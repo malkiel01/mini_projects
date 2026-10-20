@@ -1,0 +1,3382 @@
+{
+    "title": "טבלה ארוכה",
+    "json": {
+        "type": "doc",
+        "content": [
+            {
+                "type": "heading",
+                "attrs": {
+                    "level": 1
+                },
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "תקציב"
+                    }
+                ]
+            },
+            {
+                "type": "paragraph",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "יעדים חינוך התקציב פעילות לנוער ותורמים רווחה לשכונות מתנדבים כל ניסיון למען מתנדבים השנה אנשי מקצוע המוצע."
+                    }
+                ]
+            },
+            {
+                "type": "table",
+                "content": [
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableHeader",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "סעיף"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableHeader",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "תיאור"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableHeader",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "סכום"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "1"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "ותורמים האחרונה העמותה פועלת מקצוע נוספות שוטפת ניסיון כל."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "6,964"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "2"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "בשיתוף כל השנים לשכונות למען ופתיחת ומקיימת מתנדבים חינוך הרחבת מבוסס ומקיימת."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "89,494"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "3"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "נוספות יעדים המוצע שוטפת מרכז נוספות."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "52,318"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "4"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "למען למען לשכונות חינוך המוצע ניסיון בשנה הקודמות רבים יעדים התקציב האחרונה הרחבת כולל."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "22,078"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "5"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "יעדים הקודמות האחרונה בשנה כולל ועל פעילות המוצע אנשי כל."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "73,970"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "6"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "בישיבת המוצע השנים בשנה האחרונה כולל."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "25,322"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "7"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "השירותים המוצע ותורמים 2026 מקצוע מבוסס כולל שהוגדרו השנים העמותה."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "43,982"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "8"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "הקודמות ההנהלה כל השנה המוצע בשיתוף שקלים ההנהלה יעדים ותורמים אנשי אנשי הרחבת מרכז."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "83,566"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "9"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "בישיבת רבים שוטפת ההנהלה השירותים הקודמות השנה הקהילה נוספות חינוך."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "64,546"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "10"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "נוספות לאורך ותרבות פועלת רבים נוספות אנשי ותורמים בישיבת פועלת כל התקציב ותרבות כל."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "47,954"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "11"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "התקציב על 2026 מקצוע המוצע הקהילה ותרבות ומקיימת שקלים בישיבת שקלים ועל העמותה נוספות."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "74,418"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "12"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "הרחבת נוספות מבוסס על ותורמים כולל."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "26,362"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "13"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "העמותה לאורך למידה הקודמות ועל העמותה על התקציב בשנה בישיבת."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "12,014"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "14"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "ופתיחת ותרבות רבים פועלת ותרבות חינוך."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "23,030"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "15"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "חדשים לאורך מתנדבים מבוסס המוצע התקציב."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "53,070"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "16"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "המוצע השירותים מבוסס ותורמים ופתיחת למידה כל בשנה לשכונות 2026."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "34,482"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "17"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "בתחומי על רווחה ניסיון המוצע מבוסס ומקיימת בתחומי כל לאורך ההנהלה בתחומי לשכונות למידה."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "5,522"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "18"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "ותורמים לאורך שקלים הקהילה שהוגדרו ותורמים."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "55,098"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "19"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "ותרבות רווחה יעדים המוצע הקהילה לנוער."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "68,978"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "20"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "מתנדבים על פעילות למידה מבוסס ניסיון פעילות השנה שוטפת למען."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "73,302"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "21"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "חינוך מבוסס 2026 נוספות בשנה שקלים."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "86,990"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "22"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "בתחומי למען לשכונות על שקלים התקציב."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "45,590"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "23"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "ומקיימת העמותה שהוגדרו פעילות למען לנוער."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "32,798"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "24"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "ופתיחת מקצוע לשכונות לנוער מתנדבים רווחה."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "2,758"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "25"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "רבים ההנהלה הקהילה האחרונה שקלים מרכז."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "26,110"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "26"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "יעדים לשכונות מתנדבים מבוסס ועל כולל על מקצוע ועל ועל שהוגדרו ועל שוטפת רבים."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "81,726"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "27"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "המוצע ועל מבוסס ותורמים כל פועלת."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "71,334"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "28"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "בשיתוף נאמנים מקצוע אנשי מבוסס על כולל חינוך השנים אנשי."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "42,202"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "29"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "מרכז כולל מתנדבים שהוגדרו רבים מתנדבים מרכז 2026 מבוסס לאורך שקלים שוטפת הקודמות מקצוע."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "50,074"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "30"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "הקהילה חדשים ותורמים לאורך פעילות העמותה הקהילה ותרבות חדשים לאורך בתחומי יעדים ומקיימת לנוער."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "71,098"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "31"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "ופתיחת רבים רווחה מקצוע נוספות התקציב למידה מקצוע הקודמות נאמנים."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "19,038"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "32"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "נוספות על למידה שקלים נוספות הקהילה ותרבות מרכז השנים נאמנים."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "73,730"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "33"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "ופתיחת לאורך פעילות מקצוע הקהילה השירותים המוצע רווחה פעילות לנוער למען ותרבות לשכונות ההנהלה."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "54,594"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "34"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "מרכז המוצע ותורמים ותורמים הרחבת בשיתוף."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "50,570"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "35"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "השירותים הרחבת שהוגדרו מרכז למידה כל מתנדבים בתחומי 2026 ניסיון."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "53,646"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "36"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "ותרבות בשיתוף בתחומי שקלים ותרבות רווחה."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "37,862"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "37"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "למידה אנשי ופתיחת חינוך מקצוע בשיתוף."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "69,294"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "38"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "רבים ומקיימת פועלת נאמנים הרחבת ההנהלה האחרונה נאמנים מבוסס ותרבות רווחה התקציב חדשים נאמנים."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "67,918"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "39"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "מרכז ניסיון השנה מתנדבים לאורך המוצע רווחה נאמנים בישיבת המוצע בשנה השירותים כל בישיבת."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "17,518"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "40"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "מקצוע שהוגדרו מתנדבים לנוער ופתיחת התקציב לשכונות בשיתוף ועל הרחבת."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "87,618"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "41"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "על ההנהלה המוצע ותרבות העמותה לנוער הרחבת השנה השנים לשכונות השירותים לנוער ניסיון ותורמים."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "44,322"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "42"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "למידה הרחבת כל העמותה למען ופתיחת בשנה המוצע יעדים שקלים."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "33,126"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "43"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "רבים נאמנים ופתיחת לנוער ההנהלה שוטפת."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "84,686"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "44"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "ומקיימת פעילות העמותה ניסיון כל פעילות."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "84,422"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "45"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "השירותים מתנדבים מקצוע העמותה חדשים מתנדבים המוצע האחרונה השנים 2026 ההנהלה מבוסס התקציב הקודמות."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "44,198"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "46"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "השנה העמותה על 2026 ותורמים ותורמים."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "37,038"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "47"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "התקציב התקציב נוספות ניסיון כולל ותרבות שוטפת שקלים שוטפת אנשי המוצע בתחומי חדשים כל."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "52,558"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "48"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "לשכונות השנים למען המוצע שוטפת לנוער ועל מתנדבים נוספות לנוער."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "36,162"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "49"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "יעדים למידה כולל ההנהלה הרחבת בשנה הקהילה לנוער פועלת מבוסס בתחומי כולל רבים השירותים."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "21,042"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "50"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "חדשים השנים השירותים הקהילה לאורך חינוך."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "53,146"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "51"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "למען ניסיון שהוגדרו כולל פעילות ההנהלה."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "14,738"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "52"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "נוספות בישיבת לאורך שקלים 2026 פעילות בישיבת הקהילה השירותים ופתיחת רבים מרכז לאורך בשיתוף."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "83,394"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "53"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "בשנה הקודמות השנה רבים רווחה התקציב שוטפת חדשים חינוך ועל."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "3,254"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "54"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "חדשים התקציב השנה פעילות לאורך למען מקצוע יעדים כולל מבוסס הקהילה העמותה לאורך ההנהלה."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "12,230"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "55"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "האחרונה לנוער ותרבות מרכז ותרבות יעדים התקציב מרכז חינוך ניסיון אנשי מרכז השנה מתנדבים."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "12,390"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "56"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "שוטפת רבים פועלת השנה ומקיימת חדשים שקלים האחרונה בשיתוף 2026."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "74,026"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "57"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "אנשי לאורך התקציב חינוך יעדים השנים העמותה בתחומי רבים כל רווחה שהוגדרו מתנדבים בשנה."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "9,354"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "58"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "הקודמות בתחומי חינוך יעדים 2026 בישיבת שקלים לנוער בישיבת שקלים ותורמים לאורך הקודמות מבוסס."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "21,258"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "59"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "שוטפת בישיבת 2026 בשנה למען לאורך הקודמות חדשים רבים רבים מקצוע יעדים הקודמות ופתיחת."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "48,314"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "60"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "ומקיימת שוטפת לשכונות 2026 ועל שוטפת מקצוע לשכונות כולל הרחבת."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "69,454"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "61"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "בשנה בשנה הקהילה ותרבות ניסיון למידה חדשים השנה חינוך בתחומי."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "78,402"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "62"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "בתחומי השנים יעדים רווחה מרכז נאמנים לשכונות פעילות השנה ופתיחת שהוגדרו המוצע על התקציב."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "44,322"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "63"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "כל הרחבת מתנדבים ניסיון השירותים פועלת נאמנים אנשי חינוך שוטפת."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "38,518"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "64"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "לאורך למידה האחרונה בישיבת חינוך שקלים לנוער מבוסס מרכז מרכז."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "30,234"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "65"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "לשכונות מרכז השירותים העמותה הרחבת רבים השירותים שוטפת מבוסס השנה."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "2,750"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "66"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "ותרבות העמותה לאורך חינוך ניסיון ההנהלה."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "23,110"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "67"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "השנה רבים מקצוע חינוך פעילות התקציב ההנהלה פועלת שהוגדרו בישיבת."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "59,018"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "68"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "2026 ניסיון השנים לאורך נאמנים ותורמים אנשי בשיתוף בתחומי שוטפת."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "34,542"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "69"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "כולל בשיתוף ותרבות מתנדבים רבים לשכונות ניסיון למען ותורמים מתנדבים."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "80,706"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "70"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "ומקיימת פעילות ניסיון שקלים בשיתוף לאורך ועל הקהילה שוטפת המוצע חינוך השירותים נאמנים אנשי."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "51,234"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "type": "paragraph",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "ותורמים התקציב ומקיימת פועלת מרכז על חינוך למען 2026 ופתיחת הקודמות 2026 על נאמנים פועלת בשנה."
+                    }
+                ]
+            }
+        ]
+    },
+    "page": null,
+    "known": "טבלה גבוהה מעמוד לא נשברת בין שורות על המסך — אב-טיפוס בשלב 0, חלק 4"
+}

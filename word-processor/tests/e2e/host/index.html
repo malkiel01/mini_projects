@@ -1,0 +1,18 @@
+<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><title>מארחת בדיקה</title></head>
+<body style="margin:0;font-family:sans-serif">
+<div id="log" style="font-size:11px;height:60px;overflow:auto;background:#ffe;white-space:pre"></div>
+<div id="box" style="height:640px"></div>
+<script>
+window.events = [];
+const log = (t, d) => { events.push(t); document.getElementById('log').textContent += t + ' ' + JSON.stringify(d ?? '') + '\n'; };
+const s = document.createElement('script');
+s.src = new URLSearchParams(location.search).get('editor') + 'assets/js/host.js';
+s.onload = () => {
+  window.ed = WordProcessor.mount(document.getElementById('box'), {
+    session: () => fetch('api.php?action=editor_session').then(r => r.json()),
+    onReady: e => log('ready', e), onChange: d => log('change', d), onSaved: e => log('saved', e), onPage: s => log('page', s && s.orientation),
+    onLock: l => log('lock', l), onClose: e => log('close', e), onError: e => log('error', e),
+  });
+};
+document.head.append(s);
+</script></body></html>

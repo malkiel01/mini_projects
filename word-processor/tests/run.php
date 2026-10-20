@@ -477,6 +477,35 @@ check('שמירה מלשונית ישנה (בלי הגדרות עמוד בפני
 check('מבנה חדש יותר מהשרת → schema_newer', throws(fn() => doc_save($rowS, ['type' => 'doc', 'attrs' => ['schema' => SCHEMA_VERSION + 1], 'content' => []], null, 'u1', 'דנה'), 'schema_newer'));
 check('ייצוא Word ממסמך עם attrs', strlen(export_docx(doc_json($rowS), doc_page($rowS))) > 1000);
 
+// ======================================================================
+section('אוסף המסמכים (tests/corpus) — Word הלוך וחזור');
+$words = fn(string $s) => preg_split('/\s+/u', trim(preg_replace('/[^\p{L}\p{N}\s]+/u', ' ', $s)), -1, PREG_SPLIT_NO_EMPTY);
+foreach (glob(__DIR__ . '/corpus/*.json') as $f) {
+    $c = json_decode(file_get_contents($f), true);
+    $page = page_normalize($c['page'] ?? []);
+    $docx = export_docx($c['json'], $page, $c['title']);
+    $zip = new ZipArchive();
+    $tmpDocx = "$tmp/corpus.docx";
+    file_put_contents($tmpDocx, $docx);
+    $bad = [];
+    if ($zip->open($tmpDocx) === true) {
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $name = $zip->getNameIndex($i);
+            if (!preg_match('/\.(xml|rels)$/', $name)) continue;
+            $x = new DOMDocument();
+            if (!@$x->loadXML($zip->getFromIndex($i))) $bad[] = $name;
+        }
+        $zip->close();
+    } else $bad[] = 'zip';
+    $back = import_docx($docx, 'corpus');
+    $a = $words(export_text($c['json']));
+    $b = $words(export_text($back['json']));
+    $bp = page_normalize($back['page'] ?? []);
+    check("{$c['title']}: Word תקין, וחוזר עם אותו טקסט ואותן הגדרות עמוד",
+        !$bad && $a === $b && $bp['size'] === $page['size'] && $bp['orientation'] === $page['orientation'] && $bp['margins'] == $page['margins'],
+        $bad ? 'XML שבור: ' . implode(', ', $bad) : (count($a) . ' מילים מול ' . count($b) . ($a !== $b ? ' — מילה ראשונה שונה: ' . json_encode(array_values(array_diff_assoc($a, $b))[0] ?? '', JSON_UNESCAPED_UNICODE) : '')));
+}
+
 // ניקוי
 array_map('unlink', glob("$tmp/media/*") ?: []);
 @rmdir("$tmp/media");
