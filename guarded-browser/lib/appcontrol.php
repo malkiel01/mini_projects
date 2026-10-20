@@ -19,6 +19,14 @@ require_once __DIR__ . '/appversion.php';
 
 const APP_POSTURES = ['allow_all', 'deny_all'];
 
+/**
+ * מסך ההתקנה של אנדרואיד — לעולם לא נחסם: דרכו מגדלור מתקין את העדכון של עצמו. חסום (במפורש, או ב"רק מה
+ * שאישרתי") — מסך האישור נסגר מיד, וב"בעל מכשיר" אף מושעה, והעדכון לא מסתיים לעולם (באג, 2026-10-20).
+ * נשלח למכשיר ברשימת המותרות, כך שגם גרסה שכבר מותקנת מקבלת את התיקון בלי עדכון.
+ */
+const UPDATE_PACKAGES = ['com.android.packageinstaller', 'com.google.android.packageinstaller',
+                         'com.samsung.android.packageinstaller'];
+
 /** ניהול אפליקציות פתוח לחשבון? רק ברמת apps / device. */
 function accountAppsAllowed(int $accountId): bool {
     return in_array((string) (accountRow($accountId)['level_max'] ?? 'browser'), ['apps', 'device'], true);
@@ -78,8 +86,8 @@ function appsPayload(array $user): array {
     return [
         'manage'  => true,
         'posture' => appPosture($childId),
-        'blocked' => array_values(array_keys(array_filter($rules, fn($a) => $a === 'block'))),
-        'allowed' => array_values(array_keys(array_filter($rules, fn($a) => $a === 'allow'))),
+        'blocked' => array_values(array_diff(array_keys(array_filter($rules, fn($a) => $a === 'block')), UPDATE_PACKAGES)),
+        'allowed' => array_values(array_unique(array_merge(array_keys(array_filter($rules, fn($a) => $a === 'allow')), UPDATE_PACKAGES))),
     ];
 }
 
@@ -95,6 +103,7 @@ function appsSavePosture(int $childId, string $posture): string {
 function appsSaveRule(int $childId, string $pkg, string $action): string {
     $pkg = cleanPackage($pkg);
     if ($pkg === '') return 'שם חבילה לא תקין';
+    if (in_array($pkg, UPDATE_PACKAGES, true)) return 'מסך ההתקנה של אנדרואיד תמיד פתוח — דרכו מגדלור מתעדכן';
     if ($action === '') { q('DELETE FROM app_rules WHERE child_id = ? AND package = ?', [$childId, $pkg]); return ''; }
     if (!in_array($action, ['allow', 'block'], true)) return 'פעולה לא מוכרת';
     upsert('app_rules', ['child_id' => $childId, 'package' => $pkg], ['action' => $action], ['created_at' => nowIso()]);
@@ -114,8 +123,10 @@ function appsList(int $accountId, int $childId): array {
     $apps = [];
     foreach (all('SELECT package, label, is_system FROM device_apps WHERE child_id = ? ORDER BY is_system, LOWER(label), package', [$childId]) as $a) {
         $pkg = $a['package'];
+        $locked = in_array($pkg, UPDATE_PACKAGES, true);   // מסך ההתקנה — תמיד פתוח
         $apps[] = ['package' => $pkg, 'label' => $a['label'] ?: $pkg, 'system' => (bool) $a['is_system'],
-                   'action' => $rules[$pkg] ?? '', 'blocked' => appBlocked($posture, $rules[$pkg] ?? '')];
+                   'action' => $locked ? 'allow' : ($rules[$pkg] ?? ''), 'locked' => $locked,
+                   'blocked' => !$locked && appBlocked($posture, $rules[$pkg] ?? '')];
         unset($rules[$pkg]);
     }
     // כללים ל"רפאים" — חבילות שכבר לא מותקנות אך נשמר עליהן כלל.

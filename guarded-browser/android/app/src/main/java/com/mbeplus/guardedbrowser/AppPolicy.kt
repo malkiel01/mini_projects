@@ -15,6 +15,8 @@ object AppPolicy {
         "com.android.systemui",
         "com.android.dialer", "com.google.android.dialer", "com.android.phone",
         "com.android.incallui", "com.android.contacts", "com.android.emergency",
+        // מסך ההתקנה של אנדרואיד — דרכו מגדלור מתקין את העדכון של עצמו (גם השרת שולח אותו כמותר).
+        "com.android.packageinstaller", "com.google.android.packageinstaller", "com.samsung.android.packageinstaller",
     )
 
     /** אפליקציית ההגדרות (גם בסמסונג ובשיאומי זו החבילה). */
