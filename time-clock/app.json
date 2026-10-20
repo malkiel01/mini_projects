@@ -1,0 +1,9 @@
+{
+  "id": "time-clock",
+  "name": "שעון נוכחות",
+  "icon": "🕒",
+  "description": "דיווח כניסה ויציאה ומעקב אחר שעות עבודה. הפרויקט בשלב האפיון.",
+  "category": "dev",
+  "entry": "index.html",
+  "gate": true
+}
