@@ -160,6 +160,37 @@ export const PageBreak = Node.create({
     },
 });
 
+/**
+ * מעבר מקטע (עמוד הבא) — כמו ב-Word: מכאן מתחיל מקטע חדש בעמוד חדש, עם הגדרות עמוד משלו (attrs.page —
+ * רק מה שמשתנה לעומת המקטע הקודם: גודל, כיוון, שוליים, כותרות ומספור). המסמך נשאר שטוח: הצומת מסמן את הגבול.
+ */
+export const SectionBreak = Node.create({
+    name: 'sectionBreak',
+    group: 'block',
+    atom: true,
+    selectable: true,
+    addAttributes() {
+        return {
+            page: {
+                default: null,
+                parseHTML: el => { try { return JSON.parse(el.getAttribute('data-page') || 'null'); } catch { return null; } },
+                renderHTML: a => ({ 'data-page': JSON.stringify(a.page || {}) }),
+            },
+        };
+    },
+    parseHTML() {
+        return [{ tag: 'div[data-section-break]' }];
+    },
+    renderHTML({ HTMLAttributes }) {
+        return ['div', mergeAttributes(HTMLAttributes, { 'data-section-break': '', class: 'wp-section-break', contenteditable: 'false' })];
+    },
+    addCommands() {
+        return {
+            insertSectionBreak: page => ({ chain }) => chain().insertContent({ type: 'sectionBreak', attrs: { page: page || null } }).createParagraphNear().run(),
+        };
+    },
+});
+
 /** מילוי תא. */
 const cellAttrs = {
     background: {
@@ -392,7 +423,7 @@ export function extensions(extra = []) {
         Highlight.configure({ multicolor: true }),
         Subscript, Superscript,
         TextAlign.configure({ types: BLOCKS, alignments: ['right', 'center', 'left', 'justify'], defaultAlignment: null }),
-        ParagraphFormat, PageBreak, WpImage, LetterSpacing,
+        ParagraphFormat, PageBreak, SectionBreak, WpImage, LetterSpacing,
         Table.configure({ resizable: true, cellMinWidth: 30, allowTableNodeSelection: true }),
         TableRow, Cell, HeaderCell,
         DocAttrs,

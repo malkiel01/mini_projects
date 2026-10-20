@@ -12,6 +12,8 @@
 import { Extension, Plugin, PluginKey, Decoration, DecorationSet } from '../../vendor/tiptap.js';
 
 export const pagesKey = new PluginKey('wpPages');
+const sectionsKey = new PluginKey('wpSections');
+let secCache = { doc: null, sig: '', set: null };
 const CONTAINERS = new Set(['bulletList', 'orderedList', 'listItem']);
 const TEXTBLOCKS = new Set(['paragraph', 'heading']);
 
@@ -67,7 +69,7 @@ export const Pages = Extension.create({
                         ext.storage.pages = pick.pages;
                         ext.options.onLayout(pick);
                         const deco = DecorationSet.create(view.state.doc, pick.breaks.flatMap(b => {
-                            const out = [Decoration.widget(b.pos, spacer(b.h, b.page, b.row), {
+                            const out = [Decoration.widget(b.pos, spacer(b.h, b.page, b.row, b.sec), {
                                 side: -2, key: `pb${b.page}-${Math.round(b.h)}${b.row ? 'r' : ''}`, ignoreSelection: true,
                                 marks: [],   // מחוץ לכל סימון (גודל גופן וכו'): בהדפסה Chrome לא שובר עמוד בתוך span
                             })];
@@ -103,6 +105,31 @@ export const Pages = Extension.create({
                     destroy() { cancelAnimationFrame(raf); ro.disconnect(); document.fonts?.removeEventListener?.('loadingdone', fresh); },
                 };
             },
+        }), new Plugin({
+            // מקטעים: כל בלוק ברוחב העמוד של המקטע שלו (גבולות שקופים — לא נוגעים ב-margin של הזחה), ושם עמוד להדפסה
+            key: sectionsKey,
+            props: {
+                decorations: state => {
+                    const g = ext.options.geometry();
+                    if (!g.sections || g.sections.length < 2) return null;
+                    const sig = g.sections.map(x => `${x.from}:${x.pageW}:${x.left}:${x.right}`).join('|');
+                    if (secCache.doc === state.doc && secCache.sig === sig) return secCache.set;
+                    const deco = [];
+                    state.doc.forEach((node, pos) => {
+                        let k = 0;
+                        for (let i = 1; i < g.sections.length; i++) if (pos > g.sections[i].from) k = i;
+                        const x = g.sections[k];
+                        const side = (g.sheetW - x.pageW) / 2;
+                        deco.push(Decoration.node(pos, pos + node.nodeSize, {
+                            style: `border-left:${side + x.left}px solid transparent;border-right:${side + x.right}px solid transparent;`
+                                + `--wps-w:${x.pageW - x.left - x.right}px;` + (k ? `page:wps${k};` : ''),
+                            'data-sec': String(k),
+                        }));
+                    });
+                    secCache = { doc: state.doc, sig, set: DecorationSet.create(state.doc, deco) };
+                    return secCache.set;
+                },
+            },
         })];
     },
     addCommands() {
@@ -134,7 +161,7 @@ function repeatRow(tr) {
 }
 
 /** row — מספר העמודות כשהרווח בתוך טבלה (0 — רווח רגיל). */
-function spacer(h, page, row = 0) {
+function spacer(h, page, row = 0, sec = false) {
     if (row) {
         // בתוך טבלה: שורה ריקה על כל הרוחב (span בתוך tbody אינו חוקי)
         const tr = document.createElement('tr');
@@ -149,7 +176,8 @@ function spacer(h, page, row = 0) {
         return tr;
     }
     const el = document.createElement('span');
-    el.className = 'wp-break';
+    // בגבול מקטע ההדפסה כבר עוברת לעמוד חדש בגלל שם העמוד (page: wpsN) — שבירה נוספת הייתה יוצרת עמוד ריק
+    el.className = sec ? 'wp-break wp-break-sec' : 'wp-break';
     el.contentEditable = 'false';
     el.setAttribute('aria-hidden', 'true');
     el.dataset.page = page;
@@ -189,9 +217,9 @@ function measure(view, g) {
             const dom = view.nodeDOM(cpos);
             if (!(dom instanceof HTMLElement)) return;
             const name = child.type.name;
-            if (name === 'pageBreak') {
+            if (name === 'pageBreak' || name === 'sectionBreak') {
                 const b = box(dom);
-                units.push({ top: b.top, bottom: b.bottom, pos: cpos, kind: 'force', after: cpos + child.nodeSize });
+                units.push({ top: b.top, bottom: b.bottom, pos: cpos, kind: 'force', after: cpos + child.nodeSize, section: name === 'sectionBreak' });
                 return;
             }
             if (CONTAINERS.has(name)) { visit(child, cpos + 1, name === 'listItem' ? brk : (offset === 0 ? at : null)); return; }
@@ -203,7 +231,10 @@ function measure(view, g) {
     };
     visit(view.state.doc, 0);
 
-    // סימולציה: עמוד אחרי עמוד
+    // סימולציה: עמוד אחרי עמוד. כל עמוד — בגיאומטריה של המקטע שלו (g.sections; בלי מקטעים — g עצמו)
+    const secs = g.sections || [g];
+    let s = 0;                    // המקטע של העמוד הנוכחי
+    const pageSecs = [0];
     const breaks = [];
     let pageTop = g.top;          // הלוגי שבו מתחיל אזור הטקסט של העמוד הנוכחי
     let page = 0;
@@ -212,14 +243,18 @@ function measure(view, g) {
     while (i < units.length) {
         const u = units[i];
         if (u.kind === 'force') {
-            // מעבר עמוד ידני: העמוד הבא מתחיל אחריו
-            breaks.push({ pos: u.after, h: Math.max(0, g.pageH + g.gap - (u.bottom - pageTop)), page: page + 1 });
+            // מעבר עמוד ידני / מעבר מקטע: העמוד הבא מתחיל אחריו (במעבר מקטע — בגיאומטריה של המקטע הבא)
+            const cur = secs[s];
+            const next = u.section ? secs[Math.min(s + 1, secs.length - 1)] : cur;
+            breaks.push({ pos: u.after, h: Math.max(0, cur.pageH - cur.top - (u.bottom - pageTop) + g.gap + next.top), page: page + 1, sec: !!u.section });
+            if (u.section) s = Math.min(s + 1, secs.length - 1);
             pageTop = u.bottom;
             page++;
+            pageSecs.push(s);
             firstOnPage = ++i;
             continue;
         }
-        if (i === firstOnPage || u.bottom - pageTop <= g.contentH + 0.5) { i++; continue; }
+        if (i === firstOnPage || u.bottom - pageTop <= secs[s].contentH + 0.5) { i++; continue; }
         // לא נכנס — שוברים לפני u, עם תיקונים:
         let j = i;
         // שורות יתומות: לפחות 2 שורות של הפסקה בעמוד הזה, ו-2 בבא
@@ -235,14 +270,15 @@ function measure(view, g) {
         if (j <= firstOnPage) j = i;
         const used = units[j].top - pageTop;
         const rep = units[j].repeat;   // שורה באמצע טבלה: גם השבירה בתוך הטבלה, וגם שורת הכותרת חוזרת (תופסת מקום)
-        breaks.push({ pos: units[j].pos, h: Math.max(0, g.pageH + g.gap - used), page: page + 1, row: units[j].row || 0, repeat: rep ? rep.pos : null });
+        breaks.push({ pos: units[j].pos, h: Math.max(0, secs[s].pageH + g.gap - used), page: page + 1, row: units[j].row || 0, repeat: rep ? rep.pos : null });
         pageTop = units[j].top - (rep ? rep.h : 0);
         page++;
+        pageSecs.push(s);
         firstOnPage = j;
         i = j + 1;
     }
     const sig = breaks.map(b => `${b.pos}:${Math.round(b.h)}`).join('|');
-    return { breaks, pages: page + 1, sig, zoom };
+    return { breaks, pages: page + 1, pageSecs, sig: sig + '#' + pageSecs.join(','), zoom };
 }
 
 /**
