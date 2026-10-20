@@ -42,12 +42,20 @@ object Setup {
 
     fun steps(ctx: Context): List<Step> = listOf(
         Step(NOTIF, "🔔", "התראות",
-            "כדי שמגדלור יוכל להציג שהוא פועל, ולהודיע כשמשהו נחסם.", true,
-            { ctx -> Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-                ctx.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED },
+            "כדי שמגדלור יוכל להציג שהוא פועל, להודיע כשמשהו נחסם, ולהקפיץ את מסך העדכון לבד.", true,
+            { ctx -> notifGranted(ctx) && fullScreenGranted(ctx) },
             { act ->
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
-                    act.requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 71)
+                // קודם ההתראות עצמן, ואז (אנדרואיד 14+) ההיתר להקפיץ מסך מלא — בלעדיו מסך העדכון
+                // לא קופץ לבד כשמגדלור סגור, אלא יורד להתראה רגילה.
+                if (!notifGranted(act)) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+                        act.requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 71)
+                } else if (!fullScreenGranted(act) && Build.VERSION.SDK_INT >= 34) {
+                    try {
+                        AppPolicy.openSettings(act, Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
+                            Uri.parse("package:" + act.packageName)))
+                    } catch (e: Exception) {}
+                }
             }),
 
         Step(BATTERY, "🔋", "ריצה רציפה",
@@ -95,6 +103,23 @@ object Setup {
 
     /** האם כל החיוניות ניתנו — לשער הכניסה. */
     fun ready(ctx: Context): Boolean = pendingRequired(ctx).isEmpty()
+
+    /** האם הותרו התראות (מאנדרואיד 13 צריך היתר מפורש). */
+    fun notifGranted(ctx: Context): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ctx.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+
+    /**
+     * האם מותר להקפיץ התראת מסך מלא. מאנדרואיד 14 זהו היתר נפרד (app-op) שברירת המחדל שלו כבויה
+     * לאפליקציות שאינן שיחה/שעון — ובלעדיו מסך העדכון החובה לא קופץ לבד כשמגדלור סגור.
+     */
+    fun fullScreenGranted(ctx: Context): Boolean {
+        if (Build.VERSION.SDK_INT < 34) return true
+        return try {
+            (ctx.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager)
+                .canUseFullScreenIntent()
+        } catch (e: Exception) { true }
+    }
 
     /** האם שירות הנגישות של מגדלור דלוק. */
     fun accessibilityOn(ctx: Context): Boolean {
