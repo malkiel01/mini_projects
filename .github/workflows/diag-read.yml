@@ -1,0 +1,61 @@
+# זמני — קריאת יומן האבחון (diag_log) מהשרת לניתוח. הפלט מוצפן למפתח שאינו בריפו (הריפו ציבורי).
+name: Diag read (temporary)
+on:
+  push:
+    branches: [diag-read]
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Prepare SSH key
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Unlock the deploy key if it has a passphrase
+        env:
+          DEPLOY_PASS: ${{ secrets.DEPLOY_SSH_PASSPHRASE }}
+        run: |
+          [ -n "$DEPLOY_PASS" ] || exit 0
+          eval "$(ssh-agent -s)"
+          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> "$GITHUB_ENV"
+          echo "SSH_AGENT_PID=$SSH_AGENT_PID" >> "$GITHUB_ENV"
+          printf '#!/bin/sh\nprintf "%%s\\n" "$DEPLOY_PASS"\n' > "$RUNNER_TEMP/askpass"
+          chmod +x "$RUNNER_TEMP/askpass"
+          SSH_ASKPASS="$RUNNER_TEMP/askpass" SSH_ASKPASS_REQUIRE=force ssh-add ~/.ssh/deploy_key
+          rm -f "$RUNNER_TEMP/askpass"
+
+      - name: Read and encrypt
+        env:
+          DEST: ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          cat > pub.pem <<'KEY'
+          -----BEGIN PUBLIC KEY-----
+          MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAvWV6SopVjM8vMFRDR8qG
+          zYlsVMqg+Vh3xBfMfAupgt1ApHEGs3+EZ7vCR8Dh50Mc/PNM6zGRznls3hv0Qjcj
+          HWPR86A1/XshwrgNsYFvk3yoDoWQEGUxBjWZF0Jf8zJTF258xMTsOIEGZVLeQAIH
+          VKWgsMBWXPqnLYFqqnnUMtMxzve6B733VXytLVIo/QpNEBXVGxNlJdDS+7uxwjZN
+          jouWoSzT1r/+Iu2KMQrb8Kmk5wfN1JjomVN2p5QkgLh9pvodismlNpk8u1TSS2Uy
+          RBY0FCoCnuWKJ8FEC5BdewcSt7kjDEUP8px5GOGNRWGhJqs4sHeFblazda/VKXhn
+          wRbfevrDECPkxxRFBpGRCNWIZlBuF94ZsvMlnEQqmQpFc4gn6toiDfsyo7c4/Vp4
+          x3aUbaWOPWqwrf738BUC4tZQkaSPnPSu/v/2Hl2s9w8+NWZJQwAhRKClGPqPtubt
+          aoi4wd/UkzRTgrRMX+eidDigHmZVSpwV9/KK9iTGajeJAgMBAAE=
+          -----END PUBLIC KEY-----
+          KEY
+          sed -i 's/^ *//' pub.pem
+          Q='$p=new PDO("sqlite:platform/data/platform.sqlite");$r=$p->query("SELECT id,at,event,app,user_id,device,ua,path,referrer,info FROM diag_log WHERE at >= strftime(\"%Y-%m-%dT%H:%M:%SZ\",\"now\",\"-3 hours\") ORDER BY id")->fetchAll(PDO::FETCH_ASSOC);echo json_encode($r,JSON_UNESCAPED_UNICODE);'
+          ok=0
+          for w in 0 30 90 180; do
+            sleep $w
+            if ssh -i ~/.ssh/deploy_key -o BatchMode=yes "$DEST" "cd '${DEPLOY_PATH%/}' && php -r '$Q'" > out.json; then ok=1; break; fi
+          done
+          [ $ok = 1 ] || exit 1
+          echo "bytes: $(wc -c < out.json)"
+          openssl rand -hex 32 > k.txt
+          openssl enc -aes-256-cbc -pbkdf2 -salt -in out.json -out out.enc -pass file:k.txt
+          openssl pkeyutl -encrypt -pubin -inkey pub.pem -in k.txt -out k.enc
+          echo "KEY:$(base64 -w0 k.enc)"
+          echo "DATA:$(base64 -w0 out.enc)"
