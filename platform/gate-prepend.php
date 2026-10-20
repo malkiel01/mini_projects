@@ -32,7 +32,7 @@
     $verdict = \Platform\Gate\decide($app, $path, $params);
     if ($verdict !== null) {
         \Platform\Gate\diag_nav('gate:' . $verdict[1], $app);
-        \Platform\Gate\deny($verdict, \Platform\Gate\base_url($_SERVER['SCRIPT_NAME'] ?? '/', $rel));
+        \Platform\Gate\deny($verdict, \Platform\Gate\base_url($_SERVER['SCRIPT_NAME'] ?? '/', $rel), $app);
     }
     \Platform\Gate\record_visit($app);
     \Platform\Gate\diag_nav('gate:ok', $app);

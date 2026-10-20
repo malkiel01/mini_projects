@@ -64,7 +64,7 @@ $params = array_diff_key($_GET, ['__gate_app' => 1, '__gate_path' => 1]);
 $verdict = decide($app, $rel, $params);
 if ($verdict !== null) {
     \Platform\Gate\diag_nav('gate:' . $verdict[1], $app);
-    deny($verdict, $base);
+    deny($verdict, $base, $app);
 }
 \Platform\Gate\touch_session($base);
 if (in_array($ext, ['html', 'htm'], true)) {

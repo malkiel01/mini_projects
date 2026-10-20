@@ -174,12 +174,20 @@ function decide(string $app, string $path, array $params): ?array
 }
 
 /** תשובת סירוב: דף לבני אדם, JSON לכל השאר. */
-function deny(array $verdict, string $base): never
+function deny(array $verdict, string $base, string $app = ''): never
 {
     [$code, $reason] = $verdict;
     $accept = $_SERVER['HTTP_ACCEPT'] ?? '';
     $isPage = ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET' && str_contains($accept, 'text/html');
 
+    // בתוך אפליקציית אנדרואיד עם דפדפן פנימי (WebView — "; wv)"): לא מסך הכניסה של הכלים הדיגיטליים בתוך
+    // האפליקציה, אלא platform/handoff.php — האפליקציה פותחת אותו בחוץ (כרום, שם מחוברים), והשרת מחזיר
+    // אליה עם ההתחברות. כך הכלים הדיגיטליים לעולם לא נטענים בתוך אפליקציה.
+    if ($isPage && $reason === 'login' && $app !== '' && str_contains($_SERVER['HTTP_USER_AGENT'] ?? '', '; wv)')) {
+        header('Cache-Control: no-store');
+        header('Location: ' . $base . 'platform/handoff.php?app=' . rawurlencode($app), true, 302);
+        exit;
+    }
     if ($isPage && $reason === 'login') {
         $next = $_SERVER['REQUEST_URI'] ?? $base;
         header('Location: ' . $base . '?next=' . rawurlencode($next), true, 302);
