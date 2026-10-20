@@ -37,8 +37,18 @@ function out(array $payload, int $code = 200): never {
     exit;
 }
 
+/**
+ * חוזה הסירוב, אחיד לכל הפעולות (סקירה, 2026-10-20 — שלב 7):
+ *
+ *   ‏ok=false תמיד נושא allowed=false ו-reason, חוץ משגיאה זמנית (שרת, עומס) — שם retry=true ואין
+ *   allowed: "לא הצלחנו לשאול", לא "נשאלנו ונענינו לא". לפני זה סירוב (חשבון מושעה, 403) הגיע בלי
+ *   allowed, וגרסאות שקראו optBoolean("allowed", true) המשיכו לגלוש בחשבון מושעה.
+ */
 function bad(string $message, string $code = 'error', int $http = 400): never {
-    out(['ok' => false, 'error' => $message, 'code' => $code], $http);
+    $out = ['ok' => false, 'error' => $message, 'code' => $code];
+    if ($http >= 500 || $http === 429) $out['retry'] = true;
+    else $out += ['allowed' => false, 'reason' => $message];
+    out($out, $http);
 }
 
 /** גוף הבקשה כ-JSON, או מערך ריק. */

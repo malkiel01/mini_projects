@@ -124,7 +124,9 @@ class HomeActivity : AppCompatActivity() {
             if (r.ok && Updater.required(this)) { Updater.lock(this); return@policy }
 
             state = r.json?.optJSONObject("state")
-            allowed = state?.optBoolean("allowed") ?: true
+            // תשובה תקינה — לפי state (חסר = סירוב); סירוב מהשרת (חשבון מושעה) — חסום; בלי רשת — כמו שהיה.
+            val v = if (r.ok) Verdict.nested(state) else Verdict.from(r)
+            if (v.kind != Verdict.Kind.UNKNOWN) allowed = v.allow
             val reason = state?.optString("reason") ?: r.json?.optString("error") ?: ""
 
             b.greeting.text = store.displayName().ifEmpty { "שלום" }.let { if (it == "שלום") it else "שלום $it" }
