@@ -203,6 +203,11 @@ export function createWordEditor(root, opts) {
         editorProps: {
             attributes: { class: 'wp-doc', dir: 'rtl', lang: 'he', spellcheck: 'true', 'aria-label': 'המסמך' },
             transformPastedHTML: cleanPastedHtml,
+            // Ctrl+Alt+F — הערת שוליים (כמו ב-Word)
+            handleKeyDown: (view, e) => {
+                if ((e.ctrlKey || e.metaKey) && e.altKey && e.code === 'KeyF') { footnoteDialog(null); return true; }
+                return false;
+            },
             handlePaste: (view, e) => imageFiles(e.clipboardData) ? (insertImages(imageFiles(e.clipboardData)), true) : false,
             handleDrop: (view, e, slice, moved) => {
                 if (moved || !imageFiles(e.dataTransfer)) return false;
@@ -413,6 +418,7 @@ export function createWordEditor(root, opts) {
             zoomIn: () => { fit = false; zoom = Math.min(3, Math.round((zoom + 0.1) * 10) / 10); setZoom(); },
             zoomFit: () => { fit = true; setZoom(); },
             crop: pos => cropDialog(pos), imageProps: pos => imageDialog(pos), imageSize: f => imageSizeTo(f),
+            footnote: () => footnoteDialog(null),
             // הגדרות העמוד של המקטע שבו הסמן
             sectionPage: () => { const at = editor.state.selection.from; return sections().filter((x, k) => k === 0 || x.from < at).pop().page; },
         },
@@ -442,7 +448,7 @@ export function createWordEditor(root, opts) {
 
     const TOGGLES = ['bold', 'italic', 'underline', 'strike', 'superscript', 'subscript', 'alignRight', 'alignCenter', 'alignLeft', 'alignJustify', 'bulletList', 'orderedList'];
     const B = Object.fromEntries(['undo', 'redo', ...TOGGLES, 'clearFormat', 'outdent', 'indent', 'paragraphDialog', 'insertTable', 'insertImage', 'pageBreak',
-        'sectionBreak', 'pageSetup', 'editStyles', 'print', 'zoomOut', 'zoomIn', 'zoomFit'].map(id => [id, cmdBtn(id)]));
+        'footnote', 'sectionBreak', 'pageSetup', 'editStyles', 'print', 'zoomOut', 'zoomIn', 'zoomFit'].map(id => [id, cmdBtn(id)]));
     B.painter = cmdBtn('formatPainter', { ondblclick: () => cmds.run('formatPainter', true) });
     B.color = cmdColor('color', '#c00000');
     B.mark = cmdColor('highlight', '#ffff00', '.mark');
@@ -452,7 +458,7 @@ export function createWordEditor(root, opts) {
         h('div.tb-group', B.bold, B.italic, B.underline, B.strike, B.color, B.mark, B.superscript, B.subscript, spacingSel, B.painter, B.clearFormat), sep(),
         h('div.tb-group', B.alignRight, B.alignCenter, B.alignLeft, B.alignJustify), sep(),
         h('div.tb-group', B.bulletList, B.orderedList, listType, B.outdent, B.indent, B.paragraphDialog), sep(),
-        h('div.tb-group', B.insertTable, B.insertImage, imgInput, B.pageBreak, B.sectionBreak), sep(),
+        h('div.tb-group', B.insertTable, B.insertImage, imgInput, B.footnote, B.pageBreak, B.sectionBreak), sep(),
         h('div.tb-group', B.pageSetup, B.editStyles, B.print, opts.versions ? cmdBtn('versions') : null, ...(opts.menu || [])), sep(),
         h('div.tb-group.tb-zoomg', B.zoomOut, zoomLabel, B.zoomIn, B.zoomFit),
     );
@@ -544,6 +550,38 @@ export function createWordEditor(root, opts) {
             ed.chain().focus().setNodeSelection(pos).updateAttributes('image', { crop }).setNodeSelection(pos).run();
         });
     }
+
+    /** הערת שוליים: חדשה (pos = null — במקום הסמן) או עריכה של קיימת. טקסט ריק בעריכה — מחיקת ההערה. */
+    function footnoteDialog(pos) {
+        const node = pos == null ? null : ed.state.doc.nodeAt(pos);
+        if (pos != null && node?.type.name !== 'footnote') return;
+        if (!editor.isEditable) return;
+        const sel = ed.state.selection;
+        sheet(node ? 'הערת שוליים' : 'הערת שוליים חדשה', body => {
+            body.append(field('הטקסט שיופיע בתחתית העמוד', h('textarea', { name: 'text', rows: 4, maxlength: 2000 }, node?.attrs.text || '')),
+                node ? h('p.hint', 'מחיקת כל הטקסט ושמירה — מוחקת את ההערה.') : null);
+            setTimeout(() => body.querySelector('textarea')?.focus(), 30);
+        }, form => {
+            const text = String(new FormData(form).get('text') || '').trim();
+            if (!node) {
+                if (!text) return;
+                ed.chain().focus().setTextSelection(sel.to).insertFootnote(text).run();
+            } else if (!text) {
+                ed.chain().focus().command(({ tr }) => { tr.delete(pos, pos + node.nodeSize); return true; }).run();
+            } else {
+                ed.chain().focus().command(({ tr }) => { tr.setNodeMarkup(pos, null, { ...node.attrs, text }); return true; }).run();
+            }
+        }, 'שמירה');
+    }
+    // לחיצה על סימן הערה או על ההערה בתחתית העמוד — עריכה
+    host.addEventListener('click', e => {
+        const ref = e.target.closest?.('.wp-fn-ref, .wp-fn-area .wp-fn-note');
+        if (!ref) return;
+        let pos = ref.dataset.pos != null ? +ref.dataset.pos : null;
+        if (pos == null) { try { pos = editor.view.posAtDOM(ref, 0); } catch { return; } }
+        e.preventDefault();
+        footnoteDialog(pos);
+    });
 
     /** כיתוב, מרחק מהטקסט ותיאור (alt). */
     function imageDialog(pos) {

@@ -81,6 +81,7 @@ export const COMMANDS = [
     // ---------- הוספה ----------
     { id: 'insertTable', label: 'טבלה', icon: '▦', group: 'insert', run: x => x.ui.table() },
     { id: 'insertImage', label: 'תמונה', icon: '🖼', group: 'insert', run: x => x.ui.image() },
+    { id: 'footnote', label: 'הערת שוליים', icon: '¹', keys: 'Ctrl+Alt+F', group: 'insert', run: x => x.ui.footnote() },
     { id: 'pageBreak', label: 'מעבר עמוד', icon: '⤓', keys: 'Ctrl+Enter', group: 'insert', run: x => x.chain().insertPageBreak().run() },
     { id: 'sectionBreak', label: 'מעבר מקטע: העמוד הבא בכיוון ההפוך', icon: '⧉', group: 'layout',
         run: (x, page) => x.chain().insertSectionBreak(page || { orientation: x.ui.sectionPage().orientation === 'landscape' ? 'portrait' : 'landscape' }).run() },

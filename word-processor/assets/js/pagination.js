@@ -79,7 +79,10 @@ export const Pages = Extension.create({
                                 if (hdr) out.push(Decoration.widget(b.pos, repeatRow(hdr), { side: -1, key: `rp${b.page}-${b.repeat}`, ignoreSelection: true, marks: [] }));
                             }
                             return out;
-                        }));
+                        }).concat((pick.notesArea || []).map(a => Decoration.widget(a.pos, notesAreaEl(a), {
+                            side: a.end ? 1 : -3, key: `fn${a.pos}-${Math.round(a.fill)}-${a.notes.map(n => n.n).join('.')}-${a.notes.map(n => n.text).join('|').length}`,
+                            ignoreSelection: true, marks: [],
+                        }))));
                         view.dispatch(view.state.tr.setMeta(pagesKey, { deco, sig: pick.sig }).setMeta('addToHistory', false));
                     });
                 };
@@ -150,6 +153,61 @@ function earlier(a, b) {
     return a.breaks.length > b.breaks.length;
 }
 
+const FN_SEP = 14;   // קו ההפרדה מעל ההערות + רווח
+const fnCache = new Map();
+let fnBox = null;
+/** גובה הערה אחת בתחתית העמוד — מדידה בקופסה נסתרת, באותו רוחב ובאותו גופן כמו אזור ההערות. */
+function noteHeight(root, note, g) {
+    const w = Math.round(g.pageW - g.left - g.right);
+    const font = getComputedStyle(root).fontFamily;
+    const key = `${w}|${font}|${note.n}|${note.text}`;
+    if (fnCache.has(key)) return fnCache.get(key);
+    if (!fnBox || !fnBox.isConnected) {
+        fnBox = document.createElement('div');
+        fnBox.className = 'wp-fn-measure';
+        fnBox.setAttribute('aria-hidden', 'true');
+        root.parentElement.append(fnBox);   // מחוץ למסמך העריך — ProseMirror לא רואה אותה
+    }
+    fnBox.style.width = w + 'px';
+    fnBox.style.fontFamily = font;
+    fnBox.textContent = '';
+    fnBox.append(noteEl(note));
+    const zoomed = root.getBoundingClientRect().height / (root.offsetHeight || 1) || 1;
+    const h = fnBox.getBoundingClientRect().height / zoomed;
+    if (fnCache.size > 2000) fnCache.clear();
+    fnCache.set(key, h);
+    return h;
+}
+
+function noteEl(note) {
+    const d = document.createElement('div');
+    d.className = 'wp-fn-note';
+    if (note.pos != null) d.dataset.pos = note.pos;
+    const sup = document.createElement('sup');
+    sup.textContent = note.n;
+    d.append(sup, ' ', note.text || '');
+    return d;
+}
+
+/** אזור ההערות בתחתית עמוד: מילוי עד תחתית הטקסט, קו, וההערות. בתוך טבלה — כשורה על כל העמודות. */
+function notesAreaEl(a) {
+    const el = document.createElement('div');
+    el.className = 'wp-fn-area';
+    el.contentEditable = 'false';
+    el.style.paddingTop = a.fill + 'px';
+    const sep = document.createElement('div');
+    sep.className = 'wp-fn-sep';
+    el.append(sep, ...a.notes.map(noteEl));
+    if (!a.row) return el;
+    const tr = document.createElement('tr');
+    tr.className = 'wp-fn-row';
+    const td = document.createElement('td');
+    td.colSpan = a.row;
+    td.append(el);
+    tr.append(td);
+    return tr;
+}
+
 /** שורת הכותרת של טבלה — עותק לקריאה בלבד, בראש עמוד שהטבלה נמשכת אליו. */
 function repeatRow(tr) {
     const el = tr.cloneNode(true);
@@ -194,7 +252,7 @@ function measure(view, g) {
     const rr = root.getBoundingClientRect();
     const zoom = rr.height && root.offsetHeight ? rr.height / root.offsetHeight : 1;
     // הרווחים הקיימים: [top פיזי, גובה] — כדי להמיר מיקום פיזי ללוגי
-    const spacers = [...root.querySelectorAll('.wp-break, .wp-repeat')].map(el => {
+    const spacers = [...root.querySelectorAll('.wp-break, .wp-repeat, .wp-fn-area')].map(el => {
         const r = el.getBoundingClientRect();
         return [(r.top - rr.top) / zoom, r.height / zoom];
     }).sort((a, b) => a[0] - b[0]);
@@ -231,6 +289,19 @@ function measure(view, g) {
     };
     visit(view.state.doc, 0);
 
+    // הערות שוליים: כל סימן משויך ליחידה (שורה / בלוק) שבה הוא נמצא; גובה ההערה נמדד מראש באותו רוחב ובאותו גופן
+    const refs = [...root.querySelectorAll('.wp-fn-ref')].filter(el => !el.closest('.wp-repeat, .wp-fn-area'));
+    refs.forEach((el, k) => {
+        const b = box(el);
+        const mid = (b.top + b.bottom) / 2;
+        const u = units.find(x => x.kind !== 'force' && mid >= x.top - 0.5 && mid <= x.bottom + 0.5);
+        if (!u) return;
+        let pos = null;
+        try { pos = view.posAtDOM(el, 0); } catch { /* */ }
+        (u.notes ||= []).push({ n: k + 1, pos, text: el.getAttribute('data-text') || '' });
+    });
+    const noteH = note => noteHeight(root, note, (g.sections ? g.sections[0] : g));
+
     // סימולציה: עמוד אחרי עמוד. כל עמוד — בגיאומטריה של המקטע שלו (g.sections; בלי מקטעים — g עצמו)
     const secs = g.sections || [g];
     let s = 0;                    // המקטע של העמוד הנוכחי
@@ -239,6 +310,19 @@ function measure(view, g) {
     let pageTop = g.top;          // הלוגי שבו מתחיל אזור הטקסט של העמוד הנוכחי
     let page = 0;
     let firstOnPage = 0;          // היחידה הראשונה בעמוד — תמיד נכנסת (גם אם גבוהה מעמוד)
+    // הערות השוליים של העמוד הנוכחי: הגובה שלהן (כולל קו ההפרדה) נלקח מהמקום לטקסט
+    const notesOf = (a, b) => units.slice(a, b).flatMap(x => x.notes || []);
+    const areaH = list => list.length ? FN_SEP + list.reduce((t, n) => t + noteH(n), 0) : 0;
+    const notesArea = [];         // {pos, fill, notes, row} — האזור בתחתית כל עמוד שיש בו הערות
+    // סוגר עמוד: אם יש בו הערות — אזור ההערות לפני המעבר (מילוי עד תחתית הטקסט), והרווח מתקצר בגובה האזור
+    const closePage = (brk, used, from, to) => {
+        const list = notesOf(from, to);
+        if (!list.length) return brk;
+        const fill = Math.max(0, secs[s].contentH - used - areaH(list));
+        notesArea.push({ pos: brk.pos, fill, notes: list, row: brk.row || 0 });
+        brk.h = Math.max(0, brk.h - fill - areaH(list));
+        return brk;
+    };
     let i = 0;
     while (i < units.length) {
         const u = units[i];
@@ -246,7 +330,8 @@ function measure(view, g) {
             // מעבר עמוד ידני / מעבר מקטע: העמוד הבא מתחיל אחריו (במעבר מקטע — בגיאומטריה של המקטע הבא)
             const cur = secs[s];
             const next = u.section ? secs[Math.min(s + 1, secs.length - 1)] : cur;
-            breaks.push({ pos: u.after, h: Math.max(0, cur.pageH - cur.top - (u.bottom - pageTop) + g.gap + next.top), page: page + 1, sec: !!u.section });
+            breaks.push(closePage({ pos: u.after, h: Math.max(0, cur.pageH - cur.top - (u.bottom - pageTop) + g.gap + next.top), page: page + 1, sec: !!u.section },
+                u.bottom - pageTop, firstOnPage, i));
             if (u.section) s = Math.min(s + 1, secs.length - 1);
             pageTop = u.bottom;
             page++;
@@ -254,7 +339,8 @@ function measure(view, g) {
             firstOnPage = ++i;
             continue;
         }
-        if (i === firstOnPage || u.bottom - pageTop <= secs[s].contentH + 0.5) { i++; continue; }
+        const withNotes = areaH([...notesOf(firstOnPage, i), ...(u.notes || [])]);
+        if (i === firstOnPage || u.bottom - pageTop + withNotes <= secs[s].contentH + 0.5) { i++; continue; }
         // לא נכנס — שוברים לפני u, עם תיקונים:
         let j = i;
         // שורות יתומות: לפחות 2 שורות של הפסקה בעמוד הזה, ו-2 בבא
@@ -270,15 +356,23 @@ function measure(view, g) {
         if (j <= firstOnPage) j = i;
         const used = units[j].top - pageTop;
         const rep = units[j].repeat;   // שורה באמצע טבלה: גם השבירה בתוך הטבלה, וגם שורת הכותרת חוזרת (תופסת מקום)
-        breaks.push({ pos: units[j].pos, h: Math.max(0, secs[s].pageH + g.gap - used), page: page + 1, row: units[j].row || 0, repeat: rep ? rep.pos : null });
+        breaks.push(closePage({ pos: units[j].pos, h: Math.max(0, secs[s].pageH + g.gap - used), page: page + 1, row: units[j].row || 0, repeat: rep ? rep.pos : null },
+            used, firstOnPage, j));
         pageTop = units[j].top - (rep ? rep.h : 0);
         page++;
         pageSecs.push(s);
         firstOnPage = j;
         i = j + 1;
     }
-    const sig = breaks.map(b => `${b.pos}:${Math.round(b.h)}`).join('|');
-    return { breaks, pages: page + 1, pageSecs, sig: sig + '#' + pageSecs.join(','), zoom };
+    // העמוד האחרון: ההערות שלו — בסוף המסמך
+    const last = notesOf(firstOnPage, units.length);
+    if (last.length) {
+        const end = units.length ? units[units.length - 1].bottom - pageTop : 0;
+        notesArea.push({ pos: view.state.doc.content.size, fill: Math.max(0, secs[s].contentH - end - areaH(last)), notes: last, row: 0, end: true });
+    }
+    const sig = breaks.map(b => `${b.pos}:${Math.round(b.h)}`).join('|')
+        + '§' + notesArea.map(a => `${a.pos}:${Math.round(a.fill)}:${a.notes.map(n => n.n + n.text).join(',')}`).join('|');
+    return { breaks, notesArea, pages: page + 1, pageSecs, sig: sig + '#' + pageSecs.join(','), zoom };
 }
 
 /**

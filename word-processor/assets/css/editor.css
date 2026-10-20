@@ -86,6 +86,18 @@ html.wp-no-page-zoom, html.wp-no-page-zoom body, .wp-editor, .wp-stage { touch-a
     font-size: 8pt; color: #667; background: #fff; padding: 0 6px; }
 .wp-doc .wp-section-break.ProseMirror-selectednode::before { border-top-color: #2d4a8a; }
 .wp-sheet .wp-doc.wp-multisec { padding-left: 0 !important; padding-right: 0 !important; }
+/* הערות שוליים: הסימן ממוספר לבד לפי הסדר; ההערות בתחתית העמוד (pagination.js) — גובה קו ההפרדה = FN_SEP */
+.wp-doc { counter-reset: wpfn; }
+.wp-doc .wp-fn-ref { counter-increment: wpfn; font-size: .7em; vertical-align: super; line-height: 0; color: #1a4fa0; cursor: pointer; padding-inline: 1px; }
+.wp-doc .wp-fn-ref::after { content: counter(wpfn); }
+.wp-doc .wp-fn-ref.ProseMirror-selectednode { outline: 2px solid #2d4a8a; border-radius: 2px; }
+.wp-fn-area { display: block; user-select: none; direction: rtl; }
+.wp-fn-sep { inline-size: 33%; height: 0; border-top: 1px solid #000; margin: 6px 0 7px; }
+.wp-fn-note, .wp-fn-measure .wp-fn-note { font-size: 10pt; line-height: 1.25; text-align: start; font-weight: 400; font-style: normal; text-decoration: none; color: #000; }
+.wp-fn-area .wp-fn-note { cursor: pointer; }
+.wp-fn-note > sup { font-size: .75em; }
+.wp-fn-measure { position: absolute; visibility: hidden; top: 0; left: 0; pointer-events: none; direction: rtl; }
+.wp-doc tr.wp-fn-row > td { padding: 0; border: none; background: none; }
 .wp-break { display: block; pointer-events: none; user-select: none; }
 /* טבלה שנמשכת לעמוד הבא: שורת רווח בלי גבולות, ושורת הכותרת חוזרת (עותק, לא ניתן לעריכה) */
 .wp-doc tr.wp-break-row { display: table-row; }
