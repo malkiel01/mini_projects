@@ -183,8 +183,8 @@ function action_diag(array $body): never
     $device = is_string($body['device'] ?? null) && preg_match('/^[a-f0-9]{32}$/', $body['device']) ? $body['device'] : null;
     $event = is_string($body['event'] ?? null) && preg_match('/^[a-z0-9:_-]{1,40}$/', $body['event']) ? $body['event'] : null;
     if ($event === null) throw new ApiError('בקשה לא תקינה', 400);
-    $st = db()->prepare("SELECT COUNT(*) FROM diag_log WHERE device = ? AND at > ?");
     try {
+        $st = db()->prepare("SELECT COUNT(*) FROM diag_log WHERE device = ? AND at > ?");
         $st->execute([$device ?? 'ip:' . substr(hash('sha256', client_ip()), 0, 16), gmdate('Y-m-d\TH:i:s\Z', time() - 60)]);
         if ((int)$st->fetchColumn() > 60) json_out(['ok' => true, 'skipped' => true]);
     } catch (Throwable) { /* הטבלה עוד לא נוצרה */ }
