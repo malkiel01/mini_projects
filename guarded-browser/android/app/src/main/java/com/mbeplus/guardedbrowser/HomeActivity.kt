@@ -71,6 +71,8 @@ class HomeActivity : AppCompatActivity() {
         // שער ההקמה: בלי ההרשאות החיוניות לא נכנסים למגדלור.
         store.perms = Setup.flags(this)
         if (!Setup.ready(this)) { startActivity(Intent(this, SetupActivity::class.java)); return }
+        // עדכון חובה — עד ההתקנה אין כניסה (Updater).
+        if (Updater.required(this)) { Updater.lock(this); return }
         refresh()
         if (store.pendingRequests().isNotEmpty()) watcher.start()
     }
@@ -98,8 +100,11 @@ class HomeActivity : AppCompatActivity() {
                 reportApps()
                 if (!store.released) Enforcer.apply(this, store)
             }
-            // ההורה ביקש לעדכן, ויש גרסה חדשה.
-            r.json?.optJSONObject("update")?.let { Updater.offer(this, it) }
+            // יש גרסה חדשה — עדכון חובה: נועלים עד ההתקנה.
+            if (r.ok) {
+                Updater.note(this, r.json?.optJSONObject("update"))
+                if (Updater.required(this)) { Updater.lock(this); return@policy }
+            }
 
             state = r.json?.optJSONObject("state")
             allowed = state?.optBoolean("allowed") ?: true

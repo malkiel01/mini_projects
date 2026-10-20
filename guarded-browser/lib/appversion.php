@@ -5,8 +5,8 @@
  *   האפליקציה שולחת את מספר הגרסה בכותרת X-Migdalor-App (מ-1.43), והשרת שומר אותו במכשיר
  *   (userByToken). הגרסה האחרונה — מ-latest.json שה-CI מעלה ל-Release, במטמון של חצי שעה.
  *
- *   ההורה לוחץ "עדכון" ← devices.update_requested_at. ומשם:
- *     • אפליקציה שמדווחת גרסה — מקבלת update בתשובה, ומציעה לילד להוריד ולהתקין.
+ *   אפליקציה שמדווחת גרסה ואינה האחרונה — מקבלת update (חובה) בכל תשובה, בלי שההורה יבקש.
+ *   ההורה לוחץ "עדכון" ← devices.update_requested_at — נשאר בשביל האפליקציות שלא מדווחות:
  *     • אפליקציה שלא מדווחת (לפני 1.43, או "דפדפן מנוהל" הישן) — אינה מכירה update. היא כן מציגה
  *       סיבת חסימה, ולכן היא מקבלת חסימה עם הוראות המעבר (upgradeBlock). זו הדרך היחידה להגיע אליה.
  *       "דפדפן מנוהל" נחתם במפתח זמני — אי אפשר להתקין עליו; צריך למחוק ולחבר מחדש בקוד.
@@ -65,14 +65,18 @@ function provisionConfig(): ?array {
 
 /* ── הרשאות המכשיר (מסלול ההקמה) — אותם ביטים כמו Setup.kt ── */
 const PERM_NOTIF = 1, PERM_BATTERY = 2, PERM_ADMIN = 4, PERM_INSTALL = 8, PERM_ACCESS = 16, PERM_OWNER = 32;
-const PERM_REQUIRED = 3;   // NOTIF | BATTERY
+// כל ההרשאות שאפליקציה יכולה לבקש — חובה (בעל המערכת, 2026-10-20). "בעל מכשיר" אינו נכלל: אנדרואיד
+// מאפשר אותו רק בהקמה של מכשיר מאופס, ולכן הוא "מומלץ" ומוצג להורה כ"אכיפה חלקית" כשהוא חסר.
+const PERM_REQUIRED = 31;  // NOTIF | BATTERY | ADMIN | INSTALL | ACCESS
 const PERM_NAMES = [PERM_NOTIF => 'התראות', PERM_BATTERY => 'ריצה רציפה', PERM_ACCESS => 'ניהול אפליקציות', PERM_ADMIN => 'ניהול מכשיר', PERM_INSTALL => 'עדכונים'];
 
 /** מצב ההרשאות של מכשיר: מה ניתן, מה חסר, והאם החיוני כולו קיים. */
 function devicePermsState(int $perms): array {
     $missing = [];
     foreach (PERM_NAMES as $bit => $name) if (!($perms & $bit)) $missing[$bit] = $name;
-    $requiredMissing = array_values(array_intersect_key($missing, array_flip([PERM_NOTIF, PERM_BATTERY])));
+    $requiredMissing = array_values($missing);
+    // "בעל מכשיר" — גם הוא דרישה, ומסומן להורה כחסר. הוא לא חוסם כניסה: אי אפשר לבקש אותו במכשיר.
+    if (!($perms & PERM_OWNER)) $missing[PERM_OWNER] = 'בעל מכשיר';
     return [
         'ok'       => ($perms & PERM_REQUIRED) === PERM_REQUIRED,
         'owner'    => (bool) ($perms & PERM_OWNER),
@@ -104,16 +108,22 @@ function cancelDeviceUpdate(int $childId, int $deviceId): void {
     q("UPDATE devices SET update_requested_at = '' WHERE id = ? AND user_id = ?", [$deviceId, $childId]);
 }
 
-/** למכשיר שמדווח גרסה: מה להציע לו, או null. מכשיר שכבר עודכן — הבקשה נמחקת. */
+/**
+ * למכשיר שמדווח גרסה: העדכון שהוא חייב להתקין, או null. מכשיר שכבר עודכן — הבקשה נמחקת.
+ *
+ * עדכון חובה, תמיד — גם בלי בקשה מההורה: כל גרסה ישנה מקבלת אותו בכל פנייה (מדיניות ופעימה), ומהגרסה
+ * שבה נוסף עדכון החובה האפליקציה ננעלת עד ההתקנה (Updater.kt). ‏required — לגרסאות שמכירות אותו; ישנות יותר רק מציעות.
+ */
 function deviceUpdateOffer(int $deviceRowId): ?array {
     $d = one('SELECT * FROM devices WHERE id = ?', [$deviceRowId]);
-    if (!$d || (string) $d['update_requested_at'] === '' || (int) $d['app_version'] === 0) return null;
+    if (!$d || (int) $d['app_version'] === 0) return null;
     $latest = latestApp();
     if (!$latest || $latest['code'] <= (int) $d['app_version']) {
-        if ($latest) q("UPDATE devices SET update_requested_at = '' WHERE id = ?", [$deviceRowId]);
+        if ($latest && (string) $d['update_requested_at'] !== '') q("UPDATE devices SET update_requested_at = '' WHERE id = ?", [$deviceRowId]);
         return null;
     }
-    return ['version_code' => $latest['code'], 'version_name' => $latest['name'], 'url' => (serverUrl() ?: '') !== '' ? serverUrl() . 'download.php' : APK_URL];
+    return ['version_code' => $latest['code'], 'version_name' => $latest['name'], 'required' => true,
+            'url' => (serverUrl() ?: '') !== '' ? serverUrl() . 'download.php' : APK_URL];
 }
 
 /**

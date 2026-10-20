@@ -12,5 +12,7 @@ class GuardApp : Application() {
     override fun onCreate() {
         super.onCreate()
         Api.init(Store(this))
+        // בדיקת עדכון חובה ברקע, בכל פעם שיש רשת (Updater).
+        UpdateJob.schedule(this)
     }
 }

@@ -361,6 +361,10 @@ class BrowserActivity : AppCompatActivity() {
             val j = r.json ?: return@heartbeat        // אין רשת — ממשיכים
             if (j.optString("code") == "unauthorized") { refuse("נדרשת כניסה מחדש"); return@heartbeat }
 
+            // יש גרסה חדשה — עדכון חובה: הגלישה נעצרת עד ההתקנה.
+            if (r.ok) Updater.note(this, j.optJSONObject("update"))
+            if (Updater.required(this)) { Updater.lock(this); finish(); return@heartbeat }
+
             usedSec = j.optInt("used_today_sec", usedSec)
             if (!j.optBoolean("allowed", true)) {
                 refuse(j.optString("reason", "הגישה הופסקה"))
@@ -966,6 +970,8 @@ class BrowserActivity : AppCompatActivity() {
         super.onResume()
         onScreen = true
         Trace.log("onResume", state())
+        // עדכון חובה — עד ההתקנה אין גלישה (Updater).
+        if (Updater.required(this)) { Updater.lock(this); finish(); return }
         if (!closing) ticker.postDelayed(beat, BEAT_SEC * 1000L)
         b.web.onResume()
         // חזרנו למסך — אין עוד סיבה להתראה.

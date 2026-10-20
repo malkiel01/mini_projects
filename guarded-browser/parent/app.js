@@ -477,9 +477,11 @@ function appLine(d) {
 /** שורת ההרשאות של מכשיר (מסלול ההקמה): מה חסר, או ✓. */
 function permLine(p) {
     if (!p) return '';
-    if (p.required_missing.length) return `⚠️ חסרות הרשאות חיוניות: ${p.required_missing.join('، ')}`;
-    if (!p.admin) return '🛡️ ניהול מכשיר לא מופעל (מומלץ)';
-    return p.complete ? '✓ כל ההרשאות' : `הרשאות: חסר ${p.missing.join('، ')}`;
+    if (p.complete) return '✓ כל ההרשאות · בעל מכשיר';
+    // "בעל מכשיר" חסר — תמיד מסומן: בלעדיו אין שליטה בהגדרות המערכת ועדכון שקט.
+    const owner = p.owner ? '' : '⚠️ חסר "בעל מכשיר" — הקמה מלאה ב"חיבור מכשיר" (איפוס המכשיר)';
+    const req = p.required_missing.length ? `⚠️ חסרות הרשאות: ${p.required_missing.join('، ')}` : '';
+    return [req, owner].filter(Boolean).join(' · ');
 }
 
 function updateDevice(d) {
@@ -499,7 +501,7 @@ function kidDev() {
         el('span', { text: '📱', ariaHidden: 'true' }),
         el('span', { class: 'nm' }, [d.name || 'מכשיר',
             el('small', { text: `${appLine(d)} · ${ago(d.last_seen_at)}` }),
-            el('small', { text: permLine(d.perms), style: `color:${d.perms.ok ? 'var(--muted)' : 'var(--danger)'}` })]),
+            el('small', { text: permLine(d.perms), style: `color:${d.perms.complete ? 'var(--muted)' : 'var(--danger)'}` })]),
         d.app.status !== 'current' ? el('button', { type: 'button', class: d.app.requested ? 'btn ghost sm' : 'btn primary sm',
             text: d.app.requested ? '⏳ נשלח' : '⬆️ עדכון', onclick: () => updateDevice(d) }) : null,
         el('button', { type: 'button', class: 'icon-btn', text: '✕', ariaLabel: 'ניתוק', onclick: () => {
@@ -713,6 +715,7 @@ async function openPair() {
             el('p', { class: 'muted', text: 'או מקלידים את הקוד:' }),
             el('div', { class: 'pw' }, [el('code', { text: pretty })])]),
         left,
+        provisionBox(r.provision),
     );
     const d = $('#pair-dlg'); if (!d.open) d.showModal();
 
@@ -735,6 +738,34 @@ async function openPair() {
             }
         } catch { /* ננסה שוב בעוד רגע */ }
     }, 1000);
+}
+
+/**
+ * הקמה כ"בעל מכשיר" — המסלול המומלץ: שליטה מלאה, גם בהגדרות המערכת, ועדכונים שקטים. אנדרואיד מאפשר
+ * אותה רק במכשיר מאופס: במסך הפתיחה מקישים 6 פעמים, וסורקים את ה-QR הזה. אחר כך מחברים כרגיל.
+ */
+function provisionBox(cfg) {
+    if (!cfg) return null;
+    const holder = el('div', { style: 'display:grid;justify-items:center;gap:8px' });
+    const btn = el('button', { type: 'button', class: 'btn', text: '🛡️ הקמה מלאה — מכשיר חדש או מאופס (מומלץ)' });
+    btn.addEventListener('click', () => {
+        if (holder.firstChild) { holder.replaceChildren(); return; }
+        const qr = qrcode(0, 'M'); qr.addData(JSON.stringify(cfg)); qr.make();
+        const svg = new DOMParser().parseFromString(qr.createSvgTag({ cellSize: 5, margin: 2, scalable: true }), 'image/svg+xml').documentElement;
+        svg.setAttribute('role', 'img'); svg.setAttribute('aria-label', 'קוד QR להקמה כבעל מכשיר');
+        svg.style.cssText = 'inline-size:min(80vw,320px);block-size:auto;background:#fff;border-radius:10px;padding:6px';
+        holder.replaceChildren(
+            el('ol', { class: 'steps' }, [
+                'מאפסים את המכשיר להגדרות יצרן (כל מה שעליו יימחק).',
+                'במסך הפתיחה ("ברוכים הבאים") מקישים 6 פעמים על אותו מקום — נפתח סורק QR.',
+                'סורקים את הקוד הזה ומתחברים ל-Wi‑Fi. מגדלור יורד ומוגדר כ"בעל מכשיר" לבד.',
+                'כשמגדלור נפתח — סורקים את קוד החיבור שלמעלה.',
+            ].map(t => el('li', { text: t }))),
+            svg);
+    });
+    return el('div', { style: 'margin-top:16px;display:grid;gap:8px' }, [
+        el('p', { class: 'hint', text: 'בלי הקמה מלאה האכיפה חלקית: אי אפשר לנעול את הגדרות המערכת, והעדכונים דורשים לחיצה של הילד.' }),
+        btn, holder]);
 }
 
 /* ── ילד חדש ───────────────────────────────────────────────────── */
