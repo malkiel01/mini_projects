@@ -29,7 +29,8 @@ object PolicySync {
             return false
         }
         store.savePolicy(payload)
-        if (seq > 0) store.policySeq = seq
+        if (seq > 0) { store.policySeq = seq; TrustedClock.anchor(store, seq) }
+        store.lastSyncMs = TrustedClock.now(store)
         applyRelease(ctx, store, payload)
         if (!store.released) Enforcer.apply(ctx, store)
         Updater.note(ctx, payload.optJSONObject("update"))

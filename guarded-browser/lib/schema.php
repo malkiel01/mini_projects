@@ -120,6 +120,17 @@ function schemaStatements(): array {
         PRIMARY KEY (user_id, day)
     )",
 
+    // מנות שימוש שהמכשיר צבר (lib/heartbeat.php): מזהה לכל מנה, כדי שמנה שנשלחה שוב (פעימה שנכשלה
+    // באמצע, חזרה לרשת) לא תיספר פעמיים. נמחקות אחרי שבוע.
+    "CREATE TABLE IF NOT EXISTS usage_batches (
+        user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        batch       TEXT    NOT NULL,
+        seconds     INTEGER NOT NULL,
+        day         TEXT    NOT NULL,
+        at          TEXT    NOT NULL,
+        PRIMARY KEY (user_id, batch)
+    )",
+
     // ── יומן ───────────────────────────────────────────────────
     // כל הכרעה נרשמת. זה מה שהופך את הפאנל מהגדרות לניהול: רואים
     // מה המשתמש ניסה לפתוח ומה נחסם, ולא רק מה הוגדר לו.
