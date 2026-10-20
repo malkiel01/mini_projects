@@ -19,6 +19,7 @@ require_once __DIR__ . '/../lib/search.php';
 require_once __DIR__ . '/../lib/appcontrol.php';
 require_once __DIR__ . '/../lib/enforce.php';
 require_once __DIR__ . '/../lib/devicesettings.php';
+require_once __DIR__ . '/../lib/signing.php';
 
 jsonHeaders();
 
@@ -253,6 +254,21 @@ try {
             $c = myChild($parent);
             if ($err = deviceSettingSave((int) $c['id'], str('key'), (bool) (body()['blocked'] ?? false))) fail($err);
             out(['ok' => true, 'child' => detail($parent, (int) $c['id'])]);
+
+        /* ── העברה בלי אינטרנט: QR חתום שמכשיר הילד סורק (lib/signing.php, offlineToken) ── */
+        case 'offline_code':
+            $c = myChild($parent);
+            $cid = (int) $c['id'];
+            $apps = appsPayload(['id' => $cid, 'account_id' => $aid]);
+            $tok = offlineToken($aid, $cid, deviceSettings($cid), $apps);
+            $partial = false;
+            // QR גדול מדי לא נסרק במצלמה של טלפון זול: בלי רשימות האפליקציות — רק ברירת המחדל והגדרות המכשיר.
+            if (strlen($tok) > 1600 && !empty($apps['manage'])) {
+                $tok = offlineToken($aid, $cid, deviceSettings($cid),
+                                    ['manage' => true, 'posture' => $apps['posture'], 'partial' => true]);
+                $partial = true;
+            }
+            out(['ok' => true, 'qr' => 'migdalor:policy?t=' . $tok, 'expires_in' => OFFLINE_TTL, 'partial' => $partial]);
 
         case 'apps_posture':
             $c = myChild($parent);

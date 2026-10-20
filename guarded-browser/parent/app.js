@@ -529,7 +529,36 @@ function deviceSettingsGroup() {
         seg(`ds_${s.key}`, [['allow', '✅ מותר'], ['block', '🚫 חסום']], s.blocked ? 'block' : 'allow',
             { cls: 'seg mini', onchange: v => act('device_setting', { key: s.key, blocked: v === 'block' }, 'נשמר') }),
     ])));
-    return group('⚙️ הגדרות המכשיר', `${S2.filter(s => s.blocked).length} חסומות`, [warn, rows].filter(Boolean));
+    const offline = el('button', { type: 'button', class: 'btn', text: '📷 העברה בקוד — גם כשאין למכשיר אינטרנט' });
+    offline.addEventListener('click', openOffline);
+    return group('⚙️ הגדרות המכשיר', `${S2.filter(s => s.blocked).length} חסומות`, [warn, rows, offline].filter(Boolean));
+}
+
+/**
+ * העברה בלי אינטרנט: QR חתום עם הגדרות המכשיר והאפליקציות כפי שהן עכשיו. מכשיר הילד סורק אותו
+ * ומפעיל גם בלי רשת — כך אפשר לפתוח או לחסום מחדש גם אחרי שהמכשיר התנתק. תקף רבע שעה.
+ */
+async function openOffline() {
+    let r;
+    try { r = await call('offline_code', { id: K.id }); } catch (e) { toast(e.message, true); return; }
+    const qr = qrcode(0, 'L');
+    qr.addData(r.qr);
+    qr.make();
+    const svg = new DOMParser().parseFromString(qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true }), 'image/svg+xml').documentElement;
+    svg.setAttribute('role', 'img'); svg.setAttribute('aria-label', 'קוד QR להעברת ההגדרות');
+    svg.style.cssText = 'inline-size:min(86vw,340px);block-size:auto;background:#fff;border-radius:10px;padding:6px';
+    $('#pair-title').textContent = `העברה בקוד — ${K.name}`;
+    $('#pair-body').replaceChildren(
+        el('ol', { class: 'steps' }, [
+            el('li', { text: 'קודם משנים כאן את ההגדרות (מותר / חסום), ורק אז פותחים את הקוד.' }),
+            el('li', { text: 'במכשיר של הילד: מגדלור ← ההגדרות שלי ← "📷 קוד מההורה", ומכוונים למסך הזה.' }),
+        ]),
+        el('div', { style: 'display:grid;justify-items:center;gap:8px' }, [svg]),
+        el('p', { class: 'hint', style: 'text-align:center',
+            text: `הקוד תקף ${Math.round(r.expires_in / 60)} דקות.` + (r.partial
+                ? ' רשימת האפליקציות ארוכה מדי לקוד — עוברות הגדרות המכשיר וברירת המחדל של האפליקציות בלבד.' : '') }),
+    );
+    const d = $('#pair-dlg'); if (!d.open) d.showModal();
 }
 
 function kidDev() {
