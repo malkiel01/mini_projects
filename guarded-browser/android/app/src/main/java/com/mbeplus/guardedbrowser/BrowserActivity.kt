@@ -41,8 +41,14 @@ class BrowserActivity : AppCompatActivity() {
     private var policy: Policy = Policy()
     private var ruleSet: RuleSet = RuleSet()
 
-    private var usedSec = 0          // נוצל היום, לפי השרת
-    private var sessionSec = 0       // משך הישיבה הנוכחית
+    // נוצל היום והישיבה — מהמונה המקומי (UsageMeter): השרת + מה שעוד לא אושר. נאכף גם בלי שרת.
+    private val usedSec: Int get() = UsageMeter.usedToday(store)
+    private val sessionSec: Int get() = UsageMeter.sessionSec(store)
+    private var nextExpiry = 0L      // התפוגה הקרובה של היתר זמני (UsageMath.nextExpiry)
+
+    /** הכרעה מקומית — בזמן אמין (TrustedClock), עם המונה המקומי. */
+    private fun decide(url: String, main: Boolean): Verdict =
+        PolicyEngine.evaluate(policy, ruleSet, url, main, usedSec, sessionSec, nowMs = TrustedClock.now(store))
     private var closing = false
     private var lastAllowed = ""      // הכתובת המותרת האחרונה, לחזרה אליה
     private var background = false    // ממשיכים לרוץ מחוץ לאפליקציה
@@ -94,13 +100,55 @@ class BrowserActivity : AppCompatActivity() {
     private val ticker = Handler(Looper.getMainLooper())
     private val beat = object : Runnable {
         override fun run() {
-            sessionSec += BEAT_SEC
             sendBeat()
             ticker.postDelayed(this, BEAT_SEC * 1000L)
         }
     }
 
-    companion object { private const val BEAT_SEC = 30 }
+    /**
+     * דגימת שימוש כל 5 שניות (UsageMeter), ואכיפה מקומית שאינה תלויה בשרת: מכסה, ישיבה וחלון שעות
+     * שנגמרו, היתר זמני שפג (גם בלי רשת), וחלון החסד בלי סנכרון.
+     */
+    private val meter = object : Runnable {
+        override fun run() {
+            if (closing) return
+            UsageMeter.tick(store)
+            val now = TrustedClock.now(store)
+            if (!store.released && UsageMath.graceExpired(store.lastSyncMs, now)) {
+                refuse("אין חיבור לשרת של ההורה כבר יותר מיממה. התחברו לאינטרנט, או בקשו מההורה קוד.", "offline_grace")
+                return
+            }
+            val s = decide("", true)
+            if (!s.allow) { refuse(s.reason.ifEmpty { "הזמן נגמר" }, s.code); return }
+            if (nextExpiry in 1..now) {
+                ruleSet = store.ruleSet()
+                nextExpiry = UsageMath.nextExpiry(store.ruleExpiries(), now)
+                recheckCurrent("expiry")
+            }
+            ticker.postDelayed(this, METER_MS)
+        }
+    }
+
+    companion object { private const val BEAT_SEC = 30; private const val METER_MS = 5_000L }
+
+    private var meterOn = false
+
+    /** מתחיל לספור שימוש — כשהדפדפן על המסך, או ממשיך ברקע כי ההורה התיר. */
+    private fun startMeter() {
+        if (meterOn || closing) return
+        meterOn = true
+        UsageMeter.start(store)
+        nextExpiry = UsageMath.nextExpiry(store.ruleExpiries(), TrustedClock.now(store))
+        ticker.postDelayed(meter, METER_MS)
+    }
+
+    /** מפסיק לספור, ושומר את מה שנצבר עד עכשיו. */
+    private fun stopMeter() {
+        if (!meterOn) return
+        meterOn = false
+        ticker.removeCallbacks(meter)
+        UsageMeter.stop(store)
+    }
 
     private val watcher by lazy { RequestWatcher(store) { url, ok -> onAnswer(url, ok) } }
 
@@ -123,7 +171,7 @@ class BrowserActivity : AppCompatActivity() {
         PolicySync.listen(onPolicyChanged)
 
         // ההכרעה הראשונה לפני שנטען משהו: גם הכניסה עצמה נבדקת.
-        val v = PolicyEngine.evaluate(policy, ruleSet, start, true, usedSec, sessionSec)
+        val v = decide(start, true)
         if (!v.allow && !v.needsServer) { refuse(v.reason.ifEmpty { "הכתובת אינה מותרת" }, v.code, start); return }
 
         Trace.reset()
@@ -245,7 +293,7 @@ class BrowserActivity : AppCompatActivity() {
                 view: WebView, request: WebResourceRequest,
             ): Boolean {
                 val url = request.url.toString()
-                val v = PolicyEngine.evaluate(policy, ruleSet, url, true, usedSec, sessionSec)
+                val v = decide(url, true)
 
                 if (v.allow) {
                     verifyWithServer(url)
@@ -274,8 +322,7 @@ class BrowserActivity : AppCompatActivity() {
                 val url = request.url.toString()
                 if (!url.startsWith("http")) return null
 
-                val v = PolicyEngine.evaluate(
-                    policy, ruleSet, url, request.isForMainFrame, usedSec, sessionSec)
+                val v = decide(url, request.isForMainFrame)
 
                 // משאב שדורש הכרעת שרת אינו נחסם: חסימה שקטה של
                 // משאב היא מסך שבור בלי הסבר. הניווט כבר נבדק.
@@ -355,15 +402,21 @@ class BrowserActivity : AppCompatActivity() {
     /** פעימה: צוברת זמן, ומביאה את המצב. זה גם ערוץ הניתוק מרחוק. */
     private fun sendBeat() {
         val url = b.web.url?.takeIf { it.startsWith("http") && !closing } ?: ""
-        Api.heartbeat(store.token, BEAT_SEC, sessionSec, url) { r ->
-            val j = r.json ?: return@heartbeat        // אין רשת — ממשיכים
+        UsageMeter.tick(store)
+        Api.heartbeat(store.token, 0, sessionSec, url, UsageMeter.batches(store)) { r ->
+            // אין רשת — ממשיכים: המנות נשמרות ונשלחות שוב (אותו מזהה) בפעימה הבאה.
+            val j = r.json ?: return@heartbeat
             if (j.optString("code") == "unauthorized") { refuse("נדרשת כניסה מחדש"); return@heartbeat }
 
             // יש גרסה חדשה — עדכון חובה: הגלישה נעצרת עד ההתקנה.
             if (r.ok) Updater.note(this, j.optJSONObject("update"))
             if (Updater.required(this)) { Updater.lock(this); finish(); return@heartbeat }
 
-            usedSec = j.optInt("used_today_sec", usedSec)
+            if (r.ok) {
+                UsageMeter.ack(store, j.optJSONArray("acked"), j.optInt("used_today_sec"), j.optString("day"))
+                TrustedClock.anchor(store, j.optLong("server_ms"))
+                store.lastSyncMs = TrustedClock.now(store)
+            }
             if (!j.optBoolean("allowed", true)) {
                 refuse(j.optString("reason", "הגישה הופסקה"))
                 return@heartbeat
@@ -402,7 +455,7 @@ class BrowserActivity : AppCompatActivity() {
          */
         showCover()
 
-        val v = PolicyEngine.evaluate(policy, ruleSet, url, true, usedSec, sessionSec)
+        val v = decide(url, true)
         when {
             v.allow -> { lastAllowed = url; hideCover(); verifyWithServer(url) }
             v.needsServer -> Api.check(store.token, url, true) { r ->
@@ -704,6 +757,7 @@ class BrowserActivity : AppCompatActivity() {
         closing = true
 
         ticker.removeCallbacks(beat)
+        stopMeter()
         background = false
         GuardService.stop(this)
         hideCover()
@@ -980,7 +1034,7 @@ class BrowserActivity : AppCompatActivity() {
         Trace.log("onResume", state())
         // עדכון חובה — עד ההתקנה אין גלישה (Updater).
         if (Updater.required(this)) { Updater.lock(this); finish(); return }
-        if (!closing) ticker.postDelayed(beat, BEAT_SEC * 1000L)
+        if (!closing) { ticker.postDelayed(beat, BEAT_SEC * 1000L); startMeter() }
         b.web.onResume()
         // חזרנו למסך — אין עוד סיבה להתראה.
         if (!background) GuardService.stop(this)
@@ -1010,6 +1064,7 @@ class BrowserActivity : AppCompatActivity() {
             policy = store.policy()
             ruleSet = store.ruleSet()
             applySecureFlag()
+            nextExpiry = UsageMath.nextExpiry(store.ruleExpiries(), TrustedClock.now(store))
             b.pip.visibility = View.VISIBLE
             if (Updater.required(this)) { Updater.lock(this); finish() }
             else recheckCurrent("policy")
@@ -1064,6 +1119,7 @@ class BrowserActivity : AppCompatActivity() {
         } else {
             background = false
             ticker.removeCallbacks(beat)
+            stopMeter()   // לא על המסך ולא ממשיך ברקע — זה לא שימוש
             Trace.log("webView.onPause", "השהיית ה-WebView — כאן הניגון נעצר")
             b.web.onPause()
             GuardService.stop(this)
@@ -1072,6 +1128,13 @@ class BrowserActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         PolicySync.unlisten(onPolicyChanged)
+        stopMeter()
+        // מה שנצבר מאז הפעימה האחרונה — נשלח עכשיו, בלי לגעת במסך שנסגר. נכשל — יישלח בפעם הבאה.
+        val st = store
+        Api.heartbeat(st.token, 0, sessionSec, "", UsageMeter.batches(st)) { r ->
+            val j = r.json
+            if (r.ok && j != null) UsageMeter.ack(st, j.optJSONArray("acked"), j.optInt("used_today_sec"), j.optString("day"))
+        }
         ticker.removeCallbacks(beat)
         ticker.removeCallbacks(coverTimeout)
         background = false

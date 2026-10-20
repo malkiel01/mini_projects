@@ -438,7 +438,9 @@ try {
      */
     if ($do === 'heartbeat') {
         $user = requireUser();
-        $out = heartbeatPayload($user, (int) (body()['seconds'] ?? 0), field('url'), (int) (body()['session_sec'] ?? 0));
+        $b = body()['batches'] ?? null;
+        $out = heartbeatPayload($user, (int) (body()['seconds'] ?? 0), field('url'), (int) (body()['session_sec'] ?? 0),
+                                is_array($b) ? $b : null);
         if (mt_rand(1, 500) === 1) activityCleanup();
         if (mt_rand(1, 40) === 1) searchTickAfterResponse(4);
         out($out);

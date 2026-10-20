@@ -166,9 +166,15 @@ class Store(context: Context) {
         catch (e: Exception) { Policy() }
     }
 
+    /** כל הכללים, כולל כאלה שתוקפם יפוג — לחישוב התפוגה הקרובה. */
+    fun ruleExpiries(): List<String> = try {
+        PolicyEngine.rulesFrom(JSONArray(prefs.getString("rules", "[]") ?: "[]")).map { it.expiresAt }.filter { it.isNotEmpty() }
+    } catch (e: Exception) { emptyList() }
+
     fun rules(): List<Rule> = try {
+        // תפוגה לפי זמן אמין (TrustedClock), לא לפי שעון המכשיר שהילד יכול להזיז.
         PolicyEngine.liveRules(PolicyEngine.rulesFrom(JSONArray(prefs.getString("rules", "[]") ?: "[]")),
-                               PolicyEngine.nowIso())
+                               PolicyEngine.nowIso(TrustedClock.now(this)))
     } catch (e: Exception) { emptyList() }
 
     /** טביעת האצבע של המדיניות השמורה; הפעימה משווה אליה (שלב 6). */
@@ -258,15 +264,39 @@ class Store(context: Context) {
         if (o.has(key)) o.getBoolean(key) else null
     } catch (e: Exception) { null }
 
+    /* ── מונה השימוש (UsageMeter) וזמן אמין (TrustedClock) ── */
+    var usageOpen: String
+        get() = prefs.getString("usage_open", "{}") ?: "{}"
+        set(v) { prefs.edit().putString("usage_open", v).apply() }
+    var usageInflight: String
+        get() = prefs.getString("usage_inflight", "[]") ?: "[]"
+        set(v) { prefs.edit().putString("usage_inflight", v).apply() }
+    var usageServerUsed: Int
+        get() = prefs.getInt("usage_server_used", 0)
+        set(v) { prefs.edit().putInt("usage_server_used", v).apply() }
+    var usageServerDay: String
+        get() = prefs.getString("usage_server_day", "") ?: ""
+        set(v) { prefs.edit().putString("usage_server_day", v).apply() }
+    var sessionMs: Long
+        get() = prefs.getLong("session_ms", 0L)
+        set(v) { prefs.edit().putLong("session_ms", v).apply() }
+    var sessionLast: Long
+        get() = prefs.getLong("session_last", 0L)
+        set(v) { prefs.edit().putLong("session_last", v).apply() }
+    var clockServerMs: Long
+        get() = prefs.getLong("clock_server_ms", 0L)
+        set(v) { prefs.edit().putLong("clock_server_ms", v).apply() }
+    var clockElapsed: Long
+        get() = prefs.getLong("clock_elapsed", 0L)
+        set(v) { prefs.edit().putLong("clock_elapsed", v).apply() }
+    /** זמן אמין של הסנכרון המוצלח האחרון עם השרת — לחלון החסד (UsageMath.graceExpired). */
+    var lastSyncMs: Long
+        get() = prefs.getLong("last_sync_ms", 0L)
+        set(v) { prefs.edit().putLong("last_sync_ms", v).apply() }
+
     /** ביטים של ההרשאות שניתנו במכשיר (Setup.flags) — נשלח לשרת כדי שההורה יראה. */
     var perms: Int
         get() = prefs.getInt("perms", 0)
         set(v) { prefs.edit().putInt("perms", v).apply() }
 
-    /** גיל המדיניות השמורה. מדיניות עתיקה מדי אינה בסיס להמשך גלישה. */
-    fun policyAgeMinutes(): Long {
-        val at = prefs.getLong("policy_at", 0L)
-        if (at == 0L) return Long.MAX_VALUE
-        return (System.currentTimeMillis() - at) / 60_000L
-    }
 }

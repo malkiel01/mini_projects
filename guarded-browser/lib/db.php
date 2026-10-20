@@ -351,9 +351,9 @@ function usedTodaySeconds(int $userId, string $tz): int {
  * כאן צריך חיבור ולא החלפה, ולכן זו אינה upsert רגילה: קודם מובטח
  * שהשורה קיימת, ואז מוסיפים לה. שתי הפקודות עובדות בכל גרסת SQLite.
  */
-function addUsage(int $userId, string $tz, int $seconds): void {
+function addUsage(int $userId, string $tz, int $seconds, ?string $day = null): void {
     if ($seconds <= 0) return;
-    $day = todayIn($tz);
+    $day ??= todayIn($tz);
     q('INSERT OR IGNORE INTO usage (user_id, day, seconds) VALUES (?, ?, 0)', [$userId, $day]);
     q('UPDATE usage SET seconds = seconds + ? WHERE user_id = ? AND day = ?',
       [$seconds, $userId, $day]);

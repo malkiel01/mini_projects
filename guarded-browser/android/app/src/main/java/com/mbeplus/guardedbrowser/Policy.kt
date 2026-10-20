@@ -434,8 +434,10 @@ object PolicyEngine {
      * הכרעות שונות מהשרת, וזו בדיוק הפרצה.
      */
     fun evaluate(p: Policy, set: RuleSet, url: String, isMainFrame: Boolean,
-                 usedSec: Int, sessionSec: Int, declaredType: String = ""): Verdict {
-        val now = Calendar.getInstance(TimeZone.getTimeZone(p.timezone))
+                 usedSec: Int, sessionSec: Int, declaredType: String = "",
+                 nowMs: Long = System.currentTimeMillis()): Verdict {
+        // ‏nowMs — זמן אמין מהמכשיר (TrustedClock), כדי ששינוי השעה בטלפון לא יפתח את חלון השעות.
+        val now = Calendar.getInstance(TimeZone.getTimeZone(p.timezone)).apply { timeInMillis = nowMs }
 
         withinWindow(p, now).let { if (!it.allow) return it }
         withinQuota(p, usedSec).let { if (!it.allow) return it }
