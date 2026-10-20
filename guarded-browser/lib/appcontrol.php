@@ -27,6 +27,15 @@ const APP_POSTURES = ['allow_all', 'deny_all'];
 const UPDATE_PACKAGES = ['com.android.packageinstaller', 'com.google.android.packageinstaller',
                          'com.samsung.android.packageinstaller'];
 
+/** מגדלור עצמה — לא מופיעה אצל ההורה כאפליקציה שאפשר לחסום (באפליקציה היא ממילא לא נחסמת לעולם). */
+const SELF_PACKAGE = 'com.mbeplus.guardedbrowser';
+
+/** חבילות שתמיד פתוחות, וההסבר שההורה רואה לידן. */
+function alwaysOpen(string $pkg): string {
+    if ($pkg === SELF_PACKAGE) return 'זו מגדלור עצמה';
+    return in_array($pkg, UPDATE_PACKAGES, true) ? 'דרכו מגדלור מתעדכן' : '';
+}
+
 /** ניהול אפליקציות פתוח לחשבון? רק ברמת apps / device. */
 function accountAppsAllowed(int $accountId): bool {
     return in_array((string) (accountRow($accountId)['level_max'] ?? 'browser'), ['apps', 'device'], true);
@@ -86,7 +95,7 @@ function appsPayload(array $user): array {
     return [
         'manage'  => true,
         'posture' => appPosture($childId),
-        'blocked' => array_values(array_diff(array_keys(array_filter($rules, fn($a) => $a === 'block')), UPDATE_PACKAGES)),
+        'blocked' => array_values(array_diff(array_keys(array_filter($rules, fn($a) => $a === 'block')), UPDATE_PACKAGES, [SELF_PACKAGE])),
         'allowed' => array_values(array_unique(array_merge(array_keys(array_filter($rules, fn($a) => $a === 'allow')), UPDATE_PACKAGES))),
     ];
 }
@@ -103,7 +112,7 @@ function appsSavePosture(int $childId, string $posture): string {
 function appsSaveRule(int $childId, string $pkg, string $action): string {
     $pkg = cleanPackage($pkg);
     if ($pkg === '') return 'שם חבילה לא תקין';
-    if (in_array($pkg, UPDATE_PACKAGES, true)) return 'מסך ההתקנה של אנדרואיד תמיד פתוח — דרכו מגדלור מתעדכן';
+    if ($why = alwaysOpen($pkg)) return "תמיד פתוח — $why";
     if ($action === '') { q('DELETE FROM app_rules WHERE child_id = ? AND package = ?', [$childId, $pkg]); return ''; }
     if (!in_array($action, ['allow', 'block'], true)) return 'פעולה לא מוכרת';
     upsert('app_rules', ['child_id' => $childId, 'package' => $pkg], ['action' => $action], ['created_at' => nowIso()]);
@@ -123,9 +132,10 @@ function appsList(int $accountId, int $childId): array {
     $apps = [];
     foreach (all('SELECT package, label, is_system FROM device_apps WHERE child_id = ? ORDER BY is_system, LOWER(label), package', [$childId]) as $a) {
         $pkg = $a['package'];
-        $locked = in_array($pkg, UPDATE_PACKAGES, true);   // מסך ההתקנה — תמיד פתוח
+        $why = alwaysOpen($pkg);                             // מגדלור ומסך ההתקנה — תמיד פתוחים
+        $locked = $why !== '';
         $apps[] = ['package' => $pkg, 'label' => $a['label'] ?: $pkg, 'system' => (bool) $a['is_system'],
-                   'action' => $locked ? 'allow' : ($rules[$pkg] ?? ''), 'locked' => $locked,
+                   'action' => $locked ? 'allow' : ($rules[$pkg] ?? ''), 'locked' => $locked, 'why' => $why,
                    'blocked' => !$locked && appBlocked($posture, $rules[$pkg] ?? '')];
         unset($rules[$pkg]);
     }

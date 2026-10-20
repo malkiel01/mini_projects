@@ -59,7 +59,15 @@ appsSaveRule($kid, 'com.whatsapp', 'allow');
 $p = appsPayload($user($kid, $aApps));
 check('רק וואטסאפ מותר (ומסך ההתקנה — תמיד)', [$p['posture'], $p['allowed']], ['deny_all', array_merge(['com.whatsapp'], UPDATE_PACKAGES)]);
 check('מסך ההתקנה — אי אפשר לחסום (דרכו מגדלור מתעדכן)', appsSaveRule($kid, 'com.google.android.packageinstaller', 'block'),
-      'מסך ההתקנה של אנדרואיד תמיד פתוח — דרכו מגדלור מתעדכן');
+      'תמיד פתוח — דרכו מגדלור מתעדכן');
+check('מגדלור עצמה — אי אפשר לחסום', appsSaveRule($kid, SELF_PACKAGE, 'block'), 'תמיד פתוח — זו מגדלור עצמה');
+q("INSERT INTO app_rules (child_id, package, action, created_at) VALUES (?, ?, 'block', ?)", [$kid, SELF_PACKAGE, nowIso()]);
+check('...גם כלל ישן שחוסם אותה לא נשלח למכשיר', in_array(SELF_PACKAGE, appsPayload($user($kid, $aApps))['blocked'], true), false);
+q('DELETE FROM app_rules WHERE child_id = ? AND package = ?', [$kid, SELF_PACKAGE]);
+appsReport($kid, [['p' => SELF_PACKAGE, 'n' => 'מגדלור']]);
+$me = array_values(array_filter(appsList($aApps, $kid)['apps'], fn($a) => $a['package'] === SELF_PACKAGE))[0] ?? [];
+check('...ואצל ההורה — "תמיד", לא חסומה גם ב"רק מה שאישרתי"', [$me['locked'] ?? null, $me['blocked'] ?? null, $me['why'] ?? null],
+      [true, false, 'זו מגדלור עצמה']);
 check('ברירת מחדל לא מוכרת', appsSavePosture($kid, 'x'), 'ברירת מחדל לא מוכרת');
 
 echo "\n— ניקוי כלל —\n";
@@ -68,7 +76,7 @@ check('הוסר הכלל', isset(appRules($kid)['com.whatsapp']), false);
 
 echo "\n— בידוד —\n";
 check('חשבון דפדפן — דיווח לא נשמר דרך ה-API (appsReport ישיר כן, אבל appsList חסום)', appsList($aBrowser, $kidB), ['manage' => false]);
-check('הילד של לוי לא רואה אפליקציות של נועה', count(appsList($aApps, $kid)['apps']), 3);
+check('הילד של לוי לא רואה אפליקציות של נועה', count(appsList($aApps, $kid)['apps']), 4);
 childDelete($kid);
 check('מחיקת ילד מוחקת אפליקציות וכללים',
       (int) one('SELECT COUNT(*) n FROM device_apps WHERE child_id = ?', [$kid])['n']
