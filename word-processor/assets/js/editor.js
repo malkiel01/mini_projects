@@ -240,7 +240,11 @@ export function createWordEditor(root, opts) {
             const text = k === 'top-center' && page.header ? q(page.header) : k === 'bottom-center' && page.footer ? q(page.footer) : 'none';
             firstNoNum = `@page:first{@${k}{content:${text}}}`;
         }
-        printEl.textContent = `@page{size:${wmm}mm ${hmm}mm;margin:${page.margins.top}mm ${page.margins.right}mm ${page.margins.bottom}mm ${page.margins.left}mm;${margin}}`
+        // רזרבה בשוליים התחתונים (עד 15 מ"מ, ונשארים לפחות 6 למספר העמוד): כל עמוד מסתיים ממילא במעבר עמוד מאולץ
+        // (.wp-break), כך שהרזרבה לא מתמלאת בטקסט — היא רק בולעת הבדלי עיגול בין המסך להדפסה. בשורות עם כמה גדלי גופן
+        // ההדפסה מעגלת את גובה השורה אחרת, ובעמוד שלם זה מצטבר לכמה מ"מ; בלי רזרבה הטקסט גולש ונוסף עמוד (tests/e2e, parity)
+        const slack = Math.max(0, Math.min(15, page.margins.bottom - 6));
+        printEl.textContent = `@page{size:${wmm}mm ${hmm}mm;margin:${page.margins.top}mm ${page.margins.right}mm ${page.margins.bottom - slack}mm ${page.margins.left}mm;${margin}}`
             + firstNoNum + (nb.start !== 1 ? `@page:first{counter-reset:page ${nb.start - 1}}` : '');
         setZoom();
         editor.storage.wpPages.schedule?.();
@@ -727,12 +731,19 @@ export function createWordEditor(root, opts) {
         printing = true;
         document.documentElement.classList.add('wp-printing');
         editor.storage.wpPages.schedule?.();
-        // שני פריימים: המדידה עם רווח 0 בין הדפים, ואז ההדפסה
-        requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(() => {
-            window.print();
+        // שני פריימים: המדידה עם רווח 0 בין הדפים, ואז ההדפסה. חוזרים למסך רק ב-afterprint: בספארי (iPhone)
+        // window.print() לא מחכה לסיום, ובבדיקות האוטומטיות מצב ההדפסה נשאר עד שהן מסיימות.
+        const done = () => {
+            if (!printing) return;
             printing = false;
+            window.removeEventListener('afterprint', done);
             document.documentElement.classList.remove('wp-printing');
             editor.storage.wpPages.schedule?.();
+        };
+        window.addEventListener('afterprint', done);
+        requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(() => {
+            window.print();
+            setTimeout(() => { if (!window.matchMedia('print').matches && !window.__wpHoldPrint) done(); }, 1000);   // דפדפן בלי afterprint
         }, 60)));
     }
 

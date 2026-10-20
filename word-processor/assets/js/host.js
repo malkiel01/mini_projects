@@ -93,7 +93,9 @@
             frame: frame,
             /** שמירה עכשיו. מחזיר Promise<boolean> — true כשנשמר (או שלא היה מה לשמור), false אחרי 5 שניות או שגיאה. */
             save: function () {
-                if (!dirty) { post('save'); return Promise.resolve(true); }
+                // תמיד מחכים לתשובת העורך (saved, או change:false כשאין מה לשמור): ייתכן שהוקלד משהו וההודעה change
+                // עוד לא הגיעה — "לא מלוכלך" כאן אינו "נשמר"
+                if (!origin || !frame.contentWindow) return Promise.resolve(!dirty);
                 return new Promise(function (resolve) {
                     var t = setTimeout(function () { resolve(false); }, 5000);
                     waiters.push(function (ok) { clearTimeout(t); resolve(ok); });

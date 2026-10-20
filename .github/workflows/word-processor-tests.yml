@@ -1,0 +1,48 @@
+# בדיקות עורך התמלילים — בכל PR שנוגע ב-word-processor/, ובכל push ל-main.
+#
+# לא פורס דבר (הפריסה היחידה — deploy.yml). שני חלקים:
+#   php word-processor/tests/run.php        — השרת: חתימה, סשן, נעילה, גרסאות, ייצוא וייבוא, PDF, אוסף המסמכים ל-Word וחזרה
+#   node word-processor/tests/e2e/run.mjs   — דפדפן אמיתי: שמירה וניתוק, הטמעה ממקור אחר, טלפון, ואותם עמודים
+#                                             בעורך, בהדפסה וב-PDF על אוסף המסמכים (tests/corpus)
+name: Word processor tests
+
+on:
+  pull_request:
+    paths: ['word-processor/**', '.github/workflows/word-processor-tests.yml']
+  push:
+    branches: [main]
+    paths: ['word-processor/**', '.github/workflows/word-processor-tests.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_sqlite, sqlite3, sodium, gd, zip, mbstring, curl, dom
+          coverage: none
+
+      - name: pdftotext
+        run: sudo apt-get update -q && sudo apt-get install -y -q poppler-utils
+
+      - name: בדיקות השרת
+        run: php word-processor/tests/run.php
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Playwright + Chromium
+        working-directory: word-processor/tests/e2e
+        run: npm install --no-audit --no-fund && npx playwright install --with-deps chromium
+
+      - name: בדיקות הדפדפן
+        working-directory: word-processor/tests/e2e
+        run: node run.mjs

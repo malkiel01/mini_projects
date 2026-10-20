@@ -54,6 +54,7 @@ export const Pages = Extension.create({
                         if (++stable > 4) { stable = 0; return; }   // הגנה מלולאה (לא אמור לקרות)
                         const deco = DecorationSet.create(view.state.doc, res.breaks.map(b => Decoration.widget(b.pos, spacer(b.h, b.page), {
                             side: -1, key: `pb${b.page}-${Math.round(b.h)}`, ignoreSelection: true,
+                            marks: [],   // מחוץ לכל סימון (גודל גופן וכו'): בהדפסה Chrome לא שובר עמוד בתוך span
                         })));
                         view.dispatch(view.state.tr.setMeta(pagesKey, { deco, sig: res.sig }).setMeta('addToHistory', false));
                     });
@@ -62,12 +63,14 @@ export const Pages = Extension.create({
                 const ro = new ResizeObserver(schedule);
                 ro.observe(view.dom);
                 document.fonts?.ready.then(schedule);
+                // גופן שנטען מאוחר יותר (נטען רק כשמשתמשים בו — למשל גופן המסמך) משנה רוחב שורות — מודדים שוב
+                document.fonts?.addEventListener?.('loadingdone', schedule);
                 schedule();
                 return {
                     update(v, prev) {
                         if (v.state.doc !== prev.doc || pagesKey.getState(v.state) !== pagesKey.getState(prev)) schedule();
                     },
-                    destroy() { cancelAnimationFrame(raf); ro.disconnect(); },
+                    destroy() { cancelAnimationFrame(raf); ro.disconnect(); document.fonts?.removeEventListener?.('loadingdone', schedule); },
                 };
             },
         })];
