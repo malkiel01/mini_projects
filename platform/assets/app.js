@@ -290,6 +290,22 @@ async function consumeVerifyLink() {
     }
 }
 
+// קישור ההזמנה מהמייל: #invite=<אסימון> — אפליקציה פתחה לכם חשבון (platform/provision.php). בוחרים סיסמה,
+// ונכנסים ישר לאפליקציה שהזמינה.
+function showInvite(token) {
+    view.replaceChildren(form({
+        title: 'בחירת סיסמה',
+        lead: 'נפתח לכם חשבון. בחרו סיסמה — ובה, עם המייל, תיכנסו מעכשיו.',
+        fields: [field('סיסמה', 'password', { type: 'password', ltr: true, hint: 'לפחות 8 תווים', autocomplete: 'new-password' })],
+        submit: 'שמירה וכניסה',
+        onSubmit: async (data) => {
+            const r = await api('invite_accept', { token, password: data.password });
+            history.replaceState(null, '', location.pathname + location.search);
+            location.replace(r.next);
+        },
+    }));
+}
+
 function showMessage(title, text, icon = '') {
     view.replaceChildren(el('div', { className: 'auth' }, [el('div', { className: 'panel msg' }, [
         icon ? el('div', { className: 'big', textContent: icon, ariaHidden: 'true' }) : logo(),
@@ -1136,6 +1152,8 @@ function goNext() {
 async function start() {
     closeMenu();
     try {
+        const invite = location.hash.match(/^#invite=([a-f0-9]{48})$/);
+        if (invite) return showInvite(invite[1]);
         await consumeVerifyLink();
         me = await api('me');
         csrf = me.csrf;
