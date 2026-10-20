@@ -3,6 +3,7 @@
  *
  *   const ed = createWordEditor(root, { json, page, editable, upload, versions, onUpdate, onPage, menu });
  *   ed.getJSON() · ed.setContent(json) · ed.page · ed.setPage(p) · ed.setEditable(b) · ed.print() · ed.destroy()
+ *   הגדרות העמוד — בתוך ה-JSON (attrs.page של צומת השורש); opts.page / onPage — לתאימות ולמארחת.
  *
  * מה שעל המסך הוא מה שיודפס: עמודים בגודל אמיתי (מ"מ → פיקסלים ב-96 לאינץ'), שוליים, כותרת עליונה ותחתונה
  * ומספר עמוד בכל עמוד, וזום שמגדיל רק את הדפים.
@@ -11,6 +12,7 @@ import { Editor } from '../../vendor/tiptap.js';
 import { extensions, imageBox } from './extensions.js';
 import { Pages, pageLabel } from './pagination.js';
 import { cleanPastedHtml } from './paste.js';
+import { migrate } from './schema.js';
 
 const MM = 96 / 25.4;
 const PT = 4 / 3;
@@ -130,9 +132,14 @@ function fontSelect(name, value, allowInherit = false) {
 // ======================================================================
 
 export function createWordEditor(root, opts) {
-    let page = mergePage(defaultPage(), opts.page || {});
+    // הגדרות העמוד יושבות בתוך המסמך (attrs.page) — נשמרות עם התוכן, ו-Ctrl+Z מבטל אותן. page כאן — העותק המוחל
+    const initial = migrate(opts.json, opts.page);
+    let page = mergePage(defaultPage(), initial.attrs.page || {});
+    initial.attrs.page = page;
     let zoom = 1;
     let fit = true;
+    let loading = false;
+    let pageAttr;   // לפני שהעורך נבנה — undefined, ו-syncPage לא עושה כלום
     const emitPage = () => opts.onPage?.(structuredClone(page));
 
     // ---------- מבנה ----------
@@ -165,7 +172,7 @@ export function createWordEditor(root, opts) {
     const editor = new Editor({
         element: host,
         extensions: extensions([Pages.configure({ geometry, onLayout: drawPages })]),
-        content: opts.json || { type: 'doc', content: [{ type: 'paragraph' }] },
+        content: initial,
         editable: opts.editable !== false,
         editorProps: {
             attributes: { class: 'wp-doc', dir: 'rtl', lang: 'he', spellcheck: 'true', 'aria-label': 'המסמך' },
@@ -181,8 +188,19 @@ export function createWordEditor(root, opts) {
         },
         onUpdate: () => opts.onUpdate?.(),
         onSelectionUpdate: () => refresh(),
-        onTransaction: () => refresh(),
+        onTransaction: () => { syncPage(); refresh(); },
     });
+    pageAttr = editor.state.doc.attrs.page;
+    /** המסמך השתנה (עריכה, ביטול, שחזור, טעינה) — אם הגדרות העמוד שבו אחרות, מחילים אותן. */
+    function syncPage() {
+        if (pageAttr === undefined) return;
+        const a = editor.state.doc.attrs.page;
+        if (a === pageAttr) return;
+        pageAttr = a;
+        page = mergePage(defaultPage(), a || {});
+        applyPage();
+        if (!loading) emitPage();
+    }
     editor.storage.wpPages.zoom = 1;
 
     // ---------- דפים ----------
@@ -266,7 +284,8 @@ export function createWordEditor(root, opts) {
         editor.storage.wpPages.zoom = zoom;
         if (zoomLabel) zoomLabel.textContent = Math.round(zoom * 100) + '%';
     }
-    new ResizeObserver(() => { if (fit) setZoom(); }).observe(stage);
+    const resizeObs = new ResizeObserver(() => { if (fit && !editor.isDestroyed) setZoom(); });
+    resizeObs.observe(stage);
 
     // ---------- תמונות ----------
     function imageFiles(dt) {
@@ -594,7 +613,6 @@ export function createWordEditor(root, opts) {
                     start: Math.max(0, Math.round(n('n_start'))), first_page: !!f.get('n_first') },
                 header: f.get('header'), footer: f.get('footer'),
             });
-            emitPage();
         });
     }
 
@@ -639,7 +657,6 @@ export function createWordEditor(root, opts) {
         }, () => {
             collect();
             setPage({ styles: work }, true);
-            emitPage();
         }, 'שמירה');
     }
 
@@ -666,8 +683,8 @@ export function createWordEditor(root, opts) {
             if (!editor.isEditable) return toast('צפייה בלבד — אי אפשר לשחזר', true);
             if (!confirm(`לשחזר את הגרסה מ-${when(v.saved_at)}? המצב הנוכחי יישמר כגרסה.`)) return;
             const d = await opts.versions.get(v.id);
-            editor.commands.setContent(d.json, { emitUpdate: true });
-            if (d.page) { setPage(d.page); emitPage(); }
+            // הגדרות העמוד של הגרסה — בתוך המסמך (attrs.page), כך שגם השחזור עצמו ניתן לביטול
+            editor.commands.setContent(migrate(d.json, d.page || page), { emitUpdate: true });
             document.querySelector('dialog[open]')?.close();
             toast('הגרסה שוחזרה');
         }
@@ -694,9 +711,16 @@ export function createWordEditor(root, opts) {
         statusEl.textContent = `${pageCount} ${pageCount === 1 ? 'עמוד' : 'עמודים'}`;
     }
 
+    /** שינוי הגדרות עמוד = טרנזקציה על המסמך: נכנס להיסטוריה (ביטול), ומפעיל onUpdate (שמירה). */
     function setPage(p, replaceStyles = false) {
-        page = mergePage(page, p, replaceStyles);
-        applyPage();
+        const next = mergePage(page, p, replaceStyles);
+        if (JSON.stringify(next) === JSON.stringify(page)) return;
+        editor.view.dispatch(editor.state.tr.setDocAttribute('page', next));
+    }
+
+    function setContent(json) {
+        loading = true;
+        try { editor.commands.setContent(migrate(json, page), { emitUpdate: false }); } finally { loading = false; }
     }
 
     function setEditable(v) {
@@ -717,13 +741,13 @@ export function createWordEditor(root, opts) {
         get page() { return structuredClone(page); },
         get pages() { return pageCount; },
         getJSON: () => editor.getJSON(),
-        setContent: json => editor.commands.setContent(json, { emitUpdate: false }),
+        setContent,
         setPage,
         setEditable,
         print,
         focus: () => editor.commands.focus(),
         statusTarget: el => { statusEl = el; status(); },
-        destroy: () => { editor.destroy(); root.textContent = ''; },
+        destroy: () => { resizeObs.disconnect(); editor.destroy(); root.textContent = ''; },
     };
 }
 

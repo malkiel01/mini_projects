@@ -88,7 +88,7 @@ function client_register(array $in): array
     $now = time();
     $st = db()->prepare('SELECT * FROM clients WHERE id = ?');
     $st->execute([$client]);
-    $old = $st->fetch();
+    $old = $st->fetch(); $st->closeCursor();
     $originsJson = json_encode($clean);
     if ($old) {
         $changed = $old['key_url'] !== $keyUrl || $old['origins'] !== $originsJson;
@@ -245,7 +245,7 @@ function token_peek(string $token): ?array
     if (!preg_match('/^[0-9a-f]{48}$/', $token)) return null;
     $st = db()->prepare('SELECT * FROM embed_tokens WHERE hash = ?');
     $st->execute([hash('sha256', $token)]);
-    $t = $st->fetch();
+    $t = $st->fetch(); $st->closeCursor();
     return $t && !$t['used'] && (int)$t['expires'] >= time() ? $t : null;
 }
 
@@ -259,7 +259,7 @@ function token_consume(string $token): array
     if ($st->rowCount() !== 1) throw new ApiError('הקישור פג או כבר נוצל — פתחו את העורך מחדש', 'expired', 401);
     $q = db()->prepare('SELECT * FROM embed_tokens WHERE hash = ?');
     $q->execute([$h]);
-    $t = $q->fetch();
+    $t = $q->fetch(); $q->closeCursor();
     $client = client_get($t['client']);
     if (!$client || $client['status'] !== 'active') throw new ApiError('הלקוח אינו פעיל', 'pending', 401);
 

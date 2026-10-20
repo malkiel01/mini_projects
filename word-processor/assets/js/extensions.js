@@ -362,6 +362,23 @@ export const LetterSpacing = Extension.create({
     },
 });
 
+/** גרסת המבנה של ה-JSON. עולה כשהמבנה משתנה; schema.js ו-lib/docs.php יודעים להמיר גרסאות ישנות. */
+export const SCHEMA_VERSION = 1;
+
+/**
+ * מאפיינים של המסמך עצמו (צומת השורש): הגדרות העמוד וגרסת המבנה.
+ * הגדרות העמוד בתוך המסמך — לכן הן נשמרות יחד עם התוכן באותה גרסה, ו-Ctrl+Z מבטל גם אותן.
+ */
+export const DocAttrs = Extension.create({
+    name: 'wpDocAttrs',
+    addGlobalAttributes() {
+        return [{ types: ['doc'], attributes: {
+            page: { default: null, rendered: false },
+            schema: { default: SCHEMA_VERSION, rendered: false },
+        } }];
+    },
+});
+
 /** כל ההרחבות של העורך. */
 export function extensions(extra = []) {
     return [
@@ -378,6 +395,7 @@ export function extensions(extra = []) {
         ParagraphFormat, PageBreak, WpImage, LetterSpacing,
         Table.configure({ resizable: true, cellMinWidth: 30, allowTableNodeSelection: true }),
         TableRow, Cell, HeaderCell,
+        DocAttrs,
         ...extra,
     ];
 }
