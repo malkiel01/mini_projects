@@ -1,0 +1,357 @@
+<?php
+/**
+ * בדיקות השרת: php word-processor/tests/run.php
+ * חתימה, טוקן וסשן, הפרדה בין לקוחות, נעילה וגרסאות, ייצוא וייבוא. מסד זמני — לא נוגע ב-data/.
+ */
+
+if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
+
+$tmp = sys_get_temp_dir() . '/wp-tests-' . getmypid();
+@mkdir($tmp, 0775, true);
+putenv("WP_DATA_DIR=$tmp");
+putenv('WP_BASE_URL=https://mbe-plus.com/mini_projects/word-processor/');
+putenv('WP_DETACHED=1');
+
+require_once __DIR__ . '/../lib/embed.php';
+require_once __DIR__ . '/../lib/export.php';
+require_once __DIR__ . '/../lib/import.php';
+
+$fail = 0;
+$pass = 0;
+function check(string $name, bool $ok, string $detail = ''): void
+{
+    global $fail, $pass;
+    if ($ok) { $pass++; echo "  ✓ $name\n"; }
+    else { $fail++; echo "  ✗ $name" . ($detail !== '' ? " — $detail" : '') . "\n"; }
+}
+function throws(callable $fn, string $code): bool
+{
+    try { $fn(); } catch (ApiError $e) { return $e->codeName === $code; }
+    return false;
+}
+function section(string $s): void { echo "\n$s\n"; }
+
+// מפתחות "מפורסמים" של לקוחות — במקום HTTP
+$published = [];
+$GLOBALS['WP_KEY_FETCHER'] = function (string $url) use (&$published) {
+    return $published[$url] ?? null;
+};
+function keypair(): array
+{
+    $kp = sodium_crypto_sign_keypair();
+    return ['secret' => sodium_crypto_sign_secretkey($kp), 'public' => sodium_crypto_sign_publickey($kp)];
+}
+function publish(array &$published, string $url, string $client, array $keys): void
+{
+    $published[$url] = json_encode(['client' => $client, 'keys' => array_map(fn($kid, $k) => ['kid' => $kid, 'alg' => 'Ed25519', 'key' => base64_encode($k['public'])], array_keys($keys), $keys)]);
+}
+
+$A = 'org-budget-proposals';
+$urlA = 'https://mbe-plus.com/mini_projects/org-budget-proposals/api.php?action=embed_key';
+$kA = keypair();
+publish($published, $urlA, $A, ['2026-10' => $kA]);
+
+// ======================================================================
+section('רישום');
+$r = client_register(['client' => $A, 'name' => 'הצעות תקציב', 'key_url' => $urlA, 'origins' => ['https://mbe-plus.com']]);
+check('אותו מקור ובתיקייה של הלקוח → active', $r['status'] === 'active', json_encode($r));
+$r = client_register(['client' => $A, 'name' => 'הצעות תקציב', 'key_url' => $urlA, 'origins' => ['https://mbe-plus.com']]);
+check('רישום חוזר זהה — בלי שינוי', $r['status'] === 'active');
+check('key_url שאינו תחת origins → נדחה', throws(fn() => client_register(['client' => 'x1', 'key_url' => 'https://evil.example/k', 'origins' => ['https://mbe-plus.com']]), 'bad_key_url'));
+check('origin עם נתיב → נדחה', throws(fn() => client_register(['client' => 'x1', 'key_url' => $urlA, 'origins' => ['https://mbe-plus.com/x']]), 'bad_origins'));
+check('http (לא https) → נדחה', throws(fn() => client_register(['client' => 'x1', 'key_url' => 'http://mbe-plus.com/a', 'origins' => ['http://mbe-plus.com']]), 'bad_origins'));
+check('מפתח שלא ניתן להוריד → נדחה', throws(fn() => client_register(['client' => 'x1', 'key_url' => 'https://mbe-plus.com/mini_projects/x1/k', 'origins' => ['https://mbe-plus.com']]), 'key_fetch_failed'));
+
+// אפליקציה אחרת באותו דומיין שמנסה להירשם בשם אחר — המפתח לא בתיקייה של הלקוח → pending
+$urlEvil = 'https://mbe-plus.com/mini_projects/other-app/api.php?action=embed_key';
+$kEvil = keypair();
+publish($published, $urlEvil, 'victim', ['k' => $kEvil]);
+$r = client_register(['client' => 'victim', 'key_url' => $urlEvil, 'origins' => ['https://mbe-plus.com']]);
+check('מפתח בתיקייה של אפליקציה אחרת → pending', $r['status'] === 'pending');
+
+$B = 'outside-app';
+$urlB = 'https://outside.example/embed-key';
+$kB = keypair();
+publish($published, $urlB, $B, ['b1' => $kB]);
+$r = client_register(['client' => $B, 'name' => 'חיצונית', 'key_url' => $urlB, 'origins' => ['https://outside.example']]);
+check('דומיין אחר → pending', $r['status'] === 'pending');
+
+// ======================================================================
+section('חתימה');
+function signed_req(string $client, string $kid, string $secret, string $action, array $payload, ?int $time = null, ?string $nonce = null): array
+{
+    $body = json_encode($payload, JSON_UNESCAPED_UNICODE);
+    return [$body, sign_headers($client, $kid, $secret, $action, $body, $time, $nonce)];
+}
+[$body, $h] = signed_req($A, '2026-10', $kA['secret'], 'doc_list', []);
+check('חתימה תקינה מתקבלת', verify_signed('doc_list', $body, $h)['id'] === $A);
+check('אותה בקשה שוב → replay', throws(fn() => verify_signed('doc_list', $body, $h), 'replay'));
+[$body, $h] = signed_req($A, '2026-10', $kA['secret'], 'doc_list', ['after' => '']);
+check('גוף ששונה → bad_signature', throws(fn() => verify_signed('doc_list', $body . ' ', $h), 'bad_signature'));
+check('פעולה אחרת מזו שנחתמה → bad_signature', throws(fn() => verify_signed('doc_delete', $body, $h), 'bad_signature'));
+[$body, $h] = signed_req($A, '2026-10', $kA['secret'], 'doc_list', [], time() - 400);
+check('זמן ישן (400 ש\') → stale', throws(fn() => verify_signed('doc_list', $body, $h), 'stale'));
+[$body, $h] = signed_req($A, '2026-10', $kA['secret'], 'doc_list', [], time() + 400);
+check('זמן עתידי → stale', throws(fn() => verify_signed('doc_list', $body, $h), 'stale'));
+[$body, $h] = signed_req('nobody', 'k', $kA['secret'], 'doc_list', []);
+check('לקוח לא רשום → unknown_client', throws(fn() => verify_signed('doc_list', $body, $h), 'unknown_client'));
+[$body, $h] = signed_req($B, 'b1', $kB['secret'], 'doc_list', []);
+check('לקוח ממתין → pending', throws(fn() => verify_signed('doc_list', $body, $h), 'pending'));
+[$body, $h] = signed_req($A, '2026-10', keypair()['secret'], 'doc_list', []);
+check('מפתח זר באותו kid → bad_signature', throws(fn() => verify_signed('doc_list', $body, $h), 'bad_signature'));
+$h['X-Embed-Signature'] = '2026-10.' . base64_encode('short');
+check('חתימה קצרה → bad_signature', throws(fn() => verify_signed('doc_list', $body, $h), 'bad_signature'));
+
+// החלפת מפתח: המארחת מפרסמת מפתח חדש — חתימה שנכשלת מורידה מחדש פעם אחת
+$kA2 = keypair();
+publish($published, $urlA, $A, ['2026-10' => $kA, '2026-11' => $kA2]);
+db()->prepare('UPDATE clients SET refetch_at = 0 WHERE id = ?')->execute([$A]);
+[$body, $h] = signed_req($A, '2026-11', $kA2['secret'], 'doc_list', []);
+check('מפתח חדש (kid חדש) — הורדה מחדש ומתקבל', verify_signed('doc_list', $body, $h)['id'] === $A);
+[$body, $h] = signed_req($A, '2026-12', keypair()['secret'], 'doc_list', []);
+check('kid לא מוכר אחרי הורדה → bad_signature', throws(fn() => verify_signed('doc_list', $body, $h), 'bad_signature'));
+
+// לקוח קיים שנרשם עם origins אחרים → חוזר ל-pending (אף פעם לא דריסה שקטה)
+publish($published, 'https://outside.example/k2', $A, ['2026-10' => $kA]);
+$r = client_register(['client' => $A, 'key_url' => 'https://outside.example/k2', 'origins' => ['https://outside.example', 'https://mbe-plus.com']]);
+check('שינוי key_url/origins ללקוח קיים → pending', $r['status'] === 'pending');
+[$body, $h] = signed_req($A, '2026-10', $kA['secret'], 'doc_list', []);
+check('…ואז הבקשות שלו נדחות', throws(fn() => verify_signed('doc_list', $body, $h), 'pending'));
+$r = client_register(['client' => $A, 'name' => 'הצעות תקציב', 'key_url' => $urlA, 'origins' => ['https://mbe-plus.com']]);
+check('חזרה לכתובת בתיקייה שלו → active', $r['status'] === 'active');
+// B מאושר ידנית (כמו המתג במסך המנהל)
+db()->prepare("UPDATE clients SET status = 'active' WHERE id = ?")->execute([$B]);
+
+// ======================================================================
+section('טוקן וסשן');
+$cA = client_get($A);
+$cB = client_get($B);
+check('return_origin שאינו רשום → נדחה', throws(fn() => embed_session($cA, ['doc' => '', 'user' => ['id' => 'u1', 'name' => 'דנה'], 'return_origin' => 'https://evil.example']), 'bad_origin'));
+check('בלי user.id → נדחה', throws(fn() => embed_session($cA, ['doc' => '', 'user' => ['name' => 'דנה'], 'return_origin' => 'https://mbe-plus.com']), 'bad_user'));
+$s = embed_session($cA, ['doc' => '', 'user' => ['id' => 'u1', 'name' => 'דנה'], 'can' => 'edit', 'mode' => 'section',
+    'page' => ['size' => 'Letter', 'margins' => ['top' => 30]], 'return_origin' => 'https://mbe-plus.com']);
+check('embed_session על doc ריק → מסמך חדש', preg_match('/^[a-z0-9]{20}$/', $s['doc']) === 1);
+check('embed_url עם טוקן, 60 שניות', str_starts_with($s['embed_url'], 'https://mbe-plus.com/mini_projects/word-processor/embed.php?t=') && $s['expires_in'] === 60);
+$docA = $s['doc'];
+check('page של מצב קטע נשמר במסמך', doc_page(doc_find($docA, "c:$A"))['size'] === 'Letter' && doc_page(doc_find($docA, "c:$A"))['margins']['top'] == 30);
+$t = substr($s['embed_url'], strpos($s['embed_url'], '?t=') + 3);
+check('token_peek מוצא את הלקוח (ל-frame-ancestors)', (token_peek($t)['client'] ?? '') === $A);
+$open = token_consume($t);
+check('embed_open → סשן', strlen($open['session']) === 64 && $open['doc'] === $docA && $open['can'] === 'edit');
+check('טוקן חד-פעמי: פתיחה שנייה → expired', throws(fn() => token_consume($t), 'expired'));
+check('token_peek אחרי שימוש → null', token_peek($t) === null);
+$s2 = embed_session($cA, ['doc' => $docA, 'user' => ['id' => 'u1', 'name' => 'דנה'], 'return_origin' => 'https://mbe-plus.com']);
+$t2 = substr($s2['embed_url'], strpos($s2['embed_url'], '?t=') + 3);
+db()->prepare('UPDATE embed_tokens SET expires = ? WHERE hash = ?')->execute([time() - 1, hash('sha256', $t2)]);
+check('טוקן שפג (60 שניות) → expired', throws(fn() => token_consume($t2), 'expired'));
+check('טוקן מזויף → expired', throws(fn() => token_consume(str_repeat('a', 48)), 'expired'));
+
+$_SERVER['HTTP_AUTHORIZATION'] = 'Bearer ' . $open['session'];
+check('Bearer → הסשן', embed_auth()['doc'] === $docA);
+unset($_SERVER['HTTP_AUTHORIZATION']);
+$_SERVER['HTTP_X_EMBED_SESSION'] = $open['session'];
+check('X-Embed-Session (כשהשרת מוריד Authorization) → הסשן', embed_auth()['doc'] === $docA);
+$_SERVER['HTTP_X_EMBED_SESSION'] = str_repeat('0', 64);
+check('סשן לא קיים → expired', throws(fn() => embed_auth(), 'expired'));
+db()->prepare('UPDATE embed_sessions SET expires = ? WHERE hash = ?')->execute([time() - 1, hash('sha256', $open['session'])]);
+$_SERVER['HTTP_X_EMBED_SESSION'] = $open['session'];
+check('סשן שפג (8 שעות) → expired', throws(fn() => embed_auth(), 'expired'));
+unset($_SERVER['HTTP_X_EMBED_SESSION']);
+
+// ======================================================================
+section('הפרדה בין לקוחות');
+$docB = doc_new("c:$B", 'של B', null, null, 'client:b', 'B');
+check('לקוח A לא רואה מסמך של B → 404', throws(fn() => doc_find($docB, "c:$A"), 'not_found'));
+check('לקוח B לא רואה מסמך של A → 404', throws(fn() => doc_find($docA, "c:$B"), 'not_found'));
+check('embed_session של B על מסמך של A → 404', throws(fn() => embed_session($cB, ['doc' => $docA, 'user' => ['id' => 'x'], 'return_origin' => 'https://outside.example']), 'not_found'));
+check('משתמש אפליקציה לא רואה מסמך של לקוח → 404', throws(fn() => doc_find($docA, 'a:1'), 'not_found'));
+$ids = array_column(db()->query("SELECT id FROM docs WHERE space = 'c:$A'")->fetchAll(), 'id');
+check('doc_list של A — רק שלו', in_array($docA, $ids, true) && !in_array($docB, $ids, true));
+check('מזהה לא תקין → 404 (לא שגיאת SQL)', throws(fn() => doc_find("x' OR 1=1 --", "c:$A"), 'not_found'));
+
+// ======================================================================
+section('נעילה וגרסאות');
+check('משתמש 1 לוקח נעילה', lock_take($docA, 'u1', 'דנה', 'h1')['ok']);
+$r = lock_take($docA, 'u2', 'יוסי', 'h2');
+check('משתמש 2 — תפוס, "פתוח לעריכה אצל דנה"', !$r['ok'] && $r['by'] === 'דנה');
+check('אותו משתמש בלשונית אחרת — מותר', lock_take($docA, 'u1', 'דנה', 'h3')['ok']);
+db()->prepare('UPDATE locks SET beat = ? WHERE doc = ?')->execute([time() - 121, $docA]);
+check('בלי דופק 2 דקות — הנעילה פגה', lock_take($docA, 'u2', 'יוסי', 'h2')['ok']);
+lock_release($docA, 'u2');
+check('שחרור', lock_get($docA) === null);
+
+$row = doc_find($docA, "c:$A");
+$v0 = (int)$row['version'];
+$p = ['type' => 'doc', 'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'גרסה']]]]];
+$row = doc_save($row, $p, null, 'u1', 'דנה', $v0);
+$row = doc_save($row, $p, null, 'u1', 'דנה', $v0 + 1);
+check('שתי שמירות של אותו משתמש תוך 10 דקות — גרסה אחת', count(versions_list($row)) === 1, (string)count(versions_list($row)));
+$row = doc_save($row, $p, null, 'u2', 'יוסי', $v0 + 2);
+check('משתמש אחר — גרסה חדשה', count(versions_list($row)) === 2);
+check('שמירה על גרסה ישנה → 409 conflict', throws(fn() => doc_save($row, $p, null, 'u2', 'יוסי', $v0), 'conflict'));
+check('JSON לא תקין → bad_json', throws(fn() => doc_save($row, ['type' => 'x'], null, 'u2', 'יוסי'), 'bad_json'));
+db()->prepare('UPDATE versions SET started_at = started_at - 700 WHERE doc = ?')->execute([$docA]);
+for ($i = 0; $i < 105; $i++) {
+    $row = doc_save($row, $p, null, 'u' . ($i % 2 + 3), 'x', null);
+}
+check('עד 100 גרסאות למסמך', count(versions_list($row)) === 100, (string)count(versions_list($row)));
+
+// ======================================================================
+section('ייצוא');
+$png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP8z8DAwMDAxMDAwMDAAAANHQEDK+mmyAAAAABJRU5ErkJggg==');
+$media = media_store($docA, $png);
+check('העלאת תמונה (PNG אמיתי)', strlen($media['id']) === 24 && $media['width'] === 2);
+check('קובץ שאינו תמונה → נדחה', throws(fn() => media_store($docA, '<?php echo 1;'), 'bad_type'));
+check('כתובת תמונה חתומה', hash_equals(media_sig($media['id']), explode('&s=', media_url($media['id']))[1]));
+
+$json = ['type' => 'doc', 'content' => [
+    ['type' => 'paragraph', 'attrs' => ['pstyle' => 'title'], 'content' => [['type' => 'text', 'text' => 'תכנית עבודה לשנת 2026']]],
+    ['type' => 'heading', 'attrs' => ['level' => 1, 'textAlign' => 'center'], 'content' => [['type' => 'text', 'text' => 'מבוא']]],
+    ['type' => 'paragraph', 'attrs' => ['textAlign' => 'justify', 'lineHeight' => '1.5', 'spaceAfter' => 8, 'indent' => 1], 'content' => [
+        ['type' => 'text', 'text' => 'טקסט '], ['type' => 'text', 'text' => 'מודגש', 'marks' => [['type' => 'bold']]],
+        ['type' => 'text', 'text' => ' ותאריך 2026/01-04 ', 'marks' => [['type' => 'textStyle', 'attrs' => ['color' => '#c00000', 'fontSize' => '14pt', 'fontFamily' => 'Frank Ruehl']]]],
+        ['type' => 'text', 'text' => 'H', 'marks' => [['type' => 'italic']]], ['type' => 'text', 'text' => '2', 'marks' => [['type' => 'subscript']]],
+        ['type' => 'text', 'text' => ' <script>', 'marks' => [['type' => 'highlight', 'attrs' => ['color' => '#ffff00']]]],
+    ]],
+    ['type' => 'orderedList', 'attrs' => ['start' => 1, 'listType' => 'hebrew'], 'content' => [
+        ['type' => 'listItem', 'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'ראשון']]],
+            ['type' => 'bulletList', 'content' => [['type' => 'listItem', 'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'תת-סעיף']]]]]]]]],
+        ['type' => 'listItem', 'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'שני']]]]],
+    ]],
+    ['type' => 'table', 'content' => [
+        ['type' => 'tableRow', 'content' => [['type' => 'tableHeader', 'attrs' => ['colspan' => 2], 'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'כותרת']]]]]]],
+        ['type' => 'tableRow', 'content' => [['type' => 'tableCell', 'attrs' => ['rowspan' => 2], 'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'ממוזג']]]]],
+            ['type' => 'tableCell', 'attrs' => ['background' => '#ddeeff'], 'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'א']]]]]]],
+        ['type' => 'tableRow', 'content' => [['type' => 'tableCell', 'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'ב']]]]]]],
+    ]],
+    ['type' => 'paragraph', 'content' => [['type' => 'image', 'attrs' => ['media' => $media['id'], 'width' => 120, 'height' => 120, 'wrap' => 'square', 'align' => 'left']],
+        ['type' => 'text', 'text' => 'טקסט שגולש סביב התמונה'], ['type' => 'hardBreak'], ['type' => 'text', 'text' => 'שורה שנייה']]],
+    ['type' => 'pageBreak'],
+    ['type' => 'paragraph', 'attrs' => ['dir' => 'ltr', 'textAlign' => 'left'], 'content' => [['type' => 'text', 'text' => 'English paragraph']]],
+]];
+$row = doc_save(doc_find($docA, "c:$A"), $json, 'תכנית', 'u1', 'דנה');
+check('המקור נשמר בלי כתובת התמונה (רק המזהה)', !str_contains($row['json'], 'api.php'));
+$page = page_normalize(['numbering' => ['format' => 'n_of_m', 'position' => 'bottom', 'align' => 'left', 'first_page' => false, 'start' => 3], 'header' => 'כותרת עליונה', 'footer' => 'תחתונה']);
+
+$html = export_html(doc_json($row), $page);
+check('html: כותרת מסמך, h1 ממורכז', str_contains($html['html'], 'class="wp-title"') && str_contains($html['html'], '<h1 style="text-align:center;">מבוא</h1>'));
+check('html: מודגש, צבע, גודל, גופן', str_contains($html['html'], '<strong>מודגש</strong>') && str_contains($html['html'], 'color:#C00000') && str_contains($html['html'], 'font-size:14pt'));
+check('html: רשימה עברית מקוננת', str_contains($html['html'], '<ol class="hebrew">') && str_contains($html['html'], '<ul><li><p>תת-סעיף'));
+check('html: טבלה עם colspan/rowspan', str_contains($html['html'], '<th colspan="2">') && str_contains($html['html'], '<td rowspan="2">'));
+check('html: תמונה בכתובת חתומה מלאה, גלישה ריבוע', str_contains($html['html'], 'src="https://mbe-plus.com/mini_projects/word-processor/api.php?action=media&amp;id=' . $media['id']) && str_contains($html['html'], 'wrap-square align-left'));
+check('html: תוכן משתמש מוברח (<script>)', !str_contains($html['html'], '<script>') && str_contains($html['html'], '&lt;script&gt;'));
+check('html: css עם הגופן וסגנונות הכותרות', str_contains($html['css'], "'David'") && str_contains($html['css'], '.wp-doc h1{'));
+check('html: פסקה משמאל לימין', str_contains($html['html'], '<p dir="ltr" style="text-align:left;">English paragraph</p>'));
+
+$text = export_text(doc_json($row));
+$lines = explode("\n", $text);
+check('text: כותרות בלי סימון', $lines[0] === 'תכנית עבודה לשנת 2026' && $lines[1] === 'מבוא');
+check('text: ממוספר עברי ותבליט מקונן', in_array('א. ראשון', $lines, true) && in_array('  - תת-סעיף', $lines, true) && in_array('ב. שני', $lines, true));
+check('text: טבלה בטאבים', in_array("ממוזג\tא", $lines, true));
+
+$ox = export_ooxml(doc_json($row), $page);
+$wrap = fn($inner) => '<w:document ' . W_NS . '><w:body>' . $inner . '</w:body></w:document>';
+$dom = new DOMDocument();
+check('ooxml: הגוף הוא XML תקין', @$dom->loadXML($wrap($ox['body'])));
+check('ooxml: סגנונות בקידומת wp (בלי התנגשות במארחת)', str_contains($ox['body'], 'w:pStyle w:val="wpHeading1"') && str_contains($ox['styles'], 'w:styleId="wpTitle"'));
+check('ooxml: מספור עברי ומזהים מ-9001', str_contains($ox['numbering'], 'hebrew1') && str_contains($ox['numbering'], 'w:numId="9001"'));
+check('ooxml: תמונה + rels + media', count($ox['media']) === 1 && str_contains($ox['rels'], 'Id="wpImg1"') && str_contains($ox['body'], 'r:embed="wpImg1"') && str_contains($ox['body'], '<wp:wrapSquare'));
+check('ooxml: rtl רק על עברית, לא על תאריך', str_contains($ox['body'], '<w:t xml:space="preserve">2026/01-04</w:t>') && !preg_match('/<w:rtl\/>[^<]*<\/w:rPr><w:t xml:space="preserve">2026\/01-04/', $ox['body']));
+check('ooxml: יישור לוגי (justify→both, ltr+left→ללא)', str_contains($ox['body'], '<w:jc w:val="both"/>'));
+check('ooxml: ריווח 1.5 ו-8pt אחרי', str_contains($ox['body'], 'w:after="160" w:line="360" w:lineRule="auto"'));
+check('ooxml: מיזוג אנכי וגריד', str_contains($ox['body'], '<w:vMerge w:val="restart"/>') && str_contains($ox['body'], '<w:vMerge/>') && str_contains($ox['body'], '<w:gridSpan w:val="2"/>'));
+
+$docx = export_docx(doc_json($row), $page, 'תכנית');
+$f = "$tmp/t.docx";
+file_put_contents($f, $docx);
+$z = new ZipArchive();
+check('docx: ZIP תקין', $z->open($f) === true);
+$allXml = true;
+for ($i = 0; $i < $z->numFiles; $i++) {
+    $n = $z->getNameIndex($i);
+    if (preg_match('/\.(xml|rels)$/', $n)) {
+        $d = new DOMDocument();
+        if (!@$d->loadXML($z->getFromName($n))) { $allXml = false; echo "    XML פגום: $n\n"; }
+    }
+}
+check('docx: כל חלקי ה-XML תקינים', $allXml);
+$docXml = $z->getFromName('word/document.xml');
+check('docx: גודל A4 ושוליים', str_contains($docXml, '<w:pgSz w:w="11906" w:h="16838"/>') && str_contains($docXml, 'w:top="1417"'));
+check('docx: מספור מ-3, עמוד ראשון בלי מספר (titlePg)', str_contains($docXml, 'w:start="3"') && str_contains($docXml, '<w:titlePg/>'));
+$footer = $z->getFromName('word/footer1.xml');
+check('docx: "N מתוך M" בכותרת התחתונה, משמאל', str_contains($footer, ' PAGE ') && str_contains($footer, ' NUMPAGES ') && str_contains($footer, 'מתוך') && str_contains($footer, '<w:jc w:val="end"/>'));
+check('docx: עמוד ראשון — הטקסט בלי מספר', !str_contains((string)$z->getFromName('word/footer2.xml'), 'PAGE') && str_contains((string)$z->getFromName('word/footer2.xml'), 'תחתונה'));
+check('docx: כותרת עליונה', str_contains($z->getFromName('word/header1.xml'), 'כותרת עליונה'));
+check('docx: סגנונות מובנים (Heading1, Title) וגופן ברירת מחדל', str_contains($z->getFromName('word/styles.xml'), 'w:styleId="Heading1"') && str_contains($z->getFromName('word/styles.xml'), 'w:ascii="David"'));
+check('docx: התמונה בתוך החבילה', $z->getFromName('word/media/image_1.png') === $png);
+check('docx: שבירת עמוד', str_contains($docXml, '<w:br w:type="page"/>'));
+$z->close();
+$hebrewPage = page_normalize(['numbering' => ['format' => 'hebrew']]);
+$z2 = export_docx(doc_json($row), $hebrewPage);
+file_put_contents($f, $z2);
+$z->open($f);
+check('docx: מספור עמודים באותיות (hebrew1)', str_contains($z->getFromName('word/document.xml'), 'w:fmt="hebrew1"'));
+$z->close();
+check('page_label: כל התבניות', page_label(3, 12, 'n') === '3' && page_label(3, 12, 'page_n') === "עמ' 3" && page_label(3, 12, 'n_of_m') === '3 מתוך 12'
+    && page_label(3, 12, 'dash_n') === '- 3 -' && page_label(15, 20, 'hebrew') === 'טו' && page_label(11, 20, 'hebrew') === 'יא');
+
+// ======================================================================
+section('ייבוא');
+$imp = import_lines("# פרק ראשון\nפסקה רגילה\n- תבליט א\n- תבליט ב\n\n## כותרת משנה\nעוד פסקה");
+$c = $imp['json']['content'];
+check('lines: "# " → כותרת 1', $c[0]['type'] === 'heading' && $c[0]['attrs']['level'] === 1 && $c[0]['content'][0]['text'] === 'פרק ראשון');
+check('lines: שורה → פסקה', $c[1]['type'] === 'paragraph');
+check('lines: "- " רצופים → רשימה אחת', $c[2]['type'] === 'bulletList' && count($c[2]['content']) === 2);
+check('lines: "## " → כותרת 2', $c[3]['type'] === 'heading' && $c[3]['attrs']['level'] === 2);
+check('lines → text חוזר לאותו פורמט', export_text($imp['json']) === "פרק ראשון\nפסקה רגילה\n- תבליט א\n- תבליט ב\nכותרת משנה\nעוד פסקה");
+
+$docC = doc_new("c:$A", 'ייבוא', null, null, 'u1', 'דנה');
+$imp = import_docx($docx, $docC);
+$types = array_column($imp['json']['content'], 'type');
+check('docx → JSON: כותרת מסמך וכותרת 1', ($imp['json']['content'][0]['attrs']['pstyle'] ?? '') === 'title' && ($imp['json']['content'][1]['attrs']['level'] ?? 0) === 1);
+check('docx → JSON: רשימה ממוספרת עברית עם תת-רשימה', in_array('orderedList', $types, true)
+    && ($imp['json']['content'][array_search('orderedList', $types)]['attrs']['listType'] ?? '') === 'hebrew'
+    && ($imp['json']['content'][array_search('orderedList', $types)]['content'][0]['content'][1]['type'] ?? '') === 'bulletList');
+check('docx → JSON: טבלה עם מיזוגים', in_array('table', $types, true)
+    && ($imp['json']['content'][array_search('table', $types)]['content'][1]['content'][0]['attrs']['rowspan'] ?? 0) === 2);
+$flat = json_encode($imp['json'], JSON_UNESCAPED_UNICODE);
+check('docx → JSON: מודגש, צבע, גודל', str_contains($flat, '"type":"bold"') && str_contains($flat, '#c00000') && str_contains($flat, '"fontSize":"14pt"'));
+check('docx → JSON: תמונה נשמרה, גלישה ריבוע', str_contains($flat, '"type":"image"') && str_contains($flat, '"wrap":"square"'));
+check('docx → JSON: שבירת עמוד', in_array('pageBreak', $types, true));
+check('docx → JSON: הגדרות עמוד', ($imp['page']['size'] ?? '') === 'A4' && abs(($imp['page']['margins']['top'] ?? 0) - 25) < 0.2);
+
+$imp = import_html('<h1>כותרת</h1><p style="text-align:center">שלום <b>עולם</b> <span style="color:#ff0000">אדום</span></p><ul><li>א</li><li>ב</li></ul><table><tr><td>1</td><td>2</td></tr></table>', $docC);
+$c = $imp['json']['content'];
+check('html → JSON', $c[0]['type'] === 'heading' && ($c[1]['attrs']['textAlign'] ?? '') === 'center' && $c[2]['type'] === 'bulletList' && $c[3]['type'] === 'table'
+    && str_contains(json_encode($c[1], JSON_UNESCAPED_UNICODE), '"color":"#ff0000"'));
+
+// ======================================================================
+section('העתקה ומחיקה');
+$copy = doc_copy(doc_find($docA, "c:$A"), "c:$A", 'תכנית 2027', [['2026', '2027'], ['תשפ"ו', 'תשפ"ז']], 'u1', 'דנה');
+$cj = json_encode(doc_json(doc_find($copy, "c:$A")), JSON_UNESCAPED_UNICODE);
+check('doc_copy: החלפת שנה בטקסט', str_contains($cj, 'תכנית עבודה לשנת 2027') && !str_contains($cj, '2026'));
+$cm = json_decode($cj, true);
+$imgId = null;
+walk_nodes($cm, function ($n) use (&$imgId) { if (($n['type'] ?? '') === 'image') $imgId = $n['attrs']['media']; return $n; });
+check('doc_copy: תמונה הועתקה (מזהה חדש, שייך להעתק)', $imgId && $imgId !== $media['id'] && media_of_doc($imgId, $copy) !== null);
+doc_delete(doc_find($docA, "c:$A"));
+check('doc_delete: המסמך והתמונות שלו נמחקו', throws(fn() => doc_find($docA, "c:$A"), 'not_found') && media_row($media['id']) === null && !is_file(media_path($media['id'], 'image/png')));
+check('העותק לא נפגע', media_of_doc($imgId, $copy) !== null);
+
+// ======================================================================
+section('הגדרות עמוד');
+$p = page_normalize(['size' => 'Legal', 'orientation' => 'landscape', 'margins' => ['top' => 500, 'left' => 'x'], 'font' => ['family' => 'David<script>', 'size' => 200],
+    'styles' => ['h1' => ['size' => 18, 'color' => 'red', 'underline' => true]], 'numbering' => ['format' => 'bad', 'align' => 'left']]);
+check('ערכים לא תקינים נדחים / נחתכים', $p['size'] === 'A4' && $p['orientation'] === 'landscape' && $p['margins']['top'] == 80 && $p['margins']['left'] == 25
+    && $p['font']['family'] === 'Davidscript' && $p['font']['size'] == 72 && $p['styles']['h1']['size'] == 18 && !isset($p['styles']['h1']['color'])
+    && $p['styles']['h1']['underline'] === true && $p['numbering']['format'] === 'n' && $p['numbering']['align'] === 'left');
+check('גודל לרוחב', page_mm($p) === [297, 210]);
+
+// ניקוי
+array_map('unlink', glob("$tmp/media/*") ?: []);
+@rmdir("$tmp/media");
+array_map('unlink', glob("$tmp/*") ?: []);
+@rmdir($tmp);
+
+echo "\n" . ($fail ? "✗ $fail נכשלו, $pass עברו\n" : "✓ כל $pass הבדיקות עברו\n");
+exit($fail ? 1 : 0);

@@ -1,0 +1,14 @@
+{
+  "id": "word-processor",
+  "name": "עורך תמלילים",
+  "icon": "📝",
+  "description": "עורך מסמכים כמו Word — עמודים אמיתיים, כותרות, רשימות, טבלאות, תמונות ומספור עמודים; ייצוא ל-Word, ומשמש גם כעורך מוטמע באפליקציות אחרות.",
+  "category": "documents",
+  "entry": "index.html",
+  "gate": true,
+  "sso": { "return": ["https://mbe-plus.com/mini_projects/word-processor/api.php?action=sso_callback"] },
+  "public": [
+    "embed.php", "assets/**", "vendor/**",
+    "api.php?action=client_register|embed_session|embed_open|embed_load|embed_save|embed_upload|embed_lock|embed_page|media|doc_create|doc_copy|doc_get|doc_export|doc_import|doc_delete|doc_list|embed_key|selftest"
+  ]
+}

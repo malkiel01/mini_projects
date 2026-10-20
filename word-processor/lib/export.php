@@ -1,0 +1,781 @@
+<?php
+/**
+ * הפלטים — כולם נגזרים בשרת מה-JSON של המנוע (embed.md, פרק 0): HTML נקי, טקסט, גוף OOXML לשילוב
+ * ב-docx של המארחת, ו-docx שלם (עמוד, שוליים, כותרות, מספור עמודים, רשימות, טבלאות, תמונות).
+ *
+ * כללי Word שנבחרו כאן:
+ * - פסקה מימין לשמאל = <w:bidi/>, ויישור/הזחה לוגיים (start/end) — לא left/right, שמשמעותם מתהפכת בפסקה כזו.
+ * - <w:rtl/> רק על ריצה בעברית; מספרים ואנגלית בריצה בלי rtl (אחרת Word הופך תאריכים וטווחים —
+ *   ראו org-budget-proposals/lib/export.php, שם נלמד הכלל).
+ */
+
+require_once __DIR__ . '/docs.php';
+
+const EMU_PER_PX = 9525;
+const TWIP_PER_MM = 56.6929;
+
+/** משפחת גופנים ל-CSS: השם כמו ב-Word, ואחריו גופן רשת חופשי שמותקן אצלנו (vendor/fonts). */
+function css_font(string $f): string
+{
+    $fallback = [
+        'David' => "'David Libre', serif", 'Frank Ruehl' => "'Frank Ruhl Libre', serif", 'Narkisim' => "'Assistant', sans-serif",
+        'Miriam' => "'Miriam Libre', sans-serif", 'Arial' => "'Heebo', sans-serif", 'Times New Roman' => "'Frank Ruhl Libre', serif",
+        'Calibri' => "'Assistant', sans-serif", 'Tahoma' => "'Heebo', sans-serif",
+    ][$f] ?? 'sans-serif';
+    return "'" . str_replace("'", '', $f) . "', " . $fallback;
+}
+
+function h(string $s): string
+{
+    return htmlspecialchars($s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+}
+
+function xml(string $s): string
+{
+    $s = preg_replace('/[^\x{9}\x{A}\x{D}\x{20}-\x{D7FF}\x{E000}-\x{FFFD}\x{10000}-\x{10FFFF}]/u', '', $s) ?? '';
+    return htmlspecialchars($s, ENT_XML1 | ENT_QUOTES, 'UTF-8');
+}
+
+function pt_val($v): ?float
+{
+    if (is_numeric($v)) return (float)$v;
+    if (is_string($v) && preg_match('/^([\d.]+)\s*(pt|px)?$/', $v, $m)) return $m[2] === 'px' ? (float)$m[1] * 0.75 : (float)$m[1];
+    return null;
+}
+
+function color_val($v): ?string
+{
+    if (!is_string($v)) return null;
+    if (preg_match('/^#([0-9a-f]{6})$/i', $v, $m)) return strtoupper($m[1]);
+    if (preg_match('/^#([0-9a-f])([0-9a-f])([0-9a-f])$/i', $v, $m)) return strtoupper($m[1] . $m[1] . $m[2] . $m[2] . $m[3] . $m[3]);
+    if (preg_match('/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/', $v, $m)) return sprintf('%02X%02X%02X', min(255, $m[1]), min(255, $m[2]), min(255, $m[3]));
+    return null;
+}
+
+/** ריווח שורות: '1.5' → ['auto', 1.5]; 'exact:14' → ['exact', 14 (pt)]. */
+function line_val($v): ?array
+{
+    if (is_string($v) && preg_match('/^exact:([\d.]+)$/', $v, $m)) return ['exact', (float)$m[1]];
+    if (is_numeric($v) && (float)$v > 0) return ['auto', (float)$v];
+    return null;
+}
+
+// ======================================================================
+// HTML
+// ======================================================================
+
+/** {html, css}. $absolute — כתובות תמונות מלאות (למארחת). */
+function export_html(array $json, array $page, bool $absolute = true): array
+{
+    $json = with_media_src($json, $absolute);
+    $body = '';
+    foreach ($json['content'] ?? [] as $n) $body .= html_node($n);
+    return ['html' => '<div class="wp-doc" dir="rtl" lang="he">' . $body . '</div>', 'css' => export_css($page)];
+}
+
+function export_css(array $page): string
+{
+    $f = $page['font'];
+    $css = '.wp-doc{font-family:' . css_font($f['family']) . ';font-size:' . $f['size'] . 'pt;line-height:1.15;direction:rtl;color:#000}'
+        . '.wp-doc p,.wp-doc h1,.wp-doc h2,.wp-doc h3{margin:0}'
+        . '.wp-doc table{border-collapse:collapse;width:100%;margin:4pt 0}'
+        . '.wp-doc td,.wp-doc th{border:1px solid #888;padding:2pt 4pt;vertical-align:top}'
+        . '.wp-doc ul,.wp-doc ol{margin:0;padding-inline-start:24pt}'
+        . '.wp-doc ol.hebrew{list-style-type:hebrew}.wp-doc ol.roman{list-style-type:lower-roman}'
+        . '.wp-doc img{max-width:100%;height:auto}.wp-doc img.wrap-square{margin:2pt 8pt}'
+        . '.wp-doc img.wrap-square.align-right{float:right}.wp-doc img.wrap-square.align-left{float:left}'
+        . '.wp-doc img.wrap-square.align-center{display:block;margin-inline:auto}'
+        . '.wp-doc .page-break{break-after:page;height:0}';
+    $sel = ['normal' => '.wp-doc p', 'title' => '.wp-doc .wp-title', 'h1' => '.wp-doc h1', 'h2' => '.wp-doc h2', 'h3' => '.wp-doc h3'];
+    foreach ($sel as $k => $s) $css .= $s . '{' . style_css($page['styles'][$k] ?? [], $k !== 'normal') . '}';
+    return $css;
+}
+
+function style_css(array $st, bool $heading): string
+{
+    $o = '';
+    if (!empty($st['font'])) $o .= 'font-family:' . css_font($st['font']) . ';';
+    if (isset($st['size'])) $o .= 'font-size:' . $st['size'] . 'pt;';
+    $o .= 'font-weight:' . (!empty($st['bold']) ? '700' : '400') . ';';
+    if (!empty($st['italic'])) $o .= 'font-style:italic;';
+    if (!empty($st['underline'])) $o .= 'text-decoration:underline;';
+    if (!empty($st['color'])) $o .= 'color:' . $st['color'] . ';';
+    if (!empty($st['align'])) $o .= 'text-align:' . $st['align'] . ';';
+    if (isset($st['before'])) $o .= 'padding-top:' . $st['before'] . 'pt;';
+    if (isset($st['after'])) $o .= 'padding-bottom:' . $st['after'] . 'pt;';
+    if (isset($st['line'])) $o .= 'line-height:' . $st['line'] . ';';
+    return $o;
+}
+
+function block_style(array $a): string
+{
+    $s = '';
+    if (!empty($a['textAlign'])) $s .= 'text-align:' . $a['textAlign'] . ';';
+    if (($l = line_val($a['lineHeight'] ?? null))) $s .= 'line-height:' . ($l[0] === 'exact' ? $l[1] . 'pt' : $l[1]) . ';';
+    if (isset($a['spaceBefore']) && is_numeric($a['spaceBefore'])) $s .= 'padding-top:' . (float)$a['spaceBefore'] . 'pt;';
+    if (isset($a['spaceAfter']) && is_numeric($a['spaceAfter'])) $s .= 'padding-bottom:' . (float)$a['spaceAfter'] . 'pt;';
+    if (!empty($a['indent'])) $s .= 'margin-inline-start:' . ((int)$a['indent'] * 36) . 'pt;';
+    if (!empty($a['letterSpacing']) && is_numeric($a['letterSpacing'])) $s .= 'letter-spacing:' . (float)$a['letterSpacing'] . 'pt;';
+    return $s;
+}
+
+function block_attrs(array $a, string $class = ''): string
+{
+    $o = '';
+    if ($class !== '') $o .= ' class="' . $class . '"';
+    if (in_array($a['dir'] ?? null, ['rtl', 'ltr'], true)) $o .= ' dir="' . $a['dir'] . '"';
+    if (($s = block_style($a)) !== '') $o .= ' style="' . h($s) . '"';
+    return $o;
+}
+
+function html_node(array $n): string
+{
+    $a = $n['attrs'] ?? [];
+    $kids = fn() => implode('', array_map('html_node', $n['content'] ?? []));
+    switch ($n['type'] ?? '') {
+        case 'paragraph':
+            $inner = $kids();
+            if (($a['pstyle'] ?? '') === 'title') return '<p' . block_attrs($a, 'wp-title') . '>' . ($inner ?: '<br>') . '</p>';
+            return '<p' . block_attrs($a) . '>' . ($inner ?: '<br>') . '</p>';
+        case 'heading':
+            $l = max(1, min(3, (int)($a['level'] ?? 1)));
+            return "<h$l" . block_attrs($a) . '>' . $kids() . "</h$l>";
+        case 'bulletList':
+            return '<ul>' . $kids() . '</ul>';
+        case 'orderedList':
+            $t = $a['listType'] ?? 'decimal';
+            $start = (int)($a['start'] ?? 1);
+            return '<ol' . ($t !== 'decimal' ? ' class="' . h($t) . '"' : '') . ($start !== 1 ? ' start="' . $start . '"' : '') . '>' . $kids() . '</ol>';
+        case 'listItem':
+            return '<li>' . $kids() . '</li>';
+        case 'table':
+            return '<table><tbody>' . $kids() . '</tbody></table>';
+        case 'tableRow':
+            return '<tr>' . $kids() . '</tr>';
+        case 'tableCell':
+        case 'tableHeader':
+            $tag = $n['type'] === 'tableHeader' ? 'th' : 'td';
+            $at = '';
+            if (($c = (int)($a['colspan'] ?? 1)) > 1) $at .= ' colspan="' . $c . '"';
+            if (($r = (int)($a['rowspan'] ?? 1)) > 1) $at .= ' rowspan="' . $r . '"';
+            if (($bg = color_val($a['background'] ?? null))) $at .= ' style="background:#' . $bg . '"';
+            return "<$tag$at>" . $kids() . "</$tag>";
+        case 'image':
+            if (empty($a['src'])) return '';
+            $cls = 'wrap-' . (($a['wrap'] ?? 'inline') === 'square' ? 'square' : 'inline') . ' align-' . h($a['align'] ?? 'center');
+            $wh = (!empty($a['width']) ? ' width="' . (int)$a['width'] . '"' : '') . (!empty($a['height']) ? ' height="' . (int)$a['height'] . '"' : '');
+            return '<img src="' . h($a['src']) . '" alt="' . h((string)($a['alt'] ?? '')) . '" class="' . $cls . '"' . $wh . '>';
+        case 'pageBreak':
+            return '<div class="page-break"></div>';
+        case 'hardBreak':
+            return '<br>';
+        case 'horizontalRule':
+            return '<hr>';
+        case 'text':
+            return html_marks(h((string)($n['text'] ?? '')), $n['marks'] ?? []);
+        default:
+            return $kids();
+    }
+}
+
+function html_marks(string $s, array $marks): string
+{
+    $style = '';
+    foreach ($marks as $m) {
+        $a = $m['attrs'] ?? [];
+        switch ($m['type'] ?? '') {
+            case 'bold': $s = "<strong>$s</strong>"; break;
+            case 'italic': $s = "<em>$s</em>"; break;
+            case 'underline': $s = "<u>$s</u>"; break;
+            case 'strike': $s = "<s>$s</s>"; break;
+            case 'subscript': $s = "<sub>$s</sub>"; break;
+            case 'superscript': $s = "<sup>$s</sup>"; break;
+            case 'highlight': $s = '<mark style="background:#' . (color_val($a['color'] ?? null) ?? 'FFFF00') . '">' . $s . '</mark>'; break;
+            case 'textStyle':
+                if (($c = color_val($a['color'] ?? null))) $style .= "color:#$c;";
+                if (!empty($a['fontFamily'])) $style .= 'font-family:' . css_font(font_name((string)$a['fontFamily'])) . ';';
+                if (($z = pt_val($a['fontSize'] ?? null))) $style .= "font-size:{$z}pt;";
+                if (($b = color_val($a['backgroundColor'] ?? null))) $style .= "background:#$b;";
+                break;
+        }
+    }
+    return $style !== '' ? '<span style="' . h($style) . '">' . $s . '</span>' : $s;
+}
+
+// ======================================================================
+// טקסט
+// ======================================================================
+
+/** פסקאות בשורות, תבליט כ-"- ", ממוספר כ-"1. ", כותרת בלי סימון, תאי טבלה מופרדים בטאב. */
+function export_text(array $json): string
+{
+    $lines = [];
+    text_blocks($json['content'] ?? [], $lines, 0);
+    return rtrim(implode("\n", $lines));
+}
+
+function text_blocks(array $nodes, array &$lines, int $depth): void
+{
+    foreach ($nodes as $n) {
+        $t = $n['type'] ?? '';
+        if ($t === 'bulletList' || $t === 'orderedList') {
+            $i = (int)($n['attrs']['start'] ?? 1);
+            foreach ($n['content'] ?? [] as $li) {
+                $marker = $t === 'bulletList' ? '- ' : list_marker($i++, $n['attrs']['listType'] ?? 'decimal') . ' ';
+                $first = true;
+                foreach ($li['content'] ?? [] as $child) {
+                    if (in_array($child['type'] ?? '', ['bulletList', 'orderedList'], true)) { text_blocks([$child], $lines, $depth + 1); continue; }
+                    $lines[] = str_repeat('  ', $depth) . ($first ? $marker : '  ') . inline_text($child);
+                    $first = false;
+                }
+            }
+        } elseif ($t === 'table') {
+            foreach ($n['content'] ?? [] as $row) {
+                $cells = [];
+                foreach ($row['content'] ?? [] as $cell) {
+                    $parts = [];
+                    foreach ($cell['content'] ?? [] as $p) $parts[] = inline_text($p);
+                    $cells[] = implode(' ', array_filter($parts, 'strlen'));
+                }
+                $lines[] = implode("\t", $cells);
+            }
+        } elseif ($t === 'pageBreak' || $t === 'horizontalRule') {
+            $lines[] = '';
+        } else {
+            $lines[] = inline_text($n);
+        }
+    }
+}
+
+function inline_text(array $n): string
+{
+    if (($n['type'] ?? '') === 'text') return (string)($n['text'] ?? '');
+    if (($n['type'] ?? '') === 'hardBreak') return "\n";
+    $s = '';
+    foreach ($n['content'] ?? [] as $c) {
+        if (in_array($c['type'] ?? '', ['paragraph', 'heading'], true) && $s !== '') $s .= "\n";
+        $s .= inline_text($c);
+    }
+    return $s;
+}
+
+function list_marker(int $i, string $type): string
+{
+    return match ($type) {
+        'hebrew' => hebrew_letters($i) . '.',
+        'roman' => strtolower(roman($i)) . '.',
+        default => $i . '.',
+    };
+}
+
+function roman(int $n): string
+{
+    $out = '';
+    foreach (['M' => 1000, 'CM' => 900, 'D' => 500, 'CD' => 400, 'C' => 100, 'XC' => 90, 'L' => 50, 'XL' => 40, 'X' => 10, 'IX' => 9, 'V' => 5, 'IV' => 4, 'I' => 1] as $r => $v) {
+        while ($n >= $v) { $out .= $r; $n -= $v; }
+    }
+    return $out;
+}
+
+// ======================================================================
+// OOXML
+// ======================================================================
+
+/**
+ * בונה WordprocessingML. $prefix — קידומת לסגנונות, למספורים ולקשרים, כדי שגוף שמשולב ב-docx של
+ * המארחת לא יתנגש בשלה ('' ב-docx שלם; 'wp' בגוף לשילוב).
+ */
+final class Ooxml
+{
+    public array $media = [];        // [{name, type, bytes, rid}]
+    public array $nums = [];         // [numId => ['abstract' => id]]
+    public array $abstracts = [];    // [abstractId => ['type' => ..]]
+    private int $docPr = 1;
+    private int $numBase;
+    public float $contentTw;         // רוחב אזור הטקסט ב-twips (לטבלאות ולתמונות)
+
+    public function __construct(public array $page, public string $prefix = '')
+    {
+        $this->numBase = $prefix === '' ? 1 : 9001;
+        [$w] = page_mm($page);
+        $this->contentTw = ($w - $page['margins']['left'] - $page['margins']['right']) * TWIP_PER_MM;
+    }
+
+    public function styleId(string $k): string
+    {
+        $base = ['normal' => 'Normal', 'title' => 'Title', 'h1' => 'Heading1', 'h2' => 'Heading2', 'h3' => 'Heading3'][$k];
+        return $this->prefix === '' ? $base : $this->prefix . $base;
+    }
+
+    public function body(array $json): string
+    {
+        $out = '';
+        foreach ($json['content'] ?? [] as $n) $out .= $this->block($n, []);
+        return $out;
+    }
+
+    /** $list — ['num' => numId, 'lvl' => רמה] כשהבלוק בתוך פריט רשימה. */
+    private function block(array $n, array $list, bool $firstInItem = true): string
+    {
+        $a = $n['attrs'] ?? [];
+        switch ($n['type'] ?? '') {
+            case 'paragraph':
+                $style = ($a['pstyle'] ?? '') === 'title' ? 'title' : null;
+                return $this->para($n, $style, $list && $firstInItem ? $list : [], (bool)$list);
+            case 'heading':
+                return $this->para($n, 'h' . max(1, min(3, (int)($a['level'] ?? 1))), $list && $firstInItem ? $list : [], (bool)$list);
+            case 'bulletList':
+            case 'orderedList':
+                $type = $n['type'] === 'bulletList' ? 'bullet' : (in_array($a['listType'] ?? '', ['hebrew', 'roman'], true) ? $a['listType'] : 'decimal');
+                $lvl = $list ? min(8, $list['lvl'] + 1) : 0;
+                $num = $this->newNum($type, (int)($a['start'] ?? 1), $lvl);
+                $out = '';
+                foreach ($n['content'] ?? [] as $li) {
+                    $first = true;
+                    foreach ($li['content'] ?? [] as $child) {
+                        $out .= $this->block($child, ['num' => $num, 'lvl' => $lvl], $first);
+                        if (!in_array($child['type'] ?? '', ['bulletList', 'orderedList'], true)) $first = false;
+                    }
+                }
+                return $out;
+            case 'table':
+                return $this->table($n);
+            case 'pageBreak':
+                return '<w:p><w:r><w:br w:type="page"/></w:r></w:p>';
+            case 'horizontalRule':
+                return '<w:p><w:pPr><w:pBdr><w:bottom w:val="single" w:sz="6" w:space="1" w:color="auto"/></w:pBdr><w:bidi/></w:pPr></w:p>';
+            default:
+                return '';
+        }
+    }
+
+    private function para(array $n, ?string $style, array $num, bool $inList): string
+    {
+        $a = $n['attrs'] ?? [];
+        $rtl = ($a['dir'] ?? 'rtl') !== 'ltr';
+        $ppr = '';
+        if ($style) $ppr .= '<w:pStyle w:val="' . $this->styleId($style) . '"/>';
+        if ($num) $ppr .= '<w:numPr><w:ilvl w:val="' . $num['lvl'] . '"/><w:numId w:val="' . $num['num'] . '"/></w:numPr>';
+        if ($rtl) $ppr .= '<w:bidi/>';
+        $sp = '';
+        if (isset($a['spaceBefore']) && is_numeric($a['spaceBefore'])) $sp .= ' w:before="' . (int)round($a['spaceBefore'] * 20) . '"';
+        if (isset($a['spaceAfter']) && is_numeric($a['spaceAfter'])) $sp .= ' w:after="' . (int)round($a['spaceAfter'] * 20) . '"';
+        if (($l = line_val($a['lineHeight'] ?? null))) {
+            $sp .= $l[0] === 'exact' ? ' w:line="' . (int)round($l[1] * 20) . '" w:lineRule="exact"' : ' w:line="' . (int)round($l[1] * 240) . '" w:lineRule="auto"';
+        }
+        if ($sp !== '') $ppr .= "<w:spacing$sp/>";
+        if (!empty($a['indent'])) $ppr .= '<w:ind w:start="' . ((int)$a['indent'] * 720 + ($inList ? 720 : 0)) . '"/>';
+        elseif ($inList && !$num) $ppr .= '<w:ind w:start="' . (720 * 1) . '"/>';
+        $jc = $this->jc($a['textAlign'] ?? null, $rtl);
+        if ($jc) $ppr .= '<w:jc w:val="' . $jc . '"/>';
+        $runs = '';
+        $anchors = '';
+        foreach ($n['content'] ?? [] as $c) {
+            if (($c['type'] ?? '') === 'image' && ($c['attrs']['wrap'] ?? 'inline') === 'square') { $anchors .= $this->image($c); continue; }
+            $runs .= $this->inline($c, $a);
+        }
+        return '<w:p>' . ($ppr !== '' ? "<w:pPr>$ppr</w:pPr>" : '') . $anchors . $runs . '</w:p>';
+    }
+
+    /** יישור ויזואלי → ערך לוגי (start = ימין בפסקה מימין לשמאל). */
+    private function jc(?string $align, bool $rtl): ?string
+    {
+        return match ($align) {
+            'center' => 'center',
+            'justify' => 'both',
+            'right' => $rtl ? null : 'end',
+            'left' => $rtl ? 'end' : null,
+            default => null,
+        };
+    }
+
+    private function inline(array $c, array $pa): string
+    {
+        switch ($c['type'] ?? '') {
+            case 'text':
+                return $this->runs((string)($c['text'] ?? ''), $c['marks'] ?? [], $pa);
+            case 'hardBreak':
+                return '<w:r><w:br/></w:r>';
+            case 'image':
+                return $this->image($c);
+            default:
+                return '';
+        }
+    }
+
+    /** טקסט לריצות: עברית עם <w:rtl/>, ומספרים/אנגלית בלי. */
+    private function runs(string $text, array $marks, array $pa): string
+    {
+        $rpr = $this->rpr($marks, $pa);
+        $out = '';
+        $parts = preg_split('/([A-Za-z0-9](?:[A-Za-z0-9.,:\/\\\\\-+%_@&#= ]*[A-Za-z0-9%])?)/u', $text, -1, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY);
+        foreach ($parts as $p) {
+            $ltr = (bool)preg_match('/^[A-Za-z0-9]/', $p);
+            $r = $rpr . ($ltr ? '' : '<w:rtl/>');
+            foreach (preg_split('/(\t)/', $p, -1, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY) as $q) {
+                $inner = $q === "\t" ? '<w:tab/>' : '<w:t xml:space="preserve">' . xml($q) . '</w:t>';
+                $out .= '<w:r>' . ($r !== '' ? "<w:rPr>$r</w:rPr>" : '') . $inner . '</w:r>';
+            }
+        }
+        return $out;
+    }
+
+    /** תכונות ריצה בסדר שהסכמה דורשת (rFonts, b, i, strike, color, spacing, sz, u, shd, vertAlign; rtl נוסף אחרי). */
+    private function rpr(array $marks, array $pa): string
+    {
+        $m = [];
+        foreach ($marks as $mk) $m[$mk['type'] ?? ''] = $mk['attrs'] ?? [];
+        $o = '';
+        $ts = $m['textStyle'] ?? [];
+        if (!empty($ts['fontFamily'])) {
+            $f = xml(font_name((string)$ts['fontFamily']));
+            $o .= "<w:rFonts w:ascii=\"$f\" w:hAnsi=\"$f\" w:cs=\"$f\"/>";
+        }
+        if (isset($m['bold'])) $o .= '<w:b/><w:bCs/>';
+        if (isset($m['italic'])) $o .= '<w:i/><w:iCs/>';
+        if (isset($m['strike'])) $o .= '<w:strike/>';
+        if (($c = color_val($ts['color'] ?? null))) $o .= "<w:color w:val=\"$c\"/>";
+        if (!empty($pa['letterSpacing']) && is_numeric($pa['letterSpacing'])) $o .= '<w:spacing w:val="' . (int)round($pa['letterSpacing'] * 20) . '"/>';
+        if (($z = pt_val($ts['fontSize'] ?? null))) { $hz = (int)round($z * 2); $o .= "<w:sz w:val=\"$hz\"/><w:szCs w:val=\"$hz\"/>"; }
+        if (isset($m['underline'])) $o .= '<w:u w:val="single"/>';
+        $bg = color_val($m['highlight']['color'] ?? null) ?? (isset($m['highlight']) ? 'FFFF00' : color_val($ts['backgroundColor'] ?? null));
+        if ($bg) $o .= "<w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"$bg\"/>";
+        if (isset($m['superscript'])) $o .= '<w:vertAlign w:val="superscript"/>';
+        elseif (isset($m['subscript'])) $o .= '<w:vertAlign w:val="subscript"/>';
+        return $o;
+    }
+
+    private function image(array $c): string
+    {
+        $a = $c['attrs'] ?? [];
+        $m = !empty($a['media']) ? media_row((string)$a['media']) : null;
+        if (!$m || !is_file(media_path($m['id'], $m['type']))) return '';
+        $rid = $this->addMedia($m);
+        $wpx = (float)($a['width'] ?: $m['width']);
+        $hpx = !empty($a['height']) ? (float)$a['height'] : ($m['width'] ? $wpx * $m['height'] / $m['width'] : $wpx);
+        $maxPx = $this->contentTw / 15;   // twips → px (1px = 15 twips)
+        if ($wpx > $maxPx) { $hpx *= $maxPx / $wpx; $wpx = $maxPx; }
+        $cx = (int)round($wpx * EMU_PER_PX);
+        $cy = (int)round($hpx * EMU_PER_PX);
+        $id = $this->docPr++;
+        $graphic = '<wp:docPr id="' . $id . '" name="Picture ' . $id . '" descr="' . xml((string)($a['alt'] ?? '')) . '"/>'
+            . '<wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/></wp:cNvGraphicFramePr>'
+            . '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+            . '<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="' . $id . '" name="Picture ' . $id . '"/><pic:cNvPicPr/></pic:nvPicPr>'
+            . '<pic:blipFill><a:blip r:embed="' . $rid . '"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>'
+            . '<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="' . $cx . '" cy="' . $cy . '"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic>'
+            . '</a:graphicData></a:graphic>';
+        if (($a['wrap'] ?? 'inline') === 'square') {
+            $align = ['right' => 'right', 'left' => 'left', 'center' => 'center'][$a['align'] ?? 'right'] ?? 'right';
+            return '<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="114300" distR="114300" simplePos="0" relativeHeight="' . (251658240 + $id) . '" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1">'
+                . '<wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:align>' . $align . '</wp:align></wp:positionH>'
+                . '<wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV>'
+                . '<wp:extent cx="' . $cx . '" cy="' . $cy . '"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapSquare wrapText="bothSides"/>'
+                . $graphic . '</wp:anchor></w:drawing></w:r>';
+        }
+        return '<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="' . $cx . '" cy="' . $cy . '"/><wp:effectExtent l="0" t="0" r="0" b="0"/>'
+            . $graphic . '</wp:inline></w:drawing></w:r>';
+    }
+
+    private function addMedia(array $m): string
+    {
+        if (isset($this->media[$m['id']])) return $this->media[$m['id']]['rid'];
+        $n = count($this->media) + 1;
+        $ext = MEDIA_TYPES[$m['type']];
+        $this->media[$m['id']] = ['name' => ($this->prefix ?: 'image') . "_$n.$ext", 'type' => $m['type'],
+            'bytes' => file_get_contents(media_path($m['id'], $m['type'])), 'rid' => ($this->prefix ?: 'r') . "Img$n"];
+        return $this->media[$m['id']]['rid'];
+    }
+
+    private function newNum(string $type, int $start, int $lvl): int
+    {
+        $abs = $this->numBase + count($this->abstracts);
+        $this->abstracts[$abs] = ['type' => $type, 'start' => max(0, $start), 'lvl' => $lvl];
+        $num = $this->numBase + count($this->nums);
+        $this->nums[$num] = $abs;
+        return $num;
+    }
+
+    private function table(array $t): string
+    {
+        $rows = $t['content'] ?? [];
+        // רשת: כמה עמודות, ואיפה תאים ממוזגים אנכית ממשיכים (vMerge)
+        $occupied = [];   // [row][col] => ['cont' => true, 'span' => n]
+        $ncols = 0;
+        $layout = [];
+        foreach ($rows as $ri => $row) {
+            $col = 0;
+            $cells = [];
+            foreach ($row['content'] ?? [] as $cell) {
+                while (isset($occupied[$ri][$col])) { $cells[] = ['cont' => $occupied[$ri][$col]]; $col += $occupied[$ri][$col]; }
+                $cs = max(1, (int)($cell['attrs']['colspan'] ?? 1));
+                $rs = max(1, (int)($cell['attrs']['rowspan'] ?? 1));
+                for ($k = 1; $k < $rs; $k++) $occupied[$ri + $k][$col] = $cs;
+                $cells[] = ['cell' => $cell, 'col' => $col, 'span' => $cs, 'restart' => $rs > 1];
+                $col += $cs;
+            }
+            while (isset($occupied[$ri][$col])) { $cells[] = ['cont' => $occupied[$ri][$col]]; $col += $occupied[$ri][$col]; }
+            $ncols = max($ncols, $col);
+            $layout[] = $cells;
+        }
+        if ($ncols === 0) return '';
+        // רוחב עמודות: colwidth מהעורך (px), אחרת שווה
+        $widths = array_fill(0, $ncols, 0);
+        foreach ($layout as $cells) foreach ($cells as $c) {
+            if (isset($c['cell']) && $c['span'] === 1 && !empty($c['cell']['attrs']['colwidth'][0])) $widths[$c['col']] = (float)$c['cell']['attrs']['colwidth'][0] * 15;
+        }
+        $known = array_sum($widths);
+        $unknown = count(array_filter($widths, fn($w) => $w == 0));
+        $rest = $unknown ? max(600, ($this->contentTw - $known) / $unknown) : 0;
+        foreach ($widths as $i => $w) if ($w == 0) $widths[$i] = $rest;
+        $scale = array_sum($widths) > $this->contentTw ? $this->contentTw / array_sum($widths) : 1;
+        $widths = array_map(fn($w) => (int)round($w * $scale), $widths);
+
+        $b = '';
+        foreach (['top', 'start', 'bottom', 'end', 'insideH', 'insideV'] as $side) $b .= "<w:$side w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"808080\"/>";
+        $out = '<w:tbl><w:tblPr><w:bidiVisual/><w:tblW w:w="' . array_sum($widths) . '" w:type="dxa"/><w:tblBorders>' . $b . '</w:tblBorders>'
+            . '<w:tblLayout w:type="fixed"/><w:tblCellMar><w:start w:w="85" w:type="dxa"/><w:end w:w="85" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>';
+        foreach ($widths as $w) $out .= '<w:gridCol w:w="' . $w . '"/>';
+        $out .= '</w:tblGrid>';
+        foreach ($layout as $ri => $cells) {
+            $isHeader = ($rows[$ri]['content'][0]['type'] ?? '') === 'tableHeader';
+            $out .= '<w:tr>' . ($isHeader ? '<w:trPr><w:tblHeader/></w:trPr>' : '');
+            $col = 0;
+            foreach ($cells as $c) {
+                if (isset($c['cont'])) {
+                    $span = $c['cont'];
+                    $w = array_sum(array_slice($widths, $col, $span));
+                    $out .= '<w:tc><w:tcPr><w:tcW w:w="' . $w . '" w:type="dxa"/>' . ($span > 1 ? '<w:gridSpan w:val="' . $span . '"/>' : '') . '<w:vMerge/></w:tcPr><w:p/></w:tc>';
+                    $col += $span;
+                    continue;
+                }
+                $cell = $c['cell'];
+                $w = array_sum(array_slice($widths, $c['col'], $c['span']));
+                $pr = '<w:tcW w:w="' . $w . '" w:type="dxa"/>' . ($c['span'] > 1 ? '<w:gridSpan w:val="' . $c['span'] . '"/>' : '')
+                    . ($c['restart'] ? '<w:vMerge w:val="restart"/>' : '');
+                if (($bg = color_val($cell['attrs']['background'] ?? null))) $pr .= "<w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"$bg\"/>";
+                elseif ($cell['type'] === 'tableHeader') $pr .= '<w:shd w:val="clear" w:color="auto" w:fill="F2F2F2"/>';
+                $inner = '';
+                foreach ($cell['content'] ?? [] as $p) {
+                    if ($cell['type'] === 'tableHeader' && ($p['type'] ?? '') === 'paragraph') {
+                        $p['content'] = array_map(function ($t) {
+                            if (($t['type'] ?? '') === 'text') $t['marks'] = array_merge($t['marks'] ?? [], [['type' => 'bold']]);
+                            return $t;
+                        }, $p['content'] ?? []);
+                    }
+                    $inner .= $this->block($p, []);
+                }
+                $out .= '<w:tc><w:tcPr>' . $pr . '</w:tcPr>' . ($inner !== '' ? $inner : '<w:p/>') . '</w:tc>';
+                $col += $c['span'];
+            }
+            $out .= '</w:tr>';
+        }
+        return $out . '</w:tbl><w:p><w:pPr><w:spacing w:after="0"/></w:pPr></w:p>';
+    }
+
+    // ---------- סגנונות ומספור ----------
+
+    /** <w:style> לכל סגנון (רגיל, כותרת מסמך, כותרות 1–3). */
+    public function styles(): string
+    {
+        $out = '';
+        $names = ['normal' => 'Normal', 'title' => 'Title', 'h1' => 'heading 1', 'h2' => 'heading 2', 'h3' => 'heading 3'];
+        foreach ($names as $k => $name) {
+            $st = $this->page['styles'][$k] ?? [];
+            $sp = '';
+            if (isset($st['before'])) $sp .= ' w:before="' . (int)round($st['before'] * 20) . '"';
+            if (isset($st['after'])) $sp .= ' w:after="' . (int)round($st['after'] * 20) . '"';
+            if (isset($st['line'])) $sp .= ' w:line="' . (int)round($st['line'] * 240) . '" w:lineRule="auto"';
+            $ppr = ($k !== 'normal' ? '<w:keepNext/><w:keepLines/>' : '') . '<w:bidi/>' . ($sp ? "<w:spacing$sp/>" : '');
+            if (!empty($st['align'])) $ppr .= '<w:jc w:val="' . ($this->jc($st['align'], true) ?? 'start') . '"/>';
+            if ($k[0] === 'h') $ppr .= '<w:outlineLvl w:val="' . ((int)$k[1] - 1) . '"/>';
+            $rpr = '';
+            if (!empty($st['font'])) { $f = xml($st['font']); $rpr .= "<w:rFonts w:ascii=\"$f\" w:hAnsi=\"$f\" w:cs=\"$f\"/>"; }
+            if ($k !== 'normal') $rpr .= !empty($st['bold']) ? '<w:b/><w:bCs/>' : '<w:b w:val="0"/><w:bCs w:val="0"/>';
+            elseif (!empty($st['bold'])) $rpr .= '<w:b/><w:bCs/>';
+            if (!empty($st['italic'])) $rpr .= '<w:i/><w:iCs/>';
+            if (!empty($st['color'])) $rpr .= '<w:color w:val="' . strtoupper(ltrim($st['color'], '#')) . '"/>';
+            if (isset($st['size'])) { $hz = (int)round($st['size'] * 2); $rpr .= "<w:sz w:val=\"$hz\"/><w:szCs w:val=\"$hz\"/>"; }
+            if (!empty($st['underline'])) $rpr .= '<w:u w:val="single"/>';
+            $id = $this->styleId($k);
+            $display = $this->prefix === '' ? $name : $this->prefix . ' ' . $name;
+            $out .= '<w:style w:type="paragraph"' . ($k === 'normal' && $this->prefix === '' ? ' w:default="1"' : '') . ' w:styleId="' . $id . '">'
+                . '<w:name w:val="' . xml($display) . '"/>' . ($k !== 'normal' ? '<w:basedOn w:val="' . $this->styleId('normal') . '"/><w:next w:val="' . $this->styleId('normal') . '"/>' : '')
+                . '<w:qFormat/><w:pPr>' . $ppr . '</w:pPr>' . ($rpr ? "<w:rPr>$rpr</w:rPr>" : '') . '</w:style>';
+        }
+        return $out;
+    }
+
+    public function numberingParts(): array
+    {
+        $abs = '';
+        $bullets = ['•', '◦', '▪', '•', '◦', '▪', '•', '◦', '▪'];
+        $fmt = ['bullet' => 'bullet', 'decimal' => 'decimal', 'hebrew' => 'hebrew1', 'roman' => 'lowerRoman'];
+        foreach ($this->abstracts as $id => $a) {
+            $abs .= '<w:abstractNum w:abstractNumId="' . $id . '"><w:multiLevelType w:val="hybridMultilevel"/>';
+            for ($i = 0; $i < 9; $i++) {
+                $text = $a['type'] === 'bullet' ? $bullets[$i] : '%' . ($i + 1) . '.';
+                $start = $i === $a['lvl'] ? $a['start'] : 1;
+                $abs .= '<w:lvl w:ilvl="' . $i . '"><w:start w:val="' . $start . '"/><w:numFmt w:val="' . $fmt[$a['type']] . '"/>'
+                    . '<w:lvlText w:val="' . xml($text) . '"/><w:lvlJc w:val="start"/><w:pPr><w:bidi/><w:ind w:start="' . (360 + 360 * ($i + 1)) . '" w:hanging="360"/></w:pPr></w:lvl>';
+            }
+            $abs .= '</w:abstractNum>';
+        }
+        $num = '';
+        foreach ($this->nums as $id => $absId) $num .= '<w:num w:numId="' . $id . '"><w:abstractNumId w:val="' . $absId . '"/></w:num>';
+        return ['abstract' => $abs, 'num' => $num];
+    }
+
+    public function rels(): string
+    {
+        $out = '';
+        foreach ($this->media as $m) {
+            $out .= '<Relationship Id="' . $m['rid'] . '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/' . $m['name'] . '"/>';
+        }
+        return $out;
+    }
+}
+
+const W_NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"'
+    . ' xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"'
+    . ' xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"';
+
+/** גוף לשילוב ב-docx של המארחת (embed.md, פרק 3): {body, styles, numbering, media, rels}. */
+function export_ooxml(array $json, array $page): array
+{
+    $o = new Ooxml($page, 'wp');
+    $body = $o->body($json);
+    $parts = $o->numberingParts();
+    return [
+        'body' => $body,
+        'styles' => $o->styles(),
+        'numbering' => $parts['abstract'] . $parts['num'],
+        'numbering_parts' => $parts,
+        'media' => array_values(array_map(fn($m) => ['name' => $m['name'], 'type' => $m['type'], 'rid' => $m['rid'], 'base64' => base64_encode($m['bytes'])], $o->media)),
+        'rels' => $o->rels(),
+        'namespaces' => W_NS,
+    ];
+}
+
+/** docx שלם. מחזיר את הבתים. */
+function export_docx(array $json, array $page, string $title = ''): string
+{
+    $o = new Ooxml($page, '');
+    $body = $o->body($json);
+    [$wmm, $hmm] = page_mm($page);
+    $tw = fn($mm) => (int)round($mm * TWIP_PER_MM);
+    $mg = $page['margins'];
+    $nb = $page['numbering'];
+
+    // כותרת עליונה ותחתונה: טקסט חופשי + מספר העמוד (בצד שנבחר). עמוד ראשון בלי מספר — titlePg.
+    $hf = function (string $text, bool $withNumber, string $tag) use ($page, $nb) {
+        $paras = '';
+        $jcNum = ['right' => null, 'center' => 'center', 'left' => 'end'][$nb['align']] ?? 'center';
+        if ($text !== '') {
+            foreach (preg_split('/\R/u', $text) as $line) {
+                $paras .= '<w:p><w:pPr><w:bidi/><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:rtl/><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr><w:t xml:space="preserve">' . xml($line) . '</w:t></w:r></w:p>';
+            }
+        }
+        if ($withNumber) {
+            $paras .= '<w:p><w:pPr><w:bidi/>' . ($jcNum ? '<w:jc w:val="' . $jcNum . '"/>' : '') . '</w:pPr>' . page_number_runs($nb['format']) . '</w:p>';
+        }
+        if ($paras === '') $paras = '<w:p><w:pPr><w:bidi/></w:pPr></w:p>';
+        return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:' . $tag . ' ' . W_NS . '>' . $paras . '</w:' . $tag . '>';
+    };
+    $numTop = $nb['show'] && $nb['position'] === 'top';
+    $numBottom = $nb['show'] && $nb['position'] === 'bottom';
+    $titlePg = $nb['show'] && !$nb['first_page'];
+    $files = [
+        'word/header1.xml' => $hf($page['header'], $numTop, 'hdr'),
+        'word/footer1.xml' => $hf($page['footer'], $numBottom, 'ftr'),
+    ];
+    $hfRels = '<Relationship Id="rIdH1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>'
+        . '<Relationship Id="rIdF1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>';
+    $refs = '<w:headerReference w:type="default" r:id="rIdH1"/><w:footerReference w:type="default" r:id="rIdF1"/>';
+    if ($titlePg) {
+        $files['word/header2.xml'] = $hf($page['header'], false, 'hdr');
+        $files['word/footer2.xml'] = $hf($page['footer'], false, 'ftr');
+        $hfRels .= '<Relationship Id="rIdH2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header2.xml"/>'
+            . '<Relationship Id="rIdF2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer2.xml"/>';
+        $refs .= '<w:headerReference w:type="first" r:id="rIdH2"/><w:footerReference w:type="first" r:id="rIdF2"/>';
+    }
+    $pgNum = '<w:pgNumType' . ($nb['format'] === 'hebrew' ? ' w:fmt="hebrew1"' : '') . ' w:start="' . (int)$nb['start'] . '"/>';
+    $sect = '<w:sectPr>' . $refs . '<w:pgSz w:w="' . $tw($wmm) . '" w:h="' . $tw($hmm) . '"' . ($page['orientation'] === 'landscape' ? ' w:orient="landscape"' : '') . '/>'
+        . '<w:pgMar w:top="' . $tw($mg['top']) . '" w:right="' . $tw($mg['right']) . '" w:bottom="' . $tw($mg['bottom']) . '" w:left="' . $tw($mg['left'])
+        . '" w:header="' . $tw(min(12.5, $mg['top'] / 2)) . '" w:footer="' . $tw(min(12.5, $mg['bottom'] / 2)) . '" w:gutter="0"/>'
+        . $pgNum . ($titlePg ? '<w:titlePg/>' : '') . '<w:bidi/></w:sectPr>';
+
+    $document = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document ' . W_NS . '><w:body>' . $body . $sect . '</w:body></w:document>';
+    $f = xml($page['font']['family']);
+    $sz = (int)round($page['font']['size'] * 2);
+    $styles = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles ' . W_NS . '>'
+        . '<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="' . $f . '" w:hAnsi="' . $f . '" w:cs="' . $f . '" w:eastAsia="' . $f . '"/>'
+        . '<w:sz w:val="' . $sz . '"/><w:szCs w:val="' . $sz . '"/><w:lang w:val="he-IL" w:eastAsia="en-US" w:bidi="he-IL"/></w:rPr></w:rPrDefault>'
+        . '<w:pPrDefault><w:pPr><w:bidi/></w:pPr></w:pPrDefault></w:docDefaults>'
+        . $o->styles()
+        . '<w:style w:type="table" w:default="1" w:styleId="TableNormal"><w:name w:val="Normal Table"/><w:tblPr><w:bidiVisual/><w:tblInd w:w="0" w:type="dxa"/>'
+        . '<w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:start w:w="108" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:end w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr></w:style>'
+        . '</w:styles>';
+    $parts = $o->numberingParts();
+    $numbering = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:numbering ' . W_NS . '>' . $parts['abstract'] . $parts['num'] . '</w:numbering>';
+    $settings = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings ' . W_NS . '><w:defaultTabStop w:val="720"/>'
+        . '<w:characterSpacingControl w:val="doNotCompress"/><w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>';
+
+    $ct = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+        . '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>'
+        . '<Default Extension="png" ContentType="image/png"/><Default Extension="jpg" ContentType="image/jpeg"/><Default Extension="gif" ContentType="image/gif"/><Default Extension="webp" ContentType="image/webp"/>'
+        . '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
+        . '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>'
+        . '<Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>'
+        . '<Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>'
+        . '<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>';
+    foreach (array_keys($files) as $p) {
+        $kind = str_contains($p, 'header') ? 'header' : 'footer';
+        $ct .= '<Override PartName="/' . $p . '" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.' . $kind . '+xml"/>';
+    }
+    $ct .= '</Types>';
+    $rootRels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        . '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>'
+        . '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>';
+    $docRels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        . '<Relationship Id="rIdS" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'
+        . '<Relationship Id="rIdN" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/>'
+        . '<Relationship Id="rIdT" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>'
+        . $hfRels . $o->rels() . '</Relationships>';
+    $core = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"'
+        . ' xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">'
+        . '<dc:title>' . xml($title) . '</dc:title><dc:creator>עורך התמלילים</dc:creator>'
+        . '<dcterms:created xsi:type="dcterms:W3CDTF">' . gmdate('Y-m-d\TH:i:s\Z') . '</dcterms:created></cp:coreProperties>';
+
+    $tmp = tempnam(sys_get_temp_dir(), 'wpdocx');
+    $zip = new ZipArchive();
+    $zip->open($tmp, ZipArchive::OVERWRITE);
+    $zip->addFromString('[Content_Types].xml', $ct);
+    $zip->addFromString('_rels/.rels', $rootRels);
+    $zip->addFromString('docProps/core.xml', $core);
+    $zip->addFromString('word/document.xml', $document);
+    $zip->addFromString('word/styles.xml', $styles);
+    $zip->addFromString('word/numbering.xml', $numbering);
+    $zip->addFromString('word/settings.xml', $settings);
+    $zip->addFromString('word/_rels/document.xml.rels', $docRels);
+    foreach ($files as $p => $x) $zip->addFromString($p, $x);
+    foreach ($o->media as $m) $zip->addFromString('word/media/' . $m['name'], $m['bytes']);
+    $zip->close();
+    $bytes = file_get_contents($tmp);
+    unlink($tmp);
+    return $bytes;
+}
+
+/** שדה מספר עמוד בתבנית שנבחרה. */
+function page_number_runs(string $format): string
+{
+    $t = fn($s) => '<w:r><w:rPr><w:rtl/></w:rPr><w:t xml:space="preserve">' . xml($s) . '</w:t></w:r>';
+    $field = fn($name) => '<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> ' . $name . ' </w:instrText></w:r>'
+        . '<w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>1</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>';
+    return match ($format) {
+        'page_n' => $t("עמ' ") . $field('PAGE'),
+        'n_of_m' => $field('PAGE') . $t(' מתוך ') . $field('NUMPAGES'),
+        'dash_n' => $t('- ') . $field('PAGE') . $t(' -'),
+        default => $field('PAGE'),
+    };
+}
