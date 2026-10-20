@@ -39,7 +39,7 @@ function xml(string $s): string
 function pt_val($v): ?float
 {
     if (is_numeric($v)) return (float)$v;
-    if (is_string($v) && preg_match('/^([\d.]+)\s*(pt|px)?$/', $v, $m)) return $m[2] === 'px' ? (float)$m[1] * 0.75 : (float)$m[1];
+    if (is_string($v) && preg_match('/^(-?[\d.]+)\s*(pt|px)?$/', $v, $m)) return ($m[2] ?? '') === 'px' ? (float)$m[1] * 0.75 : (float)$m[1];
     return null;
 }
 
@@ -58,6 +58,32 @@ function line_val($v): ?array
     if (is_string($v) && preg_match('/^exact:([\d.]+)$/', $v, $m)) return ['exact', (float)$m[1]];
     if (is_numeric($v) && (float)$v > 0) return ['auto', (float)$v];
     return null;
+}
+
+const IMAGE_WRAPS = ['inline', 'square', 'tight', 'topBottom', 'behind', 'front'];
+
+/**
+ * גאומטריית תמונה (כמו imageBox ב-assets/js/extensions.js): w/h — התמונה המלאה, cw/ch — אחרי חיתוך,
+ * bw/bh — אחרי סיבוב, בפיקסלים. $maxW — רוחב מרבי לחלק הנראה (מקטין את הכול באותו יחס).
+ */
+function image_geom(array $a, ?array $m, ?float $maxW = null): array
+{
+    $w = (float)(($a['width'] ?? 0) ?: ($m['width'] ?? 0) ?: 200);
+    $h = !empty($a['height']) ? (float)$a['height'] : (!empty($m['width']) ? $w * $m['height'] / $m['width'] : $w * 0.75);
+    $c = is_array($a['crop'] ?? null) ? $a['crop'] : [];
+    $crop = [];
+    foreach (['t', 'r', 'b', 'l'] as $k) $crop[$k] = max(0, min(45, (float)($c[$k] ?? 0)));
+    $rot = ((int)($a['rotate'] ?? 0) % 360 + 360) % 360;
+    $rot = in_array($rot, [0, 90, 180, 270], true) ? $rot : 0;
+    $cw = $w * (1 - ($crop['l'] + $crop['r']) / 100);
+    $ch = $h * (1 - ($crop['t'] + $crop['b']) / 100);
+    if ($maxW && $cw > $maxW) { $k = $maxW / $cw; $w *= $k; $h *= $k; $cw *= $k; $ch *= $k; }
+    $turned = $rot % 180 !== 0;
+    $wrap = in_array($a['wrap'] ?? 'inline', IMAGE_WRAPS, true) ? ($a['wrap'] ?? 'inline') : 'inline';
+    $dist = isset($a['dist']) && is_numeric($a['dist']) ? max(0, min(72, (float)$a['dist'])) : (in_array($wrap, ['square', 'tight', 'topBottom'], true) ? 9.0 : 0.0);
+    return ['w' => $w, 'h' => $h, 'cw' => $cw, 'ch' => $ch, 'bw' => $turned ? $ch : $cw, 'bh' => $turned ? $cw : $ch,
+        'crop' => $crop, 'rot' => $rot, 'wrap' => $wrap, 'dist' => $dist,
+        'align' => in_array($a['align'] ?? '', ['right', 'center', 'left'], true) ? $a['align'] : 'right'];
 }
 
 // ======================================================================
@@ -82,9 +108,15 @@ function export_css(array $page): string
         . '.wp-doc td,.wp-doc th{border:1px solid #888;padding:2pt 4pt;vertical-align:top}'
         . '.wp-doc ul,.wp-doc ol{margin:0;padding-inline-start:24pt}'
         . '.wp-doc ol.hebrew{list-style-type:hebrew}.wp-doc ol.roman{list-style-type:lower-roman}'
-        . '.wp-doc img{max-width:100%;height:auto}.wp-doc img.wrap-square{margin:2pt 8pt}'
-        . '.wp-doc img.wrap-square.align-right{float:right}.wp-doc img.wrap-square.align-left{float:left}'
-        . '.wp-doc img.wrap-square.align-center{display:block;margin-inline:auto}'
+        . '.wp-doc p,.wp-doc h1,.wp-doc h2,.wp-doc h3{position:relative}'
+        . '.wp-doc .wp-img{display:inline-block;vertical-align:bottom;position:relative}'
+        . '.wp-doc .wp-img-cap{display:block;text-align:center;font-size:9pt;font-style:italic;color:#333;padding-top:2pt}'
+        . '.wp-doc .wrap-square,.wp-doc .wrap-tight{float:right;margin:0 0 var(--dist) var(--dist)}'
+        . '.wp-doc .wrap-square.align-left,.wp-doc .wrap-tight.align-left{float:left;margin:0 var(--dist) var(--dist) 0}'
+        . '.wp-doc .wrap-square.align-center,.wp-doc .wrap-tight.align-center,.wp-doc .wrap-topBottom{float:none;display:block;clear:both;margin:var(--dist) 0}'
+        . '.wp-doc .wrap-square.align-center,.wp-doc .wrap-tight.align-center,.wp-doc .wrap-topBottom.align-center{margin-inline:auto}'
+        . '.wp-doc .wrap-topBottom.align-left{margin-inline-start:auto}'
+        . '.wp-doc .wrap-behind,.wp-doc .wrap-front{position:absolute}.wp-doc .wrap-behind{z-index:-1}.wp-doc .wrap-front{z-index:2}'
         . '.wp-doc .page-break{break-after:page;height:0}';
     $sel = ['normal' => '.wp-doc p', 'title' => '.wp-doc .wp-title', 'h1' => '.wp-doc h1', 'h2' => '.wp-doc h2', 'h3' => '.wp-doc h3'];
     foreach ($sel as $k => $s) $css .= $s . '{' . style_css($page['styles'][$k] ?? [], $k !== 'normal') . '}';
@@ -161,10 +193,7 @@ function html_node(array $n): string
             if (($bg = color_val($a['background'] ?? null))) $at .= ' style="background:#' . $bg . '"';
             return "<$tag$at>" . $kids() . "</$tag>";
         case 'image':
-            if (empty($a['src'])) return '';
-            $cls = 'wrap-' . (($a['wrap'] ?? 'inline') === 'square' ? 'square' : 'inline') . ' align-' . h($a['align'] ?? 'center');
-            $wh = (!empty($a['width']) ? ' width="' . (int)$a['width'] . '"' : '') . (!empty($a['height']) ? ' height="' . (int)$a['height'] . '"' : '');
-            return '<img src="' . h($a['src']) . '" alt="' . h((string)($a['alt'] ?? '')) . '" class="' . $cls . '"' . $wh . '>';
+            return html_image($a);
         case 'pageBreak':
             return '<div class="page-break"></div>';
         case 'hardBreak':
@@ -176,6 +205,23 @@ function html_node(array $n): string
         default:
             return $kids();
     }
+}
+
+/** תמונה ב-HTML: מסגרת בגודל שעל הדף, חלון חיתוך מסובב, והתמונה המלאה בתוכו; כיתוב מתחת. */
+function html_image(array $a): string
+{
+    if (empty($a['src'])) return '';
+    $m = !empty($a['media']) ? media_row((string)$a['media']) : null;
+    $g = image_geom($a, $m);
+    $px = fn($v) => round($v, 1) . 'px';
+    $outer = 'width:' . $px($g['bw']) . ';--dist:' . $g['dist'] . 'pt;';
+    if (in_array($g['wrap'], ['behind', 'front'], true)) $outer .= 'left:' . (int)($a['x'] ?? 0) . 'px;top:' . (int)($a['y'] ?? 0) . 'px;';
+    $img = '<img src="' . h($a['src']) . '" alt="' . h((string)($a['alt'] ?? '')) . '" style="display:block;max-width:none;width:' . $px($g['w']) . ';height:' . $px($g['h'])
+        . ';margin-left:' . $px(-$g['w'] * $g['crop']['l'] / 100) . ';margin-top:' . $px(-$g['h'] * $g['crop']['t'] / 100) . '">';
+    $box = '<span style="position:absolute;left:50%;top:50%;width:' . $px($g['cw']) . ';height:' . $px($g['ch']) . ';overflow:hidden;transform:translate(-50%,-50%) rotate(' . $g['rot'] . 'deg)">' . $img . '</span>';
+    $frame = '<span style="display:block;position:relative;width:' . $px($g['bw']) . ';height:' . $px($g['bh']) . '">' . $box . '</span>';
+    $cap = !empty($a['caption']) ? '<span class="wp-img-cap">' . h((string)$a['caption']) . '</span>' : '';
+    return '<span class="wp-img wrap-' . $g['wrap'] . ' align-' . $g['align'] . '" style="' . $outer . '">' . $frame . $cap . '</span>';
 }
 
 function html_marks(string $s, array $marks): string
@@ -196,6 +242,7 @@ function html_marks(string $s, array $marks): string
                 if (!empty($a['fontFamily'])) $style .= 'font-family:' . css_font(font_name((string)$a['fontFamily'])) . ';';
                 if (($z = pt_val($a['fontSize'] ?? null))) $style .= "font-size:{$z}pt;";
                 if (($b = color_val($a['backgroundColor'] ?? null))) $style .= "background:#$b;";
+                if (($ls = pt_val($a['letterSpacing'] ?? null)) !== null && $ls != 0) $style .= "letter-spacing:{$ls}pt;";
                 break;
         }
     }
@@ -370,11 +417,19 @@ final class Ooxml
         if ($jc) $ppr .= '<w:jc w:val="' . $jc . '"/>';
         $runs = '';
         $anchors = '';
+        $captions = '';
         foreach ($n['content'] ?? [] as $c) {
-            if (($c['type'] ?? '') === 'image' && ($c['attrs']['wrap'] ?? 'inline') === 'square') { $anchors .= $this->image($c); continue; }
+            if (($c['type'] ?? '') === 'image') {
+                if (!empty($c['attrs']['caption'])) {
+                    // כיתוב: פסקה ממורכזת אחרי הפסקה של התמונה
+                    $captions .= '<w:p><w:pPr><w:bidi/><w:spacing w:before="40" w:after="120"/><w:jc w:val="center"/></w:pPr>'
+                        . $this->runs((string)$c['attrs']['caption'], [['type' => 'italic'], ['type' => 'textStyle', 'attrs' => ['fontSize' => '9pt', 'color' => '#333333']]], []) . '</w:p>';
+                }
+                if (($c['attrs']['wrap'] ?? 'inline') !== 'inline') { $anchors .= $this->image($c); continue; }
+            }
             $runs .= $this->inline($c, $a);
         }
-        return '<w:p>' . ($ppr !== '' ? "<w:pPr>$ppr</w:pPr>" : '') . $anchors . $runs . '</w:p>';
+        return '<w:p>' . ($ppr !== '' ? "<w:pPr>$ppr</w:pPr>" : '') . $anchors . $runs . '</w:p>' . $captions;
     }
 
     /** יישור ויזואלי → ערך לוגי (start = ימין בפסקה מימין לשמאל). */
@@ -435,7 +490,8 @@ final class Ooxml
         if (isset($m['italic'])) $o .= '<w:i/><w:iCs/>';
         if (isset($m['strike'])) $o .= '<w:strike/>';
         if (($c = color_val($ts['color'] ?? null))) $o .= "<w:color w:val=\"$c\"/>";
-        if (!empty($pa['letterSpacing']) && is_numeric($pa['letterSpacing'])) $o .= '<w:spacing w:val="' . (int)round($pa['letterSpacing'] * 20) . '"/>';
+        $ls = pt_val($ts['letterSpacing'] ?? null) ?? (is_numeric($pa['letterSpacing'] ?? null) ? (float)$pa['letterSpacing'] : null);
+        if ($ls) $o .= '<w:spacing w:val="' . (int)round($ls * 20) . '"/>';
         if (($z = pt_val($ts['fontSize'] ?? null))) { $hz = (int)round($z * 2); $o .= "<w:sz w:val=\"$hz\"/><w:szCs w:val=\"$hz\"/>"; }
         if (isset($m['underline'])) $o .= '<w:u w:val="single"/>';
         $bg = color_val($m['highlight']['color'] ?? null) ?? (isset($m['highlight']) ? 'FFFF00' : color_val($ts['backgroundColor'] ?? null));
@@ -451,30 +507,50 @@ final class Ooxml
         $m = !empty($a['media']) ? media_row((string)$a['media']) : null;
         if (!$m || !is_file(media_path($m['id'], $m['type']))) return '';
         $rid = $this->addMedia($m);
-        $wpx = (float)($a['width'] ?: $m['width']);
-        $hpx = !empty($a['height']) ? (float)$a['height'] : ($m['width'] ? $wpx * $m['height'] / $m['width'] : $wpx);
-        $maxPx = $this->contentTw / 15;   // twips → px (1px = 15 twips)
-        if ($wpx > $maxPx) { $hpx *= $maxPx / $wpx; $wpx = $maxPx; }
-        $cx = (int)round($wpx * EMU_PER_PX);
-        $cy = (int)round($hpx * EMU_PER_PX);
+        $g = image_geom($a, $m, $this->contentTw / 15);   // twips → px (1px = 15 twips)
+        $cx = (int)round($g['cw'] * EMU_PER_PX);
+        $cy = (int)round($g['ch'] * EMU_PER_PX);
         $id = $this->docPr++;
+        $src = '';
+        if (array_sum($g['crop']) > 0) {
+            $src = '<a:srcRect l="' . (int)round($g['crop']['l'] * 1000) . '" t="' . (int)round($g['crop']['t'] * 1000)
+                . '" r="' . (int)round($g['crop']['r'] * 1000) . '" b="' . (int)round($g['crop']['b'] * 1000) . '"/>';
+        }
         $graphic = '<wp:docPr id="' . $id . '" name="Picture ' . $id . '" descr="' . xml((string)($a['alt'] ?? '')) . '"/>'
             . '<wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/></wp:cNvGraphicFramePr>'
             . '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'
             . '<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="' . $id . '" name="Picture ' . $id . '"/><pic:cNvPicPr/></pic:nvPicPr>'
-            . '<pic:blipFill><a:blip r:embed="' . $rid . '"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>'
-            . '<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="' . $cx . '" cy="' . $cy . '"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic>'
+            . '<pic:blipFill><a:blip r:embed="' . $rid . '"/>' . $src . '<a:stretch><a:fillRect/></a:stretch></pic:blipFill>'
+            . '<pic:spPr><a:xfrm' . ($g['rot'] ? ' rot="' . ($g['rot'] * 60000) . '"' : '') . '><a:off x="0" y="0"/><a:ext cx="' . $cx . '" cy="' . $cy . '"/></a:xfrm>'
+            . '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic>'
             . '</a:graphicData></a:graphic>';
-        if (($a['wrap'] ?? 'inline') === 'square') {
-            $align = ['right' => 'right', 'left' => 'left', 'center' => 'center'][$a['align'] ?? 'right'] ?? 'right';
-            return '<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="114300" distR="114300" simplePos="0" relativeHeight="' . (251658240 + $id) . '" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1">'
-                . '<wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:align>' . $align . '</wp:align></wp:positionH>'
-                . '<wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV>'
-                . '<wp:extent cx="' . $cx . '" cy="' . $cy . '"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapSquare wrapText="bothSides"/>'
-                . $graphic . '</wp:anchor></w:drawing></w:r>';
+        // סיבוב ברבע: התמונה תופסת על הדף את הממדים המוחלפים — effectExtent משלים את ההפרש
+        $ee = '<wp:effectExtent l="0" t="0" r="0" b="0"/>';
+        if ($g['rot'] % 180) {
+            $dx = (int)max(0, round(($cy - $cx) / 2));
+            $dy = (int)max(0, round(($cx - $cy) / 2));
+            $ee = '<wp:effectExtent l="' . $dx . '" t="' . $dy . '" r="' . $dx . '" b="' . $dy . '"/>';
         }
-        return '<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="' . $cx . '" cy="' . $cy . '"/><wp:effectExtent l="0" t="0" r="0" b="0"/>'
-            . $graphic . '</wp:inline></w:drawing></w:r>';
+        if ($g['wrap'] === 'inline') {
+            return '<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="' . $cx . '" cy="' . $cy . '"/>' . $ee
+                . $graphic . '</wp:inline></w:drawing></w:r>';
+        }
+        $d = (int)round($g['dist'] * 12700);   // נקודות → EMU
+        $abs = in_array($g['wrap'], ['behind', 'front'], true);
+        $posH = $abs ? '<wp:positionH relativeFrom="column"><wp:posOffset>' . (int)round((float)($a['x'] ?? 0) * EMU_PER_PX) . '</wp:posOffset></wp:positionH>'
+            : '<wp:positionH relativeFrom="column"><wp:align>' . $g['align'] . '</wp:align></wp:positionH>';
+        $posV = '<wp:positionV relativeFrom="paragraph"><wp:posOffset>' . ($abs ? (int)round((float)($a['y'] ?? 0) * EMU_PER_PX) : 0) . '</wp:posOffset></wp:positionV>';
+        $wrapXml = match ($g['wrap']) {
+            'square' => '<wp:wrapSquare wrapText="bothSides"/>',
+            'tight' => '<wp:wrapTight wrapText="bothSides"><wp:wrapPolygon edited="0"><wp:start x="0" y="0"/><wp:lineTo x="0" y="21600"/>'
+                . '<wp:lineTo x="21600" y="21600"/><wp:lineTo x="21600" y="0"/><wp:lineTo x="0" y="0"/></wp:wrapPolygon></wp:wrapTight>',
+            'topBottom' => '<wp:wrapTopAndBottom/>',
+            default => '<wp:wrapNone/>',
+        };
+        $dist = $g['wrap'] === 'topBottom' ? 'distT="' . $d . '" distB="' . $d . '" distL="0" distR="0"' : 'distT="0" distB="0" distL="' . $d . '" distR="' . $d . '"';
+        return '<w:r><w:drawing><wp:anchor ' . $dist . ' simplePos="0" relativeHeight="' . (251658240 + $id) . '" behindDoc="' . ($g['wrap'] === 'behind' ? 1 : 0)
+            . '" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/>' . $posH . $posV
+            . '<wp:extent cx="' . $cx . '" cy="' . $cy . '"/>' . $ee . $wrapXml . $graphic . '</wp:anchor></w:drawing></w:r>';
     }
 
     private function addMedia(array $m): string
