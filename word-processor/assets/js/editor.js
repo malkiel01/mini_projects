@@ -287,6 +287,38 @@ export function createWordEditor(root, opts) {
     const resizeObs = new ResizeObserver(() => { if (fit && !editor.isDestroyed) setZoom(); });
     resizeObs.observe(stage);
 
+    // צביטה בשתי אצבעות (טלפון) — מגדילה רק את הדף, לא את הכותרת והסרגל. הדפדפן לא מגדיל (touch-action ב-CSS),
+    // והנקודה שבין האצבעות נשארת במקומה.
+    let pinch = null;
+    const dist = t => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    const mid = t => ({ x: (t[0].clientX + t[1].clientX) / 2, y: (t[0].clientY + t[1].clientY) / 2 });
+    stage.addEventListener('touchstart', e => {
+        if (e.touches.length !== 2) return;
+        pinch = { d0: dist(e.touches), z0: zoom };
+    }, { passive: true });
+    stage.addEventListener('touchmove', e => {
+        if (!pinch || e.touches.length !== 2) return;
+        e.preventDefault();
+        const m = mid(e.touches);
+        const r = zoomBox.getBoundingClientRect();
+        const px = (m.x - r.left) / zoom;
+        const py = (m.y - r.top) / zoom;
+        fit = false;
+        zoom = Math.max(0.3, Math.min(3, pinch.z0 * dist(e.touches) / pinch.d0));
+        setZoom();
+        const r2 = zoomBox.getBoundingClientRect();
+        stage.scrollLeft += r2.left + px * zoom - m.x;
+        stage.scrollTop += r2.top + py * zoom - m.y;
+    }, { passive: false });
+    const endPinch = e => { if (pinch && e.touches.length < 2) pinch = null; };
+    stage.addEventListener('touchend', endPinch);
+    stage.addEventListener('touchcancel', endPinch);
+    // ספארי (iPhone) מתעלם לפעמים מ-touch-action — חוסמים את מחוות ההגדלה שלו כל עוד העורך פתוח (גם על הכותרת)
+    const noGesture = e => e.preventDefault();
+    document.addEventListener('gesturestart', noGesture);
+    document.addEventListener('gesturechange', noGesture);
+    document.documentElement.classList.add('wp-no-page-zoom');
+
     // ---------- תמונות ----------
     function imageFiles(dt) {
         const files = [...(dt?.files || [])].filter(f => /^image\//.test(f.type));
@@ -747,7 +779,14 @@ export function createWordEditor(root, opts) {
         print,
         focus: () => editor.commands.focus(),
         statusTarget: el => { statusEl = el; status(); },
-        destroy: () => { resizeObs.disconnect(); editor.destroy(); root.textContent = ''; },
+        destroy: () => {
+            resizeObs.disconnect();
+            document.removeEventListener('gesturestart', noGesture);
+            document.removeEventListener('gesturechange', noGesture);
+            document.documentElement.classList.remove('wp-no-page-zoom');
+            editor.destroy();
+            root.textContent = '';
+        },
     };
 }
 
