@@ -18,6 +18,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/children.php';
 require_once __DIR__ . '/platforms.php';
+require_once __DIR__ . '/safefetch.php';
 
 const SEARCH_SITE_PAGES = 150;      // דפים לאתר מ-sitemap
 const SEARCH_MAX_PAGES  = 20000;    // תקרה לכל האינדקס
@@ -249,7 +250,16 @@ function searchRunSource(array $s, callable $get): array {
  * לדפים שנכנסו מה-sitemap. ‏$get — להחלפה בבדיקות. מוחזר כמה מקורות נסרקו.
  */
 function searchTick(float $budget = 5.0, ?callable $get = null): int {
-    $get ??= fn(string $u) => httpGet($u, 400000);
+    // כתובות שלא אנחנו בחרנו (אתרים מההורה, sitemap, תוכן חיצוני) — רק דרך safeHttpGet (lib/safefetch.php).
+    $get ??= fn(string $u) => safeHttpGet($u, 400000);
+    // צעד אחד בכל רגע: כמה בקשות שמסתיימות יחד לא מריצות סריקות מקבילות מאותו שרת.
+    $lock = @fopen(dataDir() . '/search.lock', 'c');
+    if ($lock && !flock($lock, LOCK_EX | LOCK_NB)) { fclose($lock); return 0; }
+    try { return searchTickLocked($budget, $get); }
+    finally { if ($lock) { flock($lock, LOCK_UN); fclose($lock); } }
+}
+
+function searchTickLocked(float $budget, callable $get): int {
     $until = microtime(true) + $budget;
     searchSyncSources();
     $done = 0;
