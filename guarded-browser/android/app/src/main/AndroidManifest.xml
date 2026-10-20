@@ -39,6 +39,12 @@
         <intent>
             <action android:name="android.view.InputMethod"/>
         </intent>
+        <!-- הדפדפנים שבמכשיר — לדוח האכיפה: האם כל דפדפן אחר חסום (EnforceReport). -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <category android:name="android.intent.category.BROWSABLE"/>
+            <data android:scheme="https"/>
+        </intent>
     </queries>
 
     <application

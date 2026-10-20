@@ -120,6 +120,11 @@ function migrate(PDO $pdo): void {
     if (!in_array('perms', $columns('devices'), true)) {
         $pdo->exec("ALTER TABLE devices ADD COLUMN perms INTEGER NOT NULL DEFAULT 0");
     }
+    // דוח האכיפה האחרון מהמכשיר (lib/enforce.php) — מה הוחל בפועל ומה נכשל, ומתי.
+    if (!in_array('enforce_report', $columns('devices'), true)) {
+        $pdo->exec("ALTER TABLE devices ADD COLUMN enforce_report TEXT NOT NULL DEFAULT ''");
+        $pdo->exec("ALTER TABLE devices ADD COLUMN enforce_at TEXT NOT NULL DEFAULT ''");
+    }
     // שלב 11: ברירת המחדל לאפליקציות (allow_all — חוסם רק מה שסומן; deny_all — רק מה שאושר).
     if (!in_array('apps_posture', $columns('policies'), true)) {
         $pdo->exec("ALTER TABLE policies ADD COLUMN apps_posture TEXT NOT NULL DEFAULT 'allow_all'");
@@ -467,8 +472,11 @@ function ruleSetFor(int $userId): array {
  */
 function policyRev(int $userId): string {
     $user = one('SELECT status FROM users WHERE id = ?', [$userId]);
+    // גם כללי האפליקציות (app_rules): בלעדיהם חסימת אפליקציה לא שינתה את הטביעה, והמכשיר לא ידע
+    // למשוך מדיניות חדשה עד שינוי אחר (סקירה, 2026-10-20).
+    $apps = all('SELECT package, action FROM app_rules WHERE child_id = ? ORDER BY package', [$userId]);
     return substr(md5(json_encode([
         $user['status'] ?? '', policyFor($userId), rulesFor($userId), categoryRulesFor($userId),
-        platformRulesFor($userId), platformItemsFor($userId),
+        platformRulesFor($userId), platformItemsFor($userId), $apps,
     ])), 0, 12);
 }
