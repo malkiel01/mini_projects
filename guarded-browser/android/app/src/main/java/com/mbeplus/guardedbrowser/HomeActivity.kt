@@ -162,7 +162,6 @@ class HomeActivity : AppCompatActivity() {
                 val pm = packageManager
                 val main = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
                 val arr = org.json.JSONArray()
-                val launchers = mutableSetOf<String>()
                 for (ri in pm.queryIntentActivities(main, 0)) {
                     val pkg = ri.activityInfo.packageName
                     if (pkg == store.ownPackage) continue
@@ -170,10 +169,7 @@ class HomeActivity : AppCompatActivity() {
                     val sys = (ri.activityInfo.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
                     arr.put(org.json.JSONObject().apply { put("p", pkg); put("n", label); put("s", if (sys) 1 else 0) })
                 }
-                // חבילת ה-launcher הנוכחית — לא נחסמת.
-                pm.resolveActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), 0)
-                    ?.activityInfo?.packageName?.let { launchers.add(it) }
-                store.launchers = launchers
+                AppPolicy.scan(this, force = true)   // מסכי הבית והמקלדות — לא נחסמים
                 if (arr.length() > 0) Api.apps(store.token, arr) { }
             } catch (e: Exception) { Trace.log("reportApps.fail", e.message ?: "") }
         }.start()

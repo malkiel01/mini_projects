@@ -57,7 +57,8 @@ echo "\n— deny_all —\n";
 check('מעבר ל-deny_all', appsSavePosture($kid, 'deny_all'), '');
 appsSaveRule($kid, 'com.whatsapp', 'allow');
 $p = appsPayload($user($kid, $aApps));
-check('רק וואטסאפ מותר (ומסך ההתקנה — תמיד)', [$p['posture'], $p['allowed']], ['deny_all', array_merge(['com.whatsapp'], UPDATE_PACKAGES)]);
+check('רק וואטסאפ מותר (ומסך ההתקנה — תמיד)', [$p['posture'], $p['allowed']], ['deny_all', array_merge(['com.whatsapp'], UPDATE_PACKAGES, SHELL_PACKAGES)]);
+check('מסך הבית של סמסונג — אי אפשר לחסום', appsSaveRule($kid, 'com.sec.android.app.launcher', 'block'), 'תמיד פתוח — מסך הבית או המקלדת');
 check('מסך ההתקנה — אי אפשר לחסום (דרכו מגדלור מתעדכן)', appsSaveRule($kid, 'com.google.android.packageinstaller', 'block'),
       'תמיד פתוח — דרכו מגדלור מתעדכן');
 check('מגדלור עצמה — אי אפשר לחסום', appsSaveRule($kid, SELF_PACKAGE, 'block'), 'תמיד פתוח — זו מגדלור עצמה');

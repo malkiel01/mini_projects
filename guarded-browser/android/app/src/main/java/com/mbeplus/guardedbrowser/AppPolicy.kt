@@ -32,6 +32,33 @@ object AppPolicy {
         ctx.startActivity(intent)
     }
 
+    @Volatile private var scannedAt = 0L
+
+    /**
+     * מה במכשיר לעולם לא נחסם, ועל מה חל "רק מה שאישרתי". נקרא משירות הנגישות לפני כל בדיקה — בפועל
+     * לכל היותר פעם בדקה.
+     *
+     * באג (2026-10-20): מסך הבית נמצא רק כ-launcher *ברירת המחדל*, ובאנדרואיד 11+ בלי <queries> מתאים
+     * בכלל לא נמצא — ולכן ב"רק מה שאישרתי" לחיצה על "בית" פתחה את מסך החסימה. עכשיו: כל מסכי הבית
+     * וכל המקלדות לעולם לא נחסמים, ו"רק מה שאישרתי" חל רק על אפליקציות עם אייקון (לא על רכיבי מערכת).
+     */
+    fun scan(ctx: android.content.Context, force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (!force && now - scannedAt < 60_000) return
+        scannedAt = now
+        try {
+            val pm = ctx.packageManager
+            val store = Store(ctx)
+            val home = android.content.Intent(android.content.Intent.ACTION_MAIN).addCategory(android.content.Intent.CATEGORY_HOME)
+            val keep = pm.queryIntentActivities(home, 0).map { it.activityInfo.packageName }.toMutableSet()
+            pm.queryIntentServices(android.content.Intent("android.view.InputMethod"), 0)
+                .mapTo(keep) { it.serviceInfo.packageName }
+            store.launchers = keep - "android"
+            val main = android.content.Intent(android.content.Intent.ACTION_MAIN).addCategory(android.content.Intent.CATEGORY_LAUNCHER)
+            store.launchable = pm.queryIntentActivities(main, 0).map { it.activityInfo.packageName }.toSet()
+        } catch (e: Exception) { Trace.log("apppolicy.scan", e.message ?: "") }
+    }
+
     /** האם לחסום את החבילה הזו עכשיו, לפי המדיניות השמורה. */
     fun blocked(store: Store, pkg: String): Boolean {
         // משוחרר (SPEC סעיף 5) — כל המגבלות נפתחות, כולל חסימת אפליקציות אחרות.
@@ -43,6 +70,7 @@ object AppPolicy {
         }
         if (pkg in store.appsAllowed) return false
         if (pkg in store.appsBlocked) return true
-        return store.appsPosture == "deny_all"
+        // "רק מה שאישרתי" — רק על אפליקציות שאפשר לפתוח מאייקון; רכיבי מערכת (חלונות, מקלדת) לא נחסמים.
+        return store.appsPosture == "deny_all" && pkg in store.launchable
     }
 }

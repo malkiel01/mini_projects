@@ -30,6 +30,15 @@
             <action android:name="android.intent.action.MAIN"/>
             <category android:name="android.intent.category.LAUNCHER"/>
         </intent>
+        <!-- מסכי הבית (launcher) — בלי זה אנדרואיד 11+ מסתיר אותם, ולחיצה על "בית" נחסמה (באג, 2026-10-20). -->
+        <intent>
+            <action android:name="android.intent.action.MAIN"/>
+            <category android:name="android.intent.category.HOME"/>
+        </intent>
+        <!-- המקלדות — שירות. -->
+        <intent>
+            <action android:name="android.view.InputMethod"/>
+        </intent>
     </queries>
 
     <application

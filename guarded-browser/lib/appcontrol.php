@@ -27,12 +27,27 @@ const APP_POSTURES = ['allow_all', 'deny_all'];
 const UPDATE_PACKAGES = ['com.android.packageinstaller', 'com.google.android.packageinstaller',
                          'com.samsung.android.packageinstaller'];
 
+/**
+ * מסכי הבית והמקלדות הנפוצים — לעולם לא נחסמים. באג (2026-10-20): ב"רק מה שאישרתי" לחיצה על "בית" פתחה
+ * את מסך החסימה, כי הגרסה שבמכשיר לא זיהתה את מסך הבית. נשלחים ברשימת המותרות, כך שגם גרסה שכבר
+ * מותקנת מתוקנת בלי עדכון; מהגרסה הבאה האפליקציה מזהה בעצמה כל מסך בית ומקלדת (AppPolicy.scan).
+ */
+const SHELL_PACKAGES = [
+    'com.sec.android.app.launcher', 'com.google.android.apps.nexuslauncher', 'com.android.launcher',
+    'com.android.launcher3', 'com.miui.home', 'com.mi.android.globallauncher', 'com.huawei.android.launcher',
+    'com.oppo.launcher', 'com.android.launcher.oppo', 'net.oneplus.launcher', 'com.motorola.launcher3',
+    'com.teslacoilsw.launcher', 'com.microsoft.launcher',
+    'com.samsung.android.honeyboard', 'com.sec.android.inputmethod', 'com.google.android.inputmethod.latin',
+    'com.touchtype.swiftkey', 'com.android.inputmethod.latin',
+];
+
 /** מגדלור עצמה — לא מופיעה אצל ההורה כאפליקציה שאפשר לחסום (באפליקציה היא ממילא לא נחסמת לעולם). */
 const SELF_PACKAGE = 'com.mbeplus.guardedbrowser';
 
 /** חבילות שתמיד פתוחות, וההסבר שההורה רואה לידן. */
 function alwaysOpen(string $pkg): string {
     if ($pkg === SELF_PACKAGE) return 'זו מגדלור עצמה';
+    if (in_array($pkg, SHELL_PACKAGES, true)) return 'מסך הבית או המקלדת';
     return in_array($pkg, UPDATE_PACKAGES, true) ? 'דרכו מגדלור מתעדכן' : '';
 }
 
@@ -95,8 +110,8 @@ function appsPayload(array $user): array {
     return [
         'manage'  => true,
         'posture' => appPosture($childId),
-        'blocked' => array_values(array_diff(array_keys(array_filter($rules, fn($a) => $a === 'block')), UPDATE_PACKAGES, [SELF_PACKAGE])),
-        'allowed' => array_values(array_unique(array_merge(array_keys(array_filter($rules, fn($a) => $a === 'allow')), UPDATE_PACKAGES))),
+        'blocked' => array_values(array_diff(array_keys(array_filter($rules, fn($a) => $a === 'block')), UPDATE_PACKAGES, SHELL_PACKAGES, [SELF_PACKAGE])),
+        'allowed' => array_values(array_unique(array_merge(array_keys(array_filter($rules, fn($a) => $a === 'allow')), UPDATE_PACKAGES, SHELL_PACKAGES))),
     ];
 }
 
