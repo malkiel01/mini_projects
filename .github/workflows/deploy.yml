@@ -228,6 +228,8 @@ jobs:
             --exclude='project-manager/data/tmp/' \
             --exclude='org-budget-proposals/data/*.sqlite*' \
             --exclude='org-budget-proposals/data/files/' \
+            --exclude='word-processor/data/*.sqlite*' \
+            --exclude='word-processor/data/media/' \
             --exclude='*.log' --exclude='error_log' \
             --exclude='.DS_Store' --exclude='._*' \
             -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ConnectTimeout=30" \
