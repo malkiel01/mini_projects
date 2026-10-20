@@ -8,7 +8,7 @@
  * ומספר עמוד בכל עמוד, וזום שמגדיל רק את הדפים.
  */
 import { Editor } from '../../vendor/tiptap.js';
-import { extensions } from './extensions.js';
+import { extensions, imageBox } from './extensions.js';
 import { Pages, pageLabel } from './pagination.js';
 import { cleanPastedHtml } from './paste.js';
 
@@ -23,6 +23,8 @@ const FALLBACK = { David: "'David Libre', serif", 'Frank Ruehl': "'Frank Ruhl Li
     Calibri: "'Assistant', sans-serif", Tahoma: "'Heebo', sans-serif" };
 const SIZE_LIST = [8, 9, 10, 10.5, 11, 12, 14, 16, 18, 20, 22, 24, 28, 32, 36, 48, 72];
 const STYLE_NAMES = { normal: 'רגיל', title: 'כותרת מסמך', h1: 'כותרת 1', h2: 'כותרת 2', h3: 'כותרת 3' };
+const WRAP_NAMES = { inline: 'בשורה עם הטקסט', square: 'ריבוע', tight: 'צמוד', topBottom: 'מעל ומתחת', behind: 'מאחורי הטקסט', front: 'לפני הטקסט' };
+const SPACING = [['-1', 'צפוף 1'], ['-0.5', 'צפוף ½'], ['', 'רגיל'], ['0.5', 'מרווח ½'], ['1', 'מרווח 1'], ['2', 'מרווח 2'], ['3', 'מרווח 3']];
 const NUM_FORMATS = { n: '1', page_n: "עמ' 1", n_of_m: '1 מתוך 12', dash_n: '- 1 -', hebrew: 'א, ב, ג' };
 
 export function cssFont(f) {
@@ -309,6 +311,9 @@ export function createWordEditor(root, opts) {
         h('option', { value: '' }, '—'), SIZE_LIST.map(s => h('option', { value: s }, s)));
     const colorIn = h('input', { type: 'color', value: '#c00000', 'aria-label': 'צבע טקסט', oninput: e => chain().setColor(e.target.value).run() });
     const markIn = h('input', { type: 'color', value: '#ffff00', 'aria-label': 'צבע הדגשה', oninput: e => chain().setHighlight({ color: e.target.value }).run() });
+    const spacingSel = h('select.tb-sel.w-spacing', { 'aria-label': 'ריווח בין תווים', title: 'ריווח בין תווים',
+        onchange: e => { e.target.value ? chain().setLetterSpacing(e.target.value + 'pt').run() : chain().unsetLetterSpacing().run(); } },
+        SPACING.map(([v, t]) => h('option', { value: v }, t)));
     const listType = h('select.tb-sel.w-list', { 'aria-label': 'סוג מספור', title: 'סוג מספור',
         onchange: e => {
             if (!ed.isActive('orderedList')) chain().toggleOrderedList().run();
@@ -329,6 +334,7 @@ export function createWordEditor(root, opts) {
         sub: btn(h('span', 'x', h('sub', '2')), 'כתב תחתי', () => chain().toggleSubscript().run()),
         color: h('label.tb.tb-color', { title: 'צבע טקסט' }, h('span', { 'aria-hidden': 'true' }, 'A'), colorIn),
         mark: h('label.tb.tb-color.mark', { title: 'צבע הדגשה' }, h('span', { 'aria-hidden': 'true' }, '🖍'), markIn),
+        painter: btn('🖌', 'העתקת עיצוב (לחיצה כפולה — לכמה מקומות)', e => { if (painter) stopPainter(); else startPainter(false); }, { ondblclick: () => { stopPainter(); startPainter(true); } }),
         clear: btn('⌧', 'ניקוי עיצוב', () => chain().unsetAllMarks().setBlockAttrs({ lineHeight: null, spaceBefore: null, spaceAfter: null, indent: 0 }).unsetTextAlign().run()),
         right: btn(alignIcon('right'), 'יישור לימין', () => chain().setTextAlign('right').run()),
         center: btn(alignIcon('center'), 'מרכוז', () => chain().setTextAlign('center').run()),
@@ -352,7 +358,7 @@ export function createWordEditor(root, opts) {
     bar.append(
         h('div.tb-group', B.undo, B.redo), sep(),
         h('div.tb-group', styleSel, fontSel, sizeSel), sep(),
-        h('div.tb-group', B.bold, B.italic, B.underline, B.strike, B.color, B.mark, B.sup, B.sub, B.clear), sep(),
+        h('div.tb-group', B.bold, B.italic, B.underline, B.strike, B.color, B.mark, B.sup, B.sub, spacingSel, B.painter, B.clear), sep(),
         h('div.tb-group', B.right, B.center, B.left, B.justify), sep(),
         h('div.tb-group', B.bullets, B.numbers, listType, B.outdent, B.indent, B.para), sep(),
         h('div.tb-group', B.table, B.image, imgInput, B.pagebreak), sep(),
@@ -372,6 +378,7 @@ export function createWordEditor(root, opts) {
         const ts = ed.getAttributes('textStyle');
         fontSel.value = FONTS.includes(ts.fontFamily) ? ts.fontFamily : '';
         sizeSel.value = ts.fontSize ? String(parseFloat(ts.fontSize)) : '';
+        spacingSel.value = ts.letterSpacing ? String(parseFloat(ts.letterSpacing)) : '';
         if (ed.isActive('orderedList')) listType.value = ed.getAttributes('orderedList').listType || 'decimal';
         B.undo.disabled = !ed.can().undo();
         B.redo.disabled = !ed.can().redo();
@@ -401,16 +408,25 @@ export function createWordEditor(root, opts) {
             const a = sel.node.attrs;
             const set = attrs => chain().updateAttributes('image', attrs).setNodeSelection(sel.from).run();
             const max = editor.storage.wpPages.contentWidth;
+            const img = editor.view.nodeDOM(sel.from)?.querySelector('img');
+            const natural = img?.naturalWidth ? { w: img.naturalWidth, h: img.naturalHeight } : null;
             const sizeTo = f => {
-                const img = editor.view.nodeDOM(sel.from)?.querySelector('img');
-                const ratio = img && img.naturalWidth ? img.naturalHeight / img.naturalWidth : (a.height && a.width ? a.height / a.width : 1);
-                const w = f === 0 ? Math.min(img?.naturalWidth || max, max) : Math.round(max * f);
-                set({ width: w, height: Math.round(w * ratio) });
+                const g = imageBox(a, natural);
+                const ratio = g.h / g.w;
+                const c = a.crop || {};
+                const keep = 1 - ((c.l || 0) + (c.r || 0)) / 100;   // רוחב החלק שנשאר אחרי החיתוך
+                const w = f === 0 ? (natural?.w || g.w) : Math.round(max * f / keep);
+                set({ width: Math.round(w), height: Math.round(w * ratio) });
             };
-            ctxBar.append(h('span.ctx-title', 'תמונה'),
-                segBtns({ inline: 'בשורה', square: 'ריבוע' }, a.wrap, v => set({ wrap: v }), 'גלישת טקסט'),
+            const wrapSel = h('select.tb-sel', { 'aria-label': 'גלישת טקסט', title: 'גלישת טקסט', onchange: e => set({ wrap: e.target.value, x: 0, y: 0 }) },
+                Object.entries(WRAP_NAMES).map(([k, t]) => h('option', { value: k, selected: (a.wrap || 'inline') === k }, t)));
+            ctxBar.append(h('span.ctx-title', 'תמונה'), wrapSel,
                 segBtns({ right: 'ימין', center: 'מרכז', left: 'שמאל' }, a.align, v => set({ align: v }), 'יישור'),
                 segBtns([['0.25', '¼'], ['0.5', '½'], ['1', 'מלא'], ['0', 'מקורי']], '', v => sizeTo(+v), 'גודל'),
+                btn('⟲', 'סיבוב שמאלה', () => set({ rotate: ((a.rotate || 0) + 270) % 360 })),
+                btn('⟳', 'סיבוב ימינה', () => set({ rotate: ((a.rotate || 0) + 90) % 360 })),
+                btn('✂', 'חיתוך', () => cropDialog(sel.from)),
+                btn('⚙', 'כיתוב, מרחק מהטקסט ותיאור', () => imageDialog(sel.from)),
                 btn('🗑', 'מחיקת התמונה', () => chain().deleteSelection().run()));
         }
     }
@@ -420,6 +436,90 @@ export function createWordEditor(root, opts) {
     }
 
     // ---------- חלונות ----------
+    /** חיתוך: ארבעה מחוונים (אחוזים מכל צד) עם תצוגה חיה. */
+    function cropDialog(pos) {
+        const node = ed.state.doc.nodeAt(pos);
+        if (!node) return;
+        const c = { t: 0, r: 0, b: 0, l: 0, ...(node.attrs.crop || {}) };
+        const shades = { t: h('span.crop-shade'), r: h('span.crop-shade'), b: h('span.crop-shade'), l: h('span.crop-shade') };
+        const paintShade = () => {
+            Object.assign(shades.t.style, { top: 0, left: 0, right: 0, height: c.t + '%' });
+            Object.assign(shades.b.style, { bottom: 0, left: 0, right: 0, height: c.b + '%' });
+            Object.assign(shades.l.style, { top: c.t + '%', bottom: c.b + '%', left: 0, width: c.l + '%' });
+            Object.assign(shades.r.style, { top: c.t + '%', bottom: c.b + '%', right: 0, width: c.r + '%' });
+        };
+        const row = (k, label) => {
+            const out = h('output', c[k] + '%');
+            return h('label.range-row', h('span', label), h('input', { type: 'range', min: 0, max: 45, step: 1, value: c[k], name: k,
+                oninput: e => { c[k] = +e.target.value; out.textContent = c[k] + '%'; paintShade(); } }), out);
+        };
+        sheet('חיתוך תמונה', body => {
+            body.append(h('div.crop-stage', h('div.crop-img', h('img', { src: node.attrs.src, alt: '' }), ...Object.values(shades))),
+                row('t', 'למעלה'), row('b', 'למטה'), row('r', 'ימין'), row('l', 'שמאל'),
+                h('p.hint', 'החלק הכהה ייחתך. אפשר לחזור ולהחזיר — התמונה המקורית נשמרת.'));
+            paintShade();
+        }, () => {
+            const crop = c.t || c.r || c.b || c.l ? { t: c.t, r: c.r, b: c.b, l: c.l } : null;
+            ed.chain().focus().setNodeSelection(pos).updateAttributes('image', { crop }).setNodeSelection(pos).run();
+        });
+    }
+
+    /** כיתוב, מרחק מהטקסט ותיאור (alt). */
+    function imageDialog(pos) {
+        const a = ed.state.doc.nodeAt(pos)?.attrs;
+        if (!a) return;
+        sheet('תמונה', body => {
+            body.append(
+                field('כיתוב מתחת לתמונה', h('input', { name: 'caption', value: a.caption || '', maxlength: 300 })),
+                field('מרחק מהטקסט (נק\')', numInput('dist', a.dist ?? '', { min: 0, max: 72, placeholder: '9' })),
+                field('תיאור לקוראי מסך', h('input', { name: 'alt', value: a.alt || '', maxlength: 300 })));
+        }, form => {
+            const f = new FormData(form);
+            const d = f.get('dist');
+            ed.chain().focus().setNodeSelection(pos).updateAttributes('image', {
+                caption: String(f.get('caption')).trim(), alt: String(f.get('alt')).trim(), dist: d === '' ? null : Math.max(0, Math.min(72, +d)),
+            }).setNodeSelection(pos).run();
+        });
+    }
+
+    // ---------- העתקת עיצוב: לחיצה — פעם אחת; לחיצה כפולה — עד Esc או לחיצה נוספת ----------
+    let painter = null;
+    function startPainter(sticky) {
+        const { $from } = ed.state.selection;
+        const p = $from.parent;
+        const block = {};
+        for (const k of ['textAlign', 'lineHeight', 'spaceBefore', 'spaceAfter', 'indent', 'dir']) if (k in (p.attrs || {})) block[k] = p.attrs[k];
+        painter = { marks: (ed.state.storedMarks || $from.marks()).map(m => ({ type: m.type.name, attrs: m.attrs })), block, sticky };
+        B.painter.classList.add('on');
+        ed.view.dom.classList.add('painting');
+        toast(sticky ? 'העתקת עיצוב — סמנו טקסט (Esc לסיום)' : 'העתקת עיצוב — סמנו את הטקסט');
+    }
+    function stopPainter() {
+        painter = null;
+        B.painter.classList.remove('on');
+        ed.view.dom.classList.remove('painting');
+    }
+    function applyPainter() {
+        if (!painter) return;
+        let { from, to, empty } = ed.state.selection;
+        if (empty) {   // לחיצה בתוך מילה — המילה כולה, כמו ב-Word
+            const $p = ed.state.selection.$from;
+            const text = $p.parent.textContent;
+            let s0 = $p.parentOffset, e0 = $p.parentOffset;
+            while (s0 > 0 && /\S/.test(text[s0 - 1])) s0--;
+            while (e0 < text.length && /\S/.test(text[e0])) e0++;
+            if (s0 === e0) return;
+            from = $p.start() + s0; to = $p.start() + e0;
+        }
+        let c = ed.chain().setTextSelection({ from, to }).unsetAllMarks();
+        for (const m of painter.marks) c = c.setMark(m.type, m.attrs);
+        c.setBlockAttrs(painter.block).run();
+        if (!painter.sticky) stopPainter();
+    }
+    editor.view.dom.addEventListener('mouseup', () => { if (painter) setTimeout(applyPainter, 0); });
+    editor.view.dom.addEventListener('touchend', () => { if (painter) setTimeout(applyPainter, 0); });
+    editor.view.dom.addEventListener('keydown', e => { if (e.key === 'Escape' && painter) stopPainter(); });
+
     function paragraphDialog() {
         const node = ed.state.selection.$from.parent;
         const a = node.attrs || {};

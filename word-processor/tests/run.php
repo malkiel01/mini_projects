@@ -339,6 +339,45 @@ check('doc_delete: המסמך והתמונות שלו נמחקו', throws(fn() =
 check('העותק לא נפגע', media_of_doc($imgId, $copy) !== null);
 
 // ======================================================================
+section('שלב 2: גלישת תמונות, חיתוך, סיבוב, כיתוב, ריווח תווים');
+$docI = doc_new("c:$B", 'תמונות', null, null, 'u1', 'דנה');
+$mi = media_store($docI, $png);
+$img = fn(array $a) => ['type' => 'image', 'attrs' => ['media' => $mi['id'], 'width' => 200, 'height' => 100] + $a];
+$jsonI = ['type' => 'doc', 'content' => [
+    ['type' => 'paragraph', 'content' => [$img(['wrap' => 'tight', 'align' => 'left', 'dist' => 12]), ['type' => 'text', 'text' => 'צמוד']]],
+    ['type' => 'paragraph', 'content' => [$img(['wrap' => 'topBottom', 'align' => 'center']), ['type' => 'text', 'text' => 'מעל ומתחת']]],
+    ['type' => 'paragraph', 'content' => [$img(['wrap' => 'behind', 'x' => 40, 'y' => 10]), ['type' => 'text', 'text' => 'מאחורי']]],
+    ['type' => 'paragraph', 'content' => [$img(['wrap' => 'front', 'x' => -5, 'y' => 0]), ['type' => 'text', 'text' => 'לפני']]],
+    ['type' => 'paragraph', 'content' => [$img(['wrap' => 'inline', 'crop' => ['t' => 10, 'r' => 0, 'b' => 10, 'l' => 25], 'rotate' => 90, 'caption' => 'איור 1: מבנה הארגון'])]],
+    ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'מרווח', 'marks' => [['type' => 'textStyle', 'attrs' => ['letterSpacing' => '2pt']]]],
+        ['type' => 'text', 'text' => 'צפוף', 'marks' => [['type' => 'textStyle', 'attrs' => ['letterSpacing' => '-1pt']]]]]],
+]];
+$rowI = doc_save(doc_find($docI, "c:$B"), $jsonI, null, 'u1', 'דנה');
+$ox = export_ooxml(doc_json($rowI), page_normalize([]));
+$d = new DOMDocument();
+check('ooxml (שלב 2): XML תקין', @$d->loadXML($wrap($ox['body'])));
+check('צמוד → wrapTight עם מצולע, מרחק 12 נק׳', str_contains($ox['body'], '<wp:wrapTight wrapText="bothSides"><wp:wrapPolygon') && str_contains($ox['body'], 'distL="152400"') && str_contains($ox['body'], '<wp:align>left</wp:align>'));
+check('מעל ומתחת → wrapTopAndBottom, מרחק למעלה ולמטה', str_contains($ox['body'], '<wp:wrapTopAndBottom/>') && str_contains($ox['body'], 'distT="114300" distB="114300"'));
+check('מאחורי הטקסט → wrapNone + behindDoc=1 + מיקום', str_contains($ox['body'], 'behindDoc="1"') && str_contains($ox['body'], '<wp:posOffset>' . (40 * 9525) . '</wp:posOffset>'));
+check('לפני הטקסט → wrapNone + behindDoc=0', substr_count($ox['body'], '<wp:wrapNone/>') === 2 && str_contains($ox['body'], '<wp:posOffset>' . (-5 * 9525) . '</wp:posOffset>'));
+check('חיתוך → srcRect (אלפיות האחוז), החלק הנראה ב-extent', str_contains($ox['body'], '<a:srcRect l="25000" t="10000" r="0" b="10000"/>') && str_contains($ox['body'], '<wp:extent cx="' . (150 * 9525) . '" cy="' . (80 * 9525) . '"/>'));
+check('סיבוב 90° → rot=5400000 ו-effectExtent', str_contains($ox['body'], 'rot="5400000"') && preg_match('/<wp:effectExtent l="0" t="([1-9]\d*)" r="0" b="\1"\/>/', $ox['body']) === 1);
+check('כיתוב → פסקה ממורכזת אחרי התמונה', str_contains($ox['body'], ': מבנה הארגון') && str_contains($ox['body'], '</w:p><w:p><w:pPr><w:bidi/><w:spacing w:before="40" w:after="120"/><w:jc w:val="center"/>'));
+check('ריווח תווים → w:spacing (גם שלילי)', str_contains($ox['body'], '<w:spacing w:val="40"/>') && str_contains($ox['body'], '<w:spacing w:val="-20"/>'));
+$hI = export_html(doc_json($rowI), page_normalize([]))['html'];
+check('html: כל סוגי הגלישה, חיתוך, סיבוב, כיתוב, ריווח', str_contains($hI, 'wrap-tight align-left') && str_contains($hI, 'wrap-topBottom') && str_contains($hI, 'wrap-behind')
+    && str_contains($hI, 'left:40px;top:10px') && str_contains($hI, 'rotate(90deg)') && str_contains($hI, 'margin-left:-50px') && str_contains($hI, 'wp-img-cap">איור 1')
+    && str_contains($hI, 'letter-spacing:2pt') && str_contains($hI, 'letter-spacing:-1pt'));
+$docxI = export_docx(doc_json($rowI), page_normalize([]));
+$back = import_docx($docxI, $docI);
+$imgs = [];
+walk_nodes($back['json'], function ($n) use (&$imgs) { if (($n['type'] ?? '') === 'image') $imgs[] = $n['attrs']; return $n; });
+check('docx → JSON: כל סוגי הגלישה חוזרים', array_column($imgs, 'wrap') === ['tight', 'topBottom', 'behind', 'front', 'inline'], json_encode(array_column($imgs, 'wrap')));
+check('docx → JSON: חיתוך, סיבוב, מיקום ומרחק חוזרים', ($imgs[4]['crop'] ?? null) == ['t' => 10, 'r' => 0, 'b' => 10, 'l' => 25] && ($imgs[4]['rotate'] ?? 0) === 90
+    && abs($imgs[4]['width'] - 200) <= 1 && ($imgs[2]['x'] ?? null) === 40 && ($imgs[3]['x'] ?? null) === -5 && ($imgs[0]['dist'] ?? null) == 12);
+check('docx → JSON: ריווח תווים חוזר', str_contains(json_encode($back['json']), '"letterSpacing":"2pt"') && str_contains(json_encode($back['json']), '"letterSpacing":"-1pt"'));
+
+// ======================================================================
 section('הגדרות עמוד');
 $p = page_normalize(['size' => 'Legal', 'orientation' => 'landscape', 'margins' => ['top' => 500, 'left' => 'x'], 'font' => ['family' => 'David<script>', 'size' => 200],
     'styles' => ['h1' => ['size' => 18, 'color' => 'red', 'underline' => true]], 'numbering' => ['format' => 'bad', 'align' => 'left']]);

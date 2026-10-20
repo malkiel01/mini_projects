@@ -79,16 +79,37 @@
 .wp-break { display: block; pointer-events: none; user-select: none; }
 .wp-doc .ProseMirror-gapcursor { display: none; }
 
-/* תמונות */
-.wp-img { position: relative; display: inline-block; line-height: 0; max-inline-size: 100%; }
-.wp-img img { max-inline-size: 100%; block-size: auto; }
-.wp-img.wrap-square.align-right { float: right; margin: 2pt 0 4pt 9pt; }
-.wp-img.wrap-square.align-left { float: left; margin: 2pt 9pt 4pt 0; }
-.wp-img.wrap-square.align-center { display: block; margin: 4pt auto; inline-size: fit-content; }
-.wp-img.selected img, .wp-img.ProseMirror-selectednode img { outline: 2px solid #2d4a8a; outline-offset: 1px; }
-.wp-img-handle { display: none; position: absolute; inline-size: 14px; block-size: 14px; bottom: -6px; left: -6px; background: #2d4a8a; border: 2px solid #fff;
-    border-radius: 3px; cursor: nesw-resize; touch-action: none; }
+/* תמונות: מסגרת בגודל שעל הדף (--bw × --bh, אחרי חיתוך וסיבוב); בתוכה חלון החיתוך שמסתובב סביב המרכז */
+.wp-img { position: relative; display: inline-block; vertical-align: bottom; line-height: 1; inline-size: var(--bw); max-inline-size: none; text-indent: 0; }
+.wp-img::before { content: ''; display: block; block-size: var(--bh); }
+.wp-img-box { position: absolute; top: calc(var(--bh) / 2); left: 50%; overflow: hidden; transform-origin: 50% 50%; }
+.wp-img-box img { display: block; max-inline-size: none; }
+.wp-img-cap { display: block; text-align: center; font-size: 9pt; font-style: italic; color: #333; padding-top: 2pt; line-height: 1.2; white-space: normal; }
+.wp-img.wrap-square, .wp-img.wrap-tight { float: right; margin: 0 0 var(--dist) var(--dist); }
+.wp-img.wrap-square.align-left, .wp-img.wrap-tight.align-left { float: left; margin: 0 var(--dist) var(--dist) 0; }
+.wp-img.wrap-square.align-center, .wp-img.wrap-tight.align-center { float: none; display: block; margin: var(--dist) auto; }
+.wp-img.wrap-tight { shape-margin: var(--dist); shape-image-threshold: .5; }
+.wp-img.wrap-topBottom { display: block; clear: both; margin-block: var(--dist); margin-inline-start: 0; }
+.wp-img.wrap-topBottom.align-center { margin-inline: auto; }
+.wp-img.wrap-topBottom.align-left { margin-inline-start: auto; }
+.wp-img.wrap-behind, .wp-img.wrap-front { position: absolute; margin: 0; }
+.wp-img.wrap-behind { z-index: -1; }
+.wp-img.wrap-front { z-index: 2; }
+.wp-img.wrap-behind.selected .wp-img-box, .wp-img.wrap-front.selected .wp-img-box { cursor: move; touch-action: none; }
+.wp-doc p, .wp-doc h1, .wp-doc h2, .wp-doc h3 { position: relative; }
+.wp-pages { z-index: -2; }
+.wp-img.selected .wp-img-box, .wp-img.ProseMirror-selectednode .wp-img-box { outline: 2px solid #2d4a8a; outline-offset: 1px; }
+.wp-img-handle { display: none; position: absolute; inline-size: 14px; block-size: 14px; top: calc(var(--bh) - 8px); left: -6px; background: #2d4a8a; border: 2px solid #fff;
+    border-radius: 3px; cursor: nesw-resize; touch-action: none; z-index: 3; }
 .wp-img.selected .wp-img-handle { display: block; }
+.wp-doc.painting { cursor: copy; }
+.crop-stage { position: relative; display: grid; place-items: center; background: repeating-conic-gradient(#eee 0 25%, #fff 0 50%) 0 0 / 16px 16px;
+    border: 1px solid var(--line); border-radius: var(--r); padding: var(--s2); }
+.crop-stage .crop-img { position: relative; max-inline-size: 100%; }
+.crop-stage img { display: block; max-inline-size: 100%; max-block-size: 40dvh; }
+.crop-stage .crop-shade { position: absolute; background: rgba(0, 0, 0, .55); pointer-events: none; }
+.range-row { display: grid; grid-template-columns: 4.5em 1fr 3em; align-items: center; gap: var(--s2); }
+.range-row input { min-height: 28px; padding: 0; border: 0; box-shadow: none; }
 .readonly .wp-img-handle { display: none !important; }
 .wp-doc[contenteditable="false"] { caret-color: transparent; }
 
@@ -105,3 +126,4 @@
     .wp-page-break::after { display: none !important; }
     .wp-img-handle { display: none !important; }
 }
+.tb-sel.w-spacing { inline-size: 6.6em; }

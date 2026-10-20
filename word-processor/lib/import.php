@@ -429,6 +429,8 @@ final class DocxCtx
         if (is_numeric($sz)) $ts['fontSize'] = ((float)$sz / 2) . 'pt';
         $font = (string)$xp->evaluate('string(w:rFonts/@w:cs)', $rpr) ?: (string)$xp->evaluate('string(w:rFonts/@w:ascii)', $rpr);
         if ($font !== '') $ts['fontFamily'] = font_name($font);
+        $sp = (string)$xp->evaluate('string(w:spacing/@w:val)', $rpr);
+        if (is_numeric($sp) && (int)$sp !== 0) $ts['letterSpacing'] = round((int)$sp / 20, 1) . 'pt';
         if ($ts) $m[] = ['type' => 'textStyle', 'attrs' => $ts];
         $hl = (string)$xp->evaluate('string(w:highlight/@w:val)', $rpr);
         $fill = (string)$xp->evaluate('string(w:shd/@w:fill)', $rpr);
@@ -454,12 +456,40 @@ final class DocxCtx
             return null;
         }
         $cx = (int)$xp->evaluate('string(.//wp:extent/@cx)', $drawing);
-        $w = $cx > 0 ? (int)round($cx / EMU_PER_PX_IMPORT) : $m['width'];
-        $h = $m['width'] ? (int)round($w * $m['height'] / $m['width']) : $m['height'];
-        $anchor = $xp->query('.//wp:anchor', $drawing)->length > 0;
+        $anchor = $xp->query('.//wp:anchor', $drawing)->item(0);
+        $wrap = 'inline';
+        if ($anchor instanceof DOMElement) {
+            $wrap = match (true) {
+                $xp->query('wp:wrapSquare', $anchor)->length > 0 => 'square',
+                $xp->query('wp:wrapTight|wp:wrapThrough', $anchor)->length > 0 => 'tight',
+                $xp->query('wp:wrapTopAndBottom', $anchor)->length > 0 => 'topBottom',
+                default => $anchor->getAttribute('behindDoc') === '1' ? 'behind' : 'front',
+            };
+        }
         $align = (string)$xp->evaluate('string(.//wp:positionH/wp:align)', $drawing);
-        return ['type' => 'image', 'attrs' => ['media' => $m['id'], 'width' => $w, 'height' => $h,
-            'wrap' => $anchor ? 'square' : 'inline', 'align' => in_array($align, ['left', 'right', 'center'], true) ? $align : 'right']];
+        // חיתוך: srcRect באלפיות האחוז; extent הוא החלק הנראה — מחשבים את גודל התמונה המלאה
+        $crop = [];
+        foreach (['l', 't', 'r', 'b'] as $k) {
+            $v = (string)$xp->evaluate("string(.//a:srcRect/@$k)", $drawing);
+            if (is_numeric($v) && (int)$v > 0) $crop[$k] = min(45, round((int)$v / 1000, 1));
+        }
+        $visW = $cx > 0 ? $cx / EMU_PER_PX_IMPORT : $m['width'];
+        $w = (int)round($visW / max(0.1, 1 - (($crop['l'] ?? 0) + ($crop['r'] ?? 0)) / 100));
+        $h = $m['width'] ? (int)round($w * $m['height'] / $m['width']) : $m['height'];
+        $rot = (int)round(((int)$xp->evaluate('string(.//a:xfrm/@rot)', $drawing)) / 60000 / 90) * 90 % 360;
+        $attrs = ['media' => $m['id'], 'width' => $w, 'height' => $h, 'wrap' => $wrap,
+            'align' => in_array($align, ['left', 'right', 'center'], true) ? $align : 'right'];
+        if ($crop) $attrs['crop'] = ['t' => $crop['t'] ?? 0, 'r' => $crop['r'] ?? 0, 'b' => $crop['b'] ?? 0, 'l' => $crop['l'] ?? 0];
+        if ($rot) $attrs['rotate'] = $rot;
+        if ($anchor instanceof DOMElement) {
+            $d = $wrap === 'topBottom' ? $anchor->getAttribute('distT') : $anchor->getAttribute('distL');
+            if (is_numeric($d)) $attrs['dist'] = round((int)$d / 12700, 1);
+            if (in_array($wrap, ['behind', 'front'], true)) {
+                $attrs['x'] = (int)round(((int)$xp->evaluate('string(wp:positionH/wp:posOffset)', $anchor)) / EMU_PER_PX_IMPORT);
+                $attrs['y'] = (int)round(((int)$xp->evaluate('string(wp:positionV/wp:posOffset)', $anchor)) / EMU_PER_PX_IMPORT);
+            }
+        }
+        return ['type' => 'image', 'attrs' => $attrs];
     }
 
     private function table(DOMElement $tbl, DOMXPath $xp): array

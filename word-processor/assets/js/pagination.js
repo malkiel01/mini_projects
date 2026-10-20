@@ -188,7 +188,9 @@ function lines(view, dom, node, pos, brk, logical, rr, zoom, units, heading) {
     const walker = document.createTreeWalker(dom, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, {
         acceptNode: n => {
             if (n.nodeType === 1) {
-                if (n.classList.contains('wp-break') || n.classList.contains('wrap-square')) return NodeFilter.FILTER_REJECT;
+                // רווחים שלנו, ותמונות שאינן בשורה (צפות / מאחורי / לפני) — לא שורות טקסט
+                if (n.classList.contains('wp-break') || /\bwrap-(square|tight|behind|front)\b/.test(n.className)) return NodeFilter.FILTER_REJECT;
+                if (n.classList.contains('wp-img')) { const r = n.getBoundingClientRect(); if (r.height) rects.push([r.top, r.bottom]); return NodeFilter.FILTER_REJECT; }
                 return n.tagName === 'IMG' || n.tagName === 'BR' ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
             }
             return n.nodeValue ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
