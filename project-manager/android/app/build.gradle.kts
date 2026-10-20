@@ -21,6 +21,9 @@ android {
         versionCode = vCode
         versionName = "1.$vCode"
         buildConfigField("String", "WEB_URL", "\"$webUrl\"")
+        resValue("string", "asset_statements",
+            "[{\\\"relation\\\": [\\\"delegate_permission/common.handle_all_urls\\\"], " +
+            "\\\"target\\\": {\\\"namespace\\\": \\\"web\\\", \\\"site\\\": \\\"https://mbe-plus.com\\\"}}]")
     }
 
     signingConfigs {

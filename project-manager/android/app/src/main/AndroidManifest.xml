@@ -13,6 +13,9 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.PM">
 
+        <!-- האישור ההדדי: האפליקציה מצהירה על האתר, והאתר (assetlinks.json) עליה — כך הפלטפורמה יודעת שהיא מותקנת -->
+        <meta-data android:name="asset_statements" android:value="@string/asset_statements" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -32,6 +35,14 @@
                 <action android:name="android.intent.action.SEND_MULTIPLE" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="*/*" />
+            </intent-filter>
+            <!-- קישור לאתר נפתח באפליקציה (App Link) — כך "פתיחה" בכרטיס של הכלים הדיגיטליים מגיעה לכאן עם
+                 ?platform-handoff=<קוד>, והשער מחבר את המשתמש (platform/docs/auth.md, "העברת התחברות") -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="mbe-plus.com" android:pathPrefix="/mini_projects/project-manager/" />
             </intent-filter>
             <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
             <!-- אנדרואיד 9 ומטה: אותם קיצורים דרך ספריית sharetarget -->
