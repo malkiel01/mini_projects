@@ -67,12 +67,16 @@ function own_manifest(string $app): ?string
 }
 
 /** מוסיף לפני </head> את הסקריפט, ואם אין manifest בדף — את ה-manifest של הפלטפורמה. */
-function inject_html(string $html, string $app, array $cfg, string $base): string
+function inject_html(string $html, string $app, array $cfg, string $base, bool $beacon = true): string
 {
     $pos = stripos($html, '</head>');
-    if ($pos === false || str_contains($html, 'pwa-beacon.js')) return $html;
+    if ($pos === false || str_contains($html, 'pwa-beacon.js') || str_contains($html, 'platform/assets/diag.js')) return $html;
     $e = fn(string $s) => htmlspecialchars($s, ENT_QUOTES, 'UTF-8');
-    $tags = '<script src="' . $e($base . 'platform/assets/pwa-beacon.js') . '" defer'
+    // יומן האבחון (lib/diag.php) — בכל דף, גם כשאין פס התקנה: בעיקר בתוך APK ובדפדפן אחר
+    $diag = '<script src="' . $e($base . 'platform/assets/diag.js') . '" defer'
+          . ' data-app="' . $e($app) . '" data-api="' . $e($base . 'platform/api.php') . '"></script>';
+    if (!$beacon) return substr($html, 0, $pos) . $diag . substr($html, $pos);
+    $tags = $diag . '<script src="' . $e($base . 'platform/assets/pwa-beacon.js') . '" defer'
           . ' data-app="' . $e($app) . '" data-name="' . $e((string)($cfg['name'] ?? $app)) . '"'
           . ' data-api="' . $e($base . 'platform/api.php') . '"'
           // "install": {"banner": false} ב-app.json — בלי הפס "התקנה"; בדיקת ההתקנה נשארת.
@@ -131,14 +135,14 @@ function absolute(string $path): string
  */
 function inject_php_page(string $app, array $cfg, string $base, string $path, array $params): void
 {
-    if (!wanted($app, $cfg, $path, $params)) return;
+    $beacon = wanted($app, $cfg, $path, $params);   // בלעדיו — רק יומן האבחון
     if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET') return;
     $dest = $_SERVER['HTTP_SEC_FETCH_DEST'] ?? '';
     if ($dest !== '' ? $dest !== 'document' : !str_contains($_SERVER['HTTP_ACCEPT'] ?? '', 'text/html')) return;
-    ob_start(static function (string $buf, int $phase) use ($app, $cfg, $base): string {
+    ob_start(static function (string $buf, int $phase) use ($app, $cfg, $base, $beacon): string {
         foreach (headers_list() as $h) {
             if (stripos($h, 'content-type:') === 0 && stripos($h, 'text/html') === false) return $buf;
         }
-        return inject_html($buf, $app, $cfg, $base);
+        return inject_html($buf, $app, $cfg, $base, $beacon);
     });
 }

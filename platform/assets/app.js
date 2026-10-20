@@ -14,6 +14,9 @@ function el(tag, props = {}, children = []) {
     return node;
 }
 
+// יומן האבחון (assets/diag.js) — אירועים של הפלטפורמה: כניסה, חזרה לאפליקציה, התקנה ופתיחה
+const dlog = (event, info) => { try { window.PlatformDiag?.log(event, info); } catch { /* */ } };
+
 async function api(action, body) {
     const opts = { cache: 'no-store', headers: {} };
     if (body !== undefined) {
@@ -137,7 +140,7 @@ function showLogin() {
             field('סיסמה', 'password', { type: 'password', ltr: true, autocomplete: 'current-password' }),
         ],
         submit: 'כניסה',
-        onSubmit: async (data) => { await api('login', data); justSignedIn = true; start(); },
+        onSubmit: async (data) => { await api('login', data); dlog('login', { next: new URLSearchParams(location.search).get('next') || '' }); justSignedIn = true; start(); },
         footer: [switchLink('אין לכם חשבון?', 'הרשמה', showRegister)],
     }));
 }
@@ -586,6 +589,7 @@ async function detectNativeApps() {
     try {
         const list = await navigator.getInstalledRelatedApps();
         nativeInstalled = new Set(list.filter(a => a.platform === 'play').map(a => a.id));
+        dlog('installed-apps', { apps: [...nativeInstalled].join(',') || '(אין)' });
     } catch { nativeInstalled = null; }
 }
 
@@ -603,7 +607,7 @@ function androidTiles(app, tile) {
     const s = androidState(app);
     const download = (icon, text) => {
         const t = tile(icon, text, { href: app.install.apk, download: '' });
-        t.addEventListener('click', () => apkRemember(app.id, s.latest));
+        t.addEventListener('click', () => { apkRemember(app.id, s.latest); dlog('apk-download', { app: app.id, version: s.latest, installed: s.installed, mine: s.mine }); });
         return t;
     };
     if (!s.installed) return [download('📲', s.latest ? `התקנה · גרסה ${s.latest}` : 'התקנה')];
@@ -612,7 +616,9 @@ function androidTiles(app, tile) {
         const u = new URL(app.href, document.baseURI);
         const intent = `intent://${u.host}${u.pathname}${u.search}#Intent;scheme=https;package=${s.pkg};` +
             `S.browser_fallback_url=${encodeURIComponent(u.href)};end`;
-        out.push(tile('▶️', 'פתיחה', { href: intent }));
+        const open = tile('▶️', 'פתיחה', { href: intent });
+        open.addEventListener('click', () => dlog('open-app', { app: app.id, pkg: s.pkg }));
+        out.push(open);
     }
     if (s.update) out.push(download('⬆️', `עדכון לגרסה ${s.latest}`));
     else out.push(download('🔄', 'התקנה מחדש'));
@@ -1026,6 +1032,7 @@ function goNext() {
     if (next && next.startsWith('/') && !next.startsWith('//')) {
         // מה שאחרי # (#invite=…, #reset=…) לא מגיע לשרת, ולכן אינו ב-?next. הדפדפן משאיר אותו
         // בכתובת אחרי הפניית השער (הפניה בלי # שומרת את ה-# המקורי) — ומכאן מחזירים אותו לכלי.
+        dlog('go-next', { next });
         location.replace(next.includes('#') ? next : next + location.hash);
         return true;
     }
@@ -1041,7 +1048,7 @@ async function start() {
         showTopbar();
         showUserbar(me.user);
         if (me.setupNeeded) return showSetup(me);
-        if (!me.user) return showLogin();
+        if (!me.user) { dlog('show-login', { next: new URLSearchParams(location.search).get('next') || '' }); return showLogin(); }
         // ממתין ועוד לא אימת את המייל. מי שהמנהל כבר אישר — נכנס גם בלי (המנהל החליט).
         if (me.user.status === 'pending' && !me.user.email_verified) return showVerifyPending(me.user);
         if (me.user.status === 'pending') {

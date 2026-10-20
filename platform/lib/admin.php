@@ -410,3 +410,32 @@ function admin_sso_revoke(array $body): never
     sso_revoke((int)($body['user_id'] ?? 0), (string)($body['client_id'] ?? ''), 'admin');
     json_out(['ok' => true]);
 }
+
+/**
+ * GET admin_diag&limit=300[&user=<id>][&app=<id>][&device=<id>][&q=טקסט] — יומן האבחון (lib/diag.php), החדש
+ * למעלה. ⚙️ ← 📜 יומן.
+ */
+function admin_diag(array $admin, array $q): never
+{
+    \Platform\Diag\ensure(db());
+    $limit = max(20, min(1000, (int)($q['limit'] ?? 300)));
+    $where = ['1'];
+    $args = [];
+    if (($q['user'] ?? '') !== '') { $where[] = 'd.user_id = ?'; $args[] = (int)$q['user']; }
+    if (($q['app'] ?? '') !== '') { $where[] = 'd.app = ?'; $args[] = (string)$q['app']; }
+    if (($q['device'] ?? '') !== '') { $where[] = 'd.device = ?'; $args[] = (string)$q['device']; }
+    if (($q['q'] ?? '') !== '') {
+        $where[] = '(d.event LIKE ? OR d.path LIKE ? OR d.ua LIKE ? OR d.info LIKE ? OR d.referrer LIKE ?)';
+        array_push($args, ...array_fill(0, 5, '%' . (string)$q['q'] . '%'));
+    }
+    $st = db()->prepare('SELECT d.id, d.at, d.event, d.app, d.user_id, d.device, d.ua, d.path, d.referrer, d.info,
+                                u.display_name AS user_name
+                           FROM diag_log d LEFT JOIN users u ON u.id = d.user_id
+                          WHERE ' . implode(' AND ', $where) . ' ORDER BY d.id DESC LIMIT ' . $limit);
+    $st->execute($args);
+    $rows = array_map(function ($r) {
+        $r['info'] = json_decode((string)$r['info'], true) ?: [];
+        return $r;
+    }, $st->fetchAll());
+    json_out(['rows' => $rows]);
+}

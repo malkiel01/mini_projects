@@ -250,6 +250,28 @@ function device_label(string $ua): string
     return $browser !== '' ? "$os · $browser" : $os;
 }
 
+/**
+ * יומן אבחון (lib/diag.php): פתיחת דף באפליקציה מחוברת — "gate:ok", או הסירוב ("gate:login" …),
+ * עם מה שהשרת רואה: האם עוגיית הכניסה נשלחה ותקפה, מאיפה הגיעה הבקשה.
+ */
+function diag_nav(string $event, string $app): void
+{
+    try {
+        if (!is_navigation() || !is_file(DB_FILE)) return;
+        require_once __DIR__ . '/diag.php';
+        $user = current_user();
+        $ua = (string)($_SERVER['HTTP_USER_AGENT'] ?? '');
+        \Platform\Diag\write(pdo(), [
+            'event' => $event, 'app' => $app, 'user_id' => $user ? (int)$user['id'] : null,
+            'device' => device_label($ua), 'ua' => $ua,
+            'path' => (string)($_SERVER['REQUEST_URI'] ?? ''), 'referrer' => (string)($_SERVER['HTTP_REFERER'] ?? ''),
+            'info' => \Platform\Diag\request_info(isset($_COOKIE[COOKIE]), $user !== null),
+        ]);
+    } catch (\Throwable $e) {
+        error_log('platform diag: ' . $e->getMessage());
+    }
+}
+
 /** רושם כניסה לאפליקציה. נקרא אחרי שהשער התיר את הבקשה. */
 function record_visit(string $app): void
 {
