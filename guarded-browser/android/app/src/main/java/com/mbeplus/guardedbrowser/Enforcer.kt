@@ -17,6 +17,31 @@ import android.os.UserManager
  */
 object Enforcer {
 
+    /**
+     * מה נעול במכשיר "בעל מכשיר" (בעל המערכת, 2026-10-20). שעון — כדי שאי אפשר לעקוף חלון שעות; חשבונות,
+     * VPN ומקור לא ידוע — כדי שאי אפשר לעקוף את הסינון; מיקום — בלי שיתוף.
+     */
+    private val RESTRICTIONS = listOf(
+        UserManager.DISALLOW_FACTORY_RESET, UserManager.DISALLOW_SAFE_BOOT,
+        UserManager.DISALLOW_ADD_USER, UserManager.DISALLOW_DEBUGGING_FEATURES,
+        UserManager.DISALLOW_CONFIG_DATE_TIME, UserManager.DISALLOW_MODIFY_ACCOUNTS,
+        UserManager.DISALLOW_CONFIG_VPN, UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES,
+        UserManager.DISALLOW_SHARE_LOCATION,
+    )
+
+    /**
+     * ההתקנה של עדכון (Updater) — DISALLOW_INSTALL_UNKNOWN_SOURCES עלול לחסום גם אותה, ולכן הוא מוסר
+     * לרגע לפני ההתקנה, וחוזר בכישלון (Updater.InstallResult) או ב-apply הבא אחרי הגרסה החדשה.
+     */
+    fun allowInstall(ctx: Context, on: Boolean) {
+        if (!isOwner(ctx)) return
+        val admin = DeviceAdmin.component(ctx)
+        trySet {
+            if (on) dpm(ctx).clearUserRestriction(admin, UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES)
+            else dpm(ctx).addUserRestriction(admin, UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES)
+        }
+    }
+
     fun isOwner(ctx: Context): Boolean =
         dpm(ctx).isDeviceOwnerApp(ctx.packageName)
 
@@ -31,10 +56,7 @@ object Enforcer {
 
         // הגנה על עצמנו ועל המכשיר.
         trySet { dpm.setUninstallBlocked(admin, ctx.packageName, true) }
-        for (r in listOf(UserManager.DISALLOW_FACTORY_RESET, UserManager.DISALLOW_SAFE_BOOT,
-                         UserManager.DISALLOW_ADD_USER, UserManager.DISALLOW_DEBUGGING_FEATURES)) {
-            trySet { dpm.addUserRestriction(admin, r) }
-        }
+        for (r in RESTRICTIONS) trySet { dpm.addUserRestriction(admin, r) }
 
         if (!store.appsManage) { unsuspendAll(ctx, store); return }
 
@@ -74,10 +96,7 @@ object Enforcer {
         val admin = DeviceAdmin.component(ctx)
         unsuspendAll(ctx, store)
         trySet { dpm.setUninstallBlocked(admin, ctx.packageName, false) }
-        for (r in listOf(UserManager.DISALLOW_FACTORY_RESET, UserManager.DISALLOW_SAFE_BOOT,
-                         UserManager.DISALLOW_ADD_USER, UserManager.DISALLOW_DEBUGGING_FEATURES)) {
-            trySet { dpm.clearUserRestriction(admin, r) }
-        }
+        for (r in RESTRICTIONS) trySet { dpm.clearUserRestriction(admin, r) }
     }
 
     /** ההורה מחק את הילדים: מגדלור מסיר את עצמו כבעל מכשיר, והמכשיר חוזר לטלפון רגיל. */

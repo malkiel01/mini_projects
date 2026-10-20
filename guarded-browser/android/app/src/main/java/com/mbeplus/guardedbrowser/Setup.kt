@@ -16,8 +16,9 @@ import android.provider.Settings
  * שלבים חיוניים (required) חוסמים את הכניסה למגדלור עד שהם ניתנו; מומלצים — מוצגים אבל
  * אפשר להמשיך בלעדיהם, וההורה רואה בצד שלו מה חסר.
  *
- * מה שנדרש כאן קיים בכל התקנה רגילה. שליטה מלאה על כל אפליקציות המכשיר = "בעל המכשיר"
- * (שלב 11), שדורש התקנה על מכשיר נקי ולכן אינו חלק מהמסלול הזה.
+ * כל ההרשאות שאפליקציה יכולה לבקש — חובה (בעל המערכת, 2026-10-20): בלי כולן אין כניסה למגדלור.
+ * שליטה מלאה, גם בהגדרות המערכת = "בעל המכשיר" (Enforcer), שאנדרואיד מאפשר רק בהקמה של מכשיר מאופס
+ * (QR מההורה) — ולכן אינו שלב כאן. במכשיר כזה ניהול המכשיר והעדכונים כבר מכוסים.
  */
 object Setup {
 
@@ -63,19 +64,19 @@ object Setup {
             }),
 
         Step(ADMIN, "🛡️", "הגנה על ההגדרות",
-            "מגדיר את מגדלור כמנהל מכשיר: אי אפשר להסיר אותו בלי ההורה, ואפשר לנעול את המסך. מופיע בהגדרות — שקוף לגמרי.", false,
-            { ctx -> DeviceAdmin.active(ctx) },
+            "מגדיר את מגדלור כמנהל מכשיר: אי אפשר להסיר אותו בלי ההורה, ואפשר לנעול את המסך. מופיע בהגדרות — שקוף לגמרי.", true,
+            { ctx -> Enforcer.isOwner(ctx) || DeviceAdmin.active(ctx) },
             { act -> act.startActivity(DeviceAdmin.enableIntent(act)) }),
 
         Step(ACCESS, "📲", "ניהול אפליקציות",
-            "כדי שמגדלור יוכל לחסום אפליקציות אחרות שההורה חסם. נדרש בחשבון שמנהל אפליקציות.",
-            Store(ctx).appsManage,
+            "כדי שמגדלור יוכל לחסום אפליקציות אחרות שההורה חסם, ולהקפיץ את מסך העדכון.",
+            true,
             { c -> accessibilityOn(c) },
             { act -> try { act.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) } catch (e: Exception) {} }),
 
         Step(INSTALL, "⬆️", "עדכונים",
-            "כדי שמגדלור יוכל להתקין עדכון שההורה שולח, בלי להוריד ידנית.", false,
-            { ctx -> Build.VERSION.SDK_INT < Build.VERSION_CODES.O || ctx.packageManager.canRequestPackageInstalls() },
+            "כדי שמגדלור יוכל להתקין את העדכונים — עדכון הוא חובה.", true,
+            { ctx -> Enforcer.isOwner(ctx) || Build.VERSION.SDK_INT < Build.VERSION_CODES.O || ctx.packageManager.canRequestPackageInstalls() },
             { act ->
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
                     try { act.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,

@@ -124,6 +124,7 @@ object Updater {
             setAppPackageName(ctx.packageName)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
         }
+        Enforcer.allowInstall(ctx, true)
         val id = installer.createSession(params)
         installer.openSession(id).use { session ->
             session.openWrite("migdalor.apk", 0, apk.length()).use { out ->
@@ -149,7 +150,10 @@ object Updater {
                     catch (e: Exception) { Trace.log("update.confirm", e.message ?: "") }
                 }
                 PackageInstaller.STATUS_SUCCESS -> Trace.log("update.ok", "")
-                else -> Trace.log("update.status", "$status " + intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE))
+                else -> {
+                    Enforcer.allowInstall(ctx, false)
+                    Trace.log("update.status", "$status " + intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE))
+                }
             }
         }
     }

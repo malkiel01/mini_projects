@@ -221,7 +221,9 @@ try {
             if ($c['status'] !== 'active') fail('הילד מושהה — החזירו אותו קודם');
             [$code, $exp] = pairCreate((int) $c['id']);
             out(['ok' => true, 'code' => $code, 'expires_at' => $exp, 'server' => serverBase(),
-                 'qr' => 'migdalor:pair?c=' . $code . '&s=' . rawurlencode(serverBase())]);
+                 'qr' => 'migdalor:pair?c=' . $code . '&s=' . rawurlencode(serverBase()),
+                 // הקמה כ"בעל מכשיר" (מומלץ): QR שסורקים במסך הפתיחה של מכשיר מאופס. null — עוד אין בנייה חתומה.
+                 'provision' => provisionConfig()]);
 
         /* ── ניהול אפליקציות (שלב 11) ── */
         case 'apps':
