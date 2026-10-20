@@ -212,6 +212,17 @@ class Store(context: Context) {
         return on
     }
 
+    /**
+     * עדכון חובה שהשרת הודיע עליו (Updater): הגרסה והקישור. נשמר — כך שגם אחרי הפעלה מחדש, ובלי
+     * רשת, האפליקציה נשארת נעולה עד שהגרסה החדשה מותקנת.
+     */
+    var updateCode: Int
+        get() = prefs.getInt("update_code", 0)
+        set(v) { prefs.edit().putInt("update_code", v).apply() }
+    var updateUrl: String
+        get() = prefs.getString("update_url", "") ?: ""
+        set(v) { prefs.edit().putString("update_url", v).apply() }
+
     /** ביטים של ההרשאות שניתנו במכשיר (Setup.flags) — נשלח לשרת כדי שההורה יראה. */
     var perms: Int
         get() = prefs.getInt("perms", 0)

@@ -60,11 +60,12 @@ check('ישנה — unknown', deviceAppState($dev($tOld), $latest)['status'], 'u
 check('שם הגרסה', deviceAppState($dev($tNew), $latest)['version_name'], '1.43');
 
 echo "\n— עדכון לאפליקציה חדשה —\n";
-check('בלי בקשה — אין הצעה', deviceUpdateOffer((int) $dev($tNew)['id']), null);
+check('גם בלי בקשה — עדכון חובה', deviceUpdateOffer((int) $dev($tNew)['id']),
+      ['version_code' => 45, 'version_name' => '1.45', 'required' => true, 'url' => APK_URL]);
 check('בקשת עדכון', requestDeviceUpdate($kid, (int) $dev($tNew)['id']), '');
 check('...מסומנת', deviceAppState($dev($tNew), $latest)['requested'], true);
 check('המכשיר מקבל הצעה עם הקישור', deviceUpdateOffer((int) $dev($tNew)['id']),
-      ['version_code' => 45, 'version_name' => '1.45', 'url' => APK_URL]);
+      ['version_code' => 45, 'version_name' => '1.45', 'required' => true, 'url' => APK_URL]);
 check('אפליקציה חדשה לא נחסמת', upgradeBlock((int) $dev($tNew)['id']), '');
 $_SERVER['HTTP_X_MIGDALOR_APP'] = '45';
 userByToken($tNew);

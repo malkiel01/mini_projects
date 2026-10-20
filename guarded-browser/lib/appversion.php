@@ -5,8 +5,8 @@
  *   האפליקציה שולחת את מספר הגרסה בכותרת X-Migdalor-App (מ-1.43), והשרת שומר אותו במכשיר
  *   (userByToken). הגרסה האחרונה — מ-latest.json שה-CI מעלה ל-Release, במטמון של חצי שעה.
  *
- *   ההורה לוחץ "עדכון" ← devices.update_requested_at. ומשם:
- *     • אפליקציה שמדווחת גרסה — מקבלת update בתשובה, ומציעה לילד להוריד ולהתקין.
+ *   אפליקציה שמדווחת גרסה ואינה האחרונה — מקבלת update (חובה) בכל תשובה, בלי שההורה יבקש.
+ *   ההורה לוחץ "עדכון" ← devices.update_requested_at — נשאר בשביל האפליקציות שלא מדווחות:
  *     • אפליקציה שלא מדווחת (לפני 1.43, או "דפדפן מנוהל" הישן) — אינה מכירה update. היא כן מציגה
  *       סיבת חסימה, ולכן היא מקבלת חסימה עם הוראות המעבר (upgradeBlock). זו הדרך היחידה להגיע אליה.
  *       "דפדפן מנוהל" נחתם במפתח זמני — אי אפשר להתקין עליו; צריך למחוק ולחבר מחדש בקוד.
@@ -104,16 +104,22 @@ function cancelDeviceUpdate(int $childId, int $deviceId): void {
     q("UPDATE devices SET update_requested_at = '' WHERE id = ? AND user_id = ?", [$deviceId, $childId]);
 }
 
-/** למכשיר שמדווח גרסה: מה להציע לו, או null. מכשיר שכבר עודכן — הבקשה נמחקת. */
+/**
+ * למכשיר שמדווח גרסה: העדכון שהוא חייב להתקין, או null. מכשיר שכבר עודכן — הבקשה נמחקת.
+ *
+ * עדכון חובה, תמיד — גם בלי בקשה מההורה: כל גרסה ישנה מקבלת אותו בכל פנייה (מדיניות ופעימה), ומהגרסה
+ * שבה נוסף עדכון החובה האפליקציה ננעלת עד ההתקנה (Updater.kt). ‏required — לגרסאות שמכירות אותו; ישנות יותר רק מציעות.
+ */
 function deviceUpdateOffer(int $deviceRowId): ?array {
     $d = one('SELECT * FROM devices WHERE id = ?', [$deviceRowId]);
-    if (!$d || (string) $d['update_requested_at'] === '' || (int) $d['app_version'] === 0) return null;
+    if (!$d || (int) $d['app_version'] === 0) return null;
     $latest = latestApp();
     if (!$latest || $latest['code'] <= (int) $d['app_version']) {
-        if ($latest) q("UPDATE devices SET update_requested_at = '' WHERE id = ?", [$deviceRowId]);
+        if ($latest && (string) $d['update_requested_at'] !== '') q("UPDATE devices SET update_requested_at = '' WHERE id = ?", [$deviceRowId]);
         return null;
     }
-    return ['version_code' => $latest['code'], 'version_name' => $latest['name'], 'url' => (serverUrl() ?: '') !== '' ? serverUrl() . 'download.php' : APK_URL];
+    return ['version_code' => $latest['code'], 'version_name' => $latest['name'], 'required' => true,
+            'url' => (serverUrl() ?: '') !== '' ? serverUrl() . 'download.php' : APK_URL];
 }
 
 /**

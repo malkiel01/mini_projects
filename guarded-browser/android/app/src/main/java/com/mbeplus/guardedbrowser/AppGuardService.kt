@@ -16,10 +16,20 @@ class AppGuardService : AccessibilityService() {
     private val store by lazy { Store(this) }
     private var lastBlocked = ""
     private var lastAt = 0L
+    private var lastUpdateNag = 0L
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val pkg = event.packageName?.toString() ?: return
+        // עדכון חובה (Updater): מסך העדכון קופץ במעבר בין אפליקציות — לכל היותר פעם בשתי דקות,
+        // ולא מעל מגדלור עצמו (שם הוא כבר מוצג) או מעל מסך האישור של ההתקנה.
+        if (Updater.required(this) && pkg != store.ownPackage && !pkg.contains("packageinstaller")) {
+            val now = System.currentTimeMillis()
+            if (now - lastUpdateNag > 120_000) {
+                lastUpdateNag = now
+                try { Updater.lock(this) } catch (e: Exception) { Trace.log("appguard.update", e.message ?: "") }
+            }
+        }
         if (!AppPolicy.blocked(store, pkg)) return
 
         // מונע הצפה: אותה אפליקציה תוך שנייה — כבר טיפלנו.
