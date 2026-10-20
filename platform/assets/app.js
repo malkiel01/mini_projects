@@ -133,7 +133,7 @@ function showSetup(me) {
 
 // בתוך אפליקציית אנדרואיד (דפדפן פנימי, או TWA — assets/diag.js שומר android-app://) השער שלח לכאן כי
 // לאפליקציה אין את ההתחברות. במקום להתחבר שוב בתוכה: פותחים את הכלים הדיגיטליים (שם כבר מחוברים),
-// והם מחזירים לאפליקציה עם קוד חד-פעמי (takeHandoffRequest).
+// והם מחזירים לאפליקציה עם קוד חד-פעמי (platform/handoff.php — הפניה של השרת, בלי מסך).
 function appHandoffButton() {
     const next = new URLSearchParams(location.search).get('next') || '';
     const root = new URL('./', document.baseURI).pathname;
@@ -142,11 +142,11 @@ function appHandoffButton() {
     try { opener = sessionStorage.getItem('platform:opener') || ''; } catch { /* */ }
     const webview = /; wv\)/.test(UA);
     if (!app || !/^[a-z0-9][a-z0-9-]*$/.test(app) || !(webview || opener)) return null;
-    const home = new URL('platform/home/', document.baseURI);
-    home.hash = `handoff=${app}`;
+    // platform/handoff.php: בכרום (שם הכלים הדיגיטליים מחוברים) השרת מנפיק קוד ומפנה ישר לאפליקציה.
+    const back = new URL(`platform/handoff.php?app=${app}`, document.baseURI);
     // WebView: קישור רגיל — האפליקציה פותחת כתובת מחוץ לתיקייה שלה בחוץ. TWA: intent — אחרת נשארים בתוכה.
-    const href = webview ? home.href
-        : `intent://${home.host}${home.pathname}#Intent;scheme=https;S.browser_fallback_url=${encodeURIComponent(home.href)};end`;
+    const href = webview ? back.href
+        : `intent://${back.host}${back.pathname}${back.search}#Intent;scheme=https;S.browser_fallback_url=${encodeURIComponent(back.href)};end`;
     const a = el('a', { className: 'btn primary big', href, textContent: '📲 כניסה עם הכלים הדיגיטליים' });
     a.addEventListener('click', () => dlog('handoff-request', { app, webview, opener }));
     return el('div', { className: 'handoff-box' }, [
@@ -709,20 +709,12 @@ function prepareOpen(link, app, pkg) {
     });
 }
 
-// #handoff=<app>: אפליקציה פתחה את הכלים הדיגיטליים כי חסרה לה ההתחברות (showLogin). כאן המשתמש מחובר.
-// החזרה לאפליקציה דורשת לחיצה אחת (כרום לא פותח אפליקציה בלי לחיצה) — מסך עם כפתור אחד, שהקוד שלו כבר מוכן.
+// #handoff=<app> — מגרסה קודמת של הכפתור "כניסה עם הכלים הדיגיטליים". עכשיו זה platform/handoff.php: השרת
+// מפנה לאפליקציה, בלי מסך ובלי כפתור.
 function takeHandoffRequest() {
     const m = location.hash.match(/^#handoff=([a-z0-9-]+)$/);
     if (!m) return false;
-    history.replaceState(null, '', location.pathname + location.search);
-    const app = currentApps.find(a => a.id === m[1]);
-    if (!app) { toast('אין לך גישה לאפליקציה הזו'); return false; }
-    const go = el('a', { className: 'btn primary big', href: app.href, textContent: `▶️ חזרה ל${app.name}` });
-    prepareOpen(go, app, isAndroid() ? app.install.android?.package : null);
-    view.replaceChildren(el('div', { className: 'auth' }, [el('div', { className: 'panel msg' }, [
-        appIcon(app), el('h2', { textContent: 'מחוברים' }),
-        el('p', { className: 'lead', textContent: `${app.name} מקבלת את ההתחברות שלך מהכלים הדיגיטליים.` }), go,
-    ])]));
+    location.replace(new URL(`platform/handoff.php?app=${m[1]}`, document.baseURI).href);
     return true;
 }
 
