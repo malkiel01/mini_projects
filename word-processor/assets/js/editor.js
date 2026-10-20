@@ -158,16 +158,41 @@ export function createWordEditor(root, opts) {
     root.append(styleEl, printEl, bar, ctxBar, stage);
     root.classList.add('wp-editor');
 
-    const geometry = () => {
-        const [wmm, hmm] = pageMm();
+    /** גיאומטריה של עמוד לפי הגדרות (בפיקסלים לא מוגדלים). */
+    const geoOf = p => {
+        const [wmm, hmm] = mmOf(p);
+        const m = p.margins;
         const pageH = hmm * MM;
-        const m = page.margins;
         return { pageW: wmm * MM, pageH, top: m.top * MM, bottom: m.bottom * MM, right: m.right * MM, left: m.left * MM,
-            contentH: pageH - (m.top + m.bottom) * MM, gap: GAP };
+            contentH: pageH - (m.top + m.bottom) * MM };
     };
-    const pageMm = () => {
-        const [w, hh] = SIZES[page.size] || SIZES.A4;
-        return page.orientation === 'landscape' ? [hh, w] : [w, hh];
+    const mmOf = p => {
+        const [w, hh] = SIZES[p.size] || SIZES.A4;
+        return p.orientation === 'landscape' ? [hh, w] : [w, hh];
+    };
+    const pageMm = () => mmOf(page);
+    /**
+     * מקטעים: הראשון — הגדרות המסמך; כל מעבר מקטע (sectionBreak) — המקטע הקודם + מה שהוא משנה. from — מיקום הצומת
+     * (הצומת עצמו שייך למקטע שלפניו).
+     */
+    let ed0 = null;
+    let secMemo = { doc: null, page: null, out: null };
+    const sections = () => {
+        const doc = ed0?.state.doc;
+        if (doc && secMemo.doc === doc && secMemo.page === page) return secMemo.out;
+        const out = [{ from: 0, page }];
+        let cur = page;
+        doc?.forEach((n, pos) => {
+            if (n.type.name !== 'sectionBreak') return;
+            cur = mergePage(cur, n.attrs.page || {});
+            out.push({ from: pos, page: cur });
+        });
+        secMemo = { doc, page, out };
+        return out;
+    };
+    const geometry = () => {
+        const secs = sections().map(x => ({ from: x.from, page: x.page, ...geoOf(x.page) }));
+        return { ...secs[0], gap: GAP, sections: secs, sheetW: Math.max(...secs.map(x => x.pageW)) };
     };
 
     const editor = new Editor({
@@ -191,11 +216,16 @@ export function createWordEditor(root, opts) {
         onSelectionUpdate: () => refresh(),
         onTransaction: () => { syncPage(); refresh(); },
     });
+    ed0 = editor;
     pageAttr = editor.state.doc.attrs.page;
     /** המסמך השתנה (עריכה, ביטול, שחזור, טעינה) — אם הגדרות העמוד שבו אחרות, מחילים אותן. */
+    let secSig = '';
     function syncPage() {
         if (pageAttr === undefined) return;
         const a = editor.state.doc.attrs.page;
+        // מקטע נוסף / נמחק / השתנה — גם זה שינוי בהגדרות העמוד
+        const sig = sections().slice(1).map(x => x.from + JSON.stringify(x.page)).join('|');
+        if (sig !== secSig) { secSig = sig; if (a === pageAttr) { applyPage(); return; } }
         if (a === pageAttr) return;
         pageAttr = a;
         page = mergePage(defaultPage(), a || {});
@@ -208,7 +238,9 @@ export function createWordEditor(root, opts) {
     function applyPage() {
         const g = geometry();
         editor.storage.wpPages.contentWidth = g.pageW - g.left - g.right;
-        sheetEl.style.width = g.pageW + 'px';
+        sheetEl.style.width = g.sheetW + 'px';
+        // כמה מקטעים: הרוחב של כל מקטע נקבע לכל בלוק (pagination.js), לא בריפוד של המסמך
+        editor.view.dom.classList.toggle('wp-multisec', g.sections.length > 1);
         const s = page.styles;
         const st = (sel, x, heading) => `${sel}{${x.font ? `font-family:${cssFont(x.font)};` : ''}${x.size ? `font-size:${x.size}pt;` : ''}`
             + `font-weight:${x.bold ? 700 : 400};font-style:${x.italic ? 'italic' : 'normal'};text-decoration:${x.underline ? 'underline' : 'none'};`
@@ -245,30 +277,43 @@ export function createWordEditor(root, opts) {
         // (.wp-break), כך שהרזרבה לא מתמלאת בטקסט — היא רק בולעת הבדלי עיגול בין המסך להדפסה. בשורות עם כמה גדלי גופן
         // ההדפסה מעגלת את גובה השורה אחרת, ובעמוד שלם זה מצטבר לכמה מ"מ; בלי רזרבה הטקסט גולש ונוסף עמוד (tests/e2e, parity)
         const slack = Math.max(0, Math.min(15, page.margins.bottom - 6));
+        // כל מקטע אחרי הראשון — עמוד בשם משלו (page: wpsN על הבלוקים שלו), בגודל ובשוליים שלו
+        const named = g.sections.slice(1).map((x, k) => {
+            const [w2, h2] = mmOf(x.page);
+            const m2 = x.page.margins;
+            const sl = Math.max(0, Math.min(15, m2.bottom - 6));
+            return `@page wps${k + 1}{size:${w2}mm ${h2}mm;margin:${m2.top}mm ${m2.right}mm ${m2.bottom - sl}mm ${m2.left}mm;${margin}}`;
+        }).join('');
         printEl.textContent = `@page{size:${wmm}mm ${hmm}mm;margin:${page.margins.top}mm ${page.margins.right}mm ${page.margins.bottom - slack}mm ${page.margins.left}mm;${margin}}`
-            + firstNoNum + (nb.start !== 1 ? `@page:first{counter-reset:page ${nb.start - 1}}` : '');
+            + firstNoNum + (nb.start !== 1 ? `@page:first{counter-reset:page ${nb.start - 1}}` : '') + named;
         setZoom();
         editor.storage.wpPages.schedule?.();
     }
 
     function drawPages(res) {
-        const g = geometry();
+        const G = geometry();
         const n = res.pages;
         const total = n;
-        const nb = page.numbering;
         pagesLayer.textContent = '';
+        let y = 0;
         for (let i = 0; i < n; i++) {
-            const pg = h('div.wp-page', { style: { top: i * (g.pageH + GAP) + 'px', height: g.pageH + 'px' } });
-            const label = nb.show && (i > 0 || nb.first_page) ? pageLabel(nb.start + i, total, nb.format) : '';
+            // כל עמוד בגודל של המקטע שלו, ממורכז ברוחב הגיליון
+            const sec = G.sections[res.pageSecs?.[i] ?? 0] || G.sections[0];
+            const g = sec;
+            const pp = sec.page;
+            const nb = pp.numbering;
+            const pg = h('div.wp-page', { style: { top: y + 'px', height: g.pageH + 'px', width: g.pageW + 'px', left: (G.sheetW - g.pageW) / 2 + 'px', right: 'auto' } });
+            y += g.pageH + GAP;
+            const label = nb.show && (i > 0 || nb.first_page) ? pageLabel(page.numbering.start + i, total, nb.format) : '';
             const hdr = h('div.wp-hf.wp-hdr', { style: { height: g.top + 'px', paddingInline: `${g.right}px ${g.left}px` } });
             const ftr = h('div.wp-hf.wp-ftr', { style: { height: g.bottom + 'px', paddingInline: `${g.right}px ${g.left}px` } });
-            if (page.header) hdr.append(h('span.wp-hf-text', page.header));
-            if (page.footer) ftr.append(h('span.wp-hf-text', page.footer));
+            if (pp.header) hdr.append(h('span.wp-hf-text', pp.header));
+            if (pp.footer) ftr.append(h('span.wp-hf-text', pp.footer));
             if (label) (nb.position === 'top' ? hdr : ftr).append(h('span.wp-num.al-' + nb.align, { style: nb.align === 'right' ? { right: g.right + 'px' } : nb.align === 'left' ? { left: g.left + 'px' } : {} }, label));
             pg.append(hdr, ftr);
             pagesLayer.append(pg);
         }
-        const H = n * g.pageH + (n - 1) * GAP;
+        const H = y - GAP;
         editor.view.dom.style.minHeight = H + 'px';
         sheetEl.style.height = H + 'px';
         pageCount = n;
@@ -281,10 +326,10 @@ export function createWordEditor(root, opts) {
         const g = geometry();
         if (fit) {
             const avail = stage.clientWidth - 16;
-            zoom = avail > 0 ? Math.max(0.3, Math.min(1.25, avail / g.pageW)) : 1;
+            zoom = avail > 0 ? Math.max(0.3, Math.min(1.25, avail / g.sheetW)) : 1;
         }
         zoomEl.style.transform = `scale(${zoom})`;
-        zoomBox.style.width = g.pageW * zoom + 'px';
+        zoomBox.style.width = g.sheetW * zoom + 'px';
         zoomBox.style.height = (parseFloat(sheetEl.style.height) || g.pageH) * zoom + 'px';
         editor.storage.wpPages.zoom = zoom;
         if (zoomLabel) zoomLabel.textContent = Math.round(zoom * 100) + '%';
@@ -368,6 +413,8 @@ export function createWordEditor(root, opts) {
             zoomIn: () => { fit = false; zoom = Math.min(3, Math.round((zoom + 0.1) * 10) / 10); setZoom(); },
             zoomFit: () => { fit = true; setZoom(); },
             crop: pos => cropDialog(pos), imageProps: pos => imageDialog(pos), imageSize: f => imageSizeTo(f),
+            // הגדרות העמוד של המקטע שבו הסמן
+            sectionPage: () => { const at = editor.state.selection.from; return sections().filter((x, k) => k === 0 || x.from < at).pop().page; },
         },
     });
     const ICONS = {
@@ -395,7 +442,7 @@ export function createWordEditor(root, opts) {
 
     const TOGGLES = ['bold', 'italic', 'underline', 'strike', 'superscript', 'subscript', 'alignRight', 'alignCenter', 'alignLeft', 'alignJustify', 'bulletList', 'orderedList'];
     const B = Object.fromEntries(['undo', 'redo', ...TOGGLES, 'clearFormat', 'outdent', 'indent', 'paragraphDialog', 'insertTable', 'insertImage', 'pageBreak',
-        'pageSetup', 'editStyles', 'print', 'zoomOut', 'zoomIn', 'zoomFit'].map(id => [id, cmdBtn(id)]));
+        'sectionBreak', 'pageSetup', 'editStyles', 'print', 'zoomOut', 'zoomIn', 'zoomFit'].map(id => [id, cmdBtn(id)]));
     B.painter = cmdBtn('formatPainter', { ondblclick: () => cmds.run('formatPainter', true) });
     B.color = cmdColor('color', '#c00000');
     B.mark = cmdColor('highlight', '#ffff00', '.mark');
@@ -405,7 +452,7 @@ export function createWordEditor(root, opts) {
         h('div.tb-group', B.bold, B.italic, B.underline, B.strike, B.color, B.mark, B.superscript, B.subscript, spacingSel, B.painter, B.clearFormat), sep(),
         h('div.tb-group', B.alignRight, B.alignCenter, B.alignLeft, B.alignJustify), sep(),
         h('div.tb-group', B.bulletList, B.orderedList, listType, B.outdent, B.indent, B.paragraphDialog), sep(),
-        h('div.tb-group', B.insertTable, B.insertImage, imgInput, B.pageBreak), sep(),
+        h('div.tb-group', B.insertTable, B.insertImage, imgInput, B.pageBreak, B.sectionBreak), sep(),
         h('div.tb-group', B.pageSetup, B.editStyles, B.print, opts.versions ? cmdBtn('versions') : null, ...(opts.menu || [])), sep(),
         h('div.tb-group.tb-zoomg', B.zoomOut, zoomLabel, B.zoomIn, B.zoomFit),
     );

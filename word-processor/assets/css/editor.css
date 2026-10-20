@@ -78,6 +78,14 @@ html.wp-no-page-zoom, html.wp-no-page-zoom body, .wp-editor, .wp-stage { touch-a
 .wp-doc .wp-page-break::after { content: 'מעבר עמוד'; position: absolute; inset-inline-start: 50%; top: -.7em; transform: translateX(50%); font-size: 8pt;
     background: #fff; color: #889; padding: 0 6px; font-family: system-ui, sans-serif; }
 .wp-doc .wp-page-break.ProseMirror-selectednode { border-top-color: #2d4a8a; }
+/* מעבר מקטע: קו כפול עם תווית; כמה מקטעים — הרוחב של כל בלוק נקבע בגבולות שקופים (pagination.js) */
+.wp-doc .wp-section-break { block-size: 0; margin: 0; position: relative; }
+/* הקו — בתוך רוחב הטקסט בלבד (במסמך עם מקטעים לבלוק יש גבולות שקופים בצדדים) */
+.wp-doc .wp-section-break::before { content: ''; position: absolute; inset-inline: 0; top: 0; border-top: 3px double #aab; }
+.wp-doc .wp-section-break::after { content: 'מעבר מקטע (עמוד הבא)'; position: absolute; inset-inline-start: 50%; top: -.75em; transform: translateX(50%);
+    font-size: 8pt; color: #667; background: #fff; padding: 0 6px; }
+.wp-doc .wp-section-break.ProseMirror-selectednode::before { border-top-color: #2d4a8a; }
+.wp-sheet .wp-doc.wp-multisec { padding-left: 0 !important; padding-right: 0 !important; }
 .wp-break { display: block; pointer-events: none; user-select: none; }
 /* טבלה שנמשכת לעמוד הבא: שורת רווח בלי גבולות, ושורת הכותרת חוזרת (עותק, לא ניתן לעריכה) */
 .wp-doc tr.wp-break-row { display: table-row; }
@@ -128,7 +136,12 @@ html.wp-no-page-zoom, html.wp-no-page-zoom body, .wp-editor, .wp-stage { touch-a
     .wp-sheet .wp-doc { padding: 0 !important; min-height: 0 !important; }
     .wp-break { block-size: 0 !important; height: 0 !important; break-before: page; page-break-before: always; }
     .wp-break-row > td { height: 0 !important; }
+    .wp-break-sec { display: none !important; }
     .wp-page-break { border: 0 !important; }
+    .wp-section-break::before, .wp-section-break::after { display: none !important; }
+    /* בהדפסה כל בלוק ברוחב הטקסט של המקטע שלו במפורש: Chrome פורס עמודים בגדלים שונים, אבל טבלה בלי רוחב
+       מפורש מקבלת את רוחב העמוד הראשון */
+    .wp-doc.wp-multisec > * { border-left-width: 0 !important; border-right-width: 0 !important; inline-size: var(--wps-w) !important; box-sizing: border-box; }
     .wp-page-break::after { display: none !important; }
     .wp-img-handle { display: none !important; }
 }

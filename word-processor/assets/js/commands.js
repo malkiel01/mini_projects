@@ -82,6 +82,8 @@ export const COMMANDS = [
     { id: 'insertTable', label: 'טבלה', icon: '▦', group: 'insert', run: x => x.ui.table() },
     { id: 'insertImage', label: 'תמונה', icon: '🖼', group: 'insert', run: x => x.ui.image() },
     { id: 'pageBreak', label: 'מעבר עמוד', icon: '⤓', keys: 'Ctrl+Enter', group: 'insert', run: x => x.chain().insertPageBreak().run() },
+    { id: 'sectionBreak', label: 'מעבר מקטע: העמוד הבא בכיוון ההפוך', icon: '⧉', group: 'layout',
+        run: (x, page) => x.chain().insertSectionBreak(page || { orientation: x.ui.sectionPage().orientation === 'landscape' ? 'portrait' : 'landscape' }).run() },
 
     // ---------- פריסה וקובץ ----------
     { id: 'pageSetup', label: 'הגדרות עמוד ומספור עמודים', icon: '📄', group: 'layout', run: x => x.ui.pageSetup() },

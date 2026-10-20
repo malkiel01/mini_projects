@@ -86,6 +86,23 @@ for ($i = 1; $i <= 70; $i++) {
 $corpus['long-table'] = ['title' => 'טבלה ארוכה', 'json' => $doc([$hd('תקציב', 1), $p($sentence(10, 20)), ['type' => 'table', 'content' => $rows], $p($sentence(10, 30))]),
     'page' => null, 'known_pdf' => 'רוחב העמודות ב-PDF מחושב אחרת מהעורך (בעורך — שווה), ולכן נכנסות יותר שורות לעמוד; גם סדר הטקסט בטבלה ב-pdftotext שונה — לטיפול: יישור מנוע ה-PDF והעורך'];
 
+// 7. מקטעים (אב-טיפוס): לאורך → עמוד לרוחב עם טבלה רחבה → חזרה לאורך
+$wide = [['type' => 'tableRow', 'content' => array_map(fn($h) => ['type' => 'tableHeader', 'content' => [$p($h)]], ['חודש', 'הכנסות', 'הוצאות', 'יתרה', 'הערות'])]];
+for ($i = 1; $i <= 12; $i++) {
+    $wide[] = ['type' => 'tableRow', 'content' => array_map(fn($v) => ['type' => 'tableCell', 'content' => [$p($v)]],
+        ["חודש $i", number_format(10000 + $rand(50000)), number_format(5000 + $rand(30000)), number_format($rand(20000)), $sentence(3, 8)])];
+}
+$c = [$hd('מקטעים', 1)];
+for ($i = 0; $i < 8; $i++) $c[] = $p($sentence(20, 60));
+$c[] = ['type' => 'sectionBreak', 'attrs' => ['page' => ['orientation' => 'landscape']]];
+$c[] = $hd('נספח: טבלה רחבה', 2);
+$c[] = ['type' => 'table', 'content' => $wide];
+$c[] = ['type' => 'sectionBreak', 'attrs' => ['page' => ['orientation' => 'portrait']]];
+$c[] = $hd('סיכום', 2);
+for ($i = 0; $i < 6; $i++) $c[] = $p($sentence(20, 60));
+$corpus['sections'] = ['title' => 'מקטעים', 'json' => $doc($c), 'page' => null,
+    'known_pdf' => 'מנוע ה-PDF עוד לא מכיר מקטעים (הכול בהגדרות העמוד הראשונות) — אב-טיפוס בשלב 0'];
+
 foreach ($corpus as $name => $d) {
     file_put_contents(__DIR__ . "/$name.json", json_encode($d, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
     echo "$name.json\n";
