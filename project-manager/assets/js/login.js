@@ -93,7 +93,6 @@ function showWaiting(title, text, canRetry = true) {
     $('#waiting-text').textContent = text;
     $('#recheck').hidden = !canRetry;
     $('#logout').hidden = !csrf || !!state.platform; // מחוברת — יוצאים מהכלים הדיגיטליים, לא מכאן
-    $('#platform-login').hidden = true;
 }
 
 /** לאן ממשיכים: לאפליקציה, למסך "ממתין", להקמה, לאיפוס, או לכניסה. */
@@ -103,12 +102,10 @@ async function route() {
     csrf = data.csrf || null;
     const user = data.user;
     // מחוברת לפלטפורמה: אין כאן כניסה בסיסמה. מחובר לכלים הדיגיטליים עם הרשאה — נכנס לבד (lib/platform.php);
-    // לא — לכניסה שם, וחזרה לכאן אחריה
+    // לא — הכניסה דרך השער (platform/handoff.php); אין מכאן קישור לכלים הדיגיטליים
     if (data.platform && !user) {
         showWaiting(t('הכניסה היא דרך הכלים הדיגיטליים'), t('נכנסים פעם אחת לכלים הדיגיטליים — ומשם האפליקציה נפתחת לבד, בלי סיסמה נוספת.'));
         $('#recheck').hidden = true;
-        $('#platform-login').href = '../?next=' + encodeURIComponent(new URL('./', location.href).pathname);
-        $('#platform-login').hidden = false;
         $('.big', $('#waiting')).textContent = '🔐';
         return;
     }

@@ -168,7 +168,6 @@ function bindMe() {
         const l = b.dataset.lang;
         api('lang', { body: { lang: l } }).catch(() => {}).finally(() => I18n.set(l));
     });
-    $('#me-apps').hidden = !!state.standalone;
 }
 
 /** החשבון שלי — מהתפריט: שם, אימייל, טלפון, התקנה וסיסמה. */
