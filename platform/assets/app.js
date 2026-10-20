@@ -156,7 +156,20 @@ function appHandoffButton() {
 
 function showLogin() {
     const handoff = appHandoffButton();
-    if (handoff) dlog('handoff-offer', {});
+    if (handoff) {
+        dlog('handoff-offer', {});
+        // בתוך WebView — אוטומטית, בלי ללחוץ: האפליקציה פותחת את הכלים הדיגיטליים בחוץ, והם מחזירים אליה
+        // מחוברים. פעם אחת בשתי דקות — אם ההעברה לא הצליחה, לא נכנסים ללולאה; הכפתור נשאר.
+        // TWA — רק בלחיצה: כרום חוסם פתיחת אפליקציה אחרת בלי לחיצה (ושם ההתחברות ממילא משותפת עם כרום).
+        const a = handoff.querySelector('a');
+        let last = 0;
+        try { last = Number(localStorage.getItem('platform:handoff-auto') || 0); } catch { /* */ }
+        if (/; wv\)/.test(UA) && Date.now() - last > 120_000) {
+            try { localStorage.setItem('platform:handoff-auto', String(Date.now())); } catch { /* */ }
+            dlog('handoff-auto', {});
+            location.href = a.href;
+        }
+    }
     view.replaceChildren(form({
         title: 'ברוכים הבאים',
         lead: 'נכנסים כדי לראות את האפליקציות שלכם.',
