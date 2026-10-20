@@ -58,6 +58,9 @@
   `embed_page` נשארו לתאימות.
 - **גרסת מבנה** (`attrs.schema`, היום 1): `doc_migrate` בשרת ו-`assets/js/schema.js` ממירים מסמך ישן; מסמך ממבנה
   חדש מהקוד — נדחה (`schema_newer`), כדי שלשונית ישנה לא תשמור מבנה שהיא לא מבינה.
+- **רישום פקודות** (`assets/js/commands.js`): כל פקודה פעם אחת — מזהה, שם, סמל, קיצור, קבוצה, פעולה ומצב
+  (פעיל / זמין / ערך). סרגל הכלים והסרגל להקשר (טבלה, תמונה) נבנים ממנו; `ed.commands.run('bold')`. הסרט (Ribbon),
+  חיפוש פקודות, תפריט לחיצה ימנית וקיצורים להגדרה — ייבנו ממנו.
 - מונה עמודים בכותרת. **נעילה** ("פתוח לעריכה אצל X", 2 דקות בלי דופק), **גרסאות** (🕘 — כל שמירה,
   מאוחדות לאחת לכל משתמש בכל 10 דקות, עד 100; שחזור יוצר גרסה חדשה).
 - **🔗 לקוחות הטמעה** (מנהל בלבד): רשימת האפליקציות הרשומות, אישור לקוח ממתין, כיבוי.
@@ -103,7 +106,7 @@
 app.json  index.html  embed.php  api.php  .htaccess
 lib/        db.php (סכמה) · page.php (הגדרות עמוד) · docs.php (מסמכים, גרסאות, נעילה, תמונות) · pdf.php + pdf/ (מנוע ה-PDF)
             embed.php (רישום, חתימה, טוקן, סשן) · export.php · import.php · users.php · selftest.php
-assets/js/  editor.js (העורך) · extensions.js · pagination.js · paste.js · saver.js (שמירה וטיוטה) · schema.js
+assets/js/  editor.js (העורך) · commands.js (רישום הפקודות) · extensions.js · pagination.js · paste.js · saver.js (שמירה וטיוטה) · schema.js
             app.js · embed.js · host.js (למארחת)
 client/     WordProcessorClient.php — הלקוח שמארחות מעתיקות
 docs/       integration.md — מדריך ההתממשקות
