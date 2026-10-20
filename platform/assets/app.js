@@ -452,7 +452,7 @@ function appRow(app) {
     } else {
         node = el('button', { type: 'button', className: 'app', ariaHasPopup: 'dialog' }, body);
         // הכפתורים נבנים מחדש בכל פתיחה — מה שמותקן ובאיזו גרסה יכול להשתנות בינתיים
-        node.addEventListener('click', () => openAppSheet(app, installLinks(app)));
+        node.addEventListener('click', () => openAppSheet(app, installLinks(app, true)));
     }
     const li = el('li', {}, [node]);
     li.dataset.search = `${app.name} ${app.description}`.toLowerCase();
@@ -654,7 +654,7 @@ function androidState(app) {
 
 // כפתורי אנדרואיד: לא מותקנת — "התקנה"; מותקנת — "פתיחה" (ישר באפליקציה, לא בדפדפן), ו"עדכון"
 // כשיש גרסה חדשה ממה שהותקן מכאן. ההורדה מהשרת שלנו (platform/downloads, store-mirror.sh).
-function androidTiles(app, tile) {
+function androidTiles(app, tile, live) {
     const s = androidState(app);
     const download = (icon, text) => {
         const t = tile(icon, text, { href: app.install.apk, download: '' });
@@ -669,7 +669,7 @@ function androidTiles(app, tile) {
             `S.browser_fallback_url=${encodeURIComponent(u.href)};end`;
         const open = tile('▶️', 'פתיחה', { href: intent });
         // פתיחה עם ההתחברות: לאפליקציה עם דפדפן פנימי משלה אין את העוגייה של הכלים הדיגיטליים
-        open.addEventListener('click', (e) => { e.preventDefault(); openWithLogin(app, s.pkg); });
+        if (live) prepareOpen(open, app, s.pkg);   // רק בגיליון הפתוח — לא קוד לכל אפליקציה ברשימה
         out.push(open);
     }
     if (s.update) out.push(download('⬆️', `עדכון לגרסה ${s.latest}`));
@@ -680,33 +680,54 @@ function androidTiles(app, tile) {
 // ---------- העברת ההתחברות לאפליקציה (platform/lib/gate.php, handoff) ----------
 // קוד חד-פעמי (שתי דקות) בכתובת: השער מחבר איתו את האפליקציה, גם כשיש לה עוגיות משלה (WebView, דפדפן
 // אחר). pkg — פתיחה ישר באפליקציית האנדרואיד; בלעדיו — באותו חלון.
-async function openWithLogin(app, pkg) {
+// כרום פותח אפליקציה אחרת (intent) רק מתוך לחיצה — ניווט שמגיע אחרי await או בלי לחיצה נחסם, וכרום
+// נופל ל-S.browser_fallback_url: האפליקציה נפתחת כדף בדפדפן פנימי במקום כאפליקציה. לכן הקוד מוכן מראש
+// (prepareOpen), והלחיצה עצמה מנווטת מיד, בלי לחכות לשרת. קוד חד-פעמי לשתי דקות — מחדשים אחרי 90 שניות.
+function openUrl(app, pkg, token, param) {
     const u = new URL(app.href, document.baseURI);
-    try {
-        const { token, param } = await api('handoff', { app: app.id });
-        u.searchParams.set(param, token);
-    } catch (err) { dlog('handoff-error', { app: app.id, error: err.message }); }
-    dlog('open-app', { app: app.id, pkg: pkg || '', handoff: u.search.includes('platform-handoff') });
-    location.href = pkg
+    if (token) u.searchParams.set(param, token);
+    return pkg
         ? `intent://${u.host}${u.pathname}${u.search}#Intent;scheme=https;package=${pkg};` +
           `S.browser_fallback_url=${encodeURIComponent(u.href)};end`
         : u.href;
 }
 
-// #handoff=<app>: אפליקציה ביקשה "כניסה עם הכלים הדיגיטליים" (showLogin). כאן המשתמש מחובר —
-// מחזירים אותו לאפליקציה כשהוא מחובר גם שם.
+function prepareOpen(link, app, pkg) {
+    let at = 0;
+    const refresh = async () => {
+        try {
+            const { token, param } = await api('handoff', { app: app.id });
+            link.href = openUrl(app, pkg, token, param);
+            at = Date.now();
+        } catch (err) { dlog('handoff-error', { app: app.id, error: err.message }); }
+    };
+    refresh();
+    link.addEventListener('click', (e) => {
+        const fresh = Date.now() - at < 90_000;
+        dlog('open-app', { app: app.id, pkg: pkg || '', handoff: fresh });
+        if (!fresh) { e.preventDefault(); refresh().then(() => { location.href = link.href; }); }
+    });
+}
+
+// #handoff=<app>: אפליקציה פתחה את הכלים הדיגיטליים כי חסרה לה ההתחברות (showLogin). כאן המשתמש מחובר.
+// החזרה לאפליקציה דורשת לחיצה אחת (כרום לא פותח אפליקציה בלי לחיצה) — מסך עם כפתור אחד, שהקוד שלו כבר מוכן.
 function takeHandoffRequest() {
     const m = location.hash.match(/^#handoff=([a-z0-9-]+)$/);
     if (!m) return false;
     history.replaceState(null, '', location.pathname + location.search);
     const app = currentApps.find(a => a.id === m[1]);
     if (!app) { toast('אין לך גישה לאפליקציה הזו'); return false; }
-    openWithLogin(app, isAndroid() ? app.install.android?.package : null);
+    const go = el('a', { className: 'btn primary big', href: app.href, textContent: `▶️ חזרה ל${app.name}` });
+    prepareOpen(go, app, isAndroid() ? app.install.android?.package : null);
+    view.replaceChildren(el('div', { className: 'auth' }, [el('div', { className: 'panel msg' }, [
+        appIcon(app), el('h2', { textContent: 'מחוברים' }),
+        el('p', { className: 'lead', textContent: `${app.name} מקבלת את ההתחברות שלך מהכלים הדיגיטליים.` }), go,
+    ])]));
     return true;
 }
 
 // מה שהמנהל אישר לאפליקציה: התקנה נפרדת, APK, חנות. השרת לא שולח את מה שלא אושר.
-function installLinks(app) {
+function installLinks(app, live = false) {
     const tile = (icon, text, props) => el('a', { className: 'tile', ...props }, [
         el('span', { textContent: icon, ariaHidden: 'true' }), el('span', { className: 'one', textContent: text }),
     ]);
@@ -714,7 +735,7 @@ function installLinks(app) {
     // אנדרואיד עם APK: כפתור אחד שמוריד ומתקין. PWA לא — מתוך הכלים הדיגיטליים המותקנים כל קישור נפתח
     // בחלונית של הדפדפן (גם intent לכרום), ושם אי אפשר להתקין. ה-APK (TWA) נפתח במסך מלא עם אייקון משלו.
     const apkFirst = isAndroid() && app.install.apk;
-    if (apkFirst) out.push(...androidTiles(app, tile));
+    if (apkFirst) out.push(...androidTiles(app, tile, live));
     if (app.install.pwa && !apkFirst) {
         // פותח את האפליקציה בחלון משלה עם ?pwa-install=1 — שם pwa-beacon.js מציג "התקנה" (בלחיצה
         // כשהדפדפן מאפשר, אחרת ההסבר המדויק למכשיר). ההתקנה חייבת לקרות מתוך הדף של האפליקציה.
@@ -1036,7 +1057,7 @@ async function clearFamilyCache() {
 async function showApps() {
     const [{ categories, apps }] = await Promise.all([api('apps'), loadInstalls()]);
     currentApps = apps;
-    takeHandoffRequest();
+    if (takeHandoffRequest()) return;
     if (!apps.length) {
         showMessage('עוד אין כאן אפליקציות', 'המנהל עדיין לא הקצה לכם אפליקציות. כשיקצה — הן יופיעו כאן.', '📭');
         return;
