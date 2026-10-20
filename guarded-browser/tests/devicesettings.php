@@ -31,7 +31,8 @@ echo "\n— ברירות מחדל —\n";
 $s = deviceSettings($kid);
 check('מה שהיה נעול לפני הפאנל — חסום', [$s['date_time'], $s['accounts'], $s['vpn'], $s['location']], [true, true, true, true]);
 check('השאר — מותר', [$s['wifi'], $s['camera'], $s['install_apps']], [false, false, false]);
-check('כל ההגדרות בתצוגה, לפי הסדר', array_column(deviceSettingsView($kid), 'key'), array_keys(DEVICE_SETTINGS));
+check('כל ההגדרות בתצוגה, לפי הסדר — בלי Wi‑Fi', array_column(deviceSettingsView($kid), 'key'),
+      array_values(array_diff(array_keys(DEVICE_SETTINGS), DEVICE_NEVER_BLOCK)));
 
 echo "\n— שמירה —\n";
 check('חסימת מצלמה', deviceSettingSave($kid, 'camera', true), '');
@@ -40,8 +41,11 @@ check('...ושאר ההגדרות לא זזו', deviceSettings($kid)['vpn'], tru
 check('פתיחת VPN', deviceSettingSave($kid, 'vpn', false), '');
 check('...נשמרה', deviceSettings($kid)['vpn'], false);
 check('מפתח לא מוכר', deviceSettingSave($kid, 'nuke', true), 'הגדרה לא מוכרת');
+check('Wi‑Fi — אי אפשר לחסום', deviceSettingSave($kid, 'wifi', true), 'Wi‑Fi תמיד מותר — בלי רשת אי אפשר לשחרר את המכשיר מרחוק');
+q('UPDATE policies SET device_settings = ? WHERE user_id = ?', [json_encode(['wifi' => true]), $kid]);
+check('...גם חסימה ישנה נשלחת כמותר', deviceSettings($kid)['wifi'], false);
 $rev = policyRev($kid);
-deviceSettingSave($kid, 'wifi', true);
+deviceSettingSave($kid, 'bluetooth', true);
 check('שינוי מחליף את טביעת המדיניות (המכשיר מתעדכן בפעימה)', policyRev($kid) !== $rev, true);
 
 echo "\n— מצב האכיפה —\n";

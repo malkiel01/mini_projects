@@ -31,13 +31,20 @@ const DEVICE_SETTINGS = [
     'vpn'            => ['🛡️ VPN', 'בלי זה אפשר לעקוף את הסינון', true],
 ];
 
+/**
+ * הגדרות שלעולם לא נחסמות. Wi‑Fi (בעל המערכת, 2026-10-20): בלי רשת המכשיר לא מגיע לשרת, ואז אי אפשר
+ * לשחרר אותו מרחוק לעולם. נשלחות למכשיר כ"מותר" — כך גם חסימה ישנה מתבטלת במדיניות הבאה.
+ */
+const DEVICE_NEVER_BLOCK = ['wifi'];
+
 /** ההגדרות של ילד: {מפתח: חסום?}, עם ברירות המחדל למה שלא נקבע. */
 function deviceSettings(int $childId): array {
     $row = one('SELECT device_settings FROM policies WHERE user_id = ?', [$childId]);
     $saved = json_decode((string) ($row['device_settings'] ?? ''), true);
     $out = [];
     foreach (DEVICE_SETTINGS as $key => [, , $default]) {
-        $out[$key] = is_array($saved) && array_key_exists($key, $saved) ? (bool) $saved[$key] : $default;
+        $out[$key] = !in_array($key, DEVICE_NEVER_BLOCK, true)
+            && (is_array($saved) && array_key_exists($key, $saved) ? (bool) $saved[$key] : $default);
     }
     return $out;
 }
@@ -47,6 +54,7 @@ function deviceSettingsView(int $childId): array {
     $cur = deviceSettings($childId);
     $list = [];
     foreach (DEVICE_SETTINGS as $key => [$label, $hint]) {
+        if (in_array($key, DEVICE_NEVER_BLOCK, true)) continue;   // לא מוצג — תמיד מותר
         $list[] = ['key' => $key, 'label' => $label, 'hint' => $hint, 'blocked' => $cur[$key]];
     }
     return $list;
@@ -55,6 +63,7 @@ function deviceSettingsView(int $childId): array {
 /** שמירה של הגדרה אחת. מוחזרת שגיאה, או ''. */
 function deviceSettingSave(int $childId, string $key, bool $blocked): string {
     if (!isset(DEVICE_SETTINGS[$key])) return 'הגדרה לא מוכרת';
+    if ($blocked && in_array($key, DEVICE_NEVER_BLOCK, true)) return 'Wi‑Fi תמיד מותר — בלי רשת אי אפשר לשחרר את המכשיר מרחוק';
     $cur = deviceSettings($childId);
     $cur[$key] = $blocked;
     q('UPDATE policies SET device_settings = ?, updated_at = ? WHERE user_id = ?',
