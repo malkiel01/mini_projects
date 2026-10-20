@@ -41,36 +41,58 @@ export const Pages = Extension.create({
             },
             view: view => {
                 let raf = 0;
-                let stable = 0;
+                // עימודים שכבר נוסו מאז השינוי האחרון במסמך. שורה שיושבת בדיוק על קצה העמוד יכולה "להתנדנד": עימוד א'
+                // משנה מעט את המדידה ומוביל לעימוד ב', שמוביל חזרה לא'. כשעימוד חוזר — בוחרים את הזהיר מבין השניים
+                // (שבירה מוקדמת יותר, כך ששום שורה לא גולשת מהעמוד) ועוצרים, עד השינוי הבא.
+                let tried = new Map();
+                let settled = false;
                 const schedule = () => {
                     cancelAnimationFrame(raf);
                     raf = requestAnimationFrame(() => {
                         raf = 0;
+                        // בזמן הדפסה הדף משנה גודל — לא מודדים: מדפיסים בדיוק את העמודים שעל המסך
+                        if (window.matchMedia?.('print').matches) return;
                         const res = measure(view, ext.options.geometry());
                         const cur = pagesKey.getState(view.state);
-                        ext.storage.pages = res.pages;
-                        ext.options.onLayout(res);
-                        if (res.sig === cur.sig) { stable = 0; return; }
-                        if (++stable > 4) { stable = 0; return; }   // הגנה מלולאה (לא אמור לקרות)
-                        const deco = DecorationSet.create(view.state.doc, res.breaks.map(b => Decoration.widget(b.pos, spacer(b.h, b.page), {
+                        if (res.sig === cur.sig) { ext.storage.pages = res.pages; ext.options.onLayout(res); return; }
+                        if (settled) return;
+                        let pick = res;
+                        if (tried.has(res.sig)) {
+                            settled = true;
+                            const all = [...tried.values()];
+                            pick = all.reduce((a, r) => (earlier(r, a) ? r : a));
+                            if (pick.sig === cur.sig) return;
+                        }
+                        tried.set(res.sig, res);
+                        ext.storage.pages = pick.pages;
+                        ext.options.onLayout(pick);
+                        const deco = DecorationSet.create(view.state.doc, pick.breaks.map(b => Decoration.widget(b.pos, spacer(b.h, b.page), {
                             side: -1, key: `pb${b.page}-${Math.round(b.h)}`, ignoreSelection: true,
                             marks: [],   // מחוץ לכל סימון (גודל גופן וכו'): בהדפסה Chrome לא שובר עמוד בתוך span
                         })));
-                        view.dispatch(view.state.tr.setMeta(pagesKey, { deco, sig: res.sig }).setMeta('addToHistory', false));
+                        view.dispatch(view.state.tr.setMeta(pagesKey, { deco, sig: pick.sig }).setMeta('addToHistory', false));
                     });
                 };
-                ext.storage.schedule = schedule;
-                const ro = new ResizeObserver(schedule);
+                // מדידה מחדש מבחוץ (הגדרות עמוד, גופן שנטען, שינוי רוחב) — פותחת מחדש את הבחירה
+                const fresh = () => { tried = new Map(); settled = false; schedule(); };
+                ext.storage.schedule = fresh;
+                // שינוי גובה — בדרך כלל הרווחים שלנו; שינוי רוחב — שבירת שורות חדשה, מתחילים מחדש
+                let width = 0;
+                const ro = new ResizeObserver(() => {
+                    const w = view.dom.offsetWidth;
+                    if (w !== width) { width = w; fresh(); } else schedule();
+                });
                 ro.observe(view.dom);
-                document.fonts?.ready.then(schedule);
+                document.fonts?.ready.then(fresh);
                 // גופן שנטען מאוחר יותר (נטען רק כשמשתמשים בו — למשל גופן המסמך) משנה רוחב שורות — מודדים שוב
-                document.fonts?.addEventListener?.('loadingdone', schedule);
+                document.fonts?.addEventListener?.('loadingdone', fresh);
                 schedule();
                 return {
                     update(v, prev) {
+                        if (v.state.doc !== prev.doc) { tried = new Map(); settled = false; }
                         if (v.state.doc !== prev.doc || pagesKey.getState(v.state) !== pagesKey.getState(prev)) schedule();
                     },
-                    destroy() { cancelAnimationFrame(raf); ro.disconnect(); document.fonts?.removeEventListener?.('loadingdone', schedule); },
+                    destroy() { cancelAnimationFrame(raf); ro.disconnect(); document.fonts?.removeEventListener?.('loadingdone', fresh); },
                 };
             },
         })];
@@ -84,6 +106,14 @@ export const Pages = Extension.create({
         };
     },
 });
+
+/** האם בעימוד a הדף הראשון ששונה נשבר מוקדם יותר (בטוח יותר: שום שורה לא גולשת). */
+function earlier(a, b) {
+    for (let i = 0; i < Math.min(a.breaks.length, b.breaks.length); i++) {
+        if (a.breaks[i].pos !== b.breaks[i].pos) return a.breaks[i].pos < b.breaks[i].pos;
+    }
+    return a.breaks.length > b.breaks.length;
+}
 
 function spacer(h, page) {
     const el = document.createElement('span');

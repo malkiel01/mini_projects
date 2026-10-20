@@ -45,4 +45,14 @@ jobs:
 
       - name: בדיקות הדפדפן
         working-directory: word-processor/tests/e2e
+        env:
+          E2E_ARTIFACTS: ${{ runner.temp }}/e2e
         run: node run.mjs
+
+      - name: קבצים מהשוואה שנכשלה (PDF, צילום העורך)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: word-processor-e2e
+          path: ${{ runner.temp }}/e2e
+          if-no-files-found: ignore

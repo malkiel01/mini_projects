@@ -3,6 +3,7 @@
  *
  *   const ed = createWordEditor(root, { json, page, editable, upload, versions, onUpdate, onPage, menu });
  *   ed.getJSON() · ed.setContent(json) · ed.page · ed.setPage(p) · ed.setEditable(b) · ed.print() · ed.destroy()
+ *   ed.commands — כל הפקודות במקום אחד (commands.js); סרגל הכלים נבנה מהן
  *   הגדרות העמוד — בתוך ה-JSON (attrs.page של צומת השורש); opts.page / onPage — לתאימות ולמארחת.
  *
  * מה שעל המסך הוא מה שיודפס: עמודים בגודל אמיתי (מ"מ → פיקסלים ב-96 לאינץ'), שוליים, כותרת עליונה ותחתונה
@@ -13,6 +14,7 @@ import { extensions, imageBox } from './extensions.js';
 import { Pages, pageLabel } from './pagination.js';
 import { cleanPastedHtml } from './paste.js';
 import { migrate } from './schema.js';
+import { createCommands } from './commands.js';
 
 const MM = 96 / 25.4;
 const PT = 4 / 3;
@@ -354,88 +356,72 @@ export function createWordEditor(root, opts) {
     const chain = () => editor.chain().focus();
     const ed = editor;
 
-    const styleSel = h('select.tb-sel.w-style', { 'aria-label': 'סגנון', title: 'סגנון',
-        onchange: e => { chain().setStyle(e.target.value).run(); } },
-        Object.entries(STYLE_NAMES).map(([k, t]) => h('option', { value: k }, t)));
-    const fontSel = h('select.tb-sel.w-font', { 'aria-label': 'גופן', title: 'גופן',
-        onchange: e => { e.target.value ? chain().setFontFamily(e.target.value).run() : chain().unsetFontFamily().run(); } },
-        h('option', { value: '' }, 'גופן המסמך'), FONTS.map(f => h('option', { value: f, style: { fontFamily: cssFont(f) } }, f)));
-    const sizeSel = h('select.tb-sel.w-size', { 'aria-label': 'גודל גופן', title: 'גודל',
-        onchange: e => { e.target.value ? chain().setFontSize(e.target.value + 'pt').run() : chain().unsetFontSize().run(); } },
-        h('option', { value: '' }, '—'), SIZE_LIST.map(s => h('option', { value: s }, s)));
-    const colorIn = h('input', { type: 'color', value: '#c00000', 'aria-label': 'צבע טקסט', oninput: e => chain().setColor(e.target.value).run() });
-    const markIn = h('input', { type: 'color', value: '#ffff00', 'aria-label': 'צבע הדגשה', oninput: e => chain().setHighlight({ color: e.target.value }).run() });
-    const spacingSel = h('select.tb-sel.w-spacing', { 'aria-label': 'ריווח בין תווים', title: 'ריווח בין תווים',
-        onchange: e => { e.target.value ? chain().setLetterSpacing(e.target.value + 'pt').run() : chain().unsetLetterSpacing().run(); } },
-        SPACING.map(([v, t]) => h('option', { value: v }, t)));
-    const listType = h('select.tb-sel.w-list', { 'aria-label': 'סוג מספור', title: 'סוג מספור',
-        onchange: e => {
-            if (!ed.isActive('orderedList')) chain().toggleOrderedList().run();
-            chain().updateAttributes('orderedList', { listType: e.target.value }).run();
-        } }, h('option', { value: 'decimal' }, '1.'), h('option', { value: 'hebrew' }, 'א.'), h('option', { value: 'roman' }, 'i.'));
+    // ---------- הפקודות (commands.js) ----------
+    const cmds = createCommands({
+        editor, chain,
+        ui: {
+            paragraph: () => paragraphDialog(), table: () => tableDialog(), image: () => imgInput.click(),
+            pageSetup: () => pageDialog(), styles: () => stylesDialog(), print: () => print(),
+            versions: opts.versions ? () => versionsDialog() : null,
+            painter: sticky => { if (painter && !sticky) stopPainter(); else { stopPainter(); startPainter(sticky); } },
+            zoomOut: () => { fit = false; zoom = Math.max(0.3, Math.round((zoom - 0.1) * 10) / 10); setZoom(); },
+            zoomIn: () => { fit = false; zoom = Math.min(3, Math.round((zoom + 0.1) * 10) / 10); setZoom(); },
+            zoomFit: () => { fit = true; setZoom(); },
+            crop: pos => cropDialog(pos), imageProps: pos => imageDialog(pos), imageSize: f => imageSizeTo(f),
+        },
+    });
+    const ICONS = {
+        bold: () => h('b', 'B'), italic: () => h('i', 'I'), underline: () => h('u', 'U'), strike: () => h('s', 'S'),
+        superscript: () => h('span', 'x', h('sup', '2')), subscript: () => h('span', 'x', h('sub', '2')),
+        alignRight: () => alignIcon('right'), alignCenter: () => alignIcon('center'), alignLeft: () => alignIcon('left'), alignJustify: () => alignIcon('justify'),
+    };
+    /** כפתור של פקודה: הסמל, הכותרת והפעולה — מהרישום. */
+    const cmdBtn = (id, extra = {}) => btn(ICONS[id]?.() ?? cmds.get(id).icon, cmds.title(id), () => cmds.run(id), extra);
+    /** תיבת בחירה של פקודה עם ערך (גופן, גודל…). */
+    const cmdSel = (id, cls, options) => h('select.tb-sel.' + cls, { 'aria-label': cmds.get(id).label, title: cmds.get(id).label,
+        onchange: e => cmds.run(id, e.target.value) }, options);
+    const cmdColor = (id, value, cls = '') => h('label.tb.tb-color' + cls, { title: cmds.get(id).label },
+        h('span', { 'aria-hidden': 'true' }, cmds.get(id).icon), h('input', { type: 'color', value, 'aria-label': cmds.get(id).label, oninput: e => cmds.run(id, e.target.value) }));
+
+    const styleSel = cmdSel('style', 'w-style', Object.entries(STYLE_NAMES).map(([k, t]) => h('option', { value: k }, t)));
+    const fontSel = cmdSel('fontFamily', 'w-font', [h('option', { value: '' }, 'גופן המסמך'), ...FONTS.map(f => h('option', { value: f, style: { fontFamily: cssFont(f) } }, f))]);
+    const sizeSel = cmdSel('fontSize', 'w-size', [h('option', { value: '' }, '—'), ...SIZE_LIST.map(s => h('option', { value: s }, s))]);
+    const spacingSel = cmdSel('letterSpacing', 'w-spacing', SPACING.map(([v, t]) => h('option', { value: v }, t)));
+    const listType = cmdSel('listType', 'w-list', [h('option', { value: 'decimal' }, '1.'), h('option', { value: 'hebrew' }, 'א.'), h('option', { value: 'roman' }, 'i.')]);
+    sizeSel.title = 'גודל';
     let zoomLabel = h('span.tb-zoom', '100%');
     const imgInput = h('input', { type: 'file', accept: 'image/png,image/jpeg,image/gif,image/webp', multiple: true, hidden: true,
         onchange: e => { if (e.target.files.length) insertImages([...e.target.files]); e.target.value = ''; } });
 
-    const B = {
-        undo: btn('↶', 'ביטול (Ctrl+Z)', () => chain().undo().run()),
-        redo: btn('↷', 'ביצוע מחדש (Ctrl+Y)', () => chain().redo().run()),
-        bold: btn(h('b', 'B'), 'מודגש (Ctrl+B)', () => chain().toggleBold().run()),
-        italic: btn(h('i', 'I'), 'נטוי (Ctrl+I)', () => chain().toggleItalic().run()),
-        underline: btn(h('u', 'U'), 'קו תחתון (Ctrl+U)', () => chain().toggleUnderline().run()),
-        strike: btn(h('s', 'S'), 'קו חוצה', () => chain().toggleStrike().run()),
-        sup: btn(h('span', 'x', h('sup', '2')), 'כתב עילי', () => chain().toggleSuperscript().run()),
-        sub: btn(h('span', 'x', h('sub', '2')), 'כתב תחתי', () => chain().toggleSubscript().run()),
-        color: h('label.tb.tb-color', { title: 'צבע טקסט' }, h('span', { 'aria-hidden': 'true' }, 'A'), colorIn),
-        mark: h('label.tb.tb-color.mark', { title: 'צבע הדגשה' }, h('span', { 'aria-hidden': 'true' }, '🖍'), markIn),
-        painter: btn('🖌', 'העתקת עיצוב (לחיצה כפולה — לכמה מקומות)', e => { if (painter) stopPainter(); else startPainter(false); }, { ondblclick: () => { stopPainter(); startPainter(true); } }),
-        clear: btn('⌧', 'ניקוי עיצוב', () => chain().unsetAllMarks().setBlockAttrs({ lineHeight: null, spaceBefore: null, spaceAfter: null, indent: 0 }).unsetTextAlign().run()),
-        right: btn(alignIcon('right'), 'יישור לימין', () => chain().setTextAlign('right').run()),
-        center: btn(alignIcon('center'), 'מרכוז', () => chain().setTextAlign('center').run()),
-        left: btn(alignIcon('left'), 'יישור לשמאל', () => chain().setTextAlign('left').run()),
-        justify: btn(alignIcon('justify'), 'יישור לשני הצדדים', () => chain().setTextAlign('justify').run()),
-        bullets: btn('•≡', 'תבליטים', () => chain().toggleBulletList().run()),
-        numbers: btn('1≡', 'רשימה ממוספרת', () => chain().toggleOrderedList().run()),
-        outdent: btn('⇤', 'הקטנת הזחה', () => ed.isActive('listItem') ? chain().liftListItem('listItem').run() : chain().changeIndent(-1).run()),
-        indent: btn('⇥', 'הגדלת הזחה', () => ed.isActive('listItem') ? chain().sinkListItem('listItem').run() : chain().changeIndent(1).run()),
-        para: btn('¶', 'פסקה: ריווח, הזחה, כיוון', () => paragraphDialog()),
-        table: btn('▦', 'טבלה', () => tableDialog()),
-        image: btn('🖼', 'תמונה', () => imgInput.click()),
-        pagebreak: btn('⤓', 'מעבר עמוד (Ctrl+Enter)', () => chain().insertPageBreak().run()),
-        pagesetup: btn('📄', 'הגדרות עמוד ומספור עמודים', () => pageDialog()),
-        styles: btn('🅰', 'עריכת סגנונות', () => stylesDialog()),
-        print: btn('🖨', 'הדפסה / PDF', () => print()),
-        zoomOut: btn('−', 'הקטנה', () => { fit = false; zoom = Math.max(0.3, Math.round((zoom - 0.1) * 10) / 10); setZoom(); }),
-        zoomIn: btn('+', 'הגדלה', () => { fit = false; zoom = Math.min(3, Math.round((zoom + 0.1) * 10) / 10); setZoom(); }),
-        zoomFit: btn('⤢', 'התאמה למסך', () => { fit = true; setZoom(); }),
-    };
+    const TOGGLES = ['bold', 'italic', 'underline', 'strike', 'superscript', 'subscript', 'alignRight', 'alignCenter', 'alignLeft', 'alignJustify', 'bulletList', 'orderedList'];
+    const B = Object.fromEntries(['undo', 'redo', ...TOGGLES, 'clearFormat', 'outdent', 'indent', 'paragraphDialog', 'insertTable', 'insertImage', 'pageBreak',
+        'pageSetup', 'editStyles', 'print', 'zoomOut', 'zoomIn', 'zoomFit'].map(id => [id, cmdBtn(id)]));
+    B.painter = cmdBtn('formatPainter', { ondblclick: () => cmds.run('formatPainter', true) });
+    B.color = cmdColor('color', '#c00000');
+    B.mark = cmdColor('highlight', '#ffff00', '.mark');
     bar.append(
         h('div.tb-group', B.undo, B.redo), sep(),
         h('div.tb-group', styleSel, fontSel, sizeSel), sep(),
-        h('div.tb-group', B.bold, B.italic, B.underline, B.strike, B.color, B.mark, B.sup, B.sub, spacingSel, B.painter, B.clear), sep(),
-        h('div.tb-group', B.right, B.center, B.left, B.justify), sep(),
-        h('div.tb-group', B.bullets, B.numbers, listType, B.outdent, B.indent, B.para), sep(),
-        h('div.tb-group', B.table, B.image, imgInput, B.pagebreak), sep(),
-        h('div.tb-group', B.pagesetup, B.styles, B.print, opts.versions ? btn('🕘', 'גרסאות', () => versionsDialog()) : null, ...(opts.menu || [])), sep(),
+        h('div.tb-group', B.bold, B.italic, B.underline, B.strike, B.color, B.mark, B.superscript, B.subscript, spacingSel, B.painter, B.clearFormat), sep(),
+        h('div.tb-group', B.alignRight, B.alignCenter, B.alignLeft, B.alignJustify), sep(),
+        h('div.tb-group', B.bulletList, B.orderedList, listType, B.outdent, B.indent, B.paragraphDialog), sep(),
+        h('div.tb-group', B.insertTable, B.insertImage, imgInput, B.pageBreak), sep(),
+        h('div.tb-group', B.pageSetup, B.editStyles, B.print, opts.versions ? cmdBtn('versions') : null, ...(opts.menu || [])), sep(),
         h('div.tb-group.tb-zoomg', B.zoomOut, zoomLabel, B.zoomIn, B.zoomFit),
     );
 
     function refresh() {
         const on = (b, v) => { b.classList.toggle('on', !!v); b.setAttribute('aria-pressed', v ? 'true' : 'false'); };
-        on(B.bold, ed.isActive('bold')); on(B.italic, ed.isActive('italic')); on(B.underline, ed.isActive('underline'));
-        on(B.strike, ed.isActive('strike')); on(B.sup, ed.isActive('superscript')); on(B.sub, ed.isActive('subscript'));
-        for (const a of ['right', 'center', 'left', 'justify']) on(B[a], ed.isActive({ textAlign: a }));
-        on(B.bullets, ed.isActive('bulletList'));
-        on(B.numbers, ed.isActive('orderedList'));
-        styleSel.value = ed.isActive('heading', { level: 1 }) ? 'h1' : ed.isActive('heading', { level: 2 }) ? 'h2' : ed.isActive('heading', { level: 3 }) ? 'h3'
-            : ed.isActive('paragraph', { pstyle: 'title' }) ? 'title' : 'normal';
-        const ts = ed.getAttributes('textStyle');
-        fontSel.value = FONTS.includes(ts.fontFamily) ? ts.fontFamily : '';
-        sizeSel.value = ts.fontSize ? String(parseFloat(ts.fontSize)) : '';
-        spacingSel.value = ts.letterSpacing ? String(parseFloat(ts.letterSpacing)) : '';
-        if (ed.isActive('orderedList')) listType.value = ed.getAttributes('orderedList').listType || 'decimal';
-        B.undo.disabled = !ed.can().undo();
-        B.redo.disabled = !ed.can().redo();
+        for (const id of TOGGLES) on(B[id], cmds.state(id).active);
+        styleSel.value = cmds.state('style').value;
+        const font = cmds.state('fontFamily').value;
+        fontSel.value = FONTS.includes(font) ? font : '';
+        sizeSel.value = cmds.state('fontSize').value;
+        spacingSel.value = cmds.state('letterSpacing').value;
+        const lt = cmds.state('listType').value;
+        if (lt) listType.value = lt;
+        B.undo.disabled = !cmds.state('undo').enabled;
+        B.redo.disabled = !cmds.state('redo').enabled;
         contextBar();
     }
 
@@ -450,39 +436,33 @@ export function createWordEditor(root, opts) {
         ctxBar.textContent = '';
         ctxBar.hidden = !kind;
         if (kind === 'table') {
-            const fill = h('input', { type: 'color', value: '#ddeeff', 'aria-label': 'מילוי תא', oninput: e => chain().setCellAttribute('background', e.target.value).run() });
             ctxBar.append(h('span.ctx-title', 'טבלה'),
-                btn('⬆+', 'שורה מעל', () => chain().addRowBefore().run()), btn('⬇+', 'שורה מתחת', () => chain().addRowAfter().run()),
-                btn('➡+', 'עמודה מימין', () => chain().addColumnBefore().run()), btn('⬅+', 'עמודה משמאל', () => chain().addColumnAfter().run()),
-                btn('−⇆', 'מחיקת שורה', () => chain().deleteRow().run()), btn('−⇅', 'מחיקת עמודה', () => chain().deleteColumn().run()),
-                btn('⊞', 'מיזוג / פיצול תאים', () => chain().mergeOrSplit().run()), btn('▤', 'שורת כותרת', () => chain().toggleHeaderRow().run()),
-                h('label.tb.tb-color', { title: 'מילוי תא' }, h('span', { 'aria-hidden': 'true' }, '◩'), fill),
-                btn('🗑', 'מחיקת הטבלה', () => chain().deleteTable().run()));
+                ...['addRowBefore', 'addRowAfter', 'addColumnBefore', 'addColumnAfter', 'deleteRow', 'deleteColumn', 'mergeOrSplit', 'toggleHeaderRow']
+                    .map(id => cmdBtn('table.' + id)),
+                cmdColor('table.cellFill', '#ddeeff'), cmdBtn('table.deleteTable'));
         } else if (kind === 'image') {
             const a = sel.node.attrs;
-            const set = attrs => chain().updateAttributes('image', attrs).setNodeSelection(sel.from).run();
-            const max = editor.storage.wpPages.contentWidth;
-            const img = editor.view.nodeDOM(sel.from)?.querySelector('img');
-            const natural = img?.naturalWidth ? { w: img.naturalWidth, h: img.naturalHeight } : null;
-            const sizeTo = f => {
-                const g = imageBox(a, natural);
-                const ratio = g.h / g.w;
-                const c = a.crop || {};
-                const keep = 1 - ((c.l || 0) + (c.r || 0)) / 100;   // רוחב החלק שנשאר אחרי החיתוך
-                const w = f === 0 ? (natural?.w || g.w) : Math.round(max * f / keep);
-                set({ width: Math.round(w), height: Math.round(w * ratio) });
-            };
-            const wrapSel = h('select.tb-sel', { 'aria-label': 'גלישת טקסט', title: 'גלישת טקסט', onchange: e => set({ wrap: e.target.value, x: 0, y: 0 }) },
-                Object.entries(WRAP_NAMES).map(([k, t]) => h('option', { value: k, selected: (a.wrap || 'inline') === k }, t)));
+            const wrapSel = cmdSel('image.wrap', 'w-wrap', Object.entries(WRAP_NAMES).map(([k, t]) => h('option', { value: k, selected: (a.wrap || 'inline') === k }, t)));
             ctxBar.append(h('span.ctx-title', 'תמונה'), wrapSel,
-                segBtns({ right: 'ימין', center: 'מרכז', left: 'שמאל' }, a.align, v => set({ align: v }), 'יישור'),
-                segBtns([['0.25', '¼'], ['0.5', '½'], ['1', 'מלא'], ['0', 'מקורי']], '', v => sizeTo(+v), 'גודל'),
-                btn('⟲', 'סיבוב שמאלה', () => set({ rotate: ((a.rotate || 0) + 270) % 360 })),
-                btn('⟳', 'סיבוב ימינה', () => set({ rotate: ((a.rotate || 0) + 90) % 360 })),
-                btn('✂', 'חיתוך', () => cropDialog(sel.from)),
-                btn('⚙', 'כיתוב, מרחק מהטקסט ותיאור', () => imageDialog(sel.from)),
-                btn('🗑', 'מחיקת התמונה', () => chain().deleteSelection().run()));
+                segBtns({ right: 'ימין', center: 'מרכז', left: 'שמאל' }, a.align, v => cmds.run('image.align', v), 'יישור'),
+                segBtns([['0.25', '¼'], ['0.5', '½'], ['1', 'מלא'], ['0', 'מקורי']], '', v => cmds.run('image.size', v), 'גודל'),
+                ...['image.rotateLeft', 'image.rotateRight', 'image.crop', 'image.props', 'image.delete'].map(id => cmdBtn(id)));
         }
+    }
+    /** גודל תמונה: חלק מרוחב השורה (¼, ½, מלא), או 0 — הגודל המקורי. */
+    function imageSizeTo(f) {
+        const sel = ed.state.selection;
+        const a = sel.node?.attrs;
+        if (!a) return false;
+        const max = editor.storage.wpPages.contentWidth;
+        const img = editor.view.nodeDOM(sel.from)?.querySelector('img');
+        const natural = img?.naturalWidth ? { w: img.naturalWidth, h: img.naturalHeight } : null;
+        const g = imageBox(a, natural);
+        const ratio = g.h / g.w;
+        const c = a.crop || {};
+        const keep = 1 - ((c.l || 0) + (c.r || 0)) / 100;   // רוחב החלק שנשאר אחרי החיתוך
+        const w = f === 0 ? (natural?.w || g.w) : Math.round(max * f / keep);
+        return chain().updateAttributes('image', { width: Math.round(w), height: Math.round(w * ratio) }).setNodeSelection(sel.from).run();
     }
     function segBtns(options, value, onPick, label) {
         return h('div.tb-seg', { role: 'group', 'aria-label': label },
@@ -772,6 +752,8 @@ export function createWordEditor(root, opts) {
         get pages() { return pageCount; },
         getJSON: () => editor.getJSON(),
         setContent,
+        /** רישום הפקודות (commands.js): run(id, arg), state(id), list({group, available}). */
+        commands: cmds,
         setPage,
         setEditable,
         print,
