@@ -13,6 +13,7 @@
  *   POST ?action=install_report {device, label, app, state, how} — מהמכשיר (pwa-beacon.js / app.js)
  *   GET  ?action=sso_mine  האפליקציות שהמשתמש אישר להן כניסה מאוחדת
  *   POST ?action=sso_revoke {client_id} — ביטול חיבור
+ *   POST ?action=invite_accept {token, password} — הזמנה מאפליקציה (lib/provision.php): סיסמה וכניסה → {next}
  *
  * פעולות מנהל (lib/admin.php): GET admin_state, ו-POST admin_* — כולן דורשות
  * מנהל מחובר ו-X-CSRF.
@@ -62,6 +63,7 @@ try {
             'install_report' => action_install_report($body),
             'diag'     => action_diag($body),
             'handoff'  => action_handoff($body),
+            'invite_accept' => action_invite_accept($body),
             default    => str_starts_with($action, 'admin_')
                 ? admin_dispatch($action, $body, require_admin(true))
                 : throw new ApiError('פעולה לא מוכרת', 404),
@@ -301,6 +303,23 @@ function action_register(array $body): never
         error_log('platform mail: ' . $e->getMessage());
     }
     exit;
+}
+
+/** קישור ההזמנה מהמייל (#invite=…) — אפליקציה פתחה חשבון (lib/provision.php). בוחרים סיסמה ונכנסים. */
+function action_invite_accept(array $body): never
+{
+    require_once __DIR__ . '/lib/provision.php';
+    $keys = ['invite:' . client_ip()];
+    if (lock_remaining($keys) > 0) throw new ApiError('יותר מדי ניסיונות. נסו מאוחר יותר', 429);
+    $password = validate_password($body['password'] ?? null);
+    try {
+        $r = invite_accept(is_string($body['token'] ?? null) ? $body['token'] : '', $password);
+    } catch (ApiError $e) {
+        record_failure($keys);
+        throw $e;
+    }
+    start_session($r['user_id']);
+    json_out(['ok' => true, 'next' => $r['next']]);
 }
 
 /** הקישור מהמייל (#verify=…): המייל אומת. ממתין לאישור → התראה למנהל; בלי צורך באישור → פעיל. */

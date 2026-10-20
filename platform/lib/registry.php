@@ -44,6 +44,7 @@ function registry_load(): array
             'restricted'  => $app['restricted'] ?? false,
             'gate'        => $app['gate'] ?? false,
             'sso_returns' => array_values($app['sso']['return'] ?? []),
+            'provision_key_url' => $app['provision']['key_url'] ?? null,
             'category'    => $app['category'],
             'href'        => registry_href($folder, $app['entry'] ?? ''),
             'external'    => registry_is_external($app['entry'] ?? ''),
@@ -138,6 +139,11 @@ function registry_validate(string $folder, $app, array $categoryIds): ?string
         foreach ($ret as $u) {
             if (!is_string($u) || !preg_match('#^https://[^/?\#@\s]+(/[^\#\s]*)?$#i', $u)) return "sso.return: כתובת https מלאה, בלי # ($u)";
         }
+    }
+    // הזמנת משתמשים מהאפליקציה (docs/sso.md, סעיף 6): "provision": {"key_url": "https://…"} — המפתח הציבורי שלה.
+    if (isset($app['provision'])) {
+        $k = $app['provision']['key_url'] ?? null;
+        if (!is_string($k) || !preg_match('#^https://[^/?\#@\s]+(/[^\#\s]*)?$#i', $k)) return 'provision.key_url: כתובת https מלאה, בלי #';
     }
     $install = $app['install'] ?? [];
     if (!is_array($install)) return 'install חייב להיות אובייקט';
