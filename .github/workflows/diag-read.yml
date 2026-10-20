@@ -46,7 +46,7 @@ jobs:
           -----END PUBLIC KEY-----
           KEY
           sed -i 's/^ *//' pub.pem
-          Q='$p=new PDO("sqlite:platform/data/platform.sqlite");$r=$p->query("SELECT id,at,event,app,user_id,device,ua,path,referrer,info FROM diag_log WHERE event LIKE \"gate:%\" AND device LIKE \"Android%\" AND app NOT IN (\"greeting-cards\",\"project-manager\") ORDER BY id")->fetchAll(PDO::FETCH_ASSOC);echo json_encode($r,JSON_UNESCAPED_UNICODE);'
+          Q='$p=new PDO("sqlite:platform/data/platform.sqlite");$r=$p->query("SELECT id,at,event,app,user_id,device,ua,path,referrer,info FROM diag_log WHERE at >= strftime(\"%Y-%m-%dT%H:%M:%SZ\",\"now\",\"-75 minutes\") ORDER BY id")->fetchAll(PDO::FETCH_ASSOC);echo json_encode($r,JSON_UNESCAPED_UNICODE);'
           ok=0
           for w in 0 30 90 180; do
             sleep $w
