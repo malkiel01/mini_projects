@@ -54,7 +54,8 @@ export default async function (t) {
             if (d && process.env.DEBUG) console.log({ editor: ed.map(x => x.slice(0, 50)), [name]: name === 'הדפסה' ? t.pdfPages(printPdf).map(x => x.slice(0, 80)) : t.pdfPages(pdf).map(x => x.slice(0, 80)) });
             const known = c.known || (name === 'PDF מהשרת' ? c.known_pdf : null);
             if (d && known) t.known(label, `${d} (${known})`);
-            else if (!d && known) t.ok(label + ' — ההבדל הידוע נעלם: להסיר אותו מ-tests/corpus/make.php', false);
+            // הבדל ידוע שלא הופיע — עובר. חלקם תלויים בשורה גבולית שהעיגול שלה משתנה בין מחשבים (ב-CI ומקומית)
+            else if (!d && known) t.ok(label, true, 'ההבדל הידוע לא הופיע כאן — אם זה קבוע, להסיר אותו מ-tests/corpus/make.php');
             else t.ok(label, !d, d || `${edStarts.length} עמודים`);
         }
     }
