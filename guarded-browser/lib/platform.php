@@ -202,7 +202,9 @@ function provisionKeyPayload(): array {
 function platformProvision(string $email, string $name, bool $grant, ?callable $send = null): array {
     $email = strtolower(trim($email));
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) return ['', '', 'אין מייל — אי אפשר להזמין לפלטפורמה'];
-    $payload = ['email' => $email, 'name' => $name !== '' ? $name : $email, 'grant' => $grant,
+    // השם בפלטפורמה: 1–60 תווים (validate_display_name) — אצלנו עד 80.
+    $name = mb_substr(trim($name) !== '' ? trim($name) : $email, 0, 60);
+    $payload = ['email' => $email, 'name' => $name, 'grant' => $grant,
                 'next' => '/mini_projects/' . PLATFORM_CLIENT . '/parent/'];
     $body = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     $time = (string) time();
