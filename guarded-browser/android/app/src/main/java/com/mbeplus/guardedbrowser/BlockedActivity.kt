@@ -27,13 +27,15 @@ class BlockedActivity : AppCompatActivity() {
                 setImageResource(R.drawable.logo)
                 layoutParams = LinearLayout.LayoutParams(dp(72), dp(72))
             })
+            val removal = intent?.getBooleanExtra("removal", false) == true
             addView(TextView(this@BlockedActivity).apply {
-                text = "האפליקציה הזו חסומה"
+                text = if (removal) "אי אפשר להסיר את מגדלור" else "האפליקציה הזו חסומה"
                 textSize = 22f; setTextColor(getColor(R.color.ink))
                 gravity = Gravity.CENTER; setPadding(0, dp(16), 0, dp(6))
             })
             addView(TextView(this@BlockedActivity).apply {
-                text = "ההורה חסם את האפליקציה הזו במגדלור. אפשר לבקש ממנו לפתוח אותה."
+                text = if (removal) "הסרת מגדלור וביטול ניהול המכשיר אפשריים רק בתיאום עם ההורה."
+                       else "ההורה חסם את האפליקציה הזו במגדלור. אפשר לבקש ממנו לפתוח אותה."
                 textSize = 15f; setTextColor(getColor(R.color.dim)); gravity = Gravity.CENTER
             })
             addView(MaterialButton(this@BlockedActivity).apply {
