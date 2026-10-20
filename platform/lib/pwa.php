@@ -39,6 +39,14 @@ const INSTALL_COOKIE = 'platform-pwa-install';
 function wanted(string $app, ?array $cfg, string $path, array $params): bool
 {
     if (!applies($app, $cfg)) return false;
+    // אנדרואיד, ולאפליקציה יש APK: ההתקנה היא ה-APK, לא PWA. גם בתוך ה-APK עצמו הדף נראה
+    // כמו דפדפן (WebView, או TWA שלא אומת) — שם פס "התקנה" מציע להתקין את מה שכבר פתוח.
+    // ‏"; wv)" — כל WebView של אנדרואיד, גם של אפליקציה שאין לה Release.
+    $ua = (string)($_SERVER['HTTP_USER_AGENT'] ?? '');
+    if (str_contains($ua, 'Android')
+        && (str_contains($ua, '; wv)') || !empty($cfg['install']['release']) || !empty($cfg['install']['apk']))) {
+        return false;
+    }
     if (\Platform\Gate\is_public($cfg, $path, $params)
         && !isset($params['pwa-install']) && !isset($params['pwa-launch'])
         && ($_COOKIE[INSTALL_COOKIE] ?? '') !== $app) return false;
