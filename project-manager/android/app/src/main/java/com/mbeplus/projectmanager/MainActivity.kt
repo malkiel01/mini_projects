@@ -44,6 +44,7 @@ import java.io.FileInputStream
  *   • שיתוף אליה מכל אפליקציה (ShareInbox) — נפתח מסך "לאן לשמור?" של האתר (#/share).
  *   • קיצורי שיתוף ישיר לתיקיות האחרונות (Shortcuts) — האתר מעדכן אותם דרך PMNative.setRecent.
  *   • צילום / בחירת קבצים לשדות הקובץ, הורדות, קישורים חיצוניים (וואטסאפ, טלפון, מייל) ו"חזרה".
+ *   • קישור לאתר (App Link) נטען כמו שהוא — כולל ?platform-handoff של הכלים הדיגיטליים (platform/docs/auth.md).
  */
 class MainActivity : Activity() {
     companion object {
@@ -98,15 +99,22 @@ class MainActivity : Activity() {
         }
 
         val shared = ShareInbox.receive(this, intent)
-        web.loadUrl(base + (if (shared) "#/share" else intent.getStringExtra(EXTRA_HASH) ?: ""))
+        web.loadUrl(link(intent) ?: (base + (if (shared) "#/share" else intent.getStringExtra(EXTRA_HASH) ?: "")))
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        link(intent)?.let { web.loadUrl(it); return }
         val hash = if (ShareInbox.receive(this, intent)) "#/share" else intent.getStringExtra(EXTRA_HASH) ?: return
         // האתר כבר פתוח — רק מעבירים מסך (אם כבר ב-#/share — מכריחים ציור מחדש)
         web.evaluateJavascript("(function(h){ if (location.hash === h) dispatchEvent(new HashChangeEvent('hashchange')); else location.hash = h; })('$hash')", null)
+    }
+
+    /** קישור לאתר שנפתח באפליקציה (VIEW) — הכתובת כמו שהיא, עם ?platform-handoff אם יש; אחרת null. */
+    private fun link(intent: Intent?): String? {
+        val url = intent?.takeIf { it.action == Intent.ACTION_VIEW }?.dataString ?: return null
+        return url.takeIf { it.startsWith(base) }
     }
 
     override fun onPause() {
@@ -157,7 +165,11 @@ class MainActivity : Activity() {
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
             val url = request.url
             val inside = (url.scheme == "https" || url.scheme == "http") && url.host == Uri.parse(base).host
-            if (inside) return false
+            // הכלים הדיגיטליים (platform/) — בדפדפן, שם המשתמש מחובר; משם "כניסה עם הכלים הדיגיטליים" חוזרת לכאן
+            // עם ?platform-handoff. sso.php נשאר בפנים: הכניסה המאוחדת של האתר חוזרת אליו עם token באותה עוגייה.
+            val platform = inside && (url.path ?: "").startsWith("/mini_projects/platform/") &&
+                !(url.path ?: "").startsWith("/mini_projects/platform/sso.php")
+            if (inside && !platform) return false
             // וואטסאפ, טלפון, מייל, ניווט ואתרים אחרים — באפליקציה המתאימה
             try {
                 val i = if (url.scheme == "intent") Intent.parseUri(url.toString(), Intent.URI_INTENT_SCHEME) else Intent(Intent.ACTION_VIEW, url)

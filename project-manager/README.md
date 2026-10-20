@@ -151,6 +151,12 @@
   (`Shortcuts.kt`, סמל: ראשי התיבות של הפרויקט).
 - **עוד באפליקציה**: צילום / בחירת קבצים לשדות קובץ (FileProvider), הורדות (גם קבצים שנוצרים בדף — blob),
   וואטסאפ / טלפון / מייל באפליקציות שלהם, "חזרה" של הטלפון = החץ של האתר, מסך "אין חיבור".
+- **התחברות מהכלים הדיגיטליים** (2026-10-20, `platform/docs/auth.md` — "העברת התחברות לאפליקציית אנדרואיד"):
+  App Link (`autoVerify`) ל-`https://mbe-plus.com/mini_projects/project-manager/` — "פתיחה" בכרטיס מגיעה עם
+  `?platform-handoff=<קוד>`, `MainActivity` טוען אותה כמו שהיא (`onCreate` / `onNewIntent`) והשער מחבר.
+  כתובות `/mini_projects/platform/` נפתחות **בדפדפן** (שם המשתמש מחובר; משם "כניסה עם הכלים הדיגיטליים" חוזרת
+  לאפליקציה); `platform/sso.php` ומסך הכניסה `/mini_projects/?next` — בפנים. `asset_statements` — כדי שהפלטפורמה
+  תזהה שהאפליקציה מותקנת.
 - **בנייה וחתימה — תיקיית החנות** (גרסה 0.99, `platform/docs/rollout.md` צעד 5): ה-workflow בונה בכל שינוי
   ב-`android/` (מ-PR — רק בדיקה). מ-main — Release קבוע `project-manager-store` (`app.json` ←
   `"install": {"release": "project-manager-store"}`): `project-manager.apk` (התקנה ידנית — גם ב"החשבון שלי"),
