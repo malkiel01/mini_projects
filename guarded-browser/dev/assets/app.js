@@ -109,6 +109,7 @@ async function boot() {
     catch (e) { document.body.append(el('p', { class: 'error', text: e.message, style: 'margin:16px' })); return; }
     state.csrf = me.csrf;
     state.platform = me.platform;
+    state.can_create = !!me.can_create;
     if (me.link) return showAuth(false, true);
     if (!me.me) return showAuth(me.setup);
     state.me = me.me;
@@ -129,6 +130,11 @@ function showAuth(setup, link = false) {
     $('#auth-link').hidden = !link;
     // מהתפריט (כבר מחובר) — "חזרה" במקום חשבון חדש.
     $('#auth-new').textContent = state.me ? 'חזרה' : 'אין לי חשבון — פתיחת חשבון חדש';
+    // חשבון חדש רק בהקמה הראשונה; אחרת — הזמנה ממפתח קיים (השרת אוכף, כאן רק לא מציעים).
+    $('#auth-new').hidden = !state.me && !state.can_create;
+    if (link && !state.me && !state.can_create) {
+        $('#auth-sub').textContent = 'אין לך גישה לקונסולה. אם היה לך חשבון ישן — חבר אותו כאן; אחרת בקש ממפתח קיים להזמין את המייל שלך.';
+    }
     $('#auth-go').textContent = link ? 'חיבור החשבון הישן' : setup ? 'יצירה וכניסה' : 'כניסה';
     const form = $('#auth-form');
     form.password.autocomplete = setup ? 'new-password' : 'current-password';
@@ -494,6 +500,20 @@ async function loadSystem() {
     renderProvision(s.provision);
     renderSignKey(s.sign_pubkey);
     renderInviteAll();
+    renderDevInvite();
+}
+
+/** הזמנת מפתח נוסף: המייל נשמר, והחשבון מתקשר בכניסה הראשונה דרך הפלטפורמה (מייל מאומת בלבד). */
+function renderDevInvite() {
+    const box = $('#sys-invite');
+    if (!box) return;
+    const email = el('input', { type: 'email', dir: 'ltr', placeholder: 'email@example.com', autocomplete: 'off' });
+    const btn = el('button', { type: 'button', class: 'btn', text: '➕ הזמנת מפתח נוסף' });
+    btn.addEventListener('click', async () => {
+        try { await call('dev_invite', { email: email.value }); toast('הוזמן — יתחבר בכניסה הראשונה דרך הכלים הדיגיטליים'); email.value = ''; }
+        catch (x) { toast(x.message, true); }
+    });
+    box.append(el('label', { class: 'f', style: 'margin-top:12px' }, [el('span', { text: 'מפתח נוסף — לפי מייל מאומת בפלטפורמה' }), email]), btn);
 }
 
 /** כל ההורים נכנסים דרך הפלטפורמה: הזמנה לכל מי שעוד לא מקושר. */

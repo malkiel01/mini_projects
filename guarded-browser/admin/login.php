@@ -26,12 +26,18 @@ if ($id) {
         // לפני החיבור אין session, ולכן אין CSRF — כמו בכניסה הרגילה. אחריו — כרגיל.
         if ($me) checkCsrf();
         if (($_POST['choice'] ?? '') === 'new') {
-            if (!$row) platformCreate('admin', $id);
-            header('Location: index.php');
-            exit;
+            // מנהל חדש נפתח רק בהקמה הראשונה — הרשאה בפלטפורמה אינה הרשאת ניהול.
+            if (!$row && platformMayBootstrap('admin', $id)) {
+                platformCreate('admin', $id);
+                header('Location: index.php');
+                exit;
+            }
+            audit(0, 'platform_create', false, '', 'admin', 'denied:' . $id['sub']);
+            $msg = 'חשבון מנהל נפתח רק על ידי מנהל קיים. אם יש לך חשבון ישן — היכנס בו למטה.';
+        } else {
+            $msg = platformLinkOld('admin', $id, (string) ($_POST['username'] ?? ''), (string) ($_POST['password'] ?? ''));
+            if ($msg === '') { forgetSessions(); header('Location: index.php'); exit; }
         }
-        $msg = platformLinkOld('admin', $id, (string) ($_POST['username'] ?? ''), (string) ($_POST['password'] ?? ''));
-        if ($msg === '') { forgetSessions(); header('Location: index.php'); exit; }
     }
 
     layoutTop('חיבור חשבון', $me);
@@ -48,7 +54,7 @@ if ($id) {
     <button class="btn btn--go" type="submit">חיבור החשבון הישן</button>
   </form>
 </div>
-<?php if (!$me): ?>
+<?php if (!$me && platformMayBootstrap('admin', $id)): ?>
 <div class="card">
   <form method="post">
     <input type="hidden" name="choice" value="new">

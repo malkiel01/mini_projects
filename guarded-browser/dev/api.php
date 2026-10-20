@@ -42,6 +42,8 @@ function meState(): array {
         'ok'    => true,
         'platform' => $platform,
         'link'  => $platform && !$d,
+        // "אין לי חשבון" — רק בהקמה הראשונה. אחרת חשבון מפתח נפתח בהזמנה ממפתח קיים (developerInvite).
+        'can_create' => !$d && ($id = platformIdentity()) && platformMayBootstrap('dev', $id),
         'setup' => !$platform && developerCount() === 0,
         'me'    => $d ? ['id' => (int) $d['id'], 'username' => $d['username'], 'name' => $d['name']] : null,
         'csrf'  => $d ? (string) (sessionRow('dev')['csrf'] ?? '') : '',
@@ -74,6 +76,10 @@ try {
         if ($action === 'link') {
             if ($err = platformLinkOld('dev', $id, str('username'), (string) (body()['password'] ?? ''))) fail($err);
         } elseif (!platformLinked('dev', $id)) {
+            if (!platformMayBootstrap('dev', $id)) {
+                audit(0, 'platform_create', false, '', 'dev', 'denied:' . $id['sub']);
+                fail('חשבון מפתח נפתח רק בהזמנה ממפתח קיים', 403, 'forbidden');
+            }
             platformCreate('dev', $id);
         }
         forgetSessions();
@@ -90,6 +96,11 @@ try {
             // מחוברת: היציאה היא מהפלטפורמה — אחרת הבקשה הבאה הייתה מכניסה שוב.
             if (platformIdentity()) fail('היציאה היא מהכלים הדיגיטליים');
             endSession('dev');
+            out(['ok' => true]);
+
+        /* ── הזמנת מפתח: המייל נשמר, והחשבון מתקשר בכניסה הראשונה דרך הפלטפורמה (מייל מאומת) ── */
+        case 'dev_invite':
+            if ($err = developerInvite(str('email'), str('name'), (int) $dev['id'])) fail($err);
             out(['ok' => true]);
 
         case 'password':
