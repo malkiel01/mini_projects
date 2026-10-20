@@ -15,6 +15,7 @@ putenv('WP_DETACHED=1');
 require_once __DIR__ . '/../lib/embed.php';
 require_once __DIR__ . '/../lib/export.php';
 require_once __DIR__ . '/../lib/import.php';
+require_once __DIR__ . '/../lib/pdf.php';
 
 $fail = 0;
 $pass = 0;
@@ -30,6 +31,14 @@ function throws(callable $fn, string $code): bool
     return false;
 }
 function section(string $s): void { echo "\n$s\n"; }
+/** כל זרמי התוכן של PDF, פרושים (לבדיקה). */
+function gzuncompress_pages(string $pdf): string
+{
+    $out = '';
+    preg_match_all('/stream\n(.*?)\nendstream/s', $pdf, $m);
+    foreach ($m[1] as $z) { $u = @gzuncompress($z); if ($u !== false && str_contains($u, ' Tf ') || ($u !== false && str_contains($u, ' re '))) $out .= $u; }
+    return $out;
+}
 
 // מפתחות "מפורסמים" של לקוחות — במקום HTTP
 $published = [];
@@ -198,7 +207,9 @@ check('עד 100 גרסאות למסמך', count(versions_list($row)) === 100, (s
 
 // ======================================================================
 section('ייצוא');
-$png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP8z8DAwMDAxMDAwMDAAAANHQEDK+mmyAAAAABJRU5ErkJggg==');
+$gd = imagecreatetruecolor(2, 2);
+imagefill($gd, 0, 0, imagecolorallocate($gd, 200, 30, 30));
+ob_start(); imagepng($gd); $png = ob_get_clean();   // PNG תקין (2×2)
 $media = media_store($docA, $png);
 check('העלאת תמונה (PNG אמיתי)', strlen($media['id']) === 24 && $media['width'] === 2);
 check('קובץ שאינו תמונה → נדחה', throws(fn() => media_store($docA, '<?php echo 1;'), 'bad_type'));
@@ -376,6 +387,64 @@ check('docx → JSON: כל סוגי הגלישה חוזרים', array_column($im
 check('docx → JSON: חיתוך, סיבוב, מיקום ומרחק חוזרים', ($imgs[4]['crop'] ?? null) == ['t' => 10, 'r' => 0, 'b' => 10, 'l' => 25] && ($imgs[4]['rotate'] ?? 0) === 90
     && abs($imgs[4]['width'] - 200) <= 1 && ($imgs[2]['x'] ?? null) === 40 && ($imgs[3]['x'] ?? null) === -5 && ($imgs[0]['dist'] ?? null) == 12);
 check('docx → JSON: ריווח תווים חוזר', str_contains(json_encode($back['json']), '"letterSpacing":"2pt"') && str_contains(json_encode($back['json']), '"letterSpacing":"-1pt"'));
+
+// ======================================================================
+section('PDF מהשרת');
+$vis = function (string $s, int $p = 1): string {
+    $cps = array_map('mb_ord', mb_str_split($s));
+    $lv = bidi_levels($cps, $p);
+    $out = '';
+    foreach (bidi_visual($lv, $cps, $p) as $i) { $ch = mb_chr($cps[$i]); $out .= $lv[$i] % 2 && isset(BIDI_MIRROR[$ch]) ? BIDI_MIRROR[$ch] : $ch; }
+    return $out;
+};
+check('bidi: תאריך ומספר נשארים שלמים בתוך עברית', $vis('שלום 2026/01-04 עולם') === 'םלוע 2026/01-04 םולש' && $vis('סכום 250,000 ₪.') === '.₪ 250,000 םוכס');
+check('bidi: סוגריים מתהפכים, אנגלית נשארת משמאל לימין', $vis('פרויקט ABC def (שלב 2)') === '(2 בלש) ABC def טקיורפ');
+check('bidi: פסקה משמאל לימין עם עברית', $vis('Hello שלום world', 0) === 'Hello םולש world');
+$f = FontSet::pick(FontSet::stack('David', false), 0x5D0);
+check('גופן: WOFF נקרא, עברית ורוחבים', $f->has(0x5D0) && $f->unitsPerEm > 0 && $f->advance(0x5D0, 12) > 3 && substr($f->sfnt, 0, 4) === "\0\1\0\0");
+
+$pdfOf = fn(array $j, array $p = []) => export_pdf($j, page_normalize($p), 'בדיקה');
+$structOk = function (string $pdf): bool {
+    if (!str_starts_with($pdf, '%PDF-1.7') || !str_ends_with(rtrim($pdf), '%%EOF')) return false;
+    if (!preg_match('/startxref\n(\d+)\n/', $pdf, $m) || substr($pdf, (int)$m[1], 4) !== 'xref') return false;
+    preg_match_all('/^(\d+) 0 obj$/m', $pdf, $objs, PREG_OFFSET_CAPTURE);
+    preg_match('/xref\n0 (\d+)\n0000000000 65535 f \n((?:\d{10} 00000 n \n)+)/', $pdf, $x);
+    $offs = array_map(fn($l) => (int)substr($l, 0, 10), array_filter(explode("\n", $x[2] ?? '')));
+    foreach ($objs[1] as $k => [$num, $at]) if (($offs[(int)$num - 1] ?? -1) !== $objs[0][$k][1]) return false;
+    return count($offs) === (int)$x[1] - 1;
+};
+$long = ['type' => 'doc', 'content' => []];
+for ($i = 1; $i <= 40; $i++) $long['content'][] = ['type' => 'paragraph', 'attrs' => ['textAlign' => 'justify'], 'content' => [['type' => 'text', 'text' => str_repeat("פסקה $i עם טקסט שחוזר על עצמו כדי למלא שורות. ", 6)]]];
+$long['content'][] = ['type' => 'pageBreak'];
+$long['content'][] = ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'אחרי מעבר עמוד']]];
+$pdf = $pdfOf($long, ['numbering' => ['format' => 'hebrew'], 'header' => 'כותרת עליונה']);
+$pages = preg_match_all('#/Type /Page /#', $pdf);
+check('PDF: מבנה תקין (xref מדויק, EOF)', $structOk($pdf));
+check('PDF: מסמך ארוך → כמה עמודים, ומעבר עמוד ידני פותח עמוד', $pages >= 4, (string)$pages);
+check('PDF: גופן מוטמע (Type0 + FontFile2) עם ToUnicode', str_contains($pdf, '/Subtype /Type0') && str_contains($pdf, '/FontFile2') && str_contains($pdf, '/ToUnicode'));
+check('PDF: כיוון קריאה מימין לשמאל ושפה עברית', str_contains($pdf, '/Direction /R2L') && str_contains($pdf, '/Lang (he-IL)'));
+if (trim((string)shell_exec('command -v pdftotext'))) {
+    $tmpPdf = "$tmp/t.pdf";
+    file_put_contents($tmpPdf, $pdf);
+    // pdftotext מוסיף סימני כיוון (U+202A–202C) בין עברית לספרות — מסירים
+    $clean = fn($t) => preg_replace('/[\x{202A}-\x{202E}]/u', '', (string)$t);
+    $p1 = $clean(shell_exec('pdftotext -f 1 -l 1 ' . escapeshellarg($tmpPdf) . ' - 2>&1'));
+    $pl = $clean(shell_exec('pdftotext -f ' . $pages . ' -l ' . $pages . ' ' . escapeshellarg($tmpPdf) . ' - 2>&1'));
+    check('PDF (pdftotext): העברית ניתנת לחילוץ, מספור עמודים באותיות', preg_match('/פסקה\s+1/u', $p1) === 1 && str_contains($p1, 'כותרת עליונה') && preg_match('/^\s*א\s*$/mu', $p1) === 1);
+    check('PDF (pdftotext): העמוד האחרון — אחרי מעבר העמוד בלבד', str_contains($pl, 'אחרי מעבר עמוד') && !str_contains($pl, 'פסקה 40'));
+} else {
+    echo "  · pdftotext לא מותקן — דילוג על חילוץ הטקסט\n";
+}
+$pdfImg = $pdfOf(doc_json($rowI));
+$ops = gzuncompress_pages($pdfImg);
+check('PDF: תמונות (XObject), חיתוך כ-clip, סיבוב 90° עם כיוון השעון', $structOk($pdfImg) && str_contains($pdfImg, '/Subtype /Image') && str_contains($ops, ' re W n')
+    && preg_match('/\n0 -1 1 0 [\d.]+ [\d.]+ cm/', $ops) === 1, substr($ops, 0, 0));
+$tbl = ['type' => 'doc', 'content' => [['type' => 'table', 'content' => array_merge(
+    [['type' => 'tableRow', 'content' => [['type' => 'tableHeader', 'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'כותרת הטבלה']]]]]]]],
+    array_map(fn($i) => ['type' => 'tableRow', 'content' => [['type' => 'tableCell', 'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => "שורה $i"]]]]]]], range(1, 80)))]]];
+$pdfT = $pdfOf($tbl);
+$pt = preg_match_all('#/Type /Page /#', $pdfT);
+check('PDF: טבלה ארוכה נשברת בין שורות, ושורת הכותרת חוזרת בכל עמוד', $pt >= 2 && substr_count(gzuncompress_pages($pdfT), '0.95 0.95 0.95 rg') >= $pt, "$pt עמודים");
 
 // ======================================================================
 section('הגדרות עמוד');

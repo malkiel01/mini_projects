@@ -88,7 +88,6 @@
 .wp-img.wrap-square, .wp-img.wrap-tight { float: right; margin: 0 0 var(--dist) var(--dist); }
 .wp-img.wrap-square.align-left, .wp-img.wrap-tight.align-left { float: left; margin: 0 var(--dist) var(--dist) 0; }
 .wp-img.wrap-square.align-center, .wp-img.wrap-tight.align-center { float: none; display: block; margin: var(--dist) auto; }
-.wp-img.wrap-tight { shape-margin: var(--dist); shape-image-threshold: .5; }
 .wp-img.wrap-topBottom { display: block; clear: both; margin-block: var(--dist); margin-inline-start: 0; }
 .wp-img.wrap-topBottom.align-center { margin-inline: auto; }
 .wp-img.wrap-topBottom.align-left { margin-inline-start: auto; }

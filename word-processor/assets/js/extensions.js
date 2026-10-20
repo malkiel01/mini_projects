@@ -254,11 +254,10 @@ export const WpImage = Node.create({
                     transform: `translate(-50%, -50%) rotate(${a.rotate || 0}deg)` });
                 dom.style.setProperty('--bw', g.bw + 'px');
                 dom.style.setProperty('--bh', g.bh + 'px');
-                dom.style.setProperty('--dist', (a.dist ?? (FLOATING.includes(wrap) || wrap === 'topBottom' ? 9 : 0)) + 'pt');
+                // צמוד — כמו ריבוע סביב מלבן התמונה (כך גם ב-Word וב-PDF), במרחק קטן יותר
+                dom.style.setProperty('--dist', (a.dist ?? (wrap === 'tight' ? 4 : FLOATING.includes(wrap) || wrap === 'topBottom' ? 9 : 0)) + 'pt');
                 dom.style.left = ABSOLUTE.includes(wrap) ? (a.x || 0) + 'px' : '';
                 dom.style.top = ABSOLUTE.includes(wrap) ? (a.y || 0) + 'px' : '';
-                // צמוד: הטקסט עוטף את קווי המתאר של התמונה (שקיפות), כשאין חיתוך או סיבוב
-                dom.style.shapeOutside = wrap === 'tight' && !a.crop && !a.rotate && a.src ? `url("${a.src}")` : '';
                 cap.textContent = a.caption || '';
                 cap.hidden = !a.caption;
             };

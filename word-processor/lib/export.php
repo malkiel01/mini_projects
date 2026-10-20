@@ -80,7 +80,7 @@ function image_geom(array $a, ?array $m, ?float $maxW = null): array
     if ($maxW && $cw > $maxW) { $k = $maxW / $cw; $w *= $k; $h *= $k; $cw *= $k; $ch *= $k; }
     $turned = $rot % 180 !== 0;
     $wrap = in_array($a['wrap'] ?? 'inline', IMAGE_WRAPS, true) ? ($a['wrap'] ?? 'inline') : 'inline';
-    $dist = isset($a['dist']) && is_numeric($a['dist']) ? max(0, min(72, (float)$a['dist'])) : (in_array($wrap, ['square', 'tight', 'topBottom'], true) ? 9.0 : 0.0);
+    $dist = isset($a['dist']) && is_numeric($a['dist']) ? max(0, min(72, (float)$a['dist'])) : ($wrap === 'tight' ? 4.0 : (in_array($wrap, ['square', 'topBottom'], true) ? 9.0 : 0.0));
     return ['w' => $w, 'h' => $h, 'cw' => $cw, 'ch' => $ch, 'bw' => $turned ? $ch : $cw, 'bh' => $turned ? $cw : $ch,
         'crop' => $crop, 'rot' => $rot, 'wrap' => $wrap, 'dist' => $dist,
         'align' => in_array($a['align'] ?? '', ['right', 'center', 'left'], true) ? $a['align'] : 'right'];

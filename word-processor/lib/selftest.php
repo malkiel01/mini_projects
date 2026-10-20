@@ -3,7 +3,7 @@
  * בדיקה חיה של ההטמעה מול השרת עצמו — api.php?action=selftest (ציבורי, פעם ב-20 שניות).
  * העורך נרשם כלקוח של עצמו ('word-processor', המפתח ב-embed_key) ועובר את כל המסלול **ב-HTTP אמיתי**
  * (דרך השרת והשער, כמו מארחת): client_register → embed_session חתום → embed.php (CSP) → embed_open →
- * embed_save → doc_export (html/text/ooxml/docx) → בקשה חוזרת (replay) → מסמך של לקוח אחר (404) → doc_delete.
+ * embed_save → doc_export (html/text/ooxml/docx/pdf) → בקשה חוזרת (replay) → מסמך של לקוח אחר (404) → doc_delete.
  * מחזיר רק כן/לא לכל שלב — בלי תוכן ובלי סודות.
  */
 
@@ -86,6 +86,8 @@ function selftest(): array
     }
     [[$c, $h, $b]] = $signed('doc_export', ['doc' => $doc, 'format' => 'docx']);
     $ok('doc_export docx', $c === 200 && str_starts_with($b, 'PK') && stripos($h, 'wordprocessingml') !== false, (string)$c);
+    [[$c, $h, $b]] = $signed('doc_export', ['doc' => $doc, 'format' => 'pdf']);
+    $ok('doc_export pdf', $c === 200 && str_starts_with($b, '%PDF-') && str_contains($b, '%%EOF') && stripos($h, 'application/pdf') !== false, $c . ' ' . strlen($b) . 'B');
 
     // 7. replay — אותה בקשה חתומה פעמיים
     [[$c], $hdr, $body] = $signed('doc_get', ['doc' => $doc]);

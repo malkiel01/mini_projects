@@ -218,7 +218,8 @@ async function openDoc(id) {
     function docMenu(anchor) {
         const items = [
             ['⬇️', 'הורדה כ-Word', () => { location.href = `api.php?action=my_export&format=docx&doc=${id}`; }],
-            ['🖨', 'הדפסה / PDF', () => ed.print()],
+            ['📕', 'הורדה כ-PDF', async () => { await save(); location.href = `api.php?action=my_export&format=pdf&doc=${id}`; }],
+            ['🖨', 'הדפסה', () => ed.print()],
             ['📝', 'הורדה כטקסט', () => { location.href = `api.php?action=my_export&format=text&doc=${id}`; }],
             ['🧾', 'גיבוי (JSON)', () => { location.href = `api.php?action=my_export&format=json&doc=${id}`; }],
             ['📑', 'שכפול', async () => { await save(); const r = await api('my_copy', { doc: id }); location.hash = '#/d/' + r.doc; }],
