@@ -109,14 +109,12 @@ class MainActivity : AppCompatActivity() {
 
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                // הכלי מאחורי השער של הפלטפורמה: בלי כניסה, השער מפנה לדף הכניסה
-                // ‏(/mini_projects/?next=…). הוא חייב להיפתח כאן, כדי שעוגיית הכניסה
-                // תישמר ב-WebView ולא בדפדפן חיצוני.
+                // ‏רק כתובות האפליקציה עצמה נשארות כאן. הכלים הדיגיטליים (/mini_projects/) הם מעטפת
+                // הפיתוח, לא חלק מהאפליקציה — נפתחים בחוץ. גם ההתחברות לשער: הוא מפנה את ה-WebView
+                // ל-platform/handoff.php, שנפתח בדפדפן ומחזיר לכאן כתובת עם ?platform-handoff=<קוד>.
                 val path = request.url.path ?: ""
-                val inApp = request.url.host == "mbe-plus.com" && (
-                    path.startsWith("/mini_projects/greeting-cards") ||
-                    path == "/mini_projects/" || path == "/mini_projects/index.html"
-                )
+                val inApp = request.url.scheme == "https" && request.url.host == "mbe-plus.com" &&
+                    path.startsWith("/mini_projects/greeting-cards/")
                 return if (inApp) {
                     false
                 } else {
