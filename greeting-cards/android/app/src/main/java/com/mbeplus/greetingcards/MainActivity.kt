@@ -64,7 +64,26 @@ class MainActivity : AppCompatActivity() {
         })
 
         setupWebView()
-        binding.webView.loadUrl(BuildConfig.WEB_URL)
+        binding.webView.loadUrl(launchUrl(intent) ?: BuildConfig.WEB_URL)
+    }
+
+    // ‏launchMode="singleTask": "פתיחה" כשהאפליקציה כבר פתוחה מגיעה לכאן ולא ל-onCreate.
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        launchUrl(intent)?.let { binding.webView.loadUrl(it) }
+    }
+
+    /**
+     * ‏כתובת הכלי שהאפליקציה נפתחה בה (intent של VIEW), כמו שהיא — כולל ?platform-handoff=<קוד>,
+     * שבו השער מחבר את המשתמש. כל כתובת אחרת, או פתיחה מהאייקון — null.
+     */
+    private fun launchUrl(intent: Intent?): String? {
+        val uri = intent?.data ?: return null
+        if (intent.action != Intent.ACTION_VIEW) return null
+        val ok = uri.scheme == "https" && uri.host == "mbe-plus.com" &&
+            (uri.path ?: "").startsWith("/mini_projects/greeting-cards/")
+        return if (ok) uri.toString() else null
     }
 
     private fun setupWebView() {

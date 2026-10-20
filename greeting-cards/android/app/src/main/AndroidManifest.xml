@@ -22,13 +22,27 @@
         android:usesCleartextTraffic="false"
         android:theme="@style/Theme.GreetingCards">
 
+        <meta-data android:name="asset_statements" android:resource="@string/asset_statements" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTask"
             android:configChanges="orientation|screenSize|keyboardHidden">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+            <!--
+              ‏"פתיחה" בכלים הדיגיטליים פותח את האפליקציה בכתובת הכלי עם ?platform-handoff=<קוד>,
+              והשער מחבר בו את המשתמש בתוך ה-WebView (platform/docs/auth.md).
+            -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="https" android:host="mbe-plus.com"
+                      android:pathPrefix="/mini_projects/greeting-cards/"/>
             </intent-filter>
         </activity>
 
