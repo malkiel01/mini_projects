@@ -220,6 +220,9 @@ const VISIT_MAX_ROWS  = 200000;
 function is_navigation(): bool
 {
     if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET') return false;
+    // ניווט שעובר דרך service worker (למשל family-sw.js של הפלטפורמה, שהיקפו כל האתר) מגיע עם
+    // Sec-Fetch-Dest: empty ו-Sec-Fetch-Mode: navigate — גם הוא פתיחת דף.
+    if (($_SERVER['HTTP_SEC_FETCH_MODE'] ?? '') === 'navigate') return true;
     $dest = $_SERVER['HTTP_SEC_FETCH_DEST'] ?? '';
     if ($dest !== '') return $dest === 'document';
     // דפדפן ישן בלי Sec-Fetch — לפי Accept
@@ -248,6 +251,82 @@ function device_label(string $ua): string
     };
     if (str_contains($ua, '; wv)')) $browser = 'אפליקציה'; // WebView של אפליקציית אנדרואיד
     return $browser !== '' ? "$os · $browser" : $os;
+}
+
+// ---------- העברת התחברות לאפליקציה (handoff) ----------
+// אפליקציית אנדרואיד עם דפדפן פנימי משלה (WebView), או דפדפן אחר, לא רואה את ההתחברות של הכלים
+// הדיגיטליים — לכל אחד עוגיות משלו. לכן הפלטפורמה מעבירה אותה בקישור: "פתיחה" (או החזרה מ"כניסה עם
+// הכלים הדיגיטליים") פותח את האפליקציה בכתובת עם ?platform-handoff=<קוד>. הקוד חד-פעמי, לאפליקציה אחת
+// ולשתי דקות; השער מממש אותו להתחברות רגילה של אותו משתמש (עוגייה בעטיפה הזו) ומוחק אותו מהכתובת.
+
+const HANDOFF_PARAM = 'platform-handoff';
+const HANDOFF_SECONDS = 120;
+
+function handoff_table(): void
+{
+    pdo()->exec('CREATE TABLE IF NOT EXISTS handoff_tokens (
+        token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL, app_id TEXT NOT NULL, expires_at TEXT NOT NULL)');
+}
+
+/** קוד חדש למשתמש ולאפליקציה (api.php?action=handoff — אחרי בדיקת ההרשאה). */
+function handoff_issue(int $userId, string $app): string
+{
+    handoff_table();
+    $now = gmdate('Y-m-d\TH:i:s\Z');
+    pdo()->prepare('DELETE FROM handoff_tokens WHERE expires_at <= ?')->execute([$now]);
+    $token = bin2hex(random_bytes(32));
+    pdo()->prepare('INSERT INTO handoff_tokens (token_hash, user_id, app_id, expires_at) VALUES (?,?,?,?)')
+        ->execute([hash('sha256', $token), $userId, $app, gmdate('Y-m-d\TH:i:s\Z', time() + HANDOFF_SECONDS)]);
+    return $token;
+}
+
+/**
+ * בכל בקשה לאפליקציה, לפני ההכרעה: יש בכתובת קוד העברה → מתחברים, ובפתיחת דף — אותה כתובת בלעדיו.
+ * קוד שגוי, שפג או שכבר נוצל — כאילו לא היה (השער ימשיך כרגיל, כלומר לכניסה). נרשם ביומן האבחון.
+ */
+function handoff_consume(string $app, string $base): void
+{
+    $token = $_GET[HANDOFF_PARAM] ?? null;
+    if (!is_string($token) || !is_file(DB_FILE)) return;
+    $ok = false;
+    try {
+        if (preg_match('/^[a-f0-9]{64}$/', $token)) {
+            handoff_table();
+            $hash = hash('sha256', $token);
+            $st = pdo()->prepare('SELECT t.user_id, t.app_id, t.expires_at, u.status FROM handoff_tokens t
+                                    JOIN users u ON u.id = t.user_id WHERE t.token_hash = ?');
+            $st->execute([$hash]);
+            $row = $st->fetch(\PDO::FETCH_ASSOC);
+            pdo()->prepare('DELETE FROM handoff_tokens WHERE token_hash = ?')->execute([$hash]);   // חד-פעמי
+            if ($row && $row['app_id'] === $app && $row['status'] === 'active'
+                && $row['expires_at'] > gmdate('Y-m-d\TH:i:s\Z') && !headers_sent()) {
+                $session = bin2hex(random_bytes(32));
+                $expires = time() + SESSION_DAYS * 86400;
+                pdo()->prepare('INSERT INTO sessions (token_hash, user_id, csrf, created_at, expires_at) VALUES (?,?,?,?,?)')
+                    ->execute([hash('sha256', $session), (int)$row['user_id'], bin2hex(random_bytes(16)),
+                        gmdate('Y-m-d\TH:i:s\Z'), gmdate('Y-m-d\TH:i:s\Z', $expires)]);
+                setcookie(COOKIE, $session, [
+                    'expires' => $expires, 'path' => $base, 'httponly' => true, 'samesite' => 'Lax',
+                    'secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
+                ]);
+                $_COOKIE[COOKIE] = $session;   // ההכרעה של הבקשה הזו כבר רואה את ההתחברות
+                $ok = true;
+            }
+        }
+    } catch (\Throwable $e) {
+        error_log('platform handoff: ' . $e->getMessage());
+    }
+    diag_nav($ok ? 'gate:handoff-ok' : 'gate:handoff-bad', $app);
+    // הקוד לא נשאר בכתובת (היסטוריה, סימנייה, Referer) — רק בפתיחת דף; בקשת API ממשיכה כמו שהיא
+    if (is_navigation()) {
+        $uri = (string)($_SERVER['REQUEST_URI'] ?? $base);
+        $clean = preg_replace('/([?&])' . preg_quote(HANDOFF_PARAM, '/') . '=[^&#]*&?/', '$1', $uri);
+        $clean = preg_replace('/[?&](#|$)/', '$1', (string)$clean);
+        header('Cache-Control: no-store');
+        header('Location: ' . $clean, true, 302);
+        exit;
+    }
+    unset($_GET[HANDOFF_PARAM]);
 }
 
 /**

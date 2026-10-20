@@ -137,8 +137,7 @@ function inject_php_page(string $app, array $cfg, string $base, string $path, ar
 {
     $beacon = wanted($app, $cfg, $path, $params);   // בלעדיו — רק יומן האבחון
     if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET') return;
-    $dest = $_SERVER['HTTP_SEC_FETCH_DEST'] ?? '';
-    if ($dest !== '' ? $dest !== 'document' : !str_contains($_SERVER['HTTP_ACCEPT'] ?? '', 'text/html')) return;
+    if (!\Platform\Gate\is_navigation()) return;   // גם ניווט דרך service worker (Sec-Fetch-Mode: navigate)
     ob_start(static function (string $buf, int $phase) use ($app, $cfg, $base, $beacon): string {
         foreach (headers_list() as $h) {
             if (stripos($h, 'content-type:') === 0 && stripos($h, 'text/html') === false) return $buf;

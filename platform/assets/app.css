@@ -475,3 +475,7 @@ dialog.install .logo { width: 40px; height: 40px; }
     max-width: calc(100vw - 24px); z-index: 30; background: var(--ink); color: var(--bg); padding: 10px var(--s4); border-radius: 99px;
     font-size: .9rem; box-shadow: var(--shadow-pop); animation: pop .15s ease-out;
 }
+
+/* --- כניסה בתוך אפליקציית אנדרואיד: "כניסה עם הכלים הדיגיטליים" (handoff) --- */
+.handoff-box { display: grid; gap: 6px; margin-bottom: var(--s3); padding-bottom: var(--s3); border-bottom: 1px solid var(--line); }
+.handoff-box .btn { text-align: center; text-decoration: none; }

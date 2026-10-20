@@ -131,7 +131,32 @@ function showSetup(me) {
     }));
 }
 
+// בתוך אפליקציית אנדרואיד (דפדפן פנימי, או TWA — assets/diag.js שומר android-app://) השער שלח לכאן כי
+// לאפליקציה אין את ההתחברות. במקום להתחבר שוב בתוכה: פותחים את הכלים הדיגיטליים (שם כבר מחוברים),
+// והם מחזירים לאפליקציה עם קוד חד-פעמי (takeHandoffRequest).
+function appHandoffButton() {
+    const next = new URLSearchParams(location.search).get('next') || '';
+    const root = new URL('./', document.baseURI).pathname;
+    const app = next.startsWith(root) ? next.slice(root.length).split('/')[0] : '';
+    let opener = '';
+    try { opener = sessionStorage.getItem('platform:opener') || ''; } catch { /* */ }
+    const webview = /; wv\)/.test(UA);
+    if (!app || !/^[a-z0-9][a-z0-9-]*$/.test(app) || !(webview || opener)) return null;
+    const home = new URL('platform/home/', document.baseURI);
+    home.hash = `handoff=${app}`;
+    // WebView: קישור רגיל — האפליקציה פותחת כתובת מחוץ לתיקייה שלה בחוץ. TWA: intent — אחרת נשארים בתוכה.
+    const href = webview ? home.href
+        : `intent://${home.host}${home.pathname}#Intent;scheme=https;S.browser_fallback_url=${encodeURIComponent(home.href)};end`;
+    const a = el('a', { className: 'btn primary big', href, textContent: '📲 כניסה עם הכלים הדיגיטליים' });
+    a.addEventListener('click', () => dlog('handoff-request', { app, webview, opener }));
+    return el('div', { className: 'handoff-box' }, [
+        a, el('p', { className: 'muted small', textContent: 'נפתחים הכלים הדיגיטליים, ומשם חוזרים לאפליקציה מחוברים. או — כניסה כאן:' }),
+    ]);
+}
+
 function showLogin() {
+    const handoff = appHandoffButton();
+    if (handoff) dlog('handoff-offer', {});
     view.replaceChildren(form({
         title: 'ברוכים הבאים',
         lead: 'נכנסים כדי לראות את האפליקציות שלכם.',
@@ -143,6 +168,7 @@ function showLogin() {
         onSubmit: async (data) => { await api('login', data); dlog('login', { next: new URLSearchParams(location.search).get('next') || '' }); justSignedIn = true; start(); },
         footer: [switchLink('אין לכם חשבון?', 'הרשמה', showRegister)],
     }));
+    if (handoff) view.querySelector('form')?.prepend(handoff);
 }
 
 function showRegister() {
@@ -467,7 +493,17 @@ function reportInstall(appId, state, how) {
     }).catch(() => {});
 }
 
-const isInstalledHere = (appId) => installedHere[appId]?.state === 'installed';
+// מותקנת במכשיר הזה? באנדרואיד, לאפליקציה עם APK — רק מה שאנדרואיד מדווח עכשיו (androidState):
+// הרשומה הישנה של PWA לא מתעדכנת כשמסירים, והיא סימנה "מותקנת" גם כשלא.
+function isInstalledHere(appId) {
+    const app = currentApps.find(a => a.id === appId);
+    if (app && isAndroid() && app.install.apk) return androidState(app).installed;
+    return installedHere[appId]?.state === 'installed';
+}
+
+function repaintInstalled() {
+    document.querySelectorAll('li[data-app]').forEach(li => paintInstalled(li, li.dataset.app));
+}
 
 function paintInstalled(li, appId) {
     li.dataset.inst = isInstalledHere(appId) ? 'yes' : li.dataset.can ? 'can' : 'no';
@@ -590,6 +626,7 @@ async function detectNativeApps() {
         const list = await navigator.getInstalledRelatedApps();
         nativeInstalled = new Set(list.filter(a => a.platform === 'play').map(a => a.id));
         dlog('installed-apps', { apps: [...nativeInstalled].join(',') || '(אין)' });
+        repaintInstalled();
     } catch { nativeInstalled = null; }
 }
 
@@ -597,7 +634,8 @@ function androidState(app) {
     const pkg = app.install.android?.package;
     const latest = app.install.android?.version || null;
     const mine = apkRecord()[app.id]?.version || null;
-    const installed = nativeInstalled && pkg ? nativeInstalled.has(pkg) : Boolean(apkRecord()[app.id]);
+    // אנדרואיד יודע לבדוק (getInstalledRelatedApps) — רק הוא קובע. בלעדיו — מה שנרשם בהורדה מכאן.
+    const installed = nativeInstalled ? Boolean(pkg && nativeInstalled.has(pkg)) : Boolean(apkRecord()[app.id]);
     return { pkg, latest, mine, installed, update: installed && latest && (!mine || mine < latest) };
 }
 
@@ -617,12 +655,41 @@ function androidTiles(app, tile) {
         const intent = `intent://${u.host}${u.pathname}${u.search}#Intent;scheme=https;package=${s.pkg};` +
             `S.browser_fallback_url=${encodeURIComponent(u.href)};end`;
         const open = tile('▶️', 'פתיחה', { href: intent });
-        open.addEventListener('click', () => dlog('open-app', { app: app.id, pkg: s.pkg }));
+        // פתיחה עם ההתחברות: לאפליקציה עם דפדפן פנימי משלה אין את העוגייה של הכלים הדיגיטליים
+        open.addEventListener('click', (e) => { e.preventDefault(); openWithLogin(app, s.pkg); });
         out.push(open);
     }
     if (s.update) out.push(download('⬆️', `עדכון לגרסה ${s.latest}`));
     else out.push(download('🔄', 'התקנה מחדש'));
     return out;
+}
+
+// ---------- העברת ההתחברות לאפליקציה (platform/lib/gate.php, handoff) ----------
+// קוד חד-פעמי (שתי דקות) בכתובת: השער מחבר איתו את האפליקציה, גם כשיש לה עוגיות משלה (WebView, דפדפן
+// אחר). pkg — פתיחה ישר באפליקציית האנדרואיד; בלעדיו — באותו חלון.
+async function openWithLogin(app, pkg) {
+    const u = new URL(app.href, document.baseURI);
+    try {
+        const { token, param } = await api('handoff', { app: app.id });
+        u.searchParams.set(param, token);
+    } catch (err) { dlog('handoff-error', { app: app.id, error: err.message }); }
+    dlog('open-app', { app: app.id, pkg: pkg || '', handoff: u.search.includes('platform-handoff') });
+    location.href = pkg
+        ? `intent://${u.host}${u.pathname}${u.search}#Intent;scheme=https;package=${pkg};` +
+          `S.browser_fallback_url=${encodeURIComponent(u.href)};end`
+        : u.href;
+}
+
+// #handoff=<app>: אפליקציה ביקשה "כניסה עם הכלים הדיגיטליים" (showLogin). כאן המשתמש מחובר —
+// מחזירים אותו לאפליקציה כשהוא מחובר גם שם.
+function takeHandoffRequest() {
+    const m = location.hash.match(/^#handoff=([a-z0-9-]+)$/);
+    if (!m) return false;
+    history.replaceState(null, '', location.pathname + location.search);
+    const app = currentApps.find(a => a.id === m[1]);
+    if (!app) { toast('אין לך גישה לאפליקציה הזו'); return false; }
+    openWithLogin(app, isAndroid() ? app.install.android?.package : null);
+    return true;
 }
 
 // מה שהמנהל אישר לאפליקציה: התקנה נפרדת, APK, חנות. השרת לא שולח את מה שלא אושר.
@@ -956,6 +1023,7 @@ async function clearFamilyCache() {
 async function showApps() {
     const [{ categories, apps }] = await Promise.all([api('apps'), loadInstalls()]);
     currentApps = apps;
+    takeHandoffRequest();
     if (!apps.length) {
         showMessage('עוד אין כאן אפליקציות', 'המנהל עדיין לא הקצה לכם אפליקציות. כשיקצה — הן יופיעו כאן.', '📭');
         return;

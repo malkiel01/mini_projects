@@ -61,6 +61,7 @@ try {
             'sso_revoke' => action_sso_revoke($body),
             'install_report' => action_install_report($body),
             'diag'     => action_diag($body),
+            'handoff'  => action_handoff($body),
             default    => str_starts_with($action, 'admin_')
                 ? admin_dispatch($action, $body, require_admin(true))
                 : throw new ApiError('פעולה לא מוכרת', 404),
@@ -204,6 +205,25 @@ function action_diag(array $body): never
         'info' => $info + ['label' => \Platform\Gate\device_label($ua)],
     ]);
     json_out(['ok' => true]);
+}
+
+/**
+ * קוד העברת התחברות לאפליקציה (lib/gate.php, handoff): "פתיחה" באפליקציית אנדרואיד, או החזרה אליה אחרי
+ * "כניסה עם הכלים הדיגיטליים". רק לאפליקציה מחוברת שיש למשתמש הרשאה אליה.
+ */
+function action_handoff(array $body): never
+{
+    $user = current_user();
+    if (!$user) throw new ApiError('נדרשת כניסה', 401);
+    if (!hash_equals($user['csrf'], $_SERVER['HTTP_X_CSRF'] ?? '')) throw new ApiError('בקשה לא תקינה', 403);
+    if ($user['status'] !== 'active') throw new ApiError('החשבון עוד לא פעיל', 403);
+    $app = is_string($body['app'] ?? null) ? $body['app'] : '';
+    $cfg = \Platform\Gate\app_config($app);
+    if (!$cfg || empty($cfg['gate']) || \Platform\Gate\is_detached($app)) throw new ApiError('האפליקציה לא מחוברת לכלים הדיגיטליים', 422);
+    if (!\Platform\Gate\can_use(['id' => (int)$user['id'], 'role' => $user['role']], $app, $cfg)) {
+        throw new ApiError('אין לך הרשאת גישה לאפליקציה הזו — פנו למנהל', 403);
+    }
+    json_out(['token' => \Platform\Gate\handoff_issue((int)$user['id'], $app), 'param' => \Platform\Gate\HANDOFF_PARAM]);
 }
 
 function action_sso_mine(): never
