@@ -23,6 +23,7 @@ require_once __DIR__ . '/../lib/appversion.php';
 require_once __DIR__ . '/../lib/search.php';
 require_once __DIR__ . '/../lib/appcontrol.php';
 require_once __DIR__ . '/../lib/signing.php';
+require_once __DIR__ . '/../lib/devicesettings.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -162,6 +163,8 @@ function policyPayload(array $user): array {
         'update' => $dev ? deviceUpdateOffer($dev) : null,
         // ניהול אפליקציות המכשיר (שלב 11) — manage=false לדפדפן בלבד.
         'apps' => appsPayload($user),
+        // הגדרות המכשיר שההורה קבע — {מפתח: חסום?}. נאכף רק ב"בעל מכשיר" (Enforcer.kt).
+        'device' => deviceSettings($uid),
         'state' => [
             'allowed'        => $state['allow'],
             'code'           => $state['code'],

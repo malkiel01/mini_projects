@@ -511,6 +511,27 @@ function updateDevice(d) {
     act('device_update', { device_id: d.id }, old ? 'נשלח — יופיע לילד בפעם הבאה שיפתח' : 'נשלח — הילד יתבקש לעדכן');
 }
 
+/**
+ * הגדרות המכשיר — לכל אחת מותר / חסום (lib/devicesettings.php). נאכף רק ב"בעל מכשיר": בלי הקמה מלאה
+ * ההגדרות נשמרות, ומוצג שהן עוד לא נאכפות.
+ */
+function deviceSettingsGroup() {
+    const S2 = K.device_settings || [];
+    if (!S2.length) return null;
+    const owners = K.device_list.filter(d => d.perms.owner).length, total = K.device_list.length;
+    const warn = total && owners < total
+        ? el('div', { class: 'banner warn' }, [el('span', { text: '⚠️' }), el('div', {}, [
+            el('b', { text: owners ? 'נאכף רק בחלק מהמכשירים' : 'עוד לא נאכף' }),
+            'הגדרות המכשיר דורשות הקמה מלאה ("בעל מכשיר"): איפוס המכשיר, ואז "📷 חיבור מכשיר חדש" ← "🛡️ הקמה מלאה".'])])
+        : null;
+    const rows = el('ul', { class: 'rows' }, S2.map(s => el('li', {}, [
+        el('span', { class: 'nm' }, [s.label, el('small', { text: s.hint })]),
+        seg(`ds_${s.key}`, [['allow', '✅ מותר'], ['block', '🚫 חסום']], s.blocked ? 'block' : 'allow',
+            { cls: 'seg mini', onchange: v => act('device_setting', { key: s.key, blocked: v === 'block' }, 'נשמר') }),
+    ])));
+    return group('⚙️ הגדרות המכשיר', `${S2.filter(s => s.blocked).length} חסומות`, [warn, rows].filter(Boolean));
+}
+
 function kidDev() {
     const list = K.device_list.length ? el('ul', { class: 'rows' }, K.device_list.map(d => el('li', {}, [
         el('span', { text: '📱', ariaHidden: 'true' }),
@@ -526,6 +547,7 @@ function kidDev() {
     const anyOld = K.device_list.some(d => d.app.status === 'unknown');
     return [
         list,
+        deviceSettingsGroup(),
         anyOld ? group('איך מעבירים מכשיר ישן', 'פעם אחת — אחר כך הכול מתעדכן מכאן', [
             el('ol', { class: 'steps' }, [
                 el('li', { text: 'במכשיר של הילד: מוחקים את האפליקציה הישנה ("דפדפן מנוהל" או מגדלור ישן). גרסה ישנה מאוד נחתמה אחרת, ולכן אי אפשר להתקין עליה.' }),

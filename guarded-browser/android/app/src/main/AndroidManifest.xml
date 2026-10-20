@@ -23,6 +23,15 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT"/>
 
+    <!-- רשימת האפליקציות להורה (reportApps): מאנדרואיד 11 queryIntentActivities רואה בלי זה רק אפליקציות
+         מערכת. כל מה שיש לו סמל במסך הבית — זה מה שההורה צריך לראות ולחסום. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN"/>
+            <category android:name="android.intent.category.LAUNCHER"/>
+        </intent>
+    </queries>
+
     <application
         android:name=".GuardApp"
         android:allowBackup="false"

@@ -139,6 +139,10 @@ function migrate(PDO $pdo): void {
     if (!in_array('platform_sub', $columns('users'), true)) {
         $pdo->exec("ALTER TABLE users ADD COLUMN platform_sub TEXT NOT NULL DEFAULT ''");
     }
+    // הגדרות המכשיר (lib/devicesettings.php) — '' = ברירות המחדל.
+    if (!in_array('device_settings', $columns('policies'), true)) {
+        $pdo->exec("ALTER TABLE policies ADD COLUMN device_settings TEXT NOT NULL DEFAULT ''");
+    }
     if (!in_array('platform_sub', $columns('parents'), true)) {
         $pdo->exec("ALTER TABLE parents ADD COLUMN platform_sub TEXT NOT NULL DEFAULT ''");
     }

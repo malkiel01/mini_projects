@@ -18,6 +18,7 @@ require_once __DIR__ . '/../lib/appversion.php';
 require_once __DIR__ . '/../lib/search.php';
 require_once __DIR__ . '/../lib/appcontrol.php';
 require_once __DIR__ . '/../lib/enforce.php';
+require_once __DIR__ . '/../lib/devicesettings.php';
 
 jsonHeaders();
 
@@ -73,6 +74,7 @@ function detail(array $parent, int $childId): array {
     foreach ($out['device_list'] as &$d) { $d['app'] = deviceAppState($d, $latest); $d['perms'] = devicePermsState((int) $d['perms']); }
     unset($d);
     $out['enforcement'] = enforcementState((int) $parent['account_id'], $childId);
+    $out['device_settings'] = deviceSettingsView($childId);
     return $out;
 }
 
@@ -245,6 +247,12 @@ try {
         /* ── ניהול אפליקציות (שלב 11) ── */
         case 'apps':
             out(['ok' => true, 'apps' => appsList($aid, (int) myChild($parent)['id'])]);
+
+        /* ── הגדרות המכשיר (lib/devicesettings.php) — נאכף ב"בעל מכשיר" ── */
+        case 'device_setting':
+            $c = myChild($parent);
+            if ($err = deviceSettingSave((int) $c['id'], str('key'), (bool) (body()['blocked'] ?? false))) fail($err);
+            out(['ok' => true, 'child' => detail($parent, (int) $c['id'])]);
 
         case 'apps_posture':
             $c = myChild($parent);
