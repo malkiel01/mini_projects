@@ -75,6 +75,8 @@ class Store(context: Context) {
             .putInt("account_id", payload.optInt("account_id"))
             .putLong("policy_at", System.currentTimeMillis())
             .apply()
+        // הגדרות המכשיר שההורה קבע ({מפתח: חסום?}) — Enforcer מפעיל אותן ב"בעל מכשיר".
+        prefs.edit().putString("device", payload.optJSONObject("device")?.toString() ?: "{}").apply()
         pinSignKey(payload.optString("sign_pubkey"))
         saveApps(payload.optJSONObject("apps"))
     }
@@ -222,6 +224,12 @@ class Store(context: Context) {
     var updateUrl: String
         get() = prefs.getString("update_url", "") ?: ""
         set(v) { prefs.edit().putString("update_url", v).apply() }
+
+    /** הגדרות המכשיר מהמדיניות: חסום? לפי מפתח (lib/devicesettings.php). null — השרת לא שלח (ישן). */
+    fun deviceSetting(key: String): Boolean? = try {
+        val o = JSONObject(prefs.getString("device", "{}") ?: "{}")
+        if (o.has(key)) o.getBoolean(key) else null
+    } catch (e: Exception) { null }
 
     /** ביטים של ההרשאות שניתנו במכשיר (Setup.flags) — נשלח לשרת כדי שההורה יראה. */
     var perms: Int

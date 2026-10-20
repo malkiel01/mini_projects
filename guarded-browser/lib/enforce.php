@@ -21,6 +21,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/appcontrol.php';
 require_once __DIR__ . '/appversion.php';
+require_once __DIR__ . '/devicesettings.php';
 
 /** דורש לפחות מכשיר אחד מחובר כדי לאכוף בכלל. */
 function enforceDeviceCaps(int $childId): array {
@@ -88,6 +89,10 @@ function enforcementState(int $accountId, int $childId): array {
     $ownerStatus = enforceStatus($caps['owner'], $caps['total']);
     $add('uninstall', 'הגנה מהסרת מגדלור', 'owner', $ownerStatus, $caps['owner'] >= $caps['total'] ? '' : 'דורש "בעל מכשיר"');
     $add('tamper', 'מניעת איפוס ועקיפה', 'owner', $ownerStatus, $caps['owner'] >= $caps['total'] ? '' : 'דורש "בעל מכשיר"');
+    // הגדרות המכשיר (Wi‑Fi, מצלמה, התקנה…) — רק כשההורה חסם משהו.
+    $blockedSettings = count(array_filter(deviceSettings($childId)));
+    $add('device', 'הגדרות המכשיר', 'owner', $blockedSettings ? $ownerStatus : 'na',
+        $caps['owner'] >= $caps['total'] ? '' : 'דורש הקמה מלאה ("בעל מכשיר")');
 
     // סיכום: מה הכי "חלש" שדורש השלמה.
     $active = array_filter($rows, fn($r) => $r['status'] !== 'na');

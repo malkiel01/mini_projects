@@ -4,6 +4,7 @@ import android.app.admin.DevicePolicyManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
+import android.os.Build
 import android.os.UserManager
 
 /**
@@ -18,28 +19,61 @@ import android.os.UserManager
 object Enforcer {
 
     /**
-     * מה נעול במכשיר "בעל מכשיר" (בעל המערכת, 2026-10-20). שעון — כדי שאי אפשר לעקוף חלון שעות; חשבונות,
-     * VPN ומקור לא ידוע — כדי שאי אפשר לעקוף את הסינון; מיקום — בלי שיתוף.
+     * נעול תמיד במכשיר "בעל מכשיר" — ההגנה על מגדלור עצמו: איפוס, מצב בטוח, משתמש נוסף, אפשרויות מפתח
+     * ומקור לא ידוע. לא תלוי בהורה.
      */
-    private val RESTRICTIONS = listOf(
+    private val ALWAYS = listOf(
         UserManager.DISALLOW_FACTORY_RESET, UserManager.DISALLOW_SAFE_BOOT,
         UserManager.DISALLOW_ADD_USER, UserManager.DISALLOW_DEBUGGING_FEATURES,
-        UserManager.DISALLOW_CONFIG_DATE_TIME, UserManager.DISALLOW_MODIFY_ACCOUNTS,
-        UserManager.DISALLOW_CONFIG_VPN, UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES,
-        UserManager.DISALLOW_SHARE_LOCATION,
+        UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES,
     )
 
     /**
-     * ההתקנה של עדכון (Updater) — DISALLOW_INSTALL_UNKNOWN_SOURCES עלול לחסום גם אותה, ולכן הוא מוסר
-     * לרגע לפני ההתקנה, וחוזר בכישלון (Updater.InstallResult) או ב-apply הבא אחרי הגרסה החדשה.
+     * הגדרות המכשיר שההורה קובע (lib/devicesettings.php — אותם מפתחות): מפתח → [ההגבלות, חסום כברירת מחדל].
+     * ברירת המחדל — כשהשרת עוד לא שלח (גרסה ישנה): מה שהיה נעול לפני הפאנל. מצלמה וצילום מסך אינם
+     * הגבלות משתמש — הם ב-applySettings.
+     */
+    private val SETTINGS: Map<String, Pair<List<String>, Boolean>> = mapOf(
+        "wifi" to (listOf(UserManager.DISALLOW_CONFIG_WIFI) to false),
+        "mobile_data" to (listOf(UserManager.DISALLOW_CONFIG_MOBILE_NETWORKS) to false),
+        "tethering" to (listOf(UserManager.DISALLOW_CONFIG_TETHERING) to false),
+        "bluetooth" to ((listOf(UserManager.DISALLOW_CONFIG_BLUETOOTH) +
+            (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) listOf(UserManager.DISALLOW_BLUETOOTH) else emptyList())) to false),
+        "location" to ((listOf(UserManager.DISALLOW_SHARE_LOCATION) +
+            (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) listOf(UserManager.DISALLOW_CONFIG_LOCATION) else emptyList())) to true),
+        "usb" to (listOf(UserManager.DISALLOW_USB_FILE_TRANSFER) to false),
+        "install_apps" to (listOf(UserManager.DISALLOW_INSTALL_APPS) to false),
+        "uninstall_apps" to (listOf(UserManager.DISALLOW_UNINSTALL_APPS) to false),
+        "date_time" to ((if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) listOf(UserManager.DISALLOW_CONFIG_DATE_TIME) else emptyList()) to true),
+        "accounts" to (listOf(UserManager.DISALLOW_MODIFY_ACCOUNTS) to true),
+        "vpn" to (listOf(UserManager.DISALLOW_CONFIG_VPN) to true),
+    )
+
+    private fun blocked(store: Store, key: String, default: Boolean) = store.deviceSetting(key) ?: default
+
+    /** מפעיל או מסיר כל הגדרה לפי מה שההורה בחר. */
+    private fun applySettings(ctx: Context, store: Store) {
+        val dpm = dpm(ctx)
+        val admin = DeviceAdmin.component(ctx)
+        for ((key, v) in SETTINGS) {
+            val on = blocked(store, key, v.second)
+            for (r in v.first) trySet { if (on) dpm.addUserRestriction(admin, r) else dpm.clearUserRestriction(admin, r) }
+        }
+        trySet { dpm.setCameraDisabled(admin, blocked(store, "camera", false)) }
+        trySet { dpm.setScreenCaptureDisabled(admin, blocked(store, "screenshot", false)) }
+    }
+
+    /**
+     * ההתקנה של עדכון (Updater) — "מקור לא ידוע" ו"התקנת אפליקציות" עלולים לחסום גם אותה, ולכן הם מוסרים
+     * לרגע לפני ההתקנה, וחוזרים בכישלון (Updater.InstallResult) או ב-apply הבא אחרי הגרסה החדשה.
      */
     fun allowInstall(ctx: Context, on: Boolean) {
         if (!isOwner(ctx)) return
         val admin = DeviceAdmin.component(ctx)
-        trySet {
-            if (on) dpm(ctx).clearUserRestriction(admin, UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES)
-            else dpm(ctx).addUserRestriction(admin, UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES)
-        }
+        val store = Store(ctx)
+        val keys = listOf(UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES) +
+            (if (on || blocked(store, "install_apps", false)) listOf(UserManager.DISALLOW_INSTALL_APPS) else emptyList())
+        for (r in keys) trySet { if (on) dpm(ctx).clearUserRestriction(admin, r) else dpm(ctx).addUserRestriction(admin, r) }
     }
 
     fun isOwner(ctx: Context): Boolean =
@@ -56,7 +90,8 @@ object Enforcer {
 
         // הגנה על עצמנו ועל המכשיר.
         trySet { dpm.setUninstallBlocked(admin, ctx.packageName, true) }
-        for (r in RESTRICTIONS) trySet { dpm.addUserRestriction(admin, r) }
+        for (r in ALWAYS) trySet { dpm.addUserRestriction(admin, r) }
+        applySettings(ctx, store)
 
         if (!store.appsManage) { unsuspendAll(ctx, store); return }
 
@@ -96,7 +131,9 @@ object Enforcer {
         val admin = DeviceAdmin.component(ctx)
         unsuspendAll(ctx, store)
         trySet { dpm.setUninstallBlocked(admin, ctx.packageName, false) }
-        for (r in RESTRICTIONS) trySet { dpm.clearUserRestriction(admin, r) }
+        for (r in ALWAYS + SETTINGS.values.flatMap { it.first }) trySet { dpm.clearUserRestriction(admin, r) }
+        trySet { dpm.setCameraDisabled(admin, false) }
+        trySet { dpm.setScreenCaptureDisabled(admin, false) }
     }
 
     /** ההורה מחק את הילדים: מגדלור מסיר את עצמו כבעל מכשיר, והמכשיר חוזר לטלפון רגיל. */

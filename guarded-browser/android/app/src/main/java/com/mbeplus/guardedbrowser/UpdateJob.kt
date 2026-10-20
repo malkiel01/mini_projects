@@ -16,7 +16,7 @@ import androidx.core.app.NotificationCompat
  * בדיקת עדכון ברקע — גם כשמגדלור סגור. אנדרואיד מריץ אותה רק כשיש רשת (לפחות כל 15 דקות),
  * ושומר אותה גם אחרי הפעלה מחדש של הטלפון.
  *
- * פעימה ריקה (0 שניות) מחזירה update. יש — "בעל מכשיר" מעדכן מיד, בשקט; אחרת קופצת הודעה
+ * המדיניות (הגדרות המכשיר נאכפות מיד) וה-update. יש עדכון — "בעל מכשיר" מעדכן מיד, בשקט; אחרת קופצת הודעה
  * במסך מלא שפותחת את מסך העדכון, ושירות הנגישות מקפיץ אותו גם בכל מעבר בין אפליקציות.
  */
 class UpdateJob : JobService() {
@@ -24,8 +24,14 @@ class UpdateJob : JobService() {
     override fun onStartJob(params: JobParameters): Boolean {
         val store = Store(this)
         if (!store.isLoggedIn) return false
-        Api.heartbeat(store.token, 0, 0) { r ->
-            if (r.ok) Updater.note(this, r.json?.optJSONObject("update"))
+        // המדיניות המלאה ולא פעימה: כך גם הגדרות המכשיר שההורה שינה נאכפות ב"בעל מכשיר" בלי שהילד יפתח
+        // את מגדלור (Enforcer), והתשובה כוללת גם את העדכון.
+        Api.policy(store.token) { r ->
+            if (r.ok && r.json != null) {
+                store.savePolicy(r.json)
+                if (!store.released) Enforcer.apply(this, store)
+                Updater.note(this, r.json.optJSONObject("update"))
+            }
             if (Updater.required(this)) {
                 if (Enforcer.isOwner(this)) Updater.run(this) else notifyUpdate(this)
             }
