@@ -477,8 +477,11 @@ function appLine(d) {
 /** שורת ההרשאות של מכשיר (מסלול ההקמה): מה חסר, או ✓. */
 function permLine(p) {
     if (!p) return '';
-    if (p.required_missing.length) return `⚠️ חסרות הרשאות חיוניות: ${p.required_missing.join('، ')}`;
-    return p.owner ? '✓ כל ההרשאות · בעל מכשיר' : '🟡 אכיפה חלקית — המכשיר לא הוקם כ"בעל מכשיר" (מומלץ)';
+    if (p.complete) return '✓ כל ההרשאות · בעל מכשיר';
+    // "בעל מכשיר" חסר — תמיד מסומן: בלעדיו אין שליטה בהגדרות המערכת ועדכון שקט.
+    const owner = p.owner ? '' : '⚠️ חסר "בעל מכשיר" — הקמה מלאה ב"חיבור מכשיר" (איפוס המכשיר)';
+    const req = p.required_missing.length ? `⚠️ חסרות הרשאות: ${p.required_missing.join('، ')}` : '';
+    return [req, owner].filter(Boolean).join(' · ');
 }
 
 function updateDevice(d) {
@@ -498,7 +501,7 @@ function kidDev() {
         el('span', { text: '📱', ariaHidden: 'true' }),
         el('span', { class: 'nm' }, [d.name || 'מכשיר',
             el('small', { text: `${appLine(d)} · ${ago(d.last_seen_at)}` }),
-            el('small', { text: permLine(d.perms), style: `color:${d.perms.ok ? 'var(--muted)' : 'var(--danger)'}` })]),
+            el('small', { text: permLine(d.perms), style: `color:${d.perms.complete ? 'var(--muted)' : 'var(--danger)'}` })]),
         d.app.status !== 'current' ? el('button', { type: 'button', class: d.app.requested ? 'btn ghost sm' : 'btn primary sm',
             text: d.app.requested ? '⏳ נשלח' : '⬆️ עדכון', onclick: () => updateDevice(d) }) : null,
         el('button', { type: 'button', class: 'icon-btn', text: '✕', ariaLabel: 'ניתוק', onclick: () => {

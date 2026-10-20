@@ -129,9 +129,9 @@ try {
                 // מכשירים שצריכים עדכון — לסימן ⬆️ בכרטיס.
                 $card['outdated'] = count(array_filter(all('SELECT app_version FROM devices WHERE user_id = ?', [$u['id']]),
                     fn($d) => deviceAppState($d, $latest)['status'] !== 'current'));
-                // מכשירים שחסרה בהם הרשאה חיונית (מסלול ההקמה) — לסימן 🛡️ בכרטיס.
+                // מכשירים שחסרה בהם הרשאה, או שאינם "בעל מכשיר" — לסימן 🛡️ בכרטיס.
                 $card['perms_bad'] = count(array_filter(all('SELECT perms FROM devices WHERE user_id = ?', [$u['id']]),
-                    fn($d) => !devicePermsState((int) $d['perms'])['ok']));
+                    fn($d) => !devicePermsState((int) $d['perms'])['complete']));
                 return $card;
             }, $rows)]);
 

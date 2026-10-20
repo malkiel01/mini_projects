@@ -75,6 +75,8 @@ function devicePermsState(int $perms): array {
     $missing = [];
     foreach (PERM_NAMES as $bit => $name) if (!($perms & $bit)) $missing[$bit] = $name;
     $requiredMissing = array_values($missing);
+    // "בעל מכשיר" — גם הוא דרישה, ומסומן להורה כחסר. הוא לא חוסם כניסה: אי אפשר לבקש אותו במכשיר.
+    if (!($perms & PERM_OWNER)) $missing[PERM_OWNER] = 'בעל מכשיר';
     return [
         'ok'       => ($perms & PERM_REQUIRED) === PERM_REQUIRED,
         'owner'    => (bool) ($perms & PERM_OWNER),

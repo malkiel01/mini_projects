@@ -34,9 +34,9 @@ check('ריק — חסר הכול, לא תקין', devicePermsState(0)['ok'], fa
 check('...וכולן חיוניות', devicePermsState(0)['required_missing'], ['התראות', 'ריצה רציפה', 'ניהול אפליקציות', 'ניהול מכשיר', 'עדכונים']);
 check('רק התראות וריצה (3) — כבר לא מספיק', devicePermsState(PERM_NOTIF | PERM_BATTERY)['ok'], false);
 check('...וחסר ברשימה', devicePermsState(PERM_NOTIF | PERM_BATTERY)['required_missing'], ['ניהול אפליקציות', 'ניהול מכשיר', 'עדכונים']);
-check('הכול (31) — תקין והושלם', [devicePermsState(31)['ok'], devicePermsState(31)['complete']], [true, true]);
-check('...אבל בלי בעל מכשיר', devicePermsState(31)['owner'], false);
-check('בעל מכשיר (63)', devicePermsState(63)['owner'], true);
+check('הכול (31) — נכנס, אבל לא הושלם', [devicePermsState(31)['ok'], devicePermsState(31)['complete']], [true, false]);
+check('...חסר "בעל מכשיר", ומסומן להורה', devicePermsState(31)['missing'], ['בעל מכשיר']);
+check('בעל מכשיר (63) — הושלם', [devicePermsState(63)['owner'], devicePermsState(63)['complete']], [true, true]);
 check('רק התראות — עוד חסרה ריצה', devicePermsState(PERM_NOTIF)['ok'], false);
 check('ניהול דלוק', devicePermsState(PERM_ADMIN | PERM_REQUIRED)['admin'], true);
 
