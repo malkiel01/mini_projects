@@ -374,6 +374,23 @@ function developerSetup(string $username, string $name, string $password): array
     return [$id, ''];
 }
 
+/**
+ * הזמנת מפתח נוסף — רק ממפתח מחובר. נשמר חשבון בלי סיסמה ובלי sub, עם המייל; בכניסה הראשונה דרך
+ * הפלטפורמה, עם המייל הזה *מאומת*, הוא מתקשר (platformLinked). זו הדרך היחידה לפתוח מפתח שני.
+ */
+function developerInvite(string $email, string $name, int $byDevId): string {
+    $email = mb_strtolower(trim($email));
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) return 'מייל לא תקין';
+    if (one('SELECT id FROM developers WHERE LOWER(email) = ?', [$email])) return 'המייל הזה כבר מוזמן או מחובר';
+    $base = preg_replace('/[^a-zA-Z0-9._\-]/', '', strstr($email, '@', true) ?: '') ?: 'dev';
+    $user = substr($base, 0, 24);
+    for ($i = 2; one('SELECT id FROM developers WHERE username = ?', [$user]); $i++) $user = substr($base, 0, 20) . '-' . $i;
+    q('INSERT INTO developers (username, name, email, password_hash, created_at) VALUES (?, ?, ?, ?, ?)',
+      [$user, mb_substr(trim($name) ?: $user, 0, 80), $email, '', nowIso()]);
+    audit($byDevId, 'dev_invite', true, '', 'dev', $email);
+    return '';
+}
+
 function developerChangePassword(int $id, string $current, string $next): string {
     $d = one('SELECT * FROM developers WHERE id = ?', [$id]);
     if (!$d || !password_verify($current, $d['password_hash'])) return 'הסיסמה הנוכחית שגויה';

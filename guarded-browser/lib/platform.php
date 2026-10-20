@@ -8,9 +8,13 @@
  * מחוברת: השער כותב את הזהות ל-$_SERVER['PLATFORM_USER'] בכל בקשת PHP, רק למי שיש לו הרשאה. בממשקים
  * שאינם ציבוריים זהות חסרה פירושה שהאפליקציה מנותקת מהשער — ואז הכניסה בסיסמה חוזרת לעבוד.
  *
- * קישור: לפי sub, ואם אין — לפי מייל. אין התאמה ויש חשבונות שעוד לא קושרו — מסך חד-פעמי ("יש לי כבר
- * חשבון" / "אין לי חשבון"). אין חשבונות כאלה בכלל — נפתח חשבון חדש מיד, פעיל: ההרשאה בפלטפורמה היא
- * האישור. הורה — אף פעם לא נפתח לבד: חשבון משפחה פותח מנהל המערכת, ומגדלור מזמין את ההורה לפלטפורמה
+ * קישור: לפי sub, ואם אין — לפי מייל *מאומת* בלבד. אין התאמה — מסך חד-פעמי ("יש לי כבר חשבון").
+ *
+ * הרשאה בפלטפורמה למגדלור אינה הרשאת ניהול (סקירת אבטחה, 2026-10-20): כל ההורים נכנסים דרך הפלטפורמה,
+ * ולכן "יש לו גישה למגדלור" אינו "מותר לו להיות מפתח/מנהל". חשבון מפתח או מנהל נפתח רק:
+ *   • בהקמה הראשונה — כשאין עדיין אף חשבון מהסוג הזה, והזהות אינה של הורה קיים (platformMayBootstrap);
+ *   • בהזמנה — מפתח קיים מוסיף מייל (developerInvite), והחשבון מתקשר בכניסה הראשונה לפי המייל המאומת.
+ * הורה — אף פעם לא נפתח לבד: חשבון משפחה פותח מנהל המערכת, ומגדלור מזמין את ההורה לפלטפורמה
  * (platformProvision). הסיסמה הישנה לא נמחקת — היא רק חסומה כל עוד האפליקציה מחוברת.
  */
 
@@ -35,7 +39,9 @@ function platformIdentity(): ?array {
     $sub = (string) ($id['sub'] ?? '');
     if ($sub === '') return null;
     return ['sub' => $sub, 'name' => trim((string) ($id['name'] ?? '')),
-            'email' => mb_strtolower(trim((string) ($id['email'] ?? '')))];
+            'email' => mb_strtolower(trim((string) ($id['email'] ?? ''))),
+            // השער שולח email גם כשלא אומת (שם המשתמש שנראה כמו מייל) — לקישור לפי מייל רק מאומת.
+            'email_verified' => ($id['email_verified'] ?? false) === true];
 }
 
 /**
@@ -46,7 +52,8 @@ function platformLinked(string $kind, array $id): ?array {
     ['table' => $t, 'where' => $w, 'email' => $e] = PLATFORM_KINDS[$kind];
     $row = one("SELECT * FROM $t WHERE $w AND platform_sub = ?", [$id['sub']]);
     if ($row) return $row;
-    if ($id['email'] === '') return null;
+    // מייל שלא אומת אינו הוכחת זהות — אחרת אפשר היה לתפוס חשבון (גם של מנהל) בהרשמה עם המייל שלו.
+    if ($id['email'] === '' || empty($id['email_verified'])) return null;
     $row = one("SELECT * FROM $t WHERE $w AND platform_sub = '' AND $e <> '' AND LOWER($e) = ? ORDER BY id LIMIT 1",
                [$id['email']]);
     if (!$row) return null;
@@ -55,10 +62,17 @@ function platformLinked(string $kind, array $id): ?array {
     return one("SELECT * FROM $t WHERE id = ?", [$row['id']]);
 }
 
-/** כמה חשבונות מהסוג הזה עוד לא קושרו — אם אין, אין מה להציע במסך החד-פעמי. */
-function platformUnlinkedCount(string $kind): int {
+/**
+ * הקמה ראשונה בלבד: אין עדיין אף חשבון מהסוג הזה (גם לא כזה שלא קושר), והזהות אינה של הורה במגדלור.
+ * זה המסלול היחיד שבו כניסה דרך הפלטפורמה פותחת חשבון מפתח/מנהל בלי הזמנה.
+ */
+function platformMayBootstrap(string $kind, array $id): bool {
+    if ($kind === 'parent') return false;
     ['table' => $t, 'where' => $w] = PLATFORM_KINDS[$kind];
-    return (int) one("SELECT COUNT(*) n FROM $t WHERE $w AND platform_sub = ''")['n'];
+    if ((int) one("SELECT COUNT(*) n FROM $t WHERE $w")['n'] > 0) return false;
+    $parent = one('SELECT id FROM parents WHERE platform_sub = ? OR (? <> \'\' AND LOWER(login) = ?) LIMIT 1',
+                  [$id['sub'], $id['email'], $id['email']]);
+    return !$parent;
 }
 
 /** שם משתמש פנוי לחשבון חדש — מהמייל, ואם תפוס או לא תקין — עם סיומת. */
@@ -77,6 +91,8 @@ function platformUsername(string $table, array $id): string {
  * בלי סיסמה (hash ריק — password_verify לעולם לא מצליח מולו): הכניסה היא דרך הפלטפורמה.
  */
 function platformCreate(string $kind, array $id): array {
+    // שער אחרון: גם קריאה ישירה לא פותחת מפתח/מנהל, אלא בהקמה הראשונה.
+    if (!platformMayBootstrap($kind, $id)) throw new RuntimeException('platformCreate: no bootstrap for ' . $kind);
     $now = nowIso();
     $name = mb_substr($id['name'] !== '' ? $id['name'] : 'מנהל', 0, 80);
     if ($kind === 'dev') {
@@ -132,12 +148,14 @@ function platformLinkOld(string $kind, array $id, string $username, string $pass
 
 /**
  * מחוברת: החשבון של מי שנכנס דרך הפלטפורמה, וה-session שלו בממשק הזה. ה-session שייך לחשבון אחר
- * (מישהו אחר נכנס לפלטפורמה) — מוחלף. אין חשבון ואין מה לקשר — נפתח מיד (לא להורה: חשבון משפחה פותח
- * מנהל המערכת). null = להציג את המסך החד-פעמי.
+ * (מישהו אחר נכנס לפלטפורמה) — מוחלף. אין חשבון — נפתח רק בהקמה הראשונה (platformMayBootstrap).
+ * null = אין גישה (או להציג את המסך החד-פעמי, למי שיש לו חשבון ישן).
  */
 function platformSession(string $kind, array $id): ?array {
     $row = platformLinked($kind, $id)
-        ?? ($kind !== 'parent' && platformUnlinkedCount($kind) === 0 ? platformCreate($kind, $id) : null);
+        ?? (platformMayBootstrap($kind, $id) ? platformCreate($kind, $id) : null);
+    // חשבון מושעה אינו נכנס (בפאנל הישן status; למפתחים אין סטטוס).
+    if ($row && ($row['status'] ?? 'active') !== 'active') $row = null;
     $s = sessionRow($kind);
     if (!$row) {
         if ($s) endSession($kind);
