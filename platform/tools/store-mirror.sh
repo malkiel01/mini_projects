@@ -23,7 +23,8 @@ for f in */app.json; do
     fi
     ls "$d"/*.apk >/dev/null 2>&1 || { echo "::notice::$app — אין APK ב-$rel"; rm -rf "$d"; continue; }
     ver=$(jq -r '.versionCode // empty' "$d/build.json" 2>/dev/null)
-    built=$(jq -r '.builtAt // empty' "$d/build.json" 2>/dev/null)
+    # builtAt בבניות TWA, built בבניות עם build.json ידני (כרטיסי ברכה ועוד)
+    built=$(jq -r '.builtAt // .built // empty' "$d/build.json" 2>/dev/null)
     pkg=$(jq -r '[.[] | .target.package_name // empty][0] // empty' "$d/assetlinks.json" 2>/dev/null)
     jq -n --arg v "$ver" --arg p "$pkg" --arg b "$built" \
         '{versionCode: ($v | if . == "" then null else tonumber end), package: ($p | if . == "" then null else . end), builtAt: ($b | if . == "" then null else . end)}' \
