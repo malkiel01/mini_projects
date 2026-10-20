@@ -161,9 +161,8 @@ export function createWordEditor(root, opts) {
         const pageH = hmm * MM;
         const m = page.margins;
         return { pageW: wmm * MM, pageH, top: m.top * MM, bottom: m.bottom * MM, right: m.right * MM, left: m.left * MM,
-            contentH: pageH - (m.top + m.bottom) * MM, gap: printing ? 0 : GAP };
+            contentH: pageH - (m.top + m.bottom) * MM, gap: GAP };
     };
-    let printing = false;
     const pageMm = () => {
         const [w, hh] = SIZES[page.size] || SIZES.A4;
         return page.orientation === 'landscape' ? [hh, w] : [w, hh];
@@ -727,24 +726,12 @@ export function createWordEditor(root, opts) {
     }
 
     // ---------- הדפסה ----------
+    /**
+     * הדפסה = בדיוק העמודים שעל המסך. לא מודדים מחדש: ב-CSS של ההדפסה כל רווח עמוד (.wp-break) מתכווץ ל-0 והופך
+     * למעבר עמוד, כך שהשבירות הן אלה שכבר חושבו. מדידה נוספת (בעבר — "מצב הדפסה") יכלה להעביר שורה גבולית לעמוד אחר.
+     */
     function print() {
-        printing = true;
-        document.documentElement.classList.add('wp-printing');
-        editor.storage.wpPages.schedule?.();
-        // שני פריימים: המדידה עם רווח 0 בין הדפים, ואז ההדפסה. חוזרים למסך רק ב-afterprint: בספארי (iPhone)
-        // window.print() לא מחכה לסיום, ובבדיקות האוטומטיות מצב ההדפסה נשאר עד שהן מסיימות.
-        const done = () => {
-            if (!printing) return;
-            printing = false;
-            window.removeEventListener('afterprint', done);
-            document.documentElement.classList.remove('wp-printing');
-            editor.storage.wpPages.schedule?.();
-        };
-        window.addEventListener('afterprint', done);
-        requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(() => {
-            window.print();
-            setTimeout(() => { if (!window.matchMedia('print').matches && !window.__wpHoldPrint) done(); }, 1000);   // דפדפן בלי afterprint
-        }, 60)));
+        window.print();
     }
 
     // ---------- מצב ----------

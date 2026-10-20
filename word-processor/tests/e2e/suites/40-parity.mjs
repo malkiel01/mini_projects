@@ -33,14 +33,9 @@ export default async function (t) {
         writeFileSync(pdf, await res.body());
         const pdfStarts = t.pdfPages(pdf).map(heb);
 
-        // הדפסה: מצב ההדפסה של העורך (מרווח 0 בין הדפים), ואז PDF של הדפדפן כמו "שמירה כ-PDF"
-        await p.evaluate(() => { window.__wpHoldPrint = true; window.print = () => {}; });
-        await p.click('button[aria-label="הדפסה / PDF"]');
-        await p.waitForSelector('html.wp-printing');
-        await t.settle(p);
+        // הדפסה: PDF של הדפדפן ("שמירה כ-PDF") — מה שהכפתור "הדפסה / PDF" מדפיס
         const printPdf = join(t.data, `${f}.print.pdf`);
         writeFileSync(printPdf, await p.pdf({ preferCSSPageSize: true, printBackground: true }));
-        await p.evaluate(() => window.dispatchEvent(new Event('afterprint')));
         const printStarts = t.pdfPages(printPdf).map(heb);
 
         const diff = (a, b) => {
@@ -59,6 +54,9 @@ export default async function (t) {
             else t.ok(label, !d, d || `${edStarts.length} עמודים`);
         }
     }
+    await p.evaluate(() => { window.__printed = 0; window.print = () => { window.__printed++; }; });
+    await p.click('button[aria-label="הדפסה / PDF"]');
+    t.ok('כפתור ההדפסה פותח הדפסה', await p.evaluate(() => window.__printed) === 1);
     t.ok('בלי שגיאות JS', !p.errors.length, p.errors.join(' | '));
     await p.context().close();
 }
