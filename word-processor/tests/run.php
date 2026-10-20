@@ -455,6 +455,28 @@ check('ערכים לא תקינים נדחים / נחתכים', $p['size'] === '
     && $p['styles']['h1']['underline'] === true && $p['numbering']['format'] === 'n' && $p['numbering']['align'] === 'left');
 check('גודל לרוחב', page_mm($p) === [297, 210]);
 
+// ======================================================================
+section('שמירה אטומית וגרסת מבנה');
+$docS = doc_new('a:99', 'אטומי', null, null, 'u1', 'דנה');
+$rowS = doc_find($docS, 'a:99');
+check('מסמך חדש נשמר עם attrs.schema', (doc_json($rowS)['attrs']['schema'] ?? 0) === SCHEMA_VERSION);
+$j = ['type' => 'doc', 'attrs' => ['schema' => 1, 'page' => ['size' => 'Letter', 'orientation' => 'landscape']], 'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'שלום']]]]];
+$v0 = (int)$rowS['version'];
+$rowS = doc_save($rowS, $j, null, 'u1', 'דנה', $v0);
+check('הגדרות העמוד שבתוך המסמך נשמרות באותה גרסה', (int)$rowS['version'] === $v0 + 1 && doc_page($rowS)['size'] === 'Letter' && doc_page($rowS)['orientation'] === 'landscape');
+check('…ולא נשארות כפולות בתוך ה-JSON השמור', !isset(doc_json($rowS)['attrs']['page']));
+$vs = versions_list($rowS);
+$vrow = version_get($rowS, $vs[0]['id']);
+check('הגרסה השמורה כוללת את הגדרות העמוד', json_decode($vrow['page'], true)['size'] === 'Letter');
+$ej = editor_json(doc_json($rowS), doc_page($rowS));
+check('לעורך: הגדרות העמוד מוחזרות בתוך המסמך', ($ej['attrs']['page']['size'] ?? '') === 'Letter' && $ej['attrs']['schema'] === SCHEMA_VERSION);
+$old = ['type' => 'doc', 'content' => [['type' => 'paragraph']]];
+check('מסמך ישן (בלי attrs) מומר', doc_migrate($old)['attrs']['schema'] === SCHEMA_VERSION);
+$rowS = doc_save($rowS, $old, null, 'u1', 'דנה');
+check('שמירה מלשונית ישנה (בלי הגדרות עמוד בפנים) משאירה את ההגדרות', doc_page($rowS)['size'] === 'Letter');
+check('מבנה חדש יותר מהשרת → schema_newer', throws(fn() => doc_save($rowS, ['type' => 'doc', 'attrs' => ['schema' => SCHEMA_VERSION + 1], 'content' => []], null, 'u1', 'דנה'), 'schema_newer'));
+check('ייצוא Word ממסמך עם attrs', strlen(export_docx(doc_json($rowS), doc_page($rowS))) > 1000);
+
 // ניקוי
 array_map('unlink', glob("$tmp/media/*") ?: []);
 @rmdir("$tmp/media");

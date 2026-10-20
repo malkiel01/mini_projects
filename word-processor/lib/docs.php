@@ -13,6 +13,8 @@ const VERSION_MAX = 100;
 const LOCK_SECONDS = 120;
 const MEDIA_MAX_BYTES = 10 * 1024 * 1024;
 const MEDIA_TYPES = ['image/png' => 'png', 'image/jpeg' => 'jpg', 'image/gif' => 'gif', 'image/webp' => 'webp'];
+/** גרסת המבנה של ה-JSON (attrs.schema). אותו מספר ב-assets/js/extensions.js; ההמרות — כאן וב-assets/js/schema.js. */
+const SCHEMA_VERSION = 1;
 
 class ApiError extends Exception
 {
@@ -36,7 +38,39 @@ function doc_json_valid($json): array
     }
     if (!$json['content']) $json['content'] = [['type' => 'paragraph']];
     if (strlen(json_encode($json)) > DOC_MAX_BYTES) throw new ApiError('המסמך גדול מדי', 'too_large', 413);
+    return doc_migrate($json);
+}
+
+/**
+ * המרה לגרסת המבנה הנוכחית. מסמך מגרסה חדשה מהשרת (לשונית עם קוד חדש, ושרת שעוד לא עודכן) — נדחה,
+ * כדי שקוד ישן לא ישמור מבנה שהוא לא מבין.
+ *   0 → 1: attrs נוסף לצומת השורש; הגדרות העמוד עוברות בו (attrs.page) בדרך מהשרת ואליו — במסד הן בעמודה page.
+ */
+function doc_migrate(array $json): array
+{
+    $attrs = is_array($json['attrs'] ?? null) ? $json['attrs'] : [];
+    $v = (int)($attrs['schema'] ?? 0);
+    if ($v > SCHEMA_VERSION) throw new ApiError('המסמך נשמר בגרסה חדשה יותר של העורך — רעננו את הדף', 'schema_newer', 409);
+    if ($v < 1) $v = 1;
+    $attrs['schema'] = $v;
+    $json['attrs'] = $attrs;
     return $json;
+}
+
+/** הגדרות העמוד שבתוך ה-JSON — מוציאים לעמודה page (או null), ומסירים מה-JSON שנשמר. */
+function take_page(array &$json): ?array
+{
+    $p = $json['attrs']['page'] ?? null;
+    unset($json['attrs']['page']);
+    return is_array($p) ? $p : null;
+}
+
+/** ה-JSON כפי שהעורך טוען אותו: מומר, עם הגדרות העמוד בפנים. */
+function editor_json(array $json, array $page): array
+{
+    $json = doc_migrate($json);
+    $json['attrs']['page'] = $page;
+    return with_media_src($json);
 }
 
 function clean_title($t): string
@@ -48,7 +82,8 @@ function clean_title($t): string
 function doc_new(string $space, string $title, ?array $json, $page, string $userId, string $userName): string
 {
     $id = rand_id(20);
-    $json = $json ? doc_json_valid($json) : empty_doc_json();
+    $json = $json ? doc_json_valid($json) : doc_migrate(empty_doc_json());
+    $page = take_page($json) ?? $page;
     $now = time();
     db()->prepare('INSERT INTO docs (id, space, title, json, page, version, created_at, updated_at, updated_by, updated_by_id)
         VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?)')
@@ -64,7 +99,7 @@ function doc_find($id, string $space): array
     if (!is_string($id) || !preg_match('/^[a-z0-9]{6,40}$/', $id)) throw new ApiError('המסמך לא נמצא', 'not_found', 404);
     $st = db()->prepare('SELECT * FROM docs WHERE id = ? AND space = ?');
     $st->execute([$id, $space]);
-    $row = $st->fetch();
+    $row = $st->fetch(); $st->closeCursor();
     if (!$row) throw new ApiError('המסמך לא נמצא', 'not_found', 404);
     return $row;
 }
@@ -89,6 +124,7 @@ function doc_save(array $row, $json, ?string $title, string $userId, string $use
         throw new ApiError('המסמך השתנה בינתיים — טענו אותו מחדש', 'conflict', 409);
     }
     $json = doc_json_valid($json);
+    $page = take_page($json) ?? $page;   // הגדרות העמוד שבתוך המסמך — באותה שמירה ובאותה גרסה
     $now = time();
     $sets = 'json = ?, version = version + 1, updated_at = ?, updated_by = ?, updated_by_id = ?';
     $args = [json_encode(strip_media_src($json), JSON_UNESCAPED_UNICODE), $now, $userName, $userId];
@@ -104,7 +140,10 @@ function doc_save(array $row, $json, ?string $title, string $userId, string $use
     return $row;
 }
 
-/** הגדרות עמוד בלבד — בלי גרסה חדשה של התוכן. */
+/**
+ * הגדרות עמוד בלבד — בלי גרסה חדשה של התוכן. לתאימות (embed_page, my_page של לשונית ישנה);
+ * העורך שולח היום את ההגדרות בתוך המסמך, באותה שמירה (doc_save).
+ */
 function doc_set_page(array $row, $page): array
 {
     $p = page_normalize($page, doc_page($row));
@@ -190,7 +229,7 @@ function version_record(array $row, string $userId, string $userName): void
     $now = time();
     $st = db()->prepare('SELECT id, user_id, started_at FROM versions WHERE doc = ? ORDER BY id DESC LIMIT 1');
     $st->execute([$row['id']]);
-    $last = $st->fetch();
+    $last = $st->fetch(); $st->closeCursor();
     if ($last && $last['user_id'] === $userId && $now - (int)$last['started_at'] < VERSION_MERGE_SECONDS) {
         db()->prepare('UPDATE versions SET version = ?, title = ?, json = ?, page = ?, user_name = ?, saved_at = ? WHERE id = ?')
             ->execute([$row['version'], $row['title'], $row['json'], $row['page'], $userName, $now, $last['id']]);
@@ -214,7 +253,7 @@ function version_get(array $row, $id): array
 {
     $st = db()->prepare('SELECT * FROM versions WHERE doc = ? AND id = ?');
     $st->execute([$row['id'], (int)$id]);
-    $v = $st->fetch();
+    $v = $st->fetch(); $st->closeCursor();
     if (!$v) throw new ApiError('הגרסה לא נמצאה', 'not_found', 404);
     return $v;
 }
@@ -224,7 +263,7 @@ function version_by_number(array $row, int $version): array
 {
     $st = db()->prepare('SELECT * FROM versions WHERE doc = ? AND version >= ? ORDER BY version ASC LIMIT 1');
     $st->execute([$row['id'], $version]);
-    $v = $st->fetch();
+    $v = $st->fetch(); $st->closeCursor();
     if (!$v || (int)$v['version'] !== $version) {
         // גרסאות מאוחדות: מספר שנבלע בגרסה מאוחדת — אין אותו בדיוק
         throw new ApiError('הגרסה לא נשמרה בנפרד (גרסאות מאוחדות בכל 10 דקות)', 'not_found', 404);
@@ -239,7 +278,7 @@ function lock_get(string $doc): ?array
 {
     $st = db()->prepare('SELECT * FROM locks WHERE doc = ?');
     $st->execute([$doc]);
-    $l = $st->fetch();
+    $l = $st->fetch(); $st->closeCursor();
     if (!$l || time() - (int)$l['beat'] > LOCK_SECONDS) return null;
     return $l;
 }

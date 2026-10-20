@@ -95,7 +95,7 @@ function doc_public(array $row, bool $withJson = true): array
 {
     $o = ['doc' => $row['id'], 'title' => $row['title'], 'version' => (int)$row['version'], 'updated_at' => (int)$row['updated_at'],
         'updated_by' => $row['updated_by'], 'page' => doc_page($row)];
-    if ($withJson) $o['json'] = with_media_src(doc_json($row));
+    if ($withJson) $o['json'] = editor_json(doc_json($row), $o['page']);   // לעורך: הגדרות העמוד בתוך המסמך
     return $o;
 }
 
@@ -174,7 +174,7 @@ try {
             $s = token_consume((string)($in['t'] ?? ''));
             $row = doc_find($s['doc'], 'c:' . $s['client']);
             out(['session' => $s['session'], 'mode' => $s['mode'], 'return_origin' => $s['return_origin'],
-                'user' => ['name' => $s['user_name']]] + embed_state($s, $row, $s['session']));
+                'client' => $s['client'], 'user' => ['id' => $s['user_id'], 'name' => $s['user_name']]] + embed_state($s, $row, $s['session']));
 
         case 'embed_load':
             need_post();
@@ -184,7 +184,8 @@ try {
             if ($op === 'versions') out(['versions' => versions_list($row)]);
             if ($op === 'version') {
                 $v = version_get($row, $in['id'] ?? 0);
-                out(['json' => with_media_src(json_decode($v['json'], true)), 'page' => page_normalize(json_decode($v['page'], true) ?: []), 'title' => $v['title'], 'version' => (int)$v['version']]);
+                $vp = page_normalize(json_decode($v['page'], true) ?: []);
+                out(['json' => editor_json(json_decode($v['json'], true) ?: empty_doc_json(), $vp), 'page' => $vp, 'title' => $v['title'], 'version' => (int)$v['version']]);
             }
             out(embed_state($s, $row, $s['token']));
 
@@ -348,7 +349,8 @@ function app_action(string $action, array $in): never
             out(['versions' => versions_list(doc_find($in['doc'] ?? '', $space))]);
         case 'my_version':
             $v = version_get(doc_find($in['doc'] ?? '', $space), $in['id'] ?? 0);
-            out(['json' => with_media_src(json_decode($v['json'], true)), 'page' => page_normalize(json_decode($v['page'], true) ?: []), 'title' => $v['title'], 'version' => (int)$v['version']]);
+            $vp = page_normalize(json_decode($v['page'], true) ?: []);
+            out(['json' => editor_json(json_decode($v['json'], true) ?: empty_doc_json(), $vp), 'page' => $vp, 'title' => $v['title'], 'version' => (int)$v['version']]);
         case 'my_export':
             $row = doc_find($_GET['doc'] ?? '', $space);
             $fmt = (string)($_GET['format'] ?? 'docx');

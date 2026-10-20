@@ -37,11 +37,11 @@ function account_for_identity(array $id): array
     $name = mb_substr(trim((string)($id['name'] ?? '')), 0, 120);
     $st = db()->prepare('SELECT * FROM accounts WHERE sub = ?');
     $st->execute([$sub]);
-    $acc = $st->fetch();
+    $acc = $st->fetch(); $st->closeCursor();
     if (!$acc && $email) {
         $st = db()->prepare('SELECT * FROM accounts WHERE sub IS NULL AND email = ? COLLATE NOCASE');
         $st->execute([$email]);
-        $acc = $st->fetch();
+        $acc = $st->fetch(); $st->closeCursor();
         if ($acc) {
             db()->prepare('UPDATE accounts SET sub = ? WHERE id = ?')->execute([$sub, $acc['id']]);
             wp_log('account_linked', "{$acc['id']} ↔ $sub (מייל)");
@@ -54,8 +54,13 @@ function account_for_identity(array $id): array
         $acc = ['id' => (int)db()->lastInsertId()];
         wp_log('account_created', "{$acc['id']} ← $sub" . ($first ? ' (מנהל)' : ''));
     }
-    db()->prepare('UPDATE accounts SET name = COALESCE(NULLIF(?, \'\'), name), email = COALESCE(?, email), last_seen = ? WHERE id = ?')
-        ->execute([$name, $email, time(), $acc['id']]);
+    // כתיבה רק כשמשהו השתנה (או פעם ב-5 דקות) — לא בכל בקשה: פחות תחרות על המסד
+    $stale = !isset($acc['last_seen']) || time() - (int)$acc['last_seen'] > 300
+        || ($name !== '' && $name !== ($acc['name'] ?? '')) || ($email !== null && $email !== ($acc['email'] ?? null));
+    if ($stale) {
+        db()->prepare('UPDATE accounts SET name = COALESCE(NULLIF(?, \'\'), name), email = COALESCE(?, email), last_seen = ? WHERE id = ?')
+            ->execute([$name, $email, time(), $acc['id']]);
+    }
     $st = db()->prepare('SELECT * FROM accounts WHERE id = ?');
     $st->execute([$acc['id']]);
     return $st->fetch();

@@ -2,14 +2,15 @@
  * עורך התמלילים — האפליקציה: רשימת המסמכים של המשתמש, פתיחה ועריכה, שמירה אוטומטית, נעילה, גרסאות,
  * ייצוא, ומסך המנהל (אישור לקוחות הטמעה). המשתמש — מהשער (PLATFORM_USER) או מכניסה עם הכלים הדיגיטליים.
  */
-import { createWordEditor, h, toast, sheet, field, when } from './editor.js';
+import { createWordEditor, h, toast, sheet, when } from './editor.js';
+import { createSaver, findDraft, drafts, downloadLocalCopy, STATE_TEXT } from './saver.js';
 
 const tab = Math.random().toString(36).slice(2);
 const GUIDE = 'https://github.com/malkiel01/mini_projects/blob/main/word-processor/docs/integration.md';
 const main = document.getElementById('main');
 const top = document.querySelector('header.top');
 let me = null;
-let current = null;   // {id, ed, version, dirty, timer, beat, ...}
+let current = null;   // {id, ed, saver, can, title, beat, ...}
 
 async function api(action, body = {}, isForm = false) {
     let res;
@@ -32,7 +33,9 @@ async function api(action, body = {}, isForm = false) {
 window.addEventListener('hashchange', route);
 async function route() {
     const hash = location.hash || '#/';
-    if (current && !hash.startsWith('#/d/' + current.id)) await closeDoc();
+    if (current && !hash.startsWith('#/d/' + current.id)) {
+        try { await closeDoc(); } catch (e) { if (e.stay) return; throw e; }
+    }
     if (hash.startsWith('#/d/')) return openDoc(hash.slice(4));
     if (hash === '#/admin' && me?.admin) return adminView();
     return listView();
@@ -122,8 +125,9 @@ async function openDoc(id) {
     }
     const titleIn = h('input.title-in', { value: d.title, 'aria-label': 'שם המסמך', placeholder: 'ללא שם', maxlength: 200 });
     const state = h('span.save-state', { role: 'status' }, '');
-    const cur = current = { id, version: d.version, dirty: false, saving: null, can: d.can, title: d.title };
-    header({ back: true, title: titleIn, actions: [state, h('button.icon-btn', { 'aria-label': 'עוד', title: 'עוד', onclick: e => docMenu(e.currentTarget) }, '⋯')] });
+    const pagesEl = h('span.save-state.pages-count', { 'aria-live': 'off' });
+    const cur = current = { id, can: d.can, title: d.title };
+    header({ back: true, title: titleIn, actions: [pagesEl, state, h('button.icon-btn', { 'aria-label': 'עוד', title: 'עוד', onclick: e => docMenu(e.currentTarget) }, '⋯')] });
     titleIn.addEventListener('change', async () => {
         try { await api('my_rename', { doc: id, title: titleIn.value }); cur.title = titleIn.value; } catch (e) { toast(e.message, true); }
     });
@@ -145,89 +149,104 @@ async function openDoc(id) {
             list: async () => (await api('my_versions', { doc: id })).versions,
             get: vid => api('my_version', { doc: id, id: vid }),
         },
-        onUpdate: () => {
-            // טרנזקציה שלא שינתה כלום (למשל תיקון טבלה בטעינה) — לא שינוי
-            if (!cur.ed || (!cur.dirty && JSON.stringify(cur.ed.getJSON()) === cur.saved)) return;
-            cur.dirty = true; setState(); clearTimeout(cur.timer); cur.timer = setTimeout(() => save(), 1500);
-        },
-        onPage: async p => {
-            try { await api('my_page', { doc: id, page: p }); } catch (e) { toast(e.message, true); }
-        },
+        // כל שינוי — כולל הגדרות עמוד וסגנונות, שנמצאים בתוך המסמך — עובר לשמירה
+        onUpdate: () => { if (cur.saver && cur.can === 'edit') cur.saver.changed(); },
     });
     cur.ed = ed;
-    cur.saved = JSON.stringify(ed.getJSON());
+    ed.statusTarget(pagesEl);
 
-    function setState(text) {
-        state.textContent = text || (cur.dirty ? 'לא נשמר' : 'נשמר');
-    }
-    setState();
-    async function save() {
-        if (!cur.dirty || cur.can !== 'edit') return;
-        if (cur.saving) return cur.saving.then(save);
-        cur.dirty = false;
-        const json = ed.getJSON();
-        const str = JSON.stringify(json);
-        if (str === cur.saved) return setState();
-        setState('שומר…');
-        cur.saving = api('my_save', { doc: id, json, base_version: cur.version })
-            .then(r => { cur.version = r.version; cur.saved = str; setState(); })
-            .catch(e => {
-                cur.dirty = true;
-                setState('לא נשמר');
-                if (e.code === 'conflict') banner_(`המסמך השתנה במקום אחר. `, 'טעינה מחדש', () => { current = null; openDoc(id); });
-                else if (e.code === 'locked') lockedBy(e.message);
-                else toast(e.message, true);
-            })
-            .finally(() => { cur.saving = null; });
-        return cur.saving;
-    }
-    cur.save = save;
+    // שמירה: טיוטה במכשיר מיד, לשרת אחרי שנייה וחצי; תוכן והגדרות עמוד — בבקשה אחת ובגרסה אחת
+    const draftKey = `app:${me.id}:${id}`;
+    const saver = cur.saver = createSaver({
+        version: d.version,
+        draftKey,
+        snapshot: () => ed.getJSON(),
+        send: (json, base) => api('my_save', { doc: id, json, base_version: base }),
+        onState: (s, info) => {
+            state.textContent = cur.can === 'edit' || s !== 'saved' ? STATE_TEXT[s] : 'קריאה בלבד';
+            state.classList.toggle('bad', ['offline', 'conflict', 'error'].includes(s));
+            if (s === 'conflict') showBanner('המסמך השתנה במקום אחר. השינויים שלך שמורים במכשיר.',
+                ['טעינה מחדש', reloadFromServer], ['הורדת העותק שלי', () => downloadLocalCopy(ed.getJSON(), cur.title)]);
+            else if (s === 'locked') lockedBy(info.message || 'המסמך פתוח לעריכה אצל משתמש אחר');
+            else if (s === 'error' && info.code === 'schema_newer') showBanner(info.message, ['רענון', () => location.reload()]);
+            else if (s === 'error') toast(info.message || 'השמירה נכשלה', true);
+            else if (s === 'saved' && banner.dataset.kind === 'offline') hideBanner();
+            if (s === 'offline') showBanner('אין חיבור לשרת. ממשיכים לעבוד — הכול נשמר במכשיר ויישלח כשהחיבור יחזור.', null, 'offline');
+        },
+    });
+    state.textContent = cur.can === 'edit' ? STATE_TEXT.saved : 'קריאה בלבד';
+    cur.save = () => saver.flush();
 
-    function banner_(text, label, onClick) {
+    function showBanner(text, ...rest) {
+        const kind = typeof rest[rest.length - 1] === 'string' ? rest.pop() : '';
         banner.textContent = '';
-        banner.append(h('span', text), label ? h('button.btn.sm.ghost', { onclick: onClick }, label) : null);
+        banner.dataset.kind = kind;
+        banner.append(h('span', text), ...rest.filter(Boolean).map(([label, fn]) => h('button.btn.sm.ghost', { onclick: fn }, label)));
         banner.hidden = false;
     }
+    function hideBanner() { banner.hidden = true; banner.dataset.kind = ''; }
     function lockedBy(msg) {
         cur.can = 'view';
+        saver.stop();
         ed.setEditable(false);
-        banner_(msg + ' — פתוח לקריאה בלבד.', null);
+        state.textContent = 'קריאה בלבד';
+        showBanner(msg + ' — פתוח לקריאה בלבד.' + (saver.dirty ? ' השינויים שלך שמורים במכשיר.' : ''));
+    }
+    async function reloadFromServer() {
+        const fresh = await api('my_open', { doc: id });
+        ed.setContent(fresh.json);
+        cur.can = fresh.can;
+        ed.setEditable(cur.can === 'edit');
+        saver.reset(fresh.version);
+        hideBanner();
+        if (cur.can !== 'edit' && fresh.lock) lockedBy(`פתוח לעריכה אצל ${fresh.lock.by}`);
     }
     if (d.can !== 'edit' && d.lock) lockedBy(`פתוח לעריכה אצל ${d.lock.by}`);
+
+    // טיוטה שנשארה במכשיר (לשונית שנסגרה, ניתוק, קריסה) — מציעים לשחזר
+    findDraft(draftKey, JSON.stringify(ed.getJSON())).then(dr => {
+        if (!dr || current !== cur) return;
+        const changedSince = dr.base_version !== d.version;
+        const at = when(Math.round(dr.at / 1000));
+        if (cur.can !== 'edit') {
+            showBanner(`יש במכשיר שינויים שלא נשמרו (${at}), והמסמך פתוח עכשיו אצל מישהו אחר.`, ['הורדת השינויים', () => downloadLocalCopy(dr.json, cur.title)]);
+            return;
+        }
+        showBanner(`נמצאו במכשיר שינויים שלא נשמרו (${at}).` + (changedSince ? ' שימו לב: המסמך השתנה מאז בשרת — שחזור ידרוס את השינויים ההם.' : ''),
+            ['שחזור', () => { ed.setContent(dr.json); saver.markDirty(d.version); hideBanner(); toast('השינויים שוחזרו'); }],
+            ['הורדה', () => downloadLocalCopy(dr.json, cur.title)],
+            ['מחיקה', () => { if (confirm('למחוק את השינויים שלא נשמרו? אי אפשר לבטל.')) { drafts.del(draftKey); hideBanner(); } }]);
+    });
 
     // דופק: מחזיק את הנעילה; כשהיא תפוסה — בודק אם התפנתה
     cur.beat = setInterval(async () => {
         try {
             const l = await api('my_lock', { doc: id, op: 'beat' });
             if (l.ok && cur.can !== 'edit') {
-                banner_('המסמך התפנה לעריכה.', 'מעבר לעריכה', async () => {
-                    const fresh = await api('my_open', { doc: id });
-                    cur.version = fresh.version;
-                    ed.setContent(fresh.json);
-                    cur.saved = JSON.stringify(ed.getJSON());
-                    ed.setPage(fresh.page);
-                    cur.can = 'edit';
-                    ed.setEditable(true);
-                    banner.hidden = true;
-                });
+                showBanner('המסמך התפנה לעריכה.', ['מעבר לעריכה', reloadFromServer]);
             } else if (!l.ok && cur.can === 'edit') {
                 lockedBy(`פתוח לעריכה אצל ${l.lock?.by || 'משתמש אחר'}`);
             }
         } catch { /* רשת — ננסה בדופק הבא */ }
     }, 30000);
 
+    /** לפני ייצוא / שכפול: שומרים קודם, ואם לא הצליח — לא ממשיכים בשקט עם גרסה ישנה. */
+    const saved = async what => (await ensureSaved(cur, what)) === 'ok';
+    const download = (fmt, what) => async () => { if (await saved(what)) location.href = `api.php?action=my_export&format=${fmt}&doc=${id}`; };
     function docMenu(anchor) {
         const items = [
-            ['⬇️', 'הורדה כ-Word', () => { location.href = `api.php?action=my_export&format=docx&doc=${id}`; }],
-            ['📕', 'הורדה כ-PDF', async () => { await save(); location.href = `api.php?action=my_export&format=pdf&doc=${id}`; }],
+            ['⬇️', 'הורדה כ-Word', download('docx', 'ההורדה')],
+            ['📕', 'הורדה כ-PDF', download('pdf', 'ההורדה')],
             ['🖨', 'הדפסה', () => ed.print()],
-            ['📝', 'הורדה כטקסט', () => { location.href = `api.php?action=my_export&format=text&doc=${id}`; }],
-            ['🧾', 'גיבוי (JSON)', () => { location.href = `api.php?action=my_export&format=json&doc=${id}`; }],
-            ['📑', 'שכפול', async () => { await save(); const r = await api('my_copy', { doc: id }); location.hash = '#/d/' + r.doc; }],
+            ['📝', 'הורדה כטקסט', download('text', 'ההורדה')],
+            ['🧾', 'גיבוי (JSON)', download('json', 'הגיבוי')],
+            ['📑', 'שכפול', async () => { if (!(await saved('השכפול'))) return; const r = await api('my_copy', { doc: id }); location.hash = '#/d/' + r.doc; }],
             ['🗑', 'מחיקה', async () => {
                 if (!confirm(`למחוק את "${cur.title || 'ללא שם'}"? אי אפשר לבטל.`)) return;
                 await api('my_delete', { doc: id });
-                cur.dirty = false;
+                saver.stop();
+                drafts.del(draftKey);
+                cur.deleted = true;
                 location.hash = '#/';
             }],
         ];
@@ -235,24 +254,68 @@ async function openDoc(id) {
     }
 }
 
+/**
+ * מוודא שהכול נשמר בשרת. אם לא — שואל: לנסות שוב / להוריד עותק / (בסגירה) לצאת בכל זאת.
+ * מחזיר 'ok' | 'leave' | 'stay'. השינויים שלא נשמרו נשארים בכל מקרה כטיוטה במכשיר.
+ */
+async function ensureSaved(cur, what, leaving = false) {
+    if (!cur.saver || cur.deleted || !cur.saver.dirty) return 'ok';
+    for (;;) {
+        const r = await cur.saver.flush();
+        if (r.ok && !cur.saver.dirty) return 'ok';
+        if (r.ok) continue;   // הוקלד עוד בזמן השמירה
+        const reason = { offline: 'אין חיבור לשרת', conflict: 'המסמך השתנה במקום אחר', locked: 'המסמך פתוח לעריכה אצל מישהו אחר' }[r.code] || r.message;
+        const pick = await choose('השינויים לא נשמרו', `${reason}. ${what} לא תכלול את השינויים האחרונים — לכן ${leaving ? 'לא יצאנו' : 'עצרנו'}. השינויים שמורים במכשיר הזה.`, [
+            ['retry', 'לנסות שוב', 'primary'],
+            ['copy', 'הורדת עותק של השינויים'],
+            leaving ? ['leave', 'לצאת בכל זאת (השינויים יוצעו לשחזור בפתיחה הבאה)'] : null,
+            ['stay', leaving ? 'להישאר במסמך' : 'ביטול'],
+        ]);
+        if (pick === 'retry') continue;
+        if (pick === 'copy') { downloadLocalCopy(cur.ed.getJSON(), cur.title); continue; }
+        return pick === 'leave' ? 'leave' : 'stay';
+    }
+}
+
+/** חלון בחירה פשוט. מחזיר את המפתח שנבחר, או null כשנסגר. */
+function choose(title, text, options) {
+    return new Promise(resolve => {
+        let picked = null;
+        const dlg = sheet(title, body => {
+            body.append(h('p', text), h('div.choices', options.filter(Boolean).map(([key, label, kind]) =>
+                h('button.btn' + (kind ? '.' + kind : '.ghost'), { type: 'button', onclick: () => { picked = key; dlg.close(); } }, label))));
+        });
+        dlg.addEventListener('close', () => resolve(picked));
+    });
+}
+
 async function closeDoc() {
     const cur = current;
-    current = null;
     if (!cur) return;
-    clearTimeout(cur.timer);
+    if (cur.can === 'edit' && (await ensureSaved(cur, 'היציאה', true)) === 'stay') {
+        history.replaceState(null, '', '#/d/' + cur.id);   // נשארים במסמך
+        throw Object.assign(new Error('stay'), { stay: true });
+    }
+    current = null;
     clearInterval(cur.beat);
-    try {
-        if (cur.dirty) { cur.dirty = true; await cur.save?.(); }
-        if (cur.can === 'edit') await api('my_lock', { doc: cur.id, op: 'release' });
-    } catch { /* לא מעכבים יציאה */ }
+    cur.saver?.destroy();
+    if (cur.can === 'edit') api('my_lock', { doc: cur.id, op: 'release' }).catch(() => {});
     cur.ed?.destroy();
     main.classList.remove('editor-main');
 }
 
+// סגירת לשונית / ניווט החוצה: הטיוטה כבר במכשיר; מנסים לשמור, משחררים את הנעילה, ומבקשים מהדפדפן לשאול
 window.addEventListener('beforeunload', e => {
-    if (current?.dirty) { current.save?.(); e.preventDefault(); }
+    if (current?.saver?.dirty) { current.saver.flush(); e.preventDefault(); }
 });
-document.addEventListener('visibilitychange', () => { if (document.hidden && current?.dirty) current.save?.(); });
+window.addEventListener('pagehide', () => {
+    const cur = current;
+    if (!cur || cur.can !== 'edit') return;
+    fetch('api.php?action=my_lock', { method: 'POST', keepalive: true, credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-WP': '1', 'X-Tab': tab },
+        body: JSON.stringify({ doc: cur.id, op: 'release' }) }).catch(() => {});
+});
+document.addEventListener('visibilitychange', () => { if (document.hidden && current?.saver?.dirty) current.saver.flush(); });
 
 function popMenu(anchor, items) {
     document.querySelector('.menu-pop')?.remove();

@@ -20,6 +20,10 @@ function wp_media_dir(): string
     return $dir;
 }
 
+/**
+ * חשוב: אחרי fetch() של שורה אחת — closeCursor(). בלעדיו הקריאה נשארת פתוחה, וכתיבה באותה פונקציה נכשלת מיד
+ * ("database is locked") אם בקשה אחרת כתבה בינתיים — busy_timeout לא עוזר במקרה הזה.
+ */
 function db(): PDO
 {
     static $pdo = null;
@@ -175,7 +179,7 @@ function setting(string $k, ?callable $init = null): ?string
 {
     $v = db()->prepare('SELECT v FROM settings WHERE k = ?');
     $v->execute([$k]);
-    $val = $v->fetchColumn();
+    $val = $v->fetchColumn(); $v->closeCursor();
     if ($val !== false) return $val;
     if (!$init) return null;
     $val = $init();

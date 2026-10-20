@@ -212,7 +212,15 @@ body.app > main { width: 100%; flex: 1; overflow-y: auto; }
 .top input.title-in::placeholder { color: inherit; opacity: .7; }
 .banner { display: flex; align-items: center; gap: var(--s2); padding: 6px var(--s3); background: color-mix(in srgb, var(--star) 16%, var(--surface));
     border-bottom: 1px solid var(--line); font-size: .88rem; }
-.banner .btn { margin-inline-start: auto; }
+.banner { flex-wrap: wrap; }
+.banner > span { flex: 1 1 220px; }
+.banner .btn { flex: none; }
+.save-state.bad { font-weight: 700; }
+.embed-bar .save-state.bad { color: var(--danger); }
+.top .pages-count { opacity: .75; }
+@media (max-width: 560px) { .top .pages-count { display: none; } }
+.choices { display: grid; gap: var(--s2); margin-top: var(--s3); }
+.choices .btn { justify-content: center; min-height: var(--tap); }
 .menu-pop { position: fixed; z-index: 40; min-width: 200px; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: var(--r);
     box-shadow: 0 8px 28px rgba(0, 0, 0, .18); padding: 4px; display: grid; }
 .menu-pop button { display: flex; align-items: center; gap: var(--s2); min-height: var(--tap); padding: 0 var(--s3); border: 0; background: none; border-radius: 8px; cursor: pointer; text-align: start; }
