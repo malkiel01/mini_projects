@@ -409,7 +409,8 @@ function appRow(app) {
         node = el('a', { className: 'app', ...openProps(app.href) }, body);
     } else {
         node = el('button', { type: 'button', className: 'app', ariaHasPopup: 'dialog' }, body);
-        node.addEventListener('click', () => openAppSheet(app, extras));
+        // הכפתורים נבנים מחדש בכל פתיחה — מה שמותקן ובאיזו גרסה יכול להשתנות בינתיים
+        node.addEventListener('click', () => openAppSheet(app, installLinks(app)));
     }
     const li = el('li', {}, [node]);
     li.dataset.search = `${app.name} ${app.description}`.toLowerCase();
@@ -477,10 +478,17 @@ function installStatus(app) {
     const info = installedHere[app.id];
     const when = info ? new Date(info.checked_at).toLocaleDateString('he-IL') : '';
     let cls = '', text;
-    if (info?.state === 'installed') { cls = 'on'; text = `✓ מותקנת במכשיר הזה — ${HOW[info.how] || 'נבדק'}, ${when}`; }
+    if (isAndroid() && app.install.apk) {
+        // אנדרואיד: האפליקציה היא ה-APK (androidTiles) — המצב לפי מה שמותקן ובאיזו גרסה
+        const s = androidState(app);
+        const latest = s.latest ? `גרסה ${s.latest}` : '';
+        if (!s.installed) text = `לא מותקנת במכשיר הזה${latest ? ` — ${latest}` : ''}. בהתקנה הראשונה אנדרואיד מבקש לאשר התקנה מהמקור הזה`;
+        else if (s.update) { cls = 'on'; text = `✓ מותקנת${s.mine ? ` (גרסה ${s.mine})` : ''} — יש ${latest}`; }
+        else { cls = 'on'; text = `✓ מותקנת במכשיר הזה${s.mine ? ` — גרסה ${s.mine}, העדכנית` : ''}`; }
+    }
+    else if (info?.state === 'installed') { cls = 'on'; text = `✓ מותקנת במכשיר הזה — ${HOW[info.how] || 'נבדק'}, ${when}`; }
     else if (info?.state === 'not_installed') { cls = 'off'; text = `לא מותקנת במכשיר הזה (${HOW.prompt}, ${when})`; }
-    else if (isAndroid() && app.install.apk) text = 'אפליקציית אנדרואיד — "התקנה" מוריד אותה; בפעם הראשונה אנדרואיד מבקש לאשר התקנה מהמקור הזה';
-    else if (app.install.pwa) text ='עוד לא נבדק במכשיר הזה — הבדיקה נעשית לבד בפתיחה הראשונה של האפליקציה';
+    else if (app.install.pwa) text = 'עוד לא נבדק במכשיר הזה — הבדיקה נעשית לבד בפתיחה הראשונה של האפליקציה';
     else text = 'אפליקציית אנדרואיד (APK) — דפדפן לא יכול לבדוק אם היא מותקנת';
     return el('p', { className: `inst-status ${cls}`, textContent: text });
 }
@@ -557,6 +565,60 @@ function openInstallElsewhere(app, url) {
     dlg.showModal();
 }
 
+// ---------- אפליקציות אנדרואיד (APK) — מותקנת? באיזו גרסה? ----------
+// מותקנת: getInstalledRelatedApps — החבילות רשומות ב-related_applications של המניפסט, והאפליקציה
+// (TWA) מצהירה על האתר. הגרסה: אנדרואיד לא מגלה לדפדפן, ולכן נרשמת כאן כשמורידים מהכפתור.
+// בלי ה-API (דפדפן אחר) — מה שנרשם בהורדה הוא הסימן היחיד.
+const APK_KEY = 'platform-apk';
+let nativeInstalled = null;   // Set של חבילות מותקנות, או null כשהדפדפן לא יודע לבדוק
+
+function apkRecord() {
+    try { return JSON.parse(localStorage.getItem(APK_KEY) || '{}') || {}; } catch { return {}; }
+}
+function apkRemember(appId, version) {
+    const rec = apkRecord();
+    rec[appId] = { version: version || null, at: new Date().toISOString() };
+    try { localStorage.setItem(APK_KEY, JSON.stringify(rec)); } catch { /* בלי אחסון — רק לא נזכור */ }
+}
+
+async function detectNativeApps() {
+    if (!isAndroid() || !navigator.getInstalledRelatedApps) return;
+    try {
+        const list = await navigator.getInstalledRelatedApps();
+        nativeInstalled = new Set(list.filter(a => a.platform === 'play').map(a => a.id));
+    } catch { nativeInstalled = null; }
+}
+
+function androidState(app) {
+    const pkg = app.install.android?.package;
+    const latest = app.install.android?.version || null;
+    const mine = apkRecord()[app.id]?.version || null;
+    const installed = nativeInstalled && pkg ? nativeInstalled.has(pkg) : Boolean(apkRecord()[app.id]);
+    return { pkg, latest, mine, installed, update: installed && latest && (!mine || mine < latest) };
+}
+
+// כפתורי אנדרואיד: לא מותקנת — "התקנה"; מותקנת — "פתיחה" (ישר באפליקציה, לא בדפדפן), ו"עדכון"
+// כשיש גרסה חדשה ממה שהותקן מכאן. ההורדה מהשרת שלנו (platform/downloads, store-mirror.sh).
+function androidTiles(app, tile) {
+    const s = androidState(app);
+    const download = (icon, text) => {
+        const t = tile(icon, text, { href: app.install.apk, download: '' });
+        t.addEventListener('click', () => apkRemember(app.id, s.latest));
+        return t;
+    };
+    if (!s.installed) return [download('📲', s.latest ? `התקנה · גרסה ${s.latest}` : 'התקנה')];
+    const out = [];
+    if (s.pkg) {
+        const u = new URL(app.href, document.baseURI);
+        const intent = `intent://${u.host}${u.pathname}${u.search}#Intent;scheme=https;package=${s.pkg};` +
+            `S.browser_fallback_url=${encodeURIComponent(u.href)};end`;
+        out.push(tile('▶️', 'פתיחה', { href: intent }));
+    }
+    if (s.update) out.push(download('⬆️', `עדכון לגרסה ${s.latest}`));
+    else out.push(download('🔄', 'התקנה מחדש'));
+    return out;
+}
+
 // מה שהמנהל אישר לאפליקציה: התקנה נפרדת, APK, חנות. השרת לא שולח את מה שלא אושר.
 function installLinks(app) {
     const tile = (icon, text, props) => el('a', { className: 'tile', ...props }, [
@@ -566,7 +628,7 @@ function installLinks(app) {
     // אנדרואיד עם APK: כפתור אחד שמוריד ומתקין. PWA לא — מתוך הכלים הדיגיטליים המותקנים כל קישור נפתח
     // בחלונית של הדפדפן (גם intent לכרום), ושם אי אפשר להתקין. ה-APK (TWA) נפתח במסך מלא עם אייקון משלו.
     const apkFirst = isAndroid() && app.install.apk;
-    if (apkFirst) out.push(tile('📲', 'התקנה', { href: app.install.apk, rel: 'noopener' }));
+    if (apkFirst) out.push(...androidTiles(app, tile));
     if (app.install.pwa && !apkFirst) {
         // פותח את האפליקציה בחלון משלה עם ?pwa-install=1 — שם pwa-beacon.js מציג "התקנה" (בלחיצה
         // כשהדפדפן מאפשר, אחרת ההסבר המדויק למכשיר). ההתקנה חייבת לקרות מתוך הדף של האפליקציה.
@@ -631,6 +693,9 @@ async function installFamily() {
 const UA = navigator.userAgent;
 const isIOS = () => /iPhone|iPad|iPod/.test(UA) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const isAndroid = () => /Android/.test(UA);
+// מה מותקן — בטעינה, ושוב כשחוזרים לכאן (למשל אחרי התקנה או הסרה של APK)
+detectNativeApps();
+document.addEventListener('visibilitychange', () => { if (!document.hidden) detectNativeApps(); });
 const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 
 // ---------- האם מותקן במכשיר הזה ----------

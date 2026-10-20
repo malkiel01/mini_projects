@@ -1,0 +1,11 @@
+# קבצי ההתקנה של האפליקציות — מועתקים לכאן מ-GitHub בפריסה (platform/tools/store-mirror.sh).
+# APK צריך את הסוג הזה, אחרת אנדרואיד לא מציע להתקין אותו.
+AddType application/vnd.android.package-archive .apk
+AddType application/octet-stream .aab
+Options -Indexes
+<IfModule mod_headers.c>
+    # גרסה חדשה באותו שם קובץ — הדפדפן חייב לבדוק מחדש
+    <FilesMatch "\.(apk|aab|zip|json)$">
+        Header set Cache-Control "no-cache"
+    </FilesMatch>
+</IfModule>

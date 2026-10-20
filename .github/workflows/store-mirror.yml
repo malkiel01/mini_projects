@@ -1,0 +1,48 @@
+# מעתיק את תיקיות החנות (Release <app>-store) לשרת — platform/downloads/<app>/ — כדי שכפתור "התקנה"
+# בפלטפורמה יוריד מהאתר שלנו. בניית אנדרואיד מעדכנת את ה-Release בלי להפעיל פריסה, ולכן גם כל שעה.
+# אותה עבודה רצה גם בסוף deploy.yml. הסקריפט: platform/tools/store-mirror.sh.
+
+name: Store downloads mirror
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch: {}
+
+# קבוצה נפרדת מהפריסה: באותה קבוצה הרצה הממתינה מחליפה את הקודמת — העתקה הייתה מבטלת פריסה שמחכה
+concurrency:
+  group: store-mirror
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare SSH key
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Unlock the deploy key if it has a passphrase
+        env:
+          DEPLOY_PASS: ${{ secrets.DEPLOY_SSH_PASSPHRASE }}
+        run: |
+          [ -n "$DEPLOY_PASS" ] || exit 0
+          eval "$(ssh-agent -s)"
+          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> "$GITHUB_ENV"
+          echo "SSH_AGENT_PID=$SSH_AGENT_PID" >> "$GITHUB_ENV"
+          printf '#!/bin/sh\nprintf "%%s\\n" "$DEPLOY_PASS"\n' > "$RUNNER_TEMP/askpass"
+          chmod +x "$RUNNER_TEMP/askpass"
+          SSH_ASKPASS="$RUNNER_TEMP/askpass" SSH_ASKPASS_REQUIRE=force ssh-add ~/.ssh/deploy_key
+          rm -f "$RUNNER_TEMP/askpass"
+
+      - name: Mirror the store folders
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEST: ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: bash platform/tools/store-mirror.sh

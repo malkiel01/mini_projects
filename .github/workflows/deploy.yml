@@ -187,6 +187,8 @@ jobs:
             --include='recipes-app/data/media/.htaccess' \
             --exclude='recipes-app/data/media/*' \
             --exclude='recipes-app/data/scans/' \
+            --include='platform/downloads/.htaccess' \
+            --exclude='platform/downloads/*' \
             --exclude='claude-tasks/data/config.json' \
             --exclude='claude-tasks/data/secret.key' \
             --exclude='camera-app/data/*.sqlite*' \
@@ -293,6 +295,18 @@ jobs:
             sleep 60
           done
           echo "::warning::לא הצלחתי לכתוב את assetlinks.json לשורש הדומיין"
+
+      # קבצי ההתקנה מהשרת שלנו: כל Release <app>-store מועתק ל-platform/downloads/<app>/ עם meta.json
+      # (גרסה וחבילה) — כפתור "התקנה" בפלטפורמה מוריד משם, לא מ-GitHub. גם store-mirror.yml (כל שעה),
+      # כי בניית אנדרואיד מעדכנת את ה-Release בלי פריסה. לא מפיל את הפריסה.
+      - name: תיקיות החנות — APK ו-AAB מהשרת שלנו
+        if: success()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEST: ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: bash platform/tools/store-mirror.sh
 
       # DevLoop (מנהל הפרויקטים, "מטלות ושיח"): אחרי פריסה מוצלחת — כל קוד מטלה (PM-017) בהודעת ה-commit
       # מקבל ראיות (הפריסה וה-PR) ועובר ל"ממתין לאימות שלך". לא מפיל את הפריסה, ומדלג כשאין סוד.
