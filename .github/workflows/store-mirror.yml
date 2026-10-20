@@ -5,6 +5,31 @@
 name: Store downloads mirror
 
 on:
+  # מיד כשבניית אנדרואיד מסתיימת — אחרת הכפתור מוריד את הגרסה הקודמת עד ההעתקה הבאה.
+  # בניית APK חדשה (workflow שמפרסם Release <app>-store) — להוסיף כאן את השם שלה.
+  workflow_run:
+    types: [completed]
+    workflows:
+      - 'Build Android APK'
+      - 'Build Camera app (Google Play)'
+      - 'Build Carpentry 3D app (Google Play)'
+      - 'Build Catering menu app (Google Play)'
+      - 'Build Claude Tasks app (Google Play)'
+      - 'Build Data Embed app (Google Play)'
+      - 'Build Database Analyzer app (Google Play)'
+      - 'Build Document Templates app (Google Play)'
+      - 'Build File Merger app (Google Play)'
+      - 'Build Frame Browser app (Google Play)'
+      - 'Build git-deploy app (Google Play)'
+      - 'Build Greeting Cards app (APK + Google Play)'
+      - 'Build Org Budget Proposals app (Google Play)'
+      - 'Build PDF merger app (Google Play)'
+      - 'Build Project Manager APK'
+      - 'Build Recipes app (Google Play)'
+      - 'Build Renovation punchlist app (Google Play)'
+      - 'Build Sketches 3D app (Google Play)'
+      - 'Build Sukkah sketch app (Google Play)'
+      - 'Build WA-Scanner bridge (APK + Google Play)'
   schedule:
     - cron: '17 * * * *'
   workflow_dispatch: {}
