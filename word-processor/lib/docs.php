@@ -93,11 +93,14 @@ function doc_new(string $space, string $title, ?array $json, $page, string $user
     return $id;
 }
 
-/** המסמך במרחב — או 404. מזהה של מרחב אחר נראה בדיוק כמו מזהה שלא קיים. */
-function doc_find($id, string $space): array
+/**
+ * המסמך במרחב — או 404. מזהה של מרחב אחר נראה בדיוק כמו מזהה שלא קיים. מסמך בסל המחזור — לא נמצא
+ * (פתיחה, שמירה, ייצוא); $trashed — רק מסמך שבסל (שחזור, מחיקה לצמיתות).
+ */
+function doc_find($id, string $space, bool $trashed = false): array
 {
     if (!is_string($id) || !preg_match('/^[a-z0-9]{6,40}$/', $id)) throw new ApiError('המסמך לא נמצא', 'not_found', 404);
-    $st = db()->prepare('SELECT * FROM docs WHERE id = ? AND space = ?');
+    $st = db()->prepare('SELECT * FROM docs WHERE id = ? AND space = ? AND deleted_at IS ' . ($trashed ? 'NOT NULL' : 'NULL'));
     $st->execute([$id, $space]);
     $row = $st->fetch(); $st->closeCursor();
     if (!$row) throw new ApiError('המסמך לא נמצא', 'not_found', 404);
@@ -157,6 +160,30 @@ function doc_rename(array $row, string $title): void
     db()->prepare('UPDATE docs SET title = ? WHERE id = ?')->execute([clean_title($title), $row['id']]);
 }
 
+// ---------- סל המחזור ----------
+const TRASH_DAYS = 30;
+
+/** מחיקה מהאפליקציה: לסל המחזור (אפשר לשחזר עד TRASH_DAYS ימים). הנעילות על המסמך משתחררות. */
+function doc_trash(array $row): void
+{
+    db()->prepare('UPDATE docs SET deleted_at = ? WHERE id = ?')->execute([time(), $row['id']]);
+    db()->prepare('DELETE FROM locks WHERE doc = ?')->execute([$row['id']]);
+}
+
+function doc_restore(array $row): void
+{
+    db()->prepare('UPDATE docs SET deleted_at = NULL WHERE id = ?')->execute([$row['id']]);
+}
+
+/** מה שבסל יותר מ-TRASH_DAYS ימים — נמחק לצמיתות (נקרא כשפותחים את הרשימה או את הסל). */
+function trash_purge(string $space): void
+{
+    $st = db()->prepare('SELECT * FROM docs WHERE space = ? AND deleted_at IS NOT NULL AND deleted_at < ?');
+    $st->execute([$space, time() - TRASH_DAYS * 86400]);
+    foreach ($st->fetchAll() as $row) doc_delete($row);
+}
+
+/** מחיקה לצמיתות: התמונות, הגרסאות (cascade) והמסמך. */
 function doc_delete(array $row): void
 {
     $st = db()->prepare('SELECT id, type FROM media WHERE doc = ?');

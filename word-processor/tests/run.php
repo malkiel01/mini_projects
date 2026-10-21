@@ -488,6 +488,36 @@ check('ערכים לא תקינים נדחים / נחתכים', $p['size'] === '
 check('גודל לרוחב', page_mm($p) === [297, 210]);
 
 // ======================================================================
+section('סל המחזור (ליקוי ה\')');
+$sp = 'a:trash-test';
+$tid = doc_new($sp, 'לסל', null, null, 'u1', 'דנה');
+doc_trash(doc_find($tid, $sp));
+$gone = false;
+try { doc_find($tid, $sp); } catch (ApiError $e) { $gone = $e->getMessage() === 'המסמך לא נמצא'; }
+check('מסמך בסל — לא נפתח, לא נשמר ולא מיוצא (לא נמצא)', $gone);
+check('מסמך בסל — נמצא כשמחפשים בסל', doc_find($tid, $sp, true)['id'] === $tid);
+doc_restore(doc_find($tid, $sp, true));
+check('שחזור — המסמך חוזר', doc_find($tid, $sp)['title'] === 'לסל');
+doc_trash(doc_find($tid, $sp));
+db()->prepare('UPDATE docs SET deleted_at = ? WHERE id = ?')->execute([time() - (TRASH_DAYS + 1) * 86400, $tid]);
+$keep = doc_new($sp, 'נשאר בסל', null, null, 'u1', 'דנה');
+doc_trash(doc_find($keep, $sp));
+trash_purge($sp);
+$cnt = fn($id) => (int)db()->query("SELECT COUNT(*) FROM docs WHERE id = " . db()->quote($id))->fetchColumn();
+check('אחרי ' . TRASH_DAYS . ' יום — נמחק לצמיתות; מסמך שנמחק היום — נשאר בסל', $cnt($tid) === 0 && $cnt($keep) === 1);
+doc_delete(doc_find($keep, $sp, true));
+check('מחיקה לצמיתות מהסל', $cnt($keep) === 0);
+// מסד ישן (גרסה 1, בלי העמודה) — ההסבה מוסיפה אותה, והמסמכים נשארים
+$old = new PDO('sqlite::memory:');
+$old->exec("CREATE TABLE docs (id TEXT PRIMARY KEY, space TEXT NOT NULL, title TEXT NOT NULL DEFAULT '', json TEXT NOT NULL, page TEXT NOT NULL DEFAULT '{}',
+    version INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, updated_by TEXT NOT NULL DEFAULT '', updated_by_id TEXT NOT NULL DEFAULT '');
+    INSERT INTO docs (id, space, json, created_at, updated_at) VALUES ('old1', 'a:1', '{}', 1, 1); PRAGMA user_version = 1;");
+wp_migrate($old);
+$cols = array_column($old->query('PRAGMA table_info(docs)')->fetchAll(PDO::FETCH_ASSOC), 'name');
+check('הסבה של מסד ישן: עמודת deleted_at נוספה, המסמך נשאר', in_array('deleted_at', $cols, true)
+    && $old->query("SELECT COUNT(*) FROM docs WHERE id = 'old1' AND deleted_at IS NULL")->fetchColumn() == 1);
+
+// ======================================================================
 section('שמירה אטומית וגרסת מבנה');
 $docS = doc_new('a:99', 'אטומי', null, null, 'u1', 'דנה');
 $rowS = doc_find($docS, 'a:99');

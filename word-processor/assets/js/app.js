@@ -29,7 +29,7 @@ async function api(action, body = {}, isForm = false) {
     return data;
 }
 
-// ---------- ניתוב: #/ רשימה · #/d/<id> מסמך · #/admin לקוחות ----------
+// ---------- ניתוב: #/ רשימה · #/d/<id> מסמך · #/trash סל המחזור · #/admin לקוחות ----------
 window.addEventListener('hashchange', route);
 async function route() {
     const hash = location.hash || '#/';
@@ -38,6 +38,7 @@ async function route() {
     }
     if (hash.startsWith('#/d/')) return openDoc(hash.slice(4));
     if (hash === '#/admin' && me?.admin) return adminView();
+    if (hash === '#/trash') return trashView();
     return listView();
 }
 
@@ -51,6 +52,7 @@ function header({ back = false, title = '', sub = '', actions = [] } = {}) {
 async function listView() {
     document.body.classList.remove('editing');
     header({ title: 'עורך התמלילים', sub: me?.name || '', actions: [
+        h('button.icon-btn', { 'aria-label': 'סל המחזור', title: 'סל המחזור', onclick: () => { location.hash = '#/trash'; } }, '🗑'),
         me?.admin ? h('button.icon-btn', { 'aria-label': 'לקוחות הטמעה', title: 'לקוחות הטמעה', onclick: () => { location.hash = '#/admin'; } }, '🔗') : null,
     ] });
     const search = h('input', { type: 'search', placeholder: 'חיפוש', 'aria-label': 'חיפוש' });
@@ -84,6 +86,38 @@ async function listView() {
         list.textContent = '';
         list.append(h('li.error', e.message));
     }
+}
+
+// ---------- סל המחזור ----------
+async function trashView() {
+    document.body.classList.remove('editing');
+    header({ back: true, title: 'סל המחזור', sub: 'מסמך שנמחק נשמר כאן 30 יום, ואז נמחק לצמיתות' });
+    const list = h('ul.list', h('li.empty', 'טוען…'));
+    main.textContent = '';
+    main.append(list);
+    const paint = r => {
+        list.textContent = '';
+        if (!r.docs.length) list.append(h('li.empty', 'הסל ריק.'));
+        for (const d of r.docs) {
+            const left = Math.max(0, Math.ceil((d.purge_at * 1000 - Date.now()) / 86400000));
+            const restore = h('button.btn.sm', { type: 'button', onclick: async () => {
+                try { await api('my_restore', { doc: d.doc }); toast(`"${d.title || 'ללא שם'}" שוחזר`); load(); } catch (e) { toast(e.message, true); }
+            } }, 'שחזור');
+            const purge = h('button.btn.sm.danger', { type: 'button', onclick: async () => {
+                if (!confirm(`למחוק את "${d.title || 'ללא שם'}" לצמיתות? אי אפשר לבטל.`)) return;
+                try { await api('my_purge', { doc: d.doc }); toast('נמחק לצמיתות'); load(); } catch (e) { toast(e.message, true); }
+            } }, 'מחיקה לצמיתות');
+            list.append(h('li.card.static',
+                h('span.doc-ic', { 'aria-hidden': 'true' }, '📄'),
+                h('div.body', h('div.l1', h('span', d.title || 'ללא שם'), h('span.t', 'נמחק ' + when(d.deleted_at))),
+                    h('div.l2', left > 0 ? `יימחק לצמיתות בעוד ${left} ${left === 1 ? 'יום' : 'ימים'}` : 'יימחק לצמיתות היום')),
+                h('div.acts', restore, purge)));
+        }
+    };
+    const load = async () => {
+        try { paint(await api('my_trash')); } catch (e) { list.textContent = ''; list.append(h('li.error', e.message)); }
+    };
+    load();
 }
 
 async function newDoc() {
@@ -241,13 +275,18 @@ async function openDoc(id) {
             ['📝', 'הורדה כטקסט', download('text', 'ההורדה')],
             ['🧾', 'גיבוי (JSON)', download('json', 'הגיבוי')],
             ['📑', 'שכפול', async () => { if (!(await saved('השכפול'))) return; const r = await api('my_copy', { doc: id }); location.hash = '#/d/' + r.doc; }],
-            ['🗑', 'מחיקה', async () => {
-                if (!confirm(`למחוק את "${cur.title || 'ללא שם'}"? אי אפשר לבטל.`)) return;
-                await api('my_delete', { doc: id });
+            ['🗑', 'העברה לסל המחזור', async () => {
+                // קודם שומרים — כך שחזור מהסל מחזיר את המסמך כמו שהיה ברגע המחיקה
+                if (!(await saved('המחיקה'))) return;
+                const title = cur.title || 'ללא שם';
+                const r = await api('my_delete', { doc: id });
                 saver.stop();
                 drafts.del(draftKey);
                 cur.deleted = true;
                 location.hash = '#/';
+                toast(`"${title}" הועבר לסל המחזור (${r.days} יום)`, false, { label: 'ביטול', run: async () => {
+                    try { await api('my_restore', { doc: id }); location.hash = '#/d/' + id; } catch (e) { toast(e.message, true); }
+                } });
             }],
         ];
         popMenu(anchor, items);
