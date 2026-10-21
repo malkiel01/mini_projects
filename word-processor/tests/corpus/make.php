@@ -101,7 +101,7 @@ $c[] = ['type' => 'sectionBreak', 'attrs' => ['page' => ['orientation' => 'portr
 $c[] = $hd('סיכום', 2);
 for ($i = 0; $i < 6; $i++) $c[] = $p($sentence(20, 60));
 $corpus['sections'] = ['title' => 'מקטעים', 'json' => $doc($c), 'page' => null,
-    'known_pdf' => 'מנוע ה-PDF עוד לא מכיר מקטעים (הכול בהגדרות העמוד הראשונות) — אב-טיפוס בשלב 0'];
+    'known_pdf' => 'המקטעים זהים (4 עמודים: לאורך, 2 לרוחב, לאורך); בטבלה הרחבה ה-PDF מכניס יותר שורות לעמוד — רוחב העמודות (כמו "טבלה ארוכה"), וסדר הטקסט בטבלה ב-pdftotext שונה'];
 
 // 8. הערות שוליים (אב-טיפוס): פסקאות עם הערות קצרות וארוכות — חלקן בתחתית עמוד, שם ההערה דוחפת שורה לעמוד הבא
 $fn = fn(string $t) => ['type' => 'footnote', 'attrs' => ['text' => $t]];
@@ -112,7 +112,7 @@ for ($i = 1; $i <= 30; $i++) {
     $c[] = ['type' => 'paragraph', 'content' => $parts];
 }
 $corpus['footnotes'] = ['title' => 'הערות שוליים', 'json' => $doc($c), 'page' => null,
-    'known_pdf' => 'מנוע ה-PDF עוד לא מציג הערות שוליים — אב-טיפוס בשלב 0'];
+    'known_pdf' => 'ההערות בתחתית העמוד גם ב-PDF; השבירה זזה בפסקה — אותם הבדלי מדידת שורה כמו ב"טקסט ארוך" — לטיפול: יישור מנוע ה-PDF והעורך'];
 
 foreach ($corpus as $name => $d) {
     file_put_contents(__DIR__ . "/$name.json", json_encode($d, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");

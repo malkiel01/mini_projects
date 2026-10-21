@@ -291,7 +291,7 @@ check('docx: גודל A4 ושוליים', str_contains($docXml, '<w:pgSz w:w="11
 check('docx: מספור מ-3, עמוד ראשון בלי מספר (titlePg)', str_contains($docXml, 'w:start="3"') && str_contains($docXml, '<w:titlePg/>'));
 $footer = $z->getFromName('word/footer1.xml');
 check('docx: "N מתוך M" בכותרת התחתונה, משמאל', str_contains($footer, ' PAGE ') && str_contains($footer, ' NUMPAGES ') && str_contains($footer, 'מתוך') && str_contains($footer, '<w:jc w:val="end"/>'));
-check('docx: עמוד ראשון — הטקסט בלי מספר', !str_contains((string)$z->getFromName('word/footer2.xml'), 'PAGE') && str_contains((string)$z->getFromName('word/footer2.xml'), 'תחתונה'));
+check('docx: עמוד ראשון — הטקסט בלי מספר', !str_contains((string)$z->getFromName('word/footer1f.xml'), 'PAGE') && str_contains((string)$z->getFromName('word/footer1f.xml'), 'תחתונה'));
 check('docx: כותרת עליונה', str_contains($z->getFromName('word/header1.xml'), 'כותרת עליונה'));
 check('docx: סגנונות מובנים (Heading1, Title) וגופן ברירת מחדל', str_contains($z->getFromName('word/styles.xml'), 'w:styleId="Heading1"') && str_contains($z->getFromName('word/styles.xml'), 'w:ascii="David"'));
 check('docx: התמונה בתוך החבילה', $z->getFromName('word/media/image_1.png') === $png);
@@ -501,6 +501,20 @@ foreach (glob(__DIR__ . '/corpus/*.json') as $f) {
     $a = $words(export_text($c['json']));
     $b = $words(export_text($back['json']));
     $bp = page_normalize($back['page'] ?? []);
+    // מעברי מקטע (עם הכיוון) והערות שוליים (עם הטקסט) — חוזרים כמו שהיו
+    $marks = function (array $json) {
+        $out = [];
+        $walk = function ($n) use (&$walk, &$out) {
+            if (($n['type'] ?? '') === 'sectionBreak') $out[] = 'S:' . ($n['attrs']['page']['orientation'] ?? '');
+            if (($n['type'] ?? '') === 'footnote') $out[] = 'F:' . trim($n['attrs']['text'] ?? '');
+            foreach ($n['content'] ?? [] as $ch) $walk($ch);
+        };
+        $walk($json);
+        return $out;
+    };
+    $m1 = $marks($c['json']);
+    $m2 = $marks($back['json']);
+    if ($m1) check("{$c['title']}: מעברי מקטע והערות שוליים חוזרים מ-Word", $m1 === $m2, count($m1) . ' מול ' . count($m2) . ($m1 !== $m2 ? ' — ' . json_encode(array_slice(array_values(array_diff_assoc($m1, $m2)), 0, 2), JSON_UNESCAPED_UNICODE) : ''));
     check("{$c['title']}: Word תקין, וחוזר עם אותו טקסט ואותן הגדרות עמוד",
         !$bad && $a === $b && $bp['size'] === $page['size'] && $bp['orientation'] === $page['orientation'] && $bp['margins'] == $page['margins'],
         $bad ? 'XML שבור: ' . implode(', ', $bad) : (count($a) . ' מילים מול ' . count($b) . ($a !== $b ? ' — מילה ראשונה שונה: ' . json_encode(array_values(array_diff_assoc($a, $b))[0] ?? '', JSON_UNESCAPED_UNICODE) : '')));
