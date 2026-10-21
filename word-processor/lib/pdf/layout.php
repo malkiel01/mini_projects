@@ -96,6 +96,7 @@ final class FlowItem
     public bool $keepNext = false; // כותרת — נשארת עם הבא
     public ?int $table = null;
     public bool $header = false;   // שורת כותרת של טבלה — חוזרת בעמוד הבא
+    public array $notes = [];      // הערות שוליים שהסימן שלהן בפריט: [{n, h, draw}] — יוצגו בתחתית העמוד שלו
     /** @var callable(PdfCanvas, float, float): void */
     public $draw;
 
@@ -110,40 +111,109 @@ final class FlowItem
 final class PdfLayout
 {
     private PdfWriter $pdf;
-    private array $page;
+    private array $page;           // הגדרות העמוד של המקטע הנוכחי
+    private array $first;          // של המקטע הראשון (מספור העמודים מתחיל בו)
     private float $W, $H, $mt, $mb, $ml, $mr, $cw, $chH;
     private int $paraSeq = 0;
+    private int $fnSeq = 0;        // מספור הערות השוליים — לאורך כל המסמך
     private int $tableSeq = 0;
 
     public function __construct(array $page)
     {
-        $this->page = page_normalize($page);
-        [$wmm, $hmm] = page_mm($this->page);
+        $this->first = page_normalize($page);
+        $this->setSection($this->first);
+        $this->pdf = new PdfWriter();
+    }
+
+    private function setSection(array $p): void
+    {
+        $this->page = $p;
+        [$wmm, $hmm] = page_mm($p);
         $this->W = $wmm * PT_PER_MM;
         $this->H = $hmm * PT_PER_MM;
-        $m = $this->page['margins'];
+        $m = $p['margins'];
         $this->mt = $m['top'] * PT_PER_MM;
         $this->mb = $m['bottom'] * PT_PER_MM;
         $this->ml = $m['left'] * PT_PER_MM;
         $this->mr = $m['right'] * PT_PER_MM;
         $this->cw = $this->W - $this->ml - $this->mr;
         $this->chH = $this->H - $this->mt - $this->mb;
-        $this->pdf = new PdfWriter();
     }
 
     public function render(array $json, string $title = ''): string
     {
         FontSet::reset();
-        $items = $this->blocks($json['content'] ?? [], $this->cw, 0);
-        $pages = $this->paginate($items);
-        $total = count($pages);
-        foreach ($pages as $i => $placed) {
+        // מקטעים: כל מקטע מתחיל בעמוד חדש, ולכן נפרס ומעומד לבד — בגיאומטריה שלו. מעבר מקטע נושא את
+        // השינויים למקטע שאחריו (כמו בעורך)
+        $chunks = [[]];
+        $sections = [$this->first];
+        foreach ($json['content'] ?? [] as $n) {
+            if (($n['type'] ?? '') === 'sectionBreak') {
+                $sections[] = page_normalize(is_array($n['attrs']['page'] ?? null) ? $n['attrs']['page'] : [], end($sections));
+                $chunks[] = [];
+                continue;
+            }
+            $chunks[count($chunks) - 1][] = $n;
+        }
+        $all = [];
+        foreach ($chunks as $k => $nodes) {
+            $this->setSection($sections[$k]);
+            foreach ($this->paginate($this->blocks($nodes, $this->cw, 0)) as $placed) $all[] = [$k, $placed];
+        }
+        $total = count($all);
+        foreach ($all as $i => [$k, $placed]) {
+            $this->setSection($sections[$k]);
             $pi = $this->pdf->addPage($this->W, $this->H);
             $c = new PdfCanvas($this->pdf, $pi, $this->H);
             $this->decorate($c, $i, $total);
             foreach ($placed as [$item, $y]) ($item->draw)($c, $this->ml, $this->mt + $y);
+            $this->drawNotes($c, array_merge(...array_map(fn($p) => $p[0]->notes, $placed)));
         }
         return $this->pdf->output($title);
+    }
+
+    // ---------- הערות שוליים ----------
+
+    private const FN_SEP = 10.5;   // קו ההפרדה + רווח (נק') — כמו בעורך (14px)
+
+    private function notesHeight(array $notes): float
+    {
+        if (!$notes) return 0.0;
+        return self::FN_SEP + array_sum(array_column($notes, 'h'));
+    }
+
+    /** קו הפרדה (שליש מהרוחב, בצד ההתחלה — ימין) וההערות, בתחתית אזור הטקסט. */
+    private function drawNotes(PdfCanvas $c, array $notes): void
+    {
+        if (!$notes) return;
+        $y = $this->mt + $this->chH - $this->notesHeight($notes);
+        $c->line($this->ml + $this->cw * 2 / 3, $y + 4.5, $this->ml + $this->cw, $y + 4.5, [0, 0, 0], 0.75);
+        $y += self::FN_SEP;
+        foreach ($notes as $nt) { ($nt['draw'])($c, $this->ml, $y); $y += $nt['h']; }
+    }
+
+    /** הערה: מספר עילי + הטקסט, 10 נק', ברוחב הטקסט — הגובה מחושב מראש (לעימוד). */
+    private function footnote(string $text, bool $rtl): array
+    {
+        $n = ++$this->fnSeq;
+        $base = $this->blockStyle('normal');
+        $base['size'] = 10.0;
+        $st = $this->charStyle($base, []);
+        $sup = $st;
+        $sup['va'] = 'sup';
+        $atoms = [];
+        foreach (mb_str_split((string)$n) as $ch) $atoms[] = $this->charAtom(mb_ord($ch), $sup);
+        foreach (mb_str_split(' ' . $text) as $ch) $atoms[] = $this->charAtom(mb_ord($ch), $st);
+        $levels = bidi_levels(array_column($atoms, 'cp'), $rtl ? 1 : 0);
+        foreach ($atoms as $i => &$at) $at['lvl'] = $levels[$i] ?? ($rtl ? 1 : 0);
+        unset($at);
+        $width = $this->cw;
+        $lines = $this->breakLines($atoms, fn() => [0.0, $width], 0.0, $base, ['auto', 1.25]);
+        $h = array_sum(array_column($lines, 'h'));
+        $dir = $rtl ? 1 : 0;
+        return ['n' => $n, 'h' => $h, 'draw' => function (PdfCanvas $c, float $x, float $y) use ($lines, $atoms, $dir, $rtl) {
+            foreach ($lines as $ln) { $this->drawLine($c, $ln, $atoms, $x, $y, $rtl ? 'right' : 'left', true, $dir); $y += $ln['h']; }
+        }];
     }
 
     // ==================================================================
@@ -289,6 +359,16 @@ final class PdfLayout
                 foreach (mb_str_split((string)($c['text'] ?? '')) as $ch) $atoms[] = $this->charAtom(mb_ord($ch), $st);
             } elseif ($ct === 'hardBreak') {
                 $atoms[] = ['br' => true, 'cp' => 0x0A, 'w' => 0];
+            } elseif ($ct === 'footnote') {
+                // הסימן: המספר בכתב עילי; ההערה עצמה — נמדדת עכשיו ותצויר בתחתית העמוד של השורה
+                $note = $this->footnote(trim((string)($c['attrs']['text'] ?? '')), $rtl);
+                $sup = $this->charStyle($base, []);
+                $sup['va'] = 'sup';
+                foreach (mb_str_split((string)$note['n']) as $k => $ch) {
+                    $at = $this->charAtom(mb_ord($ch), $sup);
+                    if ($k === 0) $at['fn'] = $note;
+                    $atoms[] = $at;
+                }
             } elseif ($ct === 'image') {
                 $img = $this->imageInfo($c['attrs'] ?? []);
                 if (!$img) continue;
@@ -367,6 +447,9 @@ final class PdfLayout
             $it->para = $paraId;
             $it->index = $k;
             $it->count = $count;
+            if ($ln['from'] !== null) {
+                for ($q = $ln['from']; $q <= $ln['to']; $q++) if (isset($atoms[$q]['fn'])) $it->notes[] = $atoms[$q]['fn'];
+            }
             $it->keepNext = $kind !== 'normal' && $last;
             $items[] = $it;
         }
@@ -715,10 +798,13 @@ final class PdfLayout
         $headers = [];   // טבלה → שורת הכותרת שלה
         $n = count($items);
         $newPage = function () use (&$pages, &$y) { $pages[] = []; $y = 0.0; };
+        // הערות השוליים של העמוד הנוכחי תופסות מקום בתחתיתו — כולל של הפריט שבודקים
+        $pageNotes = function () use (&$pages) { return array_merge([], ...array_map(fn($p) => $p[0]->notes, $pages[count($pages) - 1])); };
         for ($i = 0; $i < $n; $i++) {
             $it = $items[$i];
             if ($it->kind === 'force') { $newPage(); continue; }
             if ($it->header && $it->table) $headers[$it->table] = $it;
+            $H = $this->chH - $this->notesHeight(array_merge($pageNotes(), $it->notes));
             $fits = $y + $it->h <= $H + 0.5;
             $atTop = $y < 0.01;
             $break = !$fits && !$atTop;

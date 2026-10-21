@@ -339,13 +339,23 @@ final class Ooxml
     public array $abstracts = [];    // [abstractId => ['type' => ..]]
     private int $docPr = 1;
     private int $numBase;
-    public float $contentTw;         // רוחב אזור הטקסט ב-twips (לטבלאות ולתמונות)
+    public float $contentTw;         // רוחב אזור הטקסט ב-twips (לטבלאות ולתמונות) — של המקטע הנוכחי
+    public array $cur;               // הגדרות העמוד של המקטע הנוכחי (מתחלפות בכל מעבר מקטע)
+    public $sectFn = null;           // fn(array $page, int $index): string — <w:sectPr> של מקטע שמסתיים (docx שלם בלבד)
+    private int $sectIndex = 0;
+    public array $footnotes = [];    // [id => טקסט] — word/footnotes.xml (docx שלם); בשילוב — הטקסט בסוגריים
 
     public function __construct(public array $page, public string $prefix = '')
     {
         $this->numBase = $prefix === '' ? 1 : 9001;
-        [$w] = page_mm($page);
-        $this->contentTw = ($w - $page['margins']['left'] - $page['margins']['right']) * TWIP_PER_MM;
+        $this->setSection($page);
+    }
+
+    private function setSection(array $p): void
+    {
+        $this->cur = $p;
+        [$w] = page_mm($p);
+        $this->contentTw = ($w - $p['margins']['left'] - $p['margins']['right']) * TWIP_PER_MM;
     }
 
     public function styleId(string $k): string
@@ -389,6 +399,13 @@ final class Ooxml
                 return $this->table($n);
             case 'pageBreak':
                 return '<w:p><w:r><w:br w:type="page"/></w:r></w:p>';
+            case 'sectionBreak':
+                // ב-Word מקטע מסתיים בפסקה שנושאת את ההגדרות שלו; המקטע הבא — בהגדרות שבצומת (שינויים בלבד)
+                $next = page_normalize(is_array($a['page'] ?? null) ? $a['page'] : [], $this->cur);
+                if (!$this->sectFn) { $this->setSection($next); return '<w:p><w:r><w:br w:type="page"/></w:r></w:p>'; }
+                $xml = '<w:p><w:pPr><w:bidi/>' . ($this->sectFn)($this->cur, $this->sectIndex++) . '</w:pPr></w:p>';
+                $this->setSection($next);
+                return $xml;
             case 'horizontalRule':
                 return '<w:p><w:pPr><w:pBdr><w:bottom w:val="single" w:sz="6" w:space="1" w:color="auto"/></w:pBdr><w:bidi/></w:pPr></w:p>';
             default:
@@ -453,9 +470,31 @@ final class Ooxml
                 return '<w:r><w:br/></w:r>';
             case 'image':
                 return $this->image($c);
+            case 'footnote':
+                $text = trim((string)($c['attrs']['text'] ?? ''));
+                if ($this->prefix !== '') {
+                    // גוף לשילוב: אין לנו חלק הערות במסמך של המארחת — הטקסט בסוגריים, בכתב עילי
+                    return $this->runs(' (' . $text . ')', [['type' => 'superscript']], $pa);
+                }
+                $id = count($this->footnotes) + 1;
+                $this->footnotes[$id] = $text;
+                return '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteReference w:id="' . $id . '"/></w:r>';
             default:
                 return '';
         }
+    }
+
+    /** word/footnotes.xml: שני המפרידים שחובה (-1, 0) והערות המסמך. */
+    public function footnotesXml(): string
+    {
+        $sep = fn(int $id, string $type, string $tag) => '<w:footnote w:type="' . $type . '" w:id="' . $id . '"><w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:' . $tag . '/></w:r></w:p></w:footnote>';
+        $out = $sep(-1, 'separator', 'separator') . $sep(0, 'continuationSeparator', 'continuationSeparator');
+        foreach ($this->footnotes as $id => $text) {
+            $out .= '<w:footnote w:id="' . $id . '"><w:p><w:pPr><w:pStyle w:val="FootnoteText"/><w:bidi/></w:pPr>'
+                . '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteRef/></w:r>'
+                . $this->runs(' ' . $text, [], []) . '</w:p></w:footnote>';
+        }
+        return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:footnotes ' . W_NS . '>' . $out . '</w:footnotes>';
     }
 
     /** טקסט לריצות: עברית עם <w:rtl/>, ומספרים/אנגלית בלי. */
@@ -737,14 +776,9 @@ function export_ooxml(array $json, array $page): array
 function export_docx(array $json, array $page, string $title = ''): string
 {
     $o = new Ooxml($page, '');
-    $body = $o->body($json);
-    [$wmm, $hmm] = page_mm($page);
-    $tw = fn($mm) => (int)round($mm * TWIP_PER_MM);
-    $mg = $page['margins'];
-    $nb = $page['numbering'];
 
     // כותרת עליונה ותחתונה: טקסט חופשי + מספר העמוד (בצד שנבחר). עמוד ראשון בלי מספר — titlePg.
-    $hf = function (string $text, bool $withNumber, string $tag) use ($page, $nb) {
+    $hf = function (string $text, bool $withNumber, string $tag, array $nb) {
         $paras = '';
         $jcNum = ['right' => null, 'center' => 'center', 'left' => 'end'][$nb['align']] ?? 'center';
         if ($text !== '') {
@@ -758,28 +792,54 @@ function export_docx(array $json, array $page, string $title = ''): string
         if ($paras === '') $paras = '<w:p><w:pPr><w:bidi/></w:pPr></w:p>';
         return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:' . $tag . ' ' . W_NS . '>' . $paras . '</w:' . $tag . '>';
     };
-    $numTop = $nb['show'] && $nb['position'] === 'top';
-    $numBottom = $nb['show'] && $nb['position'] === 'bottom';
-    $titlePg = $nb['show'] && !$nb['first_page'];
-    $files = [
-        'word/header1.xml' => $hf($page['header'], $numTop, 'hdr'),
-        'word/footer1.xml' => $hf($page['footer'], $numBottom, 'ftr'),
-    ];
-    $hfRels = '<Relationship Id="rIdH1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>'
-        . '<Relationship Id="rIdF1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>';
-    $refs = '<w:headerReference w:type="default" r:id="rIdH1"/><w:footerReference w:type="default" r:id="rIdF1"/>';
-    if ($titlePg) {
-        $files['word/header2.xml'] = $hf($page['header'], false, 'hdr');
-        $files['word/footer2.xml'] = $hf($page['footer'], false, 'ftr');
-        $hfRels .= '<Relationship Id="rIdH2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header2.xml"/>'
-            . '<Relationship Id="rIdF2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer2.xml"/>';
-        $refs .= '<w:headerReference w:type="first" r:id="rIdH2"/><w:footerReference w:type="first" r:id="rIdF2"/>';
-    }
-    $pgNum = '<w:pgNumType' . ($nb['format'] === 'hebrew' ? ' w:fmt="hebrew1"' : '') . ' w:start="' . (int)$nb['start'] . '"/>';
-    $sect = '<w:sectPr>' . $refs . '<w:pgSz w:w="' . $tw($wmm) . '" w:h="' . $tw($hmm) . '"' . ($page['orientation'] === 'landscape' ? ' w:orient="landscape"' : '') . '/>'
-        . '<w:pgMar w:top="' . $tw($mg['top']) . '" w:right="' . $tw($mg['right']) . '" w:bottom="' . $tw($mg['bottom']) . '" w:left="' . $tw($mg['left'])
-        . '" w:header="' . $tw(min(12.5, $mg['top'] / 2)) . '" w:footer="' . $tw(min(12.5, $mg['bottom'] / 2)) . '" w:gutter="0"/>'
-        . $pgNum . ($titlePg ? '<w:titlePg/>' : '') . '<w:bidi/></w:sectPr>';
+    $files = [];
+    $hfRels = '';
+    $hfIds = [];   // חתימת כותרות → [refs] — מקטעים עם אותן כותרות חולקים את אותם קבצים
+    /** הפניות לכותרות של מקטע (יוצר את הקבצים בפעם הראשונה). */
+    $hfRefs = function (array $p, bool $first) use (&$files, &$hfRels, &$hfIds, $hf): string {
+        $nb = $p['numbering'];
+        $titlePg = $first && $nb['show'] && !$nb['first_page'];
+        $key = md5(json_encode([$p['header'], $p['footer'], $nb['show'], $nb['position'], $nb['align'], $nb['format'], $titlePg]));
+        if (!isset($hfIds[$key])) {
+            $n = count($hfIds) + 1;
+            $numTop = $nb['show'] && $nb['position'] === 'top';
+            $numBottom = $nb['show'] && $nb['position'] === 'bottom';
+            $files["word/header$n.xml"] = $hf($p['header'], $numTop, 'hdr', $nb);
+            $files["word/footer$n.xml"] = $hf($p['footer'], $numBottom, 'ftr', $nb);
+            $hfRels .= '<Relationship Id="rIdH' . $n . '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header' . $n . '.xml"/>'
+                . '<Relationship Id="rIdF' . $n . '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer' . $n . '.xml"/>';
+            $refs = '<w:headerReference w:type="default" r:id="rIdH' . $n . '"/><w:footerReference w:type="default" r:id="rIdF' . $n . '"/>';
+            if ($titlePg) {
+                $files["word/header{$n}f.xml"] = $hf($p['header'], false, 'hdr', $nb);
+                $files["word/footer{$n}f.xml"] = $hf($p['footer'], false, 'ftr', $nb);
+                $hfRels .= '<Relationship Id="rIdH' . $n . 'f" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header' . $n . 'f.xml"/>'
+                    . '<Relationship Id="rIdF' . $n . 'f" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer' . $n . 'f.xml"/>';
+                $refs .= '<w:headerReference w:type="first" r:id="rIdH' . $n . 'f"/><w:footerReference w:type="first" r:id="rIdF' . $n . 'f"/>';
+            }
+            $hfIds[$key] = $refs;
+        }
+        return $hfIds[$key] . ($titlePg ? '' : '');
+    };
+    /** <w:sectPr> של מקטע: גודל, כיוון, שוליים, כותרות; מספור העמודים מתחיל רק במקטע הראשון ונמשך אחריו. */
+    $sectXml = function (array $p, int $index) use ($hfRefs, $page): string {
+        [$wmm, $hmm] = page_mm($p);
+        $tw = fn($mm) => (int)round($mm * TWIP_PER_MM);
+        $mg = $p['margins'];
+        $nb = $p['numbering'];
+        $first = $index === 0;
+        $titlePg = $first && $nb['show'] && !$nb['first_page'];
+        $pgNum = '<w:pgNumType' . ($nb['format'] === 'hebrew' ? ' w:fmt="hebrew1"' : '') . ($first ? ' w:start="' . (int)$page['numbering']['start'] . '"' : '') . '/>';
+        return '<w:sectPr>' . $hfRefs($p, $first) . ($first ? '' : '<w:type w:val="nextPage"/>')
+            . '<w:pgSz w:w="' . $tw($wmm) . '" w:h="' . $tw($hmm) . '"' . ($p['orientation'] === 'landscape' ? ' w:orient="landscape"' : '') . '/>'
+            . '<w:pgMar w:top="' . $tw($mg['top']) . '" w:right="' . $tw($mg['right']) . '" w:bottom="' . $tw($mg['bottom']) . '" w:left="' . $tw($mg['left'])
+            . '" w:header="' . $tw(min(12.5, $mg['top'] / 2)) . '" w:footer="' . $tw(min(12.5, $mg['bottom'] / 2)) . '" w:gutter="0"/>'
+            . $pgNum . ($titlePg ? '<w:titlePg/>' : '') . '<w:bidi/></w:sectPr>';
+    };
+    $o->sectFn = $sectXml;
+    $body = $o->body($json);
+    $sectCount = substr_count($body, '<w:sectPr>');
+    $sect = $sectXml($o->cur, $sectCount);   // המקטע האחרון — בסוף הגוף
+    if ($o->footnotes) $files['word/footnotes.xml'] = $o->footnotesXml();
 
     $document = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document ' . W_NS . '><w:body>' . $body . $sect . '</w:body></w:document>';
     $f = xml($page['font']['family']);
@@ -791,11 +851,16 @@ function export_docx(array $json, array $page, string $title = ''): string
         . $o->styles()
         . '<w:style w:type="table" w:default="1" w:styleId="TableNormal"><w:name w:val="Normal Table"/><w:tblPr><w:bidiVisual/><w:tblInd w:w="0" w:type="dxa"/>'
         . '<w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:start w:w="108" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:end w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr></w:style>'
+        // הערות שוליים: טקסט ההערה (10 נק') והסימן (עילי) — בשמות של Word, כדי שיתנהגו כמו הערות שנוצרו ב-Word
+        . '<w:style w:type="paragraph" w:styleId="FootnoteText"><w:name w:val="footnote text"/><w:basedOn w:val="Normal"/><w:pPr><w:bidi/><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr>'
+        . '<w:rPr><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr></w:style>'
+        . '<w:style w:type="character" w:styleId="FootnoteReference"><w:name w:val="footnote reference"/><w:rPr><w:vertAlign w:val="superscript"/></w:rPr></w:style>'
         . '</w:styles>';
     $parts = $o->numberingParts();
     $numbering = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:numbering ' . W_NS . '>' . $parts['abstract'] . $parts['num'] . '</w:numbering>';
     $settings = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings ' . W_NS . '><w:defaultTabStop w:val="720"/>'
-        . '<w:characterSpacingControl w:val="doNotCompress"/><w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>';
+        . '<w:characterSpacingControl w:val="doNotCompress"/>'
+        . ($o->footnotes ? '<w:footnotePr><w:footnote w:id="-1"/><w:footnote w:id="0"/></w:footnotePr>' : '') . '<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>';
 
     $ct = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
         . '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>'
@@ -806,7 +871,7 @@ function export_docx(array $json, array $page, string $title = ''): string
         . '<Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>'
         . '<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>';
     foreach (array_keys($files) as $p) {
-        $kind = str_contains($p, 'header') ? 'header' : 'footer';
+        $kind = str_contains($p, 'footnotes') ? 'footnotes' : (str_contains($p, 'header') ? 'header' : 'footer');
         $ct .= '<Override PartName="/' . $p . '" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.' . $kind . '+xml"/>';
     }
     $ct .= '</Types>';
@@ -817,7 +882,8 @@ function export_docx(array $json, array $page, string $title = ''): string
         . '<Relationship Id="rIdS" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'
         . '<Relationship Id="rIdN" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/>'
         . '<Relationship Id="rIdT" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>'
-        . $hfRels . $o->rels() . '</Relationships>';
+        . $hfRels . ($o->footnotes ? '<Relationship Id="rIdFn" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/>' : '')
+        . $o->rels() . '</Relationships>';
     $core = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"'
         . ' xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">'
         . '<dc:title>' . xml($title) . '</dc:title><dc:creator>עורך התמלילים</dc:creator>'

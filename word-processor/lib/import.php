@@ -221,7 +221,19 @@ function import_docx(string $bytes, string $docId): array
     $xp->registerNamespace('w', W);
     $body = $xp->query('/w:document/w:body')->item(0);
     $blocks = $body ? $ctx->blocks($body) : [];
-    $page = $ctx->section($xp->query('/w:document/w:body/w:sectPr')->item(0));
+    // מקטעים: ב-Word כל מקטע מסתיים בפסקה עם sectPr (ההגדרות שלו), והאחרון — ב-sectPr של הגוף. אצלנו: הגדרות
+    // המסמך = המקטע הראשון, וכל מעבר מקטע נושא את ההגדרות של המקטע שאחריו
+    $sects = [];
+    foreach ($blocks as $b) if (($b['type'] ?? '') === 'sectionBreak') $sects[] = $b['_sect'];
+    $sects[] = $xp->query('/w:document/w:body/w:sectPr')->item(0);
+    $page = $ctx->section($sects[0]);
+    $k = 0;
+    foreach ($blocks as &$b) {
+        if (($b['type'] ?? '') !== 'sectionBreak') continue;
+        unset($b['_sect']);
+        $b['attrs'] = ['page' => $ctx->section($sects[++$k]) ?: null];
+    }
+    unset($b);
     $zip->close();
     unlink($tmp);
     return ['json' => ['type' => 'doc', 'content' => $blocks ?: [para()]], 'page' => $page];
@@ -239,6 +251,7 @@ final class DocxCtx
     private array $styles = [];    // styleId => 'title'|'h1'..
     private array $numFmt = [];    // numId => [ilvl => fmt]
     private array $rels = [];      // rId => target
+    private array $footnotes = []; // id => טקסט ההערה (word/footnotes.xml)
     private $read;
 
     public function __construct(callable $read, private string $docId)
@@ -263,6 +276,14 @@ final class DocxCtx
             }
             foreach ($xp->query('//w:num') as $n) {
                 $this->numFmt[$n->getAttributeNS(W, 'numId')] = $abs[(string)$xp->evaluate('string(w:abstractNumId/@w:val)', $n)] ?? [];
+            }
+        }
+        if ($s = $read('word/footnotes.xml')) {
+            $xp = $this->xp(xml_dom($s));
+            foreach ($xp->query('//w:footnote') as $f) {
+                $text = '';
+                foreach ($xp->query('.//w:t', $f) as $t) $text .= $t->textContent;
+                $this->footnotes[$f->getAttributeNS(W, 'id')] = trim($text);
             }
         }
         if ($s = $read('word/_rels/document.xml.rels')) {
@@ -295,9 +316,13 @@ final class DocxCtx
             if (!$c instanceof DOMElement || $c->namespaceURI !== W) continue;
             if ($c->localName === 'p') {
                 [$block, $num, $breakAfter] = $this->para($c, $xp);
+                $sect = $xp->query('w:pPr/w:sectPr', $c)->item(0);
+                // פסקה ריקה שכל תפקידה לסיים מקטע — לא נכנסת למסמך
+                $empty = $sect && !($block['content'] ?? []);
                 if ($num) { $listRun[] = ['p' => $block, 'num' => $num]; }
-                else { $flush(); $out[] = $block; }
+                elseif (!$empty) { $flush(); $out[] = $block; }
                 if ($breakAfter) { $flush(); $out[] = ['type' => 'pageBreak']; }
+                if ($sect) { $flush(); $out[] = ['type' => 'sectionBreak', '_sect' => $sect]; }
             } elseif ($c->localName === 'tbl') {
                 $flush();
                 $out[] = $this->table($c, $xp);
@@ -377,6 +402,9 @@ final class DocxCtx
                         break;
                     case 'drawing':
                         if ($img = $this->image($k)) $inline[] = $img;
+                        break;
+                    case 'footnoteReference':
+                        $inline[] = ['type' => 'footnote', 'attrs' => ['text' => $this->footnotes[$k->getAttributeNS(W, 'id')] ?? '']];
                         break;
                 }
             }
