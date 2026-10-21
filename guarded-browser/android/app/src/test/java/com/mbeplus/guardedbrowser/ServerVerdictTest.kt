@@ -1,14 +1,14 @@
 package com.mbeplus.guardedbrowser
 
-import com.mbeplus.guardedbrowser.Verdict.Kind
+import com.mbeplus.guardedbrowser.ServerVerdict.Kind
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /** חוזה ההכרעה — היעדר allowed לעולם אינו היתר (שלב 7). */
-class VerdictTest {
+class ServerVerdictTest {
 
     private fun k(hasJson: Boolean, ok: Boolean, allowed: Boolean?, code: String = "", retry: Boolean = false) =
-        Verdict.of(hasJson, ok, allowed, code, "", retry).kind
+        ServerVerdict.of(hasJson, ok, allowed, code, "", retry).kind
 
     @Test fun allowedTrueIsAllow() = assertEquals(Kind.ALLOW, k(true, true, true))
 
@@ -33,7 +33,7 @@ class VerdictTest {
     @Test fun retryFlagIsUnknown() = assertEquals(Kind.UNKNOWN, k(true, false, null, "whatever", retry = true))
 
     @Test fun denyCarriesAReason() {
-        val v = Verdict.of(true, false, null, "account_suspended", "")
+        val v = ServerVerdict.of(true, false, null, "account_suspended", "")
         assertEquals("account_suspended", v.code)
         assertEquals(true, v.reason.isNotEmpty())
     }

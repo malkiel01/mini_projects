@@ -125,8 +125,8 @@ class HomeActivity : AppCompatActivity() {
 
             state = r.json?.optJSONObject("state")
             // תשובה תקינה — לפי state (חסר = סירוב); סירוב מהשרת (חשבון מושעה) — חסום; בלי רשת — כמו שהיה.
-            val v = if (r.ok) Verdict.nested(state) else Verdict.from(r)
-            if (v.kind != Verdict.Kind.UNKNOWN) allowed = v.allow
+            val v = if (r.ok) ServerVerdict.nested(state) else ServerVerdict.from(r)
+            if (v.kind != ServerVerdict.Kind.UNKNOWN) allowed = v.allow
             val reason = state?.optString("reason") ?: r.json?.optString("error") ?: ""
 
             b.greeting.text = store.displayName().ifEmpty { "שלום" }.let { if (it == "שלום") it else "שלום $it" }

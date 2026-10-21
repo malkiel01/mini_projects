@@ -14,7 +14,7 @@ import org.json.JSONObject
  *
  * ‏of() טהורה (נבדקת ב-JVM, בלי org.json); ‏from()/page() מחלצות את השדות.
  */
-object Verdict {
+object ServerVerdict {
     enum class Kind { ALLOW, DENY, UNKNOWN }
     data class V(val kind: Kind, val code: String, val reason: String) {
         val allow get() = kind == Kind.ALLOW
