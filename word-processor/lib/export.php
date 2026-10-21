@@ -120,6 +120,7 @@ function export_css(array $page): string
         . '.wp-doc .page-break{break-after:page;height:0}';
     $sel = ['normal' => '.wp-doc p', 'title' => '.wp-doc .wp-title', 'h1' => '.wp-doc h1', 'h2' => '.wp-doc h2', 'h3' => '.wp-doc h3'];
     foreach ($sel as $k => $s) $css .= $s . '{' . style_css($page['styles'][$k] ?? [], $k !== 'normal') . '}';
+    $css .= '.wp-doc td>p,.wp-doc th>p{padding-bottom:0}';   // כמו בעורך
     return $css;
 }
 
@@ -649,7 +650,7 @@ final class Ooxml
         $b = '';
         foreach (['top', 'start', 'bottom', 'end', 'insideH', 'insideV'] as $side) $b .= "<w:$side w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"808080\"/>";
         $out = '<w:tbl><w:tblPr><w:bidiVisual/><w:tblW w:w="' . array_sum($widths) . '" w:type="dxa"/><w:tblBorders>' . $b . '</w:tblBorders>'
-            . '<w:tblLayout w:type="fixed"/><w:tblCellMar><w:start w:w="85" w:type="dxa"/><w:end w:w="85" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>';
+            . '<w:tblLayout w:type="fixed"/><w:tblCellMar><w:top w:w="40" w:type="dxa"/><w:start w:w="80" w:type="dxa"/><w:bottom w:w="40" w:type="dxa"/><w:end w:w="80" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>';
         foreach ($widths as $w) $out .= '<w:gridCol w:w="' . $w . '"/>';
         $out .= '</w:tblGrid>';
         foreach ($layout as $ri => $cells) {
@@ -672,6 +673,8 @@ final class Ooxml
                 elseif ($cell['type'] === 'tableHeader') $pr .= '<w:shd w:val="clear" w:color="auto" w:fill="F2F2F2"/>';
                 $inner = '';
                 foreach ($cell['content'] ?? [] as $p) {
+                    // בתא — בלי רווח אחרי פסקה, כמו בעורך וב-PDF (אלא אם נקבע לפסקה במפורש)
+                    if (($p['type'] ?? '') === 'paragraph' && !is_numeric($p['attrs']['spaceAfter'] ?? null)) $p['attrs']['spaceAfter'] = 0;
                     if ($cell['type'] === 'tableHeader' && ($p['type'] ?? '') === 'paragraph') {
                         $p['content'] = array_map(function ($t) {
                             if (($t['type'] ?? '') === 'text') $t['marks'] = array_merge($t['marks'] ?? [], [['type' => 'bold']]);

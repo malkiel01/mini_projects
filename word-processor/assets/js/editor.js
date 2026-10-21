@@ -255,7 +255,9 @@ export function createWordEditor(root, opts) {
         styleEl.textContent = `${P}{padding:${g.top}px ${g.right}px 0 ${g.left}px;font-family:${cssFont(page.font.family)};font-size:${page.font.size}pt;line-height:${s.normal.line || 1.15}}`
             + st(`${P} p`, s.normal, false) + st(`${P} p.wp-title`, s.title, true)
             + st(`${P} h1`, s.h1, true) + st(`${P} h2`, s.h2, true) + st(`${P} h3`, s.h3, true)
-            + `${P} li>p{padding-top:0;padding-bottom:${Math.min(3, s.normal.after ?? 0)}pt}`;
+            + `${P} li>p{padding-top:0;padding-bottom:${Math.min(3, s.normal.after ?? 0)}pt}`
+            // בתא טבלה — בלי רווח אחרי פסקה (גם ב-PDF וב-Word); בלי זה כלל הסגנון (ספציפי יותר) גובר על editor.css
+            + `${P} td>p,${P} th>p{padding-bottom:0}`;
         // הדפסה: אותם עמודים — כל רווח של עמוד הופך לשבירת עמוד, ומספר העמוד בשולי הדף
         const [wmm, hmm] = pageMm();
         const nb = page.numbering;

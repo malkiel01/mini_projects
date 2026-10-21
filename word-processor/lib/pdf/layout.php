@@ -739,7 +739,8 @@ final class PdfLayout
                 $content = $c['cell']['content'] ?? [];
                 if ($c['cell']['type'] === 'tableHeader') $content = array_map(fn($p) => self::boldify($p), $content);
                 $items = $this->blocks($content, $cw - 2 * $padX, 0, [], -1, true);
-                $h = array_sum(array_map(fn($it) => $it->h, $items)) + 2 * $padY;
+                // + גבול התא: בעורך (border-collapse, קו של 1px) כל שורה גבוהה ב-1px = 0.75pt מהתוכן והריפוד
+                $h = array_sum(array_map(fn($it) => $it->h, $items)) + 2 * $padY + 0.75;
                 $laid[$ri][$ci] = ['items' => $items, 'h' => $h, 'w' => $cw] + $c;
                 if ($c['rs'] === 1) $rowH[$ri] = max($rowH[$ri], $h);
             }
