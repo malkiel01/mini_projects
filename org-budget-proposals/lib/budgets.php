@@ -111,6 +111,7 @@ function budgets_migrate(PDO $pdo): void
     add_columns($pdo, 'orgs', ['doc_style TEXT']);
     // תכנית העבודה בעורך התמלילים (lib/plan_doc.php): המזהה, מקור להעתקה, ועותק אחרון של הפלט
     add_columns($pdo, 'budgets', ['plan_doc TEXT', 'plan_src TEXT', 'plan_html TEXT', 'plan_ooxml TEXT', 'plan_at TEXT']);
+    add_columns($pdo, 'budgets', ['cover_doc TEXT', 'cover_src TEXT', 'cover_html TEXT', 'cover_ooxml TEXT', 'cover_at TEXT']);   // השער — כמו התכנית
 }
 
 /** עמודה חדשה בטבלה קיימת — רק אם עוד אין. */
@@ -374,6 +375,7 @@ function budget_get(array $s, int $id): array
         'submitted_to' => $b['submitted_to'], 'signers' => json_decode((string)$b['signers'], true) ?: [],
         'work_plan' => $b['work_plan'], 'summary_note' => $b['summary_note'],
         'plan_doc' => (bool)$b['plan_doc'] || (bool)$b['plan_src'], 'plan_view' => json_decode((string)$b['plan_html'], true) ?: null,
+        'cover_doc' => (bool)$b['cover_doc'] || (bool)$b['cover_src'], 'cover_view' => json_decode((string)$b['cover_html'], true) ?: null,
         'prev_actual_as_of' => $b['prev_actual_as_of'], 'actual_as_of' => $b['actual_as_of'], 'expense_first' => (bool)$b['expense_first'],
         'based_on_id' => $b['based_on_id'] ? (int)$b['based_on_id'] : null,
         'created_at' => $b['created_at'], 'updated_at' => $b['updated_at'], 'status_at' => $b['status_at'],

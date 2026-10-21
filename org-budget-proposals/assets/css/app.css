@@ -408,3 +408,4 @@ body.wp-open { overflow: hidden; }
     .wp-box { block-size: 96dvh; max-inline-size: 1280px; margin-inline: auto; border-radius: var(--r); overflow: hidden; background: #fff; }
 }
 .plan-html { min-width: 0; overflow-x: auto; }
+.part-prev { background: #fff; color: #000; border: 1px solid var(--line); border-radius: var(--r); padding: 12px; display: grid; gap: 4px; min-width: 0; }
