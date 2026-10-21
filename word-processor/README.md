@@ -5,6 +5,9 @@
 תקציב). האפיון: `org-budget-proposals/docs/word-processor-request.md`. פרוטוקול ההטמעה (מחייב):
 `platform/docs/embed.md`.
 
+**מעקב מול האפיון — [`docs/roadmap.md`](docs/roadmap.md):** השלבים, מה בוצע ומה הבא. כל PR של העורך מעדכן אותו
+(סטטוס הפריטים ששינה + שורה ביומן).
+
 כתובת: https://mbe-plus.com/mini_projects/word-processor/
 
 ## מה עובד (שלב 1)
