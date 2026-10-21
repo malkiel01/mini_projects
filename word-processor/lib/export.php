@@ -10,6 +10,7 @@
  */
 
 require_once __DIR__ . '/docs.php';
+require_once __DIR__ . '/footnote.php';
 
 const EMU_PER_PX = 9525;
 const TWIP_PER_MM = 56.6929;
@@ -344,7 +345,7 @@ final class Ooxml
     public array $cur;               // הגדרות העמוד של המקטע הנוכחי (מתחלפות בכל מעבר מקטע)
     public $sectFn = null;           // fn(array $page, int $index): string — <w:sectPr> של מקטע שמסתיים (docx שלם בלבד)
     private int $sectIndex = 0;
-    public array $footnotes = [];    // [id => טקסט] — word/footnotes.xml (docx שלם); בשילוב — הטקסט בסוגריים
+    public array $footnotes = [];    // [id => צמתי text עם עיצוב] — word/footnotes.xml (docx שלם); בשילוב — בסוגריים
 
     public function __construct(public array $page, public string $prefix = '')
     {
@@ -472,13 +473,16 @@ final class Ooxml
             case 'image':
                 return $this->image($c);
             case 'footnote':
-                $text = trim((string)($c['attrs']['text'] ?? ''));
+                $inline = fn_inline($c['attrs'] ?? []);
                 if ($this->prefix !== '') {
-                    // גוף לשילוב: אין לנו חלק הערות במסמך של המארחת — הטקסט בסוגריים, בכתב עילי
-                    return $this->runs(' (' . $text . ')', [['type' => 'superscript']], $pa);
+                    // גוף לשילוב: אין לנו חלק הערות במסמך של המארחת — הטקסט בסוגריים, בכתב עילי (עם העיצוב שלו)
+                    $sup = [['type' => 'superscript']];
+                    $out = $this->runs(' (', $sup, $pa);
+                    foreach ($inline as $t) $out .= $this->runs($t['text'], array_merge($t['marks'] ?? [], $sup), $pa);
+                    return $out . $this->runs(')', $sup, $pa);
                 }
                 $id = count($this->footnotes) + 1;
-                $this->footnotes[$id] = $text;
+                $this->footnotes[$id] = $inline;
                 return '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteReference w:id="' . $id . '"/></w:r>';
             default:
                 return '';
@@ -490,10 +494,11 @@ final class Ooxml
     {
         $sep = fn(int $id, string $type, string $tag) => '<w:footnote w:type="' . $type . '" w:id="' . $id . '"><w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:' . $tag . '/></w:r></w:p></w:footnote>';
         $out = $sep(-1, 'separator', 'separator') . $sep(0, 'continuationSeparator', 'continuationSeparator');
-        foreach ($this->footnotes as $id => $text) {
+        foreach ($this->footnotes as $id => $inline) {
             $out .= '<w:footnote w:id="' . $id . '"><w:p><w:pPr><w:pStyle w:val="FootnoteText"/><w:bidi/></w:pPr>'
-                . '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteRef/></w:r>'
-                . $this->runs(' ' . $text, [], []) . '</w:p></w:footnote>';
+                . '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteRef/></w:r>' . $this->runs(' ', [], []);
+            foreach ($inline as $t) $out .= $this->runs($t['text'], $t['marks'] ?? [], []);
+            $out .= '</w:p></w:footnote>';
         }
         return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:footnotes ' . W_NS . '>' . $out . '</w:footnotes>';
     }

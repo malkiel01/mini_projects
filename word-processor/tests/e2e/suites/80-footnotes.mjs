@@ -8,12 +8,12 @@ export default async function (t) {
     await p.click('.wp-doc');
     await p.keyboard.type('טקסט עם הערה');
     await p.click('button[aria-label="הערת שוליים (Ctrl+Alt+F)"]');
-    await p.fill('dialog textarea', 'זו ההערה הראשונה');
+    await p.fill('dialog .fn-edit-doc', 'זו ההערה הראשונה');
     await p.click('dialog button[type=submit]');
     await p.waitForSelector('dialog', { state: 'detached' });
     await p.keyboard.type(' ועוד טקסט');
     await p.keyboard.press('Control+Alt+KeyF');
-    await p.fill('dialog textarea', 'הערה שנייה');
+    await p.fill('dialog .fn-edit-doc', 'הערה שנייה');
     await p.click('dialog button[type=submit]');
     await t.settle(p);
     const st = await p.evaluate(() => ({
@@ -31,13 +31,49 @@ export default async function (t) {
 
     // עריכה בלחיצה על ההערה בתחתית העמוד
     await p.click('.wp-fn-area .wp-fn-note >> nth=0');
-    await p.fill('dialog textarea', 'הערה מתוקנת');
+    await p.fill('dialog .fn-edit-doc', 'הערה מתוקנת');
     await p.click('dialog button[type=submit]');
     await t.settle(p);
     t.ok('עריכה בלחיצה על ההערה', (await p.locator('.wp-fn-area .wp-fn-note').first().textContent()).includes('הערה מתוקנת'));
+    // עיצוב בתוך ההערה: מילה מודגשת (כפתור) ומילה נטויה (Ctrl+I) — נשמר, מוצג בתחתית העמוד, ונשאר בעריכה הבאה
+    await p.click('.wp-fn-area .wp-fn-note >> nth=0');
+    const ed2 = p.locator('dialog .fn-edit-doc');
+    await ed2.click();
+    await p.keyboard.press('End');
+    await p.keyboard.type(' ');
+    await p.click('dialog button[aria-label="מודגש (Ctrl+B)"]');
+    await p.keyboard.type('חשוב');
+    await p.click('dialog button[aria-label="מודגש (Ctrl+B)"]');
+    await p.keyboard.type(' ');
+    await p.keyboard.press('Control+i');
+    await p.keyboard.type('נטוי');
+    await p.click('dialog button[type=submit]');
+    await p.waitForSelector('dialog', { state: 'detached' });
+    await t.settle(p);
+    const area = await p.evaluate(() => { const n = document.querySelector('.wp-fn-area .wp-fn-note'); return { b: n.querySelector('b')?.textContent, i: n.querySelector('i')?.textContent, all: n.textContent }; });
+    t.ok('עיצוב בהערה: מודגש ונטוי בתחתית העמוד', area.b === 'חשוב' && area.i === 'נטוי' && area.all.includes('הערה מתוקנת חשוב נטוי'), JSON.stringify(area));
+    await p.waitForTimeout(2500);
+    s = await t.api(p, 'my_open', { doc });
+    const saved = JSON.stringify(s.json);
+    t.ok('עיצוב בהערה: נשמר (content עם bold ו-italic, text פשוט)', saved.includes('"text":"הערה מתוקנת חשוב נטוי"') && /"marks":\[\{"type":"bold"\}\]/.test(saved) && /"marks":\[\{"type":"italic"\}\]/.test(saved));
+    await p.click('.wp-fn-area .wp-fn-note >> nth=0');
+    t.ok('עיצוב בהערה: נשאר בעריכה הבאה', await p.locator('dialog .fn-edit-doc strong, dialog .fn-edit-doc b').first().textContent() === 'חשוב');
+    t.ok('עיצוב בהערה: Enter לא פותח שורה', await (async () => { await p.keyboard.press('Enter'); return await p.locator('dialog .fn-edit-doc p').count() === 1; })());
+    await p.keyboard.press('Escape');
+    await p.waitForSelector('dialog', { state: 'detached' });
+    // הקלדה מיד אחרי פתיחת החלון (בלי לחכות) — כל האותיות בחלון, ולא בגוף המסמך
+    const bodyBefore = await p.locator('.wp-doc').textContent();
+    await p.click('.wp-doc p >> nth=0');
+    await p.keyboard.press('End');
+    await p.keyboard.press('Control+Alt+f');
+    await p.keyboard.type('הקלדה מהירה');
+    t.ok('הקלדה מיד בפתיחה — כל הטקסט בחלון', (await p.locator('dialog .fn-edit-doc').textContent()) === 'הקלדה מהירה'
+        && (await p.locator('.wp-doc').textContent()) === bodyBefore);
+    await p.keyboard.press('Escape');
+    await p.waitForSelector('dialog', { state: 'detached' });
     // מחיקה: טקסט ריק
     await p.click('.wp-doc .wp-fn-ref >> nth=1');
-    await p.fill('dialog textarea', '');
+    await p.fill('dialog .fn-edit-doc', '');
     await p.click('dialog button[type=submit]');
     await t.settle(p);
     t.ok('מחיקה: טקסט ריק מוחק את ההערה', await p.locator('.wp-doc .wp-fn-ref').count() === 1 && await p.locator('.wp-fn-area .wp-fn-note').count() === 1);

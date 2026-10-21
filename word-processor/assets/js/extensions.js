@@ -204,6 +204,12 @@ export const Footnote = Node.create({
     addAttributes() {
         return {
             text: { default: '', parseHTML: el => el.getAttribute('data-text') || '', renderHTML: a => ({ 'data-text': a.text || '' }) },
+            // אותו טקסט עם עיצוב (צמתי text עם marks: מודגש, נטוי, קו תחתון, קו חוצה, עילי, תחתי) — או null
+            content: {
+                default: null,
+                parseHTML: el => { try { return JSON.parse(el.getAttribute('data-content') || 'null'); } catch { return null; } },
+                renderHTML: a => (a.content ? { 'data-content': JSON.stringify(a.content) } : {}),
+            },
         };
     },
     parseHTML() {
@@ -214,7 +220,7 @@ export const Footnote = Node.create({
     },
     addCommands() {
         return {
-            insertFootnote: text => ({ chain }) => chain().insertContent({ type: 'footnote', attrs: { text: text || '' } }).run(),
+            insertFootnote: (text, content = null) => ({ chain }) => chain().insertContent({ type: 'footnote', attrs: { text: text || '', content } }).run(),
         };
     },
 });

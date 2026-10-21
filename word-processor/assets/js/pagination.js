@@ -87,7 +87,7 @@ export const Pages = Extension.create({
                             }
                             return out;
                         }).concat((pick.notesArea || []).map(a => Decoration.widget(a.pos, notesAreaEl(a), {
-                            side: a.end ? 1 : -3, key: `fn${a.pos}-${Math.round(a.fill)}-${a.notes.map(n => n.n).join('.')}-${a.notes.map(n => n.text).join('|').length}`,
+                            side: a.end ? 1 : -3, key: `fn${a.pos}-${Math.round(a.fill)}-${a.notes.map(n => n.n).join('.')}-${hash(a.notes.map(n => n.text + JSON.stringify(n.content || '') + (n.clip || '') + (n.skip || '')).join('|'))}`,
                             ignoreSelection: true, marks: [],
                         }))));
                         view.dispatch(view.state.tr.setMeta(pagesKey, { deco, sig: pick.sig }).setMeta('addToHistory', false));
@@ -169,7 +169,7 @@ let fnBox = null;
 function noteHeight(root, note, g) {
     const w = Math.round(g.pageW - g.left - g.right);
     const font = getComputedStyle(root).fontFamily;
-    const key = `${w}|${font}|${note.n}|${note.text}`;
+    const key = `${w}|${font}|${note.n}|${note.text}|${note.content ? JSON.stringify(note.content) : ''}`;
     if (fnCache.has(key)) return fnCache.get(key);
     if (!fnBox || !fnBox.isConnected) {
         fnBox = document.createElement('div');
@@ -194,8 +194,28 @@ function noteEl(note) {
     if (note.pos != null) d.dataset.pos = note.pos;
     const sup = document.createElement('sup');
     sup.textContent = note.n;
-    d.append(sup, ' ', note.text || '');
+    d.append(sup, ' ', ...noteInline(note));
     return d;
+}
+
+/** טביעה קצרה למחרוזת — מפתח לווידג'ט: תוכן אחר (גם רק עיצוב אחר) — ווידג'ט חדש */
+function hash(str) {
+    let x = 0;
+    for (let i = 0; i < str.length; i++) x = (x * 31 + str.charCodeAt(i)) | 0;
+    return (x >>> 0).toString(36);
+}
+
+const NOTE_TAGS = { bold: 'b', italic: 'i', underline: 'u', strike: 's', superscript: 'sup', subscript: 'sub' };
+/** תוכן ההערה: עם עיצוב (content) — אלמנט לכל סימון; בלי — הטקסט. תמיד textContent, לא HTML. */
+export function noteInline(note) {
+    if (!Array.isArray(note.content)) return [note.text || ''];
+    return note.content.filter(t => t?.type === 'text' && t.text).map(t => (t.marks || []).reduce((node, m) => {
+        const tag = NOTE_TAGS[m?.type];
+        if (!tag) return node;
+        const e = document.createElement(tag);
+        e.append(node);
+        return e;
+    }, document.createTextNode(t.text)));
 }
 
 /** אזור ההערות בתחתית עמוד: מילוי עד תחתית הטקסט, קו, וההערות. בתוך טבלה — כשורה על כל העמודות. */
@@ -317,7 +337,9 @@ function measure(view, g) {
         if (!u) return;
         let pos = null;
         try { pos = view.posAtDOM(el, 0); } catch { /* */ }
-        (u.notes ||= []).push({ n: k + 1, pos, text: el.getAttribute('data-text') || '' });
+        let content = null;
+        try { content = JSON.parse(el.getAttribute('data-content') || 'null'); } catch { /* */ }
+        (u.notes ||= []).push({ n: k + 1, pos, text: el.getAttribute('data-text') || '', content });
     });
     const noteH = note => noteHeight(root, note, (g.sections ? g.sections[0] : g));
 
@@ -415,7 +437,7 @@ function measure(view, g) {
         notesArea.push({ pos: view.state.doc.content.size, fill: Math.max(0, secs[s].contentH - end - areaH(last)), notes: last, row: 0, end: true });
     }
     const sig = breaks.map(b => `${b.pos}:${Math.round(b.h)}`).join('|')
-        + '§' + notesArea.map(a => `${a.pos}:${Math.round(a.fill)}:${a.notes.map(n => n.n + n.text + (n.clip ? '<' + Math.round(n.clip) : '') + (n.skip ? '>' + Math.round(n.skip) : '')).join(',')}`).join('|');
+        + '§' + notesArea.map(a => `${a.pos}:${Math.round(a.fill)}:${a.notes.map(n => n.n + n.text + (n.content ? JSON.stringify(n.content).length : '') + (n.clip ? '<' + Math.round(n.clip) : '') + (n.skip ? '>' + Math.round(n.skip) : '')).join(',')}`).join('|');
     return { breaks, notesArea, pages: page + 1, pageSecs, sig: sig + '#' + pageSecs.join(','), zoom };
 }
 

@@ -9,7 +9,7 @@
  * מה שעל המסך הוא מה שיודפס: עמודים בגודל אמיתי (מ"מ → פיקסלים ב-96 לאינץ'), שוליים, כותרת עליונה ותחתונה
  * ומספר עמוד בכל עמוד, וזום שמגדיל רק את הדפים.
  */
-import { Editor } from '../../vendor/tiptap.js';
+import { Editor, Extension, StarterKit, Superscript, Subscript } from '../../vendor/tiptap.js';
 import { extensions, imageBox } from './extensions.js';
 import { Pages, pageLabel } from './pagination.js';
 import { cleanPastedHtml } from './paste.js';
@@ -556,30 +556,68 @@ export function createWordEditor(root, opts) {
         });
     }
 
-    /** הערת שוליים: חדשה (pos = null — במקום הסמן) או עריכה של קיימת. טקסט ריק בעריכה — מחיקת ההערה. */
+    /**
+     * הערת שוליים: חדשה (pos = null — במקום הסמן) או עריכה של קיימת. טקסט ריק בעריכה — מחיקת ההערה.
+     * העריכה — בעורך קטן עם עיצוב תווים (מודגש, נטוי, קו תחתון, קו חוצה, עילי, תחתי); נשמר ב-attrs.content,
+     * והטקסט הפשוט ב-attrs.text. פסקה אחת: Enter לא פותח שורה (Ctrl+Enter — שמירה).
+     */
     function footnoteDialog(pos) {
         const node = pos == null ? null : ed.state.doc.nodeAt(pos);
         if (pos != null && node?.type.name !== 'footnote') return;
         if (!editor.isEditable) return;
         const sel = ed.state.selection;
-        sheet(node ? 'הערת שוליים' : 'הערת שוליים חדשה', body => {
-            body.append(field('הטקסט שיופיע בתחתית העמוד', h('textarea', { name: 'text', rows: 4, maxlength: 2000 }, node?.attrs.text || '')),
-                node ? h('p.hint', 'מחיקת כל הטקסט ושמירה — מוחקת את ההערה.') : null);
-            setTimeout(() => body.querySelector('textarea')?.focus(), 30);
-        }, form => {
-            const text = String(new FormData(form).get('text') || '').trim();
+        let mini = null;
+        sheet(node ? 'הערת שוליים' : 'הערת שוליים חדשה', (body, dlg) => {
+            const box = h('div.fn-edit');
+            const tool = (cmd, mark, label, icon) => h('button.fn-tool', {
+                type: 'button', title: label, 'aria-label': label, 'data-mark': mark,
+                onmousedown: e => e.preventDefault(), onclick: () => mini.chain().focus()[cmd]().run(),
+            }, icon);
+            const tools = h('div.fn-tools', { role: 'toolbar', 'aria-label': 'עיצוב ההערה' },
+                tool('toggleBold', 'bold', 'מודגש (Ctrl+B)', h('b', 'B')), tool('toggleItalic', 'italic', 'נטוי (Ctrl+I)', h('i', 'I')),
+                tool('toggleUnderline', 'underline', 'קו תחתון (Ctrl+U)', h('u', 'U')), tool('toggleStrike', 'strike', 'קו חוצה', h('s', 'S')),
+                tool('toggleSuperscript', 'superscript', 'כתב עילי', ICONS.superscript()), tool('toggleSubscript', 'subscript', 'כתב תחתי', ICONS.subscript()));
+            // div ולא label: בתוך label לחיצה על הכיתוב "לוחצת" על הכפתור הראשון
+            body.append(h('div.f', h('span', 'הטקסט שיופיע בתחתית העמוד'), tools, box));
+            if (node) body.append(h('p.hint', 'מחיקת כל הטקסט ושמירה — מוחקת את ההערה.'));
+            const text = node?.attrs.text || '';
+            const inline = Array.isArray(node?.attrs.content) ? node.attrs.content : (text ? [{ type: 'text', text }] : []);
+            mini = new Editor({
+                element: box,
+                extensions: [
+                    StarterKit.configure({ heading: false, bulletList: false, orderedList: false, listItem: false, listKeymap: false, blockquote: false,
+                        code: false, codeBlock: false, horizontalRule: false, hardBreak: false, link: false, trailingNode: false, dropcursor: false, gapcursor: false }),
+                    Superscript, Subscript,
+                    Extension.create({ name: 'fnKeys', addKeyboardShortcuts: () => ({
+                        Enter: () => true, 'Shift-Enter': () => true,
+                        'Mod-Enter': () => { dlg.querySelector('form').requestSubmit(); return true; },
+                        // Escape במנוע = "בחירת הבלוק" (והמקש נבלע) — כאן הוא סוגר את החלון, כמו בכל חלון אחר
+                        Escape: () => { dlg.close(); return true; },
+                    }) }),
+                ],
+                content: { type: 'doc', content: [{ type: 'paragraph', content: inline }] },
+                // autofocus: הדפדפן ממקד את התיבה כחלק מפתיחת החלון (showModal) — אותיות שמוקלדות מיד לא הולכות לאיבוד
+                editorProps: { attributes: { class: 'fn-edit-doc', dir: 'rtl', lang: 'he', spellcheck: 'true', role: 'textbox', 'aria-multiline': 'false', 'aria-label': 'הטקסט שיופיע בתחתית העמוד', autofocus: 'true' } },
+            });
+            const sync = () => tools.querySelectorAll('[data-mark]').forEach(b => b.classList.toggle('on', mini.isActive(b.dataset.mark)));
+            mini.on('transaction', sync);
+            dlg.addEventListener('close', () => mini.destroy(), { once: true });
+        }, () => {
+            const { text, content } = noteFromMini(mini.getJSON());
             if (!node) {
                 if (!text) return;
-                ed.chain().focus().setTextSelection(sel.to).insertFootnote(text).run();
+                ed.chain().focus().setTextSelection(sel.to).insertFootnote(text, content).run();
                 // סגירת החלון מחזירה את המיקוד למה שהיה לפניו (לפעמים הסמן קופץ לפני ההערה) — מחזירים אחרי ההערה
                 const after = sel.to + 1;
                 setTimeout(() => ed.chain().focus().setTextSelection(Math.min(after, ed.state.doc.content.size)).run(), 0);
             } else if (!text) {
                 ed.chain().focus().command(({ tr }) => { tr.delete(pos, pos + node.nodeSize); return true; }).run();
             } else {
-                ed.chain().focus().command(({ tr }) => { tr.setNodeMarkup(pos, null, { ...node.attrs, text }); return true; }).run();
+                ed.chain().focus().command(({ tr }) => { tr.setNodeMarkup(pos, null, { ...node.attrs, text, content }); return true; }).run();
             }
         }, 'שמירה');
+        // הסמן בסוף הטקסט (המיקוד עצמו — autofocus)
+        mini.commands.setTextSelection(mini.state.doc.content.size);
     }
     // לחיצה על סימן הערה או על ההערה בתחתית העמוד — עריכה
     host.addEventListener('click', e => {
@@ -905,6 +943,28 @@ export function mergePage(base, p, replaceStyles = false) {
     if (p.numbering) Object.assign(out.numbering, p.numbering);
     if (p.styles) for (const [k, v] of Object.entries(p.styles)) out.styles[k] = replaceStyles ? { ...v } : { ...(out.styles[k] || {}), ...v };
     return out;
+}
+
+const FN_MARKS = ['bold', 'italic', 'underline', 'strike', 'superscript', 'subscript'];
+/** מהעורך הקטן של ההערה: טקסט פשוט, ו-content (צמתי text עם עיצוב מותר) — או null כשאין עיצוב. */
+export function noteFromMini(json) {
+    const inline = [];
+    (json.content || []).forEach((p, i) => {
+        if (i) inline.push({ type: 'text', text: ' ' });
+        for (const t of p.content || []) {
+            if (t.type !== 'text' || !t.text) continue;
+            const marks = (t.marks || []).filter(m => FN_MARKS.includes(m.type)).map(m => ({ type: m.type }));
+            inline.push(marks.length ? { type: 'text', text: t.text, marks } : { type: 'text', text: t.text });
+        }
+    });
+    if (inline.length) {
+        inline[0] = { ...inline[0], text: inline[0].text.replace(/^\s+/, '') };
+        const k = inline.length - 1;
+        inline[k] = { ...inline[k], text: inline[k].text.replace(/\s+$/, '') };
+    }
+    const nodes = inline.filter(t => t.text);
+    const text = nodes.map(t => t.text).join('');
+    return { text, content: nodes.some(t => t.marks) ? nodes : null };
 }
 
 function alignIcon(a) {

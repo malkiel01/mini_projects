@@ -447,6 +447,38 @@ $pt = preg_match_all('#/Type /Page /#', $pdfT);
 check('PDF: טבלה ארוכה נשברת בין שורות, ושורת הכותרת חוזרת בכל עמוד', $pt >= 2 && substr_count(gzuncompress_pages($pdfT), '0.95 0.95 0.95 rg') >= $pt, "$pt עמודים");
 
 // ======================================================================
+section('הערת שוליים עם עיצוב (attrs.content)');
+$fnDoc = ['type' => 'doc', 'content' => [['type' => 'paragraph', 'content' => [
+    ['type' => 'text', 'text' => 'טקסט'],
+    ['type' => 'footnote', 'attrs' => ['text' => 'רגיל מודגש נטוי', 'content' => [
+        ['type' => 'text', 'text' => 'רגיל '], ['type' => 'text', 'text' => 'מודגש', 'marks' => [['type' => 'bold']]],
+        ['type' => 'text', 'text' => ' '], ['type' => 'text', 'text' => 'נטוי', 'marks' => [['type' => 'italic'], ['type' => 'link', 'attrs' => ['href' => 'x']]]],
+        ['type' => 'image', 'attrs' => []]]]],
+]]]];
+check('fn_inline: רק צמתי text ורק עיצוב מותר', fn_inline($fnDoc['content'][0]['content'][1]['attrs']) === [
+    ['type' => 'text', 'text' => 'רגיל '], ['type' => 'text', 'text' => 'מודגש', 'marks' => [['type' => 'bold']]],
+    ['type' => 'text', 'text' => ' '], ['type' => 'text', 'text' => 'נטוי', 'marks' => [['type' => 'italic']]]]);
+check('fn_inline: בלי content — הטקסט הפשוט', fn_inline(['text' => ' רק טקסט ']) === [['type' => 'text', 'text' => 'רק טקסט']]);
+$fnDocx = export_docx($fnDoc, page_normalize([]), 'הערה');
+$zip = new ZipArchive();
+file_put_contents("$tmp/fn.docx", $fnDocx);
+$zip->open("$tmp/fn.docx");
+$fnXml = $zip->getFromName('word/footnotes.xml');
+$zip->close();
+check('Word: ההערה עם מודגש ונטוי (w:b, w:i)', str_contains($fnXml, '<w:b/>') && str_contains($fnXml, '<w:i/>') && str_contains($fnXml, 'מודגש'));
+$fnBack = import_docx($fnDocx, 'fn');
+$fnAttrs = null;
+$walkFn = function ($n) use (&$walkFn, &$fnAttrs) { if (($n['type'] ?? '') === 'footnote') $fnAttrs = $n['attrs']; foreach ($n['content'] ?? [] as $c) $walkFn($c); };
+$walkFn($fnBack['json']);
+check('Word הלוך וחזור: הטקסט והעיצוב של ההערה חוזרים', ($fnAttrs['text'] ?? '') === 'רגיל מודגש נטוי'
+    && fn_inline($fnAttrs) == [['type' => 'text', 'text' => 'רגיל '], ['type' => 'text', 'text' => 'מודגש', 'marks' => [['type' => 'bold']]],
+        ['type' => 'text', 'text' => ' '], ['type' => 'text', 'text' => 'נטוי', 'marks' => [['type' => 'italic']]]], json_encode($fnAttrs, JSON_UNESCAPED_UNICODE));
+$fnBody = export_ooxml($fnDoc, page_normalize([]))['body'];
+check('גוף לשילוב: ההערה בסוגריים, עילית, עם המודגש', str_contains($fnBody, 'מודגש') && preg_match('#<w:b/>.*?<w:vertAlign w:val="superscript"/>.*?מודגש#s', $fnBody) === 1);
+$fnPdf = $pdfOf($fnDoc);
+check('PDF: ההערה עם גופן מודגש ונטוי', str_contains($fnPdf, 'BaseFont') && preg_match('#/BaseFont /\w+\+[\w-]*(?:700|Bold)#', $fnPdf) === 1, '');
+
+// ======================================================================
 section('הגדרות עמוד');
 $p = page_normalize(['size' => 'Legal', 'orientation' => 'landscape', 'margins' => ['top' => 500, 'left' => 'x'], 'font' => ['family' => 'David<script>', 'size' => 200],
     'styles' => ['h1' => ['size' => 18, 'color' => 'red', 'underline' => true]], 'numbering' => ['format' => 'bad', 'align' => 'left']]);
