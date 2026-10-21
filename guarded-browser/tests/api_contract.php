@@ -80,6 +80,11 @@ check('heartbeat — allowed בוליאני', is_bool($j['allowed'] ?? null), tr
 [$c, $j] = api('policy', [], $token);
 check('policy — state.allowed בוליאני', is_bool($j['state']['allowed'] ?? null), true);
 
+[$c, $j] = api('update_state', ['state' => 'downloading', 'target' => 99], $token);
+check('update_state — נשמר', [$c, $j['ok'] ?? null], [200, true]);
+[$c, $j] = api('update_state', ['state' => 'pwned'], $token);
+check('update_state עם מצב לא מוכר — refused', [$c, shape($j)], [400, 'refused']);
+
 echo "\n— סירובים: ok=false תמיד עם allowed=false —\n";
 [$c, $j] = api('heartbeat', [], 'not-a-token');
 check('אסימון לא מוכר — 401, unauthorized, refused', [$c, $j['code'], shape($j)], [401, 'unauthorized', 'refused']);

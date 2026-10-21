@@ -486,9 +486,24 @@ function kidSites() {
     ];
 }
 
+/** מצב העדכון כפי שהמכשיר דיווח (שלב 9) — או '' כשאין מה להראות. */
+const UPDATE_STATE = {
+    downloading: '⏳ מוריד', verifying: '🔎 בודק את הקובץ של', installing: '⏳ מתקין',
+    waiting_user: '✋ מחכה שהילד יאשר במסך ההתקנה את', failed: '❌ נכשל עדכון ל-',
+};
+function updateLine(u) {
+    if (!u || !UPDATE_STATE[u.state]) return '';
+    const when = u.at ? ` (${ago(u.at)})` : '';
+    return u.state === 'failed'
+        ? `${UPDATE_STATE.failed}${u.target_name}${u.error ? ': ' + u.error : ''}${when} — ינוסה שוב לבד`
+        : `${UPDATE_STATE[u.state]} ${u.target_name}${when}`;
+}
+
 /** שורת הגרסה של מכשיר: מה מותקן, ומה המצב מול הגרסה האחרונה. */
 function appLine(d) {
     const a = d.app, latest = K.latest_app;
+    const u = updateLine(a.update);
+    if (u) return `${a.version_name || 'גרסה ישנה'} · ${u}`;
     if (a.status === 'unknown') return a.requested ? '⏳ ישנה — נשלחו לו הוראות מעבר' : '⚠️ גרסה ישנה (לא מדווחת)';
     if (a.status === 'outdated') return a.requested ? `⏳ ${a.version_name} — מחכה שהילד יאשר עדכון` : `⬆️ ${a.version_name} · יש ${latest.name}`;
     return `✓ ${a.version_name} — מעודכנת`;

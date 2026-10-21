@@ -269,6 +269,14 @@ class Store(context: Context) {
     var updateUrl: String
         get() = prefs.getString("update_url", "") ?: ""
         set(v) { prefs.edit().putString("update_url", v).apply() }
+    /** ‏sha256 של ה-APK כפי שהשרת פרסם (latest.json). ריק — שרת ישן. */
+    var updateSha: String
+        get() = prefs.getString("update_sha", "") ?: ""
+        set(v) { prefs.edit().putString("update_sha", v).apply() }
+    /** עד מתי הגבלות ההתקנה מוסרות לעדכון (UpdateMath.installOpen). 0 — סגור. */
+    var installOpenUntil: Long
+        get() = prefs.getLong("install_open_until", 0L)
+        set(v) { prefs.edit().putLong("install_open_until", v).apply() }
 
     /** הגדרות המכשיר מהמדיניות: חסום? לפי מפתח (lib/devicesettings.php). null — השרת לא שלח (ישן). */
     fun deviceSetting(key: String): Boolean? = try {

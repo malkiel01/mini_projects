@@ -224,6 +224,12 @@ object Api {
     fun apps(token: String, list: org.json.JSONArray, cb: (Result) -> Unit) =
         call("apps", JSONObject().apply { put("apps", list) }, token, cb)
 
+    /** מצב העדכון (שלב 9) — ההורה רואה עדכון שנכשל או נתקע. בלי תשובה נדרשת. */
+    fun updateState(token: String, state: String, target: Int, error: String = "") =
+        call("update_state", JSONObject().apply {
+            put("state", state); put("target", target); put("error", error.take(120))
+        }, token) {}
+
     /** חיפוש (שלב 8): השרת בוחר מנוע לפי הילד ומסנן כל תוצאה. */
     fun search(token: String, q: String, cb: (Result) -> Unit) =
         call("search", JSONObject().apply { put("q", q) }, token, cb)

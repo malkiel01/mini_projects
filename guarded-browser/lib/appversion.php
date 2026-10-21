@@ -36,7 +36,9 @@ function latestApp(?callable $fetch = null, int $ttl = APK_LATEST_TTL): ?array {
         $r = ($fetch ?? fn() => httpGet(APK_LATEST_URL, 4000))();
         $j = ($r['status'] ?? 0) === 200 ? json_decode((string) $r['body'], true) : null;
         if (is_array($j) && (int) ($j['version_code'] ?? 0) > 0) {
-            $val = json_encode(['code' => (int) $j['version_code'], 'cert' => (string) ($j['cert_sha256'] ?? '')]);
+            $sha = strtolower((string) ($j['apk_sha256'] ?? ''));
+            $val = json_encode(['code' => (int) $j['version_code'], 'cert' => (string) ($j['cert_sha256'] ?? ''),
+                                'sha256' => preg_match('/^[0-9a-f]{64}$/', $sha) ? $sha : '']);
             upsert('app_meta', ['key' => 'apk_latest'], ['value' => $val, 'updated_at' => nowIso()]);
             $row = ['value' => $val];
         } elseif ($row) {
@@ -46,7 +48,8 @@ function latestApp(?callable $fetch = null, int $ttl = APK_LATEST_TTL): ?array {
     }
     $data = json_decode((string) ($row['value'] ?? ''), true) ?: [];
     $code = (int) ($data['code'] ?? 0);
-    return $code > 0 ? ['code' => $code, 'name' => '1.' . $code, 'cert' => (string) ($data['cert'] ?? '')] : null;
+    return $code > 0 ? ['code' => $code, 'name' => '1.' . $code, 'cert' => (string) ($data['cert'] ?? ''),
+                        'sha256' => (string) ($data['sha256'] ?? '')] : null;
 }
 
 /**
@@ -95,7 +98,38 @@ function deviceAppState(array $d, ?array $latest): array {
     $v = (int) ($d['app_version'] ?? 0);
     $status = $v === 0 ? 'unknown' : ($latest && $latest['code'] > $v ? 'outdated' : 'current');
     return ['version' => $v, 'version_name' => $v ? '1.' . $v : '', 'status' => $status,
-            'requested' => (string) ($d['update_requested_at'] ?? '') !== '' && $status !== 'current'];
+            'requested' => (string) ($d['update_requested_at'] ?? '') !== '' && $status !== 'current',
+            'update' => updateStateFor($d)];
+}
+
+/** מצבי העדכון שהמכשיר מדווח (Updater.kt). ‏done — הגרסה החדשה רצה. */
+const UPDATE_STATES = ['downloading', 'verifying', 'installing', 'waiting_user', 'failed', 'done'];
+
+/**
+ * דיווח מהמכשיר על העדכון (סקירה, 2026-10-20 — שלב 9): קודם ההורה ראה רק "גרסה ישנה" — לא אם ההורדה
+ * נתקעה, אם הקובץ נדחה, או אם ההתקנה מחכה לאישור. נשמר רק מצב מוכר; שגיאה מקוצרת.
+ */
+function updateStateSave(int $deviceRowId, array $in): bool {
+    $state = (string) ($in['state'] ?? '');
+    if (!in_array($state, UPDATE_STATES, true)) return false;
+    $clean = ['state' => $state, 'target' => max(0, (int) ($in['target'] ?? 0)),
+              'error' => mb_substr(trim((string) ($in['error'] ?? '')), 0, 120)];
+    q('UPDATE devices SET update_state = ?, update_at = ? WHERE id = ?',
+      [json_encode($clean, JSON_UNESCAPED_UNICODE), nowIso(), $deviceRowId]);
+    return true;
+}
+
+/**
+ * המצב להצגה, או null. מצב שכבר לא רלוונטי — הגרסה המותקנת הגיעה ליעד (או עברה אותו) — לא מוצג,
+ * כדי ש"נכשל" ישן לא יישאר אחרי שהעדכון הצליח בניסיון הבא.
+ */
+function updateStateFor(array $d): ?array {
+    $s = json_decode((string) ($d['update_state'] ?? ''), true);
+    if (!is_array($s) || !in_array($s['state'] ?? '', UPDATE_STATES, true)) return null;
+    $v = (int) ($d['app_version'] ?? 0);
+    if ($s['state'] === 'done' || (int) $s['target'] <= $v) return null;
+    return ['state' => $s['state'], 'target' => (int) $s['target'], 'target_name' => '1.' . (int) $s['target'],
+            'error' => (string) $s['error'], 'at' => (string) ($d['update_at'] ?? '')];
 }
 
 /** ההורה ביקש לעדכן מכשיר. מוחזרת שגיאה, או ''. */
@@ -125,8 +159,10 @@ function deviceUpdateOffer(int $deviceRowId): ?array {
         if ($latest && (string) $d['update_requested_at'] !== '') q("UPDATE devices SET update_requested_at = '' WHERE id = ?", [$deviceRowId]);
         return null;
     }
+    // ‏sha256 — המכשיר משווה אליו את הקובץ שהוריד לפני שהוא פותח את ההתקנה (Updater.kt, שלב 9).
     return ['version_code' => $latest['code'], 'version_name' => $latest['name'], 'required' => true,
-            'url' => (serverUrl() ?: '') !== '' ? serverUrl() . 'download.php' : APK_URL];
+            'url' => (serverUrl() ?: '') !== '' ? serverUrl() . 'download.php' : APK_URL,
+            'sha256' => $latest['sha256'] ?? ''];
 }
 
 /**
