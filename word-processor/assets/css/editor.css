@@ -88,14 +88,23 @@ html.wp-no-page-zoom, html.wp-no-page-zoom body, .wp-editor, .wp-stage { touch-a
 .wp-sheet .wp-doc.wp-multisec { padding-left: 0 !important; padding-right: 0 !important; }
 /* הערות שוליים: הסימן ממוספר לבד לפי הסדר; ההערות בתחתית העמוד (pagination.js) — גובה קו ההפרדה = FN_SEP */
 .wp-doc { counter-reset: wpfn; }
-.wp-doc .wp-fn-ref { counter-increment: wpfn; font-size: .7em; vertical-align: super; line-height: 0; color: #1a4fa0; cursor: pointer; padding-inline: 1px; }
+/* רווח בסוף שורה "תלוי" מחוץ לשוליים ולא נספר ברוחב — כמו ב-Word וב-PDF מהשרת. ProseMirror קובע break-spaces
+   (הרווח תופס מקום), ואז מילה שנכנסת בדיוק עד השוליים יורדת לשורה הבאה */
+.wp-sheet .wp-doc.ProseMirror { white-space: pre-wrap; }
+/* בלי ריווח זוגות אותיות (kerning) — כמו ב-Word (כבוי כברירת מחדל) וב-PDF מהשרת, שמודד לפי רוחב האות בלבד.
+   ובלי locl: בגופני Libre יש ספרות "עבריות" צרות יותר (two.hebr) שהדפדפן בוחר לבד בטקסט בעברית — ה-PDF מהשרת
+   מודד את הספרות הרגילות, ושורה עם מספרים נשברת אחרת */
+.wp-sheet .wp-doc.ProseMirror, .wp-fn-area, .wp-fn-measure { font-kerning: none; font-feature-settings: "liga" 0, "locl" 0; }
+/* גודל ורוחב הסימן — כמו ב-PDF מהשרת (75%, בלי ריפוד), כדי שהשורה תישבר באותו מקום */
+.wp-doc .wp-fn-ref { counter-increment: wpfn; font-size: .75em; vertical-align: super; line-height: 0; color: #1a4fa0; cursor: pointer; }
 .wp-doc .wp-fn-ref::after { content: counter(wpfn); }
 .wp-doc .wp-fn-ref.ProseMirror-selectednode { outline: 2px solid #2d4a8a; border-radius: 2px; }
 .wp-fn-area { display: block; user-select: none; direction: rtl; }
 .wp-fn-sep { inline-size: 33%; height: 0; border-top: 1px solid #000; margin: 6px 0 7px; }
 .wp-fn-note, .wp-fn-measure .wp-fn-note { font-size: 10pt; line-height: 1.25; text-align: start; font-weight: 400; font-style: normal; text-decoration: none; color: #000; }
 .wp-fn-area .wp-fn-note { cursor: pointer; }
-.wp-fn-note > sup { font-size: .75em; }
+/* line-height: 0 — המספר העילי לא מגביה את השורה (כמו ב-PDF מהשרת) */
+.wp-fn-note > sup { font-size: .75em; line-height: 0; }
 .wp-fn-measure { position: absolute; visibility: hidden; top: 0; left: 0; pointer-events: none; direction: rtl; }
 .wp-doc tr.wp-fn-row > td { padding: 0; border: none; background: none; }
 .wp-break { display: block; pointer-events: none; user-select: none; }

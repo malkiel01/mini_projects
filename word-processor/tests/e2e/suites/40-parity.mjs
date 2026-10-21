@@ -54,6 +54,16 @@ export default async function (t) {
                 copyFileSync(name === 'הדפסה' ? printPdf : pdf, join(process.env.E2E_ARTIFACTS, `${f}.${name === 'הדפסה' ? 'print' : 'server'}.pdf`));
                 writeFileSync(join(process.env.E2E_ARTIFACTS, `${f}.editor.txt`), ed.join('\n—— עמוד ——\n'));
                 await p.screenshot({ path: join(process.env.E2E_ARTIFACTS, `${f}.editor.png`), fullPage: true });
+                // גובה כל בלוק כפי שהעורך מדד (נק', בלי הרווחים של מעברי העמוד) והגופן שבו הוא צויר בפועל — להשוואה עם ה-PDF
+                writeFileSync(join(process.env.E2E_ARTIFACTS, `${f}.editor.blocks.txt`), await p.evaluate(() => {
+                    const d = document.querySelector('.wp-doc');
+                    const z = d.getBoundingClientRect().height / d.offsetHeight;
+                    const gap = el => [...el.querySelectorAll('.wp-break')].reduce((t, b) => t + b.getBoundingClientRect().height, 0);
+                    return [...d.children].filter(b => !b.classList.contains('wp-break')).map((b, i) => {
+                        const r = b.getBoundingClientRect();
+                        return `${i}\t${((r.height - gap(b)) / z * 0.75).toFixed(2)}\t${getComputedStyle(b).lineHeight}`;
+                    }).join('\n') + '\nfonts: ' + [...document.fonts].filter(x => x.status === 'loaded').map(x => x.family).filter((x, i, a) => a.indexOf(x) === i).join(', ');
+                }));
             }
             if (d && process.env.DEBUG) console.log({ editor: ed.map(x => x.slice(0, 50)), [name]: name === 'הדפסה' ? t.pdfPages(printPdf).map(x => x.slice(0, 80)) : t.pdfPages(pdf).map(x => x.slice(0, 80)) });
             if (d && known) t.known(label, `${d} (${known})`);
