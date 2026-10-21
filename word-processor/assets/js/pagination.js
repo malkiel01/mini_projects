@@ -54,6 +54,13 @@ export const Pages = Extension.create({
                         raf = 0;
                         // בזמן הדפסה הדף משנה גודל — לא מודדים: מדפיסים בדיוק את העמודים שעל המסך
                         if (window.matchMedia?.('print').matches) return;
+                        // מדידה מחדש מבחוץ: קודם בלי הרווחים הקיימים. רווח באמצע פסקה שנקבע במדידה ישנה (למשל לפני שהגופן
+                        // נטען) מפצל את השורה שלו — ואז המדידה "מאשרת" את עצמה ונתקעת על שבירה שגויה. באותו פריים, בלי הבהוב
+                        if (clean) {
+                            clean = false;
+                            if (pagesKey.getState(view.state).deco !== DecorationSet.empty)
+                                view.dispatch(view.state.tr.setMeta(pagesKey, { deco: DecorationSet.empty, sig: '' }).setMeta('addToHistory', false));
+                        }
                         const res = measure(view, ext.options.geometry());
                         const cur = pagesKey.getState(view.state);
                         if (res.sig === cur.sig) { ext.storage.pages = res.pages; ext.options.onLayout(res); return; }
@@ -87,7 +94,8 @@ export const Pages = Extension.create({
                     });
                 };
                 // מדידה מחדש מבחוץ (הגדרות עמוד, גופן שנטען, שינוי רוחב) — פותחת מחדש את הבחירה
-                const fresh = () => { tried = new Map(); settled = false; schedule(); };
+                let clean = false;
+                const fresh = () => { tried = new Map(); settled = false; clean = true; schedule(); };
                 ext.storage.schedule = fresh;
                 // שינוי גובה — בדרך כלל הרווחים שלנו; שינוי רוחב — שבירת שורות חדשה, מתחילים מחדש
                 let width = 0;
@@ -404,8 +412,8 @@ function lines(view, dom, node, pos, brk, logical, rr, zoom, units, heading) {
     const walker = document.createTreeWalker(dom, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, {
         acceptNode: n => {
             if (n.nodeType === 1) {
-                // רווחים שלנו, ותמונות שאינן בשורה (צפות / מאחורי / לפני) — לא שורות טקסט
-                if (n.classList.contains('wp-break') || /\bwrap-(square|tight|behind|front)\b/.test(n.className)) return NodeFilter.FILTER_REJECT;
+                // רווחים שלנו (גם אזור ההערות שלפני מעבר עמוד), ותמונות שאינן בשורה (צפות / מאחורי / לפני) — לא שורות טקסט
+                if (n.classList.contains('wp-break') || n.classList.contains('wp-fn-area') || /\bwrap-(square|tight|behind|front)\b/.test(n.className)) return NodeFilter.FILTER_REJECT;
                 if (n.classList.contains('wp-img')) { const r = n.getBoundingClientRect(); if (r.height) rects.push([r.top, r.bottom]); return NodeFilter.FILTER_REJECT; }
                 return n.tagName === 'IMG' || n.tagName === 'BR' ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
             }
@@ -413,9 +421,19 @@ function lines(view, dom, node, pos, brk, logical, rr, zoom, units, heading) {
         },
     });
     const range = document.createRange();
+    // לכל מלבן של טקסט — גם הגובה המלא של השורה שלו (line-height של הגופן שלו, ממורכז סביב האותיות). כך גם
+    // בשורה עם כמה גדלי גופן הגבול בין השורות הוא הגבול האמיתי
+    const lh = new Map();
+    const leadOf = el => {
+        if (!lh.has(el)) { const cs = getComputedStyle(el); lh.set(el, parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.2); }
+        return lh.get(el) * zoom;
+    };
     for (let n = walker.nextNode(); n; n = walker.nextNode()) {
-        if (n.nodeType === 3) { range.selectNodeContents(n); for (const r of range.getClientRects()) if (r.height) rects.push([r.top, r.bottom]); }
-        else { const r = n.getBoundingClientRect(); if (r.height) rects.push([r.top, r.bottom]); }
+        if (n.nodeType === 3) {
+            range.selectNodeContents(n);
+            const L = leadOf(n.parentElement);
+            for (const r of range.getClientRects()) if (r.height) { const hl = (L - r.height) / 2; rects.push([r.top, r.bottom, r.top - hl, r.bottom + hl]); }
+        } else { const r = n.getBoundingClientRect(); if (r.height) rects.push([r.top, r.bottom, r.top, r.bottom]); }
     }
     const box = dom.getBoundingClientRect();
     const blockTop = logical((box.top - rr.top) / zoom);
@@ -427,10 +445,12 @@ function lines(view, dom, node, pos, brk, logical, rr, zoom, units, heading) {
     // קיבוץ לשורות: מלבן שמתחיל לפני סוף השורה הנוכחית (פחות חצי גובה) — באותה שורה
     rects.sort((a, b) => a[0] - b[0]);
     const ls = [];
-    for (const [t, b] of rects) {
+    for (const [t, b, et, eb] of rects) {
         const last = ls[ls.length - 1];
-        if (last && t < last[1] - (last[1] - last[0]) / 2) { last[1] = Math.max(last[1], b); last[0] = Math.min(last[0], t); }
-        else ls.push([t, b]);
+        if (last && t < last[1] - (last[1] - last[0]) / 2) {
+            last[1] = Math.max(last[1], b); last[0] = Math.min(last[0], t);
+            last[2] = Math.min(last[2], et); last[3] = Math.max(last[3], eb);
+        } else ls.push([t, b, et, eb]);
     }
     if (ls.length < 2 || heading) {
         units.push({ top: blockTop, bottom: blockBottom, pos: brk, kind: 'block', para, heading, first: true, last: true });
@@ -438,9 +458,14 @@ function lines(view, dom, node, pos, brk, logical, rr, zoom, units, heading) {
     }
     const start = pos + 1;
     const end = pos + node.nodeSize - 1;
-    ls.forEach(([t, b], k) => {
-        const top = k === 0 ? blockTop : logical((t - rr.top) / zoom);
-        const bottom = k === ls.length - 1 ? blockBottom : logical((b - rr.top) / zoom);
+    // שורה = כל גובה השורה (line-height), לא רק גובה האותיות — כך מודד גם ה-PDF מהשרת, ושורה שרק האותיות שלה
+    // נכנסות בתחתית העמוד עוברת לעמוד הבא. הגבול בין שתי שורות: בין תחתית השורה המלאה של האחת לראש של הבאה
+    // (כל קצה מומר ללוגי לבד: בין שתי השורות יכול לשבת רווח של מעבר עמוד)
+    const lg = y => logical((y - rr.top) / zoom);
+    const cut = k => (lg(ls[k][3]) + lg(ls[k + 1][2])) / 2;
+    ls.forEach(([t], k) => {
+        const top = k === 0 ? blockTop : cut(k - 1);
+        const bottom = k === ls.length - 1 ? blockBottom : cut(k);
         // המיקום במסמך נחשב רק לשורה שבאמת נשברת (חיפוש בינארי — יקר במסמך ארוך)
         const u = { top, bottom, kind: 'line', para, heading: false, first: k === 0, last: k === ls.length - 1 };
         if (k === 0) u.pos = brk;

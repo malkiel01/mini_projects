@@ -33,8 +33,7 @@ for ($i = 1; $i <= 45; $i++) {
     if ($i % 8 === 0) $c[] = $hd("פרק $i", 2);
     $c[] = $p("$i. " . $sentence(20, 90));
 }
-$corpus['long-text'] = ['title' => 'טקסט ארוך', 'json' => $doc($c), 'page' => null,
-    'known_pdf' => 'שורה בתחתית עמוד: העורך מודד שורה לפי גובה האותיות ולא לפי גובה השורה המלא, וה-PDF שובר שורה אחת קודם — לטיפול: יישור מנוע ה-PDF והעורך'];
+$corpus['long-text'] = ['title' => 'טקסט ארוך', 'json' => $doc($c), 'page' => null];
 
 // 2. רשימות ממוספרות ותבליטים, כולל מקוננות
 $c = [$hd('רשימות', 1)];
@@ -57,8 +56,7 @@ for ($s = 1; $s <= 4; $s++) {
     for ($i = 0; $i < 5 + $s; $i++) $c[] = $p($sentence(15, 60), ['lineHeight' => [1, 1.15, 1.5, 2][$s - 1], 'spaceAfter' => 6 * $s]);
     if ($s < 4) $c[] = ['type' => 'pageBreak'];
 }
-$corpus['breaks-spacing'] = ['title' => 'מעברי עמוד וריווח', 'json' => $doc($c), 'page' => null,
-    'known_pdf' => 'ריווח שורות 2: ה-PDF עוטף שורה מילה אחת לפני העורך — לטיפול: יישור מנוע ה-PDF והעורך'];
+$corpus['breaks-spacing'] = ['title' => 'מעברי עמוד וריווח', 'json' => $doc($c), 'page' => null];
 
 // 4. גדלי גופן שונים בתוך פסקאות
 $c = [$hd('גדלים', 1)];
@@ -71,8 +69,7 @@ $corpus['font-sizes'] = ['title' => 'גדלי גופן', 'json' => $doc($c), 'pa
 $c = [$hd('לרוחב', 1)];
 for ($i = 0; $i < 30; $i++) $c[] = $p($sentence(25, 80));
 $corpus['landscape'] = ['title' => 'Letter לרוחב', 'json' => $doc($c),
-    'page' => ['size' => 'Letter', 'orientation' => 'landscape', 'margins' => ['top' => 15, 'bottom' => 15, 'right' => 15, 'left' => 15], 'font' => ['family' => 'Frank Ruehl', 'size' => 13]],
-    'known_pdf' => 'Frank Ruehl 13: ה-PDF יוצא עמוד ארוך יותר מהעורך — לטיפול: יישור מנוע ה-PDF והעורך'];
+    'page' => ['size' => 'Letter', 'orientation' => 'landscape', 'margins' => ['top' => 15, 'bottom' => 15, 'right' => 15, 'left' => 15], 'font' => ['family' => 'Frank Ruehl', 'size' => 13]]];
 
 // 6. טבלה ארוכה עם שורת כותרת
 $rows = [['type' => 'tableRow', 'content' => array_map(fn($h) => ['type' => 'tableHeader', 'content' => [$p($h)]], ['סעיף', 'תיאור', 'סכום'])]];
@@ -110,8 +107,7 @@ for ($i = 1; $i <= 30; $i++) {
     if ($i % 3 === 0) { $parts[] = $fn("הערה $i: " . $sentence(4, $i % 2 ? 40 : 10)); $parts[] = $text(' ' . $sentence(5, 20)); }
     $c[] = ['type' => 'paragraph', 'content' => $parts];
 }
-$corpus['footnotes'] = ['title' => 'הערות שוליים', 'json' => $doc($c), 'page' => null,
-    'known_pdf' => 'ההערות בתחתית העמוד גם ב-PDF; השבירה זזה בפסקה — אותם הבדלי מדידת שורה כמו ב"טקסט ארוך" — לטיפול: יישור מנוע ה-PDF והעורך'];
+$corpus['footnotes'] = ['title' => 'הערות שוליים', 'json' => $doc($c), 'page' => null];
 
 foreach ($corpus as $name => $d) {
     file_put_contents(__DIR__ . "/$name.json", json_encode($d, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
