@@ -193,7 +193,7 @@ final class PdfLayout
     }
 
     /** הערה: מספר עילי + הטקסט, 10 נק', ברוחב הטקסט — הגובה מחושב מראש (לעימוד). */
-    private function footnote(string $text, bool $rtl): array
+    private function footnote(array $attrs, bool $rtl): array
     {
         $n = ++$this->fnSeq;
         $base = $this->blockStyle('normal');
@@ -203,7 +203,11 @@ final class PdfLayout
         $sup['va'] = 'sup';
         $atoms = [];
         foreach (mb_str_split((string)$n) as $ch) $atoms[] = $this->charAtom(mb_ord($ch), $sup);
-        foreach (mb_str_split(' ' . $text) as $ch) $atoms[] = $this->charAtom(mb_ord($ch), $st);
+        $atoms[] = $this->charAtom(0x20, $st);
+        foreach (fn_inline($attrs) as $t) {
+            $cs = $this->charStyle($base, $t['marks'] ?? []);
+            foreach (mb_str_split($t['text']) as $ch) $atoms[] = $this->charAtom(mb_ord($ch), $cs);
+        }
         $levels = bidi_levels(array_column($atoms, 'cp'), $rtl ? 1 : 0);
         foreach ($atoms as $i => &$at) $at['lvl'] = $levels[$i] ?? ($rtl ? 1 : 0);
         unset($at);
@@ -366,7 +370,7 @@ final class PdfLayout
                 $atoms[] = ['br' => true, 'cp' => 0x0A, 'w' => 0];
             } elseif ($ct === 'footnote') {
                 // הסימן: המספר בכתב עילי; ההערה עצמה — נמדדת עכשיו ותצויר בתחתית העמוד של השורה
-                $note = $this->footnote(trim((string)($c['attrs']['text'] ?? '')), $rtl);
+                $note = $this->footnote($c['attrs'] ?? [], $rtl);
                 $sup = $this->charStyle($base, []);
                 $sup['va'] = 'sup';
                 foreach (mb_str_split((string)$note['n']) as $k => $ch) {

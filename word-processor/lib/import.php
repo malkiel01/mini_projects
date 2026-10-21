@@ -251,7 +251,7 @@ final class DocxCtx
     private array $styles = [];    // styleId => 'title'|'h1'..
     private array $numFmt = [];    // numId => [ilvl => fmt]
     private array $rels = [];      // rId => target
-    private array $footnotes = []; // id => טקסט ההערה (word/footnotes.xml)
+    private array $footnotes = []; // id => attrs של ההערה: text, content (word/footnotes.xml)
     private $read;
 
     public function __construct(callable $read, private string $docId)
@@ -281,9 +281,31 @@ final class DocxCtx
         if ($s = $read('word/footnotes.xml')) {
             $xp = $this->xp(xml_dom($s));
             foreach ($xp->query('//w:footnote') as $f) {
-                $text = '';
-                foreach ($xp->query('.//w:t', $f) as $t) $text .= $t->textContent;
-                $this->footnotes[$f->getAttributeNS(W, 'id')] = trim($text);
+                // הטקסט עם העיצוב שמותר בהערה (fn_inline); ריצת המספר (footnoteRef) — לא חלק מהטקסט
+                $inline = [];
+                foreach ($xp->query('.//w:p', $f) as $pi => $p) {
+                    if ($pi > 0) $inline[] = ['text' => ' ', 'marks' => []];
+                    foreach ($xp->query('w:r | w:hyperlink/w:r', $p) as $r) {
+                        if ($xp->query('w:footnoteRef', $r)->length) continue;
+                        $t = '';
+                        foreach ($xp->query('w:t | w:tab', $r) as $k) $t .= $k->localName === 'tab' ? ' ' : $k->textContent;
+                        if ($t === '') continue;
+                        $marks = array_values(array_filter($this->runMarks($r, $xp), fn($m) => in_array($m['type'], FN_MARKS, true)));
+                        $marks = array_map(fn($m) => ['type' => $m['type']], $marks);
+                        $last = count($inline) - 1;
+                        if ($last >= 0 && $inline[$last]['marks'] == $marks) $inline[$last]['text'] .= $t;
+                        else $inline[] = ['text' => $t, 'marks' => $marks];
+                    }
+                }
+                if ($inline) {
+                    $inline[0]['text'] = ltrim($inline[0]['text']);
+                    $inline[count($inline) - 1]['text'] = rtrim($inline[count($inline) - 1]['text']);
+                }
+                $inline = array_values(array_filter($inline, fn($x) => $x['text'] !== ''));
+                $text = implode('', array_column($inline, 'text'));
+                $styled = (bool)array_filter($inline, fn($x) => $x['marks']);
+                $this->footnotes[$f->getAttributeNS(W, 'id')] = ['text' => $text, 'content' => $styled
+                    ? array_map(fn($x) => ['type' => 'text', 'text' => $x['text']] + ($x['marks'] ? ['marks' => $x['marks']] : []), $inline) : null];
             }
         }
         if ($s = $read('word/_rels/document.xml.rels')) {
@@ -404,7 +426,7 @@ final class DocxCtx
                         if ($img = $this->image($k)) $inline[] = $img;
                         break;
                     case 'footnoteReference':
-                        $inline[] = ['type' => 'footnote', 'attrs' => ['text' => $this->footnotes[$k->getAttributeNS(W, 'id')] ?? '']];
+                        $inline[] = ['type' => 'footnote', 'attrs' => $this->footnotes[$k->getAttributeNS(W, 'id')] ?? ['text' => '', 'content' => null]];
                         break;
                 }
             }

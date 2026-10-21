@@ -106,6 +106,16 @@ html.wp-no-page-zoom, html.wp-no-page-zoom body, .wp-editor, .wp-stage { touch-a
 /* line-height: 0 — המספר העילי לא מגביה את השורה (כמו ב-PDF מהשרת) */
 .wp-fn-part { overflow: hidden; }   /* חלק של הערה שנמשכת לעמוד הבא (pagination.js) */
 .wp-fn-note > sup { font-size: .75em; line-height: 0; }
+/* עיצוב בתוך ההערה: עילי ותחתי לא מגביהים את השורה (כמו ב-PDF מהשרת: 75%) */
+.wp-fn-note sup, .wp-fn-note sub { font-size: .75em; line-height: 0; }
+/* חלון ההערה: עורך קטן עם עיצוב תווים */
+.fn-tools { display: flex; gap: 4px; flex-wrap: wrap; margin-block: 4px; }
+.fn-tool { min-inline-size: 36px; min-block-size: 36px; border: 1px solid var(--line, #ccd); border-radius: 6px; background: var(--surface, #fff); color: inherit; cursor: pointer; font: inherit; }
+.fn-tool.on { background: #e3e9f6; border-color: #2d4a8a; }
+.fn-edit .fn-edit-doc { min-block-size: 5.5em; padding: 8px 10px; border: 1px solid var(--line, #ccd); border-radius: 6px; outline: none; background: #fff; color: #000;
+    font-size: 1rem; line-height: 1.5; white-space: pre-wrap; text-align: start; }
+.fn-edit .fn-edit-doc:focus { border-color: #2d4a8a; box-shadow: 0 0 0 2px rgba(45, 74, 138, .2); }
+.fn-edit .fn-edit-doc p { margin: 0; }
 .wp-fn-measure { position: absolute; visibility: hidden; top: 0; left: 0; pointer-events: none; direction: rtl; }
 .wp-doc tr.wp-fn-row > td { padding: 0; border: none; background: none; }
 .wp-break { display: block; pointer-events: none; user-select: none; }
