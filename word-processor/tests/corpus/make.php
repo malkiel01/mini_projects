@@ -69,7 +69,10 @@ $corpus['font-sizes'] = ['title' => 'גדלי גופן', 'json' => $doc($c), 'pa
 $c = [$hd('לרוחב', 1)];
 for ($i = 0; $i < 30; $i++) $c[] = $p($sentence(25, 80));
 $corpus['landscape'] = ['title' => 'Letter לרוחב', 'json' => $doc($c),
-    'page' => ['size' => 'Letter', 'orientation' => 'landscape', 'margins' => ['top' => 15, 'bottom' => 15, 'right' => 15, 'left' => 15], 'font' => ['family' => 'Frank Ruehl', 'size' => 13]]];
+    'page' => ['size' => 'Letter', 'orientation' => 'landscape', 'margins' => ['top' => 15, 'bottom' => 15, 'right' => 15, 'left' => 15], 'font' => ['family' => 'Frank Ruehl', 'size' => 13]],
+    // מקומית — זהה. ב-CI הדפדפן מכניס לשורה אחת בפסקה 22 מילה שחורגת ב-0.6px (943.2 מתוך 942.6), הפסקה קצרה בשורה,
+    // והפסקה האחרונה נכנסת בעמוד 3 (חסרות לה 2.5 נק'). עיגול רוחב שתלוי במחשב — לא באג בעימוד
+    'known_pdf' => 'שורה גבולית (חריגה של 0.6px) — במחשבים מסוימים הדפדפן מכניס אותה ושובר אחרת'];
 
 // 6. טבלה ארוכה עם שורת כותרת
 $rows = [['type' => 'tableRow', 'content' => array_map(fn($h) => ['type' => 'tableHeader', 'content' => [$p($h)]], ['סעיף', 'תיאור', 'סכום'])]];
