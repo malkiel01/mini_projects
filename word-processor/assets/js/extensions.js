@@ -191,6 +191,34 @@ export const SectionBreak = Node.create({
     },
 });
 
+/**
+ * הערת שוליים: סימן בטקסט (מספר עילי, ממוספר לבד לפי הסדר במסמך — CSS counter), והטקסט שלה ב-attrs.text.
+ * ההערה עצמה מוצגת בתחתית העמוד שבו הסימן (pagination.js) — גם בהדפסה. עריכה — בלחיצה על הסימן או על ההערה.
+ */
+export const Footnote = Node.create({
+    name: 'footnote',
+    group: 'inline',
+    inline: true,
+    atom: true,
+    selectable: true,
+    addAttributes() {
+        return {
+            text: { default: '', parseHTML: el => el.getAttribute('data-text') || '', renderHTML: a => ({ 'data-text': a.text || '' }) },
+        };
+    },
+    parseHTML() {
+        return [{ tag: 'sup[data-footnote]' }];
+    },
+    renderHTML({ HTMLAttributes }) {
+        return ['sup', mergeAttributes(HTMLAttributes, { 'data-footnote': '', class: 'wp-fn-ref', contenteditable: 'false' })];
+    },
+    addCommands() {
+        return {
+            insertFootnote: text => ({ chain }) => chain().insertContent({ type: 'footnote', attrs: { text: text || '' } }).run(),
+        };
+    },
+});
+
 /** מילוי תא. */
 const cellAttrs = {
     background: {
@@ -423,7 +451,7 @@ export function extensions(extra = []) {
         Highlight.configure({ multicolor: true }),
         Subscript, Superscript,
         TextAlign.configure({ types: BLOCKS, alignments: ['right', 'center', 'left', 'justify'], defaultAlignment: null }),
-        ParagraphFormat, PageBreak, SectionBreak, WpImage, LetterSpacing,
+        ParagraphFormat, PageBreak, SectionBreak, Footnote, WpImage, LetterSpacing,
         Table.configure({ resizable: true, cellMinWidth: 30, allowTableNodeSelection: true }),
         TableRow, Cell, HeaderCell,
         DocAttrs,

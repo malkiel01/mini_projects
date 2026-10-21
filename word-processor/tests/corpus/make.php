@@ -103,6 +103,17 @@ for ($i = 0; $i < 6; $i++) $c[] = $p($sentence(20, 60));
 $corpus['sections'] = ['title' => 'מקטעים', 'json' => $doc($c), 'page' => null,
     'known_pdf' => 'מנוע ה-PDF עוד לא מכיר מקטעים (הכול בהגדרות העמוד הראשונות) — אב-טיפוס בשלב 0'];
 
+// 8. הערות שוליים (אב-טיפוס): פסקאות עם הערות קצרות וארוכות — חלקן בתחתית עמוד, שם ההערה דוחפת שורה לעמוד הבא
+$fn = fn(string $t) => ['type' => 'footnote', 'attrs' => ['text' => $t]];
+$c = [$hd('הערות שוליים', 1)];
+for ($i = 1; $i <= 30; $i++) {
+    $parts = [$text($sentence(15, 50))];
+    if ($i % 3 === 0) { $parts[] = $fn("הערה $i: " . $sentence(4, $i % 2 ? 40 : 10)); $parts[] = $text(' ' . $sentence(5, 20)); }
+    $c[] = ['type' => 'paragraph', 'content' => $parts];
+}
+$corpus['footnotes'] = ['title' => 'הערות שוליים', 'json' => $doc($c), 'page' => null,
+    'known_pdf' => 'מנוע ה-PDF עוד לא מציג הערות שוליים — אב-טיפוס בשלב 0'];
+
 foreach ($corpus as $name => $d) {
     file_put_contents(__DIR__ . "/$name.json", json_encode($d, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
     echo "$name.json\n";
