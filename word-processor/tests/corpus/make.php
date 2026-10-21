@@ -112,6 +112,15 @@ for ($i = 1; $i <= 30; $i++) {
 }
 $corpus['footnotes'] = ['title' => 'הערות שוליים', 'json' => $doc($c), 'page' => null];
 
+// 9. הערות ארוכות (8–12 שורות): הערה שלא נכנסת כולה בתחתית העמוד נמשכת לעמוד הבא (כמו ב-Word)
+$c = [$hd('הערות ארוכות', 1)];
+for ($i = 1; $i <= 24; $i++) {
+    $parts = [$text($sentence(15, 45))];
+    if ($i % 4 === 0) { $parts[] = $fn("הערה ארוכה $i: " . $sentence(90, 140)); $parts[] = $text(' ' . $sentence(5, 15)); }
+    $c[] = ['type' => 'paragraph', 'content' => $parts];
+}
+$corpus['long-footnotes'] = ['title' => 'הערות ארוכות', 'json' => $doc($c), 'page' => null];
+
 foreach ($corpus as $name => $d) {
     file_put_contents(__DIR__ . "/$name.json", json_encode($d, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
     echo "$name.json\n";

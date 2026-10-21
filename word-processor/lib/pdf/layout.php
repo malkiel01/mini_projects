@@ -158,16 +158,16 @@ final class PdfLayout
         $all = [];
         foreach ($chunks as $k => $nodes) {
             $this->setSection($sections[$k]);
-            foreach ($this->paginate($this->blocks($nodes, $this->cw, 0)) as $placed) $all[] = [$k, $placed];
+            foreach ($this->paginate($this->blocks($nodes, $this->cw, 0)) as $pi => $placed) $all[] = [$k, $placed, $this->pageNotes[$pi]];
         }
         $total = count($all);
-        foreach ($all as $i => [$k, $placed]) {
+        foreach ($all as $i => [$k, $placed, $notes]) {
             $this->setSection($sections[$k]);
             $pi = $this->pdf->addPage($this->W, $this->H);
             $c = new PdfCanvas($this->pdf, $pi, $this->H);
             $this->decorate($c, $i, $total);
             foreach ($placed as [$item, $y]) ($item->draw)($c, $this->ml, $this->mt + $y);
-            $this->drawNotes($c, array_merge(...array_map(fn($p) => $p[0]->notes, $placed)));
+            $this->drawNotes($c, $notes);
         }
         return $this->pdf->output($title);
     }
@@ -209,11 +209,16 @@ final class PdfLayout
         unset($at);
         $width = $this->cw;
         $lines = $this->breakLines($atoms, fn() => [0.0, $width], 0.0, $base, ['auto', 1.25]);
-        $h = array_sum(array_column($lines, 'h'));
         $dir = $rtl ? 1 : 0;
-        return ['n' => $n, 'h' => $h, 'draw' => function (PdfCanvas $c, float $x, float $y) use ($lines, $atoms, $dir, $rtl) {
-            foreach ($lines as $ln) { $this->drawLine($c, $ln, $atoms, $x, $y, $rtl ? 'right' : 'left', true, $dir); $y += $ln['h']; }
-        }];
+        // חלק מההערה (שורות from..to) — הערה ארוכה שנמשכת לעמוד הבא (paginate)
+        $part = function (int $from, int $to) use ($lines, $atoms, $dir, $rtl, $n, &$part) {
+            $slice = array_slice($lines, $from, $to - $from);
+            return ['n' => $n, 'h' => array_sum(array_column($slice, 'h')), 'lines' => array_column($lines, 'h'), 'part' => $part,
+                'draw' => function (PdfCanvas $c, float $x, float $y) use ($slice, $atoms, $dir, $rtl) {
+                    foreach ($slice as $ln) { $this->drawLine($c, $ln, $atoms, $x, $y, $rtl ? 'right' : 'left', true, $dir); $y += $ln['h']; }
+                }];
+        };
+        return $part(0, count($lines));
     }
 
     // ==================================================================
@@ -791,6 +796,9 @@ final class PdfLayout
     // ==================================================================
 
     /** @return array<int, array<int, array{0: FlowItem, 1: float}>> */
+    /** ההערות של כל עמוד מהעימוד האחרון (paginate) — לפי מספר העמוד בו. */
+    private array $pageNotes = [];
+
     private function paginate(array $items): array
     {
         $pages = [[]];
@@ -798,17 +806,42 @@ final class PdfLayout
         $H = $this->chH;
         $headers = [];   // טבלה → שורת הכותרת שלה
         $n = count($items);
-        $newPage = function () use (&$pages, &$y) { $pages[] = []; $y = 0.0; };
-        // הערות השוליים של העמוד הנוכחי תופסות מקום בתחתיתו — כולל של הפריט שבודקים
-        $pageNotes = function () use (&$pages) { return array_merge([], ...array_map(fn($p) => $p[0]->notes, $pages[count($pages) - 1])); };
+        // הערות השוליים של כל עמוד: ההמשך של הערה מהעמוד הקודם (carry), ואז של הפריטים שבו (split — הפריט שההערה
+        // האחרונה שלו נחתכה: בעמוד שלו רק השורות שנכנסו)
+        $carry = [[]];
+        $split = [];
+        $next = null;
+        $newPage = function () use (&$pages, &$y, &$carry, &$next) { $pages[] = []; $carry[] = $next ? [$next] : []; $next = null; $y = 0.0; };
+        $pageNotes = function () use (&$pages, &$carry, &$split) {
+            $p = count($pages) - 1;
+            return array_merge($carry[$p], ...array_map(fn($x) => $split[spl_object_id($x[0])] ?? $x[0]->notes, $pages[$p]));
+        };
+        $forced = false;
         for ($i = 0; $i < $n; $i++) {
             $it = $items[$i];
-            if ($it->kind === 'force') { $newPage(); continue; }
+            if ($it->kind === 'force') { $newPage(); $forced = false; continue; }
             if ($it->header && $it->table) $headers[$it->table] = $it;
             $H = $this->chH - $this->notesHeight(array_merge($pageNotes(), $it->notes));
             $fits = $y + $it->h <= $H + 0.5;
             $atTop = $y < 0.01;
-            $break = !$fits && !$atTop;
+            // הפריט נכנס אבל ההערה האחרונה שלו לא כולה (כמו ב-Word): השורות שנכנסות — כאן, והשאר בראש ההערות של הבא
+            if (!$fits && !$atTop && !$forced && $it->notes && isset($items[$i + 1]) && $items[$i + 1]->kind !== 'force') {
+                $before = array_merge($pageNotes(), array_slice($it->notes, 0, -1));
+                $last = end($it->notes);
+                $room = $this->chH - $y - $it->h - self::FN_SEP - array_sum(array_column($before, 'h'));
+                $k = 0;
+                $acc = 0.0;
+                foreach ($last['lines'] as $lh) { if ($acc + $lh > $room + 0.5) break; $acc += $lh; $k++; }
+                if ($k >= 1 && $k < count($last['lines'])) {
+                    $split[spl_object_id($it)] = array_merge(array_slice($it->notes, 0, -1), [($last['part'])(0, $k)]);
+                    $next = ($last['part'])($k, count($last['lines']));
+                    $pages[count($pages) - 1][] = [$it, $y];
+                    $y += $it->h;
+                    $forced = true;   // הפריט הבא — בעמוד חדש
+                    continue;
+                }
+            }
+            $break = (!$fits && !$atTop) || $forced;
             if (!$break && !$atTop) {
                 // שורה ראשונה של פסקה בתחתית העמוד, כשהשנייה כבר לא נכנסת — עוברת איתה
                 if ($it->kind === 'line' && $it->index === 0 && $it->count >= 2 && isset($items[$i + 1]) && $y + $it->h + $items[$i + 1]->h > $H + 0.5) $break = true;
@@ -820,7 +853,7 @@ final class PdfLayout
             if ($break) {
                 // כותרת שלפני — עוברת גם היא (אם אינה ראשונה בעמוד)
                 $moved = [];
-                while ($pages[count($pages) - 1] && end($pages[count($pages) - 1])[0]->keepNext && count($pages[count($pages) - 1]) > 1) {
+                while (!$forced && $pages[count($pages) - 1] && end($pages[count($pages) - 1])[0]->keepNext && count($pages[count($pages) - 1]) > 1) {
                     $moved[] = array_pop($pages[count($pages) - 1])[0];
                 }
                 $newPage();
@@ -830,9 +863,14 @@ final class PdfLayout
                     $y += $headers[$it->table]->h;
                 }
                 foreach (array_reverse($moved) as $m) { $pages[count($pages) - 1][] = [$m, $y]; $y += $m->h; }
+                $forced = false;
             }
             $pages[count($pages) - 1][] = [$it, $y];
             $y += $it->h;
+        }
+        $this->pageNotes = [];
+        foreach ($pages as $p => $placed) {
+            $this->pageNotes[$p] = array_merge($carry[$p], ...array_map(fn($x) => $split[spl_object_id($x[0])] ?? $x[0]->notes, $placed));
         }
         return $pages;
     }

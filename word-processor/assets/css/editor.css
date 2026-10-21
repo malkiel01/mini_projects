@@ -104,6 +104,7 @@ html.wp-no-page-zoom, html.wp-no-page-zoom body, .wp-editor, .wp-stage { touch-a
 .wp-fn-note, .wp-fn-measure .wp-fn-note { font-size: 10pt; line-height: 1.25; text-align: start; font-weight: 400; font-style: normal; text-decoration: none; color: #000; }
 .wp-fn-area .wp-fn-note { cursor: pointer; }
 /* line-height: 0 — המספר העילי לא מגביה את השורה (כמו ב-PDF מהשרת) */
+.wp-fn-part { overflow: hidden; }   /* חלק של הערה שנמשכת לעמוד הבא (pagination.js) */
 .wp-fn-note > sup { font-size: .75em; line-height: 0; }
 .wp-fn-measure { position: absolute; visibility: hidden; top: 0; left: 0; pointer-events: none; direction: rtl; }
 .wp-doc tr.wp-fn-row > td { padding: 0; border: none; background: none; }
