@@ -454,6 +454,13 @@ try {
         out(['ok' => true]);
     }
 
+    /* ── מצב העדכון במכשיר (שלב 9) — ההורה רואה עדכון שנכשל או נתקע ── */
+    if ($do === 'update_state') {
+        $user = requireUser();
+        if (!updateStateSave((int) $user['device_row_id'], body())) bad('מצב לא מוכר', 'bad_state');
+        out(['ok' => true]);
+    }
+
     if ($do === 'heartbeat') {
         $user = requireUser();
         $b = body()['batches'] ?? null;

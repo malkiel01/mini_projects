@@ -4,7 +4,9 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInfo
 import android.content.pm.PackageInstaller
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -12,6 +14,7 @@ import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.MessageDigest
 import java.util.concurrent.Executors
 
 /**
@@ -26,6 +29,12 @@ import java.util.concurrent.Executors
  *
  * הבדיקה רצה גם כשהאפליקציה סגורה: UpdateJob, בכל פעם שיש רשת (לפחות כל 15 דקות).
  * החתימה קבועה, ולכן ההתקנה היא מעל הקיים: החיבור וההגדרות נשמרים.
+ *
+ * סקירה, 2026-10-20 — שלב 9:
+ *   • הקובץ נבדק לפני שהגבלות ההתקנה מוסרות (UpdateMath.checkArchive): חבילה, גרסה, חתימה, sha256.
+ *   • ההגבלות חוזרות בכל כישלון — חריגה, קובץ שנדחה, סטטוס כישלון — ותוך 15 דקות גם כשהתהליך נהרג
+ *     (Enforcer.apply, ‏recover). קודם רק סטטוס כישלון שהגיע החזיר אותן.
+ *   • כל שלב מדווח לשרת (Api.updateState) — ההורה רואה עדכון שנתקע או נכשל, ולמה.
  */
 object Updater {
 
@@ -41,10 +50,30 @@ object Updater {
         if (code > BuildConfig.VERSION_CODE && url.startsWith("https://")) {
             store.updateCode = code
             store.updateUrl = url
+            store.updateSha = u?.optString("sha256").orEmpty()
         } else if (u == null || code <= BuildConfig.VERSION_CODE) {
             store.updateCode = 0
             UpdateJob.clear(ctx)
         }
+        recover(ctx)
+    }
+
+    /**
+     * מחזיר את הגבלות ההתקנה כשהחלון פג, או כשהעדכון כבר הותקן (הגרסה הזו היא החדשה). נקרא מכל
+     * סנכרון (note) ומשירות הנגישות — גם בלי רשת. בגרסה החדשה מדווח גם "הושלם".
+     */
+    fun recover(ctx: Context) {
+        val store = Store(ctx)
+        if (!UpdateMath.shouldRestore(store.installOpenUntil, System.currentTimeMillis(), required(ctx))) return
+        Enforcer.allowInstall(ctx, false)
+        Trace.log("update.restore", "required=" + required(ctx))
+        if (!required(ctx)) report(ctx, "done", BuildConfig.VERSION_CODE)
+    }
+
+    /** דיווח להורה — הכי טוב שאפשר: בלי רשת הוא פשוט לא מגיע, והמצב הבא יחליף אותו. */
+    private fun report(ctx: Context, state: String, target: Int, error: String = "") {
+        val store = Store(ctx)
+        if (store.isLoggedIn) try { Api.updateState(store.token, state, target, error) } catch (e: Exception) {}
     }
 
     /** האם האפליקציה נעולה עד עדכון. */
@@ -66,14 +95,26 @@ object Updater {
         if (!required(app) || running) return
         running = true
         val say = { t: String -> progress?.let { p -> main.post { p(t) } } }
+        val target = store.updateCode
         pool.execute {
             try {
                 say("מוריד את הגרסה החדשה…")
-                val apk = download(app, store.updateUrl, store.updateCode) { pct -> say("מוריד… $pct%") }
+                report(app, "downloading", target)
+                val apk = download(app, store.updateUrl, target) { pct -> say("מוריד… $pct%") }
+                report(app, "verifying", target)
+                val bad = verify(app, apk, target, store.updateSha)
+                if (bad.isNotEmpty()) {
+                    apk.delete()   // לא לנסות שוב את אותו קובץ
+                    throw IllegalStateException(bad)
+                }
                 say("מתקין…")
+                report(app, "installing", target)
                 install(app, apk)
             } catch (e: Exception) {
+                // כל כישלון — גם אחרי שההגבלות הוסרו (יצירת סשן, כתיבה, commit) — מחזיר אותן מיד.
+                Enforcer.allowInstall(app, false)
                 Trace.log("update.fail", e.javaClass.simpleName + ": " + e.message)
+                report(app, "failed", target, e.message ?: e.javaClass.simpleName)
                 say("העדכון נכשל — בודקים שיש אינטרנט, ולוחצים שוב.")
             } finally {
                 running = false
@@ -112,6 +153,42 @@ object Updater {
         } finally { conn.disconnect() }
     }
 
+    /** ‏"" — הקובץ הוא העדכון שהוצע (UpdateMath.checkArchive); אחרת הסיבה. */
+    private fun verify(ctx: Context, apk: File, offered: Int, expectSha: String): String {
+        val pm = ctx.packageManager
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) PackageManager.GET_SIGNING_CERTIFICATES
+                    else @Suppress("DEPRECATION") PackageManager.GET_SIGNATURES
+        val archive = try { pm.getPackageArchiveInfo(apk.path, flags) } catch (e: Exception) { null }
+        val mine = try { pm.getPackageInfo(ctx.packageName, flags) } catch (e: Exception) { null }
+        return UpdateMath.checkArchive(archive?.packageName, ctx.packageName, versionOf(archive), offered,
+            BuildConfig.VERSION_CODE, certsOf(archive, history = true), certsOf(mine, history = false),
+            sha256(apk), expectSha)
+    }
+
+    private fun versionOf(p: PackageInfo?): Long = when {
+        p == null -> 0L
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.P -> p.longVersionCode
+        else -> @Suppress("DEPRECATION") p.versionCode.toLong()
+    }
+
+    /** טביעות SHA-256 של החותמים. ‏history — כולל מפתחות קודמים בשושלת (קובץ חדש אחרי סבב מפתחות). */
+    private fun certsOf(p: PackageInfo?, history: Boolean): Set<String> {
+        if (p == null) return emptySet()
+        val sigs = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val si = p.signingInfo ?: return emptySet()
+            if (si.hasMultipleSigners() || !history) si.apkContentsSigners else si.signingCertificateHistory
+        } else @Suppress("DEPRECATION") p.signatures
+        return sigs?.map { hex(MessageDigest.getInstance("SHA-256").digest(it.toByteArray())) }?.toSet() ?: emptySet()
+    }
+
+    private fun sha256(f: File): String {
+        val md = MessageDigest.getInstance("SHA-256")
+        f.inputStream().use { val buf = ByteArray(64 * 1024); while (true) { val n = it.read(buf); if (n < 0) break; md.update(buf, 0, n) } }
+        return hex(md.digest())
+    }
+
+    private fun hex(b: ByteArray) = b.joinToString("") { "%02x".format(it) }
+
     private fun isZip(f: File) = f.inputStream().use { val b = ByteArray(2); it.read(b) == 2 && b[0] == 'P'.code.toByte() && b[1] == 'K'.code.toByte() }
 
     /**
@@ -144,15 +221,19 @@ object Updater {
         override fun onReceive(ctx: Context, intent: Intent) {
             when (val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)) {
                 PackageInstaller.STATUS_PENDING_USER_ACTION -> {
+                    report(ctx, "waiting_user", Store(ctx).updateCode)
                     @Suppress("DEPRECATION")
                     val confirm = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT) ?: return
                     try { ctx.startActivity(confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
                     catch (e: Exception) { Trace.log("update.confirm", e.message ?: "") }
                 }
+                // הצלחה: התהליך מוחלף. ההגבלות חוזרות בגרסה החדשה (recover, ‏Enforcer.apply), שגם מדווחת "הושלם".
                 PackageInstaller.STATUS_SUCCESS -> Trace.log("update.ok", "")
                 else -> {
                     Enforcer.allowInstall(ctx, false)
-                    Trace.log("update.status", "$status " + intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE))
+                    val msg = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE).orEmpty()
+                    Trace.log("update.status", "$status $msg")
+                    report(ctx, "failed", Store(ctx).updateCode, "התקנה: $status ${msg.take(80)}".trim())
                 }
             }
         }

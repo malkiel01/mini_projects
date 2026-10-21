@@ -15,7 +15,7 @@ require_once __DIR__ . '/lib/appversion.php';
 const APK_GITHUB = 'https://github.com/malkiel01/mini_projects/releases/download/guarded-browser-apk/migdalor.apk';
 
 /** הקובץ השמור לגרסה הזו, או '' אם לא הצלחנו להשיג אותו. */
-function apkFile(int $code): string {
+function apkFile(int $code, string $sha256 = ''): string {
     $dir = dataDir() . '/apk';
     $file = "$dir/migdalor-$code.apk";
     if (is_file($file)) return $file;
@@ -35,7 +35,10 @@ function apkFile(int $code): string {
         curl_close($ch);
         fclose($fh);
         // APK הוא קובץ ZIP: מתחיל ב-PK, ולא קטן ממגה. כל דבר אחר — דף שגיאה, לא אפליקציה.
-        if (!$ok || filesize($tmp) < 1_000_000 || file_get_contents($tmp, false, null, 0, 2) !== 'PK') {
+        // ‏sha256 מ-latest.json (שלב 9): הקובץ ב-Release מתחלף בכל בנייה, ובלי זה קובץ של בנייה אחרת היה נשמר
+        // בשם של הגרסה הזו — והמכשיר היה מקבל גרסה שונה ממה שהוצעה לו.
+        if (!$ok || filesize($tmp) < 1_000_000 || file_get_contents($tmp, false, null, 0, 2) !== 'PK'
+            || ($sha256 !== '' && !hash_equals($sha256, hash_file('sha256', $tmp)))) {
             @unlink($tmp);
             return '';
         }
@@ -52,7 +55,7 @@ function apkFile(int $code): string {
 try {
     // דקה ולא חצי שעה: מי שמוריד רגע אחרי בנייה חדשה — מקבל אותה, לא את הקודמת.
     $latest = latestApp(null, 60);
-    $file = $latest ? apkFile($latest['code']) : '';
+    $file = $latest ? apkFile($latest['code'], $latest['sha256'] ?? '') : '';
 } catch (Throwable $e) {
     error_log('migdalor download: ' . $e->getMessage());
     $file = '';

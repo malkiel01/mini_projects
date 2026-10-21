@@ -61,6 +61,8 @@ class AppGuardService : AccessibilityService() {
         val now = System.currentTimeMillis()
         if (now - lastUpdateCheck < 5 * 60_000 || !store.isLoggedIn) return
         lastUpdateCheck = now
+        // הגבלות ההתקנה שהוסרו לעדכון חוזרות גם בלי רשת — חלון שפג או עדכון שכבר הותקן (שלב 9).
+        Updater.recover(this)
         Api.policy(store.token) { r ->
             if (!r.ok || r.json == null) return@policy
             PolicySync.apply(this, r.json, "guard")

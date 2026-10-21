@@ -79,12 +79,20 @@ object Enforcer {
 
     /**
      * ההתקנה של עדכון (Updater) — "מקור לא ידוע" ו"התקנת אפליקציות" עלולים לחסום גם אותה, ולכן הם מוסרים
-     * לרגע לפני ההתקנה, וחוזרים בכישלון (Updater.InstallResult) או ב-apply הבא אחרי הגרסה החדשה.
+     * לרגע לפני ההתקנה, וחוזרים בכל כישלון (Updater.run, ‏InstallResult), אחרי הגרסה החדשה (Updater.recover),
+     * ובכל מקרה תוך UpdateMath.OPEN_MS — גם כשהתהליך נהרג באמצע (שלב 9).
      */
     fun allowInstall(ctx: Context, on: Boolean) {
+        // החלון נרשם לפני הפעולה: גם אם התהליך נהרג באמצע, ההחלה הבאה יודעת לסגור אותו (UpdateMath).
+        Store(ctx).installOpenUntil = if (on) System.currentTimeMillis() + UpdateMath.OPEN_MS else 0L
+        setInstall(ctx, on)
+    }
+
+    /** ההגבלות עצמן, בלי לגעת בחלון — apply משאיר פתוח חלון קיים בלי להאריך אותו. */
+    private fun setInstall(ctx: Context, on: Boolean) {
         if (!isOwner(ctx)) return
-        val admin = DeviceAdmin.component(ctx)
         val store = Store(ctx)
+        val admin = DeviceAdmin.component(ctx)
         val keys = listOf(UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES) +
             (if (on || blocked(store, "install_apps", false)) listOf(UserManager.DISALLOW_INSTALL_APPS) else emptyList())
         for (r in keys) trySet { if (on) dpm(ctx).clearUserRestriction(admin, r) else dpm(ctx).addUserRestriction(admin, r) }
@@ -109,6 +117,9 @@ object Enforcer {
         trySet { dpm.setUninstallBlocked(admin, ctx.packageName, true) }
         for (r in ALWAYS) trySet { dpm.addUserRestriction(admin, r) }
         val settings = applySettings(ctx, store)
+        // עדכון באמצע התקנה — ההחלה לא סוגרת לו את ההתקנה מתחת לרגליים. חלון שפג — כבר נסגר כאן (ALWAYS).
+        if (UpdateMath.installOpen(store.installOpenUntil, System.currentTimeMillis())) setInstall(ctx, true)
+        else store.installOpenUntil = 0L
 
         if (!store.appsManage) {
             unsuspendAll(ctx, store)
