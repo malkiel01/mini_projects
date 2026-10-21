@@ -8,6 +8,7 @@ export default async function (t) {
     await p.click('button[aria-label="הערת שוליים (Ctrl+Alt+F)"]');
     await p.fill('dialog textarea', 'זו ההערה הראשונה');
     await p.click('dialog button[type=submit]');
+    await p.waitForSelector('dialog', { state: 'detached' });
     await p.keyboard.type(' ועוד טקסט');
     await p.keyboard.press('Control+Alt+KeyF');
     await p.fill('dialog textarea', 'הערה שנייה');

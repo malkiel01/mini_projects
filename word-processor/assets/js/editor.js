@@ -566,6 +566,9 @@ export function createWordEditor(root, opts) {
             if (!node) {
                 if (!text) return;
                 ed.chain().focus().setTextSelection(sel.to).insertFootnote(text).run();
+                // סגירת החלון מחזירה את המיקוד למה שהיה לפניו (לפעמים הסמן קופץ לפני ההערה) — מחזירים אחרי ההערה
+                const after = sel.to + 1;
+                setTimeout(() => ed.chain().focus().setTextSelection(Math.min(after, ed.state.doc.content.size)).run(), 0);
             } else if (!text) {
                 ed.chain().focus().command(({ tr }) => { tr.delete(pos, pos + node.nodeSize); return true; }).run();
             } else {
