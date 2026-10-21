@@ -83,7 +83,7 @@ function policyPayload(array $user): array {
     // שחרור (SPEC סעיף 5): המינוי של ההורה הסתיים — המכשיר פותח הכול, אבל רק מול אסימון
     // חתום (סעיף 13). "אין חיבור" אינו "פג תוקף": בלי האסימון החתום הזה הוא ממשיך לאכוף.
     $acct    = (int) ($user['account_id'] ?? 0);
-    $release = ($state['code'] ?? '') === 'released' ? releaseToken($acct) : null;
+    $release = ($state['code'] ?? '') === 'released' ? releaseToken($acct, $uid) : null;
 
     $quota = (int) $policy['daily_quota_min'];
 

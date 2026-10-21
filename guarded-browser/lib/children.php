@@ -108,19 +108,41 @@ function pairCreate(int $childId): array {
 function pairRedeem(string $code, string $deviceName, string $deviceId): array {
     $code = cleanPairCode($code);
     if (!preg_match('/^[a-z0-9]{8}$/', $code)) return [null, '', 'הקוד לא תקין — 8 אותיות וספרות'];
-    $row = one("SELECT * FROM pair_codes WHERE code_hash = ? AND used_at = '' AND expires_at > ?",
-               [hash('sha256', $code), nowIso()]);
-    if (!$row) return [null, '', 'הקוד לא נמצא או שפג תוקפו. בקשו מההורה קוד חדש.'];
-    $u = one('SELECT * FROM users WHERE id = ?', [$row['child_id']]);
-    if (!$u) return [null, '', 'הקוד לא נמצא או שפג תוקפו. בקשו מההורה קוד חדש.'];
-    if ($u['status'] !== 'active') return [null, '', 'הילד הזה מושהה. ההורה צריך להחזיר אותו קודם.'];
-    if ($block = accountBlock($u)) return [null, '', $block[1]];
-    if (accountDeviceQuotaFull((int) $u['account_id'], $deviceId)) {
-        return [null, '', 'הגעתם למספר המכשירים המרבי בחשבון. נתקו מכשיר ישן באפליקציית ההורה.'];
+    $missing = 'הקוד לא נמצא או שפג תוקפו. בקשו מההורה קוד חדש.';
+    $hash = hash('sha256', $code);
+
+    /*
+     * תפיסה אטומית (סקירה, 2026-10-20 — שלב 8). קודם: SELECT ‏used_at='' ← רישום מכשיר ← UPDATE. שתי בקשות
+     * בו-זמנית עם אותו קוד עברו שתיהן את ה-SELECT, וקוד חד-פעמי צימד שני מכשירים. עכשיו ה-UPDATE המותנה
+     * הוא הצעד הראשון בטרנזקציה: רק בקשה אחת משנה שורה, והשנייה מחכה לנעילה ורואה קוד משומש. כישלון
+     * בדיקה (ילד מושהה, מכסת מכשירים) מבטל את הטרנזקציה — והקוד נשאר תקף לניסיון אחרי התיקון.
+     */
+    $pdo = db();
+    $pdo->beginTransaction();
+    try {
+        $claim = $pdo->prepare("UPDATE pair_codes SET used_at = ? WHERE code_hash = ? AND used_at = '' AND expires_at > ?");
+        $claim->execute([nowIso(), $hash, nowIso()]);
+        $err = '';
+        $u = null;
+        if ($claim->rowCount() !== 1) $err = $missing;
+        else {
+            $row = one('SELECT * FROM pair_codes WHERE code_hash = ?', [$hash]);
+            $u = one('SELECT * FROM users WHERE id = ?', [$row['child_id']]);
+            if (!$u) $err = $missing;
+            elseif ($u['status'] !== 'active') $err = 'הילד הזה מושהה. ההורה צריך להחזיר אותו קודם.';
+            elseif ($block = accountBlock($u)) $err = $block[1];
+            elseif (accountDeviceQuotaFull((int) $u['account_id'], $deviceId)) {
+                $err = 'הגעתם למספר המכשירים המרבי בחשבון. נתקו מכשיר ישן באפליקציית ההורה.';
+            }
+        }
+        if ($err !== '') { $pdo->rollBack(); return [null, '', $err]; }
+        $token = registerDevice((int) $u['id'], $deviceName, $deviceId, (int) policyFor((int) $u['id'])['max_devices']);
+        $pdo->commit();
+        return [$u, $token, ''];
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        throw $e;
     }
-    $token = registerDevice((int) $u['id'], $deviceName, $deviceId, (int) policyFor((int) $u['id'])['max_devices']);
-    q('UPDATE pair_codes SET used_at = ? WHERE code_hash = ?', [nowIso(), $row['code_hash']]);
-    return [$u, $token, ''];
 }
 
 /* ── מדיניות ───────────────────────────────────────────────────── */

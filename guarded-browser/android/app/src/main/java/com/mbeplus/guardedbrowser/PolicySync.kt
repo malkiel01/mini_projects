@@ -44,12 +44,14 @@ object PolicySync {
 
     private fun applyRelease(ctx: Context, store: Store, payload: JSONObject) {
         val token = payload.optString("release")
-        val valid = token.isNotEmpty() && Release.isReleaseFor(token, store.signPubKey, payload.optInt("account_id"))
+        // מול הזהות שהוצמדה בצימוד ומול השעון האמין — לא מול account_id של אותה תשובה.
+        val valid = token.isNotEmpty() && Release.isReleaseFor(token, store.signPubKey, store.accountId, store.childId,
+                                                                TrustedClock.now(store) / 1000)
         when (SyncRules.release(store.released, token.isNotEmpty(), valid)) {
             SyncRules.Release.ENTER -> {
                 store.released = true
                 Enforcer.release(ctx, store)
-                Trace.log("release", "acct=${payload.optInt("account_id")}")
+                Trace.log("release", "acct=${store.accountId}")
             }
             SyncRules.Release.RENEW -> {
                 store.released = false

@@ -72,10 +72,9 @@ class Store(context: Context) {
             .putString("ad_css", payload.optString("ad_css"))
             .putString("name", payload.optJSONObject("user")?.optString("name") ?: "")
             .putString("rev", payload.optString("rev"))
-            .putInt("account_id", payload.optInt("account_id"))
-            .putInt("child_id", payload.optInt("child_id"))
             .putLong("policy_at", System.currentTimeMillis())
             .apply()
+        pinIdentity(payload.optInt("account_id"), payload.optInt("child_id"))
         // הגדרות המכשיר שההורה קבע ({מפתח: חסום?}) — Enforcer מפעיל אותן ב"בעל מכשיר".
         prefs.edit().putString("device", payload.optJSONObject("device")?.toString() ?: "{}").apply()
         pinSignKey(payload.optString("sign_pubkey"))
@@ -92,8 +91,21 @@ class Store(context: Context) {
 
     fun pinSignKey(k: String) { if (k.isNotEmpty() && signPubKey.isEmpty()) signPubKey = k }
 
-    /** זהות החשבון של המכשיר — לאימות ש-acct של אסימון השחרור תואם. */
+    /**
+     * זהות החשבון והילד של המכשיר — לאימות אסימון השחרור וקוד ההורה. מוצמדת בפעם הראשונה (בצימוד), כמו
+     * המפתח, ואינה נדרסת מתשובה מאוחרת (סקירה, 2026-10-20 — שלב 8): קודם נכתבה מכל תשובה, ואסימון השחרור
+     * אומת מול account_id מאותה תשובה — כלומר מול עצמו. ניתוק (clear) מאפס אותה.
+     */
     val accountId: Int get() = prefs.getInt("account_id", 0)
+
+    private fun pinIdentity(acct: Int, child: Int) {
+        val e = prefs.edit()
+        if (accountId <= 0 && acct > 0) e.putInt("account_id", acct)
+        else if (acct > 0 && acct != accountId) Trace.log("identity.mismatch", "acct=$acct pinned=$accountId")
+        if (childId <= 0 && child > 0) e.putInt("child_id", child)
+        else if (child > 0 && child != childId) Trace.log("identity.mismatch", "child=$child pinned=$childId")
+        e.apply()
+    }
 
     /** ‏issued_at של תשובת המדיניות האחרונה שהוחלה (PolicySync) — תשובה ישנה ממנה נזרקת. */
     var policySeq: Long
