@@ -263,15 +263,18 @@ export function createWordEditor(root, opts) {
             dash_n: '"- " counter(page) " -"', hebrew: 'counter(page, hebrew)' }[nb.format] || 'counter(page)';
         const box = (pos, al) => `@${pos}-${{ right: 'right', center: 'center', left: 'left' }[al]}`;
         const q = t => '"' + String(t).replace(/["\\]/g, '\\$&').replace(/\n/g, ' ') + '"';
-        let margin = '';
-        const slots = {};
-        if (page.header) slots['top-center'] = q(page.header);
-        if (page.footer) slots['bottom-center'] = q(page.footer);
-        if (nb.show) {
-            const k = box(nb.position, nb.align).slice(1);
-            slots[k] = slots[k] ? `${slots[k]} "  " ${fmt}` : fmt;
-        }
-        for (const [k, v] of Object.entries(slots)) margin += `@${k}{content:${v};font-family:${cssFont(page.font.family)};font-size:9pt}`;
+        // תוכן השוליים (כותרות ומספר עמוד) — לכל מקטע לפי הכותרות שלו
+        const marginOf = pp => {
+            const slots = {};
+            if (pp.header) slots['top-center'] = q(pp.header);
+            if (pp.footer) slots['bottom-center'] = q(pp.footer);
+            if (nb.show) {
+                const k = box(nb.position, nb.align).slice(1);
+                slots[k] = slots[k] ? `${slots[k]} "  " ${fmt}` : fmt;
+            }
+            return Object.entries(slots).map(([k, v]) => `@${k}{content:${v};font-family:${cssFont(page.font.family)};font-size:9pt}`).join('');
+        };
+        const margin = marginOf(page);
         let firstNoNum = '';
         if (nb.show && !nb.first_page) {
             const k = box(nb.position, nb.align).slice(1);
@@ -287,7 +290,7 @@ export function createWordEditor(root, opts) {
             const [w2, h2] = mmOf(x.page);
             const m2 = x.page.margins;
             const sl = Math.max(0, Math.min(15, m2.bottom - 6));
-            return `@page wps${k + 1}{size:${w2}mm ${h2}mm;margin:${m2.top}mm ${m2.right}mm ${m2.bottom - sl}mm ${m2.left}mm;${margin}}`;
+            return `@page wps${k + 1}{size:${w2}mm ${h2}mm;margin:${m2.top}mm ${m2.right}mm ${m2.bottom - sl}mm ${m2.left}mm;${marginOf(x.page)}}`;
         }).join('');
         printEl.textContent = `@page{size:${wmm}mm ${hmm}mm;margin:${page.margins.top}mm ${page.margins.right}mm ${page.margins.bottom - slack}mm ${page.margins.left}mm;${margin}}`
             + firstNoNum + (nb.start !== 1 ? `@page:first{counter-reset:page ${nb.start - 1}}` : '') + named;
@@ -680,11 +683,20 @@ export function createWordEditor(root, opts) {
         }, 'הוספה');
     }
 
+    /**
+     * הגדרות עמוד. במסמך עם מקטעים — לפי המקטע שבו הסמן (כמו ב-Word): גודל, כיוון, שוליים וכותרות — "המקטע
+     * הזה" או "כל המסמך"; הגופן והמספור — תמיד לכל המסמך.
+     */
     function pageDialog() {
-        const p = page;
-        const nb = p.numbering;
+        const secs = sections();
+        const at = editor.state.selection.from;
+        const k = secs.reduce((acc, x, i) => (i && x.from < at ? i : acc), 0);
+        const p = secs[k].page;
+        const nb = page.numbering;
         sheet('הגדרות עמוד', body => {
             body.append(
+                secs.length > 1 ? h('section.group', h('h3', 'להחיל על'),
+                    seg('scope', { section: `המקטע הזה (${k + 1} מתוך ${secs.length})`, all: 'כל המסמך' }, 'section', 'להחיל על')) : null,
                 h('section.group', h('h3', 'נייר'),
                     seg('size', { A4: 'A4', Letter: 'Letter' }, p.size, 'גודל'),
                     seg('orientation', { portrait: 'לאורך', landscape: 'לרוחב' }, p.orientation, 'כיוון')),
@@ -693,7 +705,7 @@ export function createWordEditor(root, opts) {
                         field('למעלה', numInput('m_top', p.margins.top, { min: 0, max: 80 })), field('למטה', numInput('m_bottom', p.margins.bottom, { min: 0, max: 80 })),
                         field('ימין', numInput('m_right', p.margins.right, { min: 0, max: 80 })), field('שמאל', numInput('m_left', p.margins.left, { min: 0, max: 80 })))),
                 h('section.group', h('h3', 'גופן המסמך'),
-                    h('div.fields.two', field('גופן', fontSelect('font', p.font.family)), field('גודל', numInput('fsize', p.font.size, { min: 6, max: 72 })))),
+                    h('div.fields.two', field('גופן', fontSelect('font', page.font.family)), field('גודל', numInput('fsize', page.font.size, { min: 6, max: 72 })))),
                 h('section.group', h('h3', 'מספור עמודים'),
                     sw('n_show', 'מספרי עמודים', nb.show),
                     seg('n_pos', { top: 'למעלה', bottom: 'למטה' }, nb.position, 'מיקום'),
@@ -708,15 +720,37 @@ export function createWordEditor(root, opts) {
         }, form => {
             const f = new FormData(form);
             const n = k => +f.get(k);
-            setPage({
+            const sec = {
                 size: f.get('size'), orientation: f.get('orientation'),
                 margins: { top: n('m_top'), bottom: n('m_bottom'), right: n('m_right'), left: n('m_left') },
+                header: f.get('header'), footer: f.get('footer'),
+            };
+            const whole = {
                 font: { family: f.get('font'), size: n('fsize') || 12 },
                 numbering: { show: !!f.get('n_show'), position: f.get('n_pos'), align: f.get('n_align'), format: f.get('n_format'),
                     start: Math.max(0, Math.round(n('n_start'))), first_page: !!f.get('n_first') },
-                header: f.get('header'), footer: f.get('footer'),
-            });
+            };
+            if (secs.length === 1) return setPage({ ...sec, ...whole });
+            setSections(f.get('scope') === 'all' ? null : k, sec, whole);
         });
+    }
+
+    /**
+     * שינוי מקטע אחד (k) או כולם (null) — טרנזקציה אחת (ביטול אחד). כל מעבר מקטע נכתב מחדש עם כל ההגדרות
+     * שלו במפורש, כדי ששינוי במקטע אחד לא "יזלוג" למקטעים שאחריו.
+     */
+    function setSections(k, sec, whole) {
+        const pick = q => ({ size: q.size, orientation: q.orientation, margins: { ...q.margins }, header: q.header, footer: q.footer });
+        const secs = sections();
+        const tr = editor.state.tr;
+        const first = mergePage(page, { ...(k === null || k === 0 ? sec : {}), ...whole });
+        if (JSON.stringify(first) !== JSON.stringify(page)) tr.setDocAttribute('page', first);
+        secs.forEach((x, i) => {
+            if (!i) return;
+            const want = k === null ? {} : pick(i === k ? mergePage(x.page, sec) : x.page);
+            if (JSON.stringify(want) !== JSON.stringify(editor.state.doc.nodeAt(x.from).attrs.page || {})) tr.setNodeAttribute(x.from, 'page', want);
+        });
+        if (tr.docChanged || tr.steps.length) editor.view.dispatch(tr);
     }
 
     function stylesDialog() {
