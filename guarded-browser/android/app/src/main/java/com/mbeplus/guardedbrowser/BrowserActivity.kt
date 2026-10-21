@@ -392,10 +392,9 @@ class BrowserActivity : AppCompatActivity() {
         // ‏true = האפליקציה התירה. השרת משווה, וחוסר הסכמה הוא ההתרעה.
         Api.check(store.token, url, true, clientAllowed = true) { r ->
             if (r.json?.optString("code") == "unauthorized") { refuse("נדרשת כניסה מחדש"); return@check }
-            // שגיאת רשת אינה סירוב: r.json ריק פירושו שלא הצלחנו לשאול.
-            if (r.json != null && !r.json.optBoolean("allowed", true)) {
-                refuse(r.json.optString("reason", "הכתובת אינה מותרת"), r.json.optString("code"), url)
-            }
+            // שגיאת רשת או שרת אינה סירוב (UNKNOWN — ההכרעה המקומית נשארת). היעדר allowed — כן (ServerVerdict).
+            val v = ServerVerdict.from(r)
+            if (v.deny) refuse(v.reason, v.code, url)
         }
     }
 
@@ -417,16 +416,20 @@ class BrowserActivity : AppCompatActivity() {
                 TrustedClock.anchor(store, j.optLong("server_ms"))
                 store.lastSyncMs = TrustedClock.now(store)
             }
-            if (!j.optBoolean("allowed", true)) {
-                refuse(j.optString("reason", "הגישה הופסקה"))
+            // חשבון מושעה (403) מגיע בלי state של מדיניות — לפני ServerVerdict הוא נקרא כהיתר.
+            val v = ServerVerdict.from(r)
+            if (v.deny) {
+                refuse(v.reason.ifEmpty { "הגישה הופסקה" })
                 return@heartbeat
             }
+            if (!v.allow) return@heartbeat   // שגיאה זמנית — אין הכרעה חדשה
             // הדף שעל המסך נבדק גם בשרת (היתר זמני שפג, אתר שהוסר) — חזרה ממנו, לא סגירת הכול.
             j.optJSONObject("page")?.let { p ->
-                if (!p.optBoolean("allowed", false) && url.isNotEmpty() && b.web.url == url) {
+                val pv = ServerVerdict.nested(p)
+                if (!pv.allow && url.isNotEmpty() && b.web.url == url) {
                     if (lastAllowed == url) lastAllowed = ""
                     showCover()
-                    revert(p.optString("reason", "הכתובת אינה מותרת"), p.optString("code"), url)
+                    revert(pv.reason, pv.code, url)
                 }
             }
             // ההורה שינה משהו (או אישר בקשה) — מדיניות חדשה תוך פעימה אחת.
@@ -459,11 +462,11 @@ class BrowserActivity : AppCompatActivity() {
         when {
             v.allow -> { lastAllowed = url; hideCover(); verifyWithServer(url) }
             v.needsServer -> Api.check(store.token, url, true) { r ->
-                val j = r.json
-                when {
-                    j == null -> revert("אין חיבור לשרת, ולא ניתן לוודא שהכתובת מותרת")
-                    j.optBoolean("allowed") -> { lastAllowed = url; hideCover() }
-                    else -> revert(j.optString("reason", "הכתובת אינה מותרת"), j.optString("code"), url)
+                val sv = ServerVerdict.from(r)
+                when (sv.kind) {
+                    ServerVerdict.Kind.ALLOW -> { lastAllowed = url; hideCover() }
+                    ServerVerdict.Kind.UNKNOWN -> revert("אין חיבור לשרת, ולא ניתן לוודא שהכתובת מותרת")
+                    ServerVerdict.Kind.DENY -> revert(sv.reason, sv.code, url)
                 }
             }
             else -> revert(v.reason, v.code, url)
@@ -739,11 +742,11 @@ class BrowserActivity : AppCompatActivity() {
     private fun askServerThenLoad(url: String) {
         showCover()
         Api.check(store.token, url, true) { r ->
-            val j = r.json
-            when {
-                j == null -> refuse("אין חיבור לשרת, ולא ניתן לוודא שהכתובת מותרת")
-                j.optBoolean("allowed") -> { lastAllowed = url; b.web.loadUrl(url) }
-                else -> refuse(j.optString("reason", "הכתובת אינה מותרת"), j.optString("code"), url)
+            val sv = ServerVerdict.from(r)
+            when (sv.kind) {
+                ServerVerdict.Kind.ALLOW -> { lastAllowed = url; b.web.loadUrl(url) }
+                ServerVerdict.Kind.UNKNOWN -> refuse("אין חיבור לשרת, ולא ניתן לוודא שהכתובת מותרת")
+                ServerVerdict.Kind.DENY -> refuse(sv.reason, sv.code, url)
             }
         }
     }
