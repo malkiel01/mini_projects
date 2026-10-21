@@ -4,7 +4,7 @@
  * אין כאן שום require לקובץ מחוץ לתיקייה (CLAUDE.md: אפליקציה עצמאית מהמעטפת).
  */
 
-const WP_SCHEMA_VERSION = 1;
+const WP_SCHEMA_VERSION = 2;
 
 function wp_data_dir(): string
 {
@@ -95,7 +95,8 @@ function wp_migrate(PDO $pdo): void
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL,
             updated_by TEXT NOT NULL DEFAULT '',
-            updated_by_id TEXT NOT NULL DEFAULT ''
+            updated_by_id TEXT NOT NULL DEFAULT '',
+            deleted_at INTEGER              -- סל המחזור: מתי הועבר לסל (NULL — לא בסל)
         );
         CREATE INDEX IF NOT EXISTS docs_space ON docs(space, updated_at);
 
@@ -172,6 +173,9 @@ function wp_migrate(PDO $pdo): void
             detail TEXT NOT NULL DEFAULT ''
         );
     SQL);
+    // גרסה 2: סל מחזור — עמודה במסד קיים
+    $cols = array_column($pdo->query('PRAGMA table_info(docs)')->fetchAll(), 'name');
+    if (!in_array('deleted_at', $cols, true)) $pdo->exec('ALTER TABLE docs ADD COLUMN deleted_at INTEGER');
     $pdo->exec('PRAGMA user_version = ' . WP_SCHEMA_VERSION);
 }
 

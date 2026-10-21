@@ -159,7 +159,7 @@ try {
                     out(['ok' => true]);
                 case 'doc_list':
                     $after = is_string($in['after'] ?? null) ? $in['after'] : '';
-                    $st = db()->prepare('SELECT id, title, version, updated_at FROM docs WHERE space = ? AND id > ? ORDER BY id LIMIT 200');
+                    $st = db()->prepare('SELECT id, title, version, updated_at FROM docs WHERE space = ? AND id > ? AND deleted_at IS NULL ORDER BY id LIMIT 200');
                     $st->execute([$space, $after]);
                     $docs = array_map(fn($r) => ['doc' => $r['id'], 'title' => $r['title'], 'version' => (int)$r['version'], 'updated_at' => (int)$r['updated_at']], $st->fetchAll());
                     $o = ['docs' => $docs];
@@ -303,7 +303,8 @@ function app_action(string $action, array $in): never
 
     switch ($action) {
         case 'my_docs':
-            $st = db()->prepare('SELECT id, title, version, updated_at, updated_by FROM docs WHERE space = ? ORDER BY updated_at DESC LIMIT 500');
+            trash_purge($space);
+            $st = db()->prepare('SELECT id, title, version, updated_at, updated_by FROM docs WHERE space = ? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 500');
             $st->execute([$space]);
             out(['docs' => array_map(fn($r) => ['doc' => $r['id'], 'title' => $r['title'], 'version' => (int)$r['version'],
                 'updated_at' => (int)$r['updated_at'], 'updated_by' => $r['updated_by']], $st->fetchAll())]);
@@ -337,7 +338,20 @@ function app_action(string $action, array $in): never
             doc_rename(doc_find($in['doc'] ?? '', $space), (string)($in['title'] ?? ''));
             out(['ok' => true]);
         case 'my_delete':
-            doc_delete(doc_find($in['doc'] ?? '', $space));
+            // מחיקה מהאפליקציה — לסל המחזור (ליקוי ה' באפיון). מחיקה לצמיתות — רק מתוך הסל (my_purge)
+            doc_trash(doc_find($in['doc'] ?? '', $space));
+            out(['ok' => true, 'trash' => true, 'days' => TRASH_DAYS]);
+        case 'my_trash':
+            trash_purge($space);
+            $st = db()->prepare('SELECT id, title, updated_at, deleted_at FROM docs WHERE space = ? AND deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT 500');
+            $st->execute([$space]);
+            out(['days' => TRASH_DAYS, 'docs' => array_map(fn($r) => ['doc' => $r['id'], 'title' => $r['title'], 'updated_at' => (int)$r['updated_at'],
+                'deleted_at' => (int)$r['deleted_at'], 'purge_at' => (int)$r['deleted_at'] + TRASH_DAYS * 86400], $st->fetchAll())]);
+        case 'my_restore':
+            doc_restore(doc_find($in['doc'] ?? '', $space, true));
+            out(['ok' => true]);
+        case 'my_purge':
+            doc_delete(doc_find($in['doc'] ?? '', $space, true));
             out(['ok' => true]);
         case 'my_copy':
             $from = doc_find($in['doc'] ?? '', $space);

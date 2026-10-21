@@ -68,14 +68,17 @@ export function h(sel, attrs, ...kids) {
     return el;
 }
 
-export function toast(msg, err = false) {
+/** הודעה קצרה בתחתית המסך. action: {label, run} — כפתור בהודעה (למשל "ביטול"); ההודעה נשארת יותר זמן. */
+export function toast(msg, err = false, action = null) {
     const el = document.querySelector('.toast');
     if (!el) return;
     el.textContent = msg;
+    if (action) el.append(h('button.toast-act', { type: 'button', onclick: () => { el.hidden = true; action.run(); } }, action.label));
     el.classList.toggle('err', err);
+    el.classList.toggle('has-act', !!action);
     el.hidden = false;
     clearTimeout(toast.t);
-    toast.t = setTimeout(() => { el.hidden = true; }, 2800);
+    toast.t = setTimeout(() => { el.hidden = true; }, action ? 8000 : 2800);
 }
 
 /** גיליון עריכה (dialog) — חלון במחשב, מסך מלא בטלפון. fields(body) ממלא; onSave(form) → true לסגירה. */

@@ -190,6 +190,18 @@ dialog > form { display: flex; flex-direction: column; max-height: inherit; heig
     max-width: calc(100vw - 24px); z-index: 30; background: var(--ink); color: var(--bg); padding: var(--s2) var(--s4); border-radius: 99px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .toast.err { background: var(--danger); color: #fff; }
+.toast.has-act { display: flex; align-items: center; gap: var(--s3); padding-inline-end: var(--s2); }
+.toast.has-act[hidden] { display: none; }
+.toast-act { flex: none; min-height: var(--tap); padding: 0 var(--s3); border: 0; border-radius: 99px; background: rgba(255, 255, 255, .18);
+    color: inherit; font: inherit; font-weight: 700; cursor: pointer; }
+/* סל המחזור: כרטיס עם פעולות, לא נפתח בלחיצה */
+.card.static { cursor: default; }
+.card .acts { display: flex; gap: var(--s1); flex: none; }
+/* בטלפון — הפעולות בשורה משלהן מתחת לשם, כדי שהשם לא ייחתך */
+@media (max-width: 560px) {
+    .card.static { flex-wrap: wrap; }
+    .card.static .acts { flex-basis: 100%; justify-content: flex-start; padding-inline-start: 44px; }
+}
 
 /* ===== הדפסה: רק האזור המודפס ===== */
 @media print {
