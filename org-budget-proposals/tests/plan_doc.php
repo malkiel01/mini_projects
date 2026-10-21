@@ -30,6 +30,7 @@ final class FakeWp
     public array $docs = [];
     public array $calls = [];
     public bool $offline = false;
+    public array $media = [];
     private int $n = 0;
 
     private function on(string $what): void
@@ -41,7 +42,18 @@ final class FakeWp
     {
         $this->on('create');
         $id = 'd' . ++$this->n;
-        $this->docs[$id] = ['title' => $title, 'page' => $page, 'text' => $import['content'] ?? ''];
+        $text = $import['content'] ?? '';
+        if (($import['format'] ?? '') === 'docx') {   // השער: Word → שורות; תמונה = [img]
+            $f = tempnam(sys_get_temp_dir(), 'fk');
+            file_put_contents($f, base64_decode($text));
+            $z = new ZipArchive();
+            $z->open($f);
+            preg_match_all('/<w:p[ >].*?<\/w:p>/s', $z->getFromName('word/document.xml'), $ps);
+            $text = implode("\n", array_filter(array_map(fn($x) => str_contains($x, '<w:drawing') ? '[img]' : html_entity_decode(strip_tags($x)), $ps[0])));
+            $this->media[$id] = $z->locateName('word/media/logo.png') !== false;
+            unlink($f);
+        }
+        $this->docs[$id] = ['title' => $title, 'page' => $page, 'text' => $text];
         return $id;
     }
     public function copy(string $from, string $title, array $replace = []): string
@@ -68,7 +80,7 @@ final class FakeWp
             foreach ($lines as $l) {
                 $h .= str_starts_with($l, '# ') ? '<h1>' . htmlspecialchars(substr($l, 2)) . '</h1>'
                     : (str_starts_with($l, '## ') ? '<h2>' . htmlspecialchars(substr($l, 3)) . '</h2>'
-                    : (str_starts_with($l, '- ') ? '<ul><li>' . htmlspecialchars(substr($l, 2)) . '</li></ul>' : '<p>' . htmlspecialchars($l) . '</p>'));
+                    : ($l === '[img]' ? '<p><img src="https://x/m.png"></p>' : (str_starts_with($l, '- ') ? '<ul><li>' . htmlspecialchars(substr($l, 2)) . '</li></ul>' : '<p>' . htmlspecialchars($l) . '</p>')));
             }
             return ['html' => '<div class="wp-doc" dir="rtl">' . $h . '<ol><li>ראשון</li><li>שני</li></ol></div>', 'css' => '.wp-doc{font-size:12pt}'];
         }
@@ -145,7 +157,7 @@ check(fails_with(fn() => editor_session($mk('x@example.com', 'זר'), ['budget_i
 echo "שמירה בעורך → העותק אצלנו\n";
 $wp->docs[$doc]['text'] .= "\nפסקה חדשה";
 $r = plan_sync($s, ['budget_id' => $bid]);
-check(str_contains($r['plan_view']['html'], 'פסקה חדשה'), 'plan_sync מחזיר ושומר את ה-HTML החדש');
+check(str_contains($r['view']['html'], 'פסקה חדשה'), 'plan_sync מחזיר ושומר את ה-HTML החדש');
 $d = doc_model($s, $bid);
 $types = array_column($d['plan']['blocks'], 'type');
 check($d['plan']['view'] !== null && $d['plan']['blocks'][1] === ['type' => 'heading', 'text' => 'א. הקדשות'] && in_array('bullet', $types, true), 'מודל המסמך: בלוקים מה-HTML (כותרת, תבליט)');
@@ -182,30 +194,68 @@ $z->close();
 echo "על בסיס השנה הקודמת\n";
 $n = budget_create($s, ['org_id' => $orgId, 'year' => 2027, 'based_on_id' => $bid])['id'];
 $nb = budget_get($s, $n)['budget'];
-$nd = plan_row($n)['plan_doc'];
+$nd = part_row($n, 'plan')['doc'];
 check($nd && $nd !== $doc && str_contains($wp->docs[$nd]['text'], 'פסקה לשנת 2027'), 'המסמך הועתק בעורך, עם החלפת השנה');
 check(str_contains($nb['plan_view']['html'], 'לשנת 2027'), 'והעותק של ההצעה החדשה כבר מעודכן');
 
 $wp->offline = true;
 $m = budget_create($s, ['org_id' => $orgId, 'year' => 2028, 'based_on_id' => $n])['id'];
-$row = plan_row($m);
-check(!$row['plan_doc'] && json_decode($row['plan_src'], true) === ['doc' => $nd, 'year' => 2027] && $row['plan_html'] !== null,
+$row = part_row($m, 'plan');
+check(!$row['doc'] && json_decode($row['src'], true) === ['doc' => $nd, 'year' => 2027] && $row['html'] !== null,
     'העורך לא זמין ביצירה — ההצעה נוצרת, המקור נשמר, והעותק עובר');
 check(fails_with(fn() => editor_session($s, ['budget_id' => $m]), 502), 'פתיחה כשהעורך לא זמין — הודעה, לא קריסה');
 $wp->offline = false;
 editor_session($s, ['budget_id' => $m]);
-$row = plan_row($m);
-check($row['plan_doc'] && !$row['plan_src'] && str_contains($wp->docs[$row['plan_doc']]['text'], 'פסקה לשנת 2028'), 'בפתיחה הבאה — ההעתקה נעשית (2027 → 2028)');
+$row = part_row($m, 'plan');
+check($row['doc'] && !$row['src'] && str_contains($wp->docs[$row['doc']]['text'], 'פסקה לשנת 2028'), 'בפתיחה הבאה — ההעתקה נעשית (2027 → 2028)');
 
 $c = budget_duplicate($s, ['budget_id' => $bid])['id'];
-$cd = plan_row($c)['plan_doc'];
+$cd = part_row($c, 'plan')['doc'];
 check($cd && $cd !== $doc && $wp->docs[$cd]['text'] === $wp->docs[$doc]['text'], 'עותק לאותה שנה — מסמך נפרד, אותו תוכן');
+
+
+echo "השער בעורך\n";
+file_put_contents($tmp . '/logo.png', base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='));
+org_logo_upload($s, ['org_id' => $orgId], ['logo' => ['tmp_name' => $tmp . '/logo.png', 'error' => 0, 'size' => filesize($tmp . '/logo.png')]]);
+budget_update($s, ['budget_id' => $bid, 'submitted_to' => 'מוגשת למליאה', 'signers' => [['name' => 'חותם', 'titles' => ['גזבר']]], 'work_plan' => '']);
+$e = editor_session($s, ['budget_id' => $bid, 'part' => 'cover']);
+$cdoc = $e['doc'];
+$ct = $wp->docs[$cdoc]['text'];
+check($cdoc !== $doc && str_contains($ct, 'ארגון') && str_contains($ct, 'הצעת תקציב לשנת 2026') && str_contains($ct, 'מוגשת למליאה') && str_contains($ct, 'חותם'),
+    'שער: מסמך נפרד, נבנה מהשדות (שם, כותרת, מוגשת ל…, חותמים)');
+check(str_contains($ct, '[img]') && $wp->media[$cdoc], 'הלוגו עובר לעורך כתמונה');
+check($wp->docs[$cdoc]['page']['numbering']['show'] === false, 'בשער — בלי מספר עמוד');
+check(part_row($bid, 'plan')['doc'] === $doc, 'התכנית לא נגעה');
+$wp->docs[$cdoc]['text'] .= "\nשורה חדשה בשער";
+check(str_contains(plan_sync($s, ['budget_id' => $bid, 'part' => 'cover'])['view']['html'], 'שורה חדשה בשער'), 'plan_sync לשער');
+$d = doc_model($s, $bid);
+check($d['cover']['view'] !== null && in_array('image', array_column($d['cover']['blocks'], 'type'), true), 'מודל המסמך: השער מהעורך, עם התמונה');
+$z = new ZipArchive();
+$z->open(sink('export_docx', $s, $bid, 'docx'));
+$docXml = $z->getFromName('word/document.xml');
+check(@(new DOMDocument())->loadXML($docXml) !== false && str_contains($docXml, 'wcImg1') && str_contains($docXml, 'wpImg1'), 'Word: שער ותכנית מהעורך, מזהי התמונות לא מתנגשים');
+check(str_contains($docXml, 'w:numId w:val="10001"') && str_contains($docXml, 'w:numId w:val="9001"'), 'מספור: השער בקידומת 10001, התכנית 9001');
+$sty = $z->getFromName('word/styles.xml');
+check(str_contains($sty, 'w:styleId="wcNormal"') && str_contains($sty, 'w:styleId="wpNormal"') && str_contains($docXml, 'w:pStyle w:val="wcNormal"'), 'סגנונות: wc לשער, wp לתכנית');
+check($z->getFromName('word/media/wc_1.gif') === 'GIF89a' && $z->getFromName('word/media/wp_1.gif') === 'GIF89a', 'שתי התמונות בקובץ');
+$num = $z->getFromName('word/numbering.xml');
+check(@(new DOMDocument())->loadXML($num) !== false && strpos($num, '<w:num ') > strrpos($num, '<w:abstractNum '), 'numbering.xml: כל ה-abstract לפני כל ה-num');
+check(!str_contains($docXml, 'מוגשת למליאה'), 'השער מהשדות לא נכתב בנוסף');
+$z->close();
+$z->open(sink('export_xlsx', $s, $bid, 'xlsx'));
+$all = '';
+for ($i = 0; $i < $z->numFiles; $i++) $all .= $z->getFromIndex($i);
+check(str_contains($all, 'שורה חדשה בשער') && $z->locateName('xl/media/logo.png') !== false, 'אקסל: השער מהעורך, עם הלוגו');
+$z->close();
+$n2 = budget_create($s, ['org_id' => $orgId, 'year' => 2031, 'based_on_id' => $bid])['id'];
+$c2 = part_row($n2, 'cover')['doc'];
+check($c2 && $c2 !== $cdoc && str_contains($wp->docs[$c2]['text'], 'הצעת תקציב לשנת 2031'), 'על בסיס — גם השער מועתק, עם השנה');
 
 echo "הצעה בלי תכנית\n";
 $e2 = budget_create($s, ['org_id' => $orgId, 'year' => 2030])['id'];
-check(plan_row($e2)['plan_doc'] === null && doc_model($s, $e2)['plan']['view'] === null, 'בלי פתיחה — אין מסמך');
+check(part_row($e2, 'plan')['doc'] === null && doc_model($s, $e2)['plan']['view'] === null, 'בלי פתיחה — אין מסמך');
 editor_session($s, ['budget_id' => $e2]);
-check($wp->docs[plan_row($e2)['plan_doc']]['text'] === '', 'פתיחה — מסמך ריק');
+check($wp->docs[part_row($e2, 'plan')['doc']]['text'] === '', 'פתיחה — מסמך ריק');
 
 echo $fails ? "\n✕ $fails נכשלו\n" : "\n✓ הכול עבר\n";
 exit($fails ? 1 : 0);

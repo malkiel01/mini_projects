@@ -1,13 +1,14 @@
 <?php
 /**
- * תכנית העבודה — בעורך התמלילים (word-processor/docs/integration.md).
+ * השער ותכנית העבודה — בעורך התמלילים (word-processor/docs/integration.md). כל חלק מסמך משלו (WP_PARTS).
  *
- * המסמך עצמו, התמונות והגרסאות — בעורך. אצלנו בהצעה: budgets.plan_doc (המזהה), ועותק אחרון של הפלט —
- * plan_html (למסך ולהדפסה) ו-plan_ooxml (לשילוב ב-Word), כדי שהפלט יעבוד גם כשהעורך לא זמין.
+ * המסמך עצמו, התמונות והגרסאות — בעורך. אצלנו בהצעה, לכל חלק: <part>_doc (המזהה), ועותק אחרון של הפלט —
+ * <part>_html (למסך ולהדפסה) ו-<part>_ooxml (לשילוב ב-Word), כדי שהפלט יעבוד גם כשהעורך לא זמין.
  * אקסל ואומדן העמודים — מבלוקים שנגזרים מה-HTML השמור.
  *
- * הצעה ישנה (טקסט ב-work_plan) עוברת לעורך בפתיחה הראשונה. הצעה "על בסיס" — העתק של המסמך, עם החלפת השנה;
- * כשהעורך לא זמין ברגע היצירה — plan_src נשמר, וההעתקה נעשית בפתיחה הבאה.
+ * פתיחה ראשונה: התכנית — מהטקסט הישן (work_plan); השער — מהשער שנבנה מהשדות, כקובץ Word עם הלוגו.
+ * הצעה "על בסיס" — העתק של המסמכים, עם החלפת השנה; כשהעורך לא זמין ברגע היצירה — <part>_src נשמר,
+ * וההעתקה נעשית בפתיחה הבאה.
  *
  * המפתח הפרטי — בטבלה wp_embed_keys במסד שלנו (data/, מוחרג מהפריסה). WordProcessorClient.php הוא עותק
  * מ-word-processor/client — לא עורכים אותו כאן; כשהעורך מעדכן — מעתיקים שוב.
@@ -72,34 +73,53 @@ function plan_lines(string $text): string
     return implode("\n", $out);
 }
 
-function plan_title(array $bud): string
+const WP_PARTS = ['cover', 'plan'];   // שער, תכנית עבודה — כל אחד מסמך משלו בעורך
+
+function wp_part(mixed $p): string
 {
-    return mb_substr("תכנית עבודה {$bud['year']} – {$bud['org']['name']}", 0, 120);
+    return in_array($p, WP_PARTS, true) ? $p : 'plan';
 }
 
-function plan_row(int $id): array
+function part_title(array $bud, string $part): string
 {
-    $st = db()->prepare('SELECT plan_doc, plan_src, plan_html, plan_ooxml, plan_at FROM budgets WHERE id = ?');
+    $what = $part === 'cover' ? 'שער – הצעת תקציב' : 'תכנית עבודה';
+    return mb_substr("$what {$bud['year']} – {$bud['org']['name']}", 0, 120);
+}
+
+/** המסמך של החלק: doc (המזהה), src (מקור להעתקה), html / ooxml (העותק השמור), at. */
+function part_row(int $id, string $part): array
+{
+    $p = wp_part($part);
+    $st = db()->prepare("SELECT {$p}_doc AS doc, {$p}_src AS src, {$p}_html AS html, {$p}_ooxml AS ooxml, {$p}_at AS at FROM budgets WHERE id = ?");
     $st->execute([$id]);
     return $st->fetch() ?: [];
 }
 
-/** המסמך של ההצעה — קיים, העתק מההצעה הקודמת, או חדש מהטקסט הישן. */
-function plan_ensure_doc(array $bud): string
+/**
+ * המסמך של החלק — קיים, העתק מההצעה הקודמת, או חדש: תכנית — מהטקסט הישן; שער — מהשער שנבנה מהשדות
+ * (שם הארגון, הלוגו, הכותרת, מוגשת ל…, חותמים), כקובץ Word שהעורך מייבא.
+ */
+function part_ensure_doc(array $bud, string $part, ?array $s = null): string
 {
-    $row = plan_row((int)$bud['id']);
-    if ($row['plan_doc']) return $row['plan_doc'];
-    $src = json_decode((string)$row['plan_src'], true);
+    $p = wp_part($part);
+    $row = part_row((int)$bud['id'], $p);
+    if ($row['doc']) return $row['doc'];
+    $src = json_decode((string)$row['src'], true);
     if ($src) {
-        $doc = wp_try(fn() => wp()->copy($src['doc'], plan_title($bud),
+        $doc = wp_try(fn() => wp()->copy($src['doc'], part_title($bud, $p),
             (int)$src['year'] !== (int)$bud['year'] ? [[(string)$src['year'], (string)$bud['year']]] : []));
+    } elseif ($p === 'cover') {
+        $page = plan_page($bud['org']);
+        $page['numbering']['show'] = false;
+        $bytes = cover_docx_bytes($s ?? throw new ApiError('נדרשת כניסה', 401), (int)$bud['id']);
+        $doc = wp_try(fn() => wp()->create(part_title($bud, $p), $page, ['format' => 'docx', 'content' => base64_encode($bytes)]));
     } else {
         $text = plan_lines((string)$bud['work_plan']);
-        $doc = wp_try(fn() => wp()->create(plan_title($bud), plan_page($bud['org']), $text !== '' ? ['format' => 'lines', 'content' => $text] : null));
+        $doc = wp_try(fn() => wp()->create(part_title($bud, $p), plan_page($bud['org']), $text !== '' ? ['format' => 'lines', 'content' => $text] : null));
     }
-    db()->prepare('UPDATE budgets SET plan_doc = ?, plan_src = NULL WHERE id = ?')->execute([$doc, $bud['id']]);
+    db()->prepare("UPDATE budgets SET {$p}_doc = ?, {$p}_src = NULL WHERE id = ?")->execute([$doc, $bud['id']]);
     try {
-        plan_store((int)$bud['id'], $doc);
+        part_store((int)$bud['id'], $p, $doc);
     } catch (Throwable) {
         // העותק יתעדכן בשמירה הראשונה
     }
@@ -107,12 +127,13 @@ function plan_ensure_doc(array $bud): string
 }
 
 /** עותק הפלט האחרון — אחרי כל שמירה בעורך. */
-function plan_store(int $id, string $doc): array
+function part_store(int $id, string $part, string $doc): array
 {
+    $p = wp_part($part);
     $h = wp()->export($doc, 'html');
     $o = wp()->export($doc, 'ooxml');
     $html = ['html' => (string)($h['html'] ?? ''), 'css' => (string)($h['css'] ?? '')];
-    db()->prepare('UPDATE budgets SET plan_html = ?, plan_ooxml = ?, plan_at = ? WHERE id = ?')
+    db()->prepare("UPDATE budgets SET {$p}_html = ?, {$p}_ooxml = ?, {$p}_at = ? WHERE id = ?")
         ->execute([json_encode($html, JSON_UNESCAPED_UNICODE), json_encode($o, JSON_UNESCAPED_UNICODE), now_iso(), $id]);
     return $html;
 }
@@ -121,10 +142,11 @@ function plan_store(int $id, string $doc): array
 function editor_session(array $s, array $b): array
 {
     $bud = budget_access($s, (int)($b['budget_id'] ?? 0));
+    $p = wp_part($b['part'] ?? 'plan');
     $can = canEditRole($bud['org']['role']) && $bud['status'] === 'draft' ? 'edit' : 'view';
-    $doc = plan_ensure_doc($bud);
+    $doc = part_ensure_doc($bud, $p, $s);
     $r = wp_try(fn() => wp()->embedSession($doc, ['id' => (string)$s['id'], 'name' => (string)(($s['display_name'] ?? '') ?: ($s['email'] ?? $s['id']))],
-        $can, 'section', null, plan_title($bud)));
+        $can, 'section', null, part_title($bud, $p)));
     return ['ok' => true, 'embed_url' => $r['embed_url'], 'doc' => $r['doc'] ?? $doc, 'can' => $can];
 }
 
@@ -132,29 +154,32 @@ function editor_session(array $s, array $b): array
 function plan_sync(array $s, array $b): array
 {
     $bud = budget_access($s, (int)($b['budget_id'] ?? 0));
-    $doc = plan_row((int)$bud['id'])['plan_doc'] ?? null;
-    if (!$doc) return ['ok' => true, 'plan_view' => null];
-    return ['ok' => true, 'plan_view' => wp_try(fn() => plan_store((int)$bud['id'], $doc))];
+    $p = wp_part($b['part'] ?? 'plan');
+    $doc = part_row((int)$bud['id'], $p)['doc'] ?? null;
+    if (!$doc) return ['ok' => true, 'view' => null];
+    return ['ok' => true, 'view' => wp_try(fn() => part_store((int)$bud['id'], $p, $doc))];
 }
 
 /**
- * הצעה חדשה מהצעה קיימת (על בסיס / עותק): העותק של הפלט עובר מיד, והמסמך מועתק בעורך.
- * העורך לא זמין — plan_src נשאר, וההעתקה בפתיחה הבאה (plan_ensure_doc).
+ * הצעה חדשה מהצעה קיימת (על בסיס / עותק): לכל חלק — העותק של הפלט עובר מיד, והמסמך מועתק בעורך.
+ * העורך לא זמין — <part>_src נשאר, וההעתקה בפתיחה הבאה (part_ensure_doc).
  */
 function plan_copy_from(array $base, int $toId): void
 {
-    $from = $base['plan_doc'] ? ['doc' => $base['plan_doc'], 'year' => (int)$base['year']] : json_decode((string)($base['plan_src'] ?? ''), true);
-    if (!$from) return;
-    db()->prepare('UPDATE budgets SET plan_src = ?, plan_html = ?, plan_ooxml = ?, plan_at = ? WHERE id = ?')
-        ->execute([json_encode($from), $base['plan_html'], $base['plan_ooxml'], $base['plan_at'], $toId]);
-    try {
-        $st = db()->prepare('SELECT * FROM budgets WHERE id = ?');
-        $st->execute([$toId]);
-        $bud = $st->fetch();
-        $bud['org'] = org_row((int)$bud['org_id']);
-        plan_ensure_doc($bud);
-    } catch (Throwable) {
-        // נשאר plan_src
+    foreach (WP_PARTS as $p) {
+        $from = $base["{$p}_doc"] ? ['doc' => $base["{$p}_doc"], 'year' => (int)$base['year']] : json_decode((string)($base["{$p}_src"] ?? ''), true);
+        if (!$from) continue;
+        db()->prepare("UPDATE budgets SET {$p}_src = ?, {$p}_html = ?, {$p}_ooxml = ?, {$p}_at = ? WHERE id = ?")
+            ->execute([json_encode($from), $base["{$p}_html"], $base["{$p}_ooxml"], $base["{$p}_at"], $toId]);
+        try {
+            $st = db()->prepare('SELECT * FROM budgets WHERE id = ?');
+            $st->execute([$toId]);
+            $bud = $st->fetch();
+            $bud['org'] = org_row((int)$bud['org_id']);
+            part_ensure_doc($bud, $p);
+        } catch (Throwable) {
+            // נשאר <part>_src
+        }
     }
 }
 
@@ -170,7 +195,10 @@ function plan_html_blocks(string $html): array
         $t = trim(preg_replace('/\s+/u', ' ', $el->textContent));
         $tag = $el->nodeName;
         if ($tag === 'tr') $t = implode(' | ', array_map(fn($c) => trim($c->textContent), iterator_to_array((new DOMXPath($dom))->query('td|th', $el))));
-        if ($t === '') continue;
+        if ($t === '') {
+            if ($tag === 'p' && $el->getElementsByTagName('img')->length) $out[] = ['type' => 'image', 'text' => ''];
+            continue;
+        }
         if ($tag === 'li') {
             $list = $el->parentNode;
             $ordered = $list->nodeName === 'ol';

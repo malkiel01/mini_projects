@@ -1641,22 +1641,25 @@ function loadWordProcessor() {
     });
 }
 
-/** העורך במסך מלא (במחשב — חלון רחב). בסגירה: שמירה, ואז העותק של הפלט נמשך לשרת שלנו (plan_sync). */
-async function openPlanEditor(b, after) {
+/**
+ * העורך במסך מלא (במחשב — חלון רחב). part: 'cover' (השער) או 'plan' (תכנית העבודה).
+ * בסגירה: שמירה, ואז העותק של הפלט נמשך לשרת שלנו (plan_sync).
+ */
+async function openPartEditor(b, part, after) {
     if (S.wpClose) return;
     let WP;
     try { WP = await loadWordProcessor(); } catch (e) { toast(e.message, true); return; }
     const box = h('div.wp-box');
-    const wrap = h('div.wp-overlay', { role: 'dialog', 'aria-label': `תכנית עבודה לשנת ${b.year}` }, box);
+    const wrap = h('div.wp-overlay', { role: 'dialog', 'aria-label': part === 'cover' ? 'השער' : `תכנית עבודה לשנת ${b.year}` }, box);
     document.body.append(wrap);
     document.body.classList.add('wp-open');
     let timer = null, closing = false;
-    const sync = () => api('plan_sync', { budget_id: b.id })
-        .then(r => { if (r.plan_view) { b.plan_view = r.plan_view; b.plan_doc = true; } })
+    const sync = () => api('plan_sync', { budget_id: b.id, part })
+        .then(r => { if (r.view) { b[part + '_view'] = r.view; b[part + '_doc'] = true; } })
         .catch(e => toast(e.message, true));
     const ed = WP.mount(box, {
-        session: () => api('editor_session', { budget_id: b.id }),
-        onReady: () => { b.plan_doc = true; },
+        session: () => api('editor_session', { budget_id: b.id, part }),
+        onReady: () => { b[part + '_doc'] = true; },
         onSaved: () => { clearTimeout(timer); timer = setTimeout(sync, 1500); },
         onClose: () => close(false),
         onLock: l => toast(`פתוח לעריכה אצל ${l.by} — נפתח לקריאה בלבד`),
@@ -1698,43 +1701,48 @@ function renderPlan(text) {
 
 function budPlan(box, d) {
     const b = d.budget, edit = d.edit;
-    const signers = h('textarea', { rows: 3, disabled: !edit, placeholder: 'שם — תפקיד, תפקיד נוסף\nלמשל: אבשלום מלכה — יו"ר ועדת כספים, ממ"מ גזבר הארגון' },
-        (b.signers || []).map(s => s.name + (s.titles.length ? ' — ' + s.titles.join(', ') : '')).join('\n'));
-    const prev = h('div', { style: 'background:#fff;color:#000;border:1px solid var(--line);border-radius:var(--r);padding:12px;display:grid;gap:4px' });
-    const drawPrev = () => prev.replaceChildren(h('p', { style: 'font-weight:700;text-align:center' }, `תכנית עבודה לשנת ${b.year}`),
-        ...(b.plan_view ? [planHtml(b.plan_view)] : b.work_plan ? renderPlan(b.work_plan) : [h('p.hint', 'עוד לא נכתבה תכנית עבודה.')]));
-    const openEd = h('button.btn.primary', { type: 'button' }, edit ? '📝 עריכת תכנית העבודה' : '👁️ פתיחה בעורך');
-    const hint = h('p.hint', 'נערכת בעורך התמלילים — כמו ב-Word: כותרות, רשימות, טבלאות, תמונות ועימוד. נשמרת לבד תוך כדי כתיבה.'
-        + (!b.plan_doc && b.work_plan ? ' בפתיחה הראשונה הטקסט הקיים עובר לעורך.' : ''));
-    openEd.addEventListener('click', () => openPlanEditor(b, () => { hint.textContent = hint.textContent.replace(' בפתיחה הראשונה הטקסט הקיים עובר לעורך.', ''); drawPrev(); }));
+    // השער והתכנית — כל אחד מסמך בעורך התמלילים; כאן תצוגה וכפתור עריכה
+    const MIGRATE = ' בפתיחה הראשונה הוא עובר לעורך כמו שהוא — ומשם עורכים הכול.';
+    const part = (key, label, fallback, hasOld) => {
+        const prev = h('div.part-prev');
+        const draw = () => prev.replaceChildren(...(b[key + '_view']   // לתכנית — הכותרת שהמסמך מוסיף לפניה
+            ? [key === 'plan' ? h('p', { style: 'font-weight:700;text-align:center' }, `תכנית עבודה לשנת ${b.year}`) : null, planHtml(b[key + '_view'])]
+            : fallback()));
+        const hint = h('p.hint', (key === 'cover'
+            ? 'השער של המסמך — שם הארגון, הלוגו, הכותרת, מוגשת ל… והחותמים, בעיצוב חופשי.'
+            : 'כותרות, רשימות, טבלאות, תמונות ועימוד — כמו ב-Word.') + ' נשמר לבד תוך כדי כתיבה.' + (!b[key + '_doc'] && hasOld ? MIGRATE : ''));
+        const btn = h('button.btn.primary', { type: 'button' }, edit ? `📝 עריכת ${label}` : '👁️ פתיחה בעורך');
+        btn.addEventListener('click', () => openPartEditor(b, key, () => { hint.textContent = hint.textContent.replace(MIGRATE, ''); draw(); }));
+        draw();
+        return h('section.group', h('h3', key === 'cover' ? '📄 השער' : '📝 תכנית העבודה'), hint,
+            h('div', { style: 'display:flex;justify-content:flex-start' }, btn), prev);
+    };
+    const coverFallback = () => [h('div', { style: 'text-align:center;display:grid;gap:6px' },
+        h('p', { style: 'font-weight:700;font-size:1.2rem' }, d.org.name),
+        h('p', { style: 'font-weight:700' }, `הצעת תקציב לשנת ${b.year}`),
+        b.submitted_to ? h('p', b.submitted_to) : null,
+        ...(b.signers || []).map(sg => h('p', h('b', sg.name), ...sg.titles.map(t => [h('br'), t]))))];
+    const planFallback = () => [h('p', { style: 'font-weight:700;text-align:center' }, `תכנית עבודה לשנת ${b.year}`),
+        ...(b.work_plan ? renderPlan(b.work_plan) : [h('p.hint', 'עוד לא נכתבה תכנית עבודה.')])];
+
     const save = h('button.btn.primary', { type: 'button' }, 'שמירה');
     save.addEventListener('click', busy(save, async () => {
         const v = k => box.querySelector(`[name=${k}]`).value;
-        await saveBudgetFields(d, {
-            title: v('title'), submitted_to: v('submitted_to'), expense_first: box.querySelector('[name=expense_first]').checked, prev_actual_as_of: v('prev_actual_as_of'), actual_as_of: v('actual_as_of'),
-            signers: signers.value.split('\n').map(x => x.trim()).filter(Boolean).map(x => {
-                const [name, rest = ''] = x.split(/\s+[—–-]\s+/);
-                return { name: name.trim(), titles: rest.split(',').map(t => t.trim()).filter(Boolean) };
-            }),
-        });
+        await saveBudgetFields(d, { title: v('title'), expense_first: box.querySelector('[name=expense_first]').checked,
+            prev_actual_as_of: v('prev_actual_as_of'), actual_as_of: v('actual_as_of') });
         viewBudget(b.id);
     }));
     const dis = { disabled: !edit };
-    drawPrev();
-    put(box, 
-        h('p.hint', 'השער ותכנית העבודה של המסמך. השם, תת-הכותרת והלוגו — מפרטי הארגון.'),
-        h('section.panel',
+    put(box,
+        part('cover', 'השער', coverFallback, true),
+        part('plan', 'תכנית העבודה', planFallback, !!b.work_plan),
+        h('section.group', h('h3', '⚙️ הגדרות ההצעה'),
             h('div.fields',
-                field('כותרת ההצעה (לא חובה)', 'title', b.title, { wide: true, max: 80, attrs: dis }),
-                field('מוגשת ל…', 'submitted_to', b.submitted_to, { wide: true, max: 200, attrs: dis }),
+                field('שם פנימי להצעה (לא חובה)', 'title', b.title, { wide: true, max: 80, attrs: dis }),
                 h('label.f', h('span', `ניצול ${b.year - 1} — עד תאריך`), h('input', { type: 'date', name: 'prev_actual_as_of', value: b.prev_actual_as_of || '', dir: 'ltr', ...dis })),
                 h('label.f', h('span', `ניצול ${b.year} — עד תאריך`), h('input', { type: 'date', name: 'actual_as_of', value: b.actual_as_of || '', dir: 'ltr', ...dis }))),
             h('label.switch', h('input', { type: 'checkbox', name: 'expense_first', checked: !!b.expense_first, ...dis }), h('span', 'בכל קופה — הוצאות לפני הכנסות (כמו בחבר"ק)')),
-            h('label.f', h('span', 'חותמים — שורה לכל אחד'), signers),
-            edit ? save : null),
-        h('p.sec-title', 'תכנית העבודה'),
-        hint,
-        h('div', { style: 'display:flex;justify-content:flex-start' }, openEd), prev);
+            edit ? save : null));
 }
 
 // ── הערות ──
@@ -1848,7 +1856,7 @@ async function viewPrint(id) {
     const td = (v, cls = '') => h(`td${cls ? '.' + cls : ''}`, v);
     const pg = (...kids) => h('section.pg', ...kids);
 
-    const cover = !st.show_cover ? null : pg(h('div.cover',
+    const cover = !st.show_cover ? null : c.view ? pg(planHtml(c.view)) : pg(h('div.cover',
         h('p.c-org', c.org), c.subtitle ? h('p.c-sub', c.subtitle) : null,
         c.has_logo ? h('img.c-logo', { src: fileUrl('org_logo', c.logo_org), alt: '' }) : h('div', { style: 'height:40mm' }),
         h('p.c-title', c.title), c.submitted_to ? h('p.c-to', c.submitted_to) : null,
