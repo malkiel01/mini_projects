@@ -84,7 +84,7 @@ for ($i = 1; $i <= 70; $i++) {
     ]];
 }
 $corpus['long-table'] = ['title' => 'טבלה ארוכה', 'json' => $doc([$hd('תקציב', 1), $p($sentence(10, 20)), ['type' => 'table', 'content' => $rows], $p($sentence(10, 30))]),
-    'page' => null, 'known_pdf' => 'רוחב העמודות ב-PDF מחושב אחרת מהעורך (בעורך — שווה), ולכן נכנסות יותר שורות לעמוד; גם סדר הטקסט בטבלה ב-pdftotext שונה — לטיפול: יישור מנוע ה-PDF והעורך'];
+    'page' => null];
 
 // 7. מקטעים (אב-טיפוס): לאורך → עמוד לרוחב עם טבלה רחבה → חזרה לאורך
 $wide = [['type' => 'tableRow', 'content' => array_map(fn($h) => ['type' => 'tableHeader', 'content' => [$p($h)]], ['חודש', 'הכנסות', 'הוצאות', 'יתרה', 'הערות'])]];
@@ -100,8 +100,7 @@ $c[] = ['type' => 'table', 'content' => $wide];
 $c[] = ['type' => 'sectionBreak', 'attrs' => ['page' => ['orientation' => 'portrait']]];
 $c[] = $hd('סיכום', 2);
 for ($i = 0; $i < 6; $i++) $c[] = $p($sentence(20, 60));
-$corpus['sections'] = ['title' => 'מקטעים', 'json' => $doc($c), 'page' => null,
-    'known_pdf' => 'המקטעים זהים (4 עמודים: לאורך, 2 לרוחב, לאורך); בטבלה הרחבה ה-PDF מכניס יותר שורות לעמוד — רוחב העמודות (כמו "טבלה ארוכה"), וסדר הטקסט בטבלה ב-pdftotext שונה'];
+$corpus['sections'] = ['title' => 'מקטעים', 'json' => $doc($c), 'page' => null];
 
 // 8. הערות שוליים (אב-טיפוס): פסקאות עם הערות קצרות וארוכות — חלקן בתחתית עמוד, שם ההערה דוחפת שורה לעמוד הבא
 $fn = fn(string $t) => ['type' => 'footnote', 'attrs' => ['text' => $t]];
