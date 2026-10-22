@@ -637,9 +637,11 @@ export function createWordEditor(root, opts) {
             if (phone.matches) openSheet(true);
             selectTab(key, true);
             el.focus();
+            // פקודה קודמת מחזירה את המיקוד לעורך באיחור של פריים (TipTap) — לא לתת לה לגנוב אותו מהפקד
+            requestAnimationFrame(() => { if (document.activeElement !== el) el.focus(); });
             return;
         }
-        editor.commands.focus();
+        editor.view.focus();   // מיד — לא באיחור של פריים
         cmds.run(c.id);
     }
     function focusSearch() {
