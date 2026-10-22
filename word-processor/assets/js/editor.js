@@ -20,7 +20,7 @@ import { ParagraphMarks, marksKey, createNavPane, createPasteOptions, wordStats 
 import { headings } from './toc.js';
 import { captions, newSeqId, SEQ_LABELS, listTitle } from './caption.js';
 import { createComments } from './comments.js';
-import { TrackChanges, changes, resolveChanges, goToChange, setTracking } from './track.js';
+import { TrackChanges, changes, resolveChanges, goToChange, setTracking, VIEWS as TRACK_VIEWS, authors as changeAuthors, authorColor } from './track.js';
 import { TabStops, tabsOf, ALIGNS as TAB_ALIGNS, LEADERS as TAB_LEADERS } from './tabs.js';
 
 const MM = 96 / 25.4;
@@ -199,6 +199,10 @@ export function createWordEditor(root, opts) {
     const styleEl = h('style');
     const printEl = h('style', { media: 'print' });
     let printViaPdf = false;   // מקטעים עם מספר טורים שונה — ההדפסה דרך ה-PDF מהשרת (applyPage, print)
+    // תצוגת השינויים (track.js, VIEWS): מחלקה על המסמך, ו-CSS למחברים המוסתרים — רק תצוגה, גם בהדפסה
+    let trackView = 'all';
+    const trackHide = new Set();
+    const trackStyle = h('style');
     const wmPrint = h('div.wp-wm-print', { 'aria-hidden': 'true' });   // סימן המים בהדפסה (בכל עמוד)
     const pagesLayer = h('div.wp-pages', { 'aria-hidden': 'true' });
     const host = h('div.wp-host');
@@ -213,7 +217,7 @@ export function createWordEditor(root, opts) {
     const previewBar = h('div.wp-preview-bar', { hidden: true });   // תצוגה לפני הדפסה
     const findSlot = h('div.wp-find-slot');               // פס החיפוש וההחלפה (find.js) — נבנה אחרי העורך
     const body = h('div.wp-body', stage);                 // חלונית הניווט (view.js) נכנסת לפני הדף — בצד ההתחלה
-    root.append(styleEl, printEl, wmPrint, bar, previewBar, findSlot, body, statusBar, mobileBar, sheetShade);
+    root.append(styleEl, trackStyle, printEl, wmPrint, bar, previewBar, findSlot, body, statusBar, mobileBar, sheetShade);
     root.classList.add('wp-editor');
 
     /** גיאומטריה של עמוד לפי הגדרות (בפיקסלים לא מוגדלים). */
@@ -602,9 +606,10 @@ export function createWordEditor(root, opts) {
             commentsPane: () => { if (comments.isOpen()) comments.close(); else { if (phone.matches) openSheet(false); comments.open(); } refresh(); },
             commentsOn: () => comments.isOpen(),
             trackToggle: () => { setTracking(editor, !editor.state.doc.attrs.track); toast(editor.state.doc.attrs.track ? 'מעקב שינויים פועל — כל עריכה תסומן' : 'מעקב שינויים כבוי'); },
-            resolve: (accept, all) => { const n = resolveChanges(editor, accept, all); if (!n) toast('אין כאן שינויים'); else if (all) toast(`${accept ? 'אושרו' : 'נדחו'} ${n} שינויים`); },
+            trackView: v => setTrackView(v), trackViewValue: () => trackView, trackAuthors: () => authorsDialog(),
+            resolve: (accept, all) => { const n = resolveChanges(editor, accept, all, trackHide); if (!n) toast('אין כאן שינויים'); else if (all) toast(`${accept ? 'אושרו' : 'נדחו'} ${n} שינויים`); },
             hasChanges: () => changes(editor.state.doc).length > 0,
-            goChange: dir => goToChange(editor, dir),
+            goChange: dir => goToChange(editor, dir, trackHide),
             caption: () => captionDialog(), crossRef: () => crossRefDialog(), insertTof: () => tofDialog(),
             link: () => linkDialog(), bookmark: () => bookmarkDialog(),
             newStyle: () => newStyleDialog(), updateStyle: () => updateStyleFromSelection(),
@@ -684,6 +689,7 @@ export function createWordEditor(root, opts) {
     const numBtns = ['restartNumbering', 'continueNumbering', 'numberingValue'].map(id => cmdBtn(id));
     const tocUpd = cmdBtn('updateToc');
     const trackBtn = cmdBtn('trackChanges');
+    const trackViewSel = cmdSel('trackView', 'w-tview', Object.entries(TRACK_VIEWS).map(([v, t]) => h('option', { value: v }, t)));
     const changeBtns = ['acceptChange', 'rejectChange', 'prevChange', 'nextChange', 'acceptAll', 'rejectAll'].map(id => cmdBtn(id));
     sizeSel.title = 'גודל';
     let zoomLabel = h('span.tb-zoom', '100%');
@@ -717,7 +723,7 @@ export function createWordEditor(root, opts) {
         ['insert', 'הוספה', [grp('טבלאות', B.insertTable), grp('איורים', [B.insertImage, imgInput]), grp('הערות', [B.footnote, cmdBtn('endnote')]), grp('קישורים', [cmdBtn('link'), linkOff, cmdBtn('bookmark')]), grp('כיתובים', [cmdBtn('caption'), cmdBtn('crossRef'), cmdBtn('insertTof')]), grp('תוכן עניינים', [cmdBtn('insertToc'), tocUpd]), grp('עמודים', B.pageBreak)]],
         ['layout', 'פריסה', [grp('הגדרת עמוד', B.pageSetup), grp('מעברים', [B.sectionBreak, cmdBtn('columnBreak')])]],
         ['review', 'סקירה', [grp('הערות', [cmdBtn('comment'), cmdBtn('commentsPane')]),
-            grp('מעקב', trackBtn),
+            grp('מעקב', [trackBtn, trackViewSel, cmdBtn('trackAuthors')]),
             grp('שינויים', changeBtns.slice(0, 4), changeBtns.slice(4))]],
         ['view', 'תצוגה', [zoomGroup, grp('הצגה', [B.navPane, B.showMarks, cmdBtn('wordCount')]), grp('מסמך', [opts.save ? cmdBtn('save') : null, B.print, cmdBtn('printPreview'), opts.versions ? cmdBtn('versions') : null, ...(opts.menu || [])])]],
     ];
@@ -963,6 +969,7 @@ export function createWordEditor(root, opts) {
         B.redo.disabled = !cmds.state('redo').enabled;
         linkOff.disabled = !cmds.state('unlink').enabled;
         tocUpd.disabled = !cmds.state('updateToc').enabled || !editor.isEditable;
+        trackViewSel.value = trackView;
         const anyChange = cmds.state('acceptChange').enabled;
         changeBtns.forEach((b, i) => { b.disabled = !anyChange || (i !== 2 && i !== 3 && !editor.isEditable); });
         for (const b of numBtns) b.disabled = !editor.isActive('orderedList') || !editor.isEditable;
@@ -1848,6 +1855,41 @@ export function createWordEditor(root, opts) {
         }
     }
 
+    // ---------- תצוגת השינויים ----------
+    /** סימון מלא / סופי / מקור (כמו ב-Word) — מחלקה על המסמך; העימוד והטאבים נמדדים מחדש (טקסט מוסתר / מוצג). */
+    function setTrackView(v) {
+        trackView = TRACK_VIEWS[v] ? v : 'all';
+        applyTrackView();
+        if (trackView !== 'all') toast(trackView === 'final' ? 'תצוגה סופית — השינויים מוצגים כאילו אושרו (לא אושרו בפועל)' : 'תצוגת המקור — כמו לפני השינויים (הם עדיין במסמך)');
+    }
+    function applyTrackView() {
+        const dom = editor.view.dom;
+        dom.classList.toggle('wp-tv-final', trackView === 'final');
+        dom.classList.toggle('wp-tv-original', trackView === 'original');
+        // מחבר מוסתר: השינויים שלו כמו בתצוגה הסופית — התוספת טקסט רגיל, המחיקה לא מוצגת
+        trackStyle.textContent = [...trackHide].map(a => `.wp-doc ins.wp-ins[data-author="${CSS.escape(a)}"]{text-decoration:none;color:inherit}`
+            + `.wp-doc del.wp-del[data-author="${CSS.escape(a)}"]{display:none}`).join('');
+        editor.storage.wpTabs?.measure?.();
+        editor.storage.wpPages.schedule?.();
+        refresh();
+    }
+    /** אילו מחברים מוצגים (כמו "סקירה ← הצגת סימון ← אנשים" ב-Word). */
+    function authorsDialog() {
+        const list = changeAuthors(editor.state.doc);
+        if (!list.length) { toast('אין שינויים במסמך'); return; }
+        sheet('שינויים של מחברים', body => body.append(h('section.group',
+            ...list.map(({ author, count }, i) => h('label.switch', h('input', { type: 'checkbox', name: 'a' + i, checked: !trackHide.has(author) }),
+                h('span', h('span.wp-author-dot', { style: { background: authorColor(author) }, 'aria-hidden': 'true' }), ` ${author || 'ללא שם'} · ${count} שינויים`))),
+            h('p.hint', 'שינויים של מחבר שאינו מסומן מוצגים כאילו אושרו. "אישור / דחיית כל השינויים" — רק של המחברים המוצגים.'))), form => {
+            const f = new FormData(form);
+            trackHide.clear();
+            list.forEach(({ author }, i) => { if (!f.get('a' + i)) trackHide.add(author); });
+            applyTrackView();
+        });
+    }
+    /** ל-PDF מהשרת (app.js): אותה תצוגה של השינויים כמו בעורך — כמו ההדפסה. */
+    const exportQuery = () => (trackView !== 'all' ? '&track=' + trackView : '') + (trackHide.size ? '&hide=' + encodeURIComponent(JSON.stringify([...trackHide])) : '');
+
     // ---------- הדפסה ----------
     /**
      * הדפסה = בדיוק העמודים שעל המסך. לא מודדים מחדש: ב-CSS של ההדפסה כל רווח עמוד (.wp-break) מתכווץ ל-0 והופך
@@ -1905,6 +1947,7 @@ export function createWordEditor(root, opts) {
         setPage,
         setEditable,
         print,
+        exportQuery,
         focus: () => editor.commands.focus(),
         statusTarget: el => { statusEl = el; status(); },
         destroy: () => {

@@ -6,9 +6,11 @@
 
 require_once __DIR__ . '/pdf/layout.php';
 
-function export_pdf(array $json, array $page, string $title = ''): string
+/** $track — תצוגת השינויים (כמו בעורך): ['view' => all|final|original, 'hide' => [מחברים]]; ברירת המחדל — סימון מלא. */
+function export_pdf(array $json, array $page, string $title = '', array $track = []): string
 {
-    return (new PdfLayout($page))->render(track_visual(seq_flatten(pdf_toc_dests(sections_top($json)))), $title);
+    $tv = track_view(seq_flatten(pdf_toc_dests(sections_top($json))), (string)($track['view'] ?? 'all'), array_map('strval', (array)($track['hide'] ?? [])));
+    return (new PdfLayout($page))->render($tv, $title);
 }
 
 /**

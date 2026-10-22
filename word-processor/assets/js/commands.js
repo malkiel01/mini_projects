@@ -120,6 +120,8 @@ export const COMMANDS = [
     { id: 'comment', label: 'הערה חדשה', icon: '💬', keys: 'Ctrl+Alt+M', group: 'review', run: x => x.ui.comment() },
     { id: 'commentsPane', label: 'חלונית הערות', icon: '🗨', group: 'review', run: x => x.ui.commentsPane(), active: x => x.ui.commentsOn() },
     { id: 'trackChanges', label: 'מעקב שינויים', icon: '✎', keys: 'Ctrl+Shift+E', group: 'review', run: x => x.ui.trackToggle(), active: x => !!x.editor.state.doc.attrs.track },
+    { id: 'trackView', label: 'תצוגת השינויים', group: 'review', edit: false, run: (x, v) => x.ui.trackView(v), value: x => x.ui.trackViewValue() },
+    { id: 'trackAuthors', label: 'שינויים של מחברים…', icon: '👥', group: 'review', edit: false, run: x => x.ui.trackAuthors(), enabled: x => x.ui.hasChanges() },
     { id: 'acceptChange', label: 'אישור השינוי', icon: '✔', group: 'review', run: x => x.ui.resolve(true), enabled: x => x.ui.hasChanges() },
     { id: 'rejectChange', label: 'דחיית השינוי', icon: '✖', group: 'review', run: x => x.ui.resolve(false), enabled: x => x.ui.hasChanges() },
     { id: 'acceptAll', label: 'אישור כל השינויים', icon: '✔✔', group: 'review', run: x => x.ui.resolve(true, true), enabled: x => x.ui.hasChanges() },

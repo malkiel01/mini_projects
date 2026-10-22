@@ -1127,6 +1127,16 @@ check('טקסט: אחרי קבלת השינויים', export_text($trDoc) === '�
 $tv = track_visual($trDoc)['content'][0]['content'];
 check('PDF / HTML: תוספת — קו תחתון וצבע (המודגש נשאר), מחיקה — קו חוצה וצבע', in_array(['type' => 'underline'], $tv[1]['marks']) && in_array(['type' => 'bold'], $tv[1]['marks'])
     && in_array(['type' => 'textStyle', 'attrs' => ['color' => track_color('דנה לוי')]], $tv[1]['marks']) && in_array(['type' => 'strike'], $tv[2]['marks']));
+// תצוגת השינויים (חלק ב): סופי / מקור / מחבר מוסתר — לפי הטקסט שנשאר ואילו סימונים
+$tvText = fn($j) => implode('', array_map(fn($x) => $x['text'], $j['content'][0]['content']));
+$tvf = track_view($trDoc, 'final');
+check('track_view סופי: המחיקה יוצאת, התוספת — בלי קו ובלי צבע (המודגש נשאר)', $tvText($tvf) === 'לפני חדש אחרי'
+    && $tvf['content'][0]['content'][1]['marks'] === [['type' => 'bold']], json_encode($tvf['content'][0]['content'], JSON_UNESCAPED_UNICODE));
+check('track_view מקור: התוספת יוצאת, המחיקה — טקסט רגיל', $tvText(track_view($trDoc, 'original')) === 'לפני  ישן אחרי'
+    && !isset(track_view($trDoc, 'original')['content'][0]['content'][1]['marks'][1]));
+$tvh = track_view($trDoc, 'all', ['יוסי']);
+check('track_view עם מחבר מוסתר: השינוי שלו כמו בסופי, של האחר — מסומן', $tvText($tvh) === 'לפני חדש אחרי' && in_array(['type' => 'underline'], $tvh['content'][0]['content'][1]['marks']));
+check('track_view: תצוגה לא מוכרת — סימון מלא', track_view($trDoc, 'xx') === track_visual($trDoc));
 $trDocx = export_docx($trDoc, page_normalize([]), 'מעקב');
 file_put_contents("$tmp/tr.docx", $trDocx);
 $zip->open("$tmp/tr.docx");

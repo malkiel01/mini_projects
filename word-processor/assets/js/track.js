@@ -5,6 +5,8 @@
  * - מחיקה של טקסט שנוסף במעקב — מוחקת אותו באמת (כמו ב-Word). מחיקה שחוצה פסקאות — הטקסט מסומן, הפסקאות לא מתאחדות.
  * - קבלה / דחייה: של השינוי שבו הסמן (או של כל השינויים בבחירה), או של כולם. הבא / הקודם — מעבר בין שינויים.
  * - עיצוב (מודגש, צבע…) ושינויי מבנה (רשימה, טבלה) — לא נרשמים (עדיין).
+ * - תצוגה (VIEWS, כמו ב-Word): סימון מלא / סופי / מקור, והסתרת השינויים של מחברים — רק תצוגה (מחלקה ו-CSS על המסמך
+ *   ב-editor.js), לא שינוי במסמך. ההדפסה וה-PDF (track_view בשרת) — באותה תצוגה.
  * הרישום: appendTransaction — העסקה של המשתמש מתבצעת, ומיד אחריה (באותו צעד ביטול) עסקה שמחזירה את מה שנמחק
  * עם del ומסמנת את מה שנוסף ב-ins.
  */
@@ -166,6 +168,16 @@ export const TrackChanges = Extension.create({
     },
 });
 
+/** תצוגת השינויים: סימון מלא; סופי — כאילו הכול אושר; מקור — כאילו הכול נדחה. */
+export const VIEWS = { all: 'סימון מלא', final: 'סופי — בלי סימון', original: 'מקור' };
+
+/** המחברים של השינויים במסמך, עם מספר השינויים של כל אחד: [{ author, count }], לפי סדר ההופעה. */
+export function authors(doc) {
+    const m = new Map();
+    for (const c of changes(doc)) m.set(c.author, (m.get(c.author) || 0) + 1);
+    return [...m].map(([author, count]) => ({ author, count }));
+}
+
 /** השינויים במסמך לפי הסדר: [{ type: 'ins'|'del', author, date, from, to }] — רצף צמוד של אותו סימון הוא שינוי אחד. */
 export function changes(doc) {
     const out = [];
@@ -183,13 +195,13 @@ export function changes(doc) {
 }
 
 /**
- * קבלה (accept=true) או דחייה של שינויים: all — כולם; אחרת — אלה שנוגעים בבחירה (או השינוי שבו הסמן).
- * מחזיר כמה שינויים טופלו.
+ * קבלה (accept=true) או דחייה של שינויים: all — כולם (חוץ ממחברים מוסתרים — hide, כמו "כל השינויים המוצגים"
+ * ב-Word); אחרת — אלה שנוגעים בבחירה (או השינוי שבו הסמן). מחזיר כמה שינויים טופלו.
  */
-export function resolveChanges(editor, accept, all = false) {
+export function resolveChanges(editor, accept, all = false, hide = null) {
     const { state } = editor;
     const { from, to } = state.selection;
-    const list = changes(state.doc).filter(c => all || (c.from <= to && c.to >= from));
+    const list = changes(state.doc).filter(c => all ? !hide?.has(c.author) : (c.from <= to && c.to >= from));
     if (!list.length) return 0;
     const tr = state.tr.setMeta(SKIP, true).setMeta('closeHistory$', true);
     // מהסוף להתחלה — מחיקה לא מזיזה את מה שלפניה
@@ -202,9 +214,9 @@ export function resolveChanges(editor, accept, all = false) {
     return list.length;
 }
 
-/** מעבר לשינוי הבא / הקודם (dir 1 / -1), במעגל. */
-export function goToChange(editor, dir) {
-    const list = changes(editor.state.doc);
+/** מעבר לשינוי הבא / הקודם (dir 1 / -1), במעגל — רק בין השינויים של המחברים המוצגים. */
+export function goToChange(editor, dir, hide = null) {
+    const list = changes(editor.state.doc).filter(c => !hide?.has(c.author));
     if (!list.length) return false;
     const at = editor.state.selection.from;
     const c = dir > 0 ? (list.find(x => x.from > at) || list[0]) : ([...list].reverse().find(x => x.to < at) || list[list.length - 1]);

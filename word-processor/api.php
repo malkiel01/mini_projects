@@ -54,7 +54,7 @@ function send_file(string $bytes, string $type, string $name): never
 }
 
 /** export לפי פורמט. $absolute — כתובות תמונות מלאות (למארחת). */
-function do_export(array $row, string $format, $version, bool $absolute): array
+function do_export(array $row, string $format, $version, bool $absolute, array $track = []): array
 {
     if ($version !== null && $version !== '') {
         $v = version_by_number($row, (int)$version);
@@ -74,7 +74,7 @@ function do_export(array $row, string $format, $version, bool $absolute): array
         case 'docx':
             send_file(export_docx($json, $page, $title), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', ($title ?: 'מסמך') . '.docx');
         case 'pdf':
-            send_file(export_pdf($json, $page, $title), 'application/pdf', ($title ?: 'מסמך') . '.pdf');
+            send_file(export_pdf($json, $page, $title, $track), 'application/pdf', ($title ?: 'מסמך') . '.pdf');
         default: throw new ApiError('פורמט לא נתמך: html, ooxml, docx, pdf, text, json', 'bad_format');
     }
 }
@@ -384,7 +384,9 @@ function app_action(string $action, array $in): never
             $fmt = (string)($_GET['format'] ?? 'docx');
             if ($fmt === 'text') send_file(export_text(doc_json($row)), 'text/plain; charset=utf-8', ($row['title'] ?: 'מסמך') . '.txt');
             if ($fmt === 'json') send_file(json_encode(['title' => $row['title'], 'json' => doc_json($row), 'page' => doc_page($row)], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT), 'application/json', ($row['title'] ?: 'מסמך') . '.json');
-            do_export($row, $fmt === 'pdf' ? 'pdf' : 'docx', null, true);
+            // PDF בתצוגת השינויים שבעורך: track=final|original, hide=מחברים (JSON) — כמו שההדפסה מהעורך נראית
+            $hide = json_decode((string)($_GET['hide'] ?? '[]'), true);
+            do_export($row, $fmt === 'pdf' ? 'pdf' : 'docx', null, true, ['view' => (string)($_GET['track'] ?? 'all'), 'hide' => is_array($hide) ? array_slice($hide, 0, 50) : []]);
         case 'admin_clients':
             need_admin($acc);
             $rows = db()->query('SELECT id, name, key_url, origins, status, created_at, updated_at FROM clients ORDER BY created_at')->fetchAll();
