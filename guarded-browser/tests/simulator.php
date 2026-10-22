@@ -58,7 +58,8 @@ check('ברירת מחדל "הכול פתוח"', [simulateApp($child(), 'com.rob
 appsSaveRule($kid, 'com.roblox.client', 'block');
 $a = simulateApp($child(), 'com.roblox.client');
 check('חסומה — הכלל עליה, בשם שלה', [$a['allow'], $a['label'], $a['reason']], [false, 'Roblox', 'חסמתם את האפליקציה הזו']);
-check('ואומר שזמנים לא חלים על אפליקציות', str_contains($a['note'], 'לא על אפליקציות'), true);
+// עד זמן המסך (2026-10-22): "לא חלים על אפליקציות". עכשיו: שעות הגלישה — רק במגדלור; לאפליקציות — זמן מסך.
+check('ואומר ששעות הגלישה חלות על מגדלור בלבד, ולאפליקציות — זמן מסך', str_contains($a['note'], 'מגדלור בלבד') && str_contains($a['note'], 'זמן מסך'), true);
 check('מסך ההתקנה — תמיד פתוח', simulateApp($child(), 'com.android.packageinstaller')['where'], 'תמיד פתוח');
 
 echo "\n— בלי תופעות לוואי —\n";

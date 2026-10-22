@@ -29,10 +29,62 @@ class AppGuardService : AccessibilityService() {
     private val timer = android.os.Handler(android.os.Looper.getMainLooper())
     private val grantEnd = Runnable { endGrants() }
 
+    /* ── זמן מסך (AppTimeMath) ── */
+    private var fgPkg = ""
+    private var lastTickMs = 0L
+    private var lastUsageSent = 0L
+    private var transient: Set<String> = emptySet()
+    private val timeTick = object : Runnable {
+        override fun run() { tickTime(); timer.postDelayed(this, AppTimeMath.TICK_MS) }
+    }
+
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        // מקלדות ושורת המערכת — לא מחליפות את האפליקציה שבחזית (AppTimeMath.foreground).
+        transient = try {
+            (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager)
+                .enabledInputMethodList.map { it.packageName }.toSet()
+        } catch (e: Exception) { emptySet() } + "com.android.systemui"
+        timer.removeCallbacks(timeTick)
+        timer.postDelayed(timeTick, AppTimeMath.TICK_MS)
+    }
+
+    override fun onDestroy() { timer.removeCallbacksAndMessages(null); super.onDestroy() }
+
+    /**
+     * כל TICK_MS: מוסיפים לאפליקציה שבחזית את הזמן שעבר — רק כשהמסך דלוק. נגמר הזמן כשהיא פתוחה — חוזרים
+     * הביתה עם מסך "נגמר הזמן". ופעם ב-5 דקות — דיווח להורה (do=app_usage).
+     */
+    /** ‏enforce=false — במעבר בין אפליקציות: רק סוגרים את הזמן, בלי להקפיץ את האפליקציה שהילד כבר עוזב. */
+    private fun tickTime(enforce: Boolean = true) {
+        if (!store.isLoggedIn || store.released || !store.appsManage) { lastTickMs = 0; return }
+        val now = TrustedClock.now(store)
+        val on = try { (getSystemService(POWER_SERVICE) as android.os.PowerManager).isInteractive } catch (e: Exception) { true }
+        val step = AppTimeMath.step(lastTickMs, now)
+        lastTickMs = now
+        val today = store.today()
+        val before = store.appUsage
+        // יום חדש — לפני האיפוס שולחים את הסיכום של אתמול (השרת מקבל גם את אתמול).
+        if (before.day.isNotEmpty() && before.day != today && before.ms.isNotEmpty()) Api.appUsage(store.token, before.day, before.ms) {}
+        store.appUsage = AppTimeMath.add(before, today, if (on) fgPkg else "", step)
+        if (enforce && on && fgPkg.isNotEmpty() && AppPolicy.timeUp(store, fgPkg) && AppPolicy.blocked(store, fgPkg)) bounce(fgPkg, removal = false)
+        if (now - lastUsageSent > 5 * 60_000L) reportUsage(now)
+    }
+
+    private fun reportUsage(now: Long) {
+        val u = store.appUsage
+        val sig = u.day + u.ms.toString()
+        if (u.ms.isEmpty() || sig == store.appUsageSent) { lastUsageSent = now; return }
+        Api.appUsage(store.token, u.day, u.ms) { r -> if (r.ok) { lastUsageSent = now; store.appUsageSent = sig } }
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val pkg = event.packageName?.toString() ?: return
         lastPkg = pkg
+        // זמן מסך: מה נספר מעכשיו. לפני העדכון — סוגרים את הזמן של האפליקציה הקודמת.
+        val next = AppTimeMath.foreground(fgPkg, pkg, store.launchable, transient, store.ownPackage)
+        if (next != fgPkg) { tickTime(enforce = false); fgPkg = next }
         // היתר זמני שהסתיים — חוסמים מחדש לפני כל בדיקה אחרת (גם בלי שרת).
         AppGrants.tick(this, store)
         armGrantTimer()

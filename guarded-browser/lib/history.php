@@ -36,7 +36,8 @@ function policySnapshot(int $childId): array {
         'platforms'  => all('SELECT platform, mode, allow_search, allow_shorts FROM platform_rules WHERE user_id = ? ORDER BY platform', [$childId]),
         'items'      => all('SELECT platform, kind, item_id, label, action FROM platform_items WHERE user_id = ? ORDER BY platform, kind, item_id', [$childId]),
         'apps'       => all('SELECT package, action FROM app_rules WHERE child_id = ? ORDER BY package', [$childId]),
-    ];
+    // זמן מסך — רק כשיש מגבלה, כדי שילדים בלי מגבלות לא יקבלו גרסה "חדשה" בלי שינוי.
+    ] + (($lim = all('SELECT package, daily_min FROM app_limits WHERE child_id = ? ORDER BY package', [$childId])) ? ['app_limits' => $lim] : []);
 }
 
 /** מה השתנה בין שתי תמונות מצב — שורות לתצוגה. */
@@ -69,11 +70,12 @@ function policyDiff(?array $old, array $new): array {
         'rules' => [['pattern', 'scope', 'action', 'enabled'], fn($r) => ($r['action'] === 'deny' ? '🚫 ' : '✅ ') . $r['pattern'] . ($r['enabled'] ? '' : ' (כבוי)')],
         'items' => [['platform', 'kind', 'item_id', 'action'], fn($r) => '▶️ ' . ($r['label'] ?: $r['item_id']) . ($r['action'] === 'allow' ? '' : ' (חסום)')],
         'apps'  => [['package', 'action'], fn($r) => '📱 ' . $r['package'] . ($r['action'] === 'block' ? ' — חסומה' : ' — מותרת')],
+        'app_limits' => [['package', 'daily_min'], fn($r) => '⏱️ ' . $r['package'] . " — {$r['daily_min']} דק׳ ביום"],
         'platforms' => [['platform', 'mode', 'allow_search', 'allow_shorts'], fn($r) => "יוטיוב: {$r['mode']}" . ($r['allow_search'] ? ' + חיפוש' : '') . ($r['allow_shorts'] ? ' + Shorts' : '')],
     ];
     foreach ($sets as $name => [$fields, $show]) {
         $a = []; foreach ($old[$name] ?? [] as $r) $a[$key($r, $fields)] = $r;
-        $b = []; foreach ($new[$name] as $r) $b[$key($r, $fields)] = $r;
+        $b = []; foreach ($new[$name] ?? [] as $r) $b[$key($r, $fields)] = $r;
         foreach (array_diff_key($b, $a) as $r) $out[] = '+ ' . $show($r);
         foreach (array_diff_key($a, $b) as $r) $out[] = '− ' . $show($r);
     }
@@ -207,6 +209,9 @@ function policyRestore(int $childId, int $versionId, int $by): array {
         }
         q('DELETE FROM app_rules WHERE child_id = ?', [$childId]);
         foreach ((array) $s['apps'] as $r) q('INSERT INTO app_rules (child_id, package, action, created_at) VALUES (?,?,?,?)', [$childId, $r['package'], $r['action'], $now]);
+        // גרסה מלפני זמן המסך — בלי מגבלות.
+        q('DELETE FROM app_limits WHERE child_id = ?', [$childId]);
+        foreach ((array) ($s['app_limits'] ?? []) as $r) q('INSERT INTO app_limits (child_id, package, daily_min, created_at) VALUES (?,?,?,?)', [$childId, $r['package'], (int) $r['daily_min'], $now]);
         $pdo->commit();
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();

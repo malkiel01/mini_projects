@@ -65,7 +65,7 @@ function simulateSite(array $child, string $url, string $time = '', int $day = -
 function simulateApp(array $child, string $pkg): array {
     $cid = (int) $child['id'];
     $pkg = cleanPackage($pkg);
-    $note = 'שעות ומכסה חלות על הגלישה במגדלור בלבד, לא על אפליקציות';
+    $note = 'שעות ומכסת הגלישה חלות על מגדלור בלבד; לאפליקציות — "זמן מסך" לכל אפליקציה';
     if ($pkg === '') return ['allow' => false, 'where' => '', 'reason' => 'שם חבילה לא תקין', 'note' => ''];
     if (!accountAppsAllowed((int) $child['account_id'])) {
         return ['allow' => true, 'where' => 'ניהול אפליקציות לא פעיל בחשבון', 'reason' => 'מגדלור לא חוסם אפליקציות בחשבון הזה', 'note' => ''];
@@ -86,5 +86,14 @@ function simulateApp(array $child, string $pkg): array {
         $posture === 'deny_all' => 'ברירת המחדל: רק אפליקציות שאישרתם',
         default => 'ברירת המחדל: הכול פתוח חוץ ממה שחסמתם',
     };
-    return ['allow' => !appBlocked($posture, $action), 'label' => $label, 'where' => $where, 'reason' => $reason, 'note' => $note];
+    $allow = !appBlocked($posture, $action);
+    // זמן מסך (lib/apptime.php): מגבלה יומית, לפי מה שהמכשיר דיווח היום.
+    $limit = appLimits($cid)[$pkg] ?? 0;
+    if ($allow && $limit > 0) {
+        $used = intdiv(appUsageToday($cid)[$pkg] ?? 0, 60);
+        if ($used >= $limit) return ['allow' => false, 'label' => $label, 'where' => '📲 אפליקציות — זמן מסך',
+            'reason' => "נגמר הזמן להיום ($limit דק׳)", 'note' => 'לפי הדיווח האחרון מהמכשיר'];
+        $reason .= " · עוד " . ($limit - $used) . " דק׳ היום (מתוך $limit)";
+    }
+    return ['allow' => $allow, 'label' => $label, 'where' => $where, 'reason' => $reason, 'note' => $note];
 }

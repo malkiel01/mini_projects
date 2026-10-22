@@ -65,7 +65,7 @@ class BlockedActivity : AppCompatActivity() {
                 setImageResource(R.drawable.logo)
                 layoutParams = LinearLayout.LayoutParams(dp(72), dp(72))
             })
-            addView(text(if (removal) "אי אפשר להסיר את מגדלור" else "$name חסומה", 22f, R.color.ink, dp(16)))
+            addView(text(if (removal) "אי אפשר להסיר את מגדלור" else if (AppPolicy.timeUp(store, pkg)) "⏱️ נגמר הזמן ל$name" else "$name חסומה", 22f, R.color.ink, dp(16)))
             addView(text(if (removal) "הסרת מגדלור וביטול ניהול המכשיר אפשריים רק בתיאום עם ההורה." else reason(), 15f, R.color.dim, 0))
             if (!removal && canAsk()) {
                 val pending = store.appPending[pkg]
@@ -82,6 +82,8 @@ class BlockedActivity : AppCompatActivity() {
 
     /** למה חסומה — חסימה מפורשת, או "רק מה שאישרתי" בלי אישור. */
     private fun reason(): String = when {
+        // זמן מסך (AppTimeMath): נגמר להיום. היתר זמני מההורה גובר — ולכן אפשר לבקש.
+        AppPolicy.timeUp(store, pkg) -> "נגמר הזמן להיום (${store.appLimits[pkg]} דקות). מחר הוא מתחדש — או שאפשר לבקש עוד זמן מההורה."
         pkg in store.appsBlocked -> "ההורה חסם את האפליקציה הזו במגדלור. אפשר לבקש ממנו לפתוח אותה."
         else -> "במכשיר הזה פתוחות רק אפליקציות שההורה אישר, ואת זו הוא עוד לא אישר. אפשר לבקש."
     }

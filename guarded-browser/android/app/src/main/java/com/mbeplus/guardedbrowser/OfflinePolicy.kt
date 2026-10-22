@@ -37,6 +37,7 @@ object OfflinePolicy {
             // קוד חלקי (רשימות ארוכות מדי ל-QR): רק ברירת המחדל משתנה, והרשימות שכבר במכשיר נשארות.
             if (a.optBoolean("partial")) {
                 store.saveApps(JSONObject().put("manage", a.optBoolean("manage")).put("posture", a.optString("posture"))
+                    .put("limits", JSONObject(store.appLimits as Map<*, *>))
                     .put("blocked", org.json.JSONArray(store.appsBlocked.toList()))
                     .put("allowed", org.json.JSONArray(store.appsAllowed.toList())))
             } else store.saveApps(a)

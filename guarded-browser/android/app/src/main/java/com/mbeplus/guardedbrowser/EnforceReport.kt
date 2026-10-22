@@ -44,7 +44,7 @@ object EnforceReport {
             for (ri in pm.queryIntentActivities(view, PackageManager.MATCH_ALL)) {
                 val pkg = ri.activityInfo.packageName
                 if (pkg == ctx.packageName || !seen.add(pkg)) continue
-                val blocked = AppPolicy.blocked(store, pkg) && (access || pkg in store.suspended)
+                val blocked = AppPolicy.blocked(store, pkg, withTime = false) && (access || pkg in store.suspended)
                 out.put(JSONObject().put("p", pkg).put("n", ri.loadLabel(pm).toString()).put("blocked", blocked))
             }
         } catch (e: Exception) { Trace.log("report.browsers", e.message ?: "") }

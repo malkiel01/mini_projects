@@ -167,6 +167,15 @@ function migrate(PDO $pdo): void {
         $pdo->exec("ALTER TABLE policies ADD COLUMN offline_grace_h INTEGER NOT NULL DEFAULT 24");
         $pdo->exec("ALTER TABLE policies ADD COLUMN offline_content TEXT NOT NULL DEFAULT 'all'");
     }
+    // זמן מסך לאפליקציות (lib/apptime.php): מגבלה יומית לכל אפליקציה, והזמן שהמכשיר דיווח.
+    $pdo->exec("CREATE TABLE IF NOT EXISTS app_limits (
+        child_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        package TEXT NOT NULL, daily_min INTEGER NOT NULL, created_at TEXT NOT NULL DEFAULT '',
+        PRIMARY KEY (child_id, package))");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS app_usage (
+        child_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        day TEXT NOT NULL, package TEXT NOT NULL, seconds INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (child_id, day, package))");
     // מצב העדכון כפי שהמכשיר דיווח (lib/appversion.php, updateStateSave) — ההורה רואה עדכון שנתקע או נכשל.
     if (!in_array('update_state', $columns('devices'), true)) {
         $pdo->exec("ALTER TABLE devices ADD COLUMN update_state TEXT NOT NULL DEFAULT ''");
@@ -537,6 +546,9 @@ function policyRev(int $userId): string {
     // גם כללי האפליקציות (app_rules): בלעדיהם חסימת אפליקציה לא שינתה את הטביעה, והמכשיר לא ידע
     // למשוך מדיניות חדשה עד שינוי אחר (סקירה, 2026-10-20).
     $apps = all('SELECT package, action FROM app_rules WHERE child_id = ? ORDER BY package', [$userId]);
+    // ומגבלות הזמן לאפליקציות (lib/apptime.php) — שינוי מגיע למכשיר בפעימה הבאה.
+    $limits = all('SELECT package, daily_min FROM app_limits WHERE child_id = ? ORDER BY package', [$userId]);
+    if ($limits) $apps[] = ['limits' => $limits];
     // והחלטות על בקשות פתיחה של אפליקציות (בלי apply_state — האישור מהמכשיר לא אמור לגרום למשיכה חוזרת).
     $appReq = all("SELECT id, status, scope, minutes FROM access_requests WHERE child_id = ? AND kind = 'app' AND status != 'pending'
                    AND decided_at > ? ORDER BY id", [$userId, gmdate('Y-m-d\TH:i:s\Z', time() - 86400)]);

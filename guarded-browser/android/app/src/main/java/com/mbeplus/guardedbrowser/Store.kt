@@ -138,8 +138,31 @@ class Store(context: Context) {
             .putString("apps_posture", a?.optString("posture", "allow_all") ?: "allow_all")
             .putString("apps_blocked", a?.optJSONArray("blocked")?.toString() ?: "[]")
             .putString("apps_allowed", a?.optJSONArray("allowed")?.toString() ?: "[]")
+            // זמן מסך: {package: דקות ליום} (AppTimeMath).
+            .putString("app_limits", a?.optJSONObject("limits")?.toString() ?: "{}")
             .apply()
     }
+
+    /** זמן מסך — {package: דקות ליום}. */
+    val appLimits: Map<String, Int> get() = obj(prefs.getString("app_limits", "{}") ?: "{}").let { o ->
+        o.keys().asSequence().associateWith { o.optInt(it) }.filterValues { it > 0 }
+    }
+
+    /** הזמן שנצבר היום לכל אפליקציה (AppGuardService). */
+    var appUsage: AppTimeMath.Usage
+        get() = obj(prefs.getString("app_usage", "{}") ?: "{}").let { o ->
+            val ms = o.optJSONObject("ms") ?: JSONObject()
+            AppTimeMath.Usage(o.optString("day"), ms.keys().asSequence().associateWith { ms.optLong(it) })
+        }
+        set(v) { prefs.edit().putString("app_usage", JSONObject().put("day", v.day).put("ms", JSONObject(v.ms as Map<*, *>)).toString()).apply() }
+
+    /** הדיווח האחרון לשרת (do=app_usage): מתי, ומה. */
+    var appUsageSent: String
+        get() = prefs.getString("app_usage_sent", "") ?: ""
+        set(v) { prefs.edit().putString("app_usage_sent", v).apply() }
+
+    /** היום של הילד (אזור הזמן שלו, השעון האמין) — למגבלות זמן המסך. */
+    fun today(): String = UsageMath.dayKey(TrustedClock.now(this), policy().timezone)
 
     val appsManage: Boolean get() = prefs.getBoolean("apps_manage", false)
     val appsPosture: String get() = prefs.getString("apps_posture", "allow_all") ?: "allow_all"
