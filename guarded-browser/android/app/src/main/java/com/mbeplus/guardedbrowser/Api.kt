@@ -230,6 +230,16 @@ object Api {
             put("state", state); put("target", target); put("error", error.take(120))
         }, token) {}
 
+    /** בקשת פתיחה לאפליקציה חסומה (2026-10-22). */
+    fun appRequest(token: String, pkg: String, note: String, cb: (Result) -> Unit) =
+        call("app_request", JSONObject().apply { put("package", pkg); put("note", note) }, token, cb)
+
+    /** אישור ביצוע: ההחלטה הוחלה במכשיר (או נכשלה, עם הסיבה). ‏endsMs — סוף היתר זמני כפי שהמכשיר חישב. */
+    fun appRequestApplied(token: String, id: Int, ok: Boolean, error: String, endsMs: Long, cb: (Result) -> Unit = {}) =
+        call("app_request_applied", JSONObject().apply {
+            put("id", id); put("ok", ok); put("error", error.take(160)); put("ends_ms", endsMs)
+        }, token, cb)
+
     /** חיפוש (שלב 8): השרת בוחר מנוע לפי הילד ומסנן כל תוצאה. */
     fun search(token: String, q: String, cb: (Result) -> Unit) =
         call("search", JSONObject().apply { put("q", q) }, token, cb)

@@ -25,10 +25,17 @@ class AppGuardService : AccessibilityService() {
     private var lastAt = 0L
     private var lastUpdateNag = 0L
     private var lastUpdateCheck = 0L
+    private var lastPkg = ""
+    private val timer = android.os.Handler(android.os.Looper.getMainLooper())
+    private val grantEnd = Runnable { endGrants() }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val pkg = event.packageName?.toString() ?: return
+        lastPkg = pkg
+        // היתר זמני שהסתיים — חוסמים מחדש לפני כל בדיקה אחרת (גם בלי שרת).
+        AppGrants.tick(this, store)
+        armGrantTimer()
         checkUpdate(pkg)
         // עדכון חובה (Updater): מסך העדכון קופץ במעבר בין אפליקציות — לכל היותר פעם בשתי דקות,
         // ולא מעל מגדלור עצמו (שם הוא כבר מוצג) או מעל מסך האישור של ההתקנה.
@@ -59,19 +66,38 @@ class AppGuardService : AccessibilityService() {
      */
     private fun checkUpdate(pkg: String) {
         val now = System.currentTimeMillis()
-        if (now - lastUpdateCheck < 5 * 60_000 || !store.isLoggedIn) return
+        // יש בקשת פתיחה ממתינה — בודקים כל חצי דקה, כדי שההחלטה של ההורה תגיע מהר (ולא אחרי 5 דקות).
+        val every = if (store.appPending.isNotEmpty()) 30_000 else 5 * 60_000
+        if (now - lastUpdateCheck < every || !store.isLoggedIn) return
         lastUpdateCheck = now
         // הגבלות ההתקנה שהוסרו לעדכון חוזרות גם בלי רשת — חלון שפג או עדכון שכבר הותקן (שלב 9).
         Updater.recover(this)
         Api.policy(store.token) { r ->
             if (!r.ok || r.json == null) return@policy
             PolicySync.apply(this, r.json, "guard")
+            armGrantTimer()
             if (!Updater.required(this)) return@policy
             if (Enforcer.isOwner(this)) { Updater.run(this); return@policy }
             if (pkg == store.ownPackage || pkg.contains("packageinstaller")) return@policy
             lastUpdateNag = System.currentTimeMillis()
             try { Updater.lock(this) } catch (e: Exception) { Trace.log("appguard.update", e.message ?: "") }
         }
+    }
+
+    /**
+     * טיימר לסוף ההיתר הזמני הקרוב: אפליקציה שפתוחה ברגע הזה נחסמת שוב בזמן, גם אם הילד לא עבר מסך (ואז אין
+     * אירוע נגישות). ב"בעל מכשיר" ההשעיה (Enforcer.apply) סוגרת אותה; בלי — חזרה הביתה ומסך חסימה.
+     */
+    private fun armGrantTimer() {
+        timer.removeCallbacks(grantEnd)
+        val next = AppGrantMath.nextEnd(store.appGrants, TrustedClock.now(store))
+        if (next > 0) timer.postDelayed(grantEnd, (next - TrustedClock.now(store)).coerceAtLeast(1000))
+    }
+
+    private fun endGrants() {
+        val ended = AppGrants.tick(this, store)
+        if (lastPkg in ended && AppPolicy.blocked(store, lastPkg)) bounce(lastPkg, removal = false)
+        armGrantTimer()
     }
 
     /** חזרה הביתה + מסך חסימה. מונע הצפה: אותו מקור תוך 1.5 שניות — כבר טיפלנו. */

@@ -65,6 +65,8 @@ object AppPolicy {
         if (store.released) return false
         if (pkg.isEmpty() || !store.appsManage) return false
         if (pkg == store.ownPackage || pkg in ALWAYS || pkg in store.launchers) return false
+        // היתר זמני מבקשת פתיחה (AppGrants) — עד הסוף שלו בשעון האמין, גם בלי שרת.
+        if (pkg in AppGrantMath.granted(store.appGrants, TrustedClock.now(store))) return false
         if (pkg in SETTINGS) {
             return pkg in store.appsBlocked && System.currentTimeMillis() > store.settingsPassUntil
         }

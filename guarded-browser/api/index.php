@@ -26,6 +26,7 @@ require_once __DIR__ . '/../lib/signing.php';
 require_once __DIR__ . '/../lib/devicesettings.php';
 require_once __DIR__ . '/../lib/heartbeat.php';
 require_once __DIR__ . '/../lib/enforce.php';
+require_once __DIR__ . '/../lib/apprequests.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -179,7 +180,9 @@ function policyPayload(array $user): array {
         // יש גרסה חדשה — עדכון חובה (גרסה עם עדכון חובה ננעלת עד ההתקנה; ישנות יותר מציעות לילד).
         'update' => $dev ? deviceUpdateOffer($dev) : null,
         // ניהול אפליקציות המכשיר (שלב 11) — manage=false לדפדפן בלבד.
-        'apps' => appsPayload($user),
+        // + היתרים זמניים והחלטות על בקשות פתיחה (lib/apprequests.php) — המכשיר מחיל ומאשר ביצוע.
+        'apps' => ($apps = appsPayload($user))['manage']
+            ? $apps + ['temp' => appTempGrants($uid), 'decisions' => appDecisions($uid)] : $apps,
         // הגדרות המכשיר שההורה קבע — {מפתח: חסום?}. נאכף רק ב"בעל מכשיר" (Enforcer.kt).
         'device' => deviceSettings($uid),
         'state' => [
@@ -419,6 +422,23 @@ try {
         if ($err) bad($err, 'request_refused');
         pushAfterResponse();
         out(['ok' => true, 'id' => $id, 'message' => $msg]);
+    }
+
+    /* ── בקשת פתיחה לאפליקציה חסומה, ואישור הביצוע במכשיר (lib/apprequests.php) ── */
+    if ($do === 'app_request') {
+        $user = requireUser();
+        [$id, $msg, $err] = appRequestCreate($user, field('package'), field('note'));
+        if ($err) bad($err, 'request_refused');
+        pushAfterResponse();
+        out(['ok' => true, 'id' => $id, 'message' => $msg]);
+    }
+    if ($do === 'app_request_applied') {
+        $user = requireUser();
+        $b = body();
+        if ($err = appRequestApplied($user, (int) ($b['id'] ?? 0), !empty($b['ok']), (string) ($b['error'] ?? ''), (int) ($b['ends_ms'] ?? 0))) {
+            bad($err, 'request_inactive', 409);
+        }
+        out(['ok' => true]);
     }
 
     /* ── האם ההורה ענה ── המכשיר שואל כל עוד יש לו בקשה ממתינה. */

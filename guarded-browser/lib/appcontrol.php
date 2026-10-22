@@ -128,8 +128,11 @@ function appsSaveRule(int $childId, string $pkg, string $action): string {
     $pkg = cleanPackage($pkg);
     if ($pkg === '') return 'שם חבילה לא תקין';
     if ($why = alwaysOpen($pkg)) return "תמיד פתוח — $why";
+    if ($action !== '' && !in_array($action, ['allow', 'block'], true)) return 'פעולה לא מוכרת';
+    // החלטה חדשה של ההורה על האפליקציה גוברת על היתר זמני פעיל עליה (lib/apprequests.php) — הוא מבוטל.
+    q("UPDATE access_requests SET apply_state = 'revoked' WHERE child_id = ? AND kind = 'app' AND package = ?
+       AND status = 'approved' AND scope = 'temporary' AND apply_state IN ('pending', 'applied')", [$childId, $pkg]);
     if ($action === '') { q('DELETE FROM app_rules WHERE child_id = ? AND package = ?', [$childId, $pkg]); return ''; }
-    if (!in_array($action, ['allow', 'block'], true)) return 'פעולה לא מוכרת';
     upsert('app_rules', ['child_id' => $childId, 'package' => $pkg], ['action' => $action], ['created_at' => nowIso()]);
     return '';
 }

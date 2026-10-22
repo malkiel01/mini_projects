@@ -201,6 +201,33 @@ class Store(context: Context) {
         o.keys().asSequence().associate { it.toInt() to o.getString(it) }
     } catch (e: Exception) { emptyMap() }
 
+    /** היתרים זמניים לאפליקציות שהוחלו במכשיר (AppGrants): מזהה הבקשה → חבילה ועד מתי. */
+    var appGrants: Map<Int, AppGrantMath.Grant>
+        get() = try {
+            val o = JSONObject(prefs.getString("app_grants", "{}") ?: "{}")
+            o.keys().asSequence().associate { k -> o.getJSONObject(k).let { k.toInt() to AppGrantMath.Grant(it.optString("p"), it.optLong("u")) } }
+        } catch (e: Exception) { emptyMap() }
+        set(m) {
+            val o = JSONObject(); for ((k, g) in m) o.put(k.toString(), JSONObject().put("p", g.pkg).put("u", g.until))
+            prefs.edit().putString("app_grants", o.toString()).apply()
+        }
+
+    /** בקשות פתיחה לאפליקציות שנשלחו ועוד לא נענו: חבילה → מזהה הבקשה ומתי נשלחה. */
+    var appPending: Map<String, Pair<Int, Long>>
+        get() = try {
+            val o = JSONObject(prefs.getString("app_pending", "{}") ?: "{}")
+            o.keys().asSequence().associate { k -> o.getJSONObject(k).let { k to (it.optInt("id") to it.optLong("at")) } }
+        } catch (e: Exception) { emptyMap() }
+        set(m) {
+            val o = JSONObject(); for ((k, v) in m) o.put(k, JSONObject().put("id", v.first).put("at", v.second))
+            prefs.edit().putString("app_pending", o.toString()).apply()
+        }
+
+    /** החלטות שכבר טופלו במכשיר (אישור ביצוע נשלח, הילד קיבל הודעה) — כדי לא לחזור עליהן. */
+    var appHandled: Set<Int>
+        get() = (prefs.getString("app_handled", "") ?: "").split(",").mapNotNull { it.toIntOrNull() }.toSet()
+        set(v) { prefs.edit().putString("app_handled", v.sorted().takeLast(100).joinToString(",")).apply() }
+
     fun addPendingRequest(id: Int, url: String) = savePending(pendingRequests() + (id to url))
     fun removePendingRequest(id: Int) = savePending(pendingRequests() - id)
 

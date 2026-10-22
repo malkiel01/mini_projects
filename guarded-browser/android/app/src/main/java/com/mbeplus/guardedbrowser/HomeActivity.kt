@@ -327,6 +327,12 @@ class HomeActivity : AppCompatActivity() {
                 text = "$ic  $t"; textSize = 15f; setPadding(0, dp(8), 0, dp(8))
                 setTextColor(getColor(R.color.ink))
             })
+            // בקשת פתיחה גם מכאן: ב"בעל מכשיר" אפליקציה מושעית לא עולה בכלל, ומסך החסימה לא מופיע (2026-10-22).
+            if (store.appsManage && !store.released) addView(TextView(this@HomeActivity).apply {
+                text = "🔒  אפליקציות חסומות — לבקש פתיחה"; textSize = 15f; setPadding(0, dp(8), 0, dp(8))
+                setTextColor(getColor(R.color.ink))
+                setOnClickListener { showBlockedApps() }
+            })
         }
         MaterialAlertDialogBuilder(this)
             .setTitle(store.displayName().ifEmpty { "ההגדרות שלי" })
@@ -335,6 +341,26 @@ class HomeActivity : AppCompatActivity() {
             .setNeutralButton("👨‍👩‍👧 כניסת הורה") { _, _ -> startActivity(Intent(this, ParentActivity::class.java)) }
             // הגדרות מההורה בלי אינטרנט — QR חתום שההורה מציג (OfflinePolicy).
             .setNegativeButton("📷 קוד מההורה") { _, _ -> scanParentCode() }
+            .show()
+    }
+
+    /** האפליקציות החסומות במכשיר — לחיצה פותחת את מסך החסימה שלה, עם "בקש פתיחה" ומצב הבקשה. */
+    private fun showBlockedApps() {
+        AppPolicy.scan(this, force = true)
+        val apps = store.launchable.filter { AppPolicy.blocked(store, it) }
+            .map { it to AppGrants.label(this, it) }.sortedBy { it.second.lowercase() }
+        if (apps.isEmpty()) {
+            MaterialAlertDialogBuilder(this).setTitle("🔒 אפליקציות חסומות")
+                .setMessage("אין כרגע אפליקציות חסומות במכשיר.").setPositiveButton("סגירה", null).show()
+            return
+        }
+        val pending = store.appPending
+        MaterialAlertDialogBuilder(this)
+            .setTitle("🔒 אפליקציות חסומות")
+            .setItems(apps.map { (p, l) -> if (p in pending) "$l — 🕓 ממתין להורה" else l }.toTypedArray()) { _, i ->
+                startActivity(Intent(this, BlockedActivity::class.java).putExtra("pkg", apps[i].first))
+            }
+            .setPositiveButton("סגירה", null)
             .show()
     }
 

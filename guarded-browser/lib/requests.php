@@ -62,21 +62,27 @@ function requestCreate(array $user, string $url, string $note = '', ?array $set 
 /** הבקשות של הילד מהיממה האחרונה — המכשיר בודק כאן אם נענה. */
 function requestsOfChild(int $childId): array {
     $since = gmdate('Y-m-d\TH:i:s\Z', time() - 86400);
-    return array_map(fn($r) => ['id' => (int) $r['id'], 'url' => $r['url'], 'status' => $r['status'], 'scope' => $r['scope']],
+    return array_map(fn($r) => ['id' => (int) $r['id'], 'url' => $r['url'], 'status' => $r['status'], 'scope' => $r['scope'],
+                                'kind' => $r['kind'], 'package' => $r['package']],
         all('SELECT * FROM access_requests WHERE child_id = ? AND created_at > ? ORDER BY id DESC LIMIT 50', [$childId, $since]));
 }
 
 /** להורה: כל הממתינות, ומה שטופל בשבוע האחרון. */
 function requestList(int $accountId): array {
     $since = gmdate('Y-m-d\TH:i:s\Z', time() - 7 * 86400);
-    $rows = all("SELECT r.*, u.display_name, u.username FROM access_requests r JOIN users u ON u.id = r.child_id
+    $rows = all("SELECT r.*, u.display_name, u.username, d.device_name FROM access_requests r JOIN users u ON u.id = r.child_id
+                 LEFT JOIN devices d ON d.id = r.device_id
                  WHERE r.account_id = ? AND (r.status = 'pending' OR r.decided_at > ?)
                  ORDER BY CASE r.status WHEN 'pending' THEN 0 ELSE 1 END, r.id DESC LIMIT 60", [$accountId, $since]);
     return array_map(fn($r) => [
         'id' => (int) $r['id'], 'child_id' => (int) $r['child_id'], 'child' => $r['display_name'] ?: $r['username'],
         'url' => $r['url'], 'host' => $r['host'], 'note' => $r['note'], 'status' => $r['status'], 'scope' => $r['scope'],
         'created_at' => $r['created_at'], 'decided_at' => $r['decided_at'],
-        'scopes' => requestScopesFor($r['host']),
+        'scopes' => $r['kind'] === 'app' ? [] : requestScopesFor($r['host']),
+        // בקשת אפליקציה (lib/apprequests.php): מה החליטו, והאם המכשיר באמת פתח.
+        'kind' => $r['kind'], 'package' => $r['package'], 'device' => (string) ($r['device_name'] ?? ''),
+        'minutes' => (int) $r['minutes'], 'apply_state' => $r['apply_state'], 'apply_error' => $r['apply_error'],
+        'applied_at' => $r['applied_at'], 'ends_at' => $r['ends_at'],
     ], $rows);
 }
 
@@ -96,7 +102,7 @@ function requestScopesFor(string $host): array {
  *   ביוטיוב: page — הסרטון (או הערוץ, אם זה מה שנחסם) · site — הערוץ של הסרטון.
  */
 function requestDecide(int $accountId, int $parentId, int $id, string $decision, string $scope = 'page'): array {
-    $r = one('SELECT * FROM access_requests WHERE id = ? AND account_id = ?', [$id, $accountId]);
+    $r = one("SELECT * FROM access_requests WHERE id = ? AND account_id = ? AND kind = 'site'", [$id, $accountId]);
     if (!$r) return ['', 'הבקשה לא נמצאה'];
     if ($r['status'] !== 'pending') return ['', 'כבר טיפלו בבקשה הזו'];
     $child = childOf($accountId, (int) $r['child_id']);
