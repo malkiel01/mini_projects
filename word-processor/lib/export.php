@@ -12,6 +12,7 @@
 require_once __DIR__ . '/docs.php';
 require_once __DIR__ . '/footnote.php';
 require_once __DIR__ . '/caption.php';
+require_once __DIR__ . '/track.php';
 
 const EMU_PER_PX = 9525;
 const TWIP_PER_MM = 56.6929;
@@ -123,7 +124,7 @@ function sections_top(array $json): array
 function export_html(array $json, array $page, bool $absolute = true): array
 {
     $json = sections_top($json);
-    [$json, $foot, $end] = fn_numbered(seq_flatten(with_media_src($json, $absolute)));
+    [$json, $foot, $end] = fn_numbered(track_visual(seq_flatten(with_media_src($json, $absolute))));
     $body = '';
     foreach ($json['content'] ?? [] as $n) $body .= html_node($n);
     // אין עמודים ב-HTML: הערות השוליים בסוף, ואחריהן הערות הסיום (כמו "שמירה כדף אינטרנט" ב-Word)
@@ -391,7 +392,7 @@ function html_marks(string $s, array $marks): string
 function export_text(array $json): string
 {
     $lines = [];
-    [$json, $foot, $end] = fn_numbered(seq_flatten($json));
+    [$json, $foot, $end] = fn_numbered(seq_flatten(track_final($json)));
     text_blocks($json['content'] ?? [], $lines, 0);
     // ההערות בסוף, אחרי קו — כל אחת בשורה עם המספר שלה בסוגריים, כמו הסימן בטקסט
     foreach ([$foot, $end] as $list) {
@@ -756,7 +757,16 @@ final class Ooxml
     {
         switch ($c['type'] ?? '') {
             case 'text':
-                return $this->runs((string)($c['text'] ?? ''), $c['marks'] ?? [], $pa);
+                $out = $this->runs((string)($c['text'] ?? ''), $c['marks'] ?? [], $pa);
+                // מעקב שינויים: w:ins / w:del (בטקסט שנמחק — w:delText), עם מחבר ותאריך — Word מציג ומאפשר לקבל / לדחות
+                foreach ($c['marks'] ?? [] as $m) {
+                    $t = $m['type'] ?? '';
+                    if (($t !== 'ins' && $t !== 'del') || $this->prefix !== '') continue;
+                    $date = preg_match('/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/', (string)($m['attrs']['date'] ?? '')) ? ' w:date="' . $m['attrs']['date'] . '"' : '';
+                    if ($t === 'del') $out = str_replace(['<w:t ', '<w:t>', '</w:t>'], ['<w:delText ', '<w:delText>', '</w:delText>'], $out);
+                    return '<w:' . $t . ' w:id="' . (++$this->bookmarkId) . '" w:author="' . xml(mb_substr((string)($m['attrs']['author'] ?? ''), 0, 120)) . '"' . $date . '>' . $out . '</w:' . $t . '>';
+                }
+                return $out;
             case 'hardBreak':
                 return '<w:r><w:br/></w:r>';
             case 'bookmark':
@@ -1155,7 +1165,7 @@ const W_NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/m
 function export_ooxml(array $json, array $page): array
 {
     $o = new Ooxml($page, 'wp');
-    $body = $o->body(sections_top($json));
+    $body = $o->body(track_final(sections_top($json)));   // במסמך של המארחת — הטקסט אחרי קבלת השינויים (בלי טקסט מחוק)
     $styles = $o->styles();               // לפני המספור: מספור הכותרות נוצר בסגנונות
     $parts = $o->numberingParts();
     return [
@@ -1283,7 +1293,8 @@ function export_docx(array $json, array $page, string $title = ''): string
         . '</w:styles>';
     $parts = $o->numberingParts();
     $numbering = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:numbering ' . W_NS . '>' . $parts['abstract'] . $parts['num'] . '</w:numbering>';
-    $settings = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings ' . W_NS . '>' . ($pc ? '<w:displayBackgroundShape/>' : '') . '<w:defaultTabStop w:val="720"/>'
+    $settings = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings ' . W_NS . '>' . ($pc ? '<w:displayBackgroundShape/>' : '')
+        . (!empty($json['attrs']['track']) ? '<w:trackRevisions/>' : '') . '<w:defaultTabStop w:val="720"/>'
         . '<w:characterSpacingControl w:val="doNotCompress"/>'
         . ($o->footnotes ? '<w:footnotePr><w:footnote w:id="-1"/><w:footnote w:id="0"/></w:footnotePr>' : '')
         . ($o->endnotes ? '<w:endnotePr><w:numFmt w:val="lowerRoman"/><w:endnote w:id="-1"/><w:endnote w:id="0"/></w:endnotePr>' : '') . '<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>';

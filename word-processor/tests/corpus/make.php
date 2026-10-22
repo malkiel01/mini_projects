@@ -235,6 +235,16 @@ foreach ($c as $b) foreach ($b['content'] ?? [] as $x) if (($x['type'] ?? '') ==
 array_splice($c, 1, 0, [['type' => 'toc', 'attrs' => ['seq' => 'איור', 'levels' => 3, 'entries' => $figs]]]);
 $corpus['captions'] = ['title' => 'כיתובים והפניות', 'json' => $doc($c), 'page' => null];
 
+// 18. מעקב שינויים: תוספות (קו תחתון) ומחיקות (קו חוצה) של כמה מחברים בתוך הטקסט — הטקסט המחוק תופס מקום כמו בעורך
+$c = [$hd('מעקב שינויים', 1)];
+$who = ['דנה לוי', 'יוסי כהן', 'רונית'];
+for ($i = 1; $i <= 24; $i++) {
+    $a = ['author' => $who[$i % 3], 'date' => '2026-10-22T10:00:00Z'];
+    $c[] = ['type' => 'paragraph', 'content' => [$text($sentence(8, 25) . ' '), ['type' => 'text', 'text' => $sentence(2, 8), 'marks' => [['type' => $i % 2 ? 'ins' : 'del', 'attrs' => $a]]],
+        $text(' ' . $sentence(8, 30))]];
+}
+$corpus['track'] = ['title' => 'מעקב שינויים', 'json' => $doc($c), 'page' => null];
+
 foreach ($corpus as $name => $d) {
     file_put_contents(__DIR__ . "/$name.json", json_encode($d, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
     echo "$name.json\n";
