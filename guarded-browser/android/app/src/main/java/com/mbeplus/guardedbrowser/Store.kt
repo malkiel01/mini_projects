@@ -144,13 +144,13 @@ class Store(context: Context) {
     }
 
     /** זמן מסך — {package: דקות ליום}. */
-    val appLimits: Map<String, Int> get() = obj(prefs.getString("app_limits", "{}") ?: "{}").let { o ->
+    val appLimits: Map<String, Int> get() = (obj("app_limits") ?: JSONObject()).let { o ->
         o.keys().asSequence().associateWith { o.optInt(it) }.filterValues { it > 0 }
     }
 
     /** הזמן שנצבר היום לכל אפליקציה (AppGuardService). */
     var appUsage: AppTimeMath.Usage
-        get() = obj(prefs.getString("app_usage", "{}") ?: "{}").let { o ->
+        get() = (obj("app_usage") ?: JSONObject()).let { o ->
             val ms = o.optJSONObject("ms") ?: JSONObject()
             AppTimeMath.Usage(o.optString("day"), ms.keys().asSequence().associateWith { ms.optLong(it) })
         }

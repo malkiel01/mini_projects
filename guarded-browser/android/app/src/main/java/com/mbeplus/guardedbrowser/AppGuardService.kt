@@ -41,10 +41,11 @@ class AppGuardService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         // מקלדות ושורת המערכת — לא מחליפות את האפליקציה שבחזית (AppTimeMath.foreground).
-        transient = try {
+        val ime: Set<String> = try {
             (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager)
                 .enabledInputMethodList.map { it.packageName }.toSet()
-        } catch (e: Exception) { emptySet() } + "com.android.systemui"
+        } catch (e: Exception) { emptySet() }
+        transient = ime + "com.android.systemui"
         timer.removeCallbacks(timeTick)
         timer.postDelayed(timeTick, AppTimeMath.TICK_MS)
     }
@@ -54,8 +55,8 @@ class AppGuardService : AccessibilityService() {
     /**
      * כל TICK_MS: מוסיפים לאפליקציה שבחזית את הזמן שעבר — רק כשהמסך דלוק. נגמר הזמן כשהיא פתוחה — חוזרים
      * הביתה עם מסך "נגמר הזמן". ופעם ב-5 דקות — דיווח להורה (do=app_usage).
+     * ‏enforce=false — במעבר בין אפליקציות: רק סוגרים את הזמן, בלי להקפיץ את האפליקציה שהילד כבר עוזב.
      */
-    /** ‏enforce=false — במעבר בין אפליקציות: רק סוגרים את הזמן, בלי להקפיץ את האפליקציה שהילד כבר עוזב. */
     private fun tickTime(enforce: Boolean = true) {
         if (!store.isLoggedIn || store.released || !store.appsManage) { lastTickMs = 0; return }
         val now = TrustedClock.now(store)
@@ -74,8 +75,10 @@ class AppGuardService : AccessibilityService() {
     private fun reportUsage(now: Long) {
         val u = store.appUsage
         val sig = u.day + u.ms.toString()
-        if (u.ms.isEmpty() || sig == store.appUsageSent) { lastUsageSent = now; return }
-        Api.appUsage(store.token, u.day, u.ms) { r -> if (r.ok) { lastUsageSent = now; store.appUsageSent = sig } }
+        // לא יותר מפעם ב-5 דקות גם כשנכשל (בלי רשת) — לא בכל טיק.
+        lastUsageSent = now
+        if (u.ms.isEmpty() || sig == store.appUsageSent) return
+        Api.appUsage(store.token, u.day, u.ms) { r -> if (r.ok) store.appUsageSent = sig }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
