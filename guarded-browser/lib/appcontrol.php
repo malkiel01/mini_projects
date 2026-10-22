@@ -11,6 +11,11 @@
  *
  *   מה *לעולם לא* נחסם מוכרע במכשיר (מגדלור עצמו, המסך הראשי, חייגן) — כדי לא לנעול את הטלפון.
  *
+ *   אפליקציה חדשה (בעל המערכת, 2026-10-22): ההורה קובע אם אפליקציה שתותקן מעכשיו פתוחה או חסומה — בלי קשר
+ *   לברירת המחדל של מה שכבר מותקן (new_apps; ריק — כמו ברירת המחדל). במכשיר — מיד, גם בלי רשת: מה שלא
+ *   ברשימה שההורה ראה (known) ולא היה מותקן כשההגדרה הגיעה (AppPolicy). כשהמכשיר מדווח עליה — נרשם עליה
+ *   כלל, וההורה רואה אותה ברשימה כבר מוכרעת, ויכול לשנות.
+ *
  *   הסתרה (בעל המערכת, 2026-10-22): הכרעה שלישית — 'hide'. האפליקציה נעלמת מהטלפון לגמרי (אין אייקון, לא ברשימת
  *   האפליקציות בהגדרות), והנתונים שלה נשמרים; ביטול ההסתרה מחזיר אותה כמו שהייתה. רק ב"בעל מכשיר"
  *   (setApplicationHidden) — בלעדיו אנדרואיד לא מאפשר, והיא נחסמת כרגיל. לכן היא גם ברשימת החסומות.
@@ -25,6 +30,7 @@ require_once __DIR__ . '/chrome.php';
 
 const APP_POSTURES = ['allow_all', 'deny_all'];
 const APP_ACTIONS = ['allow', 'block', 'hide'];
+const NEW_APPS = ['', 'allow', 'block'];
 
 /**
  * מסך ההתקנה של אנדרואיד — לעולם לא נחסם: דרכו מגדלור מתקין את העדכון של עצמו. חסום (במפורש, או ב"רק מה
@@ -75,17 +81,28 @@ function cleanPackage(string $p): string {
  * המכשיר מדווח את האפליקציות שמותקנות אצל הילד. איחוד בין המכשירים של אותו ילד:
  * חבילה שנראתה באחד מהם — ההורה יכול להכריע עליה. מוחזר כמה נקלטו.
  */
-function appsReport(int $childId, array $apps): int {
+function appsReport(int $childId, array $apps, int $deviceRowId = 0): int {
     $n = 0;
     $now = nowIso();
+    // אפליקציה חדשה — רק מדיווח של מכשיר שכבר דיווח פעם (הדיווח הראשון הוא מה שהיה מותקן), ורק כשההחלטה
+    // של ההורה שונה מברירת המחדל (אחרת אין מה לרשום).
+    $reported = $deviceRowId > 0 && (int) (one('SELECT apps_reported FROM devices WHERE id = ? AND user_id = ?', [$deviceRowId, $childId])['apps_reported'] ?? 0);
+    $newAct = appNewDefault($childId);
+    $mark = $reported && $newAct !== (appPosture($childId) === 'deny_all' ? 'block' : 'allow') ? $newAct : '';
+    $known = $mark ? array_flip(array_column(all('SELECT package FROM device_apps WHERE child_id = ?', [$childId]), 'package')) : [];
+    $rules = $mark ? appRules($childId) : [];
     db()->beginTransaction();
     foreach ($apps as $a) {
         $pkg = cleanPackage((string) ($a['p'] ?? ''));
         if ($pkg === '') continue;
+        if ($mark && !isset($known[$pkg]) && !isset($rules[$pkg]) && alwaysOpen($pkg) === '') {
+            q('INSERT INTO app_rules (child_id, package, action, created_at) VALUES (?,?,?,?)', [$childId, $pkg, $mark, $now]);
+        }
         upsert('device_apps', ['child_id' => $childId, 'package' => $pkg],
                ['label' => mb_substr((string) ($a['n'] ?? ''), 0, 100), 'is_system' => !empty($a['s']) ? 1 : 0, 'last_seen' => $now]);
         $n++;
     }
+    if ($deviceRowId > 0) q('UPDATE devices SET apps_reported = 1 WHERE id = ? AND user_id = ?', [$deviceRowId, $childId]);
     db()->commit();
     return $n;
 }
@@ -95,6 +112,19 @@ function appsReport(int $childId, array $apps): int {
 function appPosture(int $childId): string {
     $p = (string) (policyFor($childId)['apps_posture'] ?? 'allow_all');
     return in_array($p, APP_POSTURES, true) ? $p : 'allow_all';
+}
+
+/** אפליקציה שתותקן מעכשיו: allow / block — ההחלטה של ההורה, ובלעדיה כמו ברירת המחדל. */
+function appNewDefault(int $childId): string {
+    $v = (string) (policyFor($childId)['new_apps'] ?? '');
+    if (in_array($v, ['allow', 'block'], true)) return $v;
+    return appPosture($childId) === 'deny_all' ? 'block' : 'allow';
+}
+
+function appsSaveNewApps(int $childId, string $v): string {
+    if (!in_array($v, NEW_APPS, true)) return 'בחירה לא מוכרת';
+    q('UPDATE policies SET new_apps = ?, updated_at = ? WHERE user_id = ?', [$v, nowIso(), $childId]);
+    return '';
 }
 
 /** מפה package → allow|block|hide. */
@@ -121,6 +151,9 @@ function appsPayload(array $user): array {
         // זמן מסך: {package: דקות ליום} — נאכף במכשיר (AppTimeMath). אובייקט גם כשריק.
         'limits'  => (object) appLimits($childId),
         'posture' => appPosture($childId),
+        // אפליקציה חדשה (AppPolicy): מה שלא ב-known — לפי new_apps, מיד, עד שהשרת רושם עליה כלל.
+        'new_apps' => appNewDefault($childId),
+        'known'   => array_column(all('SELECT package FROM device_apps WHERE child_id = ? ORDER BY package', [$childId]), 'package'),
         // מוסתרת היא גם חסומה: גרסה ישנה, או מכשיר בלי "בעל מכשיר", חוסמים אותה כרגיל.
         'blocked' => array_values(array_diff(array_keys(array_filter($rules, fn($a) => $a !== 'allow')), $never)),
         'hidden'  => $hidden,
@@ -187,7 +220,7 @@ function appsList(int $accountId, int $childId): array {
     // הסתרה דורשת "בעל מכשיר" — מכשירים בלעדיו רק חוסמים את המוסתרות (האייקון נשאר).
     $ownerMissing = count(array_filter(all('SELECT perms FROM devices WHERE user_id = ?', [$childId]),
         fn($d) => !((int) $d['perms'] & PERM_OWNER)));
-    return ['manage' => true, 'posture' => $posture, 'apps' => $apps, 'orphan_rules' => $orphans,
+    return ['manage' => true, 'posture' => $posture, 'new_apps' => appNewDefault($childId), 'apps' => $apps, 'orphan_rules' => $orphans,
             'blocked_count' => count(array_filter($apps, fn($x) => $x['blocked'])),
             'hidden_count' => count(array_filter($apps, fn($x) => $x['action'] === 'hide')), 'owner_missing' => $ownerMissing,
             'chrome' => chromeStatus($childId),

@@ -138,6 +138,9 @@ class Store(context: Context) {
             .putString("apps_posture", a?.optString("posture", "allow_all") ?: "allow_all")
             .putString("apps_blocked", a?.optJSONArray("blocked")?.toString() ?: "[]")
             .putString("apps_allowed", a?.optJSONArray("allowed")?.toString() ?: "[]")
+            // אפליקציה חדשה (NewAppMath): allow / block, ומה שההורה כבר ראה.
+            .putString("apps_new", a?.optString("new_apps", "") ?: "")
+            .putString("apps_known", a?.optJSONArray("known")?.toString() ?: "[]")
             // מוסתרות (בעל מכשיר): נעלמות מהטלפון. השרת שולח אותן גם ב-blocked.
             .putString("apps_hidden", a?.optJSONArray("hidden")?.toString() ?: "[]")
             // כרום מנוהל (lib/chrome.php, Enforcer.applyChrome).
@@ -172,6 +175,21 @@ class Store(context: Context) {
     val appsPosture: String get() = prefs.getString("apps_posture", "allow_all") ?: "allow_all"
     val appsBlocked: Set<String> get() = strSet("apps_blocked")
     val appsAllowed: Set<String> get() = strSet("apps_allowed")
+    val appsNew: String get() = prefs.getString("apps_new", "") ?: ""
+    val appsKnown: Set<String> get() = strSet("apps_known")
+
+    /** מה שהיה מותקן בסריקה הראשונה — לא "חדש" (NewAppMath). */
+    var appsBaseline: Set<String>
+        get() = strSet("apps_baseline")
+        set(v) { prefs.edit().putString("apps_baseline", JSONArray(v.toList()).toString()).apply() }
+
+    /** הדיווח האחרון על אפליקציות חדשות: מה ומתי. */
+    var newAppsSent: Set<String>
+        get() = strSet("new_apps_sent")
+        set(v) { prefs.edit().putString("new_apps_sent", JSONArray(v.toList()).toString()).apply() }
+    var newAppsSentAt: Long
+        get() = prefs.getLong("new_apps_sent_at", 0L)
+        set(v) { prefs.edit().putLong("new_apps_sent_at", v).apply() }
     val appsHidden: Set<String> get() = strSet("apps_hidden")
     val chromePolicy: JSONObject get() = obj("apps_chrome") ?: JSONObject()
 

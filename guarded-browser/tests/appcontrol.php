@@ -91,6 +91,38 @@ check('פעולה לא מוכרת', appsSaveRule($kid, 'com.whatsapp', 'vanish')
 check('ביטול ההסתרה — יוצאת מהרשימה', [appsSaveRule($kid, 'com.supercell.clashofclans', 'block'),
       appsPayload($user($kid, $aApps))['hidden']], ['', []]);
 
+echo "\n— אפליקציה חדשה שתותקן —\n";
+appsSavePosture($kid, 'allow_all');
+check('ברירת מחדל — כמו ברירת המחדל (הכול פתוח → פתוחה)', appNewDefault($kid), 'allow');
+check('בחירה לא מוכרת', appsSaveNewApps($kid, 'maybe'), 'בחירה לא מוכרת');
+check('ההורה: חדשות — חסומות', [appsSaveNewApps($kid, 'block'), appNewDefault($kid)], ['', 'block']);
+$p = appsPayload($user($kid, $aApps));
+check('המכשיר מקבל את ההחלטה ואת מה שההורה כבר ראה', [$p['new_apps'], in_array('com.whatsapp', $p['known'], true)], ['block', true]);
+q("INSERT INTO devices (user_id, device_name, token_hash, created_at) VALUES (?, 'גלקסי', 'hn1', ?)", [$kid, nowIso()]);
+$dev = (int) db()->lastInsertId();
+appsReport($kid, [['p' => 'com.whatsapp', 'n' => 'וואטסאפ'], ['p' => 'com.roblox.client', 'n' => 'Roblox']], $dev);
+check('דיווח ראשון של מכשיר — "מה שהיה", בלי כלל', isset(appRules($kid)['com.roblox.client']), false);
+$rev = policyRev($kid);
+appsReport($kid, [['p' => 'com.whatsapp', 'n' => 'וואטסאפ'], ['p' => 'com.zhiliaoapp.musically', 'n' => 'TikTok'],
+                  ['p' => 'com.sec.android.app.launcher', 'n' => 'בית']], $dev);
+check('הותקנה אחרי — נחסמה (כלל), מסך הבית — לא', [appRules($kid)['com.zhiliaoapp.musically'] ?? '', isset(appRules($kid)['com.sec.android.app.launcher'])], ['block', false]);
+check('...והמכשיר מושך מחדש (known התעדכן)', policyRev($kid) !== $rev, true);
+$t = array_values(array_filter(appsList($aApps, $kid)['apps'], fn($a) => $a['package'] === 'com.zhiliaoapp.musically'))[0];
+check('אצל ההורה — ברשימה, 🚫, ואפשר לשנות', [$t['action'], $t['blocked'], appsSaveRule($kid, 'com.zhiliaoapp.musically', 'allow')], ['block', true, '']);
+appsReport($kid, [['p' => 'com.zhiliaoapp.musically', 'n' => 'TikTok']], $dev);
+check('דיווח חוזר לא דורס את ההחלטה של ההורה', appRules($kid)['com.zhiliaoapp.musically'], 'allow');
+appsSaveNewApps($kid, 'allow');
+appsReport($kid, [['p' => 'com.king.candycrush', 'n' => 'Candy']], $dev);
+check('חדשות פתוחות ב"הכול פתוח" — אין מה לרשום', isset(appRules($kid)['com.king.candycrush']), false);
+appsSavePosture($kid, 'deny_all');
+appsReport($kid, [['p' => 'com.duolingo', 'n' => 'Duolingo']], $dev);
+check('"רק מה שאישרתי" + חדשות פתוחות — נרשם היתר', appRules($kid)['com.duolingo'] ?? '', 'allow');
+appsSaveNewApps($kid, '');
+check('חזרה ל"כברירת המחדל"', appNewDefault($kid), 'block');
+foreach (['com.zhiliaoapp.musically', 'com.duolingo'] as $pk) appsSaveRule($kid, $pk, '');
+q('DELETE FROM device_apps WHERE child_id = ? AND package IN (?,?,?,?)', [$kid, 'com.roblox.client', 'com.zhiliaoapp.musically', 'com.king.candycrush', 'com.duolingo']);
+q("DELETE FROM device_apps WHERE child_id = ? AND package = 'com.sec.android.app.launcher'", [$kid]);
+
 echo "\n— ניקוי כלל —\n";
 appsSaveRule($kid, 'com.whatsapp', '');
 check('הוסר הכלל', isset(appRules($kid)['com.whatsapp']), false);

@@ -201,6 +201,14 @@ function migrate(PDO $pdo): void {
     if (!in_array('apps_posture', $columns('policies'), true)) {
         $pdo->exec("ALTER TABLE policies ADD COLUMN apps_posture TEXT NOT NULL DEFAULT 'allow_all'");
     }
+    // אפליקציה חדשה שתותקן (lib/appcontrol.php): '' — כברירת המחדל, allow / block — החלטת ההורה.
+    if (!in_array('new_apps', $columns('policies'), true)) {
+        $pdo->exec("ALTER TABLE policies ADD COLUMN new_apps TEXT NOT NULL DEFAULT ''");
+    }
+    // האם המכשיר כבר דיווח אפליקציות — הדיווח הראשון שלו הוא "מה שהיה", לא "אפליקציה חדשה".
+    if (!in_array('apps_reported', $columns('devices'), true)) {
+        $pdo->exec("ALTER TABLE devices ADD COLUMN apps_reported INTEGER NOT NULL DEFAULT 0");
+    }
     // שלב 7: רמת הדיווח להורה, וזמן לכל כתובת בהיסטוריה המלאה.
     if (!in_array('report_level', $columns('policies'), true)) {
         $pdo->exec("ALTER TABLE policies ADD COLUMN report_level TEXT NOT NULL DEFAULT 'summary'");
@@ -551,6 +559,10 @@ function policyRev(int $userId): string {
     // ומגבלות הזמן לאפליקציות (lib/apptime.php) — שינוי מגיע למכשיר בפעימה הבאה.
     $limits = all('SELECT package, daily_min FROM app_limits WHERE child_id = ? ORDER BY package', [$userId]);
     if ($limits) $apps[] = ['limits' => $limits];
+    // אפליקציה חדשה (new_apps): אחרי דיווח — המכשיר צריך את הרשימה המעודכנת של מה שההורה ראה (known).
+    if ((string) (policyFor($userId)['new_apps'] ?? '') !== '') {
+        $apps[] = ['known' => (int) one('SELECT COUNT(*) n FROM device_apps WHERE child_id = ?', [$userId])['n']];
+    }
     // והחלטות על בקשות פתיחה של אפליקציות (בלי apply_state — האישור מהמכשיר לא אמור לגרום למשיכה חוזרת).
     $appReq = all("SELECT id, status, scope, minutes FROM access_requests WHERE child_id = ? AND kind = 'app' AND status != 'pending'
                    AND decided_at > ? ORDER BY id", [$userId, gmdate('Y-m-d\TH:i:s\Z', time() - 86400)]);
