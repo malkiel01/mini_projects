@@ -136,6 +136,7 @@ function attach_file(array $d, array $schema, string $fieldKey, array $file, str
     $pdo = db();
     $pdo->beginTransaction();
     try {
+        doc_lock($pdo, (int)$d['id'], ['draft', 'sent', 'in_progress']);   // לא מצרפים למסמך שננעל בינתיים (DT-F07)
         $now = now_iso();
         $pdo->prepare(
             'INSERT INTO attachments (document_id, field_key, path, name_enc, mime, size, sha256, uploaded_by, at)
