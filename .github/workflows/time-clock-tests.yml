@@ -1,0 +1,27 @@
+# בדיקות שעון הנוכחות — רצות על כל PR שנוגע בתיקייה, על מסד SQLite זמני.
+#   php time-clock/tests/run.php — זהות מהפלטפורמה, חברה, סניפים, צוות והפרדה בין חברות
+# אין כאן פריסה: הפריסה היחידה היא deploy.yml.
+name: time-clock tests
+
+on:
+  pull_request:
+    paths:
+      - 'time-clock/**'
+      - '.github/workflows/time-clock-tests.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: pdo_sqlite, mbstring
+          coverage: none
+      - name: בדיקות
+        run: php time-clock/tests/run.php

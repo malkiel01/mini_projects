@@ -1,0 +1,9 @@
+# חסימת גישה ישירה: time-clock.sqlite מכיל את החברות, האנשים והדיווחים.
+# הכול מוגש רק דרך api.php, שבודק מי המבקש ולאיזו חברה הוא שייך.
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+</IfModule>

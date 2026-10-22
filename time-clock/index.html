@@ -2,29 +2,36 @@
 <html lang="he" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>שעון נוכחות — מתחילים לאפיין</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="theme-color" content="#2d4a8a">
+<title>שעון נוכחות</title>
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="assets/css/app.css">
 <script src="assets/js/app.js" defer></script>
 </head>
 <body>
-<main>
-<header><img src="assets/icon.svg" alt="" width="64" height="64"><span class="badge">פרויקט חדש · באפיון</span></header>
-<h1>שעון נוכחות</h1>
-<p class="intro">דרך פשוטה לדווח כניסה ויציאה, ולעקוב אחרי שעות העבודה.</p>
-<section class="notice" aria-labelledby="status"><h2 id="status">מתחילים מהצרכים שלך</h2><p>האפליקציה עדיין אינה פעילה. אין כרגע דיווחי נוכחות או שמירת נתונים — כאן מתחיל האפיון.</p></section>
-<section aria-labelledby="questions"><h2 id="questions">מה נגדיר יחד?</h2>
-<ol><li><strong>למי זה מיועד?</strong> למספר עסקים, לכל עסק עובדים ומנהל משלו.</li><li><strong>איך מדווחים?</strong> טלפון אישי, מחשב או עמדת דיווח משותפת.</li><li><strong>מה נרשם?</strong> כניסה, יציאה, הפסקות ותיקוני דיווח.</li><li><strong>מה רואים בסוף החודש?</strong> סיכום שעות, אישור מנהל וייצוא.</li></ol></section>
-<section class="next" aria-labelledby="next"><h2 id="next">ממשיכים בצ׳אט הייעודי</h2><p>פותחים צ׳אט חדש בשם „שעון נוכחות” ומדביקים את הודעת הפתיחה.</p><button type="button" id="copy">העתקת הודעת הפתיחה</button><p id="copy-status" role="status"></p>
-<details><summary>הצגת הודעת הפתיחה</summary><pre id="handoff">אנחנו ממשיכים את פרויקט „שעון נוכחות” במאגר malkiel01/mini_projects, בתיקייה time-clock.
-קרא קודם את CLAUDE.md, את .claude/COORDINATION.md ואת time-clock/README.md.
-בדוק את main המעודכן ואת ה-PR של הקמת הפרויקט לפני יצירת ענף חדש.
-הפרויקט נמצא בשלב האפיון. כרגע יש רישום באינדקס ודף פתיחה בלבד.
-עבוד רק על שעון הנוכחות. אל תניח שהצעות באפיון כבר אושרו.
-הוחלט: מספר עסקים, לכל עסק עובדים ומנהל משלו, עם הפרדה בין נתוני העסקים.
-התחל בבירור אופן הדיווח, ועדכן את ההחלטות ב-README לפני בניית מנגנון הנוכחות.</pre></details></section>
-<footer>שעון נוכחות · הכלים הדיגיטליים</footer>
-</main>
+<a class="skip" href="#main">דילוג לתוכן</a>
+<header class="top" id="top" hidden>
+  <button class="icon-btn" id="back" aria-label="חזרה" hidden>→</button>
+  <div class="titles">
+    <h1 id="title">שעון נוכחות</h1>
+    <button class="co-btn sub" id="co-btn" type="button" aria-label="החלפת חברה"><span class="one" id="co-name"></span><span id="co-caret" aria-hidden="true">▾</span></button>
+  </div>
+  <button class="icon-btn" id="settings-btn" aria-label="הגדרות החברה" hidden>⚙️</button>
+</header>
+<main id="main" tabindex="-1"><p class="empty">טוען…</p></main>
+
+<!-- גיליון כללי: התוכן נבנה ב-JS לכל עריכה -->
+<dialog id="sheet" aria-labelledby="sheet-title">
+  <form method="dialog" novalidate>
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+      <h2 id="sheet-title"></h2>
+      <button type="submit" class="btn primary" id="sheet-save">שמירה</button>
+    </header>
+    <div class="sheet-body" id="sheet-body"></div>
+  </form>
+</dialog>
+<div class="toast" role="status" hidden></div>
 </body>
 </html>
