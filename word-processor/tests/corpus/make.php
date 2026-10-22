@@ -152,6 +152,18 @@ for ($r = 1; $r <= 4; $r++) {
 }
 $corpus['numbering'] = ['title' => 'מספור', 'json' => $doc($c), 'page' => ['heading_numbers' => true]];
 
+// 12. טיפוגרפיה: הזחת שורה ראשונה ותלויה, טאבים (עצירות כל 36 נק'), סוגי קו תחתון, גדלים
+$c = [$hd('טיפוגרפיה', 1)];
+$uls = ['double', 'dotted', 'dashed', 'wavy', 'thick', null];
+for ($i = 0; $i < 24; $i++) {
+    $attrs = $i % 3 === 0 ? ['firstLine' => 24] : ($i % 3 === 1 ? ['firstLine' => -36] : []);
+    $u = $uls[$i % 6];
+    $parts = [$text($sentence(4, 10) . "\t"), $text($sentence(3, 8), [['type' => 'underline'] + ($u ? ['attrs' => ['ul' => $u]] : [])]), $text("\t" . $sentence(10, 40))];
+    if ($i % 4 === 0) $parts[] = $text("\t\t" . $sentence(3, 9), [['type' => 'textStyle', 'attrs' => ['fontSize' => '14pt']]]);
+    $c[] = ['type' => 'paragraph', 'attrs' => $attrs, 'content' => $parts];
+}
+$corpus['typography'] = ['title' => 'טיפוגרפיה', 'json' => $doc($c), 'page' => null];
+
 foreach ($corpus as $name => $d) {
     file_put_contents(__DIR__ . "/$name.json", json_encode($d, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
     echo "$name.json\n";

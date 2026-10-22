@@ -65,6 +65,10 @@ export const COMMANDS = [
     { id: 'letterSpacing', label: 'ריווח בין תווים', group: 'font', run: (x, v) => v ? x.chain().setLetterSpacing(v + 'pt').run() : x.chain().unsetLetterSpacing().run(),
         value: x => ts(x).letterSpacing ? String(parseFloat(ts(x).letterSpacing)) : '' },
     { id: 'formatPainter', label: 'העתקת עיצוב (לחיצה כפולה — לכמה מקומות)', icon: '🖌', group: 'font', run: (x, sticky) => x.ui.painter(!!sticky) },
+    { id: 'growFont', label: 'הגדלת גופן', icon: 'A+', keys: 'Ctrl+Shift+>', group: 'font', run: x => x.ui.stepFont(1) },
+    { id: 'shrinkFont', label: 'הקטנת גופן', icon: 'A−', keys: 'Ctrl+Shift+<', group: 'font', run: x => x.ui.stepFont(-1) },
+    { id: 'underlineStyle', label: 'סוג קו תחתון', group: 'font', run: (x, v) => x.chain().setMark('underline', { ul: v || null }).run(),
+        value: x => (x.editor.isActive('underline') ? x.editor.getAttributes('underline').ul || '' : '') },
     { id: 'clearFormat', label: 'ניקוי עיצוב', icon: '⌧', group: 'font',
         run: x => x.chain().unsetAllMarks().setBlockAttrs({ lineHeight: null, spaceBefore: null, spaceAfter: null, indent: 0 }).unsetTextAlign().run() },
 

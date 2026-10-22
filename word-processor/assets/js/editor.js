@@ -10,7 +10,7 @@
  * ומספר עמוד בכל עמוד, וזום שמגדיל רק את הדפים.
  */
 import { Editor, Extension, StarterKit, Superscript, Subscript } from '../../vendor/tiptap.js';
-import { extensions, imageBox, FONTS, FALLBACK, cssFont, safeHref, bookmarks, BOOKMARK_RE, USER_STYLE, styleKeyOf } from './extensions.js';
+import { extensions, imageBox, FONTS, FALLBACK, cssFont, safeHref, bookmarks, BOOKMARK_RE, USER_STYLE, styleKeyOf, UNDERLINES } from './extensions.js';
 import { Pages, pageLabel } from './pagination.js';
 import { cleanPastedHtml } from './paste.js';
 import { migrate } from './schema.js';
@@ -460,6 +460,7 @@ export function createWordEditor(root, opts) {
             link: () => linkDialog(), bookmark: () => bookmarkDialog(),
             newStyle: () => newStyleDialog(), updateStyle: () => updateStyleFromSelection(),
             numberingValue: () => numberingDialog(),
+            stepFont: dir => stepFont(dir),
             headingNumbers: () => setPage({ heading_numbers: !page.heading_numbers }),
             headingNumbersOn: () => !!page.heading_numbers,
             save: opts.save ? () => opts.save() : null,
@@ -486,6 +487,7 @@ export function createWordEditor(root, opts) {
         h('span', { 'aria-hidden': 'true' }, cmds.get(id).icon), h('input', { type: 'color', value, 'aria-label': cmds.get(id).label, oninput: e => cmds.run(id, e.target.value) }));
 
     const linkOff = cmdBtn('unlink');
+    const ulSel = cmdSel('underlineStyle', 'w-ul', Object.entries(UNDERLINES).map(([v, t]) => h('option', { value: v }, t)));
     const hnumBtn = cmdBtn('headingNumbers');
     const styleSel = cmdSel('style', 'w-style', []);
     // גלריית סגנונות: כל כפתור נראה כמו הסגנון (גופן, משקל, צבע; גודל מוקטן), כמו ב-Word
@@ -533,7 +535,7 @@ export function createWordEditor(root, opts) {
     const TABS = [
         ['home', 'בית', [
             grp('לוח', B.painter),
-            grp('גופן', [fontSel, sizeSel, B.clearFormat], [B.bold, B.italic, B.underline, B.strike, B.superscript, B.subscript, B.color, B.mark, spacingSel]),
+            grp('גופן', [fontSel, sizeSel, cmdBtn('growFont'), cmdBtn('shrinkFont'), B.clearFormat], [B.bold, B.italic, B.underline, ulSel, B.strike, B.superscript, B.subscript, B.color, B.mark, spacingSel]),
             grp('פסקה', [B.bulletList, B.orderedList, listType, ...numBtns, B.outdent, B.indent], [B.alignRight, B.alignCenter, B.alignLeft, B.alignJustify, B.paragraphDialog, hnumBtn]),
             grp('סגנונות', [gallery], [styleSel, B.editStyles, cmdBtn('newStyle'), cmdBtn('updateStyle')]),
             grp('עריכה', [cmdBtn('find'), cmdBtn('replace')])]],
@@ -615,6 +617,11 @@ export function createWordEditor(root, opts) {
         else if (e.altKey && !e.ctrlKey && e.code === 'KeyQ') { e.preventDefault(); focusSearch(); }
         else if ((e.ctrlKey || e.metaKey) && !e.altKey && e.code === 'KeyS') { e.preventDefault(); cmds.run('save'); }
         else if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.code === 'KeyK' && !previewing) { e.preventDefault(); cmds.run('link'); }
+        // Ctrl+Shift+> / < — הגדלה / הקטנה של הגופן (לפי המקש, גם במקלדת עברית)
+        else if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && (e.code === 'Period' || e.code === 'Comma') && !previewing) {
+            e.preventDefault();
+            cmds.run(e.code === 'Period' ? 'growFont' : 'shrinkFont');
+        }
         // Ctrl+F / Ctrl+H — החיפוש של העורך, לא של הדפדפן (שלא מוצא טקסט בעמודים שמחוץ למסך)
         else if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && (e.code === 'KeyF' || e.code === 'KeyH') && !previewing) {
             e.preventDefault();
@@ -764,6 +771,7 @@ export function createWordEditor(root, opts) {
         for (const b of gallery.children) { b.classList.toggle('on', b.dataset.style === sk); b.setAttribute('aria-pressed', String(b.dataset.style === sk)); }
         fontIndicator(cmds.state('fontFamily').value);
         sizeSel.value = cmds.state('fontSize').value;
+        ulSel.value = cmds.state('underlineStyle').value;
         spacingSel.value = cmds.state('letterSpacing').value;
         const lt = cmds.state('listType').value;
         if (lt) listType.value = lt;
@@ -1050,7 +1058,10 @@ export function createWordEditor(root, opts) {
                     h('div.fields.two',
                         field('לפני הפסקה', numInput('before', a.spaceBefore, { min: 0, max: 200 })),
                         field('אחרי הפסקה', numInput('after', a.spaceAfter, { min: 0, max: 200 })),
-                        field('הזחה (צעדים של 1.27 ס"מ)', numInput('indent', a.indent || 0, { min: 0, max: 8, step: 1 })))));
+                        field('הזחה (צעדים של 1.27 ס"מ)', numInput('indent', a.indent || 0, { min: 0, max: 8, step: 1 })),
+                        field('שורה ראשונה', h('select', { name: 'flk' }, Object.entries({ '': 'ללא', first: 'הזחה', hang: 'תלויה' })
+                            .map(([k, t]) => h('option', { value: k, selected: k === (a.firstLine > 0 ? 'first' : a.firstLine < 0 ? 'hang' : '') }, t)))),
+                        field('בכמה (נקודות)', numInput('flv', a.firstLine ? Math.abs(a.firstLine) : 36, { min: 0, max: 200 })))));
         }, form => {
             const f = new FormData(form);
             const line = f.get('line');
@@ -1060,6 +1071,7 @@ export function createWordEditor(root, opts) {
                 dir: f.get('dir') === 'ltr' ? 'ltr' : null,
                 lineHeight: line === 'exact' ? (ex > 0 ? 'exact:' + ex : null) : (line || null),
                 spaceBefore: n('before'), spaceAfter: n('after'), indent: Math.min(8, Math.round(n('indent') || 0)),
+                firstLine: f.get('flk') && n('flv') ? Math.min(200, n('flv')) * (f.get('flk') === 'hang' ? -1 : 1) : null,
             }).run();
         });
     }
@@ -1096,6 +1108,32 @@ export function createWordEditor(root, opts) {
                     .setTextSelection(from + shown.length).unsetMark('link').run();
             } else chain().setTextSelection({ from, to }).setMark('link', { href }).run();
         }, 'אישור');
+    }
+
+    /**
+     * A+ / A−: כל קטע בבחירה עולה / יורד לגודל הבא ברשימה (SIZE_LIST), לפי הגודל שלו עכשיו — העיצוב הישיר, או הגודל
+     * של סגנון הפסקה. בלי בחירה — הגודל להקלדה.
+     */
+    function stepFont(dir) {
+        const { state } = editor;
+        const ts = editor.schema.marks.textStyle;
+        const styleSize = block => {
+            const k = ['paragraph', 'heading'].includes(block?.type.name) ? styleKeyOf(block) : 'normal';
+            return page.styles[k]?.size || (USER_STYLE.test(k) ? page.styles.normal.size : null) || page.font.size;
+        };
+        const next = sz => dir > 0 ? (SIZE_LIST.find(x => x > sz) ?? Math.min(400, sz + 10)) : ([...SIZE_LIST].reverse().find(x => x < sz) ?? Math.max(1, sz - 1));
+        const { from, to, empty, $from } = state.selection;
+        if (empty) return chain().setFontSize(next(parseFloat(editor.getAttributes('textStyle').fontSize) || styleSize($from.parent)) + 'pt').run();
+        const tr = state.tr;
+        state.doc.nodesBetween(from, to, (n, pos, parent) => {
+            if (!n.isText) return;
+            const old = n.marks.find(m => m.type === ts);
+            const cur = parseFloat(old?.attrs.fontSize) || styleSize(parent);
+            tr.addMark(Math.max(from, pos), Math.min(to, pos + n.nodeSize), ts.create({ ...(old?.attrs || {}), fontSize: next(cur) + 'pt' }));
+        });
+        editor.view.dispatch(tr);
+        editor.view.focus();
+        return true;
     }
 
     /** קביעת ערך המספור: הרשימה שבה הסמן מתחילה במספר הזה (ולא ממשיכה את הקודמת). */
