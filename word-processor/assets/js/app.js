@@ -317,7 +317,8 @@ async function openDoc(id) {
 
     /** לפני ייצוא / שכפול: שומרים קודם, ואם לא הצליח — לא ממשיכים בשקט עם גרסה ישנה. */
     const saved = async what => (await ensureSaved(cur, what)) === 'ok';
-    const download = (fmt, what) => async () => { if (await saved(what)) location.href = `api.php?action=my_export&format=${fmt}&doc=${id}`; };
+    // PDF — בתצוגת השינויים שבעורך (סופי / מקור / מחברים מוסתרים), כמו ההדפסה
+    const download = (fmt, what) => async () => { if (await saved(what)) location.href = `api.php?action=my_export&format=${fmt}&doc=${id}` + (fmt === 'pdf' ? ed.exportQuery?.() || '' : ''); };
     function docMenu(anchor) {
         const items = [
             ['⬇️', 'הורדה כ-Word', download('docx', 'ההורדה')],

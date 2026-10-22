@@ -34,11 +34,31 @@ function track_walk(array $json, callable $fn): array
 /** כמו בעורך (ובהדפסה): תוספת — קו תחתון, מחיקה — קו חוצה, בצבע של המחבר. ל-PDF ול-HTML. */
 function track_visual(array $json): array
 {
-    return track_walk($json, function (array $n) {
+    return track_view($json);
+}
+
+const TRACK_VIEWS = ['all', 'final', 'original'];
+
+/**
+ * המסמך כמו בתצוגת השינויים של העורך (כמו ב-Word): all — סימון מלא; final — סופי (כאילו הכול אושר: המחיקות
+ * יוצאות, התוספות — טקסט רגיל); original — המקור (כאילו הכול נדחה). $hide — מחברים שהשינויים שלהם מוסתרים
+ * בסימון המלא (מוצגים כמו בסופי). השינויים שנשארים — בצבע המחבר, קו תחתון / חוצה. ל-PDF.
+ */
+function track_view(array $json, string $view = 'all', array $hide = []): array
+{
+    $view = in_array($view, TRACK_VIEWS, true) ? $view : 'all';
+    return track_walk($json, function (array $n) use ($view, $hide) {
         $marks = $n['marks'] ?? [];
         foreach ($marks as $m) {
             $t = $m['type'] ?? '';
             if ($t !== 'ins' && $t !== 'del') continue;
+            $plain = $view === 'final' || ($view === 'all' && in_array((string)($m['attrs']['author'] ?? ''), $hide, true)) ? 'final' : ($view === 'original' ? 'original' : null);
+            if ($plain !== null) {
+                // סופי: מחיקה יוצאת; מקור: תוספת יוצאת; השאר — בלי הסימון
+                if (($plain === 'final') === ($t === 'del')) return null;
+                $n['marks'] = array_values(array_filter($marks, fn($x) => ($x['type'] ?? '') !== $t));
+                return $n;
+            }
             $line = $t === 'ins' ? 'underline' : 'strike';
             $marks = array_values(array_filter($marks, fn($x) => ($x['type'] ?? '') !== $line));
             $style = null;
