@@ -1,0 +1,21 @@
+/* מוניטור מערכת — לפי phone-first-design (tokens.css). */
+:root {
+    --bg: #f4f5f7; --surface: #fff; --ink: #16192b; --muted: #5d6475; --line: #e3e6eb;
+    --brand: #2d4a8a; --brand-ink: #fff;
+    --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --r: 10px; --head: 48px;
+}
+@media (prefers-color-scheme: dark) {
+    :root { --bg: #111318; --surface: #1b1e26; --ink: #e8eaf0; --muted: #9aa1b2; --line: #2c303b; --brand: #7f9fe0; --brand-ink: #0d1324; }
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font: 15px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; background: var(--bg); color: var(--ink); min-height: 100dvh; }
+.one { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.muted { color: var(--muted); }
+.top { height: var(--head); display: flex; align-items: center; padding: 0 var(--s4); padding-top: env(safe-area-inset-top); background: var(--brand); color: var(--brand-ink); }
+.top h1 { font-size: 1.05rem; }
+main { max-width: 860px; margin: 0 auto; padding: var(--s3); display: grid; gap: var(--s3); }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: var(--s3); display: grid; gap: var(--s2); }
+.card h2 { font-size: 1rem; }
+.list { list-style: none; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
+.list li { display: flex; gap: var(--s2); align-items: center; min-height: 44px; padding: 0 var(--s3); }
+.list li + li { border-top: 1px solid var(--line); }
