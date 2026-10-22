@@ -455,23 +455,24 @@ object PolicyEngine {
             return Verdict(false, "ad_blocked", "פרסומת נחסמה")
         }
 
-        when (matchUrlRules(set.rules, u, isMainFrame)) {
-            "deny" -> return Verdict(false, "rule_deny", "הכתובת הזו נחסמה עבורך")
-            "allow" -> return Verdict(true, "rule_allow")
-        }
+        val urlVerdict = matchUrlRules(set.rules, u, isMainFrame)
+        if (urlVerdict == "deny") return Verdict(false, "rule_deny", "הכתובת הזו נחסמה עבורך")
 
-        val platform = platformOf(u.host)
-        if (platform.isNotEmpty()) {
-            set.platforms[platform]?.let {
-                return youTubeVerdict(u, it, set.platformItems[platform] ?: emptyMap(), isMainFrame)
-            }
-        }
-
+        // סוג תוכן לפני היתר מפורש — "לחסום תמיד, גם באתר שמותר" (שלב 10; כמו lib/policy.php).
         if (p.blockedTypes.isNotEmpty()) {
             val t = contentTypeOf(u.full, declaredType)
             if (t.isNotEmpty() && t in p.blockedTypes) {
                 val label = contentTypeLabels[t] ?: t
                 return Verdict(false, "type_blocked", "תוכן מסוג \"$label\" חסום בחשבון שלך")
+            }
+        }
+
+        if (urlVerdict == "allow") return Verdict(true, "rule_allow")
+
+        val platform = platformOf(u.host)
+        if (platform.isNotEmpty()) {
+            set.platforms[platform]?.let {
+                return youTubeVerdict(u, it, set.platformItems[platform] ?: emptyMap(), isMainFrame)
             }
         }
 

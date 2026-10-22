@@ -8,13 +8,15 @@
 declare(strict_types=1);
 require_once __DIR__ . '/../lib/auth.php';
 require_once __DIR__ . '/../lib/ui.php';
+require_once __DIR__ . '/../lib/privacy.php';
 
 $admin = requireAdmin();
 
 $who  = (int) ($_GET['user'] ?? 0);
 $only = (string) ($_GET['only'] ?? '');
 
-$where = []; $args = [];
+// רק משתמשים שמנהל המערכת מנהל בעצמו — יומני משפחות גלויים להורים בלבד (lib/privacy.php).
+$where = [adminSeesActivitySql()]; $args = [];
 if ($who > 0)            { $where[] = 'a.user_id = ?'; $args[] = $who; }
 if ($only === 'blocked') { $where[] = 'a.allowed = 0'; }
 $sql = 'SELECT a.*, u.username FROM audit a LEFT JOIN users u ON u.id = a.user_id'
@@ -22,13 +24,13 @@ $sql = 'SELECT a.*, u.username FROM audit a LEFT JOIN users u ON u.id = a.user_i
      . ' ORDER BY a.id DESC LIMIT 200';
 
 $rows  = all($sql, $args);
-$users = all('SELECT id, username FROM users ORDER BY username');
+$users = all('SELECT id, username FROM users u WHERE ' . adminSeesActivitySql() . ' ORDER BY username');
 
 layoutTop('יומן', $admin);
 ?>
 <div class="card">
   <h2>יומן פעילות</h2>
-  <p class="hint">‏200 הרשומות האחרונות.</p>
+  <p class="hint">‏200 הרשומות האחרונות, של משתמשים שאינם בחשבון משפחה. יומני משפחות — להורים בלבד.</p>
   <form method="get" class="grid" style="align-items:end">
     <label><span class="lbl">משתמש</span>
       <select name="user">

@@ -9,6 +9,7 @@
 declare(strict_types=1);
 require_once __DIR__ . '/../lib/auth.php';
 require_once __DIR__ . '/../lib/ui.php';
+require_once __DIR__ . '/../lib/privacy.php';
 
 $admin = requireAdmin();
 
@@ -136,7 +137,7 @@ note($msg ?? '', 'ok');
     רצף האירועים שהאפליקציה הקליטה, עם מצב הדגלים בכל נקודה.
     <br>לשליחה מהמכשיר: בדפדפן, <strong>לחיצה ארוכה על "חלון צף"</strong>.
   </p>
-  <?php $traces = all('SELECT t.*, u.username FROM traces t
+  <?php $traces = all('SELECT t.*, u.username, u.account_id FROM traces t
                        LEFT JOIN users u ON u.id = t.user_id
                        ORDER BY t.id DESC LIMIT 10');
   if (!$traces): ?>
@@ -152,7 +153,7 @@ note($msg ?? '', 'ok');
       <div class="sec-body">
         <pre style="direction:ltr;text-align:left;white-space:pre;font-size:11.5px;
                     background:var(--bg);padding:12px;border-radius:9px;
-                    overflow:auto;max-height:70vh"><?= h($t['body']) ?></pre>
+                    overflow:auto;max-height:70vh"><?= h(adminSeesActivity($t) ? $t['body'] : redactUrls((string) $t['body'])) ?></pre>
       </div>
     </details>
   <?php endforeach; endif; ?>

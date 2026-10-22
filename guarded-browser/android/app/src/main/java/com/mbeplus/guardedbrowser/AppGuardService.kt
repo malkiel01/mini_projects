@@ -108,23 +108,21 @@ class AppGuardService : AccessibilityService() {
         return windowMentionsSelf()
     }
 
-    /** האם השם "מגדלור" או שם החבילה מופיעים בחלון הפעיל (סריקה חסומה בעומק ובכמות). */
+    /**
+     * האם השם "מגדלור" או שם החבילה מופיעים בחלון הפעיל.
+     *
+     * פרטיות (סקירה, 2026-10-20 — שלב 10): נקרא רק משלושת המסכים שב-guardsRemoval (הסרה, פרטי אפליקציה,
+     * מנהלי מכשיר), ורק בלי "בעל מכשיר". החיפוש הוא של המערכת (findAccessibilityNodeInfosByText): אנחנו
+     * מקבלים רק את הצמתים שמכילים את השם — לא את שאר הטקסט בחלון — ותשובת כן/לא בלבד. שום טקסט לא נשמר,
+     * לא נרשם ולא נשלח. קודם עברנו על כל הטקסט בחלון (עד 400 צמתים), בניגוד ל"לא קוראים תוכן מסך".
+     */
     private fun windowMentionsSelf(): Boolean {
         val root = try { rootInActiveWindow } catch (e: Exception) { null } ?: return false
-        val label = getString(R.string.app_name)
-        val self = store.ownPackage
-        var seen = 0
-        val queue = ArrayDeque<AccessibilityNodeInfo>()
-        queue.add(root)
-        try {
-            while (queue.isNotEmpty() && seen < 400) {
-                val n = queue.removeFirst(); seen++
-                val t = (n.text?.toString() ?: "") + " " + (n.contentDescription?.toString() ?: "")
-                if (t.contains(label) || t.contains(self, true)) return true
-                for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
+        return try {
+            listOf(getString(R.string.app_name), store.ownPackage).any { needle ->
+                needle.isNotEmpty() && root.findAccessibilityNodeInfosByText(needle).isNotEmpty()
             }
-        } catch (e: Exception) { Trace.log("appguard.scan", e.message ?: "") }
-        return false
+        } catch (e: Exception) { Trace.log("appguard.scan", e.javaClass.simpleName); false }
     }
 
     override fun onInterrupt() {}
