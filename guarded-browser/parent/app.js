@@ -1239,6 +1239,61 @@ const APOST = { allow_all: ['🔓 הכול פתוח', 'כל האפליקציות
                 deny_all: ['🔒 רק מה שאישרתי', 'רק האפליקציות שתאשרו ייפתחו. השאר חסומות.'] };
 let AP = null;
 
+/* ── 🛒 מרקט: מה משחררים לילד מתוך המלאי (lib/market.php) ── */
+let MK = null;
+
+async function loadMarket() {
+    const kid = K.id;
+    try { MK = { ...(await call('market', { id: kid })).market, kid }; }
+    catch (e) { MK = { kid, error: e.message }; }
+    if (tab === 'apps' && K && K.id === kid) renderKid();
+}
+
+function marketGroup() {
+    if (!MK || MK.kid !== K.id) { loadMarket(); return group('🛒 מרקט', '', [el('p', { class: 'muted', text: 'טוען…' })]); }
+    if (MK.error) return group('🛒 מרקט', '', [el('p', { class: 'error', text: MK.error })]);
+    const save = async (action, data, ok) => {
+        try { MK = { ...(await call(action, { id: K.id, ...data })).market, kid: K.id }; if (ok) toast(ok); AP = null; }
+        catch (e) { toast(e.message, true); } renderKid();
+    };
+    const released = MK.apps.filter(a => a.released).length;
+    const icon = a => a.icon ? el('img', { src: a.icon, alt: '', width: 32, height: 32, loading: 'lazy', referrerPolicy: 'no-referrer',
+        style: 'border-radius:8px;flex:none' }) : el('span', { class: 'app-ic', text: '📱', ariaHidden: 'true' });
+    const row = a => el('li', {}, [icon(a),
+        el('span', { class: 'nm' }, [a.name, el('small', { text: `${a.min_age ? a.min_age + '+ · ' : ''}${a.installed ? 'מותקנת אצלו' : 'לא מותקנת'}${a.private ? ' · פרטית שלכם' : ''}` }),
+            a.note ? el('small', { text: '⚠️ ' + a.note, style: 'color:var(--danger)' }) : null]),
+        a.private ? el('button', { type: 'button', class: 'icon-btn', text: '🗑️', ariaLabel: `הסרה מהמלאי — ${a.name}`,
+            onclick: () => confirm(`להסיר את ${a.name} מהמלאי שלכם?`) && save('market_remove', { market_id: a.id }, 'הוסר') }) : null,
+        // כפתור אחד, קצר — ברוחב טלפון שני מצבים לא נכנסו בשורה.
+        el('button', { type: 'button', class: a.released ? 'btn primary sm' : 'btn ghost sm', style: 'flex:none',
+            text: a.released ? '✅ משוחררת' : '➕ שחרור', ariaPressed: String(a.released),
+            onclick: () => save('market_release', { package: a.package, on: a.released ? 0 : 1 },
+                a.released ? 'הוסרה מהמרקט שלו' : 'שוחררה — תופיע אצלו במרקט') }),
+    ]);
+    const cats = Object.entries(MK.categories).map(([k, [ic, name]]) => {
+        const list = MK.apps.filter(a => a.category === k);
+        if (!list.length) return null;
+        const on = list.filter(a => a.released).length;
+        return el('details', { class: 'group', open: on > 0 }, [
+            el('summary', {}, [el('b', { text: `${ic} ${name}` }), el('small', { class: 'muted', text: ` — ${list.length} אפליקציות${on ? ` · ${on} משוחררות` : ''}` })]),
+            el('ul', { class: 'rows apps' }, list.map(row))]);
+    }).filter(Boolean);
+    // אפליקציה פרטית מקישור Play — נוספת למלאי שלכם ומשוחררת לילד הזה.
+    const link = el('input', { type: 'url', dir: 'ltr', placeholder: 'https://play.google.com/store/apps/details?id=…', style: 'flex:1;min-width:0' });
+    const cat = el('select', {}, Object.entries(MK.categories).map(([k, [ic, n]]) => el('option', { value: k, text: `${ic} ${n}` })));
+    const add = el('button', { type: 'button', class: 'btn', text: '➕ הוספה', onclick: () => {
+        if (!link.value.trim()) return toast('מדביקים קישור של Google Play', true);
+        save('market_add', { link: link.value.trim(), category: cat.value, min_age: 0 }, 'נוספה ושוחררה לו');
+    } });
+    return group('🛒 מרקט', released ? `${released} משוחררות` : 'בוחרים מה הוא יכול להתקין', [
+        el('p', { class: 'hint', text: 'מה שמשחררים מופיע אצלו ברובריקת "📲 אפליקציות" עם "התקנה", ומותר לו לפתוח אותו — גם כשאפליקציה חדשה נחסמת.' }),
+        ...cats,
+        el('details', { class: 'group' }, [el('summary', {}, [el('b', { text: '➕ אפליקציה שאין במלאי' })]),
+            el('p', { class: 'hint', text: 'מדביקים קישור מ-Google Play. היא נוספת למלאי שלכם בלבד, ומשוחררת לילד הזה.' }),
+            el('div', { style: 'display:flex;gap:8px;flex-wrap:wrap' }, [link, cat, add])]),
+    ]);
+}
+
 async function loadApps() {
     const kid = K.id;
     try { AP = { ...(await call('apps', { id: kid })).apps, kid }; }
@@ -1324,6 +1379,7 @@ function kidApps() {
         warn,
         hideWarn,
         chrome,
+        marketGroup(),
         group('ברירת מחדל', '', [posture, hint]),
         group('אפליקציה חדשה שתותקן', '', [newApps, el('p', { class: 'hint', text: AP.new_apps === 'block'
             ? 'כל אפליקציה שתותקן מעכשיו — חסומה מיד, גם בלי אינטרנט. היא תופיע כאן ברשימה עם 🚫, ותוכלו לפתוח אותה. הילד יכול לבקש.'
