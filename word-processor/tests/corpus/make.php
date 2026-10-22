@@ -210,6 +210,17 @@ for ($i = 1; $i <= 14; $i++) {
 array_unshift($c, ['type' => 'toc', 'attrs' => ['levels' => 3, 'entries' => $entries]]);
 $corpus['toc'] = ['title' => 'תוכן עניינים', 'json' => $doc($c), 'page' => null];
 
+// 16. הערות סיום: כמה עמודים של טקסט עם הערות סיום (קצרות וארוכות) ומעט הערות שוליים — הסיום מרוכז בסוף, ונמשך לעמוד הבא
+$en = fn(string $t) => ['type' => 'footnote', 'attrs' => ['text' => $t, 'end' => true]];
+$c = [$hd('הערות סיום', 1)];
+for ($i = 1; $i <= 26; $i++) {
+    $parts = [$text($sentence(15, 50))];
+    if ($i % 2 === 0) { $parts[] = $en("מקור $i: " . $sentence(4, $i % 6 === 0 ? 45 : 12)); $parts[] = $text(' ' . $sentence(5, 20)); }
+    if ($i % 9 === 0) $parts[] = $fn("שוליים $i: " . $sentence(4, 12));
+    $c[] = ['type' => 'paragraph', 'content' => $parts];
+}
+$corpus['endnotes'] = ['title' => 'הערות סיום', 'json' => $doc($c), 'page' => null];
+
 foreach ($corpus as $name => $d) {
     file_put_contents(__DIR__ . "/$name.json", json_encode($d, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
     echo "$name.json\n";

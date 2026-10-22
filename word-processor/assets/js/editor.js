@@ -11,7 +11,7 @@
  */
 import { Editor, Extension, StarterKit, Superscript, Subscript } from '../../vendor/tiptap.js';
 import { extensions, imageBox, FONTS, FALLBACK, cssFont, safeHref, bookmarks, BOOKMARK_RE, USER_STYLE, styleKeyOf, UNDERLINES, TABLE_BORDERS, VALIGNS } from './extensions.js';
-import { Pages, pageLabel } from './pagination.js';
+import { Pages, pageLabel, Endnotes } from './pagination.js';
 import { cleanPastedHtml } from './paste.js';
 import { migrate } from './schema.js';
 import { createCommands } from './commands.js';
@@ -244,7 +244,7 @@ export function createWordEditor(root, opts) {
 
     const editor = new Editor({
         element: host,
-        extensions: extensions([Pages.configure({ geometry, onLayout: drawPages }), FindReplace, ParagraphMarks]),
+        extensions: extensions([Pages.configure({ geometry, onLayout: drawPages }), FindReplace, ParagraphMarks, Endnotes]),
         content: initial,
         editable: opts.editable !== false,
         editorProps: {
@@ -256,6 +256,7 @@ export function createWordEditor(root, opts) {
             // Ctrl+Alt+F — הערת שוליים (כמו ב-Word)
             handleKeyDown: (view, e) => {
                 if ((e.ctrlKey || e.metaKey) && e.altKey && e.code === 'KeyF') { footnoteDialog(null); return true; }
+                if ((e.ctrlKey || e.metaKey) && e.altKey && e.code === 'KeyD') { footnoteDialog(null, true); return true; }   // הערת סיום — כמו ב-Word
                 return false;
             },
             handlePaste: (view, e) => {
@@ -539,7 +540,7 @@ export function createWordEditor(root, opts) {
             tableStyle: k => applyTableStyle(k),
             insertToc: () => insertToc(), updateToc: () => updateToc(), hasToc: () => { let f = false; editor.state.doc.descendants(n => { if (n.type.name === 'toc') f = true; return !f; }); return f; },
             crop: pos => cropDialog(pos), imageProps: pos => imageDialog(pos), imageSize: f => imageSizeTo(f), tableProps: () => tablePropsDialog(),
-            footnote: () => footnoteDialog(null),
+            footnote: () => footnoteDialog(null), endnote: () => footnoteDialog(null, true),
             link: () => linkDialog(), bookmark: () => bookmarkDialog(),
             newStyle: () => newStyleDialog(), updateStyle: () => updateStyleFromSelection(),
             numberingValue: () => numberingDialog(),
@@ -634,7 +635,7 @@ export function createWordEditor(root, opts) {
             grp('פסקה', [B.bulletList, B.orderedList, listType, ...numBtns, B.outdent, B.indent], [B.alignRight, B.alignCenter, B.alignLeft, B.alignJustify, B.paragraphDialog, hnumBtn]),
             grp('סגנונות', [gallery], [styleSel, B.editStyles, cmdBtn('newStyle'), cmdBtn('updateStyle')]),
             grp('עריכה', [cmdBtn('find'), cmdBtn('replace')])]],
-        ['insert', 'הוספה', [grp('טבלאות', B.insertTable), grp('איורים', [B.insertImage, imgInput]), grp('הערות', B.footnote), grp('קישורים', [cmdBtn('link'), linkOff, cmdBtn('bookmark')]), grp('תוכן עניינים', [cmdBtn('insertToc'), tocUpd]), grp('עמודים', B.pageBreak)]],
+        ['insert', 'הוספה', [grp('טבלאות', B.insertTable), grp('איורים', [B.insertImage, imgInput]), grp('הערות', [B.footnote, cmdBtn('endnote')]), grp('קישורים', [cmdBtn('link'), linkOff, cmdBtn('bookmark')]), grp('תוכן עניינים', [cmdBtn('insertToc'), tocUpd]), grp('עמודים', B.pageBreak)]],
         ['layout', 'פריסה', [grp('הגדרת עמוד', B.pageSetup), grp('מעברים', B.sectionBreak)]],
         ['view', 'תצוגה', [zoomGroup, grp('הצגה', [B.navPane, B.showMarks, cmdBtn('wordCount')]), grp('מסמך', [opts.save ? cmdBtn('save') : null, B.print, cmdBtn('printPreview'), opts.versions ? cmdBtn('versions') : null, ...(opts.menu || [])])]],
     ];
@@ -1105,13 +1106,16 @@ export function createWordEditor(root, opts) {
      * העריכה — בעורך קטן עם עיצוב תווים (מודגש, נטוי, קו תחתון, קו חוצה, עילי, תחתי); נשמר ב-attrs.content,
      * והטקסט הפשוט ב-attrs.text. פסקה אחת: Enter לא פותח שורה (Ctrl+Enter — שמירה).
      */
-    function footnoteDialog(pos) {
+    /** הערת שוליים — או הערת סיום (end): אותו חלון; הטקסט מופיע בתחתית העמוד / בסוף המסמך. */
+    function footnoteDialog(pos, endNew = false) {
         const node = pos == null ? null : ed.state.doc.nodeAt(pos);
         if (pos != null && node?.type.name !== 'footnote') return;
         if (!editor.isEditable) return;
+        const end = node ? !!node.attrs.end : endNew;
+        const kind = end ? 'הערת סיום' : 'הערת שוליים';
         const sel = ed.state.selection;
         let mini = null;
-        sheet(node ? 'הערת שוליים' : 'הערת שוליים חדשה', (body, dlg) => {
+        sheet(node ? kind : kind + ' חדשה', (body, dlg) => {
             const box = h('div.fn-edit');
             const tool = (cmd, mark, label, icon) => h('button.fn-tool', {
                 type: 'button', title: label, 'aria-label': label, 'data-mark': mark,
@@ -1122,7 +1126,7 @@ export function createWordEditor(root, opts) {
                 tool('toggleUnderline', 'underline', 'קו תחתון (Ctrl+U)', h('u', 'U')), tool('toggleStrike', 'strike', 'קו חוצה', h('s', 'S')),
                 tool('toggleSuperscript', 'superscript', 'כתב עילי', ICONS.superscript()), tool('toggleSubscript', 'subscript', 'כתב תחתי', ICONS.subscript()));
             // div ולא label: בתוך label לחיצה על הכיתוב "לוחצת" על הכפתור הראשון
-            body.append(h('div.f', h('span', 'הטקסט שיופיע בתחתית העמוד'), tools, box));
+            body.append(h('div.f', h('span', end ? 'הטקסט שיופיע בסוף המסמך' : 'הטקסט שיופיע בתחתית העמוד'), tools, box));
             if (node) body.append(h('p.hint', 'מחיקת כל הטקסט ושמירה — מוחקת את ההערה.'));
             const text = node?.attrs.text || '';
             const inline = Array.isArray(node?.attrs.content) ? node.attrs.content : (text ? [{ type: 'text', text }] : []);
@@ -1141,7 +1145,7 @@ export function createWordEditor(root, opts) {
                 ],
                 content: { type: 'doc', content: [{ type: 'paragraph', content: inline }] },
                 // autofocus: הדפדפן ממקד את התיבה כחלק מפתיחת החלון (showModal) — אותיות שמוקלדות מיד לא הולכות לאיבוד
-                editorProps: { attributes: { class: 'fn-edit-doc', dir: 'rtl', lang: 'he', spellcheck: 'true', role: 'textbox', 'aria-multiline': 'false', 'aria-label': 'הטקסט שיופיע בתחתית העמוד', autofocus: 'true' } },
+                editorProps: { attributes: { class: 'fn-edit-doc', dir: 'rtl', lang: 'he', spellcheck: 'true', role: 'textbox', 'aria-multiline': 'false', 'aria-label': end ? 'הטקסט שיופיע בסוף המסמך' : 'הטקסט שיופיע בתחתית העמוד', autofocus: 'true' } },
             });
             const sync = () => tools.querySelectorAll('[data-mark]').forEach(b => b.classList.toggle('on', mini.isActive(b.dataset.mark)));
             mini.on('transaction', sync);
@@ -1150,7 +1154,7 @@ export function createWordEditor(root, opts) {
             const { text, content } = noteFromMini(mini.getJSON());
             if (!node) {
                 if (!text) return;
-                ed.chain().focus().setTextSelection(sel.to).insertFootnote(text, content).run();
+                ed.chain().focus().setTextSelection(sel.to).insertFootnote(text, content, end).run();
                 // סגירת החלון מחזירה את המיקוד למה שהיה לפניו (לפעמים הסמן קופץ לפני ההערה) — מחזירים אחרי ההערה
                 const after = sel.to + 1;
                 setTimeout(() => ed.chain().focus().setTextSelection(Math.min(after, ed.state.doc.content.size)).run(), 0);
@@ -1165,7 +1169,7 @@ export function createWordEditor(root, opts) {
     }
     // לחיצה על סימן הערה או על ההערה בתחתית העמוד — עריכה
     host.addEventListener('click', e => {
-        const ref = e.target.closest?.('.wp-fn-ref, .wp-fn-area .wp-fn-note');
+        const ref = e.target.closest?.('.wp-fn-ref, .wp-fn-area .wp-fn-note, .wp-en-area .wp-fn-note');
         if (!ref) return;
         let pos = ref.dataset.pos != null ? +ref.dataset.pos : null;
         if (pos == null) { try { pos = editor.view.posAtDOM(ref, 0); } catch { return; } }

@@ -348,17 +348,19 @@ export const Footnote = Node.create({
                 parseHTML: el => { try { return JSON.parse(el.getAttribute('data-content') || 'null'); } catch { return null; } },
                 renderHTML: a => (a.content ? { 'data-content': JSON.stringify(a.content) } : {}),
             },
+            // הערת סיום (במקום הערת שוליים): ממוספרת בנפרד (i, ii, iii — כמו ב-Word) ומרוכזת בסוף המסמך
+            end: { default: false, parseHTML: el => el.hasAttribute('data-end'), renderHTML: a => (a.end ? { 'data-end': '' } : {}) },
         };
     },
     parseHTML() {
         return [{ tag: 'sup[data-footnote]' }];
     },
-    renderHTML({ HTMLAttributes }) {
-        return ['sup', mergeAttributes(HTMLAttributes, { 'data-footnote': '', class: 'wp-fn-ref', contenteditable: 'false' })];
+    renderHTML({ node, HTMLAttributes }) {
+        return ['sup', mergeAttributes(HTMLAttributes, { 'data-footnote': '', class: node.attrs.end ? 'wp-fn-ref wp-en-ref' : 'wp-fn-ref', contenteditable: 'false' })];
     },
     addCommands() {
         return {
-            insertFootnote: (text, content = null) => ({ chain }) => chain().insertContent({ type: 'footnote', attrs: { text: text || '', content } }).run(),
+            insertFootnote: (text, content = null, end = false) => ({ chain }) => chain().insertContent({ type: 'footnote', attrs: { text: text || '', content, end: !!end } }).run(),
         };
     },
 });

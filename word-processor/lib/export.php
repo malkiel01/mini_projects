@@ -436,6 +436,7 @@ final class Ooxml
     public array $cur;               // הגדרות העמוד של המקטע הנוכחי (מתחלפות בכל מעבר מקטע)
     public $sectFn = null;           // fn(array $page, int $index): string — <w:sectPr> של מקטע שמסתיים (docx שלם בלבד)
     private int $sectIndex = 0;
+    public array $endnotes = [];     // [id => צמתי text עם עיצוב] — word/endnotes.xml
     public array $footnotes = [];    // [id => צמתי text עם עיצוב] — word/footnotes.xml (docx שלם); בשילוב — בסוגריים
 
     public function __construct(public array $page, public string $prefix = '')
@@ -602,6 +603,11 @@ final class Ooxml
                     foreach ($inline as $t) $out .= $this->runs($t['text'], array_merge($t['marks'] ?? [], $sup), $pa);
                     return $out . $this->runs(')', $sup, $pa);
                 }
+                if (!empty($c['attrs']['end'])) {   // הערת סיום — word/endnotes.xml (Word ממספר i, ii…)
+                    $id = count($this->endnotes) + 1;
+                    $this->endnotes[$id] = $inline;
+                    return '<w:r><w:rPr><w:rStyle w:val="EndnoteReference"/></w:rPr><w:endnoteReference w:id="' . $id . '"/></w:r>';
+                }
                 $id = count($this->footnotes) + 1;
                 $this->footnotes[$id] = $inline;
                 return '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteReference w:id="' . $id . '"/></w:r>';
@@ -618,18 +624,19 @@ final class Ooxml
         return '<w:hyperlink r:id="' . $this->links[$href] . '" w:history="1">';
     }
 
-    /** word/footnotes.xml: שני המפרידים שחובה (-1, 0) והערות המסמך. */
-    public function footnotesXml(): string
+    /** word/footnotes.xml (או endnotes.xml — end): שני המפרידים שחובה (-1, 0) והערות המסמך. */
+    public function footnotesXml(bool $end = false): string
     {
-        $sep = fn(int $id, string $type, string $tag) => '<w:footnote w:type="' . $type . '" w:id="' . $id . '"><w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:' . $tag . '/></w:r></w:p></w:footnote>';
+        [$tag, $style, $ref, $list] = $end ? ['endnote', 'Endnote', 'endnoteRef', $this->endnotes] : ['footnote', 'Footnote', 'footnoteRef', $this->footnotes];
+        $sep = fn(int $id, string $type, string $t) => '<w:' . $tag . ' w:type="' . $type . '" w:id="' . $id . '"><w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:' . $t . '/></w:r></w:p></w:' . $tag . '>';
         $out = $sep(-1, 'separator', 'separator') . $sep(0, 'continuationSeparator', 'continuationSeparator');
-        foreach ($this->footnotes as $id => $inline) {
-            $out .= '<w:footnote w:id="' . $id . '"><w:p><w:pPr><w:pStyle w:val="FootnoteText"/><w:bidi/></w:pPr>'
-                . '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteRef/></w:r>' . $this->runs(' ', [], []);
+        foreach ($list as $id => $inline) {
+            $out .= '<w:' . $tag . ' w:id="' . $id . '"><w:p><w:pPr><w:pStyle w:val="' . $style . 'Text"/><w:bidi/></w:pPr>'
+                . '<w:r><w:rPr><w:rStyle w:val="' . $style . 'Reference"/></w:rPr><w:' . $ref . '/></w:r>' . $this->runs(' ', [], []);
             foreach ($inline as $t) $out .= $this->runs($t['text'], $t['marks'] ?? [], []);
-            $out .= '</w:p></w:footnote>';
+            $out .= '</w:p></w:' . $tag . '>';
         }
-        return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:footnotes ' . W_NS . '>' . $out . '</w:footnotes>';
+        return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:' . $tag . 's ' . W_NS . '>' . $out . '</w:' . $tag . 's>';
     }
 
     /** טקסט לריצות: עברית עם <w:rtl/>, ומספרים/אנגלית בלי. */
@@ -1056,6 +1063,7 @@ function export_docx(array $json, array $page, string $title = ''): string
     $sectCount = substr_count($body, '<w:sectPr>');
     $sect = $sectXml($o->cur, $sectCount);   // המקטע האחרון — בסוף הגוף
     if ($o->footnotes) $files['word/footnotes.xml'] = $o->footnotesXml();
+    if ($o->endnotes) $files['word/endnotes.xml'] = $o->footnotesXml(true);
 
     $pc = color_val($page['page_color'] ?? null);   // צבע עמוד — w:background, ו-displayBackgroundShape בהגדרות (אחרת Word לא מציג)
     $document = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document ' . W_NS . '>' . ($pc ? '<w:background w:color="' . strtoupper($pc) . '"/>' : '')
@@ -1073,12 +1081,16 @@ function export_docx(array $json, array $page, string $title = ''): string
         . '<w:style w:type="paragraph" w:styleId="FootnoteText"><w:name w:val="footnote text"/><w:basedOn w:val="Normal"/><w:pPr><w:bidi/><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr>'
         . '<w:rPr><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr></w:style>'
         . '<w:style w:type="character" w:styleId="FootnoteReference"><w:name w:val="footnote reference"/><w:rPr><w:vertAlign w:val="superscript"/></w:rPr></w:style>'
+        . '<w:style w:type="paragraph" w:styleId="EndnoteText"><w:name w:val="endnote text"/><w:basedOn w:val="Normal"/><w:pPr><w:bidi/><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr>'
+        . '<w:rPr><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr></w:style>'
+        . '<w:style w:type="character" w:styleId="EndnoteReference"><w:name w:val="endnote reference"/><w:rPr><w:vertAlign w:val="superscript"/></w:rPr></w:style>'
         . '</w:styles>';
     $parts = $o->numberingParts();
     $numbering = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:numbering ' . W_NS . '>' . $parts['abstract'] . $parts['num'] . '</w:numbering>';
     $settings = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings ' . W_NS . '>' . ($pc ? '<w:displayBackgroundShape/>' : '') . '<w:defaultTabStop w:val="720"/>'
         . '<w:characterSpacingControl w:val="doNotCompress"/>'
-        . ($o->footnotes ? '<w:footnotePr><w:footnote w:id="-1"/><w:footnote w:id="0"/></w:footnotePr>' : '') . '<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>';
+        . ($o->footnotes ? '<w:footnotePr><w:footnote w:id="-1"/><w:footnote w:id="0"/></w:footnotePr>' : '')
+        . ($o->endnotes ? '<w:endnotePr><w:numFmt w:val="lowerRoman"/><w:endnote w:id="-1"/><w:endnote w:id="0"/></w:endnotePr>' : '') . '<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>';
 
     $ct = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
         . '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>'
@@ -1089,7 +1101,7 @@ function export_docx(array $json, array $page, string $title = ''): string
         . '<Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>'
         . '<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>';
     foreach (array_keys($files) as $p) {
-        $kind = str_contains($p, 'footnotes') ? 'footnotes' : (str_contains($p, 'header') ? 'header' : 'footer');
+        $kind = str_contains($p, 'footnotes') ? 'footnotes' : (str_contains($p, 'endnotes') ? 'endnotes' : (str_contains($p, 'header') ? 'header' : 'footer'));
         $ct .= '<Override PartName="/' . $p . '" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.' . $kind . '+xml"/>';
     }
     $ct .= '</Types>';
@@ -1101,6 +1113,7 @@ function export_docx(array $json, array $page, string $title = ''): string
         . '<Relationship Id="rIdN" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/>'
         . '<Relationship Id="rIdT" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>'
         . $hfRels . ($o->footnotes ? '<Relationship Id="rIdFn" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/>' : '')
+        . ($o->endnotes ? '<Relationship Id="rIdEn" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes" Target="endnotes.xml"/>' : '')
         . $o->rels() . '</Relationships>';
     $core = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"'
         . ' xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">'

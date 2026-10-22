@@ -238,7 +238,7 @@ html.wp-no-page-zoom, html.wp-no-page-zoom body, .wp-editor, .wp-stage { touch-a
 .wp-doc .wp-section-break.ProseMirror-selectednode::before { border-top-color: #2d4a8a; }
 .wp-sheet .wp-doc.wp-multisec { padding-left: 0 !important; padding-right: 0 !important; }
 /* הערות שוליים: הסימן ממוספר לבד לפי הסדר; ההערות בתחתית העמוד (pagination.js) — גובה קו ההפרדה = FN_SEP */
-.wp-doc { counter-reset: wpfn; }
+.wp-doc { counter-reset: wpfn wpen; }
 /* רווח בסוף שורה "תלוי" מחוץ לשוליים ולא נספר ברוחב — כמו ב-Word וב-PDF מהשרת. ProseMirror קובע break-spaces
    (הרווח תופס מקום), ואז מילה שנכנסת בדיוק עד השוליים יורדת לשורה הבאה */
 .wp-sheet .wp-doc.ProseMirror { white-space: pre-wrap; }
@@ -249,6 +249,11 @@ html.wp-no-page-zoom, html.wp-no-page-zoom body, .wp-editor, .wp-stage { touch-a
 /* גודל ורוחב הסימן — כמו ב-PDF מהשרת (75%, בלי ריפוד), כדי שהשורה תישבר באותו מקום */
 .wp-doc .wp-fn-ref { counter-increment: wpfn; font-size: .75em; vertical-align: super; line-height: 0; color: #1a4fa0; cursor: pointer; }
 .wp-doc .wp-fn-ref::after { content: counter(wpfn); }
+/* הערת סיום: מונה נפרד באותיות רומיות קטנות (כמו ב-Word); ההערות עצמן — .wp-en-area בסוף המסמך (pagination.js) */
+.wp-doc .wp-fn-ref.wp-en-ref { counter-increment: wpen; }
+.wp-doc .wp-fn-ref.wp-en-ref::after { content: counter(wpen, lower-roman); }
+.wp-en-area { display: block; user-select: none; direction: rtl; }
+.wp-en-area .wp-fn-note { cursor: pointer; }
 .wp-doc .wp-fn-ref.ProseMirror-selectednode { outline: 2px solid #2d4a8a; border-radius: 2px; }
 .wp-fn-area { display: block; user-select: none; direction: rtl; }
 .wp-fn-sep { inline-size: 33%; height: 0; border-top: 1px solid #000; margin: 6px 0 7px; }

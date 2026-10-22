@@ -355,15 +355,17 @@ final class DocxCtx
                 }
             }
         }
-        if ($s = $read('word/footnotes.xml')) {
+        // הערות שוליים וסיום — אותו מבנה; הסיום נשמר תחת "e<id>" ומסומן end
+        foreach (['footnote' => '', 'endnote' => 'e'] as $tag => $pre) {
+            if (!($s = $read("word/{$tag}s.xml"))) continue;
             $xp = $this->xp(xml_dom($s));
-            foreach ($xp->query('//w:footnote') as $f) {
+            foreach ($xp->query("//w:$tag") as $f) {
                 // הטקסט עם העיצוב שמותר בהערה (fn_inline); ריצת המספר (footnoteRef) — לא חלק מהטקסט
                 $inline = [];
                 foreach ($xp->query('.//w:p', $f) as $pi => $p) {
                     if ($pi > 0) $inline[] = ['text' => ' ', 'marks' => []];
                     foreach ($xp->query('w:r | w:hyperlink/w:r', $p) as $r) {
-                        if ($xp->query('w:footnoteRef', $r)->length) continue;
+                        if ($xp->query('w:footnoteRef | w:endnoteRef', $r)->length) continue;
                         $t = '';
                         foreach ($xp->query('w:t | w:tab', $r) as $k) $t .= $k->localName === 'tab' ? ' ' : $k->textContent;
                         if ($t === '') continue;
@@ -381,8 +383,9 @@ final class DocxCtx
                 $inline = array_values(array_filter($inline, fn($x) => $x['text'] !== ''));
                 $text = implode('', array_column($inline, 'text'));
                 $styled = (bool)array_filter($inline, fn($x) => $x['marks']);
-                $this->footnotes[$f->getAttributeNS(W, 'id')] = ['text' => $text, 'content' => $styled
-                    ? array_map(fn($x) => ['type' => 'text', 'text' => $x['text']] + ($x['marks'] ? ['marks' => $x['marks']] : []), $inline) : null];
+                $this->footnotes[$pre . $f->getAttributeNS(W, 'id')] = ['text' => $text, 'content' => $styled
+                    ? array_map(fn($x) => ['type' => 'text', 'text' => $x['text']] + ($x['marks'] ? ['marks' => $x['marks']] : []), $inline) : null]
+                    + ($pre ? ['end' => true] : []);
             }
         }
         if ($s = $read('word/_rels/document.xml.rels')) {
@@ -586,7 +589,7 @@ final class DocxCtx
                         $this->note('shapes');
                         break;
                     case 'endnoteReference':
-                        $this->note('endnotes');
+                        $inline[] = ['type' => 'footnote', 'attrs' => $this->footnotes['e' . $k->getAttributeNS(W, 'id')] ?? ['text' => '', 'content' => null, 'end' => true]];
                         break;
                     case 'footnoteReference':
                         $inline[] = ['type' => 'footnote', 'attrs' => $this->footnotes[$k->getAttributeNS(W, 'id')] ?? ['text' => '', 'content' => null]];
@@ -985,7 +988,6 @@ const IMPORT_REPORT = [
     'images' => ['תמונות שלא נטענו', 'הקובץ פגום או בפורמט שאינו נתמך'],
     'math' => ['נוסחאות', 'לא יובאו'],
     'comments' => ['הערות (Comments)', 'לא יובאו'],
-    'endnotes' => ['הערות סיום', 'לא יובאו (הערות שוליים — כן)'],
     'nested' => ['טבלה בתוך טבלה', 'הטבלה הפנימית לא יובאה'],
     'tracked' => ['שינויים במעקב', 'התקבלו: מה שנוסף נשאר, מה שנמחק הוסר'],
     'fields' => ['שדות (תוכן עניינים, תאריך, הפניות)', 'יובאו כטקסט קבוע — לא יתעדכנו'],

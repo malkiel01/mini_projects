@@ -362,6 +362,8 @@ $wordDocx = $mkDocx([
     'word/styles.xml' => '<w:styles ' . $WN . '><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:rPr><w:sz w:val="24"/></w:rPr></w:style>'
         . '<w:style w:type="paragraph" w:styleId="Quote"><w:name w:val="ציטוט"/><w:pPr><w:jc w:val="center"/><w:spacing w:after="240"/></w:pPr><w:rPr><w:i/><w:color w:val="595959"/></w:rPr></w:style>'
         . '<w:style w:type="character" w:styleId="Emph"><w:name w:val="Emph"/><w:rPr><w:b/></w:rPr></w:style></w:styles>',
+    'word/endnotes.xml' => '<w:endnotes ' . $WN . '><w:endnote w:type="separator" w:id="-1"><w:p><w:r><w:separator/></w:r></w:p></w:endnote>'
+        . '<w:endnote w:id="1"><w:p><w:r><w:endnoteRef/></w:r><w:r><w:t xml:space="preserve"> מקור </w:t></w:r><w:r><w:rPr><w:b/></w:rPr><w:t>חשוב</w:t></w:r></w:p></w:endnote></w:endnotes>',
     'word/comments.xml' => '<w:comments ' . $WN . '><w:comment w:id="0"><w:p>' . $run('הערה') . '</w:p></w:comment></w:comments>',
     'word/_rels/document.xml.rels' => '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rH" Target="header1.xml"/><Relationship Id="rE" Target="header2.xml"/><Relationship Id="rF" Target="footer1.xml"/></Relationships>',
     'word/header1.xml' => $hdr('hdr', '<w:p><w:pPr><w:bidi/></w:pPr>' . $run('חברה בע"מ') . '</w:p>'),
@@ -370,7 +372,7 @@ $wordDocx = $mkDocx([
 ]);
 $w = import_docx($wordDocx, $docC);
 $rep = array_column($w['report'], 'count', 'key');
-check('דוח ייבוא: כל מה שלא נתמך מופיע', $rep == ['shapes' => 1, 'math' => 1, 'comments' => 1, 'endnotes' => 1, 'nested' => 1, 'tracked' => 2, 'fields' => 1,
+check('דוח ייבוא: כל מה שלא נתמך מופיע', $rep == ['shapes' => 1, 'math' => 1, 'comments' => 1, 'nested' => 1, 'tracked' => 2, 'fields' => 1,
     'columns' => 1, 'hf_extra' => 1, 'styles' => 1, 'pborder' => 1, 'fonts' => 1], json_encode($rep));
 check('ייבוא: סגנון פסקה מותאם → סגנון שלנו (שם ועיצוב), והפסקה בו', ($w['page']['styles']['u1'] ?? null) == ['name' => 'ציטוט', 'italic' => true, 'color' => '#595959', 'align' => 'center', 'after' => 12.0]
     && ($w['json']['content'][0]['attrs']['pstyle'] ?? '') === 'u1', json_encode($w['page']['styles'] ?? null, JSON_UNESCAPED_UNICODE));
@@ -713,6 +715,45 @@ $fnBody = export_ooxml($fnDoc, page_normalize([]))['body'];
 check('גוף לשילוב: ההערה בסוגריים, עילית, עם המודגש', str_contains($fnBody, 'מודגש') && preg_match('#<w:b/>.*?<w:vertAlign w:val="superscript"/>.*?מודגש#s', $fnBody) === 1);
 $fnPdf = $pdfOf($fnDoc);
 check('PDF: ההערה עם גופן מודגש ונטוי', str_contains($fnPdf, 'BaseFont') && preg_match('#/BaseFont /\w+\+[\w-]*(?:700|Bold)#', $fnPdf) === 1, '');
+
+// ======================================================================
+section('הערות סיום (שלב 4)');
+$enDoc = ['type' => 'doc', 'content' => [['type' => 'paragraph', 'content' => [
+    ['type' => 'text', 'text' => 'גוף'],
+    ['type' => 'footnote', 'attrs' => ['text' => 'שוליים אחת']],
+    ['type' => 'text', 'text' => ' עוד'],
+    ['type' => 'footnote', 'attrs' => ['text' => 'סיום ראשונה', 'end' => true]],
+    ['type' => 'footnote', 'attrs' => ['text' => 'סיום שנייה', 'content' => [['type' => 'text', 'text' => 'סיום '], ['type' => 'text', 'text' => 'שנייה', 'marks' => [['type' => 'bold']]]], 'end' => true]],
+]]]];
+$enDocx = export_docx($enDoc, page_normalize([]), 'סיום');
+file_put_contents("$tmp/en.docx", $enDocx);
+$zip->open("$tmp/en.docx");
+$enXml = (string)$zip->getFromName('word/endnotes.xml');
+$enFn = (string)$zip->getFromName('word/footnotes.xml');
+$enMain = (string)$zip->getFromName('word/document.xml');
+$enCt = (string)$zip->getFromName('[Content_Types].xml');
+$enRels = (string)$zip->getFromName('word/_rels/document.xml.rels');
+$enSet = (string)$zip->getFromName('word/settings.xml');
+$zip->close();
+check('Word: endnotes.xml עם המפרידים ושתי ההערות; הערת השוליים — ב-footnotes.xml', substr_count($enXml, '<w:endnoteRef/>') === 2
+    && str_contains($enXml, 'w:type="separator"') && str_contains($enXml, 'סיום ראשונה') && !str_contains($enXml, 'שוליים אחת')
+    && str_contains($enFn, 'שוליים אחת') && !str_contains($enFn, 'סיום'));
+check('Word: הפניות במסמך, סוג תוכן, קשר וספרות רומיות', substr_count($enMain, '<w:endnoteReference') === 2 && substr_count($enMain, '<w:footnoteReference') === 1
+    && str_contains($enCt, 'wordprocessingml.endnotes+xml') && str_contains($enRels, 'Target="endnotes.xml"') && str_contains($enSet, '<w:numFmt w:val="lowerRoman"/>'));
+$enBack = import_docx($enDocx, 'en');
+$notes = [];
+$walkEn = function ($n) use (&$walkEn, &$notes) { if (($n['type'] ?? '') === 'footnote') $notes[] = $n['attrs']; foreach ($n['content'] ?? [] as $c) $walkEn($c); };
+$walkEn($enBack['json']);
+check('Word הלוך וחזור: שוליים נשארת שוליים, סיום — סיום, עם העיצוב', count($notes) === 3 && empty($notes[0]['end']) && ($notes[1]['end'] ?? false) === true
+    && $notes[1]['text'] === 'סיום ראשונה' && ($notes[2]['content'][1]['marks'][0]['type'] ?? '') === 'bold'
+    && !array_filter($enBack['report'], fn($r) => $r['key'] === 'endnotes'), json_encode($notes, JSON_UNESCAPED_UNICODE));
+check('ייבוא מ-Word: הפניית סיום → הערת סיום עם הטקסט והעיצוב', (function () use ($w) {
+    $f = null;
+    $walk = function ($n) use (&$walk, &$f) { if (($n['type'] ?? '') === 'footnote') $f = $n['attrs']; foreach ($n['content'] ?? [] as $c) $walk($c); };
+    $walk($w['json']);
+    return ($f['end'] ?? false) === true && $f['text'] === 'מקור חשוב' && ($f['content'][1]['marks'][0]['type'] ?? '') === 'bold';
+})());
+check('PDF: הערות הסיום בסוף המסמך עם ספרות רומיות, השוליים — עם מספר', preg_match_all('#/Type /Page /#', $pdfOf($enDoc)) === 1 && roman_lower(2) === 'ii' && roman_lower(14) === 'xiv');
 
 // ======================================================================
 section('הגדרות עמוד');

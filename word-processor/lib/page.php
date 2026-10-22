@@ -185,6 +185,16 @@ function page_label(int $n, int $total, string $format): string
 }
 
 /** א, ב, … ט, י, יא … כמו "hebrew1" ב-Word (בלי גרשיים). */
+/** מספר רומי קטן (i, ii, iii…) — מספור הערות הסיום, כמו romanLower בעורך. */
+function roman_lower(int $n): string
+{
+    $out = '';
+    foreach ([1000 => 'm', 900 => 'cm', 500 => 'd', 400 => 'cd', 100 => 'c', 90 => 'xc', 50 => 'l', 40 => 'xl', 10 => 'x', 9 => 'ix', 5 => 'v', 4 => 'iv', 1 => 'i'] as $v => $r) {
+        while ($n >= $v) { $out .= $r; $n -= $v; }
+    }
+    return $out;
+}
+
 function hebrew_letters(int $n): string
 {
     if ($n <= 0) return (string)$n;
