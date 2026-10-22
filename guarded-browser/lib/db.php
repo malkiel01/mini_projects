@@ -572,6 +572,9 @@ function policyRev(int $userId): string {
     // ומגבלות הזמן לאפליקציות (lib/apptime.php) — שינוי מגיע למכשיר בפעימה הבאה.
     $limits = all('SELECT package, daily_min FROM app_limits WHERE child_id = ? ORDER BY package', [$userId]);
     if ($limits) $apps[] = ['limits' => $limits];
+    // ומה ששוחרר במרקט (lib/market.php).
+    $market = array_column(all('SELECT package FROM market_releases WHERE child_id = ? ORDER BY package', [$userId]), 'package');
+    if ($market) $apps[] = ['market' => $market];
     // אפליקציה חדשה (new_apps): אחרי דיווח — המכשיר צריך את הרשימה המעודכנת של מה שההורה ראה (known).
     if ((string) (policyFor($userId)['new_apps'] ?? '') !== '') {
         $apps[] = ['known' => (int) one('SELECT COUNT(*) n FROM device_apps WHERE child_id = ?', [$userId])['n']];

@@ -1,0 +1,798 @@
+{
+ "version": 1,
+ "verified": "2026-10-22",
+ "apps": [
+  {
+   "package": "com.duolingo",
+   "name": "דואולינגו — לימוד שפות",
+   "play_title": "Duolingo: Learn Languages",
+   "category": "learn",
+   "min_age": 6,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/tw_coGKgk1K_zO-Ypf9zBKV1s-KT3dYN1MIUxIqtnbfmON5x_YmuoAr31gE4oSfJHNtA-aStTd-qe9R8S6NVyA=s0-br30"
+  },
+  {
+   "package": "org.khanacademy.android",
+   "name": "קהאן אקדמי",
+   "play_title": "Khan Academy",
+   "category": "learn",
+   "min_age": 8,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/ZpYO18Se26RWzXzmOGvT7R_5wBknrnznqKqFjXUiMIZDCD_OO1V4Nr8q_bJrU34jR2TaZPNOSzbUrKb8DeZatro=s0-br30"
+  },
+  {
+   "package": "org.khankids.android",
+   "name": "Khan Academy Kids",
+   "play_title": "Khan Academy Kids",
+   "category": "learn",
+   "min_age": 3,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/NYerCWXaH0kwo937P2igSvpaiiw6qKA_XhkF9AsK1S72y2CNjT-lm4RZly61wgHqE6aRYIc2m78mKngjFdAB-A=s0-br30"
+  },
+  {
+   "package": "com.quizlet.quizletandroid",
+   "name": "Quizlet — כרטיסיות לימוד",
+   "play_title": "Quizlet: More than Flashcards",
+   "category": "learn",
+   "min_age": 10,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/ppK0J4O_f4d2GBDaNEUQky_LoHfv6TKTBUVjNvD6vVSOhRF6V9uKm4W2VJZ-z6nMEfCUW5QICZF3A8GhBVOPFKQ=s0-br30"
+  },
+  {
+   "package": "com.microblink.photomath",
+   "name": "Photomath — פתרון תרגילים",
+   "play_title": "Photomath",
+   "category": "learn",
+   "min_age": 10,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/SdtwWRFWpe98RgGwOM1dsBEoNYUd9H6KZKFs8WpWFb6YZvDM3xY3kiUK0BcV-ZzPjjLp_HuFagj1lbm2fsnmcMY=s0-br30"
+  },
+  {
+   "package": "com.google.android.apps.classroom",
+   "name": "Google Classroom",
+   "play_title": "Google Classroom",
+   "category": "learn",
+   "min_age": 6,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/PNYNq4kPt-oJMEJb91DUYgsjMl9Ubx5KHP5c1UglZJd8FQWv0xvRL3mZdTvicuhaF0yQm00lV7RN0eAxUbkvQw=s0-br30"
+  },
+  {
+   "package": "org.scratchjr.android",
+   "name": "ScratchJr — תכנות לילדים",
+   "play_title": "ScratchJr",
+   "category": "learn",
+   "min_age": 5,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/5HDWVRFGe6t3V_Ad8W17QIM83qr4Rv2IsBEDaHFjtF0IxqfRY4qo694p53MyXlVK-l-GM4YhsgmphjLRnccjqw=s0-br30"
+  },
+  {
+   "package": "com.sololearn",
+   "name": "Sololearn — תכנות",
+   "play_title": "Sololearn: Learn to code",
+   "category": "learn",
+   "min_age": 10,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/PFmNIm2mn6t-x-aaJTxt5dqnLpw3mqDM6ehet4Miqk61JZ_oC71hpxu2jMpPbNJ_Q9c4Gfn3G680e2XMIusAWfo=s0-br30"
+  },
+  {
+   "package": "org.geogebra.android",
+   "name": "GeoGebra — מחשבון גרפי",
+   "play_title": "GeoGebra Graphing Calculator",
+   "category": "learn",
+   "min_age": 10,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/eaJJaxKVX_ciHVdLaT_VkpFBkjHZp2vlul-qC0oho6Un_pP5WCWdS-kFKry_uUha5s1XYaf21JAEd13oiqElvQ=s0-br30"
+  },
+  {
+   "package": "com.desmos.calculator",
+   "name": "Desmos — מחשבון גרפי",
+   "play_title": "Desmos Graphing Calculator",
+   "category": "learn",
+   "min_age": 10,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/0XIdUexS8PBUJCrxOzrsNus5vRC1I72JmeKUivvUvJBqJo1P3MmK7QXRA6cPNUSoBlXoDNWNxUkEjEMLdhgc4Y8=s0-br30"
+  },
+  {
+   "package": "no.mobitroll.kahoot.android",
+   "name": "Kahoot!",
+   "play_title": "Kahoot! Play & Create Quizzes",
+   "category": "learn",
+   "min_age": 8,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/eIlvMkUf_Sv4k4RVN2MAnxIzojgRbKNop8tgKpU31_LsIWBWr41ZkfGW6c3nABJLUlcWyCn7cfiplXBWQxRnBQ=s0-br30"
+  },
+  {
+   "package": "co.brainly",
+   "name": "Brainly — עזרה בשיעורי בית",
+   "play_title": "Brainly: AI Homework Helper",
+   "category": "learn",
+   "min_age": 10,
+   "note": "יש קהילה ושאלות של משתמשים",
+   "icon": "https://play-lh.googleusercontent.com/IrrGVigSrdYk-NF6jWo16pmgkbzSuSI8DVcDpcIjbKTx4RNN1AfDOQvvKAK7l2VBI4PO5s3yuCHhD1XR4eq1Tg=s0-br30"
+  },
+  {
+   "package": "org.wikipedia",
+   "name": "ויקיפדיה",
+   "play_title": "Wikipedia",
+   "category": "learn",
+   "min_age": 8,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/qurdJcCdD7Z62t_F84epGg4YoKgjVPapiqLNUKI3__O3vvHHF20SRcWkN3OKLZQFF6C_EPxHD7aAj8uHox_JwVo=s0-br30"
+  },
+  {
+   "package": "com.google.android.apps.translate",
+   "name": "Google Translate",
+   "play_title": "Google Translate",
+   "category": "learn",
+   "min_age": 6,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/muIZuJn9awFB9XWa4g0aiqFxHbgAFVVfHVQrEmos46v29NfyZX5z1n1ZYBjH3Zvg80Dm90TI2ZdQZMr2cLMcCg=s0-br30"
+  },
+  {
+   "package": "com.google.ar.lens",
+   "name": "Google Lens",
+   "play_title": "Google Lens",
+   "category": "learn",
+   "min_age": 8,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/kK7kVusKbtUcQJdL2EybMDDZWN0IVd4inFKi8nOaaNM6c_7oU-mKoHTbQReQ4ToH4_g3e_RIKt48I_DMq7kpfQ=s0-br30"
+  },
+  {
+   "package": "org.sefaria.sefaria",
+   "name": "ספריא — ספרייה יהודית",
+   "play_title": "Sefaria",
+   "category": "learn",
+   "min_age": 8,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/aiTY816uqHPTKkzoBXAbpqRJVN7JCC0sbNJYhb5oFq75ZG2Txv0uuIa4GTTkamAZfokHbS26g7C-ej4FVEox=s0-br30"
+  },
+  {
+   "package": "com.google.android.apps.books",
+   "name": "Google Play ספרים",
+   "play_title": "Google Play Books & Audiobooks",
+   "category": "learn",
+   "min_age": 6,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/KQKRmi5uic0yjSl7rfXKRyDunmQP1d7kqsswnKM4QPkq8OtQtAYAqb7nKsLyQKq7QXD01s4EVpxfDK7G9gyzZQ=s0-br30"
+  },
+  {
+   "package": "com.chess",
+   "name": "Chess.com — שחמט",
+   "play_title": "Chess - Play and Learn Online",
+   "category": "learn",
+   "min_age": 8,
+   "note": "יש צ׳אט במשחקים מקוונים",
+   "icon": "https://play-lh.googleusercontent.com/JO7Z75U1oypXpNTAklroO5emKWePni0sK9zn1E_nRgqmbAHoMxz1oQHDfSTpcycdht92dTBejkpEDXttGeCWN74=s0-br30"
+  },
+  {
+   "package": "com.microsoft.teams",
+   "name": "Microsoft Teams",
+   "play_title": "Microsoft Teams",
+   "category": "school",
+   "min_age": 10,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/afnciqsoxrp8BYGFAS_BZtUBn2NvmxTVoKFproR5SljREfTBnueRjPxzxCXvIJNYTUdbtOWz-_GjVuOCMfi7fiU=s0-br30"
+  },
+  {
+   "package": "us.zoom.videomeetings",
+   "name": "Zoom",
+   "play_title": "Zoom Workplace",
+   "category": "school",
+   "min_age": 10,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/-Ajlo-aDBHtpCez_yILc8Kepv_kNhbTJPw1WyvXgkh4O-hvUN-YD_v_0FlJmgRbZ2vn1OmZCmCBOY23h4kJYEA=s0-br30"
+  },
+  {
+   "package": "com.google.android.apps.docs.editors.docs",
+   "name": "Google Docs",
+   "play_title": "Google Docs",
+   "category": "school",
+   "min_age": 8,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/fzQ8TFqWZQ34NVL5veaXOFtymoGSVqI5YisBw3sgl6mc0AMKAGgKw5st2YMiSzTanSWbCDrmLipI7bD_epry=s0-br30"
+  },
+  {
+   "package": "com.google.android.apps.docs.editors.sheets",
+   "name": "Google Sheets",
+   "play_title": "Google Sheets",
+   "category": "school",
+   "min_age": 8,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/NjfIWrzr4KXjVVUpihoWNJ1ZFfDBqjr3l4lsrbXG9fcYNJlpiH4wCxFXrQsgqMt7fXgKCmk33mvI2arRyzo5hGY=s0-br30"
+  },
+  {
+   "package": "com.google.android.apps.docs.editors.slides",
+   "name": "Google Slides",
+   "play_title": "Google Slides",
+   "category": "school",
+   "min_age": 8,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/xqxFEBjrkpXc_RtE9sPfOEftQmPS0KhFg3IHWyaYVS243dIEbQArz1xOhPgfF_s1NCHpVNBPeb5ykWU_LqyUDw=s0-br30"
+  },
+  {
+   "package": "com.google.android.apps.docs",
+   "name": "Google Drive",
+   "play_title": "Google Drive",
+   "category": "school",
+   "min_age": 8,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/chc-Fx3Qi3BisTZw1aOteYK_XkMHUiXKRbX2Hc8shyFI8pYt7DcyUPzVwLGJKIeKCKDD6nFVhEtUrIaEyzcnmA=s0-br30"
+  },
+  {
+   "package": "com.microsoft.office.word",
+   "name": "Microsoft Word",
+   "play_title": "Microsoft Word: Edit Documents",
+   "category": "school",
+   "min_age": 8,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/UPPHK323_gvNZWTnmq_lgp_qrSXwdXI8aYNfqNF27MtuujT2YAytdueWIKncRh5YfNB_rfpCBfImzo95iYC1Fw=s0-br30"
+  },
+  {
+   "package": "com.microsoft.office.excel",
+   "name": "Microsoft Excel",
+   "play_title": "Microsoft Excel: Spreadsheets",
+   "category": "school",
+   "min_age": 8,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/yycGmvRqYttLxLsu_2mMo17jb5KVfrSSj0W67w5nN6QcOn30HIxQ7DBwdNVtbTRTFCQNd5vNyd-bgeGfmiSS=s0-br30"
+  },
+  {
+   "package": "com.microsoft.office.powerpoint",
+   "name": "Microsoft PowerPoint",
+   "play_title": "Microsoft PowerPoint",
+   "category": "school",
+   "min_age": 8,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/T1Jpfdfi6q8x0da-eNvBve4UlTxxLBGDFEeXR9sH5uFwU5m6EUpaK6vL4J3t4Gc9RlzDCgmsp4N4E8aeNCmNCw=s0-br30"
+  },
+  {
+   "package": "com.microsoft.office.officehubrow",
+   "name": "Microsoft 365 Copilot (Office)",
+   "play_title": "Microsoft Copilot",
+   "category": "school",
+   "min_age": 8,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/LO0qJeIk4uKo6HJB5fkMpipB9x4BedNr0YegnCJKOxsX8SNZIoY-NC8-KL-cLQyUgmmKFyZRa0cdyaNkDsyBveg=s0-br30"
+  },
+  {
+   "package": "com.microsoft.office.outlook",
+   "name": "Outlook",
+   "play_title": "Microsoft Outlook",
+   "category": "school",
+   "min_age": 12,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/cQ6W3fn_i56tK1PDQZlKvpuggupXR-kGyzwCtF1vYw-wK9FS3YDVUTnpfEvpbWXXuqH6aJ1JRD_t5bfAyCD4=s0-br30"
+  },
+  {
+   "package": "com.adobe.scan.android",
+   "name": "Adobe Scan — סורק מסמכים",
+   "play_title": "Adobe Scan AI PDF Scanner, OCR",
+   "category": "school",
+   "min_age": 8,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/4xN2UipKYDSBDuW0FKLJQ1tnhvgZyfnKj7rnoBJYhWHwUuOTMta3m-Dwc4Lo881wOIz8YUQiFY6XpcJF5h1r=s0-br30"
+  },
+  {
+   "package": "com.google.android.keep",
+   "name": "Google Keep — פתקים",
+   "play_title": "Google Keep - Notes and lists",
+   "category": "school",
+   "min_age": 6,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/0AM0MfDO-MWUAKwg8vpbftm7GqvEW1JfLGHCgwsgIemF6hMW61XOVnnNDHCGeRMiYZtVaxV2M-AYoP_zMoJt6w=s0-br30"
+  },
+  {
+   "package": "com.google.android.apps.tasks",
+   "name": "Google Tasks — משימות",
+   "play_title": "Google Tasks",
+   "category": "school",
+   "min_age": 6,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/CHgl9nsIJn7g-QeUk-08KGHk0baiEsK3buBTVnOpatdFfF5HFzgbiGliR1lt8jRv29sYJQ0HQlDmlz544oMdDQ=s0-br30"
+  },
+  {
+   "package": "com.google.android.calculator",
+   "name": "מחשבון",
+   "play_title": "Calculator",
+   "category": "tools",
+   "min_age": 3,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/VBPoo5bxW4MYDd6pZLZ6W8XqyvubpatbvF55sYJaIzDqyMg2GK_tg3Nopo2rHAXc8NJMKPyL7RI8zoP_J6r8tmY=s0-br30"
+  },
+  {
+   "package": "com.google.android.deskclock",
+   "name": "שעון",
+   "play_title": "Clock",
+   "category": "tools",
+   "min_age": 3,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/EuxRXLT112vxErcVv9RH7qlZcO4nhnQ0gDMbnCWTgUTzCT0ahKah1HR6B3Xc2VYSD3wCG-bDmlJXwDWVn3in=s0-br30"
+  },
+  {
+   "package": "com.google.android.calendar",
+   "name": "Google Calendar",
+   "play_title": "Google Calendar",
+   "category": "tools",
+   "min_age": 6,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/vEoqLbT_QkYcEaawWBRc22N6i98OUtOUpM1LmKdVs_xx7lCsUyFfV0ZiqoUXjMijUteiBhhN4K5MpoF96FRNOg=s0-br30"
+  },
+  {
+   "package": "com.google.android.apps.photos",
+   "name": "Google Photos",
+   "play_title": "Google Photos",
+   "category": "tools",
+   "min_age": 6,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/kErBTF4VcGwhtKbCr80Bs2R1lNZiYkHbKcf1i3ZF6dg_5LqDAlCI4wU-nzwvo7PAbxeBXM_tv1hc11gr4aIIW-Q=s0-br30"
+  },
+  {
+   "package": "com.google.android.apps.nbu.files",
+   "name": "Files by Google",
+   "play_title": "Files by Google",
+   "category": "tools",
+   "min_age": 6,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/cjyFg0ABFwOFdLf1GsCGRvOoAANqCnIsFCgwGe8g-FPVaQ5STxoqZAKQOph44Hlx-gO0GMx8AZC9AY1VUBiO=s0-br30"
+  },
+  {
+   "package": "com.google.android.apps.authenticator2",
+   "name": "Google Authenticator",
+   "play_title": "Google Authenticator",
+   "category": "tools",
+   "min_age": 10,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/4qyuLCJkVpVfoIeu6b0ld6LkKzPHHby9ZilLbxhUZLK4f64o65oHGW-ZsuVe3LAWDVuIZpkQISmmVvA4-qnofw=s0-br30"
+  },
+  {
+   "package": "com.google.android.apps.fitness",
+   "name": "Google Fit",
+   "play_title": "Google Fit: Activity Tracking",
+   "category": "tools",
+   "min_age": 8,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/JX8RAoUFybCYzCLp5bNhqeXCmhqqzXf4sX81-XsokkOJXqZyw5N83wpzrtHlILhFBkFmuhhM51z9wSLXQrEa=s0-br30"
+  },
+  {
+   "package": "com.google.android.gm",
+   "name": "Gmail",
+   "play_title": "Gmail",
+   "category": "tools",
+   "min_age": 13,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/c6KD_8-GvnGRJA4lRQ4y5YnUa3-LOeYAS7ubw1jWyB9bmr6Kj6zzRvh2A5WBB-Vd3e6zhElmhDv07fCJx2Fc=s0-br30"
+  },
+  {
+   "package": "com.android.chrome",
+   "name": "Google Chrome",
+   "play_title": "Google Chrome",
+   "category": "tools",
+   "min_age": 12,
+   "note": "דפדפן — נאכף רק עם \"כרום מנוהל\"",
+   "icon": "https://play-lh.googleusercontent.com/gbkzfC3R1fXcGR4Uag1uRSN_123Tpo_KxhVZFLFCatmthFuO1bzPczUomFtxI42YYEQMJeAaZuIFVrTF58gZYg=s0-br30"
+  },
+  {
+   "package": "com.waze",
+   "name": "Waze",
+   "play_title": "Waze Navigation & Live Traffic",
+   "category": "transport",
+   "min_age": 10,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/d4dltd4baeDGnfJD1H-ut68ERsIynfywij9zHRL7ioB-PJW3ENw-bFgg08KGPo8zQfSyRW36e58xhlqQ0pE1gg=s0-br30"
+  },
+  {
+   "package": "com.google.android.apps.maps",
+   "name": "Google Maps",
+   "play_title": "Google Maps",
+   "category": "transport",
+   "min_age": 8,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/B8pdO_2K5nBsF0g1h6dKwV_jQFLP-XombGDEQGtJT-mw1EUKCKJpa9lBGCF4rP_MwCsozSXyvI3z19g9R3J4=s0-br30"
+  },
+  {
+   "package": "com.tranzmate",
+   "name": "Moovit — תחבורה ציבורית",
+   "play_title": "Moovit: Your Transit Tracker",
+   "category": "transport",
+   "min_age": 8,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/pKE_kPsExlHJ3q68oDr4sMdhRoskymtTGak4QaS_TXVrdOXq5uANlza3UGnG94vzslF45crK3NcbWFMC7obNMw=s0-br30"
+  },
+  {
+   "package": "com.spotify.music",
+   "name": "Spotify",
+   "play_title": "Spotify: Music and Podcasts",
+   "category": "music",
+   "min_age": 10,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/IzQgYCcnCFCD08GR-3bdtcT8xzOvrNkC84avGT5CwTX2VIqmTmKKJcP_Cd4JoBOdmCMlTndlOzV6hrthg2fOWA=s0-br30"
+  },
+  {
+   "package": "com.shazam.android",
+   "name": "Shazam",
+   "play_title": "Shazam: Find Music & Concerts",
+   "category": "music",
+   "min_age": 8,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/Ne3g286DhSUmbg75RI5hmJLAFLPZfgIiWVOboDL8Rb08iQAAfqb7CBfwI6eU3rIvI6Kk6B9CySgMUTbh7i42_Q=s0-br30"
+  },
+  {
+   "package": "com.google.android.apps.youtube.music",
+   "name": "YouTube Music",
+   "play_title": "YouTube Music",
+   "category": "music",
+   "min_age": 10,
+   "note": "שירים מיוטיוב — בלי הסינון של מגדלור",
+   "icon": "https://play-lh.googleusercontent.com/MyptZXmcCyF59phIWPsNCfHq6zSO_ojEdw_4rMYYWPOGdikSjqeOXcoszBZ053VYpINe5K7ZR9KV1nkFWgxdOw=s0-br30"
+  },
+  {
+   "package": "com.google.android.apps.youtube.kids",
+   "name": "YouTube Kids",
+   "play_title": "YouTube Kids",
+   "category": "video",
+   "min_age": 3,
+   "note": "הסינון של גוגל, לא של מגדלור",
+   "icon": "https://play-lh.googleusercontent.com/XmNSJLiwxfeoGwofbTZ37le-jDNAdZmHbVo7un7y2g-d-A3iD0LKUm1FMAgdURw8PFEiFh4Vv14u7q_nvET-=s0-br30"
+  },
+  {
+   "package": "com.netflix.mediaclient",
+   "name": "Netflix",
+   "play_title": "Netflix",
+   "category": "video",
+   "min_age": 10,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/fXVS45nukV1x9PYVSKHkCQK0QGCOishIvAOxIZS3sgRem8HS7l9l94_Ggj-WZPrTLePRdNYN4pp4SPAQL7oS0PU=s0-br30"
+  },
+  {
+   "package": "com.disney.disneyplus",
+   "name": "Disney+",
+   "play_title": "Disney+",
+   "category": "video",
+   "min_age": 6,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/AEX_3Bk5_SEZfR4fUcJsWiyqW_RRVcLED9AM2HMUVHAPVTZhZHfP2q3M35mRe4LtCXlb712DtkKwkZa_nJ-0=s0-br30"
+  },
+  {
+   "package": "com.whatsapp",
+   "name": "WhatsApp",
+   "play_title": "WhatsApp Messenger",
+   "category": "social",
+   "min_age": 13,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/Gqxk4T0uZsDwFp07DE-508hkyvcNmgFuRwPiwTEfF7D7OzGv1FdHDzEyMxNsSBZLOJlGpe3ULvVM2RgrRAlBqA=s0-br30"
+  },
+  {
+   "package": "org.telegram.messenger",
+   "name": "Telegram",
+   "play_title": "Telegram",
+   "category": "social",
+   "min_age": 13,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/PyZ3akMGXPV0tKKirKNwfO--PSQW3FHR6rD_H9mAaukZ8LiHyYFuBLeU8UZ2ok6r5SP79-3prkfybWKh98AZAD0=s0-br30"
+  },
+  {
+   "package": "org.thoughtcrime.securesms",
+   "name": "Signal",
+   "play_title": "Signal Private Messenger",
+   "category": "social",
+   "min_age": 13,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/HXEs85Okatm4_lZMmCaLFk3iXQ6_lrr00i8nsxaqBRSy6VGnsP7F50dKUfrO37Sj0nxtzSjMpKbjgWh6d0PTyEA=s0-br30"
+  },
+  {
+   "package": "com.instagram.android",
+   "name": "Instagram",
+   "play_title": "Instagram",
+   "category": "social",
+   "min_age": 13,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/yHi59jmO_lVamcyJ1i3rM1_E8bAiAspShnGjjURq05ipQQSUksO3QVEsXTegRSqul038-4YNA7O644XAcx251Q=s0-br30"
+  },
+  {
+   "package": "com.zhiliaoapp.musically",
+   "name": "TikTok",
+   "play_title": "TikTok - Videos, Shop & LIVE",
+   "category": "social",
+   "min_age": 13,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/2o7iuqPe-0msP3DvNhzoOgNo4eZ6GkL_RtGVeKyBn5UBQAW5cw-GW5V3wDOHB1yTQuqWzrFLFOv2u4_5ea1uhg=s0-br30"
+  },
+  {
+   "package": "com.snapchat.android",
+   "name": "Snapchat",
+   "play_title": "Snapchat",
+   "category": "social",
+   "min_age": 13,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/nOJWJoDAzuRSHmlFfpzHXAj8UbTJwk_JGYf0uAPTKPtiiIX_2Y7r5ATO1ZtxHRqaFTqfIDZ40PnBK4hukeJh=s0-br30"
+  },
+  {
+   "package": "com.facebook.katana",
+   "name": "Facebook",
+   "play_title": "Facebook",
+   "category": "social",
+   "min_age": 13,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/12KEJDhgk6oyE1VgmfCuFzFrQripZ_endElbvEhU1rZawQgV3RI-v3II8fDslI1sdC_WKBkmtxS3jxuIihk33Q=s0-br30"
+  },
+  {
+   "package": "com.tocaboca.tocalifeworld",
+   "name": "Toca Boca World",
+   "play_title": "Toca Boca World",
+   "category": "games",
+   "min_age": 6,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/EQJQ_3OTKMq8h5ULR30LouHVfe-Ii5LDCR3jk_dlXZRlByJlVDlDndgw09GDE7c5-k9k8xiJ2DfEG5vw_v_q=s0-br30"
+  },
+  {
+   "package": "com.kiloo.subwaysurf",
+   "name": "Subway Surfers",
+   "play_title": "Subway Surfers",
+   "category": "games",
+   "min_age": 8,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/G1eIJ3yor1yW20izrYjOfCzHgVkRtewlfPFG9CEFTHzSI2m0Lwds_Y1xYgeg21CFok_UXrol-ox2IwqL4JMrLQ=s0-br30"
+  },
+  {
+   "package": "com.king.candycrushsaga",
+   "name": "Candy Crush Saga",
+   "play_title": "Candy Crush Saga",
+   "category": "games",
+   "min_age": 8,
+   "note": "רכישות בתוך המשחק",
+   "icon": "https://play-lh.googleusercontent.com/Ge-hDKA4KcMCbKcPnwBZgessZfujpST4CUIdwze1hX6eg-_67fdKqtotO1pIS3fmafKjgPeaXQ26VnJpDh5q5b8=s0-br30"
+  },
+  {
+   "package": "com.supercell.brawlstars",
+   "name": "Brawl Stars",
+   "play_title": "Brawl Stars",
+   "category": "games",
+   "min_age": 10,
+   "note": "צ׳אט ורכישות",
+   "icon": "https://play-lh.googleusercontent.com/wEOIM7cYyXkMExNztvFYKHJLPegXp6h81-P_JQQ_9KQvDCWK49m2zpt1mTRXO5bA2qU_Bp4em_nfMsHXmq8Z=s0-br30"
+  },
+  {
+   "package": "com.supercell.clashroyale",
+   "name": "Clash Royale",
+   "play_title": "Clash Royale",
+   "category": "games",
+   "min_age": 10,
+   "note": "צ׳אט ורכישות",
+   "icon": "https://play-lh.googleusercontent.com/z0rspJKftanEI7MA4WOdypbaaHfeKy4UjoawRGKf4Ys3v6LrrcleZWOfms7XK-J33Oqyfm3DlFd4Z_eKWafVFg=s0-br30"
+  },
+  {
+   "package": "com.roblox.client",
+   "name": "Roblox",
+   "play_title": "Roblox",
+   "category": "games",
+   "min_age": 13,
+   "note": "צ׳אט עם זרים",
+   "icon": "https://play-lh.googleusercontent.com/QqZj22aXblAyYDxLQw-Gg0ycW0QkKhrDnwqgERZU9BMRXZnMlgXfq-94sikG5mEpt_I0lzZxcUzfLblmQgwYzUE=s0-br30"
+  },
+  {
+   "package": "com.nianticlabs.pokemongo",
+   "name": "Pokémon GO",
+   "play_title": "Pokémon GO",
+   "category": "games",
+   "min_age": 10,
+   "note": "משחק בחוץ, עם מיקום",
+   "icon": "https://play-lh.googleusercontent.com/DUA40mf0fd6lUkU_Pvfw78BOoY37nPNM5tKw0tf4sCqzJfNwR84wqj-J00WN99QaZ89SpruNsU1xX7sDw6uBZg=s0-br30"
+  },
+  {
+   "package": "com.mojang.minecraftpe",
+   "name": "Minecraft",
+   "play_title": "Minecraft: Dream it, Build it!",
+   "category": "games",
+   "min_age": 8,
+   "note": "בתשלום",
+   "icon": "https://play-lh.googleusercontent.com/tI4StRSPVhpGJH5R013naszLUawOjao1ya8FvyaNO7XY_cJFHFqo1EFaEJv_7zz3rRJ5lEpLiw14ZqQLCOYc=s0-br30"
+  },
+  {
+   "package": "com.outfit7.mytalkingtomfree",
+   "name": "My Talking Tom",
+   "play_title": "My Talking Tom",
+   "category": "games",
+   "min_age": 4,
+   "note": "פרסומות",
+   "icon": "https://play-lh.googleusercontent.com/WcyzKmezd5XQgLqdSch8N0PungS1iXsHTq8R1wzCY35YuFNnvhSIVQRmVia1Uw1ivJwSpbDrzRmaELKlEKUDCw=s0-br30"
+  },
+  {
+   "package": "com.fingersoft.hillclimb",
+   "name": "Hill Climb Racing",
+   "play_title": "Hill Climb Racing",
+   "category": "games",
+   "min_age": 6,
+   "note": "פרסומות",
+   "icon": "https://play-lh.googleusercontent.com/7YJtBKClRTrPRIO-vm-_GoqAEwob4kQ-wJd0qmUMLdbor5Jxj-IKpsXOj6MQejf2XYN9YE0q6IUgYnu-fcAGIg=s0-br30"
+  },
+  {
+   "package": "com.miniclip.eightballpool",
+   "name": "8 Ball Pool",
+   "play_title": "8 Ball Pool",
+   "category": "games",
+   "min_age": 10,
+   "note": "צ׳אט ורכישות",
+   "icon": "https://play-lh.googleusercontent.com/F2_Kbn1-vQePDh_Y0qNCDhkmpEK5qdEyPwcJqwXho54ZVG4w6Szt32VHsyPzeVLPR2kfYI62-hGmNpQoDxS-wQ=s0-br30"
+  },
+  {
+   "package": "com.innersloth.spacemafia",
+   "name": "Among Us",
+   "play_title": "Among Us",
+   "category": "games",
+   "min_age": 10,
+   "note": "צ׳אט עם זרים",
+   "icon": "https://play-lh.googleusercontent.com/pfGArJJx-vtMRVu2-ziedzAhTLsHgks6N3mNyyOC0oxRdsXINGwdd9h4ZutdTG7MfgiqlDXBXnk-kNo-Fns70Q=s0-br30"
+  },
+  {
+   "package": "org.lichess.mobileV2",
+   "name": "Lichess — שחמט",
+   "play_title": "Lichess",
+   "category": "learn",
+   "min_age": 6,
+   "note": "יש צ׳אט במשחקים מקוונים",
+   "icon": "https://play-lh.googleusercontent.com/jVMwpscgp8X0kYuXF42Ysxe5URPLnJF4mHyrRb2mqRxs0JG6-bLmZ_ODEPoeB8mqQvwh9seLNPObNEKnAOM8Hg=s0-br30"
+  },
+  {
+   "package": "com.google.android.apps.tachyon",
+   "name": "Google Meet",
+   "play_title": "Google Meet",
+   "category": "school",
+   "min_age": 8,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/G7KKIhzS9ZKa5iCVAkt1P8vXvVWPbaV9JjkMsgb4BcEjqov0TysngtuJ4jE17DYhi4wblu4UXJDWjr7SYgnZ6A=s0-br30"
+  },
+  {
+   "package": "com.amazon.kindle",
+   "name": "Kindle — ספרים",
+   "play_title": "Amazon Kindle: Reading App",
+   "category": "learn",
+   "min_age": 8,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/OMOY8Erqgf955efAZgpCJLC9yU8W8WMRgiZSUc4jf653YyV3XwTY2uFQZCY1nz8-8Lb4eZXRCmd4RoWK5q6G2A=s0-br30"
+  },
+  {
+   "package": "com.audible.application",
+   "name": "Audible — ספרי שמע",
+   "play_title": "Audible: Audiobooks & Podcasts",
+   "category": "learn",
+   "min_age": 12,
+   "note": "בתשלום",
+   "icon": "https://play-lh.googleusercontent.com/LrA0bv-RgOlwONOM-yNHiQQJncEsOlQCLjMEOQTMNUw1gbbLBq92gVcr3SSoVNl5WKFw-3JeJFaKWVcYYvE6=s0-br30"
+  },
+  {
+   "package": "com.ted.android",
+   "name": "TED — הרצאות",
+   "play_title": "TED Talks: Watch and Learn",
+   "category": "learn",
+   "min_age": 12,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/GJTrpzrJltWBGETh1PBR2pboFGh-Y3Av0oMBPZoiULNS5FQRQgyuvGaOI9HMC1dD158cErAo_ttF9e8_JQMO=s0-br30"
+  },
+  {
+   "package": "gov.nasa",
+   "name": "NASA",
+   "play_title": "NASA",
+   "category": "learn",
+   "min_age": 6,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/oVqYAwNGdMPQGtooDs4bo-pJXrfxcO0nel9PT24KS_1PqIzYZRrBgWpQh8iyMuY_XUxjfDG7-dJUlsQwXsy88A=s0-br30"
+  },
+  {
+   "package": "com.memrise.android.memrisecompanion",
+   "name": "Memrise — לימוד שפות",
+   "play_title": "Memrise: Fun language lessons",
+   "category": "learn",
+   "min_age": 10,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/Vjyi1MGzec2ZakgqO1uRozgnUoc6mV5ls6XmId46WMvM_12zo7wLcXWnE2f3e0w2fEQn72j822BSldTySluc1w=s0-br30"
+  },
+  {
+   "package": "com.busuu.android.enc",
+   "name": "Busuu — לימוד שפות",
+   "play_title": "Busuu: Learn & Speak Languages",
+   "category": "learn",
+   "min_age": 10,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/bodOsAH2LLt33V_Y43_f5HcH7oPf77s8LV2cWjXTHz3DMOeKlnWZStVgW9LjFODWPD0a9lI_zalvkmr1gG5W=s0-br30"
+  },
+  {
+   "package": "com.mojang.minecraftedu",
+   "name": "Minecraft Education",
+   "play_title": "Minecraft Education",
+   "category": "learn",
+   "min_age": 8,
+   "note": "דורש חשבון בית ספר",
+   "icon": "https://play-lh.googleusercontent.com/JbaRbEMRaS8-9MT-jS7P_iiqgJZq1OVh6VM-OEaMuHj6em7JV3ZvuBHoFhg6z8lHCIG81d66boVJl7LUTQZJ=s0-br30"
+  },
+  {
+   "package": "com.prodigygame.prodigy",
+   "name": "Prodigy — מתמטיקה במשחק",
+   "play_title": "Prodigy Math: Kids Game",
+   "category": "learn",
+   "min_age": 6,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/iVzuHge5AZ_RELMQe4_PKORrc2ZjJNpurkV79YK2Oz_rQPGfyAAYmNZDULmRJK1Zu--GpeWMSjw69dtBCU85WQ=s0-br30"
+  },
+  {
+   "package": "com.canva.editor",
+   "name": "Canva — עיצוב",
+   "play_title": "Canva: AI Photo & Video Editor",
+   "category": "school",
+   "min_age": 10,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/52fzAlhKzDyZV8ttyQ_DHB-jOeLZAZEdKlgXnWL__YNMZuvsoRCshJX5mr_ArFZjK7rte4hqEJ4ucjtuKJK5=s0-br30"
+  },
+  {
+   "package": "com.adobe.reader",
+   "name": "Adobe Acrobat — PDF",
+   "play_title": "Adobe Acrobat Reader: Edit PDF",
+   "category": "school",
+   "min_age": 8,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/VIohTA3wyJgKJ-SZzoJeYuykxyVFCbSmXFAjefIGQybY57FX44VCHyVa3CTOZROzWLbMc-VFwL4CEDj47LeRpM0=s0-br30"
+  },
+  {
+   "package": "com.google.android.apps.messaging",
+   "name": "Google Messages — הודעות",
+   "play_title": "Google Messages",
+   "category": "social",
+   "min_age": 8,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/Mgukz1fq2stUYX_lQf79gmMeDzNvRCu5eobmiJwNkXl4riNY6HZ3VB-HRW5QciwEuLnFyk_ZmHumvn8RJ5Um=s0-br30"
+  },
+  {
+   "package": "com.discord",
+   "name": "Discord",
+   "play_title": "Discord - Talk, Play, Hang Out",
+   "category": "social",
+   "min_age": 13,
+   "note": "צ׳אט עם זרים",
+   "icon": "https://play-lh.googleusercontent.com/w2DdjDHGSj3DQElQQM0_J3PsNsALS-WD3CBeH0aXOYceR-F3aT02gFonhoFzz-Tc9ec8Dx9cLqh48-tzIFcP=s0-br30"
+  },
+  {
+   "package": "com.pinterest",
+   "name": "Pinterest",
+   "play_title": "Pinterest",
+   "category": "social",
+   "min_age": 13,
+   "note": "",
+   "icon": "https://play-lh.googleusercontent.com/VExMwhu9Fe5kz72YnPWP6mHrNA5WfgZ-PJMnBnQmXFpLncTAOaaHtK4b8w7b2xxGxtqycDatYslVyNSLucl9QA=s0-br30"
+  },
+  {
+   "package": "com.halfbrick.fruitninjafree",
+   "name": "Fruit Ninja",
+   "play_title": "Fruit Ninja®",
+   "category": "games",
+   "min_age": 6,
+   "note": "פרסומות",
+   "icon": "https://play-lh.googleusercontent.com/fznhdrBfXgOQx6CBMYServVpkwRBbJUke9-S6-QfeCnI0ZmipdfO7dvD5K-ae7Fb-8l9O3uIYYR3XXEl8ot1=s0-br30"
+  },
+  {
+   "package": "com.rovio.baba",
+   "name": "Angry Birds 2",
+   "play_title": "Angry Birds 2",
+   "category": "games",
+   "min_age": 6,
+   "note": "רכישות בתוך המשחק",
+   "icon": "https://play-lh.googleusercontent.com/XrA1acf-l1YT0jw0QTxWqpJLE_TYSgdGpWE1vrEepFpA2128Zx4to0ARPvKFdhT5vAc0LHHC7xAAwa8aABIFeg=s0-br30"
+  },
+  {
+   "package": "com.imangi.templerun2",
+   "name": "Temple Run 2",
+   "play_title": "Temple Run 2",
+   "category": "games",
+   "min_age": 8,
+   "note": "פרסומות",
+   "icon": "https://play-lh.googleusercontent.com/48yHWnGUQ5S8qgQ13CAtp0EOuPN23443EM7K_NG0HiX_icUINAbUPLJoVOuGSTy9zTIPIDJ9shcSVPhe-VHmCE0=s0-br30"
+  },
+  {
+   "package": "com.zeptolab.ctr.ads",
+   "name": "Cut the Rope",
+   "play_title": "Cut the Rope",
+   "category": "games",
+   "min_age": 4,
+   "note": "פרסומות",
+   "icon": "https://play-lh.googleusercontent.com/2bTmHHM7DBMVe7fLh16Em-J-tVBMFGL2HJCxPAMNF7gAYIfU6EZoYG1__lQ0cvFMEyp3GU9CGijZzEB1qJHF=s0-br30"
+  }
+ ]
+}

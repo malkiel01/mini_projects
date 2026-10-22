@@ -153,7 +153,7 @@ try {
      * הרישום בסוף הבקשה (shutdown), כשהשינוי כבר נשמר; שינוי שלא שינה דבר לא נרשם.
      */
     $histActions = ['child_save', 'youtube', 'yt_add', 'yt_del', 'rule_add', 'rule_del', 'rule_toggle', 'device_setting',
-                    'apps_posture', 'apps_new', 'app_rule', 'app_limit', 'chrome_managed', 'report_level', 'request_decide', 'app_request_decide'];
+                    'apps_posture', 'apps_new', 'app_rule', 'market_release', 'market_add', 'market_remove', 'app_limit', 'chrome_managed', 'report_level', 'request_decide', 'app_request_decide'];
     if (in_array($action, $histActions, true)) {
         $histChild = str_ends_with($action, 'request_decide')
             ? (int) (one('SELECT child_id FROM access_requests WHERE id = ? AND account_id = ?', [num('req'), $aid])['child_id'] ?? 0)
@@ -334,6 +334,32 @@ try {
         /* ── ניהול אפליקציות (שלב 11) ── */
         case 'apps':
             out(['ok' => true, 'apps' => appsList($aid, (int) myChild($parent)['id'])]);
+
+        /* ── מרקט האפליקציות (lib/market.php): מה משחררים לילד, ואפליקציה פרטית מקישור Play ── */
+        case 'market':
+            if (!accountAppsAllowed($aid)) fail('ניהול אפליקציות אינו פעיל בחשבון');
+            out(['ok' => true, 'market' => marketForParent($aid, (int) myChild($parent)['id'])]);
+
+        case 'market_release':
+            $c = myChild($parent);
+            if (!accountAppsAllowed($aid)) fail('ניהול אפליקציות אינו פעיל בחשבון');
+            if ($err = marketRelease((int) $c['id'], str('package'), (bool) num('on'))) fail($err);
+            out(['ok' => true, 'market' => marketForParent($aid, (int) $c['id'])]);
+
+        case 'market_add':
+            $c = myChild($parent);
+            if (!accountAppsAllowed($aid)) fail('ניהול אפליקציות אינו פעיל בחשבון');
+            [$id, $err] = marketAdd($aid, str('link'), str('category'), num('min_age'), '', str('name'));
+            if ($err) fail($err);
+            // נוספה בשביל הילד הזה — משוחררת לו מיד.
+            $pkg = (string) one('SELECT package FROM market_apps WHERE id = ?', [$id])['package'];
+            marketRelease((int) $c['id'], $pkg, true);
+            out(['ok' => true, 'market' => marketForParent($aid, (int) $c['id'])]);
+
+        case 'market_remove':
+            $c = myChild($parent);
+            if (!marketRemove(num('market_id'), $aid)) fail('אפשר להסיר רק אפליקציה פרטית שהוספתם');
+            out(['ok' => true, 'market' => marketForParent($aid, (int) $c['id'])]);
 
         /* ── הגדרות המכשיר (lib/devicesettings.php) — נאכף ב"בעל מכשיר" ── */
         case 'device_setting':
