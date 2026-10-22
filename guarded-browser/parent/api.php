@@ -18,6 +18,7 @@ require_once __DIR__ . '/../lib/appversion.php';
 require_once __DIR__ . '/../lib/search.php';
 require_once __DIR__ . '/../lib/appcontrol.php';
 require_once __DIR__ . '/../lib/apprequests.php';
+require_once __DIR__ . '/../lib/simulator.php';
 require_once __DIR__ . '/../lib/enforce.php';
 require_once __DIR__ . '/../lib/devicesettings.php';
 require_once __DIR__ . '/../lib/signing.php';
@@ -145,6 +146,15 @@ try {
     if (!$viaPlatform && $parent['must_change_pw']) fail('יש לבחור סיסמה חדשה לפני שממשיכים', 403, 'must_change');
 
     switch ($action) {
+        /* ── סימולטור הרשאות (שלב 12 ב) — קריאה בלבד ── */
+        case 'simulate':
+            $c = myChild($parent);
+            $b = body();
+            out(['ok' => true,
+                 'site' => str('url') !== '' ? simulateSite($c, str('url'), str('time'), isset($b['day']) ? (int) $b['day'] : -1,
+                                                           isset($b['used_min']) && $b['used_min'] !== '' ? (int) $b['used_min'] : -1) : null,
+                 'app'  => str('package') !== '' ? simulateApp($c, str('package')) : null]);
+
         case 'children':
             $rows = all('SELECT * FROM users WHERE account_id = ? AND is_admin = 0
                          ORDER BY CASE status WHEN \'pending\' THEN 0 ELSE 1 END, id', [$aid]);
