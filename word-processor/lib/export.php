@@ -93,8 +93,36 @@ function image_geom(array $a, ?array $m, ?float $maxW = null): array
 // ======================================================================
 
 /** {html, css}. $absolute — כתובות תמונות מלאות (למארחת). */
+/**
+ * מעבר מקטע תמיד ברמה העליונה (כמו בעורך — extensions.js, wpSectionTop): מעבר שנמצא בתוך רשימה / טבלה יוצא החוצה,
+ * מיד אחרי הבלוק העליון שהכיל אותו. בלי זה העימוד והרוחב מתפצלים (ביקורת 04, R01).
+ */
+function sections_top(array $json): array
+{
+    $pull = function (array $n, array &$out) use (&$pull): array {
+        if (!is_array($n['content'] ?? null)) return $n;
+        $kids = [];
+        foreach ($n['content'] as $c) {
+            if (is_array($c) && ($c['type'] ?? '') === 'sectionBreak') { $out[] = $c; continue; }
+            $kids[] = is_array($c) ? $pull($c, $out) : $c;
+        }
+        $n['content'] = $kids;
+        return $n;
+    };
+    $top = [];
+    foreach ($json['content'] ?? [] as $n) {
+        if (!is_array($n) || ($n['type'] ?? '') === 'sectionBreak') { $top[] = $n; continue; }
+        $out = [];
+        $top[] = $pull($n, $out);
+        array_push($top, ...$out);
+    }
+    if (isset($json['content'])) $json['content'] = $top;
+    return $json;
+}
+
 function export_html(array $json, array $page, bool $absolute = true): array
 {
+    $json = sections_top($json);
     $json = seq_flatten(with_media_src($json, $absolute));
     $body = '';
     foreach ($json['content'] ?? [] as $n) $body .= html_node($n);
@@ -1102,7 +1130,7 @@ const W_NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/m
 function export_ooxml(array $json, array $page): array
 {
     $o = new Ooxml($page, 'wp');
-    $body = $o->body($json);
+    $body = $o->body(sections_top($json));
     $styles = $o->styles();               // לפני המספור: מספור הכותרות נוצר בסגנונות
     $parts = $o->numberingParts();
     return [
@@ -1198,7 +1226,7 @@ function export_docx(array $json, array $page, string $title = ''): string
             . $pgNum . ($titlePg ? '<w:titlePg/>' : '') . '<w:bidi/></w:sectPr>';
     };
     $o->sectFn = $sectXml;
-    $body = $o->body($json);
+    $body = $o->body(sections_top($json));
     $sectCount = substr_count($body, '<w:sectPr>');
     $sect = $sectXml($o->cur, $sectCount);   // המקטע האחרון — בסוף הגוף
     if ($o->footnotes) $files['word/footnotes.xml'] = $o->footnotesXml();

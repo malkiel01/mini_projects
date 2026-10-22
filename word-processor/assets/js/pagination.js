@@ -353,6 +353,9 @@ function measure(view, g) {
 
     // סימולציה: עמוד אחרי עמוד. כל עמוד — בגיאומטריה של המקטע שלו (g.sections; בלי מקטעים — g עצמו)
     const secs = g.sections || [g];
+    // המקטע של מיקום במסמך — אותו כלל כמו רוחב הבלוקים (sectionsKey): המקטע האחרון שמתחיל לפני המיקום. מקור אמת
+    // אחד לרוחב הטקסט ולעמוד שמצויר מתחתיו (ביקורת 04, R01: העימוד ספר מעבר מקטע שבתוך רשימה, והרוחב — לא)
+    const secOf = pos => { let k = 0; for (let x = 1; x < secs.length; x++) if (pos > secs[x].from) k = x; return k; };
     let s = 0;                    // המקטע של העמוד הנוכחי
     const pageSecs = [0];
     const breaks = [];
@@ -382,10 +385,10 @@ function measure(view, g) {
         if (u.kind === 'force') {
             // מעבר עמוד ידני / מעבר מקטע: העמוד הבא מתחיל אחריו (במעבר מקטע — בגיאומטריה של המקטע הבא)
             const cur = secs[s];
-            const next = u.section ? secs[Math.min(s + 1, secs.length - 1)] : cur;
+            const next = u.section ? secs[secOf(u.after)] : cur;
             breaks.push(closePage({ pos: u.after, h: Math.max(0, cur.pageH - cur.top - (u.bottom - pageTop) + g.gap + next.top), page: page + 1, sec: !!u.section },
                 u.bottom - pageTop, notesOf(firstOnPage, i)));
-            if (u.section) s = Math.min(s + 1, secs.length - 1);
+            if (u.section) s = secOf(u.after);
             pageTop = u.bottom;
             page++;
             pageSecs.push(s);

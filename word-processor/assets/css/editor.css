@@ -415,11 +415,13 @@ html.wp-no-page-zoom, html.wp-no-page-zoom body, .wp-editor, .wp-stage { touch-a
 /* ===== תוכן עניינים (toc.js): מידות קבועות לפי גודל הגופן של המסמך — כמו toc() ב-lib/pdf/layout.php ===== */
 .wp-doc .wp-toc { padding-block-end: 6pt; user-select: none; cursor: default; }
 .wp-doc .wp-toc-title { font-weight: 700; font-size: 1.25em; line-height: 1.5; padding-block-end: 6pt; }
-.wp-doc .wp-toc-line { display: flex; align-items: baseline; gap: 4pt; line-height: 1.6; white-space: nowrap; cursor: pointer; }
+/* שורה ארוכה — נשברת לשורה הבאה (כמו ב-Word), לא נחתכת: מספר העמוד והנקודות — בשורה האחרונה שלה. אותו חישוב ב-PDF
+   (lib/pdf/layout.php, toc()): רוחב הטקסט = השורה פחות מספר העמוד, 12 נק' נקודות לפחות ושני רווחים של 4 נק' */
+.wp-doc .wp-toc-line { display: flex; align-items: flex-end; gap: 4pt; line-height: 1.6; cursor: pointer; }
 .wp-doc .wp-toc-line:hover .wp-toc-t { text-decoration: underline; }
-.wp-doc .wp-toc-t { overflow: hidden; text-overflow: ellipsis; min-inline-size: 0; }
-.wp-doc .wp-toc-dots { flex: 1; border-block-end: 1px dotted currentColor; opacity: .6; min-inline-size: 12pt; }
-.wp-doc .wp-toc-p { flex: none; }
+.wp-doc .wp-toc-t { min-inline-size: 0; overflow-wrap: anywhere; }
+.wp-doc .wp-toc-dots { flex: 1 1 12pt; border-block-end: 1px dotted currentColor; opacity: .6; min-inline-size: 12pt; margin-block-end: .45em; }
+.wp-doc .wp-toc-p { flex: none; white-space: nowrap; }
 .wp-doc .wp-toc-l1 { font-weight: 700; }
 .wp-doc .wp-toc-l2 { padding-inline-start: 14pt; } .wp-doc .wp-toc-l3 { padding-inline-start: 28pt; }
 .wp-doc .wp-toc-l4, .wp-doc .wp-toc-l5, .wp-doc .wp-toc-l6, .wp-doc .wp-toc-l7, .wp-doc .wp-toc-l8, .wp-doc .wp-toc-l9 { padding-inline-start: 42pt; }
