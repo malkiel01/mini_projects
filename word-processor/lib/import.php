@@ -204,6 +204,33 @@ function html_table(DOMElement $t): array
 
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
+/**
+ * שכבות של תמונות מאחורי / לפני הטקסט: ב-Word relativeHeight (גבוה — מעל). אצלנו z — רק כשהסדר שונה מהסדר במסמך
+ * (בסדר הרגיל z נשאר 0). _rh נמחק תמיד.
+ */
+function import_layers(array &$blocks): void
+{
+    $refs = ['behind' => [], 'front' => []];
+    $walk = function (array &$nodes) use (&$walk, &$refs) {
+        foreach ($nodes as &$n) {
+            if (($n['type'] ?? '') === 'image' && isset($n['attrs']['_rh'])) $refs[$n['attrs']['wrap'] ?? 'front'][] = &$n['attrs'];
+            if (is_array($n['content'] ?? null)) $walk($n['content']);
+        }
+    };
+    $walk($blocks);
+    foreach ($refs as $list) {
+        $rh = array_map(fn($a) => $a['_rh'], $list);
+        $sorted = $rh;
+        sort($sorted);
+        $inOrder = $rh === $sorted;
+        foreach ($list as $i => &$a) {
+            if (!$inOrder) $a['z'] = min(50, (int)array_search($rh[$i], $sorted, true));   // הדרגה (שווים — אותה דרגה)
+            unset($a['_rh']);
+        }
+        unset($a);
+    }
+}
+
 function import_docx(string $bytes, string $docId): array
 {
     $tmp = tempnam(sys_get_temp_dir(), 'wpimp');
@@ -234,6 +261,7 @@ function import_docx(string $bytes, string $docId): array
     $bg = strtolower((string)$xp->evaluate('string(/w:document/w:background/@w:color)'));
     if (preg_match('/^[0-9a-f]{6}$/', $bg) && $bg !== 'ffffff') $page = ($page ?? []) + ['page_color' => '#' . $bg];
     if ($ctx->watermark !== '') $page = ($page ?? []) + ['watermark' => $ctx->watermark];
+    import_layers($blocks);
     $k = 0;
     foreach ($blocks as &$b) {
         if (($b['type'] ?? '') !== 'sectionBreak') continue;
@@ -728,6 +756,7 @@ final class DocxCtx
             if (in_array($wrap, ['behind', 'front'], true)) {
                 $attrs['x'] = (int)round(((int)$xp->evaluate('string(wp:positionH/wp:posOffset)', $anchor)) / EMU_PER_PX_IMPORT);
                 $attrs['y'] = (int)round(((int)$xp->evaluate('string(wp:positionV/wp:posOffset)', $anchor)) / EMU_PER_PX_IMPORT);
+                $attrs['_rh'] = (int)$anchor->getAttribute('relativeHeight');   // שכבה — import_layers()
             }
         }
         return ['type' => 'image', 'attrs' => $attrs];

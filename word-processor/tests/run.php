@@ -607,6 +607,21 @@ check('Word → חזרה: צבע העמוד וסימן המים; הכותרת ל
 $pdfW = gzuncompress_pages($pdfOf(['type' => 'doc', 'content' => [$pk('טקסט')]], ['page_color' => '#fdf6e3', 'watermark' => 'טיוטה']));
 check('PDF: מלבן הרקע בצבע העמוד, והסימן מסובב 45°', str_contains($pdfW, '0.99 0.96 0.89 rg 0 0 595.28 841.89 re f') && str_contains($pdfW, '0.71 0.71 -0.71 0.71'));
 
+// שכבות של תמונות (מאחורי / לפני הטקסט): PDF לפי z, Word (relativeHeight) הלוך וחזור
+$pngOf = function (array $c): string { $g = imagecreatetruecolor(2, 2); imagefill($g, 0, 0, imagecolorallocate($g, ...$c)); ob_start(); imagepng($g); return ob_get_clean(); };
+$docZ = doc_new("c:$A", 'שכבות', null, null, 'u1', 'דנה');
+$mR = media_store($docZ, $pngOf([255, 0, 0]))['id']; $mB = media_store($docZ, $pngOf([0, 0, 255]))['id'];
+$imgL = fn($z, $c) => ['type' => 'image', 'attrs' => ['media' => $c === [255, 0, 0] ? $mR : $mB, 'width' => 100, 'height' => 100, 'wrap' => 'front', 'x' => 0, 'y' => 0, 'z' => $z]];
+$jL = ['type' => 'doc', 'content' => [['type' => 'paragraph', 'content' => [$imgL(1, [255, 0, 0]), $imgL(0, [0, 0, 255]), ['type' => 'text', 'text' => 'שכבות']]]]];
+$pdfL = gzuncompress_pages($pdfOf($jL));
+preg_match_all('#(/Im\d+) Do#', $pdfL, $mL);
+// הכחולה (z 0, שנייה במסמך) נרשמת ראשונה ב-PDF — Im2 לפני Im1; האדומה (z 1) — אחריה, כלומר מעליה
+check('PDF: התמונה עם z גבוה מצוירת אחרונה (מעל), גם כשהיא ראשונה במסמך', $mL[1] === ['/Im2', '/Im1'], implode(',', $mL[1]));
+$backL = import_docx(export_docx($jL, page_normalize([])), $docL)['json']['content'][0]['content'];
+check('Word → חזרה: סדר השכבות נשמר (הראשונה במסמך — מעל)', ($backL[0]['attrs']['z'] ?? 0) > ($backL[1]['attrs']['z'] ?? 0) && !isset($backL[0]['attrs']['_rh']), json_encode(array_map(fn($n) => $n['attrs']['z'] ?? null, $backL)));
+$backL2 = import_docx(export_docx(['type' => 'doc', 'content' => [['type' => 'paragraph', 'content' => [$imgL(0, [255, 0, 0]), $imgL(0, [0, 0, 255]), ['type' => 'text', 'text' => 'שכבות']]]]], page_normalize([])), $docL)['json']['content'][0]['content'];
+check('Word → חזרה: בסדר הרגיל — בלי z', empty($backL2[0]['attrs']['z']) && empty($backL2[1]['attrs']['z']));
+
 // מספור: רב-רמתי 1.1.1, המשך מספור, מספור כותרות — PDF, Word הלוך וחזור, HTML
 $li = fn($t, $sub = null) => ['type' => 'listItem', 'content' => array_merge([['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => $t]]]], $sub ? [$sub] : [])];
 $jn = ['type' => 'doc', 'content' => [

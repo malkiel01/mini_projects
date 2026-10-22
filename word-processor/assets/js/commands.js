@@ -34,9 +34,21 @@ const inTable = x => x.editor.isActive('table');
 const ts = x => x.editor.getAttributes('textStyle');
 const imgSet = (x, attrs) => {
     const pos = x.editor.state.selection.from;
-    return x.chain().updateAttributes('image', attrs).setNodeSelection(pos).run();
+    // כל פעולה על תמונה — צעד ביטול משלה (שתי פעולות מהירות על אותה תמונה לא מתאחדות). 'closeHistory$' — כמו setBlockAttrs
+    return x.chain().command(({ tr }) => { tr.setMeta('closeHistory$', true); return true; }).updateAttributes('image', attrs).setNodeSelection(pos).run();
 };
 const imgAttrs = x => x.editor.state.selection.node?.attrs || {};
+/** תמונה מאחורי / לפני הטקסט — יש לה שכבה. */
+const isFloating = x => isImage(x) && ['behind', 'front'].includes(imgAttrs(x).wrap);
+/** שכבה: לחזית — מעל כל התמונות באותה שכבה (מאחורי / לפני הטקסט); לרקע — מתחת לכולן. */
+const restack = (x, up) => {
+    const me = x.editor.state.selection.from;
+    const wrap = imgAttrs(x).wrap;
+    const zs = [];
+    x.editor.state.doc.descendants((n, pos) => { if (n.type.name === 'image' && n.attrs.wrap === wrap && pos !== me) zs.push(n.attrs.z || 0); });
+    const z = !zs.length ? 0 : up ? Math.max(...zs) + 1 : Math.min(...zs) - 1;
+    return imgSet(x, { z: Math.max(-50, Math.min(50, z)) });
+};
 
 /** @type {Array<{id:string,label:string,icon?:string,keys?:string,group:string,when?:(x)=>boolean,
  *   run:(x,arg?)=>any, active?:(x)=>boolean, enabled?:(x)=>boolean, value?:(x)=>string, edit?:boolean}>} */
@@ -141,6 +153,8 @@ export const COMMANDS = [
     { id: 'image.rotateRight', label: 'סיבוב ימינה', icon: '⟳', group: 'image', when: isImage, run: x => imgSet(x, { rotate: ((imgAttrs(x).rotate || 0) + 90) % 360 }) },
     { id: 'image.crop', label: 'חיתוך', icon: '✂', group: 'image', when: isImage, run: x => x.ui.crop(x.editor.state.selection.from) },
     { id: 'image.props', label: 'גודל, מיקום, כיתוב ותיאור', icon: '⚙', group: 'image', when: isImage, run: x => x.ui.imageProps(x.editor.state.selection.from) },
+    { id: 'image.toFront', label: 'הבאה לחזית', icon: '⬒', group: 'image', when: isFloating, run: x => restack(x, true) },
+    { id: 'image.toBack', label: 'שליחה לרקע', icon: '⬓', group: 'image', when: isFloating, run: x => restack(x, false) },
     { id: 'image.delete', label: 'מחיקת התמונה', icon: '🗑', group: 'image', when: isImage, run: x => x.chain().deleteSelection().run() },
 ];
 
