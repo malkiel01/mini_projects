@@ -15,6 +15,10 @@ export default async function (t) {
     const bar = await p.$$eval('.wp-toolbar:not(.wp-ctx) button.tb, .wp-toolbar:not(.wp-ctx) select, .wp-toolbar:not(.wp-ctx) label.tb', els => els.map(e => e.title || e.getAttribute('aria-label')));
     const orphans = bar.filter(x => !titles.has(x) && !['גופן', 'גודל'].includes(x));
     t.ok('כל כפתור בסרגל — פקודה מהרישום', !orphans.length, orphans.join(', ') || `${bar.length} פקדים`);
+    // ולהפך: כל פקודה ברישום — בסרט (בטלפון הגיליון הוא אותו סרט). טבלה ותמונה — בלשונית ההקשר שלהן
+    const inRibbon = new Set(await p.$$eval('.wp-ribbon [aria-label], .wp-ribbon [title]', els => els.flatMap(e => [e.getAttribute('aria-label'), e.title])));
+    const missing = reg.cmds.filter(c => !/^(table|image)\./.test(c.id) && !inRibbon.has(c.label) && !inRibbon.has(c.label + (c.keys ? ` (${c.keys})` : ''))).map(c => c.id);
+    t.ok('כל פקודה ברישום — בסרט, בלי פקודה שאבדה', !missing.length, missing.join(', ') || `${reg.cmds.filter(c => !/^(table|image)\./.test(c.id)).length} פקודות`);
 
     await p.click('.wp-doc');
     await p.keyboard.type('בדיקת פקודות');
