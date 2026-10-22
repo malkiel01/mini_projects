@@ -136,6 +136,22 @@ $corpus['styles'] = ['title' => 'סגנונות', 'json' => $doc($c), 'page' => 
     'u2' => ['name' => 'הדגשה', 'size' => 14, 'bold' => true, 'font' => 'Rubik', 'after' => 9],
 ]]];
 
+// 11. מספור: כותרות ממוספרות (המספר תופס מקום בשורה — גם כותרת ארוכה שנשברת), רב-רמתי 1.1.1 והמשך מספור
+$c = [];
+for ($r = 1; $r <= 4; $r++) {
+    $c[] = $hd("פרק $r: " . $sentence(6, 14), 1);
+    $c[] = $p($sentence(20, 50));
+    $c[] = $hd($sentence(4, 9), 2);
+    $c[] = ['type' => 'orderedList', 'attrs' => ['listType' => 'multi', 'start' => 1], 'content' => [
+        ['type' => 'listItem', 'content' => [$p($sentence(6, 20)), ['type' => 'orderedList', 'attrs' => ['start' => 1], 'content' => [$li($sentence(5, 18)), $li($sentence(5, 18))]]]],
+        $li($sentence(6, 20))]];   // פריטים קצרים: שורה שנשברת על הקצה שוברת אחרת במחשבים שונים (כמו "לרוחב")
+    $c[] = $hd($sentence(3, 7), 3);
+    $c[] = ['type' => 'orderedList', 'attrs' => ['start' => 1], 'content' => [$li($sentence(8, 25)), $li($sentence(8, 25))]];
+    $c[] = $p($sentence(15, 40));
+    $c[] = ['type' => 'orderedList', 'attrs' => ['start' => 3, 'cont' => true], 'content' => [$li($sentence(8, 25))]];
+}
+$corpus['numbering'] = ['title' => 'מספור', 'json' => $doc($c), 'page' => ['heading_numbers' => true]];
+
 foreach ($corpus as $name => $d) {
     file_put_contents(__DIR__ . "/$name.json", json_encode($d, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
     echo "$name.json\n";

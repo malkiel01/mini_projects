@@ -109,6 +109,8 @@ function export_css(array $page): string
         . '.wp-doc td,.wp-doc th{border:1px solid #888;padding:2pt 4pt;vertical-align:top}'
         . '.wp-doc ul,.wp-doc ol{margin:0;padding-inline-start:24pt}'
         . '.wp-doc ol.hebrew{list-style-type:hebrew}.wp-doc ol.roman{list-style-type:lower-roman}'
+        . '.wp-doc ol.multi,.wp-doc ol.multi ol{list-style:none}.wp-doc ol.multi>li,.wp-doc ol.multi ol>li{counter-increment:wpl;position:relative}'
+        . '.wp-doc ol.multi>li::before,.wp-doc ol.multi ol>li::before{content:counters(wpl,".") ".";position:absolute;inset-inline-end:100%;margin-inline-end:6pt;white-space:nowrap}'
         . '.wp-doc p,.wp-doc h1,.wp-doc h2,.wp-doc h3,.wp-doc h4,.wp-doc h5,.wp-doc h6{position:relative}'
         . '.wp-doc .wp-img{display:inline-block;vertical-align:bottom;position:relative}'
         . '.wp-doc .wp-img-cap{display:block;text-align:center;font-size:9pt;font-style:italic;color:#333;padding-top:2pt}'
@@ -127,6 +129,16 @@ function export_css(array $page): string
         if (preg_match(USER_STYLE_RE, (string)$k)) $css .= ".wp-doc .wp-s-$k{" . style_css($st + ($page['styles']['normal'] ?? []), false) . '}';
     }
     $css .= '.wp-doc td>p,.wp-doc th>p{padding-bottom:0}';   // כמו בעורך
+    if (!empty($page['heading_numbers'])) {
+        // מספור כותרות — כמו headingNumbersCss בעורך
+        $css .= '.wp-doc{counter-reset:wh1 wh2 wh3 wh4 wh5 wh6 wh7 wh8 wh9}';
+        for ($l = 1; $l <= 9; $l++) {
+            $sel = $l <= 6 ? ".wp-doc h$l" : ".wp-doc .wp-h$l";
+            $below = implode(' ', array_map(fn($x) => "wh$x", range($l + 1, 9)));
+            $path = implode(' "." ', array_map(fn($x) => "counter(wh$x)", range(1, $l)));
+            $css .= "$sel{counter-increment:wh$l" . ($l < 9 ? ";counter-reset:$below" : '') . "}$sel::before{content:$path \"" . ($l === 1 ? '. ' : ' ') . '"}';
+        }
+    }
     return $css;
 }
 
@@ -186,7 +198,7 @@ function html_node(array $n): string
         case 'orderedList':
             $t = $a['listType'] ?? 'decimal';
             $start = (int)($a['start'] ?? 1);
-            return '<ol' . ($t !== 'decimal' ? ' class="' . h($t) . '"' : '') . ($start !== 1 ? ' start="' . $start . '"' : '') . '>' . $kids() . '</ol>';
+            return '<ol' . ($t !== 'decimal' ? ' class="' . h($t) . '"' : '') . ($start !== 1 ? ' start="' . $start . '"' : '') . ' style="counter-reset:wpl ' . ($start - 1) . '">' . $kids() . '</ol>';
         case 'listItem':
             return '<li>' . $kids() . '</li>';
         case 'table':
@@ -376,6 +388,8 @@ final class Ooxml
 {
     public array $media = [];        // [{name, type, bytes, rid}]
     public array $links = [];        // כתובת חיצונית => rid (קשר hyperlink ב-rels)
+    private array $lastOrdered = []; // "רמה:סוג" => numId של הרשימה הממוספרת האחרונה (להמשך מספור)
+    private ?int $headingNum = null; // numId של מספור הכותרות (מקושר לסגנונות Heading1–9)
     private int $bookmarkId = 0;     // w:id של סימניות; בגוף לשילוב — מ-900000, כדי לא להתנגש בסימניות של המארחת
     public array $nums = [];         // [numId => ['abstract' => id]]
     public array $abstracts = [];    // [abstractId => ['type' => ..]]
@@ -426,14 +440,22 @@ final class Ooxml
                 return $this->para($n, $style === 'normal' ? null : $style, $list && $firstInItem ? $list : [], (bool)$list);
             case 'bulletList':
             case 'orderedList':
-                $type = $n['type'] === 'bulletList' ? 'bullet' : (in_array($a['listType'] ?? '', ['hebrew', 'roman'], true) ? $a['listType'] : 'decimal');
+                $type = $n['type'] === 'bulletList' ? 'bullet' : (in_array($a['listType'] ?? '', ['hebrew', 'roman', 'multi'], true) ? $a['listType'] : 'decimal');
                 $lvl = $list ? min(8, $list['lvl'] + 1) : 0;
-                $num = $this->newNum($type, (int)($a['start'] ?? 1), $lvl);
+                $multi = !empty($list['multi']);
+                if ($multi && $type !== 'bullet') {
+                    $num = $list['num'];   // רב-רמתי: רשימה ממוספרת שבתוכו — הרמה הבאה של אותה הגדרה (1.1, 1.1.1)
+                } elseif (!empty($a['cont']) && $type !== 'bullet' && isset($this->lastOrdered["$lvl:$type"])) {
+                    $num = $this->lastOrdered["$lvl:$type"];   // "המשך מספור" — אותה הגדרה, Word ממשיך את המספרים לבד
+                } else {
+                    $num = $this->newNum($type, (int)($a['start'] ?? 1), $lvl);
+                }
+                if ($type !== 'bullet') $this->lastOrdered["$lvl:$type"] = $num;
                 $out = '';
                 foreach ($n['content'] ?? [] as $li) {
                     $first = true;
                     foreach ($li['content'] ?? [] as $child) {
-                        $out .= $this->block($child, ['num' => $num, 'lvl' => $lvl], $first);
+                        $out .= $this->block($child, ['num' => $num, 'lvl' => $lvl, 'multi' => $multi || ($type === 'multi' && $n['type'] === 'orderedList')], $first);
                         if (!in_array($child['type'] ?? '', ['bulletList', 'orderedList'], true)) $first = false;
                     }
                 }
@@ -776,6 +798,11 @@ final class Ooxml
             if (isset($st['line'])) $sp .= ' w:line="' . (int)round($st['line'] * 240) . '" w:lineRule="auto"';
             $user = (bool)preg_match(USER_STYLE_RE, $k);
             $ppr = ($k !== 'normal' && !$user ? '<w:keepNext/><w:keepLines/>' : '') . '<w:bidi/>' . ($sp ? "<w:spacing$sp/>" : '');
+            // מספור כותרות: הסגנון מקושר להגדרת מספור אחת, ברמה של הכותרת
+            if ($k[0] === 'h' && !$user && !empty($this->page['heading_numbers'])) {
+                $this->headingNum ??= $this->newNum('headings', 1, 0);
+                $ppr = '<w:keepNext/><w:keepLines/><w:numPr><w:ilvl w:val="' . ((int)substr($k, 1) - 1) . '"/><w:numId w:val="' . $this->headingNum . '"/></w:numPr>' . substr($ppr, strlen('<w:keepNext/><w:keepLines/>'));
+            }
             if (!empty($st['align'])) $ppr .= '<w:jc w:val="' . ($this->jc($st['align'], true) ?? 'start') . '"/>';
             if ($k[0] === 'h') $ppr .= '<w:outlineLvl w:val="' . ((int)$k[1] - 1) . '"/>';
             $rpr = '';
@@ -801,12 +828,20 @@ final class Ooxml
     {
         $abs = '';
         $bullets = ['•', '◦', '▪', '•', '◦', '▪', '•', '◦', '▪'];
-        $fmt = ['bullet' => 'bullet', 'decimal' => 'decimal', 'hebrew' => 'hebrew1', 'roman' => 'lowerRoman'];
+        $fmt = ['bullet' => 'bullet', 'decimal' => 'decimal', 'hebrew' => 'hebrew1', 'roman' => 'lowerRoman', 'multi' => 'decimal', 'headings' => 'decimal'];
         foreach ($this->abstracts as $id => $a) {
-            $abs .= '<w:abstractNum w:abstractNumId="' . $id . '"><w:multiLevelType w:val="hybridMultilevel"/>';
+            $multi = in_array($a['type'], ['multi', 'headings'], true);
+            $abs .= '<w:abstractNum w:abstractNumId="' . $id . '"><w:multiLevelType w:val="' . ($multi ? 'multilevel' : 'hybridMultilevel') . '"/>';
             for ($i = 0; $i < 9; $i++) {
-                $text = $a['type'] === 'bullet' ? $bullets[$i] : '%' . ($i + 1) . '.';
+                // רב-רמתי: "%1.%2." — כל הרמות שמעל; כותרות: "%1." ו-"%1.%2" ואחריו רווח (כמו בעורך)
+                $path = implode('.', array_map(fn($k) => '%' . $k, range(1, $i + 1)));
+                $text = match ($a['type']) { 'bullet' => $bullets[$i], 'multi' => $path . '.', 'headings' => $i === 0 ? '%1.' : $path, default => '%' . ($i + 1) . '.' };
                 $start = $i === $a['lvl'] ? $a['start'] : 1;
+                if ($a['type'] === 'headings') {
+                    $abs .= '<w:lvl w:ilvl="' . $i . '"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:pStyle w:val="' . $this->styleId('h' . ($i + 1)) . '"/>'
+                        . '<w:suff w:val="space"/><w:lvlText w:val="' . xml($text) . '"/><w:lvlJc w:val="start"/><w:pPr><w:bidi/><w:ind w:start="0" w:hanging="0"/></w:pPr></w:lvl>';
+                    continue;
+                }
                 $abs .= '<w:lvl w:ilvl="' . $i . '"><w:start w:val="' . $start . '"/><w:numFmt w:val="' . $fmt[$a['type']] . '"/>'
                     . '<w:lvlText w:val="' . xml($text) . '"/><w:lvlJc w:val="start"/><w:pPr><w:bidi/><w:ind w:start="' . (360 + 360 * ($i + 1)) . '" w:hanging="360"/></w:pPr></w:lvl>';
             }
@@ -839,10 +874,11 @@ function export_ooxml(array $json, array $page): array
 {
     $o = new Ooxml($page, 'wp');
     $body = $o->body($json);
+    $styles = $o->styles();               // לפני המספור: מספור הכותרות נוצר בסגנונות
     $parts = $o->numberingParts();
     return [
         'body' => $body,
-        'styles' => $o->styles(),
+        'styles' => $styles,
         'numbering' => $parts['abstract'] . $parts['num'],
         'numbering_parts' => $parts,
         'media' => array_values(array_map(fn($m) => ['name' => $m['name'], 'type' => $m['type'], 'rid' => $m['rid'], 'base64' => base64_encode($m['bytes'])], $o->media)),

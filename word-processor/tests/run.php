@@ -247,7 +247,7 @@ $page = page_normalize(['numbering' => ['format' => 'n_of_m', 'position' => 'bot
 $html = export_html(doc_json($row), $page);
 check('html: כותרת מסמך, h1 ממורכז', str_contains($html['html'], 'class="wp-title"') && str_contains($html['html'], '<h1 style="text-align:center;">מבוא</h1>'));
 check('html: מודגש, צבע, גודל, גופן', str_contains($html['html'], '<strong>מודגש</strong>') && str_contains($html['html'], 'color:#C00000') && str_contains($html['html'], 'font-size:14pt'));
-check('html: רשימה עברית מקוננת', str_contains($html['html'], '<ol class="hebrew">') && str_contains($html['html'], '<ul><li><p>תת-סעיף'));
+check('html: רשימה עברית מקוננת', str_contains($html['html'], '<ol class="hebrew" style="counter-reset:wpl 0">') && str_contains($html['html'], '<ul><li><p>תת-סעיף'));
 check('html: טבלה עם colspan/rowspan', str_contains($html['html'], '<th colspan="2">') && str_contains($html['html'], '<td rowspan="2">'));
 check('html: תמונה בכתובת חתומה מלאה, גלישה ריבוע', str_contains($html['html'], 'src="https://mbe-plus.com/mini_projects/word-processor/api.php?action=media&amp;id=' . $media['id']) && str_contains($html['html'], 'wrap-square align-left'));
 check('html: תוכן משתמש מוברח (<script>)', !str_contains($html['html'], '<script>') && str_contains($html['html'], '&lt;script&gt;'));
@@ -539,6 +539,41 @@ if (trim((string)shell_exec('command -v pdftotext'))) {
 } else {
     echo "  · pdftotext לא מותקן — דילוג על חילוץ הטקסט\n";
 }
+
+// מספור: רב-רמתי 1.1.1, המשך מספור, מספור כותרות — PDF, Word הלוך וחזור, HTML
+$li = fn($t, $sub = null) => ['type' => 'listItem', 'content' => array_merge([['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => $t]]]], $sub ? [$sub] : [])];
+$jn = ['type' => 'doc', 'content' => [
+    ['type' => 'heading', 'attrs' => ['level' => 1], 'content' => [['type' => 'text', 'text' => 'מבוא']]],
+    ['type' => 'heading', 'attrs' => ['level' => 2], 'content' => [['type' => 'text', 'text' => 'רקע']]],
+    ['type' => 'orderedList', 'attrs' => ['listType' => 'multi', 'start' => 1], 'content' => [
+        $li('ראשון', ['type' => 'orderedList', 'attrs' => ['start' => 1], 'content' => [$li('תת א'), $li('תת ב')]]), $li('שני')]],
+    ['type' => 'heading', 'attrs' => ['level' => 3], 'content' => [['type' => 'text', 'text' => 'פירוט']]],
+    ['type' => 'orderedList', 'attrs' => ['start' => 1], 'content' => [$li('א1'), $li('א2')]],
+    ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'באמצע']]],
+    ['type' => 'orderedList', 'attrs' => ['start' => 3, 'cont' => true], 'content' => [$li('א3')]],
+    ['type' => 'heading', 'attrs' => ['level' => 1], 'content' => [['type' => 'text', 'text' => 'סיכום']]],
+]];
+$pgN = page_normalize(['heading_numbers' => true]);
+check('מספור כותרות: 1. / 1.1 / 1.1.1 / 2.', array_column(array_column(array_filter(heading_numbers($jn)['content'], fn($b) => $b['type'] === 'heading'), 'attrs'), '_hnum') === ['1. ', '1.1 ', '1.1.1 ', '2. ']);
+if (trim((string)shell_exec('command -v pdftotext'))) {
+    file_put_contents("$tmp/n.pdf", export_pdf($jn, $pgN, 'מספור'));
+    $tn = $clean(shell_exec('pdftotext -layout ' . escapeshellarg("$tmp/n.pdf") . ' - 2>&1'));
+    // pdftotext מציג מספר בשורה מימין לשמאל עם הנקודה משמאל (".1") — כך הוא נראה בעמוד
+    $tn1 = preg_replace('/\s+/u', '', $tn);
+    check('PDF: מספרי הכותרות לפני הטקסט, 1.1 / 1.2 ברשימה הרב-רמתית, והמשך מספור (3.)', str_contains($tn1, '.1מבוא') && str_contains($tn1, '1.1רקע') && str_contains($tn1, '1.1.1פירוט')
+        && str_contains($tn1, '.1.1תתא') && str_contains($tn1, '.1.2תתב') && str_contains($tn1, '.2שני') && str_contains($tn1, '.3א3') && str_contains($tn1, '.2סיכום'), $tn);
+}
+$oxN = export_ooxml($jn, $pgN);
+check('Word: רב-רמתי — %1.%2. ורשימה פנימית באותו numId ברמה 1', str_contains($oxN['numbering'], 'w:val="%1.%2."')
+    && preg_match('/<w:ilvl w:val="1"\/><w:numId w:val="(\d+)"\/>.*?/s', $oxN['body'], $m1) === 1 && substr_count($oxN['body'], '<w:numId w:val="' . $m1[1] . '"/>') === 4);
+preg_match_all('/<w:numId w:val="(\d+)"\/>/', $oxN['body'], $all);
+check('Word: המשך מספור — אותו numId כמו הרשימה הקודמת', count(array_unique(array_slice($all[1], -3))) === 1, implode(',', $all[1]));
+check('Word: מספור כותרות — הסגנונות מקושרים, %1. ו-%1.%2 עם רווח', str_contains($oxN['styles'], '<w:numPr><w:ilvl w:val="0"/>') && str_contains($oxN['numbering'], '<w:pStyle w:val="wpHeading2"/><w:suff w:val="space"/><w:lvlText w:val="%1.%2"/>'));
+$backN = import_docx(export_docx($jn, $pgN), $docSt);
+$ols = array_values(array_filter($backN['json']['content'], fn($b) => $b['type'] === 'orderedList'));
+check('Word → חזרה: רב-רמתי, המשך מספור מ-3, ומספור כותרות', ($ols[0]['attrs']['listType'] ?? '') === 'multi' && !empty($ols[2]['attrs']['cont']) && ($ols[2]['attrs']['start'] ?? 0) === 3
+    && !empty($backN['page']['heading_numbers']), json_encode(array_column($ols, 'attrs')) . ' ' . json_encode($backN['page']['heading_numbers'] ?? null));
+check('HTML: מוני כותרות ו-1.1.1', str_contains(export_css($pgN), '.wp-doc h2::before{content:counter(wh1) "." counter(wh2) " "}') && str_contains(export_css($pgN), 'counters(wpl,".")'));
 $pdfImg = $pdfOf(doc_json($rowI));
 $ops = gzuncompress_pages($pdfImg);
 check('PDF: תמונות (XObject), חיתוך כ-clip, סיבוב 90° עם כיוון השעון', $structOk($pdfImg) && str_contains($pdfImg, '/Subtype /Image') && str_contains($ops, ' re W n')

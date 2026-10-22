@@ -193,6 +193,12 @@ html.wp-no-page-zoom, html.wp-no-page-zoom body, .wp-editor, .wp-stage { touch-a
 .wp-doc ul, .wp-doc ol { margin: 0; padding-inline-start: 24pt; }
 .wp-doc ol[data-list="hebrew"] { list-style-type: hebrew; }
 .wp-doc ol[data-list="roman"] { list-style-type: lower-roman; }
+/* רב-רמתי 1.1.1: מונה wpl (counter-reset ב-<ol> לפי start); גם רשימות ממוספרות שבתוכה. הסימן בשוליים שלפני הטקסט —
+   מחוץ לזרימה, כמו ::marker, ובאותו מקום כמו ב-PDF (6 נק' מתחילת השורה) */
+.wp-doc ol[data-list="multi"], .wp-doc ol[data-list="multi"] ol { list-style: none; }
+.wp-doc ol[data-list="multi"] > li, .wp-doc ol[data-list="multi"] ol > li { counter-increment: wpl; position: relative; }
+.wp-doc ol[data-list="multi"] > li::before, .wp-doc ol[data-list="multi"] ol > li::before {
+    content: counters(wpl, ".") "."; position: absolute; inset-inline-end: 100%; margin-inline-end: 6pt; white-space: nowrap; }
 .wp-doc ul ul, .wp-doc ol ul { list-style-type: circle; }
 .wp-doc ul ul ul, .wp-doc ol ul ul { list-style-type: square; }
 .wp-doc li > p { padding-top: 0; }

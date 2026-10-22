@@ -48,8 +48,24 @@ export function defaultPage() {
             normal: { before: 0, after: 6, line: 1.15 },
         },
         numbering: { show: true, position: 'bottom', align: 'center', format: 'n', start: 1, first_page: true },
-        header: '', footer: '',
+        header: '', footer: '', heading_numbers: false,
     };
+}
+
+/**
+ * מספור כותרות (1. / 1.1 / 1.1.1 …) במונים של CSS — אותה מחרוזת כמו heading_number() ב-PDF:
+ * כותרת 1 — "N. ", עמוקה יותר — "N.M " (רמות שדולגו — 0, כמו ב-Word).
+ */
+function headingNumbersCss(P) {
+    const L = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+    let css = `${P}{counter-reset:${L.map(l => 'wh' + l).join(' ')}}`;
+    for (const l of L) {
+        const below = L.filter(x => x > l).map(x => 'wh' + x).join(' ');
+        const path = L.filter(x => x <= l).map(x => `counter(wh${x})`).join(' "." ');
+        css += `${P} h${l}{counter-increment:wh${l}${below ? `;counter-reset:${below}` : ''}}`
+            + `${P} h${l}::before{content:${path} "${l === 1 ? '. ' : ' '}"}`;
+    }
+    return css;
 }
 
 /** h('button.btn.primary', {onclick}, 'טקסט', child…) */
@@ -270,6 +286,7 @@ export function createWordEditor(root, opts) {
             + [1, 2, 3, 4, 5, 6, 7, 8, 9].map(l => st(`${P} h${l}`, s['h' + l] || {}, true)).join('')
             + Object.keys(s).filter(k => USER_STYLE.test(k)).map(k => st(`${P} p.wp-s-${k}`, { ...s.normal, ...s[k] }, false)).join('')
             + `${P} li>p{padding-top:0;padding-bottom:${Math.min(3, s.normal.after ?? 0)}pt}`
+            + (page.heading_numbers ? headingNumbersCss(P) : '')
             // בתא טבלה — בלי רווח אחרי פסקה (גם ב-PDF וב-Word); בלי זה כלל הסגנון (ספציפי יותר) גובר על editor.css
             + `${P} td>p,${P} th>p{padding-bottom:0}`;
         // הדפסה: אותם עמודים — כל רווח של עמוד הופך לשבירת עמוד, ומספר העמוד בשולי הדף
@@ -442,6 +459,9 @@ export function createWordEditor(root, opts) {
             footnote: () => footnoteDialog(null),
             link: () => linkDialog(), bookmark: () => bookmarkDialog(),
             newStyle: () => newStyleDialog(), updateStyle: () => updateStyleFromSelection(),
+            numberingValue: () => numberingDialog(),
+            headingNumbers: () => setPage({ heading_numbers: !page.heading_numbers }),
+            headingNumbersOn: () => !!page.heading_numbers,
             save: opts.save ? () => opts.save() : null,
             printPreview: () => preview(true),
             commandSearch: () => focusSearch(),
@@ -466,6 +486,7 @@ export function createWordEditor(root, opts) {
         h('span', { 'aria-hidden': 'true' }, cmds.get(id).icon), h('input', { type: 'color', value, 'aria-label': cmds.get(id).label, oninput: e => cmds.run(id, e.target.value) }));
 
     const linkOff = cmdBtn('unlink');
+    const hnumBtn = cmdBtn('headingNumbers');
     const styleSel = cmdSel('style', 'w-style', []);
     // גלריית סגנונות: כל כפתור נראה כמו הסגנון (גופן, משקל, צבע; גודל מוקטן), כמו ב-Word
     const gallery = h('div.rb-gallery', { role: 'group', 'aria-label': 'גלריית סגנונות' });
@@ -487,7 +508,8 @@ export function createWordEditor(root, opts) {
     const fontSel = cmdSel('fontFamily', 'w-font', [h('option', { value: '' }, 'גופן המסמך'), ...FONTS.map(f => h('option', { value: f, style: { fontFamily: cssFont(f) } }, f))]);
     const sizeSel = cmdSel('fontSize', 'w-size', [h('option', { value: '' }, '—'), ...SIZE_LIST.map(s => h('option', { value: s }, s))]);
     const spacingSel = cmdSel('letterSpacing', 'w-spacing', SPACING.map(([v, t]) => h('option', { value: v }, t)));
-    const listType = cmdSel('listType', 'w-list', [h('option', { value: 'decimal' }, '1.'), h('option', { value: 'hebrew' }, 'א.'), h('option', { value: 'roman' }, 'i.')]);
+    const listType = cmdSel('listType', 'w-list', [h('option', { value: 'decimal' }, '1.'), h('option', { value: 'hebrew' }, 'א.'), h('option', { value: 'roman' }, 'i.'), h('option', { value: 'multi' }, '1.1.1')]);
+    const numBtns = ['restartNumbering', 'continueNumbering', 'numberingValue'].map(id => cmdBtn(id));
     sizeSel.title = 'גודל';
     let zoomLabel = h('span.tb-zoom', '100%');
     let stZoom = null;   // הזום בשורת המצב (נבנה עם שורת המצב)
@@ -512,7 +534,7 @@ export function createWordEditor(root, opts) {
         ['home', 'בית', [
             grp('לוח', B.painter),
             grp('גופן', [fontSel, sizeSel, B.clearFormat], [B.bold, B.italic, B.underline, B.strike, B.superscript, B.subscript, B.color, B.mark, spacingSel]),
-            grp('פסקה', [B.bulletList, B.orderedList, listType, B.outdent, B.indent], [B.alignRight, B.alignCenter, B.alignLeft, B.alignJustify, B.paragraphDialog]),
+            grp('פסקה', [B.bulletList, B.orderedList, listType, ...numBtns, B.outdent, B.indent], [B.alignRight, B.alignCenter, B.alignLeft, B.alignJustify, B.paragraphDialog, hnumBtn]),
             grp('סגנונות', [gallery], [styleSel, B.editStyles, cmdBtn('newStyle'), cmdBtn('updateStyle')]),
             grp('עריכה', [cmdBtn('find'), cmdBtn('replace')])]],
         ['insert', 'הוספה', [grp('טבלאות', B.insertTable), grp('איורים', [B.insertImage, imgInput]), grp('הערות', B.footnote), grp('קישורים', [cmdBtn('link'), linkOff, cmdBtn('bookmark')]), grp('עמודים', B.pageBreak)]],
@@ -748,6 +770,9 @@ export function createWordEditor(root, opts) {
         B.undo.disabled = !cmds.state('undo').enabled;
         B.redo.disabled = !cmds.state('redo').enabled;
         linkOff.disabled = !cmds.state('unlink').enabled;
+        for (const b of numBtns) b.disabled = !editor.isActive('orderedList') || !editor.isEditable;
+        hnumBtn.classList.toggle('on', !!page.heading_numbers);
+        hnumBtn.setAttribute('aria-pressed', String(!!page.heading_numbers));
         contextBar();
         statusBarPage();
         refreshMobile();
@@ -1070,6 +1095,18 @@ export function createWordEditor(root, opts) {
                 chain().insertContentAt({ from, to }, { type: 'text', text: shown, marks: [...marks, { type: 'link', attrs: { href } }] })
                     .setTextSelection(from + shown.length).unsetMark('link').run();
             } else chain().setTextSelection({ from, to }).setMark('link', { href }).run();
+        }, 'אישור');
+    }
+
+    /** קביעת ערך המספור: הרשימה שבה הסמן מתחילה במספר הזה (ולא ממשיכה את הקודמת). */
+    function numberingDialog() {
+        const cur = editor.getAttributes('orderedList').start ?? 1;
+        sheet('קביעת ערך המספור', body => {
+            body.append(field('להתחיל ב-', numInput('start', cur, { min: 0, max: 9999, step: 1 })));
+        }, form => {
+            const n = parseInt(new FormData(form).get('start'), 10);
+            if (!(n >= 0 && n <= 9999)) throw new Error('מספר בין 0 ל-9999');
+            chain().setListNumbering({ start: n, cont: false }).run();
         }, 'אישור');
     }
 
@@ -1433,7 +1470,7 @@ export function createWordEditor(root, opts) {
 export function mergePage(base, p, replaceStyles = false) {
     const out = structuredClone(base);
     if (!p || typeof p !== 'object') return out;
-    for (const k of ['size', 'orientation', 'header', 'footer']) if (p[k] !== undefined && p[k] !== null) out[k] = p[k];
+    for (const k of ['size', 'orientation', 'header', 'footer', 'heading_numbers']) if (p[k] !== undefined && p[k] !== null) out[k] = p[k];
     if (p.margins) Object.assign(out.margins, Object.fromEntries(Object.entries(p.margins).filter(([, v]) => isFinite(v) && v !== ''))
     );
     if (p.font) Object.assign(out.font, Object.fromEntries(Object.entries(p.font).filter(([, v]) => v !== '' && v !== null)));

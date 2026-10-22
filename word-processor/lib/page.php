@@ -34,7 +34,7 @@ function page_defaults(): array
             'normal' => ['before' => 0, 'after' => 6, 'line' => 1.15],
         ],
         'numbering' => ['show' => true, 'position' => 'bottom', 'align' => 'center', 'format' => 'n', 'start' => 1, 'first_page' => true],
-        'header' => '', 'footer' => '',
+        'header' => '', 'footer' => '', 'heading_numbers' => false,
     ];
 }
 
@@ -103,6 +103,7 @@ function page_normalize($in, ?array $base = null): array
     foreach (['header', 'footer'] as $k) {
         if (is_string($in[$k] ?? null)) $p[$k] = mb_substr(str_replace(["\r", "\0"], '', $in[$k]), 0, 500);
     }
+    if (isset($in['heading_numbers'])) $p['heading_numbers'] = (bool)$in['heading_numbers'];
     return $p;
 }
 
@@ -110,6 +111,26 @@ function font_name(string $f): string
 {
     $f = trim(preg_replace('/[^\p{L}\p{N} \-]/u', '', $f));
     return mb_substr($f, 0, 60);
+}
+
+/**
+ * מספור כותרות: לכל כותרת במסמך (לפי הסדר) — attrs._hnum, אותה מחרוזת כמו המונים של העורך (headingNumbersCss):
+ * כותרת 1 — "N. ", עמוקה יותר — "N.M " (רמה שדולגה — 0).
+ */
+function heading_numbers(array $json): array
+{
+    $c = array_fill(1, 9, 0);
+    $walk = function (array $n) use (&$walk, &$c): array {
+        if (($n['type'] ?? '') === 'heading') {
+            $l = max(1, min(9, (int)($n['attrs']['level'] ?? 1)));
+            $c[$l]++;
+            for ($k = $l + 1; $k <= 9; $k++) $c[$k] = 0;
+            $n['attrs']['_hnum'] = implode('.', array_slice($c, 0, $l)) . ($l === 1 ? '. ' : ' ');
+        }
+        if (is_array($n['content'] ?? null)) $n['content'] = array_map($walk, $n['content']);
+        return $n;
+    };
+    return $walk($json);
 }
 
 /** שם סגנון של משתמש: טקסט קצר בלי תווי בקרה. */

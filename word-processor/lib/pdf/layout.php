@@ -118,6 +118,8 @@ final class PdfLayout
     private int $fnSeq = 0;        // מספור הערות השוליים — לאורך כל המסמך
     private int $tableSeq = 0;
 
+    private ?array $multiPath = null;   // המספרים של הפריטים שמעל (רשימה רב-רמתית), או null
+
     public function __construct(array $page)
     {
         $this->first = page_normalize($page);
@@ -143,6 +145,7 @@ final class PdfLayout
     public function render(array $json, string $title = ''): string
     {
         FontSet::reset();
+        if (!empty($this->first['heading_numbers'])) $json = heading_numbers($json);
         // מקטעים: כל מקטע מתחיל בעמוד חדש, ולכן נפרס ומעומד לבד — בגיאומטריה שלו. מעבר מקטע נושא את
         // השינויים למקטע שאחריו (כמו בעורך)
         $chunks = [[]];
@@ -329,15 +332,25 @@ final class PdfLayout
     private function listItems(array $n, float $width, float $indent, int $parentDepth, array &$floats, float &$y): array
     {
         $ordered = $n['type'] === 'orderedList';
-        $type = $ordered ? (in_array($n['attrs']['listType'] ?? '', ['hebrew', 'roman'], true) ? $n['attrs']['listType'] : 'decimal') : 'bullet';
+        $type = $ordered ? (in_array($n['attrs']['listType'] ?? '', ['hebrew', 'roman', 'multi'], true) ? $n['attrs']['listType'] : 'decimal') : 'bullet';
+        // רב-רמתי: רשימה ממוספרת בתוך רשימה רב-רמתית — גם היא 1.1.1 (כמו ב-editor.css)
+        if ($ordered && $this->multiPath !== null) $type = 'multi';
         $depth = $parentDepth + 1;
         $num = (int)($n['attrs']['start'] ?? 1);
         $out = [];
+        $saved = $this->multiPath;
         foreach ($n['content'] ?? [] as $li) {
-            $marker = $type === 'bullet' ? ['•', '◦', '▪'][min(2, $depth % 3)] : list_marker($num++, $type);
+            if ($type === 'multi') {
+                $path = [...($saved ?? []), $num++];
+                $marker = implode('.', $path) . '.';
+                $this->multiPath = $path;
+            } else {
+                $marker = $type === 'bullet' ? ['•', '◦', '▪'][min(2, $depth % 3)] : list_marker($num++, $type);
+            }
             $items = $this->blocks($li['content'] ?? [], $width, $indent + 24, ['marker' => $marker], $depth);
             foreach ($items as $it) { $out[] = $it; }
         }
+        $this->multiPath = $saved;
         return $out;
     }
 
@@ -362,6 +375,8 @@ final class PdfLayout
 
         // אטומים: תו / תמונה בשורה / שבירת שורה. תמונות אחרות — בנפרד.
         $atoms = [];
+        // מספור כותרות — המספר לפני הטקסט, בסגנון הכותרת (בעורך: ::before)
+        if (isset($a['_hnum'])) foreach (mb_str_split((string)$a['_hnum']) as $ch) $atoms[] = $this->charAtom(mb_ord($ch), $this->charStyle($base, []));
         $absImgs = [];
         $blockImgs = [];
         foreach ($n['content'] ?? [] as $c) {
