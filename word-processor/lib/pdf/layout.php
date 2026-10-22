@@ -388,17 +388,18 @@ final class PdfLayout
     {
         $S = (float)$this->page['font']['size'];
         $entries = is_array($a['entries'] ?? null) ? array_values(array_filter($a['entries'], 'is_array')) : [];
-        $rows = $entries ?: [['t' => 'אין כותרות במסמך', 'l' => 0, 'p' => '']];
+        $rows = $entries ?: [['t' => toc_empty($a), 'l' => 0, 'p' => '']];
+        $title = toc_title($a);
         $titleH = $S * 1.25 * 1.5;
         $lineH = $S * 1.6;
         $h = $titleH + 6 + count($rows) * $lineH + 6;
         $fam = $this->page['font']['family'];
-        return new FlowItem($h, function (PdfCanvas $c, float $x, float $y) use ($rows, $entries, $S, $titleH, $lineH, $width, $indent, $fam) {
+        return new FlowItem($h, function (PdfCanvas $c, float $x, float $y) use ($rows, $entries, $S, $titleH, $lineH, $width, $indent, $fam, $title) {
             $st = fn(float $size, bool $bold, array $rgb = [0, 0, 0]) => ['family' => $fam, 'size' => $size, 'bold' => $bold, 'italic' => false, 'u' => false,
                 'strike' => false, 'color' => $rgb, 'bg' => null, 'va' => null, 'ls' => 0.0];
             $left = $x + $indent;
             $right = $x + $width;
-            $this->drawTextCentered($c, 'תוכן עניינים', $st($S * 1.25, true), $left, $right, $y + $titleH / 2 + 0.32 * $S * 1.25, 'main', 'right');
+            $this->drawTextCentered($c, $title, $st($S * 1.25, true), $left, $right, $y + $titleH / 2 + 0.32 * $S * 1.25, 'main', 'right');
             $yy = $y + $titleH + 6;
             foreach ($rows as $e) {
                 $lvl = max(0, min(9, (int)($e['l'] ?? 1)));

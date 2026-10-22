@@ -249,9 +249,9 @@ function html_node(array $n): string
         case 'toc':   // תוכן עניינים: השורות השמורות, כל אחת קישור לכותרת (אם יש לה עוגן) — בלי עוגנים: טקסט ומספר
             $rows = '';
             foreach (is_array($a['entries'] ?? null) ? $a['entries'] : [] as $e) {
-                $rows .= '<li class="toc-l' . max(1, min(9, (int)($e['l'] ?? 1))) . '"><span>' . h((string)($e['t'] ?? '')) . '</span> <span class="toc-p">' . h((string)($e['p'] ?? '')) . '</span></li>';
+                $rows .= '<li class="toc-l' . max(0, min(9, (int)($e['l'] ?? 1))) . '"><span>' . h((string)($e['t'] ?? '')) . '</span> <span class="toc-p">' . h((string)($e['p'] ?? '')) . '</span></li>';
             }
-            return '<nav class="toc" aria-label="תוכן עניינים"><p class="toc-title"><b>תוכן עניינים</b></p><ul>' . $rows . '</ul></nav>';
+            return '<nav class="toc" aria-label="' . h(toc_title($a)) . '"><p class="toc-title"><b>' . h(toc_title($a)) . '</b></p><ul>' . $rows . '</ul></nav>';
         case 'hardBreak':
             return '<br>';
         case 'bookmark':
@@ -784,6 +784,7 @@ final class Ooxml
     /**
      * תוכן עניינים — כמו ש-Word שומר אותו: sdt (Table of Contents) עם שדה TOC, והשורות השמורות כתוצאת השדה:
      * טקסט, טאב עם נקודות לקצה השורה, ומספר העמוד. ב-Word אפשר "לעדכן שדה".
+     * רשימת איורים (seq): השדה TOC \c "<תווית>" — הכיתובים עם התווית (באותו sdt, כדי שהייבוא יזהה אותה).
      */
     private function toc(array $a): string
     {
@@ -792,12 +793,12 @@ final class Ooxml
         $tab = '<w:tabs><w:tab w:val="left" w:leader="dot" w:pos="' . (int)$this->contentTw . '"/></w:tabs>';
         $run = fn(string $t, bool $b = false) => '<w:r><w:rPr>' . ($b ? '<w:b/><w:bCs/>' : '') . '<w:rtl/></w:rPr><w:t xml:space="preserve">' . xml($t) . '</w:t></w:r>';
         $out = '<w:sdt><w:sdtPr><w:docPartObj><w:docPartGallery w:val="Table of Contents"/><w:docPartUnique/></w:docPartObj></w:sdtPr><w:sdtContent>'
-            . '<w:p><w:pPr><w:bidi/><w:spacing w:after="120"/></w:pPr>' . str_replace('<w:rtl/>', '<w:rtl/><w:sz w:val="' . (int)round($this->page['font']['size'] * 2.5) . '"/>', $run('תוכן עניינים', true)) . '</w:p>';
-        $begin = '<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> TOC \o "1-' . $levels . '" \h \z \u </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>';
-        if (!$entries) $out .= '<w:p><w:pPr><w:bidi/></w:pPr>' . $begin . $run('אין כותרות במסמך') . '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>';
+            . '<w:p><w:pPr><w:bidi/><w:spacing w:after="120"/></w:pPr>' . str_replace('<w:rtl/>', '<w:rtl/><w:sz w:val="' . (int)round($this->page['font']['size'] * 2.5) . '"/>', $run(toc_title($a), true)) . '</w:p>';
+        $begin = '<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> ' . (empty($a['seq']) ? 'TOC \o "1-' . $levels . '" \h \z \u' : 'TOC \h \z \c "' . xml(seq_label($a['seq'])) . '"') . ' </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>';
+        if (!$entries) $out .= '<w:p><w:pPr><w:bidi/></w:pPr>' . $begin . $run(toc_empty($a)) . '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>';
         foreach ($entries as $k => $e) {
-            $l = max(1, min(9, (int)($e['l'] ?? 1)));
-            $ind = min(3, $l - 1) * 280;
+            $l = max(0, min(9, (int)($e['l'] ?? 1)));
+            $ind = min(3, max(0, $l - 1)) * 280;
             $out .= '<w:p><w:pPr>' . $tab . '<w:bidi/><w:spacing w:after="0"/>' . ($ind ? '<w:ind w:start="' . $ind . '"/>' : '') . '</w:pPr>'
                 . ($k === 0 ? $begin : '') . $run((string)($e['t'] ?? ''), $l === 1) . '<w:r><w:tab/></w:r>' . $run((string)($e['p'] ?? ''))
                 . ($k === count($entries) - 1 ? '<w:r><w:fldChar w:fldCharType="end"/></w:r>' : '') . '</w:p>';

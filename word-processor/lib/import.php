@@ -876,6 +876,13 @@ final class DocxCtx
             $max = max($max, $lvl);
             $entries[] = ['t' => mb_substr(trim($parts[0]), 0, 300), 'l' => $lvl, 'p' => mb_substr(trim(end($parts)), 0, 12), 'i' => count($entries)];
         }
+        // רשימת איורים: TOC \c "<תווית>" — שורות בלי רמה
+        $instr = '';
+        foreach ($xp->query('w:sdtContent//w:instrText', $sdt) as $n) $instr .= $n->textContent;
+        foreach ($xp->query('w:sdtContent//w:fldSimple/@w:instr', $sdt) as $n) $instr .= ' ' . $n->value;
+        if (preg_match('/\\\\c\s+"?([^"\\\\\s]+)/u', $instr, $m)) {
+            return ['type' => 'toc', 'attrs' => ['seq' => seq_label($m[1]), 'levels' => 3, 'entries' => array_map(fn($e) => array_replace($e, ['l' => 0]), $entries)]];
+        }
         return ['type' => 'toc', 'attrs' => ['levels' => $max, 'entries' => $entries]];
     }
 

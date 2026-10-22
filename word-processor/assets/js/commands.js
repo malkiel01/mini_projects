@@ -115,6 +115,7 @@ export const COMMANDS = [
     { id: 'updateToc', label: 'עדכון תוכן עניינים', icon: '🔄', group: 'insert', run: x => x.ui.updateToc(), enabled: x => x.ui.hasToc() },
     { id: 'caption', label: 'הוספת כיתוב', icon: '🏷', group: 'insert', run: x => x.ui.caption() },
     { id: 'crossRef', label: 'הפניה צולבת', icon: '↗', group: 'insert', run: x => x.ui.crossRef() },
+    { id: 'insertTof', label: 'רשימת איורים', icon: '🗂', group: 'insert', run: x => x.ui.insertTof() },
     { id: 'bookmark', label: 'סימניה', icon: '🔖', group: 'insert', run: x => x.ui.bookmark() },
     { id: 'pageBreak', label: 'מעבר עמוד', icon: '⤓', keys: 'Ctrl+Enter', group: 'insert', run: x => x.chain().insertPageBreak().run() },
     { id: 'sectionBreak', label: 'מעבר מקטע: העמוד הבא בכיוון ההפוך', icon: '⧉', group: 'layout',

@@ -63,6 +63,19 @@ function seq_text_list(array $json): array
     return $out;
 }
 
+/** הכותרת של תוכן עניינים — או של רשימת איורים (attrs.seq), כמו tocTitle ב-toc.js. */
+function toc_title(array $a): string
+{
+    if (empty($a['seq'])) return 'תוכן עניינים';
+    $l = seq_label($a['seq']);
+    return 'רשימת ' . (['איור' => 'איורים', 'טבלה' => 'טבלאות', 'משוואה' => 'משוואות'][$l] ?? $l);
+}
+
+function toc_empty(array $a): string
+{
+    return empty($a['seq']) ? 'אין כותרות במסמך' : 'אין כיתובי "' . seq_label($a['seq']) . '" במסמך';
+}
+
 /** הטקסט של הפניה צולבת. */
 function xref_text(array $attrs, array $nums): string
 {

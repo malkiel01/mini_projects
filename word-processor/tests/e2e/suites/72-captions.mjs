@@ -60,6 +60,26 @@ export default async function (t) {
     const order = await E(new Function(`return ${ed}.getJSON().content.map(b => b.type === 'paragraph' && b.attrs?.pstyle === 'caption' ? 'cap:' + b.content.map(c => c.text || c.attrs?.label).join('') : b.type).join(',')`));
     t.ok('כיתוב הטבלה מעליה, ומספרו 1', order.includes('cap:טבלה טבלה: נתונים,table') && (await shown())[0].endsWith('#1'), order);
 
+    // רשימת איורים בתחילת המסמך: הכיתוב "איור" עם מספר העמוד; כיתוב חדש — מופיע אחרי "עדכון"
+    await E(new Function(`${ed}.chain().focus().setTextSelection(1).run()`));
+    await t.tool(p, 'רשימת איורים');
+    await p.waitForSelector('dialog input[name=label]');
+    t.ok('ברירת המחדל — התווית שבשימוש', await p.locator('dialog input[name=label][value="איור"]').isChecked());
+    await p.click('dialog button[type=submit]');
+    await p.waitForSelector('dialog', { state: 'detached' });
+    await p.waitForTimeout(1200);
+    const tof = () => p.locator('.wp-doc .wp-toc').first().evaluate(e => [...e.querySelectorAll('.wp-toc-title, .wp-toc-line')].map(x => x.textContent).join('|'));
+    t.ok('רשימת איורים: הכותרת והכיתוב עם המספר והעמוד', (await tof()) === 'רשימת איורים|איור 1: השנייה1', await tof());
+    await E(new Function(`const e = ${ed}; e.chain().focus().setTextSelection(e.state.doc.content.size - 1).run();`));
+    await caption('איור', 'שלישי');
+    await t.tool(p, 'עדכון תוכן עניינים');
+    await p.waitForTimeout(1200);
+    t.ok('אחרי עדכון — גם הכיתוב החדש (בסוף)', (await tof()) === 'רשימת איורים|איור 1: השנייה1|איור 2: שלישי1', await tof());
+    await p.locator('.wp-doc .wp-toc-line').nth(1).click();
+    await p.waitForTimeout(200);
+    const atCap = await E(new Function(`return ${ed}.state.selection.$from.parent.textContent`));
+    t.ok('לחיצה על שורה — מעבר לכיתוב', atCap === 'איור : שלישי', atCap);
+
     await p.keyboard.press('Control+s');
     await p.waitForTimeout(600);
     const saved = JSON.stringify((await t.api(p, 'my_open', { doc })).json);
@@ -68,6 +88,7 @@ export default async function (t) {
     const f = join(t.data, 'captions.pdf');
     writeFileSync(f, await res.body());
     const pages = t.pdfPages(f).join(' ');
+    t.ok('PDF מהשרת: רשימת האיורים', pages.includes('רשימת איורים'), pages);
     t.ok('PDF מהשרת: המספרים וההפניה כטקסט', /טבלה\s+:1נתונים/.test(pages) && /איור\s+:1השנייה/.test(pages) && pages.includes('ראו איור 1'), pages);
     t.ok('בלי שגיאות JS', !p.errors.length, p.errors.join(' | '));
 }

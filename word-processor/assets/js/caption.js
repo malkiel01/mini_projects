@@ -15,19 +15,25 @@ const ID_RE = /^[A-Za-z0-9]{1,30}$/;
 export const newSeqId = () => Math.random().toString(36).slice(2, 11).replace(/[^a-z0-9]/g, '') || String(Date.now());
 const labelOf = l => (LABEL_RE.test(l || '') ? l : SEQ_LABELS[0]);
 
-/** כל הכיתובים במסמך לפי הסדר: [{ pos, id, label, n, text }] — text: הטקסט של הפסקה (לחלון ההפניה). */
+/** כל הכיתובים במסמך לפי הסדר: [{ pos, id, label, n, text }] — text: הפסקה עם המספר ("איור 2: מבנה המערכת"). */
 export function captions(doc) {
     const out = [];
     const count = {};
     doc.descendants((node, pos, parent) => {
         if (node.type.name !== 'seq') return true;
         const label = labelOf(node.attrs.label);
-        count[label] = (count[label] || 0) + 1;
-        out.push({ pos, id: node.attrs.id, label, n: count[label], text: parent?.textContent.trim() || '' });
+        const n = count[label] = (count[label] || 0) + 1;
+        let text = '';
+        parent?.forEach(ch => { text += ch === node ? String(n) : ch.isText ? ch.text : ''; });
+        out.push({ pos, id: node.attrs.id, label, n, text: text.trim() });
         return false;
     });
     return out;
 }
+
+/** רשימת איורים / טבלאות / משוואות — הכותרת של תוכן עניינים לפי כיתובים (toc עם attrs.seq). */
+const PLURAL = { 'איור': 'איורים', 'טבלה': 'טבלאות', 'משוואה': 'משוואות' };
+export const listTitle = label => 'רשימת ' + (PLURAL[label] || label);
 
 export function xrefText(attrs, byId) {
     const c = byId.get(attrs.target);

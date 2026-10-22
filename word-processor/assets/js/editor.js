@@ -18,7 +18,7 @@ import { createCommands } from './commands.js';
 import { FindReplace, createFindBar } from './find.js';
 import { ParagraphMarks, marksKey, createNavPane, createPasteOptions, wordStats } from './view.js';
 import { headings } from './toc.js';
-import { captions, newSeqId, SEQ_LABELS } from './caption.js';
+import { captions, newSeqId, SEQ_LABELS, listTitle } from './caption.js';
 
 const MM = 96 / 25.4;
 const PT = 4 / 3;
@@ -375,12 +375,16 @@ export function createWordEditor(root, opts) {
         return pg;
     }
 
-    /** שורות תוכן העניינים: הכותרות עד הרמה levels, ומספר העמוד כמו שהוא מוצג (מספרים, או אותיות בתבנית עברית). */
-    function tocEntries(levels) {
+    /**
+     * שורות תוכן העניינים: הכותרות עד הרמה levels, ומספר העמוד כמו שהוא מוצג (מספרים, או אותיות בתבנית עברית).
+     * seq — רשימת איורים: הכיתובים עם התווית הזו (בלי רמה).
+     */
+    function tocEntries(levels, seq = null) {
         const nb = page.numbering;
         const fmt = nb.format === 'hebrew' ? 'hebrew' : 'n';
-        return headings(editor.state.doc, levels).map(x => ({ t: x.text || '(כותרת ריקה)', l: x.level, i: x.i,
-            p: pageLabel(nb.start + pageOf(x.pos), pageCount, fmt) }));
+        const pg = pos => pageLabel(nb.start + pageOf(pos), pageCount, fmt);
+        if (seq) return captions(editor.state.doc).filter(c => c.label === seq).map((c, i) => ({ t: c.text, l: 0, i, p: pg(c.pos) }));
+        return headings(editor.state.doc, levels).map(x => ({ t: x.text || '(כותרת ריקה)', l: x.level, i: x.i, p: pg(x.pos) }));
     }
 
     /**
@@ -391,7 +395,7 @@ export function createWordEditor(root, opts) {
         const tr = editor.state.tr;
         editor.state.doc.descendants((n, pos) => {
             if (n.type.name !== 'toc') return true;
-            const entries = tocEntries(n.attrs.levels);
+            const entries = tocEntries(n.attrs.levels, n.attrs.seq);
             if (JSON.stringify(entries) !== JSON.stringify(n.attrs.entries)) tr.setNodeMarkup(pos, undefined, { ...n.attrs, entries });
             return false;
         });
@@ -403,9 +407,21 @@ export function createWordEditor(root, opts) {
         if (round < 3) setTimeout(() => updateToc(round + 1), 350);
     }
 
-    function insertToc() {
-        editor.chain().focus().insertContent({ type: 'toc', attrs: { levels: 3, entries: tocEntries(3) } }).run();
+    function insertToc(seq = null) {
+        editor.chain().focus().insertContent({ type: 'toc', attrs: { seq, levels: 3, entries: tocEntries(3, seq) } }).run();
         setTimeout(() => updateToc(1), 350);
+    }
+
+    /** רשימת איורים (כמו "הוספת טבלת איורים" ב-Word): לאיזו תווית — ברירת המחדל: התווית הנפוצה במסמך. */
+    function tofDialog() {
+        const list = captions(editor.state.doc);
+        const used = SEQ_LABELS.filter(l => list.some(c => c.label === l));
+        sheet('רשימת איורים', body => {
+            body.append(seg('label', Object.fromEntries(SEQ_LABELS.map(l => [l, listTitle(l)])), used[0] || SEQ_LABELS[0], 'רשימה של'));
+        }, form => {
+            const l = new FormData(form).get('label');
+            insertToc(SEQ_LABELS.includes(l) ? l : SEQ_LABELS[0]);
+        }, 'הוספה');
     }
 
     function drawPages(res) {
@@ -543,7 +559,7 @@ export function createWordEditor(root, opts) {
             insertToc: () => insertToc(), updateToc: () => updateToc(), hasToc: () => { let f = false; editor.state.doc.descendants(n => { if (n.type.name === 'toc') f = true; return !f; }); return f; },
             crop: pos => cropDialog(pos), imageProps: pos => imageDialog(pos), imageSize: f => imageSizeTo(f), tableProps: () => tablePropsDialog(),
             footnote: () => footnoteDialog(null), endnote: () => footnoteDialog(null, true),
-            caption: () => captionDialog(), crossRef: () => crossRefDialog(),
+            caption: () => captionDialog(), crossRef: () => crossRefDialog(), insertTof: () => tofDialog(),
             link: () => linkDialog(), bookmark: () => bookmarkDialog(),
             newStyle: () => newStyleDialog(), updateStyle: () => updateStyleFromSelection(),
             numberingValue: () => numberingDialog(),
@@ -638,7 +654,7 @@ export function createWordEditor(root, opts) {
             grp('פסקה', [B.bulletList, B.orderedList, listType, ...numBtns, B.outdent, B.indent], [B.alignRight, B.alignCenter, B.alignLeft, B.alignJustify, B.paragraphDialog, hnumBtn]),
             grp('סגנונות', [gallery], [styleSel, B.editStyles, cmdBtn('newStyle'), cmdBtn('updateStyle')]),
             grp('עריכה', [cmdBtn('find'), cmdBtn('replace')])]],
-        ['insert', 'הוספה', [grp('טבלאות', B.insertTable), grp('איורים', [B.insertImage, imgInput]), grp('הערות', [B.footnote, cmdBtn('endnote')]), grp('קישורים', [cmdBtn('link'), linkOff, cmdBtn('bookmark')]), grp('כיתובים', [cmdBtn('caption'), cmdBtn('crossRef')]), grp('תוכן עניינים', [cmdBtn('insertToc'), tocUpd]), grp('עמודים', B.pageBreak)]],
+        ['insert', 'הוספה', [grp('טבלאות', B.insertTable), grp('איורים', [B.insertImage, imgInput]), grp('הערות', [B.footnote, cmdBtn('endnote')]), grp('קישורים', [cmdBtn('link'), linkOff, cmdBtn('bookmark')]), grp('כיתובים', [cmdBtn('caption'), cmdBtn('crossRef'), cmdBtn('insertTof')]), grp('תוכן עניינים', [cmdBtn('insertToc'), tocUpd]), grp('עמודים', B.pageBreak)]],
         ['layout', 'פריסה', [grp('הגדרת עמוד', B.pageSetup), grp('מעברים', B.sectionBreak)]],
         ['view', 'תצוגה', [zoomGroup, grp('הצגה', [B.navPane, B.showMarks, cmdBtn('wordCount')]), grp('מסמך', [opts.save ? cmdBtn('save') : null, B.print, cmdBtn('printPreview'), opts.versions ? cmdBtn('versions') : null, ...(opts.menu || [])])]],
     ];

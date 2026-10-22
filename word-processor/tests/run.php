@@ -799,6 +799,26 @@ check('ייבוא מ-Word: SEQ → כיתוב, REF → הפניה מלאה, בל
     && export_text($wc['json']) === "Figure 1: Map\nSee Figure 1" && !str_contains(json_encode($wc['json']), '"bookmark"')
     && ($wc['json']['content'][1]['content'][1]['attrs'] ?? null) === ['target' => '123456', 'show' => 'full'], export_text($wc['json']) . json_encode($wc['json']));
 
+section('רשימת איורים (toc עם seq)');
+$tofDoc = ['type' => 'doc', 'content' => [
+    ['type' => 'toc', 'attrs' => ['seq' => 'איור', 'levels' => 3, 'entries' => [['t' => 'איור 1: ראשון', 'l' => 0, 'p' => '2', 'i' => 0], ['t' => 'איור 2: שני', 'l' => 0, 'p' => '3', 'i' => 1]]]],
+    ['type' => 'toc', 'attrs' => ['seq' => 'טבלה', 'levels' => 3, 'entries' => []]],
+    $cap('איור', 'a1', 'ראשון'), $cap('איור', 'b2', 'שני'),
+]];
+check('הכותרות: רשימת איורים / טבלאות', toc_title($tofDoc['content'][0]['attrs']) === 'רשימת איורים' && toc_title($tofDoc['content'][1]['attrs']) === 'רשימת טבלאות'
+    && toc_title(['levels' => 3]) === 'תוכן עניינים' && toc_empty($tofDoc['content'][1]['attrs']) === 'אין כיתובי "טבלה" במסמך');
+$tofDocx = export_docx($tofDoc, page_normalize([]), 'רשימה');
+file_put_contents("$tmp/tof.docx", $tofDocx);
+$zip->open("$tmp/tof.docx");
+$tofMain = (string)$zip->getFromName('word/document.xml');
+$zip->close();
+check('Word: שדה TOC \\c "איור", הכותרת, בלי הדגשה בשורות', str_contains($tofMain, 'TOC \\h \\z \\c "איור"') && str_contains($tofMain, 'רשימת איורים')
+    && str_contains($tofMain, 'TOC \\h \\z \\c "טבלה"') && !preg_match('#<w:b/><w:bCs/><w:rtl/></w:rPr><w:t xml:space="preserve">איור 1#u', $tofMain));
+$tofBack = import_docx($tofDocx, 'tof');
+check('Word הלוך וחזור: רשימת איורים חוזרת עם התווית והשורות', ($tofBack['json']['content'][0]['attrs'] ?? null) === $tofDoc['content'][0]['attrs']
+    && ($tofBack['json']['content'][1]['attrs']['seq'] ?? null) === 'טבלה', json_encode($tofBack['json']['content'][0] ?? null, JSON_UNESCAPED_UNICODE));
+check('HTML: הכותרת של הרשימה', str_contains(export_html($tofDoc, page_normalize([]))['html'], '<b>רשימת איורים</b>'));
+
 // ======================================================================
 section('הגדרות עמוד');
 $p = page_normalize(['size' => 'Legal', 'orientation' => 'landscape', 'margins' => ['top' => 500, 'left' => 'x'], 'font' => ['family' => 'David<script>', 'size' => 200],
