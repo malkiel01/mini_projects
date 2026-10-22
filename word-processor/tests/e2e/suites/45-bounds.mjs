@@ -51,10 +51,11 @@ export default async function (t) {
     for (let i = 0; i < 3; i++) await p.keyboard.press('Control+y');
     await gate('אחרי שחזור');
     // זום
-    for (const z of ['הקטנה', 'הגדלה', 'הגדלה']) { await t.tool(p, z).catch(() => {}); }
+    for (const z of ['הקטנה', 'הגדלה', 'הגדלה']) await t.tool(p, z);
     await gate('אחרי זום');
     // תצוגה מקדימה וחזרה
-    await t.tool(p, 'תצוגה מקדימה להדפסה').catch(() => {});
+    await t.tool(p, 'תצוגה לפני הדפסה');
+    await p.waitForSelector('.wp-editor.wp-preview');
     await gate('בתצוגה מקדימה');
     await p.keyboard.press('Escape');
     await gate('אחרי יציאה מתצוגה מקדימה');
