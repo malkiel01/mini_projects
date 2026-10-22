@@ -39,6 +39,8 @@ function page_defaults(): array
         ],
         'numbering' => ['show' => true, 'position' => 'bottom', 'align' => 'center', 'format' => 'n', 'start' => 1, 'first_page' => true],
         'header' => '', 'footer' => '', 'heading_numbers' => false,
+        // רקע הדף (כל המסמך): צבע עמוד, וסימן מים — טקסט באלכסון מאחורי הטקסט
+        'page_color' => '', 'watermark' => '',
     ];
 }
 
@@ -108,6 +110,11 @@ function page_normalize($in, ?array $base = null): array
         if (is_string($in[$k] ?? null)) $p[$k] = mb_substr(str_replace(["\r", "\0"], '', $in[$k]), 0, 500);
     }
     if (isset($in['heading_numbers'])) $p['heading_numbers'] = (bool)$in['heading_numbers'];
+    if (array_key_exists('page_color', $in)) {
+        $c = is_string($in['page_color']) ? strtolower(trim($in['page_color'])) : '';
+        $p['page_color'] = preg_match('/^#[0-9a-f]{6}$/', $c) && $c !== '#ffffff' ? $c : '';
+    }
+    if (is_string($in['watermark'] ?? null)) $p['watermark'] = mb_substr(trim(preg_replace('/[\x00-\x1f]+/u', ' ', $in['watermark'])), 0, 40);
     return $p;
 }
 
@@ -135,6 +142,13 @@ function heading_numbers(array $json): array
         return $n;
     };
     return $walk($json);
+}
+
+/** גודל סימן המים (נק'): לפי האלכסון של העמוד ומספר התווים, בין 24 ל-120 — אותה נוסחה בעורך (watermarkSize). */
+function watermark_size(string $text, float $wPt, float $hPt): float
+{
+    $n = max(1, mb_strlen($text));
+    return round(max(24, min(120, sqrt($wPt * $wPt + $hPt * $hPt) * 0.6 / ($n * 0.6))), 1);
 }
 
 /** שם סגנון של משתמש: טקסט קצר בלי תווי בקרה. */

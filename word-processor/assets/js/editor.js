@@ -49,8 +49,14 @@ export function defaultPage() {
             normal: { before: 0, after: 6, line: 1.15 },
         },
         numbering: { show: true, position: 'bottom', align: 'center', format: 'n', start: 1, first_page: true },
-        header: '', footer: '', heading_numbers: false,
+        header: '', footer: '', heading_numbers: false, page_color: '', watermark: '',
     };
+}
+
+/** גודל סימן המים (נק') — כמו watermark_size בשרת: לפי האלכסון של העמוד ומספר התווים, 24–120. */
+export function watermarkSize(text, wPt, hPt) {
+    const n = Math.max(1, [...text].length);
+    return Math.round(Math.max(24, Math.min(120, Math.hypot(wPt, hPt) * 0.6 / (n * 0.6))) * 10) / 10;
 }
 
 /**
@@ -168,6 +174,7 @@ export function createWordEditor(root, opts) {
     // ---------- מבנה ----------
     const styleEl = h('style');
     const printEl = h('style', { media: 'print' });
+    const wmPrint = h('div.wp-wm-print', { 'aria-hidden': 'true' });   // סימן המים בהדפסה (בכל עמוד)
     const pagesLayer = h('div.wp-pages', { 'aria-hidden': 'true' });
     const host = h('div.wp-host');
     const sheetEl = h('div.wp-sheet', pagesLayer, host);
@@ -181,7 +188,7 @@ export function createWordEditor(root, opts) {
     const previewBar = h('div.wp-preview-bar', { hidden: true });   // תצוגה לפני הדפסה
     const findSlot = h('div.wp-find-slot');               // פס החיפוש וההחלפה (find.js) — נבנה אחרי העורך
     const body = h('div.wp-body', stage);                 // חלונית הניווט (view.js) נכנסת לפני הדף — בצד ההתחלה
-    root.append(styleEl, printEl, bar, previewBar, findSlot, body, statusBar, mobileBar, sheetShade);
+    root.append(styleEl, printEl, wmPrint, bar, previewBar, findSlot, body, statusBar, mobileBar, sheetShade);
     root.classList.add('wp-editor');
 
     /** גיאומטריה של עמוד לפי הגדרות (בפיקסלים לא מוגדלים). */
@@ -332,8 +339,14 @@ export function createWordEditor(root, opts) {
             const sl = Math.max(0, Math.min(15, m2.bottom - 6));
             return `@page wps${k + 1}{size:${w2}mm ${h2}mm;margin:${m2.top}mm ${m2.right}mm ${m2.bottom - sl}mm ${m2.left}mm;${marginOf(x.page)}}`;
         }).join('');
+        // רקע הדף בהדפסה: צבע — ברקע של @page (כל הדף, גם השוליים); סימן מים — אלמנט fixed, שהדפדפן מדפיס בכל עמוד.
+        // fixed נמדד מאזור התוכן של הדף, לכן ההזזה למרכז הדף (השוליים לא סימטריים)
+        const bg = page.page_color ? `@page{background:${page.page_color}}` + g.sections.slice(1).map((x, k) => `@page wps${k + 1}{background:${page.page_color}}`).join('') : '';
         printEl.textContent = `@page{size:${wmm}mm ${hmm}mm;margin:${page.margins.top}mm ${page.margins.right}mm ${page.margins.bottom - slack}mm ${page.margins.left}mm;${margin}}`
-            + firstNoNum + (nb.start !== 1 ? `@page:first{counter-reset:page ${nb.start - 1}}` : '') + named;
+            + firstNoNum + (nb.start !== 1 ? `@page:first{counter-reset:page ${nb.start - 1}}` : '') + named + bg
+            + (page.watermark ? `.wp-wm-print{display:flex!important;transform:translate(${(page.margins.right - page.margins.left) / 2}mm,${(page.margins.bottom - slack - page.margins.top) / 2}mm) rotate(-45deg)}` : '');
+        wmPrint.textContent = page.watermark || '';
+        if (page.watermark) Object.assign(wmPrint.style, { fontSize: watermarkSize(page.watermark, wmm * 72 / 25.4, hmm * 72 / 25.4) + 'pt', fontFamily: cssFont(page.font.family) });
         setZoom();
         editor.storage.wpPages.schedule?.();
     }
@@ -359,6 +372,12 @@ export function createWordEditor(root, opts) {
             if (pp.footer) ftr.append(h('span.wp-hf-text', pp.footer));
             if (label) (nb.position === 'top' ? hdr : ftr).append(h('span.wp-num.al-' + nb.align, { style: nb.align === 'right' ? { right: g.right + 'px' } : nb.align === 'left' ? { left: g.left + 'px' } : {} }, label));
             pg.append(hdr, ftr);
+            // רקע הדף (מהגדרות המסמך): צבע, וסימן מים באלכסון מאחורי הטקסט — כמו ב-PDF
+            if (page.page_color) pg.style.background = page.page_color;
+            if (page.watermark) {
+                const sz = watermarkSize(page.watermark, g.pageW * 0.75, g.pageH * 0.75);
+                pg.append(h('div.wp-wm', { 'aria-hidden': 'true', style: { fontSize: sz + 'pt', fontFamily: cssFont(page.font.family) } }, page.watermark));
+            }
             pagesLayer.append(pg);
         }
         const H = y - GAP;
@@ -1289,6 +1308,7 @@ export function createWordEditor(root, opts) {
         const k = secs.reduce((acc, x, i) => (i && x.from < at ? i : acc), 0);
         const p = secs[k].page;
         const nb = page.numbering;
+        const wmInput = h('input', { name: 'watermark', value: page.watermark || '', maxlength: 40 });
         sheet('הגדרות עמוד', body => {
             body.append(
                 secs.length > 1 ? h('section.group', h('h3', 'להחיל על'),
@@ -1312,7 +1332,13 @@ export function createWordEditor(root, opts) {
                     sw('n_first', 'מספר גם בעמוד הראשון', nb.first_page)),
                 h('section.group', h('h3', 'כותרת עליונה ותחתונה'),
                     field('כותרת עליונה', h('input', { name: 'header', value: p.header, maxlength: 500 })),
-                    field('כותרת תחתונה', h('input', { name: 'footer', value: p.footer, maxlength: 500 }))));
+                    field('כותרת תחתונה', h('input', { name: 'footer', value: p.footer, maxlength: 500 }))),
+                // רקע הדף — לכל המסמך (כמו "עיצוב ← רקע הדף" ב-Word)
+                h('section.group', h('h3', 'רקע הדף ', h('small', 'לכל המסמך')),
+                    sw('pc_on', 'צבע עמוד', !!page.page_color),
+                    field('הצבע', h('input', { type: 'color', name: 'page_color', value: page.page_color || '#fdf6e3' })),
+                    field('סימן מים (טקסט באלכסון; ריק — בלי)', wmInput),
+                    h('div.wm-presets', ['טיוטה', 'סודי', 'דחוף', 'עותק', 'לא להפצה'].map(v => h('button.btn.sm', { type: 'button', onclick: () => { wmInput.value = v; } }, v)))));
         }, form => {
             const f = new FormData(form);
             const n = k => +f.get(k);
@@ -1325,9 +1351,13 @@ export function createWordEditor(root, opts) {
                 font: { family: f.get('font'), size: n('fsize') || 12 },
                 numbering: { show: !!f.get('n_show'), position: f.get('n_pos'), align: f.get('n_align'), format: f.get('n_format'),
                     start: Math.max(0, Math.round(n('n_start'))), first_page: !!f.get('n_first') },
+                page_color: f.get('pc_on') && f.get('page_color') !== '#ffffff' ? String(f.get('page_color')).toLowerCase() : '',
+                watermark: String(f.get('watermark') || '').trim().slice(0, 40),
             };
-            if (secs.length === 1) return setPage({ ...sec, ...whole });
-            setSections(f.get('scope') === 'all' ? null : k, sec, whole);
+            if (secs.length === 1) setPage({ ...sec, ...whole });
+            else setSections(f.get('scope') === 'all' ? null : k, sec, whole);
+            // המקלדת חוזרת למסמך (Ctrl+S / Ctrl+Z) — אחרי שהחלון נסגר: סגירה מחזירה את המיקוד לכפתור שפתח אותו
+            requestAnimationFrame(() => editor.view.focus());
         });
     }
 
@@ -1606,7 +1636,7 @@ export function createWordEditor(root, opts) {
 export function mergePage(base, p, replaceStyles = false) {
     const out = structuredClone(base);
     if (!p || typeof p !== 'object') return out;
-    for (const k of ['size', 'orientation', 'header', 'footer', 'heading_numbers']) if (p[k] !== undefined && p[k] !== null) out[k] = p[k];
+    for (const k of ['size', 'orientation', 'header', 'footer', 'heading_numbers', 'page_color', 'watermark']) if (p[k] !== undefined && p[k] !== null) out[k] = p[k];
     if (p.margins) Object.assign(out.margins, Object.fromEntries(Object.entries(p.margins).filter(([, v]) => isFinite(v) && v !== ''))
     );
     if (p.font) Object.assign(out.font, Object.fromEntries(Object.entries(p.font).filter(([, v]) => v !== '' && v !== null)));

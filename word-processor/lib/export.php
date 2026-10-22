@@ -943,9 +943,26 @@ function export_docx(array $json, array $page, string $title = ''): string
 {
     $o = new Ooxml($page, '');
 
+    // סימן מים — כמו ש-Word עצמו שומר אותו: צורת WordArt (VML) בכותרת העליונה, ממורכזת בעמוד ומסובבת 315°
+    $wm = $page['watermark'] ?? '';
+    $wmXml = $wm === '' ? '' : (function () use ($wm, $page) {
+        [$wmm, $hmm] = page_mm($page);
+        $size = watermark_size($wm, $wmm * 72 / 25.4, $hmm * 72 / 25.4);
+        $w = round(mb_strlen($wm) * $size * 0.6, 1);
+        return '<w:p><w:pPr><w:bidi/></w:pPr><w:r><w:rPr><w:noProof/></w:rPr><w:pict>'
+            . '<v:shapetype id="_x0000_t136" coordsize="21600,21600" o:spt="136" adj="10800" path="m@7,l@8,m@5,21600l@6,21600e"><v:formulas>'
+            . implode('', array_map(fn($e) => '<v:f eqn="' . $e . '"/>', ['sum #0 0 10800', 'prod #0 2 1', 'sum 21600 0 @1', 'sum 0 0 @2', 'sum 21600 0 @3', 'if @0 @3 0',
+                'if @0 21600 @1', 'if @0 0 @2', 'if @0 @4 21600', 'mid @5 @6', 'mid @8 @5', 'mid @7 @8', 'mid @6 @7', 'sum @6 0 @5']))
+            . '</v:formulas><v:path textpathok="t" o:connecttype="custom" o:connectlocs="@9,0;@10,10800;@11,21600;@12,10800" o:connectangles="270,180,90,0"/>'
+            . '<v:textpath on="t" fitshape="t"/><v:handles><v:h position="#0,bottomRight" xrange="6629,14971"/></v:handles><o:lock v:ext="edit" text="t" shapetype="t"/></v:shapetype>'
+            . '<v:shape id="PowerPlusWaterMarkObject1" o:spid="_x0000_s2049" type="#_x0000_t136" style="position:absolute;margin-left:0;margin-top:0;width:' . $w . 'pt;height:' . $size . 'pt;'
+            . 'rotation:315;z-index:-251657216;mso-position-horizontal:center;mso-position-horizontal-relative:page;mso-position-vertical:center;mso-position-vertical-relative:page"'
+            . ' o:allowincell="f" fillcolor="#d0d0d0" stroked="f"><v:textpath style="font-family:&quot;' . xml($page['font']['family']) . '&quot;;font-size:1pt;font-weight:bold" string="' . xml($wm) . '"/></v:shape>'
+            . '</w:pict></w:r></w:p>';
+    })();
     // כותרת עליונה ותחתונה: טקסט חופשי + מספר העמוד (בצד שנבחר). עמוד ראשון בלי מספר — titlePg.
-    $hf = function (string $text, bool $withNumber, string $tag, array $nb) {
-        $paras = '';
+    $hf = function (string $text, bool $withNumber, string $tag, array $nb) use ($wmXml) {
+        $paras = $tag === 'hdr' ? $wmXml : '';
         $jcNum = ['right' => null, 'center' => 'center', 'left' => 'end'][$nb['align']] ?? 'center';
         if ($text !== '') {
             foreach (preg_split('/\R/u', $text) as $line) {
@@ -956,7 +973,8 @@ function export_docx(array $json, array $page, string $title = ''): string
             $paras .= '<w:p><w:pPr><w:bidi/>' . ($jcNum ? '<w:jc w:val="' . $jcNum . '"/>' : '') . '</w:pPr>' . page_number_runs($nb['format']) . '</w:p>';
         }
         if ($paras === '') $paras = '<w:p><w:pPr><w:bidi/></w:pPr></w:p>';
-        return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:' . $tag . ' ' . W_NS . '>' . $paras . '</w:' . $tag . '>';
+        return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:' . $tag . ' ' . W_NS . ' xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">'
+            . $paras . '</w:' . $tag . '>';
     };
     $files = [];
     $hfRels = '';
@@ -1007,7 +1025,9 @@ function export_docx(array $json, array $page, string $title = ''): string
     $sect = $sectXml($o->cur, $sectCount);   // המקטע האחרון — בסוף הגוף
     if ($o->footnotes) $files['word/footnotes.xml'] = $o->footnotesXml();
 
-    $document = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document ' . W_NS . '><w:body>' . $body . $sect . '</w:body></w:document>';
+    $pc = color_val($page['page_color'] ?? null);   // צבע עמוד — w:background, ו-displayBackgroundShape בהגדרות (אחרת Word לא מציג)
+    $document = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document ' . W_NS . '>' . ($pc ? '<w:background w:color="' . strtoupper($pc) . '"/>' : '')
+        . '<w:body>' . $body . $sect . '</w:body></w:document>';
     $f = xml($page['font']['family']);
     $sz = (int)round($page['font']['size'] * 2);
     $styles = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles ' . W_NS . '>'
@@ -1024,7 +1044,7 @@ function export_docx(array $json, array $page, string $title = ''): string
         . '</w:styles>';
     $parts = $o->numberingParts();
     $numbering = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:numbering ' . W_NS . '>' . $parts['abstract'] . $parts['num'] . '</w:numbering>';
-    $settings = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings ' . W_NS . '><w:defaultTabStop w:val="720"/>'
+    $settings = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings ' . W_NS . '>' . ($pc ? '<w:displayBackgroundShape/>' : '') . '<w:defaultTabStop w:val="720"/>'
         . '<w:characterSpacingControl w:val="doNotCompress"/>'
         . ($o->footnotes ? '<w:footnotePr><w:footnote w:id="-1"/><w:footnote w:id="0"/></w:footnotePr>' : '') . '<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>';
 

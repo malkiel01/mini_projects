@@ -311,7 +311,8 @@ html.wp-no-page-zoom, html.wp-no-page-zoom body, .wp-editor, .wp-stage { touch-a
 
 /* ===== הדפסה: רק הדפים, כל רווח = שבירת עמוד (מספרי העמודים — בשולי @page, editor.js) ===== */
 @media print {
-    html, body { background: #fff !important; height: auto !important; overflow: visible !important; }
+    /* שקוף — הדף עצמו לבן; רקע לבן כאן היה מסתיר את צבע העמוד ואת סימן המים בעמוד הראשון */
+    html, body { background: transparent !important; height: auto !important; overflow: visible !important; }
     .no-print, header.top, .banner, .wp-toolbar, .wp-findbar, .wp-nav, .wp-paste, .wp-statusbar, .wp-mobilebar, .wp-sheet-shade, .wp-preview-bar, .toast, dialog { display: none !important; }
     .wp-doc .wp-find, .wp-doc .wp-find-cur { background: none !important; }
     main, .wp-editor, .wp-stage, .wp-zoom-box, .wp-zoom, .wp-sheet { display: block !important; overflow: visible !important; padding: 0 !important; margin: 0 !important;
@@ -370,3 +371,12 @@ html.wp-no-page-zoom, html.wp-no-page-zoom body, .wp-editor, .wp-stage { touch-a
 .wc-table { border-collapse: collapse; inline-size: 100%; }
 .wc-table th, .wc-table td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: start; }
 .wc-table td { font-variant-numeric: tabular-nums; }
+
+/* ===== רקע הדף: סימן מים (במסך — בתוך כל דף; בהדפסה — .wp-wm-print, fixed, בכל עמוד; הסיבוב — ב-editor.js) ===== */
+.wp-page { overflow: hidden; }
+.wp-wm, .wp-wm-print { display: flex; align-items: center; justify-content: center; position: absolute; inset: 0; pointer-events: none;
+    font-weight: 700; color: #d0d0d0; white-space: nowrap; line-height: 1; user-select: none; }
+.wp-wm { transform: rotate(-45deg); }
+.wp-wm-print { display: none; position: fixed; z-index: -1; }
+@media print { html { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+.wm-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-block-start: 6px; }
