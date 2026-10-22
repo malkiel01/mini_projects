@@ -55,7 +55,8 @@ function enforceStatus(int $have, int $total): string {
 
 /** דוח שלא חודש יותר מזה — אינו אימות עדכני. */
 const ENFORCE_STALE_SEC = 24 * 3600;
-const ENFORCE_SETTING_RESULTS = ['ok', 'fail', 'no_owner'];
+// ‏ok — גרסאות עד 2026-10-22: "הקריאה לא זרקה", בלי קריאה חוזרת. מוצג כ"הוחל", לא כ"אומת".
+const ENFORCE_SETTING_RESULTS = ['ok', 'fail', 'no_owner', 'verified', 'applied', 'unsupported', 'needs_device', 'blocked_by_apps'];
 
 /** שמירת דוח מהמכשיר, אחרי ניקוי (הדוח מגיע מהמכשיר — לא סומכים על הצורה שלו). */
 function enforceReportSave(int $deviceRowId, array $r): void {
@@ -180,7 +181,7 @@ function enforcementState(int $accountId, int $childId): array {
         $res = $per(function ($rep) use ($blocked, &$bad) {
             if (empty($rep['owner'])) return 'fail';
             $r = 'ok';
-            foreach ($blocked as $k) if (($rep['settings'][$k] ?? '') !== 'ok') { $bad[DEVICE_SETTINGS[$k][0]] = true; $r = 'fail'; }
+            foreach ($blocked as $k) if (!in_array($rep['settings'][$k] ?? '', ['ok', 'applied', 'verified'], true)) { $bad[DEVICE_SETTINGS[$k][0]] = true; $r = 'fail'; }
             return $r;
         });
         $st = enforceAggregate($res);
@@ -207,3 +208,74 @@ function enforcementState(int $accountId, int $childId): array {
             // מתי כל מכשיר דיווח לאחרונה, ובאיזה מצב — כדי שדוח ישן לא ייראה כאימות עדכני.
             'devices' => array_map(fn($d) => ['name' => $d['name'], 'reported_at' => $d['reported_at'], 'state' => $d['state']], $reports)];
 }
+
+
+/* ── מצב הביצוע של כל הגדרה (2026-10-22) ─────────────────────────────────────────────────
+ * "אין להציג הצלחה על סמך שמירה בשרת בלבד": לכל הגדרת מכשיר — חסומה או מותרת — המצב בפועל, לפי מה
+ * שהמכשיר משך (devices.policy_rev) ומה שדיווח שקרא בחזרה מהמערכת (enforce_report.settings).
+ */
+
+/** מצבים, מהגרוע לטוב — כשיש כמה מכשירים מוצג הגרוע. */
+const SETTING_STATES = [
+    'failed'       => 'נכשל',
+    'needs_action' => 'נדרשת פעולה',
+    'needs_device' => 'נדרשת פעולה במכשיר',
+    'unsupported'  => 'לא נתמך',
+    'saved'        => 'נשמר בשרת',
+    'pending'      => 'ממתין למכשיר',
+    'received'     => 'התקבל במכשיר',
+    'applied'      => 'הוחל',
+    'verified'     => 'אומת',
+];
+
+/** תוצאה אחת מהמכשיר → [מצב, הסבר]. */
+function settingStateOf(string $key, bool $blocked, string $result, array $settings): array {
+    return match ($result) {
+        'verified'        => ['verified', ''],
+        'ok', 'applied'   => ['applied', 'הקריאה למערכת הצליחה; המכשיר לא יכול היה לבדוק את התוצאה'],
+        'no_owner'        => ['needs_device', 'דורש הקמה מלאה ("בעל מכשיר")'],
+        'unsupported'     => ['unsupported', 'גרסת האנדרואיד במכשיר לא מאפשרת את ההגדרה הזו'],
+        'needs_device'    => ['needs_device', 'מותר. בכל התקנה אנדרואיד מבקש לאשר במכשיר את האפליקציה שממנה מתקינים'
+                                               . (($settings['install_apps'] ?? false) ? ' — אבל "התקנת אפליקציות" חסומה, ולכן גם זה חסום' : '')],
+        'blocked_by_apps' => ['needs_action', 'מותר, אבל Google Play חסומה בלשונית "אפליקציות" — פותחים אותה שם'],
+        'fail'            => ['failed', $blocked ? 'המכשיר לא הצליח לחסום' : 'המכשיר לא הצליח לפתוח — נשארה הגבלה'],
+        default           => ['received', 'המכשיר לא דיווח על ההגדרה הזו (גרסה ישנה)'],
+    };
+}
+
+/**
+ * לכל הגדרה: ['state', 'label', 'hint', 'at', 'devices' => [{name, state, hint}]]. ‏$now — לבדיקות.
+ */
+function deviceSettingsStatus(int $childId, ?int $now = null): array {
+    $now ??= time();
+    $rev = policyRev($childId);
+    $settings = deviceSettings($childId);
+    $devices = all('SELECT id, device_name, policy_rev, enforce_report, enforce_at FROM devices WHERE user_id = ?', [$childId]);
+    $rank = array_flip(array_keys(SETTING_STATES));
+    $out = [];
+    foreach ($settings as $key => $blocked) {
+        $per = [];
+        foreach ($devices as $d) {
+            $rep = json_decode((string) $d['enforce_report'], true);
+            $fresh = is_array($rep) && ($rep['rev'] ?? '') === $rev && $now - (int) strtotime((string) $d['enforce_at']) <= ENFORCE_STALE_SEC;
+            if ($fresh) [$st, $hint] = settingStateOf($key, $blocked, (string) ($rep['settings'][$key] ?? ''), $settings);
+            elseif ((string) $d['policy_rev'] === $rev) [$st, $hint] = ['received', 'המכשיר קיבל את ההגדרה ועוד לא דיווח שהחיל אותה'];
+            else [$st, $hint] = ['pending', 'המכשיר עוד לא משך את ההגדרה (כבוי, או בלי אינטרנט)'];
+            $per[] = ['name' => (string) $d['device_name'], 'state' => $st, 'hint' => $hint,
+                      'at' => $fresh ? (string) $d['enforce_at'] : ''];
+        }
+        if (!$per) {
+            $state = 'saved'; $hint = 'אין מכשיר מחובר';
+        } else {
+            usort($per, fn($a, $b) => $rank[$a['state']] <=> $rank[$b['state']]);
+            $state = $per[0]['state'];
+            $hint = $per[0]['hint'] . (count($per) > 1 ? " ({$per[0]['name']})" : '');
+        }
+        // "אומת לאחרונה" — רק כשכל המכשירים דיווחו: הדיווח הישן מביניהם.
+        $ats = array_filter(array_column($per, 'at'));
+        $out[$key] = ['state' => $state, 'label' => SETTING_STATES[$state], 'hint' => $hint,
+                      'at' => $per && count($ats) === count($per) ? min($ats) : '', 'devices' => $per];
+    }
+    return $out;
+}
+

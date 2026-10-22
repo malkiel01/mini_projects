@@ -20,14 +20,23 @@ import android.os.UserManager
 object Enforcer {
 
     /**
-     * נעול תמיד במכשיר "בעל מכשיר" — ההגנה על מגדלור עצמו: איפוס, מצב בטוח, משתמש נוסף, אפשרויות מפתח
-     * ומקור לא ידוע. לא תלוי בהורה.
+     * נעול תמיד במכשיר "בעל מכשיר" — ההגנה על מגדלור עצמו: איפוס, מצב בטוח, משתמש נוסף, אפשרויות מפתח.
+     * לא תלוי בהורה.
+     *
+     * תקלה מדווחת (2026-10-22): גם "מקור לא ידוע" היה כאן — ולכן התקנת APK נחסמה תמיד, גם כשההורה התיר
+     * "התקנת אפליקציות (מכל מקור)". עכשיו הוא הגדרה של ההורה (install_unknown), חסומה כברירת מחדל.
      */
     private val ALWAYS = listOf(
         UserManager.DISALLOW_FACTORY_RESET, UserManager.DISALLOW_SAFE_BOOT,
         UserManager.DISALLOW_ADD_USER, UserManager.DISALLOW_DEBUGGING_FEATURES,
-        UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES,
     )
+
+    /** התקנה מקובץ (APK): ההגבלה הרגילה, ומאנדרואיד 10 גם הגלובלית (חוסמת כל מקור במכשיר). */
+    private val UNKNOWN_SOURCES = listOf(UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES) +
+        (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) listOf(UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES_GLOBALLY) else emptyList())
+
+    /** חנות האפליקציות — אם ההורה התיר התקנה והחנות חסומה ברשימת האפליקציות, מדווחים (blocked_by_apps). */
+    private const val STORE = "com.android.vending"
 
     /**
      * הגדרות המכשיר שההורה קובע (lib/devicesettings.php — אותם מפתחות): מפתח → [ההגבלות, חסום כברירת מחדל].
@@ -44,6 +53,7 @@ object Enforcer {
             (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) listOf(UserManager.DISALLOW_CONFIG_LOCATION) else emptyList())) to true),
         "usb" to (listOf(UserManager.DISALLOW_USB_FILE_TRANSFER) to false),
         "install_apps" to (listOf(UserManager.DISALLOW_INSTALL_APPS) to false),
+        "install_unknown" to (UNKNOWN_SOURCES to true),
         "uninstall_apps" to (listOf(UserManager.DISALLOW_UNINSTALL_APPS) to false),
         "date_time" to ((if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) listOf(UserManager.DISALLOW_CONFIG_DATE_TIME) else emptyList()) to true),
         "accounts" to (listOf(UserManager.DISALLOW_MODIFY_ACCOUNTS) to true),
@@ -62,20 +72,44 @@ object Enforcer {
         trySet { dpm(ctx).setCameraDisabled(DeviceAdmin.component(ctx), false) }
     }
 
-    /** מחיל כל הגדרה, ומחזיר לכל מפתח אם ההחלה הצליחה (ok) או נכשלה (fail) — לדוח האכיפה. */
+    /**
+     * מחיל כל הגדרה, וקורא בחזרה מהמערכת את מה שבאמת חל — לכל מפתח תוצאה (SettingsMath): verified רק כשהמצב
+     * שנקרא תואם לבחירת ההורה, גם כשההורה *התיר* (קודם נבדקו רק החסומות, ו-"ok" = "הקריאה לא זרקה").
+     */
     private fun applySettings(ctx: Context, store: Store): Map<String, String> {
         val dpm = dpm(ctx)
         val admin = DeviceAdmin.component(ctx)
+        val calls = mutableMapOf<String, Boolean>()
+        for ((key, v) in SETTINGS) {
+            val on = blocked(store, key, v.second)
+            calls[key] = v.first.map { r -> ok { if (on) dpm.addUserRestriction(admin, r) else dpm.clearUserRestriction(admin, r) } }.all { it }
+        }
+        val camOn = blocked(store, "camera", false)
+        val shotOn = blocked(store, "screenshot", false)
+        val camOk = ok { dpm.setCameraDisabled(admin, camOn) }
+        val shotOk = ok { dpm.setScreenCaptureDisabled(admin, shotOn) }
+
+        // הקריאה בחזרה — מה שהמערכת מחזיקה עכשיו מטעמנו.
+        val now = try { dpm.getUserRestrictions(admin) } catch (e: Exception) { null }
+        val updating = UpdateMath.installOpen(store.installOpenUntil, System.currentTimeMillis())
         val out = mutableMapOf<String, String>()
         for ((key, v) in SETTINGS) {
             val on = blocked(store, key, v.second)
-            val ok = v.first.map { r -> ok { if (on) dpm.addUserRestriction(admin, r) else dpm.clearUserRestriction(admin, r) } }.all { it }
-            out[key] = if (ok) "ok" else "fail"
+            // באמצע עדכון של מגדלור הגבלות ההתקנה מוסרות זמנית — אי אפשר לאמת אותן עכשיו.
+            val readable = now != null && !(updating && key.startsWith("install"))
+            val matches = if (readable) SettingsMath.restrictionsMatch(on, v.first.map { now!!.getBoolean(it, false) }) else null
+            out[key] = SettingsMath.result(true, v.first.isNotEmpty(), calls[key] == true, matches)
         }
-        out["camera"] = if (ok { dpm.setCameraDisabled(admin, blocked(store, "camera", false)) }) "ok" else "fail"
-        out["screenshot"] = if (ok { dpm.setScreenCaptureDisabled(admin, blocked(store, "screenshot", false)) }) "ok" else "fail"
+        out["install_apps"] = SettingsMath.installApps(out["install_apps"] ?: "fail", blocked(store, "install_apps", false),
+            storeInstalled(ctx) && AppPolicy.blocked(store, STORE))
+        out["install_unknown"] = SettingsMath.installUnknown(out["install_unknown"] ?: "fail", blocked(store, "install_unknown", true))
+        out["camera"] = SettingsMath.result(true, true, camOk, try { dpm.getCameraDisabled(admin) == camOn } catch (e: Exception) { null })
+        out["screenshot"] = SettingsMath.result(true, true, shotOk, try { dpm.getScreenCaptureDisabled(admin) == shotOn } catch (e: Exception) { null })
         return out
     }
+
+    private fun storeInstalled(ctx: Context): Boolean =
+        try { ctx.packageManager.getApplicationInfo(STORE, 0); true } catch (e: Exception) { false }
 
     /**
      * ההתקנה של עדכון (Updater) — "מקור לא ידוע" ו"התקנת אפליקציות" עלולים לחסום גם אותה, ולכן הם מוסרים
@@ -93,9 +127,15 @@ object Enforcer {
         if (!isOwner(ctx)) return
         val store = Store(ctx)
         val admin = DeviceAdmin.component(ctx)
-        val keys = listOf(UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES) +
-            (if (on || blocked(store, "install_apps", false)) listOf(UserManager.DISALLOW_INSTALL_APPS) else emptyList())
-        for (r in keys) trySet { if (on) dpm(ctx).clearUserRestriction(admin, r) else dpm(ctx).addUserRestriction(admin, r) }
+        if (on) {
+            for (r in UNKNOWN_SOURCES + UserManager.DISALLOW_INSTALL_APPS) trySet { dpm(ctx).clearUserRestriction(admin, r) }
+            return
+        }
+        // סיום העדכון — חזרה בדיוק לבחירת ההורה. קודם "מקור לא ידוע" חזר תמיד, גם כשההורה התיר אותו.
+        val unknownOn = blocked(store, "install_unknown", true)
+        val appsOn = blocked(store, "install_apps", false)
+        for (r in UNKNOWN_SOURCES) trySet { if (unknownOn) dpm(ctx).addUserRestriction(admin, r) else dpm(ctx).clearUserRestriction(admin, r) }
+        trySet { if (appsOn) dpm(ctx).addUserRestriction(admin, UserManager.DISALLOW_INSTALL_APPS) else dpm(ctx).clearUserRestriction(admin, UserManager.DISALLOW_INSTALL_APPS) }
     }
 
     fun isOwner(ctx: Context): Boolean =

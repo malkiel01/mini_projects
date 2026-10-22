@@ -120,6 +120,11 @@ function migrate(PDO $pdo): void {
     if (!in_array('perms', $columns('devices'), true)) {
         $pdo->exec("ALTER TABLE devices ADD COLUMN perms INTEGER NOT NULL DEFAULT 0");
     }
+    // המדיניות האחרונה שהמכשיר משך (rev) — "התקבל במכשיר", עוד לפני שדיווח שהחיל (lib/enforce.php).
+    if (!in_array('policy_rev', $columns('devices'), true)) {
+        $pdo->exec("ALTER TABLE devices ADD COLUMN policy_rev TEXT NOT NULL DEFAULT ''");
+        $pdo->exec("ALTER TABLE devices ADD COLUMN policy_rev_at TEXT NOT NULL DEFAULT ''");
+    }
     // מצב העדכון כפי שהמכשיר דיווח (lib/appversion.php, updateStateSave) — ההורה רואה עדכון שנתקע או נכשל.
     if (!in_array('update_state', $columns('devices'), true)) {
         $pdo->exec("ALTER TABLE devices ADD COLUMN update_state TEXT NOT NULL DEFAULT ''");

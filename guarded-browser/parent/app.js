@@ -535,6 +535,17 @@ function updateDevice(d) {
  * הגדרות המכשיר — לכל אחת מותר / חסום (lib/devicesettings.php). נאכף רק ב"בעל מכשיר": בלי הקמה מלאה
  * ההגדרות נשמרות, ומוצג שהן עוד לא נאכפות.
  */
+/** מצב הביצוע בפועל של הגדרה (2026-10-22): לא "נשמר" — מה המכשיר עשה, ומתי אומת. */
+const SETTING_ICON = { verified: '✅', applied: '☑️', received: '📥', pending: '⏳', saved: '💾',
+    unsupported: '➖', needs_device: '📱', needs_action: '👉', failed: '❌' };
+function settingStatusLine(st) {
+    if (!st) return null;
+    const bad = st.state === 'failed' || st.state === 'needs_action' || st.state === 'needs_device';
+    const when = st.at && st.state === 'verified' ? ` · ${ago(st.at)}` : '';
+    return el('small', { text: `${SETTING_ICON[st.state] || ''} ${st.label}${when}${st.hint ? ' — ' + st.hint : ''}`,
+        style: bad ? 'color:var(--danger)' : 'color:var(--muted)' });
+}
+
 function deviceSettingsGroup() {
     const S2 = K.device_settings || [];
     if (!S2.length) return null;
@@ -545,7 +556,7 @@ function deviceSettingsGroup() {
             'הגדרות המכשיר דורשות הקמה מלאה ("בעל מכשיר"): איפוס המכשיר, ואז "📷 חיבור מכשיר חדש" ← "🛡️ הקמה מלאה".'])])
         : null;
     const rows = el('ul', { class: 'rows' }, S2.map(s => el('li', {}, [
-        el('span', { class: 'nm' }, [s.label, el('small', { text: s.hint })]),
+        el('span', { class: 'nm' }, [s.label, el('small', { text: s.hint }), settingStatusLine(s.status)]),
         seg(`ds_${s.key}`, [['allow', '✅ מותר'], ['block', '🚫 חסום']], s.blocked ? 'block' : 'allow',
             { cls: 'seg mini', onchange: v => act('device_setting', { key: s.key, blocked: v === 'block' }, 'נשמר') }),
     ])));
