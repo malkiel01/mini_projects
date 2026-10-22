@@ -776,6 +776,72 @@ check('ייבוא מ-Word: הפניית סיום → הערת סיום עם הט
 check('PDF: הערות הסיום בסוף המסמך עם ספרות רומיות, השוליים — עם מספר', preg_match_all('#/Type /Page /#', $pdfOf($enDoc)) === 1 && roman_lower(2) === 'ii' && roman_lower(14) === 'xiv');
 
 // ======================================================================
+// ======================================================================
+section('R08/F03 — הערות ב-HTML ובטקסט');
+$fnH = export_html(['type' => 'doc', 'content' => [
+    $enDoc['content'][0],
+    ['type' => 'table', 'content' => [['type' => 'tableRow', 'content' => [['type' => 'tableCell', 'content' => [['type' => 'paragraph', 'content' => [
+        ['type' => 'text', 'text' => 'תא'], ['type' => 'footnote', 'attrs' => ['text' => 'שוליים בתא']]]]]]]]]],
+]], page_normalize([]))['html'];
+check('HTML: כל ההערות מופיעות — שוליים 1,2 (גם מתא), סיום i,ii, עם העיצוב',
+    str_contains($fnH, 'שוליים אחת') && str_contains($fnH, 'שוליים בתא') && str_contains($fnH, 'סיום ראשונה') && str_contains($fnH, 'סיום <strong>שנייה</strong>')
+    && str_contains($fnH, 'href="#wp-fn-f2"') && str_contains($fnH, 'id="wp-fn-f2"') && str_contains($fnH, 'href="#wp-fn-eii"') && str_contains($fnH, 'id="wp-fn-eii"')
+    && strpos($fnH, 'class="wp-footnotes"') < strpos($fnH, 'class="wp-endnotes"'), $fnH);
+$fnT = export_text($enDoc);
+check('טקסט: סימן [1] / [i] בגוף, וההערות בסוף', str_contains($fnT, 'גוף[1] עוד[i][ii]') && str_contains($fnT, "[1] שוליים אחת\n") && str_ends_with($fnT, "[i] סיום ראשונה\n[ii] סיום שנייה"), $fnT);
+check('בלי הערות — HTML וטקסט בלי מקטע הערות', !str_contains(export_html(['type' => 'doc', 'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'א']]]]], page_normalize([]))['html'], 'wp-footnotes')
+    && export_text(['type' => 'doc', 'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'א']]]]]) === 'א');
+
+section('R08/F04 — הערת שוליים בתא טבלה ב-PDF');
+if (trim((string)shell_exec('command -v pdftotext'))) {
+    $cellNotes = ['type' => 'doc', 'content' => [
+        ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'גוף'], ['type' => 'footnote', 'attrs' => ['text' => 'הערה מהגוף']]]],
+        ['type' => 'table', 'content' => [['type' => 'tableRow', 'content' => [
+            ['type' => 'tableCell', 'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'תא'], ['type' => 'footnote', 'attrs' => ['text' => 'הערה מהתא']]]]]],
+            ['type' => 'tableCell', 'content' => [['type' => 'table', 'content' => [['type' => 'tableRow', 'content' => [['type' => 'tableCell', 'content' => [
+                ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'פנימי'], ['type' => 'footnote', 'attrs' => ['text' => 'הערה מטבלה פנימית']]]]]]]]]]]],
+        ]]]],
+    ]];
+    file_put_contents("$tmp/fn-cell.pdf", $pdfOf($cellNotes));
+    $fc = preg_replace('/[\x{202A}-\x{202E}]/u', '', (string)shell_exec('pdftotext ' . escapeshellarg("$tmp/fn-cell.pdf") . ' - 2>&1'));
+    check('PDF: הערות מתא ומטבלה מקוננת מופיעות בתחתית העמוד, לפי הסדר', str_contains($fc, 'הערה מהגוף') && str_contains($fc, 'הערה מהתא') && str_contains($fc, 'הערה מטבלה פנימית')
+        && strpos($fc, 'הערה מהגוף') < strpos($fc, 'הערה מהתא') && strpos($fc, 'הערה מהתא') < strpos($fc, 'הערה מטבלה פנימית'), $fc);
+} else {
+    echo "  · pdftotext לא מותקן — דילוג\n";
+}
+
+section('R08/F05 — הערה ארוכה מעמוד ב-PDF');
+if (trim((string)shell_exec('command -v pdftotext'))) {
+    // כל מילה בתוך אזור התוכן של העמוד (מספר העמוד בשוליים — מחוץ לבדיקה), וכל מילות ההערה — במקומן
+    $pdfWords = function (array $doc, string $name) use ($tmp, $pdfOf): array {
+        file_put_contents("$tmp/$name.pdf", $pdfOf($doc));
+        $x = (string)shell_exec('pdftotext -bbox ' . escapeshellarg("$tmp/$name.pdf") . ' - 2>&1');
+        $out = ['pages' => 0, 'outside' => [], 'text' => ''];
+        preg_match_all('#<page width="([\d.]+)" height="([\d.]+)">(.*?)</page>#s', $x, $pg, PREG_SET_ORDER);
+        foreach ($pg as $k => [, $w, $h, $body]) {
+            $out['pages']++;
+            preg_match_all('#xMin="([\d.]+)" yMin="([\d.]+)" xMax="([\d.]+)" yMax="([\d.]+)">([^<]*)<#', $body, $ws, PREG_SET_ORDER);
+            foreach ($ws as [, $x0, $y0, $x1, $y1, $t]) {
+                $out['text'] .= $t . ' ';
+                if (ctype_digit($t) && $y0 > $h - 60) continue;
+                if ($y1 > $h - 72 + 3 || $y0 < 72 - 5 || $x0 < 72 - 3 || $x1 > $w - 72 + 3) $out['outside'][] = ($k + 1) . ":$t";
+            }
+        }
+        return $out;
+    };
+    $longNote = fn(string $end) => ['type' => 'footnote', 'attrs' => ['text' => implode(' ', array_map(fn($i) => "מילה$i", range(1, 2600))) . " $end"]];
+    $pp = fn(string $t, ...$more) => ['type' => 'paragraph', 'content' => array_merge([['type' => 'text', 'text' => $t]], $more)];
+    $fe = $pdfWords(['type' => 'doc', 'content' => [$pp('גוף', $longNote('סוףבסוף'))]], 'fn-end');
+    check('PDF: הערה של כמה עמודים בסוף המסמך — עמודים של הערות בלבד, הכול בתוך הדף', $fe['pages'] >= 4 && !$fe['outside'], $fe['pages'] . ' ' . implode(',', array_slice($fe['outside'], 0, 5)));
+    check('PDF: הערה בסוף המסמך — כל המילים, עד האחרונה', substr_count($fe['text'], 'מילה') + substr_count($fe['text'], 'הלימ') === 2600 && preg_match('/סוףבסוף|ףוסבףוס/u', $fe['text']) === 1);
+    $body = array_fill(0, 12, $pp(str_repeat('טקסט רגיל בגוף המסמך. ', 30)));
+    $fm = $pdfWords(['type' => 'doc', 'content' => array_merge($body, [$pp('סימן', $longNote('סוףבאמצע'), ['type' => 'text', 'text' => ' ועוד'], ['type' => 'footnote', 'attrs' => ['text' => 'הערה שנייה קצרה']])], $body, [['type' => 'pageBreak']], $body)], 'fn-mid');
+    check('PDF: שתי הערות (אחת ארוכה מעמודים) באמצע — הכול בתוך הדף, ושתיהן שלמות', !$fm['outside'] && preg_match('/סוףבאמצע|עצמאבףוס/u', $fm['text']) === 1
+        && preg_match('/שנייה|היינש/u', $fm['text']) === 1, implode(',', array_slice($fm['outside'], 0, 5)) . ' ' . mb_substr($fm['text'], -200));
+} else {
+    echo "  · pdftotext לא מותקן — דילוג\n";
+}
+
 section('כיתובים והפניות צולבות (שלב 4)');
 $cap = fn($label, $id, $text) => ['type' => 'paragraph', 'attrs' => ['pstyle' => 'caption'], 'content' => [
     ['type' => 'text', 'text' => "$label "], ['type' => 'seq', 'attrs' => ['label' => $label, 'id' => $id]], ['type' => 'text', 'text' => ": $text"]]];
@@ -956,6 +1022,24 @@ $rowS = doc_save($rowS, $old, null, 'u1', 'דנה');
 check('שמירה מלשונית ישנה (בלי הגדרות עמוד בפנים) משאירה את ההגדרות', doc_page($rowS)['size'] === 'Letter');
 check('מבנה חדש יותר מהשרת → schema_newer', throws(fn() => doc_save($rowS, ['type' => 'doc', 'attrs' => ['schema' => SCHEMA_VERSION + 1], 'content' => []], null, 'u1', 'דנה'), 'schema_newer'));
 check('ייצוא Word ממסמך עם attrs', strlen(export_docx(doc_json($rowS), doc_page($rowS))) > 1000);
+// R09 / F02: כותב ישן (גרסה 2) על מסמך עם מבנה של גרסה 3 — היה מוחק אותו בשקט (צמתים לא מוכרים נזרקים בטעינה)
+$p3 = fn(array ...$inl) => ['type' => 'paragraph', 'content' => $inl];
+foreach ([
+    'כיתוב' => ['type' => 'doc', 'content' => [$p3(['type' => 'text', 'text' => 'איור '], ['type' => 'seq', 'attrs' => ['label' => 'איור', 'id' => 'a1']])]],
+    'תוכן עניינים' => ['type' => 'doc', 'content' => [['type' => 'toc'], $p3(['type' => 'text', 'text' => 'א'])]],
+    'הערה על טקסט' => ['type' => 'doc', 'attrs' => ['comments' => ['c1' => ['text' => 'הערה']]], 'content' => [$p3(['type' => 'text', 'text' => 'א', 'marks' => [['type' => 'comment', 'attrs' => ['id' => 'c1']]]])]],
+    'הערת סיום' => ['type' => 'doc', 'content' => [$p3(['type' => 'text', 'text' => 'א'], ['type' => 'footnote', 'attrs' => ['text' => 'ס', 'end' => true]])]],
+] as $what => $j3) {
+    // נשמר בעבר עם המספר 2 (לפני שעלה) — הדחייה לפי התוכן, לא לפי המספר
+    $j3['attrs'] = ($j3['attrs'] ?? []) + ['schema' => 2];
+    $r3 = doc_find(doc_new('a:99', "גרסה 3 — $what", $j3, null, 'u1', 'דנה'), 'a:99');
+    check("גרסת מבנה: כותב בגרסה 2 על מסמך עם $what → schema_newer, והמסמך לא השתנה", throws(fn() => doc_save($r3, ['type' => 'doc', 'attrs' => ['schema' => 2], 'content' => [$p3(['type' => 'text', 'text' => 'ישן'])]], null, 'u2', 'ישן'), 'schema_newer')
+        && doc_find($r3['id'], 'a:99')['version'] === $r3['version']);
+    check("גרסת מבנה: כותב בגרסה 3 על מסמך עם $what — נשמר", (int)doc_save($r3, array_replace_recursive($j3, ['attrs' => ['schema' => 3]]), null, 'u1', 'דנה')['version'] === (int)$r3['version'] + 1);
+}
+$r2 = doc_find(doc_new('a:99', 'גרסה 2 בלבד', ['type' => 'doc', 'content' => [$p3(['type' => 'text', 'text' => 'רגיל'])]], null, 'u1', 'דנה'), 'a:99');
+$r2 = doc_save($r2, ['type' => 'doc', 'attrs' => ['schema' => 2], 'content' => [$p3(['type' => 'text', 'text' => 'ישן'])]], null, 'u2', 'ישן');
+check('גרסת מבנה: כותב בגרסה 2 על מסמך בלי מבנה חדש — עדיין נשמר (גם פעם שנייה)', doc_save($r2, ['type' => 'doc', 'attrs' => ['schema' => 2], 'content' => [$p3(['type' => 'text', 'text' => 'שוב'])]], null, 'u2', 'ישן')['version'] > $r2['version']);
 
 // ======================================================================
 section('אוסף המסמכים (tests/corpus) — Word הלוך וחזור');

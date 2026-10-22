@@ -22,3 +22,27 @@ function fn_inline(array $attrs): array
     if (!$out && ($t = trim((string)($attrs['text'] ?? ''))) !== '') $out[] = ['type' => 'text', 'text' => $t];
     return $out;
 }
+
+/**
+ * המסמך עם מספר לכל הערה (attrs._n: "1", "2"… לשוליים; "i", "ii"… לסיום — כמו בעורך וב-PDF), והרשימות לפי הסדר:
+ * [json, [[n, attrs]…] שוליים, [[n, attrs]…] סיום]. ל-HTML ולטקסט, שאין בהם עמודים — ההערות מרוכזות בסוף.
+ */
+function fn_numbered(array $json): array
+{
+    $foot = [];
+    $end = [];
+    $walk = function (array $nodes) use (&$walk, &$foot, &$end) {
+        foreach ($nodes as $i => $n) {
+            if (!is_array($n)) continue;
+            if (($n['type'] ?? '') === 'footnote') {
+                $a = is_array($n['attrs'] ?? null) ? $n['attrs'] : [];
+                if (!empty($a['end'])) { $a['_n'] = roman_lower(count($end) + 1); $end[] = [$a['_n'], $a]; }
+                else { $a['_n'] = (string)(count($foot) + 1); $foot[] = [$a['_n'], $a]; }
+                $nodes[$i]['attrs'] = $a;
+            } elseif (is_array($n['content'] ?? null)) $nodes[$i]['content'] = $walk($n['content']);
+        }
+        return $nodes;
+    };
+    if (is_array($json['content'] ?? null)) $json['content'] = $walk($json['content']);
+    return [$json, $foot, $end];
+}
