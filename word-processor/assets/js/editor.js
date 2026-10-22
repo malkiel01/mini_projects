@@ -158,7 +158,9 @@ export function createWordEditor(root, opts) {
     const stage = h('div.wp-stage', zoomBox);
     const bar = h('div.wp-toolbar.wp-ribbon');           // הסרט — נבנה למטה, מרישום הפקודות
     const statusBar = h('div.wp-statusbar');             // שורת המצב: עמוד, מילים, זום
-    root.append(styleEl, printEl, bar, stage, statusBar);
+    const mobileBar = h('div.wp-mobilebar', { role: 'toolbar', 'aria-label': 'פעולות מהירות' });   // טלפון: שורה קבועה בתחתית
+    const sheetShade = h('div.wp-sheet-shade', { hidden: true });
+    root.append(styleEl, printEl, bar, stage, statusBar, mobileBar, sheetShade);
     root.classList.add('wp-editor');
 
     /** גיאומטריה של עמוד לפי הגדרות (בפיקסלים לא מוגדלים). */
@@ -205,6 +207,9 @@ export function createWordEditor(root, opts) {
         editable: opts.editable !== false,
         editorProps: {
             attributes: { class: 'wp-doc', dir: 'rtl', lang: 'he', spellcheck: 'true', 'aria-label': 'המסמך' },
+            // הסמן לא מסתתר מתחת לשורת הפעולות בתחתית (טלפון) — מרווח בגלילה אל הסמן
+            scrollMargin: { top: 16, bottom: 72, left: 8, right: 8 },
+            scrollThreshold: { top: 16, bottom: 72, left: 8, right: 8 },
             transformPastedHTML: cleanPastedHtml,
             // Ctrl+Alt+F — הערת שוליים (כמו ב-Word)
             handleKeyDown: (view, e) => {
@@ -591,6 +596,56 @@ export function createWordEditor(root, opts) {
         B.redo.disabled = !cmds.state('redo').enabled;
         contextBar();
         statusBarPage();
+        refreshMobile();
+    }
+
+    // ---------- טלפון: שורת פעולות קבועה בתחתית, ו"כלים" — כל הסרט בגיליון מלמטה ----------
+    // בטלפון הסרט עצמו הוא הגיליון: אותם פקדים ואותן לשוניות, בשורות שנשברות (בלי גלילה הצידה), אזורי לחיצה 44px.
+    // טבלה / תמונה — הגיליון נפתח ישר בלשונית ההקשר. כשהמקלדת פתוחה — השורה והגיליון מעליה (visualViewport).
+    const phone = window.matchMedia('(max-width: 700px)');
+    const ALIGNS = ['alignRight', 'alignCenter', 'alignLeft', 'alignJustify'];
+    const MB = Object.fromEntries(['undo', 'bold', 'italic', 'underline', 'bulletList'].map(id => [id, cmdBtn(id)]));
+    MB.align = btn(alignIcon('right'), 'יישור (הבא בתור)', () => {
+        const i = ALIGNS.findIndex(id => cmds.state(id).active);
+        cmds.run(ALIGNS[(i + 1) % ALIGNS.length]);
+    });
+    MB.tools = h('button.mb-tools', { type: 'button', 'aria-haspopup': 'dialog', 'aria-expanded': 'false', onmousedown: e => e.preventDefault(), onclick: () => openSheet(!sheetOpen) },
+        h('span', { 'aria-hidden': 'true' }, '☰'), ' כלים');
+    mobileBar.append(...Object.values(MB));
+    const sheetClose = h('button.rb-close', { type: 'button', 'aria-label': 'סגירת הכלים', title: 'סגירה', onmousedown: e => e.preventDefault(), onclick: () => openSheet(false) }, '✕');
+    bar.querySelector('.rb-head').append(sheetClose);
+    let sheetOpen = false;
+    function openSheet(v) {
+        sheetOpen = !!v && phone.matches;
+        bar.classList.toggle('sheet-open', sheetOpen);
+        sheetShade.hidden = !sheetOpen;
+        MB.tools.setAttribute('aria-expanded', sheetOpen ? 'true' : 'false');
+        if (phone.matches) bar.inert = !sheetOpen;
+        if (sheetOpen && !tabBtn.ctx.hidden) selectTab('ctx');
+    }
+    sheetShade.addEventListener('click', () => openSheet(false));
+    bar.addEventListener('keydown', e => { if (e.key === 'Escape' && sheetOpen) { e.preventDefault(); openSheet(false); } });
+    function applyPhone() {
+        root.classList.toggle('wp-phone', phone.matches);
+        bar.inert = phone.matches && !sheetOpen;
+        if (!phone.matches) openSheet(false);
+    }
+    phone.addEventListener('change', applyPhone);
+    // המקלדת בטלפון: כמה מתחתית המסך היא מכסה — השורה בתחתית והגיליון עולים מעליה
+    const vv = window.visualViewport;
+    const onViewport = () => root.style.setProperty('--kb', Math.max(0, Math.round(innerHeight - vv.height - vv.offsetTop)) + 'px');
+    vv?.addEventListener('resize', onViewport);
+    vv?.addEventListener('scroll', onViewport);
+    function refreshMobile() {
+        for (const id of ['bold', 'italic', 'underline', 'bulletList']) {
+            const v = cmds.state(id).active;
+            MB[id].classList.toggle('on', !!v);
+            MB[id].setAttribute('aria-pressed', v ? 'true' : 'false');
+        }
+        MB.undo.disabled = !cmds.state('undo').enabled || !ed.isEditable;
+        const al = ALIGNS.find(id => cmds.state(id).active) || 'alignRight';
+        MB.align.replaceChildren(alignIcon(al.slice(5).toLowerCase()));
+        MB.tools.classList.toggle('ctx', !tabBtn.ctx.hidden);
     }
 
     // ---------- כלים להקשר: טבלה / תמונה ----------
@@ -1022,6 +1077,7 @@ export function createWordEditor(root, opts) {
     }
 
     applyPage();
+    applyPhone();
     setEditable(opts.editable !== false);
     refresh();
     countWords();
@@ -1041,6 +1097,9 @@ export function createWordEditor(root, opts) {
         statusTarget: el => { statusEl = el; status(); },
         destroy: () => {
             resizeObs.disconnect();
+            phone.removeEventListener('change', applyPhone);
+            vv?.removeEventListener('resize', onViewport);
+            vv?.removeEventListener('scroll', onViewport);
             document.removeEventListener('gesturestart', noGesture);
             document.removeEventListener('gesturechange', noGesture);
             document.documentElement.classList.remove('wp-no-page-zoom');
