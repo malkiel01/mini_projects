@@ -221,6 +221,19 @@ for ($i = 1; $i <= 26; $i++) {
 }
 $corpus['endnotes'] = ['title' => 'הערות סיום', 'json' => $doc($c), 'page' => null];
 
+// 17. כיתובים והפניות: פסקאות בסגנון "כיתוב" (קטן, נטוי) עם מספר מחושב, והפניות צולבות בתוך הטקסט — אותו רוחב בכל מקום
+$c = [$hd('כיתובים והפניות', 1)];
+for ($i = 1; $i <= 22; $i++) {
+    $label = $i % 3 === 0 ? 'טבלה' : 'איור';
+    $c[] = ['type' => 'paragraph', 'content' => [$text($sentence(12, 40) . ' (ראו '), ['type' => 'xref', 'attrs' => ['target' => 'c' . max(1, $i - 1), 'show' => $i % 2 ? 'full' : 'num']], $text(') ' . $sentence(3, 12))]];
+    $c[] = ['type' => 'paragraph', 'attrs' => ['pstyle' => 'caption'], 'content' => [$text("$label "), ['type' => 'seq', 'attrs' => ['label' => $label, 'id' => "c$i"]], $text(': ' . $sentence(3, $i % 4 ? 8 : 25))]];
+}
+// בראש — רשימת איורים (toc עם seq): שורות בלי הדגשה ובלי הזחה
+$figs = [];
+foreach ($c as $b) foreach ($b['content'] ?? [] as $x) if (($x['type'] ?? '') === 'seq' && $x['attrs']['label'] === 'איור') $figs[] = ['t' => 'איור ' . (count($figs) + 1) . ': ' . $sentence(3, 8), 'l' => 0, 'p' => (string)(1 + intdiv(count($figs), 6)), 'i' => count($figs)];
+array_splice($c, 1, 0, [['type' => 'toc', 'attrs' => ['seq' => 'איור', 'levels' => 3, 'entries' => $figs]]]);
+$corpus['captions'] = ['title' => 'כיתובים והפניות', 'json' => $doc($c), 'page' => null];
+
 foreach ($corpus as $name => $d) {
     file_put_contents(__DIR__ . "/$name.json", json_encode($d, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
     echo "$name.json\n";
