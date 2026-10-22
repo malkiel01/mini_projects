@@ -33,6 +33,24 @@
 .rb-results .lb { flex: 1; }
 .rb-results .k { font-size: .75rem; color: var(--muted); }
 /* תצוגה לפני הדפסה: בלי הסרט, שורות המצב והפעולות, ובלי סימני עריכה — כמו בהדפסה */
+/* חיפוש והחלפה (find.js): פס מתחת לסרט; ההתאמות מסומנות במסמך, הנוכחית — חזק יותר */
+.wp-find-slot { flex: none; }
+.wp-findbar { display: grid; gap: 4px; padding: 6px var(--s2); background: var(--surface); border-bottom: 1px solid var(--line); }
+.wp-findbar[hidden] { display: none; }
+.wp-findbar .find-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.wp-findbar .find-row[hidden] { display: none; }
+.wp-findbar input[type=search], .wp-findbar input[type=text] { flex: 1 1 180px; min-inline-size: 0; max-inline-size: 360px; min-block-size: 32px;
+    padding: 0 8px; border: 1px solid var(--line); border-radius: var(--r, 6px); font: inherit; background: var(--bg); color: var(--ink); }
+.wp-findbar .find-count { font-size: .8rem; color: var(--muted); min-inline-size: 5.5em; }
+.wp-findbar .find-count.none { color: var(--danger, #b42318); }
+.wp-findbar .find-btn { min-inline-size: 32px; min-block-size: 32px; border: 1px solid transparent; border-radius: var(--r, 6px); background: none; color: var(--ink); cursor: pointer; }
+.wp-findbar .find-btn:hover:not(:disabled), .wp-findbar .find-btn.on { background: var(--brand-soft, #e8f0fe); }
+.wp-findbar .find-btn:disabled { opacity: .4; cursor: default; }
+.wp-findbar .find-opt { display: inline-flex; align-items: center; gap: 4px; font-size: .85rem; margin-inline-end: var(--s2); }
+.wp-doc .wp-find { background: #fff3a3; border-radius: 1px; }
+.wp-doc .wp-find-cur { background: #ff9632; }
+.wp-editor.wp-phone .wp-findbar .find-btn { min-inline-size: 44px; min-block-size: 44px; }
+.wp-editor.wp-phone .wp-findbar input { min-block-size: 44px; font-size: 16px; }
 .wp-preview-bar { display: flex; align-items: center; gap: var(--s2); flex: none; padding: 6px var(--s2); background: var(--surface); border-bottom: 1px solid var(--line); }
 .wp-preview-bar[hidden] { display: none; }
 .wp-preview-bar .pv-pages { color: var(--muted); font-size: .85rem; }
@@ -256,7 +274,8 @@ html.wp-no-page-zoom, html.wp-no-page-zoom body, .wp-editor, .wp-stage { touch-a
 /* ===== הדפסה: רק הדפים, כל רווח = שבירת עמוד (מספרי העמודים — בשולי @page, editor.js) ===== */
 @media print {
     html, body { background: #fff !important; height: auto !important; overflow: visible !important; }
-    .no-print, header.top, .banner, .wp-toolbar, .wp-statusbar, .wp-mobilebar, .wp-sheet-shade, .wp-preview-bar, .toast, dialog { display: none !important; }
+    .no-print, header.top, .banner, .wp-toolbar, .wp-findbar, .wp-statusbar, .wp-mobilebar, .wp-sheet-shade, .wp-preview-bar, .toast, dialog { display: none !important; }
+    .wp-doc .wp-find, .wp-doc .wp-find-cur { background: none !important; }
     main, .wp-editor, .wp-stage, .wp-zoom-box, .wp-zoom, .wp-sheet { display: block !important; overflow: visible !important; padding: 0 !important; margin: 0 !important;
         background: none !important; transform: none !important; inline-size: auto !important; block-size: auto !important; height: auto !important; width: auto !important; }
     .wp-pages { display: none !important; }

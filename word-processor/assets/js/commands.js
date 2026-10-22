@@ -15,6 +15,7 @@
 /** קבוצות — לסדר בסרגל ובסרט, ולחיפוש. */
 export const GROUPS = {
     history: 'ביטול',
+    editing: 'עריכה',
     style: 'סגנון',
     font: 'גופן',
     paragraph: 'פסקה',
@@ -85,6 +86,10 @@ export const COMMANDS = [
     { id: 'pageBreak', label: 'מעבר עמוד', icon: '⤓', keys: 'Ctrl+Enter', group: 'insert', run: x => x.chain().insertPageBreak().run() },
     { id: 'sectionBreak', label: 'מעבר מקטע: העמוד הבא בכיוון ההפוך', icon: '⧉', group: 'layout',
         run: (x, page) => x.chain().insertSectionBreak(page || { orientation: x.ui.sectionPage().orientation === 'landscape' ? 'portrait' : 'landscape' }).run() },
+
+    // ---------- עריכה: חיפוש והחלפה (find.js) ----------
+    { id: 'find', label: 'חיפוש', icon: '🔎', keys: 'Ctrl+F', group: 'editing', edit: false, run: x => x.ui.find('find') },
+    { id: 'replace', label: 'החלפה', icon: '⇄', keys: 'Ctrl+H', group: 'editing', run: x => x.ui.find('replace') },
 
     // ---------- פריסה וקובץ ----------
     { id: 'pageSetup', label: 'הגדרות עמוד ומספור עמודים', icon: '📄', group: 'layout', run: x => x.ui.pageSetup() },
