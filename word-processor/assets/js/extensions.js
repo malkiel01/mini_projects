@@ -517,16 +517,85 @@ export function bookmarks(doc) {
     return out;
 }
 
-/** מילוי תא. */
+/** מילוי תא, ויישור אנכי בתא (למעלה — ברירת המחדל). */
+export const VALIGNS = { top: 'למעלה', middle: 'באמצע', bottom: 'למטה' };
 const cellAttrs = {
     background: {
         default: null,
         parseHTML: el => el.style.backgroundColor || el.getAttribute('bgcolor') || null,
         renderHTML: a => a.background ? { style: `background-color:${a.background}` } : {},
     },
+    valign: {
+        default: null,
+        parseHTML: el => ['middle', 'bottom'].includes(el.style.verticalAlign || el.getAttribute('valign')) ? (el.style.verticalAlign || el.getAttribute('valign')) : null,
+        renderHTML: a => ['middle', 'bottom'].includes(a.valign) ? { style: `vertical-align:${a.valign}` } : {},
+    },
 };
 export const Cell = TableCell.extend({ addAttributes() { return { ...this.parent?.(), ...cellAttrs }; } });
 export const HeaderCell = TableHeader.extend({ addAttributes() { return { ...this.parent?.(), ...cellAttrs }; } });
+
+/**
+ * עיצוב טבלה: גבולות (כולם / מסגרת / פנימיים / בלי), צבע הגבולות, רוחב (% מרוחב השורה) ויישור (ימין / מרכז / שמאל).
+ * הגבולות תמיד ברוחב 1px — גבול "כבוי" הוא שקוף (במסך — קו עדין), כך שהגובה והרוחב לא משתנים (וזהים ל-PDF).
+ */
+export const TABLE_BORDERS = { all: 'כל הגבולות', outer: 'מסגרת בלבד', inner: 'פנימיים בלבד', none: 'ללא גבולות' };
+const HEX = /^#[0-9a-f]{6}$/i;
+const tableAttrs = {
+    borders: {
+        default: null,
+        parseHTML: el => ['outer', 'inner', 'none'].includes(el.getAttribute('data-borders')) ? el.getAttribute('data-borders') : null,
+        renderHTML: a => ['outer', 'inner', 'none'].includes(a.borders) ? { 'data-borders': a.borders } : {},
+    },
+    borderColor: {
+        default: null,
+        parseHTML: el => HEX.test(el.getAttribute('data-border-color') || '') ? el.getAttribute('data-border-color').toLowerCase() : null,
+        renderHTML: a => HEX.test(a.borderColor || '') ? { 'data-border-color': a.borderColor, style: `--wpt-bc:${a.borderColor}` } : {},
+    },
+    width: {
+        default: null,
+        parseHTML: el => { const v = parseInt(el.getAttribute('data-width'), 10); return v >= 10 && v < 100 ? v : null; },
+        renderHTML: a => a.width ? { 'data-width': a.width } : {},
+    },
+    align: {
+        default: null,
+        parseHTML: el => ['center', 'left', 'right'].includes(el.getAttribute('data-align')) ? el.getAttribute('data-align') : null,
+        renderHTML: a => a.align ? { 'data-align': a.align } : {},
+    },
+};
+/** התצוגה של הטבלה (של TipTap — עטיפה, colgroup): מוסיפה את העיצוב על האלמנטים שלה אחרי כל עדכון. */
+const BaseTableView = Table.options.View;
+class WpTableView extends BaseTableView {
+    constructor(node, ...rest) { super(node, ...rest); this.style(node); }
+    update(node) { const ok = super.update(node); if (ok) this.style(node); return ok; }
+    style(node) {
+        const a = node.attrs;
+        const t = this.table;
+        for (const k of ['borders', 'align']) { if (a[k]) t.setAttribute('data-' + k, a[k]); else t.removeAttribute('data-' + k); }
+        t.style.setProperty('--wpt-bc', HEX.test(a.borderColor || '') ? a.borderColor : '');
+        if (!HEX.test(a.borderColor || '')) t.style.removeProperty('--wpt-bc');
+        // רוחב: אחוז מרוחב השורה (העמודות כבר הותאמו אליו); יישור — לפי השוליים של הטבלה
+        if (a.width) { t.style.width = a.width + '%'; t.style.minWidth = ''; }
+        const al = a.width ? (a.align || 'right') : null;
+        t.style.marginInlineStart = t.style.marginInlineEnd = '';
+        t.style.marginLeft = al === 'right' || al === 'center' ? 'auto' : '';
+        t.style.marginRight = al === 'left' || al === 'center' ? 'auto' : '';
+    }
+}
+export const WpTable = Table.extend({ addAttributes() { return { ...this.parent?.(), ...tableAttrs }; } });
+
+/** גובה מינימלי לשורה (נק'); התוכן יכול להגביה אותה. */
+export const WpTableRow = TableRow.extend({
+    addAttributes() {
+        return {
+            ...this.parent?.(),
+            height: {
+                default: null,
+                parseHTML: el => { const v = parseFloat(el.getAttribute('data-height')); return v > 0 ? Math.min(400, v) : null; },
+                renderHTML: a => a.height > 0 ? { 'data-height': a.height, style: `height:${a.height}pt` } : {},
+            },
+        };
+    },
+});
 
 /**
  * תמונה. גלישה כמו ב-Word: inline (בשורה) · square (ריבוע) · tight (צמוד) · topBottom (מעל ומתחת) ·
@@ -753,8 +822,8 @@ export function extensions(extra = []) {
         Subscript, Superscript,
         TextAlign.configure({ types: BLOCKS, alignments: ['right', 'center', 'left', 'justify'], defaultAlignment: null }),
         ParagraphFormat, PageBreak, SectionBreak, Footnote, WpImage, LetterSpacing, Link, Bookmark, UnderlineStyle,
-        Table.configure({ resizable: true, cellMinWidth: 30, allowTableNodeSelection: true }),
-        TableRow, Cell, HeaderCell,
+        WpTable.configure({ resizable: true, cellMinWidth: 30, allowTableNodeSelection: true, View: WpTableView }),
+        WpTableRow, Cell, HeaderCell,
         DocAttrs,
         ...extra,
     ];
