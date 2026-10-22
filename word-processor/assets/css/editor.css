@@ -206,8 +206,19 @@ html.wp-no-page-zoom, html.wp-no-page-zoom body, .wp-editor, .wp-stage { touch-a
 .wp-doc li > p { padding-top: 0; }
 .wp-doc mark { color: inherit; }
 .wp-doc table { border-collapse: collapse; table-layout: fixed; inline-size: 100%; margin: 0; overflow: hidden; }
-.wp-doc td, .wp-doc th { border: 1px solid #888; padding: 2pt 4pt; vertical-align: top; position: relative; min-inline-size: 1em; box-sizing: border-box; }
+.wp-doc td, .wp-doc th { border: 1px solid var(--wpt-bc, #888); padding: 2pt 4pt; vertical-align: top; position: relative; min-inline-size: 1em; box-sizing: border-box; }
 .wp-doc th { background: #f2f2f2; font-weight: 700; text-align: start; }
+/* גבולות הטבלה (data-borders): גבול כבוי — שקוף, באותו רוחב (הגובה לא משתנה); במסך — קו עדין כדי לראות את התאים */
+.wp-doc table { --wpt-off: rgb(0 0 0 / .1); }
+.wp-doc table[data-borders] > tbody > tr > :is(td, th) { border-color: var(--wpt-off); }
+.wp-doc table[data-borders=inner] > tbody > tr > :is(td, th) { border-color: var(--wpt-bc, #888); }
+.wp-doc table:is([data-borders=outer], [data-borders=inner]) > tbody > tr:is(:first-child, .wp-repeat) > :is(td, th) { border-top-color: var(--wpt-edge); }
+.wp-doc table:is([data-borders=outer], [data-borders=inner]) > tbody > tr:last-child > :is(td, th) { border-bottom-color: var(--wpt-edge); }
+.wp-doc table:is([data-borders=outer], [data-borders=inner]) > tbody > tr > :is(td, th):first-child { border-inline-start-color: var(--wpt-edge); }
+.wp-doc table:is([data-borders=outer], [data-borders=inner]) > tbody > tr > :is(td, th):last-child { border-inline-end-color: var(--wpt-edge); }
+.wp-doc table[data-borders=outer] { --wpt-edge: var(--wpt-bc, #888); }
+.wp-doc table[data-borders=inner] { --wpt-edge: var(--wpt-off); }
+@media print { .wp-doc table { --wpt-off: transparent; } }
 .wp-doc td > p, .wp-doc th > p { padding-bottom: 0; }
 .wp-doc .selectedCell::after { content: ''; position: absolute; inset: 0; background: rgba(45, 74, 138, .15); pointer-events: none; }
 .wp-doc .column-resize-handle { position: absolute; inset-inline-start: -2px; top: 0; bottom: -2px; inline-size: 4px; background: #2d4a8a; pointer-events: none; }

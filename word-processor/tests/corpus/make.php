@@ -177,6 +177,25 @@ for ($i = 1; $i <= 30; $i++) {
 }
 $corpus['keep'] = ['title' => 'שבירת עמודים', 'json' => $doc($c), 'page' => null];
 
+// 14. עיצוב טבלה: רוחב חלקי ויישור (עם עמודות ברוחב קבוע ובלי), גבולות, יישור אנכי, גובה שורה — טבלאות שחוצות עמודים
+$c = [$hd('עיצוב טבלה', 1)];
+$modes = [['outer', 60, 'center'], ['inner', 75, 'left'], ['none', 50, 'right'], [null, 90, 'center']];
+foreach ($modes as $k => [$b, $w, $al]) {
+    $c[] = $p($sentence(20, 50));
+    $rows = [['type' => 'tableRow', 'content' => array_map(fn($h) => ['type' => 'tableHeader', 'content' => [$p($h)]], ['סעיף', 'תיאור', 'הערה'])]];
+    for ($i = 1; $i <= 10 + 4 * $k; $i++) {
+        $cw = $k % 2 ? ['colwidth' => [round(160 * $w / 100)]] : [];   // בחלק מהטבלאות — רוחב עמודות קבוע (כמו אחרי "מאפייני טבלה")
+        $rows[] = ['type' => 'tableRow', 'attrs' => $i % 4 === 0 ? ['height' => 36] : [], 'content' => [
+            ['type' => 'tableCell', 'attrs' => $cw, 'content' => [$p((string)$i)]],
+            ['type' => 'tableCell', 'attrs' => $cw + ($i % 3 === 0 ? ['valign' => 'middle'] : []), 'content' => [$p($sentence(3, 16))]],
+            ['type' => 'tableCell', 'attrs' => $cw + ($i % 5 === 0 ? ['valign' => 'bottom'] : []), 'content' => [$p($sentence(1, 6))]],
+        ]];
+    }
+    $c[] = ['type' => 'table', 'attrs' => array_filter(['borders' => $b, 'borderColor' => $k === 0 ? '#c00000' : null, 'width' => $w, 'align' => $al]), 'content' => $rows];
+}
+$c[] = $p($sentence(10, 30));
+$corpus['table-format'] = ['title' => 'עיצוב טבלה', 'json' => $doc($c), 'page' => null];
+
 foreach ($corpus as $name => $d) {
     file_put_contents(__DIR__ . "/$name.json", json_encode($d, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
     echo "$name.json\n";

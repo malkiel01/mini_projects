@@ -106,7 +106,14 @@ function export_css(array $page): string
     $css = '.wp-doc{font-family:' . css_font($f['family']) . ';font-size:' . $f['size'] . 'pt;line-height:1.15;direction:rtl;color:#000}'
         . '.wp-doc p,.wp-doc h1,.wp-doc h2,.wp-doc h3,.wp-doc h4,.wp-doc h5,.wp-doc h6{margin:0}'
         . '.wp-doc table{border-collapse:collapse;width:100%;margin:4pt 0}'
-        . '.wp-doc td,.wp-doc th{border:1px solid #888;padding:2pt 4pt;vertical-align:top}'
+        . '.wp-doc td,.wp-doc th{border:1px solid var(--wpt-bc,#888);padding:2pt 4pt;vertical-align:top}'
+        // גבולות הטבלה (data-borders) — כמו editor.css: גבול כבוי שקוף, באותו רוחב
+        . '.wp-doc table[data-borders]>tbody>tr>*{border-color:transparent}.wp-doc table[data-borders=inner]>tbody>tr>*{border-color:var(--wpt-bc,#888)}'
+        . '.wp-doc table[data-borders=outer]{--wpt-edge:var(--wpt-bc,#888)}.wp-doc table[data-borders=inner]{--wpt-edge:transparent}'
+        . '.wp-doc table:is([data-borders=outer],[data-borders=inner])>tbody>tr:first-child>*{border-top-color:var(--wpt-edge)}'
+        . '.wp-doc table:is([data-borders=outer],[data-borders=inner])>tbody>tr:last-child>*{border-bottom-color:var(--wpt-edge)}'
+        . '.wp-doc table:is([data-borders=outer],[data-borders=inner])>tbody>tr>:first-child{border-inline-start-color:var(--wpt-edge)}'
+        . '.wp-doc table:is([data-borders=outer],[data-borders=inner])>tbody>tr>:last-child{border-inline-end-color:var(--wpt-edge)}'
         . '.wp-doc ul,.wp-doc ol{margin:0;padding-inline-start:24pt}'
         . '.wp-doc ol.hebrew{list-style-type:hebrew}.wp-doc ol.roman{list-style-type:lower-roman}'
         . '.wp-doc ol.multi,.wp-doc ol.multi ol{list-style:none}.wp-doc ol.multi>li,.wp-doc ol.multi ol>li{counter-increment:wpl;position:relative}'
@@ -215,16 +222,24 @@ function html_node(array $n): string
         case 'listItem':
             return '<li>' . $kids() . '</li>';
         case 'table':
-            return '<table><tbody>' . $kids() . '</tbody></table>';
+            $at = in_array($a['borders'] ?? null, ['outer', 'inner', 'none'], true) ? ' data-borders="' . $a['borders'] . '"' : '';
+            $st = ($bc = color_val($a['borderColor'] ?? null)) ? "--wpt-bc:#$bc;" : '';
+            if (is_numeric($a['width'] ?? null) && $a['width'] >= 10 && $a['width'] < 100) {
+                $al = $a['align'] ?? 'right';
+                $st .= 'width:' . (int)$a['width'] . '%;' . ($al === 'center' ? 'margin-left:auto;margin-right:auto;' : ($al === 'left' ? 'margin-right:auto;' : 'margin-left:auto;'));
+            }
+            return '<table' . $at . ($st ? ' style="' . $st . '"' : '') . '><tbody>' . $kids() . '</tbody></table>';
         case 'tableRow':
-            return '<tr>' . $kids() . '</tr>';
+            return '<tr' . (is_numeric($a['height'] ?? null) && $a['height'] > 0 ? ' style="height:' . min(400, (float)$a['height']) . 'pt"' : '') . '>' . $kids() . '</tr>';
         case 'tableCell':
         case 'tableHeader':
             $tag = $n['type'] === 'tableHeader' ? 'th' : 'td';
             $at = '';
             if (($c = (int)($a['colspan'] ?? 1)) > 1) $at .= ' colspan="' . $c . '"';
             if (($r = (int)($a['rowspan'] ?? 1)) > 1) $at .= ' rowspan="' . $r . '"';
-            if (($bg = color_val($a['background'] ?? null))) $at .= ' style="background:#' . $bg . '"';
+            $st = ($bg = color_val($a['background'] ?? null)) ? "background:#$bg;" : '';
+            if (in_array($a['valign'] ?? null, ['middle', 'bottom'], true)) $st .= 'vertical-align:' . $a['valign'] . ';';
+            if ($st) $at .= ' style="' . $st . '"';
             return "<$tag$at>" . $kids() . "</$tag>";
         case 'image':
             return html_image($a);
@@ -752,22 +767,35 @@ final class Ooxml
         foreach ($layout as $cells) foreach ($cells as $c) {
             if (isset($c['cell']) && $c['span'] === 1 && !empty($c['cell']['attrs']['colwidth'][0])) $widths[$c['col']] = (float)$c['cell']['attrs']['colwidth'][0] * 15;
         }
+        $ta = $t['attrs'] ?? [];
+        $pct = is_numeric($ta['width'] ?? null) && $ta['width'] >= 10 && $ta['width'] < 100 ? (int)$ta['width'] : 100;
+        $target = $this->contentTw * $pct / 100;   // הרוחב שהטבלה תופסת בשורה
         $known = array_sum($widths);
         $unknown = count(array_filter($widths, fn($w) => $w == 0));
-        $rest = $unknown ? max(600, ($this->contentTw - $known) / $unknown) : 0;
+        $rest = $unknown ? max(600, ($target - $known) / $unknown) : 0;
         foreach ($widths as $i => $w) if ($w == 0) $widths[$i] = $rest;
-        $scale = array_sum($widths) > $this->contentTw ? $this->contentTw / array_sum($widths) : 1;
+        $scale = array_sum($widths) > $target ? $target / array_sum($widths) : 1;
         $widths = array_map(fn($w) => (int)round($w * $scale), $widths);
 
+        // גבולות: כולם / מסגרת / פנימיים / בלי, בצבע של הטבלה
+        $mode = in_array($ta['borders'] ?? null, ['outer', 'inner', 'none'], true) ? $ta['borders'] : 'all';
+        $bc = strtoupper(color_val($ta['borderColor'] ?? null) ?? '808080');
         $b = '';
-        foreach (['top', 'start', 'bottom', 'end', 'insideH', 'insideV'] as $side) $b .= "<w:$side w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"808080\"/>";
-        $out = '<w:tbl><w:tblPr><w:bidiVisual/><w:tblW w:w="' . array_sum($widths) . '" w:type="dxa"/><w:tblBorders>' . $b . '</w:tblBorders>'
+        foreach (['top', 'start', 'bottom', 'end', 'insideH', 'insideV'] as $side) {
+            $inside = str_starts_with($side, 'inside');
+            $on = $mode === 'all' || ($mode === 'outer' && !$inside) || ($mode === 'inner' && $inside);
+            $b .= $on ? "<w:$side w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"$bc\"/>" : "<w:$side w:val=\"nil\"/>";
+        }
+        // יישור: בטבלה מימין לשמאל (bidiVisual) start — ימין
+        $jc = $pct < 100 ? match ($ta['align'] ?? 'right') { 'center' => '<w:jc w:val="center"/>', 'left' => '<w:jc w:val="end"/>', default => '' } : '';
+        $out = '<w:tbl><w:tblPr><w:bidiVisual/><w:tblW w:w="' . array_sum($widths) . '" w:type="dxa"/>' . $jc . '<w:tblBorders>' . $b . '</w:tblBorders>'
             . '<w:tblLayout w:type="fixed"/><w:tblCellMar><w:top w:w="40" w:type="dxa"/><w:start w:w="80" w:type="dxa"/><w:bottom w:w="40" w:type="dxa"/><w:end w:w="80" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>';
         foreach ($widths as $w) $out .= '<w:gridCol w:w="' . $w . '"/>';
         $out .= '</w:tblGrid>';
         foreach ($layout as $ri => $cells) {
             $isHeader = ($rows[$ri]['content'][0]['type'] ?? '') === 'tableHeader';
-            $out .= '<w:tr>' . ($isHeader ? '<w:trPr><w:tblHeader/></w:trPr>' : '');
+            $rh = is_numeric($rows[$ri]['attrs']['height'] ?? null) && $rows[$ri]['attrs']['height'] > 0 ? '<w:trHeight w:val="' . (int)round(min(400, $rows[$ri]['attrs']['height']) * 20) . '" w:hRule="atLeast"/>' : '';
+            $out .= '<w:tr>' . ($isHeader || $rh ? '<w:trPr>' . $rh . ($isHeader ? '<w:tblHeader/>' : '') . '</w:trPr>' : '');
             $col = 0;
             foreach ($cells as $c) {
                 if (isset($c['cont'])) {
@@ -783,6 +811,7 @@ final class Ooxml
                     . ($c['restart'] ? '<w:vMerge w:val="restart"/>' : '');
                 if (($bg = color_val($cell['attrs']['background'] ?? null))) $pr .= "<w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"$bg\"/>";
                 elseif ($cell['type'] === 'tableHeader') $pr .= '<w:shd w:val="clear" w:color="auto" w:fill="F2F2F2"/>';
+                if (in_array($cell['attrs']['valign'] ?? null, ['middle', 'bottom'], true)) $pr .= '<w:vAlign w:val="' . ($cell['attrs']['valign'] === 'middle' ? 'center' : 'bottom') . '"/>';
                 $inner = '';
                 foreach ($cell['content'] ?? [] as $p) {
                     // בתא — בלי רווח אחרי פסקה, כמו בעורך וב-PDF (אלא אם נקבע לפסקה במפורש)

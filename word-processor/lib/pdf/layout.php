@@ -811,7 +811,16 @@ final class PdfLayout
             $ncols = max($ncols, $col, count($occupied[$ri] ?? []));
         }
         if (!$ncols) return [];
-        $avail = $width - $indent;
+        $ta = $t['attrs'] ?? [];
+        // רוחב (% מהשורה) ויישור — כמו בעורך: offR — המרחק מהקצה הימני של השורה לקצה הימני של הטבלה
+        $full = $width - $indent;
+        $pct = is_numeric($ta['width'] ?? null) && $ta['width'] >= 10 && $ta['width'] < 100 ? (float)$ta['width'] : 100.0;
+        $avail = $full * $pct / 100;
+        $offR = match ($pct < 100 ? ($ta['align'] ?? 'right') : 'right') { 'center' => ($full - $avail) / 2, 'left' => $full - $avail, default => 0.0 };
+        // גבולות: כולם / מסגרת / פנימיים / בלי — תמיד באותו רוחב (בעורך גבול כבוי שקוף), רק מה שמצויר משתנה
+        $bmode = in_array($ta['borders'] ?? null, ['outer', 'inner', 'none'], true) ? $ta['borders'] : 'all';
+        $bcol = color_val($ta['borderColor'] ?? null) ? self::hex($ta['borderColor']) : [136, 136, 136];
+        $nrows = count($rows);
         $widths = array_fill(0, $ncols, 0.0);
         foreach ($grid as $cells) foreach ($cells as $c) {
             if ($c['cs'] === 1 && !empty($c['cell']['attrs']['colwidth'][0])) $widths[$c['col']] = (float)$c['cell']['attrs']['colwidth'][0] * PT_PER_PX;
@@ -839,6 +848,8 @@ final class PdfLayout
                 if ($c['rs'] === 1) $rowH[$ri] = max($rowH[$ri], $h);
             }
             $rowH[$ri] = max($rowH[$ri], 12);
+            // גובה מינימלי לשורה (נק') — כולל הריפוד והגבול, כמו height של tr בעורך
+            if (is_numeric($rows[$ri]['attrs']['height'] ?? null) && $rows[$ri]['attrs']['height'] > 0) $rowH[$ri] = max($rowH[$ri], min(400, (float)$rows[$ri]['attrs']['height']));
         }
         foreach ($laid as $ri => $cells) foreach ($cells as $c) {
             if ($c['rs'] > 1) {
@@ -849,18 +860,29 @@ final class PdfLayout
         $out = [];
         foreach ($laid as $ri => $cells) {
             $h = $rowH[$ri];
-            $it = new FlowItem($h, function (PdfCanvas $cv, float $x, float $y) use ($cells, $widths, $rowH, $ri, $indent, $width, $padX, $padY) {
+            $it = new FlowItem($h, function (PdfCanvas $cv, float $x, float $y) use ($cells, $widths, $rowH, $ri, $indent, $width, $padX, $padY, $offR, $bmode, $bcol, $nrows, $ncols) {
                 foreach ($cells as $c) {
                     // מימין לשמאל: העמודה הראשונה בצד ימין
-                    $right = $x + $width - array_sum(array_slice($widths, 0, $c['col']));
+                    $right = $x + $width - $offR - array_sum(array_slice($widths, 0, $c['col']));
                     $cx = $right - $c['w'];
                     $ch = array_sum(array_slice($rowH, $ri, $c['rs']));
                     $bg = $c['cell']['attrs']['background'] ?? null;
                     if (color_val($bg)) $cv->rect($cx, $y, $c['w'], $ch, self::hex($bg));
                     elseif ($c['cell']['type'] === 'tableHeader') $cv->rect($cx, $y, $c['w'], $ch, [242, 242, 242]);
-                    $yy = $y + $padY;
+                    // יישור אנכי: התוכן (בלי הריפוד והגבול) בתוך גובה התא
+                    $free = $ch - $c['h'];
+                    $va = $c['cell']['attrs']['valign'] ?? null;
+                    $yy = $y + $padY + ($va === 'middle' ? $free / 2 : ($va === 'bottom' ? $free : 0));
                     foreach ($c['items'] as $item) { ($item->draw)($cv, $cx + $padX, $yy); $yy += $item->h; }
-                    $cv->strokeRect($cx, $y, $c['w'], $ch, [136, 136, 136], 0.75);
+                    // ארבעת הצדדים — כל אחד לפי מצב הגבולות (קצה הטבלה או פנימי)
+                    $edges = ['t' => $ri === 0, 'b' => $ri + $c['rs'] >= $nrows, 'r' => $c['col'] === 0, 'l' => $c['col'] + $c['cs'] >= $ncols];
+                    foreach ($edges as $e => $outer) {
+                        if (!($bmode === 'all' || ($bmode === 'outer' && $outer) || ($bmode === 'inner' && !$outer))) continue;
+                        if ($e === 't') $cv->line($cx, $y, $cx + $c['w'], $y, $bcol, 0.75);
+                        elseif ($e === 'b') $cv->line($cx, $y + $ch, $cx + $c['w'], $y + $ch, $bcol, 0.75);
+                        elseif ($e === 'r') $cv->line($cx + $c['w'], $y, $cx + $c['w'], $y + $ch, $bcol, 0.75);
+                        else $cv->line($cx, $y, $cx, $y + $ch, $bcol, 0.75);
+                    }
                 }
             }, 'row');
             $it->table = $tid;
