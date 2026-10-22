@@ -53,6 +53,17 @@ export function defaultPage() {
     };
 }
 
+/** סגנונות טבלה מוכנים: גבולות (null — כולם), צבע הגבולות, מילוי השורה הראשונה, ופס לשורות הזוגיות (שנייה, רביעית…). */
+export const TABLE_STYLES = {
+    plain: { name: 'רגיל', borders: null, color: null, head: null, band: null },
+    blueGrid: { name: 'רשת כחולה', borders: null, color: '#2f5496', head: '#d9e2f3', band: null },
+    blueBands: { name: 'פסים כחולים', borders: 'outer', color: '#2f5496', head: '#b4c6e7', band: '#deeaf6' },
+    greenBands: { name: 'פסים ירוקים', borders: 'outer', color: '#538135', head: '#c5e0b3', band: '#e2efd9' },
+    orangeBands: { name: 'פסים כתומים', borders: 'outer', color: '#c55a11', head: '#f7caac', band: '#fbe4d5' },
+    grayLight: { name: 'אפור עדין', borders: 'inner', color: '#a6a6a6', head: '#f2f2f2', band: null },
+    minimal: { name: 'בלי קווים, פסים אפורים', borders: 'none', color: null, head: '#d9d9d9', band: '#f2f2f2' },
+};
+
 /** גודל סימן המים (נק') — כמו watermark_size בשרת: לפי האלכסון של העמוד ומספר התווים, 24–120. */
 export function watermarkSize(text, wPt, hPt) {
     const n = Math.max(1, [...text].length);
@@ -481,6 +492,7 @@ export function createWordEditor(root, opts) {
             zoomOut: () => { fit = false; zoom = Math.max(0.3, Math.round((zoom - 0.1) * 10) / 10); setZoom(); },
             zoomIn: () => { fit = false; zoom = Math.min(3, Math.round((zoom + 0.1) * 10) / 10); setZoom(); },
             zoomFit: () => { fit = true; setZoom(); },
+            tableStyle: k => applyTableStyle(k),
             crop: pos => cropDialog(pos), imageProps: pos => imageDialog(pos), imageSize: f => imageSizeTo(f), tableProps: () => tablePropsDialog(),
             footnote: () => footnoteDialog(null),
             link: () => linkDialog(), bookmark: () => bookmarkDialog(),
@@ -896,7 +908,8 @@ export function createWordEditor(root, opts) {
             ctxBar.append(
                 grp('שורות ועמודות', [T('addRowBefore'), T('addRowAfter'), T('addColumnBefore'), T('addColumnAfter')], [T('deleteRow'), T('deleteColumn')]),
                 grp('תאים', [T('mergeOrSplit'), cmdColor('table.cellFill', '#ddeeff')], [T('toggleHeaderRow')]),
-                grp('טבלה', [T('props'), T('deleteTable')]));
+                grp('טבלה', [T('props'), T('deleteTable')], [cmdSel('table.style', 'w-tstyle', [h('option', { value: '' }, 'סגנון טבלה…'),
+                    ...Object.entries(TABLE_STYLES).map(([k, v]) => h('option', { value: k }, v.name))])]));
         } else if (kind === 'image') {
             const a = sel.node.attrs;
             const wrapSel = cmdSel('image.wrap', 'w-wrap', Object.entries(WRAP_NAMES).map(([k, t]) => h('option', { value: k, selected: (a.wrap || 'inline') === k }, t)));
@@ -911,6 +924,34 @@ export function createWordEditor(root, opts) {
      * מאפייני טבלה: גבולות וצבע, רוחב ויישור (הטבלה כולה); יישור אנכי (התאים שבבחירה); גובה שורה (השורות שבבחירה).
      * שינוי רוחב מתאים גם את רוחבי העמודות (colwidth) באותו יחס — כך הטבלה ב-PDF וב-Word באותו רוחב.
      */
+    /**
+     * סגנון טבלה מוכן (כמו הגלריה של Word): גבולות וצבע, מילוי לשורה הראשונה, ופסים לסירוגין בשאר. נכתב כעיצוב רגיל
+     * של הטבלה והתאים (borders / borderColor / background) — לכן זהה בעורך, בהדפסה, ב-PDF וב-Word. צעד ביטול אחד.
+     */
+    function applyTableStyle(key) {
+        const st = TABLE_STYLES[key];
+        const $f = editor.state.selection.$from;
+        let tpos = -1, tnode = null;
+        for (let d = $f.depth; d > 0; d--) if ($f.node(d).type.name === 'table') { tpos = $f.before(d); tnode = $f.node(d); break; }
+        if (!st || !tnode) return false;
+        const tr = editor.state.tr;
+        tr.setNodeMarkup(tpos, undefined, { ...tnode.attrs, borders: st.borders, borderColor: st.color });
+        let r = 0;
+        tnode.forEach((row, off) => {
+            const fill = r === 0 ? st.head : (st.band && r % 2 === 0 ? st.band : null);
+            row.forEach((cell, coff) => {
+                const pos = tpos + 1 + off + 1 + coff;
+                tr.setNodeMarkup(pos, undefined, { ...cell.attrs, background: fill });
+            });
+            r++;
+        });
+        editor.view.dispatch(tr.setMeta('closeHistory$', true));
+        editor.view.focus();
+        const sel = ctxBar.querySelector('select.w-tstyle');
+        if (sel) sel.value = '';   // אפשר לבחור שוב את אותו סגנון (למשל אחרי שנוספו שורות)
+        return true;
+    }
+
     function tablePropsDialog() {
         const st = editor.state;
         const $f = st.selection.$from;
