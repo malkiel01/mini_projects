@@ -6,7 +6,7 @@ description: Creates backgrounds and design elements for the Greeting Cards edit
 <!--
   ‏זו הגרסה הבסיסית של הסקיל. האפליקציה מייצרת ממנה עותק אישי לכל משתמש: היא ממלאת את
   {{FONTS}}, {{BRAND}} ו-{{SIZES}}, ונותנת אותו להורדה (Claude) או כטקסט להדבקה (ChatGPT, Gemini).
-  הפורמט: ../schema/design.schema.json. ההקשר: ../04-ai-chat-skill.md.
+  הפורמט: ../../spec/schema/design.schema.json. ההקשר: ../../spec/04-ai-chat-skill.md.
 -->
 
 # Background and elements for the Greeting Cards editor

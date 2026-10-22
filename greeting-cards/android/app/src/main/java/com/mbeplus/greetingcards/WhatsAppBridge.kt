@@ -3,8 +3,12 @@ package com.mbeplus.greetingcards
 import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.ContentValues
 import android.content.pm.PackageManager
+import android.os.Build
+import android.os.Environment
 import android.provider.ContactsContract
+import android.provider.MediaStore
 import android.util.Base64
 import android.util.Log
 import android.webkit.JavascriptInterface
@@ -171,6 +175,38 @@ class WhatsAppBridge(private val context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "Cannot open WhatsApp chat", e)
             JSONObject().put("ok", false).put("error", e.message ?: "launch_failed").toString()
+        }
+    }
+
+    // ─── שמירת קובץ ──────────────────────────────────
+    //
+    // ‏DownloadManager מקבל רק http(s), ולכן ייצוא מהעורך (‏blob:) לא יורד ב-WebView. הדף שולח את
+    // הקובץ כ-base64, והוא נשמר בתיקיית ההורדות של הטלפון.
+
+    /** מחזיר "" בהצלחה, או הודעת שגיאה. */
+    @JavascriptInterface
+    fun saveFile(base64: String, fileName: String, mime: String): String {
+        return try {
+            val bytes = Base64.decode(base64, Base64.DEFAULT)
+            val name = fileName.replace(Regex("[\\\\/:*?\"<>|]"), "_").take(100).ifBlank { "design" }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val values = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, name)
+                    put(MediaStore.MediaColumns.MIME_TYPE, mime)
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                }
+                val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                    ?: return "לא ניתן ליצור את הקובץ"
+                context.contentResolver.openOutputStream(uri)?.use { it.write(bytes) } ?: return "לא ניתן לכתוב את הקובץ"
+            } else {
+                // עד אנדרואיד 9 — תיקיית ההורדות של האפליקציה (בלי הרשאת אחסון).
+                val dir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: return "אין אחסון זמין"
+                File(dir, name).writeBytes(bytes)
+            }
+            ""
+        } catch (e: Exception) {
+            Log.w(TAG, "Cannot save file", e)
+            e.message ?: "השמירה נכשלה"
         }
     }
 

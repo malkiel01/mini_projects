@@ -14,5 +14,15 @@
     "manifest.webmanifest",
     "service-worker.js",
     "assets/icons/**"
+  ],
+  "links": [
+    {
+      "label": "🎨 העורך החדש (בפיתוח)",
+      "href": "editor/"
+    },
+    {
+      "label": "כרטיסי ברכה — הגרסה הקיימת",
+      "href": ""
+    }
   ]
 }
