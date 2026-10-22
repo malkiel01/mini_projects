@@ -74,6 +74,7 @@ class HomeActivity : AppCompatActivity() {
         setContentView(b.root)
 
         b.settings.setOnClickListener { showSettings() }
+        b.sync.setOnClickListener { syncNow() }
         b.search.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, a: Int, c: Int, d: Int) {}
             override fun onTextChanged(s: CharSequence?, a: Int, c: Int, d: Int) {}
@@ -111,7 +112,7 @@ class HomeActivity : AppCompatActivity() {
      * סירוב מהשרת כן נועל — שם ההבחנה בין "לא הצלחנו לשאול" לבין
      * "נשאלנו ונענינו לא".
      */
-    private fun refresh() {
+    private fun refresh(done: ((Boolean) -> Unit)? = null) {
         b.progress.visibility = View.VISIBLE
         Api.policy(store.token) { r ->
             b.progress.visibility = View.GONE
@@ -120,6 +121,7 @@ class HomeActivity : AppCompatActivity() {
                 PolicySync.apply(this, r.json, "home")
                 reportApps()
             }
+            done?.invoke(r.ok)   // 🔄 — אחרי ההחלה
             // יש גרסה חדשה — עדכון חובה: נועלים עד ההתקנה.
             if (r.ok && Updater.required(this)) { Updater.lock(this); return@policy }
 
@@ -295,6 +297,21 @@ class HomeActivity : AppCompatActivity() {
 
     private fun open(url: String) {
         startActivity(Intent(this, BrowserActivity::class.java).putExtra("url", url))
+    }
+
+    /**
+     * 🔄 רענון עכשיו — בלי לחכות לסנכרון: מושך מההורה את ההגדרות ומחיל אותן (כולל אכיפת האפליקציות ובדיקת
+     * עדכון), ומדווח מחדש את האפליקציות המותקנות — כך אפליקציה שהותקנה עכשיו מגיעה להורה מיד.
+     */
+    private fun syncNow() {
+        if (b.progress.visibility == View.VISIBLE) return
+        b.sync.isEnabled = false
+        appsReported = false
+        refresh { ok ->
+            b.sync.isEnabled = true
+            Toast.makeText(this, if (ok) "✅ עודכן — ההגדרות מההורה הוחלו" else "⚠️ אין חיבור לשרת — ממשיכים עם ההגדרות השמורות",
+                Toast.LENGTH_SHORT).show()
+        }
     }
 
     /** "ההגדרות שלי": מה מותר, מתי, וכניסת הורה. */

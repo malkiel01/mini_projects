@@ -20,6 +20,12 @@
                 android:layout_height="wrap_content" android:textSize="13sp"
                 android:textColor="@color/brand_ink" android:alpha="0.85" android:maxLines="1" android:ellipsize="end"/>
         </LinearLayout>
+        <!-- רענון עכשיו: מושך מההורה את ההגדרות, מחיל, ומדווח את האפליקציות — בלי לחכות לסנכרון. -->
+        <com.google.android.material.button.MaterialButton android:id="@+id/sync"
+            style="@style/Widget.Material3.Button.TextButton" android:layout_width="48dp"
+            android:layout_height="48dp" android:insetTop="0dp" android:insetBottom="0dp"
+            android:padding="0dp" android:text="🔄" android:textSize="20sp"
+            android:contentDescription="רענון — למשוך עכשיו את ההגדרות מההורה"/>
         <com.google.android.material.button.MaterialButton android:id="@+id/settings"
             style="@style/Widget.Material3.Button.TextButton" android:layout_width="48dp"
             android:layout_height="48dp" android:insetTop="0dp" android:insetBottom="0dp"
