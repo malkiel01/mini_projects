@@ -175,6 +175,9 @@ dialog > form { display: flex; flex-direction: column; max-height: inherit; heig
 .sheet-head h2 { flex: 1; font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sheet-body { overflow-y: auto; flex: 1 1 auto; min-height: 0; padding: var(--s3); display: grid; grid-auto-rows: max-content; align-content: start;
     gap: var(--s3); overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+/* דוח ייבוא: מה לא עבר בדיוק */
+.import-report ul { display: grid; gap: var(--s2); padding-inline-start: 1.2em; }
+.import-report li span { color: var(--muted); }
 .group { display: grid; gap: var(--s2); padding-top: var(--s3); border-top: 1px solid var(--line); }
 .group h3 { font-size: .9rem; font-weight: 600; }
 .group h3 small { font-weight: 400; color: var(--muted); margin-inline-start: var(--s1); }

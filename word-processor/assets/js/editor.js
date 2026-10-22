@@ -10,7 +10,7 @@
  * ומספר עמוד בכל עמוד, וזום שמגדיל רק את הדפים.
  */
 import { Editor, Extension, StarterKit, Superscript, Subscript } from '../../vendor/tiptap.js';
-import { extensions, imageBox } from './extensions.js';
+import { extensions, imageBox, FONTS, FALLBACK, cssFont } from './extensions.js';
 import { Pages, pageLabel } from './pagination.js';
 import { cleanPastedHtml } from './paste.js';
 import { migrate } from './schema.js';
@@ -20,20 +20,13 @@ const MM = 96 / 25.4;
 const PT = 4 / 3;
 const GAP = 24;
 const SIZES = { A4: [210, 297], Letter: [215.9, 279.4] };
-export const FONTS = ['David', 'Frank Ruehl', 'Arial', 'Narkisim', 'Miriam', 'Times New Roman', 'Calibri', 'Tahoma',
-    'David Libre', 'Frank Ruhl Libre', 'Miriam Libre', 'Heebo', 'Assistant', 'Rubik', 'Alef'];
-const FALLBACK = { David: "'David Libre', serif", 'Frank Ruehl': "'Frank Ruhl Libre', serif", Narkisim: "'Assistant', sans-serif",
-    Miriam: "'Miriam Libre', sans-serif", Arial: "'Heebo', sans-serif", 'Times New Roman': "'Frank Ruhl Libre', serif",
-    Calibri: "'Assistant', sans-serif", Tahoma: "'Heebo', sans-serif" };
 const SIZE_LIST = [8, 9, 10, 10.5, 11, 12, 14, 16, 18, 20, 22, 24, 28, 32, 36, 48, 72];
 const STYLE_NAMES = { normal: 'רגיל', title: 'כותרת מסמך', h1: 'כותרת 1', h2: 'כותרת 2', h3: 'כותרת 3' };
 const WRAP_NAMES = { inline: 'בשורה עם הטקסט', square: 'ריבוע', tight: 'צמוד', topBottom: 'מעל ומתחת', behind: 'מאחורי הטקסט', front: 'לפני הטקסט' };
 const SPACING = [['-1', 'צפוף 1'], ['-0.5', 'צפוף ½'], ['', 'רגיל'], ['0.5', 'מרווח ½'], ['1', 'מרווח 1'], ['2', 'מרווח 2'], ['3', 'מרווח 3']];
 const NUM_FORMATS = { n: '1', page_n: "עמ' 1", n_of_m: '1 מתוך 12', dash_n: '- 1 -', hebrew: 'א, ב, ג' };
 
-export function cssFont(f) {
-    return `'${String(f).replace(/'/g, '')}', ${FALLBACK[f] || 'sans-serif'}`;
-}
+export { FONTS, cssFont };
 
 export function defaultPage() {
     return {
@@ -648,10 +641,33 @@ export function createWordEditor(root, opts) {
     // ---------- שורת המצב: עמוד X מתוך Y (לפי הסמן), מילים, זום ----------
     const stPage = h('span.st-page');
     const stWords = h('span.st-words');
+    const stFont = h('span.st-font', { hidden: true });   // "גופן מוחלף" — רק כשהסמן בגופן שאינו זמין
     stZoom = h('button.st-zoom', { type: 'button', title: 'התאמה למסך', onclick: () => cmds.run('zoomFit') });
-    statusBar.append(stPage, h('span.st-sep', { 'aria-hidden': 'true' }), stWords, h('span.st-fill'),
+    statusBar.append(stPage, h('span.st-sep', { 'aria-hidden': 'true' }), stWords, stFont, h('span.st-fill'),
         h('button.st-btn', { type: 'button', 'aria-label': 'הקטנת התצוגה', title: 'הקטנת התצוגה', onclick: () => cmds.run('zoomOut') }, '−'), stZoom,
         h('button.st-btn', { type: 'button', 'aria-label': 'הגדלת התצוגה', title: 'הגדלת התצוגה', onclick: () => cmds.run('zoomIn') }, '+'));
+    /**
+     * חיווי גופן מוחלף (ליקוי ח'): גופן שאינו ברשימה (למשל מ-Word) מוצג ב-Heebo — בתיבת הגופן "(מוחלף)", ובשורת
+     * המצב מה מוצג במקומו. שם של Word (David…) — בהסבר שמעל התיבה: באיזה גופן חופשי הוא מוצג, זהה בכל מחשב.
+     */
+    let subOpt = null;
+    function fontIndicator(font) {
+        const missing = !!font && !FONTS.includes(font);
+        if (missing) {
+            if (!subOpt) fontSel.append(subOpt = h('option.sub'));
+            subOpt.value = font;
+            subOpt.textContent = `${font} (מוחלף)`;
+        } else if (subOpt) { subOpt.remove(); subOpt = null; }
+        fontSel.value = missing || FONTS.includes(font) ? font : '';
+        fontSel.classList.toggle('sub', missing);
+        const alias = FALLBACK[font]?.match(/'([^']+)'/)?.[1];
+        fontSel.title = missing ? `הגופן "${font}" אינו זמין — מוצג ב-Heebo, זהה במסך, בהדפסה וב-PDF`
+            : alias ? `${font} — מוצג בגופן החופשי ${alias}, זהה בכל מחשב, בהדפסה וב-PDF` : cmds.get('fontFamily').label;
+        stFont.hidden = !missing;
+        stFont.textContent = missing ? `⚠ גופן מוחלף: ${font} ← Heebo` : '';
+        stFont.title = missing ? fontSel.title : '';
+    }
+
     let curPage = 1;
     function caretPage() {
         const pages = pagesLayer.children;
@@ -678,8 +694,7 @@ export function createWordEditor(root, opts) {
         const on = (b, v) => { b.classList.toggle('on', !!v); b.setAttribute('aria-pressed', v ? 'true' : 'false'); };
         for (const id of TOGGLES) on(B[id], cmds.state(id).active);
         styleSel.value = cmds.state('style').value;
-        const font = cmds.state('fontFamily').value;
-        fontSel.value = FONTS.includes(font) ? font : '';
+        fontIndicator(cmds.state('fontFamily').value);
         sizeSel.value = cmds.state('fontSize').value;
         spacingSel.value = cmds.state('letterSpacing').value;
         const lt = cmds.state('listType').value;

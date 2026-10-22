@@ -6,6 +6,7 @@
  */
 
 require_once __DIR__ . '/export.php';
+require_once __DIR__ . '/pdf/font.php';   // FontSet::FAMILIES — אילו גופנים זמינים (לדוח הייבוא)
 
 function text_node(string $t, array $marks = []): array
 {
@@ -236,7 +237,7 @@ function import_docx(string $bytes, string $docId): array
     unset($b);
     $zip->close();
     unlink($tmp);
-    return ['json' => ['type' => 'doc', 'content' => $blocks ?: [para()]], 'page' => $page];
+    return ['json' => ['type' => 'doc', 'content' => $blocks ?: [para()]], 'page' => $page, 'report' => $ctx->report()];
 }
 
 function xml_dom(string $xml): DOMDocument
@@ -252,6 +253,10 @@ final class DocxCtx
     private array $numFmt = [];    // numId => [ilvl => fmt]
     private array $rels = [];      // rId => target
     private array $footnotes = []; // id => attrs של ההערה: text, content (word/footnotes.xml)
+    private array $custom = [];    // styleId => true — סגנון פסקה מותאם שיש בו עיצוב (העיצוב שלו לא מיובא)
+    private array $seen = [];      // מפתח => true — מה שנספר פעם אחת בלבד (סגנון, גופן)
+    private array $notes = [];     // דוח הייבוא: מפתח => מספר מופעים
+    private array $fonts = [];     // שמות גופנים שאינם זמינים → מוצגים ב-Heebo
     private $read;
 
     public function __construct(callable $read, private string $docId)
@@ -264,8 +269,10 @@ final class DocxCtx
                 $id = $st->getAttributeNS(W, 'styleId');
                 if ($name === 'title') $this->styles[$id] = 'title';
                 elseif (preg_match('/^heading ([1-9])$/', $name, $m)) $this->styles[$id] = 'h' . min(3, (int)$m[1]);
+                elseif ($st->getAttributeNS(W, 'default') !== '1' && $xp->query('w:rPr/*|w:pPr/*[not(self::w:keepNext or self::w:keepLines or self::w:outlineLvl)]', $st)->length) $this->custom[$id] = true;
             }
         }
+        if ($s = $read('word/comments.xml')) $this->note('comments', $this->xp(xml_dom($s))->query('//w:comment')->length);
         if ($s = $read('word/numbering.xml')) {
             $xp = $this->xp(xml_dom($s));
             $abs = [];
@@ -312,6 +319,29 @@ final class DocxCtx
             $d = xml_dom($s);
             foreach ($d->getElementsByTagName('Relationship') as $r) $this->rels[$r->getAttribute('Id')] = $r->getAttribute('Target');
         }
+    }
+
+    /** דוח הייבוא: מה שלא עבר בדיוק. [{key, label, count, detail}], לפי סדר IMPORT_REPORT. */
+    public function report(): array
+    {
+        $out = [];
+        foreach (IMPORT_REPORT as $k => [$label, $detail]) {
+            $n = $k === 'fonts' ? count($this->fonts) : ($this->notes[$k] ?? 0);
+            if (!$n) continue;
+            if ($k === 'fonts') $detail = implode(', ', array_keys($this->fonts)) . ' — ' . $detail;
+            $out[] = ['key' => $k, 'label' => $label, 'count' => $n, 'detail' => $detail];
+        }
+        return $out;
+    }
+
+    private function note(string $k, int $n = 1, ?string $once = null): void
+    {
+        if ($n <= 0) return;
+        if ($once !== null) {
+            if (isset($this->seen["$k:$once"])) return;
+            $this->seen["$k:$once"] = true;
+        }
+        $this->notes[$k] = ($this->notes[$k] ?? 0) + $n;
     }
 
     private function xp(DOMDocument $d): DOMXPath
@@ -382,6 +412,7 @@ final class DocxCtx
         $type = 'paragraph';
         $style = (string)$xp->evaluate('string(w:pPr/w:pStyle/@w:val)', $p);
         $kind = $this->styles[$style] ?? null;
+        if (isset($this->custom[$style])) $this->note('styles', 1, $style);
         if ($kind === 'title') $attrs['pstyle'] = 'title';
         elseif ($kind) { $type = 'heading'; $attrs['level'] = (int)$kind[1]; }
         $bidi = $xp->query('w:pPr/w:bidi', $p)->length > 0 && (string)$xp->evaluate('string(w:pPr/w:bidi/@w:val)', $p) !== '0';
@@ -403,15 +434,29 @@ final class DocxCtx
                 $attrs['lineHeight'] = $rule === 'auto' ? (string)round($line / 240, 2) : 'exact:' . round($line / 20, 1);
             }
         }
+        if ($xp->query('w:pPr/w:pBdr/*[@w:val!="nil" and @w:val!="none"]', $p)->length
+            || preg_match('/^[0-9A-Fa-f]{6}$/', $f = (string)$xp->evaluate('string(w:pPr/w:shd/@w:fill)', $p)) && strtoupper($f) !== 'FFFFFF') $this->note('pborder');
         $num = null;
         $numId = (string)$xp->evaluate('string(w:pPr/w:numPr/w:numId/@w:val)', $p);
         if ($numId !== '' && $numId !== '0') {
             $lvl = (int)$xp->evaluate('string(w:pPr/w:numPr/w:ilvl/@w:val)', $p);
             $num = ['lvl' => $lvl, 'fmt' => $this->numFmt[$numId][$lvl] ?? 'bullet'];
         }
+        // הזחה: אצלנו בצעדים של חצי אינץ' (720 twip) מהצד שבו השורה מתחילה; ברשימה — ההזחה של המספור
+        $ind = $xp->query('w:pPr/w:ind', $p)->item(0);
+        if ($ind instanceof DOMElement && !$num) {
+            $start = $ind->getAttributeNS(W, 'start') ?: $ind->getAttributeNS(W, $bidi ? 'right' : 'left');
+            if (is_numeric($start) && ($n = (int)round((int)$start / 720)) > 0) $attrs['indent'] = min(8, $n);
+            if ((int)$ind->getAttributeNS(W, 'firstLine') > 0 || (int)$ind->getAttributeNS(W, 'hanging') > 0) $this->note('firstline');
+        }
+        $this->note('tracked', $xp->query('w:ins|w:del|w:r/w:rPr/w:rPrChange|w:pPr/w:pPrChange', $p)->length);
+        $this->note('fields', $xp->query('w:fldSimple|w:r/w:fldChar[@w:fldCharType="begin"]|w:hyperlink/w:r/w:fldChar[@w:fldCharType="begin"]', $p)->length);
+        $this->note('math', $xp->query('.//*[local-name()="oMath"]', $p)->length);
+        if ($xp->query('w:pPr/w:framePr', $p)->length) $this->note('shapes');
         $inline = [];
         $breakAfter = false;
-        foreach ($xp->query('w:r|w:hyperlink/w:r|w:ins/w:r|w:smartTag/w:r', $p) as $r) {
+        // שדה פשוט (fldSimple) — התוצאה האחרונה שלו נכנסת כטקסט
+        foreach ($xp->query('w:r|w:hyperlink/w:r|w:ins/w:r|w:smartTag/w:r|w:fldSimple/w:r|w:hyperlink/w:fldSimple/w:r', $p) as $r) {
             $marks = $this->runMarks($r, $xp);
             foreach ($r->childNodes as $k) {
                 if (!$k instanceof DOMElement) continue;
@@ -424,6 +469,12 @@ final class DocxCtx
                         break;
                     case 'drawing':
                         if ($img = $this->image($k)) $inline[] = $img;
+                        break;
+                    case 'AlternateContent': case 'pict': case 'object':
+                        $this->note('shapes');
+                        break;
+                    case 'endnoteReference':
+                        $this->note('endnotes');
                         break;
                     case 'footnoteReference':
                         $inline[] = ['type' => 'footnote', 'attrs' => $this->footnotes[$k->getAttributeNS(W, 'id')] ?? ['text' => '', 'content' => null]];
@@ -478,7 +529,10 @@ final class DocxCtx
         $sz = (string)$xp->evaluate('string(w:szCs/@w:val)', $rpr) ?: (string)$xp->evaluate('string(w:sz/@w:val)', $rpr);
         if (is_numeric($sz)) $ts['fontSize'] = ((float)$sz / 2) . 'pt';
         $font = (string)$xp->evaluate('string(w:rFonts/@w:cs)', $rpr) ?: (string)$xp->evaluate('string(w:rFonts/@w:ascii)', $rpr);
-        if ($font !== '') $ts['fontFamily'] = font_name($font);
+        if ($font !== '') {
+            $ts['fontFamily'] = font_name($font);
+            if (!isset(FontSet::FAMILIES[$ts['fontFamily']])) $this->fonts[$ts['fontFamily']] = true;
+        }
         $sp = (string)$xp->evaluate('string(w:spacing/@w:val)', $rpr);
         if (is_numeric($sp) && (int)$sp !== 0) $ts['letterSpacing'] = round((int)$sp / 20, 1) . 'pt';
         if ($ts) $m[] = ['type' => 'textStyle', 'attrs' => $ts];
@@ -496,13 +550,15 @@ final class DocxCtx
     {
         $xp = $this->xp($drawing->ownerDocument);
         $rid = (string)$xp->evaluate('string(.//a:blip/@r:embed)', $drawing);
+        // ציור בלי תמונה — צורה, תיבת טקסט, תרשים, SmartArt
+        if ($rid === '') { $this->note('shapes'); return null; }
         $target = $this->rels[$rid] ?? '';
-        if ($target === '' || str_contains($target, '..')) return null;
-        $bytes = ($this->read)('word/' . ltrim($target, '/'));
-        if ($bytes === null) return null;
+        $bytes = $target === '' || str_contains($target, '..') ? null : ($this->read)('word/' . ltrim($target, '/'));
+        if ($bytes === null) { $this->note('images'); return null; }
         try {
             $m = media_store($this->docId, $bytes);
         } catch (ApiError $e) {
+            $this->note('images');
             return null;
         }
         $cx = (int)$xp->evaluate('string(.//wp:extent/@cx)', $drawing);
@@ -567,7 +623,9 @@ final class DocxCtx
                 if ($w > 0 && $span === 1) $attrs['colwidth'] = [(int)round($w / 15)];
                 $fill = (string)$xp->evaluate('string(w:tcPr/w:shd/@w:fill)', $tc);
                 if (preg_match('/^[0-9A-Fa-f]{6}$/', $fill) && strtoupper($fill) !== 'FFFFFF') $attrs['background'] = '#' . strtolower($fill);
-                $content = array_values(array_filter($this->blocks($tc), fn($b) => in_array($b['type'], ['paragraph', 'heading', 'bulletList', 'orderedList'], true)));
+                $all = $this->blocks($tc);
+                $content = array_values(array_filter($all, fn($b) => in_array($b['type'], ['paragraph', 'heading', 'bulletList', 'orderedList'], true)));
+                $this->note('nested', count(array_filter($all, fn($b) => $b['type'] === 'table')));
                 $cells[] = ['type' => 'tableCell', 'attrs' => $attrs, 'content' => $content ?: [para()]];
                 if ($vm instanceof DOMElement) $restart[$col] = [$ri, count($cells) - 1];
                 else unset($restart[$col]);
@@ -595,9 +653,99 @@ final class DocxCtx
             $v = (string)$xp->evaluate("string(w:pgMar/@w:$k)", $sect);
             if (is_numeric($v)) $p['margins'][$k] = round((int)$v / TWIP_PER_MM_IMPORT, 1);
         }
+        if ((int)$xp->evaluate('string(w:cols/@w:num)', $sect) > 1) $this->note('columns');
+        $p += $this->headerFooter($sect, $xp);
         return $p ?: null;
+    }
+
+    /**
+     * כותרת עליונה ותחתונה של מקטע: הטקסט, ומספר העמוד (שדה PAGE) → numbering. רק הכותרת הרגילה (default);
+     * כותרת לעמוד הראשון שהיא אותו טקסט בלי מספר = first_page:false. כל כותרת אחרת — לדוח. בלי PAGE — בלי מספור.
+     */
+    private function headerFooter(DOMElement $sect, DOMXPath $xp): array
+    {
+        $out = [];
+        $num = null;
+        $firstNum = false;
+        foreach (['header', 'footer'] as $kind) {
+            $parts = [];
+            foreach ($xp->query("w:{$kind}Reference", $sect) as $ref) {
+                $target = $this->rels[$ref->getAttributeNS(R_NS, 'id')] ?? '';
+                $xml = $target === '' || str_contains($target, '..') ? null : ($this->read)('word/' . ltrim($target, '/'));
+                if ($xml !== null) $parts[$ref->getAttributeNS(W, 'type') ?: 'default'] = $this->hfPart(xml_dom($xml), $kind);
+            }
+            $def = $parts['default'] ?? null;
+            if ($def) {
+                if ($def['text']) $out[$kind] = implode("\n", $def['text']);
+                $num ??= $def['num'];
+                if ($def['complex']) $this->note('hf_complex', 1, $kind);
+            }
+            foreach ($parts as $type => $part) {
+                if ($type === 'default') continue;
+                if ($type === 'first' && $part['text'] === ($def['text'] ?? [])) { $firstNum = $firstNum || (bool)$part['num']; continue; }
+                if ($part['text'] || $part['num']) $this->note('hf_extra', 1, $type . $kind);
+            }
+        }
+        if ($num) {
+            $fmt = (string)$xp->evaluate('string(w:pgNumType/@w:fmt)', $sect);
+            if (in_array($fmt, ['hebrew1', 'hebrew2'], true)) $num['format'] = 'hebrew';
+            $start = (string)$xp->evaluate('string(w:pgNumType/@w:start)', $sect);
+            if (is_numeric($start)) $num['start'] = (int)$start;
+            $titlePg = $xp->query('w:titlePg', $sect)->length && (string)$xp->evaluate('string(w:titlePg/@w:val)', $sect) !== '0';
+            $num['first_page'] = !$titlePg || $firstNum;
+        }
+        $out['numbering'] = $num ?: ['show' => false];
+        return $out;
+    }
+
+    /** חלק כותרת: שורות הטקסט, המספור (הפסקה עם PAGE) והאם יש בו טבלה / תמונה. */
+    private function hfPart(DOMDocument $d, string $kind): array
+    {
+        $hx = $this->xp($d);
+        $text = [];
+        $num = null;
+        foreach ($hx->query('//w:p') as $hp) {
+            $instr = '';
+            foreach ($hx->query('.//w:instrText', $hp) as $n) $instr .= ' ' . $n->textContent;
+            foreach ($hx->query('.//w:fldSimple', $hp) as $n) $instr .= ' ' . $n->getAttributeNS(W, 'instr');
+            $line = '';
+            foreach ($hx->query('.//w:t|.//w:tab', $hp) as $t) $line .= $t->localName === 'tab' ? ' ' : $t->textContent;
+            if (!$num && preg_match('/\bPAGE\b/', $instr)) {
+                $bidi = $hx->query('w:pPr/w:bidi', $hp)->length > 0;
+                $num = ['show' => true, 'position' => $kind === 'header' ? 'top' : 'bottom',
+                    'align' => match ((string)$hx->evaluate('string(w:pPr/w:jc/@w:val)', $hp)) {
+                        'center' => 'center', 'left' => 'left', 'right' => 'right',
+                        'end' => $bidi ? 'left' : 'right',
+                        default => $bidi ? 'right' : 'left',
+                    },
+                    'format' => preg_match('/\bNUMPAGES\b/', $instr) ? 'n_of_m' : (str_contains($line, "עמ'") ? 'page_n' : (str_contains($line, '-') ? 'dash_n' : 'n'))];
+                continue;
+            }
+            if (trim($line) !== '') $text[] = trim($line);
+        }
+        return ['text' => $text, 'num' => $num, 'complex' => $hx->query('//w:tbl|//w:drawing|//w:pict')->length > 0];
     }
 }
 
 const EMU_PER_PX_IMPORT = 9525;
+const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+
+/** דוח הייבוא: מפתח => [מה, מה קרה לו]. הסדר — הסדר בדוח. */
+const IMPORT_REPORT = [
+    'shapes' => ['צורות, תיבות טקסט ותרשימים', 'לא יובאו'],
+    'images' => ['תמונות שלא נטענו', 'הקובץ פגום או בפורמט שאינו נתמך'],
+    'math' => ['נוסחאות', 'לא יובאו'],
+    'comments' => ['הערות (Comments)', 'לא יובאו'],
+    'endnotes' => ['הערות סיום', 'לא יובאו (הערות שוליים — כן)'],
+    'nested' => ['טבלה בתוך טבלה', 'הטבלה הפנימית לא יובאה'],
+    'tracked' => ['שינויים במעקב', 'התקבלו: מה שנוסף נשאר, מה שנמחק הוסר'],
+    'fields' => ['שדות (תוכן עניינים, תאריך, הפניות)', 'יובאו כטקסט קבוע — לא יתעדכנו'],
+    'columns' => ['טורים', 'המסמך יובא בטור אחד'],
+    'hf_extra' => ['כותרת שונה לעמוד הראשון או לעמודים זוגיים', 'יובאה רק הכותרת הרגילה'],
+    'hf_complex' => ['תמונה או טבלה בכותרת עליונה / תחתונה', 'יובא רק הטקסט'],
+    'styles' => ['סגנונות מותאמים', 'העיצוב שבא מהסגנון לא יובא; עיצוב שהוחל ישירות על הטקסט — כן'],
+    'pborder' => ['גבולות והצללה של פסקה', 'לא יובאו'],
+    'firstline' => ['הזחת שורה ראשונה / תלויה', 'לא יובאה'],
+    'fonts' => ['גופנים שאינם זמינים', 'מוצגים ב-Heebo, זהה במסך, בהדפסה וב-PDF'],
+];
 const TWIP_PER_MM_IMPORT = 56.6929;

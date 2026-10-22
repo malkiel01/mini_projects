@@ -330,6 +330,56 @@ check('docx → JSON: מודגש, צבע, גודל', str_contains($flat, '"type"
 check('docx → JSON: תמונה נשמרה, גלישה ריבוע', str_contains($flat, '"type":"image"') && str_contains($flat, '"wrap":"square"'));
 check('docx → JSON: שבירת עמוד', in_array('pageBreak', $types, true));
 check('docx → JSON: הגדרות עמוד', ($imp['page']['size'] ?? '') === 'A4' && abs(($imp['page']['margins']['top'] ?? 0) - 25) < 0.2);
+check('docx → JSON: כותרת עליונה / תחתונה ומספור חוזרים', ($imp['page']['header'] ?? '') === 'כותרת עליונה' && ($imp['page']['footer'] ?? '') === 'תחתונה'
+    && ($imp['page']['numbering'] ?? null) == ['show' => true, 'position' => 'bottom', 'align' => 'left', 'format' => 'n_of_m', 'start' => 3, 'first_page' => false], json_encode($imp['page']['numbering'] ?? null, JSON_UNESCAPED_UNICODE));
+check('דוח ייבוא: מסמך שיצא מכאן חוזר בלי הערות', $imp['report'] === [], json_encode($imp['report'], JSON_UNESCAPED_UNICODE));
+
+// docx "של Word" עם מה שלא נתמך — כל דבר מגיע לדוח, והטקסט שמסביב נשמר
+$mkDocx = function (array $parts): string {
+    global $tmp;
+    $f = "$tmp/r.docx";
+    @unlink($f);
+    $z = new ZipArchive();
+    $z->open($f, ZipArchive::CREATE);
+    foreach ($parts as $name => $xml) $z->addFromString($name, $xml);
+    $z->close();
+    return (string)file_get_contents($f);
+};
+$WN = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"';
+$run = fn($t, $font = '') => '<w:r>' . ($font ? '<w:rPr><w:rFonts w:ascii="' . $font . '" w:cs="' . $font . '"/></w:rPr>' : '') . '<w:t xml:space="preserve">' . $t . '</w:t></w:r>';
+$body = '<w:p><w:pPr><w:pStyle w:val="Quote"/><w:bidi/><w:ind w:right="1440" w:firstLine="360"/></w:pPr>' . $run('מוזח', 'Segoe UI') . '</w:p>'
+    . '<w:p><w:pPr><w:pBdr><w:top w:val="single" w:sz="4"/></w:pBdr></w:pPr>' . $run('לפני ') . '<w:r><w:drawing><wp:inline><a:graphic><a:graphicData uri="x"/></a:graphic></wp:inline></w:drawing></w:r>' . $run(' אחרי') . '</w:p>'
+    . '<w:p><m:oMathPara><m:oMath><m:r><m:t>x</m:t></m:r></m:oMath></m:oMathPara>' . $run('נוסחה') . '</w:p>'
+    . '<w:p><w:fldSimple w:instr=" DATE "><w:r><w:t>22/10/2026</w:t></w:r></w:fldSimple><w:ins w:id="1">' . $run(' נוסף') . '</w:ins><w:del w:id="2"><w:r><w:delText>נמחק</w:delText></w:r></w:del></w:p>'
+    . '<w:p>' . $run('סיום') . '<w:r><w:endnoteReference w:id="1"/></w:r><w:commentRangeStart w:id="0"/></w:p>'
+    . '<w:tbl><w:tr><w:tc><w:tbl><w:tr><w:tc><w:p>' . $run('פנימי') . '</w:p></w:tc></w:tr></w:tbl><w:p>' . $run('תא') . '</w:p></w:tc></w:tr></w:tbl>'
+    . '<w:sectPr><w:headerReference w:type="default" r:id="rH"/><w:headerReference w:type="even" r:id="rE"/><w:footerReference w:type="default" r:id="rF"/>'
+    . '<w:pgSz w:w="11906" w:h="16838"/><w:cols w:num="2"/></w:sectPr>';
+$hdr = fn($tag, $inner) => '<w:' . $tag . ' ' . $WN . '>' . $inner . '</w:' . $tag . '>';
+$wordDocx = $mkDocx([
+    '[Content_Types].xml' => '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>',
+    'word/document.xml' => '<w:document ' . $WN . '><w:body>' . $body . '</w:body></w:document>',
+    'word/styles.xml' => '<w:styles ' . $WN . '><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:rPr><w:sz w:val="24"/></w:rPr></w:style>'
+        . '<w:style w:type="paragraph" w:styleId="Quote"><w:name w:val="Quote"/><w:rPr><w:i/></w:rPr></w:style></w:styles>',
+    'word/comments.xml' => '<w:comments ' . $WN . '><w:comment w:id="0"><w:p>' . $run('הערה') . '</w:p></w:comment></w:comments>',
+    'word/_rels/document.xml.rels' => '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rH" Target="header1.xml"/><Relationship Id="rE" Target="header2.xml"/><Relationship Id="rF" Target="footer1.xml"/></Relationships>',
+    'word/header1.xml' => $hdr('hdr', '<w:p><w:pPr><w:bidi/></w:pPr>' . $run('חברה בע"מ') . '</w:p>'),
+    'word/header2.xml' => $hdr('hdr', '<w:p>' . $run('זוגי') . '</w:p>'),
+    'word/footer1.xml' => $hdr('ftr', '<w:p><w:pPr><w:bidi/><w:jc w:val="center"/></w:pPr><w:r><w:t xml:space="preserve">- </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> PAGE </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>1</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:t xml:space="preserve"> -</w:t></w:r></w:p>'),
+]);
+$w = import_docx($wordDocx, $docC);
+$rep = array_column($w['report'], 'count', 'key');
+check('דוח ייבוא: כל מה שלא נתמך מופיע', $rep == ['shapes' => 1, 'math' => 1, 'comments' => 1, 'endnotes' => 1, 'nested' => 1, 'tracked' => 2, 'fields' => 1,
+    'columns' => 1, 'hf_extra' => 1, 'styles' => 1, 'pborder' => 1, 'firstline' => 1, 'fonts' => 1], json_encode($rep));
+$fontRow = array_values(array_filter($w['report'], fn($r) => $r['key'] === 'fonts'))[0] ?? [];
+check('דוח ייבוא: שם הגופן החסר ומה מוצג במקומו', str_contains($fontRow['detail'] ?? '', 'Segoe UI') && str_contains($fontRow['detail'] ?? '', 'Heebo'));
+$wt = export_text($w['json']);
+check('דוח ייבוא: הטקסט שמסביב נשמר; שדה — תוצאתו; נמחק — לא', str_contains($wt, 'לפני  אחרי') && str_contains($wt, '22/10/2026 נוסף') && !str_contains($wt, 'נמחק') && str_contains($wt, 'תא'), $wt);
+check('ייבוא: הזחה מימין (bidi) → indent', ($w['json']['content'][0]['attrs']['indent'] ?? 0) === 2);
+check('ייבוא: כותרת עליונה, ומספר "- N -" במרכז הכותרת התחתונה', ($w['page']['header'] ?? '') === 'חברה בע"מ' && !isset($w['page']['footer'])
+    && ($w['page']['numbering'] ?? null) == ['show' => true, 'position' => 'bottom', 'align' => 'center', 'format' => 'dash_n', 'first_page' => true], json_encode($w['page'], JSON_UNESCAPED_UNICODE));
+$noHf = $mkDocx(['word/document.xml' => '<w:document ' . $WN . '><w:body><w:p>' . $run('א') . '</w:p><w:sectPr><w:pgSz w:w="11906" w:h="16838"/></w:sectPr></w:body></w:document>']);
+check('ייבוא: בלי מספר עמוד במקור — בלי מספור', (import_docx($noHf, $docC)['page']['numbering'] ?? null) == ['show' => false]);
 
 $imp = import_html('<h1>כותרת</h1><p style="text-align:center">שלום <b>עולם</b> <span style="color:#ff0000">אדום</span></p><ul><li>א</li><li>ב</li></ul><table><tr><td>1</td><td>2</td></tr></table>', $docC);
 $c = $imp['json']['content'];
