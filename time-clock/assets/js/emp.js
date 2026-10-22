@@ -1,7 +1,7 @@
 'use strict';
 /*
  * שעון נוכחות — העובד (e/). בלי חשבון בכלים הדיגיטליים: הקישור האישי (#t=…) מפעיל את הטלפון, העובד
- * בוחר קוד בן 4 ספרות, ומכאן העוגייה tc_session מזהה אותו. האפיון: docs/v1-screens-data.md, E1–E2.
+ * בוחר קוד בן 4 ספרות, ומכאן העוגייה tc_session מזהה אותו. האפיון: docs/v1-screens-data.md, E1–E4.
  * הקישור ב-# — כדי שלא יגיע ליומני השרת; אחרי ההפעלה הוא נמחק מהכתובת.
  */
 
@@ -145,9 +145,64 @@ async function month(delta = 0) {
   let r;
   try { r = await api('emp_month', { member_id: m.id, month: shown }); }
   catch (e) { toast(e.message, true); return; }
-  main.innerHTML = monthHtml(r);
+  let corr = [];
+  try { corr = (await api('emp_corrections', { member_id: m.id })).corrections; } catch { /* בלי — רק בלי הרשימה */ }
+  const recent = corr.filter(c => c.status !== 'cancelled').slice(0, 5);
+  main.innerHTML = '<div id="mview">' + monthHtml(r) + (recent.length ? `<h2 class="sec-title">הבקשות שלי</h2><ul class="list">${recent.map(c => `
+    <li class="card" tabindex="0" role="button" data-date="${corrDay(c)}"><div class="body"><div class="l1"><span>${corrText(c)}</span><span class="t">${dHe(c.new_at || c.old_at)}</span></div>
+      <div class="l2">${c.note ? esc(c.note) : esc(c.reason)}</div></div><span class="chip ${CSTATUS[c.status][0]}">${CSTATUS[c.status][1]}</span></li>`).join('')}</ul>` : '') + '</div>';
   $('#prev').addEventListener('click', () => month(-1));
   $('#next').addEventListener('click', () => month(1));
+  const open = e => {
+    const li = e.target.closest('[data-date]'); if (!li) return;
+    const d = r.days.find(x => x.date === li.dataset.date);
+    if (d) dayView(d, corr); else { shown = li.dataset.date.slice(0, 7); month(); }
+  };
+  // על העטיפה של התצוגה הזו — main נשאר, ומאזין עליו היה מצטבר בכל החלפת חודש
+  $('#mview').addEventListener('click', open);
+  $('#mview').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(e); } });
+}
+
+/* ===== E4 · יום ובקשת תיקון ===== */
+
+function openSheet(title, html, onSave) {
+  const dlg = $('#sheet');
+  const fresh = dlg.querySelector('form').cloneNode(true);
+  dlg.querySelector('form').replaceWith(fresh);
+  $('#sheet-title').textContent = title;
+  $('#sheet-body').innerHTML = html;
+  $('#sheet-save').hidden = !onSave;
+  $('#sheet-save').disabled = false;
+  fresh.addEventListener('submit', async e => {
+    e.preventDefault();
+    if (!onSave) return;
+    const err = fresh.querySelector('.error'), btn = $('#sheet-save');
+    btn.disabled = true;
+    try { await onSave(fresh); dlg.close(); }
+    catch (ex) { if (err) { err.textContent = ex.message; err.hidden = false; } btn.disabled = false; }
+  });
+  if (!dlg.open) dlg.showModal();
+}
+document.addEventListener('click', e => { if (e.target.closest('[data-close]')) $('#sheet').close(); });
+
+function dayView(d, corr) {
+  const m = current();
+  openSheet(dHe(d.date + 'T12:00:00Z'), `<p class="hint">שעה לא נכונה או דיווח חסר? בוחרים, כותבים סיבה, והמנהל מאשר.</p>${dayHtml(d, corr)}`, null);
+  $('#sheet-body').addEventListener('click', async e => {
+    const b = e.target.closest('[data-move],[data-void],[data-add],[data-cancel]'); if (!b) return;
+    if (b.dataset.cancel) {
+      try { await api('emp_correct_cancel', { member_id: m.id, id: +b.dataset.cancel }); $('#sheet').close(); toast('הבקשה בוטלה'); month(); }
+      catch (ex) { toast(ex.message, true); }
+      return;
+    }
+    const op = b.dataset.add !== undefined ? 'add' : b.dataset.move ? 'move' : 'void';
+    const punch = d.punches.find(p => p.id === +(b.dataset.move || b.dataset.void));
+    openSheet('בקשת תיקון', correctionForm(op, d, punch), async form => {
+      await api('emp_correct', { member_id: m.id, ...correctionBody(op, form, punch) });
+      toast('הבקשה נשלחה למנהל');
+      month();
+    });
+  });
 }
 
 $('#month-btn').addEventListener('click', () => { location.hash = '#/month'; });

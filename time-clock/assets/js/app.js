@@ -1,8 +1,8 @@
 'use strict';
 /*
  * שעון נוכחות — ממשק הניהול: פתיחת חברה, הגדרות (פרטים, סניפים, צוות), עובדים וכרטיס עובד.
- * מסכים לפי ה-hash: #/ (בית) · #/settings · #/employees · #/employee/<id>.
- * האפיון: docs/v1-screens-data.md — M1, M3, M4, M7.
+ * מסכים לפי ה-hash: #/ (בית) · #/settings · #/employees · #/employee/<id> · #/approvals.
+ * האפיון: docs/v1-screens-data.md — M1–M5, M7.
  */
 
 const ROLE = { owner: 'בעלים', manager: 'מנהל', branch_manager: 'מנהל סניף', payroll: 'מנהלת שכר', employee: 'עובד' };
@@ -82,8 +82,16 @@ async function route() {
   if (path === '/settings') renderSettings();
   else if (path === '/employees') await renderEmployees();
   else if (emp) await renderEmployee(+emp[1]);
+  else if (path === '/approvals') await renderApprovals();
   else renderHome();
   main.focus({ preventScroll: true });
+  refreshBadge();
+}
+
+/** מספר התיקונים שממתינים — בלשונית "אישורים". */
+async function refreshBadge() {
+  try { const r = await api('corr_list', { company_id: state.companyId }); $('#appr-n').textContent = r.corrections.length || ''; }
+  catch { /* לא קריטי */ }
 }
 window.addEventListener('hashchange', route);
 
@@ -355,6 +363,36 @@ function teamSheet(t = null) {
   });
 }
 
+/* ===== M5 · אישורים ===== */
+
+async function renderApprovals() {
+  setHeader('אישורים', { settings: true, tab: '/approvals' });
+  const r = await api('corr_list', { company_id: state.companyId });
+  main.innerHTML = `
+    <p class="hint">בקשות תיקון מהעובדים. הדיווח המקורי נשמר; אישור מחיל את התיקון בחישוב, ודחייה — עם הסבר לעובד.</p>
+    <ul class="list" id="appr">${r.corrections.length ? r.corrections.map(c => `
+      <li class="card" data-id="${c.id}">
+        <span class="avatar" style="--h:${hue(c.name)}" aria-hidden="true">${esc(initials(c.name))}</span>
+        <div class="body"><div class="l1"><span>${esc(c.name)}</span><span class="t">${dHe(c.new_at || c.old_at)}</span></div>
+          <div class="l2">${corrText(c)} · ${esc(c.reason)}</div></div>
+        ${r.can_decide ? `<button class="icon-btn" type="button" data-ok="${c.id}" aria-label="אישור">✅</button>
+                          <button class="icon-btn" type="button" data-no="${c.id}" aria-label="דחייה">✕</button>` : ''}
+      </li>`).join('') : '<li class="empty">אין בקשות שממתינות. 👍</li>'}</ul>`;
+  $('#appr').addEventListener('click', async e => {
+    const ok = e.target.closest('[data-ok]'), no = e.target.closest('[data-no]');
+    if (ok) {
+      try { await api('corr_decide', { company_id: state.companyId, id: +ok.dataset.ok, approve: true }); toast('אושר'); route(); }
+      catch (err) { toast(err.message, true); }
+    } else if (no) {
+      const c = r.corrections.find(x => x.id === +no.dataset.no);
+      openSheet('דחיית בקשה', `<p><b>${esc(c.name)}</b> · ${corrText(c)}</p><p class="hint">סיבה: ${esc(c.reason)}</p>
+        <label class="f" style="margin-top:12px"><span>למה? (העובד יראה) *</span><input name="note" maxlength="200" required></label>
+        <p class="error" role="alert" hidden></p>`,
+        async f => { await api('corr_decide', { company_id: state.companyId, id: c.id, approve: false, note: f.note.value }); return 'נדחה'; });
+    }
+  });
+}
+
 /* ===== M7 · עמדות ===== */
 
 const ago = iso => {
@@ -576,10 +614,35 @@ async function paneMonth(pane, d, _canEdit, month = null) {
   let r;
   try { r = await api('emp_month_m', { company_id: state.companyId, id, month }); }
   catch (e) { pane.innerHTML = `<p class="error" role="alert">${esc(e.message)}</p>`; return; }
-  pane.innerHTML = monthHtml(r);
+  let corr = [];
+  try { corr = (await api('corr_history', { company_id: state.companyId, member_id: id })).corrections; } catch { /* */ }
+  pane.innerHTML = '<div>' + monthHtml(r) + '</div>';
+  const view = pane.firstElementChild;   // מאזינים על העטיפה — pane נשאר בין חודשים
   const shift = delta => { const [y, m] = r.month.split('-').map(Number); return new Date(Date.UTC(y, m - 1 + delta, 1)).toISOString().slice(0, 7); };
-  pane.querySelector('#prev').addEventListener('click', () => paneMonth(pane, d, _canEdit, shift(-1)));
-  pane.querySelector('#next').addEventListener('click', () => paneMonth(pane, d, _canEdit, shift(1)));
+  view.querySelector('#prev').addEventListener('click', () => paneMonth(pane, d, _canEdit, shift(-1)));
+  view.querySelector('#next').addEventListener('click', () => paneMonth(pane, d, _canEdit, shift(1)));
+  const canFix = d.can_edit && d.employee.status === 'active';
+  const open = e => { const li = e.target.closest('[data-date]'); const day = li && r.days.find(x => x.date === li.dataset.date); if (day) mgrDay(d.employee, day, corr, canFix); };
+  view.addEventListener('click', open);
+  view.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(e); } });
+}
+
+/** יום של עובד אצל המנהל: הדיווחים, התיקונים — ותיקון ישיר (מאושר מיד, עם סיבה). */
+function mgrDay(emp, day, corr, canFix) {
+  openSheet(emp.name + ' · ' + dHe(day.date + 'T12:00:00Z'),
+    (canFix ? '<p class="hint">תיקון של מנהל נכנס לתוקף מיד ונרשם ביומן. המקור נשמר.</p>' : '') + dayHtml(day, corr), null, { save: false });
+  const body = $('#sheet-body');
+  if (!canFix) { for (const b of body.querySelectorAll('[data-move],[data-void],[data-add],[data-cancel]')) b.remove(); return; }
+  for (const b of body.querySelectorAll('[data-cancel]')) b.remove();
+  body.addEventListener('click', e => {
+    const b = e.target.closest('[data-move],[data-void],[data-add]'); if (!b) return;
+    const op = b.dataset.add !== undefined ? 'add' : b.dataset.move ? 'move' : 'void';
+    const punch = day.punches.find(p => p.id === +(b.dataset.move || b.dataset.void));
+    openSheet('תיקון', correctionForm(op, day, punch), async f => {
+      await api('corr_direct', { company_id: state.companyId, member_id: emp.id, ...correctionBody(op, f, punch) });
+      return 'תוקן';
+    });
+  });
 }
 
 function paneEmpDetails(pane, d, canEdit) {

@@ -18,6 +18,16 @@
   <button class="icon-btn" id="month-btn" aria-label="החודש שלי" hidden>📅</button>
 </header>
 <main id="main" tabindex="-1"><p class="empty">טוען…</p></main>
+<dialog id="sheet" aria-labelledby="sheet-title">
+  <form method="dialog" novalidate>
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+      <h2 id="sheet-title"></h2>
+      <button type="submit" class="btn primary" id="sheet-save">שליחה</button>
+    </header>
+    <div class="sheet-body" id="sheet-body"></div>
+  </form>
+</dialog>
 <div class="toast" role="status" hidden></div>
 </body>
 </html>

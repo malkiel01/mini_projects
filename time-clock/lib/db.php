@@ -17,6 +17,8 @@ if (!defined('DB_FILE')) define('DB_FILE', __DIR__ . '/../data/time-clock.sqlite
 
 /** חתימת זמן אחידה: ISO-8601 ב-UTC. התצוגה בשעון ישראל — בדפדפן. */
 function nowIso(): string {
+    // שעון לבדיקות בלבד (tests/run.php) — כך אפשר לבדוק "עתיד" ו"עבר" בלי לחכות.
+    if (PHP_SAPI === 'cli' && isset($GLOBALS['TC_NOW'])) return $GLOBALS['TC_NOW'];
     return gmdate('Y-m-d\TH:i:s\Z');
 }
 
@@ -135,6 +137,26 @@ function migrate(PDO $pdo): void {
             created_at TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS punches_member ON punches (member_id, at_utc);
+
+        -- תיקון לדיווח: add (דיווח חדש), move (שעה אחרת לדיווח קיים), void (ביטול דיווח). הדיווח המקורי לא
+        -- משתנה; החישוב מחיל רק תיקונים שאושרו. עובד מבקש (by_member), מנהל מתקן ישירות (by_person, מאושר מיד).
+        CREATE TABLE IF NOT EXISTS corrections (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            member_id   INTEGER NOT NULL REFERENCES members(id),
+            op          TEXT NOT NULL CHECK (op IN ('add','move','void')),
+            punch_id    INTEGER REFERENCES punches(id),
+            new_kind    TEXT CHECK (new_kind IN ('in','out')),
+            new_at      TEXT,
+            reason      TEXT NOT NULL,
+            by_member   INTEGER,
+            by_person   INTEGER,
+            status      TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected','cancelled')),
+            decided_by  INTEGER,
+            decided_at  TEXT,
+            note        TEXT,
+            created_at  TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS corrections_member ON corrections (member_id, status);
 
         -- עמדה בעסק: מכשיר משותף, מוצמד לחברה (ולסניף) בקוד חד-פעמי. נשמר רק ה-hash של האסימון.
         CREATE TABLE IF NOT EXISTS stations (
