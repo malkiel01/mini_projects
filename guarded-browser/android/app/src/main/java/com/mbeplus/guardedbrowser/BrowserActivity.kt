@@ -170,7 +170,8 @@ class BrowserActivity : AppCompatActivity() {
         b = ActivityBrowserBinding.inflate(layoutInflater)
         setContentView(b.root)
 
-        val start = intent.getStringExtra("url") ?: ""
+        // חיפוש בגוגל — תמיד עם חיפוש בטוח (PolicyEngine.googleSafeUrl), גם כשנפתח מכתובת שהוקלדה.
+        val start = (intent.getStringExtra("url") ?: "").let { PolicyEngine.googleSafeUrl(it) ?: it }
         setupWebView()
         PolicySync.listen(onPolicyChanged)
 
@@ -297,6 +298,8 @@ class BrowserActivity : AppCompatActivity() {
                 view: WebView, request: WebResourceRequest,
             ): Boolean {
                 val url = request.url.toString()
+                // חיפוש בגוגל — תמיד עם חיפוש בטוח: כתובת בלעדיו נטענת מחדש איתו.
+                PolicyEngine.googleSafeUrl(url)?.let { safe -> view.loadUrl(safe); return true }
                 val v = decide(url, true)
 
                 if (v.allow) {

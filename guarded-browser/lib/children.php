@@ -194,6 +194,10 @@ function childPolicySave(int $childId, array $in): string {
         if (!in_array($in['offline_content'], OFFLINE_CONTENT, true)) return 'מה זמין בלי חיבור — ערך לא מוכר';
         $set['offline_content'] = $in['offline_content'];
     }
+    if (array_key_exists('search_engine', $in)) {
+        if (!in_array($in['search_engine'], SEARCH_ENGINES, true)) return 'מנוע חיפוש לא מוכר';
+        $set['search_engine'] = $in['search_engine'];
+    }
     if (array_key_exists('max_devices', $in)) $set['max_devices'] = max(1, min(20, (int) $in['max_devices']));
     if (array_key_exists('timezone', $in)) {
         $tz = (string) $in['timezone'];
@@ -384,6 +388,7 @@ function childDetail(array $u, array $allowedYt): array {
             'keep_history' => (bool) $p['keep_history'], 'allow_pip' => (bool) $p['allow_pip'],
             'allow_background' => (bool) $p['allow_background'],
             'offline_grace_h' => (int) ($p['offline_grace_h'] ?? 24), 'offline_content' => (string) ($p['offline_content'] ?? 'all'),
+            'search_engine' => (string) ($p['search_engine'] ?? 'migdalor'),
         ],
         'categories' => (object) categoryRulesFor($id),
         'rules' => array_map(fn($r) => [

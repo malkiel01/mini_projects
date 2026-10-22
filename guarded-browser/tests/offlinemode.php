@@ -46,5 +46,10 @@ policyVersionRecord($kid, 0, 'child_save');
 $h = policyHistory($kid)[0];
 check('השינוי מופיע בהיסטוריה בשם קריא', (bool) array_filter($h['changes'], fn($c) => str_contains($c, 'זמין בלי חיבור')), true);
 
+echo "\n— מנוע החיפוש —\n";
+check('ברירת מחדל — מגדלור', (string) policyFor($kid)['search_engine'], 'migdalor');
+check('גוגל — נשמר', [childPolicySave($kid, ['search_engine' => 'google']), (string) policyFor($kid)['search_engine']], ['', 'google']);
+check('מנוע לא מוכר — נדחה', childPolicySave($kid, ['search_engine' => 'bing']), 'מנוע חיפוש לא מוכר');
+
 echo "\n$pass עברו, $fail נכשלו\n";
 exit($fail ? 1 : 0);

@@ -375,4 +375,35 @@ class PolicyEngineTest {
         assertEquals("bad_url",
             PolicyEngine.evaluate(shut, RuleSet(), "javascript:alert(1)", true, 0, 0).code)
     }
+
+    /* ── חיפוש גוגל (search_engine=google) — אותם מקרים כמו tests/policy.php ── */
+
+    private val google = shut.copy(searchEngine = "google")
+
+    @Test fun googleSearchOnlyWithSafeSearch() {
+        val ev = { p: Policy, url: String, main: Boolean -> PolicyEngine.evaluate(p, RuleSet(), url, main, 0, 0).code }
+        assertEquals("search_engine", ev(google, "https://www.google.com/search?q=dino&safe=active", true))
+        assertEquals("search_engine", ev(google, "https://www.google.co.il/", true))
+        assertEquals("search_engine", ev(google, "https://www.google.com/url?q=https://x.com", true))
+        assertEquals("בלי חיפוש בטוח", "not_listed", ev(google, "https://www.google.com/search?q=dino", true))
+        assertEquals("safe כפול — אחד לא active", "not_listed", ev(google, "https://www.google.com/search?q=a&safe=active&safe=off", true))
+        assertEquals("שאר גוגל — לפי הכללים", "not_listed", ev(google, "https://www.google.com/maps", true))
+        assertEquals("משאב של הדף", "search_engine", ev(google, "https://encrypted-tbn0.gstatic.com/images?q=1", false))
+        assertEquals("gstatic אינו יעד לגלישה", "not_listed", ev(google, "https://www.gstatic.com/x", true))
+        assertEquals("בלי ההגדרה — כמו קודם", "not_listed", ev(shut, "https://www.google.com/search?q=dino&safe=active", true))
+        val denyGoogle = RuleSet(rules = listOf(rule("google.com", action = "deny")))
+        assertEquals("איסור מפורש גובר", "rule_deny",
+            PolicyEngine.evaluate(google, denyGoogle, "https://www.google.com/search?q=a&safe=active", true, 0, 0).code)
+    }
+
+    @Test fun googleSafeUrlRewrites() {
+        assertEquals("https://www.google.com/search?q=a&safe=active", PolicyEngine.googleSafeUrl("https://www.google.com/search?q=a"))
+        assertEquals("https://www.google.com/search?q=a&safe=active", PolicyEngine.googleSafeUrl("https://www.google.com/search?q=a&safe=off"))
+        assertEquals("https://google.co.il/search?q=a&safe=active#x", PolicyEngine.googleSafeUrl("https://google.co.il/search?q=a#x"))
+        assertEquals(null, PolicyEngine.googleSafeUrl("https://www.google.com/search?q=a&safe=active"))
+        assertEquals(null, PolicyEngine.googleSafeUrl("https://example.com/search?q=a"))
+        assertTrue(PolicyEngine.googleSafe("q=%D7%90&safe=active"))
+        assertFalse("ערך פגום — לא חריגה, לא active", PolicyEngine.googleSafe("safe=%zz"))
+        assertEquals("https://www.google.com/search?q=%D7%93%D7%99%D7%A0%D7%95&safe=active", PolicyEngine.googleSearchUrl("דינו"))
+    }
 }

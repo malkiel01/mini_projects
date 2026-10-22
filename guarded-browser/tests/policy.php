@@ -574,5 +574,22 @@ check('והתוכן של אותו אתר כן נטען',
       'rule_allow');
 
 
+echo "\n— חיפוש גוגל (search_engine=google) —\n";
+$g = $pol(['search_engine' => 'google']);
+$ev = fn(array $p, string $url, bool $main = true, array $rules = []) =>
+    evaluate($user(), $p, $set(['rules' => $rules]), $now, ['url' => $url, 'main_frame' => $main])['code'];
+check('חיפוש עם חיפוש בטוח — מותר גם ב"הכול חסום"', $ev($g, 'https://www.google.com/search?q=dino&safe=active'), 'search_engine');
+check('דף הבית של גוגל ישראל', $ev($g, 'https://www.google.co.il/'), 'search_engine');
+check('ההפניה לתוצאה (/url) — היעד נבדק בעצמו', $ev($g, 'https://www.google.com/url?q=https://x.com'), 'search_engine');
+check('בלי חיפוש בטוח — לא', $ev($g, 'https://www.google.com/search?q=dino'), 'not_listed');
+check('safe כפול — אחד לא active', $ev($g, 'https://www.google.com/search?q=a&safe=active&safe=off'), 'not_listed');
+check('שאר גוגל — לפי הכללים', $ev($g, 'https://www.google.com/maps'), 'not_listed');
+check('משאב של הדף', $ev($g, 'https://encrypted-tbn0.gstatic.com/images?q=1', false), 'search_engine');
+check('gstatic אינו יעד לגלישה', $ev($g, 'https://www.gstatic.com/x'), 'not_listed');
+check('בלי ההגדרה — כמו קודם', $ev($pol(), 'https://www.google.com/search?q=dino&safe=active'), 'not_listed');
+check('איסור מפורש גובר', $ev($g, 'https://www.google.com/search?q=a&safe=active', true,
+      [['pattern' => 'google.com', 'scope' => 'domain', 'action' => 'deny', 'label' => '', 'enabled' => 1]]), 'rule_deny');
+check('ערך פגום — לא active', googleSafe('safe=%zz'), false);
+
 echo "\n════ עברו: $pass · נכשלו: $fail ════\n";
 exit($fail === 0 ? 0 : 1);

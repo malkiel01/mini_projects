@@ -60,6 +60,8 @@ data class Policy(
     /** מצב לא מקוון מתוכנן (OfflineMath): שעות עד שהכול נחסם, ומה זמין עד אז. */
     val offlineGraceH: Int = 24,
     val offlineContent: String = "all",
+    /** מנוע החיפוש: migdalor / google (PolicyEngine.googleSearchAllowed, כמו lib/policy.php). */
+    val searchEngine: String = "migdalor",
 ) {
     companion object {
         const val MODE_KIOSK = "kiosk"
@@ -87,6 +89,7 @@ data class Policy(
             allowBackground = o.optBoolean("allow_background"),
             offlineGraceH = o.optInt("offline_grace_h", 24),
             offlineContent = o.optString("offline_content", "all"),
+            searchEngine = o.optString("search_engine", "migdalor"),
         )
     }
 }
@@ -178,6 +181,52 @@ object PolicyEngine {
      * הנקודה המפרידה חיונית: בלעדיה "nota.com" היה נחשב תת-דומיין של
      * "a.com", וכל מי שרושם דומיין כזה עוקף את הכלל.
      */
+    /* ── חיפוש גוגל (כמו lib/policy.php) ── */
+
+    private val GOOGLE_SEARCH_HOSTS = setOf("google.com", "google.co.il")
+    private val GOOGLE_RESOURCE_HOSTS = listOf("google.com", "google.co.il", "gstatic.com", "googleusercontent.com")
+    private val SAFE_PARAM = Regex("(?:^|&)safe=([^&]*)", RegexOption.IGNORE_CASE)
+
+    /** חיפוש בטוח: יש safe=active, וכל safe בכתובת הוא active. */
+    fun googleSafe(query: String): Boolean {
+        // ערך פגום (%zz) — לא נזרקת חריגה בתוך ה-WebView; פשוט לא "active".
+        val vals = SAFE_PARAM.findAll(query).map { m ->
+            try { java.net.URLDecoder.decode(m.groupValues[1], "UTF-8") } catch (e: Exception) { m.groupValues[1] }
+        }.map { it.lowercase() }.toList()
+        return vals.isNotEmpty() && vals.all { it == "active" }
+    }
+
+    /** דף הבית והחיפוש של גוגל (רק עם חיפוש בטוח), ההפניה לתוצאה (/url), והמשאבים של הדף. */
+    fun googleSearchAllowed(u: Url, isMainFrame: Boolean): Boolean {
+        if (!isMainFrame) return GOOGLE_RESOURCE_HOSTS.any { hostMatches(u.host, it) }
+        if (u.host !in GOOGLE_SEARCH_HOSTS) return false
+        return when (u.path) {
+            "/", "/url" -> true
+            "/search" -> googleSafe(u.query)
+            else -> false
+        }
+    }
+
+    /**
+     * חיפוש בגוגל בלי חיפוש בטוח — אותה כתובת עם safe=active (ובלי כל safe אחר); null — אין מה לשנות.
+     * בדפדפן של מגדלור כל חיפוש בגוגל עובר דרך כאן, גם בלי search_engine=google.
+     */
+    fun googleSafeUrl(raw: String): String? {
+        val u = normalize(raw) ?: return null
+        if (u.host !in GOOGLE_SEARCH_HOSTS || u.path != "/search" || googleSafe(u.query)) return null
+        val hash = raw.indexOf('#').let { if (it >= 0) raw.substring(it) else "" }
+        val noHash = raw.removeSuffix(hash)
+        val q = noHash.indexOf('?')
+        val base = if (q >= 0) noHash.substring(0, q) else noHash
+        val params = (if (q >= 0) noHash.substring(q + 1) else "").split('&')
+            .filter { it.isNotEmpty() && !it.lowercase().startsWith("safe=") }
+        return base + "?" + (params + "safe=active").joinToString("&") + hash
+    }
+
+    /** כתובת חיפוש בגוגל לשאלה (מסך הבית, search_engine=google) — כבר עם חיפוש בטוח. */
+    fun googleSearchUrl(q: String): String =
+        "https://www.google.com/search?q=" + java.net.URLEncoder.encode(q, "UTF-8") + "&safe=active"
+
     fun hostMatches(host: String, domain: String): Boolean =
         host == domain || host.endsWith(".$domain")
 
@@ -479,6 +528,9 @@ object PolicyEngine {
                 return Verdict(false, "type_blocked", "תוכן מסוג \"$label\" חסום בחשבון שלך")
             }
         }
+
+        // חיפוש גוגל (search_engine=google) — אחרי איסור מפורש וסוג תוכן, לפני כל השאר: גם ב"הכול חסום".
+        if (p.searchEngine == "google" && googleSearchAllowed(u, isMainFrame)) return Verdict(true, "search_engine")
 
         if (urlVerdict == "allow") return Verdict(true, "rule_allow")
 

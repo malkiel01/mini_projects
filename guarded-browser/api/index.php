@@ -138,6 +138,8 @@ function policyPayload(array $user): array {
             // מצב לא מקוון מתוכנן (שלב 12 ו) — נאכף במכשיר (OfflineMath).
             'offline_grace_h'   => (int) ($policy['offline_grace_h'] ?? 24),
             'offline_content'   => (string) ($policy['offline_content'] ?? 'all'),
+            // חיפוש גוגל (lib/policy.php, googleSearchAllowed) — אותה הכרעה גם במכשיר.
+            'search_engine'     => (string) ($policy['search_engine'] ?? 'migdalor'),
         ],
         'rules' => array_map(fn($r) => [
             'label'     => $r['label'],
