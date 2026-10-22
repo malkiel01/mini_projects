@@ -7,10 +7,7 @@
 session_start();
 
 header('Content-Type: application/json; charset=utf-8');
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: GET, POST, DELETE, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, X-Auth-Token');
-header('Access-Control-Allow-Credentials: true');
+// ‏בלי CORS: האפליקציה (גם ב-APK) פונה מאותו מקור. ‏`*` עם credentials פתח את ה-API לכל אתר.
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(204);
@@ -25,6 +22,18 @@ const DESIGN_SLOT_RE = '/^(paint|s\d{1,2})$/';
 
 /** הפורמטים המותרים לכל תמונה. SVG אינו ברשימה — הוא נושא סקריפט. */
 const DESIGN_IMAGE_EXT = ['jpg', 'png', 'webp'];
+
+/** תמונות שמותר להעלות. SVG אינו ברשימה — הוא מוגש מאותו מקור ונושא סקריפט. */
+const UPLOAD_IMAGE_EXT = ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif', 'tiff', 'tif', 'heic', 'heif', 'avif'];
+
+/**
+ * מזהה שמגיע מהבקשה ונכנס לנתיב קובץ. ‏uniqid מייצר <קידומת>_<hex>, ולכן כל דבר אחר — כולל
+ * ‏`../` — נדחה לפני שהוא נוגע במערכת הקבצים.
+ */
+const ID_RE = '/^[a-z]{2,5}_[a-f0-9]{8,32}$/';
+
+/** סיסמת הניהול הישנה. מכניסה עדיין (אחרת בעל המערכת ננעל בחוץ), אבל מחייבת החלפה מיד. */
+const ADMIN_DEFAULT_PASSWORD = 'admin123';
 
 $dataDir = __DIR__ . '/data';
 $usersDir = $dataDir . '/users';
@@ -76,22 +85,22 @@ try {
         case 'save_user_data':  requireAuth($usersDir, $token); saveUserData($usersDir, $token, $input); break;
         case 'load_user_data':  requireAuth($usersDir, $token); loadUserData($usersDir, $token); break;
 
-        // ─── Fonts (public) ─────────────────────────
-        case 'upload_font':     handleFontUpload($fontsDir); break;
+        // ─── Fonts — המאגר משותף: הרשימה והקריאה לכולם, העלאה רק למחובר, ומחיקה רק לבעלים או למנהל
+        case 'upload_font':     requireAuth($usersDir, $token); handleFontUpload($fontsDir, currentUsername($usersDir, $token)); break;
         case 'list_fonts':      listFonts($fontsDir); break;
         case 'get_font':        getFont($fontsDir); break;
-        case 'delete_font':     deleteFont($fontsDir); break;
+        case 'delete_font':     requireAuth($usersDir, $token); deleteFont($fontsDir, currentUsername($usersDir, $token)); break;
 
-        // ─── Templates ─────────────────────────────
-        case 'save_template':   saveTemplate($templatesDir); break;
+        // ─── Templates — האפליקציה לא משתמשת בהן; כתיבה רק למנהל ─────
+        case 'save_template':   requireAdmin(); saveTemplate($templatesDir); break;
         case 'list_templates':  listTemplates($templatesDir); break;
         case 'get_template':    getTemplate($templatesDir); break;
-        case 'delete_template': deleteTemplate($templatesDir); break;
+        case 'delete_template': requireAdmin(); deleteTemplate($templatesDir); break;
 
-        // ─── Backgrounds (global defaults) ──────────
-        case 'upload_background':   handleBackgroundUpload($backgroundsDir); break;
+        // ─── Backgrounds (global defaults) — כתיבה רק למנהל ──────────
+        case 'upload_background':   requireAdmin(); handleBackgroundUpload($backgroundsDir); break;
         case 'list_backgrounds':    listBackgrounds($backgroundsDir); break;
-        case 'delete_background':   deleteBackground($backgroundsDir); break;
+        case 'delete_background':   requireAdmin(); deleteBackground($backgroundsDir); break;
 
         // ─── User Backgrounds (per-user) ────────────
         case 'upload_user_bg':      requireAuth($usersDir, $token); uploadUserBackground($usersDir, $token); break;
@@ -109,12 +118,13 @@ try {
 
         // ─── Admin (global defaults management) ─────
         case 'admin_check':         adminCheck($dataDir, $input); break;
-        case 'admin_upload_bg':     handleBackgroundUpload($backgroundsDir); break;
-        case 'admin_upload_bg_zip': adminUploadBgZip($backgroundsDir); break;
-        case 'admin_delete_bg':     deleteBackground($backgroundsDir); break;
-        case 'admin_upload_font':   handleFontUpload($fontsDir); break;
-        case 'admin_delete_font':   deleteFont($fontsDir); break;
-        case 'admin_list_users':    adminListUsers($usersDir, $dataDir, $input); break;
+        case 'admin_set_password':  requireAdmin(); adminSetPassword($dataDir, $input); break;
+        case 'admin_upload_bg':     requireAdmin(); handleBackgroundUpload($backgroundsDir); break;
+        case 'admin_upload_bg_zip': requireAdmin(); adminUploadBgZip($backgroundsDir); break;
+        case 'admin_delete_bg':     requireAdmin(); deleteBackground($backgroundsDir); break;
+        case 'admin_upload_font':   requireAdmin(); handleFontUpload($fontsDir, null); break;
+        case 'admin_delete_font':   requireAdmin(); deleteFont($fontsDir, null); break;
+        case 'admin_list_users':    requireAdmin(); adminListUsers($usersDir); break;
 
         default:
             respond(false, 'Unknown action: ' . $action);
@@ -373,13 +383,46 @@ function setTokenCookie($token) {
     setcookie('gc_token', $token, [
         'expires' => time() + 86400 * 90, // 90 days
         'path' => '/',
-        'httponly' => false,
+        // הדף מקבל את האסימון בתשובה של check_auth, ואין סיבה שסקריפט יקרא אותו מהעוגייה.
+        'httponly' => true,
+        'secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
         'samesite' => 'Lax',
     ]);
 }
 
 function safeFilename($name) {
     return preg_replace('/[^a-zA-Z0-9_\-]/', '_', $name);
+}
+
+/** מזהה תקין מהבקשה, או עצירה. */
+function requestId($value) {
+    $id = is_string($value) ? $value : '';
+    if (!preg_match(ID_RE, $id)) respond(false, 'מזהה לא תקין');
+    return $id;
+}
+
+function currentUsername($usersDir, $token) {
+    $profile = findUserByToken($usersDir, $token);
+    return $profile ? (string)$profile['username'] : null;
+}
+
+/** פעולות ניהול: רק אחרי admin_check מוצלח באותו סשן. */
+function requireAdmin() {
+    if (empty($_SESSION['gc_admin'])) respond(false, 'נדרשת כניסת מנהל', ['admin_required' => true]);
+}
+
+/** שם תצוגה שמגיע מהמשתמש: בלי תגיות ובלי תווי בקרה, באורך סביר. */
+function cleanName($value, $fallback) {
+    $name = trim(preg_replace('/[\x00-\x1F\x7F<>"\'`]/u', '', strip_tags((string)$value)));
+    return mb_substr($name !== '' ? $name : $fallback, 0, 80);
+}
+
+/** כותרות לכל תמונה שמוגשת: גם קובץ ישן (SVG) לא יכול להריץ סקריפט כשפותחים אותו ישירות. */
+function imageHeaders($mime, $path) {
+    header('Content-Type: ' . $mime);
+    header('Content-Length: ' . filesize($path));
+    header('X-Content-Type-Options: nosniff');
+    header("Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox");
 }
 
 // ═══════════════════════════════════════════════════════
@@ -486,7 +529,7 @@ function uploadUserBackground($usersDir, $token) {
 
     $file = $_FILES['background'];
     $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-    if (!in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif', 'tiff', 'tif', 'heic', 'heif', 'svg', 'avif'])) respond(false, 'תמונה לא נתמכת');
+    if (!in_array($ext, UPLOAD_IMAGE_EXT, true)) respond(false, 'תמונה לא נתמכת');
     if ($file['size'] > 20 * 1024 * 1024) respond(false, 'קובץ גדול מדי (20MB מקסימום)');
 
     $id = uniqid('ubg_');
@@ -495,7 +538,7 @@ function uploadUserBackground($usersDir, $token) {
 
     $meta = [
         'id' => $id,
-        'name' => $_POST['name'] ?? pathinfo($file['name'], PATHINFO_FILENAME),
+        'name' => cleanName($_POST['name'] ?? '', pathinfo($file['name'], PATHINFO_FILENAME)),
         'filename' => $filename,
         'ext' => $ext,
         'size' => $file['size'],
@@ -518,7 +561,7 @@ function uploadUserBackgroundZip($usersDir, $token) {
 
     $added = 0;
     $errors = [];
-    $validExts = ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif', 'tiff', 'tif', 'heic', 'heif', 'svg', 'avif'];
+    $validExts = UPLOAD_IMAGE_EXT;
 
     for ($i = 0; $i < $zip->numFiles; $i++) {
         $entry = $zip->getNameIndex($i);
@@ -538,7 +581,7 @@ function uploadUserBackgroundZip($usersDir, $token) {
 
         $meta = [
             'id' => $id,
-            'name' => pathinfo(basename($entry), PATHINFO_FILENAME),
+            'name' => cleanName(pathinfo(basename($entry), PATHINFO_FILENAME), 'רקע'),
             'filename' => $filename,
             'ext' => $ext,
             'size' => strlen($data),
@@ -569,21 +612,18 @@ function getUserBackground($usersDir, $token) {
     $bgDir = getUserBgDir($usersDir, $token);
     if (!$bgDir) respond(false, 'משתמש לא נמצא');
 
-    $id = $_GET['id'] ?? '';
-    if (!$id) respond(false, 'Missing ID');
+    $id = requestId($_GET['id'] ?? '');
 
     $metaFile = $bgDir . '/' . $id . '.json';
     if (!file_exists($metaFile)) respond(false, 'רקע לא נמצא');
 
     $meta = json_decode(file_get_contents($metaFile), true);
-    $imgFile = $bgDir . '/' . $meta['filename'];
-    if (!file_exists($imgFile)) respond(false, 'קובץ רקע חסר');
+    $imgFile = $bgDir . '/' . basename((string)($meta['filename'] ?? ''));
+    if (!is_file($imgFile)) respond(false, 'קובץ רקע חסר');
 
     // Return image directly
     $mime = ['jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp', 'bmp' => 'image/bmp', 'gif' => 'image/gif', 'tiff' => 'image/tiff', 'tif' => 'image/tiff', 'heic' => 'image/heic', 'heif' => 'image/heif', 'svg' => 'image/svg+xml', 'avif' => 'image/avif'];
-    header('Content-Type: ' . ($mime[$meta['ext']] ?? 'application/octet-stream'));
-    header('Content-Length: ' . filesize($imgFile));
-    header('Content-Disposition: inline; filename="' . $meta['filename'] . '"');
+    imageHeaders($mime[$meta['ext']] ?? 'application/octet-stream', $imgFile);
     readfile($imgFile);
     exit;
 }
@@ -592,14 +632,13 @@ function deleteUserBackground($usersDir, $token, $input) {
     $bgDir = getUserBgDir($usersDir, $token);
     if (!$bgDir) respond(false, 'משתמש לא נמצא');
 
-    $id = $input['id'] ?? $_GET['id'] ?? '';
-    if (!$id) respond(false, 'Missing ID');
+    $id = requestId($input['id'] ?? $_GET['id'] ?? '');
 
     $metaFile = $bgDir . '/' . $id . '.json';
     if (!file_exists($metaFile)) respond(false, 'רקע לא נמצא');
 
     $meta = json_decode(file_get_contents($metaFile), true);
-    @unlink($bgDir . '/' . $meta['filename']);
+    @unlink($bgDir . '/' . basename((string)($meta['filename'] ?? '')));
     @unlink($metaFile);
     respond(true, 'רקע נמחק');
 }
@@ -784,8 +823,7 @@ function getDesignBackground($usersDir, $token) {
     if (!$ext || !file_exists($path)) respond(false, 'הנכס לא נמצא בעיצוב');
 
     $mime = ['jpg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp'];
-    header('Content-Type: ' . ($mime[$ext] ?? 'application/octet-stream'));
-    header('Content-Length: ' . filesize($path));
+    imageHeaders($mime[$ext] ?? 'application/octet-stream', $path);
     readfile($path);
     exit;
 }
@@ -812,19 +850,20 @@ function deleteDesign($usersDir, $token, $input) {
 // Font Functions
 // ═══════════════════════════════════════════════════════
 
-function handleFontUpload($dir) {
+/** ‏$owner — שם המשתמש שהעלה; null = מנהל (פונט של המערכת). */
+function handleFontUpload($dir, $owner) {
     if (empty($_FILES['font'])) respond(false, 'No font file provided');
     $file = $_FILES['font'];
     $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
     if (!in_array($ext, ['ttf', 'otf', 'woff', 'woff2'])) respond(false, 'Unsupported font format');
     if ($file['size'] > 10 * 1024 * 1024) respond(false, 'Font file too large (max 10MB)');
 
-    $displayName = $_POST['name'] ?? pathinfo($file['name'], PATHINFO_FILENAME);
+    $displayName = cleanName($_POST['name'] ?? '', pathinfo($file['name'], PATHINFO_FILENAME));
     $id = uniqid('font_');
     $filename = $id . '.' . $ext;
     if (!move_uploaded_file($file['tmp_name'], $dir . '/' . $filename)) respond(false, 'Failed to save font file');
 
-    $meta = ['id' => $id, 'name' => $displayName, 'filename' => $filename, 'ext' => $ext, 'size' => $file['size'], 'uploaded' => date('c')];
+    $meta = ['id' => $id, 'name' => $displayName, 'filename' => $filename, 'ext' => $ext, 'size' => $file['size'], 'uploaded' => date('c'), 'owner' => $owner];
     file_put_contents($dir . '/' . $id . '.json', json_encode($meta, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
     respond(true, 'Font uploaded', $meta);
 }
@@ -837,24 +876,24 @@ function listFonts($dir) {
 }
 
 function getFont($dir) {
-    $id = $_GET['id'] ?? '';
-    if (!$id) respond(false, 'Missing font ID');
+    $id = requestId($_GET['id'] ?? '');
     $metaFile = $dir . '/' . $id . '.json';
     if (!file_exists($metaFile)) respond(false, 'Font not found');
     $meta = json_decode(file_get_contents($metaFile), true);
-    $fontFile = $dir . '/' . $meta['filename'];
+    $fontFile = $dir . '/' . basename((string)($meta['filename'] ?? ''));
     if (!file_exists($fontFile)) respond(false, 'Font file missing');
     $meta['data'] = base64_encode(file_get_contents($fontFile));
     respond(true, 'OK', $meta);
 }
 
-function deleteFont($dir) {
-    $id = $_GET['id'] ?? $_POST['id'] ?? '';
-    if (!$id) respond(false, 'Missing font ID');
+/** ‏$user — המשתמש שמבקש; null = מנהל. משתמש מוחק רק פונט שהוא העלה — המאגר משותף לכולם. */
+function deleteFont($dir, $user) {
+    $id = requestId($_GET['id'] ?? $_POST['id'] ?? '');
     $metaFile = $dir . '/' . $id . '.json';
     if (!file_exists($metaFile)) respond(false, 'Font not found');
     $meta = json_decode(file_get_contents($metaFile), true);
-    @unlink($dir . '/' . $meta['filename']);
+    if ($user !== null && ($meta['owner'] ?? null) !== $user) respond(false, 'רק מי שהעלה את הפונט יכול למחוק אותו');
+    @unlink($dir . '/' . basename((string)($meta['filename'] ?? '')));
     @unlink($metaFile);
     respond(true, 'Font deleted');
 }
@@ -865,8 +904,8 @@ function deleteFont($dir) {
 
 function saveTemplate($dir) {
     $input = json_decode(file_get_contents('php://input'), true) ?: $_POST;
-    $id = $input['id'] ?? uniqid('tmpl_');
-    $template = ['id' => $id, 'name' => $input['name'] ?? 'ללא שם', 'fields' => $input['fields'] ?? [], 'background' => $input['background'] ?? null, 'updated' => date('c')];
+    $id = isset($input['id']) ? requestId($input['id']) : uniqid('tmpl_');
+    $template = ['id' => $id, 'name' => cleanName($input['name'] ?? '', 'ללא שם'), 'fields' => $input['fields'] ?? [], 'background' => $input['background'] ?? null, 'updated' => date('c')];
     file_put_contents($dir . '/' . $id . '.json', json_encode($template, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
     respond(true, 'Template saved', $template);
 }
@@ -879,16 +918,14 @@ function listTemplates($dir) {
 }
 
 function getTemplate($dir) {
-    $id = $_GET['id'] ?? '';
-    if (!$id) respond(false, 'Missing template ID');
+    $id = requestId($_GET['id'] ?? '');
     $f = $dir . '/' . $id . '.json';
     if (!file_exists($f)) respond(false, 'Template not found');
     respond(true, 'OK', json_decode(file_get_contents($f), true));
 }
 
 function deleteTemplate($dir) {
-    $id = $_GET['id'] ?? $_POST['id'] ?? '';
-    if (!$id) respond(false, 'Missing template ID');
+    $id = requestId($_GET['id'] ?? $_POST['id'] ?? '');
     $f = $dir . '/' . $id . '.json';
     if (!file_exists($f)) respond(false, 'Template not found');
     @unlink($f);
@@ -903,14 +940,14 @@ function handleBackgroundUpload($dir) {
     if (empty($_FILES['background'])) respond(false, 'No background file provided');
     $file = $_FILES['background'];
     $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-    if (!in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif', 'tiff', 'tif', 'heic', 'heif', 'svg', 'avif'])) respond(false, 'Unsupported image format');
+    if (!in_array($ext, UPLOAD_IMAGE_EXT, true)) respond(false, 'Unsupported image format');
     if ($file['size'] > 20 * 1024 * 1024) respond(false, 'Image too large (max 20MB)');
 
     $id = uniqid('bg_');
     $filename = $id . '.' . $ext;
     if (!move_uploaded_file($file['tmp_name'], $dir . '/' . $filename)) respond(false, 'Failed to save background');
 
-    $meta = ['id' => $id, 'name' => $_POST['name'] ?? pathinfo($file['name'], PATHINFO_FILENAME), 'filename' => $filename, 'ext' => $ext, 'size' => $file['size'], 'uploaded' => date('c')];
+    $meta = ['id' => $id, 'name' => cleanName($_POST['name'] ?? '', pathinfo($file['name'], PATHINFO_FILENAME)), 'filename' => $filename, 'ext' => $ext, 'size' => $file['size'], 'uploaded' => date('c')];
     file_put_contents($dir . '/' . $id . '.json', json_encode($meta, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
     respond(true, 'Background uploaded', $meta);
 }
@@ -922,12 +959,11 @@ function listBackgrounds($dir) {
 }
 
 function deleteBackground($dir) {
-    $id = $_GET['id'] ?? $_POST['id'] ?? '';
-    if (!$id) respond(false, 'Missing background ID');
+    $id = requestId($_GET['id'] ?? $_POST['id'] ?? '');
     $metaFile = $dir . '/' . $id . '.json';
     if (!file_exists($metaFile)) respond(false, 'Background not found');
     $meta = json_decode(file_get_contents($metaFile), true);
-    @unlink($dir . '/' . $meta['filename']);
+    @unlink($dir . '/' . basename((string)($meta['filename'] ?? '')));
     @unlink($metaFile);
     respond(true, 'Background deleted');
 }
@@ -936,25 +972,50 @@ function deleteBackground($dir) {
 // Admin Functions
 // ═══════════════════════════════════════════════════════
 
-function getAdminPassword($dataDir) {
-    $configFile = $dataDir . '/admin_config.json';
-    if (file_exists($configFile)) {
-        $cfg = json_decode(file_get_contents($configFile), true);
-        return $cfg['password'] ?? 'admin123';
+/**
+ * סיסמת הניהול נשמרת כ-hash. קובץ ישן עם סיסמה גלויה עובר ל-hash בכניסה הראשונה. ברירת המחדל
+ * ‏ADMIN_DEFAULT_PASSWORD עדיין מכניסה, אבל ממשק הניהול מחייב להחליף אותה מיד.
+ */
+function adminConfig($dataDir) {
+    $file = $dataDir . '/admin_config.json';
+    $cfg = is_file($file) ? (json_decode((string)file_get_contents($file), true) ?: []) : [];
+    if (empty($cfg['hash'])) {
+        $plain = (string)($cfg['password'] ?? ADMIN_DEFAULT_PASSWORD);
+        $cfg = ['hash' => password_hash($plain, PASSWORD_DEFAULT), 'isDefault' => $plain === ADMIN_DEFAULT_PASSWORD];
+        file_put_contents($file, json_encode($cfg, JSON_PRETTY_PRINT));
     }
-    // Create default config
-    $cfg = ['password' => 'admin123'];
-    file_put_contents($configFile, json_encode($cfg, JSON_PRETTY_PRINT));
-    return 'admin123';
+    return $cfg;
+}
+
+/** 5 ניסיונות שגויים מאותה כתובת → נעילה של 15 דקות. */
+function adminLockFile($dataDir) {
+    return $dataDir . '/admin_lock_' . hash('sha256', $_SERVER['REMOTE_ADDR'] ?? '') . '.json';
 }
 
 function adminCheck($dataDir, $input) {
-    $pass = $input['password'] ?? '';
-    $correct = getAdminPassword($dataDir);
-    if ($pass === $correct) {
-        respond(true, 'OK');
+    $lockFile = adminLockFile($dataDir);
+    $lock = is_file($lockFile) ? (json_decode((string)file_get_contents($lockFile), true) ?: []) : [];
+    if ((int)($lock['until'] ?? 0) > time()) respond(false, 'יותר מדי ניסיונות. נסו שוב בעוד ' . ceil(((int)$lock['until'] - time()) / 60) . ' דקות');
+
+    $cfg = adminConfig($dataDir);
+    if (password_verify((string)($input['password'] ?? ''), $cfg['hash'])) {
+        @unlink($lockFile);
+        session_regenerate_id(true);
+        $_SESSION['gc_admin'] = true;
+        respond(true, 'OK', ['mustChange' => !empty($cfg['isDefault'])]);
     }
+
+    $fails = (int)($lock['fails'] ?? 0) + 1;
+    file_put_contents($lockFile, json_encode($fails >= 5 ? ['fails' => 0, 'until' => time() + 15 * 60] : ['fails' => $fails]));
     respond(false, 'סיסמה שגויה');
+}
+
+function adminSetPassword($dataDir, $input) {
+    $pass = (string)($input['password'] ?? '');
+    if (mb_strlen($pass) < 10) respond(false, 'הסיסמה חייבת להיות באורך 10 תווים לפחות');
+    if ($pass === ADMIN_DEFAULT_PASSWORD) respond(false, 'בחרו סיסמה אחרת');
+    file_put_contents($dataDir . '/admin_config.json', json_encode(['hash' => password_hash($pass, PASSWORD_DEFAULT), 'isDefault' => false], JSON_PRETTY_PRINT));
+    respond(true, 'הסיסמה עודכנה');
 }
 
 function adminUploadBgZip($backgroundsDir) {
@@ -966,7 +1027,7 @@ function adminUploadBgZip($backgroundsDir) {
     if ($zip->open($file['tmp_name']) !== true) respond(false, 'שגיאה בפתיחת ZIP');
 
     $added = 0;
-    $validExts = ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif', 'tiff', 'tif', 'heic', 'heif', 'svg', 'avif'];
+    $validExts = UPLOAD_IMAGE_EXT;
     for ($i = 0; $i < $zip->numFiles; $i++) {
         $entry = $zip->getNameIndex($i);
         if (substr($entry, -1) === '/' || strpos(basename($entry), '.') === 0) continue;
@@ -983,7 +1044,7 @@ function adminUploadBgZip($backgroundsDir) {
 
         $meta = [
             'id' => $id,
-            'name' => pathinfo(basename($entry), PATHINFO_FILENAME),
+            'name' => cleanName(pathinfo(basename($entry), PATHINFO_FILENAME), 'רקע'),
             'filename' => $filename,
             'ext' => $ext,
             'size' => strlen($data),
@@ -996,10 +1057,7 @@ function adminUploadBgZip($backgroundsDir) {
     respond(true, "הועלו $added רקעים", ['added' => $added]);
 }
 
-function adminListUsers($usersDir, $dataDir, $input) {
-    $pass = $input['password'] ?? '';
-    if ($pass !== getAdminPassword($dataDir)) respond(false, 'לא מורשה');
-
+function adminListUsers($usersDir) {
     $users = [];
     foreach (glob($usersDir . '/*/profile.json') as $file) {
         $profile = json_decode(file_get_contents($file), true);

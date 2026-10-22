@@ -401,6 +401,8 @@ async function checkAdminPass() {
         const data = await res.json();
         if (data.success) {
             adminPassword = pass;
+            // ‏admin123 ידועה לכל מי שקרא את הקוד — לא ממשיכים איתה.
+            if (data.mustChange && !(await changeAdminPassword())) return;
             document.getElementById('authGate').style.display = 'none';
             document.getElementById('adminPanel').style.display = 'block';
             loadAll();
@@ -409,6 +411,24 @@ async function checkAdminPass() {
         }
     } catch (e) {
         document.getElementById('authError').textContent = 'שגיאת חיבור';
+    }
+}
+
+async function changeAdminPassword() {
+    for (;;) {
+        const next = prompt('זו סיסמת ברירת המחדל. בחרו סיסמת ניהול חדשה (10 תווים לפחות):');
+        if (next === null) {
+            document.getElementById('authError').textContent = 'יש להחליף את סיסמת ברירת המחדל לפני הכניסה';
+            return false;
+        }
+        const res = await fetch(API + '?action=admin_set_password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: next })
+        });
+        const data = await res.json();
+        if (data.success) { adminPassword = next; alert('הסיסמה עודכנה'); return true; }
+        alert(data.message || 'שגיאה');
     }
 }
 
