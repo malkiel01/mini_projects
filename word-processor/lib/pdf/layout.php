@@ -22,9 +22,10 @@ final class PdfCanvas
 {
     public function __construct(public PdfWriter $pdf, public int $page, public float $H) {}
 
+    /** layer: bg / main / fg, או bg:z / fg:z — תת-שכבה של תמונות (מצוירת אחרי הבסיס, לפי z). */
     public function add(string $layer, string $ops): void
     {
-        $this->pdf->pages[$this->page][$layer] .= $ops;
+        $this->pdf->pages[$this->page][$layer] = ($this->pdf->pages[$this->page][$layer] ?? '') . $ops;
     }
 
     public function rect(float $x, float $y, float $w, float $h, array $rgb, string $layer = 'main'): void
@@ -496,8 +497,10 @@ final class PdfLayout
                 }
                 if ($first) {
                     foreach ($absImgs as $img) {
+                        // שכבה: bg:z / fg:z — הכותב מצייר את השכבות לפי z (שווה — לפי הסדר במסמך), כמו z-index בעורך
+                        $z = max(-50, min(50, (int)($img['a']['z'] ?? 0)));
                         $this->drawImage($c, $img, $x + (float)($img['a']['x'] ?? 0) * PT_PER_PX, $y + (float)($img['a']['y'] ?? 0) * PT_PER_PX,
-                            $img['g']['wrap'] === 'behind' ? 'bg' : 'fg');
+                            ($img['g']['wrap'] === 'behind' ? 'bg' : 'fg') . ":$z");
                     }
                     if ($list) $this->drawMarker($c, $list['marker'], $base, $ln, $x, $top, $width, $ind, $rtl);
                 }

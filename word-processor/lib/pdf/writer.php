@@ -129,7 +129,13 @@ final class PdfWriter
         foreach ($this->pages as $p) {
             $pid = $alloc();
             $cid = $alloc();
-            $content = "q\n" . $p['bg'] . "Q\nq\n" . $p['main'] . "Q\nq\n" . $p['fg'] . "Q\n";
+            // כל שכבה: הבסיס, ואחריו תתי-השכבות שלה (bg:z / fg:z) לפי z
+            $layer = function (string $base) use ($p): string {
+                $subs = array_filter(array_keys($p), fn($k) => str_starts_with((string)$k, "$base:"));
+                usort($subs, fn($a, $b) => (int)substr($a, strlen($base) + 1) <=> (int)substr($b, strlen($base) + 1));
+                return $p[$base] . implode('', array_map(fn($k) => $p[$k], $subs));
+            };
+            $content = "q\n" . $layer('bg') . "Q\nq\n" . $p['main'] . "Q\nq\n" . $layer('fg') . "Q\n";
             $objs[$cid] = self::stream('', gzcompress($content, 6), true);
             $objs[$pid] = "<< /Type /Page /Parent $pagesId 0 R /MediaBox [0 0 " . self::n($p['w']) . ' ' . self::n($p['h']) . "] /Resources $res 0 R /Contents $cid 0 R >>";
             $kids[] = "$pid 0 R";

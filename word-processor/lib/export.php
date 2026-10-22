@@ -715,7 +715,7 @@ final class Ooxml
             default => '<wp:wrapNone/>',
         };
         $dist = $g['wrap'] === 'topBottom' ? 'distT="' . $d . '" distB="' . $d . '" distL="0" distR="0"' : 'distT="0" distB="0" distL="' . $d . '" distR="' . $d . '"';
-        return '<w:r><w:drawing><wp:anchor ' . $dist . ' simplePos="0" relativeHeight="' . (251658240 + $id) . '" behindDoc="' . ($g['wrap'] === 'behind' ? 1 : 0)
+        return '<w:r><w:drawing><wp:anchor ' . $dist . ' simplePos="0" relativeHeight="' . (251658240 + (max(-50, min(50, (int)($a['z'] ?? 0))) + 50) * 4096 + $id) . '" behindDoc="' . ($g['wrap'] === 'behind' ? 1 : 0)
             . '" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/>' . $posH . $posV
             . '<wp:extent cx="' . $cx . '" cy="' . $cy . '"/>' . $ee . $wrapXml . $graphic . '</wp:anchor></w:drawing></w:r>';
     }

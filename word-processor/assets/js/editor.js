@@ -917,6 +917,7 @@ export function createWordEditor(root, opts) {
                 grp('יישור', segBtns({ right: 'ימין', center: 'מרכז', left: 'שמאל' }, a.align, v => cmds.run('image.align', v), 'יישור')),
                 grp('גודל', segBtns([['0.25', '¼'], ['0.5', '½'], ['1', 'מלא'], ['0', 'מקורי']], '', v => cmds.run('image.size', v), 'גודל')),
                 grp('סיבוב', [cmdBtn('image.rotateLeft'), cmdBtn('image.rotateRight')]),
+                ['behind', 'front'].includes(a.wrap) ? grp('שכבות', [cmdBtn('image.toFront'), cmdBtn('image.toBack')]) : null,
                 grp('תמונה', [cmdBtn('image.crop'), cmdBtn('image.props'), cmdBtn('image.delete')]));
         }
     }

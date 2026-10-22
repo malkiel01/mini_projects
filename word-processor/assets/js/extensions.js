@@ -640,6 +640,8 @@ export const WpImage = Node.create({
             x: { default: 0, parseHTML: el => num(el.getAttribute('data-x')) || 0 },
             y: { default: 0, parseHTML: el => num(el.getAttribute('data-y')) || 0 },
             caption: { default: '', parseHTML: el => el.getAttribute('data-caption') || '' },
+            // שכבה (תמונה מאחורי / לפני הטקסט): גבוה יותר — מעל. שווה — לפי הסדר במסמך
+            z: { default: 0, parseHTML: el => Math.max(-50, Math.min(50, num(el.getAttribute('data-z')) || 0)) },
         };
     },
     parseHTML() {
@@ -648,7 +650,7 @@ export const WpImage = Node.create({
     renderHTML({ HTMLAttributes: a }) {
         return ['img', mergeAttributes({ src: a.src, alt: a.alt, width: a.width, height: a.height, 'data-media': a.media, 'data-wrap': a.wrap,
             'data-align': a.align, 'data-dist': a.dist, 'data-crop': a.crop ? JSON.stringify(a.crop) : null, 'data-rotate': a.rotate || null,
-            'data-x': a.x || null, 'data-y': a.y || null, 'data-caption': a.caption || null })];
+            'data-x': a.x || null, 'data-y': a.y || null, 'data-caption': a.caption || null, 'data-z': a.z || null })];
     },
     addNodeView() {
         return ({ node, getPos, editor }) => {
@@ -684,6 +686,8 @@ export const WpImage = Node.create({
                 dom.style.setProperty('--dist', (a.dist ?? (wrap === 'tight' ? 4 : FLOATING.includes(wrap) || wrap === 'topBottom' ? 9 : 0)) + 'pt');
                 dom.style.left = ABSOLUTE.includes(wrap) ? (a.x || 0) + 'px' : '';
                 dom.style.top = ABSOLUTE.includes(wrap) ? (a.y || 0) + 'px' : '';
+                // שכבות: מאחורי הטקסט — מתחת לטקסט (שלילי) ומעל הדפים (‎-200); לפני הטקסט — מעליו
+                dom.style.zIndex = ABSOLUTE.includes(wrap) ? String((wrap === 'behind' ? -100 : 10) + Math.max(-50, Math.min(50, a.z || 0))) : '';
                 cap.textContent = a.caption || '';
                 cap.hidden = !a.caption;
             };
