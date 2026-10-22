@@ -373,7 +373,7 @@ function clean_value(array $f, $v, int $docId = 0): string
             return $v;
         case 'date':
             $v = trim($v);
-            if ($v !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $v)) throw new ApiError('"' . $f['label'] . '": תאריך לא תקין', 422);
+            if ($v !== '' && !valid_date($v)) throw new ApiError('"' . $f['label'] . '": תאריך לא תקין', 422);
             return $v;
         case 'signature':
             if ($v !== '' && !preg_match('#^data:image/png;base64,[A-Za-z0-9+/=]+$#', $v)) {
