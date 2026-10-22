@@ -842,7 +842,11 @@ if (trim((string)shell_exec('command -v pdftotext'))) {
     echo "  · pdftotext לא מותקן — דילוג\n";
 }
 
-<<<<<<< HEAD
+section('R10 — גודל גופן בחצאי נקודה');
+$hs = json_encode(import_html('<p><span style="font-size:13.5pt">חצי</span> <span style="font-size:10.4pt">עיגול</span></p>', 'r10')['json'], JSON_UNESCAPED_UNICODE);
+check('ייבוא HTML: 13.5 נשאר 13.5 (לא 14), 10.4 → 10.5', str_contains($hs, '"fontSize":"13.5pt"') && str_contains($hs, '"fontSize":"10.5pt"'), $hs);
+$hx = export_ooxml(['type' => 'doc', 'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'א', 'marks' => [['type' => 'textStyle', 'attrs' => ['fontSize' => '13.5pt']]]]]]]], page_normalize([]));
+check('Word: 13.5 → w:sz 27', str_contains(json_encode($hx, JSON_UNESCAPED_UNICODE), 'w:sz w:val=\\"27\\"'));
 section('R10 ג — קישורים לחיצים ב-PDF');
 $lk = fn(string $t, string $href) => ['type' => 'text', 'text' => $t, 'marks' => [['type' => 'link', 'attrs' => ['href' => $href]]]];
 $lpdf = $pdfOf(['type' => 'doc', 'content' => [
@@ -875,13 +879,6 @@ preg_match_all('/\/Dest \[(\d+) 0 R/', $tpdf, $td);
 preg_match_all('/^(\d+) 0 obj\n<< \/Type \/Page \//m', $tpdf, $tp);
 $pageOfObj = array_flip(array_map('intval', $tp[1]));
 check('PDF: שורות תוכן העניינים ורשימת האיורים לחיצות — אל העמוד של הכותרת / הכיתוב (גם כותרת בתוך טבלה)', array_map(fn($o) => $pageOfObj[(int)$o] ?? -1, $td[1]) === [1, 1, 2, 2], json_encode($td[1]) . ' ' . json_encode($tp[1]));
-=======
-section('R10 — גודל גופן בחצאי נקודה');
-$hs = json_encode(import_html('<p><span style="font-size:13.5pt">חצי</span> <span style="font-size:10.4pt">עיגול</span></p>', 'r10')['json'], JSON_UNESCAPED_UNICODE);
-check('ייבוא HTML: 13.5 נשאר 13.5 (לא 14), 10.4 → 10.5', str_contains($hs, '"fontSize":"13.5pt"') && str_contains($hs, '"fontSize":"10.5pt"'), $hs);
-$hx = export_ooxml(['type' => 'doc', 'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'א', 'marks' => [['type' => 'textStyle', 'attrs' => ['fontSize' => '13.5pt']]]]]]]], page_normalize([]));
-check('Word: 13.5 → w:sz 27', str_contains(json_encode($hx, JSON_UNESCAPED_UNICODE), 'w:sz w:val=\\"27\\"'));
->>>>>>> origin/main
 
 section('כיתובים והפניות צולבות (שלב 4)');
 $cap = fn($label, $id, $text) => ['type' => 'paragraph', 'attrs' => ['pstyle' => 'caption'], 'content' => [
