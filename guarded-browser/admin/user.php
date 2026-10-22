@@ -32,6 +32,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // היסטוריית מדיניות (lib/history.php): גם שינוי מהפאנל נרשם כגרסה — וההורה רואה "מנהל המערכת" שינה.
     // קודם שינוי כאן לא הופיע בהיסטוריה, ושחזור היה מוחק אותו בלי שההורה ידע שהיה.
     $histAdmin = in_array($action, ['policy', 'youtube', 'yt_add', 'yt_del', 'add_rule', 'del_rule', 'toggle_rule'], true);
+    // ילד בחשבון משפחה — ההגדרות והכללים שלו אצל ההורים בלבד (בעל המערכת, 2026-10-22): המנהל לא רואה ולא משנה.
+    // נאכף כאן, בשרת — לא רק בהסתרת הטפסים.
+    if ($histAdmin && !adminSeesActivity($user)) {
+        layoutTop($user['username'], $admin);
+        note('ההגדרות והכללים של ילד בחשבון משפחה — אצל ההורים בלבד', 'bad');
+        layoutEnd();
+        exit;
+    }
     if ($histAdmin && !one('SELECT id FROM policy_versions WHERE child_id = ? LIMIT 1', [$uid])) {
         policyVersionRecord($uid, 0, 'לפני תחילת התיעוד');
     }
@@ -172,6 +180,12 @@ note($msg, $kind);
   </form>
 </div>
 
+<?php if (!adminSeesActivity($user)): ?>
+<div class="card">
+  <p class="hint" style="margin:0">🔒 ילד בחשבון משפחה: ההגדרות, הכללים, יוטיוב והאפליקציות — אצל ההורים בלבד, ולא מוצגים כאן.
+    מכשירים ומספרים — למטה.</p>
+</div>
+<?php else: ?>
 <form method="post">
 <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
 <input type="hidden" name="action" value="policy">
@@ -468,6 +482,8 @@ secOpen('יוטיוב', YT_MODE_LABELS[$yt['mode']][0] . $ytWarn . ' ' . $countT
     <button class="btn btn--go btn--wide" type="submit">הוספת כלל</button>
   </form>
 <?php secClose(); ?>
+
+<?php endif; // adminSeesActivity — ההגדרות ?>
 
 <?php secOpen('מכשירים מחוברים', $countTag(count($devices))); ?>
   <p class="hint">ניתוק מבטל את האסימון מיד.</p>

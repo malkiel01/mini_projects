@@ -193,7 +193,7 @@ function reportHeight() {
     const root = h('div');
     app.append(ui.bar, ui.banner, root);
     ed = createWordEditor(root, {
-        json: d.json, page: d.page, editable: can === 'edit',
+        json: d.json, page: d.page, editable: can === 'edit', user: d.user,
         upload: file => { const fd = new FormData(); fd.append('file', file); return api('embed_upload', {}, fd); },
         versions: {
             list: async () => (await api('embed_load', { op: 'versions' })).versions,

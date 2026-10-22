@@ -441,6 +441,12 @@ final class Ooxml
     private array $seqNums = [];     // כיתובים: [id => [label, n]] (seq_numbers) — לשדות REF
     private array $seqList = [];     // המספר של כל seq לפי הסדר (seq_text_list) — התוצאה השמורה של שדה SEQ
     private int $seqAt = 0;
+    // הערות (docx שלם): השרשורים מ-attrs.comments; לכל הערה — הצומת הראשון והאחרון שלה (לפי הסדר במסמך)
+    private array $cmData = [];
+    private array $cmFirst = [];
+    private array $cmLast = [];
+    private int $inlineAt = 0;
+    public array $comments = [];     // [מספר ב-Word => ['id' => ..., 'parent' => מספר | null, 'c' => נתונים]] — word/comments.xml
     public array $footnotes = [];    // [id => צמתי text עם עיצוב] — word/footnotes.xml (docx שלם); בשילוב — בסוגריים
 
     public function __construct(public array $page, public string $prefix = '')
@@ -469,9 +475,102 @@ final class Ooxml
         $this->seqNums = seq_numbers($json);
         $this->seqList = seq_text_list($json);
         $this->seqAt = 0;
+        $this->commentRanges($json);
         $out = '';
         foreach ($json['content'] ?? [] as $n) $out .= $this->block($n, []);
         return $out;
+    }
+
+    /** הטווח של כל הערה: האינדקס של הצומת הראשון והאחרון שלה מבין כל הצמתים בתוך פסקאות (באותו סדר כמו para()). */
+    private function commentRanges(array $json): void
+    {
+        $this->cmData = $this->prefix === '' && is_array($json['attrs']['comments'] ?? null) ? $json['attrs']['comments'] : [];
+        $this->cmFirst = $this->cmLast = [];
+        $this->inlineAt = 0;
+        if (!$this->cmData) return;
+        $i = 0;
+        $walk = function (array $nodes) use (&$walk, &$i) {
+            foreach ($nodes as $n) {
+                if (!is_array($n)) continue;
+                if (in_array($n['type'] ?? '', ['paragraph', 'heading'], true)) {
+                    foreach ($n['content'] ?? [] as $c) {
+                        foreach ($c['marks'] ?? [] as $m) {
+                            $id = (string)($m['attrs']['id'] ?? '');
+                            if (($m['type'] ?? '') !== 'comment' || !is_array($this->cmData[$id] ?? null)) continue;
+                            $this->cmFirst[$id] ??= $i;
+                            $this->cmLast[$id] = $i;
+                        }
+                        $i++;
+                    }
+                } elseif (is_array($n['content'] ?? null)) $walk($n['content']);
+            }
+        };
+        $walk($json['content'] ?? []);
+    }
+
+    /** תחילת הטווח של ההערות שמתחילות בצומת $k — ההערה והתשובות שלה (כל אחת הערה משלה ב-Word, באותו טווח). */
+    private function commentStarts(int $k): string
+    {
+        $out = '';
+        foreach ($this->cmFirst as $id => $f) {
+            if ($f !== $k) continue;
+            $c = $this->cmData[$id];
+            $n = count($this->comments);
+            $this->comments[$n] = ['id' => $id, 'parent' => null, 'c' => $c];
+            $out .= '<w:commentRangeStart w:id="' . $n . '"/>';
+            foreach (is_array($c['replies'] ?? null) ? $c['replies'] : [] as $r) {
+                if (!is_array($r)) continue;
+                $m = count($this->comments);
+                $this->comments[$m] = ['id' => $id, 'parent' => $n, 'c' => $r];
+                $out .= '<w:commentRangeStart w:id="' . $m . '"/>';
+            }
+        }
+        return $out;
+    }
+
+    private function commentEnds(int $k): string
+    {
+        $out = '';
+        foreach ($this->cmLast as $id => $l) {
+            if ($l !== $k) continue;
+            foreach ($this->comments as $n => $x) {
+                if ($x['id'] !== $id) continue;
+                $out .= '<w:commentRangeEnd w:id="' . $n . '"/><w:r><w:rPr><w:rStyle w:val="CommentReference"/></w:rPr><w:commentReference w:id="' . $n . '"/></w:r>';
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * word/comments.xml ו-commentsExtended.xml (Word 2013+): לכל הערה פסקה עם w14:paraId; התשובות — paraIdParent,
+     * ו"נפתר" — w15:done.
+     */
+    public function commentsXml(): array
+    {
+        $pid = fn(int $n) => sprintf('%08X', 0x10000000 + $n);
+        $xml = '';
+        $ex = '';
+        foreach ($this->comments as $n => $x) {
+            $c = $x['c'];
+            $date = preg_match('/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/', (string)($c['date'] ?? '')) ? $c['date'] : gmdate('Y-m-d\TH:i:s\Z');
+            $author = mb_substr(trim((string)($c['author'] ?? '')), 0, 120);
+            $lines = preg_split('/\R/u', (string)($c['text'] ?? ''));
+            $xml .= '<w:comment w:id="' . $n . '" w:author="' . xml($author) . '" w:date="' . $date . '" w:initials="' . xml(mb_substr($author, 0, 1)) . '">';
+            foreach ($lines as $i => $line) {
+                $xml .= '<w:p' . ($i === count($lines) - 1 ? ' w14:paraId="' . $pid($n) . '" w14:textId="77777777"' : '') . '><w:pPr><w:pStyle w:val="CommentText"/><w:bidi/></w:pPr>'
+                    . ($i === 0 ? '<w:r><w:rPr><w:rStyle w:val="CommentReference"/></w:rPr><w:annotationRef/></w:r>' : '')
+                    . '<w:r><w:rPr><w:rtl/></w:rPr><w:t xml:space="preserve">' . xml($line) . '</w:t></w:r></w:p>';
+            }
+            $xml .= '</w:comment>';
+            $done = $x['parent'] === null ? !empty($c['done']) : !empty($this->comments[$x['parent']]['c']['done']);
+            $ex .= '<w15:commentEx w15:paraId="' . $pid($n) . '"' . ($x['parent'] !== null ? ' w15:paraIdParent="' . $pid($x['parent']) . '"' : '') . ' w15:done="' . ($done ? 1 : 0) . '"/>';
+        }
+        $ns = W_NS . ' xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml"'
+            . ' xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="w14 w15"';
+        return [
+            'word/comments.xml' => '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:comments ' . $ns . '>' . $xml . '</w:comments>',
+            'word/commentsExtended.xml' => '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w15:commentsEx ' . $ns . '>' . $ex . '</w15:commentsEx>',
+        ];
     }
 
     /** $list — ['num' => numId, 'lvl' => רמה] כשהבלוק בתוך פריט רשימה. */
@@ -555,13 +654,24 @@ final class Ooxml
         $captions = '';
         $openLink = null;
         foreach ($n['content'] ?? [] as $c) {
+            // הערות: תחילת טווח לפני הצומת, וסוף + סימן ההערה אחריו (מחוץ לקישור)
+            $k = $this->inlineAt++;
+            if ($this->cmFirst && ($cs = $this->commentStarts($k)) !== '') {
+                if ($openLink !== null) { $runs .= '</w:hyperlink>'; $openLink = null; }
+                $runs .= $cs;
+            }
+            $ends = function () use ($k, &$runs, &$openLink) {
+                if (!$this->cmLast || ($ce = $this->commentEnds($k)) === '') return;
+                if ($openLink !== null) { $runs .= '</w:hyperlink>'; $openLink = null; }
+                $runs .= $ce;
+            };
             if (($c['type'] ?? '') === 'image') {
                 if (!empty($c['attrs']['caption'])) {
                     // כיתוב: פסקה ממורכזת אחרי הפסקה של התמונה
                     $captions .= '<w:p><w:pPr><w:bidi/><w:spacing w:before="40" w:after="120"/><w:jc w:val="center"/></w:pPr>'
                         . $this->runs((string)$c['attrs']['caption'], [['type' => 'italic'], ['type' => 'textStyle', 'attrs' => ['fontSize' => '9pt', 'color' => '#333333']]], []) . '</w:p>';
                 }
-                if (($c['attrs']['wrap'] ?? 'inline') !== 'inline') { $anchors .= $this->image($c); continue; }
+                if (($c['attrs']['wrap'] ?? 'inline') !== 'inline') { $anchors .= $this->image($c); $ends(); continue; }
             }
             // קישור: ריצות רצופות עם אותה כתובת — בתוך w:hyperlink אחד
             $href = ($c['type'] ?? '') === 'text' ? link_href($c['marks'] ?? []) : null;
@@ -571,6 +681,7 @@ final class Ooxml
                 $openLink = $href;
             }
             $runs .= $this->inline($c, $a);
+            $ends();
         }
         if ($openLink !== null) $runs .= '</w:hyperlink>';
         return '<w:p>' . ($ppr !== '' ? "<w:pPr>$ppr</w:pPr>" : '') . $anchors . $runs . '</w:p>' . $captions;
@@ -1092,6 +1203,7 @@ function export_docx(array $json, array $page, string $title = ''): string
     $sect = $sectXml($o->cur, $sectCount);   // המקטע האחרון — בסוף הגוף
     if ($o->footnotes) $files['word/footnotes.xml'] = $o->footnotesXml();
     if ($o->endnotes) $files['word/endnotes.xml'] = $o->footnotesXml(true);
+    if ($o->comments) $files += $o->commentsXml();
 
     $pc = color_val($page['page_color'] ?? null);   // צבע עמוד — w:background, ו-displayBackgroundShape בהגדרות (אחרת Word לא מציג)
     $document = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document ' . W_NS . '>' . ($pc ? '<w:background w:color="' . strtoupper($pc) . '"/>' : '')
@@ -1109,6 +1221,9 @@ function export_docx(array $json, array $page, string $title = ''): string
         . '<w:style w:type="paragraph" w:styleId="FootnoteText"><w:name w:val="footnote text"/><w:basedOn w:val="Normal"/><w:pPr><w:bidi/><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr>'
         . '<w:rPr><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr></w:style>'
         . '<w:style w:type="character" w:styleId="FootnoteReference"><w:name w:val="footnote reference"/><w:rPr><w:vertAlign w:val="superscript"/></w:rPr></w:style>'
+        . '<w:style w:type="paragraph" w:styleId="CommentText"><w:name w:val="annotation text"/><w:basedOn w:val="Normal"/><w:pPr><w:bidi/><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr>'
+        . '<w:rPr><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr></w:style>'
+        . '<w:style w:type="character" w:styleId="CommentReference"><w:name w:val="annotation reference"/><w:rPr><w:sz w:val="16"/><w:szCs w:val="16"/></w:rPr></w:style>'
         . '<w:style w:type="paragraph" w:styleId="EndnoteText"><w:name w:val="endnote text"/><w:basedOn w:val="Normal"/><w:pPr><w:bidi/><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr>'
         . '<w:rPr><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr></w:style>'
         . '<w:style w:type="character" w:styleId="EndnoteReference"><w:name w:val="endnote reference"/><w:rPr><w:vertAlign w:val="superscript"/></w:rPr></w:style>'
@@ -1129,7 +1244,7 @@ function export_docx(array $json, array $page, string $title = ''): string
         . '<Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>'
         . '<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>';
     foreach (array_keys($files) as $p) {
-        $kind = str_contains($p, 'footnotes') ? 'footnotes' : (str_contains($p, 'endnotes') ? 'endnotes' : (str_contains($p, 'header') ? 'header' : 'footer'));
+        $kind = str_contains($p, 'commentsExtended') ? 'commentsExtended' : (str_contains($p, 'comments') ? 'comments' : (str_contains($p, 'footnotes') ? 'footnotes' : (str_contains($p, 'endnotes') ? 'endnotes' : (str_contains($p, 'header') ? 'header' : 'footer'))));
         $ct .= '<Override PartName="/' . $p . '" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.' . $kind . '+xml"/>';
     }
     $ct .= '</Types>';
@@ -1142,6 +1257,8 @@ function export_docx(array $json, array $page, string $title = ''): string
         . '<Relationship Id="rIdT" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>'
         . $hfRels . ($o->footnotes ? '<Relationship Id="rIdFn" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/>' : '')
         . ($o->endnotes ? '<Relationship Id="rIdEn" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes" Target="endnotes.xml"/>' : '')
+        . ($o->comments ? '<Relationship Id="rIdCm" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="comments.xml"/>'
+            . '<Relationship Id="rIdCmx" Type="http://schemas.microsoft.com/office/2011/relationships/commentsExtended" Target="commentsExtended.xml"/>' : '')
         . $o->rels() . '</Relationships>';
     $core = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"'
         . ' xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">'
