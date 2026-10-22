@@ -163,6 +163,17 @@
     </form>
   </dialog>
 
+  <!-- מדריך: הקמה מלאה ("בעל מכשיר") -->
+  <dialog id="guide-dlg" aria-labelledby="guide-title">
+    <form method="dialog">
+      <header class="sheet-head">
+        <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+        <h2 id="guide-title">🛡️ מדריך: הקמה מלאה</h2>
+      </header>
+      <div class="sheet-body" id="guide-body"></div>
+    </form>
+  </dialog>
+
   <!-- תפריט -->
   <dialog id="menu-dlg" aria-labelledby="menu-title">
     <form method="dialog">
@@ -172,6 +183,7 @@
       </header>
       <div class="sheet-body">
         <ul class="menu-list list">
+          <li><button type="button" id="m-guide">🛡️ מדריך: הקמה מלאה (בעל מכשיר)</button></li>
           <li><button type="button" id="m-push">🔔 התראות לטלפון</button></li>
           <li><button type="button" id="m-install">📲 התקנה כאפליקציה</button></li>
           <li><button type="button" id="m-pass">🔑 החלפת סיסמה</button></li>
