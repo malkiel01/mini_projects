@@ -361,6 +361,9 @@ html.wp-no-page-zoom, html.wp-no-page-zoom body, .wp-editor, .wp-stage { touch-a
 .wp-nav .nav-empty { color: var(--muted); font-size: .85rem; }
 .wp-editor.wp-phone .wp-nav { position: absolute; inset-block: 0; inset-inline-start: 0; z-index: 30; inline-size: min(80vw, 300px); box-shadow: 0 0 24px rgb(0 0 0 / .2); }
 .wp-editor.wp-phone .wp-nav .nav-item { min-block-size: 44px; }
+/* מעקב שינויים (track.js): תוספת — קו תחתון, מחיקה — קו חוצה, בצבע של המחבר (כמו ב-Word, גם בהדפסה וב-PDF) */
+.wp-doc ins.wp-ins { text-decoration: underline; color: var(--wpc, #c00000); }
+.wp-doc del.wp-del { text-decoration: line-through; color: var(--wpc, #c00000); }
 /* הערות (comments.js): הטווח בצהוב (בלי לשנות מידות), החלונית בצד הסוף — כמו ב-Word */
 .wp-doc .wp-cmt { background: #fff2a8; }
 .wp-doc .wp-cmt.on { background: #ffd966; }

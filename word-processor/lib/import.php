@@ -269,13 +269,15 @@ function import_docx(string $bytes, string $docId): array
         $b['attrs'] = ['page' => $ctx->section($sects[++$k]) ?: null];
     }
     unset($b);
+    $json = ['type' => 'doc', 'content' => $blocks ?: [para()]];
+    // מעקב שינויים פועל במסמך (settings.xml) — פועל גם אצלנו
+    if (($st = $read('word/settings.xml')) && str_contains($st, 'trackRevisions') && !preg_match('/<w:trackRevisions[^>]*w:val="(false|0)"/', $st)) $json['attrs']['track'] = true;
     $zip->close();
     unlink($tmp);
-    $json = ['type' => 'doc', 'content' => $blocks ?: [para()]];
     // הערות: רק שרשורים שהטווח שלהם נכנס למסמך
     $used = [];
     array_walk_recursive($blocks, function ($v, $k) use (&$used) { if ($k === 'id' && is_string($v) && str_starts_with($v, 'c')) $used[$v] = true; });
-    if ($cm = array_intersect_key($ctx->comments, $used)) $json['attrs'] = ['comments' => $cm];
+    if ($cm = array_intersect_key($ctx->comments, $used)) $json['attrs']['comments'] = $cm;
     return ['json' => $json, 'page' => $page, 'report' => $ctx->report()];
 }
 
@@ -552,7 +554,8 @@ final class DocxCtx
             $start = $ind->getAttributeNS(W, 'start') ?: $ind->getAttributeNS(W, $bidi ? 'right' : 'left');
             if (is_numeric($start) && ($n = (int)round(((int)$start - max(0, $hang)) / 720)) > 0) $attrs['indent'] = min(8, $n);
         }
-        $this->note('tracked', $xp->query('w:ins|w:del|w:r/w:rPr/w:rPrChange|w:pPr/w:pPrChange', $p)->length);
+        // שינויי עיצוב במעקב — לא נכנסים (תוספות ומחיקות — כן: סימוני ins / del)
+        $this->note('tracked', $xp->query('w:r/w:rPr/w:rPrChange|w:pPr/w:pPrChange', $p)->length);
         // שדות — חוץ מ-HYPERLINK (קישור אמיתי), SEQ (כיתוב) ו-REF לכיתוב (הפניה צולבת)
         $known = fn($e) => 'starts-with(normalize-space(' . $e . '), "HYPERLINK") or starts-with(normalize-space(' . $e . '), "SEQ ") or starts-with(normalize-space(' . $e . '), "REF _Ref")';
         $this->note('fields', $xp->query('w:fldSimple|w:r/w:fldChar[@w:fldCharType="begin"]|w:hyperlink/w:r/w:fldChar[@w:fldCharType="begin"]', $p)->length
@@ -568,7 +571,7 @@ final class DocxCtx
         $capField = null;     // שדה SEQ / REF שבתוכו (מ-separate עד end): [צומת, תוצאה] — התוצאה לא נכנסת כטקסט
         $refMark = null;      // הסימניה הנסתרת _Ref<id> האחרונה בפסקה — המזהה של הכיתוב שאחריה
         $simple = null;       // fldSimple של SEQ / REF שכבר נכנס
-        foreach ($xp->query('w:commentRangeStart|w:commentRangeEnd|w:hyperlink/w:commentRangeStart|w:hyperlink/w:commentRangeEnd|w:bookmarkStart|w:hyperlink/w:bookmarkStart|w:r|w:hyperlink/w:r|w:ins/w:r|w:smartTag/w:r|w:fldSimple/w:r|w:hyperlink/w:fldSimple/w:r', $p) as $r) {
+        foreach ($xp->query('w:commentRangeStart|w:commentRangeEnd|w:hyperlink/w:commentRangeStart|w:hyperlink/w:commentRangeEnd|w:bookmarkStart|w:hyperlink/w:bookmarkStart|w:r|w:hyperlink/w:r|w:ins/w:r|w:del/w:r|w:hyperlink/w:ins/w:r|w:hyperlink/w:del/w:r|w:smartTag/w:r|w:fldSimple/w:r|w:hyperlink/w:fldSimple/w:r', $p) as $r) {
             if ($r->localName === 'commentRangeStart' || $r->localName === 'commentRangeEnd') {
                 $cid = $this->cmTop[$r->getAttributeNS(W, 'id')] ?? null;
                 if ($cid !== null && $r->localName === 'commentRangeStart') $this->cmOpen[$cid] = true;
@@ -605,6 +608,12 @@ final class DocxCtx
                 continue;
             }
             $marks = $this->runMarks($r, $xp);
+            if ($r->parentNode instanceof DOMElement && in_array($r->parentNode->localName, ['ins', 'del'], true)) {
+                $rv = $r->parentNode;
+                $date = (string)$rv->getAttributeNS(W, 'date');
+                $marks[] = ['type' => $rv->localName, 'attrs' => ['author' => mb_substr(trim((string)$rv->getAttributeNS(W, 'author')), 0, 120),
+                    'date' => preg_match('/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d/', $date) ? substr($date, 0, 19) . 'Z' : '']];
+            }
             foreach ($this->cmOpen as $cid => $_) $marks[] = ['type' => 'comment', 'attrs' => ['id' => $cid]];
             $rs = (string)$xp->evaluate('string(w:rPr/w:rStyle/@w:val)', $r);
             if ($rs !== '' && isset($this->custom[$rs])) $this->note('styles', 1, $rs);
@@ -613,7 +622,7 @@ final class DocxCtx
             foreach ($r->childNodes as $k) {
                 if (!$k instanceof DOMElement) continue;
                 switch ($k->localName) {
-                    case 't': if ($k->textContent !== '') $inline[] = text_node($k->textContent, $marks); break;
+                    case 't': case 'delText': if ($k->textContent !== '') $inline[] = text_node($k->textContent, $marks); break;
                     case 'tab': $inline[] = text_node("\t", $marks); break;
                     case 'br':
                         if ($k->getAttributeNS(W, 'type') === 'page') $breakAfter = true;
@@ -1093,7 +1102,7 @@ const IMPORT_REPORT = [
     'images' => ['תמונות שלא נטענו', 'הקובץ פגום או בפורמט שאינו נתמך'],
     'math' => ['נוסחאות', 'לא יובאו'],
     'nested' => ['טבלה בתוך טבלה', 'הטבלה הפנימית לא יובאה'],
-    'tracked' => ['שינויים במעקב', 'התקבלו: מה שנוסף נשאר, מה שנמחק הוסר'],
+    'tracked' => ['שינויי עיצוב במעקב', 'התקבלו (תוספות ומחיקות — יובאו עם המעקב)'],
     'fields' => ['שדות (תוכן עניינים, תאריך, הפניות)', 'יובאו כטקסט קבוע — לא יתעדכנו'],
     'columns' => ['טורים', 'המסמך יובא בטור אחד'],
     'hf_extra' => ['כותרת שונה לעמוד הראשון או לעמודים זוגיים', 'יובאה רק הכותרת הרגילה'],

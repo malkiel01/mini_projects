@@ -64,7 +64,7 @@
 - רשימת המסמכים של המשתמש, חיפוש, מסמך חדש, **ייבוא מ-Word**, שינוי שם, שכפול, מחיקה, הורדה כ-Word / טקסט /
   גיבוי JSON.
 - **דוח ייבוא:** אחרי ייבוא מ-Word נפתח "דוח ייבוא" — מה לא עבר בדיוק (צורות ותיבות טקסט, נוסחאות,
-  טבלה בתוך טבלה, מעקב שינויים, שדות, טורים, כותרת שונה לעמוד ראשון/זוגי, סגנונות מותאמים,
+  טבלה בתוך טבלה, שינויי עיצוב במעקב, שדות, טורים, כותרת שונה לעמוד ראשון/זוגי, סגנונות מותאמים,
   גבולות פסקה, הזחת שורה ראשונה, גופנים חסרים). מסמך שעבר כולו — הודעה קצרה בלבד. `IMPORT_REPORT` ב-`lib/import.php`.
   כותרת עליונה ותחתונה (טקסט), מספר העמוד (מיקום, יישור, תבנית, התחלה, בלי מספר בעמוד הראשון) והזחה — מיובאים.
 - **גופן מוחלף:** גופן שאינו ברשימה (למשל מ-Word) מוצג ב-Heebo — במסך, בהדפסה וב-PDF, בכל מחשב; השם המקורי נשמר
@@ -172,6 +172,12 @@
   השרשור מסומן, לחיצה על השרשור — מעבר לטקסט. כל פעולה — צעד ביטול. הערה שהטקסט שלה נמחק כולו — לא מוצגת ולא
   מיוצאת. בהדפסה וב-PDF — בלי סימון. **Word:** `comments.xml` + `commentsExtended.xml` (תשובות — `paraIdParent`,
   נפתר — `done`), טווח שחוצה פסקאות — כמו ב-Word; וגם בייבוא (`comments.js`, ובשרת `commentRanges()` / `readComments()`).
+- **מעקב שינויים** (שלב 4; סקירה ← מעקב שינויים, Ctrl+Shift+E — כמו Track Changes ב-Word): כשהמעקב פועל
+  (`attrs.track` של המסמך — נשמר איתו) כל הקלדה מסומנת `ins` וכל מחיקה — `del` (הטקסט נשאר, בקו חוצה), עם מחבר
+  ותאריך, בצבע של המחבר. Backspace / Delete במעקב — שלנו: מסמנים במקום למחוק, ומחיקה של תוספת — מוחקת באמת; איחוד
+  פסקאות ושינויי עיצוב — לא נרשמים (עדיין). אישור / דחייה של השינוי שבו הסמן (או של הבחירה), אישור / דחיית הכול,
+  הקודם / הבא. בהדפסה וב-PDF — כמו בעורך; בטקסט ובגוף לשילוב — אחרי קבלת השינויים (`lib/track.php`).
+  **Word:** `w:ins` / `w:del` (`w:delText`) עם מחבר ותאריך, ו-`trackRevisions`; וגם בייבוא (`track.js`).
 - **כיתובים והפניות צולבות** (שלב 4; הוספה ← כיתובים): "הוספת כיתוב" מוסיף פסקה בסגנון **כיתוב** (9 נק', נטוי) —
   התווית (איור / טבלה / משוואה), המספר והטקסט — מתחת לפריט שבו הסמן או מעליו (בטבלה — מעליה). המספר הוא צומת `seq`
   (`attrs.label`, `attrs.id`) והוא מחושב לפי הסדר, לכל תווית בנפרד; "הפניה צולבת" — צומת `xref` (`target`, `show`:
@@ -226,8 +232,8 @@
 ```
 app.json  index.html  embed.php  api.php  .htaccess
 lib/        db.php (סכמה) · page.php (הגדרות עמוד) · docs.php (מסמכים, גרסאות, נעילה, תמונות) · pdf.php + pdf/ (מנוע ה-PDF)
-            embed.php (רישום, חתימה, טוקן, סשן) · export.php · import.php · footnote.php · caption.php · users.php · selftest.php
-assets/js/  editor.js (העורך) · commands.js (רישום הפקודות) · extensions.js · find.js · view.js · pagination.js · paste.js · saver.js (שמירה וטיוטה) · schema.js · toc.js · caption.js · comments.js
+            embed.php (רישום, חתימה, טוקן, סשן) · export.php · import.php · footnote.php · caption.php · track.php · users.php · selftest.php
+assets/js/  editor.js (העורך) · commands.js (רישום הפקודות) · extensions.js · find.js · view.js · pagination.js · paste.js · saver.js (שמירה וטיוטה) · schema.js · toc.js · caption.js · comments.js · track.js
             app.js · embed.js · host.js (למארחת)
 client/     WordProcessorClient.php — הלקוח שמארחות מעתיקות
 docs/       integration.md — מדריך ההתממשקות

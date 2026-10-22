@@ -372,14 +372,14 @@ $wordDocx = $mkDocx([
 ]);
 $w = import_docx($wordDocx, $docC);
 $rep = array_column($w['report'], 'count', 'key');
-check('דוח ייבוא: כל מה שלא נתמך מופיע', $rep == ['shapes' => 1, 'math' => 1, 'nested' => 1, 'tracked' => 2, 'fields' => 1,
+check('דוח ייבוא: כל מה שלא נתמך מופיע', $rep == ['shapes' => 1, 'math' => 1, 'nested' => 1, 'fields' => 1,
     'columns' => 1, 'hf_extra' => 1, 'styles' => 1, 'pborder' => 1, 'fonts' => 1], json_encode($rep));
 check('ייבוא: סגנון פסקה מותאם → סגנון שלנו (שם ועיצוב), והפסקה בו', ($w['page']['styles']['u1'] ?? null) == ['name' => 'ציטוט', 'italic' => true, 'color' => '#595959', 'align' => 'center', 'after' => 12.0]
     && ($w['json']['content'][0]['attrs']['pstyle'] ?? '') === 'u1', json_encode($w['page']['styles'] ?? null, JSON_UNESCAPED_UNICODE));
 $fontRow = array_values(array_filter($w['report'], fn($r) => $r['key'] === 'fonts'))[0] ?? [];
 check('דוח ייבוא: שם הגופן החסר ומה מוצג במקומו', str_contains($fontRow['detail'] ?? '', 'Segoe UI') && str_contains($fontRow['detail'] ?? '', 'Heebo'));
 $wt = export_text($w['json']);
-check('דוח ייבוא: הטקסט שמסביב נשמר; שדה — תוצאתו; נמחק — לא', str_contains($wt, 'לפני  אחרי') && str_contains($wt, '22/10/2026 נוסף') && !str_contains($wt, 'נמחק') && str_contains($wt, 'תא'), $wt);
+check('ייבוא: הטקסט שמסביב נשמר; שדה — תוצאתו; תוספת ומחיקה במעקב — בטקסט הסופי נמחק לא מופיע', str_contains($wt, 'לפני  אחרי') && str_contains($wt, '22/10/2026 נוסף') && !str_contains($wt, 'נמחק') && str_contains($wt, 'תא'), $wt);
 check('ייבוא: הזחה מימין (bidi) → indent, ושורה ראשונה → firstLine', ($w['json']['content'][0]['attrs']['indent'] ?? 0) === 2 && ($w['json']['content'][0]['attrs']['firstLine'] ?? 0) == 18);
 check('ייבוא: כותרת עליונה, ומספר "- N -" במרכז הכותרת התחתונה', ($w['page']['header'] ?? '') === 'חברה בע"מ' && !isset($w['page']['footer'])
     && ($w['page']['numbering'] ?? null) == ['show' => true, 'position' => 'bottom', 'align' => 'center', 'format' => 'dash_n', 'first_page' => true], json_encode($w['page'], JSON_UNESCAPED_UNICODE));
@@ -856,6 +856,35 @@ check('Word הלוך וחזור: שני שרשורים, התשובה, נפתר �
     && ($v[0]['replies'][0]['text'] ?? '') === 'מסכים' && $v[0]['done'] === false && $v[1]['done'] === true
     && array_values($cmText) === ['מסומן וגםהמשך', ' ושני'] && !array_filter($cmBack['report'], fn($r) => $r['key'] === 'comments'), json_encode([$cmAttrs, $cmText], JSON_UNESCAPED_UNICODE));
 check('PDF וטקסט: ההערות לא מופיעות ולא מפריעות', export_text($cmDoc) === "לפני מסומן וגם\nהמשך ושני סוף" && str_starts_with($pdfOf($cmDoc), '%PDF'));
+
+// ======================================================================
+section('מעקב שינויים (שלב 4)');
+$ins = fn($a = 'דנה לוי') => [['type' => 'ins', 'attrs' => ['author' => $a, 'date' => '2026-10-22T10:00:00Z']]];
+$del = fn($a = 'יוסי') => [['type' => 'del', 'attrs' => ['author' => $a, 'date' => '2026-10-22T11:00:00Z']]];
+$trDoc = ['type' => 'doc', 'attrs' => ['track' => true], 'content' => [['type' => 'paragraph', 'content' => [
+    ['type' => 'text', 'text' => 'לפני '], ['type' => 'text', 'text' => 'חדש', 'marks' => array_merge($ins(), [['type' => 'bold']])],
+    ['type' => 'text', 'text' => ' ישן', 'marks' => $del()], ['type' => 'text', 'text' => ' אחרי'],
+]]]];
+check('צבע לפי מחבר — קבוע, מהרשימה', track_color('דנה לוי') === track_color('דנה לוי') && in_array(track_color('יוסי'), TRACK_COLORS, true));
+check('טקסט: אחרי קבלת השינויים', export_text($trDoc) === 'לפני חדש אחרי', export_text($trDoc));
+$tv = track_visual($trDoc)['content'][0]['content'];
+check('PDF / HTML: תוספת — קו תחתון וצבע (המודגש נשאר), מחיקה — קו חוצה וצבע', in_array(['type' => 'underline'], $tv[1]['marks']) && in_array(['type' => 'bold'], $tv[1]['marks'])
+    && in_array(['type' => 'textStyle', 'attrs' => ['color' => track_color('דנה לוי')]], $tv[1]['marks']) && in_array(['type' => 'strike'], $tv[2]['marks']));
+$trDocx = export_docx($trDoc, page_normalize([]), 'מעקב');
+file_put_contents("$tmp/tr.docx", $trDocx);
+$zip->open("$tmp/tr.docx");
+$trMain = (string)$zip->getFromName('word/document.xml');
+$trSet = (string)$zip->getFromName('word/settings.xml');
+$zip->close();
+check('Word: w:ins ו-w:del (delText) עם מחבר ותאריך; trackRevisions', preg_match('#<w:ins w:id="\d+" w:author="דנה לוי" w:date="2026-10-22T10:00:00Z"><w:r>.*?חדש.*?</w:ins>#u', $trMain) === 1
+    && preg_match('#<w:del w:id="\d+" w:author="יוסי"[^>]*><w:r>.*?<w:delText xml:space="preserve"> ישן</w:delText>.*?</w:del>#u', $trMain) === 1 && str_contains($trSet, '<w:trackRevisions/>'));
+$trBack = import_docx($trDocx, 'tr');
+$bk = $trBack['json']['content'][0]['content'];
+check('Word הלוך וחזור: התוספת והמחיקה עם המחבר והתאריך, והמעקב פועל', ($trBack['json']['attrs']['track'] ?? false) === true
+    && in_array($ins()[0], $bk[1]['marks'] ?? []) && in_array(['type' => 'bold'], $bk[1]['marks'] ?? []) && in_array($del()[0], $bk[2]['marks'] ?? []) && $bk[2]['text'] === ' ישן'
+    && !array_filter($trBack['report'], fn($r) => $r['key'] === 'tracked'), json_encode($bk, JSON_UNESCAPED_UNICODE));
+$trBody = export_ooxml($trDoc, page_normalize([]))['body'];
+check('גוף לשילוב: הטקסט אחרי קבלת השינויים — בלי סימונים ובלי הטקסט המחוק', !str_contains($trBody, '<w:ins') && !str_contains($trBody, 'ישן') && str_contains($trBody, 'חדש'));
 
 // ======================================================================
 section('הגדרות עמוד');
