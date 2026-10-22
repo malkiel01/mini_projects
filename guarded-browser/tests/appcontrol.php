@@ -71,6 +71,26 @@ check('...ואצל ההורה — "תמיד", לא חסומה גם ב"רק מה 
       [true, false, 'זו מגדלור עצמה']);
 check('ברירת מחדל לא מוכרת', appsSavePosture($kid, 'x'), 'ברירת מחדל לא מוכרת');
 
+echo "\n— הסתרה (👻) —\n";
+check('הסתרת משחק', appsSaveRule($kid, 'com.supercell.clashofclans', 'hide'), '');
+$p = appsPayload($user($kid, $aApps));
+check('נשלחת כמוסתרת — וגם כחסומה (גרסה ישנה / בלי בעל מכשיר חוסמים אותה)',
+      [$p['hidden'], in_array('com.supercell.clashofclans', $p['blocked'], true)], [['com.supercell.clashofclans'], true]);
+$l = appsList($aApps, $kid);
+$g = array_values(array_filter($l['apps'], fn($a) => $a['package'] === 'com.supercell.clashofclans'))[0];
+check('אצל ההורה: 👻, נחשבת חסומה, ומונה מוסתרות', [$g['action'], $g['blocked'], $l['hidden_count']], ['hide', true, 1]);
+check('בלי מכשיר עם "בעל מכשיר" — owner_missing לפי המכשירים', $l['owner_missing'],
+      (int) one('SELECT COUNT(*) n FROM devices WHERE user_id = ? AND (perms & 32) = 0', [$kid])['n']);
+check('גם ב"הכול פתוח" — מוסתרת חסומה', appBlocked('allow_all', 'hide'), true);
+check('ההגדרות — אי אפשר להסתיר', appsSaveRule($kid, 'com.android.settings', 'hide'),
+      'את ההגדרות אפשר לחסום, לא להסתיר — מגדלור צריך אותן להקמה ולעדכון');
+check('...אבל אפשר לחסום', appsSaveRule($kid, 'com.android.settings', 'block'), '');
+appsSaveRule($kid, 'com.android.settings', '');
+check('מסך הבית — אי אפשר להסתיר', appsSaveRule($kid, 'com.sec.android.app.launcher', 'hide'), 'תמיד פתוח — מסך הבית או המקלדת');
+check('פעולה לא מוכרת', appsSaveRule($kid, 'com.whatsapp', 'vanish'), 'פעולה לא מוכרת');
+check('ביטול ההסתרה — יוצאת מהרשימה', [appsSaveRule($kid, 'com.supercell.clashofclans', 'block'),
+      appsPayload($user($kid, $aApps))['hidden']], ['', []]);
+
 echo "\n— ניקוי כלל —\n";
 appsSaveRule($kid, 'com.whatsapp', '');
 check('הוסר הכלל', isset(appRules($kid)['com.whatsapp']), false);

@@ -120,7 +120,7 @@ function enforcementState(int $accountId, int $childId): array {
     $caps = enforceDeviceCaps($childId);
     $reports = enforceReports($childId);
     $appsAllowed = accountAppsAllowed($accountId);
-    $hasBlockRule = count(array_filter(appRules($childId), fn($a) => $a === 'block')) > 0;
+    $hasBlockRule = count(array_filter(appRules($childId), fn($a) => $a !== 'allow')) > 0;
     $hasBlockedApps = $appsAllowed && ($hasBlockRule || appPosture($childId) === 'deny_all');
 
     $rows = [];

@@ -39,7 +39,8 @@ object OfflinePolicy {
                 store.saveApps(JSONObject().put("manage", a.optBoolean("manage")).put("posture", a.optString("posture"))
                     .put("limits", JSONObject(store.appLimits as Map<*, *>))
                     .put("blocked", org.json.JSONArray(store.appsBlocked.toList()))
-                    .put("allowed", org.json.JSONArray(store.appsAllowed.toList())))
+                    .put("allowed", org.json.JSONArray(store.appsAllowed.toList()))
+                    .put("hidden", org.json.JSONArray(store.appsHidden.toList())))
             } else store.saveApps(a)
         }
         store.offlineIat = iat
