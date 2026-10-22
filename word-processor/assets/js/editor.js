@@ -197,6 +197,7 @@ export function createWordEditor(root, opts) {
     // ---------- מבנה ----------
     const styleEl = h('style');
     const printEl = h('style', { media: 'print' });
+    let printViaPdf = false;   // מקטעים עם מספר טורים שונה — ההדפסה דרך ה-PDF מהשרת (applyPage, print)
     const wmPrint = h('div.wp-wm-print', { 'aria-hidden': 'true' });   // סימן המים בהדפסה (בכל עמוד)
     const pagesLayer = h('div.wp-pages', { 'aria-hidden': 'true' });
     const host = h('div.wp-host');
@@ -219,8 +220,14 @@ export function createWordEditor(root, opts) {
         const [wmm, hmm] = mmOf(p);
         const m = p.margins;
         const pageH = hmm * MM;
+        // טורים: הטקסט ברוחב טור (textW), במקום של הטור הראשון — מימין; shift — מה שנוסף לשוליים השמאליים.
+        // כל "עמוד" בעימוד הוא טור; בהדפסה — n טורים לעמוד (printEl), כמו ב-PDF מהשרת
+        const cols = Math.max(1, Math.min(4, +p.columns?.n || 1));
+        const colGap = cols > 1 ? (+p.columns?.gap >= 0 ? +p.columns.gap : 12.7) * MM : 0;
+        const full = wmm * MM - (m.left + m.right) * MM;
+        const textW = (full - colGap * (cols - 1)) / cols;
         return { pageW: wmm * MM, pageH, top: m.top * MM, bottom: m.bottom * MM, right: m.right * MM, left: m.left * MM,
-            contentH: pageH - (m.top + m.bottom) * MM };
+            contentH: pageH - (m.top + m.bottom) * MM, cols, colGap, textW, shift: full - textW };
     };
     const mmOf = p => {
         const [w, hh] = SIZES[p.size] || SIZES.A4;
@@ -310,7 +317,7 @@ export function createWordEditor(root, opts) {
     function applyPage() {
         stylesUI?.();
         const g = geometry();
-        editor.storage.wpPages.contentWidth = g.pageW - g.left - g.right;
+        editor.storage.wpPages.contentWidth = g.textW;
         sheetEl.style.width = g.sheetW + 'px';
         // כמה מקטעים: הרוחב של כל מקטע נקבע לכל בלוק (pagination.js), לא בריפוד של המסמך
         editor.view.dom.classList.toggle('wp-multisec', g.sections.length > 1);
@@ -320,7 +327,7 @@ export function createWordEditor(root, opts) {
             + `${x.color ? `color:${x.color};` : (heading ? '' : '')}${x.align ? `text-align:${x.align};` : ''}`
             + `padding-top:${x.before ?? 0}pt;padding-bottom:${x.after ?? 0}pt;${x.line ? `line-height:${x.line};` : ''}}`;
         const P = '.wp-sheet .wp-doc';
-        styleEl.textContent = `${P}{padding:${g.top}px ${g.right}px 0 ${g.left}px;font-family:${cssFont(page.font.family)};font-size:${page.font.size}pt;line-height:${s.normal.line || 1.15}}`
+        styleEl.textContent = `${P}{padding:${g.top}px ${g.right}px 0 ${g.left + g.shift}px;font-family:${cssFont(page.font.family)};font-size:${page.font.size}pt;line-height:${s.normal.line || 1.15}}`
             + st(`${P} p`, s.normal, false) + st(`${P} p.wp-title`, s.title, true) + st(`${P} p.wp-caption`, s.caption || {}, true)
             + [1, 2, 3, 4, 5, 6, 7, 8, 9].map(l => st(`${P} h${l}`, s['h' + l] || {}, true)).join('')
             + Object.keys(s).filter(k => USER_STYLE.test(k)).map(k => st(`${P} p.wp-s-${k}`, { ...s.normal, ...s[k] }, false)).join('')
@@ -369,7 +376,17 @@ export function createWordEditor(root, opts) {
         const bg = page.page_color ? `@page{background:${page.page_color}}` + g.sections.slice(1).map((x, k) => `@page wps${k + 1}{background:${page.page_color}}`).join('') : '';
         printEl.textContent = `@page{size:${wmm}mm ${hmm}mm;margin:${page.margins.top}mm ${page.margins.right}mm ${page.margins.bottom - slack}mm ${page.margins.left}mm;${margin}}`
             + firstNoNum + (nb.start !== 1 ? `@page:first{counter-reset:page ${nb.start - 1}}` : '') + named + bg
-            + (page.watermark ? `.wp-wm-print{display:flex!important;transform:translate(${(page.margins.right - page.margins.left) / 2}mm,${(page.margins.bottom - slack - page.margins.top) / 2}mm) rotate(-45deg)}` : '');
+            + (page.watermark ? `.wp-wm-print{display:flex!important;transform:translate(${(page.margins.right - page.margins.left) / 2}mm,${(page.margins.bottom - slack - page.margins.top) / 2}mm) rotate(-45deg)}` : '')
+            // טורים (מקטע אחד): המסמך בטורים, וכל רווח עמוד — מעבר טור (אחרי הטור האחרון — העמוד הבא, כי column-fill: auto);
+            // כל טור כבר נחתך בעימוד לגובה העמוד, כך שהשבירות הן בדיוק אלה שעל המסך ושב-PDF מהשרת
+            + (g.sections.length === 1 && g.cols > 1 ? `.wp-sheet .wp-doc{columns:${g.cols} !important;column-gap:${page.columns.gap}mm;column-fill:auto}`
+                + '.wp-break{break-before:column !important}.wp-colskip{display:block;break-before:column}'
+                // שתי שבירות צמודות מתאחדות לאחת; שורה ריקה בגובה 0 לפני כל מעבר טור נוסף מפרידה ביניהן. הגובה של הרווח —
+                // auto (ממילא 0): בגובה קבוע Chrome לא מפצל את מה שבתוכו, ומעברי הטור הנוספים נבלעים
+                + '.wp-doc .wp-break:has(.wp-colskip){height:auto !important;block-size:auto !important}'
+                + '.wp-break:has(.wp-colskip)::before,.wp-colskip::after{content:"\\200b";display:block;height:0;overflow:hidden}' : '');
+        // מקטעים עם טורים שונים — הדפדפן לא מחליף מספר טורים באמצע; ההדפסה עוברת דרך ה-PDF מהשרת (print)
+        printViaPdf = g.sections.length > 1 && g.sections.some(x => x.cols > 1);
         wmPrint.textContent = page.watermark || '';
         if (page.watermark) Object.assign(wmPrint.style, { fontSize: watermarkSize(page.watermark, wmm * 72 / 25.4, hmm * 72 / 25.4) + 'pt', fontFamily: cssFont(page.font.family) });
         setZoom();
@@ -382,7 +399,7 @@ export function createWordEditor(root, opts) {
     function pageOf(pos) {
         let pg = 0;
         for (const b of lastLayout?.breaks || []) if (b.pos <= pos && b.page > pg) pg = b.page;
-        return pg;
+        return lastLayout?.phys?.[pg] ?? pg;
     }
 
     /**
@@ -438,7 +455,9 @@ export function createWordEditor(root, opts) {
         lastLayout = res;
         const G = geometry();
         const n = res.pages;
-        const total = n;
+        // טורים: כל מסגרת היא טור; המספור וספירת העמודים — לפי העמוד הפיזי (res.phys)
+        const physOf = i => res.phys?.[i] ?? i;
+        const total = physOf(n - 1) + 1;
         pagesLayer.textContent = '';
         let y = 0;
         for (let i = 0; i < n; i++) {
@@ -449,13 +468,19 @@ export function createWordEditor(root, opts) {
             const nb = pp.numbering;
             const pg = h('div.wp-page', { style: { top: y + 'px', height: g.pageH + 'px', width: g.pageW + 'px', left: (G.sheetW - g.pageW) / 2 + 'px', right: 'auto' } });
             y += g.pageH + GAP;
-            const label = nb.show && (i > 0 || nb.first_page) ? pageLabel(page.numbering.start + i, total, nb.format) : '';
+            const pi = physOf(i);
+            const label = nb.show && (pi > 0 || nb.first_page) ? pageLabel(page.numbering.start + pi, total, nb.format) : '';
             const hdr = h('div.wp-hf.wp-hdr', { style: { height: g.top + 'px', paddingInline: `${g.right}px ${g.left}px` } });
             const ftr = h('div.wp-hf.wp-ftr', { style: { height: g.bottom + 'px', paddingInline: `${g.right}px ${g.left}px` } });
             if (pp.header) hdr.append(h('span.wp-hf-text', pp.header));
             if (pp.footer) ftr.append(h('span.wp-hf-text', pp.footer));
             if (label) (nb.position === 'top' ? hdr : ftr).append(h('span.wp-num.al-' + nb.align, { style: nb.align === 'right' ? { right: g.right + 'px' } : nb.align === 'left' ? { left: g.left + 'px' } : {} }, label));
             pg.append(hdr, ftr);
+            if (g.cols > 1) {
+                // תצוגת טיוטה של טורים (כמו "טיוטה" ב-Word): כל טור במסגרת משלו, ברוחב שלו; הטורים זה לצד זה — בהדפסה וב-PDF
+                pg.classList.add('wp-page-col');
+                hdr.append(h('span.wp-col-badge', { title: 'בהדפסה וב-PDF — הטורים זה לצד זה' }, `עמוד ${pi + 1} · טור ${(res.cols?.[i] ?? 0) + 1} מתוך ${g.cols}`));
+            }
             // רקע הדף (מהגדרות המסמך): צבע, וסימן מים באלכסון מאחורי הטקסט — כמו ב-PDF
             if (page.page_color) pg.style.background = page.page_color;
             if (page.watermark) {
@@ -467,12 +492,14 @@ export function createWordEditor(root, opts) {
         const H = y - GAP;
         editor.view.dom.style.minHeight = H + 'px';
         sheetEl.style.height = H + 'px';
-        pageCount = n;
+        pageCount = total;
+        frameOf = physOf;
         setZoom();
         status();
         statusBarPage();
     }
     let pageCount = 1;
+    let frameOf = i => i;   // מסגרת על המסך → העמוד הפיזי (בטורים — כמה מסגרות לעמוד)
 
     function setZoom() {
         const g = geometry();
@@ -902,8 +929,8 @@ export function createWordEditor(root, opts) {
         if (!pages.length) return 1;
         let top;
         try { top = editor.view.coordsAtPos(editor.state.selection.head).top; } catch { return curPage; }
-        for (let i = 0; i < pages.length; i++) if (top < pages[i].getBoundingClientRect().bottom) return i + 1;
-        return pages.length;
+        for (let i = 0; i < pages.length; i++) if (top < pages[i].getBoundingClientRect().bottom) return frameOf(i) + 1;
+        return pageCount;
     }
     let wordsTimer = 0;
     function countWords() {
@@ -1538,12 +1565,12 @@ export function createWordEditor(root, opts) {
                 h('section.group', h('h3', 'נייר'),
                     seg('size', { A4: 'A4', Letter: 'Letter' }, p.size, 'גודל'),
                     seg('orientation', { portrait: 'לאורך', landscape: 'לרוחב' }, p.orientation, 'כיוון')),
-                // טורים (כמו "פריסה ← טורים" ב-Word) — נשמרים ויוצאים ל-Word; בעורך וב-PDF הטקסט עדיין בטור אחד
+                // טורים (כמו "פריסה ← טורים" ב-Word): בהדפסה וב-PDF זה לצד זה; בעורך — תצוגת טיוטה, טור במסגרת
                 h('section.group', h('h3', 'טורים'),
                     seg('cols_n', { 1: 'אחד', 2: 'שניים', 3: 'שלושה' }, String(p.columns?.n || 1), 'מספר טורים'),
                     h('div.fields.two', field('רווח בין טורים (מ"מ)', numInput('cols_gap', p.columns?.gap ?? 12.7, { min: 0, max: 50 })),
                         h('div', sw('cols_line', 'קו מפריד', !!p.columns?.line))),
-                    h('p.hint', 'נשמר במסמך ובקובץ Word. בעורך, בהדפסה וב-PDF הטקסט מוצג עדיין בטור אחד.')),
+                    h('p.hint', 'בהדפסה וב-PDF הטורים זה לצד זה. בעורך כל טור מוצג במסגרת משלו ("עמוד 1 · טור 2"), ברוחב הטור.')),
                 h('section.group', h('h3', 'שוליים ', h('small', 'במ"מ')),
                     h('div.fields.two',
                         field('למעלה', numInput('m_top', p.margins.top, { min: 0, max: 80 })), field('למטה', numInput('m_bottom', p.margins.bottom, { min: 0, max: 80 })),
@@ -1807,6 +1834,8 @@ export function createWordEditor(root, opts) {
      * למעבר עמוד, כך שהשבירות הן אלה שכבר חושבו. מדידה נוספת (בעבר — "מצב הדפסה") יכלה להעביר שורה גבולית לעמוד אחר.
      */
     function print() {
+        if (printViaPdf && opts.printPdf) { opts.printPdf(); return; }
+        if (printViaPdf) toast('מקטעים עם מספר טורים שונה — בהדפסה מכאן הם בטור אחד; ב-PDF (ייצוא) — בטורים', true);
         window.print();
     }
 

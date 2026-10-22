@@ -392,8 +392,8 @@ $wordDocx = $mkDocx([
 ]);
 $w = import_docx($wordDocx, $docC);
 $rep = array_column($w['report'], 'count', 'key');
-check('דוח ייבוא: כל מה שלא נתמך מופיע', $rep == ['shapes' => 1, 'math' => 1, 'nested' => 1, 'fields' => 1,
-    'columns' => 1, 'hf_extra' => 1, 'styles' => 1, 'pborder' => 1, 'fonts' => 1], json_encode($rep));
+check('דוח ייבוא: כל מה שלא נתמך מופיע (וטורים — כבר נתמכים, לא בדוח)', $rep == ['shapes' => 1, 'math' => 1, 'nested' => 1, 'fields' => 1,
+    'hf_extra' => 1, 'styles' => 1, 'pborder' => 1, 'fonts' => 1], json_encode($rep));
 check('ייבוא: סגנון פסקה מותאם → סגנון שלנו (שם ועיצוב), והפסקה בו', ($w['page']['styles']['u1'] ?? null) == ['name' => 'ציטוט', 'italic' => true, 'color' => '#595959', 'align' => 'center', 'after' => 12.0]
     && ($w['json']['content'][0]['attrs']['pstyle'] ?? '') === 'u1', json_encode($w['page']['styles'] ?? null, JSON_UNESCAPED_UNICODE));
 $fontRow = array_values(array_filter($w['report'], fn($r) => $r['key'] === 'fonts'))[0] ?? [];
@@ -898,10 +898,45 @@ check('Word: w:cols במקטע הראשון (2, רווח, קו), ובמקטע ה
     && str_contains($colMain, '<w:cols w:num="2" w:space="567" w:sep="1"/>'), substr_count($colMain, '<w:cols '));
 $colBack = import_docx($colDocx, 'cols');
 $sb = array_values(array_filter($colBack['json']['content'], fn($n) => ($n['type'] ?? '') === 'sectionBreak'));
-check('Word הלוך וחזור: המקטע הראשון בשני טורים, השני בטור אחד; ובדוח — שהתצוגה עדיין בטור אחד',
+check('Word הלוך וחזור: המקטע הראשון בשני טורים, השני בטור אחד; ובדוח הייבוא — לא כאובדן (מוצגים בטורים)',
     ($colBack['page']['columns']['n'] ?? 0) === 2 && ($colBack['page']['columns']['line'] ?? false) === true && abs(($colBack['page']['columns']['gap'] ?? 0) - 10) < 0.2
-    && ($sb[0]['attrs']['page']['columns']['n'] ?? 0) === 1 && (bool)array_filter($colBack['report'], fn($r) => $r['key'] === 'columns'),
+    && ($sb[0]['attrs']['page']['columns']['n'] ?? 0) === 1 && !array_filter($colBack['report'], fn($r) => $r['key'] === 'columns'),
     json_encode([$colBack['page']['columns'] ?? null, $sb[0]['attrs']['page']['columns'] ?? null], JSON_UNESCAPED_UNICODE));
+
+section('טורים — PDF בשני טורים');
+if (trim((string)shell_exec('command -v pdftotext'))) {
+    $colText = fn(int $n) => array_map(fn($i) => ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => "פסקה$i " . str_repeat('מילים רבות בטור צר כדי למלא שורות. ', 6)]]], range(1, $n));
+    $colPdf = function (array $doc, array $page) use ($tmp): array {
+        file_put_contents("$tmp/colpdf.pdf", export_pdf($doc, page_normalize($page), 'טורים'));
+        $x = (string)shell_exec('pdftotext -bbox ' . escapeshellarg("$tmp/colpdf.pdf") . ' - 2>&1');
+        preg_match_all('#<page width="([\d.]+)" height="([\d.]+)">(.*?)</page>#s', $x, $pg, PREG_SET_ORDER);
+        return array_map(function ($p) {
+            preg_match_all('#xMin="([\d.]+)" yMin="([\d.]+)" xMax="([\d.]+)" yMax="([\d.]+)">([^<]*)<#', $p[3], $ws, PREG_SET_ORDER);
+            return ['w' => (float)$p[1], 'h' => (float)$p[2], 'words' => array_map(fn($m) => ['x0' => (float)$m[1], 'y0' => (float)$m[2], 'x1' => (float)$m[3], 'y1' => (float)$m[4], 't' => $m[5]], $ws)];
+        }, $pg);
+    };
+    $one = $colPdf(['type' => 'doc', 'content' => $colText(30)], []);
+    $two = $colPdf(['type' => 'doc', 'content' => $colText(30)], ['columns' => ['n' => 2, 'gap' => 10, 'line' => true]]);
+    // A4, שוליים 25 מ"מ: אזור התוכן 70.87–524.41; שני טורים עם רווח 10 מ"מ — הימני 311.81–524.41, השמאלי 70.87–283.46
+    $L = 25 * PT_PER_MM; $R = 595.28 - 25 * PT_PER_MM; $gapL = ($L + $R) / 2 - 5 * PT_PER_MM; $gapR = ($L + $R) / 2 + 5 * PT_PER_MM;
+    $body = fn($pg) => array_filter($pg['words'], fn($w) => !(ctype_digit($w['t']) && $w['y0'] > $pg['h'] - 60));
+    $inGap = []; $right = 0; $left = 0;
+    foreach ($two as $k => $pg) foreach ($body($pg) as $w) {
+        if ($w['x1'] > $gapL + 1 && $w['x0'] < $gapR - 1) $inGap[] = ($k + 1) . ':' . $w['t'];
+        if ($w['x0'] >= $gapR - 1) $right++; elseif ($w['x1'] <= $gapL + 1) $left++;
+    }
+    check('PDF בשני טורים: שום מילה ברווח בין הטורים, ושני הטורים מלאים', !$inGap && $right > 50 && $left > 50, implode(',', array_slice($inGap, 0, 5)) . " ימין $right שמאל $left");
+    check('PDF בשני טורים: הטור הראשון — מימין (פסקה1 בטור הימני בעמוד 1)', (bool)array_filter($body($two[0]), fn($w) => str_contains(implode('', array_reverse(mb_str_split($w['t']))), 'פסקה1') && $w['x0'] >= $gapR - 1)
+        || (bool)array_filter($body($two[0]), fn($w) => str_contains($w['t'], 'פסקה1') && $w['x0'] >= $gapR - 1));
+    check('PDF בשני טורים: כל המילים, ובערך באותו מספר עמודים כמו טור אחד (הטקסט צר — שורות רבות יותר)',
+        array_sum(array_map(fn($p) => count($body($p)), $two)) >= array_sum(array_map(fn($p) => count($body($p)), $one)) - 2 && count($two) >= count($one) - 1 && count($two) <= count($one) + 1, count($one) . ' / ' . count($two));
+    $brk = $colPdf(['type' => 'doc', 'content' => [$colText(1)[0], ['type' => 'pageBreak'], ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'אחרימעבר']]]]], ['columns' => ['n' => 2]]);
+    check('PDF בטורים: מעבר עמוד ידני — עמוד חדש (לא הטור הבא)', count($brk) === 2 && (bool)array_filter($brk[1]['words'], fn($w) => in_array($w['t'], ['אחרימעבר', 'רבעמירחא'], true)), (string)count($brk));
+    $fnc = $colPdf(['type' => 'doc', 'content' => array_merge($colText(14), [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'סימן'], ['type' => 'footnote', 'attrs' => ['text' => 'הערהבטורהשמאלי']]]]])], ['columns' => ['n' => 2, 'gap' => 10]]);
+    $fw = null;
+    foreach ($fnc as $pg) foreach ($pg['words'] as $w) if (in_array($w['t'], ['הערהבטורהשמאלי', 'ילאמשהרוטבהרעה'], true)) $fw = $w;
+    check('PDF בטורים: הערת שוליים — ברוחב הטור שלה ובתוכו', $fw && ($fw['x1'] <= $gapL + 1 || $fw['x0'] >= $gapR - 1), json_encode($fw, JSON_UNESCAPED_UNICODE));
+} else echo "  · pdftotext לא מותקן — דילוג\n";
 
 section('כיתובים והפניות צולבות (שלב 4)');
 $cap = fn($label, $id, $text) => ['type' => 'paragraph', 'attrs' => ['pstyle' => 'caption'], 'content' => [
