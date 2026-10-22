@@ -233,11 +233,11 @@ async function loadKids() {
 
 let K = null, tab = 'sum';
 const TABS_BASE = [['sum', '📋 סיכום'], ['act', '📊 פעילות'], ['access', '🔐 גישה'], ['time', '⏰ זמנים'],
-                   ['yt', '▶️ יוטיוב'], ['sites', '🌐 אתרים'], ['dev', '📱 מכשירים']];
+                   ['yt', '▶️ יוטיוב'], ['sites', '🌐 אתרים'], ['dev', '📱 מכשירים'], ['hist', '🕓 שינויים']];
 // לשונית "אפליקציות" רק לחשבון ברמת אפליקציות/מכשיר (המפתח פותח).
 const appsAllowed = () => S.account && (S.account.level_max === 'apps' || S.account.level_max === 'device');
 const tabsFor = () => appsAllowed()
-    ? [...TABS_BASE.slice(0, 6), ['apps', '📲 אפליקציות'], TABS_BASE[6]] : TABS_BASE;
+    ? [...TABS_BASE.slice(0, 6), ['apps', '📲 אפליקציות'], ...TABS_BASE.slice(6)] : TABS_BASE;
 
 async function openKid(id) {
     try { K = (await call('child', { id })).child; } catch (e) { toast(e.message, true); return; }
@@ -252,6 +252,7 @@ async function act(action, extra = {}, ok = '') {
     try {
         const r = await call(action, { id: K.id, ...extra });
         if (r.child) K = r.child;
+        HK = 0;   // שינוי — ההיסטוריה תיטען מחדש
         if (r.message || ok) toast(r.message || ok);
         renderKid(); loadKids();
         return r;
@@ -265,8 +266,63 @@ function renderKid() {
     const tabs = el('div', { class: 'seg-tabs', role: 'tablist', style: `grid-template-columns:repeat(4,minmax(0,1fr))` },
         T.map(([k, label]) => el('button', { type: 'button', role: 'tab', ariaSelected: String(tab === k),
             text: label, onclick: () => { tab = k; sessionStorage.setItem('mg:tab', k); renderKid(); } })));
-    const body = { sum: kidSum, act: kidAct, access: kidAccess, time: kidTime, yt: kidYt, sites: kidSites, dev: kidDev, apps: kidApps }[tab]();
+    const body = { sum: kidSum, act: kidAct, access: kidAccess, time: kidTime, yt: kidYt, sites: kidSites, dev: kidDev, apps: kidApps,
+                   hist: kidHist }[tab]();
     $('#kid-body').replaceChildren(tabs, ...body.filter(Boolean));
+}
+
+/*
+ * שינויים (שלב 12 א+ז): כל גרסה של המדיניות — מי ומתי ומה השתנה, ולכל מכשיר קבלה: התקבל / הוחל / אומת / נכשל
+ * (עם שעה וסיבה) או "הוחלפה" לפני שהגיעה. השוואה לגרסה הנוכחית ושחזור (כגרסה חדשה). lib/history.php.
+ */
+let H = null, HK = 0;
+const RECEIPT = { pending: ['⏳', 'ממתין למכשיר'], received: ['📥', 'התקבל'], applied: ['☑️', 'הוחל'],
+                  verified: ['✅', 'אומת'], failed: ['❌', 'נכשל'], superseded: ['⏭️', 'הוחלפה לפני שהגיעה'] };
+const whenStr = iso => iso ? new Date(iso).toLocaleString('he-IL', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+
+function kidHist() {
+    if (HK !== K.id) {
+        HK = K.id; H = null;
+        call('history', { id: K.id }).then(r => { H = r.history; if (tab === 'hist') renderKid(); })
+            .catch(e => toast(e.message, true));
+    }
+    if (!H) return [el('p', { class: 'hint', text: 'טוען…' })];
+    if (!H.length) return [el('p', { class: 'empty', text: 'עוד לא נרשמו שינויים. כל שינוי מעכשיו יופיע כאן, עם מה שהמכשיר עשה איתו.' })];
+    return [el('ul', { class: 'rows' }, H.map(v => el('li', { style: 'display:block' }, [
+        el('div', { class: 'nm' }, [
+            el('b', { text: `${whenStr(v.at)} · ${v.by}${v.current ? ' · נוכחית' : ''}` }),
+            ...v.changes.slice(0, 8).map(t => el('small', { text: t })),
+            v.changes.length > 8 ? el('small', { text: `ועוד ${v.changes.length - 8}…` }) : null,
+            ...v.devices.map(d => {
+                const [ic, label] = RECEIPT[d.state] || ['', d.state];
+                const when = d.applied_at ? ` ${whenStr(d.applied_at)}` : d.received_at ? ` ${whenStr(d.received_at)}` : '';
+                return el('small', { text: `${ic} ${d.device || 'מכשיר'}: ${label}${when}${d.detail ? ' — ' + d.detail : ''}`,
+                    style: d.state === 'failed' ? 'color:var(--danger)' : 'color:var(--muted)' });
+            }),
+        ]),
+        v.current ? null : el('div', { class: 'row-btns' }, [
+            el('button', { type: 'button', class: 'btn ghost sm', text: '🔍 מה ישתנה', onclick: () => compareVersion(v) }),
+            el('button', { type: 'button', class: 'btn sm', text: '↩️ שחזור', onclick: () => restoreVersion(v) }),
+        ]),
+    ])))];
+}
+
+async function compareVersion(v) {
+    try {
+        const r = await call('history_compare', { id: K.id, version: v.id });
+        alert(r.changes.length ? `שחזור לגרסה מ-${whenStr(v.at)} ישנה:\n\n${r.changes.join('\n')}` : 'זהה למצב הנוכחי.');
+    } catch (e) { toast(e.message, true); }
+}
+
+async function restoreVersion(v) {
+    let r;
+    try { r = await call('history_compare', { id: K.id, version: v.id }); } catch (e) { toast(e.message, true); return; }
+    if (!r.changes.length) { toast('זהה למצב הנוכחי'); return; }
+    if (!confirm(`לשחזר את המצב מ-${whenStr(v.at)}?\n\n${r.changes.slice(0, 15).join('\n')}\n\nהיתרים זמניים לא ישתנו.`)) return;
+    try {
+        const res = await call('history_restore', { id: K.id, version: v.id });
+        K = res.child; H = res.history; toast(res.message); renderKid(); loadKids();
+    } catch (e) { toast(e.message, true); }
 }
 
 function kidSum() {
