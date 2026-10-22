@@ -367,6 +367,7 @@ function openMenu(btn, user) {
         items.push(inAdmin()
             ? menuItem('🏠', 'האפליקציות שלי', null, { href: '#' })
             : menuItem('⚙️', 'ניהול', null, { href: '#admin', count: me.pending || 0 }));
+        items.push(menuItem('📐', 'אפיונים', null, { href: 'platform/spec/' }));
     }
     items.push(menuItem('🔑', 'החלפת סיסמה', () => showPassword(false)));
     items.push(menuItem('🔗', 'חיבורים לאפליקציות', openConnections));

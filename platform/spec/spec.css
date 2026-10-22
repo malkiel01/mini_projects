@@ -1,0 +1,57 @@
+/* אפיונים — דפי קריאה. בלי תלות ב-app.css: הדף צריך להיפתח גם כשהמעטפת לא נטענת. */
+:root {
+    --bg: #f4f6fb; --card: #fff; --ink: #1c2333; --muted: #5d6679; --line: #e2e6ef;
+    --accent: #2b4a6f; --accent-bg: #e8eef7; --ok: #1f7a4d; --ok-bg: #e6f4ec;
+    --warn: #8a5a00; --warn-bg: #fdf3dc; --bad: #a3262a; --bad-bg: #fbe9ea;
+    color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        --bg: #12151c; --card: #1a1f2a; --ink: #e6e9f0; --muted: #9aa3b5; --line: #2b3242;
+        --accent: #8fb3e0; --accent-bg: #1f2a3b; --ok: #6fcf9a; --ok-bg: #16281f;
+        --warn: #f0c060; --warn-bg: #2b2414; --bad: #f08a8d; --bad-bg: #2d1a1c;
+        color-scheme: dark;
+    }
+}
+* { box-sizing: border-box; }
+body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.65 system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+}
+.wrap { max-width: 860px; margin: 0 auto; padding: 20px 16px 64px; }
+header.top { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+header.top a { color: var(--accent); text-decoration: none; font-size: 1.4rem; }
+h1 { font-size: 1.5rem; margin: 0; line-height: 1.3; }
+.sub { color: var(--muted); margin: 4px 0 20px; font-size: .95rem; }
+h2 { font-size: 1.2rem; margin: 32px 0 10px; padding-top: 8px; border-top: 1px solid var(--line); }
+h3 { font-size: 1.02rem; margin: 20px 0 6px; }
+p, li { max-width: 72ch; }
+ul, ol { padding-inline-start: 22px; margin: 6px 0; }
+li { margin: 3px 0; }
+code { font: .88em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--accent-bg);
+       padding: 1px 5px; border-radius: 5px; direction: ltr; unicode-bidi: isolate; }
+pre { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px;
+      overflow-x: auto; direction: ltr; text-align: left; font: .85rem/1.5 ui-monospace, Menlo, Consolas, monospace; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; margin: 12px 0; }
+.note { border-radius: 12px; padding: 10px 14px; margin: 12px 0; }
+.note.warn { background: var(--warn-bg); color: var(--warn); }
+.note.ok { background: var(--ok-bg); color: var(--ok); }
+.note.bad { background: var(--bad-bg); color: var(--bad); }
+.note.info { background: var(--accent-bg); color: var(--accent); }
+.table { overflow-x: auto; margin: 10px 0; }
+table { border-collapse: collapse; width: 100%; background: var(--card); border-radius: 12px; overflow: hidden;
+        border: 1px solid var(--line); font-size: .93rem; }
+th, td { text-align: start; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { background: var(--accent-bg); color: var(--accent); font-weight: 600; white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+.chip { display: inline-block; padding: 1px 9px; border-radius: 999px; font-size: .82rem; font-weight: 600; white-space: nowrap; }
+.chip.ok { background: var(--ok-bg); color: var(--ok); }
+.chip.warn { background: var(--warn-bg); color: var(--warn); }
+.chip.bad { background: var(--bad-bg); color: var(--bad); }
+.chip.info { background: var(--accent-bg); color: var(--accent); }
+nav.toc { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 10px 16px; }
+nav.toc a { color: var(--accent); text-decoration: none; }
+nav.toc ol { margin: 4px 0; }
+.list a.card { display: block; color: inherit; text-decoration: none; }
+.list a.card:hover { border-color: var(--accent); }
+.list .meta { color: var(--muted); font-size: .88rem; }
