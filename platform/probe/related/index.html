@@ -38,7 +38,7 @@
     const device = (() => { try { return localStorage.getItem('platform:device') || null; } catch { return null; } })();
     const mode = matchMedia('(display-mode: standalone)').matches ? 'standalone' : 'browser';
 
-    document.getElementById('again').addEventListener('click', () => { sessionStorage.removeItem(KEY); location.replace('./'); });
+    document.getElementById('again').addEventListener('click', () => { sessionStorage.removeItem(KEY); location.replace(location.pathname + (qs.get('limit') ? '?limit=' + encodeURIComponent(qs.get('limit')) : '')); });
 
     if (!/Android/i.test(navigator.userAgent)) { say('הבדיקה רלוונטית רק בטלפון אנדרואיד, בכרום.', 'warn'); return; }
     if (!('getInstalledRelatedApps' in navigator)) { say('הדפדפן הזה לא תומך ב-getInstalledRelatedApps — צריך כרום.', 'bad'); return; }
@@ -47,7 +47,12 @@
     let s = load();
     if (!s || !qs.has('p')) {
         const all = (await (await fetch('manifest.php?p=all', { cache: 'no-store' })).json()).related_applications.map(a => a.id);
-        s = { all, plan: ['all', all.slice(0, 3).join(','), ...all], i: 0, results: [] };
+        // ?limit=<חבילה מותקנת>: כמה חבילות כרום בודק — החבילה המותקנת במקום k (1…20), אחרי k-1 שאינן מותקנות.
+        const target = qs.get('limit');
+        const others = all.filter(x => x !== target);
+        const plan = target ? all.map((_, k) => [...others.slice(0, k), target].join(','))
+                            : ['all', all.slice(0, 3).join(','), ...all];
+        s = { all, target, plan, i: 0, results: [] };
         save(s);
         location.replace('?p=' + encodeURIComponent(s.plan[0]));
         return;
@@ -64,7 +69,29 @@
     if (s.i < s.plan.length) { location.replace('?p=' + encodeURIComponent(s.plan[s.i])); return; }
 
     // סוף — טבלה, ודיווח אחד ליומן
-    const label = (p) => p === 'all' ? `כל הרשימה (${s.all.length})` : p.includes(',') ? 'שלוש ראשונות' : p;
+    const label = (p) => s.target ? `במקום ${p.split(',').length}` : p === 'all' ? `כל הרשימה (${s.all.length})` : p.includes(',') ? 'שלוש ראשונות' : p;
+    if (s.target) {
+        // מצב המגבלה: עד איזה מקום ברשימה כרום עוד מוצא את החבילה
+        const tbody = document.querySelector('#out tbody');
+        let max = 0;
+        s.results.forEach((r, k) => {
+            const ok = r.found.some(f => f.startsWith(s.target));
+            if (ok) max = k + 1;
+            const tr = document.createElement('tr'); tr.innerHTML = '<td></td><td></td>';
+            tr.children[0].textContent = label(r.p); tr.children[1].textContent = r.error ? '⚠️ ' + r.error : ok ? '✓' : '—';
+            tbody.append(tr);
+        });
+        document.getElementById('out').hidden = false;
+        document.getElementById('again').hidden = false;
+        say(max ? `כרום בודק עד ${max} חבילות ברשימה` : 'כרום לא מצא את החבילה גם במקום הראשון', max ? 'ok' : 'bad');
+        try {
+            await fetch('../../api.php?action=diag', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Platform': '1' },
+                body: JSON.stringify({ event: 'probe-related-limit', device, path: location.pathname, info: { mode, target: s.target, max,
+                    pattern: s.results.map(r => r.found.some(f => f.startsWith(s.target)) ? '1' : '0').join('') } }) });
+        } catch { /* */ }
+        sessionStorage.removeItem(KEY);
+        return;
+    }
     const tbody = document.querySelector('#out tbody');
     for (const r of s.results) {
         const tr = document.createElement('tr');
