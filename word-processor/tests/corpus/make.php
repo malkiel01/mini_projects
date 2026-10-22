@@ -197,6 +197,19 @@ foreach ($modes as $k => [$b, $w, $al]) {
 $c[] = $p($sentence(10, 30));
 $corpus['table-format'] = ['title' => 'עיצוב טבלה', 'json' => $doc($c), 'page' => null];
 
+// 15. תוכן עניינים: בלוק בגובה קבוע (גופן × 1.6 לשורה) — עם שורות ארוכות (נחתכות ב"…") ובשלוש רמות, ואחריו טקסט
+$entries = [];
+$c = [];
+for ($i = 1; $i <= 14; $i++) {
+    $lvl = $i % 3 === 0 ? 2 : ($i % 7 === 0 ? 3 : 1);
+    $t = "פרק $i: " . $sentence($i % 4 === 0 ? 14 : 3, $i % 4 === 0 ? 20 : 7);
+    $entries[] = ['t' => $t, 'l' => $lvl, 'p' => (string)(1 + intdiv($i, 3)), 'i' => $i - 1];
+    $c[] = $hd($t, $lvl);
+    $c[] = $p($sentence(20, 60));
+}
+array_unshift($c, ['type' => 'toc', 'attrs' => ['levels' => 3, 'entries' => $entries]]);
+$corpus['toc'] = ['title' => 'תוכן עניינים', 'json' => $doc($c), 'page' => null];
+
 foreach ($corpus as $name => $d) {
     file_put_contents(__DIR__ . "/$name.json", json_encode($d, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
     echo "$name.json\n";

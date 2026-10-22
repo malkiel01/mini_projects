@@ -380,3 +380,17 @@ html.wp-no-page-zoom, html.wp-no-page-zoom body, .wp-editor, .wp-stage { touch-a
 .wp-wm-print { display: none; position: fixed; z-index: -1; }
 @media print { html { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
 .wm-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-block-start: 6px; }
+
+/* ===== תוכן עניינים (toc.js): מידות קבועות לפי גודל הגופן של המסמך — כמו toc() ב-lib/pdf/layout.php ===== */
+.wp-doc .wp-toc { padding-block-end: 6pt; user-select: none; cursor: default; }
+.wp-doc .wp-toc-title { font-weight: 700; font-size: 1.25em; line-height: 1.5; padding-block-end: 6pt; }
+.wp-doc .wp-toc-line { display: flex; align-items: baseline; gap: 4pt; line-height: 1.6; white-space: nowrap; cursor: pointer; }
+.wp-doc .wp-toc-line:hover .wp-toc-t { text-decoration: underline; }
+.wp-doc .wp-toc-t { overflow: hidden; text-overflow: ellipsis; min-inline-size: 0; }
+.wp-doc .wp-toc-dots { flex: 1; border-block-end: 1px dotted currentColor; opacity: .6; min-inline-size: 12pt; }
+.wp-doc .wp-toc-p { flex: none; }
+.wp-doc .wp-toc-l1 { font-weight: 700; }
+.wp-doc .wp-toc-l2 { padding-inline-start: 14pt; } .wp-doc .wp-toc-l3 { padding-inline-start: 28pt; }
+.wp-doc .wp-toc-l4, .wp-doc .wp-toc-l5, .wp-doc .wp-toc-l6, .wp-doc .wp-toc-l7, .wp-doc .wp-toc-l8, .wp-doc .wp-toc-l9 { padding-inline-start: 42pt; }
+.wp-doc .wp-toc-empty { color: #888; cursor: default; }
+.wp-doc .wp-toc.ProseMirror-selectednode { outline: 2px solid #2d4a8a; outline-offset: 2px; }
