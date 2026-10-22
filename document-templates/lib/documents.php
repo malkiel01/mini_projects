@@ -163,7 +163,7 @@ function doc_create(array $user, array $b, ?array $copy = null): array
     if (empty($schema['fields'])) throw new ApiError('לתבנית אין שדות עדיין. הוסיפו שדות בעורך', 409);
 
     $pdo = db();
-    $pdo->beginTransaction();
+    tx_begin($pdo);
     try {
         $number = next_number((int)$t['id'], clean_numbering(json_decode((string)$t['numbering_json'], true)));
         $title = trim((string)($b['title'] ?? '')) ?: (string)unseal($t['name_enc']);
@@ -193,9 +193,9 @@ function doc_create(array $user, array $b, ?array $copy = null): array
         if ($copy !== null) doc_copy_extras($docId, $copy, $user);
         log_event($docId, 'user:' . $user['id'], 'created', ['number' => $number, 'template_version' => (int)$t['current_version']]
             + ($copy !== null ? ['copy_of' => $copy['number']] : []));
-        $pdo->commit();
+        tx_commit($pdo);
     } catch (Throwable $e) {
-        $pdo->rollBack();
+        tx_rollback($pdo);
         throw $e;
     }
     return ['ok' => true, 'id' => $docId, 'number' => $number];
@@ -485,7 +485,7 @@ function doc_save(array $user, array $b): array
 
     $changes = [];
     $pdo = db();
-    $pdo->beginTransaction();
+    tx_begin($pdo);
     try {
         doc_lock($pdo, (int)$d['id'], DOC_EDITABLE);
         $old = doc_values((int)$d['id']);   // אחרי הנעילה — לא ערכים של לפני שמירה מקבילה
@@ -534,9 +534,9 @@ function doc_save(array $user, array $b): array
             if ($d['status'] === 'draft') $pdo->prepare("UPDATE documents SET status = 'in_progress' WHERE id = ?")->execute([$d['id']]);
             log_event((int)$d['id'], $actor, 'values_saved', ['changes' => $changes]);
         }
-        $pdo->commit();
+        tx_commit($pdo);
     } catch (Throwable $e) {
-        $pdo->rollBack();
+        tx_rollback($pdo);
         throw $e;
     }
     if (function_exists('purge_attachments')) purge_attachments((int)$d['id']);   // קובץ שהוסר משדה — נמחק

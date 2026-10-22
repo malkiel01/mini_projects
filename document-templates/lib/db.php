@@ -34,6 +34,38 @@ function doc_lock(PDO $pdo, int $docId, array $statuses, string $msg = 'המסמ
     if ($st->rowCount() === 0) throw new ApiError($msg, 409);
 }
 
+/**
+ * טרנזקציה שאפשר לקנן: בתוך טרנזקציה פתוחה — SAVEPOINT. כך פעולה שיש לה טרנזקציה משלה
+ * (doc_create, doc_save) יכולה לרוץ גם כחלק מפעולה גדולה יותר שמתחייבת או נכשלת כולה
+ * (ext_issue — נספח הביקורת v0.3, DT-F02).
+ */
+function tx_begin(PDO $pdo): void
+{
+    $GLOBALS['dt_tx_depth'] ??= [];
+    if ($pdo->inTransaction()) {
+        $sp = 'sp' . count($GLOBALS['dt_tx_depth']);
+        $pdo->exec("SAVEPOINT $sp");
+        $GLOBALS['dt_tx_depth'][] = $sp;
+    } else {
+        $pdo->beginTransaction();
+        $GLOBALS['dt_tx_depth'][] = null;
+    }
+}
+
+function tx_commit(PDO $pdo): void
+{
+    $sp = array_pop($GLOBALS['dt_tx_depth']);
+    $sp === null ? $pdo->commit() : $pdo->exec("RELEASE $sp");
+}
+
+function tx_rollback(PDO $pdo): void
+{
+    $sp = array_pop($GLOBALS['dt_tx_depth']);
+    if ($sp === null) { $pdo->rollBack(); return; }
+    $pdo->exec("ROLLBACK TO $sp");
+    $pdo->exec("RELEASE $sp");
+}
+
 function db(): PDO
 {
     static $pdo = null;

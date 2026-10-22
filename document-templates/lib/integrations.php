@@ -54,8 +54,16 @@ function integrations_migrate(PDO $pdo): void
         CREATE INDEX IF NOT EXISTS idx_keys_owner ON api_keys(owner_id);
         SQL);
     $cols = array_column($pdo->query('PRAGMA table_info(documents)')->fetchAll(), 'name');
-    foreach (['api_key_id INTEGER', 'external_ref TEXT', 'sender_enc TEXT'] as $def) {
+    foreach (['api_key_id INTEGER', 'external_ref TEXT', 'sender_enc TEXT', 'ext_request_hash TEXT'] as $def) {
         if (!in_array(strtok($def, ' '), $cols, true)) $pdo->exec("ALTER TABLE documents ADD COLUMN $def");
+    }
+    // ref אחד — מסמך אחד לבעלים (DT-F03). אם כבר יש כפילויות מלפני התיקון — האינדקס לא נוצר,
+    // ו-ext_issue ממשיך להגן בנעילה; את הכפילויות מבררים ידנית
+    try {
+        $pdo->exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_docs_owner_ref ON documents(owner_id, external_ref)
+            WHERE external_ref IS NOT NULL AND deleted_at IS NULL');
+    } catch (PDOException $e) {
+        error_log('document-templates: idx_docs_owner_ref not created — duplicate refs exist: ' . $e->getMessage());
     }
 }
 
@@ -548,21 +556,67 @@ function ext_map_values(array $schema, array $in): array
     return $out;
 }
 
-/** הנפקה: מסמך מתבנית, עם ערכים, ואופציונלית קישורים לממלאים. */
+/** טביעת הבקשה: אותו ref עם בקשה אחרת — לא "אותה בקשה שוב" (DT-F03). */
+function ext_request_hash(array $b): string
+{
+    $canon = function ($v) use (&$canon) {
+        if (!is_array($v)) return is_string($v) ? trim($v) : $v;
+        if (!array_is_list($v)) ksort($v);
+        return array_map($canon, $v);
+    };
+    $in = array_intersect_key($b, array_flip(['template_id', 'title', 'values', 'tag', 'participants', 'sender_name']));
+    $in['template_id'] = (int)($in['template_id'] ?? 0);
+    return hash('sha256', json_encode($canon($in), JSON_UNESCAPED_UNICODE));
+}
+
+/**
+ * הנפקה: מסמך מתבנית, עם ערכים, ואופציונלית קישורים לממלאים.
+ *
+ * אטומית (נספח הביקורת v0.3, DT-F02/F03): המסמך, הערכים, התגית ופרטי הממלאים נכתבים
+ * בטרנזקציה אחת — ממלא שלא קיים בתבנית או ערך פסול לא משאירים מסמך חלקי. מה שיוצא החוצה
+ * (קישורים ומיילים) — רק אחרי ה-commit. בקשה חוזרת עם אותו ref ואותה בקשה ממשיכה
+ * מאיפה שנעצרה (קישורים שלא יצאו), ולא שולחת מייל שוב למי שכבר קיבל. אותו ref עם בקשה אחרת — 409.
+ */
 function ext_issue(array $user, array $key, array $b): array
 {
     $ref = mb_substr(trim((string)($b['ref'] ?? '')), 0, 120);
-    if ($ref !== '') {
-        // אותו מזהה מהמערכת החיצונית — אותו מסמך (בקשה כפולה לא יוצרת שניים)
-        $st = db()->prepare('SELECT id FROM documents WHERE owner_id = ? AND external_ref = ? AND deleted_at IS NULL');
-        $st->execute([$user['id'], $ref]);
-        if ($id = $st->fetchColumn()) return ['ok' => true, 'existing' => true] + ext_document($user, ['id' => $id])['document'];
+    $hash = ext_request_hash($b);
+    $pdo = db();
+    $pdo->beginTransaction();
+    try {
+        // נעילת הכתיבה לפני הבדיקה: בקשה מקבילה עם אותו ref מחכה, ורואה את המסמך של הראשונה
+        $pdo->prepare('UPDATE api_keys SET last_used_at = last_used_at WHERE id = ?')->execute([$key['id']]);
+        $existing = null;
+        if ($ref !== '') {
+            $st = $pdo->prepare('SELECT id, ext_request_hash FROM documents WHERE owner_id = ? AND external_ref = ? AND deleted_at IS NULL');
+            $st->execute([$user['id'], $ref]);
+            $existing = $st->fetch() ?: null;
+            // מסמך מלפני התיקון (בלי טביעה) — כמו קודם: אותו ref, אותו מסמך
+            if ($existing && $existing['ext_request_hash'] !== null && !hash_equals($existing['ext_request_hash'], $hash)) {
+                throw new ApiError("ה-ref \"$ref\" כבר שימש להנפקה עם נתונים אחרים", 409);
+            }
+        }
+        if (!$existing) $id = ext_issue_create($user, $key, $b, $ref, $hash);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        throw $e;
     }
+    $id = $existing ? (int)$existing['id'] : $id;
+    // מסמך מלפני התיקון — כמו קודם: בלי קישורים בבקשה החוזרת (לא לשלוח מייל שלא נשלח אז)
+    $legacy = $existing && $existing['ext_request_hash'] === null;
+    $links = $legacy ? [] : ext_issue_links($user, $id, (array)($b['participants'] ?? []));
+    return ['ok' => true, 'existing' => (bool)$existing, 'links' => $links] + ext_document($user, ['id' => $id])['document'];
+}
+
+/** החלק שבתוך הטרנזקציה של ext_issue. כל שגיאה כאן מבטלת את כולו. */
+function ext_issue_create(array $user, array $key, array $b, string $ref, string $hash): int
+{
     $r = doc_create($user, ['template_id' => $b['template_id'] ?? 0, 'title' => $b['title'] ?? '']);
     $id = (int)$r['id'];
     $sender = mb_substr(trim((string)($b['sender_name'] ?? '')), 0, 80);
-    db()->prepare('UPDATE documents SET api_key_id = ?, external_ref = ?, sender_enc = ? WHERE id = ?')
-        ->execute([$key['id'], $ref !== '' ? $ref : null, $sender !== '' ? seal($sender) : null, $id]);
+    db()->prepare('UPDATE documents SET api_key_id = ?, external_ref = ?, sender_enc = ?, ext_request_hash = ? WHERE id = ?')
+        ->execute([$key['id'], $ref !== '' ? $ref : null, $sender !== '' ? seal($sender) : null, $hash, $id]);
     log_event($id, 'user:' . $user['id'], 'api_issued', ['key' => unseal($key['name_enc']), 'ref' => $ref]);
 
     $d = doc_owned($id, $user, 'owner');
@@ -572,7 +626,6 @@ function ext_issue(array $user, array $key, array $b): array
     if ($values) doc_save($user, ['id' => $id, 'values' => $values]);
     if (!empty($b['tag'])) doc_tags($user, ['id' => $id, 'tags' => [(string)$b['tag']]]);
 
-    $links = [];
     foreach ((array)($b['participants'] ?? []) as $p) {
         $role = (string)($p['role'] ?? '');
         $st = db()->prepare('SELECT id FROM participants WHERE document_id = ? AND role_key = ?');
@@ -580,11 +633,27 @@ function ext_issue(array $user, array $key, array $b): array
         $pid = (int)$st->fetchColumn();
         if (!$pid) throw new ApiError("אין בתבנית ממלא בשם \"$role\"", 422);
         part_contact($user, ['id' => $id, 'participant_id' => $pid] + array_intersect_key($p, array_flip(['name', 'email', 'phone'])));
+    }
+    return $id;
+}
+
+/** הקישורים — אחרי ה-commit. מי שכבר קיבל קישור (בבקשה קודמת) — מקבל את אותו קישור, בלי מייל שוב. */
+function ext_issue_links(array $user, int $id, array $participants): array
+{
+    $links = [];
+    foreach ($participants as $p) {
         $send = $p['send'] ?? 'link';
         if ($send === false || $send === 'none') continue;
-        $links[$role] = part_link($user, ['id' => $id, 'participant_id' => $pid, 'via' => $send === 'email' ? 'email' : 'link'])['url'];
+        $role = (string)($p['role'] ?? '');
+        $st = db()->prepare('SELECT * FROM participants WHERE document_id = ? AND role_key = ?');
+        $st->execute([$id, $role]);
+        $row = $st->fetch();
+        if (!$row) continue;   // נבדק בטרנזקציה; כאן רק ליתר ביטחון
+        $links[$role] = $row['notified_at']
+            ? fill_url(part_token($row))
+            : part_link($user, ['id' => $id, 'participant_id' => (int)$row['id'], 'via' => $send === 'email' ? 'email' : 'link'])['url'];
     }
-    return ['ok' => true, 'existing' => false, 'links' => $links] + ext_document($user, ['id' => $id])['document'];
+    return $links;
 }
 
 function ext_find(array $user, array $q): array
