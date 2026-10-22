@@ -229,11 +229,12 @@ final class PdfLayout
     // סגנונות
     // ==================================================================
 
-    /** סגנון בסיס של בלוק: 'normal' | 'title' | 'h1'..'h3'. */
+    /** סגנון בסיס של בלוק: 'normal' | 'title' | 'h1'..'h9' | סגנון משתמש (u<N> — מעל "רגיל", כמו בעורך). */
     private function blockStyle(string $kind): array
     {
         $s = $this->page['styles'];
-        $st = $s[$kind] ?? [];
+        $user = (bool)preg_match(USER_STYLE_RE, $kind);
+        $st = $user ? ($s[$kind] ?? []) + ($s['normal'] ?? []) : ($s[$kind] ?? []);
         return [
             'family' => $st['font'] ?? $this->page['font']['family'],
             'size' => (float)($st['size'] ?? $this->page['font']['size']),
@@ -244,7 +245,7 @@ final class PdfLayout
             'align' => $st['align'] ?? null,
             'before' => (float)($st['before'] ?? 0),
             'after' => (float)($st['after'] ?? 0),
-            'line' => (float)($s['normal']['line'] ?? 1.15),
+            'line' => (float)(($user ? $st['line'] ?? null : null) ?? $s['normal']['line'] ?? 1.15),
         ];
     }
 
@@ -347,7 +348,7 @@ final class PdfLayout
     private function paragraph(array $n, float $width, float $indent, array $list, array &$floats, float $yLocal, bool $cell = false): array
     {
         $a = $n['attrs'] ?? [];
-        $kind = $n['type'] === 'heading' ? 'h' . max(1, min(3, (int)($a['level'] ?? 1))) : (($a['pstyle'] ?? '') === 'title' ? 'title' : 'normal');
+        $kind = block_style_key($n, $this->page);
         $base = $this->blockStyle($kind);
         $rtl = ($a['dir'] ?? 'rtl') !== 'ltr';
         $align = $a['textAlign'] ?? $base['align'] ?? ($rtl ? 'right' : 'left');
@@ -461,7 +462,8 @@ final class PdfLayout
             if ($ln['from'] !== null) {
                 for ($q = $ln['from']; $q <= $ln['to']; $q++) if (isset($atoms[$q]['fn'])) $it->notes[] = $atoms[$q]['fn'];
             }
-            $it->keepNext = $kind !== 'normal' && $last;
+            // "שמור עם הבא" — לכותרות (כמו בעורך); לא לסגנון של משתמש, שהוא פסקה רגילה
+            $it->keepNext = $kind !== 'normal' && !preg_match(USER_STYLE_RE, $kind) && $last;
             $items[] = $it;
         }
         return $items;

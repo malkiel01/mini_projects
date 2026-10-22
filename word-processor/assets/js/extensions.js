@@ -9,6 +9,11 @@ import {
 } from '../../vendor/tiptap.js';
 
 const BLOCKS = ['paragraph', 'heading'];
+/** מפתח של סגנון שהמשתמש יצר (u1, u2…) — כמו USER_STYLE_RE ב-lib/page.php. */
+export const USER_STYLE = /^u[1-9]\d{0,2}$/;
+/** מפתח הסגנון של בלוק: h1..h9, title, u<N>, או normal. */
+export const styleKeyOf = node => node.type.name === 'heading' ? 'h' + node.attrs.level
+    : (node.attrs.pstyle === 'title' || USER_STYLE.test(node.attrs.pstyle || '')) ? node.attrs.pstyle : 'normal';
 
 /** הגופנים הזמינים — אותם קבצים במסך, בהדפסה וב-PDF (lib/pdf/font.php, FontSet::FAMILIES). */
 export const FONTS = ['David', 'Frank Ruehl', 'Arial', 'Narkisim', 'Miriam', 'Times New Roman', 'Calibri', 'Tahoma',
@@ -98,10 +103,12 @@ export const ParagraphFormat = Extension.create({
         }, {
             types: ['paragraph'],
             attributes: {
+                // 'title' או סגנון של המשתמש ('u1'…) — הגדרותיו ב-page.styles
                 pstyle: {
                     default: null,
-                    parseHTML: el => el.classList.contains('wp-title') || el.classList.contains('MsoTitle') ? 'title' : null,
-                    renderHTML: a => a.pstyle === 'title' ? { class: 'wp-title' } : {},
+                    parseHTML: el => el.classList.contains('wp-title') || el.classList.contains('MsoTitle') ? 'title'
+                        : (el.getAttribute('data-style') && USER_STYLE.test(el.getAttribute('data-style')) ? el.getAttribute('data-style') : null),
+                    renderHTML: a => a.pstyle === 'title' ? { class: 'wp-title' } : USER_STYLE.test(a.pstyle || '') ? { class: 'wp-s-' + a.pstyle, 'data-style': a.pstyle } : {},
                 },
             },
         }];
@@ -125,11 +132,11 @@ export const ParagraphFormat = Extension.create({
                 if (dispatch) dispatch(tr);
                 return true;
             },
-            /** סגנון: 'normal' | 'title' | 'h1'..'h3'. */
+            /** סגנון: 'normal' | 'title' | 'h1'..'h9' | סגנון משתמש 'u1'…. */
             setStyle: s => ({ chain }) => {
                 if (s === 'normal') return chain().setParagraph().setBlockAttrs({ pstyle: null }).run();
-                if (s === 'title') return chain().setParagraph().setBlockAttrs({ pstyle: 'title' }).run();
-                return chain().setHeading({ level: +s.slice(1) }).run();
+                if (s === 'title' || USER_STYLE.test(s)) return chain().setParagraph().setBlockAttrs({ pstyle: s }).run();
+                return chain().setHeading({ level: Math.max(1, Math.min(9, +s.slice(1))) }).run();
             },
         };
     },
@@ -624,7 +631,7 @@ export const DocAttrs = Extension.create({
 export function extensions(extra = []) {
     return [
         StarterKit.configure({
-            heading: { levels: [1, 2, 3] },
+            heading: { levels: [1, 2, 3, 4, 5, 6, 7, 8, 9] },   // h7–h9 אינם תגיות HTML — editor.css נותן להן display:block
             blockquote: false, code: false, codeBlock: false, link: false, orderedList: false, trailingNode: false,
             undoRedo: { depth: 200 },
         }),

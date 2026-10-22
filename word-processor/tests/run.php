@@ -351,7 +351,7 @@ $body = '<w:p><w:pPr><w:pStyle w:val="Quote"/><w:bidi/><w:ind w:right="1440" w:f
     . '<w:p><w:pPr><w:pBdr><w:top w:val="single" w:sz="4"/></w:pBdr></w:pPr>' . $run('לפני ') . '<w:r><w:drawing><wp:inline><a:graphic><a:graphicData uri="x"/></a:graphic></wp:inline></w:drawing></w:r>' . $run(' אחרי') . '</w:p>'
     . '<w:p><m:oMathPara><m:oMath><m:r><m:t>x</m:t></m:r></m:oMath></m:oMathPara>' . $run('נוסחה') . '</w:p>'
     . '<w:p><w:fldSimple w:instr=" DATE "><w:r><w:t>22/10/2026</w:t></w:r></w:fldSimple><w:ins w:id="1">' . $run(' נוסף') . '</w:ins><w:del w:id="2"><w:r><w:delText>נמחק</w:delText></w:r></w:del></w:p>'
-    . '<w:p>' . $run('סיום') . '<w:r><w:endnoteReference w:id="1"/></w:r><w:commentRangeStart w:id="0"/></w:p>'
+    . '<w:p>' . $run('סיום') . '<w:r><w:rPr><w:rStyle w:val="Emph"/></w:rPr><w:t>!</w:t></w:r><w:r><w:endnoteReference w:id="1"/></w:r><w:commentRangeStart w:id="0"/></w:p>'
     . '<w:tbl><w:tr><w:tc><w:tbl><w:tr><w:tc><w:p>' . $run('פנימי') . '</w:p></w:tc></w:tr></w:tbl><w:p>' . $run('תא') . '</w:p></w:tc></w:tr></w:tbl>'
     . '<w:sectPr><w:headerReference w:type="default" r:id="rH"/><w:headerReference w:type="even" r:id="rE"/><w:footerReference w:type="default" r:id="rF"/>'
     . '<w:pgSz w:w="11906" w:h="16838"/><w:cols w:num="2"/></w:sectPr>';
@@ -360,7 +360,8 @@ $wordDocx = $mkDocx([
     '[Content_Types].xml' => '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>',
     'word/document.xml' => '<w:document ' . $WN . '><w:body>' . $body . '</w:body></w:document>',
     'word/styles.xml' => '<w:styles ' . $WN . '><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:rPr><w:sz w:val="24"/></w:rPr></w:style>'
-        . '<w:style w:type="paragraph" w:styleId="Quote"><w:name w:val="Quote"/><w:rPr><w:i/></w:rPr></w:style></w:styles>',
+        . '<w:style w:type="paragraph" w:styleId="Quote"><w:name w:val="ציטוט"/><w:pPr><w:jc w:val="center"/><w:spacing w:after="240"/></w:pPr><w:rPr><w:i/><w:color w:val="595959"/></w:rPr></w:style>'
+        . '<w:style w:type="character" w:styleId="Emph"><w:name w:val="Emph"/><w:rPr><w:b/></w:rPr></w:style></w:styles>',
     'word/comments.xml' => '<w:comments ' . $WN . '><w:comment w:id="0"><w:p>' . $run('הערה') . '</w:p></w:comment></w:comments>',
     'word/_rels/document.xml.rels' => '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rH" Target="header1.xml"/><Relationship Id="rE" Target="header2.xml"/><Relationship Id="rF" Target="footer1.xml"/></Relationships>',
     'word/header1.xml' => $hdr('hdr', '<w:p><w:pPr><w:bidi/></w:pPr>' . $run('חברה בע"מ') . '</w:p>'),
@@ -371,6 +372,8 @@ $w = import_docx($wordDocx, $docC);
 $rep = array_column($w['report'], 'count', 'key');
 check('דוח ייבוא: כל מה שלא נתמך מופיע', $rep == ['shapes' => 1, 'math' => 1, 'comments' => 1, 'endnotes' => 1, 'nested' => 1, 'tracked' => 2, 'fields' => 1,
     'columns' => 1, 'hf_extra' => 1, 'styles' => 1, 'pborder' => 1, 'firstline' => 1, 'fonts' => 1], json_encode($rep));
+check('ייבוא: סגנון פסקה מותאם → סגנון שלנו (שם ועיצוב), והפסקה בו', ($w['page']['styles']['u1'] ?? null) == ['name' => 'ציטוט', 'italic' => true, 'color' => '#595959', 'align' => 'center', 'after' => 12.0]
+    && ($w['json']['content'][0]['attrs']['pstyle'] ?? '') === 'u1', json_encode($w['page']['styles'] ?? null, JSON_UNESCAPED_UNICODE));
 $fontRow = array_values(array_filter($w['report'], fn($r) => $r['key'] === 'fonts'))[0] ?? [];
 check('דוח ייבוא: שם הגופן החסר ומה מוצג במקומו', str_contains($fontRow['detail'] ?? '', 'Segoe UI') && str_contains($fontRow['detail'] ?? '', 'Heebo'));
 $wt = export_text($w['json']);
@@ -409,6 +412,28 @@ $anchorDocx = $mkDocx(['word/document.xml' => '<w:document ' . $WN . '><w:body><
 check('ייבוא: HYPERLINK \\l "סימניה" → קישור פנימי', str_contains(json_encode(import_docx($anchorDocx, $docL)['json'], JSON_UNESCAPED_UNICODE), '"href":"#פרק_ג"'));
 check('ייבוא: שדה HYPERLINK לא נספר בדוח כ"שדה"', !in_array('fields', array_column($fi['report'], 'key'), true));
 check('safe_href: משלים ודוחה', safe_href('www.a.co.il') === 'https://www.a.co.il' && safe_href('a@b.co') === 'mailto:a@b.co' && safe_href('javascript:x') === null && safe_href('#') === null);
+
+// סגנונות: כותרות 1–9 וסגנון של המשתמש — Word הלוך וחזור, HTML, נרמול
+$pgS = page_normalize(['styles' => ['u1' => ['name' => 'הדגשה <b>', 'size' => 14, 'bold' => true, 'color' => '#C00000'], 'u2' => ['size' => 10], 'x9' => ['name' => 'רע']]]);
+check('נרמול: סגנון משתמש עם שם נשמר (שם מנוקה), בלי שם / מפתח לא תקין — לא', ($pgS['styles']['u1'] ?? null) == ['name' => 'הדגשה b', 'size' => 14.0, 'bold' => true, 'color' => '#c00000']
+    && !isset($pgS['styles']['u2']) && !isset($pgS['styles']['x9']) && isset($pgS['styles']['h9']), json_encode($pgS['styles']['u1'] ?? null, JSON_UNESCAPED_UNICODE));
+check('נרמול: null מוחק סגנון משתמש', !isset(page_normalize(['styles' => ['u1' => null]], $pgS)['styles']['u1']));
+$js = ['type' => 'doc', 'content' => [
+    ['type' => 'heading', 'attrs' => ['level' => 5], 'content' => [['type' => 'text', 'text' => 'כותרת חמש']]],
+    ['type' => 'heading', 'attrs' => ['level' => 8], 'content' => [['type' => 'text', 'text' => 'כותרת שמונה']]],
+    ['type' => 'paragraph', 'attrs' => ['pstyle' => 'u1'], 'content' => [['type' => 'text', 'text' => 'פסקה מודגשת']]],
+]];
+$oxS = export_ooxml($js, $pgS);
+check('Word: Heading5 / Heading8 וסגנון User1 בשם שלו', str_contains($oxS['body'], 'w:val="wpHeading5"') && str_contains($oxS['body'], 'w:val="wpUser1"')
+    && str_contains($oxS['styles'], 'w:styleId="wpHeading8"') && str_contains($oxS['styles'], '<w:name w:val="wp הדגשה b"/>'));
+$docSt = doc_new("c:$A", 'סגנונות', null, null, 'u1', 'דנה');
+$backS = import_docx(export_docx($js, $pgS), $docSt);
+check('Word → חזרה: כותרות 5 ו-8, הסגנון והפסקה שבו', ($backS['json']['content'][0]['attrs']['level'] ?? 0) === 5 && ($backS['json']['content'][1]['attrs']['level'] ?? 0) === 8
+    && ($backS['json']['content'][2]['attrs']['pstyle'] ?? '') === 'u1' && ($backS['page']['styles']['u1']['name'] ?? '') === 'הדגשה b'
+    && ($backS['page']['styles']['u1']['size'] ?? 0) == 14 && !empty($backS['page']['styles']['u1']['bold']), json_encode($backS['page']['styles'] ?? null, JSON_UNESCAPED_UNICODE));
+$hS = export_html($js, $pgS)['html'];
+check('HTML: h5, כותרת 8 כפסקה עם תפקיד, ומחלקת הסגנון עם CSS', str_contains($hS, '<h5') && str_contains($hS, 'role="heading" aria-level="8"') && str_contains($hS, 'class="wp-s-u1"')
+    && str_contains(export_css($pgS), '.wp-doc .wp-s-u1{') && str_contains(export_css($pgS), '.wp-doc .wp-h8{'));
 
 $imp = import_html('<h1>כותרת</h1><p style="text-align:center">שלום <b>עולם</b> <span style="color:#ff0000">אדום</span></p><ul><li>א</li><li>ב</li></ul><table><tr><td>1</td><td>2</td></tr></table>', $docC);
 $c = $imp['json']['content'];

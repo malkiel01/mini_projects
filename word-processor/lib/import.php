@@ -86,7 +86,7 @@ function html_blocks(DOMNode $parent): array
             else {
                 $attrs = html_para_attrs($c);
                 $kids = trim_inline(html_inline($c, []));
-                if ($tag[0] === 'h' && $tag !== 'hr') $out[] = para($kids, $attrs + ['level' => min(3, (int)$tag[1])], 'heading');
+                if ($tag[0] === 'h' && $tag !== 'hr') $out[] = para($kids, $attrs + ['level' => min(9, (int)$tag[1])], 'heading');
                 else $out[] = para($kids, $attrs);
             }
         } else {
@@ -228,6 +228,7 @@ function import_docx(string $bytes, string $docId): array
     foreach ($blocks as $b) if (($b['type'] ?? '') === 'sectionBreak') $sects[] = $b['_sect'];
     $sects[] = $xp->query('/w:document/w:body/w:sectPr')->item(0);
     $page = $ctx->section($sects[0]);
+    if ($ctx->userStyles) $page = ($page ?? []) + ['styles' => $ctx->userStyles];   // סגנונות מותאמים מ-Word
     $k = 0;
     foreach ($blocks as &$b) {
         if (($b['type'] ?? '') !== 'sectionBreak') continue;
@@ -253,7 +254,8 @@ final class DocxCtx
     private array $numFmt = [];    // numId => [ilvl => fmt]
     private array $rels = [];      // rId => target
     private array $footnotes = []; // id => attrs של ההערה: text, content (word/footnotes.xml)
-    private array $custom = [];    // styleId => true — סגנון פסקה מותאם שיש בו עיצוב (העיצוב שלו לא מיובא)
+    private array $custom = [];    // styleId => true — סגנון תו מותאם שיש בו עיצוב (העיצוב שלו לא מיובא)
+    public array $userStyles = []; // u<N> => הגדרות הסגנון (name, font, size, bold…) — סגנונות פסקה מותאמים מ-Word
     private array $seen = [];      // מפתח => true — מה שנספר פעם אחת בלבד (סגנון, גופן)
     private array $notes = [];     // דוח הייבוא: מפתח => מספר מופעים
     private array $fonts = [];     // שמות גופנים שאינם זמינים → מוצגים ב-Heebo
@@ -268,8 +270,19 @@ final class DocxCtx
                 $name = strtolower((string)$xp->evaluate('string(w:name/@w:val)', $st));
                 $id = $st->getAttributeNS(W, 'styleId');
                 if ($name === 'title') $this->styles[$id] = 'title';
-                elseif (preg_match('/^heading ([1-9])$/', $name, $m)) $this->styles[$id] = 'h' . min(3, (int)$m[1]);
-                elseif ($st->getAttributeNS(W, 'default') !== '1' && $xp->query('w:rPr/*|w:pPr/*[not(self::w:keepNext or self::w:keepLines or self::w:outlineLvl)]', $st)->length) $this->custom[$id] = true;
+                elseif (preg_match('/^heading ([1-9])$/', $name, $m)) $this->styles[$id] = 'h' . (int)$m[1];
+                elseif ($st->getAttributeNS(W, 'default') !== '1' && $xp->query('w:rPr/*|w:pPr/*[not(self::w:keepNext or self::w:keepLines or self::w:outlineLvl)]', $st)->length
+                    && count($this->userStyles) < USER_STYLES_MAX) {
+                    // סגנון פסקה מותאם — נכנס כסגנון של המשתמש (u<N>) עם השם והעיצוב שלו
+                    $key = 'u' . (count($this->userStyles) + 1);
+                    $this->styles[$id] = $key;
+                    $this->userStyles[$key] = ['name' => style_name((string)$xp->evaluate('string(w:name/@w:val)', $st)) ?: $id] + $this->styleProps($st, $xp);
+                }
+            }
+            // סגנון תו מותאם עם עיצוב (חוץ מ-Hyperlink והערות שוליים) — העיצוב שלו לא נכנס: לדוח
+            foreach ($xp->query('//w:style[@w:type="character"][w:rPr/*]') as $st) {
+                $id = $st->getAttributeNS(W, 'styleId');
+                if (!preg_match('/hyperlink|footnote|endnote|default/i', $id . ' ' . $xp->evaluate('string(w:name/@w:val)', $st))) $this->custom[$id] = true;
             }
         }
         if ($s = $read('word/comments.xml')) $this->note('comments', $this->xp(xml_dom($s))->query('//w:comment')->length);
@@ -412,8 +425,7 @@ final class DocxCtx
         $type = 'paragraph';
         $style = (string)$xp->evaluate('string(w:pPr/w:pStyle/@w:val)', $p);
         $kind = $this->styles[$style] ?? null;
-        if (isset($this->custom[$style])) $this->note('styles', 1, $style);
-        if ($kind === 'title') $attrs['pstyle'] = 'title';
+        if ($kind === 'title' || ($kind && $kind[0] === 'u')) $attrs['pstyle'] = $kind;
         elseif ($kind) { $type = 'heading'; $attrs['level'] = (int)$kind[1]; }
         $bidi = $xp->query('w:pPr/w:bidi', $p)->length > 0 && (string)$xp->evaluate('string(w:pPr/w:bidi/@w:val)', $p) !== '0';
         $jc = (string)$xp->evaluate('string(w:pPr/w:jc/@w:val)', $p);
@@ -474,6 +486,8 @@ final class DocxCtx
                 elseif ($ft === 'end') { $fieldLink = null; $pending = null; }
             }
             $marks = $this->runMarks($r, $xp);
+            $rs = (string)$xp->evaluate('string(w:rPr/w:rStyle/@w:val)', $r);
+            if ($rs !== '' && isset($this->custom[$rs])) $this->note('styles', 1, $rs);
             $href = $this->runLink($r, $p) ?? $fieldLink;
             if ($href !== null) $marks[] = ['type' => 'link', 'attrs' => ['href' => $href]];
             foreach ($r->childNodes as $k) {
@@ -501,6 +515,36 @@ final class DocxCtx
             }
         }
         return [para($this->mergeText($inline), $attrs, $type), $num, $breakAfter];
+    }
+
+    /** העיצוב של סגנון פסקה מ-styles.xml → הגדרות סגנון אצלנו (font, size, bold, italic, underline, color, align, before, after, line). */
+    private function styleProps(DOMElement $st, DOMXPath $xp): array
+    {
+        $o = [];
+        $on = function (string $tag) use ($xp, $st) {
+            $e = $xp->query("w:rPr/w:$tag", $st)->item(0);
+            return $e instanceof DOMElement && !in_array($e->getAttributeNS(W, 'val'), ['0', 'false', 'none'], true);
+        };
+        $font = (string)$xp->evaluate('string(w:rPr/w:rFonts/@w:cs)', $st) ?: (string)$xp->evaluate('string(w:rPr/w:rFonts/@w:ascii)', $st);
+        if ($font !== '') $o['font'] = font_name($font);
+        $sz = (string)$xp->evaluate('string(w:rPr/w:szCs/@w:val)', $st) ?: (string)$xp->evaluate('string(w:rPr/w:sz/@w:val)', $st);
+        if (is_numeric($sz)) $o['size'] = (float)$sz / 2;
+        if ($on('b') || $on('bCs')) $o['bold'] = true;
+        if ($on('i') || $on('iCs')) $o['italic'] = true;
+        if ($on('u')) $o['underline'] = true;
+        $c = (string)$xp->evaluate('string(w:rPr/w:color/@w:val)', $st);
+        if (preg_match('/^[0-9A-Fa-f]{6}$/', $c) && strtoupper($c) !== '000000') $o['color'] = '#' . strtolower($c);
+        $bidi = $xp->query('w:pPr/w:bidi', $st)->length > 0;
+        $jc = (string)$xp->evaluate('string(w:pPr/w:jc/@w:val)', $st);
+        $al = match ($jc) { 'center' => 'center', 'both', 'distribute' => 'justify', 'start' => $bidi ? 'right' : 'left', 'end' => $bidi ? 'left' : 'right', 'left' => 'left', 'right' => 'right', default => null };
+        if ($al) $o['align'] = $al;
+        $sp = $xp->query('w:pPr/w:spacing', $st)->item(0);
+        if ($sp instanceof DOMElement) {
+            if ($sp->hasAttributeNS(W, 'before')) $o['before'] = round((int)$sp->getAttributeNS(W, 'before') / 20, 1);
+            if ($sp->hasAttributeNS(W, 'after')) $o['after'] = round((int)$sp->getAttributeNS(W, 'after') / 20, 1);
+            if ($sp->hasAttributeNS(W, 'line') && ($sp->getAttributeNS(W, 'lineRule') ?: 'auto') === 'auto') $o['line'] = round((int)$sp->getAttributeNS(W, 'line') / 240, 2);
+        }
+        return $o;
     }
 
     /** הכתובת של ריצה שבתוך w:hyperlink (קשר חיצוני או w:anchor) או fldSimple של HYPERLINK — או null. */
@@ -783,7 +827,7 @@ const IMPORT_REPORT = [
     'columns' => ['טורים', 'המסמך יובא בטור אחד'],
     'hf_extra' => ['כותרת שונה לעמוד הראשון או לעמודים זוגיים', 'יובאה רק הכותרת הרגילה'],
     'hf_complex' => ['תמונה או טבלה בכותרת עליונה / תחתונה', 'יובא רק הטקסט'],
-    'styles' => ['סגנונות מותאמים', 'העיצוב שבא מהסגנון לא יובא; עיצוב שהוחל ישירות על הטקסט — כן'],
+    'styles' => ['סגנונות תו מותאמים', 'העיצוב שבא מסגנון התו לא יובא; סגנונות פסקה ועיצוב ישיר — כן'],
     'pborder' => ['גבולות והצללה של פסקה', 'לא יובאו'],
     'firstline' => ['הזחת שורה ראשונה / תלויה', 'לא יובאה'],
     'fonts' => ['גופנים שאינם זמינים', 'מוצגים ב-Heebo, זהה במסך, בהדפסה וב-PDF'],

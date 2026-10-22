@@ -12,6 +12,8 @@
  * כל run מחזיר true כשהפקודה בוצעה.
  */
 
+import { styleKeyOf } from './extensions.js';
+
 /** קבוצות — לסדר בסרגל ובסרט, ולחיפוש. */
 export const GROUPS = {
     history: 'ביטול',
@@ -45,8 +47,9 @@ export const COMMANDS = [
 
     // ---------- סגנון וגופן ----------
     { id: 'style', label: 'סגנון', group: 'style', run: (x, v) => x.chain().setStyle(v).run(),
-        value: x => { const e = x.editor; return e.isActive('heading', { level: 1 }) ? 'h1' : e.isActive('heading', { level: 2 }) ? 'h2' : e.isActive('heading', { level: 3 }) ? 'h3'
-            : e.isActive('paragraph', { pstyle: 'title' }) ? 'title' : 'normal'; } },
+        value: x => { const b = x.editor.state.selection.$from.parent; return ['paragraph', 'heading'].includes(b.type.name) ? styleKeyOf(b) : 'normal'; } },
+    { id: 'newStyle', label: 'סגנון חדש מהבחירה', icon: '✚', group: 'style', run: x => x.ui.newStyle() },
+    { id: 'updateStyle', label: 'עדכון הסגנון לפי הבחירה', icon: '⟲', group: 'style', run: x => x.ui.updateStyle() },
     { id: 'fontFamily', label: 'גופן', group: 'font', run: (x, v) => v ? x.chain().setFontFamily(v).run() : x.chain().unsetFontFamily().run(),
         value: x => ts(x).fontFamily || '' },
     { id: 'fontSize', label: 'גודל גופן', group: 'font', run: (x, v) => v ? x.chain().setFontSize(v + 'pt').run() : x.chain().unsetFontSize().run(),
