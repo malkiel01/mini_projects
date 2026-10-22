@@ -20,7 +20,7 @@
   ],
   "gate": true,
   "public": [
-    "api/index.php?do=register|login|pair|policy|check|yt_allowed|trace|heartbeat|ping|request|requests|search|apps|platform_key",
+    "api/index.php?do=register|login|pair|policy|check|yt_allowed|trace|heartbeat|ping|request|requests|search|apps|platform_key|app_request|app_request_applied|app_usage|enforce_report|selftest|update_state|yt_learn_report",
     "parent/manifest.webmanifest",
     "parent/sw.js",
     "assets/**",
