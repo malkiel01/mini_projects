@@ -88,7 +88,7 @@ export default async function (t) {
 
     await t.api(p, 'my_page', { doc, page: { size: 'Letter' } });
     s = await srv();
-    t.ok('תאימות: my_page של לשונית ישנה עדיין עובד', s.json.attrs.page.size === 'Letter' && s.json.attrs.schema === 4);
+    t.ok('תאימות: my_page של לשונית ישנה עדיין עובד', s.json.attrs.page.size === 'Letter' && s.json.attrs.schema === 5);
     t.ok('בלי שגיאות JS', !p.errors.length, p.errors.join(' | '));
     await p.context().close();
 }

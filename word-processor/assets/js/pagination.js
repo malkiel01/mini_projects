@@ -321,9 +321,9 @@ function measure(view, g) {
             const dom = view.nodeDOM(cpos);
             if (!(dom instanceof HTMLElement)) return;
             const name = child.type.name;
-            if (name === 'pageBreak' || name === 'sectionBreak') {
+            if (name === 'pageBreak' || name === 'sectionBreak' || name === 'columnBreak') {
                 const b = box(dom);
-                units.push({ top: b.top, bottom: b.bottom, pos: cpos, kind: 'force', after: cpos + child.nodeSize, section: name === 'sectionBreak' });
+                units.push({ top: b.top, bottom: b.bottom, pos: cpos, kind: 'force', after: cpos + child.nodeSize, section: name === 'sectionBreak', column: name === 'columnBreak' });
                 return;
             }
             if (CONTAINERS.has(name)) { visit(child, cpos + 1, name === 'listItem' ? brk : (offset === 0 ? at : null)); return; }
@@ -445,7 +445,7 @@ function measure(view, g) {
             }
             shown = null;
             pending = rest;   // closePage מעביר אותו לעמוד הבא
-            breaks.push(closePage({ pos: u.after, h: Math.max(0, cur.pageH - cur.top - (u.bottom - top) + g.gap + next.top), page: page + 1, sec: !!u.section, forced: true },
+            breaks.push(closePage({ pos: u.after, h: Math.max(0, cur.pageH - cur.top - (u.bottom - top) + g.gap + next.top), page: page + 1, sec: !!u.section, forced: !u.column },
                 u.bottom - top, here));
             if (u.section) s = secOf(u.after);
             pageTop = u.bottom;

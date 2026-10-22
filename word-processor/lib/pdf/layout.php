@@ -436,6 +436,9 @@ final class PdfLayout
                 case 'pageBreak':
                     $new = [new FlowItem(0, fn() => null, 'force')];
                     break;
+                case 'columnBreak':   // הטור הבא (בטור אחד — העמוד הבא); לא נרשם כמעבר עמוד מאולץ
+                    $new = [new FlowItem(0, fn() => null, 'column')];
+                    break;
                 case 'toc':
                     $new = [$this->toc($n['attrs'] ?? [], $width, $indent)];
                     break;
@@ -1185,7 +1188,7 @@ final class PdfLayout
         };
         for ($i = 0; $i < $n; $i++) {
             $it = $items[$i];
-            if ($it->kind === 'force') { $settle(); $newPage(); $forced[] = count($pages) - 1; continue; }
+            if ($it->kind === 'force' || $it->kind === 'column') { $settle(); $newPage(); if ($it->kind === 'force') $forced[] = count($pages) - 1; continue; }
             if ($it->header && $it->table) $headers[$it->table] = $it;
             $atTop = $y <= $top + 0.01;
             $full = $shown !== null;   // העמוד מלא (הערה נחתכה בו): הפריט הבא — בעמוד חדש, בלי תיקונים
@@ -1208,7 +1211,7 @@ final class PdfLayout
                 // שורה אחת לפני האחרונה: אם האחרונה לא נכנסת והפסקה ארוכה — שתיים עוברות יחד
                 elseif ($it->kind === 'line' && $it->count >= 4 && $it->index === $it->count - 2 && isset($items[$i + 1]) && $y + $it->h + $items[$i + 1]->h > $H + 0.5) $break = true;
                 // כותרת לא נשארת לבד בתחתית
-                elseif ($it->keepNext && isset($items[$i + 1]) && $items[$i + 1]->kind !== 'force' && $y + $it->h + $items[$i + 1]->h > $H + 0.5) $break = true;
+                elseif ($it->keepNext && isset($items[$i + 1]) && !in_array($items[$i + 1]->kind, ['force', 'column'], true) && $y + $it->h + $items[$i + 1]->h > $H + 0.5) $break = true;
             }
             if ($break) {
                 // כותרת שלפני — עוברת גם היא (אם אינה ראשונה בעמוד)

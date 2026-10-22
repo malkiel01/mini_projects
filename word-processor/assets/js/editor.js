@@ -713,7 +713,7 @@ export function createWordEditor(root, opts) {
             grp('סגנונות', [gallery], [styleSel, B.editStyles, cmdBtn('newStyle'), cmdBtn('updateStyle')]),
             grp('עריכה', [cmdBtn('find'), cmdBtn('replace')])]],
         ['insert', 'הוספה', [grp('טבלאות', B.insertTable), grp('איורים', [B.insertImage, imgInput]), grp('הערות', [B.footnote, cmdBtn('endnote')]), grp('קישורים', [cmdBtn('link'), linkOff, cmdBtn('bookmark')]), grp('כיתובים', [cmdBtn('caption'), cmdBtn('crossRef'), cmdBtn('insertTof')]), grp('תוכן עניינים', [cmdBtn('insertToc'), tocUpd]), grp('עמודים', B.pageBreak)]],
-        ['layout', 'פריסה', [grp('הגדרת עמוד', B.pageSetup), grp('מעברים', B.sectionBreak)]],
+        ['layout', 'פריסה', [grp('הגדרת עמוד', B.pageSetup), grp('מעברים', [B.sectionBreak, cmdBtn('columnBreak')])]],
         ['review', 'סקירה', [grp('הערות', [cmdBtn('comment'), cmdBtn('commentsPane')]),
             grp('מעקב', trackBtn),
             grp('שינויים', changeBtns.slice(0, 4), changeBtns.slice(4))]],
