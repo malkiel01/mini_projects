@@ -1084,21 +1084,49 @@ export function createWordEditor(root, opts) {
         footnoteDialog(pos);
     });
 
-    /** כיתוב, מרחק מהטקסט ותיאור (alt). */
+    /**
+     * חלון התמונה: גודל מדויק בס"מ (של מה שרואים — אחרי חיתוך וסיבוב; "נעילת יחס" כמו ב-Word), הזזה מדויקת לתמונה
+     * מאחורי / לפני הטקסט, כיתוב, מרחק מהטקסט ותיאור. 1px = 2.54/96 ס"מ.
+     */
     function imageDialog(pos) {
         const a = ed.state.doc.nodeAt(pos)?.attrs;
         if (!a) return;
+        const img = editor.view.nodeDOM(pos)?.querySelector?.('img');
+        const g = imageBox(a, img?.naturalWidth ? { w: img.naturalWidth, h: img.naturalHeight } : null);
+        const CM = 2.54 / 96;
+        const cm = px => Math.round(px * CM * 100) / 100;
+        const free = a.wrap === 'behind' || a.wrap === 'front';
+        const wIn = numInput('bw', cm(g.bw), { min: 0.5, max: 50, step: 0.01 });
+        const hIn = numInput('bh', cm(g.bh), { min: 0.5, max: 50, step: 0.01 });
+        const lock = h('input', { type: 'checkbox', name: 'lock', checked: true });
+        // נעילת יחס: שינוי אחד מהמידות מעדכן את השנייה מיד
+        wIn.addEventListener('input', () => { if (lock.checked && +wIn.value > 0) hIn.value = Math.round(+wIn.value * g.bh / g.bw * 100) / 100; });
+        hIn.addEventListener('input', () => { if (lock.checked && +hIn.value > 0) wIn.value = Math.round(+hIn.value * g.bw / g.bh * 100) / 100; });
         sheet('תמונה', body => {
             body.append(
+                h('section.group', h('h3', 'גודל ', h('small', 'בס"מ')),
+                    h('div.fields.two', field('רוחב', wIn), field('גובה', hIn)),
+                    h('label.switch', lock, h('span', 'נעילת יחס גובה-רוחב'))),
+                free ? h('section.group', h('h3', 'מיקום ', h('small', 'בס"מ, מהמקום של התמונה בטקסט')),
+                    h('div.fields.two', field('אופקי (שמאלה — שלילי)', numInput('px', cm(a.x || 0), { min: -50, max: 50, step: 0.01 })),
+                        field('אנכי (למטה — חיובי)', numInput('py', cm(a.y || 0), { min: -50, max: 50, step: 0.01 })))) : null,
                 field('כיתוב מתחת לתמונה', h('input', { name: 'caption', value: a.caption || '', maxlength: 300 })),
                 field('מרחק מהטקסט (נק\')', numInput('dist', a.dist ?? '', { min: 0, max: 72, placeholder: '9' })),
                 field('תיאור לקוראי מסך', h('input', { name: 'alt', value: a.alt || '', maxlength: 300 })));
         }, form => {
             const f = new FormData(form);
             const d = f.get('dist');
-            ed.chain().focus().setNodeSelection(pos).updateAttributes('image', {
-                caption: String(f.get('caption')).trim(), alt: String(f.get('alt')).trim(), dist: d === '' ? null : Math.max(0, Math.min(72, +d)),
-            }).setNodeSelection(pos).run();
+            const attrs = { caption: String(f.get('caption')).trim(), alt: String(f.get('alt')).trim(), dist: d === '' ? null : Math.max(0, Math.min(72, +d)) };
+            // הגודל שרואים → רוחב וגובה של התמונה המלאה (לפני חיתוך; בסיבוב של 90° הצירים מתחלפים)
+            const bw = Math.max(0.5, Math.min(50, +f.get('bw') || cm(g.bw))) / CM, bh = Math.max(0.5, Math.min(50, +f.get('bh') || cm(g.bh))) / CM;
+            if (Math.abs(bw - g.bw) > 0.5 || Math.abs(bh - g.bh) > 0.5) {
+                const turned = (a.rotate || 0) % 180 !== 0;
+                const sx = bw / g.bw, sy = bh / g.bh;
+                attrs.width = Math.round(g.w * (turned ? sy : sx));
+                attrs.height = Math.round(g.h * (turned ? sx : sy));
+            }
+            if (free) { attrs.x = Math.round(+f.get('px') / CM) || 0; attrs.y = Math.round(+f.get('py') / CM) || 0; }
+            ed.chain().focus().setNodeSelection(pos).updateAttributes('image', attrs).setNodeSelection(pos).run();
         });
     }
 
