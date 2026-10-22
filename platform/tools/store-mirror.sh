@@ -26,6 +26,8 @@ for f in */app.json; do
     # builtAt בבניות TWA, built בבניות עם build.json ידני (כרטיסי ברכה ועוד)
     built=$(jq -r '.builtAt // .built // empty' "$d/build.json" 2>/dev/null)
     pkg=$(jq -r '[.[] | .target.package_name // empty][0] // empty' "$d/assetlinks.json" 2>/dev/null)
+    # בלי assetlinks.json ב-Release (מגדלור) — שם החבילה מ-build.json; בלעדיו אין "פתיחה" ו"עדכון" בכרטיס
+    [ -n "$pkg" ] || pkg=$(jq -r '.package // empty' "$d/build.json" 2>/dev/null)
     jq -n --arg v "$ver" --arg p "$pkg" --arg b "$built" \
         '{versionCode: ($v | if . == "" then null else tonumber end), package: ($p | if . == "" then null else . end), builtAt: ($b | if . == "" then null else . end)}' \
         > "$d/meta.json"
