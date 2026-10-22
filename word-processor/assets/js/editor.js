@@ -21,6 +21,7 @@ import { headings } from './toc.js';
 import { captions, newSeqId, SEQ_LABELS, listTitle } from './caption.js';
 import { createComments } from './comments.js';
 import { TrackChanges, changes, resolveChanges, goToChange, setTracking } from './track.js';
+import { TabStops, tabsOf, ALIGNS as TAB_ALIGNS, LEADERS as TAB_LEADERS } from './tabs.js';
 
 const MM = 96 / 25.4;
 const PT = 4 / 3;
@@ -262,7 +263,7 @@ export function createWordEditor(root, opts) {
 
     const editor = new Editor({
         element: host,
-        extensions: extensions([Pages.configure({ geometry, onLayout: drawPages }), FindReplace, ParagraphMarks, Endnotes,
+        extensions: extensions([Pages.configure({ geometry, onLayout: drawPages }), FindReplace, ParagraphMarks, Endnotes, TabStops,
             TrackChanges.configure({ author: () => opts.user?.name || '' })]),
         content: initial,
         editable: opts.editable !== false,
@@ -390,6 +391,7 @@ export function createWordEditor(root, opts) {
         wmPrint.textContent = page.watermark || '';
         if (page.watermark) Object.assign(wmPrint.style, { fontSize: watermarkSize(page.watermark, wmm * 72 / 25.4, hmm * 72 / 25.4) + 'pt', fontFamily: cssFont(page.font.family) });
         setZoom();
+        editor.storage.wpTabs?.measure?.();   // עמוד / גופן אחרים — הטאבים נמדדים מחדש
         editor.storage.wpPages.schedule?.();
     }
 
@@ -1350,6 +1352,19 @@ export function createWordEditor(root, opts) {
         const node = ed.state.selection.$from.parent;
         const a = node.attrs || {};
         const exact = /^exact:([\d.]+)$/.exec(a.lineHeight || '');
+        // עצירות טאב (כמו "טאבים" ב-Word): מיקום בס"מ מהשוליים בצד ההתחלה, יישור, מוביל — שורה לכל עצירה
+        const CM = 72 / 2.54;
+        const tabList = h('div.tab-list');
+        const tabRow = (t = {}) => {
+            const row = h('div.tab-row',
+                numInput('tab_pos', t.pos ? Math.round(t.pos / CM * 100) / 100 : '', { type: 'text', pattern: '[0-9]+([.,][0-9]+)?', 'aria-label': 'מיקום (ס"מ)', placeholder: 'ס"מ' }),
+                h('select', { name: 'tab_align', 'aria-label': 'יישור' }, Object.entries(TAB_ALIGNS).map(([k, v]) => h('option', { value: k, selected: k === (t.align || 'start') }, v))),
+                h('select', { name: 'tab_leader', 'aria-label': 'מוביל' }, Object.entries(TAB_LEADERS).map(([k, v]) => h('option', { value: k, selected: k === (t.leader || 'none') }, v))),
+                h('button.icon-btn', { type: 'button', 'aria-label': 'מחיקת העצירה', onclick: () => row.remove() }, '✕'));
+            tabList.append(row);
+            return row;
+        };
+        tabsOf(a.tabs).forEach(tabRow);
         sheet('פסקה', body => {
             body.append(
                 h('section.group', h('h3', 'כיוון'), seg('dir', { rtl: 'מימין לשמאל', ltr: 'משמאל לימין' }, a.dir || 'rtl', 'כיוון')),
@@ -1368,7 +1383,10 @@ export function createWordEditor(root, opts) {
                 h('section.group', h('h3', 'שבירת עמודים'),
                     sw('keepNext', 'שמירה עם הבא — לא נשארת לבד בתחתית העמוד', a.keepNext),
                     sw('keepLines', 'שמירת שורות יחד — לא נחצית בין עמודים', a.keepLines),
-                    sw('breakBefore', 'מעבר עמוד לפני — מתחילה עמוד חדש', a.breakBefore)));
+                    sw('breakBefore', 'מעבר עמוד לפני — מתחילה עמוד חדש', a.breakBefore)),
+                h('section.group', h('h3', 'עצירות טאב ', h('small', 'ס"מ מהשוליים')), tabList,
+                    h('button.btn', { type: 'button', onclick: () => tabRow().querySelector('input').focus() }, '+ עצירה'),
+                    h('p.hint', 'מוביל — נקודות / מקפים / קו עד העצירה, כמו בתוכן עניינים. אחרי העצירה האחרונה — כל 1.27 ס"מ.')));
         }, form => {
             const f = new FormData(form);
             const line = f.get('line');
@@ -1380,6 +1398,8 @@ export function createWordEditor(root, opts) {
                 spaceBefore: n('before'), spaceAfter: n('after'), indent: Math.min(8, Math.round(n('indent') || 0)),
                 firstLine: f.get('flk') && n('flv') ? Math.min(200, n('flv')) * (f.get('flk') === 'hang' ? -1 : 1) : null,
                 keepNext: f.get('keepNext') ? true : null, keepLines: f.get('keepLines') ? true : null, breakBefore: f.get('breakBefore') ? true : null,
+                tabs: (t => t.length ? t : null)(tabsOf(f.getAll('tab_pos').map((p, i) => ({ pos: parseFloat(String(p).replace(',', '.')) * CM,
+                    align: f.getAll('tab_align')[i], leader: f.getAll('tab_leader')[i] })))),
             }).run();
         });
     }

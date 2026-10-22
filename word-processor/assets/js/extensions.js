@@ -113,6 +113,12 @@ export const ParagraphFormat = Extension.create({
                     parseHTML: el => ptOf(el.style.letterSpacing),
                     renderHTML: a => num(a.letterSpacing) ? { style: `letter-spacing:${a.letterSpacing}pt` } : {},
                 },
+                // עצירות טאב מותאמות (tabs.js): [{pos נק', align, leader}]. ב-HTML — data-tabs, כדי שהעתקה בתוך העורך תשמור אותן
+                tabs: {
+                    default: null,
+                    parseHTML: el => { try { const v = JSON.parse(el.getAttribute('data-tabs') || 'null'); return Array.isArray(v) && v.length ? v : null; } catch { return null; } },
+                    renderHTML: a => Array.isArray(a.tabs) && a.tabs.length ? { 'data-tabs': JSON.stringify(a.tabs) } : {},
+                },
                 // שבירת עמודים (כמו ב-Word): שמירה עם הבא, שמירת שורות יחד, מעבר עמוד לפני. העימוד (pagination.js) והשרת
                 // (lib/pdf/layout.php) קוראים אותן; ב-HTML — רק סימון (data-*), כי השבירה בהדפסה היא של העימוד שלנו.
                 // מ-Word (הדבקה): page-break-after:avoid / page-break-inside:avoid / page-break-before:always
@@ -856,8 +862,9 @@ export const LetterSpacing = Extension.create({
  *    צריך (doc_schema_need) — כך לשונית ישנה לא מוחקת אותם בשקט.
  * 4: מעקב שינויים (ins / del, attrs.track).
  * 5: מעבר טור ידני (columnBreak).
+ * 6: עצירות טאב מותאמות (attrs.tabs בפסקה).
  */
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 /**
  * מאפיינים של המסמך עצמו (צומת השורש): הגדרות העמוד וגרסת המבנה.

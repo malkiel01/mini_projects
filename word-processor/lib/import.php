@@ -531,6 +531,19 @@ final class DocxCtx
                 $attrs['lineHeight'] = $rule === 'auto' ? (string)round($line / 240, 2) : 'exact:' . round($line / 20, 1);
             }
         }
+        // עצירות טאב (בפסקה עצמה): left / right הפוכים בפסקה מימין לשמאל; clear / bar / num — לא נכנסים
+        $tabs = [];
+        foreach ($xp->query('w:pPr/w:tabs/w:tab', $p) as $tb) {
+            $al = match ($tb->getAttributeNS(W, 'val')) {
+                'start' => 'start', 'end' => 'end', 'center' => 'center', 'decimal' => 'decimal',
+                'left' => $bidi ? 'end' : 'start', 'right' => $bidi ? 'start' : 'end', default => null,
+            };
+            if ($al === null) continue;
+            $ld = $tb->getAttributeNS(W, 'leader');
+            $tabs[] = ['pos' => (int)$tb->getAttributeNS(W, 'pos') / 20, 'align' => $al,
+                'leader' => in_array($ld, ['dot', 'middleDot'], true) ? 'dot' : (in_array($ld, ['underscore', 'heavy'], true) ? 'underscore' : ($ld === 'hyphen' ? 'hyphen' : 'none'))];
+        }
+        if ($tabs = tabs_val($tabs)) $attrs['tabs'] = $tabs;
         // שבירת עמודים (בפסקה עצמה; בכותרות — ממילא נשמרות עם הבא). w:val="0"/"false" — כבוי
         foreach (['keepNext' => 'keepNext', 'keepLines' => 'keepLines', 'pageBreakBefore' => 'breakBefore'] as $tag => $key) {
             $el = $xp->query("w:pPr/w:$tag", $p)->item(0);

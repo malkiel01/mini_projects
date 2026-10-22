@@ -96,7 +96,7 @@ export default async function (t) {
     t.ok('מעבר טור בהדפסה: עמוד אחד, "לפני" בטור הימני ו"אחרי" בראש השמאלי', cc.length === 1 && /לפנימעבר|רבעמינפל/.test(cc[0].firstR) && /אחרימעבר|רבעמירחא/.test(cc[0].firstL), JSON.stringify(cc));
     await p.waitForTimeout(2500);
     const saved = await t.api(p, 'my_open', { doc: cb });
-    t.ok('מעבר טור נשמר (columnBreak, גרסת מבנה 5)', saved.json.content.some(n => n.type === 'columnBreak') && saved.json.attrs.schema === 5, JSON.stringify(saved.json.content.map(n => n.type)));
+    t.ok('מעבר טור נשמר (columnBreak, גרסת מבנה 5)', saved.json.content.some(n => n.type === 'columnBreak') && saved.json.attrs.schema >= 5, JSON.stringify(saved.json.content.map(n => n.type)));
     // בטור אחד — מעבר טור הוא מעבר עמוד (כמו ב-Word)
     const cb1 = await t.newDoc(p, 'מעבר טור בטור אחד', { type: 'doc', content: [P('לפנימעבר'), { type: 'columnBreak' }, P('אחרימעבר טור')] });
     await t.openDoc(p, cb1);

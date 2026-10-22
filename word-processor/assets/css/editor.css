@@ -199,6 +199,12 @@ html.wp-no-page-zoom, html.wp-no-page-zoom body, .wp-editor, .wp-stage { touch-a
 .wp-doc h7, .wp-doc h8, .wp-doc h9 { display: block; }
 /* עצירות טאב כל חצי אינץ' — כמו ב-Word וב-PDF (TAB_STOP) */
 .wp-doc { tab-size: 36pt; }
+/* עצירות טאב מותאמות (tabs.js): הטאב — קופסה ברוחב שנמדד; המוביל — רקע (נקודות / מקפים / קו), גם בהדפסה */
+.wp-doc .wp-tab { display: inline-block; tab-size: 0; text-indent: 0; white-space: pre; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.wp-doc .wp-tab.lead-dot { background: radial-gradient(circle, currentColor .7px, transparent 1px) 0 calc(100% - .25em) / 4px 4px repeat-x; }
+.wp-doc .wp-tab.lead-hyphen { background: linear-gradient(90deg, currentColor 55%, transparent 0) 0 62% / 6px 1px repeat-x; }
+.wp-doc .wp-tab.lead-underscore { background: linear-gradient(currentColor, currentColor) 0 calc(100% - .15em) / 100% 1px no-repeat; }
+.tab-row { display: grid; grid-template-columns: 5.5em minmax(0, 1fr) minmax(0, 1fr) auto; gap: var(--s2); align-items: center; margin-block-end: var(--s2); }
 .wp-doc ul, .wp-doc ol { margin: 0; padding-inline-start: 24pt; }
 .wp-doc ol[data-list="hebrew"] { list-style-type: hebrew; }
 .wp-doc ol[data-list="roman"] { list-style-type: lower-roman; }
