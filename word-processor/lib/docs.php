@@ -14,7 +14,7 @@ const LOCK_SECONDS = 120;
 const MEDIA_MAX_BYTES = 10 * 1024 * 1024;
 const MEDIA_TYPES = ['image/png' => 'png', 'image/jpeg' => 'jpg', 'image/gif' => 'gif', 'image/webp' => 'webp'];
 /** גרסת המבנה של ה-JSON (attrs.schema). אותו מספר ב-assets/js/extensions.js; ההמרות — כאן וב-assets/js/schema.js. */
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 class ApiError extends Exception
 {
@@ -45,13 +45,14 @@ function doc_json_valid($json): array
  * המרה לגרסת המבנה הנוכחית. מסמך מגרסה חדשה מהשרת (לשונית עם קוד חדש, ושרת שעוד לא עודכן) — נדחה,
  * כדי שקוד ישן לא ישמור מבנה שהוא לא מבין.
  *   0 → 1: attrs נוסף לצומת השורש; הגדרות העמוד עוברות בו (attrs.page) בדרך מהשרת ואליו — במסד הן בעמודה page.
+ *   1 → 2: קישורים (link) וסימניות (bookmark) — אין מה להמיר.
  */
 function doc_migrate(array $json): array
 {
     $attrs = is_array($json['attrs'] ?? null) ? $json['attrs'] : [];
     $v = (int)($attrs['schema'] ?? 0);
     if ($v > SCHEMA_VERSION) throw new ApiError('המסמך נשמר בגרסה חדשה יותר של העורך — רעננו את הדף', 'schema_newer', 409);
-    if ($v < 1) $v = 1;
+    if ($v < 2) $v = 2;
     $attrs['schema'] = $v;
     $json['attrs'] = $attrs;
     return $json;

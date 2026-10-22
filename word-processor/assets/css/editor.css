@@ -33,6 +33,14 @@
 .rb-results .lb { flex: 1; }
 .rb-results .k { font-size: .75rem; color: var(--muted); }
 /* תצוגה לפני הדפסה: בלי הסרט, שורות המצב והפעולות, ובלי סימני עריכה — כמו בהדפסה */
+/* קישור — כמו הסגנון Hyperlink של Word (גם בהדפסה וב-PDF); סימניה — נקודה בלי רוחב */
+.wp-doc a.wp-link { color: #0563c1; text-decoration: underline; cursor: text; }
+.wp-doc.ProseMirror[contenteditable=false] a.wp-link { cursor: pointer; }
+.wp-doc a.wp-bookmark { display: inline; font-size: 0; line-height: 0; }
+.bm-list { display: grid; gap: var(--s1); list-style: none; padding: 0; }
+.bm-list li { display: flex; align-items: center; gap: var(--s2); }
+.bm-list .bm-name { flex: 1; min-inline-size: 0; overflow-wrap: anywhere; }
+.bm-list li.none { color: var(--muted); }
 /* חיפוש והחלפה (find.js): פס מתחת לסרט; ההתאמות מסומנות במסמך, הנוכחית — חזק יותר */
 .wp-find-slot { flex: none; }
 .wp-findbar { display: grid; gap: 4px; padding: 6px var(--s2); background: var(--surface); border-bottom: 1px solid var(--line); }

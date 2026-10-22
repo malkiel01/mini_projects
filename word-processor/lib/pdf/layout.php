@@ -269,6 +269,8 @@ final class PdfLayout
                 case 'subscript': $s['va'] = 'sub'; break;
                 case 'superscript': $s['va'] = 'sup'; break;
                 case 'highlight': $s['bg'] = self::hex($a['color'] ?? '#ffff00'); break;
+                // קישור: כחול עם קו תחתון, כמו במסך (צבע מפורש שאחריו — גובר, כמו ב-CSS)
+                case 'link': $s['u'] = true; $s['color'] = self::hex('#0563c1'); break;
                 case 'textStyle':
                     if (!empty($a['fontFamily'])) $s['family'] = font_name((string)$a['fontFamily']);
                     if (($z = pt_val($a['fontSize'] ?? null))) $s['size'] = $z;

@@ -450,14 +450,32 @@ final class DocxCtx
             if ((int)$ind->getAttributeNS(W, 'firstLine') > 0 || (int)$ind->getAttributeNS(W, 'hanging') > 0) $this->note('firstline');
         }
         $this->note('tracked', $xp->query('w:ins|w:del|w:r/w:rPr/w:rPrChange|w:pPr/w:pPrChange', $p)->length);
-        $this->note('fields', $xp->query('w:fldSimple|w:r/w:fldChar[@w:fldCharType="begin"]|w:hyperlink/w:r/w:fldChar[@w:fldCharType="begin"]', $p)->length);
+        // שדות — חוץ משדה HYPERLINK, שנכנס כקישור אמיתי
+        $this->note('fields', $xp->query('w:fldSimple|w:r/w:fldChar[@w:fldCharType="begin"]|w:hyperlink/w:r/w:fldChar[@w:fldCharType="begin"]', $p)->length
+            - $xp->query('w:fldSimple[starts-with(normalize-space(@w:instr), "HYPERLINK")]|w:r/w:instrText[starts-with(normalize-space(.), "HYPERLINK")]|w:hyperlink/w:r/w:instrText[starts-with(normalize-space(.), "HYPERLINK")]', $p)->length);
         $this->note('math', $xp->query('.//*[local-name()="oMath"]', $p)->length);
         if ($xp->query('w:pPr/w:framePr', $p)->length) $this->note('shapes');
         $inline = [];
         $breakAfter = false;
-        // שדה פשוט (fldSimple) — התוצאה האחרונה שלו נכנסת כטקסט
-        foreach ($xp->query('w:r|w:hyperlink/w:r|w:ins/w:r|w:smartTag/w:r|w:fldSimple/w:r|w:hyperlink/w:fldSimple/w:r', $p) as $r) {
+        // שדה פשוט (fldSimple) — התוצאה האחרונה שלו נכנסת כטקסט. קישור: w:hyperlink, או שדה HYPERLINK (מורכב / פשוט)
+        $fieldLink = null;   // הכתובת של שדה HYPERLINK מורכב שבתוכו אנחנו (מ-separate עד end)
+        $pending = null;
+        foreach ($xp->query('w:bookmarkStart|w:hyperlink/w:bookmarkStart|w:r|w:hyperlink/w:r|w:ins/w:r|w:smartTag/w:r|w:fldSimple/w:r|w:hyperlink/w:fldSimple/w:r', $p) as $r) {
+            if ($r->localName === 'bookmarkStart') {
+                $name = $r->getAttributeNS(W, 'name');
+                if ($name !== '_GoBack' && ($b = bookmark_name($name))) $inline[] = ['type' => 'bookmark', 'attrs' => ['name' => $b]];
+                continue;
+            }
+            foreach ($xp->query('w:fldChar|w:instrText', $r) as $f) {
+                if ($f->localName === 'instrText') { if (($u = $this->fieldHref($f->textContent)) !== null) $pending = $u; continue; }
+                $ft = $f->getAttributeNS(W, 'fldCharType');
+                if ($ft === 'begin') $pending = null;
+                elseif ($ft === 'separate') $fieldLink = $pending;
+                elseif ($ft === 'end') { $fieldLink = null; $pending = null; }
+            }
             $marks = $this->runMarks($r, $xp);
+            $href = $this->runLink($r, $p) ?? $fieldLink;
+            if ($href !== null) $marks[] = ['type' => 'link', 'attrs' => ['href' => $href]];
             foreach ($r->childNodes as $k) {
                 if (!$k instanceof DOMElement) continue;
                 switch ($k->localName) {
@@ -483,6 +501,28 @@ final class DocxCtx
             }
         }
         return [para($this->mergeText($inline), $attrs, $type), $num, $breakAfter];
+    }
+
+    /** הכתובת של ריצה שבתוך w:hyperlink (קשר חיצוני או w:anchor) או fldSimple של HYPERLINK — או null. */
+    private function runLink(DOMElement $r, DOMElement $p): ?string
+    {
+        for ($e = $r->parentNode; $e instanceof DOMElement && $e !== $p; $e = $e->parentNode) {
+            if ($e->localName === 'hyperlink') {
+                $anchor = $e->getAttributeNS(W, 'anchor');
+                if ($anchor !== '') return bookmark_name($anchor) !== null ? '#' . $anchor : null;
+                return safe_href($this->rels[$e->getAttributeNS(R_NS, 'id')] ?? '');
+            }
+            if ($e->localName === 'fldSimple' && ($u = $this->fieldHref($e->getAttributeNS(W, 'instr'))) !== null) return $u;
+        }
+        return null;
+    }
+
+    /** קוד שדה HYPERLINK "url" או HYPERLINK \l "סימניה" → כתובת. */
+    private function fieldHref(string $instr): ?string
+    {
+        if (!preg_match('/^\s*HYPERLINK\b(.*)$/s', $instr, $m)) return null;
+        if (preg_match('/\\\\l\s+"([^"]+)"/', $m[1], $l)) return bookmark_name($l[1]) !== null ? '#' . $l[1] : null;
+        return preg_match('/"([^"]+)"/', $m[1], $u) ? safe_href($u[1]) : null;
     }
 
     private function hasLatinOnly(DOMElement $p): bool

@@ -200,6 +200,8 @@ function html_node(array $n): string
             return '<div class="page-break"></div>';
         case 'hardBreak':
             return '<br>';
+        case 'bookmark':
+            return ($b = bookmark_name($a['name'] ?? '')) ? '<a id="' . h($b) . '"></a>' : '';
         case 'horizontalRule':
             return '<hr>';
         case 'text':
@@ -226,6 +228,32 @@ function html_image(array $a): string
     return '<span class="wp-img wrap-' . $g['wrap'] . ' align-' . $g['align'] . '" style="' . $outer . '">' . $frame . $cap . '</span>';
 }
 
+/** כתובת קישור בטוחה (כמו safeHref ב-assets/js/extensions.js): http(s), mailto, tel, "#סימניה"; אחרת null. */
+function safe_href($v): ?string
+{
+    $s = trim((string)$v);
+    if ($s === '' || preg_match('/[\x00-\x1f]/', $s)) return null;
+    if ($s[0] === '#') return strlen($s) > 1 ? $s : null;
+    if (preg_match('~^(https?://|mailto:|tel:)~i', $s)) return $s;
+    if (preg_match('/^[\w.+-]+@[\w-]+(\.[\w-]+)+$/', $s)) return 'mailto:' . $s;
+    if (preg_match('~^(www\.)?[\w-]+(\.[\w-]+)*\.[a-z]{2,}([/?#:]\S*)?$~i', $s)) return 'https://' . $s;
+    return null;
+}
+
+/** הקישור שעל ריצת טקסט (או null). */
+function link_href(array $marks): ?string
+{
+    foreach ($marks as $m) if (($m['type'] ?? '') === 'link') return safe_href($m['attrs']['href'] ?? null);
+    return null;
+}
+
+/** שם סימניה תקין (כמו BOOKMARK_RE ב-extensions.js) — או null. */
+function bookmark_name($v): ?string
+{
+    $s = (string)$v;
+    return preg_match('/^[\p{L}_][\p{L}\p{N}_]{0,39}$/u', $s) ? $s : null;
+}
+
 function html_marks(string $s, array $marks): string
 {
     $style = '';
@@ -239,6 +267,9 @@ function html_marks(string $s, array $marks): string
             case 'subscript': $s = "<sub>$s</sub>"; break;
             case 'superscript': $s = "<sup>$s</sup>"; break;
             case 'highlight': $s = '<mark style="background:#' . (color_val($a['color'] ?? null) ?? 'FFFF00') . '">' . $s . '</mark>'; break;
+            case 'link':
+                if (($href = safe_href($a['href'] ?? null))) $s = '<a href="' . h($href) . '">' . $s . '</a>';
+                break;
             case 'textStyle':
                 if (($c = color_val($a['color'] ?? null))) $style .= "color:#$c;";
                 if (!empty($a['fontFamily'])) $style .= 'font-family:' . css_font(font_name((string)$a['fontFamily'])) . ';';
@@ -337,6 +368,8 @@ function roman(int $n): string
 final class Ooxml
 {
     public array $media = [];        // [{name, type, bytes, rid}]
+    public array $links = [];        // כתובת חיצונית => rid (קשר hyperlink ב-rels)
+    private int $bookmarkId = 0;     // w:id של סימניות; בגוף לשילוב — מ-900000, כדי לא להתנגש בסימניות של המארחת
     public array $nums = [];         // [numId => ['abstract' => id]]
     public array $abstracts = [];    // [abstractId => ['type' => ..]]
     private int $docPr = 1;
@@ -349,6 +382,7 @@ final class Ooxml
 
     public function __construct(public array $page, public string $prefix = '')
     {
+        if ($prefix !== '') $this->bookmarkId = 900000;
         $this->numBase = $prefix === '' ? 1 : 9001;
         $this->setSection($page);
     }
@@ -437,6 +471,7 @@ final class Ooxml
         $runs = '';
         $anchors = '';
         $captions = '';
+        $openLink = null;
         foreach ($n['content'] ?? [] as $c) {
             if (($c['type'] ?? '') === 'image') {
                 if (!empty($c['attrs']['caption'])) {
@@ -446,8 +481,16 @@ final class Ooxml
                 }
                 if (($c['attrs']['wrap'] ?? 'inline') !== 'inline') { $anchors .= $this->image($c); continue; }
             }
+            // קישור: ריצות רצופות עם אותה כתובת — בתוך w:hyperlink אחד
+            $href = ($c['type'] ?? '') === 'text' ? link_href($c['marks'] ?? []) : null;
+            if ($href !== $openLink) {
+                if ($openLink !== null) $runs .= '</w:hyperlink>';
+                if ($href !== null) $runs .= $this->hyperlink($href);
+                $openLink = $href;
+            }
             $runs .= $this->inline($c, $a);
         }
+        if ($openLink !== null) $runs .= '</w:hyperlink>';
         return '<w:p>' . ($ppr !== '' ? "<w:pPr>$ppr</w:pPr>" : '') . $anchors . $runs . '</w:p>' . $captions;
     }
 
@@ -470,6 +513,10 @@ final class Ooxml
                 return $this->runs((string)($c['text'] ?? ''), $c['marks'] ?? [], $pa);
             case 'hardBreak':
                 return '<w:r><w:br/></w:r>';
+            case 'bookmark':
+                if (!($b = bookmark_name($c['attrs']['name'] ?? ''))) return '';
+                $id = ++$this->bookmarkId;
+                return '<w:bookmarkStart w:id="' . $id . '" w:name="' . xml($b) . '"/><w:bookmarkEnd w:id="' . $id . '"/>';
             case 'image':
                 return $this->image($c);
             case 'footnote':
@@ -487,6 +534,14 @@ final class Ooxml
             default:
                 return '';
         }
+    }
+
+    /** פתיחת w:hyperlink: "#שם" — לסימניה במסמך (w:anchor); אחרת — קשר חיצוני (rels). */
+    private function hyperlink(string $href): string
+    {
+        if ($href[0] === '#') return '<w:hyperlink w:anchor="' . xml(substr($href, 1)) . '" w:history="1">';
+        $this->links[$href] ??= ($this->prefix ?: 'r') . 'Link' . (count($this->links) + 1);
+        return '<w:hyperlink r:id="' . $this->links[$href] . '" w:history="1">';
     }
 
     /** word/footnotes.xml: שני המפרידים שחובה (-1, 0) והערות המסמך. */
@@ -525,7 +580,8 @@ final class Ooxml
     {
         $m = [];
         foreach ($marks as $mk) $m[$mk['type'] ?? ''] = $mk['attrs'] ?? [];
-        $o = '';
+        // קישור: הסגנון Hyperlink (כחול, קו תחתון) — כמו ב-Word, ובלי עיצוב ישיר שהיה חוזר בייבוא כצבע וקו תחתון
+        $o = isset($m['link']) && link_href([['type' => 'link', 'attrs' => $m['link']]]) ? '<w:rStyle w:val="' . ($this->prefix . 'Hyperlink') . '"/>' : '';
         $ts = $m['textStyle'] ?? [];
         if (!empty($ts['fontFamily'])) {
             $f = xml(font_name((string)$ts['fontFamily']));
@@ -726,6 +782,8 @@ final class Ooxml
                 . '<w:name w:val="' . xml($display) . '"/>' . ($k !== 'normal' ? '<w:basedOn w:val="' . $this->styleId('normal') . '"/><w:next w:val="' . $this->styleId('normal') . '"/>' : '')
                 . '<w:qFormat/><w:pPr>' . $ppr . '</w:pPr>' . ($rpr ? "<w:rPr>$rpr</w:rPr>" : '') . '</w:style>';
         }
+        $out .= '<w:style w:type="character" w:styleId="' . $this->prefix . 'Hyperlink"><w:name w:val="' . ($this->prefix === '' ? 'Hyperlink' : $this->prefix . ' Hyperlink') . '"/>'
+            . '<w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:rPr><w:color w:val="0563C1"/><w:u w:val="single"/></w:rPr></w:style>';
         return $out;
     }
 
@@ -754,6 +812,9 @@ final class Ooxml
         $out = '';
         foreach ($this->media as $m) {
             $out .= '<Relationship Id="' . $m['rid'] . '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/' . $m['name'] . '"/>';
+        }
+        foreach ($this->links as $href => $rid) {
+            $out .= '<Relationship Id="' . $rid . '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="' . xml($href) . '" TargetMode="External"/>';
         }
         return $out;
     }
