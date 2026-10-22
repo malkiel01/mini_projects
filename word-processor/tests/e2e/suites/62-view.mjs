@@ -44,12 +44,15 @@ export default async function (t) {
     t.ok('סגירה', await p.locator('.wp-nav').isHidden());
 
     // סימני פסקה: ¶ לכל פסקה, · לרווח, → לטאב — ובלי לשנות את הגובה
-    const hBefore = await p.locator('.wp-doc').evaluate(e => e.getBoundingClientRect().height);
+    // העימוד מודד מחדש אחרי כל עדכון של התצוגה (במסגרת הבאה) — מודדים רק כשהוא נרגע
+    const settled = async () => { await p.waitForTimeout(300); return p.locator('.wp-doc').evaluate(e => e.getBoundingClientRect().height); };
     await sel(1, 1);
+    const hBefore = await settled();
     await p.keyboard.press('Control+Shift+Digit8');
     t.ok('סימני פסקה — ¶ בכל פסקה', await p.locator('.wp-doc .wp-mk-p').count() === 6);
     t.ok('רווחים וטאב מסומנים', await p.locator('.wp-doc .wp-mk-sp').count() >= 4 && await p.locator('.wp-doc .wp-mk-tab').count() === 1);
-    t.ok('הגובה לא השתנה', Math.abs(await p.locator('.wp-doc').evaluate(e => e.getBoundingClientRect().height) - hBefore) < 1);
+    const hAfter = await settled();
+    t.ok('הגובה לא השתנה', Math.abs(hAfter - hBefore) < 1, `${hBefore} → ${hAfter}`);
     t.ok('לא נכנס לתוכן', !JSON.stringify(await E(() => document.querySelector('.wp-doc').editor.getJSON())).includes('¶'));
     await p.keyboard.press('Control+Shift+Digit8');
     t.ok('כיבוי', await p.locator('.wp-doc .wp-mk-p').count() === 0);
