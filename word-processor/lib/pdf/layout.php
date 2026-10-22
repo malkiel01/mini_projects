@@ -70,6 +70,13 @@ final class PdfCanvas
             . '1 0' . $skew . ' 1 ' . self::n($x) . ' ' . self::n($this->H - $baseline) . " Tm <$hex> Tj ET\n");
     }
 
+    /** גליף אחד במטריצה מלאה (סימן מים — טקסט מסובב), בשכבה נתונה. m = [a, b, c, d, e, f] בקואורדינטות של PDF. */
+    public function glyphsMatrix(TtfFont $f, float $size, array $m, string $hex, array $rgb, string $layer): void
+    {
+        $name = $this->pdf->font($f);
+        $this->add($layer, 'BT ' . self::rgb($rgb, 'rg') . " $name " . self::n($size) . ' Tf ' . implode(' ', array_map([self::class, 'n'], $m)) . " Tm <$hex> Tj ET\n");
+    }
+
     /**
      * תמונה במסגרת (x, y, bw, bh): חלון חיתוך cw×ch שמסתובב סביב מרכז המסגרת, והתמונה המלאה w×h בתוכו.
      */
@@ -769,6 +776,29 @@ final class PdfLayout
     }
 
     /** שורת טקסט אחת ממורכזת בין x1 ל-x2 (כיתוב, כותרת עליונה ותחתונה, מספר עמוד). */
+    /** סימן מים: הטקסט במרכז העמוד, מסובב 45° (עולה משמאל לימין), אפור בהיר, מאחורי הכול — כמו בעורך. */
+    private function watermark(PdfCanvas $c, string $text): void
+    {
+        $size = watermark_size($text, $this->W, $this->H);
+        $st = ['family' => $this->first['font']['family'], 'size' => $size, 'bold' => true, 'italic' => false, 'u' => false, 'strike' => false,
+            'color' => [208, 208, 208], 'bg' => null, 'va' => null, 'ls' => 0.0];
+        $atoms = array_map(fn($ch) => $this->charAtom(mb_ord($ch), $st), mb_str_split($text));
+        $cps = array_column($atoms, 'cp');
+        $lv = bidi_levels($cps, 1);
+        $order = bidi_visual($lv, $cps, 1);
+        $w = array_sum(array_column($atoms, 'w'));
+        $cos = $sin = M_SQRT1_2;
+        // תחילת השורה: המרכז, פחות חצי רוחב לאורך הקו, ופחות חצי גובה האותיות לניצב (בקואורדינטות PDF — y למעלה)
+        $x = $this->W / 2 - $w / 2 * $cos + 0.35 * $size * $sin;
+        $y = $this->H / 2 - $w / 2 * $sin - 0.35 * $size * $cos;
+        foreach ($order as $i) {
+            $at = $atoms[$i];
+            $c->glyphsMatrix($at['f'], $at['size'], [$cos, $sin, -$sin, $cos, $x, $y], $at['f']->encode($at['cp']), $st['color'], 'bg');
+            $x += $at['w'] * $cos;
+            $y += $at['w'] * $sin;
+        }
+    }
+
     private function drawTextCentered(PdfCanvas $c, string $text, array $st, float $x1, float $x2, float $baseline, string $layer = 'main', string $align = 'center'): void
     {
         $atoms = array_map(fn($ch) => $this->charAtom(mb_ord($ch), $st), mb_str_split($text));
@@ -1001,6 +1031,9 @@ final class PdfLayout
     /** כותרת עליונה ותחתונה ומספר העמוד, בשוליים — כמו בעורך. */
     private function decorate(PdfCanvas $c, int $i, int $total): void
     {
+        // רקע הדף (של כל המסמך — מהמקטע הראשון): צבע עמוד, וסימן מים באלכסון — ראשונים בשכבה האחורית
+        if (($pc = color_val($this->first['page_color'] ?? null))) $c->rect(0, 0, $this->W, $this->H, self::hex('#' . $pc), 'bg');
+        if (($wm = $this->first['watermark'] ?? '') !== '') $this->watermark($c, $wm);
         $nb = $this->page['numbering'];
         $st = ['family' => $this->page['font']['family'], 'size' => 9.0, 'bold' => false, 'italic' => false, 'u' => false, 'strike' => false,
             'color' => [85, 85, 85], 'bg' => null, 'va' => null, 'ls' => 0.0];

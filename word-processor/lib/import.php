@@ -230,6 +230,10 @@ function import_docx(string $bytes, string $docId): array
     $page = $ctx->section($sects[0]);
     if ($ctx->userStyles) $page = ($page ?? []) + ['styles' => $ctx->userStyles];   // סגנונות מותאמים מ-Word
     if ($ctx->headingNumbers) $page = ($page ?? []) + ['heading_numbers' => true];
+    // רקע הדף: צבע עמוד (w:background), וסימן מים שנמצא בכותרות (hfPart)
+    $bg = strtolower((string)$xp->evaluate('string(/w:document/w:background/@w:color)'));
+    if (preg_match('/^[0-9a-f]{6}$/', $bg) && $bg !== 'ffffff') $page = ($page ?? []) + ['page_color' => '#' . $bg];
+    if ($ctx->watermark !== '') $page = ($page ?? []) + ['watermark' => $ctx->watermark];
     $k = 0;
     foreach ($blocks as &$b) {
         if (($b['type'] ?? '') !== 'sectionBreak') continue;
@@ -263,7 +267,8 @@ final class DocxCtx
     private array $seen = [];      // מפתח => true — מה שנספר פעם אחת בלבד (סגנון, גופן)
     private array $notes = [];     // דוח הייבוא: מפתח => מספר מופעים
     private array $fonts = [];     // שמות גופנים שאינם זמינים → מוצגים ב-Heebo
-    private ?int $contentTw = null; // רוחב השורה (twip) לפי המקטע האחרון — לרוחב טבלה באחוזים
+    private ?int $contentTw = null;
+    public string $watermark = '';  // סימן מים מהכותרת העליונה (צורת WordArt של Word) // רוחב השורה (twip) לפי המקטע האחרון — לרוחב טבלה באחוזים
     private $read;
 
     public function __construct(callable $read, private string $docId)
@@ -904,7 +909,11 @@ final class DocxCtx
             }
             if (trim($line) !== '') $text[] = trim($line);
         }
-        return ['text' => $text, 'num' => $num, 'complex' => $hx->query('//w:tbl|//w:drawing|//w:pict')->length > 0];
+        // סימן מים: צורת WordArt (VML) עם textpath — כך Word שומר "סימן מים" מותאם. היא לא נחשבת "כותרת מורכבת"
+        $wm = $hx->query('//*[local-name()="textpath"][@string]')->item(0);
+        if ($wm instanceof DOMElement && $this->watermark === '') $this->watermark = mb_substr(trim($wm->getAttribute('string')), 0, 40);
+        $complex = $hx->query('//w:tbl|//w:drawing|//w:pict[not(.//*[local-name()="textpath"])]')->length > 0;
+        return ['text' => $text, 'num' => $num, 'complex' => $complex];
     }
 }
 

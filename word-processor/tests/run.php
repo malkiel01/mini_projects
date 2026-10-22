@@ -589,6 +589,24 @@ check('HTML: data-borders, צבע, רוחב, גובה, יישור אנכי', str
 $tall = ['type' => 'doc', 'content' => [['type' => 'table', 'content' => array_map(fn($i) => ['type' => 'tableRow', 'attrs' => ['height' => 400], 'content' => [$tc("שורה $i")]], [1, 2, 3])]]];
 check('PDF: גובה שורה — שלוש שורות של 400 נק\' (עמוד ~700) בשלושה עמודים', preg_match_all('#/Type /Page /#', $pdfOf($tall)) === 3);
 
+// רקע הדף: צבע עמוד וסימן מים — נרמול, Word הלוך וחזור, PDF
+$pgW = page_normalize(['page_color' => '#FDF6E3', 'watermark' => "  טיוטה\n "]);
+check('נרמול: צבע עמוד (אותיות קטנות), סימן מים מנוקה; לבן / לא תקין — בלי', $pgW['page_color'] === '#fdf6e3' && $pgW['watermark'] === 'טיוטה'
+    && page_normalize(['page_color' => '#ffffff'])['page_color'] === '' && page_normalize(['page_color' => 'red'])['page_color'] === '');
+check('גודל סימן המים: קצר — 120, ארוך — קטן יותר, לא פחות מ-24', watermark_size('טיוטה', 595, 842) == 120 && watermark_size(str_repeat('א', 30), 595, 842) < 60 && watermark_size(str_repeat('א', 40), 300, 300) == 24);
+$dxW = export_docx(['type' => 'doc', 'content' => [$pk('טקסט')]], $pgW);
+$zW = new ZipArchive(); $tW = tempnam(sys_get_temp_dir(), 'wm'); file_put_contents($tW, $dxW); $zW->open($tW);
+$hdrW = $zW->getFromName('word/header1.xml');
+check('Word: w:background, displayBackgroundShape, סימן מים (textpath) בכותרת — XML תקין',
+    str_contains($zW->getFromName('word/document.xml'), '<w:background w:color="FDF6E3"/>') && str_contains($zW->getFromName('word/settings.xml'), '<w:displayBackgroundShape/>')
+    && str_contains($hdrW, 'string="טיוטה"') && str_contains($hdrW, 'rotation:315') && (new DOMDocument())->loadXML($hdrW));
+$zW->close(); unlink($tW);
+$backW = import_docx($dxW, $docL);
+check('Word → חזרה: צבע העמוד וסימן המים; הכותרת לא "מורכבת"', ($backW['page']['page_color'] ?? '') === '#fdf6e3' && ($backW['page']['watermark'] ?? '') === 'טיוטה'
+    && !in_array('hf_complex', array_column($backW['report'], 'key'), true), json_encode($backW['page'], JSON_UNESCAPED_UNICODE));
+$pdfW = gzuncompress_pages($pdfOf(['type' => 'doc', 'content' => [$pk('טקסט')]], ['page_color' => '#fdf6e3', 'watermark' => 'טיוטה']));
+check('PDF: מלבן הרקע בצבע העמוד, והסימן מסובב 45°', str_contains($pdfW, '0.99 0.96 0.89 rg 0 0 595.28 841.89 re f') && str_contains($pdfW, '0.71 0.71 -0.71 0.71'));
+
 // מספור: רב-רמתי 1.1.1, המשך מספור, מספור כותרות — PDF, Word הלוך וחזור, HTML
 $li = fn($t, $sub = null) => ['type' => 'listItem', 'content' => array_merge([['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => $t]]]], $sub ? [$sub] : [])];
 $jn = ['type' => 'doc', 'content' => [

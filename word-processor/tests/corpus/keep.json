@@ -527,5 +527,8 @@
             }
         ]
     },
-    "page": null
+    "page": {
+        "page_color": "#fdf6e3",
+        "watermark": "טיוטה"
+    }
 }
