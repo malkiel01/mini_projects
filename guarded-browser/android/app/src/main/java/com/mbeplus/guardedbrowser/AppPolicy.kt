@@ -83,6 +83,8 @@ object AppPolicy {
         if (store.released) return false
         if (pkg.isEmpty() || !store.appsManage) return false
         if (pkg == store.ownPackage || pkg in ALWAYS || pkg in store.launchers) return false
+        // חלון התקנה מהמרקט (MarketInstall) — Google Play פתוחה, גם כשההורה חסם אותה.
+        if (pkg == MarketMath.PLAY && MarketMath.open(store.marketTarget, store.marketUntil, System.currentTimeMillis())) return false
         // היתר זמני מבקשת פתיחה (AppGrants) — עד הסוף שלו בשעון האמין, גם בלי שרת.
         if (pkg in AppGrantMath.granted(store.appGrants, TrustedClock.now(store))) return false
         // זמן מסך (AppTimeMath): נגמר הזמן להיום — חסומה, גם אם ההורה אישר אותה. היתר זמני (למעלה) גובר.
@@ -91,6 +93,8 @@ object AppPolicy {
             return pkg in store.appsBlocked && System.currentTimeMillis() > store.settingsPassUntil
         }
         if (pkg in store.appsAllowed) return false
+        // הותקנה בחלון של המרקט ולא אושרה — חסומה, מה שלא תהיה ההגדרה לאפליקציה חדשה (ההורה מאשר — appsAllowed למעלה).
+        if (pkg in store.marketStrays) return true
         if (pkg in store.appsBlocked) return true
         // אפליקציה חדשה שעוד אין עליה החלטה — לפי מה שההורה קבע לחדשות, מיד (גם בלי רשת).
         if (store.appsNew.isNotEmpty() && pkg in store.launchable && NewAppMath.isNew(pkg, store.appsKnown, store.appsBaseline)) {
