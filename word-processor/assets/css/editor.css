@@ -236,6 +236,7 @@ html.wp-no-page-zoom, html.wp-no-page-zoom body, .wp-editor, .wp-stage { touch-a
 .wp-doc .wp-page-break::after { content: 'מעבר עמוד'; position: absolute; inset-inline-start: 50%; top: -.7em; transform: translateX(50%); font-size: 8pt;
     background: #fff; color: #889; padding: 0 6px; font-family: system-ui, sans-serif; }
 .wp-doc .wp-page-break.ProseMirror-selectednode { border-top-color: #2d4a8a; }
+.wp-doc .wp-col-break::after { content: 'מעבר טור'; }
 /* מעבר מקטע: קו כפול עם תווית; כמה מקטעים — הרוחב של כל בלוק נקבע בגבולות שקופים (pagination.js) */
 .wp-doc .wp-section-break { block-size: 0; margin: 0; position: relative; }
 /* הקו — בתוך רוחב הטקסט בלבד (במסמך עם מקטעים לבלוק יש גבולות שקופים בצדדים) */

@@ -71,6 +71,41 @@ export default async function (t) {
     writeFileSync(bp, await p.pdf({ preferCSSPageSize: true, printBackground: true }));
     const p3 = t.pdfPages(bp);
     t.ok('שלושה טורים: מעבר עמוד ידני — בהדפסה עמוד חדש', p3.length === 2 && /אחרימעבר|רבעמירחא/.test(p3[1]), JSON.stringify(p3.map(x => x.slice(-60))));
+    // מעבר טור ידני (Ctrl+Shift+Enter): הטקסט שאחריו — בראש הטור השמאלי של אותו עמוד, במסך ובהדפסה; נשמר כ-columnBreak
+    const cb = await t.newDoc(p, 'מעבר טור', { type: 'doc', content: [P('לפנימעבר')] }, { columns: { n: 2 } });
+    await t.openDoc(p, cb);
+    // הסמן בסוף המסמך — אחרי שהעורך קיבל את המיקוד (TipTap מזיז אותו באיחור; לחיצה מוקדמת מדי משאירה את הסמן בהתחלה)
+    await p.click('.wp-doc p');
+    await p.waitForTimeout(300);
+    await p.keyboard.press('Control+End');
+    await p.waitForFunction(() => { const s = getSelection(); return s.focusNode && s.focusNode.textContent === 'לפנימעבר' && s.focusOffset === 8; });
+    await p.keyboard.press('Control+Shift+Enter');
+    await p.keyboard.type('אחרימעבר טור');
+    await t.settle(p);
+    const sc = await p.evaluate(() => {
+        const frames = [...document.querySelectorAll('.wp-pages .wp-page')].map(f => f.getBoundingClientRect());
+        const ps = [...document.querySelectorAll('.wp-doc p')];
+        const last = ps[ps.length - 1].getBoundingClientRect();
+        const k = frames.findIndex(f => last.top >= f.top && last.bottom <= f.bottom);
+        return { k, frames: frames.length, label: document.querySelectorAll('.wp-col-badge')[k]?.textContent, mark: !!document.querySelector('.wp-doc .wp-col-break') };
+    });
+    t.ok('מעבר טור במסך: הטקסט שאחריו במסגרת "עמוד 1 · טור 2"', sc.mark && sc.k === 1 && sc.label === 'עמוד 1 · טור 2 מתוך 2', JSON.stringify(sc));
+    const cbp = join(t.data, 'colcb.print.pdf');
+    writeFileSync(cbp, await p.pdf({ preferCSSPageSize: true, printBackground: true }));
+    const cc = columnsOf(cbp);
+    t.ok('מעבר טור בהדפסה: עמוד אחד, "לפני" בטור הימני ו"אחרי" בראש השמאלי', cc.length === 1 && /לפנימעבר|רבעמינפל/.test(cc[0].firstR) && /אחרימעבר|רבעמירחא/.test(cc[0].firstL), JSON.stringify(cc));
+    await p.waitForTimeout(2500);
+    const saved = await t.api(p, 'my_open', { doc: cb });
+    t.ok('מעבר טור נשמר (columnBreak, גרסת מבנה 5)', saved.json.content.some(n => n.type === 'columnBreak') && saved.json.attrs.schema === 5, JSON.stringify(saved.json.content.map(n => n.type)));
+    // בטור אחד — מעבר טור הוא מעבר עמוד (כמו ב-Word)
+    const cb1 = await t.newDoc(p, 'מעבר טור בטור אחד', { type: 'doc', content: [P('לפנימעבר'), { type: 'columnBreak' }, P('אחרימעבר טור')] });
+    await t.openDoc(p, cb1);
+    await t.settle(p);
+    const fr1 = await p.locator('.wp-pages .wp-page').count();
+    writeFileSync(cbp, await p.pdf({ preferCSSPageSize: true, printBackground: true }));
+    const pp1 = t.pdfPages(cbp);
+    t.ok('מעבר טור בטור אחד: עמוד חדש — במסך ובהדפסה', fr1 === 2 && pp1.length === 2 && /אחרימעבר|רבעמירחא/.test(pp1[1]), `${fr1} / ${pp1.length}`);
+
     t.ok('בלי שגיאות JS', !p.errors.length, p.errors.join(' | '));
     await p.context().close();
 }

@@ -936,7 +936,37 @@ if (trim((string)shell_exec('command -v pdftotext'))) {
     $fw = null;
     foreach ($fnc as $pg) foreach ($pg['words'] as $w) if (in_array($w['t'], ['הערהבטורהשמאלי', 'ילאמשהרוטבהרעה'], true)) $fw = $w;
     check('PDF בטורים: הערת שוליים — ברוחב הטור שלה ובתוכו', $fw && ($fw['x1'] <= $gapL + 1 || $fw['x0'] >= $gapR - 1), json_encode($fw, JSON_UNESCAPED_UNICODE));
+    // מעבר טור ידני: בשני טורים — הטור השמאלי של אותו עמוד; בטור אחד — העמוד הבא (כמו ב-Word)
+    $cb = ['type' => 'doc', 'content' => [$colText(1)[0], ['type' => 'columnBreak'], ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'אחרימעבר']]]]];
+    $find = fn($pages) => array_values(array_filter(array_merge(...array_map(fn($p, $k) => array_map(fn($w) => $w + ['pg' => $k], $p['words']), $pages, array_keys($pages))),
+        fn($w) => in_array($w['t'], ['אחרימעבר', 'רבעמירחא'], true)))[0] ?? null;
+    $cb2 = $colPdf($cb, ['columns' => ['n' => 2, 'gap' => 10]]);
+    $aw = $find($cb2);
+    check('PDF: מעבר טור בשני טורים — בראש הטור השמאלי, באותו עמוד', count($cb2) === 1 && $aw && $aw['x1'] <= $gapL + 1 && $aw['y0'] < 25 * PT_PER_MM + 20, json_encode($aw, JSON_UNESCAPED_UNICODE) . ' / ' . count($cb2));
+    $cb1 = $colPdf($cb, []);
+    check('PDF: מעבר טור בטור אחד — העמוד הבא', count($cb1) === 2 && ($find($cb1)['pg'] ?? -1) === 1, (string)count($cb1));
+    $cb3 = $colPdf(['type' => 'doc', 'content' => [$colText(1)[0], ['type' => 'columnBreak'], $colText(1)[0], ['type' => 'columnBreak'], ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'אחרימעבר']]]]], ['columns' => ['n' => 2]]);
+    check('PDF: מעבר טור בטור האחרון — העמוד הבא, בטור הראשון (מימין)', count($cb3) === 2 && ($w3 = $find($cb3)) && $w3['pg'] === 1 && $w3['x0'] >= $gapR - 1, (string)count($cb3));
 } else echo "  · pdftotext לא מותקן — דילוג\n";
+
+section('מעבר טור — Word, HTML, טקסט וגרסת המבנה');
+$cbDoc = ['type' => 'doc', 'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'לפני']]], ['type' => 'columnBreak'],
+    ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'אחרי']]]]];
+file_put_contents("$tmp/cb.docx", export_docx($cbDoc, page_normalize(['columns' => ['n' => 2]]), 'מעבר טור'));
+$zip->open("$tmp/cb.docx");
+$cbMain = (string)$zip->getFromName('word/document.xml');
+$zip->close();
+check('Word: מעבר טור — w:br w:type="column"', str_contains($cbMain, '<w:br w:type="column"/>') && !str_contains($cbMain, '<w:br w:type="page"/>'));
+$cbBack = import_docx(file_get_contents("$tmp/cb.docx"), 'cb');
+check('Word הלוך וחזור: מעבר הטור חוזר כמעבר טור (לא מעבר עמוד)', array_column($cbBack['json']['content'], 'type') === ['paragraph', 'columnBreak', 'paragraph'], json_encode(array_column($cbBack['json']['content'], 'type')));
+check('HTML: מעבר טור עם break-before: column; טקסט — שורה ריקה', str_contains(export_html($cbDoc, page_normalize([]))[0] ?? json_encode(export_html($cbDoc, page_normalize([]))), 'break-before:column')
+    && str_contains(export_text($cbDoc), "לפני\n\nאחרי"), substr(export_text($cbDoc), 0, 40));
+check('גרסת מבנה: מסמך עם מעבר טור צריך 5', doc_schema_need($cbDoc) === 5 && doc_schema_need(['type' => 'doc', 'attrs' => ['track' => true], 'content' => $cbDoc['content']]) === 5
+    && doc_schema_need(['type' => 'doc', 'attrs' => ['track' => true], 'content' => []]) === 4);
+$r5 = doc_find(doc_new('a:99', 'גרסה 5 — מעבר טור', $cbDoc, null, 'u1', 'דנה'), 'a:99');
+check('גרסת מבנה 5: כותב בגרסה 4 על מסמך עם מעבר טור → schema_newer; בגרסה 5 — נשמר',
+    throws(fn() => doc_save($r5, ['type' => 'doc', 'attrs' => ['schema' => 4], 'content' => [$cbDoc['content'][0]]], null, 'u2', 'ישן'), 'schema_newer')
+    && (int)doc_save($r5, $cbDoc + ['attrs' => ['schema' => 5]], null, 'u1', 'דנה')['version'] === (int)$r5['version'] + 1);
 
 section('כיתובים והפניות צולבות (שלב 4)');
 $cap = fn($label, $id, $text) => ['type' => 'paragraph', 'attrs' => ['pstyle' => 'caption'], 'content' => [

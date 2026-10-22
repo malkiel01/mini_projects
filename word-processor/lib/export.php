@@ -288,6 +288,8 @@ function html_node(array $n): string
             return html_image($a);
         case 'pageBreak':
             return '<div class="page-break"></div>';
+        case 'columnBreak':
+            return '<div class="column-break" style="break-before:column"></div>';
         case 'toc':   // תוכן עניינים: השורות השמורות, כל אחת קישור לכותרת (אם יש לה עוגן) — בלי עוגנים: טקסט ומספר
             $rows = '';
             foreach (is_array($a['entries'] ?? null) ? $a['entries'] : [] as $e) {
@@ -429,7 +431,7 @@ function text_blocks(array $nodes, array &$lines, int $depth): void
                 }
                 $lines[] = implode("\t", $cells);
             }
-        } elseif ($t === 'pageBreak' || $t === 'horizontalRule') {
+        } elseif ($t === 'pageBreak' || $t === 'columnBreak' || $t === 'horizontalRule') {
             $lines[] = '';
         } else {
             $lines[] = inline_text($n);
@@ -662,6 +664,8 @@ final class Ooxml
                 return $this->table($n);
             case 'pageBreak':
                 return '<w:p><w:r><w:br w:type="page"/></w:r></w:p>';
+            case 'columnBreak':
+                return '<w:p><w:r><w:br w:type="column"/></w:r></w:p>';
             case 'toc':
                 return $this->toc($a);
             case 'sectionBreak':

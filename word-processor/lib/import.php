@@ -453,10 +453,11 @@ final class DocxCtx
                 [$block, $num, $breakAfter] = $this->para($c, $xp);
                 $sect = $xp->query('w:pPr/w:sectPr', $c)->item(0);
                 // פסקה ריקה שכל תפקידה לסיים מקטע — לא נכנסת למסמך
-                $empty = $sect && !($block['content'] ?? []);
+                // וגם פסקה שכל תוכנה מעבר עמוד / טור (כך Word ואנחנו כותבים מעבר) — המעבר לבדו
+                $empty = ($sect || $breakAfter) && !($block['content'] ?? []);
                 if ($num) { $listRun[] = ['p' => $block, 'num' => $num]; }
                 elseif (!$empty) { $flush(); $out[] = $block; }
-                if ($breakAfter) { $flush(); $out[] = ['type' => 'pageBreak']; }
+                if ($breakAfter) { $flush(); $out[] = ['type' => $breakAfter === 'column' ? 'columnBreak' : 'pageBreak']; }
                 if ($sect) { $flush(); $out[] = ['type' => 'sectionBreak', '_sect' => $sect]; }
             } elseif ($c->localName === 'tbl') {
                 $flush();
@@ -625,7 +626,9 @@ final class DocxCtx
                     case 't': case 'delText': if ($k->textContent !== '') $inline[] = text_node($k->textContent, $marks); break;
                     case 'tab': $inline[] = text_node("\t", $marks); break;
                     case 'br':
-                        if ($k->getAttributeNS(W, 'type') === 'page') $breakAfter = true;
+                        $bt = $k->getAttributeNS(W, 'type');
+                        if ($bt === 'page') $breakAfter = true;
+                        elseif ($bt === 'column') $breakAfter = $breakAfter ?: 'column';   // מעבר עמוד גובר
                         else $inline[] = ['type' => 'hardBreak'];
                         break;
                     case 'drawing':

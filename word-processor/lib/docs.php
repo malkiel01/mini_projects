@@ -14,7 +14,7 @@ const LOCK_SECONDS = 120;
 const MEDIA_MAX_BYTES = 10 * 1024 * 1024;
 const MEDIA_TYPES = ['image/png' => 'png', 'image/jpeg' => 'jpg', 'image/gif' => 'gif', 'image/webp' => 'webp'];
 /** גרסת המבנה של ה-JSON (attrs.schema). אותו מספר ב-assets/js/extensions.js; ההמרות — כאן וב-assets/js/schema.js. */
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 class ApiError extends Exception
 {
@@ -67,14 +67,14 @@ function doc_migrate(array $json): array
  */
 function doc_schema_need(array $json): int
 {
-    if (!empty($json['attrs']['track'])) return 4;
-    $need = empty($json['attrs']['comments']) ? 0 : 3;
+    $need = !empty($json['attrs']['track']) ? 4 : (empty($json['attrs']['comments']) ? 0 : 3);
     $walk = function (array $nodes) use (&$walk, &$need) {
         foreach ($nodes as $n) {
-            if (!is_array($n) || $need >= 4) return;
+            if (!is_array($n) || $need >= SCHEMA_VERSION) return;
             $t = $n['type'] ?? '';
+            if ($t === 'columnBreak') { $need = 5; return; }
             $marks = array_column(array_filter(is_array($n['marks'] ?? null) ? $n['marks'] : [], 'is_array'), 'type');
-            if (in_array('ins', $marks, true) || in_array('del', $marks, true)) { $need = 4; return; }
+            if (in_array('ins', $marks, true) || in_array('del', $marks, true)) { $need = max($need, 4); continue; }
             if (in_array($t, ['toc', 'seq', 'xref'], true) || ($t === 'footnote' && !empty($n['attrs']['end'])) || in_array('comment', $marks, true)) { $need = max($need, 3); continue; }
             if ($t === 'bookmark' || in_array('link', $marks, true)) $need = max($need, 2);
             if (is_array($n['content'] ?? null)) $walk($n['content']);

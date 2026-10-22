@@ -189,6 +189,7 @@ export const ParagraphFormat = Extension.create({
             },
             'Shift-Tab': () => inList(this.editor) ? this.editor.commands.liftListItem('listItem') : this.editor.commands.changeIndent(-1),
             'Mod-Enter': () => this.editor.commands.insertPageBreak(),
+            'Mod-Shift-Enter': () => this.editor.commands.insertColumnBreak(),
         };
     },
 });
@@ -298,6 +299,25 @@ export const PageBreak = Node.create({
     addCommands() {
         return {
             insertPageBreak: () => ({ chain }) => chain().insertContent({ type: 'pageBreak' }).createParagraphNear().run(),
+        };
+    },
+});
+
+/** מעבר טור ידני (Ctrl+Shift+Enter, כמו ב-Word): הטקסט שאחריו — בראש הטור הבא; במקטע של טור אחד — כמו מעבר עמוד. */
+export const ColumnBreak = Node.create({
+    name: 'columnBreak',
+    group: 'block',
+    atom: true,
+    selectable: true,
+    parseHTML() {
+        return [{ tag: 'div[data-column-break]' }, { tag: 'div.column-break' }];
+    },
+    renderHTML() {
+        return ['div', { 'data-column-break': '', class: 'wp-page-break wp-col-break', contenteditable: 'false' }];
+    },
+    addCommands() {
+        return {
+            insertColumnBreak: () => ({ chain }) => chain().insertContent({ type: 'columnBreak' }).createParagraphNear().run(),
         };
     },
 });
@@ -835,8 +855,9 @@ export const LetterSpacing = Extension.create({
  * 3: תוכן עניינים, כיתובים והפניות, הערות על טקסט, הערות סיום. השרת דוחה שמירה של כותב בגרסה נמוכה ממה שהמסמך
  *    צריך (doc_schema_need) — כך לשונית ישנה לא מוחקת אותם בשקט.
  * 4: מעקב שינויים (ins / del, attrs.track).
+ * 5: מעבר טור ידני (columnBreak).
  */
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 /**
  * מאפיינים של המסמך עצמו (צומת השורש): הגדרות העמוד וגרסת המבנה.
@@ -867,7 +888,7 @@ export function extensions(extra = []) {
         Highlight.configure({ multicolor: true }),
         Subscript, Superscript,
         TextAlign.configure({ types: BLOCKS, alignments: ['right', 'center', 'left', 'justify'], defaultAlignment: null }),
-        ParagraphFormat, PageBreak, SectionBreak, Footnote, WpImage, LetterSpacing, Link, Bookmark, UnderlineStyle, Toc, Seq, Xref, CommentMark, InsMark, DelMark,
+        ParagraphFormat, PageBreak, ColumnBreak, SectionBreak, Footnote, WpImage, LetterSpacing, Link, Bookmark, UnderlineStyle, Toc, Seq, Xref, CommentMark, InsMark, DelMark,
         WpTable.configure({ resizable: true, cellMinWidth: 30, allowTableNodeSelection: true, View: WpTableView }),
         WpTableRow, Cell, HeaderCell,
         DocAttrs,
