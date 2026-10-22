@@ -25,15 +25,84 @@ function monthHtml(r) {
       <div><dt>תקן עד היום</dt><dd>${hm(s.standard)}</dd></div>
       <div><dt>הפרש</dt><dd>${hm(s.diff)}</dd></div>
     </dl>
-    ${s.missing ? `<p class="hint">⚠️ ${s.missing} דיווחים חסרים — תיקון יתאפשר בקרוב. בינתיים מעדכנים את המנהל.</p>` : ''}
+    ${s.missing ? `<p class="hint">⚠️ ${s.missing} דיווחים חסרים. לוחצים על היום כדי לתקן.</p>` : ''}
     <p class="hint">ההפרש הוא מול שעות התקן בלבד, ואינו חישוב שעות נוספות.</p>
     <ul class="list">${rows.length ? rows.map(d => {
       const spans = d.pairs.map(p => t(p.in) + '–' + t(p.out));
       if (d.open) spans.push(t(d.open) + '–…');
       const chips = [d.missing_out ? '<span class="chip bad">חסר יציאה</span>' : '', d.missing_in ? '<span class="chip bad">חסר כניסה</span>' : '',
         d.open ? '<span class="chip ok">בעבודה</span>' : '',
-        !spans.length && !d.missing_out && !d.missing_in && d.standard ? '<span class="chip">לא דווח</span>' : ''].join('');
-      return `<li class="card"><div class="body"><div class="l1"><span>${dayName(d.date)}</span><span class="t">${d.minutes ? hm(d.minutes) : ''}</span></div>
+        !spans.length && !d.missing_out && !d.missing_in && d.standard ? '<span class="chip">לא דווח</span>' : '',
+        d.pending ? '<span class="chip warn">ממתין לאישור</span>' : d.corrected ? '<span class="chip">תוקן</span>' : ''].join('');
+      return `<li class="card" tabindex="0" role="button" data-date="${d.date}"><div class="body"><div class="l1"><span>${dayName(d.date)}</span><span class="t">${d.minutes ? hm(d.minutes) : ''}</span></div>
         <div class="l2" dir="ltr" style="text-align:end">${spans.join(' · ') || '—'}</div></div>${chips}</li>`;
     }).join('') : '<li class="empty">אין ימים להצגה בחודש הזה.</li>'}</ul>`;
+}
+
+/* ===== יום ותיקונים — משותף לעובד ולמנהל ===== */
+
+const KIND = { in: 'כניסה', out: 'יציאה' };
+const escM = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const tHe = iso => new Date(iso).toLocaleTimeString('he-IL', { timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit' });
+const dHe = iso => new Date(iso).toLocaleDateString('he-IL', { timeZone: 'Asia/Jerusalem', weekday: 'short', day: 'numeric', month: 'numeric' });
+const localDay = iso => new Date(iso).toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
+
+/** "הוספת יציאה 16:00" · "שינוי כניסה 08:00 ← 07:30" · "ביטול יציאה 12:00" */
+function corrText(c) {
+  if (c.op === 'add') return `הוספת ${KIND[c.kind]} ${tHe(c.new_at)}`;
+  if (c.op === 'move') return `שינוי ${KIND[c.kind]} ${tHe(c.old_at)} ← ${tHe(c.new_at)}`;
+  return `ביטול ${KIND[c.kind]} ${tHe(c.old_at)}`;
+}
+const corrDay = c => localDay(c.new_at || c.old_at);
+const CSTATUS = { pending: ['warn', 'ממתין'], approved: ['ok', 'אושר'], rejected: ['bad', 'נדחה'], cancelled: ['', 'בוטל'] };
+
+/** הדיווחים של יום, עם ✏️ / 🗑️ לכל דיווח מקורי (דיווח שנוסף בתיקון — בלי), ו"+ הוספת דיווח". */
+function dayHtml(d, corrections = []) {
+  const SRC = { phone: 'טלפון', station: 'עמדה', manager: 'מנהל', correction: 'נוסף בתיקון' };
+  const mine = corrections.filter(c => corrDay(c) === d.date);
+  return `
+    <ul class="list">${d.punches.length ? d.punches.map(p => `
+      <li class="card">
+        <span class="avatar" style="--h:${p.kind === 'in' ? 140 : 10}" aria-hidden="true">${p.kind === 'in' ? '⇠' : '⇢'}</span>
+        <div class="body"><div class="l1"><span>${KIND[p.kind]} ${tHe(p.at)}</span></div>
+          <div class="l2">${SRC[p.source] ?? ''}${p.corrected && p.source !== 'correction' ? ' · תוקן' : ''}</div></div>
+        ${p.id ? `<button class="icon-btn" type="button" data-move="${p.id}" aria-label="שינוי שעה">✏️</button>
+                  <button class="icon-btn" type="button" data-void="${p.id}" aria-label="ביטול הדיווח">🗑️</button>` : ''}
+      </li>`).join('') : '<li class="empty">אין דיווחים ביום הזה.</li>'}</ul>
+    <div class="row-btns" style="margin-top:12px"><button class="btn" type="button" data-add>+ הוספת דיווח</button></div>
+    ${mine.length ? `<h3 class="sec-title">תיקונים ביום הזה</h3><ul class="list">${mine.map(c => `
+      <li class="card"><div class="body"><div class="l1"><span>${corrText(c)}</span></div>
+        <div class="l2">${c.reason ? 'סיבה: ' + escM(c.reason) : ''}${c.note ? ' · ' + escM(c.note) : ''}</div></div>
+        <span class="chip ${CSTATUS[c.status][0]}">${CSTATUS[c.status][1]}</span>
+        ${c.status === 'pending' && c.by === 'employee' ? `<button class="icon-btn" type="button" data-cancel="${c.id}" aria-label="ביטול הבקשה">✕</button>` : ''}
+      </li>`).join('')}</ul>` : ''}`;
+}
+
+/** טופס התיקון: op = add | move | void. מחזיר את ה-HTML; הקריאה ל-API — אצל מי שקרא. */
+function correctionForm(op, d, punch) {
+  const hhmm = punch ? new Date(punch.at).toLocaleTimeString('en-GB', { timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit' }) : '';
+  const what = op === 'add' ? 'הוספת דיווח' : op === 'move' ? `שינוי השעה של ה${KIND[punch.kind]} (${tHe(punch.at)})` : `ביטול ה${KIND[punch.kind]} (${tHe(punch.at)})`;
+  return `
+    <p><b>${what}</b> · ${dHe(d.date + 'T12:00:00Z')}</p>
+    ${op === 'add' ? `<div class="f" style="margin-top:12px"><span id="ck">מה</span><fieldset class="seg" aria-labelledby="ck">
+        <label><input type="radio" name="kind" value="in" checked><span>כניסה</span></label>
+        <label><input type="radio" name="kind" value="out"><span>יציאה</span></label></fieldset></div>` : ''}
+    ${op !== 'void' ? `<div class="fields two" style="margin-top:12px">
+        <label class="f"><span>תאריך</span><input name="date" type="date" value="${d.date}"></label>
+        <label class="f"><span>שעה</span><input name="time" type="time" value="${hhmm}" required></label></div>` : ''}
+    <label class="f" style="margin-top:12px"><span>סיבה *</span><input name="reason" maxlength="200" required placeholder="למשל: שכחתי לצאת"></label>
+    <p class="error" role="alert" hidden></p>`;
+}
+
+function correctionBody(op, form, punch) {
+  const reason = form.reason.value.trim();
+  if (!reason) throw new Error('חסרה סיבה');
+  const body = { op, reason };
+  if (punch) body.punch_id = punch.id;
+  if (op === 'add') body.kind = form.kind.value;
+  if (op !== 'void') {
+    if (!form.time.value) throw new Error('חסרה שעה');
+    body.at = form.date.value + 'T' + form.time.value;
+  }
+  return body;
 }

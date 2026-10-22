@@ -236,3 +236,6 @@ main:focus-visible { outline: 0; }
 /* טאבלט על השיש — הכול גדול יותר, ונקרא ממרחק */
 body.station { font-size: 18px; }
 @media (min-width: 700px) { body.station .clock { font-size: 96px; } body.station .names .tile { min-height: 80px; font-size: 1.2rem; } body.station h2 { font-size: 1.6rem; } }
+/* מונה בלשונית (אישורים ממתינים) */
+.tabs a small { display: inline-block; min-width: 1.4em; margin-inline-start: 4px; padding: 0 4px; border-radius: 999px; background: var(--danger); color: #fff; font-size: .72rem; text-align: center; }
+.tabs a small:empty { display: none; }

@@ -7,6 +7,7 @@
  * - זוג = כניסה ואחריה יציאה, עד MAX_SHIFT_H שעות. המשמרת שייכת ליום שבו התחילה (גם כשחצתה חצות).
  * - כניסה בלי יציאה — "חסר יציאה", לא נספרת. יציאה בלי כניסה — "חסר כניסה". התיקון — בקשת תיקון (שלב 5).
  * - אין עיגול: דקות שלמות, כלפי מטה.
+ * - החישוב עובד על הדיווחים "בפועל": המקוריים, אחרי תיקונים שאושרו (lib/corrections.php). המקור לא משתנה.
  * - תקן יומי מהתנאים התקפים באותו יום: 5 ימים = ראשון–חמישי, 6 ימים = ראשון–שישי. שבת — 0.
  * - "מעל התקן" הוא רק ההפרש מהתקן — לא שעות נוספות לפי דין.
  */
@@ -35,16 +36,57 @@ function dayBoundsUtc(string $date, string $tz): array {
             $a->modify('+1 day')->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d\TH:i:s\Z')];
 }
 
+/**
+ * הדיווחים בפועל בטווח: המקוריים, בלי אלה שבוטלו בתיקון, עם השעה המתוקנת לאלה שהוזזו, ועם הדיווחים
+ * שנוספו בתיקון. תיקון מזיז דיווח עד יום אחד לכל כיוון — ולכן מושכים יום לפני ואחרי.
+ */
 function punchesBetween(int $memberId, string $fromUtc, string $toUtc): array {
+    $wideFrom = utc($fromUtc)->modify('-1 day')->format('Y-m-d\TH:i:s\Z');
+    $wideTo = $toUtc >= '9999' ? $toUtc : utc($toUtc)->modify('+1 day')->format('Y-m-d\TH:i:s\Z');
     $st = db()->prepare('SELECT id, kind, at_utc, source FROM punches WHERE member_id = ? AND at_utc >= ? AND at_utc < ? ORDER BY at_utc, id');
-    $st->execute([$memberId, $fromUtc, $toUtc]);
-    return $st->fetchAll();
+    $st->execute([$memberId, $wideFrom, $wideTo]);
+    $raw = $st->fetchAll();
+    $st = db()->prepare("SELECT id, op, punch_id, new_kind, new_at FROM corrections WHERE member_id = ? AND status = 'approved' ORDER BY id");
+    $st->execute([$memberId]);
+    $fix = [];
+    $out = [];
+    foreach ($st->fetchAll() as $c) {
+        if ($c['op'] === 'add') {
+            $out[] = ['id' => null, 'correction_id' => (int) $c['id'], 'kind' => $c['new_kind'], 'at_utc' => $c['new_at'], 'source' => 'correction', 'corrected' => true];
+        } else {
+            $fix[(int) $c['punch_id']] = $c;   // האחרון קובע
+        }
+    }
+    foreach ($raw as $p) {
+        $c = $fix[(int) $p['id']] ?? null;
+        if ($c && $c['op'] === 'void') continue;
+        $out[] = ['id' => (int) $p['id'], 'correction_id' => null, 'kind' => $p['kind'], 'at_utc' => $c ? $c['new_at'] : $p['at_utc'],
+                  'source' => $p['source'], 'corrected' => $c !== null];
+    }
+    $out = array_values(array_filter($out, fn($p) => $p['at_utc'] >= $fromUtc && $p['at_utc'] < $toUtc));
+    usort($out, fn($a, $b) => [$a['at_utc'], $a['id'] ?? PHP_INT_MAX] <=> [$b['at_utc'], $b['id'] ?? PHP_INT_MAX]);
+    return $out;
 }
 
 function lastPunch(int $memberId): ?array {
+    $all = punchesBetween($memberId, utc(nowIso())->modify('-3 days')->format('Y-m-d\TH:i:s\Z'), '9999-12-31T00:00:00Z');
+    if ($all) return end($all);
+    // אין כלום בשלושת הימים האחרונים — האחרון בכלל (בלי תיקונים: הוא ממילא ישן מכדי לפתוח משמרת).
     $st = db()->prepare('SELECT id, kind, at_utc FROM punches WHERE member_id = ? ORDER BY at_utc DESC, id DESC LIMIT 1');
     $st->execute([$memberId]);
     return $st->fetch() ?: null;
+}
+
+/** תיקונים שממתינים, לפי היום (המקומי) שהם נוגעים בו. */
+function pendingByDay(int $memberId, string $tz): array {
+    $st = db()->prepare("SELECT c.new_at, p.at_utc FROM corrections c LEFT JOIN punches p ON p.id = c.punch_id
+        WHERE c.member_id = ? AND c.status = 'pending'");
+    $st->execute([$memberId]);
+    $by = [];
+    foreach ($st->fetchAll() as $c) {
+        foreach (array_unique(array_filter([$c['new_at'], $c['at_utc']])) as $at) $by[localDate($at, $tz)] = ($by[localDate($at, $tz)] ?? 0) + 1;
+    }
+    return $by;
 }
 
 /** התקן לתאריך מסוים, בדקות. */
@@ -71,8 +113,16 @@ function daysReport(int $memberId, string $from, string $to, string $tz, ?string
     for ($d = new DateTimeImmutable($from); $d->format('Y-m-d') <= $to; $d = $d->modify('+1 day')) {
         $k = $d->format('Y-m-d');
         $days[$k] = ['date' => $k, 'pairs' => [], 'minutes' => 0, 'missing_out' => 0, 'missing_in' => 0,
-                     'open' => null, 'standard' => standardMinutes($memberId, $k)];
+                     'open' => null, 'standard' => standardMinutes($memberId, $k), 'punches' => [], 'corrected' => false,
+                     'pending' => 0];
     }
+    foreach (pendingByDay($memberId, $tz) as $k => $n) if (isset($days[$k])) $days[$k]['pending'] = $n;
+    // הדיווחים של היום — לפי יום המשמרת: יציאה שסוגרת משמרת מאתמול מוצגת באתמול, יחד עם הכניסה שלה.
+    $show = function (array $p, string $k) use (&$days) {
+        if (!isset($days[$k])) return;
+        $days[$k]['punches'][] = ['id' => $p['id'], 'kind' => $p['kind'], 'at' => $p['at_utc'], 'source' => $p['source'], 'corrected' => $p['corrected']];
+        if ($p['corrected']) $days[$k]['corrected'] = true;
+    };
 
     $open = null;   // הכניסה האחרונה שעוד לא נסגרה
     $add = function (string $date, string $key, $value = null) use (&$days) {
@@ -84,14 +134,17 @@ function daysReport(int $memberId, string $from, string $to, string $tz, ?string
         if ($p['kind'] === 'in') {
             if ($open) $add(localDate($open['at_utc'], $tz), 'missing_out');
             $open = $p;
+            $show($p, localDate($p['at_utc'], $tz));
             continue;
         }
         if ($open && utc($p['at_utc'])->getTimestamp() - utc($open['at_utc'])->getTimestamp() <= MAX_SHIFT_H * 3600) {
             $min = intdiv(utc($p['at_utc'])->getTimestamp() - utc($open['at_utc'])->getTimestamp(), 60);
             $add(localDate($open['at_utc'], $tz), 'pair', ['in' => $open['at_utc'], 'out' => $p['at_utc'], 'minutes' => $min]);
+            $show($p, localDate($open['at_utc'], $tz));
         } else {
             if ($open) $add(localDate($open['at_utc'], $tz), 'missing_out');
             $add(localDate($p['at_utc'], $tz), 'missing_in');
+            $show($p, localDate($p['at_utc'], $tz));
         }
         $open = null;
     }
@@ -142,7 +195,7 @@ function nowStatus(int $memberId, string $tz, ?string $now = null): array {
     [$a, $b] = dayBoundsUtc($today, $tz);
     return ['today' => $today, 'open_since' => $openSince, 'next' => $openSince ? 'out' : 'in', 'minutes_today' => $minutes,
             'standard_today' => standardMinutes($memberId, $today),
-            'punches' => array_map(fn($p) => ['kind' => $p['kind'], 'at' => $p['at_utc'], 'source' => $p['source']], punchesBetween($memberId, $a, $b))];
+            'punches' => array_map(fn($p) => ['kind' => $p['kind'], 'at' => $p['at_utc'], 'source' => $p['source'], 'corrected' => $p['corrected']], punchesBetween($memberId, $a, $b))];
 }
 
 /** רישום דיווח. אותו סוג כמו האחרון בתוך דקה — נחסם (לחיצה כפולה). */
