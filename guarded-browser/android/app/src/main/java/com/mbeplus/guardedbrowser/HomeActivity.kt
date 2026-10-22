@@ -330,33 +330,43 @@ class HomeActivity : AppCompatActivity() {
             "⭐" to "לחיצה ארוכה על אריח — מוסיפה למועדפים",
             "ℹ️" to "גרסה ${BuildConfig.VERSION_NAME}",
         )
+        /*
+         * תקלה מדווחת (2026-10-22): במסך קטן החלון לא נגלל, ושלושת הכפתורים בתחתית דחקו זה את זה החוצה — לא
+         * הייתה גישה ל"הגנה מלאה", ל"כניסת הורה" ול"קוד מההורה". עכשיו: הכול בתוך גלילה, הפעולות למעלה (שורות
+         * ללחיצה), והמידע אחריהן; בתחתית רק "סגירה".
+         */
+        var dialog: androidx.appcompat.app.AlertDialog? = null
+        val tap = android.util.TypedValue().also { theme.resolveAttribute(android.R.attr.selectableItemBackground, it, true) }.resourceId
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(24), dp(8), dp(24), 0)
-            for ((ic, t) in rows) addView(TextView(this@HomeActivity).apply {
-                text = "$ic  $t"; textSize = 15f; setPadding(0, dp(8), 0, dp(8))
-                setTextColor(getColor(R.color.ink))
+            setPadding(dp(24), dp(4), dp(24), dp(8))
+            fun action(t: String, go: () -> Unit) = addView(TextView(this@HomeActivity).apply {
+                text = "$t  ›"; textSize = 16f; setPadding(0, dp(12), 0, dp(12))
+                setTextColor(getColor(R.color.brand)); setBackgroundResource(tap)
+                setOnClickListener { dialog?.dismiss(); go() }
             })
             // בקשת פתיחה גם מכאן: ב"בעל מכשיר" אפליקציה מושעית לא עולה בכלל, ומסך החסימה לא מופיע (2026-10-22).
-            if (store.appsManage && !store.released) addView(TextView(this@HomeActivity).apply {
-                text = "🔒  אפליקציות חסומות — לבקש פתיחה"; textSize = 15f; setPadding(0, dp(8), 0, dp(8))
-                setTextColor(getColor(R.color.ink))
-                setOnClickListener { showBlockedApps() }
-            })
+            if (store.appsManage && !store.released) action("🔒  אפליקציות חסומות — לבקש פתיחה") { showBlockedApps() }
             // הגנה מלאה דרך מחשב (FullSetupActivity) — רק כשעוד אין "בעל מכשיר".
-            if (!Enforcer.isOwner(this@HomeActivity) && !store.released) addView(TextView(this@HomeActivity).apply {
-                text = "🛡️  הגנה מלאה — דרך מחשב, עם ההורה"; textSize = 15f; setPadding(0, dp(8), 0, dp(8))
+            if (!Enforcer.isOwner(this@HomeActivity) && !store.released) {
+                action("🛡️  הגנה מלאה — דרך מחשב, עם ההורה") { startActivity(Intent(this@HomeActivity, FullSetupActivity::class.java)) }
+            }
+            action("👨‍👩‍👧  כניסת הורה") { startActivity(Intent(this@HomeActivity, ParentActivity::class.java)) }
+            // הגדרות מההורה בלי אינטרנט — QR חתום שההורה מציג (OfflinePolicy).
+            action("📷  קוד מההורה (בלי אינטרנט)") { scanParentCode() }
+            addView(View(this@HomeActivity).apply {
+                setBackgroundColor(getColor(R.color.line))
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(1)).apply { topMargin = dp(8); bottomMargin = dp(8) }
+            })
+            for ((ic, t) in rows) addView(TextView(this@HomeActivity).apply {
+                text = "$ic  $t"; textSize = 15f; setPadding(0, dp(6), 0, dp(6))
                 setTextColor(getColor(R.color.ink))
-                setOnClickListener { startActivity(Intent(this@HomeActivity, FullSetupActivity::class.java)) }
             })
         }
-        MaterialAlertDialogBuilder(this)
+        dialog = MaterialAlertDialogBuilder(this)
             .setTitle(store.displayName().ifEmpty { "ההגדרות שלי" })
-            .setView(box)
+            .setView(android.widget.ScrollView(this).apply { addView(box) })
             .setPositiveButton("סגירה", null)
-            .setNeutralButton("👨‍👩‍👧 כניסת הורה") { _, _ -> startActivity(Intent(this, ParentActivity::class.java)) }
-            // הגדרות מההורה בלי אינטרנט — QR חתום שההורה מציג (OfflinePolicy).
-            .setNegativeButton("📷 קוד מההורה") { _, _ -> scanParentCode() }
             .show()
     }
 
