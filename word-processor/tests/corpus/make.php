@@ -143,8 +143,8 @@ for ($r = 1; $r <= 4; $r++) {
     $c[] = $p($sentence(20, 50));
     $c[] = $hd($sentence(4, 9), 2);
     $c[] = ['type' => 'orderedList', 'attrs' => ['listType' => 'multi', 'start' => 1], 'content' => [
-        ['type' => 'listItem', 'content' => [$p($sentence(8, 30)), ['type' => 'orderedList', 'attrs' => ['start' => 1], 'content' => [$li($sentence(6, 25)), $li($sentence(6, 25))]]]],
-        $li($sentence(8, 30))]];
+        ['type' => 'listItem', 'content' => [$p($sentence(6, 20)), ['type' => 'orderedList', 'attrs' => ['start' => 1], 'content' => [$li($sentence(5, 18)), $li($sentence(5, 18))]]]],
+        $li($sentence(6, 20))]];   // פריטים קצרים: שורה שנשברת על הקצה שוברת אחרת במחשבים שונים (כמו "לרוחב")
     $c[] = $hd($sentence(3, 7), 3);
     $c[] = ['type' => 'orderedList', 'attrs' => ['start' => 1], 'content' => [$li($sentence(8, 25)), $li($sentence(8, 25))]];
     $c[] = $p($sentence(15, 40));
