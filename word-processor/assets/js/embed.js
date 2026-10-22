@@ -82,7 +82,8 @@ function syncDirty() {
 /** שמירה עכשיו. מחזיר { ok, code?, message? } — הודעות saved / error למארחת נשלחות מ-onState. */
 async function save() {
     if (!saver || can !== 'edit' || !session) { syncDirty(); return { ok: !saver?.dirty }; }
-    const r = await saver.flush();
+    // עד שהמסמך נקי — "נשמר" למארחת רק כשכל מה שהוקלד בשרת (ביקורת 03, F08)
+    const r = await saver.flushUntilClean();
     syncDirty();
     return r;
 }
@@ -92,11 +93,14 @@ function onSaveState(s, info) {
     ui.state?.classList.toggle('bad', ['offline', 'conflict', 'error'].includes(s));
     if (s === 'saved' && info.version) post('saved', { doc: docId, version: info.version, updated_at: info.updated_at });
     if (s === 'saved' || s === 'dirty') syncDirty();
-    if (s === 'offline') showBanner('אין חיבור לשרת. השינויים שמורים במכשיר ויישלחו כשהחיבור יחזור.');   // error/offline — כבר נשלח מ-api()
+    if (s === 'offline') showBanner(saver.local === 'failed' ? 'אין חיבור לשרת, ואי אפשר לשמור במכשיר (האחסון חסום או מלא) — אל תסגרו את החלון.'
+        : 'אין חיבור לשרת. השינויים שמורים במכשיר ויישלחו כשהחיבור יחזור.');
+    if (info.localFailed && s !== 'saved') showBanner('אי אפשר לשמור טיוטה במכשיר (האחסון חסום או מלא). השינויים נשמרים רק בשרת — כשיש חיבור.');   // error/offline — כבר נשלח מ-api()
     else if (s === 'saved' && ui.banner && !ui.banner.hidden && ui.banner.dataset.kind === 'offline') ui.banner.hidden = true;
     if (s === 'conflict') {
         post('error', { code: 'conflict', message: info.message || 'המסמך השתנה במקום אחר' });
-        showBanner('המסמך השתנה במקום אחר. השינויים שלך שמורים במכשיר.', 'טעינה מחדש', reloadFromServer);
+        showBanner('המסמך השתנה במקום אחר. ' + (saver.local === 'saved' ? 'השינויים שלך שמורים במכשיר' : 'השינויים שלך לא נשמרו במכשיר')
+            + ' — וגם יישמרו בנפרד בטעינה מחדש.', 'טעינה מחדש', reloadFromServer);
     }
     if (s === 'locked') { post('error', { code: 'locked', message: info.message }); readOnlyBecause(info.message || 'המסמך פתוח לעריכה אצל משתמש אחר'); }
     if (s === 'error' && info.code !== 'expired') { post('error', { code: info.code === 'schema_newer' ? 'conflict' : 'save_failed', message: info.message }); toast(info.message || 'השמירה נכשלה', true); }
@@ -104,12 +108,24 @@ function onSaveState(s, info) {
 }
 
 async function reloadFromServer() {
+    // ביקורת 03, F09: העבודה המקומית לא נמחקת בטעינה מחדש — נשמרת בנפרד במכשיר (draftKey:conflict)
+    const kept = saver.dirty && await saver.keepConflictCopy();
     const fresh = await api('embed_load');
     ed.setContent(fresh.json);
     can = fresh.can;
     ed.setEditable(can === 'edit');
     saver.reset(fresh.version);
     ui.banner.hidden = can === 'edit';
+    syncDirty();
+    if (kept && can === 'edit') showBanner('הגרסה שלך מלפני הטעינה מחדש שמורה בנפרד במכשיר.', 'שחזור הגרסה שלי', restoreConflictCopy);
+}
+async function restoreConflictCopy() {
+    const c = await drafts.get(saver.draftKey + ':conflict');
+    if (!c?.json) return;
+    ed.setContent(c.json);
+    saver.markDirty(saver.version);
+    drafts.del(saver.draftKey + ':conflict');
+    ui.banner.hidden = true;
     syncDirty();
 }
 
@@ -136,7 +152,8 @@ window.addEventListener('message', async e => {
             if (m.settings && typeof m.settings === 'object') ed?.setPage(m.settings);
             break;
         case 'readonly':
-            if (m.value) { can = 'view'; ed?.setEditable(false); }
+            // קריאה בלבד מהמארחת — גם השמירה נעצרת (ביקורת 03, F09); בקשה שכבר יצאה — נגמרת כרגיל
+            if (m.value) { can = 'view'; saver?.stop(); ed?.setEditable(false); }
             else if (requested === 'edit') {
                 const l = await api('embed_lock', { op: 'take' }).catch(() => null);
                 if (l?.ok) await reloadFromServer();
@@ -198,6 +215,16 @@ function reportHeight() {
         versions: {
             list: async () => (await api('embed_load', { op: 'versions' })).versions,
             get: id => api('embed_load', { op: 'version', id }),
+            // שחזור בשרת (ביקורת 04, R07) — קודם כל השינויים נשמרים
+            restore: async id => {
+                const s = await save();
+                if (!s.ok || saver.dirty) { toast(s.message || 'לא ניתן לשמור לפני השחזור', true); return false; }
+                const r = await api('embed_version_restore', { id, base_version: saver.version });
+                ed.setContent(r.json);
+                saver.reset(r.version);
+                syncDirty();
+                return true;
+            },
         },
         onUpdate: changed,
         save: () => save(),
