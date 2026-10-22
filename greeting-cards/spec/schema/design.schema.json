@@ -1,0 +1,165 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mbe-plus.com/mini_projects/greeting-cards/schema/design.schema.json",
+  "title": "Greeting Cards design document",
+  "description": "עיצוב = עמוד, נכסים ושכבות. אותו פורמט לשמירה, לתבניות ולייבוא מהצ'אט (spec/03-editor.md, spec/04-ai-chat-skill.md).",
+  "type": "object",
+  "required": ["version", "page", "layers"],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "const": 1 },
+    "source": {
+      "type": "object",
+      "properties": {
+        "app": { "enum": ["editor", "chat", "ai", "template", "legacy"] },
+        "skill": { "type": "string", "maxLength": 80 }
+      }
+    },
+    "title": { "type": "string", "maxLength": 120 },
+    "page": {
+      "type": "object",
+      "required": ["width", "height"],
+      "additionalProperties": false,
+      "properties": {
+        "width": { "type": "integer", "minimum": 16, "maximum": 10000 },
+        "height": { "type": "integer", "minimum": 16, "maximum": 10000 },
+        "unit": { "enum": ["px"], "default": "px" },
+        "dpi": { "type": "integer", "minimum": 72, "maximum": 600, "default": 300 },
+        "background": { "$ref": "#/$defs/color" },
+        "bleed": { "type": "number", "minimum": 0, "maximum": 200, "default": 0 }
+      }
+    },
+    "assets": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/id" },
+      "additionalProperties": {
+        "type": "object",
+        "required": ["type"],
+        "properties": {
+          "type": { "enum": ["image", "svg", "font"] },
+          "file": { "type": "string", "pattern": "^[A-Za-z0-9_.\\-]{1,100}$", "description": "שם קובץ בתוך assets/ ב-gcard, או קובץ שהמשתמש בחר בייבוא" },
+          "src": { "type": "string", "description": "מזהה קובץ בשרת (שמור) — לא כתובת חיצונית" },
+          "width": { "type": "integer" },
+          "height": { "type": "integer" }
+        }
+      }
+    },
+    "variables": {
+      "type": "array",
+      "description": "שמות המשתנים לשדות מיזוג — {{שם}}",
+      "items": { "type": "string", "maxLength": 40 }
+    },
+    "layers": {
+      "type": "array",
+      "maxItems": 500,
+      "description": "מהתחתונה לעליונה",
+      "items": { "$ref": "#/$defs/layer" }
+    }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9_\\-]{1,64}$" },
+    "color": { "type": "string", "pattern": "^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$" },
+    "shadow": {
+      "type": "object",
+      "properties": {
+        "x": { "type": "number" }, "y": { "type": "number" },
+        "blur": { "type": "number", "minimum": 0 }, "color": { "$ref": "#/$defs/color" }
+      }
+    },
+    "base": {
+      "type": "object",
+      "required": ["id", "type", "x", "y", "w", "h"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "type": { "enum": ["text", "image", "shape", "icon", "group"] },
+        "name": { "type": "string", "maxLength": 80 },
+        "role": { "enum": ["background", "title", "subtitle", "body", "cta", "logo", "photo", "decoration", "other"] },
+        "x": { "type": "number" }, "y": { "type": "number" },
+        "w": { "type": "number", "exclusiveMinimum": 0 }, "h": { "type": "number", "exclusiveMinimum": 0 },
+        "rotation": { "type": "number", "default": 0 },
+        "opacity": { "type": "number", "minimum": 0, "maximum": 1, "default": 1 },
+        "flipX": { "type": "boolean" }, "flipY": { "type": "boolean" },
+        "locked": { "type": "boolean" }, "hidden": { "type": "boolean" },
+        "blend": { "enum": ["normal", "multiply", "screen", "overlay", "darken", "lighten"] },
+        "shadow": { "$ref": "#/$defs/shadow" }
+      }
+    },
+    "layer": {
+      "allOf": [{ "$ref": "#/$defs/base" }],
+      "oneOf": [
+        {
+          "properties": {
+            "type": { "const": "text" },
+            "text": { "type": "string", "maxLength": 5000 },
+            "style": {
+              "type": "object",
+              "properties": {
+                "font": { "type": "string", "maxLength": 60 },
+                "size": { "type": "number", "minimum": 1, "maximum": 2000 },
+                "weight": { "type": "integer", "minimum": 100, "maximum": 900 },
+                "italic": { "type": "boolean" },
+                "color": { "$ref": "#/$defs/color" },
+                "gradient": { "type": "array", "items": { "$ref": "#/$defs/color" }, "minItems": 2, "maxItems": 5 },
+                "align": { "enum": ["right", "center", "left", "justify"] },
+                "dir": { "enum": ["rtl", "ltr", "auto"] },
+                "lineHeight": { "type": "number" },
+                "letterSpacing": { "type": "number" },
+                "stroke": { "type": "object", "properties": { "width": { "type": "number" }, "color": { "$ref": "#/$defs/color" } } },
+                "shadow": { "$ref": "#/$defs/shadow" },
+                "background": { "type": "object", "properties": { "color": { "$ref": "#/$defs/color" }, "radius": { "type": "number" }, "padding": { "type": "number" } } },
+                "autoFit": { "type": "boolean", "description": "הקטנת הגודל עד שהטקסט נכנס לתיבה" }
+              }
+            }
+          },
+          "required": ["text"]
+        },
+        {
+          "properties": {
+            "type": { "const": "image" },
+            "asset": { "$ref": "#/$defs/id" },
+            "fit": { "enum": ["cover", "contain", "fill", "crop"] },
+            "crop": { "type": "object", "properties": { "x": { "type": "number" }, "y": { "type": "number" }, "w": { "type": "number" }, "h": { "type": "number" } } },
+            "filters": {
+              "type": "object",
+              "properties": {
+                "brightness": { "type": "number" }, "contrast": { "type": "number" },
+                "saturation": { "type": "number" }, "blur": { "type": "number", "minimum": 0 },
+                "grayscale": { "type": "boolean" }
+              }
+            },
+            "mask": { "enum": ["none", "circle", "rounded", "star", "heart"] },
+            "radius": { "type": "number" },
+            "border": { "type": "object", "properties": { "width": { "type": "number" }, "color": { "$ref": "#/$defs/color" } } }
+          },
+          "required": ["asset"]
+        },
+        {
+          "properties": {
+            "type": { "const": "shape" },
+            "shape": { "enum": ["rect", "ellipse", "line", "arrow", "polygon", "star"] },
+            "fill": { "$ref": "#/$defs/color" },
+            "stroke": { "type": "object", "properties": { "width": { "type": "number" }, "color": { "$ref": "#/$defs/color" } } },
+            "radius": { "type": "number" },
+            "points": { "type": "integer", "minimum": 3, "maximum": 24 }
+          },
+          "required": ["shape"]
+        },
+        {
+          "properties": {
+            "type": { "const": "icon" },
+            "icon": { "type": "string", "maxLength": 60, "description": "שם מספריית האייקונים הפנימית" },
+            "color": { "$ref": "#/$defs/color" }
+          },
+          "required": ["icon"]
+        },
+        {
+          "properties": {
+            "type": { "const": "group" },
+            "children": { "type": "array", "items": { "$ref": "#/$defs/layer" }, "maxItems": 200 }
+          },
+          "required": ["children"]
+        }
+      ]
+    }
+  }
+}
