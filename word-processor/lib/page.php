@@ -6,7 +6,10 @@
 
 const PAGE_SIZES = ['A4' => [210, 297], 'Letter' => [215.9, 279.4]];
 const PAGE_NUM_FORMATS = ['n', 'page_n', 'n_of_m', 'dash_n', 'hebrew'];
-const STYLE_KEYS = ['title', 'h1', 'h2', 'h3', 'normal'];
+const STYLE_KEYS = ['title', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'h7', 'h8', 'h9', 'normal'];
+/** סגנון שהמשתמש יצר: u1, u2… (עם name). עד USER_STYLES_MAX. */
+const USER_STYLE_RE = '/^u[1-9]\d{0,2}$/';
+const USER_STYLES_MAX = 60;
 const FONTS = ['Arial', 'David', 'Frank Ruehl', 'Narkisim', 'Miriam', 'Times New Roman', 'Calibri', 'Tahoma',
     'David Libre', 'Frank Ruhl Libre', 'Miriam Libre', 'Heebo', 'Assistant', 'Rubik', 'Alef'];
 
@@ -21,6 +24,13 @@ function page_defaults(): array
             'h1' => ['size' => 16, 'bold' => true, 'color' => '#1f3864', 'before' => 12, 'after' => 6],
             'h2' => ['size' => 14, 'bold' => true, 'color' => '#2f5496', 'before' => 10, 'after' => 4],
             'h3' => ['size' => 12, 'bold' => true, 'color' => '#2f5496', 'before' => 8, 'after' => 4],
+            // 4–9 — כמו ב-Word: קטנות יותר, נטוי / צבע מבדילים
+            'h4' => ['size' => 12, 'bold' => true, 'italic' => true, 'color' => '#2f5496', 'before' => 6, 'after' => 2],
+            'h5' => ['size' => 12, 'color' => '#2f5496', 'before' => 6, 'after' => 2],
+            'h6' => ['size' => 12, 'color' => '#1f3763', 'before' => 4, 'after' => 2],
+            'h7' => ['size' => 12, 'italic' => true, 'color' => '#1f3763', 'before' => 4, 'after' => 2],
+            'h8' => ['size' => 10.5, 'color' => '#272727', 'before' => 4, 'after' => 2],
+            'h9' => ['size' => 10.5, 'italic' => true, 'color' => '#272727', 'before' => 4, 'after' => 2],
             'normal' => ['before' => 0, 'after' => 6, 'line' => 1.15],
         ],
         'numbering' => ['show' => true, 'position' => 'bottom', 'align' => 'center', 'format' => 'n', 'start' => 1, 'first_page' => true],
@@ -44,7 +54,17 @@ function page_normalize($in, ?array $base = null): array
         if (is_string($in['font']['family'] ?? null) && ($f = font_name($in['font']['family'])) !== '') $p['font']['family'] = $f;
         if (($v = $num($in['font']['size'] ?? null, 6, 72)) !== null) $p['font']['size'] = $v;
     }
-    foreach (STYLE_KEYS as $s) {
+    // סגנונות של המשתמש: מפתח u<N> עם שם; null — מחיקה
+    $keys = STYLE_KEYS;
+    foreach (array_keys(is_array($in['styles'] ?? null) ? $in['styles'] : []) as $k) {
+        if (!is_string($k) || !preg_match(USER_STYLE_RE, $k)) continue;
+        if ($in['styles'][$k] === null) { unset($p['styles'][$k]); continue; }
+        $name = is_string($in['styles'][$k]['name'] ?? null) ? style_name($in['styles'][$k]['name']) : ($p['styles'][$k]['name'] ?? '');
+        if ($name === '' || (!isset($p['styles'][$k]) && count(array_filter(array_keys($p['styles']), fn($x) => preg_match(USER_STYLE_RE, (string)$x))) >= USER_STYLES_MAX)) continue;
+        $p['styles'][$k] = ['name' => $name] + ($p['styles'][$k] ?? []);
+        $keys[] = $k;
+    }
+    foreach ($keys as $s) {
         $src = $in['styles'][$s] ?? null;
         if (!is_array($src)) continue;
         $st = $p['styles'][$s];
@@ -90,6 +110,20 @@ function font_name(string $f): string
 {
     $f = trim(preg_replace('/[^\p{L}\p{N} \-]/u', '', $f));
     return mb_substr($f, 0, 60);
+}
+
+/** שם סגנון של משתמש: טקסט קצר בלי תווי בקרה. */
+function style_name(string $s): string
+{
+    return mb_substr(trim(preg_replace('/[\x00-\x1f<>]/u', '', $s)), 0, 40);
+}
+
+/** מפתח הסגנון של בלוק (paragraph / heading) — h1..h9, title, u<N> שקיים בהגדרות, או normal. */
+function block_style_key(array $n, array $page): string
+{
+    if (($n['type'] ?? '') === 'heading') return 'h' . max(1, min(9, (int)($n['attrs']['level'] ?? 1)));
+    $ps = $n['attrs']['pstyle'] ?? null;
+    return is_string($ps) && ($ps === 'title' || (preg_match(USER_STYLE_RE, $ps) && isset($page['styles'][$ps]))) ? $ps : 'normal';
 }
 
 /** גודל העמוד במ"מ לפי הכיוון: [רוחב, גובה]. */

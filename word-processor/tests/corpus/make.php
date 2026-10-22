@@ -121,6 +121,19 @@ for ($i = 1; $i <= 24; $i++) {
 }
 $corpus['long-footnotes'] = ['title' => 'הערות ארוכות', 'json' => $doc($c), 'page' => null];
 
+// 10. סגנונות: כותרות 1–9 וסגנונות של המשתמש (גודל, ריווח, ריווח שורות, יישור) — בכל מקום אותו גובה
+$c = [];
+for ($r = 0; $r < 3; $r++) {
+    for ($l = 1; $l <= 9; $l++) {
+        $c[] = $hd("כותרת $l — סבב " . ($r + 1), $l);
+        $c[] = $p($sentence(15, 45), $l % 3 === 0 ? ['pstyle' => 'u1'] : ($l % 3 === 1 ? ['pstyle' => 'u2'] : []));
+    }
+}
+$corpus['styles'] = ['title' => 'סגנונות', 'json' => $doc($c), 'page' => ['styles' => [
+    'u1' => ['name' => 'ציטוט', 'size' => 11, 'italic' => true, 'color' => '#595959', 'align' => 'center', 'before' => 6, 'after' => 12, 'line' => 1.4],
+    'u2' => ['name' => 'הדגשה', 'size' => 14, 'bold' => true, 'font' => 'Rubik', 'after' => 9],
+]]];
+
 foreach ($corpus as $name => $d) {
     file_put_contents(__DIR__ . "/$name.json", json_encode($d, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
     echo "$name.json\n";

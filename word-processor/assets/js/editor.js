@@ -10,7 +10,7 @@
  * ומספר עמוד בכל עמוד, וזום שמגדיל רק את הדפים.
  */
 import { Editor, Extension, StarterKit, Superscript, Subscript } from '../../vendor/tiptap.js';
-import { extensions, imageBox, FONTS, FALLBACK, cssFont, safeHref, bookmarks, BOOKMARK_RE } from './extensions.js';
+import { extensions, imageBox, FONTS, FALLBACK, cssFont, safeHref, bookmarks, BOOKMARK_RE, USER_STYLE, styleKeyOf } from './extensions.js';
 import { Pages, pageLabel } from './pagination.js';
 import { cleanPastedHtml } from './paste.js';
 import { migrate } from './schema.js';
@@ -22,7 +22,8 @@ const PT = 4 / 3;
 const GAP = 24;
 const SIZES = { A4: [210, 297], Letter: [215.9, 279.4] };
 const SIZE_LIST = [8, 9, 10, 10.5, 11, 12, 14, 16, 18, 20, 22, 24, 28, 32, 36, 48, 72];
-const STYLE_NAMES = { normal: 'רגיל', title: 'כותרת מסמך', h1: 'כותרת 1', h2: 'כותרת 2', h3: 'כותרת 3' };
+const STYLE_NAMES = { normal: 'רגיל', title: 'כותרת מסמך', ...Object.fromEntries([1, 2, 3, 4, 5, 6, 7, 8, 9].map(l => ['h' + l, 'כותרת ' + l])) };
+const GALLERY = ['normal', 'title', 'h1', 'h2', 'h3'];   // בגלריה בסרט; 4–9 — ברשימה (כמו ב-Word, שמראה אותן כשהן בשימוש)
 const WRAP_NAMES = { inline: 'בשורה עם הטקסט', square: 'ריבוע', tight: 'צמוד', topBottom: 'מעל ומתחת', behind: 'מאחורי הטקסט', front: 'לפני הטקסט' };
 const SPACING = [['-1', 'צפוף 1'], ['-0.5', 'צפוף ½'], ['', 'רגיל'], ['0.5', 'מרווח ½'], ['1', 'מרווח 1'], ['2', 'מרווח 2'], ['3', 'מרווח 3']];
 const NUM_FORMATS = { n: '1', page_n: "עמ' 1", n_of_m: '1 מתוך 12', dash_n: '- 1 -', hebrew: 'א, ב, ג' };
@@ -38,6 +39,12 @@ export function defaultPage() {
             h1: { size: 16, bold: true, color: '#1f3864', before: 12, after: 6 },
             h2: { size: 14, bold: true, color: '#2f5496', before: 10, after: 4 },
             h3: { size: 12, bold: true, color: '#2f5496', before: 8, after: 4 },
+            h4: { size: 12, bold: true, italic: true, color: '#2f5496', before: 6, after: 2 },
+            h5: { size: 12, color: '#2f5496', before: 6, after: 2 },
+            h6: { size: 12, color: '#1f3763', before: 4, after: 2 },
+            h7: { size: 12, italic: true, color: '#1f3763', before: 4, after: 2 },
+            h8: { size: 10.5, color: '#272727', before: 4, after: 2 },
+            h9: { size: 10.5, italic: true, color: '#272727', before: 4, after: 2 },
             normal: { before: 0, after: 6, line: 1.15 },
         },
         numbering: { show: true, position: 'bottom', align: 'center', format: 'n', start: 1, first_page: true },
@@ -177,6 +184,7 @@ export function createWordEditor(root, opts) {
      * (הצומת עצמו שייך למקטע שלפניו).
      */
     let ed0 = null;
+    let stylesUI = null;   // גלריית הסגנונות והרשימה — נבנות מחדש כשהסגנונות משתנים (נקבע אחרי בניית הסרט)
     let secMemo = { doc: null, page: null, out: null };
     const sections = () => {
         const doc = ed0?.state.doc;
@@ -245,6 +253,7 @@ export function createWordEditor(root, opts) {
 
     // ---------- דפים ----------
     function applyPage() {
+        stylesUI?.();
         const g = geometry();
         editor.storage.wpPages.contentWidth = g.pageW - g.left - g.right;
         sheetEl.style.width = g.sheetW + 'px';
@@ -258,7 +267,8 @@ export function createWordEditor(root, opts) {
         const P = '.wp-sheet .wp-doc';
         styleEl.textContent = `${P}{padding:${g.top}px ${g.right}px 0 ${g.left}px;font-family:${cssFont(page.font.family)};font-size:${page.font.size}pt;line-height:${s.normal.line || 1.15}}`
             + st(`${P} p`, s.normal, false) + st(`${P} p.wp-title`, s.title, true)
-            + st(`${P} h1`, s.h1, true) + st(`${P} h2`, s.h2, true) + st(`${P} h3`, s.h3, true)
+            + [1, 2, 3, 4, 5, 6, 7, 8, 9].map(l => st(`${P} h${l}`, s['h' + l] || {}, true)).join('')
+            + Object.keys(s).filter(k => USER_STYLE.test(k)).map(k => st(`${P} p.wp-s-${k}`, { ...s.normal, ...s[k] }, false)).join('')
             + `${P} li>p{padding-top:0;padding-bottom:${Math.min(3, s.normal.after ?? 0)}pt}`
             // בתא טבלה — בלי רווח אחרי פסקה (גם ב-PDF וב-Word); בלי זה כלל הסגנון (ספציפי יותר) גובר על editor.css
             + `${P} td>p,${P} th>p{padding-bottom:0}`;
@@ -431,6 +441,7 @@ export function createWordEditor(root, opts) {
             crop: pos => cropDialog(pos), imageProps: pos => imageDialog(pos), imageSize: f => imageSizeTo(f),
             footnote: () => footnoteDialog(null),
             link: () => linkDialog(), bookmark: () => bookmarkDialog(),
+            newStyle: () => newStyleDialog(), updateStyle: () => updateStyleFromSelection(),
             save: opts.save ? () => opts.save() : null,
             printPreview: () => preview(true),
             commandSearch: () => focusSearch(),
@@ -455,7 +466,24 @@ export function createWordEditor(root, opts) {
         h('span', { 'aria-hidden': 'true' }, cmds.get(id).icon), h('input', { type: 'color', value, 'aria-label': cmds.get(id).label, oninput: e => cmds.run(id, e.target.value) }));
 
     const linkOff = cmdBtn('unlink');
-    const styleSel = cmdSel('style', 'w-style', Object.entries(STYLE_NAMES).map(([k, t]) => h('option', { value: k }, t)));
+    const styleSel = cmdSel('style', 'w-style', []);
+    // גלריית סגנונות: כל כפתור נראה כמו הסגנון (גופן, משקל, צבע; גודל מוקטן), כמו ב-Word
+    const gallery = h('div.rb-gallery', { role: 'group', 'aria-label': 'גלריית סגנונות' });
+    const styleName = k => STYLE_NAMES[k] || page.styles[k]?.name || k;
+    const userKeys = () => Object.keys(page.styles).filter(k => USER_STYLE.test(k)).sort((a, b) => a.slice(1) - b.slice(1));
+    stylesUI = () => {
+        const cur = styleSel.value;
+        styleSel.textContent = '';
+        for (const k of [...Object.keys(STYLE_NAMES), ...userKeys()]) styleSel.append(h('option', { value: k }, styleName(k)));
+        styleSel.value = cur && styleSel.querySelector(`option[value="${cur}"]`) ? cur : 'normal';
+        gallery.textContent = '';
+        for (const k of [...GALLERY, ...userKeys()]) {
+            const st = { ...(k === 'normal' || USER_STYLE.test(k) ? page.styles.normal : {}), ...page.styles[k] };
+            gallery.append(h('button.rb-sty', { type: 'button', title: styleName(k), 'aria-pressed': 'false', 'data-style': k, onclick: () => cmds.run('style', k) },
+                h('span', { style: { fontFamily: cssFont(st.font || page.font.family), fontWeight: st.bold ? '700' : '400', fontStyle: st.italic ? 'italic' : 'normal',
+                    textDecoration: st.underline ? 'underline' : 'none', color: st.color || '', fontSize: Math.min(15, Math.max(10, (st.size || page.font.size) * 0.95)) + 'px' } }, styleName(k))));
+        }
+    };
     const fontSel = cmdSel('fontFamily', 'w-font', [h('option', { value: '' }, 'גופן המסמך'), ...FONTS.map(f => h('option', { value: f, style: { fontFamily: cssFont(f) } }, f))]);
     const sizeSel = cmdSel('fontSize', 'w-size', [h('option', { value: '' }, '—'), ...SIZE_LIST.map(s => h('option', { value: s }, s))]);
     const spacingSel = cmdSel('letterSpacing', 'w-spacing', SPACING.map(([v, t]) => h('option', { value: v }, t)));
@@ -485,7 +513,7 @@ export function createWordEditor(root, opts) {
             grp('לוח', B.painter),
             grp('גופן', [fontSel, sizeSel, B.clearFormat], [B.bold, B.italic, B.underline, B.strike, B.superscript, B.subscript, B.color, B.mark, spacingSel]),
             grp('פסקה', [B.bulletList, B.orderedList, listType, B.outdent, B.indent], [B.alignRight, B.alignCenter, B.alignLeft, B.alignJustify, B.paragraphDialog]),
-            grp('סגנונות', [styleSel], [B.editStyles]),
+            grp('סגנונות', [gallery], [styleSel, B.editStyles, cmdBtn('newStyle'), cmdBtn('updateStyle')]),
             grp('עריכה', [cmdBtn('find'), cmdBtn('replace')])]],
         ['insert', 'הוספה', [grp('טבלאות', B.insertTable), grp('איורים', [B.insertImage, imgInput]), grp('הערות', B.footnote), grp('קישורים', [cmdBtn('link'), linkOff, cmdBtn('bookmark')]), grp('עמודים', B.pageBreak)]],
         ['layout', 'פריסה', [grp('הגדרת עמוד', B.pageSetup), grp('מעברים', B.sectionBreak)]],
@@ -707,7 +735,9 @@ export function createWordEditor(root, opts) {
     function refresh() {
         const on = (b, v) => { b.classList.toggle('on', !!v); b.setAttribute('aria-pressed', v ? 'true' : 'false'); };
         for (const id of TOGGLES) on(B[id], cmds.state(id).active);
-        styleSel.value = cmds.state('style').value;
+        const sk = cmds.state('style').value;
+        styleSel.value = sk;
+        for (const b of gallery.children) { b.classList.toggle('on', b.dataset.style === sk); b.setAttribute('aria-pressed', String(b.dataset.style === sk)); }
         fontIndicator(cmds.state('fontFamily').value);
         sizeSel.value = cmds.state('fontSize').value;
         spacingSel.value = cmds.state('letterSpacing').value;
@@ -1144,17 +1174,120 @@ export function createWordEditor(root, opts) {
         if (tr.docChanged || tr.steps.length) editor.view.dispatch(tr);
     }
 
+    /**
+     * העיצוב של הבחירה (כמו "סגנון חדש" / "עדכון לפי הבחירה" ב-Word): מהריצה הראשונה בפסקה — גופן, גודל, צבע,
+     * מודגש / נטוי / קו תחתון; מהפסקה — יישור, ריווח לפני / אחרי ושורות. מחזיר גם את הבלוק ואת מיקומו.
+     */
+    function selectionFormat() {
+        const $f = editor.state.selection.$from;
+        const block = $f.parent;
+        if (!['paragraph', 'heading'].includes(block.type.name)) return null;
+        const pos = $f.before($f.depth);
+        let first = null;
+        block.forEach(c => { if (!first && c.isText) first = c; });
+        const f = {};
+        for (const m of first?.marks || []) {
+            if (['bold', 'italic', 'underline'].includes(m.type.name)) f[m.type.name] = true;
+            if (m.type.name === 'textStyle') {
+                if (m.attrs.fontFamily) f.font = m.attrs.fontFamily;
+                if (parseFloat(m.attrs.fontSize)) f.size = parseFloat(m.attrs.fontSize);
+                if (m.attrs.color) f.color = m.attrs.color;
+            }
+        }
+        const a = block.attrs;
+        if (a.textAlign) f.align = a.textAlign;
+        if (isFinite(parseFloat(a.spaceBefore))) f.before = +a.spaceBefore;
+        if (isFinite(parseFloat(a.spaceAfter))) f.after = +a.spaceAfter;
+        if (a.lineHeight && !String(a.lineHeight).startsWith('exact:')) f.line = +a.lineHeight;
+        return { key: styleKeyOf(block), block, pos, f };
+    }
+
+    /**
+     * עסקה אחת (ביטול אחד): הסגנונות החדשים, הפסקה בסגנון toKey (אם נמסר), ובלי העיצוב הישיר שנכנס לסגנון —
+     * עיצוב שחל רק על חלק מהפסקה נשאר.
+     */
+    function applyStyleChange(sel, patch, toKey) {
+        const { block, pos, f } = sel;
+        const sc = editor.schema;
+        const tr = editor.state.tr.setDocAttribute('page', mergePage(page, { styles: patch }));
+        const attrs = { ...block.attrs };
+        if (f.align) attrs.textAlign = null;
+        if ('before' in f) attrs.spaceBefore = null;
+        if ('after' in f) attrs.spaceAfter = null;
+        if ('line' in f) attrs.lineHeight = null;
+        if (toKey) { delete attrs.level; attrs.pstyle = toKey; tr.setNodeMarkup(pos, sc.nodes.paragraph, attrs); }
+        else tr.setNodeMarkup(pos, undefined, attrs);
+        const texts = [];
+        block.forEach((c, off) => { if (c.isText) texts.push([c, pos + 1 + off]); });
+        const everywhere = test => texts.length && texts.every(([c]) => test(c));
+        for (const t of ['bold', 'italic', 'underline']) {
+            if (f[t] && everywhere(c => c.marks.some(m => m.type.name === t))) tr.removeMark(pos + 1, pos + 1 + block.content.size, sc.marks[t]);
+        }
+        const tsAll = k => everywhere(c => c.marks.some(m => m.type.name === 'textStyle' && m.attrs[k] != null && String(m.attrs[k]) === String(texts[0][0].marks.find(x => x.type.name === 'textStyle')?.attrs[k])));
+        const drop = { fontFamily: 'font' in f && tsAll('fontFamily'), fontSize: 'size' in f && tsAll('fontSize'), color: 'color' in f && tsAll('color') };
+        if (Object.values(drop).some(Boolean)) for (const [c, p] of texts) {
+            const ts = c.marks.find(m => m.type.name === 'textStyle');
+            if (!ts) continue;
+            const na = { ...ts.attrs };
+            for (const k of Object.keys(drop)) if (drop[k]) na[k] = null;
+            tr.removeMark(p, p + c.nodeSize, sc.marks.textStyle);
+            if (Object.values(na).some(v => v != null)) tr.addMark(p, p + c.nodeSize, sc.marks.textStyle.create(na));
+        }
+        editor.view.dispatch(tr);
+        editor.view.focus();
+    }
+
+    /** סגנון חדש מהבחירה: שם, והעיצוב של הפסקה (הסגנון שלה + העיצוב הישיר). הפסקה עוברת לסגנון החדש. */
+    function newStyleDialog() {
+        const sel = selectionFormat();
+        if (!sel) return toast('הסמן צריך להיות בפסקה', true);
+        sheet('סגנון חדש מהבחירה', body => {
+            body.append(field('שם הסגנון', h('input', { name: 'name', maxlength: 40, autocomplete: 'off', value: '' })),
+                h('p.hint', 'הסגנון יקבל את העיצוב של הפסקה שבה הסמן, והפסקה תעבור אליו.'));
+            setTimeout(() => body.querySelector('[name=name]')?.focus());
+        }, form => {
+            const name = String(new FormData(form).get('name') || '').trim().slice(0, 40);
+            if (!name) throw new Error('צריך שם לסגנון');
+            if ([...Object.keys(STYLE_NAMES), ...userKeys()].some(k => styleName(k) === name)) throw new Error('כבר יש סגנון בשם הזה');
+            let n = 1;
+            while (page.styles['u' + n]) n++;
+            const base = { ...(sel.key === 'normal' || USER_STYLE.test(sel.key) ? {} : page.styles[sel.key]), ...(USER_STYLE.test(sel.key) ? page.styles[sel.key] : {}) };
+            delete base.name;
+            const key = 'u' + n;
+            applyStyleChange(sel, { [key]: { name, ...base, ...sel.f } }, key);
+        }, 'יצירה');
+    }
+
+    /** עדכון הסגנון של הפסקה לפי העיצוב שלה (Word: "עדכון … כך שיתאים לבחירה"). */
+    function updateStyleFromSelection() {
+        const sel = selectionFormat();
+        if (!sel) return;
+        if (!Object.keys(sel.f).length) return toast(`אין בפסקה עיצוב שונה מהסגנון "${styleName(sel.key)}"`);
+        applyStyleChange(sel, { [sel.key]: sel.f }, null);
+        toast(`הסגנון "${styleName(sel.key)}" עודכן — כל הפסקאות בסגנון הזה השתנו`);
+    }
+
     function stylesDialog() {
         let cur = styleSel.value || 'h1';
         const work = structuredClone(page.styles);
         let collect = () => {};
         sheet('עריכת סגנונות', (body, dlg) => {
             const area = h('div.group');
-            const pick = seg('which', STYLE_NAMES, cur, 'סגנון');
+            const keys = [...Object.keys(STYLE_NAMES), ...userKeys()];
+            const pick = field('סגנון', h('select', { name: 'which' }, keys.map(k => h('option', { value: k, selected: k === cur }, styleName(k)))));
             const render = () => {
                 const s = work[cur] || {};
                 area.textContent = '';
+                const user = USER_STYLE.test(cur);
                 area.append(
+                    user ? h('div.fields.two', field('שם', h('input', { name: 'sname', value: s.name || '', maxlength: 40 })),
+                        h('button.btn.ghost', { type: 'button', onclick: () => {
+                            const which = pick.querySelector('select');
+                            work[cur] = null;
+                            which.querySelector(`option[value="${cur}"]`)?.remove();
+                            cur = which.value = 'normal';
+                            render();
+                        } }, 'מחיקת הסגנון')) : null,
                     h('div.fields.two',
                         field('גופן', fontSelect('font', s.font || '', true)),
                         field('גודל (נק\')', numInput('size', s.size ?? '', { min: 6, max: 96 })),
@@ -1168,6 +1301,7 @@ export function createWordEditor(root, opts) {
                     h('p.hint', 'השינוי חל על כל הפסקאות בסגנון הזה במסמך.'));
             };
             collect = () => {
+                if (work[cur] === null) return;   // נמחק
                 const f = new FormData(dlg.querySelector('form'));
                 const n = k => f.get(k) === '' || f.get(k) === null ? undefined : +f.get(k);
                 const s = { ...work[cur] };
@@ -1176,6 +1310,7 @@ export function createWordEditor(root, opts) {
                 s.bold = !!f.get('bold'); s.italic = !!f.get('italic'); s.underline = !!f.get('underline');
                 s.color = f.get('color') === '#000000' && cur === 'normal' ? undefined : f.get('color');
                 s.align = f.get('align') || undefined;
+                if (USER_STYLE.test(cur)) s.name = String(f.get('sname') || '').trim().slice(0, 40) || s.name;
                 for (const k of Object.keys(s)) if (s[k] === undefined) delete s[k];
                 work[cur] = s;
             };
@@ -1184,7 +1319,11 @@ export function createWordEditor(root, opts) {
             render();
         }, () => {
             collect();
-            setPage({ styles: work }, true);
+            // סגנון שנמחק: הפסקאות שבו חוזרות ל"רגיל" — באותה עסקה (ביטול אחד)
+            const gone = Object.keys(work).filter(k => work[k] === null);
+            const tr = editor.state.tr.setDocAttribute('page', mergePage(page, { styles: work }, true));
+            if (gone.length) tr.doc.descendants((n, pos) => { if (n.type.name === 'paragraph' && gone.includes(n.attrs.pstyle)) tr.setNodeMarkup(pos, undefined, { ...n.attrs, pstyle: null }); });
+            editor.view.dispatch(tr);
         }, 'שמירה');
     }
 
@@ -1297,7 +1436,11 @@ export function mergePage(base, p, replaceStyles = false) {
     );
     if (p.font) Object.assign(out.font, Object.fromEntries(Object.entries(p.font).filter(([, v]) => v !== '' && v !== null)));
     if (p.numbering) Object.assign(out.numbering, p.numbering);
-    if (p.styles) for (const [k, v] of Object.entries(p.styles)) out.styles[k] = replaceStyles ? { ...v } : { ...(out.styles[k] || {}), ...v };
+    // סגנון של משתמש עם null — נמחק
+    if (p.styles) for (const [k, v] of Object.entries(p.styles)) {
+        if (v === null) delete out.styles[k];
+        else out.styles[k] = replaceStyles ? { ...v } : { ...(out.styles[k] || {}), ...v };
+    }
     return out;
 }
 

@@ -104,12 +104,12 @@ function export_css(array $page): string
 {
     $f = $page['font'];
     $css = '.wp-doc{font-family:' . css_font($f['family']) . ';font-size:' . $f['size'] . 'pt;line-height:1.15;direction:rtl;color:#000}'
-        . '.wp-doc p,.wp-doc h1,.wp-doc h2,.wp-doc h3{margin:0}'
+        . '.wp-doc p,.wp-doc h1,.wp-doc h2,.wp-doc h3,.wp-doc h4,.wp-doc h5,.wp-doc h6{margin:0}'
         . '.wp-doc table{border-collapse:collapse;width:100%;margin:4pt 0}'
         . '.wp-doc td,.wp-doc th{border:1px solid #888;padding:2pt 4pt;vertical-align:top}'
         . '.wp-doc ul,.wp-doc ol{margin:0;padding-inline-start:24pt}'
         . '.wp-doc ol.hebrew{list-style-type:hebrew}.wp-doc ol.roman{list-style-type:lower-roman}'
-        . '.wp-doc p,.wp-doc h1,.wp-doc h2,.wp-doc h3{position:relative}'
+        . '.wp-doc p,.wp-doc h1,.wp-doc h2,.wp-doc h3,.wp-doc h4,.wp-doc h5,.wp-doc h6{position:relative}'
         . '.wp-doc .wp-img{display:inline-block;vertical-align:bottom;position:relative}'
         . '.wp-doc .wp-img-cap{display:block;text-align:center;font-size:9pt;font-style:italic;color:#333;padding-top:2pt}'
         . '.wp-doc .wrap-square,.wp-doc .wrap-tight{float:right;margin:0 0 var(--dist) var(--dist)}'
@@ -119,8 +119,13 @@ function export_css(array $page): string
         . '.wp-doc .wrap-topBottom.align-left{margin-inline-start:auto}'
         . '.wp-doc .wrap-behind,.wp-doc .wrap-front{position:absolute}.wp-doc .wrap-behind{z-index:-1}.wp-doc .wrap-front{z-index:2}'
         . '.wp-doc .page-break{break-after:page;height:0}';
-    $sel = ['normal' => '.wp-doc p', 'title' => '.wp-doc .wp-title', 'h1' => '.wp-doc h1', 'h2' => '.wp-doc h2', 'h3' => '.wp-doc h3'];
+    // כותרות 7–9 — אין תגית HTML: פסקה עם מחלקה (html_node); סגנון משתמש — מחלקה wp-s-u<N>, מעל "רגיל"
+    $sel = ['normal' => '.wp-doc p', 'title' => '.wp-doc .wp-title'];
+    for ($l = 1; $l <= 9; $l++) $sel["h$l"] = $l <= 6 ? ".wp-doc h$l" : ".wp-doc .wp-h$l";
     foreach ($sel as $k => $s) $css .= $s . '{' . style_css($page['styles'][$k] ?? [], $k !== 'normal') . '}';
+    foreach ($page['styles'] as $k => $st) {
+        if (preg_match(USER_STYLE_RE, (string)$k)) $css .= ".wp-doc .wp-s-$k{" . style_css($st + ($page['styles']['normal'] ?? []), false) . '}';
+    }
     $css .= '.wp-doc td>p,.wp-doc th>p{padding-bottom:0}';   // כמו בעורך
     return $css;
 }
@@ -170,9 +175,11 @@ function html_node(array $n): string
         case 'paragraph':
             $inner = $kids();
             if (($a['pstyle'] ?? '') === 'title') return '<p' . block_attrs($a, 'wp-title') . '>' . ($inner ?: '<br>') . '</p>';
+            if (preg_match(USER_STYLE_RE, (string)($a['pstyle'] ?? ''))) return '<p' . block_attrs($a, 'wp-s-' . $a['pstyle']) . '>' . ($inner ?: '<br>') . '</p>';
             return '<p' . block_attrs($a) . '>' . ($inner ?: '<br>') . '</p>';
         case 'heading':
-            $l = max(1, min(3, (int)($a['level'] ?? 1)));
+            $l = max(1, min(9, (int)($a['level'] ?? 1)));
+            if ($l > 6) return '<p role="heading" aria-level="' . $l . '"' . block_attrs($a, "wp-h$l") . '>' . $kids() . '</p>';
             return "<h$l" . block_attrs($a) . '>' . $kids() . "</h$l>";
         case 'bulletList':
             return '<ul>' . $kids() . '</ul>';
@@ -396,7 +403,8 @@ final class Ooxml
 
     public function styleId(string $k): string
     {
-        $base = ['normal' => 'Normal', 'title' => 'Title', 'h1' => 'Heading1', 'h2' => 'Heading2', 'h3' => 'Heading3'][$k];
+        // h1..h9 → Heading1..9; סגנון משתמש u<N> → UserN (השם שלו — ב-w:name)
+        $base = $k === 'normal' ? 'Normal' : ($k === 'title' ? 'Title' : ($k[0] === 'h' ? 'Heading' . substr($k, 1) : 'User' . substr($k, 1)));
         return $this->prefix === '' ? $base : $this->prefix . $base;
     }
 
@@ -413,10 +421,9 @@ final class Ooxml
         $a = $n['attrs'] ?? [];
         switch ($n['type'] ?? '') {
             case 'paragraph':
-                $style = ($a['pstyle'] ?? '') === 'title' ? 'title' : null;
-                return $this->para($n, $style, $list && $firstInItem ? $list : [], (bool)$list);
             case 'heading':
-                return $this->para($n, 'h' . max(1, min(3, (int)($a['level'] ?? 1))), $list && $firstInItem ? $list : [], (bool)$list);
+                $style = block_style_key($n, $this->page);
+                return $this->para($n, $style === 'normal' ? null : $style, $list && $firstInItem ? $list : [], (bool)$list);
             case 'bulletList':
             case 'orderedList':
                 $type = $n['type'] === 'bulletList' ? 'bullet' : (in_array($a['listType'] ?? '', ['hebrew', 'roman'], true) ? $a['listType'] : 'decimal');
@@ -758,19 +765,22 @@ final class Ooxml
     public function styles(): string
     {
         $out = '';
-        $names = ['normal' => 'Normal', 'title' => 'Title', 'h1' => 'heading 1', 'h2' => 'heading 2', 'h3' => 'heading 3'];
+        $names = ['normal' => 'Normal', 'title' => 'Title'];
+        for ($l = 1; $l <= 9; $l++) $names["h$l"] = "heading $l";
+        foreach ($this->page['styles'] as $k => $st) if (preg_match(USER_STYLE_RE, (string)$k)) $names[$k] = style_name((string)($st['name'] ?? $k)) ?: $k;
         foreach ($names as $k => $name) {
             $st = $this->page['styles'][$k] ?? [];
             $sp = '';
             if (isset($st['before'])) $sp .= ' w:before="' . (int)round($st['before'] * 20) . '"';
             if (isset($st['after'])) $sp .= ' w:after="' . (int)round($st['after'] * 20) . '"';
             if (isset($st['line'])) $sp .= ' w:line="' . (int)round($st['line'] * 240) . '" w:lineRule="auto"';
-            $ppr = ($k !== 'normal' ? '<w:keepNext/><w:keepLines/>' : '') . '<w:bidi/>' . ($sp ? "<w:spacing$sp/>" : '');
+            $user = (bool)preg_match(USER_STYLE_RE, $k);
+            $ppr = ($k !== 'normal' && !$user ? '<w:keepNext/><w:keepLines/>' : '') . '<w:bidi/>' . ($sp ? "<w:spacing$sp/>" : '');
             if (!empty($st['align'])) $ppr .= '<w:jc w:val="' . ($this->jc($st['align'], true) ?? 'start') . '"/>';
             if ($k[0] === 'h') $ppr .= '<w:outlineLvl w:val="' . ((int)$k[1] - 1) . '"/>';
             $rpr = '';
             if (!empty($st['font'])) { $f = xml($st['font']); $rpr .= "<w:rFonts w:ascii=\"$f\" w:hAnsi=\"$f\" w:cs=\"$f\"/>"; }
-            if ($k !== 'normal') $rpr .= !empty($st['bold']) ? '<w:b/><w:bCs/>' : '<w:b w:val="0"/><w:bCs w:val="0"/>';
+            if ($k !== 'normal' && !$user) $rpr .= !empty($st['bold']) ? '<w:b/><w:bCs/>' : '<w:b w:val="0"/><w:bCs w:val="0"/>';
             elseif (!empty($st['bold'])) $rpr .= '<w:b/><w:bCs/>';
             if (!empty($st['italic'])) $rpr .= '<w:i/><w:iCs/>';
             if (!empty($st['color'])) $rpr .= '<w:color w:val="' . strtoupper(ltrim($st['color'], '#')) . '"/>';
