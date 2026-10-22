@@ -31,6 +31,18 @@ const POSTURE_DENY  = 'deny_all';   // הכול חסום, נפתח לפי הית
 const POSTURE_ALLOW = 'allow_all';  // הכול פתוח, נחסם לפי איסור
 const POSTURES = [POSTURE_DENY, POSTURE_ALLOW];
 
+/*
+ * מנוע החיפוש של הילד (בעל המערכת, 2026-10-22): 'migdalor' — החיפוש של מגדלור (אינדקס משלנו / Brave, כל
+ * תוצאה מסוננת לפני שמוצגת); 'google' — חיפוש גוגל בתוך הדפדפן של מגדלור, עם חיפוש בטוח בכוח, וכל תוצאה
+ * נבדקת כשלוחצים עליה. ממשק החיפוש של גוגל (Custom Search JSON API) סגור למערכות חדשות ונסגר ב-2027 — לכן
+ * לא "תוצאות גוגל בתוך מגדלור", אלא דף החיפוש של גוגל עצמו.
+ */
+const SEARCH_ENGINES = ['migdalor', 'google'];
+/** דף החיפוש: google.com ו-google.co.il (בלי www — normalizeUrl מסיר). */
+const GOOGLE_SEARCH_HOSTS = ['google.com', 'google.co.il'];
+/** המשאבים של דף החיפוש (סקריפטים, תמונות ממוזערות) — רק בתוך דף, לא יעד לגלישה. */
+const GOOGLE_RESOURCE_HOSTS = ['google.com', 'google.co.il', 'gstatic.com', 'googleusercontent.com'];
+
 /**
  * מצב לא מקוון מתוכנן (שלב 12 ו): מה זמין כשהמכשיר לא מגיע לשרת — ‏all: כל מה שהמדיניות השמורה מתירה;
  * ‏approved: רק מה שההורה אישר במפורש (אתרים ויוטיוב); ‏none: כלום. ואחרי כמה שעות בלי חיבור הכול נחסם.
@@ -76,6 +88,29 @@ function normalizeUrl(string $url): ?array {
 
     return ['scheme' => $scheme, 'host' => $host, 'path' => $path,
             'query' => $p['query'] ?? '', 'full' => $url];
+}
+
+/** חיפוש בטוח: יש safe=active, וכל safe בכתובת הוא active (שני ערכים — לא סומכים על מי מהם גוגל קוראת). */
+function googleSafe(string $query): bool {
+    preg_match_all('/(?:^|&)safe=([^&]*)/i', $query, $m);
+    return $m[1] && count(array_filter($m[1], fn($v) => strtolower(urldecode($v)) !== 'active')) === 0;
+}
+
+/**
+ * search_engine=google: דף הבית והחיפוש של גוגל (רק עם חיפוש בטוח), ההפניה לתוצאה (/url — היעד נבדק בעצמו),
+ * והמשאבים של הדף. כל שאר גוגל (מפות, חדשות, Gmail) — לפי הכללים הרגילים.
+ */
+function googleSearchAllowed(array $url, bool $isMainFrame): bool {
+    if (!$isMainFrame) {
+        foreach (GOOGLE_RESOURCE_HOSTS as $h) if (hostMatches($url['host'], $h)) return true;
+        return false;
+    }
+    if (!in_array($url['host'], GOOGLE_SEARCH_HOSTS, true)) return false;
+    return match ($url['path']) {
+        '/', '/url' => true,
+        '/search'   => googleSafe($url['query']),
+        default     => false,
+    };
 }
 
 /** האם $host הוא הדומיין עצמו או תת-דומיין שלו. */
@@ -518,6 +553,11 @@ function evaluate(array $user, array $policy, array $set, DateTimeImmutable $now
      */
     $d = matchContentType($policy, $url['full'], (string) ($ctx['content_type'] ?? ''));
     if (!$d['allow']) return $d;
+
+    // חיפוש גוגל (search_engine=google) — אחרי איסור מפורש וסוג תוכן, לפני כל השאר: גם ב"הכול חסום".
+    if (($policy['search_engine'] ?? '') === 'google' && googleSearchAllowed($url, $main)) {
+        return decision(true, 'search_engine');
+    }
 
     if ($u['verdict'] === 'allow') return decision(true, 'rule_allow');
 

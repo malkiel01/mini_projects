@@ -201,6 +201,10 @@ function migrate(PDO $pdo): void {
     if (!in_array('apps_posture', $columns('policies'), true)) {
         $pdo->exec("ALTER TABLE policies ADD COLUMN apps_posture TEXT NOT NULL DEFAULT 'allow_all'");
     }
+    // מנוע החיפוש של הילד (lib/policy.php, SEARCH_ENGINES).
+    if (!in_array('search_engine', $columns('policies'), true)) {
+        $pdo->exec("ALTER TABLE policies ADD COLUMN search_engine TEXT NOT NULL DEFAULT 'migdalor'");
+    }
     // אפליקציה חדשה שתותקן (lib/appcontrol.php): '' — כברירת המחדל, allow / block — החלטת ההורה.
     if (!in_array('new_apps', $columns('policies'), true)) {
         $pdo->exec("ALTER TABLE policies ADD COLUMN new_apps TEXT NOT NULL DEFAULT ''");

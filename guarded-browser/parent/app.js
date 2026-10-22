@@ -483,6 +483,12 @@ function kidAccess() {
     const p = K.policy, C = S.catalogs;
     const hint = (map, v) => el('p', { class: 'hint', text: map[v][1] });
     const modeHint = hint(MODES, p.mode), postureHint = hint(POSTURES, p.posture);
+    const SEARCH_HINTS = {
+        migdalor: 'החיפוש של מגדלור: רק תוצאות שמותרות לילד מוצגות. ב"הכול חסום" — באתרים שאישרתם; ב"הכול פתוח" — בכל הרשת (Brave).',
+        google: 'חיפוש בגוגל, בתוך הדפדפן של מגדלור, עם חיפוש בטוח שאי אפשר לכבות. כל תוצאה נבדקת כשלוחצים עליה — חסומה לא נפתחת. ' +
+                'מתאים בעיקר ל"הכול פתוח": ב"הכול חסום" רוב התוצאות יובילו לדף חסימה. גוגל מציגה תמונות ותקצירים גם מאתרים שחסומים לילד.',
+    };
+    const searchHint = el('p', { class: 'hint', text: SEARCH_HINTS[p.search_engine || 'migdalor'] });
     const cats = Object.entries(C.categories).map(([k, c]) => el('li', {}, [
         el('span', { text: c.icon, ariaHidden: 'true' }), el('span', { class: 'nm', text: c.name }),
         seg(`cat_${k}`, [['', '—'], ['allow', 'מותר'], ['deny', 'חסום']], K.categories[k] || '', { cls: 'seg mini' }),
@@ -495,6 +501,11 @@ function kidAccess() {
         group('כשאין כלל שמתאים', '', [
             seg('posture', Object.entries(POSTURES).map(([k, v]) => [k, v[0]]), p.posture, { cols: 2, onchange: v => { postureHint.textContent = POSTURES[v][1]; } }),
             postureHint]),
+        // מנוע החיפוש (lib/policy.php, SEARCH_ENGINES): החיפוש של מגדלור, או דף החיפוש של גוגל עם חיפוש בטוח.
+        group('חיפוש', '', [
+            seg('search_engine', [['migdalor', '🗼 מגדלור'], ['google', '🔎 גוגל']], p.search_engine || 'migdalor', { cols: 2,
+                onchange: v => { searchHint.textContent = SEARCH_HINTS[v]; } }),
+            searchHint]),
         group('סוגי אתרים', 'מותר / חסום לפי סוג, לא רק לפי כתובת', [el('ul', { class: 'rows' }, cats)]),
         group('לחסום תמיד', 'גם באתר שמותר', [el('div', { class: 'chips' }, Object.entries(C.types).map(([k, t]) =>
             el('label', {}, [el('input', { type: 'checkbox', name: 'types', value: k, checked: p.types.includes(k) }),
@@ -549,7 +560,7 @@ $('#kid-form').addEventListener('submit', async e => {
             const v = f.querySelector(`[name=cat_${k}]:checked`)?.value; if (v) categories[k] = v;
         }
         policy = { display_name: f.display_name.value, mode: f.querySelector('[name=mode]:checked').value,
-            posture: f.querySelector('[name=posture]:checked').value, categories, types: checked('types'), ads: checked('ads'),
+            posture: f.querySelector('[name=posture]:checked').value, search_engine: f.querySelector('[name=search_engine]:checked').value, categories, types: checked('types'), ads: checked('ads'),
             allow_downloads: f.allow_downloads.checked, allow_pip: f.allow_pip.checked,
             allow_background: f.allow_background.checked, block_screenshots: f.block_screenshots.checked };
     } else if (tab === 'time') {

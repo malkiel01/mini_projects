@@ -153,7 +153,7 @@ class HomeActivity : AppCompatActivity() {
             if (style != 0) b.status.setBackgroundResource(style)
 
             val canType = store.policy().mode == Policy.MODE_BROWSER
-            b.search.hint = if (canType) "🔎 חיפוש או כתובת" else "🔎 חיפוש"
+            b.search.hint = (if (store.policy().searchEngine == "google") "🔎 חיפוש בגוגל" else "🔎 חיפוש") + (if (canType) " או כתובת" else "")
             draw()
         }
     }
@@ -253,6 +253,8 @@ class HomeActivity : AppCompatActivity() {
 
     /** חיפוש בשרת: אינדקס האתרים שאושרו, או הרשת — לפי מה שההורה קבע. התוצאות כבר מסוננות. */
     private fun runSearch(q: String) {
+        // חיפוש גוגל (ההורה בחר): דף החיפוש של גוגל בדפדפן של מגדלור, עם חיפוש בטוח; כל תוצאה נבדקת כשנפתחת.
+        if (store.policy().searchEngine == "google") { open(PolicyEngine.googleSearchUrl(q)); return }
         b.progress.visibility = View.VISIBLE
         (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager)
             .hideSoftInputFromWindow(b.search.windowToken, 0)
