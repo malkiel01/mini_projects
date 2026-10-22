@@ -339,6 +339,8 @@ function handoff_consume(string $app, string $base): void
 
 /** הפרמטר שאפליקציית אנדרואיד (TWA) מוסיפה לכתובת הפתיחה: ?platform-apk=<versionCode>. */
 const APK_PARAM = 'platform-apk';
+/** מזהה ההתקנה (PlatformLauncherActivity) — הדופק היומי (platform/apk.php) מדווח בו. */
+const APK_INSTALL_PARAM = 'platform-install';
 
 /**
  * אפליקציית אנדרואיד שלנו נפתחה — רושמים "מותקנת, גרסה N" למשתמש ולמכשיר (lib/installs.php, device_apps;
@@ -368,12 +370,15 @@ function apk_seen(string $app, string $base): void
                 $device = is_string($cookie) && preg_match('/^[a-f0-9]{32}$/', $cookie) ? $cookie
                     : 'ua:' . substr(hash('sha256', device_label($ua) . '|' . $app), 0, 29);
                 apk_table();
+                $install = $_GET[APK_INSTALL_PARAM] ?? null;
+                $install = is_string($install) && preg_match('/^[a-f0-9]{32}$/', $install) ? $install : null;
                 pdo()->prepare(
-                    "INSERT INTO device_apps (user_id, device_id, app_id, state, how, device, checked_at, version, source)
-                     VALUES (?, ?, ?, 'installed', 'apk', ?, ?, ?, ?)
+                    "INSERT INTO device_apps (user_id, device_id, app_id, state, how, device, checked_at, version, source, install_id)
+                     VALUES (?, ?, ?, 'installed', 'apk', ?, ?, ?, ?, ?)
                      ON CONFLICT(user_id, device_id, app_id) DO UPDATE SET state = 'installed', how = 'apk',
-                         device = excluded.device, checked_at = excluded.checked_at, version = excluded.version, source = excluded.source"
-                )->execute([(int)$user['id'], $device, $app, device_label($ua), gmdate('Y-m-d\TH:i:s\Z'), $version, $source]);
+                         device = excluded.device, checked_at = excluded.checked_at, version = excluded.version, source = excluded.source,
+                         install_id = COALESCE(excluded.install_id, device_apps.install_id)"
+                )->execute([(int)$user['id'], $device, $app, device_label($ua), gmdate('Y-m-d\TH:i:s\Z'), $version, $source, $install]);
             }
         } catch (\Throwable $e) {
             error_log('platform apk-seen: ' . $e->getMessage());
@@ -381,13 +386,14 @@ function apk_seen(string $app, string $base): void
     }
     if ($param !== null && is_navigation() && !headers_sent()) {
         $uri = (string)($_SERVER['REQUEST_URI'] ?? $base);
-        $clean = preg_replace('/([?&])' . preg_quote(APK_PARAM, '/') . '=[^&#]*&?/', '$1', $uri);
+        $clean = preg_replace('/([?&])(?:' . preg_quote(APK_PARAM, '/') . '|' . preg_quote(APK_INSTALL_PARAM, '/') . ')=[^&#]*&?/', '$1', $uri);
+        $clean = preg_replace('/([?&])(?:' . preg_quote(APK_PARAM, '/') . '|' . preg_quote(APK_INSTALL_PARAM, '/') . ')=[^&#]*&?/', '$1', (string)$clean);
         $clean = preg_replace('/[?&](#|$)/', '$1', (string)$clean);
         header('Cache-Control: no-store');
         header('Location: ' . $clean, true, 302);
         exit;
     }
-    unset($_GET[APK_PARAM]);
+    unset($_GET[APK_PARAM], $_GET[APK_INSTALL_PARAM]);
 }
 
 /** device_apps (lib/installs.php) — העמודות של הגרסה, אם עוד לא נוספו. אותה הגדרה גם שם. */
@@ -403,6 +409,7 @@ function apk_table(): void
     $cols = array_column(pdo()->query('PRAGMA table_info(device_apps)')->fetchAll(\PDO::FETCH_ASSOC), 'name');
     if (!in_array('version', $cols, true)) pdo()->exec('ALTER TABLE device_apps ADD COLUMN version INTEGER');
     if (!in_array('source', $cols, true)) pdo()->exec("ALTER TABLE device_apps ADD COLUMN source TEXT NOT NULL DEFAULT ''");
+    if (!in_array('install_id', $cols, true)) pdo()->exec('ALTER TABLE device_apps ADD COLUMN install_id TEXT');
 }
 
 /**

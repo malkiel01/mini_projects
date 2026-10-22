@@ -39,6 +39,7 @@ function installs_migrate(): void
     $cols = array_column(db()->query('PRAGMA table_info(device_apps)')->fetchAll(), 'name');
     if (!in_array('version', $cols, true)) db()->exec('ALTER TABLE device_apps ADD COLUMN version INTEGER');
     if (!in_array('source', $cols, true)) db()->exec("ALTER TABLE device_apps ADD COLUMN source TEXT NOT NULL DEFAULT ''");
+    if (!in_array('install_id', $cols, true)) db()->exec('ALTER TABLE device_apps ADD COLUMN install_id TEXT');
 }
 
 function installs_valid_device($id): string
