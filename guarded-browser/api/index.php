@@ -463,7 +463,7 @@ try {
         $user = requireUser();
         $list = body()['apps'] ?? [];
         out(['ok' => true, 'saved' => accountAppsAllowed((int) $user['account_id']) && is_array($list)
-             ? appsReport((int) $user['id'], $list) : 0]);
+             ? appsReport((int) $user['id'], $list, (int) ($user['device_row_id'] ?? 0)) : 0]);
     }
 
     /* ── חיפוש (שלב 8) ───────────────────────────────────────────

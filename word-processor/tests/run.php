@@ -842,6 +842,12 @@ if (trim((string)shell_exec('command -v pdftotext'))) {
     echo "  · pdftotext לא מותקן — דילוג\n";
 }
 
+section('R10 — גודל גופן בחצאי נקודה');
+$hs = json_encode(import_html('<p><span style="font-size:13.5pt">חצי</span> <span style="font-size:10.4pt">עיגול</span></p>', 'r10')['json'], JSON_UNESCAPED_UNICODE);
+check('ייבוא HTML: 13.5 נשאר 13.5 (לא 14), 10.4 → 10.5', str_contains($hs, '"fontSize":"13.5pt"') && str_contains($hs, '"fontSize":"10.5pt"'), $hs);
+$hx = export_ooxml(['type' => 'doc', 'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'א', 'marks' => [['type' => 'textStyle', 'attrs' => ['fontSize' => '13.5pt']]]]]]]], page_normalize([]));
+check('Word: 13.5 → w:sz 27', str_contains(json_encode($hx, JSON_UNESCAPED_UNICODE), 'w:sz w:val=\\"27\\"'));
+
 section('כיתובים והפניות צולבות (שלב 4)');
 $cap = fn($label, $id, $text) => ['type' => 'paragraph', 'attrs' => ['pstyle' => 'caption'], 'content' => [
     ['type' => 'text', 'text' => "$label "], ['type' => 'seq', 'attrs' => ['label' => $label, 'id' => $id]], ['type' => 'text', 'text' => ": $text"]]];

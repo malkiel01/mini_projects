@@ -55,7 +55,15 @@ object AppPolicy {
                 .mapTo(keep) { it.serviceInfo.packageName }
             store.launchers = keep - "android"
             val main = android.content.Intent(android.content.Intent.ACTION_MAIN).addCategory(android.content.Intent.CATEGORY_LAUNCHER)
-            store.launchable = pm.queryIntentActivities(main, 0).map { it.activityInfo.packageName }.toSet()
+            val launchable = pm.queryIntentActivities(main, 0).map { it.activityInfo.packageName }.toSet()
+            store.launchable = launchable
+            // אפליקציה חדשה (NewAppMath): הסריקה הראשונה — מה שהיה; חדשה — מדווחים לשרת, שירשום עליה כלל.
+            if (store.appsBaseline.isEmpty()) store.appsBaseline = launchable
+            val fresh = NewAppMath.fresh(launchable - store.launchers - store.ownPackage, store.appsKnown, store.appsBaseline)
+            if (store.appsManage && NewAppMath.shouldReport(fresh, store.newAppsSent, store.newAppsSentAt, now)) {
+                store.newAppsSent = fresh; store.newAppsSentAt = now
+                AppsReport.send(ctx)
+            }
         } catch (e: Exception) { Trace.log("apppolicy.scan", e.message ?: "") }
     }
 
@@ -84,6 +92,10 @@ object AppPolicy {
         }
         if (pkg in store.appsAllowed) return false
         if (pkg in store.appsBlocked) return true
+        // אפליקציה חדשה שעוד אין עליה החלטה — לפי מה שההורה קבע לחדשות, מיד (גם בלי רשת).
+        if (store.appsNew.isNotEmpty() && pkg in store.launchable && NewAppMath.isNew(pkg, store.appsKnown, store.appsBaseline)) {
+            return store.appsNew == "block"
+        }
         // "רק מה שאישרתי" — רק על אפליקציות שאפשר לפתוח מאייקון; רכיבי מערכת (חלונות, מקלדת) לא נחסמים.
         return store.appsPosture == "deny_all" && pkg in store.launchable
     }
