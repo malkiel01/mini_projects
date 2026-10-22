@@ -21,6 +21,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/children.php';
 require_once __DIR__ . '/appversion.php';
 require_once __DIR__ . '/apptime.php';
+require_once __DIR__ . '/chrome.php';
 
 const APP_POSTURES = ['allow_all', 'deny_all'];
 const APP_ACTIONS = ['allow', 'block', 'hide'];
@@ -123,6 +124,8 @@ function appsPayload(array $user): array {
         // מוסתרת היא גם חסומה: גרסה ישנה, או מכשיר בלי "בעל מכשיר", חוסמים אותה כרגיל.
         'blocked' => array_values(array_diff(array_keys(array_filter($rules, fn($a) => $a !== 'allow')), $never)),
         'hidden'  => $hidden,
+        // כרום מנוהל (lib/chrome.php) — נאכף רק ב"בעל מכשיר".
+        'chrome'  => chromePolicy($childId),
         'allowed' => array_values(array_unique(array_merge(array_keys(array_filter($rules, fn($a) => $a === 'allow')), UPDATE_PACKAGES, SHELL_PACKAGES))),
     ];
 }
@@ -187,6 +190,7 @@ function appsList(int $accountId, int $childId): array {
     return ['manage' => true, 'posture' => $posture, 'apps' => $apps, 'orphan_rules' => $orphans,
             'blocked_count' => count(array_filter($apps, fn($x) => $x['blocked'])),
             'hidden_count' => count(array_filter($apps, fn($x) => $x['action'] === 'hide')), 'owner_missing' => $ownerMissing,
+            'chrome' => chromeStatus($childId),
             'access_missing' => $accessMissing, 'devices' => $devices];
 }
 

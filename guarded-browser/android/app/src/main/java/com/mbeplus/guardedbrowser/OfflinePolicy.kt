@@ -40,7 +40,8 @@ object OfflinePolicy {
                     .put("limits", JSONObject(store.appLimits as Map<*, *>))
                     .put("blocked", org.json.JSONArray(store.appsBlocked.toList()))
                     .put("allowed", org.json.JSONArray(store.appsAllowed.toList()))
-                    .put("hidden", org.json.JSONArray(store.appsHidden.toList())))
+                    .put("hidden", org.json.JSONArray(store.appsHidden.toList()))
+                    .put("chrome", store.chromePolicy))
             } else store.saveApps(a)
         }
         store.offlineIat = iat

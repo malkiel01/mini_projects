@@ -26,6 +26,7 @@ object EnforceReport {
             .put("settings", JSONObject(if (owner) settings else settings.mapValues { "no_owner" }))
             .put("suspend_failed", JSONArray(suspendFailed))
             .put("browsers", browsers(ctx, store, access))
+            .put("chrome", store.chromeResult)
         val hash = body.toString().hashCode().toString()
         val now = TrustedClock.now(store)
         if (!EnforceMath.shouldSend(store.enforceHash, hash, store.enforceAt, now)) return
@@ -45,7 +46,9 @@ object EnforceReport {
                 val pkg = ri.activityInfo.packageName
                 if (pkg == ctx.packageName || !seen.add(pkg)) continue
                 val blocked = AppPolicy.blocked(store, pkg, withTime = false) && (access || pkg in store.suspended)
-                out.put(JSONObject().put("p", pkg).put("n", ri.loadLabel(pm).toString()).put("blocked", blocked))
+                // כרום מנוהל שאומת — הכללים של הילד נאכפים בתוכו (Enforcer.applyChrome).
+                val managed = store.chromeResult == "verified" && pkg in store.chromeApplied
+                out.put(JSONObject().put("p", pkg).put("n", ri.loadLabel(pm).toString()).put("blocked", blocked).put("managed", managed))
             }
         } catch (e: Exception) { Trace.log("report.browsers", e.message ?: "") }
         return out
