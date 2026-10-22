@@ -201,6 +201,10 @@ function migrate(PDO $pdo): void {
     if (!in_array('apps_posture', $columns('policies'), true)) {
         $pdo->exec("ALTER TABLE policies ADD COLUMN apps_posture TEXT NOT NULL DEFAULT 'allow_all'");
     }
+    // רובריקות דף הבית (lib/policy.php, HOME_SECTIONS) — ריק: כולן.
+    if (!in_array('home_sections', $columns('policies'), true)) {
+        $pdo->exec("ALTER TABLE policies ADD COLUMN home_sections TEXT NOT NULL DEFAULT ''");
+    }
     // מנוע החיפוש של הילד (lib/policy.php, SEARCH_ENGINES).
     if (!in_array('search_engine', $columns('policies'), true)) {
         $pdo->exec("ALTER TABLE policies ADD COLUMN search_engine TEXT NOT NULL DEFAULT 'migdalor'");
@@ -538,11 +542,16 @@ function youTubeOwner(string $videoId): array {
 
 /** כל מה שהמנוע צריך על משתמש, במקום אחד. */
 function ruleSetFor(int $userId): array {
+    $platforms = platformRulesFor($userId);
+    // רובריקת יוטיוב כבויה — יוטיוב סגור, בשני המנועים (המכשיר מקבל את אותו set).
+    if (!in_array('youtube', homeSections(policyFor($userId)), true)) {
+        $platforms[PLATFORM_YOUTUBE] = ['platform' => PLATFORM_YOUTUBE, 'mode' => 'off', 'allow_search' => 0, 'allow_shorts' => 0];
+    }
     return [
         'rules'          => rulesFor($userId),
         'categories'     => categoryRulesFor($userId),
         'domain_map'     => domainMap(),
-        'platforms'      => platformRulesFor($userId),
+        'platforms'      => $platforms,
         'platform_items' => platformItemsFor($userId),
         'owner_of'       => fn(string $v) => youTubeOwner($v),   // ['channel'=>…, 'handle'=>…]
     ];

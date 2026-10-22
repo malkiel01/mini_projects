@@ -479,6 +479,17 @@ function enforceCard(e) {
     ]);
 }
 
+/** רובריקות דף הבית של הילד (lib/policy.php, HOME_SECTIONS) — מה שמופיע אצלו, ומה כבוי. */
+const HOME_SECTIONS = [
+    ['search', '🔎 חיפוש ברשת', 'שורת החיפוש. כבוי — אין חיפוש (במצב "דפדפן" נשארת שורת כתובת).'],
+    ['sites', '🌐 אתרים', 'האתרים שאישרתם, כאריחים.'],
+    ['youtube', '▶️ יוטיוב', 'כבוי — יוטיוב סגור לגמרי, בלי קשר להגדרות בלשונית יוטיוב.'],
+    ['apps', '📲 אפליקציות', 'האפליקציות שמותר לו לפתוח (בקרוב — גם מרקט להתקנה).'],
+    ['favorites', '⭐ מועדפים', 'מה שהוא סימן בלחיצה ארוכה.'],
+    ['tasks', '📝 משימות', 'דפים שפתחתם למשימה, עם הזמן שנשאר.'],
+    ['requests', '🙋 הבקשות שלי', 'מה הוא ביקש, ומה עניתם.'],
+];
+
 function kidAccess() {
     const p = K.policy, C = S.catalogs;
     const hint = (map, v) => el('p', { class: 'hint', text: map[v][1] });
@@ -495,6 +506,10 @@ function kidAccess() {
     ]));
     return [
         el('label', { class: 'f' }, [el('span', { text: 'שם' }), el('input', { name: 'display_name', value: K.name, maxLength: 40 })]),
+        group('🏠 דף הבית', 'הרובריקות שהוא רואה — כבויה לא מופיעה', [el('ul', { class: 'rows' }, HOME_SECTIONS.map(([k, name, hint]) =>
+            el('li', {}, [el('label', { class: 'check', style: 'display:flex;gap:10px;align-items:flex-start;width:100%' }, [
+                el('input', { type: 'checkbox', name: 'home_sections', value: k, checked: (p.home_sections || HOME_SECTIONS.map(s => s[0])).includes(k) }),
+                el('span', {}, [el('b', { text: name }), el('small', { class: 'muted', style: 'display:block', text: hint })])])])))]),
         group('מה הוא רואה', '', [
             seg('mode', Object.entries(MODES).map(([k, v]) => [k, v[0]]), p.mode, { cols: 2, onchange: v => { modeHint.textContent = MODES[v][1]; } }),
             modeHint]),
@@ -560,7 +575,7 @@ $('#kid-form').addEventListener('submit', async e => {
             const v = f.querySelector(`[name=cat_${k}]:checked`)?.value; if (v) categories[k] = v;
         }
         policy = { display_name: f.display_name.value, mode: f.querySelector('[name=mode]:checked').value,
-            posture: f.querySelector('[name=posture]:checked').value, search_engine: f.querySelector('[name=search_engine]:checked').value, categories, types: checked('types'), ads: checked('ads'),
+            posture: f.querySelector('[name=posture]:checked').value, home_sections: checked('home_sections'), search_engine: f.querySelector('[name=search_engine]:checked').value, categories, types: checked('types'), ads: checked('ads'),
             allow_downloads: f.allow_downloads.checked, allow_pip: f.allow_pip.checked,
             allow_background: f.allow_background.checked, block_screenshots: f.block_screenshots.checked };
     } else if (tab === 'time') {
@@ -585,7 +600,13 @@ function kidYt() {
         el('button', { type: 'button', class: 'icon-btn', text: '🗑️', ariaLabel: 'הסרה', onclick: () => act('yt_del', { item_id: i.id }, 'הוסר') }),
     ]))) : el('p', { class: 'empty', text: 'הרשימה ריקה. הוסיפו ערוץ — מספיק @שם-הערוץ.' });
     const action = seg('yt_item_action', [['allow', '✅ להתיר'], ['deny', '🚫 לחסום']], 'allow', { cols: 2 });
+    // רובריקת יוטיוב כבויה (🔐 גישה ← 🏠 דף הבית) — יוטיוב סגור, מה שלא יוגדר כאן.
+    const ytOff = K.policy.home_sections && !K.policy.home_sections.includes('youtube')
+        ? el('div', { class: 'banner warn' }, [el('span', { text: '▶️' }), el('div', {}, [el('b', { text: 'רובריקת יוטיוב כבויה' }),
+            'יוטיוב סגור לגמרי, בלי קשר להגדרות כאן. מדליקים בלשונית "🔐 גישה" ← "🏠 דף הבית".'])])
+        : null;
     return [
+        ytOff,
         allowed.length === 1 ? el('div', { class: 'banner info' }, [el('span', { text: 'ℹ️' }),
             el('div', { text: 'יוטיוב לא פתוח בחשבון שלכם. אפשר לבקש ממנהל המערכת.' })]) : null,
         group('יוטיוב', '', [mode, hint, learnCheck(y),

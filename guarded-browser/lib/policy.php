@@ -38,6 +38,23 @@ const POSTURES = [POSTURE_DENY, POSTURE_ALLOW];
  * לא "תוצאות גוגל בתוך מגדלור", אלא דף החיפוש של גוגל עצמו.
  */
 const SEARCH_ENGINES = ['migdalor', 'google'];
+
+/*
+ * דף הבית של הילד — רובריקות (בעל המערכת, 2026-10-22). ההורה מדליק לכל ילד מה שהוא רוצה; כבויה — לא מופיעה.
+ *   search    — שורת החיפוש. כבויה: אין חיפוש (do=search נדחה); במצב "דפדפן" נשארת שורת כתובת בלבד.
+ *   youtube   — כבויה: יוטיוב סגור לגמרי (ruleSetFor — מצב off, בשני המנועים), בלי קשר להגדרות יוטיוב.
+ *   sites / apps / favorites / tasks / requests — מה שמוצג בדף הבית. האכיפה עצמה — לפי ההגדרות הרגילות.
+ * ריק בעמודה — כולן (כמו לפני הרובריקות).
+ */
+const HOME_SECTIONS = ['search', 'sites', 'youtube', 'apps', 'favorites', 'tasks', 'requests'];
+
+/** הרובריקות הפעילות, לפי הסדר הקבוע. */
+function homeSections(array $policy): array {
+    $raw = trim((string) ($policy['home_sections'] ?? ''));
+    if ($raw === '') return HOME_SECTIONS;
+    $on = array_flip(explode(',', $raw));
+    return array_values(array_filter(HOME_SECTIONS, fn($s) => isset($on[$s])));
+}
 /** דף החיפוש: google.com ו-google.co.il (בלי www — normalizeUrl מסיר). */
 const GOOGLE_SEARCH_HOSTS = ['google.com', 'google.co.il'];
 /** המשאבים של דף החיפוש (סקריפטים, תמונות ממוזערות) — רק בתוך דף, לא יעד לגלישה. */

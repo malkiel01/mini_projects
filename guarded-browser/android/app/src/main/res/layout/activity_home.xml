@@ -51,18 +51,9 @@
                 android:imeOptions="actionSearch" android:importantForAutofill="no"
                 android:textColor="@color/ink" android:textColorHint="@color/dim" android:textSize="16sp"/>
 
-            <TextView android:id="@+id/favTitle" style="@style/MgSection"
-                android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:text="⭐ מועדפים" android:visibility="gone"/>
-            <GridLayout android:id="@+id/favGrid" android:layout_width="match_parent"
-                android:layout_height="wrap_content" android:columnCount="2" android:visibility="gone"/>
-
-            <TextView android:id="@+id/allTitle" style="@style/MgSection"
-                android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:text="כל האתרים שלי" android:visibility="gone"/>
-            <GridLayout android:id="@+id/grid" android:layout_width="match_parent"
-                android:layout_height="wrap_content" android:columnCount="2"
-                android:layout_marginTop="8dp"/>
+            <!-- הרובריקות (HomeActivity.draw): מועדפים, משימות, אתרים, יוטיוב, אפליקציות, בקשות — מה שההורה הדליק. -->
+            <LinearLayout android:id="@+id/sections" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:orientation="vertical"/>
 
             <!-- תוצאות חיפוש (שלב 8): מהאינדקס של האתרים שאושרו, או מהרשת — כבר מסוננות בשרת. -->
             <TextView android:id="@+id/resultsTitle" style="@style/MgSection"

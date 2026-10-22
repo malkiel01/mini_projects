@@ -153,8 +153,15 @@ class HomeActivity : AppCompatActivity() {
             if (style != 0) b.status.setBackgroundResource(style)
 
             val canType = store.policy().mode == Policy.MODE_BROWSER
-            b.search.hint = (if (store.policy().searchEngine == "google") "🔎 חיפוש בגוגל" else "🔎 חיפוש") + (if (canType) " או כתובת" else "")
+            // רובריקת החיפוש כבויה: במצב "דפדפן" — שורת כתובת בלבד; אחרת — מסנן של מה שבדף.
+            b.search.hint = when {
+                has("search") -> (if (store.policy().searchEngine == "google") "🔎 חיפוש בגוגל" else "🔎 חיפוש") + (if (canType) " או כתובת" else "")
+                canType -> "🔗 כתובת, או סינון של מה שכאן"
+                else -> "🔎 סינון של מה שכאן"
+            }
             draw()
+            loadApps()
+            loadRequests()
         }
     }
 
@@ -184,55 +191,159 @@ class HomeActivity : AppCompatActivity() {
         return list
     }
 
+    private fun has(section: String) = section in store.policy().homeSections
+
+    /**
+     * דף הבית ברובריקות (בעל המערכת, 2026-10-22): רק מה שההורה הדליק (Policy.homeSections), לפי הסדר — מועדפים,
+     * משימות, אתרים, יוטיוב, אפליקציות, בקשות. החיפוש בשורה למעלה מסנן את כולן.
+     */
     private fun draw() {
-        val tiles = allTiles()
         val q = query.lowercase()
-        val shown = if (q.isEmpty()) tiles else tiles.filter {
-            it.label.lowercase().contains(q) || it.url.lowercase().contains(q)
-        }
-        val favUrls = store.favorites()
+        val match = { label: String, url: String -> q.isEmpty() || label.lowercase().contains(q) || url.lowercase().contains(q) }
+        val shown = allTiles().filter { match(it.label, it.url) }
+        val favUrls = if (has("favorites")) store.favorites() else emptyList()
+        b.sections.removeAllViews()
+        var any = false
+
         val favs = favUrls.mapNotNull { u -> shown.firstOrNull { it.url == u } }
+        if (favs.isNotEmpty()) { section("⭐ מועדפים", favs, true); any = true }
         val rest = shown.filter { it.url !in favUrls }
+        val tasks = rest.filter { it.kind == "task" }
+        if (has("tasks") && tasks.isNotEmpty()) { section("📝 משימות", tasks, false); any = true }
+        val sites = rest.filter { it.kind == "url" }
+        if (has("sites") && sites.isNotEmpty()) { section("🌐 אתרים", sites, false); any = true }
+        val yt = rest.filter { it.kind == "youtube" || it.kind == "platform" }
+        if (has("youtube") && yt.isNotEmpty()) { section("▶️ יוטיוב", yt, false); any = true }
+        if (has("apps") && store.appsManage) {
+            val apps = appsCache.filter { match(it.second, it.first) }
+            if (apps.isNotEmpty()) { appsSection(apps); any = true }
+        }
+        if (has("requests") && q.isEmpty() && myRequests.isNotEmpty()) { requestsSection(); any = true }
 
-        fill(b.favGrid, favs, true)
-        b.favTitle.visibility = if (favs.isEmpty()) View.GONE else View.VISIBLE
-        b.favGrid.visibility = b.favTitle.visibility
-
-        fill(b.grid, rest, false)
-        b.allTitle.visibility = if (rest.isEmpty() || favs.isEmpty()) View.GONE else View.VISIBLE
-
-        b.empty.visibility = if (shown.isEmpty()) View.VISIBLE else View.GONE
+        b.empty.visibility = if (any) View.GONE else View.VISIBLE
         b.empty.text = when {
-            q.isNotEmpty() && store.policy().mode == Policy.MODE_BROWSER -> "לא באריחים. 🔎 Enter — חיפוש, או כתובת לפתיחה."
-            q.isNotEmpty() -> "לא באריחים. 🔎 Enter — חיפוש."
-            else -> "עוד אין לך אתרים. ההורה מוסיף אותם מהאפליקציה שלו."
+            q.isNotEmpty() && store.policy().mode == Policy.MODE_BROWSER -> "לא נמצא כאן. 🔎 Enter — חיפוש, או כתובת לפתיחה."
+            q.isNotEmpty() && has("search") -> "לא נמצא כאן. 🔎 Enter — חיפוש."
+            q.isNotEmpty() -> "לא נמצא כאן."
+            else -> "עוד אין כאן כלום. ההורה מוסיף מהאפליקציה שלו."
         }
     }
 
+    /** כותרת של רובריקה. */
+    private fun header(t: String) = b.sections.addView(
+        TextView(this, null, 0, R.style.MgSection).apply { text = t },
+        // המרווחים של MgSection הם של ה-layout — לא עוברים מסגנון בקוד.
+        LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            .apply { topMargin = dp(16); bottomMargin = dp(8) })
+
+    private fun grid() = GridLayout(this).apply { columnCount = 2 }.also { b.sections.addView(it) }
+
+    private fun section(title: String, tiles: List<Tile>, fav: Boolean) {
+        header(title)
+        fill(grid(), tiles, fav)
+    }
+
     private fun fill(grid: GridLayout, tiles: List<Tile>, fav: Boolean) {
-        grid.removeAllViews()
+        val now = TrustedClock.now(store)
         for (t in tiles) {
-            val v = layoutInflater.inflate(R.layout.item_tile, grid, false)
-            v.findViewById<TextView>(R.id.tileIcon).text = when {
-                t.kind == "youtube" || t.kind == "platform" -> "▶️"
+            val v = tile(grid)
+            v.findViewById<TextView>(R.id.tileIcon).text = when (t.kind) {
+                "youtube", "platform" -> "▶️"
+                "task" -> "📝"
                 else -> "🌐"
             }
             v.findViewById<TextView>(R.id.tileLabel).text = t.label.ifEmpty { hostOf(t.url) }
-            v.findViewById<TextView>(R.id.tileUrl).text = hostOf(t.url)
+            v.findViewById<TextView>(R.id.tileUrl).text = if (t.kind == "task") HomeMath.taskLine(t.ends, now) else hostOf(t.url)
             v.findViewById<TextView>(R.id.tileStar).visibility = if (fav) View.VISIBLE else View.GONE
-            v.isEnabled = allowed
-            v.alpha = if (allowed) 1f else 0.45f
             v.setOnClickListener { if (allowed) open(t.url) }
-            v.setOnLongClickListener {
+            if (has("favorites")) v.setOnLongClickListener {
                 val on = store.toggleFavorite(t.url)
                 Toast.makeText(this, if (on) "⭐ נוסף למועדפים" else "הוסר מהמועדפים", Toast.LENGTH_SHORT).show()
                 draw(); true
             }
-            v.layoutParams = GridLayout.LayoutParams(
-                GridLayout.spec(GridLayout.UNDEFINED, 1f), GridLayout.spec(GridLayout.UNDEFINED, 1f)
-            ).apply { width = 0; setMargins(dp(4), dp(4), dp(4), dp(4)) }
-            grid.addView(v)
         }
+    }
+
+    /** אריח ריק בתוך הרשת — לפי item_tile. */
+    private fun tile(grid: GridLayout): View {
+        val v = layoutInflater.inflate(R.layout.item_tile, grid, false)
+        v.isEnabled = allowed
+        v.alpha = if (allowed) 1f else 0.45f
+        v.layoutParams = GridLayout.LayoutParams(
+            GridLayout.spec(GridLayout.UNDEFINED, 1f), GridLayout.spec(GridLayout.UNDEFINED, 1f)
+        ).apply { width = 0; setMargins(dp(4), dp(4), dp(4), dp(4)) }
+        grid.addView(v)
+        return v
+    }
+
+    /* ── 📲 אפליקציות: מה שמותר לילד לפתוח במכשיר (בשלב הבא — גם המרקט) ── */
+
+    /** (חבילה, שם) — האפליקציות שמותר לפתוח, לפי המדיניות. נבנה ברקע (AppPolicy.scan, PackageManager). */
+    @Volatile private var appsCache: List<Pair<String, String>> = emptyList()
+
+    private fun loadApps() {
+        if (!store.appsManage || !has("apps")) { appsCache = emptyList(); return }
+        Thread {
+            try {
+                AppPolicy.scan(this)
+                val pm = packageManager
+                val list = (store.launchable - store.launchers - store.ownPackage)
+                    .filter { !AppPolicy.blocked(store, it) }
+                    .map { it to (try { pm.getApplicationLabel(pm.getApplicationInfo(it, 0)).toString() } catch (e: Exception) { it }) }
+                    .sortedBy { it.second.lowercase() }
+                appsCache = list
+                runOnUiThread { if (!isFinishing) draw() }
+            } catch (e: Exception) { Trace.log("home.apps", e.message ?: "") }
+        }.start()
+    }
+
+    private fun appsSection(apps: List<Pair<String, String>>) {
+        header("📲 אפליקציות")
+        val g = grid()
+        for ((pkg, label) in apps) {
+            val v = tile(g)
+            v.findViewById<TextView>(R.id.tileIcon).apply {
+                text = ""
+                try { background = packageManager.getApplicationIcon(pkg) } catch (e: Exception) { text = "📱" }
+            }
+            v.findViewById<TextView>(R.id.tileLabel).text = label
+            v.findViewById<TextView>(R.id.tileUrl).visibility = View.GONE
+            v.setOnClickListener {
+                val i = packageManager.getLaunchIntentForPackage(pkg)
+                if (allowed && i != null) startActivity(i)
+            }
+        }
+    }
+
+    /* ── 🙋 הבקשות שלי: מהיממה האחרונה (api do=requests) ── */
+
+    private var myRequests: List<org.json.JSONObject> = emptyList()
+
+    private fun loadRequests() {
+        if (!has("requests")) { myRequests = emptyList(); return }
+        Api.requests(store.token) { r ->
+            val a = r.json?.optJSONArray("requests") ?: return@requests
+            myRequests = (0 until minOf(a.length(), 8)).mapNotNull { a.optJSONObject(it) }
+            if (!isFinishing) draw()
+        }
+    }
+
+    private fun requestsSection() {
+        header("🙋 הבקשות שלי")
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundResource(R.drawable.bg_card)
+            setPadding(dp(12), dp(4), dp(12), dp(4))
+        }
+        for (o in myRequests) {
+            val what = if (o.optString("kind") == "app") AppGrants.label(this, o.optString("package"))
+                       else AccessRequest.hostOf(o.optString("url"))
+            box.addView(TextView(this).apply {
+                text = "$what — ${HomeMath.requestStatus(o.optString("status"))}"
+                textSize = 14f; setTextColor(getColor(R.color.ink)); setPadding(0, dp(8), 0, dp(8))
+            })
+        }
+        b.sections.addView(box)
     }
 
     private fun hostOf(url: String): String =
@@ -247,7 +358,8 @@ class HomeActivity : AppCompatActivity() {
         when {
             hits.size == 1 -> open(hits[0].url)
             store.policy().mode == Policy.MODE_BROWSER && query.contains('.') && !query.contains(' ') -> open(query)
-            else -> runSearch(query)
+            has("search") -> runSearch(query)
+            else -> Toast.makeText(this, "החיפוש סגור. אפשר לבקש מההורה לפתוח אותו.", Toast.LENGTH_SHORT).show()
         }
     }
 

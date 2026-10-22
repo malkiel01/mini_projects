@@ -140,6 +140,8 @@ function policyPayload(array $user): array {
             'offline_content'   => (string) ($policy['offline_content'] ?? 'all'),
             // חיפוש גוגל (lib/policy.php, googleSearchAllowed) — אותה הכרעה גם במכשיר.
             'search_engine'     => (string) ($policy['search_engine'] ?? 'migdalor'),
+            // רובריקות דף הבית (HOME_SECTIONS).
+            'home_sections'     => homeSections($policy),
         ],
         'rules' => array_map(fn($r) => [
             'label'     => $r['label'],
@@ -218,10 +220,14 @@ function tilesFor(array $set): array {
 
     foreach ($set['rules'] as $r) {
         if ($r['action'] !== 'allow' || !$r['show_tile']) continue;
+        // דף של משימה (lib/tasks.php) — ברובריקת "משימות", עם מתי נגמר.
+        $task = (int) ($r['task_id'] ?? 0) > 0;
         $tiles[] = ['label' => $r['label'] ?: $r['pattern'], 'url' => $r['pattern'],
-                    'kind' => 'url'];
+                    'kind' => $task ? 'task' : 'url'] + ($task ? ['ends' => (string) $r['expires_at']] : []);
     }
 
+    // יוטיוב סגור (גם כשהרובריקה כבויה) — בלי אריחים.
+    if (($set['platforms'][PLATFORM_YOUTUBE]['mode'] ?? '') === 'off') return $tiles;
     foreach (($set['platform_items'][PLATFORM_YOUTUBE] ?? []) as $kind => $items) {
         foreach ($items as $id => $action) {
             if ($action !== 'allow') continue;
@@ -474,6 +480,10 @@ try {
      */
     if ($do === 'search') {
         $user = requireUser();
+        // רובריקת החיפוש כבויה — אין חיפוש (גם אם גרסה ישנה של האפליקציה עוד מציגה את השורה).
+        if (!in_array('search', homeSections(policyFor((int) $user['id'])), true)) {
+            out(['ok' => true, 'engine' => 'off', 'results' => [], 'note' => 'החיפוש סגור. ההורה יכול לפתוח אותו.']);
+        }
         $r = searchFor($user, field('q'));
         searchTickAfterResponse(4);
         out(['ok' => true] + $r);
