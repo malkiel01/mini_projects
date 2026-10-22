@@ -252,29 +252,70 @@ function with_media_src(array $json, bool $absolute = false): array
 // ---------- גרסאות ----------
 
 /** כל שמירה = גרסה; שמירה של אותו משתמש תוך 10 דקות מתחילת הגרסה האחרונה — מעדכנת אותה. */
-function version_record(array $row, string $userId, string $userName): void
+/**
+ * רישום גרסה. רגילה ($kind '') — מתאחדת עם הגרסה הקודמת של אותו משתמש בחלון 10 הדקות; גרסת שחזור ('restore') —
+ * תמיד שורה חדשה, ואף שמירה לא מתאחדת לתוכה. כך המצב שלפני שחזור והמצב המשוחזר נשמרים שניהם (ביקורת 03 / 04, F06 / R07).
+ */
+function version_record(array $row, string $userId, string $userName, string $kind = ''): void
 {
     $now = time();
-    $st = db()->prepare('SELECT id, user_id, started_at FROM versions WHERE doc = ? ORDER BY id DESC LIMIT 1');
+    $st = db()->prepare('SELECT id, user_id, started_at, kind FROM versions WHERE doc = ? ORDER BY id DESC LIMIT 1');
     $st->execute([$row['id']]);
     $last = $st->fetch(); $st->closeCursor();
-    if ($last && $last['user_id'] === $userId && $now - (int)$last['started_at'] < VERSION_MERGE_SECONDS) {
+    if ($kind === '' && $last && $last['kind'] === '' && $last['user_id'] === $userId && $now - (int)$last['started_at'] < VERSION_MERGE_SECONDS) {
         db()->prepare('UPDATE versions SET version = ?, title = ?, json = ?, page = ?, user_name = ?, saved_at = ? WHERE id = ?')
             ->execute([$row['version'], $row['title'], $row['json'], $row['page'], $userName, $now, $last['id']]);
         return;
     }
-    db()->prepare('INSERT INTO versions (doc, version, title, json, page, user_id, user_name, started_at, saved_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-        ->execute([$row['id'], $row['version'], $row['title'], $row['json'], $row['page'], $userId, $userName, $now, $now]);
+    db()->prepare('INSERT INTO versions (doc, version, title, json, page, user_id, user_name, started_at, saved_at, kind) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        ->execute([$row['id'], $row['version'], $row['title'], $row['json'], $row['page'], $userId, $userName, $now, $now, $kind]);
     db()->prepare('DELETE FROM versions WHERE doc = ? AND id NOT IN (SELECT id FROM versions WHERE doc = ? ORDER BY id DESC LIMIT ' . VERSION_MAX . ')')
         ->execute([$row['id'], $row['id']]);
 }
 
 function versions_list(array $row): array
 {
-    $st = db()->prepare('SELECT id, version, title, user_name, started_at, saved_at FROM versions WHERE doc = ? ORDER BY id DESC');
+    $st = db()->prepare('SELECT id, version, title, user_name, started_at, saved_at, kind FROM versions WHERE doc = ? ORDER BY id DESC');
     $st->execute([$row['id']]);
     return array_map(fn($v) => ['id' => (int)$v['id'], 'version' => (int)$v['version'], 'title' => $v['title'],
-        'by' => $v['user_name'], 'started_at' => (int)$v['started_at'], 'saved_at' => (int)$v['saved_at']], $st->fetchAll());
+        'by' => $v['user_name'], 'started_at' => (int)$v['started_at'], 'saved_at' => (int)$v['saved_at'], 'kind' => $v['kind']], $st->fetchAll());
+}
+
+/**
+ * שחזור גרסה — פעולה אחת בשרת (ביקורת 03 / 04, F06 / R07): בבסיס הנוכחי בלבד (אחרת התנגשות), המצב הנוכחי נשאר כגרסה
+ * (הגרסה האחרונה — היא המצב הנוכחי; מעכשיו לא מתאחדים לתוכה), והתוכן המשוחזר נרשם כגרסת 'restore' נפרדת.
+ */
+function doc_restore_version(array $row, $versionId, string $userId, string $userName, $base): array
+{
+    if ($base !== null && (int)$base !== (int)$row['version']) throw new ApiError('המסמך השתנה בינתיים — טענו אותו מחדש', 'conflict', 409);
+    $v = version_get($row, $versionId);
+    $pdo = db();
+    $pdo->beginTransaction();
+    try {
+        // המצב הנוכחי — כגרסה בפני עצמה, אם עוד לא רשום בדיוק כך (מסמך שנשמר לפני שהיו גרסאות, או בלי רישום)
+        $st = $pdo->prepare('SELECT version, json FROM versions WHERE doc = ? ORDER BY id DESC LIMIT 1');
+        $st->execute([$row['id']]);
+        $last = $st->fetch(); $st->closeCursor();
+        if (!$last || (int)$last['version'] !== (int)$row['version'] || $last['json'] !== $row['json']) {
+            $now = time();
+            $pdo->prepare('INSERT INTO versions (doc, version, title, json, page, user_id, user_name, started_at, saved_at, kind) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+                ->execute([$row['id'], $row['version'], $row['title'], $row['json'], $row['page'], (string)$row['updated_by_id'], (string)$row['updated_by'], $now, $now, 'before']);
+        } else {
+            // הגרסה האחרונה היא המצב שלפני השחזור — נסגרת: שמירות הבאות לא יתאחדו לתוכה
+            $pdo->prepare("UPDATE versions SET kind = 'before' WHERE id = (SELECT id FROM versions WHERE doc = ? ORDER BY id DESC LIMIT 1) AND kind = ''")->execute([$row['id']]);
+        }
+        $now = time();
+        $st = $pdo->prepare('UPDATE docs SET json = ?, page = ?, title = ?, version = version + 1, updated_at = ?, updated_by = ?, updated_by_id = ? WHERE id = ? AND version = ?');
+        $st->execute([$v['json'], $v['page'], $v['title'], $now, $userName, $userId, $row['id'], (int)$row['version']]);
+        if ($st->rowCount() !== 1) throw new ApiError('המסמך השתנה בינתיים — טענו אותו מחדש', 'conflict', 409);
+        $row = doc_find($row['id'], $row['space']);
+        version_record($row, $userId, $userName, 'restore');
+        $pdo->commit();
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        throw $e;
+    }
+    return $row;
 }
 
 function version_get(array $row, $id): array

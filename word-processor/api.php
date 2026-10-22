@@ -197,6 +197,14 @@ try {
             $row = doc_save($row, $in['json'] ?? null, isset($in['title']) ? (string)$in['title'] : null, $s['user_id'], $s['user_name'], $in['base_version'] ?? null);
             out(['doc' => $row['id'], 'version' => (int)$row['version'], 'updated_at' => (int)$row['updated_at']]);
 
+        case 'embed_version_restore':   // שחזור גרסה — פעולה אחת בשרת (doc_restore_version)
+            need_post();
+            $s = embed_auth();
+            $row = doc_find($s['doc'], 'c:' . $s['client']);
+            require_edit($s['can'], $row['id'], $s['user_id'], $s['user_name'], $s['token']);
+            $row = doc_restore_version($row, $in['id'] ?? 0, $s['user_id'], $s['user_name'], $in['base_version'] ?? null);
+            out(['doc' => $row['id'], 'version' => (int)$row['version'], 'json' => editor_json(doc_json($row), doc_page($row)), 'page' => doc_page($row)]);
+
         case 'embed_page':
             need_post();
             $s = embed_auth();
@@ -331,6 +339,11 @@ function app_action(string $action, array $in): never
             require_edit('edit', $row['id'], $uid, $uname, $holder);
             $row = doc_save($row, $in['json'] ?? null, isset($in['title']) ? (string)$in['title'] : null, $uid, $uname, $in['base_version'] ?? null);
             out(['doc' => $row['id'], 'version' => (int)$row['version'], 'updated_at' => (int)$row['updated_at']]);
+        case 'my_version_restore':   // שחזור גרסה — פעולה אחת בשרת (doc_restore_version)
+            $row = doc_find($in['doc'] ?? '', $space);
+            require_edit('edit', $row['id'], $uid, $uname, $holder);
+            $row = doc_restore_version($row, $in['id'] ?? 0, $uid, $uname, $in['base_version'] ?? null);
+            out(['doc' => $row['id'], 'version' => (int)$row['version'], 'json' => editor_json(doc_json($row), doc_page($row)), 'page' => doc_page($row)]);
         case 'my_page':
             $row = doc_find($in['doc'] ?? '', $space);
             require_edit('edit', $row['id'], $uid, $uname, $holder);

@@ -1729,7 +1729,7 @@ export function createWordEditor(root, opts) {
         if (!opts.versions) return;
         sheet('גרסאות', async body => {
             const list = h('ul.list', h('li.empty', 'טוען…'));
-            body.append(h('p.hint', 'כל שמירה נרשמת; שמירות של אותו אדם בתוך 10 דקות מאוחדות לגרסה אחת. שחזור יוצר גרסה חדשה — שום דבר לא נמחק.'), list);
+            body.append(h('p.hint', 'כל שמירה נרשמת; שמירות של אותו אדם בתוך 10 דקות מאוחדות לגרסה אחת. שחזור שומר את המצב הנוכחי כגרסה ויוצר גרסה חדשה — שום דבר לא נמחק.'), list);
             try {
                 const vs = await opts.versions.list();
                 list.textContent = '';
@@ -1747,6 +1747,15 @@ export function createWordEditor(root, opts) {
             if (current) return toast('זו הגרסה הנוכחית');
             if (!editor.isEditable) return toast('צפייה בלבד — אי אפשר לשחזר', true);
             if (!confirm(`לשחזר את הגרסה מ-${when(v.saved_at)}? המצב הנוכחי יישמר כגרסה.`)) return;
+            // שחזור בשרת (ביקורת 04, R07): המצב הנוכחי והמשוחזר — שתי גרסאות נפרדות, גם בתוך חלון 10 הדקות
+            if (opts.versions.restore) {
+                try {
+                    if (!(await opts.versions.restore(v.id))) return;
+                } catch (e) { return toast(e.message || 'השחזור נכשל', true); }
+                document.querySelector('dialog[open]')?.close();
+                toast('הגרסה שוחזרה — המצב הקודם נשמר כגרסה');
+                return;
+            }
             const d = await opts.versions.get(v.id);
             // הגדרות העמוד של הגרסה — בתוך המסמך (attrs.page), כך שגם השחזור עצמו ניתן לביטול
             editor.commands.setContent(migrate(d.json, d.page || page), { emitUpdate: true });

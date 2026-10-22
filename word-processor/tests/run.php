@@ -205,6 +205,26 @@ for ($i = 0; $i < 105; $i++) {
 }
 check('עד 100 גרסאות למסמך', count(versions_list($row)) === 100, (string)count(versions_list($row)));
 
+// שחזור גרסה (ביקורת 03 / 04, F06 / R07): עריכה, שמירה ושחזור בתוך 10 דקות — גם המצב שלפני וגם המשוחזר נשארים
+$docR = doc_new("c:$A", 'שחזור', null, null, 'u1', 'דנה');
+$rowR = doc_find($docR, "c:$A");
+$txt = fn($t) => ['type' => 'doc', 'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => $t]]]]];
+$rowR = doc_save($rowR, $txt('ראשון'), null, 'u1', 'דנה', (int)$rowR['version']);
+db()->prepare('UPDATE versions SET started_at = started_at - 700 WHERE doc = ?')->execute([$docR]);   // "ראשון" — גרסה סגורה
+$rowR = doc_save($rowR, $txt('שני'), null, 'u1', 'דנה', (int)$rowR['version']);
+$rowR = doc_save($rowR, $txt('שלישי'), null, 'u1', 'דנה', (int)$rowR['version']);   // מתאחד עם "שני" (אותו משתמש, 10 דקות)
+$vsR = versions_list($rowR);
+$first = end($vsR)['id'];
+check('לפני השחזור: "ראשון" ו"שלישי" (שני ושלישי מאוחדים)', count($vsR) === 2);
+check('שחזור על בסיס ישן → התנגשות', throws(fn() => doc_restore_version($rowR, $first, 'u1', 'דנה', (int)$rowR['version'] - 1), 'conflict'));
+$rowR = doc_restore_version($rowR, $first, 'u1', 'דנה', (int)$rowR['version']);
+$texts = fn() => array_map(fn($v) => export_text(json_decode(version_get($rowR, $v['id'])['json'], true)), versions_list($rowR));
+check('שחזור: התוכן הוא "ראשון", והמצב שלפני ("שלישי") נשמר כגרסה נפרדת', export_text(doc_json($rowR)) === 'ראשון' && $texts() === ['ראשון', 'שלישי', 'ראשון'], json_encode($texts(), JSON_UNESCAPED_UNICODE));
+$rowR = doc_save($rowR, $txt('אחרי השחזור'), null, 'u1', 'דנה', (int)$rowR['version']);
+check('שמירה מיד אחרי השחזור — גרסה חדשה, לא דורסת את המשוחזר', $texts() === ['אחרי השחזור', 'ראשון', 'שלישי', 'ראשון'], json_encode($texts(), JSON_UNESCAPED_UNICODE));
+$rowR = doc_save($rowR, $txt('אחרי השחזור, עוד'), null, 'u1', 'דנה', (int)$rowR['version']);
+check('ושמירה נוספת — מתאחדת כרגיל (רק לא לתוך השחזור / המצב שלפניו)', count(versions_list($rowR)) === 4 && $texts()[0] === 'אחרי השחזור, עוד');
+
 // ======================================================================
 section('ייצוא');
 $gd = imagecreatetruecolor(2, 2);
