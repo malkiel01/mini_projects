@@ -136,6 +136,30 @@ function migrate(PDO $pdo): void {
         );
         CREATE INDEX IF NOT EXISTS punches_member ON punches (member_id, at_utc);
 
+        -- עמדה בעסק: מכשיר משותף, מוצמד לחברה (ולסניף) בקוד חד-פעמי. נשמר רק ה-hash של האסימון.
+        CREATE TABLE IF NOT EXISTS stations (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            company_id INTEGER NOT NULL REFERENCES companies(id),
+            site_id    INTEGER REFERENCES sites(id),
+            name       TEXT NOT NULL,
+            token_hash TEXT UNIQUE,
+            pair_hash  TEXT,
+            pair_expires TEXT,
+            created_by INTEGER,
+            created_at TEXT NOT NULL,
+            paired_at  TEXT,
+            last_seen  TEXT,
+            revoked_at TEXT
+        );
+
+        -- ניסיונות שגויים: קוד אישי (לכל חברוּת) וקוד הצמדה (לכל כתובת IP).
+        CREATE TABLE IF NOT EXISTS throttle (
+            k            TEXT PRIMARY KEY,
+            fails        INTEGER NOT NULL DEFAULT 0,
+            first_at     TEXT NOT NULL,
+            locked_until TEXT
+        );
+
         -- כל שינוי: מי, מה, לפני ואחרי.
         CREATE TABLE IF NOT EXISTS audit (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,

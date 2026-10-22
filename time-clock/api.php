@@ -6,13 +6,16 @@
  *
  * שני סוגי מבקשים:
  * - צוות הניהול — מאחורי השער, הזהות מ-PLATFORM_USER.
- * - עובד — `emp_*`, בלי פלטפורמה; הזהות היא העוגייה tc_session. הפעולות האלה ב-"public" של app.json,
- *   וכל פעולה חדשה כזו חייבת להיכנס גם לשם — אחרת השער חוסם אותה בשקט.
+ * - עובד — `emp_*`, בלי פלטפורמה; הזהות היא העוגייה tc_session.
+ * - עמדה — `station_*`; הזהות היא העוגייה tc_station.
+ * הפעולות הציבוריות ב-"public" של app.json, וכל פעולה חדשה כזו חייבת להיכנס גם לשם — אחרת השער חוסם
+ * אותה בשקט.
  */
 
 declare(strict_types=1);
 
 require_once __DIR__ . '/lib/attendance.php';
+require_once __DIR__ . '/lib/station.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -50,6 +53,10 @@ try {
         case 'emp_state':       ok(empState());
         case 'emp_punch':       ok(empPunch($in));
         case 'emp_month':       ok(empMonth($in));
+        case 'station_pair':    writeStationCookie(stationPair($in)); ok(stationState());
+        case 'station_state':   ok(stationState());
+        case 'station_check':   ok(stationCheck($in));
+        case 'station_punch':   ok(stationPunch($in));
     }
 
     $person = currentPerson();
@@ -74,6 +81,9 @@ try {
         case 'emp_end':        ok(empEnd($person, $in));
         case 'today_board':    ok(todayBoard($person, $in));
         case 'emp_month_m':    ok(empMonthManager($person, $in));
+        case 'station_list':   ok(stationList($person, $in));
+        case 'station_create': ok(stationCreate($person, $in));
+        case 'station_revoke': ok(stationRevoke($person, $in));
         default:               fail('פעולה לא מוכרת', 404);
     }
 } catch (AppError $e) {

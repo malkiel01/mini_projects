@@ -2,7 +2,8 @@
 /**
  * בדיקות: זהות מהפלטפורמה, חברה, סניפים, צוות והפרדה בין חברות (שלב 1);
  * עובדים, תנאים בגרסאות, קישור הזמנה, הפעלה וקוד, מכשיר והרשאות מנהל סניף (שלב 2);
- * דיווח, חישוב שעות (משמרת לילה, שעון קיץ, חסר יציאה, כפילות), החודש והמסך "היום" (שלב 3).
+ * דיווח, חישוב שעות (משמרת לילה, שעון קיץ, חסר יציאה, כפילות), החודש והמסך "היום" (שלב 3);
+ * עמדה: הצמדה, קוד שגוי ונעילה, סניף, ביטול (שלב 4).
  * הרצה: php time-clock/tests/run.php — על מסד זמני, בלי לגעת ב-data/.
  */
 
@@ -10,6 +11,7 @@ declare(strict_types=1);
 
 define('DB_FILE', sys_get_temp_dir() . '/time-clock-test-' . getmypid() . '.sqlite');
 require_once __DIR__ . '/../lib/attendance.php';
+require_once __DIR__ . '/../lib/station.php';
 
 $fails = 0; $n = 0;
 function check(string $name, bool $cond): void {
@@ -212,6 +214,52 @@ check('היום: דנה בעבודה', $row['state'] === 'in' && $b['count']['in
 check('עובד שסיים לא מופיע', !in_array($omer, array_column($b['employees'], 'id'), true));
 throws('מנהל סניף אחר לא רואה את החודש של דנה', fn() => empMonthManager($yossi, ['company_id' => $cid, 'id' => $dana]), 404);
 check('מנהל רואה את החודש של עובד', empMonthManager($owner, ['company_id' => $cid, 'id' => $h, 'month' => '2026-11'])['summary']['minutes'] === 1530);
+
+
+// ===== שלב 4: עמדה =====
+$_COOKIE = [];
+throws('בלי הצמדה — אין עמדה', fn() => stationState(), 401);
+throws('מנהלת שכר לא יוצרת עמדה', fn() => stationCreate(as_(['sub' => 'u-sara']), ['company_id' => $cid, 'name' => 'x']), 403);
+$owner = as_(['sub' => 'u-owner']);
+$r = stationCreate($owner, ['company_id' => $cid, 'name' => 'כניסה ראשית', 'site_id' => $s1]);
+$code = $r['code']; $stId = $r['station_id'];
+check('נוצרה עמדה עם קוד בן 6 ספרות, עוד לא מוצמדת', strlen($code) === 6 && $r['stations'][0]['paired'] === false);
+throws('קוד הצמדה שגוי', fn() => stationPair(['code' => $code === '000000' ? '111111' : '000000']));
+writeStationCookie(stationPair(['code' => $code]));
+$ss = stationState();
+check('מוצמדת: שם החברה והסניף', $ss['station']['site'] === 'מרכז' && $ss['station']['company'] === 'מאפיית השקד בע״מ');
+$names = array_column($ss['employees'], 'name');
+check('בעמדה רק עובדי הסניף שלה, פעילים', in_array('דנה לוי', $names, true) && !in_array('עומר', $names, true));
+throws('אותו קוד הצמדה פעמיים', fn() => stationPair(['code' => $code]));
+
+throws('עובד מסניף אחר', fn() => stationCheck(['member_id' => $r2['employee']['id'], 'pin' => '9071']), 404);
+throws('קוד אישי שגוי', fn() => stationCheck(['member_id' => $dana, 'pin' => '0001']));
+$c1 = stationCheck(['member_id' => $dana, 'pin' => '5839']);
+check('קוד נכון: השם והפעולה הצפויה', $c1['name'] === 'דנה לוי' && in_array($c1['next'], ['in', 'out'], true));
+$p = stationPunch(['member_id' => $dana, 'pin' => '5839', 'kind' => $c1['next']]);
+$last = db()->query("SELECT source, station_id FROM punches WHERE member_id = $dana ORDER BY id DESC LIMIT 1")->fetch();
+check('דיווח מהעמדה — עם מקור ועמדה', $last['source'] === 'station' && (int) $last['station_id'] === $stId);
+throws('עובד בלי קוד (לא הפעיל)', fn() => stationCheck(['member_id' => $h, 'pin' => '1111']));
+
+for ($k = 0; $k < 4; $k++) { try { stationCheck(['member_id' => $dana, 'pin' => '0002']); } catch (AppError) {} }
+throws('חמישה קודים שגויים — נעילה', fn() => stationCheck(['member_id' => $dana, 'pin' => '0003']), 429);
+throws('נעול גם עם הקוד הנכון', fn() => stationCheck(['member_id' => $dana, 'pin' => '5839']), 429);
+db()->exec("UPDATE throttle SET locked_until = '2000-01-01T00:00:00Z' WHERE k = 'pin:$dana'");
+check('אחרי דקה — הקוד הנכון עובד שוב', stationCheck(['member_id' => $dana, 'pin' => '5839'])['name'] === 'דנה לוי');
+
+for ($k = 0; $k < 10; $k++) { try { stationPair(['code' => '12345' . $k]); } catch (AppError) {} }
+throws('עשרה קודי הצמדה שגויים — נעילה', fn() => stationPair(['code' => '999999']), 429);
+db()->exec("DELETE FROM throttle WHERE k LIKE 'pair:%'");
+
+$y2 = as_(['sub' => 'u-yossi']);
+check('מנהל סניף לא רואה עמדה של סניף אחר', stationList($y2, ['company_id' => $cid])['stations'] === []);
+throws('ומבטל אותה — לא', fn() => stationRevoke($y2, ['company_id' => $cid, 'id' => $stId]), 404);
+$r = stationCreate($owner, ['company_id' => $cid, 'id' => $stId]);
+throws('קוד הצמדה חדש מנתק את הטאבלט הקודם', fn() => stationState(), 401);
+writeStationCookie(stationPair(['code' => $r['code']]));
+check('והטאבלט החדש מוצמד', stationState()['station']['name'] === 'כניסה ראשית');
+stationRevoke($owner, ['company_id' => $cid, 'id' => $stId]);
+throws('עמדה שבוטלה', fn() => stationState(), 401);
 
 @unlink(DB_FILE); @unlink(DB_FILE . '-wal'); @unlink(DB_FILE . '-shm');
 echo "\n" . ($n - $fails) . "/$n עברו\n";
