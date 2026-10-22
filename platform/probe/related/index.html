@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>בדיקת אפליקציות מותקנות</title>
+    <meta name="robots" content="noindex">
+    <link rel="stylesheet" href="../../spec/spec.css">
+    <script>
+        // המניפסט נקבע לפי ?p= לפני שהדפדפן קורא אותו — כל ריצה בודקת רשימה אחרת (manifest.php).
+        document.write('<link rel="manifest" href="manifest.php?p=' +
+            encodeURIComponent(new URLSearchParams(location.search).get('p') || 'all') + '">');
+    </script>
+</head>
+<body>
+<div class="wrap">
+    <header class="top">
+        <a href="../../spec/apps-and-accounts.html#a" aria-label="לאפיון">‹</a>
+        <h1>🔎 בדיקת אפליקציות מותקנות</h1>
+    </header>
+    <p class="sub">האפיון, סעיף 3.1: למה כרום לא מזהה את אפליקציות האנדרואיד שלנו. הבדיקה רצה לבד (כמה שניות, הדף נטען כמה פעמים),
+        והתוצאה נשלחת ליומן האבחון.</p>
+    <div id="status" class="note info">מתחיל…</div>
+    <div class="table"><table id="out" hidden>
+        <thead><tr><th>מה נבדק</th><th>נמצאו מותקנות</th></tr></thead>
+        <tbody></tbody>
+    </table></div>
+    <p><button id="again" type="button" hidden>הרצה מחדש</button></p>
+</div>
+<script>
+(async () => {
+    const KEY = 'probe-related';
+    const qs = new URLSearchParams(location.search);
+    const status = document.getElementById('status');
+    const say = (t, cls = 'info') => { status.className = 'note ' + cls; status.textContent = t; };
+    const load = () => { try { return JSON.parse(sessionStorage.getItem(KEY) || 'null'); } catch { return null; } };
+    const save = (s) => { try { sessionStorage.setItem(KEY, JSON.stringify(s)); } catch { /* */ } };
+    const device = (() => { try { return localStorage.getItem('platform:device') || null; } catch { return null; } })();
+    const mode = matchMedia('(display-mode: standalone)').matches ? 'standalone' : 'browser';
+
+    document.getElementById('again').addEventListener('click', () => { sessionStorage.removeItem(KEY); location.replace('./'); });
+
+    if (!/Android/i.test(navigator.userAgent)) { say('הבדיקה רלוונטית רק בטלפון אנדרואיד, בכרום.', 'warn'); return; }
+    if (!('getInstalledRelatedApps' in navigator)) { say('הדפדפן הזה לא תומך ב-getInstalledRelatedApps — צריך כרום.', 'bad'); return; }
+
+    // התוכנית: כל הרשימה (כמו בפלטפורמה), שלוש ראשונות, ואז כל חבילה לבד.
+    let s = load();
+    if (!s || !qs.has('p')) {
+        const all = (await (await fetch('manifest.php?p=all', { cache: 'no-store' })).json()).related_applications.map(a => a.id);
+        s = { all, plan: ['all', all.slice(0, 3).join(','), ...all], i: 0, results: [] };
+        save(s);
+        location.replace('?p=' + encodeURIComponent(s.plan[0]));
+        return;
+    }
+
+    say(`בודק ${s.i + 1} מתוך ${s.plan.length}…`);
+    await new Promise(r => setTimeout(r, 400));          // שהמניפסט ייקרא
+    let found = [], error = '';
+    try { found = (await navigator.getInstalledRelatedApps()).map(a => a.id + (a.version ? '@' + a.version : '')); }
+    catch (e) { error = String(e && e.message || e); }
+    s.results.push({ p: s.plan[s.i], found, error });
+    s.i++;
+    save(s);
+    if (s.i < s.plan.length) { location.replace('?p=' + encodeURIComponent(s.plan[s.i])); return; }
+
+    // סוף — טבלה, ודיווח אחד ליומן
+    const label = (p) => p === 'all' ? `כל הרשימה (${s.all.length})` : p.includes(',') ? 'שלוש ראשונות' : p;
+    const tbody = document.querySelector('#out tbody');
+    for (const r of s.results) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = '<td></td><td></td>';
+        tr.children[0].textContent = label(r.p);
+        tr.children[1].textContent = r.error ? '⚠️ ' + r.error : (r.found.join(', ') || '—');
+        tbody.append(tr);
+    }
+    document.getElementById('out').hidden = false;
+    document.getElementById('again').hidden = false;
+    const singles = s.results.filter(r => !r.p.includes(',') && r.p !== 'all' && r.found.length).map(r => r.found.join('+'));
+    const allRun = s.results.find(r => r.p === 'all');
+    say(singles.length || allRun?.found.length
+        ? `✓ כרום מזהה: ${[...new Set([...(allRun?.found || []), ...singles])].join(', ')}`
+        : '✕ כרום לא מזהה אף אפליקציה — לא ברשימה המלאה ולא אחת-אחת.', singles.length || allRun?.found.length ? 'ok' : 'bad');
+    try {
+        await fetch('../../api.php?action=diag', {
+            method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Platform': '1' },
+            body: JSON.stringify({ event: 'probe-related', device, path: location.pathname, info: {
+                mode, all: allRun ? (allRun.found.join(',') || allRun.error || '(אין)') : '?',
+                three: s.results[1] ? (s.results[1].found.join(',') || s.results[1].error || '(אין)') : '?',
+                singles: singles.join(',') || '(אין)',
+                errors: s.results.filter(r => r.error).map(r => r.p + ':' + r.error).join(' | ').slice(0, 280),
+            } }),
+        });
+    } catch { /* היומן לא זמין — התוצאה על המסך */ }
+    sessionStorage.removeItem(KEY);
+})();
+</script>
+</body>
+</html>
