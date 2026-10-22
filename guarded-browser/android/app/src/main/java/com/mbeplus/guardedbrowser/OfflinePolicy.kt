@@ -42,6 +42,9 @@ object OfflinePolicy {
             } else store.saveApps(a)
         }
         store.offlineIat = iat
+        // קוד חתום וטרי מההורה = קשר עם ההורה, נכון לזמן שבו נוצר (iat, שעון השרת): חלון "בלי חיבור" מתחיל
+        // ממנו מחדש. קודם ההודעה "בקשו מההורה קוד" לא פתחה דבר — הקוד לא נגע בזמן הסנכרון (2026-10-22).
+        store.lastSyncMs = maxOf(store.lastSyncMs, minOf(TrustedClock.now(store), iat * 1000))
         if (!store.released) Enforcer.apply(ctx, store)
         Trace.log("offline.apply", "iat=$iat")
         PolicySync.changed()   // מסכים פתוחים (הדפדפן) מחילים על עצמם

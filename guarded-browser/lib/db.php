@@ -157,6 +157,11 @@ function migrate(PDO $pdo): void {
             $pdo->exec("ALTER TABLE devices ADD COLUMN $col TEXT NOT NULL DEFAULT ''");
         }
     }
+    // מצב לא מקוון מתוכנן (שלב 12 ו) — ברירות המחדל: כמו שהיה (24 שעות על המדיניות השמורה).
+    if (!in_array('offline_grace_h', $columns('policies'), true)) {
+        $pdo->exec("ALTER TABLE policies ADD COLUMN offline_grace_h INTEGER NOT NULL DEFAULT 24");
+        $pdo->exec("ALTER TABLE policies ADD COLUMN offline_content TEXT NOT NULL DEFAULT 'all'");
+    }
     // מצב העדכון כפי שהמכשיר דיווח (lib/appversion.php, updateStateSave) — ההורה רואה עדכון שנתקע או נכשל.
     if (!in_array('update_state', $columns('devices'), true)) {
         $pdo->exec("ALTER TABLE devices ADD COLUMN update_state TEXT NOT NULL DEFAULT ''");

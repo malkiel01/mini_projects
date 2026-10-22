@@ -57,6 +57,9 @@ data class Policy(
     val keepHistory: Boolean = true,
     val allowPip: Boolean = false,
     val allowBackground: Boolean = false,
+    /** מצב לא מקוון מתוכנן (OfflineMath): שעות עד שהכול נחסם, ומה זמין עד אז. */
+    val offlineGraceH: Int = 24,
+    val offlineContent: String = "all",
 ) {
     companion object {
         const val MODE_KIOSK = "kiosk"
@@ -82,6 +85,8 @@ data class Policy(
             keepHistory = o.optBoolean("keep_history", true),
             allowPip = o.optBoolean("allow_pip"),
             allowBackground = o.optBoolean("allow_background"),
+            offlineGraceH = o.optInt("offline_grace_h", 24),
+            offlineContent = o.optString("offline_content", "all"),
         )
     }
 }
