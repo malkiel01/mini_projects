@@ -456,17 +456,27 @@ function fill_guard(): array
     return [$p, $d, $schema];
 }
 
+/** fill_guard שוב, בתוך הטרנזקציה ואחרי נעילת הכתיבה: המסמך לא ננעל והממלא לא סיים בינתיים (DT-F07). */
+function fill_lock(PDO $pdo, array $p, array $d): void
+{
+    doc_lock($pdo, (int)$d['id'], ['sent', 'in_progress']);
+    $st = $pdo->prepare('SELECT completed_at FROM participants WHERE id = ?');
+    $st->execute([$p['id']]);
+    if ($st->fetchColumn()) throw new ApiError('כבר סיימת למלא את המסמך הזה', 409);
+}
+
 function fill_save(array $b): array
 {
     [$p, $d, $schema] = fill_guard();
     $mine = array_column(array_filter($schema['fields'], fn($f) => in_array($p['role_key'], field_roles($f), true)), null, 'key');
-    $old = doc_values((int)$d['id']);
     $actor = 'participant:' . $p['id'];
     $now = now_iso();
     $changes = [];
     $pdo = db();
     $pdo->beginTransaction();
     try {
+        fill_lock($pdo, $p, $d);
+        $old = doc_values((int)$d['id']);
         $up = $pdo->prepare(
             'INSERT INTO field_values (document_id, field_key, row_index, value_enc, updated_by, updated_at) VALUES (?, ?, 0, ?, ?, ?)
              ON CONFLICT(document_id, field_key, row_index) DO UPDATE SET
@@ -513,9 +523,18 @@ function fill_complete(): array
 
     $pdo = db();
     $pdo->beginTransaction();
-    $pdo->prepare("UPDATE participants SET completed_at = ?, status = 'completed' WHERE id = ?")->execute([now_iso(), $p['id']]);
-    log_event((int)$d['id'], 'participant:' . $p['id'], 'participant_completed', ['role' => role_of($schema, $p['role_key'])['label']]);
-    $pdo->commit();
+    try {
+        fill_lock($pdo, $p, $d);
+        if ($m = missing_for($schema, doc_values((int)$d['id']), $p['role_key'], open_roles((int)$d['id']))) {
+            throw new ApiError('חסרים שדות חובה: ' . implode(', ', $m), 422);
+        }
+        $pdo->prepare("UPDATE participants SET completed_at = ?, status = 'completed' WHERE id = ?")->execute([now_iso(), $p['id']]);
+        log_event((int)$d['id'], 'participant:' . $p['id'], 'participant_completed', ['role' => role_of($schema, $p['role_key'])['label']]);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        throw $e;
+    }
     webhook_fire((int)$d['id'], 'participant.completed', ['role' => $p['role_key']]);
 
     // מי מקבל "ממתין לאישורך": בעל התבנית, כשהתבנית מחייבת אישור רק דרכו — אחרת מי שהנפיק

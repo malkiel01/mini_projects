@@ -20,6 +20,20 @@ function now_iso(): string
     return gmdate('Y-m-d\TH:i:s\Z');
 }
 
+/**
+ * הפקודה הראשונה בטרנזקציה שכותבת למסמך: תופסת את נעילת הכתיבה של המסד ובודקת שהמסמך
+ * עדיין במצב שמותר לכתוב בו — בפעולה אחת. בלי זה, שמירה שעברה את בדיקת המצב לפני
+ * הטרנזקציה יכלה לכתוב אחרי שהמסמך ננעל בינתיים (נספח הביקורת v0.3, DT-F07).
+ * כל קריאה של ערכים שבאה אחריה רואה את המצב העדכני: כותב אחר לא נכנס עד ה-commit.
+ */
+function doc_lock(PDO $pdo, int $docId, array $statuses, string $msg = 'המסמך נעול'): void
+{
+    $in = implode(',', array_fill(0, count($statuses), '?'));
+    $st = $pdo->prepare("UPDATE documents SET status = status WHERE id = ? AND status IN ($in)");
+    $st->execute(array_merge([$docId], $statuses));
+    if ($st->rowCount() === 0) throw new ApiError($msg, 409);
+}
+
 function db(): PDO
 {
     static $pdo = null;
