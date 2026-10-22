@@ -699,14 +699,16 @@ function androidState(app) {
     const pkg = app.install.android?.package;
     const latest = app.install.android?.version || null;
     // מה שהאפליקציה עצמה דיווחה כשנפתחה במכשיר הזה (השער, apk_seen) — המקור המדויק, עם הגרסה.
-    const seen = installedHere[app.id]?.how === 'apk' ? installedHere[app.id] : null;
+    const seen = installedHere[app.id]?.how === 'apk' && installedHere[app.id].state === 'installed' ? installedHere[app.id] : null;
+    // הדופק דיווח שהיא הוסרה מהמכשיר — "התקנה", גם אם כרום זכר אותה
+    const removed = installedHere[app.id]?.how === 'apk' && installedHere[app.id].state === 'not_installed';
     // כרום (getInstalledRelatedApps) בודק רק 3 חבילות — מאשר כשמצא, ולא שולל כשלא.
-    const detected = Boolean(pkg && nativeInstalled?.has(pkg));
+    const detected = !removed && Boolean(pkg && nativeInstalled?.has(pkg));
     const installed = Boolean(seen) || detected;
     // הגרסה: מהדיווח של האפליקציה, ואם אין — מה שכרום החזיר (versionName = versionCode מאז #567)
     const mine = seen?.version || (pkg && detectedRecord()[pkg]?.version) || null;
     // הורד מכאן, ועוד לא נפתח מאז — אולי מותקנת: "התקנה", ולצידה "פתיחה".
-    const maybe = !installed && Boolean(apkRecord()[app.id]);
+    const maybe = !installed && !removed && Boolean(apkRecord()[app.id]);
     return { pkg, latest, mine, installed, maybe, update: installed && latest && mine !== null && mine < latest };
 }
 
