@@ -19,6 +19,7 @@ import { FindReplace, createFindBar } from './find.js';
 import { ParagraphMarks, marksKey, createNavPane, createPasteOptions, wordStats } from './view.js';
 import { headings } from './toc.js';
 import { captions, newSeqId, SEQ_LABELS, listTitle } from './caption.js';
+import { createComments } from './comments.js';
 
 const MM = 96 / 25.4;
 const PT = 4 / 3;
@@ -559,6 +560,9 @@ export function createWordEditor(root, opts) {
             insertToc: () => insertToc(), updateToc: () => updateToc(), hasToc: () => { let f = false; editor.state.doc.descendants(n => { if (n.type.name === 'toc') f = true; return !f; }); return f; },
             crop: pos => cropDialog(pos), imageProps: pos => imageDialog(pos), imageSize: f => imageSizeTo(f), tableProps: () => tablePropsDialog(),
             footnote: () => footnoteDialog(null), endnote: () => footnoteDialog(null, true),
+            comment: () => { if (phone.matches) openSheet(false); comments.add(); refresh(); },
+            commentsPane: () => { if (comments.isOpen()) comments.close(); else { if (phone.matches) openSheet(false); comments.open(); } refresh(); },
+            commentsOn: () => comments.isOpen(),
             caption: () => captionDialog(), crossRef: () => crossRefDialog(), insertTof: () => tofDialog(),
             link: () => linkDialog(), bookmark: () => bookmarkDialog(),
             newStyle: () => newStyleDialog(), updateStyle: () => updateStyleFromSelection(),
@@ -583,6 +587,8 @@ export function createWordEditor(root, opts) {
     findSlot.append(finder.el);
     const nav = createNavPane({ editor, h, onClose: () => refresh() });
     body.prepend(nav.el);
+    const comments = createComments({ editor, h, user: opts.user, onChange: () => refresh() });
+    body.append(comments.el);
     pasteOpts = createPasteOptions({ editor, h, host: root });
     const marksOn = () => !!marksKey.getState(editor.state)?.on;
     const ICONS = {
@@ -656,6 +662,7 @@ export function createWordEditor(root, opts) {
             grp('עריכה', [cmdBtn('find'), cmdBtn('replace')])]],
         ['insert', 'הוספה', [grp('טבלאות', B.insertTable), grp('איורים', [B.insertImage, imgInput]), grp('הערות', [B.footnote, cmdBtn('endnote')]), grp('קישורים', [cmdBtn('link'), linkOff, cmdBtn('bookmark')]), grp('כיתובים', [cmdBtn('caption'), cmdBtn('crossRef'), cmdBtn('insertTof')]), grp('תוכן עניינים', [cmdBtn('insertToc'), tocUpd]), grp('עמודים', B.pageBreak)]],
         ['layout', 'פריסה', [grp('הגדרת עמוד', B.pageSetup), grp('מעברים', B.sectionBreak)]],
+        ['review', 'סקירה', [grp('הערות', [cmdBtn('comment'), cmdBtn('commentsPane')])]],
         ['view', 'תצוגה', [zoomGroup, grp('הצגה', [B.navPane, B.showMarks, cmdBtn('wordCount')]), grp('מסמך', [opts.save ? cmdBtn('save') : null, B.print, cmdBtn('printPreview'), opts.versions ? cmdBtn('versions') : null, ...(opts.menu || [])])]],
     ];
     const uid = Math.random().toString(36).slice(2, 8);

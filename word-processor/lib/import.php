@@ -271,7 +271,12 @@ function import_docx(string $bytes, string $docId): array
     unset($b);
     $zip->close();
     unlink($tmp);
-    return ['json' => ['type' => 'doc', 'content' => $blocks ?: [para()]], 'page' => $page, 'report' => $ctx->report()];
+    $json = ['type' => 'doc', 'content' => $blocks ?: [para()]];
+    // הערות: רק שרשורים שהטווח שלהם נכנס למסמך
+    $used = [];
+    array_walk_recursive($blocks, function ($v, $k) use (&$used) { if ($k === 'id' && is_string($v) && str_starts_with($v, 'c')) $used[$v] = true; });
+    if ($cm = array_intersect_key($ctx->comments, $used)) $json['attrs'] = ['comments' => $cm];
+    return ['json' => $json, 'page' => $page, 'report' => $ctx->report()];
 }
 
 function xml_dom(string $xml): DOMDocument
@@ -289,6 +294,9 @@ final class DocxCtx
     private array $numSeen = [];   // numId => מספר הפריט הבא — רשימה נוספת עם אותו numId ממשיכה (Word)
     public bool $headingNumbers = false;   // סגנון כותרת מקושר למספור
     private array $rels = [];      // rId => target
+    public array $comments = [];   // השרשורים (attrs.comments של המסמך): "c<id ב-Word>" => {author, date, text, done, replies}
+    private array $cmTop = [];     // id ב-Word של הערה => המזהה של השרשור שלה (תשובה — של ההורה)
+    private array $cmOpen = [];    // הטווחים הפתוחים עכשיו (commentRangeStart עד End) — נמשכים בין פסקאות
     private array $footnotes = []; // id => attrs של ההערה: text, content (word/footnotes.xml)
     private array $custom = [];    // styleId => true — סגנון תו מותאם שיש בו עיצוב (העיצוב שלו לא מיובא)
     public array $userStyles = []; // u<N> => הגדרות הסגנון (name, font, size, bold…) — סגנונות פסקה מותאמים מ-Word
@@ -327,7 +335,7 @@ final class DocxCtx
                 if (!preg_match('/hyperlink|footnote|endnote|default/i', $id . ' ' . $xp->evaluate('string(w:name/@w:val)', $st))) $this->custom[$id] = true;
             }
         }
-        if ($s = $read('word/comments.xml')) $this->note('comments', $this->xp(xml_dom($s))->query('//w:comment')->length);
+        if ($s = $read('word/comments.xml')) $this->readComments($s, $read('word/commentsExtended.xml'));
         if ($s = $read('word/numbering.xml')) {
             $xp = $this->xp(xml_dom($s));
             $abs = [];
@@ -560,7 +568,13 @@ final class DocxCtx
         $capField = null;     // שדה SEQ / REF שבתוכו (מ-separate עד end): [צומת, תוצאה] — התוצאה לא נכנסת כטקסט
         $refMark = null;      // הסימניה הנסתרת _Ref<id> האחרונה בפסקה — המזהה של הכיתוב שאחריה
         $simple = null;       // fldSimple של SEQ / REF שכבר נכנס
-        foreach ($xp->query('w:bookmarkStart|w:hyperlink/w:bookmarkStart|w:r|w:hyperlink/w:r|w:ins/w:r|w:smartTag/w:r|w:fldSimple/w:r|w:hyperlink/w:fldSimple/w:r', $p) as $r) {
+        foreach ($xp->query('w:commentRangeStart|w:commentRangeEnd|w:hyperlink/w:commentRangeStart|w:hyperlink/w:commentRangeEnd|w:bookmarkStart|w:hyperlink/w:bookmarkStart|w:r|w:hyperlink/w:r|w:ins/w:r|w:smartTag/w:r|w:fldSimple/w:r|w:hyperlink/w:fldSimple/w:r', $p) as $r) {
+            if ($r->localName === 'commentRangeStart' || $r->localName === 'commentRangeEnd') {
+                $cid = $this->cmTop[$r->getAttributeNS(W, 'id')] ?? null;
+                if ($cid !== null && $r->localName === 'commentRangeStart') $this->cmOpen[$cid] = true;
+                elseif ($cid !== null) unset($this->cmOpen[$cid]);
+                continue;
+            }
             if ($r->localName === 'bookmarkStart') {
                 $name = $r->getAttributeNS(W, 'name');
                 if (str_starts_with($name, '_Ref')) { $refMark = substr($name, 4); continue; }   // נסתרת גם ב-Word
@@ -591,6 +605,7 @@ final class DocxCtx
                 continue;
             }
             $marks = $this->runMarks($r, $xp);
+            foreach ($this->cmOpen as $cid => $_) $marks[] = ['type' => 'comment', 'attrs' => ['id' => $cid]];
             $rs = (string)$xp->evaluate('string(w:rPr/w:rStyle/@w:val)', $r);
             if ($rs !== '' && isset($this->custom[$rs])) $this->note('styles', 1, $rs);
             $href = $this->runLink($r, $p) ?? $fieldLink;
@@ -620,6 +635,48 @@ final class DocxCtx
             }
         }
         return [para($this->mergeText($inline), $attrs, $type), $num, $breakAfter];
+    }
+
+    /**
+     * הערות: comments.xml (מחבר, תאריך, טקסט) ו-commentsExtended.xml (Word 2013+: תשובה — paraIdParent, נפתר — done).
+     * הערה בלי הורה — שרשור; תשובה — נכנסת לשרשור של ההורה, בסדר שבקובץ.
+     */
+    private function readComments(string $s, $ext): void
+    {
+        $xp = $this->xp(xml_dom($s));
+        $W14 = 'http://schemas.microsoft.com/office/word/2010/wordml';
+        $W15 = 'http://schemas.microsoft.com/office/word/2012/wordml';
+        $exInfo = [];   // paraId => [parent paraId, done]
+        if ($ext) {
+            $ed = xml_dom($ext);
+            foreach ($ed->getElementsByTagNameNS($W15, 'commentEx') as $e) {
+                $exInfo[$e->getAttributeNS($W15, 'paraId')] = [$e->getAttributeNS($W15, 'paraIdParent') ?: null, $e->getAttributeNS($W15, 'done') === '1'];
+            }
+        }
+        $byPara = [];   // paraId של הפסקה האחרונה בהערה => id ב-Word
+        foreach ($xp->query('//w:comment') as $c) {
+            $wid = $c->getAttributeNS(W, 'id');
+            $lines = [];
+            $paraId = '';
+            foreach ($xp->query('w:p', $c) as $p) {
+                $lines[] = $xp->evaluate('string(.)', $p);
+                $paraId = $p->getAttributeNS($W14, 'paraId') ?: $paraId;
+            }
+            $date = (string)$c->getAttributeNS(W, 'date');
+            $item = ['author' => mb_substr(trim((string)$c->getAttributeNS(W, 'author')), 0, 120),
+                'date' => preg_match('/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d/', $date) ? substr($date, 0, 19) . 'Z' : '',
+                'text' => mb_substr(trim(implode("\n", $lines)), 0, 2000)];
+            [$parentPara, $done] = $exInfo[$paraId] ?? [null, false];
+            $parent = $parentPara !== null ? ($byPara[$parentPara] ?? null) : null;
+            if ($paraId !== '') $byPara[$paraId] = $wid;
+            if ($parent !== null && isset($this->cmTop[$parent])) {
+                $this->cmTop[$wid] = $top = $this->cmTop[$parent];
+                $this->comments[$top]['replies'][] = $item;
+                continue;
+            }
+            $this->cmTop[$wid] = 'c' . preg_replace('/\D/', '', $wid);
+            $this->comments[$this->cmTop[$wid]] = $item + ['done' => $done, 'replies' => []];
+        }
     }
 
     /** שדה SEQ (כיתוב) או REF לסימניה _Ref… (הפניה צולבת) → הצומת שלו בלי התוצאה; אחרת null. */
@@ -1035,7 +1092,6 @@ const IMPORT_REPORT = [
     'shapes' => ['צורות, תיבות טקסט ותרשימים', 'לא יובאו'],
     'images' => ['תמונות שלא נטענו', 'הקובץ פגום או בפורמט שאינו נתמך'],
     'math' => ['נוסחאות', 'לא יובאו'],
-    'comments' => ['הערות (Comments)', 'לא יובאו'],
     'nested' => ['טבלה בתוך טבלה', 'הטבלה הפנימית לא יובאה'],
     'tracked' => ['שינויים במעקב', 'התקבלו: מה שנוסף נשאר, מה שנמחק הוסר'],
     'fields' => ['שדות (תוכן עניינים, תאריך, הפניות)', 'יובאו כטקסט קבוע — לא יתעדכנו'],
