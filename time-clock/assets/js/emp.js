@@ -97,6 +97,8 @@ function home(state) {
   main.innerHTML = `
     ${st.memberships.length > 1 ? `<fieldset class="seg" aria-label="מקום עבודה" style="margin-bottom:12px">${st.memberships.map(x =>
       `<label><input type="radio" name="mem" value="${x.id}"${x.id === m.id ? ' checked' : ''}><span>${esc(x.company)}</span></label>`).join('')}</fieldset>` : ''}
+    ${(m.to_approve || []).map(mo => `<button class="summary approve-card" type="button" data-approve="${mo}">
+      <div class="line"><b>📋 ${monthName(mo)} מוכן לאישורך</b></div><div class="line muted">צפייה בשעות ואישור ›</div></button>`).join('')}
     <div class="summary">
       <div class="line"><span class="state">${open ? '🟢 בעבודה מאז ' + time(s.open_since) : '⚪ לא בעבודה'}</span></div>
       <div class="line"><span class="muted">היום</span> <b id="today-min">${hm(s.minutes_today)}</b>${s.standard_today ? ` <span class="muted">מתוך תקן ${hm(s.standard_today)}</span>` : ''}</div>
@@ -109,6 +111,7 @@ function home(state) {
           <div class="l2">${SRC[p.source] ?? ''}</div></div></li>`).join('') : '<li class="empty">עוד אין דיווחים היום.</li>'}</ul>`;
   main.querySelector('.seg')?.addEventListener('change', e => { try { localStorage.setItem('tc-member', e.target.value); } catch { /* */ } home(st); });
   $('#punch').addEventListener('click', punch);
+  for (const b of main.querySelectorAll('[data-approve]')) b.addEventListener('click', () => { shown = b.dataset.approve; location.hash = '#/month'; });
   // משמרת פתוחה — הדקות של היום מתעדכנות כל חצי דקה, בלי לפנות לשרת
   clearInterval(tick);
   if (open) {
@@ -132,7 +135,22 @@ async function punch() {
   }
 }
 
-/* ===== E3 · החודש שלי ===== */
+/* ===== E3 · החודש שלי, E5 · אישור החודש ===== */
+
+const monthName = mo => { const [y, m] = mo.split('-').map(Number); return new Date(Date.UTC(y, m - 1, 15)).toLocaleDateString('he-IL', { month: 'long', year: 'numeric', timeZone: 'UTC' }); };
+
+/** כרטיס מצב האישור בראש החודש: תורי — כפתור אישור; אחרת — השלבים, או "נעול". */
+function periodCard(r) {
+  const p = r.period;
+  if (!p) return '';
+  if (p.status === 'locked') return '<div class="summary"><div class="line"><b>🔒 החודש נעול</b></div><div class="line muted">לתיקון — פונים למנהל.</div></div>';
+  const chain = p.steps.map((k, i) => `<span class="chip ${p.done.includes(i) ? 'ok' : ''}">${p.done.includes(i) ? '✓ ' : ''}${p.labels[k]}</span>`).join('<span aria-hidden="true">←</span>');
+  if (!p.my_turn) return `<div class="summary"><div class="line"><b>החודש באישור</b></div><div class="steps">${chain}</div></div>`;
+  return `<div class="summary approve-card"><div class="line"><b>📋 ${monthName(r.month)} מוכן לאישורך</b></div>
+    <div class="line muted">בודקים את הימים למטה. משהו לא נכון? לוחצים על היום ומבקשים תיקון — לפני האישור.</div>
+    ${r.summary.missing ? `<div class="line" style="color:var(--danger)">⚠️ ${r.summary.missing} דיווחים חסרים</div>` : ''}
+    <button class="btn primary" type="button" id="approve-month">✅ אישור החודש</button></div>`;
+}
 
 let shown = null;   // "YYYY-MM"
 
@@ -148,11 +166,20 @@ async function month(delta = 0) {
   let corr = [];
   try { corr = (await api('emp_corrections', { member_id: m.id })).corrections; } catch { /* בלי — רק בלי הרשימה */ }
   const recent = corr.filter(c => c.status !== 'cancelled').slice(0, 5);
-  main.innerHTML = '<div id="mview">' + monthHtml(r) + (recent.length ? `<h2 class="sec-title">הבקשות שלי</h2><ul class="list">${recent.map(c => `
+  main.innerHTML = '<div id="mview">' + periodCard(r) + monthHtml(r) + (recent.length ? `<h2 class="sec-title">הבקשות שלי</h2><ul class="list">${recent.map(c => `
     <li class="card" tabindex="0" role="button" data-date="${corrDay(c)}"><div class="body"><div class="l1"><span>${corrText(c)}</span><span class="t">${dHe(c.new_at || c.old_at)}</span></div>
       <div class="l2">${c.note ? esc(c.note) : esc(c.reason)}</div></div><span class="chip ${CSTATUS[c.status][0]}">${CSTATUS[c.status][1]}</span></li>`).join('')}</ul>` : '') + '</div>';
   $('#prev').addEventListener('click', () => month(-1));
   $('#next').addEventListener('click', () => month(1));
+  $('#approve-month')?.addEventListener('click', async () => {
+    if (!confirm(`לאשר את ${monthName(r.month)}: ${r.summary.days} ימים, ${hm(r.summary.minutes)} שעות?`)) return;
+    try {
+      await api('emp_approve', { member_id: m.id, month: r.month });
+      toast('החודש אושר. תודה!');
+      m.to_approve = (m.to_approve || []).filter(x => x !== r.month);
+      month();
+    } catch (ex) { toast(ex.message, true); }
+  });
   const open = e => {
     const li = e.target.closest('[data-date]'); if (!li) return;
     const d = r.days.find(x => x.date === li.dataset.date);

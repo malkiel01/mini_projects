@@ -34,7 +34,7 @@ function validDate(string $d, string $label): string {
 
 /** היום בשעון החברה — "מאיזה תאריך" נקבע לפי ישראל, לא לפי UTC. */
 function todayIn(string $tz = 'Asia/Jerusalem'): string {
-    return (new DateTimeImmutable('now', new DateTimeZone($tz)))->format('Y-m-d');
+    return (new DateTimeImmutable(nowIso()))->setTimezone(new DateTimeZone($tz))->format('Y-m-d');
 }
 
 /** טלפון ישראלי: ספרות בלבד, 05X → 9725X. ריק — מותר. */

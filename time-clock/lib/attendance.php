@@ -23,7 +23,7 @@ function empPunch(array $in): array {
 function empMonth(array $in): array {
     $m = sessionMember(intIn($in, 'member_id'));
     $month = str($in, 'month', 7) ?: substr(todayIn($m['tz']), 0, 7);
-    return monthReport((int) $m['id'], $month, $m['tz']);
+    return monthReport((int) $m['id'], $month, $m['tz']) + ['period' => empPeriodInfo((int) $m['company_id'], (int) $m['id'], $month)];
 }
 
 /** המסך "היום" של המנהל: מי בעבודה, מי לא דיווח ביום עבודה, ומי שכח לצאת אתמול. מנהל סניף — הסניף שלו. */
