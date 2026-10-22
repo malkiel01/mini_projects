@@ -87,6 +87,42 @@ function migrate(PDO $pdo): void {
         CREATE INDEX IF NOT EXISTS members_company ON members (company_id, status);
         CREATE INDEX IF NOT EXISTS members_person ON members (person_id, status);
 
+        -- תנאי העסקה בגרסאות: התקף בתאריך = השורה האחרונה עם effective_from עד אותו תאריך.
+        CREATE TABLE IF NOT EXISTS work_terms (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            member_id      INTEGER NOT NULL REFERENCES members(id),
+            effective_from TEXT NOT NULL,
+            days_per_week  INTEGER NOT NULL CHECK (days_per_week IN (5, 6)),
+            daily_minutes  INTEGER NOT NULL,
+            pay_type       TEXT NOT NULL DEFAULT 'monthly' CHECK (pay_type IN ('monthly','hourly')),
+            created_by     INTEGER,
+            created_at     TEXT NOT NULL,
+            UNIQUE (member_id, effective_from)
+        );
+
+        -- קישור הזמנה אישי: חד-פעמי, 7 ימים. נשמר רק ה-hash.
+        CREATE TABLE IF NOT EXISTS invites (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            member_id  INTEGER NOT NULL REFERENCES members(id),
+            token_hash TEXT NOT NULL UNIQUE,
+            created_by INTEGER,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            used_at    TEXT,
+            revoked_at TEXT
+        );
+
+        -- מכשיר של עובד: אסימון לכל חברוּת (כך ביטול בחברה אחת לא נוגע באחרת). נשמר רק ה-hash.
+        CREATE TABLE IF NOT EXISTS devices (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            member_id  INTEGER NOT NULL REFERENCES members(id),
+            token_hash TEXT NOT NULL UNIQUE,
+            user_agent TEXT,
+            created_at TEXT NOT NULL,
+            last_seen  TEXT,
+            revoked_at TEXT
+        );
+
         -- כל שינוי: מי, מה, לפני ואחרי.
         CREATE TABLE IF NOT EXISTS audit (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,

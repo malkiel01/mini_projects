@@ -1,13 +1,16 @@
 'use strict';
 /*
- * שעון נוכחות — ממשק הניהול (שלב 1: פתיחת חברה, פרטים, סניפים וצוות).
- * מסכים לפי ה-hash: #/ (בית) · #/settings. האפיון: docs/v1-screens-data.md, M1 ו-M7.
+ * שעון נוכחות — ממשק הניהול: פתיחת חברה, הגדרות (פרטים, סניפים, צוות), עובדים וכרטיס עובד.
+ * מסכים לפי ה-hash: #/ (בית) · #/settings · #/employees · #/employee/<id>.
+ * האפיון: docs/v1-screens-data.md — M1, M3, M4, M7.
  */
 
 const ROLE = { owner: 'בעלים', manager: 'מנהל', branch_manager: 'מנהל סניף', payroll: 'מנהלת שכר', employee: 'עובד' };
 const $ = (s, el = document) => el.querySelector(s);
 const main = $('#main');
-const state = { me: null, companies: [], companyId: null, data: null, tab: 'details' };
+const state = { me: null, companies: [], companyId: null, data: null, backTo: '#/' };
+const PAY = { monthly: 'חודשי', hourly: 'שעתי' };
+const INVITE = { pending: ['warn', 'ממתין להפעלה'], expired: ['bad', 'הקישור פג'], none: ['', 'אין קישור'] };
 
 // --vvh: הגובה הנראה (בלי המקלדת) — הגיליון מתקצר והכול נגלל
 (() => { const vv = window.visualViewport; if (!vv) return;
@@ -75,14 +78,23 @@ async function route() {
   try {
     if (!state.data || state.data.company.id !== state.companyId) state.data = await api('company_get', { company_id: state.companyId });
   } catch (e) { main.innerHTML = `<p class="error" role="alert">${esc(e.message)}</p>`; return; }
-  if (path === '/settings') renderSettings(); else renderHome();
+  const emp = path.match(/^\/employee\/(\d+)$/);
+  if (path === '/settings') renderSettings();
+  else if (path === '/employees') await renderEmployees();
+  else if (emp) await renderEmployee(+emp[1]);
+  else renderHome();
   main.focus({ preventScroll: true });
 }
 window.addEventListener('hashchange', route);
 
-function setHeader(title, { back = false, settings = false } = {}) {
+function setHeader(title, { back = false, settings = false, tab = null } = {}) {
   $('#title').textContent = title;
   $('#back').hidden = !back;
+  state.backTo = typeof back === 'string' ? back : '#/';
+  $('#tabs').hidden = tab === null;
+  for (const a of $('#tabs').children) {
+    if (a.dataset.tab === tab) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+  }
   $('#settings-btn').hidden = !settings;
   const co = state.companies.find(c => c.id === state.companyId);
   $('#co-name').textContent = co ? co.name + ' · ' + ROLE[co.role] : (state.me?.name ?? '');
@@ -90,7 +102,7 @@ function setHeader(title, { back = false, settings = false } = {}) {
   $('#co-btn').disabled = !co;
 }
 
-$('#back').addEventListener('click', () => { location.hash = '#/'; });
+$('#back').addEventListener('click', () => { location.hash = state.backTo; });
 $('#settings-btn').addEventListener('click', () => { location.hash = '#/settings'; });
 $('#co-btn').addEventListener('click', openCompanyPicker);
 
@@ -174,12 +186,12 @@ function openCompanyPicker() {
 
 function renderHome() {
   const d = state.data, c = d.company;
-  setHeader('היום', { settings: true });
+  setHeader('היום', { settings: true, tab: '/' });
   const missing = [];
   if (!d.sites.length) missing.push('סניפים');
   if (d.team.length < 2) missing.push('צוות');
   main.innerHTML = `
-    <p class="empty">עוד אין עובדים. הוספת עובדים ודיווח נוכחות יגיעו בשלב הבא.</p>
+    <p class="empty">דיווח הנוכחות של היום יופיע כאן בשלב הבא. <a href="#/employees">לעובדים ›</a></p>
     <h2 class="sec-title">החברה</h2>
     <ul class="list"><li><button class="use-row" type="button" id="go-settings">
       <span class="use-ic" aria-hidden="true">⚙️</span>
@@ -238,7 +250,7 @@ function paneSites(pane) {
     <ul class="list">${d.sites.length ? d.sites.map(s => `
       <li class="card">
         <span class="avatar" style="--h:${hue(s.name)}" aria-hidden="true">📍</span>
-        <div class="body"><div class="l1"><span>${esc(s.name)}</span></div><div class="l2">${s.members} בצוות הסניף</div></div>
+        <div class="body"><div class="l1"><span>${esc(s.name)}</span></div><div class="l2">${s.members} אנשים בסניף</div></div>
         ${canEdit ? `<button class="icon-btn" type="button" data-edit="${s.id}" aria-label="עריכת ${esc(s.name)}">✏️</button>` : ''}
       </li>`).join('') : '<li class="empty">עוד אין סניפים.</li>'}</ul>`;
   $('#add-site')?.addEventListener('click', () => siteSheet());
@@ -319,6 +331,207 @@ function teamSheet(t = null) {
   });
 }
 
+/* ===== M3 · עובדים ===== */
+
+const siteName = id => state.data.sites.find(s => s.id === id)?.name ?? '';
+const termsLine = t => t ? `${t.days_per_week} ימים · ${hm(t.daily_minutes)} ליום · ${PAY[t.pay_type]}` : 'בלי תנאים';
+const isoToday = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
+const dateHe = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric', year: 'numeric' }) : '';
+
+function inviteChip(e) {
+  if (e.status === 'left') return '<span class="chip">סיים</span>';
+  if (e.invite === 'active') return '';
+  const [cls, label] = INVITE[e.invite];
+  return `<span class="chip ${cls}">${label}</span>`;
+}
+
+async function renderEmployees() {
+  setHeader('עובדים', { settings: true, tab: '/employees' });
+  const d = await api('emp_list', { company_id: state.companyId });
+  state.emp = d;
+  const active = d.employees.filter(e => e.status === 'active').length;
+  main.innerHTML = `
+    <div class="toolbar">
+      <input type="search" id="emp-q" placeholder="חיפוש לפי שם או מספר" aria-label="חיפוש עובד">
+      ${d.can_edit ? '<button class="btn primary" id="add-emp" type="button"><span aria-hidden="true">+</span> עובד</button>' : ''}
+    </div>
+    ${d.site_only ? `<p class="hint">עובדי ${esc(siteName(d.site_only))} בלבד.</p>` : ''}
+    <ul class="list" id="emp-list"></ul>
+    <p class="hint" style="margin-top:8px">${active} עובדים פעילים.</p>`;
+  const list = $('#emp-list');
+  const draw = q => {
+    const rows = d.employees.filter(e => !q || e.name.includes(q) || (e.employee_no ?? '') === q);
+    list.innerHTML = rows.length ? rows.map(e => `
+      <li class="card" tabindex="0" role="button" data-id="${e.id}">
+        <span class="avatar" style="--h:${hue(e.name)}" aria-hidden="true">${esc(initials(e.name))}</span>
+        <div class="body"><div class="l1"><span>${esc(e.name)}</span>${e.employee_no ? `<span class="t">מס׳ ${esc(e.employee_no)}</span>` : ''}</div>
+          <div class="l2">${e.site_id ? esc(siteName(e.site_id)) + ' · ' : ''}${termsLine(e.terms)}</div></div>
+        ${inviteChip(e)}
+      </li>`).join('')
+      : `<li class="empty">${q ? 'לא נמצא.' : 'עוד אין עובדים. "+ עובד" כדי להוסיף.'}</li>`;
+  };
+  draw('');
+  $('#emp-q').addEventListener('input', e => draw(e.target.value.trim()));
+  const open = e => { const li = e.target.closest('[data-id]'); if (li) location.hash = '#/employee/' + li.dataset.id; };
+  list.addEventListener('click', open);
+  list.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(e); } });
+  $('#add-emp')?.addEventListener('click', addEmployeeSheet);
+}
+
+function siteSelect(selected, disabled = false) {
+  if (!state.data.sites.length) return '';
+  return `<label class="f"><span>סניף</span><select name="site_id"${disabled ? ' disabled' : ''}>
+      <option value="">בלי סניף</option>
+      ${state.data.sites.map(s => `<option value="${s.id}"${s.id === selected ? ' selected' : ''}>${esc(s.name)}</option>`).join('')}
+    </select></label>`;
+}
+
+function termsFields(t) {
+  return `<div class="fields two">
+      <div class="f"><span id="t-days">ימים בשבוע</span>
+        <fieldset class="seg" aria-labelledby="t-days">
+          ${[5, 6].map(n => `<label><input type="radio" name="days_per_week" value="${n}"${t.days_per_week === n ? ' checked' : ''}><span>${n}</span></label>`).join('')}
+        </fieldset></div>
+      <label class="f"><span>שעות תקן ליום</span><input name="daily" dir="ltr" inputmode="numeric" value="${hm(t.daily_minutes)}"></label>
+    </div>
+    <div class="f" style="margin-top:8px"><span id="t-pay">שכר</span>
+      <fieldset class="seg" aria-labelledby="t-pay">
+        ${Object.entries(PAY).map(([k, v]) => `<label><input type="radio" name="pay_type" value="${k}"${t.pay_type === k ? ' checked' : ''}><span>${v}</span></label>`).join('')}
+      </fieldset></div>`;
+}
+
+function readTerms(form) {
+  const minutes = parseHm(form.daily.value);
+  if (!(minutes >= 60 && minutes <= 720)) throw new Error('שעות תקן ליום — למשל 8:24 (בין 1 ל-12 שעות)');
+  return { days_per_week: +form.days_per_week.value, daily_minutes: minutes, pay_type: form.pay_type.value };
+}
+
+function addEmployeeSheet() {
+  const c = state.data.company, siteOnly = state.emp?.site_only ?? null;
+  openSheet('עובד חדש', `
+    <div class="fields">
+      <label class="f wide"><span>שם מלא *</span><input name="name" required maxlength="80" autocomplete="off"></label>
+      <label class="f"><span>טלפון (לוואטסאפ)</span><input name="phone" type="tel" dir="ltr" inputmode="tel" autocomplete="off"></label>
+      <label class="f"><span>מס׳ עובד</span><input name="employee_no" dir="ltr" inputmode="numeric" maxlength="20"></label>
+      ${siteOnly ? '' : siteSelect(null)}
+      <label class="f"><span>תאריך התחלה</span><input name="start_date" type="date" value="${isoToday()}"></label>
+    </div>
+    <h3 class="sec-title">תנאים</h3>
+    ${termsFields({ days_per_week: c.days_per_week, daily_minutes: c.daily_minutes, pay_type: 'monthly' })}
+    <p class="hint" style="margin-top:8px">אחרי השמירה נפתח קישור הפעלה לשליחה לעובד.</p>
+    <p class="error" role="alert" hidden></p>`,
+    async form => {
+      const r = await api('emp_add', { company_id: state.companyId, name: form.name.value, phone: form.phone.value,
+        employee_no: form.employee_no.value, site_id: +(form.site_id?.value || 0), start_date: form.start_date.value, ...readTerms(form) });
+      return () => { inviteSheet(r.employee, r.invite_token, () => { location.hash = '#/employee/' + r.employee.id; }); };
+    });
+}
+
+/** קישור ההפעלה — מוצג פעם אחת: בשרת נשמר רק ה-hash. */
+function inviteSheet(e, token, after) {
+  const url = new URL('e/#t=' + token, location.href).href;
+  const msg = `שלום ${e.name}, זה הקישור שלך לשעון הנוכחות של ${state.data.company.name}:\n${url}\nהקישור בתוקף 7 ימים.`;
+  const wa = 'https://wa.me/' + (e.phone ?? '') + '?text=' + encodeURIComponent(msg);
+  openSheet('קישור הפעלה', `
+    <p>שולחים ל<b>${esc(e.name)}</b> את הקישור. בפתיחה הוא בוחר קוד בן 4 ספרות, והטלפון נשאר מחובר.</p>
+    <input class="one" readonly dir="ltr" value="${esc(url)}" aria-label="הקישור" style="margin-block:12px;inline-size:100%">
+    <div class="row-btns">
+      <a class="btn primary" href="${esc(wa)}" target="_blank" rel="noopener">שליחה בוואטסאפ</a>
+      <button class="btn" type="button" id="copy-link">העתקה</button>
+    </div>
+    <p class="hint" style="margin-top:12px">הקישור חד-פעמי ובתוקף 7 ימים. הוא לא יוצג שוב — אם צריך, יוצרים קישור חדש מכרטיס העובד.</p>`,
+    null, { save: false });
+  $('#copy-link').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(msg); toast('הועתק'); }
+    catch { $('#sheet-body input').select(); toast('סמנו והעתיקו את הקישור', true); }
+  });
+  $('#sheet').addEventListener('close', () => after?.(), { once: true });
+}
+
+/* ===== M4 · כרטיס עובד ===== */
+
+async function renderEmployee(id) {
+  setHeader('כרטיס עובד', { back: '#/employees', tab: '/employees' });
+  const d = await api('emp_get', { company_id: state.companyId, id });
+  const e = d.employee, canEdit = d.can_edit && e.status === 'active';
+  const tab = sessionStorage.getItem('tc-emp-tab') || 'details';
+  const status = e.status === 'left' ? `סיים ב-${dateHe(e.end_date)}`
+    : e.invite === 'active' ? 'מחובר מהטלפון' : INVITE[e.invite][1];
+  main.innerHTML = `
+    <div class="summary">
+      <div class="line"><b>${esc(e.name)}</b>${e.employee_no ? `<span class="muted">· מס׳ ${esc(e.employee_no)}</span>` : ''}</div>
+      <div class="line muted">${e.site_id ? esc(siteName(e.site_id)) + ' · ' : ''}${termsLine(e.terms)}</div>
+      <div class="chips">${inviteChip(e) || '<span class="chip ok">מחובר</span>'}${e.has_pin ? '<span class="chip">יש קוד</span>' : ''}</div>
+    </div>
+    ${canEdit ? `<div class="row-btns" style="margin-bottom:12px"><button class="btn" type="button" id="new-link">🔗 ${e.invite === 'none' || e.invite === 'expired' ? 'קישור הפעלה' : 'קישור חדש'}</button></div>` : ''}
+    <div class="seg-tabs" role="tablist">
+      <button role="tab" data-tab="details" aria-selected="${tab === 'details'}">👤 פרטים</button>
+      <button role="tab" data-tab="terms" aria-selected="${tab === 'terms'}">📄 תנאים <small>${d.terms_history.length}</small></button>
+    </div><div id="pane"></div>
+    <p class="hint">${status}.</p>`;
+  main.querySelector('.seg-tabs').addEventListener('click', ev => {
+    const b = ev.target.closest('[data-tab]'); if (!b) return;
+    try { sessionStorage.setItem('tc-emp-tab', b.dataset.tab); } catch { /* */ }
+    renderEmployee(id);
+  });
+  $('#new-link')?.addEventListener('click', async () => {
+    if (e.invite === 'active' && !confirm(`קישור חדש ינתק את הטלפון הנוכחי של ${e.name}. להמשיך?`)) return;
+    try { const r = await api('emp_invite', { company_id: state.companyId, id }); inviteSheet(r.employee, r.invite_token, () => renderEmployee(id)); }
+    catch (err) { toast(err.message, true); }
+  });
+  (tab === 'terms' ? paneTerms : paneEmpDetails)($('#pane'), d, canEdit);
+}
+
+function paneEmpDetails(pane, d, canEdit) {
+  const e = d.employee, ro = canEdit ? '' : ' disabled', siteOnly = state.emp?.site_only ?? null;
+  pane.innerHTML = `<form class="form" id="emp-form" novalidate>
+      <div class="fields">
+        <label class="f wide"><span>שם מלא *</span><input name="name" required maxlength="80" value="${esc(e.name)}"${ro}></label>
+        <label class="f"><span>טלפון</span><input name="phone" type="tel" dir="ltr" inputmode="tel" value="${esc(e.phone ? '0' + e.phone.slice(3) : '')}"${ro}></label>
+        <label class="f"><span>מייל</span><input name="email" type="email" dir="ltr" inputmode="email" value="${esc(e.email ?? '')}"${ro}></label>
+        <label class="f"><span>מס׳ עובד</span><input name="employee_no" dir="ltr" inputmode="numeric" value="${esc(e.employee_no ?? '')}"${ro}></label>
+        ${siteSelect(e.site_id, !canEdit || siteOnly !== null)}
+        <label class="f"><span>תאריך התחלה</span><input name="start_date" type="date" value="${esc(e.start_date ?? '')}"${ro}></label>
+      </div>
+      <p class="error" role="alert" hidden></p>
+      ${canEdit ? `<div class="actions"><button class="btn danger" type="button" id="end-emp">סיום העסקה</button><span style="flex:1"></span><button class="btn primary" type="submit">שמירה</button></div>` : ''}
+    </form>`;
+  if (!canEdit) return;
+  const form = $('#emp-form');
+  form.addEventListener('submit', async ev => {
+    ev.preventDefault();
+    try {
+      await api('emp_update', { company_id: state.companyId, id: e.id, name: form.name.value, phone: form.phone.value, email: form.email.value,
+        employee_no: form.employee_no.value, site_id: +(form.site_id?.value || 0), start_date: form.start_date.value });
+      toast('נשמר'); renderEmployee(e.id);
+    } catch (err) { showError(form, err.message); }
+  });
+  $('#end-emp').addEventListener('click', () => openSheet('סיום העסקה', `
+      <p>${esc(e.name)} לא יוכל לדווח יותר, והטלפון שלו יתנתק. הנתונים נשמרים.</p>
+      <div class="fields" style="margin-top:12px"><label class="f"><span>תאריך סיום</span><input name="end_date" type="date" value="${isoToday()}"></label></div>
+      <p class="error" role="alert" hidden></p>`,
+    async f => { await api('emp_end', { company_id: state.companyId, id: e.id, end_date: f.end_date.value }); return 'ההעסקה הסתיימה'; }));
+}
+
+function paneTerms(pane, d, canEdit) {
+  const e = d.employee, current = e.terms?.id;
+  pane.innerHTML = `
+    <p class="hint">תנאים לפי תאריך תחולה. שינוי לא מוחק את הקודם — הוא חל מהתאריך שבוחרים.</p>
+    ${canEdit ? '<div class="toolbar"><span></span><button class="btn primary" id="add-terms" type="button"><span aria-hidden="true">+</span> שינוי תנאים</button></div>' : ''}
+    <ul class="list">${d.terms_history.map(t => `
+      <li class="card">
+        <span class="avatar" style="--h:${t.id === current ? 140 : 220}" aria-hidden="true">📄</span>
+        <div class="body"><div class="l1"><span>מ-${dateHe(t.effective_from)}</span></div><div class="l2">${termsLine(t)}</div></div>
+        ${t.id === current ? '<span class="chip ok">בתוקף</span>' : t.effective_from > isoToday() ? '<span class="chip warn">עתידי</span>' : ''}
+      </li>`).join('')}</ul>`;
+  $('#add-terms')?.addEventListener('click', () => openSheet('שינוי תנאים', `
+      <div class="fields"><label class="f"><span>בתוקף מתאריך</span><input name="effective_from" type="date" value="${isoToday()}"></label></div>
+      <div style="margin-top:12px">${termsFields(e.terms ?? { days_per_week: 5, daily_minutes: 504, pay_type: 'monthly' })}</div>
+      <p class="hint" style="margin-top:8px">באותו תאריך כבר יש גרסה? היא מתעדכנת, והקודמת נשמרת ביומן.</p>
+      <p class="error" role="alert" hidden></p>`,
+    async f => { await api('emp_terms_add', { company_id: state.companyId, id: e.id, effective_from: f.effective_from.value, ...readTerms(f) }); return 'נשמר'; }));
+}
+
 /* ===== גיליון ===== */
 
 function openSheet(title, html, onSave, { save = true } = {}) {
@@ -329,11 +542,16 @@ function openSheet(title, html, onSave, { save = true } = {}) {
   $('#sheet-title').textContent = title;
   $('#sheet-body').innerHTML = html;
   $('#sheet-save').hidden = !save;
+  $('#sheet-save').disabled = false;   // השיבוט מעתיק גם "disabled" משמירה שפתחה את הגיליון הזה
   fresh.addEventListener('submit', async e => {
     e.preventDefault();
     if (!onSave) return;
     const btn = $('#sheet-save'); btn.disabled = true;
-    try { const msg = await onSave(fresh); dlg.close(); toast(msg); renderSettings(); }
+    try {
+      const r = await onSave(fresh);
+      dlg.close();
+      if (typeof r === 'function') r(); else { toast(r); route(); }
+    }
     catch (err) { showError(fresh, err.message); }
     finally { btn.disabled = false; }
   });
