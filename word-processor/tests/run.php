@@ -847,6 +847,38 @@ $hs = json_encode(import_html('<p><span style="font-size:13.5pt">חצי</span> <
 check('ייבוא HTML: 13.5 נשאר 13.5 (לא 14), 10.4 → 10.5', str_contains($hs, '"fontSize":"13.5pt"') && str_contains($hs, '"fontSize":"10.5pt"'), $hs);
 $hx = export_ooxml(['type' => 'doc', 'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'א', 'marks' => [['type' => 'textStyle', 'attrs' => ['fontSize' => '13.5pt']]]]]]]], page_normalize([]));
 check('Word: 13.5 → w:sz 27', str_contains(json_encode($hx, JSON_UNESCAPED_UNICODE), 'w:sz w:val=\\"27\\"'));
+section('R10 ג — קישורים לחיצים ב-PDF');
+$lk = fn(string $t, string $href) => ['type' => 'text', 'text' => $t, 'marks' => [['type' => 'link', 'attrs' => ['href' => $href]]]];
+$lpdf = $pdfOf(['type' => 'doc', 'content' => [
+    ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'ראו '], $lk('האתר', 'https://example.com/דף (1)'), ['type' => 'text', 'text' => ' ו-'], $lk('פרק ב', '#פרק_ב'),
+        ['type' => 'text', 'text' => ' ו-'], $lk('חסר', '#אין_כזה'), ['type' => 'text', 'text' => ' ו-'], $lk('רע', 'javascript:alert(1)')]],
+    ['type' => 'pageBreak'],
+    ['type' => 'paragraph', 'content' => [['type' => 'bookmark', 'attrs' => ['name' => 'פרק_ב']], ['type' => 'text', 'text' => 'פרק ב מתחיל כאן']]],
+]]);
+preg_match_all('/<< \/Type \/Annot \/Subtype \/Link \/Rect \[([\d. ]+)\] \/Border \[0 0 0\] (.*?) >>\n/', $lpdf, $an, PREG_SET_ORDER);
+preg_match_all('/^(\d+) 0 obj\n<< \/Type \/Page \//m', $lpdf, $pg);
+$uri = array_values(array_filter($an, fn($m) => str_contains($m[2], '/URI')));
+$dst = array_values(array_filter($an, fn($m) => str_contains($m[2], '/Dest')));
+check('PDF: קישור לאתר — אזור לחיץ עם הכתובת (עברית ורווח בקידוד אחוזים, סוגריים בבריחה)', count($uri) === 1 && str_contains($uri[0][2], '(https://example.com/%D7%93%D7%A3%20\(1\))'), json_encode(array_column($an, 2)));
+check('PDF: קישור לסימניה — יעד בעמוד 2; לסימניה שלא קיימת ול-javascript: — בלי אזור לחיץ', count($an) === 2 && count($dst) === 1
+    && preg_match('/\/Dest \[(\d+) 0 R \/XYZ null [\d.]+ null\]/', $dst[0][2], $dm) && (int)$dm[1] === (int)($pg[1][1] ?? -1), json_encode(array_column($an, 2)) . ' ' . json_encode($pg[1]));
+check('PDF: האזור הלחיץ — על הטקסט (בתוך העמוד, בגובה שורה)', (function () use ($uri) {
+    [$x1, $y1, $x2, $y2] = array_map('floatval', explode(' ', $uri[0][1]));
+    return $x1 > 0 && $x2 < 600 && $x2 - $x1 > 10 && $y2 - $y1 > 8 && $y2 - $y1 < 30 && $y2 > 700;
+})(), $uri[0][1] ?? '');
+check('PDF עם קישורים — מבנה תקין', $structOk($lpdf));
+// תוכן עניינים ורשימת איורים: כל שורה לחיצה, אל הכותרת / הכיתוב שלה (לפי i, כמו בעורך)
+$hd = fn(string $t, int $l = 1) => ['type' => 'heading', 'attrs' => ['level' => $l], 'content' => [['type' => 'text', 'text' => $t]]];
+$tpdf = $pdfOf(['type' => 'doc', 'content' => [
+    ['type' => 'toc', 'attrs' => ['entries' => [['t' => 'א', 'l' => 1, 'p' => '2', 'i' => 0], ['t' => 'ב', 'l' => 2, 'p' => '2', 'i' => 1], ['t' => 'ג', 'l' => 1, 'p' => '3', 'i' => 2]]]],
+    ['type' => 'toc', 'attrs' => ['seq' => 'איור', 'entries' => [['t' => 'איור 1', 'l' => 0, 'p' => '3', 'i' => 0]]]],
+    ['type' => 'pageBreak'], $hd('א'), ['type' => 'table', 'content' => [['type' => 'tableRow', 'content' => [['type' => 'tableCell', 'content' => [$hd('ב בטבלה', 2)]]]]]],
+    ['type' => 'pageBreak'], $hd('ג'), ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'איור '], ['type' => 'seq', 'attrs' => ['label' => 'איור', 'id' => 'x1']], ['type' => 'text', 'text' => ': תמונה']]],
+]]);
+preg_match_all('/\/Dest \[(\d+) 0 R/', $tpdf, $td);
+preg_match_all('/^(\d+) 0 obj\n<< \/Type \/Page \//m', $tpdf, $tp);
+$pageOfObj = array_flip(array_map('intval', $tp[1]));
+check('PDF: שורות תוכן העניינים ורשימת האיורים לחיצות — אל העמוד של הכותרת / הכיתוב (גם כותרת בתוך טבלה)', array_map(fn($o) => $pageOfObj[(int)$o] ?? -1, $td[1]) === [1, 1, 2, 2], json_encode($td[1]) . ' ' . json_encode($tp[1]));
 
 section('כיתובים והפניות צולבות (שלב 4)');
 $cap = fn($label, $id, $text) => ['type' => 'paragraph', 'attrs' => ['pstyle' => 'caption'], 'content' => [
