@@ -63,6 +63,26 @@ function line_val($v): ?array
     return null;
 }
 
+/**
+ * עצירות טאב של פסקה (attrs.tabs, כמו ב-Word): [{pos (נק' מהשוליים, בצד ההתחלה), align: start|center|end|decimal,
+ * leader: none|dot|hyphen|underscore}], ממוינות, בלי כפולות. ערך לא תקין — לא נכנס. כמו tabsOf ב-assets/js/tabs.js.
+ */
+function tabs_val($v): array
+{
+    if (!is_array($v)) return [];
+    $out = [];
+    foreach ($v as $t) {
+        if (!is_array($t) || !is_numeric($t['pos'] ?? null)) continue;
+        $pos = round((float)$t['pos'], 1);
+        if ($pos <= 0 || $pos > 1584) continue;
+        $out[(string)$pos] = ['pos' => $pos,
+            'align' => in_array($t['align'] ?? '', ['center', 'end', 'decimal'], true) ? $t['align'] : 'start',
+            'leader' => in_array($t['leader'] ?? '', ['dot', 'hyphen', 'underscore'], true) ? $t['leader'] : 'none'];
+    }
+    ksort($out, SORT_NUMERIC);
+    return array_slice(array_values($out), 0, 20);
+}
+
 const IMAGE_WRAPS = ['inline', 'square', 'tight', 'topBottom', 'behind', 'front'];
 
 /**
@@ -693,6 +713,12 @@ final class Ooxml
         if (!empty($a['keepLines'])) $ppr .= '<w:keepLines/>';
         if (!empty($a['breakBefore'])) $ppr .= '<w:pageBreakBefore/>';
         if ($num) $ppr .= '<w:numPr><w:ilvl w:val="' . $num['lvl'] . '"/><w:numId w:val="' . $num['num'] . '"/></w:numPr>';
+        // עצירות טאב: בפסקה מימין לשמאל Word הופך את left / right (left = יישור לסוף — כמו בתוכן העניינים שלמטה)
+        if ($tabs = tabs_val($a['tabs'] ?? null)) {
+            $val = fn($al) => match ($al) { 'start' => $rtl ? 'right' : 'left', 'end' => $rtl ? 'left' : 'right', default => $al };
+            $ppr .= '<w:tabs>' . implode('', array_map(fn($t) => '<w:tab w:val="' . $val($t['align']) . '"' . ($t['leader'] !== 'none' ? ' w:leader="' . $t['leader'] . '"' : '')
+                . ' w:pos="' . (int)round($t['pos'] * 20) . '"/>', $tabs)) . '</w:tabs>';
+        }
         if ($rtl) $ppr .= '<w:bidi/>';
         $sp = '';
         if (isset($a['spaceBefore']) && is_numeric($a['spaceBefore'])) $sp .= ' w:before="' . (int)round($a['spaceBefore'] * 20) . '"';

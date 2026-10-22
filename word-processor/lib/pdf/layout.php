@@ -668,7 +668,7 @@ final class PdfLayout
             $extra = $k === 0 ? max(0.0, $fl) : max(0.0, -$fl);
             // הזחה בצד ההתחלה: ימין בפסקה מימין לשמאל. שלישי — איפה השורה מתחילה ביחס לקצה התוכן (לעצירות הטאב)
             return $rtl ? [$l, $width - $ind - $r - $extra, $k === 0 ? $fl : 0.0] : [$ind + $l + $extra, $width - $r, $k === 0 ? $fl : 0.0];
-        }, $yLocal + $before, $base, $lh, $onFloat);
+        }, $yLocal + $before, $base, $lh, $onFloat, tabs_val($a['tabs'] ?? null), (int)($a['indent'] ?? 0) * 36 + max(0.0, -$fl), $rtl);
 
         $count = count($lines);
         $dir = $rtl ? 1 : 0;
@@ -744,10 +744,40 @@ final class PdfLayout
     }
 
     /**
+     * עצירות טאב מותאמות (כמו tabs.js בעורך): העצירה הראשונה אחרי $x (נק' מהשוליים, בצד ההתחלה). יישור לסוף / מרכז /
+     * עשרוני — לפי רוחב הקטע שאחרי הטאב (עד הטאב הבא או סוף הפסקה). עשרוני: המרחק מתחילת הקטע עד הקצה השמאלי של
+     * הנקודה — בפסקה מימין לשמאל המספר נכתב משמאל לימין, אז מה שלפניו בקטע, הנקודה עצמה והספרות שאחריה.
+     * אחרי העצירה האחרונה — כל 36 נק' מהשוליים, בלי מוביל. מחזיר [רוחב הטאב, מוביל].
+     */
+    private function tabStop(array $tabs, float $x, array $atoms, int $at, bool $rtl = true): array
+    {
+        $num = fn($cp) => ($cp >= 0x30 && $cp <= 0x39) || $cp === 0x2E || $cp === 0x2C;
+        foreach ($tabs as $t) {
+            if ($t['pos'] <= $x + 0.5) continue;
+            $seg = 0.0; $dec = null; $dot = null;
+            for ($i = $at + 1; isset($atoms[$i]) && $atoms[$i]['cp'] !== 0x09 && empty($atoms[$i]['br']); $i++) {
+                if ($dot === null && in_array($atoms[$i]['cp'], [0x2E, 0x2C], true)) { $dot = $i; $dec = $seg; }
+                $seg += $atoms[$i]['w'];
+            }
+            if ($dot !== null && $rtl) {
+                // תחילת המספר (הספרות שלפני הנקודה) — מה שלפניה בקטע נמצא מימין למספר
+                for ($s = $dot; $s - 1 > $at && $num($atoms[$s - 1]['cp']); $s--);
+                $dec = 0.0;
+                for ($i = $at + 1; $i < $s; $i++) $dec += $atoms[$i]['w'];
+                for ($i = $dot; isset($atoms[$i]) && $num($atoms[$i]['cp']); $i++) $dec += $atoms[$i]['w'];
+            }
+            $w = $t['pos'] - $x - match ($t['align']) { 'end' => $seg, 'center' => $seg / 2, 'decimal' => $dec ?? $seg, default => 0.0 };
+            return [max(0.0, $w), $t['leader']];
+        }
+        $w = TAB_STOP - fmod($x, TAB_STOP);
+        return [$w < 0.5 ? $w + TAB_STOP : $w, 'none'];
+    }
+
+    /**
      * שורות: מילים (עם הרווחים שאחריהן, "תלויים" בסוף שורה), חלוקה חמדנית לרוחב הזמין בגובה השורה.
      * $range($top, $h) → [שמאל, ימין] בתוך העמודה.
      */
-    private function breakLines(array &$atoms, callable $range, float $top, array $base, array $lh, ?callable $onFloat = null): array
+    private function breakLines(array &$atoms, callable $range, float $top, array $base, array $lh, ?callable $onFloat = null, array $tabs = [], float $tabOrigin = 0.0, bool $rtl = true): array
     {
         // מילים: התווים שאינם רווח, והרווחים שאחריהם ("תלויים" — לא נספרים בסוף שורה)
         $words = [];
@@ -788,6 +818,7 @@ final class PdfLayout
                 $abs = $pos + $line['off'];
                 $tw = TAB_STOP - (fmod(fmod($abs, TAB_STOP) + TAB_STOP, TAB_STOP));
                 if ($tw < 0.5) $tw += TAB_STOP;
+                if ($tabs) [$tw, $atoms[$wd['from']]['leader']] = $this->tabStop($tabs, $abs + $tabOrigin, $atoms, $wd['from'], $rtl);
                 if ($line['from'] !== null && $pos + $tw > $line['r'] - $line['l'] + 0.01) {
                     // טאב שלא נכנס — "תלוי" בסוף השורה (כמו רווח, בלי רוחב), והמילה הבאה מתחילה שורה חדשה (כמו בדפדפן)
                     $atoms[$wd['from']]['w'] = 0.0;
@@ -913,7 +944,7 @@ final class PdfLayout
             $cp = $at['cp'];
             if ($at['lvl'] % 2 && isset(BIDI_MIRROR[mb_chr($cp)])) $cp = mb_ord(BIDI_MIRROR[mb_chr($cp)]);
             // טאב: רק מקום (הרוחב נקבע בשבירת השורות) — הריצה נקטעת, כי ב-PDF כל גליף זז ברוחב שלו
-            if ($cp === 0x09) { $flush(); $xx += $at['w']; continue; }
+            if ($cp === 0x09) { $flush(); $this->leader($c, $at['leader'] ?? 'none', $xx, $at['w'], $baseline, $at['s']); $xx += $at['w']; continue; }
             $ws = !empty($at['ws']);
             if ($run && ($run['f'] !== $at['f'] || $run['s'] != $at['s'] || ($justify && $ws))) $flush();
             if (!$run) {
@@ -927,6 +958,20 @@ final class PdfLayout
             if ($justify && $ws) { $flush(); $xx += $extra; }
         }
         $flush();
+    }
+
+    /** מוביל של טאב (כמו ב-Word): נקודות, מקפים או קו, לאורך הטאב — בצבע הטקסט. */
+    private function leader(PdfCanvas $c, string $kind, float $x, float $w, float $baseline, array $s): void
+    {
+        if ($kind === 'none' || $w < 4) return;
+        $x0 = $x + 1.5; $x1 = $x + $w - 1.5;
+        if ($kind === 'underscore') { $c->line($x0, $baseline + 1, $x1, $baseline + 1, $s['color'], 0.6); return; }
+        $step = $kind === 'dot' ? 3.0 : 4.5;
+        // מיושר לרשת קבועה (כמו ב-Word) — הנקודות של כמה שורות זו מתחת לזו
+        for ($xx = ceil($x0 / $step) * $step; $xx + 1 <= $x1; $xx += $step) {
+            if ($kind === 'dot') $c->rect($xx, $baseline - 0.9, 0.9, 0.9, $s['color']);
+            else $c->line($xx, $baseline - $s['size'] * 0.28, $xx + 2.5, $baseline - $s['size'] * 0.28, $s['color'], 0.6);
+        }
     }
 
     /** הסימן של פריט רשימה, בצד ההתחלה, צמוד לתחילת השורה. */

@@ -968,6 +968,51 @@ check('גרסת מבנה 5: כותב בגרסה 4 על מסמך עם מעבר ט
     throws(fn() => doc_save($r5, ['type' => 'doc', 'attrs' => ['schema' => 4], 'content' => [$cbDoc['content'][0]]], null, 'u2', 'ישן'), 'schema_newer')
     && (int)doc_save($r5, $cbDoc + ['attrs' => ['schema' => 5]], null, 'u1', 'דנה')['version'] === (int)$r5['version'] + 1);
 
+section('עצירות טאב ומובילים (R10 ב)');
+check('tabs_val: ממוין, בלי כפולות ובלי ערכים לא תקינים; יישור / מוביל לא מוכרים — ברירת מחדל',
+    tabs_val([['pos' => 300, 'align' => 'end', 'leader' => 'dot'], ['pos' => 100, 'align' => 'x', 'leader' => 'y'], ['pos' => 100], ['pos' => -5], ['pos' => 'a'], 'x'])
+    === [['pos' => 100.0, 'align' => 'start', 'leader' => 'none'], ['pos' => 300.0, 'align' => 'end', 'leader' => 'dot']]);
+$tabDoc = ['type' => 'doc', 'content' => [
+    ['type' => 'paragraph', 'attrs' => ['tabs' => [['pos' => 100, 'align' => 'start'], ['pos' => 300, 'align' => 'end', 'leader' => 'dot']]], 'content' => [['type' => 'text', 'text' => "פרק\tראשון\t12"]]],
+    ['type' => 'paragraph', 'attrs' => ['dir' => 'ltr', 'tabs' => [['pos' => 72, 'align' => 'start'], ['pos' => 144, 'align' => 'end', 'leader' => 'hyphen'], ['pos' => 200, 'align' => 'decimal', 'leader' => 'underscore']]],
+        'content' => [['type' => 'text', 'text' => "a\tb\tc\t3.5"]]],
+]];
+file_put_contents("$tmp/tabs.docx", export_docx($tabDoc, page_normalize([]), 'טאבים'));
+$zip->open("$tmp/tabs.docx");
+$tabMain = (string)$zip->getFromName('word/document.xml');
+$zip->close();
+check('Word: עצירות בפסקה — מימין לשמאל left / right הפוכים (לתחילה = right), משמאל לימין כרגיל; לפני w:bidi',
+    str_contains($tabMain, '<w:tabs><w:tab w:val="right" w:pos="2000"/><w:tab w:val="left" w:leader="dot" w:pos="6000"/></w:tabs><w:bidi/>')
+    && str_contains($tabMain, '<w:tabs><w:tab w:val="left" w:pos="1440"/><w:tab w:val="right" w:leader="hyphen" w:pos="2880"/><w:tab w:val="decimal" w:leader="underscore" w:pos="4000"/></w:tabs>'),
+    implode(' ', array_slice(explode('<w:tabs>', $tabMain), 1)));
+$tabBack = import_docx(file_get_contents("$tmp/tabs.docx"), 'tabs');
+check('Word הלוך וחזור: אותן עצירות, יישור ומובילים (בשני הכיוונים)', array_map(fn($p) => $p['attrs']['tabs'] ?? null, $tabBack['json']['content'])
+    === array_map(fn($p) => tabs_val($p['attrs']['tabs']), $tabDoc['content']), json_encode(array_map(fn($p) => $p['attrs']['tabs'] ?? null, $tabBack['json']['content'])));
+check('Word: start / end / clear / bar — start ו-end לפי הכיוון הלוגי, clear ו-bar לא נכנסים', (function () {
+    $xml = '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:tabs><w:tab w:val="clear" w:pos="500"/><w:tab w:val="bar" w:pos="700"/>'
+        . '<w:tab w:val="end" w:leader="middleDot" w:pos="2000"/><w:tab w:val="start" w:pos="1000"/></w:tabs><w:bidi/></w:pPr><w:r><w:t>א</w:t></w:r></w:p></w:body></w:document>';
+    $z = new ZipArchive(); $f = sys_get_temp_dir() . '/wp-tabs-' . getmypid() . '.docx';
+    copy($GLOBALS['tmp'] . '/tabs.docx', $f); $z->open($f); $z->addFromString('word/document.xml', $xml); $z->close();
+    $t = import_docx(file_get_contents($f), 'x')['json']['content'][0]['attrs']['tabs'] ?? null;
+    unlink($f);
+    return $t === [['pos' => 50.0, 'align' => 'start', 'leader' => 'none'], ['pos' => 100.0, 'align' => 'end', 'leader' => 'dot']];
+})());
+check('גרסת מבנה: פסקה עם עצירות טאב צריכה 6', doc_schema_need($tabDoc) === 6 && doc_schema_need(['type' => 'doc', 'content' => [['type' => 'paragraph', 'attrs' => ['tabs' => null]]]]) === 0);
+$r6 = doc_find(doc_new('a:99', 'גרסה 6 — טאבים', $tabDoc, null, 'u1', 'דנה'), 'a:99');
+check('גרסת מבנה 6: כותב בגרסה 5 על מסמך עם עצירות → schema_newer', throws(fn() => doc_save($r6, ['type' => 'doc', 'attrs' => ['schema' => 5], 'content' => []], null, 'u2', 'ישן'), 'schema_newer'));
+if (trim((string)shell_exec('command -v pdftotext'))) {
+    file_put_contents("$tmp/tabs.pdf", export_pdf($tabDoc, page_normalize([]), 'טאבים'));
+    $x = (string)shell_exec('pdftotext -bbox ' . escapeshellarg("$tmp/tabs.pdf") . ' - 2>&1');
+    preg_match_all('#xMin="([\d.]+)" yMin="[\d.]+" xMax="([\d.]+)" yMax="[\d.]+">([^<]*)<#', $x, $tw, PREG_SET_ORDER);
+    $box = []; foreach ($tw as $m) $box[$m[3]] ??= [(float)$m[1], (float)$m[2]];
+    $Rm = 595.28 - 25 * PT_PER_MM; $Lm = 25 * PT_PER_MM;
+    $first = $box['ןושאר'] ?? $box['ראשון'] ?? null;
+    check('PDF: לתחילה ב-100 מימין, לסוף ב-300 (המספר מסתיים בעצירה), משמאל לימין — מהשוליים השמאליים',
+        $first && abs($first[1] - ($Rm - 100)) < 1 && isset($box['12']) && abs($box['12'][0] - ($Rm - 300)) < 1
+        && isset($box['b']) && abs($box['b'][0] - ($Lm + 72)) < 1 && isset($box['c']) && abs($box['c'][1] - ($Lm + 144)) < 1 && isset($box['3.5']) && $box['3.5'][0] < $Lm + 200 && $box['3.5'][1] > $Lm + 200,
+        json_encode(array_intersect_key($box, array_flip(['ןושאר', 'ראשון', '12', 'b', '3.5', 'c']))));
+}
+
 section('כיתובים והפניות צולבות (שלב 4)');
 $cap = fn($label, $id, $text) => ['type' => 'paragraph', 'attrs' => ['pstyle' => 'caption'], 'content' => [
     ['type' => 'text', 'text' => "$label "], ['type' => 'seq', 'attrs' => ['label' => $label, 'id' => $id]], ['type' => 'text', 'text' => ": $text"]]];
