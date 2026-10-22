@@ -365,7 +365,46 @@ function kidSum() {
         el('div', { class: 'tiles' }, tiles.map(([ic, t, fn]) => el('button', { type: 'button', class: 'tile', onclick: fn },
             [el('span', { class: 'tile-ic', text: ic }), t]))),
         simulatorGroup(),
+        selftestGroup(),
     ].filter(Boolean);
+}
+
+/* ── בדיקת הגנה יזומה (שלב 12 ג) — המכשיר בודק את עצמו; הפסיקה בשרת (lib/selftest.php) ── */
+
+const ST_ICON = { fail: '❌', warn: '🟡', ok: '✅' };
+const ST_AREA = { device: '📱', web: '🌐', apps: '🧩', settings: '⚙️' };
+
+function selftestGroup() {
+    const kid = K.id;
+    const out = el('div', { role: 'status' });
+    let timer = 0;
+    const show = devs => {
+        if (K.id !== kid) return;
+        out.replaceChildren(...devs.map(d => {
+            const head = d.at
+                ? `${d.device} — ${d.fail ? `${d.fail} נכשלו` : 'לא נמצאו כשלים'}${d.warn ? ` · ${d.warn} לתשומת לב` : ''} · ${d.ok} תקינים (${whenStr(d.at)})`
+                : `${d.device} — עוד לא נבדק`;
+            return el('div', {}, [
+                el('div', { class: `banner ${d.fail ? 'warn' : d.at ? 'ok' : ''}` }, [el('span', { text: d.fail ? '❌' : d.at ? '🛡️' : '·' }),
+                    el('div', {}, [el('b', { text: head }),
+                        d.waiting ? el('div', { class: 'hint', text: '⏳ ממתין למכשיר — הבדיקה רצה בסנכרון הבא (כשמגדלור פתוח או ברקע)' }) : null])]),
+                d.checks.length ? el('ul', { class: 'rows' }, d.checks.map(c => el('li', {}, [
+                    el('span', { text: `${ST_ICON[c.state]} ${ST_AREA[c.area] || ''}` }),
+                    el('div', { class: 'nm' }, [el('b', { text: c.label }), c.detail ? el('small', { text: c.detail, title: c.detail }) : null])]))) : null,
+            ]);
+        }));
+        // ממתין — מתעדכן לבד עוד כמה דקות.
+        clearTimeout(timer);
+        if (devs.some(d => d.waiting) && out.isConnected) timer = setTimeout(load, 8000);
+    };
+    const load = async () => { try { show((await call('selftest', { id: kid })).devices); } catch (e) { toast(e.message, true); } };
+    const start = async () => {
+        try { await call('selftest_request', { id: kid }); toast('נשלח למכשיר'); load(); } catch (e) { toast(e.message, true); }
+    };
+    load();
+    return group('🛡️ בדיקת הגנה', 'המכשיר בודק את עצמו — בלי לגלוש לאתרים ובלי לפתוח אפליקציות', [
+        el('div', { class: 'hint', text: 'נבדק: ההכרעה של המכשיר על אתר חסום, אתר מותר ואתר שאינו ברשימה (מול השרת); אפליקציות חסומות — מושעות או נחסמות בפועל; הגדרות המכשיר — נקראות מהמערכת; "בעל מכשיר", נגישות והגנה מהסרה.' }),
+        el('button', { type: 'button', class: 'btn primary', text: 'הרצת בדיקה', onclick: start }), out]);
 }
 
 /**
