@@ -311,8 +311,8 @@ function youTubeVideoVerdicts(array $set, array $ids): array {
 /**
  * חסימה לפי *מה* נטען, ולא לפי לאן פונים.
  *
- * נבדק רק אחרי שכללי הכתובות לא נתנו היתר מפורש — כך "לחסום ווידאו
- * בכל מקום חוץ מהאתר הזה" ניתן להבעה בלי חריג מיוחד.
+ * נבדק לפני היתר מפורש של כתובת — "לחסום תמיד, גם באתר שמותר", כמו שאפליקציית ההורה אומרת. רק איסור
+ * מפורש קודם לו.
  */
 function matchContentType(array $policy, string $url, string $declared = ''): array {
     $blocked = array_filter(array_map('trim',
@@ -489,6 +489,15 @@ function evaluate(array $user, array $policy, array $set, DateTimeImmutable $now
         return decision(false, 'rule_deny',
             'הכתובת הזו נחסמה עבורך' . ($u['label'] ? " ({$u['label']})" : ''));
     }
+
+    /*
+     * סוג תוכן — אחרי איסור מפורש ולפני היתר מפורש (סקירה, 2026-10-20 — שלב 10). אפליקציית ההורה מבטיחה
+     * "לחסום תמיד — גם באתר שמותר", אבל הבדיקה רצה אחרי rule_allow ויוטיוב: קובץ ווידאו באתר שהותר עבר.
+     * דף יוטיוב אינו "ווידאו" כאן (אין לו סיומת ולא MIME מוצהר בניווט) — הוא נשלט בהגדרות יוטיוב.
+     */
+    $d = matchContentType($policy, $url['full'], (string) ($ctx['content_type'] ?? ''));
+    if (!$d['allow']) return $d;
+
     if ($u['verdict'] === 'allow') return decision(true, 'rule_allow');
 
     // 6. פלטפורמה
@@ -500,10 +509,6 @@ function evaluate(array $user, array $policy, array $set, DateTimeImmutable $now
                                   $set['owner_of'] ?? null);
         }
     }
-
-    // 7. סוג תוכן
-    $d = matchContentType($policy, $url['full'], (string) ($ctx['content_type'] ?? ''));
-    if (!$d['allow']) return $d;
 
     // 8–9. קטגוריות
     $c = matchCategories($url['host'], $set['domain_map'] ?? [], $set['categories'] ?? []);
