@@ -9,7 +9,7 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/employees.php';
+require_once __DIR__ . '/hours.php';
 
 const SESSION_COOKIE = 'tc_session';
 const SESSION_DAYS = 180;
@@ -117,6 +117,6 @@ function empState(): array {
     return ['memberships' => array_map(function ($m) {
         $t = termsAt((int) $m['id'], todayIn($m['tz']));
         return ['id' => (int) $m['id'], 'name' => $m['name'], 'company' => $m['company_name'], 'site' => $m['site_name'],
-                'employee_no' => $m['employee_no'], 'terms' => termsOut($t)];
+                'employee_no' => $m['employee_no'], 'terms' => termsOut($t), 'status' => nowStatus((int) $m['id'], $m['tz'])];
     }, $members)];
 }

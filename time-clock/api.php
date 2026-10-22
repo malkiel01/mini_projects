@@ -12,7 +12,7 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/lib/session.php';
+require_once __DIR__ . '/lib/attendance.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -48,6 +48,8 @@ try {
         case 'emp_invite_info': ok(empInviteInfo($in));
         case 'emp_activate':    ok(empActivateAndLogin($in));
         case 'emp_state':       ok(empState());
+        case 'emp_punch':       ok(empPunch($in));
+        case 'emp_month':       ok(empMonth($in));
     }
 
     $person = currentPerson();
@@ -70,6 +72,8 @@ try {
         case 'emp_terms_add':  ok(empTermsAdd($person, $in));
         case 'emp_invite':     ok(empInvite($person, $in));
         case 'emp_end':        ok(empEnd($person, $in));
+        case 'today_board':    ok(todayBoard($person, $in));
+        case 'emp_month_m':    ok(empMonthManager($person, $in));
         default:               fail('פעולה לא מוכרת', 404);
     }
 } catch (AppError $e) {

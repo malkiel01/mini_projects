@@ -123,6 +123,19 @@ function migrate(PDO $pdo): void {
             revoked_at TEXT
         );
 
+        -- דיווח נוכחות. לא משתנה ולא נמחק אף פעם: תיקון (שלב 5) הוא רשומה נפרדת.
+        CREATE TABLE IF NOT EXISTS punches (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            member_id  INTEGER NOT NULL REFERENCES members(id),
+            kind       TEXT NOT NULL CHECK (kind IN ('in','out')),
+            at_utc     TEXT NOT NULL,
+            source     TEXT NOT NULL CHECK (source IN ('phone','station','manager')),
+            station_id INTEGER,
+            device_id  INTEGER,
+            created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS punches_member ON punches (member_id, at_utc);
+
         -- כל שינוי: מי, מה, לפני ואחרי.
         CREATE TABLE IF NOT EXISTS audit (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,

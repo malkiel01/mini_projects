@@ -8,11 +8,14 @@
 <title>שעון נוכחות</title>
 <link rel="icon" href="../assets/icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="../assets/css/app.css">
+<script src="../assets/js/month.js" defer></script>
 <script src="../assets/js/emp.js" defer></script>
 </head>
 <body>
 <header class="top">
+  <button class="icon-btn" id="back" aria-label="חזרה" hidden>→</button>
   <div class="titles"><h1>שעון נוכחות</h1><div class="sub" id="sub"></div></div>
+  <button class="icon-btn" id="month-btn" aria-label="החודש שלי" hidden>📅</button>
 </header>
 <main id="main" tabindex="-1"><p class="empty">טוען…</p></main>
 <div class="toast" role="status" hidden></div>
