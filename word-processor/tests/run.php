@@ -858,6 +858,25 @@ check('Word הלוך וחזור: שני שרשורים, התשובה, נפתר �
 check('PDF וטקסט: ההערות לא מופיעות ולא מפריעות', export_text($cmDoc) === "לפני מסומן וגם\nהמשך ושני סוף" && str_starts_with($pdfOf($cmDoc), '%PDF'));
 
 // ======================================================================
+section('מעבר מקטע בתוך רשימה (ביקורת 04, R01)');
+$nsDoc = ['type' => 'doc', 'content' => [['type' => 'bulletList', 'content' => [['type' => 'listItem', 'content' => [
+    ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'לפני']]],
+    ['type' => 'sectionBreak', 'attrs' => ['page' => ['orientation' => 'landscape']]],
+    ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'אחרי']]]]]]],
+    ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'סוף']]]]];
+$nsTop = sections_top($nsDoc);
+check('sections_top: המעבר יוצא מהרשימה, מיד אחריה; שום טקסט לא נעלם', array_column($nsTop['content'], 'type') === ['bulletList', 'sectionBreak', 'paragraph']
+    && preg_split('/\s+/u', trim(export_text($nsTop))) === preg_split('/\s+/u', trim(export_text($nsDoc))) && !str_contains(json_encode($nsTop['content'][0]), 'sectionBreak'), json_encode(array_column($nsTop['content'], 'type')));
+$nsPdf = $pdfOf($nsDoc);
+check('PDF: מעבר מקטע מתוך רשימה — עמוד שני לרוחב', preg_match_all('#/MediaBox \[0 0 ([\d.]+) ([\d.]+)\]#', $nsPdf, $mb) === 2 && (float)$mb[1][1] > (float)$mb[2][1], json_encode($mb[1] ?? []));
+$nsDocx = export_docx($nsDoc, page_normalize([]), 'מקטע');
+file_put_contents("$tmp/ns.docx", $nsDocx);
+$zip->open("$tmp/ns.docx");
+$nsMain = (string)$zip->getFromName('word/document.xml');
+$zip->close();
+check('Word: הגדרות המקטע בפסקה מחוץ לרשימה (בלי numPr)', preg_match('#<w:p><w:pPr><w:bidi/><w:sectPr#', $nsMain) === 1 && substr_count($nsMain, '<w:sectPr') === 2, substr_count($nsMain, '<w:sectPr'));
+
+// ======================================================================
 section('הגדרות עמוד');
 $p = page_normalize(['size' => 'Legal', 'orientation' => 'landscape', 'margins' => ['top' => 500, 'left' => 'x'], 'font' => ['family' => 'David<script>', 'size' => 200],
     'styles' => ['h1' => ['size' => 18, 'color' => 'red', 'underline' => true]], 'numbering' => ['format' => 'bad', 'align' => 'left']]);

@@ -392,37 +392,64 @@ final class PdfLayout
         $title = toc_title($a);
         $titleH = $S * 1.25 * 1.5;
         $lineH = $S * 1.6;
-        $h = $titleH + 6 + count($rows) * $lineH + 6;
         $fam = $this->page['font']['family'];
-        return new FlowItem($h, function (PdfCanvas $c, float $x, float $y) use ($rows, $entries, $S, $titleH, $lineH, $width, $indent, $fam, $title) {
-            $st = fn(float $size, bool $bold, array $rgb = [0, 0, 0]) => ['family' => $fam, 'size' => $size, 'bold' => $bold, 'italic' => false, 'u' => false,
-                'strike' => false, 'color' => $rgb, 'bg' => null, 'va' => null, 'ls' => 0.0];
+        $st = fn(float $size, bool $bold, array $rgb = [0, 0, 0]) => ['family' => $fam, 'size' => $size, 'bold' => $bold, 'italic' => false, 'u' => false,
+            'strike' => false, 'color' => $rgb, 'bg' => null, 'va' => null, 'ls' => 0.0];
+        // כל רשומה — שורה אחת או כמה: טקסט ארוך נשבר (כמו בעורך, ולא נחתך); מספר העמוד והנקודות — בשורה האחרונה
+        $plan = [];
+        $lines = 0;
+        foreach ($rows as $e) {
+            $lvl = max(0, min(9, (int)($e['l'] ?? 1)));
+            $s = $st($S, $lvl === 1, $entries ? [0, 0, 0] : [136, 136, 136]);
+            $pg = (string)($e['p'] ?? '');
+            $pw = $pg === '' ? 0.0 : $this->textWidth($pg, $s);
+            $start = $width - min(3, max(0, $lvl - 1)) * 14;   // הזחה לפי הרמה (14 נק' לרמה, עד 42) — מהקצה הימני
+            $room = $start - $indent - ($pw + 4 + 12 + 4);      // מקום לטקסט: מספר העמוד, 4 + נקודות 12 לפחות + 4
+            $wrapped = $this->wrapText(trim((string)($e['t'] ?? '')), $s, max(10.0, $room));
+            $plan[] = [$wrapped, $s, $pg, $pw, $start, $room];
+            $lines += count($wrapped);
+        }
+        $h = $titleH + 6 + $lines * $lineH + 6;
+        return new FlowItem($h, function (PdfCanvas $c, float $x, float $y) use ($plan, $S, $titleH, $lineH, $width, $indent, $title, $st) {
             $left = $x + $indent;
             $right = $x + $width;
             $this->drawTextCentered($c, $title, $st($S * 1.25, true), $left, $right, $y + $titleH / 2 + 0.32 * $S * 1.25, 'main', 'right');
             $yy = $y + $titleH + 6;
-            foreach ($rows as $e) {
-                $lvl = max(0, min(9, (int)($e['l'] ?? 1)));
-                $s = $st($S, $lvl === 1, $entries ? [0, 0, 0] : [136, 136, 136]);
-                $base = $yy + $lineH / 2 + 0.32 * $S;
-                $pg = (string)($e['p'] ?? '');
-                $pw = $pg === '' ? 0.0 : $this->textWidth($pg, $s);
-                $start = $right - min(3, max(0, $lvl - 1)) * 14;   // הזחה לפי הרמה (14 נק' לרמה, עד 42)
-                $room = $start - ($left + $pw + 4 + 12 + 4);        // מקום לטקסט: אחרי המספר, 4 + נקודות 12 לפחות + 4
-                $text = trim((string)($e['t'] ?? ''));
-                if ($this->textWidth($text, $s) > $room) {
-                    while (mb_strlen($text) > 1 && $this->textWidth($text . '…', $s) > $room) $text = mb_substr($text, 0, -1);
-                    $text .= '…';
+            foreach ($plan as [$wrapped, $s, $pg, $pw, $start, $room]) {
+                $start += $x;
+                foreach ($wrapped as $k => $line) {
+                    $base = $yy + $lineH / 2 + 0.32 * $S;
+                    $this->drawTextCentered($c, $line, $s, $left, $start, $base, 'main', 'right');
+                    if ($k === count($wrapped) - 1 && $pg !== '') {
+                        // הטקסט תופס את רוחבו — או את כל המקום, כשנשבר (כמו פריט flex שהתכווץ)
+                        $tw = count($wrapped) > 1 ? $room : min($room, $this->textWidth($line, $s));
+                        $this->drawTextCentered($c, $pg, $s, $left, $right, $base, 'main', 'left');
+                        $c->dashLine($left + $pw + 4, $base + 1, $start - $tw - 4, [120, 120, 120], 0.6, [0.6, 2.4]);
+                    }
+                    $yy += $lineH;
                 }
-                $tw = $this->textWidth($text, $s);
-                $this->drawTextCentered($c, $text, $s, $left, $start, $base, 'main', 'right');
-                if ($pg !== '') {
-                    $this->drawTextCentered($c, $pg, $s, $left, $right, $base, 'main', 'left');
-                    $c->dashLine($left + $pw + 4, $base + 1, $start - $tw - 4, [120, 120, 120], 0.6, [0.6, 2.4]);
-                }
-                $yy += $lineH;
             }
         });
+    }
+
+    /** שבירת טקסט לשורות ברוחב $room (מילה אחרי מילה; מילה ארוכה מהשורה — נשברת באמצע, כמו overflow-wrap: anywhere). */
+    private function wrapText(string $text, array $st, float $room): array
+    {
+        $lines = [];
+        $cur = '';
+        foreach (preg_split('/ +/u', $text) as $word) {
+            $try = $cur === '' ? $word : $cur . ' ' . $word;
+            if ($cur !== '' && $this->textWidth($try, $st) > $room) { $lines[] = $cur; $try = $word; }
+            while (mb_strlen($try) > 1 && $this->textWidth($try, $st) > $room) {
+                $n = mb_strlen($try) - 1;
+                while ($n > 1 && $this->textWidth(mb_substr($try, 0, $n), $st) > $room) $n--;
+                $lines[] = mb_substr($try, 0, $n);
+                $try = mb_substr($try, $n);
+            }
+            $cur = $try;
+        }
+        $lines[] = $cur;
+        return $lines;
     }
 
     /** רוחב טקסט בשורה אחת (נק'), באותו גופן שבו drawTextCentered מצייר. */
@@ -563,7 +590,8 @@ final class PdfLayout
         $dir = $rtl ? 1 : 0;
         // שבירת עמודים (כמו בעורך): "שמור שורות יחד" — רק כשכל הפסקה נכנסת בעמוד
         $keepNext = !empty($a['keepNext']);
-        $together = !empty($a['keepLines']) && $before + array_sum(array_column($lines, 'h')) + $after <= $this->chH + 0.5;
+        // כותרת — תמיד שורות יחד (בעורך כותרת היא יחידה אחת שלא נשברת בין עמודים — pagination.js, lines())
+        $together = (!empty($a['keepLines']) || ($n['type'] ?? '') === 'heading') && $before + array_sum(array_column($lines, 'h')) + $after <= $this->chH + 0.5;
         foreach ($lines as $k => $ln) {
             $first = $k === 0;
             $last = $k === $count - 1;

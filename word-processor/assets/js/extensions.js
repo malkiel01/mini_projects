@@ -327,8 +327,38 @@ export const SectionBreak = Node.create({
     },
     addCommands() {
         return {
-            insertSectionBreak: page => ({ chain }) => chain().insertContent({ type: 'sectionBreak', attrs: { page: page || null } }).createParagraphNear().run(),
+            // תמיד ברמה העליונה של המסמך (כמו ב-Word — מקטע אינו בתוך רשימה או טבלה): מתוך רשימה / טבלה — אחרי כולה
+            insertSectionBreak: page => ({ state, chain }) => {
+                const $f = state.selection.$from;
+                if ($f.depth <= 1) return chain().insertContent({ type: 'sectionBreak', attrs: { page: page || null } }).createParagraphNear().run();
+                const at = $f.after(1);
+                return chain().insertContentAt(at, [{ type: 'sectionBreak', attrs: { page: page || null } }, { type: 'paragraph' }])
+                    .setTextSelection(at + 2).run();
+            },
         };
+    },
+    addProseMirrorPlugins() {
+        // מעבר מקטע שנמצא בתוך רשימה / טבלה (מסמך מגרסה קודמת, הדבקה) — עובר החוצה, מיד אחרי הבלוק העליון שהכיל אותו
+        const lift = state => {
+            const nested = [];
+            state.doc.forEach((top, pos) => {
+                if (top.type.name === 'sectionBreak' || top.isTextblock) return;
+                top.descendants((n, p) => { if (n.type.name === 'sectionBreak') nested.push({ at: pos + 1 + p, node: n, after: pos + top.nodeSize }); });
+            });
+            if (!nested.length) return null;
+            const tr = state.tr.setMeta('addToHistory', false);
+            for (const x of [...nested].reverse()) {
+                tr.insert(tr.mapping.map(x.after), x.node);
+                tr.delete(tr.mapping.map(x.at), tr.mapping.map(x.at + x.node.nodeSize));
+            }
+            return tr;
+        };
+        return [new Plugin({
+            key: new PluginKey('wpSectionTop'),
+            appendTransaction: (trs, _, state) => (trs.some(t => t.docChanged) ? lift(state) : null),
+            // מסמך שנטען כך (בלי עסקה) — מתוקן מיד אחרי הפתיחה
+            view: v => { queueMicrotask(() => { const tr = !v.isDestroyed && lift(v.state); if (tr) v.dispatch(tr); }); return {}; },
+        })];
     },
 });
 
