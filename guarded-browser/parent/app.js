@@ -1194,9 +1194,28 @@ function kidApps() {
             try { AP = { ...(await call('apps_new', { id: K.id, new_apps: v })).apps, kid: K.id }; toast('נשמר — המכשיר יתעדכן תוך דקה'); }
             catch (e) { toast(e.message, true); } renderKid();
         } });
+    // כרום מנוהל (lib/chrome.php): הכללים של הילד גם בתוך Google Chrome — רק ב"הקמה מלאה".
+    const CH = AP.chrome || { managed: false, devices: [] };
+    const CHR = { verified: '✅ נאכף בכרום', fail: '⚠️ ההחלה נכשלה — מגדלור ינסה שוב', no_owner: '⚠️ דורש הקמה מלאה',
+                  not_installed: '· כרום לא מותקן', '': '⏳ עוד לא דווח' };
+    const chrome = group('🌐 כרום מנוהל', '', [
+        seg('chrome_managed', [['0', 'כבוי'], ['1', 'מנוהל']], CH.managed ? '1' : '0', { cols: 2, onchange: async v => {
+            try { AP = { ...(await call('chrome_managed', { id: K.id, on: Number(v) })).apps, kid: K.id }; toast('נשמר — המכשיר יתעדכן תוך דקה'); }
+            catch (e) { toast(e.message, true); } renderKid();
+        } }),
+        el('p', { class: 'hint', text: CH.managed
+            ? 'בכרום: רק האתרים שמותרים לפי ההגדרות, חיפוש בטוח בגוגל, סינון תוכן למבוגרים, ובלי גלישה בסתר. ' +
+              (CH.youtube ? 'יוטיוב פתוח (במצב מוגבל), כי ביוטיוב מוגדר "הכול מותר". ' : 'יוטיוב חסום בכרום — צופים בו דרך מגדלור, עם הערוצים שאישרתם. ') +
+              'לא עובר לכרום: זמנים ומכסה (הגבילו את כרום ב-⏱️), סוגי תוכן וחסימת פרסומות. כרום עצמו צריך להיות מותר ברשימה למטה.'
+            : 'כבוי: מה שקורה בכרום לא מסונן — לכן כדאי לחסום אותו (🚫 או 👻) ברשימה למטה. "מנוהל" מעביר לכרום את רשימות האתרים, חיפוש בטוח וחסימת גלישה בסתר — רק במכשיר עם הקמה מלאה.' }),
+        CH.managed && CH.truncated ? el('p', { class: 'hint', style: 'color:var(--danger)', text: 'יותר מ-1000 כתובות ברשימה — כרום מקבל רק את ה-1000 הראשונות.' }) : null,
+        CH.managed && CH.devices.length ? el('ul', { class: 'hint' }, CH.devices.map(d =>
+            el('li', { text: `${d.name || 'מכשיר'}: ${d.owner ? (CHR[d.result] ?? d.result) : CHR.no_owner}` }))) : null,
+    ].filter(Boolean));
     return [
         warn,
         hideWarn,
+        chrome,
         group('ברירת מחדל', '', [posture, hint]),
         group('אפליקציה חדשה שתותקן', '', [newApps, el('p', { class: 'hint', text: AP.new_apps === 'block'
             ? 'כל אפליקציה שתותקן מעכשיו — חסומה מיד, גם בלי אינטרנט. היא תופיע כאן ברשימה עם 🚫, ותוכלו לפתוח אותה. הילד יכול לבקש.'

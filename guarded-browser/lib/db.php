@@ -75,6 +75,8 @@ function migrate(PDO $pdo): void {
         'ad_block'      => "TEXT NOT NULL DEFAULT ''",
         'allow_pip'        => 'INTEGER NOT NULL DEFAULT 0',
         'allow_background' => 'INTEGER NOT NULL DEFAULT 0',
+        // כרום מנוהל (lib/chrome.php).
+        'chrome_managed'   => 'INTEGER NOT NULL DEFAULT 0',
     ];
     foreach ($add as $col => $def) {
         if (!in_array($col, $have, true)) {

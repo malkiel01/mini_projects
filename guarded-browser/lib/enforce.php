@@ -69,11 +69,14 @@ function enforceReportSave(int $deviceRowId, array $r): void {
     $browsers = [];
     foreach (array_slice((array) ($r['browsers'] ?? []), 0, 50) as $b) {
         $pkg = cleanPackage((string) ($b['p'] ?? ''));
-        if ($pkg !== '') $browsers[] = ['p' => $pkg, 'n' => mb_substr((string) ($b['n'] ?? ''), 0, 60), 'blocked' => !empty($b['blocked'])];
+        if ($pkg !== '') $browsers[] = ['p' => $pkg, 'n' => mb_substr((string) ($b['n'] ?? ''), 0, 60), 'blocked' => !empty($b['blocked']),
+                                        'managed' => !empty($b['managed'])];
     }
     $clean = ['rev' => mb_substr((string) ($r['rev'] ?? ''), 0, 64), 'owner' => !empty($r['owner']),
               'access' => !empty($r['access']), 'settings' => $settings, 'suspend_failed' => $failed,
-              'browsers' => $browsers];
+              'browsers' => $browsers,
+              // כרום מנוהל (lib/chrome.php): מה המכשיר קרא בחזרה מהמערכת.
+              'chrome' => in_array($r['chrome'] ?? '', CHROME_RESULTS, true) ? $r['chrome'] : ''];
     q('UPDATE devices SET enforce_report = ?, enforce_at = ? WHERE id = ?',
       [json_encode($clean, JSON_UNESCAPED_UNICODE), nowIso(), $deviceRowId]);
 }
@@ -145,7 +148,8 @@ function enforcementState(int $accountId, int $childId): array {
     if ($appsAllowed) {
         $open = [];
         $res = $per(function ($rep) use (&$open) {
-            $o = array_filter($rep['browsers'] ?? [], fn($b) => empty($b['blocked']));
+            // כרום מנוהל שאומת — אינו "דפדפן פתוח": הכללים נאכפים בו (lib/chrome.php).
+            $o = array_filter($rep['browsers'] ?? [], fn($b) => empty($b['blocked']) && empty($b['managed']));
             foreach ($o as $b) $open[$b['n'] ?: $b['p']] = true;
             return $o ? 'fail' : 'ok';
         });
@@ -153,6 +157,14 @@ function enforcementState(int $accountId, int $childId): array {
         $add('web_other', 'חסימת דפדפנים אחרים', 'access', $st,
              $open ? 'פתוחים: ' . implode(', ', array_keys($open)) . ' — חוסמים אותם בלשונית "אפליקציות"'
                    : ($st === 'unknown' ? 'המכשיר עוד לא דיווח' : ''));
+    }
+
+    // כרום מנוהל (lib/chrome.php) — מה שהמכשיר קרא בחזרה מהמערכת אחרי ההחלה.
+    if ($appsAllowed && chromeManaged($childId)) {
+        $res = $per(fn($rep) => in_array($rep['chrome'] ?? '', ['verified', 'not_installed'], true) ? 'ok' : 'fail');
+        $st = enforceAggregate($res);
+        $add('chrome', 'כרום מנוהל (אתרים, חיפוש בטוח, בלי גלישה בסתר)', 'owner', $st,
+             $st === 'full' ? '' : ($st === 'unknown' ? 'המכשיר עוד לא דיווח' : 'דורש הקמה מלאה ("בעל מכשיר") וגרסה עדכנית של מגדלור'), true);
     }
 
     // חסימת אפליקציות אחרות — נגישות פעילה בפועל (לא רק ביט), והשעיות שלא נכשלו.
