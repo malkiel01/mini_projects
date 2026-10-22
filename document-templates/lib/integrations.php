@@ -278,7 +278,8 @@ function source_rows(int $id): array
     $s = $st->fetch();
     if (!$s) return [];
     $stale = !$s['fetched_at'] || strtotime($s['fetched_at']) < time() - 60 * (int)$s['ttl_min'];
-    if ($stale) {
+    // בתוך טרנזקציה — בלי פנייה לרשת (היא מחזיקה את נעילת הכתיבה): העותק השמור
+    if ($stale && !db()->inTransaction()) {
         try { return $memo[$id . '@' . now_iso()] = src_refresh($s); } catch (ApiError) { /* נופלים לעותק */ }
     }
     return $memo[$id . '@' . $s['fetched_at']] ??= $s['rows_enc'] ? (json_decode((string)unseal($s['rows_enc']), true) ?: []) : [];

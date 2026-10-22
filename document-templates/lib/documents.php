@@ -574,9 +574,54 @@ function doc_complete(array $user, array $b): array
     return ['ok' => true, 'hash' => db()->query('SELECT final_hash FROM documents WHERE id = ' . (int)$d['id'])->fetchColumn(), 'notify' => $wa];
 }
 
+/**
+ * מה שמוצג במסמך ותלוי במשהו חי (נספח הביקורת v0.3, DT-F06): תרגום של רשימת ערכים, ותווית
+ * של בחירה ממקור נתונים חיצוני. נלכד ברגע ההשלמה — רק לערכים שבמסמך — כדי ששינוי מאוחר
+ * ברשימה, בתרגום או במקור לא ישנה מסמך שהושלם. {sel: {שדה: [{value, label}]}, tr: {"f:שדה" | "c:טבלה.עמודה": {ערך: תרגום}}}
+ */
+function freeze_capture(array $schema, array $values): array
+{
+    $sel = $tr = [];
+    foreach ($schema['fields'] ?? [] as $f) {
+        $v = (string)($values[$f['key']] ?? '');
+        if ($v === '') continue;
+        if ($f['type'] === 'select' && !empty($f['source'])) $sel[$f['key']] = [['value' => $v, 'label' => select_label($f, $v)]];
+        if (!empty($f['list']['lang'])) $tr['f:' . $f['key']][$v] = list_translate($f['list'], $v);
+        if ($f['type'] !== 'table') continue;
+        foreach ($f['columns'] ?? [] as $c) {
+            if (empty($c['list']['lang'])) continue;
+            foreach (table_rows($v) as $r) {
+                $cell = (string)($r[$c['key']] ?? '');
+                if ($cell !== '') $tr['c:' . $f['key'] . '.' . $c['key']][$cell] = list_translate($c['list'], $cell);
+            }
+        }
+    }
+    return ['sel' => $sel, 'tr' => $tr];
+}
+
+/** מחיל את מה שנלכד על הסכמה: בחירה ממקור — האפשרות שנבחרה, בלי המקור; רשימה — התרגום שנלכד. */
+function freeze_apply(array $schema, array $frozen): array
+{
+    foreach ($schema['fields'] ?? [] as $i => $f) {
+        if (isset($frozen['sel'][$f['key']])) {
+            $schema['fields'][$i]['options'] = $frozen['sel'][$f['key']];
+            unset($schema['fields'][$i]['source']);
+        }
+        if (!empty($f['list']['lang'])) $schema['fields'][$i]['list']['tr'] = $frozen['tr']['f:' . $f['key']] ?? [];
+        foreach ($f['columns'] ?? [] as $j => $c) {
+            if (!empty($c['list']['lang'])) $schema['fields'][$i]['columns'][$j]['list']['tr'] = $frozen['tr']['c:' . $f['key'] . '.' . $c['key']] ?? [];
+        }
+    }
+    return $schema;
+}
+
 /** נעילה וטביעת אצבע. נקרא מ"סיום" של המנפיק, או כשהמשתתף האחרון סיים. */
 function doc_finalize(array $d, string $actor, string $event = 'completed'): void
 {
+    // מקורות נתונים לבחירה — מרעננים לפני הטרנזקציה, כדי שהתוויות שננעלות יהיו עדכניות בלי רשת בתוכה
+    foreach (doc_schema($d)['fields'] ?? [] as $f) {
+        if ($f['type'] === 'select' && !empty($f['source'])) source_rows((int)$f['source']['id']);
+    }
     // הכול בטרנזקציה אחת: נעילה, תאריך ההשלמה, החישובים, טביעת האצבע והמצב. שמירה
     // מקבילה נכנסת או לפני (ונכללת בטביעה) או אחרי (ונדחית: "המסמך נעול") — DT-F07.
     $pdo = db();
@@ -595,8 +640,9 @@ function doc_finalize(array $d, string $actor, string $event = 'completed'): voi
         ksort($values);
         $hash = hash('sha256', json_encode(['template_version_id' => (int)$d['template_version_id'], 'values' => $values],
             JSON_UNESCAPED_UNICODE));
-        $pdo->prepare("UPDATE documents SET status = 'completed', completed_at = ?, final_hash = ? WHERE id = ?")
-            ->execute([$now, $hash, $d['id']]);
+        $frozen = json_encode(freeze_capture($schema, $values), JSON_UNESCAPED_UNICODE);
+        $pdo->prepare("UPDATE documents SET status = 'completed', completed_at = ?, final_hash = ?, frozen_enc = ? WHERE id = ?")
+            ->execute([$now, $hash, seal($frozen), $d['id']]);
         log_event((int)$d['id'], $actor, $event, ['hash' => $hash]);
         $pdo->commit();
     } catch (Throwable $e) {
