@@ -98,6 +98,15 @@ const t = {
             await p.waitForTimeout(100);
         }
     },
+    /** לחיצה על פקד בסרט (לפי aria-label): קודם פותחים את הלשונית שבה הוא נמצא. */
+    async tool(p, label) {
+        const sel = `.wp-ribbon [aria-label="${label}"]`;
+        await p.evaluate(s => {
+            const pn = document.querySelector(s)?.closest('[role=tabpanel]');
+            if (pn?.hidden) document.getElementById(pn.getAttribute('aria-labelledby')).click();
+        }, sel);
+        await p.click(sel);
+    },
     /** טקסט כל עמוד ב-PDF (pdftotext), בלי סימני כיוון. */
     pdfPages(file) {
         const out = execFileSync('pdftotext', [file, '-'], { encoding: 'utf8' });

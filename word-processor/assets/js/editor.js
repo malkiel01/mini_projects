@@ -156,9 +156,9 @@ export function createWordEditor(root, opts) {
     const zoomEl = h('div.wp-zoom', sheetEl);
     const zoomBox = h('div.wp-zoom-box', zoomEl);
     const stage = h('div.wp-stage', zoomBox);
-    const bar = h('div.wp-toolbar', { role: 'toolbar', 'aria-label': 'סרגל כלים' });
-    const ctxBar = h('div.wp-toolbar.wp-ctx', { role: 'toolbar', 'aria-label': 'כלים להקשר', hidden: true });
-    root.append(styleEl, printEl, bar, ctxBar, stage);
+    const bar = h('div.wp-toolbar.wp-ribbon');           // הסרט — נבנה למטה, מרישום הפקודות
+    const statusBar = h('div.wp-statusbar');             // שורת המצב: עמוד, מילים, זום
+    root.append(styleEl, printEl, bar, stage, statusBar);
     root.classList.add('wp-editor');
 
     /** גיאומטריה של עמוד לפי הגדרות (בפיקסלים לא מוגדלים). */
@@ -222,7 +222,7 @@ export function createWordEditor(root, opts) {
         },
         onUpdate: () => opts.onUpdate?.(),
         onSelectionUpdate: () => refresh(),
-        onTransaction: () => { syncPage(); refresh(); },
+        onTransaction: ({ transaction }) => { syncPage(); refresh(); if (transaction.docChanged) countWords(); },
     });
     ed0 = editor;
     pageAttr = editor.state.doc.attrs.page;
@@ -332,6 +332,7 @@ export function createWordEditor(root, opts) {
         pageCount = n;
         setZoom();
         status();
+        statusBarPage();
     }
     let pageCount = 1;
 
@@ -346,6 +347,7 @@ export function createWordEditor(root, opts) {
         zoomBox.style.height = (parseFloat(sheetEl.style.height) || g.pageH) * zoom + 'px';
         editor.storage.wpPages.zoom = zoom;
         if (zoomLabel) zoomLabel.textContent = Math.round(zoom * 100) + '%';
+        if (stZoom) stZoom.textContent = Math.round(zoom * 100) + '%';
     }
     const resizeObs = new ResizeObserver(() => { if (fit && !editor.isDestroyed) setZoom(); });
     resizeObs.observe(stage);
@@ -451,6 +453,7 @@ export function createWordEditor(root, opts) {
     const listType = cmdSel('listType', 'w-list', [h('option', { value: 'decimal' }, '1.'), h('option', { value: 'hebrew' }, 'א.'), h('option', { value: 'roman' }, 'i.')]);
     sizeSel.title = 'גודל';
     let zoomLabel = h('span.tb-zoom', '100%');
+    let stZoom = null;   // הזום בשורת המצב (נבנה עם שורת המצב)
     const imgInput = h('input', { type: 'file', accept: 'image/png,image/jpeg,image/gif,image/webp', multiple: true, hidden: true,
         onchange: e => { if (e.target.files.length) insertImages([...e.target.files]); e.target.value = ''; } });
 
@@ -460,16 +463,119 @@ export function createWordEditor(root, opts) {
     B.painter = cmdBtn('formatPainter', { ondblclick: () => cmds.run('formatPainter', true) });
     B.color = cmdColor('color', '#c00000');
     B.mark = cmdColor('highlight', '#ffff00', '.mark');
-    bar.append(
-        h('div.tb-group', B.undo, B.redo), sep(),
-        h('div.tb-group', styleSel, fontSel, sizeSel), sep(),
-        h('div.tb-group', B.bold, B.italic, B.underline, B.strike, B.color, B.mark, B.superscript, B.subscript, spacingSel, B.painter, B.clearFormat), sep(),
-        h('div.tb-group', B.alignRight, B.alignCenter, B.alignLeft, B.alignJustify), sep(),
-        h('div.tb-group', B.bulletList, B.orderedList, listType, B.outdent, B.indent, B.paragraphDialog), sep(),
-        h('div.tb-group', B.insertTable, B.insertImage, imgInput, B.footnote, B.pageBreak, B.sectionBreak), sep(),
-        h('div.tb-group', B.pageSetup, B.editStyles, B.print, opts.versions ? cmdBtn('versions') : null, ...(opts.menu || [])), sep(),
-        h('div.tb-group.tb-zoomg', B.zoomOut, zoomLabel, B.zoomIn, B.zoomFit),
-    );
+
+    // ---------- הסרט (כמו ב-Word): לשוניות → קבוצות עם שם; לשונית הקשר לטבלה ולתמונה; כיווץ (Ctrl+F1); חצים ----------
+    // קבוצה: שם מתחת, ושורה אחת או שתיים של פקדים
+    const grp = (name, ...rows) => h('div.rb-group', { role: 'group', 'aria-label': name },
+        h('div.rb-rows', rows.map(r => h('div.rb-row', (Array.isArray(r) ? r : [r]).filter(Boolean)))),
+        h('div.rb-name', { 'aria-hidden': 'true' }, name));
+    const zoomGroup = grp('זום', [B.zoomOut, zoomLabel, B.zoomIn, B.zoomFit]);
+    zoomGroup.classList.add('tb-zoomg');
+    const TABS = [
+        ['home', 'בית', [
+            grp('לוח', B.painter),
+            grp('גופן', [fontSel, sizeSel, B.clearFormat], [B.bold, B.italic, B.underline, B.strike, B.superscript, B.subscript, B.color, B.mark, spacingSel]),
+            grp('פסקה', [B.bulletList, B.orderedList, listType, B.outdent, B.indent], [B.alignRight, B.alignCenter, B.alignLeft, B.alignJustify, B.paragraphDialog]),
+            grp('סגנונות', [styleSel], [B.editStyles])]],
+        ['insert', 'הוספה', [grp('טבלאות', B.insertTable), grp('איורים', [B.insertImage, imgInput]), grp('הערות', B.footnote), grp('עמודים', B.pageBreak)]],
+        ['layout', 'פריסה', [grp('הגדרת עמוד', B.pageSetup), grp('מעברים', B.sectionBreak)]],
+        ['view', 'תצוגה', [zoomGroup, grp('מסמך', [B.print, opts.versions ? cmdBtn('versions') : null, ...(opts.menu || [])])]],
+    ];
+    const uid = Math.random().toString(36).slice(2, 8);
+    const tabsEl = h('div.rb-tabs', { role: 'tablist', 'aria-label': 'לשוניות הסרט' });
+    const tabBtn = {}, panel = {};
+    const mkTab = (key, label, items, ctx = false) => {
+        const id = `rb-${uid}-${key}`;
+        tabBtn[key] = h('button.rb-tab' + (ctx ? '.ctx' : ''), { type: 'button', role: 'tab', id: id + '-t', 'aria-controls': id, 'aria-selected': 'false', tabindex: '-1',
+            onmousedown: e => e.preventDefault(), onclick: () => selectTab(key, true) }, label);
+        panel[key] = h('div.rb-panel' + (ctx ? '.wp-ctx' : ''), { role: 'tabpanel', id, 'aria-labelledby': id + '-t', hidden: true }, items);
+        tabsEl.append(tabBtn[key]);
+    };
+    for (const [key, label, items] of TABS) mkTab(key, label, items);
+    mkTab('ctx', '', [], true);
+    tabBtn.ctx.hidden = true;
+    const ctxBar = panel.ctx;
+    const store = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch { /* */ } return null; };
+    let curTab = '';
+    let userTab = TABS.some(t => t[0] === store('wp-ribbon-tab')) ? store('wp-ribbon-tab') : 'home';
+    function selectTab(key, byUser = false) {
+        if (byUser && collapsed) setCollapsed(false);
+        curTab = key;
+        for (const k in tabBtn) {
+            const on = k === key;
+            tabBtn[k].setAttribute('aria-selected', on ? 'true' : 'false');
+            tabBtn[k].tabIndex = on ? 0 : -1;
+            panel[k].hidden = !on;
+        }
+        if (byUser && key !== 'ctx') { userTab = key; store('wp-ribbon-tab', key); }
+    }
+    let collapsed = store('wp-ribbon-collapsed') === '1';
+    const collapseBtn = h('button.rb-collapse', { type: 'button', onmousedown: e => e.preventDefault(), onclick: () => setCollapsed(!collapsed) });
+    function setCollapsed(v) {
+        collapsed = !!v;
+        bar.classList.toggle('collapsed', collapsed);
+        collapseBtn.textContent = collapsed ? '⌄' : '⌃';
+        const t = collapsed ? 'הצגת הסרט (Ctrl+F1)' : 'כיווץ הסרט (Ctrl+F1)';
+        collapseBtn.title = t;
+        collapseBtn.setAttribute('aria-label', t);
+        collapseBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+        store('wp-ribbon-collapsed', collapsed ? '1' : '0');
+    }
+    bar.append(h('div.rb-head', h('div.rb-quick', { role: 'group', 'aria-label': 'גישה מהירה' }, B.undo, B.redo), tabsEl, collapseBtn), ...Object.values(panel));
+    setCollapsed(collapsed);
+    selectTab(userTab);
+    // חצים: בין הלשוניות, ובתוך הלשונית בין הפקדים (מימין לשמאל: שמאלה = הבא). תיבת בחירה — החצים שלה
+    tabsEl.addEventListener('keydown', e => {
+        const keys = Object.keys(tabBtn).filter(k => !tabBtn[k].hidden);
+        const i = keys.indexOf(curTab);
+        const to = { ArrowLeft: i + 1, ArrowRight: i - 1, Home: 0, End: keys.length - 1 }[e.key];
+        if (to === undefined) return;
+        e.preventDefault();
+        const k = keys[(to + keys.length) % keys.length];
+        selectTab(k, true);
+        tabBtn[k].focus();
+    });
+    bar.addEventListener('keydown', e => {
+        if ((e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') || !e.target.closest('.rb-panel') || e.target.matches('select')) return;
+        const items = [...e.target.closest('.rb-panel').querySelectorAll('button, select, input[type=color]')].filter(x => !x.disabled && x.offsetParent);
+        const i = items.indexOf(e.target);
+        if (i < 0) return;
+        e.preventDefault();
+        items[(i + (e.key === 'ArrowLeft' ? 1 : -1) + items.length) % items.length].focus();
+    });
+    // Ctrl+F1 — כיווץ והצגה של הסרט (כמו ב-Word), מכל מקום בעורך
+    root.addEventListener('keydown', e => {
+        if (e.key === 'F1' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); setCollapsed(!collapsed); }
+    });
+
+    // ---------- שורת המצב: עמוד X מתוך Y (לפי הסמן), מילים, זום ----------
+    const stPage = h('span.st-page');
+    const stWords = h('span.st-words');
+    stZoom = h('button.st-zoom', { type: 'button', title: 'התאמה למסך', onclick: () => cmds.run('zoomFit') });
+    statusBar.append(stPage, h('span.st-sep', { 'aria-hidden': 'true' }), stWords, h('span.st-fill'),
+        h('button.st-btn', { type: 'button', 'aria-label': 'הקטנת התצוגה', title: 'הקטנת התצוגה', onclick: () => cmds.run('zoomOut') }, '−'), stZoom,
+        h('button.st-btn', { type: 'button', 'aria-label': 'הגדלת התצוגה', title: 'הגדלת התצוגה', onclick: () => cmds.run('zoomIn') }, '+'));
+    let curPage = 1;
+    function caretPage() {
+        const pages = pagesLayer.children;
+        if (!pages.length) return 1;
+        let top;
+        try { top = editor.view.coordsAtPos(editor.state.selection.head).top; } catch { return curPage; }
+        for (let i = 0; i < pages.length; i++) if (top < pages[i].getBoundingClientRect().bottom) return i + 1;
+        return pages.length;
+    }
+    let wordsTimer = 0;
+    function countWords() {
+        clearTimeout(wordsTimer);
+        wordsTimer = setTimeout(() => {
+            const n = (editor.state.doc.textBetween(0, editor.state.doc.content.size, ' ', ' ').match(/[^\s]+/g) || []).length;
+            stWords.textContent = `${n.toLocaleString('he-IL')} ${n === 1 ? 'מילה' : 'מילים'}`;
+        }, 300);
+    }
+    function statusBarPage() {
+        curPage = caretPage();
+        stPage.textContent = `עמוד ${curPage} מתוך ${pageCount}`;
+    }
 
     function refresh() {
         const on = (b, v) => { b.classList.toggle('on', !!v); b.setAttribute('aria-pressed', v ? 'true' : 'false'); };
@@ -484,6 +590,7 @@ export function createWordEditor(root, opts) {
         B.undo.disabled = !cmds.state('undo').enabled;
         B.redo.disabled = !cmds.state('redo').enabled;
         contextBar();
+        statusBarPage();
     }
 
     // ---------- כלים להקשר: טבלה / תמונה ----------
@@ -493,21 +600,28 @@ export function createWordEditor(root, opts) {
         const isImg = sel.node?.type.name === 'image';
         const kind = !ed.isEditable ? '' : isImg ? 'image' : ed.isActive('table') ? 'table' : '';
         if (kind === ctxKind && kind !== 'image') return;
+        const was = ctxKind;
         ctxKind = kind;
         ctxBar.textContent = '';
-        ctxBar.hidden = !kind;
+        // לשונית ההקשר מופיעה רק כשיש טבלה / תמונה. תמונה שנבחרה — הלשונית נפתחת לבד; כשיוצאים — חוזרים ללשונית הקודמת
+        tabBtn.ctx.hidden = !kind;
+        tabBtn.ctx.textContent = kind === 'table' ? 'טבלה' : kind === 'image' ? 'תמונה' : '';
+        if (!kind && curTab === 'ctx') selectTab(userTab);
+        if (kind === 'image' && was !== 'image') selectTab('ctx');
         if (kind === 'table') {
-            ctxBar.append(h('span.ctx-title', 'טבלה'),
-                ...['addRowBefore', 'addRowAfter', 'addColumnBefore', 'addColumnAfter', 'deleteRow', 'deleteColumn', 'mergeOrSplit', 'toggleHeaderRow']
-                    .map(id => cmdBtn('table.' + id)),
-                cmdColor('table.cellFill', '#ddeeff'), cmdBtn('table.deleteTable'));
+            const T = id => cmdBtn('table.' + id);
+            ctxBar.append(
+                grp('שורות ועמודות', [T('addRowBefore'), T('addRowAfter'), T('addColumnBefore'), T('addColumnAfter')], [T('deleteRow'), T('deleteColumn')]),
+                grp('תאים', [T('mergeOrSplit'), cmdColor('table.cellFill', '#ddeeff')], [T('toggleHeaderRow')]),
+                grp('טבלה', T('deleteTable')));
         } else if (kind === 'image') {
             const a = sel.node.attrs;
             const wrapSel = cmdSel('image.wrap', 'w-wrap', Object.entries(WRAP_NAMES).map(([k, t]) => h('option', { value: k, selected: (a.wrap || 'inline') === k }, t)));
-            ctxBar.append(h('span.ctx-title', 'תמונה'), wrapSel,
-                segBtns({ right: 'ימין', center: 'מרכז', left: 'שמאל' }, a.align, v => cmds.run('image.align', v), 'יישור'),
-                segBtns([['0.25', '¼'], ['0.5', '½'], ['1', 'מלא'], ['0', 'מקורי']], '', v => cmds.run('image.size', v), 'גודל'),
-                ...['image.rotateLeft', 'image.rotateRight', 'image.crop', 'image.props', 'image.delete'].map(id => cmdBtn(id)));
+            ctxBar.append(grp('גלישת טקסט', wrapSel),
+                grp('יישור', segBtns({ right: 'ימין', center: 'מרכז', left: 'שמאל' }, a.align, v => cmds.run('image.align', v), 'יישור')),
+                grp('גודל', segBtns([['0.25', '¼'], ['0.5', '½'], ['1', 'מלא'], ['0', 'מקורי']], '', v => cmds.run('image.size', v), 'גודל')),
+                grp('סיבוב', [cmdBtn('image.rotateLeft'), cmdBtn('image.rotateRight')]),
+                grp('תמונה', [cmdBtn('image.crop'), cmdBtn('image.props'), cmdBtn('image.delete')]));
         }
     }
     /** גודל תמונה: חלק מרוחב השורה (¼, ½, מלא), או 0 — הגודל המקורי. */
@@ -902,7 +1016,7 @@ export function createWordEditor(root, opts) {
         editor.setEditable(!!v);
         root.classList.toggle('readonly', !v);
         bar.querySelectorAll('button, select, input').forEach(el => {
-            if (!el.closest('.tb-zoomg') && el !== B.print) el.disabled = !v;
+            if (!el.closest('.tb-zoomg, .rb-head') && el !== B.print) el.disabled = !v;
         });
         refresh();
     }
@@ -910,6 +1024,7 @@ export function createWordEditor(root, opts) {
     applyPage();
     setEditable(opts.editable !== false);
     refresh();
+    countWords();
 
     return {
         editor,

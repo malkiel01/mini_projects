@@ -17,7 +17,7 @@ export default async function (t) {
     t.ok('השרת קיבל את הטקסט', JSON.stringify(s.json).includes('שלום עולם'));
     const v1 = s.version;
 
-    await p.click('button[aria-label="הגדרות עמוד ומספור עמודים"]');
+    await t.tool(p, 'הגדרות עמוד ומספור עמודים');
     await p.click('dialog label:has-text("לרוחב")');
     await p.click('dialog button[type=submit]');
     await p.waitForTimeout(2500);

@@ -7,7 +7,7 @@ export default async function (t) {
     await t.openDoc(p, doc);
     await p.click('.wp-doc');
     await p.keyboard.type('טקסט עם הערה');
-    await p.click('button[aria-label="הערת שוליים (Ctrl+Alt+F)"]');
+    await t.tool(p, 'הערת שוליים (Ctrl+Alt+F)');
     await p.fill('dialog .fn-edit-doc', 'זו ההערה הראשונה');
     await p.click('dialog button[type=submit]');
     await p.waitForSelector('dialog', { state: 'detached' });
