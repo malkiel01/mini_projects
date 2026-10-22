@@ -14,7 +14,7 @@ const LOCK_SECONDS = 120;
 const MEDIA_MAX_BYTES = 10 * 1024 * 1024;
 const MEDIA_TYPES = ['image/png' => 'png', 'image/jpeg' => 'jpg', 'image/gif' => 'gif', 'image/webp' => 'webp'];
 /** גרסת המבנה של ה-JSON (attrs.schema). אותו מספר ב-assets/js/extensions.js; ההמרות — כאן וב-assets/js/schema.js. */
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 class ApiError extends Exception
 {
@@ -46,16 +46,40 @@ function doc_json_valid($json): array
  * כדי שקוד ישן לא ישמור מבנה שהוא לא מבין.
  *   0 → 1: attrs נוסף לצומת השורש; הגדרות העמוד עוברות בו (attrs.page) בדרך מהשרת ואליו — במסד הן בעמודה page.
  *   1 → 2: קישורים (link) וסימניות (bookmark) — אין מה להמיר.
+ *   2 → 3: תוכן עניינים, כיתובים והפניות (seq / xref), הערות על טקסט (comment, attrs.comments), הערות סיום — אין מה להמיר.
  */
 function doc_migrate(array $json): array
 {
     $attrs = is_array($json['attrs'] ?? null) ? $json['attrs'] : [];
     $v = (int)($attrs['schema'] ?? 0);
     if ($v > SCHEMA_VERSION) throw new ApiError('המסמך נשמר בגרסה חדשה יותר של העורך — רעננו את הדף', 'schema_newer', 409);
-    if ($v < 2) $v = 2;
+    if ($v < SCHEMA_VERSION) $v = SCHEMA_VERSION;   // אין צעד המרה של ממש: מבנה ישן תקף גם בגרסה הנוכחית
     $attrs['schema'] = $v;
     $json['attrs'] = $attrs;
     return $json;
+}
+
+/**
+ * הגרסה המינימלית של עורך שמותר לו לשמור על המסמך: לפי מה שבאמת יש בו — לא לפי המספר שנרשם (מסמכים נשמרו
+ * עם מבנה של גרסה 3 עוד כשהמספר היה 2). צומת או סימון של גרסה 3 → 3; קישור / סימניה → 2; אחרת 0.
+ * מאפיינים שנוספו לצמתים קיימים (למשל סגנון קו תחתון) — לא נבדקים כאן; מעכשיו כל תוספת כזו מעלה את המספר.
+ */
+function doc_schema_need(array $json): int
+{
+    if (!empty($json['attrs']['comments'])) return 3;
+    $need = 0;
+    $walk = function (array $nodes) use (&$walk, &$need) {
+        foreach ($nodes as $n) {
+            if (!is_array($n) || $need >= 3) return;
+            $t = $n['type'] ?? '';
+            $marks = array_column(array_filter(is_array($n['marks'] ?? null) ? $n['marks'] : [], 'is_array'), 'type');
+            if (in_array($t, ['toc', 'seq', 'xref'], true) || ($t === 'footnote' && !empty($n['attrs']['end'])) || in_array('comment', $marks, true)) { $need = 3; return; }
+            if ($t === 'bookmark' || in_array('link', $marks, true)) $need = max($need, 2);
+            if (is_array($n['content'] ?? null)) $walk($n['content']);
+        }
+    };
+    $walk($json['content'] ?? []);
+    return $need;
 }
 
 /** הגדרות העמוד שבתוך ה-JSON — מוציאים לעמודה page (או null), ומסירים מה-JSON שנשמר. */
@@ -127,6 +151,11 @@ function doc_save(array $row, $json, ?string $title, string $userId, string $use
     if ($base !== null && (int)$base !== (int)$row['version']) {
         throw new ApiError('המסמך השתנה בינתיים — טענו אותו מחדש', 'conflict', 409);
     }
+    // כותב ישן (לשונית שנפתחה לפני עדכון) על מסמך שיש בו מבנה שהוא לא מכיר — היה מוחק אותו בשקט. נדחה (ביקורת 04, F02)
+    $in = is_string($json) ? json_decode($json, true) : $json;
+    // (בלי מספר בכלל — לא עורך: קריאת API של מארחת, שהמבנה שלה לא נבדק כאן)
+    $writer = is_array($in) && isset($in['attrs']['schema']) ? (int)$in['attrs']['schema'] : null;
+    if ($writer !== null && $writer < doc_schema_need(doc_json($row))) throw new ApiError('המסמך נשמר בגרסה חדשה יותר של העורך — רעננו את הדף', 'schema_newer', 409);
     $json = doc_json_valid($json);
     $page = take_page($json) ?? $page;   // הגדרות העמוד שבתוך המסמך — באותה שמירה ובאותה גרסה
     $now = time();

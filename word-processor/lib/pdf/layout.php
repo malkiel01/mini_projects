@@ -216,6 +216,29 @@ final class PdfLayout
     }
 
     /** קו הפרדה (שליש מהרוחב, בצד ההתחלה — ימין) וההערות, בתחתית אזור הטקסט. */
+    /**
+     * חלוקת הערות לפי הסדר: מה שנכנס ב-room (כולל קו ההפרדה) — בעמוד הזה, בשורות שלמות; השאר — לעמוד הבא.
+     * אותו כלל כמו fit ב-pagination.js. @return array{0: array, 1: array}
+     */
+    private function fitNotes(array $notes, float $room): array
+    {
+        $here = [];
+        $rest = [];
+        $left = $room - self::FN_SEP;
+        foreach ($notes as $nt) {
+            if ($rest) { $rest[] = $nt; continue; }
+            if ($nt['h'] <= $left + 0.5) { $here[] = $nt; $left -= $nt['h']; continue; }
+            $k = 0;
+            $acc = 0.0;
+            for ($q = $nt['from']; $q < $nt['to']; $q++) { if ($acc + $nt['lines'][$q] > $left + 0.5) break; $acc += $nt['lines'][$q]; $k++; }
+            if ($k >= 1 && $nt['from'] + $k < $nt['to']) {
+                $here[] = ($nt['part'])($nt['from'], $nt['from'] + $k);
+                $rest[] = ($nt['part'])($nt['from'] + $k, $nt['to']);
+            } else $rest[] = $nt;
+        }
+        return [$here, $rest];
+    }
+
     private function drawNotes(PdfCanvas $c, array $notes): void
     {
         if (!$notes) return;
@@ -269,7 +292,7 @@ final class PdfLayout
         // חלק מההערה (שורות from..to) — הערה ארוכה שנמשכת לעמוד הבא (paginate)
         $part = function (int $from, int $to) use ($lines, $atoms, $dir, $rtl, $n, &$part) {
             $slice = array_slice($lines, $from, $to - $from);
-            return ['n' => $n, 'h' => array_sum(array_column($slice, 'h')), 'lines' => array_column($lines, 'h'), 'part' => $part,
+            return ['n' => $n, 'h' => array_sum(array_column($slice, 'h')), 'lines' => array_column($lines, 'h'), 'from' => $from, 'to' => $to, 'part' => $part,
                 'draw' => function (PdfCanvas $c, float $x, float $y) use ($slice, $atoms, $dir, $rtl) {
                     foreach ($slice as $ln) { $this->drawLine($c, $ln, $atoms, $x, $y, $rtl ? 'right' : 'left', true, $dir); $y += $ln['h']; }
                 }];
@@ -1030,6 +1053,8 @@ final class PdfLayout
             }, 'row');
             $it->table = $tid;
             $it->header = ($rows[$ri]['content'][0]['type'] ?? '') === 'tableHeader' && $ri === 0;
+            // הערות שוליים מהתאים — בתחתית העמוד של השורה (כמו בפסקה), לפי סדר התאים
+            foreach ($cells as $c) foreach ($c['items'] as $item) array_push($it->notes, ...$item->notes);
             $out[] = $it;
         }
         $out[] = new FlowItem(4, fn() => null);   // רווח קטן אחרי טבלה
@@ -1060,43 +1085,58 @@ final class PdfLayout
         $H = $this->chH;
         $headers = [];   // טבלה → שורת הכותרת שלה
         $n = count($items);
-        // הערות השוליים של כל עמוד: ההמשך של הערה מהעמוד הקודם (carry), ואז של הפריטים שבו (split — הפריט שההערה
-        // האחרונה שלו נחתכה: בעמוד שלו רק השורות שנכנסו)
+        // הערות השוליים של כל עמוד: ההמשך מהעמוד הקודם (carry), ואז של הפריטים שבו. הערה שלא נכנסת כולה (כמו ב-Word):
+        // השורות שנכנסות — בעמוד הזה, והשאר בראש ההערות של הבא, וכך הלאה — גם על פני כמה עמודים (ביקורת 04, F05).
+        // shown — העמוד מלא: אלה ההערות שבו (חלקן חתוכות), ו-pending — ההמשך לעמוד הבא. אותו כלל כמו pagination.js
         $carry = [[]];
-        $split = [];
-        $next = null;
-        $newPage = function () use (&$pages, &$y, &$carry, &$next) { $pages[] = []; $carry[] = $next ? [$next] : []; $next = null; $y = 0.0; };
-        $pageNotes = function () use (&$pages, &$carry, &$split) {
+        $shownOf = [];
+        $shown = null;
+        $pending = [];
+        $top = 0.0;   // ראש העמוד אחרי שורת כותרת של טבלה שחוזרת
+        $newPage = function () use (&$pages, &$y, &$carry, &$pending, &$shown, &$top) { $pages[] = []; $carry[] = $pending; $pending = []; $shown = null; $y = 0.0; $top = 0.0; };
+        $pageNotes = function () use (&$pages, &$carry, &$shown) {
             $p = count($pages) - 1;
-            return array_merge($carry[$p], ...array_map(fn($x) => $split[spl_object_id($x[0])] ?? $x[0]->notes, $pages[$p]));
+            return $shown ?? array_merge($carry[$p], ...array_map(fn($x) => $x[0]->notes, $pages[$p]));
         };
-        $forced = false;
+        // סוגר את העמוד הנוכחי: ההערות שלו (וההמשך שמחכה) — מה שנכנס מתחת לטקסט; השאר ממשיך
+        $settle = function () use (&$pages, &$y, &$pending, &$shown, &$shownOf, $pageNotes) {
+            [$here, $rest] = $this->fitNotes(array_merge($pageNotes(), $pending), $this->chH - $y);
+            $shownOf[count($pages) - 1] = $here;
+            $shown = $here;
+            $pending = $rest;
+        };
+        $place = function (FlowItem $it) use (&$pages, &$y, &$shown, &$shownOf, &$pending, $pageNotes) {
+            // נכנס לעמוד: אם ההערות (ההמשך מהקודם, של הפריטים שבו ושלו) לא נכנסות — מה שנכנס כאן, והשאר לבא
+            $list = array_merge($pageNotes(), $pending, $it->notes);
+            $room = $this->chH - $y - $it->h;
+            if ($this->notesHeight($list) > $room + 0.5) {
+                [$here, $rest] = $this->fitNotes($list, $room);
+                $shown = $here;
+                $shownOf[count($pages) - 1] = $here;
+                $pending = $rest;
+            }
+            $pages[count($pages) - 1][] = [$it, $y];
+            $y += $it->h;
+        };
         for ($i = 0; $i < $n; $i++) {
             $it = $items[$i];
-            if ($it->kind === 'force') { $newPage(); $forced = false; continue; }
+            if ($it->kind === 'force') { $settle(); $newPage(); continue; }
             if ($it->header && $it->table) $headers[$it->table] = $it;
-            $H = $this->chH - $this->notesHeight(array_merge($pageNotes(), $it->notes));
-            $fits = $y + $it->h <= $H + 0.5;
-            $atTop = $y < 0.01;
-            // הפריט נכנס אבל ההערה האחרונה שלו לא כולה (כמו ב-Word): השורות שנכנסות — כאן, והשאר בראש ההערות של הבא
+            $atTop = $y <= $top + 0.01;
+            $full = $shown !== null;   // העמוד מלא (הערה נחתכה בו): הפריט הבא — בעמוד חדש, בלי תיקונים
             $pb = $it->breakBefore && !$atTop;   // "מעבר עמוד לפני": שוברים לפניה, בלי תיקונים
-            if (!$pb && !$fits && !$atTop && !$forced && $it->notes && isset($items[$i + 1]) && $items[$i + 1]->kind !== 'force') {
-                $before = array_merge($pageNotes(), array_slice($it->notes, 0, -1));
-                $last = end($it->notes);
-                $room = $this->chH - $y - $it->h - self::FN_SEP - array_sum(array_column($before, 'h'));
-                $k = 0;
-                $acc = 0.0;
-                foreach ($last['lines'] as $lh) { if ($acc + $lh > $room + 0.5) break; $acc += $lh; $k++; }
-                if ($k >= 1 && $k < count($last['lines'])) {
-                    $split[spl_object_id($it)] = array_merge(array_slice($it->notes, 0, -1), [($last['part'])(0, $k)]);
-                    $next = ($last['part'])($k, count($last['lines']));
-                    $pages[count($pages) - 1][] = [$it, $y];
-                    $y += $it->h;
-                    $forced = true;   // הפריט הבא — בעמוד חדש
-                    continue;
+            // הפריט נכנס אבל ההערות שלו לא כולן: נשאר אם כל ההערות לפני האחרונה שלו נכנסות, ומהאחרונה לפחות שורה
+            if (!$pb && !$full && !$atTop && $it->notes) {
+                $list = array_merge($pageNotes(), $it->notes);
+                $room = $this->chH - $y - $it->h;
+                if ($this->notesHeight($list) > $room + 0.5) {
+                    [$here, $rest] = $this->fitNotes($list, $room);
+                    if (count($rest) === 1 && count($here) === count($list)) { $place($it); continue; }
                 }
             }
-            $break = (!$fits && !$atTop) || $forced || $pb;
+            $H = $this->chH - $this->notesHeight(array_merge($pageNotes(), $it->notes));
+            $fits = $y + $it->h <= $H + 0.5;
+            $break = (!$fits && !$atTop) || $full || $pb;
             if (!$break && !$atTop) {
                 // שורה ראשונה של פסקה בתחתית העמוד, כשהשנייה כבר לא נכנסת — עוברת איתה
                 if ($it->kind === 'line' && $it->index === 0 && $it->count >= 2 && isset($items[$i + 1]) && $y + $it->h + $items[$i + 1]->h > $H + 0.5) $break = true;
@@ -1109,7 +1149,7 @@ final class PdfLayout
                 // כותרת שלפני — עוברת גם היא (אם אינה ראשונה בעמוד)
                 $moved = [];
                 $cur = &$pages[count($pages) - 1];
-                while (!$forced && !$pb && $cur && end($cur)[0]->keepNext && count($cur) > 1) {
+                while (!$full && !$pb && $cur && end($cur)[0]->keepNext && count($cur) > 1) {
                     $moved[] = array_pop($cur)[0];
                 }
                 // המעבר נפל באמצע פסקה (שמור עם הבא / שורות יחד): לפחות 2 שורות שלה בכל צד — כמו בעורך
@@ -1122,21 +1162,31 @@ final class PdfLayout
                     }
                 }
                 unset($cur);
+                $y = array_sum(array_map(fn($x) => $x[0]->h, $pages[count($pages) - 1]));   // בלי מה שעבר לעמוד הבא
+                $settle();
                 $newPage();
                 // שורת הכותרת של טבלה שנמשכת — חוזרת בראש העמוד
                 if ($it->kind === 'row' && $it->table && isset($headers[$it->table]) && $headers[$it->table] !== $it) {
                     $pages[count($pages) - 1][] = [$headers[$it->table], $y];
                     $y += $headers[$it->table]->h;
+                    $top = $y;
                 }
-                foreach (array_reverse($moved) as $m) { $pages[count($pages) - 1][] = [$m, $y]; $y += $m->h; }
-                $forced = false;
+                foreach (array_reverse($moved) as $m) $place($m);
             }
-            $pages[count($pages) - 1][] = [$it, $y];
-            $y += $it->h;
+            $place($it);
+        }
+        // סוף הטקסט (של המקטע): הערה שעוד נמשכת — עמודים של הערות בלבד, עד סופה
+        $settle();
+        for ($guard = 0; $pending && $guard < 500; $guard++) {
+            $newPage();
+            [$here, $rest] = $this->fitNotes($carry[count($pages) - 1], $this->chH);
+            if (!$here) break;   // לא אמור לקרות: עמוד שלם תמיד מכיל שורה של הערה
+            $shownOf[count($pages) - 1] = $here;
+            $pending = $rest;
         }
         $this->pageNotes = [];
         foreach ($pages as $p => $placed) {
-            $this->pageNotes[$p] = array_merge($carry[$p], ...array_map(fn($x) => $split[spl_object_id($x[0])] ?? $x[0]->notes, $placed));
+            $this->pageNotes[$p] = $shownOf[$p] ?? array_merge($carry[$p], ...array_map(fn($x) => $x[0]->notes, $placed));
         }
         return $pages;
     }

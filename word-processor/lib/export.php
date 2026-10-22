@@ -123,9 +123,20 @@ function sections_top(array $json): array
 function export_html(array $json, array $page, bool $absolute = true): array
 {
     $json = sections_top($json);
-    $json = seq_flatten(with_media_src($json, $absolute));
+    [$json, $foot, $end] = fn_numbered(seq_flatten(with_media_src($json, $absolute)));
     $body = '';
     foreach ($json['content'] ?? [] as $n) $body .= html_node($n);
+    // אין עמודים ב-HTML: הערות השוליים בסוף, ואחריהן הערות הסיום (כמו "שמירה כדף אינטרנט" ב-Word)
+    foreach (['wp-footnotes' => $foot, 'wp-endnotes' => $end] as $cls => $list) {
+        if (!$list) continue;
+        $body .= '<section class="' . $cls . '" aria-label="' . ($cls === 'wp-footnotes' ? 'הערות שוליים' : 'הערות סיום') . '"><hr>';
+        foreach ($list as [$num, $a]) {
+            $id = ($cls === 'wp-footnotes' ? 'f' : 'e') . $num;
+            $body .= '<p class="wp-fn" id="wp-fn-' . $id . '"><a class="wp-fn-n" href="#wp-fnr-' . $id . '">' . $num . '</a> '
+                . implode('', array_map('html_node', fn_inline($a))) . '</p>';
+        }
+        $body .= '</section>';
+    }
     return ['html' => '<div class="wp-doc" dir="rtl" lang="he">' . $body . '</div>', 'css' => export_css($page)];
 }
 
@@ -156,7 +167,9 @@ function export_css(array $page): string
         . '.wp-doc .wrap-square.align-center,.wp-doc .wrap-tight.align-center,.wp-doc .wrap-topBottom.align-center{margin-inline:auto}'
         . '.wp-doc .wrap-topBottom.align-left{margin-inline-start:auto}'
         . '.wp-doc .wrap-behind,.wp-doc .wrap-front{position:absolute}.wp-doc .wrap-behind{z-index:-1}.wp-doc .wrap-front{z-index:2}'
-        . '.wp-doc .page-break{break-after:page;height:0}';
+        . '.wp-doc .page-break{break-after:page;height:0}'
+        . '.wp-doc .wp-fn-ref a,.wp-doc .wp-fn-n{text-decoration:none;color:inherit}.wp-doc .wp-fn-n{vertical-align:super;font-size:smaller}'
+        . '.wp-doc .wp-fn{font-size:10pt}.wp-doc :is(.wp-footnotes,.wp-endnotes)>hr{width:33%;margin-inline:0 auto;border:0;border-top:1px solid #000}';
     // כותרות 7–9 — אין תגית HTML: פסקה עם מחלקה (html_node); סגנון משתמש — מחלקה wp-s-u<N>, מעל "רגיל"
     $sel = ['normal' => '.wp-doc p', 'title' => '.wp-doc .wp-title', 'caption' => '.wp-doc .wp-caption'];
     for ($l = 1; $l <= 9; $l++) $sel["h$l"] = $l <= 6 ? ".wp-doc h$l" : ".wp-doc .wp-h$l";
@@ -282,6 +295,9 @@ function html_node(array $n): string
             return '<nav class="toc" aria-label="' . h(toc_title($a)) . '"><p class="toc-title"><b>' . h(toc_title($a)) . '</b></p><ul>' . $rows . '</ul></nav>';
         case 'hardBreak':
             return '<br>';
+        case 'footnote':   // הסימן — קישור להערה שבסוף (export_html)
+            $id = (!empty($a['end']) ? 'e' : 'f') . ($a['_n'] ?? '');
+            return '<sup class="wp-fn-ref"><a href="#wp-fn-' . h($id) . '" id="wp-fnr-' . h($id) . '">' . h((string)($a['_n'] ?? '')) . '</a></sup>';
         case 'bookmark':
             return ($b = bookmark_name($a['name'] ?? '')) ? '<a id="' . h($b) . '"></a>' : '';
         case 'horizontalRule':
@@ -375,7 +391,15 @@ function html_marks(string $s, array $marks): string
 function export_text(array $json): string
 {
     $lines = [];
-    text_blocks(seq_flatten($json)['content'] ?? [], $lines, 0);
+    [$json, $foot, $end] = fn_numbered(seq_flatten($json));
+    text_blocks($json['content'] ?? [], $lines, 0);
+    // ההערות בסוף, אחרי קו — כל אחת בשורה עם המספר שלה בסוגריים, כמו הסימן בטקסט
+    foreach ([$foot, $end] as $list) {
+        if (!$list) continue;
+        $lines[] = '';
+        $lines[] = '____________';
+        foreach ($list as [$num, $a]) $lines[] = '[' . $num . '] ' . implode('', array_map(fn($t) => $t['text'], fn_inline($a)));
+    }
     return rtrim(implode("\n", $lines));
 }
 
@@ -416,6 +440,7 @@ function inline_text(array $n): string
 {
     if (($n['type'] ?? '') === 'text') return (string)($n['text'] ?? '');
     if (($n['type'] ?? '') === 'hardBreak') return "\n";
+    if (($n['type'] ?? '') === 'footnote') return '[' . ($n['attrs']['_n'] ?? '') . ']';   // export_text
     $s = '';
     foreach ($n['content'] ?? [] as $c) {
         if (in_array($c['type'] ?? '', ['paragraph', 'heading'], true) && $s !== '') $s .= "\n";
