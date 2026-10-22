@@ -62,6 +62,8 @@ data class Policy(
     val offlineContent: String = "all",
     /** מנוע החיפוש: migdalor / google (PolicyEngine.googleSearchAllowed, כמו lib/policy.php). */
     val searchEngine: String = "migdalor",
+    /** רובריקות דף הבית (HomeMath.ALL) — מה שההורה הדליק. */
+    val homeSections: List<String> = HomeMath.ALL,
 ) {
     companion object {
         const val MODE_KIOSK = "kiosk"
@@ -90,6 +92,7 @@ data class Policy(
             offlineGraceH = o.optInt("offline_grace_h", 24),
             offlineContent = o.optString("offline_content", "all"),
             searchEngine = o.optString("search_engine", "migdalor"),
+            homeSections = o.optJSONArray("home_sections")?.let { a -> (0 until a.length()).map { a.optString(it) } } ?: HomeMath.ALL,
         )
     }
 }
@@ -101,12 +104,14 @@ data class Policy(
  * ערוץ יוטיוב מאושר הוא אריח בלי שיהיה כלל כתובת — ואילו ערבבנו
  * ביניהם, הוא היה הופך להיתר גורף לכל youtube.com.
  */
-data class Tile(val label: String, val url: String, val kind: String) {
+/** ‏kind: url / youtube / platform / task (דף של משימה — ‏ends: מתי נגמרת). */
+data class Tile(val label: String, val url: String, val kind: String, val ends: String = "") {
     companion object {
         fun from(o: JSONObject) = Tile(
             label = o.optString("label"),
             url = o.optString("url"),
             kind = o.optString("kind", "url"),
+            ends = o.optString("ends"),
         )
     }
 }
