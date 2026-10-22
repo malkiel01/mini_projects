@@ -372,7 +372,7 @@ $wordDocx = $mkDocx([
 ]);
 $w = import_docx($wordDocx, $docC);
 $rep = array_column($w['report'], 'count', 'key');
-check('דוח ייבוא: כל מה שלא נתמך מופיע', $rep == ['shapes' => 1, 'math' => 1, 'comments' => 1, 'nested' => 1, 'tracked' => 2, 'fields' => 1,
+check('דוח ייבוא: כל מה שלא נתמך מופיע', $rep == ['shapes' => 1, 'math' => 1, 'nested' => 1, 'tracked' => 2, 'fields' => 1,
     'columns' => 1, 'hf_extra' => 1, 'styles' => 1, 'pborder' => 1, 'fonts' => 1], json_encode($rep));
 check('ייבוא: סגנון פסקה מותאם → סגנון שלנו (שם ועיצוב), והפסקה בו', ($w['page']['styles']['u1'] ?? null) == ['name' => 'ציטוט', 'italic' => true, 'color' => '#595959', 'align' => 'center', 'after' => 12.0]
     && ($w['json']['content'][0]['attrs']['pstyle'] ?? '') === 'u1', json_encode($w['page']['styles'] ?? null, JSON_UNESCAPED_UNICODE));
@@ -818,6 +818,44 @@ $tofBack = import_docx($tofDocx, 'tof');
 check('Word הלוך וחזור: רשימת איורים חוזרת עם התווית והשורות', ($tofBack['json']['content'][0]['attrs'] ?? null) === $tofDoc['content'][0]['attrs']
     && ($tofBack['json']['content'][1]['attrs']['seq'] ?? null) === 'טבלה', json_encode($tofBack['json']['content'][0] ?? null, JSON_UNESCAPED_UNICODE));
 check('HTML: הכותרת של הרשימה', str_contains(export_html($tofDoc, page_normalize([]))['html'], '<b>רשימת איורים</b>'));
+
+// ======================================================================
+section('הערות על טווח טקסט (שלב 4)');
+$cm = fn($id) => [['type' => 'comment', 'attrs' => ['id' => $id]]];
+$cmDoc = ['type' => 'doc', 'attrs' => ['comments' => [
+    'k1' => ['author' => 'דנה לוי', 'date' => '2026-10-22T10:00:00Z', 'text' => "לנסח מחדש\nבבקשה", 'done' => false, 'replies' => [['author' => 'יוסי', 'date' => '2026-10-22T11:00:00Z', 'text' => 'מסכים']]],
+    'k2' => ['author' => 'יוסי', 'date' => '2026-10-22T12:00:00Z', 'text' => 'נפתר כבר', 'done' => true, 'replies' => []],
+    'gone' => ['author' => 'x', 'date' => '2026-10-22T12:00:00Z', 'text' => 'בלי טווח', 'done' => false, 'replies' => []],
+]], 'content' => [
+    ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'לפני '], ['type' => 'text', 'text' => 'מסומן', 'marks' => $cm('k1')],
+        ['type' => 'text', 'text' => ' וגם', 'marks' => array_merge($cm('k1'), [['type' => 'link', 'attrs' => ['href' => 'https://example.com']]])]]],
+    ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'המשך', 'marks' => $cm('k1')], ['type' => 'text', 'text' => ' ושני', 'marks' => $cm('k2')], ['type' => 'text', 'text' => ' סוף']]],
+]];
+$cmDocx = export_docx($cmDoc, page_normalize([]), 'הערות');
+file_put_contents("$tmp/cm.docx", $cmDocx);
+$zip->open("$tmp/cm.docx");
+$cmMain = (string)$zip->getFromName('word/document.xml');
+$cmXml = (string)$zip->getFromName('word/comments.xml');
+$cmEx = (string)$zip->getFromName('word/commentsExtended.xml');
+$cmCt = (string)$zip->getFromName('[Content_Types].xml');
+$cmRels = (string)$zip->getFromName('word/_rels/document.xml.rels');
+$zip->close();
+check('Word: טווחים — התחלה בפסקה אחת וסוף בפסקה הבאה, ההערה והתשובה; בלי הערה שאין לה טווח', substr_count($cmMain, '<w:commentRangeStart') === 3 && substr_count($cmMain, '<w:commentReference') === 3
+    && strpos($cmMain, 'w:commentRangeStart w:id="0"') < strpos($cmMain, 'מסומן') && strpos($cmMain, 'w:commentRangeEnd w:id="0"') > strpos($cmMain, 'המשך')
+    && strpos($cmMain, 'w:commentRangeEnd w:id="0"') < strpos($cmMain, ' ושני') && !str_contains($cmXml, 'בלי טווח'));
+check('Word: comments.xml (מחבר, תאריך, שתי שורות) ו-commentsExtended (תשובה, נפתר), סוג תוכן וקשרים', str_contains($cmXml, 'w:author="דנה לוי"') && str_contains($cmXml, 'w:date="2026-10-22T10:00:00Z"')
+    && str_contains($cmXml, '>לנסח מחדש<') && str_contains($cmXml, '>בבקשה<') && str_contains($cmEx, 'w15:paraIdParent="10000000"') && str_contains($cmEx, 'w15:paraId="10000002" w15:done="1"')
+    && str_contains($cmCt, 'wordprocessingml.comments+xml') && str_contains($cmCt, 'wordprocessingml.commentsExtended+xml') && str_contains($cmRels, 'Target="commentsExtended.xml"'));
+$cmBack = import_docx($cmDocx, 'cm');
+$cmAttrs = $cmBack['json']['attrs']['comments'] ?? [];
+$cmText = [];
+$walkCm = function ($n) use (&$walkCm, &$cmText) { foreach ($n['marks'] ?? [] as $m) if (($m['type'] ?? '') === 'comment') $cmText[$m['attrs']['id']] = ($cmText[$m['attrs']['id']] ?? '') . $n['text']; foreach ($n['content'] ?? [] as $c) $walkCm($c); };
+$walkCm($cmBack['json']);
+$v = array_values($cmAttrs);
+check('Word הלוך וחזור: שני שרשורים, התשובה, נפתר והטווחים', count($v) === 2 && $v[0]['text'] === "לנסח מחדש\nבבקשה" && $v[0]['author'] === 'דנה לוי' && $v[0]['date'] === '2026-10-22T10:00:00Z'
+    && ($v[0]['replies'][0]['text'] ?? '') === 'מסכים' && $v[0]['done'] === false && $v[1]['done'] === true
+    && array_values($cmText) === ['מסומן וגםהמשך', ' ושני'] && !array_filter($cmBack['report'], fn($r) => $r['key'] === 'comments'), json_encode([$cmAttrs, $cmText], JSON_UNESCAPED_UNICODE));
+check('PDF וטקסט: ההערות לא מופיעות ולא מפריעות', export_text($cmDoc) === "לפני מסומן וגם\nהמשך ושני סוף" && str_starts_with($pdfOf($cmDoc), '%PDF'));
 
 // ======================================================================
 section('הגדרות עמוד');

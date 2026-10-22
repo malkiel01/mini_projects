@@ -187,7 +187,7 @@ async function openDoc(id) {
     main.append(banner, root);
     main.classList.add('editor-main');
     const ed = createWordEditor(root, {
-        json: d.json, page: d.page, editable: d.can === 'edit',
+        json: d.json, page: d.page, editable: d.can === 'edit', user: me,
         upload: async file => {
             const fd = new FormData();
             fd.append('file', file);

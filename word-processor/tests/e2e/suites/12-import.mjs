@@ -24,7 +24,8 @@ export default async function (t) {
     await upload(docx(true), 'מ-Word.docx');
     await p.waitForSelector('dialog[aria-label="דוח ייבוא"]');
     const rows = await p.locator('dialog .import-report li').allTextContents();
-    t.ok('דוח נפתח עם המסמך: הערות וגופן חסר', rows.length === 2 && rows.some(r => r.includes('הערות (Comments) (1)')) && rows.some(r => r.includes('Segoe UI') && r.includes('Heebo')), rows.join(' | '));
+    // הערה (Comments) בלי טווח במסמך — לא מיובאת, וגם לא בדוח (הערות עם טווח — מיובאות; tests/run.php)
+    t.ok('דוח נפתח עם המסמך: גופן חסר', rows.length === 1 && rows.some(r => r.includes('Segoe UI') && r.includes('Heebo')), rows.join(' | '));
     t.ok('הטקסט עצמו יובא', (await p.locator('.wp-doc').textContent()).includes('שלום מ-Word'));
     await p.click('dialog button[type=submit]');
     // חיווי גופן מוחלף (ליקוי ח'): הטקסט ב-Segoe UI מוצג ב-Heebo, והשם המקורי נשמר

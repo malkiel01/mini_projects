@@ -324,7 +324,7 @@ html.wp-no-page-zoom, html.wp-no-page-zoom body, .wp-editor, .wp-stage { touch-a
 @media print {
     /* שקוף — הדף עצמו לבן; רקע לבן כאן היה מסתיר את צבע העמוד ואת סימן המים בעמוד הראשון */
     html, body { background: transparent !important; height: auto !important; overflow: visible !important; }
-    .no-print, header.top, .banner, .wp-toolbar, .wp-findbar, .wp-nav, .wp-paste, .wp-statusbar, .wp-mobilebar, .wp-sheet-shade, .wp-preview-bar, .toast, dialog { display: none !important; }
+    .no-print, header.top, .banner, .wp-toolbar, .wp-findbar, .wp-nav, .wp-comments, .wp-paste, .wp-statusbar, .wp-mobilebar, .wp-sheet-shade, .wp-preview-bar, .toast, dialog { display: none !important; }
     .wp-doc .wp-find, .wp-doc .wp-find-cur { background: none !important; }
     main, .wp-editor, .wp-stage, .wp-zoom-box, .wp-zoom, .wp-sheet { display: block !important; overflow: visible !important; padding: 0 !important; margin: 0 !important;
         background: none !important; transform: none !important; inline-size: auto !important; block-size: auto !important; height: auto !important; width: auto !important; }
@@ -361,6 +361,26 @@ html.wp-no-page-zoom, html.wp-no-page-zoom body, .wp-editor, .wp-stage { touch-a
 .wp-nav .nav-empty { color: var(--muted); font-size: .85rem; }
 .wp-editor.wp-phone .wp-nav { position: absolute; inset-block: 0; inset-inline-start: 0; z-index: 30; inline-size: min(80vw, 300px); box-shadow: 0 0 24px rgb(0 0 0 / .2); }
 .wp-editor.wp-phone .wp-nav .nav-item { min-block-size: 44px; }
+/* הערות (comments.js): הטווח בצהוב (בלי לשנות מידות), החלונית בצד הסוף — כמו ב-Word */
+.wp-doc .wp-cmt { background: #fff2a8; }
+.wp-doc .wp-cmt.on { background: #ffd966; }
+@media print { .wp-doc .wp-cmt, .wp-doc .wp-cmt.on { background: none; } }
+.wp-comments { flex: none; inline-size: 280px; overflow: auto; background: var(--surface); border-inline-start: 1px solid var(--line); padding: var(--s2); }
+.wp-comments[hidden] { display: none; }
+.wp-comments .nav-head { display: flex; align-items: center; justify-content: space-between; margin-block-end: var(--s2); }
+.wp-comments .nav-close { min-inline-size: 32px; min-block-size: 32px; border: 0; border-radius: 6px; background: none; color: inherit; cursor: pointer; }
+.wp-comments .cm-empty { color: var(--muted); font-size: .85rem; }
+.cm-card { border: 1px solid var(--line); border-radius: 8px; padding: 8px; margin-block-end: 8px; background: var(--surface); font-size: .85rem; cursor: pointer; }
+.cm-card.on { border-color: #d4a017; box-shadow: 0 0 0 1px #d4a017; }
+.cm-card.done { opacity: .6; }
+.cm-head { display: flex; justify-content: space-between; gap: 6px; margin-block-end: 4px; }
+.cm-author { font-weight: 600; }
+.cm-date { color: var(--muted); font-size: .75rem; }
+.cm-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.cm-reply { border-block-start: 1px solid var(--line); margin-block-start: 6px; padding-block-start: 6px; padding-inline-start: 10px; }
+.cm-edit, .cm-reply-in { inline-size: 100%; box-sizing: border-box; font: inherit; margin-block-start: 6px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; }
+.cm-actions { display: flex; gap: 4px; flex-wrap: wrap; margin-block-start: 6px; }
+.wp-editor.wp-phone .wp-comments { position: absolute; inset-block: 0; inset-inline-end: 0; z-index: 30; inline-size: min(85vw, 320px); box-shadow: 0 0 24px rgb(0 0 0 / .2); }
 /* סימני פסקה — בלי רוחב, כדי לא לשנות שבירת שורות */
 .wp-mk-p { position: relative; display: inline; }
 .wp-mk-p::after { content: '¶'; position: absolute; inset-inline-start: 1px; color: #6b8fd6; font-weight: normal; font-style: normal; pointer-events: none; }

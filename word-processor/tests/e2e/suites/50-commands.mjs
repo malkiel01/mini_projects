@@ -57,8 +57,8 @@ export default async function (t) {
     t.ok('לשונית "פריסה": הגדרת עמוד ומעברים', JSON.stringify(await shown()) === JSON.stringify(['הגדרת עמוד', 'מעברים']), (await shown()).join(','));
     await p.focus('.rb-tab:text-is("פריסה")');
     await p.keyboard.press('ArrowLeft');
-    t.ok('חץ שמאלה — הלשונית הבאה (תצוגה)', await p.getAttribute('.rb-tab:text-is("תצוגה")', 'aria-selected') === 'true'
-        && await p.evaluate(() => document.activeElement.textContent) === 'תצוגה');
+    t.ok('חץ שמאלה — הלשונית הבאה (סקירה)', await p.getAttribute('.rb-tab:text-is("סקירה")', 'aria-selected') === 'true'
+        && await p.evaluate(() => document.activeElement.textContent) === 'סקירה');
     await p.click('.wp-doc');
     await p.keyboard.press('Control+F1');
     t.ok('Ctrl+F1 — הסרט מתכווץ (הלשוניות נשארות)', await p.locator('.rb-panel:not([hidden])').isHidden() && await p.locator('.rb-tabs').isVisible());
