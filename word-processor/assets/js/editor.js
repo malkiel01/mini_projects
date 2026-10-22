@@ -15,6 +15,7 @@ import { Pages, pageLabel } from './pagination.js';
 import { cleanPastedHtml } from './paste.js';
 import { migrate } from './schema.js';
 import { createCommands } from './commands.js';
+import { FindReplace, createFindBar } from './find.js';
 
 const MM = 96 / 25.4;
 const PT = 4 / 3;
@@ -154,7 +155,8 @@ export function createWordEditor(root, opts) {
     const mobileBar = h('div.wp-mobilebar', { role: 'toolbar', 'aria-label': 'פעולות מהירות' });   // טלפון: שורה קבועה בתחתית
     const sheetShade = h('div.wp-sheet-shade', { hidden: true });
     const previewBar = h('div.wp-preview-bar', { hidden: true });   // תצוגה לפני הדפסה
-    root.append(styleEl, printEl, bar, previewBar, stage, statusBar, mobileBar, sheetShade);
+    const findSlot = h('div.wp-find-slot');               // פס החיפוש וההחלפה (find.js) — נבנה אחרי העורך
+    root.append(styleEl, printEl, bar, previewBar, findSlot, stage, statusBar, mobileBar, sheetShade);
     root.classList.add('wp-editor');
 
     /** גיאומטריה של עמוד לפי הגדרות (בפיקסלים לא מוגדלים). */
@@ -196,7 +198,7 @@ export function createWordEditor(root, opts) {
 
     const editor = new Editor({
         element: host,
-        extensions: extensions([Pages.configure({ geometry, onLayout: drawPages })]),
+        extensions: extensions([Pages.configure({ geometry, onLayout: drawPages }), FindReplace]),
         content: initial,
         editable: opts.editable !== false,
         editorProps: {
@@ -431,10 +433,13 @@ export function createWordEditor(root, opts) {
             save: opts.save ? () => opts.save() : null,
             printPreview: () => preview(true),
             commandSearch: () => focusSearch(),
+            find: mode => { if (phone.matches) openSheet(false); finder.open(mode); },
             // הגדרות העמוד של המקטע שבו הסמן
             sectionPage: () => { const at = editor.state.selection.from; return sections().filter((x, k) => k === 0 || x.from < at).pop().page; },
         },
     });
+    const finder = createFindBar(h, { editor, notify: msg => toast(msg) });
+    findSlot.append(finder.el);
     const ICONS = {
         bold: () => h('b', 'B'), italic: () => h('i', 'I'), underline: () => h('u', 'U'), strike: () => h('s', 'S'),
         superscript: () => h('span', 'x', h('sup', '2')), subscript: () => h('span', 'x', h('sub', '2')),
@@ -478,7 +483,8 @@ export function createWordEditor(root, opts) {
             grp('לוח', B.painter),
             grp('גופן', [fontSel, sizeSel, B.clearFormat], [B.bold, B.italic, B.underline, B.strike, B.superscript, B.subscript, B.color, B.mark, spacingSel]),
             grp('פסקה', [B.bulletList, B.orderedList, listType, B.outdent, B.indent], [B.alignRight, B.alignCenter, B.alignLeft, B.alignJustify, B.paragraphDialog]),
-            grp('סגנונות', [styleSel], [B.editStyles])]],
+            grp('סגנונות', [styleSel], [B.editStyles]),
+            grp('עריכה', [cmdBtn('find'), cmdBtn('replace')])]],
         ['insert', 'הוספה', [grp('טבלאות', B.insertTable), grp('איורים', [B.insertImage, imgInput]), grp('הערות', B.footnote), grp('עמודים', B.pageBreak)]],
         ['layout', 'פריסה', [grp('הגדרת עמוד', B.pageSetup), grp('מעברים', B.sectionBreak)]],
         ['view', 'תצוגה', [zoomGroup, grp('מסמך', [opts.save ? cmdBtn('save') : null, B.print, cmdBtn('printPreview'), opts.versions ? cmdBtn('versions') : null, ...(opts.menu || [])])]],
@@ -556,6 +562,11 @@ export function createWordEditor(root, opts) {
         if (e.key === 'F1' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); setCollapsed(!collapsed); }
         else if (e.altKey && !e.ctrlKey && e.code === 'KeyQ') { e.preventDefault(); focusSearch(); }
         else if ((e.ctrlKey || e.metaKey) && !e.altKey && e.code === 'KeyS') { e.preventDefault(); cmds.run('save'); }
+        // Ctrl+F / Ctrl+H — החיפוש של העורך, לא של הדפדפן (שלא מוצא טקסט בעמודים שמחוץ למסך)
+        else if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && (e.code === 'KeyF' || e.code === 'KeyH') && !previewing) {
+            e.preventDefault();
+            cmds.run(e.code === 'KeyF' ? 'find' : 'replace');
+        }
         else if (e.key === 'Escape' && previewing) { e.preventDefault(); preview(false); }
     });
 
@@ -627,7 +638,7 @@ export function createWordEditor(root, opts) {
     function preview(on) {
         if (on === previewing) return;
         previewing = on;
-        if (on) { wasEditable = editor.isEditable; editor.setEditable(false, false); openSheet(false); }
+        if (on) { wasEditable = editor.isEditable; editor.setEditable(false, false); openSheet(false); finder.close(false); }
         else editor.setEditable(wasEditable, false);
         root.classList.toggle('wp-preview', on);
         previewBar.hidden = !on;
