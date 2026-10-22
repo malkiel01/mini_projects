@@ -503,6 +503,12 @@ try {
         out(['ok' => true]);
     }
 
+    /* ── זמן מסך לאפליקציות: הזמן שנצבר היום במכשיר (lib/apptime.php) ── */
+    if ($do === 'app_usage') {
+        $user = requireUser();
+        out(['ok' => true, 'saved' => accountAppsAllowed((int) $user['account_id']) ? appUsageSave((int) $user['id'], (array) body()) : 0]);
+    }
+
     /* ── מצב העדכון במכשיר (שלב 9) — ההורה רואה עדכון שנכשל או נתקע ── */
     if ($do === 'update_state') {
         $user = requireUser();

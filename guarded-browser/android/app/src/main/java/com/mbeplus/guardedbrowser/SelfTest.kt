@@ -56,7 +56,7 @@ object SelfTest {
             val suspended = if (installed && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
                 try { pm.isPackageSuspended(pkg) } catch (e: Exception) { null } else null
             apps.put(JSONObject().put("p", pkg).put("n", a.optString("n"))
-                .put("state", SelfTestMath.appState(installed, AppPolicy.blocked(store, pkg), suspended, access)))
+                .put("state", SelfTestMath.appState(installed, AppPolicy.blocked(store, pkg, withTime = false), suspended, access)))
         }
 
         return JSONObject()

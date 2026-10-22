@@ -118,7 +118,7 @@ object Enforcer {
             out[key] = SettingsMath.result(true, v.first.isNotEmpty(), calls[key] == true, matches)
         }
         out["install_apps"] = SettingsMath.installApps(out["install_apps"] ?: "fail", blocked(store, "install_apps", false),
-            storeInstalled(ctx) && AppPolicy.blocked(store, STORE))
+            storeInstalled(ctx) && AppPolicy.blocked(store, STORE, withTime = false))
         out["install_unknown"] = SettingsMath.installUnknown(out["install_unknown"] ?: "fail", blocked(store, "install_unknown", true))
         out["camera"] = SettingsMath.result(true, true, camOk, try { dpm.getCameraDisabled(admin) == camOn } catch (e: Exception) { null })
         out["screenshot"] = SettingsMath.result(true, true, shotOk, try { dpm.getScreenCaptureDisabled(admin) == shotOn } catch (e: Exception) { null })
@@ -208,7 +208,7 @@ object Enforcer {
     private fun rawBlockList(ctx: Context, store: Store): Set<String> {
         AppPolicy.scan(ctx, force = true)
         if (store.appsPosture != "deny_all") {
-            return store.appsBlocked.filter { AppPolicy.blocked(store, it) }.toSet()
+            return store.appsBlocked.filter { AppPolicy.blocked(store, it, withTime = false) }.toSet()
         }
         // deny_all: כל מה שניתן לפתוח, פרט למותר ולמה שלעולם לא נחסם.
         val out = mutableSetOf<String>()
@@ -217,9 +217,9 @@ object Enforcer {
             val pkg = ri.activityInfo.packageName
             val sys = (ri.activityInfo.applicationInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
             // אפליקציות מערכת לא מושעות ב-deny_all (סיכון לנעילת הטלפון); הן נחסמות רק אם סומנו.
-            if (!sys && AppPolicy.blocked(store, pkg)) out.add(pkg)
+            if (!sys && AppPolicy.blocked(store, pkg, withTime = false)) out.add(pkg)
         }
-        out.addAll(store.appsBlocked.filter { AppPolicy.blocked(store, it) })
+        out.addAll(store.appsBlocked.filter { AppPolicy.blocked(store, it, withTime = false) })
         return out
     }
 
