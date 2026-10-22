@@ -341,6 +341,9 @@ final class PdfLayout
                 case 'pageBreak':
                     $new = [new FlowItem(0, fn() => null, 'force')];
                     break;
+                case 'toc':
+                    $new = [$this->toc($n['attrs'] ?? [], $width, $indent)];
+                    break;
                 case 'horizontalRule':
                     $new = [new FlowItem(12, function (PdfCanvas $c, float $x, float $yy) use ($width) {
                         $c->line($x, $yy + 6, $x + $width, $yy + 6, [136, 136, 136], 0.75);
@@ -353,6 +356,56 @@ final class PdfLayout
             $list = [];   // רק הבלוק הראשון בפריט רשימה מקבל את הסימן
         }
         return $items;
+    }
+
+    /**
+     * תוכן עניינים — בלוק אחד (כמו בעורך, toc.js): כותרת (גופן × 1.25, שורה × 1.5, ואחריה 6 נק'), ולכל רשומה שורה
+     * (גופן × 1.6): הטקסט מימין (מוזח לפי הרמה), נקודות, ומספר העמוד משמאל. טקסט ארוך מדי — נחתך עם "…".
+     */
+    private function toc(array $a, float $width, float $indent): FlowItem
+    {
+        $S = (float)$this->page['font']['size'];
+        $entries = is_array($a['entries'] ?? null) ? array_values(array_filter($a['entries'], 'is_array')) : [];
+        $rows = $entries ?: [['t' => 'אין כותרות במסמך', 'l' => 0, 'p' => '']];
+        $titleH = $S * 1.25 * 1.5;
+        $lineH = $S * 1.6;
+        $h = $titleH + 6 + count($rows) * $lineH + 6;
+        $fam = $this->page['font']['family'];
+        return new FlowItem($h, function (PdfCanvas $c, float $x, float $y) use ($rows, $entries, $S, $titleH, $lineH, $width, $indent, $fam) {
+            $st = fn(float $size, bool $bold, array $rgb = [0, 0, 0]) => ['family' => $fam, 'size' => $size, 'bold' => $bold, 'italic' => false, 'u' => false,
+                'strike' => false, 'color' => $rgb, 'bg' => null, 'va' => null, 'ls' => 0.0];
+            $left = $x + $indent;
+            $right = $x + $width;
+            $this->drawTextCentered($c, 'תוכן עניינים', $st($S * 1.25, true), $left, $right, $y + $titleH / 2 + 0.32 * $S * 1.25, 'main', 'right');
+            $yy = $y + $titleH + 6;
+            foreach ($rows as $e) {
+                $lvl = max(0, min(9, (int)($e['l'] ?? 1)));
+                $s = $st($S, $lvl === 1, $entries ? [0, 0, 0] : [136, 136, 136]);
+                $base = $yy + $lineH / 2 + 0.32 * $S;
+                $pg = (string)($e['p'] ?? '');
+                $pw = $pg === '' ? 0.0 : $this->textWidth($pg, $s);
+                $start = $right - min(3, max(0, $lvl - 1)) * 14;   // הזחה לפי הרמה (14 נק' לרמה, עד 42)
+                $room = $start - ($left + $pw + 4 + 12 + 4);        // מקום לטקסט: אחרי המספר, 4 + נקודות 12 לפחות + 4
+                $text = trim((string)($e['t'] ?? ''));
+                if ($this->textWidth($text, $s) > $room) {
+                    while (mb_strlen($text) > 1 && $this->textWidth($text . '…', $s) > $room) $text = mb_substr($text, 0, -1);
+                    $text .= '…';
+                }
+                $tw = $this->textWidth($text, $s);
+                $this->drawTextCentered($c, $text, $s, $left, $start, $base, 'main', 'right');
+                if ($pg !== '') {
+                    $this->drawTextCentered($c, $pg, $s, $left, $right, $base, 'main', 'left');
+                    $c->dashLine($left + $pw + 4, $base + 1, $start - $tw - 4, [120, 120, 120], 0.6, [0.6, 2.4]);
+                }
+                $yy += $lineH;
+            }
+        });
+    }
+
+    /** רוחב טקסט בשורה אחת (נק'), באותו גופן שבו drawTextCentered מצייר. */
+    private function textWidth(string $text, array $st): float
+    {
+        return array_sum(array_map(fn($ch) => $this->charAtom(mb_ord($ch), $st)['w'], mb_str_split($text)));
     }
 
     /** רשימה: כל פריט — הבלוקים שלו, מוזחים 24 נק', והסימן (• / 1. / א. / i.) ליד השורה הראשונה. */

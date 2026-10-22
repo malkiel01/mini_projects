@@ -17,6 +17,7 @@ import { migrate } from './schema.js';
 import { createCommands } from './commands.js';
 import { FindReplace, createFindBar } from './find.js';
 import { ParagraphMarks, marksKey, createNavPane, createPasteOptions, wordStats } from './view.js';
+import { headings } from './toc.js';
 
 const MM = 96 / 25.4;
 const PT = 4 / 3;
@@ -362,7 +363,50 @@ export function createWordEditor(root, opts) {
         editor.storage.wpPages.schedule?.();
     }
 
+    let lastLayout = null;   // העימוד האחרון — לתוכן העניינים: באיזה עמוד כל כותרת
+
+    /** מספר העמוד (מ-0) שבו מתחיל המיקום pos — לפי המעברים של העימוד האחרון. */
+    function pageOf(pos) {
+        let pg = 0;
+        for (const b of lastLayout?.breaks || []) if (b.pos <= pos && b.page > pg) pg = b.page;
+        return pg;
+    }
+
+    /** שורות תוכן העניינים: הכותרות עד הרמה levels, ומספר העמוד כמו שהוא מוצג (מספרים, או אותיות בתבנית עברית). */
+    function tocEntries(levels) {
+        const nb = page.numbering;
+        const fmt = nb.format === 'hebrew' ? 'hebrew' : 'n';
+        return headings(editor.state.doc, levels).map(x => ({ t: x.text || '(כותרת ריקה)', l: x.level, i: x.i,
+            p: pageLabel(nb.start + pageOf(x.pos), pageCount, fmt) }));
+    }
+
+    /**
+     * עדכון כל תוכני העניינים. תוכן עניינים שגדל או קטן מזיז עמודים — לכן עוד סבב אחרי שהעימוד נרגע (עד 3).
+     * כל העדכונים — צעד ביטול אחד.
+     */
+    function updateToc(round = 0) {
+        const tr = editor.state.tr;
+        editor.state.doc.descendants((n, pos) => {
+            if (n.type.name !== 'toc') return true;
+            const entries = tocEntries(n.attrs.levels);
+            if (JSON.stringify(entries) !== JSON.stringify(n.attrs.entries)) tr.setNodeMarkup(pos, undefined, { ...n.attrs, entries });
+            return false;
+        });
+        if (!tr.docChanged) return;
+        // הסבבים שאחרי הראשון — רק תיקון של מספרי העמודים, לא צעד ביטול נוסף
+        if (round) tr.setMeta('addToHistory', false);
+        else tr.setMeta('closeHistory$', true);
+        editor.view.dispatch(tr);
+        if (round < 3) setTimeout(() => updateToc(round + 1), 350);
+    }
+
+    function insertToc() {
+        editor.chain().focus().insertContent({ type: 'toc', attrs: { levels: 3, entries: tocEntries(3) } }).run();
+        setTimeout(() => updateToc(1), 350);
+    }
+
     function drawPages(res) {
+        lastLayout = res;
         const G = geometry();
         const n = res.pages;
         const total = n;
@@ -493,6 +537,7 @@ export function createWordEditor(root, opts) {
             zoomIn: () => { fit = false; zoom = Math.min(3, Math.round((zoom + 0.1) * 10) / 10); setZoom(); },
             zoomFit: () => { fit = true; setZoom(); },
             tableStyle: k => applyTableStyle(k),
+            insertToc: () => insertToc(), updateToc: () => updateToc(), hasToc: () => { let f = false; editor.state.doc.descendants(n => { if (n.type.name === 'toc') f = true; return !f; }); return f; },
             crop: pos => cropDialog(pos), imageProps: pos => imageDialog(pos), imageSize: f => imageSizeTo(f), tableProps: () => tablePropsDialog(),
             footnote: () => footnoteDialog(null),
             link: () => linkDialog(), bookmark: () => bookmarkDialog(),
@@ -559,6 +604,7 @@ export function createWordEditor(root, opts) {
     const spacingSel = cmdSel('letterSpacing', 'w-spacing', SPACING.map(([v, t]) => h('option', { value: v }, t)));
     const listType = cmdSel('listType', 'w-list', [h('option', { value: 'decimal' }, '1.'), h('option', { value: 'hebrew' }, 'א.'), h('option', { value: 'roman' }, 'i.'), h('option', { value: 'multi' }, '1.1.1')]);
     const numBtns = ['restartNumbering', 'continueNumbering', 'numberingValue'].map(id => cmdBtn(id));
+    const tocUpd = cmdBtn('updateToc');
     sizeSel.title = 'גודל';
     let zoomLabel = h('span.tb-zoom', '100%');
     let stZoom = null;   // הזום בשורת המצב (נבנה עם שורת המצב)
@@ -588,7 +634,7 @@ export function createWordEditor(root, opts) {
             grp('פסקה', [B.bulletList, B.orderedList, listType, ...numBtns, B.outdent, B.indent], [B.alignRight, B.alignCenter, B.alignLeft, B.alignJustify, B.paragraphDialog, hnumBtn]),
             grp('סגנונות', [gallery], [styleSel, B.editStyles, cmdBtn('newStyle'), cmdBtn('updateStyle')]),
             grp('עריכה', [cmdBtn('find'), cmdBtn('replace')])]],
-        ['insert', 'הוספה', [grp('טבלאות', B.insertTable), grp('איורים', [B.insertImage, imgInput]), grp('הערות', B.footnote), grp('קישורים', [cmdBtn('link'), linkOff, cmdBtn('bookmark')]), grp('עמודים', B.pageBreak)]],
+        ['insert', 'הוספה', [grp('טבלאות', B.insertTable), grp('איורים', [B.insertImage, imgInput]), grp('הערות', B.footnote), grp('קישורים', [cmdBtn('link'), linkOff, cmdBtn('bookmark')]), grp('תוכן עניינים', [cmdBtn('insertToc'), tocUpd]), grp('עמודים', B.pageBreak)]],
         ['layout', 'פריסה', [grp('הגדרת עמוד', B.pageSetup), grp('מעברים', B.sectionBreak)]],
         ['view', 'תצוגה', [zoomGroup, grp('הצגה', [B.navPane, B.showMarks, cmdBtn('wordCount')]), grp('מסמך', [opts.save ? cmdBtn('save') : null, B.print, cmdBtn('printPreview'), opts.versions ? cmdBtn('versions') : null, ...(opts.menu || [])])]],
     ];
@@ -830,6 +876,7 @@ export function createWordEditor(root, opts) {
         B.undo.disabled = !cmds.state('undo').enabled;
         B.redo.disabled = !cmds.state('redo').enabled;
         linkOff.disabled = !cmds.state('unlink').enabled;
+        tocUpd.disabled = !cmds.state('updateToc').enabled || !editor.isEditable;
         for (const b of numBtns) b.disabled = !editor.isActive('orderedList') || !editor.isEditable;
         hnumBtn.classList.toggle('on', !!page.heading_numbers);
         for (const [b, on] of [[B.navPane, nav.isOpen()], [B.showMarks, marksOn()]]) { b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }

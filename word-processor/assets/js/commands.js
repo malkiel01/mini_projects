@@ -110,6 +110,8 @@ export const COMMANDS = [
     { id: 'footnote', label: 'הערת שוליים', icon: '¹', keys: 'Ctrl+Alt+F', group: 'insert', run: x => x.ui.footnote() },
     { id: 'link', label: 'קישור', icon: '🔗', keys: 'Ctrl+K', group: 'insert', run: x => x.ui.link(), active: x => x.editor.isActive('link') },
     { id: 'unlink', label: 'הסרת קישור', icon: '⛓', group: 'insert', enabled: x => x.editor.isActive('link'), run: x => x.chain().unsetLink().run() },
+    { id: 'insertToc', label: 'הוספת תוכן עניינים', icon: '📑', group: 'insert', run: x => x.ui.insertToc() },
+    { id: 'updateToc', label: 'עדכון תוכן עניינים', icon: '🔄', group: 'insert', run: x => x.ui.updateToc(), enabled: x => x.ui.hasToc() },
     { id: 'bookmark', label: 'סימניה', icon: '🔖', group: 'insert', run: x => x.ui.bookmark() },
     { id: 'pageBreak', label: 'מעבר עמוד', icon: '⤓', keys: 'Ctrl+Enter', group: 'insert', run: x => x.chain().insertPageBreak().run() },
     { id: 'sectionBreak', label: 'מעבר מקטע: העמוד הבא בכיוון ההפוך', icon: '⧉', group: 'layout',

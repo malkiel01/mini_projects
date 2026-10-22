@@ -622,6 +622,21 @@ check('Word → חזרה: סדר השכבות נשמר (הראשונה במסמ�
 $backL2 = import_docx(export_docx(['type' => 'doc', 'content' => [['type' => 'paragraph', 'content' => [$imgL(0, [255, 0, 0]), $imgL(0, [0, 0, 255]), ['type' => 'text', 'text' => 'שכבות']]]]], page_normalize([])), $docL)['json']['content'][0]['content'];
 check('Word → חזרה: בסדר הרגיל — בלי z', empty($backL2[0]['attrs']['z']) && empty($backL2[1]['attrs']['z']));
 
+// תוכן עניינים: Word (שדה TOC בתוך sdt) הלוך וחזור, HTML, PDF
+$toc = ['type' => 'toc', 'attrs' => ['levels' => 2, 'entries' => [['t' => 'מבוא', 'l' => 1, 'p' => '1', 'i' => 0], ['t' => 'רקע & הקשר', 'l' => 2, 'p' => '2', 'i' => 1]]]];
+$jT = ['type' => 'doc', 'content' => [$toc, ['type' => 'heading', 'attrs' => ['level' => 1], 'content' => [['type' => 'text', 'text' => 'מבוא']]]]];
+$oxToc = export_ooxml($jT, page_normalize([]));
+check('Word: sdt "Table of Contents" עם שדה TOC \\o "1-2", שורות עם טאב ונקודות', str_contains($oxToc['body'], 'w:docPartGallery w:val="Table of Contents"') && str_contains($oxToc['body'], 'TOC \\o "1-2"')
+    && str_contains($oxToc['body'], 'w:leader="dot"') && str_contains($oxToc['body'], 'רקע &amp; הקשר') && substr_count($oxToc['body'], 'fldCharType="end"') === 1);
+$backToc = import_docx(export_docx($jT, page_normalize([])), $docL)['json']['content'];
+check('Word → חזרה: צומת toc עם אותן שורות (טקסט, רמה, עמוד), והכותרת אחריו', ($backToc[0]['type'] ?? '') === 'toc'
+    && array_map(fn($e) => [$e['t'], $e['l'], $e['p']], $backToc[0]['attrs']['entries']) == [['מבוא', 1, '1'], ['רקע & הקשר', 2, '2']] && ($backToc[1]['type'] ?? '') === 'heading',
+    json_encode($backToc[0] ?? null, JSON_UNESCAPED_UNICODE));
+$hToc = export_html($jT, page_normalize([]))['html'];
+check('HTML: רשימת תוכן העניינים', str_contains($hToc, 'class="toc"') && str_contains($hToc, 'רקע &amp; הקשר'));
+$pdfToc = $pdfOf($jT);
+check('PDF: תוכן העניינים מצויר (עמוד אחד, מבנה תקין)', $structOk($pdfToc) && preg_match_all('#/Type /Page /#', $pdfToc) === 1);
+
 // מספור: רב-רמתי 1.1.1, המשך מספור, מספור כותרות — PDF, Word הלוך וחזור, HTML
 $li = fn($t, $sub = null) => ['type' => 'listItem', 'content' => array_merge([['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => $t]]]], $sub ? [$sub] : [])];
 $jn = ['type' => 'doc', 'content' => [

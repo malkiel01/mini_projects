@@ -245,6 +245,12 @@ function html_node(array $n): string
             return html_image($a);
         case 'pageBreak':
             return '<div class="page-break"></div>';
+        case 'toc':   // תוכן עניינים: השורות השמורות, כל אחת קישור לכותרת (אם יש לה עוגן) — בלי עוגנים: טקסט ומספר
+            $rows = '';
+            foreach (is_array($a['entries'] ?? null) ? $a['entries'] : [] as $e) {
+                $rows .= '<li class="toc-l' . max(1, min(9, (int)($e['l'] ?? 1))) . '"><span>' . h((string)($e['t'] ?? '')) . '</span> <span class="toc-p">' . h((string)($e['p'] ?? '')) . '</span></li>';
+            }
+            return '<nav class="toc" aria-label="תוכן עניינים"><p class="toc-title"><b>תוכן עניינים</b></p><ul>' . $rows . '</ul></nav>';
         case 'hardBreak':
             return '<br>';
         case 'bookmark':
@@ -495,6 +501,8 @@ final class Ooxml
                 return $this->table($n);
             case 'pageBreak':
                 return '<w:p><w:r><w:br w:type="page"/></w:r></w:p>';
+            case 'toc':
+                return $this->toc($a);
             case 'sectionBreak':
                 // ב-Word מקטע מסתיים בפסקה שנושאת את ההגדרות שלו; המקטע הבא — בהגדרות שבצומת (שינויים בלבד)
                 $next = page_normalize(is_array($a['page'] ?? null) ? $a['page'] : [], $this->cur);
@@ -737,6 +745,30 @@ final class Ooxml
         $num = $this->numBase + count($this->nums);
         $this->nums[$num] = $abs;
         return $num;
+    }
+
+    /**
+     * תוכן עניינים — כמו ש-Word שומר אותו: sdt (Table of Contents) עם שדה TOC, והשורות השמורות כתוצאת השדה:
+     * טקסט, טאב עם נקודות לקצה השורה, ומספר העמוד. ב-Word אפשר "לעדכן שדה".
+     */
+    private function toc(array $a): string
+    {
+        $levels = max(1, min(9, (int)($a['levels'] ?? 3)));
+        $entries = is_array($a['entries'] ?? null) ? $a['entries'] : [];
+        $tab = '<w:tabs><w:tab w:val="left" w:leader="dot" w:pos="' . (int)$this->contentTw . '"/></w:tabs>';
+        $run = fn(string $t, bool $b = false) => '<w:r><w:rPr>' . ($b ? '<w:b/><w:bCs/>' : '') . '<w:rtl/></w:rPr><w:t xml:space="preserve">' . xml($t) . '</w:t></w:r>';
+        $out = '<w:sdt><w:sdtPr><w:docPartObj><w:docPartGallery w:val="Table of Contents"/><w:docPartUnique/></w:docPartObj></w:sdtPr><w:sdtContent>'
+            . '<w:p><w:pPr><w:bidi/><w:spacing w:after="120"/></w:pPr>' . str_replace('<w:rtl/>', '<w:rtl/><w:sz w:val="' . (int)round($this->page['font']['size'] * 2.5) . '"/>', $run('תוכן עניינים', true)) . '</w:p>';
+        $begin = '<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> TOC \o "1-' . $levels . '" \h \z \u </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>';
+        if (!$entries) $out .= '<w:p><w:pPr><w:bidi/></w:pPr>' . $begin . $run('אין כותרות במסמך') . '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>';
+        foreach ($entries as $k => $e) {
+            $l = max(1, min(9, (int)($e['l'] ?? 1)));
+            $ind = min(3, $l - 1) * 280;
+            $out .= '<w:p><w:pPr>' . $tab . '<w:bidi/><w:spacing w:after="0"/>' . ($ind ? '<w:ind w:start="' . $ind . '"/>' : '') . '</w:pPr>'
+                . ($k === 0 ? $begin : '') . $run((string)($e['t'] ?? ''), $l === 1) . '<w:r><w:tab/></w:r>' . $run((string)($e['p'] ?? ''))
+                . ($k === count($entries) - 1 ? '<w:r><w:fldChar w:fldCharType="end"/></w:r>' : '') . '</w:p>';
+        }
+        return $out . '</w:sdtContent></w:sdt>';
     }
 
     private function table(array $t): string

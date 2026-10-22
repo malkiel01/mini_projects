@@ -7,6 +7,7 @@ import {
     Extension, Node, Mark, Plugin, PluginKey, mergeAttributes, StarterKit, TextStyle, Color, FontFamily, FontSize, TextAlign, Highlight,
     Subscript, Superscript, Table, TableRow, TableCell, TableHeader, OrderedList, TextSelection,
 } from '../../vendor/tiptap.js';
+import { Toc } from './toc.js';
 
 const BLOCKS = ['paragraph', 'heading'];
 /** מפתח של סגנון שהמשתמש יצר (u1, u2…) — כמו USER_STYLE_RE ב-lib/page.php. */
@@ -825,7 +826,7 @@ export function extensions(extra = []) {
         Highlight.configure({ multicolor: true }),
         Subscript, Superscript,
         TextAlign.configure({ types: BLOCKS, alignments: ['right', 'center', 'left', 'justify'], defaultAlignment: null }),
-        ParagraphFormat, PageBreak, SectionBreak, Footnote, WpImage, LetterSpacing, Link, Bookmark, UnderlineStyle,
+        ParagraphFormat, PageBreak, SectionBreak, Footnote, WpImage, LetterSpacing, Link, Bookmark, UnderlineStyle, Toc,
         WpTable.configure({ resizable: true, cellMinWidth: 30, allowTableNodeSelection: true, View: WpTableView }),
         WpTableRow, Cell, HeaderCell,
         DocAttrs,

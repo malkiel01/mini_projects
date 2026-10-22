@@ -450,6 +450,11 @@ final class DocxCtx
                 $out[] = $this->table($c, $xp);
             } elseif ($c->localName === 'sdt') {
                 $flush();
+                // תוכן עניינים של Word (docPartGallery) → צומת toc עם השורות השמורות: טקסט, ומספר העמוד שאחרי הטאב
+                if (str_contains((string)$xp->evaluate('string(w:sdtPr/w:docPartObj/w:docPartGallery/@w:val)', $c), 'Table of Contents')) {
+                    $out[] = $this->toc($c, $xp);
+                    continue;
+                }
                 foreach ($xp->query('w:sdtContent', $c) as $sc) array_push($out, ...$this->blocks($sc));
             }
         }
@@ -803,6 +808,31 @@ final class DocxCtx
             if ($rh > 0) $rows[$ri]['attrs'] = ['height' => min(400, round($rh / 20, 1))];
         }
         return $rows ? ['type' => 'table', 'attrs' => $this->tableAttrs($tbl, $xp, $grid), 'content' => array_values($rows)] : para();
+    }
+
+    /**
+     * תוכן עניינים: פסקה עם טאב — לפניו הכותרת, אחריו מספר העמוד; הרמה — מההזחה (w:ind) או מסגנון TOCn.
+     * הפסקה הראשונה בלי טאב (הכותרת "תוכן עניינים") — מדולגת. כמה רמות: הרמה העמוקה ביותר שנמצאה (לפחות 3).
+     */
+    private function toc(DOMElement $sdt, DOMXPath $xp): array
+    {
+        $entries = [];
+        $max = 3;
+        foreach ($xp->query('w:sdtContent//w:p', $sdt) as $p) {
+            $parts = [''];
+            foreach ($xp->query('.//w:t|.//w:tab[not(ancestor::w:pPr)]', $p) as $n) {
+                if ($n->localName === 'tab') $parts[] = '';
+                else $parts[count($parts) - 1] .= $n->textContent;
+            }
+            if (count($parts) < 2 || trim($parts[0]) === '') continue;
+            $style = (string)$xp->evaluate('string(w:pPr/w:pStyle/@w:val)', $p);
+            $lvl = preg_match('/^TOC(\d)$/i', $style, $m) ? (int)$m[1]
+                : 1 + (int)round((int)($xp->evaluate('string(w:pPr/w:ind/@w:start)', $p) ?: $xp->evaluate('string(w:pPr/w:ind/@w:right)', $p)) / 280);
+            $lvl = max(1, min(9, $lvl));
+            $max = max($max, $lvl);
+            $entries[] = ['t' => mb_substr(trim($parts[0]), 0, 300), 'l' => $lvl, 'p' => mb_substr(trim(end($parts)), 0, 12), 'i' => count($entries)];
+        }
+        return ['type' => 'toc', 'attrs' => ['levels' => $max, 'entries' => $entries]];
     }
 
     /** גבולות, צבע, רוחב (% מהשורה) ויישור של טבלה מ-tblPr — רק מה שאינו ברירת המחדל. */
