@@ -38,8 +38,19 @@ class AppGuardService : AccessibilityService() {
         override fun run() { tickTime(); timer.postDelayed(this, AppTimeMath.TICK_MS) }
     }
 
+    /** מרקט: התקנה חדשה — הסתיימה ההתקנה, או "זרה" שהותקנה בחלון (MarketInstall). */
+    private val installs = object : android.content.BroadcastReceiver() {
+        override fun onReceive(ctx: android.content.Context, i: Intent) {
+            val pkg = i.data?.schemeSpecificPart ?: return
+            MarketInstall.onInstalled(ctx, pkg, i.getBooleanExtra(Intent.EXTRA_REPLACING, false))
+        }
+    }
+
     override fun onServiceConnected() {
         super.onServiceConnected()
+        try {
+            registerReceiver(installs, android.content.IntentFilter(Intent.ACTION_PACKAGE_ADDED).apply { addDataScheme("package") })
+        } catch (e: Exception) { Trace.log("appguard.installs", e.message ?: "") }
         // מקלדות ושורת המערכת — לא מחליפות את האפליקציה שבחזית (AppTimeMath.foreground).
         val ime: Set<String> = try {
             (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager)
@@ -50,7 +61,11 @@ class AppGuardService : AccessibilityService() {
         timer.postDelayed(timeTick, AppTimeMath.TICK_MS)
     }
 
-    override fun onDestroy() { timer.removeCallbacksAndMessages(null); super.onDestroy() }
+    override fun onDestroy() {
+        timer.removeCallbacksAndMessages(null)
+        try { unregisterReceiver(installs) } catch (e: Exception) {}
+        super.onDestroy()
+    }
 
     /**
      * כל TICK_MS: מוסיפים לאפליקציה שבחזית את הזמן שעבר — רק כשהמסך דלוק. נגמר הזמן כשהיא פתוחה — חוזרים
@@ -58,6 +73,7 @@ class AppGuardService : AccessibilityService() {
      * ‏enforce=false — במעבר בין אפליקציות: רק סוגרים את הזמן, בלי להקפיץ את האפליקציה שהילד כבר עוזב.
      */
     private fun tickTime(enforce: Boolean = true) {
+        if (enforce) MarketInstall.tick(this)
         if (!store.isLoggedIn || store.released || !store.appsManage) { lastTickMs = 0; return }
         val now = TrustedClock.now(store)
         val on = try { (getSystemService(POWER_SERVICE) as android.os.PowerManager).isInteractive } catch (e: Exception) { true }

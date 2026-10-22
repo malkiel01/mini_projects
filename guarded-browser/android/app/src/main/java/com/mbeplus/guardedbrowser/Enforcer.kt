@@ -191,6 +191,9 @@ object Enforcer {
         // עדכון באמצע התקנה — ההחלה לא סוגרת לו את ההתקנה מתחת לרגליים. חלון שפג — כבר נסגר כאן (ALWAYS).
         if (UpdateMath.installOpen(store.installOpenUntil, System.currentTimeMillis())) setInstall(ctx, true)
         else store.installOpenUntil = 0L
+        // חלון התקנה מהמרקט (MarketInstall) — Play מתקינה רק כש"התקנת אפליקציות" פתוחה. נסגר ב-close (ההחלה הבאה).
+        if (MarketMath.open(store.marketTarget, store.marketUntil, System.currentTimeMillis()))
+            trySet { dpm.clearUserRestriction(admin, UserManager.DISALLOW_INSTALL_APPS) }
 
         if (!store.appsManage) {
             unsuspendAll(ctx, store)
@@ -230,7 +233,7 @@ object Enforcer {
         AppPolicy.scan(ctx, force = true)
         if (store.appsPosture != "deny_all") {
             // ועוד אפליקציות חדשות שנחסמות כברירת מחדל (NewAppMath) — עד שהשרת רושם עליהן כלל.
-            return (store.appsBlocked + store.launchable.filter { NewAppMath.isNew(it, store.appsKnown, store.appsBaseline) })
+            return (store.appsBlocked + store.marketStrays + store.launchable.filter { NewAppMath.isNew(it, store.appsKnown, store.appsBaseline) })
                 .filter { AppPolicy.blocked(store, it, withTime = false) }.toSet()
         }
         // deny_all: כל מה שניתן לפתוח, פרט למותר ולמה שלעולם לא נחסם.

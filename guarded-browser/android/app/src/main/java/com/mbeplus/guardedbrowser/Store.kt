@@ -145,6 +145,8 @@ class Store(context: Context) {
             .putString("apps_hidden", a?.optJSONArray("hidden")?.toString() ?: "[]")
             // כרום מנוהל (lib/chrome.php, Enforcer.applyChrome).
             .putString("apps_chrome", a?.optJSONObject("chrome")?.toString() ?: "{}")
+            // המרקט (lib/market.php): מה ששוחרר — [{p, n, c, icon, note}].
+            .putString("apps_market", a?.optJSONArray("market")?.toString() ?: "[]")
             // זמן מסך: {package: דקות ליום} (AppTimeMath).
             .putString("app_limits", a?.optJSONObject("limits")?.toString() ?: "{}")
             .apply()
@@ -192,6 +194,25 @@ class Store(context: Context) {
         set(v) { prefs.edit().putLong("new_apps_sent_at", v).apply() }
     val appsHidden: Set<String> get() = strSet("apps_hidden")
     val chromePolicy: JSONObject get() = obj("apps_chrome") ?: JSONObject()
+
+    /** המרקט: מה ששוחרר לילד — (חבילה, שם). */
+    val market: List<Pair<String, String>> get() = try {
+        val a = JSONArray(prefs.getString("apps_market", "[]") ?: "[]")
+        (0 until a.length()).mapNotNull { a.optJSONObject(it) }.map { it.optString("p") to it.optString("n") }.filter { it.first.isNotEmpty() }
+    } catch (e: Exception) { emptyList() }
+
+    /** חלון ההתקנה מהמרקט (MarketMath): מה מתקינים, ועד מתי Play פתוחה. */
+    var marketTarget: String
+        get() = prefs.getString("market_target", "") ?: ""
+        set(v) { prefs.edit().putString("market_target", v).apply() }
+    var marketUntil: Long
+        get() = prefs.getLong("market_until", 0L)
+        set(v) { prefs.edit().putLong("market_until", v).apply() }
+
+    /** "זרות": הותקנו בחלון ולא אושרו — חסומות עד שההורה יחליט (AppPolicy). */
+    var marketStrays: Set<String>
+        get() = strSet("market_strays")
+        set(v) { prefs.edit().putString("market_strays", JSONArray(v.toList()).toString()).apply() }
 
     /** חבילות כרום שמגדלור העביר להן מדיניות — כדי לנקות אותה כשההורה מכבה "כרום מנוהל". */
     var chromeApplied: Set<String>

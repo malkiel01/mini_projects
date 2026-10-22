@@ -96,6 +96,7 @@ class HomeActivity : AppCompatActivity() {
         if (!Setup.ready(this)) { startActivity(Intent(this, SetupActivity::class.java)); return }
         // עדכון חובה — עד ההתקנה אין כניסה (Updater).
         if (Updater.required(this)) { Updater.lock(this); return }
+        MarketInstall.tick(this)   // חזרה מ-Play — החלון נסגר כשההתקנה הסתיימה או כשהזמן עבר
         refresh()
         if (store.pendingRequests().isNotEmpty()) watcher.start()
     }
@@ -216,7 +217,8 @@ class HomeActivity : AppCompatActivity() {
         if (has("youtube") && yt.isNotEmpty()) { section("▶️ יוטיוב", yt, false); any = true }
         if (has("apps") && store.appsManage) {
             val apps = appsCache.filter { match(it.second, it.first) }
-            if (apps.isNotEmpty()) { appsSection(apps); any = true }
+            val market = marketCache.filter { match(it.second, it.first) }
+            if (apps.isNotEmpty() || market.isNotEmpty()) { appsSection(apps, market); any = true }
         }
         if (has("requests") && q.isEmpty() && myRequests.isNotEmpty()) { requestsSection(); any = true }
 
@@ -276,13 +278,15 @@ class HomeActivity : AppCompatActivity() {
         return v
     }
 
-    /* ── 📲 אפליקציות: מה שמותר לילד לפתוח במכשיר (בשלב הבא — גם המרקט) ── */
+    /* ── 📲 אפליקציות: מה שמותר לילד לפתוח במכשיר, ומהמרקט — מה ששוחרר לו ועוד לא מותקן ── */
 
     /** (חבילה, שם) — האפליקציות שמותר לפתוח, לפי המדיניות. נבנה ברקע (AppPolicy.scan, PackageManager). */
     @Volatile private var appsCache: List<Pair<String, String>> = emptyList()
+    /** מהמרקט: שוחררו ולא מותקנות — "📥 התקנה" (MarketInstall). */
+    @Volatile private var marketCache: List<Pair<String, String>> = emptyList()
 
     private fun loadApps() {
-        if (!store.appsManage || !has("apps")) { appsCache = emptyList(); return }
+        if (!store.appsManage || !has("apps")) { appsCache = emptyList(); marketCache = emptyList(); return }
         Thread {
             try {
                 AppPolicy.scan(this)
@@ -292,14 +296,25 @@ class HomeActivity : AppCompatActivity() {
                     .map { it to (try { pm.getApplicationLabel(pm.getApplicationInfo(it, 0)).toString() } catch (e: Exception) { it }) }
                     .sortedBy { it.second.lowercase() }
                 appsCache = list
+                val installed = store.launchable
+                marketCache = store.market.filter { it.first !in installed && it.first != store.ownPackage }
                 runOnUiThread { if (!isFinishing) draw() }
             } catch (e: Exception) { Trace.log("home.apps", e.message ?: "") }
         }.start()
     }
 
-    private fun appsSection(apps: List<Pair<String, String>>) {
+    private fun appsSection(apps: List<Pair<String, String>>, market: List<Pair<String, String>>) {
         header("📲 אפליקציות")
         val g = grid()
+        val now = System.currentTimeMillis()
+        for ((pkg, label) in market) {
+            val v = tile(g)
+            v.findViewById<TextView>(R.id.tileIcon).text = "📥"
+            v.findViewById<TextView>(R.id.tileLabel).text = label
+            val busy = MarketMath.action(false, pkg, store.marketTarget, store.marketUntil, now) == "installing"
+            v.findViewById<TextView>(R.id.tileUrl).text = if (busy) "⏳ בהתקנה…" else "התקנה"
+            v.setOnClickListener { if (allowed) confirmInstall(pkg, label) }
+        }
         for ((pkg, label) in apps) {
             val v = tile(g)
             v.findViewById<TextView>(R.id.tileIcon).apply {
@@ -313,6 +328,20 @@ class HomeActivity : AppCompatActivity() {
                 if (allowed && i != null) startActivity(i)
             }
         }
+    }
+
+    /** התקנה מהמרקט: Google Play נפתחת לכמה דקות, רק לאפליקציה הזו. */
+    private fun confirmInstall(pkg: String, label: String) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle("📥 התקנת $label")
+            .setMessage("חנות Google Play תיפתח בדף של $label ל-${MarketMath.WINDOW_MS / 60_000} דקות. לוחצים \"התקנה\" ומחכים — " +
+                "מגדלור יחזור לבד כשההתקנה תסתיים.\n\nצריך חשבון Google במכשיר. אפליקציה אחרת שתותקן בזמן הזה — תיחסם עד שההורה יאשר.")
+            .setPositiveButton("פתיחת Play") { _, _ ->
+                try { MarketInstall.start(this, pkg) }
+                catch (e: Exception) { Toast.makeText(this, "חנות Google Play לא נמצאה במכשיר", Toast.LENGTH_LONG).show() }
+            }
+            .setNegativeButton("ביטול", null)
+            .show()
     }
 
     /* ── 🙋 הבקשות שלי: מהיממה האחרונה (api do=requests) ── */
