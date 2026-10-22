@@ -90,6 +90,8 @@ function ruleMatches(array $rule, array $url, bool $isMainFrame): bool {
     $scope = (string) ($rule['scope'] ?? 'domain');
 
     if ($scope === 'domain_plus' && !$isMainFrame) return true;
+    // משאב של משימה (lib/tasks.php): נטען בתוך דף — לא יעד לגלישה.
+    if ($scope === 'resource' && $isMainFrame) return false;
     if (!hostMatches($url['host'], $pattern['host'])) return false;
 
     if ($scope === 'exact') {
