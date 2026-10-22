@@ -631,7 +631,6 @@
             "u1": {
                 "name": "ציטוט",
                 "size": 11,
-                "italic": true,
                 "color": "#595959",
                 "align": "center",
                 "before": 6,
