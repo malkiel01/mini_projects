@@ -874,11 +874,19 @@ final class Ooxml
     private function runs(string $text, array $marks, array $pa): string
     {
         $rpr = $this->rpr($marks, $pa);
+        // שינוי עיצוב במעקב: w:rPrChange — האחרון ב-rPr, עם העיצוב הקודם (Word מציג "עוצב" ומאפשר לקבל / לדחות)
+        $chg = '';
+        foreach ($marks as $m) {
+            if (($m['type'] ?? '') !== 'fmt' || $this->prefix !== '') continue;
+            $date = preg_match('/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/', (string)($m['attrs']['date'] ?? '')) ? ' w:date="' . $m['attrs']['date'] . '"' : '';
+            $chg = '<w:rPrChange w:id="' . (++$this->bookmarkId) . '" w:author="' . xml(mb_substr((string)($m['attrs']['author'] ?? ''), 0, 120)) . '"' . $date . '><w:rPr>'
+                . $this->rpr(is_array($m['attrs']['old'] ?? null) ? $m['attrs']['old'] : [], $pa) . '</w:rPr></w:rPrChange>';
+        }
         $out = '';
         $parts = preg_split('/([A-Za-z0-9](?:[A-Za-z0-9.,:\/\\\\\-+%_@&#= ]*[A-Za-z0-9%])?)/u', $text, -1, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY);
         foreach ($parts as $p) {
             $ltr = (bool)preg_match('/^[A-Za-z0-9]/', $p);
-            $r = $rpr . ($ltr ? '' : '<w:rtl/>');
+            $r = $rpr . ($ltr ? '' : '<w:rtl/>') . $chg;
             foreach (preg_split('/(\t)/', $p, -1, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY) as $q) {
                 $inner = $q === "\t" ? '<w:tab/>' : '<w:t xml:space="preserve">' . xml($q) . '</w:t>';
                 $out .= '<w:r>' . ($r !== '' ? "<w:rPr>$r</w:rPr>" : '') . $inner . '</w:r>';

@@ -569,7 +569,7 @@ final class DocxCtx
             if (is_numeric($start) && ($n = (int)round(((int)$start - max(0, $hang)) / 720)) > 0) $attrs['indent'] = min(8, $n);
         }
         // שינויי עיצוב במעקב — לא נכנסים (תוספות ומחיקות — כן: סימוני ins / del)
-        $this->note('tracked', $xp->query('w:r/w:rPr/w:rPrChange|w:pPr/w:pPrChange', $p)->length);
+        $this->note('tracked', $xp->query('w:pPr/w:pPrChange', $p)->length);   // שינויי עיצוב של תווים (rPrChange) — כן נכנסים, כסימון fmt
         // שדות — חוץ מ-HYPERLINK (קישור אמיתי), SEQ (כיתוב) ו-REF לכיתוב (הפניה צולבת)
         $known = fn($e) => 'starts-with(normalize-space(' . $e . '), "HYPERLINK") or starts-with(normalize-space(' . $e . '), "SEQ ") or starts-with(normalize-space(' . $e . '), "REF _Ref")';
         $this->note('fields', $xp->query('w:fldSimple|w:r/w:fldChar[@w:fldCharType="begin"]|w:hyperlink/w:r/w:fldChar[@w:fldCharType="begin"]', $p)->length
@@ -799,6 +799,22 @@ final class DocxCtx
     {
         $rpr = $xp->query('w:rPr', $r)->item(0);
         if (!$rpr) return [];
+        $m = $this->rprMarks($rpr, $xp);
+        // שינוי עיצוב במעקב (w:rPrChange): סימון fmt עם העיצוב הקודם
+        $chg = $xp->query('w:rPrChange', $rpr)->item(0);
+        if ($chg instanceof DOMElement) {
+            $old = $xp->query('w:rPr', $chg)->item(0);
+            $date = (string)$chg->getAttributeNS(W, 'date');
+            $m[] = ['type' => 'fmt', 'attrs' => ['author' => mb_substr(trim((string)$chg->getAttributeNS(W, 'author')), 0, 120),
+                'date' => preg_match('/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d/', $date) ? substr($date, 0, 19) . 'Z' : '',
+                'old' => $old instanceof DOMElement ? $this->rprMarks($old, $xp) : []]];
+        }
+        return $m;
+    }
+
+    /** הסימונים של w:rPr (או של ה-rPr הקודם שבתוך rPrChange). */
+    private function rprMarks(DOMElement $rpr, DOMXPath $xp): array
+    {
         $on = function (string $tag) use ($xp, $rpr) {
             $e = $xp->query("w:$tag", $rpr)->item(0);
             if (!$e instanceof DOMElement) return false;
@@ -1123,7 +1139,7 @@ const IMPORT_REPORT = [
     'images' => ['תמונות שלא נטענו', 'הקובץ פגום או בפורמט שאינו נתמך'],
     'math' => ['נוסחאות', 'לא יובאו'],
     'nested' => ['טבלה בתוך טבלה', 'הטבלה הפנימית לא יובאה'],
-    'tracked' => ['שינויי עיצוב במעקב', 'התקבלו (תוספות ומחיקות — יובאו עם המעקב)'],
+    'tracked' => ['שינויי עיצוב פסקה במעקב', 'התקבלו (תוספות, מחיקות ועיצוב תווים — יובאו עם המעקב)'],
     'fields' => ['שדות (תוכן עניינים, תאריך, הפניות)', 'יובאו כטקסט קבוע — לא יתעדכנו'],
     'hf_extra' => ['כותרת שונה לעמוד הראשון או לעמודים זוגיים', 'יובאה רק הכותרת הרגילה'],
     'hf_complex' => ['תמונה או טבלה בכותרת עליונה / תחתונה', 'יובא רק הטקסט'],

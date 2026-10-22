@@ -104,7 +104,7 @@ export default async function (t) {
     const s = await t.api(p, 'my_open', { doc });
     const tabs = s.json.content[0].attrs.tabs;
     t.ok('חלון הפסקה: שתי עצירות נשמרו — 2.5 ס"מ לתחילה, 5 ס"מ לסוף עם נקודות; גרסת מבנה 6',
-        tabs?.length === 2 && Math.abs(tabs[0].pos - 70.9) < 0.2 && tabs[0].align === 'start' && Math.abs(tabs[1].pos - 141.7) < 0.2 && tabs[1].align === 'end' && tabs[1].leader === 'dot' && s.json.attrs.schema === 6,
+        tabs?.length === 2 && Math.abs(tabs[0].pos - 70.9) < 0.2 && tabs[0].align === 'start' && Math.abs(tabs[1].pos - 141.7) < 0.2 && tabs[1].align === 'end' && tabs[1].leader === 'dot' && s.json.attrs.schema >= 6,
         JSON.stringify(tabs));
     t.ok('בלי שגיאות JS', !p.errors.length, p.errors.join(' | '));
     await p.context().close();

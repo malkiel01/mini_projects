@@ -14,7 +14,7 @@ const LOCK_SECONDS = 120;
 const MEDIA_MAX_BYTES = 10 * 1024 * 1024;
 const MEDIA_TYPES = ['image/png' => 'png', 'image/jpeg' => 'jpg', 'image/gif' => 'gif', 'image/webp' => 'webp'];
 /** גרסת המבנה של ה-JSON (attrs.schema). אותו מספר ב-assets/js/extensions.js; ההמרות — כאן וב-assets/js/schema.js. */
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 
 class ApiError extends Exception
 {
@@ -64,7 +64,7 @@ function doc_migrate(array $json): array
  * הגרסה המינימלית של עורך שמותר לו לשמור על המסמך: לפי מה שבאמת יש בו — לא לפי המספר שנרשם (מסמכים נשמרו
  * עם מבנה של גרסה 3 עוד כשהמספר היה 2). צומת או סימון של גרסה 3 → 3; קישור / סימניה → 2; אחרת 0.
  * מאפיינים שנוספו לצמתים קיימים (למשל סגנון קו תחתון) — לא נבדקים כאן; מעכשיו כל תוספת כזו מעלה את המספר.
- * 4 — מעקב שינויים; 5 — מעבר טור; 6 — עצירות טאב (attrs.tabs בפסקה).
+ * 4 — מעקב שינויים; 5 — מעבר טור; 6 — עצירות טאב (attrs.tabs בפסקה); 7 — שינוי עיצוב במעקב (fmt).
  */
 function doc_schema_need(array $json): int
 {
@@ -73,7 +73,8 @@ function doc_schema_need(array $json): int
         foreach ($nodes as $n) {
             if (!is_array($n) || $need >= SCHEMA_VERSION) return;
             $t = $n['type'] ?? '';
-            if (!empty($n['attrs']['tabs'])) { $need = 6; return; }
+            if (in_array('fmt', array_column(array_filter(is_array($n['marks'] ?? null) ? $n['marks'] : [], 'is_array'), 'type'), true)) { $need = 7; return; }
+            if (!empty($n['attrs']['tabs'])) $need = max($need, 6);   // ממשיכים לתוכן — בו יכול להיות שינוי עיצוב (7)
             if ($t === 'columnBreak') { $need = max($need, 5); continue; }
             $marks = array_column(array_filter(is_array($n['marks'] ?? null) ? $n['marks'] : [], 'is_array'), 'type');
             if (in_array('ins', $marks, true) || in_array('del', $marks, true)) { $need = max($need, 4); continue; }

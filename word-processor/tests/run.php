@@ -1137,6 +1137,29 @@ check('track_view מקור: התוספת יוצאת, המחיקה — טקסט �
 $tvh = track_view($trDoc, 'all', ['יוסי']);
 check('track_view עם מחבר מוסתר: השינוי שלו כמו בסופי, של האחר — מסומן', $tvText($tvh) === 'לפני חדש אחרי' && in_array(['type' => 'underline'], $tvh['content'][0]['content'][1]['marks']));
 check('track_view: תצוגה לא מוכרת — סימון מלא', track_view($trDoc, 'xx') === track_visual($trDoc));
+// שינוי עיצוב במעקב (fmt): מודגש ואדום, לפני כן נטוי — Word: rPrChange הלוך וחזור; PDF במקור — העיצוב הקודם
+$fmDoc = ['type' => 'doc', 'attrs' => ['track' => true], 'content' => [['type' => 'paragraph', 'content' => [
+    ['type' => 'text', 'text' => 'עוצב', 'marks' => [['type' => 'bold'], ['type' => 'textStyle', 'attrs' => ['color' => '#ff0000']],
+        ['type' => 'fmt', 'attrs' => ['author' => 'דנה', 'date' => '2026-10-22T10:00:00Z', 'old' => [['type' => 'italic']]]]]],
+    ['type' => 'text', 'text' => ' רגיל'],
+]]]];
+$fmo = track_view($fmDoc, 'original')['content'][0]['content'][0]['marks'];
+check('track_view מקור: שינוי עיצוב — העיצוב הקודם במקום הנוכחי', $fmo === [['type' => 'italic']], json_encode($fmo));
+check('track_view סופי / מלא: העיצוב הנוכחי, בלי הסימון', array_column(track_view($fmDoc, 'final')['content'][0]['content'][0]['marks'], 'type') === ['bold', 'textStyle']
+    && array_column(track_view($fmDoc)['content'][0]['content'][0]['marks'], 'type') === ['bold', 'textStyle']);
+file_put_contents("$tmp/fm.docx", export_docx($fmDoc, page_normalize([]), 'עיצוב'));
+$zip->open("$tmp/fm.docx");
+$fmMain = (string)$zip->getFromName('word/document.xml');
+$zip->close();
+check('Word: w:rPrChange — האחרון ב-rPr, עם מחבר, תאריך והעיצוב הקודם', (bool)preg_match('#<w:rPr><w:b/><w:bCs/><w:color w:val="FF0000"/><w:rtl/><w:rPrChange w:id="\d+" w:author="דנה" w:date="2026-10-22T10:00:00Z"><w:rPr><w:i/><w:iCs/></w:rPr></w:rPrChange></w:rPr>#u', $fmMain),
+    substr($fmMain, strpos($fmMain, '<w:body>'), 400));
+$fmBack = import_docx(file_get_contents("$tmp/fm.docx"), 'fm')['json']['content'][0]['content'][0];
+$fmMark = array_values(array_filter($fmBack['marks'], fn($m) => $m['type'] === 'fmt'))[0] ?? null;
+check('Word הלוך וחזור: שינוי העיצוב חוזר — מחבר, תאריך והעיצוב הקודם', $fmMark && $fmMark['attrs']['author'] === 'דנה' && $fmMark['attrs']['date'] === '2026-10-22T10:00:00Z'
+    && $fmMark['attrs']['old'] === [['type' => 'italic']] && in_array(['type' => 'bold'], $fmBack['marks']), json_encode($fmBack, JSON_UNESCAPED_UNICODE));
+check('גרסת מבנה: שינוי עיצוב במעקב צריך 7 (גם בפסקה עם עצירות טאב)', doc_schema_need($fmDoc) === 7
+    && doc_schema_need(['type' => 'doc', 'content' => [['type' => 'paragraph', 'attrs' => ['tabs' => [['pos' => 50]]], 'content' => $fmDoc['content'][0]['content']]]]) === 7);
+check('טקסט: שינוי עיצוב לא משנה את הטקסט', export_text($fmDoc) === 'עוצב רגיל');
 $trDocx = export_docx($trDoc, page_normalize([]), 'מעקב');
 file_put_contents("$tmp/tr.docx", $trDocx);
 $zip->open("$tmp/tr.docx");

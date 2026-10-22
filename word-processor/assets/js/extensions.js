@@ -10,7 +10,7 @@ import {
 import { Toc } from './toc.js';
 import { Seq, Xref } from './caption.js';
 import { CommentMark } from './comments.js';
-import { InsMark, DelMark } from './track.js';
+import { InsMark, DelMark, FmtMark } from './track.js';
 
 const BLOCKS = ['paragraph', 'heading'];
 /** מפתח של סגנון שהמשתמש יצר (u1, u2…) — כמו USER_STYLE_RE ב-lib/page.php. */
@@ -863,8 +863,9 @@ export const LetterSpacing = Extension.create({
  * 4: מעקב שינויים (ins / del, attrs.track).
  * 5: מעבר טור ידני (columnBreak).
  * 6: עצירות טאב מותאמות (attrs.tabs בפסקה).
+ * 7: שינויי עיצוב במעקב (סימון fmt).
  */
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 /**
  * מאפיינים של המסמך עצמו (צומת השורש): הגדרות העמוד וגרסת המבנה.
@@ -895,7 +896,7 @@ export function extensions(extra = []) {
         Highlight.configure({ multicolor: true }),
         Subscript, Superscript,
         TextAlign.configure({ types: BLOCKS, alignments: ['right', 'center', 'left', 'justify'], defaultAlignment: null }),
-        ParagraphFormat, PageBreak, ColumnBreak, SectionBreak, Footnote, WpImage, LetterSpacing, Link, Bookmark, UnderlineStyle, Toc, Seq, Xref, CommentMark, InsMark, DelMark,
+        ParagraphFormat, PageBreak, ColumnBreak, SectionBreak, Footnote, WpImage, LetterSpacing, Link, Bookmark, UnderlineStyle, Toc, Seq, Xref, CommentMark, InsMark, DelMark, FmtMark,
         WpTable.configure({ resizable: true, cellMinWidth: 30, allowTableNodeSelection: true, View: WpTableView }),
         WpTableRow, Cell, HeaderCell,
         DocAttrs,

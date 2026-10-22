@@ -381,6 +381,13 @@ html.wp-no-page-zoom, html.wp-no-page-zoom body, .wp-editor, .wp-stage { touch-a
 /* תצוגת השינויים (editor.js, setTrackView): סופי — כאילו הכול אושר; מקור — כאילו הכול נדחה. גם בהדפסה */
 .wp-doc.wp-tv-final ins.wp-ins, .wp-doc.wp-tv-original del.wp-del { text-decoration: none; color: inherit; }
 .wp-doc.wp-tv-final del.wp-del, .wp-doc.wp-tv-original ins.wp-ins { display: none; }
+/* שינוי עיצוב במעקב: קו כפול דק בצבע המחבר מתחת (כמו בסימון של Word). בתצוגת המקור — העיצוב הקודם (--o-*), ומה שבפנים מאופס */
+.wp-doc .wp-fmt { text-decoration: underline double var(--wpc, #c00000); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.wp-doc.wp-tv-final .wp-fmt { text-decoration: none; }
+.wp-doc.wp-tv-original .wp-fmt { text-decoration: var(--o-td, none); font-weight: var(--o-fw); font-style: var(--o-fs); color: var(--o-color, inherit);
+    font-size: var(--o-size, inherit); font-family: var(--o-ff, inherit); background: var(--o-bg, none); }
+.wp-doc.wp-tv-original .wp-fmt :is(strong, b, em, i, u, s, mark, span) { font-weight: inherit; font-style: inherit; text-decoration: inherit; color: inherit;
+    font-size: inherit; font-family: inherit; background: none; }
 .wp-author-dot { display: inline-block; inline-size: .7em; block-size: .7em; border-radius: 50%; vertical-align: middle; }
 /* הערות (comments.js): הטווח בצהוב (בלי לשנות מידות), החלונית בצד הסוף — כמו ב-Word */
 .wp-doc .wp-cmt { background: #fff2a8; }

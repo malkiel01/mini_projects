@@ -18,7 +18,7 @@ export function migrate(json, page = null) {
     let v = Number(doc.attrs.schema) || 0;
     if (v > SCHEMA_VERSION) throw Object.assign(new Error('המסמך נשמר בגרסה חדשה יותר של העורך — רעננו את הדף'), { code: 'schema_newer' });
     // if (v < 5) { …; v = 5; }   — צעדי המרה עתידיים
-    if (v < SCHEMA_VERSION) v = SCHEMA_VERSION;   // 0 → 6: אין מה להמיר בתוכן
+    if (v < SCHEMA_VERSION) v = SCHEMA_VERSION;   // 0 → 7: אין מה להמיר בתוכן
     doc.attrs.schema = v;
     if (page && !doc.attrs.page) doc.attrs.page = page;
     return doc;
