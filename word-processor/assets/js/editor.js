@@ -160,7 +160,8 @@ export function createWordEditor(root, opts) {
     const statusBar = h('div.wp-statusbar');             // שורת המצב: עמוד, מילים, זום
     const mobileBar = h('div.wp-mobilebar', { role: 'toolbar', 'aria-label': 'פעולות מהירות' });   // טלפון: שורה קבועה בתחתית
     const sheetShade = h('div.wp-sheet-shade', { hidden: true });
-    root.append(styleEl, printEl, bar, stage, statusBar, mobileBar, sheetShade);
+    const previewBar = h('div.wp-preview-bar', { hidden: true });   // תצוגה לפני הדפסה
+    root.append(styleEl, printEl, bar, previewBar, stage, statusBar, mobileBar, sheetShade);
     root.classList.add('wp-editor');
 
     /** גיאומטריה של עמוד לפי הגדרות (בפיקסלים לא מוגדלים). */
@@ -434,6 +435,9 @@ export function createWordEditor(root, opts) {
             zoomFit: () => { fit = true; setZoom(); },
             crop: pos => cropDialog(pos), imageProps: pos => imageDialog(pos), imageSize: f => imageSizeTo(f),
             footnote: () => footnoteDialog(null),
+            save: opts.save ? () => opts.save() : null,
+            printPreview: () => preview(true),
+            commandSearch: () => focusSearch(),
             // הגדרות העמוד של המקטע שבו הסמן
             sectionPage: () => { const at = editor.state.selection.from; return sections().filter((x, k) => k === 0 || x.from < at).pop().page; },
         },
@@ -484,7 +488,7 @@ export function createWordEditor(root, opts) {
             grp('סגנונות', [styleSel], [B.editStyles])]],
         ['insert', 'הוספה', [grp('טבלאות', B.insertTable), grp('איורים', [B.insertImage, imgInput]), grp('הערות', B.footnote), grp('עמודים', B.pageBreak)]],
         ['layout', 'פריסה', [grp('הגדרת עמוד', B.pageSetup), grp('מעברים', B.sectionBreak)]],
-        ['view', 'תצוגה', [zoomGroup, grp('מסמך', [B.print, opts.versions ? cmdBtn('versions') : null, ...(opts.menu || [])])]],
+        ['view', 'תצוגה', [zoomGroup, grp('מסמך', [opts.save ? cmdBtn('save') : null, B.print, cmdBtn('printPreview'), opts.versions ? cmdBtn('versions') : null, ...(opts.menu || [])])]],
     ];
     const uid = Math.random().toString(36).slice(2, 8);
     const tabsEl = h('div.rb-tabs', { role: 'tablist', 'aria-label': 'לשוניות הסרט' });
@@ -526,7 +530,13 @@ export function createWordEditor(root, opts) {
         collapseBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
         store('wp-ribbon-collapsed', collapsed ? '1' : '0');
     }
-    bar.append(h('div.rb-head', h('div.rb-quick', { role: 'group', 'aria-label': 'גישה מהירה' }, B.undo, B.redo), tabsEl, collapseBtn), ...Object.values(panel));
+    // חיפוש פקודה (Alt+Q), כמו "ספר לי" ב-Word: מסנן את רישום הפקודות לפי השם; Enter מפעיל. פקודה שצריכה ערך
+    // (גופן, גודל, צבע…) — פותח את הלשונית שלה ומעביר אליה את המיקוד
+    const searchIn = h('input.rb-search-in', { type: 'search', placeholder: 'חיפוש פקודה', 'aria-label': cmds.title('commandSearch'), title: cmds.title('commandSearch'),
+        role: 'combobox', 'aria-autocomplete': 'list', 'aria-expanded': 'false', 'aria-controls': `rb-${uid}-res`, autocomplete: 'off', spellcheck: 'false' });
+    const results = h('ul.rb-results', { role: 'listbox', id: `rb-${uid}-res`, 'aria-label': 'פקודות', hidden: true });
+    const searchBox = h('div.rb-search', searchIn, results);
+    bar.append(h('div.rb-head', h('div.rb-quick', { role: 'group', 'aria-label': 'גישה מהירה' }, opts.save ? cmdBtn('save') : null, B.undo, B.redo), tabsEl, searchBox, collapseBtn), ...Object.values(panel));
     setCollapsed(collapsed);
     selectTab(userTab);
     // חצים: בין הלשוניות, ובתוך הלשונית בין הפקדים (מימין לשמאל: שמאלה = הבא). תיבת בחירה — החצים שלה
@@ -548,10 +558,92 @@ export function createWordEditor(root, opts) {
         e.preventDefault();
         items[(i + (e.key === 'ArrowLeft' ? 1 : -1) + items.length) % items.length].focus();
     });
-    // Ctrl+F1 — כיווץ והצגה של הסרט (כמו ב-Word), מכל מקום בעורך
+    // קיצורים מכל מקום בעורך: Ctrl+F1 — כיווץ הסרט; Alt+Q — חיפוש פקודה; Ctrl+S — שמירה; Escape — יציאה מתצוגה לפני הדפסה
     root.addEventListener('keydown', e => {
         if (e.key === 'F1' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); setCollapsed(!collapsed); }
+        else if (e.altKey && !e.ctrlKey && e.code === 'KeyQ') { e.preventDefault(); focusSearch(); }
+        else if ((e.ctrlKey || e.metaKey) && !e.altKey && e.code === 'KeyS') { e.preventDefault(); cmds.run('save'); }
+        else if (e.key === 'Escape' && previewing) { e.preventDefault(); preview(false); }
     });
+
+    const plain = s => String(s).normalize('NFD').replace(/[\u0591-\u05C7]/g, '').toLowerCase();
+    let hits = [], active = -1;
+    function findCommands(q) {
+        const n = plain(q.trim());
+        if (!n) return [];
+        const all = cmds.list().filter(c => c.id !== 'commandSearch' && (!c.when || cmds.state(c.id).enabled || c.group === 'table' || c.group === 'image'));
+        // זמינות קודם, אחר כך מה שמתחיל במילה שהוקלדה, ואז הקצרות
+        return all.map(c => ({ c, at: plain(c.label).indexOf(n), ok: cmds.state(c.id).enabled })).filter(x => x.at >= 0)
+            .sort((a, b) => (b.ok - a.ok) || (a.at === 0 ? 0 : 1) - (b.at === 0 ? 0 : 1) || a.c.label.length - b.c.label.length).slice(0, 8).map(x => x.c);
+    }
+    function paintResults() {
+        results.textContent = '';
+        hits.forEach((c, i) => {
+            const ok = cmds.state(c.id).enabled;
+            results.append(h('li', { role: 'option', id: `rb-${uid}-o${i}`, 'aria-selected': i === active ? 'true' : 'false', 'aria-disabled': ok ? 'false' : 'true',
+                onmousedown: e => e.preventDefault(), onclick: () => runHit(i) },
+                h('span.ic', { 'aria-hidden': 'true' }, c.icon || ''), h('span.lb', c.label), c.keys ? h('span.k', c.keys) : null, ok ? null : h('span.k', 'לא זמין כאן')));
+        });
+        if (!hits.length && searchIn.value.trim()) results.append(h('li.none', 'אין פקודה כזו'));
+        const open = !!searchIn.value.trim();
+        results.hidden = !open;
+        searchIn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        if (active >= 0) searchIn.setAttribute('aria-activedescendant', `rb-${uid}-o${active}`); else searchIn.removeAttribute('aria-activedescendant');
+    }
+    function closeSearch() { searchIn.value = ''; hits = []; active = -1; paintResults(); }
+    function runHit(i) {
+        const c = hits[i];
+        if (!c || !cmds.state(c.id).enabled) return;
+        closeSearch();
+        // פקד בסרט שצריך ערך (בחירה / צבע) — פותחים את הלשונית שלו ומתמקדים בו; אחרת — מפעילים
+        const el = [...bar.querySelectorAll('.rb-panel select, .rb-panel input[type=color]')].find(x => x.getAttribute('aria-label') === c.label);
+        if (el) {
+            const key = Object.keys(panel).find(k => panel[k].contains(el));
+            if (phone.matches) openSheet(true);
+            selectTab(key, true);
+            el.focus();
+            return;
+        }
+        editor.commands.focus();
+        cmds.run(c.id);
+    }
+    function focusSearch() {
+        if (phone.matches) openSheet(true);
+        if (collapsed) setCollapsed(false);
+        searchIn.focus();
+        searchIn.select();
+        // פקודה שהופעלה רגע לפני מחזירה את המיקוד לעורך באיחור של פריים (TipTap, focus) — לא לתת לה לגנוב אותו
+        requestAnimationFrame(() => { if (document.activeElement !== searchIn) searchIn.focus(); });
+    }
+    searchIn.addEventListener('input', () => { hits = findCommands(searchIn.value); active = hits.length ? 0 : -1; paintResults(); });
+    searchIn.addEventListener('keydown', e => {
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            if (hits.length) { active = (active + (e.key === 'ArrowDown' ? 1 : -1) + hits.length) % hits.length; paintResults(); }
+        } else if (e.key === 'Enter') { e.preventDefault(); runHit(active); }
+        else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeSearch(); editor.commands.focus(); }
+    });
+    searchIn.addEventListener('blur', () => setTimeout(() => { if (document.activeElement !== searchIn) { results.hidden = true; searchIn.setAttribute('aria-expanded', 'false'); } }, 150));
+
+    // ---------- תצוגה לפני הדפסה: העמודים בלי סרט ובלי סימני עריכה (כמו בהדפסה), קריאה בלבד עד הסגירה ----------
+    let previewing = false, wasEditable = true;
+    const pvPages = h('span.pv-pages');
+    previewBar.append(h('strong', 'תצוגה לפני הדפסה'), pvPages, h('span.st-fill'),
+        h('button.btn.primary', { type: 'button', onclick: () => print() }, '🖨 הדפסה'),
+        h('button.btn', { type: 'button', onclick: () => preview(false) }, 'חזרה לעריכה'));
+    function preview(on) {
+        if (on === previewing) return;
+        previewing = on;
+        if (on) { wasEditable = editor.isEditable; editor.setEditable(false, false); openSheet(false); }
+        else editor.setEditable(wasEditable, false);
+        root.classList.toggle('wp-preview', on);
+        previewBar.hidden = !on;
+        pvPages.textContent = `${pageCount} ${pageCount === 1 ? 'עמוד' : 'עמודים'}`;
+        fit = true;
+        setZoom();
+        refresh();
+        if (on) previewBar.querySelector('.btn.primary').focus(); else editor.commands.focus();
+    }
 
     // ---------- שורת המצב: עמוד X מתוך Y (לפי הסמן), מילים, זום ----------
     const stPage = h('span.st-page');

@@ -185,6 +185,11 @@ async function openDoc(id) {
         },
         // כל שינוי — כולל הגדרות עמוד וסגנונות, שנמצאים בתוך המסמך — עובר לשמירה
         onUpdate: () => { if (cur.saver && cur.can === 'edit') cur.saver.changed(); },
+        // שמירה ידנית (💾 / Ctrl+S): שומרים עכשיו, בלי לחכות להשהיה של השמירה האוטומטית
+        save: async () => {
+            const r = await cur.save?.();
+            if (r?.ok) toast('נשמר');
+        },
     });
     cur.ed = ed;
     ed.statusTarget(pagesEl);
