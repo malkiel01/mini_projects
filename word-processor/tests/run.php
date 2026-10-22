@@ -371,14 +371,14 @@ $wordDocx = $mkDocx([
 $w = import_docx($wordDocx, $docC);
 $rep = array_column($w['report'], 'count', 'key');
 check('דוח ייבוא: כל מה שלא נתמך מופיע', $rep == ['shapes' => 1, 'math' => 1, 'comments' => 1, 'endnotes' => 1, 'nested' => 1, 'tracked' => 2, 'fields' => 1,
-    'columns' => 1, 'hf_extra' => 1, 'styles' => 1, 'pborder' => 1, 'firstline' => 1, 'fonts' => 1], json_encode($rep));
+    'columns' => 1, 'hf_extra' => 1, 'styles' => 1, 'pborder' => 1, 'fonts' => 1], json_encode($rep));
 check('ייבוא: סגנון פסקה מותאם → סגנון שלנו (שם ועיצוב), והפסקה בו', ($w['page']['styles']['u1'] ?? null) == ['name' => 'ציטוט', 'italic' => true, 'color' => '#595959', 'align' => 'center', 'after' => 12.0]
     && ($w['json']['content'][0]['attrs']['pstyle'] ?? '') === 'u1', json_encode($w['page']['styles'] ?? null, JSON_UNESCAPED_UNICODE));
 $fontRow = array_values(array_filter($w['report'], fn($r) => $r['key'] === 'fonts'))[0] ?? [];
 check('דוח ייבוא: שם הגופן החסר ומה מוצג במקומו', str_contains($fontRow['detail'] ?? '', 'Segoe UI') && str_contains($fontRow['detail'] ?? '', 'Heebo'));
 $wt = export_text($w['json']);
 check('דוח ייבוא: הטקסט שמסביב נשמר; שדה — תוצאתו; נמחק — לא', str_contains($wt, 'לפני  אחרי') && str_contains($wt, '22/10/2026 נוסף') && !str_contains($wt, 'נמחק') && str_contains($wt, 'תא'), $wt);
-check('ייבוא: הזחה מימין (bidi) → indent', ($w['json']['content'][0]['attrs']['indent'] ?? 0) === 2);
+check('ייבוא: הזחה מימין (bidi) → indent, ושורה ראשונה → firstLine', ($w['json']['content'][0]['attrs']['indent'] ?? 0) === 2 && ($w['json']['content'][0]['attrs']['firstLine'] ?? 0) == 18);
 check('ייבוא: כותרת עליונה, ומספר "- N -" במרכז הכותרת התחתונה', ($w['page']['header'] ?? '') === 'חברה בע"מ' && !isset($w['page']['footer'])
     && ($w['page']['numbering'] ?? null) == ['show' => true, 'position' => 'bottom', 'align' => 'center', 'format' => 'dash_n', 'first_page' => true], json_encode($w['page'], JSON_UNESCAPED_UNICODE));
 $noHf = $mkDocx(['word/document.xml' => '<w:document ' . $WN . '><w:body><w:p>' . $run('א') . '</w:p><w:sectPr><w:pgSz w:w="11906" w:h="16838"/></w:sectPr></w:body></w:document>']);
@@ -412,6 +412,21 @@ $anchorDocx = $mkDocx(['word/document.xml' => '<w:document ' . $WN . '><w:body><
 check('ייבוא: HYPERLINK \\l "סימניה" → קישור פנימי', str_contains(json_encode(import_docx($anchorDocx, $docL)['json'], JSON_UNESCAPED_UNICODE), '"href":"#פרק_ג"'));
 check('ייבוא: שדה HYPERLINK לא נספר בדוח כ"שדה"', !in_array('fields', array_column($fi['report'], 'key'), true));
 check('safe_href: משלים ודוחה', safe_href('www.a.co.il') === 'https://www.a.co.il' && safe_href('a@b.co') === 'mailto:a@b.co' && safe_href('javascript:x') === null && safe_href('#') === null);
+
+// טיפוגרפיה: סוגי קו תחתון, שורה ראשונה / תלויה, טאב — Word הלוך וחזור ו-HTML
+$jt = ['type' => 'doc', 'content' => [
+    ['type' => 'paragraph', 'attrs' => ['firstLine' => 18], 'content' => [['type' => 'text', 'text' => 'גלי', 'marks' => [['type' => 'underline', 'attrs' => ['ul' => 'wavy']]]], ['type' => 'text', 'text' => "\tאחרי טאב"]]],
+    ['type' => 'paragraph', 'attrs' => ['firstLine' => -24, 'indent' => 1], 'content' => [['type' => 'text', 'text' => 'כפול', 'marks' => [['type' => 'underline', 'attrs' => ['ul' => 'double']]]]]],
+]];
+$oxT = export_ooxml($jt, page_normalize([]));
+check('Word: קו גלי / כפול, firstLine ו-hanging (start כולל את התלויה), טאב', str_contains($oxT['body'], '<w:u w:val="wave"/>') && str_contains($oxT['body'], '<w:u w:val="double"/>')
+    && str_contains($oxT['body'], '<w:ind w:start="0" w:firstLine="360"/>') && str_contains($oxT['body'], '<w:ind w:start="1200" w:hanging="480"/>') && str_contains($oxT['body'], '<w:tab/>'));
+$backT = import_docx(export_docx($jt, page_normalize([])), $docL)['json']['content'];
+$ft = json_encode($backT, JSON_UNESCAPED_UNICODE);
+check('Word → חזרה: סוגי הקו, השורה הראשונה, התלויה וההזחה, הטאב', ($backT[0]['attrs']['firstLine'] ?? 0) == 18 && ($backT[1]['attrs']['firstLine'] ?? 0) == -24 && ($backT[1]['attrs']['indent'] ?? 0) === 1
+    && str_contains($ft, '"ul":"wavy"') && str_contains($ft, '"ul":"double"') && str_contains($ft, '\t'), $ft);
+$hT = export_html($jt, page_normalize([]))['html'];
+check('HTML: text-indent / padding לתלויה, וסוג הקו', str_contains($hT, 'text-indent:18pt') && str_contains($hT, 'text-indent:-24pt;padding-inline-start:24pt') && str_contains($hT, 'text-decoration-style:wavy'));
 
 // סגנונות: כותרות 1–9 וסגנון של המשתמש — Word הלוך וחזור, HTML, נרמול
 $pgS = page_normalize(['styles' => ['u1' => ['name' => 'הדגשה <b>', 'size' => 14, 'bold' => true, 'color' => '#C00000'], 'u2' => ['size' => 10], 'x9' => ['name' => 'רע']]]);

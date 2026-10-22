@@ -166,8 +166,17 @@ function block_style(array $a): string
     if (isset($a['spaceBefore']) && is_numeric($a['spaceBefore'])) $s .= 'padding-top:' . (float)$a['spaceBefore'] . 'pt;';
     if (isset($a['spaceAfter']) && is_numeric($a['spaceAfter'])) $s .= 'padding-bottom:' . (float)$a['spaceAfter'] . 'pt;';
     if (!empty($a['indent'])) $s .= 'margin-inline-start:' . ((int)$a['indent'] * 36) . 'pt;';
+    $s .= first_line_css($a['firstLine'] ?? null);
     if (!empty($a['letterSpacing']) && is_numeric($a['letterSpacing'])) $s .= 'letter-spacing:' . (float)$a['letterSpacing'] . 'pt;';
     return $s;
+}
+
+/** הזחת שורה ראשונה (חיובי) / תלויה (שלילי) — כמו ParagraphFormat בעורך. */
+function first_line_css($v): string
+{
+    if (!is_numeric($v) || !(float)$v) return '';
+    $f = max(-200, min(200, round((float)$v, 1)));
+    return 'text-indent:' . $f . 'pt;' . ($f < 0 ? 'padding-inline-start:' . -$f . 'pt;' : '');
 }
 
 function block_attrs(array $a, string $class = ''): string
@@ -281,7 +290,10 @@ function html_marks(string $s, array $marks): string
         switch ($m['type'] ?? '') {
             case 'bold': $s = "<strong>$s</strong>"; break;
             case 'italic': $s = "<em>$s</em>"; break;
-            case 'underline': $s = "<u>$s</u>"; break;
+            case 'underline':
+                $ul = $a['ul'] ?? null;
+                $s = in_array($ul, UNDERLINES, true) ? '<u style="' . ($ul === 'thick' ? 'text-decoration-thickness:0.12em' : 'text-decoration-style:' . $ul) . '">' . $s . '</u>' : "<u>$s</u>";
+                break;
             case 'strike': $s = "<s>$s</s>"; break;
             case 'subscript': $s = "<sub>$s</sub>"; break;
             case 'superscript': $s = "<sup>$s</sup>"; break;
@@ -493,8 +505,10 @@ final class Ooxml
             $sp .= $l[0] === 'exact' ? ' w:line="' . (int)round($l[1] * 20) . '" w:lineRule="exact"' : ' w:line="' . (int)round($l[1] * 240) . '" w:lineRule="auto"';
         }
         if ($sp !== '') $ppr .= "<w:spacing$sp/>";
-        if (!empty($a['indent'])) $ppr .= '<w:ind w:start="' . ((int)$a['indent'] * 720 + ($inList ? 720 : 0)) . '"/>';
-        elseif ($inList && !$num) $ppr .= '<w:ind w:start="' . (720 * 1) . '"/>';
+        // הזחה: start (בצעדים של 720) + שורה ראשונה (firstLine) / תלויה (hanging — Word מזיז את כל השאר, start כולל אותה)
+        $fl = is_numeric($a['firstLine'] ?? null) ? (int)round(max(-200, min(200, (float)$a['firstLine'])) * 20) : 0;
+        $start = (int)($a['indent'] ?? 0) * 720 + ($inList ? 720 : 0) + ($fl < 0 ? -$fl : 0);
+        if ($start || $fl) $ppr .= '<w:ind w:start="' . $start . '"' . ($fl > 0 ? ' w:firstLine="' . $fl . '"' : ($fl < 0 ? ' w:hanging="' . -$fl . '"' : '')) . '/>';
         $jc = $this->jc($a['textAlign'] ?? null, $rtl);
         if ($jc) $ppr .= '<w:jc w:val="' . $jc . '"/>';
         $runs = '';
@@ -623,7 +637,7 @@ final class Ooxml
         $ls = pt_val($ts['letterSpacing'] ?? null) ?? (is_numeric($pa['letterSpacing'] ?? null) ? (float)$pa['letterSpacing'] : null);
         if ($ls) $o .= '<w:spacing w:val="' . (int)round($ls * 20) . '"/>';
         if (($z = pt_val($ts['fontSize'] ?? null))) { $hz = (int)round($z * 2); $o .= "<w:sz w:val=\"$hz\"/><w:szCs w:val=\"$hz\"/>"; }
-        if (isset($m['underline'])) $o .= '<w:u w:val="single"/>';
+        if (isset($m['underline'])) $o .= '<w:u w:val="' . (['double' => 'double', 'dotted' => 'dotted', 'dashed' => 'dash', 'wavy' => 'wave', 'thick' => 'thick'][$m['underline']['ul'] ?? ''] ?? 'single') . '"/>';
         $bg = color_val($m['highlight']['color'] ?? null) ?? (isset($m['highlight']) ? 'FFFF00' : color_val($ts['backgroundColor'] ?? null));
         if ($bg) $o .= "<w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"$bg\"/>";
         if (isset($m['superscript'])) $o .= '<w:vertAlign w:val="superscript"/>';

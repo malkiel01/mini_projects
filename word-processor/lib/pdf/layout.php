@@ -43,6 +43,24 @@ final class PdfCanvas
             . self::n($x2) . ' ' . self::n($this->H - $y2) . " l S\n");
     }
 
+    /** קו מקווקו / מנוקד: dash — [קו, רווח] בנקודות. */
+    public function dashLine(float $x1, float $y, float $x2, array $rgb, float $lw, array $dash): void
+    {
+        $this->add('main', 'q ' . self::rgb($rgb, 'RG') . ' ' . self::n($lw) . ' w [' . self::n($dash[0]) . ' ' . self::n($dash[1]) . '] 0 d ' . self::n($x1) . ' ' . self::n($this->H - $y) . ' m '
+            . self::n($x2) . ' ' . self::n($this->H - $y) . " l S Q\n");
+    }
+
+    /** קו גלי (זיגזג רך) מ-x1 עד x2 סביב y. */
+    public function waveLine(float $x1, float $y, float $x2, array $rgb, float $lw, float $amp): void
+    {
+        $step = $amp * 2;
+        $ops = self::rgb($rgb, 'RG') . ' ' . self::n($lw) . ' w ' . self::n($x1) . ' ' . self::n($this->H - $y) . ' m';
+        for ($x = $x1, $k = 0; $x < $x2; $x += $step, $k++) {
+            $ops .= ' ' . self::n(min($x2, $x + $step)) . ' ' . self::n($this->H - $y + ($k % 2 ? -$amp : $amp)) . ' l';
+        }
+        $this->add('main', $ops . " S\n");
+    }
+
     /** טקסט: גליפים (hex) מקו בסיס y. italic — הטיה; rise — עילי/תחתי; tc — ריווח בין תווים. */
     public function glyphs(TtfFont $f, float $size, float $x, float $baseline, string $hex, array $rgb, bool $italic, float $rise, float $tc): void
     {
@@ -268,7 +286,7 @@ final class PdfLayout
             switch ($m['type'] ?? '') {
                 case 'bold': $s['bold'] = true; break;
                 case 'italic': $s['italic'] = true; break;
-                case 'underline': $s['u'] = true; break;
+                case 'underline': $s['u'] = in_array($a['ul'] ?? null, UNDERLINES, true) ? $a['ul'] : true; break;
                 case 'strike': $s['strike'] = true; break;
                 case 'subscript': $s['va'] = 'sub'; break;
                 case 'superscript': $s['va'] = 'sup'; break;
@@ -438,13 +456,16 @@ final class PdfLayout
         unset($at);
 
         // שבירת שורות
-        $lines = $this->breakLines($atoms, function (float $top, float $lineH) use ($width, $ind, &$floats, $rtl) {
+        // הזחת שורה ראשונה (חיובי) / תלויה (שלילי): השורה הראשונה זזה ב-fl, או כל השאר ב-‎−fl (כמו text-indent + padding)
+        $fl = is_numeric($a['firstLine'] ?? null) ? max(-200, min(200, (float)$a['firstLine'])) : 0.0;
+        $lines = $this->breakLines($atoms, function (float $top, float $lineH, int $k = 0) use ($width, $ind, &$floats, $rtl, $fl) {
             $l = 0.0; $r = 0.0;
             foreach ($floats as [$side, $ft, $fb, $fw]) {
                 if ($top < $fb && $top + $lineH > $ft) { if ($side === 'left') $l = max($l, $fw); else $r = max($r, $fw); }
             }
-            // הזחה בצד ההתחלה: ימין בפסקה מימין לשמאל
-            return $rtl ? [$l, $width - $ind - $r] : [$ind + $l, $width - $r];
+            $extra = $k === 0 ? max(0.0, $fl) : max(0.0, -$fl);
+            // הזחה בצד ההתחלה: ימין בפסקה מימין לשמאל. שלישי — איפה השורה מתחילה ביחס לקצה התוכן (לעצירות הטאב)
+            return $rtl ? [$l, $width - $ind - $r - $extra, $k === 0 ? $fl : 0.0] : [$ind + $l + $extra, $width - $r, $k === 0 ? $fl : 0.0];
         }, $yLocal + $before, $base, $lh, $onFloat);
 
         $count = count($lines);
@@ -484,26 +505,43 @@ final class PdfLayout
         return $items;
     }
 
+    /** קו תחתון לפי הסוג (כמו text-decoration-style בעורך): רגיל, כפול, מנוקד, מקווקו, גלי, עבה. */
+    private function underline(PdfCanvas $c, array $s, float $x1, float $x2, float $baseline): void
+    {
+        $y = $baseline + $s['size'] * 0.12;
+        $lw = max(0.5, $s['size'] * 0.05);
+        match ($s['u'] === true ? 'single' : $s['u']) {
+            'double' => [$c->line($x1, $y - $lw, $x2, $y - $lw, $s['color'], $lw * 0.8), $c->line($x1, $y + $lw * 1.2, $x2, $y + $lw * 1.2, $s['color'], $lw * 0.8)],
+            'dotted' => $c->dashLine($x1, $y, $x2, $s['color'], $lw, [$lw, $lw * 1.5]),
+            'dashed' => $c->dashLine($x1, $y, $x2, $s['color'], $lw, [$lw * 3, $lw * 2]),
+            'wavy' => $c->waveLine($x1, $y + $lw, $x2, $s['color'], $lw * 0.8, $lw * 1.2),
+            'thick' => $c->line($x1, $y, $x2, $y, $s['color'], $lw * 2),
+            default => $c->line($x1, $y, $x2, $y, $s['color'], $lw),
+        };
+    }
+
     private function charAtom(int $cp, array $st): array
     {
         $size = $st['va'] ? $st['size'] * 0.75 : $st['size'];
         $stack = FontSet::stack($st['family'], $st['bold']);
         $f = FontSet::pick($stack, $cp);
-        $w = $cp === 0x09 ? 36 : $f->advance($cp, $size) + $st['ls'];
-        return ['cp' => $cp, 's' => $st, 'f' => $f, 'size' => $size, 'w' => $w, 'ws' => $cp === 0x20 || $cp === 0x09];
+        $w = $cp === 0x09 ? TAB_STOP : $f->advance($cp, $size) + $st['ls'];
+        return ['cp' => $cp, 's' => $st, 'f' => $f, 'size' => $size, 'w' => $w, 'ws' => $cp === 0x20];
     }
 
     /**
      * שורות: מילים (עם הרווחים שאחריהן, "תלויים" בסוף שורה), חלוקה חמדנית לרוחב הזמין בגובה השורה.
      * $range($top, $h) → [שמאל, ימין] בתוך העמודה.
      */
-    private function breakLines(array $atoms, callable $range, float $top, array $base, array $lh, ?callable $onFloat = null): array
+    private function breakLines(array &$atoms, callable $range, float $top, array $base, array $lh, ?callable $onFloat = null): array
     {
         // מילים: התווים שאינם רווח, והרווחים שאחריהם ("תלויים" — לא נספרים בסוף שורה)
         $words = [];
         $cur = null;
         foreach ($atoms as $i => $at) {
             if (!empty($at['br'])) { if ($cur) $words[] = $cur; $words[] = ['br' => true, 'from' => $i, 'to' => $i, 'w' => 0.0, 'trail' => 0.0]; $cur = null; continue; }
+            // טאב: מילה משלו, ורוחבו נקבע במקום — עד העצירה הבאה (כל 36 נק' מתחילת השורה, כמו tab-size בעורך)
+            if ($at['cp'] === 0x09) { if ($cur) $words[] = $cur; $words[] = ['tab' => true, 'from' => $i, 'to' => $i, 'w' => 0.0, 'trail' => 0.0]; $cur = null; continue; }
             $ws = !empty($at['ws']);
             if ($cur && !$ws && $cur['trail'] > 0) { $words[] = $cur; $cur = null; }
             $cur ??= ['from' => $i, 'to' => $i, 'w' => 0.0, 'trail' => 0.0];
@@ -515,10 +553,10 @@ final class PdfLayout
         $lines = [];
         $line = null;
         $y = $top;
-        $newLine = function () use (&$line, $range, &$y, $base, $lh) {
+        $newLine = function () use (&$line, $range, &$y, $base, $lh, &$lines) {
             $estH = $lh[0] === 'exact' ? $lh[1] : $base['size'] * $lh[1];
-            [$l, $r] = $range($y, $estH);
-            $line = ['from' => null, 'to' => null, 'w' => 0.0, 'trail' => 0.0, 'l' => $l, 'r' => $r, 'br' => false];
+            [$l, $r, $off] = $range($y, $estH, count($lines)) + [2 => 0.0];
+            $line = ['from' => null, 'to' => null, 'w' => 0.0, 'trail' => 0.0, 'l' => $l, 'r' => $r, 'br' => false, 'off' => $off];
         };
         $finish = function (bool $br = false) use (&$line, &$lines, &$y, $atoms, $base, $lh) {
             $line['br'] = $br;
@@ -530,6 +568,27 @@ final class PdfLayout
         $newLine();
         foreach ($words as $wd) {
             if (!empty($wd['br'])) { $finish(true); $newLine(); continue; }
+            if (!empty($wd['tab'])) {
+                $pos = $line['from'] === null ? 0.0 : $line['w'] + $line['trail'];
+                // העצירות נמדדות מקצה התוכן של הפסקה (כמו בדפדפן): השורה הראשונה מתחילה ב-off (הזחה / תלויה)
+                $abs = $pos + $line['off'];
+                $tw = TAB_STOP - (fmod(fmod($abs, TAB_STOP) + TAB_STOP, TAB_STOP));
+                if ($tw < 0.5) $tw += TAB_STOP;
+                if ($line['from'] !== null && $pos + $tw > $line['r'] - $line['l'] + 0.01) {
+                    // טאב שלא נכנס — "תלוי" בסוף השורה (כמו רווח, בלי רוחב), והמילה הבאה מתחילה שורה חדשה (כמו בדפדפן)
+                    $atoms[$wd['from']]['w'] = 0.0;
+                    $line['to'] = $wd['from'];
+                    $finish();
+                    $newLine();
+                    continue;
+                }
+                $atoms[$wd['from']]['w'] = $tw;
+                $line['w'] = $pos + $tw;
+                $line['trail'] = 0.0;
+                $line['from'] ??= $wd['from'];
+                $line['to'] = $wd['from'];
+                continue;
+            }
             $avail = $line['r'] - $line['l'];
             if ($line['from'] !== null && $line['w'] + $line['trail'] + $wd['w'] > $avail + 0.01) { $finish(); $newLine(); $avail = $line['r'] - $line['l']; }
             if ($line['from'] === null && $wd['w'] > $avail) {
@@ -552,7 +611,7 @@ final class PdfLayout
                 if (!isset($atoms[$i]['float']) || !$onFloat) continue;
                 $onFloat($atoms[$i]['float'], $y, count($lines));
                 $estH = $lh[0] === 'exact' ? $lh[1] : $base['size'] * $lh[1];
-                [$line['l'], $line['r']] = $range($y, $estH);
+                [$line['l'], $line['r']] = $range($y, $estH, count($lines));
             }
         }
         $finish(true);
@@ -624,7 +683,7 @@ final class PdfLayout
             if ($s['bg']) $c->rect($run['x'], $baseline - $run['asc'], $run['w'], $run['asc'] + $run['desc'], $s['bg']);
             $rise = $s['va'] === 'sup' ? $s['size'] * 0.33 : ($s['va'] === 'sub' ? -$s['size'] * 0.15 : 0);
             $c->glyphs($run['f'], $run['size'], $run['x'], $baseline, $run['hex'], $s['color'], $s['italic'], $rise, $s['ls']);
-            if ($s['u']) $c->line($run['x'], $baseline + $s['size'] * 0.12, $run['x'] + $run['w'] - $s['ls'], $baseline + $s['size'] * 0.12, $s['color'], max(0.5, $s['size'] * 0.05));
+            if ($s['u']) $this->underline($c, $s, $run['x'], $run['x'] + $run['w'] - $s['ls'], $baseline);
             if ($s['strike']) $c->line($run['x'], $baseline - $s['size'] * 0.28, $run['x'] + $run['w'] - $s['ls'], $baseline - $s['size'] * 0.28, $s['color'], max(0.5, $s['size'] * 0.05));
             $run = null;
         };
@@ -638,6 +697,8 @@ final class PdfLayout
             }
             $cp = $at['cp'];
             if ($at['lvl'] % 2 && isset(BIDI_MIRROR[mb_chr($cp)])) $cp = mb_ord(BIDI_MIRROR[mb_chr($cp)]);
+            // טאב: רק מקום (הרוחב נקבע בשבירת השורות) — הריצה נקטעת, כי ב-PDF כל גליף זז ברוחב שלו
+            if ($cp === 0x09) { $flush(); $xx += $at['w']; continue; }
             $ws = !empty($at['ws']);
             if ($run && ($run['f'] !== $at['f'] || $run['s'] != $at['s'] || ($justify && $ws))) $flush();
             if (!$run) {
@@ -645,7 +706,7 @@ final class PdfLayout
                 $run = ['f' => $f, 's' => $at['s'], 'size' => $at['size'], 'x' => $xx, 'w' => 0.0, 'hex' => '',
                     'asc' => $f->ascent / $f->unitsPerEm * $at['size'], 'desc' => -$f->descent / $f->unitsPerEm * $at['size']];
             }
-            $run['hex'] .= $cp === 0x09 ? $at['f']->encode(0x20) : $at['f']->encode($cp);
+            $run['hex'] .= $at['f']->encode($cp);
             $run['w'] += $at['w'];
             $xx += $at['w'];
             if ($justify && $ws) { $flush(); $xx += $extra; }

@@ -489,9 +489,13 @@ final class DocxCtx
         // הזחה: אצלנו בצעדים של חצי אינץ' (720 twip) מהצד שבו השורה מתחילה; ברשימה — ההזחה של המספור
         $ind = $xp->query('w:pPr/w:ind', $p)->item(0);
         if ($ind instanceof DOMElement && !$num) {
+            // שורה ראשונה / תלויה: אצלנו firstLine בנקודות (שלילי — תלויה); ב-Word start כולל את התלויה
+            $hang = (int)$ind->getAttributeNS(W, 'hanging');
+            $first = (int)$ind->getAttributeNS(W, 'firstLine');
+            if ($hang > 0) $attrs['firstLine'] = -round($hang / 20, 1);
+            elseif ($first > 0) $attrs['firstLine'] = round($first / 20, 1);
             $start = $ind->getAttributeNS(W, 'start') ?: $ind->getAttributeNS(W, $bidi ? 'right' : 'left');
-            if (is_numeric($start) && ($n = (int)round((int)$start / 720)) > 0) $attrs['indent'] = min(8, $n);
-            if ((int)$ind->getAttributeNS(W, 'firstLine') > 0 || (int)$ind->getAttributeNS(W, 'hanging') > 0) $this->note('firstline');
+            if (is_numeric($start) && ($n = (int)round(((int)$start - max(0, $hang)) / 720)) > 0) $attrs['indent'] = min(8, $n);
         }
         $this->note('tracked', $xp->query('w:ins|w:del|w:r/w:rPr/w:rPrChange|w:pPr/w:pPrChange', $p)->length);
         // שדות — חוץ משדה HYPERLINK, שנכנס כקישור אמיתי
@@ -634,7 +638,11 @@ final class DocxCtx
         $m = [];
         if ($on('b') || $on('bCs')) $m[] = ['type' => 'bold'];
         if ($on('i') || $on('iCs')) $m[] = ['type' => 'italic'];
-        if ($on('u')) $m[] = ['type' => 'underline'];
+        if ($on('u')) {
+            $ul = ['double' => 'double', 'dotted' => 'dotted', 'dottedHeavy' => 'dotted', 'dash' => 'dashed', 'dashLong' => 'dashed', 'dashedHeavy' => 'dashed',
+                'wave' => 'wavy', 'wavyHeavy' => 'wavy', 'wavyDouble' => 'wavy', 'thick' => 'thick'][(string)$xp->evaluate('string(w:u/@w:val)', $rpr)] ?? null;
+            $m[] = $ul ? ['type' => 'underline', 'attrs' => ['ul' => $ul]] : ['type' => 'underline'];
+        }
         if ($on('strike') || $on('dstrike')) $m[] = ['type' => 'strike'];
         $va = (string)$xp->evaluate('string(w:vertAlign/@w:val)', $rpr);
         if ($va === 'superscript') $m[] = ['type' => 'superscript'];
@@ -861,7 +869,6 @@ const IMPORT_REPORT = [
     'hf_complex' => ['תמונה או טבלה בכותרת עליונה / תחתונה', 'יובא רק הטקסט'],
     'styles' => ['סגנונות תו מותאמים', 'העיצוב שבא מסגנון התו לא יובא; סגנונות פסקה ועיצוב ישיר — כן'],
     'pborder' => ['גבולות והצללה של פסקה', 'לא יובאו'],
-    'firstline' => ['הזחת שורה ראשונה / תלויה', 'לא יובאה'],
     'fonts' => ['גופנים שאינם זמינים', 'מוצגים ב-Heebo, זהה במסך, בהדפסה וב-PDF'],
 ];
 const TWIP_PER_MM_IMPORT = 56.6929;
