@@ -224,12 +224,44 @@ object Api {
     fun apps(token: String, list: org.json.JSONArray, cb: (Result) -> Unit) =
         call("apps", JSONObject().apply { put("apps", list) }, token, cb)
 
+    /** מצב העדכון (שלב 9) — ההורה רואה עדכון שנכשל או נתקע. בלי תשובה נדרשת. */
+    fun updateState(token: String, state: String, target: Int, error: String = "") =
+        call("update_state", JSONObject().apply {
+            put("state", state); put("target", target); put("error", error.take(120))
+        }, token) {}
+
+    /** בקשת פתיחה לאפליקציה חסומה (2026-10-22). */
+    fun appRequest(token: String, pkg: String, note: String, cb: (Result) -> Unit) =
+        call("app_request", JSONObject().apply { put("package", pkg); put("note", note) }, token, cb)
+
+    /** אישור ביצוע: ההחלטה הוחלה במכשיר (או נכשלה, עם הסיבה). ‏endsMs — סוף היתר זמני כפי שהמכשיר חישב. */
+    fun appRequestApplied(token: String, id: Int, ok: Boolean, error: String, endsMs: Long, cb: (Result) -> Unit = {}) =
+        call("app_request_applied", JSONObject().apply {
+            put("id", id); put("ok", ok); put("error", error.take(160)); put("ends_ms", endsMs)
+        }, token, cb)
+
     /** חיפוש (שלב 8): השרת בוחר מנוע לפי הילד ומסנן כל תוצאה. */
     fun search(token: String, q: String, cb: (Result) -> Unit) =
         call("search", JSONObject().apply { put("q", q) }, token, cb)
 
-    fun heartbeat(token: String, seconds: Int, sessionSec: Int, url: String = "", cb: (Result) -> Unit) =
+    /** דוח האכיפה: מה הוחל ומה נכשל (EnforceReport). */
+    fun enforceReport(token: String, body: JSONObject, cb: (Result) -> Unit) = call("enforce_report", body, token, cb)
+
+    /** תוצאות בדיקת ההגנה היזומה (SelfTest) — נתונים גולמיים; השרת פוסק. */
+    fun selftest(token: String, body: JSONObject, cb: (Result) -> Unit) = call("selftest", body, token, cb)
+
+    /** מצב למידה ביוטיוב: מה הסקריפט בדף אימת (lib/ytlearn.php). */
+    fun ytLearnReport(token: String, body: JSONObject, cb: (Result) -> Unit) = call("yt_learn_report", body, token, cb)
+
+    /** זמן מסך: הזמן שנצבר היום לכל אפליקציה, בשניות (lib/apptime.php). */
+    fun appUsage(token: String, day: String, apps: Map<String, Long>, cb: (Result) -> Unit) =
+        call("app_usage", JSONObject().put("day", day).put("apps", JSONObject(apps.mapValues { it.value / 1000 } as Map<*, *>)), token, cb)
+
+    fun heartbeat(token: String, seconds: Int, sessionSec: Int, url: String = "",
+                  batches: org.json.JSONArray? = null, cb: (Result) -> Unit) =
         call("heartbeat", JSONObject().apply {
             put("seconds", seconds); put("session_sec", sessionSec); put("url", url)
+            // מנות שימוש עם מזהה (UsageMeter) — השרת סופר כל אחת פעם אחת.
+            if (batches != null) put("batches", batches)
         }, token, cb)
 }

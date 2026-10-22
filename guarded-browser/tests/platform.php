@@ -101,20 +101,99 @@ q("INSERT INTO users (username, email, display_name, password_hash, status, is_a
           ('boss2', '', 'בוס שני', ?, 'active', 1, ?)",
   [hashPassword('boss12345'), nowIso(), hashPassword('kid12345'), nowIso(), hashPassword('boss12345'), nowIso()]);
 asPlatform($rina);
+check('רינה, מייל לא מאומת — לא מתאחדת עם המנהל הישן לפי המייל', currentAdmin(), null);
+check('...ולא נקשר כלום', one("SELECT platform_sub FROM users WHERE username = 'boss'")['platform_sub'], '');
+$rinaV = $rina + ['email_verified' => true];
+$rinaV['email_verified'] = true;
+asPlatform($rinaV);
 $a = currentAdmin();
-check('רינה — איחוד לפי מייל עם המנהל הישן', $a['username'] ?? null, 'boss');
+check('רינה, מייל מאומת — איחוד לפי מייל עם המנהל הישן', $a['username'] ?? null, 'boss');
 check('...והקישור נשמר', one("SELECT platform_sub FROM users WHERE username = 'boss'")['platform_sub'], '9');
 asPlatform($moshe);
 check('משה — המייל שלו של ילד, לא מנהל: אין איחוד, יש מה לקשר → המסך', currentAdmin(), null);
 check('ילד לא מתקשר כמנהל', platformLinkOld('admin', platformIdentity(), 'kid', 'kid12345'), 'שם משתמש או סיסמה שגויים');
-$new = platformCreate('admin', platformIdentity());
-check('"אין לי חשבון" — מנהל חדש, פעיל', [$new['status'], (int) $new['is_admin']], ['active', 1]);
-check('...עם מדיניות', one('SELECT user_id FROM policies WHERE user_id = ?', [$new['id']]) !== null, true);
-asPlatform($moshe);
-check('...ונכנס', (int) (currentAdmin()['id'] ?? 0), (int) $new['id']);
-q("UPDATE users SET status = 'suspended' WHERE id = ?", [$new['id']]);
-asPlatform($moshe);
-check('מנהל מושעה — אין כניסה, ואין חשבון חדש במקומו', [currentAdmin(), (int) one('SELECT COUNT(*) n FROM users WHERE is_admin = 1')['n']], [null, 3]);
+$admins = (int) one('SELECT COUNT(*) n FROM users WHERE is_admin = 1')['n'];
+check('"אין לי חשבון" — יש כבר מנהלים: אין הקמה', platformMayBootstrap('admin', platformIdentity()), false);
+$threw = false;
+try { platformCreate('admin', platformIdentity()); } catch (RuntimeException $e) { $threw = true; }
+check('...וקריאה ישירה ל-platformCreate נחסמת', [$threw, (int) one('SELECT COUNT(*) n FROM users WHERE is_admin = 1')['n']], [true, $admins]);
+q("UPDATE users SET status = 'suspended' WHERE username = 'boss'");
+asPlatform($rinaV);
+check('מנהל מושעה — אין כניסה, ואין חשבון חדש במקומו', [currentAdmin(), (int) one('SELECT COUNT(*) n FROM users WHERE is_admin = 1')['n']], [null, $admins]);
+q("UPDATE users SET status = 'active' WHERE username = 'boss'");
+
+
+echo "\n— אפליקציית ההורים — רק דרך הפלטפורמה —\n";
+[$acc] = accountCreate(['name' => 'כהן'], 'dana@example.com', 'דנה');
+q("INSERT INTO parents (account_id, login, name, password_hash, created_at) VALUES (?, 'avi', 'אבי', ?, ?)",
+  [$acc, hashPassword('avi12345'), nowIso()]);
+$dana = ['sub' => '21', 'name' => 'דנה', 'email' => 'Dana@Example.com', 'email_verified' => true];
+asPlatform($dana);
+check('דנה — מקושרת לפי המייל, אוטומטית', currentParent()['login'] ?? null, 'dana@example.com');
+check('...וה-sub נשמר', one("SELECT platform_sub FROM parents WHERE login = 'dana@example.com'")['platform_sub'], '21');
+check('כניסה בסיסמה של מגדלור — חסומה', parentLogin('dana@example.com', 'x')[1], 'הכניסה היא דרך הכלים הדיגיטליים');
+$stranger = ['sub' => '22', 'name' => 'זר', 'email' => 'nobody@example.com'];
+asPlatform($stranger);
+check('בלי חשבון משפחה — לא נפתח חשבון לבד', currentParent(), null);
+check('...ולא נוצר הורה', (int) one('SELECT COUNT(*) n FROM parents')['n'], 2);
+check('אבי (שם כניסה בלי מייל) — מתחבר במסך החד-פעמי', platformLinkOld('parent', platformIdentity(), 'AVI', 'avi12345'), '');
+asPlatform($stranger);
+check('...ומעכשיו נכנס אוטומטית', currentParent()['login'] ?? null, 'avi');
+
+echo "\n— הסלמת הרשאות: הורה לא נעשה מפתח או מנהל —\n";
+// כל המפתחים והמנהלים כבר מקושרים — בדיוק המצב שבו פעם נפתח חשבון חדש לכל זהות מהפלטפורמה.
+q("UPDATE developers SET platform_sub = 'x' || id WHERE platform_sub = ''");
+q("UPDATE users SET platform_sub = 'y' || id WHERE is_admin = 1 AND platform_sub = ''");
+$devs = developerCount();
+$adm = (int) one('SELECT COUNT(*) n FROM users WHERE is_admin = 1')['n'];
+asPlatform($dana);
+check('הורה בקונסולת המפתח — אין חשבון', currentDeveloper(), null);
+asPlatform($dana);
+check('הורה בפאנל הישן — אין חשבון', currentAdmin(), null);
+check('...ולא נוצר מפתח או מנהל', [developerCount(), (int) one('SELECT COUNT(*) n FROM users WHERE is_admin = 1')['n']], [$devs, $adm]);
+$evil = ['sub' => '66', 'name' => 'זר', 'email' => 'evil@example.com', 'email_verified' => true];
+asPlatform($evil);
+check('זר עם גישה למגדלור בפלטפורמה — לא מפתח', [currentDeveloper(), platformMayBootstrap('dev', platformIdentity())], [null, false]);
+check('...ולא מנהל', [currentAdmin(), platformMayBootstrap('admin', platformIdentity())], [null, false]);
+check('הורה אינו "הקמה ראשונה" גם במסד בלי מפתחים', (function () use ($dana) {
+    q('DELETE FROM developers'); $r = platformMayBootstrap('dev', $dana + ['email' => 'dana@example.com']); return $r;
+})(), false);
+q("INSERT INTO developers (username, name, email, password_hash, platform_sub, created_at) VALUES ('owner', 'בעלים', '', 'x', 'x1', ?)", [nowIso()]);
+
+echo "\n— הזמנת מפתח —\n";
+$owner = (int) one("SELECT id FROM developers WHERE username = 'owner'")['id'];
+check('הזמנה במייל', developerInvite('New.Dev@Example.com', 'חדש', $owner), '');
+check('...פעמיים — נדחה', developerInvite('new.dev@example.com', '', $owner), 'המייל הזה כבר מוזמן או מחובר');
+$inv = ['sub' => '77', 'name' => 'חדש', 'email' => 'new.dev@example.com', 'email_verified' => false];
+asPlatform($inv);
+check('המוזמן עם מייל לא מאומת — לא נכנס', currentDeveloper(), null);
+$inv['email_verified'] = true;
+asPlatform($inv);
+$me = currentDeveloper();
+check('המוזמן עם מייל מאומת — נכנס לחשבון שהוזמן',
+      one('SELECT email, platform_sub FROM developers WHERE id = ?', [(int) ($me['id'] ?? 0)]),
+      ['email' => 'new.dev@example.com', 'platform_sub' => '77']);
+
+echo "\n— הזמנה לפלטפורמה (חתימה) —\n";
+$sent = null;
+$fake = function (string $body, array $headers) use (&$sent): array {
+    $sent = [$body, $headers];
+    return ['status' => 200, 'body' => '{"status":"invited","sub":"99"}'];
+};
+q("INSERT INTO parents (account_id, login, name, password_hash, created_at) VALUES (?, 'new@example.com', 'חדש', 'x', ?)", [$acc, nowIso()]);
+$newId = (int) db()->lastInsertId();
+check('הזמנה', parentInvite($newId, $fake), ['invited', '']);
+check('...ה-sub נשמר להורה', one('SELECT platform_sub FROM parents WHERE id = ?', [$newId])['platform_sub'], '99');
+$h = [];
+foreach ($sent[1] as $line) { [$k, $v] = explode(': ', $line, 2); $h[$k] = $v; }
+[$kid, $sig] = explode('.', $h['X-Embed-Signature'], 2);
+$key = base64_decode(provisionKeyPayload()['keys'][0]['key']);
+$msg = "provision\n{$h['X-Embed-Time']}\n{$h['X-Embed-Nonce']}\n" . hash('sha256', $sent[0]);
+check('החתימה מתאמתת מול המפתח הציבורי (כמו בפלטפורמה)', sodium_crypto_sign_verify_detached(base64_decode($sig), $msg, $key), true);
+check('...לקוח ו-next נכונים', [$h['X-Embed-Client'], json_decode($sent[0], true)['next']],
+      ['guarded-browser', '/mini_projects/guarded-browser/parent/']);
+check('שם כניסה בלי מייל — אי אפשר להזמין', parentInvite((int) one("SELECT id FROM parents WHERE login = 'avi'")['id'], $fake)[1],
+      'אין מייל — אי אפשר להזמין לפלטפורמה');
 
 echo "\n$pass עברו, $fail נכשלו\n";
 exit($fail ? 1 : 0);

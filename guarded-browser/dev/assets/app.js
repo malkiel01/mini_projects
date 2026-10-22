@@ -109,6 +109,7 @@ async function boot() {
     catch (e) { document.body.append(el('p', { class: 'error', text: e.message, style: 'margin:16px' })); return; }
     state.csrf = me.csrf;
     state.platform = me.platform;
+    state.can_create = !!me.can_create;
     if (me.link) return showAuth(false, true);
     if (!me.me) return showAuth(me.setup);
     state.me = me.me;
@@ -129,6 +130,11 @@ function showAuth(setup, link = false) {
     $('#auth-link').hidden = !link;
     // מהתפריט (כבר מחובר) — "חזרה" במקום חשבון חדש.
     $('#auth-new').textContent = state.me ? 'חזרה' : 'אין לי חשבון — פתיחת חשבון חדש';
+    // חשבון חדש רק בהקמה הראשונה; אחרת — הזמנה ממפתח קיים (השרת אוכף, כאן רק לא מציעים).
+    $('#auth-new').hidden = !state.me && !state.can_create;
+    if (link && !state.me && !state.can_create) {
+        $('#auth-sub').textContent = 'אין לך גישה לקונסולה. אם היה לך חשבון ישן — חבר אותו כאן; אחרת בקש ממפתח קיים להזמין את המייל שלך.';
+    }
     $('#auth-go').textContent = link ? 'חיבור החשבון הישן' : setup ? 'יצירה וכניסה' : 'כניסה';
     const form = $('#auth-form');
     form.password.autocomplete = setup ? 'new-password' : 'current-password';
@@ -349,11 +355,16 @@ function parTab(a) {
         el('span', { class: 'avatar', style: `--h:${hue(p.login)}`, ariaHidden: 'true', text: initials(p.name || p.login) }),
         el('div', { class: 'body' }, [
             el('div', { class: 'l1' }, [el('span', { text: p.name || p.login }),
-                el('span', { class: 't', text: p.must_change_pw ? '🔑 סיסמה זמנית'
-                    : (p.last_login_at ? ago(p.last_login_at) : 'לא נכנס') })]),
+                // כל ההורים נכנסים דרך הפלטפורמה — מי שעוד לא מקושר אליה מסומן.
+                el('span', { class: 't', text: p.platform ? '🔗 בפלטפורמה' : '⚠️ לא בפלטפורמה' })]),
             el('div', { class: 'l2', text: p.login, dir: 'ltr', style: 'text-align:end' }),
         ]),
         el('span', { class: 'row-act' }, [
+            el('button', { type: 'button', class: 'icon-btn', ariaLabel: `הזמנה לפלטפורמה ל-${p.login}`, text: '📧',
+                onclick: async () => {
+                    try { toast((await call('parent_invite', { id: p.id })).message); openAccount(a.id); }
+                    catch (x) { toast(x.message, true); }
+                } }),
             el('button', { type: 'button', class: 'icon-btn', ariaLabel: `איפוס סיסמה ל-${p.login}`, text: '🔑',
                 onclick: async () => {
                     if (!confirm(`לאפס את הסיסמה של ${p.login}? הוא יתנתק מכל המכשירים.`)) return;
@@ -382,7 +393,7 @@ function parTab(a) {
             el('button', { type: 'button', class: 'btn primary', onclick: async () => {
                 try {
                     const r = await call('parent_add', { account_id: a.id, login: login.value, name: name.value });
-                    current = r.account; renderSheet(); loadAccounts(); showPw(r.temp_password, login.value.trim().toLowerCase());
+                    current = r.account; renderSheet(); loadAccounts(); showPw(r.temp_password, login.value.trim().toLowerCase(), r.invite);
                 } catch (x) { toast(x.message, true); }
             } }, ['+ הורה']),
         ]),
@@ -434,12 +445,12 @@ function openNew() {
             const m = Number(months.querySelector('input:checked').value);
             if (m) await call('account_extend', { id: r.id, months: m });
             dlg.close(); loadAccounts();
-            showPw(r.temp_password, f.login.value.trim().toLowerCase());
+            showPw(r.temp_password, f.login.value.trim().toLowerCase(), r.invite);
         } catch (x) { err.textContent = x.message; err.hidden = false; }
         go.disabled = false;
     });
     $('#acc-body').replaceChildren(
-        el('p', { class: 'hint', text: 'חשבון שאתה פותח פעיל מיד. ההורה מקבל סיסמה זמנית ומחליף אותה בכניסה הראשונה.' }),
+        el('p', { class: 'hint', text: 'חשבון שאתה פותח פעיל מיד. ההורה מקבל במייל הזמנה לכלים הדיגיטליים, בוחר סיסמה ונכנס — לכן שם הכניסה הוא המייל שלו.' }),
         el('label', { class: 'f' }, [el('span', { text: 'שם החשבון *' }), f.name]),
         el('section', { class: 'group' }, [el('h3', { text: 'ההורה הראשון' }), el('div', { class: 'fields two' }, [
             el('label', { class: 'f' }, [el('span', { text: 'דוא"ל / שם כניסה *' }), f.login]),
@@ -459,8 +470,9 @@ function openNew() {
 
 /* ── סיסמה זמנית ───────────────────────────────────────────────── */
 
-function showPw(pw, who) {
-    $('#pw-for').textContent = `הסיסמה הזמנית של ${who}:`;
+/** ‏invite — מה קרה בהזמנה לפלטפורמה. הסיסמה הזמנית — רק לכניסה כשמגדלור מנותק מהפלטפורמה. */
+function showPw(pw, who, invite = '') {
+    $('#pw-for').textContent = (invite ? `${who}: ${invite}.\n\n` : '') + `הסיסמה הזמנית של ${who} (רק כשמגדלור מנותק מהפלטפורמה):`;
     $('#pw-code').textContent = pw;
     $('#pw-dlg').showModal();
 }
@@ -487,6 +499,41 @@ async function loadSystem() {
     renderSearch(s.search);
     renderProvision(s.provision);
     renderSignKey(s.sign_pubkey);
+    renderInviteAll();
+    renderDevInvite();
+}
+
+/** הזמנת מפתח נוסף: המייל נשמר, והחשבון מתקשר בכניסה הראשונה דרך הפלטפורמה (מייל מאומת בלבד). */
+function renderDevInvite() {
+    const box = $('#sys-invite');
+    if (!box) return;
+    const email = el('input', { type: 'email', dir: 'ltr', placeholder: 'email@example.com', autocomplete: 'off' });
+    const btn = el('button', { type: 'button', class: 'btn', text: '➕ הזמנת מפתח נוסף' });
+    btn.addEventListener('click', async () => {
+        try { await call('dev_invite', { email: email.value }); toast('הוזמן — יתחבר בכניסה הראשונה דרך הכלים הדיגיטליים'); email.value = ''; }
+        catch (x) { toast(x.message, true); }
+    });
+    box.append(el('label', { class: 'f', style: 'margin-top:12px' }, [el('span', { text: 'מפתח נוסף — לפי מייל מאומת בפלטפורמה' }), email]), btn);
+}
+
+/** כל ההורים נכנסים דרך הפלטפורמה: הזמנה לכל מי שעוד לא מקושר. */
+function renderInviteAll() {
+    const box = $('#sys-invite');
+    if (!box) return;
+    const btn = el('button', { type: 'button', class: 'btn primary', text: '📧 הזמנת כל ההורים שעוד לא בפלטפורמה' });
+    const out = el('p', { class: 'hint' });
+    btn.addEventListener('click', async () => {
+        if (!confirm('לשלוח הזמנה במייל לכל הורה שעוד לא מחובר לכלים הדיגיטליים?')) return;
+        btn.disabled = true; out.textContent = 'שולח…';
+        try {
+            const r = await call('invite_all', {});
+            out.textContent = `נשלחו ${r.invited} הזמנות · ${r.granted} כבר היו בפלטפורמה ונוספה להם הרשאה`
+                + (r.skipped.length ? ` · בלי מייל (לחבר במסך החד-פעמי): ${r.skipped.join(', ')}` : '')
+                + (r.failed.length ? ` · נכשלו: ${r.failed.join(' | ')}` : '');
+        } catch (x) { out.textContent = x.message; }
+        btn.disabled = false;
+    });
+    box.replaceChildren(el('p', { class: 'hint', text: 'כל ההורים נכנסים לאפליקציית ההורים בחשבון של הכלים הדיגיטליים. הורה שעוד לא מחובר — מקבל במייל הזמנה לבחור סיסמה, עם הרשאה למגדלור בלבד.' }), btn, out);
 }
 
 /** המפתח הציבורי של השרת לחתימת הודעות (שחרור, server_url). נצרב באפליקציה. */

@@ -38,11 +38,11 @@ $dev = fn(string $t) => one('SELECT * FROM devices WHERE token_hash = ?', [token
 echo "\n— הגרסה האחרונה —\n";
 $calls = 0;
 $ok = function () use (&$calls) { $calls++; return ['status' => 200, 'body' => '{"version_code": 45, "version_name": "1.45"}']; };
-check('נקראת מ-latest.json', latestApp($ok), ['code' => 45, 'name' => '1.45', 'cert' => '']);
-check('ובמטמון — בלי פנייה נוספת', [latestApp($ok), $calls], [['code' => 45, 'name' => '1.45', 'cert' => ''], 1]);
+check('נקראת מ-latest.json', latestApp($ok), ['code' => 45, 'name' => '1.45', 'cert' => '', 'sha256' => '']);
+check('ובמטמון — בלי פנייה נוספת', [latestApp($ok), $calls], [['code' => 45, 'name' => '1.45', 'cert' => '', 'sha256' => ''], 1]);
 q("UPDATE app_meta SET updated_at = '2020-01-01T00:00:00Z'");
 $bad = fn() => ['status' => 404, 'body' => 'Not Found'];
-check('שליפה שנכשלה — נשארים עם הישן', latestApp($bad), ['code' => 45, 'name' => '1.45', 'cert' => '']);
+check('שליפה שנכשלה — נשארים עם הישן', latestApp($bad), ['code' => 45, 'name' => '1.45', 'cert' => '', 'sha256' => '']);
 q('DELETE FROM app_meta');
 check('אין מידע בכלל — null', latestApp($bad), null);
 latestApp($ok);
@@ -60,11 +60,12 @@ check('ישנה — unknown', deviceAppState($dev($tOld), $latest)['status'], 'u
 check('שם הגרסה', deviceAppState($dev($tNew), $latest)['version_name'], '1.43');
 
 echo "\n— עדכון לאפליקציה חדשה —\n";
-check('בלי בקשה — אין הצעה', deviceUpdateOffer((int) $dev($tNew)['id']), null);
+check('גם בלי בקשה — עדכון חובה', deviceUpdateOffer((int) $dev($tNew)['id']),
+      ['version_code' => 45, 'version_name' => '1.45', 'required' => true, 'url' => APK_URL, 'sha256' => '']);
 check('בקשת עדכון', requestDeviceUpdate($kid, (int) $dev($tNew)['id']), '');
 check('...מסומנת', deviceAppState($dev($tNew), $latest)['requested'], true);
 check('המכשיר מקבל הצעה עם הקישור', deviceUpdateOffer((int) $dev($tNew)['id']),
-      ['version_code' => 45, 'version_name' => '1.45', 'url' => APK_URL]);
+      ['version_code' => 45, 'version_name' => '1.45', 'required' => true, 'url' => APK_URL, 'sha256' => '']);
 check('אפליקציה חדשה לא נחסמת', upgradeBlock((int) $dev($tNew)['id']), '');
 $_SERVER['HTTP_X_MIGDALOR_APP'] = '45';
 userByToken($tNew);
@@ -91,6 +92,32 @@ check('אחרי בקשה — נחסמת עם הוראות', str_contains(upgrade
 check('ולא מקבלת update (היא לא מכירה אותו)', deviceUpdateOffer((int) $dev($tOld)['id']), null);
 cancelDeviceUpdate($kid, (int) $dev($tOld)['id']);
 check('ביטול — נפתחת שוב', upgradeBlock((int) $dev($tOld)['id']), '');
+
+echo "\n— sha256 של ה-APK (שלב 9) —\n";
+q('DELETE FROM app_meta');
+$sha = str_repeat('ab', 32);
+latestApp(fn() => ['status' => 200, 'body' => '{"version_code": 61, "apk_sha256": "' . strtoupper($sha) . '"}']);
+check('נקרא מ-latest.json (באותיות קטנות)', latestApp()['sha256'], $sha);
+check('ונשלח למכשיר בהצעה', deviceUpdateOffer((int) $dev($tNew)['id'])['sha256'], $sha);
+q('DELETE FROM app_meta');
+latestApp(fn() => ['status' => 200, 'body' => '{"version_code": 61, "apk_sha256": "<script>"}']);
+check('ערך לא תקין — ריק', latestApp()['sha256'], '');
+
+echo "\n— מצב העדכון מהמכשיר (שלב 9) —\n";
+$nid = (int) $dev($tNew)['id'];
+check('אין דיווח — אין מצב', deviceAppState($dev($tNew), latestApp())['update'], null);
+check('מצב לא מוכר — נדחה', updateStateSave($nid, ['state' => 'hacked', 'target' => 61]), false);
+updateStateSave($nid, ['state' => 'failed', 'target' => 61, 'error' => 'הקובץ שונה ממה שפורסם (sha256)' . str_repeat('x', 300)]);
+$u = deviceAppState($dev($tNew), latestApp())['update'];
+check('נכשל — מוצג להורה, עם הסיבה', [$u['state'], $u['target_name'], str_starts_with($u['error'], 'הקובץ שונה')], ['failed', '1.61', true]);
+check('השגיאה מקוצרת', mb_strlen($u['error']), 120);
+updateStateSave($nid, ['state' => 'waiting_user', 'target' => 61]);
+check('מחכה לאישור', deviceAppState($dev($tNew), latestApp())['update']['state'], 'waiting_user');
+q('UPDATE devices SET app_version = 61 WHERE id = ?', [$nid]);
+check('הגרסה הגיעה ליעד — "נכשל" ישן לא נשאר', deviceAppState($dev($tNew), latestApp())['update'], null);
+q('UPDATE devices SET app_version = 43 WHERE id = ?', [$nid]);
+updateStateSave($nid, ['state' => 'done', 'target' => 61]);
+check('הושלם — אין מה להציג', deviceAppState($dev($tNew), latestApp())['update'], null);
 
 echo "\n— בידוד —\n";
 [$a2] = accountCreate(['name' => 'לוי'], 'avi@x.com', 'אבי');

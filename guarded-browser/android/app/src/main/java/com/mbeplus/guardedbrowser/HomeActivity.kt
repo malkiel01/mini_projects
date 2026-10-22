@@ -29,6 +29,28 @@ class HomeActivity : AppCompatActivity() {
     private var allowed = true
     private var query = ""
 
+    /** סריקת קוד מההורה — הגדרות בלי אינטרנט (OfflinePolicy). אחרי הסריקה Enforcer מחזיר את חסימת המצלמה. */
+    private val offlineScan = registerForActivityResult(com.journeyapps.barcodescanner.ScanContract()) { r ->
+        val text = r?.contents
+        val (ok, msg) = when {
+            text == null -> false to ""
+            !OfflinePolicy.isCode(text) -> false to "זה לא קוד הגדרות. פותחים באפליקציית ההורה: הגדרות המכשיר ← \"📷 העברה בקוד\"."
+            else -> OfflinePolicy.apply(this, text)
+        }
+        if (!ok && !store.released) Enforcer.apply(this, store)   // ביטול או קוד שנדחה — המצלמה חוזרת לחסימה
+        if (msg.isNotEmpty()) Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+        if (ok) refresh()
+    }
+
+    private fun scanParentCode() {
+        Enforcer.allowCamera(this)
+        offlineScan.launch(com.journeyapps.barcodescanner.ScanOptions()
+            .setDesiredBarcodeFormats(com.journeyapps.barcodescanner.ScanOptions.QR_CODE)
+            .setPrompt("כוונו את המצלמה לקוד שבאפליקציית ההורה")
+            .setBeepEnabled(false)
+            .setOrientationLocked(false))
+    }
+
     /** בקשה שנשלחה מהדפדפן ונענתה כשהילד כבר במסך הבית (שלב 6). */
     private val watcher by lazy {
         RequestWatcher(store) { url, ok ->
@@ -71,6 +93,8 @@ class HomeActivity : AppCompatActivity() {
         // שער ההקמה: בלי ההרשאות החיוניות לא נכנסים למגדלור.
         store.perms = Setup.flags(this)
         if (!Setup.ready(this)) { startActivity(Intent(this, SetupActivity::class.java)); return }
+        // עדכון חובה — עד ההתקנה אין כניסה (Updater).
+        if (Updater.required(this)) { Updater.lock(this); return }
         refresh()
         if (store.pendingRequests().isNotEmpty()) watcher.start()
     }
@@ -93,16 +117,16 @@ class HomeActivity : AppCompatActivity() {
             b.progress.visibility = View.GONE
             if (!r.ok && r.json?.optString("code") == "unauthorized") { unpair(); return@policy }
             if (r.ok && r.json != null) {
-                store.savePolicy(r.json)
-                applyRelease(r.json)
+                PolicySync.apply(this, r.json, "home")
                 reportApps()
-                if (!store.released) Enforcer.apply(this, store)
             }
-            // ההורה ביקש לעדכן, ויש גרסה חדשה.
-            r.json?.optJSONObject("update")?.let { Updater.offer(this, it) }
+            // יש גרסה חדשה — עדכון חובה: נועלים עד ההתקנה.
+            if (r.ok && Updater.required(this)) { Updater.lock(this); return@policy }
 
             state = r.json?.optJSONObject("state")
-            allowed = state?.optBoolean("allowed") ?: true
+            // תשובה תקינה — לפי state (חסר = סירוב); סירוב מהשרת (חשבון מושעה) — חסום; בלי רשת — כמו שהיה.
+            val v = if (r.ok) ServerVerdict.nested(state) else ServerVerdict.from(r)
+            if (v.kind != ServerVerdict.Kind.UNKNOWN) allowed = v.allow
             val reason = state?.optString("reason") ?: r.json?.optString("error") ?: ""
 
             b.greeting.text = store.displayName().ifEmpty { "שלום" }.let { if (it == "שלום") it else "שלום $it" }
@@ -110,7 +134,12 @@ class HomeActivity : AppCompatActivity() {
 
             val (text, style) = when {
                 store.released -> "המנוי של ההורים הסתיים — אין יותר הגבלה במכשיר" to R.drawable.bg_status_warn
-                !r.ok && r.json == null -> "אין חיבור לשרת — מוצגים האתרים שנשמרו" to R.drawable.bg_status_warn
+                !r.ok && r.json == null -> store.policy().let { p ->
+                    val now = TrustedClock.now(store)
+                    // מה זמין בלי חיבור, ועד מתי (OfflineMath) — לא "מוצגים האתרים שנשמרו" סתם.
+                    OfflineMath.statusLine(p.offlineContent, true, OfflineMath.leftMs(store.lastSyncMs, now, p.offlineGraceH))
+                        .ifEmpty { "אין חיבור לשרת" }
+                } to R.drawable.bg_status_warn
                 !r.ok -> reason to R.drawable.bg_status_danger
                 !allowed -> reason.ifEmpty { "הגלישה חסומה כרגע" } to R.drawable.bg_status_danger
                 store.pendingRequests().isNotEmpty() -> "🙋 מחכים לתשובה מההורה: " +
@@ -127,26 +156,6 @@ class HomeActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * שחרור חתום (SPEC סעיף 5): אסימון תקף → מצב משוחרר (מגבלות נפתחות, בעלות המכשיר משתחררת
-     * מאכיפה). הארכה → חזרה לאכיפה. בלי אסימון תקף לא נכנסים ולא יוצאים ממצב משוחרר.
-     */
-    private fun applyRelease(payload: JSONObject) {
-        val token = payload.optString("release")
-        val valid = token.isNotEmpty() &&
-            Release.isReleaseFor(token, store.signPubKey, payload.optInt("account_id"))
-        if (valid && !store.released) {
-            store.released = true
-            Enforcer.release(this, store)
-            Trace.log("release", "acct=${payload.optInt("account_id")}")
-        } else if (token.isEmpty() && store.released) {
-            // השרת לא שולח יותר אסימון שחרור — החשבון הוארך. חוזרים לאכיפה.
-            store.released = false
-            Enforcer.apply(this, store)
-            Trace.log("release.renewed", "")
-        }
-    }
-
     /** מדווח לשרת אילו אפליקציות (עם מסך פתיחה) מותקנות — פעם אחת בכל ריצה, רק כשמנהלים. */
     private var appsReported = false
     private fun reportApps() {
@@ -157,7 +166,6 @@ class HomeActivity : AppCompatActivity() {
                 val pm = packageManager
                 val main = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
                 val arr = org.json.JSONArray()
-                val launchers = mutableSetOf<String>()
                 for (ri in pm.queryIntentActivities(main, 0)) {
                     val pkg = ri.activityInfo.packageName
                     if (pkg == store.ownPackage) continue
@@ -165,10 +173,7 @@ class HomeActivity : AppCompatActivity() {
                     val sys = (ri.activityInfo.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
                     arr.put(org.json.JSONObject().apply { put("p", pkg); put("n", label); put("s", if (sys) 1 else 0) })
                 }
-                // חבילת ה-launcher הנוכחית — לא נחסמת.
-                pm.resolveActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), 0)
-                    ?.activityInfo?.packageName?.let { launchers.add(it) }
-                store.launchers = launchers
+                AppPolicy.scan(this, force = true)   // מסכי הבית והמקלדות — לא נחסמים
                 if (arr.length() > 0) Api.apps(store.token, arr) { }
             } catch (e: Exception) { Trace.log("reportApps.fail", e.message ?: "") }
         }.start()
@@ -327,12 +332,40 @@ class HomeActivity : AppCompatActivity() {
                 text = "$ic  $t"; textSize = 15f; setPadding(0, dp(8), 0, dp(8))
                 setTextColor(getColor(R.color.ink))
             })
+            // בקשת פתיחה גם מכאן: ב"בעל מכשיר" אפליקציה מושעית לא עולה בכלל, ומסך החסימה לא מופיע (2026-10-22).
+            if (store.appsManage && !store.released) addView(TextView(this@HomeActivity).apply {
+                text = "🔒  אפליקציות חסומות — לבקש פתיחה"; textSize = 15f; setPadding(0, dp(8), 0, dp(8))
+                setTextColor(getColor(R.color.ink))
+                setOnClickListener { showBlockedApps() }
+            })
         }
         MaterialAlertDialogBuilder(this)
             .setTitle(store.displayName().ifEmpty { "ההגדרות שלי" })
             .setView(box)
             .setPositiveButton("סגירה", null)
             .setNeutralButton("👨‍👩‍👧 כניסת הורה") { _, _ -> startActivity(Intent(this, ParentActivity::class.java)) }
+            // הגדרות מההורה בלי אינטרנט — QR חתום שההורה מציג (OfflinePolicy).
+            .setNegativeButton("📷 קוד מההורה") { _, _ -> scanParentCode() }
+            .show()
+    }
+
+    /** האפליקציות החסומות במכשיר — לחיצה פותחת את מסך החסימה שלה, עם "בקש פתיחה" ומצב הבקשה. */
+    private fun showBlockedApps() {
+        AppPolicy.scan(this, force = true)
+        val apps = store.launchable.filter { AppPolicy.blocked(store, it) }
+            .map { it to AppGrants.label(this, it) }.sortedBy { it.second.lowercase() }
+        if (apps.isEmpty()) {
+            MaterialAlertDialogBuilder(this).setTitle("🔒 אפליקציות חסומות")
+                .setMessage("אין כרגע אפליקציות חסומות במכשיר.").setPositiveButton("סגירה", null).show()
+            return
+        }
+        val pending = store.appPending
+        MaterialAlertDialogBuilder(this)
+            .setTitle("🔒 אפליקציות חסומות")
+            .setItems(apps.map { (p, l) -> if (p in pending) "$l — 🕓 ממתין להורה" else l }.toTypedArray()) { _, i ->
+                startActivity(Intent(this, BlockedActivity::class.java).putExtra("pkg", apps[i].first))
+            }
+            .setPositiveButton("סגירה", null)
             .show()
     }
 

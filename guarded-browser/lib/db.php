@@ -120,6 +120,81 @@ function migrate(PDO $pdo): void {
     if (!in_array('perms', $columns('devices'), true)) {
         $pdo->exec("ALTER TABLE devices ADD COLUMN perms INTEGER NOT NULL DEFAULT 0");
     }
+    // היסטוריית מדיניות וקבלות (lib/history.php, שלב 12 א+ז).
+    $pdo->exec("CREATE TABLE IF NOT EXISTS policy_versions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, child_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        by_parent INTEGER NOT NULL DEFAULT 0, source TEXT NOT NULL DEFAULT '', rev TEXT NOT NULL DEFAULT '',
+        hash TEXT NOT NULL DEFAULT '', snapshot TEXT NOT NULL DEFAULT '', summary TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL)");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_pv_child ON policy_versions(child_id, id)");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS policy_receipts (
+        version_id INTEGER NOT NULL REFERENCES policy_versions(id) ON DELETE CASCADE,
+        device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+        received_at TEXT NOT NULL DEFAULT '', applied_at TEXT NOT NULL DEFAULT '',
+        state TEXT NOT NULL DEFAULT '', detail TEXT NOT NULL DEFAULT '',
+        PRIMARY KEY (version_id, device_id))");
+    if (!in_array('policy_version', $columns('devices'), true)) {
+        $pdo->exec("ALTER TABLE devices ADD COLUMN policy_version INTEGER NOT NULL DEFAULT 0");
+    }
+    // המדיניות האחרונה שהמכשיר משך (rev) — "התקבל במכשיר", עוד לפני שדיווח שהחיל (lib/enforce.php).
+    if (!in_array('policy_rev', $columns('devices'), true)) {
+        $pdo->exec("ALTER TABLE devices ADD COLUMN policy_rev TEXT NOT NULL DEFAULT ''");
+        $pdo->exec("ALTER TABLE devices ADD COLUMN policy_rev_at TEXT NOT NULL DEFAULT ''");
+    }
+    // אישור לפי משימה (lib/tasks.php): המשימה, והכללים הזמניים שלה מסומנים ב-task_id — סיום מוקדם מוחק אותם יחד.
+    $pdo->exec("CREATE TABLE IF NOT EXISTS tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        child_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        title TEXT NOT NULL, minutes INTEGER NOT NULL,
+        starts_at TEXT NOT NULL, ends_at TEXT NOT NULL, ended_at TEXT NOT NULL DEFAULT '',
+        created_by INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL)");
+    if (!in_array('task_id', $columns('rules'), true)) {
+        $pdo->exec("ALTER TABLE rules ADD COLUMN task_id INTEGER NOT NULL DEFAULT 0");
+    }
+    // בדיקת הגנה יזומה (lib/selftest.php): הבקשה האחרונה, האחרונה שהמכשיר ענה עליה, והתוצאה הגולמית.
+    if (!in_array('selftest_req', $columns('devices'), true)) {
+        foreach (['selftest_req', 'selftest_done', 'selftest_result', 'selftest_at'] as $col) {
+            $pdo->exec("ALTER TABLE devices ADD COLUMN $col TEXT NOT NULL DEFAULT ''");
+        }
+    }
+    // מצב למידה ביוטיוב (lib/ytlearn.php): מה הסקריפט בדף אימת — המלצות, ניגון אוטומטי, עצירה בסוף.
+    if (!in_array('yt_learn', $columns('devices'), true)) {
+        $pdo->exec("ALTER TABLE devices ADD COLUMN yt_learn TEXT NOT NULL DEFAULT ''");
+        $pdo->exec("ALTER TABLE devices ADD COLUMN yt_learn_at TEXT NOT NULL DEFAULT ''");
+    }
+    // מצב לא מקוון מתוכנן (שלב 12 ו) — ברירות המחדל: כמו שהיה (24 שעות על המדיניות השמורה).
+    if (!in_array('offline_grace_h', $columns('policies'), true)) {
+        $pdo->exec("ALTER TABLE policies ADD COLUMN offline_grace_h INTEGER NOT NULL DEFAULT 24");
+        $pdo->exec("ALTER TABLE policies ADD COLUMN offline_content TEXT NOT NULL DEFAULT 'all'");
+    }
+    // זמן מסך לאפליקציות (lib/apptime.php): מגבלה יומית לכל אפליקציה, והזמן שהמכשיר דיווח.
+    $pdo->exec("CREATE TABLE IF NOT EXISTS app_limits (
+        child_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        package TEXT NOT NULL, daily_min INTEGER NOT NULL, created_at TEXT NOT NULL DEFAULT '',
+        PRIMARY KEY (child_id, package))");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS app_usage (
+        child_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        day TEXT NOT NULL, package TEXT NOT NULL, seconds INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (child_id, day, package))");
+    // מצב העדכון כפי שהמכשיר דיווח (lib/appversion.php, updateStateSave) — ההורה רואה עדכון שנתקע או נכשל.
+    if (!in_array('update_state', $columns('devices'), true)) {
+        $pdo->exec("ALTER TABLE devices ADD COLUMN update_state TEXT NOT NULL DEFAULT ''");
+        $pdo->exec("ALTER TABLE devices ADD COLUMN update_at TEXT NOT NULL DEFAULT ''");
+    }
+    // בקשת פתיחה לאפליקציה (lib/apprequests.php, 2026-10-22) — באותה טבלה כמו בקשות האתרים, עם kind='app'.
+    // ‏apply_state: pending (נשלח למכשיר) / applied / failed / revoked. ‏ends_at — סוף היתר זמני, כפי שהמכשיר החיל.
+    if (!in_array('kind', $columns('access_requests'), true)) {
+        foreach (["kind TEXT NOT NULL DEFAULT 'site'", "package TEXT NOT NULL DEFAULT ''", "device_id INTEGER NOT NULL DEFAULT 0",
+                  "minutes INTEGER NOT NULL DEFAULT 0", "apply_state TEXT NOT NULL DEFAULT ''", "apply_error TEXT NOT NULL DEFAULT ''",
+                  "applied_at TEXT NOT NULL DEFAULT ''", "ends_at TEXT NOT NULL DEFAULT ''"] as $col) {
+            $pdo->exec("ALTER TABLE access_requests ADD COLUMN $col");
+        }
+    }
+    // דוח האכיפה האחרון מהמכשיר (lib/enforce.php) — מה הוחל בפועל ומה נכשל, ומתי.
+    if (!in_array('enforce_report', $columns('devices'), true)) {
+        $pdo->exec("ALTER TABLE devices ADD COLUMN enforce_report TEXT NOT NULL DEFAULT ''");
+        $pdo->exec("ALTER TABLE devices ADD COLUMN enforce_at TEXT NOT NULL DEFAULT ''");
+    }
     // שלב 11: ברירת המחדל לאפליקציות (allow_all — חוסם רק מה שסומן; deny_all — רק מה שאושר).
     if (!in_array('apps_posture', $columns('policies'), true)) {
         $pdo->exec("ALTER TABLE policies ADD COLUMN apps_posture TEXT NOT NULL DEFAULT 'allow_all'");
@@ -138,6 +213,13 @@ function migrate(PDO $pdo): void {
     // כניסה דרך הפלטפורמה (lib/platform.php): החשבון בממשק הניהול מקושר ל-sub של חשבון הפלטפורמה.
     if (!in_array('platform_sub', $columns('users'), true)) {
         $pdo->exec("ALTER TABLE users ADD COLUMN platform_sub TEXT NOT NULL DEFAULT ''");
+    }
+    // הגדרות המכשיר (lib/devicesettings.php) — '' = ברירות המחדל.
+    if (!in_array('device_settings', $columns('policies'), true)) {
+        $pdo->exec("ALTER TABLE policies ADD COLUMN device_settings TEXT NOT NULL DEFAULT ''");
+    }
+    if (!in_array('platform_sub', $columns('parents'), true)) {
+        $pdo->exec("ALTER TABLE parents ADD COLUMN platform_sub TEXT NOT NULL DEFAULT ''");
     }
     $have = $columns('developers');
     foreach (['email', 'platform_sub'] as $col) {
@@ -344,9 +426,9 @@ function usedTodaySeconds(int $userId, string $tz): int {
  * כאן צריך חיבור ולא החלפה, ולכן זו אינה upsert רגילה: קודם מובטח
  * שהשורה קיימת, ואז מוסיפים לה. שתי הפקודות עובדות בכל גרסת SQLite.
  */
-function addUsage(int $userId, string $tz, int $seconds): void {
+function addUsage(int $userId, string $tz, int $seconds, ?string $day = null): void {
     if ($seconds <= 0) return;
-    $day = todayIn($tz);
+    $day ??= todayIn($tz);
     q('INSERT OR IGNORE INTO usage (user_id, day, seconds) VALUES (?, ?, 0)', [$userId, $day]);
     q('UPDATE usage SET seconds = seconds + ? WHERE user_id = ? AND day = ?',
       [$seconds, $userId, $day]);
@@ -403,7 +485,8 @@ function platformRulesFor(int $userId): array {
 /** הפריטים שאושרו: [platform => [kind => [id => action]]]. */
 function platformItemsFor(int $userId): array {
     $out = [];
-    foreach (all('SELECT * FROM platform_items WHERE user_id = ?', [$userId]) as $r) {
+    // לפי סדר ההוספה — זה סדר האריחים, וזה התור במצב למידה (שלב 12 ה).
+    foreach (all('SELECT * FROM platform_items WHERE user_id = ? ORDER BY id', [$userId]) as $r) {
         $out[$r['platform']][$r['kind']][$r['item_id']] = $r['action'];
     }
     return $out;
@@ -460,8 +543,19 @@ function ruleSetFor(int $userId): array {
  */
 function policyRev(int $userId): string {
     $user = one('SELECT status FROM users WHERE id = ?', [$userId]);
+    // גם כללי האפליקציות (app_rules): בלעדיהם חסימת אפליקציה לא שינתה את הטביעה, והמכשיר לא ידע
+    // למשוך מדיניות חדשה עד שינוי אחר (סקירה, 2026-10-20).
+    $apps = all('SELECT package, action FROM app_rules WHERE child_id = ? ORDER BY package', [$userId]);
+    // ומגבלות הזמן לאפליקציות (lib/apptime.php) — שינוי מגיע למכשיר בפעימה הבאה.
+    $limits = all('SELECT package, daily_min FROM app_limits WHERE child_id = ? ORDER BY package', [$userId]);
+    if ($limits) $apps[] = ['limits' => $limits];
+    // והחלטות על בקשות פתיחה של אפליקציות (בלי apply_state — האישור מהמכשיר לא אמור לגרום למשיכה חוזרת).
+    $appReq = all("SELECT id, status, scope, minutes FROM access_requests WHERE child_id = ? AND kind = 'app' AND status != 'pending'
+                   AND decided_at > ? ORDER BY id", [$userId, gmdate('Y-m-d\TH:i:s\Z', time() - 86400)]);
+    // בקשת בדיקת הגנה (lib/selftest.php) — כך כל מסלול סנכרון במכשיר מושך אותה.
+    $selftest = (string) (one('SELECT MAX(selftest_req) AS m FROM devices WHERE user_id = ?', [$userId])['m'] ?? '');
     return substr(md5(json_encode([
         $user['status'] ?? '', policyFor($userId), rulesFor($userId), categoryRulesFor($userId),
-        platformRulesFor($userId), platformItemsFor($userId),
-    ])), 0, 12);
+        platformRulesFor($userId), platformItemsFor($userId), $apps, $appReq,
+    ] + ($selftest !== '' ? ['selftest' => $selftest] : []))), 0, 12);
 }

@@ -102,7 +102,7 @@ function accountDetail(int $id): ?array {
     $view['parent_list'] = array_map(fn($p) => [
         'id' => (int) $p['id'], 'login' => $p['login'], 'name' => $p['name'],
         'status' => $p['status'], 'must_change_pw' => (bool) $p['must_change_pw'],
-        'last_login_at' => $p['last_login_at'],
+        'last_login_at' => $p['last_login_at'], 'platform' => (string) $p['platform_sub'] !== '',
     ], all('SELECT * FROM parents WHERE account_id = ? ORDER BY id', [$id]));
     $view['child_list'] = array_map(fn($u) => [
         'id' => (int) $u['id'], 'name' => $u['display_name'] ?: $u['username'],
@@ -287,6 +287,8 @@ function parentRemove(int $parentId): string {
 /* ── כניסת הורה ────────────────────────────────────────────────── */
 
 function currentParent(): ?array {
+    // כל ההורים נכנסים דרך הפלטפורמה (lib/platform.php): הזהות מהשער קובעת מי ההורה, לא העוגייה.
+    if (($id = platformIdentity()) && !platformSession('parent', $id)) return null;
     $s = sessionRow('parent');
     if (!$s) return null;
     $p = one("SELECT * FROM parents WHERE id = ? AND status = 'active'", [(int) $s['user_id']]);
@@ -295,6 +297,8 @@ function currentParent(): ?array {
 
 /** כניסת הורה. מוחזר [parent, שגיאה]. אותה הודעה לשם שגוי ולסיסמה שגויה. */
 function parentLogin(string $login, string $password): array {
+    if (platformIdentity()) return [null, 'הכניסה היא דרך הכלים הדיגיטליים'];
+    if (!passwordLoginOpen()) return [null, 'הכניסה בסיסמה כבויה — היכנסו דרך הכלים הדיגיטליים'];
     $login = cleanLogin($login);
     $key = 'parent:' . $login;
     if (tooManyFailures($key)) return [null, 'יותר מדי ניסיונות. נסו שוב בעוד רבע שעה.'];
@@ -368,6 +372,23 @@ function developerSetup(string $username, string $name, string $password): array
     $id = (int) db()->lastInsertId();
     startSession('dev', $id);
     return [$id, ''];
+}
+
+/**
+ * הזמנת מפתח נוסף — רק ממפתח מחובר. נשמר חשבון בלי סיסמה ובלי sub, עם המייל; בכניסה הראשונה דרך
+ * הפלטפורמה, עם המייל הזה *מאומת*, הוא מתקשר (platformLinked). זו הדרך היחידה לפתוח מפתח שני.
+ */
+function developerInvite(string $email, string $name, int $byDevId): string {
+    $email = mb_strtolower(trim($email));
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) return 'מייל לא תקין';
+    if (one('SELECT id FROM developers WHERE LOWER(email) = ?', [$email])) return 'המייל הזה כבר מוזמן או מחובר';
+    $base = preg_replace('/[^a-zA-Z0-9._\-]/', '', strstr($email, '@', true) ?: '') ?: 'dev';
+    $user = substr($base, 0, 24);
+    for ($i = 2; one('SELECT id FROM developers WHERE username = ?', [$user]); $i++) $user = substr($base, 0, 20) . '-' . $i;
+    q('INSERT INTO developers (username, name, email, password_hash, created_at) VALUES (?, ?, ?, ?, ?)',
+      [$user, mb_substr(trim($name) ?: $user, 0, 80), $email, '', nowIso()]);
+    audit($byDevId, 'dev_invite', true, '', 'dev', $email);
+    return '';
 }
 
 function developerChangePassword(int $id, string $current, string $next): string {

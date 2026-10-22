@@ -20,6 +20,52 @@ function now_iso(): string
     return gmdate('Y-m-d\TH:i:s\Z');
 }
 
+/**
+ * הפקודה הראשונה בטרנזקציה שכותבת למסמך: תופסת את נעילת הכתיבה של המסד ובודקת שהמסמך
+ * עדיין במצב שמותר לכתוב בו — בפעולה אחת. בלי זה, שמירה שעברה את בדיקת המצב לפני
+ * הטרנזקציה יכלה לכתוב אחרי שהמסמך ננעל בינתיים (נספח הביקורת v0.3, DT-F07).
+ * כל קריאה של ערכים שבאה אחריה רואה את המצב העדכני: כותב אחר לא נכנס עד ה-commit.
+ */
+function doc_lock(PDO $pdo, int $docId, array $statuses, string $msg = 'המסמך נעול'): void
+{
+    $in = implode(',', array_fill(0, count($statuses), '?'));
+    $st = $pdo->prepare("UPDATE documents SET status = status WHERE id = ? AND status IN ($in)");
+    $st->execute(array_merge([$docId], $statuses));
+    if ($st->rowCount() === 0) throw new ApiError($msg, 409);
+}
+
+/**
+ * טרנזקציה שאפשר לקנן: בתוך טרנזקציה פתוחה — SAVEPOINT. כך פעולה שיש לה טרנזקציה משלה
+ * (doc_create, doc_save) יכולה לרוץ גם כחלק מפעולה גדולה יותר שמתחייבת או נכשלת כולה
+ * (ext_issue — נספח הביקורת v0.3, DT-F02).
+ */
+function tx_begin(PDO $pdo): void
+{
+    $GLOBALS['dt_tx_depth'] ??= [];
+    if ($pdo->inTransaction()) {
+        $sp = 'sp' . count($GLOBALS['dt_tx_depth']);
+        $pdo->exec("SAVEPOINT $sp");
+        $GLOBALS['dt_tx_depth'][] = $sp;
+    } else {
+        $pdo->beginTransaction();
+        $GLOBALS['dt_tx_depth'][] = null;
+    }
+}
+
+function tx_commit(PDO $pdo): void
+{
+    $sp = array_pop($GLOBALS['dt_tx_depth']);
+    $sp === null ? $pdo->commit() : $pdo->exec("RELEASE $sp");
+}
+
+function tx_rollback(PDO $pdo): void
+{
+    $sp = array_pop($GLOBALS['dt_tx_depth']);
+    if ($sp === null) { $pdo->rollBack(); return; }
+    $pdo->exec("ROLLBACK TO $sp");
+    $pdo->exec("RELEASE $sp");
+}
+
 function db(): PDO
 {
     static $pdo = null;
@@ -265,6 +311,8 @@ function db_migrate(PDO $pdo): void
     // שיתוף למילוי: מי ממלא כל שדה במסמך הזה (גובר על התבנית) — lib/participants.php, doc_assign
     $cols = array_column($pdo->query('PRAGMA table_info(documents)')->fetchAll(), 'name');
     if (!in_array('assign_enc', $cols, true)) $pdo->exec('ALTER TABLE documents ADD COLUMN assign_enc TEXT');
+    // מסמך שהושלם: תוויות ותרגומים כפי שהיו ברגע ההשלמה (lib/documents.php, freeze_capture — DT-F06)
+    if (!in_array('frozen_enc', $cols, true)) $pdo->exec('ALTER TABLE documents ADD COLUMN frozen_enc TEXT');
 
     // שיתוף בטלפון: הזמנה בקישור חד-פעמי, שנשלח בוואטסאפ (lib/sharing.php, share_invite)
     $pdo->exec(<<<'SQL'

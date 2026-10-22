@@ -72,9 +72,11 @@ class Store(context: Context) {
             .putString("ad_css", payload.optString("ad_css"))
             .putString("name", payload.optJSONObject("user")?.optString("name") ?: "")
             .putString("rev", payload.optString("rev"))
-            .putInt("account_id", payload.optInt("account_id"))
             .putLong("policy_at", System.currentTimeMillis())
             .apply()
+        pinIdentity(payload.optInt("account_id"), payload.optInt("child_id"))
+        // הגדרות המכשיר שההורה קבע ({מפתח: חסום?}) — Enforcer מפעיל אותן ב"בעל מכשיר".
+        prefs.edit().putString("device", payload.optJSONObject("device")?.toString() ?: "{}").apply()
         pinSignKey(payload.optString("sign_pubkey"))
         saveApps(payload.optJSONObject("apps"))
     }
@@ -89,8 +91,37 @@ class Store(context: Context) {
 
     fun pinSignKey(k: String) { if (k.isNotEmpty() && signPubKey.isEmpty()) signPubKey = k }
 
-    /** זהות החשבון של המכשיר — לאימות ש-acct של אסימון השחרור תואם. */
+    /**
+     * זהות החשבון והילד של המכשיר — לאימות אסימון השחרור וקוד ההורה. מוצמדת בפעם הראשונה (בצימוד), כמו
+     * המפתח, ואינה נדרסת מתשובה מאוחרת (סקירה, 2026-10-20 — שלב 8): קודם נכתבה מכל תשובה, ואסימון השחרור
+     * אומת מול account_id מאותה תשובה — כלומר מול עצמו. ניתוק (clear) מאפס אותה.
+     */
     val accountId: Int get() = prefs.getInt("account_id", 0)
+
+    private fun pinIdentity(acct: Int, child: Int) {
+        val e = prefs.edit()
+        if (accountId <= 0 && acct > 0) e.putInt("account_id", acct)
+        else if (acct > 0 && acct != accountId) Trace.log("identity.mismatch", "acct=$acct pinned=$accountId")
+        if (childId <= 0 && child > 0) e.putInt("child_id", child)
+        else if (child > 0 && child != childId) Trace.log("identity.mismatch", "child=$child pinned=$childId")
+        e.apply()
+    }
+
+    /** ‏issued_at של תשובת המדיניות האחרונה שהוחלה (PolicySync) — תשובה ישנה ממנה נזרקת. */
+    var policySeq: Long
+        get() = prefs.getLong("policy_seq", 0L)
+        set(v) { prefs.edit().putLong("policy_seq", v).apply() }
+
+    /** מזהה הילד — לקוד "העברה בלי אינטרנט" (OfflinePolicy). 0 — שרת ישן שעוד לא שלח. */
+    val childId: Int get() = prefs.getInt("child_id", 0)
+
+    /** ‏iat של הקוד האחרון שהופעל בלי אינטרנט — קוד ישן ממנו (או אותו קוד שוב) נדחה. */
+    var offlineIat: Long
+        get() = prefs.getLong("offline_iat", 0L)
+        set(v) { prefs.edit().putLong("offline_iat", v).apply() }
+
+    /** הגדרות המכשיר מקוד בלי אינטרנט — כמו "device" במדיניות מהשרת. */
+    fun saveDevice(d: JSONObject) { prefs.edit().putString("device", d.toString()).apply() }
 
     /**
      * המכשיר קיבל שחרור חתום: המנוי הסתיים, כל המגבלות פתוחות, ומוצג "המנוי של ההורים הסתיים".
@@ -107,23 +138,56 @@ class Store(context: Context) {
             .putString("apps_posture", a?.optString("posture", "allow_all") ?: "allow_all")
             .putString("apps_blocked", a?.optJSONArray("blocked")?.toString() ?: "[]")
             .putString("apps_allowed", a?.optJSONArray("allowed")?.toString() ?: "[]")
+            // זמן מסך: {package: דקות ליום} (AppTimeMath).
+            .putString("app_limits", a?.optJSONObject("limits")?.toString() ?: "{}")
             .apply()
     }
+
+    /** זמן מסך — {package: דקות ליום}. */
+    val appLimits: Map<String, Int> get() = (obj("app_limits") ?: JSONObject()).let { o ->
+        o.keys().asSequence().associateWith { o.optInt(it) }.filterValues { it > 0 }
+    }
+
+    /** הזמן שנצבר היום לכל אפליקציה (AppGuardService). */
+    var appUsage: AppTimeMath.Usage
+        get() = (obj("app_usage") ?: JSONObject()).let { o ->
+            val ms = o.optJSONObject("ms") ?: JSONObject()
+            AppTimeMath.Usage(o.optString("day"), ms.keys().asSequence().associateWith { ms.optLong(it) })
+        }
+        set(v) { prefs.edit().putString("app_usage", JSONObject().put("day", v.day).put("ms", JSONObject(v.ms as Map<*, *>)).toString()).apply() }
+
+    /** הדיווח האחרון לשרת (do=app_usage): מתי, ומה. */
+    var appUsageSent: String
+        get() = prefs.getString("app_usage_sent", "") ?: ""
+        set(v) { prefs.edit().putString("app_usage_sent", v).apply() }
+
+    /** היום של הילד (אזור הזמן שלו, השעון האמין) — למגבלות זמן המסך. */
+    fun today(): String = UsageMath.dayKey(TrustedClock.now(this), policy().timezone)
 
     val appsManage: Boolean get() = prefs.getBoolean("apps_manage", false)
     val appsPosture: String get() = prefs.getString("apps_posture", "allow_all") ?: "allow_all"
     val appsBlocked: Set<String> get() = strSet("apps_blocked")
     val appsAllowed: Set<String> get() = strSet("apps_allowed")
 
+    /** עד מתי ההגדרות פתוחות למרות חסימה — כי מגדלור עצמו פתח אותן (AppPolicy.openSettings). */
+    var settingsPassUntil: Long
+        get() = prefs.getLong("settings_pass", 0L)
+        set(v) { prefs.edit().putLong("settings_pass", v).apply() }
+
     /** חבילות שמגדלור השעה (בעל מכשיר) — כדי לבטל השעיה כשהן כבר לא חסומות. */
     var suspended: Set<String>
         get() = strSet("suspended")
         set(v) { prefs.edit().putString("suspended", JSONArray(v.toList()).toString()).apply() }
 
-    /** חבילות ה-launcher במכשיר — לא נחסמות. נשמר כשמדווחים את האפליקציות. */
+    /** חבילות ה-launcher (מסכי הבית) והמקלדות במכשיר — לא נחסמות לעולם. AppPolicy.scan. */
     var launchers: Set<String>
         get() = strSet("launchers")
         set(v) { prefs.edit().putString("launchers", JSONArray(v.toList()).toString()).apply() }
+
+    /** האפליקציות שיש להן אייקון לפתיחה — רק עליהן חל "רק מה שאישרתי". AppPolicy.scan. */
+    var launchable: Set<String>
+        get() = strSet("launchable")
+        set(v) { prefs.edit().putString("launchable", JSONArray(v.toList()).toString()).apply() }
 
     private fun strSet(key: String): Set<String> = try {
         val a = JSONArray(prefs.getString(key, "[]") ?: "[]")
@@ -137,9 +201,15 @@ class Store(context: Context) {
         catch (e: Exception) { Policy() }
     }
 
+    /** כל הכללים, כולל כאלה שתוקפם יפוג — לחישוב התפוגה הקרובה. */
+    fun ruleExpiries(): List<String> = try {
+        PolicyEngine.rulesFrom(JSONArray(prefs.getString("rules", "[]") ?: "[]")).map { it.expiresAt }.filter { it.isNotEmpty() }
+    } catch (e: Exception) { emptyList() }
+
     fun rules(): List<Rule> = try {
+        // תפוגה לפי זמן אמין (TrustedClock), לא לפי שעון המכשיר שהילד יכול להזיז.
         PolicyEngine.liveRules(PolicyEngine.rulesFrom(JSONArray(prefs.getString("rules", "[]") ?: "[]")),
-                               PolicyEngine.nowIso())
+                               PolicyEngine.nowIso(TrustedClock.now(this)))
     } catch (e: Exception) { emptyList() }
 
     /** טביעת האצבע של המדיניות השמורה; הפעימה משווה אליה (שלב 6). */
@@ -153,6 +223,33 @@ class Store(context: Context) {
         val o = JSONObject(prefs.getString("pending_req", "{}") ?: "{}")
         o.keys().asSequence().associate { it.toInt() to o.getString(it) }
     } catch (e: Exception) { emptyMap() }
+
+    /** היתרים זמניים לאפליקציות שהוחלו במכשיר (AppGrants): מזהה הבקשה → חבילה ועד מתי. */
+    var appGrants: Map<Int, AppGrantMath.Grant>
+        get() = try {
+            val o = JSONObject(prefs.getString("app_grants", "{}") ?: "{}")
+            o.keys().asSequence().associate { k -> o.getJSONObject(k).let { k.toInt() to AppGrantMath.Grant(it.optString("p"), it.optLong("u")) } }
+        } catch (e: Exception) { emptyMap() }
+        set(m) {
+            val o = JSONObject(); for ((k, g) in m) o.put(k.toString(), JSONObject().put("p", g.pkg).put("u", g.until))
+            prefs.edit().putString("app_grants", o.toString()).apply()
+        }
+
+    /** בקשות פתיחה לאפליקציות שנשלחו ועוד לא נענו: חבילה → מזהה הבקשה ומתי נשלחה. */
+    var appPending: Map<String, Pair<Int, Long>>
+        get() = try {
+            val o = JSONObject(prefs.getString("app_pending", "{}") ?: "{}")
+            o.keys().asSequence().associate { k -> o.getJSONObject(k).let { k to (it.optInt("id") to it.optLong("at")) } }
+        } catch (e: Exception) { emptyMap() }
+        set(m) {
+            val o = JSONObject(); for ((k, v) in m) o.put(k, JSONObject().put("id", v.first).put("at", v.second))
+            prefs.edit().putString("app_pending", o.toString()).apply()
+        }
+
+    /** החלטות שכבר טופלו במכשיר (אישור ביצוע נשלח, הילד קיבל הודעה) — כדי לא לחזור עליהן. */
+    var appHandled: Set<Int>
+        get() = (prefs.getString("app_handled", "") ?: "").split(",").mapNotNull { it.toIntOrNull() }.toSet()
+        set(v) { prefs.edit().putString("app_handled", v.sorted().takeLast(100).joinToString(",")).apply() }
 
     fun addPendingRequest(id: Int, url: String) = savePending(pendingRequests() + (id to url))
     fun removePendingRequest(id: Int) = savePending(pendingRequests() - id)
@@ -212,15 +309,85 @@ class Store(context: Context) {
         return on
     }
 
+    /**
+     * עדכון חובה שהשרת הודיע עליו (Updater): הגרסה והקישור. נשמר — כך שגם אחרי הפעלה מחדש, ובלי
+     * רשת, האפליקציה נשארת נעולה עד שהגרסה החדשה מותקנת.
+     */
+    var updateCode: Int
+        get() = prefs.getInt("update_code", 0)
+        set(v) { prefs.edit().putInt("update_code", v).apply() }
+    var updateUrl: String
+        get() = prefs.getString("update_url", "") ?: ""
+        set(v) { prefs.edit().putString("update_url", v).apply() }
+    /** ‏sha256 של ה-APK כפי שהשרת פרסם (latest.json). ריק — שרת ישן. */
+    var updateSha: String
+        get() = prefs.getString("update_sha", "") ?: ""
+        set(v) { prefs.edit().putString("update_sha", v).apply() }
+    /** עד מתי הגבלות ההתקנה מוסרות לעדכון (UpdateMath.installOpen). 0 — סגור. */
+    var installOpenUntil: Long
+        get() = prefs.getLong("install_open_until", 0L)
+        set(v) { prefs.edit().putLong("install_open_until", v).apply() }
+
+    /** הגדרות המכשיר מהמדיניות: חסום? לפי מפתח (lib/devicesettings.php). null — השרת לא שלח (ישן). */
+    fun deviceSetting(key: String): Boolean? = try {
+        val o = JSONObject(prefs.getString("device", "{}") ?: "{}")
+        if (o.has(key)) o.getBoolean(key) else null
+    } catch (e: Exception) { null }
+
+    /* ── מונה השימוש (UsageMeter) וזמן אמין (TrustedClock) ── */
+    var usageOpen: String
+        get() = prefs.getString("usage_open", "{}") ?: "{}"
+        set(v) { prefs.edit().putString("usage_open", v).apply() }
+    var usageInflight: String
+        get() = prefs.getString("usage_inflight", "[]") ?: "[]"
+        set(v) { prefs.edit().putString("usage_inflight", v).apply() }
+    var usageServerUsed: Int
+        get() = prefs.getInt("usage_server_used", 0)
+        set(v) { prefs.edit().putInt("usage_server_used", v).apply() }
+    var usageServerDay: String
+        get() = prefs.getString("usage_server_day", "") ?: ""
+        set(v) { prefs.edit().putString("usage_server_day", v).apply() }
+    var sessionMs: Long
+        get() = prefs.getLong("session_ms", 0L)
+        set(v) { prefs.edit().putLong("session_ms", v).apply() }
+    var sessionLast: Long
+        get() = prefs.getLong("session_last", 0L)
+        set(v) { prefs.edit().putLong("session_last", v).apply() }
+    var clockServerMs: Long
+        get() = prefs.getLong("clock_server_ms", 0L)
+        set(v) { prefs.edit().putLong("clock_server_ms", v).apply() }
+    var clockElapsed: Long
+        get() = prefs.getLong("clock_elapsed", 0L)
+        set(v) { prefs.edit().putLong("clock_elapsed", v).apply() }
+    /** זמן אמין של הסנכרון המוצלח האחרון עם השרת — לחלון החסד (UsageMath.graceExpired). */
+    var lastSyncMs: Long
+        get() = prefs.getLong("last_sync_ms", 0L)
+        set(v) { prefs.edit().putLong("last_sync_ms", v).apply() }
+
+    /** הדוח האחרון שנשלח (EnforceReport) — לא שולחים שוב אותו דוח, אלא אם התיישן. */
+    var enforceHash: String
+        get() = prefs.getString("enforce_hash", "") ?: ""
+        set(v) { prefs.edit().putString("enforce_hash", v).apply() }
+    var enforceAt: Long
+        get() = prefs.getLong("enforce_at", 0L)
+        set(v) { prefs.edit().putLong("enforce_at", v).apply() }
+
+    /** דוח האימות האחרון של מצב הלמידה ביוטיוב שהשרת קיבל (YouTubeLearn). */
+    var ytLearnSent: String
+        get() = prefs.getString("yt_learn_sent", "") ?: ""
+        set(v) { prefs.edit().putString("yt_learn_sent", v).apply() }
+    var ytLearnSentAt: Long
+        get() = prefs.getLong("yt_learn_sent_at", 0L)
+        set(v) { prefs.edit().putLong("yt_learn_sent_at", v).apply() }
+
+    /** בדיקת ההגנה האחרונה שהשרת קיבל את התוצאות שלה (SelfTest). */
+    var selftestDone: String
+        get() = prefs.getString("selftest_done", "") ?: ""
+        set(v) { prefs.edit().putString("selftest_done", v).apply() }
+
     /** ביטים של ההרשאות שניתנו במכשיר (Setup.flags) — נשלח לשרת כדי שההורה יראה. */
     var perms: Int
         get() = prefs.getInt("perms", 0)
         set(v) { prefs.edit().putInt("perms", v).apply() }
 
-    /** גיל המדיניות השמורה. מדיניות עתיקה מדי אינה בסיס להמשך גלישה. */
-    fun policyAgeMinutes(): Long {
-        val at = prefs.getLong("policy_at", 0L)
-        if (at == 0L) return Long.MAX_VALUE
-        return (System.currentTimeMillis() - at) / 60_000L
-    }
 }

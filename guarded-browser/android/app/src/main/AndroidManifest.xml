@@ -19,6 +19,33 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <!-- פטור מאופטימיזציית סוללה, כדי שהאכיפה לא תיעצר ברקע (מבוקש במסלול ההקמה). -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
+    <!-- עדכון חובה (Updater): הבדיקה ברקע נשמרת אחרי הפעלה מחדש, וההודעה קופצת במסך מלא. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT"/>
+
+    <!-- רשימת האפליקציות להורה (reportApps): מאנדרואיד 11 queryIntentActivities רואה בלי זה רק אפליקציות
+         מערכת. כל מה שיש לו סמל במסך הבית — זה מה שההורה צריך לראות ולחסום. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN"/>
+            <category android:name="android.intent.category.LAUNCHER"/>
+        </intent>
+        <!-- מסכי הבית (launcher) — בלי זה אנדרואיד 11+ מסתיר אותם, ולחיצה על "בית" נחסמה (באג, 2026-10-20). -->
+        <intent>
+            <action android:name="android.intent.action.MAIN"/>
+            <category android:name="android.intent.category.HOME"/>
+        </intent>
+        <!-- המקלדות — שירות. -->
+        <intent>
+            <action android:name="android.view.InputMethod"/>
+        </intent>
+        <!-- הדפדפנים שבמכשיר — לדוח האכיפה: האם כל דפדפן אחר חסום (EnforceReport). -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <category android:name="android.intent.category.BROWSABLE"/>
+            <data android:scheme="https"/>
+        </intent>
+    </queries>
 
     <application
         android:name=".GuardApp"
@@ -82,6 +109,13 @@
             android:resizeableActivity="true"
             android:launchMode="singleTask"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"/>
+
+        <!-- עדכון חובה (Updater): המסך הנעול, הבדיקה ברקע, ותוצאת ההתקנה. -->
+        <activity android:name=".UpdateActivity" android:exported="false"
+            android:excludeFromRecents="true" android:launchMode="singleTask"/>
+        <service android:name=".UpdateJob" android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE"/>
+        <receiver android:name=".Updater$InstallResult" android:exported="false"/>
 
         <service android:name=".GuardService" android:exported="false"
             android:foregroundServiceType="mediaPlayback"/>

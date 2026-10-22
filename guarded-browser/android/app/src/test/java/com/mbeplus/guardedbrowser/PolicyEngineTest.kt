@@ -64,6 +64,15 @@ class PolicyEngineTest {
         assertFalse(PolicyEngine.ruleMatches(rule("liveball.sx", "domain"), foreign, false))
     }
 
+    /** משאב של משימה (lib/tasks.php): נטען בתוך דף, אבל לא יעד לגלישה — כמו בשרת. */
+    @Test fun resourceScopeOnlyInsidePages() {
+        val cdn = PolicyEngine.normalize("https://cdn.lib.example/app.js")!!
+        assertTrue(PolicyEngine.ruleMatches(rule("cdn.lib.example", "resource"), cdn, false))
+        assertFalse(PolicyEngine.ruleMatches(rule("cdn.lib.example", "resource"), cdn, true))
+        val other = PolicyEngine.normalize("https://tracker.example/x.js")!!
+        assertFalse(PolicyEngine.ruleMatches(rule("cdn.lib.example", "resource"), other, false))
+    }
+
     /** איסור שאפשר לנטרל בהוספת היתר אחריו אינו איסור. */
     @Test fun denyWinsRegardlessOfOrder() {
         val u = PolicyEngine.normalize("https://bad.com")!!
@@ -134,13 +143,16 @@ class PolicyEngineTest {
         assertEquals("", PolicyEngine.contentTypeOf("https://a.com/page"))
     }
 
-    @Test fun blockedTypeStopsResourceButExplicitRuleWins() {
+    /** שלב 10: "לחסום תמיד — גם באתר שמותר". קודם היתר מפורש גבר על חסימת הסוג. */
+    @Test fun blockedTypeWinsEvenOnAnExplicitlyAllowedSite() {
         val p = open.copy(blockedTypes = listOf("video"))
         assertEquals("type_blocked",
             PolicyEngine.evaluate(p, RuleSet(), "https://a.com/clip.mp4", false, 0, 0).code)
         assertTrue(PolicyEngine.evaluate(p, RuleSet(), "https://a.com/page", true, 0, 0).allow)
-        assertEquals("rule_allow", PolicyEngine.evaluate(
+        assertEquals("type_blocked", PolicyEngine.evaluate(
             p, RuleSet(rules = listOf(rule("a.com"))), "https://a.com/clip.mp4", false, 0, 0).code)
+        assertEquals("rule_allow", PolicyEngine.evaluate(
+            p, RuleSet(rules = listOf(rule("a.com"))), "https://a.com/page", true, 0, 0).code)
     }
 
     /* ── יוטיוב ── */

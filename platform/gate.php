@@ -59,7 +59,8 @@ $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
 if (!isset(TYPES[$ext])) not_found();
 
 $rel = substr($file, strlen($appDir) + 1);
-\Platform\Gate\handoff_consume($app, $base);   // ?platform-handoff — התחברות שהועברה מהכלים הדיגיטליים
+\Platform\Gate\handoff_consume($app, $base);
+\Platform\Gate\apk_seen($app, $base);       // ?platform-apk / PlatformApk/ — אפליקציית אנדרואיד שלנו נפתחה   // ?platform-handoff — התחברות שהועברה מהכלים הדיגיטליים
 $params = array_diff_key($_GET, ['__gate_app' => 1, '__gate_path' => 1]);
 $verdict = decide($app, $rel, $params);
 if ($verdict !== null) {

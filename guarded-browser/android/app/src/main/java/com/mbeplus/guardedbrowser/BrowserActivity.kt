@@ -41,8 +41,18 @@ class BrowserActivity : AppCompatActivity() {
     private var policy: Policy = Policy()
     private var ruleSet: RuleSet = RuleSet()
 
-    private var usedSec = 0          // נוצל היום, לפי השרת
-    private var sessionSec = 0       // משך הישיבה הנוכחית
+    // נוצל היום והישיבה — מהמונה המקומי (UsageMeter): השרת + מה שעוד לא אושר. נאכף גם בלי שרת.
+    private val usedSec: Int get() = UsageMeter.usedToday(store)
+    private val sessionSec: Int get() = UsageMeter.sessionSec(store)
+    private var nextExpiry = 0L      // התפוגה הקרובה של היתר זמני (UsageMath.nextExpiry)
+
+    /** הכרעה מקומית — בזמן אמין (TrustedClock), עם המונה המקומי. */
+    private fun decide(url: String, main: Boolean): Verdict {
+        val now = TrustedClock.now(store)
+        // בלי חיבור — רק מה שההורה קבע שזמין בלי חיבור (OfflineMath; מצמצם בלבד).
+        return OfflineMath.gate(policy.offlineContent, OfflineMath.offline(store.lastSyncMs, now),
+            PolicyEngine.evaluate(policy, ruleSet, url, main, usedSec, sessionSec, nowMs = now), main)
+    }
     private var closing = false
     private var lastAllowed = ""      // הכתובת המותרת האחרונה, לחזרה אליה
     private var background = false    // ממשיכים לרוץ מחוץ לאפליקציה
@@ -94,13 +104,55 @@ class BrowserActivity : AppCompatActivity() {
     private val ticker = Handler(Looper.getMainLooper())
     private val beat = object : Runnable {
         override fun run() {
-            sessionSec += BEAT_SEC
             sendBeat()
             ticker.postDelayed(this, BEAT_SEC * 1000L)
         }
     }
 
-    companion object { private const val BEAT_SEC = 30 }
+    /**
+     * דגימת שימוש כל 5 שניות (UsageMeter), ואכיפה מקומית שאינה תלויה בשרת: מכסה, ישיבה וחלון שעות
+     * שנגמרו, היתר זמני שפג (גם בלי רשת), וחלון החסד בלי סנכרון.
+     */
+    private val meter = object : Runnable {
+        override fun run() {
+            if (closing) return
+            UsageMeter.tick(store)
+            val now = TrustedClock.now(store)
+            if (!store.released && UsageMath.graceExpired(store.lastSyncMs, now, OfflineMath.graceMs(policy.offlineGraceH))) {
+                refuse("אין חיבור לשרת של ההורה כבר יותר מ-${policy.offlineGraceH} שעות. התחברו לאינטרנט, או בקשו מההורה קוד.", "offline_grace")
+                return
+            }
+            val s = decide("", true)
+            if (!s.allow) { refuse(s.reason.ifEmpty { "הזמן נגמר" }, s.code); return }
+            if (nextExpiry in 1..now) {
+                ruleSet = store.ruleSet()
+                nextExpiry = UsageMath.nextExpiry(store.ruleExpiries(), now)
+                recheckCurrent("expiry")
+            }
+            ticker.postDelayed(this, METER_MS)
+        }
+    }
+
+    companion object { private const val BEAT_SEC = 30; private const val METER_MS = 5_000L }
+
+    private var meterOn = false
+
+    /** מתחיל לספור שימוש — כשהדפדפן על המסך, או ממשיך ברקע כי ההורה התיר. */
+    private fun startMeter() {
+        if (meterOn || closing) return
+        meterOn = true
+        UsageMeter.start(store)
+        nextExpiry = UsageMath.nextExpiry(store.ruleExpiries(), TrustedClock.now(store))
+        ticker.postDelayed(meter, METER_MS)
+    }
+
+    /** מפסיק לספור, ושומר את מה שנצבר עד עכשיו. */
+    private fun stopMeter() {
+        if (!meterOn) return
+        meterOn = false
+        ticker.removeCallbacks(meter)
+        UsageMeter.stop(store)
+    }
 
     private val watcher by lazy { RequestWatcher(store) { url, ok -> onAnswer(url, ok) } }
 
@@ -112,20 +164,18 @@ class BrowserActivity : AppCompatActivity() {
         ruleSet = store.ruleSet()
 
         // חסימת צילום מסך חייבת לקרות לפני setContentView כדי לחול
-        // גם על התצוגה המקדימה במחליף האפליקציות.
-        if (policy.blockScreenshots) {
-            window.setFlags(WindowManager.LayoutParams.FLAG_SECURE,
-                            WindowManager.LayoutParams.FLAG_SECURE)
-        }
+        // גם על התצוגה המקדימה במחליף האפליקציות. משתנה גם תוך כדי (onPolicyChanged).
+        applySecureFlag()
 
         b = ActivityBrowserBinding.inflate(layoutInflater)
         setContentView(b.root)
 
         val start = intent.getStringExtra("url") ?: ""
         setupWebView()
+        PolicySync.listen(onPolicyChanged)
 
         // ההכרעה הראשונה לפני שנטען משהו: גם הכניסה עצמה נבדקת.
-        val v = PolicyEngine.evaluate(policy, ruleSet, start, true, usedSec, sessionSec)
+        val v = decide(start, true)
         if (!v.allow && !v.needsServer) { refuse(v.reason.ifEmpty { "הכתובת אינה מותרת" }, v.code, start); return }
 
         Trace.reset()
@@ -247,7 +297,7 @@ class BrowserActivity : AppCompatActivity() {
                 view: WebView, request: WebResourceRequest,
             ): Boolean {
                 val url = request.url.toString()
-                val v = PolicyEngine.evaluate(policy, ruleSet, url, true, usedSec, sessionSec)
+                val v = decide(url, true)
 
                 if (v.allow) {
                     verifyWithServer(url)
@@ -276,8 +326,7 @@ class BrowserActivity : AppCompatActivity() {
                 val url = request.url.toString()
                 if (!url.startsWith("http")) return null
 
-                val v = PolicyEngine.evaluate(
-                    policy, ruleSet, url, request.isForMainFrame, usedSec, sessionSec)
+                val v = decide(url, request.isForMainFrame)
 
                 // משאב שדורש הכרעת שרת אינו נחסם: חסימה שקטה של
                 // משאב היא מסך שבור בלי הסבר. הניווט כבר נבדק.
@@ -347,24 +396,45 @@ class BrowserActivity : AppCompatActivity() {
         // ‏true = האפליקציה התירה. השרת משווה, וחוסר הסכמה הוא ההתרעה.
         Api.check(store.token, url, true, clientAllowed = true) { r ->
             if (r.json?.optString("code") == "unauthorized") { refuse("נדרשת כניסה מחדש"); return@check }
-            // שגיאת רשת אינה סירוב: r.json ריק פירושו שלא הצלחנו לשאול.
-            if (r.json != null && !r.json.optBoolean("allowed", true)) {
-                refuse(r.json.optString("reason", "הכתובת אינה מותרת"), r.json.optString("code"), url)
-            }
+            // שגיאת רשת או שרת אינה סירוב (UNKNOWN — ההכרעה המקומית נשארת). היעדר allowed — כן (ServerVerdict).
+            val v = ServerVerdict.from(r)
+            if (v.deny) refuse(v.reason, v.code, url)
         }
     }
 
     /** פעימה: צוברת זמן, ומביאה את המצב. זה גם ערוץ הניתוק מרחוק. */
     private fun sendBeat() {
         val url = b.web.url?.takeIf { it.startsWith("http") && !closing } ?: ""
-        Api.heartbeat(store.token, BEAT_SEC, sessionSec, url) { r ->
-            val j = r.json ?: return@heartbeat        // אין רשת — ממשיכים
+        UsageMeter.tick(store)
+        Api.heartbeat(store.token, 0, sessionSec, url, UsageMeter.batches(store)) { r ->
+            // אין רשת — ממשיכים: המנות נשמרות ונשלחות שוב (אותו מזהה) בפעימה הבאה.
+            val j = r.json ?: return@heartbeat
             if (j.optString("code") == "unauthorized") { refuse("נדרשת כניסה מחדש"); return@heartbeat }
 
-            usedSec = j.optInt("used_today_sec", usedSec)
-            if (!j.optBoolean("allowed", true)) {
-                refuse(j.optString("reason", "הגישה הופסקה"))
+            // יש גרסה חדשה — עדכון חובה: הגלישה נעצרת עד ההתקנה.
+            if (r.ok) Updater.note(this, j.optJSONObject("update"))
+            if (Updater.required(this)) { Updater.lock(this); finish(); return@heartbeat }
+
+            if (r.ok) {
+                UsageMeter.ack(store, j.optJSONArray("acked"), j.optInt("used_today_sec"), j.optString("day"))
+                TrustedClock.anchor(store, j.optLong("server_ms"))
+                store.lastSyncMs = TrustedClock.now(store)
+            }
+            // חשבון מושעה (403) מגיע בלי state של מדיניות — לפני ServerVerdict הוא נקרא כהיתר.
+            val v = ServerVerdict.from(r)
+            if (v.deny) {
+                refuse(v.reason.ifEmpty { "הגישה הופסקה" })
                 return@heartbeat
+            }
+            if (!v.allow) return@heartbeat   // שגיאה זמנית — אין הכרעה חדשה
+            // הדף שעל המסך נבדק גם בשרת (היתר זמני שפג, אתר שהוסר) — חזרה ממנו, לא סגירת הכול.
+            j.optJSONObject("page")?.let { p ->
+                val pv = ServerVerdict.nested(p)
+                if (!pv.allow && url.isNotEmpty() && b.web.url == url) {
+                    if (lastAllowed == url) lastAllowed = ""
+                    showCover()
+                    revert(pv.reason, pv.code, url)
+                }
             }
             // ההורה שינה משהו (או אישר בקשה) — מדיניות חדשה תוך פעימה אחת.
             val rev = j.optString("rev")
@@ -382,6 +452,11 @@ class BrowserActivity : AppCompatActivity() {
     private fun enforceCurrent(url: String) {
         if (closing || url.isEmpty() || url == "about:blank") return
         if (url == lastAllowed) { hideCover(); return }
+        if (learnAutoAdvance(url)) {
+            showCover()
+            revert("במצב למידה אין ניגון אוטומטי — את הסרטון הבא בוחרים במסך הבית", "yt_learn_autoplay", url)
+            return
+        }
 
         /*
          * הכיסוי עולה לפני ההכרעה, לא אחריה.
@@ -392,15 +467,15 @@ class BrowserActivity : AppCompatActivity() {
          */
         showCover()
 
-        val v = PolicyEngine.evaluate(policy, ruleSet, url, true, usedSec, sessionSec)
+        val v = decide(url, true)
         when {
             v.allow -> { lastAllowed = url; hideCover(); verifyWithServer(url) }
             v.needsServer -> Api.check(store.token, url, true) { r ->
-                val j = r.json
-                when {
-                    j == null -> revert("אין חיבור לשרת, ולא ניתן לוודא שהכתובת מותרת")
-                    j.optBoolean("allowed") -> { lastAllowed = url; hideCover() }
-                    else -> revert(j.optString("reason", "הכתובת אינה מותרת"), j.optString("code"), url)
+                val sv = ServerVerdict.from(r)
+                when (sv.kind) {
+                    ServerVerdict.Kind.ALLOW -> { lastAllowed = url; hideCover() }
+                    ServerVerdict.Kind.UNKNOWN -> revert("אין חיבור לשרת, ולא ניתן לוודא שהכתובת מותרת")
+                    ServerVerdict.Kind.DENY -> revert(sv.reason, sv.code, url)
                 }
             }
             else -> revert(v.reason, v.code, url)
@@ -493,12 +568,12 @@ class BrowserActivity : AppCompatActivity() {
      */
     private fun styleRestrictedYouTube(url: String) {
         val yt = ruleSet.platforms[PolicyEngine.PLATFORM_YOUTUBE] ?: return
-        if (yt.mode != "restricted") return
+        if (yt.mode != "restricted" && yt.mode != "learn") return
         if (PolicyEngine.platformOf(PolicyEngine.normalize(url)?.host ?: "") !=
             PolicyEngine.PLATFORM_YOUTUBE) return
 
         val hide = buildString {
-            if (!yt.allowSearch) {
+            if (!yt.allowSearch || yt.mode == "learn") {
                 append("ytd-searchbox,#search,#search-form,#center.ytd-masthead,")
                 append("ytd-search-header-renderer,")
             }
@@ -524,7 +599,31 @@ class BrowserActivity : AppCompatActivity() {
             "{childList:true,subtree:true});}" +
             "}catch(e){}})()"
         b.web.evaluateJavascript(js, null)
+        // מצב למידה (שלב 12 ה): המלצות, ניגון אוטומטי ועצירה בסוף — והסקריפט מדווח מה אומת (YouTubeLearn).
+        if (yt.mode == "learn") b.web.evaluateJavascript(YouTubeLearn.script(), null)
         filterYouTube()
+    }
+
+    /* ── מצב למידה: בלי ניגון אוטומטי (YouTubeLearnMath) ── */
+
+    private var learnEnded = ""
+    private var learnEndedAt = 0L
+
+    private fun learnMode() = ruleSet.platforms[PolicyEngine.PLATFORM_YOUTUBE]?.mode == "learn"
+
+    private fun videoOf(url: String) = PolicyEngine.parseYouTube(url).let { if (it.kind == "video") it.id else "" }
+
+    /** יוטיוב עבר לבד לסרטון אחר מיד אחרי שהקודם הסתיים — גם אם הוא בתור, הבא נבחר במסך הבית. */
+    private fun learnAutoAdvance(url: String): Boolean = learnMode() &&
+        YouTubeLearnMath.blocksAutoAdvance(learnEnded, learnEndedAt, videoOf(url), android.os.SystemClock.elapsedRealtime())
+
+    private fun sendLearnReport(json: String) {
+        val now = System.currentTimeMillis()
+        // הממשק MgYt חשוף לכל דף — דוח מתקבל רק כשהדף שעל המסך הוא יוטיוב.
+        val onYt = PolicyEngine.platformOf(PolicyEngine.normalize(b.web.url ?: "")?.host ?: "") == PolicyEngine.PLATFORM_YOUTUBE
+        if (!onYt || !learnMode() || !YouTubeLearnMath.shouldReport(store.ytLearnSent, store.ytLearnSentAt, json, now)) return
+        val body = try { org.json.JSONObject(json).put("version", BuildConfig.VERSION_CODE) } catch (e: Exception) { return }
+        Api.ytLearnReport(store.token, body) { r -> if (r.ok) { store.ytLearnSent = json; store.ytLearnSentAt = now } }
     }
 
     /* ── סינון ההצעות ביוטיוב (שלב 5) ─────────────────────────────── */
@@ -539,8 +638,10 @@ class BrowserActivity : AppCompatActivity() {
         val allowed = { m: Map<String, String> -> m.filterValues { it == "allow" }.keys }
         val known = HashMap<String, Boolean>(ytKnown)
         for ((id, a) in ytItems("video")) known[id] = a == "allow"
-        b.web.evaluateJavascript(
-            YouTubeFilter.script(allowed(ytItems("handle")), allowed(ytItems("channel")), known), null)
+        // במצב למידה ערוץ מאושר לא פותח את הסרטונים שלו — רק התור.
+        val learn = learnMode()
+        b.web.evaluateJavascript(YouTubeFilter.script(if (learn) emptySet() else allowed(ytItems("handle")),
+            if (learn) emptySet() else allowed(ytItems("channel")), known), null)
     }
 
     /**
@@ -557,6 +658,16 @@ class BrowserActivity : AppCompatActivity() {
                       catch (e: Exception) { return }
             runOnUiThread { resolveVideos(ids.take(30)) }
         }
+
+        /** מצב למידה: הסרטון הסתיים (והסקריפט עצר אותו) — ניווט מיד אחריו הוא ניגון אוטומטי. */
+        @JavascriptInterface
+        fun learnEnded(href: String) {
+            runOnUiThread { learnEnded = videoOf(href); learnEndedAt = android.os.SystemClock.elapsedRealtime() }
+        }
+
+        /** מצב למידה: מה הסקריפט אימת בדף (YouTubeLearn) — ההורה רואה רק את זה כ"אומת". */
+        @JavascriptInterface
+        fun learnReport(json: String) { runOnUiThread { sendLearnReport(json.take(300)) } }
 
         /** לחיצה על סרטון או ערוץ שלא אושרו נעצרה בדף — ואפשר לבקש אותם (שלב 6). */
         @JavascriptInterface
@@ -676,11 +787,11 @@ class BrowserActivity : AppCompatActivity() {
     private fun askServerThenLoad(url: String) {
         showCover()
         Api.check(store.token, url, true) { r ->
-            val j = r.json
-            when {
-                j == null -> refuse("אין חיבור לשרת, ולא ניתן לוודא שהכתובת מותרת")
-                j.optBoolean("allowed") -> { lastAllowed = url; b.web.loadUrl(url) }
-                else -> refuse(j.optString("reason", "הכתובת אינה מותרת"), j.optString("code"), url)
+            val sv = ServerVerdict.from(r)
+            when (sv.kind) {
+                ServerVerdict.Kind.ALLOW -> { lastAllowed = url; b.web.loadUrl(url) }
+                ServerVerdict.Kind.UNKNOWN -> refuse("אין חיבור לשרת, ולא ניתן לוודא שהכתובת מותרת")
+                ServerVerdict.Kind.DENY -> refuse(sv.reason, sv.code, url)
             }
         }
     }
@@ -694,6 +805,7 @@ class BrowserActivity : AppCompatActivity() {
         closing = true
 
         ticker.removeCallbacks(beat)
+        stopMeter()
         background = false
         GuardService.stop(this)
         hideCover()
@@ -927,6 +1039,8 @@ class BrowserActivity : AppCompatActivity() {
         (if (ok) "\u2713 " else "\u2717 ") + label + (if (ok) "" else "\n     " + hint)
 
     private fun openPipSettings() {
+        // ההורה חסם את ההגדרות — לא פותחים אותן מכאן (שם אפשר היה להמשיך לכל מסך הגדרות אחר).
+        if (AppPolicy.blocked(store, AppPolicy.SETTINGS.first())) { toast("ההגדרות חסומות — בקשו מההורה"); return }
         try {
             startActivity(Intent("android.settings.PICTURE_IN_PICTURE_SETTINGS")
                 .setData(android.net.Uri.parse("package:$packageName")))
@@ -966,7 +1080,9 @@ class BrowserActivity : AppCompatActivity() {
         super.onResume()
         onScreen = true
         Trace.log("onResume", state())
-        if (!closing) ticker.postDelayed(beat, BEAT_SEC * 1000L)
+        // עדכון חובה — עד ההתקנה אין גלישה (Updater).
+        if (Updater.required(this)) { Updater.lock(this); finish(); return }
+        if (!closing) { ticker.postDelayed(beat, BEAT_SEC * 1000L); startMeter() }
         b.web.onResume()
         // חזרנו למסך — אין עוד סיבה להתראה.
         if (!background) GuardService.stop(this)
@@ -985,12 +1101,40 @@ class BrowserActivity : AppCompatActivity() {
         Api.policy(store.token) { r ->
             val j = r.json ?: return@policy
             if (!j.optBoolean("ok")) return@policy
+            // ההחלה עצמה — ב-PolicySync, והמסך הזה מקבל onPolicyChanged כמו מכל מסלול אחר.
+            PolicySync.apply(this, j, "browser")
+        }
+    }
 
-            store.savePolicy(j)
+    /** מדיניות חדשה, מכל מסלול (PolicySync) — מוחלת על המסך הפתוח, לא רק על הניווט הבא. */
+    private val onPolicyChanged: () -> Unit = {
+        if (!closing) {
             policy = store.policy()
             ruleSet = store.ruleSet()
+            applySecureFlag()
+            nextExpiry = UsageMath.nextExpiry(store.ruleExpiries(), TrustedClock.now(store))
             b.pip.visibility = View.VISIBLE
+            if (Updater.required(this)) { Updater.lock(this); finish() }
+            else recheckCurrent("policy")
         }
+    }
+
+    /**
+     * בדיקה מחודשת של הדף שעל המסך — גם אם כבר הותר (סקירה, 2026-10-20: enforceCurrent דילג על
+     * הכתובת המותרת האחרונה, ולכן היתר שהוסר לא עצר דף פתוח). עוצר ניגון עד ההכרעה; כתובת שנאסרה —
+     * חזרה, ואם אין לאן — סגירה.
+     */
+    private fun recheckCurrent(why: String) {
+        val url = b.web.url?.takeIf { it.startsWith("http") } ?: return
+        Trace.log("recheck", why)
+        if (lastAllowed == url) lastAllowed = ""
+        enforceCurrent(url)
+    }
+
+    /** חסימת צילום מסך לפי המדיניות הנוכחית — מוסיפה או מסירה, בלי לפתוח את המסך מחדש. */
+    private fun applySecureFlag() {
+        if (policy.blockScreenshots) window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        else window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
     }
 
     override fun onPause() {
@@ -1023,6 +1167,7 @@ class BrowserActivity : AppCompatActivity() {
         } else {
             background = false
             ticker.removeCallbacks(beat)
+            stopMeter()   // לא על המסך ולא ממשיך ברקע — זה לא שימוש
             Trace.log("webView.onPause", "השהיית ה-WebView — כאן הניגון נעצר")
             b.web.onPause()
             GuardService.stop(this)
@@ -1030,6 +1175,14 @@ class BrowserActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        PolicySync.unlisten(onPolicyChanged)
+        stopMeter()
+        // מה שנצבר מאז הפעימה האחרונה — נשלח עכשיו, בלי לגעת במסך שנסגר. נכשל — יישלח בפעם הבאה.
+        val st = store
+        Api.heartbeat(st.token, 0, sessionSec, "", UsageMeter.batches(st)) { r ->
+            val j = r.json
+            if (r.ok && j != null) UsageMeter.ack(st, j.optJSONArray("acked"), j.optInt("used_today_sec"), j.optString("day"))
+        }
         ticker.removeCallbacks(beat)
         ticker.removeCallbacks(coverTimeout)
         background = false

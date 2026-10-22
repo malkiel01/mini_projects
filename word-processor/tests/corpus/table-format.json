@@ -1,0 +1,4063 @@
+{
+    "title": "עיצוב טבלה",
+    "json": {
+        "type": "doc",
+        "content": [
+            {
+                "type": "heading",
+                "attrs": {
+                    "level": 1
+                },
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "עיצוב טבלה"
+                    }
+                ]
+            },
+            {
+                "type": "paragraph",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "פעילות בשנה בתחומי הקודמות בישיבת האחרונה האחרונה נוספות הקהילה נוספות מקצוע בשנה מרכז שקלים בתחומי שהוגדרו ניסיון השנים מבוסס פעילות שוטפת שהוגדרו רבים בישיבת הקודמות."
+                    }
+                ]
+            },
+            {
+                "type": "table",
+                "attrs": {
+                    "borders": "outer",
+                    "borderColor": "#c00000",
+                    "width": 60,
+                    "align": "center"
+                },
+                "content": [
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableHeader",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "סעיף"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableHeader",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "תיאור"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableHeader",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "הערה"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "1"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "ותורמים ההנהלה ועל לאורך אנשי לאורך בשיתוף הקודמות בשנה מתנדבים ומקיימת למען."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "נוספות העמותה כולל."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "2"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "בשנה מקצוע כולל."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "התקציב."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "3"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "valign": "middle"
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "שוטפת בישיבת ניסיון."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "כולל המוצע מבוסס השנים העמותה."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": {
+                            "height": 36
+                        },
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "4"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "בשנה ההנהלה שקלים הרחבת האחרונה ומקיימת לנוער ועל רבים הקהילה העמותה שקלים מתנדבים."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "ופתיחת ההנהלה ניסיון פועלת ותרבות."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "5"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "בשנה מתנדבים ופתיחת."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "valign": "bottom"
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "בתחומי."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "6"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "valign": "middle"
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "יעדים רבים על פועלת למען בשנה למידה."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "2026 נאמנים למען."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "7"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "התקציב ופתיחת רווחה השנים חדשים השנים רבים שקלים השירותים הקודמות ומקיימת."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "נוספות שקלים שוטפת."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": {
+                            "height": 36
+                        },
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "8"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "ועל רבים על."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "בתחומי."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "9"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "valign": "middle"
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "כל אנשי הרחבת למען ניסיון."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "מרכז."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "10"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "רבים רבים ניסיון ניסיון השנה."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "valign": "bottom"
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "פעילות נוספות מתנדבים כולל מתנדבים."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "type": "paragraph",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "בתחומי נאמנים בתחומי שהוגדרו 2026 נאמנים ותרבות 2026 השירותים חינוך כל כולל על פעילות רבים לאורך בתחומי השירותים שוטפת לנוער ותרבות ומקיימת חינוך ותורמים מבוסס ניסיון בתחומי מקצוע הקהילה בתחומי פועלת ומקיימת המוצע העמותה על מרכז מתנדבים."
+                    }
+                ]
+            },
+            {
+                "type": "table",
+                "attrs": {
+                    "borders": "inner",
+                    "width": 75,
+                    "align": "left"
+                },
+                "content": [
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableHeader",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "סעיף"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableHeader",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "תיאור"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableHeader",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "הערה"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        120
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "1"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        120
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "פועלת ומקיימת השירותים."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        120
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "בשנה פועלת העמותה לנוער ותורמים."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        120
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "2"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        120
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "ופתיחת רווחה ועל ותרבות האחרונה האחרונה לנוער השנים לנוער ופתיחת 2026 שקלים השנים."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        120
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "ותרבות מרכז ומקיימת."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        120
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "3"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        120
+                                    ],
+                                    "valign": "middle"
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "רבים יעדים אנשי אנשי בשיתוף."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        120
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "ועל למידה חדשים מתנדבים ומקיימת."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": {
+                            "height": 36
+                        },
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        120
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "4"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        120
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "על האחרונה בישיבת ותרבות ופתיחת למידה ההנהלה שקלים השנה."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        120
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "לנוער ניסיון השנים למידה ההנהלה."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        120
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "5"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        120
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "שהוגדרו על ועל מרכז התקציב האחרונה השירותים."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        120
+                                    ],
+                                    "valign": "bottom"
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "בשנה על כולל ההנהלה המוצע."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        120
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "6"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        120
+                                    ],
+                                    "valign": "middle"
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "ופתיחת 2026 לאורך הקהילה ניסיון."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        120
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "חינוך."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        120
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "7"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        120
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "השנים על מרכז 2026 ותורמים הרחבת למען לאורך כל."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        120
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "בתחומי."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": {
+                            "height": 36
+                        },
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        120
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "8"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        120
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "ותרבות למען חינוך ותורמים ההנהלה."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        120
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "בשנה."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        120
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "9"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        120
+                                    ],
+                                    "valign": "middle"
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "בשנה הרחבת למידה התקציב ההנהלה מרכז יעדים ומקיימת אנשי."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        120
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "הקודמות מבוסס הקודמות."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        120
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "10"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        120
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "ופתיחת לנוער בשיתוף אנשי ותרבות הקהילה השירותים ניסיון נאמנים לשכונות העמותה הרחבת הקודמות."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        120
+                                    ],
+                                    "valign": "bottom"
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "ותרבות בתחומי לאורך."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        120
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "11"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        120
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "למען מתנדבים נאמנים."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        120
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "חינוך נאמנים על הקודמות השירותים."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": {
+                            "height": 36
+                        },
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        120
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "12"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        120
+                                    ],
+                                    "valign": "middle"
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "שהוגדרו 2026 רבים האחרונה מקצוע התקציב ומקיימת נאמנים ההנהלה."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        120
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "ההנהלה ועל למען בשנה שהוגדרו."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        120
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "13"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        120
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "שקלים 2026 רבים כל למען בשנה לאורך שהוגדרו נאמנים."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        120
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "מבוסס."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        120
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "14"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        120
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "רבים הקודמות בשנה."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        120
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "יעדים מתנדבים לשכונות מבוסס השנים."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "type": "paragraph",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "ותרבות למידה מבוסס כל רווחה מקצוע נאמנים חינוך ותורמים לאורך העמותה יעדים נאמנים מתנדבים האחרונה לשכונות על למען למידה ההנהלה למידה העמותה העמותה השנים שהוגדרו בשיתוף לאורך בתחומי מתנדבים העמותה לשכונות המוצע לנוער העמותה השנה בתחומי בישיבת ניסיון."
+                    }
+                ]
+            },
+            {
+                "type": "table",
+                "attrs": {
+                    "borders": "none",
+                    "width": 50,
+                    "align": "right"
+                },
+                "content": [
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableHeader",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "סעיף"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableHeader",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "תיאור"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableHeader",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "הערה"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "1"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "על שקלים מקצוע פעילות."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "נוספות."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "2"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "הקהילה העמותה נוספות."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "פועלת."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "3"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "valign": "middle"
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "בשיתוף כולל בשיתוף חינוך שוטפת כולל ותרבות יעדים מקצוע האחרונה האחרונה בישיבת כל."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "בישיבת."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": {
+                            "height": 36
+                        },
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "4"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "כל לנוער מבוסס השנה כל העמותה שהוגדרו ועל כל."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "הרחבת."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "5"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "כל יעדים כולל בתחומי שקלים חינוך שקלים לנוער המוצע."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "valign": "bottom"
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "ניסיון."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "6"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "valign": "middle"
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "התקציב לנוער לאורך השנים הקהילה האחרונה ותורמים האחרונה לנוער."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "השנה לנוער בישיבת רבים נוספות."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "7"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "רבים כולל התקציב."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "על."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": {
+                            "height": 36
+                        },
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "8"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "בתחומי ניסיון על אנשי ומקיימת מתנדבים לנוער."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "שקלים רבים השירותים."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "9"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "valign": "middle"
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "חדשים בישיבת לאורך הקודמות התקציב התקציב מתנדבים ההנהלה השנה."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "נוספות."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "10"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "הרחבת השנה השנים נאמנים בשיתוף בשיתוף שוטפת הקהילה המוצע הרחבת נאמנים."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "valign": "bottom"
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "ההנהלה כולל ההנהלה."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "11"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "ניסיון ההנהלה שקלים שהוגדרו אנשי חדשים מתנדבים מרכז התקציב חדשים כולל השירותים שהוגדרו."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "פעילות שהוגדרו ומקיימת בשנה ניסיון."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": {
+                            "height": 36
+                        },
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "12"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "valign": "middle"
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "מתנדבים ופתיחת כולל."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "בשיתוף הרחבת למידה מקצוע הקודמות."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "13"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "מתנדבים נוספות שהוגדרו השנה למידה חינוך חדשים הרחבת מרכז."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "רבים לאורך ותורמים כל על."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "14"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "פועלת אנשי ותרבות מקצוע שקלים הרחבת ניסיון אנשי 2026 השירותים מקצוע שוטפת ועל בתחומי 2026."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "רווחה פעילות 2026 כולל אנשי."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "15"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "valign": "middle"
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "השנה מקצוע השנים בישיבת ועל השנים רבים אנשי 2026."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "valign": "bottom"
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "הקודמות."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": {
+                            "height": 36
+                        },
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "16"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "השירותים בשיתוף בישיבת."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "בשנה."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "17"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "נוספות רווחה יעדים האחרונה מקצוע התקציב כולל ותורמים נוספות יעדים ותרבות מקצוע ופתיחת."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "התקציב בישיבת בישיבת."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "18"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "valign": "middle"
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "ניסיון יעדים מתנדבים ועל ופתיחת על חינוך."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": [],
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "פועלת."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "type": "paragraph",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "2026 אנשי על ותרבות אנשי לשכונות בתחומי השנה למען הקודמות בשנה חדשים השירותים האחרונה השנה השנה רבים רבים השירותים האחרונה הקודמות מרכז חינוך כל למען בישיבת בשיתוף פועלת חדשים בתחומי נאמנים מתנדבים השירותים בישיבת השנים חינוך לאורך."
+                    }
+                ]
+            },
+            {
+                "type": "table",
+                "attrs": {
+                    "width": 90,
+                    "align": "center"
+                },
+                "content": [
+                    {
+                        "type": "tableRow",
+                        "content": [
+                            {
+                                "type": "tableHeader",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "סעיף"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableHeader",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "תיאור"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableHeader",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "הערה"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "1"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "ומקיימת למידה פעילות אנשי חדשים העמותה פועלת."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "מבוסס."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "2"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "ניסיון כל שקלים למידה השנים ועל הקודמות בישיבת מבוסס."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "רווחה."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "3"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ],
+                                    "valign": "middle"
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "ניסיון שקלים הרחבת רווחה רווחה."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "התקציב השנה ועל."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": {
+                            "height": 36
+                        },
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "4"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "למידה חדשים ומקיימת 2026 בתחומי."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "העמותה למידה ההנהלה."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "5"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "שקלים 2026 ניסיון שהוגדרו ותרבות לאורך האחרונה."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ],
+                                    "valign": "bottom"
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "המוצע."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "6"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ],
+                                    "valign": "middle"
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "שהוגדרו שקלים המוצע."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "חינוך."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "7"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "בישיבת אנשי העמותה השירותים ההנהלה."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "פועלת."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": {
+                            "height": 36
+                        },
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "8"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "ההנהלה שוטפת ועל ומקיימת ופתיחת בשיתוף פועלת."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "בשנה."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "9"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ],
+                                    "valign": "middle"
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "למידה כל העמותה פעילות פעילות בישיבת האחרונה ניסיון רבים העמותה פועלת."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "למען ותרבות העמותה בתחומי מקצוע."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "10"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "המוצע חינוך ותורמים ועל התקציב השירותים הקודמות."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ],
+                                    "valign": "bottom"
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "כל ופתיחת פעילות השירותים רבים."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "11"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "שהוגדרו לאורך חדשים 2026 כל בתחומי יעדים רבים מרכז על נאמנים."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "רווחה ופתיחת לנוער הקהילה השירותים."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": {
+                            "height": 36
+                        },
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "12"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ],
+                                    "valign": "middle"
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "כל חדשים כולל השירותים בישיבת כל רווחה פעילות העמותה השנה לשכונות הרחבת יעדים הקודמות ההנהלה."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "לשכונות העמותה 2026 ועל העמותה."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "13"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "נאמנים לנוער המוצע."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "רבים אנשי חדשים."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "14"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "נאמנים בשנה בתחומי לשכונות מקצוע האחרונה האחרונה בישיבת ועל נוספות מרכז אנשי השנים."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "השנים לשכונות לשכונות."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "15"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ],
+                                    "valign": "middle"
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "לשכונות מתנדבים למידה."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ],
+                                    "valign": "bottom"
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "השנים."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": {
+                            "height": 36
+                        },
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "16"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "כולל כולל ועל 2026 על פועלת הרחבת פעילות נאמנים."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "חדשים בתחומי ופתיחת."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "17"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "הקהילה הקודמות פועלת."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "הרחבת חדשים בשיתוף."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "18"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ],
+                                    "valign": "middle"
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "מבוסס הרחבת התקציב פועלת למען העמותה ניסיון לאורך רווחה חדשים מקצוע האחרונה ההנהלה."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "שוטפת מרכז הקהילה רבים האחרונה."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "19"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "2026 העמותה נאמנים נאמנים הקודמות."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "פועלת התקציב השירותים המוצע שוטפת."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": {
+                            "height": 36
+                        },
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "20"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "נוספות ופתיחת השירותים למידה המוצע השנים העמותה 2026 יעדים השירותים פועלת לאורך רבים."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ],
+                                    "valign": "bottom"
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "חינוך חינוך לאורך חדשים מקצוע."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "21"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ],
+                                    "valign": "middle"
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "הרחבת ותרבות פועלת לשכונות על בתחומי לאורך."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "2026 הקהילה השנים השנים המוצע."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tableRow",
+                        "attrs": [],
+                        "content": [
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "22"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "רווחה כולל ועל העמותה ניסיון."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "tableCell",
+                                "attrs": {
+                                    "colwidth": [
+                                        144
+                                    ]
+                                },
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "בתחומי."
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "type": "paragraph",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "ותרבות כולל יעדים המוצע ועל הקהילה אנשי ומקיימת 2026 חדשים פועלת."
+                    }
+                ]
+            }
+        ]
+    },
+    "page": null
+}

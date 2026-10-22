@@ -66,6 +66,10 @@ check('domain_plus — משאב נלווה מדומיין זר מותר',
 check('domain_plus — ניווט לדומיין זר נדחה',
       ruleMatches($rule('liveball.sx', ['scope' => 'domain_plus']),
                   normalizeUrl('https://evil.com/x'), true), false);
+check('resource (משימה) — נטען בתוך דף',
+      ruleMatches($rule('cdn.lib.example', ['scope' => 'resource']), normalizeUrl('https://cdn.lib.example/a.js'), false), true);
+check('resource — לא יעד לגלישה',
+      ruleMatches($rule('cdn.lib.example', ['scope' => 'resource']), normalizeUrl('https://cdn.lib.example/'), true), false);
 
 echo "\n— איסור גובר על היתר —\n";
 $mixed = [$rule('bad.com', ['action' => 'deny']), $rule('bad.com')];
@@ -144,9 +148,19 @@ check('ווידאו חסום',
       'type_blocked');
 check('שאר התוכן עובר',
       evaluate($user(), $noVideo, $set(), $now, ['url' => 'https://a.com/page'])['allow'], true);
-check('היתר מפורש גובר על חסימת סוג',
+// שלב 10: "לחסום תמיד — גם באתר שמותר" (אפליקציית ההורה). קודם היתר מפורש גבר — וקובץ ווידאו באתר מותר עבר.
+check('חסימת סוג גוברת גם על אתר שהותר במפורש',
       evaluate($user(), $noVideo, $set(['rules' => [$rule('a.com')]]), $now,
-               ['url' => 'https://a.com/clip.mp4'])['code'], 'rule_allow');
+               ['url' => 'https://a.com/clip.mp4'])['code'], 'type_blocked');
+check('...וגם כשהסוג מוצהר בכותרת ולא בסיומת',
+      evaluate($user(), $noVideo, $set(['rules' => [$rule('a.com')]]), $now,
+               ['url' => 'https://a.com/stream', 'content_type' => 'video/mp4', 'main_frame' => false])['code'], 'type_blocked');
+check('דף רגיל באתר שהותר — עדיין מותר',
+      evaluate($user(), $noVideo, $set(['rules' => [$rule('a.com')]]), $now,
+               ['url' => 'https://a.com/page'])['code'], 'rule_allow');
+check('איסור מפורש עדיין קודם לסוג',
+      evaluate($user(), $noVideo, $set(['rules' => [$rule('a.com', ['action' => 'deny'])]]), $now,
+               ['url' => 'https://a.com/clip.mp4'])['code'], 'rule_deny');
 
 echo "\n— פירוק כתובות יוטיוב —\n";
 check('צפייה',       parseYouTube('https://www.youtube.com/watch?v=abc123XYZ'),

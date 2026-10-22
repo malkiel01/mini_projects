@@ -16,6 +16,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/accounts.php';
 require_once __DIR__ . '/platforms.php';
 require_once __DIR__ . '/adblock.php';
+require_once __DIR__ . '/ytlearn.php';
 
 /** הילד — רק אם הוא בחשבון הזה. כל קריאה של הורה עוברת כאן. */
 function childOf(int $accountId, int $childId): ?array {
@@ -108,19 +109,41 @@ function pairCreate(int $childId): array {
 function pairRedeem(string $code, string $deviceName, string $deviceId): array {
     $code = cleanPairCode($code);
     if (!preg_match('/^[a-z0-9]{8}$/', $code)) return [null, '', 'הקוד לא תקין — 8 אותיות וספרות'];
-    $row = one("SELECT * FROM pair_codes WHERE code_hash = ? AND used_at = '' AND expires_at > ?",
-               [hash('sha256', $code), nowIso()]);
-    if (!$row) return [null, '', 'הקוד לא נמצא או שפג תוקפו. בקשו מההורה קוד חדש.'];
-    $u = one('SELECT * FROM users WHERE id = ?', [$row['child_id']]);
-    if (!$u) return [null, '', 'הקוד לא נמצא או שפג תוקפו. בקשו מההורה קוד חדש.'];
-    if ($u['status'] !== 'active') return [null, '', 'הילד הזה מושהה. ההורה צריך להחזיר אותו קודם.'];
-    if ($block = accountBlock($u)) return [null, '', $block[1]];
-    if (accountDeviceQuotaFull((int) $u['account_id'], $deviceId)) {
-        return [null, '', 'הגעתם למספר המכשירים המרבי בחשבון. נתקו מכשיר ישן באפליקציית ההורה.'];
+    $missing = 'הקוד לא נמצא או שפג תוקפו. בקשו מההורה קוד חדש.';
+    $hash = hash('sha256', $code);
+
+    /*
+     * תפיסה אטומית (סקירה, 2026-10-20 — שלב 8). קודם: SELECT ‏used_at='' ← רישום מכשיר ← UPDATE. שתי בקשות
+     * בו-זמנית עם אותו קוד עברו שתיהן את ה-SELECT, וקוד חד-פעמי צימד שני מכשירים. עכשיו ה-UPDATE המותנה
+     * הוא הצעד הראשון בטרנזקציה: רק בקשה אחת משנה שורה, והשנייה מחכה לנעילה ורואה קוד משומש. כישלון
+     * בדיקה (ילד מושהה, מכסת מכשירים) מבטל את הטרנזקציה — והקוד נשאר תקף לניסיון אחרי התיקון.
+     */
+    $pdo = db();
+    $pdo->beginTransaction();
+    try {
+        $claim = $pdo->prepare("UPDATE pair_codes SET used_at = ? WHERE code_hash = ? AND used_at = '' AND expires_at > ?");
+        $claim->execute([nowIso(), $hash, nowIso()]);
+        $err = '';
+        $u = null;
+        if ($claim->rowCount() !== 1) $err = $missing;
+        else {
+            $row = one('SELECT * FROM pair_codes WHERE code_hash = ?', [$hash]);
+            $u = one('SELECT * FROM users WHERE id = ?', [$row['child_id']]);
+            if (!$u) $err = $missing;
+            elseif ($u['status'] !== 'active') $err = 'הילד הזה מושהה. ההורה צריך להחזיר אותו קודם.';
+            elseif ($block = accountBlock($u)) $err = $block[1];
+            elseif (accountDeviceQuotaFull((int) $u['account_id'], $deviceId)) {
+                $err = 'הגעתם למספר המכשירים המרבי בחשבון. נתקו מכשיר ישן באפליקציית ההורה.';
+            }
+        }
+        if ($err !== '') { $pdo->rollBack(); return [null, '', $err]; }
+        $token = registerDevice((int) $u['id'], $deviceName, $deviceId, (int) policyFor((int) $u['id'])['max_devices']);
+        $pdo->commit();
+        return [$u, $token, ''];
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        throw $e;
     }
-    $token = registerDevice((int) $u['id'], $deviceName, $deviceId, (int) policyFor((int) $u['id'])['max_devices']);
-    q('UPDATE pair_codes SET used_at = ? WHERE code_hash = ?', [nowIso(), $row['code_hash']]);
-    return [$u, $token, ''];
 }
 
 /* ── מדיניות ───────────────────────────────────────────────────── */
@@ -161,6 +184,15 @@ function childPolicySave(int $childId, array $in): string {
         $n = (int) $in[$k];
         if ($n < 0 || $n > $cap) return 'מספר דקות לא תקין';
         $set[$k] = $n;
+    }
+    if (array_key_exists('offline_grace_h', $in)) {
+        $h = (int) $in['offline_grace_h'];
+        if ($h < 1 || $h > OFFLINE_GRACE_MAX_H) return 'זמן בלי חיבור: 1–' . OFFLINE_GRACE_MAX_H . ' שעות';
+        $set['offline_grace_h'] = $h;
+    }
+    if (array_key_exists('offline_content', $in)) {
+        if (!in_array($in['offline_content'], OFFLINE_CONTENT, true)) return 'מה זמין בלי חיבור — ערך לא מוכר';
+        $set['offline_content'] = $in['offline_content'];
     }
     if (array_key_exists('max_devices', $in)) $set['max_devices'] = max(1, min(20, (int) $in['max_devices']));
     if (array_key_exists('timezone', $in)) {
@@ -205,11 +237,11 @@ function childPolicySave(int $childId, array $in): string {
 /** אילו מצבי יוטיוב החשבון רשאי לתת (זכאות yt_filtered מהמפתח). */
 function youTubeModesFor(int $accountId): array {
     $mods = moduleList((string) (accountRow($accountId)['modules'] ?? ''));
-    return in_array('yt_filtered', $mods, true) ? ['off', 'restricted', 'full'] : ['off'];
+    return in_array('yt_filtered', $mods, true) ? ['off', 'learn', 'restricted', 'full'] : ['off'];
 }
 
 function childYouTubeSave(int $childId, string $mode, bool $search, bool $shorts, array $allowedModes): string {
-    if (!in_array($mode, ['off', 'restricted', 'full'], true)) return 'מצב יוטיוב לא מוכר';
+    if (!in_array($mode, ['off', 'learn', 'restricted', 'full'], true)) return 'מצב יוטיוב לא מוכר';
     if (!in_array($mode, $allowedModes, true)) return 'יוטיוב לא פתוח בחשבון הזה. אפשר לבקש ממנהל המערכת.';
     upsert('platform_rules', ['user_id' => $childId, 'platform' => PLATFORM_YOUTUBE],
            ['mode' => $mode, 'allow_search' => $search ? 1 : 0, 'allow_shorts' => $shorts ? 1 : 0],
@@ -351,6 +383,7 @@ function childDetail(array $u, array $allowedYt): array {
             'allow_downloads' => (bool) $p['allow_downloads'], 'block_screenshots' => (bool) $p['block_screenshots'],
             'keep_history' => (bool) $p['keep_history'], 'allow_pip' => (bool) $p['allow_pip'],
             'allow_background' => (bool) $p['allow_background'],
+            'offline_grace_h' => (int) ($p['offline_grace_h'] ?? 24), 'offline_content' => (string) ($p['offline_content'] ?? 'all'),
         ],
         'categories' => (object) categoryRulesFor($id),
         'rules' => array_map(fn($r) => [
@@ -364,6 +397,8 @@ function childDetail(array $u, array $allowedYt): array {
             return [
                 'mode' => $r['mode'], 'allow_search' => (bool) $r['allow_search'], 'allow_shorts' => (bool) $r['allow_shorts'],
                 'allowed_modes' => $allowedYt,
+                // מצב למידה: מה אומת בדף במכשיר (lib/ytlearn.php) — לא הבטחה, דוח.
+                'learn_check' => $r['mode'] === 'learn' ? ytLearnStatus($id) : [],
                 'items' => array_map(fn($i) => [
                     'id' => (int) $i['id'], 'kind' => $i['kind'], 'item_id' => $i['item_id'],
                     'label' => $i['label'], 'action' => $i['action'],

@@ -1,127 +1,241 @@
 package com.mbeplus.guardedbrowser
 
-import android.app.Activity
-import android.app.DownloadManager
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
+import android.content.pm.PackageInfo
+import android.content.pm.PackageInstaller
+import android.content.pm.PackageManager
 import android.os.Build
-import android.os.Environment
 import android.os.Handler
 import android.os.Looper
-import android.provider.Settings
-import androidx.appcompat.app.AlertDialog
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import org.json.JSONObject
+import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
+import java.security.MessageDigest
+import java.util.concurrent.Executors
 
 /**
- * עדכון האפליקציה כשההורה מבקש.
+ * עדכון חובה.
  *
- * השרת מחזיר update רק אחרי שההורה לחץ "עדכון" ויש גרסה חדשה. כאן: הצעה לילד ← הורדה
- * (DownloadManager) ← מסך ההתקנה של אנדרואיד. התקנה שקטה, בלי אישור, אפשרית רק לאפליקציה
- * שהיא "בעלת המכשיר" (שלב 11) — עד אז הילד לוחץ "התקנה".
+ * השרת מחזיר update בכל תשובה (מדיניות ופעימה) כשיש גרסה חדשה מזו שמותקנת. מאותו רגע האפליקציה
+ * נעולה: כל מסך מפנה ל-UpdateActivity, ואין דרך להמשיך בלי להתקין. הנעילה נשמרת (Store.updateCode),
+ * כך שהפעלה מחדש או ניתוק מהרשת לא משחררים אותה. היא משתחררת רק כשהגרסה שרצה היא החדשה.
  *
- * החתימה קבועה מ-1.x, ולכן ההתקנה היא מעל הקיים: החיבור וההגדרות נשמרים.
- * כל כישלון באמצע — נפתח הקישור בדפדפן, ומשם מתקינים ידנית.
+ *   • "בעל מכשיר" — העדכון שקט, בלי ידיעת הילד: הורדה והתקנה ברקע (PackageInstaller).
+ *   • בלי "בעל מכשיר" — אנדרואיד מחייב אישור של מי שמחזיק את הטלפון. מסך העדכון לא נסגר עד שמאשרים.
+ *
+ * הבדיקה רצה גם כשהאפליקציה סגורה: UpdateJob, בכל פעם שיש רשת (לפחות כל 15 דקות).
+ * החתימה קבועה, ולכן ההתקנה היא מעל הקיים: החיבור וההגדרות נשמרים.
+ *
+ * סקירה, 2026-10-20 — שלב 9:
+ *   • הקובץ נבדק לפני שהגבלות ההתקנה מוסרות (UpdateMath.checkArchive): חבילה, גרסה, חתימה, sha256.
+ *   • ההגבלות חוזרות בכל כישלון — חריגה, קובץ שנדחה, סטטוס כישלון — ותוך 15 דקות גם כשהתהליך נהרג
+ *     (Enforcer.apply, ‏recover). קודם רק סטטוס כישלון שהגיע החזיר אותן.
+ *   • כל שלב מדווח לשרת (Api.updateState) — ההורה רואה עדכון שנתקע או נכשל, ולמה.
  */
 object Updater {
 
-    /** הוצע כבר בהרצה הזו של האפליקציה — "אחר כך" לא חוזר על כל חזרה למסך הבית. */
-    private var offeredCode = 0
-    private var downloadId = -1L
+    private val pool = Executors.newSingleThreadExecutor()
+    private val main = Handler(Looper.getMainLooper())
+    @Volatile private var running = false
 
-    fun offer(act: Activity, u: JSONObject) {
-        val code = u.optInt("version_code")
-        val url = u.optString("url")
-        if (code <= BuildConfig.VERSION_CODE || url.isEmpty() || code == offeredCode) return
-        offeredCode = code
-        MaterialAlertDialogBuilder(act)
-            .setTitle("⬆️ גרסה חדשה של מגדלור")
-            .setMessage("ההורה ביקש לעדכן ל-${u.optString("version_name")} (עכשיו מותקנת ${BuildConfig.VERSION_NAME}).\n\n" +
-                        "העדכון לוקח רגע, וכל ההגדרות נשמרות.")
-            .setNegativeButton("אחר כך", null)
-            .setPositiveButton("עדכון עכשיו") { _, _ -> start(act, url, code) }
-            .show()
+    /** העדכון מהשרת (או null — אין). נקרא מכל תשובה של מדיניות ופעימה. */
+    fun note(ctx: Context, u: JSONObject?) {
+        val store = Store(ctx)
+        val code = u?.optInt("version_code") ?: 0
+        val url = u?.optString("url").orEmpty()
+        if (code > BuildConfig.VERSION_CODE && url.startsWith("https://")) {
+            store.updateCode = code
+            store.updateUrl = url
+            store.updateSha = u?.optString("sha256").orEmpty()
+        } else if (u == null || code <= BuildConfig.VERSION_CODE) {
+            store.updateCode = 0
+            UpdateJob.clear(ctx)
+        }
+        recover(ctx)
     }
 
-    private fun start(act: Activity, url: String, code: Int) {
-        // אנדרואיד 8+: צריך היתר "התקנת אפליקציות לא מוכרות" — פעם אחת, בהגדרות.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !act.packageManager.canRequestPackageInstalls()) {
-            MaterialAlertDialogBuilder(act)
-                .setTitle("צריך אישור אחד")
-                .setMessage("במסך הבא מדליקים \"לאפשר מהמקור הזה\", וחוזרים. אחר כך לוחצים שוב \"עדכון עכשיו\".")
-                .setPositiveButton("להגדרות") { _, _ ->
-                    offeredCode = 0
-                    try {
-                        act.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + act.packageName)))
-                    } catch (e: Exception) { browser(act, url) }
+    /**
+     * מחזיר את הגבלות ההתקנה כשהחלון פג, או כשהעדכון כבר הותקן (הגרסה הזו היא החדשה). נקרא מכל
+     * סנכרון (note) ומשירות הנגישות — גם בלי רשת. בגרסה החדשה מדווח גם "הושלם".
+     */
+    fun recover(ctx: Context) {
+        val store = Store(ctx)
+        if (!UpdateMath.shouldRestore(store.installOpenUntil, System.currentTimeMillis(), required(ctx))) return
+        Enforcer.allowInstall(ctx, false)
+        Trace.log("update.restore", "required=" + required(ctx))
+        if (!required(ctx)) report(ctx, "done", BuildConfig.VERSION_CODE)
+    }
+
+    /** דיווח להורה — הכי טוב שאפשר: בלי רשת הוא פשוט לא מגיע, והמצב הבא יחליף אותו. */
+    private fun report(ctx: Context, state: String, target: Int, error: String = "") {
+        val store = Store(ctx)
+        if (store.isLoggedIn) try { Api.updateState(store.token, state, target, error) } catch (e: Exception) {}
+    }
+
+    /** האם האפליקציה נעולה עד עדכון. */
+    fun required(ctx: Context): Boolean = Store(ctx).updateCode > BuildConfig.VERSION_CODE
+
+    /** מסך העדכון — מעל כל מה שפתוח. נקרא מכל מסך, ומשירות הנגישות. */
+    fun lock(ctx: Context) {
+        ctx.startActivity(Intent(ctx, UpdateActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP))
+    }
+
+    /**
+     * הורדה והתקנה. ‏progress — טקסט למסך העדכון (בתהליך הראשי); בלי מסך (UpdateJob) — null.
+     * ריצה אחת בכל רגע: לחיצה חוזרת או בדיקת רקע באמצע הורדה לא מתחילות הורדה שנייה.
+     */
+    fun run(ctx: Context, progress: ((String) -> Unit)? = null) {
+        val app = ctx.applicationContext
+        val store = Store(app)
+        if (!required(app) || running) return
+        running = true
+        val say = { t: String -> progress?.let { p -> main.post { p(t) } } }
+        val target = store.updateCode
+        pool.execute {
+            try {
+                say("מוריד את הגרסה החדשה…")
+                report(app, "downloading", target)
+                val apk = download(app, store.updateUrl, target) { pct -> say("מוריד… $pct%") }
+                report(app, "verifying", target)
+                val bad = verify(app, apk, target, store.updateSha)
+                if (bad.isNotEmpty()) {
+                    apk.delete()   // לא לנסות שוב את אותו קובץ
+                    throw IllegalStateException(bad)
                 }
-                .setNegativeButton("ביטול") { _, _ -> offeredCode = 0 }
-                .show()
-            return
+                say("מתקין…")
+                report(app, "installing", target)
+                install(app, apk)
+            } catch (e: Exception) {
+                // כל כישלון — גם אחרי שההגבלות הוסרו (יצירת סשן, כתיבה, commit) — מחזיר אותן מיד.
+                Enforcer.allowInstall(app, false)
+                Trace.log("update.fail", e.javaClass.simpleName + ": " + e.message)
+                report(app, "failed", target, e.message ?: e.javaClass.simpleName)
+                say("העדכון נכשל — בודקים שיש אינטרנט, ולוחצים שוב.")
+            } finally {
+                running = false
+            }
+        }
+    }
+
+    /** ההורדה — לתיקיית המטמון של האפליקציה. APK הוא ZIP: מתחיל ב-PK. */
+    private fun download(ctx: Context, url: String, code: Int, pct: (Int) -> Unit): File {
+        val dir = File(ctx.cacheDir, "update").apply { mkdirs() }
+        dir.listFiles()?.forEach { if (it.name != "migdalor-$code.apk") it.delete() }
+        val file = File(dir, "migdalor-$code.apk")
+        if (file.length() > 1_000_000 && isZip(file)) return file
+
+        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 15_000; readTimeout = 30_000; instanceFollowRedirects = true
         }
         try {
-            val dm = act.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-            val req = DownloadManager.Request(Uri.parse(url))
-                .setTitle("מגדלור — עדכון")
-                .setMimeType("application/vnd.android.package-archive")
-                .setDestinationInExternalFilesDir(act, Environment.DIRECTORY_DOWNLOADS, "migdalor-$code.apk")
-                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE)
-            downloadId = dm.enqueue(req)
-            watch(act, dm, url)
-        } catch (e: Exception) {
-            Trace.log("update.fail", e.javaClass.simpleName + ": " + e.message)
-            browser(act, url)
-        }
-    }
-
-    /** בודק כל שנייה אם ההורדה הסתיימה — בלי BroadcastReceiver, שדורש הצהרות שונות בכל גרסת אנדרואיד. */
-    private fun watch(act: Activity, dm: DownloadManager, url: String) {
-        val main = Handler(Looper.getMainLooper())
-        val dlg: AlertDialog = MaterialAlertDialogBuilder(act)
-            .setTitle("מוריד את העדכון…")
-            .setMessage("רגע אחד.")
-            .setCancelable(false)
-            .setNegativeButton("ביטול") { _, _ -> dm.remove(downloadId); downloadId = -1L; offeredCode = 0 }
-            .show()
-        val tick = object : Runnable {
-            override fun run() {
-                if (downloadId < 0 || act.isFinishing) { dlg.dismiss(); return }
-                val c = dm.query(DownloadManager.Query().setFilterById(downloadId))
-                val (status, done, total) = c.use {
-                    if (!it.moveToFirst()) Triple(DownloadManager.STATUS_FAILED, 0L, 0L)
-                    else Triple(it.getInt(it.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS)),
-                                it.getLong(it.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)),
-                                it.getLong(it.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)))
-                }
-                when (status) {
-                    DownloadManager.STATUS_SUCCESSFUL -> { dlg.dismiss(); install(act, dm, url) }
-                    DownloadManager.STATUS_FAILED -> { dlg.dismiss(); browser(act, url) }
-                    else -> {
-                        if (total > 0) dlg.setMessage("${(done * 100 / total)}%")
-                        main.postDelayed(this, 1000)
+            if (conn.responseCode != 200) throw IllegalStateException("HTTP ${conn.responseCode}")
+            val total = conn.contentLengthLong
+            val tmp = File(dir, file.name + ".part")
+            conn.inputStream.use { input ->
+                tmp.outputStream().use { out ->
+                    val buf = ByteArray(64 * 1024)
+                    var done = 0L; var last = -1
+                    while (true) {
+                        val n = input.read(buf); if (n < 0) break
+                        out.write(buf, 0, n); done += n
+                        if (total > 0) { val p = (done * 100 / total).toInt(); if (p != last) { last = p; pct(p) } }
                     }
                 }
             }
-        }
-        main.postDelayed(tick, 800)
+            if (tmp.length() < 1_000_000 || !isZip(tmp)) { tmp.delete(); throw IllegalStateException("לא APK") }
+            tmp.renameTo(file)
+            return file
+        } finally { conn.disconnect() }
     }
 
-    private fun install(act: Activity, dm: DownloadManager, url: String) {
-        try {
-            val uri = dm.getUriForDownloadedFile(downloadId) ?: return browser(act, url)
-            act.startActivity(Intent(Intent.ACTION_VIEW)
-                .setDataAndType(uri, "application/vnd.android.package-archive")
-                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK))
-        } catch (e: Exception) {
-            Trace.log("update.install", e.javaClass.simpleName + ": " + e.message)
-            browser(act, url)
-        }
+    /** ‏"" — הקובץ הוא העדכון שהוצע (UpdateMath.checkArchive); אחרת הסיבה. */
+    private fun verify(ctx: Context, apk: File, offered: Int, expectSha: String): String {
+        val pm = ctx.packageManager
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) PackageManager.GET_SIGNING_CERTIFICATES
+                    else @Suppress("DEPRECATION") PackageManager.GET_SIGNATURES
+        val archive = try { pm.getPackageArchiveInfo(apk.path, flags) } catch (e: Exception) { null }
+        val mine = try { pm.getPackageInfo(ctx.packageName, flags) } catch (e: Exception) { null }
+        return UpdateMath.checkArchive(archive?.packageName, ctx.packageName, versionOf(archive), offered,
+            BuildConfig.VERSION_CODE, certsOf(archive, history = true), certsOf(mine, history = false),
+            sha256(apk), expectSha)
     }
 
-    /** נפילה חזרה: הקישור בדפדפן של המכשיר, ומשם — הורדה והתקנה ידנית. */
-    private fun browser(act: Activity, url: String) {
-        try { act.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-        catch (e: Exception) { android.widget.Toast.makeText(act, "לא הצלחנו לפתוח את העדכון", android.widget.Toast.LENGTH_LONG).show() }
+    private fun versionOf(p: PackageInfo?): Long = when {
+        p == null -> 0L
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.P -> p.longVersionCode
+        else -> @Suppress("DEPRECATION") p.versionCode.toLong()
+    }
+
+    /** טביעות SHA-256 של החותמים. ‏history — כולל מפתחות קודמים בשושלת (קובץ חדש אחרי סבב מפתחות). */
+    private fun certsOf(p: PackageInfo?, history: Boolean): Set<String> {
+        if (p == null) return emptySet()
+        val sigs = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val si = p.signingInfo ?: return emptySet()
+            if (si.hasMultipleSigners() || !history) si.apkContentsSigners else si.signingCertificateHistory
+        } else @Suppress("DEPRECATION") p.signatures
+        return sigs?.map { hex(MessageDigest.getInstance("SHA-256").digest(it.toByteArray())) }?.toSet() ?: emptySet()
+    }
+
+    private fun sha256(f: File): String {
+        val md = MessageDigest.getInstance("SHA-256")
+        f.inputStream().use { val buf = ByteArray(64 * 1024); while (true) { val n = it.read(buf); if (n < 0) break; md.update(buf, 0, n) } }
+        return hex(md.digest())
+    }
+
+    private fun hex(b: ByteArray) = b.joinToString("") { "%02x".format(it) }
+
+    private fun isZip(f: File) = f.inputStream().use { val b = ByteArray(2); it.read(b) == 2 && b[0] == 'P'.code.toByte() && b[1] == 'K'.code.toByte() }
+
+    /**
+     * ההתקנה. "בעל מכשיר" — אנדרואיד מתקין בלי לשאול (מ-12 גם מבקשים זאת במפורש). אחרת התוצאה היא
+     * STATUS_PENDING_USER_ACTION, ו-InstallResult פותח את מסך האישור של אנדרואיד.
+     */
+    private fun install(ctx: Context, apk: File) {
+        val installer = ctx.packageManager.packageInstaller
+        val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
+            setAppPackageName(ctx.packageName)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
+        }
+        Enforcer.allowInstall(ctx, true)
+        val id = installer.createSession(params)
+        installer.openSession(id).use { session ->
+            session.openWrite("migdalor.apk", 0, apk.length()).use { out ->
+                apk.inputStream().use { it.copyTo(out) }
+                session.fsync(out)
+            }
+            val flags = PendingIntent.FLAG_UPDATE_CURRENT or
+                (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0)
+            val done = PendingIntent.getBroadcast(ctx, id, Intent(ctx, InstallResult::class.java), flags)
+            session.commit(done.intentSender)
+        }
+        Trace.log("update.commit", "owner=" + Enforcer.isOwner(ctx))
+    }
+
+    /** התוצאה של ההתקנה. הצלחה — התהליך מוחלף בגרסה החדשה, ואין מה לעשות. */
+    class InstallResult : BroadcastReceiver() {
+        override fun onReceive(ctx: Context, intent: Intent) {
+            when (val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)) {
+                PackageInstaller.STATUS_PENDING_USER_ACTION -> {
+                    report(ctx, "waiting_user", Store(ctx).updateCode)
+                    @Suppress("DEPRECATION")
+                    val confirm = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT) ?: return
+                    try { ctx.startActivity(confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                    catch (e: Exception) { Trace.log("update.confirm", e.message ?: "") }
+                }
+                // הצלחה: התהליך מוחלף. ההגבלות חוזרות בגרסה החדשה (recover, ‏Enforcer.apply), שגם מדווחת "הושלם".
+                PackageInstaller.STATUS_SUCCESS -> Trace.log("update.ok", "")
+                else -> {
+                    Enforcer.allowInstall(ctx, false)
+                    val msg = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE).orEmpty()
+                    Trace.log("update.status", "$status $msg")
+                    report(ctx, "failed", Store(ctx).updateCode, "התקנה: $status ${msg.take(80)}".trim())
+                }
+            }
+        }
     }
 }

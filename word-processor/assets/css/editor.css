@@ -1,0 +1,427 @@
+/*
+ * העורך: סרגל כלים, במה אפורה עם דפים לבנים בגודל אמיתי, זום, והדפסה.
+ * הדפים מצוירים בשכבה (.wp-pages) מאחורי הטקסט; הטקסט עצמו — עמודה אחת (.wp-doc) עם רווחים (.wp-break)
+ * בכל מעבר עמוד (assets/js/pagination.js).
+ */
+
+.wp-editor { display: flex; flex-direction: column; min-height: 0; flex: 1; background: var(--bg); }
+
+/* ===== הסרט (ribbon): לשוניות, ובכל לשונית קבוצות עם שם (editor.js) ===== */
+.wp-toolbar.wp-ribbon { display: block; padding: 0; overflow: visible; flex-wrap: nowrap; }
+.rb-head { display: flex; align-items: flex-end; gap: 4px; padding: 2px var(--s2) 0; border-bottom: 1px solid var(--line); }
+.rb-quick { display: flex; align-items: center; gap: 2px; padding-inline-end: 6px; margin-inline-end: 2px; border-inline-end: 1px solid var(--line); align-self: center; }
+.rb-tabs { display: flex; gap: 2px; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.rb-tab { flex: none; min-block-size: 38px; padding: 0 14px; border: 0; border-bottom: 3px solid transparent; background: none; font: inherit; font-size: .9rem;
+    color: var(--muted); cursor: pointer; border-radius: 6px 6px 0 0; }
+.rb-tab:hover { color: var(--ink); background: var(--bg); }
+.rb-tab[aria-selected="true"] { color: var(--brand); border-bottom-color: var(--brand); font-weight: 600; }
+.rb-tab.ctx { color: #b45309; }
+.rb-tab.ctx[aria-selected="true"] { border-bottom-color: #b45309; }
+.rb-tab[hidden] { display: none; }
+/* חיפוש פקודה (Alt+Q) */
+.rb-search { position: relative; flex: none; align-self: center; margin-inline-start: auto; }
+.rb-search-in { inline-size: 11em; min-height: 32px; block-size: 32px; padding: 0 10px; border: 1px solid var(--line); border-radius: 16px; font-size: .85rem;
+    background: var(--bg); }
+.rb-results { position: absolute; z-index: 30; inset-inline-end: 0; max-inline-size: calc(100vw - 16px); top: calc(100% + 4px); min-inline-size: 16em; margin: 0; padding: 4px; list-style: none;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 24px rgba(0, 0, 0, .14); }
+.rb-results[hidden] { display: none; }
+.rb-results li { display: flex; align-items: center; gap: 8px; min-block-size: 36px; padding: 0 8px; border-radius: 6px; cursor: pointer; white-space: nowrap; }
+.rb-results li[aria-selected="true"] { background: var(--brand-soft); color: var(--brand); }
+.rb-results li[aria-disabled="true"] { opacity: .5; cursor: default; }
+.rb-results li.none { color: var(--muted); cursor: default; }
+.rb-results .ic { inline-size: 1.4em; text-align: center; }
+.rb-results .lb { flex: 1; }
+.rb-results .k { font-size: .75rem; color: var(--muted); }
+/* תצוגה לפני הדפסה: בלי הסרט, שורות המצב והפעולות, ובלי סימני עריכה — כמו בהדפסה */
+/* גלריית סגנונות: כל כפתור נראה כמו הסגנון; בטלפון — שורות שנשברות */
+.rb-gallery { display: flex; gap: 3px; max-inline-size: 420px; overflow-x: auto; scrollbar-width: thin; }
+.rb-sty { flex: none; min-inline-size: 64px; max-inline-size: 110px; block-size: 36px; padding: 0 8px; border: 1px solid var(--line); border-radius: var(--r, 6px);
+    background: #fff; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1; }
+.rb-sty:hover:not(:disabled) { border-color: var(--brand, #2563eb); }
+.rb-sty.on { border-color: var(--brand, #2563eb); box-shadow: inset 0 0 0 1px var(--brand, #2563eb); }
+.rb-sty:disabled { opacity: .5; cursor: default; }
+.wp-editor.wp-phone .rb-gallery { flex-wrap: wrap; max-inline-size: none; overflow: visible; }
+.wp-editor.wp-phone .rb-sty { block-size: 44px; }
+/* קישור — כמו הסגנון Hyperlink של Word (גם בהדפסה וב-PDF); סימניה — נקודה בלי רוחב */
+.wp-doc a.wp-link { color: #0563c1; text-decoration: underline; cursor: text; }
+.wp-doc.ProseMirror[contenteditable=false] a.wp-link { cursor: pointer; }
+.wp-doc a.wp-bookmark { display: inline; font-size: 0; line-height: 0; }
+.bm-list { display: grid; gap: var(--s1); list-style: none; padding: 0; }
+.bm-list li { display: flex; align-items: center; gap: var(--s2); }
+.bm-list .bm-name { flex: 1; min-inline-size: 0; overflow-wrap: anywhere; }
+.bm-list li.none { color: var(--muted); }
+/* חיפוש והחלפה (find.js): פס מתחת לסרט; ההתאמות מסומנות במסמך, הנוכחית — חזק יותר */
+.wp-find-slot { flex: none; }
+.wp-findbar { display: grid; gap: 4px; padding: 6px var(--s2); background: var(--surface); border-bottom: 1px solid var(--line); }
+.wp-findbar[hidden] { display: none; }
+.wp-findbar .find-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.wp-findbar .find-row[hidden] { display: none; }
+.wp-findbar input[type=search], .wp-findbar input[type=text] { flex: 1 1 180px; min-inline-size: 0; max-inline-size: 360px; min-block-size: 32px;
+    padding: 0 8px; border: 1px solid var(--line); border-radius: var(--r, 6px); font: inherit; background: var(--bg); color: var(--ink); }
+.wp-findbar .find-count { font-size: .8rem; color: var(--muted); min-inline-size: 5.5em; }
+.wp-findbar .find-count.none { color: var(--danger, #b42318); }
+.wp-findbar .find-btn { min-inline-size: 32px; min-block-size: 32px; border: 1px solid transparent; border-radius: var(--r, 6px); background: none; color: var(--ink); cursor: pointer; }
+.wp-findbar .find-btn:hover:not(:disabled), .wp-findbar .find-btn.on { background: var(--brand-soft, #e8f0fe); }
+.wp-findbar .find-btn:disabled { opacity: .4; cursor: default; }
+.wp-findbar .find-opt { display: inline-flex; align-items: center; gap: 4px; font-size: .85rem; margin-inline-end: var(--s2); }
+.wp-doc .wp-find { background: #fff3a3; border-radius: 1px; }
+.wp-doc .wp-find-cur { background: #ff9632; }
+.wp-editor.wp-phone .wp-findbar .find-btn { min-inline-size: 44px; min-block-size: 44px; }
+.wp-editor.wp-phone .wp-findbar input { min-block-size: 44px; font-size: 16px; }
+.wp-preview-bar { display: flex; align-items: center; gap: var(--s2); flex: none; padding: 6px var(--s2); background: var(--surface); border-bottom: 1px solid var(--line); }
+.wp-preview-bar[hidden] { display: none; }
+.wp-preview-bar .pv-pages { color: var(--muted); font-size: .85rem; }
+.wp-editor.wp-preview .wp-ribbon, .wp-editor.wp-preview .wp-statusbar, .wp-editor.wp-preview .wp-mobilebar { display: none !important; }
+.wp-editor.wp-preview .wp-page-break { border: 0; }
+.wp-editor.wp-preview .wp-page-break::after, .wp-editor.wp-preview .wp-section-break::before, .wp-editor.wp-preview .wp-section-break::after,
+.wp-editor.wp-preview .wp-img-handle, .wp-editor.wp-preview .selectedCell::after { display: none !important; }
+.wp-editor.wp-preview .ProseMirror-selectednode { outline: none !important; }
+.wp-editor.wp-preview .wp-doc { caret-color: transparent; }
+.wp-editor.wp-phone .rb-search { flex-basis: 100%; order: 10; margin: 4px 0; }
+.wp-editor.wp-phone .rb-search-in { inline-size: 100%; min-height: 44px; block-size: 44px; }
+.wp-editor.wp-phone .rb-head { flex-wrap: wrap; }
+.rb-collapse { flex: none; align-self: center; min-inline-size: 36px; min-block-size: 36px; border: 0; border-radius: 8px; background: none; color: var(--muted);
+    cursor: pointer; font-size: 1rem; }
+.rb-collapse:hover { background: var(--bg); color: var(--ink); }
+.rb-panel { display: flex; align-items: stretch; gap: 2px; padding: 4px var(--s2) 2px; overflow-x: auto; scrollbar-width: thin; }
+.rb-panel[hidden], .wp-ribbon.collapsed .rb-panel { display: none; }
+.wp-ribbon.collapsed .rb-head { border-bottom: 0; }
+.rb-group { display: flex; flex-direction: column; flex: none; padding: 0 8px; border-inline-end: 1px solid var(--line); }
+.rb-group:last-child { border-inline-end: 0; }
+.rb-rows { display: flex; flex-direction: column; justify-content: center; gap: 2px; flex: 1; }
+.rb-row { display: flex; align-items: center; gap: 2px; }
+.rb-name { padding-top: 2px; font-size: .7rem; color: var(--muted); text-align: center; white-space: nowrap; }
+/* שורת המצב */
+.wp-statusbar { display: flex; align-items: center; gap: var(--s2); flex: none; min-block-size: 28px; padding: 0 var(--s2); font-size: .78rem; color: var(--muted);
+    background: var(--surface); border-top: 1px solid var(--line); white-space: nowrap; }
+.wp-statusbar .st-sep { inline-size: 1px; block-size: 14px; background: var(--line); }
+.wp-statusbar .st-fill { flex: 1; }
+/* גופן מוחלף (ליקוי ח') — רק כשהסמן בגופן שאינו זמין */
+.wp-statusbar .st-font { color: var(--danger, #b42318); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-inline-size: 0; }
+.wp-ribbon select.sub { color: var(--danger, #b42318); font-style: italic; }
+.st-btn, .st-zoom { min-block-size: 28px; min-inline-size: 28px; padding: 0 6px; border: 0; border-radius: 6px; background: none; color: inherit; font: inherit; cursor: pointer; }
+.st-btn:hover, .st-zoom:hover { background: var(--bg); color: var(--ink); }
+
+/* ===== טלפון (עד 700px): שורת פעולות קבועה בתחתית, והסרט — גיליון מלמטה ("כלים") ===== */
+.wp-mobilebar, .wp-sheet-shade, .rb-close { display: none; }
+.wp-editor.wp-phone .wp-statusbar { display: none; }
+.wp-editor.wp-phone .wp-mobilebar { display: flex; align-items: center; justify-content: space-between; gap: 2px; flex: none;
+    padding: 4px var(--s2) calc(4px + env(safe-area-inset-bottom)); background: var(--surface); border-top: 1px solid var(--line);
+    transform: translateY(calc(-1 * var(--kb, 0px))); }
+.wp-editor.wp-phone .wp-mobilebar .tb { min-inline-size: 44px; block-size: 44px; }
+.mb-tools { min-block-size: 44px; padding: 0 14px; border: 1px solid var(--line); border-radius: 22px; background: var(--surface); color: inherit;
+    font: inherit; font-size: .95rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.mb-tools.ctx { border-color: #b45309; color: #b45309; }
+.mb-tools[aria-expanded="true"] { background: var(--brand-soft); border-color: var(--brand); color: var(--brand); }
+.wp-editor.readonly .wp-mobilebar .tb { display: none; }
+.wp-editor.wp-phone .wp-stage { padding-bottom: calc(var(--s4) * 3 + var(--kb, 0px)); }
+.wp-editor.wp-phone .wp-sheet-shade:not([hidden]) { display: block; position: fixed; inset: 0; z-index: 39; background: rgba(10, 15, 30, .35); }
+.wp-editor.wp-phone .wp-ribbon { position: fixed; inset-inline: 0; bottom: var(--kb, 0px); z-index: 40; max-block-size: 72vh; overflow-y: auto;
+    padding-bottom: env(safe-area-inset-bottom); border: 0; border-top: 1px solid var(--line); border-radius: 16px 16px 0 0;
+    box-shadow: 0 -10px 30px rgba(0, 0, 0, .18); transform: translateY(110%); visibility: hidden; transition: transform .2s ease, visibility 0s .2s; }
+.wp-editor.wp-phone .wp-ribbon.sheet-open { transform: none; visibility: visible; transition: transform .2s ease; }
+.wp-editor.wp-phone .rb-head { position: sticky; top: 0; z-index: 1; background: var(--surface); padding-top: 6px; }
+.wp-editor.wp-phone .rb-quick, .wp-editor.wp-phone .rb-collapse { display: none; }
+.wp-editor.wp-phone .rb-close { display: inline-grid; place-items: center; flex: none; align-self: center; min-inline-size: 44px; min-block-size: 44px;
+    border: 0; border-radius: 22px; background: none; color: var(--muted); font-size: 1.1rem; cursor: pointer; }
+.wp-editor.wp-phone .rb-tabs { flex-wrap: wrap; }
+.wp-editor.wp-phone .rb-tab { min-block-size: 44px; }
+.wp-editor.wp-phone .wp-ribbon.collapsed .rb-panel:not([hidden]) { display: flex; }
+.wp-editor.wp-phone .rb-panel { flex-direction: column; overflow: visible; padding: var(--s2); gap: var(--s2); }
+.wp-editor.wp-phone .rb-group { padding: 0 0 var(--s2); border-inline-end: 0; border-bottom: 1px solid var(--line); }
+.wp-editor.wp-phone .rb-group:last-child { border-bottom: 0; }
+.wp-editor.wp-phone .rb-name { order: -1; text-align: start; padding: 0 0 4px; font-size: .78rem; font-weight: 600; }
+.wp-editor.wp-phone .rb-row { flex-wrap: wrap; gap: 4px; }
+.wp-editor.wp-phone .wp-ribbon .tb { min-inline-size: 44px; block-size: 44px; }
+.wp-editor.wp-phone .wp-ribbon .tb-sel { block-size: 44px; min-height: 44px; }
+.wp-editor.wp-phone .wp-ribbon .tb-seg button { min-block-size: 44px; }
+
+/* ===== סרגל הכלים: שורה אחת שנגללת בטלפון, נשברת במחשב ===== */
+.wp-toolbar { display: flex; align-items: center; gap: 2px; padding: 4px var(--s2); background: var(--surface); border-bottom: 1px solid var(--line);
+    overflow-x: auto; scrollbar-width: thin; flex: none; }
+@media (min-width: 1000px) { .wp-toolbar { flex-wrap: wrap; overflow: visible; } }
+.tb-group { display: flex; align-items: center; gap: 2px; flex: none; }
+.tb-sep { flex: none; inline-size: 1px; block-size: 24px; background: var(--line); margin: 0 4px; }
+.tb { position: relative; display: inline-grid; place-items: center; min-inline-size: 36px; block-size: 36px; padding: 0 6px; border: 1px solid transparent;
+    border-radius: 8px; background: none; cursor: pointer; font-size: .95rem; line-height: 1; color: var(--ink); flex: none; }
+.tb:hover:not(:disabled) { background: var(--bg); }
+.tb.on { background: var(--brand-soft); border-color: color-mix(in srgb, var(--brand) 35%, transparent); color: var(--brand); }
+.tb:disabled, .tb-sel:disabled { opacity: .4; cursor: default; }
+.tb sup, .tb sub { font-size: .65em; }
+.tb-sel { inline-size: auto; min-height: 34px; block-size: 34px; padding: 0 4px; font-size: 14px; border-radius: 8px; flex: none; }
+.tb-sel.w-style { inline-size: 8.4em; }
+.tb-sel.w-font { inline-size: 8.4em; }
+.tb-sel.w-size { inline-size: 4.2em; }
+.tb-sel.w-list { inline-size: 3.6em; }
+.tb-color input { position: absolute; inset: 0; opacity: 0; cursor: pointer; inline-size: 100%; block-size: 100%; min-height: 0; padding: 0; border: 0; }
+.tb-color > span { border-bottom: 3px solid #c00000; padding: 0 2px; font-weight: 700; }
+.tb-color.mark > span { border-bottom-color: #ffd400; font-weight: 400; }
+.tb-zoom { min-inline-size: 3.2em; text-align: center; font-size: .8rem; color: var(--muted); }
+.wp-ctx { background: var(--brand-soft); }
+.ctx-title { font-size: .8rem; font-weight: 600; color: var(--brand); padding: 0 6px; flex: none; }
+.tb-seg { display: inline-flex; flex: none; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; margin: 0 2px; background: var(--surface); }
+.tb-seg button { min-block-size: 34px; padding: 0 10px; border: 0; background: none; cursor: pointer; font-size: .85rem; white-space: nowrap; }
+.tb-seg button + button { border-inline-start: 1px solid var(--line); }
+.tb-seg button.on { background: var(--brand); color: var(--brand-ink); }
+
+/* ===== הבמה, הזום והדפים ===== */
+/* בזמן עריכה הדפדפן לא מגדיל את כל הדף בצביטה — הצביטה מגדילה רק את המסמך (editor.js). גלילה רגילה נשארת */
+html.wp-no-page-zoom, html.wp-no-page-zoom body, .wp-editor, .wp-stage { touch-action: pan-x pan-y; }
+.wp-stage { flex: 1; min-height: 0; overflow: auto; padding: var(--s3) var(--s2) calc(var(--s4) * 3); background: #e9ebef; overscroll-behavior: contain; }
+@media (prefers-color-scheme: dark) { .wp-stage { background: #0c0e12; } }
+.wp-zoom-box { direction: ltr; margin: 0 auto; }
+.wp-zoom { transform-origin: 0 0; inline-size: max-content; }
+.wp-sheet { position: relative; direction: rtl; }
+.wp-pages { position: absolute; inset: 0; pointer-events: none; }
+.wp-page { position: absolute; inset-inline: 0; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .18), 0 0 0 1px rgba(0, 0, 0, .04); }
+.wp-hf { position: absolute; inset-inline: 0; display: flex; align-items: center; justify-content: center; color: #555; font-size: 9pt;
+    font-family: inherit; box-sizing: border-box; }
+.wp-hdr { top: 0; align-items: center; }
+.wp-ftr { bottom: 0; }
+.wp-hf-text { white-space: pre-wrap; text-align: center; max-inline-size: 100%; overflow: hidden; }
+.wp-num { position: absolute; }
+.wp-num.al-center { inset-inline: 0; text-align: center; }
+.wp-hf-text ~ .wp-num.al-center { position: static; margin-inline-start: 1em; }
+.wp-host { position: relative; }
+
+/* ===== המסמך עצמו — צבעים של נייר תמיד (גם במצב כהה) ===== */
+.wp-doc { position: relative; outline: none; color: #000; box-sizing: border-box; caret-color: #000; word-wrap: break-word; white-space: pre-wrap;
+    font-variant-ligatures: none; -webkit-font-smoothing: antialiased; }
+.wp-doc p, .wp-doc h1, .wp-doc h2, .wp-doc h3, .wp-doc h4, .wp-doc h5, .wp-doc h6, .wp-doc h7, .wp-doc h8, .wp-doc h9 { margin: 0; min-height: 1em; }
+/* כותרות 7–9: אין תגית HTML כזו — הדפדפן מציג אותן בשורה, אז במפורש בלוק */
+.wp-doc h7, .wp-doc h8, .wp-doc h9 { display: block; }
+/* עצירות טאב כל חצי אינץ' — כמו ב-Word וב-PDF (TAB_STOP) */
+.wp-doc { tab-size: 36pt; }
+.wp-doc ul, .wp-doc ol { margin: 0; padding-inline-start: 24pt; }
+.wp-doc ol[data-list="hebrew"] { list-style-type: hebrew; }
+.wp-doc ol[data-list="roman"] { list-style-type: lower-roman; }
+/* רב-רמתי 1.1.1: מונה wpl (counter-reset ב-<ol> לפי start); גם רשימות ממוספרות שבתוכה. הסימן בשוליים שלפני הטקסט —
+   מחוץ לזרימה, כמו ::marker, ובאותו מקום כמו ב-PDF (6 נק' מתחילת השורה) */
+.wp-doc ol[data-list="multi"], .wp-doc ol[data-list="multi"] ol { list-style: none; }
+.wp-doc ol[data-list="multi"] > li, .wp-doc ol[data-list="multi"] ol > li { counter-increment: wpl; position: relative; }
+.wp-doc ol[data-list="multi"] > li::before, .wp-doc ol[data-list="multi"] ol > li::before {
+    content: counters(wpl, ".") "."; position: absolute; inset-inline-end: 100%; margin-inline-end: 6pt; white-space: nowrap; }
+.wp-doc ul ul, .wp-doc ol ul { list-style-type: circle; }
+.wp-doc ul ul ul, .wp-doc ol ul ul { list-style-type: square; }
+.wp-doc li > p { padding-top: 0; }
+.wp-doc mark { color: inherit; }
+.wp-doc table { border-collapse: collapse; table-layout: fixed; inline-size: 100%; margin: 0; overflow: hidden; }
+.wp-doc td, .wp-doc th { border: 1px solid var(--wpt-bc, #888); padding: 2pt 4pt; vertical-align: top; position: relative; min-inline-size: 1em; box-sizing: border-box; }
+.wp-doc th { background: #f2f2f2; font-weight: 700; text-align: start; }
+/* גבולות הטבלה (data-borders): גבול כבוי — שקוף, באותו רוחב (הגובה לא משתנה); במסך — קו עדין כדי לראות את התאים */
+.wp-doc table { --wpt-off: rgb(0 0 0 / .1); }
+.wp-doc table[data-borders] > tbody > tr > :is(td, th) { border-color: var(--wpt-off); }
+.wp-doc table[data-borders=inner] > tbody > tr > :is(td, th) { border-color: var(--wpt-bc, #888); }
+.wp-doc table:is([data-borders=outer], [data-borders=inner]) > tbody > tr:is(:first-child, .wp-repeat) > :is(td, th) { border-top-color: var(--wpt-edge); }
+.wp-doc table:is([data-borders=outer], [data-borders=inner]) > tbody > tr:last-child > :is(td, th) { border-bottom-color: var(--wpt-edge); }
+.wp-doc table:is([data-borders=outer], [data-borders=inner]) > tbody > tr > :is(td, th):first-child { border-inline-start-color: var(--wpt-edge); }
+.wp-doc table:is([data-borders=outer], [data-borders=inner]) > tbody > tr > :is(td, th):last-child { border-inline-end-color: var(--wpt-edge); }
+.wp-doc table[data-borders=outer] { --wpt-edge: var(--wpt-bc, #888); }
+.wp-doc table[data-borders=inner] { --wpt-edge: var(--wpt-off); }
+@media print { .wp-doc table { --wpt-off: transparent; } }
+.wp-doc td > p, .wp-doc th > p { padding-bottom: 0; }
+.wp-doc .selectedCell::after { content: ''; position: absolute; inset: 0; background: rgba(45, 74, 138, .15); pointer-events: none; }
+.wp-doc .column-resize-handle { position: absolute; inset-inline-start: -2px; top: 0; bottom: -2px; inline-size: 4px; background: #2d4a8a; pointer-events: none; }
+.wp-doc.resize-cursor { cursor: col-resize; }
+.wp-doc .tableWrapper { overflow-x: auto; }
+.wp-doc hr { border: 0; border-top: 1px solid #888; margin: 6pt 0; }
+.wp-doc .wp-page-break { block-size: 0; border-top: 1px dashed #aab; margin: 0; position: relative; }
+.wp-doc .wp-page-break::after { content: 'מעבר עמוד'; position: absolute; inset-inline-start: 50%; top: -.7em; transform: translateX(50%); font-size: 8pt;
+    background: #fff; color: #889; padding: 0 6px; font-family: system-ui, sans-serif; }
+.wp-doc .wp-page-break.ProseMirror-selectednode { border-top-color: #2d4a8a; }
+/* מעבר מקטע: קו כפול עם תווית; כמה מקטעים — הרוחב של כל בלוק נקבע בגבולות שקופים (pagination.js) */
+.wp-doc .wp-section-break { block-size: 0; margin: 0; position: relative; }
+/* הקו — בתוך רוחב הטקסט בלבד (במסמך עם מקטעים לבלוק יש גבולות שקופים בצדדים) */
+.wp-doc .wp-section-break::before { content: ''; position: absolute; inset-inline: 0; top: 0; border-top: 3px double #aab; }
+.wp-doc .wp-section-break::after { content: 'מעבר מקטע (עמוד הבא)'; position: absolute; inset-inline-start: 50%; top: -.75em; transform: translateX(50%);
+    font-size: 8pt; color: #667; background: #fff; padding: 0 6px; }
+.wp-doc .wp-section-break.ProseMirror-selectednode::before { border-top-color: #2d4a8a; }
+.wp-sheet .wp-doc.wp-multisec { padding-left: 0 !important; padding-right: 0 !important; }
+/* הערות שוליים: הסימן ממוספר לבד לפי הסדר; ההערות בתחתית העמוד (pagination.js) — גובה קו ההפרדה = FN_SEP */
+.wp-doc { counter-reset: wpfn wpen; }
+/* רווח בסוף שורה "תלוי" מחוץ לשוליים ולא נספר ברוחב — כמו ב-Word וב-PDF מהשרת. ProseMirror קובע break-spaces
+   (הרווח תופס מקום), ואז מילה שנכנסת בדיוק עד השוליים יורדת לשורה הבאה */
+.wp-sheet .wp-doc.ProseMirror { white-space: pre-wrap; }
+/* בלי ריווח זוגות אותיות (kerning) — כמו ב-Word (כבוי כברירת מחדל) וב-PDF מהשרת, שמודד לפי רוחב האות בלבד.
+   ובלי locl: בגופני Libre יש ספרות "עבריות" צרות יותר (two.hebr) שהדפדפן בוחר לבד בטקסט בעברית — ה-PDF מהשרת
+   מודד את הספרות הרגילות, ושורה עם מספרים נשברת אחרת */
+.wp-sheet .wp-doc.ProseMirror, .wp-fn-area, .wp-fn-measure { font-kerning: none; font-feature-settings: "liga" 0, "locl" 0; }
+/* גודל ורוחב הסימן — כמו ב-PDF מהשרת (75%, בלי ריפוד), כדי שהשורה תישבר באותו מקום */
+.wp-doc .wp-fn-ref { counter-increment: wpfn; font-size: .75em; vertical-align: super; line-height: 0; color: #1a4fa0; cursor: pointer; }
+.wp-doc .wp-fn-ref::after { content: counter(wpfn); }
+/* הערת סיום: מונה נפרד באותיות רומיות קטנות (כמו ב-Word); ההערות עצמן — .wp-en-area בסוף המסמך (pagination.js) */
+.wp-doc .wp-fn-ref.wp-en-ref { counter-increment: wpen; }
+.wp-doc .wp-fn-ref.wp-en-ref::after { content: counter(wpen, lower-roman); }
+.wp-en-area { display: block; user-select: none; direction: rtl; }
+.wp-en-area .wp-fn-note { cursor: pointer; }
+/* כיתוב ממוספר והפניה צולבת (caption.js): הטקסט מחושב לבד (data-n) — כמו שדה ב-Word, ברקע אפור כשהסמן עליו */
+.wp-doc .wp-seq::after, .wp-doc .wp-xref::after { content: attr(data-n); }
+.wp-doc .wp-xref { cursor: default; }
+.wp-doc .wp-xref.wp-xref-bad { color: #b00020; }
+.wp-doc .wp-seq.ProseMirror-selectednode, .wp-doc .wp-xref.ProseMirror-selectednode { background: #d9d9d9; }
+@media print { .wp-doc .wp-seq.ProseMirror-selectednode, .wp-doc .wp-xref.ProseMirror-selectednode { background: none; } }
+.wp-doc .wp-fn-ref.ProseMirror-selectednode { outline: 2px solid #2d4a8a; border-radius: 2px; }
+.wp-fn-area { display: block; user-select: none; direction: rtl; }
+.wp-fn-sep { inline-size: 33%; height: 0; border-top: 1px solid #000; margin: 6px 0 7px; }
+.wp-fn-note, .wp-fn-measure .wp-fn-note { font-size: 10pt; line-height: 1.25; text-align: start; font-weight: 400; font-style: normal; text-decoration: none; color: #000; }
+.wp-fn-area .wp-fn-note { cursor: pointer; }
+/* line-height: 0 — המספר העילי לא מגביה את השורה (כמו ב-PDF מהשרת) */
+.wp-fn-part { overflow: hidden; }   /* חלק של הערה שנמשכת לעמוד הבא (pagination.js) */
+.wp-fn-note > sup { font-size: .75em; line-height: 0; }
+/* עיצוב בתוך ההערה: עילי ותחתי לא מגביהים את השורה (כמו ב-PDF מהשרת: 75%) */
+.wp-fn-note sup, .wp-fn-note sub { font-size: .75em; line-height: 0; }
+/* חלון ההערה: עורך קטן עם עיצוב תווים */
+.fn-tools { display: flex; gap: 4px; flex-wrap: wrap; margin-block: 4px; }
+.fn-tool { min-inline-size: 36px; min-block-size: 36px; border: 1px solid var(--line, #ccd); border-radius: 6px; background: var(--surface, #fff); color: inherit; cursor: pointer; font: inherit; }
+.fn-tool.on { background: #e3e9f6; border-color: #2d4a8a; }
+.fn-edit .fn-edit-doc { min-block-size: 5.5em; padding: 8px 10px; border: 1px solid var(--line, #ccd); border-radius: 6px; outline: none; background: #fff; color: #000;
+    font-size: 1rem; line-height: 1.5; white-space: pre-wrap; text-align: start; }
+.fn-edit .fn-edit-doc:focus { border-color: #2d4a8a; box-shadow: 0 0 0 2px rgba(45, 74, 138, .2); }
+.fn-edit .fn-edit-doc p { margin: 0; }
+.wp-fn-measure { position: absolute; visibility: hidden; top: 0; left: 0; pointer-events: none; direction: rtl; }
+.wp-doc tr.wp-fn-row > td { padding: 0; border: none; background: none; }
+.wp-break { display: block; pointer-events: none; user-select: none; }
+/* טבלה שנמשכת לעמוד הבא: שורת רווח בלי גבולות, ושורת הכותרת חוזרת (עותק, לא ניתן לעריכה) */
+.wp-doc tr.wp-break-row { display: table-row; }
+.wp-doc tr.wp-break-row > td { padding: 0; border: none; background: none; }
+.wp-doc tr.wp-repeat { pointer-events: none; user-select: none; }
+.wp-doc .ProseMirror-gapcursor { display: none; }
+
+/* תמונות: מסגרת בגודל שעל הדף (--bw × --bh, אחרי חיתוך וסיבוב); בתוכה חלון החיתוך שמסתובב סביב המרכז */
+.wp-img { position: relative; display: inline-block; vertical-align: bottom; line-height: 1; inline-size: var(--bw); max-inline-size: none; text-indent: 0; }
+.wp-img::before { content: ''; display: block; block-size: var(--bh); }
+.wp-img-box { position: absolute; top: calc(var(--bh) / 2); left: 50%; overflow: hidden; transform-origin: 50% 50%; }
+.wp-img-box img { display: block; max-inline-size: none; }
+.wp-img-cap { display: block; text-align: center; font-size: 9pt; font-style: italic; color: #333; padding-top: 2pt; line-height: 1.2; white-space: normal; }
+.wp-img.wrap-square, .wp-img.wrap-tight { float: right; margin: 0 0 var(--dist) var(--dist); }
+.wp-img.wrap-square.align-left, .wp-img.wrap-tight.align-left { float: left; margin: 0 var(--dist) var(--dist) 0; }
+.wp-img.wrap-square.align-center, .wp-img.wrap-tight.align-center { float: none; display: block; margin: var(--dist) auto; }
+.wp-img.wrap-topBottom { display: block; clear: both; margin-block: var(--dist); margin-inline-start: 0; }
+.wp-img.wrap-topBottom.align-center { margin-inline: auto; }
+.wp-img.wrap-topBottom.align-left { margin-inline-start: auto; }
+.wp-img.wrap-behind, .wp-img.wrap-front { position: absolute; margin: 0; }
+.wp-img.wrap-behind { z-index: -100; }   /* + z (שכבה) — extensions.js */
+.wp-img.wrap-front { z-index: 10; }
+.wp-img.wrap-behind.selected .wp-img-box, .wp-img.wrap-front.selected .wp-img-box { cursor: move; touch-action: none; }
+.wp-doc p, .wp-doc h1, .wp-doc h2, .wp-doc h3, .wp-doc h4, .wp-doc h5, .wp-doc h6, .wp-doc h7, .wp-doc h8, .wp-doc h9 { position: relative; }
+.wp-pages { z-index: -200; }
+.wp-img.selected .wp-img-box, .wp-img.ProseMirror-selectednode .wp-img-box { outline: 2px solid #2d4a8a; outline-offset: 1px; }
+.wp-img-handle { display: none; position: absolute; inline-size: 14px; block-size: 14px; top: calc(var(--bh) - 8px); left: -6px; background: #2d4a8a; border: 2px solid #fff;
+    border-radius: 3px; cursor: nesw-resize; touch-action: none; z-index: 3; }
+.wp-img.selected .wp-img-handle { display: block; }
+.wp-doc.painting { cursor: copy; }
+.crop-stage { position: relative; display: grid; place-items: center; background: repeating-conic-gradient(#eee 0 25%, #fff 0 50%) 0 0 / 16px 16px;
+    border: 1px solid var(--line); border-radius: var(--r); padding: var(--s2); }
+.crop-stage .crop-img { position: relative; max-inline-size: 100%; }
+.crop-stage img { display: block; max-inline-size: 100%; max-block-size: 40dvh; }
+.crop-stage .crop-shade { position: absolute; background: rgba(0, 0, 0, .55); pointer-events: none; }
+.range-row { display: grid; grid-template-columns: 4.5em 1fr 3em; align-items: center; gap: var(--s2); }
+.range-row input { min-height: 28px; padding: 0; border: 0; box-shadow: none; }
+.readonly .wp-img-handle { display: none !important; }
+.wp-doc[contenteditable="false"] { caret-color: transparent; }
+
+/* ===== הדפסה: רק הדפים, כל רווח = שבירת עמוד (מספרי העמודים — בשולי @page, editor.js) ===== */
+@media print {
+    /* שקוף — הדף עצמו לבן; רקע לבן כאן היה מסתיר את צבע העמוד ואת סימן המים בעמוד הראשון */
+    html, body { background: transparent !important; height: auto !important; overflow: visible !important; }
+    .no-print, header.top, .banner, .wp-toolbar, .wp-findbar, .wp-nav, .wp-comments, .wp-paste, .wp-statusbar, .wp-mobilebar, .wp-sheet-shade, .wp-preview-bar, .toast, dialog { display: none !important; }
+    .wp-doc .wp-find, .wp-doc .wp-find-cur { background: none !important; }
+    main, .wp-editor, .wp-stage, .wp-zoom-box, .wp-zoom, .wp-sheet { display: block !important; overflow: visible !important; padding: 0 !important; margin: 0 !important;
+        background: none !important; transform: none !important; inline-size: auto !important; block-size: auto !important; height: auto !important; width: auto !important; }
+    .wp-pages { display: none !important; }
+    .wp-sheet .wp-doc { padding: 0 !important; min-height: 0 !important; }
+    .wp-break { block-size: 0 !important; height: 0 !important; break-before: page; page-break-before: always; }
+    .wp-break-row > td { height: 0 !important; }
+    .wp-break-sec { display: none !important; }
+    .wp-page-break { border: 0 !important; }
+    .wp-section-break::before, .wp-section-break::after { display: none !important; }
+    /* בהדפסה כל בלוק ברוחב הטקסט של המקטע שלו במפורש: Chrome פורס עמודים בגדלים שונים, אבל טבלה בלי רוחב
+       מפורש מקבלת את רוחב העמוד הראשון */
+    .wp-doc.wp-multisec > * { border-left-width: 0 !important; border-right-width: 0 !important; inline-size: var(--wps-w) !important; box-sizing: border-box; }
+    .wp-page-break::after { display: none !important; }
+    .wp-img-handle { display: none !important; }
+    .wp-body { display: block !important; }
+    .wp-mk-p::after, .wp-mk-sp::after, .wp-mk-tab::after { display: none !important; }
+}
+.tb-sel.w-spacing { inline-size: 6.6em; }
+
+/* ===== תצוגה (view.js): חלונית ניווט, סימני פסקה, אפשרויות הדבקה, ספירת מילים ===== */
+.wp-body { display: flex; flex: 1; min-height: 0; }
+.wp-body > .wp-stage { flex: 1; min-inline-size: 0; }
+.wp-editor { position: relative; }
+.wp-nav { flex: none; inline-size: 240px; overflow: auto; background: var(--surface); border-inline-end: 1px solid var(--line); padding: var(--s2); }
+.wp-nav[hidden] { display: none; }
+.wp-nav .nav-head { display: flex; align-items: center; justify-content: space-between; margin-block-end: var(--s2); }
+.wp-nav .nav-close { min-inline-size: 32px; min-block-size: 32px; border: 0; border-radius: 6px; background: none; color: inherit; cursor: pointer; }
+.wp-nav .nav-list { list-style: none; margin: 0; padding: 0; }
+.wp-nav .nav-item { display: block; inline-size: 100%; text-align: start; min-block-size: 32px; border: 0; border-radius: 6px; background: none; color: var(--ink);
+    font: inherit; font-size: .85rem; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wp-nav .nav-item:hover { background: var(--bg); }
+.wp-nav .nav-item.on { background: var(--accent-soft, #e6effc); font-weight: 600; }
+.wp-nav .nav-empty { color: var(--muted); font-size: .85rem; }
+.wp-editor.wp-phone .wp-nav { position: absolute; inset-block: 0; inset-inline-start: 0; z-index: 30; inline-size: min(80vw, 300px); box-shadow: 0 0 24px rgb(0 0 0 / .2); }
+.wp-editor.wp-phone .wp-nav .nav-item { min-block-size: 44px; }
+/* הערות (comments.js): הטווח בצהוב (בלי לשנות מידות), החלונית בצד הסוף — כמו ב-Word */
+.wp-doc .wp-cmt { background: #fff2a8; }
+.wp-doc .wp-cmt.on { background: #ffd966; }
+@media print { .wp-doc .wp-cmt, .wp-doc .wp-cmt.on { background: none; } }
+.wp-comments { flex: none; inline-size: 280px; overflow: auto; background: var(--surface); border-inline-start: 1px solid var(--line); padding: var(--s2); }
+.wp-comments[hidden] { display: none; }
+.wp-comments .nav-head { display: flex; align-items: center; justify-content: space-between; margin-block-end: var(--s2); }
+.wp-comments .nav-close { min-inline-size: 32px; min-block-size: 32px; border: 0; border-radius: 6px; background: none; color: inherit; cursor: pointer; }
+.wp-comments .cm-empty { color: var(--muted); font-size: .85rem; }
+.cm-card { border: 1px solid var(--line); border-radius: 8px; padding: 8px; margin-block-end: 8px; background: var(--surface); font-size: .85rem; cursor: pointer; }
+.cm-card.on { border-color: #d4a017; box-shadow: 0 0 0 1px #d4a017; }
+.cm-card.done { opacity: .6; }
+.cm-head { display: flex; justify-content: space-between; gap: 6px; margin-block-end: 4px; }
+.cm-author { font-weight: 600; }
+.cm-date { color: var(--muted); font-size: .75rem; }
+.cm-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.cm-reply { border-block-start: 1px solid var(--line); margin-block-start: 6px; padding-block-start: 6px; padding-inline-start: 10px; }
+.cm-edit, .cm-reply-in { inline-size: 100%; box-sizing: border-box; font: inherit; margin-block-start: 6px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; }
+.cm-actions { display: flex; gap: 4px; flex-wrap: wrap; margin-block-start: 6px; }
+.wp-editor.wp-phone .wp-comments { position: absolute; inset-block: 0; inset-inline-end: 0; z-index: 30; inline-size: min(85vw, 320px); box-shadow: 0 0 24px rgb(0 0 0 / .2); }
+/* סימני פסקה — בלי רוחב, כדי לא לשנות שבירת שורות */
+.wp-mk-p { position: relative; display: inline; }
+.wp-mk-p::after { content: '¶'; position: absolute; inset-inline-start: 1px; color: #6b8fd6; font-weight: normal; font-style: normal; pointer-events: none; }
+.wp-mk-sp, .wp-mk-tab { position: relative; }
+.wp-mk-sp::after, .wp-mk-tab::after { position: absolute; inset-inline-start: 0; inset-inline-end: 0; text-align: center; color: #6b8fd6; pointer-events: none; font-weight: normal; }
+.wp-mk-sp::after { content: '·'; }
+.wp-mk-tab::after { content: '→'; transform: scaleX(-1); }
+/* אפשרויות הדבקה */
+.wp-paste { position: absolute; z-index: 25; }
+.wp-paste[hidden] { display: none; }
+.wp-paste .paste-chip { min-block-size: 28px; padding: 0 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); cursor: pointer; box-shadow: 0 2px 6px rgb(0 0 0 / .15); }
+.wp-paste .paste-menu { position: absolute; inset-block-start: 100%; inset-inline-start: 0; display: grid; margin-block-start: 4px; min-inline-size: 190px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 4px; box-shadow: 0 6px 18px rgb(0 0 0 / .18); }
+.wp-paste .paste-menu[hidden] { display: none; }
+.wp-paste .paste-menu button { text-align: start; min-block-size: 36px; padding: 0 8px; border: 0; border-radius: 6px; background: none; color: var(--ink); font: inherit; cursor: pointer; }
+.wp-paste .paste-menu button:hover { background: var(--bg); }
+.wp-statusbar .st-words { border: 0; background: none; color: inherit; font: inherit; cursor: pointer; border-radius: 6px; min-block-size: 28px; padding: 0 6px; }
+.wp-statusbar .st-words:hover { background: var(--bg); color: var(--ink); }
+.wc-table { border-collapse: collapse; inline-size: 100%; }
+.wc-table th, .wc-table td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: start; }
+.wc-table td { font-variant-numeric: tabular-nums; }
+
+/* ===== רקע הדף: סימן מים (במסך — בתוך כל דף; בהדפסה — .wp-wm-print, fixed, בכל עמוד; הסיבוב — ב-editor.js) ===== */
+.wp-page { overflow: hidden; }
+.wp-wm, .wp-wm-print { display: flex; align-items: center; justify-content: center; position: absolute; inset: 0; pointer-events: none;
+    font-weight: 700; color: #d0d0d0; white-space: nowrap; line-height: 1; user-select: none; }
+.wp-wm { transform: rotate(-45deg); }
+.wp-wm-print { display: none; position: fixed; z-index: -1; }
+@media print { html { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+.wm-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-block-start: 6px; }
+
+/* ===== תוכן עניינים (toc.js): מידות קבועות לפי גודל הגופן של המסמך — כמו toc() ב-lib/pdf/layout.php ===== */
+.wp-doc .wp-toc { padding-block-end: 6pt; user-select: none; cursor: default; }
+.wp-doc .wp-toc-title { font-weight: 700; font-size: 1.25em; line-height: 1.5; padding-block-end: 6pt; }
+.wp-doc .wp-toc-line { display: flex; align-items: baseline; gap: 4pt; line-height: 1.6; white-space: nowrap; cursor: pointer; }
+.wp-doc .wp-toc-line:hover .wp-toc-t { text-decoration: underline; }
+.wp-doc .wp-toc-t { overflow: hidden; text-overflow: ellipsis; min-inline-size: 0; }
+.wp-doc .wp-toc-dots { flex: 1; border-block-end: 1px dotted currentColor; opacity: .6; min-inline-size: 12pt; }
+.wp-doc .wp-toc-p { flex: none; }
+.wp-doc .wp-toc-l1 { font-weight: 700; }
+.wp-doc .wp-toc-l2 { padding-inline-start: 14pt; } .wp-doc .wp-toc-l3 { padding-inline-start: 28pt; }
+.wp-doc .wp-toc-l4, .wp-doc .wp-toc-l5, .wp-doc .wp-toc-l6, .wp-doc .wp-toc-l7, .wp-doc .wp-toc-l8, .wp-doc .wp-toc-l9 { padding-inline-start: 42pt; }
+.wp-doc .wp-toc-empty { color: #888; cursor: default; }
+.wp-doc .wp-toc.ProseMirror-selectednode { outline: 2px solid #2d4a8a; outline-offset: 2px; }

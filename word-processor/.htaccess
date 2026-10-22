@@ -1,0 +1,13 @@
+# lib/, tests/ ו-client/ — קוד שנטען מ-api.php בלבד, בדיקות לשורת הפקודה, ולקוח שמארחות מעתיקות. data/ חסומה בקובץ משלה.
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule ^(lib|tests|client)/ - [F,L]
+    # יש שרתים שמורידים את Authorization לפני PHP — מעבירים אותה (הסשן של ה-iframe; גם X-Embed-Session נתמך)
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+</IfModule>
+<IfModule mod_headers.c>
+    <FilesMatch "\.(html|js|css)$">
+        Header set Cache-Control "no-cache, must-revalidate"
+    </FilesMatch>
+</IfModule>

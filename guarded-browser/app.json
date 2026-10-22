@@ -20,13 +20,17 @@
   ],
   "gate": true,
   "public": [
-    "api/index.php?do=register|login|pair|policy|check|yt_allowed|trace|heartbeat|ping|request|requests|search|apps",
-    "parent/**",
+    "api/index.php?do=register|login|pair|policy|check|yt_allowed|trace|heartbeat|ping|request|requests|search|apps|platform_key",
+    "parent/manifest.webmanifest",
+    "parent/sw.js",
     "assets/**",
     "download.php",
     "privacy.html"
   ],
   "install": {
     "release": "guarded-browser-store"
+  },
+  "provision": {
+    "key_url": "https://mbe-plus.com/mini_projects/guarded-browser/api/index.php?do=platform_key"
   }
 }

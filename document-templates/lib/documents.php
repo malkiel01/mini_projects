@@ -163,7 +163,7 @@ function doc_create(array $user, array $b, ?array $copy = null): array
     if (empty($schema['fields'])) throw new ApiError('לתבנית אין שדות עדיין. הוסיפו שדות בעורך', 409);
 
     $pdo = db();
-    $pdo->beginTransaction();
+    tx_begin($pdo);
     try {
         $number = next_number((int)$t['id'], clean_numbering(json_decode((string)$t['numbering_json'], true)));
         $title = trim((string)($b['title'] ?? '')) ?: (string)unseal($t['name_enc']);
@@ -193,9 +193,9 @@ function doc_create(array $user, array $b, ?array $copy = null): array
         if ($copy !== null) doc_copy_extras($docId, $copy, $user);
         log_event($docId, 'user:' . $user['id'], 'created', ['number' => $number, 'template_version' => (int)$t['current_version']]
             + ($copy !== null ? ['copy_of' => $copy['number']] : []));
-        $pdo->commit();
+        tx_commit($pdo);
     } catch (Throwable $e) {
-        $pdo->rollBack();
+        tx_rollback($pdo);
         throw $e;
     }
     return ['ok' => true, 'id' => $docId, 'number' => $number];
@@ -373,7 +373,7 @@ function clean_value(array $f, $v, int $docId = 0): string
             return $v;
         case 'date':
             $v = trim($v);
-            if ($v !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $v)) throw new ApiError('"' . $f['label'] . '": תאריך לא תקין', 422);
+            if ($v !== '' && !valid_date($v)) throw new ApiError('"' . $f['label'] . '": תאריך לא תקין', 422);
             return $v;
         case 'signature':
             if ($v !== '' && !preg_match('#^data:image/png;base64,[A-Za-z0-9+/=]+$#', $v)) {
@@ -480,14 +480,15 @@ function doc_save(array $user, array $b): array
     if (!in_array($d['status'], DOC_EDITABLE, true)) throw new ApiError('המסמך נעול', 409);
     $schema = doc_schema($d);   // כולל מי ממלא מה בשיתוף
     $byKey = array_column($schema['fields'] ?? [], null, 'key');
-    $old = doc_values((int)$d['id']);
     $actor = 'user:' . $user['id'];
     $now = now_iso();
 
     $changes = [];
     $pdo = db();
-    $pdo->beginTransaction();
+    tx_begin($pdo);
     try {
+        doc_lock($pdo, (int)$d['id'], DOC_EDITABLE);
+        $old = doc_values((int)$d['id']);   // אחרי הנעילה — לא ערכים של לפני שמירה מקבילה
         $up = $pdo->prepare(
             'INSERT INTO field_values (document_id, field_key, row_index, value_enc, updated_by, updated_at)
              VALUES (?, ?, 0, ?, ?, ?)
@@ -533,9 +534,9 @@ function doc_save(array $user, array $b): array
             if ($d['status'] === 'draft') $pdo->prepare("UPDATE documents SET status = 'in_progress' WHERE id = ?")->execute([$d['id']]);
             log_event((int)$d['id'], $actor, 'values_saved', ['changes' => $changes]);
         }
-        $pdo->commit();
+        tx_commit($pdo);
     } catch (Throwable $e) {
-        $pdo->rollBack();
+        tx_rollback($pdo);
         throw $e;
     }
     if (function_exists('purge_attachments')) purge_attachments((int)$d['id']);   // קובץ שהוסר משדה — נמחק
@@ -573,23 +574,81 @@ function doc_complete(array $user, array $b): array
     return ['ok' => true, 'hash' => db()->query('SELECT final_hash FROM documents WHERE id = ' . (int)$d['id'])->fetchColumn(), 'notify' => $wa];
 }
 
+/**
+ * מה שמוצג במסמך ותלוי במשהו חי (נספח הביקורת v0.3, DT-F06): תרגום של רשימת ערכים, ותווית
+ * של בחירה ממקור נתונים חיצוני. נלכד ברגע ההשלמה — רק לערכים שבמסמך — כדי ששינוי מאוחר
+ * ברשימה, בתרגום או במקור לא ישנה מסמך שהושלם. {sel: {שדה: [{value, label}]}, tr: {"f:שדה" | "c:טבלה.עמודה": {ערך: תרגום}}}
+ */
+function freeze_capture(array $schema, array $values): array
+{
+    $sel = $tr = [];
+    foreach ($schema['fields'] ?? [] as $f) {
+        $v = (string)($values[$f['key']] ?? '');
+        if ($v === '') continue;
+        if ($f['type'] === 'select' && !empty($f['source'])) $sel[$f['key']] = [['value' => $v, 'label' => select_label($f, $v)]];
+        if (!empty($f['list']['lang'])) $tr['f:' . $f['key']][$v] = list_translate($f['list'], $v);
+        if ($f['type'] !== 'table') continue;
+        foreach ($f['columns'] ?? [] as $c) {
+            if (empty($c['list']['lang'])) continue;
+            foreach (table_rows($v) as $r) {
+                $cell = (string)($r[$c['key']] ?? '');
+                if ($cell !== '') $tr['c:' . $f['key'] . '.' . $c['key']][$cell] = list_translate($c['list'], $cell);
+            }
+        }
+    }
+    return ['sel' => $sel, 'tr' => $tr];
+}
+
+/** מחיל את מה שנלכד על הסכמה: בחירה ממקור — האפשרות שנבחרה, בלי המקור; רשימה — התרגום שנלכד. */
+function freeze_apply(array $schema, array $frozen): array
+{
+    foreach ($schema['fields'] ?? [] as $i => $f) {
+        if (isset($frozen['sel'][$f['key']])) {
+            $schema['fields'][$i]['options'] = $frozen['sel'][$f['key']];
+            unset($schema['fields'][$i]['source']);
+        }
+        if (!empty($f['list']['lang'])) $schema['fields'][$i]['list']['tr'] = $frozen['tr']['f:' . $f['key']] ?? [];
+        foreach ($f['columns'] ?? [] as $j => $c) {
+            if (!empty($c['list']['lang'])) $schema['fields'][$i]['columns'][$j]['list']['tr'] = $frozen['tr']['c:' . $f['key'] . '.' . $c['key']] ?? [];
+        }
+    }
+    return $schema;
+}
+
 /** נעילה וטביעת אצבע. נקרא מ"סיום" של המנפיק, או כשהמשתתף האחרון סיים. */
 function doc_finalize(array $d, string $actor, string $event = 'completed'): void
 {
-    // קודם תאריך ההשלמה, ואז החישובים — כך ששדה "תאריך השלמה" נכלל בטביעת האצבע
-    $now = now_iso();
-    db()->prepare('UPDATE documents SET completed_at = ? WHERE id = ?')->execute([$now, $d['id']]);
-    doc_recalc((int)$d['id'], doc_schema($d), $actor);   // הערכים המחושבים — סופיים לפני טביעת האצבע
-    $values = doc_values((int)$d['id']);
-    ksort($values);
-    $hash = hash('sha256', json_encode(['template_version_id' => (int)$d['template_version_id'], 'values' => $values],
-        JSON_UNESCAPED_UNICODE));
+    // מקורות נתונים לבחירה — מרעננים לפני הטרנזקציה, כדי שהתוויות שננעלות יהיו עדכניות בלי רשת בתוכה
+    foreach (doc_schema($d)['fields'] ?? [] as $f) {
+        if ($f['type'] === 'select' && !empty($f['source'])) source_rows((int)$f['source']['id']);
+    }
+    // הכול בטרנזקציה אחת: נעילה, תאריך ההשלמה, החישובים, טביעת האצבע והמצב. שמירה
+    // מקבילה נכנסת או לפני (ונכללת בטביעה) או אחרי (ונדחית: "המסמך נעול") — DT-F07.
     $pdo = db();
     $pdo->beginTransaction();
-    $pdo->prepare("UPDATE documents SET status = 'completed', completed_at = ?, final_hash = ? WHERE id = ?")
-        ->execute([$now, $hash, $d['id']]);
-    log_event((int)$d['id'], $actor, $event, ['hash' => $hash]);
-    $pdo->commit();
+    try {
+        doc_lock($pdo, (int)$d['id'], DOC_EDITABLE, 'המסמך כבר הושלם');
+        $schema = doc_schema($d);
+        if ($missing = doc_progress($schema, doc_values((int)$d['id']))['missing']) {
+            throw new ApiError('חסרים שדות חובה: ' . implode(', ', $missing), 422);
+        }
+        // קודם תאריך ההשלמה, ואז החישובים — כך ששדה "תאריך השלמה" נכלל בטביעת האצבע
+        $now = now_iso();
+        $pdo->prepare('UPDATE documents SET completed_at = ? WHERE id = ?')->execute([$now, $d['id']]);
+        doc_recalc((int)$d['id'], $schema, $actor);   // הערכים המחושבים — סופיים לפני טביעת האצבע
+        $values = doc_values((int)$d['id']);
+        ksort($values);
+        $hash = hash('sha256', json_encode(['template_version_id' => (int)$d['template_version_id'], 'values' => $values],
+            JSON_UNESCAPED_UNICODE));
+        $frozen = json_encode(freeze_capture($schema, $values), JSON_UNESCAPED_UNICODE);
+        $pdo->prepare("UPDATE documents SET status = 'completed', completed_at = ?, final_hash = ?, frozen_enc = ? WHERE id = ?")
+            ->execute([$now, $hash, seal($frozen), $d['id']]);
+        log_event((int)$d['id'], $actor, $event, ['hash' => $hash]);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        throw $e;
+    }
     webhook_fire((int)$d['id'], 'document.completed', ['hash' => $hash]);
 }
 

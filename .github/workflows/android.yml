@@ -183,8 +183,10 @@ jobs:
                   | openssl dgst -sha256 -binary | openssl base64 | tr '+/' '-_' | tr -d '=')
           fi
           # הגרסה האחרונה + טביעת האצבע — השרת קורא אותן (lib/appversion.php).
-          printf '{"version_code": %s, "version_name": "1.%s", "cert_sha256": "%s"}\n' \
-            "${{ github.run_number }}" "${{ github.run_number }}" "$CHK" > "$OUT/latest.json"
+          # ‏apk_sha256 — המכשיר והשרת (download.php) מוודאים שהקובץ הוא בדיוק הבנייה הזו (שלב 9).
+          APK_SHA=$(sha256sum "$OUT/migdalor.apk" | cut -d' ' -f1)
+          printf '{"version_code": %s, "version_name": "1.%s", "cert_sha256": "%s", "apk_sha256": "%s"}\n' \
+            "${{ github.run_number }}" "${{ github.run_number }}" "$CHK" "$APK_SHA" > "$OUT/latest.json"
           jq -n --arg sha "${{ steps.key.outputs.sha }}" --arg commit "$GITHUB_SHA" --argjson code "${{ github.run_number }}" \
             '{app: "guarded-browser", package: "com.mbeplus.guardedbrowser", versionCode: $code, versionName: "1.\($code)",
               signed: ($sha != ""), signingKeySha256: (if $sha == "" then null else $sha end),

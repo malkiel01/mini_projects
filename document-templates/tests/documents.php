@@ -84,6 +84,9 @@ check('טקסט חד-שורתי — ירידת שורה הוחלפה ברווח'
 check('אחרי שמירה ראשונה — בתהליך', $doc['status'] === 'in_progress');
 check('שמירה זהה לא נרשמת שוב', doc_save($a, ['id' => $d1['id'], 'values' => ['name' => 'משה כהן']])['saved'] === 0);
 throws('מספר לא תקין', fn() => doc_save($a, ['id' => $d1['id'], 'values' => ['amount' => 'אלף']]), 422);
+throws('תאריך שלא קיים בלוח (31 בפברואר)', fn() => doc_save($a, ['id' => $d1['id'], 'values' => ['day' => '2026-02-31']]), 422);
+throws('תאריך בלי מבנה', fn() => doc_save($a, ['id' => $d1['id'], 'values' => ['day' => '2026-2-3']]), 422);
+check('ברירת מחדל: תאריך שלא קיים נמחק', clean_default('date', '2026-13-01') === '' && clean_default('date', '2026-10-15') === '2026-10-15');
 throws('תאריך לא תקין', fn() => doc_save($a, ['id' => $d1['id'], 'values' => ['day' => '31/12/2026']]), 422);
 throws('חתימה שאינה PNG', fn() => doc_save($a, ['id' => $d1['id'], 'values' => ['sig' => 'javascript:alert(1)']]), 422);
 $raw = db()->query("SELECT value_enc FROM field_values WHERE field_key = 'name'")->fetchColumn();
@@ -127,6 +130,7 @@ doc_delete($a, ['id' => $d2['id']]);
 throws('טיוטה שנמחקה — לא נמצאת', fn() => doc_get($a, $d2['id']), 404);
 $d3 = doc_create($a, ['template_id' => $tid]);
 check('מספור ממשיך אחרי מחיקה (לא ממחזר מספרים)', $d3['number'] === "שכ-$y-0003");
+check('29 בפברואר בשנה מעוברת — תקין', doc_save($a, ['id' => $d3['id'], 'values' => ['day' => '2028-02-29']])['saved'] === 1);
 
 // ── גרסה: מסמך נשאר על הגרסה שלו ──
 tpl_save($a, ['id' => $tid, 'schema' => ['pages' => [['w' => 595, 'h' => 842]], 'fields' => [$field('other', 'text')]]]);

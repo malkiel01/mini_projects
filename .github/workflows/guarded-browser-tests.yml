@@ -1,0 +1,75 @@
+name: Migdalor tests
+
+# בדיקות מגדלור, מופרדות לפי רמה (README, "בדיקות"): תחביר ← יחידה ← אינטגרציה ← חוזה. כל רמה שלב נפרד,
+# והסיכום מפרט כל רמה בנפרד — "עבר" ברמה אחת אינו "עובד". רמת המכשיר אינה אוטומטית (docs/device-matrix.md),
+# והסיכום אומר זאת במפורש. רצות בכל PR ובכל push ל-main שנוגע במגדלור.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'guarded-browser/**'
+      - '.github/workflows/guarded-browser-tests.yml'
+  pull_request:
+    paths:
+      - 'guarded-browser/**'
+      - '.github/workflows/guarded-browser-tests.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  php:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: guarded-browser
+    env:
+      # בדיקות יחידה — לוגיקה טהורה; חוזה — HTTP / service worker אמיתיים; השאר — אינטגרציה מול SQLite זמני.
+      UNIT: tests/policy.php tests/signing.php tests/safefetch.php
+      CONTRACT: tests/api_contract.php
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_sqlite, sodium, mbstring, curl
+          coverage: none
+
+      - name: תחביר
+        run: |
+          FAIL=0
+          for f in $(git ls-files '*.php'); do php -l "$f" >/dev/null || { echo "::error file=guarded-browser/$f::שגיאת תחביר"; FAIL=1; }; done
+          for f in $(git ls-files '*.js' '*.mjs'); do node --check "$f" || { echo "::error file=guarded-browser/$f::שגיאת תחביר"; FAIL=1; }; done
+          echo "| תחביר | $([ $FAIL = 0 ] && echo ✅ || echo ❌) | php -l, node --check |" >> "$RUNNER_TEMP/summary"
+          exit $FAIL
+
+      - name: יחידה
+        run: SUMMARY="$RUNNER_TEMP/summary" tests/run-level.sh יחידה $UNIT
+
+      - name: אינטגרציה
+        run: |
+          FILES=""
+          for t in tests/*.php; do case " $UNIT $CONTRACT " in *" $t "*) ;; *) FILES="$FILES $t" ;; esac; done
+          SUMMARY="$RUNNER_TEMP/summary" tests/run-level.sh "אינטגרציה (SQLite זמני)" $FILES
+
+      - name: חוזה
+        run: |
+          FAIL=0
+          php tests/api_contract.php || { echo "::error file=guarded-browser/tests/api_contract.php::נכשל"; FAIL=1; }
+          node tests/sw.mjs || { echo "::error file=guarded-browser/tests/sw.mjs::נכשל"; FAIL=1; }
+          echo "| חוזה | $([ $FAIL = 0 ] && echo ✅ || echo ❌) | API דרך HTTP אמיתי, service worker של ההורה |" >> "$RUNNER_TEMP/summary"
+          exit $FAIL
+
+      - name: סיכום
+        if: always()
+        run: |
+          {
+            echo "## מגדלור — בדיקות לפי רמה"
+            echo "| רמה | תוצאה | מה רץ |"
+            echo "| --- | --- | --- |"
+            cat "$RUNNER_TEMP/summary" 2>/dev/null
+            echo "| יחידה (Kotlin) | ראו Build Android APK | gradle test |"
+            echo "| מכשיר | ⚪ לא נבדק אוטומטית | docs/device-matrix.md · docs/enforcement-audit.md |"
+          } >> "$GITHUB_STEP_SUMMARY"

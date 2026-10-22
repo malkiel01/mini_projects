@@ -23,7 +23,7 @@ import java.util.TimeZone
 data class Rule(
     val label: String,
     val pattern: String,
-    val scope: String,      // exact | domain | domain_plus
+    val scope: String,      // exact | domain | domain_plus | resource (משימה — רק בתוך דף)
     val action: String,     // allow | deny
     val showTile: Boolean,
     /** היתר "לשעה" מבקש גישה (שלב 6): עד מתי, ISO ב-UTC. ריק — קבוע. */
@@ -57,6 +57,9 @@ data class Policy(
     val keepHistory: Boolean = true,
     val allowPip: Boolean = false,
     val allowBackground: Boolean = false,
+    /** מצב לא מקוון מתוכנן (OfflineMath): שעות עד שהכול נחסם, ומה זמין עד אז. */
+    val offlineGraceH: Int = 24,
+    val offlineContent: String = "all",
 ) {
     companion object {
         const val MODE_KIOSK = "kiosk"
@@ -82,6 +85,8 @@ data class Policy(
             keepHistory = o.optBoolean("keep_history", true),
             allowPip = o.optBoolean("allow_pip"),
             allowBackground = o.optBoolean("allow_background"),
+            offlineGraceH = o.optInt("offline_grace_h", 24),
+            offlineContent = o.optString("offline_content", "all"),
         )
     }
 }
@@ -105,7 +110,7 @@ data class Tile(val label: String, val url: String, val kind: String) {
 
 /** הגדרות פלטפורמה (כרגע יוטיוב) והפריטים שאושרו בה. */
 data class PlatformRule(
-    val mode: String = "off",           // off | restricted | full
+    val mode: String = "off",           // off | learn | restricted | full
     val allowSearch: Boolean = false,
     val allowShorts: Boolean = false,
 ) {
@@ -181,6 +186,8 @@ object PolicyEngine {
     fun ruleMatches(rule: Rule, url: Url, isMainFrame: Boolean): Boolean {
         val pattern = normalize(rule.pattern) ?: return false
         if (rule.scope == "domain_plus" && !isMainFrame) return true
+        // משאב של משימה (lib/tasks.php): נטען בתוך דף — לא יעד לגלישה.
+        if (rule.scope == "resource" && isMainFrame) return false
         if (!hostMatches(url.host, pattern.host)) return false
 
         if (rule.scope == "exact") {
@@ -341,7 +348,7 @@ object PolicyEngine {
              * עמוד-יחיד, והחיפוש אינו ניווט אלא בקשת רקע שמחליפה
              * את תוכן הדף. חסימת /results לבדה אינה עוצרת אותו.
              */
-            if (rule.mode == "restricted" && !rule.allowSearch &&
+            if (((rule.mode == "restricted" && !rule.allowSearch) || rule.mode == "learn") &&
                 isYouTubeSearchEndpoint(url.path)) {
                 return Verdict(false, "yt_no_search", "החיפוש ביוטיוב חסום עבורך")
             }
@@ -356,6 +363,12 @@ object PolicyEngine {
             if (direct == "deny") {
                 return Verdict(false, "yt_item_denied", "הפריט הזה ביוטיוב חסום עבורך")
             }
+        }
+        // מצב למידה (שלב 12 ה; כמו בשרת): רק הסרטונים שבתור, בלי Shorts, ערוצים, חיפוש או דף הבית.
+        if (rule.mode == "learn") {
+            if (ref.kind == "shorts") return Verdict(false, "yt_no_shorts", "במצב למידה אין Shorts")
+            if (ref.kind == "video" && action("video", ref.id) == "allow") return Verdict(true, "yt_video_allowed")
+            return Verdict(false, "yt_learn_queue", "במצב למידה נפתחים רק הסרטונים שההורה הוסיף לתור")
         }
         if (rule.mode == "full") {
             // במצב פתוח המתג קובע את פיד ה-Shorts כולו (שלב 5).
@@ -434,8 +447,10 @@ object PolicyEngine {
      * הכרעות שונות מהשרת, וזו בדיוק הפרצה.
      */
     fun evaluate(p: Policy, set: RuleSet, url: String, isMainFrame: Boolean,
-                 usedSec: Int, sessionSec: Int, declaredType: String = ""): Verdict {
-        val now = Calendar.getInstance(TimeZone.getTimeZone(p.timezone))
+                 usedSec: Int, sessionSec: Int, declaredType: String = "",
+                 nowMs: Long = System.currentTimeMillis()): Verdict {
+        // ‏nowMs — זמן אמין מהמכשיר (TrustedClock), כדי ששינוי השעה בטלפון לא יפתח את חלון השעות.
+        val now = Calendar.getInstance(TimeZone.getTimeZone(p.timezone)).apply { timeInMillis = nowMs }
 
         withinWindow(p, now).let { if (!it.allow) return it }
         withinQuota(p, usedSec).let { if (!it.allow) return it }
@@ -453,23 +468,24 @@ object PolicyEngine {
             return Verdict(false, "ad_blocked", "פרסומת נחסמה")
         }
 
-        when (matchUrlRules(set.rules, u, isMainFrame)) {
-            "deny" -> return Verdict(false, "rule_deny", "הכתובת הזו נחסמה עבורך")
-            "allow" -> return Verdict(true, "rule_allow")
-        }
+        val urlVerdict = matchUrlRules(set.rules, u, isMainFrame)
+        if (urlVerdict == "deny") return Verdict(false, "rule_deny", "הכתובת הזו נחסמה עבורך")
 
-        val platform = platformOf(u.host)
-        if (platform.isNotEmpty()) {
-            set.platforms[platform]?.let {
-                return youTubeVerdict(u, it, set.platformItems[platform] ?: emptyMap(), isMainFrame)
-            }
-        }
-
+        // סוג תוכן לפני היתר מפורש — "לחסום תמיד, גם באתר שמותר" (שלב 10; כמו lib/policy.php).
         if (p.blockedTypes.isNotEmpty()) {
             val t = contentTypeOf(u.full, declaredType)
             if (t.isNotEmpty() && t in p.blockedTypes) {
                 val label = contentTypeLabels[t] ?: t
                 return Verdict(false, "type_blocked", "תוכן מסוג \"$label\" חסום בחשבון שלך")
+            }
+        }
+
+        if (urlVerdict == "allow") return Verdict(true, "rule_allow")
+
+        val platform = platformOf(u.host)
+        if (platform.isNotEmpty()) {
+            set.platforms[platform]?.let {
+                return youTubeVerdict(u, it, set.platformItems[platform] ?: emptyMap(), isMainFrame)
             }
         }
 

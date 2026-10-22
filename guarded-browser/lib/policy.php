@@ -31,6 +31,14 @@ const POSTURE_DENY  = 'deny_all';   // הכול חסום, נפתח לפי הית
 const POSTURE_ALLOW = 'allow_all';  // הכול פתוח, נחסם לפי איסור
 const POSTURES = [POSTURE_DENY, POSTURE_ALLOW];
 
+/**
+ * מצב לא מקוון מתוכנן (שלב 12 ו): מה זמין כשהמכשיר לא מגיע לשרת — ‏all: כל מה שהמדיניות השמורה מתירה;
+ * ‏approved: רק מה שההורה אישר במפורש (אתרים ויוטיוב); ‏none: כלום. ואחרי כמה שעות בלי חיבור הכול נחסם.
+ * נאכף במכשיר בלבד (OfflineMath.kt) — השרת, מעצם הגדרתו, מחובר.
+ */
+const OFFLINE_CONTENT = ['all', 'approved', 'none'];
+const OFFLINE_GRACE_MAX_H = 72;
+
 const SCOPES = ['exact', 'domain', 'domain_plus'];
 
 /** החלטה אחידה. $code לזיהוי במבחנים וביומן; $reason למשתמש. */
@@ -90,6 +98,8 @@ function ruleMatches(array $rule, array $url, bool $isMainFrame): bool {
     $scope = (string) ($rule['scope'] ?? 'domain');
 
     if ($scope === 'domain_plus' && !$isMainFrame) return true;
+    // משאב של משימה (lib/tasks.php): נטען בתוך דף — לא יעד לגלישה.
+    if ($scope === 'resource' && $isMainFrame) return false;
     if (!hostMatches($url['host'], $pattern['host'])) return false;
 
     if ($scope === 'exact') {
@@ -187,7 +197,7 @@ function youTubeVerdict(array $url, array $rule, array $items, bool $isMainFrame
          * שמחליפה את תוכן הדף. לחסום רק את הכתובת /results אינו
          * מספיק — צריך לחסום את הבקשה שמחזירה את התוצאות.
          */
-        if (($rule['mode'] ?? '') === 'restricted' && !($rule['allow_search'] ?? 0)
+        if (((($rule['mode'] ?? '') === 'restricted' && !($rule['allow_search'] ?? 0)) || $mode === 'learn')
             && isYouTubeSearchEndpoint($url['path'])) {
             return decision(false, 'yt_no_search', 'החיפוש ביוטיוב חסום עבורך');
         }
@@ -211,6 +221,17 @@ function youTubeVerdict(array $url, array $rule, array $items, bool $isMainFrame
         if ($direct === 'deny') {
             return decision(false, 'yt_item_denied', 'הפריט הזה ביוטיוב חסום עבורך');
         }
+    }
+
+    /*
+     * מצב למידה (שלב 12 ה): רק הסרטונים שבתור — אלה שההורה אישר אחד-אחד. לא ערוץ שלם, לא פלייליסט,
+     * לא חיפוש, לא דף הבית, ובלי Shorts גם כשאושרו. ההמלצות והניגון האוטומטי — בדף עצמו (YouTubeLearn.kt);
+     * כאן הגבול שלא תלוי בדף: גם אם יוטיוב מנגן "הבא בתור" משלו, הוא לא ייפתח.
+     */
+    if ($mode === 'learn') {
+        if ($kind === 'shorts') return decision(false, 'yt_no_shorts', 'במצב למידה אין Shorts');
+        if ($kind === 'video' && $itemAction('video', $id) === 'allow') return decision(true, 'yt_video_allowed');
+        return decision(false, 'yt_learn_queue', 'במצב למידה נפתחים רק הסרטונים שההורה הוסיף לתור');
     }
 
     if ($mode === 'full') {
@@ -311,8 +332,8 @@ function youTubeVideoVerdicts(array $set, array $ids): array {
 /**
  * חסימה לפי *מה* נטען, ולא לפי לאן פונים.
  *
- * נבדק רק אחרי שכללי הכתובות לא נתנו היתר מפורש — כך "לחסום ווידאו
- * בכל מקום חוץ מהאתר הזה" ניתן להבעה בלי חריג מיוחד.
+ * נבדק לפני היתר מפורש של כתובת — "לחסום תמיד, גם באתר שמותר", כמו שאפליקציית ההורה אומרת. רק איסור
+ * מפורש קודם לו.
  */
 function matchContentType(array $policy, string $url, string $declared = ''): array {
     $blocked = array_filter(array_map('trim',
@@ -489,6 +510,15 @@ function evaluate(array $user, array $policy, array $set, DateTimeImmutable $now
         return decision(false, 'rule_deny',
             'הכתובת הזו נחסמה עבורך' . ($u['label'] ? " ({$u['label']})" : ''));
     }
+
+    /*
+     * סוג תוכן — אחרי איסור מפורש ולפני היתר מפורש (סקירה, 2026-10-20 — שלב 10). אפליקציית ההורה מבטיחה
+     * "לחסום תמיד — גם באתר שמותר", אבל הבדיקה רצה אחרי rule_allow ויוטיוב: קובץ ווידאו באתר שהותר עבר.
+     * דף יוטיוב אינו "ווידאו" כאן (אין לו סיומת ולא MIME מוצהר בניווט) — הוא נשלט בהגדרות יוטיוב.
+     */
+    $d = matchContentType($policy, $url['full'], (string) ($ctx['content_type'] ?? ''));
+    if (!$d['allow']) return $d;
+
     if ($u['verdict'] === 'allow') return decision(true, 'rule_allow');
 
     // 6. פלטפורמה
@@ -500,10 +530,6 @@ function evaluate(array $user, array $policy, array $set, DateTimeImmutable $now
                                   $set['owner_of'] ?? null);
         }
     }
-
-    // 7. סוג תוכן
-    $d = matchContentType($policy, $url['full'], (string) ($ctx['content_type'] ?? ''));
-    if (!$d['allow']) return $d;
 
     // 8–9. קטגוריות
     $c = matchCategories($url['host'], $set['domain_map'] ?? [], $set['categories'] ?? []);

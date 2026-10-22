@@ -290,6 +290,22 @@ async function consumeVerifyLink() {
     }
 }
 
+// קישור ההזמנה מהמייל: #invite=<אסימון> — אפליקציה פתחה לכם חשבון (platform/provision.php). בוחרים סיסמה,
+// ונכנסים ישר לאפליקציה שהזמינה.
+function showInvite(token) {
+    view.replaceChildren(form({
+        title: 'בחירת סיסמה',
+        lead: 'נפתח לכם חשבון. בחרו סיסמה — ובה, עם המייל, תיכנסו מעכשיו.',
+        fields: [field('סיסמה', 'password', { type: 'password', ltr: true, hint: 'לפחות 8 תווים', autocomplete: 'new-password' })],
+        submit: 'שמירה וכניסה',
+        onSubmit: async (data) => {
+            const r = await api('invite_accept', { token, password: data.password });
+            history.replaceState(null, '', location.pathname + location.search);
+            location.replace(r.next);
+        },
+    }));
+}
+
 function showMessage(title, text, icon = '') {
     view.replaceChildren(el('div', { className: 'auth' }, [el('div', { className: 'panel msg' }, [
         icon ? el('div', { className: 'big', textContent: icon, ariaHidden: 'true' }) : logo(),
@@ -351,6 +367,7 @@ function openMenu(btn, user) {
         items.push(inAdmin()
             ? menuItem('🏠', 'האפליקציות שלי', null, { href: '#' })
             : menuItem('⚙️', 'ניהול', null, { href: '#admin', count: me.pending || 0 }));
+        items.push(menuItem('📐', 'אפיונים', null, { href: 'platform/spec/' }));
     }
     items.push(menuItem('🔑', 'החלפת סיסמה', () => showPassword(false)));
     items.push(menuItem('🔗', 'חיבורים לאפליקציות', openConnections));
@@ -476,6 +493,9 @@ function deviceId() {
             id = [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join('');
             localStorage.setItem('platform:device', id);
         }
+        // גם בעוגייה — השער מזהה בה את המכשיר כשאפליקציית אנדרואיד שלנו נפתחת (lib/gate.php, apk_seen)
+        document.cookie = `platform-device=${id}; path=${new URL('./', document.baseURI).pathname}; max-age=63072000; SameSite=Lax`
+            + (location.protocol === 'https:' ? '; Secure' : '');
         return id;
     } catch { return null; }   // בלי אחסון (מצב פרטי) — בלי מעקב
 }
@@ -633,23 +653,63 @@ function apkRemember(appId, version) {
     try { localStorage.setItem(APK_KEY, JSON.stringify(rec)); } catch { /* בלי אחסון — רק לא נזכור */ }
 }
 
+// כרום בודק רק 3 חבילות (platform/manifest.php). לכן בכל טעינה נבדקות 3 אחרות — מה שנמצא נזכר כאן עד שבדיקה
+// מאוחרת של אותה חבילה לא תמצא אותה (הוסרה). {package: {at, version}}
+const DETECTED_KEY = 'platform-apk-detected';
+const ROTATE_KEY = 'platform-related-next';
+function detectedRecord() {
+    try { return JSON.parse(localStorage.getItem(DETECTED_KEY) || '{}') || {}; } catch { return {}; }
+}
+// החבילות שהמניפסט של הטעינה הזו כולל — מה שהעוגייה ביקשה (בלעדיה — לא ידוע, ורק מה שנמצא נרשם)
+const relatedAsked = (document.cookie.match(/(?:^|; )platform-related=([^;]*)/)?.[1] || '').split(',').filter(Boolean);
+// מה שכבר נמצא בטעינות קודמות — זמין מיד, עוד לפני שהבדיקה של הטעינה הזו חוזרת
+if (/Android/.test(navigator.userAgent) && 'getInstalledRelatedApps' in navigator) nativeInstalled = new Set(Object.keys(detectedRecord()));
+
 async function detectNativeApps() {
     if (!isAndroid() || !navigator.getInstalledRelatedApps) return;
     try {
-        const list = await navigator.getInstalledRelatedApps();
-        nativeInstalled = new Set(list.filter(a => a.platform === 'play').map(a => a.id));
-        dlog('installed-apps', { apps: [...nativeInstalled].join(',') || '(אין)' });
+        const list = (await navigator.getInstalledRelatedApps()).filter(a => a.platform === 'play');
+        const rec = detectedRecord();
+        for (const pkg of relatedAsked) delete rec[pkg];
+        for (const a of list) rec[a.id] = { at: new Date().toISOString(), version: /^\d+$/.test(a.version || '') ? Number(a.version) : null };
+        try { localStorage.setItem(DETECTED_KEY, JSON.stringify(rec)); } catch { /* */ }
+        nativeInstalled = new Set(Object.keys(rec));
+        dlog('installed-apps', { asked: relatedAsked.join(',') || '(ברירת מחדל)', apps: list.map(a => a.id).join(',') || '(אין)' });
         repaintInstalled();
     } catch { nativeInstalled = null; }
+}
+
+// הבדיקה של הטעינה הבאה: 3 אפליקציות אנדרואיד מהרשימה של המשתמש — קודם אלה שהשרת עוד לא שמע מהן (לא נפתחו
+// מהאייקון בגרסה שמדווחת), ובתוכן בסבב. נכתב בעוגייה, ו-manifest.php בונה ממנה את related_applications.
+function relatedRotate(apps) {
+    if (!isAndroid()) return;
+    const pkgs = apps.filter(a => a.install.apk && a.install.android?.package);
+    if (!pkgs.length) return;
+    const unsure = pkgs.filter(a => installedHere[a.id]?.how !== 'apk').map(a => a.install.android.package);
+    const pool = unsure.length ? unsure : pkgs.map(a => a.install.android.package);
+    let at = 0;
+    try { at = Number(localStorage.getItem(ROTATE_KEY) || 0) || 0; } catch { /* */ }
+    const next = [0, 1, 2].map(i => pool[(at + i) % pool.length]).filter((v, i, x) => x.indexOf(v) === i);
+    try { localStorage.setItem(ROTATE_KEY, String((at + next.length) % pool.length)); } catch { /* */ }
+    document.cookie = `platform-related=${next.join(',')}; path=${new URL('./', document.baseURI).pathname}; max-age=31536000; SameSite=Lax`
+        + (location.protocol === 'https:' ? '; Secure' : '');
 }
 
 function androidState(app) {
     const pkg = app.install.android?.package;
     const latest = app.install.android?.version || null;
-    const mine = apkRecord()[app.id]?.version || null;
-    // אנדרואיד יודע לבדוק (getInstalledRelatedApps) — רק הוא קובע. בלעדיו — מה שנרשם בהורדה מכאן.
-    const installed = nativeInstalled ? Boolean(pkg && nativeInstalled.has(pkg)) : Boolean(apkRecord()[app.id]);
-    return { pkg, latest, mine, installed, update: installed && latest && (!mine || mine < latest) };
+    // מה שהאפליקציה עצמה דיווחה כשנפתחה במכשיר הזה (השער, apk_seen) — המקור המדויק, עם הגרסה.
+    const seen = installedHere[app.id]?.how === 'apk' && installedHere[app.id].state === 'installed' ? installedHere[app.id] : null;
+    // הדופק דיווח שהיא הוסרה מהמכשיר — "התקנה", גם אם כרום זכר אותה
+    const removed = installedHere[app.id]?.how === 'apk' && installedHere[app.id].state === 'not_installed';
+    // כרום (getInstalledRelatedApps) בודק רק 3 חבילות — מאשר כשמצא, ולא שולל כשלא.
+    const detected = !removed && Boolean(pkg && nativeInstalled?.has(pkg));
+    const installed = Boolean(seen) || detected;
+    // הגרסה: מהדיווח של האפליקציה, ואם אין — מה שכרום החזיר (versionName = versionCode מאז #567)
+    const mine = seen?.version || (pkg && detectedRecord()[pkg]?.version) || null;
+    // הורד מכאן, ועוד לא נפתח מאז — אולי מותקנת: "התקנה", ולצידה "פתיחה".
+    const maybe = !installed && !removed && Boolean(apkRecord()[app.id]);
+    return { pkg, latest, mine, installed, maybe, update: installed && latest && mine !== null && mine < latest };
 }
 
 // כפתורי אנדרואיד: לא מותקנת — "התקנה"; מותקנת — "פתיחה" (ישר באפליקציה, לא בדפדפן), ו"עדכון"
@@ -661,8 +721,11 @@ function androidTiles(app, tile, live) {
         t.addEventListener('click', () => { apkRemember(app.id, s.latest); dlog('apk-download', { app: app.id, version: s.latest, installed: s.installed, mine: s.mine }); });
         return t;
     };
-    if (!s.installed) return [download('📲', s.latest ? `התקנה · גרסה ${s.latest}` : 'התקנה')];
     const out = [];
+    if (!s.installed) {
+        out.push(download('📲', s.latest ? `התקנה · גרסה ${s.latest}` : 'התקנה'));
+        if (!s.maybe || !s.pkg) return out;
+    }
     if (s.pkg) {
         const u = new URL(app.href, document.baseURI);
         const intent = `intent://${u.host}${u.pathname}${u.search}#Intent;scheme=https;package=${s.pkg};` +
@@ -672,8 +735,9 @@ function androidTiles(app, tile, live) {
         if (live) prepareOpen(open, app, s.pkg);   // רק בגיליון הפתוח — לא קוד לכל אפליקציה ברשימה
         out.push(open);
     }
-    if (s.update) out.push(download('⬆️', `עדכון לגרסה ${s.latest}`));
-    else out.push(download('🔄', 'התקנה מחדש'));
+    if (!s.installed) return out;                       // אולי מותקנת: "התקנה" + "פתיחה"
+    if (s.update) out.unshift(download('⬆️', `עדכון לגרסה ${s.latest} · מותקנת ${s.mine}`));
+    else out.push(download('🔄', 'התקנה מחדש'));      // הגרסה כבר בשורה הירוקה
     return out;
 }
 
@@ -1049,6 +1113,7 @@ async function clearFamilyCache() {
 async function showApps() {
     const [{ categories, apps }] = await Promise.all([api('apps'), loadInstalls()]);
     currentApps = apps;
+    relatedRotate(apps);
     if (takeHandoffRequest()) return;
     if (!apps.length) {
         showMessage('עוד אין כאן אפליקציות', 'המנהל עדיין לא הקצה לכם אפליקציות. כשיקצה — הן יופיעו כאן.', '📭');
@@ -1136,6 +1201,8 @@ function goNext() {
 async function start() {
     closeMenu();
     try {
+        const invite = location.hash.match(/^#invite=([a-f0-9]{48})$/);
+        if (invite) return showInvite(invite[1]);
         await consumeVerifyLink();
         me = await api('me');
         csrf = me.csrf;

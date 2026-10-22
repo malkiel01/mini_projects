@@ -15,8 +15,16 @@
                 id = [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join('');
                 localStorage.setItem('platform:device', id);
             }
+            deviceCookie(id);
             return id;
         } catch { return null; }
+    }
+
+    // המזהה גם בעוגייה, לכל האתר: אפליקציית אנדרואיד (TWA) רצה בתוך כרום, והשער מזהה בה את המכשיר כשהיא נפתחת
+    // (lib/gate.php, apk_seen). שנתיים, ומתחדשת בכל טעינה.
+    function deviceCookie(id) {
+        const base = new URL(API, location.href).pathname.replace(/platform\/api\.php$/, '');
+        document.cookie = `platform-device=${id}; path=${base}; max-age=63072000; SameSite=Lax` + (location.protocol === 'https:' ? '; Secure' : '');
     }
 
     const mode = ['fullscreen', 'standalone', 'minimal-ui', 'window-controls-overlay', 'browser']

@@ -39,6 +39,11 @@ check('מאומת', is_array($c), true);
 check('typ', $c['typ'], 'release');
 check('acct', $c['acct'], 7);
 check('יש iat', isset($c['iat']), true);
+// שלב 8: קשור לילד ומוגבל בזמן — קודם אותו אסימון {typ, acct} תקף לנצח, לכל ילד בחשבון.
+$c = verifyToken(releaseToken(7, 42, 1_800_000_000), $pub);
+check('child', $c['child'], 42);
+check('exp = iat + RELEASE_TTL', [$c['iat'], $c['exp']], [1_800_000_000, 1_800_000_000 + RELEASE_TTL]);
+check('תוקף של שבוע', RELEASE_TTL, 7 * 86400);
 
 echo "\n— דחיות —\n";
 check('חתימה שהשתנתה נדחית', verifyToken($t . 'x', $pub), null);

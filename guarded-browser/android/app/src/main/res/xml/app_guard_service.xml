@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- שירות הנגישות של מגדלור: מזהה איזו אפליקציה עלתה לחזית, כדי לחסום את מה שההורה חסם.
-     canRetrieveWindowContent=false — אנחנו לא קוראים תוכן מסך, רק את שם האפליקציה. -->
+     canRetrieveWindowContent=true — נדרש כדי לזהות את מסך ההסרה/ניהול המכשיר של מגדלור עצמו
+     (AppGuardService.windowMentionsSelf) ולמנוע הסרה. בשאר המסכים נבדק רק שם האפליקציה. -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:accessibilityEventTypes="typeWindowStateChanged"
     android:accessibilityFeedbackType="feedbackGeneric"
     android:notificationTimeout="100"
-    android:canRetrieveWindowContent="false"
+    android:canRetrieveWindowContent="true"
     android:description="@string/a11y_desc"/>

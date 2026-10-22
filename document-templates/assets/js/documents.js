@@ -1589,6 +1589,7 @@
   function listCol(lists, ref, v, lang) {
     v = String(v ?? '');
     if (!ref || !lang || v === '') return v;
+    if (ref.tr && lang === ref.lang) return ref.tr[v] ?? v;   // מסמך שהושלם — התרגום מרגע ההשלמה
     const t = lists && lists[String(ref.id)] && lists[String(ref.id)].translations;
     return (t && t[String(ref.level)] && t[String(ref.level)][v] && t[String(ref.level)][v][lang]) || v;
   }

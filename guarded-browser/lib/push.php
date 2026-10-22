@@ -162,7 +162,7 @@ function pushPending(array $parent, string $endpoint): array {
     if (!$rows) return [];
     if ($sub) q('UPDATE push_subs SET delivered_at = ? WHERE id = ?', [$rows[0]['created_at'], (int) $sub['id']]);
     return array_map(fn($r) => [
-        'title' => ($r['display_name'] ?: $r['username']) . ' מבקש/ת גישה',
+        'title' => ($r['display_name'] ?: $r['username']) . (($r['kind'] ?? 'site') === 'app' ? ' מבקש/ת לפתוח אפליקציה' : ' מבקש/ת גישה'),
         'body'  => $r['host'] . ($r['note'] !== '' ? ' — "' . $r['note'] . '"' : ''),
         'link'  => './?req=' . (int) $r['id'],
         'tag'   => 'req-' . (int) $r['id'],

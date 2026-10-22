@@ -19,6 +19,18 @@ require_once __DIR__ . '/../lib/signing.php';
 
 jsonHeaders();
 
+const INVITE_MESSAGES = [
+    'invited' => 'נשלחה הזמנה במייל — ההורה בוחר סיסמה ונכנס',
+    'granted' => 'יש לו כבר חשבון בפלטפורמה — נוספה הרשאה למגדלור',
+    'blocked' => 'החשבון שלו חסום בפלטפורמה — לא נשלחה הזמנה',
+];
+
+/** הזמנה אחרי פתיחת הורה: הודעה לתצוגה. כישלון לא מבטל את פתיחת ההורה — אפשר לשלוח שוב מהגיליון. */
+function inviteResult(int $parentId): string {
+    [$status, $err] = parentInvite($parentId);
+    return $err ?: (INVITE_MESSAGES[$status] ?? $status);
+}
+
 /**
  * מה הדף צריך כדי להחליט מה להציג: כניסה, התקנה, המסך החד-פעמי, או הקונסולה.
  * ‏platform — מחוברת לפלטפורמה: אין כניסה, התקנה ויציאה משלנו. ‏link — הזהות עוד לא קושרה לחשבון.
@@ -30,6 +42,8 @@ function meState(): array {
         'ok'    => true,
         'platform' => $platform,
         'link'  => $platform && !$d,
+        // "אין לי חשבון" — רק בהקמה הראשונה. אחרת חשבון מפתח נפתח בהזמנה ממפתח קיים (developerInvite).
+        'can_create' => !$d && ($id = platformIdentity()) && platformMayBootstrap('dev', $id),
         'setup' => !$platform && developerCount() === 0,
         'me'    => $d ? ['id' => (int) $d['id'], 'username' => $d['username'], 'name' => $d['name']] : null,
         'csrf'  => $d ? (string) (sessionRow('dev')['csrf'] ?? '') : '',
@@ -62,6 +76,10 @@ try {
         if ($action === 'link') {
             if ($err = platformLinkOld('dev', $id, str('username'), (string) (body()['password'] ?? ''))) fail($err);
         } elseif (!platformLinked('dev', $id)) {
+            if (!platformMayBootstrap('dev', $id)) {
+                audit(0, 'platform_create', false, '', 'dev', 'denied:' . $id['sub']);
+                fail('חשבון מפתח נפתח רק בהזמנה ממפתח קיים', 403, 'forbidden');
+            }
             platformCreate('dev', $id);
         }
         forgetSessions();
@@ -78,6 +96,11 @@ try {
             // מחוברת: היציאה היא מהפלטפורמה — אחרת הבקשה הבאה הייתה מכניסה שוב.
             if (platformIdentity()) fail('היציאה היא מהכלים הדיגיטליים');
             endSession('dev');
+            out(['ok' => true]);
+
+        /* ── הזמנת מפתח: המייל נשמר, והחשבון מתקשר בכניסה הראשונה דרך הפלטפורמה (מייל מאומת) ── */
+        case 'dev_invite':
+            if ($err = developerInvite(str('email'), str('name'), (int) $dev['id'])) fail($err);
             out(['ok' => true]);
 
         case 'password':
@@ -97,7 +120,9 @@ try {
         case 'account_create':
             [$id, $pw, $err] = accountCreate(body()['account'] ?? [], str('parent_login'), str('parent_name'));
             if ($err) fail($err);
-            out(['ok' => true, 'id' => $id, 'temp_password' => $pw, 'account' => accountDetail($id)]);
+            $p = one('SELECT id FROM parents WHERE account_id = ? ORDER BY id LIMIT 1', [$id]);
+            out(['ok' => true, 'id' => $id, 'temp_password' => $pw, 'invite' => inviteResult((int) $p['id']),
+                 'account' => accountDetail($id)]);
 
         case 'account_update':
             if ($err = accountUpdate(num('id'), body()['account'] ?? [])) fail($err);
@@ -114,7 +139,26 @@ try {
         case 'parent_add':
             [$pw, $err] = parentAdd(num('account_id'), str('login'), str('name'));
             if ($err) fail($err);
-            out(['ok' => true, 'temp_password' => $pw, 'account' => accountDetail(num('account_id'))]);
+            $p = one('SELECT id FROM parents WHERE login = ?', [cleanLogin(str('login'))]);
+            out(['ok' => true, 'temp_password' => $pw, 'invite' => inviteResult((int) $p['id']),
+                 'account' => accountDetail(num('account_id'))]);
+
+        /* ── הזמנה לפלטפורמה (platform/docs/sso.md, סעיף 6): כל ההורים נכנסים דרכה ── */
+        case 'parent_invite':
+            [$status, $err] = parentInvite(num('id'));
+            if ($err) fail($err);
+            out(['ok' => true, 'status' => $status, 'message' => INVITE_MESSAGES[$status] ?? $status]);
+
+        case 'invite_all':
+            @set_time_limit(120);
+            $res = ['invited' => 0, 'granted' => 0, 'skipped' => [], 'failed' => []];
+            foreach (all("SELECT id, login FROM parents WHERE platform_sub = '' AND status = 'active'") as $row) {
+                if (!filter_var($row['login'], FILTER_VALIDATE_EMAIL)) { $res['skipped'][] = $row['login']; continue; }
+                [$status, $err] = parentInvite((int) $row['id']);
+                if ($err || !isset($res[$status])) $res['failed'][] = $row['login'] . ($err ? ": $err" : ": $status");
+                else $res[$status]++;
+            }
+            out(['ok' => true] + $res);
 
         case 'parent_reset':
             [$pw, $err] = parentReset(num('id'));
@@ -122,8 +166,10 @@ try {
             out(['ok' => true, 'temp_password' => $pw]);
 
         case 'parent_remove':
-            $p = one('SELECT account_id FROM parents WHERE id = ?', [num('id')]);
+            $p = one('SELECT account_id, login FROM parents WHERE id = ?', [num('id')]);
             if ($err = parentRemove(num('id'))) fail($err);
+            // ההרשאה למגדלור בפלטפורמה מוסרת (החשבון שם נשאר — אולי יש לו אפליקציות אחרות).
+            if ($p && filter_var($p['login'], FILTER_VALIDATE_EMAIL)) platformProvision($p['login'], '', false);
             out(['ok' => true, 'account' => accountDetail((int) ($p['account_id'] ?? 0))]);
 
         case 'system':

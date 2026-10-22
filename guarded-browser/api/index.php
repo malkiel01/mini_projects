@@ -23,6 +23,13 @@ require_once __DIR__ . '/../lib/appversion.php';
 require_once __DIR__ . '/../lib/search.php';
 require_once __DIR__ . '/../lib/appcontrol.php';
 require_once __DIR__ . '/../lib/signing.php';
+require_once __DIR__ . '/../lib/devicesettings.php';
+require_once __DIR__ . '/../lib/heartbeat.php';
+require_once __DIR__ . '/../lib/enforce.php';
+require_once __DIR__ . '/../lib/apprequests.php';
+require_once __DIR__ . '/../lib/history.php';
+require_once __DIR__ . '/../lib/ytlearn.php';
+require_once __DIR__ . '/../lib/selftest.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -34,8 +41,18 @@ function out(array $payload, int $code = 200): never {
     exit;
 }
 
+/**
+ * חוזה הסירוב, אחיד לכל הפעולות (סקירה, 2026-10-20 — שלב 7):
+ *
+ *   ‏ok=false תמיד נושא allowed=false ו-reason, חוץ משגיאה זמנית (שרת, עומס) — שם retry=true ואין
+ *   allowed: "לא הצלחנו לשאול", לא "נשאלנו ונענינו לא". לפני זה סירוב (חשבון מושעה, 403) הגיע בלי
+ *   allowed, וגרסאות שקראו optBoolean("allowed", true) המשיכו לגלוש בחשבון מושעה.
+ */
 function bad(string $message, string $code = 'error', int $http = 400): never {
-    out(['ok' => false, 'error' => $message, 'code' => $code], $http);
+    $out = ['ok' => false, 'error' => $message, 'code' => $code];
+    if ($http >= 500 || $http === 429) $out['retry'] = true;
+    else $out += ['allowed' => false, 'reason' => $message];
+    out($out, $http);
 }
 
 /** גוף הבקשה כ-JSON, או מערך ריק. */
@@ -80,7 +97,7 @@ function policyPayload(array $user): array {
     // שחרור (SPEC סעיף 5): המינוי של ההורה הסתיים — המכשיר פותח הכול, אבל רק מול אסימון
     // חתום (סעיף 13). "אין חיבור" אינו "פג תוקף": בלי האסימון החתום הזה הוא ממשיך לאכוף.
     $acct    = (int) ($user['account_id'] ?? 0);
-    $release = ($state['code'] ?? '') === 'released' ? releaseToken($acct) : null;
+    $release = ($state['code'] ?? '') === 'released' ? releaseToken($acct, $uid) : null;
 
     $quota = (int) $policy['daily_quota_min'];
 
@@ -118,6 +135,9 @@ function policyPayload(array $user): array {
             'keep_history'      => (bool) $policy['keep_history'],
             'allow_pip'         => (bool) $policy['allow_pip'],
             'allow_background'  => (bool) $policy['allow_background'],
+            // מצב לא מקוון מתוכנן (שלב 12 ו) — נאכף במכשיר (OfflineMath).
+            'offline_grace_h'   => (int) ($policy['offline_grace_h'] ?? 24),
+            'offline_content'   => (string) ($policy['offline_content'] ?? 'all'),
         ],
         'rules' => array_map(fn($r) => [
             'label'     => $r['label'],
@@ -145,11 +165,16 @@ function policyPayload(array $user): array {
         // זהות החשבון, ואסימון השחרור החתום (רק כשמשוחרר). המכשיר מאמת שהחתימה
         // תקפה וש-acct תואם — ורק אז מסיר מגבלות ומציג "המנוי של ההורים הסתיים".
         'account_id'     => $acct,
+        // מזהה הילד — לקוד ה-QR של "העברה בלי אינטרנט" (offlineToken), שמיועד לילד אחד בלבד.
+        'child_id'       => $uid,
         'release'        => $release,
         // המפתח הציבורי לאימות חתימות. המכשיר מצמיד אותו בפעם הראשונה (TOFU) ומאמת מולו.
         'sign_pubkey'    => signingPublicKey(),
         // טביעת האצבע של המדיניות — הפעימה משווה אליה (policyRev).
         'rev'            => policyRev($uid),
+        // רצף התשובות (מילישניות של השרת): המכשיר דוחה תשובה ישנה מזו שכבר החיל — תשובה איטית
+        // שהגיעה אחרי חדשה לא תדרוס מדיניות חדשה (PolicySync.kt).
+        'issued_at'      => (int) floor(microtime(true) * 1000),
         'categories'     => $set['categories'],
         'domain_map'     => $slim,
         'platforms'      => array_map(fn($p) => [
@@ -158,10 +183,16 @@ function policyPayload(array $user): array {
             'allow_shorts' => (bool) $p['allow_shorts'],
         ], $set['platforms']),
         'platform_items' => $set['platform_items'],
-        // ההורה ביקש לעדכן, ויש גרסה חדשה — האפליקציה מציעה לילד להתקין (1.43 ומעלה).
+        // יש גרסה חדשה — עדכון חובה (גרסה עם עדכון חובה ננעלת עד ההתקנה; ישנות יותר מציעות לילד).
         'update' => $dev ? deviceUpdateOffer($dev) : null,
         // ניהול אפליקציות המכשיר (שלב 11) — manage=false לדפדפן בלבד.
-        'apps' => appsPayload($user),
+        // + היתרים זמניים והחלטות על בקשות פתיחה (lib/apprequests.php) — המכשיר מחיל ומאשר ביצוע.
+        'apps' => ($apps = appsPayload($user))['manage']
+            ? $apps + ['temp' => appTempGrants($uid), 'decisions' => appDecisions($uid)] : $apps,
+        // הגדרות המכשיר שההורה קבע — {מפתח: חסום?}. נאכף רק ב"בעל מכשיר" (Enforcer.kt).
+        'device' => deviceSettings($uid),
+        // בדיקת הגנה שההורה ביקש ועוד לא נענתה (lib/selftest.php) — המכשיר בודק את עצמו ושולח do=selftest.
+        'selftest' => $dev ? selftestFor($user) : null,
         'state' => [
             'allowed'        => $state['allow'],
             'code'           => $state['code'],
@@ -209,6 +240,11 @@ try {
      */
     if ($do === 'ping') {
         out(['ok' => true, 'app' => 'migdalor']);
+    }
+
+    /* ── המפתח הציבורי להזמנת הורים לפלטפורמה (app.json → "provision", platform/docs/sso.md סעיף 6) ── */
+    if ($do === 'platform_key') {
+        out(provisionKeyPayload());
     }
 
     /* ── הרשמה עצמית ──────────────────────────────────────────────
@@ -305,7 +341,13 @@ try {
 
     /* ── רענון מדיניות ─────────────────────────────────────────── */
     if ($do === 'policy') {
-        out(policyPayload(requireUser()));
+        $user = requireUser();
+        $payload = policyPayload($user);
+        // "התקבל במכשיר" — המכשיר משך את המדיניות הזו. ההחלה עצמה — בדוח האכיפה (enforce_report).
+        q('UPDATE devices SET policy_rev = ?, policy_rev_at = ? WHERE id = ?',
+          [(string) $payload['rev'], nowIso(), (int) $user['device_row_id']]);
+        receiptReceived((int) $user['id'], (int) $user['device_row_id']);   // קבלה: התקבל במכשיר (lib/history.php)
+        out($payload);
     }
 
     /* ── בדיקת כתובת ───────────────────────────────────────────────
@@ -391,6 +433,23 @@ try {
         out(['ok' => true, 'id' => $id, 'message' => $msg]);
     }
 
+    /* ── בקשת פתיחה לאפליקציה חסומה, ואישור הביצוע במכשיר (lib/apprequests.php) ── */
+    if ($do === 'app_request') {
+        $user = requireUser();
+        [$id, $msg, $err] = appRequestCreate($user, field('package'), field('note'));
+        if ($err) bad($err, 'request_refused');
+        pushAfterResponse();
+        out(['ok' => true, 'id' => $id, 'message' => $msg]);
+    }
+    if ($do === 'app_request_applied') {
+        $user = requireUser();
+        $b = body();
+        if ($err = appRequestApplied($user, (int) ($b['id'] ?? 0), !empty($b['ok']), (string) ($b['error'] ?? ''), (int) ($b['ends_ms'] ?? 0))) {
+            bad($err, 'request_inactive', 409);
+        }
+        out(['ok' => true]);
+    }
+
     /* ── האם ההורה ענה ── המכשיר שואל כל עוד יש לו בקשה ממתינה. */
     if ($do === 'requests') {
         $user = requireUser();
@@ -422,33 +481,49 @@ try {
      * צוברת זמן צפייה ומחזירה את המצב. זה גם ערוץ הניתוק: מנהל
      * שמשעה חשבון או מוחק מכשיר — הפעימה הבאה מחזירה סירוב.
      */
-    if ($do === 'heartbeat') {
-        $user   = requireUser();
-        $uid    = (int) $user['id'];
-        $policy = policyFor($uid);
-        $tz     = (string) $policy['timezone'];
+    /* ── דוח אכיפה: מה הוחל בפועל במכשיר ומה נכשל (lib/enforce.php) ── */
+    if ($do === 'enforce_report') {
+        $user = requireUser();
+        enforceReportSave((int) $user['device_row_id'], (array) body());
+        receiptApplied((int) $user['device_row_id'], (array) body());        // קבלה: הוחל / נכשל (lib/history.php)
+        out(['ok' => true]);
+    }
 
-        // חסם עליון לפעימה: דיווח מנופח לא יוכל לשרוף מכסה של יום.
-        $seconds = max(0, min(300, (int) (body()['seconds'] ?? 0)));
-        addUsage($uid, $tz, $seconds);
-        // הכתובת שעל המסך — כדי שההורה יראה כמה זמן בכל אתר (שלב 7).
-        activityBeat($uid, field('url'), $seconds, $tz);
+    /* ── תוצאות בדיקת ההגנה (lib/selftest.php) — הפסיקה בשרת, מהנתונים הגולמיים ── */
+    if ($do === 'selftest') {
+        $user = requireUser();
+        if ($err = selftestSave((int) $user['device_row_id'], (array) body())) bad($err, 'selftest_inactive', 409);
+        out(['ok' => true]);
+    }
+
+    /* ── מצב למידה ביוטיוב: מה הסקריפט בדף אימת (lib/ytlearn.php) ── */
+    if ($do === 'yt_learn_report') {
+        $user = requireUser();
+        ytLearnReportSave((int) $user['device_row_id'], (array) body());
+        out(['ok' => true]);
+    }
+
+    /* ── זמן מסך לאפליקציות: הזמן שנצבר היום במכשיר (lib/apptime.php) ── */
+    if ($do === 'app_usage') {
+        $user = requireUser();
+        out(['ok' => true, 'saved' => accountAppsAllowed((int) $user['account_id']) ? appUsageSave((int) $user['id'], (array) body()) : 0]);
+    }
+
+    /* ── מצב העדכון במכשיר (שלב 9) — ההורה רואה עדכון שנכשל או נתקע ── */
+    if ($do === 'update_state') {
+        $user = requireUser();
+        if (!updateStateSave((int) $user['device_row_id'], body())) bad('מצב לא מוכר', 'bad_state');
+        out(['ok' => true]);
+    }
+
+    if ($do === 'heartbeat') {
+        $user = requireUser();
+        $b = body()['batches'] ?? null;
+        $out = heartbeatPayload($user, (int) (body()['seconds'] ?? 0), field('url'), (int) (body()['session_sec'] ?? 0),
+                                is_array($b) ? $b : null);
         if (mt_rand(1, 500) === 1) activityCleanup();
         if (mt_rand(1, 40) === 1) searchTickAfterResponse(4);
-
-        $used = usedTodaySeconds($uid, $tz);
-        $d = evaluate($user, $policy, ruleSetFor($uid), nowIn($tz), [
-            'url' => '', 'used_today' => $used,
-            'session' => (int) (body()['session_sec'] ?? 0),
-        ]);
-
-        if ($block = upgradeBlock((int) $user['device_row_id'])) $d = decision(false, 'app_update', $block);
-        $quota = (int) $policy['daily_quota_min'];
-        out(['ok' => true, 'allowed' => $d['allow'], 'code' => $d['code'], 'reason' => $d['reason'],
-             'update' => deviceUpdateOffer((int) $user['device_row_id']),
-             'used_today_sec' => $used,
-             'quota_left_sec' => $quota > 0 ? max(0, $quota * 60 - $used) : -1,
-             'server_url' => serverUrl(), 'rev' => policyRev($uid)]);
+        out($out);
     }
 
     bad('פעולה לא מוכרת', 'unknown_action', 404);

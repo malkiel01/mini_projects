@@ -16,8 +16,41 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/children.php';
 require_once __DIR__ . '/appversion.php';
+require_once __DIR__ . '/apptime.php';
 
 const APP_POSTURES = ['allow_all', 'deny_all'];
+
+/**
+ * מסך ההתקנה של אנדרואיד — לעולם לא נחסם: דרכו מגדלור מתקין את העדכון של עצמו. חסום (במפורש, או ב"רק מה
+ * שאישרתי") — מסך האישור נסגר מיד, וב"בעל מכשיר" אף מושעה, והעדכון לא מסתיים לעולם (באג, 2026-10-20).
+ * נשלח למכשיר ברשימת המותרות, כך שגם גרסה שכבר מותקנת מקבלת את התיקון בלי עדכון.
+ */
+const UPDATE_PACKAGES = ['com.android.packageinstaller', 'com.google.android.packageinstaller',
+                         'com.samsung.android.packageinstaller'];
+
+/**
+ * מסכי הבית והמקלדות הנפוצים — לעולם לא נחסמים. באג (2026-10-20): ב"רק מה שאישרתי" לחיצה על "בית" פתחה
+ * את מסך החסימה, כי הגרסה שבמכשיר לא זיהתה את מסך הבית. נשלחים ברשימת המותרות, כך שגם גרסה שכבר
+ * מותקנת מתוקנת בלי עדכון; מהגרסה הבאה האפליקציה מזהה בעצמה כל מסך בית ומקלדת (AppPolicy.scan).
+ */
+const SHELL_PACKAGES = [
+    'com.sec.android.app.launcher', 'com.google.android.apps.nexuslauncher', 'com.android.launcher',
+    'com.android.launcher3', 'com.miui.home', 'com.mi.android.globallauncher', 'com.huawei.android.launcher',
+    'com.oppo.launcher', 'com.android.launcher.oppo', 'net.oneplus.launcher', 'com.motorola.launcher3',
+    'com.teslacoilsw.launcher', 'com.microsoft.launcher',
+    'com.samsung.android.honeyboard', 'com.sec.android.inputmethod', 'com.google.android.inputmethod.latin',
+    'com.touchtype.swiftkey', 'com.android.inputmethod.latin',
+];
+
+/** מגדלור עצמה — לא מופיעה אצל ההורה כאפליקציה שאפשר לחסום (באפליקציה היא ממילא לא נחסמת לעולם). */
+const SELF_PACKAGE = 'com.mbeplus.guardedbrowser';
+
+/** חבילות שתמיד פתוחות, וההסבר שההורה רואה לידן. */
+function alwaysOpen(string $pkg): string {
+    if ($pkg === SELF_PACKAGE) return 'זו מגדלור עצמה';
+    if (in_array($pkg, SHELL_PACKAGES, true)) return 'מסך הבית או המקלדת';
+    return in_array($pkg, UPDATE_PACKAGES, true) ? 'דרכו מגדלור מתעדכן' : '';
+}
 
 /** ניהול אפליקציות פתוח לחשבון? רק ברמת apps / device. */
 function accountAppsAllowed(int $accountId): bool {
@@ -77,9 +110,11 @@ function appsPayload(array $user): array {
     $rules = appRules($childId);
     return [
         'manage'  => true,
+        // זמן מסך: {package: דקות ליום} — נאכף במכשיר (AppTimeMath). אובייקט גם כשריק.
+        'limits'  => (object) appLimits($childId),
         'posture' => appPosture($childId),
-        'blocked' => array_values(array_keys(array_filter($rules, fn($a) => $a === 'block'))),
-        'allowed' => array_values(array_keys(array_filter($rules, fn($a) => $a === 'allow'))),
+        'blocked' => array_values(array_diff(array_keys(array_filter($rules, fn($a) => $a === 'block')), UPDATE_PACKAGES, SHELL_PACKAGES, [SELF_PACKAGE])),
+        'allowed' => array_values(array_unique(array_merge(array_keys(array_filter($rules, fn($a) => $a === 'allow')), UPDATE_PACKAGES, SHELL_PACKAGES))),
     ];
 }
 
@@ -95,8 +130,12 @@ function appsSavePosture(int $childId, string $posture): string {
 function appsSaveRule(int $childId, string $pkg, string $action): string {
     $pkg = cleanPackage($pkg);
     if ($pkg === '') return 'שם חבילה לא תקין';
+    if ($why = alwaysOpen($pkg)) return "תמיד פתוח — $why";
+    if ($action !== '' && !in_array($action, ['allow', 'block'], true)) return 'פעולה לא מוכרת';
+    // החלטה חדשה של ההורה על האפליקציה גוברת על היתר זמני פעיל עליה (lib/apprequests.php) — הוא מבוטל.
+    q("UPDATE access_requests SET apply_state = 'revoked' WHERE child_id = ? AND kind = 'app' AND package = ?
+       AND status = 'approved' AND scope = 'temporary' AND apply_state IN ('pending', 'applied')", [$childId, $pkg]);
     if ($action === '') { q('DELETE FROM app_rules WHERE child_id = ? AND package = ?', [$childId, $pkg]); return ''; }
-    if (!in_array($action, ['allow', 'block'], true)) return 'פעולה לא מוכרת';
     upsert('app_rules', ['child_id' => $childId, 'package' => $pkg], ['action' => $action], ['created_at' => nowIso()]);
     return '';
 }
@@ -111,11 +150,18 @@ function appsList(int $accountId, int $childId): array {
     if (!accountAppsAllowed($accountId)) return ['manage' => false];
     $posture = appPosture($childId);
     $rules = appRules($childId);
+    $limits = appLimits($childId);
+    $usage = appUsageToday($childId);
     $apps = [];
     foreach (all('SELECT package, label, is_system FROM device_apps WHERE child_id = ? ORDER BY is_system, LOWER(label), package', [$childId]) as $a) {
         $pkg = $a['package'];
+        $why = alwaysOpen($pkg);                             // מגדלור ומסך ההתקנה — תמיד פתוחים
+        $locked = $why !== '';
         $apps[] = ['package' => $pkg, 'label' => $a['label'] ?: $pkg, 'system' => (bool) $a['is_system'],
-                   'action' => $rules[$pkg] ?? '', 'blocked' => appBlocked($posture, $rules[$pkg] ?? '')];
+                   'action' => $locked ? 'allow' : ($rules[$pkg] ?? ''), 'locked' => $locked, 'why' => $why,
+                   'blocked' => !$locked && appBlocked($posture, $rules[$pkg] ?? ''),
+                   // זמן מסך (lib/apptime.php): המגבלה, וכמה שימשה היום לפי דיווח המכשיר.
+                   'limit_min' => $limits[$pkg] ?? 0, 'used_sec' => $usage[$pkg] ?? 0];
         unset($rules[$pkg]);
     }
     // כללים ל"רפאים" — חבילות שכבר לא מותקנות אך נשמר עליהן כלל.

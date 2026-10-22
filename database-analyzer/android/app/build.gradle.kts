@@ -1,6 +1,7 @@
 // אנליסט מסד הנתונים לחנות של גוגל — Trusted Web Activity (TWA).
 //
-// אין כאן קוד משלנו: LauncherActivity של androidbrowserhelper (ספריית גוגל) פותח
+// הקוד שלנו כאן מצומצם: PlatformLauncherActivity (LauncherActivity של androidbrowserhelper, עם מזהה ההתקנה בכתובת)
+// ו-PlatformHeartbeat (דופק יומי לכלים הדיגיטליים). את המסך עצמו פותח LauncherActivity של גוגל
 // את האתר ב-Chrome, במסך מלא, בלי שורת כתובת — בתנאי שהאתר מאשר את האפליקציה
 // ב-/.well-known/assetlinks.json (Digital Asset Links). בלי האישור — נפתח כלשונית
 // Chrome רגילה עם שורת כתובת. כל עדכון באתר מגיע לאפליקציה מיד, בלי גרסה חדשה בחנות.
@@ -19,6 +20,9 @@ plugins {
 val appHost = (findProperty("appHost") as String?) ?: "mbe-plus.com"
 val appPath = (findProperty("appPath") as String?) ?: "/mini_projects/database-analyzer/"
 val launchUrl = "https://$appHost$appPath"
+val appVersionCode = ((findProperty("versionCode") as String?) ?: "1").toInt()
+// הפתיחה מהאייקון מודיעה לכלים הדיגיטליים "מותקנת, גרסה N" (platform/lib/gate.php, apk_seen) — השער רושם ומסיר את הפרמטר
+val launchUrlWithVersion = "$launchUrl?platform-apk=$appVersionCode"
 
 android {
     namespace = "com.mbeplus.dbanalyzer"
@@ -28,11 +32,11 @@ android {
         applicationId = "com.mbeplus.dbanalyzer"
         minSdk = 24   // androidbrowserhelper 2.7.4 דורש 24 (Android 7.0)
         targetSdk = 36
-        versionCode = ((findProperty("versionCode") as String?) ?: "1").toInt()
-        versionName = "1.0"
+        versionCode = appVersionCode
+        versionName = appVersionCode.toString()   // כרום מחזיר אותו ב-getInstalledRelatedApps
 
         resValue("string", "hostName", appHost)
-        resValue("string", "launchUrl", launchUrl)
+        resValue("string", "launchUrl", launchUrlWithVersion)
         resValue("string", "pathPrefix", appPath)
         resValue("string", "providerAuthority", "com.mbeplus.dbanalyzer.fileprovider")
         // האישור ההדדי: האפליקציה מצהירה על האתר, והאתר (assetlinks.json) על האפליקציה
@@ -68,4 +72,5 @@ android {
 
 dependencies {
     implementation("com.google.androidbrowserhelper:androidbrowserhelper:2.7.4")
+    implementation("androidx.work:work-runtime:2.9.1")   // הדופק היומי לכלים הדיגיטליים (PlatformHeartbeat)
 }

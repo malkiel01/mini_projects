@@ -31,10 +31,10 @@ object Release {
         } catch (e: Exception) { null }
     }
 
-    /** ‏true אם זהו שחרור חתום וחוקי לחשבון הזה. */
-    fun isReleaseFor(token: String, pubKeyB64u: String, accountId: Int): Boolean {
-        if (accountId <= 0) return false
+    /** ‏true אם זהו שחרור חתום, בתוקף, לחשבון ולילד שהוצמדו במכשיר (SyncRules.releaseClaimsOk). */
+    fun isReleaseFor(token: String, pubKeyB64u: String, accountId: Int, childId: Int, nowSec: Long): Boolean {
         val c = claims(token, pubKeyB64u) ?: return false
-        return c.optString("typ") == "release" && c.optInt("acct") == accountId
+        return SyncRules.releaseClaimsOk(c.optString("typ"), c.optInt("acct"), c.optInt("child"), c.optLong("exp"),
+                                         accountId, childId, nowSec)
     }
 }

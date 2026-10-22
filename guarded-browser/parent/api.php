@@ -2,10 +2,10 @@
 /**
  * אפליקציית ההורה — JSON בלבד. ‏?action=…  (SPEC.md, סעיף 10)
  *
- * ציבורי מבחינת שער הפלטפורמה (הורים אינם משתמשי mini_projects), ולכן כל
- * ההגנה כאן: עוגייה mg_parent, X-Migdalor ו-X-CSRF בכל שינוי, והגבלת ניסיונות
- * בכניסה. וכל פעולה על ילד עוברת ב-childOf — הורה רואה ומשנה רק את
- * הילדים שבחשבון שלו. מזהה של ילד מחשבון אחר נראה בדיוק כמו מזהה שלא קיים.
+ * מאחורי שער הפלטפורמה: כל ההורים נכנסים בחשבון הפלטפורמה שלהם (בעל המערכת, 2026-10-20), והזהות
+ * מגיעה מ-PLATFORM_USER (lib/platform.php). הכניסה בסיסמה של מגדלור — רק כשהאפליקציה מנותקת מהשער.
+ * בנוסף: עוגייה mg_parent, X-Migdalor ו-X-CSRF בכל שינוי. וכל פעולה על ילד עוברת ב-childOf — הורה
+ * רואה ומשנה רק את הילדים שבחשבון שלו. מזהה של ילד מחשבון אחר נראה בדיוק כמו מזהה שלא קיים.
  */
 
 declare(strict_types=1);
@@ -17,19 +17,31 @@ require_once __DIR__ . '/../lib/activity.php';
 require_once __DIR__ . '/../lib/appversion.php';
 require_once __DIR__ . '/../lib/search.php';
 require_once __DIR__ . '/../lib/appcontrol.php';
+require_once __DIR__ . '/../lib/apprequests.php';
+require_once __DIR__ . '/../lib/simulator.php';
+require_once __DIR__ . '/../lib/tasks.php';
+require_once __DIR__ . '/../lib/selftest.php';
+require_once __DIR__ . '/../lib/history.php';
 require_once __DIR__ . '/../lib/enforce.php';
+require_once __DIR__ . '/../lib/devicesettings.php';
+require_once __DIR__ . '/../lib/signing.php';
 
 jsonHeaders();
 
-/** מה הדף צריך: מי מחובר, מה מצב החשבון, ומה החשבון רשאי לתת. */
+/**
+ * מה הדף צריך: מי מחובר, מה מצב החשבון, ומה החשבון רשאי לתת. ‏platform — מחוברת לפלטפורמה: אין כניסה,
+ * סיסמה ויציאה משלנו. ‏link — הזהות עוד לא מקושרת לאף הורה (המסך החד-פעמי, או "אין לך חשבון משפחה").
+ */
 function meState(): array {
     $p = currentParent();
-    if (!$p) return ['ok' => true, 'me' => null];
+    $platform = platformIdentity() !== null;
+    if (!$p) return ['ok' => true, 'me' => null, 'platform' => $platform, 'link' => $platform];
     $a = accountRow((int) $p['account_id']);
     return [
         'ok'   => true,
+        'platform' => $platform,
         'me'   => ['id' => (int) $p['id'], 'login' => $p['login'], 'name' => $p['name'],
-                   'must_change' => (bool) $p['must_change_pw']],
+                   'must_change' => !$platform && (bool) $p['must_change_pw']],
         'csrf' => (string) (sessionRow('parent')['csrf'] ?? ''),
         'account' => [
             'name' => $a['name'], 'status' => $a['status'], 'expires_at' => $a['expires_at'],
@@ -68,6 +80,11 @@ function detail(array $parent, int $childId): array {
     foreach ($out['device_list'] as &$d) { $d['app'] = deviceAppState($d, $latest); $d['perms'] = devicePermsState((int) $d['perms']); }
     unset($d);
     $out['enforcement'] = enforcementState((int) $parent['account_id'], $childId);
+    $out['device_settings'] = deviceSettingsView($childId);
+    // מצב הביצוע בפועל לכל הגדרה — לא רק מה שנשמר (lib/enforce.php, deviceSettingsStatus).
+    $status = deviceSettingsStatus($childId);
+    foreach ($out['device_settings'] as &$s) $s['status'] = $status[$s['key']] ?? null;
+    unset($s);
     return $out;
 }
 
@@ -83,7 +100,7 @@ try {
     if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'push_pending') {
         $p = currentParent();
         $ep = (string) ($_GET['ep'] ?? '');
-        out(['ok' => true, 'items' => $p && !$p['must_change_pw'] ? pushPending($p, $ep) : []]);
+        out(['ok' => true, 'items' => $p && (platformIdentity() || !$p['must_change_pw']) ? pushPending($p, $ep) : []]);
     }
     requirePostFrom();
 
@@ -93,12 +110,24 @@ try {
         out(['ok' => true]);
     }
 
+    /* המסך החד-פעמי: "יש לי כבר חשבון" — שם הכניסה והסיסמה הישנים של מגדלור. גם מהתפריט. */
+    if ($action === 'link') {
+        $id = platformIdentity();
+        if (!$id) fail('האפליקציה לא מחוברת לפלטפורמה');
+        if ($err = platformLinkOld('parent', $id, str('login'), (string) (body()['password'] ?? ''))) fail($err);
+        forgetSessions();
+        out(meState());
+    }
+
     $parent = currentParent();
     if (!$parent) fail('נדרשת כניסה', 401, 'unauthorized');
     requireCsrf('parent');
     $pid = (int) $parent['id'];
     $aid = (int) $parent['account_id'];
+    $viaPlatform = platformIdentity() !== null;
 
+    // מחוברת: היציאה והסיסמה הן של הכלים הדיגיטליים, לא שלנו.
+    if ($viaPlatform && in_array($action, ['logout', 'password'], true)) fail('זה נעשה בחשבון של הכלים הדיגיטליים');
     if ($action === 'logout') { endSession('parent'); out(['ok' => true]); }
     if ($action === 'password') {
         $err = parentChangePassword($pid, (string) (body()['current'] ?? ''), (string) (body()['next'] ?? ''));
@@ -117,9 +146,86 @@ try {
     // אתר או ערוץ שנוסף עכשיו — נכנס לאינדקס החיפוש כבר אחרי התשובה, לא מחר.
     if (in_array($action, ['rule_add', 'yt_add', 'request_decide', 'children'], true)) searchTickAfterResponse(5);
     // סיסמה זמנית — שום דבר אחר עד שהוחלפה.
-    if ($parent['must_change_pw']) fail('יש לבחור סיסמה חדשה לפני שממשיכים', 403, 'must_change');
+    if (!$viaPlatform && $parent['must_change_pw']) fail('יש לבחור סיסמה חדשה לפני שממשיכים', 403, 'must_change');
+
+    /*
+     * היסטוריית מדיניות (lib/history.php): לפני השינוי הראשון — גרסת בסיס; אחרי כל שינוי — גרסה, מי ומה.
+     * הרישום בסוף הבקשה (shutdown), כשהשינוי כבר נשמר; שינוי שלא שינה דבר לא נרשם.
+     */
+    $histActions = ['child_save', 'youtube', 'yt_add', 'yt_del', 'rule_add', 'rule_del', 'rule_toggle', 'device_setting',
+                    'apps_posture', 'app_rule', 'app_limit', 'report_level', 'request_decide', 'app_request_decide'];
+    if (in_array($action, $histActions, true)) {
+        $histChild = str_ends_with($action, 'request_decide')
+            ? (int) (one('SELECT child_id FROM access_requests WHERE id = ? AND account_id = ?', [num('req'), $aid])['child_id'] ?? 0)
+            : (int) (childOf($aid, num('id'))['id'] ?? 0);
+        if ($histChild) {
+            if (!one('SELECT id FROM policy_versions WHERE child_id = ? LIMIT 1', [$histChild])) {
+                policyVersionRecord($histChild, 0, 'לפני תחילת התיעוד');
+            }
+            register_shutdown_function(function () use ($histChild, $pid, $action) {
+                try { policyVersionRecord($histChild, $pid, $action); }
+                catch (Throwable $e) { error_log('migdalor history: ' . $e->getMessage()); }
+            });
+        }
+    }
 
     switch ($action) {
+        /* ── סימולטור הרשאות (שלב 12 ב) — קריאה בלבד ── */
+        case 'simulate':
+            $c = myChild($parent);
+            $b = body();
+            out(['ok' => true,
+                 'site' => str('url') !== '' ? simulateSite($c, str('url'), str('time'), isset($b['day']) ? (int) $b['day'] : -1,
+                                                           isset($b['used_min']) && $b['used_min'] !== '' ? (int) $b['used_min'] : -1) : null,
+                 'app'  => str('package') !== '' ? simulateApp($c, str('package')) : null]);
+
+        /* ── אישור לפי משימה (שלב 12 ד) — דפים ומשאבים לזמן מוגבל, במקום היתר קבוע ── */
+        case 'tasks':
+            out(['ok' => true, 'tasks' => tasksOf((int) myChild($parent)['id'])]);
+
+        case 'task_scan':
+            myChild($parent);
+            [$hosts, $err] = taskScan(str('url'));
+            if ($err) fail($err);
+            out(['ok' => true, 'resources' => $hosts]);
+
+        case 'task_add':
+            $c = myChild($parent);
+            $b = body();
+            [$tid, $err] = taskCreate((int) $c['id'], str('title'), (array) ($b['pages'] ?? []), (array) ($b['resources'] ?? []),
+                                      num('minutes'), $pid);
+            if ($err) fail($err);
+            out(['ok' => true, 'task' => $tid, 'tasks' => tasksOf((int) $c['id']), 'child' => detail($parent, (int) $c['id'])]);
+
+        case 'task_end':
+            $c = myChild($parent);
+            if (!taskEnd((int) $c['id'], num('task'))) fail('המשימה כבר הסתיימה');
+            out(['ok' => true, 'tasks' => tasksOf((int) $c['id']), 'child' => detail($parent, (int) $c['id'])]);
+        /* ── בדיקת הגנה יזומה (שלב 12 ג) — המכשיר בודק את עצמו, בלי לגלוש ובלי לפתוח אפליקציות ── */
+        case 'selftest_request':
+            $n = selftestRequest((int) myChild($parent)['id']);
+            if (!$n) bad('אין מכשיר מחובר לילד הזה');
+            out(['ok' => true, 'devices' => $n]);
+
+        case 'selftest':
+            out(['ok' => true, 'devices' => selftestReport((int) myChild($parent)['id'])]);
+
+        /* ── היסטוריית מדיניות, קבלות ושחזור (שלב 12 א+ז) ── */
+        case 'history':
+            out(['ok' => true, 'history' => policyHistory((int) myChild($parent)['id'])]);
+
+        case 'history_compare':
+            $diff = policyCompare((int) myChild($parent)['id'], num('version'));
+            if ($diff === null) fail('הגרסה לא נמצאה', 404);
+            out(['ok' => true, 'changes' => $diff]);
+
+        case 'history_restore':
+            $c = myChild($parent);
+            [$vid, $err] = policyRestore((int) $c['id'], num('version'), $pid);
+            if ($err) fail($err);
+            out(['ok' => true, 'message' => $vid ? 'שוחזר — המכשיר יקבל את זה בסנכרון הבא' : 'זה כבר המצב הנוכחי',
+                 'history' => policyHistory((int) $c['id']), 'child' => detail($parent, (int) $c['id'])]);
+
         case 'children':
             $rows = all('SELECT * FROM users WHERE account_id = ? AND is_admin = 0
                          ORDER BY CASE status WHEN \'pending\' THEN 0 ELSE 1 END, id', [$aid]);
@@ -129,9 +235,9 @@ try {
                 // מכשירים שצריכים עדכון — לסימן ⬆️ בכרטיס.
                 $card['outdated'] = count(array_filter(all('SELECT app_version FROM devices WHERE user_id = ?', [$u['id']]),
                     fn($d) => deviceAppState($d, $latest)['status'] !== 'current'));
-                // מכשירים שחסרה בהם הרשאה חיונית (מסלול ההקמה) — לסימן 🛡️ בכרטיס.
+                // מכשירים שחסרה בהם הרשאה, או שאינם "בעל מכשיר" — לסימן 🛡️ בכרטיס.
                 $card['perms_bad'] = count(array_filter(all('SELECT perms FROM devices WHERE user_id = ?', [$u['id']]),
-                    fn($d) => !devicePermsState((int) $d['perms'])['ok']));
+                    fn($d) => !devicePermsState((int) $d['perms'])['complete']));
                 return $card;
             }, $rows)]);
 
@@ -221,15 +327,44 @@ try {
             if ($c['status'] !== 'active') fail('הילד מושהה — החזירו אותו קודם');
             [$code, $exp] = pairCreate((int) $c['id']);
             out(['ok' => true, 'code' => $code, 'expires_at' => $exp, 'server' => serverBase(),
-                 'qr' => 'migdalor:pair?c=' . $code . '&s=' . rawurlencode(serverBase())]);
+                 'qr' => 'migdalor:pair?c=' . $code . '&s=' . rawurlencode(serverBase()),
+                 // הקמה כ"בעל מכשיר" (מומלץ): QR שסורקים במסך הפתיחה של מכשיר מאופס. null — עוד אין בנייה חתומה.
+                 'provision' => provisionConfig()]);
 
         /* ── ניהול אפליקציות (שלב 11) ── */
         case 'apps':
             out(['ok' => true, 'apps' => appsList($aid, (int) myChild($parent)['id'])]);
 
+        /* ── הגדרות המכשיר (lib/devicesettings.php) — נאכף ב"בעל מכשיר" ── */
+        case 'device_setting':
+            $c = myChild($parent);
+            if ($err = deviceSettingSave((int) $c['id'], str('key'), (bool) (body()['blocked'] ?? false))) fail($err);
+            out(['ok' => true, 'child' => detail($parent, (int) $c['id'])]);
+
+        /* ── העברה בלי אינטרנט: QR חתום שמכשיר הילד סורק (lib/signing.php, offlineToken) ── */
+        case 'offline_code':
+            $c = myChild($parent);
+            $cid = (int) $c['id'];
+            $apps = appsPayload(['id' => $cid, 'account_id' => $aid]);
+            $tok = offlineToken($aid, $cid, deviceSettings($cid), $apps);
+            $partial = false;
+            // QR גדול מדי לא נסרק במצלמה של טלפון זול: בלי רשימות האפליקציות — רק ברירת המחדל והגדרות המכשיר.
+            if (strlen($tok) > 1600 && !empty($apps['manage'])) {
+                $tok = offlineToken($aid, $cid, deviceSettings($cid),
+                                    ['manage' => true, 'posture' => $apps['posture'], 'partial' => true]);
+                $partial = true;
+            }
+            out(['ok' => true, 'qr' => 'migdalor:policy?t=' . $tok, 'expires_in' => OFFLINE_TTL, 'partial' => $partial]);
+
         case 'apps_posture':
             $c = myChild($parent);
             if ($err = appsSavePosture((int) $c['id'], str('posture'))) fail($err);
+            out(['ok' => true, 'apps' => appsList($aid, (int) $c['id'])]);
+
+        /* ── זמן מסך: מגבלה יומית לאפליקציה (lib/apptime.php) — 0 = בלי מגבלה ── */
+        case 'app_limit':
+            $c = myChild($parent);
+            if ($err = appLimitSave((int) $c['id'], str('package'), num('minutes'))) fail($err);
             out(['ok' => true, 'apps' => appsList($aid, (int) $c['id'])]);
 
         case 'app_rule':
@@ -252,6 +387,11 @@ try {
         case 'requests':
             requestsCleanup();
             out(['ok' => true, 'requests' => requestList($aid)]);
+
+        case 'app_request_decide':
+            [$msg, $err] = appRequestDecide($aid, $pid, num('req'), str('decision'), num('minutes'));
+            if ($err) fail($err);
+            out(['ok' => true, 'message' => $msg, 'requests' => requestList($aid)]);
 
         case 'request_decide':
             [$msg, $err] = requestDecide($aid, $pid, num('req'), str('decision'), str('scope') ?: 'page');

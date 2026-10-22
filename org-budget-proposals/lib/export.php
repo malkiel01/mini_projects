@@ -15,6 +15,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/import.php';
+require_once __DIR__ . '/plan_doc.php';   // תכנית העבודה בעורך התמלילים
 
 const LOGO_MAX_BYTES = 1_500_000;
 const LOGO_TYPES = ['image/png' => 'png', 'image/jpeg' => 'jpg'];
@@ -168,8 +169,8 @@ function plan_blocks(string $text): array
     foreach (preg_split('/\R/u', $text) as $raw) {
         $t = trim($raw);
         if ($t === '' || preg_match('/^תכנית עבודה לשנת \d{4}$/u', $t)) continue;   // הכותרת נכתבת ממילא
-        if (str_starts_with($t, '## ')) $out[] = ['type' => 'heading', 'text' => mb_substr($t, 3)];
-        elseif (str_starts_with($t, '# ')) $out[] = ['type' => 'heading', 'text' => ($letters[$n++] ?? (string)$n) . '. ' . mb_substr($t, 2)];
+        if (str_starts_with($t, '## ')) $out[] = ['type' => 'heading', 'text' => mb_substr($t, 3), 'level' => 2];
+        elseif (str_starts_with($t, '# ')) $out[] = ['type' => 'heading', 'text' => ($letters[$n++] ?? (string)$n) . '. ' . mb_substr($t, 2), 'level' => 1];
         elseif (str_starts_with($t, '- ')) $out[] = ['type' => 'bullet', 'text' => mb_substr($t, 2)];
         elseif (in_array(rtrim($t, ':'), ['מבוא'], true)) $out[] = ['type' => 'center', 'text' => rtrim($t, ':')];
         else $out[] = ['type' => 'para', 'text' => $t];
@@ -233,7 +234,9 @@ function doc_model(array $s, int $budgetId): array
     }
 
     // הערכת עמודים: שער 1, תכנית עבודה לפי אורך, ריכוז, וכל קופה בדף חדש
-    $plan = plan_blocks((string)$b['work_plan']);
+    // תכנית העבודה: מהעורך (העותק השמור), ובהצעה שעוד לא עברה לעורך — מהטקסט
+    $planView = $b['plan_view'] ?? null;
+    $plan = $planView ? plan_html_blocks($planView['html']) : plan_blocks((string)$b['work_plan']);
     $page = 2;
     $planPages = $plan ? max(1, (int)ceil((array_sum(array_map(fn($x) => 1 + intdiv(mb_strlen($x['text']), 90), $plan)) + 3) / 32)) : 0;
     $page += $planPages;
@@ -278,8 +281,9 @@ function doc_model(array $s, int $budgetId): array
             'org' => $root['name'], 'subtitle' => $org['parent_id'] ? $org['name'] : $org['subtitle'],
             'has_logo' => org_logo_path($org) !== null, 'logo_org' => (int)$org['id'],
             'title' => "הצעת תקציב לשנת $y", 'submitted_to' => $b['submitted_to'], 'signers' => $b['signers'],
+            'view' => $b['cover_view'] ?? null, 'blocks' => !empty($b['cover_view']) ? plan_html_blocks($b['cover_view']['html']) : [],
         ],
-        'plan' => ['title' => "תכנית עבודה לשנת $y", 'blocks' => $plan],
+        'plan' => ['title' => "תכנית עבודה לשנת $y", 'blocks' => $plan, 'view' => $planView],
         'summary' => ['title' => 'דף ריכוז', 'sections' => $sections, 'note' => $b['summary_note']],
         'funds' => $funds,
         'summary_only' => array_values(array_map(fn($l) => ['id' => $l['id'], 'fund_id' => $l['fund_id'], 'title' => $l['title'],
@@ -434,12 +438,84 @@ function w_logo(array $img): string
         . '</a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>';
 }
 
+const OOXML_MEDIA = ['jpeg' => 'image/jpeg', 'gif' => 'image/gif', 'webp' => 'image/webp', 'svg' => 'image/svg+xml', 'bmp' => 'image/bmp'];
+
+/**
+ * העותק השמור של גוף ה-Word מהעורך. $prefix / $numOffset — לחלק השני באותו קובץ: מזהי הסגנונות, המספור,
+ * התמונות והקשרים של העורך זהים בין מסמכים (wpNormal, 9001, wp_1.png, wpImg1), ולכן מקבלים קידומת אחרת.
+ */
+function part_ox(int $id, string $part, string $prefix = 'wp', int $numOffset = 0): ?array
+{
+    $ox = json_decode((string)(part_row($id, $part)['ooxml'] ?? ''), true);
+    if (!is_array($ox) || !isset($ox['body'])) return null;
+    if ($prefix === 'wp' && !$numOffset) return $ox;
+    $ren = function (string $x) use ($prefix, $numOffset): string {
+        $x = preg_replace('/(w:styleId|w:val)="wp([A-Z]\w*)"/', '$1="' . $prefix . '$2"', $x);
+        $x = preg_replace('/r:(embed|id|link)="wpImg/', 'r:$1="' . $prefix . 'Img', $x);
+        $x = preg_replace('/Id="wpImg/', 'Id="' . $prefix . 'Img', $x);
+        $x = preg_replace('/Target="media\/wp_/', 'Target="media/' . $prefix . '_', $x);
+        return preg_replace_callback('/(w:numId w:val|w:abstractNumId w:val|w:abstractNumId|w:numId)="(\d+)"/', fn($m) => $m[1] . '="' . ((int)$m[2] + $numOffset) . '"', $x);
+    };
+    foreach (['body', 'styles', 'rels'] as $k) $ox[$k] = $ren((string)($ox[$k] ?? ''));
+    foreach (['abstract', 'num'] as $k) if (isset($ox['numbering_parts'][$k])) $ox['numbering_parts'][$k] = $ren($ox['numbering_parts'][$k]);
+    foreach ($ox['media'] ?? [] as $i => $m) $ox['media'][$i]['name'] = preg_replace('/^wp_/', $prefix . '_', (string)$m['name']);
+    return $ox;
+}
+
+/** כמה גופים מהעורך בקובץ אחד: סגנונות, מספור (כל ה-abstract לפני כל ה-num), תמונות, קשרים ומרחבי שמות. */
+function ooxml_join(array $oxs): ?array
+{
+    if (!$oxs) return null;
+    $j = ['styles' => '', 'numbering_parts' => ['abstract' => '', 'num' => ''], 'media' => [], 'rels' => '', 'namespaces' => ''];
+    foreach ($oxs as $o) {
+        $j['styles'] .= $o['styles'] ?? '';
+        $j['numbering_parts']['abstract'] .= $o['numbering_parts']['abstract'] ?? '';
+        $j['numbering_parts']['num'] .= $o['numbering_parts']['num'] ?? '';
+        $j['media'] = array_merge($j['media'], $o['media'] ?? []);
+        $j['rels'] .= $o['rels'] ?? '';
+        $j['namespaces'] .= ' ' . ($o['namespaces'] ?? '');
+    }
+    return $j;
+}
+
+/** מרחבי השמות של הגוף מהעורך — מה שחסר נוסף ל-<w:document> שלנו. */
+function ooxml_ns_merge(string $ours, string $theirs): string
+{
+    preg_match_all('/xmlns:(\w+)="([^"]*)"/', $ours, $a);
+    preg_match_all('/xmlns:(\w+)="([^"]*)"/', $theirs, $b);
+    foreach ($b[1] as $i => $p) {
+        if (in_array($p, $a[1], true)) continue;
+        $ours .= ' xmlns:' . $p . '="' . xml($b[2][$i]) . '"';
+        $a[1][] = $p;
+    }
+    return $ours;
+}
+
 function export_docx(array $s, int $id): never
+{
+    [$tmp, $d] = docx_build($s, $id);
+    if (defined('OB_EXPORT_SINK')) { rename($tmp, OB_EXPORT_SINK . '.docx'); throw new RuntimeException('sink'); }
+    send_download($tmp, $d['file'] . '.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+}
+
+/** השער שנבנה מהשדות, כ-docx לבד — כדי לפתוח ממנו את מסמך השער בעורך (lib/plan_doc.php). */
+function cover_docx_bytes(array $s, int $id): string
+{
+    [$tmp] = docx_build($s, $id, true);
+    $bytes = (string)file_get_contents($tmp);
+    unlink($tmp);
+    return $bytes;
+}
+
+/** בונה את ה-docx לקובץ זמני → [נתיב, מודל המסמך]. $coverOnly — רק השער מהשדות, בלי מספרי עמודים. */
+function docx_build(array $s, int $id, bool $coverOnly = false): array
 {
     $d = doc_model($s, $id);
     $c = $d['cover'];
     $body = '';
     $ds = doc_st($d['style']);
+    if ($coverOnly) $ds = ['show_cover' => true, 'show_plan' => false, 'show_summary' => false, 'show_appendix' => false, 'page_numbers' => false] + $ds;
+    $oxs = [];   // גופים מהעורך (שער, תכנית) — הסגנונות, המספור והתמונות שלהם נכנסים לחבילה
     [$X, $T, $H, $TI, $C] = [$ds['size_text'], $ds['size_table'], $ds['size_head'], $ds['size_title'], $ds['size_cover']];
     $u = $ds['underline'];
     $al = $ds['title_align'];
@@ -458,7 +534,12 @@ function export_docx(array $s, int $id): never
             $logo = ['path' => $path, 'ext' => str_ends_with($path, '.png') ? 'png' : 'jpeg', 'emu' => [(int)($w * 360000), (int)($h * 360000)]];
         }
     }
-    if ($ds['show_cover']) {
+    $cv = !$coverOnly && $ds['show_cover'] && $c['view'] ? part_ox($id, 'cover', 'wc', 1000) : null;
+    if ($cv) {
+        $first = false;
+        $body .= $cv['body'];   // השער מהעורך
+        $oxs[] = $cv;
+    } elseif ($ds['show_cover']) {
         $first = false;
         $body .= w_p($c['org'], ['bold' => true, 'size' => $C, 'align' => 'center', 'before' => 1200, 'after' => 200]);
         if ($c['subtitle']) $body .= w_p($c['subtitle'], ['bold' => true, 'size' => round($C * .75 * 2) / 2, 'align' => 'center', 'after' => 200]);
@@ -475,11 +556,13 @@ function export_docx(array $s, int $id): never
     // תכנית עבודה
     if ($ds['show_plan'] && $d['plan']['blocks']) {
         $body .= w_p($d['plan']['title'], ['bold' => true, 'u' => $u, 'size' => $TI, 'align' => $al, 'break' => $brk(), 'after' => 200]);
-        foreach ($d['plan']['blocks'] as $bl) {
+        $ox = $d['plan']['view'] ? part_ox($id, 'plan') : null;
+        if ($ox) { $body .= $ox['body']; $oxs[] = $ox; }   // הגוף מהעורך — עם העיצוב, הרשימות והתמונות שלו
+        else foreach ($d['plan']['blocks'] as $bl) {
             $body .= match ($bl['type']) {
                 'center' => w_p($bl['text'], ['bold' => true, 'u' => $u, 'size' => $H + 1, 'align' => $al, 'after' => 160]),
                 'heading' => w_p($bl['text'], ['bold' => true, 'u' => $u, 'size' => $H, 'before' => 160, 'keep' => true]),
-                'bullet' => w_p('•  ' . $bl['text'], ['size' => $X]),
+                'bullet' => w_p((($bl['n'] ?? null) ? $bl['n'] . '.  ' : '•  ') . $bl['text'], ['size' => $X]),
                 default => w_p($bl['text'], ['size' => $X, 'after' => 120]),
             };
         }
@@ -512,7 +595,7 @@ function export_docx(array $s, int $id): never
     }
 
     // דף לכל קופה
-    foreach ($d['funds'] as $i => $f) {
+    foreach ($coverOnly ? [] : $d['funds'] as $i => $f) {
         $bm = '<w:bookmarkStart w:id="' . ($i + 10) . '" w:name="fund' . $f['id'] . '"/>';
         $nb = $brk();
         $body .= w_p($f['title'], ['bold' => true, 'u' => $u, 'size' => $TI, 'align' => $al, 'break' => $nb && ($ds['fund_new_page'] || $i === 0),
@@ -563,6 +646,8 @@ function export_docx(array $s, int $id): never
         . '" w:header="567" w:footer="' . $tw(min(10, $ds['margin_bottom'] / 2)) . '" w:gutter="0"/>' . ($ds['show_cover'] ? '<w:titlePg/>' : '') . '<w:bidi/></w:sectPr>';
     $ns = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
         . 'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"';
+    $ox = ooxml_join($oxs);
+    if ($ox) $ns = ooxml_ns_merge($ns, (string)($ox['namespaces'] ?? ''));
     $doc = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document ' . $ns . '><w:body>' . $body . $sect . '</w:body></w:document>';
     $footer = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:ftr ' . $ns . '><w:p><w:pPr><w:bidi/><w:jc w:val="center"/></w:pPr>'
         . '<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r>'
@@ -571,7 +656,12 @@ function export_docx(array $s, int $id): never
         . '<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="' . xml($ds['font']) . '" w:hAnsi="' . xml($ds['font']) . '" w:cs="' . xml($ds['font']) . '" w:eastAsia="' . xml($ds['font']) . '"/>'
         . '<w:sz w:val="' . (int)round($X * 2) . '"/><w:szCs w:val="' . (int)round($X * 2) . '"/><w:lang w:val="he-IL" w:bidi="he-IL"/></w:rPr></w:rPrDefault>'
         . '<w:pPrDefault><w:pPr><w:bidi/><w:spacing w:after="60" w:line="' . (int)round(240 * $ds['line']) . '" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>'
-        . '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style></w:styles>';
+        . '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>' . ($ox['styles'] ?? '') . '</w:styles>';
+    $np = $ox['numbering_parts'] ?? null;
+    $numbering = $np && ($np['abstract'] ?? '') !== '' ? '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        . $np['abstract'] . $np['num'] . '</w:numbering>' : null;
+    $media = $ox['media'] ?? [];
+    $exts = array_diff(array_unique(array_map(fn($m) => strtolower(pathinfo($m['name'], PATHINFO_EXTENSION)), $media)), ['png', 'jpg', '']);
     $settings = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
         . '<w:updateFields w:val="true"/><w:defaultTabStop w:val="720"/><w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>';
     $rels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
@@ -579,10 +669,13 @@ function export_docx(array $s, int $id): never
         . '<Relationship Id="rSettings" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>'
         . '<Relationship Id="rFooter" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>'
         . ($logo ? '<Relationship Id="rLogo" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/logo.' . ($logo['ext'] === 'png' ? 'png' : 'jpg') . '"/>' : '')
-        . '</Relationships>';
+        . ($numbering ? '<Relationship Id="rNumbering" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/>' : '')
+        . ($ox['rels'] ?? '') . '</Relationships>';
     $types = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
         . '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>'
         . '<Default Extension="png" ContentType="image/png"/><Default Extension="jpg" ContentType="image/jpeg"/>'
+        . implode('', array_map(fn($e) => '<Default Extension="' . xml($e) . '" ContentType="' . xml(OOXML_MEDIA[$e] ?? 'application/octet-stream') . '"/>', $exts))
+        . ($numbering ? '<Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>' : '')
         . '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
         . '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>'
         . '<Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>'
@@ -608,9 +701,13 @@ function export_docx(array $s, int $id): never
     $zip->addFromString('word/footer1.xml', $footer);
     $zip->addFromString('word/_rels/document.xml.rels', $rels);
     if ($logo) $zip->addFile($logo['path'], 'word/media/logo.' . ($logo['ext'] === 'png' ? 'png' : 'jpg'));
+    if ($numbering) $zip->addFromString('word/numbering.xml', $numbering);
+    foreach ($media as $m) {
+        $name = basename((string)$m['name']);
+        if ($name !== '' && $name !== 'logo.png' && $name !== 'logo.jpg') $zip->addFromString('word/media/' . $name, (string)base64_decode((string)$m['base64']));
+    }
     $zip->close();
-    if (defined('OB_EXPORT_SINK')) { rename($tmp, OB_EXPORT_SINK . '.docx'); throw new RuntimeException('sink'); }
-    send_download($tmp, $d['file'] . '.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    return [$tmp, $d];
 }
 
 // ── אקסל ─────────────────────────────────────────────────────
@@ -836,24 +933,35 @@ function export_xlsx(array $s, int $id): never
         $cover = new Sheet(sheet_name('שער', $used), [round($units / .94, 1)], $pageH);   // שער — כל רוחב העמוד, כמו ב-Word
         $cover->footer = false;
         $c = $d['cover'];
+        $logo = function (float $gapNo) use ($c, $cover, $st) {
+            $q = db()->prepare('SELECT * FROM orgs WHERE id = ?');
+            $q->execute([$c['logo_org']]);
+            $path = $c['has_logo'] ? org_logo_path($q->fetch()) : null;
+            if (!$path || !($sz = getimagesize($path))) { if ($gapNo) $cover->gap($gapNo); return; }
+            $w = 5.0; $h = $w * $sz[1] / max(1, $sz[0]);   // ס"מ, כמו ב-Word
+            if ($h > 6) { $w *= 6 / $h; $h = 6; }
+            $cover->gap(20);
+            $row = $cover->add([], $h / 2.54 * 72 + 4);
+            $widthEmu = (int)(((210 - 2 * $st['margin_side']) / 10) * 360000 * .94);
+            $cover->image = ['row' => $row, 'emu' => [(int)($w * 360000), (int)($h * 360000)], 'off' => max(0, (int)(($widthEmu - $w * 360000) / 2)),
+                'path' => $path, 'ext' => str_ends_with($path, '.png') ? 'png' : 'jpeg'];
+            $cover->gap(20);
+        };
+        if ($c['blocks']) {
+            // השער מהעורך: הטקסט לפי הסדר, במרכז; התמונה הראשונה — הלוגו של הארגון
+            $cover->gap(40);
+            $img = false;
+            foreach ($c['blocks'] as $bl) {
+                if ($bl['type'] === 'image') { if (!$img) $logo(0); $img = true; continue; }
+                $big = $bl['type'] === 'heading';
+                $cover->line(['v' => $bl['text'], 's' => $big ? XS_C_TITLE : XS_C_SMALL], $big ? $pt($C, $lines($bl['text'], $total, $C)) : $pt($X + 1, $lines($bl['text'], $total, $X + 1)));
+                $cover->gap($big ? 10 : 4);
+            }
+        } else {
         $cover->gap(60);
         $cover->line(['v' => $c['org'], 's' => XS_C_ORG], $pt($C, $lines($c['org'], $total, $C)));
         if ($c['subtitle']) { $cover->gap(10); $cover->line(['v' => $c['subtitle'], 's' => XS_C_SUB], $pt($C * .75, $lines($c['subtitle'], $total, $C * .75))); }
-        if ($c['has_logo']) {
-            $q = db()->prepare('SELECT * FROM orgs WHERE id = ?');
-            $q->execute([$c['logo_org']]);
-            $path = org_logo_path($q->fetch());
-            if ($path && ($sz = getimagesize($path))) {
-                $w = 5.0; $h = $w * $sz[1] / max(1, $sz[0]);   // ס"מ, כמו ב-Word
-                if ($h > 6) { $w *= 6 / $h; $h = 6; }
-                $cover->gap(20);
-                $row = $cover->add([], $h / 2.54 * 72 + 4);
-                $widthEmu = (int)(((210 - 2 * $st['margin_side']) / 10) * 360000 * .94);
-                $cover->image = ['row' => $row, 'emu' => [(int)($w * 360000), (int)($h * 360000)], 'off' => max(0, (int)(($widthEmu - $w * 360000) / 2)),
-                    'path' => $path, 'ext' => str_ends_with($path, '.png') ? 'png' : 'jpeg'];
-                $cover->gap(20);
-            } else $cover->gap(110);
-        } else $cover->gap(110);
+        $logo(110);
         $cover->line(['v' => $c['title'], 's' => XS_C_TITLE], $pt($C + 2));
         if ($c['submitted_to']) { $cover->gap(14); $cover->line(['v' => $c['submitted_to'], 's' => XS_C_SMALL], $pt($X + 1, $lines($c['submitted_to'], $total, $X + 1))); }
         $cover->gap(40);
@@ -861,6 +969,7 @@ function export_xlsx(array $s, int $id): never
             $t = implode("\n", array_merge([$sg['name']], $sg['titles']));
             $cover->line(['v' => $t, 's' => XS_C_SMALL], $pt($X + 1, count($sg['titles']) + 1));
             $cover->gap(12);
+        }
         }
         $sheets[] = $cover;
     }
@@ -873,7 +982,7 @@ function export_xlsx(array $s, int $id): never
             match ($bl['type']) {
                 'center' => [$pl->gap(4), $pl->line(['v' => $bl['text'], 's' => XS_P_CENTER], $pt($H + 1), true)],
                 'heading' => [$pl->gap(6), $pl->line(['v' => $bl['text'], 's' => XS_P_HEAD], $pt($H, $lines($bl['text'], $total, $H)), true)],
-                'bullet' => $pl->line(['v' => '•  ' . $bl['text'], 's' => XS_BULLET], $pt($X, $lines($bl['text'], $total - 3, $X))),
+                'bullet' => $pl->line(['v' => (($bl['n'] ?? null) ? $bl['n'] . '.  ' : '•  ') . $bl['text'], 's' => XS_BULLET], $pt($X, $lines($bl['text'], $total - 3, $X))),
                 default => $pl->line(['v' => $bl['text'], 's' => XS_PARA], $pt($X, $lines($bl['text'], $total, $X)) + 2),
             };
         }

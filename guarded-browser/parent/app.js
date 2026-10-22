@@ -14,9 +14,10 @@ const MODES = { kiosk: ['🧩 אריחים בלבד', 'רק האתרים והע�
 const POSTURES = { deny_all: ['🔒 הכול חסום', 'שום דבר לא נפתח עד שאתם מתירים. הבחירה הבטוחה. 🔎 החיפוש — רק באתרים ובערוצים שאישרתם.'],
                    allow_all: ['🔓 הכול פתוח', 'האינטרנט פתוח, חוץ ממה שאתם חוסמים. 🔎 החיפוש — ברשת, וכל תוצאה מסוננת.'] };
 const YT = { off: ['⛔ כבוי', 'יוטיוב לא נפתח בכלל.'],
+             learn: ['🎓 למידה', 'רק הסרטונים שהוספתם לתור, לפי הסדר — כאריחים במסך הבית. בלי Shorts, חיפוש, ערוצים, המלצות וניגון אוטומטי.'],
              restricted: ['✅ רק מה שאישרתי', 'רק הערוצים והסרטונים שברשימה. בלי דף הבית ובלי המלצות.'],
              full: ['▶️ פתוח', 'כל יוטיוב, חוץ ממה שתחסמו ברשימה.'] };
-const SCOPES = { domain: 'כל האתר', exact: 'הדף הזה בלבד', domain_plus: 'האתר + מה שהוא טוען' };
+const SCOPES = { domain: 'כל האתר', exact: 'הדף הזה בלבד', domain_plus: 'האתר + מה שהוא טוען', resource: 'משאב בתוך דף (משימה)' };
 const KIND = { channel: 'ערוץ', handle: 'ערוץ', video: 'סרטון', playlist: 'פלייליסט' };
 
 const $ = (s, root = document) => root.querySelector(s);
@@ -103,8 +104,13 @@ async function boot() {
     let me;
     try { me = await call('me'); }
     catch (e) { document.body.append(el('p', { class: 'error', text: e.message, style: 'margin:16px' })); return; }
+    // מחוברת לפלטפורמה, והזהות עוד לא מקושרת להורה — המסך החד-פעמי.
+    if (!me.me && me.link) return showOnly('#linkacc', () => $('#link-form').login.focus());
     if (!me.me) return showOnly('#auth', () => $('#login-form').login.focus());
-    Object.assign(S, { me: me.me, csrf: me.csrf, account: me.account, catalogs: me.catalogs });
+    Object.assign(S, { me: me.me, csrf: me.csrf, account: me.account, catalogs: me.catalogs, platform: me.platform });
+    // מחוברת: הסיסמה והיציאה שייכות לכלים הדיגיטליים.
+    $('#m-pass').hidden = $('#m-out').hidden = !!me.platform;
+    $('#m-link').hidden = !me.platform;
     if (me.me.must_change) return showOnly('#newpass', () => $('#newpass-form').current.focus());
     // משוחרר — הפאנל נעול. אין טעם להגדיר דבר כשהאכיפה כבויה.
     if (S.account.expiry === 'released') return renderReleaseLock();
@@ -118,7 +124,7 @@ async function boot() {
 }
 
 function showOnly(sel, then) {
-    for (const s of ['#auth', '#newpass', '#released', '#app']) $(s).hidden = s !== sel;
+    for (const s of ['#auth', '#linkacc', '#newpass', '#released', '#app']) $(s).hidden = s !== sel;
     if (then) then();
 }
 
@@ -149,6 +155,7 @@ function renderReleaseLock() {
             location.reload();
         } catch (e) { toast(e.message, true); }
     };
+    $('#released-logout').hidden = !!S.platform;   // מחוברת — היציאה מהכלים הדיגיטליים
     $('#released-logout').onclick = async () => { try { await call('logout', {}); } catch {} location.reload(); };
 }
 
@@ -159,6 +166,15 @@ $('#login-form').addEventListener('submit', async e => {
     try { await call('login', { login: f.login.value, password: f.password.value }); location.reload(); }
     catch (x) { err.textContent = x.message; err.hidden = false; btn.disabled = false; }
 });
+
+$('#link-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const f = e.target, err = $('.error', f), btn = $('button', f);
+    err.hidden = true; btn.disabled = true;
+    try { await call('link', { login: f.login.value, password: f.password.value }); location.reload(); }
+    catch (x) { err.textContent = x.message; err.hidden = false; btn.disabled = false; }
+});
+$('#link-back').addEventListener('click', () => location.reload());
 
 $('#newpass-form').addEventListener('submit', async e => {
     e.preventDefault();
@@ -218,11 +234,11 @@ async function loadKids() {
 
 let K = null, tab = 'sum';
 const TABS_BASE = [['sum', '📋 סיכום'], ['act', '📊 פעילות'], ['access', '🔐 גישה'], ['time', '⏰ זמנים'],
-                   ['yt', '▶️ יוטיוב'], ['sites', '🌐 אתרים'], ['dev', '📱 מכשירים']];
+                   ['yt', '▶️ יוטיוב'], ['sites', '🌐 אתרים'], ['dev', '📱 מכשירים'], ['hist', '🕓 שינויים']];
 // לשונית "אפליקציות" רק לחשבון ברמת אפליקציות/מכשיר (המפתח פותח).
 const appsAllowed = () => S.account && (S.account.level_max === 'apps' || S.account.level_max === 'device');
 const tabsFor = () => appsAllowed()
-    ? [...TABS_BASE.slice(0, 6), ['apps', '📲 אפליקציות'], TABS_BASE[6]] : TABS_BASE;
+    ? [...TABS_BASE.slice(0, 6), ['apps', '📲 אפליקציות'], ...TABS_BASE.slice(6)] : TABS_BASE;
 
 async function openKid(id) {
     try { K = (await call('child', { id })).child; } catch (e) { toast(e.message, true); return; }
@@ -237,6 +253,8 @@ async function act(action, extra = {}, ok = '') {
     try {
         const r = await call(action, { id: K.id, ...extra });
         if (r.child) K = r.child;
+        if (r.tasks) { TS = r.tasks; TK = K.id; }
+        HK = 0;   // שינוי — ההיסטוריה תיטען מחדש
         if (r.message || ok) toast(r.message || ok);
         renderKid(); loadKids();
         return r;
@@ -250,8 +268,63 @@ function renderKid() {
     const tabs = el('div', { class: 'seg-tabs', role: 'tablist', style: `grid-template-columns:repeat(4,minmax(0,1fr))` },
         T.map(([k, label]) => el('button', { type: 'button', role: 'tab', ariaSelected: String(tab === k),
             text: label, onclick: () => { tab = k; sessionStorage.setItem('mg:tab', k); renderKid(); } })));
-    const body = { sum: kidSum, act: kidAct, access: kidAccess, time: kidTime, yt: kidYt, sites: kidSites, dev: kidDev, apps: kidApps }[tab]();
+    const body = { sum: kidSum, act: kidAct, access: kidAccess, time: kidTime, yt: kidYt, sites: kidSites, dev: kidDev, apps: kidApps,
+                   hist: kidHist }[tab]();
     $('#kid-body').replaceChildren(tabs, ...body.filter(Boolean));
+}
+
+/*
+ * שינויים (שלב 12 א+ז): כל גרסה של המדיניות — מי ומתי ומה השתנה, ולכל מכשיר קבלה: התקבל / הוחל / אומת / נכשל
+ * (עם שעה וסיבה) או "הוחלפה" לפני שהגיעה. השוואה לגרסה הנוכחית ושחזור (כגרסה חדשה). lib/history.php.
+ */
+let H = null, HK = 0;
+const RECEIPT = { pending: ['⏳', 'ממתין למכשיר'], received: ['📥', 'התקבל'], applied: ['☑️', 'הוחל'],
+                  verified: ['✅', 'אומת'], failed: ['❌', 'נכשל'], superseded: ['⏭️', 'הוחלפה לפני שהגיעה'] };
+const whenStr = iso => iso ? new Date(iso).toLocaleString('he-IL', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+
+function kidHist() {
+    if (HK !== K.id) {
+        HK = K.id; H = null;
+        call('history', { id: K.id }).then(r => { H = r.history; if (tab === 'hist') renderKid(); })
+            .catch(e => toast(e.message, true));
+    }
+    if (!H) return [el('p', { class: 'hint', text: 'טוען…' })];
+    if (!H.length) return [el('p', { class: 'empty', text: 'עוד לא נרשמו שינויים. כל שינוי מעכשיו יופיע כאן, עם מה שהמכשיר עשה איתו.' })];
+    return [el('ul', { class: 'rows' }, H.map(v => el('li', { style: 'display:block' }, [
+        el('div', { class: 'nm' }, [
+            el('b', { text: `${whenStr(v.at)} · ${v.by}${v.current ? ' · נוכחית' : ''}` }),
+            ...v.changes.slice(0, 8).map(t => el('small', { text: t })),
+            v.changes.length > 8 ? el('small', { text: `ועוד ${v.changes.length - 8}…` }) : null,
+            ...v.devices.map(d => {
+                const [ic, label] = RECEIPT[d.state] || ['', d.state];
+                const when = d.applied_at ? ` ${whenStr(d.applied_at)}` : d.received_at ? ` ${whenStr(d.received_at)}` : '';
+                return el('small', { text: `${ic} ${d.device || 'מכשיר'}: ${label}${when}${d.detail ? ' — ' + d.detail : ''}`,
+                    style: d.state === 'failed' ? 'color:var(--danger)' : 'color:var(--muted)' });
+            }),
+        ]),
+        v.current ? null : el('div', { class: 'row-btns' }, [
+            el('button', { type: 'button', class: 'btn ghost sm', text: '🔍 מה ישתנה', onclick: () => compareVersion(v) }),
+            el('button', { type: 'button', class: 'btn sm', text: '↩️ שחזור', onclick: () => restoreVersion(v) }),
+        ]),
+    ])))];
+}
+
+async function compareVersion(v) {
+    try {
+        const r = await call('history_compare', { id: K.id, version: v.id });
+        alert(r.changes.length ? `שחזור לגרסה מ-${whenStr(v.at)} ישנה:\n\n${r.changes.join('\n')}` : 'זהה למצב הנוכחי.');
+    } catch (e) { toast(e.message, true); }
+}
+
+async function restoreVersion(v) {
+    let r;
+    try { r = await call('history_compare', { id: K.id, version: v.id }); } catch (e) { toast(e.message, true); return; }
+    if (!r.changes.length) { toast('זהה למצב הנוכחי'); return; }
+    if (!confirm(`לשחזר את המצב מ-${whenStr(v.at)}?\n\n${r.changes.slice(0, 15).join('\n')}\n\nהיתרים זמניים לא ישתנו.`)) return;
+    try {
+        const res = await call('history_restore', { id: K.id, version: v.id });
+        K = res.child; H = res.history; toast(res.message); renderKid(); loadKids();
+    } catch (e) { toast(e.message, true); }
 }
 
 function kidSum() {
@@ -293,14 +366,91 @@ function kidSum() {
         enforceCard(K.enforcement),
         el('div', { class: 'tiles' }, tiles.map(([ic, t, fn]) => el('button', { type: 'button', class: 'tile', onclick: fn },
             [el('span', { class: 'tile-ic', text: ic }), t]))),
+        simulatorGroup(),
+        selftestGroup(),
     ].filter(Boolean);
+}
+
+/* ── בדיקת הגנה יזומה (שלב 12 ג) — המכשיר בודק את עצמו; הפסיקה בשרת (lib/selftest.php) ── */
+
+const ST_ICON = { fail: '❌', warn: '🟡', ok: '✅' };
+const ST_AREA = { device: '📱', web: '🌐', apps: '🧩', settings: '⚙️' };
+
+function selftestGroup() {
+    const kid = K.id;
+    const out = el('div', { role: 'status' });
+    let timer = 0;
+    const show = devs => {
+        if (K.id !== kid) return;
+        out.replaceChildren(...devs.map(d => {
+            const head = d.at
+                ? `${d.device} — ${d.fail ? `${d.fail} נכשלו` : 'לא נמצאו כשלים'}${d.warn ? ` · ${d.warn} לתשומת לב` : ''} · ${d.ok} תקינים (${whenStr(d.at)})`
+                : `${d.device} — עוד לא נבדק`;
+            return el('div', {}, [
+                el('div', { class: `banner ${d.fail ? 'warn' : d.at ? 'ok' : ''}` }, [el('span', { text: d.fail ? '❌' : d.at ? '🛡️' : '·' }),
+                    el('div', {}, [el('b', { text: head }),
+                        d.waiting ? el('div', { class: 'hint', text: '⏳ ממתין למכשיר — הבדיקה רצה בסנכרון הבא (כשמגדלור פתוח או ברקע)' }) : null])]),
+                d.checks.length ? el('ul', { class: 'rows' }, d.checks.map(c => el('li', {}, [
+                    el('span', { text: `${ST_ICON[c.state]} ${ST_AREA[c.area] || ''}` }),
+                    el('div', { class: 'nm' }, [el('b', { text: c.label }), c.detail ? el('small', { text: c.detail, title: c.detail }) : null])]))) : null,
+            ]);
+        }));
+        // ממתין — מתעדכן לבד עוד כמה דקות.
+        clearTimeout(timer);
+        if (devs.some(d => d.waiting) && out.isConnected) timer = setTimeout(load, 8000);
+    };
+    const load = async () => { try { show((await call('selftest', { id: kid })).devices); } catch (e) { toast(e.message, true); } };
+    const start = async () => {
+        try { await call('selftest_request', { id: kid }); toast('נשלח למכשיר'); load(); } catch (e) { toast(e.message, true); }
+    };
+    load();
+    return group('🛡️ בדיקת הגנה', 'המכשיר בודק את עצמו — בלי לגלוש לאתרים ובלי לפתוח אפליקציות', [
+        el('div', { class: 'hint', text: 'נבדק: ההכרעה של המכשיר על אתר חסום, אתר מותר ואתר שאינו ברשימה (מול השרת); אפליקציות חסומות — מושעות או נחסמות בפועל; הגדרות המכשיר — נקראות מהמערכת; "בעל מכשיר", נגישות והגנה מהסרה.' }),
+        el('button', { type: 'button', class: 'btn primary', text: 'הרצת בדיקה', onclick: start }), out]);
+}
+
+/**
+ * סימולטור הרשאות (שלב 12 ב): אתר, אפליקציה ושעה ← ההכרעה ואיפה בהגדרות היא נקבעה. מריץ את המנוע האמיתי של
+ * השרת על ההגדרות השמורות, בלי לשנות דבר (lib/simulator.php).
+ */
+function simulatorGroup() {
+    const url = el('input', { type: 'text', dir: 'ltr', placeholder: 'אתר — למשל wikipedia.org', ariaLabel: 'אתר' });
+    const pkg = el('input', { type: 'text', dir: 'ltr', placeholder: 'אפליקציה — שם חבילה (לא חובה)', ariaLabel: 'אפליקציה' });
+    pkg.setAttribute('list', 'sim-apps');   // ‏list הוא מאפיין לקריאה בלבד — רק כ-attribute
+    // האפליקציות שהמכשיר דיווח (אם לשונית האפליקציות כבר נטענה).
+    const apps = el('datalist', { id: 'sim-apps' }, (AP?.kid === K.id && AP.apps || []).map(a => el('option', { value: a.package, label: a.label })));
+    const time = el('input', { type: 'time', ariaLabel: 'שעה' });
+    const day = el('select', { ariaLabel: 'יום' }, [['-1', 'היום'], ...['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת']
+        .map((d, i) => [String(i), d])].map(([v, t]) => el('option', { value: v, text: t })));
+    const used = el('input', { type: 'number', min: '0', max: '1440', placeholder: 'דקות שכבר נוצלו (ריק — בפועל)', ariaLabel: 'דקות שנוצלו' });
+    const out = el('div', { role: 'status' });
+    const line = (ok, title, sub) => el('div', { class: `banner ${ok ? 'ok' : 'warn'}` }, [el('span', { text: ok ? '✅' : '🚫' }),
+        el('div', {}, [el('b', { text: title }), ...sub.filter(Boolean).map(t => el('div', { class: 'hint', text: t }))])]);
+    const run = async () => {
+        if (!url.value.trim() && !pkg.value.trim()) { toast('אתר או אפליקציה'); return; }
+        let r;
+        try { r = await call('simulate', { id: K.id, url: url.value.trim(), package: pkg.value.trim(), time: time.value,
+                                            day: Number(day.value), used_min: used.value }); }
+        catch (e) { toast(e.message, true); return; }
+        out.replaceChildren(...[
+            r.site && line(r.site.allow, `${r.site.allow ? 'ייפתח' : 'ייחסם'} — ${url.value.trim()}`,
+                [r.site.reason, `נקבע ב: ${r.site.where}`, r.site.rule ? `הכלל: ${r.site.rule}` : '',
+                 `בדיקה ל-${r.site.at}, אחרי ${r.site.used_min} דקות היום`]),
+            r.app && line(r.app.allow, `${r.app.allow ? 'תיפתח' : 'תיחסם'} — ${r.app.label || pkg.value.trim()}`,
+                [r.app.reason, r.app.where ? `נקבע ב: ${r.app.where}` : '', r.app.note]),
+        ].filter(Boolean));
+    };
+    return group('🧪 מה יקרה אם…', 'בודק את ההגדרות השמורות, בלי לשנות דבר', [
+        url, pkg, apps, el('div', { class: 'row-btns' }, [day, time]), used,
+        el('button', { type: 'button', class: 'btn primary', text: 'בדיקה', onclick: run }), out]);
 }
 
 /* ── מצב אכיפה: מה באמת נאכף (שלב 11) ───────────────────────────── */
 
-const ENF_ICON = { full: '✅', partial: '🟡', none: '⚠️', na: '·' };
+const ENF_ICON = { full: '✅', partial: '🟡', none: '⚠️', na: '·', unknown: '❔' };
 const ENF_SUM = {
-    full: ['ok', '🛡️ הכול נאכף', 'כל ההגדרות נאכפות בכל המכשירים.'],
+    full: ['ok', '🛡️ הכול נאכף', 'כל ההגדרות נאכפות בכל המכשירים — לפי מה שהמכשירים דיווחו.'],
+    unverified: ['', '❔ עוד לא אומת', 'המכשיר עוד לא דיווח מה הוחל אחרי השינוי האחרון. זה מתעדכן בסנכרון הבא (פתיחת מגדלור).'],
     needs_access: ['warn', '🟡 אכיפה חלקית', 'חלק מההגדרות דורשות את אישור "ניהול אפליקציות" במכשיר.'],
     needs_owner: ['warn', '🛡️ אכיפה לא הרמטית', 'חלק מההגדרות דורשות "בעל מכשיר" — התקנה על מכשיר נקי.'],
     no_device: ['', '📱 אין מכשיר מחובר', 'חברו מכשיר כדי שההגדרות ייאכפו.'],
@@ -311,10 +461,15 @@ function enforceCard(e) {
     const [cls, title, sub] = ENF_SUM[e.summary] || ENF_SUM.full;
     const rows = e.rows.filter(r => r.status !== 'na');
     const dlg = el('div', { class: 'enf-detail', hidden: true }, rows.map(r => el('div', { class: 'enf-row' }, [
-        el('span', { class: 'enf-ic', text: ENF_ICON[r.status], ariaHidden: 'true' }),
+        // אותם מצבים כמו בהגדרות המכשיר (lib/enforce.php, SETTING_STATES) — "הוחל" רק אחרי דוח מהמכשיר.
+        el('span', { class: 'enf-ic', text: SETTING_ICON[r.state] || ENF_ICON[r.status], ariaHidden: 'true' }),
         el('span', { class: 'enf-nm' }, [r.label, r.hint && r.status !== 'full' ? el('small', { text: r.hint }) : null]),
-        el('span', { class: `enf-st ${r.status}`, text: { full: 'נאכף', partial: 'חלקי', none: 'לא נאכף' }[r.status] || '' }),
+        el('span', { class: `enf-st ${r.status}`, text: r.state_label || { full: 'נאכף', partial: 'חלקי', none: 'לא נאכף', unknown: 'לא דווח' }[r.status] || '' }),
     ])));
+    // מתי כל מכשיר דיווח — דוח ישן אינו אימות עדכני.
+    const STATE = { fresh: 'עדכני', pending: 'ממתין לסנכרון', stale: 'דוח ישן', none: 'לא דיווח (גרסה ישנה)' };
+    (e.devices || []).forEach(d => dlg.append(el('p', { class: 'hint',
+        text: `📱 ${d.name || 'מכשיר'}: ${STATE[d.state] || d.state}${d.reported_at ? ' · דווח ' + ago(d.reported_at) : ''}` })));
     const toggle = el('button', { type: 'button', class: 'enf-more', text: 'פירוט ▾',
         onclick: () => { const h = dlg.hidden; dlg.hidden = !h; toggle.textContent = h ? 'פחות ▴' : 'פירוט ▾'; } });
     return el('section', { class: `enf ${cls}` }, [
@@ -373,6 +528,14 @@ function kidTime() {
             el('label', { class: 'f' }, [el('span', { text: 'לישיבה אחת' }), el('input', { type: 'number', name: 'session_max_min', min: 0, max: 1440,
                 value: p.session_max_min || '', inputMode: 'numeric', dir: 'ltr', placeholder: 'בלי' })]),
         ])]),
+        // מצב לא מקוון מתוכנן (שלב 12 ו) — נאכף במכשיר; הילד רואה במסך הבית מה זמין ועד מתי.
+        group('📴 בלי חיבור לאינטרנט', 'כשהמכשיר לא מגיע לשרת — למשל בטיסה או בלי חבילת גלישה', [
+            seg('offline_content', [['all', 'מה שמותר'], ['approved', 'רק מה שאישרתי'], ['none', 'כלום']], p.offline_content || 'all', { cols: 3 }),
+            el('label', { class: 'f' }, [el('span', { text: 'אחרי כמה שעות בלי חיבור נסגר הכול' }),
+                el('select', { name: 'offline_grace_h' }, [1, 2, 4, 8, 12, 24, 48, 72].map(h =>
+                    el('option', { value: String(h), text: h === 1 ? 'שעה' : `${h} שעות`, selected: h === (p.offline_grace_h || 24) })))]),
+            el('p', { class: 'hint', text: '"רק מה שאישרתי" — אתרים שהוספתם בלשונית אתרים (כולל משימות) ויוטיוב שאישרתם. הזמנים והמכסה ממשיכים לחול גם בלי חיבור. קוד מההורה ("📷 העברה בקוד") מחזיר גלישה גם אחרי שהזמן נגמר.' }),
+        ]),
     ];
 }
 
@@ -391,7 +554,8 @@ $('#kid-form').addEventListener('submit', async e => {
             allow_background: f.allow_background.checked, block_screenshots: f.block_screenshots.checked };
     } else if (tab === 'time') {
         policy = { days: checked('days').map(Number), window_start: f.window_start.value, window_end: f.window_end.value,
-            daily_quota_min: Number(f.daily_quota_min.value || 0), session_max_min: Number(f.session_max_min.value || 0) };
+            daily_quota_min: Number(f.daily_quota_min.value || 0), session_max_min: Number(f.session_max_min.value || 0),
+            offline_content: f.querySelector('[name=offline_content]:checked').value, offline_grace_h: Number(f.offline_grace_h.value) };
     } else return;
     await act('child_save', { policy }, 'נשמר — המכשיר יתעדכן תוך דקה');
 });
@@ -400,7 +564,7 @@ function kidYt() {
     const y = K.youtube, allowed = y.allowed_modes;
     const hint = el('p', { class: 'hint', text: YT[y.mode][1] });
     const mode = seg('yt_mode', Object.entries(YT).map(([k, v]) => [k, v[0]]), y.mode,
-        { cols: 3, disabled: Object.keys(YT).filter(k => !allowed.includes(k)), onchange: v => { hint.textContent = YT[v][1]; } });
+        { cols: 2, disabled: Object.keys(YT).filter(k => !allowed.includes(k)), onchange: v => { hint.textContent = YT[v][1]; } });
     const search = el('input', { type: 'checkbox', checked: y.allow_search }), shorts = el('input', { type: 'checkbox', checked: y.allow_shorts });
     const input = el('input', { dir: 'ltr', placeholder: '@ChannelName או קישור', autocapitalize: 'off', ariaLabel: 'ערוץ, סרטון או פלייליסט' });
     const items = y.items.length ? el('ul', { class: 'rows' }, y.items.map(i => el('li', {}, [
@@ -413,7 +577,7 @@ function kidYt() {
     return [
         allowed.length === 1 ? el('div', { class: 'banner info' }, [el('span', { text: 'ℹ️' }),
             el('div', { text: 'יוטיוב לא פתוח בחשבון שלכם. אפשר לבקש ממנהל המערכת.' })]) : null,
-        group('יוטיוב', '', [mode, hint,
+        group('יוטיוב', '', [mode, hint, learnCheck(y),
             el('div', { class: 'mods' }, [
                 el('label', { class: 'switch' }, [search, el('span', { text: '🔎 חיפוש ביוטיוב' })]),
                 el('label', { class: 'switch' }, [shorts, el('span', {}, ['📱 פיד Shorts',
@@ -430,6 +594,21 @@ function kidYt() {
             } }),
         ]),
     ];
+}
+
+/**
+ * מצב למידה: מה אומת בדף במכשיר (lib/ytlearn.php). המלצות, ניגון אוטומטי ועצירה בסוף תלויים בדף של יוטיוב,
+ * שמשתנה — לכן מוצג רק מה שהמכשיר בדק בפועל. הגבול עצמו (רק הסרטונים שבתור) נאכף בכל מקרה.
+ */
+const LEARN_ICON = { verified: '✅', failed: '❌', unknown: '⚪' };
+function learnCheck(y) {
+    if (y.mode !== 'learn' || !y.learn_check?.length) return null;
+    return el('div', { class: 'hint' }, [
+        el('b', { text: 'מה אומת במכשיר:' }),
+        ...y.learn_check.map(c => el('div', { text: `${LEARN_ICON[c.state]} ${c.label}${c.state === 'unknown' ? ' — עוד לא נבדק (נבדק כשהילד צופה)' : ` · ${c.device} · ${ago(c.at)}`}`,
+            style: c.state === 'failed' ? 'color:var(--danger)' : '' })),
+        el('div', { text: 'בכל מקרה: סרטון שאינו בתור — לא נפתח, וסרטון שמתחיל לבד מיד אחרי סוף הקודם — נעצר.' }),
+    ]);
 }
 
 function kidSites() {
@@ -450,6 +629,7 @@ function kidSites() {
     const scope = el('select', {}, Object.entries(SCOPES).map(([k, v]) => el('option', { value: k, text: v, selected: k === 'domain' })));
     const action = seg('rule_action', [['allow', '✅ להתיר'], ['deny', '🚫 לחסום']], 'allow', { cols: 2 });
     return [
+        tasksGroup(),
         el('p', { class: 'hint', text: 'כתובת שאתם מתירים — מופיעה כאריח במסך הבית שלו. כלל שאתם כותבים גובר על "סוגי אתרים".' }),
         rows,
         group('אתר חדש', '', [
@@ -466,9 +646,78 @@ function kidSites() {
     ];
 }
 
+/* ── אישור לפי משימה (שלב 12 ד) — דפים ומשאבים לזמן מוגבל (lib/tasks.php) ── */
+
+let TS = null, TK = 0;
+
+function tasksGroup() {
+    if (TK !== K.id) {
+        TK = K.id; TS = null;
+        call('tasks', { id: K.id }).then(r => { TS = r.tasks; if (tab === 'sites') renderKid(); }).catch(e => toast(e.message, true));
+    }
+    const list = (TS || []).filter(t => t.active || Date.now() - new Date(t.ends_at) < 86400e3).map(t => el('li', { style: t.active ? '' : 'opacity:.55' }, [
+        el('span', { text: t.active ? '📝' : '✔️', ariaHidden: 'true' }),
+        el('span', { class: 'nm' }, [t.title,
+            el('small', { text: t.active ? `עוד ${t.left_min} דק׳ · עד ${whenStr(t.ends_at)}` : `${t.ended_early ? 'הסתיימה מוקדם' : 'הסתיימה'} ${whenStr(t.ends_at)}` }),
+            el('small', { text: [...t.pages, ...t.resources.map(h => `+ ${h}`)].join(' · ') })]),
+        t.active ? el('button', { type: 'button', class: 'btn ghost sm', text: 'סיום', onclick: () => {
+            if (confirm(`לסיים עכשיו את "${t.title}"? הדפים ייחסמו שוב בסנכרון הבא.`)) act('task_end', { task: t.id }, 'הסתיימה');
+        } }) : null,
+    ]));
+
+    const title = el('input', { placeholder: 'שיעורי בית בהיסטוריה', maxLength: 60 });
+    const url = el('input', { dir: 'ltr', placeholder: 'https://school.example/hw/12', autocapitalize: 'off', inputMode: 'url' });
+    const scope = el('select', {}, [['exact', 'הדף הזה בלבד'], ['domain', 'כל האתר']].map(([v, t]) => el('option', { value: v, text: t })));
+    const minutes = el('select', {}, [15, 30, 45, 60, 90, 120, 180, 240].map(m => el('option', { value: String(m), text: `${m} דק׳`, selected: m === 45 })));
+    const res = el('div', {});
+    let found = [];
+    const scan = async () => {
+        if (!url.value.trim()) { toast('כתובת הדף'); return; }
+        res.replaceChildren(el('p', { class: 'hint', text: 'בודק מה הדף טוען…' }));
+        try { found = (await call('task_scan', { id: K.id, url: url.value.trim() })).resources; }
+        catch (e) { res.replaceChildren(el('p', { class: 'hint', text: `${e.message} — אפשר ליצור בלי משאבים; אם הדף לא נטען כראוי, הוסיפו אותם אחר כך.` })); found = []; return; }
+        res.replaceChildren(found.length
+            ? el('div', {}, [el('p', { class: 'hint', text: 'הדף טוען גם מהשרתים האלה (תמונות, סקריפטים, סרטונים משובצים). מסומן — ייטען בתוך הדף בלבד, לא כאתר לגלישה:' }),
+                ...found.map(h => el('label', { class: 'f' }, [el('input', { type: 'checkbox', checked: true, value: h, name: 'task-res' }), el('span', { text: h, dir: 'ltr' })]))])
+            : el('p', { class: 'hint', text: 'הדף לא טוען משאבים משרתים אחרים.' }));
+    };
+    const add = async () => {
+        const chosen = [...document.querySelectorAll('[name=task-res]:checked')].map(i => i.value);
+        const r = await act('task_add', { title: title.value, minutes: Number(minutes.value),
+            pages: [{ url: url.value.trim(), scope: scope.value }], resources: chosen }, 'נפתח — יופיע לו כאריח בסנכרון הבא');
+        if (r) { title.value = ''; url.value = ''; res.replaceChildren(); }
+    };
+    return group('📝 משימה — פתיחה לזמן מוגבל', 'במקום היתר קבוע: הדף ומה שהוא צריך, ונסגר לבד בסוף הזמן', [
+        list.length ? el('ul', { class: 'rows' }, list) : null,
+        el('div', { class: 'fields two' }, [el('label', { class: 'f' }, [el('span', { text: 'מה המשימה *' }), title]),
+            el('label', { class: 'f' }, [el('span', { text: 'לכמה זמן' }), minutes])]),
+        el('label', { class: 'f' }, [el('span', { text: 'הדף *' }), url]),
+        el('label', { class: 'f' }, [el('span', { text: 'מה נפתח' }), scope]),
+        el('button', { type: 'button', class: 'btn ghost', text: '🔎 מה הדף צריך כדי לעבוד?', onclick: scan }),
+        res,
+        el('p', { class: 'hint', text: 'חסימות מפורשות וסוגי תוכן חסומים ממשיכים לחול גם בתוך המשימה.' }),
+        el('button', { type: 'button', class: 'btn primary', text: 'פתיחה למשימה', onclick: add }),
+    ]);
+}
+
+/** מצב העדכון כפי שהמכשיר דיווח (שלב 9) — או '' כשאין מה להראות. */
+const UPDATE_STATE = {
+    downloading: '⏳ מוריד', verifying: '🔎 בודק את הקובץ של', installing: '⏳ מתקין',
+    waiting_user: '✋ מחכה שהילד יאשר במסך ההתקנה את', failed: '❌ נכשל עדכון ל-',
+};
+function updateLine(u) {
+    if (!u || !UPDATE_STATE[u.state]) return '';
+    const when = u.at ? ` (${ago(u.at)})` : '';
+    return u.state === 'failed'
+        ? `${UPDATE_STATE.failed}${u.target_name}${u.error ? ': ' + u.error : ''}${when} — ינוסה שוב לבד`
+        : `${UPDATE_STATE[u.state]} ${u.target_name}${when}`;
+}
+
 /** שורת הגרסה של מכשיר: מה מותקן, ומה המצב מול הגרסה האחרונה. */
 function appLine(d) {
     const a = d.app, latest = K.latest_app;
+    const u = updateLine(a.update);
+    if (u) return `${a.version_name || 'גרסה ישנה'} · ${u}`;
     if (a.status === 'unknown') return a.requested ? '⏳ ישנה — נשלחו לו הוראות מעבר' : '⚠️ גרסה ישנה (לא מדווחת)';
     if (a.status === 'outdated') return a.requested ? `⏳ ${a.version_name} — מחכה שהילד יאשר עדכון` : `⬆️ ${a.version_name} · יש ${latest.name}`;
     return `✓ ${a.version_name} — מעודכנת`;
@@ -477,9 +726,11 @@ function appLine(d) {
 /** שורת ההרשאות של מכשיר (מסלול ההקמה): מה חסר, או ✓. */
 function permLine(p) {
     if (!p) return '';
-    if (p.required_missing.length) return `⚠️ חסרות הרשאות חיוניות: ${p.required_missing.join('، ')}`;
-    if (!p.admin) return '🛡️ ניהול מכשיר לא מופעל (מומלץ)';
-    return p.complete ? '✓ כל ההרשאות' : `הרשאות: חסר ${p.missing.join('، ')}`;
+    if (p.complete) return '✓ כל ההרשאות · בעל מכשיר';
+    // "בעל מכשיר" חסר — תמיד מסומן: בלעדיו אין שליטה בהגדרות המערכת ועדכון שקט.
+    const owner = p.owner ? '' : '⚠️ חסר "בעל מכשיר" — הקמה מלאה ב"חיבור מכשיר" (איפוס המכשיר)';
+    const req = p.required_missing.length ? `⚠️ חסרות הרשאות: ${p.required_missing.join('، ')}` : '';
+    return [req, owner].filter(Boolean).join(' · ');
 }
 
 function updateDevice(d) {
@@ -494,12 +745,73 @@ function updateDevice(d) {
     act('device_update', { device_id: d.id }, old ? 'נשלח — יופיע לילד בפעם הבאה שיפתח' : 'נשלח — הילד יתבקש לעדכן');
 }
 
+/**
+ * הגדרות המכשיר — לכל אחת מותר / חסום (lib/devicesettings.php). נאכף רק ב"בעל מכשיר": בלי הקמה מלאה
+ * ההגדרות נשמרות, ומוצג שהן עוד לא נאכפות.
+ */
+/** מצב הביצוע בפועל של הגדרה (2026-10-22): לא "נשמר" — מה המכשיר עשה, ומתי אומת. */
+const SETTING_ICON = { verified: '✅', applied: '☑️', received: '📥', pending: '⏳', saved: '💾',
+    unsupported: '➖', needs_device: '📱', needs_action: '👉', failed: '❌' };
+function settingStatusLine(st) {
+    if (!st) return null;
+    const bad = st.state === 'failed' || st.state === 'needs_action' || st.state === 'needs_device';
+    const when = st.at && st.state === 'verified' ? ` · ${ago(st.at)}` : '';
+    return el('small', { text: `${SETTING_ICON[st.state] || ''} ${st.label}${when}${st.hint ? ' — ' + st.hint : ''}`,
+        style: bad ? 'color:var(--danger)' : 'color:var(--muted)' });
+}
+
+function deviceSettingsGroup() {
+    const S2 = K.device_settings || [];
+    if (!S2.length) return null;
+    const owners = K.device_list.filter(d => d.perms.owner).length, total = K.device_list.length;
+    const warn = total && owners < total
+        ? el('div', { class: 'banner warn' }, [el('span', { text: '⚠️' }), el('div', {}, [
+            el('b', { text: owners ? 'נאכף רק בחלק מהמכשירים' : 'עוד לא נאכף' }),
+            'הגדרות המכשיר דורשות הקמה מלאה ("בעל מכשיר"): איפוס המכשיר, ואז "📷 חיבור מכשיר חדש" ← "🛡️ הקמה מלאה".'])])
+        : null;
+    const rows = el('ul', { class: 'rows' }, S2.map(s => el('li', {}, [
+        el('span', { class: 'nm' }, [s.label, el('small', { text: s.hint }), settingStatusLine(s.status)]),
+        seg(`ds_${s.key}`, [['allow', '✅ מותר'], ['block', '🚫 חסום']], s.blocked ? 'block' : 'allow',
+            { cls: 'seg mini', onchange: v => act('device_setting', { key: s.key, blocked: v === 'block' }, 'נשמר') }),
+    ])));
+    const offline = el('button', { type: 'button', class: 'btn', text: '📷 העברה בקוד — גם כשאין למכשיר אינטרנט' });
+    offline.addEventListener('click', openOffline);
+    return group('⚙️ הגדרות המכשיר', `${S2.filter(s => s.blocked).length} חסומות`, [warn, rows, offline].filter(Boolean));
+}
+
+/**
+ * העברה בלי אינטרנט: QR חתום עם הגדרות המכשיר והאפליקציות כפי שהן עכשיו. מכשיר הילד סורק אותו
+ * ומפעיל גם בלי רשת — כך אפשר לפתוח או לחסום מחדש גם אחרי שהמכשיר התנתק. תקף רבע שעה.
+ */
+async function openOffline() {
+    let r;
+    try { r = await call('offline_code', { id: K.id }); } catch (e) { toast(e.message, true); return; }
+    const qr = qrcode(0, 'L');
+    qr.addData(r.qr);
+    qr.make();
+    const svg = new DOMParser().parseFromString(qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true }), 'image/svg+xml').documentElement;
+    svg.setAttribute('role', 'img'); svg.setAttribute('aria-label', 'קוד QR להעברת ההגדרות');
+    svg.style.cssText = 'inline-size:min(86vw,340px);block-size:auto;background:#fff;border-radius:10px;padding:6px';
+    $('#pair-title').textContent = `העברה בקוד — ${K.name}`;
+    $('#pair-body').replaceChildren(
+        el('ol', { class: 'steps' }, [
+            el('li', { text: 'קודם משנים כאן את ההגדרות (מותר / חסום), ורק אז פותחים את הקוד.' }),
+            el('li', { text: 'במכשיר של הילד: מגדלור ← ההגדרות שלי ← "📷 קוד מההורה", ומכוונים למסך הזה.' }),
+        ]),
+        el('div', { style: 'display:grid;justify-items:center;gap:8px' }, [svg]),
+        el('p', { class: 'hint', style: 'text-align:center',
+            text: `הקוד תקף ${Math.round(r.expires_in / 60)} דקות.` + (r.partial
+                ? ' רשימת האפליקציות ארוכה מדי לקוד — עוברות הגדרות המכשיר וברירת המחדל של האפליקציות בלבד.' : '') }),
+    );
+    const d = $('#pair-dlg'); if (!d.open) d.showModal();
+}
+
 function kidDev() {
     const list = K.device_list.length ? el('ul', { class: 'rows' }, K.device_list.map(d => el('li', {}, [
         el('span', { text: '📱', ariaHidden: 'true' }),
         el('span', { class: 'nm' }, [d.name || 'מכשיר',
             el('small', { text: `${appLine(d)} · ${ago(d.last_seen_at)}` }),
-            el('small', { text: permLine(d.perms), style: `color:${d.perms.ok ? 'var(--muted)' : 'var(--danger)'}` })]),
+            el('small', { text: permLine(d.perms), style: `color:${d.perms.complete ? 'var(--muted)' : 'var(--danger)'}` })]),
         d.app.status !== 'current' ? el('button', { type: 'button', class: d.app.requested ? 'btn ghost sm' : 'btn primary sm',
             text: d.app.requested ? '⏳ נשלח' : '⬆️ עדכון', onclick: () => updateDevice(d) }) : null,
         el('button', { type: 'button', class: 'icon-btn', text: '✕', ariaLabel: 'ניתוק', onclick: () => {
@@ -509,6 +821,7 @@ function kidDev() {
     const anyOld = K.device_list.some(d => d.app.status === 'unknown');
     return [
         list,
+        deviceSettingsGroup(),
         anyOld ? group('איך מעבירים מכשיר ישן', 'פעם אחת — אחר כך הכול מתעדכן מכאן', [
             el('ol', { class: 'steps' }, [
                 el('li', { text: 'במכשיר של הילד: מוחקים את האפליקציה הישנה ("דפדפן מנוהל" או מגדלור ישן). גרסה ישנה מאוד נחתמה אחרת, ולכן אי אפשר להתקין עליה.' }),
@@ -713,6 +1026,7 @@ async function openPair() {
             el('p', { class: 'muted', text: 'או מקלידים את הקוד:' }),
             el('div', { class: 'pw' }, [el('code', { text: pretty })])]),
         left,
+        provisionBox(r.provision),
     );
     const d = $('#pair-dlg'); if (!d.open) d.showModal();
 
@@ -735,6 +1049,34 @@ async function openPair() {
             }
         } catch { /* ננסה שוב בעוד רגע */ }
     }, 1000);
+}
+
+/**
+ * הקמה כ"בעל מכשיר" — המסלול המומלץ: שליטה מלאה, גם בהגדרות המערכת, ועדכונים שקטים. אנדרואיד מאפשר
+ * אותה רק במכשיר מאופס: במסך הפתיחה מקישים 6 פעמים, וסורקים את ה-QR הזה. אחר כך מחברים כרגיל.
+ */
+function provisionBox(cfg) {
+    if (!cfg) return null;
+    const holder = el('div', { style: 'display:grid;justify-items:center;gap:8px' });
+    const btn = el('button', { type: 'button', class: 'btn', text: '🛡️ הקמה מלאה — מכשיר חדש או מאופס (מומלץ)' });
+    btn.addEventListener('click', () => {
+        if (holder.firstChild) { holder.replaceChildren(); return; }
+        const qr = qrcode(0, 'M'); qr.addData(JSON.stringify(cfg)); qr.make();
+        const svg = new DOMParser().parseFromString(qr.createSvgTag({ cellSize: 5, margin: 2, scalable: true }), 'image/svg+xml').documentElement;
+        svg.setAttribute('role', 'img'); svg.setAttribute('aria-label', 'קוד QR להקמה כבעל מכשיר');
+        svg.style.cssText = 'inline-size:min(80vw,320px);block-size:auto;background:#fff;border-radius:10px;padding:6px';
+        holder.replaceChildren(
+            el('ol', { class: 'steps' }, [
+                'מאפסים את המכשיר להגדרות יצרן (כל מה שעליו יימחק).',
+                'במסך הפתיחה ("ברוכים הבאים") מקישים 6 פעמים על אותו מקום — נפתח סורק QR.',
+                'סורקים את הקוד הזה ומתחברים ל-Wi‑Fi. מגדלור יורד ומוגדר כ"בעל מכשיר" לבד.',
+                'כשמגדלור נפתח — סורקים את קוד החיבור שלמעלה.',
+            ].map(t => el('li', { text: t }))),
+            svg);
+    });
+    return el('div', { style: 'margin-top:16px;display:grid;gap:8px' }, [
+        el('p', { class: 'hint', text: 'בלי הקמה מלאה האכיפה חלקית: אי אפשר לנעול את הגדרות המערכת, והעדכונים דורשים לחיצה של הילד.' }),
+        btn, holder]);
 }
 
 /* ── ילד חדש ───────────────────────────────────────────────────── */
@@ -802,10 +1144,25 @@ function kidApps() {
             try { AP = { ...(await call('apps_posture', { id: K.id, posture: v })).apps, kid: K.id }; toast('נשמר'); }
             catch (e) { toast(e.message, true); } renderKid();
         } });
+    // זמן מסך (lib/apptime.php): כמה שימשה היום (לפי המכשיר), והמגבלה.
+    const usedLine = a => {
+        const m = Math.round((a.used_sec || 0) / 60);
+        if (a.limit_min) return `⏱️ ${m} מתוך ${a.limit_min} דק׳ היום${m >= a.limit_min ? ' — נגמר' : ''}`;
+        return m ? `היום: ${m} דק׳` : '';
+    };
+    const setLimit = async a => {
+        const v = prompt(`כמה דקות ביום ל${a.label}? (0 — בלי מגבלה)`, String(a.limit_min || ''));
+        if (v === null) return;
+        try { AP = { ...(await call('app_limit', { id: K.id, package: a.package, minutes: Number(v) || 0 })).apps, kid: K.id }; toast('נשמר — המכשיר יתעדכן תוך דקה'); }
+        catch (e) { toast(e.message, true); } renderKid();
+    };
     const row = a => el('li', {}, [
         el('span', { class: 'app-ic', ariaHidden: 'true', text: a.system ? '⚙️' : '📱' }),
-        el('span', { class: 'nm' }, [a.label, el('small', { dir: 'ltr', text: a.package })]),
-        seg(`ap_${a.package}`, [['allow', '✅'], ['', '—'], ['block', '🚫']], a.action,
+        el('span', { class: 'nm' }, [a.label, el('small', { dir: 'ltr', text: a.package }),
+            usedLine(a) ? el('small', { text: usedLine(a), style: a.limit_min && a.used_sec >= a.limit_min * 60 ? 'color:var(--danger)' : '' }) : null]),
+        a.locked || a.blocked ? null : el('button', { type: 'button', class: 'icon-btn', text: '⏱️',
+            ariaLabel: `זמן מסך — ${a.label}`, title: a.limit_min ? `${a.limit_min} דק׳ ביום` : 'בלי מגבלת זמן', onclick: () => setLimit(a) }),
+        a.locked ? el('small', { class: 'muted', text: `✅ תמיד — ${a.why}` }) : seg(`ap_${a.package}`, [['allow', '✅'], ['', '—'], ['block', '🚫']], a.action,
             { cls: 'seg mini', onchange: async v => {
                 try { AP = { ...(await call('app_rule', { id: K.id, package: a.package, app_action: v })).apps, kid: K.id }; }
                 catch (e) { toast(e.message, true); } renderKid();
@@ -824,7 +1181,8 @@ function kidApps() {
     return [
         warn,
         group('ברירת מחדל', '', [posture, hint]),
-        group('האפליקציות במכשיר', AP.apps.length ? `${AP.blocked_count} חסומות · ✅ מותר · — כברירת המחדל · 🚫 חסום` : '', [list]),
+        group('האפליקציות במכשיר', AP.apps.length ? `${AP.blocked_count} חסומות · ✅ מותר · — כברירת המחדל · 🚫 חסום · ⏱️ זמן ביום` : '', [list]),
+        el('p', { class: 'hint', text: '⏱️ זמן מסך: מגבלת דקות ביום לאפליקציה. נמדד ונאכף רק כש"ניהול אפליקציות" (נגישות) פעיל במכשיר. נגמר הזמן — הילד יכול לבקש עוד, ואישור זמני גובר על המגבלה. מתחדש בחצות.' }),
     ];
 }
 
@@ -848,21 +1206,67 @@ function renderRequests() {
         el('span', { class: 'avatar', style: `--h:${hue(r.child)}`, ariaHidden: 'true', text: initials(r.child) }),
         el('div', { class: 'body' }, [
             el('div', { class: 'l1' }, [el('span', { text: r.child }), el('span', { class: 't', text: ago(r.created_at).replace('מחובר עכשיו', 'עכשיו') })]),
-            el('div', { class: 'l2', dir: 'ltr', style: 'text-align:end', text: r.host }),
+            r.kind === 'app'
+                ? el('div', { class: 'l2', text: `📱 ${r.host}${r.device ? ' · ' + r.device : ''}` })
+                : el('div', { class: 'l2', dir: 'ltr', style: 'text-align:end', text: r.host }),
             r.note ? el('div', { class: 'l2', text: `"${r.note}"` }) : null,
         ]),
-        el('button', { type: 'button', class: 'icon-btn', text: '✕', ariaLabel: `דחייה — ${r.host}`, onclick: () => decide(r, 'deny') }),
-        el('button', { type: 'button', class: 'btn primary sm', text: '✓ אישור', onclick: () => openDecide(r) }),
+        el('button', { type: 'button', class: 'icon-btn', text: '✕', ariaLabel: `דחייה — ${r.host}`,
+            onclick: () => r.kind === 'app' ? decideApp(r, 'deny') : decide(r, 'deny') }),
+        el('button', { type: 'button', class: 'btn primary sm', text: '✓ אישור', onclick: () => r.kind === 'app' ? openAppDecide(r) : openDecide(r) }),
     ])));
     $('#req-recent').hidden = !done.length;
     $('#req-done').replaceChildren(...done.slice(0, 15).map(r => el('li', { class: 'card', style: 'cursor:default' }, [
         el('span', { text: r.status === 'approved' ? '✅' : '🚫', ariaHidden: 'true' }),
         el('div', { class: 'body' }, [
             el('div', { class: 'l1' }, [el('span', { text: `${r.child} · ${r.host}` })]),
-            el('div', { class: 'l2', text: r.status === 'approved'
+            el('div', { class: 'l2', text: r.kind === 'app' ? appDoneLine(r) : r.status === 'approved'
                 ? `אושר — ${((r.scopes.length === 2 ? RSCOPE_YT : RSCOPE)[r.scope] || [r.scope])[0]}` : 'נדחה' }),
         ]),
     ])));
+}
+
+/** בקשת אפליקציה שטופלה: ההחלטה, ומה המכשיר באמת עשה (לא רק "אושר"). */
+function appDoneLine(r) {
+    if (r.status === 'denied') return 'נדחה';
+    const what = r.scope === 'temporary' ? `אושר ל-${minsLabel(r.minutes)}` : 'אושר — קבוע';
+    if (r.apply_state === 'pending') return `${what} · ⏳ ממתין שהמכשיר יחיל`;
+    if (r.apply_state === 'failed') return `${what} · ❌ לא נפתחה במכשיר: ${r.apply_error || 'סיבה לא ידועה'}`;
+    if (r.apply_state === 'revoked') return `${what} · בוטל (שיניתם את הכלל של האפליקציה)`;
+    if (r.scope === 'temporary' && r.ends_at) {
+        const end = new Date(r.ends_at);
+        return end > new Date() ? `${what} · ✅ פתוחה עד ${end.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`
+                                : `${what} · הסתיים — חסומה שוב`;
+    }
+    return `${what} · ✅ נפתחה במכשיר`;
+}
+const minsLabel = m => m < 60 ? `${m} דקות` : m === 60 ? 'שעה' : m === 120 ? 'שעתיים' : `${m / 60} שעות`;
+
+/** אישור אפליקציה: קבוע (עד שמשנים), זמני (חלון זמן מרגע ההחלה במכשיר — לא מכסת שימוש), או סירוב. */
+function openAppDecide(r) {
+    const mins = seg('app_mins', [[15, '15 ד׳'], [30, '30 ד׳'], [60, 'שעה'], [120, 'שעתיים'], [240, '4 שעות']], 30, { cols: 5 });
+    $('#req-dlg-title').textContent = `${r.child} מבקש/ת לפתוח את ${r.host}`;
+    $('#req-dlg-body').replaceChildren(
+        el('p', { class: 'hint', text: `${r.device ? 'במכשיר ' + r.device + ' · ' : ''}${ago(r.created_at)}` }),
+        r.note ? el('p', { class: 'hint', text: `למה: "${r.note}"` }) : null,
+        group('⏱️ זמני', 'חלון זמן שמתחיל כשהמכשיר מקבל את האישור, ואז האפליקציה נחסמת שוב — גם אם היא פתוחה, וגם בלי אינטרנט', [
+            mins,
+            el('button', { type: 'button', class: 'btn primary', text: '⏱️ פתיחה זמנית', onclick: () => {
+                $('#req-dlg').close(); decideApp(r, 'temporary', Number($('[name=app_mins]:checked').value)); } }),
+        ]),
+        el('div', { class: 'row-btns' }, [
+            el('button', { type: 'button', class: 'btn ghost', text: '✕ סירוב', onclick: () => { $('#req-dlg').close(); decideApp(r, 'deny'); } }),
+            el('button', { type: 'button', class: 'btn', text: '✅ פתיחה קבועה', onclick: () => {
+                $('#req-dlg').close(); decideApp(r, 'permanent'); } }),
+        ]));
+    if (!$('#req-dlg').open) $('#req-dlg').showModal();
+}
+
+async function decideApp(r, decision, minutes = 0) {
+    try {
+        const res = await call('app_request_decide', { req: r.id, decision, minutes });
+        R = res.requests; renderRequests(); loadKids(); toast(res.message);
+    } catch (e) { toast(e.message, true); loadRequests(); }
 }
 
 function openDecide(r) {
@@ -985,6 +1389,12 @@ $('#m-install').addEventListener('click', async () => {
     $('#install-box').hidden = false;
 });
 $('#m-pass').addEventListener('click', () => { $('#pass-box').hidden = false; $('#p-cur').focus(); });
+$('#m-link').addEventListener('click', () => {
+    $('#menu-dlg').close();
+    $('#link-sub').textContent = 'חיבור חשבון ישן';
+    $('#link-none').hidden = true; $('#link-back').hidden = false;
+    showOnly('#linkacc', () => $('#link-form').login.focus());
+});
 $('#m-out').addEventListener('click', async () => { try { await call('logout', {}); } finally { location.reload(); } });
 $('#p-go').addEventListener('click', async () => {
     try {

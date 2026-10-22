@@ -123,9 +123,25 @@ check('הנפקה: ערכים לפי תווית ומפתח; בחירה ממקו�
     $r['values']['size'] === 'L' && $r['values']['city'] === 'חיפה' && $r['values']['phone'] === '03-0000000' && $r['labels']->cust === 'דנה כהן');
 $mail = json_decode(trim(array_slice(file(DT_MAIL_SINK), -1)[0]), true);
 check('המייל לממלא — בשם השולח שנמסר, בלי שם המערכת', str_contains($mail['body'], 'חנות הדוגמה') && !str_contains($mail['body'], 'אבי לוי'));
-$r2 = ext_issue($u, $key, ['template_id' => $tid, 'ref' => 'ORD-77', 'values' => ['מידה' => 'S']]);
-check('אותו ref — אותו מסמך (לא נוצר כפול)', $r2['existing'] && $r2['id'] === $r['id']
+$req77 = ['template_id' => $tid, 'title' => 'הזמנה 77', 'ref' => 'ORD-77', 'sender_name' => 'חנות הדוגמה',
+    'values' => ['מידה' => 'L', 'cust' => 'C-1', 'טלפון' => '03-0000000'],
+    'participants' => [['role' => 'client', 'name' => 'דנה', 'email' => 'dana@x.com', 'send' => 'email']]];
+$mails = count(file(DT_MAIL_SINK));
+$r2 = ext_issue($u, $key, $req77);
+check('אותו ref ואותה בקשה — אותו מסמך (לא נוצר כפול)', $r2['existing'] && $r2['id'] === $r['id']
     && (int)db()->query("SELECT COUNT(*) FROM documents WHERE external_ref = 'ORD-77'")->fetchColumn() === 1);
+check('בקשה חוזרת: אותו קישור, בלי מייל שני', $r2['links']['client'] === $r['links']['client'] && count(file(DT_MAIL_SINK)) === $mails);
+throws('אותו ref עם נתונים אחרים — 409 (DT-F03)', fn() => ext_issue($u, $key, ['template_id' => $tid, 'ref' => 'ORD-77', 'values' => ['מידה' => 'S']]), 409);
+
+// ── אטומיות (DT-F02): ממלא שלא קיים — לא נשאר מסמך חלקי, וניסיון מתוקן עם אותו ref עובר ──
+$docs = (int)db()->query('SELECT COUNT(*) FROM documents')->fetchColumn();
+throws('ממלא שלא קיים בתבנית — 422', fn() => ext_issue($u, $key, ['template_id' => $tid, 'ref' => 'ORD-78',
+    'values' => ['מידה' => 'M'], 'participants' => [['role' => 'nobody', 'name' => 'x']]]), 422);
+throws('ערך פסול — 422', fn() => ext_issue($u, $key, ['template_id' => $tid, 'ref' => 'ORD-78', 'values' => ['מידה' => 'XL']]), 422);
+check('אחרי שני הכשלים — אין מסמך חלקי', (int)db()->query('SELECT COUNT(*) FROM documents')->fetchColumn() === $docs);
+$r78 = ext_issue($u, $key, ['template_id' => $tid, 'ref' => 'ORD-78', 'values' => ['מידה' => 'M']]);
+check('הניסיון המתוקן עם אותו ref — מסמך חדש', !$r78['existing'] && $r78['values']['size'] === 'M');
+check('אינדקס ייחודי לבעלים+ref קיים', (bool)db()->query("SELECT 1 FROM sqlite_master WHERE name = 'idx_docs_owner_ref'")->fetchColumn());
 throws('ערך שאינו ברשימה דרך ה-API — נדחה', fn() => ext_update($u, ['ref' => 'ORD-77', 'values' => ['size' => 'XL']]), 422);
 check('ext_update לפי ref', ext_update($u, ['ref' => 'ORD-77', 'values' => ['size' => 'S']])['document']['values']['size'] === 'S');
 throws('ext_file מתבנית PDF — 409 עם הסבר', fn() => ext_file($u, ['id' => $r['id']]), 409);

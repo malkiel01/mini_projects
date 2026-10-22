@@ -5,8 +5,8 @@
  *   האפליקציה שולחת את מספר הגרסה בכותרת X-Migdalor-App (מ-1.43), והשרת שומר אותו במכשיר
  *   (userByToken). הגרסה האחרונה — מ-latest.json שה-CI מעלה ל-Release, במטמון של חצי שעה.
  *
- *   ההורה לוחץ "עדכון" ← devices.update_requested_at. ומשם:
- *     • אפליקציה שמדווחת גרסה — מקבלת update בתשובה, ומציעה לילד להוריד ולהתקין.
+ *   אפליקציה שמדווחת גרסה ואינה האחרונה — מקבלת update (חובה) בכל תשובה, בלי שההורה יבקש.
+ *   ההורה לוחץ "עדכון" ← devices.update_requested_at — נשאר בשביל האפליקציות שלא מדווחות:
  *     • אפליקציה שלא מדווחת (לפני 1.43, או "דפדפן מנוהל" הישן) — אינה מכירה update. היא כן מציגה
  *       סיבת חסימה, ולכן היא מקבלת חסימה עם הוראות המעבר (upgradeBlock). זו הדרך היחידה להגיע אליה.
  *       "דפדפן מנוהל" נחתם במפתח זמני — אי אפשר להתקין עליו; צריך למחוק ולחבר מחדש בקוד.
@@ -20,7 +20,10 @@ require_once __DIR__ . '/platforms.php';
 // ההורדה עוברת דרך השרת שלנו (download.php) — ההפניה של GitHub נתקעה בטלפונים.
 const APK_URL = 'https://mbe-plus.com/mini_projects/guarded-browser/download.php';
 const APK_LATEST_URL = 'https://github.com/malkiel01/mini_projects/releases/download/guarded-browser-apk/latest.json';
-const APK_LATEST_TTL = 1800;
+// שתי דקות: אחרי כל בנייה המכשירים צריכים לראות את הגרסה החדשה מיד. עם 30 דקות (עד 2026-10-20) ההורה
+// ראה "מעודכנת" על גרסה ישנה, והעדכון החובה לא נשלח לילד עד חצי שעה אחרי שהגרסה יצאה. שליפה שנכשלת לא
+// חוזרת על עצמה בכל בקשה — המטמון מתחדש גם אז (latestApp).
+const APK_LATEST_TTL = 120;
 
 /**
  * הגרסה האחרונה שפורסמה: ['code' => 45, 'name' => '1.45'], או null כשלא ידוע. ‏$fetch — להחלפה בבדיקות.
@@ -33,7 +36,9 @@ function latestApp(?callable $fetch = null, int $ttl = APK_LATEST_TTL): ?array {
         $r = ($fetch ?? fn() => httpGet(APK_LATEST_URL, 4000))();
         $j = ($r['status'] ?? 0) === 200 ? json_decode((string) $r['body'], true) : null;
         if (is_array($j) && (int) ($j['version_code'] ?? 0) > 0) {
-            $val = json_encode(['code' => (int) $j['version_code'], 'cert' => (string) ($j['cert_sha256'] ?? '')]);
+            $sha = strtolower((string) ($j['apk_sha256'] ?? ''));
+            $val = json_encode(['code' => (int) $j['version_code'], 'cert' => (string) ($j['cert_sha256'] ?? ''),
+                                'sha256' => preg_match('/^[0-9a-f]{64}$/', $sha) ? $sha : '']);
             upsert('app_meta', ['key' => 'apk_latest'], ['value' => $val, 'updated_at' => nowIso()]);
             $row = ['value' => $val];
         } elseif ($row) {
@@ -43,7 +48,8 @@ function latestApp(?callable $fetch = null, int $ttl = APK_LATEST_TTL): ?array {
     }
     $data = json_decode((string) ($row['value'] ?? ''), true) ?: [];
     $code = (int) ($data['code'] ?? 0);
-    return $code > 0 ? ['code' => $code, 'name' => '1.' . $code, 'cert' => (string) ($data['cert'] ?? '')] : null;
+    return $code > 0 ? ['code' => $code, 'name' => '1.' . $code, 'cert' => (string) ($data['cert'] ?? ''),
+                        'sha256' => (string) ($data['sha256'] ?? '')] : null;
 }
 
 /**
@@ -65,14 +71,18 @@ function provisionConfig(): ?array {
 
 /* ── הרשאות המכשיר (מסלול ההקמה) — אותם ביטים כמו Setup.kt ── */
 const PERM_NOTIF = 1, PERM_BATTERY = 2, PERM_ADMIN = 4, PERM_INSTALL = 8, PERM_ACCESS = 16, PERM_OWNER = 32;
-const PERM_REQUIRED = 3;   // NOTIF | BATTERY
+// כל ההרשאות שאפליקציה יכולה לבקש — חובה (בעל המערכת, 2026-10-20). "בעל מכשיר" אינו נכלל: אנדרואיד
+// מאפשר אותו רק בהקמה של מכשיר מאופס, ולכן הוא "מומלץ" ומוצג להורה כ"אכיפה חלקית" כשהוא חסר.
+const PERM_REQUIRED = 31;  // NOTIF | BATTERY | ADMIN | INSTALL | ACCESS
 const PERM_NAMES = [PERM_NOTIF => 'התראות', PERM_BATTERY => 'ריצה רציפה', PERM_ACCESS => 'ניהול אפליקציות', PERM_ADMIN => 'ניהול מכשיר', PERM_INSTALL => 'עדכונים'];
 
 /** מצב ההרשאות של מכשיר: מה ניתן, מה חסר, והאם החיוני כולו קיים. */
 function devicePermsState(int $perms): array {
     $missing = [];
     foreach (PERM_NAMES as $bit => $name) if (!($perms & $bit)) $missing[$bit] = $name;
-    $requiredMissing = array_values(array_intersect_key($missing, array_flip([PERM_NOTIF, PERM_BATTERY])));
+    $requiredMissing = array_values($missing);
+    // "בעל מכשיר" — גם הוא דרישה, ומסומן להורה כחסר. הוא לא חוסם כניסה: אי אפשר לבקש אותו במכשיר.
+    if (!($perms & PERM_OWNER)) $missing[PERM_OWNER] = 'בעל מכשיר';
     return [
         'ok'       => ($perms & PERM_REQUIRED) === PERM_REQUIRED,
         'owner'    => (bool) ($perms & PERM_OWNER),
@@ -88,7 +98,38 @@ function deviceAppState(array $d, ?array $latest): array {
     $v = (int) ($d['app_version'] ?? 0);
     $status = $v === 0 ? 'unknown' : ($latest && $latest['code'] > $v ? 'outdated' : 'current');
     return ['version' => $v, 'version_name' => $v ? '1.' . $v : '', 'status' => $status,
-            'requested' => (string) ($d['update_requested_at'] ?? '') !== '' && $status !== 'current'];
+            'requested' => (string) ($d['update_requested_at'] ?? '') !== '' && $status !== 'current',
+            'update' => updateStateFor($d)];
+}
+
+/** מצבי העדכון שהמכשיר מדווח (Updater.kt). ‏done — הגרסה החדשה רצה. */
+const UPDATE_STATES = ['downloading', 'verifying', 'installing', 'waiting_user', 'failed', 'done'];
+
+/**
+ * דיווח מהמכשיר על העדכון (סקירה, 2026-10-20 — שלב 9): קודם ההורה ראה רק "גרסה ישנה" — לא אם ההורדה
+ * נתקעה, אם הקובץ נדחה, או אם ההתקנה מחכה לאישור. נשמר רק מצב מוכר; שגיאה מקוצרת.
+ */
+function updateStateSave(int $deviceRowId, array $in): bool {
+    $state = (string) ($in['state'] ?? '');
+    if (!in_array($state, UPDATE_STATES, true)) return false;
+    $clean = ['state' => $state, 'target' => max(0, (int) ($in['target'] ?? 0)),
+              'error' => mb_substr(trim((string) ($in['error'] ?? '')), 0, 120)];
+    q('UPDATE devices SET update_state = ?, update_at = ? WHERE id = ?',
+      [json_encode($clean, JSON_UNESCAPED_UNICODE), nowIso(), $deviceRowId]);
+    return true;
+}
+
+/**
+ * המצב להצגה, או null. מצב שכבר לא רלוונטי — הגרסה המותקנת הגיעה ליעד (או עברה אותו) — לא מוצג,
+ * כדי ש"נכשל" ישן לא יישאר אחרי שהעדכון הצליח בניסיון הבא.
+ */
+function updateStateFor(array $d): ?array {
+    $s = json_decode((string) ($d['update_state'] ?? ''), true);
+    if (!is_array($s) || !in_array($s['state'] ?? '', UPDATE_STATES, true)) return null;
+    $v = (int) ($d['app_version'] ?? 0);
+    if ($s['state'] === 'done' || (int) $s['target'] <= $v) return null;
+    return ['state' => $s['state'], 'target' => (int) $s['target'], 'target_name' => '1.' . (int) $s['target'],
+            'error' => (string) $s['error'], 'at' => (string) ($d['update_at'] ?? '')];
 }
 
 /** ההורה ביקש לעדכן מכשיר. מוחזרת שגיאה, או ''. */
@@ -104,16 +145,24 @@ function cancelDeviceUpdate(int $childId, int $deviceId): void {
     q("UPDATE devices SET update_requested_at = '' WHERE id = ? AND user_id = ?", [$deviceId, $childId]);
 }
 
-/** למכשיר שמדווח גרסה: מה להציע לו, או null. מכשיר שכבר עודכן — הבקשה נמחקת. */
+/**
+ * למכשיר שמדווח גרסה: העדכון שהוא חייב להתקין, או null. מכשיר שכבר עודכן — הבקשה נמחקת.
+ *
+ * עדכון חובה, תמיד — גם בלי בקשה מההורה: כל גרסה ישנה מקבלת אותו בכל פנייה (מדיניות ופעימה), ומהגרסה
+ * שבה נוסף עדכון החובה האפליקציה ננעלת עד ההתקנה (Updater.kt). ‏required — לגרסאות שמכירות אותו; ישנות יותר רק מציעות.
+ */
 function deviceUpdateOffer(int $deviceRowId): ?array {
     $d = one('SELECT * FROM devices WHERE id = ?', [$deviceRowId]);
-    if (!$d || (string) $d['update_requested_at'] === '' || (int) $d['app_version'] === 0) return null;
+    if (!$d || (int) $d['app_version'] === 0) return null;
     $latest = latestApp();
     if (!$latest || $latest['code'] <= (int) $d['app_version']) {
-        if ($latest) q("UPDATE devices SET update_requested_at = '' WHERE id = ?", [$deviceRowId]);
+        if ($latest && (string) $d['update_requested_at'] !== '') q("UPDATE devices SET update_requested_at = '' WHERE id = ?", [$deviceRowId]);
         return null;
     }
-    return ['version_code' => $latest['code'], 'version_name' => $latest['name'], 'url' => (serverUrl() ?: '') !== '' ? serverUrl() . 'download.php' : APK_URL];
+    // ‏sha256 — המכשיר משווה אליו את הקובץ שהוריד לפני שהוא פותח את ההתקנה (Updater.kt, שלב 9).
+    return ['version_code' => $latest['code'], 'version_name' => $latest['name'], 'required' => true,
+            'url' => (serverUrl() ?: '') !== '' ? serverUrl() . 'download.php' : APK_URL,
+            'sha256' => $latest['sha256'] ?? ''];
 }
 
 /**

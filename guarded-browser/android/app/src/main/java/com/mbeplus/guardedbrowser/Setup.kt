@@ -16,8 +16,9 @@ import android.provider.Settings
  * שלבים חיוניים (required) חוסמים את הכניסה למגדלור עד שהם ניתנו; מומלצים — מוצגים אבל
  * אפשר להמשיך בלעדיהם, וההורה רואה בצד שלו מה חסר.
  *
- * מה שנדרש כאן קיים בכל התקנה רגילה. שליטה מלאה על כל אפליקציות המכשיר = "בעל המכשיר"
- * (שלב 11), שדורש התקנה על מכשיר נקי ולכן אינו חלק מהמסלול הזה.
+ * כל ההרשאות שאפליקציה יכולה לבקש — חובה (בעל המערכת, 2026-10-20): בלי כולן אין כניסה למגדלור.
+ * שליטה מלאה, גם בהגדרות המערכת = "בעל המכשיר" (Enforcer), שאנדרואיד מאפשר רק בהקמה של מכשיר מאופס
+ * (QR מההורה) — ולכן אינו שלב כאן. במכשיר כזה ניהול המכשיר והעדכונים כבר מכוסים.
  */
 object Setup {
 
@@ -41,12 +42,20 @@ object Setup {
 
     fun steps(ctx: Context): List<Step> = listOf(
         Step(NOTIF, "🔔", "התראות",
-            "כדי שמגדלור יוכל להציג שהוא פועל, ולהודיע כשמשהו נחסם.", true,
-            { ctx -> Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-                ctx.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED },
+            "כדי שמגדלור יוכל להציג שהוא פועל, להודיע כשמשהו נחסם, ולהקפיץ את מסך העדכון לבד.", true,
+            { ctx -> notifGranted(ctx) && fullScreenGranted(ctx) },
             { act ->
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
-                    act.requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 71)
+                // קודם ההתראות עצמן, ואז (אנדרואיד 14+) ההיתר להקפיץ מסך מלא — בלעדיו מסך העדכון
+                // לא קופץ לבד כשמגדלור סגור, אלא יורד להתראה רגילה.
+                if (!notifGranted(act)) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+                        act.requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 71)
+                } else if (!fullScreenGranted(act) && Build.VERSION.SDK_INT >= 34) {
+                    try {
+                        AppPolicy.openSettings(act, Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
+                            Uri.parse("package:" + act.packageName)))
+                    } catch (e: Exception) {}
+                }
             }),
 
         Step(BATTERY, "🔋", "ריצה רציפה",
@@ -55,30 +64,31 @@ object Setup {
                 .isIgnoringBatteryOptimizations(ctx.packageName) },
             { act ->
                 try {
-                    act.startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                    AppPolicy.openSettings(act, Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
                         Uri.parse("package:" + act.packageName)))
                 } catch (e: Exception) {
-                    act.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                    AppPolicy.openSettings(act, Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
                 }
             }),
 
         Step(ADMIN, "🛡️", "הגנה על ההגדרות",
-            "מגדיר את מגדלור כמנהל מכשיר: אי אפשר להסיר אותו בלי ההורה, ואפשר לנעול את המסך. מופיע בהגדרות — שקוף לגמרי.", false,
-            { ctx -> DeviceAdmin.active(ctx) },
-            { act -> act.startActivity(DeviceAdmin.enableIntent(act)) }),
+            "מגדיר את מגדלור כמנהל מכשיר: ההסרה הופכת לפעולה מכוונת (צריך קודם לבטל את הניהול), " +
+            "ומגדלור מזהה ומחזיר מהמסך הזה. הגנה מלאה מהסרה דורשת \"בעל מכשיר\". מופיע בהגדרות — שקוף לגמרי.", true,
+            { ctx -> Enforcer.isOwner(ctx) || DeviceAdmin.active(ctx) },
+            { act -> AppPolicy.openSettings(act, DeviceAdmin.enableIntent(act)) }),
 
         Step(ACCESS, "📲", "ניהול אפליקציות",
-            "כדי שמגדלור יוכל לחסום אפליקציות אחרות שההורה חסם. נדרש בחשבון שמנהל אפליקציות.",
-            Store(ctx).appsManage,
+            "כדי שמגדלור יוכל לחסום אפליקציות אחרות שההורה חסם, ולהקפיץ את מסך העדכון.",
+            true,
             { c -> accessibilityOn(c) },
-            { act -> try { act.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) } catch (e: Exception) {} }),
+            { act -> try { AppPolicy.openSettings(act, Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) } catch (e: Exception) {} }),
 
         Step(INSTALL, "⬆️", "עדכונים",
-            "כדי שמגדלור יוכל להתקין עדכון שההורה שולח, בלי להוריד ידנית.", false,
-            { ctx -> Build.VERSION.SDK_INT < Build.VERSION_CODES.O || ctx.packageManager.canRequestPackageInstalls() },
+            "כדי שמגדלור יוכל להתקין את העדכונים — עדכון הוא חובה.", true,
+            { ctx -> Enforcer.isOwner(ctx) || Build.VERSION.SDK_INT < Build.VERSION_CODES.O || ctx.packageManager.canRequestPackageInstalls() },
             { act ->
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
-                    try { act.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                    try { AppPolicy.openSettings(act, Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
                         Uri.parse("package:" + act.packageName))) } catch (e: Exception) {}
             }),
     )
@@ -94,6 +104,23 @@ object Setup {
 
     /** האם כל החיוניות ניתנו — לשער הכניסה. */
     fun ready(ctx: Context): Boolean = pendingRequired(ctx).isEmpty()
+
+    /** האם הותרו התראות (מאנדרואיד 13 צריך היתר מפורש). */
+    fun notifGranted(ctx: Context): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ctx.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+
+    /**
+     * האם מותר להקפיץ התראת מסך מלא. מאנדרואיד 14 זהו היתר נפרד (app-op) שברירת המחדל שלו כבויה
+     * לאפליקציות שאינן שיחה/שעון — ובלעדיו מסך העדכון החובה לא קופץ לבד כשמגדלור סגור.
+     */
+    fun fullScreenGranted(ctx: Context): Boolean {
+        if (Build.VERSION.SDK_INT < 34) return true
+        return try {
+            (ctx.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager)
+                .canUseFullScreenIntent()
+        } catch (e: Exception) { true }
+    }
 
     /** האם שירות הנגישות של מגדלור דלוק. */
     fun accessibilityOn(ctx: Context): Boolean {

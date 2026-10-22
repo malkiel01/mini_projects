@@ -8,7 +8,7 @@
  *   installed / detected   — getInstalledRelatedApps של הדפדפן מצא אותה.
  *   installed / installed  — appinstalled: הותקנה עכשיו.
  *   not_installed / prompt — הדפדפן מציע להתקין, כלומר היא לא מותקנת.
- * אפליקציית אנדרואיד (APK) — הדפדפן לא יכול לבדוק; לא נרשם עליה דבר.
+ * אפליקציית אנדרואיד (APK) — נרשמת בשער כשהיא נפתחת (lib/gate.php, apk_seen): how=apk, עם הגרסה.
  * מכשיר = מזהה אקראי ב-localStorage (`platform:device`), משותף לכל הדפים באתר באותו דפדפן.
  */
 
@@ -35,6 +35,11 @@ function installs_migrate(): void
             PRIMARY KEY (user_id, device_id, app_id)
         );
         SQL);
+    // אפליקציית אנדרואיד שנפתחה (lib/gate.php, apk_seen): הגרסה, ואיך זוהתה (twa / webview). אותה הגדרה גם שם.
+    $cols = array_column(db()->query('PRAGMA table_info(device_apps)')->fetchAll(), 'name');
+    if (!in_array('version', $cols, true)) db()->exec('ALTER TABLE device_apps ADD COLUMN version INTEGER');
+    if (!in_array('source', $cols, true)) db()->exec("ALTER TABLE device_apps ADD COLUMN source TEXT NOT NULL DEFAULT ''");
+    if (!in_array('install_id', $cols, true)) db()->exec('ALTER TABLE device_apps ADD COLUMN install_id TEXT');
 }
 
 function installs_valid_device($id): string
@@ -43,14 +48,17 @@ function installs_valid_device($id): string
     return $id;
 }
 
-/** מה ידוע על המכשיר הזה: {app_id: {state, how, checked_at}}. */
+/** מה ידוע על המכשיר הזה: {app_id: {state, how, checked_at, version}} — version רק לאפליקציית אנדרואיד (how=apk). */
 function installs_on_device(int $userId, string $deviceId): array
 {
     installs_migrate();
-    $st = db()->prepare('SELECT app_id, state, how, checked_at FROM device_apps WHERE user_id = ? AND device_id = ?');
+    $st = db()->prepare('SELECT app_id, state, how, checked_at, version FROM device_apps WHERE user_id = ? AND device_id = ?');
     $st->execute([$userId, $deviceId]);
     $out = [];
-    foreach ($st->fetchAll() as $r) $out[$r['app_id']] = ['state' => $r['state'], 'how' => $r['how'], 'checked_at' => $r['checked_at']];
+    foreach ($st->fetchAll() as $r) {
+        $out[$r['app_id']] = ['state' => $r['state'], 'how' => $r['how'], 'checked_at' => $r['checked_at'],
+            'version' => $r['version'] !== null ? (int)$r['version'] : null];
+    }
     return $out;
 }
 

@@ -228,6 +228,12 @@ function tpl_asset(array $user, int $id): never
     exit;
 }
 
+/** תאריך אמיתי בלוח השנה, YYYY-MM-DD — לא רק המבנה (2026-02-31 נדחה). */
+function valid_date(string $v): bool
+{
+    return (bool)preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $v, $m) && checkdate((int)$m[2], (int)$m[3], (int)$m[1]);
+}
+
 /**
  * ערך ברירת מחדל. בתאריך: תאריך קבוע (2026-10-15), או יחסי ליום ההנפקה — "@today", "@today+30", "@today-7".
  * תאריך שלא מתאים לאף אחד מהם — נמחק (אחרת השדה היה נפתח עם ערך פסול).
@@ -236,7 +242,7 @@ function clean_default(string $type, string $v): string
 {
     if ($type !== 'date' || $v === '') return $v;
     if (preg_match('/^@today(?:([+-])(\d{1,4}))?$/', $v, $m)) return isset($m[1]) && (int)$m[2] !== 0 ? "@today{$m[1]}" . (int)$m[2] : '@today';
-    return preg_match('/^\d{4}-\d{2}-\d{2}$/', $v) ? $v : '';
+    return valid_date($v) ? $v : '';
 }
 
 /** הערך שהשדה מקבל במסמך חדש: "@today±N" — התאריך (לפי שעון ישראל) ביום ההנפקה. */
