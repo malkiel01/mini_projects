@@ -1,7 +1,7 @@
 // הקמה מלאה דרך מחשב (setup/logic.js) — מה הטלפון מחזיר, ומה אומרים להורה.
 //   node guarded-browser/tests/setup.mjs
 // הפלטים כאן — בצורה שאנדרואיד מדפיס (dumpsys / pm / dpm). במכשיר אמיתי — לא נבדק עדיין (docs/device-matrix.md).
-import { parseAccounts, parseUsers, ownerState, explainSetOwner, blockers, PKG } from '../setup/logic.js';
+import { parseAccounts, parseUsers, ownerState, explainSetOwner, blockers, PKG, hasAdbInterface, usbDiagnosis } from '../setup/logic.js';
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {
@@ -22,6 +22,18 @@ const acc = parseAccounts(dumpAccounts);
 check('שלושה חשבונות, בלי כפילות', acc.map(a => a.name), ['dana@gmail.com', 'WhatsApp', 'd.cohen']);
 check('שמות ידידותיים לסוג', acc.map(a => a.label), ['גוגל', 'וואטסאפ', 'סמסונג']);
 check('בלי חשבונות — ריק', parseAccounts('User UserInfo{0:Owner:c13}:\n  Accounts: 0\n'), []);
+
+console.log('\n— "לא נמצאו מכשירים תואמים" —');
+const usb = (...alts) => ({ manufacturerName: 'Unihertz', productName: 'Jelly', configurations: [{ interfaces: [{ alternates: alts }] }] });
+const MTP = { interfaceClass: 6, interfaceSubclass: 1, interfaceProtocol: 1 };
+const ADB = { interfaceClass: 255, interfaceSubclass: 66, interfaceProtocol: 1 };
+check('יש ממשק ADB', hasAdbInterface(usb(MTP, ADB)), true);
+check('רק העברת קבצים — אין ADB', hasAdbInterface(usb(MTP)), false);
+check('מכשיר בלי תצורות', hasAdbInterface({}), false);
+check('לא נבחר כלום — כבל / יציאה', usbDiagnosis(null).kind, 'none');
+const noAdb = usbDiagnosis(usb(MTP));
+check('נראה בלי ADB — מצב החיבור בטלפון, עם שם הטלפון', [noAdb.kind, noAdb.title.includes('Unihertz Jelly'), noAdb.steps[0].includes('העברת קבצים')], ['no-adb', true, true]);
+check('נראה עם ADB — מוכן', usbDiagnosis(usb(ADB)).kind, 'adb');
 
 console.log('\n— משתמשים —');
 check('ראשי + מרחב שני', parseUsers('Users:\n\tUserInfo{0:Owner:c13} running\n\tUserInfo{10:Second space:1030} running\n'),

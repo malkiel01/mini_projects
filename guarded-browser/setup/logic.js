@@ -84,3 +84,50 @@ export function blockers({ installed, accounts, users, owner }) {
         fix: 'למחוק: ' + extra.map(u => u.name || `משתמש ${u.id}`).join(', ') + ' (מרחב שני / תיקייה מאובטחת / אורח).' });
     return out;
 }
+
+/* ── "הטלפון לא מופיע ברשימה" ─────────────────────────────────────
+ * תקלה מדווחת (2026-10-22, Mac + כרום): ניפוי USB דלוק, וחלון הבחירה של הדפדפן "לא נמצאו מכשירים תואמים".
+ * החלון מציג רק מכשירים שיש בהם ממשק ADB. בדיקה שנייה בלי סינון מבחינה בין "המחשב לא רואה את הטלפון
+ * בכלל" (כבל / יציאה) לבין "רואה אותו, אבל בלי ממשק ADB" (מצב החיבור בטלפון, ניפוי USB).
+ */
+
+/** ממשק ADB ב-USB: מחלקה 255, תת-מחלקה 66, פרוטוקול 1 (כמו adb ו-Tango). */
+export const ADB_IFACE = { classCode: 255, subclassCode: 66, protocolCode: 1 };
+
+/** מכשיר WebUSB ← האם יש בו ממשק ADB, בתצורה כלשהי. */
+export function hasAdbInterface(device) {
+    for (const c of (device && device.configurations) || []) {
+        for (const i of c.interfaces || []) {
+            for (const a of i.alternates || []) {
+                if (a.interfaceClass === ADB_IFACE.classCode && a.interfaceSubclass === ADB_IFACE.subclassCode
+                    && a.interfaceProtocol === ADB_IFACE.protocolCode) return true;
+            }
+        }
+    }
+    return false;
+}
+
+/** מה אומרים להורה אחרי הבדיקה בלי סינון. ‏device — מה שנבחר (או null: לא נבחר / הרשימה ריקה). */
+export function usbDiagnosis(device) {
+    if (!device) return {
+        kind: 'none', title: 'המחשב לא רואה את הטלפון בכלל',
+        steps: [
+            'כבל שמעביר נתונים — הרבה כבלים מעבירים רק טעינה. הכי טוב: הכבל שהגיע עם הטלפון.',
+            'חיבור ישיר למחשב — בלי מפצל ובלי מתאם, וביציאה אחרת אם יש.',
+            'ב-Mac: אם מופיעה שאלה "לאפשר לאביזר להתחבר?" — מאשרים. אם פעם נלחץ "לא" — הגדרות המערכת ← פרטיות ואבטחה ← "לאפשר לאביזרים להתחבר" ← "תמיד", ומנתקים ומחברים את הכבל.',
+            'ב-Mac: אפליקציות שתופסות את הטלפון (Android File Transfer, ‏OpenMTP, ‏Android Studio, ‏scrcpy) — סוגרים אותן.',
+            'הטלפון פתוח (לא במסך נעילה) בזמן החיבור.',
+        ],
+    };
+    const name = [device.manufacturerName, device.productName].filter(Boolean).join(' ') || 'הטלפון';
+    if (!hasAdbInterface(device)) return {
+        kind: 'no-adb', title: `המחשב רואה את ${name}, אבל ניפוי ה-USB לא פעיל בחיבור`,
+        steps: [
+            'בטלפון: מושכים את סרגל ההתראות ← "טעינת המכשיר דרך USB" (או "USB") ← בוחרים "העברת קבצים".',
+            'מכבים ומדליקים שוב את "ניפוי באגים ב-USB" (הגדרות ← אפשרויות למפתחים), עם הכבל מחובר.',
+            'אם זה לא עוזר: "ביטול הרשאות לניפוי ב-USB" באותו מסך, ומנתקים ומחברים את הכבל.',
+            'כשזה עובד — בסרגל ההתראות של הטלפון מופיע "ניפוי באגים ב-USB מחובר".',
+        ],
+    };
+    return { kind: 'adb', title: `${name} מוכן`, steps: ['לוחצים שוב "חיבור לטלפון" ובוחרים אותו ברשימה.'] };
+}

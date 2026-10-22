@@ -4,7 +4,7 @@
  * בלי שרת: שום פרט מהטלפון לא נשלח לשום מקום. הלוגיקה הטהורה — logic.js (tests/setup.mjs).
  */
 import { supported, connect } from './webadb.js';
-import { PKG, ADMIN, parseAccounts, parseUsers, ownerState, explainSetOwner, blockers } from './logic.js';
+import { PKG, ADMIN, parseAccounts, parseUsers, ownerState, explainSetOwner, blockers, usbDiagnosis } from './logic.js';
 
 const $ = id => document.getElementById(id);
 const el = (tag, props = {}, kids = []) => {
@@ -87,12 +87,34 @@ async function done(already) {
     ]);
 }
 
+/**
+ * "הטלפון לא מופיע": חלון בחירה בלי סינון — מכל מכשירי ה-USB. מה שנבחר (או לא) אומר אם הבעיה בכבל, או במצב
+ * החיבור בטלפון (usbDiagnosis). שום פרט לא נשלח לשום מקום.
+ */
+async function diagnoseUsb() {
+    let dev = null;
+    try { dev = await navigator.usb.requestDevice({ filters: [] }); } catch (e) { /* לא נבחר / אין מכשירים */ }
+    const d = usbDiagnosis(dev);
+    result(d.kind === 'adb' ? '' : 'warn', d.kind === 'adb' ? '✅' : '🔍', d.title, d.steps.map(t => '• ' + t));
+}
+
+/** "לא נמצא טלפון" — מה בודקים, וכפתור לבדיקה שמבחינה בין כבל למצב החיבור. */
+function notFound() {
+    result('warn', '🔌', 'הטלפון לא נבחר, או שלא הופיע ברשימה', [
+        'אם הרשימה הייתה ריקה ("לא נמצאו מכשירים תואמים") — המחשב לא רואה את ניפוי ה-USB של הטלפון.',
+        'הכי נפוץ: בטלפון, בסרגל ההתראות ← "USB" ← "העברת קבצים". ואז שוב "חיבור לטלפון".',
+        'לא עזר? הבדיקה כאן אומרת אם הבעיה בכבל או בהגדרה בטלפון: בוחרים בה את הטלפון — אם הוא מופיע.',
+    ]);
+    $('result').append(el('button', { className: 'btn', type: 'button', textContent: '🔍 בדיקה: האם המחשב רואה את הטלפון בכלל?', onclick: diagnoseUsb }));
+}
+
 /** שגיאות החיבור — בעברית. */
 async function guard(fn) {
     $('go').disabled = true;
     try { await fn(); }
     catch (e) {
         const code = e && e.code;
+        if (code === 'no-device') { notFound(); if (phone) { phone.close(); phone = null; } return; }
         const msg = {
             'no-device': ['לא נבחר טלפון', 'לחצו שוב "חיבור לטלפון", ובחרו את הטלפון ברשימה. לא מופיע? ראו "לא מצליח?" למטה.'],
             busy: ['הטלפון תפוס בתוכנה אחרת במחשב', 'סגרו את Android Studio / adb / תוכנות היצרן, ונסו שוב.'],
