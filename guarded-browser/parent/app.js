@@ -364,7 +364,44 @@ function kidSum() {
         enforceCard(K.enforcement),
         el('div', { class: 'tiles' }, tiles.map(([ic, t, fn]) => el('button', { type: 'button', class: 'tile', onclick: fn },
             [el('span', { class: 'tile-ic', text: ic }), t]))),
+        simulatorGroup(),
     ].filter(Boolean);
+}
+
+/**
+ * סימולטור הרשאות (שלב 12 ב): אתר, אפליקציה ושעה ← ההכרעה ואיפה בהגדרות היא נקבעה. מריץ את המנוע האמיתי של
+ * השרת על ההגדרות השמורות, בלי לשנות דבר (lib/simulator.php).
+ */
+function simulatorGroup() {
+    const url = el('input', { type: 'text', dir: 'ltr', placeholder: 'אתר — למשל wikipedia.org', ariaLabel: 'אתר' });
+    const pkg = el('input', { type: 'text', dir: 'ltr', placeholder: 'אפליקציה — שם חבילה (לא חובה)', ariaLabel: 'אפליקציה' });
+    pkg.setAttribute('list', 'sim-apps');   // ‏list הוא מאפיין לקריאה בלבד — רק כ-attribute
+    // האפליקציות שהמכשיר דיווח (אם לשונית האפליקציות כבר נטענה).
+    const apps = el('datalist', { id: 'sim-apps' }, (AP?.kid === K.id && AP.apps || []).map(a => el('option', { value: a.package, label: a.label })));
+    const time = el('input', { type: 'time', ariaLabel: 'שעה' });
+    const day = el('select', { ariaLabel: 'יום' }, [['-1', 'היום'], ...['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת']
+        .map((d, i) => [String(i), d])].map(([v, t]) => el('option', { value: v, text: t })));
+    const used = el('input', { type: 'number', min: '0', max: '1440', placeholder: 'דקות שכבר נוצלו (ריק — בפועל)', ariaLabel: 'דקות שנוצלו' });
+    const out = el('div', { role: 'status' });
+    const line = (ok, title, sub) => el('div', { class: `banner ${ok ? 'ok' : 'warn'}` }, [el('span', { text: ok ? '✅' : '🚫' }),
+        el('div', {}, [el('b', { text: title }), ...sub.filter(Boolean).map(t => el('div', { class: 'hint', text: t }))])]);
+    const run = async () => {
+        if (!url.value.trim() && !pkg.value.trim()) { toast('אתר או אפליקציה'); return; }
+        let r;
+        try { r = await call('simulate', { id: K.id, url: url.value.trim(), package: pkg.value.trim(), time: time.value,
+                                            day: Number(day.value), used_min: used.value }); }
+        catch (e) { toast(e.message, true); return; }
+        out.replaceChildren(...[
+            r.site && line(r.site.allow, `${r.site.allow ? 'ייפתח' : 'ייחסם'} — ${url.value.trim()}`,
+                [r.site.reason, `נקבע ב: ${r.site.where}`, r.site.rule ? `הכלל: ${r.site.rule}` : '',
+                 `בדיקה ל-${r.site.at}, אחרי ${r.site.used_min} דקות היום`]),
+            r.app && line(r.app.allow, `${r.app.allow ? 'תיפתח' : 'תיחסם'} — ${r.app.label || pkg.value.trim()}`,
+                [r.app.reason, r.app.where ? `נקבע ב: ${r.app.where}` : '', r.app.note]),
+        ].filter(Boolean));
+    };
+    return group('🧪 מה יקרה אם…', 'בודק את ההגדרות השמורות, בלי לשנות דבר', [
+        url, pkg, apps, el('div', { class: 'row-btns' }, [day, time]), used,
+        el('button', { type: 'button', class: 'btn primary', text: 'בדיקה', onclick: run }), out]);
 }
 
 /* ── מצב אכיפה: מה באמת נאכף (שלב 11) ───────────────────────────── */

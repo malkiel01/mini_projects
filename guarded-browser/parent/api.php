@@ -18,6 +18,7 @@ require_once __DIR__ . '/../lib/appversion.php';
 require_once __DIR__ . '/../lib/search.php';
 require_once __DIR__ . '/../lib/appcontrol.php';
 require_once __DIR__ . '/../lib/apprequests.php';
+require_once __DIR__ . '/../lib/simulator.php';
 require_once __DIR__ . '/../lib/history.php';
 require_once __DIR__ . '/../lib/enforce.php';
 require_once __DIR__ . '/../lib/devicesettings.php';
@@ -167,6 +168,15 @@ try {
     }
 
     switch ($action) {
+        /* ── סימולטור הרשאות (שלב 12 ב) — קריאה בלבד ── */
+        case 'simulate':
+            $c = myChild($parent);
+            $b = body();
+            out(['ok' => true,
+                 'site' => str('url') !== '' ? simulateSite($c, str('url'), str('time'), isset($b['day']) ? (int) $b['day'] : -1,
+                                                           isset($b['used_min']) && $b['used_min'] !== '' ? (int) $b['used_min'] : -1) : null,
+                 'app'  => str('package') !== '' ? simulateApp($c, str('package')) : null]);
+
         /* ── היסטוריית מדיניות, קבלות ושחזור (שלב 12 א+ז) ── */
         case 'history':
             out(['ok' => true, 'history' => policyHistory((int) myChild($parent)['id'])]);
