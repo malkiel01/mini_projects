@@ -47,8 +47,12 @@ class BrowserActivity : AppCompatActivity() {
     private var nextExpiry = 0L      // התפוגה הקרובה של היתר זמני (UsageMath.nextExpiry)
 
     /** הכרעה מקומית — בזמן אמין (TrustedClock), עם המונה המקומי. */
-    private fun decide(url: String, main: Boolean): Verdict =
-        PolicyEngine.evaluate(policy, ruleSet, url, main, usedSec, sessionSec, nowMs = TrustedClock.now(store))
+    private fun decide(url: String, main: Boolean): Verdict {
+        val now = TrustedClock.now(store)
+        // בלי חיבור — רק מה שההורה קבע שזמין בלי חיבור (OfflineMath; מצמצם בלבד).
+        return OfflineMath.gate(policy.offlineContent, OfflineMath.offline(store.lastSyncMs, now),
+            PolicyEngine.evaluate(policy, ruleSet, url, main, usedSec, sessionSec, nowMs = now), main)
+    }
     private var closing = false
     private var lastAllowed = ""      // הכתובת המותרת האחרונה, לחזרה אליה
     private var background = false    // ממשיכים לרוץ מחוץ לאפליקציה
@@ -114,8 +118,8 @@ class BrowserActivity : AppCompatActivity() {
             if (closing) return
             UsageMeter.tick(store)
             val now = TrustedClock.now(store)
-            if (!store.released && UsageMath.graceExpired(store.lastSyncMs, now)) {
-                refuse("אין חיבור לשרת של ההורה כבר יותר מיממה. התחברו לאינטרנט, או בקשו מההורה קוד.", "offline_grace")
+            if (!store.released && UsageMath.graceExpired(store.lastSyncMs, now, OfflineMath.graceMs(policy.offlineGraceH))) {
+                refuse("אין חיבור לשרת של ההורה כבר יותר מ-${policy.offlineGraceH} שעות. התחברו לאינטרנט, או בקשו מההורה קוד.", "offline_grace")
                 return
             }
             val s = decide("", true)

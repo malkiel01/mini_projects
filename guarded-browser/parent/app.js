@@ -525,6 +525,14 @@ function kidTime() {
             el('label', { class: 'f' }, [el('span', { text: 'לישיבה אחת' }), el('input', { type: 'number', name: 'session_max_min', min: 0, max: 1440,
                 value: p.session_max_min || '', inputMode: 'numeric', dir: 'ltr', placeholder: 'בלי' })]),
         ])]),
+        // מצב לא מקוון מתוכנן (שלב 12 ו) — נאכף במכשיר; הילד רואה במסך הבית מה זמין ועד מתי.
+        group('📴 בלי חיבור לאינטרנט', 'כשהמכשיר לא מגיע לשרת — למשל בטיסה או בלי חבילת גלישה', [
+            seg('offline_content', [['all', 'מה שמותר'], ['approved', 'רק מה שאישרתי'], ['none', 'כלום']], p.offline_content || 'all', { cols: 3 }),
+            el('label', { class: 'f' }, [el('span', { text: 'אחרי כמה שעות בלי חיבור נסגר הכול' }),
+                el('select', { name: 'offline_grace_h' }, [1, 2, 4, 8, 12, 24, 48, 72].map(h =>
+                    el('option', { value: String(h), text: h === 1 ? 'שעה' : `${h} שעות`, selected: h === (p.offline_grace_h || 24) })))]),
+            el('p', { class: 'hint', text: '"רק מה שאישרתי" — אתרים שהוספתם בלשונית אתרים (כולל משימות) ויוטיוב שאישרתם. הזמנים והמכסה ממשיכים לחול גם בלי חיבור. קוד מההורה ("📷 העברה בקוד") מחזיר גלישה גם אחרי שהזמן נגמר.' }),
+        ]),
     ];
 }
 
@@ -543,7 +551,8 @@ $('#kid-form').addEventListener('submit', async e => {
             allow_background: f.allow_background.checked, block_screenshots: f.block_screenshots.checked };
     } else if (tab === 'time') {
         policy = { days: checked('days').map(Number), window_start: f.window_start.value, window_end: f.window_end.value,
-            daily_quota_min: Number(f.daily_quota_min.value || 0), session_max_min: Number(f.session_max_min.value || 0) };
+            daily_quota_min: Number(f.daily_quota_min.value || 0), session_max_min: Number(f.session_max_min.value || 0),
+            offline_content: f.querySelector('[name=offline_content]:checked').value, offline_grace_h: Number(f.offline_grace_h.value) };
     } else return;
     await act('child_save', { policy }, 'נשמר — המכשיר יתעדכן תוך דקה');
 });

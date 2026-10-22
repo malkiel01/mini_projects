@@ -31,6 +31,14 @@ const POSTURE_DENY  = 'deny_all';   // הכול חסום, נפתח לפי הית
 const POSTURE_ALLOW = 'allow_all';  // הכול פתוח, נחסם לפי איסור
 const POSTURES = [POSTURE_DENY, POSTURE_ALLOW];
 
+/**
+ * מצב לא מקוון מתוכנן (שלב 12 ו): מה זמין כשהמכשיר לא מגיע לשרת — ‏all: כל מה שהמדיניות השמורה מתירה;
+ * ‏approved: רק מה שההורה אישר במפורש (אתרים ויוטיוב); ‏none: כלום. ואחרי כמה שעות בלי חיבור הכול נחסם.
+ * נאכף במכשיר בלבד (OfflineMath.kt) — השרת, מעצם הגדרתו, מחובר.
+ */
+const OFFLINE_CONTENT = ['all', 'approved', 'none'];
+const OFFLINE_GRACE_MAX_H = 72;
+
 const SCOPES = ['exact', 'domain', 'domain_plus'];
 
 /** החלטה אחידה. $code לזיהוי במבחנים וביומן; $reason למשתמש. */
