@@ -8,6 +8,7 @@
 declare(strict_types=1);
 require_once __DIR__ . '/../lib/auth.php';
 require_once __DIR__ . '/../lib/ui.php';
+require_once __DIR__ . '/../lib/privacy.php';
 
 $admin = requireAdmin();
 $msg = ''; $kind = 'ok';
@@ -32,9 +33,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$open   = all("SELECT a.*, u.username, u.display_name FROM alerts a LEFT JOIN users u ON u.id = a.user_id
+$open   = all("SELECT a.*, u.username, u.display_name,
+                      CASE WHEN " . adminSeesActivitySql() . " THEN a.url ELSE '' END AS url
+               FROM alerts a LEFT JOIN users u ON u.id = a.user_id
                WHERE a.acked_at = '' ORDER BY a.id DESC LIMIT 50");
-$recent = all("SELECT a.*, u.username, u.display_name FROM alerts a LEFT JOIN users u ON u.id = a.user_id
+$recent = all("SELECT a.*, u.username, u.display_name,
+                      CASE WHEN " . adminSeesActivitySql() . " THEN a.url ELSE '' END AS url
+               FROM alerts a LEFT JOIN users u ON u.id = a.user_id
                WHERE a.acked_at != '' ORDER BY a.id DESC LIMIT 30");
 $csrf   = csrfToken();
 

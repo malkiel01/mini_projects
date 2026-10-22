@@ -10,6 +10,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../lib/auth.php';
 require_once __DIR__ . '/../lib/ui.php';
 require_once __DIR__ . '/../lib/children.php';
+require_once __DIR__ . '/../lib/privacy.php';
 
 $admin = requireAdmin();
 $uid   = (int) ($_GET['id'] ?? 0);
@@ -481,6 +482,13 @@ secOpen('יוטיוב', YT_MODE_LABELS[$yt['mode']][0] . $ytWarn . ' ' . $countT
 <?php secClose(); ?>
 
 <?php secOpen('פעילות אחרונה'); ?>
+<?php if (!adminSeesActivity($user)):
+    // חשבון משפחה — מספרים בלבד (privacy.html, ‏lib/privacy.php).
+    $since = gmdate('Y-m-d\TH:i:s\Z', time() - 7 * 86400);
+    $cnt = one('SELECT SUM(allowed = 1) ok, SUM(allowed = 0) blocked FROM audit WHERE user_id = ? AND at >= ?', [$uid, $since]); ?>
+  <p class="hint" style="margin:0">בשבוע האחרון: <?= (int) ($cnt['ok'] ?? 0) ?> כניסות שהותרו, <?= (int) ($cnt['blocked'] ?? 0) ?> חסימות.
+    הכתובות וההיסטוריה גלויות להורים בלבד.</p>
+<?php else: ?>
   <table>
     <thead><tr><th>מתי</th><th>מה</th><th>כתובת</th><th>תוצאה</th></tr></thead>
     <tbody>
@@ -496,5 +504,6 @@ secOpen('יוטיוב', YT_MODE_LABELS[$yt['mode']][0] . $ytWarn . ' ' . $countT
     </tbody>
   </table>
   <p class="hint" style="margin:12px 0 0"><a href="audit.php?user=<?= $uid ?>">ליומן המלא</a></p>
+<?php endif; ?>
 <?php secClose(); ?>
 <?php layoutEnd();
