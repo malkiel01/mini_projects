@@ -6,6 +6,7 @@
  * - מנהל (בעלים, מנהל, מנהל סניף לסניף שלו) מאשר או דוחה; או מתקן ישירות — מאושר מיד, עם סיבה.
  * - הדיווח המקורי לא משתנה. החישוב (lib/hours.php) מחיל רק תיקונים שאושרו, וכל החלטה נרשמת ביומן.
  * - שינוי שעה — עד יום אחד מהשעה המקורית; תיקון לא יכול להיות בעתיד.
+ * - חודש נעול — אין תיקונים. תיקון שנכנס לתוקף בחודש שבאישור מבטל את האישורים של העובד בו (periods.php).
  */
 
 declare(strict_types=1);
@@ -66,6 +67,7 @@ function insertCorrection(int $memberId, array $row, ?int $byMember, ?int $byPer
 function empCorrect(array $in): array {
     $m = sessionMember(intIn($in, 'member_id'));
     $row = correctionFrom((int) $m['id'], $m['tz'], $in);
+    guardLocked((int) $m['company_id'], correctionMonths($row, $m['tz']));
     $id = insertCorrection((int) $m['id'], $row, (int) $m['id'], null, false);
     audit((int) $m['company_id'], null, 'correction.request', 'corrections:' . $id, null, $row);
     return ['id' => $id];
@@ -118,11 +120,15 @@ function corrDecide(array $person, array $in): array {
     if (!$c || ($site !== null && $c['site_id'] !== $site)) throw new AppError('הבקשה לא נמצאה', 404);
     if ($c['status'] !== 'pending') throw new AppError('כבר הוחלט על הבקשה הזו');
     $approve = !empty($in['approve']);
+    $tz = companyRow($companyId)['tz'];
+    $months = array_values(array_unique(array_map(fn($a) => substr(localDate($a, $tz), 0, 7), array_filter([$c['new_at'], $c['old_at']]))));
+    if ($approve) guardLocked($companyId, $months);
     $note = str($in, 'note', 200);
     if (!$approve && $note === '') throw new AppError('בדחייה — כותבים לעובד למה');
     db()->prepare('UPDATE corrections SET status = ?, decided_by = ?, decided_at = ?, note = ? WHERE id = ?')
         ->execute([$approve ? 'approved' : 'rejected', $person['id'], nowIso(), $note ?: null, $c['id']]);
     audit($companyId, (int) $person['id'], $approve ? 'correction.approve' : 'correction.reject', 'corrections:' . $c['id'], null, ['note' => $note]);
+    if ($approve) revokeAfterCorrection($companyId, $c['member_id'], $months);
     return corrList($person, $in);
 }
 
@@ -131,9 +137,13 @@ function corrDirect(array $person, array $in): array {
     $companyId = intIn($in, 'company_id');
     [, $site] = empScope($person, $companyId, CORR_EDIT);
     $e = empRow($companyId, intIn($in, 'member_id'), $site);
-    $row = correctionFrom((int) $e['id'], companyRow($companyId)['tz'], $in);
-    // תיקון ישיר מחליף בקשה ממתינה לאותו דיווח? לא — היא נחסמה למעלה; מחליטים עליה קודם.
+    $tz = companyRow($companyId)['tz'];
+    $row = correctionFrom((int) $e['id'], $tz, $in);
+    $months = correctionMonths($row, $tz);
+    guardLocked($companyId, $months);
+    // בקשה ממתינה לאותו דיווח חוסמת (correctionFrom) — מחליטים עליה קודם.
     $id = insertCorrection((int) $e['id'], $row, null, (int) $person['id'], true);
+    revokeAfterCorrection($companyId, (int) $e['id'], $months);
     audit($companyId, (int) $person['id'], 'correction.direct', 'corrections:' . $id, null, $row);
     return ['id' => $id];
 }
@@ -145,3 +155,5 @@ function corrHistory(array $person, array $in): array {
     $e = empRow($companyId, intIn($in, 'member_id'), $site);
     return ['corrections' => correctionsOf('c.member_id = ?', [$e['id']])];
 }
+
+require_once __DIR__ . '/periods.php';   // guardLocked, revokeAfterCorrection — הקשר בין התיקונים לחודש

@@ -1,8 +1,8 @@
 'use strict';
 /*
  * שעון נוכחות — ממשק הניהול: פתיחת חברה, הגדרות (פרטים, סניפים, צוות), עובדים וכרטיס עובד.
- * מסכים לפי ה-hash: #/ (בית) · #/settings · #/employees · #/employee/<id> · #/approvals.
- * האפיון: docs/v1-screens-data.md — M1–M5, M7.
+ * מסכים לפי ה-hash: #/ (בית) · #/settings · #/employees · #/employee/<id> · #/approvals · #/month.
+ * האפיון: docs/v1-screens-data.md — M1–M7.
  */
 
 const ROLE = { owner: 'בעלים', manager: 'מנהל', branch_manager: 'מנהל סניף', payroll: 'מנהלת שכר', employee: 'עובד' };
@@ -83,6 +83,7 @@ async function route() {
   else if (path === '/employees') await renderEmployees();
   else if (emp) await renderEmployee(+emp[1]);
   else if (path === '/approvals') await renderApprovals();
+  else if (path === '/month') await renderMonth();
   else renderHome();
   main.focus({ preventScroll: true });
   refreshBadge();
@@ -243,13 +244,14 @@ function renderSettings() {
       <button role="tab" data-tab="sites" aria-selected="${tab === 'sites'}">📍 סניפים <small>${d.sites.length || ''}</small></button>
       <button role="tab" data-tab="team" aria-selected="${tab === 'team'}">👥 צוות <small>${d.team.length}</small></button>
       ${canStations() ? `<button role="tab" data-tab="stations" aria-selected="${tab === 'stations'}">📟 עמדות</button>` : ''}
+      <button role="tab" data-tab="steps" aria-selected="${tab === 'steps'}">✍️ אישור</button>
     </div><div id="pane"></div>`;
   main.querySelector('.seg-tabs').addEventListener('click', e => {
     const b = e.target.closest('[data-tab]'); if (!b) return;
     try { sessionStorage.setItem('tc-tab', b.dataset.tab); } catch { /* */ }
     renderSettings();
   });
-  ({ details: paneDetails, sites: paneSites, team: paneTeam, stations: canStations() ? paneStations : paneDetails })[tab]($('#pane'));
+  ({ details: paneDetails, sites: paneSites, team: paneTeam, stations: canStations() ? paneStations : paneDetails, steps: paneSteps })[tab]($('#pane'));
 }
 
 const isOwner = () => state.data.my_role === 'owner';
@@ -390,6 +392,149 @@ async function renderApprovals() {
         <p class="error" role="alert" hidden></p>`,
         async f => { await api('corr_decide', { company_id: state.companyId, id: c.id, approve: false, note: f.note.value }); return 'נדחה'; });
     }
+  });
+}
+
+/* ===== M7 · מסלול האישור החודשי ===== */
+
+async function paneSteps(pane) {
+  let r;
+  try { r = await api('steps_get', { company_id: state.companyId }); }
+  catch (e) { pane.innerHTML = `<p class="error" role="alert">${esc(e.message)}</p>`; return; }
+  let steps = [...r.steps];
+  const draw = () => {
+    const free = Object.keys(r.labels).filter(k => !steps.includes(k));
+    pane.innerHTML = `
+      <p class="hint">מי מאשר את דוח הנוכחות החודשי, ובאיזה סדר. השינוי חל על חודשים שייפתחו לאישור מעכשיו.</p>
+      <ol class="list" id="steps">${steps.map((k, i) => `
+        <li class="card"><span class="avatar" aria-hidden="true">${i + 1}</span>
+          <div class="body"><div class="l1"><span>${r.labels[k]}</span></div>
+            <div class="l2">${k === 'employee' ? 'העובד מהטלפון' : k === 'manager' ? 'בעלים, מנהל, או מנהל הסניף של העובד' : k === 'payroll' ? 'מנהלת השכר (או הבעלים)' : 'הבעלים'}</div></div>
+          ${r.can_edit ? `<button class="icon-btn" type="button" data-up="${i}" aria-label="למעלה"${i ? '' : ' disabled'}>↑</button>
+            <button class="icon-btn" type="button" data-del="${i}" aria-label="הסרה"${steps.length > 1 ? '' : ' disabled'}>🗑️</button>` : ''}
+        </li>`).join('')}</ol>
+      ${r.can_edit ? `<div class="toolbar" style="margin-top:12px">
+          ${free.length ? `<select id="add-step" aria-label="שלב להוספה">${free.map(k => `<option value="${k}">${r.labels[k]}</option>`).join('')}</select>
+          <button class="btn" type="button" id="add-step-btn">+ שלב</button>` : ''}
+          <span style="flex:1"></span><button class="btn primary" type="button" id="save-steps">שמירה</button></div>` : '<p class="hint">רק הבעלים משנה את המסלול.</p>'}`;
+  };
+  draw();
+  pane.addEventListener('click', async e => {
+    const up = e.target.closest('[data-up]'), del = e.target.closest('[data-del]');
+    if (up) { const i = +up.dataset.up; [steps[i - 1], steps[i]] = [steps[i], steps[i - 1]]; draw(); }
+    else if (del) { steps.splice(+del.dataset.del, 1); draw(); }
+    else if (e.target.id === 'add-step-btn') { steps.push($('#add-step').value); draw(); }
+    else if (e.target.id === 'save-steps') {
+      try { r = await api('steps_save', { company_id: state.companyId, steps }); steps = [...r.steps]; draw(); toast('נשמר'); }
+      catch (err) { toast(err.message, true); }
+    }
+  });
+}
+
+/* ===== M6 · חודש: אישור, נעילה, ייצוא ===== */
+
+let monthShown = null;
+
+async function renderMonth(delta = 0) {
+  setHeader('חודש', { settings: true, tab: '/month' });
+  if (!monthShown) monthShown = new Date().toLocaleDateString('en-CA', { timeZone: TZ }).slice(0, 7);
+  if (delta) { const [y, m] = monthShown.split('-').map(Number); monthShown = new Date(Date.UTC(y, m - 1 + delta, 1)).toISOString().slice(0, 7); }
+  let v;
+  try { v = await api('period_view', { company_id: state.companyId, month: monthShown }); }
+  catch (e) { main.innerHTML = `<p class="error" role="alert">${esc(e.message)}</p>`; return; }
+  const [y, mo] = v.month.split('-').map(Number);
+  const title = new Date(Date.UTC(y, mo - 1, 15)).toLocaleDateString('he-IL', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+  const hmS = m => (m < 0 ? '−' : '') + hm(Math.abs(m));
+  const stepChips = e => v.steps.map((k, i) => {
+    const s = e.signoffs.find(x => x.step === i);
+    return `<span class="chip ${s ? 'ok' : e.next === i && v.status === 'review' ? 'warn' : ''}" title="${s ? esc(s.on_behalf ? 'במקום העובד: ' + (s.note ?? '') : 'אושר') : ''}">${s ? '✓ ' : ''}${v.labels[k]}${s?.on_behalf ? '*' : ''}</span>`;
+  }).join('<span aria-hidden="true">←</span>');
+  const status = v.status === 'open' ? 'פתוח — עוד לא נשלח לאישור' : v.status === 'locked' ? '🔒 נעול' : `באישור — ${v.done} מתוך ${v.employees.length} הושלמו`;
+  const bulk = v.employees.filter(e => e.can_approve && v.steps[e.next] !== 'employee');
+  main.innerHTML = `<div id="mview">
+    <div class="toolbar month-nav">
+      <button class="icon-btn" id="prev" type="button" aria-label="החודש הקודם">‹</button>
+      <b class="one" style="flex:1;text-align:center">${title}</b>
+      <button class="icon-btn" id="next" type="button" aria-label="החודש הבא"${v.month >= v.today.slice(0, 7) ? ' disabled' : ''}>›</button>
+    </div>
+    <div class="summary">
+      <div class="line"><b>${status}</b></div>
+      <div class="steps">${v.steps.map(k => `<span class="chip">${v.labels[k]}</span>`).join('<span aria-hidden="true">←</span>')}</div>
+      ${v.site_only ? `<div class="line muted">${esc(siteName(v.site_only))} בלבד</div>` : ''}
+    </div>
+    <div class="row-btns" style="flex-wrap:wrap;margin-bottom:12px">
+      ${v.can.open ? '<button class="btn primary" type="button" id="p-open">פתיחה לאישור</button>' : ''}
+      ${bulk.length ? `<button class="btn primary" type="button" id="p-approve">✓ אישור המסומנים</button>` : ''}
+      ${v.can.lock ? '<button class="btn" type="button" id="p-lock">🔒 נעילה</button>' : ''}
+      ${v.can.reopen ? '<button class="btn" type="button" id="p-reopen">פתיחה מחדש</button>' : ''}
+      <button class="icon-btn" type="button" id="p-csv" aria-label="ייצוא לאקסל">⬇️</button>
+      <button class="icon-btn" type="button" id="p-print" aria-label="הדפסה">🖨️</button>
+    </div>
+    ${bulk.length ? `<label class="hint" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="all"> סימון כל מי שממתין לאישור שלי (${bulk.length})</label>` : ''}
+    <ul class="list">${v.employees.length ? v.employees.map(e => {
+      const s = e.summary, mine = e.can_approve && v.steps[e.next] !== 'employee', behalf = e.can_approve && v.steps[e.next] === 'employee';
+      return `<li class="card">
+        ${mine ? `<input type="checkbox" class="pick" value="${e.id}" aria-label="סימון ${esc(e.name)}">` : ''}
+        <div class="body" data-emp="${e.id}" style="cursor:pointer"><div class="l1"><span>${esc(e.name)}</span><span class="t">${hm(s.minutes)} / ${hm(s.standard)}</span></div>
+          <div class="l2">הפרש ${hmS(s.diff)}${s.missing ? ` · <b style="color:var(--danger)">${s.missing} חסרים</b>` : ''}${e.pending ? ` · ${e.pending} תיקונים ממתינים` : ''}</div>
+          ${v.status !== 'open' ? `<div class="steps" style="margin-top:4px">${stepChips(e)}</div>` : ''}</div>
+        ${behalf ? `<button class="btn sm" type="button" data-behalf="${e.id}">במקום העובד</button>` : ''}
+      </li>`;
+    }).join('') : '<li class="empty">אין עובדים בחודש הזה.</li>'}</ul>
+    ${v.status === 'review' ? '<p class="hint" style="margin-top:8px">תיקון שמאושר בחודש הזה מבטל את האישורים של אותו עובד — הם אישרו נתונים אחרים. * — אושר במקום העובד.</p>' : ''}
+  </div>`;
+  const view = $('#mview'), body = { company_id: state.companyId, month: v.month };
+  $('#prev').addEventListener('click', () => renderMonth(-1));
+  $('#next').addEventListener('click', () => renderMonth(1));
+  const run = async (action, extra = {}, msg = 'נשמר') => {
+    try { await api(action, { ...body, ...extra }); toast(msg); renderMonth(); } catch (err) { toast(err.message, true); }
+  };
+  $('#p-open')?.addEventListener('click', () => { if (confirm(`לפתוח את ${title} לאישור? העובדים יראו בקשה לאשר את החודש.`)) run('period_open', {}, 'נפתח לאישור'); });
+  $('#all')?.addEventListener('change', e => { for (const c of view.querySelectorAll('.pick')) c.checked = e.target.checked; });
+  $('#p-approve')?.addEventListener('click', () => {
+    const ids = [...view.querySelectorAll('.pick:checked')].map(c => +c.value);
+    if (!ids.length) return toast('לא סומנו עובדים', true);
+    run('period_approve', { member_ids: ids }, `אושרו ${ids.length}`);
+  });
+  $('#p-lock')?.addEventListener('click', () => {
+    const all = v.done === v.employees.length;
+    if (all) { if (confirm(`לנעול את ${title}? אחרי הנעילה אין תיקונים.`)) run('period_lock', {}, 'ננעל'); return; }
+    openSheet('נעילה לפני שכולם אישרו', `<p>${v.employees.length - v.done} עובדים עוד לא השלימו את כל השלבים. נעילה בכל זאת — רק בעלים, עם סיבה.</p>
+      <label class="f" style="margin-top:12px"><span>סיבה *</span><input name="reason" maxlength="200" required></label><p class="error" role="alert" hidden></p>`,
+      async f => { await api('period_lock', { ...body, reason: f.reason.value }); return () => { toast('ננעל'); renderMonth(); }; });
+  });
+  $('#p-reopen')?.addEventListener('click', () => openSheet('פתיחה מחדש', `<p>החודש יחזור לאישור, וכל האישורים יתבטלו (הם נשמרים בתיעוד).</p>
+      <label class="f" style="margin-top:12px"><span>למה? *</span><input name="reason" maxlength="200" required></label><p class="error" role="alert" hidden></p>`,
+    async f => { await api('period_reopen', { ...body, reason: f.reason.value }); return () => { toast('נפתח מחדש'); renderMonth(); }; }));
+  view.addEventListener('click', e => {
+    const b = e.target.closest('[data-behalf]'), emp = e.target.closest('[data-emp]');
+    if (b) {
+      const x = v.employees.find(z => z.id === +b.dataset.behalf);
+      openSheet('אישור במקום העובד', `<p>${esc(x.name)} עוד לא אישר את ${title}. האישור יסומן "במקום העובד", עם ההערה.</p>
+        <label class="f" style="margin-top:12px"><span>הערה *</span><input name="note" maxlength="200" required placeholder="למשל: אושר בשיחה"></label><p class="error" role="alert" hidden></p>`,
+        async f => { await api('period_approve', { ...body, member_ids: [x.id], on_behalf: true, note: f.note.value }); return () => { toast('אושר'); renderMonth(); }; });
+    } else if (emp) { sessionStorage.setItem('tc-emp-tab', 'month'); location.hash = '#/employee/' + emp.dataset.emp; }
+  });
+  $('#p-csv').addEventListener('click', async () => {
+    try {
+      const res = await fetch('api.php?action=period_csv', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), credentials: 'same-origin' });
+      if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || 'הייצוא נכשל');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(await res.blob());
+      a.download = `attendance-${v.month}.csv`;
+      document.body.append(a); a.click(); a.remove();
+    } catch (err) { toast(err.message, true); }
+  });
+  $('#p-print').addEventListener('click', () => {
+    let box = $('#print-box');
+    if (!box) { box = document.createElement('div'); box.id = 'print-box'; box.className = 'print-only'; document.body.append(box); }
+    box.innerHTML = `<h1>${esc(state.data.company.name)} — נוכחות ${title} (${status})</h1>
+      <table><thead><tr><th>עובד</th><th>מס׳</th><th>ימים</th><th>שעות</th><th>תקן</th><th>הפרש</th><th>חסרים</th>${v.steps.map(k => `<th>${v.labels[k]}</th>`).join('')}</tr></thead>
+      <tbody>${v.employees.map(e => `<tr><td>${esc(e.name)}</td><td>${esc(e.employee_no ?? '')}</td><td>${e.summary.days}</td><td>${hm(e.summary.minutes)}</td>
+        <td>${hm(e.summary.standard)}</td><td>${hmS(e.summary.diff)}</td><td>${e.summary.missing || ''}</td>
+        ${v.steps.map((k, i) => { const s = e.signoffs.find(x => x.step === i); return `<td>${s ? new Date(s.at).toLocaleDateString('he-IL', { timeZone: TZ }) + (s.on_behalf ? '*' : '') : ''}</td>`; }).join('')}</tr>`).join('')}</tbody></table>
+      <p style="margin-top:8px;font-size:9pt">"הפרש" — מול שעות התקן בלבד, ואינו חישוב שעות נוספות. * — אושר במקום העובד.</p>`;
+    window.print();
   });
 }
 

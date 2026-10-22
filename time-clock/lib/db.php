@@ -158,6 +158,43 @@ function migrate(PDO $pdo): void {
         );
         CREATE INDEX IF NOT EXISTS corrections_member ON corrections (member_id, status);
 
+        -- מסלול האישור החודשי של החברה: שלבים לפי סדר, כל שלב — תפקיד. ברירת מחדל: עובד ← מנהל.
+        CREATE TABLE IF NOT EXISTS approval_steps (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            company_id INTEGER NOT NULL REFERENCES companies(id),
+            ord        INTEGER NOT NULL,
+            role       TEXT NOT NULL CHECK (role IN ('employee','manager','payroll','owner'))
+        );
+
+        -- חודש של חברה: open (רגיל) ← review (נפתח לאישור; השלבים נקבעים ברגע הפתיחה) ← locked.
+        CREATE TABLE IF NOT EXISTS periods (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            company_id INTEGER NOT NULL REFERENCES companies(id),
+            month      TEXT NOT NULL,
+            status     TEXT NOT NULL DEFAULT 'review' CHECK (status IN ('review','locked')),
+            steps      TEXT NOT NULL,
+            opened_by  INTEGER,
+            opened_at  TEXT NOT NULL,
+            locked_by  INTEGER,
+            locked_at  TEXT,
+            UNIQUE (company_id, month)
+        );
+
+        -- אישור של עובד בחודש בשלב. revoked_at — בוטל (תיקון אחרי האישור, או פתיחה מחדש); נשמר לתיעוד.
+        CREATE TABLE IF NOT EXISTS period_signoffs (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            period_id  INTEGER NOT NULL REFERENCES periods(id),
+            member_id  INTEGER NOT NULL REFERENCES members(id),
+            step       INTEGER NOT NULL,
+            by_person  INTEGER,
+            by_member  INTEGER,
+            on_behalf  INTEGER NOT NULL DEFAULT 0,
+            note       TEXT,
+            at         TEXT NOT NULL,
+            revoked_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS signoffs_period ON period_signoffs (period_id, member_id);
+
         -- עמדה בעסק: מכשיר משותף, מוצמד לחברה (ולסניף) בקוד חד-פעמי. נשמר רק ה-hash של האסימון.
         CREATE TABLE IF NOT EXISTS stations (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
