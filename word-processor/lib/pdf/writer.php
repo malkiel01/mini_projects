@@ -14,10 +14,12 @@ final class PdfWriter
     private array $fontNames = [];     // spl_object_id => '/F1'
     private array $fontObjs = [];      // '/F1' => TtfFont
     private array $images = [];        // hash => [name, w, h, objects…]
+    /** יעדים לקישורים פנימיים (סימניות): שם => [מספר עמוד, y בנקודות מראש העמוד] — הראשון בשם הזה */
+    public array $dests = [];
 
     public function addPage(float $w, float $h): int
     {
-        $this->pages[] = ['w' => $w, 'h' => $h, 'bg' => '', 'main' => '', 'fg' => ''];
+        $this->pages[] = ['w' => $w, 'h' => $h, 'bg' => '', 'main' => '', 'fg' => '', 'links' => []];
         return count($this->pages) - 1;
     }
 
@@ -124,10 +126,11 @@ final class PdfWriter
         }
         $res = $alloc();
         $objs[$res] = "<< /Font << $fontRefs>> /XObject << $imgRefs>> /ProcSet [/PDF /Text /ImageB /ImageC] >>";
-        // עמודים
+        // עמודים — המספרים מוקצים קודם, כי קישור פנימי מפנה לעמוד אחר
         $kids = [];
-        foreach ($this->pages as $p) {
-            $pid = $alloc();
+        $pids = array_map(fn() => $alloc(), $this->pages);
+        foreach ($this->pages as $pn => $p) {
+            $pid = $pids[$pn];
             $cid = $alloc();
             // כל שכבה: הבסיס, ואחריו תתי-השכבות שלה (bg:z / fg:z) לפי z
             $layer = function (string $base) use ($p): string {
@@ -137,7 +140,20 @@ final class PdfWriter
             };
             $content = "q\n" . $layer('bg') . "Q\nq\n" . $p['main'] . "Q\nq\n" . $layer('fg') . "Q\n";
             $objs[$cid] = self::stream('', gzcompress($content, 6), true);
-            $objs[$pid] = "<< /Type /Page /Parent $pagesId 0 R /MediaBox [0 0 " . self::n($p['w']) . ' ' . self::n($p['h']) . "] /Resources $res 0 R /Contents $cid 0 R >>";
+            // קישורים: אזור לחיץ (בלי מסגרת) — כתובת, או סימניה במסמך (קישור לסימניה שלא קיימת — לא לחיץ)
+            $annots = [];
+            foreach ($p['links'] as [$x1, $y1, $x2, $y2, $href]) {
+                if ($href[0] === '#') {
+                    $d = $this->dests[substr($href, 1)] ?? null;
+                    if (!$d) continue;
+                    $act = '/Dest [' . $pids[$d[0]] . ' 0 R /XYZ null ' . self::n($this->pages[$d[0]]['h'] - $d[1]) . ' null]';
+                } else $act = '/A << /S /URI /URI ' . self::uri($href) . ' >>';
+                $aid = $alloc();
+                $objs[$aid] = '<< /Type /Annot /Subtype /Link /Rect [' . implode(' ', array_map([self::class, 'n'], [$x1, $y1, $x2, $y2])) . "] /Border [0 0 0] $act >>";
+                $annots[] = "$aid 0 R";
+            }
+            $objs[$pid] = "<< /Type /Page /Parent $pagesId 0 R /MediaBox [0 0 " . self::n($p['w']) . ' ' . self::n($p['h']) . "] /Resources $res 0 R /Contents $cid 0 R"
+                . ($annots ? ' /Annots [' . implode(' ', $annots) . ']' : '') . ' >>';
             $kids[] = "$pid 0 R";
         }
         $objs[$pagesId] = '<< /Type /Pages /Kids [' . implode(' ', $kids) . '] /Count ' . count($kids) . ' >>';
@@ -182,6 +198,13 @@ final class PdfWriter
         $t = '';
         for ($i = 0; $i < 6; $i++) { $t .= chr(65 + $h % 26); $h = intdiv($h, 26); }
         return $t;
+    }
+
+    /** כתובת לקישור: ASCII בלבד (אותיות עבריות ורווחים — בקידוד אחוזים), עם בריחה של \ ( ). */
+    private static function uri(string $s): string
+    {
+        $s = preg_replace_callback('/[^\x21-\x7e]/', fn($m) => rawurlencode($m[0]), $s);
+        return '(' . strtr($s, ['\\' => '\\\\', '(' => '\\(', ')' => '\\)']) . ')';
     }
 
     /** מחרוזת טקסט ל-PDF (UTF-16BE עם BOM). */

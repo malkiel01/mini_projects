@@ -28,6 +28,12 @@ final class PdfCanvas
         $this->pdf->pages[$this->page][$layer] = ($this->pdf->pages[$this->page][$layer] ?? '') . $ops;
     }
 
+    /** אזור לחיץ של קישור (y מלמעלה, כמו כל השאר). */
+    public function link(float $x, float $y, float $w, float $h, string $href): void
+    {
+        $this->pdf->pages[$this->page]['links'][] = [$x, $this->H - $y - $h, $x + $w, $this->H - $y, $href];
+    }
+
     public function rect(float $x, float $y, float $w, float $h, array $rgb, string $layer = 'main'): void
     {
         $this->add($layer, self::rgb($rgb, 'rg') . ' ' . self::n($x) . ' ' . self::n($this->H - $y - $h) . ' ' . self::n($w) . ' ' . self::n($h) . " re f\n");
@@ -124,6 +130,7 @@ final class FlowItem
     public ?int $table = null;
     public bool $header = false;   // שורת כותרת של טבלה — חוזרת בעמוד הבא
     public array $notes = [];      // הערות שוליים שהסימן שלהן בפריט: [{n, h, draw}] — יוצגו בתחתית העמוד שלו
+    public array $dests = [];      // סימניות שבפריט — יעדים לקישורים פנימיים ב-PDF
     /** @var callable(PdfCanvas, float, float): void */
     public $draw;
 
@@ -199,7 +206,10 @@ final class PdfLayout
             $pi = $this->pdf->addPage($this->W, $this->H);
             $c = new PdfCanvas($this->pdf, $pi, $this->H);
             $this->decorate($c, $i, $total);
-            foreach ($placed as [$item, $y]) ($item->draw)($c, $this->ml, $this->mt + $y);
+            foreach ($placed as [$item, $y]) {
+                ($item->draw)($c, $this->ml, $this->mt + $y);
+                foreach ($item->dests as $bm) $this->pdf->dests[$bm] ??= [$pi, $this->mt + $y];
+            }
             $this->drawNotes($c, $notes);
         }
         return $this->pdf->output($title);
@@ -346,7 +356,7 @@ final class PdfLayout
                 case 'superscript': $s['va'] = 'sup'; break;
                 case 'highlight': $s['bg'] = self::hex($a['color'] ?? '#ffff00'); break;
                 // קישור: כחול עם קו תחתון, כמו במסך (צבע מפורש שאחריו — גובר, כמו ב-CSS)
-                case 'link': $s['u'] = true; $s['color'] = self::hex('#0563c1'); break;
+                case 'link': $s['u'] = true; $s['color'] = self::hex('#0563c1'); $s['href'] = safe_href($a['href'] ?? null); break;
                 case 'textStyle':
                     if (!empty($a['fontFamily'])) $s['family'] = font_name((string)$a['fontFamily']);
                     if (($z = pt_val($a['fontSize'] ?? null))) $s['size'] = $z;
@@ -429,7 +439,8 @@ final class PdfLayout
             $start = $width - min(3, max(0, $lvl - 1)) * 14;   // הזחה לפי הרמה (14 נק' לרמה, עד 42) — מהקצה הימני
             $room = $start - $indent - ($pw + 4 + 12 + 4);      // מקום לטקסט: מספר העמוד, 4 + נקודות 12 לפחות + 4
             $wrapped = $this->wrapText(trim((string)($e['t'] ?? '')), $s, max(10.0, $room));
-            $plan[] = [$wrapped, $s, $pg, $pw, $start, $room];
+            $href = isset($e['i']) && is_numeric($e['i']) ? '#' . (empty($a['seq']) ? '_h' : '_c' . seq_label($a['seq']) . '_') . (int)$e['i'] : null;
+            $plan[] = [$wrapped, $s, $pg, $pw, $start, $room, $href];
             $lines += count($wrapped);
         }
         $h = $titleH + 6 + $lines * $lineH + 6;
@@ -438,8 +449,10 @@ final class PdfLayout
             $right = $x + $width;
             $this->drawTextCentered($c, $title, $st($S * 1.25, true), $left, $right, $y + $titleH / 2 + 0.32 * $S * 1.25, 'main', 'right');
             $yy = $y + $titleH + 6;
-            foreach ($plan as [$wrapped, $s, $pg, $pw, $start, $room]) {
+            foreach ($plan as [$wrapped, $s, $pg, $pw, $start, $room, $href]) {
                 $start += $x;
+                // כל הרשומה לחיצה (כמו בעורך ובתוכן העניינים של Word) — אל הכותרת / הכיתוב
+                if ($href) $c->link($left, $yy, $start - $left, count($wrapped) * $lineH, $href);
                 foreach ($wrapped as $k => $line) {
                     $base = $yy + $lineH / 2 + 0.32 * $S;
                     $this->drawTextCentered($c, $line, $s, $left, $start, $base, 'main', 'right');
@@ -532,6 +545,8 @@ final class PdfLayout
         if (isset($a['_hnum'])) foreach (mb_str_split((string)$a['_hnum']) as $ch) $atoms[] = $this->charAtom(mb_ord($ch), $this->charStyle($base, []));
         $absImgs = [];
         $blockImgs = [];
+        // יעדים: תחילת כותרת / כיתוב (לתוכן העניינים — pdf_toc_dests), וסימניות שבפסקה
+        $bms = array_map(fn($d) => [0, $d], array_values(array_filter([$a['_dest'] ?? null, $a['_cdest'] ?? null])));
         foreach ($n['content'] ?? [] as $c) {
             $ct = $c['type'] ?? '';
             if ($ct === 'text') {
@@ -539,6 +554,9 @@ final class PdfLayout
                 foreach (mb_str_split((string)($c['text'] ?? '')) as $ch) $atoms[] = $this->charAtom(mb_ord($ch), $st);
             } elseif ($ct === 'hardBreak') {
                 $atoms[] = ['br' => true, 'cp' => 0x0A, 'w' => 0];
+            } elseif ($ct === 'bookmark') {
+                // סימניה: יעד לקישור פנימי — בשורה של התו שאחריה (ib)
+                if (($bm = bookmark_name($c['attrs']['name'] ?? ''))) $bms[] = [count($atoms), $bm];
             } elseif ($ct === 'footnote' && !empty($c['attrs']['end'])) {
                 // הערת סיום: רק הסימן (i, ii… בכתב עילי); ההערה — בסוף המסמך
                 $this->endnotes[] = $c['attrs'];
@@ -644,6 +662,11 @@ final class PdfLayout
             $it->count = $count;
             if ($ln['from'] !== null) {
                 for ($q = $ln['from']; $q <= $ln['to']; $q++) if (isset($atoms[$q]['fn'])) $it->notes[] = $atoms[$q]['fn'];
+            }
+            // סימניות: בשורה שבה התו שאחריהן (בסוף הפסקה / בפסקה ריקה — בשורה האחרונה / הראשונה)
+            foreach ($bms as [$at, $bm]) {
+                $inLine = $ln['from'] !== null && $at >= $ln['from'] && $at <= $ln['to'];
+                if ($inLine || ($last && ($ln['from'] === null || $at > $ln['to']))) $it->dests[] = $bm;
             }
             // "שמור עם הבא" — לכותרות (כמו בעורך); לא לסגנון של משתמש, שהוא פסקה רגילה
             $it->keepNext = $last ? ($keepNext || ($kind !== 'normal' && $kind !== 'caption' && !preg_match(USER_STYLE_RE, $kind))) : $together;
@@ -832,6 +855,7 @@ final class PdfLayout
             $rise = $s['va'] === 'sup' ? $s['size'] * 0.33 : ($s['va'] === 'sub' ? -$s['size'] * 0.15 : 0);
             $c->glyphs($run['f'], $run['size'], $run['x'], $baseline, $run['hex'], $s['color'], $s['italic'], $rise, $s['ls']);
             if ($s['u']) $this->underline($c, $s, $run['x'], $run['x'] + $run['w'] - $s['ls'], $baseline);
+            if (!empty($s['href'])) $c->link($run['x'], $baseline - $run['asc'], $run['w'], $run['asc'] + $run['desc'], $s['href']);
             if ($s['strike']) $c->line($run['x'], $baseline - $s['size'] * 0.28, $run['x'] + $run['w'] - $s['ls'], $baseline - $s['size'] * 0.28, $s['color'], max(0.5, $s['size'] * 0.05));
             $run = null;
         };
@@ -1053,8 +1077,8 @@ final class PdfLayout
             }, 'row');
             $it->table = $tid;
             $it->header = ($rows[$ri]['content'][0]['type'] ?? '') === 'tableHeader' && $ri === 0;
-            // הערות שוליים מהתאים — בתחתית העמוד של השורה (כמו בפסקה), לפי סדר התאים
-            foreach ($cells as $c) foreach ($c['items'] as $item) array_push($it->notes, ...$item->notes);
+            // הערות שוליים מהתאים — בתחתית העמוד של השורה (כמו בפסקה), לפי סדר התאים; וגם היעדים (סימניות, כותרות)
+            foreach ($cells as $c) foreach ($c['items'] as $item) { array_push($it->notes, ...$item->notes); array_push($it->dests, ...$item->dests); }
             $out[] = $it;
         }
         $out[] = new FlowItem(4, fn() => null);   // רווח קטן אחרי טבלה
