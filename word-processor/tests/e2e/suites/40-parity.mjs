@@ -73,7 +73,7 @@ export default async function (t) {
         }
     }
     await p.evaluate(() => { window.__printed = 0; window.print = () => { window.__printed++; }; });
-    await p.click('button[aria-label="הדפסה / PDF"]');
+    await t.tool(p, 'הדפסה / PDF');
     t.ok('כפתור ההדפסה פותח הדפסה', await p.evaluate(() => window.__printed) === 1);
     t.ok('בלי שגיאות JS', !p.errors.length, p.errors.join(' | '));
     await p.context().close();

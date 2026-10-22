@@ -7,7 +7,7 @@ export default async function (t) {
 
     await p.click('.wp-doc');
     await p.keyboard.type('עמוד לאורך');
-    await p.click('button[aria-label="מעבר מקטע: העמוד הבא בכיוון ההפוך"]');
+    await t.tool(p, 'מעבר מקטע: העמוד הבא בכיוון ההפוך');
     await p.keyboard.type('עמוד לרוחב');
     await t.settle(p);
     const w = await pages();
@@ -25,7 +25,7 @@ export default async function (t) {
     t.ok('נשמר: מעבר מקטע עם כיוון לרוחב', sb?.attrs?.page?.orientation === 'landscape');
 
     // מעבר מקטע נוסף — חזרה לאורך
-    await p.click('button[aria-label="מעבר מקטע: העמוד הבא בכיוון ההפוך"]');
+    await t.tool(p, 'מעבר מקטע: העמוד הבא בכיוון ההפוך');
     await p.keyboard.type('שוב לאורך');
     await t.settle(p);
     const w2 = await pages();
@@ -39,7 +39,7 @@ export default async function (t) {
 
     // חלון הגדרות העמוד — לפי המקטע שבו הסמן
     const setup = async (fill, scope) => {
-        await p.click('button[aria-label="הגדרות עמוד ומספור עמודים"]');
+        await t.tool(p, 'הגדרות עמוד ומספור עמודים');
         const d = p.locator('dialog[open]');
         if (scope) await d.locator(`input[name=scope][value=${scope}]`).check({ force: true });
         await fill(d);

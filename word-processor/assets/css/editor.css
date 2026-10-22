@@ -6,6 +6,37 @@
 
 .wp-editor { display: flex; flex-direction: column; min-height: 0; flex: 1; background: var(--bg); }
 
+/* ===== הסרט (ribbon): לשוניות, ובכל לשונית קבוצות עם שם (editor.js) ===== */
+.wp-toolbar.wp-ribbon { display: block; padding: 0; overflow: visible; flex-wrap: nowrap; }
+.rb-head { display: flex; align-items: flex-end; gap: 4px; padding: 2px var(--s2) 0; border-bottom: 1px solid var(--line); }
+.rb-quick { display: flex; align-items: center; gap: 2px; padding-inline-end: 6px; margin-inline-end: 2px; border-inline-end: 1px solid var(--line); align-self: center; }
+.rb-tabs { display: flex; gap: 2px; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.rb-tab { flex: none; min-block-size: 38px; padding: 0 14px; border: 0; border-bottom: 3px solid transparent; background: none; font: inherit; font-size: .9rem;
+    color: var(--muted); cursor: pointer; border-radius: 6px 6px 0 0; }
+.rb-tab:hover { color: var(--ink); background: var(--bg); }
+.rb-tab[aria-selected="true"] { color: var(--brand); border-bottom-color: var(--brand); font-weight: 600; }
+.rb-tab.ctx { color: #b45309; }
+.rb-tab.ctx[aria-selected="true"] { border-bottom-color: #b45309; }
+.rb-tab[hidden] { display: none; }
+.rb-collapse { flex: none; align-self: center; min-inline-size: 36px; min-block-size: 36px; border: 0; border-radius: 8px; background: none; color: var(--muted);
+    cursor: pointer; font-size: 1rem; }
+.rb-collapse:hover { background: var(--bg); color: var(--ink); }
+.rb-panel { display: flex; align-items: stretch; gap: 2px; padding: 4px var(--s2) 2px; overflow-x: auto; scrollbar-width: thin; }
+.rb-panel[hidden], .wp-ribbon.collapsed .rb-panel { display: none; }
+.wp-ribbon.collapsed .rb-head { border-bottom: 0; }
+.rb-group { display: flex; flex-direction: column; flex: none; padding: 0 8px; border-inline-end: 1px solid var(--line); }
+.rb-group:last-child { border-inline-end: 0; }
+.rb-rows { display: flex; flex-direction: column; justify-content: center; gap: 2px; flex: 1; }
+.rb-row { display: flex; align-items: center; gap: 2px; }
+.rb-name { padding-top: 2px; font-size: .7rem; color: var(--muted); text-align: center; white-space: nowrap; }
+/* שורת המצב */
+.wp-statusbar { display: flex; align-items: center; gap: var(--s2); flex: none; min-block-size: 28px; padding: 0 var(--s2); font-size: .78rem; color: var(--muted);
+    background: var(--surface); border-top: 1px solid var(--line); white-space: nowrap; }
+.wp-statusbar .st-sep { inline-size: 1px; block-size: 14px; background: var(--line); }
+.wp-statusbar .st-fill { flex: 1; }
+.st-btn, .st-zoom { min-block-size: 28px; min-inline-size: 28px; padding: 0 6px; border: 0; border-radius: 6px; background: none; color: inherit; font: inherit; cursor: pointer; }
+.st-btn:hover, .st-zoom:hover { background: var(--bg); color: var(--ink); }
+
 /* ===== סרגל הכלים: שורה אחת שנגללת בטלפון, נשברת במחשב ===== */
 .wp-toolbar { display: flex; align-items: center; gap: 2px; padding: 4px var(--s2); background: var(--surface); border-bottom: 1px solid var(--line);
     overflow-x: auto; scrollbar-width: thin; flex: none; }
@@ -161,7 +192,7 @@ html.wp-no-page-zoom, html.wp-no-page-zoom body, .wp-editor, .wp-stage { touch-a
 /* ===== הדפסה: רק הדפים, כל רווח = שבירת עמוד (מספרי העמודים — בשולי @page, editor.js) ===== */
 @media print {
     html, body { background: #fff !important; height: auto !important; overflow: visible !important; }
-    .no-print, header.top, .banner, .wp-toolbar, .toast, dialog { display: none !important; }
+    .no-print, header.top, .banner, .wp-toolbar, .wp-statusbar, .toast, dialog { display: none !important; }
     main, .wp-editor, .wp-stage, .wp-zoom-box, .wp-zoom, .wp-sheet { display: block !important; overflow: visible !important; padding: 0 !important; margin: 0 !important;
         background: none !important; transform: none !important; inline-size: auto !important; block-size: auto !important; height: auto !important; width: auto !important; }
     .wp-pages { display: none !important; }
