@@ -38,6 +38,8 @@ object PolicySync {
         if (!store.released) Enforcer.apply(ctx, store)
         AppGrants.confirm(ctx, store, apps)
         Updater.note(ctx, payload.optJSONObject("update"))
+        // בדיקת הגנה שההורה ביקש — אחרי ההחלה, כדי לבדוק את מה שבאמת חל עכשיו.
+        if (!store.released) SelfTest.maybeRun(ctx, store, payload.optJSONObject("selftest"))
         Trace.log("sync.apply", "$source seq=$seq rev=${store.rev}")
         changed()
         return true

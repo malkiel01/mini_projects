@@ -113,6 +113,9 @@ export const COMMANDS = [
     { id: 'save', label: 'שמירה', icon: '💾', keys: 'Ctrl+S', group: 'file', when: x => !!x.ui.save, run: x => x.ui.save() },
     { id: 'print', label: 'הדפסה / PDF', icon: '🖨', group: 'file', edit: false, run: x => x.ui.print() },
     { id: 'printPreview', label: 'תצוגה לפני הדפסה', icon: '🔍', group: 'file', edit: false, run: x => x.ui.printPreview() },
+    { id: 'wordCount', label: 'ספירת מילים', icon: '🔢', keys: 'Ctrl+Shift+G', group: 'view', edit: false, run: x => x.ui.wordCount() },
+    { id: 'navPane', label: 'חלונית ניווט', icon: '🧭', group: 'view', edit: false, run: x => x.ui.navPane(), active: x => x.ui.navOn() },
+    { id: 'showMarks', label: 'סימני פסקה', icon: '¶', keys: 'Ctrl+Shift+8', group: 'view', edit: false, run: x => x.ui.showMarks(), active: x => x.ui.marksOn() },
     { id: 'commandSearch', label: 'חיפוש פקודה', icon: '⌕', keys: 'Alt+Q', group: 'view', edit: false, run: x => x.ui.commandSearch() },
     { id: 'versions', label: 'גרסאות', icon: '🕘', group: 'file', edit: false, when: x => !!x.ui.versions, run: x => x.ui.versions() },
 

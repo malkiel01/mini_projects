@@ -20,6 +20,7 @@ require_once __DIR__ . '/../lib/appcontrol.php';
 require_once __DIR__ . '/../lib/apprequests.php';
 require_once __DIR__ . '/../lib/simulator.php';
 require_once __DIR__ . '/../lib/tasks.php';
+require_once __DIR__ . '/../lib/selftest.php';
 require_once __DIR__ . '/../lib/history.php';
 require_once __DIR__ . '/../lib/enforce.php';
 require_once __DIR__ . '/../lib/devicesettings.php';
@@ -200,6 +201,14 @@ try {
             $c = myChild($parent);
             if (!taskEnd((int) $c['id'], num('task'))) fail('המשימה כבר הסתיימה');
             out(['ok' => true, 'tasks' => tasksOf((int) $c['id']), 'child' => detail($parent, (int) $c['id'])]);
+        /* ── בדיקת הגנה יזומה (שלב 12 ג) — המכשיר בודק את עצמו, בלי לגלוש ובלי לפתוח אפליקציות ── */
+        case 'selftest_request':
+            $n = selftestRequest((int) myChild($parent)['id']);
+            if (!$n) bad('אין מכשיר מחובר לילד הזה');
+            out(['ok' => true, 'devices' => $n]);
+
+        case 'selftest':
+            out(['ok' => true, 'devices' => selftestReport((int) myChild($parent)['id'])]);
 
         /* ── היסטוריית מדיניות, קבלות ושחזור (שלב 12 א+ז) ── */
         case 'history':

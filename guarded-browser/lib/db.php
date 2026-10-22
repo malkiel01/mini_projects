@@ -151,6 +151,12 @@ function migrate(PDO $pdo): void {
     if (!in_array('task_id', $columns('rules'), true)) {
         $pdo->exec("ALTER TABLE rules ADD COLUMN task_id INTEGER NOT NULL DEFAULT 0");
     }
+    // בדיקת הגנה יזומה (lib/selftest.php): הבקשה האחרונה, האחרונה שהמכשיר ענה עליה, והתוצאה הגולמית.
+    if (!in_array('selftest_req', $columns('devices'), true)) {
+        foreach (['selftest_req', 'selftest_done', 'selftest_result', 'selftest_at'] as $col) {
+            $pdo->exec("ALTER TABLE devices ADD COLUMN $col TEXT NOT NULL DEFAULT ''");
+        }
+    }
     // מצב העדכון כפי שהמכשיר דיווח (lib/appversion.php, updateStateSave) — ההורה רואה עדכון שנתקע או נכשל.
     if (!in_array('update_state', $columns('devices'), true)) {
         $pdo->exec("ALTER TABLE devices ADD COLUMN update_state TEXT NOT NULL DEFAULT ''");
@@ -523,8 +529,10 @@ function policyRev(int $userId): string {
     // והחלטות על בקשות פתיחה של אפליקציות (בלי apply_state — האישור מהמכשיר לא אמור לגרום למשיכה חוזרת).
     $appReq = all("SELECT id, status, scope, minutes FROM access_requests WHERE child_id = ? AND kind = 'app' AND status != 'pending'
                    AND decided_at > ? ORDER BY id", [$userId, gmdate('Y-m-d\TH:i:s\Z', time() - 86400)]);
+    // בקשת בדיקת הגנה (lib/selftest.php) — כך כל מסלול סנכרון במכשיר מושך אותה.
+    $selftest = (string) (one('SELECT MAX(selftest_req) AS m FROM devices WHERE user_id = ?', [$userId])['m'] ?? '');
     return substr(md5(json_encode([
         $user['status'] ?? '', policyFor($userId), rulesFor($userId), categoryRulesFor($userId),
         platformRulesFor($userId), platformItemsFor($userId), $apps, $appReq,
-    ])), 0, 12);
+    ] + ($selftest !== '' ? ['selftest' => $selftest] : []))), 0, 12);
 }

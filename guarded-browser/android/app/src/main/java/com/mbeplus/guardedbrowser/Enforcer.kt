@@ -88,7 +88,24 @@ object Enforcer {
         val shotOn = blocked(store, "screenshot", false)
         val camOk = ok { dpm.setCameraDisabled(admin, camOn) }
         val shotOk = ok { dpm.setScreenCaptureDisabled(admin, shotOn) }
+        return results(ctx, store, calls, camOk, shotOk)
+    }
 
+    /**
+     * קריאה חוזרת בלבד — בלי להחיל דבר (בדיקת הגנה יזומה, SelfTest): לכל הגדרה, האם מה שהמערכת מחזיקה עכשיו
+     * תואם את בחירת ההורה. בלי "בעל מכשיר" — no_owner לכולן.
+     */
+    fun readBack(ctx: Context, store: Store): Map<String, String> {
+        if (!isOwner(ctx)) return (SETTINGS.keys + listOf("camera", "screenshot")).associateWith { "no_owner" }
+        return results(ctx, store, SETTINGS.keys.associateWith { true }, camOk = true, shotOk = true)
+    }
+
+    /** התוצאה לכל הגדרה מהמצב שנקרא בחזרה (SettingsMath). ‏calls — האם הקריאה למערכת הצליחה. */
+    private fun results(ctx: Context, store: Store, calls: Map<String, Boolean>, camOk: Boolean, shotOk: Boolean): Map<String, String> {
+        val dpm = dpm(ctx)
+        val admin = DeviceAdmin.component(ctx)
+        val camOn = blocked(store, "camera", false)
+        val shotOn = blocked(store, "screenshot", false)
         // הקריאה בחזרה — מה שהמערכת מחזיקה עכשיו מטעמנו.
         val now = try { dpm.getUserRestrictions(admin) } catch (e: Exception) { null }
         val updating = UpdateMath.installOpen(store.installOpenUntil, System.currentTimeMillis())
@@ -107,6 +124,10 @@ object Enforcer {
         out["screenshot"] = SettingsMath.result(true, true, shotOk, try { dpm.getScreenCaptureDisabled(admin) == shotOn } catch (e: Exception) { null })
         return out
     }
+
+    /** "בעל מכשיר" חוסם את הסרת מגדלור עצמו? null — אי אפשר לבדוק. */
+    fun uninstallBlocked(ctx: Context): Boolean? =
+        if (!isOwner(ctx)) null else try { dpm(ctx).isUninstallBlocked(DeviceAdmin.component(ctx), ctx.packageName) } catch (e: Exception) { null }
 
     private fun storeInstalled(ctx: Context): Boolean =
         try { ctx.packageManager.getApplicationInfo(STORE, 0); true } catch (e: Exception) { false }
