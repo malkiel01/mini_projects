@@ -464,8 +464,8 @@ final class PdfLayout
                 if ($top < $fb && $top + $lineH > $ft) { if ($side === 'left') $l = max($l, $fw); else $r = max($r, $fw); }
             }
             $extra = $k === 0 ? max(0.0, $fl) : max(0.0, -$fl);
-            // הזחה בצד ההתחלה: ימין בפסקה מימין לשמאל
-            return $rtl ? [$l, $width - $ind - $r - $extra] : [$ind + $l + $extra, $width - $r];
+            // הזחה בצד ההתחלה: ימין בפסקה מימין לשמאל. שלישי — איפה השורה מתחילה ביחס לקצה התוכן (לעצירות הטאב)
+            return $rtl ? [$l, $width - $ind - $r - $extra, $k === 0 ? $fl : 0.0] : [$ind + $l + $extra, $width - $r, $k === 0 ? $fl : 0.0];
         }, $yLocal + $before, $base, $lh, $onFloat);
 
         $count = count($lines);
@@ -555,8 +555,8 @@ final class PdfLayout
         $y = $top;
         $newLine = function () use (&$line, $range, &$y, $base, $lh, &$lines) {
             $estH = $lh[0] === 'exact' ? $lh[1] : $base['size'] * $lh[1];
-            [$l, $r] = $range($y, $estH, count($lines));
-            $line = ['from' => null, 'to' => null, 'w' => 0.0, 'trail' => 0.0, 'l' => $l, 'r' => $r, 'br' => false];
+            [$l, $r, $off] = $range($y, $estH, count($lines)) + [2 => 0.0];
+            $line = ['from' => null, 'to' => null, 'w' => 0.0, 'trail' => 0.0, 'l' => $l, 'r' => $r, 'br' => false, 'off' => $off];
         };
         $finish = function (bool $br = false) use (&$line, &$lines, &$y, $atoms, $base, $lh) {
             $line['br'] = $br;
@@ -570,7 +570,9 @@ final class PdfLayout
             if (!empty($wd['br'])) { $finish(true); $newLine(); continue; }
             if (!empty($wd['tab'])) {
                 $pos = $line['from'] === null ? 0.0 : $line['w'] + $line['trail'];
-                $tw = TAB_STOP - fmod($pos, TAB_STOP);
+                // העצירות נמדדות מקצה התוכן של הפסקה (כמו בדפדפן): השורה הראשונה מתחילה ב-off (הזחה / תלויה)
+                $abs = $pos + $line['off'];
+                $tw = TAB_STOP - (fmod(fmod($abs, TAB_STOP) + TAB_STOP, TAB_STOP));
                 if ($tw < 0.5) $tw += TAB_STOP;
                 if ($line['from'] !== null && $pos + $tw > $line['r'] - $line['l'] + 0.01) {
                     // טאב שלא נכנס — "תלוי" בסוף השורה (כמו רווח, בלי רוחב), והמילה הבאה מתחילה שורה חדשה (כמו בדפדפן)

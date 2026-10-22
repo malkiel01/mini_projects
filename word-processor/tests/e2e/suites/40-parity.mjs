@@ -9,6 +9,12 @@ const heb = s => (s.match(/[א-ת]/g) || []).join('').slice(0, 12);
 // בצד ה-PDF: האותיות של תחילת העמוד (עד 80). pdftotext מפצל שורה עם טאב לשני "טורים" ומוציא לפעמים את החלק השני
 // קודם — לכן כשבשורה הראשונה בעורך יש טאב, מספיק שהיא נמצאת בתחילת העמוד ב-PDF; אחרת — העמוד מתחיל בדיוק בה
 const head = s => (s.match(/[א-ת]/g) || []).join('').slice(0, 80);
+/** כל האותיות של x (עם החזרות) נמצאות ב-y — בלי חשיבות לסדר (שורה עם טאב: pdftotext מערבב את הקטעים שלה). */
+const sameLetters = (x, y) => {
+    const n = {};
+    for (const ch of y) n[ch] = (n[ch] || 0) + 1;
+    return [...x].every(ch => n[ch]-- > 0);
+};
 
 export default async function (t) {
     const dir = join(t.app, 'tests', 'corpus');
@@ -42,7 +48,7 @@ export default async function (t) {
         const printStarts = t.pdfPages(printPdf).map(head);
 
         const diff = (a, b) => {
-            const i = a.findIndex((x, k) => !(b[k] ?? '').startsWith(x) && !(ed[k]?.includes('\t') && (b[k] ?? '').includes(x)));
+            const i = a.findIndex((x, k) => !(b[k] ?? '').startsWith(x) && !(ed[k]?.includes('\t') && sameLetters(x, (b[k] ?? '').slice(0, x.length + 30))));
             const at = i < 0 ? '' : `עמוד ${i + 1}: "${a[i]}" מול "${(b[i] ?? '—').slice(0, 24)}"`;
             if (a.length !== b.length) return `${a.length} עמודים מול ${b.length}${at ? ' — ' + at : ''}`;
             return at;
