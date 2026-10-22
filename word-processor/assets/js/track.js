@@ -4,7 +4,8 @@
  *   טקסט שנוסף — סימון ins; טקסט שנמחק — לא נמחק אלא מקבל סימון del (קו חוצה). לכל שינוי: מחבר ותאריך.
  * - מחיקה של טקסט שנוסף במעקב — מוחקת אותו באמת (כמו ב-Word). מחיקה שחוצה פסקאות — הטקסט מסומן, הפסקאות לא מתאחדות.
  * - קבלה / דחייה: של השינוי שבו הסמן (או של כל השינויים בבחירה), או של כולם. הבא / הקודם — מעבר בין שינויים.
- * - עיצוב (מודגש, צבע…) ושינויי מבנה (רשימה, טבלה) — לא נרשמים (עדיין).
+ * - עיצוב תווים (מודגש, צבע, גודל…) — סימון fmt עם העיצוב הקודם (attrs.old), כמו rPrChange ב-Word: אישור — הסימון יוצא;
+ *   דחייה — העיצוב הקודם חוזר. עיצוב של טקסט שנוסף במעקב — לא נרשם (הוא ממילא חדש). שינויי פסקה ומבנה — לא נרשמים.
  * - תצוגה (VIEWS, כמו ב-Word): סימון מלא / סופי / מקור, והסתרת השינויים של מחברים — רק תצוגה (מחלקה ו-CSS על המסמך
  *   ב-editor.js), לא שינוי במסמך. ההדפסה וה-PDF (track_view בשרת) — באותה תצוגה.
  * הרישום: appendTransaction — העסקה של המשתמש מתבצעת, ומיד אחריה (באותו צעד ביטול) עסקה שמחזירה את מה שנמחק
@@ -38,6 +39,43 @@ const changeMark = (name, cls) => Mark.create({
 });
 export const InsMark = changeMark('ins', 'wp-ins');
 export const DelMark = changeMark('del', 'wp-del');
+
+/** סימוני העיצוב שנרשמים במעקב (לא קישור, הערה, תוספת / מחיקה). */
+export const FORMAT_MARKS = new Set(['bold', 'italic', 'underline', 'strike', 'textStyle', 'highlight', 'superscript', 'subscript']);
+const fmtOf = marks => marks.filter(m => FORMAT_MARKS.has(m.type.name)).map(m => m.toJSON());
+const sameFmt = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+/**
+ * שינוי עיצוב במעקב: העיצוב הקודם ב-attrs.old (רשימת סימונים). בתצוגת המקור — העיצוב הקודם מוצג במקום הנוכחי:
+ * ה-span עוטף את סימוני העיצוב (עדיפות גבוהה — חיצוני), מקבל את הקודם במשתנים (--o-*), וה-CSS מאפס את מה שבתוכו.
+ */
+export const FmtMark = Mark.create({
+    name: 'fmt',
+    priority: 2000,
+    inclusive: false,
+    addAttributes() {
+        return {
+            author: { default: '', parseHTML: el => el.getAttribute('data-author') || '' },
+            date: { default: '', parseHTML: el => el.getAttribute('data-date') || '' },
+            old: { default: [], parseHTML: el => { try { return JSON.parse(el.getAttribute('data-old') || '[]'); } catch { return []; } } },
+        };
+    },
+    parseHTML() { return [{ tag: 'span.wp-fmt[data-author]' }]; },
+    renderHTML({ HTMLAttributes: a }) {
+        const old = Array.isArray(a.old) ? a.old : [];
+        const has = t => old.find(m => m.type === t);
+        const ts = has('textStyle')?.attrs || {};
+        const v = [`--wpc:${authorColor(a.author)}`, `--o-fw:${has('bold') ? 700 : 400}`, `--o-fs:${has('italic') ? 'italic' : 'normal'}`,
+            `--o-td:${[has('underline') && 'underline', has('strike') && 'line-through'].filter(Boolean).join(' ') || 'none'}`];
+        if (ts.color) v.push(`--o-color:${ts.color}`);
+        if (ts.fontSize) v.push(`--o-size:${ts.fontSize}`);
+        if (ts.fontFamily) v.push(`--o-ff:${ts.fontFamily}`);
+        if (has('highlight')) v.push(`--o-bg:${has('highlight').attrs?.color || '#ffff00'}`);
+        const t = new Date(a.date);
+        return ['span', { class: 'wp-fmt', 'data-author': a.author, 'data-date': a.date, 'data-old': JSON.stringify(old), style: v.join(';'),
+            title: `עיצוב — ${a.author}${isNaN(t) ? '' : ', ' + t.toLocaleString('he-IL')}` }, 0];
+    },
+});
 
 const now = () => new Date().toISOString().slice(0, 19) + 'Z';
 
@@ -74,6 +112,29 @@ export function trackPlugin(author) {
             const who = author() || 'אני';
             const attrs = { author: who, date: now() };
             const tr = state.tr.setMeta(trackKey, true);
+            // שינוי עיצוב בלבד (כל הצעדים — הוספה / הסרה של סימון עיצוב): נרשם עם העיצוב שהיה (מהמסמך שלפני העסקה)
+            const json = tr0.steps.map(s => s.toJSON());
+            if (json.length && json.every(j => (j.stepType === 'addMark' || j.stepType === 'removeMark') && FORMAT_MARKS.has(j.mark?.type))) {
+                const fmt = schema.marks.fmt;
+                for (const j of json) {
+                    oldState.doc.nodesBetween(j.from, j.to, (node, pos) => {
+                        if (!node.isText) return true;
+                        // טקסט שנוסף / נמחק במעקב — העיצוב שלו לא נרשם; שינוי עיצוב קודם — שומר את העיצוב המקורי
+                        if (node.marks.some(m => m.type.name === 'ins' || m.type.name === 'del' || m.type.name === 'fmt')) return false;
+                        const a = after(Math.max(j.from, pos), 1), b = after(Math.min(j.to, pos + node.nodeSize), -1);
+                        if (a < b) tr.addMark(a, b, fmt.create({ ...attrs, old: fmtOf(node.marks) }));
+                        return false;
+                    });
+                }
+                // עיצוב שחזר להיות כמו המקורי — כבר לא שינוי
+                const from = Math.min(...json.map(j => after(j.from, 1))), to = Math.max(...json.map(j => after(j.to, -1)));
+                tr.doc.nodesBetween(from, to, (node, pos) => {
+                    const m = node.isText && node.marks.find(x => x.type.name === 'fmt');
+                    if (m && sameFmt(fmtOf(node.marks), m.attrs.old)) tr.removeMark(pos, pos + node.nodeSize, fmt);
+                    return !node.isText;
+                });
+                return tr.docChanged ? tr : null;
+            }
             // כל צעד החלפה של המשתמש: הקטע שנמחק (ממסמך הביניים שלפניו) והקטע שנוסף — במיקומים של המסמך הסופי
             const ops = [];
             tr0.steps.forEach((step, i) => {
@@ -178,13 +239,13 @@ export function authors(doc) {
     return [...m].map(([author, count]) => ({ author, count }));
 }
 
-/** השינויים במסמך לפי הסדר: [{ type: 'ins'|'del', author, date, from, to }] — רצף צמוד של אותו סימון הוא שינוי אחד. */
+/** השינויים במסמך לפי הסדר: [{ type: 'ins'|'del'|'fmt', author, date, from, to }] — רצף צמוד של אותו סימון הוא שינוי אחד. */
 export function changes(doc) {
     const out = [];
     doc.descendants((node, pos) => {
         if (!node.isInline) return true;
         for (const m of node.marks) {
-            if (m.type.name !== 'ins' && m.type.name !== 'del') continue;
+            if (m.type.name !== 'ins' && m.type.name !== 'del' && m.type.name !== 'fmt') continue;
             const last = out[out.length - 1];
             if (last && last.type === m.type.name && last.author === m.attrs.author && last.to === pos) last.to = pos + node.nodeSize;
             else out.push({ type: m.type.name, author: m.attrs.author, date: m.attrs.date, from: pos, to: pos + node.nodeSize });
@@ -206,6 +267,19 @@ export function resolveChanges(editor, accept, all = false, hide = null) {
     const tr = state.tr.setMeta(SKIP, true).setMeta('closeHistory$', true);
     // מהסוף להתחלה — מחיקה לא מזיזה את מה שלפניה
     for (const c of [...list].reverse()) {
+        if (c.type === 'fmt') {
+            // דחיית שינוי עיצוב: העיצוב הקודם חוזר (לכל קטע — שלו); אישור — רק הסימון יוצא
+            if (!accept) state.doc.nodesBetween(c.from, c.to, (node, pos) => {
+                const m = node.isText && node.marks.find(x => x.type.name === 'fmt');
+                if (!m) return !node.isText;
+                const a = Math.max(c.from, pos), b = Math.min(c.to, pos + node.nodeSize);
+                for (const x of node.marks) if (FORMAT_MARKS.has(x.type.name)) tr.removeMark(a, b, x.type);
+                for (const o of m.attrs.old || []) { const t = state.schema.marks[o.type]; if (t) tr.addMark(a, b, t.create(o.attrs)); }
+                return false;
+            });
+            tr.removeMark(c.from, c.to, state.schema.marks.fmt);
+            continue;
+        }
         const remove = (c.type === 'ins') !== accept;   // דחיית תוספת / קבלת מחיקה — הטקסט יוצא
         if (remove) tr.delete(c.from, c.to);
         else tr.removeMark(c.from, c.to, state.schema.marks[c.type]);

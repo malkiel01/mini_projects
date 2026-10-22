@@ -38,6 +38,8 @@ function track_visual(array $json): array
 }
 
 const TRACK_VIEWS = ['all', 'final', 'original'];
+/** סימוני העיצוב שנרשמים במעקב (כמו FORMAT_MARKS ב-track.js). */
+const TRACK_FORMAT = ['bold', 'italic', 'underline', 'strike', 'textStyle', 'highlight', 'superscript', 'subscript'];
 
 /**
  * המסמך כמו בתצוגת השינויים של העורך (כמו ב-Word): all — סימון מלא; final — סופי (כאילו הכול אושר: המחיקות
@@ -51,6 +53,14 @@ function track_view(array $json, string $view = 'all', array $hide = []): array
         $marks = $n['marks'] ?? [];
         foreach ($marks as $m) {
             $t = $m['type'] ?? '';
+            if ($t === 'fmt') {
+                // שינוי עיצוב: במקור — העיצוב הקודם במקום הנוכחי; אחרת — העיצוב הנוכחי (בלי סימון נוסף)
+                $rest = array_values(array_filter($marks, fn($x) => ($x['type'] ?? '') !== 'fmt'));
+                if ($view === 'original') $rest = array_merge(array_values(array_filter($rest, fn($x) => !in_array($x['type'] ?? '', TRACK_FORMAT, true))),
+                    array_values(array_filter(is_array($m['attrs']['old'] ?? null) ? $m['attrs']['old'] : [], fn($x) => in_array($x['type'] ?? '', TRACK_FORMAT, true))));
+                $marks = $rest;
+                continue;
+            }
             if ($t !== 'ins' && $t !== 'del') continue;
             $plain = $view === 'final' || ($view === 'all' && in_array((string)($m['attrs']['author'] ?? ''), $hide, true)) ? 'final' : ($view === 'original' ? 'original' : null);
             if ($plain !== null) {
