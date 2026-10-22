@@ -61,6 +61,9 @@
     background: var(--surface); border-top: 1px solid var(--line); white-space: nowrap; }
 .wp-statusbar .st-sep { inline-size: 1px; block-size: 14px; background: var(--line); }
 .wp-statusbar .st-fill { flex: 1; }
+/* גופן מוחלף (ליקוי ח') — רק כשהסמן בגופן שאינו זמין */
+.wp-statusbar .st-font { color: var(--danger, #b42318); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-inline-size: 0; }
+.wp-ribbon select.sub { color: var(--danger, #b42318); font-style: italic; }
 .st-btn, .st-zoom { min-block-size: 28px; min-inline-size: 28px; padding: 0 6px; border: 0; border-radius: 6px; background: none; color: inherit; font: inherit; cursor: pointer; }
 .st-btn:hover, .st-zoom:hover { background: var(--bg); color: var(--ink); }
 

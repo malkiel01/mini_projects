@@ -9,6 +9,38 @@ import {
 } from '../../vendor/tiptap.js';
 
 const BLOCKS = ['paragraph', 'heading'];
+
+/** הגופנים הזמינים — אותם קבצים במסך, בהדפסה וב-PDF (lib/pdf/font.php, FontSet::FAMILIES). */
+export const FONTS = ['David', 'Frank Ruehl', 'Arial', 'Narkisim', 'Miriam', 'Times New Roman', 'Calibri', 'Tahoma',
+    'David Libre', 'Frank Ruhl Libre', 'Miriam Libre', 'Heebo', 'Assistant', 'Rubik', 'Alef'];
+export const FALLBACK = { David: "'David Libre', serif", 'Frank Ruehl': "'Frank Ruhl Libre', serif", Narkisim: "'Assistant', sans-serif",
+    Miriam: "'Miriam Libre', sans-serif", Arial: "'Heebo', sans-serif", 'Times New Roman': "'Frank Ruhl Libre', serif",
+    Calibri: "'Assistant', sans-serif", Tahoma: "'Heebo', sans-serif" };
+
+/**
+ * font-family ל-CSS. גופן שאינו ברשימה — Heebo בלבד, בלי השם: אחרת מחשב שהגופן מותקן אצלו מציג אותו, וה-PDF
+ * (שמציג Heebo) והעימוד במחשב אחר — שונים. השם המקורי נשמר במסמך (ובייצוא ל-Word).
+ */
+export function cssFont(f) {
+    if (!FONTS.includes(f)) return "'Heebo', sans-serif";
+    return `'${String(f).replace(/'/g, '')}', ${FALLBACK[f] || 'sans-serif'}`;
+}
+
+/** גופן לטקסט: מוצג דרך cssFont; השם המקורי — ב-data-font, כדי שהעתקה והדבקה בתוך העורך ישמרו אותו. */
+const WpFontFamily = FontFamily.extend({
+    addGlobalAttributes() {
+        return [{
+            types: this.options.types,
+            attributes: {
+                fontFamily: {
+                    default: null,
+                    parseHTML: el => el.dataset.font || el.style.fontFamily?.split(',')[0].trim().replace(/^['"]|['"]$/g, '') || null,
+                    renderHTML: a => a.fontFamily ? { style: `font-family: ${cssFont(a.fontFamily)}`, 'data-font': a.fontFamily } : {},
+                },
+            },
+        }];
+    },
+});
 const num = v => (v === null || v === undefined || v === '' || isNaN(+v)) ? null : +v;
 
 /** עיצוב פסקה: dir, indent, lineHeight ('1.5' / 'exact:14'), spaceBefore/After (נק'), letterSpacing, pstyle. */
@@ -453,7 +485,7 @@ export function extensions(extra = []) {
             undoRedo: { depth: 200 },
         }),
         NumberedList,
-        TextStyle, Color, FontFamily, FontSize,
+        TextStyle, Color, WpFontFamily, FontSize,
         Highlight.configure({ multicolor: true }),
         Subscript, Superscript,
         TextAlign.configure({ types: BLOCKS, alignments: ['right', 'center', 'left', 'justify'], defaultAlignment: null }),

@@ -316,6 +316,7 @@ function app_action(string $action, array $in): never
                 $row = doc_find($id, $space);
                 if ($imp['page']) $row = doc_set_page($row, $imp['page']);
                 doc_save($row, $imp['json'], null, $uid, $uname);
+                out(['doc' => $id, 'report' => $imp['report']]);
             }
             out(['doc' => $id]);
         case 'my_open':

@@ -138,10 +138,25 @@ async function importDocx(e) {
         const r = await fetch('api.php?action=my_new&title=', { method: 'POST', body: withTitle(fd, f.name.replace(/\.docx$/i, '')), headers: { 'X-WP': '1', 'X-Tab': tab } });
         const d = await r.json();
         if (!r.ok) throw new Error(d.error || 'הייבוא נכשל');
+        importReport = d.report || [];
         location.hash = '#/d/' + d.doc;
     } catch (ex) { toast(ex.message, true); }
 }
 function withTitle(fd, t) { fd.append('title', t); return fd; }
+
+/** דוח הייבוא — אחרי שהמסמך המיובא נפתח: מה לא עבר בדיוק. בלי הערות — רק הודעה קצרה. */
+let importReport = null;
+function showImportReport() {
+    const rep = importReport;
+    importReport = null;
+    if (!rep) return;
+    if (!rep.length) { toast('המסמך יובא במלואו'); return; }
+    sheet('דוח ייבוא', body => {
+        body.classList.add('import-report');
+        body.append(h('p', 'המסמך יובא. אלה הדברים שלא עברו בדיוק כמו ב-Word:'),
+            h('ul', rep.map(r => h('li', h('b', r.label), r.key === 'fonts' ? '' : ` (${r.count})`, h('span', ' — ' + r.detail)))));
+    }, () => true, 'הבנתי');
+}
 
 // ---------- מסמך ----------
 async function openDoc(id) {
@@ -215,6 +230,7 @@ async function openDoc(id) {
     });
     state.textContent = cur.can === 'edit' ? STATE_TEXT.saved : 'קריאה בלבד';
     cur.save = () => saver.flush();
+    showImportReport();
 
     function showBanner(text, ...rest) {
         const kind = typeof rest[rest.length - 1] === 'string' ? rest.pop() : '';
