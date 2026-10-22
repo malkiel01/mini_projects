@@ -69,7 +69,7 @@ function policyDiff(?array $old, array $new): array {
     $sets = [
         'rules' => [['pattern', 'scope', 'action', 'enabled'], fn($r) => ($r['action'] === 'deny' ? '🚫 ' : '✅ ') . $r['pattern'] . ($r['enabled'] ? '' : ' (כבוי)')],
         'items' => [['platform', 'kind', 'item_id', 'action'], fn($r) => '▶️ ' . ($r['label'] ?: $r['item_id']) . ($r['action'] === 'allow' ? '' : ' (חסום)')],
-        'apps'  => [['package', 'action'], fn($r) => '📱 ' . $r['package'] . ($r['action'] === 'block' ? ' — חסומה' : ' — מותרת')],
+        'apps'  => [['package', 'action'], fn($r) => '📱 ' . $r['package'] . match ($r['action']) { 'block' => ' — חסומה', 'hide' => ' — מוסתרת', default => ' — מותרת' }],
         'app_limits' => [['package', 'daily_min'], fn($r) => '⏱️ ' . $r['package'] . " — {$r['daily_min']} דק׳ ביום"],
         'platforms' => [['platform', 'mode', 'allow_search', 'allow_shorts'], fn($r) => "יוטיוב: {$r['mode']}" . ($r['allow_search'] ? ' + חיפוש' : '') . ($r['allow_shorts'] ? ' + Shorts' : '')],
     ];

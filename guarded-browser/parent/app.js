@@ -1165,7 +1165,7 @@ function kidApps() {
             usedLine(a) ? el('small', { text: usedLine(a), style: a.limit_min && a.used_sec >= a.limit_min * 60 ? 'color:var(--danger)' : '' }) : null]),
         a.locked || a.blocked ? null : el('button', { type: 'button', class: 'icon-btn', text: '⏱️',
             ariaLabel: `זמן מסך — ${a.label}`, title: a.limit_min ? `${a.limit_min} דק׳ ביום` : 'בלי מגבלת זמן', onclick: () => setLimit(a) }),
-        a.locked ? el('small', { class: 'muted', text: `✅ תמיד — ${a.why}` }) : seg(`ap_${a.package}`, [['allow', '✅'], ['', '—'], ['block', '🚫']], a.action,
+        a.locked ? el('small', { class: 'muted', text: `✅ תמיד — ${a.why}` }) : seg(`ap_${a.package}`, [['allow', '✅'], ['', '—'], ['block', '🚫'], ['hide', '👻']], a.action,
             { cls: 'seg mini', onchange: async v => {
                 try { AP = { ...(await call('app_rule', { id: K.id, package: a.package, app_action: v })).apps, kid: K.id }; }
                 catch (e) { toast(e.message, true); } renderKid();
@@ -1181,10 +1181,19 @@ function kidApps() {
             el('b', { text: 'החסימה עוד לא נאכפת' }),
             `במכשיר של ${K.name} חסר אישור "ניהול אפליקציות". פתחו במכשיר: מגדלור ← הקמה, או הגדרות ← נגישות ← מגדלור.`])])
         : null;
+    // הסתרה (👻) דורשת "בעל מכשיר" — בלעדיו המוסתרות רק נחסמות, והאייקון נשאר.
+    const hideWarn = AP.hidden_count > 0 && AP.owner_missing > 0
+        ? el('div', { class: 'banner warn' }, [el('span', { text: '👻' }), el('div', {}, [
+            el('b', { text: 'ההסתרה עוד לא פועלת במכשיר' }),
+            'להסתרה צריך "הקמה מלאה" (בעל מכשיר). עד אז האפליקציות שסימנתם 👻 חסומות, אבל האייקון שלהן נשאר. ' +
+            'בטלפון: מגדלור ← ⚙️ ← "🛡️ הגנה מלאה".'])])
+        : null;
     return [
         warn,
+        hideWarn,
         group('ברירת מחדל', '', [posture, hint]),
-        group('האפליקציות במכשיר', AP.apps.length ? `${AP.blocked_count} חסומות · ✅ מותר · — כברירת המחדל · 🚫 חסום · ⏱️ זמן ביום` : '', [list]),
+        group('האפליקציות במכשיר', AP.apps.length ? `${AP.blocked_count} חסומות · ✅ מותר · — כברירת המחדל · 🚫 חסום · 👻 מוסתר · ⏱️ זמן ביום` : '', [list]),
+        el('p', { class: 'hint', text: '👻 מוסתר: האפליקציה נעלמת מהטלפון — בלי אייקון, ולא ברשימת האפליקציות. הנתונים שלה נשמרים, וכשמבטלים את ההסתרה היא חוזרת כמו שהייתה. דורש "הקמה מלאה" (בעל מכשיר).' }),
         el('p', { class: 'hint', text: '⏱️ זמן מסך: מגבלת דקות ביום לאפליקציה. נמדד ונאכף רק כש"ניהול אפליקציות" (נגישות) פעיל במכשיר. נגמר הזמן — הילד יכול לבקש עוד, ואישור זמני גובר על המגבלה. מתחדש בחצות.' }),
     ];
 }

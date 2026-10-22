@@ -60,7 +60,7 @@ function appRequestCreate(array $user, string $pkg, string $note = ''): array {
     }
 
     $label = (string) (one('SELECT label FROM device_apps WHERE child_id = ? AND package = ?', [$uid, $pkg])['label'] ?? '') ?: $pkg;
-    $code = $action === 'block' ? 'app_blocked' : 'app_not_listed';
+    $code = in_array($action, ['block', 'hide'], true) ? 'app_blocked' : 'app_not_listed';
     q("INSERT INTO access_requests (account_id, child_id, kind, url, host, package, device_id, note, code, created_at)
        VALUES (?, ?, 'app', ?, ?, ?, ?, ?, ?, ?)",
       [$accountId, $uid, 'app:' . $pkg, mb_substr($label, 0, 80), $pkg, (int) ($user['device_row_id'] ?? 0),

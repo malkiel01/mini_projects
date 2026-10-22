@@ -83,6 +83,7 @@ function simulateApp(array $child, string $pkg): array {
     $reason = match (true) {
         $action === 'allow' => 'אישרתם את האפליקציה הזו',
         $action === 'block' => 'חסמתם את האפליקציה הזו',
+        $action === 'hide' => 'הסתרתם את האפליקציה הזו',
         $posture === 'deny_all' => 'ברירת המחדל: רק אפליקציות שאישרתם',
         default => 'ברירת המחדל: הכול פתוח חוץ ממה שחסמתם',
     };

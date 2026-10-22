@@ -16,6 +16,10 @@ import android.os.UserManager
  *
  *   מה *לעולם לא* מושעה: מגדלור, המסך הראשי, המערכת, חייגן (AppPolicy.ALWAYS), וההגדרות — חסימה שלהן
  *   רק בנגישות, כדי שמגדלור יוכל לפתוח אותן להקמה ולעדכון (AppPolicy.openSettings).
+ *
+ *   הסתרה (בעל המערכת, 2026-10-22): מה שההורה סימן "מוסתרת" נעלם מהטלפון (setApplicationHidden) — אין אייקון,
+ *   לא ברשימת האפליקציות. הנתונים נשמרים, וביטול מחזיר אותה. רק מה שחסום עכשיו (blockList) — לכן היתר זמני
+ *   ושחרור מחזירים אותה, ומה שלעולם לא נחסם לעולם לא מוסתר.
  */
 object Enforcer {
 
@@ -186,18 +190,29 @@ object Enforcer {
 
         if (!store.appsManage) {
             unsuspendAll(ctx, store)
+            unhideAll(ctx, store)
             EnforceReport.send(ctx, store, settings, emptyList())
             return
         }
 
         // רשימת החבילות לחסום: ב-deny_all הכול חוץ מהמאושרות, אחרת רק המסומנות.
         val block = blockList(ctx, store)
+        // הסתרה — רק מה שחסום עכשיו. הסדר: קודם מחזירים מוסתרות, אחר כך ההשעיה, ובסוף מסתירים — אנדרואיד לא
+        // תמיד משעה או מחזיר חבילה מוסתרת. מה שנכשל לא נרשם, וינוסה שוב בהחלה הבאה (כמו ההשעיה).
+        val toHide = store.appsHidden intersect block
+        val wasHidden = store.hidden
+        val showFail = setHidden(ctx, (wasHidden - toHide).toList(), false)
+
         val prev = store.suspended
         val failOn = suspend(ctx, (block - prev).toList(), true)
         val failOff = suspend(ctx, (prev - block).toList(), false)
         store.suspended = EnforceMath.nextSuspended(block, prev, failOn, failOff)
         if (failOn.isNotEmpty()) Trace.log("enforce.suspend_fail", failOn.joinToString(","))
-        EnforceReport.send(ctx, store, settings, failOn)
+
+        val hideFail = setHidden(ctx, (toHide - wasHidden).toList(), true)
+        store.hidden = EnforceMath.nextSuspended(toHide, wasHidden, hideFail, showFail)
+        if (hideFail.isNotEmpty()) Trace.log("enforce.hide_fail", hideFail.joinToString(","))
+        EnforceReport.send(ctx, store, settings, (failOn + hideFail).distinct())
     }
 
     /** איזה חבילות צריכות להיות מושעות עכשיו. */
@@ -232,6 +247,7 @@ object Enforcer {
         val dpm = dpm(ctx)
         val admin = DeviceAdmin.component(ctx)
         unsuspendAll(ctx, store)
+        unhideAll(ctx, store)
         trySet { dpm.setUninstallBlocked(admin, ctx.packageName, false) }
         for (r in ALWAYS + SETTINGS.values.flatMap { it.first }) trySet { dpm.clearUserRestriction(admin, r) }
         trySet { dpm.setCameraDisabled(admin, false) }
@@ -257,6 +273,23 @@ object Enforcer {
 
     private fun unsuspendAll(ctx: Context, store: Store) {
         store.suspended = suspend(ctx, store.suspended.toList(), false).toSet()
+    }
+
+    /**
+     * מסתיר או מחזיר חבילות, ומחזיר את אלה שנכשלו. ‏setApplicationHidden מחזיר אם המצב אכן השתנה — לכן
+     * נקרא בחזרה (isApplicationHidden): חבילה שכבר במצב המבוקש אינה כישלון.
+     */
+    private fun setHidden(ctx: Context, pkgs: List<String>, on: Boolean): List<String> {
+        val dpm = dpm(ctx)
+        val admin = DeviceAdmin.component(ctx)
+        return pkgs.filterNot { pkg ->
+            try { dpm.setApplicationHidden(admin, pkg, on); dpm.isApplicationHidden(admin, pkg) == on }
+            catch (e: Exception) { Trace.log("enforce.hide", "$pkg: ${e.message}"); false }
+        }
+    }
+
+    private fun unhideAll(ctx: Context, store: Store) {
+        store.hidden = setHidden(ctx, store.hidden.toList(), false).toSet()
     }
 
     private inline fun trySet(block: () -> Unit) {

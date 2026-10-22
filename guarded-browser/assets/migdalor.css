@@ -318,6 +318,7 @@ dialog > form { display: flex; flex-direction: column; max-height: inherit; heig
 .apps .seg.mini { flex: none; width: auto; }
 .apps .seg.mini input[value=allow]:checked + span { background: var(--ok); color: #fff; }
 .apps .seg.mini input[value=block]:checked + span { background: var(--danger); color: #fff; }
+.apps .seg.mini input[value=hide]:checked + span { background: var(--ink); color: var(--bg); }
 
 /* ── מצב אכיפה (שלב 11) ─────────────────────────────────────────── */
 .enf { border: 1px solid var(--line); border-radius: var(--r); padding: var(--s3); margin-top: var(--s2); background: var(--surface); }

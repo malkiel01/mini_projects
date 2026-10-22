@@ -138,6 +138,8 @@ class Store(context: Context) {
             .putString("apps_posture", a?.optString("posture", "allow_all") ?: "allow_all")
             .putString("apps_blocked", a?.optJSONArray("blocked")?.toString() ?: "[]")
             .putString("apps_allowed", a?.optJSONArray("allowed")?.toString() ?: "[]")
+            // מוסתרות (בעל מכשיר): נעלמות מהטלפון. השרת שולח אותן גם ב-blocked.
+            .putString("apps_hidden", a?.optJSONArray("hidden")?.toString() ?: "[]")
             // זמן מסך: {package: דקות ליום} (AppTimeMath).
             .putString("app_limits", a?.optJSONObject("limits")?.toString() ?: "{}")
             .apply()
@@ -168,6 +170,7 @@ class Store(context: Context) {
     val appsPosture: String get() = prefs.getString("apps_posture", "allow_all") ?: "allow_all"
     val appsBlocked: Set<String> get() = strSet("apps_blocked")
     val appsAllowed: Set<String> get() = strSet("apps_allowed")
+    val appsHidden: Set<String> get() = strSet("apps_hidden")
 
     /** עד מתי ההגדרות פתוחות למרות חסימה — כי מגדלור עצמו פתח אותן (AppPolicy.openSettings). */
     var settingsPassUntil: Long
@@ -178,6 +181,11 @@ class Store(context: Context) {
     var suspended: Set<String>
         get() = strSet("suspended")
         set(v) { prefs.edit().putString("suspended", JSONArray(v.toList()).toString()).apply() }
+
+    /** חבילות שמגדלור הסתיר (setApplicationHidden) — כדי להחזיר אותן כשההורה ביטל את ההסתרה. */
+    var hidden: Set<String>
+        get() = strSet("hidden_now")
+        set(v) { prefs.edit().putString("hidden_now", JSONArray(v.toList()).toString()).apply() }
 
     /** חבילות ה-launcher (מסכי הבית) והמקלדות במכשיר — לא נחסמות לעולם. AppPolicy.scan. */
     var launchers: Set<String>
