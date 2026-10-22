@@ -14,7 +14,7 @@ const LOCK_SECONDS = 120;
 const MEDIA_MAX_BYTES = 10 * 1024 * 1024;
 const MEDIA_TYPES = ['image/png' => 'png', 'image/jpeg' => 'jpg', 'image/gif' => 'gif', 'image/webp' => 'webp'];
 /** גרסת המבנה של ה-JSON (attrs.schema). אותו מספר ב-assets/js/extensions.js; ההמרות — כאן וב-assets/js/schema.js. */
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 4;
 
 class ApiError extends Exception
 {
@@ -46,16 +46,42 @@ function doc_json_valid($json): array
  * כדי שקוד ישן לא ישמור מבנה שהוא לא מבין.
  *   0 → 1: attrs נוסף לצומת השורש; הגדרות העמוד עוברות בו (attrs.page) בדרך מהשרת ואליו — במסד הן בעמודה page.
  *   1 → 2: קישורים (link) וסימניות (bookmark) — אין מה להמיר.
+ *   2 → 3: תוכן עניינים, כיתובים והפניות (seq / xref), הערות על טקסט (comment, attrs.comments), הערות סיום — אין מה להמיר.
+ *   3 → 4: מעקב שינויים (סימונים ins / del, attrs.track) — אין מה להמיר.
  */
 function doc_migrate(array $json): array
 {
     $attrs = is_array($json['attrs'] ?? null) ? $json['attrs'] : [];
     $v = (int)($attrs['schema'] ?? 0);
     if ($v > SCHEMA_VERSION) throw new ApiError('המסמך נשמר בגרסה חדשה יותר של העורך — רעננו את הדף', 'schema_newer', 409);
-    if ($v < 2) $v = 2;
+    if ($v < SCHEMA_VERSION) $v = SCHEMA_VERSION;   // אין צעד המרה של ממש: מבנה ישן תקף גם בגרסה הנוכחית
     $attrs['schema'] = $v;
     $json['attrs'] = $attrs;
     return $json;
+}
+
+/**
+ * הגרסה המינימלית של עורך שמותר לו לשמור על המסמך: לפי מה שבאמת יש בו — לא לפי המספר שנרשם (מסמכים נשמרו
+ * עם מבנה של גרסה 3 עוד כשהמספר היה 2). צומת או סימון של גרסה 3 → 3; קישור / סימניה → 2; אחרת 0.
+ * מאפיינים שנוספו לצמתים קיימים (למשל סגנון קו תחתון) — לא נבדקים כאן; מעכשיו כל תוספת כזו מעלה את המספר.
+ */
+function doc_schema_need(array $json): int
+{
+    if (!empty($json['attrs']['track'])) return 4;
+    $need = empty($json['attrs']['comments']) ? 0 : 3;
+    $walk = function (array $nodes) use (&$walk, &$need) {
+        foreach ($nodes as $n) {
+            if (!is_array($n) || $need >= 4) return;
+            $t = $n['type'] ?? '';
+            $marks = array_column(array_filter(is_array($n['marks'] ?? null) ? $n['marks'] : [], 'is_array'), 'type');
+            if (in_array('ins', $marks, true) || in_array('del', $marks, true)) { $need = 4; return; }
+            if (in_array($t, ['toc', 'seq', 'xref'], true) || ($t === 'footnote' && !empty($n['attrs']['end'])) || in_array('comment', $marks, true)) { $need = max($need, 3); continue; }
+            if ($t === 'bookmark' || in_array('link', $marks, true)) $need = max($need, 2);
+            if (is_array($n['content'] ?? null)) $walk($n['content']);
+        }
+    };
+    $walk($json['content'] ?? []);
+    return $need;
 }
 
 /** הגדרות העמוד שבתוך ה-JSON — מוציאים לעמודה page (או null), ומסירים מה-JSON שנשמר. */
@@ -127,6 +153,11 @@ function doc_save(array $row, $json, ?string $title, string $userId, string $use
     if ($base !== null && (int)$base !== (int)$row['version']) {
         throw new ApiError('המסמך השתנה בינתיים — טענו אותו מחדש', 'conflict', 409);
     }
+    // כותב ישן (לשונית שנפתחה לפני עדכון) על מסמך שיש בו מבנה שהוא לא מכיר — היה מוחק אותו בשקט. נדחה (ביקורת 04, F02)
+    $in = is_string($json) ? json_decode($json, true) : $json;
+    // (בלי מספר בכלל — לא עורך: קריאת API של מארחת, שהמבנה שלה לא נבדק כאן)
+    $writer = is_array($in) && isset($in['attrs']['schema']) ? (int)$in['attrs']['schema'] : null;
+    if ($writer !== null && $writer < doc_schema_need(doc_json($row))) throw new ApiError('המסמך נשמר בגרסה חדשה יותר של העורך — רעננו את הדף', 'schema_newer', 409);
     $json = doc_json_valid($json);
     $page = take_page($json) ?? $page;   // הגדרות העמוד שבתוך המסמך — באותה שמירה ובאותה גרסה
     $now = time();
@@ -252,29 +283,70 @@ function with_media_src(array $json, bool $absolute = false): array
 // ---------- גרסאות ----------
 
 /** כל שמירה = גרסה; שמירה של אותו משתמש תוך 10 דקות מתחילת הגרסה האחרונה — מעדכנת אותה. */
-function version_record(array $row, string $userId, string $userName): void
+/**
+ * רישום גרסה. רגילה ($kind '') — מתאחדת עם הגרסה הקודמת של אותו משתמש בחלון 10 הדקות; גרסת שחזור ('restore') —
+ * תמיד שורה חדשה, ואף שמירה לא מתאחדת לתוכה. כך המצב שלפני שחזור והמצב המשוחזר נשמרים שניהם (ביקורת 03 / 04, F06 / R07).
+ */
+function version_record(array $row, string $userId, string $userName, string $kind = ''): void
 {
     $now = time();
-    $st = db()->prepare('SELECT id, user_id, started_at FROM versions WHERE doc = ? ORDER BY id DESC LIMIT 1');
+    $st = db()->prepare('SELECT id, user_id, started_at, kind FROM versions WHERE doc = ? ORDER BY id DESC LIMIT 1');
     $st->execute([$row['id']]);
     $last = $st->fetch(); $st->closeCursor();
-    if ($last && $last['user_id'] === $userId && $now - (int)$last['started_at'] < VERSION_MERGE_SECONDS) {
+    if ($kind === '' && $last && $last['kind'] === '' && $last['user_id'] === $userId && $now - (int)$last['started_at'] < VERSION_MERGE_SECONDS) {
         db()->prepare('UPDATE versions SET version = ?, title = ?, json = ?, page = ?, user_name = ?, saved_at = ? WHERE id = ?')
             ->execute([$row['version'], $row['title'], $row['json'], $row['page'], $userName, $now, $last['id']]);
         return;
     }
-    db()->prepare('INSERT INTO versions (doc, version, title, json, page, user_id, user_name, started_at, saved_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-        ->execute([$row['id'], $row['version'], $row['title'], $row['json'], $row['page'], $userId, $userName, $now, $now]);
+    db()->prepare('INSERT INTO versions (doc, version, title, json, page, user_id, user_name, started_at, saved_at, kind) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        ->execute([$row['id'], $row['version'], $row['title'], $row['json'], $row['page'], $userId, $userName, $now, $now, $kind]);
     db()->prepare('DELETE FROM versions WHERE doc = ? AND id NOT IN (SELECT id FROM versions WHERE doc = ? ORDER BY id DESC LIMIT ' . VERSION_MAX . ')')
         ->execute([$row['id'], $row['id']]);
 }
 
 function versions_list(array $row): array
 {
-    $st = db()->prepare('SELECT id, version, title, user_name, started_at, saved_at FROM versions WHERE doc = ? ORDER BY id DESC');
+    $st = db()->prepare('SELECT id, version, title, user_name, started_at, saved_at, kind FROM versions WHERE doc = ? ORDER BY id DESC');
     $st->execute([$row['id']]);
     return array_map(fn($v) => ['id' => (int)$v['id'], 'version' => (int)$v['version'], 'title' => $v['title'],
-        'by' => $v['user_name'], 'started_at' => (int)$v['started_at'], 'saved_at' => (int)$v['saved_at']], $st->fetchAll());
+        'by' => $v['user_name'], 'started_at' => (int)$v['started_at'], 'saved_at' => (int)$v['saved_at'], 'kind' => $v['kind']], $st->fetchAll());
+}
+
+/**
+ * שחזור גרסה — פעולה אחת בשרת (ביקורת 03 / 04, F06 / R07): בבסיס הנוכחי בלבד (אחרת התנגשות), המצב הנוכחי נשאר כגרסה
+ * (הגרסה האחרונה — היא המצב הנוכחי; מעכשיו לא מתאחדים לתוכה), והתוכן המשוחזר נרשם כגרסת 'restore' נפרדת.
+ */
+function doc_restore_version(array $row, $versionId, string $userId, string $userName, $base): array
+{
+    if ($base !== null && (int)$base !== (int)$row['version']) throw new ApiError('המסמך השתנה בינתיים — טענו אותו מחדש', 'conflict', 409);
+    $v = version_get($row, $versionId);
+    $pdo = db();
+    $pdo->beginTransaction();
+    try {
+        // המצב הנוכחי — כגרסה בפני עצמה, אם עוד לא רשום בדיוק כך (מסמך שנשמר לפני שהיו גרסאות, או בלי רישום)
+        $st = $pdo->prepare('SELECT version, json FROM versions WHERE doc = ? ORDER BY id DESC LIMIT 1');
+        $st->execute([$row['id']]);
+        $last = $st->fetch(); $st->closeCursor();
+        if (!$last || (int)$last['version'] !== (int)$row['version'] || $last['json'] !== $row['json']) {
+            $now = time();
+            $pdo->prepare('INSERT INTO versions (doc, version, title, json, page, user_id, user_name, started_at, saved_at, kind) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+                ->execute([$row['id'], $row['version'], $row['title'], $row['json'], $row['page'], (string)$row['updated_by_id'], (string)$row['updated_by'], $now, $now, 'before']);
+        } else {
+            // הגרסה האחרונה היא המצב שלפני השחזור — נסגרת: שמירות הבאות לא יתאחדו לתוכה
+            $pdo->prepare("UPDATE versions SET kind = 'before' WHERE id = (SELECT id FROM versions WHERE doc = ? ORDER BY id DESC LIMIT 1) AND kind = ''")->execute([$row['id']]);
+        }
+        $now = time();
+        $st = $pdo->prepare('UPDATE docs SET json = ?, page = ?, title = ?, version = version + 1, updated_at = ?, updated_by = ?, updated_by_id = ? WHERE id = ? AND version = ?');
+        $st->execute([$v['json'], $v['page'], $v['title'], $now, $userName, $userId, $row['id'], (int)$row['version']]);
+        if ($st->rowCount() !== 1) throw new ApiError('המסמך השתנה בינתיים — טענו אותו מחדש', 'conflict', 409);
+        $row = doc_find($row['id'], $row['space']);
+        version_record($row, $userId, $userName, 'restore');
+        $pdo->commit();
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        throw $e;
+    }
+    return $row;
 }
 
 function version_get(array $row, $id): array

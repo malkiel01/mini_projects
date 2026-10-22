@@ -153,7 +153,7 @@ try {
      * הרישום בסוף הבקשה (shutdown), כשהשינוי כבר נשמר; שינוי שלא שינה דבר לא נרשם.
      */
     $histActions = ['child_save', 'youtube', 'yt_add', 'yt_del', 'rule_add', 'rule_del', 'rule_toggle', 'device_setting',
-                    'apps_posture', 'app_rule', 'report_level', 'request_decide', 'app_request_decide'];
+                    'apps_posture', 'app_rule', 'app_limit', 'report_level', 'request_decide', 'app_request_decide'];
     if (in_array($action, $histActions, true)) {
         $histChild = str_ends_with($action, 'request_decide')
             ? (int) (one('SELECT child_id FROM access_requests WHERE id = ? AND account_id = ?', [num('req'), $aid])['child_id'] ?? 0)
@@ -359,6 +359,12 @@ try {
         case 'apps_posture':
             $c = myChild($parent);
             if ($err = appsSavePosture((int) $c['id'], str('posture'))) fail($err);
+            out(['ok' => true, 'apps' => appsList($aid, (int) $c['id'])]);
+
+        /* ── זמן מסך: מגבלה יומית לאפליקציה (lib/apptime.php) — 0 = בלי מגבלה ── */
+        case 'app_limit':
+            $c = myChild($parent);
+            if ($err = appLimitSave((int) $c['id'], str('package'), num('minutes'))) fail($err);
             out(['ok' => true, 'apps' => appsList($aid, (int) $c['id'])]);
 
         case 'app_rule':

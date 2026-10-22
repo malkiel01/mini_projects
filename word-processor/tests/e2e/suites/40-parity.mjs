@@ -17,7 +17,20 @@ const sameLetters = (x, y) => {
     return [...x].every(ch => n[ch]-- > 0);
 };
 
+/** האם ההבדל בין a (העורך) ל-b הוא בדיוק ההבדל הידוע: מספרי העמודים כפי שתועדו, והעמודים המשותפים זהים (diff ריק). */
+export const knownMatches = (known, a, b, diff) => !!known && Array.isArray(known.pages) && a.length === known.pages[0] && b.length === known.pages[1]
+    && !diff(a.slice(0, Math.min(...known.pages)), b.slice(0, Math.min(...known.pages)));
+
 export default async function (t) {
+    // השער עצמו (F15): הבדל ידוע פוטר רק את עצמו
+    {
+        const same = (a, b) => (a.some((x, k) => x !== b[k]) ? 'שונה' : '');
+        const k = { pages: [3, 4] };
+        t.ok('הבדל ידוע: בדיוק כפי שתועד — מדווח ולא נכשל', knownMatches(k, ['א', 'ב', 'ג'], ['א', 'ב', 'ג', 'ד'], same));
+        t.ok('הבדל ידוע: עמוד משותף אחר — נכשל', !knownMatches(k, ['א', 'ב', 'ג'], ['א', 'X', 'ג', 'ד'], same));
+        t.ok('הבדל ידוע: מספר עמודים אחר — נכשל', !knownMatches(k, ['א', 'ב', 'ג'], ['א', 'ב', 'ג', 'ד', 'ה'], same) && !knownMatches(k, ['א', 'ב'], ['א', 'ב', 'ג'], same));
+        t.ok('הבדל ידוע: טקסט חופשי בלי עמודים — לא פוטר', !knownMatches('שורה גבולית', ['א'], ['ב'], same));
+    }
     const dir = join(t.app, 'tests', 'corpus');
     const p = await t.page();
     for (const f of readdirSync(dir).filter(f => f.endsWith('.json')).sort()) {
@@ -81,7 +94,11 @@ export default async function (t) {
                 }));
             }
             if (d && process.env.DEBUG) console.log({ editor: ed.map(x => x.slice(0, 50)), [name]: name === 'הדפסה' ? t.pdfPages(printPdf).map(x => x.slice(0, 80)) : t.pdfPages(pdf).map(x => x.slice(0, 80)) });
-            if (d && known) t.known(label, `${d} (${known})`);
+            // הבדל ידוע — רק בדיוק כפי שתועד: מספר העמודים בשני הצדדים, וכל העמודים המשותפים מתחילים באותו טקסט
+            // (ביקורת 04, F15: קודם הבדל ידוע פטר כל הבדל במסמך)
+            const exact = knownMatches(known, edStarts, other, diff);
+            if (d && known && !exact) t.ok(label, false, `${d} — לא ההבדל הידוע (${JSON.stringify(known.pages ?? known)})`);
+            else if (d && known) t.known(label, `${d} (${known.why})`);
             // הבדל ידוע שלא הופיע — עובר. חלקם תלויים בשורה גבולית שהעיגול שלה משתנה בין מחשבים (ב-CI ומקומית)
             else if (!d && known) t.ok(label, true, 'ההבדל הידוע לא הופיע כאן — אם זה קבוע, להסיר אותו מ-tests/corpus/make.php');
             else t.ok(label, !d, d || `${edStarts.length} עמודים`);

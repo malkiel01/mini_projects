@@ -728,7 +728,7 @@ function permLine(p) {
     if (!p) return '';
     if (p.complete) return '✓ כל ההרשאות · בעל מכשיר';
     // "בעל מכשיר" חסר — תמיד מסומן: בלעדיו אין שליטה בהגדרות המערכת ועדכון שקט.
-    const owner = p.owner ? '' : '⚠️ חסר "בעל מכשיר" — הקמה מלאה ב"חיבור מכשיר" (איפוס המכשיר)';
+    const owner = p.owner ? '' : '⚠️ חסר "בעל מכשיר" — הקמה מלאה ב"חיבור מכשיר": בקוד QR (איפוס) או דרך מחשב (בלי איפוס)';
     const req = p.required_missing.length ? `⚠️ חסרות הרשאות: ${p.required_missing.join('، ')}` : '';
     return [req, owner].filter(Boolean).join(' · ');
 }
@@ -1076,7 +1076,10 @@ function provisionBox(cfg) {
     });
     return el('div', { style: 'margin-top:16px;display:grid;gap:8px' }, [
         el('p', { class: 'hint', text: 'בלי הקמה מלאה האכיפה חלקית: אי אפשר לנעול את הגדרות המערכת, והעדכונים דורשים לחיצה של הילד.' }),
-        btn, holder]);
+        btn, holder,
+        // בלי איפוס — דרך מחשב (setup/, WebUSB). בטלפון: מגדלור ← ⚙️ ← "הגנה מלאה" (FullSetupActivity).
+        el('a', { class: 'btn', href: '../setup/', target: '_blank', rel: 'noopener', text: '💻 הקמה מלאה בלי איפוס — דרך מחשב' }),
+        el('p', { class: 'hint', text: 'בטלפון: מגדלור ← ⚙️ ← "הגנה מלאה"; במחשב בכרום — הדף שנפתח בכפתור. מסירים זמנית את החשבונות בטלפון, וכל השאר אוטומטי.' })]);
 }
 
 /* ── ילד חדש ───────────────────────────────────────────────────── */
@@ -1144,10 +1147,25 @@ function kidApps() {
             try { AP = { ...(await call('apps_posture', { id: K.id, posture: v })).apps, kid: K.id }; toast('נשמר'); }
             catch (e) { toast(e.message, true); } renderKid();
         } });
+    // זמן מסך (lib/apptime.php): כמה שימשה היום (לפי המכשיר), והמגבלה.
+    const usedLine = a => {
+        const m = Math.round((a.used_sec || 0) / 60);
+        if (a.limit_min) return `⏱️ ${m} מתוך ${a.limit_min} דק׳ היום${m >= a.limit_min ? ' — נגמר' : ''}`;
+        return m ? `היום: ${m} דק׳` : '';
+    };
+    const setLimit = async a => {
+        const v = prompt(`כמה דקות ביום ל${a.label}? (0 — בלי מגבלה)`, String(a.limit_min || ''));
+        if (v === null) return;
+        try { AP = { ...(await call('app_limit', { id: K.id, package: a.package, minutes: Number(v) || 0 })).apps, kid: K.id }; toast('נשמר — המכשיר יתעדכן תוך דקה'); }
+        catch (e) { toast(e.message, true); } renderKid();
+    };
     const row = a => el('li', {}, [
         el('span', { class: 'app-ic', ariaHidden: 'true', text: a.system ? '⚙️' : '📱' }),
-        el('span', { class: 'nm' }, [a.label, el('small', { dir: 'ltr', text: a.package })]),
-        a.locked ? el('small', { class: 'muted', text: `✅ תמיד — ${a.why}` }) : seg(`ap_${a.package}`, [['allow', '✅'], ['', '—'], ['block', '🚫']], a.action,
+        el('span', { class: 'nm' }, [a.label, el('small', { dir: 'ltr', text: a.package }),
+            usedLine(a) ? el('small', { text: usedLine(a), style: a.limit_min && a.used_sec >= a.limit_min * 60 ? 'color:var(--danger)' : '' }) : null]),
+        a.locked || a.blocked ? null : el('button', { type: 'button', class: 'icon-btn', text: '⏱️',
+            ariaLabel: `זמן מסך — ${a.label}`, title: a.limit_min ? `${a.limit_min} דק׳ ביום` : 'בלי מגבלת זמן', onclick: () => setLimit(a) }),
+        a.locked ? el('small', { class: 'muted', text: `✅ תמיד — ${a.why}` }) : seg(`ap_${a.package}`, [['allow', '✅'], ['', '—'], ['block', '🚫'], ['hide', '👻']], a.action,
             { cls: 'seg mini', onchange: async v => {
                 try { AP = { ...(await call('app_rule', { id: K.id, package: a.package, app_action: v })).apps, kid: K.id }; }
                 catch (e) { toast(e.message, true); } renderKid();
@@ -1163,10 +1181,20 @@ function kidApps() {
             el('b', { text: 'החסימה עוד לא נאכפת' }),
             `במכשיר של ${K.name} חסר אישור "ניהול אפליקציות". פתחו במכשיר: מגדלור ← הקמה, או הגדרות ← נגישות ← מגדלור.`])])
         : null;
+    // הסתרה (👻) דורשת "בעל מכשיר" — בלעדיו המוסתרות רק נחסמות, והאייקון נשאר.
+    const hideWarn = AP.hidden_count > 0 && AP.owner_missing > 0
+        ? el('div', { class: 'banner warn' }, [el('span', { text: '👻' }), el('div', {}, [
+            el('b', { text: 'ההסתרה עוד לא פועלת במכשיר' }),
+            'להסתרה צריך "הקמה מלאה" (בעל מכשיר). עד אז האפליקציות שסימנתם 👻 חסומות, אבל האייקון שלהן נשאר. ' +
+            'בטלפון: מגדלור ← ⚙️ ← "🛡️ הגנה מלאה".'])])
+        : null;
     return [
         warn,
+        hideWarn,
         group('ברירת מחדל', '', [posture, hint]),
-        group('האפליקציות במכשיר', AP.apps.length ? `${AP.blocked_count} חסומות · ✅ מותר · — כברירת המחדל · 🚫 חסום` : '', [list]),
+        group('האפליקציות במכשיר', AP.apps.length ? `${AP.blocked_count} חסומות · ✅ מותר · — כברירת המחדל · 🚫 חסום · 👻 מוסתר · ⏱️ זמן ביום` : '', [list]),
+        el('p', { class: 'hint', text: '👻 מוסתר: האפליקציה נעלמת מהטלפון — בלי אייקון, ולא ברשימת האפליקציות. הנתונים שלה נשמרים, וכשמבטלים את ההסתרה היא חוזרת כמו שהייתה. דורש "הקמה מלאה" (בעל מכשיר).' }),
+        el('p', { class: 'hint', text: '⏱️ זמן מסך: מגבלת דקות ביום לאפליקציה. נמדד ונאכף רק כש"ניהול אפליקציות" (נגישות) פעיל במכשיר. נגמר הזמן — הילד יכול לבקש עוד, ואישור זמני גובר על המגבלה. מתחדש בחצות.' }),
     ];
 }
 

@@ -2,9 +2,15 @@
  * שמירה אמינה — משותף לאפליקציה (app.js) ולהטמעה (embed.js).
  *
  *   const s = createSaver({ snapshot, send, version, draftKey, onState });
- *   s.changed()            — היה שינוי: טיוטה במכשיר מיד, שמירה לשרת אחרי שנייה וחצי
- *   await s.flush()        — שמירה עכשיו. מחזיר { ok: true } או { ok: false, code, message } — תמיד, בלי לזרוק
+ *   s.changed()            — היה שינוי: טיוטה במכשיר (אחרי 250 מ"ש שקט, ולכל המאוחר אחרי שנייה), שמירה לשרת אחרי שנייה וחצי
+ *   await s.flush()        — שמירה עכשיו. מחזיר { ok: true, dirty } או { ok: false, code, message } — תמיד, בלי לזרוק.
+ *                            ok + dirty: true — מה שנשלח נשמר, אבל הוקלד עוד בזמן הבקשה (המסמך עוד לא נקי)
+ *   await s.flushUntilClean() — שומר עד שהמסמך נקי (או כשל): לסגירה ולייצוא
+ *   await s.flushDraft()   — כתיבת הטיוטה למכשיר עכשיו; true כשנכתבה (ביקורת 03, F01)
+ *   s.local                — 'saved' (בשרת או בטיוטה שנכתבה) | 'pending' | 'failed' (אין אחסון במכשיר / מלא)
+ *   s.keepConflictCopy()   — לפני טעינה מחדש אחרי התנגשות: התוכן המקומי נשמר בנפרד (draftKey + ':conflict') עד החלטה
  *   s.state                — 'saved' | 'dirty' | 'saving' | 'offline' | 'conflict' | 'locked' | 'error'
+ *   onState(state, info)   — גם { localFailed: true } כשכתיבת טיוטה נכשלה
  *
  * כללים:
  * - תוכן, הגדרות עמוד וסגנונות נשמרים יחד, בגרסה אחת: snapshot() מחזיר את ה-JSON של המסמך, וההגדרות בתוכו (attrs.page).
@@ -30,16 +36,19 @@ function idb() {
     });
 }
 
+/** קריאה: הערך או null. כתיבה / מחיקה: true רק כשהעסקה הושלמה (oncomplete) — אחרת false (אין אחסון, מלא, חסום). */
 async function draftOp(mode, fn) {
+    const write = mode === 'readwrite';
     const db = await idb();
-    if (!db) return null;
+    if (!db) return write ? false : null;
     return new Promise(resolve => {
         try {
             const tx = db.transaction(STORE, mode);
             const r = fn(tx.objectStore(STORE));
-            tx.oncomplete = () => resolve(r?.result ?? null);
-            tx.onerror = () => resolve(null);
-        } catch { resolve(null); }
+            tx.oncomplete = () => resolve(write ? true : r?.result ?? null);
+            tx.onerror = () => resolve(write ? false : null);
+            tx.onabort = () => resolve(write ? false : null);
+        } catch { resolve(write ? false : null); }
     });
 }
 
@@ -71,6 +80,10 @@ export function createSaver(o) {
     let inflight = null;
     let retry = 0;
     let stopped = false;
+    let draftStr = null;     // התוכן שנכתב בהצלחה לטיוטה האחרונה
+    let draftFailed = false;
+    let draftSince = 0;      // מתי התחילה ההמתנה לכתיבת הטיוטה (maxWait)
+    const DRAFT_WAIT = 250, DRAFT_MAX = 1000;
 
     const set = (s, info = {}) => {
         state = s;
@@ -80,13 +93,24 @@ export function createSaver(o) {
         const snap = o.snapshot();
         return { snap, str: JSON.stringify(snap) };
     };
+    /** כתיבת הטיוטה עכשיו; true כשנכתבה (או שאין מה לכתוב — הכול בשרת). כשל — localFailed למעלה. */
+    async function flushDraft() {
+        clearTimeout(draftTimer);
+        draftTimer = 0;
+        draftSince = 0;
+        const { snap, str } = current();
+        if (str === lastSaved) { drafts.del(o.draftKey); draftStr = str; return true; }
+        const ok = await drafts.put(o.draftKey, { json: snap, base_version: version, at: Date.now() });
+        if (ok) { draftStr = str; if (draftFailed) { draftFailed = false; set(state, { localFailed: false }); } }
+        else if (!draftFailed) { draftFailed = true; set(state, { localFailed: true }); }
+        return ok;
+    }
+    // שקט של 250 מ"ש — או לכל המאוחר שנייה מהשינוי הראשון שעוד לא נכתב (הקלדה רצופה לא דוחה את הטיוטה לעד)
     const writeDraft = () => {
         clearTimeout(draftTimer);
-        draftTimer = setTimeout(() => {
-            const { snap, str } = current();
-            if (str === lastSaved) drafts.del(o.draftKey);
-            else drafts.put(o.draftKey, { json: snap, base_version: version, at: Date.now() });
-        }, 250);
+        const now = Date.now();
+        if (!draftSince) draftSince = now;
+        draftTimer = setTimeout(flushDraft, Math.max(0, Math.min(DRAFT_WAIT, draftSince + DRAFT_MAX - now)));
     };
 
     async function doSave() {
@@ -99,9 +123,10 @@ export function createSaver(o) {
             lastSaved = str;
             retry = 0;
             // אם הוקלד עוד בזמן השמירה — עדיין יש מה לשמור
-            if (current().str === lastSaved) { drafts.del(o.draftKey); set('saved', r); }
+            const dirty = current().str !== lastSaved;
+            if (!dirty) { drafts.del(o.draftKey); set('saved', r); }
             else { set('dirty'); schedule(); }
-            return { ok: true, version: r.version };
+            return { ok: true, version: r.version, dirty };
         } catch (e) {
             const code = e.code || 'error';
             if (code === 'conflict') { stopped = true; set('conflict', { message: e.message }); }
@@ -125,6 +150,13 @@ export function createSaver(o) {
         return inflight;
     }
 
+    /** שמירה עד שהמסמך נקי — מה שהוקלד בזמן בקשה נשלח בבקשה הבאה (עד 5 סבבים). */
+    async function flushUntilClean() {
+        let r = { ok: true, dirty: true };
+        for (let i = 0; i < 5 && r.ok && current().str !== lastSaved; i++) r = await flush();
+        return r.ok ? { ...r, dirty: current().str !== lastSaved } : r;
+    }
+
     function schedule() {
         clearTimeout(timer);
         timer = setTimeout(() => { flush(); }, 1500);
@@ -134,6 +166,8 @@ export function createSaver(o) {
         get state() { return state; },
         get version() { return version; },
         get dirty() { return current().str !== lastSaved; },
+        get draftKey() { return o.draftKey; },
+        get local() { const str = current().str; return str === lastSaved || str === draftStr ? 'saved' : draftFailed ? 'failed' : 'pending'; },
         changed() {
             if (stopped) { writeDraft(); return; }
             if (current().str === lastSaved) return;
@@ -142,6 +176,14 @@ export function createSaver(o) {
             if (state !== 'offline') schedule();
         },
         flush,
+        flushUntilClean,
+        flushDraft,
+        /** לפני טעינה מחדש אחרי התנגשות: העותק המקומי — בנפרד, עד שהמשתמש מחליט (הורדה / מחיקה). */
+        async keepConflictCopy() {
+            const { snap, str } = current();
+            if (str === lastSaved) return false;
+            return drafts.put(o.draftKey + ':conflict', { json: snap, base_version: version, at: Date.now() });
+        },
         /** אחרי טעינה מחדש מהשרת (למשל אחרי התנגשות או שחרור נעילה). */
         reset(newVersion) {
             version = newVersion;
@@ -162,7 +204,8 @@ export function createSaver(o) {
             schedule();
         },
         stop() { stopped = true; clearTimeout(timer); },
-        destroy() { clearTimeout(timer); clearTimeout(draftTimer); },
+        // יציאה: טיוטה שממתינה נכתבת (ולא מתבטלת — ביקורת 03, F01); השמירה לשרת — של מי שקרא (ensureSaved)
+        destroy() { clearTimeout(timer); if (draftTimer) flushDraft(); },
     };
 }
 

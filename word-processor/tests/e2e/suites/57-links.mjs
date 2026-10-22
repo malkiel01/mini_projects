@@ -85,6 +85,6 @@ export default async function (t) {
     await p.waitForTimeout(600);
     const s = await t.api(p, 'my_open', { doc });
     const flat = JSON.stringify(s.json);
-    t.ok('נשמר בשרת: קישורים, סימניה, schema 2', flat.includes('https://example.com/x') && flat.includes('#פרק_ב') && flat.includes('"bookmark"') && s.json.attrs.schema === 2);
+    t.ok('נשמר בשרת: קישורים, סימניה, גרסת המבנה הנוכחית', flat.includes('https://example.com/x') && flat.includes('#פרק_ב') && flat.includes('"bookmark"') && s.json.attrs.schema === 4);
     t.ok('בלי שגיאות JS', !p.errors.length, p.errors.join(' | '));
 }

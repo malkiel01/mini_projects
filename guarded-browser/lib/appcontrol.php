@@ -10,14 +10,20 @@
  *   deny_all (רק המאושרות). האכיפה עצמה במכשיר (שירות נגישות / בעל מכשיר); כאן רק המדיניות.
  *
  *   מה *לעולם לא* נחסם מוכרע במכשיר (מגדלור עצמו, המסך הראשי, חייגן) — כדי לא לנעול את הטלפון.
+ *
+ *   הסתרה (בעל המערכת, 2026-10-22): הכרעה שלישית — 'hide'. האפליקציה נעלמת מהטלפון לגמרי (אין אייקון, לא ברשימת
+ *   האפליקציות בהגדרות), והנתונים שלה נשמרים; ביטול ההסתרה מחזיר אותה כמו שהייתה. רק ב"בעל מכשיר"
+ *   (setApplicationHidden) — בלעדיו אנדרואיד לא מאפשר, והיא נחסמת כרגיל. לכן היא גם ברשימת החסומות.
  */
 
 declare(strict_types=1);
 
 require_once __DIR__ . '/children.php';
 require_once __DIR__ . '/appversion.php';
+require_once __DIR__ . '/apptime.php';
 
 const APP_POSTURES = ['allow_all', 'deny_all'];
+const APP_ACTIONS = ['allow', 'block', 'hide'];
 
 /**
  * מסך ההתקנה של אנדרואיד — לעולם לא נחסם: דרכו מגדלור מתקין את העדכון של עצמו. חסום (במפורש, או ב"רק מה
@@ -90,11 +96,11 @@ function appPosture(int $childId): string {
     return in_array($p, APP_POSTURES, true) ? $p : 'allow_all';
 }
 
-/** מפה package → allow|block. */
+/** מפה package → allow|block|hide. */
 function appRules(int $childId): array {
     $out = [];
     foreach (all('SELECT package, action FROM app_rules WHERE child_id = ?', [$childId]) as $r) {
-        $out[$r['package']] = $r['action'] === 'allow' ? 'allow' : 'block';
+        $out[$r['package']] = in_array($r['action'], APP_ACTIONS, true) ? $r['action'] : 'block';
     }
     return $out;
 }
@@ -107,10 +113,16 @@ function appsPayload(array $user): array {
     $childId = (int) $user['id'];
     if (!accountAppsAllowed((int) $user['account_id'])) return ['manage' => false];
     $rules = appRules($childId);
+    $never = array_merge(UPDATE_PACKAGES, SHELL_PACKAGES, [SELF_PACKAGE]);
+    $hidden = array_values(array_diff(array_keys(array_filter($rules, fn($a) => $a === 'hide')), $never));
     return [
         'manage'  => true,
+        // זמן מסך: {package: דקות ליום} — נאכף במכשיר (AppTimeMath). אובייקט גם כשריק.
+        'limits'  => (object) appLimits($childId),
         'posture' => appPosture($childId),
-        'blocked' => array_values(array_diff(array_keys(array_filter($rules, fn($a) => $a === 'block')), UPDATE_PACKAGES, SHELL_PACKAGES, [SELF_PACKAGE])),
+        // מוסתרת היא גם חסומה: גרסה ישנה, או מכשיר בלי "בעל מכשיר", חוסמים אותה כרגיל.
+        'blocked' => array_values(array_diff(array_keys(array_filter($rules, fn($a) => $a !== 'allow')), $never)),
+        'hidden'  => $hidden,
         'allowed' => array_values(array_unique(array_merge(array_keys(array_filter($rules, fn($a) => $a === 'allow')), UPDATE_PACKAGES, SHELL_PACKAGES))),
     ];
 }
@@ -123,12 +135,14 @@ function appsSavePosture(int $childId, string $posture): string {
     return '';
 }
 
-/** הכרעה לחבילה: allow / block / '' (מחיקת הכלל — חוזר לברירת המחדל). */
+/** הכרעה לחבילה: allow / block / hide / '' (מחיקת הכלל — חוזר לברירת המחדל). */
 function appsSaveRule(int $childId, string $pkg, string $action): string {
     $pkg = cleanPackage($pkg);
     if ($pkg === '') return 'שם חבילה לא תקין';
     if ($why = alwaysOpen($pkg)) return "תמיד פתוח — $why";
-    if ($action !== '' && !in_array($action, ['allow', 'block'], true)) return 'פעולה לא מוכרת';
+    if ($action !== '' && !in_array($action, APP_ACTIONS, true)) return 'פעולה לא מוכרת';
+    // ההגדרות — לא מוסתרות: דרכן מגדלור עצמו פותח מסכי הקמה ועדכון (AppPolicy.openSettings). חסימה — כן.
+    if ($action === 'hide' && $pkg === 'com.android.settings') return 'את ההגדרות אפשר לחסום, לא להסתיר — מגדלור צריך אותן להקמה ולעדכון';
     // החלטה חדשה של ההורה על האפליקציה גוברת על היתר זמני פעיל עליה (lib/apprequests.php) — הוא מבוטל.
     q("UPDATE access_requests SET apply_state = 'revoked' WHERE child_id = ? AND kind = 'app' AND package = ?
        AND status = 'approved' AND scope = 'temporary' AND apply_state IN ('pending', 'applied')", [$childId, $pkg]);
@@ -147,6 +161,8 @@ function appsList(int $accountId, int $childId): array {
     if (!accountAppsAllowed($accountId)) return ['manage' => false];
     $posture = appPosture($childId);
     $rules = appRules($childId);
+    $limits = appLimits($childId);
+    $usage = appUsageToday($childId);
     $apps = [];
     foreach (all('SELECT package, label, is_system FROM device_apps WHERE child_id = ? ORDER BY is_system, LOWER(label), package', [$childId]) as $a) {
         $pkg = $a['package'];
@@ -154,7 +170,9 @@ function appsList(int $accountId, int $childId): array {
         $locked = $why !== '';
         $apps[] = ['package' => $pkg, 'label' => $a['label'] ?: $pkg, 'system' => (bool) $a['is_system'],
                    'action' => $locked ? 'allow' : ($rules[$pkg] ?? ''), 'locked' => $locked, 'why' => $why,
-                   'blocked' => !$locked && appBlocked($posture, $rules[$pkg] ?? '')];
+                   'blocked' => !$locked && appBlocked($posture, $rules[$pkg] ?? ''),
+                   // זמן מסך (lib/apptime.php): המגבלה, וכמה שימשה היום לפי דיווח המכשיר.
+                   'limit_min' => $limits[$pkg] ?? 0, 'used_sec' => $usage[$pkg] ?? 0];
         unset($rules[$pkg]);
     }
     // כללים ל"רפאים" — חבילות שכבר לא מותקנות אך נשמר עליהן כלל.
@@ -163,14 +181,18 @@ function appsList(int $accountId, int $childId): array {
     $accessMissing = count(array_filter(all('SELECT perms FROM devices WHERE user_id = ?', [$childId]),
         fn($d) => !((int) $d['perms'] & PERM_ACCESS)));
     $devices = (int) one('SELECT COUNT(*) n FROM devices WHERE user_id = ?', [$childId])['n'];
+    // הסתרה דורשת "בעל מכשיר" — מכשירים בלעדיו רק חוסמים את המוסתרות (האייקון נשאר).
+    $ownerMissing = count(array_filter(all('SELECT perms FROM devices WHERE user_id = ?', [$childId]),
+        fn($d) => !((int) $d['perms'] & PERM_OWNER)));
     return ['manage' => true, 'posture' => $posture, 'apps' => $apps, 'orphan_rules' => $orphans,
             'blocked_count' => count(array_filter($apps, fn($x) => $x['blocked'])),
+            'hidden_count' => count(array_filter($apps, fn($x) => $x['action'] === 'hide')), 'owner_missing' => $ownerMissing,
             'access_missing' => $accessMissing, 'devices' => $devices];
 }
 
 /** האם חבילה חסומה בפועל, לפי ברירת המחדל וההכרעה. */
 function appBlocked(string $posture, string $action): bool {
     if ($action === 'allow') return false;
-    if ($action === 'block') return true;
+    if ($action === 'block' || $action === 'hide') return true;
     return $posture === 'deny_all';
 }

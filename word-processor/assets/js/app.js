@@ -197,6 +197,15 @@ async function openDoc(id) {
         versions: {
             list: async () => (await api('my_versions', { doc: id })).versions,
             get: vid => api('my_version', { doc: id, id: vid }),
+            // שחזור — פעולה אחת בשרת (ביקורת 04, R07): קודם כל השינויים נשמרים, ואז השרת רושם את המצב הנוכחי ואת
+            // המשוחזר כשתי גרסאות נפרדות (לא מתאחדות). מחזיר false כשלא נשמר — ואז לא משחזרים
+            restore: async vid => {
+                if ((await ensureSaved(cur, 'השחזור')) !== 'ok') return false;
+                const r = await api('my_version_restore', { doc: id, id: vid, base_version: cur.saver.version });
+                ed.setContent(r.json);
+                cur.saver.reset(r.version);
+                return true;
+            },
         },
         // כל שינוי — כולל הגדרות עמוד וסגנונות, שנמצאים בתוך המסמך — עובר לשמירה
         onUpdate: () => { if (cur.saver && cur.can === 'edit') cur.saver.changed(); },
@@ -219,13 +228,19 @@ async function openDoc(id) {
         onState: (s, info) => {
             state.textContent = cur.can === 'edit' || s !== 'saved' ? STATE_TEXT[s] : 'קריאה בלבד';
             state.classList.toggle('bad', ['offline', 'conflict', 'error'].includes(s));
-            if (s === 'conflict') showBanner('המסמך השתנה במקום אחר. השינויים שלך שמורים במכשיר.',
+            // "שמורים במכשיר" — רק כשהטיוטה באמת נכתבה (ביקורת 03, F01)
+            if (s === 'conflict') showBanner('המסמך השתנה במקום אחר. ' + (saver.local === 'saved' ? 'השינויים שלך שמורים במכשיר.' : 'השינויים שלך לא נשמרו במכשיר — הורידו עותק.'),
                 ['טעינה מחדש', reloadFromServer], ['הורדת העותק שלי', () => downloadLocalCopy(ed.getJSON(), cur.title)]);
             else if (s === 'locked') lockedBy(info.message || 'המסמך פתוח לעריכה אצל משתמש אחר');
             else if (s === 'error' && info.code === 'schema_newer') showBanner(info.message, ['רענון', () => location.reload()]);
             else if (s === 'error') toast(info.message || 'השמירה נכשלה', true);
             else if (s === 'saved' && banner.dataset.kind === 'offline') hideBanner();
-            if (s === 'offline') showBanner('אין חיבור לשרת. ממשיכים לעבוד — הכול נשמר במכשיר ויישלח כשהחיבור יחזור.', null, 'offline');
+            if (s === 'offline') showBanner(saver.local === 'failed' ? 'אין חיבור לשרת, ואי אפשר לשמור במכשיר (האחסון חסום או מלא). הורידו עותק כדי לא לאבד שינויים.'
+                : 'אין חיבור לשרת. ממשיכים לעבוד — הכול נשמר במכשיר ויישלח כשהחיבור יחזור.', ['הורדת עותק', () => downloadLocalCopy(ed.getJSON(), cur.title)], 'offline');
+            // כתיבת טיוטה במכשיר נכשלה — חיווי (לא מבטיחים "שמור במכשיר" כשלא)
+            if (info.localFailed && s !== 'saved') showBanner('אי אפשר לשמור טיוטה במכשיר (האחסון חסום או מלא). השינויים נשמרים רק בשרת — כשיש חיבור.',
+                ['הורדת עותק', () => downloadLocalCopy(ed.getJSON(), cur.title)], 'local');
+            else if (info.localFailed === false && banner.dataset.kind === 'local') hideBanner();
         },
     });
     state.textContent = cur.can === 'edit' ? STATE_TEXT.saved : 'קריאה בלבד';
@@ -245,9 +260,12 @@ async function openDoc(id) {
         saver.stop();
         ed.setEditable(false);
         state.textContent = 'קריאה בלבד';
-        showBanner(msg + ' — פתוח לקריאה בלבד.' + (saver.dirty ? ' השינויים שלך שמורים במכשיר.' : ''));
+        showBanner(msg + ' — פתוח לקריאה בלבד.' + (saver.dirty ? (saver.local === 'saved' ? ' השינויים שלך שמורים במכשיר.' : ' השינויים שלך לא נשמרו במכשיר.') : ''),
+            saver.dirty ? ['הורדת השינויים', () => downloadLocalCopy(ed.getJSON(), cur.title)] : null);
     }
     async function reloadFromServer() {
+        // ביקורת 03, F09: טעינה מחדש אחרי התנגשות לא מוחקת את העבודה המקומית — היא נשמרת בנפרד עד החלטה
+        const kept = saver.dirty && await saver.keepConflictCopy();
         const fresh = await api('my_open', { doc: id });
         ed.setContent(fresh.json);
         cur.can = fresh.can;
@@ -255,8 +273,18 @@ async function openDoc(id) {
         saver.reset(fresh.version);
         hideBanner();
         if (cur.can !== 'edit' && fresh.lock) lockedBy(`פתוח לעריכה אצל ${fresh.lock.by}`);
+        else if (kept) conflictCopy();
+    }
+    /** עותק מקומי מהתנגשות (draftKey:conflict) — נשאר עד הורדה / מחיקה מפורשת, גם אחרי סגירה ופתיחה. */
+    async function conflictCopy() {
+        const c = await drafts.get(draftKey + ':conflict');
+        if (!c?.json || current !== cur) return;
+        showBanner(`הגרסה שלך מלפני הטעינה מחדש (${when(Math.round(c.at / 1000))}) שמורה בנפרד במכשיר.`,
+            ['הורדה', () => downloadLocalCopy(c.json, cur.title + ' (הגרסה שלי)')],
+            ['מחיקה', () => { if (confirm('למחוק את הגרסה המקומית? אי אפשר לבטל.')) { drafts.del(draftKey + ':conflict'); hideBanner(); } }], 'conflict-copy');
     }
     if (d.can !== 'edit' && d.lock) lockedBy(`פתוח לעריכה אצל ${d.lock.by}`);
+    conflictCopy();
 
     // טיוטה שנשארה במכשיר (לשונית שנסגרה, ניתוק, קריסה) — מציעים לשחזר
     findDraft(draftKey, JSON.stringify(ed.getJSON())).then(dr => {
@@ -321,8 +349,8 @@ async function openDoc(id) {
 async function ensureSaved(cur, what, leaving = false) {
     if (!cur.saver || cur.deleted || !cur.saver.dirty) return 'ok';
     for (;;) {
-        const r = await cur.saver.flush();
-        if (r.ok && !cur.saver.dirty) return 'ok';
+        const r = await cur.saver.flushUntilClean();
+        if (r.ok && !r.dirty) return 'ok';
         if (r.ok) continue;   // הוקלד עוד בזמן השמירה
         const reason = { offline: 'אין חיבור לשרת', conflict: 'המסמך השתנה במקום אחר', locked: 'המסמך פתוח לעריכה אצל מישהו אחר' }[r.code] || r.message;
         const pick = await choose('השינויים לא נשמרו', `${reason}. ${what} לא תכלול את השינויים האחרונים — לכן ${leaving ? 'לא יצאנו' : 'עצרנו'}. השינויים שמורים במכשיר הזה.`, [

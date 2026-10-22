@@ -7,13 +7,13 @@
  * מתאים לטקסט. הטקסט שבתוך הערות השוליים (attrs) — לא בחיפוש.
  */
 import { Extension, Plugin, PluginKey, Decoration, DecorationSet, TextSelection } from '../../vendor/tiptap.js';
+import { matchText, newBudget, SLOW } from './find-core.js';
 
 export const findKey = new PluginKey('wpFind');
 
 // ניקוד וטעמים — בלי מקף (05BE), פסק (05C0), סוף פסוק (05C3) ונון הפוכה (05C6), שהם סימני פיסוק
 const NIQQUD = /[֑-ׇֽֿׁׂׅׄ]/;
 const NIQQUD_G = new RegExp(NIQQUD.source, 'g');
-const WORD = /[\p{L}\p{N}\p{M}_]/u;
 const escapeRe = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
@@ -32,7 +32,9 @@ export function findMatches(doc, query, opts = {}) {
         return { error: 'ביטוי רגולרי לא תקין' };
     }
     const out = [];
+    const budget = newBudget();
     doc.descendants((node, pos) => {
+        if (budget.stopped) return false;
         if (!node.isTextblock) return true;
         // הטקסט של הפסקה, ולכל תו — המיקום שלו במסמך (ניקוד שהושמט — לא נכנס לטקסט, אבל נשאר בטווח ההתאמה)
         let text = '';
@@ -49,16 +51,11 @@ export function findMatches(doc, query, opts = {}) {
         });
         const end = pos + 1 + node.content.size;
         const posAt = i => (i < at.length ? at[i] : end);
-        re.lastIndex = 0;
-        let m;
-        while ((m = re.exec(text))) {
-            if (!m[0].length) { re.lastIndex++; continue; }
-            const a = m.index, b = a + m[0].length;
-            if (opts.wholeWord && ((a > 0 && WORD.test(text[a - 1])) || (b < text.length && WORD.test(text[b])))) continue;
-            out.push({ from: at[a], to: posAt(b), groups: m.slice(1), text: m[0] });
-        }
+        for (const x of matchText(text, re, opts.wholeWord, budget)) out.push({ from: at[x.a], to: posAt(x.b), groups: x.groups, text: x.text });
         return false;
     });
+    // נעצר באמצע — לא מציגים חצי תוצאות כאילו זה הכול
+    if (budget.stopped) return { error: SLOW };
     return out;
 }
 
@@ -189,8 +186,8 @@ export function createFindBar(h, { editor, notify }) {
     function paint() {
         const s = st();
         const n = s.matches.length;
-        count.textContent = s.error ? s.error : !s.query ? '' : n ? `${s.index + 1} מתוך ${n}` : 'אין תוצאות';
-        count.classList.toggle('none', !!s.query && !n);
+        count.textContent = preErr || (s.error ? s.error : !s.query ? '' : n ? `${s.index + 1} מתוך ${n}` : 'אין תוצאות');
+        count.classList.toggle('none', !!preErr || (!!s.query && !n));
         prev.disabled = next.disabled = !n;
         const can = editor.isEditable;
         replOne.disabled = replAll.disabled = !n || !can;
@@ -200,7 +197,32 @@ export function createFindBar(h, { editor, notify }) {
     function reveal() {
         requestAnimationFrame(() => editor.view.dom.querySelector('.wp-find-cur')?.scrollIntoView({ block: 'center', inline: 'nearest' }));
     }
-    function search() {
+    // ביטוי רגולרי — קודם בדיקה ב-Worker (find-worker.js) עם זמן קצוב: ביטוי שנתקע לא מגיע לדף ולא מקפיא את העורך
+    let gen = 0;
+    let preErr = null;
+    const PRECHECK_MS = 1500;
+    function precheck(query) {
+        const strip = opt.ignoreNiqqud !== false;
+        const source = strip ? query.replace(NIQQUD_G, '') : query;
+        const texts = [];
+        editor.state.doc.descendants(n => { if (n.isTextblock) { texts.push(strip ? n.textContent.replace(NIQQUD_G, '') : n.textContent); return false; } return true; });
+        return new Promise(resolve => {
+            let w;
+            try { w = new Worker(new URL('./find-worker.js', import.meta.url), { type: 'module' }); } catch { resolve({ ok: true }); return; }
+            const timer = setTimeout(() => { w.terminate(); resolve({ error: 'החיפוש בוטל: הביטוי הרגולרי איטי מדי' }); }, PRECHECK_MS);
+            w.onmessage = e => { clearTimeout(timer); w.terminate(); resolve(e.data.stopped ? { error: 'החיפוש בוטל: הביטוי איטי מדי או מחזיר יותר מדי התאמות' } : e.data); };
+            w.onerror = () => { clearTimeout(timer); w.terminate(); resolve({ ok: true }); };
+            w.postMessage({ source, flags: 'gu' + (opt.matchCase ? '' : 'i'), wholeWord: opt.wholeWord, texts });
+        });
+    }
+    async function search() {
+        const my = ++gen;
+        preErr = null;
+        if (opt.regex && findIn.value) {
+            const r = await precheck(findIn.value);
+            if (my !== gen) return;   // הוקלד משהו חדש בינתיים
+            if (r.error) { preErr = r.error; editor.commands.setFind('', { ...opt }); paint(); return; }
+        }
         editor.commands.setFind(findIn.value, { ...opt });
         paint();
         if (st().matches.length) reveal();

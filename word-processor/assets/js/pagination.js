@@ -88,7 +88,7 @@ export const Pages = Extension.create({
                             return out;
                         }).concat((pick.notesArea || []).map(a => Decoration.widget(a.pos, notesAreaEl(a), {
                             // אזור ההערות של העמוד האחרון — אחרי הכול (גם אחרי הערות הסיום); עמוד שנגמר בין הערות סיום — לפני המעבר שלו
-                            side: a.end ? 1000 : a.side != null ? a.side - 0.25 : -3, key: `fn${a.pos}-${Math.round(a.fill)}-${a.notes.map(n => n.n).join('.')}-${hash(a.notes.map(n => n.text + JSON.stringify(n.content || '') + (n.clip || '') + (n.skip || '')).join('|'))}`,
+                            side: a.end ? a.end : a.side != null ? a.side - 0.25 : -3, key: `fn${a.pos}-${a.end || ''}-${Math.round(a.fill)}-${a.notes.map(n => n.n).join('.')}-${a.style ? hash(a.style) : ''}-${hash(a.notes.map(n => n.text + JSON.stringify(n.content || '') + (n.clip || '') + (n.skip || '')).join('|'))}`,
                             ignoreSelection: true, marks: [],
                         }))));
                         view.dispatch(view.state.tr.setMeta(pagesKey, { deco, sig: pick.sig }).setMeta('addToHistory', false));
@@ -96,7 +96,8 @@ export const Pages = Extension.create({
                 };
                 // מדידה מחדש מבחוץ (הגדרות עמוד, גופן שנטען, שינוי רוחב) — פותחת מחדש את הבחירה
                 let clean = false;
-                const fresh = () => { tried = new Map(); settled = false; clean = true; schedule(); };
+                // גם גובה ההערות נמדד מחדש: גופן שנטען משנה אותו, והמפתח במטמון (שם הגופן) — לא (ביקורת 04, F10)
+        const fresh = () => { tried = new Map(); settled = false; clean = true; fnCache.clear(); schedule(); };
                 ext.storage.schedule = fresh;
                 // שינוי גובה — בדרך כלל הרווחים שלנו; שינוי רוחב — שבירת שורות חדשה, מתחילים מחדש
                 let width = 0;
@@ -224,6 +225,7 @@ function notesAreaEl(a) {
     const el = document.createElement('div');
     el.className = 'wp-fn-area';
     el.contentEditable = 'false';
+    el.style.cssText = a.style || '';
     el.style.paddingTop = a.fill + 'px';
     const sep = document.createElement('div');
     sep.className = 'wp-fn-sep';
@@ -349,11 +351,15 @@ function measure(view, g) {
         try { content = JSON.parse(el.getAttribute('data-content') || 'null'); } catch { /* */ }
         (u.notes ||= []).push({ n: k + 1, pos, text: el.getAttribute('data-text') || '', content });
     });
-    const noteH = note => noteHeight(root, note, (g.sections ? g.sections[0] : g));
 
     // סימולציה: עמוד אחרי עמוד. כל עמוד — בגיאומטריה של המקטע שלו (g.sections; בלי מקטעים — g עצמו)
     const secs = g.sections || [g];
+    // המקטע של מיקום במסמך — אותו כלל כמו רוחב הבלוקים (sectionsKey): המקטע האחרון שמתחיל לפני המיקום. מקור אמת
+    // אחד לרוחב הטקסט ולעמוד שמצויר מתחתיו (ביקורת 04, R01: העימוד ספר מעבר מקטע שבתוך רשימה, והרוחב — לא)
+    const secOf = pos => { let k = 0; for (let x = 1; x < secs.length; x++) if (pos > secs[x].from) k = x; return k; };
     let s = 0;                    // המקטע של העמוד הנוכחי
+    // גובה הערה — ברוחב העמוד שהיא בו (ביקורת 04, F10: נמדד ברוחב המקטע הראשון)
+    const noteH = note => noteHeight(root, note, secs[s]);
     const pageSecs = [0];
     const breaks = [];
     let pageTop = g.top;          // הלוגי שבו מתחיל אזור הטקסט של העמוד הנוכחי
@@ -361,18 +367,46 @@ function measure(view, g) {
     let firstOnPage = 0;          // היחידה הראשונה בעמוד — תמיד נכנסת (גם אם גבוהה מעמוד)
     // הערות השוליים של העמוד הנוכחי: הגובה שלהן (כולל קו ההפרדה) נלקח מהמקום לטקסט
     // הערה ארוכה שלא נכנסת כולה (כמו ב-Word): השורות שנכנסות — בעמוד של הסימן (clip), והשאר — בראש אזור ההערות
-    // של העמוד הבא (skip). carry — ההמשך שמחכה לעמוד הנוכחי
-    let carry = null;
-    const notesOf = (a, b) => [...(carry ? [carry] : []), ...units.slice(a, b).flatMap(x => x.notes || [])];
+    // של העמוד הבא (skip), וכך הלאה — הערה יכולה להימשך על פני כמה עמודים (ביקורת 04, F05).
+    // carry — החלקים שמחכים לעמוד הנוכחי; shown — העמוד מלא: אלה ההערות שבו (חלקן חתוכות), ו-pending — ההמשך לבא
+    let carry = [];
+    let shown = null;
+    let pending = [];
+    const notesOf = (a, b) => shown ?? [...carry, ...units.slice(a, b).flatMap(x => x.notes || [])];
     const shownH = n => n.clip ?? (noteH(n) - (n.skip || 0));
     const areaH = list => list.length ? FN_SEP + list.reduce((t, n) => t + shownH(n), 0) : 0;
+    // חלוקת ההערות לפי הסדר: מה שנכנס ב-room (כולל קו ההפרדה) — בעמוד הזה, בשורות שלמות; השאר — לעמוד הבא
+    const fit = (list, room) => {
+        const here = [], rest = [];
+        let left = room - FN_SEP;
+        for (const n of list) {
+            if (rest.length) { rest.push(n); continue; }
+            const h = shownH(n);
+            if (h <= left + 0.5) { here.push(n); left -= h; continue; }
+            const k = Math.floor((left + 0.5) / FN_LINE);
+            if (k >= 1 && h - k * FN_LINE >= 1) {
+                here.push({ ...n, clip: k * FN_LINE });
+                rest.push({ ...n, skip: (n.skip || 0) + k * FN_LINE, clip: h - k * FN_LINE });
+            } else rest.push(n);
+        }
+        return [here, rest];
+    };
     const notesArea = [];         // {pos, fill, notes, row} — האזור בתחתית כל עמוד שיש בו הערות
+    // ברוחב העמוד של המקטע (כמו הבלוקים — sectionsKey), ולא ברוחב הגיליון
+    const secStyle = () => {
+        if (!g.sections || g.sections.length < 2) return '';
+        const x = secs[s], side = (g.sheetW - x.pageW) / 2;
+        return `border-left:${side + x.left}px solid transparent;border-right:${side + x.right}px solid transparent;`;
+    };
     // סוגר עמוד: אם יש בו הערות — אזור ההערות לפני המעבר (מילוי עד תחתית הטקסט), והרווח מתקצר בגובה האזור
     const closePage = (brk, used, list) => {
-        carry = null;
+        carry = pending;
+        pending = [];
+        shown = null;
         if (!list.length) return brk;
         const fill = Math.max(0, secs[s].contentH - used - areaH(list));
-        notesArea.push({ pos: brk.pos, side: brk.side, fill, notes: list, row: brk.row || 0 });
+        // בתוך בלוק (שבירה באמצע פסקה, ברשימה) — הבלוק העליון כבר ברוחב המקטע; רק בין בלוקים — האזור צריך אותו בעצמו
+        notesArea.push({ pos: brk.pos, side: brk.side, fill, notes: list, row: brk.row || 0, style: brk.row || view.state.doc.resolve(brk.pos).depth ? '' : secStyle() });
         brk.h = Math.max(0, brk.h - fill - areaH(list));
         return brk;
     };
@@ -382,10 +416,35 @@ function measure(view, g) {
         if (u.kind === 'force') {
             // מעבר עמוד ידני / מעבר מקטע: העמוד הבא מתחיל אחריו (במעבר מקטע — בגיאומטריה של המקטע הבא)
             const cur = secs[s];
-            const next = u.section ? secs[Math.min(s + 1, secs.length - 1)] : cur;
-            breaks.push(closePage({ pos: u.after, h: Math.max(0, cur.pageH - cur.top - (u.bottom - pageTop) + g.gap + next.top), page: page + 1, sec: !!u.section },
-                u.bottom - pageTop, notesOf(firstOnPage, i)));
-            if (u.section) s = Math.min(s + 1, secs.length - 1);
+            const next = u.section ? secs[secOf(u.after)] : cur;
+            // ההערות של העמוד (וההמשך שעוד מחכה) — מה שנכנס מתחת לטקסט; השאר ממשיך לעמוד הבא
+            let [here, rest] = fit([...notesOf(firstOnPage, i), ...pending], cur.contentH - (u.bottom - pageTop));
+            let top = pageTop;
+            if (u.section && rest.length) {
+                // הערה שלא נגמרה לפני מעבר מקטע: ממשיכה בעמודים של הערות בלבד באותו מקטע (ברוחב שלו), לפני סימון המעבר
+                // (המקטע הבא ברוחב אחר — ההמשך לא נמדד בו). כמו ב-PDF: הערות שנשארו בסוף מקטע — עמודים משלהן
+                const mh = u.bottom - u.top;
+                [here, rest] = fit([...notesOf(firstOnPage, i), ...pending], cur.contentH - (u.top - pageTop));
+                let used = u.top - pageTop;
+                for (let m = 1; rest.length && m < 500; m++) {
+                    shown = null;
+                    pending = [];
+                    breaks.push(closePage({ pos: u.pos, side: -1000 + m, h: Math.max(0, cur.pageH + g.gap - used), page: page + 1 }, used, here));
+                    page++;
+                    pageSecs.push(s);
+                    used = 0;
+                    const [h2, r2] = fit(rest, cur.contentH - mh);
+                    if (!h2.length) break;   // לא אמור לקרות: עמוד שלם תמיד מכיל שורה של הערה
+                    [here, rest] = [h2, r2];
+                }
+                top = u.top;
+                rest = [];
+            }
+            shown = null;
+            pending = rest;   // closePage מעביר אותו לעמוד הבא
+            breaks.push(closePage({ pos: u.after, h: Math.max(0, cur.pageH - cur.top - (u.bottom - top) + g.gap + next.top), page: page + 1, sec: !!u.section },
+                u.bottom - top, here));
+            if (u.section) s = secOf(u.after);
             pageTop = u.bottom;
             page++;
             pageSecs.push(s);
@@ -394,30 +453,23 @@ function measure(view, g) {
         }
         // "מעבר עמוד לפני" (פסקה): שוברים לפניה, בלי תיקונים — אלא אם היא כבר ראשונה בעמוד
         const pb = u.breakBefore && i > firstOnPage;
-        const withNotes = pb ? 0 : areaH([...notesOf(firstOnPage, i), ...(u.notes || [])]);
-        if (!pb && (i === firstOnPage || u.bottom - pageTop + withNotes <= secs[s].contentH + 0.5)) { i++; continue; }
-        // השורה נכנסת אבל ההערה האחרונה שלה לא כולה: לפחות שורה אחת של ההערה בעמוד הזה, והשאר ממשיך בעמוד הבא
-        const next = units[i + 1];
-        if (!pb && u.notes?.length && next && next.kind !== 'force') {
-            const before = [...notesOf(firstOnPage, i), ...u.notes.slice(0, -1)];
-            const lastNote = u.notes[u.notes.length - 1];
-            const room = secs[s].contentH - (u.bottom - pageTop) - FN_SEP - before.reduce((t, n) => t + shownH(n), 0);
-            const k = Math.floor((room + 0.5) / FN_LINE);
-            if (k >= 1 && k * FN_LINE < noteH(lastNote) - 1) {
-                const used = next.top - pageTop;
-                const rp = next.repeat;
-                breaks.push(closePage({ pos: next.pos, side: next.side, h: Math.max(0, secs[s].pageH + g.gap - used), page: page + 1, row: next.row || 0, repeat: rp ? rp.pos : null },
-                    used, [...before, { ...lastNote, clip: k * FN_LINE }]));
-                carry = { ...lastNote, skip: k * FN_LINE, clip: noteH(lastNote) - k * FN_LINE };
-                pageTop = next.top - (rp ? rp.h : 0);
-                page++;
-                pageSecs.push(s);
-                firstOnPage = i + 1;
-                i += 2;
-                continue;
+        const atTop = i === firstOnPage;
+        if (!pb && !shown) {
+            const list = [...notesOf(firstOnPage, i), ...(u.notes || [])];
+            const room = secs[s].contentH - (u.bottom - pageTop);
+            if (areaH(list) <= room + 0.5) { i++; continue; }
+            // ההערות לא נכנסות כולן. ראשונה בעמוד — נשארת תמיד, וההערות (ההמשך מהעמוד הקודם ושלה) ממלאות את מה שנשאר;
+            // אחרת — נשארת רק אם כל ההערות לפני האחרונה שלה נכנסות, ומהאחרונה לפחות שורה (כמו ב-Word). השאר — לעמוד הבא
+            if (atTop || u.notes?.length) {
+                const [here, rest] = fit(list, room);
+                if (atTop || (rest.length === 1 && here.length === list.length)) {
+                    if (rest.length) { shown = here; pending = rest; }
+                    i++;
+                    continue;
+                }
             }
-        }
-        // לא נכנס — שוברים לפני u, עם תיקונים:
+        } else if (!pb && atTop) { i++; continue; }
+        // לא נכנס — שוברים לפני u, עם תיקונים (לא אחרי הערה שנחתכה: העמוד מלא, u פותח את הבא):
         let j = i;
         // שורות יתומות: לפחות 2 שורות של הפסקה בעמוד הזה, ו-2 בבא
         const orphans = k => {
@@ -430,7 +482,7 @@ function measure(view, g) {
             if (total - before < 2 && before >= 3) return k - 1;
             return k;
         };
-        if (!pb) {
+        if (!pb && !shown) {
             j = orphans(i);
             // "שמור עם הבא" (כותרת, או פסקה שסומנה) ו"שמור שורות יחד" — עוברות יחד עם מה שאחריהן
             const k0 = j;
@@ -447,13 +499,25 @@ function measure(view, g) {
         page++;
         pageSecs.push(s);
         firstOnPage = j;
-        i = j + 1;
+        i = j;   // הראשונה בעמוד החדש — נבדקת שוב: ההערות שלה (וההמשך מהעמוד הקודם) צריכות להיכנס איתה
     }
     // העמוד האחרון: ההערות שלו — בסוף המסמך
-    const last = notesOf(firstOnPage, units.length);
+    const end = units.length ? units[units.length - 1].bottom - pageTop : 0;
+    const [last, rest] = fit([...notesOf(firstOnPage, units.length), ...pending], secs[s].contentH - end);
+    pending = rest;
+    const docEnd = view.state.doc.content.size;
     if (last.length) {
-        const end = units.length ? units[units.length - 1].bottom - pageTop : 0;
-        notesArea.push({ pos: view.state.doc.content.size, fill: Math.max(0, secs[s].contentH - end - areaH(last)), notes: last, row: 0, end: true });
+        notesArea.push({ pos: docEnd, fill: Math.max(0, secs[s].contentH - end - areaH(last)), notes: last, row: 0, end: 1000, style: secStyle() });
+    }
+    // הערה שנמשכת אחרי סוף הטקסט: עמודים של הערות בלבד, עד סופה (בסוף המסמך — אחרי אזור ההערות של העמוד האחרון)
+    for (let m = 1; pending.length && m < 500; m++) {
+        breaks.push({ pos: docEnd, side: 1000 + 2 * m - 1, h: Math.max(0, secs[s].pageH - secs[s].contentH + g.gap), page: page + 1 });
+        page++;
+        pageSecs.push(s);
+        const [here, rest] = fit(pending, secs[s].contentH);
+        if (!here.length) break;   // לא אמור לקרות: עמוד שלם תמיד מכיל שורה של הערה
+        pending = rest;
+        notesArea.push({ pos: docEnd, fill: Math.max(0, secs[s].contentH - areaH(here)), notes: here, row: 0, end: 1000 + 2 * m, style: secStyle() });
     }
     const sig = breaks.map(b => `${b.pos}${b.side ? '~' + b.side : ''}:${Math.round(b.h)}`).join('|')
         + '§' + notesArea.map(a => `${a.pos}:${Math.round(a.fill)}:${a.notes.map(n => n.n + n.text + (n.content ? JSON.stringify(n.content).length : '') + (n.clip ? '<' + Math.round(n.clip) : '') + (n.skip ? '>' + Math.round(n.skip) : '')).join(',')}`).join('|');

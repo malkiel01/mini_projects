@@ -4,6 +4,8 @@
  *
  *   0 → 1  מסמך בלי attrs. הגדרות העמוד עוברות לתוך המסמך (attrs.page) — כאן רק מוסיפים אותן אם נמסרו.
  *   1 → 2  קישורים וסימניות — אין מה להמיר (מסמך ישן פשוט בלי אותם).
+ *   2 → 3  תוכן עניינים, כיתובים, הערות על טקסט, הערות סיום — אין מה להמיר.
+ *   3 → 4  מעקב שינויים — אין מה להמיר.
  */
 import { SCHEMA_VERSION } from './extensions.js';
 
@@ -15,8 +17,8 @@ export function migrate(json, page = null) {
     doc.attrs = { ...(doc.attrs || {}) };
     let v = Number(doc.attrs.schema) || 0;
     if (v > SCHEMA_VERSION) throw Object.assign(new Error('המסמך נשמר בגרסה חדשה יותר של העורך — רעננו את הדף'), { code: 'schema_newer' });
-    // if (v < 3) { …; v = 3; }   — צעדי המרה עתידיים
-    if (v < 2) v = 2;
+    // if (v < 5) { …; v = 5; }   — צעדי המרה עתידיים
+    if (v < SCHEMA_VERSION) v = SCHEMA_VERSION;   // 0 → 4: אין מה להמיר בתוכן
     doc.attrs.schema = v;
     if (page && !doc.attrs.page) doc.attrs.page = page;
     return doc;

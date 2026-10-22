@@ -138,13 +138,39 @@ class Store(context: Context) {
             .putString("apps_posture", a?.optString("posture", "allow_all") ?: "allow_all")
             .putString("apps_blocked", a?.optJSONArray("blocked")?.toString() ?: "[]")
             .putString("apps_allowed", a?.optJSONArray("allowed")?.toString() ?: "[]")
+            // מוסתרות (בעל מכשיר): נעלמות מהטלפון. השרת שולח אותן גם ב-blocked.
+            .putString("apps_hidden", a?.optJSONArray("hidden")?.toString() ?: "[]")
+            // זמן מסך: {package: דקות ליום} (AppTimeMath).
+            .putString("app_limits", a?.optJSONObject("limits")?.toString() ?: "{}")
             .apply()
     }
+
+    /** זמן מסך — {package: דקות ליום}. */
+    val appLimits: Map<String, Int> get() = (obj("app_limits") ?: JSONObject()).let { o ->
+        o.keys().asSequence().associateWith { o.optInt(it) }.filterValues { it > 0 }
+    }
+
+    /** הזמן שנצבר היום לכל אפליקציה (AppGuardService). */
+    var appUsage: AppTimeMath.Usage
+        get() = (obj("app_usage") ?: JSONObject()).let { o ->
+            val ms = o.optJSONObject("ms") ?: JSONObject()
+            AppTimeMath.Usage(o.optString("day"), ms.keys().asSequence().associateWith { ms.optLong(it) })
+        }
+        set(v) { prefs.edit().putString("app_usage", JSONObject().put("day", v.day).put("ms", JSONObject(v.ms as Map<*, *>)).toString()).apply() }
+
+    /** הדיווח האחרון לשרת (do=app_usage): מתי, ומה. */
+    var appUsageSent: String
+        get() = prefs.getString("app_usage_sent", "") ?: ""
+        set(v) { prefs.edit().putString("app_usage_sent", v).apply() }
+
+    /** היום של הילד (אזור הזמן שלו, השעון האמין) — למגבלות זמן המסך. */
+    fun today(): String = UsageMath.dayKey(TrustedClock.now(this), policy().timezone)
 
     val appsManage: Boolean get() = prefs.getBoolean("apps_manage", false)
     val appsPosture: String get() = prefs.getString("apps_posture", "allow_all") ?: "allow_all"
     val appsBlocked: Set<String> get() = strSet("apps_blocked")
     val appsAllowed: Set<String> get() = strSet("apps_allowed")
+    val appsHidden: Set<String> get() = strSet("apps_hidden")
 
     /** עד מתי ההגדרות פתוחות למרות חסימה — כי מגדלור עצמו פתח אותן (AppPolicy.openSettings). */
     var settingsPassUntil: Long
@@ -155,6 +181,11 @@ class Store(context: Context) {
     var suspended: Set<String>
         get() = strSet("suspended")
         set(v) { prefs.edit().putString("suspended", JSONArray(v.toList()).toString()).apply() }
+
+    /** חבילות שמגדלור הסתיר (setApplicationHidden) — כדי להחזיר אותן כשההורה ביטל את ההסתרה. */
+    var hidden: Set<String>
+        get() = strSet("hidden_now")
+        set(v) { prefs.edit().putString("hidden_now", JSONArray(v.toList()).toString()).apply() }
 
     /** חבילות ה-launcher (מסכי הבית) והמקלדות במכשיר — לא נחסמות לעולם. AppPolicy.scan. */
     var launchers: Set<String>

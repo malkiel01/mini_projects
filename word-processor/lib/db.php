@@ -4,7 +4,7 @@
  * אין כאן שום require לקובץ מחוץ לתיקייה (CLAUDE.md: אפליקציה עצמאית מהמעטפת).
  */
 
-const WP_SCHEMA_VERSION = 2;
+const WP_SCHEMA_VERSION = 3;
 
 function wp_data_dir(): string
 {
@@ -176,6 +176,9 @@ function wp_migrate(PDO $pdo): void
     // גרסה 2: סל מחזור — עמודה במסד קיים
     $cols = array_column($pdo->query('PRAGMA table_info(docs)')->fetchAll(), 'name');
     if (!in_array('deleted_at', $cols, true)) $pdo->exec('ALTER TABLE docs ADD COLUMN deleted_at INTEGER');
+    // גרסה 3: סוג גרסה — '' רגילה (מתאחדת בחלון 10 הדקות), 'restore' — שחזור (לא מתאחדת, וגם לא מתאחדים לתוכה)
+    $vcols = array_column($pdo->query('PRAGMA table_info(versions)')->fetchAll(), 'name');
+    if (!in_array('kind', $vcols, true)) $pdo->exec("ALTER TABLE versions ADD COLUMN kind TEXT NOT NULL DEFAULT ''");
     $pdo->exec('PRAGMA user_version = ' . WP_SCHEMA_VERSION);
 }
 

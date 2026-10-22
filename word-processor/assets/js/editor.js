@@ -827,7 +827,10 @@ export function createWordEditor(root, opts) {
     searchIn.addEventListener('blur', () => setTimeout(() => { if (document.activeElement !== searchIn) { results.hidden = true; searchIn.setAttribute('aria-expanded', 'false'); } }, 150));
 
     // ---------- תצוגה לפני הדפסה: העמודים בלי סרט ובלי סימני עריכה (כמו בהדפסה), קריאה בלבד עד הסגירה ----------
-    let previewing = false, wasEditable = true;
+    let canEdit = opts.editable !== false;
+    // ביקורת 04, R03: לא שומרים צילום של ההרשאה — canEdit היא ההרשאה העדכנית (setEditable מבחוץ), והעריכה בפועל
+    // היא canEdit && !previewing. כך הרשאה שבוטלה בזמן התצוגה המקדימה לא חוזרת כשיוצאים ממנה
+    let previewing = false;
     const pvPages = h('span.pv-pages');
     previewBar.append(h('strong', 'תצוגה לפני הדפסה'), pvPages, h('span.st-fill'),
         h('button.btn.primary', { type: 'button', onclick: () => print() }, '🖨 הדפסה'),
@@ -835,8 +838,8 @@ export function createWordEditor(root, opts) {
     function preview(on) {
         if (on === previewing) return;
         previewing = on;
-        if (on) { wasEditable = editor.isEditable; editor.setEditable(false, false); openSheet(false); finder.close(false); }
-        else editor.setEditable(wasEditable, false);
+        if (on) { editor.setEditable(false, false); openSheet(false); finder.close(false); }
+        else editor.setEditable(canEdit, false);
         root.classList.toggle('wp-preview', on);
         previewBar.hidden = !on;
         pvPages.textContent = `${pageCount} ${pageCount === 1 ? 'עמוד' : 'עמודים'}`;
@@ -1738,7 +1741,7 @@ export function createWordEditor(root, opts) {
         if (!opts.versions) return;
         sheet('גרסאות', async body => {
             const list = h('ul.list', h('li.empty', 'טוען…'));
-            body.append(h('p.hint', 'כל שמירה נרשמת; שמירות של אותו אדם בתוך 10 דקות מאוחדות לגרסה אחת. שחזור יוצר גרסה חדשה — שום דבר לא נמחק.'), list);
+            body.append(h('p.hint', 'כל שמירה נרשמת; שמירות של אותו אדם בתוך 10 דקות מאוחדות לגרסה אחת. שחזור שומר את המצב הנוכחי כגרסה ויוצר גרסה חדשה — שום דבר לא נמחק.'), list);
             try {
                 const vs = await opts.versions.list();
                 list.textContent = '';
@@ -1756,6 +1759,15 @@ export function createWordEditor(root, opts) {
             if (current) return toast('זו הגרסה הנוכחית');
             if (!editor.isEditable) return toast('צפייה בלבד — אי אפשר לשחזר', true);
             if (!confirm(`לשחזר את הגרסה מ-${when(v.saved_at)}? המצב הנוכחי יישמר כגרסה.`)) return;
+            // שחזור בשרת (ביקורת 04, R07): המצב הנוכחי והמשוחזר — שתי גרסאות נפרדות, גם בתוך חלון 10 הדקות
+            if (opts.versions.restore) {
+                try {
+                    if (!(await opts.versions.restore(v.id))) return;
+                } catch (e) { return toast(e.message || 'השחזור נכשל', true); }
+                document.querySelector('dialog[open]')?.close();
+                toast('הגרסה שוחזרה — המצב הקודם נשמר כגרסה');
+                return;
+            }
             const d = await opts.versions.get(v.id);
             // הגדרות העמוד של הגרסה — בתוך המסמך (attrs.page), כך שגם השחזור עצמו ניתן לביטול
             editor.commands.setContent(migrate(d.json, d.page || page), { emitUpdate: true });
@@ -1793,7 +1805,8 @@ export function createWordEditor(root, opts) {
     }
 
     function setEditable(v) {
-        editor.setEditable(!!v);
+        canEdit = !!v;
+        editor.setEditable(canEdit && !previewing);
         root.classList.toggle('readonly', !v);
         bar.querySelectorAll('button, select, input').forEach(el => {
             if (!el.closest('.tb-zoomg, .rb-head') && el !== B.print) el.disabled = !v;
@@ -1807,7 +1820,7 @@ export function createWordEditor(root, opts) {
     refresh();
     countWords();
 
-    return {
+    const api = {
         editor,
         get page() { return structuredClone(page); },
         get pages() { return pageCount; },
@@ -1830,8 +1843,11 @@ export function createWordEditor(root, opts) {
             document.documentElement.classList.remove('wp-no-page-zoom');
             editor.destroy();
             root.textContent = '';
+            delete root.wordEditor;
         },
     };
+    root.wordEditor = api;   // כמו .editor של TipTap על המסמך — לבדיקות ולאבחון
+    return api;
 }
 
 /** מיזוג הגדרות עמוד חלקיות (כמו page_normalize בשרת, בלי הניקוי). */

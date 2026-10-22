@@ -205,6 +205,26 @@ for ($i = 0; $i < 105; $i++) {
 }
 check('עד 100 גרסאות למסמך', count(versions_list($row)) === 100, (string)count(versions_list($row)));
 
+// שחזור גרסה (ביקורת 03 / 04, F06 / R07): עריכה, שמירה ושחזור בתוך 10 דקות — גם המצב שלפני וגם המשוחזר נשארים
+$docR = doc_new("c:$A", 'שחזור', null, null, 'u1', 'דנה');
+$rowR = doc_find($docR, "c:$A");
+$txt = fn($t) => ['type' => 'doc', 'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => $t]]]]];
+$rowR = doc_save($rowR, $txt('ראשון'), null, 'u1', 'דנה', (int)$rowR['version']);
+db()->prepare('UPDATE versions SET started_at = started_at - 700 WHERE doc = ?')->execute([$docR]);   // "ראשון" — גרסה סגורה
+$rowR = doc_save($rowR, $txt('שני'), null, 'u1', 'דנה', (int)$rowR['version']);
+$rowR = doc_save($rowR, $txt('שלישי'), null, 'u1', 'דנה', (int)$rowR['version']);   // מתאחד עם "שני" (אותו משתמש, 10 דקות)
+$vsR = versions_list($rowR);
+$first = end($vsR)['id'];
+check('לפני השחזור: "ראשון" ו"שלישי" (שני ושלישי מאוחדים)', count($vsR) === 2);
+check('שחזור על בסיס ישן → התנגשות', throws(fn() => doc_restore_version($rowR, $first, 'u1', 'דנה', (int)$rowR['version'] - 1), 'conflict'));
+$rowR = doc_restore_version($rowR, $first, 'u1', 'דנה', (int)$rowR['version']);
+$texts = fn() => array_map(fn($v) => export_text(json_decode(version_get($rowR, $v['id'])['json'], true)), versions_list($rowR));
+check('שחזור: התוכן הוא "ראשון", והמצב שלפני ("שלישי") נשמר כגרסה נפרדת', export_text(doc_json($rowR)) === 'ראשון' && $texts() === ['ראשון', 'שלישי', 'ראשון'], json_encode($texts(), JSON_UNESCAPED_UNICODE));
+$rowR = doc_save($rowR, $txt('אחרי השחזור'), null, 'u1', 'דנה', (int)$rowR['version']);
+check('שמירה מיד אחרי השחזור — גרסה חדשה, לא דורסת את המשוחזר', $texts() === ['אחרי השחזור', 'ראשון', 'שלישי', 'ראשון'], json_encode($texts(), JSON_UNESCAPED_UNICODE));
+$rowR = doc_save($rowR, $txt('אחרי השחזור, עוד'), null, 'u1', 'דנה', (int)$rowR['version']);
+check('ושמירה נוספת — מתאחדת כרגיל (רק לא לתוך השחזור / המצב שלפניו)', count(versions_list($rowR)) === 4 && $texts()[0] === 'אחרי השחזור, עוד');
+
 // ======================================================================
 section('ייצוא');
 $gd = imagecreatetruecolor(2, 2);
@@ -756,6 +776,72 @@ check('ייבוא מ-Word: הפניית סיום → הערת סיום עם הט
 check('PDF: הערות הסיום בסוף המסמך עם ספרות רומיות, השוליים — עם מספר', preg_match_all('#/Type /Page /#', $pdfOf($enDoc)) === 1 && roman_lower(2) === 'ii' && roman_lower(14) === 'xiv');
 
 // ======================================================================
+// ======================================================================
+section('R08/F03 — הערות ב-HTML ובטקסט');
+$fnH = export_html(['type' => 'doc', 'content' => [
+    $enDoc['content'][0],
+    ['type' => 'table', 'content' => [['type' => 'tableRow', 'content' => [['type' => 'tableCell', 'content' => [['type' => 'paragraph', 'content' => [
+        ['type' => 'text', 'text' => 'תא'], ['type' => 'footnote', 'attrs' => ['text' => 'שוליים בתא']]]]]]]]]],
+]], page_normalize([]))['html'];
+check('HTML: כל ההערות מופיעות — שוליים 1,2 (גם מתא), סיום i,ii, עם העיצוב',
+    str_contains($fnH, 'שוליים אחת') && str_contains($fnH, 'שוליים בתא') && str_contains($fnH, 'סיום ראשונה') && str_contains($fnH, 'סיום <strong>שנייה</strong>')
+    && str_contains($fnH, 'href="#wp-fn-f2"') && str_contains($fnH, 'id="wp-fn-f2"') && str_contains($fnH, 'href="#wp-fn-eii"') && str_contains($fnH, 'id="wp-fn-eii"')
+    && strpos($fnH, 'class="wp-footnotes"') < strpos($fnH, 'class="wp-endnotes"'), $fnH);
+$fnT = export_text($enDoc);
+check('טקסט: סימן [1] / [i] בגוף, וההערות בסוף', str_contains($fnT, 'גוף[1] עוד[i][ii]') && str_contains($fnT, "[1] שוליים אחת\n") && str_ends_with($fnT, "[i] סיום ראשונה\n[ii] סיום שנייה"), $fnT);
+check('בלי הערות — HTML וטקסט בלי מקטע הערות', !str_contains(export_html(['type' => 'doc', 'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'א']]]]], page_normalize([]))['html'], 'wp-footnotes')
+    && export_text(['type' => 'doc', 'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'א']]]]]) === 'א');
+
+section('R08/F04 — הערת שוליים בתא טבלה ב-PDF');
+if (trim((string)shell_exec('command -v pdftotext'))) {
+    $cellNotes = ['type' => 'doc', 'content' => [
+        ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'גוף'], ['type' => 'footnote', 'attrs' => ['text' => 'הערה מהגוף']]]],
+        ['type' => 'table', 'content' => [['type' => 'tableRow', 'content' => [
+            ['type' => 'tableCell', 'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'תא'], ['type' => 'footnote', 'attrs' => ['text' => 'הערה מהתא']]]]]],
+            ['type' => 'tableCell', 'content' => [['type' => 'table', 'content' => [['type' => 'tableRow', 'content' => [['type' => 'tableCell', 'content' => [
+                ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'פנימי'], ['type' => 'footnote', 'attrs' => ['text' => 'הערה מטבלה פנימית']]]]]]]]]]]],
+        ]]]],
+    ]];
+    file_put_contents("$tmp/fn-cell.pdf", $pdfOf($cellNotes));
+    $fc = preg_replace('/[\x{202A}-\x{202E}]/u', '', (string)shell_exec('pdftotext ' . escapeshellarg("$tmp/fn-cell.pdf") . ' - 2>&1'));
+    check('PDF: הערות מתא ומטבלה מקוננת מופיעות בתחתית העמוד, לפי הסדר', str_contains($fc, 'הערה מהגוף') && str_contains($fc, 'הערה מהתא') && str_contains($fc, 'הערה מטבלה פנימית')
+        && strpos($fc, 'הערה מהגוף') < strpos($fc, 'הערה מהתא') && strpos($fc, 'הערה מהתא') < strpos($fc, 'הערה מטבלה פנימית'), $fc);
+} else {
+    echo "  · pdftotext לא מותקן — דילוג\n";
+}
+
+section('R08/F05 — הערה ארוכה מעמוד ב-PDF');
+if (trim((string)shell_exec('command -v pdftotext'))) {
+    // כל מילה בתוך אזור התוכן של העמוד (מספר העמוד בשוליים — מחוץ לבדיקה), וכל מילות ההערה — במקומן
+    $pdfWords = function (array $doc, string $name) use ($tmp, $pdfOf): array {
+        file_put_contents("$tmp/$name.pdf", $pdfOf($doc));
+        $x = (string)shell_exec('pdftotext -bbox ' . escapeshellarg("$tmp/$name.pdf") . ' - 2>&1');
+        $out = ['pages' => 0, 'outside' => [], 'text' => ''];
+        preg_match_all('#<page width="([\d.]+)" height="([\d.]+)">(.*?)</page>#s', $x, $pg, PREG_SET_ORDER);
+        foreach ($pg as $k => [, $w, $h, $body]) {
+            $out['pages']++;
+            preg_match_all('#xMin="([\d.]+)" yMin="([\d.]+)" xMax="([\d.]+)" yMax="([\d.]+)">([^<]*)<#', $body, $ws, PREG_SET_ORDER);
+            foreach ($ws as [, $x0, $y0, $x1, $y1, $t]) {
+                $out['text'] .= $t . ' ';
+                if (ctype_digit($t) && $y0 > $h - 60) continue;
+                if ($y1 > $h - 72 + 3 || $y0 < 72 - 5 || $x0 < 72 - 3 || $x1 > $w - 72 + 3) $out['outside'][] = ($k + 1) . ":$t";
+            }
+        }
+        return $out;
+    };
+    $longNote = fn(string $end) => ['type' => 'footnote', 'attrs' => ['text' => implode(' ', array_map(fn($i) => "מילה$i", range(1, 2600))) . " $end"]];
+    $pp = fn(string $t, ...$more) => ['type' => 'paragraph', 'content' => array_merge([['type' => 'text', 'text' => $t]], $more)];
+    $fe = $pdfWords(['type' => 'doc', 'content' => [$pp('גוף', $longNote('סוףבסוף'))]], 'fn-end');
+    check('PDF: הערה של כמה עמודים בסוף המסמך — עמודים של הערות בלבד, הכול בתוך הדף', $fe['pages'] >= 4 && !$fe['outside'], $fe['pages'] . ' ' . implode(',', array_slice($fe['outside'], 0, 5)));
+    check('PDF: הערה בסוף המסמך — כל המילים, עד האחרונה', substr_count($fe['text'], 'מילה') + substr_count($fe['text'], 'הלימ') === 2600 && preg_match('/סוףבסוף|ףוסבףוס/u', $fe['text']) === 1);
+    $body = array_fill(0, 12, $pp(str_repeat('טקסט רגיל בגוף המסמך. ', 30)));
+    $fm = $pdfWords(['type' => 'doc', 'content' => array_merge($body, [$pp('סימן', $longNote('סוףבאמצע'), ['type' => 'text', 'text' => ' ועוד'], ['type' => 'footnote', 'attrs' => ['text' => 'הערה שנייה קצרה']])], $body, [['type' => 'pageBreak']], $body)], 'fn-mid');
+    check('PDF: שתי הערות (אחת ארוכה מעמודים) באמצע — הכול בתוך הדף, ושתיהן שלמות', !$fm['outside'] && preg_match('/סוףבאמצע|עצמאבףוס/u', $fm['text']) === 1
+        && preg_match('/שנייה|היינש/u', $fm['text']) === 1, implode(',', array_slice($fm['outside'], 0, 5)) . ' ' . mb_substr($fm['text'], -200));
+} else {
+    echo "  · pdftotext לא מותקן — דילוג\n";
+}
+
 section('כיתובים והפניות צולבות (שלב 4)');
 $cap = fn($label, $id, $text) => ['type' => 'paragraph', 'attrs' => ['pstyle' => 'caption'], 'content' => [
     ['type' => 'text', 'text' => "$label "], ['type' => 'seq', 'attrs' => ['label' => $label, 'id' => $id]], ['type' => 'text', 'text' => ": $text"]]];
@@ -887,6 +973,25 @@ $trBody = export_ooxml($trDoc, page_normalize([]))['body'];
 check('גוף לשילוב: הטקסט אחרי קבלת השינויים — בלי סימונים ובלי הטקסט המחוק', !str_contains($trBody, '<w:ins') && !str_contains($trBody, 'ישן') && str_contains($trBody, 'חדש'));
 
 // ======================================================================
+section('מעבר מקטע בתוך רשימה (ביקורת 04, R01)');
+$nsDoc = ['type' => 'doc', 'content' => [['type' => 'bulletList', 'content' => [['type' => 'listItem', 'content' => [
+    ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'לפני']]],
+    ['type' => 'sectionBreak', 'attrs' => ['page' => ['orientation' => 'landscape']]],
+    ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'אחרי']]]]]]],
+    ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'סוף']]]]];
+$nsTop = sections_top($nsDoc);
+check('sections_top: המעבר יוצא מהרשימה, מיד אחריה; שום טקסט לא נעלם', array_column($nsTop['content'], 'type') === ['bulletList', 'sectionBreak', 'paragraph']
+    && preg_split('/\s+/u', trim(export_text($nsTop))) === preg_split('/\s+/u', trim(export_text($nsDoc))) && !str_contains(json_encode($nsTop['content'][0]), 'sectionBreak'), json_encode(array_column($nsTop['content'], 'type')));
+$nsPdf = $pdfOf($nsDoc);
+check('PDF: מעבר מקטע מתוך רשימה — עמוד שני לרוחב', preg_match_all('#/MediaBox \[0 0 ([\d.]+) ([\d.]+)\]#', $nsPdf, $mb) === 2 && (float)$mb[1][1] > (float)$mb[2][1], json_encode($mb[1] ?? []));
+$nsDocx = export_docx($nsDoc, page_normalize([]), 'מקטע');
+file_put_contents("$tmp/ns.docx", $nsDocx);
+$zip->open("$tmp/ns.docx");
+$nsMain = (string)$zip->getFromName('word/document.xml');
+$zip->close();
+check('Word: הגדרות המקטע בפסקה מחוץ לרשימה (בלי numPr)', preg_match('#<w:p><w:pPr><w:bidi/><w:sectPr#', $nsMain) === 1 && substr_count($nsMain, '<w:sectPr') === 2, substr_count($nsMain, '<w:sectPr'));
+
+// ======================================================================
 section('הגדרות עמוד');
 $p = page_normalize(['size' => 'Legal', 'orientation' => 'landscape', 'margins' => ['top' => 500, 'left' => 'x'], 'font' => ['family' => 'David<script>', 'size' => 200],
     'styles' => ['h1' => ['size' => 18, 'color' => 'red', 'underline' => true]], 'numbering' => ['format' => 'bad', 'align' => 'left']]);
@@ -946,6 +1051,32 @@ $rowS = doc_save($rowS, $old, null, 'u1', 'דנה');
 check('שמירה מלשונית ישנה (בלי הגדרות עמוד בפנים) משאירה את ההגדרות', doc_page($rowS)['size'] === 'Letter');
 check('מבנה חדש יותר מהשרת → schema_newer', throws(fn() => doc_save($rowS, ['type' => 'doc', 'attrs' => ['schema' => SCHEMA_VERSION + 1], 'content' => []], null, 'u1', 'דנה'), 'schema_newer'));
 check('ייצוא Word ממסמך עם attrs', strlen(export_docx(doc_json($rowS), doc_page($rowS))) > 1000);
+// R09 / F02: כותב ישן (גרסה 2) על מסמך עם מבנה של גרסה 3 — היה מוחק אותו בשקט (צמתים לא מוכרים נזרקים בטעינה)
+$p3 = fn(array ...$inl) => ['type' => 'paragraph', 'content' => $inl];
+foreach ([
+    'כיתוב' => ['type' => 'doc', 'content' => [$p3(['type' => 'text', 'text' => 'איור '], ['type' => 'seq', 'attrs' => ['label' => 'איור', 'id' => 'a1']])]],
+    'תוכן עניינים' => ['type' => 'doc', 'content' => [['type' => 'toc'], $p3(['type' => 'text', 'text' => 'א'])]],
+    'הערה על טקסט' => ['type' => 'doc', 'attrs' => ['comments' => ['c1' => ['text' => 'הערה']]], 'content' => [$p3(['type' => 'text', 'text' => 'א', 'marks' => [['type' => 'comment', 'attrs' => ['id' => 'c1']]]])]],
+    'הערת סיום' => ['type' => 'doc', 'content' => [$p3(['type' => 'text', 'text' => 'א'], ['type' => 'footnote', 'attrs' => ['text' => 'ס', 'end' => true]])]],
+] as $what => $j3) {
+    // נשמר בעבר עם המספר 2 (לפני שעלה) — הדחייה לפי התוכן, לא לפי המספר
+    $j3['attrs'] = ($j3['attrs'] ?? []) + ['schema' => 2];
+    $r3 = doc_find(doc_new('a:99', "גרסה 3 — $what", $j3, null, 'u1', 'דנה'), 'a:99');
+    check("גרסת מבנה: כותב בגרסה 2 על מסמך עם $what → schema_newer, והמסמך לא השתנה", throws(fn() => doc_save($r3, ['type' => 'doc', 'attrs' => ['schema' => 2], 'content' => [$p3(['type' => 'text', 'text' => 'ישן'])]], null, 'u2', 'ישן'), 'schema_newer')
+        && doc_find($r3['id'], 'a:99')['version'] === $r3['version']);
+    check("גרסת מבנה: כותב בגרסה 3 על מסמך עם $what — נשמר", (int)doc_save($r3, array_replace_recursive($j3, ['attrs' => ['schema' => 3]]), null, 'u1', 'דנה')['version'] === (int)$r3['version'] + 1);
+}
+$r2 = doc_find(doc_new('a:99', 'גרסה 2 בלבד', ['type' => 'doc', 'content' => [$p3(['type' => 'text', 'text' => 'רגיל'])]], null, 'u1', 'דנה'), 'a:99');
+$r2 = doc_save($r2, ['type' => 'doc', 'attrs' => ['schema' => 2], 'content' => [$p3(['type' => 'text', 'text' => 'ישן'])]], null, 'u2', 'ישן');
+check('גרסת מבנה: כותב בגרסה 2 על מסמך בלי מבנה חדש — עדיין נשמר (גם פעם שנייה)', doc_save($r2, ['type' => 'doc', 'attrs' => ['schema' => 2], 'content' => [$p3(['type' => 'text', 'text' => 'שוב'])]], null, 'u2', 'ישן')['version'] > $r2['version']);
+// מעקב שינויים (גרסה 4): כותב בגרסה 3 (לפני המעקב) לא שומר על מסמך עם ins / del או עם המעקב פועל
+foreach (['סימון תוספת' => ['type' => 'doc', 'attrs' => ['schema' => 3], 'content' => [$p3(['type' => 'text', 'text' => 'חדש', 'marks' => [['type' => 'ins', 'attrs' => ['author' => 'א']]]])]],
+          'מעקב פועל' => ['type' => 'doc', 'attrs' => ['schema' => 3, 'track' => true], 'content' => [$p3(['type' => 'text', 'text' => 'רגיל'])]]] as $what => $j4) {
+    $r4 = doc_find(doc_new('a:99', "גרסה 4 — $what", $j4, null, 'u1', 'דנה'), 'a:99');
+    check("גרסת מבנה 4: כותב בגרסה 3 על מסמך עם $what → schema_newer; בגרסה 4 — נשמר",
+        throws(fn() => doc_save($r4, ['type' => 'doc', 'attrs' => ['schema' => 3], 'content' => [$p3(['type' => 'text', 'text' => 'ישן'])]], null, 'u2', 'ישן'), 'schema_newer')
+        && (int)doc_save($r4, array_replace_recursive($j4, ['attrs' => ['schema' => 4]]), null, 'u1', 'דנה')['version'] === (int)$r4['version'] + 1);
+}
 
 // ======================================================================
 section('אוסף המסמכים (tests/corpus) — Word הלוך וחזור');

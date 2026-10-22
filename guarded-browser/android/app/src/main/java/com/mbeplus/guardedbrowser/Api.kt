@@ -253,6 +253,10 @@ object Api {
     /** מצב למידה ביוטיוב: מה הסקריפט בדף אימת (lib/ytlearn.php). */
     fun ytLearnReport(token: String, body: JSONObject, cb: (Result) -> Unit) = call("yt_learn_report", body, token, cb)
 
+    /** זמן מסך: הזמן שנצבר היום לכל אפליקציה, בשניות (lib/apptime.php). */
+    fun appUsage(token: String, day: String, apps: Map<String, Long>, cb: (Result) -> Unit) =
+        call("app_usage", JSONObject().put("day", day).put("apps", JSONObject(apps.mapValues { it.value / 1000 } as Map<*, *>)), token, cb)
+
     fun heartbeat(token: String, seconds: Int, sessionSec: Int, url: String = "",
                   batches: org.json.JSONArray? = null, cb: (Result) -> Unit) =
         call("heartbeat", JSONObject().apply {

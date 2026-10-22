@@ -59,14 +59,26 @@ object AppPolicy {
         } catch (e: Exception) { Trace.log("apppolicy.scan", e.message ?: "") }
     }
 
+    /** נגמר זמן המסך היומי של האפליקציה. */
+    fun timeUp(store: Store, pkg: String): Boolean {
+        val limit = store.appLimits[pkg] ?: return false
+        return AppTimeMath.over(limit, AppTimeMath.usedMs(store.appUsage, store.today(), pkg))
+    }
+
     /** האם לחסום את החבילה הזו עכשיו, לפי המדיניות השמורה. */
-    fun blocked(store: Store, pkg: String): Boolean {
+    /**
+     * ‏withTime=false — בלי זמן המסך: לרשימת ההשעיה של "בעל מכשיר" (Enforcer). השעיה בגלל זמן הייתה נשארת אחרי
+     * חצות עד הסנכרון הבא; זמן המסך נאכף בשירות הנגישות, ומתאפס בחצות גם בלי רשת.
+     */
+    fun blocked(store: Store, pkg: String, withTime: Boolean = true): Boolean {
         // משוחרר (SPEC סעיף 5) — כל המגבלות נפתחות, כולל חסימת אפליקציות אחרות.
         if (store.released) return false
         if (pkg.isEmpty() || !store.appsManage) return false
         if (pkg == store.ownPackage || pkg in ALWAYS || pkg in store.launchers) return false
         // היתר זמני מבקשת פתיחה (AppGrants) — עד הסוף שלו בשעון האמין, גם בלי שרת.
         if (pkg in AppGrantMath.granted(store.appGrants, TrustedClock.now(store))) return false
+        // זמן מסך (AppTimeMath): נגמר הזמן להיום — חסומה, גם אם ההורה אישר אותה. היתר זמני (למעלה) גובר.
+        if (withTime && timeUp(store, pkg)) return true
         if (pkg in SETTINGS) {
             return pkg in store.appsBlocked && System.currentTimeMillis() > store.settingsPassUntil
         }
