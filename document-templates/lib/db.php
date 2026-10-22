@@ -311,6 +311,8 @@ function db_migrate(PDO $pdo): void
     // שיתוף למילוי: מי ממלא כל שדה במסמך הזה (גובר על התבנית) — lib/participants.php, doc_assign
     $cols = array_column($pdo->query('PRAGMA table_info(documents)')->fetchAll(), 'name');
     if (!in_array('assign_enc', $cols, true)) $pdo->exec('ALTER TABLE documents ADD COLUMN assign_enc TEXT');
+    // מסמך שהושלם: תוויות ותרגומים כפי שהיו ברגע ההשלמה (lib/documents.php, freeze_capture — DT-F06)
+    if (!in_array('frozen_enc', $cols, true)) $pdo->exec('ALTER TABLE documents ADD COLUMN frozen_enc TEXT');
 
     // שיתוף בטלפון: הזמנה בקישור חד-פעמי, שנשלח בוואטסאפ (lib/sharing.php, share_invite)
     $pdo->exec(<<<'SQL'

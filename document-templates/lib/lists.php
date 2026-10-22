@@ -432,6 +432,7 @@ function list_level_values(array $ref): array
 function list_translate(?array $ref, string $v): string
 {
     if (!$ref || empty($ref['lang']) || $v === '') return $v;
+    if (isset($ref['tr'])) return (string)($ref['tr'][$v] ?? $v);   // מסמך שהושלם — התרגום מרגע ההשלמה (freeze_apply)
     static $cache = [];
     $id = (int)$ref['id'];
     if (!array_key_exists($id, $cache)) {

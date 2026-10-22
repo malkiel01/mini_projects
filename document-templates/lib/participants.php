@@ -47,6 +47,10 @@ function doc_schema(array $d): array
             $s['fields'][$i]['roles'] = count($r) > 1 ? $r : [];
         }
     }
+    // הושלם — מה שמוצג בו לא משתנה כשרשימה, תרגום או מקור נתונים משתנים אחר כך (DT-F06)
+    if (($d['status'] ?? '') === 'completed' && !empty($d['frozen_enc'])) {
+        $s = freeze_apply($s, json_decode((string)unseal($d['frozen_enc']), true) ?: []);
+    }
     return $s;
 }
 
