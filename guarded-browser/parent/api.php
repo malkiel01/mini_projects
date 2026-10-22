@@ -19,6 +19,7 @@ require_once __DIR__ . '/../lib/search.php';
 require_once __DIR__ . '/../lib/appcontrol.php';
 require_once __DIR__ . '/../lib/apprequests.php';
 require_once __DIR__ . '/../lib/simulator.php';
+require_once __DIR__ . '/../lib/tasks.php';
 require_once __DIR__ . '/../lib/selftest.php';
 require_once __DIR__ . '/../lib/history.php';
 require_once __DIR__ . '/../lib/enforce.php';
@@ -178,6 +179,28 @@ try {
                                                            isset($b['used_min']) && $b['used_min'] !== '' ? (int) $b['used_min'] : -1) : null,
                  'app'  => str('package') !== '' ? simulateApp($c, str('package')) : null]);
 
+        /* ── אישור לפי משימה (שלב 12 ד) — דפים ומשאבים לזמן מוגבל, במקום היתר קבוע ── */
+        case 'tasks':
+            out(['ok' => true, 'tasks' => tasksOf((int) myChild($parent)['id'])]);
+
+        case 'task_scan':
+            myChild($parent);
+            [$hosts, $err] = taskScan(str('url'));
+            if ($err) fail($err);
+            out(['ok' => true, 'resources' => $hosts]);
+
+        case 'task_add':
+            $c = myChild($parent);
+            $b = body();
+            [$tid, $err] = taskCreate((int) $c['id'], str('title'), (array) ($b['pages'] ?? []), (array) ($b['resources'] ?? []),
+                                      num('minutes'), $pid);
+            if ($err) fail($err);
+            out(['ok' => true, 'task' => $tid, 'tasks' => tasksOf((int) $c['id']), 'child' => detail($parent, (int) $c['id'])]);
+
+        case 'task_end':
+            $c = myChild($parent);
+            if (!taskEnd((int) $c['id'], num('task'))) fail('המשימה כבר הסתיימה');
+            out(['ok' => true, 'tasks' => tasksOf((int) $c['id']), 'child' => detail($parent, (int) $c['id'])]);
         /* ── בדיקת הגנה יזומה (שלב 12 ג) — המכשיר בודק את עצמו, בלי לגלוש ובלי לפתוח אפליקציות ── */
         case 'selftest_request':
             $n = selftestRequest((int) myChild($parent)['id']);

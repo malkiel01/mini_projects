@@ -66,6 +66,10 @@ check('domain_plus — משאב נלווה מדומיין זר מותר',
 check('domain_plus — ניווט לדומיין זר נדחה',
       ruleMatches($rule('liveball.sx', ['scope' => 'domain_plus']),
                   normalizeUrl('https://evil.com/x'), true), false);
+check('resource (משימה) — נטען בתוך דף',
+      ruleMatches($rule('cdn.lib.example', ['scope' => 'resource']), normalizeUrl('https://cdn.lib.example/a.js'), false), true);
+check('resource — לא יעד לגלישה',
+      ruleMatches($rule('cdn.lib.example', ['scope' => 'resource']), normalizeUrl('https://cdn.lib.example/'), true), false);
 
 echo "\n— איסור גובר על היתר —\n";
 $mixed = [$rule('bad.com', ['action' => 'deny']), $rule('bad.com')];

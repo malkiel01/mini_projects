@@ -141,6 +141,16 @@ function migrate(PDO $pdo): void {
         $pdo->exec("ALTER TABLE devices ADD COLUMN policy_rev TEXT NOT NULL DEFAULT ''");
         $pdo->exec("ALTER TABLE devices ADD COLUMN policy_rev_at TEXT NOT NULL DEFAULT ''");
     }
+    // אישור לפי משימה (lib/tasks.php): המשימה, והכללים הזמניים שלה מסומנים ב-task_id — סיום מוקדם מוחק אותם יחד.
+    $pdo->exec("CREATE TABLE IF NOT EXISTS tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        child_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        title TEXT NOT NULL, minutes INTEGER NOT NULL,
+        starts_at TEXT NOT NULL, ends_at TEXT NOT NULL, ended_at TEXT NOT NULL DEFAULT '',
+        created_by INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL)");
+    if (!in_array('task_id', $columns('rules'), true)) {
+        $pdo->exec("ALTER TABLE rules ADD COLUMN task_id INTEGER NOT NULL DEFAULT 0");
+    }
     // בדיקת הגנה יזומה (lib/selftest.php): הבקשה האחרונה, האחרונה שהמכשיר ענה עליה, והתוצאה הגולמית.
     if (!in_array('selftest_req', $columns('devices'), true)) {
         foreach (['selftest_req', 'selftest_done', 'selftest_result', 'selftest_at'] as $col) {

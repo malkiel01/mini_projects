@@ -10,7 +10,7 @@
  * ומספר עמוד בכל עמוד, וזום שמגדיל רק את הדפים.
  */
 import { Editor, Extension, StarterKit, Superscript, Subscript } from '../../vendor/tiptap.js';
-import { extensions, imageBox, FONTS, FALLBACK, cssFont, safeHref, bookmarks, BOOKMARK_RE, USER_STYLE, styleKeyOf, UNDERLINES } from './extensions.js';
+import { extensions, imageBox, FONTS, FALLBACK, cssFont, safeHref, bookmarks, BOOKMARK_RE, USER_STYLE, styleKeyOf, UNDERLINES, TABLE_BORDERS, VALIGNS } from './extensions.js';
 import { Pages, pageLabel } from './pagination.js';
 import { cleanPastedHtml } from './paste.js';
 import { migrate } from './schema.js';
@@ -462,7 +462,7 @@ export function createWordEditor(root, opts) {
             zoomOut: () => { fit = false; zoom = Math.max(0.3, Math.round((zoom - 0.1) * 10) / 10); setZoom(); },
             zoomIn: () => { fit = false; zoom = Math.min(3, Math.round((zoom + 0.1) * 10) / 10); setZoom(); },
             zoomFit: () => { fit = true; setZoom(); },
-            crop: pos => cropDialog(pos), imageProps: pos => imageDialog(pos), imageSize: f => imageSizeTo(f),
+            crop: pos => cropDialog(pos), imageProps: pos => imageDialog(pos), imageSize: f => imageSizeTo(f), tableProps: () => tablePropsDialog(),
             footnote: () => footnoteDialog(null),
             link: () => linkDialog(), bookmark: () => bookmarkDialog(),
             newStyle: () => newStyleDialog(), updateStyle: () => updateStyleFromSelection(),
@@ -877,7 +877,7 @@ export function createWordEditor(root, opts) {
             ctxBar.append(
                 grp('שורות ועמודות', [T('addRowBefore'), T('addRowAfter'), T('addColumnBefore'), T('addColumnAfter')], [T('deleteRow'), T('deleteColumn')]),
                 grp('תאים', [T('mergeOrSplit'), cmdColor('table.cellFill', '#ddeeff')], [T('toggleHeaderRow')]),
-                grp('טבלה', T('deleteTable')));
+                grp('טבלה', [T('props'), T('deleteTable')]));
         } else if (kind === 'image') {
             const a = sel.node.attrs;
             const wrapSel = cmdSel('image.wrap', 'w-wrap', Object.entries(WRAP_NAMES).map(([k, t]) => h('option', { value: k, selected: (a.wrap || 'inline') === k }, t)));
@@ -888,6 +888,61 @@ export function createWordEditor(root, opts) {
                 grp('תמונה', [cmdBtn('image.crop'), cmdBtn('image.props'), cmdBtn('image.delete')]));
         }
     }
+    /**
+     * מאפייני טבלה: גבולות וצבע, רוחב ויישור (הטבלה כולה); יישור אנכי (התאים שבבחירה); גובה שורה (השורות שבבחירה).
+     * שינוי רוחב מתאים גם את רוחבי העמודות (colwidth) באותו יחס — כך הטבלה ב-PDF וב-Word באותו רוחב.
+     */
+    function tablePropsDialog() {
+        const st = editor.state;
+        const $f = st.selection.$from;
+        let tpos = -1, tnode = null;
+        for (let d = $f.depth; d > 0; d--) if ($f.node(d).type.name === 'table') { tpos = $f.before(d); tnode = $f.node(d); break; }
+        if (!tnode) return;
+        // התאים והשורות שבבחירה (בחירת תאים — כולם; אחרת — התא שבו הסמן)
+        const cells = [], rows = new Set();
+        const tableEnd = tpos + tnode.nodeSize;
+        if (st.selection.forEachCell) st.selection.forEachCell((n, pos) => cells.push([n, pos]));
+        else for (let d = $f.depth; d > 0; d--) if (/^table(Cell|Header)$/.test($f.node(d).type.name)) { cells.push([$f.node(d), $f.before(d)]); break; }
+        for (const [, pos] of cells) { const $c = st.doc.resolve(pos); rows.add($c.before($c.depth)); }
+        const a = tnode.attrs;
+        const c0 = cells[0]?.[0].attrs || {};
+        const r0 = rows.size ? st.doc.nodeAt([...rows][0]).attrs : {};
+        sheet('מאפייני טבלה', body => {
+            body.append(
+                h('section.group', h('h3', 'גבולות'), seg('borders', TABLE_BORDERS, a.borders || 'all', 'גבולות'),
+                    field('צבע הגבולות', h('input', { type: 'color', name: 'bc', value: a.borderColor || '#888888' }))),
+                h('section.group', h('h3', 'רוחב ויישור'),
+                    h('div.fields.two', field('רוחב (% משורה)', numInput('width', a.width || 100, { min: 10, max: 100, step: 5 }))),
+                    seg('align', { right: 'ימין', center: 'מרכז', left: 'שמאל' }, a.align || 'right', 'יישור הטבלה')),
+                h('section.group', h('h3', 'תאים ושורות ', h('small', 'שבבחירה')),
+                    seg('valign', VALIGNS, c0.valign || 'top', 'יישור אנכי בתא'),
+                    h('div.fields.two', field('גובה שורה מינימלי (נק\', ריק — אוטומטי)', numInput('height', r0.height || '', { min: 0, max: 400 })))));
+        }, form => {
+            const f = new FormData(form);
+            const width = Math.max(10, Math.min(100, Math.round(+f.get('width') || 100)));
+            const tr = editor.state.tr;
+            // עמודות: אותו יחס כמו שינוי הרוחב
+            const k = width / (a.width || 100);
+            if (k !== 1) tnode.descendants((n, p) => {
+                if (/^table(Cell|Header)$/.test(n.type.name) && Array.isArray(n.attrs.colwidth)) {
+                    tr.setNodeMarkup(tpos + 1 + p, undefined, { ...n.attrs, colwidth: n.attrs.colwidth.map(w => w ? Math.max(30, Math.round(w * k)) : w) });
+                }
+                return !/^table(Cell|Header)$/.test(n.type.name);
+            });
+            const bc = String(f.get('bc') || '').toLowerCase();
+            tr.setNodeMarkup(tpos, undefined, { ...a, borders: f.get('borders') === 'all' ? null : f.get('borders'),
+                borderColor: bc && bc !== '#888888' ? bc : null, width: width < 100 ? width : null, align: width < 100 && f.get('align') !== 'right' ? f.get('align') : null });
+            for (const [n, pos] of cells) {
+                const cur = tr.doc.nodeAt(pos);
+                tr.setNodeMarkup(pos, undefined, { ...cur.attrs, valign: f.get('valign') === 'top' ? null : f.get('valign') });
+            }
+            const hgt = f.get('height') === '' ? null : Math.max(0, Math.min(400, +f.get('height'))) || null;
+            for (const pos of rows) tr.setNodeMarkup(pos, undefined, { ...tr.doc.nodeAt(pos).attrs, height: hgt });
+            editor.view.dispatch(tr.setMeta('closeHistory$', true));
+            editor.view.focus();
+        });
+    }
+
     /** גודל תמונה: חלק מרוחב השורה (¼, ½, מלא), או 0 — הגודל המקורי. */
     function imageSizeTo(f) {
         const sel = ed.state.selection;
@@ -1083,7 +1138,12 @@ export function createWordEditor(root, opts) {
                         field('הזחה (צעדים של 1.27 ס"מ)', numInput('indent', a.indent || 0, { min: 0, max: 8, step: 1 })),
                         field('שורה ראשונה', h('select', { name: 'flk' }, Object.entries({ '': 'ללא', first: 'הזחה', hang: 'תלויה' })
                             .map(([k, t]) => h('option', { value: k, selected: k === (a.firstLine > 0 ? 'first' : a.firstLine < 0 ? 'hang' : '') }, t)))),
-                        field('בכמה (נקודות)', numInput('flv', a.firstLine ? Math.abs(a.firstLine) : 36, { min: 0, max: 200 })))));
+                        field('בכמה (נקודות)', numInput('flv', a.firstLine ? Math.abs(a.firstLine) : 36, { min: 0, max: 200 })))),
+                // כמו "שורות ומעברי עמוד" ב-Word. כותרת — ממילא נשמרת עם הבא ובשלמותה
+                h('section.group', h('h3', 'שבירת עמודים'),
+                    sw('keepNext', 'שמירה עם הבא — לא נשארת לבד בתחתית העמוד', a.keepNext),
+                    sw('keepLines', 'שמירת שורות יחד — לא נחצית בין עמודים', a.keepLines),
+                    sw('breakBefore', 'מעבר עמוד לפני — מתחילה עמוד חדש', a.breakBefore)));
         }, form => {
             const f = new FormData(form);
             const line = f.get('line');
@@ -1094,6 +1154,7 @@ export function createWordEditor(root, opts) {
                 lineHeight: line === 'exact' ? (ex > 0 ? 'exact:' + ex : null) : (line || null),
                 spaceBefore: n('before'), spaceAfter: n('after'), indent: Math.min(8, Math.round(n('indent') || 0)),
                 firstLine: f.get('flk') && n('flv') ? Math.min(200, n('flv')) * (f.get('flk') === 'hang' ? -1 : 1) : null,
+                keepNext: f.get('keepNext') ? true : null, keepLines: f.get('keepLines') ? true : null, breakBefore: f.get('breakBefore') ? true : null,
             }).run();
         });
     }

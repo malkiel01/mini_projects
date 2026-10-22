@@ -167,6 +167,35 @@ for ($i = 0; $i < 24; $i++) {
 }
 $corpus['typography'] = ['title' => 'טיפוגרפיה', 'json' => $doc($c), 'page' => null];
 
+// 13. שבירת עמודים: שמירה עם הבא (פסקה קצרה לפני ארוכה), שמירת שורות יחד (פסקה ארוכה), מעבר עמוד לפני
+$c = [$hd('שבירת עמודים', 1)];
+for ($i = 1; $i <= 30; $i++) {
+    $c[] = $p("$i. " . $sentence(15, 70));
+    if ($i % 3 === 0) $c[] = $p('לפני הבאה: ' . $sentence(3, 8), ['keepNext' => true]);
+    if ($i % 4 === 2) $c[] = $p('יחד: ' . $sentence(40, 90), ['keepLines' => true]);
+    if ($i % 11 === 0) $c[] = $p('עמוד חדש: ' . $sentence(5, 20), ['breakBefore' => true]);
+}
+$corpus['keep'] = ['title' => 'שבירת עמודים', 'json' => $doc($c), 'page' => null];
+
+// 14. עיצוב טבלה: רוחב חלקי ויישור (עם עמודות ברוחב קבוע ובלי), גבולות, יישור אנכי, גובה שורה — טבלאות שחוצות עמודים
+$c = [$hd('עיצוב טבלה', 1)];
+$modes = [['outer', 60, 'center'], ['inner', 75, 'left'], ['none', 50, 'right'], [null, 90, 'center']];
+foreach ($modes as $k => [$b, $w, $al]) {
+    $c[] = $p($sentence(20, 50));
+    $rows = [['type' => 'tableRow', 'content' => array_map(fn($h) => ['type' => 'tableHeader', 'content' => [$p($h)]], ['סעיף', 'תיאור', 'הערה'])]];
+    for ($i = 1; $i <= 10 + 4 * $k; $i++) {
+        $cw = $k % 2 ? ['colwidth' => [round(160 * $w / 100)]] : [];   // בחלק מהטבלאות — רוחב עמודות קבוע (כמו אחרי "מאפייני טבלה")
+        $rows[] = ['type' => 'tableRow', 'attrs' => $i % 4 === 0 ? ['height' => 36] : [], 'content' => [
+            ['type' => 'tableCell', 'attrs' => $cw, 'content' => [$p((string)$i)]],
+            ['type' => 'tableCell', 'attrs' => $cw + ($i % 3 === 0 ? ['valign' => 'middle'] : []), 'content' => [$p($sentence(3, 16))]],
+            ['type' => 'tableCell', 'attrs' => $cw + ($i % 5 === 0 ? ['valign' => 'bottom'] : []), 'content' => [$p($sentence(1, 6))]],
+        ]];
+    }
+    $c[] = ['type' => 'table', 'attrs' => array_filter(['borders' => $b, 'borderColor' => $k === 0 ? '#c00000' : null, 'width' => $w, 'align' => $al]), 'content' => $rows];
+}
+$c[] = $p($sentence(10, 30));
+$corpus['table-format'] = ['title' => 'עיצוב טבלה', 'json' => $doc($c), 'page' => null];
+
 foreach ($corpus as $name => $d) {
     file_put_contents(__DIR__ . "/$name.json", json_encode($d, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
     echo "$name.json\n";

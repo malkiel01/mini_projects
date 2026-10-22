@@ -111,7 +111,8 @@ final class FlowItem
     public ?int $para = null;      // מזהה הפסקה (לשורות יתומות)
     public int $index = 0;
     public int $count = 1;
-    public bool $keepNext = false; // כותרת — נשארת עם הבא
+    public bool $keepNext = false; // כותרת / "שמור עם הבא" / "שמור שורות יחד" — נשאר עם הפריט הבא
+    public bool $breakBefore = false; // "מעבר עמוד לפני" — השורה הראשונה של הפסקה
     public ?int $table = null;
     public bool $header = false;   // שורת כותרת של טבלה — חוזרת בעמוד הבא
     public array $notes = [];      // הערות שוליים שהסימן שלהן בפריט: [{n, h, draw}] — יוצגו בתחתית העמוד שלו
@@ -470,6 +471,9 @@ final class PdfLayout
 
         $count = count($lines);
         $dir = $rtl ? 1 : 0;
+        // שבירת עמודים (כמו בעורך): "שמור שורות יחד" — רק כשכל הפסקה נכנסת בעמוד
+        $keepNext = !empty($a['keepNext']);
+        $together = !empty($a['keepLines']) && $before + array_sum(array_column($lines, 'h')) + $after <= $this->chH + 0.5;
         foreach ($lines as $k => $ln) {
             $first = $k === 0;
             $last = $k === $count - 1;
@@ -499,7 +503,8 @@ final class PdfLayout
                 for ($q = $ln['from']; $q <= $ln['to']; $q++) if (isset($atoms[$q]['fn'])) $it->notes[] = $atoms[$q]['fn'];
             }
             // "שמור עם הבא" — לכותרות (כמו בעורך); לא לסגנון של משתמש, שהוא פסקה רגילה
-            $it->keepNext = $kind !== 'normal' && !preg_match(USER_STYLE_RE, $kind) && $last;
+            $it->keepNext = $last ? ($keepNext || ($kind !== 'normal' && !preg_match(USER_STYLE_RE, $kind))) : $together;
+            $it->breakBefore = $first && !empty($a['breakBefore']);
             $items[] = $it;
         }
         return $items;
@@ -806,7 +811,16 @@ final class PdfLayout
             $ncols = max($ncols, $col, count($occupied[$ri] ?? []));
         }
         if (!$ncols) return [];
-        $avail = $width - $indent;
+        $ta = $t['attrs'] ?? [];
+        // רוחב (% מהשורה) ויישור — כמו בעורך: offR — המרחק מהקצה הימני של השורה לקצה הימני של הטבלה
+        $full = $width - $indent;
+        $pct = is_numeric($ta['width'] ?? null) && $ta['width'] >= 10 && $ta['width'] < 100 ? (float)$ta['width'] : 100.0;
+        $avail = $full * $pct / 100;
+        $offR = match ($pct < 100 ? ($ta['align'] ?? 'right') : 'right') { 'center' => ($full - $avail) / 2, 'left' => $full - $avail, default => 0.0 };
+        // גבולות: כולם / מסגרת / פנימיים / בלי — תמיד באותו רוחב (בעורך גבול כבוי שקוף), רק מה שמצויר משתנה
+        $bmode = in_array($ta['borders'] ?? null, ['outer', 'inner', 'none'], true) ? $ta['borders'] : 'all';
+        $bcol = color_val($ta['borderColor'] ?? null) ? self::hex($ta['borderColor']) : [136, 136, 136];
+        $nrows = count($rows);
         $widths = array_fill(0, $ncols, 0.0);
         foreach ($grid as $cells) foreach ($cells as $c) {
             if ($c['cs'] === 1 && !empty($c['cell']['attrs']['colwidth'][0])) $widths[$c['col']] = (float)$c['cell']['attrs']['colwidth'][0] * PT_PER_PX;
@@ -834,6 +848,8 @@ final class PdfLayout
                 if ($c['rs'] === 1) $rowH[$ri] = max($rowH[$ri], $h);
             }
             $rowH[$ri] = max($rowH[$ri], 12);
+            // גובה מינימלי לשורה (נק') — כולל הריפוד והגבול, כמו height של tr בעורך
+            if (is_numeric($rows[$ri]['attrs']['height'] ?? null) && $rows[$ri]['attrs']['height'] > 0) $rowH[$ri] = max($rowH[$ri], min(400, (float)$rows[$ri]['attrs']['height']));
         }
         foreach ($laid as $ri => $cells) foreach ($cells as $c) {
             if ($c['rs'] > 1) {
@@ -844,18 +860,29 @@ final class PdfLayout
         $out = [];
         foreach ($laid as $ri => $cells) {
             $h = $rowH[$ri];
-            $it = new FlowItem($h, function (PdfCanvas $cv, float $x, float $y) use ($cells, $widths, $rowH, $ri, $indent, $width, $padX, $padY) {
+            $it = new FlowItem($h, function (PdfCanvas $cv, float $x, float $y) use ($cells, $widths, $rowH, $ri, $indent, $width, $padX, $padY, $offR, $bmode, $bcol, $nrows, $ncols) {
                 foreach ($cells as $c) {
                     // מימין לשמאל: העמודה הראשונה בצד ימין
-                    $right = $x + $width - array_sum(array_slice($widths, 0, $c['col']));
+                    $right = $x + $width - $offR - array_sum(array_slice($widths, 0, $c['col']));
                     $cx = $right - $c['w'];
                     $ch = array_sum(array_slice($rowH, $ri, $c['rs']));
                     $bg = $c['cell']['attrs']['background'] ?? null;
                     if (color_val($bg)) $cv->rect($cx, $y, $c['w'], $ch, self::hex($bg));
                     elseif ($c['cell']['type'] === 'tableHeader') $cv->rect($cx, $y, $c['w'], $ch, [242, 242, 242]);
-                    $yy = $y + $padY;
+                    // יישור אנכי: התוכן (בלי הריפוד והגבול) בתוך גובה התא
+                    $free = $ch - $c['h'];
+                    $va = $c['cell']['attrs']['valign'] ?? null;
+                    $yy = $y + $padY + ($va === 'middle' ? $free / 2 : ($va === 'bottom' ? $free : 0));
                     foreach ($c['items'] as $item) { ($item->draw)($cv, $cx + $padX, $yy); $yy += $item->h; }
-                    $cv->strokeRect($cx, $y, $c['w'], $ch, [136, 136, 136], 0.75);
+                    // ארבעת הצדדים — כל אחד לפי מצב הגבולות (קצה הטבלה או פנימי)
+                    $edges = ['t' => $ri === 0, 'b' => $ri + $c['rs'] >= $nrows, 'r' => $c['col'] === 0, 'l' => $c['col'] + $c['cs'] >= $ncols];
+                    foreach ($edges as $e => $outer) {
+                        if (!($bmode === 'all' || ($bmode === 'outer' && $outer) || ($bmode === 'inner' && !$outer))) continue;
+                        if ($e === 't') $cv->line($cx, $y, $cx + $c['w'], $y, $bcol, 0.75);
+                        elseif ($e === 'b') $cv->line($cx, $y + $ch, $cx + $c['w'], $y + $ch, $bcol, 0.75);
+                        elseif ($e === 'r') $cv->line($cx + $c['w'], $y, $cx + $c['w'], $y + $ch, $bcol, 0.75);
+                        else $cv->line($cx, $y, $cx, $y + $ch, $bcol, 0.75);
+                    }
                 }
             }, 'row');
             $it->table = $tid;
@@ -909,7 +936,8 @@ final class PdfLayout
             $fits = $y + $it->h <= $H + 0.5;
             $atTop = $y < 0.01;
             // הפריט נכנס אבל ההערה האחרונה שלו לא כולה (כמו ב-Word): השורות שנכנסות — כאן, והשאר בראש ההערות של הבא
-            if (!$fits && !$atTop && !$forced && $it->notes && isset($items[$i + 1]) && $items[$i + 1]->kind !== 'force') {
+            $pb = $it->breakBefore && !$atTop;   // "מעבר עמוד לפני": שוברים לפניה, בלי תיקונים
+            if (!$pb && !$fits && !$atTop && !$forced && $it->notes && isset($items[$i + 1]) && $items[$i + 1]->kind !== 'force') {
                 $before = array_merge($pageNotes(), array_slice($it->notes, 0, -1));
                 $last = end($it->notes);
                 $room = $this->chH - $y - $it->h - self::FN_SEP - array_sum(array_column($before, 'h'));
@@ -925,7 +953,7 @@ final class PdfLayout
                     continue;
                 }
             }
-            $break = (!$fits && !$atTop) || $forced;
+            $break = (!$fits && !$atTop) || $forced || $pb;
             if (!$break && !$atTop) {
                 // שורה ראשונה של פסקה בתחתית העמוד, כשהשנייה כבר לא נכנסת — עוברת איתה
                 if ($it->kind === 'line' && $it->index === 0 && $it->count >= 2 && isset($items[$i + 1]) && $y + $it->h + $items[$i + 1]->h > $H + 0.5) $break = true;
@@ -937,9 +965,20 @@ final class PdfLayout
             if ($break) {
                 // כותרת שלפני — עוברת גם היא (אם אינה ראשונה בעמוד)
                 $moved = [];
-                while (!$forced && $pages[count($pages) - 1] && end($pages[count($pages) - 1])[0]->keepNext && count($pages[count($pages) - 1]) > 1) {
-                    $moved[] = array_pop($pages[count($pages) - 1])[0];
+                $cur = &$pages[count($pages) - 1];
+                while (!$forced && !$pb && $cur && end($cur)[0]->keepNext && count($cur) > 1) {
+                    $moved[] = array_pop($cur)[0];
                 }
+                // המעבר נפל באמצע פסקה (שמור עם הבא / שורות יחד): לפחות 2 שורות שלה בכל צד — כמו בעורך
+                $e = $moved ? end($moved) : null;
+                if ($e && $e->kind === 'line' && $e->index > 0) {
+                    if ($e->index < 2) {
+                        while (count($cur) > 1 && end($cur)[0]->para === $e->para) $moved[] = array_pop($cur)[0];
+                    } elseif ($e->count - $e->index < 2 && $e->index >= 3 && count($cur) > 1) {
+                        $moved[] = array_pop($cur)[0];
+                    }
+                }
+                unset($cur);
                 $newPage();
                 // שורת הכותרת של טבלה שנמשכת — חוזרת בראש העמוד
                 if ($it->kind === 'row' && $it->table && isset($headers[$it->table]) && $headers[$it->table] !== $it) {

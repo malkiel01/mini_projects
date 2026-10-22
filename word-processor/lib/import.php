@@ -263,6 +263,7 @@ final class DocxCtx
     private array $seen = [];      // מפתח => true — מה שנספר פעם אחת בלבד (סגנון, גופן)
     private array $notes = [];     // דוח הייבוא: מפתח => מספר מופעים
     private array $fonts = [];     // שמות גופנים שאינם זמינים → מוצגים ב-Heebo
+    private ?int $contentTw = null; // רוחב השורה (twip) לפי המקטע האחרון — לרוחב טבלה באחוזים
     private $read;
 
     public function __construct(callable $read, private string $docId)
@@ -477,6 +478,11 @@ final class DocxCtx
                 $rule = $sp->getAttributeNS(W, 'lineRule') ?: 'auto';
                 $attrs['lineHeight'] = $rule === 'auto' ? (string)round($line / 240, 2) : 'exact:' . round($line / 20, 1);
             }
+        }
+        // שבירת עמודים (בפסקה עצמה; בכותרות — ממילא נשמרות עם הבא). w:val="0"/"false" — כבוי
+        foreach (['keepNext' => 'keepNext', 'keepLines' => 'keepLines', 'pageBreakBefore' => 'breakBefore'] as $tag => $key) {
+            $el = $xp->query("w:pPr/w:$tag", $p)->item(0);
+            if ($el instanceof DOMElement && !in_array($el->getAttributeNS(W, 'val'), ['0', 'false', 'off'], true)) $attrs[$key] = true;
         }
         if ($xp->query('w:pPr/w:pBdr/*[@w:val!="nil" and @w:val!="none"]', $p)->length
             || preg_match('/^[0-9A-Fa-f]{6}$/', $f = (string)$xp->evaluate('string(w:pPr/w:shd/@w:fill)', $p)) && strtoupper($f) !== 'FFFFFF') $this->note('pborder');
@@ -747,6 +753,8 @@ final class DocxCtx
                 if ($w > 0 && $span === 1) $attrs['colwidth'] = [(int)round($w / 15)];
                 $fill = (string)$xp->evaluate('string(w:tcPr/w:shd/@w:fill)', $tc);
                 if (preg_match('/^[0-9A-Fa-f]{6}$/', $fill) && strtoupper($fill) !== 'FFFFFF') $attrs['background'] = '#' . strtolower($fill);
+                $va = (string)$xp->evaluate('string(w:tcPr/w:vAlign/@w:val)', $tc);
+                if ($va === 'center' || $va === 'bottom') $attrs['valign'] = $va === 'center' ? 'middle' : 'bottom';
                 $all = $this->blocks($tc);
                 $content = array_values(array_filter($all, fn($b) => in_array($b['type'], ['paragraph', 'heading', 'bulletList', 'orderedList'], true)));
                 $this->note('nested', count(array_filter($all, fn($b) => $b['type'] === 'table')));
@@ -756,8 +764,57 @@ final class DocxCtx
                 $col += $span;
             }
             $rows[$ri] = ['type' => 'tableRow', 'content' => $cells ?: [['type' => 'tableCell', 'content' => [para()]]]];
+            // גובה שורה (מינימלי; גם "מדויק" — אצלנו מינימלי)
+            $rh = (int)$xp->evaluate('string(w:trPr/w:trHeight/@w:val)', $tr);
+            if ($rh > 0) $rows[$ri]['attrs'] = ['height' => min(400, round($rh / 20, 1))];
         }
-        return $rows ? ['type' => 'table', 'content' => array_values($rows)] : para();
+        return $rows ? ['type' => 'table', 'attrs' => $this->tableAttrs($tbl, $xp, $grid), 'content' => array_values($rows)] : para();
+    }
+
+    /** גבולות, צבע, רוחב (% מהשורה) ויישור של טבלה מ-tblPr — רק מה שאינו ברירת המחדל. */
+    private function tableAttrs(DOMElement $tbl, DOMXPath $xp, array $grid): array
+    {
+        $a = [];
+        $on = function (string $side) use ($tbl, $xp): ?bool {
+            $alt = ['start' => 'right', 'end' => 'left'][$side] ?? null;   // Word ישן: right / left
+            $el = $xp->query("w:tblPr/w:tblBorders/w:$side", $tbl)->item(0) ?? ($alt ? $xp->query("w:tblPr/w:tblBorders/w:$alt", $tbl)->item(0) : null);
+            if (!$el instanceof DOMElement) return null;
+            return !in_array($el->getAttributeNS(W, 'val'), ['nil', 'none', ''], true);
+        };
+        $outer = array_map($on, ['top', 'bottom', 'start', 'end']);
+        $inner = array_map($on, ['insideH', 'insideV']);
+        if (!in_array(null, $outer, true) && !in_array(null, $inner, true)) {
+            $o = !in_array(false, $outer, true);
+            $i = !in_array(false, $inner, true);
+            if (!$o && !$i && !in_array(true, $outer, true) && !in_array(true, $inner, true)) $a['borders'] = 'none';
+            elseif ($o && !in_array(true, $inner, true)) $a['borders'] = 'outer';
+            elseif ($i && !in_array(true, $outer, true)) $a['borders'] = 'inner';
+        }
+        $col = strtolower((string)$xp->evaluate('string(w:tblPr/w:tblBorders/*[@w:color and @w:color!="auto"][1]/@w:color)', $tbl));
+        if (preg_match('/^[0-9a-f]{6}$/', $col) && $col !== '808080' && $col !== '000000') $a['borderColor'] = '#' . $col;
+        // רוחב: pct (חמישיות של אחוז) או dxa — ביחס לרוחב השורה
+        if ($this->contentTw === null) {
+            $sp = $xp->query('/w:document/w:body/w:sectPr')->item(0);
+            $pw = $sp ? (int)$xp->evaluate('string(w:pgSz/@w:w)', $sp) : 0;
+            $this->contentTw = $pw ? max(0, $pw - (int)$xp->evaluate('string(w:pgMar/@w:left)', $sp) - (int)$xp->evaluate('string(w:pgMar/@w:right)', $sp)) : 0;
+        }
+        $tw = $xp->query('w:tblPr/w:tblW', $tbl)->item(0);
+        $pct = null;
+        if ($tw instanceof DOMElement) {
+            $v = (string)$tw->getAttributeNS(W, 'w');
+            if ($tw->getAttributeNS(W, 'type') === 'pct') $pct = str_ends_with($v, '%') ? (float)$v : (float)$v / 50;
+            elseif ($tw->getAttributeNS(W, 'type') === 'dxa' && $this->contentTw > 0 && (int)$v > 0) $pct = (int)$v / $this->contentTw * 100;
+        }
+        if ($pct === null && $grid && $this->contentTw > 0) $pct = array_sum($grid) / $this->contentTw * 100;
+        if ($pct !== null && $pct >= 10 && $pct < 95) $a['width'] = (int)round($pct);
+        if (isset($a['width'])) {
+            $jc = (string)$xp->evaluate('string(w:tblPr/w:jc/@w:val)', $tbl);
+            $bidi = $xp->query('w:tblPr/w:bidiVisual', $tbl)->length > 0;
+            // start / end — לוגיים (בטבלה מימין לשמאל start = ימין); left / right — כפשוטם
+            $al = match ($jc) { 'center' => 'center', 'end' => $bidi ? 'left' : 'right', 'start' => $bidi ? 'right' : 'left', 'left' => 'left', 'right' => 'right', default => null };
+            if ($al && $al !== 'right') $a['align'] = $al;
+        }
+        return $a;
     }
 
     /** גודל עמוד ושוליים מ-sectPr → page חלקי. */

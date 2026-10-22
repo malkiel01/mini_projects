@@ -23,7 +23,7 @@ import java.util.TimeZone
 data class Rule(
     val label: String,
     val pattern: String,
-    val scope: String,      // exact | domain | domain_plus
+    val scope: String,      // exact | domain | domain_plus | resource (משימה — רק בתוך דף)
     val action: String,     // allow | deny
     val showTile: Boolean,
     /** היתר "לשעה" מבקש גישה (שלב 6): עד מתי, ISO ב-UTC. ריק — קבוע. */
@@ -186,6 +186,8 @@ object PolicyEngine {
     fun ruleMatches(rule: Rule, url: Url, isMainFrame: Boolean): Boolean {
         val pattern = normalize(rule.pattern) ?: return false
         if (rule.scope == "domain_plus" && !isMainFrame) return true
+        // משאב של משימה (lib/tasks.php): נטען בתוך דף — לא יעד לגלישה.
+        if (rule.scope == "resource" && isMainFrame) return false
         if (!hostMatches(url.host, pattern.host)) return false
 
         if (rule.scope == "exact") {
