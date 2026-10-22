@@ -66,6 +66,26 @@ export default async function (t) {
     await t.settle(p);
     const w5 = await pages();
     t.ok('ביטול אחד מחזיר את כל המקטעים', w5[1] > w5[0], w5.join(' / '));
+
+    // טורים במקטע הזה (המקטע השני): נשמרים במעבר המקטע, ויוצאים ל-Word (w:cols)
+    await p.click('.wp-doc > p:last-of-type');
+    await setup(async d => {
+        await d.locator('input[name=cols_n][value="2"]').check({ force: true });
+        await d.locator('input[name=cols_gap]').fill('8');
+        await d.locator('input[name=cols_line]').check({ force: true });
+    }, 'section');
+    await p.waitForTimeout(2500);
+    s = await t.api(p, 'my_open', { doc });
+    const sb3 = s.json.content.find(n => n.type === 'sectionBreak')?.attrs?.page || {};
+    t.ok('טורים: במעבר המקטע — 2, רווח 8, קו; המקטע הראשון — טור אחד', sb3.columns?.n === 2 && sb3.columns?.gap === 8 && sb3.columns?.line === true
+        && (s.json.attrs?.page?.columns?.n ?? s.page?.columns?.n ?? 1) === 1, JSON.stringify(sb3.columns));
+    const docx = await (await p.request.get(t.editor + `api.php?action=my_export&format=docx&doc=${doc}`)).body();
+    const { execFileSync } = await import('node:child_process');
+    const { writeFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    writeFileSync(join(t.data, 'cols.docx'), docx);
+    const xml = execFileSync('unzip', ['-p', join(t.data, 'cols.docx'), 'word/document.xml'], { encoding: 'utf8' });
+    t.ok('טורים: בקובץ Word — w:cols במקטע השני בלבד', (xml.match(/<w:cols /g) || []).length === 1 && xml.includes('<w:cols w:num="2" w:space="454" w:sep="1"/>'), (xml.match(/<w:cols [^>]*>/g) || []).join(' '));
     t.ok('בלי שגיאות JS', !p.errors.length, p.errors.join(' | '));
     await p.context().close();
 }

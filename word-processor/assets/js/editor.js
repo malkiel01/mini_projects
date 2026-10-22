@@ -61,6 +61,7 @@ export function defaultPage() {
         },
         numbering: { show: true, position: 'bottom', align: 'center', format: 'n', start: 1, first_page: true },
         header: '', footer: '', heading_numbers: false, page_color: '', watermark: '',
+        columns: { n: 1, gap: 12.7, line: false },
     };
 }
 
@@ -1537,6 +1538,12 @@ export function createWordEditor(root, opts) {
                 h('section.group', h('h3', 'נייר'),
                     seg('size', { A4: 'A4', Letter: 'Letter' }, p.size, 'גודל'),
                     seg('orientation', { portrait: 'לאורך', landscape: 'לרוחב' }, p.orientation, 'כיוון')),
+                // טורים (כמו "פריסה ← טורים" ב-Word) — נשמרים ויוצאים ל-Word; בעורך וב-PDF הטקסט עדיין בטור אחד
+                h('section.group', h('h3', 'טורים'),
+                    seg('cols_n', { 1: 'אחד', 2: 'שניים', 3: 'שלושה' }, String(p.columns?.n || 1), 'מספר טורים'),
+                    h('div.fields.two', field('רווח בין טורים (מ"מ)', numInput('cols_gap', p.columns?.gap ?? 12.7, { min: 0, max: 50 })),
+                        h('div', sw('cols_line', 'קו מפריד', !!p.columns?.line))),
+                    h('p.hint', 'נשמר במסמך ובקובץ Word. בעורך, בהדפסה וב-PDF הטקסט מוצג עדיין בטור אחד.')),
                 h('section.group', h('h3', 'שוליים ', h('small', 'במ"מ')),
                     h('div.fields.two',
                         field('למעלה', numInput('m_top', p.margins.top, { min: 0, max: 80 })), field('למטה', numInput('m_bottom', p.margins.bottom, { min: 0, max: 80 })),
@@ -1567,6 +1574,7 @@ export function createWordEditor(root, opts) {
                 size: f.get('size'), orientation: f.get('orientation'),
                 margins: { top: n('m_top'), bottom: n('m_bottom'), right: n('m_right'), left: n('m_left') },
                 header: f.get('header'), footer: f.get('footer'),
+                columns: { n: Math.max(1, Math.min(3, n('cols_n') || 1)), gap: Math.max(0, Math.min(50, n('cols_gap'))), line: !!f.get('cols_line') },
             };
             const whole = {
                 font: { family: f.get('font'), size: n('fsize') || 12 },
@@ -1587,7 +1595,8 @@ export function createWordEditor(root, opts) {
      * שלו במפורש, כדי ששינוי במקטע אחד לא "יזלוג" למקטעים שאחריו.
      */
     function setSections(k, sec, whole) {
-        const pick = q => ({ size: q.size, orientation: q.orientation, margins: { ...q.margins }, header: q.header, footer: q.footer });
+        const pick = q => ({ size: q.size, orientation: q.orientation, margins: { ...q.margins }, header: q.header, footer: q.footer,
+            columns: { ...(q.columns || { n: 1, gap: 12.7, line: false }) } });
         const secs = sections();
         const tr = editor.state.tr;
         const first = mergePage(page, { ...(k === null || k === 0 ? sec : {}), ...whole });
@@ -1875,6 +1884,7 @@ export function mergePage(base, p, replaceStyles = false) {
     );
     if (p.font) Object.assign(out.font, Object.fromEntries(Object.entries(p.font).filter(([, v]) => v !== '' && v !== null)));
     if (p.numbering) Object.assign(out.numbering, p.numbering);
+    if (p.columns) out.columns = { ...(out.columns || { n: 1, gap: 12.7, line: false }), ...p.columns };
     // סגנון של משתמש עם null — נמחק
     if (p.styles) for (const [k, v] of Object.entries(p.styles)) {
         if (v === null) delete out.styles[k];

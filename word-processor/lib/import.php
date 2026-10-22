@@ -1015,7 +1015,13 @@ final class DocxCtx
             $v = (string)$xp->evaluate("string(w:pgMar/@w:$k)", $sect);
             if (is_numeric($v)) $p['margins'][$k] = round((int)$v / TWIP_PER_MM_IMPORT, 1);
         }
-        if ((int)$xp->evaluate('string(w:cols/@w:num)', $sect) > 1) $this->note('columns');
+        // טורים: נשמרים במקטע (ויוצאים שוב ל-Word); התצוגה בטורים בעורך וב-PDF — עוד לא (הדוח אומר)
+        // תמיד במפורש — מקטע בלי w:cols הוא טור אחד ב-Word, ואצלנו מקטע יורש מהקודם
+        $cn = max(1, (int)$xp->evaluate('string(w:cols/@w:num)', $sect));
+        $space = (string)$xp->evaluate('string(w:cols/@w:space)', $sect);
+        $p['columns'] = ['n' => min(4, $cn), 'gap' => is_numeric($space) ? round((int)$space / TWIP_PER_MM_IMPORT, 1) : 12.7,
+            'line' => in_array((string)$xp->evaluate('string(w:cols/@w:sep)', $sect), ['1', 'true', 'on'], true)];
+        if ($cn > 1) $this->note('columns');
         $p += $this->headerFooter($sect, $xp);
         return $p ?: null;
     }
@@ -1104,7 +1110,7 @@ const IMPORT_REPORT = [
     'nested' => ['טבלה בתוך טבלה', 'הטבלה הפנימית לא יובאה'],
     'tracked' => ['שינויי עיצוב במעקב', 'התקבלו (תוספות ומחיקות — יובאו עם המעקב)'],
     'fields' => ['שדות (תוכן עניינים, תאריך, הפניות)', 'יובאו כטקסט קבוע — לא יתעדכנו'],
-    'columns' => ['טורים', 'המסמך יובא בטור אחד'],
+    'columns' => ['טורים', 'נשמרו (בהגדרות העמוד, ובייצוא ל-Word), אבל בעורך וב-PDF הטקסט מוצג עדיין בטור אחד'],
     'hf_extra' => ['כותרת שונה לעמוד הראשון או לעמודים זוגיים', 'יובאה רק הכותרת הרגילה'],
     'hf_complex' => ['תמונה או טבלה בכותרת עליונה / תחתונה', 'יובא רק הטקסט'],
     'styles' => ['סגנונות תו מותאמים', 'העיצוב שבא מסגנון התו לא יובא; סגנונות פסקה ועיצוב ישיר — כן'],

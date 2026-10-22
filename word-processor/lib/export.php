@@ -1258,7 +1258,8 @@ function export_docx(array $json, array $page, string $title = ''): string
             . '<w:pgSz w:w="' . $tw($wmm) . '" w:h="' . $tw($hmm) . '"' . ($p['orientation'] === 'landscape' ? ' w:orient="landscape"' : '') . '/>'
             . '<w:pgMar w:top="' . $tw($mg['top']) . '" w:right="' . $tw($mg['right']) . '" w:bottom="' . $tw($mg['bottom']) . '" w:left="' . $tw($mg['left'])
             . '" w:header="' . $tw(min(12.5, $mg['top'] / 2)) . '" w:footer="' . $tw(min(12.5, $mg['bottom'] / 2)) . '" w:gutter="0"/>'
-            . $pgNum . ($titlePg ? '<w:titlePg/>' : '') . '<w:bidi/></w:sectPr>';
+            . $pgNum . (($c = $p['columns'] ?? null) && $c['n'] > 1 ? '<w:cols w:num="' . $c['n'] . '" w:space="' . $tw($c['gap']) . '"' . ($c['line'] ? ' w:sep="1"' : '') . '/>' : '')
+            . ($titlePg ? '<w:titlePg/>' : '') . '<w:bidi/></w:sectPr>';
     };
     $o->sectFn = $sectXml;
     $body = $o->body(sections_top($json));

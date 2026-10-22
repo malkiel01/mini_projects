@@ -848,6 +848,29 @@ check('ייבוא HTML: 13.5 נשאר 13.5 (לא 14), 10.4 → 10.5', str_contai
 $hx = export_ooxml(['type' => 'doc', 'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'א', 'marks' => [['type' => 'textStyle', 'attrs' => ['fontSize' => '13.5pt']]]]]]]], page_normalize([]));
 check('Word: 13.5 → w:sz 27', str_contains(json_encode($hx, JSON_UNESCAPED_UNICODE), 'w:sz w:val=\\"27\\"'));
 
+section('טורים — נשמרים ב-Word הלוך וחזור');
+$colDoc = ['type' => 'doc', 'content' => [
+    ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'בשני טורים']]],
+    ['type' => 'sectionBreak', 'attrs' => ['page' => ['columns' => ['n' => 1]]]],
+    ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'בטור אחד']]],
+]];
+$colPage = page_normalize(['columns' => ['n' => 2, 'gap' => 10, 'line' => true]]);
+check('page_normalize: טורים 1–4, רווח, קו; ערך לא תקין — לא נכנס', $colPage['columns'] === ['n' => 2, 'gap' => 10.0, 'line' => true]
+    && page_normalize(['columns' => ['n' => 9]])['columns']['n'] === 4 && page_normalize([])['columns']['n'] === 1);
+$colDocx = export_docx($colDoc, $colPage, 'טורים');
+file_put_contents("$tmp/cols.docx", $colDocx);
+$zip->open("$tmp/cols.docx");
+$colMain = (string)$zip->getFromName('word/document.xml');
+$zip->close();
+check('Word: w:cols במקטע הראשון (2, רווח, קו), ובמקטע השני — בלי (טור אחד)', substr_count($colMain, '<w:cols ') === 1
+    && str_contains($colMain, '<w:cols w:num="2" w:space="567" w:sep="1"/>'), substr_count($colMain, '<w:cols '));
+$colBack = import_docx($colDocx, 'cols');
+$sb = array_values(array_filter($colBack['json']['content'], fn($n) => ($n['type'] ?? '') === 'sectionBreak'));
+check('Word הלוך וחזור: המקטע הראשון בשני טורים, השני בטור אחד; ובדוח — שהתצוגה עדיין בטור אחד',
+    ($colBack['page']['columns']['n'] ?? 0) === 2 && ($colBack['page']['columns']['line'] ?? false) === true && abs(($colBack['page']['columns']['gap'] ?? 0) - 10) < 0.2
+    && ($sb[0]['attrs']['page']['columns']['n'] ?? 0) === 1 && (bool)array_filter($colBack['report'], fn($r) => $r['key'] === 'columns'),
+    json_encode([$colBack['page']['columns'] ?? null, $sb[0]['attrs']['page']['columns'] ?? null], JSON_UNESCAPED_UNICODE));
+
 section('כיתובים והפניות צולבות (שלב 4)');
 $cap = fn($label, $id, $text) => ['type' => 'paragraph', 'attrs' => ['pstyle' => 'caption'], 'content' => [
     ['type' => 'text', 'text' => "$label "], ['type' => 'seq', 'attrs' => ['label' => $label, 'id' => $id]], ['type' => 'text', 'text' => ": $text"]]];
