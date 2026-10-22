@@ -723,7 +723,7 @@
       el('div', { class: 'toolbar' }, q,
         el('button', { class: 'primary', onclick: newTemplate }, '+ תבנית חדשה')),
       filters, msg, list,
-      el('p', { class: 'hint' }, '🔒 רק אתה רואה את התבניות שלך — גם לא המפתח.')));
+      el('p', { class: 'hint' }, '🔒 רק אתה ומי ששיתפת רואים את התבניות שלך. הן נשמרות מוצפנות בשרת.')));
     await load();
   }
 
