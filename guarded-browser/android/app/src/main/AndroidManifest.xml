@@ -74,6 +74,7 @@
 
         <activity android:name=".HomeActivity" android:exported="false"/>
         <activity android:name=".SetupActivity" android:exported="false"/>
+        <activity android:name=".FullSetupActivity" android:exported="false"/>
         <activity android:name=".BlockedActivity" android:exported="false"
             android:excludeFromRecents="true" android:launchMode="singleTask"
             android:theme="@style/Theme.GuardedBrowser"/>

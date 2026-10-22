@@ -25,7 +25,8 @@
     "parent/sw.js",
     "assets/**",
     "download.php",
-    "privacy.html"
+    "privacy.html",
+    "setup/**"
   ],
   "install": {
     "release": "guarded-browser-store"
