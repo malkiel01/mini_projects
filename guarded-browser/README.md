@@ -198,13 +198,16 @@ shouldInterceptRequest    // כל משאב — תמונה, סקריפט, נגן,
 
 ### אפליקציה
 
-אין SDK של אנדרואיד בסביבת הפיתוח, ולכן ה-APK נבנה ב-GitHub Actions:
+אין SDK של אנדרואיד בסביבת הפיתוח, ולכן ה-APK נבנה ב-GitHub Actions (`.github/workflows/android.yml`):
 
-```
-Actions → Build Android APK → Run workflow
-```
-
-ה-artifact הוא APK **בחתימת debug** — מספיק להתקנה ידנית בטלפון, לא לחנות. כתובת השרת נקבעת בזמן הבנייה (`-PapiBase=...`) ואינה מקודדת בקוד.
+- **אוטומטית** בכל מיזוג ל-`main` שנוגע ב-`android/`. מספר הגרסה = מספר ההרצה (`1.<run_number>`).
+- **חתום במפתח קבוע** (`android/keystore/signing.jks.enc`, מפוענח בסוד `ANDROID_KEYSTORE_PASSWORD`), רק ב-`main`.
+  בלי הסוד — APK בחתימת debug (אזהרה בסיכום ההרצה) וה-Releases לא מתעדכנים. ענף משנה — בדיקות ובנייה בלבד,
+  בלי חתימה ובלי Releases.
+- **מתפרסם** ל-Release ‏`guarded-browser-apk` (‏`migdalor.apk` + `latest.json` עם `version_code`, טביעת תעודת
+  החתימה ו-`apk_sha256`). השרת מגיש אותו דרך `download.php` (מאומת מול ה-sha256), וכל מכשיר בגרסה ישנה מקבל
+  עדכון חובה (ראו "גרסת האפליקציה ועדכון מההורה").
+- `Run workflow` ידני — רק לבנייה לכתובת שרת אחרת (`-PapiBase=...`).
 
 ## הפאנל
 
@@ -540,24 +543,26 @@ adb shell dpm set-device-owner com.mbeplus.guardedbrowser/.MigdalorAdmin
 
 ## בדיקות
 
+ארבע רמות, ובכל אחת — מה היא כן ולא מוכיחה. ב-CI (`guarded-browser-tests.yml`, ‏`android.yml`) כל רמה היא שלב
+נפרד, וסיכום ההרצה מפרט אותן בנפרד — "עבר" ברמה אחת אינו "עובד".
+
+| רמה | מה | מה זה מוכיח | מה לא |
+| --- | --- | --- | --- |
+| תחביר | `php -l` לכל קובץ PHP, `node --check` ל-JS | שהקוד נטען | כלום על התנהגות |
+| יחידה | `tests/policy.php`, `signing.php`, `safefetch.php`; Kotlin: `gradle test` (‏`PolicyEngineTest`, `SyncRulesTest`, `UsageMathTest`, `EnforceMathTest`, `UpdateMathTest`, `SettingsMathTest`, `AppGrantMathTest`, `ServerVerdictTest` ועוד) | הלוגיקה הטהורה — במכשיר ובשרת | שהמערכת (DPM, נגישות, רשת) עושה מה שהלוגיקה החליטה |
+| אינטגרציה | שאר `tests/*.php` — כל קובץ מול SQLite זמני משלו | שאילתות, סכימה, הרשאות, תהליכים מקצה לקצה בשרת | את המכשיר |
+| חוזה | `tests/api_contract.php` (שרת `php -S` אמיתי, בקשות HTTP), `tests/sw.mjs` (ה-service worker האמיתי) | צורת התשובות שהמכשיר וההורה מקבלים | איך המכשיר מגיב להן בפועל |
+| מכשיר | **אין אוטומציה.** תכנית: `docs/device-matrix.md`; מצב כל הגדרה: `docs/enforcement-audit.md` | — | — |
+
 ```
-php guarded-browser/tests/policy.php        # 154 — מנוע ההרשאות בבידוד
-php guarded-browser/tests/integration.php   # 81 — סכימה ושאילתות אמיתיות
-php guarded-browser/tests/accounts.php      # 50 — חשבונות, הורים, מפתח, והמעבר
-php guarded-browser/tests/parents.php       # 55 — כניסת הורה, בידוד, הרשאות וצימוד
-php guarded-browser/tests/requests.php      # 63 — בקש גישה, היקפי אישור, "לשעה", והתראות
-php guarded-browser/tests/activity.php      # 34 — מה נשמר בכל רמת דיווח, מחיקה בירידה, הדוח, שמירה
-php guarded-browser/tests/appversion.php    # 22 — גרסה בכל מכשיר, הגרסה האחרונה, עדכון וחסימת ישנה
-php guarded-browser/tests/search.php        # 28 — סריקה (רשת מזויפת), אינדקס, סינון לפי ילד, Brave
-php guarded-browser/tests/setup.php         # 13 — דיווח ההרשאות מהמכשיר ופענוחן אצל ההורה
-php guarded-browser/tests/appcontrol.php    # 23 — ניהול אפליקציות: רמת חשבון, דיווח, הכרעות, ברירת מחדל
-php guarded-browser/tests/enforce.php       # 20 — מצב אכיפה אמיתי לכל פרמטר לפי יכולות המכשירים
-php guarded-browser/tests/devicesettings.php # 13 — הגדרות המכשיר: ברירות מחדל, שמירה, מצב האכיפה
-php guarded-browser/tests/platform.php      # 45 — כניסה דרך הפלטפורמה: קישור, המסך החד-פעמי, הורים, הזמנה חתומה
+for t in guarded-browser/tests/*.php; do php "$t"; done   # כל בדיקות השרת
+node guarded-browser/tests/sw.mjs                           # ה-service worker
 ```
 
-בדיקות האנדרואיד רצות ב-CI לפני כל בנייה (`./gradlew test`).
+כל בדיקה שנוספה בסקירה (2026-10-20 ואילך) נכשלת על הקוד שלפני התיקון — זה נבדק בכל אחת לפני המיזוג.
 
 ## מה לא נבדק
 
-**האפליקציה לא הורצה מעולם.** אין SDK בסביבה, והיציאה ממנה חסומה לכל אתר מלבד גיטהאב. הקוד עובר את הבדיקות שאפשר להריץ כאן, וה-APK הראשון שייבנה ב-CI הוא הפעם הראשונה שהוא ירוץ.
+האפליקציה רצה במכשירים אמיתיים (בעל המערכת בדק עדכונים, חסימה והעברה בקוד). מה שעוד **לא** נבדק במכשיר —
+בעיקר כל מה שנוסף מאז 2026-10-20 — מפורט ב-`docs/enforcement-audit.md` (עמודת "אימות במכשיר") וב-`docs/device-matrix.md`.
+אין להסיק "עובד" מבדיקות יחידה, אינטגרציה או בנייה מוצלחת.
