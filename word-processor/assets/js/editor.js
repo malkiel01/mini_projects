@@ -612,6 +612,8 @@ export function createWordEditor(root, opts) {
         if (collapsed) setCollapsed(false);
         searchIn.focus();
         searchIn.select();
+        // פקודה שהופעלה רגע לפני מחזירה את המיקוד לעורך באיחור של פריים (TipTap, focus) — לא לתת לה לגנוב אותו
+        requestAnimationFrame(() => { if (document.activeElement !== searchIn) searchIn.focus(); });
     }
     searchIn.addEventListener('input', () => { hits = findCommands(searchIn.value); active = hits.length ? 0 : -1; paintResults(); });
     searchIn.addEventListener('keydown', e => {
