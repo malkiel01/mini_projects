@@ -153,7 +153,8 @@ function policyHistory(int $childId, int $limit = 30): array {
                       'applied_at' => $r['applied_at'] ?? '', 'detail' => $r['detail'] ?? ''];
         }
         $out[] = ['id' => (int) $v['id'], 'at' => $v['created_at'], 'source' => $v['source'],
-                  'by' => $v['parent_name'] ?: ($v['parent_login'] ?: ((int) $v['by_parent'] ? 'הורה' : 'מערכת')),
+                  'by' => $v['parent_name'] ?: ($v['parent_login'] ?: ((int) $v['by_parent'] ? 'הורה'
+                          : (str_starts_with((string) $v['source'], 'admin') ? 'מנהל המערכת' : 'מערכת'))),
                   'changes' => json_decode((string) $v['summary'], true) ?: [], 'devices' => $per, 'current' => $i === 0];
     }
     return $out;

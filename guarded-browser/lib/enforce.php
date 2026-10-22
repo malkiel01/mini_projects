@@ -124,18 +124,22 @@ function enforcementState(int $accountId, int $childId): array {
     $hasBlockedApps = $appsAllowed && ($hasBlockRule || appPosture($childId) === 'deny_all');
 
     $rows = [];
-    $add = function (string $key, string $label, string $need, string $status, string $hint = '') use (&$rows) {
-        $rows[] = ['key' => $key, 'label' => $label, 'need' => $need, 'status' => $status, 'hint' => $hint];
+    /** ‏$cap — הכישלון נובע מיכולת חסרה במכשיר (נגישות / "בעל מכשיר"), לא מהחלה שנכשלה. */
+    $add = function (string $key, string $label, string $need, string $status, string $hint = '', bool $cap = false) use (&$rows) {
+        $rows[] = ['key' => $key, 'label' => $label, 'need' => $need, 'status' => $status, 'hint' => $hint, 'cap' => $cap];
     };
     /** תוצאה לכל מכשיר: דוח עדכני → $fn(report); אחרת unknown. */
     $per = function (callable $fn) use ($reports): array {
         return array_map(fn($d) => $d['state'] === 'fresh' ? $fn($d['report'], $d) : 'unknown', $reports);
     };
 
-    // מגדלור עצמו — בכל מכשיר שבו הוא מותקן ומחובר.
-    $appFull = enforceStatus($caps['app'], $caps['total']);
-    $add('time', 'זמנים ומכסה יומית', 'app', $appFull);
-    $add('web', 'אתרים, קטגוריות ויוטיוב (בתוך מגדלור)', 'app', $appFull);
+    // מגדלור עצמו אוכף — אבל "נאכף" רק אחרי שהמכשיר דיווח שהחיל את המדיניות *הנוכחית* (2026-10-22).
+    // קודם: "נאכף" ברגע שהיה מכשיר מחובר — הצלחה על סמך כוונה.
+    $appRes = $per(fn() => 'ok');
+    $appSt = enforceAggregate($appRes);
+    $appHint = $appSt === 'unknown' ? 'המכשיר עוד לא דיווח שהחיל את ההגדרות האחרונות' : '';
+    $add('time', 'זמנים ומכסה יומית', 'app', $appSt, $appHint);
+    $add('web', 'אתרים, קטגוריות ויוטיוב (בתוך מגדלור)', 'app', $appSt, $appHint);
 
     // דפדפנים אחרים — לפי מה שהמכשיר מצא ודיווח, לא לפי "יש כלל חסימה כלשהו".
     if ($appsAllowed) {
@@ -162,7 +166,8 @@ function enforcementState(int $accountId, int $childId): array {
         $st = enforceAggregate($res);
         $add('apps', 'חסימת אפליקציות אחרות', 'access', $st,
              $failedPkgs ? 'ההשעיה נכשלה: ' . implode(', ', array_keys($failedPkgs)) . '. מגדלור ינסה שוב בסנכרון הבא.'
-             : ($st === 'unknown' ? 'המכשיר עוד לא דיווח' : ($caps['owner'] >= $caps['total'] ? '' : 'נאכף דרך נגישות (רך). "בעל מכשיר" הופך את זה להרמטי.')));
+             : ($st === 'unknown' ? 'המכשיר עוד לא דיווח' : ($caps['owner'] >= $caps['total'] ? '' : 'נאכף דרך נגישות (רך). "בעל מכשיר" הופך את זה להרמטי.')),
+             !$failedPkgs);
     } elseif ($appsAllowed) {
         $add('apps', 'חסימת אפליקציות אחרות', 'access', 'na', 'אין כרגע אפליקציות חסומות');
     }
@@ -171,8 +176,8 @@ function enforcementState(int $accountId, int $childId): array {
     $ownerRes = $per(fn($rep) => !empty($rep['owner']) ? 'ok' : 'fail');
     $ownerStatus = enforceAggregate($ownerRes);
     $ownerHint = $ownerStatus === 'full' ? '' : ($ownerStatus === 'unknown' ? 'המכשיר עוד לא דיווח' : 'דורש "בעל מכשיר"');
-    $add('uninstall', 'הגנה מהסרת מגדלור', 'owner', $ownerStatus, $ownerHint);
-    $add('tamper', 'מניעת איפוס ועקיפה', 'owner', $ownerStatus, $ownerHint);
+    $add('uninstall', 'הגנה מהסרת מגדלור', 'owner', $ownerStatus, $ownerHint, true);
+    $add('tamper', 'מניעת איפוס ועקיפה', 'owner', $ownerStatus, $ownerHint, true);
 
     // הגדרות המכשיר — כל הגדרה שההורה חסם הוחלה בפועל.
     $blocked = array_keys(array_filter(deviceSettings($childId)));
@@ -187,7 +192,8 @@ function enforcementState(int $accountId, int $childId): array {
         $st = enforceAggregate($res);
         $add('device', 'הגדרות המכשיר', 'owner', $st,
              $bad ? 'לא הוחלו: ' . implode(', ', array_keys($bad))
-             : ($st === 'unknown' ? 'המכשיר עוד לא דיווח' : ($st === 'full' ? '' : 'דורש הקמה מלאה ("בעל מכשיר")')));
+             : ($st === 'unknown' ? 'המכשיר עוד לא דיווח' : ($st === 'full' ? '' : 'דורש הקמה מלאה ("בעל מכשיר")')),
+             !$bad);
     } else {
         $add('device', 'הגדרות המכשיר', 'owner', 'na');
     }
@@ -202,6 +208,23 @@ function enforcementState(int $accountId, int $childId): array {
         elseif ($summary !== 'needs_owner') { $summary = 'needs_access'; }
     }
     if ($caps['total'] === 0) $summary = 'no_device';
+
+    // אותו אוצר מצבים כמו בהגדרות המכשיר (SETTING_STATES): נשמר / ממתין / התקבל / הוחל / נכשל / נדרשת פעולה.
+    $rev = policyRev($childId);
+    $pulled = (int) (one('SELECT COUNT(*) n FROM devices WHERE user_id = ? AND policy_rev = ?', [$childId, $rev])['n'] ?? 0);
+    foreach ($rows as &$row) {
+        $row['state'] = match (true) {
+            $row['status'] === 'na'      => 'na',
+            $caps['total'] === 0         => 'saved',
+            $row['status'] === 'full'    => 'applied',
+            $row['status'] === 'unknown' => $pulled >= $caps['total'] ? 'received' : 'pending',
+            $row['cap']                  => 'needs_device',
+            default                      => 'failed',
+        };
+        $row['state_label'] = SETTING_STATES[$row['state']] ?? '';
+        unset($row['cap']);
+    }
+    unset($row);
 
     return ['caps' => $caps, 'rows' => array_values($rows), 'summary' => $summary,
             'owner_devices' => $caps['owner'], 'total_devices' => $caps['total'],

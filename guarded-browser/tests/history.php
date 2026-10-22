@@ -101,5 +101,12 @@ check('השחזור עצמו בהיסטוריה', policyHistory($kid)[0]['source
 check('...ותמונת המצב זהה לגרסה ששוחזרה', policyCompare($kid, $v1), []);
 check('גרסה של ילד אחר — לא נמצאה', policyRestore($kid, 999999, $parent)[1], 'הגרסה לא נמצאה');
 
+echo "\n— שינוי מפאנל הניהול —\n";
+childRuleAdd($kid, 'https://admin-added.example/', 'domain', '', 'deny');
+policyVersionRecord($kid, 0, 'admin:add_rule');
+$h = policyHistory($kid)[0];
+check('נרשם כגרסה, וההורה רואה שמנהל המערכת שינה', [$h['by'], (bool) array_filter($h['changes'], fn($c) => str_contains($c, 'admin-added'))],
+      ['מנהל המערכת', true]);
+
 echo "\n$pass עברו, $fail נכשלו\n";
 exit($fail ? 1 : 0);

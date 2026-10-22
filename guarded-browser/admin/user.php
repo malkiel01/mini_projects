@@ -11,6 +11,7 @@ require_once __DIR__ . '/../lib/auth.php';
 require_once __DIR__ . '/../lib/ui.php';
 require_once __DIR__ . '/../lib/children.php';
 require_once __DIR__ . '/../lib/privacy.php';
+require_once __DIR__ . '/../lib/history.php';
 
 $admin = requireAdmin();
 $uid   = (int) ($_GET['id'] ?? 0);
@@ -28,6 +29,12 @@ $msg = ''; $kind = 'ok';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     checkCsrf();
     $action = (string) ($_POST['action'] ?? '');
+    // היסטוריית מדיניות (lib/history.php): גם שינוי מהפאנל נרשם כגרסה — וההורה רואה "מנהל המערכת" שינה.
+    // קודם שינוי כאן לא הופיע בהיסטוריה, ושחזור היה מוחק אותו בלי שההורה ידע שהיה.
+    $histAdmin = in_array($action, ['policy', 'youtube', 'yt_add', 'yt_del', 'add_rule', 'del_rule', 'toggle_rule'], true);
+    if ($histAdmin && !one('SELECT id FROM policy_versions WHERE child_id = ? LIMIT 1', [$uid])) {
+        policyVersionRecord($uid, 0, 'לפני תחילת התיעוד');
+    }
 
     if ($action === 'policy') {
         $mode = in_array($_POST['mode'] ?? '', MODES, true) ? $_POST['mode'] : MODE_KIOSK;
@@ -88,7 +95,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     } elseif ($action === 'youtube') {
         $err = childYouTubeSave($uid, (string) ($_POST['yt_mode'] ?? 'off'), isset($_POST['allow_search']),
-                                isset($_POST['allow_shorts']), ['off', 'restricted', 'full']);
+                                isset($_POST['allow_shorts']), ['off', 'learn', 'restricted', 'full']);
         [$msg, $kind] = $err ? [$err, 'bad'] : ['הגדרות יוטיוב נשמרו', 'ok'];
 
     } elseif ($action === 'yt_add') {
@@ -119,6 +126,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         childUsageReset($uid);
         $msg = 'מכסת היום אופסה';
     }
+
+    if ($histAdmin) policyVersionRecord($uid, 0, 'admin:' . $action);
 
     $user = one('SELECT * FROM users WHERE id = ?', [$uid]);
 }
