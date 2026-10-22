@@ -26,6 +26,12 @@ const PT = 4 / 3;
 const GAP = 24;
 const SIZES = { A4: [210, 297], Letter: [215.9, 279.4] };
 const SIZE_LIST = [8, 9, 10, 10.5, 11, 12, 14, 16, 18, 20, 22, 24, 28, 32, 36, 48, 72];
+/** גודל גופן שהוקלד: "13.5" / "13,5" / "13.5pt" → 13.5 (מעוגל לחצי נקודה, כמו ב-Word); מחוץ ל-1–1638 או לא מספר → null. */
+export function parseSize(v) {
+    const n = parseFloat(String(v).trim().replace(',', '.').replace(/\s*(pt|נק['׳]?)$/i, ''));
+    if (!Number.isFinite(n) || n < 1 || n > 1638) return null;
+    return Math.round(n * 2) / 2;
+}
 const STYLE_NAMES = { normal: 'רגיל', title: 'כותרת מסמך', caption: 'כיתוב', ...Object.fromEntries([1, 2, 3, 4, 5, 6, 7, 8, 9].map(l => ['h' + l, 'כותרת ' + l])) };
 const GALLERY = ['normal', 'title', 'h1', 'h2', 'h3'];   // בגלריה בסרט; 4–9 — ברשימה (כמו ב-Word, שמראה אותן כשהן בשימוש)
 const WRAP_NAMES = { inline: 'בשורה עם הטקסט', square: 'ריבוע', tight: 'צמוד', topBottom: 'מעל ומתחת', behind: 'מאחורי הטקסט', front: 'לפני הטקסט' };
@@ -626,7 +632,17 @@ export function createWordEditor(root, opts) {
         }
     };
     const fontSel = cmdSel('fontFamily', 'w-font', [h('option', { value: '' }, 'גופן המסמך'), ...FONTS.map(f => h('option', { value: f, style: { fontFamily: cssFont(f) } }, f))]);
-    const sizeSel = cmdSel('fontSize', 'w-size', [h('option', { value: '' }, '—'), ...SIZE_LIST.map(s => h('option', { value: s }, s))]);
+    // גודל גופן — שדה עם רשימת הצעות (כמו ב-Word): כל גודל בין 1 ל-1638, בחצאי נקודה (13.5); ערך לא תקין — חוזר לגודל הנוכחי
+    const sizeList = h('datalist', { id: 'wp-sizes-' + Math.random().toString(36).slice(2, 8) }, ...SIZE_LIST.map(s => h('option', { value: s })));
+    const sizeSel = h('input.tb-sel.w-size', { type: 'text', inputmode: 'decimal', 'aria-label': cmds.get('fontSize').label, autocomplete: 'off',
+        onchange: e => applySize(e.target), onkeydown: e => { if (e.key === 'Enter') { e.preventDefault(); applySize(e.target); editor.view.focus(); } else if (e.key === 'Escape') { e.target.value = cmds.state('fontSize').value; editor.view.focus(); } } });
+    sizeSel.setAttribute('list', sizeList.id);   // list — מאפיין לקריאה בלבד, רק כתכונה
+    function applySize(el) {
+        const v = parseSize(el.value);
+        if (v === null) { el.value = cmds.state('fontSize').value; el.title = 'גודל גופן: מספר בין 1 ל-1638'; return; }
+        el.title = 'גודל';
+        if (String(v) !== cmds.state('fontSize').value) cmds.run('fontSize', String(v));
+    }
     const spacingSel = cmdSel('letterSpacing', 'w-spacing', SPACING.map(([v, t]) => h('option', { value: v }, t)));
     const listType = cmdSel('listType', 'w-list', [h('option', { value: 'decimal' }, '1.'), h('option', { value: 'hebrew' }, 'א.'), h('option', { value: 'roman' }, 'i.'), h('option', { value: 'multi' }, '1.1.1')]);
     const numBtns = ['restartNumbering', 'continueNumbering', 'numberingValue'].map(id => cmdBtn(id));
@@ -656,7 +672,7 @@ export function createWordEditor(root, opts) {
     const TABS = [
         ['home', 'בית', [
             grp('לוח', B.painter),
-            grp('גופן', [fontSel, sizeSel, cmdBtn('growFont'), cmdBtn('shrinkFont'), B.clearFormat], [B.bold, B.italic, B.underline, ulSel, B.strike, B.superscript, B.subscript, B.color, B.mark, spacingSel]),
+            grp('גופן', [fontSel, sizeSel, sizeList, cmdBtn('growFont'), cmdBtn('shrinkFont'), B.clearFormat], [B.bold, B.italic, B.underline, ulSel, B.strike, B.superscript, B.subscript, B.color, B.mark, spacingSel]),
             grp('פסקה', [B.bulletList, B.orderedList, listType, ...numBtns, B.outdent, B.indent], [B.alignRight, B.alignCenter, B.alignLeft, B.alignJustify, B.paragraphDialog, hnumBtn]),
             grp('סגנונות', [gallery], [styleSel, B.editStyles, cmdBtn('newStyle'), cmdBtn('updateStyle')]),
             grp('עריכה', [cmdBtn('find'), cmdBtn('replace')])]],
@@ -784,8 +800,8 @@ export function createWordEditor(root, opts) {
         const c = hits[i];
         if (!c || !cmds.state(c.id).enabled) return;
         closeSearch();
-        // פקד בסרט שצריך ערך (בחירה / צבע) — פותחים את הלשונית שלו ומתמקדים בו; אחרת — מפעילים
-        const el = [...bar.querySelectorAll('.rb-panel select, .rb-panel input[type=color]')].find(x => x.getAttribute('aria-label') === c.label);
+        // פקד בסרט שצריך ערך (בחירה / צבע / גודל) — פותחים את הלשונית שלו ומתמקדים בו; אחרת — מפעילים
+        const el = [...bar.querySelectorAll('.rb-panel select, .rb-panel input[type=color], .rb-panel input.w-size')].find(x => x.getAttribute('aria-label') === c.label);
         if (el) {
             const key = Object.keys(panel).find(k => panel[k].contains(el));
             if (phone.matches) openSheet(true);
@@ -898,7 +914,7 @@ export function createWordEditor(root, opts) {
         styleSel.value = sk;
         for (const b of gallery.children) { b.classList.toggle('on', b.dataset.style === sk); b.setAttribute('aria-pressed', String(b.dataset.style === sk)); }
         fontIndicator(cmds.state('fontFamily').value);
-        sizeSel.value = cmds.state('fontSize').value;
+        if (document.activeElement !== sizeSel) sizeSel.value = cmds.state('fontSize').value;
         ulSel.value = cmds.state('underlineStyle').value;
         spacingSel.value = cmds.state('letterSpacing').value;
         const lt = cmds.state('listType').value;
