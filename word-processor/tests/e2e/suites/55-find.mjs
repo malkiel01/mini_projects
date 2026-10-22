@@ -18,6 +18,7 @@ export default async function (t) {
 
     // החיפוש מתחיל מהסמן, כמו ב-Word — הסמן בתחילת המסמך
     await p.click('.wp-doc p >> nth=0');
+    await p.waitForTimeout(150);   // הבחירה מהלחיצה מגיעה באיחור (selectionchange) — שלא תדרוס את זו שאחריה
     await p.evaluate(() => document.querySelector('.wp-doc').editor.commands.setTextSelection(1));
     await p.keyboard.press('Control+f');
     t.ok('Ctrl+F — פס החיפוש נפתח והמיקוד בו', await p.locator('.wp-findbar').isVisible()

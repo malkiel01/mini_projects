@@ -10,7 +10,7 @@
  * ומספר עמוד בכל עמוד, וזום שמגדיל רק את הדפים.
  */
 import { Editor, Extension, StarterKit, Superscript, Subscript } from '../../vendor/tiptap.js';
-import { extensions, imageBox, FONTS, FALLBACK, cssFont } from './extensions.js';
+import { extensions, imageBox, FONTS, FALLBACK, cssFont, safeHref, bookmarks, BOOKMARK_RE } from './extensions.js';
 import { Pages, pageLabel } from './pagination.js';
 import { cleanPastedHtml } from './paste.js';
 import { migrate } from './schema.js';
@@ -430,6 +430,7 @@ export function createWordEditor(root, opts) {
             zoomFit: () => { fit = true; setZoom(); },
             crop: pos => cropDialog(pos), imageProps: pos => imageDialog(pos), imageSize: f => imageSizeTo(f),
             footnote: () => footnoteDialog(null),
+            link: () => linkDialog(), bookmark: () => bookmarkDialog(),
             save: opts.save ? () => opts.save() : null,
             printPreview: () => preview(true),
             commandSearch: () => focusSearch(),
@@ -453,6 +454,7 @@ export function createWordEditor(root, opts) {
     const cmdColor = (id, value, cls = '') => h('label.tb.tb-color' + cls, { title: cmds.get(id).label },
         h('span', { 'aria-hidden': 'true' }, cmds.get(id).icon), h('input', { type: 'color', value, 'aria-label': cmds.get(id).label, oninput: e => cmds.run(id, e.target.value) }));
 
+    const linkOff = cmdBtn('unlink');
     const styleSel = cmdSel('style', 'w-style', Object.entries(STYLE_NAMES).map(([k, t]) => h('option', { value: k }, t)));
     const fontSel = cmdSel('fontFamily', 'w-font', [h('option', { value: '' }, 'גופן המסמך'), ...FONTS.map(f => h('option', { value: f, style: { fontFamily: cssFont(f) } }, f))]);
     const sizeSel = cmdSel('fontSize', 'w-size', [h('option', { value: '' }, '—'), ...SIZE_LIST.map(s => h('option', { value: s }, s))]);
@@ -485,7 +487,7 @@ export function createWordEditor(root, opts) {
             grp('פסקה', [B.bulletList, B.orderedList, listType, B.outdent, B.indent], [B.alignRight, B.alignCenter, B.alignLeft, B.alignJustify, B.paragraphDialog]),
             grp('סגנונות', [styleSel], [B.editStyles]),
             grp('עריכה', [cmdBtn('find'), cmdBtn('replace')])]],
-        ['insert', 'הוספה', [grp('טבלאות', B.insertTable), grp('איורים', [B.insertImage, imgInput]), grp('הערות', B.footnote), grp('עמודים', B.pageBreak)]],
+        ['insert', 'הוספה', [grp('טבלאות', B.insertTable), grp('איורים', [B.insertImage, imgInput]), grp('הערות', B.footnote), grp('קישורים', [cmdBtn('link'), linkOff, cmdBtn('bookmark')]), grp('עמודים', B.pageBreak)]],
         ['layout', 'פריסה', [grp('הגדרת עמוד', B.pageSetup), grp('מעברים', B.sectionBreak)]],
         ['view', 'תצוגה', [zoomGroup, grp('מסמך', [opts.save ? cmdBtn('save') : null, B.print, cmdBtn('printPreview'), opts.versions ? cmdBtn('versions') : null, ...(opts.menu || [])])]],
     ];
@@ -562,6 +564,7 @@ export function createWordEditor(root, opts) {
         if (e.key === 'F1' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); setCollapsed(!collapsed); }
         else if (e.altKey && !e.ctrlKey && e.code === 'KeyQ') { e.preventDefault(); focusSearch(); }
         else if ((e.ctrlKey || e.metaKey) && !e.altKey && e.code === 'KeyS') { e.preventDefault(); cmds.run('save'); }
+        else if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.code === 'KeyK' && !previewing) { e.preventDefault(); cmds.run('link'); }
         // Ctrl+F / Ctrl+H — החיפוש של העורך, לא של הדפדפן (שלא מוצא טקסט בעמודים שמחוץ למסך)
         else if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && (e.code === 'KeyF' || e.code === 'KeyH') && !previewing) {
             e.preventDefault();
@@ -712,6 +715,7 @@ export function createWordEditor(root, opts) {
         if (lt) listType.value = lt;
         B.undo.disabled = !cmds.state('undo').enabled;
         B.redo.disabled = !cmds.state('redo').enabled;
+        linkOff.disabled = !cmds.state('unlink').enabled;
         contextBar();
         statusBarPage();
         refreshMobile();
@@ -1001,6 +1005,63 @@ export function createWordEditor(root, opts) {
                 spaceBefore: n('before'), spaceAfter: n('after'), indent: Math.min(8, Math.round(n('indent') || 0)),
             }).run();
         });
+    }
+
+    /**
+     * קישור (Ctrl+K): טקסט לתצוגה + כתובת (אתר / דוא"ל) או סימניה במסמך. בתוך קישור קיים — עריכה של כולו, ו"הסרת
+     * הקישור". הטקסט שהשתנה מחליף את הבחירה עם העיצוב שבתחילתה.
+     */
+    function linkDialog() {
+        const cur = editor.getAttributes('link').href || '';
+        if (cur) chain().extendMarkRange('link').run();
+        const { from, to, empty } = editor.state.selection;
+        const text = empty ? '' : editor.state.doc.textBetween(from, to, ' ', '\ufffc');
+        const plain = !text.includes('\ufffc');   // בבחירה תמונה / הערה — בלי שדה טקסט, רק כתובת
+        const bms = bookmarks(editor.state.doc).filter(b => !b.name.startsWith('_'));
+        sheet(cur ? 'עריכת קישור' : 'הוספת קישור', (body, dlg) => {
+            body.append(
+                plain ? field('טקסט לתצוגה', h('input', { name: 'text', value: text, maxlength: 500, autocomplete: 'off' })) : null,
+                field('כתובת — אתר או דוא"ל', h('input', { name: 'href', type: 'text', dir: 'ltr', value: cur.startsWith('#') ? '' : cur.replace(/^mailto:/, ''),
+                    placeholder: 'https://…', inputmode: 'url', autocomplete: 'off', spellcheck: 'false' })),
+                bms.length ? field('או מקום במסמך (סימניה)', h('select', { name: 'bm' }, h('option', { value: '' }, '—'),
+                    ...bms.map(b => h('option', { value: b.name, selected: cur === '#' + b.name }, b.name)))) : null,
+                cur ? h('button.btn.ghost', { type: 'button', onclick: () => { chain().unsetLink().run(); dlg.close(); } }, 'הסרת הקישור') : null);
+            setTimeout(() => body.querySelector(plain && !text ? '[name=text]' : '[name=href]')?.focus());
+        }, form => {
+            const f = new FormData(form);
+            const href = safeHref(f.get('bm') ? '#' + f.get('bm') : f.get('href'));
+            if (!href) throw new Error('כתובת לא תקינה — אתר (https://…), דוא"ל, או סימניה מהרשימה');
+            const t = plain ? String(f.get('text') || '').trim() : '';
+            if (plain && (empty || t !== text)) {
+                const marks = editor.state.doc.resolve(from).marks().filter(m => m.type.name !== 'link').map(m => m.toJSON());
+                const shown = t || href.replace(/^mailto:/, '').replace(/^#/, '');
+                chain().insertContentAt({ from, to }, { type: 'text', text: shown, marks: [...marks, { type: 'link', attrs: { href } }] })
+                    .setTextSelection(from + shown.length).unsetMark('link').run();
+            } else chain().setTextSelection({ from, to }).setMark('link', { href }).run();
+        }, 'אישור');
+    }
+
+    /** סימניות: הוספה במקום הסמן (שם קיים — עובר לכאן), ורשימה עם מעבר ומחיקה. */
+    function bookmarkDialog() {
+        sheet('סימניה', (body, dlg) => {
+            const ul = h('ul.bm-list');
+            const paint = () => {
+                ul.textContent = '';
+                for (const b of bookmarks(editor.state.doc).filter(x => !x.name.startsWith('_'))) {
+                    ul.append(h('li', h('span.bm-name', b.name),
+                        h('button.btn.sm', { type: 'button', onclick: () => { dlg.close(); editor.commands.goToBookmark(b.name); editor.view.focus(); } }, 'מעבר'),
+                        h('button.btn.sm.ghost', { type: 'button', 'aria-label': 'מחיקת ' + b.name, onclick: () => { editor.commands.deleteBookmark(b.name); paint(); } }, 'מחיקה')));
+                }
+                if (!ul.children.length) ul.append(h('li.none', 'אין עדיין סימניות במסמך'));
+            };
+            paint();
+            body.append(field('שם — מתחיל באות, בלי רווחים', h('input', { name: 'name', maxlength: 40, autocomplete: 'off', spellcheck: 'false' })),
+                h('section.group', h('h3', 'הסימניות במסמך'), ul));
+        }, form => {
+            const n = String(new FormData(form).get('name') || '').trim();
+            if (!BOOKMARK_RE.test(n)) throw new Error('שם לא תקין: מתחיל באות, אותיות / ספרות / _ בלבד, עד 40 תווים');
+            chain().setBookmark(n).run();
+        }, 'הוספה');
     }
 
     function tableDialog() {

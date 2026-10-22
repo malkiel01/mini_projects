@@ -381,6 +381,33 @@ check('ייבוא: כותרת עליונה, ומספר "- N -" במרכז הכו
 $noHf = $mkDocx(['word/document.xml' => '<w:document ' . $WN . '><w:body><w:p>' . $run('א') . '</w:p><w:sectPr><w:pgSz w:w="11906" w:h="16838"/></w:sectPr></w:body></w:document>']);
 check('ייבוא: בלי מספר עמוד במקור — בלי מספור', (import_docx($noHf, $docC)['page']['numbering'] ?? null) == ['show' => false]);
 
+// קישורים וסימניות: Word הלוך וחזור, HTML, ושדה HYPERLINK של Word
+$lk = fn($t, $href, $more = []) => ['type' => 'text', 'text' => $t, 'marks' => array_merge($more, [['type' => 'link', 'attrs' => ['href' => $href]]])];
+$jl = ['type' => 'doc', 'content' => [
+    ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'ראו '], $lk('האתר', 'https://example.com/a?b=1&c=2'), ['type' => 'text', 'text' => ' או '], $lk('הפרק', '#פרק_א', [['type' => 'bold']])]],
+    ['type' => 'paragraph', 'content' => [['type' => 'bookmark', 'attrs' => ['name' => 'פרק_א']], ['type' => 'text', 'text' => 'פרק א']]],
+    ['type' => 'paragraph', 'content' => [$lk('רע', 'javascript:alert(1)')]],
+]];
+$oxl = export_ooxml($jl, page_normalize([]));
+check('Word: קישור חיצוני = w:hyperlink + קשר External, עם &amp;', str_contains($oxl['body'], '<w:hyperlink r:id="wpLink1"') && str_contains($oxl['rels'], 'Target="https://example.com/a?b=1&amp;c=2" TargetMode="External"'));
+check('Word: קישור לסימניה = w:anchor; סימניה = bookmarkStart/End', str_contains($oxl['body'], 'w:anchor="פרק_א"') && preg_match('/<w:bookmarkStart w:id="\d+" w:name="פרק_א"\/><w:bookmarkEnd/u', $oxl['body']) === 1);
+check('Word: קישור בסגנון Hyperlink (מוגדר בסגנונות)', str_contains($oxl['body'], '<w:rStyle w:val="wpHyperlink"/>') && str_contains($oxl['styles'], 'w:styleId="wpHyperlink"'));
+check('Word: javascript: לא נכנס כקישור', substr_count($oxl['body'], '<w:hyperlink') === 2);
+$hl = export_html($jl, page_normalize([]))['html'];
+check('HTML: <a href> ו-<a id>, בלי javascript:', str_contains($hl, '<a href="https://example.com/a?b=1&amp;c=2">האתר</a>') && str_contains($hl, '<a id="פרק_א"></a>') && !str_contains($hl, 'javascript'));
+$docL = doc_new("c:$A", 'קישורים', null, null, 'u1', 'דנה');
+$backL = import_docx(export_docx($jl, page_normalize([])), $docL)['json'];
+$fl = json_encode($backL, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+check('Word → חזרה: שני הקישורים, הסימניה, והמודגש — בלי צבע וקו תחתון נוספים', str_contains($fl, '"href":"https://example.com/a?b=1&c=2"') && str_contains($fl, '"href":"#פרק_א"')
+    && str_contains($fl, '{"type":"bookmark","attrs":{"name":"פרק_א"}}') && str_contains($fl, '"type":"bold"') && !str_contains($fl, '0563c1') && !str_contains($fl, 'underline'), $fl);
+$fieldDocx = $mkDocx(['word/document.xml' => '<w:document ' . $WN . '><w:body><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> HYPERLINK "https://gov.il" </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>'
+    . $run('אתר הממשלה') . '<w:r><w:fldChar w:fldCharType="end"/></w:r>' . $run(' סוף') . '<w:bookmarkStart w:id="0" w:name="_GoBack"/><w:bookmarkEnd w:id="0"/></w:p></w:body></w:document>']);
+$fi = import_docx($fieldDocx, $docL);
+$ff = json_encode($fi['json'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+check('ייבוא: שדה HYPERLINK → קישור, רק על התוצאה; _GoBack — לא', str_contains($ff, '{"type":"text","text":"אתר הממשלה","marks":[{"type":"link","attrs":{"href":"https://gov.il"}}]}') && str_contains($ff, '{"type":"text","text":" סוף"}') && !str_contains($ff, 'bookmark'), $ff);
+check('ייבוא: שדה HYPERLINK לא נספר בדוח כ"שדה"', !in_array('fields', array_column($fi['report'], 'key'), true));
+check('safe_href: משלים ודוחה', safe_href('www.a.co.il') === 'https://www.a.co.il' && safe_href('a@b.co') === 'mailto:a@b.co' && safe_href('javascript:x') === null && safe_href('#') === null);
+
 $imp = import_html('<h1>כותרת</h1><p style="text-align:center">שלום <b>עולם</b> <span style="color:#ff0000">אדום</span></p><ul><li>א</li><li>ב</li></ul><table><tr><td>1</td><td>2</td></tr></table>', $docC);
 $c = $imp['json']['content'];
 check('html → JSON', $c[0]['type'] === 'heading' && ($c[1]['attrs']['textAlign'] ?? '') === 'center' && $c[2]['type'] === 'bulletList' && $c[3]['type'] === 'table'

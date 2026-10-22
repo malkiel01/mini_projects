@@ -4,8 +4,8 @@
  * מעבר עמוד ידני, ומילוי תא. המבנה זהה למה שהשרת מייצא (lib/export.php).
  */
 import {
-    Extension, Node, mergeAttributes, StarterKit, TextStyle, Color, FontFamily, FontSize, TextAlign, Highlight,
-    Subscript, Superscript, Table, TableRow, TableCell, TableHeader, OrderedList,
+    Extension, Node, Mark, Plugin, PluginKey, mergeAttributes, StarterKit, TextStyle, Color, FontFamily, FontSize, TextAlign, Highlight,
+    Subscript, Superscript, Table, TableRow, TableCell, TableHeader, OrderedList, TextSelection,
 } from '../../vendor/tiptap.js';
 
 const BLOCKS = ['paragraph', 'heading'];
@@ -257,6 +257,147 @@ export const Footnote = Node.create({
     },
 });
 
+/**
+ * כתובת קישור בטוחה: http(s), mailto, tel, או "#שם" (סימניה במסמך). דוא"ל בלי mailto ו-www… בלי https — משלימים.
+ * כל השאר (javascript: וכו') → null — לא נכנס למסמך.
+ */
+export function safeHref(v) {
+    const s = String(v ?? '').trim();
+    if (!s) return null;
+    if (s.startsWith('#')) return s.length > 1 ? s : null;
+    if (/^(https?:\/\/|mailto:|tel:)/i.test(s)) return s;
+    if (/^[\w.+-]+@[\w-]+(\.[\w-]+)+$/.test(s)) return 'mailto:' + s;
+    if (/^(www\.)?[\w-]+(\.[\w-]+)*\.[a-z]{2,}([/?#:]\S*)?$/i.test(s)) return 'https://' + s;
+    return null;
+}
+
+/** שם סימניה כמו ב-Word: מתחיל באות, אותיות / ספרות / קו תחתון, עד 40 תווים. */
+export const BOOKMARK_RE = /^[\p{L}][\p{L}\p{N}_]{0,39}$/u;
+
+/**
+ * קישור (Ctrl+K). Ctrl+לחיצה פותחת (כמו ב-Word); בקריאה בלבד — לחיצה רגילה. "#שם" — קפיצה לסימניה במסמך.
+ * הקלדת כתובת ואחריה רווח / Enter — הופכת לקישור לבד.
+ */
+export const Link = Mark.create({
+    name: 'link',
+    priority: 1000,
+    inclusive: false,
+    addAttributes() {
+        return { href: { default: null, parseHTML: el => safeHref(el.getAttribute('href')) } };
+    },
+    parseHTML() {
+        return [{ tag: 'a[href]', getAttrs: el => (safeHref(el.getAttribute('href')) ? null : false) }];
+    },
+    renderHTML({ HTMLAttributes }) {
+        const href = safeHref(HTMLAttributes.href);
+        const ext = href && !href.startsWith('#');
+        return ['a', mergeAttributes(HTMLAttributes, { href, class: 'wp-link', title: `${href || ''}\nCtrl+לחיצה — מעבר לקישור`,
+            ...(ext ? { target: '_blank', rel: 'noopener noreferrer nofollow' } : {}) }), 0];
+    },
+    addCommands() {
+        return {
+            setLink: href => ({ chain }) => (safeHref(href) ? chain().setMark('link', { href: safeHref(href) }).run() : false),
+            unsetLink: () => ({ chain }) => chain().extendMarkRange('link').unsetMark('link').run(),
+            /** טקסט חדש כקישור, במקום הבחירה. */
+            insertLink: (text, href) => ({ chain }) => (safeHref(href) && text
+                ? chain().insertContent({ type: 'text', text, marks: [{ type: 'link', attrs: { href: safeHref(href) } }] }).unsetMark('link').run() : false),
+        };
+    },
+    addProseMirrorPlugins() {
+        const type = this.type;
+        const editor = this.editor;
+        return [new Plugin({
+            key: new PluginKey('wpLink'),
+            props: {
+                handleClick(view, pos, event) {
+                    if (event.button !== 0) return false;
+                    if (view.editable && !(event.ctrlKey || event.metaKey)) return false;
+                    const mark = view.state.doc.resolve(pos).marks().find(m => m.type === type)
+                        || (pos < view.state.doc.content.size ? view.state.doc.resolve(pos + 1).marks().find(m => m.type === type) : null);
+                    const href = mark && safeHref(mark.attrs.href);
+                    if (!href) return false;
+                    event.preventDefault();
+                    if (href.startsWith('#')) editor.commands.goToBookmark(href.slice(1));
+                    else window.open(href, '_blank', 'noopener,noreferrer');
+                    return true;
+                },
+                // כתובת שהוקלדה, ואחריה רווח — קישור
+                handleTextInput(view, from, to, text) {
+                    if (text !== ' ' || from !== to) return false;
+                    const $f = view.state.doc.resolve(from);
+                    if (!$f.parent.isTextblock) return false;
+                    const before = $f.parent.textBetween(Math.max(0, $f.parentOffset - 200), $f.parentOffset, null, '\ufffc');
+                    const m = before.match(/(?:https?:\/\/|www\.)[^\s\ufffc]+$/i);
+                    if (!m) return false;
+                    const url = m[0].replace(/[.,;:!?)\]"'»]+$/, '');
+                    const start = from - m[0].length;
+                    const href = safeHref(url);
+                    if (!href || view.state.doc.rangeHasMark(start, start + url.length, type)) return false;
+                    view.dispatch(view.state.tr.addMark(start, start + url.length, type.create({ href })).insertText(' ', from, to));
+                    return true;
+                },
+            },
+        })];
+    },
+});
+
+/** סימניה: נקודה בשם במסמך (בלי טקסט) — יעד לקישור "#שם", וב-Word bookmarkStart/End. */
+export const Bookmark = Node.create({
+    name: 'bookmark',
+    group: 'inline',
+    inline: true,
+    atom: true,
+    selectable: true,
+    addAttributes() {
+        return { name: { default: '', parseHTML: el => el.getAttribute('data-bookmark') || el.getAttribute('name') || '' } };
+    },
+    parseHTML() {
+        return [{ tag: 'a[data-bookmark]' }, { tag: 'a[name]:not([href])', getAttrs: el => (BOOKMARK_RE.test(el.getAttribute('name') || '') ? null : false) }];
+    },
+    renderHTML({ node }) {
+        return ['a', { 'data-bookmark': node.attrs.name, class: 'wp-bookmark', contenteditable: 'false', title: 'סימניה: ' + node.attrs.name }];
+    },
+    renderText: () => '',
+    addCommands() {
+        const find = (doc, name) => { let at = -1; doc.descendants((n, pos) => { if (at < 0 && n.type.name === 'bookmark' && n.attrs.name === name) at = pos; return at < 0; }); return at; };
+        return {
+            /** סימניה בשם הזה במקום הסמן; קיימת כבר — עוברת לכאן (כמו ב-Word). */
+            setBookmark: name => ({ state, tr, dispatch }) => {
+                if (!BOOKMARK_RE.test(name)) return false;
+                if (dispatch) {
+                    const old = find(state.doc, name);
+                    const at = tr.selection.from;
+                    tr.insert(at, this.type.create({ name }));
+                    if (old >= 0) tr.delete(tr.mapping.map(old), tr.mapping.map(old) + 1);
+                }
+                return true;
+            },
+            deleteBookmark: name => ({ state, tr, dispatch }) => {
+                const at = find(state.doc, name);
+                if (at < 0) return false;
+                if (dispatch) tr.delete(at, at + 1);
+                return true;
+            },
+            goToBookmark: name => ({ state, tr, dispatch, view }) => {
+                const at = find(state.doc, name);
+                if (at < 0) return false;
+                if (dispatch) {
+                    tr.setSelection(TextSelection.near(tr.doc.resolve(at + 1))).scrollIntoView();
+                    requestAnimationFrame(() => view.dom.querySelector(`[data-bookmark="${CSS.escape(name)}"]`)?.scrollIntoView({ block: 'center' }));
+                }
+                return true;
+            },
+        };
+    },
+});
+
+/** כל הסימניות במסמך: [{name, pos}] (לפי הסדר). */
+export function bookmarks(doc) {
+    const out = [];
+    doc.descendants((n, pos) => { if (n.type.name === 'bookmark') out.push({ name: n.attrs.name, pos }); });
+    return out;
+}
+
 /** מילוי תא. */
 const cellAttrs = {
     background: {
@@ -459,8 +600,11 @@ export const LetterSpacing = Extension.create({
     },
 });
 
-/** גרסת המבנה של ה-JSON. עולה כשהמבנה משתנה; schema.js ו-lib/docs.php יודעים להמיר גרסאות ישנות. */
-export const SCHEMA_VERSION = 1;
+/**
+ * גרסת המבנה של ה-JSON. עולה כשהמבנה משתנה; schema.js ו-lib/docs.php יודעים להמיר גרסאות ישנות.
+ * 2: קישור (mark link) וסימניה (צומת bookmark) — לשונית עם קוד ישן לא מכירה אותם, ולכן לא תשמור מסמך כזה.
+ */
+export const SCHEMA_VERSION = 2;
 
 /**
  * מאפיינים של המסמך עצמו (צומת השורש): הגדרות העמוד וגרסת המבנה.
@@ -489,7 +633,7 @@ export function extensions(extra = []) {
         Highlight.configure({ multicolor: true }),
         Subscript, Superscript,
         TextAlign.configure({ types: BLOCKS, alignments: ['right', 'center', 'left', 'justify'], defaultAlignment: null }),
-        ParagraphFormat, PageBreak, SectionBreak, Footnote, WpImage, LetterSpacing,
+        ParagraphFormat, PageBreak, SectionBreak, Footnote, WpImage, LetterSpacing, Link, Bookmark,
         Table.configure({ resizable: true, cellMinWidth: 30, allowTableNodeSelection: true }),
         TableRow, Cell, HeaderCell,
         DocAttrs,
