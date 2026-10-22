@@ -555,6 +555,40 @@ if (trim((string)shell_exec('command -v pdftotext'))) {
     echo "  · pdftotext לא מותקן — דילוג על חילוץ הטקסט\n";
 }
 
+// שבירת עמודים: שמירה עם הבא / שורות יחד / מעבר עמוד לפני — Word הלוך וחזור, HTML, PDF
+$pk = fn($t, $a = []) => ['type' => 'paragraph', 'attrs' => $a, 'content' => [['type' => 'text', 'text' => $t]]];
+$jk = ['type' => 'doc', 'content' => [$pk('ראשונה', ['keepNext' => true, 'keepLines' => true]), $pk('שנייה', ['breakBefore' => true])]];
+$oxK = export_ooxml($jk, page_normalize([]));
+check('Word: keepNext, keepLines, pageBreakBefore — לפני bidi', str_contains($oxK['body'], '<w:pPr><w:keepNext/><w:keepLines/><w:bidi/>') && str_contains($oxK['body'], '<w:pPr><w:pageBreakBefore/><w:bidi/>'));
+$backK = import_docx(export_docx($jk, page_normalize([])), $docL)['json']['content'];
+check('Word → חזרה: שלוש ההגדרות', !empty($backK[0]['attrs']['keepNext']) && !empty($backK[0]['attrs']['keepLines']) && empty($backK[0]['attrs']['breakBefore'])
+    && !empty($backK[1]['attrs']['breakBefore']) && empty($backK[1]['attrs']['keepNext']), json_encode($backK, JSON_UNESCAPED_UNICODE));
+$hK = export_html($jk, page_normalize([]))['html'];
+check('HTML: break-after / break-inside / break-before', str_contains($hK, 'break-after:avoid') && str_contains($hK, 'break-inside:avoid') && str_contains($hK, 'break-before:page'));
+check('PDF: מעבר עמוד לפני — שני עמודים; בלי — אחד', preg_match_all('#/Type /Page /#', $pdfOf($jk)) === 2
+    && preg_match_all('#/Type /Page /#', $pdfOf(['type' => 'doc', 'content' => [$pk('ראשונה'), $pk('שנייה')]])) === 1);
+
+// עיצוב טבלה: גבולות וצבע, רוחב ויישור, יישור אנכי, גובה שורה — Word הלוך וחזור, HTML, PDF
+$tc = fn($t, $a = []) => ['type' => 'tableCell', 'attrs' => ['colspan' => 1, 'rowspan' => 1] + $a, 'content' => [$pk($t)]];
+$jt2 = ['type' => 'doc', 'content' => [['type' => 'table', 'attrs' => ['borders' => 'outer', 'borderColor' => '#c00000', 'width' => 60, 'align' => 'center'], 'content' => [
+    ['type' => 'tableRow', 'content' => [$tc('א'), $tc('ב')]],
+    ['type' => 'tableRow', 'attrs' => ['height' => 40], 'content' => [$tc('ג', ['valign' => 'middle']), $tc('ד', ['valign' => 'bottom'])]],
+]]]];
+$oxB = export_ooxml($jt2, page_normalize([]));
+check('Word: מסגרת בצבע (פנימיים nil), jc מרכז, trHeight, vAlign', str_contains($oxB['body'], '<w:top w:val="single" w:sz="4" w:space="0" w:color="C00000"/>') && str_contains($oxB['body'], '<w:insideH w:val="nil"/>')
+    && str_contains($oxB['body'], '<w:jc w:val="center"/>') && str_contains($oxB['body'], '<w:trHeight w:val="800" w:hRule="atLeast"/>') && str_contains($oxB['body'], '<w:vAlign w:val="center"/>'));
+$backB = import_docx(export_docx($jt2, page_normalize([])), $docL)['json']['content'][0];
+check('Word → חזרה: גבולות, צבע, 60%, מרכז, גובה, יישור אנכי', ($backB['attrs'] ?? []) == ['borders' => 'outer', 'borderColor' => '#c00000', 'width' => 60, 'align' => 'center']
+    && ($backB['content'][1]['attrs']['height'] ?? 0) == 40 && ($backB['content'][1]['content'][0]['attrs']['valign'] ?? '') === 'middle' && ($backB['content'][1]['content'][1]['attrs']['valign'] ?? '') === 'bottom',
+    json_encode([$backB['attrs'] ?? null, $backB['content'][1]['attrs'] ?? null], JSON_UNESCAPED_UNICODE));
+$backPlain = import_docx(export_docx(['type' => 'doc', 'content' => [['type' => 'table', 'content' => [['type' => 'tableRow', 'content' => [$tc('א')]]]]]], page_normalize([])), $docL)['json']['content'][0];
+check('Word → חזרה: טבלה רגילה — בלי תכונות', empty($backPlain['attrs']), json_encode($backPlain['attrs'] ?? null));
+$hB = export_html($jt2, page_normalize([]))['html'];
+check('HTML: data-borders, צבע, רוחב, גובה, יישור אנכי', str_contains($hB, 'data-borders="outer"') && stripos($hB, '--wpt-bc:#c00000') !== false && str_contains($hB, 'width:60%')
+    && str_contains($hB, 'height:40pt') && str_contains($hB, 'vertical-align:middle'));
+$tall = ['type' => 'doc', 'content' => [['type' => 'table', 'content' => array_map(fn($i) => ['type' => 'tableRow', 'attrs' => ['height' => 400], 'content' => [$tc("שורה $i")]], [1, 2, 3])]]];
+check('PDF: גובה שורה — שלוש שורות של 400 נק\' (עמוד ~700) בשלושה עמודים', preg_match_all('#/Type /Page /#', $pdfOf($tall)) === 3);
+
 // מספור: רב-רמתי 1.1.1, המשך מספור, מספור כותרות — PDF, Word הלוך וחזור, HTML
 $li = fn($t, $sub = null) => ['type' => 'listItem', 'content' => array_merge([['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => $t]]]], $sub ? [$sub] : [])];
 $jn = ['type' => 'doc', 'content' => [

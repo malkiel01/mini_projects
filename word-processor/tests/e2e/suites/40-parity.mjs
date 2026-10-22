@@ -7,8 +7,9 @@ import { join } from 'node:path';
 
 const heb = s => (s.match(/[א-ת]/g) || []).join('').slice(0, 12);
 // בצד ה-PDF: האותיות של תחילת העמוד (עד 80). pdftotext מפצל שורה עם טאב לשני "טורים" ומוציא לפעמים את החלק השני
-// קודם — לכן כשבשורה הראשונה בעורך יש טאב, מספיק שהיא נמצאת בתחילת העמוד ב-PDF; אחרת — העמוד מתחיל בדיוק בה
-const head = s => (s.match(/[א-ת]/g) || []).join('').slice(0, 80);
+// קודם, וגם קורא את התאים של שורת טבלה בסדר משלו — לכן כשבשורה הראשונה בעורך יש טאב, או שהעמוד מתחיל בטבלה, מספיק
+// שאותן אותיות נמצאות בתחילת העמוד ב-PDF; אחרת — העמוד מתחיל בדיוק בה
+const head = s => (s.match(/[א-ת]/g) || []).join('').slice(0, 120);
 /** כל האותיות של x (עם החזרות) נמצאות ב-y — בלי חשיבות לסדר (שורה עם טאב: pdftotext מערבב את הקטעים שלה). */
 const sameLetters = (x, y) => {
     const n = {};
@@ -25,16 +26,21 @@ export default async function (t) {
         await t.openDoc(p, doc);
 
         // העורך: הטקסט שאחרי כל מעבר עמוד
-        const ed = await p.evaluate(() => {
-            const out = [''];
+        // cells[k] — העמוד מתחיל בתוך טבלה (pdftotext קורא את התאים של שורה בסדר משלו, לפי המיקום שלהם)
+        const { out: ed, cells } = await p.evaluate(() => {
+            const out = [''], cells = [false];
             const w = document.createTreeWalker(document.querySelector('.wp-doc'), NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
             for (let n = w.nextNode(); n; n = w.nextNode()) {
-                if (n.nodeType === 1 && n.classList.contains('wp-break')) out.push('');
-                else if (n.nodeType === 3 && !n.parentElement.closest('.wp-break') && out[out.length - 1].length < 60) out[out.length - 1] += n.data;
+                if (n.nodeType === 1 && n.classList.contains('wp-break')) { out.push(''); cells.push(false); }
+                else if (n.nodeType === 3 && !n.parentElement.closest('.wp-break') && out[out.length - 1].length < 60) {
+                    if (!out[out.length - 1].trim() && n.data.trim()) cells[cells.length - 1] = !!n.parentElement.closest('td, th');
+                    out[out.length - 1] += n.data;
+                }
             }
-            return out;
+            return { out, cells };
         });
-        const edStarts = ed.map(heb);
+        // עמוד שמתחיל בטבלה: שורת הכותרת החוזרת זהה בכל עמוד — לוקחים 30 אותיות, כדי לכלול גם את השורה שאחריה
+        const edStarts = ed.map((x, k) => cells[k] ? (x.match(/[א-ת]/g) || []).join('').slice(0, 30) : heb(x));
 
         // PDF מהשרת
         const pdf = join(t.data, `${f}.pdf`);
@@ -48,7 +54,7 @@ export default async function (t) {
         const printStarts = t.pdfPages(printPdf).map(head);
 
         const diff = (a, b) => {
-            const i = a.findIndex((x, k) => !(b[k] ?? '').startsWith(x) && !(ed[k]?.includes('\t') && sameLetters(x, (b[k] ?? '').slice(0, x.length + 30))));
+            const i = a.findIndex((x, k) => !(b[k] ?? '').startsWith(x) && !((ed[k]?.includes('\t') || cells[k]) && sameLetters(x, (b[k] ?? '').slice(0, x.length + (cells[k] ? 80 : 30)))));
             const at = i < 0 ? '' : `עמוד ${i + 1}: "${a[i]}" מול "${(b[i] ?? '—').slice(0, 24)}"`;
             if (a.length !== b.length) return `${a.length} עמודים מול ${b.length}${at ? ' — ' + at : ''}`;
             return at;

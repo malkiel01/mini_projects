@@ -17,7 +17,7 @@ const YT = { off: ['⛔ כבוי', 'יוטיוב לא נפתח בכלל.'],
              learn: ['🎓 למידה', 'רק הסרטונים שהוספתם לתור, לפי הסדר — כאריחים במסך הבית. בלי Shorts, חיפוש, ערוצים, המלצות וניגון אוטומטי.'],
              restricted: ['✅ רק מה שאישרתי', 'רק הערוצים והסרטונים שברשימה. בלי דף הבית ובלי המלצות.'],
              full: ['▶️ פתוח', 'כל יוטיוב, חוץ ממה שתחסמו ברשימה.'] };
-const SCOPES = { domain: 'כל האתר', exact: 'הדף הזה בלבד', domain_plus: 'האתר + מה שהוא טוען' };
+const SCOPES = { domain: 'כל האתר', exact: 'הדף הזה בלבד', domain_plus: 'האתר + מה שהוא טוען', resource: 'משאב בתוך דף (משימה)' };
 const KIND = { channel: 'ערוץ', handle: 'ערוץ', video: 'סרטון', playlist: 'פלייליסט' };
 
 const $ = (s, root = document) => root.querySelector(s);
@@ -253,6 +253,7 @@ async function act(action, extra = {}, ok = '') {
     try {
         const r = await call(action, { id: K.id, ...extra });
         if (r.child) K = r.child;
+        if (r.tasks) { TS = r.tasks; TK = K.id; }
         HK = 0;   // שינוי — ההיסטוריה תיטען מחדש
         if (r.message || ok) toast(r.message || ok);
         renderKid(); loadKids();
@@ -526,6 +527,14 @@ function kidTime() {
             el('label', { class: 'f' }, [el('span', { text: 'לישיבה אחת' }), el('input', { type: 'number', name: 'session_max_min', min: 0, max: 1440,
                 value: p.session_max_min || '', inputMode: 'numeric', dir: 'ltr', placeholder: 'בלי' })]),
         ])]),
+        // מצב לא מקוון מתוכנן (שלב 12 ו) — נאכף במכשיר; הילד רואה במסך הבית מה זמין ועד מתי.
+        group('📴 בלי חיבור לאינטרנט', 'כשהמכשיר לא מגיע לשרת — למשל בטיסה או בלי חבילת גלישה', [
+            seg('offline_content', [['all', 'מה שמותר'], ['approved', 'רק מה שאישרתי'], ['none', 'כלום']], p.offline_content || 'all', { cols: 3 }),
+            el('label', { class: 'f' }, [el('span', { text: 'אחרי כמה שעות בלי חיבור נסגר הכול' }),
+                el('select', { name: 'offline_grace_h' }, [1, 2, 4, 8, 12, 24, 48, 72].map(h =>
+                    el('option', { value: String(h), text: h === 1 ? 'שעה' : `${h} שעות`, selected: h === (p.offline_grace_h || 24) })))]),
+            el('p', { class: 'hint', text: '"רק מה שאישרתי" — אתרים שהוספתם בלשונית אתרים (כולל משימות) ויוטיוב שאישרתם. הזמנים והמכסה ממשיכים לחול גם בלי חיבור. קוד מההורה ("📷 העברה בקוד") מחזיר גלישה גם אחרי שהזמן נגמר.' }),
+        ]),
     ];
 }
 
@@ -544,7 +553,8 @@ $('#kid-form').addEventListener('submit', async e => {
             allow_background: f.allow_background.checked, block_screenshots: f.block_screenshots.checked };
     } else if (tab === 'time') {
         policy = { days: checked('days').map(Number), window_start: f.window_start.value, window_end: f.window_end.value,
-            daily_quota_min: Number(f.daily_quota_min.value || 0), session_max_min: Number(f.session_max_min.value || 0) };
+            daily_quota_min: Number(f.daily_quota_min.value || 0), session_max_min: Number(f.session_max_min.value || 0),
+            offline_content: f.querySelector('[name=offline_content]:checked').value, offline_grace_h: Number(f.offline_grace_h.value) };
     } else return;
     await act('child_save', { policy }, 'נשמר — המכשיר יתעדכן תוך דקה');
 });
@@ -618,6 +628,7 @@ function kidSites() {
     const scope = el('select', {}, Object.entries(SCOPES).map(([k, v]) => el('option', { value: k, text: v, selected: k === 'domain' })));
     const action = seg('rule_action', [['allow', '✅ להתיר'], ['deny', '🚫 לחסום']], 'allow', { cols: 2 });
     return [
+        tasksGroup(),
         el('p', { class: 'hint', text: 'כתובת שאתם מתירים — מופיעה כאריח במסך הבית שלו. כלל שאתם כותבים גובר על "סוגי אתרים".' }),
         rows,
         group('אתר חדש', '', [
@@ -632,6 +643,60 @@ function kidSites() {
             } }),
         ]),
     ];
+}
+
+/* ── אישור לפי משימה (שלב 12 ד) — דפים ומשאבים לזמן מוגבל (lib/tasks.php) ── */
+
+let TS = null, TK = 0;
+
+function tasksGroup() {
+    if (TK !== K.id) {
+        TK = K.id; TS = null;
+        call('tasks', { id: K.id }).then(r => { TS = r.tasks; if (tab === 'sites') renderKid(); }).catch(e => toast(e.message, true));
+    }
+    const list = (TS || []).filter(t => t.active || Date.now() - new Date(t.ends_at) < 86400e3).map(t => el('li', { style: t.active ? '' : 'opacity:.55' }, [
+        el('span', { text: t.active ? '📝' : '✔️', ariaHidden: 'true' }),
+        el('span', { class: 'nm' }, [t.title,
+            el('small', { text: t.active ? `עוד ${t.left_min} דק׳ · עד ${whenStr(t.ends_at)}` : `${t.ended_early ? 'הסתיימה מוקדם' : 'הסתיימה'} ${whenStr(t.ends_at)}` }),
+            el('small', { text: [...t.pages, ...t.resources.map(h => `+ ${h}`)].join(' · ') })]),
+        t.active ? el('button', { type: 'button', class: 'btn ghost sm', text: 'סיום', onclick: () => {
+            if (confirm(`לסיים עכשיו את "${t.title}"? הדפים ייחסמו שוב בסנכרון הבא.`)) act('task_end', { task: t.id }, 'הסתיימה');
+        } }) : null,
+    ]));
+
+    const title = el('input', { placeholder: 'שיעורי בית בהיסטוריה', maxLength: 60 });
+    const url = el('input', { dir: 'ltr', placeholder: 'https://school.example/hw/12', autocapitalize: 'off', inputMode: 'url' });
+    const scope = el('select', {}, [['exact', 'הדף הזה בלבד'], ['domain', 'כל האתר']].map(([v, t]) => el('option', { value: v, text: t })));
+    const minutes = el('select', {}, [15, 30, 45, 60, 90, 120, 180, 240].map(m => el('option', { value: String(m), text: `${m} דק׳`, selected: m === 45 })));
+    const res = el('div', {});
+    let found = [];
+    const scan = async () => {
+        if (!url.value.trim()) { toast('כתובת הדף'); return; }
+        res.replaceChildren(el('p', { class: 'hint', text: 'בודק מה הדף טוען…' }));
+        try { found = (await call('task_scan', { id: K.id, url: url.value.trim() })).resources; }
+        catch (e) { res.replaceChildren(el('p', { class: 'hint', text: `${e.message} — אפשר ליצור בלי משאבים; אם הדף לא נטען כראוי, הוסיפו אותם אחר כך.` })); found = []; return; }
+        res.replaceChildren(found.length
+            ? el('div', {}, [el('p', { class: 'hint', text: 'הדף טוען גם מהשרתים האלה (תמונות, סקריפטים, סרטונים משובצים). מסומן — ייטען בתוך הדף בלבד, לא כאתר לגלישה:' }),
+                ...found.map(h => el('label', { class: 'f' }, [el('input', { type: 'checkbox', checked: true, value: h, name: 'task-res' }), el('span', { text: h, dir: 'ltr' })]))])
+            : el('p', { class: 'hint', text: 'הדף לא טוען משאבים משרתים אחרים.' }));
+    };
+    const add = async () => {
+        const chosen = [...document.querySelectorAll('[name=task-res]:checked')].map(i => i.value);
+        const r = await act('task_add', { title: title.value, minutes: Number(minutes.value),
+            pages: [{ url: url.value.trim(), scope: scope.value }], resources: chosen }, 'נפתח — יופיע לו כאריח בסנכרון הבא');
+        if (r) { title.value = ''; url.value = ''; res.replaceChildren(); }
+    };
+    return group('📝 משימה — פתיחה לזמן מוגבל', 'במקום היתר קבוע: הדף ומה שהוא צריך, ונסגר לבד בסוף הזמן', [
+        list.length ? el('ul', { class: 'rows' }, list) : null,
+        el('div', { class: 'fields two' }, [el('label', { class: 'f' }, [el('span', { text: 'מה המשימה *' }), title]),
+            el('label', { class: 'f' }, [el('span', { text: 'לכמה זמן' }), minutes])]),
+        el('label', { class: 'f' }, [el('span', { text: 'הדף *' }), url]),
+        el('label', { class: 'f' }, [el('span', { text: 'מה נפתח' }), scope]),
+        el('button', { type: 'button', class: 'btn ghost', text: '🔎 מה הדף צריך כדי לעבוד?', onclick: scan }),
+        res,
+        el('p', { class: 'hint', text: 'חסימות מפורשות וסוגי תוכן חסומים ממשיכים לחול גם בתוך המשימה.' }),
+        el('button', { type: 'button', class: 'btn primary', text: 'פתיחה למשימה', onclick: add }),
+    ]);
 }
 
 /** מצב העדכון כפי שהמכשיר דיווח (שלב 9) — או '' כשאין מה להראות. */

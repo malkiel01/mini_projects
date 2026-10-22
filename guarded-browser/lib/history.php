@@ -48,7 +48,7 @@ function policyDiff(?array $old, array $new): array {
                'daily_quota_min' => 'מכסה יומית (דק׳)', 'session_max_min' => 'רצף מרבי (דק׳)', 'max_devices' => 'מכשירים',
                'apps_posture' => 'ברירת מחדל לאפליקציות', 'report_level' => 'רמת דיווח', 'allow_pip' => 'תמונה בתוך תמונה',
                'allow_background' => 'שמע ברקע', 'allow_downloads' => 'הורדות', 'block_screenshots' => 'חסימת צילום מסך',
-               'keep_history' => 'היסטוריה'];
+               'keep_history' => 'היסטוריה', 'offline_grace_h' => 'שעות בלי חיבור', 'offline_content' => 'זמין בלי חיבור'];
     foreach ($new['policy'] as $k => $v) {
         $was = $old['policy'][$k] ?? null;
         if ((string) $was === (string) $v) continue;

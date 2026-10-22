@@ -134,7 +134,12 @@ class HomeActivity : AppCompatActivity() {
 
             val (text, style) = when {
                 store.released -> "המנוי של ההורים הסתיים — אין יותר הגבלה במכשיר" to R.drawable.bg_status_warn
-                !r.ok && r.json == null -> "אין חיבור לשרת — מוצגים האתרים שנשמרו" to R.drawable.bg_status_warn
+                !r.ok && r.json == null -> store.policy().let { p ->
+                    val now = TrustedClock.now(store)
+                    // מה זמין בלי חיבור, ועד מתי (OfflineMath) — לא "מוצגים האתרים שנשמרו" סתם.
+                    OfflineMath.statusLine(p.offlineContent, true, OfflineMath.leftMs(store.lastSyncMs, now, p.offlineGraceH))
+                        .ifEmpty { "אין חיבור לשרת" }
+                } to R.drawable.bg_status_warn
                 !r.ok -> reason to R.drawable.bg_status_danger
                 !allowed -> reason.ifEmpty { "הגלישה חסומה כרגע" } to R.drawable.bg_status_danger
                 store.pendingRequests().isNotEmpty() -> "🙋 מחכים לתשובה מההורה: " +

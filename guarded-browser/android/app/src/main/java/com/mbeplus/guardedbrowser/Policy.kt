@@ -23,7 +23,7 @@ import java.util.TimeZone
 data class Rule(
     val label: String,
     val pattern: String,
-    val scope: String,      // exact | domain | domain_plus
+    val scope: String,      // exact | domain | domain_plus | resource (משימה — רק בתוך דף)
     val action: String,     // allow | deny
     val showTile: Boolean,
     /** היתר "לשעה" מבקש גישה (שלב 6): עד מתי, ISO ב-UTC. ריק — קבוע. */
@@ -57,6 +57,9 @@ data class Policy(
     val keepHistory: Boolean = true,
     val allowPip: Boolean = false,
     val allowBackground: Boolean = false,
+    /** מצב לא מקוון מתוכנן (OfflineMath): שעות עד שהכול נחסם, ומה זמין עד אז. */
+    val offlineGraceH: Int = 24,
+    val offlineContent: String = "all",
 ) {
     companion object {
         const val MODE_KIOSK = "kiosk"
@@ -82,6 +85,8 @@ data class Policy(
             keepHistory = o.optBoolean("keep_history", true),
             allowPip = o.optBoolean("allow_pip"),
             allowBackground = o.optBoolean("allow_background"),
+            offlineGraceH = o.optInt("offline_grace_h", 24),
+            offlineContent = o.optString("offline_content", "all"),
         )
     }
 }
@@ -181,6 +186,8 @@ object PolicyEngine {
     fun ruleMatches(rule: Rule, url: Url, isMainFrame: Boolean): Boolean {
         val pattern = normalize(rule.pattern) ?: return false
         if (rule.scope == "domain_plus" && !isMainFrame) return true
+        // משאב של משימה (lib/tasks.php): נטען בתוך דף — לא יעד לגלישה.
+        if (rule.scope == "resource" && isMainFrame) return false
         if (!hostMatches(url.host, pattern.host)) return false
 
         if (rule.scope == "exact") {

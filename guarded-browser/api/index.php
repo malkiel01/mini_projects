@@ -135,6 +135,9 @@ function policyPayload(array $user): array {
             'keep_history'      => (bool) $policy['keep_history'],
             'allow_pip'         => (bool) $policy['allow_pip'],
             'allow_background'  => (bool) $policy['allow_background'],
+            // מצב לא מקוון מתוכנן (שלב 12 ו) — נאכף במכשיר (OfflineMath).
+            'offline_grace_h'   => (int) ($policy['offline_grace_h'] ?? 24),
+            'offline_content'   => (string) ($policy['offline_content'] ?? 'all'),
         ],
         'rules' => array_map(fn($r) => [
             'label'     => $r['label'],

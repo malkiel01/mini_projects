@@ -129,6 +129,7 @@ export const COMMANDS = [
         ['deleteRow', 'מחיקת שורה', '−⇆'], ['deleteColumn', 'מחיקת עמודה', '−⇅'], ['mergeOrSplit', 'מיזוג / פיצול תאים', '⊞'],
         ['toggleHeaderRow', 'שורת כותרת', '▤'], ['deleteTable', 'מחיקת הטבלה', '🗑']]
         .map(([id, label, icon]) => ({ id: 'table.' + id, label, icon, group: 'table', when: inTable, run: x => x.chain()[id]().run() })),
+    { id: 'table.props', label: 'מאפייני טבלה: גבולות, רוחב, יישור', icon: '⚙', group: 'table', when: inTable, run: x => x.ui.tableProps() },
     { id: 'table.cellFill', label: 'מילוי תא', icon: '◩', group: 'table', when: inTable, run: (x, v) => x.chain().setCellAttribute('background', v).run() },
 
     // ---------- תמונה (כשתמונה בחורה) ----------
