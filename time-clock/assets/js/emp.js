@@ -76,22 +76,81 @@ async function activation(token) {
   });
 }
 
-/* ===== E2 · בית (הדיווח עצמו — בשלב הבא) ===== */
+/* ===== E2 · בית: כניסה / יציאה ===== */
 
-function home(st) {
-  const ms = st.memberships;
-  $('#sub').textContent = ms.length === 1 ? ms[0].company : ms.length + ' מקומות עבודה';
-  main.innerHTML = `
-    <div class="summary"><div class="line"><b>✅ הטלפון מחובר</b></div>
-      <div class="line muted">כניסה ויציאה מהטלפון יתאפשרו כאן בקרוב.</div></div>
-    <h2 class="sec-title">מקומות העבודה שלי</h2>
-    <ul class="list">${ms.map(m => `
-      <li class="card">
-        <span class="avatar" aria-hidden="true">🏢</span>
-        <div class="body"><div class="l1"><span>${esc(m.company)}</span>${m.employee_no ? `<span class="t">מס׳ ${esc(m.employee_no)}</span>` : ''}</div>
-          <div class="l2">${esc(m.name)}${m.site ? ' · ' + esc(m.site) : ''}${m.terms ? ` · תקן ${hm(m.terms.daily_minutes)} ליום` : ''}</div></div>
-      </li>`).join('')}</ul>`;
+const TZ = 'Asia/Jerusalem';
+const time = iso => new Date(iso).toLocaleTimeString('he-IL', { timeZone: TZ, hour: '2-digit', minute: '2-digit' });
+const SRC = { phone: 'טלפון', station: 'עמדה', manager: 'מנהל' };
+let st = null, tick = null;
+
+function current() {
+  const saved = +(localStorage.getItem('tc-member') || 0);
+  return st.memberships.find(m => m.id === saved) || st.memberships[0];
 }
 
-window.addEventListener('hashchange', boot);
+function home(state) {
+  st = state;
+  if (location.hash === '#/month') return month();
+  const m = current(), s = m.status, open = !!s.open_since;
+  $('#sub').textContent = m.company;
+  $('#month-btn').hidden = false; $('#back').hidden = true;
+  main.innerHTML = `
+    ${st.memberships.length > 1 ? `<fieldset class="seg" aria-label="מקום עבודה" style="margin-bottom:12px">${st.memberships.map(x =>
+      `<label><input type="radio" name="mem" value="${x.id}"${x.id === m.id ? ' checked' : ''}><span>${esc(x.company)}</span></label>`).join('')}</fieldset>` : ''}
+    <div class="summary">
+      <div class="line"><span class="state">${open ? '🟢 בעבודה מאז ' + time(s.open_since) : '⚪ לא בעבודה'}</span></div>
+      <div class="line"><span class="muted">היום</span> <b id="today-min">${hm(s.minutes_today)}</b>${s.standard_today ? ` <span class="muted">מתוך תקן ${hm(s.standard_today)}</span>` : ''}</div>
+    </div>
+    <button class="big ${open ? 'out' : ''}" id="punch" type="button">${open ? 'יציאה' : 'כניסה'}</button>
+    <h2 class="sec-title">היום</h2>
+    <ul class="list">${s.punches.length ? s.punches.map(p => `
+      <li class="card"><span class="avatar" style="--h:${p.kind === 'in' ? 140 : 10}" aria-hidden="true">${p.kind === 'in' ? '⇠' : '⇢'}</span>
+        <div class="body"><div class="l1"><span>${p.kind === 'in' ? 'כניסה' : 'יציאה'}</span><span class="t">${time(p.at)}</span></div>
+          <div class="l2">${SRC[p.source] ?? ''}</div></div></li>`).join('') : '<li class="empty">עוד אין דיווחים היום.</li>'}</ul>`;
+  main.querySelector('.seg')?.addEventListener('change', e => { try { localStorage.setItem('tc-member', e.target.value); } catch { /* */ } home(st); });
+  $('#punch').addEventListener('click', punch);
+  // משמרת פתוחה — הדקות של היום מתעדכנות כל חצי דקה, בלי לפנות לשרת
+  clearInterval(tick);
+  if (open) {
+    const base = s.minutes_today, t0 = Date.now();
+    tick = setInterval(() => { const el = $('#today-min'); if (el) el.textContent = hm(base + Math.floor((Date.now() - t0) / 60000)); }, 30000);
+  }
+}
+
+async function punch() {
+  const m = current(), kind = m.status.next, btn = $('#punch');
+  btn.disabled = true;
+  try {
+    const r = await api('emp_punch', { member_id: m.id, kind });
+    m.status = r.status;
+    toast((kind === 'in' ? 'כניסה נרשמה ' : 'יציאה נרשמה ') + time(r.punch.at));
+    home(st);
+  } catch (e) {
+    toast(e.message, true);
+    if (e.status === 401) return boot();
+    try { home(await api('emp_state')); } catch { btn.disabled = false; }
+  }
+}
+
+/* ===== E3 · החודש שלי ===== */
+
+let shown = null;   // "YYYY-MM"
+
+async function month(delta = 0) {
+  const m = current();
+  clearInterval(tick);
+  $('#month-btn').hidden = true; $('#back').hidden = false;
+  if (!shown) shown = new Date().toLocaleDateString('en-CA', { timeZone: TZ }).slice(0, 7);
+  if (delta) { const [y, mo] = shown.split('-').map(Number); const d = new Date(Date.UTC(y, mo - 1 + delta, 1)); shown = d.toISOString().slice(0, 7); }
+  let r;
+  try { r = await api('emp_month', { member_id: m.id, month: shown }); }
+  catch (e) { toast(e.message, true); return; }
+  main.innerHTML = monthHtml(r);
+  $('#prev').addEventListener('click', () => month(-1));
+  $('#next').addEventListener('click', () => month(1));
+}
+
+$('#month-btn').addEventListener('click', () => { location.hash = '#/month'; });
+$('#back').addEventListener('click', () => { location.hash = ''; });
+window.addEventListener('hashchange', () => { if (st) home(st); else boot(); });
 boot();

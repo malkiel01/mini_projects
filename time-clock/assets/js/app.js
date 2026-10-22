@@ -182,23 +182,45 @@ function openCompanyPicker() {
   });
 }
 
-/* ===== M2 · בית (בשלב זה — רק הכניסה להגדרות) ===== */
+/* ===== M2 · היום ===== */
 
-function renderHome() {
-  const d = state.data, c = d.company;
+const TZ = 'Asia/Jerusalem';
+const clock = iso => new Date(iso).toLocaleTimeString('he-IL', { timeZone: TZ, hour: '2-digit', minute: '2-digit' });
+
+async function renderHome() {
+  const d = state.data;
   setHeader('היום', { settings: true, tab: '/' });
+  let b;
+  try { b = await api('today_board', { company_id: state.companyId }); }
+  catch (e) { main.innerHTML = `<p class="error" role="alert">${esc(e.message)}</p>`; return; }
+  const STATE = {
+    in: e => [`נכנס ${clock(e.since)} · ${hm(e.minutes)}`, '<span class="chip ok">בעבודה</span>'],
+    done: e => [`${clock(e.first)} · סה״כ ${hm(e.minutes)}`, '<span class="chip">סיים</span>'],
+    none: e => [`תקן ${hm(e.standard)}`, '<span class="chip bad">לא דיווח</span>'],
+    off: () => ['לא יום עבודה', ''],
+  };
+  const order = { in: 0, none: 1, done: 2, off: 3 };
+  const rows = [...b.employees].sort((x, y) => order[x.state] - order[y.state] || x.name.localeCompare(y.name, 'he'));
   const missing = [];
-  if (!d.sites.length) missing.push('סניפים');
-  if (d.team.length < 2) missing.push('צוות');
+  if (d.my_role === 'owner' && !d.sites.length) missing.push('סניפים');
   main.innerHTML = `
-    <p class="empty">דיווח הנוכחות של היום יופיע כאן בשלב הבא. <a href="#/employees">לעובדים ›</a></p>
-    <h2 class="sec-title">החברה</h2>
-    <ul class="list"><li><button class="use-row" type="button" id="go-settings">
-      <span class="use-ic" aria-hidden="true">⚙️</span>
-      <span class="use-tx"><b>${esc(c.name)}</b><small>תקן ${c.days_per_week} ימים · ${hm(c.daily_minutes)} ליום · ${d.sites.length} סניפים · ${d.team.length} בצוות</small></span>
-      <span class="use-go" aria-hidden="true">‹</span></button></li></ul>
-    ${missing.length && d.my_role === 'owner' ? `<p class="hint" style="margin-top:8px">חסר: ${missing.join(', ')}.</p>` : ''}`;
-  $('#go-settings').addEventListener('click', () => { location.hash = '#/settings'; });
+    <dl class="cells" style="grid-template-columns:repeat(3,1fr)">
+      <div><dt>בעבודה</dt><dd>${b.count.in}</dd></div>
+      <div><dt>לא דיווחו</dt><dd>${b.count.none}</dd></div>
+      <div><dt>חסר אתמול</dt><dd>${b.count.missing}</dd></div></dl>
+    ${b.site_only ? `<p class="hint">${esc(siteName(b.site_only))} בלבד.</p>` : ''}
+    <ul class="list" id="board">${rows.length ? rows.map(e => {
+      const [l2, chip] = STATE[e.state](e);
+      return `<li class="card" tabindex="0" role="button" data-id="${e.id}">
+        <span class="avatar" style="--h:${hue(e.name)}" aria-hidden="true">${esc(initials(e.name))}</span>
+        <div class="body"><div class="l1"><span>${esc(e.name)}</span>${e.site_id && !b.site_only ? `<span class="t">${esc(siteName(e.site_id))}</span>` : ''}</div>
+          <div class="l2">${l2}${e.missing_yesterday ? ' · <b style="color:var(--danger)">חסר אתמול</b>' : ''}</div></div>
+        ${chip}</li>`;
+    }).join('') : `<li class="empty">עוד אין עובדים. <a href="#/employees">להוספת עובדים ›</a></li>`}</ul>
+    ${missing.length ? `<p class="hint" style="margin-top:8px">חסר בהגדרות: ${missing.join(', ')}.</p>` : ''}`;
+  const open = ev => { const li = ev.target.closest('[data-id]'); if (li) { sessionStorage.setItem('tc-emp-tab', 'month'); location.hash = '#/employee/' + li.dataset.id; } };
+  $('#board').addEventListener('click', open);
+  $('#board').addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); open(ev); } });
 }
 
 /* ===== M7 · הגדרות: פרטים · סניפים · צוות ===== */
@@ -454,7 +476,7 @@ async function renderEmployee(id) {
   setHeader('כרטיס עובד', { back: '#/employees', tab: '/employees' });
   const d = await api('emp_get', { company_id: state.companyId, id });
   const e = d.employee, canEdit = d.can_edit && e.status === 'active';
-  const tab = sessionStorage.getItem('tc-emp-tab') || 'details';
+  const tab = sessionStorage.getItem('tc-emp-tab') || 'month';
   const status = e.status === 'left' ? `סיים ב-${dateHe(e.end_date)}`
     : e.invite === 'active' ? 'מחובר מהטלפון' : INVITE[e.invite][1];
   main.innerHTML = `
@@ -465,6 +487,7 @@ async function renderEmployee(id) {
     </div>
     ${canEdit ? `<div class="row-btns" style="margin-bottom:12px"><button class="btn" type="button" id="new-link">🔗 ${e.invite === 'none' || e.invite === 'expired' ? 'קישור הפעלה' : 'קישור חדש'}</button></div>` : ''}
     <div class="seg-tabs" role="tablist">
+      <button role="tab" data-tab="month" aria-selected="${tab === 'month'}">📅 נוכחות</button>
       <button role="tab" data-tab="details" aria-selected="${tab === 'details'}">👤 פרטים</button>
       <button role="tab" data-tab="terms" aria-selected="${tab === 'terms'}">📄 תנאים <small>${d.terms_history.length}</small></button>
     </div><div id="pane"></div>
@@ -479,7 +502,18 @@ async function renderEmployee(id) {
     try { const r = await api('emp_invite', { company_id: state.companyId, id }); inviteSheet(r.employee, r.invite_token, () => renderEmployee(id)); }
     catch (err) { toast(err.message, true); }
   });
-  (tab === 'terms' ? paneTerms : paneEmpDetails)($('#pane'), d, canEdit);
+  ({ month: paneMonth, terms: paneTerms, details: paneEmpDetails })[tab]($('#pane'), d, canEdit);
+}
+
+async function paneMonth(pane, d, _canEdit, month = null) {
+  const id = d.employee.id;
+  let r;
+  try { r = await api('emp_month_m', { company_id: state.companyId, id, month }); }
+  catch (e) { pane.innerHTML = `<p class="error" role="alert">${esc(e.message)}</p>`; return; }
+  pane.innerHTML = monthHtml(r);
+  const shift = delta => { const [y, m] = r.month.split('-').map(Number); return new Date(Date.UTC(y, m - 1 + delta, 1)).toISOString().slice(0, 7); };
+  pane.querySelector('#prev').addEventListener('click', () => paneMonth(pane, d, _canEdit, shift(-1)));
+  pane.querySelector('#next').addEventListener('click', () => paneMonth(pane, d, _canEdit, shift(1)));
 }
 
 function paneEmpDetails(pane, d, canEdit) {

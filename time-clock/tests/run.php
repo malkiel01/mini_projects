@@ -1,14 +1,15 @@
 <?php
 /**
  * בדיקות: זהות מהפלטפורמה, חברה, סניפים, צוות והפרדה בין חברות (שלב 1);
- * עובדים, תנאים בגרסאות, קישור הזמנה, הפעלה וקוד, מכשיר והרשאות מנהל סניף (שלב 2).
+ * עובדים, תנאים בגרסאות, קישור הזמנה, הפעלה וקוד, מכשיר והרשאות מנהל סניף (שלב 2);
+ * דיווח, חישוב שעות (משמרת לילה, שעון קיץ, חסר יציאה, כפילות), החודש והמסך "היום" (שלב 3).
  * הרצה: php time-clock/tests/run.php — על מסד זמני, בלי לגעת ב-data/.
  */
 
 declare(strict_types=1);
 
 define('DB_FILE', sys_get_temp_dir() . '/time-clock-test-' . getmypid() . '.sqlite');
-require_once __DIR__ . '/../lib/session.php';
+require_once __DIR__ . '/../lib/attendance.php';
 
 $fails = 0; $n = 0;
 function check(string $name, bool $cond): void {
@@ -153,6 +154,64 @@ $r = empEnd($owner, ['company_id' => $cid, 'id' => $omer, 'end_date' => '2026-10
 check('סיום העסקה', $r['employee']['status'] === 'left' && $r['employee']['invite'] === 'none');
 throws('לעובד שסיים אין קישור חדש', fn() => empInvite($owner, ['company_id' => $cid, 'id' => $omer]));
 throws('סניף עם עובדים לא נמחק', fn() => siteDelete($owner, ['company_id' => $cid, 'id' => $s1]));
+
+
+// ===== שלב 3: דיווח ושעות =====
+$tz = 'Asia/Jerusalem';
+$h = empAdd($owner, ['company_id' => $cid, 'name' => 'שעות', 'site_id' => $s1, 'start_date' => '2026-01-01', 'days_per_week' => 5, 'daily_minutes' => 480])['employee']['id'];
+$z = fn(string $local) => (new DateTimeImmutable($local, new DateTimeZone($tz)))->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d\TH:i:s\Z');
+
+recordPunch($h, 'in', 'phone', null, null, $z('2026-11-10 08:00'));
+throws('לחיצה כפולה בתוך דקה', fn() => recordPunch($h, 'in', 'phone', null, null, $z('2026-11-10 08:00:30')), 409);
+recordPunch($h, 'out', 'phone', null, null, $z('2026-11-10 16:30'));
+recordPunch($h, 'in', 'phone', null, null, $z('2026-11-10 22:00'));
+recordPunch($h, 'out', 'phone', null, null, $z('2026-11-11 06:00'));
+recordPunch($h, 'in', 'phone', null, null, $z('2026-11-12 08:00'));             // שכח לצאת
+recordPunch($h, 'in', 'phone', null, null, $z('2026-11-13 08:00'));
+recordPunch($h, 'out', 'phone', null, null, $z('2026-11-13 17:00'));
+recordPunch($h, 'out', 'phone', null, null, $z('2026-11-15 12:00'));            // יציאה בלי כניסה
+$d = daysReport($h, '2026-11-10', '2026-11-15', $tz, $z('2026-11-20 12:00'));
+check('יום רגיל + משמרת לילה — הכול ביום ההתחלה', $d[0]['minutes'] === 510 + 480 && count($d[0]['pairs']) === 2);
+check('משמרת לילה לא נספרת ביום שאחריו', $d[1]['minutes'] === 0);
+check('כניסה בלי יציאה — חסר יציאה, 0 דקות', $d[2]['missing_out'] === 1 && $d[2]['minutes'] === 0);
+check('היום שאחריו תקין', $d[3]['minutes'] === 540);
+check('יציאה בלי כניסה — חסר כניסה', $d[5]['missing_in'] === 1);
+check('תקן: חמישי 8:00, שישי ושבת 0 (5 ימים)', $d[2]['standard'] === 480 && $d[4]['standard'] === 0 && (int) standardMinutes($h, '2026-11-14') === 0);
+
+// שעון קיץ: הלילה שבו השעון קופץ קדימה (26.3.2027) — 8 שעות על השעון הן 7 בפועל
+recordPunch($h, 'in', 'phone', null, null, $z('2027-03-25 22:00'));
+recordPunch($h, 'out', 'phone', null, null, $z('2027-03-26 06:00'));
+check('מעבר לשעון קיץ — 420 דקות ולא 480', daysReport($h, '2027-03-25', '2027-03-25', $tz, $z('2027-04-01 12:00'))[0]['minutes'] === 420);
+
+$mr = monthReport($h, '2026-11', $tz, $z('2026-11-30 20:00'));
+check('סיכום חודש: ימים, דקות, חוסרים', $mr['summary']['days'] === 2 && $mr['summary']['minutes'] === 510 + 480 + 540 && $mr['summary']['missing'] === 2);
+check('תקן החודש — 22 ימי עבודה (א׳–ה׳) בנובמבר 2026', $mr['summary']['standard'] === 22 * 480 && $mr['summary']['diff'] === 1530 - 22 * 480);
+throws('חודש לא תקין', fn() => monthReport($h, '2026-13', $tz));
+
+// עכשיו: בעבודה מאז
+recordPunch($h, 'in', 'phone', null, null, $z('2027-05-02 08:00'));
+$ns = nowStatus($h, $tz, $z('2027-05-02 10:15'));
+check('בעבודה: הכפתור הבא יציאה, 135 דקות היום', $ns['next'] === 'out' && $ns['minutes_today'] === 135 && count($ns['punches']) === 1);
+check('כניסה פתוחה מלפני יותר מ-16 שעות — הכפתור הבא שוב כניסה', nowStatus($h, $tz, $z('2027-05-03 09:00'))['next'] === 'in');
+
+// מהטלפון: רק חברוּת שהמכשיר מחובר אליה
+$_COOKIE = [];
+$t3 = empInvite($owner, ['company_id' => $cid, 'id' => $dana])['invite_token'];
+$st = empActivateAndLogin(['token' => $t3, 'pin' => '5839']);
+$mine = array_values(array_filter($st['memberships'], fn($m) => $m['id'] === $dana))[0];
+check('emp_state מחזיר מצב — הכפתור הבא כניסה', $mine['status']['next'] === 'in');
+$r = empPunch(['member_id' => $dana, 'kind' => 'in']);
+check('כניסה מהטלפון', $r['status']['next'] === 'out' && $r['status']['open_since'] !== null);
+throws('עובד אחר — לא מהמכשיר הזה', fn() => empPunch(['member_id' => $h, 'kind' => 'in']), 401);
+check('החודש שלי', count(empMonth(['member_id' => $dana])['days']) >= 28);
+
+// "היום" אצל המנהל
+$b = todayBoard($owner, ['company_id' => $cid]);
+$row = array_values(array_filter($b['employees'], fn($e) => $e['id'] === $dana))[0];
+check('היום: דנה בעבודה', $row['state'] === 'in' && $b['count']['in'] >= 1);
+check('עובד שסיים לא מופיע', !in_array($omer, array_column($b['employees'], 'id'), true));
+throws('מנהל סניף אחר לא רואה את החודש של דנה', fn() => empMonthManager($yossi, ['company_id' => $cid, 'id' => $dana]), 404);
+check('מנהל רואה את החודש של עובד', empMonthManager($owner, ['company_id' => $cid, 'id' => $h, 'month' => '2026-11'])['summary']['minutes'] === 1530);
 
 @unlink(DB_FILE); @unlink(DB_FILE . '-wal'); @unlink(DB_FILE . '-shm');
 echo "\n" . ($n - $fails) . "/$n עברו\n";

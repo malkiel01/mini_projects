@@ -209,3 +209,12 @@ dialog > form { display: flex; flex-direction: column; max-height: inherit; heig
 .gate { max-width: 420px; margin: 15vh auto 0; text-align: center; padding: var(--s4); }
 .gate .logo { font-size: 48px; }
 main:focus-visible { outline: 0; }
+
+/* כפתור הדיווח — גדול, אחד, בצבע לפי הפעולה */
+.big { display: block; inline-size: 100%; block-size: 96px; margin-block: var(--s3); border: 0; border-radius: 16px;
+    background: #1e7b3a; color: #fff; font-size: 28px; font-weight: 700; cursor: pointer; }   /* קבוע: גם במצב כהה הלבן נקרא */
+.big.out { background: #b3261e; }
+.big:disabled { opacity: .6; cursor: progress; }
+.state { font-size: 1.15rem; font-weight: 700; }
+.month-nav { align-items: center; }
+.cells { margin-bottom: var(--s3); }
