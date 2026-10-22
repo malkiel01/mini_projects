@@ -19,6 +19,7 @@ require_once __DIR__ . '/../lib/search.php';
 require_once __DIR__ . '/../lib/appcontrol.php';
 require_once __DIR__ . '/../lib/apprequests.php';
 require_once __DIR__ . '/../lib/simulator.php';
+require_once __DIR__ . '/../lib/tasks.php';
 require_once __DIR__ . '/../lib/history.php';
 require_once __DIR__ . '/../lib/enforce.php';
 require_once __DIR__ . '/../lib/devicesettings.php';
@@ -176,6 +177,29 @@ try {
                  'site' => str('url') !== '' ? simulateSite($c, str('url'), str('time'), isset($b['day']) ? (int) $b['day'] : -1,
                                                            isset($b['used_min']) && $b['used_min'] !== '' ? (int) $b['used_min'] : -1) : null,
                  'app'  => str('package') !== '' ? simulateApp($c, str('package')) : null]);
+
+        /* ── אישור לפי משימה (שלב 12 ד) — דפים ומשאבים לזמן מוגבל, במקום היתר קבוע ── */
+        case 'tasks':
+            out(['ok' => true, 'tasks' => tasksOf((int) myChild($parent)['id'])]);
+
+        case 'task_scan':
+            myChild($parent);
+            [$hosts, $err] = taskScan(str('url'));
+            if ($err) fail($err);
+            out(['ok' => true, 'resources' => $hosts]);
+
+        case 'task_add':
+            $c = myChild($parent);
+            $b = body();
+            [$tid, $err] = taskCreate((int) $c['id'], str('title'), (array) ($b['pages'] ?? []), (array) ($b['resources'] ?? []),
+                                      num('minutes'), $pid);
+            if ($err) fail($err);
+            out(['ok' => true, 'task' => $tid, 'tasks' => tasksOf((int) $c['id']), 'child' => detail($parent, (int) $c['id'])]);
+
+        case 'task_end':
+            $c = myChild($parent);
+            if (!taskEnd((int) $c['id'], num('task'))) fail('המשימה כבר הסתיימה');
+            out(['ok' => true, 'tasks' => tasksOf((int) $c['id']), 'child' => detail($parent, (int) $c['id'])]);
 
         /* ── היסטוריית מדיניות, קבלות ושחזור (שלב 12 א+ז) ── */
         case 'history':
