@@ -1083,7 +1083,12 @@ export function createWordEditor(root, opts) {
                         field('הזחה (צעדים של 1.27 ס"מ)', numInput('indent', a.indent || 0, { min: 0, max: 8, step: 1 })),
                         field('שורה ראשונה', h('select', { name: 'flk' }, Object.entries({ '': 'ללא', first: 'הזחה', hang: 'תלויה' })
                             .map(([k, t]) => h('option', { value: k, selected: k === (a.firstLine > 0 ? 'first' : a.firstLine < 0 ? 'hang' : '') }, t)))),
-                        field('בכמה (נקודות)', numInput('flv', a.firstLine ? Math.abs(a.firstLine) : 36, { min: 0, max: 200 })))));
+                        field('בכמה (נקודות)', numInput('flv', a.firstLine ? Math.abs(a.firstLine) : 36, { min: 0, max: 200 })))),
+                // כמו "שורות ומעברי עמוד" ב-Word. כותרת — ממילא נשמרת עם הבא ובשלמותה
+                h('section.group', h('h3', 'שבירת עמודים'),
+                    sw('keepNext', 'שמירה עם הבא — לא נשארת לבד בתחתית העמוד', a.keepNext),
+                    sw('keepLines', 'שמירת שורות יחד — לא נחצית בין עמודים', a.keepLines),
+                    sw('breakBefore', 'מעבר עמוד לפני — מתחילה עמוד חדש', a.breakBefore)));
         }, form => {
             const f = new FormData(form);
             const line = f.get('line');
@@ -1094,6 +1099,7 @@ export function createWordEditor(root, opts) {
                 lineHeight: line === 'exact' ? (ex > 0 ? 'exact:' + ex : null) : (line || null),
                 spaceBefore: n('before'), spaceAfter: n('after'), indent: Math.min(8, Math.round(n('indent') || 0)),
                 firstLine: f.get('flk') && n('flv') ? Math.min(200, n('flv')) * (f.get('flk') === 'hang' ? -1 : 1) : null,
+                keepNext: f.get('keepNext') ? true : null, keepLines: f.get('keepLines') ? true : null, breakBefore: f.get('breakBefore') ? true : null,
             }).run();
         });
     }

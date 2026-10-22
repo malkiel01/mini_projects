@@ -109,6 +109,24 @@ export const ParagraphFormat = Extension.create({
                     parseHTML: el => ptOf(el.style.letterSpacing),
                     renderHTML: a => num(a.letterSpacing) ? { style: `letter-spacing:${a.letterSpacing}pt` } : {},
                 },
+                // שבירת עמודים (כמו ב-Word): שמירה עם הבא, שמירת שורות יחד, מעבר עמוד לפני. העימוד (pagination.js) והשרת
+                // (lib/pdf/layout.php) קוראים אותן; ב-HTML — רק סימון (data-*), כי השבירה בהדפסה היא של העימוד שלנו.
+                // מ-Word (הדבקה): page-break-after:avoid / page-break-inside:avoid / page-break-before:always
+                keepNext: {
+                    default: null,
+                    parseHTML: el => el.hasAttribute('data-keep-next') || /avoid/.test(el.style.pageBreakAfter || el.style.breakAfter || '') || null,
+                    renderHTML: a => a.keepNext ? { 'data-keep-next': '' } : {},
+                },
+                keepLines: {
+                    default: null,
+                    parseHTML: el => el.hasAttribute('data-keep-lines') || /avoid/.test(el.style.pageBreakInside || el.style.breakInside || '') || null,
+                    renderHTML: a => a.keepLines ? { 'data-keep-lines': '' } : {},
+                },
+                breakBefore: {
+                    default: null,
+                    parseHTML: el => el.hasAttribute('data-break-before') || /always|page/.test(el.style.pageBreakBefore || el.style.breakBefore || '') || null,
+                    renderHTML: a => a.breakBefore ? { 'data-break-before': '' } : {},
+                },
             },
         }, {
             types: ['paragraph'],
@@ -131,6 +149,9 @@ export const ParagraphFormat = Extension.create({
                 state.doc.nodesBetween(from, to, (node, pos) => {
                     if (BLOCKS.includes(node.type.name)) tr.setNodeMarkup(pos, undefined, { ...node.attrs, ...attrs });
                 });
+                // צעד ביטול משלו (כמו "אישור" בחלון של Word): בלי זה שני שינויים באותה פסקה בתוך חצי שנייה מתאחדים.
+                // 'closeHistory$' — המפתח של closeHistory ב-prosemirror-history (לא מיוצא מ-vendor/tiptap.js)
+                tr.setMeta('closeHistory$', true);
                 if (dispatch) dispatch(tr);
                 return true;
             },

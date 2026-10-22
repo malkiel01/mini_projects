@@ -111,7 +111,8 @@ final class FlowItem
     public ?int $para = null;      // מזהה הפסקה (לשורות יתומות)
     public int $index = 0;
     public int $count = 1;
-    public bool $keepNext = false; // כותרת — נשארת עם הבא
+    public bool $keepNext = false; // כותרת / "שמור עם הבא" / "שמור שורות יחד" — נשאר עם הפריט הבא
+    public bool $breakBefore = false; // "מעבר עמוד לפני" — השורה הראשונה של הפסקה
     public ?int $table = null;
     public bool $header = false;   // שורת כותרת של טבלה — חוזרת בעמוד הבא
     public array $notes = [];      // הערות שוליים שהסימן שלהן בפריט: [{n, h, draw}] — יוצגו בתחתית העמוד שלו
@@ -470,6 +471,9 @@ final class PdfLayout
 
         $count = count($lines);
         $dir = $rtl ? 1 : 0;
+        // שבירת עמודים (כמו בעורך): "שמור שורות יחד" — רק כשכל הפסקה נכנסת בעמוד
+        $keepNext = !empty($a['keepNext']);
+        $together = !empty($a['keepLines']) && $before + array_sum(array_column($lines, 'h')) + $after <= $this->chH + 0.5;
         foreach ($lines as $k => $ln) {
             $first = $k === 0;
             $last = $k === $count - 1;
@@ -499,7 +503,8 @@ final class PdfLayout
                 for ($q = $ln['from']; $q <= $ln['to']; $q++) if (isset($atoms[$q]['fn'])) $it->notes[] = $atoms[$q]['fn'];
             }
             // "שמור עם הבא" — לכותרות (כמו בעורך); לא לסגנון של משתמש, שהוא פסקה רגילה
-            $it->keepNext = $kind !== 'normal' && !preg_match(USER_STYLE_RE, $kind) && $last;
+            $it->keepNext = $last ? ($keepNext || ($kind !== 'normal' && !preg_match(USER_STYLE_RE, $kind))) : $together;
+            $it->breakBefore = $first && !empty($a['breakBefore']);
             $items[] = $it;
         }
         return $items;
@@ -909,7 +914,8 @@ final class PdfLayout
             $fits = $y + $it->h <= $H + 0.5;
             $atTop = $y < 0.01;
             // הפריט נכנס אבל ההערה האחרונה שלו לא כולה (כמו ב-Word): השורות שנכנסות — כאן, והשאר בראש ההערות של הבא
-            if (!$fits && !$atTop && !$forced && $it->notes && isset($items[$i + 1]) && $items[$i + 1]->kind !== 'force') {
+            $pb = $it->breakBefore && !$atTop;   // "מעבר עמוד לפני": שוברים לפניה, בלי תיקונים
+            if (!$pb && !$fits && !$atTop && !$forced && $it->notes && isset($items[$i + 1]) && $items[$i + 1]->kind !== 'force') {
                 $before = array_merge($pageNotes(), array_slice($it->notes, 0, -1));
                 $last = end($it->notes);
                 $room = $this->chH - $y - $it->h - self::FN_SEP - array_sum(array_column($before, 'h'));
@@ -925,7 +931,7 @@ final class PdfLayout
                     continue;
                 }
             }
-            $break = (!$fits && !$atTop) || $forced;
+            $break = (!$fits && !$atTop) || $forced || $pb;
             if (!$break && !$atTop) {
                 // שורה ראשונה של פסקה בתחתית העמוד, כשהשנייה כבר לא נכנסת — עוברת איתה
                 if ($it->kind === 'line' && $it->index === 0 && $it->count >= 2 && isset($items[$i + 1]) && $y + $it->h + $items[$i + 1]->h > $H + 0.5) $break = true;
@@ -937,9 +943,20 @@ final class PdfLayout
             if ($break) {
                 // כותרת שלפני — עוברת גם היא (אם אינה ראשונה בעמוד)
                 $moved = [];
-                while (!$forced && $pages[count($pages) - 1] && end($pages[count($pages) - 1])[0]->keepNext && count($pages[count($pages) - 1]) > 1) {
-                    $moved[] = array_pop($pages[count($pages) - 1])[0];
+                $cur = &$pages[count($pages) - 1];
+                while (!$forced && !$pb && $cur && end($cur)[0]->keepNext && count($cur) > 1) {
+                    $moved[] = array_pop($cur)[0];
                 }
+                // המעבר נפל באמצע פסקה (שמור עם הבא / שורות יחד): לפחות 2 שורות שלה בכל צד — כמו בעורך
+                $e = $moved ? end($moved) : null;
+                if ($e && $e->kind === 'line' && $e->index > 0) {
+                    if ($e->index < 2) {
+                        while (count($cur) > 1 && end($cur)[0]->para === $e->para) $moved[] = array_pop($cur)[0];
+                    } elseif ($e->count - $e->index < 2 && $e->index >= 3 && count($cur) > 1) {
+                        $moved[] = array_pop($cur)[0];
+                    }
+                }
+                unset($cur);
                 $newPage();
                 // שורת הכותרת של טבלה שנמשכת — חוזרת בראש העמוד
                 if ($it->kind === 'row' && $it->table && isset($headers[$it->table]) && $headers[$it->table] !== $it) {

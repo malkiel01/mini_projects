@@ -306,6 +306,7 @@ function measure(view, g) {
         return { top: logical((r.top - rr.top) / zoom), bottom: logical((r.bottom - rr.top) / zoom) };
     };
 
+    const maxH = Math.min(...(g.sections || [g]).map(x => x.contentH));   // "שמור שורות יחד" — רק לפסקה שנכנסת בעמוד
     // at — לאן מכניסים רווח לפני הבלוק הראשון בפריט רשימה: לפני הפריט, כדי שהתבליט יעבור איתו
     const visit = (node, pos, at = null) => {
         node.forEach((child, offset) => {
@@ -320,7 +321,7 @@ function measure(view, g) {
                 return;
             }
             if (CONTAINERS.has(name)) { visit(child, cpos + 1, name === 'listItem' ? brk : (offset === 0 ? at : null)); return; }
-            if (TEXTBLOCKS.has(name)) { lines(view, dom, child, cpos, brk, logical, rr, zoom, units, name === 'heading'); return; }
+            if (TEXTBLOCKS.has(name)) { lines(view, dom, child, cpos, brk, logical, rr, zoom, units, name === 'heading', maxH); return; }
             if (name === 'table') { rows(view, child, cpos, brk, box, units); return; }
             const b = box(dom);
             units.push({ top: b.top, bottom: b.bottom, pos: brk, kind: 'block' });
@@ -384,11 +385,13 @@ function measure(view, g) {
             firstOnPage = ++i;
             continue;
         }
-        const withNotes = areaH([...notesOf(firstOnPage, i), ...(u.notes || [])]);
-        if (i === firstOnPage || u.bottom - pageTop + withNotes <= secs[s].contentH + 0.5) { i++; continue; }
+        // "מעבר עמוד לפני" (פסקה): שוברים לפניה, בלי תיקונים — אלא אם היא כבר ראשונה בעמוד
+        const pb = u.breakBefore && i > firstOnPage;
+        const withNotes = pb ? 0 : areaH([...notesOf(firstOnPage, i), ...(u.notes || [])]);
+        if (!pb && (i === firstOnPage || u.bottom - pageTop + withNotes <= secs[s].contentH + 0.5)) { i++; continue; }
         // השורה נכנסת אבל ההערה האחרונה שלה לא כולה: לפחות שורה אחת של ההערה בעמוד הזה, והשאר ממשיך בעמוד הבא
         const next = units[i + 1];
-        if (u.notes?.length && next && next.kind !== 'force') {
+        if (!pb && u.notes?.length && next && next.kind !== 'force') {
             const before = [...notesOf(firstOnPage, i), ...u.notes.slice(0, -1)];
             const lastNote = u.notes[u.notes.length - 1];
             const room = secs[s].contentH - (u.bottom - pageTop) - FN_SEP - before.reduce((t, n) => t + shownH(n), 0);
@@ -410,15 +413,24 @@ function measure(view, g) {
         // לא נכנס — שוברים לפני u, עם תיקונים:
         let j = i;
         // שורות יתומות: לפחות 2 שורות של הפסקה בעמוד הזה, ו-2 בבא
-        if (u.kind === 'line' && !u.first) {
-            const start = units.findIndex(x => x.para === u.para);
-            const total = units.filter(x => x.para === u.para).length;
-            const before = i - start;
-            if (before < 2) j = start;
-            else if (total - before < 2 && before >= 3) j = i - 1;
+        const orphans = k => {
+            const x = units[k];
+            if (x.kind !== 'line' || x.first) return k;
+            const start = units.findIndex(y => y.para === x.para);
+            const total = units.filter(y => y.para === x.para).length;
+            const before = k - start;
+            if (before < 2) return start;
+            if (total - before < 2 && before >= 3) return k - 1;
+            return k;
+        };
+        if (!pb) {
+            j = orphans(i);
+            // "שמור עם הבא" (כותרת, או פסקה שסומנה) ו"שמור שורות יחד" — עוברות יחד עם מה שאחריהן
+            const k0 = j;
+            while (j - 1 > firstOnPage && units[j - 1].heading) j--;
+            // אם המעבר נפל באמצע פסקה — שוב לפחות 2 שורות שלה בכל צד (כמו ב-PDF)
+            if (j !== k0) j = orphans(j);
         }
-        // כותרת לא נשארת לבד בתחתית העמוד
-        while (j - 1 > firstOnPage && units[j - 1].heading) j--;
         if (j <= firstOnPage) j = i;
         const used = units[j].top - pageTop;
         const rep = units[j].repeat;   // שורה באמצע טבלה: גם השבירה בתוך הטבלה, וגם שורת הכותרת חוזרת (תופסת מקום)
@@ -464,8 +476,9 @@ function rows(view, table, tpos, brk, box, units) {
     });
 }
 
-function lines(view, dom, node, pos, brk, logical, rr, zoom, units, heading) {
+function lines(view, dom, node, pos, brk, logical, rr, zoom, units, heading, maxH) {
     const para = pos;
+    const { keepNext, keepLines, breakBefore } = node.attrs;
     const rects = [];
     const walker = document.createTreeWalker(dom, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, {
         acceptNode: n => {
@@ -497,7 +510,7 @@ function lines(view, dom, node, pos, brk, logical, rr, zoom, units, heading) {
     const blockTop = logical((box.top - rr.top) / zoom);
     const blockBottom = logical((box.bottom - rr.top) / zoom);
     if (rects.length < 2) {
-        units.push({ top: blockTop, bottom: blockBottom, pos: brk, kind: 'block', para, heading, first: true, last: true });
+        units.push({ top: blockTop, bottom: blockBottom, pos: brk, kind: 'block', para, heading: heading || !!keepNext, breakBefore: !!breakBefore, first: true, last: true });
         return;
     }
     // קיבוץ לשורות: מלבן שמתחיל לפני סוף השורה הנוכחית (פחות חצי גובה) — באותה שורה
@@ -511,9 +524,11 @@ function lines(view, dom, node, pos, brk, logical, rr, zoom, units, heading) {
         } else ls.push([t, b, et, eb]);
     }
     if (ls.length < 2 || heading) {
-        units.push({ top: blockTop, bottom: blockBottom, pos: brk, kind: 'block', para, heading, first: true, last: true });
+        units.push({ top: blockTop, bottom: blockBottom, pos: brk, kind: 'block', para, heading: heading || !!keepNext, breakBefore: !!breakBefore, first: true, last: true });
         return;
     }
+    // "שמור שורות יחד": כל שורה (חוץ מהאחרונה) נשארת עם הבאה — רק כשכל הפסקה נכנסת בעמוד (כמו ב-Word)
+    const together = keepLines && blockBottom - blockTop <= maxH + 0.5;
     const start = pos + 1;
     const end = pos + node.nodeSize - 1;
     // שורה = כל גובה השורה (line-height), לא רק גובה האותיות — כך מודד גם ה-PDF מהשרת, ושורה שרק האותיות שלה
@@ -525,7 +540,8 @@ function lines(view, dom, node, pos, brk, logical, rr, zoom, units, heading) {
         const top = k === 0 ? blockTop : cut(k - 1);
         const bottom = k === ls.length - 1 ? blockBottom : cut(k);
         // המיקום במסמך נחשב רק לשורה שבאמת נשברת (חיפוש בינארי — יקר במסמך ארוך)
-        const u = { top, bottom, kind: 'line', para, heading: false, first: k === 0, last: k === ls.length - 1 };
+        const last = k === ls.length - 1;
+        const u = { top, bottom, kind: 'line', para, heading: last ? !!keepNext : !!together, breakBefore: k === 0 && !!breakBefore, first: k === 0, last };
         if (k === 0) u.pos = brk;
         else Object.defineProperty(u, 'pos', { get() { return this._p ??= lineStart(view, start, end, t); } });
         units.push(u);

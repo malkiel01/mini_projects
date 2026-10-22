@@ -168,6 +168,10 @@ function block_style(array $a): string
     if (!empty($a['indent'])) $s .= 'margin-inline-start:' . ((int)$a['indent'] * 36) . 'pt;';
     $s .= first_line_css($a['firstLine'] ?? null);
     if (!empty($a['letterSpacing']) && is_numeric($a['letterSpacing'])) $s .= 'letter-spacing:' . (float)$a['letterSpacing'] . 'pt;';
+    // שבירת עמודים בהדפסה של ה-HTML (וגם מה ש-Word קורא כשמדביקים ממנו)
+    if (!empty($a['keepNext'])) $s .= 'break-after:avoid;page-break-after:avoid;';
+    if (!empty($a['keepLines'])) $s .= 'break-inside:avoid;page-break-inside:avoid;';
+    if (!empty($a['breakBefore'])) $s .= 'break-before:page;page-break-before:always;';
     return $s;
 }
 
@@ -496,6 +500,10 @@ final class Ooxml
         $rtl = ($a['dir'] ?? 'rtl') !== 'ltr';
         $ppr = '';
         if ($style) $ppr .= '<w:pStyle w:val="' . $this->styleId($style) . '"/>';
+        // שבירת עמודים — בסדר שהסכמה של Word דורשת (אחרי pStyle, לפני numPr)
+        if (!empty($a['keepNext'])) $ppr .= '<w:keepNext/>';
+        if (!empty($a['keepLines'])) $ppr .= '<w:keepLines/>';
+        if (!empty($a['breakBefore'])) $ppr .= '<w:pageBreakBefore/>';
         if ($num) $ppr .= '<w:numPr><w:ilvl w:val="' . $num['lvl'] . '"/><w:numId w:val="' . $num['num'] . '"/></w:numPr>';
         if ($rtl) $ppr .= '<w:bidi/>';
         $sp = '';

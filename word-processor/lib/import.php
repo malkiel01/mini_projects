@@ -478,6 +478,11 @@ final class DocxCtx
                 $attrs['lineHeight'] = $rule === 'auto' ? (string)round($line / 240, 2) : 'exact:' . round($line / 20, 1);
             }
         }
+        // שבירת עמודים (בפסקה עצמה; בכותרות — ממילא נשמרות עם הבא). w:val="0"/"false" — כבוי
+        foreach (['keepNext' => 'keepNext', 'keepLines' => 'keepLines', 'pageBreakBefore' => 'breakBefore'] as $tag => $key) {
+            $el = $xp->query("w:pPr/w:$tag", $p)->item(0);
+            if ($el instanceof DOMElement && !in_array($el->getAttributeNS(W, 'val'), ['0', 'false', 'off'], true)) $attrs[$key] = true;
+        }
         if ($xp->query('w:pPr/w:pBdr/*[@w:val!="nil" and @w:val!="none"]', $p)->length
             || preg_match('/^[0-9A-Fa-f]{6}$/', $f = (string)$xp->evaluate('string(w:pPr/w:shd/@w:fill)', $p)) && strtoupper($f) !== 'FFFFFF') $this->note('pborder');
         $num = null;
