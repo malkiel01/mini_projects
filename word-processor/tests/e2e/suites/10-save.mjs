@@ -13,6 +13,13 @@ export default async function (t) {
     t.ok('אחרי הקלדה: לא נשמר', (await state()) === 'לא נשמר', await state());
     await p.waitForTimeout(2500);
     t.ok('אחרי שנייה וחצי: נשמר', (await state()).includes('נשמר'), await state());
+    // שמירה ידנית (Ctrl+S): נשמר מיד, בלי לחכות להשהיה של השמירה האוטומטית
+    await p.keyboard.type(' ועוד');
+    t.ok('הקלדה נוספת — לא נשמר', (await state()) === 'לא נשמר', await state());
+    await p.keyboard.press('Control+s');
+    await p.waitForTimeout(400);
+    const saved0 = await t.api(p, 'my_open', { doc });
+    t.ok('Ctrl+S — נשמר מיד (לפני השמירה האוטומטית)', (await state()).includes('נשמר') && JSON.stringify(saved0.json).includes('ועוד'), await state());
     let s = await srv();
     t.ok('השרת קיבל את הטקסט', JSON.stringify(s.json).includes('שלום עולם'));
     const v1 = s.version;

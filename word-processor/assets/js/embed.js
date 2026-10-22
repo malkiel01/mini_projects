@@ -200,6 +200,7 @@ function reportHeight() {
             get: id => api('embed_load', { op: 'version', id }),
         },
         onUpdate: changed,
+        save: () => save(),
         // הגדרות העמוד בתוך המסמך — נשמרות איתו; למארחת רק מודיעים (page)
         onPage: settings => post('page', { settings }),
     });

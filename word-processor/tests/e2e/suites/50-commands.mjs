@@ -69,6 +69,28 @@ export default async function (t) {
     await p.keyboard.type(' שלוש מילים נוספות');
     await p.waitForTimeout(500);
     const st = [await p.locator('.wp-statusbar .st-page').textContent(), await p.locator('.wp-statusbar .st-words').textContent()];
+    // חיפוש פקודה (Alt+Q): מסנן לפי שם, Enter מפעיל; פקודה שצריכה ערך — מתמקד בפקד שלה; פקודה לא זמינה — מסומנת
+    await p.keyboard.press('Control+a');
+    await p.keyboard.press('Alt+q');
+    t.ok('Alt+Q — המיקוד בחיפוש', await p.evaluate(() => document.activeElement.classList.contains('rb-search-in')));
+    await p.keyboard.type('נטו');
+    t.ok('חיפוש: "נטו" → נטוי ראשון', (await p.locator('.rb-results li[aria-selected="true"] .lb').textContent()) === 'נטוי');
+    await p.keyboard.press('Enter');
+    t.ok('Enter מפעיל (נטוי על הבחירה), והחיפוש נסגר', await p.locator('.wp-doc em').count() > 0 && await p.locator('.rb-results').isHidden());
+    await p.keyboard.press('Alt+q');
+    await p.keyboard.type('גודל גופן');
+    await p.keyboard.press('Enter');
+    t.ok('פקודה עם ערך (גודל גופן) — המיקוד בפקד שלה', await p.evaluate(() => document.activeElement.getAttribute('aria-label')) === 'גודל גופן');
+    await p.keyboard.press('Alt+q');
+    await p.keyboard.type('מחיקת הטבלה');
+    t.ok('פקודה לא זמינה כאן — מסומנת', await p.getAttribute('.rb-results li >> nth=0', 'aria-disabled') === 'true');
+    await p.keyboard.press('Escape');
+    // תצוגה לפני הדפסה: בלי הסרט, קריאה בלבד; Escape — חזרה
+    await t.tool(p, 'תצוגה לפני הדפסה');
+    t.ok('תצוגה לפני הדפסה: הסרט מוסתר, המסמך לקריאה בלבד', await p.locator('.wp-preview-bar').isVisible() && await p.locator('.wp-ribbon').isHidden()
+        && await p.getAttribute('.wp-doc', 'contenteditable') === 'false');
+    await p.keyboard.press('Escape');
+    t.ok('Escape — חזרה לעריכה', await p.locator('.wp-ribbon').isVisible() && await p.getAttribute('.wp-doc', 'contenteditable') === 'true');
     const words = await p.evaluate(() => (document.querySelector('.wp-doc').innerText.match(/[^\s]+/g) || []).length);
     t.ok('שורת המצב: עמוד X מתוך Y ומספר מילים', st[0] === 'עמוד 1 מתוך 1' && st[1] === `${words} מילים` && words >= 3, st.join(' | ') + ` (במסמך: ${words})`);
     t.ok('בלי שגיאות JS', !p.errors.length, p.errors.join(' | '));

@@ -89,7 +89,10 @@ export const COMMANDS = [
     // ---------- פריסה וקובץ ----------
     { id: 'pageSetup', label: 'הגדרות עמוד ומספור עמודים', icon: '📄', group: 'layout', run: x => x.ui.pageSetup() },
     { id: 'editStyles', label: 'עריכת סגנונות', icon: '🅰', group: 'layout', run: x => x.ui.styles() },
+    { id: 'save', label: 'שמירה', icon: '💾', keys: 'Ctrl+S', group: 'file', when: x => !!x.ui.save, run: x => x.ui.save() },
     { id: 'print', label: 'הדפסה / PDF', icon: '🖨', group: 'file', edit: false, run: x => x.ui.print() },
+    { id: 'printPreview', label: 'תצוגה לפני הדפסה', icon: '🔍', group: 'file', edit: false, run: x => x.ui.printPreview() },
+    { id: 'commandSearch', label: 'חיפוש פקודה', icon: '⌕', keys: 'Alt+Q', group: 'view', edit: false, run: x => x.ui.commandSearch() },
     { id: 'versions', label: 'גרסאות', icon: '🕘', group: 'file', edit: false, when: x => !!x.ui.versions, run: x => x.ui.versions() },
 
     // ---------- תצוגה (גם בקריאה בלבד) ----------
