@@ -19,6 +19,7 @@ require_once __DIR__ . '/../lib/search.php';
 require_once __DIR__ . '/../lib/appcontrol.php';
 require_once __DIR__ . '/../lib/apprequests.php';
 require_once __DIR__ . '/../lib/simulator.php';
+require_once __DIR__ . '/../lib/history.php';
 require_once __DIR__ . '/../lib/enforce.php';
 require_once __DIR__ . '/../lib/devicesettings.php';
 require_once __DIR__ . '/../lib/signing.php';
@@ -145,6 +146,27 @@ try {
     // סיסמה זמנית — שום דבר אחר עד שהוחלפה.
     if (!$viaPlatform && $parent['must_change_pw']) fail('יש לבחור סיסמה חדשה לפני שממשיכים', 403, 'must_change');
 
+    /*
+     * היסטוריית מדיניות (lib/history.php): לפני השינוי הראשון — גרסת בסיס; אחרי כל שינוי — גרסה, מי ומה.
+     * הרישום בסוף הבקשה (shutdown), כשהשינוי כבר נשמר; שינוי שלא שינה דבר לא נרשם.
+     */
+    $histActions = ['child_save', 'youtube', 'yt_add', 'yt_del', 'rule_add', 'rule_del', 'rule_toggle', 'device_setting',
+                    'apps_posture', 'app_rule', 'report_level', 'request_decide', 'app_request_decide'];
+    if (in_array($action, $histActions, true)) {
+        $histChild = str_ends_with($action, 'request_decide')
+            ? (int) (one('SELECT child_id FROM access_requests WHERE id = ? AND account_id = ?', [num('req'), $aid])['child_id'] ?? 0)
+            : (int) (childOf($aid, num('id'))['id'] ?? 0);
+        if ($histChild) {
+            if (!one('SELECT id FROM policy_versions WHERE child_id = ? LIMIT 1', [$histChild])) {
+                policyVersionRecord($histChild, 0, 'לפני תחילת התיעוד');
+            }
+            register_shutdown_function(function () use ($histChild, $pid, $action) {
+                try { policyVersionRecord($histChild, $pid, $action); }
+                catch (Throwable $e) { error_log('migdalor history: ' . $e->getMessage()); }
+            });
+        }
+    }
+
     switch ($action) {
         /* ── סימולטור הרשאות (שלב 12 ב) — קריאה בלבד ── */
         case 'simulate':
@@ -154,6 +176,22 @@ try {
                  'site' => str('url') !== '' ? simulateSite($c, str('url'), str('time'), isset($b['day']) ? (int) $b['day'] : -1,
                                                            isset($b['used_min']) && $b['used_min'] !== '' ? (int) $b['used_min'] : -1) : null,
                  'app'  => str('package') !== '' ? simulateApp($c, str('package')) : null]);
+
+        /* ── היסטוריית מדיניות, קבלות ושחזור (שלב 12 א+ז) ── */
+        case 'history':
+            out(['ok' => true, 'history' => policyHistory((int) myChild($parent)['id'])]);
+
+        case 'history_compare':
+            $diff = policyCompare((int) myChild($parent)['id'], num('version'));
+            if ($diff === null) fail('הגרסה לא נמצאה', 404);
+            out(['ok' => true, 'changes' => $diff]);
+
+        case 'history_restore':
+            $c = myChild($parent);
+            [$vid, $err] = policyRestore((int) $c['id'], num('version'), $pid);
+            if ($err) fail($err);
+            out(['ok' => true, 'message' => $vid ? 'שוחזר — המכשיר יקבל את זה בסנכרון הבא' : 'זה כבר המצב הנוכחי',
+                 'history' => policyHistory((int) $c['id']), 'child' => detail($parent, (int) $c['id'])]);
 
         case 'children':
             $rows = all('SELECT * FROM users WHERE account_id = ? AND is_admin = 0

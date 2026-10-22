@@ -10,6 +10,10 @@ const STYLE_KEYS = ['title', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'h7', 'h8', 'h9
 /** סגנון שהמשתמש יצר: u1, u2… (עם name). עד USER_STYLES_MAX. */
 const USER_STYLE_RE = '/^u[1-9]\d{0,2}$/';
 const USER_STYLES_MAX = 60;
+/** סוגי קו תחתון (underline.attrs.ul) — מעבר ל"רגיל". */
+const UNDERLINES = ['double', 'dotted', 'dashed', 'wavy', 'thick'];
+/** עצירות טאב: כל חצי אינץ' (36 נק'), כמו ברירת המחדל של Word ו-tab-size בעורך. */
+const TAB_STOP = 36.0;
 const FONTS = ['Arial', 'David', 'Frank Ruehl', 'Narkisim', 'Miriam', 'Times New Roman', 'Calibri', 'Tahoma',
     'David Libre', 'Frank Ruhl Libre', 'Miriam Libre', 'Heebo', 'Assistant', 'Rubik', 'Alef'];
 

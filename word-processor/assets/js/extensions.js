@@ -94,6 +94,16 @@ export const ParagraphFormat = Extension.create({
                     parseHTML: el => ptOf(el.style.marginBottom || el.style.paddingBottom),
                     renderHTML: a => num(a.spaceAfter) !== null ? { style: `padding-bottom:${a.spaceAfter}pt` } : {},
                 },
+                // שורה ראשונה (נק'): חיובי — הזחה, שלילי — תלויה (כל השאר זזות פנימה). כמו first_line_css בשרת
+                firstLine: {
+                    default: null,
+                    parseHTML: el => { const v = ptOf(el.style.textIndent); return v ? Math.max(-200, Math.min(200, v)) : null; },
+                    renderHTML: a => {
+                        const v = num(a.firstLine);
+                        if (!v) return {};
+                        return { style: `text-indent:${v}pt` + (v < 0 ? `;padding-inline-start:${-v}pt` : '') };
+                    },
+                },
                 letterSpacing: {
                     default: null,
                     parseHTML: el => ptOf(el.style.letterSpacing),
@@ -143,7 +153,14 @@ export const ParagraphFormat = Extension.create({
     addKeyboardShortcuts() {
         const inList = ed => ed.isActive('listItem');
         return {
-            Tab: () => inList(this.editor) ? this.editor.commands.sinkListItem('listItem') : this.editor.commands.changeIndent(1),
+            // Tab: ברשימה — רמה פנימה; בתחילת פסקה — הזחה; באמצע הטקסט — תו טאב (כמו ב-Word)
+            Tab: () => {
+                const ed = this.editor;
+                if (inList(ed)) return ed.commands.sinkListItem('listItem');
+                const { empty, $from } = ed.state.selection;
+                if (empty && $from.parentOffset > 0 && $from.parent.isTextblock) return ed.commands.insertContent('\t');
+                return ed.commands.changeIndent(1);
+            },
             'Shift-Tab': () => inList(this.editor) ? this.editor.commands.liftListItem('listItem') : this.editor.commands.changeIndent(-1),
             'Mod-Enter': () => this.editor.commands.insertPageBreak(),
         };
@@ -458,6 +475,20 @@ export const Bookmark = Node.create({
     },
 });
 
+/** סוגי קו תחתון (underline.attrs.ul) — כמו UNDERLINES ב-lib/page.php. ריק = רגיל. */
+export const UNDERLINES = { '': 'קו רגיל', double: 'כפול', dotted: 'מנוקד', dashed: 'מקווקו', wavy: 'גלי', thick: 'עבה' };
+const UnderlineStyle = Extension.create({
+    name: 'wpUnderlineStyle',
+    addGlobalAttributes() {
+        return [{ types: ['underline'], attributes: { ul: {
+            default: null,
+            parseHTML: el => { const s = el.getAttribute('data-ul') || el.style.textDecorationStyle; return s && s !== 'solid' && UNDERLINES[s] ? s : null; },
+            renderHTML: a => (UNDERLINES[a.ul] && a.ul
+                ? { 'data-ul': a.ul, style: a.ul === 'thick' ? 'text-decoration-thickness:0.12em' : `text-decoration-style:${a.ul}` } : {}),
+        } } }];
+    },
+});
+
 /** כל הסימניות במסמך: [{name, pos}] (לפי הסדר). */
 export function bookmarks(doc) {
     const out = [];
@@ -700,7 +731,7 @@ export function extensions(extra = []) {
         Highlight.configure({ multicolor: true }),
         Subscript, Superscript,
         TextAlign.configure({ types: BLOCKS, alignments: ['right', 'center', 'left', 'justify'], defaultAlignment: null }),
-        ParagraphFormat, PageBreak, SectionBreak, Footnote, WpImage, LetterSpacing, Link, Bookmark,
+        ParagraphFormat, PageBreak, SectionBreak, Footnote, WpImage, LetterSpacing, Link, Bookmark, UnderlineStyle,
         Table.configure({ resizable: true, cellMinWidth: 30, allowTableNodeSelection: true }),
         TableRow, Cell, HeaderCell,
         DocAttrs,

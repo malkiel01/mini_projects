@@ -541,6 +541,10 @@ function lineStart(view, lo, hi, lineTop) {
         try { top = view.coordsAtPos(mid, 1).top; } catch { top = lineTop; }
         if (top >= lineTop - 2) b = mid; else a = mid + 1;
     }
+    // שורה שנשברה לא מתחילה ברווח / טאב: אלה "תלויים" בסוף השורה הקודמת (גם ב-PDF). טאב תלוי מדווח לפעמים
+    // במיקום של השורה הבאה — והשבירה הייתה נכנסת לפניו, והטאב היה פותח את השורה בעמוד הבא (ומזיז אותה)
+    const doc = view.state.doc;
+    while (a < hi && /^[ \t]$/.test(doc.textBetween(a, a + 1, '', ''))) a++;
     return a;
 }
 

@@ -120,6 +120,22 @@ function migrate(PDO $pdo): void {
     if (!in_array('perms', $columns('devices'), true)) {
         $pdo->exec("ALTER TABLE devices ADD COLUMN perms INTEGER NOT NULL DEFAULT 0");
     }
+    // היסטוריית מדיניות וקבלות (lib/history.php, שלב 12 א+ז).
+    $pdo->exec("CREATE TABLE IF NOT EXISTS policy_versions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, child_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        by_parent INTEGER NOT NULL DEFAULT 0, source TEXT NOT NULL DEFAULT '', rev TEXT NOT NULL DEFAULT '',
+        hash TEXT NOT NULL DEFAULT '', snapshot TEXT NOT NULL DEFAULT '', summary TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL)");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_pv_child ON policy_versions(child_id, id)");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS policy_receipts (
+        version_id INTEGER NOT NULL REFERENCES policy_versions(id) ON DELETE CASCADE,
+        device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+        received_at TEXT NOT NULL DEFAULT '', applied_at TEXT NOT NULL DEFAULT '',
+        state TEXT NOT NULL DEFAULT '', detail TEXT NOT NULL DEFAULT '',
+        PRIMARY KEY (version_id, device_id))");
+    if (!in_array('policy_version', $columns('devices'), true)) {
+        $pdo->exec("ALTER TABLE devices ADD COLUMN policy_version INTEGER NOT NULL DEFAULT 0");
+    }
     // המדיניות האחרונה שהמכשיר משך (rev) — "התקבל במכשיר", עוד לפני שדיווח שהחיל (lib/enforce.php).
     if (!in_array('policy_rev', $columns('devices'), true)) {
         $pdo->exec("ALTER TABLE devices ADD COLUMN policy_rev TEXT NOT NULL DEFAULT ''");

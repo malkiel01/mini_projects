@@ -190,6 +190,8 @@ html.wp-no-page-zoom, html.wp-no-page-zoom body, .wp-editor, .wp-stage { touch-a
 .wp-doc p, .wp-doc h1, .wp-doc h2, .wp-doc h3, .wp-doc h4, .wp-doc h5, .wp-doc h6, .wp-doc h7, .wp-doc h8, .wp-doc h9 { margin: 0; min-height: 1em; }
 /* כותרות 7–9: אין תגית HTML כזו — הדפדפן מציג אותן בשורה, אז במפורש בלוק */
 .wp-doc h7, .wp-doc h8, .wp-doc h9 { display: block; }
+/* עצירות טאב כל חצי אינץ' — כמו ב-Word וב-PDF (TAB_STOP) */
+.wp-doc { tab-size: 36pt; }
 .wp-doc ul, .wp-doc ol { margin: 0; padding-inline-start: 24pt; }
 .wp-doc ol[data-list="hebrew"] { list-style-type: hebrew; }
 .wp-doc ol[data-list="roman"] { list-style-type: lower-roman; }
