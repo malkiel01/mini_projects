@@ -139,7 +139,7 @@ export const COMMANDS = [
     { id: 'image.rotateLeft', label: 'סיבוב שמאלה', icon: '⟲', group: 'image', when: isImage, run: x => imgSet(x, { rotate: ((imgAttrs(x).rotate || 0) + 270) % 360 }) },
     { id: 'image.rotateRight', label: 'סיבוב ימינה', icon: '⟳', group: 'image', when: isImage, run: x => imgSet(x, { rotate: ((imgAttrs(x).rotate || 0) + 90) % 360 }) },
     { id: 'image.crop', label: 'חיתוך', icon: '✂', group: 'image', when: isImage, run: x => x.ui.crop(x.editor.state.selection.from) },
-    { id: 'image.props', label: 'כיתוב, מרחק מהטקסט ותיאור', icon: '⚙', group: 'image', when: isImage, run: x => x.ui.imageProps(x.editor.state.selection.from) },
+    { id: 'image.props', label: 'גודל, מיקום, כיתוב ותיאור', icon: '⚙', group: 'image', when: isImage, run: x => x.ui.imageProps(x.editor.state.selection.from) },
     { id: 'image.delete', label: 'מחיקת התמונה', icon: '🗑', group: 'image', when: isImage, run: x => x.chain().deleteSelection().run() },
 ];
 
