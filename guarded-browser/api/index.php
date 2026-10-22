@@ -27,6 +27,7 @@ require_once __DIR__ . '/../lib/devicesettings.php';
 require_once __DIR__ . '/../lib/heartbeat.php';
 require_once __DIR__ . '/../lib/enforce.php';
 require_once __DIR__ . '/../lib/apprequests.php';
+require_once __DIR__ . '/../lib/history.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -338,6 +339,7 @@ try {
         // "התקבל במכשיר" — המכשיר משך את המדיניות הזו. ההחלה עצמה — בדוח האכיפה (enforce_report).
         q('UPDATE devices SET policy_rev = ?, policy_rev_at = ? WHERE id = ?',
           [(string) $payload['rev'], nowIso(), (int) $user['device_row_id']]);
+        receiptReceived((int) $user['id'], (int) $user['device_row_id']);   // קבלה: התקבל במכשיר (lib/history.php)
         out($payload);
     }
 
@@ -476,6 +478,7 @@ try {
     if ($do === 'enforce_report') {
         $user = requireUser();
         enforceReportSave((int) $user['device_row_id'], (array) body());
+        receiptApplied((int) $user['device_row_id'], (array) body());        // קבלה: הוחל / נכשל (lib/history.php)
         out(['ok' => true]);
     }
 
