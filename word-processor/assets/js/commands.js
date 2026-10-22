@@ -108,6 +108,7 @@ export const COMMANDS = [
     { id: 'insertTable', label: 'טבלה', icon: '▦', group: 'insert', run: x => x.ui.table() },
     { id: 'insertImage', label: 'תמונה', icon: '🖼', group: 'insert', run: x => x.ui.image() },
     { id: 'footnote', label: 'הערת שוליים', icon: '¹', keys: 'Ctrl+Alt+F', group: 'insert', run: x => x.ui.footnote() },
+    { id: 'endnote', label: 'הערת סיום', icon: 'ⁱ', keys: 'Ctrl+Alt+D', group: 'insert', run: x => x.ui.endnote() },
     { id: 'link', label: 'קישור', icon: '🔗', keys: 'Ctrl+K', group: 'insert', run: x => x.ui.link(), active: x => x.editor.isActive('link') },
     { id: 'unlink', label: 'הסרת קישור', icon: '⛓', group: 'insert', enabled: x => x.editor.isActive('link'), run: x => x.chain().unsetLink().run() },
     { id: 'insertToc', label: 'הוספת תוכן עניינים', icon: '📑', group: 'insert', run: x => x.ui.insertToc() },

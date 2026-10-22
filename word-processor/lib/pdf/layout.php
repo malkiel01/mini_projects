@@ -143,6 +143,7 @@ final class PdfLayout
     private float $W, $H, $mt, $mb, $ml, $mr, $cw, $chH;
     private int $paraSeq = 0;
     private int $fnSeq = 0;        // מספור הערות השוליים — לאורך כל המסמך
+    private array $endnotes = [];  // הערות הסיום, לפי הסדר — מצוירות אחרי כל הטקסט (endnoteItems)
     private int $tableSeq = 0;
 
     private ?array $multiPath = null;   // המספרים של הפריטים שמעל (רשימה רב-רמתית), או null
@@ -188,7 +189,9 @@ final class PdfLayout
         $all = [];
         foreach ($chunks as $k => $nodes) {
             $this->setSection($sections[$k]);
-            foreach ($this->paginate($this->blocks($nodes, $this->cw, 0)) as $pi => $placed) $all[] = [$k, $placed, $this->pageNotes[$pi]];
+            $items = $this->blocks($nodes, $this->cw, 0);
+            if ($k === count($chunks) - 1) array_push($items, ...$this->endnoteItems());   // הערות הסיום — אחרי כל הטקסט
+            foreach ($this->paginate($items) as $pi => $placed) $all[] = [$k, $placed, $this->pageNotes[$pi]];
         }
         $total = count($all);
         foreach ($all as $i => [$k, $placed, $notes]) {
@@ -223,9 +226,28 @@ final class PdfLayout
     }
 
     /** הערה: מספר עילי + הטקסט, 10 נק', ברוחב הטקסט — הגובה מחושב מראש (לעימוד). */
-    private function footnote(array $attrs, bool $rtl): array
+    /**
+     * הערות הסיום (כמו EndnotesView בעורך): קו הפרדה (14px = 10.5 נק', כמו .wp-fn-sep), ואחריו כל הערה כפריט —
+     * מעבר עמוד יכול ליפול בין שתי הערות, לא באמצע אחת.
+     * @return FlowItem[]
+     */
+    private function endnoteItems(): array
     {
-        $n = ++$this->fnSeq;
+        if (!$this->endnotes) return [];
+        $out = [new FlowItem(self::FN_SEP, function (PdfCanvas $c, float $x, float $y) {
+            $c->line($x + $this->cw * 2 / 3, $y + 4.5, $x + $this->cw, $y + 4.5, [0, 0, 0], 0.75);
+        })];
+        foreach ($this->endnotes as $k => $a) {
+            $note = $this->footnote($a, true, roman_lower($k + 1));
+            $out[] = new FlowItem($note['h'], fn(PdfCanvas $c, float $x, float $y) => ($note['draw'])($c, $x, $y));
+        }
+        return $out;
+    }
+
+    /** label — הערת סיום: המספור שלה (i, ii…) במקום המספר הבא של הערות השוליים. */
+    private function footnote(array $attrs, bool $rtl, ?string $label = null): array
+    {
+        $n = $label ?? ++$this->fnSeq;
         $base = $this->blockStyle('normal');
         $base['size'] = 10.0;
         $st = $this->charStyle($base, []);
@@ -466,6 +488,12 @@ final class PdfLayout
                 foreach (mb_str_split((string)($c['text'] ?? '')) as $ch) $atoms[] = $this->charAtom(mb_ord($ch), $st);
             } elseif ($ct === 'hardBreak') {
                 $atoms[] = ['br' => true, 'cp' => 0x0A, 'w' => 0];
+            } elseif ($ct === 'footnote' && !empty($c['attrs']['end'])) {
+                // הערת סיום: רק הסימן (i, ii… בכתב עילי); ההערה — בסוף המסמך
+                $this->endnotes[] = $c['attrs'];
+                $sup = $this->charStyle($base, []);
+                $sup['va'] = 'sup';
+                foreach (mb_str_split(roman_lower(count($this->endnotes))) as $ch) $atoms[] = $this->charAtom(mb_ord($ch), $sup);
             } elseif ($ct === 'footnote') {
                 // הסימן: המספר בכתב עילי; ההערה עצמה — נמדדת עכשיו ותצויר בתחתית העמוד של השורה
                 $note = $this->footnote($c['attrs'] ?? [], $rtl);
