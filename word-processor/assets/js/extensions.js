@@ -10,6 +10,7 @@ import {
 import { Toc } from './toc.js';
 import { Seq, Xref } from './caption.js';
 import { CommentMark } from './comments.js';
+import { InsMark, DelMark } from './track.js';
 
 const BLOCKS = ['paragraph', 'heading'];
 /** מפתח של סגנון שהמשתמש יצר (u1, u2…) — כמו USER_STYLE_RE ב-lib/page.php. */
@@ -833,8 +834,9 @@ export const LetterSpacing = Extension.create({
  * 2: קישור (mark link) וסימניה (צומת bookmark) — לשונית עם קוד ישן לא מכירה אותם, ולכן לא תשמור מסמך כזה.
  * 3: תוכן עניינים, כיתובים והפניות, הערות על טקסט, הערות סיום. השרת דוחה שמירה של כותב בגרסה נמוכה ממה שהמסמך
  *    צריך (doc_schema_need) — כך לשונית ישנה לא מוחקת אותם בשקט.
+ * 4: מעקב שינויים (ins / del, attrs.track).
  */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 /**
  * מאפיינים של המסמך עצמו (צומת השורש): הגדרות העמוד וגרסת המבנה.
@@ -847,6 +849,7 @@ export const DocAttrs = Extension.create({
             page: { default: null, rendered: false },
             schema: { default: SCHEMA_VERSION, rendered: false },
             comments: { default: null, rendered: false },   // שרשורי ההערות (comments.js)
+            track: { default: null, rendered: false },      // מעקב שינויים פועל (track.js) — נשמר עם המסמך, כמו ב-Word
         } }];
     },
 });
@@ -864,7 +867,7 @@ export function extensions(extra = []) {
         Highlight.configure({ multicolor: true }),
         Subscript, Superscript,
         TextAlign.configure({ types: BLOCKS, alignments: ['right', 'center', 'left', 'justify'], defaultAlignment: null }),
-        ParagraphFormat, PageBreak, SectionBreak, Footnote, WpImage, LetterSpacing, Link, Bookmark, UnderlineStyle, Toc, Seq, Xref, CommentMark,
+        ParagraphFormat, PageBreak, SectionBreak, Footnote, WpImage, LetterSpacing, Link, Bookmark, UnderlineStyle, Toc, Seq, Xref, CommentMark, InsMark, DelMark,
         WpTable.configure({ resizable: true, cellMinWidth: 30, allowTableNodeSelection: true, View: WpTableView }),
         WpTableRow, Cell, HeaderCell,
         DocAttrs,

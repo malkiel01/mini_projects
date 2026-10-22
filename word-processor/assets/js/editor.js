@@ -20,6 +20,7 @@ import { ParagraphMarks, marksKey, createNavPane, createPasteOptions, wordStats 
 import { headings } from './toc.js';
 import { captions, newSeqId, SEQ_LABELS, listTitle } from './caption.js';
 import { createComments } from './comments.js';
+import { TrackChanges, changes, resolveChanges, goToChange, setTracking } from './track.js';
 
 const MM = 96 / 25.4;
 const PT = 4 / 3;
@@ -253,7 +254,8 @@ export function createWordEditor(root, opts) {
 
     const editor = new Editor({
         element: host,
-        extensions: extensions([Pages.configure({ geometry, onLayout: drawPages }), FindReplace, ParagraphMarks, Endnotes]),
+        extensions: extensions([Pages.configure({ geometry, onLayout: drawPages }), FindReplace, ParagraphMarks, Endnotes,
+            TrackChanges.configure({ author: () => opts.user?.name || '' })]),
         content: initial,
         editable: opts.editable !== false,
         editorProps: {
@@ -569,6 +571,10 @@ export function createWordEditor(root, opts) {
             comment: () => { if (phone.matches) openSheet(false); comments.add(); refresh(); },
             commentsPane: () => { if (comments.isOpen()) comments.close(); else { if (phone.matches) openSheet(false); comments.open(); } refresh(); },
             commentsOn: () => comments.isOpen(),
+            trackToggle: () => { setTracking(editor, !editor.state.doc.attrs.track); toast(editor.state.doc.attrs.track ? 'מעקב שינויים פועל — כל עריכה תסומן' : 'מעקב שינויים כבוי'); },
+            resolve: (accept, all) => { const n = resolveChanges(editor, accept, all); if (!n) toast('אין כאן שינויים'); else if (all) toast(`${accept ? 'אושרו' : 'נדחו'} ${n} שינויים`); },
+            hasChanges: () => changes(editor.state.doc).length > 0,
+            goChange: dir => goToChange(editor, dir),
             caption: () => captionDialog(), crossRef: () => crossRefDialog(), insertTof: () => tofDialog(),
             link: () => linkDialog(), bookmark: () => bookmarkDialog(),
             newStyle: () => newStyleDialog(), updateStyle: () => updateStyleFromSelection(),
@@ -647,6 +653,8 @@ export function createWordEditor(root, opts) {
     const listType = cmdSel('listType', 'w-list', [h('option', { value: 'decimal' }, '1.'), h('option', { value: 'hebrew' }, 'א.'), h('option', { value: 'roman' }, 'i.'), h('option', { value: 'multi' }, '1.1.1')]);
     const numBtns = ['restartNumbering', 'continueNumbering', 'numberingValue'].map(id => cmdBtn(id));
     const tocUpd = cmdBtn('updateToc');
+    const trackBtn = cmdBtn('trackChanges');
+    const changeBtns = ['acceptChange', 'rejectChange', 'prevChange', 'nextChange', 'acceptAll', 'rejectAll'].map(id => cmdBtn(id));
     sizeSel.title = 'גודל';
     let zoomLabel = h('span.tb-zoom', '100%');
     let stZoom = null;   // הזום בשורת המצב (נבנה עם שורת המצב)
@@ -678,7 +686,9 @@ export function createWordEditor(root, opts) {
             grp('עריכה', [cmdBtn('find'), cmdBtn('replace')])]],
         ['insert', 'הוספה', [grp('טבלאות', B.insertTable), grp('איורים', [B.insertImage, imgInput]), grp('הערות', [B.footnote, cmdBtn('endnote')]), grp('קישורים', [cmdBtn('link'), linkOff, cmdBtn('bookmark')]), grp('כיתובים', [cmdBtn('caption'), cmdBtn('crossRef'), cmdBtn('insertTof')]), grp('תוכן עניינים', [cmdBtn('insertToc'), tocUpd]), grp('עמודים', B.pageBreak)]],
         ['layout', 'פריסה', [grp('הגדרת עמוד', B.pageSetup), grp('מעברים', B.sectionBreak)]],
-        ['review', 'סקירה', [grp('הערות', [cmdBtn('comment'), cmdBtn('commentsPane')])]],
+        ['review', 'סקירה', [grp('הערות', [cmdBtn('comment'), cmdBtn('commentsPane')]),
+            grp('מעקב', trackBtn),
+            grp('שינויים', changeBtns.slice(0, 4), changeBtns.slice(4))]],
         ['view', 'תצוגה', [zoomGroup, grp('הצגה', [B.navPane, B.showMarks, cmdBtn('wordCount')]), grp('מסמך', [opts.save ? cmdBtn('save') : null, B.print, cmdBtn('printPreview'), opts.versions ? cmdBtn('versions') : null, ...(opts.menu || [])])]],
     ];
     const uid = Math.random().toString(36).slice(2, 8);
@@ -923,9 +933,11 @@ export function createWordEditor(root, opts) {
         B.redo.disabled = !cmds.state('redo').enabled;
         linkOff.disabled = !cmds.state('unlink').enabled;
         tocUpd.disabled = !cmds.state('updateToc').enabled || !editor.isEditable;
+        const anyChange = cmds.state('acceptChange').enabled;
+        changeBtns.forEach((b, i) => { b.disabled = !anyChange || (i !== 2 && i !== 3 && !editor.isEditable); });
         for (const b of numBtns) b.disabled = !editor.isActive('orderedList') || !editor.isEditable;
         hnumBtn.classList.toggle('on', !!page.heading_numbers);
-        for (const [b, on] of [[B.navPane, nav.isOpen()], [B.showMarks, marksOn()]]) { b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }
+        for (const [b, on] of [[B.navPane, nav.isOpen()], [B.showMarks, marksOn()], [trackBtn, !!editor.state.doc.attrs.track]]) { b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }
         hnumBtn.setAttribute('aria-pressed', String(!!page.heading_numbers));
         contextBar();
         statusBarPage();

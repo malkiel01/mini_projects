@@ -8,7 +8,7 @@ require_once __DIR__ . '/pdf/layout.php';
 
 function export_pdf(array $json, array $page, string $title = ''): string
 {
-    return (new PdfLayout($page))->render(seq_flatten(pdf_toc_dests(sections_top($json))), $title);
+    return (new PdfLayout($page))->render(track_visual(seq_flatten(pdf_toc_dests(sections_top($json)))), $title);
 }
 
 /**
