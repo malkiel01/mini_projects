@@ -28,6 +28,7 @@ require_once __DIR__ . '/../lib/heartbeat.php';
 require_once __DIR__ . '/../lib/enforce.php';
 require_once __DIR__ . '/../lib/apprequests.php';
 require_once __DIR__ . '/../lib/history.php';
+require_once __DIR__ . '/../lib/ytlearn.php';
 require_once __DIR__ . '/../lib/selftest.php';
 
 header('Content-Type: application/json; charset=utf-8');
@@ -492,6 +493,13 @@ try {
     if ($do === 'selftest') {
         $user = requireUser();
         if ($err = selftestSave((int) $user['device_row_id'], (array) body())) bad($err, 'selftest_inactive', 409);
+        out(['ok' => true]);
+    }
+
+    /* ── מצב למידה ביוטיוב: מה הסקריפט בדף אימת (lib/ytlearn.php) ── */
+    if ($do === 'yt_learn_report') {
+        $user = requireUser();
+        ytLearnReportSave((int) $user['device_row_id'], (array) body());
         out(['ok' => true]);
     }
 

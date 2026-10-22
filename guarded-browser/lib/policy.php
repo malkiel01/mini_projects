@@ -197,7 +197,7 @@ function youTubeVerdict(array $url, array $rule, array $items, bool $isMainFrame
          * שמחליפה את תוכן הדף. לחסום רק את הכתובת /results אינו
          * מספיק — צריך לחסום את הבקשה שמחזירה את התוצאות.
          */
-        if (($rule['mode'] ?? '') === 'restricted' && !($rule['allow_search'] ?? 0)
+        if (((($rule['mode'] ?? '') === 'restricted' && !($rule['allow_search'] ?? 0)) || $mode === 'learn')
             && isYouTubeSearchEndpoint($url['path'])) {
             return decision(false, 'yt_no_search', 'החיפוש ביוטיוב חסום עבורך');
         }
@@ -221,6 +221,17 @@ function youTubeVerdict(array $url, array $rule, array $items, bool $isMainFrame
         if ($direct === 'deny') {
             return decision(false, 'yt_item_denied', 'הפריט הזה ביוטיוב חסום עבורך');
         }
+    }
+
+    /*
+     * מצב למידה (שלב 12 ה): רק הסרטונים שבתור — אלה שההורה אישר אחד-אחד. לא ערוץ שלם, לא פלייליסט,
+     * לא חיפוש, לא דף הבית, ובלי Shorts גם כשאושרו. ההמלצות והניגון האוטומטי — בדף עצמו (YouTubeLearn.kt);
+     * כאן הגבול שלא תלוי בדף: גם אם יוטיוב מנגן "הבא בתור" משלו, הוא לא ייפתח.
+     */
+    if ($mode === 'learn') {
+        if ($kind === 'shorts') return decision(false, 'yt_no_shorts', 'במצב למידה אין Shorts');
+        if ($kind === 'video' && $itemAction('video', $id) === 'allow') return decision(true, 'yt_video_allowed');
+        return decision(false, 'yt_learn_queue', 'במצב למידה נפתחים רק הסרטונים שההורה הוסיף לתור');
     }
 
     if ($mode === 'full') {

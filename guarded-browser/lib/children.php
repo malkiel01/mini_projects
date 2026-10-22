@@ -16,6 +16,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/accounts.php';
 require_once __DIR__ . '/platforms.php';
 require_once __DIR__ . '/adblock.php';
+require_once __DIR__ . '/ytlearn.php';
 
 /** הילד — רק אם הוא בחשבון הזה. כל קריאה של הורה עוברת כאן. */
 function childOf(int $accountId, int $childId): ?array {
@@ -236,11 +237,11 @@ function childPolicySave(int $childId, array $in): string {
 /** אילו מצבי יוטיוב החשבון רשאי לתת (זכאות yt_filtered מהמפתח). */
 function youTubeModesFor(int $accountId): array {
     $mods = moduleList((string) (accountRow($accountId)['modules'] ?? ''));
-    return in_array('yt_filtered', $mods, true) ? ['off', 'restricted', 'full'] : ['off'];
+    return in_array('yt_filtered', $mods, true) ? ['off', 'learn', 'restricted', 'full'] : ['off'];
 }
 
 function childYouTubeSave(int $childId, string $mode, bool $search, bool $shorts, array $allowedModes): string {
-    if (!in_array($mode, ['off', 'restricted', 'full'], true)) return 'מצב יוטיוב לא מוכר';
+    if (!in_array($mode, ['off', 'learn', 'restricted', 'full'], true)) return 'מצב יוטיוב לא מוכר';
     if (!in_array($mode, $allowedModes, true)) return 'יוטיוב לא פתוח בחשבון הזה. אפשר לבקש ממנהל המערכת.';
     upsert('platform_rules', ['user_id' => $childId, 'platform' => PLATFORM_YOUTUBE],
            ['mode' => $mode, 'allow_search' => $search ? 1 : 0, 'allow_shorts' => $shorts ? 1 : 0],
@@ -396,6 +397,8 @@ function childDetail(array $u, array $allowedYt): array {
             return [
                 'mode' => $r['mode'], 'allow_search' => (bool) $r['allow_search'], 'allow_shorts' => (bool) $r['allow_shorts'],
                 'allowed_modes' => $allowedYt,
+                // מצב למידה: מה אומת בדף במכשיר (lib/ytlearn.php) — לא הבטחה, דוח.
+                'learn_check' => $r['mode'] === 'learn' ? ytLearnStatus($id) : [],
                 'items' => array_map(fn($i) => [
                     'id' => (int) $i['id'], 'kind' => $i['kind'], 'item_id' => $i['item_id'],
                     'label' => $i['label'], 'action' => $i['action'],

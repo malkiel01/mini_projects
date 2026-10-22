@@ -110,7 +110,7 @@ data class Tile(val label: String, val url: String, val kind: String) {
 
 /** הגדרות פלטפורמה (כרגע יוטיוב) והפריטים שאושרו בה. */
 data class PlatformRule(
-    val mode: String = "off",           // off | restricted | full
+    val mode: String = "off",           // off | learn | restricted | full
     val allowSearch: Boolean = false,
     val allowShorts: Boolean = false,
 ) {
@@ -348,7 +348,7 @@ object PolicyEngine {
              * עמוד-יחיד, והחיפוש אינו ניווט אלא בקשת רקע שמחליפה
              * את תוכן הדף. חסימת /results לבדה אינה עוצרת אותו.
              */
-            if (rule.mode == "restricted" && !rule.allowSearch &&
+            if (((rule.mode == "restricted" && !rule.allowSearch) || rule.mode == "learn") &&
                 isYouTubeSearchEndpoint(url.path)) {
                 return Verdict(false, "yt_no_search", "החיפוש ביוטיוב חסום עבורך")
             }
@@ -363,6 +363,12 @@ object PolicyEngine {
             if (direct == "deny") {
                 return Verdict(false, "yt_item_denied", "הפריט הזה ביוטיוב חסום עבורך")
             }
+        }
+        // מצב למידה (שלב 12 ה; כמו בשרת): רק הסרטונים שבתור, בלי Shorts, ערוצים, חיפוש או דף הבית.
+        if (rule.mode == "learn") {
+            if (ref.kind == "shorts") return Verdict(false, "yt_no_shorts", "במצב למידה אין Shorts")
+            if (ref.kind == "video" && action("video", ref.id) == "allow") return Verdict(true, "yt_video_allowed")
+            return Verdict(false, "yt_learn_queue", "במצב למידה נפתחים רק הסרטונים שההורה הוסיף לתור")
         }
         if (rule.mode == "full") {
             // במצב פתוח המתג קובע את פיד ה-Shorts כולו (שלב 5).

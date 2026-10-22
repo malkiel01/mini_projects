@@ -349,6 +349,14 @@ class Store(context: Context) {
         get() = prefs.getLong("enforce_at", 0L)
         set(v) { prefs.edit().putLong("enforce_at", v).apply() }
 
+    /** דוח האימות האחרון של מצב הלמידה ביוטיוב שהשרת קיבל (YouTubeLearn). */
+    var ytLearnSent: String
+        get() = prefs.getString("yt_learn_sent", "") ?: ""
+        set(v) { prefs.edit().putString("yt_learn_sent", v).apply() }
+    var ytLearnSentAt: Long
+        get() = prefs.getLong("yt_learn_sent_at", 0L)
+        set(v) { prefs.edit().putLong("yt_learn_sent_at", v).apply() }
+
     /** בדיקת ההגנה האחרונה שהשרת קיבל את התוצאות שלה (SelfTest). */
     var selftestDone: String
         get() = prefs.getString("selftest_done", "") ?: ""

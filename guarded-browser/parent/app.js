@@ -14,6 +14,7 @@ const MODES = { kiosk: ['🧩 אריחים בלבד', 'רק האתרים והע�
 const POSTURES = { deny_all: ['🔒 הכול חסום', 'שום דבר לא נפתח עד שאתם מתירים. הבחירה הבטוחה. 🔎 החיפוש — רק באתרים ובערוצים שאישרתם.'],
                    allow_all: ['🔓 הכול פתוח', 'האינטרנט פתוח, חוץ ממה שאתם חוסמים. 🔎 החיפוש — ברשת, וכל תוצאה מסוננת.'] };
 const YT = { off: ['⛔ כבוי', 'יוטיוב לא נפתח בכלל.'],
+             learn: ['🎓 למידה', 'רק הסרטונים שהוספתם לתור, לפי הסדר — כאריחים במסך הבית. בלי Shorts, חיפוש, ערוצים, המלצות וניגון אוטומטי.'],
              restricted: ['✅ רק מה שאישרתי', 'רק הערוצים והסרטונים שברשימה. בלי דף הבית ובלי המלצות.'],
              full: ['▶️ פתוח', 'כל יוטיוב, חוץ ממה שתחסמו ברשימה.'] };
 const SCOPES = { domain: 'כל האתר', exact: 'הדף הזה בלבד', domain_plus: 'האתר + מה שהוא טוען', resource: 'משאב בתוך דף (משימה)' };
@@ -562,7 +563,7 @@ function kidYt() {
     const y = K.youtube, allowed = y.allowed_modes;
     const hint = el('p', { class: 'hint', text: YT[y.mode][1] });
     const mode = seg('yt_mode', Object.entries(YT).map(([k, v]) => [k, v[0]]), y.mode,
-        { cols: 3, disabled: Object.keys(YT).filter(k => !allowed.includes(k)), onchange: v => { hint.textContent = YT[v][1]; } });
+        { cols: 2, disabled: Object.keys(YT).filter(k => !allowed.includes(k)), onchange: v => { hint.textContent = YT[v][1]; } });
     const search = el('input', { type: 'checkbox', checked: y.allow_search }), shorts = el('input', { type: 'checkbox', checked: y.allow_shorts });
     const input = el('input', { dir: 'ltr', placeholder: '@ChannelName או קישור', autocapitalize: 'off', ariaLabel: 'ערוץ, סרטון או פלייליסט' });
     const items = y.items.length ? el('ul', { class: 'rows' }, y.items.map(i => el('li', {}, [
@@ -575,7 +576,7 @@ function kidYt() {
     return [
         allowed.length === 1 ? el('div', { class: 'banner info' }, [el('span', { text: 'ℹ️' }),
             el('div', { text: 'יוטיוב לא פתוח בחשבון שלכם. אפשר לבקש ממנהל המערכת.' })]) : null,
-        group('יוטיוב', '', [mode, hint,
+        group('יוטיוב', '', [mode, hint, learnCheck(y),
             el('div', { class: 'mods' }, [
                 el('label', { class: 'switch' }, [search, el('span', { text: '🔎 חיפוש ביוטיוב' })]),
                 el('label', { class: 'switch' }, [shorts, el('span', {}, ['📱 פיד Shorts',
@@ -592,6 +593,21 @@ function kidYt() {
             } }),
         ]),
     ];
+}
+
+/**
+ * מצב למידה: מה אומת בדף במכשיר (lib/ytlearn.php). המלצות, ניגון אוטומטי ועצירה בסוף תלויים בדף של יוטיוב,
+ * שמשתנה — לכן מוצג רק מה שהמכשיר בדק בפועל. הגבול עצמו (רק הסרטונים שבתור) נאכף בכל מקרה.
+ */
+const LEARN_ICON = { verified: '✅', failed: '❌', unknown: '⚪' };
+function learnCheck(y) {
+    if (y.mode !== 'learn' || !y.learn_check?.length) return null;
+    return el('div', { class: 'hint' }, [
+        el('b', { text: 'מה אומת במכשיר:' }),
+        ...y.learn_check.map(c => el('div', { text: `${LEARN_ICON[c.state]} ${c.label}${c.state === 'unknown' ? ' — עוד לא נבדק (נבדק כשהילד צופה)' : ` · ${c.device} · ${ago(c.at)}`}`,
+            style: c.state === 'failed' ? 'color:var(--danger)' : '' })),
+        el('div', { text: 'בכל מקרה: סרטון שאינו בתור — לא נפתח, וסרטון שמתחיל לבד מיד אחרי סוף הקודם — נעצר.' }),
+    ]);
 }
 
 function kidSites() {
