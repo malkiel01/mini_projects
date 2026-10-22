@@ -50,6 +50,9 @@ echo "\n— הדפים בפאנל משתמשים בכלל —\n";
 $src = fn(string $f) => file_get_contents(__DIR__ . "/../admin/$f");
 check('audit.php — מסנן לפי adminSeesActivitySql', str_contains($src('audit.php'), "[adminSeesActivitySql()]"), true);
 check('user.php — מספרים לחשבון משפחה', str_contains($src('user.php'), 'if (!adminSeesActivity($user))'), true);
+// ההגדרות והכללים של ילד בחשבון משפחה — אצל ההורים בלבד (בעל המערכת, 2026-10-22): לא מוצגים ולא משתנים מהפאנל.
+check('user.php — שינוי הגדרות של ילד משפחה נחסם בשרת', str_contains($src('user.php'), 'if ($histAdmin && !adminSeesActivity($user))'), true);
+check('user.php — טופסי ההגדרות מוסתרים (if / endif סביבם)', substr_count($src('user.php'), 'adminSeesActivity — ההגדרות'), 1);
 check('alerts.php — הכתובת מוסתרת בשתי הרשימות', substr_count($src('alerts.php'), 'adminSeesActivitySql()'), 2);
 check('health.php — האבחון עם redactUrls', str_contains($src('health.php'), 'redactUrls('), true);
 
