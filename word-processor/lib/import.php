@@ -229,6 +229,7 @@ function import_docx(string $bytes, string $docId): array
     $sects[] = $xp->query('/w:document/w:body/w:sectPr')->item(0);
     $page = $ctx->section($sects[0]);
     if ($ctx->userStyles) $page = ($page ?? []) + ['styles' => $ctx->userStyles];   // סגנונות מותאמים מ-Word
+    if ($ctx->headingNumbers) $page = ($page ?? []) + ['heading_numbers' => true];
     $k = 0;
     foreach ($blocks as &$b) {
         if (($b['type'] ?? '') !== 'sectionBreak') continue;
@@ -252,6 +253,9 @@ final class DocxCtx
 {
     private array $styles = [];    // styleId => 'title'|'h1'..
     private array $numFmt = [];    // numId => [ilvl => fmt]
+    private array $numInfo = [];   // numId => ['start' => [ilvl => n], 'multi' => bool]
+    private array $numSeen = [];   // numId => מספר הפריט הבא — רשימה נוספת עם אותו numId ממשיכה (Word)
+    public bool $headingNumbers = false;   // סגנון כותרת מקושר למספור
     private array $rels = [];      // rId => target
     private array $footnotes = []; // id => attrs של ההערה: text, content (word/footnotes.xml)
     private array $custom = [];    // styleId => true — סגנון תו מותאם שיש בו עיצוב (העיצוב שלו לא מיובא)
@@ -270,7 +274,11 @@ final class DocxCtx
                 $name = strtolower((string)$xp->evaluate('string(w:name/@w:val)', $st));
                 $id = $st->getAttributeNS(W, 'styleId');
                 if ($name === 'title') $this->styles[$id] = 'title';
-                elseif (preg_match('/^heading ([1-9])$/', $name, $m)) $this->styles[$id] = 'h' . (int)$m[1];
+                elseif (preg_match('/^heading ([1-9])$/', $name, $m)) {
+                    $this->styles[$id] = 'h' . (int)$m[1];
+                    $nid = (string)$xp->evaluate('string(w:pPr/w:numPr/w:numId/@w:val)', $st);
+                    if ($nid !== '' && $nid !== '0') $this->headingNumbers = true;   // מספור כותרות (מקושר לסגנון)
+                }
                 elseif ($st->getAttributeNS(W, 'default') !== '1' && $xp->query('w:rPr/*|w:pPr/*[not(self::w:keepNext or self::w:keepLines or self::w:outlineLvl)]', $st)->length
                     && count($this->userStyles) < USER_STYLES_MAX) {
                     // סגנון פסקה מותאם — נכנס כסגנון של המשתמש (u<N>) עם השם והעיצוב שלו
@@ -289,13 +297,28 @@ final class DocxCtx
         if ($s = $read('word/numbering.xml')) {
             $xp = $this->xp(xml_dom($s));
             $abs = [];
+            $info = [];   // abstractNumId => ['start' => [lvl => n], 'multi' => bool]
             foreach ($xp->query('//w:abstractNum') as $a) {
+                $aid = $a->getAttributeNS(W, 'abstractNumId');
+                $info[$aid] = ['start' => [], 'multi' => false];
                 foreach ($xp->query('w:lvl', $a) as $l) {
-                    $abs[$a->getAttributeNS(W, 'abstractNumId')][(int)$l->getAttributeNS(W, 'ilvl')] = (string)$xp->evaluate('string(w:numFmt/@w:val)', $l);
+                    $lv = (int)$l->getAttributeNS(W, 'ilvl');
+                    $abs[$aid][$lv] = (string)$xp->evaluate('string(w:numFmt/@w:val)', $l);
+                    $st = (string)$xp->evaluate('string(w:start/@w:val)', $l);
+                    if (is_numeric($st)) $info[$aid]['start'][$lv] = (int)$st;
+                    // רב-רמתי: הרמה השנייה מציגה גם את הראשונה ("%1.%2")
+                    $text = (string)$xp->evaluate('string(w:lvlText/@w:val)', $l);
+                    if ($lv === 1 && str_contains($text, '%1') && str_contains($text, '%2')) $info[$aid]['multi'] = true;
                 }
             }
             foreach ($xp->query('//w:num') as $n) {
-                $this->numFmt[$n->getAttributeNS(W, 'numId')] = $abs[(string)$xp->evaluate('string(w:abstractNumId/@w:val)', $n)] ?? [];
+                $aid = (string)$xp->evaluate('string(w:abstractNumId/@w:val)', $n);
+                $id = $n->getAttributeNS(W, 'numId');
+                $this->numFmt[$id] = $abs[$aid] ?? [];
+                $this->numInfo[$id] = $info[$aid] ?? ['start' => [], 'multi' => false];
+                foreach ($xp->query('w:lvlOverride[w:startOverride]', $n) as $o) {
+                    $this->numInfo[$id]['start'][(int)$o->getAttributeNS(W, 'ilvl')] = (int)$xp->evaluate('string(w:startOverride/@w:val)', $o);
+                }
             }
         }
         if ($s = $read('word/footnotes.xml')) {
@@ -403,9 +426,17 @@ final class DocxCtx
     private function buildList(array $items, int $lvl): array
     {
         $fmt = $items[0]['num']['fmt'];
+        $id = $items[0]['num']['id'] ?? '';
         $type = $fmt === 'bullet' ? 'bulletList' : 'orderedList';
         $list = ['type' => $type, 'content' => []];
-        if ($type === 'orderedList') $list['attrs'] = ['start' => 1, 'listType' => in_array($fmt, ['hebrew1', 'hebrew2'], true) ? 'hebrew' : (in_array($fmt, ['lowerRoman', 'upperRoman'], true) ? 'roman' : 'decimal')];
+        if ($type === 'orderedList') {
+            $info = $this->numInfo[$id] ?? ['start' => [], 'multi' => false];
+            $start = $info['start'][$lvl] ?? 1;
+            $list['attrs'] = ['start' => $start, 'listType' => $lvl === 0 && $info['multi'] ? 'multi'
+                : (in_array($fmt, ['hebrew1', 'hebrew2'], true) ? 'hebrew' : (in_array($fmt, ['lowerRoman', 'upperRoman'], true) ? 'roman' : 'decimal'))];
+            // אותו numId שכבר הופיע ברשימה קודמת — Word ממשיך את המספור: "המשך מספור", מהמספר הבא
+            if ($lvl === 0 && $id !== '' && isset($this->numSeen[$id])) $list['attrs'] = ['start' => $this->numSeen[$id], 'cont' => true] + $list['attrs'];
+        }
         $i = 0;
         while ($i < count($items)) {
             $li = ['type' => 'listItem', 'content' => [$items[$i]['p']]];
@@ -415,6 +446,7 @@ final class DocxCtx
             if ($sub) $li['content'][] = $this->buildList($sub, $lvl + 1);
             $list['content'][] = $li;
         }
+        if ($type === 'orderedList' && $lvl === 0 && $id !== '') $this->numSeen[$id] = $list['attrs']['start'] + count($list['content']);
         return $list;
     }
 
@@ -452,7 +484,7 @@ final class DocxCtx
         $numId = (string)$xp->evaluate('string(w:pPr/w:numPr/w:numId/@w:val)', $p);
         if ($numId !== '' && $numId !== '0') {
             $lvl = (int)$xp->evaluate('string(w:pPr/w:numPr/w:ilvl/@w:val)', $p);
-            $num = ['lvl' => $lvl, 'fmt' => $this->numFmt[$numId][$lvl] ?? 'bullet'];
+            $num = ['lvl' => $lvl, 'fmt' => $this->numFmt[$numId][$lvl] ?? 'bullet', 'id' => $numId];
         }
         // הזחה: אצלנו בצעדים של חצי אינץ' (720 twip) מהצד שבו השורה מתחילה; ברשימה — ההזחה של המספור
         $ind = $xp->query('w:pPr/w:ind', $p)->item(0);

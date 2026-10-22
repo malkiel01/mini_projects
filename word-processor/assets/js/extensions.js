@@ -165,19 +165,79 @@ export const NumberedList = OrderedList.extend({
     addAttributes() {
         return {
             ...this.parent?.(),
+            // 1. / א. / i. / רב-רמתי 1.1.1 (גם הרשימות שבתוכה מוצגות כך — כמו רשימה רב-רמתית ב-Word)
             listType: {
                 default: 'decimal',
                 parseHTML: el => {
                     const t = el.getAttribute('data-list') || el.getAttribute('type') || el.style.listStyleType || '';
+                    if (t === 'multi') return 'multi';
                     if (/hebrew/.test(t) || el.classList.contains('hebrew')) return 'hebrew';
                     if (/roman|^i$/i.test(t) || el.classList.contains('roman')) return 'roman';
                     return 'decimal';
                 },
                 renderHTML: a => ({ 'data-list': a.listType || 'decimal' }),
             },
+            // "המשך מספור": המספר הראשון = אחרי הרשימה הממוספרת הקודמת באותה רמה (ListContinue מעדכן את start)
+            cont: { default: false, parseHTML: el => el.hasAttribute('data-cont'), renderHTML: a => (a.cont ? { 'data-cont': '' } : {}) },
         };
     },
+    renderHTML({ node, HTMLAttributes }) {
+        const start = node.attrs.start ?? 1;
+        const { start: _s, ...rest } = HTMLAttributes;
+        // מונה ל-1.1.1 (editor.css): counter-reset לפני המספר הראשון
+        return ['ol', { ...rest, ...(start !== 1 ? { start } : {}), style: `counter-reset: wpl ${start - 1}` }, 0];
+    },
+    addCommands() {
+        return {
+            ...this.parent?.(),
+            /** הרשימה שבה הסמן: התחלה מחדש (ב-n), או המשך מהרשימה הקודמת. */
+            setListNumbering: ({ start, cont }) => ({ state, tr, dispatch }) => {
+                const $f = state.selection.$from;
+                for (let d = $f.depth; d > 0; d--) {
+                    const n = $f.node(d);
+                    if (n.type.name !== 'orderedList') continue;
+                    if (dispatch) tr.setNodeMarkup($f.before(d), undefined, { ...n.attrs, cont: !!cont, ...(start != null ? { start: Math.max(0, Math.min(9999, start | 0)) } : {}) });
+                    return true;
+                }
+                return false;
+            },
+        };
+    },
+    addProseMirrorPlugins() {
+        return [...(this.parent?.() || []), listContinue()];
+    },
 });
+
+/**
+ * "המשך מספור": אחרי כל שינוי — רשימה ממוספרת עם cont מתחילה אחרי הקודמת שבאותו הורה (הרשימה הממוספרת
+ * האחרונה לפניה, גם אם יש ביניהן פסקאות). start נשמר במסמך — לכן ה-PDF, Word וה-HTML מקבלים את אותו מספר.
+ */
+function listContinue() {
+    return new Plugin({
+        key: new PluginKey('wpListContinue'),
+        appendTransaction(trs, old, state) {
+            if (!trs.some(t => t.docChanged)) return null;
+            const tr = state.tr;
+            const walk = (parent, base) => {
+                let last = null;   // {start, count} של הרשימה הממוספרת האחרונה בהורה הזה
+                parent.forEach((n, off) => {
+                    const pos = base + off;
+                    if (n.type.name === 'orderedList') {
+                        let start = n.attrs.start ?? 1;
+                        if (n.attrs.cont && last) {
+                            start = last.start + last.count;
+                            if (start !== n.attrs.start) tr.setNodeMarkup(pos, undefined, { ...n.attrs, start });
+                        }
+                        last = { start, count: n.childCount };
+                    }
+                    if (!n.isTextblock && !n.isAtom && n.childCount) walk(n, pos + 1);
+                });
+            };
+            walk(state.doc, 0);
+            return tr.docChanged ? tr : null;   // ההיסטוריה מצרפת אותו לעסקה שגרמה לו — ביטול אחד
+        },
+    });
+}
 
 /** מעבר עמוד ידני (Ctrl+Enter). */
 export const PageBreak = Node.create({
