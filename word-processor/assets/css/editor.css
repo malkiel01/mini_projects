@@ -77,6 +77,11 @@
 .wp-editor.wp-preview .wp-img-handle, .wp-editor.wp-preview .selectedCell::after { display: none !important; }
 .wp-editor.wp-preview .ProseMirror-selectednode { outline: none !important; }
 .wp-editor.wp-preview .wp-doc { caret-color: transparent; }
+/* ביקורת 04, R05: בתצוגה המקדימה — מה שההדפסה מסתירה: סימני פסקה, סימון חיפוש והערות, חלוניות, כפתור הדבקה */
+.wp-editor.wp-preview .wp-mk-p::after, .wp-editor.wp-preview .wp-mk-sp::after, .wp-editor.wp-preview .wp-mk-tab::after { display: none !important; }
+.wp-editor.wp-preview .wp-doc .wp-find, .wp-editor.wp-preview .wp-doc .wp-find-cur,
+.wp-editor.wp-preview .wp-doc .wp-cmt, .wp-editor.wp-preview .wp-doc .wp-cmt.on { background: none !important; }
+.wp-editor.wp-preview .wp-findbar, .wp-editor.wp-preview .wp-nav, .wp-editor.wp-preview .wp-comments, .wp-editor.wp-preview .wp-paste { display: none !important; }
 .wp-editor.wp-phone .rb-search { flex-basis: 100%; order: 10; margin: 4px 0; }
 .wp-editor.wp-phone .rb-search-in { inline-size: 100%; min-height: 44px; block-size: 44px; }
 .wp-editor.wp-phone .rb-head { flex-wrap: wrap; }

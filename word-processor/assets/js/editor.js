@@ -817,7 +817,10 @@ export function createWordEditor(root, opts) {
     searchIn.addEventListener('blur', () => setTimeout(() => { if (document.activeElement !== searchIn) { results.hidden = true; searchIn.setAttribute('aria-expanded', 'false'); } }, 150));
 
     // ---------- תצוגה לפני הדפסה: העמודים בלי סרט ובלי סימני עריכה (כמו בהדפסה), קריאה בלבד עד הסגירה ----------
-    let previewing = false, wasEditable = true;
+    let canEdit = opts.editable !== false;
+    // ביקורת 04, R03: לא שומרים צילום של ההרשאה — canEdit היא ההרשאה העדכנית (setEditable מבחוץ), והעריכה בפועל
+    // היא canEdit && !previewing. כך הרשאה שבוטלה בזמן התצוגה המקדימה לא חוזרת כשיוצאים ממנה
+    let previewing = false;
     const pvPages = h('span.pv-pages');
     previewBar.append(h('strong', 'תצוגה לפני הדפסה'), pvPages, h('span.st-fill'),
         h('button.btn.primary', { type: 'button', onclick: () => print() }, '🖨 הדפסה'),
@@ -825,8 +828,8 @@ export function createWordEditor(root, opts) {
     function preview(on) {
         if (on === previewing) return;
         previewing = on;
-        if (on) { wasEditable = editor.isEditable; editor.setEditable(false, false); openSheet(false); finder.close(false); }
-        else editor.setEditable(wasEditable, false);
+        if (on) { editor.setEditable(false, false); openSheet(false); finder.close(false); }
+        else editor.setEditable(canEdit, false);
         root.classList.toggle('wp-preview', on);
         previewBar.hidden = !on;
         pvPages.textContent = `${pageCount} ${pageCount === 1 ? 'עמוד' : 'עמודים'}`;
@@ -1781,7 +1784,8 @@ export function createWordEditor(root, opts) {
     }
 
     function setEditable(v) {
-        editor.setEditable(!!v);
+        canEdit = !!v;
+        editor.setEditable(canEdit && !previewing);
         root.classList.toggle('readonly', !v);
         bar.querySelectorAll('button, select, input').forEach(el => {
             if (!el.closest('.tb-zoomg, .rb-head') && el !== B.print) el.disabled = !v;
@@ -1795,7 +1799,7 @@ export function createWordEditor(root, opts) {
     refresh();
     countWords();
 
-    return {
+    const api = {
         editor,
         get page() { return structuredClone(page); },
         get pages() { return pageCount; },
@@ -1818,8 +1822,11 @@ export function createWordEditor(root, opts) {
             document.documentElement.classList.remove('wp-no-page-zoom');
             editor.destroy();
             root.textContent = '';
+            delete root.wordEditor;
         },
     };
+    root.wordEditor = api;   // כמו .editor של TipTap על המסמך — לבדיקות ולאבחון
+    return api;
 }
 
 /** מיזוג הגדרות עמוד חלקיות (כמו page_normalize בשרת, בלי הניקוי). */
