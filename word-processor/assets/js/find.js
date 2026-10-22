@@ -241,8 +241,9 @@ export function createFindBar(h, { editor, notify }) {
         const m = st().matches[st().index];
         editor.commands.setFind('');
         if (focusDoc) {
-            if (m) editor.chain().setTextSelection({ from: m.from, to: m.to }).focus().run();
-            else editor.commands.focus();
+            if (m) editor.commands.setTextSelection({ from: m.from, to: m.to });
+            // מיד (focus של TipTap מחכה פריים — Ctrl+Z שמגיע מהר אחרי Escape היה הולך לאיבוד)
+            editor.view.focus();
         }
     }
     findIn.addEventListener('input', search);
