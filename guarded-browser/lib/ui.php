@@ -228,6 +228,7 @@ function layoutTop(string $title, ?array $admin = null): void {
   <nav>
     <a href="index.php">משתמשים</a>
     <a href="categories.php">קטלוג</a>
+    <a href="market.php">מרקט</a>
     <a href="alerts.php">התרעות<?php $n = openAlertCount();
       echo $n ? ' <span class="badge">' . $n . '</span>' : ''; ?></a>
     <a href="audit.php">יומן</a>

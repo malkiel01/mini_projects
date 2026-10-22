@@ -17,6 +17,8 @@ if (!defined('DB_FILE')) define('DB_FILE', __DIR__ . '/../data/time-clock.sqlite
 
 /** חתימת זמן אחידה: ISO-8601 ב-UTC. התצוגה בשעון ישראל — בדפדפן. */
 function nowIso(): string {
+    // שעון לבדיקות בלבד (tests/run.php) — כך אפשר לבדוק "עתיד" ו"עבר" בלי לחכות.
+    if (PHP_SAPI === 'cli' && isset($GLOBALS['TC_NOW'])) return $GLOBALS['TC_NOW'];
     return gmdate('Y-m-d\TH:i:s\Z');
 }
 
@@ -135,6 +137,63 @@ function migrate(PDO $pdo): void {
             created_at TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS punches_member ON punches (member_id, at_utc);
+
+        -- תיקון לדיווח: add (דיווח חדש), move (שעה אחרת לדיווח קיים), void (ביטול דיווח). הדיווח המקורי לא
+        -- משתנה; החישוב מחיל רק תיקונים שאושרו. עובד מבקש (by_member), מנהל מתקן ישירות (by_person, מאושר מיד).
+        CREATE TABLE IF NOT EXISTS corrections (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            member_id   INTEGER NOT NULL REFERENCES members(id),
+            op          TEXT NOT NULL CHECK (op IN ('add','move','void')),
+            punch_id    INTEGER REFERENCES punches(id),
+            new_kind    TEXT CHECK (new_kind IN ('in','out')),
+            new_at      TEXT,
+            reason      TEXT NOT NULL,
+            by_member   INTEGER,
+            by_person   INTEGER,
+            status      TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected','cancelled')),
+            decided_by  INTEGER,
+            decided_at  TEXT,
+            note        TEXT,
+            created_at  TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS corrections_member ON corrections (member_id, status);
+
+        -- מסלול האישור החודשי של החברה: שלבים לפי סדר, כל שלב — תפקיד. ברירת מחדל: עובד ← מנהל.
+        CREATE TABLE IF NOT EXISTS approval_steps (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            company_id INTEGER NOT NULL REFERENCES companies(id),
+            ord        INTEGER NOT NULL,
+            role       TEXT NOT NULL CHECK (role IN ('employee','manager','payroll','owner'))
+        );
+
+        -- חודש של חברה: open (רגיל) ← review (נפתח לאישור; השלבים נקבעים ברגע הפתיחה) ← locked.
+        CREATE TABLE IF NOT EXISTS periods (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            company_id INTEGER NOT NULL REFERENCES companies(id),
+            month      TEXT NOT NULL,
+            status     TEXT NOT NULL DEFAULT 'review' CHECK (status IN ('review','locked')),
+            steps      TEXT NOT NULL,
+            opened_by  INTEGER,
+            opened_at  TEXT NOT NULL,
+            locked_by  INTEGER,
+            locked_at  TEXT,
+            UNIQUE (company_id, month)
+        );
+
+        -- אישור של עובד בחודש בשלב. revoked_at — בוטל (תיקון אחרי האישור, או פתיחה מחדש); נשמר לתיעוד.
+        CREATE TABLE IF NOT EXISTS period_signoffs (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            period_id  INTEGER NOT NULL REFERENCES periods(id),
+            member_id  INTEGER NOT NULL REFERENCES members(id),
+            step       INTEGER NOT NULL,
+            by_person  INTEGER,
+            by_member  INTEGER,
+            on_behalf  INTEGER NOT NULL DEFAULT 0,
+            note       TEXT,
+            at         TEXT NOT NULL,
+            revoked_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS signoffs_period ON period_signoffs (period_id, member_id);
 
         -- עמדה בעסק: מכשיר משותף, מוצמד לחברה (ולסניף) בקוד חד-פעמי. נשמר רק ה-hash של האסימון.
         CREATE TABLE IF NOT EXISTS stations (

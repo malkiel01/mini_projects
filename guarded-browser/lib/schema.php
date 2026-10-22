@@ -323,6 +323,28 @@ function schemaStatements(): array {
         last_seen  TEXT NOT NULL DEFAULT '',
         PRIMARY KEY (child_id, package)
     )",
+    // מרקט האפליקציות (lib/market.php): המלאי (account_id 0 — כללי; אחרת — פרטי של חשבון), והשחרור לכל ילד.
+    "CREATE TABLE IF NOT EXISTS market_apps (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        package    TEXT NOT NULL,
+        account_id INTEGER NOT NULL DEFAULT 0,
+        name       TEXT NOT NULL DEFAULT '',
+        play_title TEXT NOT NULL DEFAULT '',
+        category   TEXT NOT NULL DEFAULT 'other',
+        min_age    INTEGER NOT NULL DEFAULT 0,
+        note       TEXT NOT NULL DEFAULT '',
+        icon       TEXT NOT NULL DEFAULT '',
+        source     TEXT NOT NULL DEFAULT 'admin',
+        active     INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT '',
+        UNIQUE (package, account_id)
+    )",
+    "CREATE TABLE IF NOT EXISTS market_releases (
+        child_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        package    TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT '',
+        PRIMARY KEY (child_id, package)
+    )",
     "CREATE TABLE IF NOT EXISTS app_rules (
         child_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         package    TEXT NOT NULL,

@@ -16,6 +16,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/lib/attendance.php';
 require_once __DIR__ . '/lib/station.php';
+require_once __DIR__ . '/lib/corrections.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -53,6 +54,10 @@ try {
         case 'emp_state':       ok(empState());
         case 'emp_punch':       ok(empPunch($in));
         case 'emp_month':       ok(empMonth($in));
+        case 'emp_correct':     ok(empCorrect($in));
+        case 'emp_correct_cancel': ok(empCorrectCancel($in));
+        case 'emp_corrections': ok(empCorrections($in));
+        case 'emp_approve':     ok(empApprove($in));
         case 'station_pair':    writeStationCookie(stationPair($in)); ok(stationState());
         case 'station_state':   ok(stationState());
         case 'station_check':   ok(stationCheck($in));
@@ -84,6 +89,23 @@ try {
         case 'station_list':   ok(stationList($person, $in));
         case 'station_create': ok(stationCreate($person, $in));
         case 'station_revoke': ok(stationRevoke($person, $in));
+        case 'corr_list':      ok(corrList($person, $in));
+        case 'corr_decide':    ok(corrDecide($person, $in));
+        case 'corr_direct':    ok(corrDirect($person, $in));
+        case 'corr_history':   ok(corrHistory($person, $in));
+        case 'steps_get':      ok(stepsGet($person, $in));
+        case 'steps_save':     ok(stepsSave($person, $in));
+        case 'period_view':    ok(periodView($person, $in));
+        case 'period_open':    ok(periodOpen($person, $in));
+        case 'period_approve': ok(periodApprove($person, $in));
+        case 'period_lock':    ok(periodLock($person, $in));
+        case 'period_reopen':  ok(periodReopen($person, $in));
+        case 'period_csv':
+            $csv = periodCsv($person, $in);
+            header('Content-Type: text/csv; charset=utf-8');
+            header('Content-Disposition: attachment; filename="attendance-' . preg_replace('/[^0-9-]/', '', (string) ($in['month'] ?? 'month')) . '.csv"');
+            echo $csv;
+            exit;
         default:               fail('פעולה לא מוכרת', 404);
     }
 } catch (AppError $e) {

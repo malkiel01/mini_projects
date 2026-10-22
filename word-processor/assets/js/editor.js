@@ -11,7 +11,7 @@
  */
 import { Editor, Extension, StarterKit, Superscript, Subscript, TextSelection } from '../../vendor/tiptap.js';
 import { extensions, imageBox, FONTS, FALLBACK, cssFont, safeHref, bookmarks, BOOKMARK_RE, USER_STYLE, styleKeyOf, UNDERLINES, TABLE_BORDERS, VALIGNS } from './extensions.js';
-import { Pages, pageLabel, Endnotes } from './pagination.js';
+import { Pages, pageLabel, pageNumbers, Endnotes } from './pagination.js';
 import { cleanPastedHtml } from './paste.js';
 import { migrate } from './schema.js';
 import { createCommands } from './commands.js';
@@ -62,6 +62,7 @@ export function defaultPage() {
         },
         numbering: { show: true, position: 'bottom', align: 'center', format: 'n', start: 1, first_page: true },
         header: '', footer: '', heading_numbers: false, page_color: '', watermark: '',
+        even_odd: false, header_even: '', footer_even: '', num_restart: false, num_start: 1,
         columns: { n: 1, gap: 12.7, line: false },
     };
 }
@@ -254,7 +255,8 @@ export function createWordEditor(root, opts) {
         let cur = page;
         doc?.forEach((n, pos) => {
             if (n.type.name !== 'sectionBreak') return;
-            cur = mergePage(cur, n.attrs.page || {});
+            // התחלת מספור מחדש — רק במקטע שהמעבר שלו אומר (לא עוברת בירושה, כמו page_section בשרת)
+            cur = { ...mergePage(cur, n.attrs.page || {}), num_restart: !!n.attrs.page?.num_restart };
             out.push({ from: pos, page: cur });
         });
         secMemo = { doc, page, out };
@@ -391,7 +393,8 @@ export function createWordEditor(root, opts) {
                 + '.wp-doc .wp-break:has(.wp-colskip){height:auto !important;block-size:auto !important}'
                 + '.wp-break:has(.wp-colskip)::before,.wp-colskip::after{content:"\\200b";display:block;height:0;overflow:hidden}' : '');
         // מקטעים עם טורים שונים — הדפדפן לא מחליף מספר טורים באמצע; ההדפסה עוברת דרך ה-PDF מהשרת (print)
-        printViaPdf = g.sections.length > 1 && g.sections.some(x => x.cols > 1);
+        // וגם זוגי / אי-זוגי ומספור שמתחיל מחדש במקטע — @page של הדפדפן לא יודע (מונה עמודים אחד, כותרת אחת)
+        printViaPdf = (g.sections.length > 1 && g.sections.some(x => x.cols > 1)) || !!page.even_odd || g.sections.some((x, i) => i > 0 && x.page.num_restart);
         wmPrint.textContent = page.watermark || '';
         if (page.watermark) Object.assign(wmPrint.style, { fontSize: watermarkSize(page.watermark, wmm * 72 / 25.4, hmm * 72 / 25.4) + 'pt', fontFamily: cssFont(page.font.family) });
         setZoom();
@@ -415,7 +418,7 @@ export function createWordEditor(root, opts) {
     function tocEntries(levels, seq = null) {
         const nb = page.numbering;
         const fmt = nb.format === 'hebrew' ? 'hebrew' : 'n';
-        const pg = pos => pageLabel(nb.start + pageOf(pos), pageCount, fmt);
+        const pg = pos => pageLabel(pageNums[pageOf(pos)] ?? nb.start + pageOf(pos), pageCount, fmt);
         if (seq) return captions(editor.state.doc).filter(c => c.label === seq).map((c, i) => ({ t: c.text, l: 0, i, p: pg(c.pos) }));
         return headings(editor.state.doc, levels).map(x => ({ t: x.text || '(כותרת ריקה)', l: x.level, i: x.i, p: pg(x.pos) }));
     }
@@ -464,6 +467,10 @@ export function createWordEditor(root, opts) {
         // טורים: כל מסגרת היא טור; המספור וספירת העמודים — לפי העמוד הפיזי (res.phys)
         const physOf = i => res.phys?.[i] ?? i;
         const total = physOf(n - 1) + 1;
+        // מספר כל עמוד פיזי — לפי המקטע של המסגרת הראשונה שלו (מקטע עם num_restart מתחיל מחדש)
+        const secOfPhys = [];
+        for (let i = 0; i < n; i++) secOfPhys[physOf(i)] ??= res.pageSecs?.[i] ?? 0;
+        pageNums = pageNumbers(secOfPhys, G.sections, page.numbering.start);
         pagesLayer.textContent = '';
         let y = 0;
         for (let i = 0; i < n; i++) {
@@ -475,11 +482,14 @@ export function createWordEditor(root, opts) {
             const pg = h('div.wp-page', { style: { top: y + 'px', height: g.pageH + 'px', width: g.pageW + 'px', left: (G.sheetW - g.pageW) / 2 + 'px', right: 'auto' } });
             y += g.pageH + GAP;
             const pi = physOf(i);
-            const label = nb.show && (pi > 0 || nb.first_page) ? pageLabel(page.numbering.start + pi, total, nb.format) : '';
+            const label = nb.show && (pi > 0 || nb.first_page) ? pageLabel(pageNums[pi], total, nb.format) : '';
             const hdr = h('div.wp-hf.wp-hdr', { style: { height: g.top + 'px', paddingInline: `${g.right}px ${g.left}px` } });
             const ftr = h('div.wp-hf.wp-ftr', { style: { height: g.bottom + 'px', paddingInline: `${g.right}px ${g.left}px` } });
-            if (pp.header) hdr.append(h('span.wp-hf-text', pp.header));
-            if (pp.footer) ftr.append(h('span.wp-hf-text', pp.footer));
+            // זוגי / אי-זוגי שונים: בעמוד שמספרו זוגי — הכותרות לעמוד זוגי של המקטע
+            const even = page.even_odd && pageNums[pi] % 2 === 0;
+            const hText = even ? pp.header_even : pp.header, fText = even ? pp.footer_even : pp.footer;
+            if (hText) hdr.append(h('span.wp-hf-text', hText));
+            if (fText) ftr.append(h('span.wp-hf-text', fText));
             if (label) (nb.position === 'top' ? hdr : ftr).append(h('span.wp-num.al-' + nb.align, { style: nb.align === 'right' ? { right: g.right + 'px' } : nb.align === 'left' ? { left: g.left + 'px' } : {} }, label));
             pg.append(hdr, ftr);
             if (g.cols > 1) {
@@ -505,6 +515,7 @@ export function createWordEditor(root, opts) {
         statusBarPage();
     }
     let pageCount = 1;
+    let pageNums = [1];   // מספר כל עמוד פיזי (drawPages) — לתוכן העניינים ולכותרות
     let frameOf = i => i;   // מסגרת על המסך → העמוד הפיזי (בטורים — כמה מסגרות לעמוד)
 
     function setZoom() {
@@ -1614,7 +1625,17 @@ export function createWordEditor(root, opts) {
                     sw('n_first', 'מספר גם בעמוד הראשון', nb.first_page)),
                 h('section.group', h('h3', 'כותרת עליונה ותחתונה'),
                     field('כותרת עליונה', h('input', { name: 'header', value: p.header, maxlength: 500 })),
-                    field('כותרת תחתונה', h('input', { name: 'footer', value: p.footer, maxlength: 500 }))),
+                    field('כותרת תחתונה', h('input', { name: 'footer', value: p.footer, maxlength: 500 })),
+                    // כמו "זוגי ואי-זוגי שונים" ב-Word — לכל המסמך; הטקסט — לכל מקטע
+                    sw('even_odd', 'זוגי ואי-זוגי שונים (לכל המסמך)', page.even_odd),
+                    h('div.fields.two',
+                        field('עליונה — עמוד זוגי', h('input', { name: 'header_even', value: p.header_even || '', maxlength: 500 })),
+                        field('תחתונה — עמוד זוגי', h('input', { name: 'footer_even', value: p.footer_even || '', maxlength: 500 }))),
+                    h('p.hint', 'עמוד זוגי לפי מספר העמוד. שני השדות שלמעלה — לעמודים האי-זוגיים.')),
+                // מקטע (לא הראשון): התחלת מספור העמודים מחדש — כמו "התחל ב-" בתבנית מספרי העמודים של Word
+                k > 0 ? h('section.group', h('h3', 'מספור במקטע הזה'),
+                    sw('num_restart', 'להתחיל את מספור העמודים מחדש', p.num_restart),
+                    field('מתחיל מ-', numInput('num_start', p.num_start ?? 1, { min: 0, max: 9999, step: 1 }))) : null,
                 // רקע הדף — לכל המסמך (כמו "עיצוב ← רקע הדף" ב-Word)
                 h('section.group', h('h3', 'רקע הדף ', h('small', 'לכל המסמך')),
                     sw('pc_on', 'צבע עמוד', !!page.page_color),
@@ -1627,7 +1648,8 @@ export function createWordEditor(root, opts) {
             const sec = {
                 size: f.get('size'), orientation: f.get('orientation'),
                 margins: { top: n('m_top'), bottom: n('m_bottom'), right: n('m_right'), left: n('m_left') },
-                header: f.get('header'), footer: f.get('footer'),
+                header: f.get('header'), footer: f.get('footer'), header_even: f.get('header_even'), footer_even: f.get('footer_even'),
+                ...(k > 0 ? { num_restart: !!f.get('num_restart'), num_start: Math.max(0, Math.round(n('num_start') || 0)) } : {}),
                 columns: { n: Math.max(1, Math.min(3, n('cols_n') || 1)), gap: Math.max(0, Math.min(50, n('cols_gap'))), line: !!f.get('cols_line') },
             };
             const whole = {
@@ -1636,6 +1658,7 @@ export function createWordEditor(root, opts) {
                     start: Math.max(0, Math.round(n('n_start'))), first_page: !!f.get('n_first') },
                 page_color: f.get('pc_on') && f.get('page_color') !== '#ffffff' ? String(f.get('page_color')).toLowerCase() : '',
                 watermark: String(f.get('watermark') || '').trim().slice(0, 40),
+                even_odd: !!f.get('even_odd'),
             };
             if (secs.length === 1) setPage({ ...sec, ...whole });
             else setSections(f.get('scope') === 'all' ? null : k, sec, whole);
@@ -1650,6 +1673,7 @@ export function createWordEditor(root, opts) {
      */
     function setSections(k, sec, whole) {
         const pick = q => ({ size: q.size, orientation: q.orientation, margins: { ...q.margins }, header: q.header, footer: q.footer,
+            header_even: q.header_even || '', footer_even: q.footer_even || '', num_restart: !!q.num_restart, num_start: q.num_start ?? 1,
             columns: { ...(q.columns || { n: 1, gap: 12.7, line: false }) } });
         const secs = sections();
         const tr = editor.state.tr;
@@ -1907,7 +1931,7 @@ export function createWordEditor(root, opts) {
      */
     function print() {
         if (printViaPdf && opts.printPdf) { opts.printPdf(); return; }
-        if (printViaPdf) toast('מקטעים עם מספר טורים שונה — בהדפסה מכאן הם בטור אחד; ב-PDF (ייצוא) — בטורים', true);
+        if (printViaPdf) toast('ההדפסה מהדפדפן לא יודעת להחליף טורים / כותרות זוגיות / מספור באמצע — ההדפסה המדויקת: ייצוא ל-PDF', true);
         window.print();
     }
 
@@ -1981,7 +2005,8 @@ export function createWordEditor(root, opts) {
 export function mergePage(base, p, replaceStyles = false) {
     const out = structuredClone(base);
     if (!p || typeof p !== 'object') return out;
-    for (const k of ['size', 'orientation', 'header', 'footer', 'heading_numbers', 'page_color', 'watermark']) if (p[k] !== undefined && p[k] !== null) out[k] = p[k];
+    for (const k of ['size', 'orientation', 'header', 'footer', 'heading_numbers', 'page_color', 'watermark', 'even_odd', 'header_even', 'footer_even', 'num_restart', 'num_start'])
+        if (p[k] !== undefined && p[k] !== null) out[k] = p[k];
     if (p.margins) Object.assign(out.margins, Object.fromEntries(Object.entries(p.margins).filter(([, v]) => isFinite(v) && v !== ''))
     );
     if (p.font) Object.assign(out.font, Object.fromEntries(Object.entries(p.font).filter(([, v]) => v !== '' && v !== null)));

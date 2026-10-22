@@ -37,7 +37,9 @@ function policySnapshot(int $childId): array {
         'items'      => all('SELECT platform, kind, item_id, label, action FROM platform_items WHERE user_id = ? ORDER BY platform, kind, item_id', [$childId]),
         'apps'       => all('SELECT package, action FROM app_rules WHERE child_id = ? ORDER BY package', [$childId]),
     // זמן מסך — רק כשיש מגבלה, כדי שילדים בלי מגבלות לא יקבלו גרסה "חדשה" בלי שינוי.
-    ] + (($lim = all('SELECT package, daily_min FROM app_limits WHERE child_id = ? ORDER BY package', [$childId])) ? ['app_limits' => $lim] : []);
+    ] + (($lim = all('SELECT package, daily_min FROM app_limits WHERE child_id = ? ORDER BY package', [$childId])) ? ['app_limits' => $lim] : [])
+      // המרקט — רק כשמשהו שוחרר, כדי שילדים בלי מרקט לא יקבלו גרסה "חדשה" בלי שינוי.
+      + (($mk = all('SELECT package FROM market_releases WHERE child_id = ? ORDER BY package', [$childId])) ? ['market' => $mk] : []);
 }
 
 /** מה השתנה בין שתי תמונות מצב — שורות לתצוגה. */
@@ -71,6 +73,7 @@ function policyDiff(?array $old, array $new): array {
         'items' => [['platform', 'kind', 'item_id', 'action'], fn($r) => '▶️ ' . ($r['label'] ?: $r['item_id']) . ($r['action'] === 'allow' ? '' : ' (חסום)')],
         'apps'  => [['package', 'action'], fn($r) => '📱 ' . $r['package'] . match ($r['action']) { 'block' => ' — חסומה', 'hide' => ' — מוסתרת', default => ' — מותרת' }],
         'app_limits' => [['package', 'daily_min'], fn($r) => '⏱️ ' . $r['package'] . " — {$r['daily_min']} דק׳ ביום"],
+        'market' => [['package'], fn($r) => '📲 מרקט: ' . $r['package']],
         'platforms' => [['platform', 'mode', 'allow_search', 'allow_shorts'], fn($r) => "יוטיוב: {$r['mode']}" . ($r['allow_search'] ? ' + חיפוש' : '') . ($r['allow_shorts'] ? ' + Shorts' : '')],
     ];
     foreach ($sets as $name => [$fields, $show]) {
@@ -212,6 +215,9 @@ function policyRestore(int $childId, int $versionId, int $by): array {
         // גרסה מלפני זמן המסך — בלי מגבלות.
         q('DELETE FROM app_limits WHERE child_id = ?', [$childId]);
         foreach ((array) ($s['app_limits'] ?? []) as $r) q('INSERT INTO app_limits (child_id, package, daily_min, created_at) VALUES (?,?,?,?)', [$childId, $r['package'], (int) $r['daily_min'], $now]);
+        // גרסה מלפני המרקט — בלי שחרורים.
+        q('DELETE FROM market_releases WHERE child_id = ?', [$childId]);
+        foreach ((array) ($s['market'] ?? []) as $r) q('INSERT OR IGNORE INTO market_releases (child_id, package, created_at) VALUES (?,?,?)', [$childId, $r['package'], $now]);
         $pdo->commit();
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();

@@ -3,7 +3,9 @@
  * בדיקות: זהות מהפלטפורמה, חברה, סניפים, צוות והפרדה בין חברות (שלב 1);
  * עובדים, תנאים בגרסאות, קישור הזמנה, הפעלה וקוד, מכשיר והרשאות מנהל סניף (שלב 2);
  * דיווח, חישוב שעות (משמרת לילה, שעון קיץ, חסר יציאה, כפילות), החודש והמסך "היום" (שלב 3);
- * עמדה: הצמדה, קוד שגוי ונעילה, סניף, ביטול (שלב 4).
+ * עמדה: הצמדה, קוד שגוי ונעילה, סניף, ביטול (שלב 4);
+ * תיקונים: בקשה, אישור ודחייה, תיקון ישיר, המקור לא משתנה, הרשאות (שלב 5);
+ * אישור חודשי: שלבים, פתיחה, אישור לפי תפקיד, במקום העובד, נעילה, פתיחה מחדש, ייצוא (שלב 6).
  * הרצה: php time-clock/tests/run.php — על מסד זמני, בלי לגעת ב-data/.
  */
 
@@ -12,6 +14,8 @@ declare(strict_types=1);
 define('DB_FILE', sys_get_temp_dir() . '/time-clock-test-' . getmypid() . '.sqlite');
 require_once __DIR__ . '/../lib/attendance.php';
 require_once __DIR__ . '/../lib/station.php';
+require_once __DIR__ . '/../lib/corrections.php';
+require_once __DIR__ . '/../lib/periods.php';
 
 $fails = 0; $n = 0;
 function check(string $name, bool $cond): void {
@@ -175,6 +179,7 @@ recordPunch($h, 'out', 'phone', null, null, $z('2026-11-15 12:00'));            
 $d = daysReport($h, '2026-11-10', '2026-11-15', $tz, $z('2026-11-20 12:00'));
 check('יום רגיל + משמרת לילה — הכול ביום ההתחלה', $d[0]['minutes'] === 510 + 480 && count($d[0]['pairs']) === 2);
 check('משמרת לילה לא נספרת ביום שאחריו', $d[1]['minutes'] === 0);
+check('והיציאה שלה מוצגת ביום ההתחלה, לא ביום שאחריו', count($d[0]['punches']) === 4 && $d[1]['punches'] === []);
 check('כניסה בלי יציאה — חסר יציאה, 0 דקות', $d[2]['missing_out'] === 1 && $d[2]['minutes'] === 0);
 check('היום שאחריו תקין', $d[3]['minutes'] === 540);
 check('יציאה בלי כניסה — חסר כניסה', $d[5]['missing_in'] === 1);
@@ -260,6 +265,115 @@ writeStationCookie(stationPair(['code' => $r['code']]));
 check('והטאבלט החדש מוצמד', stationState()['station']['name'] === 'כניסה ראשית');
 stationRevoke($owner, ['company_id' => $cid, 'id' => $stId]);
 throws('עמדה שבוטלה', fn() => stationState(), 401);
+
+
+// ===== שלב 5: תיקונים =====
+$_COOKIE = [];
+empActivateAndLogin(['token' => empInvite($owner, ['company_id' => $cid, 'id' => $h])['invite_token'], 'pin' => '2468']);
+$GLOBALS['TC_NOW'] = $z('2026-12-01 10:00');   // "עכשיו" — אחרי נובמבר שבו הדיווחים של הבדיקה
+$day = fn(string $d) => daysReport($h, $d, $d, $tz, $z('2026-11-30 12:00'))[0];
+$nov12in = (int) db()->query("SELECT id FROM punches WHERE member_id = $h AND at_utc = '" . $z('2026-11-12 08:00') . "'")->fetchColumn();
+
+throws('תיקון בלי סיבה', fn() => empCorrect(['member_id' => $h, 'op' => 'add', 'kind' => 'out', 'at' => '2026-11-12T16:00', 'reason' => '']));
+throws('תיקון לשעה עתידית', fn() => empCorrect(['member_id' => $h, 'op' => 'add', 'kind' => 'out', 'at' => '2099-01-01T08:00', 'reason' => 'x']));
+throws('עובד לא מתקן דיווח של אחר', fn() => empCorrect(['member_id' => $h, 'op' => 'void', 'punch_id' => (int) db()->query("SELECT id FROM punches WHERE member_id = $dana LIMIT 1")->fetchColumn(), 'reason' => 'x']), 404);
+$r1 = empCorrect(['member_id' => $h, 'op' => 'add', 'kind' => 'out', 'at' => '2026-11-12T16:00', 'reason' => 'שכחתי לצאת']);
+check('בקשה ממתינה — עוד לא נספרת', $day('2026-11-12')['minutes'] === 0 && $day('2026-11-12')['pending'] === 1);
+$list = corrList($owner, ['company_id' => $cid])['corrections'];
+check('המנהל רואה את הבקשה עם הסיבה', count(array_filter($list, fn($c) => $c['id'] === $r1['id'] && $c['reason'] === 'שכחתי לצאת')) === 1);
+throws('מנהלת שכר לא מחליטה', fn() => corrDecide(as_(['sub' => 'u-sara']), ['company_id' => $cid, 'id' => $r1['id'], 'approve' => true]), 403);
+throws('מנהל סניף אחר לא מחליט', fn() => corrDecide($y2, ['company_id' => $cid, 'id' => $r1['id'], 'approve' => true]), 404);
+corrDecide($owner, ['company_id' => $cid, 'id' => $r1['id'], 'approve' => true]);
+$d12 = $day('2026-11-12');
+check('אושר: היום נספר (8 שעות), מסומן "תוקן", בלי חוסר', $d12['minutes'] === 480 && $d12['corrected'] && $d12['missing_out'] === 0 && $d12['pending'] === 0);
+throws('אי אפשר להחליט פעמיים', fn() => corrDecide($owner, ['company_id' => $cid, 'id' => $r1['id'], 'approve' => false, 'note' => 'x']));
+
+$nov13in = (int) db()->query("SELECT id FROM punches WHERE member_id = $h AND at_utc = '" . $z('2026-11-13 08:00') . "'")->fetchColumn();
+throws('שינוי שעה ביותר מיום', fn() => empCorrect(['member_id' => $h, 'op' => 'move', 'punch_id' => $nov13in, 'at' => '2026-11-15T07:30', 'reason' => 'x']));
+$r2 = empCorrect(['member_id' => $h, 'op' => 'move', 'punch_id' => $nov13in, 'at' => '2026-11-13T07:30', 'reason' => 'הגעתי מוקדם']);
+throws('בקשה שנייה לאותו דיווח', fn() => empCorrect(['member_id' => $h, 'op' => 'void', 'punch_id' => $nov13in, 'reason' => 'x']));
+throws('דחייה בלי הסבר', fn() => corrDecide($owner, ['company_id' => $cid, 'id' => $r2['id'], 'approve' => false]));
+corrDecide($owner, ['company_id' => $cid, 'id' => $r2['id'], 'approve' => false, 'note' => 'לפי המצלמה הגעת ב-8']);
+check('נדחה: היום לא השתנה', $day('2026-11-13')['minutes'] === 540);
+$mine = empCorrections(['member_id' => $h])['corrections'];
+check('העובד רואה את הדחייה ואת ההסבר', count(array_filter($mine, fn($c) => $c['id'] === $r2['id'] && $c['status'] === 'rejected' && $c['note'] === 'לפי המצלמה הגעת ב-8')) === 1);
+
+$r3 = empCorrect(['member_id' => $h, 'op' => 'move', 'punch_id' => $nov13in, 'at' => '2026-11-13T07:45', 'reason' => 'שוב']);
+empCorrectCancel(['member_id' => $h, 'id' => $r3['id']]);
+check('העובד ביטל בקשה שלו', $day('2026-11-13')['pending'] === 0);
+
+// תיקון ישיר של המנהל: ביטול היציאה בלי כניסה ב-15.11
+$stray = (int) db()->query("SELECT id FROM punches WHERE member_id = $h AND at_utc = '" . $z('2026-11-15 12:00') . "'")->fetchColumn();
+corrDirect($owner, ['company_id' => $cid, 'member_id' => $h, 'op' => 'void', 'punch_id' => $stray, 'reason' => 'דיווח בטעות']);
+check('תיקון ישיר — מיד בתוקף', $day('2026-11-15')['missing_in'] === 0 && $day('2026-11-15')['punches'] === []);
+check('הדיווח המקורי לא נמחק', (int) db()->query("SELECT COUNT(*) FROM punches WHERE id = $stray")->fetchColumn() === 1);
+corrDirect($owner, ['company_id' => $cid, 'member_id' => $h, 'op' => 'move', 'punch_id' => $nov13in, 'at' => '2026-11-13T07:30', 'reason' => 'אושר מול המצלמה']);
+check('שינוי שעה ישיר', $day('2026-11-13')['minutes'] === 570);
+check('הדיווח המקורי שומר את השעה המקורית', db()->query("SELECT at_utc FROM punches WHERE id = $nov13in")->fetchColumn() === $z('2026-11-13 08:00'));
+check('היסטוריית התיקונים בכרטיס', count(corrHistory($owner, ['company_id' => $cid, 'member_id' => $h])['corrections']) === 5);
+check('כל החלטה ביומן', (int) db()->query("SELECT COUNT(*) FROM audit WHERE action LIKE 'correction.%'")->fetchColumn() >= 7);
+unset($GLOBALS['TC_NOW']);
+
+
+// ===== שלב 6: אישור חודשי =====
+$GLOBALS['TC_NOW'] = $z('2026-12-01 10:00');
+$owner = as_(['sub' => 'u-owner']); $sara = as_(['sub' => 'u-sara']);
+check('ברירת מחדל: עובד ← מנהל', stepsGet($owner, ['company_id' => $cid])['steps'] === ['employee', 'manager']);
+throws('רק הבעלים משנה שלבים', fn() => stepsSave($sara, ['company_id' => $cid, 'steps' => ['manager']]), 403);
+throws('אותו תפקיד פעמיים', fn() => stepsSave($owner, ['company_id' => $cid, 'steps' => ['manager', 'manager']]));
+stepsSave($owner, ['company_id' => $cid, 'steps' => ['employee', 'manager', 'payroll']]);
+$v = periodView($owner, ['company_id' => $cid, 'month' => '2026-11']);
+check('לפני פתיחה: open, אפשר לפתוח', $v['status'] === 'open' && $v['can']['open']);
+$ids = array_column($v['employees'], 'id');
+check('עובדי החודש: מי שהועסק בו (עומר שסיים באוקטובר — לא)', in_array($h, $ids, true) && in_array($dana, $ids, true) && !in_array($omer, $ids, true));
+throws('חודש עתידי', fn() => periodOpen($owner, ['company_id' => $cid, 'month' => '2027-01']));
+throws('מנהלת שכר לא פותחת', fn() => periodOpen($sara, ['company_id' => $cid, 'month' => '2026-11']), 403);
+$v = periodOpen($owner, ['company_id' => $cid, 'month' => '2026-11']);
+check('נפתח לאישור עם 3 שלבים', $v['status'] === 'review' && count($v['steps']) === 3);
+stepsSave($owner, ['company_id' => $cid, 'steps' => ['manager']]);
+check('שינוי שלבים לא משנה חודש שכבר בתהליך', count(periodView($owner, ['company_id' => $cid, 'month' => '2026-11'])['steps']) === 3);
+
+$st = empState();
+$hm_ = array_values(array_filter($st['memberships'], fn($m) => $m['id'] === $h))[0];
+check('העובד רואה שנובמבר ממתין לאישורו', $hm_['to_approve'] === ['2026-11']);
+throws('המנהל לא מאשר במקום העובד בלי הערה', fn() => periodApprove($owner, ['company_id' => $cid, 'month' => '2026-11', 'member_ids' => [$h]]));
+empApprove(['member_id' => $h, 'month' => '2026-11']);
+check('העובד אישר', empMonth(['member_id' => $h, 'month' => '2026-11'])['period']['done'] === [0]);
+throws('העובד לא מאשר פעמיים', fn() => empApprove(['member_id' => $h, 'month' => '2026-11']));
+throws('מנהל סניף אחר — לא', fn() => periodApprove($y2, ['company_id' => $cid, 'month' => '2026-11', 'member_ids' => [$h]]), 404);
+throws('מנהלת שכר לא מאשרת שלב מנהל', fn() => periodApprove($sara, ['company_id' => $cid, 'month' => '2026-11', 'member_ids' => [$h]]), 403);
+periodApprove($owner, ['company_id' => $cid, 'month' => '2026-11', 'member_ids' => [$h]]);
+$v = periodApprove($sara, ['company_id' => $cid, 'month' => '2026-11', 'member_ids' => [$h]]);
+$row = array_values(array_filter($v['employees'], fn($e) => $e['id'] === $h))[0];
+check('שלושה שלבים — הושלם', $row['next'] === null && count($row['signoffs']) === 3);
+
+throws('מי שאינו בעלים או מנהל לא נועל', fn() => periodLock(as_(['sub' => 'u-david']), ['company_id' => $cid, 'month' => '2026-11']));
+throws('בעלים בלי סיבה — לא', fn() => periodLock($owner, ['company_id' => $cid, 'month' => '2026-11']));
+periodApprove($owner, ['company_id' => $cid, 'month' => '2026-11', 'member_ids' => [$dana], 'on_behalf' => true, 'note' => 'בחופשה, אושר בטלפון']);
+$v = periodApprove($owner, ['company_id' => $cid, 'month' => '2026-11', 'member_ids' => [$dana]]);
+$v = periodApprove($sara, ['company_id' => $cid, 'month' => '2026-11', 'member_ids' => [$dana]]);
+$rd = array_values(array_filter($v['employees'], fn($e) => $e['id'] === $dana))[0];
+check('במקום העובד — מסומן, עם ההערה', $rd['signoffs'][0]['on_behalf'] && $rd['signoffs'][0]['note'] === 'בחופשה, אושר בטלפון');
+check('כולם אישרו', $v['done'] === count($v['employees']));
+$v = periodLock($owner, ['company_id' => $cid, 'month' => '2026-11']);
+check('ננעל', $v['status'] === 'locked' && $v['can']['reopen']);
+$n13 = (int) db()->query("SELECT id FROM punches WHERE member_id = $h AND at_utc = '" . $z('2026-11-10 08:00') . "'")->fetchColumn();
+throws('חודש נעול — אין תיקון ישיר', fn() => corrDirect($owner, ['company_id' => $cid, 'member_id' => $h, 'op' => 'void', 'punch_id' => $n13, 'reason' => 'x']));
+throws('חודש נעול — אין בקשת תיקון', fn() => empCorrect(['member_id' => $h, 'op' => 'add', 'kind' => 'in', 'at' => '2026-11-20T08:00', 'reason' => 'x']));
+
+throws('פתיחה מחדש בלי סיבה', fn() => periodReopen($owner, ['company_id' => $cid, 'month' => '2026-11']));
+throws('רק בעלים פותח מחדש', fn() => periodReopen($sara, ['company_id' => $cid, 'month' => '2026-11', 'reason' => 'x']), 403);
+$v = periodReopen($owner, ['company_id' => $cid, 'month' => '2026-11', 'reason' => 'שכחנו חג']);
+check('נפתח מחדש — כל האישורים בוטלו', $v['status'] === 'review' && $v['done'] === 0);
+check('האישורים נשמרים כמבוטלים', (int) db()->query('SELECT COUNT(*) FROM period_signoffs WHERE revoked_at IS NOT NULL')->fetchColumn() === 6);
+empApprove(['member_id' => $h, 'month' => '2026-11']);
+corrDirect($owner, ['company_id' => $cid, 'member_id' => $h, 'op' => 'void', 'punch_id' => $n13, 'reason' => 'דיווח כפול']);
+check('תיקון בחודש שבאישור — האישור של העובד בוטל', empMonth(['member_id' => $h, 'month' => '2026-11'])['period']['done'] === []);
+
+$csv = periodCsv($owner, ['company_id' => $cid, 'month' => '2026-11']);
+check('CSV: BOM, כותרות, שורת סיכום', str_starts_with($csv, "\xEF\xBB\xBF") && str_contains($csv, 'סה״כ,תקן') && str_contains($csv, 'סה״כ 2026-11'));
+check('CSV: יום עם תיקון מסומן', str_contains($csv, '2026-11-13') && str_contains($csv, ',כן,'));
+unset($GLOBALS['TC_NOW']);
 
 @unlink(DB_FILE); @unlink(DB_FILE . '-wal'); @unlink(DB_FILE . '-shm');
 echo "\n" . ($n - $fails) . "/$n עברו\n";

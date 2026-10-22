@@ -373,7 +373,7 @@ $body = '<w:p><w:pPr><w:pStyle w:val="Quote"/><w:bidi/><w:ind w:right="1440" w:f
     . '<w:p><w:fldSimple w:instr=" DATE "><w:r><w:t>22/10/2026</w:t></w:r></w:fldSimple><w:ins w:id="1">' . $run(' נוסף') . '</w:ins><w:del w:id="2"><w:r><w:delText>נמחק</w:delText></w:r></w:del></w:p>'
     . '<w:p>' . $run('סיום') . '<w:r><w:rPr><w:rStyle w:val="Emph"/></w:rPr><w:t>!</w:t></w:r><w:r><w:endnoteReference w:id="1"/></w:r><w:commentRangeStart w:id="0"/></w:p>'
     . '<w:tbl><w:tr><w:tc><w:tbl><w:tr><w:tc><w:p>' . $run('פנימי') . '</w:p></w:tc></w:tr></w:tbl><w:p>' . $run('תא') . '</w:p></w:tc></w:tr></w:tbl>'
-    . '<w:sectPr><w:headerReference w:type="default" r:id="rH"/><w:headerReference w:type="even" r:id="rE"/><w:footerReference w:type="default" r:id="rF"/>'
+    . '<w:sectPr><w:headerReference w:type="default" r:id="rH"/><w:headerReference w:type="first" r:id="rE"/><w:footerReference w:type="default" r:id="rF"/>'
     . '<w:pgSz w:w="11906" w:h="16838"/><w:cols w:num="2"/></w:sectPr>';
 $hdr = fn($tag, $inner) => '<w:' . $tag . ' ' . $WN . '>' . $inner . '</w:' . $tag . '>';
 $wordDocx = $mkDocx([
@@ -387,7 +387,7 @@ $wordDocx = $mkDocx([
     'word/comments.xml' => '<w:comments ' . $WN . '><w:comment w:id="0"><w:p>' . $run('הערה') . '</w:p></w:comment></w:comments>',
     'word/_rels/document.xml.rels' => '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rH" Target="header1.xml"/><Relationship Id="rE" Target="header2.xml"/><Relationship Id="rF" Target="footer1.xml"/></Relationships>',
     'word/header1.xml' => $hdr('hdr', '<w:p><w:pPr><w:bidi/></w:pPr>' . $run('חברה בע"מ') . '</w:p>'),
-    'word/header2.xml' => $hdr('hdr', '<w:p>' . $run('זוגי') . '</w:p>'),
+    'word/header2.xml' => $hdr('hdr', '<w:p>' . $run('ראשון שונה') . '</w:p>'),   // כותרת שונה לעמוד הראשון — עדיין לא נתמכת
     'word/footer1.xml' => $hdr('ftr', '<w:p><w:pPr><w:bidi/><w:jc w:val="center"/></w:pPr><w:r><w:t xml:space="preserve">- </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> PAGE </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>1</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:t xml:space="preserve"> -</w:t></w:r></w:p>'),
 ]);
 $w = import_docx($wordDocx, $docC);
@@ -1054,6 +1054,45 @@ $big2 = $big; $big2['content'][450] = $cp('פסקה שונתה');
 $t0 = microtime(true);
 $r6 = $show(track_compare($big, $big2));
 check('השוואה: 900 פסקאות עם שינוי באמצע — מהר, ורק הפסקה ההיא מסומנת', microtime(true) - $t0 < 2 && substr_count($r6, '-[') === 1 && substr_count($r6, '+[') === 1, round(microtime(true) - $t0, 2) . 's');
+section('כותרות זוגי / אי-זוגי והתחלת מספור במקטע (שלב 3)');
+$eoPage = page_normalize(['even_odd' => true, 'header' => 'אי-זוגי', 'header_even' => 'זוגי', 'numbering' => ['position' => 'bottom']]);
+$eoPara = fn($i) => ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => "פסקה$i " . str_repeat('מילים רבות למלא עמוד. ', 30)]]];
+$eoDoc = ['type' => 'doc', 'content' => array_merge(array_map($eoPara, range(1, 14)),
+    [['type' => 'sectionBreak', 'attrs' => ['page' => ['num_restart' => true, 'num_start' => 1]]]], array_map($eoPara, range(15, 22)),
+    [['type' => 'sectionBreak', 'attrs' => ['page' => ['orientation' => 'landscape']]]], [$eoPara(23)])];
+check('page_numbers: מקטע עם num_restart מתחיל מחדש; המקטע שאחריו ממשיך (לא יורש את ההתחלה מחדש)',
+    page_numbers([0, 0, 0, 1, 1, 2], [page_normalize([]), page_section(['num_restart' => true, 'num_start' => 5], page_normalize([])),
+        page_section(['orientation' => 'landscape'], page_section(['num_restart' => true, 'num_start' => 5], page_normalize([])))]) === [1, 2, 3, 5, 6, 7]);
+if (trim((string)shell_exec('command -v pdftotext'))) {
+    file_put_contents("$tmp/eo.pdf", export_pdf($eoDoc, $eoPage, 'זוגי'));
+    $eoPages = explode("\f", preg_replace('/[\x{200E}\x{200F}\x{202A}-\x{202E}]/u', '', (string)shell_exec('pdftotext -layout ' . escapeshellarg("$tmp/eo.pdf") . ' - 2>&1')));
+    array_pop($eoPages);
+    $hdrOf = fn($t) => str_contains($t, 'זוגי-אי') || str_contains($t, 'אי-זוגי') ? 'odd' : (str_contains($t, 'זוגי') || str_contains($t, 'יגוז') ? 'even' : '?');
+    $numOf = function ($t) { preg_match_all('/^\s*(\d+)\s*$/m', $t, $m); return (int)end($m[1]); };
+    $seq = array_map(fn($t) => $numOf($t) . $hdrOf($t), $eoPages);
+    // המקטע השני מתחיל ב-1 — ושוב אי-זוגי; הכותרת לפי מספר העמוד
+    $nums = array_map($numOf, $eoPages);
+    $restarts = array_keys(array_filter($nums, fn($v, $i) => $i > 0 && $v !== $nums[$i - 1] + 1, ARRAY_FILTER_USE_BOTH));
+    $first2 = $restarts[0] ?? null;
+    // התחלה מחדש אחת בלבד (במקטע השני; השלישי ממשיך), ל-1
+    $ok = count($restarts) === 1 && $first2 > 1 && $nums[$first2] === 1 && $nums[0] === 1;
+    foreach ($seq as $x) if (!preg_match('/^(\d+)(odd|even)$/', $x, $m) || ((int)$m[1] % 2 === 0) !== ($m[2] === 'even')) $ok = false;
+    check('PDF: המספור מתחיל מחדש במקטע השני, וכותרת זוגית בכל עמוד שמספרו זוגי', $ok, implode(' ', $seq) . " / מקטע 2 בעמוד $first2");
+}
+file_put_contents("$tmp/eo.docx", export_docx($eoDoc, $eoPage, 'זוגי'));
+$zip->open("$tmp/eo.docx");
+$eoSet = (string)$zip->getFromName('word/settings.xml');
+$eoMain = (string)$zip->getFromName('word/document.xml');
+$eoEven = (string)$zip->getFromName('word/header1e.xml');
+$zip->close();
+preg_match_all('#<w:pgNumType[^>]*/>#', $eoMain, $pg);
+check('Word: evenAndOddHeaders, כותרת לעמוד זוגי, והתחלת מספור במקטע השני בלבד', str_contains($eoSet, '<w:evenAndOddHeaders/>') && str_contains($eoMain, 'w:type="even"')
+    && str_contains($eoEven, 'זוגי') && str_contains($pg[0][1] ?? '', 'w:start="1"') && !str_contains($pg[0][2] ?? '', 'w:start'), implode(' ', $pg[0]));
+$eoBack = import_docx(file_get_contents("$tmp/eo.docx"), 'eo');
+$eoSb = array_values(array_filter($eoBack['json']['content'], fn($n) => ($n['type'] ?? '') === 'sectionBreak'));
+check('Word הלוך וחזור: זוגי / אי-זוגי, הכותרת הזוגית, והתחלת המספור במקטע', !empty($eoBack['page']['even_odd']) && ($eoBack['page']['header_even'] ?? '') === 'זוגי'
+    && !empty($eoSb[0]['attrs']['page']['num_restart']) && ($eoSb[0]['attrs']['page']['num_start'] ?? 0) === 1 && empty($eoSb[1]['attrs']['page']['num_restart'])
+    && !array_filter($eoBack['report'], fn($r) => $r['key'] === 'hf_extra'), json_encode([$eoBack['page']['even_odd'] ?? null, $eoSb[0]['attrs']['page']['num_restart'] ?? null, $eoSb[1]['attrs']['page']['num_restart'] ?? null], JSON_UNESCAPED_UNICODE));
 
 section('כיתובים והפניות צולבות (שלב 4)');
 $cap = fn($label, $id, $text) => ['type' => 'paragraph', 'attrs' => ['pstyle' => 'caption'], 'content' => [

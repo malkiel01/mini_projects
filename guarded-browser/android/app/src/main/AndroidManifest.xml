@@ -26,6 +26,8 @@
     <!-- רשימת האפליקציות להורה (reportApps): מאנדרואיד 11 queryIntentActivities רואה בלי זה רק אפליקציות
          מערכת. כל מה שיש לו סמל במסך הבית — זה מה שההורה צריך לראות ולחסום. -->
     <queries>
+        <!-- מרקט: פתיחת Google Play בדף של אפליקציה ששוחררה (MarketInstall). -->
+        <package android:name="com.android.vending"/>
         <intent>
             <action android:name="android.intent.action.MAIN"/>
             <category android:name="android.intent.category.LAUNCHER"/>

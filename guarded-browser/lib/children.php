@@ -71,7 +71,7 @@ function childDelete(int $childId): void {
     foreach (['audit', 'alerts', 'traces'] as $t) q("DELETE FROM $t WHERE user_id = ?", [$childId]);
     q('DELETE FROM access_requests WHERE child_id = ?', [$childId]);
     q('DELETE FROM site_usage WHERE user_id = ?', [$childId]);
-    foreach (['device_apps', 'app_rules'] as $t) q("DELETE FROM $t WHERE child_id = ?", [$childId]);
+    foreach (['device_apps', 'app_rules', 'market_releases'] as $t) q("DELETE FROM $t WHERE child_id = ?", [$childId]);
     q('DELETE FROM users WHERE id = ?', [$childId]);   // השאר — ON DELETE CASCADE
     db()->commit();
 }

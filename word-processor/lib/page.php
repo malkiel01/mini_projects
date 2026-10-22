@@ -40,6 +40,10 @@ function page_defaults(): array
         ],
         'numbering' => ['show' => true, 'position' => 'bottom', 'align' => 'center', 'format' => 'n', 'start' => 1, 'first_page' => true],
         'header' => '', 'footer' => '', 'heading_numbers' => false,
+        // זוגי / אי-זוגי שונים (כמו ב-Word — לכל המסמך): בעמוד זוגי (לפי מספר העמוד) — header_even / footer_even של המקטע
+        'even_odd' => false, 'header_even' => '', 'footer_even' => '',
+        // מקטע שמתחיל את מספור העמודים מחדש (num_start); לא עובר בירושה למקטע הבא (page_section)
+        'num_restart' => false, 'num_start' => 1,
         // רקע הדף (כל המסמך): צבע עמוד, וסימן מים — טקסט באלכסון מאחורי הטקסט
         'page_color' => '', 'watermark' => '',
         // טורים (של המקטע, כמו w:cols ב-Word): מספר, הרווח ביניהם במ"מ, קו מפריד
@@ -109,9 +113,11 @@ function page_normalize($in, ?array $base = null): array
         if (($v = $num($n['start'] ?? null, 0, 9999)) !== null) $p['numbering']['start'] = (int)$v;
         if (isset($n['first_page'])) $p['numbering']['first_page'] = (bool)$n['first_page'];
     }
-    foreach (['header', 'footer'] as $k) {
+    foreach (['header', 'footer', 'header_even', 'footer_even'] as $k) {
         if (is_string($in[$k] ?? null)) $p[$k] = mb_substr(str_replace(["\r", "\0"], '', $in[$k]), 0, 500);
     }
+    foreach (['even_odd', 'num_restart'] as $k) if (isset($in[$k])) $p[$k] = (bool)$in[$k];
+    if (($v = $num($in['num_start'] ?? null, 0, 9999)) !== null) $p['num_start'] = (int)$v;
     if (isset($in['heading_numbers'])) $p['heading_numbers'] = (bool)$in['heading_numbers'];
     if (array_key_exists('page_color', $in)) {
         $c = is_string($in['page_color']) ? strtolower(trim($in['page_color'])) : '';
@@ -179,6 +185,29 @@ function page_mm(array $p): array
 {
     [$w, $h] = PAGE_SIZES[$p['size']] ?? PAGE_SIZES['A4'];
     return $p['orientation'] === 'landscape' ? [$h, $w] : [$w, $h];
+}
+
+/** הגדרות מקטע שמתחיל במעבר מקטע: יורש מהקודם, חוץ מהתחלת המספור מחדש (רק אם המעבר אומר). */
+function page_section($attrs, array $prev): array
+{
+    $p = page_normalize(is_array($attrs) ? $attrs : [], $prev);
+    $p['num_restart'] = is_array($attrs) && !empty($attrs['num_restart']);
+    return $p;
+}
+
+/**
+ * מספר כל עמוד: מתחיל ב-numbering.start של המסמך, ובעמוד הראשון של מקטע עם num_restart — מחדש ב-num_start.
+ * $secOfPage[i] — המקטע של העמוד i. (כמו pageNumbers ב-assets/js/pagination.js.)
+ */
+function page_numbers(array $secOfPage, array $sections): array
+{
+    $out = [];
+    foreach ($secOfPage as $i => $k) {
+        if ($i === 0) $out[] = (int)$sections[0]['numbering']['start'];
+        elseif ($k !== $secOfPage[$i - 1] && !empty($sections[$k]['num_restart'])) $out[] = (int)$sections[$k]['num_start'];
+        else $out[] = $out[$i - 1] + 1;
+    }
+    return $out;
 }
 
 /** מספר עמוד בתבנית (גם בדפדפן: assets/js/pagination.js, pageLabel). */

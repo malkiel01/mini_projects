@@ -27,6 +27,7 @@ require_once __DIR__ . '/children.php';
 require_once __DIR__ . '/appversion.php';
 require_once __DIR__ . '/apptime.php';
 require_once __DIR__ . '/chrome.php';
+require_once __DIR__ . '/market.php';
 
 const APP_POSTURES = ['allow_all', 'deny_all'];
 const APP_ACTIONS = ['allow', 'block', 'hide'];
@@ -144,6 +145,9 @@ function appsPayload(array $user): array {
     $childId = (int) $user['id'];
     if (!accountAppsAllowed((int) $user['account_id'])) return ['manage' => false];
     $rules = appRules($childId);
+    // מה שההורה שחרר במרקט — מותר, גם כשאפליקציה חדשה נחסמת וגם ב"רק מה שאישרתי" (lib/market.php).
+    $released = marketReleased($childId);
+    foreach ($released as $pkg) if (($rules[$pkg] ?? '') !== 'allow') $rules[$pkg] = 'allow';
     $never = array_merge(UPDATE_PACKAGES, SHELL_PACKAGES, [SELF_PACKAGE]);
     $hidden = array_values(array_diff(array_keys(array_filter($rules, fn($a) => $a === 'hide')), $never));
     return [
@@ -159,6 +163,8 @@ function appsPayload(array $user): array {
         'hidden'  => $hidden,
         // כרום מנוהל (lib/chrome.php) — נאכף רק ב"בעל מכשיר".
         'chrome'  => chromePolicy($childId),
+        // המרקט (רובריקת "📲 אפליקציות"): מה ששוחרר, עם שם ואייקון.
+        'market'  => marketPayload($childId),
         'allowed' => array_values(array_unique(array_merge(array_keys(array_filter($rules, fn($a) => $a === 'allow')), UPDATE_PACKAGES, SHELL_PACKAGES))),
     ];
 }
@@ -197,6 +203,7 @@ function appsList(int $accountId, int $childId): array {
     if (!accountAppsAllowed($accountId)) return ['manage' => false];
     $posture = appPosture($childId);
     $rules = appRules($childId);
+    $released = array_flip(marketReleased($childId));
     $limits = appLimits($childId);
     $usage = appUsageToday($childId);
     $apps = [];
@@ -206,7 +213,9 @@ function appsList(int $accountId, int $childId): array {
         $locked = $why !== '';
         $apps[] = ['package' => $pkg, 'label' => $a['label'] ?: $pkg, 'system' => (bool) $a['is_system'],
                    'action' => $locked ? 'allow' : ($rules[$pkg] ?? ''), 'locked' => $locked, 'why' => $why,
-                   'blocked' => !$locked && appBlocked($posture, $rules[$pkg] ?? ''),
+                   // שוחררה במרקט — מותרת, מה שלא יהיה הכלל.
+                   'blocked' => !$locked && !isset($released[$pkg]) && appBlocked($posture, $rules[$pkg] ?? ''),
+                   'released' => isset($released[$pkg]),
                    // זמן מסך (lib/apptime.php): המגבלה, וכמה שימשה היום לפי דיווח המכשיר.
                    'limit_min' => $limits[$pkg] ?? 0, 'used_sec' => $usage[$pkg] ?? 0];
         unset($rules[$pkg]);

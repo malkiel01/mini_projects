@@ -117,6 +117,7 @@ function empState(): array {
     return ['memberships' => array_map(function ($m) {
         $t = termsAt((int) $m['id'], todayIn($m['tz']));
         return ['id' => (int) $m['id'], 'name' => $m['name'], 'company' => $m['company_name'], 'site' => $m['site_name'],
-                'employee_no' => $m['employee_no'], 'terms' => termsOut($t), 'status' => nowStatus((int) $m['id'], $m['tz'])];
+                'employee_no' => $m['employee_no'], 'terms' => termsOut($t), 'status' => nowStatus((int) $m['id'], $m['tz']),
+                'to_approve' => function_exists('empPendingMonths') ? empPendingMonths((int) $m['company_id'], (int) $m['id']) : []];
     }, $members)];
 }
