@@ -270,6 +270,10 @@ function import_docx(string $bytes, string $docId): array
     }
     unset($b);
     $json = ['type' => 'doc', 'content' => $blocks ?: [para()]];
+    // זוגי / אי-זוגי שונים — הגדרה של כל המסמך ב-Word (settings.xml); אצלנו בהגדרות המסמך
+    $settings = $read('word/settings.xml') ?? '';
+    if (preg_match('/<w:evenAndOddHeaders(?![^>]*w:val="(false|0)")/', $settings)) $page = ($page ?? []) + ['even_odd' => true];
+    elseif (isset($page['even_odd'])) unset($page['even_odd']);
     // מעקב שינויים פועל במסמך (settings.xml) — פועל גם אצלנו
     if (($st = $read('word/settings.xml')) && str_contains($st, 'trackRevisions') && !preg_match('/<w:trackRevisions[^>]*w:val="(false|0)"/', $st)) $json['attrs']['track'] = true;
     $zip->close();
@@ -1054,6 +1058,9 @@ final class DocxCtx
         $p['columns'] = ['n' => min(4, $cn), 'gap' => is_numeric($space) ? round((int)$space / TWIP_PER_MM_IMPORT, 1) : 12.7,
             'line' => in_array((string)$xp->evaluate('string(w:cols/@w:sep)', $sect), ['1', 'true', 'on'], true)];
         $p += $this->headerFooter($sect, $xp);
+        // התחלת מספור מחדש (במקטע שאינו הראשון — המקטע הראשון לוקח את ההתחלה דרך numbering.start)
+        $st = (string)$xp->evaluate('string(w:pgNumType/@w:start)', $sect);
+        if (is_numeric($st)) { $p['num_restart'] = true; $p['num_start'] = max(0, (int)$st); }
         return $p ?: null;
     }
 
@@ -1081,6 +1088,8 @@ final class DocxCtx
             }
             foreach ($parts as $type => $part) {
                 if ($type === 'default') continue;
+                // כותרת לעמוד זוגי (evenAndOddHeaders) — הטקסט שלה; המספור — כמו בכותרת הרגילה
+                if ($type === 'even') { $out[$kind . '_even'] = implode("\n", $part['text']); continue; }
                 if ($type === 'first' && $part['text'] === ($def['text'] ?? [])) { $firstNum = $firstNum || (bool)$part['num']; continue; }
                 if ($part['text'] || $part['num']) $this->note('hf_extra', 1, $type . $kind);
             }

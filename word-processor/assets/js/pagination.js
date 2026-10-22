@@ -651,6 +651,19 @@ function lineStart(view, lo, hi, lineTop) {
 }
 
 /** מספר עמוד בתבנית (זהה ל-page_label ב-lib/page.php). */
+/**
+ * מספר כל עמוד פיזי (כמו page_numbers בשרת): מ-start, ובעמוד הראשון של מקטע עם num_restart — מחדש ב-num_start.
+ * secOfPage[i] — המקטע של העמוד i; secs[k].page — ההגדרות שלו.
+ */
+export function pageNumbers(secOfPage, secs, start) {
+    const out = [];
+    secOfPage.forEach((k, i) => {
+        const p = secs[k]?.page;
+        out.push(i === 0 ? start : k !== secOfPage[i - 1] && p?.num_restart ? (p.num_start ?? 1) : out[i - 1] + 1);
+    });
+    return out;
+}
+
 export function pageLabel(n, total, format) {
     switch (format) {
         case 'page_n': return `עמ' ${n}`;

@@ -690,7 +690,7 @@ final class Ooxml
                 return $this->toc($a);
             case 'sectionBreak':
                 // ב-Word מקטע מסתיים בפסקה שנושאת את ההגדרות שלו; המקטע הבא — בהגדרות שבצומת (שינויים בלבד)
-                $next = page_normalize(is_array($a['page'] ?? null) ? $a['page'] : [], $this->cur);
+                $next = page_section($a['page'] ?? null, $this->cur);
                 if (!$this->sectFn) { $this->setSection($next); return '<w:p><w:r><w:br w:type="page"/></w:r></w:p>'; }
                 $xml = '<w:p><w:pPr><w:bidi/>' . ($this->sectFn)($this->cur, $this->sectIndex++) . '</w:pPr></w:p>';
                 $this->setSection($next);
@@ -1259,10 +1259,12 @@ function export_docx(array $json, array $page, string $title = ''): string
     $hfRels = '';
     $hfIds = [];   // חתימת כותרות → [refs] — מקטעים עם אותן כותרות חולקים את אותם קבצים
     /** הפניות לכותרות של מקטע (יוצר את הקבצים בפעם הראשונה). */
-    $hfRefs = function (array $p, bool $first) use (&$files, &$hfRels, &$hfIds, $hf): string {
+    $evenOdd = !empty($page['even_odd']);
+    $hfRefs = function (array $p, bool $first) use (&$files, &$hfRels, &$hfIds, $hf, $evenOdd): string {
         $nb = $p['numbering'];
         $titlePg = $first && $nb['show'] && !$nb['first_page'];
-        $key = md5(json_encode([$p['header'], $p['footer'], $nb['show'], $nb['position'], $nb['align'], $nb['format'], $titlePg]));
+        $key = md5(json_encode([$p['header'], $p['footer'], $nb['show'], $nb['position'], $nb['align'], $nb['format'], $titlePg,
+            $evenOdd ? [$p['header_even'], $p['footer_even']] : null]));
         if (!isset($hfIds[$key])) {
             $n = count($hfIds) + 1;
             $numTop = $nb['show'] && $nb['position'] === 'top';
@@ -1279,6 +1281,14 @@ function export_docx(array $json, array $page, string $title = ''): string
                     . '<Relationship Id="rIdF' . $n . 'f" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer' . $n . 'f.xml"/>';
                 $refs .= '<w:headerReference w:type="first" r:id="rIdH' . $n . 'f"/><w:footerReference w:type="first" r:id="rIdF' . $n . 'f"/>';
             }
+            // זוגי / אי-זוגי שונים (evenAndOddHeaders ב-settings): כותרות לעמוד זוגי, עם המספור באותו מקום
+            if ($evenOdd) {
+                $files["word/header{$n}e.xml"] = $hf($p['header_even'], $numTop, 'hdr', $nb);
+                $files["word/footer{$n}e.xml"] = $hf($p['footer_even'], $numBottom, 'ftr', $nb);
+                $hfRels .= '<Relationship Id="rIdH' . $n . 'e" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header' . $n . 'e.xml"/>'
+                    . '<Relationship Id="rIdF' . $n . 'e" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer' . $n . 'e.xml"/>';
+                $refs .= '<w:headerReference w:type="even" r:id="rIdH' . $n . 'e"/><w:footerReference w:type="even" r:id="rIdF' . $n . 'e"/>';
+            }
             $hfIds[$key] = $refs;
         }
         return $hfIds[$key] . ($titlePg ? '' : '');
@@ -1291,7 +1301,9 @@ function export_docx(array $json, array $page, string $title = ''): string
         $nb = $p['numbering'];
         $first = $index === 0;
         $titlePg = $first && $nb['show'] && !$nb['first_page'];
-        $pgNum = '<w:pgNumType' . ($nb['format'] === 'hebrew' ? ' w:fmt="hebrew1"' : '') . ($first ? ' w:start="' . (int)$page['numbering']['start'] . '"' : '') . '/>';
+        // התחלת המספור: במקטע הראשון — של המסמך; במקטע עם num_restart — מחדש
+        $start = $first ? (int)$page['numbering']['start'] : (!empty($p['num_restart']) ? (int)$p['num_start'] : null);
+        $pgNum = '<w:pgNumType' . ($nb['format'] === 'hebrew' ? ' w:fmt="hebrew1"' : '') . ($start !== null ? ' w:start="' . $start . '"' : '') . '/>';
         return '<w:sectPr>' . $hfRefs($p, $first) . ($first ? '' : '<w:type w:val="nextPage"/>')
             . '<w:pgSz w:w="' . $tw($wmm) . '" w:h="' . $tw($hmm) . '"' . ($p['orientation'] === 'landscape' ? ' w:orient="landscape"' : '') . '/>'
             . '<w:pgMar w:top="' . $tw($mg['top']) . '" w:right="' . $tw($mg['right']) . '" w:bottom="' . $tw($mg['bottom']) . '" w:left="' . $tw($mg['left'])
@@ -1334,6 +1346,7 @@ function export_docx(array $json, array $page, string $title = ''): string
     $numbering = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:numbering ' . W_NS . '>' . $parts['abstract'] . $parts['num'] . '</w:numbering>';
     $settings = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings ' . W_NS . '>' . ($pc ? '<w:displayBackgroundShape/>' : '')
         . (!empty($json['attrs']['track']) ? '<w:trackRevisions/>' : '') . '<w:defaultTabStop w:val="720"/>'
+        . (!empty($page['even_odd']) ? '<w:evenAndOddHeaders/>' : '')
         . '<w:characterSpacingControl w:val="doNotCompress"/>'
         . ($o->footnotes ? '<w:footnotePr><w:footnote w:id="-1"/><w:footnote w:id="0"/></w:footnotePr>' : '')
         . ($o->endnotes ? '<w:endnotePr><w:numFmt w:val="lowerRoman"/><w:endnote w:id="-1"/><w:endnote w:id="0"/></w:endnotePr>' : '') . '<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>';
