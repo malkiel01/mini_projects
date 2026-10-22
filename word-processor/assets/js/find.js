@@ -4,9 +4,10 @@
  * גם "שָׁלוֹם"), ביטוי רגולרי ($1 בהחלפה).
  *
  * החיפוש בתוך כל פסקה (גם מעבר לגבולות עיצוב — "של**ום**" נמצא); תמונה / הערת שוליים בתוך פסקה = תו אחד שלא
- * מתאים לטקסט. הטקסט שבתוך הערות השוליים (attrs) — לא בחיפוש.
+ * מתאים לטקסט. גם בתוך הערות השוליים והסיום (ביקורת 04, R10 ד — כמו ב-Word): התאמה בהערה במקום הסימן שלה (note:
+ * המיקום בטקסט ההערה), מסומנת על הסימן; החלפה משנה את טקסט ההערה עצמו (עם העיצוב שלה).
  */
-import { Extension, Plugin, PluginKey, Decoration, DecorationSet, TextSelection } from '../../vendor/tiptap.js';
+import { Extension, Plugin, PluginKey, Decoration, DecorationSet, TextSelection, NodeSelection } from '../../vendor/tiptap.js';
 import { matchText, newBudget, SLOW } from './find-core.js';
 
 export const findKey = new PluginKey('wpFind');
@@ -39,8 +40,10 @@ export function findMatches(doc, query, opts = {}) {
         // הטקסט של הפסקה, ולכל תו — המיקום שלו במסמך (ניקוד שהושמט — לא נכנס לטקסט, אבל נשאר בטווח ההתאמה)
         let text = '';
         const at = [];
+        const notes = [];
         node.forEach((child, off) => {
             const p = pos + 1 + off;
+            if (child.type.name === 'footnote') notes.push([p, child]);
             if (!child.isText) { text += '￼'; at.push(p); return; }
             for (let i = 0; i < child.text.length; i++) {
                 const ch = child.text[i];
@@ -51,12 +54,44 @@ export function findMatches(doc, query, opts = {}) {
         });
         const end = pos + 1 + node.content.size;
         const posAt = i => (i < at.length ? at[i] : end);
-        for (const x of matchText(text, re, opts.wholeWord, budget)) out.push({ from: at[x.a], to: posAt(x.b), groups: x.groups, text: x.text });
+        const found = matchText(text, re, opts.wholeWord, budget).map(x => ({ from: at[x.a], to: posAt(x.b), groups: x.groups, text: x.text }));
+        // ההערות שבפסקה: כל התאמה — במקום הסימן (from–to הוא הסימן), note: הטווח בטקסט ההערה (במקור — עם ניקוד)
+        for (const [p, n] of notes) {
+            const src = n.attrs.text || '';
+            let t = '';
+            const idx = [];
+            for (let i = 0; i < src.length; i++) { if (strip && NIQQUD.test(src[i])) continue; t += src[i]; idx.push(i); }
+            for (const x of matchText(t, re, opts.wholeWord, budget)) {
+                found.push({ from: p, to: p + 1, groups: x.groups, text: x.text, note: { a: idx[x.a], b: x.b < idx.length ? idx[x.b] : src.length, end: !!n.attrs.end } });
+            }
+        }
+        found.sort((x, y) => x.from - y.from || (x.note ? 1 : 0) - (y.note ? 1 : 0));
+        out.push(...found);
         return false;
     });
     // נעצר באמצע — לא מציגים חצי תוצאות כאילו זה הכול
     if (budget.stopped) return { error: SLOW };
     return out;
+}
+
+/**
+ * החלפה בתוך הערה: attrs חדשים — text, ו-content (ריצות עם עיצוב): הטקסט החדש נכנס לריצה שבה מתחילה ההתאמה,
+ * ומה שההתאמה תפסה בריצות שאחריה — נמחק. ריצה שהתרוקנה — יוצאת.
+ */
+export function replaceInNote(attrs, a, b, str) {
+    const text = (attrs.text || '').slice(0, a) + str + (attrs.text || '').slice(b);
+    if (!Array.isArray(attrs.content)) return { ...attrs, text };
+    let off = 0;
+    const content = [];
+    for (const r of attrs.content) {
+        if (r?.type !== 'text' || !r.text) continue;
+        const s = off, e = off + r.text.length;
+        off = e;
+        if (e <= a || s >= b) { content.push(r); continue; }
+        const keep = r.text.slice(0, Math.max(0, a - s)) + (a >= s && a < e ? str : '') + r.text.slice(Math.max(0, Math.min(e, b) - s));
+        if (keep) content.push({ ...r, text: keep });
+    }
+    return { ...attrs, text, content: content.length ? content : null };
 }
 
 /** טקסט ההחלפה: בביטוי רגולרי $1..$9 ו-$& מוחלפים בקבוצות; אחרת — כמו שהוא. */
@@ -105,15 +140,30 @@ export const FindReplace = Extension.create({
                 decorations(state) {
                     const st = findKey.getState(state);
                     if (!st.matches.length) return null;
-                    return DecorationSet.create(state.doc, st.matches.map((m, i) =>
-                        Decoration.inline(m.from, m.to, { class: i === st.index ? 'wp-find wp-find-cur' : 'wp-find' })));
+                    // התאמה בהערה — על הסימן שלה (כמה התאמות באותה הערה: הסימן מסומן פעם אחת, כנוכחי אם אחת מהן נוכחית)
+                    const cur = st.matches[st.index];
+                    const seen = new Set();
+                    return DecorationSet.create(state.doc, st.matches.flatMap((m, i) => {
+                        if (!m.note) return [Decoration.inline(m.from, m.to, { class: i === st.index ? 'wp-find wp-find-cur' : 'wp-find' })];
+                        if (seen.has(m.from)) return [];
+                        seen.add(m.from);
+                        return [Decoration.node(m.from, m.to, { class: cur?.note && cur.from === m.from ? 'wp-find wp-find-cur' : 'wp-find' })];
+                    }));
                 },
             },
         })];
     },
     addCommands() {
         // כל פקודה עובדת על tr של TipTap (ולא שולחת עסקה בעצמה) — אחרת שתי עסקאות על אותו מצב
-        const select = (tr, i, m) => tr.setMeta(findKey, { index: i }).setSelection(TextSelection.create(tr.doc, m.from, m.to));
+        const select = (tr, i, m) => tr.setMeta(findKey, { index: i })
+            .setSelection(m.note ? NodeSelection.create(tr.doc, m.from) : TextSelection.create(tr.doc, m.from, m.to));
+        /** מחליף התאמה אחת ב-tr (בהערה — את הטקסט שלה, בלי לגעת במסמך מסביב). מחזיר את אורך הטקסט החדש במסמך. */
+        const put = (tr, m, text) => {
+            if (!m.note) { tr.insertText(text, m.from, m.to); return text.length; }
+            const n = tr.doc.nodeAt(m.from);
+            if (n?.type.name === 'footnote') tr.setNodeMarkup(m.from, undefined, replaceInNote(n.attrs, m.note.a, m.note.b, text)).setMeta('closeHistory$', true);
+            return 1;
+        };
         const go = dir => ({ state, tr, dispatch }) => {
             const st = findKey.getState(state);
             if (!st.matches.length) return false;
@@ -141,7 +191,7 @@ export const FindReplace = Extension.create({
                 const m = st.matches[st.index];
                 if (!m) return false;
                 const text = replacementFor(m, replace, st.opts);
-                if (dispatch) tr.insertText(text, m.from, m.to).setMeta(findKey, { after: m.from + text.length });
+                if (dispatch) tr.setMeta(findKey, { after: m.from + put(tr, m, text) });
                 return true;
             },
             /** מחליף את כל ההתאמות בעסקה אחת — Ctrl+Z אחד מבטל הכול. */
@@ -150,7 +200,7 @@ export const FindReplace = Extension.create({
                 if (!st.matches.length) return false;
                 if (dispatch) for (let i = st.matches.length - 1; i >= 0; i--) {
                     const m = st.matches[i];
-                    tr.insertText(replacementFor(m, replace, st.opts), m.from, m.to);
+                    put(tr, m, replacementFor(m, replace, st.opts));
                 }
                 return true;
             },
@@ -186,7 +236,8 @@ export function createFindBar(h, { editor, notify }) {
     function paint() {
         const s = st();
         const n = s.matches.length;
-        count.textContent = preErr || (s.error ? s.error : !s.query ? '' : n ? `${s.index + 1} מתוך ${n}` : 'אין תוצאות');
+        const inNote = s.matches[s.index]?.note;
+        count.textContent = preErr || (s.error ? s.error : !s.query ? '' : n ? `${s.index + 1} מתוך ${n}${inNote ? (inNote.end ? ' · בהערת סיום' : ' · בהערת שוליים') : ''}` : 'אין תוצאות');
         count.classList.toggle('none', !!preErr || (!!s.query && !n));
         prev.disabled = next.disabled = !n;
         const can = editor.isEditable;
@@ -205,7 +256,13 @@ export function createFindBar(h, { editor, notify }) {
         const strip = opt.ignoreNiqqud !== false;
         const source = strip ? query.replace(NIQQUD_G, '') : query;
         const texts = [];
-        editor.state.doc.descendants(n => { if (n.isTextblock) { texts.push(strip ? n.textContent.replace(NIQQUD_G, '') : n.textContent); return false; } return true; });
+        const add = t => texts.push(strip ? t.replace(NIQQUD_G, '') : t);
+        editor.state.doc.descendants(n => {
+            if (!n.isTextblock) return true;
+            add(n.textContent);
+            n.forEach(c => { if (c.type.name === 'footnote') add(c.attrs.text || ''); });   // גם ההערות — אותו תקציב
+            return false;
+        });
         return new Promise(resolve => {
             let w;
             try { w = new Worker(new URL('./find-worker.js', import.meta.url), { type: 'module' }); } catch { resolve({ ok: true }); return; }

@@ -78,5 +78,42 @@ export default async function (t) {
     await p.emulateMedia({ media: 'print' });
     t.ok('בהדפסה — הפס מוסתר', await p.locator('.wp-findbar').isHidden());
     await p.emulateMedia({ media: 'screen' });
+
+    // R10 ד — חיפוש גם בתוך הערות שוליים והערות סיום, והחלפה בתוכן ההערה (עם העיצוב שלה)
+    const FN = (text, content, end) => ({ type: 'footnote', attrs: { text, content: content || null, ...(end ? { end: true } : {}) } });
+    const nd = await t.newDoc(p, 'חיפוש בהערות', { type: 'doc', content: [
+        P(T('גוף עם תפוח'), FN('הערה על תפוח ירוק'), T(' ועוד')),
+        P(T('סוף'), FN('תפוח בסיום', [T('תפוח', [{ type: 'bold' }]), T(' בסיום')], true)),
+    ] });
+    await t.openDoc(p, nd);
+    await p.click('.wp-doc p >> nth=0');
+    await p.waitForTimeout(150);
+    await p.evaluate(() => document.querySelector('.wp-doc').editor.commands.setTextSelection(1));
+    await p.keyboard.press('Control+f');
+    await find('תפוח');
+    t.ok('R10 ד: התאמות גם בהערות — 3 (גוף, שוליים, סיום)', (await count()) === '1 מתוך 3', await count());
+    await p.keyboard.press('Enter');
+    t.ok('R10 ד: ההתאמה בהערת השוליים — מסומנת על הסימן, והמונה אומר איפה', (await count()) === '2 מתוך 3 · בהערת שוליים'
+        && await p.locator('.wp-doc .wp-fn-ref.wp-find-cur').count() === 1, await count());
+    const notes = () => p.evaluate(() => { const o = []; document.querySelector('.wp-doc').editor.state.doc.descendants(n => { if (n.type.name === 'footnote') o.push(n.attrs); }); return o; });
+    await p.keyboard.press('Control+h');
+    await p.fill('.wp-findbar .repl-in', 'אגס');
+    await p.click('.wp-findbar button:has-text("החלפה")');
+    t.ok('R10 ד: החלפה בתוך הערת השוליים — הטקסט בהערה, הגוף לא השתנה', (await notes())[0].text === 'הערה על אגס ירוק'
+        && await p.evaluate(() => document.querySelector('.wp-doc').editor.state.doc.textContent.includes('גוף עם תפוח')), JSON.stringify(await notes()));
+    await p.click('.wp-findbar button:has-text("החלף הכול")');
+    const after = await notes();
+    t.ok('R10 ד: החלף הכול — גם בהערת הסיום, עם העיצוב (מודגש נשאר)', after[1].text === 'אגס בסיום' && after[1].content?.[0]?.text === 'אגס'
+        && after[1].content[0].marks?.[0]?.type === 'bold' && await p.evaluate(() => !document.querySelector('.wp-doc').editor.state.doc.textContent.includes('תפוח')), JSON.stringify(after));
+    await p.keyboard.press('Escape');
+    await p.keyboard.press('Control+z');
+    t.ok('R10 ד: Ctrl+Z אחד מבטל את החלף הכול — גם בהערות', (await notes())[1].text === 'תפוח בסיום' && (await notes())[0].text === 'הערה על אגס ירוק', JSON.stringify(await notes()));
+    // התאמה שחוצה שתי ריצות בהערה (רגיל + מודגש): הטקסט החדש בריצה הראשונה, מה שנתפס בשנייה — נמחק
+    const cross = await p.evaluate(async url => {
+        const { replaceInNote } = await import(url);
+        return replaceInNote({ text: 'אבג דהו', content: [{ type: 'text', text: 'אבג ' }, { type: 'text', text: 'דהו', marks: [{ type: 'bold' }] }] }, 2, 5, 'X');
+    }, t.editor + 'assets/js/find.js');
+    t.ok('R10 ד: החלפה שחוצה ריצות בהערה — הטקסט והריצות מתואמים', cross.text === 'אבXהו' && cross.content.map(r => r.text).join('') === cross.text
+        && cross.content[1].marks?.[0]?.type === 'bold' && cross.content[1].text === 'הו', JSON.stringify(cross));
     t.ok('בלי שגיאות JS', !p.errors.length, p.errors.join(' | '));
 }
