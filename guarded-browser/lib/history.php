@@ -47,7 +47,7 @@ function policyDiff(?array $old, array $new): array {
     $labels = ['mode' => 'מצב', 'posture' => 'ברירת מחדל לאתרים', 'blocked_types' => 'סוגי תוכן חסומים', 'ad_block' => 'חסימת פרסומות',
                'timezone' => 'אזור זמן', 'days_mask' => 'ימים', 'window_start' => 'תחילת חלון', 'window_end' => 'סוף חלון',
                'daily_quota_min' => 'מכסה יומית (דק׳)', 'session_max_min' => 'רצף מרבי (דק׳)', 'max_devices' => 'מכשירים',
-               'apps_posture' => 'ברירת מחדל לאפליקציות', 'report_level' => 'רמת דיווח', 'allow_pip' => 'תמונה בתוך תמונה',
+               'apps_posture' => 'ברירת מחדל לאפליקציות', 'new_apps' => 'אפליקציה חדשה שתותקן', 'report_level' => 'רמת דיווח', 'allow_pip' => 'תמונה בתוך תמונה',
                'allow_background' => 'שמע ברקע', 'allow_downloads' => 'הורדות', 'block_screenshots' => 'חסימת צילום מסך',
                'keep_history' => 'היסטוריה', 'offline_grace_h' => 'שעות בלי חיבור', 'offline_content' => 'זמין בלי חיבור'];
     foreach ($new['policy'] as $k => $v) {

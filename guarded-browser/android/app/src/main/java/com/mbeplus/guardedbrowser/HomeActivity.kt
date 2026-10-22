@@ -161,22 +161,8 @@ class HomeActivity : AppCompatActivity() {
     private fun reportApps() {
         if (appsReported || !store.appsManage) return
         appsReported = true
-        Thread {
-            try {
-                val pm = packageManager
-                val main = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-                val arr = org.json.JSONArray()
-                for (ri in pm.queryIntentActivities(main, 0)) {
-                    val pkg = ri.activityInfo.packageName
-                    if (pkg == store.ownPackage) continue
-                    val label = ri.loadLabel(pm).toString()
-                    val sys = (ri.activityInfo.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
-                    arr.put(org.json.JSONObject().apply { put("p", pkg); put("n", label); put("s", if (sys) 1 else 0) })
-                }
-                AppPolicy.scan(this, force = true)   // מסכי הבית והמקלדות — לא נחסמים
-                if (arr.length() > 0) Api.apps(store.token, arr) { }
-            } catch (e: Exception) { Trace.log("reportApps.fail", e.message ?: "") }
-        }.start()
+        Thread { AppPolicy.scan(this, force = true) }.start()   // מסכי הבית והמקלדות — לא נחסמים
+        AppsReport.send(this)
     }
 
     private fun quotaLine(): String {

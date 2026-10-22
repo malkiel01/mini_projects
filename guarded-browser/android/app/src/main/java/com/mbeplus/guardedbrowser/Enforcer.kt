@@ -223,7 +223,9 @@ object Enforcer {
     private fun rawBlockList(ctx: Context, store: Store): Set<String> {
         AppPolicy.scan(ctx, force = true)
         if (store.appsPosture != "deny_all") {
-            return store.appsBlocked.filter { AppPolicy.blocked(store, it, withTime = false) }.toSet()
+            // ועוד אפליקציות חדשות שנחסמות כברירת מחדל (NewAppMath) — עד שהשרת רושם עליהן כלל.
+            return (store.appsBlocked + store.launchable.filter { NewAppMath.isNew(it, store.appsKnown, store.appsBaseline) })
+                .filter { AppPolicy.blocked(store, it, withTime = false) }.toSet()
         }
         // deny_all: כל מה שניתן לפתוח, פרט למותר ולמה שלעולם לא נחסם.
         val out = mutableSetOf<String>()
