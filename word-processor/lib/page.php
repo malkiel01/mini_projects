@@ -42,6 +42,8 @@ function page_defaults(): array
         'header' => '', 'footer' => '', 'heading_numbers' => false,
         // רקע הדף (כל המסמך): צבע עמוד, וסימן מים — טקסט באלכסון מאחורי הטקסט
         'page_color' => '', 'watermark' => '',
+        // טורים (של המקטע, כמו w:cols ב-Word): מספר, הרווח ביניהם במ"מ, קו מפריד
+        'columns' => ['n' => 1, 'gap' => 12.7, 'line' => false],
     ];
 }
 
@@ -116,6 +118,12 @@ function page_normalize($in, ?array $base = null): array
         $p['page_color'] = preg_match('/^#[0-9a-f]{6}$/', $c) && $c !== '#ffffff' ? $c : '';
     }
     if (is_string($in['watermark'] ?? null)) $p['watermark'] = mb_substr(trim(preg_replace('/[\x00-\x1f]+/u', ' ', $in['watermark'])), 0, 40);
+    if (is_array($in['columns'] ?? null)) {
+        $c = $in['columns'];
+        if (($v = $num($c['n'] ?? null, 1, 4)) !== null) $p['columns']['n'] = (int)$v;
+        if (($v = $num($c['gap'] ?? null, 0, 50)) !== null) $p['columns']['gap'] = $v;
+        if (isset($c['line'])) $p['columns']['line'] = (bool)$c['line'];
+    }
     return $p;
 }
 
