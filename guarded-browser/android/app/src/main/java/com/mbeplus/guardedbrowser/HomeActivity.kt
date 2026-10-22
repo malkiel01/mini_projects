@@ -338,6 +338,12 @@ class HomeActivity : AppCompatActivity() {
                 setTextColor(getColor(R.color.ink))
                 setOnClickListener { showBlockedApps() }
             })
+            // הגנה מלאה דרך מחשב (FullSetupActivity) — רק כשעוד אין "בעל מכשיר".
+            if (!Enforcer.isOwner(this@HomeActivity) && !store.released) addView(TextView(this@HomeActivity).apply {
+                text = "🛡️  הגנה מלאה — דרך מחשב, עם ההורה"; textSize = 15f; setPadding(0, dp(8), 0, dp(8))
+                setTextColor(getColor(R.color.ink))
+                setOnClickListener { startActivity(Intent(this@HomeActivity, FullSetupActivity::class.java)) }
+            })
         }
         MaterialAlertDialogBuilder(this)
             .setTitle(store.displayName().ifEmpty { "ההגדרות שלי" })

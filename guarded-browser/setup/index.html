@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>מגדלור · הקמה מלאה מהמחשב</title>
+  <link rel="icon" href="../assets/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/migdalor.css">
+  <style>
+    .steps { display: grid; gap: var(--s2); counter-reset: s; padding: 0; list-style: none; }
+    .steps > li { counter-increment: s; display: grid; grid-template-columns: 2rem 1fr; gap: var(--s2); align-items: start; }
+    .steps > li::before { content: counter(s); inline-size: 2rem; block-size: 2rem; border-radius: 50%; display: grid; place-items: center;
+      background: var(--surface); border: 1px solid var(--line); font-weight: 600; }
+    .log { display: grid; gap: 4px; padding: 0; list-style: none; }
+    .log li { display: flex; gap: var(--s2); align-items: flex-start; }
+    .log small { display: block; color: var(--muted); }
+    pre.raw { white-space: pre-wrap; font-size: .8rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: var(--s2); direction: ltr; text-align: left; }
+  </style>
+</head>
+<body>
+<main id="main">
+  <div class="auth" style="max-width:640px">
+    <div class="brand">
+      <span class="big" aria-hidden="true">🗼</span>
+      <h1>הקמה מלאה מהמחשב</h1>
+      <p class="muted">הגנה מלאה: כפתור "הסרה" אפור, והגדרות הטלפון נאכפות — בלי לאפס את הטלפון.</p>
+    </div>
+
+    <div class="banner bad" id="nousb" hidden><span>⚠️</span><div><b>הדפדפן הזה לא יכול להתחבר לטלפון</b>
+      פתחו את הדף הזה במחשב, בכרום או באדג׳ (לא בטלפון, לא בפיירפוקס ולא בספארי).</div></div>
+
+    <section class="group">
+      <h3>לפני שמתחילים — בטלפון</h3>
+      <ol class="steps">
+        <li><div><b>פותחים את מגדלור ← ⚙️ ← "🛡️ הגנה מלאה"</b>
+          <div class="hint">שם שלושה צעדים, עם כפתור לכל מסך: הסרת החשבונות, הפעלת "אפשרויות מפתחים", והפעלת "ניפוי USB".</div></div></li>
+        <li><div><b>מחברים את הטלפון למחשב בכבל USB</b>
+          <div class="hint">אם הטלפון שואל מה לעשות עם החיבור — "טעינה בלבד" מספיק.</div></div></li>
+        <li><div><b>לוחצים כאן "חיבור לטלפון"</b>, בוחרים את הטלפון ברשימה, ומאשרים בטלפון "לאפשר ניפוי באגים".
+          <div class="hint">כל השאר — אוטומטי. בסוף המחשב מכבה את ניפוי ה-USB בעצמו.</div></div></li>
+      </ol>
+      <button class="btn primary" type="button" id="go">🔌 חיבור לטלפון</button>
+    </section>
+
+    <section class="group" id="progress" hidden>
+      <h3>מה קורה</h3>
+      <ul class="log" id="log" aria-live="polite"></ul>
+      <div id="result"></div>
+    </section>
+
+    <p class="hint">הדף מדבר עם הטלפון ישירות מהדפדפן — שום פרט מהטלפון (חשבונות, אפליקציות) לא נשלח לשרת.
+      בלי אינטרנט בטלפון ובלי תוכנה במחשב. אם המחשב לא מוצא את הטלפון ב-Windows — ראו "לא מצליח?" למטה.</p>
+
+    <details class="group">
+      <summary><b>לא מצליח?</b></summary>
+      <ul class="hint">
+        <li>הטלפון לא מופיע ברשימה: בדקו שהכבל מעביר נתונים (לא רק טעינה), ושניפוי USB דלוק. ב-Windows לעיתים צריך את מנהל ההתקן של יצרן הטלפון (Samsung USB Driver וכדומה).</li>
+        <li>"המכשיר תפוס": סגרו תוכנות אחרות שמדברות עם הטלפון (Android Studio, ‏adb, תוכנות של היצרן), ונסו שוב.</li>
+        <li>אין חלון "לאפשר ניפוי באגים" בטלפון: נתקו וחברו את הכבל, ופתחו את הטלפון (לא במסך נעילה).</li>
+        <li>תמיד אפשר בדרך השנייה: איפוס הטלפון והקמה בקוד QR מאפליקציית ההורה.</li>
+      </ul>
+    </details>
+  </div>
+</main>
+<script type="module" src="setup.js"></script>
+</body>
+</html>

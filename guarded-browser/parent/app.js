@@ -728,7 +728,7 @@ function permLine(p) {
     if (!p) return '';
     if (p.complete) return '✓ כל ההרשאות · בעל מכשיר';
     // "בעל מכשיר" חסר — תמיד מסומן: בלעדיו אין שליטה בהגדרות המערכת ועדכון שקט.
-    const owner = p.owner ? '' : '⚠️ חסר "בעל מכשיר" — הקמה מלאה ב"חיבור מכשיר" (איפוס המכשיר)';
+    const owner = p.owner ? '' : '⚠️ חסר "בעל מכשיר" — הקמה מלאה ב"חיבור מכשיר": בקוד QR (איפוס) או דרך מחשב (בלי איפוס)';
     const req = p.required_missing.length ? `⚠️ חסרות הרשאות: ${p.required_missing.join('، ')}` : '';
     return [req, owner].filter(Boolean).join(' · ');
 }
@@ -1076,7 +1076,10 @@ function provisionBox(cfg) {
     });
     return el('div', { style: 'margin-top:16px;display:grid;gap:8px' }, [
         el('p', { class: 'hint', text: 'בלי הקמה מלאה האכיפה חלקית: אי אפשר לנעול את הגדרות המערכת, והעדכונים דורשים לחיצה של הילד.' }),
-        btn, holder]);
+        btn, holder,
+        // בלי איפוס — דרך מחשב (setup/, WebUSB). בטלפון: מגדלור ← ⚙️ ← "הגנה מלאה" (FullSetupActivity).
+        el('a', { class: 'btn', href: '../setup/', target: '_blank', rel: 'noopener', text: '💻 הקמה מלאה בלי איפוס — דרך מחשב' }),
+        el('p', { class: 'hint', text: 'בטלפון: מגדלור ← ⚙️ ← "הגנה מלאה"; במחשב בכרום — הדף שנפתח בכפתור. מסירים זמנית את החשבונות בטלפון, וכל השאר אוטומטי.' })]);
 }
 
 /* ── ילד חדש ───────────────────────────────────────────────────── */
