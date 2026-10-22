@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.os.Build
+import android.os.Bundle
 import android.os.UserManager
 
 /**
@@ -174,7 +175,10 @@ object Enforcer {
      * בטוח להרצה חוזרת. השעיה שנכשלה אינה נרשמת כמושעית, ולכן תנוסה שוב בהחלה הבאה.
      */
     fun apply(ctx: Context, store: Store) {
-        if (!isOwner(ctx)) { EnforceReport.send(ctx, store, emptyMap(), emptyList()); return }
+        if (!isOwner(ctx)) {
+            store.chromeResult = if (store.appsManage && store.chromePolicy.optBoolean("managed")) "no_owner" else ""
+            EnforceReport.send(ctx, store, emptyMap(), emptyList()); return
+        }
         val dpm = dpm(ctx)
         val admin = DeviceAdmin.component(ctx)
 
@@ -191,6 +195,7 @@ object Enforcer {
         if (!store.appsManage) {
             unsuspendAll(ctx, store)
             unhideAll(ctx, store)
+            store.chromeResult = applyChrome(ctx, store)
             EnforceReport.send(ctx, store, settings, emptyList())
             return
         }
@@ -212,6 +217,7 @@ object Enforcer {
         val hideFail = setHidden(ctx, (toHide - wasHidden).toList(), true)
         store.hidden = EnforceMath.nextSuspended(toHide, wasHidden, hideFail, showFail)
         if (hideFail.isNotEmpty()) Trace.log("enforce.hide_fail", hideFail.joinToString(","))
+        store.chromeResult = applyChrome(ctx, store)
         EnforceReport.send(ctx, store, settings, (failOn + hideFail).distinct())
     }
 
@@ -248,6 +254,7 @@ object Enforcer {
         val admin = DeviceAdmin.component(ctx)
         unsuspendAll(ctx, store)
         unhideAll(ctx, store)
+        clearChrome(ctx, store, emptySet())
         trySet { dpm.setUninstallBlocked(admin, ctx.packageName, false) }
         for (r in ALWAYS + SETTINGS.values.flatMap { it.first }) trySet { dpm.clearUserRestriction(admin, r) }
         trySet { dpm.setCameraDisabled(admin, false) }
@@ -287,6 +294,54 @@ object Enforcer {
             catch (e: Exception) { Trace.log("enforce.hide", "$pkg: ${e.message}"); false }
         }
     }
+
+    /**
+     * כרום מנוהל (lib/chrome.php, ‏ChromeMath): מעביר לכל כרום מותקן את המדיניות, וקורא בחזרה
+     * (getApplicationRestrictions) — "verified" רק כשכל מפתח תואם. כבוי — מנקה את מה שהעביר קודם.
+     * מחזיר את התוצאה לדוח: verified / fail / not_installed / ריק (לא מנוהל).
+     */
+    private fun applyChrome(ctx: Context, store: Store): String {
+        val c = store.chromePolicy
+        if (!store.appsManage || store.released || !c.optBoolean("managed")) { clearChrome(ctx, store, emptySet()); return "" }
+        val all = c.optJSONArray("packages")?.let { a -> (0 until a.length()).map { a.optString(it) } } ?: emptyList()
+        val pkgs = all.filter { installed(ctx, it) }.toSet()
+        clearChrome(ctx, store, pkgs)
+        if (pkgs.isEmpty()) return "not_installed"
+        val list = { k: String -> c.optJSONArray(k)?.let { a -> (0 until a.length()).map { a.optString(it) } } ?: emptyList() }
+        val spec = ChromeMath.spec(list("block"), list("allow"), c.optBoolean("youtube"))
+        val bundle = Bundle().apply {
+            for ((k, v) in spec) when (v) {
+                is List<*> -> putStringArray(k, v.map { it.toString() }.toTypedArray())
+                is Int -> putInt(k, v)
+                is Boolean -> putBoolean(k, v)
+            }
+        }
+        val dpm = dpm(ctx)
+        val admin = DeviceAdmin.component(ctx)
+        var allOk = true
+        for (p in pkgs) {
+            val set = ok { dpm.setApplicationRestrictions(admin, p, bundle) }
+            val back = try { dpm.getApplicationRestrictions(admin, p) } catch (e: Exception) { null }
+            val actual = spec.mapValues { (k, v) ->
+                if (back == null || !back.containsKey(k)) null
+                else when (v) { is List<*> -> back.getStringArray(k)?.toList(); is Int -> back.getInt(k); is Boolean -> back.getBoolean(k); else -> null }
+            }
+            if (!set || !ChromeMath.matches(spec, actual)) { allOk = false; Trace.log("enforce.chrome_fail", p) }
+        }
+        store.chromeApplied = pkgs
+        return if (allOk) "verified" else "fail"
+    }
+
+    /** מנקה את מדיניות כרום מכל חבילה שהועברה לה ואינה ב-keep. */
+    private fun clearChrome(ctx: Context, store: Store, keep: Set<String>) {
+        val drop = store.chromeApplied - keep
+        if (drop.isEmpty()) return
+        for (p in drop) trySet { dpm(ctx).setApplicationRestrictions(DeviceAdmin.component(ctx), p, Bundle()) }
+        store.chromeApplied = store.chromeApplied - drop
+    }
+
+    private fun installed(ctx: Context, pkg: String): Boolean =
+        try { ctx.packageManager.getApplicationInfo(pkg, 0); true } catch (e: Exception) { false }
 
     private fun unhideAll(ctx: Context, store: Store) {
         store.hidden = setHidden(ctx, store.hidden.toList(), false).toSet()

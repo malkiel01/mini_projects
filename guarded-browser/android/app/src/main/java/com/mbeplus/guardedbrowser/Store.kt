@@ -140,6 +140,8 @@ class Store(context: Context) {
             .putString("apps_allowed", a?.optJSONArray("allowed")?.toString() ?: "[]")
             // מוסתרות (בעל מכשיר): נעלמות מהטלפון. השרת שולח אותן גם ב-blocked.
             .putString("apps_hidden", a?.optJSONArray("hidden")?.toString() ?: "[]")
+            // כרום מנוהל (lib/chrome.php, Enforcer.applyChrome).
+            .putString("apps_chrome", a?.optJSONObject("chrome")?.toString() ?: "{}")
             // זמן מסך: {package: דקות ליום} (AppTimeMath).
             .putString("app_limits", a?.optJSONObject("limits")?.toString() ?: "{}")
             .apply()
@@ -171,6 +173,17 @@ class Store(context: Context) {
     val appsBlocked: Set<String> get() = strSet("apps_blocked")
     val appsAllowed: Set<String> get() = strSet("apps_allowed")
     val appsHidden: Set<String> get() = strSet("apps_hidden")
+    val chromePolicy: JSONObject get() = obj("apps_chrome") ?: JSONObject()
+
+    /** חבילות כרום שמגדלור העביר להן מדיניות — כדי לנקות אותה כשההורה מכבה "כרום מנוהל". */
+    var chromeApplied: Set<String>
+        get() = strSet("chrome_applied")
+        set(v) { prefs.edit().putString("chrome_applied", JSONArray(v.toList()).toString()).apply() }
+
+    /** התוצאה האחרונה (verified / fail / no_owner / not_installed / ריק — לא מנוהל) — לדוח האכיפה. */
+    var chromeResult: String
+        get() = prefs.getString("chrome_result", "") ?: ""
+        set(v) { prefs.edit().putString("chrome_result", v).apply() }
 
     /** עד מתי ההגדרות פתוחות למרות חסימה — כי מגדלור עצמו פתח אותן (AppPolicy.openSettings). */
     var settingsPassUntil: Long
