@@ -32,7 +32,11 @@ object PolicySync {
         if (seq > 0) { store.policySeq = seq; TrustedClock.anchor(store, seq) }
         store.lastSyncMs = TrustedClock.now(store)
         applyRelease(ctx, store, payload)
+        // בקשות פתיחה לאפליקציות: היתרים זמניים לפני ההחלה (כדי שההשעיה תוסר), אישור ביצוע אחריה.
+        val apps = payload.optJSONObject("apps")
+        AppGrants.reconcile(store, apps)
         if (!store.released) Enforcer.apply(ctx, store)
+        AppGrants.confirm(ctx, store, apps)
         Updater.note(ctx, payload.optJSONObject("update"))
         Trace.log("sync.apply", "$source seq=$seq rev=${store.rev}")
         changed()

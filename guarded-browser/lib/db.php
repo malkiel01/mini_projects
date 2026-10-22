@@ -125,6 +125,15 @@ function migrate(PDO $pdo): void {
         $pdo->exec("ALTER TABLE devices ADD COLUMN update_state TEXT NOT NULL DEFAULT ''");
         $pdo->exec("ALTER TABLE devices ADD COLUMN update_at TEXT NOT NULL DEFAULT ''");
     }
+    // בקשת פתיחה לאפליקציה (lib/apprequests.php, 2026-10-22) — באותה טבלה כמו בקשות האתרים, עם kind='app'.
+    // ‏apply_state: pending (נשלח למכשיר) / applied / failed / revoked. ‏ends_at — סוף היתר זמני, כפי שהמכשיר החיל.
+    if (!in_array('kind', $columns('access_requests'), true)) {
+        foreach (["kind TEXT NOT NULL DEFAULT 'site'", "package TEXT NOT NULL DEFAULT ''", "device_id INTEGER NOT NULL DEFAULT 0",
+                  "minutes INTEGER NOT NULL DEFAULT 0", "apply_state TEXT NOT NULL DEFAULT ''", "apply_error TEXT NOT NULL DEFAULT ''",
+                  "applied_at TEXT NOT NULL DEFAULT ''", "ends_at TEXT NOT NULL DEFAULT ''"] as $col) {
+            $pdo->exec("ALTER TABLE access_requests ADD COLUMN $col");
+        }
+    }
     // דוח האכיפה האחרון מהמכשיר (lib/enforce.php) — מה הוחל בפועל ומה נכשל, ומתי.
     if (!in_array('enforce_report', $columns('devices'), true)) {
         $pdo->exec("ALTER TABLE devices ADD COLUMN enforce_report TEXT NOT NULL DEFAULT ''");
@@ -480,8 +489,11 @@ function policyRev(int $userId): string {
     // גם כללי האפליקציות (app_rules): בלעדיהם חסימת אפליקציה לא שינתה את הטביעה, והמכשיר לא ידע
     // למשוך מדיניות חדשה עד שינוי אחר (סקירה, 2026-10-20).
     $apps = all('SELECT package, action FROM app_rules WHERE child_id = ? ORDER BY package', [$userId]);
+    // והחלטות על בקשות פתיחה של אפליקציות (בלי apply_state — האישור מהמכשיר לא אמור לגרום למשיכה חוזרת).
+    $appReq = all("SELECT id, status, scope, minutes FROM access_requests WHERE child_id = ? AND kind = 'app' AND status != 'pending'
+                   AND decided_at > ? ORDER BY id", [$userId, gmdate('Y-m-d\TH:i:s\Z', time() - 86400)]);
     return substr(md5(json_encode([
         $user['status'] ?? '', policyFor($userId), rulesFor($userId), categoryRulesFor($userId),
-        platformRulesFor($userId), platformItemsFor($userId), $apps,
+        platformRulesFor($userId), platformItemsFor($userId), $apps, $appReq,
     ])), 0, 12);
 }

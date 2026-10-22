@@ -17,6 +17,7 @@ require_once __DIR__ . '/../lib/activity.php';
 require_once __DIR__ . '/../lib/appversion.php';
 require_once __DIR__ . '/../lib/search.php';
 require_once __DIR__ . '/../lib/appcontrol.php';
+require_once __DIR__ . '/../lib/apprequests.php';
 require_once __DIR__ . '/../lib/enforce.php';
 require_once __DIR__ . '/../lib/devicesettings.php';
 require_once __DIR__ . '/../lib/signing.php';
@@ -295,6 +296,11 @@ try {
         case 'requests':
             requestsCleanup();
             out(['ok' => true, 'requests' => requestList($aid)]);
+
+        case 'app_request_decide':
+            [$msg, $err] = appRequestDecide($aid, $pid, num('req'), str('decision'), num('minutes'));
+            if ($err) fail($err);
+            out(['ok' => true, 'message' => $msg, 'requests' => requestList($aid)]);
 
         case 'request_decide':
             [$msg, $err] = requestDecide($aid, $pid, num('req'), str('decision'), str('scope') ?: 'page');

@@ -115,6 +115,8 @@ object Enforcer {
 
         // הגנה על עצמנו ועל המכשיר.
         trySet { dpm.setUninstallBlocked(admin, ctx.packageName, true) }
+        // אפליקציה מושעית לא נפתחת, ואנדרואיד מציג "נחסם על ידי המנהל" — עם ההודעה הזו, שמפנה לבקשת פתיחה.
+        trySet { dpm.setShortSupportMessage(admin, "ההורה חסם את האפליקציה. לבקשת פתיחה: מגדלור ← ⚙️ ← אפליקציות חסומות") }
         for (r in ALWAYS) trySet { dpm.addUserRestriction(admin, r) }
         val settings = applySettings(ctx, store)
         // עדכון באמצע התקנה — ההחלה לא סוגרת לו את ההתקנה מתחת לרגליים. חלון שפג — כבר נסגר כאן (ALWAYS).

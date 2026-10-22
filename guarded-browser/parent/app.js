@@ -965,21 +965,67 @@ function renderRequests() {
         el('span', { class: 'avatar', style: `--h:${hue(r.child)}`, ariaHidden: 'true', text: initials(r.child) }),
         el('div', { class: 'body' }, [
             el('div', { class: 'l1' }, [el('span', { text: r.child }), el('span', { class: 't', text: ago(r.created_at).replace('מחובר עכשיו', 'עכשיו') })]),
-            el('div', { class: 'l2', dir: 'ltr', style: 'text-align:end', text: r.host }),
+            r.kind === 'app'
+                ? el('div', { class: 'l2', text: `📱 ${r.host}${r.device ? ' · ' + r.device : ''}` })
+                : el('div', { class: 'l2', dir: 'ltr', style: 'text-align:end', text: r.host }),
             r.note ? el('div', { class: 'l2', text: `"${r.note}"` }) : null,
         ]),
-        el('button', { type: 'button', class: 'icon-btn', text: '✕', ariaLabel: `דחייה — ${r.host}`, onclick: () => decide(r, 'deny') }),
-        el('button', { type: 'button', class: 'btn primary sm', text: '✓ אישור', onclick: () => openDecide(r) }),
+        el('button', { type: 'button', class: 'icon-btn', text: '✕', ariaLabel: `דחייה — ${r.host}`,
+            onclick: () => r.kind === 'app' ? decideApp(r, 'deny') : decide(r, 'deny') }),
+        el('button', { type: 'button', class: 'btn primary sm', text: '✓ אישור', onclick: () => r.kind === 'app' ? openAppDecide(r) : openDecide(r) }),
     ])));
     $('#req-recent').hidden = !done.length;
     $('#req-done').replaceChildren(...done.slice(0, 15).map(r => el('li', { class: 'card', style: 'cursor:default' }, [
         el('span', { text: r.status === 'approved' ? '✅' : '🚫', ariaHidden: 'true' }),
         el('div', { class: 'body' }, [
             el('div', { class: 'l1' }, [el('span', { text: `${r.child} · ${r.host}` })]),
-            el('div', { class: 'l2', text: r.status === 'approved'
+            el('div', { class: 'l2', text: r.kind === 'app' ? appDoneLine(r) : r.status === 'approved'
                 ? `אושר — ${((r.scopes.length === 2 ? RSCOPE_YT : RSCOPE)[r.scope] || [r.scope])[0]}` : 'נדחה' }),
         ]),
     ])));
+}
+
+/** בקשת אפליקציה שטופלה: ההחלטה, ומה המכשיר באמת עשה (לא רק "אושר"). */
+function appDoneLine(r) {
+    if (r.status === 'denied') return 'נדחה';
+    const what = r.scope === 'temporary' ? `אושר ל-${minsLabel(r.minutes)}` : 'אושר — קבוע';
+    if (r.apply_state === 'pending') return `${what} · ⏳ ממתין שהמכשיר יחיל`;
+    if (r.apply_state === 'failed') return `${what} · ❌ לא נפתחה במכשיר: ${r.apply_error || 'סיבה לא ידועה'}`;
+    if (r.apply_state === 'revoked') return `${what} · בוטל (שיניתם את הכלל של האפליקציה)`;
+    if (r.scope === 'temporary' && r.ends_at) {
+        const end = new Date(r.ends_at);
+        return end > new Date() ? `${what} · ✅ פתוחה עד ${end.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`
+                                : `${what} · הסתיים — חסומה שוב`;
+    }
+    return `${what} · ✅ נפתחה במכשיר`;
+}
+const minsLabel = m => m < 60 ? `${m} דקות` : m === 60 ? 'שעה' : m === 120 ? 'שעתיים' : `${m / 60} שעות`;
+
+/** אישור אפליקציה: קבוע (עד שמשנים), זמני (חלון זמן מרגע ההחלה במכשיר — לא מכסת שימוש), או סירוב. */
+function openAppDecide(r) {
+    const mins = seg('app_mins', [[15, '15 ד׳'], [30, '30 ד׳'], [60, 'שעה'], [120, 'שעתיים'], [240, '4 שעות']], 30, { cols: 5 });
+    $('#req-dlg-title').textContent = `${r.child} מבקש/ת לפתוח את ${r.host}`;
+    $('#req-dlg-body').replaceChildren(
+        el('p', { class: 'hint', text: `${r.device ? 'במכשיר ' + r.device + ' · ' : ''}${ago(r.created_at)}` }),
+        r.note ? el('p', { class: 'hint', text: `למה: "${r.note}"` }) : null,
+        group('⏱️ זמני', 'חלון זמן שמתחיל כשהמכשיר מקבל את האישור, ואז האפליקציה נחסמת שוב — גם אם היא פתוחה, וגם בלי אינטרנט', [
+            mins,
+            el('button', { type: 'button', class: 'btn primary', text: '⏱️ פתיחה זמנית', onclick: () => {
+                $('#req-dlg').close(); decideApp(r, 'temporary', Number($('[name=app_mins]:checked').value)); } }),
+        ]),
+        el('div', { class: 'row-btns' }, [
+            el('button', { type: 'button', class: 'btn ghost', text: '✕ סירוב', onclick: () => { $('#req-dlg').close(); decideApp(r, 'deny'); } }),
+            el('button', { type: 'button', class: 'btn', text: '✅ פתיחה קבועה', onclick: () => {
+                $('#req-dlg').close(); decideApp(r, 'permanent'); } }),
+        ]));
+    if (!$('#req-dlg').open) $('#req-dlg').showModal();
+}
+
+async function decideApp(r, decision, minutes = 0) {
+    try {
+        const res = await call('app_request_decide', { req: r.id, decision, minutes });
+        R = res.requests; renderRequests(); loadKids(); toast(res.message);
+    } catch (e) { toast(e.message, true); loadRequests(); }
 }
 
 function openDecide(r) {
