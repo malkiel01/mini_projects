@@ -185,6 +185,8 @@ html.wp-no-page-zoom, html.wp-no-page-zoom body, .wp-editor, .wp-stage { touch-a
 .wp-ftr { bottom: 0; }
 .wp-hf-text { white-space: pre-wrap; text-align: center; max-inline-size: 100%; overflow: hidden; }
 .wp-num { position: absolute; }
+/* טורים — תצוגת טיוטה: כל טור במסגרת משלו; תווית "עמוד · טור" בפינת השוליים העליונים (לא מודפסת — השכבה לא מודפסת) */
+.wp-col-badge { position: absolute; inset-inline-start: 8px; top: 6px; font-size: 8pt; color: #2d4a8a; background: #eef2fb; border-radius: 3px; padding: 1px 6px; }
 .wp-num.al-center { inset-inline: 0; text-align: center; }
 .wp-hf-text ~ .wp-num.al-center { position: static; margin-inline-start: 1em; }
 .wp-host { position: relative; }

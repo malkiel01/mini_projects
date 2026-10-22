@@ -76,8 +76,8 @@ export const Pages = Extension.create({
                         ext.storage.pages = pick.pages;
                         ext.options.onLayout(pick);
                         const deco = DecorationSet.create(view.state.doc, pick.breaks.flatMap(b => {
-                            const out = [Decoration.widget(b.pos, spacer(b.h, b.page, b.row, b.sec), {
-                                side: b.side ?? -2, key: `pb${b.page}-${Math.round(b.h)}${b.row ? 'r' : ''}`, ignoreSelection: true,
+                            const out = [Decoration.widget(b.pos, spacer(b.h, b.page, b.row, b.sec, b.skip || 0), {
+                                side: b.side ?? -2, key: `pb${b.page}-${Math.round(b.h)}${b.row ? 'r' : ''}${b.skip ? 's' + b.skip : ''}`, ignoreSelection: true,
                                 marks: [],   // מחוץ לכל סימון (גודל גופן וכו'): בהדפסה Chrome לא שובר עמוד בתוך span
                             })];
                             // טבלה שנמשכת: שורת הכותרת חוזרת בראש העמוד (כמו ב-Word וב-PDF)
@@ -125,7 +125,7 @@ export const Pages = Extension.create({
                 decorations: state => {
                     const g = ext.options.geometry();
                     if (!g.sections || g.sections.length < 2) return null;
-                    const sig = g.sections.map(x => `${x.from}:${x.pageW}:${x.left}:${x.right}`).join('|');
+                    const sig = g.sections.map(x => `${x.from}:${x.pageW}:${x.left}:${x.right}:${x.textW}`).join('|');
                     if (secCache.doc === state.doc && secCache.sig === sig) return secCache.set;
                     const deco = [];
                     state.doc.forEach((node, pos) => {
@@ -134,8 +134,9 @@ export const Pages = Extension.create({
                         const x = g.sections[k];
                         const side = (g.sheetW - x.pageW) / 2;
                         deco.push(Decoration.node(pos, pos + node.nodeSize, {
-                            style: `border-left:${side + x.left}px solid transparent;border-right:${side + x.right}px solid transparent;`
-                                + `--wps-w:${x.pageW - x.left - x.right}px;` + (k ? `page:wps${k};` : ''),
+                            // בטורים — ברוחב הטור, במקום של הטור הראשון (מימין)
+                            style: `border-left:${side + x.left + (x.shift || 0)}px solid transparent;border-right:${side + x.right}px solid transparent;`
+                                + `--wps-w:${x.textW ?? x.pageW - x.left - x.right}px;` + (k ? `page:wps${k};` : ''),
                             'data-sec': String(k),
                         }));
                     });
@@ -169,7 +170,7 @@ const fnCache = new Map();
 let fnBox = null;
 /** גובה הערה אחת בתחתית העמוד — מדידה בקופסה נסתרת, באותו רוחב ובאותו גופן כמו אזור ההערות. */
 function noteHeight(root, note, g) {
-    const w = Math.round(g.pageW - g.left - g.right);
+    const w = Math.round(g.textW ?? (g.pageW - g.left - g.right));   // בטורים — רוחב הטור
     const font = getComputedStyle(root).fontFamily;
     const key = `${w}|${font}|${note.n}|${note.text}|${note.content ? JSON.stringify(note.content) : ''}`;
     if (fnCache.has(key)) return fnCache.get(key);
@@ -261,7 +262,7 @@ function repeatRow(tr) {
 }
 
 /** row — מספר העמודות כשהרווח בתוך טבלה (0 — רווח רגיל). */
-function spacer(h, page, row = 0, sec = false) {
+function spacer(h, page, row = 0, sec = false, skip = 0) {
     if (row) {
         // בתוך טבלה: שורה ריקה על כל הרוחב (span בתוך tbody אינו חוקי)
         const tr = document.createElement('tr');
@@ -282,6 +283,8 @@ function spacer(h, page, row = 0, sec = false) {
     el.setAttribute('aria-hidden', 'true');
     el.dataset.page = page;
     el.style.height = h + 'px';
+    // טורים: מעבר עמוד ידני באמצע העמוד — בהדפסה עוד מעבר טור לכל טור שנשאר ריק (.wp-colskip ב-CSS של ההדפסה)
+    for (let i = 0; i < skip; i++) el.append(Object.assign(document.createElement('span'), { className: 'wp-colskip' }));
     return el;
 }
 
@@ -396,7 +399,7 @@ function measure(view, g) {
     const secStyle = () => {
         if (!g.sections || g.sections.length < 2) return '';
         const x = secs[s], side = (g.sheetW - x.pageW) / 2;
-        return `border-left:${side + x.left}px solid transparent;border-right:${side + x.right}px solid transparent;`;
+        return `border-left:${side + x.left + (x.shift || 0)}px solid transparent;border-right:${side + x.right}px solid transparent;`;
     };
     // סוגר עמוד: אם יש בו הערות — אזור ההערות לפני המעבר (מילוי עד תחתית הטקסט), והרווח מתקצר בגובה האזור
     const closePage = (brk, used, list) => {
@@ -442,7 +445,7 @@ function measure(view, g) {
             }
             shown = null;
             pending = rest;   // closePage מעביר אותו לעמוד הבא
-            breaks.push(closePage({ pos: u.after, h: Math.max(0, cur.pageH - cur.top - (u.bottom - top) + g.gap + next.top), page: page + 1, sec: !!u.section },
+            breaks.push(closePage({ pos: u.after, h: Math.max(0, cur.pageH - cur.top - (u.bottom - top) + g.gap + next.top), page: page + 1, sec: !!u.section, forced: true },
                 u.bottom - top, here));
             if (u.section) s = secOf(u.after);
             pageTop = u.bottom;
@@ -521,7 +524,19 @@ function measure(view, g) {
     }
     const sig = breaks.map(b => `${b.pos}${b.side ? '~' + b.side : ''}:${Math.round(b.h)}`).join('|')
         + '§' + notesArea.map(a => `${a.pos}:${Math.round(a.fill)}:${a.notes.map(n => n.n + n.text + (n.content ? JSON.stringify(n.content).length : '') + (n.clip ? '<' + Math.round(n.clip) : '') + (n.skip ? '>' + Math.round(n.skip) : '')).join(',')}`).join('|');
-    return { breaks, notesArea, pages: page + 1, pageSecs, sig: sig + '#' + pageSecs.join(','), zoom };
+    // טורים: כל "עמוד" כאן הוא טור (ברוחב הטור). העמוד הפיזי של כל אחד — n טורים לעמוד; מקטע חדש או מעבר עמוד ידני
+    // פותחים עמוד חדש. מעבר ידני באמצע העמוד מדלג על הטורים שנשארו (skip — בהדפסה: עוד מעברי טור)
+    const byPage = new Map(breaks.map(b => [b.page, b]));
+    const phys = [0], cols = [0];
+    for (let i = 1; i <= page; i++) {
+        const b = byPage.get(i), prev = pageSecs[i - 1], n = secs[prev].cols || 1;
+        if (pageSecs[i] !== prev || cols[i - 1] + 1 >= n || b?.forced) {
+            if (b?.forced && pageSecs[i] === prev && n > 1) b.skip = n - 1 - cols[i - 1];
+            phys.push(phys[i - 1] + 1); cols.push(0);
+        } else { phys.push(phys[i - 1]); cols.push(cols[i - 1] + 1); }
+    }
+    // skip בחתימה: שינוי מספר הטורים בלבד (מסמך קצר עם מעבר ידני) לא מזיז אף מעבר, אבל משנה את מעברי הטור בהדפסה
+    return { breaks, notesArea, pages: page + 1, pageSecs, phys, cols, sig: sig + '#' + pageSecs.join(',') + '#' + breaks.map(b => b.skip || 0).join(''), zoom };
 }
 
 /**

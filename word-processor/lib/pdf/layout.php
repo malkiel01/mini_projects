@@ -175,6 +175,25 @@ final class PdfLayout
         $this->mr = $m['right'] * PT_PER_MM;
         $this->cw = $this->W - $this->ml - $this->mr;
         $this->chH = $this->H - $this->mt - $this->mb;
+        // טורים (של המקטע): הטקסט נפרס ברוחב טור — cw הוא רוחב הטור; כל טור מעומד כמו עמוד (paginate),
+        // וכל n טורים — עמוד אחד, מימין לשמאל (render). הערות שוליים — בתחתית הטור שלהן, כמו ב-Word
+        $c = $p['columns'] ?? [];
+        $this->cols = max(1, min(4, (int)($c['n'] ?? 1)));
+        $this->colGap = $this->cols > 1 ? (float)($c['gap'] ?? 12.7) * PT_PER_MM : 0.0;
+        $this->colLine = $this->cols > 1 && !empty($c['line']);
+        if ($this->cols > 1) $this->cw = ($this->cw - $this->colGap * ($this->cols - 1)) / $this->cols;
+    }
+
+    private int $cols = 1;
+    private float $colGap = 0.0;
+    private bool $colLine = false;
+    /** @var int[] עמודים (טורים) מהעימוד האחרון שנפתחו במעבר עמוד ידני — בטורים: עמוד חדש, לא רק הטור הבא */
+    private array $forcedPages = [];
+
+    /** הקצה השמאלי של טור j בעמוד (הטור הראשון — מימין). */
+    private function colX(int $j): float
+    {
+        return $this->ml + ($this->cols - 1 - $j) * ($this->cw + $this->colGap);
     }
 
     public function render(array $json, string $title = ''): string
@@ -198,19 +217,39 @@ final class PdfLayout
             $this->setSection($sections[$k]);
             $items = $this->blocks($nodes, $this->cw, 0);
             if ($k === count($chunks) - 1) array_push($items, ...$this->endnoteItems());   // הערות הסיום — אחרי כל הטקסט
-            foreach ($this->paginate($items) as $pi => $placed) $all[] = [$k, $placed, $this->pageNotes[$pi]];
+            // כל "עמוד" של העימוד הוא טור; n טורים לעמוד, ומעבר עמוד ידני פותח עמוד חדש
+            $page = null;
+            foreach ($this->paginate($items) as $pi => $placed) {
+                if ($page === null || count($page) >= $this->cols || in_array($pi, $this->forcedPages, true)) {
+                    if ($page !== null) $all[] = [$k, $page];
+                    $page = [];
+                }
+                $page[] = [$placed, $this->pageNotes[$pi]];
+            }
+            if ($page !== null) $all[] = [$k, $page];
         }
         $total = count($all);
-        foreach ($all as $i => [$k, $placed, $notes]) {
+        foreach ($all as $i => [$k, $columns]) {
             $this->setSection($sections[$k]);
             $pi = $this->pdf->addPage($this->W, $this->H);
             $c = new PdfCanvas($this->pdf, $pi, $this->H);
             $this->decorate($c, $i, $total);
-            foreach ($placed as [$item, $y]) {
-                ($item->draw)($c, $this->ml, $this->mt + $y);
-                foreach ($item->dests as $bm) $this->pdf->dests[$bm] ??= [$pi, $this->mt + $y];
+            $used = 0.0;
+            foreach ($columns as $j => [$placed, $notes]) {
+                $x = $this->colX($j);
+                foreach ($placed as [$item, $y]) {
+                    ($item->draw)($c, $x, $this->mt + $y);
+                    foreach ($item->dests as $bm) $this->pdf->dests[$bm] ??= [$pi, $this->mt + $y];
+                    $used = max($used, $y + $item->h);
+                }
+                $this->drawNotes($c, $notes, $x);
+                if ($notes) $used = $this->chH;
             }
-            $this->drawNotes($c, $notes);
+            // קו מפריד בין הטורים — בגובה הטור הארוך בעמוד
+            if ($this->colLine) for ($j = 1; $j < count($columns); $j++) {
+                $lx = $this->colX($j) + $this->cw + $this->colGap / 2;
+                $c->line($lx, $this->mt, $lx, $this->mt + min($this->chH, $used), [0, 0, 0], 0.5);
+            }
         }
         return $this->pdf->output($title);
     }
@@ -249,13 +288,14 @@ final class PdfLayout
         return [$here, $rest];
     }
 
-    private function drawNotes(PdfCanvas $c, array $notes): void
+    private function drawNotes(PdfCanvas $c, array $notes, ?float $x = null): void
     {
         if (!$notes) return;
+        $x ??= $this->ml;
         $y = $this->mt + $this->chH - $this->notesHeight($notes);
-        $c->line($this->ml + $this->cw * 2 / 3, $y + 4.5, $this->ml + $this->cw, $y + 4.5, [0, 0, 0], 0.75);
+        $c->line($x + $this->cw * 2 / 3, $y + 4.5, $x + $this->cw, $y + 4.5, [0, 0, 0], 0.75);
         $y += self::FN_SEP;
-        foreach ($notes as $nt) { ($nt['draw'])($c, $this->ml, $y); $y += $nt['h']; }
+        foreach ($notes as $nt) { ($nt['draw'])($c, $x, $y); $y += $nt['h']; }
     }
 
     /** הערה: מספר עילי + הטקסט, 10 נק', ברוחב הטקסט — הגובה מחושב מראש (לעימוד). */
@@ -1113,6 +1153,7 @@ final class PdfLayout
         // השורות שנכנסות — בעמוד הזה, והשאר בראש ההערות של הבא, וכך הלאה — גם על פני כמה עמודים (ביקורת 04, F05).
         // shown — העמוד מלא: אלה ההערות שבו (חלקן חתוכות), ו-pending — ההמשך לעמוד הבא. אותו כלל כמו pagination.js
         $carry = [[]];
+        $forced = [];
         $shownOf = [];
         $shown = null;
         $pending = [];
@@ -1144,7 +1185,7 @@ final class PdfLayout
         };
         for ($i = 0; $i < $n; $i++) {
             $it = $items[$i];
-            if ($it->kind === 'force') { $settle(); $newPage(); continue; }
+            if ($it->kind === 'force') { $settle(); $newPage(); $forced[] = count($pages) - 1; continue; }
             if ($it->header && $it->table) $headers[$it->table] = $it;
             $atTop = $y <= $top + 0.01;
             $full = $shown !== null;   // העמוד מלא (הערה נחתכה בו): הפריט הבא — בעמוד חדש, בלי תיקונים
@@ -1208,6 +1249,7 @@ final class PdfLayout
             $shownOf[count($pages) - 1] = $here;
             $pending = $rest;
         }
+        $this->forcedPages = $forced;
         $this->pageNotes = [];
         foreach ($pages as $p => $placed) {
             $this->pageNotes[$p] = $shownOf[$p] ?? array_merge($carry[$p], ...array_map(fn($x) => $x[0]->notes, $placed));

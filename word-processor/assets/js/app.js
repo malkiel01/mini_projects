@@ -188,6 +188,8 @@ async function openDoc(id) {
     main.classList.add('editor-main');
     const ed = createWordEditor(root, {
         json: d.json, page: d.page, editable: d.can === 'edit', user: me,
+        // מקטעים עם מספר טורים שונה — ההדפסה מה-PDF של השרת (שם הטורים נפרסים בכל מקטע לחוד)
+        printPdf: () => download('pdf', 'להדפסה')(),
         upload: async file => {
             const fd = new FormData();
             fd.append('file', file);
