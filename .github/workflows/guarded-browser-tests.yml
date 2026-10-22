@@ -59,7 +59,8 @@ jobs:
           FAIL=0
           php tests/api_contract.php || { echo "::error file=guarded-browser/tests/api_contract.php::נכשל"; FAIL=1; }
           node tests/sw.mjs || { echo "::error file=guarded-browser/tests/sw.mjs::נכשל"; FAIL=1; }
-          echo "| חוזה | $([ $FAIL = 0 ] && echo ✅ || echo ❌) | API דרך HTTP אמיתי, service worker של ההורה |" >> "$RUNNER_TEMP/summary"
+          node tests/setup.mjs || { echo "::error file=guarded-browser/tests/setup.mjs::נכשל"; FAIL=1; }
+          echo "| חוזה | $([ $FAIL = 0 ] && echo ✅ || echo ❌) | API דרך HTTP אמיתי, service worker של ההורה, פלטי הטלפון בהקמה מהמחשב |" >> "$RUNNER_TEMP/summary"
           exit $FAIL
 
       - name: סיכום
