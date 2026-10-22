@@ -333,7 +333,12 @@ try {
 
     /* ── רענון מדיניות ─────────────────────────────────────────── */
     if ($do === 'policy') {
-        out(policyPayload(requireUser()));
+        $user = requireUser();
+        $payload = policyPayload($user);
+        // "התקבל במכשיר" — המכשיר משך את המדיניות הזו. ההחלה עצמה — בדוח האכיפה (enforce_report).
+        q('UPDATE devices SET policy_rev = ?, policy_rev_at = ? WHERE id = ?',
+          [(string) $payload['rev'], nowIso(), (int) $user['device_row_id']]);
+        out($payload);
     }
 
     /* ── בדיקת כתובת ───────────────────────────────────────────────

@@ -37,6 +37,40 @@
 .st-btn, .st-zoom { min-block-size: 28px; min-inline-size: 28px; padding: 0 6px; border: 0; border-radius: 6px; background: none; color: inherit; font: inherit; cursor: pointer; }
 .st-btn:hover, .st-zoom:hover { background: var(--bg); color: var(--ink); }
 
+/* ===== טלפון (עד 700px): שורת פעולות קבועה בתחתית, והסרט — גיליון מלמטה ("כלים") ===== */
+.wp-mobilebar, .wp-sheet-shade, .rb-close { display: none; }
+.wp-editor.wp-phone .wp-statusbar { display: none; }
+.wp-editor.wp-phone .wp-mobilebar { display: flex; align-items: center; justify-content: space-between; gap: 2px; flex: none;
+    padding: 4px var(--s2) calc(4px + env(safe-area-inset-bottom)); background: var(--surface); border-top: 1px solid var(--line);
+    transform: translateY(calc(-1 * var(--kb, 0px))); }
+.wp-editor.wp-phone .wp-mobilebar .tb { min-inline-size: 44px; block-size: 44px; }
+.mb-tools { min-block-size: 44px; padding: 0 14px; border: 1px solid var(--line); border-radius: 22px; background: var(--surface); color: inherit;
+    font: inherit; font-size: .95rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.mb-tools.ctx { border-color: #b45309; color: #b45309; }
+.mb-tools[aria-expanded="true"] { background: var(--brand-soft); border-color: var(--brand); color: var(--brand); }
+.wp-editor.readonly .wp-mobilebar .tb { display: none; }
+.wp-editor.wp-phone .wp-stage { padding-bottom: calc(var(--s4) * 3 + var(--kb, 0px)); }
+.wp-editor.wp-phone .wp-sheet-shade:not([hidden]) { display: block; position: fixed; inset: 0; z-index: 39; background: rgba(10, 15, 30, .35); }
+.wp-editor.wp-phone .wp-ribbon { position: fixed; inset-inline: 0; bottom: var(--kb, 0px); z-index: 40; max-block-size: 72vh; overflow-y: auto;
+    padding-bottom: env(safe-area-inset-bottom); border: 0; border-top: 1px solid var(--line); border-radius: 16px 16px 0 0;
+    box-shadow: 0 -10px 30px rgba(0, 0, 0, .18); transform: translateY(110%); visibility: hidden; transition: transform .2s ease, visibility 0s .2s; }
+.wp-editor.wp-phone .wp-ribbon.sheet-open { transform: none; visibility: visible; transition: transform .2s ease; }
+.wp-editor.wp-phone .rb-head { position: sticky; top: 0; z-index: 1; background: var(--surface); padding-top: 6px; }
+.wp-editor.wp-phone .rb-quick, .wp-editor.wp-phone .rb-collapse { display: none; }
+.wp-editor.wp-phone .rb-close { display: inline-grid; place-items: center; flex: none; align-self: center; min-inline-size: 44px; min-block-size: 44px;
+    border: 0; border-radius: 22px; background: none; color: var(--muted); font-size: 1.1rem; cursor: pointer; }
+.wp-editor.wp-phone .rb-tabs { flex-wrap: wrap; }
+.wp-editor.wp-phone .rb-tab { min-block-size: 44px; }
+.wp-editor.wp-phone .wp-ribbon.collapsed .rb-panel:not([hidden]) { display: flex; }
+.wp-editor.wp-phone .rb-panel { flex-direction: column; overflow: visible; padding: var(--s2); gap: var(--s2); }
+.wp-editor.wp-phone .rb-group { padding: 0 0 var(--s2); border-inline-end: 0; border-bottom: 1px solid var(--line); }
+.wp-editor.wp-phone .rb-group:last-child { border-bottom: 0; }
+.wp-editor.wp-phone .rb-name { order: -1; text-align: start; padding: 0 0 4px; font-size: .78rem; font-weight: 600; }
+.wp-editor.wp-phone .rb-row { flex-wrap: wrap; gap: 4px; }
+.wp-editor.wp-phone .wp-ribbon .tb { min-inline-size: 44px; block-size: 44px; }
+.wp-editor.wp-phone .wp-ribbon .tb-sel { block-size: 44px; min-height: 44px; }
+.wp-editor.wp-phone .wp-ribbon .tb-seg button { min-block-size: 44px; }
+
 /* ===== סרגל הכלים: שורה אחת שנגללת בטלפון, נשברת במחשב ===== */
 .wp-toolbar { display: flex; align-items: center; gap: 2px; padding: 4px var(--s2); background: var(--surface); border-bottom: 1px solid var(--line);
     overflow-x: auto; scrollbar-width: thin; flex: none; }
@@ -192,7 +226,7 @@ html.wp-no-page-zoom, html.wp-no-page-zoom body, .wp-editor, .wp-stage { touch-a
 /* ===== הדפסה: רק הדפים, כל רווח = שבירת עמוד (מספרי העמודים — בשולי @page, editor.js) ===== */
 @media print {
     html, body { background: #fff !important; height: auto !important; overflow: visible !important; }
-    .no-print, header.top, .banner, .wp-toolbar, .wp-statusbar, .toast, dialog { display: none !important; }
+    .no-print, header.top, .banner, .wp-toolbar, .wp-statusbar, .wp-mobilebar, .wp-sheet-shade, .toast, dialog { display: none !important; }
     main, .wp-editor, .wp-stage, .wp-zoom-box, .wp-zoom, .wp-sheet { display: block !important; overflow: visible !important; padding: 0 !important; margin: 0 !important;
         background: none !important; transform: none !important; inline-size: auto !important; block-size: auto !important; height: auto !important; width: auto !important; }
     .wp-pages { display: none !important; }

@@ -77,6 +77,10 @@ function detail(array $parent, int $childId): array {
     unset($d);
     $out['enforcement'] = enforcementState((int) $parent['account_id'], $childId);
     $out['device_settings'] = deviceSettingsView($childId);
+    // מצב הביצוע בפועל לכל הגדרה — לא רק מה שנשמר (lib/enforce.php, deviceSettingsStatus).
+    $status = deviceSettingsStatus($childId);
+    foreach ($out['device_settings'] as &$s) $s['status'] = $status[$s['key']] ?? null;
+    unset($s);
     return $out;
 }
 
