@@ -555,6 +555,19 @@ if (trim((string)shell_exec('command -v pdftotext'))) {
     echo "  · pdftotext לא מותקן — דילוג על חילוץ הטקסט\n";
 }
 
+// שבירת עמודים: שמירה עם הבא / שורות יחד / מעבר עמוד לפני — Word הלוך וחזור, HTML, PDF
+$pk = fn($t, $a = []) => ['type' => 'paragraph', 'attrs' => $a, 'content' => [['type' => 'text', 'text' => $t]]];
+$jk = ['type' => 'doc', 'content' => [$pk('ראשונה', ['keepNext' => true, 'keepLines' => true]), $pk('שנייה', ['breakBefore' => true])]];
+$oxK = export_ooxml($jk, page_normalize([]));
+check('Word: keepNext, keepLines, pageBreakBefore — לפני bidi', str_contains($oxK['body'], '<w:pPr><w:keepNext/><w:keepLines/><w:bidi/>') && str_contains($oxK['body'], '<w:pPr><w:pageBreakBefore/><w:bidi/>'));
+$backK = import_docx(export_docx($jk, page_normalize([])), $docL)['json']['content'];
+check('Word → חזרה: שלוש ההגדרות', !empty($backK[0]['attrs']['keepNext']) && !empty($backK[0]['attrs']['keepLines']) && empty($backK[0]['attrs']['breakBefore'])
+    && !empty($backK[1]['attrs']['breakBefore']) && empty($backK[1]['attrs']['keepNext']), json_encode($backK, JSON_UNESCAPED_UNICODE));
+$hK = export_html($jk, page_normalize([]))['html'];
+check('HTML: break-after / break-inside / break-before', str_contains($hK, 'break-after:avoid') && str_contains($hK, 'break-inside:avoid') && str_contains($hK, 'break-before:page'));
+check('PDF: מעבר עמוד לפני — שני עמודים; בלי — אחד', preg_match_all('#/Type /Page /#', $pdfOf($jk)) === 2
+    && preg_match_all('#/Type /Page /#', $pdfOf(['type' => 'doc', 'content' => [$pk('ראשונה'), $pk('שנייה')]])) === 1);
+
 // מספור: רב-רמתי 1.1.1, המשך מספור, מספור כותרות — PDF, Word הלוך וחזור, HTML
 $li = fn($t, $sub = null) => ['type' => 'listItem', 'content' => array_merge([['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => $t]]]], $sub ? [$sub] : [])];
 $jn = ['type' => 'doc', 'content' => [

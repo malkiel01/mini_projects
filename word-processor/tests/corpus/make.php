@@ -167,6 +167,16 @@ for ($i = 0; $i < 24; $i++) {
 }
 $corpus['typography'] = ['title' => 'טיפוגרפיה', 'json' => $doc($c), 'page' => null];
 
+// 13. שבירת עמודים: שמירה עם הבא (פסקה קצרה לפני ארוכה), שמירת שורות יחד (פסקה ארוכה), מעבר עמוד לפני
+$c = [$hd('שבירת עמודים', 1)];
+for ($i = 1; $i <= 30; $i++) {
+    $c[] = $p("$i. " . $sentence(15, 70));
+    if ($i % 3 === 0) $c[] = $p('לפני הבאה: ' . $sentence(3, 8), ['keepNext' => true]);
+    if ($i % 4 === 2) $c[] = $p('יחד: ' . $sentence(40, 90), ['keepLines' => true]);
+    if ($i % 11 === 0) $c[] = $p('עמוד חדש: ' . $sentence(5, 20), ['breakBefore' => true]);
+}
+$corpus['keep'] = ['title' => 'שבירת עמודים', 'json' => $doc($c), 'page' => null];
+
 foreach ($corpus as $name => $d) {
     file_put_contents(__DIR__ . "/$name.json", json_encode($d, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
     echo "$name.json\n";
