@@ -521,7 +521,7 @@ final class DocxCtx
     private function fieldHref(string $instr): ?string
     {
         if (!preg_match('/^\s*HYPERLINK\b(.*)$/s', $instr, $m)) return null;
-        if (preg_match('/\\l\s+"([^"]+)"/', $m[1], $l)) return bookmark_name($l[1]) !== null ? '#' . $l[1] : null;
+        if (preg_match('/\\\\l\s+"([^"]+)"/', $m[1], $l)) return bookmark_name($l[1]) !== null ? '#' . $l[1] : null;
         return preg_match('/"([^"]+)"/', $m[1], $u) ? safe_href($u[1]) : null;
     }
 

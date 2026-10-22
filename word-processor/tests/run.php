@@ -405,6 +405,8 @@ $fieldDocx = $mkDocx(['word/document.xml' => '<w:document ' . $WN . '><w:body><w
 $fi = import_docx($fieldDocx, $docL);
 $ff = json_encode($fi['json'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 check('ייבוא: שדה HYPERLINK → קישור, רק על התוצאה; _GoBack — לא', str_contains($ff, '{"type":"text","text":"אתר הממשלה","marks":[{"type":"link","attrs":{"href":"https://gov.il"}}]}') && str_contains($ff, '{"type":"text","text":" סוף"}') && !str_contains($ff, 'bookmark'), $ff);
+$anchorDocx = $mkDocx(['word/document.xml' => '<w:document ' . $WN . '><w:body><w:p><w:fldSimple w:instr=" HYPERLINK \\l &quot;פרק_ג&quot; ">' . $run('לפרק') . '</w:fldSimple></w:p></w:body></w:document>']);
+check('ייבוא: HYPERLINK \\l "סימניה" → קישור פנימי', str_contains(json_encode(import_docx($anchorDocx, $docL)['json'], JSON_UNESCAPED_UNICODE), '"href":"#פרק_ג"'));
 check('ייבוא: שדה HYPERLINK לא נספר בדוח כ"שדה"', !in_array('fields', array_column($fi['report'], 'key'), true));
 check('safe_href: משלים ודוחה', safe_href('www.a.co.il') === 'https://www.a.co.il' && safe_href('a@b.co') === 'mailto:a@b.co' && safe_href('javascript:x') === null && safe_href('#') === null);
 
