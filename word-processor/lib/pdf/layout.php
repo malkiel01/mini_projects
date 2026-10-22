@@ -206,7 +206,7 @@ final class PdfLayout
         $sections = [$this->first];
         foreach ($json['content'] ?? [] as $n) {
             if (($n['type'] ?? '') === 'sectionBreak') {
-                $sections[] = page_normalize(is_array($n['attrs']['page'] ?? null) ? $n['attrs']['page'] : [], end($sections));
+                $sections[] = page_section($n['attrs']['page'] ?? null, end($sections));
                 $chunks[] = [];
                 continue;
             }
@@ -229,11 +229,12 @@ final class PdfLayout
             if ($page !== null) $all[] = [$k, $page];
         }
         $total = count($all);
+        $nums = page_numbers(array_column($all, 0), $sections);
         foreach ($all as $i => [$k, $columns]) {
             $this->setSection($sections[$k]);
             $pi = $this->pdf->addPage($this->W, $this->H);
             $c = new PdfCanvas($this->pdf, $pi, $this->H);
-            $this->decorate($c, $i, $total);
+            $this->decorate($c, $i, $total, $nums[$i]);
             $used = 0.0;
             foreach ($columns as $j => [$placed, $notes]) {
                 $x = $this->colX($j);
@@ -1306,7 +1307,7 @@ final class PdfLayout
     }
 
     /** כותרת עליונה ותחתונה ומספר העמוד, בשוליים — כמו בעורך. */
-    private function decorate(PdfCanvas $c, int $i, int $total): void
+    private function decorate(PdfCanvas $c, int $i, int $total, int $n): void
     {
         // רקע הדף (של כל המסמך — מהמקטע הראשון): צבע עמוד, וסימן מים באלכסון — ראשונים בשכבה האחורית
         if (($pc = color_val($this->first['page_color'] ?? null))) $c->rect(0, 0, $this->W, $this->H, self::hex('#' . $pc), 'bg');
@@ -1314,8 +1315,10 @@ final class PdfLayout
         $nb = $this->page['numbering'];
         $st = ['family' => $this->page['font']['family'], 'size' => 9.0, 'bold' => false, 'italic' => false, 'u' => false, 'strike' => false,
             'color' => [85, 85, 85], 'bg' => null, 'va' => null, 'ls' => 0.0];
-        $label = $nb['show'] && ($i > 0 || $nb['first_page']) ? page_label($nb['start'] + $i, $total, $nb['format']) : '';
-        foreach (['top' => [$this->page['header'], $this->mt / 2], 'bottom' => [$this->page['footer'], $this->H - $this->mb / 2]] as $pos => [$text, $mid]) {
+        $label = $nb['show'] && ($i > 0 || $nb['first_page']) ? page_label($n, $total, $nb['format']) : '';
+        // זוגי / אי-זוגי שונים: בעמוד שמספרו זוגי — הכותרות לעמוד זוגי של המקטע
+        $even = !empty($this->first['even_odd']) && $n % 2 === 0 ? '_even' : '';
+        foreach (['top' => [$this->page['header' . $even], $this->mt / 2], 'bottom' => [$this->page['footer' . $even], $this->H - $this->mb / 2]] as $pos => [$text, $mid]) {
             $baseline = $mid + 9 * 0.35;
             $num = $label !== '' && $nb['position'] === $pos ? $label : '';
             $text = trim(preg_replace('/\s+/u', ' ', $text));
