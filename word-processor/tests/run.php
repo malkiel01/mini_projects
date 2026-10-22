@@ -1013,6 +1013,48 @@ if (trim((string)shell_exec('command -v pdftotext'))) {
         json_encode(array_intersect_key($box, array_flip(['ןושאר', 'ראשון', '12', 'b', '3.5', 'c']))));
 }
 
+section('השוואת גרסאות (שלב 4)');
+require_once __DIR__ . '/../lib/compare.php';
+$cp = fn(...$t) => ['type' => 'paragraph', 'content' => array_map(fn($x) => is_array($x) ? $x : ['type' => 'text', 'text' => $x], $t)];
+$cd = fn(...$b) => ['type' => 'doc', 'content' => $b];
+/** הסימונים של התוצאה בצורה קריאה: +[נוסף] -[נמחק] ~[עוצב] */
+$show = function (array $doc) {
+    return implode(' / ', array_map(function ($b) {
+        $s = '';
+        $walk = function ($n) use (&$walk, &$s) {
+            if (isset($n['text'])) {
+                $t = array_column($n['marks'] ?? [], 'type');
+                $txt = $n['text'];
+                $s .= in_array('ins', $t, true) ? "+[$txt]" : (in_array('del', $t, true) ? "-[$txt]" : (in_array('fmt', $t, true) ? "~[$txt]" : $txt));
+            }
+            foreach ($n['content'] ?? [] as $c) $walk($c);
+        };
+        $walk($b);
+        return ($b['type'] ?? '') . ':' . $s;
+    }, $doc['content']));
+};
+$d0 = $cd($cp('אחת שתיים שלוש'), $cp('פסקה שנייה'), $cp('שלישית'));
+check('השוואה: מסמך זהה — בלי סימונים', $show(track_compare($d0, $d0)) === 'paragraph:אחת שתיים שלוש / paragraph:פסקה שנייה / paragraph:שלישית', $show(track_compare($d0, $d0)));
+$d1 = $cd($cp('אחת ארבע שלוש'), $cp('שלישית'), $cp('חדשה בסוף'));
+$r1 = $show(track_compare($d0, $d1));
+check('השוואה: מילה שהוחלפה — נמחקה ונוספה; פסקה שנמחקה ופסקה שנוספה', $r1 === 'paragraph:אחת -[שתיים]+[ארבע] שלוש / paragraph:-[פסקה שנייה] / paragraph:שלישית / paragraph:+[חדשה בסוף]', $r1);
+$r2 = track_compare($cd($cp('מילה רגילה')), $cd($cp(['type' => 'text', 'text' => 'מילה', 'marks' => [['type' => 'bold']]], ' רגילה')));
+check('השוואה: רק העיצוב השתנה — שינוי עיצוב (fmt) עם העיצוב הקודם, לא מחיקה ותוספת', $show($r2) === 'paragraph:~[מילה] רגילה'
+    && ($r2['content'][0]['content'][0]['marks'][1]['attrs']['old'] ?? null) === [] && $r2['content'][0]['content'][0]['marks'][0] === ['type' => 'bold'], $show($r2));
+$r3 = track_compare($cd($cp('ישן', ['type' => 'text', 'text' => ' כבר', 'marks' => [['type' => 'ins', 'attrs' => ['author' => 'דנה']]]])), $cd($cp('ישן כבר')));
+check('השוואה: סימוני מעקב קודמים לא נחשבים הבדל', $show($r3) === 'paragraph:ישן כבר', $show($r3));
+$tbl = fn($t) => ['type' => 'table', 'content' => [['type' => 'tableRow', 'content' => [['type' => 'tableCell', 'content' => [$cp($t)]]]]]];
+$r4 = $show(track_compare($cd($cp('לפני'), $tbl('תא ישן')), $cd($cp('לפני'), $tbl('תא חדש'))));
+check('השוואה: טבלה שהשתנתה — הישנה כמחיקה והחדשה כתוספת', $r4 === 'paragraph:לפני / table:-[תא ישן] / table:+[תא חדש]', $r4);
+$r5 = track_compare($d0, $d1, '2026-10-22T10:00:00Z');
+$m5 = $r5['content'][0]['content'][1]['marks'][0] ?? [];
+check('השוואה: המחבר "השוואה" והתאריך; המעקב לא פועל בתוצאה', $m5 === ['type' => 'del', 'attrs' => ['author' => 'השוואה', 'date' => '2026-10-22T10:00:00Z']] && empty($r5['attrs']['track']), json_encode($m5, JSON_UNESCAPED_UNICODE));
+$big = $cd(...array_map(fn($i) => $cp("פסקה $i"), range(1, 900)));
+$big2 = $big; $big2['content'][450] = $cp('פסקה שונתה');
+$t0 = microtime(true);
+$r6 = $show(track_compare($big, $big2));
+check('השוואה: 900 פסקאות עם שינוי באמצע — מהר, ורק הפסקה ההיא מסומנת', microtime(true) - $t0 < 2 && substr_count($r6, '-[') === 1 && substr_count($r6, '+[') === 1, round(microtime(true) - $t0, 2) . 's');
+
 section('כיתובים והפניות צולבות (שלב 4)');
 $cap = fn($label, $id, $text) => ['type' => 'paragraph', 'attrs' => ['pstyle' => 'caption'], 'content' => [
     ['type' => 'text', 'text' => "$label "], ['type' => 'seq', 'attrs' => ['label' => $label, 'id' => $id]], ['type' => 'text', 'text' => ": $text"]]];
