@@ -218,3 +218,21 @@ main:focus-visible { outline: 0; }
 .state { font-size: 1.15rem; font-weight: 700; }
 .month-nav { align-items: center; }
 .cells { margin-bottom: var(--s3); }
+
+/* ===== עמדה (s/) ===== */
+.center { text-align: center; }
+.clock { font-size: 64px; font-weight: 700; text-align: center; font-variant-numeric: tabular-nums; line-height: 1.1; margin-top: var(--s3); }
+.names { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: var(--s2); }
+.names .tile { min-height: 64px; font-size: 1.05rem; font-weight: 600; }
+.names .tile[aria-disabled="true"] { opacity: .5; }
+.dots { display: flex; justify-content: center; gap: 14px; margin-block: var(--s3); }
+.dots i { inline-size: 18px; block-size: 18px; border-radius: 50%; border: 2px solid var(--brand); }
+.dots i.on { background: var(--brand); }
+.pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s2); max-inline-size: 420px; margin: var(--s3) auto 0; }
+.pad button { block-size: 68px; font-size: 28px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
+.pad button:active { background: var(--brand-soft); }
+.big.ghost-big { background: var(--surface); color: var(--ink); border: 2px solid var(--line); block-size: 72px; font-size: 22px; }
+.code-input { font-size: 28px; letter-spacing: .4em; text-align: center; }
+/* טאבלט על השיש — הכול גדול יותר, ונקרא ממרחק */
+body.station { font-size: 18px; }
+@media (min-width: 700px) { body.station .clock { font-size: 96px; } body.station .names .tile { min-height: 80px; font-size: 1.2rem; } body.station h2 { font-size: 1.6rem; } }

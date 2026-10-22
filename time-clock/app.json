@@ -2,13 +2,14 @@
   "id": "time-clock",
   "name": "שעון נוכחות",
   "icon": "🕒",
-  "description": "דיווח נוכחות לכמה חברות: עובדים, סניפים, צוות ניהול ומסלולי אישור. בפיתוח — שלב 3 מתוך 7.",
+  "description": "דיווח נוכחות לכמה חברות: עובדים, סניפים, צוות ניהול ומסלולי אישור. בפיתוח — שלב 4 מתוך 7.",
   "category": "dev",
   "entry": "index.html",
   "gate": true,
   "public": [
     "e/**",
+    "s/**",
     "assets/**",
-    "api.php?action=emp_invite_info|emp_activate|emp_state|emp_punch|emp_month"
+    "api.php?action=emp_invite_info|emp_activate|emp_state|emp_punch|emp_month|station_pair|station_state|station_check|station_punch"
   ]
 }

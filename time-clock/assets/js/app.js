@@ -234,16 +234,18 @@ function renderSettings() {
       <button role="tab" data-tab="details" aria-selected="${tab === 'details'}">🏢 פרטים</button>
       <button role="tab" data-tab="sites" aria-selected="${tab === 'sites'}">📍 סניפים <small>${d.sites.length || ''}</small></button>
       <button role="tab" data-tab="team" aria-selected="${tab === 'team'}">👥 צוות <small>${d.team.length}</small></button>
+      ${canStations() ? `<button role="tab" data-tab="stations" aria-selected="${tab === 'stations'}">📟 עמדות</button>` : ''}
     </div><div id="pane"></div>`;
   main.querySelector('.seg-tabs').addEventListener('click', e => {
     const b = e.target.closest('[data-tab]'); if (!b) return;
     try { sessionStorage.setItem('tc-tab', b.dataset.tab); } catch { /* */ }
     renderSettings();
   });
-  ({ details: paneDetails, sites: paneSites, team: paneTeam })[tab]($('#pane'));
+  ({ details: paneDetails, sites: paneSites, team: paneTeam, stations: canStations() ? paneStations : paneDetails })[tab]($('#pane'));
 }
 
 const isOwner = () => state.data.my_role === 'owner';
+const canStations = () => ['owner', 'manager', 'branch_manager'].includes(state.data.my_role);
 
 function paneDetails(pane) {
   const c = state.data.company;
@@ -351,6 +353,70 @@ function teamSheet(t = null) {
       $('#sheet').close(); toast('הוסר מהצוות'); renderSettings();
     } catch (err) { showError(form, err.message); }
   });
+}
+
+/* ===== M7 · עמדות ===== */
+
+const ago = iso => {
+  if (!iso) return 'עוד לא';
+  const m = Math.round((Date.now() - new Date(iso)) / 60000);
+  return m < 2 ? 'עכשיו' : m < 60 ? `לפני ${m} דק׳` : m < 1440 ? `לפני ${Math.round(m / 60)} שע׳` : new Date(iso).toLocaleDateString('he-IL', { timeZone: TZ });
+};
+
+async function paneStations(pane) {
+  let r;
+  try { r = await api('station_list', { company_id: state.companyId }); }
+  catch (e) { pane.innerHTML = `<p class="error" role="alert">${esc(e.message)}</p>`; return; }
+  pane.innerHTML = `
+    <p class="hint">עמדה היא טאבלט בעסק: העובד בוחר את שמו, מקיש את הקוד האישי ומדווח. בעמדה עם סניף מופיעים רק עובדי הסניף.</p>
+    <div class="toolbar"><span></span><button class="btn primary" id="add-station" type="button"><span aria-hidden="true">+</span> עמדה</button></div>
+    <ul class="list">${r.stations.length ? r.stations.map(s => `
+      <li class="card">
+        <span class="avatar" style="--h:${s.paired ? 140 : 40}" aria-hidden="true">📟</span>
+        <div class="body"><div class="l1"><span>${esc(s.name)}</span></div>
+          <div class="l2">${s.site_id ? esc(siteName(s.site_id)) + ' · ' : ''}${s.paired ? 'פעילה ' + ago(s.last_seen) : 'ממתינה להצמדה'}</div></div>
+        <button class="icon-btn" type="button" data-repair="${s.id}" aria-label="קוד הצמדה חדש ל${esc(s.name)}">🔄</button>
+        <button class="icon-btn" type="button" data-revoke="${s.id}" aria-label="ביטול ${esc(s.name)}">🗑️</button>
+      </li>`).join('') : '<li class="empty">עוד אין עמדות.</li>'}</ul>`;
+  $('#add-station').addEventListener('click', () => openSheet('עמדה חדשה', `
+      <div class="fields">
+        <label class="f"><span>שם העמדה *</span><input name="name" required maxlength="60" placeholder="למשל: כניסה ראשית"></label>
+        ${r.site_only ? '' : siteSelect(null)}
+      </div>
+      <p class="error" role="alert" hidden></p>`,
+    async f => {
+      const x = await api('station_create', { company_id: state.companyId, name: f.name.value, site_id: +(f.site_id?.value || 0) });
+      return () => codeSheet(x, f.name.value);
+    }));
+  pane.querySelector('.list').addEventListener('click', async e => {
+    const rp = e.target.closest('[data-repair]'), rv = e.target.closest('[data-revoke]');
+    const s = r.stations.find(x => x.id === +(rp || rv)?.dataset[rp ? 'repair' : 'revoke']);
+    if (!s) return;
+    try {
+      if (rp) {
+        if (s.paired && !confirm(`קוד חדש ינתק את הטאבלט הנוכחי של "${s.name}". להמשיך?`)) return;
+        codeSheet(await api('station_create', { company_id: state.companyId, id: s.id }), s.name);
+      } else {
+        if (!confirm(`לבטל את העמדה "${s.name}"? הטאבלט יתנתק מיד.`)) return;
+        await api('station_revoke', { company_id: state.companyId, id: s.id }); toast('העמדה בוטלה'); paneStations(pane);
+      }
+    } catch (err) { toast(err.message, true); }
+  });
+}
+
+/** קוד ההצמדה — מוצג פעם אחת, 10 דקות. */
+function codeSheet(x, name) {
+  const url = new URL('s/', location.href).href;
+  const until = new Date(x.expires).toLocaleTimeString('he-IL', { timeZone: TZ, hour: '2-digit', minute: '2-digit' });
+  openSheet('הצמדת ' + name, `
+    <ol style="padding-inline-start:20px;display:grid;gap:8px">
+      <li>בטאבלט שבעסק פותחים את הכתובת:<br><b dir="ltr" class="one" style="display:block">${esc(url)}</b></li>
+      <li>מקלידים את הקוד:</li>
+    </ol>
+    <div class="clock" dir="ltr" style="letter-spacing:.15em">${x.code.slice(0, 3)} ${x.code.slice(3)}</div>
+    <p class="hint center">בתוקף עד ${until}. אפשר ליצור קוד חדש ב-🔄.</p>`,
+    null, { save: false });
+  $('#sheet').addEventListener('close', () => { if (location.hash === '#/settings') renderSettings(); }, { once: true });
 }
 
 /* ===== M3 · עובדים ===== */
