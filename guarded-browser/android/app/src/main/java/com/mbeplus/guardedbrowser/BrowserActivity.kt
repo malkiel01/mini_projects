@@ -448,6 +448,11 @@ class BrowserActivity : AppCompatActivity() {
     private fun enforceCurrent(url: String) {
         if (closing || url.isEmpty() || url == "about:blank") return
         if (url == lastAllowed) { hideCover(); return }
+        if (learnAutoAdvance(url)) {
+            showCover()
+            revert("במצב למידה אין ניגון אוטומטי — את הסרטון הבא בוחרים במסך הבית", "yt_learn_autoplay", url)
+            return
+        }
 
         /*
          * הכיסוי עולה לפני ההכרעה, לא אחריה.
@@ -559,12 +564,12 @@ class BrowserActivity : AppCompatActivity() {
      */
     private fun styleRestrictedYouTube(url: String) {
         val yt = ruleSet.platforms[PolicyEngine.PLATFORM_YOUTUBE] ?: return
-        if (yt.mode != "restricted") return
+        if (yt.mode != "restricted" && yt.mode != "learn") return
         if (PolicyEngine.platformOf(PolicyEngine.normalize(url)?.host ?: "") !=
             PolicyEngine.PLATFORM_YOUTUBE) return
 
         val hide = buildString {
-            if (!yt.allowSearch) {
+            if (!yt.allowSearch || yt.mode == "learn") {
                 append("ytd-searchbox,#search,#search-form,#center.ytd-masthead,")
                 append("ytd-search-header-renderer,")
             }
@@ -590,7 +595,31 @@ class BrowserActivity : AppCompatActivity() {
             "{childList:true,subtree:true});}" +
             "}catch(e){}})()"
         b.web.evaluateJavascript(js, null)
+        // מצב למידה (שלב 12 ה): המלצות, ניגון אוטומטי ועצירה בסוף — והסקריפט מדווח מה אומת (YouTubeLearn).
+        if (yt.mode == "learn") b.web.evaluateJavascript(YouTubeLearn.script(), null)
         filterYouTube()
+    }
+
+    /* ── מצב למידה: בלי ניגון אוטומטי (YouTubeLearnMath) ── */
+
+    private var learnEnded = ""
+    private var learnEndedAt = 0L
+
+    private fun learnMode() = ruleSet.platforms[PolicyEngine.PLATFORM_YOUTUBE]?.mode == "learn"
+
+    private fun videoOf(url: String) = PolicyEngine.parseYouTube(url).let { if (it.kind == "video") it.id else "" }
+
+    /** יוטיוב עבר לבד לסרטון אחר מיד אחרי שהקודם הסתיים — גם אם הוא בתור, הבא נבחר במסך הבית. */
+    private fun learnAutoAdvance(url: String): Boolean = learnMode() &&
+        YouTubeLearnMath.blocksAutoAdvance(learnEnded, learnEndedAt, videoOf(url), android.os.SystemClock.elapsedRealtime())
+
+    private fun sendLearnReport(json: String) {
+        val now = System.currentTimeMillis()
+        // הממשק MgYt חשוף לכל דף — דוח מתקבל רק כשהדף שעל המסך הוא יוטיוב.
+        val onYt = PolicyEngine.platformOf(PolicyEngine.normalize(b.web.url ?: "")?.host ?: "") == PolicyEngine.PLATFORM_YOUTUBE
+        if (!onYt || !learnMode() || !YouTubeLearnMath.shouldReport(store.ytLearnSent, store.ytLearnSentAt, json, now)) return
+        val body = try { org.json.JSONObject(json).put("version", BuildConfig.VERSION_CODE) } catch (e: Exception) { return }
+        Api.ytLearnReport(store.token, body) { r -> if (r.ok) { store.ytLearnSent = json; store.ytLearnSentAt = now } }
     }
 
     /* ── סינון ההצעות ביוטיוב (שלב 5) ─────────────────────────────── */
@@ -605,8 +634,10 @@ class BrowserActivity : AppCompatActivity() {
         val allowed = { m: Map<String, String> -> m.filterValues { it == "allow" }.keys }
         val known = HashMap<String, Boolean>(ytKnown)
         for ((id, a) in ytItems("video")) known[id] = a == "allow"
-        b.web.evaluateJavascript(
-            YouTubeFilter.script(allowed(ytItems("handle")), allowed(ytItems("channel")), known), null)
+        // במצב למידה ערוץ מאושר לא פותח את הסרטונים שלו — רק התור.
+        val learn = learnMode()
+        b.web.evaluateJavascript(YouTubeFilter.script(if (learn) emptySet() else allowed(ytItems("handle")),
+            if (learn) emptySet() else allowed(ytItems("channel")), known), null)
     }
 
     /**
@@ -623,6 +654,16 @@ class BrowserActivity : AppCompatActivity() {
                       catch (e: Exception) { return }
             runOnUiThread { resolveVideos(ids.take(30)) }
         }
+
+        /** מצב למידה: הסרטון הסתיים (והסקריפט עצר אותו) — ניווט מיד אחריו הוא ניגון אוטומטי. */
+        @JavascriptInterface
+        fun learnEnded(href: String) {
+            runOnUiThread { learnEnded = videoOf(href); learnEndedAt = android.os.SystemClock.elapsedRealtime() }
+        }
+
+        /** מצב למידה: מה הסקריפט אימת בדף (YouTubeLearn) — ההורה רואה רק את זה כ"אומת". */
+        @JavascriptInterface
+        fun learnReport(json: String) { runOnUiThread { sendLearnReport(json.take(300)) } }
 
         /** לחיצה על סרטון או ערוץ שלא אושרו נעצרה בדף — ואפשר לבקש אותם (שלב 6). */
         @JavascriptInterface

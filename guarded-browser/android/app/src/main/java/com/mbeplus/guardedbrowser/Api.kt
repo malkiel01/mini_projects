@@ -250,6 +250,9 @@ object Api {
     /** תוצאות בדיקת ההגנה היזומה (SelfTest) — נתונים גולמיים; השרת פוסק. */
     fun selftest(token: String, body: JSONObject, cb: (Result) -> Unit) = call("selftest", body, token, cb)
 
+    /** מצב למידה ביוטיוב: מה הסקריפט בדף אימת (lib/ytlearn.php). */
+    fun ytLearnReport(token: String, body: JSONObject, cb: (Result) -> Unit) = call("yt_learn_report", body, token, cb)
+
     fun heartbeat(token: String, seconds: Int, sessionSec: Int, url: String = "",
                   batches: org.json.JSONArray? = null, cb: (Result) -> Unit) =
         call("heartbeat", JSONObject().apply {

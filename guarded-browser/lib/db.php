@@ -147,6 +147,11 @@ function migrate(PDO $pdo): void {
             $pdo->exec("ALTER TABLE devices ADD COLUMN $col TEXT NOT NULL DEFAULT ''");
         }
     }
+    // מצב למידה ביוטיוב (lib/ytlearn.php): מה הסקריפט בדף אימת — המלצות, ניגון אוטומטי, עצירה בסוף.
+    if (!in_array('yt_learn', $columns('devices'), true)) {
+        $pdo->exec("ALTER TABLE devices ADD COLUMN yt_learn TEXT NOT NULL DEFAULT ''");
+        $pdo->exec("ALTER TABLE devices ADD COLUMN yt_learn_at TEXT NOT NULL DEFAULT ''");
+    }
     // מצב העדכון כפי שהמכשיר דיווח (lib/appversion.php, updateStateSave) — ההורה רואה עדכון שנתקע או נכשל.
     if (!in_array('update_state', $columns('devices'), true)) {
         $pdo->exec("ALTER TABLE devices ADD COLUMN update_state TEXT NOT NULL DEFAULT ''");
@@ -456,7 +461,8 @@ function platformRulesFor(int $userId): array {
 /** הפריטים שאושרו: [platform => [kind => [id => action]]]. */
 function platformItemsFor(int $userId): array {
     $out = [];
-    foreach (all('SELECT * FROM platform_items WHERE user_id = ?', [$userId]) as $r) {
+    // לפי סדר ההוספה — זה סדר האריחים, וזה התור במצב למידה (שלב 12 ה).
+    foreach (all('SELECT * FROM platform_items WHERE user_id = ? ORDER BY id', [$userId]) as $r) {
         $out[$r['platform']][$r['kind']][$r['item_id']] = $r['action'];
     }
     return $out;
