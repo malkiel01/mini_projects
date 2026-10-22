@@ -16,6 +16,7 @@ import { cleanPastedHtml } from './paste.js';
 import { migrate } from './schema.js';
 import { createCommands } from './commands.js';
 import { FindReplace, createFindBar } from './find.js';
+import { ParagraphMarks, marksKey, createNavPane, createPasteOptions, wordStats } from './view.js';
 
 const MM = 96 / 25.4;
 const PT = 4 / 3;
@@ -179,7 +180,8 @@ export function createWordEditor(root, opts) {
     const sheetShade = h('div.wp-sheet-shade', { hidden: true });
     const previewBar = h('div.wp-preview-bar', { hidden: true });   // תצוגה לפני הדפסה
     const findSlot = h('div.wp-find-slot');               // פס החיפוש וההחלפה (find.js) — נבנה אחרי העורך
-    root.append(styleEl, printEl, bar, previewBar, findSlot, stage, statusBar, mobileBar, sheetShade);
+    const body = h('div.wp-body', stage);                 // חלונית הניווט (view.js) נכנסת לפני הדף — בצד ההתחלה
+    root.append(styleEl, printEl, bar, previewBar, findSlot, body, statusBar, mobileBar, sheetShade);
     root.classList.add('wp-editor');
 
     /** גיאומטריה של עמוד לפי הגדרות (בפיקסלים לא מוגדלים). */
@@ -200,7 +202,8 @@ export function createWordEditor(root, opts) {
      * (הצומת עצמו שייך למקטע שלפניו).
      */
     let ed0 = null;
-    let stylesUI = null;   // גלריית הסגנונות והרשימה — נבנות מחדש כשהסגנונות משתנים (נקבע אחרי בניית הסרט)
+    let stylesUI = null;
+    let pasteOpts = null;  // אפשרויות הדבקה (view.js) — נבנות אחרי העורך   // גלריית הסגנונות והרשימה — נבנות מחדש כשהסגנונות משתנים (נקבע אחרי בניית הסרט)
     let secMemo = { doc: null, page: null, out: null };
     const sections = () => {
         const doc = ed0?.state.doc;
@@ -222,7 +225,7 @@ export function createWordEditor(root, opts) {
 
     const editor = new Editor({
         element: host,
-        extensions: extensions([Pages.configure({ geometry, onLayout: drawPages }), FindReplace]),
+        extensions: extensions([Pages.configure({ geometry, onLayout: drawPages }), FindReplace, ParagraphMarks]),
         content: initial,
         editable: opts.editable !== false,
         editorProps: {
@@ -236,7 +239,11 @@ export function createWordEditor(root, opts) {
                 if ((e.ctrlKey || e.metaKey) && e.altKey && e.code === 'KeyF') { footnoteDialog(null); return true; }
                 return false;
             },
-            handlePaste: (view, e) => imageFiles(e.clipboardData) ? (insertImages(imageFiles(e.clipboardData)), true) : false,
+            handlePaste: (view, e) => {
+                if (imageFiles(e.clipboardData)) { insertImages(imageFiles(e.clipboardData)); return true; }
+                pasteOpts?.onPaste(e);   // אפשרויות הדבקה — אחרי שההדבקה תיכנס
+                return false;
+            },
             handleDrop: (view, e, slice, moved) => {
                 if (moved || !imageFiles(e.dataTransfer)) return false;
                 const pos = view.posAtCoords({ left: e.clientX, top: e.clientY });
@@ -460,6 +467,11 @@ export function createWordEditor(root, opts) {
             link: () => linkDialog(), bookmark: () => bookmarkDialog(),
             newStyle: () => newStyleDialog(), updateStyle: () => updateStyleFromSelection(),
             numberingValue: () => numberingDialog(),
+            wordCount: () => wordCountDialog(),
+            navPane: () => { if (nav.isOpen()) nav.close(); else { if (phone.matches) openSheet(false); nav.open(); } refresh(); },
+            navOn: () => nav.isOpen(),
+            showMarks: () => editor.commands.setMarks(!marksOn()),
+            marksOn: () => marksOn(),
             stepFont: dir => stepFont(dir),
             headingNumbers: () => setPage({ heading_numbers: !page.heading_numbers }),
             headingNumbersOn: () => !!page.heading_numbers,
@@ -473,6 +485,10 @@ export function createWordEditor(root, opts) {
     });
     const finder = createFindBar(h, { editor, notify: msg => toast(msg) });
     findSlot.append(finder.el);
+    const nav = createNavPane({ editor, h, onClose: () => refresh() });
+    body.prepend(nav.el);
+    pasteOpts = createPasteOptions({ editor, h, host: root });
+    const marksOn = () => !!marksKey.getState(editor.state)?.on;
     const ICONS = {
         bold: () => h('b', 'B'), italic: () => h('i', 'I'), underline: () => h('u', 'U'), strike: () => h('s', 'S'),
         superscript: () => h('span', 'x', h('sup', '2')), subscript: () => h('span', 'x', h('sub', '2')),
@@ -521,6 +537,8 @@ export function createWordEditor(root, opts) {
     const TOGGLES = ['bold', 'italic', 'underline', 'strike', 'superscript', 'subscript', 'alignRight', 'alignCenter', 'alignLeft', 'alignJustify', 'bulletList', 'orderedList'];
     const B = Object.fromEntries(['undo', 'redo', ...TOGGLES, 'clearFormat', 'outdent', 'indent', 'paragraphDialog', 'insertTable', 'insertImage', 'pageBreak',
         'footnote', 'sectionBreak', 'pageSetup', 'editStyles', 'print', 'zoomOut', 'zoomIn', 'zoomFit'].map(id => [id, cmdBtn(id)]));
+    B.navPane = cmdBtn('navPane');
+    B.showMarks = cmdBtn('showMarks');
     B.painter = cmdBtn('formatPainter', { ondblclick: () => cmds.run('formatPainter', true) });
     B.color = cmdColor('color', '#c00000');
     B.mark = cmdColor('highlight', '#ffff00', '.mark');
@@ -541,7 +559,7 @@ export function createWordEditor(root, opts) {
             grp('עריכה', [cmdBtn('find'), cmdBtn('replace')])]],
         ['insert', 'הוספה', [grp('טבלאות', B.insertTable), grp('איורים', [B.insertImage, imgInput]), grp('הערות', B.footnote), grp('קישורים', [cmdBtn('link'), linkOff, cmdBtn('bookmark')]), grp('עמודים', B.pageBreak)]],
         ['layout', 'פריסה', [grp('הגדרת עמוד', B.pageSetup), grp('מעברים', B.sectionBreak)]],
-        ['view', 'תצוגה', [zoomGroup, grp('מסמך', [opts.save ? cmdBtn('save') : null, B.print, cmdBtn('printPreview'), opts.versions ? cmdBtn('versions') : null, ...(opts.menu || [])])]],
+        ['view', 'תצוגה', [zoomGroup, grp('הצגה', [B.navPane, B.showMarks, cmdBtn('wordCount')]), grp('מסמך', [opts.save ? cmdBtn('save') : null, B.print, cmdBtn('printPreview'), opts.versions ? cmdBtn('versions') : null, ...(opts.menu || [])])]],
     ];
     const uid = Math.random().toString(36).slice(2, 8);
     const tabsEl = h('div.rb-tabs', { role: 'tablist', 'aria-label': 'לשוניות הסרט' });
@@ -617,6 +635,9 @@ export function createWordEditor(root, opts) {
         else if (e.altKey && !e.ctrlKey && e.code === 'KeyQ') { e.preventDefault(); focusSearch(); }
         else if ((e.ctrlKey || e.metaKey) && !e.altKey && e.code === 'KeyS') { e.preventDefault(); cmds.run('save'); }
         else if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.code === 'KeyK' && !previewing) { e.preventDefault(); cmds.run('link'); }
+        // Ctrl+Shift+G — ספירת מילים; Ctrl+Shift+8 (Ctrl+*) — סימני פסקה (כמו ב-Word)
+        else if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && e.code === 'KeyG') { e.preventDefault(); cmds.run('wordCount'); }
+        else if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && e.code === 'Digit8') { e.preventDefault(); cmds.run('showMarks'); }
         // Ctrl+Shift+> / < — הגדלה / הקטנה של הגופן (לפי המקש, גם במקלדת עברית)
         else if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && (e.code === 'Period' || e.code === 'Comma') && !previewing) {
             e.preventDefault();
@@ -713,7 +734,7 @@ export function createWordEditor(root, opts) {
 
     // ---------- שורת המצב: עמוד X מתוך Y (לפי הסמן), מילים, זום ----------
     const stPage = h('span.st-page');
-    const stWords = h('span.st-words');
+    const stWords = h('button.st-words', { type: 'button', title: 'ספירת מילים (Ctrl+Shift+G)', onclick: () => cmds.run('wordCount') });
     const stFont = h('span.st-font', { hidden: true });   // "גופן מוחלף" — רק כשהסמן בגופן שאינו זמין
     stZoom = h('button.st-zoom', { type: 'button', title: 'התאמה למסך', onclick: () => cmds.run('zoomFit') });
     statusBar.append(stPage, h('span.st-sep', { 'aria-hidden': 'true' }), stWords, stFont, h('span.st-fill'),
@@ -780,6 +801,7 @@ export function createWordEditor(root, opts) {
         linkOff.disabled = !cmds.state('unlink').enabled;
         for (const b of numBtns) b.disabled = !editor.isActive('orderedList') || !editor.isEditable;
         hnumBtn.classList.toggle('on', !!page.heading_numbers);
+        for (const [b, on] of [[B.navPane, nav.isOpen()], [B.showMarks, marksOn()]]) { b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }
         hnumBtn.setAttribute('aria-pressed', String(!!page.heading_numbers));
         contextBar();
         statusBarPage();
@@ -1134,6 +1156,21 @@ export function createWordEditor(root, opts) {
         editor.view.dispatch(tr);
         editor.view.focus();
         return true;
+    }
+
+    /** ספירת מילים: במסמך, ובבחירה (אם יש) — כמו החלון של Word. הערות השוליים לא נספרות. */
+    function wordCountDialog() {
+        const all = wordStats(editor.state.doc);
+        const { from, to, empty } = editor.state.selection;
+        const sel = empty ? null : wordStats(editor.state.doc, from, to);
+        const n = v => v.toLocaleString('he-IL');
+        const rows = [['עמודים', pageCount, null], ['מילים', all.words, sel?.words], ['תווים (בלי רווחים)', all.charsNoSpaces, sel?.charsNoSpaces],
+            ['תווים (כולל רווחים)', all.chars, sel?.chars], ['פסקאות', all.paragraphs, sel?.paragraphs]];
+        sheet('ספירת מילים', body => {
+            body.append(h('table.wc-table', h('thead', h('tr', h('th', ''), h('th', 'במסמך'), sel ? h('th', 'בבחירה') : null)),
+                h('tbody', rows.map(([k, a, b]) => h('tr', h('th', { scope: 'row' }, k), h('td', n(a)), sel ? h('td', b == null ? '' : n(b)) : null)))),
+                h('p.hint', 'הטקסט שבהערות השוליים לא נספר.'));
+        }, null);
     }
 
     /** קביעת ערך המספור: הרשימה שבה הסמן מתחילה במספר הזה (ולא ממשיכה את הקודמת). */

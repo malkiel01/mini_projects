@@ -301,7 +301,7 @@ html.wp-no-page-zoom, html.wp-no-page-zoom body, .wp-editor, .wp-stage { touch-a
 /* ===== הדפסה: רק הדפים, כל רווח = שבירת עמוד (מספרי העמודים — בשולי @page, editor.js) ===== */
 @media print {
     html, body { background: #fff !important; height: auto !important; overflow: visible !important; }
-    .no-print, header.top, .banner, .wp-toolbar, .wp-findbar, .wp-statusbar, .wp-mobilebar, .wp-sheet-shade, .wp-preview-bar, .toast, dialog { display: none !important; }
+    .no-print, header.top, .banner, .wp-toolbar, .wp-findbar, .wp-nav, .wp-paste, .wp-statusbar, .wp-mobilebar, .wp-sheet-shade, .wp-preview-bar, .toast, dialog { display: none !important; }
     .wp-doc .wp-find, .wp-doc .wp-find-cur { background: none !important; }
     main, .wp-editor, .wp-stage, .wp-zoom-box, .wp-zoom, .wp-sheet { display: block !important; overflow: visible !important; padding: 0 !important; margin: 0 !important;
         background: none !important; transform: none !important; inline-size: auto !important; block-size: auto !important; height: auto !important; width: auto !important; }
@@ -317,5 +317,45 @@ html.wp-no-page-zoom, html.wp-no-page-zoom body, .wp-editor, .wp-stage { touch-a
     .wp-doc.wp-multisec > * { border-left-width: 0 !important; border-right-width: 0 !important; inline-size: var(--wps-w) !important; box-sizing: border-box; }
     .wp-page-break::after { display: none !important; }
     .wp-img-handle { display: none !important; }
+    .wp-body { display: block !important; }
+    .wp-mk-p::after, .wp-mk-sp::after, .wp-mk-tab::after { display: none !important; }
 }
 .tb-sel.w-spacing { inline-size: 6.6em; }
+
+/* ===== תצוגה (view.js): חלונית ניווט, סימני פסקה, אפשרויות הדבקה, ספירת מילים ===== */
+.wp-body { display: flex; flex: 1; min-height: 0; }
+.wp-body > .wp-stage { flex: 1; min-inline-size: 0; }
+.wp-editor { position: relative; }
+.wp-nav { flex: none; inline-size: 240px; overflow: auto; background: var(--surface); border-inline-end: 1px solid var(--line); padding: var(--s2); }
+.wp-nav[hidden] { display: none; }
+.wp-nav .nav-head { display: flex; align-items: center; justify-content: space-between; margin-block-end: var(--s2); }
+.wp-nav .nav-close { min-inline-size: 32px; min-block-size: 32px; border: 0; border-radius: 6px; background: none; color: inherit; cursor: pointer; }
+.wp-nav .nav-list { list-style: none; margin: 0; padding: 0; }
+.wp-nav .nav-item { display: block; inline-size: 100%; text-align: start; min-block-size: 32px; border: 0; border-radius: 6px; background: none; color: var(--ink);
+    font: inherit; font-size: .85rem; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wp-nav .nav-item:hover { background: var(--bg); }
+.wp-nav .nav-item.on { background: var(--accent-soft, #e6effc); font-weight: 600; }
+.wp-nav .nav-empty { color: var(--muted); font-size: .85rem; }
+.wp-editor.wp-phone .wp-nav { position: absolute; inset-block: 0; inset-inline-start: 0; z-index: 30; inline-size: min(80vw, 300px); box-shadow: 0 0 24px rgb(0 0 0 / .2); }
+.wp-editor.wp-phone .wp-nav .nav-item { min-block-size: 44px; }
+/* סימני פסקה — בלי רוחב, כדי לא לשנות שבירת שורות */
+.wp-mk-p { position: relative; display: inline; }
+.wp-mk-p::after { content: '¶'; position: absolute; inset-inline-start: 1px; color: #6b8fd6; font-weight: normal; font-style: normal; pointer-events: none; }
+.wp-mk-sp, .wp-mk-tab { position: relative; }
+.wp-mk-sp::after, .wp-mk-tab::after { position: absolute; inset-inline-start: 0; inset-inline-end: 0; text-align: center; color: #6b8fd6; pointer-events: none; font-weight: normal; }
+.wp-mk-sp::after { content: '·'; }
+.wp-mk-tab::after { content: '→'; transform: scaleX(-1); }
+/* אפשרויות הדבקה */
+.wp-paste { position: absolute; z-index: 25; }
+.wp-paste[hidden] { display: none; }
+.wp-paste .paste-chip { min-block-size: 28px; padding: 0 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); cursor: pointer; box-shadow: 0 2px 6px rgb(0 0 0 / .15); }
+.wp-paste .paste-menu { position: absolute; inset-block-start: 100%; inset-inline-start: 0; display: grid; margin-block-start: 4px; min-inline-size: 190px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 4px; box-shadow: 0 6px 18px rgb(0 0 0 / .18); }
+.wp-paste .paste-menu[hidden] { display: none; }
+.wp-paste .paste-menu button { text-align: start; min-block-size: 36px; padding: 0 8px; border: 0; border-radius: 6px; background: none; color: var(--ink); font: inherit; cursor: pointer; }
+.wp-paste .paste-menu button:hover { background: var(--bg); }
+.wp-statusbar .st-words { border: 0; background: none; color: inherit; font: inherit; cursor: pointer; border-radius: 6px; min-block-size: 28px; padding: 0 6px; }
+.wp-statusbar .st-words:hover { background: var(--bg); color: var(--ink); }
+.wc-table { border-collapse: collapse; inline-size: 100%; }
+.wc-table th, .wc-table td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: start; }
+.wc-table td { font-variant-numeric: tabular-nums; }
