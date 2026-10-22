@@ -19,6 +19,9 @@ plugins {
 val appHost = (findProperty("appHost") as String?) ?: "mbe-plus.com"
 val appPath = (findProperty("appPath") as String?) ?: "/mini_projects/camera-app/"
 val launchUrl = "https://$appHost$appPath"
+val appVersionCode = ((findProperty("versionCode") as String?) ?: "1").toInt()
+// הפתיחה מהאייקון מודיעה לכלים הדיגיטליים "מותקנת, גרסה N" (platform/lib/gate.php, apk_seen) — השער רושם ומסיר את הפרמטר
+val launchUrlWithVersion = "$launchUrl?platform-apk=$appVersionCode"
 
 android {
     namespace = "com.mbeplus.camera"
@@ -28,11 +31,11 @@ android {
         applicationId = "com.mbeplus.camera"
         minSdk = 24   // androidbrowserhelper 2.7.4 דורש 24 (Android 7.0)
         targetSdk = 36
-        versionCode = ((findProperty("versionCode") as String?) ?: "1").toInt()
-        versionName = "1.0"
+        versionCode = appVersionCode
+        versionName = appVersionCode.toString()   // כרום מחזיר אותו ב-getInstalledRelatedApps
 
         resValue("string", "hostName", appHost)
-        resValue("string", "launchUrl", launchUrl)
+        resValue("string", "launchUrl", launchUrlWithVersion)
         resValue("string", "pathPrefix", appPath)
         resValue("string", "providerAuthority", "com.mbeplus.camera.fileprovider")
         // האישור ההדדי: האפליקציה מצהירה על האתר, והאתר (assetlinks.json) על האפליקציה

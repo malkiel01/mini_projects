@@ -337,6 +337,74 @@ function handoff_consume(string $app, string $base): void
     unset($_GET[HANDOFF_PARAM]);
 }
 
+/** הפרמטר שאפליקציית אנדרואיד (TWA) מוסיפה לכתובת הפתיחה: ?platform-apk=<versionCode>. */
+const APK_PARAM = 'platform-apk';
+
+/**
+ * אפליקציית אנדרואיד שלנו נפתחה — רושמים "מותקנת, גרסה N" למשתמש ולמכשיר (lib/installs.php, device_apps;
+ * האפיון "גרסאות וחשבונות", סעיף 3.2). שני סימנים:
+ *   TWA     — כתובת הפתיחה נושאת ?platform-apk=<versionCode> (נקבע בבנייה). המכשיר: העוגייה platform-device,
+ *             כי TWA רץ בתוך כרום ורואה את העוגיות של הכלים הדיגיטליים.
+ *   WebView — סיומת ב-User-Agent: "PlatformApk/<package>/<versionCode>" (או PMAndroid/<n> הישן של ניהול פרויקטים).
+ *             לדפדפן הפנימי אין את העוגייה — המכשיר מזוהה לפי הדגם.
+ * בפתיחת דף עם הפרמטר — הפניה לאותה כתובת בלעדיו. לעולם לא עוצר את האפליקציה.
+ */
+function apk_seen(string $app, string $base): void
+{
+    $param = $_GET[APK_PARAM] ?? null;
+    $ua = (string)($_SERVER['HTTP_USER_AGENT'] ?? '');
+    $version = null;
+    $source = '';
+    if (is_string($param) && preg_match('/^\d{1,9}$/', $param)) {
+        [$version, $source] = [(int)$param, 'twa'];
+    } elseif (preg_match('#PlatformApk/[a-z][a-z0-9_.]*/(\d{1,9})#', $ua, $m) || preg_match('#PMAndroid/(\d{1,9})#', $ua, $m)) {
+        [$version, $source] = [(int)$m[1], 'webview'];
+    }
+    if ($version !== null) {
+        try {
+            $user = current_user();
+            if ($user) {
+                $cookie = $_COOKIE['platform-device'] ?? '';
+                $device = is_string($cookie) && preg_match('/^[a-f0-9]{32}$/', $cookie) ? $cookie
+                    : 'ua:' . substr(hash('sha256', device_label($ua) . '|' . $app), 0, 29);
+                apk_table();
+                pdo()->prepare(
+                    "INSERT INTO device_apps (user_id, device_id, app_id, state, how, device, checked_at, version, source)
+                     VALUES (?, ?, ?, 'installed', 'apk', ?, ?, ?, ?)
+                     ON CONFLICT(user_id, device_id, app_id) DO UPDATE SET state = 'installed', how = 'apk',
+                         device = excluded.device, checked_at = excluded.checked_at, version = excluded.version, source = excluded.source"
+                )->execute([(int)$user['id'], $device, $app, device_label($ua), gmdate('Y-m-d\TH:i:s\Z'), $version, $source]);
+            }
+        } catch (\Throwable $e) {
+            error_log('platform apk-seen: ' . $e->getMessage());
+        }
+    }
+    if ($param !== null && is_navigation() && !headers_sent()) {
+        $uri = (string)($_SERVER['REQUEST_URI'] ?? $base);
+        $clean = preg_replace('/([?&])' . preg_quote(APK_PARAM, '/') . '=[^&#]*&?/', '$1', $uri);
+        $clean = preg_replace('/[?&](#|$)/', '$1', (string)$clean);
+        header('Cache-Control: no-store');
+        header('Location: ' . $clean, true, 302);
+        exit;
+    }
+    unset($_GET[APK_PARAM]);
+}
+
+/** device_apps (lib/installs.php) — העמודות של הגרסה, אם עוד לא נוספו. אותה הגדרה גם שם. */
+function apk_table(): void
+{
+    static $done = false;
+    if ($done) return;
+    $done = true;
+    pdo()->exec("CREATE TABLE IF NOT EXISTS device_apps (
+        user_id INTEGER NOT NULL, device_id TEXT NOT NULL, app_id TEXT NOT NULL,
+        state TEXT NOT NULL CHECK (state IN ('installed', 'not_installed')), how TEXT NOT NULL,
+        device TEXT NOT NULL DEFAULT '', checked_at TEXT NOT NULL, PRIMARY KEY (user_id, device_id, app_id))");
+    $cols = array_column(pdo()->query('PRAGMA table_info(device_apps)')->fetchAll(\PDO::FETCH_ASSOC), 'name');
+    if (!in_array('version', $cols, true)) pdo()->exec('ALTER TABLE device_apps ADD COLUMN version INTEGER');
+    if (!in_array('source', $cols, true)) pdo()->exec("ALTER TABLE device_apps ADD COLUMN source TEXT NOT NULL DEFAULT ''");
+}
+
 /**
  * יומן אבחון (lib/diag.php): פתיחת דף באפליקציה מחוברת — "gate:ok", או הסירוב ("gate:login" …),
  * עם מה שהשרת רואה: האם עוגיית הכניסה נשלחה ותקפה, מאיפה הגיעה הבקשה.

@@ -493,6 +493,9 @@ function deviceId() {
             id = [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join('');
             localStorage.setItem('platform:device', id);
         }
+        // גם בעוגייה — השער מזהה בה את המכשיר כשאפליקציית אנדרואיד שלנו נפתחת (lib/gate.php, apk_seen)
+        document.cookie = `platform-device=${id}; path=${new URL('./', document.baseURI).pathname}; max-age=63072000; SameSite=Lax`
+            + (location.protocol === 'https:' ? '; Secure' : '');
         return id;
     } catch { return null; }   // בלי אחסון (מצב פרטי) — בלי מעקב
 }
@@ -663,10 +666,15 @@ async function detectNativeApps() {
 function androidState(app) {
     const pkg = app.install.android?.package;
     const latest = app.install.android?.version || null;
-    const mine = apkRecord()[app.id]?.version || null;
-    // אנדרואיד יודע לבדוק (getInstalledRelatedApps) — רק הוא קובע. בלעדיו — מה שנרשם בהורדה מכאן.
-    const installed = nativeInstalled ? Boolean(pkg && nativeInstalled.has(pkg)) : Boolean(apkRecord()[app.id]);
-    return { pkg, latest, mine, installed, update: installed && latest && (!mine || mine < latest) };
+    // מה שהאפליקציה עצמה דיווחה כשנפתחה במכשיר הזה (השער, apk_seen) — המקור המדויק, עם הגרסה.
+    const seen = installedHere[app.id]?.how === 'apk' ? installedHere[app.id] : null;
+    // כרום (getInstalledRelatedApps) בודק רק 3 חבילות — מאשר כשמצא, ולא שולל כשלא.
+    const detected = Boolean(pkg && nativeInstalled?.has(pkg));
+    const installed = Boolean(seen) || detected;
+    const mine = seen?.version || null;
+    // הורד מכאן, ועוד לא נפתח מאז — אולי מותקנת: "התקנה", ולצידה "פתיחה".
+    const maybe = !installed && Boolean(apkRecord()[app.id]);
+    return { pkg, latest, mine, installed, maybe, update: installed && latest && mine !== null && mine < latest };
 }
 
 // כפתורי אנדרואיד: לא מותקנת — "התקנה"; מותקנת — "פתיחה" (ישר באפליקציה, לא בדפדפן), ו"עדכון"
@@ -678,8 +686,11 @@ function androidTiles(app, tile, live) {
         t.addEventListener('click', () => { apkRemember(app.id, s.latest); dlog('apk-download', { app: app.id, version: s.latest, installed: s.installed, mine: s.mine }); });
         return t;
     };
-    if (!s.installed) return [download('📲', s.latest ? `התקנה · גרסה ${s.latest}` : 'התקנה')];
     const out = [];
+    if (!s.installed) {
+        out.push(download('📲', s.latest ? `התקנה · גרסה ${s.latest}` : 'התקנה'));
+        if (!s.maybe || !s.pkg) return out;
+    }
     if (s.pkg) {
         const u = new URL(app.href, document.baseURI);
         const intent = `intent://${u.host}${u.pathname}${u.search}#Intent;scheme=https;package=${s.pkg};` +
@@ -689,8 +700,9 @@ function androidTiles(app, tile, live) {
         if (live) prepareOpen(open, app, s.pkg);   // רק בגיליון הפתוח — לא קוד לכל אפליקציה ברשימה
         out.push(open);
     }
-    if (s.update) out.push(download('⬆️', `עדכון לגרסה ${s.latest}`));
-    else out.push(download('🔄', 'התקנה מחדש'));
+    if (!s.installed) return out;                       // אולי מותקנת: "התקנה" + "פתיחה"
+    if (s.update) out.unshift(download('⬆️', `עדכון לגרסה ${s.latest} · מותקנת ${s.mine}`));
+    else out.push(download('🔄', s.mine ? `התקנה מחדש · גרסה ${s.mine}` : 'התקנה מחדש'));
     return out;
 }
 
