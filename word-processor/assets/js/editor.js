@@ -9,7 +9,7 @@
  * מה שעל המסך הוא מה שיודפס: עמודים בגודל אמיתי (מ"מ → פיקסלים ב-96 לאינץ'), שוליים, כותרת עליונה ותחתונה
  * ומספר עמוד בכל עמוד, וזום שמגדיל רק את הדפים.
  */
-import { Editor, Extension, StarterKit, Superscript, Subscript } from '../../vendor/tiptap.js';
+import { Editor, Extension, StarterKit, Superscript, Subscript, TextSelection } from '../../vendor/tiptap.js';
 import { extensions, imageBox, FONTS, FALLBACK, cssFont, safeHref, bookmarks, BOOKMARK_RE, USER_STYLE, styleKeyOf, UNDERLINES, TABLE_BORDERS, VALIGNS } from './extensions.js';
 import { Pages, pageLabel, Endnotes } from './pagination.js';
 import { cleanPastedHtml } from './paste.js';
@@ -18,13 +18,14 @@ import { createCommands } from './commands.js';
 import { FindReplace, createFindBar } from './find.js';
 import { ParagraphMarks, marksKey, createNavPane, createPasteOptions, wordStats } from './view.js';
 import { headings } from './toc.js';
+import { captions, newSeqId, SEQ_LABELS } from './caption.js';
 
 const MM = 96 / 25.4;
 const PT = 4 / 3;
 const GAP = 24;
 const SIZES = { A4: [210, 297], Letter: [215.9, 279.4] };
 const SIZE_LIST = [8, 9, 10, 10.5, 11, 12, 14, 16, 18, 20, 22, 24, 28, 32, 36, 48, 72];
-const STYLE_NAMES = { normal: 'רגיל', title: 'כותרת מסמך', ...Object.fromEntries([1, 2, 3, 4, 5, 6, 7, 8, 9].map(l => ['h' + l, 'כותרת ' + l])) };
+const STYLE_NAMES = { normal: 'רגיל', title: 'כותרת מסמך', caption: 'כיתוב', ...Object.fromEntries([1, 2, 3, 4, 5, 6, 7, 8, 9].map(l => ['h' + l, 'כותרת ' + l])) };
 const GALLERY = ['normal', 'title', 'h1', 'h2', 'h3'];   // בגלריה בסרט; 4–9 — ברשימה (כמו ב-Word, שמראה אותן כשהן בשימוש)
 const WRAP_NAMES = { inline: 'בשורה עם הטקסט', square: 'ריבוע', tight: 'צמוד', topBottom: 'מעל ומתחת', behind: 'מאחורי הטקסט', front: 'לפני הטקסט' };
 const SPACING = [['-1', 'צפוף 1'], ['-0.5', 'צפוף ½'], ['', 'רגיל'], ['0.5', 'מרווח ½'], ['1', 'מרווח 1'], ['2', 'מרווח 2'], ['3', 'מרווח 3']];
@@ -38,6 +39,7 @@ export function defaultPage() {
         font: { family: 'David', size: 12 },
         styles: {
             title: { size: 22, bold: true, color: '#1f3864', align: 'center', before: 0, after: 12 },
+            caption: { size: 9, italic: true, color: '#44546a', before: 0, after: 10 },
             h1: { size: 16, bold: true, color: '#1f3864', before: 12, after: 6 },
             h2: { size: 14, bold: true, color: '#2f5496', before: 10, after: 4 },
             h3: { size: 12, bold: true, color: '#2f5496', before: 8, after: 4 },
@@ -309,7 +311,7 @@ export function createWordEditor(root, opts) {
             + `padding-top:${x.before ?? 0}pt;padding-bottom:${x.after ?? 0}pt;${x.line ? `line-height:${x.line};` : ''}}`;
         const P = '.wp-sheet .wp-doc';
         styleEl.textContent = `${P}{padding:${g.top}px ${g.right}px 0 ${g.left}px;font-family:${cssFont(page.font.family)};font-size:${page.font.size}pt;line-height:${s.normal.line || 1.15}}`
-            + st(`${P} p`, s.normal, false) + st(`${P} p.wp-title`, s.title, true)
+            + st(`${P} p`, s.normal, false) + st(`${P} p.wp-title`, s.title, true) + st(`${P} p.wp-caption`, s.caption || {}, true)
             + [1, 2, 3, 4, 5, 6, 7, 8, 9].map(l => st(`${P} h${l}`, s['h' + l] || {}, true)).join('')
             + Object.keys(s).filter(k => USER_STYLE.test(k)).map(k => st(`${P} p.wp-s-${k}`, { ...s.normal, ...s[k] }, false)).join('')
             + `${P} li>p{padding-top:0;padding-bottom:${Math.min(3, s.normal.after ?? 0)}pt}`
@@ -541,6 +543,7 @@ export function createWordEditor(root, opts) {
             insertToc: () => insertToc(), updateToc: () => updateToc(), hasToc: () => { let f = false; editor.state.doc.descendants(n => { if (n.type.name === 'toc') f = true; return !f; }); return f; },
             crop: pos => cropDialog(pos), imageProps: pos => imageDialog(pos), imageSize: f => imageSizeTo(f), tableProps: () => tablePropsDialog(),
             footnote: () => footnoteDialog(null), endnote: () => footnoteDialog(null, true),
+            caption: () => captionDialog(), crossRef: () => crossRefDialog(),
             link: () => linkDialog(), bookmark: () => bookmarkDialog(),
             newStyle: () => newStyleDialog(), updateStyle: () => updateStyleFromSelection(),
             numberingValue: () => numberingDialog(),
@@ -635,7 +638,7 @@ export function createWordEditor(root, opts) {
             grp('פסקה', [B.bulletList, B.orderedList, listType, ...numBtns, B.outdent, B.indent], [B.alignRight, B.alignCenter, B.alignLeft, B.alignJustify, B.paragraphDialog, hnumBtn]),
             grp('סגנונות', [gallery], [styleSel, B.editStyles, cmdBtn('newStyle'), cmdBtn('updateStyle')]),
             grp('עריכה', [cmdBtn('find'), cmdBtn('replace')])]],
-        ['insert', 'הוספה', [grp('טבלאות', B.insertTable), grp('איורים', [B.insertImage, imgInput]), grp('הערות', [B.footnote, cmdBtn('endnote')]), grp('קישורים', [cmdBtn('link'), linkOff, cmdBtn('bookmark')]), grp('תוכן עניינים', [cmdBtn('insertToc'), tocUpd]), grp('עמודים', B.pageBreak)]],
+        ['insert', 'הוספה', [grp('טבלאות', B.insertTable), grp('איורים', [B.insertImage, imgInput]), grp('הערות', [B.footnote, cmdBtn('endnote')]), grp('קישורים', [cmdBtn('link'), linkOff, cmdBtn('bookmark')]), grp('כיתובים', [cmdBtn('caption'), cmdBtn('crossRef')]), grp('תוכן עניינים', [cmdBtn('insertToc'), tocUpd]), grp('עמודים', B.pageBreak)]],
         ['layout', 'פריסה', [grp('הגדרת עמוד', B.pageSetup), grp('מעברים', B.sectionBreak)]],
         ['view', 'תצוגה', [zoomGroup, grp('הצגה', [B.navPane, B.showMarks, cmdBtn('wordCount')]), grp('מסמך', [opts.save ? cmdBtn('save') : null, B.print, cmdBtn('printPreview'), opts.versions ? cmdBtn('versions') : null, ...(opts.menu || [])])]],
     ];
@@ -1387,6 +1390,49 @@ export function createWordEditor(root, opts) {
     }
 
     /** סימניות: הוספה במקום הסמן (שם קיים — עובר לכאן), ורשימה עם מעבר ומחיקה. */
+    /**
+     * הוספת כיתוב (כמו ב-Word): פסקה בסגנון "כיתוב" — התווית, המספר (seq) והטקסט — מתחת לפריט שבו הסמן או מעליו
+     * (בטבלה — מעליה כברירת מחדל, כמו ב-Word העברי).
+     */
+    function captionDialog() {
+        const sel = editor.state.selection;
+        const inTable = editor.isActive('table') || sel.node?.type.name === 'table';
+        const onImage = sel.node?.type.name === 'image' || editor.isActive('image');
+        sheet('הוספת כיתוב', body => {
+            body.append(
+                seg('label', Object.fromEntries(SEQ_LABELS.map(l => [l, l])), inTable ? 'טבלה' : SEQ_LABELS[0], 'תווית'),
+                field('טקסט הכיתוב (אחרי המספר)', h('input', { name: 'text', maxlength: 200, autocomplete: 'off', placeholder: onImage || !inTable ? 'למשל: מבנה המערכת' : '' })),
+                seg('pos', { below: 'מתחת לפריט', above: 'מעל הפריט' }, inTable ? 'above' : 'below', 'מיקום'));
+        }, form => {
+            const f = new FormData(form);
+            const label = SEQ_LABELS.includes(f.get('label')) ? f.get('label') : SEQ_LABELS[0];
+            const text = String(f.get('text') || '').trim();
+            const { state } = editor;
+            const $f = state.selection.$from;
+            // הבלוק העליון שבו הסמן (או הבלוק העליון שנבחר כולו — טבלה, תוכן עניינים)
+            const [from, to] = $f.depth ? [$f.before(1), $f.after(1)] : [state.selection.from, state.selection.to];
+            const at = f.get('pos') === 'above' ? from : to;
+            const content = [{ type: 'text', text: label + ' ' }, { type: 'seq', attrs: { label, id: newSeqId() } }, ...(text ? [{ type: 'text', text: ': ' + text }] : [])];
+            chain().insertContentAt(at, { type: 'paragraph', attrs: { pstyle: 'caption' }, content })
+                .command(({ tr }) => { tr.setSelection(TextSelection.near(tr.doc.resolve(tr.doc.resolve(at + 1).end()))); return true; }).run();
+        }, 'הוספה');
+    }
+
+    /** הפניה צולבת לכיתוב: "איור 2" או "2" — מתעדכנת לבד כשהמספרים משתנים. */
+    function crossRefDialog() {
+        const list = captions(editor.state.doc);
+        sheet('הפניה צולבת', body => {
+            if (!list.length) { body.append(h('p.none', 'אין עדיין כיתובים במסמך — הוספה ← כיתובים ← הוספת כיתוב')); return; }
+            body.append(
+                field('הפניה אל', h('select', { name: 'target' }, ...list.map(c => h('option', { value: c.id }, (c.text || `${c.label} ${c.n}`).slice(0, 80))))),
+                seg('show', { full: 'תווית ומספר', num: 'מספר בלבד' }, 'full', 'להציג'));
+        }, form => {
+            if (!list.length) return;
+            const f = new FormData(form);
+            chain().insertContent({ type: 'xref', attrs: { target: String(f.get('target')), show: f.get('show') === 'num' ? 'num' : 'full' } }).run();
+        }, 'הוספה');
+    }
+
     function bookmarkDialog() {
         sheet('סימניה', (body, dlg) => {
             const ul = h('ul.bm-list');

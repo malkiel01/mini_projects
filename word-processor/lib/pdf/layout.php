@@ -594,7 +594,7 @@ final class PdfLayout
                 for ($q = $ln['from']; $q <= $ln['to']; $q++) if (isset($atoms[$q]['fn'])) $it->notes[] = $atoms[$q]['fn'];
             }
             // "שמור עם הבא" — לכותרות (כמו בעורך); לא לסגנון של משתמש, שהוא פסקה רגילה
-            $it->keepNext = $last ? ($keepNext || ($kind !== 'normal' && !preg_match(USER_STYLE_RE, $kind))) : $together;
+            $it->keepNext = $last ? ($keepNext || ($kind !== 'normal' && $kind !== 'caption' && !preg_match(USER_STYLE_RE, $kind))) : $together;
             $it->breakBefore = $first && !empty($a['breakBefore']);
             $items[] = $it;
         }

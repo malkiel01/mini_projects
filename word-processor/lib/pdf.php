@@ -8,5 +8,5 @@ require_once __DIR__ . '/pdf/layout.php';
 
 function export_pdf(array $json, array $page, string $title = ''): string
 {
-    return (new PdfLayout($page))->render($json, $title);
+    return (new PdfLayout($page))->render(seq_flatten($json), $title);
 }

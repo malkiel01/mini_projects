@@ -11,6 +11,7 @@
 
 require_once __DIR__ . '/docs.php';
 require_once __DIR__ . '/footnote.php';
+require_once __DIR__ . '/caption.php';
 
 const EMU_PER_PX = 9525;
 const TWIP_PER_MM = 56.6929;
@@ -94,7 +95,7 @@ function image_geom(array $a, ?array $m, ?float $maxW = null): array
 /** {html, css}. $absolute — כתובות תמונות מלאות (למארחת). */
 function export_html(array $json, array $page, bool $absolute = true): array
 {
-    $json = with_media_src($json, $absolute);
+    $json = seq_flatten(with_media_src($json, $absolute));
     $body = '';
     foreach ($json['content'] ?? [] as $n) $body .= html_node($n);
     return ['html' => '<div class="wp-doc" dir="rtl" lang="he">' . $body . '</div>', 'css' => export_css($page)];
@@ -129,7 +130,7 @@ function export_css(array $page): string
         . '.wp-doc .wrap-behind,.wp-doc .wrap-front{position:absolute}.wp-doc .wrap-behind{z-index:-1}.wp-doc .wrap-front{z-index:2}'
         . '.wp-doc .page-break{break-after:page;height:0}';
     // כותרות 7–9 — אין תגית HTML: פסקה עם מחלקה (html_node); סגנון משתמש — מחלקה wp-s-u<N>, מעל "רגיל"
-    $sel = ['normal' => '.wp-doc p', 'title' => '.wp-doc .wp-title'];
+    $sel = ['normal' => '.wp-doc p', 'title' => '.wp-doc .wp-title', 'caption' => '.wp-doc .wp-caption'];
     for ($l = 1; $l <= 9; $l++) $sel["h$l"] = $l <= 6 ? ".wp-doc h$l" : ".wp-doc .wp-h$l";
     foreach ($sel as $k => $s) $css .= $s . '{' . style_css($page['styles'][$k] ?? [], $k !== 'normal') . '}';
     foreach ($page['styles'] as $k => $st) {
@@ -206,7 +207,7 @@ function html_node(array $n): string
     switch ($n['type'] ?? '') {
         case 'paragraph':
             $inner = $kids();
-            if (($a['pstyle'] ?? '') === 'title') return '<p' . block_attrs($a, 'wp-title') . '>' . ($inner ?: '<br>') . '</p>';
+            if (in_array($a['pstyle'] ?? '', ['title', 'caption'], true)) return '<p' . block_attrs($a, 'wp-' . $a['pstyle']) . '>' . ($inner ?: '<br>') . '</p>';
             if (preg_match(USER_STYLE_RE, (string)($a['pstyle'] ?? ''))) return '<p' . block_attrs($a, 'wp-s-' . $a['pstyle']) . '>' . ($inner ?: '<br>') . '</p>';
             return '<p' . block_attrs($a) . '>' . ($inner ?: '<br>') . '</p>';
         case 'heading':
@@ -346,7 +347,7 @@ function html_marks(string $s, array $marks): string
 function export_text(array $json): string
 {
     $lines = [];
-    text_blocks($json['content'] ?? [], $lines, 0);
+    text_blocks(seq_flatten($json)['content'] ?? [], $lines, 0);
     return rtrim(implode("\n", $lines));
 }
 
@@ -437,6 +438,9 @@ final class Ooxml
     public $sectFn = null;           // fn(array $page, int $index): string — <w:sectPr> של מקטע שמסתיים (docx שלם בלבד)
     private int $sectIndex = 0;
     public array $endnotes = [];     // [id => צמתי text עם עיצוב] — word/endnotes.xml
+    private array $seqNums = [];     // כיתובים: [id => [label, n]] (seq_numbers) — לשדות REF
+    private array $seqList = [];     // המספר של כל seq לפי הסדר (seq_text_list) — התוצאה השמורה של שדה SEQ
+    private int $seqAt = 0;
     public array $footnotes = [];    // [id => צמתי text עם עיצוב] — word/footnotes.xml (docx שלם); בשילוב — בסוגריים
 
     public function __construct(public array $page, public string $prefix = '')
@@ -456,12 +460,15 @@ final class Ooxml
     public function styleId(string $k): string
     {
         // h1..h9 → Heading1..9; סגנון משתמש u<N> → UserN (השם שלו — ב-w:name)
-        $base = $k === 'normal' ? 'Normal' : ($k === 'title' ? 'Title' : ($k[0] === 'h' ? 'Heading' . substr($k, 1) : 'User' . substr($k, 1)));
+        $base = $k === 'normal' ? 'Normal' : ($k === 'title' ? 'Title' : ($k === 'caption' ? 'Caption' : ($k[0] === 'h' ? 'Heading' . substr($k, 1) : 'User' . substr($k, 1))));
         return $this->prefix === '' ? $base : $this->prefix . $base;
     }
 
     public function body(array $json): string
     {
+        $this->seqNums = seq_numbers($json);
+        $this->seqList = seq_text_list($json);
+        $this->seqAt = 0;
         $out = '';
         foreach ($json['content'] ?? [] as $n) $out .= $this->block($n, []);
         return $out;
@@ -594,6 +601,18 @@ final class Ooxml
                 return '<w:bookmarkStart w:id="' . $id . '" w:name="' . xml($b) . '"/><w:bookmarkEnd w:id="' . $id . '"/>';
             case 'image':
                 return $this->image($c);
+            case 'seq':   // כיתוב: שדה SEQ בתוך סימניה נסתרת _Ref<id> — אליה מפנות ההפניות הצולבות (כמו ב-Word)
+                $label = seq_label($c['attrs']['label'] ?? '');
+                $fld = $this->field('SEQ ' . $label . ' \\* ARABIC', $this->seqList[$this->seqAt++] ?? '1', $c['marks'] ?? [], $pa);
+                if (($sid = seq_id($c['attrs']['id'] ?? '')) === null) return $fld;
+                $id = ++$this->bookmarkId;
+                return '<w:bookmarkStart w:id="' . $id . '" w:name="_Ref' . $this->prefix . $sid . '"/>' . $fld . '<w:bookmarkEnd w:id="' . $id . '"/>';
+            case 'xref':   // הפניה צולבת: שדה REF למספר; "איור 2" — התווית כטקסט ואחריה השדה, כך שעדכון ב-Word שומר על שניהם
+                $a = $c['attrs'] ?? [];
+                $t = $this->seqNums[seq_id($a['target'] ?? '') ?? ''] ?? null;
+                if (!$t) return $this->runs(XREF_MISSING, $c['marks'] ?? [], $pa);
+                return (($a['show'] ?? 'full') === 'num' ? '' : $this->runs($t['label'] . ' ', $c['marks'] ?? [], $pa))
+                    . $this->field('REF _Ref' . $this->prefix . seq_id($a['target']) . ' \\h', (string)$t['n'], $c['marks'] ?? [], $pa);
             case 'footnote':
                 $inline = fn_inline($c['attrs'] ?? []);
                 if ($this->prefix !== '') {
@@ -622,6 +641,14 @@ final class Ooxml
         if ($href[0] === '#') return '<w:hyperlink w:anchor="' . xml(substr($href, 1)) . '" w:history="1">';
         $this->links[$href] ??= ($this->prefix ?: 'r') . 'Link' . (count($this->links) + 1);
         return '<w:hyperlink r:id="' . $this->links[$href] . '" w:history="1">';
+    }
+
+    /** שדה מורכב (begin / instrText / separate / התוצאה השמורה / end), באותו עיצוב כמו הטקסט. */
+    private function field(string $instr, string $result, array $marks, array $pa): string
+    {
+        $ch = fn($t) => '<w:r><w:fldChar w:fldCharType="' . $t . '"/></w:r>';
+        return $ch('begin') . '<w:r><w:instrText xml:space="preserve"> ' . xml($instr) . ' </w:instrText></w:r>' . $ch('separate')
+            . $this->runs($result, $marks, $pa) . $ch('end');
     }
 
     /** word/footnotes.xml (או endnotes.xml — end): שני המפרידים שחובה (-1, 0) והערות המסמך. */
@@ -877,7 +904,7 @@ final class Ooxml
     public function styles(): string
     {
         $out = '';
-        $names = ['normal' => 'Normal', 'title' => 'Title'];
+        $names = ['normal' => 'Normal', 'title' => 'Title', 'caption' => 'caption'];
         for ($l = 1; $l <= 9; $l++) $names["h$l"] = "heading $l";
         foreach ($this->page['styles'] as $k => $st) if (preg_match(USER_STYLE_RE, (string)$k)) $names[$k] = style_name((string)($st['name'] ?? $k)) ?: $k;
         foreach ($names as $k => $name) {
@@ -887,7 +914,7 @@ final class Ooxml
             if (isset($st['after'])) $sp .= ' w:after="' . (int)round($st['after'] * 20) . '"';
             if (isset($st['line'])) $sp .= ' w:line="' . (int)round($st['line'] * 240) . '" w:lineRule="auto"';
             $user = (bool)preg_match(USER_STYLE_RE, $k);
-            $ppr = ($k !== 'normal' && !$user ? '<w:keepNext/><w:keepLines/>' : '') . '<w:bidi/>' . ($sp ? "<w:spacing$sp/>" : '');
+            $ppr = ($k !== 'normal' && $k !== 'caption' && !$user ? '<w:keepNext/><w:keepLines/>' : '') . '<w:bidi/>' . ($sp ? "<w:spacing$sp/>" : '');
             // מספור כותרות: הסגנון מקושר להגדרת מספור אחת, ברמה של הכותרת
             if ($k[0] === 'h' && !$user && !empty($this->page['heading_numbers'])) {
                 $this->headingNum ??= $this->newNum('headings', 1, 0);

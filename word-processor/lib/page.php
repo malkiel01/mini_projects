@@ -6,7 +6,7 @@
 
 const PAGE_SIZES = ['A4' => [210, 297], 'Letter' => [215.9, 279.4]];
 const PAGE_NUM_FORMATS = ['n', 'page_n', 'n_of_m', 'dash_n', 'hebrew'];
-const STYLE_KEYS = ['title', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'h7', 'h8', 'h9', 'normal'];
+const STYLE_KEYS = ['title', 'caption', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'h7', 'h8', 'h9', 'normal'];
 /** סגנון שהמשתמש יצר: u1, u2… (עם name). עד USER_STYLES_MAX. */
 const USER_STYLE_RE = '/^u[1-9]\d{0,2}$/';
 const USER_STYLES_MAX = 60;
@@ -25,6 +25,7 @@ function page_defaults(): array
         'font' => ['family' => 'David', 'size' => 12],
         'styles' => [
             'title' => ['size' => 22, 'bold' => true, 'color' => '#1f3864', 'align' => 'center', 'before' => 0, 'after' => 12],
+            'caption' => ['size' => 9, 'italic' => true, 'color' => '#44546a', 'before' => 0, 'after' => 10],
             'h1' => ['size' => 16, 'bold' => true, 'color' => '#1f3864', 'before' => 12, 'after' => 6],
             'h2' => ['size' => 14, 'bold' => true, 'color' => '#2f5496', 'before' => 10, 'after' => 4],
             'h3' => ['size' => 12, 'bold' => true, 'color' => '#2f5496', 'before' => 8, 'after' => 4],
@@ -157,12 +158,12 @@ function style_name(string $s): string
     return mb_substr(trim(preg_replace('/[\x00-\x1f<>]/u', '', $s)), 0, 40);
 }
 
-/** מפתח הסגנון של בלוק (paragraph / heading) — h1..h9, title, u<N> שקיים בהגדרות, או normal. */
+/** מפתח הסגנון של בלוק (paragraph / heading) — h1..h9, title, caption (כיתוב), u<N> שקיים בהגדרות, או normal. */
 function block_style_key(array $n, array $page): string
 {
     if (($n['type'] ?? '') === 'heading') return 'h' . max(1, min(9, (int)($n['attrs']['level'] ?? 1)));
     $ps = $n['attrs']['pstyle'] ?? null;
-    return is_string($ps) && ($ps === 'title' || (preg_match(USER_STYLE_RE, $ps) && isset($page['styles'][$ps]))) ? $ps : 'normal';
+    return is_string($ps) && ($ps === 'title' || $ps === 'caption' || (preg_match(USER_STYLE_RE, $ps) && isset($page['styles'][$ps]))) ? $ps : 'normal';
 }
 
 /** גודל העמוד במ"מ לפי הכיוון: [רוחב, גובה]. */

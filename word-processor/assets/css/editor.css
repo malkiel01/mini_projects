@@ -254,6 +254,12 @@ html.wp-no-page-zoom, html.wp-no-page-zoom body, .wp-editor, .wp-stage { touch-a
 .wp-doc .wp-fn-ref.wp-en-ref::after { content: counter(wpen, lower-roman); }
 .wp-en-area { display: block; user-select: none; direction: rtl; }
 .wp-en-area .wp-fn-note { cursor: pointer; }
+/* כיתוב ממוספר והפניה צולבת (caption.js): הטקסט מחושב לבד (data-n) — כמו שדה ב-Word, ברקע אפור כשהסמן עליו */
+.wp-doc .wp-seq::after, .wp-doc .wp-xref::after { content: attr(data-n); }
+.wp-doc .wp-xref { cursor: default; }
+.wp-doc .wp-xref.wp-xref-bad { color: #b00020; }
+.wp-doc .wp-seq.ProseMirror-selectednode, .wp-doc .wp-xref.ProseMirror-selectednode { background: #d9d9d9; }
+@media print { .wp-doc .wp-seq.ProseMirror-selectednode, .wp-doc .wp-xref.ProseMirror-selectednode { background: none; } }
 .wp-doc .wp-fn-ref.ProseMirror-selectednode { outline: 2px solid #2d4a8a; border-radius: 2px; }
 .wp-fn-area { display: block; user-select: none; direction: rtl; }
 .wp-fn-sep { inline-size: 33%; height: 0; border-top: 1px solid #000; margin: 6px 0 7px; }

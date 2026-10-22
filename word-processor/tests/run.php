@@ -756,6 +756,50 @@ check('ייבוא מ-Word: הפניית סיום → הערת סיום עם הט
 check('PDF: הערות הסיום בסוף המסמך עם ספרות רומיות, השוליים — עם מספר', preg_match_all('#/Type /Page /#', $pdfOf($enDoc)) === 1 && roman_lower(2) === 'ii' && roman_lower(14) === 'xiv');
 
 // ======================================================================
+section('כיתובים והפניות צולבות (שלב 4)');
+$cap = fn($label, $id, $text) => ['type' => 'paragraph', 'attrs' => ['pstyle' => 'caption'], 'content' => [
+    ['type' => 'text', 'text' => "$label "], ['type' => 'seq', 'attrs' => ['label' => $label, 'id' => $id]], ['type' => 'text', 'text' => ": $text"]]];
+$capDoc = ['type' => 'doc', 'content' => [
+    ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'ראו '], ['type' => 'xref', 'attrs' => ['target' => 'b2', 'show' => 'full']],
+        ['type' => 'text', 'text' => ' ו-'], ['type' => 'xref', 'attrs' => ['target' => 't1', 'show' => 'num']], ['type' => 'text', 'text' => ' ו-'], ['type' => 'xref', 'attrs' => ['target' => 'zz']]]],
+    $cap('איור', 'a1', 'ראשון'), $cap('טבלה', 't1', 'נתונים'), $cap('איור', 'b2', 'שני'),
+]];
+check('seq_numbers: מספור נפרד לכל תווית, לפי הסדר', seq_numbers($capDoc) === ['a1' => ['label' => 'איור', 'n' => 1], 't1' => ['label' => 'טבלה', 'n' => 1], 'b2' => ['label' => 'איור', 'n' => 2]]);
+$capText = export_text($capDoc);
+check('טקסט: ההפניות והמספרים; הפניה שבורה — הודעת שגיאה', str_contains($capText, 'ראו איור 2 ו-1 ו-' . XREF_MISSING) && str_contains($capText, 'איור 2: שני') && str_contains($capText, 'טבלה 1: נתונים'), $capText);
+check('HTML: סגנון כיתוב ומספרים', str_contains(export_html($capDoc, page_normalize([]))['html'], '<p class="wp-caption"') && str_contains(export_html($capDoc, page_normalize([]))['css'], '.wp-doc .wp-caption{'));
+$capDocx = export_docx($capDoc, page_normalize([]), 'כיתובים');
+file_put_contents("$tmp/cap.docx", $capDocx);
+$zip->open("$tmp/cap.docx");
+$capMain = (string)$zip->getFromName('word/document.xml');
+$capStyles = (string)$zip->getFromName('word/styles.xml');
+$zip->close();
+check('Word: שדות SEQ בתוך סימניות _Ref, הפניות REF, סגנון Caption', substr_count($capMain, ' SEQ איור \\* ARABIC ') === 2 && str_contains($capMain, 'w:name="_Refb2"')
+    && str_contains($capMain, ' REF _Refb2 \\h ') && str_contains($capMain, ' REF _Reft1 \\h ') && str_contains($capMain, '<w:pStyle w:val="Caption"/>')
+    && str_contains($capStyles, 'w:styleId="Caption"') && str_contains($capMain, XREF_MISSING));
+$capBack = import_docx($capDocx, 'cap');
+$nodes = [];
+$walkC = function ($n) use (&$walkC, &$nodes) { if (in_array($n['type'] ?? '', ['seq', 'xref'], true)) $nodes[] = $n['type'] . ':' . json_encode($n['attrs'], JSON_UNESCAPED_UNICODE); foreach ($n['content'] ?? [] as $c) $walkC($c); };
+$walkC($capBack['json']);
+check('Word הלוך וחזור: כיתובים, הפניות (מספר בלבד אחרי התווית) וסגנון', $nodes === ['xref:{"target":"b2","show":"num"}', 'xref:{"target":"t1","show":"num"}',
+    'seq:{"label":"איור","id":"a1"}', 'seq:{"label":"טבלה","id":"t1"}', 'seq:{"label":"איור","id":"b2"}']
+    && ($capBack['json']['content'][1]['attrs']['pstyle'] ?? '') === 'caption' && export_text($capBack['json']) === $capText
+    && !array_filter($capBack['report'], fn($r) => $r['key'] === 'fields'), json_encode($nodes, JSON_UNESCAPED_UNICODE) . "\n" . export_text($capBack['json']));
+// כמו ש-Word עצמו שומר: הסימניה עוטפת "Figure 1", ותוצאת ההפניה "Figure 1" → הפניה מלאה
+$fld = fn($instr, $res) => '<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> ' . $instr . ' </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>' . $res . '</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>';
+$wCap = $mkDocx([
+    '[Content_Types].xml' => '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>',
+    'word/document.xml' => '<w:document ' . $WN . '><w:body><w:p><w:pPr><w:pStyle w:val="Caption"/></w:pPr><w:bookmarkStart w:id="1" w:name="_Ref123456"/><w:r><w:t xml:space="preserve">Figure </w:t></w:r>'
+        . $fld('SEQ Figure \\* ARABIC', '1') . '<w:bookmarkEnd w:id="1"/><w:r><w:t>: Map</w:t></w:r></w:p>'
+        . '<w:p><w:r><w:t xml:space="preserve">See </w:t></w:r>' . $fld('REF _Ref123456 \\h', 'Figure 1') . '</w:p></w:body></w:document>',
+    'word/styles.xml' => '<w:styles ' . $WN . '><w:style w:type="paragraph" w:styleId="Caption"><w:name w:val="caption"/></w:style></w:styles>',
+]);
+$wc = import_docx($wCap, 'wcap');
+check('ייבוא מ-Word: SEQ → כיתוב, REF → הפניה מלאה, בלי סימניה נראית', ($wc['json']['content'][0]['attrs']['pstyle'] ?? '') === 'caption'
+    && export_text($wc['json']) === "Figure 1: Map\nSee Figure 1" && !str_contains(json_encode($wc['json']), '"bookmark"')
+    && ($wc['json']['content'][1]['content'][1]['attrs'] ?? null) === ['target' => '123456', 'show' => 'full'], export_text($wc['json']) . json_encode($wc['json']));
+
+// ======================================================================
 section('הגדרות עמוד');
 $p = page_normalize(['size' => 'Legal', 'orientation' => 'landscape', 'margins' => ['top' => 500, 'left' => 'x'], 'font' => ['family' => 'David<script>', 'size' => 200],
     'styles' => ['h1' => ['size' => 18, 'color' => 'red', 'underline' => true]], 'numbering' => ['format' => 'bad', 'align' => 'left']]);

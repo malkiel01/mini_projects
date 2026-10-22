@@ -307,7 +307,7 @@ final class DocxCtx
             foreach ($xp->query('//w:style[@w:type="paragraph"]') as $st) {
                 $name = strtolower((string)$xp->evaluate('string(w:name/@w:val)', $st));
                 $id = $st->getAttributeNS(W, 'styleId');
-                if ($name === 'title') $this->styles[$id] = 'title';
+                if ($name === 'title' || $name === 'caption') $this->styles[$id] = $name;
                 elseif (preg_match('/^heading ([1-9])$/', $name, $m)) {
                     $this->styles[$id] = 'h' . (int)$m[1];
                     $nid = (string)$xp->evaluate('string(w:pPr/w:numPr/w:numId/@w:val)', $st);
@@ -499,7 +499,7 @@ final class DocxCtx
         $type = 'paragraph';
         $style = (string)$xp->evaluate('string(w:pPr/w:pStyle/@w:val)', $p);
         $kind = $this->styles[$style] ?? null;
-        if ($kind === 'title' || ($kind && $kind[0] === 'u')) $attrs['pstyle'] = $kind;
+        if ($kind === 'title' || $kind === 'caption' || ($kind && $kind[0] === 'u')) $attrs['pstyle'] = $kind;
         elseif ($kind) { $type = 'heading'; $attrs['level'] = (int)$kind[1]; }
         $bidi = $xp->query('w:pPr/w:bidi', $p)->length > 0 && (string)$xp->evaluate('string(w:pPr/w:bidi/@w:val)', $p) !== '0';
         $jc = (string)$xp->evaluate('string(w:pPr/w:jc/@w:val)', $p);
@@ -545,9 +545,10 @@ final class DocxCtx
             if (is_numeric($start) && ($n = (int)round(((int)$start - max(0, $hang)) / 720)) > 0) $attrs['indent'] = min(8, $n);
         }
         $this->note('tracked', $xp->query('w:ins|w:del|w:r/w:rPr/w:rPrChange|w:pPr/w:pPrChange', $p)->length);
-        // שדות — חוץ משדה HYPERLINK, שנכנס כקישור אמיתי
+        // שדות — חוץ מ-HYPERLINK (קישור אמיתי), SEQ (כיתוב) ו-REF לכיתוב (הפניה צולבת)
+        $known = fn($e) => 'starts-with(normalize-space(' . $e . '), "HYPERLINK") or starts-with(normalize-space(' . $e . '), "SEQ ") or starts-with(normalize-space(' . $e . '), "REF _Ref")';
         $this->note('fields', $xp->query('w:fldSimple|w:r/w:fldChar[@w:fldCharType="begin"]|w:hyperlink/w:r/w:fldChar[@w:fldCharType="begin"]', $p)->length
-            - $xp->query('w:fldSimple[starts-with(normalize-space(@w:instr), "HYPERLINK")]|w:r/w:instrText[starts-with(normalize-space(.), "HYPERLINK")]|w:hyperlink/w:r/w:instrText[starts-with(normalize-space(.), "HYPERLINK")]', $p)->length);
+            - $xp->query('w:fldSimple[' . $known('@w:instr') . ']|w:r/w:instrText[' . $known('.') . ']|w:hyperlink/w:r/w:instrText[' . $known('.') . ']', $p)->length);
         $this->note('math', $xp->query('.//*[local-name()="oMath"]', $p)->length);
         if ($xp->query('w:pPr/w:framePr', $p)->length) $this->note('shapes');
         $inline = [];
@@ -555,18 +556,39 @@ final class DocxCtx
         // שדה פשוט (fldSimple) — התוצאה האחרונה שלו נכנסת כטקסט. קישור: w:hyperlink, או שדה HYPERLINK (מורכב / פשוט)
         $fieldLink = null;   // הכתובת של שדה HYPERLINK מורכב שבתוכו אנחנו (מ-separate עד end)
         $pending = null;
+        $instr = '';          // הפקודה של השדה המורכב הנוכחי (מ-begin עד separate)
+        $capField = null;     // שדה SEQ / REF שבתוכו (מ-separate עד end): [צומת, תוצאה] — התוצאה לא נכנסת כטקסט
+        $refMark = null;      // הסימניה הנסתרת _Ref<id> האחרונה בפסקה — המזהה של הכיתוב שאחריה
+        $simple = null;       // fldSimple של SEQ / REF שכבר נכנס
         foreach ($xp->query('w:bookmarkStart|w:hyperlink/w:bookmarkStart|w:r|w:hyperlink/w:r|w:ins/w:r|w:smartTag/w:r|w:fldSimple/w:r|w:hyperlink/w:fldSimple/w:r', $p) as $r) {
             if ($r->localName === 'bookmarkStart') {
                 $name = $r->getAttributeNS(W, 'name');
+                if (str_starts_with($name, '_Ref')) { $refMark = substr($name, 4); continue; }   // נסתרת גם ב-Word
                 if ($name !== '_GoBack' && ($b = bookmark_name($name))) $inline[] = ['type' => 'bookmark', 'attrs' => ['name' => $b]];
                 continue;
             }
+            if ($r->parentNode instanceof DOMElement && $r->parentNode->localName === 'fldSimple'
+                && ($node = $this->captionField($r->parentNode->getAttributeNS(W, 'instr'), $refMark))) {
+                if ($simple !== $r->parentNode) { $simple = $r->parentNode; $inline[] = $this->captionResult($node, $xp->evaluate('string(.)', $r->parentNode), $this->runMarks($r, $xp)); }
+                continue;
+            }
+            $skip = $capField !== null;
             foreach ($xp->query('w:fldChar|w:instrText', $r) as $f) {
-                if ($f->localName === 'instrText') { if (($u = $this->fieldHref($f->textContent)) !== null) $pending = $u; continue; }
+                if ($f->localName === 'instrText') { $instr .= $f->textContent; if (($u = $this->fieldHref($f->textContent)) !== null) $pending = $u; continue; }
                 $ft = $f->getAttributeNS(W, 'fldCharType');
-                if ($ft === 'begin') $pending = null;
-                elseif ($ft === 'separate') $fieldLink = $pending;
-                elseif ($ft === 'end') { $fieldLink = null; $pending = null; }
+                if ($ft === 'begin') { $pending = null; $instr = ''; }
+                elseif ($ft === 'separate') {
+                    $fieldLink = $pending;
+                    if ($node = $this->captionField($instr, $refMark)) { $capField = [$node, '', $this->runMarks($r, $xp)]; $skip = true; }
+                }
+                elseif ($ft === 'end') {
+                    $fieldLink = null; $pending = null;
+                    if ($capField) { $inline[] = $this->captionResult(...$capField); $capField = null; $skip = true; }
+                }
+            }
+            if ($skip) {
+                if ($capField) { $capField[1] .= $xp->evaluate('string(w:t)', $r); if ($xp->query('w:t', $r)->length) $capField[2] = $this->runMarks($r, $xp); }
+                continue;
             }
             $marks = $this->runMarks($r, $xp);
             $rs = (string)$xp->evaluate('string(w:rPr/w:rStyle/@w:val)', $r);
@@ -598,6 +620,25 @@ final class DocxCtx
             }
         }
         return [para($this->mergeText($inline), $attrs, $type), $num, $breakAfter];
+    }
+
+    /** שדה SEQ (כיתוב) או REF לסימניה _Ref… (הפניה צולבת) → הצומת שלו בלי התוצאה; אחרת null. */
+    private function captionField(string $instr, ?string $refMark): ?array
+    {
+        if (preg_match('/^\s*SEQ\s+(\S+)/u', $instr, $m)) {
+            $id = seq_id($refMark ?? '') ?? substr(bin2hex(random_bytes(5)), 0, 9);
+            return ['type' => 'seq', 'attrs' => ['label' => seq_label($m[1]), 'id' => $id]];
+        }
+        if (preg_match('/^\s*REF\s+_Ref(\S+)/u', $instr, $m) && ($id = seq_id($m[1])) !== null) return ['type' => 'xref', 'attrs' => ['target' => $id, 'show' => 'full']];
+        return null;
+    }
+
+    /** הצומת עם התוצאה השמורה: הפניה שהתוצאה שלה רק מספר — show 'num' (התווית לפניה — טקסט רגיל). העיצוב — של ריצת התוצאה. */
+    private function captionResult(array $node, string $result, array $marks): array
+    {
+        if ($node['type'] === 'xref' && preg_match('/^\s*\d+\s*$/u', $result)) $node['attrs']['show'] = 'num';
+        $marks = array_values(array_filter($marks, fn($m) => $m['type'] !== 'link'));
+        return $node + ($marks ? ['marks' => $marks] : []);
     }
 
     /** העיצוב של סגנון פסקה מ-styles.xml → הגדרות סגנון אצלנו (font, size, bold, italic, underline, color, align, before, after, line). */

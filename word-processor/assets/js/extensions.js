@@ -8,13 +8,14 @@ import {
     Subscript, Superscript, Table, TableRow, TableCell, TableHeader, OrderedList, TextSelection,
 } from '../../vendor/tiptap.js';
 import { Toc } from './toc.js';
+import { Seq, Xref } from './caption.js';
 
 const BLOCKS = ['paragraph', 'heading'];
 /** מפתח של סגנון שהמשתמש יצר (u1, u2…) — כמו USER_STYLE_RE ב-lib/page.php. */
 export const USER_STYLE = /^u[1-9]\d{0,2}$/;
-/** מפתח הסגנון של בלוק: h1..h9, title, u<N>, או normal. */
+/** מפתח הסגנון של בלוק: h1..h9, title, caption (כיתוב), u<N>, או normal. */
 export const styleKeyOf = node => node.type.name === 'heading' ? 'h' + node.attrs.level
-    : (node.attrs.pstyle === 'title' || USER_STYLE.test(node.attrs.pstyle || '')) ? node.attrs.pstyle : 'normal';
+    : (node.attrs.pstyle === 'title' || node.attrs.pstyle === 'caption' || USER_STYLE.test(node.attrs.pstyle || '')) ? node.attrs.pstyle : 'normal';
 
 /** הגופנים הזמינים — אותם קבצים במסך, בהדפסה וב-PDF (lib/pdf/font.php, FontSet::FAMILIES). */
 export const FONTS = ['David', 'Frank Ruehl', 'Arial', 'Narkisim', 'Miriam', 'Times New Roman', 'Calibri', 'Tahoma',
@@ -136,8 +137,9 @@ export const ParagraphFormat = Extension.create({
                 pstyle: {
                     default: null,
                     parseHTML: el => el.classList.contains('wp-title') || el.classList.contains('MsoTitle') ? 'title'
+                        : el.classList.contains('wp-caption') || el.classList.contains('MsoCaption') ? 'caption'
                         : (el.getAttribute('data-style') && USER_STYLE.test(el.getAttribute('data-style')) ? el.getAttribute('data-style') : null),
-                    renderHTML: a => a.pstyle === 'title' ? { class: 'wp-title' } : USER_STYLE.test(a.pstyle || '') ? { class: 'wp-s-' + a.pstyle, 'data-style': a.pstyle } : {},
+                    renderHTML: a => a.pstyle === 'title' || a.pstyle === 'caption' ? { class: 'wp-' + a.pstyle } : USER_STYLE.test(a.pstyle || '') ? { class: 'wp-s-' + a.pstyle, 'data-style': a.pstyle } : {},
                 },
             },
         }];
@@ -167,7 +169,7 @@ export const ParagraphFormat = Extension.create({
             /** סגנון: 'normal' | 'title' | 'h1'..'h9' | סגנון משתמש 'u1'…. */
             setStyle: s => ({ chain }) => {
                 if (s === 'normal') return chain().setParagraph().setBlockAttrs({ pstyle: null }).run();
-                if (s === 'title' || USER_STYLE.test(s)) return chain().setParagraph().setBlockAttrs({ pstyle: s }).run();
+                if (s === 'title' || s === 'caption' || USER_STYLE.test(s)) return chain().setParagraph().setBlockAttrs({ pstyle: s }).run();
                 return chain().setHeading({ level: Math.max(1, Math.min(9, +s.slice(1))) }).run();
             },
         };
@@ -828,7 +830,7 @@ export function extensions(extra = []) {
         Highlight.configure({ multicolor: true }),
         Subscript, Superscript,
         TextAlign.configure({ types: BLOCKS, alignments: ['right', 'center', 'left', 'justify'], defaultAlignment: null }),
-        ParagraphFormat, PageBreak, SectionBreak, Footnote, WpImage, LetterSpacing, Link, Bookmark, UnderlineStyle, Toc,
+        ParagraphFormat, PageBreak, SectionBreak, Footnote, WpImage, LetterSpacing, Link, Bookmark, UnderlineStyle, Toc, Seq, Xref,
         WpTable.configure({ resizable: true, cellMinWidth: 30, allowTableNodeSelection: true, View: WpTableView }),
         WpTableRow, Cell, HeaderCell,
         DocAttrs,

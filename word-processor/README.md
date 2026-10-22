@@ -166,6 +166,13 @@
   בתחתית העמוד. בעורך — ווידג'טים בסוף המסמך (`Endnotes` ב-`pagination.js`), שכל אחד יחידה לעימוד, כך שהערות רבות
   נמשכות לעמוד הבא; עריכה — לחיצה על ההערה. **PDF:** `endnoteItems()` ב-`layout.php` — אחרי הבלוק האחרון. **Word:**
   `word/endnotes.xml` (סגנונות endnote text / endnote reference, `numFmt lowerRoman`), וגם בייבוא.
+- **כיתובים והפניות צולבות** (שלב 4; הוספה ← כיתובים): "הוספת כיתוב" מוסיף פסקה בסגנון **כיתוב** (9 נק', נטוי) —
+  התווית (איור / טבלה / משוואה), המספר והטקסט — מתחת לפריט שבו הסמן או מעליו (בטבלה — מעליה). המספר הוא צומת `seq`
+  (`attrs.label`, `attrs.id`) והוא מחושב לפי הסדר, לכל תווית בנפרד; "הפניה צולבת" — צומת `xref` (`target`, `show`:
+  "איור 2" או "2"). המספרים לא נשמרים: מחיקה או הוספה של כיתוב באמצע מעדכנת מיד את כל המספרים וההפניות (`caption.js`,
+  ובשרת `lib/caption.php`); הפניה לכיתוב שנמחק — "שגיאה! מקור ההפניה לא נמצא." כמו ב-Word. Ctrl+לחיצה — מעבר לכיתוב.
+  **Word:** שדה `SEQ` בתוך סימניה נסתרת `_Ref<id>`, ושדה `REF … \h` (התווית — טקסט לפניו), וגם בייבוא — כולל
+  כיתובים שנוצרו ב-Word עצמו (הסימניה עוטפת "Figure 1"). **PDF / HTML / טקסט:** המספרים כטקסט.
 - מונה עמודים בכותרת. **נעילה** ("פתוח לעריכה אצל X", 2 דקות בלי דופק), **גרסאות** (🕘 — כל שמירה,
   מאוחדות לאחת לכל משתמש בכל 10 דקות, עד 100; שחזור יוצר גרסה חדשה).
 - **🔗 לקוחות הטמעה** (מנהל בלבד): רשימת האפליקציות הרשומות, אישור לקוח ממתין, כיבוי.
@@ -210,8 +217,8 @@
 ```
 app.json  index.html  embed.php  api.php  .htaccess
 lib/        db.php (סכמה) · page.php (הגדרות עמוד) · docs.php (מסמכים, גרסאות, נעילה, תמונות) · pdf.php + pdf/ (מנוע ה-PDF)
-            embed.php (רישום, חתימה, טוקן, סשן) · export.php · import.php · users.php · selftest.php
-assets/js/  editor.js (העורך) · commands.js (רישום הפקודות) · extensions.js · find.js · view.js · pagination.js · paste.js · saver.js (שמירה וטיוטה) · schema.js
+            embed.php (רישום, חתימה, טוקן, סשן) · export.php · import.php · footnote.php · caption.php · users.php · selftest.php
+assets/js/  editor.js (העורך) · commands.js (רישום הפקודות) · extensions.js · find.js · view.js · pagination.js · paste.js · saver.js (שמירה וטיוטה) · schema.js · toc.js · caption.js
             app.js · embed.js · host.js (למארחת)
 client/     WordProcessorClient.php — הלקוח שמארחות מעתיקות
 docs/       integration.md — מדריך ההתממשקות
