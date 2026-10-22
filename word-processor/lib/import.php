@@ -147,7 +147,7 @@ function html_inline(DOMNode $n, array $marks, bool $loose = false): array
     $style = css_props($n->getAttribute('style'));
     $ts = [];
     if (($c = color_val($style['color'] ?? null))) $ts['color'] = '#' . strtolower($c);
-    if (($z = pt_val($style['font-size'] ?? null))) $ts['fontSize'] = round($z) . 'pt';
+    if (($z = pt_val($style['font-size'] ?? null))) $ts['fontSize'] = (round($z * 2) / 2) . 'pt';   // חצאי נקודה (13.5), כמו ב-Word
     if (!empty($style['font-family'])) $ts['fontFamily'] = font_name(trim(explode(',', $style['font-family'])[0], " '\""));
     if ($ts) $add('textStyle', $ts);
     if (($style['font-weight'] ?? '') === 'bold' || (int)($style['font-weight'] ?? 0) >= 600) $add('bold');

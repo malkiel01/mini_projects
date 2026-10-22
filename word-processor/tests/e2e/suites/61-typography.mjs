@@ -22,6 +22,33 @@ export default async function (t) {
     await t.tool(p, 'הגדלת גופן (Ctrl+Shift+>)');
     t.ok('A+ על כותרת 1 (16) — 18', JSON.stringify((await json()).content[2]).includes('"fontSize":"18pt"'));
 
+    // R10: גודל חופשי מהשדה בסרט — 13.5, גם עם פסיק; ערך לא תקין חוזר לגודל הנוכחי ולא משנה
+    const field = '.wp-ribbon input.w-size';
+    // הבחירה מחזירה את המיקוד לעורך באיחור של פריים (focus של TipTap) — מחכים לו, אחרת הוא נלקח מהשדה באמצע ההקלדה
+    const settled = () => p.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+    await sel(1, 5);
+    await settled();
+    await p.fill(field, '13.5');
+    await p.press(field, 'Enter');
+    t.ok('R10: גודל חופשי 13.5 מהסרט', (await size()) === '13.5pt' && (await p.inputValue(field)) === '13.5', await size());
+    await sel(1, 5);
+    await settled();
+    await p.fill(field, '9,5');
+    await p.press(field, 'Enter');
+    t.ok('R10: פסיק עשרוני — 9.5', (await size()) === '9.5pt', await size());
+    for (const bad of ['abc', '2000', '0']) {
+        await sel(1, 5);
+        await settled();
+        await p.fill(field, bad);
+        await p.press(field, 'Enter');
+        t.ok(`R10: "${bad}" — לא משנה, והשדה חוזר לגודל הנוכחי`, (await size()) === '9.5pt' && (await p.inputValue(field)) === '9.5', `${await size()} / ${await p.inputValue(field)}`);
+    }
+    t.ok('R10: רשימת ההצעות בשדה', await p.evaluate(f => document.querySelector(f).list?.options.length, field) >= 10);
+    await sel(1, 5);
+    await settled();
+    await p.fill(field, '14');
+    await p.press(field, 'Enter');
+
     // סוג קו תחתון
     await sel(6, 12);
     await p.selectOption('.wp-ribbon select.w-ul', 'wavy');

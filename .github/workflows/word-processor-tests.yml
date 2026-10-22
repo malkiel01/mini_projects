@@ -19,7 +19,8 @@ permissions:
 jobs:
   tests:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    # ההתקנה (apt, Chromium) לוקחת לפעמים 10 דקות — 15 לא הספיקו לבדיקות עצמן (כ-7 דקות)
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 

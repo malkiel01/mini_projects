@@ -153,7 +153,7 @@ try {
      * הרישום בסוף הבקשה (shutdown), כשהשינוי כבר נשמר; שינוי שלא שינה דבר לא נרשם.
      */
     $histActions = ['child_save', 'youtube', 'yt_add', 'yt_del', 'rule_add', 'rule_del', 'rule_toggle', 'device_setting',
-                    'apps_posture', 'app_rule', 'app_limit', 'report_level', 'request_decide', 'app_request_decide'];
+                    'apps_posture', 'apps_new', 'app_rule', 'app_limit', 'chrome_managed', 'report_level', 'request_decide', 'app_request_decide'];
     if (in_array($action, $histActions, true)) {
         $histChild = str_ends_with($action, 'request_decide')
             ? (int) (one('SELECT child_id FROM access_requests WHERE id = ? AND account_id = ?', [num('req'), $aid])['child_id'] ?? 0)
@@ -365,6 +365,17 @@ try {
         case 'app_limit':
             $c = myChild($parent);
             if ($err = appLimitSave((int) $c['id'], str('package'), num('minutes'))) fail($err);
+            out(['ok' => true, 'apps' => appsList($aid, (int) $c['id'])]);
+
+        case 'apps_new':
+            $c = myChild($parent);
+            if ($err = appsSaveNewApps((int) $c['id'], str('new_apps'))) fail($err);
+            out(['ok' => true, 'apps' => appsList($aid, (int) $c['id'])]);
+
+        case 'chrome_managed':
+            $c = myChild($parent);
+            if (!accountAppsAllowed($aid)) fail('ניהול אפליקציות אינו פעיל בחשבון');
+            chromeManagedSave((int) $c['id'], (bool) num('on'));
             out(['ok' => true, 'apps' => appsList($aid, (int) $c['id'])]);
 
         case 'app_rule':

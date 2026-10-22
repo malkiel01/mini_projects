@@ -73,6 +73,7 @@ function schemaStatements(): array {
         keep_history       INTEGER NOT NULL DEFAULT 1,
         allow_pip          INTEGER NOT NULL DEFAULT 0,
         allow_background   INTEGER NOT NULL DEFAULT 0,
+        chrome_managed     INTEGER NOT NULL DEFAULT 0,
         updated_at         TEXT    NOT NULL DEFAULT ''
     )",
 

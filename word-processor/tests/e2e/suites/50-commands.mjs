@@ -27,7 +27,8 @@ export default async function (t) {
     t.ok('מודגש מהסרגל', await p.locator('.wp-doc strong').count() === 1 && await p.getAttribute('button[aria-label="מודגש (Ctrl+B)"]', 'aria-pressed') === 'true');
     await t.tool(p, 'מרכוז');
     t.ok('מרכוז מהסרגל', (await p.locator('.wp-doc p').first().getAttribute('style') || '').includes('text-align: center'));
-    await p.selectOption('select[aria-label="גודל גופן"]', '18');
+    await p.fill('input[aria-label="גודל גופן"]', '18');
+    await p.press('input[aria-label="גודל גופן"]', 'Enter');
     t.ok('גודל גופן מהסרגל', (await p.locator('.wp-doc span[style*="font-size"]').first().getAttribute('style') || '').includes('18pt'));
     await p.click('button[aria-label="ביטול (Ctrl+Z)"]');
     t.ok('ביטול מהסרגל', await p.locator('.wp-doc span[style*="font-size"]').count() === 0);
