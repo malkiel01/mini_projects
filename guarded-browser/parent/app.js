@@ -461,9 +461,10 @@ function enforceCard(e) {
     const [cls, title, sub] = ENF_SUM[e.summary] || ENF_SUM.full;
     const rows = e.rows.filter(r => r.status !== 'na');
     const dlg = el('div', { class: 'enf-detail', hidden: true }, rows.map(r => el('div', { class: 'enf-row' }, [
-        el('span', { class: 'enf-ic', text: ENF_ICON[r.status], ariaHidden: 'true' }),
+        // אותם מצבים כמו בהגדרות המכשיר (lib/enforce.php, SETTING_STATES) — "הוחל" רק אחרי דוח מהמכשיר.
+        el('span', { class: 'enf-ic', text: SETTING_ICON[r.state] || ENF_ICON[r.status], ariaHidden: 'true' }),
         el('span', { class: 'enf-nm' }, [r.label, r.hint && r.status !== 'full' ? el('small', { text: r.hint }) : null]),
-        el('span', { class: `enf-st ${r.status}`, text: { full: 'נאכף', partial: 'חלקי', none: 'לא נאכף', unknown: 'לא דווח' }[r.status] || '' }),
+        el('span', { class: `enf-st ${r.status}`, text: r.state_label || { full: 'נאכף', partial: 'חלקי', none: 'לא נאכף', unknown: 'לא דווח' }[r.status] || '' }),
     ])));
     // מתי כל מכשיר דיווח — דוח ישן אינו אימות עדכני.
     const STATE = { fresh: 'עדכני', pending: 'ממתין לסנכרון', stale: 'דוח ישן', none: 'לא דיווח (גרסה ישנה)' };

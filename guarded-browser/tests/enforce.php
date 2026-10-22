@@ -22,6 +22,12 @@ function st(array $e, string $key): string {
     foreach ($e['rows'] as $r) if ($r['key'] === $key) return $r['status'];
     return 'missing';
 }
+/** השורה כולה, ומצבה באוצר המצבים (SETTING_STATES). */
+function rowOf(array $e, string $key): array {
+    foreach ($e['rows'] as $r) if ($r['key'] === $key) return $r;
+    return [];
+}
+function stt(array $e, string $key): string { return rowOf($e, $key)['state'] ?? 'missing'; }
 function dev(int $kid, string $id, int $perms) {
     $t = registerDevice($kid, $id, $id, 5);
     q('UPDATE devices SET perms = ? WHERE device_id = ?', [$perms, $id]);
@@ -49,6 +55,7 @@ $all = PERM_NOTIF | PERM_BATTERY | PERM_ADMIN | PERM_INSTALL | PERM_ACCESS | PER
 
 echo "\n— בלי מכשירים —\n";
 check('אין מכשיר', enforcementState($aApps, $kid)['summary'], 'no_device');
+check('...וכל שורה: נשמר בשרת, ולא יותר', stt(enforcementState($aApps, $kid), 'time'), 'saved');
 
 echo "\n— הרשאה אינה אימות —\n";
 dev($kid, 'd1', $all);
@@ -57,13 +64,18 @@ $e = enforcementState($aApps, $kid);
 check('כל הביטים דלוקים, אבל המכשיר לא דיווח — לא "נאכף"', [st($e, 'apps'), st($e, 'uninstall'), st($e, 'web_other')],
       ['unknown', 'unknown', 'unknown']);
 check('...והסיכום: לא אומת', $e['summary'], 'unverified');
-check('זמנים ואתרים בתוך מגדלור — נאכפים ע"י מגדלור עצמו', [st($e, 'time'), st($e, 'web')], ['full', 'full']);
+// עד 2026-10-22: "נאכף" ברגע שהיה מכשיר — הצלחה על סמך כוונה. עכשיו — רק אחרי דוח על המדיניות הנוכחית.
+check('זמנים ואתרים — בלי דוח מהמכשיר: לא דווח, לא "נאכף"', [st($e, 'time'), st($e, 'web')], ['unknown', 'unknown']);
+check('...ובאוצר המצבים: ממתין למכשיר (עוד לא משך)', stt($e, 'time'), 'pending');
+q("UPDATE devices SET policy_rev = ? WHERE device_id = 'd1'", [policyRev($kid)]);
+check('משך את המדיניות ולא דיווח — התקבל במכשיר', stt(enforcementState($aApps, $kid), 'time'), 'received');
 
 echo "\n— דוח עדכני: הכול הוחל —\n";
 report($kid, 'd1', ['owner' => true, 'access' => true, 'settings' => okSettings($kid), 'suspend_failed' => [],
                     'browsers' => [['p' => 'com.android.chrome', 'n' => 'Chrome', 'blocked' => true]]]);
 $e = enforcementState($aApps, $kid);
 check('אפליקציות, דפדפנים והגנה מהסרה — נאכפים', [st($e, 'apps'), st($e, 'web_other'), st($e, 'uninstall')], ['full', 'full', 'full']);
+check('דוח עדכני — זמנים ואתרים נאכפים, ובמצב "הוחל"', [st($e, 'time'), st($e, 'web'), stt($e, 'time')], ['full', 'full', 'applied']);
 check('הכול נאכף', $e['summary'], 'full');
 check('מועד הדיווח מוצג', $e['devices'][0]['state'] === 'fresh' && $e['devices'][0]['reported_at'] !== '', true);
 
@@ -80,6 +92,7 @@ report($kid, 'd1', ['owner' => true, 'access' => true, 'suspend_failed' => ['com
                     'browsers' => []]);
 $e = enforcementState($aApps, $kid);
 check('כישלון השעיה מוצג', st($e, 'apps'), 'none');
+check('...כ"נכשל" (החלה שנכשלה, לא יכולת חסרה)', stt($e, 'apps'), 'failed');
 check('...עם שם החבילה והבטחת ניסיון חוזר', str_contains(hint($e, 'apps'), 'com.supercell.clashofclans') && str_contains(hint($e, 'apps'), 'ינסה שוב'), true);
 
 echo "\n— נגישות: מה שהמכשיר מדווח, לא הביט —\n";
@@ -89,6 +102,7 @@ check('הביט אומר נגישות, המכשיר מדווח שהיא כבוי
 report($kid, 'd1', ['owner' => false, 'access' => true, 'browsers' => []]);
 $e = enforcementState($aApps, $kid);
 check('נגישות פעילה בלי בעלות — אפליקציות נאכפות (רך), הגנה מהסרה לא', [st($e, 'apps'), st($e, 'uninstall')], ['full', 'none']);
+check('...והגנה מהסרה: נדרשת פעולה במכשיר, עם התווית', [stt($e, 'uninstall'), rowOf($e, 'uninstall')['state_label']], ['needs_device', 'נדרשת פעולה במכשיר']);
 check('...והסיכום: לא הרמטי', $e['summary'], 'needs_owner');
 
 echo "\n— דוח ישן אינו אימות עדכני —\n";
@@ -129,7 +143,7 @@ echo "\n— חשבון דפדפן בלבד —\n";
 dev($kidB, 'b1', 3);
 $e = enforcementState($aBrowser, $kidB);
 check('אין שורת חסימת אפליקציות', st($e, 'apps'), 'missing');
-check('זמן ואתרים נאכפים', [st($e, 'time'), st($e, 'web')], ['full', 'full']);
+check('זמן ואתרים — בלי דוח: לא דווח', [st($e, 'time'), st($e, 'web')], ['unknown', 'unknown']);
 
 echo "\n$pass עברו, $fail נכשלו\n";
 exit($fail ? 1 : 0);
