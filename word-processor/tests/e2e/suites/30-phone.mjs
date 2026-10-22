@@ -48,7 +48,8 @@ export default async function (t) {
     t.ok('בטבלה — הגיליון נפתח ישר בלשונית "טבלה"', await p.getAttribute('.rb-tab.ctx', 'aria-selected') === 'true' && await p.locator('.rb-tab.ctx').textContent() === 'טבלה');
     await p.tap('.rb-close');
     await p.click('button[aria-label="חזרה לרשימה"]');
-    await p.waitForTimeout(400);
+    // היציאה מחכה קודם לשמירה של מה שהוקלד — מחכים לרשימה עצמה, לא לזמן קבוע
+    await p.waitForSelector('h1:text-is("עורך התמלילים")');
     t.ok('אחרי יציאה מהמסמך — ההגדלה הרגילה חוזרת', await p.evaluate(() => getComputedStyle(document.body).touchAction) === 'auto');
     t.ok('בלי שגיאות JS', !p.errors.length, p.errors.join(' | '));
     await p.context().close();
