@@ -4,7 +4,32 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- הדופק היומי (PlatformHeartbeat) בודק אילו מהאפליקציות שלנו מותקנות — אנדרואיד 11+ מסתיר חבילות שלא הוצהרו -->
+    <queries>
+        <package android:name="com.mbeplus.camera" />
+        <package android:name="com.mbeplus.carpentry" />
+        <package android:name="com.mbeplus.catering" />
+        <package android:name="com.mbeplus.claudetasks" />
+        <package android:name="com.mbeplus.dataembed" />
+        <package android:name="com.mbeplus.dbanalyzer" />
+        <package android:name="com.mbeplus.doctemplates" />
+        <package android:name="com.mbeplus.filemerger" />
+        <package android:name="com.mbeplus.framebrowser" />
+        <package android:name="com.mbeplus.gitdeploy" />
+        <package android:name="com.mbeplus.greetingcards" />
+        <package android:name="com.mbeplus.guardedbrowser" />
+        <package android:name="com.mbeplus.orgbudget" />
+        <package android:name="com.mbeplus.pdfmerger" />
+        <package android:name="com.mbeplus.projectmanager" />
+        <package android:name="com.mbeplus.punchlist" />
+        <package android:name="com.mbeplus.recipes" />
+        <package android:name="com.mbeplus.sketches3d" />
+        <package android:name="com.mbeplus.sukkah" />
+        <package android:name="com.mbeplus.wascanner" />
+    </queries>
+
     <application
+        android:name=".PlatformApp"
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -16,7 +41,7 @@
         <meta-data android:name="asset_statements" android:resource="@string/assetStatements" />
 
         <activity
-            android:name="com.google.androidbrowserhelper.trusted.LauncherActivity"
+            android:name=".PlatformLauncherActivity"
             android:exported="true"
             android:label="@string/appName">
             <meta-data android:name="android.support.customtabs.trusted.DEFAULT_URL" android:value="@string/launchUrl" />

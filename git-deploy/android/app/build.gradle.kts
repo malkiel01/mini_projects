@@ -1,6 +1,7 @@
 // git-deploy לחנות של גוגל — Trusted Web Activity (TWA).
 //
-// אין כאן קוד משלנו: LauncherActivity של androidbrowserhelper (ספריית גוגל) פותח
+// הקוד שלנו כאן מצומצם: PlatformLauncherActivity (LauncherActivity של androidbrowserhelper, עם מזהה ההתקנה בכתובת)
+// ו-PlatformHeartbeat (דופק יומי לכלים הדיגיטליים). את המסך עצמו פותח LauncherActivity של גוגל
 // את האתר ב-Chrome, במסך מלא, בלי שורת כתובת — בתנאי שהאתר מאשר את האפליקציה
 // ב-/.well-known/assetlinks.json (Digital Asset Links). בלי האישור — נפתח כלשונית
 // Chrome רגילה עם שורת כתובת. כל עדכון באתר מגיע לאפליקציה מיד, בלי גרסה חדשה בחנות.
@@ -71,4 +72,5 @@ android {
 
 dependencies {
     implementation("com.google.androidbrowserhelper:androidbrowserhelper:2.7.4")
+    implementation("androidx.work:work-runtime:2.9.1")   // הדופק היומי לכלים הדיגיטליים (PlatformHeartbeat)
 }

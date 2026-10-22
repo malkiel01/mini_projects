@@ -47,10 +47,12 @@ public class PlatformHeartbeat extends Worker {
     }
 
     static void schedule(Context ctx) {
+        // הראשון אחרי 2 דקות: קודם הפתיחה מהאייקון קושרת את מזהה ההתקנה למשתמש (בלי זה הדופק לא מוכר לשרת)
         PeriodicWorkRequest req = new PeriodicWorkRequest.Builder(PlatformHeartbeat.class, 24, TimeUnit.HOURS)
             .setConstraints(new Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+            .setInitialDelay(2, TimeUnit.MINUTES)
             .build();
-        WorkManager.getInstance(ctx).enqueueUniquePeriodicWork(WORK, ExistingPeriodicWorkPolicy.KEEP, req);
+        WorkManager.getInstance(ctx).enqueueUniquePeriodicWork(WORK, ExistingPeriodicWorkPolicy.UPDATE, req);
     }
 
     /** מזהה קבוע להתקנה הזו — נוצר בפעם הראשונה, ונמחק עם הסרת האפליקציה. */
@@ -103,10 +105,14 @@ public class PlatformHeartbeat extends Worker {
             try (OutputStream out = c.getOutputStream()) {
                 out.write(body.toString().getBytes(StandardCharsets.UTF_8));
             }
-            c.getResponseCode();
+            int status = c.getResponseCode();
             c.disconnect();
+            // 204 — השרת עוד לא מכיר את המזהה (האפליקציה עוד לא נפתחה מהאייקון אצל משתמש מחובר): שוב, בהמתנה הולכת וגדלה
+            if (status == 204 && getRunAttemptCount() < 8) return Result.retry();
+        } catch (java.io.IOException e) {
+            if (getRunAttemptCount() < 8) return Result.retry();   // בלי רשת — שוב בעוד זמן קצר
         } catch (Throwable ignored) {
-            // בלי רשת / תקלה — הדופק הבא ינסה שוב
+            // תקלה אחרת — הדופק הבא
         }
         return Result.success();
     }
