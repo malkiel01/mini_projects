@@ -349,6 +349,11 @@ class Store(context: Context) {
         get() = prefs.getLong("enforce_at", 0L)
         set(v) { prefs.edit().putLong("enforce_at", v).apply() }
 
+    /** בדיקת ההגנה האחרונה שהשרת קיבל את התוצאות שלה (SelfTest). */
+    var selftestDone: String
+        get() = prefs.getString("selftest_done", "") ?: ""
+        set(v) { prefs.edit().putString("selftest_done", v).apply() }
+
     /** ביטים של ההרשאות שניתנו במכשיר (Setup.flags) — נשלח לשרת כדי שההורה יראה. */
     var perms: Int
         get() = prefs.getInt("perms", 0)

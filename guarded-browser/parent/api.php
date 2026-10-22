@@ -19,6 +19,7 @@ require_once __DIR__ . '/../lib/search.php';
 require_once __DIR__ . '/../lib/appcontrol.php';
 require_once __DIR__ . '/../lib/apprequests.php';
 require_once __DIR__ . '/../lib/simulator.php';
+require_once __DIR__ . '/../lib/selftest.php';
 require_once __DIR__ . '/../lib/history.php';
 require_once __DIR__ . '/../lib/enforce.php';
 require_once __DIR__ . '/../lib/devicesettings.php';
@@ -176,6 +177,15 @@ try {
                  'site' => str('url') !== '' ? simulateSite($c, str('url'), str('time'), isset($b['day']) ? (int) $b['day'] : -1,
                                                            isset($b['used_min']) && $b['used_min'] !== '' ? (int) $b['used_min'] : -1) : null,
                  'app'  => str('package') !== '' ? simulateApp($c, str('package')) : null]);
+
+        /* ── בדיקת הגנה יזומה (שלב 12 ג) — המכשיר בודק את עצמו, בלי לגלוש ובלי לפתוח אפליקציות ── */
+        case 'selftest_request':
+            $n = selftestRequest((int) myChild($parent)['id']);
+            if (!$n) bad('אין מכשיר מחובר לילד הזה');
+            out(['ok' => true, 'devices' => $n]);
+
+        case 'selftest':
+            out(['ok' => true, 'devices' => selftestReport((int) myChild($parent)['id'])]);
 
         /* ── היסטוריית מדיניות, קבלות ושחזור (שלב 12 א+ז) ── */
         case 'history':

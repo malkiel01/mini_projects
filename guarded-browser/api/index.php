@@ -28,6 +28,7 @@ require_once __DIR__ . '/../lib/heartbeat.php';
 require_once __DIR__ . '/../lib/enforce.php';
 require_once __DIR__ . '/../lib/apprequests.php';
 require_once __DIR__ . '/../lib/history.php';
+require_once __DIR__ . '/../lib/selftest.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -186,6 +187,8 @@ function policyPayload(array $user): array {
             ? $apps + ['temp' => appTempGrants($uid), 'decisions' => appDecisions($uid)] : $apps,
         // הגדרות המכשיר שההורה קבע — {מפתח: חסום?}. נאכף רק ב"בעל מכשיר" (Enforcer.kt).
         'device' => deviceSettings($uid),
+        // בדיקת הגנה שההורה ביקש ועוד לא נענתה (lib/selftest.php) — המכשיר בודק את עצמו ושולח do=selftest.
+        'selftest' => $dev ? selftestFor($user) : null,
         'state' => [
             'allowed'        => $state['allow'],
             'code'           => $state['code'],
@@ -479,6 +482,13 @@ try {
         $user = requireUser();
         enforceReportSave((int) $user['device_row_id'], (array) body());
         receiptApplied((int) $user['device_row_id'], (array) body());        // קבלה: הוחל / נכשל (lib/history.php)
+        out(['ok' => true]);
+    }
+
+    /* ── תוצאות בדיקת ההגנה (lib/selftest.php) — הפסיקה בשרת, מהנתונים הגולמיים ── */
+    if ($do === 'selftest') {
+        $user = requireUser();
+        if ($err = selftestSave((int) $user['device_row_id'], (array) body())) bad($err, 'selftest_inactive', 409);
         out(['ok' => true]);
     }
 
