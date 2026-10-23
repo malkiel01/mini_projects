@@ -1849,15 +1849,25 @@ export function createWordEditor(root, opts) {
                 const vs = await opts.versions.list();
                 list.textContent = '';
                 if (!vs.length) list.append(h('li.empty', 'אין עדיין גרסאות'));
-                vs.forEach((v, i) => list.append(h('li', h('button.use-row', { type: 'button', onclick: () => restore(v, i === 0) },
+                vs.forEach((v, i) => list.append(h('li.ver-row', h('button.use-row', { type: 'button', onclick: () => restore(v, i === 0) },
                     h('span.use-ic', { 'aria-hidden': 'true' }, i === 0 ? '●' : '🕘'),
                     h('span.use-tx', h('b', when(v.saved_at) + (i === 0 ? ' · הנוכחית' : '')), h('small', `${v.by || '—'} · גרסה ${v.version}`)),
-                    h('span.use-go', { 'aria-hidden': 'true' }, '‹')))));
+                    h('span.use-go', { 'aria-hidden': 'true' }, '‹')),
+                    // השוואה לנוכחית — מסמך חדש עם ההבדלים כמעקב שינויים (כמו "סקירה ← השוואה" ב-Word)
+                    i > 0 && opts.versions.compare ? h('button.btn.ver-cmp', { type: 'button', title: 'מסמך חדש: מה השתנה מאז הגרסה הזו, כמעקב שינויים',
+                        onclick: () => compare(v) }, '⇄ השוואה לנוכחית') : null)));
             } catch (e) {
                 list.textContent = '';
                 list.append(h('li.error', e.message));
             }
         });
+        async function compare(v) {
+            try {
+                if (!(await opts.versions.compare(v.id))) return;
+            } catch (e) { return toast(e.message || 'ההשוואה נכשלה', true); }
+            document.querySelector('dialog[open]')?.close();
+            toast('נפתח מסמך השוואה — אשרו או דחו כל שינוי');
+        }
         async function restore(v, current) {
             if (current) return toast('זו הגרסה הנוכחית');
             if (!editor.isEditable) return toast('צפייה בלבד — אי אפשר לשחזר', true);

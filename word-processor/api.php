@@ -13,6 +13,7 @@ require_once __DIR__ . '/lib/embed.php';
 require_once __DIR__ . '/lib/export.php';
 require_once __DIR__ . '/lib/import.php';
 require_once __DIR__ . '/lib/pdf.php';
+require_once __DIR__ . '/lib/compare.php';
 require_once __DIR__ . '/lib/users.php';
 
 header('X-Content-Type-Options: nosniff');
@@ -370,6 +371,13 @@ function app_action(string $action, array $in): never
         case 'my_copy':
             $from = doc_find($in['doc'] ?? '', $space);
             out(['doc' => doc_copy($from, $space, clean_title(($in['title'] ?? '') ?: $from['title'] . ' (העתק)'), [], $uid, $uname)]);
+        case 'my_compare':
+            // השוואת גרסאות (כמו ב-Word): מסמך חדש — הגרסה מול המצב הנוכחי, ההבדלים כמעקב שינויים
+            $row = doc_find($in['doc'] ?? '', $space);
+            $v = version_get($row, $in['id'] ?? 0);
+            $cmp = track_compare(json_decode($v['json'], true) ?: empty_doc_json(), doc_json($row));
+            $title = clean_title(mb_substr('השוואה: ' . ($row['title'] ?: 'מסמך') . ' — גרסה ' . (int)$v['version'] . ' מול הנוכחית', 0, 200));
+            out(['doc' => doc_copy($row, $space, $title, [], $uid, $uname, $cmp)]);
         case 'my_upload':
             $row = doc_find($in['doc'] ?? ($_POST['doc'] ?? ''), $space);
             out(media_store($row['id'], uploaded_bytes($in)));
