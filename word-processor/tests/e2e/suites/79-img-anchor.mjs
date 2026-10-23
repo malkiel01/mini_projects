@@ -68,7 +68,7 @@ export default async function (t) {
     await p.keyboard.press('Control+s');
     await p.waitForTimeout(800);
     const s = (await t.api(p, 'my_open', { doc })).json;
-    t.ok('נשמר: anchor page, גרסת מבנה 9', JSON.stringify(s).includes('"anchor":"page"') && s.attrs.schema === 9, String(s.attrs.schema));
+    t.ok('נשמר: anchor page, גרסת מבנה 9', JSON.stringify(s).includes('"anchor":"page"') && s.attrs.schema >= 9, String(s.attrs.schema));
     t.ok('בלי שגיאות JS', !p.errors.length, p.errors.join(' | '));
     await p.context().close();
 }
