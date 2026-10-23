@@ -308,3 +308,7 @@ input.search { width: 100%; min-height: var(--tap); margin-bottom: var(--s2); }
 .swatch.on { outline: 3px solid var(--brand); outline-offset: 2px; }
 .grad-edit { padding: var(--s2) 0; }
 .log-code { font: 700 2rem/1.2 ui-monospace, monospace; letter-spacing: .08em; text-align: center; padding: var(--s3); background: var(--brand-soft); border-radius: var(--r); user-select: all; }
+.dev-logs { list-style: none; margin: 0; padding: 0; }
+.dev-log { display: flex; align-items: center; gap: var(--s2); padding: var(--s2) 0; border-bottom: 1px solid var(--line); }
+.dev-log-code { font: 700 1rem ui-monospace, monospace; }
+.dev-log .muted { flex: 1; }
