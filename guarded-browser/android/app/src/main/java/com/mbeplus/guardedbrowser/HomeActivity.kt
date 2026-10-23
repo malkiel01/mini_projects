@@ -334,10 +334,10 @@ class HomeActivity : AppCompatActivity() {
     private fun confirmInstall(pkg: String, label: String) {
         MaterialAlertDialogBuilder(this)
             .setTitle("📥 התקנת $label")
-            .setMessage("חנות Google Play תיפתח בדף של $label ל-${MarketMath.WINDOW_MS / 60_000} דקות. לוחצים \"התקנה\" ומחכים — " +
-                "מגדלור יחזור לבד כשההתקנה תסתיים.\n\nצריך חשבון Google במכשיר. אפליקציה אחרת שתותקן בזמן הזה — תיחסם עד שההורה יאשר.")
-            .setPositiveButton("פתיחת Play") { _, _ ->
-                try { MarketInstall.start(this, pkg) }
+            .setMessage("מגדלור יתקין את $label דרך Google Play, ויחזור לכאן כשההתקנה תסתיים. אם יצטרכו אותך — " +
+                "Play תיפתח לכמה דקות, רק לאפליקציה הזו.\n\nצריך חשבון Google במכשיר. אפליקציה אחרת שתותקן בזמן הזה — תיחסם עד שההורה יאשר.")
+            .setPositiveButton("התקנה") { _, _ ->
+                try { MarketInstall.start(this, pkg, label) }
                 catch (e: Exception) { Toast.makeText(this, "חנות Google Play לא נמצאה במכשיר", Toast.LENGTH_LONG).show() }
             }
             .setNegativeButton("ביטול", null)
