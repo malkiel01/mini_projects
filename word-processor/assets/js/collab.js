@@ -143,11 +143,12 @@ export function createCollabSaver(o) {
         reset() { set('saved'); },
         markDirty() { set('dirty'); writeDraft(); schedule(300); },
         stop() { stopped = true; clearTimeout(timer); },
-        destroy() {
+        /** keepDraft=false — הטיוטה כבר נשמרה בנפרד (keepConflictCopy), לא כותבים אותה שוב. */
+        destroy(keepDraft = true) {
             gone = true;
             clearInterval(poll);
             clearTimeout(timer);
-            if (draftTimer) { clearTimeout(draftTimer); if (pending()) drafts.put(o.draftKey, { json: editor.getJSON(), base_version: version, at: Date.now() }); }
+            if (draftTimer) { clearTimeout(draftTimer); if (keepDraft && pending()) drafts.put(o.draftKey, { json: editor.getJSON(), base_version: version, at: Date.now() }); }
             o.send('leave', { client: o.clientID }).catch(() => {});
         },
     };

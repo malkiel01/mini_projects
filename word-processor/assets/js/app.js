@@ -307,7 +307,8 @@ async function openDoc(id) {
         const kept = saver.dirty && await saver.keepConflictCopy();
         current = null;
         clearInterval(cur.beat);
-        saver.destroy();
+        saver.destroy(!kept);
+        if (kept) await drafts.del(draftKey);   // ההצעה אחרי הטעינה — מהעותק הנפרד בלבד, לא גם מהטיוטה
         ed.destroy();
         await openDoc(id);
         if (notice) toast(kept ? 'המסמך נטען מחדש (שוחזרה בו גרסה או שנשמר במקום אחר). השינויים שלך שמורים בנפרד במכשיר.' : 'המסמך נטען מחדש — הוא השתנה במקום אחר.');
