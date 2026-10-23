@@ -674,6 +674,7 @@ export function createWordEditor(root, opts) {
             comment: () => { if (phone.matches) openSheet(false); comments.add(); refresh(); },
             commentsPane: () => { if (comments.isOpen()) comments.close(); else { if (phone.matches) openSheet(false); comments.open(); } refresh(); },
             commentsOn: () => comments.isOpen(),
+            commentOnly: () => !!opts.commentOnly?.(),
             trackToggle: () => { setTracking(editor, !editor.state.doc.attrs.track); toast(editor.state.doc.attrs.track ? 'מעקב שינויים פועל — כל עריכה תסומן' : 'מעקב שינויים כבוי'); },
             trackView: v => setTrackView(v), trackViewValue: () => trackView, trackAuthors: () => authorsDialog(),
             resolve: (accept, all) => { const n = resolveChanges(editor, accept, all, trackHide); if (!n) toast('אין כאן שינויים'); else if (all) toast(`${accept ? 'אושרו' : 'נדחו'} ${n} שינויים`); },
@@ -715,7 +716,12 @@ export function createWordEditor(root, opts) {
         } });
     stage.prepend(ruler.el);
     body.prepend(nav.el);
-    const comments = createComments({ editor, h, user: opts.user, onChange: () => refresh() });
+    // מעיר (שלב 5): המסמך לקריאה בלבד — העורך לא מקבל מקלדת, ולכן Ctrl+Alt+M (הערה חדשה) נתפס כאן, ברמת הדף
+    const commentKey = e => {
+        if ((e.ctrlKey || e.metaKey) && e.altKey && e.code === 'KeyM' && !editor.isEditable && opts.commentOnly?.() && root.isConnected) { e.preventDefault(); cmds.run('comment'); }
+    };
+    document.addEventListener('keydown', commentKey);
+    const comments = createComments({ editor, h, user: opts.user, onChange: () => refresh(), commentOnly: () => !!opts.commentOnly?.() });
     body.append(comments.el);
     pasteOpts = createPasteOptions({ editor, h, host: root });
     const marksOn = () => !!marksKey.getState(editor.state)?.on;
@@ -2145,6 +2151,7 @@ export function createWordEditor(root, opts) {
         focus: () => editor.commands.focus(),
         statusTarget: el => { statusEl = el; status(); },
         destroy: () => {
+            document.removeEventListener('keydown', commentKey);
             resizeObs.disconnect();
             phone.removeEventListener('change', applyPhone);
             vv?.removeEventListener('resize', onViewport);

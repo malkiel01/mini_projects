@@ -4,7 +4,7 @@
  * אין כאן שום require לקובץ מחוץ לתיקייה (CLAUDE.md: אפליקציה עצמאית מהמעטפת).
  */
 
-const WP_SCHEMA_VERSION = 3;
+const WP_SCHEMA_VERSION = 4;
 
 function wp_data_dir(): string
 {
@@ -162,6 +162,17 @@ function wp_migrate(PDO $pdo): void
         );
         CREATE INDEX IF NOT EXISTS media_doc ON media(doc);
 
+        -- שיתוף (שלב 5): מסמך של חשבון אחד — למייל אחר, בתפקיד view / comment / edit. לפי מייל: פעיל גם לפני
+        -- שבעל המייל נכנס בפעם הראשונה (החשבון שלו נוצר אז, עם אותו מייל — lib/share.php)
+        CREATE TABLE IF NOT EXISTS shares (
+            doc TEXT NOT NULL,
+            email TEXT NOT NULL COLLATE NOCASE,
+            role TEXT NOT NULL,
+            by_account INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            PRIMARY KEY (doc, email)
+        );
+        CREATE INDEX IF NOT EXISTS shares_email ON shares(email COLLATE NOCASE);
         CREATE TABLE IF NOT EXISTS settings (
             k TEXT PRIMARY KEY,
             v TEXT NOT NULL

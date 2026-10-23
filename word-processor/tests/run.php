@@ -1448,6 +1448,38 @@ check('ערכים לא תקינים נדחים / נחתכים', $p['size'] === '
 check('גודל לרוחב', page_mm($p) === [297, 210]);
 
 // ======================================================================
+section('שיתוף והרשאות (שלב 5)');
+require_once __DIR__ . '/../lib/users.php';
+require_once __DIR__ . '/../lib/share.php';
+$owner = account_for_identity(['sub' => 'sh-1', 'email' => 'owner@example.com', 'name' => 'בעלת']);
+$shDoc = doc_new('a:' . $owner['id'], 'לשיתוף', ['type' => 'doc', 'content' => [para([text_node('טקסט לשיתוף')])]], null, 'a:' . $owner['id'], 'בעלת');
+$shRow = doc_find($shDoc, 'a:' . $owner['id']);
+share_set($shRow, $owner, ' Guest@Example.com ', 'comment');
+// האורח נכנס בפעם הראשונה אחרי השיתוף — החשבון נוצר עם אותו מייל, והשיתוף כבר פעיל
+$guest = account_for_identity(['sub' => 'sh-2', 'email' => 'guest@example.com', 'name' => 'אורח']);
+$stranger = account_for_identity(['sub' => 'sh-3', 'email' => 'other@example.com', 'name' => 'זר']);
+check('שיתוף לפי מייל לפני שהחשבון קיים — פעיל כשנכנסים (בלי תלות באותיות)', share_role($shRow, $guest) === 'comment' && share_role($shRow, $owner) === 'owner' && share_role($shRow, $stranger) === null);
+check('doc_access: מעיר — פתיחה ושמירת הערות כן, עריכה / בעלות לא; זר — "לא נמצא"', doc_access($shDoc, $guest, 'comment')[1] === 'comment'
+    && throws(fn() => doc_access($shDoc, $guest, 'edit'), 'forbidden') && throws(fn() => doc_access($shDoc, $guest, 'owner'), 'forbidden') && throws(fn() => doc_access($shDoc, $stranger), 'not_found'));
+$sw = shared_with($guest);
+check('shared_with: המסמך ברשימה של האורח, עם התפקיד והבעלים; לא ברשימה של הבעלים', count($sw) === 1 && $sw[0]['doc'] === $shDoc && $sw[0]['role'] === 'comment' && $sw[0]['owner'] === 'בעלת' && !shared_with($owner), json_encode($sw, JSON_UNESCAPED_UNICODE));
+check('shares_of: המייל (באותיות קטנות), התפקיד, השם — כשכבר נכנס', shares_of($shDoc) === [['email' => 'guest@example.com', 'role' => 'comment', 'name' => 'אורח', 'joined' => true]], json_encode(shares_of($shDoc), JSON_UNESCAPED_UNICODE));
+check('share_set: מייל לא תקין, המייל של הבעלים, תפקיד לא קיים — שגיאה', throws(fn() => share_set($shRow, $owner, 'לא-מייל', 'view'), 'bad_email')
+    && throws(fn() => share_set($shRow, $owner, 'OWNER@example.com', 'view'), 'bad_email') && throws(fn() => share_set($shRow, $owner, 'x@example.com', 'admin'), 'bad_role'));
+// מעיר: רק הערות — גם כשההערה מפצלת את הטקסט, ועם ערכי ברירת מחדל שהעורך מוסיף
+$base = ['type' => 'doc', 'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'שלום עולם יפה']]]]];
+$withC = ['type' => 'doc', 'attrs' => ['schema' => 10, 'comments' => ['c1' => ['author' => 'אורח', 'text' => 'הערה']], 'track' => null], 'content' => [['type' => 'paragraph', 'attrs' => ['indent' => 0, 'textAlign' => null],
+    'content' => [['type' => 'text', 'text' => 'שלום '], ['type' => 'text', 'text' => 'עולם', 'marks' => [['type' => 'comment', 'attrs' => ['id' => 'c1']]]], ['type' => 'text', 'text' => ' יפה']]]]];
+$changed = $withC; $changed['content'][0]['content'][2]['text'] = ' מכוער';
+$bolded = $withC; $bolded['content'][0]['content'][0]['marks'] = [['type' => 'bold']];
+check('only_comments_changed: הערה (גם מפצלת טקסט, עם ברירות מחדל) — כן; שינוי טקסט או עיצוב — לא', only_comments_changed($base, $withC) && !only_comments_changed($base, $changed) && !only_comments_changed($base, $bolded));
+share_set($shRow, $owner, 'guest@example.com', '');
+check('ביטול שיתוף — האורח כבר לא רואה', share_role($shRow, $guest) === null && !shared_with($guest));
+share_set($shRow, $owner, 'guest@example.com', 'view');
+doc_delete($shRow);
+$cnt = db()->prepare('SELECT COUNT(*) FROM shares WHERE doc = ?'); $cnt->execute([$shDoc]);
+check('מחיקה לצמיתות — גם השיתופים', (int)$cnt->fetchColumn() === 0);
+
 section('סל המחזור (ליקוי ה\')');
 $sp = 'a:trash-test';
 $tid = doc_new($sp, 'לסל', null, null, 'u1', 'דנה');
