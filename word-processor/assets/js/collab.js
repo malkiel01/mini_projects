@@ -129,9 +129,16 @@ export function createCollabSaver(o) {
             writeDraft();
             if (state !== 'offline' && !stopped) schedule(700);   // מקבצים הקלדה — כל שליחה כוללת את המסמך המלא
         },
-        flush: () => (stopped ? Promise.resolve({ ok: false, code: state, message: 'אי אפשר לשמור כרגע' }) : tick().then(r => ({ ...r, dirty: pending() }))),
+        // שמירה עכשיו: אם משיכה באמצע — מחכים לה, ואז סבב שבו גם שולחים (Ctrl+S לא "נבלע" במשיכה)
+        async flush() {
+            if (stopped) return { ok: false, code: state, message: 'אי אפשר לשמור כרגע' };
+            if (busy) await busy;
+            const r = await tick();
+            return { ...r, dirty: pending() };
+        },
         async flushUntilClean() {
             let r = { ok: true };
+            if (busy) await busy;
             for (let i = 0; i < 5 && r.ok && pending(); i++) r = await tick();
             return { ...r, dirty: pending() };
         },
@@ -149,7 +156,8 @@ export function createCollabSaver(o) {
             clearInterval(poll);
             clearTimeout(timer);
             if (draftTimer) { clearTimeout(draftTimer); if (keepDraft && pending()) drafts.put(o.draftKey, { json: editor.getJSON(), base_version: version, at: Date.now() }); }
-            o.send('leave', { client: o.clientID }).catch(() => {});
+            // אחרי הבקשה שבדרך — משיכה שמגיעה לשרת אחרי "יצאתי" הייתה רושמת אותי שוב כנוכח
+            Promise.resolve(busy).finally(() => o.send('leave', { client: o.clientID }).catch(() => {}));
         },
     };
 }

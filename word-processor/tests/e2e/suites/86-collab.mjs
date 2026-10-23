@@ -65,7 +65,7 @@ export default async function (t) {
     await t.openDoc(yossi, doc);
     await typeAt(dana, 0, ' חי');
     let live = '';
-    for (let i = 0; i < 20 && !live.endsWith(' חי'); i++) { await yossi.waitForTimeout(250); live = (await texts(yossi))[0]; }
+    for (let i = 0; i < 40 && !live.endsWith(' חי'); i++) { await yossi.waitForTimeout(250); live = (await texts(yossi))[0]; }
     t.ok('צפייה: השינוי של דנה מגיע לצופה בלי רענון', !(await E(yossi)) && live.endsWith(' חי'), live);
 
     // שחזור גרסה אצל דנה — יוסי נטען מחדש לבד

@@ -423,11 +423,14 @@ function lock_take(string $doc, string $userId, string $userName, string $holder
     $now = time();
     $l = lock_get($doc);
     if ($l && $l['user_id'] !== $userId) return ['ok' => false, 'by' => $l['user_name'], 'since' => (int)$l['since']];
-    // עורכים במצב עריכה משותפת (lib/collab.php) לא נועלים — אבל כותב בשיטה הישנה (הטמעה, קישור לזר) לא נכנס כשהם שם
-    $st = db()->prepare("SELECT user_name, MIN(beat) AS since FROM presence WHERE doc = ? AND user_id != ? AND beat > ? AND role IN ('owner', 'edit', 'comment')");
-    $st->execute([$doc, $userId, $now - PRESENCE_SECONDS]);
-    $p = $st->fetch(); $st->closeCursor();
-    if ($p && $p['user_name'] !== null) return ['ok' => false, 'by' => $p['user_name'], 'since' => (int)$p['since']];
+    // עורכים במצב עריכה משותפת (lib/collab.php) לא נועלים — אבל כותב בשיטה הישנה (הטמעה, קישור לזר) לא נכנס כשהם שם.
+    // מי שכבר מחזיק את הנעילה — שומר עליה (העורכים המשותפים בקריאה בלבד עד שתתפנה — collab_blocked)
+    if (!$l) {
+        $st = db()->prepare("SELECT user_name, MIN(beat) AS since FROM presence WHERE doc = ? AND user_id != ? AND beat > ? AND role IN ('owner', 'edit', 'comment')");
+        $st->execute([$doc, $userId, $now - PRESENCE_SECONDS]);
+        $p = $st->fetch(); $st->closeCursor();
+        if ($p && $p['user_name'] !== null) return ['ok' => false, 'by' => $p['user_name'], 'since' => (int)$p['since']];
+    }
     $since = $l ? (int)$l['since'] : $now;
     db()->prepare('INSERT INTO locks (doc, user_id, user_name, holder, since, beat) VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT(doc) DO UPDATE SET user_id = excluded.user_id, user_name = excluded.user_name, holder = excluded.holder,
