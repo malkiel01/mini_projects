@@ -217,6 +217,7 @@ jobs:
             --exclude='catering-menu/data/fonts/' \
             --exclude='carpentry-3d/data/*.sqlite*' \
             --exclude='carpentry-3d/data/media/' \
+            --exclude='greeting-cards/data/studio/' \
             --exclude='platform/data/*.sqlite*' \
             --exclude='document-templates/data/*.sqlite*' \
             --exclude='document-templates/data/secret.key' \

@@ -20,6 +20,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { margin: 0; height: 100%; }
 body {
     background: var(--bg); color: var(--ink);
@@ -73,6 +74,8 @@ button { cursor: pointer; }
 .home { width: 100%; max-width: 860px; margin: 0 auto; padding: var(--s4); padding-bottom: calc(var(--s4) + env(safe-area-inset-bottom)); }
 .hint { color: var(--muted); font-size: .875rem; margin: 0 0 var(--s3); }
 .lead { margin: 0 0 var(--s3); }
+.hint.warn { background: color-mix(in srgb, #e19a00 14%, var(--surface)); color: var(--ink); padding: var(--s2) var(--s3); border-radius: var(--r); }
+.login { max-width: 420px; }
 .section { font-size: .9375rem; margin: var(--s4) 0 var(--s2); }
 .tiles { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--s2); }
 .tiles.four { grid-template-columns: repeat(3, 1fr); }
