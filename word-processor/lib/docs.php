@@ -233,9 +233,10 @@ function doc_delete(array $row): void
 }
 
 /** העתק במרחב, עם החלפות בטקסט בלבד (לפי הסדר), ועם עותק של כל תמונה. */
-function doc_copy(array $row, string $space, string $title, array $replace, string $userId, string $userName): string
+/** $json — תוכן אחר במקום של המסמך (השוואת גרסאות); התמונות מועתקות בכל מקרה. */
+function doc_copy(array $row, string $space, string $title, array $replace, string $userId, string $userName, ?array $json = null): string
 {
-    $json = doc_json($row);
+    $json ??= doc_json($row);
     $pairs = [];
     foreach ($replace as $p) {
         if (is_array($p) && count($p) === 2 && is_string($p[0]) && is_string($p[1]) && $p[0] !== '') $pairs[] = [$p[0], $p[1]];

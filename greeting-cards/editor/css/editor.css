@@ -20,6 +20,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { margin: 0; height: 100%; }
 body {
     background: var(--bg); color: var(--ink);
@@ -73,6 +74,8 @@ button { cursor: pointer; }
 .home { width: 100%; max-width: 860px; margin: 0 auto; padding: var(--s4); padding-bottom: calc(var(--s4) + env(safe-area-inset-bottom)); }
 .hint { color: var(--muted); font-size: .875rem; margin: 0 0 var(--s3); }
 .lead { margin: 0 0 var(--s3); }
+.hint.warn { background: color-mix(in srgb, #e19a00 14%, var(--surface)); color: var(--ink); padding: var(--s2) var(--s3); border-radius: var(--r); }
+.login { max-width: 420px; }
 .section { font-size: .9375rem; margin: var(--s4) 0 var(--s2); }
 .tiles { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--s2); }
 .tiles.four { grid-template-columns: repeat(3, 1fr); }
@@ -98,6 +101,12 @@ button { cursor: pointer; }
 .row-title { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .row-sub { font-size: .8125rem; color: var(--muted); }
 .chev { color: var(--muted); font-size: 1.25rem; }
+.legacy-link {
+    display: flex; align-items: center; justify-content: space-between; gap: var(--s2); margin-top: var(--s4);
+    min-height: var(--tap); padding: var(--s2) var(--s3); border: 1px solid var(--line); border-radius: var(--r);
+    background: var(--surface); color: var(--ink); text-decoration: none; font-weight: 600; font-size: .9rem;
+}
+.legacy-link:hover { border-color: var(--brand); }
 
 /* ─── העורך ─── */
 /* העורך הוא מסך קבוע בגובה החלון: הדף עצמו לא נגלל, והקנבס ממלא את מה שנשאר בין הסרגלים. */
@@ -224,3 +233,23 @@ details summary { cursor: pointer; font-weight: 600; min-height: var(--tap); dis
 }
 .toast.show { opacity: 1; transform: none; }
 .toast.error { background: var(--danger); color: #fff; }
+
+/* ─── נמענים ─── */
+.previewbar {
+    position: absolute; inset-block-start: var(--s2); inset-inline-start: var(--s2); z-index: 3; display: flex; align-items: center;
+    max-width: calc(100% - 200px); background: var(--brand); color: var(--brand-ink); border-radius: var(--r); box-shadow: var(--shadow);
+}
+.previewbar .icon-btn { color: inherit; min-width: 40px; min-height: 40px; }
+.previewbar .icon-btn:hover { background: color-mix(in srgb, var(--brand-ink) 18%, transparent); }
+.pv-label { font-size: .8125rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.vars { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1); margin-bottom: var(--s3); }
+.chip-btn { min-height: 36px; padding: 0 var(--s3); border: 1px solid var(--brand); border-radius: 999px; background: var(--brand-soft); color: var(--ink); font-weight: 600; font-size: .875rem; }
+.card.summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s1); }
+.table-wrap { overflow-x: auto; max-height: 300px; overflow-y: auto; border: 1px solid var(--line); border-radius: var(--r); }
+.grid { border-collapse: collapse; width: 100%; font-size: .8125rem; }
+.grid th, .grid td { padding: var(--s1) var(--s2); border-bottom: 1px solid var(--line); text-align: start; white-space: nowrap; }
+.grid th { position: sticky; top: 0; background: var(--bg); }
+progress { width: 100%; height: 12px; accent-color: var(--brand); }
+.warn-box { margin-bottom: var(--s3); }
+.field select { width: 100%; min-height: var(--tap); padding: 0 var(--s3); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); font-size: 16px; }
+

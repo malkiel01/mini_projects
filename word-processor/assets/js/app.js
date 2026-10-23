@@ -199,6 +199,13 @@ async function openDoc(id) {
         versions: {
             list: async () => (await api('my_versions', { doc: id })).versions,
             get: vid => api('my_version', { doc: id, id: vid }),
+            // השוואה (כמו ב-Word): מסמך חדש — הגרסה מול המצב הנוכחי (שנשמר קודם), ההבדלים כמעקב שינויים
+            compare: async vid => {
+                if ((await ensureSaved(cur, 'ההשוואה')) !== 'ok') return false;
+                const r = await api('my_compare', { doc: id, id: vid });
+                location.hash = '#/d/' + r.doc;
+                return true;
+            },
             // שחזור — פעולה אחת בשרת (ביקורת 04, R07): קודם כל השינויים נשמרים, ואז השרת רושם את המצב הנוכחי ואת
             // המשוחזר כשתי גרסאות נפרדות (לא מתאחדות). מחזיר false כשלא נשמר — ואז לא משחזרים
             restore: async vid => {

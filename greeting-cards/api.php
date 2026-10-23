@@ -407,8 +407,22 @@ function currentUsername($usersDir, $token) {
 }
 
 /** פעולות ניהול: רק אחרי admin_check מוצלח באותו סשן. */
+/** פעולות ניהול: הבעלים (לפי חשבון הפלטפורמה), או מי שנכנס בסיסמת הניהול באותו סשן. */
 function requireAdmin() {
-    if (empty($_SESSION['gc_admin'])) respond(false, 'נדרשת כניסת מנהל', ['admin_required' => true]);
+    global $dataDir, $platformUser;
+    if (!empty($_SESSION['gc_admin']) || isPlatformOwner($dataDir, $platformUser)) return;
+    respond(false, 'נדרשת כניסת מנהל', ['admin_required' => true]);
+}
+
+/**
+ * המנהל המפתח מזוהה לפי חשבון הפלטפורמה (sub), ולא לפי סיסמה. הבעלים נקבע פעם אחת: החשבון הראשון
+ * שנכנס לממשק הניהול כשעוד אין בעלים. משם — רק הוא (ומי שהוא יוסיף בעתיד).
+ * כשהאפליקציה תצא לדומיין משלה, הבעלות תעבור לחשבון במערכת המשתמשים שלה (spec/06-users-and-admin.md).
+ */
+function isPlatformOwner($dataDir, $platformUser) {
+    if (!$platformUser || empty($platformUser['platformSub'])) return false;
+    $owners = adminConfig($dataDir)['owners'] ?? [];
+    return in_array((string)$platformUser['platformSub'], $owners, true);
 }
 
 /** שם תצוגה שמגיע מהמשתמש: בלי תגיות ובלי תווי בקרה, באורך סביר. */
@@ -981,7 +995,8 @@ function adminConfig($dataDir) {
     $cfg = is_file($file) ? (json_decode((string)file_get_contents($file), true) ?: []) : [];
     if (empty($cfg['hash'])) {
         $plain = (string)($cfg['password'] ?? ADMIN_DEFAULT_PASSWORD);
-        $cfg = ['hash' => password_hash($plain, PASSWORD_DEFAULT), 'isDefault' => $plain === ADMIN_DEFAULT_PASSWORD];
+        unset($cfg['password']);
+        $cfg = ['hash' => password_hash($plain, PASSWORD_DEFAULT), 'isDefault' => $plain === ADMIN_DEFAULT_PASSWORD] + $cfg;
         file_put_contents($file, json_encode($cfg, JSON_PRETTY_PRINT));
     }
     return $cfg;
@@ -993,6 +1008,20 @@ function adminLockFile($dataDir) {
 }
 
 function adminCheck($dataDir, $input) {
+    global $platformUser;
+    // כניסה בלי סיסמה: הבעלים לפי הפלטפורמה, או תביעת בעלות כשעוד אין בעלים.
+    if ($platformUser && !empty($platformUser['platformSub'])) {
+        $cfg = adminConfig($dataDir);
+        $sub = (string)$platformUser['platformSub'];
+        if (empty($cfg['owners'])) {
+            $cfg['owners'] = [$sub];
+            file_put_contents($dataDir . '/admin_config.json', json_encode($cfg, JSON_PRETTY_PRINT));
+            respond(true, 'OK', ['owner' => true, 'claimed' => true]);
+        }
+        if (in_array($sub, $cfg['owners'], true)) respond(true, 'OK', ['owner' => true]);
+    }
+    if (($input['password'] ?? '') === '') respond(false, 'נדרשת סיסמת ניהול', ['needsPassword' => true]);
+
     $lockFile = adminLockFile($dataDir);
     $lock = is_file($lockFile) ? (json_decode((string)file_get_contents($lockFile), true) ?: []) : [];
     if ((int)($lock['until'] ?? 0) > time()) respond(false, 'יותר מדי ניסיונות. נסו שוב בעוד ' . ceil(((int)$lock['until'] - time()) / 60) . ' דקות');
@@ -1014,7 +1043,10 @@ function adminSetPassword($dataDir, $input) {
     $pass = (string)($input['password'] ?? '');
     if (mb_strlen($pass) < 10) respond(false, 'הסיסמה חייבת להיות באורך 10 תווים לפחות');
     if ($pass === ADMIN_DEFAULT_PASSWORD) respond(false, 'בחרו סיסמה אחרת');
-    file_put_contents($dataDir . '/admin_config.json', json_encode(['hash' => password_hash($pass, PASSWORD_DEFAULT), 'isDefault' => false], JSON_PRETTY_PRINT));
+    $cfg = adminConfig($dataDir);
+    $cfg['hash'] = password_hash($pass, PASSWORD_DEFAULT);
+    $cfg['isDefault'] = false;
+    file_put_contents($dataDir . '/admin_config.json', json_encode($cfg, JSON_PRETTY_PRINT));
     respond(true, 'הסיסמה עודכנה');
 }
 
