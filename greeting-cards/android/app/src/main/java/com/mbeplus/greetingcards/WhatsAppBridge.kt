@@ -178,6 +178,20 @@ class WhatsAppBridge(private val context: Context) {
         }
     }
 
+    // ─── שיתוף מאפליקציה אחרת ────────────────────────
+    //
+    // ‏MainActivity קורא את מה ששותף (תמונות, טקסט) ושומר כאן; הדף לוקח פעם אחת.
+
+    @Volatile var pendingShare: String? = null
+
+    /** ‏JSON: {"files":[{name, mime, base64}], "text": "..."}, או "" כשאין. נלקח פעם אחת. */
+    @JavascriptInterface
+    fun takeShared(): String {
+        val s = pendingShare ?: return ""
+        pendingShare = null
+        return s
+    }
+
     // ─── שמירת קובץ ──────────────────────────────────
     //
     // ‏DownloadManager מקבל רק http(s), ולכן ייצוא מהעורך (‏blob:) לא יורד ב-WebView. הדף שולח את

@@ -60,6 +60,12 @@ export function shapeLayer(doc, shape = 'rect') {
     };
 }
 
+export function iconLayer(doc, name) {
+    const { width: W, height: H } = doc.page;
+    const s = Math.round(Math.min(W, H) * 0.2);
+    return { id: uid(), type: 'icon', role: 'decoration', icon: name, x: (W - s) / 2, y: (H - s) / 2, w: s, h: s, rotation: 0, opacity: 1, color: '#2d4a8a', strokeWidth: 2 };
+}
+
 export function imageLayer(doc, assetId, natW, natH, role = 'photo') {
     const { width: W, height: H } = doc.page;
     const k = Math.min((W * 0.7) / natW, (H * 0.7) / natH, 1);
@@ -83,6 +89,7 @@ export function layerLabel(l) {
     if (l.name) return l.name;
     if (l.type === 'text') return (l.text || '').split('\n')[0].slice(0, 40) || 'טקסט';
     if (l.type === 'image') return l.role === 'background' ? 'רקע' : 'תמונה';
+    if (l.type === 'icon') return 'אייקון';
     if (l.type === 'shape') return { rect: 'מלבן', ellipse: 'עיגול', line: 'קו', star: 'כוכב', polygon: 'מצולע', arrow: 'חץ' }[l.shape] || 'צורה';
     return 'שכבה';
 }
@@ -180,6 +187,15 @@ export function normalizeDoc(input) {
                 l.filters = { brightness: clamp(num(f.brightness, 0), -1, 1), contrast: clamp(num(f.contrast, 0), -100, 100), saturation: clamp(num(f.saturation, 0), -2, 10), blur: clamp(num(f.blur, 0), 0, 40) };
             }
             if (['circle', 'rounded'].includes(raw.mask)) l.mask = raw.mask;
+            const c = raw.crop;
+            if (c && [c.x, c.y, c.w, c.h].every(v => typeof v === 'number' && v >= 0 && v <= 1) && c.w > 0 && c.h > 0 && c.x + c.w <= 1.0001 && c.y + c.h <= 1.0001) {
+                l.crop = { x: c.x, y: c.y, w: c.w, h: c.h };
+            }
+        } else if (raw.type === 'icon') {
+            l.icon = /^[a-z-]{1,40}$/.test(raw.icon) ? raw.icon : 'star';
+            l.color = isColor(raw.color) ? raw.color : '#2d4a8a';
+            l.strokeWidth = clamp(num(raw.strokeWidth, 2), 0.5, 4);
+            if (raw.filled) l.filled = true;
         } else if (raw.type === 'shape') {
             l.shape = ['rect', 'ellipse', 'line', 'star', 'polygon', 'arrow'].includes(raw.shape) ? raw.shape : 'rect';
             l.fill = isColor(raw.fill) ? raw.fill : '#2d4a8a';
