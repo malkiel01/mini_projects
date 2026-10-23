@@ -9,12 +9,18 @@ import { nearestWeight } from './fonts.js';
 import { fillText } from './merge.js';
 import { ICONS } from './icons.js';
 import { ELEMENTS, scalePath } from './elements.js';
+import { log } from './log.js';
 
 const SNAP_PX = 6;           // מרחק הצמדה, בפיקסלי מסך
+const TAP_SLOP = 22;         // הקשה ליד שכבה קטנה עדיין בוחרת אותה — חצי מ-44px, גודל מטרת מגע
+const MIN_PAGE_PX = 4;       // מינימום גודל שכבה בידיות — בפיקסלי הדף, לא המסך (D4 ב-spec/11-qa.md)
+const AFTER_PINCH_MS = 350;  // אחרי צביטה, הקשות לא בוחרות (האצבע האחרונה שעוזבת אינה הקשה)
 const MIN_ZOOM = 0.05, MAX_ZOOM = 8;
 
 Konva.hitOnDragEnabled = true;
 Konva.capturePointerEventsEnabled = true;
+// גרירה מתחילה רק אחרי 6px: הקשה עם רעד קטן של האצבע לא מזיזה את השכבה.
+Konva.dragDistance = 6;
 
 export class Canvas {
     /**
@@ -28,6 +34,7 @@ export class Canvas {
         this.images = new Map();      // assetId → HTMLImageElement
         this.nodes = new Map();       // layerId → Konva.Group
         this.selected = [];
+        this.quietUntil = 0;        // עד מתי הקשות לא בוחרות (אחרי צביטה)
         this.view = { zoom: 1, x: 0, y: 0 };
         this.vars = null;             // שורת נמען בתצוגה מקדימה / בייצוא — {{משתנה}} מוחלף בערך
 
@@ -50,7 +57,11 @@ export class Canvas {
             rotateAnchorOffset: 28, anchorSize: 14, anchorCornerRadius: 7, borderStroke: '#2d4a8a', anchorStroke: '#2d4a8a',
             anchorFill: '#fff', padding: 2, rotationSnaps: [0, 45, 90, 135, 180, 225, 270, 315], rotationSnapTolerance: 6,
             ignoreStroke: true, flipEnabled: false,
-            boundBoxFunc: (oldB, newB) => (Math.abs(newB.width) < 8 || Math.abs(newB.height) < 8 ? oldB : newB),
+            // המינימום בפיקסלי הדף: בדף A4 בזום נמוך, 8px על המסך הם עשרות פיקסלים בדף, והטקסט לא קטן יותר.
+            boundBoxFunc: (oldB, newB) => {
+                const z = this.view.zoom;
+                return Math.abs(newB.width) / z < MIN_PAGE_PX || Math.abs(newB.height) / z < MIN_PAGE_PX ? oldB : newB;
+            },
         });
         this.ui.add(this.guides, this.tr);
 
@@ -198,8 +209,10 @@ export class Canvas {
 
     // ─── בחירה ──────────────────────────────────────────────────────────────
 
-    select(ids, { silent = false } = {}) {
+    select(ids, { silent = false, why = 'code' } = {}) {
+        const before = this.selected.join(',');
         this.selected = ids.filter(id => this.nodes.has(id));
+        if (this.selected.join(',') !== before) log('select', { ids: this.selected.join(',') || '-', why });
         this.refreshTransformer();
         if (!silent) this.cb.onSelect?.(this.selected.slice());
     }
@@ -224,32 +237,87 @@ export class Canvas {
 
     bindSelection() {
         this.stage.on('click tap', e => {
-            if (this.gesture?.moved) return;
-            const l = this.layerOf(e.target);
+            if (this.gesture?.moved || Date.now() < this.quietUntil) { log('tap-ignored', { why: this.gesture?.moved ? 'moved' : 'after-pinch' }); return; }
+            const pos = this.stage.getPointerPosition();
+            let l = this.layerOf(e.target);
+            // הקשה על ידית (בלי גרירה) — הידית יכולה לשבת על שכבה שכנה, למשל ידית הסיבוב מעל הטקסט שמעל.
+            // בודקים מה מתחת לידית: שכבה אחרת — נבחרת; אותה שכבה או כלום — הבחירה נשארת.
+            if (!l && e.target.getParent() === this.tr) {
+                const under = this.layerAt(pos);
+                log('tap-on-handle', { handle: e.target.name().split(' ')[0], under: under?.id || '-' });
+                if (under && !this.selected.includes(under.id)) this.select([under.id], { why: 'tap-through-handle' });
+                return;
+            }
+            // לא על שכבה (או על הרקע הנעול): השכבה הקרובה בטווח מגע — טקסט קטן בדף גדול כמעט בלתי אפשרי לפגוע בו.
+            if (!l || l.locked) l = this.layerNear(pos) || l;
             const multi = e.evt.shiftKey || e.evt.ctrlKey || e.evt.metaKey;
             // שכבה נעולה (כמו רקע מהצ'אט) לא נבחרת בהקשה על הקנבס — רק מרשימת השכבות.
-            if (!l || l.locked) { if (!multi) this.select([]); return; }
+            if (!l || l.locked) { if (!multi) this.select([], { why: 'tap-empty' }); return; }
             if (multi) {
-                this.select(this.selected.includes(l.id) ? this.selected.filter(i => i !== l.id) : [...this.selected, l.id]);
+                this.select(this.selected.includes(l.id) ? this.selected.filter(i => i !== l.id) : [...this.selected, l.id], { why: 'tap-multi' });
             } else if (!(this.selected.length === 1 && this.selected[0] === l.id)) {
-                this.select([l.id]);
+                this.select([l.id], { why: 'tap' });
             }
         });
         this.stage.on('dblclick dbltap', e => {
-            const l = this.layerOf(e.target);
+            if (Date.now() < this.quietUntil) return;
+            const l = this.layerOf(e.target) || (e.target.getParent() === this.tr ? this.layerAt(this.stage.getPointerPosition()) : null);
+            log('double-tap', { id: l?.id || '-' });
             if (l && l.type === 'text' && !l.locked) this.cb.onEditText?.(l);
         });
+    }
+
+    /** השכבה העליונה (לא נעולה, גלויה) שהתיבה שלה מכילה את הנקודה — בלי הידיות שמעליה. */
+    layerAt(pos) {
+        if (!pos || !this.doc) return null;
+        for (const l of this.doc.layers.slice().reverse()) {
+            if (l.locked || l.hidden) continue;
+            const r = this.nodes.get(l.id)?.getClientRect();
+            if (r && pos.x >= r.x && pos.x <= r.x + r.width && pos.y >= r.y && pos.y <= r.y + r.height) return l;
+        }
+        return null;
+    }
+
+    /** השכבה הקרובה ביותר לנקודה, עד TAP_SLOP פיקסלי מסך ממנה. מהעליונה לתחתונה. */
+    layerNear(pos) {
+        if (!pos || !this.doc) return null;
+        let best = null, bestD = TAP_SLOP;
+        for (const l of this.doc.layers.slice().reverse()) {
+            if (l.locked || l.hidden) continue;
+            const g = this.nodes.get(l.id);
+            if (!g) continue;
+            const r = g.getClientRect();
+            const dx = Math.max(r.x - pos.x, 0, pos.x - (r.x + r.width));
+            const dy = Math.max(r.y - pos.y, 0, pos.y - (r.y + r.height));
+            const d = Math.hypot(dx, dy);
+            if (d < bestD) { best = l; bestD = d; }
+        }
+        if (best) log('tap-near', { id: best.id, dist: bestD });
+        return best;
     }
 
     bindNode(g) {
         g.on('dragstart', () => {
             const id = g.id();
-            if (!this.selected.includes(id)) this.select([id]);
+            // בזמן צביטה אין גרירה של שכבות — גם אם האצבע השנייה נחתה על שכבה.
+            if (this.quietUntil === Infinity) { g.stopDrag(); log('drag-blocked', { id }); return; }
+            if (!this.selected.includes(id)) this.select([id], { why: 'drag' });
+            // המקום לפני הגרירה — אם תתחיל צביטה באמצע, השכבה חוזרת אליו.
+            this.dragStart = (this.tr.nodes().length ? this.tr.nodes() : [g]).map(n => ({ n, x: n.x(), y: n.y() }));
+            log('drag-start', { id, x: g.x(), y: g.y() });
         });
         g.on('dragmove', () => this.snap(g));
         g.on('dragend', () => {
             this.guides.destroyChildren();
             this.ui.batchDraw();
+            if (this.dragCancel) {
+                for (const d of this.dragStart || []) d.n.position({ x: d.x, y: d.y });
+                this.dragCancel = false;
+                this.main.batchDraw();
+                log('drag-cancelled', { id: g.id() });
+                return;
+            }
+            log('drag-end', { id: g.id(), x: g.x(), y: g.y() });
             for (const n of this.tr.nodes().length ? this.tr.nodes() : [g]) {
                 const l = this.doc.layers.find(x => x.id === n.id());
                 if (l) { l.x = n.x(); l.y = n.y(); }
@@ -259,6 +327,14 @@ export class Canvas {
     }
 
     bindTransform() {
+        this.tr.on('transformstart', () => {
+            this.trSnap = this.tr.nodes().map(g => {
+                const l = this.doc.layers.find(x => x.id === g.id());
+                return { g, attrs: { x: g.x(), y: g.y(), scaleX: g.scaleX(), scaleY: g.scaleY(), rotation: g.rotation() }, l, copy: l && JSON.parse(JSON.stringify(l)) };
+            });
+            const l = this.trSnap[0]?.l;
+            log('transform-start', { ids: this.trSnap.map(t => t.g.id()).join(','), anchor: this.tr.getActiveAnchor(), w: l?.w, h: l?.h, font: l?.style?.size, zoom: this.view.zoom });
+        });
         // טקסט: ידית צד משנה את רוחב התיבה (לא מותחת אותיות); ידית פינה מגדילה את הפונט.
         this.tr.on('transform', () => {
             const anchor = this.tr.getActiveAnchor();
@@ -272,6 +348,7 @@ export class Canvas {
             }
         });
         this.tr.on('transformend', () => {
+            if (this.trCancel) { this.restoreTransform(); return; }
             for (const g of this.tr.nodes()) {
                 const l = this.doc.layers.find(x => x.id === g.id());
                 if (!l) continue;
@@ -290,8 +367,31 @@ export class Canvas {
             }
             this.refreshTransformer();
             this.main.batchDraw();
+            const l = this.doc.layers.find(x => x.id === this.tr.nodes()[0]?.id());
+            log('transform-end', { id: l?.id, w: l?.w, h: l?.h, font: l?.style?.size, rot: l?.rotation });
             this.cb.onCommit?.();
         });
+    }
+
+    /** ביטול שינוי גודל באמצע (התחילה צביטה): השכבות חוזרות בדיוק למצב שלפני הנגיעה, בלי היסטוריה. */
+    cancelTransform() {
+        if (!this.tr.isTransforming()) return;
+        this.trCancel = true;
+        this.tr.stopTransform();
+        this.restoreTransform();
+    }
+
+    restoreTransform() {
+        if (!this.trCancel) return;
+        this.trCancel = false;
+        for (const t of this.trSnap || []) {
+            if (t.l) { for (const k of Object.keys(t.l)) delete t.l[k]; Object.assign(t.l, t.copy); }
+            t.g.setAttrs(t.attrs);
+            if (t.l) this.paint(t.g, t.l);
+        }
+        this.refreshTransformer();
+        this.main.batchDraw();
+        log('transform-cancelled', { ids: (this.trSnap || []).map(t => t.g.id()).join(',') });
     }
 
     // ─── הצמדה וקווי עזר ────────────────────────────────────────────────────
@@ -333,9 +433,14 @@ export class Canvas {
     resize() {
         const w = this.el.clientWidth, h = this.el.clientHeight;
         if (!w || !h) return;
-        const first = this.stage.width() !== w || this.stage.height() !== h;
+        const ow = this.stage.width(), oh = this.stage.height();
+        if (ow === w && oh === h) return;
         this.stage.size({ width: w, height: h });
-        if (first && this.fitted !== false) this.fit();
+        // רק שינוי רוחב (סיבוב מסך, פתיחה ראשונה) מתאים מחדש. שינוי גובה — סרגל הפעולות שנפתח בבחירה,
+        // המקלדת — לא מזיז את הדף: אחרת ההקשה הבאה נוחתת על שכבה אחרת (D2 ב-spec/11-qa.md).
+        const refit = ow !== w && this.fitted !== false;
+        log('resize', { w, h, ow, oh, refit: refit ? 1 : 0 });
+        if (refit) this.fit();
         this.main.batchDraw();
     }
 
@@ -357,6 +462,7 @@ export class Canvas {
         const zoom = Math.max(MIN_ZOOM, Math.min((cw - 2 * m) / W, (ch - 2 * m) / H));
         this.view = { zoom, x: (cw - W * zoom) / 2, y: (ch - H * zoom) / 2 };
         this.fitted = true;
+        log('fit', { zoom, cw, ch });
         this.applyView();
     }
 
@@ -399,11 +505,23 @@ export class Canvas {
 
         const local = e => { const r = el.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
 
+        const lastMove = new Map();
         el.addEventListener('pointerdown', e => {
             pts.set(e.pointerId, local(e));
+            const p0 = local(e);
+            const sh = this.stage.getIntersection(p0);
+            const hit = !sh ? 'empty' : sh.getParent() === this.tr ? 'handle:' + sh.name().split(' ')[0] : (this.layerOf(sh)?.id || sh.name() || sh.className);
+            log('down', { p: e.pointerId % 100, x: p0.x, y: p0.y, n: pts.size, hit, type: e.pointerType[0] });
             if (pts.size === 2) {
-                // אצבע שנייה: מפסיקים כל גרירה של שכבה, ועוברים לזום של הקנבס.
-                this.stage.find('.layer').forEach(n => n.isDragging() && n.stopDrag());
+                // אצבע שנייה: מבטלים גרירה או שינוי גודל שהתחילו באצבע הראשונה — השכבה חוזרת למקומה ולגודלה —
+                // ועוברים לזום של הקנבס בלבד (D3 ב-spec/11-qa.md).
+                const dragging = this.stage.find('.layer').filter(n => n.isDragging());
+                if (dragging.length) { this.dragCancel = true; dragging.forEach(n => n.stopDrag()); }
+                this.cancelTransform();
+                this.quietUntil = Infinity;
+                // השכבות לא מקבלות נגיעות עד שכל האצבעות עוזבות: האצבע השנייה לא תתחיל גרירה.
+                this.content.listening(false);
+                log('pinch-start', { zoom: this.view.zoom });
                 const [a, b] = [...pts.values()];
                 pinch = { dist: Math.hypot(a.x - b.x, a.y - b.y), mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, zoom: this.view.zoom };
                 pan = null;
@@ -421,6 +539,12 @@ export class Canvas {
         el.addEventListener('pointermove', e => {
             if (!pts.has(e.pointerId)) return;
             pts.set(e.pointerId, local(e));
+            const now = performance.now();
+            if (now - (lastMove.get(e.pointerId) || 0) > 60) {
+                lastMove.set(e.pointerId, now);
+                const q = local(e);
+                log('move', { p: e.pointerId % 100, x: q.x, y: q.y, zoom: this.view.zoom, tr: this.tr.isTransforming() ? 1 : 0 });
+            }
             if (pinch && pts.size >= 2) {
                 const [a, b] = [...pts.values()];
                 const dist = Math.hypot(a.x - b.x, a.y - b.y);
@@ -432,16 +556,21 @@ export class Canvas {
                 pinch.dist = dist;
             } else if (pan) {
                 const p = local(e);
-                if (Math.hypot(p.x - pan.start.x, p.y - pan.start.y) > 4) this.gesture.moved = true;
+                if (Math.hypot(p.x - pan.start.x, p.y - pan.start.y) > 4) { this.gesture.moved = true; pan.moved = true; }
                 this.panBy(p.x - pan.last.x, p.y - pan.last.y);
                 pan.last = p;
             }
         }, true);
 
         const up = e => {
+            if (!pts.has(e.pointerId)) return;
             pts.delete(e.pointerId);
-            if (pts.size < 2) pinch = null;
+            log('up', { p: e.pointerId % 100, n: pts.size, kind: e.type === 'pointercancel' ? 'cancel' : 'up' });
+            if (pts.size < 2 && pinch) { pinch = null; log('pinch-end', { zoom: this.view.zoom }); }
             if (pts.size === 0) {
+                // אחרי צביטה — הקשות לא בוחרות עוד רגע (D6).
+                if (this.quietUntil === Infinity) { this.quietUntil = Date.now() + AFTER_PINCH_MS; this.content.listening(true); }
+                if (pan?.moved) log('pan-end', { x: this.view.x, y: this.view.y });
                 pan = null;
                 // ה-click/tap של Konva מגיע אחרי pointerup; ‏moved נשמר עד שהוא עובר.
                 setTimeout(() => { if (pts.size === 0) this.gesture = null; }, 0);

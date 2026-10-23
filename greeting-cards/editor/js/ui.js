@@ -1,6 +1,8 @@
 // רכיבי ממשק משותפים: יצירת אלמנטים בלי innerHTML (אין הזרקת קוד מנתוני משתמש), גיליון תחתון
 // נגיש, הודעות, ואישור.
 
+import { log } from './log.js';
+
 /**
  * h('button', {class:'btn', onclick}, 'טקסט', child...) — יוצר אלמנט. מחרוזות נכנסות כ-textContent.
  * מאפיין שמתחיל ב-on הוא מאזין; aria-* ו-data-* — מאפיינים; השאר — property.
@@ -42,6 +44,7 @@ export function toast(msg, kind = '') {
 let openSheet = null;
 
 export function sheet(title, body, { actions, onClose, wide } = {}) {
+    log('sheet', { title: String(title).slice(0, 30) });
     closeSheet();
     const back = document.activeElement;
     const titleId = 'sheet-t-' + Date.now();

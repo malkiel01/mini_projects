@@ -16,7 +16,8 @@
     "assets/icons/**",
     "editor/gpt.php",
     "editor/oauth/token.php",
-    "editor/gpt/openapi.json"
+    "editor/gpt/openapi.json",
+    "editor/log.php"
   ],
   "links": [
     {

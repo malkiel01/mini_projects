@@ -307,3 +307,4 @@ input.search { width: 100%; min-height: var(--tap); margin-bottom: var(--s2); }
 .swatches.grad .swatch { aspect-ratio: 4 / 3; }
 .swatch.on { outline: 3px solid var(--brand); outline-offset: 2px; }
 .grad-edit { padding: var(--s2) 0; }
+.log-code { font: 700 2rem/1.2 ui-monospace, monospace; letter-spacing: .08em; text-align: center; padding: var(--s3); background: var(--brand-soft); border-radius: var(--r); user-select: all; }
