@@ -226,12 +226,15 @@ function appsList(int $accountId, int $childId): array {
     $accessMissing = count(array_filter(all('SELECT perms FROM devices WHERE user_id = ?', [$childId]),
         fn($d) => !((int) $d['perms'] & PERM_ACCESS)));
     $devices = (int) one('SELECT COUNT(*) n FROM devices WHERE user_id = ?', [$childId])['n'];
-    // הסתרה דורשת "בעל מכשיר" — מכשירים בלעדיו רק חוסמים את המוסתרות (האייקון נשאר).
-    $ownerMissing = count(array_filter(all('SELECT perms FROM devices WHERE user_id = ?', [$childId]),
-        fn($d) => !((int) $d['perms'] & PERM_OWNER)));
+    // הסתרה: מלאה ב"בעל מכשיר" (האפליקציה נעלמת מהטלפון); כשמגדלור הוא מסך הבית — הילד לא רואה אותה, כי הוא רואה
+    // רק את דף הבית של מגדלור. מכשיר בלי אף אחד מהשניים רק חוסם את המוסתרות, והאייקון נשאר במסך הבית שלו.
+    $perms = array_map(fn($d) => (int) $d['perms'], all('SELECT perms FROM devices WHERE user_id = ?', [$childId]));
+    $ownerMissing = count(array_filter($perms, fn($p) => !($p & PERM_OWNER)));
+    $hideMissing = count(array_filter($perms, fn($p) => !($p & (PERM_OWNER | PERM_HOME))));
     return ['manage' => true, 'posture' => $posture, 'new_apps' => appNewDefault($childId), 'apps' => $apps, 'orphan_rules' => $orphans,
             'blocked_count' => count(array_filter($apps, fn($x) => $x['blocked'])),
             'hidden_count' => count(array_filter($apps, fn($x) => $x['action'] === 'hide')), 'owner_missing' => $ownerMissing,
+            'hide_missing' => $hideMissing,
             'chrome' => chromeStatus($childId),
             'access_missing' => $accessMissing, 'devices' => $devices];
 }

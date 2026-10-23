@@ -89,8 +89,15 @@ class HomeActivity : AppCompatActivity() {
         }
     }
 
+    /** מגדלור הוא מסך הבית של הטלפון (Setup.isHome) — נבדק בכל חזרה למסך. */
+    private var isHome = false
+
+    // מסך הבית של הטלפון — "חזרה" לא יוצאת ממנו (כמו כל מסך בית).
+    override fun onBackPressed() { if (!isHome) super.onBackPressed() }
+
     override fun onResume() {
         super.onResume()
+        isHome = Setup.isHome(this)
         // שער ההקמה: בלי ההרשאות החיוניות לא נכנסים למגדלור.
         store.perms = Setup.flags(this)
         if (!Setup.ready(this)) { startActivity(Intent(this, SetupActivity::class.java)); return }
@@ -192,7 +199,8 @@ class HomeActivity : AppCompatActivity() {
         return list
     }
 
-    private fun has(section: String) = section in store.policy().homeSections
+    // כשמגדלור הוא מסך הבית, רובריקת האפליקציות תמיד מוצגת — אחרת אין לילד דרך לפתוח שום אפליקציה מותרת.
+    private fun has(section: String) = section in store.policy().homeSections || (section == "apps" && isHome)
 
     /**
      * דף הבית ברובריקות (בעל המערכת, 2026-10-22): רק מה שההורה הדליק (Policy.homeSections), לפי הסדר — מועדפים,
@@ -492,6 +500,10 @@ class HomeActivity : AppCompatActivity() {
             if (!Enforcer.isOwner(this@HomeActivity) && !store.released) {
                 action("🛡️  הגנה מלאה — דרך מחשב, עם ההורה") { startActivity(Intent(this@HomeActivity, FullSetupActivity::class.java)) }
             }
+            // מסך הבית (Setup.isHome): בלי "בעל מכשיר" — כך אפליקציות מוסתרות לא מופיעות לילד.
+            if (store.appsManage && !store.released && !Setup.isHome(this@HomeActivity)) {
+                action("🏠  מגדלור כמסך הבית של הטלפון") { Setup.requestHome(this@HomeActivity) }
+            }
             action("👨‍👩‍👧  כניסת הורה") { startActivity(Intent(this@HomeActivity, ParentActivity::class.java)) }
             // הגדרות מההורה בלי אינטרנט — QR חתום שההורה מציג (OfflinePolicy).
             action("📷  קוד מההורה (בלי אינטרנט)") { scanParentCode() }
@@ -514,7 +526,9 @@ class HomeActivity : AppCompatActivity() {
     /** האפליקציות החסומות במכשיר — לחיצה פותחת את מסך החסימה שלה, עם "בקש פתיחה" ומצב הבקשה. */
     private fun showBlockedApps() {
         AppPolicy.scan(this, force = true)
-        val apps = store.launchable.filter { AppPolicy.blocked(store, it) }
+        // מוסתרת (👻) — לא קיימת מבחינת הילד: לא ברשימה הזו (בלי "בעל מכשיר" היא עדיין מותקנת וחסומה).
+        val hidden = store.appsHidden
+        val apps = store.launchable.filter { it !in hidden && AppPolicy.blocked(store, it) }
             .map { it to AppGrants.label(this, it) }.sortedBy { it.second.lowercase() }
         if (apps.isEmpty()) {
             MaterialAlertDialogBuilder(this).setTitle("🔒 אפליקציות חסומות")

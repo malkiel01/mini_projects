@@ -29,6 +29,8 @@ object Setup {
     const val INSTALL = 8
     const val ACCESS = 16
     const val OWNER = 32
+    /** מגדלור הוא מסך הבית של הטלפון (isHome) — לא חובה; כך 👻 הסתרה עובדת גם בלי "בעל מכשיר". */
+    const val HOME = 64
 
     class Step(
         val key: Int,
@@ -99,7 +101,31 @@ object Setup {
     fun flags(ctx: Context): Int {
         var f = steps(ctx).fold(0) { acc, s -> if (s.done(ctx)) acc or s.key else acc }
         if (Enforcer.isOwner(ctx)) f = f or OWNER   // בעל מכשיר — מדווח גם הוא
+        if (isHome(ctx)) f = f or HOME
         return f
+    }
+
+    /** האם מגדלור הוא מסך הבית שנבחר (ברירת המחדל של "בית"). */
+    fun isHome(ctx: Context): Boolean = try {
+        ctx.packageManager.resolveActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), PackageManager.MATCH_DEFAULT_ONLY)
+            ?.activityInfo?.packageName == ctx.packageName
+    } catch (e: Exception) { false }
+
+    /**
+     * בחירת מגדלור כמסך הבית. מאנדרואיד 10 — חלון הבחירה של המערכת (RoleManager), בלי לפתוח את ההגדרות לילד;
+     * לפני כן — מסך "אפליקציית בית" בהגדרות, בחלון הרגיל של מגדלור (AppPolicy.openSettings).
+     */
+    fun requestHome(act: android.app.Activity) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val rm = act.getSystemService(android.app.role.RoleManager::class.java)
+                if (rm != null && rm.isRoleAvailable(android.app.role.RoleManager.ROLE_HOME)) {
+                    act.startActivityForResult(rm.createRequestRoleIntent(android.app.role.RoleManager.ROLE_HOME), 7101)
+                    return
+                }
+            }
+            AppPolicy.openSettings(act, Intent(android.provider.Settings.ACTION_HOME_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (e: Exception) { Trace.log("setup.home", e.message ?: "") }
     }
 
     /** האם כל החיוניות ניתנו — לשער הכניסה. */
