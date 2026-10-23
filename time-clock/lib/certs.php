@@ -50,7 +50,8 @@ function certErase(array $c, string $reason): void {
 function certStore(array $absence, int $companyId, array $file, ?int $byMember, ?int $byPerson): array {
     if (in_array($absence['status'], ['rejected', 'cancelled'], true)) throw new AppError('ההיעדרות בוטלה או נדחתה');
     if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
-        throw new AppError(($file['error'] ?? 0) === UPLOAD_ERR_INI_SIZE || ($file['error'] ?? 0) === UPLOAD_ERR_FORM_SIZE ? 'הקובץ גדול מדי — עד 5MB' : 'הקובץ לא הגיע');
+        // INI_SIZE — המגבלה של השרת (upload_max_filesize), שיכולה להיות קטנה מ-5MB
+        throw new AppError(in_array($file['error'] ?? 0, [UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE], true) ? 'הקובץ גדול מדי בשביל השרת. נסו קובץ קטן יותר או צילום.' : 'הקובץ לא הגיע');
     }
     $tmp = (string) $file['tmp_name'];
     if (PHP_SAPI !== 'cli' && !is_uploaded_file($tmp)) throw new AppError('הקובץ לא הגיע');

@@ -45,6 +45,8 @@ $in = is_string($raw) && $raw !== '' ? (json_decode($raw, true) ?: []) : [];
 if (!is_array($in)) $in = [];
 // העלאת קובץ (אישור להיעדרות) — multipart: השדות ב-$_POST, הקובץ ב-$_FILES['file']
 if (!$in && $_POST) $in = $_POST;
+// מעבר ל-post_max_size של השרת PHP מרוקן את $_POST ואת $_FILES — בלי זה העובד היה מקבל "המכשיר לא מחובר"
+$tooBig = !$_POST && !$_FILES && (int) ($_SERVER['CONTENT_LENGTH'] ?? 0) > 0 && str_starts_with((string) ($_SERVER['CONTENT_TYPE'] ?? ''), 'multipart/');
 $upload = is_array($_FILES['file'] ?? null) ? $_FILES['file'] : ['error' => UPLOAD_ERR_NO_FILE];
 
 /** שליחת קובץ אישור — מידע רפואי: בלי מטמון, ולא כדף שמריץ משהו. */
@@ -60,6 +62,7 @@ $action = $_GET['action'] ?? (is_string($in['action'] ?? null) ? $in['action'] :
 
 try {
     if ($action !== 'me' && ($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') fail('נדרש POST', 405);
+    if ($tooBig) fail('הקובץ גדול מדי בשביל השרת. נסו קובץ קטן יותר או צילום.', 413);
 
     // עובד — לפני הבדיקה של צוות הניהול: אין לו PLATFORM_USER.
     switch ($action) {
