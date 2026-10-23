@@ -64,3 +64,5 @@ function empMonthManager(array $person, array $in): array {
     $month = str($in, 'month', 7) ?: substr(todayIn($tz), 0, 7);
     return monthReportOt((int) $e['id'], $month, $tz);
 }
+
+require_once __DIR__ . '/absences.php';   // היעדרויות — monthReport זוקף אותן (function_exists)

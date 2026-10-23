@@ -91,7 +91,10 @@ async function route() {
 
 /** מספר התיקונים שממתינים — בלשונית "אישורים". */
 async function refreshBadge() {
-  try { const r = await api('corr_list', { company_id: state.companyId }); $('#appr-n').textContent = r.corrections.length || ''; }
+  try {
+    const [c, a] = await Promise.all([api('corr_list', { company_id: state.companyId }), api('abs_list', { company_id: state.companyId })]);
+    $('#appr-n').textContent = c.corrections.length + a.absences.length || '';
+  }
   catch { /* לא קריטי */ }
 }
 window.addEventListener('hashchange', route);
@@ -239,7 +242,7 @@ function renderSettings() {
   setHeader('הגדרות החברה', { back: true });
   const tab = sessionStorage.getItem('tc-tab') || 'details';
   main.innerHTML = `
-    <div class="seg-tabs" role="tablist">
+    <div class="seg-tabs many" role="tablist">
       <button role="tab" data-tab="details" aria-selected="${tab === 'details'}">🏢 פרטים</button>
       <button role="tab" data-tab="sites" aria-selected="${tab === 'sites'}">📍 סניפים <small>${d.sites.length || ''}</small></button>
       <button role="tab" data-tab="team" aria-selected="${tab === 'team'}">👥 צוות <small>${d.team.length}</small></button>
@@ -247,13 +250,14 @@ function renderSettings() {
       <button role="tab" data-tab="steps" aria-selected="${tab === 'steps'}">✍️ אישור</button>
       <button role="tab" data-tab="ot" aria-selected="${tab === 'ot'}">⏱️ נוספות</button>
       <button role="tab" data-tab="hol" aria-selected="${tab === 'hol'}">📅 חגים</button>
+      <button role="tab" data-tab="abs" aria-selected="${tab === 'abs'}">🌴 היעדרויות</button>
     </div><div id="pane"></div>`;
   main.querySelector('.seg-tabs').addEventListener('click', e => {
     const b = e.target.closest('[data-tab]'); if (!b) return;
     try { sessionStorage.setItem('tc-tab', b.dataset.tab); } catch { /* */ }
     renderSettings();
   });
-  ({ details: paneDetails, sites: paneSites, team: paneTeam, stations: canStations() ? paneStations : paneDetails, steps: paneSteps, ot: paneOt, hol: paneHolidays })[tab]($('#pane'));
+  ({ details: paneDetails, sites: paneSites, team: paneTeam, stations: canStations() ? paneStations : paneDetails, steps: paneSteps, ot: paneOt, hol: paneHolidays, abs: paneAbs })[tab]($('#pane'));
 }
 
 const isOwner = () => state.data.my_role === 'owner';
@@ -371,8 +375,11 @@ function teamSheet(t = null) {
 
 async function renderApprovals() {
   setHeader('אישורים', { settings: true, tab: '/approvals' });
-  const r = await api('corr_list', { company_id: state.companyId });
+  const [r, ab] = await Promise.all([api('corr_list', { company_id: state.companyId }), api('abs_list', { company_id: state.companyId })]);
   main.innerHTML = `
+    ${ab.absences.length ? `<h2 class="sec-title">🌴 היעדרויות</h2><ul class="list" id="abs-appr">${ab.absences.map(a => absItem(a, ab.can_decide
+      ? `<button class="icon-btn" type="button" data-ok="${a.id}" aria-label="אישור">✅</button><button class="icon-btn" type="button" data-no="${a.id}" aria-label="דחייה">✕</button>` : '', true)).join('')}</ul>
+      <h2 class="sec-title">✏️ תיקונים</h2>` : ''}
     <p class="hint">בקשות תיקון מהעובדים. הדיווח המקורי נשמר; אישור מחיל את התיקון בחישוב, ודחייה — עם הסבר לעובד.</p>
     <ul class="list" id="appr">${r.corrections.length ? r.corrections.map(c => `
       <li class="card" data-id="${c.id}">
@@ -395,6 +402,99 @@ async function renderApprovals() {
         async f => { await api('corr_decide', { company_id: state.companyId, id: c.id, approve: false, note: f.note.value }); return 'נדחה'; });
     }
   });
+  $('#abs-appr')?.addEventListener('click', async e => {
+    const ok = e.target.closest('[data-ok]'), no = e.target.closest('[data-no]');
+    if (ok) {
+      try { await api('abs_decide', { company_id: state.companyId, id: +ok.dataset.ok, approve: true }); toast('אושר'); route(); }
+      catch (err) { toast(err.message, true); }
+    } else if (no) {
+      const a = ab.absences.find(x => x.id === +no.dataset.no);
+      openSheet('דחיית בקשה', `<p><b>${esc(a.name)}</b> · ${a.icon} ${esc(a.type_name)}</p><p class="hint">${absText(a)}</p>
+        <label class="f" style="margin-top:12px"><span>למה? (העובד יראה) *</span><input name="note" maxlength="200" required></label>
+        <p class="error" role="alert" hidden></p>`,
+        async f => { await api('abs_decide', { company_id: state.companyId, id: a.id, approve: false, note: f.note.value }); return 'נדחה'; });
+    }
+  });
+}
+
+/* ===== M4 · כרטיס עובד: היעדרויות (גרסה 3) ===== */
+
+async function paneAbsences(pane, d) {
+  const id = d.employee.id;
+  let r;
+  try { r = await api('abs_history', { company_id: state.companyId, member_id: id }); }
+  catch (e) { pane.innerHTML = `<p class="error" role="alert">${esc(e.message)}</p>`; return; }
+  pane.innerHTML = `
+    ${r.can_edit ? '<div class="toolbar"><span style="flex:1"></span><button class="btn primary" id="abs-add" type="button"><span aria-hidden="true">+</span> היעדרות</button></div>' : ''}
+    <p class="hint">היעדרות שהמנהל רושם מאושרת מיד ונרשמת ביומן. יום שאושר זוקף את שעות התקן בהפרש. היתרות — בשלב הבא.</p>
+    <ul class="list" id="abs-hist">${r.absences.length ? r.absences.map(a => absItem(a,
+      r.can_edit && a.status === 'approved' ? `<button class="icon-btn" type="button" data-void="${a.id}" aria-label="ביטול ההיעדרות">🗑️</button>` : '')).join('')
+      : '<li class="empty">אין היעדרויות.</li>'}</ul>`;
+  $('#abs-add')?.addEventListener('click', () => {
+    openSheet('היעדרות · ' + d.employee.name, absenceForm(r.types, r.unit, isoToday()),
+      async f => { await api('abs_direct', { company_id: state.companyId, member_id: id, ...absenceBody(f) }); return () => { toast('נרשם'); paneAbsences(pane, d); }; });
+    absenceWire($('#sheet form'));
+  });
+  $('#abs-hist').addEventListener('click', e => {
+    const b = e.target.closest('[data-void]'); if (!b) return;
+    const a = r.absences.find(x => x.id === +b.dataset.void);
+    openSheet('ביטול היעדרות', `<p>${a.icon} <b>${esc(a.type_name)}</b> · ${absText(a)}</p>
+      <p class="hint">הרשומה נשמרת כ"בוטלה", והימים חוזרים להיות ימי עבודה רגילים.</p>
+      <label class="f" style="margin-top:12px"><span>סיבה *</span><input name="note" maxlength="200" required placeholder="למשל: חזר מוקדם"></label>
+      <p class="error" role="alert" hidden></p>`,
+      async f => { await api('abs_void', { company_id: state.companyId, id: a.id, note: f.note.value }); return () => { toast('בוטל'); paneAbsences(pane, d); }; });
+  });
+}
+
+/* ===== M7 · הגדרות: היעדרויות (גרסה 3) ===== */
+
+const UNIT = { day: 'יום מלא', half: 'יום / חצי', hours: 'יום / שעות' };
+const DEDUCTS = { '': 'לא מוריד מיתרה', vacation: 'מיתרת החופשה', sick: 'מיתרת המחלה' };
+
+async function paneAbs(pane) {
+  let r;
+  try { r = await api('abs_settings_get', { company_id: state.companyId }); }
+  catch (e) { pane.innerHTML = `<p class="error" role="alert">${esc(e.message)}</p>`; return; }
+  const ro = r.can_edit ? '' : ' disabled';
+  pane.innerHTML = `
+    <p class="warn-box">⚠️ ברירות המחדל לחופשה ולמחלה נגזרות מהחוק ואינן ייעוץ משפטי. הסכם, צו הרחבה או חוזה יכולים לקבוע אחרת.</p>
+    <form class="form" id="abs-form" novalidate>
+      <div class="f"><span id="au">איך מבקשים</span><fieldset class="seg grid" style="--cols:3" aria-labelledby="au">${Object.entries(UNIT).map(([k, l]) => `
+        <label><input type="radio" name="unit" value="${k}"${r.settings.unit === k ? ' checked' : ''}${ro}><span>${l}</span></label>`).join('')}</fieldset></div>
+      ${r.can_edit ? '<p class="error" role="alert" hidden></p><div class="actions"><span style="flex:1"></span><button class="btn primary" type="submit">שמירה</button></div>' : '<p class="hint">רק הבעלים משנה את ההגדרות.</p>'}
+    </form>
+    <div class="toolbar" style="margin-top:16px"><h3 class="sec-title" style="margin:0;flex:1">סוגים</h3>
+      ${r.can_edit ? '<button class="btn" id="type-add" type="button"><span aria-hidden="true">+</span> סוג</button>' : ''}</div>
+    <ul class="list" id="types">${r.types.map(t => `
+      <li class="card"${t.builtin || !r.can_edit ? '' : ` tabindex="0" role="button" data-key="${t.key}"`}>
+        <span class="avatar" style="--h:${t.active ? 140 : 0}" aria-hidden="true">${t.icon}</span>
+        <div class="body"><div class="l1"><span>${esc(t.name)}</span></div><div class="l2">${DEDUCTS[t.deducts ?? '']}</div></div>
+        ${t.builtin ? '<span class="chip">מובנה</span>' : t.active ? '' : '<span class="chip">מושבת</span>'}
+      </li>`).join('')}</ul>
+    <p class="hint">סוג לא נמחק — מושבת, כדי שהיעדרויות ישנות יישארו עם השם שלהן.</p>`;
+  const form = $('#abs-form');
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    try { await api('abs_settings_save', { company_id: state.companyId, unit: form.unit.value }); toast('נשמר'); paneAbs(pane); }
+    catch (err) { showError(form, err.message); }
+  });
+  const sheet = (t = null) => {
+    openSheet(t ? 'עריכת סוג' : 'סוג היעדרות', `
+      <div class="fields" style="grid-template-columns:5em minmax(0,1fr)">
+        <label class="f"><span>סמל</span><input name="icon" maxlength="4" value="${esc(t?.icon ?? '📌')}"></label>
+        <label class="f"><span>שם *</span><input name="name" maxlength="30" required value="${esc(t?.name ?? '')}" placeholder="למשל: אבל, חתונה"></label></div>
+      <label class="f" style="margin-top:12px"><span>יתרה</span><select name="deducts">${Object.entries(DEDUCTS).map(([k, l]) => `<option value="${k}"${(t?.deducts ?? '') === k ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
+      ${t ? `<label class="switch" style="margin-top:12px"><input type="checkbox" name="active"${t.active ? ' checked' : ''}><span>פעיל — אפשר לבקש אותו</span></label>` : ''}
+      <p class="error" role="alert" hidden></p>`,
+      async f => {
+        await api('abs_type_save', { company_id: state.companyId, id: t?.id, name: f.name.value, icon: f.icon.value, deducts: f.deducts.value, active: t ? f.active.checked : true });
+        return () => { toast('נשמר'); paneAbs(pane); };
+      });
+  };
+  $('#type-add')?.addEventListener('click', () => sheet());
+  const open = e => { const li = e.target.closest('[data-key]'); if (li) sheet(r.types.find(t => t.key === li.dataset.key)); };
+  $('#types').addEventListener('click', open);
+  $('#types').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(e); } });
 }
 
 /* ===== M7 · כללי שעות נוספות (גרסה 2) ===== */
@@ -854,6 +954,7 @@ async function renderEmployee(id) {
       <button role="tab" data-tab="month" aria-selected="${tab === 'month'}">📅 נוכחות</button>
       <button role="tab" data-tab="details" aria-selected="${tab === 'details'}">👤 פרטים</button>
       <button role="tab" data-tab="terms" aria-selected="${tab === 'terms'}">📄 תנאים <small>${d.terms_history.length}</small></button>
+      <button role="tab" data-tab="abs" aria-selected="${tab === 'abs'}">🌴 היעדרויות</button>
     </div><div id="pane"></div>
     <p class="hint">${status}.</p>`;
   main.querySelector('.seg-tabs').addEventListener('click', ev => {
@@ -866,7 +967,7 @@ async function renderEmployee(id) {
     try { const r = await api('emp_invite', { company_id: state.companyId, id }); inviteSheet(r.employee, r.invite_token, () => renderEmployee(id)); }
     catch (err) { toast(err.message, true); }
   });
-  ({ month: paneMonth, terms: paneTerms, details: paneEmpDetails })[tab]($('#pane'), d, canEdit);
+  ({ month: paneMonth, terms: paneTerms, details: paneEmpDetails, abs: paneAbsences })[tab]($('#pane'), d, canEdit);
 }
 
 async function paneMonth(pane, d, _canEdit, month = null) {

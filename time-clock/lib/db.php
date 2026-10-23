@@ -242,6 +242,46 @@ function migrate(PDO $pdo): void {
             locked_until TEXT
         );
 
+        -- הגדרות ההיעדרויות של החברה (גרסה 3): JSON — היחידה ועוד (ברירות המחדל: lib/absences.php).
+        CREATE TABLE IF NOT EXISTS absence_settings (
+            company_id INTEGER PRIMARY KEY REFERENCES companies(id),
+            settings   TEXT NOT NULL,
+            updated_by INTEGER,
+            updated_at TEXT NOT NULL
+        );
+
+        -- סוגי היעדרות של החברה, בנוסף לחופשה, מחלה ומילואים. deducts — מאיזו יתרה הסוג מוריד (או לא).
+        CREATE TABLE IF NOT EXISTS absence_types (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            company_id INTEGER NOT NULL REFERENCES companies(id),
+            name       TEXT NOT NULL,
+            icon       TEXT NOT NULL DEFAULT '📌',
+            deducts    TEXT CHECK (deducts IN ('vacation','sick')),
+            active     INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL
+        );
+
+        -- היעדרות: טווח ימים, יום מלא / חצי / שעות ליום. עובד מבקש (by_member), מנהל רושם (by_person, מאושר מיד).
+        -- type: vacation | sick | reserve | t<id> (סוג של החברה).
+        CREATE TABLE IF NOT EXISTS absences (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            member_id   INTEGER NOT NULL REFERENCES members(id),
+            type        TEXT NOT NULL,
+            from_date   TEXT NOT NULL,
+            to_date     TEXT NOT NULL,
+            part        TEXT NOT NULL DEFAULT 'full' CHECK (part IN ('full','half','hours')),
+            minutes     INTEGER,
+            note        TEXT,
+            by_member   INTEGER,
+            by_person   INTEGER,
+            status      TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected','cancelled')),
+            decided_by  INTEGER,
+            decided_at  TEXT,
+            decision_note TEXT,
+            created_at  TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS absences_member ON absences (member_id, from_date);
+
         -- כל שינוי: מי, מה, לפני ואחרי.
         CREATE TABLE IF NOT EXISTS audit (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,

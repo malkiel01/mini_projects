@@ -59,6 +59,9 @@ try {
         case 'emp_correct_cancel': ok(empCorrectCancel($in));
         case 'emp_corrections': ok(empCorrections($in));
         case 'emp_approve':     ok(empApprove($in));
+        case 'emp_absences':    ok(empAbsences($in));
+        case 'emp_absence_request': ok(empAbsenceRequest($in));
+        case 'emp_absence_cancel':  ok(empAbsenceCancel($in));
         case 'station_pair':    writeStationCookie(stationPair($in)); ok(stationState());
         case 'station_state':   ok(stationState());
         case 'station_check':   ok(stationCheck($in));
@@ -94,6 +97,14 @@ try {
         case 'corr_decide':    ok(corrDecide($person, $in));
         case 'corr_direct':    ok(corrDirect($person, $in));
         case 'corr_history':   ok(corrHistory($person, $in));
+        case 'abs_list':       ok(absList($person, $in));
+        case 'abs_decide':     ok(absDecide($person, $in));
+        case 'abs_direct':     ok(absDirect($person, $in));
+        case 'abs_void':       ok(absVoid($person, $in));
+        case 'abs_history':    ok(absHistory($person, $in));
+        case 'abs_settings_get':  ok(absSettingsGet($person, $in));
+        case 'abs_settings_save': ok(absSettingsSave($person, $in));
+        case 'abs_type_save':  ok(absTypeSave($person, $in));
         case 'ot_rules_get':   ok(otRulesGet($person, $in));
         case 'ot_rules_save':  ok(otRulesSave($person, $in));
         case 'holidays_get':   ok(holidaysGet($person, $in));

@@ -1,7 +1,8 @@
 'use strict';
 /*
  * שעון נוכחות — העובד (e/). בלי חשבון בכלים הדיגיטליים: הקישור האישי (#t=…) מפעיל את הטלפון, העובד
- * בוחר קוד בן 4 ספרות, ומכאן העוגייה tc_session מזהה אותו. האפיון: docs/v1-screens-data.md, E1–E4.
+ * בוחר קוד בן 4 ספרות, ומכאן העוגייה tc_session מזהה אותו. האפיון: docs/v1-screens-data.md, E1–E4;
+ * חופשה ומחלה — docs/v3-absences.md.
  * הקישור ב-# — כדי שלא יגיע ליומני השרת; אחרי ההפעלה הוא נמחק מהכתובת.
  */
 
@@ -91,6 +92,7 @@ function current() {
 function home(state) {
   st = state;
   if (location.hash === '#/month') return month();
+  if (location.hash === '#/abs') return absences();
   const m = current(), s = m.status, open = !!s.open_since;
   $('#sub').textContent = m.company;
   $('#month-btn').hidden = false; $('#back').hidden = true;
@@ -104,6 +106,7 @@ function home(state) {
       <div class="line"><span class="muted">היום</span> <b id="today-min">${hm(s.minutes_today)}</b>${s.standard_today ? ` <span class="muted">מתוך תקן ${hm(s.standard_today)}</span>` : ''}</div>
     </div>
     <button class="big ${open ? 'out' : ''}" id="punch" type="button">${open ? 'יציאה' : 'כניסה'}</button>
+    <div class="row-btns" style="margin-top:12px"><button class="btn" type="button" id="abs-btn">🌴 חופשה / 🤒 מחלה</button></div>
     <h2 class="sec-title">היום</h2>
     <ul class="list">${s.punches.length ? s.punches.map(p => `
       <li class="card"><span class="avatar" style="--h:${p.kind === 'in' ? 140 : 10}" aria-hidden="true">${p.kind === 'in' ? '⇠' : '⇢'}</span>
@@ -111,6 +114,7 @@ function home(state) {
           <div class="l2">${SRC[p.source] ?? ''}</div></div></li>`).join('') : '<li class="empty">עוד אין דיווחים היום.</li>'}</ul>`;
   main.querySelector('.seg')?.addEventListener('change', e => { try { localStorage.setItem('tc-member', e.target.value); } catch { /* */ } home(st); });
   $('#punch').addEventListener('click', punch);
+  $('#abs-btn').addEventListener('click', () => { location.hash = '#/abs'; });
   for (const b of main.querySelectorAll('[data-approve]')) b.addEventListener('click', () => { shown = b.dataset.approve; location.hash = '#/month'; });
   // משמרת פתוחה — הדקות של היום מתעדכנות כל חצי דקה, בלי לפנות לשרת
   clearInterval(tick);
@@ -229,6 +233,37 @@ function dayView(d, corr) {
       toast('הבקשה נשלחה למנהל');
       month();
     });
+  });
+}
+
+/* ===== E6 · חופשה ומחלה (גרסה 3) ===== */
+
+async function absences() {
+  const m = current();
+  clearInterval(tick);
+  $('#month-btn').hidden = true; $('#back').hidden = false;
+  let r;
+  try { r = await api('emp_absences', { member_id: m.id }); }
+  catch (e) { toast(e.message, true); if (e.status === 401) boot(); return; }
+  main.innerHTML = `
+    <div class="toolbar"><h2 class="sec-title" style="margin:0;flex:1">חופשה ומחלה</h2><button class="btn primary" type="button" id="abs-new"><span aria-hidden="true">+</span> בקשה</button></div>
+    <p class="hint">בוחרים סוג ותאריכים, והמנהל מאשר. יום שאושר נחשב כיום עבודה מלא בשעות התקן.</p>
+    <ul class="list" id="abs-list">${r.absences.length ? r.absences.map(a => absItem(a,
+      a.status === 'pending' && a.by === 'employee' ? `<button class="icon-btn" type="button" data-cancel="${a.id}" aria-label="ביטול הבקשה">✕</button>` : '')).join('')
+      : '<li class="empty">אין בקשות. לחופשה או למחלה — "+ בקשה".</li>'}</ul>`;
+  $('#abs-new').addEventListener('click', () => {
+    openSheet('בקשת היעדרות', absenceForm(r.types, r.unit, r.today), async form => {
+      await api('emp_absence_request', { member_id: m.id, ...absenceBody(form) });
+      toast('הבקשה נשלחה למנהל');
+      absences();
+    });
+    absenceWire($('#sheet form'));
+  });
+  $('#abs-list').addEventListener('click', async e => {
+    const b = e.target.closest('[data-cancel]'); if (!b) return;
+    if (!confirm('לבטל את הבקשה?')) return;
+    try { await api('emp_absence_cancel', { member_id: m.id, id: +b.dataset.cancel }); toast('הבקשה בוטלה'); absences(); }
+    catch (ex) { toast(ex.message, true); }
   });
 }
 
