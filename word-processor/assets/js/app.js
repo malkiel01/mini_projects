@@ -10,7 +10,10 @@ const GUIDE = 'https://github.com/malkiel01/mini_projects/blob/main/word-process
 const main = document.getElementById('main');
 const top = document.querySelector('header.top');
 let me = null;
-let current = null;   // {id, ed, saver, can, title, beat, ...}
+let current = null;   // {id, ed, saver, can, role, title, beat, ...}
+/** התפקיד שלי במסמך ששותף איתי (שלב 5 — lib/share.php). */
+const ROLE_TEXT = { view: 'צפייה', comment: 'הערות', edit: 'עריכה', owner: 'בעלים' };
+const canSave = c => c && (c.can === 'edit' || c.can === 'comment');
 
 async function api(action, body = {}, isForm = false) {
     let res;
@@ -64,23 +67,27 @@ async function listView() {
         h('div.tiles', { style: { marginBottom: '12px' } },
             h('button.tile', { type: 'button', onclick: () => fileIn.click() }, h('span.tile-ic', { 'aria-hidden': 'true' }, '📥'), 'ייבוא מסמך — Word, ‏ODT, ‏HTML או טקסט')),
         fileIn, list);
-    let docs = [];
+    let docs = [], shared = [];
+    const card = (d, l2) => h('li.card', { tabindex: 0, role: 'button', onclick: () => { location.hash = '#/d/' + d.doc; },
+        onkeydown: e => { if (e.key === 'Enter') location.hash = '#/d/' + d.doc; } },
+        h('span.doc-ic', { 'aria-hidden': 'true' }, d.role ? '👥' : '📄'),
+        h('div.body', h('div.l1', h('span', d.title || 'ללא שם'), h('span.t', when(d.updated_at))), h('div.l2', l2)));
     const paint = () => {
         const q = search.value.trim();
         const shown = docs.filter(d => !q || (d.title || '').includes(q));
+        const sh = shared.filter(d => !q || (d.title || '').includes(q));
         list.textContent = '';
         if (!shown.length) list.append(h('li.empty', docs.length ? 'אין מסמך כזה' : 'עוד אין מסמכים. "+ מסמך" כדי להתחיל.'));
-        for (const d of shown) {
-            list.append(h('li.card', { tabindex: 0, role: 'button', onclick: () => { location.hash = '#/d/' + d.doc; },
-                onkeydown: e => { if (e.key === 'Enter') location.hash = '#/d/' + d.doc; } },
-                h('span.doc-ic', { 'aria-hidden': 'true' }, '📄'),
-                h('div.body', h('div.l1', h('span', d.title || 'ללא שם'), h('span.t', when(d.updated_at))),
-                    h('div.l2', d.updated_by ? `נערך על ידי ${d.updated_by}` : ''))));
-        }
+        for (const d of shown) list.append(card(d, d.updated_by ? `נערך על ידי ${d.updated_by}` : ''));
+        // משותף איתי (שלב 5): מסמכים של אחרים, עם התפקיד שלי והבעלים
+        if (sh.length) list.append(h('li.list-head', 'משותף איתי'));
+        for (const d of sh) list.append(card(d, `${ROLE_TEXT[d.role] || ''} · של ${d.owner || 'משתמש אחר'}`));
     };
     search.addEventListener('input', paint);
     try {
-        docs = (await api('my_docs')).docs;
+        const r = await api('my_docs');
+        docs = r.docs;
+        shared = r.shared || [];
         paint();
     } catch (e) {
         list.textContent = '';
@@ -175,8 +182,11 @@ async function openDoc(id) {
     const titleIn = h('input.title-in', { value: d.title, 'aria-label': 'שם המסמך', placeholder: 'ללא שם', maxlength: 200 });
     const state = h('span.save-state', { role: 'status' }, '');
     const pagesEl = h('span.save-state.pages-count', { 'aria-live': 'off' });
-    const cur = current = { id, can: d.can, title: d.title };
+    const cur = current = { id, can: d.can, title: d.title, role: d.role || 'owner' };
+    // שומרים — עורך, וגם מעיר (רק הערות; השרת בודק)
+    const writable = () => cur.can === 'edit' || cur.can === 'comment';
     header({ back: true, title: titleIn, actions: [pagesEl, state, h('button.icon-btn', { 'aria-label': 'עוד', title: 'עוד', onclick: e => docMenu(e.currentTarget) }, '⋯')] });
+    titleIn.readOnly = !['owner', 'edit'].includes(cur.role);
     titleIn.addEventListener('change', async () => {
         try { await api('my_rename', { doc: id, title: titleIn.value }); cur.title = titleIn.value; } catch (e) { toast(e.message, true); }
     });
@@ -188,6 +198,8 @@ async function openDoc(id) {
     main.classList.add('editor-main');
     const ed = createWordEditor(root, {
         json: d.json, page: d.page, editable: d.can === 'edit', user: me,
+        // מעיר: המסמך לקריאה בלבד, ההערות — כן
+        commentOnly: () => cur.can === 'comment',
         // מקטעים עם מספר טורים שונה — ההדפסה מה-PDF של השרת (שם הטורים נפרסים בכל מקטע לחוד)
         printPdf: () => download('pdf', 'להדפסה')(),
         upload: async file => {
@@ -217,7 +229,7 @@ async function openDoc(id) {
             },
         },
         // כל שינוי — כולל הגדרות עמוד וסגנונות, שנמצאים בתוך המסמך — עובר לשמירה
-        onUpdate: () => { if (cur.saver && cur.can === 'edit') cur.saver.changed(); },
+        onUpdate: () => { if (cur.saver && writable()) cur.saver.changed(); },
         // שמירה ידנית (💾 / Ctrl+S): שומרים עכשיו, בלי לחכות להשהיה של השמירה האוטומטית
         save: async () => {
             const r = await cur.save?.();
@@ -235,7 +247,7 @@ async function openDoc(id) {
         snapshot: () => ed.getJSON(),
         send: (json, base) => api('my_save', { doc: id, json, base_version: base }),
         onState: (s, info) => {
-            state.textContent = cur.can === 'edit' || s !== 'saved' ? STATE_TEXT[s] : 'קריאה בלבד';
+            state.textContent = writable() || s !== 'saved' ? STATE_TEXT[s] : readOnlyText();
             state.classList.toggle('bad', ['offline', 'conflict', 'error'].includes(s));
             // "שמורים במכשיר" — רק כשהטיוטה באמת נכתבה (ביקורת 03, F01)
             if (s === 'conflict') showBanner('המסמך השתנה במקום אחר. ' + (saver.local === 'saved' ? 'השינויים שלך שמורים במכשיר.' : 'השינויים שלך לא נשמרו במכשיר — הורידו עותק.'),
@@ -252,8 +264,9 @@ async function openDoc(id) {
             else if (info.localFailed === false && banner.dataset.kind === 'local') hideBanner();
         },
     });
-    state.textContent = cur.can === 'edit' ? STATE_TEXT.saved : 'קריאה בלבד';
+    state.textContent = writable() ? STATE_TEXT.saved : readOnlyText();
     cur.save = () => saver.flush();
+    function readOnlyText() { return cur.role === 'view' ? 'צפייה בלבד' : 'קריאה בלבד'; }
     showImportReport();
 
     function showBanner(text, ...rest) {
@@ -268,7 +281,7 @@ async function openDoc(id) {
         cur.can = 'view';
         saver.stop();
         ed.setEditable(false);
-        state.textContent = 'קריאה בלבד';
+        state.textContent = readOnlyText();
         showBanner(msg + ' — פתוח לקריאה בלבד.' + (saver.dirty ? (saver.local === 'saved' ? ' השינויים שלך שמורים במכשיר.' : ' השינויים שלך לא נשמרו במכשיר.') : ''),
             saver.dirty ? ['הורדת השינויים', () => downloadLocalCopy(ed.getJSON(), cur.title)] : null);
     }
@@ -281,7 +294,7 @@ async function openDoc(id) {
         ed.setEditable(cur.can === 'edit');
         saver.reset(fresh.version);
         hideBanner();
-        if (cur.can !== 'edit' && fresh.lock) lockedBy(`פתוח לעריכה אצל ${fresh.lock.by}`);
+        if (!writable() && fresh.lock) lockedBy(`פתוח לעריכה אצל ${fresh.lock.by}`);
         else if (kept) conflictCopy();
     }
     /** עותק מקומי מהתנגשות (draftKey:conflict) — נשאר עד הורדה / מחיקה מפורשת, גם אחרי סגירה ופתיחה. */
@@ -292,7 +305,7 @@ async function openDoc(id) {
             ['הורדה', () => downloadLocalCopy(c.json, cur.title + ' (הגרסה שלי)')],
             ['מחיקה', () => { if (confirm('למחוק את הגרסה המקומית? אי אפשר לבטל.')) { drafts.del(draftKey + ':conflict'); hideBanner(); } }], 'conflict-copy');
     }
-    if (d.can !== 'edit' && d.lock) lockedBy(`פתוח לעריכה אצל ${d.lock.by}`);
+    if (!writable() && d.lock) lockedBy(`פתוח לעריכה אצל ${d.lock.by}`);
     conflictCopy();
 
     // טיוטה שנשארה במכשיר (לשונית שנסגרה, ניתוק, קריסה) — מציעים לשחזר
@@ -300,7 +313,7 @@ async function openDoc(id) {
         if (!dr || current !== cur) return;
         const changedSince = dr.base_version !== d.version;
         const at = when(Math.round(dr.at / 1000));
-        if (cur.can !== 'edit') {
+        if (!writable()) {
             showBanner(`יש במכשיר שינויים שלא נשמרו (${at}), והמסמך פתוח עכשיו אצל מישהו אחר.`, ['הורדת השינויים', () => downloadLocalCopy(dr.json, cur.title)]);
             return;
         }
@@ -314,9 +327,9 @@ async function openDoc(id) {
     cur.beat = setInterval(async () => {
         try {
             const l = await api('my_lock', { doc: id, op: 'beat' });
-            if (l.ok && cur.can !== 'edit') {
+            if (l.ok && !writable() && cur.role !== 'view') {
                 showBanner('המסמך התפנה לעריכה.', ['מעבר לעריכה', reloadFromServer]);
-            } else if (!l.ok && cur.can === 'edit') {
+            } else if (!l.ok && writable()) {
                 lockedBy(`פתוח לעריכה אצל ${l.lock?.by || 'משתמש אחר'}`);
             }
         } catch { /* רשת — ננסה בדופק הבא */ }
@@ -333,8 +346,11 @@ async function openDoc(id) {
             ['🖨', 'הדפסה', () => ed.print()],
             ['📝', 'הורדה כטקסט', download('text', 'ההורדה')],
             ['🧾', 'גיבוי (JSON)', download('json', 'הגיבוי')],
+            // שיתוף — רק הבעלים; מי ששותף איתו רואה מה התפקיד שלו
+            cur.role === 'owner' ? ['👥', 'שיתוף…', () => shareDialog(id)] : null,
             ['📑', 'שכפול', async () => { if (!(await saved('השכפול'))) return; const r = await api('my_copy', { doc: id }); location.hash = '#/d/' + r.doc; }],
-            ['🗑', 'העברה לסל המחזור', async () => {
+            // לסל — רק הבעלים
+            cur.role !== 'owner' ? null : ['🗑', 'העברה לסל המחזור', async () => {
                 // קודם שומרים — כך שחזור מהסל מחזיר את המסמך כמו שהיה ברגע המחיקה
                 if (!(await saved('המחיקה'))) return;
                 const title = cur.title || 'ללא שם';
@@ -348,7 +364,7 @@ async function openDoc(id) {
                 } });
             }],
         ];
-        popMenu(anchor, items);
+        popMenu(anchor, items.filter(Boolean));
     }
 }
 
@@ -390,14 +406,14 @@ function choose(title, text, options) {
 async function closeDoc() {
     const cur = current;
     if (!cur) return;
-    if (cur.can === 'edit' && (await ensureSaved(cur, 'היציאה', true)) === 'stay') {
+    if (canSave(cur) && (await ensureSaved(cur, 'היציאה', true)) === 'stay') {
         history.replaceState(null, '', '#/d/' + cur.id);   // נשארים במסמך
         throw Object.assign(new Error('stay'), { stay: true });
     }
     current = null;
     clearInterval(cur.beat);
     cur.saver?.destroy();
-    if (cur.can === 'edit') api('my_lock', { doc: cur.id, op: 'release' }).catch(() => {});
+    if (canSave(cur)) api('my_lock', { doc: cur.id, op: 'release' }).catch(() => {});
     cur.ed?.destroy();
     main.classList.remove('editor-main');
 }
@@ -408,7 +424,7 @@ window.addEventListener('beforeunload', e => {
 });
 window.addEventListener('pagehide', () => {
     const cur = current;
-    if (!cur || cur.can !== 'edit') return;
+    if (!canSave(cur)) return;
     fetch('api.php?action=my_lock', { method: 'POST', keepalive: true, credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json', 'X-WP': '1', 'X-Tab': tab },
         body: JSON.stringify({ doc: cur.id, op: 'release' }) }).catch(() => {});
@@ -424,6 +440,45 @@ function popMenu(anchor, items) {
     document.body.append(m);
     m.querySelector('button')?.focus();
     setTimeout(() => document.addEventListener('click', function off(e) { if (!m.contains(e.target)) { m.remove(); document.removeEventListener('click', off); } }), 0);
+}
+
+// ---------- שיתוף (שלב 5) ----------
+/**
+ * חלון השיתוף (רק לבעלים): מי שהמסמך שותף איתו — מייל, שם (כשכבר נכנס לעורך), התפקיד (צפייה / הערות / עריכה) והסרה;
+ * ושיתוף חדש לפי מייל — פעיל גם לפני שבעל המייל נכנס לעורך בפעם הראשונה.
+ */
+async function shareDialog(id) {
+    let shares = (await api('my_shares', { doc: id })).shares;
+    const rows = h('ul.share-list');
+    const roleSel = (value, onchange) => h('select', { 'aria-label': 'תפקיד', onchange },
+        ['view', 'comment', 'edit'].map(r => h('option', { value: r, selected: r === value }, ROLE_TEXT[r])));
+    const set = async (email, role) => {
+        try { shares = (await api('my_share', { doc: id, email, role })).shares; paint(); return true; }
+        catch (e) { toast(e.message, true); return false; }
+    };
+    const paint = () => {
+        rows.textContent = '';
+        if (!shares.length) rows.append(h('li.empty', 'המסמך עוד לא שותף עם אף אחד.'));
+        for (const x of shares) {
+            rows.append(h('li.share-row',
+                h('div.who', h('strong', x.name || x.email), x.name ? h('small', x.email) : h('small', x.joined ? '' : 'עוד לא נכנס לעורך — השיתוף יחכה לו')),
+                roleSel(x.role, e => set(x.email, e.target.value)),
+                h('button.btn.sm.ghost', { type: 'button', 'aria-label': 'הסרת השיתוף עם ' + x.email, onclick: () => set(x.email, '') }, 'הסרה')));
+        }
+    };
+    const email = h('input', { type: 'email', name: 'email', placeholder: 'מייל', autocomplete: 'off', dir: 'ltr', 'aria-label': 'מייל לשיתוף' });
+    const role = roleSel('edit');
+    paint();
+    sheet('שיתוף המסמך', body => {
+        body.append(h('section.group', h('h3', 'שיתוף עם'), h('div.share-add', email, role)),
+            h('p.hint', 'מי ששיתפת איתו רואה את המסמך ב"משותף איתי". עריכה — כמוך (חוץ משיתוף ומחיקה); הערות — קריאה והוספת הערות; צפייה — קריאה והורדה.'),
+            h('section.group', h('h3', 'משותף כרגע'), rows));
+    }, async () => {
+        const v = email.value.trim();
+        if (!v) return true;   // בלי מייל — "שיתוף" רק סוגר
+        if (await set(v, role.value)) { email.value = ''; toast('שותף עם ' + v); }
+        return false;          // החלון נשאר פתוח — לראות את הרשימה ולשתף עוד
+    }, 'שיתוף');
 }
 
 // ---------- לקוחות ההטמעה (מנהל העורך) ----------

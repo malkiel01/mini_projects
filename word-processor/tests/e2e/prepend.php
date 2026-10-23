@@ -10,5 +10,8 @@ putenv('WP_BASE_URL=' . getenv('WP_E2E_BASE'));
 putenv('WP_DETACHED=1');
 putenv('WP_ALLOW_HTTP=1');
 if (!isset($_COOKIE['nouser'])) {
-    $_SERVER['PLATFORM_USER'] = json_encode(['sub' => '17', 'name' => 'דנה לוי', 'email' => 'dana@example.com', 'email_verified' => true], JSON_UNESCAPED_UNICODE);
+    // משתמש שני (שיתוף — קבוצה 84): עוגייה as=b
+    $_SERVER['PLATFORM_USER'] = ($_COOKIE['as'] ?? '') === 'b'
+        ? json_encode(['sub' => '18', 'name' => 'יוסי כהן', 'email' => 'yossi@example.com', 'email_verified' => true], JSON_UNESCAPED_UNICODE)
+        : json_encode(['sub' => '17', 'name' => 'דנה לוי', 'email' => 'dana@example.com', 'email_verified' => true], JSON_UNESCAPED_UNICODE);
 }

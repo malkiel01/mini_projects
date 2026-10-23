@@ -117,7 +117,7 @@ export const COMMANDS = [
     { id: 'caption', label: 'הוספת כיתוב', icon: '🏷', group: 'insert', run: x => x.ui.caption() },
     { id: 'crossRef', label: 'הפניה צולבת', icon: '↗', group: 'insert', run: x => x.ui.crossRef() },
     { id: 'insertTof', label: 'רשימת איורים', icon: '🗂', group: 'insert', run: x => x.ui.insertTof() },
-    { id: 'comment', label: 'הערה חדשה', icon: '💬', keys: 'Ctrl+Alt+M', group: 'review', run: x => x.ui.comment() },
+    { id: 'comment', label: 'הערה חדשה', icon: '💬', keys: 'Ctrl+Alt+M', group: 'review', edit: 'comment', run: x => x.ui.comment() },
     { id: 'commentsPane', label: 'חלונית הערות', icon: '🗨', group: 'review', run: x => x.ui.commentsPane(), active: x => x.ui.commentsOn() },
     { id: 'trackChanges', label: 'מעקב שינויים', icon: '✎', keys: 'Ctrl+Shift+E', group: 'review', run: x => x.ui.trackToggle(), active: x => !!x.editor.state.doc.attrs.track },
     { id: 'trackView', label: 'תצוגת השינויים', group: 'review', edit: false, run: (x, v) => x.ui.trackView(v), value: x => x.ui.trackViewValue() },
@@ -180,7 +180,8 @@ export const COMMANDS = [
 
 export function createCommands(x, list = COMMANDS) {
     const byId = new Map(list.map(c => [c.id, c]));
-    const can = c => (c.edit === false || x.editor.isEditable) && (!c.when || c.when(x));
+    // edit: 'comment' — גם למעיר (מסמך לקריאה בלבד, הערות כן — שלב 5)
+    const can = c => (c.edit === false || x.editor.isEditable || (c.edit === 'comment' && !!x.ui.commentOnly?.())) && (!c.when || c.when(x));
     return {
         get: id => byId.get(id),
         /** הפקודות (אפשר לסנן: group, available — רק מה שאפשר להפעיל עכשיו). */

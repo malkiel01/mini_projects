@@ -57,7 +57,9 @@ export function threads(state) {
  * החלונית והפעולות. user — { name } של מי שעובד עכשיו (המחבר של הערות ותשובות).
  * h — יוצר האלמנטים של העורך.
  */
-export function createComments({ editor, h, user, onChange }) {
+export function createComments({ editor, h, user, onChange, commentOnly = () => false }) {
+    // מעיר (שלב 5): המסמך לקריאה בלבד, אבל אפשר להוסיף הערות ולענות
+    const canComment = () => editor.isEditable || commentOnly();
     const author = () => (user?.name || '').trim() || 'אני';
     const list = h('div.cm-list', { role: 'list' });
     const empty = h('p.cm-empty', 'אין הערות במסמך. מסמנים טקסט ולוחצים "הערה חדשה" (Ctrl+Alt+M).');
@@ -82,7 +84,7 @@ export function createComments({ editor, h, user, onChange }) {
 
     /** הערה חדשה על הבחירה (בלי בחירה — על המילה שבה הסמן). */
     function add() {
-        if (!editor.isEditable) return;
+        if (!canComment()) return;
         let { from, to, empty: none } = editor.state.selection;
         if (none) {
             const $p = editor.state.selection.$from;
@@ -142,7 +144,7 @@ export function createComments({ editor, h, user, onChange }) {
         }
         node.append(h('div.cm-text', t.text));
         for (const r of t.replies || []) node.append(h('div.cm-reply', head(r.author, r.date), h('div.cm-text', r.text)));
-        if (editor.isEditable) {
+        if (canComment()) {
             const reply = h('input.cm-reply-in', { type: 'text', placeholder: 'תשובה…', 'aria-label': 'תשובה', maxlength: 2000 });
             const send = () => {
                 const v = reply.value.trim();

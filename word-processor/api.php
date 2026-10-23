@@ -15,6 +15,7 @@ require_once __DIR__ . '/lib/import.php';
 require_once __DIR__ . '/lib/pdf.php';
 require_once __DIR__ . '/lib/compare.php';
 require_once __DIR__ . '/lib/users.php';
+require_once __DIR__ . '/lib/share.php';
 
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: no-referrer');
@@ -315,8 +316,9 @@ function app_action(string $action, array $in): never
             trash_purge($space);
             $st = db()->prepare('SELECT id, title, version, updated_at, updated_by FROM docs WHERE space = ? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 500');
             $st->execute([$space]);
+            // ושותפו איתי (שלב 5) — ברשימה נפרדת, עם התפקיד והבעלים
             out(['docs' => array_map(fn($r) => ['doc' => $r['id'], 'title' => $r['title'], 'version' => (int)$r['version'],
-                'updated_at' => (int)$r['updated_at'], 'updated_by' => $r['updated_by']], $st->fetchAll())]);
+                'updated_at' => (int)$r['updated_at'], 'updated_by' => $r['updated_by']], $st->fetchAll()), 'shared' => shared_with($acc)]);
         case 'my_new':
             $id = doc_new($space, (string)($in['title'] ?? ''), null, $in['page'] ?? null, $uid, $uname);
             if (!empty($_FILES['file']['tmp_name']) || is_string($in['import'] ?? null)) {
@@ -331,31 +333,41 @@ function app_action(string $action, array $in): never
             out(['doc' => $id]);
         case 'my_open':
         case 'my_lock':
-            $row = doc_find($in['doc'] ?? '', $space);
+            // צפייה — בלי נעילה; מעיר ועורך — לוקחים את הנעילה (מעיר כותב הערות למסמך)
+            [$row, $role] = doc_access($in['doc'] ?? '', $acc);
             $op = (string)($in['op'] ?? 'beat');
-            $l = lock_op($op, 'edit', $row['id'], $uid, $uname, $holder);
+            $l = lock_op($op, $role === 'view' ? 'view' : 'edit', $row['id'], $uid, $uname, $holder);
+            if ($l['can'] === 'edit' && $role === 'comment') $l['can'] = 'comment';
             if ($action === 'my_lock') out($l);
-            out(doc_public($row) + ['can' => $l['can'], 'lock' => $l['lock']]);
+            out(doc_public($row) + ['can' => $l['can'], 'lock' => $l['lock'], 'role' => $role,
+                'shares' => $role === 'owner' ? count(shares_of($row['id'])) : null]);
         case 'my_save':
-            $row = doc_find($in['doc'] ?? '', $space);
+            [$row, $role] = doc_access($in['doc'] ?? '', $acc, 'comment');
             require_edit('edit', $row['id'], $uid, $uname, $holder);
+            if ($role === 'comment') {
+                // מעיר: רק הערות — והגדרות העמוד שבתוך המסמך לא נשמרות ממנו
+                if (is_array($in['json'] ?? null)) unset($in['json']['attrs']['page']);
+                if (isset($in['title']) || !is_array($in['json'] ?? null) || !only_comments_changed(doc_json($row), $in['json'])) {
+                    throw new ApiError('ההרשאה שלך במסמך: הערות בלבד — אפשר להוסיף הערות, לא לשנות את הטקסט', 'forbidden', 403);
+                }
+            }
             $row = doc_save($row, $in['json'] ?? null, isset($in['title']) ? (string)$in['title'] : null, $uid, $uname, $in['base_version'] ?? null);
             out(['doc' => $row['id'], 'version' => (int)$row['version'], 'updated_at' => (int)$row['updated_at']]);
         case 'my_version_restore':   // שחזור גרסה — פעולה אחת בשרת (doc_restore_version)
-            $row = doc_find($in['doc'] ?? '', $space);
+            [$row] = doc_access($in['doc'] ?? '', $acc, 'edit');
             require_edit('edit', $row['id'], $uid, $uname, $holder);
             $row = doc_restore_version($row, $in['id'] ?? 0, $uid, $uname, $in['base_version'] ?? null);
             out(['doc' => $row['id'], 'version' => (int)$row['version'], 'json' => editor_json(doc_json($row), doc_page($row)), 'page' => doc_page($row)]);
         case 'my_page':
-            $row = doc_find($in['doc'] ?? '', $space);
+            [$row] = doc_access($in['doc'] ?? '', $acc, 'edit');
             require_edit('edit', $row['id'], $uid, $uname, $holder);
             out(['page' => doc_page(doc_set_page($row, $in['page'] ?? null))]);
         case 'my_rename':
-            doc_rename(doc_find($in['doc'] ?? '', $space), (string)($in['title'] ?? ''));
+            doc_rename(doc_access($in['doc'] ?? '', $acc, 'edit')[0], (string)($in['title'] ?? ''));
             out(['ok' => true]);
         case 'my_delete':
             // מחיקה מהאפליקציה — לסל המחזור (ליקוי ה' באפיון). מחיקה לצמיתות — רק מתוך הסל (my_purge)
-            doc_trash(doc_find($in['doc'] ?? '', $space));
+            doc_trash(doc_access($in['doc'] ?? '', $acc, 'owner')[0]);
             out(['ok' => true, 'trash' => true, 'days' => TRASH_DAYS]);
         case 'my_trash':
             trash_purge($space);
@@ -370,32 +382,41 @@ function app_action(string $action, array $in): never
             doc_delete(doc_find($in['doc'] ?? '', $space, true));
             out(['ok' => true]);
         case 'my_copy':
-            $from = doc_find($in['doc'] ?? '', $space);
+            // העתק — אצלי (גם ממסמך ששותף איתי לצפייה)
+            [$from] = doc_access($in['doc'] ?? '', $acc);
             out(['doc' => doc_copy($from, $space, clean_title(($in['title'] ?? '') ?: $from['title'] . ' (העתק)'), [], $uid, $uname)]);
         case 'my_compare':
             // השוואת גרסאות (כמו ב-Word): מסמך חדש — הגרסה מול המצב הנוכחי, ההבדלים כמעקב שינויים
-            $row = doc_find($in['doc'] ?? '', $space);
+            [$row] = doc_access($in['doc'] ?? '', $acc);
             $v = version_get($row, $in['id'] ?? 0);
             $cmp = track_compare(json_decode($v['json'], true) ?: empty_doc_json(), doc_json($row));
             $title = clean_title(mb_substr('השוואה: ' . ($row['title'] ?: 'מסמך') . ' — גרסה ' . (int)$v['version'] . ' מול הנוכחית', 0, 200));
             out(['doc' => doc_copy($row, $space, $title, [], $uid, $uname, $cmp)]);
         case 'my_upload':
-            $row = doc_find($in['doc'] ?? ($_POST['doc'] ?? ''), $space);
+            [$row] = doc_access($in['doc'] ?? ($_POST['doc'] ?? ''), $acc, 'edit');
             out(media_store($row['id'], uploaded_bytes($in)));
         case 'my_versions':
-            out(['versions' => versions_list(doc_find($in['doc'] ?? '', $space))]);
+            out(['versions' => versions_list(doc_access($in['doc'] ?? '', $acc)[0])]);
         case 'my_version':
-            $v = version_get(doc_find($in['doc'] ?? '', $space), $in['id'] ?? 0);
+            $v = version_get(doc_access($in['doc'] ?? '', $acc)[0], $in['id'] ?? 0);
             $vp = page_normalize(json_decode($v['page'], true) ?: []);
             out(['json' => editor_json(json_decode($v['json'], true) ?: empty_doc_json(), $vp), 'page' => $vp, 'title' => $v['title'], 'version' => (int)$v['version']]);
         case 'my_export':
-            $row = doc_find($_GET['doc'] ?? '', $space);
+            [$row] = doc_access($_GET['doc'] ?? '', $acc);
             $fmt = (string)($_GET['format'] ?? 'docx');
             if ($fmt === 'text') send_file(export_text(doc_json($row)), 'text/plain; charset=utf-8', ($row['title'] ?: 'מסמך') . '.txt');
             if ($fmt === 'json') send_file(json_encode(['title' => $row['title'], 'json' => doc_json($row), 'page' => doc_page($row)], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT), 'application/json', ($row['title'] ?: 'מסמך') . '.json');
             // PDF בתצוגת השינויים שבעורך: track=final|original, hide=מחברים (JSON) — כמו שההדפסה מהעורך נראית
             $hide = json_decode((string)($_GET['hide'] ?? '[]'), true);
             do_export($row, $fmt === 'pdf' ? 'pdf' : 'docx', null, true, ['view' => (string)($_GET['track'] ?? 'all'), 'hide' => is_array($hide) ? array_slice($hide, 0, 50) : []]);
+        // שיתוף (שלב 5): רק הבעלים רואה ומשנה
+        case 'my_shares':
+            [$row] = doc_access($in['doc'] ?? '', $acc, 'owner');
+            out(['shares' => shares_of($row['id'])]);
+        case 'my_share':
+            [$row] = doc_access($in['doc'] ?? '', $acc, 'owner');
+            share_set($row, $acc, $in['email'] ?? '', $in['role'] ?? '');
+            out(['shares' => shares_of($row['id'])]);
         case 'admin_clients':
             need_admin($acc);
             $rows = db()->query('SELECT id, name, key_url, origins, status, created_at, updated_at FROM clients ORDER BY created_at')->fetchAll();

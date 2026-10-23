@@ -234,6 +234,7 @@ function doc_delete(array $row): void
     foreach ($st->fetchAll() as $m) @unlink(media_path($m['id'], $m['type']));
     db()->prepare('DELETE FROM media WHERE doc = ?')->execute([$row['id']]);
     db()->prepare('DELETE FROM docs WHERE id = ?')->execute([$row['id']]);
+    db()->prepare('DELETE FROM shares WHERE doc = ?')->execute([$row['id']]);   // השיתופים שלו (שלב 5)
 }
 
 /** העתק במרחב, עם החלפות בטקסט בלבד (לפי הסדר), ועם עותק של כל תמונה. */
