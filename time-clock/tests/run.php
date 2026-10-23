@@ -12,6 +12,10 @@
 declare(strict_types=1);
 
 define('DB_FILE', sys_get_temp_dir() . '/time-clock-test-' . getmypid() . '.sqlite');
+// מסד נקי תמיד: ריצה שנפלה באמצע משאירה קובץ, ומספר תהליך שחוזר היה פותח מסד עם נתונים ישנים.
+$clean = function () { foreach (['', '-wal', '-shm'] as $x) @unlink(DB_FILE . $x); };
+$clean();
+register_shutdown_function($clean);
 require_once __DIR__ . '/../lib/attendance.php';
 require_once __DIR__ . '/../lib/station.php';
 require_once __DIR__ . '/../lib/corrections.php';
@@ -375,6 +379,5 @@ check('CSV: BOM, כותרות, שורת סיכום', str_starts_with($csv, "\xEF
 check('CSV: יום עם תיקון מסומן', str_contains($csv, '2026-11-13') && str_contains($csv, ',כן,'));
 unset($GLOBALS['TC_NOW']);
 
-@unlink(DB_FILE); @unlink(DB_FILE . '-wal'); @unlink(DB_FILE . '-shm');
 echo "\n" . ($n - $fails) . "/$n עברו\n";
 exit($fails ? 1 : 0);
