@@ -5,7 +5,10 @@
  * - מחיקה של טקסט שנוסף במעקב — מוחקת אותו באמת (כמו ב-Word). מחיקה שחוצה פסקאות — הטקסט מסומן, הפסקאות לא מתאחדות.
  * - קבלה / דחייה: של השינוי שבו הסמן (או של כל השינויים בבחירה), או של כולם. הבא / הקודם — מעבר בין שינויים.
  * - עיצוב תווים (מודגש, צבע, גודל…) — סימון fmt עם העיצוב הקודם (attrs.old), כמו rPrChange ב-Word: אישור — הסימון יוצא;
- *   דחייה — העיצוב הקודם חוזר. עיצוב של טקסט שנוסף במעקב — לא נרשם (הוא ממילא חדש). שינויי פסקה ומבנה — לא נרשמים.
+ *   דחייה — העיצוב הקודם חוזר. עיצוב של טקסט שנוסף במעקב — לא נרשם (הוא ממילא חדש).
+ * - עיצוב פסקה (יישור, הזחה, ריווח, כיוון, עצירות, סגנון — כולל פסקה ↔ כותרת), כמו pPrChange ב-Word: attrs.pchg של
+ *   הפסקה — מחבר, תאריך, והפסקה כפי שהייתה ({ type, attrs }); פס שינוי בשוליים. אישור — pchg יוצא; דחייה — הפסקה
+ *   חוזרת להיות כמו שהייתה. חזרה לעיצוב המקורי — כבר לא שינוי. שינויי מבנה (פיצול, איחוד, טבלה) — לא נרשמים.
  * - תצוגה (VIEWS, כמו ב-Word): סימון מלא / סופי / מקור, והסתרת השינויים של מחברים — רק תצוגה (מחלקה ו-CSS על המסמך
  *   ב-editor.js), לא שינוי במסמך. ההדפסה וה-PDF (track_view בשרת) — באותה תצוגה.
  * הרישום: appendTransaction — העסקה של המשתמש מתבצעת, ומיד אחריה (באותו צעד ביטול) עסקה שמחזירה את מה שנמחק
@@ -79,6 +82,13 @@ export const FmtMark = Mark.create({
 
 const now = () => new Date().toISOString().slice(0, 19) + 'Z';
 
+const TEXTBLOCKS = ['paragraph', 'heading'];
+/** הפסקה בלי סימון השינוי — מה שנשמר ב-pchg.old ומה שמשווים אליו. */
+const paraOf = node => { const { pchg, ...attrs } = node.attrs; return { type: node.type.name, attrs }; };
+const samePara = (a, b) => a.type === b.type && JSON.stringify(a.attrs) === JSON.stringify(b.attrs);
+/** פסקה שכל התוכן שלה נוסף במעקב — חדשה; העיצוב שלה לא נרשם. */
+const allIns = node => node.childCount > 0 && node.content.content.every(c => c.marks.some(m => m.type.name === 'ins'));
+
 /** הטקסט בלי מה שנוסף במעקב (מחיקה של תוספת — מוחקת באמת), ועם del על כל השאר. */
 function asDeleted(fragment, schema, attrs) {
     const out = [];
@@ -132,6 +142,23 @@ export function trackPlugin(author) {
                     const m = node.isText && node.marks.find(x => x.type.name === 'fmt');
                     if (m && sameFmt(fmtOf(node.marks), m.attrs.old)) tr.removeMark(pos, pos + node.nodeSize, fmt);
                     return !node.isText;
+                });
+                return tr.docChanged ? tr : null;
+            }
+            // שינוי עיצוב פסקה בלבד (הטקסט והמבנה בלי שינוי — אותו גודל, צעדי מאפיינים / עטיפה): לכל פסקה שהשתנתה —
+            // pchg עם הפסקה כמו שהייתה (או זו ששמורה כבר — המקור); חזרה למקור — pchg יוצא
+            if (json.length && json.every(j => j.stepType === 'replaceAround' || j.stepType === 'attr') && oldState.doc.content.size === tr0.doc.content.size
+                && oldState.doc.textContent === tr0.doc.textContent) {
+                oldState.doc.descendants((old, pos) => {
+                    if (!TEXTBLOCKS.includes(old.type.name)) return true;
+                    const p = after(pos, 1);
+                    const now_ = tr.doc.nodeAt(p);
+                    if (!now_ || !TEXTBLOCKS.includes(now_.type.name) || allIns(now_)) return false;
+                    const was = old.attrs.pchg?.old || paraOf(old);
+                    const cur = paraOf(now_);
+                    if (samePara(was, cur)) { if (now_.attrs.pchg) tr.setNodeMarkup(p, undefined, { ...now_.attrs, pchg: null }); }
+                    else if (!samePara(paraOf(old), cur) || !now_.attrs.pchg) tr.setNodeMarkup(p, undefined, { ...now_.attrs, pchg: { ...(old.attrs.pchg || attrs), old: was } });
+                    return false;
                 });
                 return tr.docChanged ? tr : null;
             }
@@ -239,10 +266,14 @@ export function authors(doc) {
     return [...m].map(([author, count]) => ({ author, count }));
 }
 
-/** השינויים במסמך לפי הסדר: [{ type: 'ins'|'del'|'fmt', author, date, from, to }] — רצף צמוד של אותו סימון הוא שינוי אחד. */
+/**
+ * השינויים במסמך לפי הסדר: [{ type: 'ins'|'del'|'fmt'|'para', author, date, from, to }] — רצף צמוד של אותו סימון הוא
+ * שינוי אחד; שינוי עיצוב פסקה — הפסקה כולה.
+ */
 export function changes(doc) {
     const out = [];
     doc.descendants((node, pos) => {
+        if (node.isTextblock && node.attrs.pchg) out.push({ type: 'para', author: node.attrs.pchg.author || '', date: node.attrs.pchg.date || '', from: pos, to: pos + node.nodeSize });
         if (!node.isInline) return true;
         for (const m of node.marks) {
             if (m.type.name !== 'ins' && m.type.name !== 'del' && m.type.name !== 'fmt') continue;
@@ -267,6 +298,15 @@ export function resolveChanges(editor, accept, all = false, hide = null) {
     const tr = state.tr.setMeta(SKIP, true).setMeta('closeHistory$', true);
     // מהסוף להתחלה — מחיקה לא מזיזה את מה שלפניה
     for (const c of [...list].reverse()) {
+        if (c.type === 'para') {
+            // דחייה: הפסקה חוזרת להיות כמו שהייתה (הסוג והמאפיינים); אישור — רק הסימון יוצא
+            const node = tr.doc.nodeAt(c.from);
+            const old = node?.attrs.pchg?.old;
+            const type = !accept && old && state.schema.nodes[old.type];
+            if (type) tr.setNodeMarkup(c.from, type, { ...old.attrs, pchg: null });
+            else if (node) tr.setNodeMarkup(c.from, undefined, { ...node.attrs, pchg: null });
+            continue;
+        }
         if (c.type === 'fmt') {
             // דחיית שינוי עיצוב: העיצוב הקודם חוזר (לכל קטע — שלו); אישור — רק הסימון יוצא
             if (!accept) state.doc.nodesBetween(c.from, c.to, (node, pos) => {
@@ -294,7 +334,9 @@ export function goToChange(editor, dir, hide = null) {
     if (!list.length) return false;
     const at = editor.state.selection.from;
     const c = dir > 0 ? (list.find(x => x.from > at) || list[0]) : ([...list].reverse().find(x => x.to < at) || list[list.length - 1]);
-    editor.chain().focus().setTextSelection({ from: c.from, to: c.to }).scrollIntoView().run();
+    // שינוי פסקה — הסמן בתחילתה (הבחירה של כל הפסקה — בתוכה)
+    const [a, b] = c.type === 'para' ? [c.from + 1, c.to - 1] : [c.from, c.to];
+    editor.chain().focus().setTextSelection({ from: a, to: b }).scrollIntoView().run();
     return true;
 }
 

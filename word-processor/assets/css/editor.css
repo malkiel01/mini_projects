@@ -399,6 +399,9 @@ html.wp-no-page-zoom, html.wp-no-page-zoom body, .wp-editor, .wp-stage { touch-a
 /* שינוי עיצוב במעקב: קו כפול דק בצבע המחבר מתחת (כמו בסימון של Word). בתצוגת המקור — העיצוב הקודם (--o-*), ומה שבפנים מאופס */
 .wp-doc .wp-fmt { text-decoration: underline double var(--wpc, #c00000); text-decoration-thickness: 1px; text-underline-offset: 3px; }
 .wp-doc.wp-tv-final .wp-fmt { text-decoration: none; }
+/* שינוי עיצוב פסקה (pchg): פס שינוי בשוליים בצד ההתחלה, בצבע המחבר — כמו ב-Word; בסופי / במקור — בלי */
+.wp-doc .wp-pchg::after { content: ''; position: absolute; inset-block: 0; inset-inline-start: -10px; inline-size: 2px; background: var(--wpc, #c00000); pointer-events: none; }
+.wp-doc:is(.wp-tv-final, .wp-tv-original) .wp-pchg::after { display: none; }
 .wp-doc.wp-tv-original .wp-fmt { text-decoration: var(--o-td, none); font-weight: var(--o-fw); font-style: var(--o-fs); color: var(--o-color, inherit);
     font-size: var(--o-size, inherit); font-family: var(--o-ff, inherit); background: var(--o-bg, none); }
 .wp-doc.wp-tv-original .wp-fmt :is(strong, b, em, i, u, s, mark, span) { font-weight: inherit; font-style: inherit; text-decoration: inherit; color: inherit;

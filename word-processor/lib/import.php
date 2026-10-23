@@ -508,16 +508,20 @@ final class DocxCtx
     }
 
     /** [בלוק, מספור|null, שבירת עמוד אחריו]. */
-    private function para(DOMElement $p, DOMXPath $xp): array
+    /**
+     * מאפייני הפסקה מ-w:pPr שתחת $host — הפסקה עצמה, או w:pPrChange (הפסקה כפי שהייתה, במעקב שינויים).
+     * מחזיר [סוג, attrs, מספור].
+     */
+    private function pprParse(DOMElement $host, DOMXPath $xp, DOMElement $p): array
     {
         $attrs = [];
         $type = 'paragraph';
-        $style = (string)$xp->evaluate('string(w:pPr/w:pStyle/@w:val)', $p);
+        $style = (string)$xp->evaluate('string(w:pPr/w:pStyle/@w:val)', $host);
         $kind = $this->styles[$style] ?? null;
         if ($kind === 'title' || $kind === 'caption' || ($kind && $kind[0] === 'u')) $attrs['pstyle'] = $kind;
         elseif ($kind) { $type = 'heading'; $attrs['level'] = (int)$kind[1]; }
-        $bidi = $xp->query('w:pPr/w:bidi', $p)->length > 0 && (string)$xp->evaluate('string(w:pPr/w:bidi/@w:val)', $p) !== '0';
-        $jc = (string)$xp->evaluate('string(w:pPr/w:jc/@w:val)', $p);
+        $bidi = $xp->query('w:pPr/w:bidi', $host)->length > 0 && (string)$xp->evaluate('string(w:pPr/w:bidi/@w:val)', $host) !== '0';
+        $jc = (string)$xp->evaluate('string(w:pPr/w:jc/@w:val)', $host);
         $align = match ($jc) {
             'center' => 'center', 'both', 'distribute' => 'justify',
             'start' => $bidi ? 'right' : 'left', 'end' => $bidi ? 'left' : 'right',
@@ -525,7 +529,7 @@ final class DocxCtx
         };
         if ($align) $attrs['textAlign'] = $align;
         if (!$bidi && $this->hasLatinOnly($p)) $attrs['dir'] = 'ltr';
-        $sp = $xp->query('w:pPr/w:spacing', $p)->item(0);
+        $sp = $xp->query('w:pPr/w:spacing', $host)->item(0);
         if ($sp instanceof DOMElement) {
             if ($sp->hasAttributeNS(W, 'before')) $attrs['spaceBefore'] = round((int)$sp->getAttributeNS(W, 'before') / 20, 1);
             if ($sp->hasAttributeNS(W, 'after')) $attrs['spaceAfter'] = round((int)$sp->getAttributeNS(W, 'after') / 20, 1);
@@ -537,7 +541,7 @@ final class DocxCtx
         }
         // עצירות טאב (בפסקה עצמה): left / right הפוכים בפסקה מימין לשמאל; clear / bar / num — לא נכנסים
         $tabs = [];
-        foreach ($xp->query('w:pPr/w:tabs/w:tab', $p) as $tb) {
+        foreach ($xp->query('w:pPr/w:tabs/w:tab', $host) as $tb) {
             $al = match ($tb->getAttributeNS(W, 'val')) {
                 'start' => 'start', 'end' => 'end', 'center' => 'center', 'decimal' => 'decimal',
                 'left' => $bidi ? 'end' : 'start', 'right' => $bidi ? 'start' : 'end', default => null,
@@ -550,19 +554,19 @@ final class DocxCtx
         if ($tabs = tabs_val($tabs)) $attrs['tabs'] = $tabs;
         // שבירת עמודים (בפסקה עצמה; בכותרות — ממילא נשמרות עם הבא). w:val="0"/"false" — כבוי
         foreach (['keepNext' => 'keepNext', 'keepLines' => 'keepLines', 'pageBreakBefore' => 'breakBefore'] as $tag => $key) {
-            $el = $xp->query("w:pPr/w:$tag", $p)->item(0);
+            $el = $xp->query("w:pPr/w:$tag", $host)->item(0);
             if ($el instanceof DOMElement && !in_array($el->getAttributeNS(W, 'val'), ['0', 'false', 'off'], true)) $attrs[$key] = true;
         }
-        if ($xp->query('w:pPr/w:pBdr/*[@w:val!="nil" and @w:val!="none"]', $p)->length
-            || preg_match('/^[0-9A-Fa-f]{6}$/', $f = (string)$xp->evaluate('string(w:pPr/w:shd/@w:fill)', $p)) && strtoupper($f) !== 'FFFFFF') $this->note('pborder');
+        if ($xp->query('w:pPr/w:pBdr/*[@w:val!="nil" and @w:val!="none"]', $host)->length
+            || preg_match('/^[0-9A-Fa-f]{6}$/', $f = (string)$xp->evaluate('string(w:pPr/w:shd/@w:fill)', $host)) && strtoupper($f) !== 'FFFFFF') { if ($host === $p) $this->note('pborder'); }
         $num = null;
-        $numId = (string)$xp->evaluate('string(w:pPr/w:numPr/w:numId/@w:val)', $p);
+        $numId = (string)$xp->evaluate('string(w:pPr/w:numPr/w:numId/@w:val)', $host);
         if ($numId !== '' && $numId !== '0') {
-            $lvl = (int)$xp->evaluate('string(w:pPr/w:numPr/w:ilvl/@w:val)', $p);
+            $lvl = (int)$xp->evaluate('string(w:pPr/w:numPr/w:ilvl/@w:val)', $host);
             $num = ['lvl' => $lvl, 'fmt' => $this->numFmt[$numId][$lvl] ?? 'bullet', 'id' => $numId];
         }
         // הזחה: אצלנו בצעדים של חצי אינץ' (720 twip) מהצד שבו השורה מתחילה; ברשימה — ההזחה של המספור
-        $ind = $xp->query('w:pPr/w:ind', $p)->item(0);
+        $ind = $xp->query('w:pPr/w:ind', $host)->item(0);
         if ($ind instanceof DOMElement && !$num) {
             // שורה ראשונה / תלויה: אצלנו firstLine בנקודות (שלילי — תלויה); ב-Word start כולל את התלויה
             $hang = (int)$ind->getAttributeNS(W, 'hanging');
@@ -572,8 +576,20 @@ final class DocxCtx
             $start = $ind->getAttributeNS(W, 'start') ?: $ind->getAttributeNS(W, $bidi ? 'right' : 'left');
             if (is_numeric($start) && ($n = (int)round(((int)$start - max(0, $hang)) / 720)) > 0) $attrs['indent'] = min(8, $n);
         }
-        // שינויי עיצוב במעקב — לא נכנסים (תוספות ומחיקות — כן: סימוני ins / del)
-        $this->note('tracked', $xp->query('w:pPr/w:pPrChange', $p)->length);   // שינויי עיצוב של תווים (rPrChange) — כן נכנסים, כסימון fmt
+        return [$type, $attrs, $num];
+    }
+
+    private function para(DOMElement $p, DOMXPath $xp): array
+    {
+        [$type, $attrs, $num] = $this->pprParse($p, $xp, $p);
+        // שינוי עיצוב פסקה במעקב (w:pPrChange): attrs.pchg — מחבר, תאריך, והפסקה כפי שהייתה (כמו בעורך — track.js)
+        $chg = $xp->query('w:pPr/w:pPrChange', $p)->item(0);
+        if ($chg instanceof DOMElement) {
+            [$ot, $oa] = $this->pprParse($chg, $xp, $p);
+            $d = $chg->getAttributeNS(W, 'date');
+            $attrs['pchg'] = ['author' => mb_substr($chg->getAttributeNS(W, 'author'), 0, 120), 'date' => preg_match('/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d/', $d) ? substr($d, 0, 19) . 'Z' : '',
+                'old' => ['type' => $ot, 'attrs' => $oa]];
+        }
         // שדות — חוץ מ-HYPERLINK (קישור אמיתי), SEQ (כיתוב) ו-REF לכיתוב (הפניה צולבת)
         $known = fn($e) => 'starts-with(normalize-space(' . $e . '), "HYPERLINK") or starts-with(normalize-space(' . $e . '), "SEQ ") or starts-with(normalize-space(' . $e . '), "REF _Ref")';
         $this->note('fields', $xp->query('w:fldSimple|w:r/w:fldChar[@w:fldCharType="begin"]|w:hyperlink/w:r/w:fldChar[@w:fldCharType="begin"]', $p)->length
@@ -1195,7 +1211,6 @@ const IMPORT_REPORT = [
     'images' => ['תמונות שלא נטענו', 'הקובץ פגום או בפורמט שאינו נתמך'],
     'math' => ['נוסחאות', 'לא יובאו'],
     'nested' => ['טבלה בתוך טבלה', 'הטבלה הפנימית לא יובאה'],
-    'tracked' => ['שינויי עיצוב פסקה במעקב', 'התקבלו (תוספות, מחיקות ועיצוב תווים — יובאו עם המעקב)'],
     'fields' => ['שדות (תוכן עניינים, תאריך, הפניות)', 'יובאו כטקסט קבוע — לא יתעדכנו'],
     'hf_extra' => ['כותרת שונה לעמוד הראשון או לעמודים זוגיים', 'יובאה רק הכותרת הרגילה'],
     'hf_complex' => ['צורה, תמונה צפה או טבלה בתוך טבלה בכותרת עליונה / תחתונה', 'יובא רק הטקסט'],

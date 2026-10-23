@@ -710,9 +710,9 @@ final class Ooxml
         }
     }
 
-    private function para(array $n, ?string $style, array $num, bool $inList): string
+    /** מאפייני פסקה (תוכן w:pPr): סגנון, שבירה, מספור, עצירות, כיוון, ריווח, הזחה, יישור — בסדר של הסכמה של Word. */
+    private function pprXml(array $a, ?string $style, array $num, bool $inList): string
     {
-        $a = $n['attrs'] ?? [];
         $rtl = ($a['dir'] ?? 'rtl') !== 'ltr';
         $ppr = '';
         if ($style) $ppr .= '<w:pStyle w:val="' . $this->styleId($style) . '"/>';
@@ -741,6 +741,22 @@ final class Ooxml
         if ($start || $fl) $ppr .= '<w:ind w:start="' . $start . '"' . ($fl > 0 ? ' w:firstLine="' . $fl . '"' : ($fl < 0 ? ' w:hanging="' . -$fl . '"' : '')) . '/>';
         $jc = $this->jc($a['textAlign'] ?? null, $rtl);
         if ($jc) $ppr .= '<w:jc w:val="' . $jc . '"/>';
+        return $ppr;
+    }
+
+    private function para(array $n, ?string $style, array $num, bool $inList): string
+    {
+        $a = $n['attrs'] ?? [];
+        $ppr = $this->pprXml($a, $style, $num, $inList);
+        // שינוי עיצוב פסקה במעקב: w:pPrChange — האחרון ב-pPr, עם הפסקה כפי שהייתה (Word מציג "עוצב" ומאפשר לקבל / לדחות)
+        $old = $a['pchg']['old'] ?? null;
+        if (is_array($old) && in_array($old['type'] ?? '', ['paragraph', 'heading'], true) && $this->prefix === '') {
+            $oa = is_array($old['attrs'] ?? null) ? $old['attrs'] : [];
+            $os = block_style_key(['type' => $old['type'], 'attrs' => $oa], $this->page);
+            $date = preg_match('/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/', (string)($a['pchg']['date'] ?? '')) ? ' w:date="' . $a['pchg']['date'] . '"' : '';
+            $ppr .= '<w:pPrChange w:id="' . (++$this->bookmarkId) . '" w:author="' . xml(mb_substr((string)($a['pchg']['author'] ?? ''), 0, 120)) . '"' . $date . '><w:pPr>'
+                . $this->pprXml($oa, $os === 'normal' ? null : $os, $num, $inList) . '</w:pPr></w:pPrChange>';
+        }
         $runs = '';
         $anchors = '';
         $captions = '';

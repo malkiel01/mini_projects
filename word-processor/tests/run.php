@@ -1381,6 +1381,28 @@ check('Word הלוך וחזור: שינוי העיצוב חוזר — מחבר, 
 check('גרסת מבנה: שינוי עיצוב במעקב צריך 7 (גם בפסקה עם עצירות טאב)', doc_schema_need($fmDoc) === 7
     && doc_schema_need(['type' => 'doc', 'content' => [['type' => 'paragraph', 'attrs' => ['tabs' => [['pos' => 50]]], 'content' => $fmDoc['content'][0]['content']]]]) === 7);
 check('טקסט: שינוי עיצוב לא משנה את הטקסט', export_text($fmDoc) === 'עוצב רגיל');
+// שינוי עיצוב פסקה במעקב (pchg): עכשיו כותרת 2 ממורכזת, לפני כן פסקה רגילה עם הזחה — Word: pPrChange הלוך וחזור
+$pcDoc = ['type' => 'doc', 'attrs' => ['track' => true], 'content' => [
+    ['type' => 'heading', 'attrs' => ['level' => 2, 'textAlign' => 'center', 'pchg' => ['author' => 'דנה', 'date' => '2026-10-22T10:00:00Z',
+        'old' => ['type' => 'paragraph', 'attrs' => ['indent' => 1, 'spaceAfter' => 12]]]], 'content' => [['type' => 'text', 'text' => 'כותרת חדשה']]],
+    ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'רגילה']]]]];
+$pco = track_view($pcDoc, 'original')['content'][0];
+$pcf = track_view($pcDoc, 'final')['content'][0];
+check('track_view מקור: הפסקה כמו שהייתה (סוג ומאפיינים); סופי — הנוכחית; בשניהם בלי pchg', $pco['type'] === 'paragraph' && $pco['attrs'] === ['indent' => 1, 'spaceAfter' => 12]
+    && $pcf['type'] === 'heading' && !isset($pcf['attrs']['pchg']) && !isset(track_final($pcDoc)['content'][0]['attrs']['pchg']), json_encode([$pco, $pcf], JSON_UNESCAPED_UNICODE));
+file_put_contents("$tmp/pc.docx", export_docx($pcDoc, page_normalize([]), 'פסקה'));
+$zip->open("$tmp/pc.docx");
+$pcMain = (string)$zip->getFromName('word/document.xml');
+$zip->close();
+check('Word: w:pPrChange — האחרון ב-pPr, עם מחבר, תאריך והפסקה הקודמת (בלי סגנון הכותרת, עם ההזחה)', (bool)preg_match('#<w:pPr><w:pStyle w:val="Heading2"/>.*?<w:jc w:val="center"/><w:pPrChange w:id="\d+" w:author="דנה" w:date="2026-10-22T10:00:00Z"><w:pPr>(?:(?!pStyle).)*?<w:ind w:start="720"/>(?:(?!pStyle).)*?</w:pPr></w:pPrChange></w:pPr>#u', $pcMain),
+    substr($pcMain, strpos($pcMain, '<w:body>'), 500));
+$pcBack = import_docx(file_get_contents("$tmp/pc.docx"), 'pc');
+$pb = $pcBack['json']['content'][0];
+check('Word הלוך וחזור: שינוי עיצוב הפסקה חוזר — מחבר, תאריך, הפסקה הקודמת; בלי שורה בדוח', $pb['type'] === 'heading' && ($pb['attrs']['pchg']['author'] ?? '') === 'דנה'
+    && ($pb['attrs']['pchg']['date'] ?? '') === '2026-10-22T10:00:00Z' && ($pb['attrs']['pchg']['old']['type'] ?? '') === 'paragraph' && ($pb['attrs']['pchg']['old']['attrs']['indent'] ?? 0) === 1
+    && ($pb['attrs']['pchg']['old']['attrs']['spaceAfter'] ?? null) == 12 && empty($pcBack['json']['content'][1]['attrs']['pchg']) && !$pcBack['report'],
+    json_encode([$pb['attrs'], $pcBack['report']], JSON_UNESCAPED_UNICODE));
+check('גרסת מבנה: שינוי עיצוב פסקה צריך 10; גוף לשילוב — בלי pPrChange', doc_schema_need($pcDoc) === 10 && !str_contains(export_ooxml($pcDoc, page_normalize([]))['body'], 'pPrChange'));
 $trDocx = export_docx($trDoc, page_normalize([]), 'מעקב');
 file_put_contents("$tmp/tr.docx", $trDocx);
 $zip->open("$tmp/tr.docx");
