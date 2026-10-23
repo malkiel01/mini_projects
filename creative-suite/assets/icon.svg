@@ -1,1 +1,14 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="18" fill="#5b3fa0"/><rect x="14" y="16" width="26" height="32" rx="4" fill="#fff"/><circle cx="42" cy="38" r="11" fill="#f3b23c" opacity=".95"/><path d="M19 25h16M19 31h12M19 37h9" stroke="#5b3fa0" stroke-width="3" stroke-linecap="round"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- ארבעה חלקים שמתחברים: טקסט, רסטר, וקטורי, עימוד -->
+  <rect width="64" height="64" rx="18" fill="#5b3fa0"/>
+  <g stroke="#5b3fa0" stroke-width="2">
+    <path d="M10 10h20v7a3 3 0 0 1 0 6v7h-7a3 3 0 0 0-6 0h-7z" fill="#fff"/>
+    <path d="M34 10h20v20h-7a3 3 0 0 0-6 0h-7v-7a3 3 0 0 0 0-6z" fill="#f3b23c"/>
+    <path d="M10 34h7a3 3 0 0 1 6 0h7v7a3 3 0 0 0 0 6v7h-20z" fill="#7fd1c3"/>
+    <path d="M34 34h7a3 3 0 0 1 6 0h7v20h-20v-7a3 3 0 0 1 0-6z" fill="#f28b82"/>
+  </g>
+  <path d="M14 15h11M14 19h8M14 23h10" stroke="#5b3fa0" stroke-width="2" stroke-linecap="round"/>
+  <path d="M37 26l5-6 4 4 3-3 3 5z" fill="#5b3fa0"/>
+  <path d="M14 50c3-10 9-2 12-11" fill="none" stroke="#5b3fa0" stroke-width="2" stroke-linecap="round"/>
+  <path d="M38 38h6v12h-6zM46 38h5v5h-5zM46 45h5v5h-5z" fill="#5b3fa0"/>
+</svg>
