@@ -10,7 +10,7 @@ import {
 import { Toc } from './toc.js';
 import { Seq, Xref } from './caption.js';
 import { CommentMark } from './comments.js';
-import { InsMark, DelMark, FmtMark } from './track.js';
+import { InsMark, DelMark, FmtMark, authorColor as changeColor } from './track.js';
 
 const BLOCKS = ['paragraph', 'heading'];
 /** מפתח של סגנון שהמשתמש יצר (u1, u2…) — כמו USER_STYLE_RE ב-lib/page.php. */
@@ -136,6 +136,14 @@ export const ParagraphFormat = Extension.create({
                     default: null,
                     parseHTML: el => el.hasAttribute('data-break-before') || /always|page/.test(el.style.pageBreakBefore || el.style.breakBefore || '') || null,
                     renderHTML: a => a.breakBefore ? { 'data-break-before': '' } : {},
+                },
+                // שינוי עיצוב פסקה במעקב (כמו pPrChange ב-Word): מחבר, תאריך, והפסקה כפי שהייתה — { type, attrs } (track.js)
+                pchg: {
+                    default: null,
+                    keepOnSplit: false,
+                    parseHTML: el => { try { const v = JSON.parse(el.getAttribute('data-pchg') || 'null'); return v && typeof v === 'object' ? v : null; } catch { return null; } },
+                    renderHTML: a => a.pchg ? { class: 'wp-pchg', 'data-pchg': JSON.stringify(a.pchg), 'data-pchg-author': a.pchg.author || '', style: `--wpc:${changeColor(a.pchg.author)}`,
+                        title: `עיצוב פסקה — ${a.pchg.author || ''}` } : {},
                 },
             },
         }, {
@@ -873,8 +881,9 @@ export const LetterSpacing = Extension.create({
  * 7: שינויי עיצוב במעקב (סימון fmt).
  * 8: כותרת עליונה / תחתונה עשירה (header / footer כפסקאות בהגדרות העמוד).
  * 9: תמונה שמעוגנת לעמוד (attrs.anchor = 'page' — x, y מפינת העמוד).
+ * 10: שינוי עיצוב פסקה במעקב (attrs.pchg בפסקה / בכותרת).
  */
-export const SCHEMA_VERSION = 9;
+export const SCHEMA_VERSION = 10;
 
 /**
  * מאפיינים של המסמך עצמו (צומת השורש): הגדרות העמוד וגרסת המבנה.

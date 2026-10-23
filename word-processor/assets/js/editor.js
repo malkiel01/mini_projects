@@ -2038,7 +2038,8 @@ export function createWordEditor(root, opts) {
         dom.classList.toggle('wp-tv-original', trackView === 'original');
         // מחבר מוסתר: השינויים שלו כמו בתצוגה הסופית — התוספת טקסט רגיל, המחיקה לא מוצגת
         trackStyle.textContent = [...trackHide].map(a => `.wp-doc ins.wp-ins[data-author="${CSS.escape(a)}"]{text-decoration:none;color:inherit}`
-            + `.wp-doc del.wp-del[data-author="${CSS.escape(a)}"]{display:none}.wp-doc .wp-fmt[data-author="${CSS.escape(a)}"]{text-decoration:none}`).join('');
+            + `.wp-doc del.wp-del[data-author="${CSS.escape(a)}"]{display:none}.wp-doc .wp-fmt[data-author="${CSS.escape(a)}"]{text-decoration:none}`
+            + `.wp-doc .wp-pchg[data-pchg-author="${CSS.escape(a)}"]::after{display:none}`).join('');
         editor.storage.wpTabs?.measure?.();
         editor.storage.wpPages.schedule?.();
         refresh();

@@ -38,6 +38,29 @@ function track_visual(array $json): array
 }
 
 const TRACK_VIEWS = ['all', 'final', 'original'];
+
+/**
+ * שינויי עיצוב פסקה (attrs.pchg — כמו pPrChange ב-Word): $original — הפסקה חוזרת להיות כמו שהייתה (הסוג
+ * והמאפיינים מ-pchg.old); אחרת — העיצוב הנוכחי. בשני המקרים pchg יוצא (הפלט לא צריך אותו).
+ */
+function track_para(array $json, bool $original): array
+{
+    $walk = function (array $nodes) use (&$walk, $original) {
+        foreach ($nodes as &$n) {
+            if (!is_array($n)) continue;
+            $old = $n['attrs']['pchg']['old'] ?? null;
+            if (isset($n['attrs']['pchg'])) unset($n['attrs']['pchg']);
+            if ($original && is_array($old) && in_array($old['type'] ?? '', ['paragraph', 'heading'], true)) {
+                $n['type'] = $old['type'];
+                $n['attrs'] = is_array($old['attrs'] ?? null) ? array_diff_key($old['attrs'], ['pchg' => 1]) : [];
+            }
+            if (is_array($n['content'] ?? null)) $n['content'] = $walk($n['content']);
+        }
+        return $nodes;
+    };
+    if (is_array($json['content'] ?? null)) $json['content'] = $walk($json['content']);
+    return $json;
+}
 /** סימוני העיצוב שנרשמים במעקב (כמו FORMAT_MARKS ב-track.js). */
 const TRACK_FORMAT = ['bold', 'italic', 'underline', 'strike', 'textStyle', 'highlight', 'superscript', 'subscript'];
 
@@ -49,6 +72,7 @@ const TRACK_FORMAT = ['bold', 'italic', 'underline', 'strike', 'textStyle', 'hig
 function track_view(array $json, string $view = 'all', array $hide = []): array
 {
     $view = in_array($view, TRACK_VIEWS, true) ? $view : 'all';
+    $json = track_para($json, $view === 'original');
     return track_walk($json, function (array $n) use ($view, $hide) {
         $marks = $n['marks'] ?? [];
         foreach ($marks as $m) {
@@ -87,7 +111,7 @@ function track_view(array $json, string $view = 'all', array $hide = []): array
 /** המסמך אחרי קבלת כל השינויים: מה שנמחק — יוצא, מה שנוסף — טקסט רגיל. לטקסט פשוט. */
 function track_final(array $json): array
 {
-    return track_walk($json, function (array $n) {
+    return track_walk(track_para($json, false), function (array $n) {
         $types = array_column($n['marks'] ?? [], 'type');
         if (in_array('del', $types, true)) return null;
         $n['marks'] = array_values(array_filter($n['marks'], fn($m) => ($m['type'] ?? '') !== 'ins'));
