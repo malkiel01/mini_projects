@@ -93,6 +93,8 @@ try {
         case 'corr_decide':    ok(corrDecide($person, $in));
         case 'corr_direct':    ok(corrDirect($person, $in));
         case 'corr_history':   ok(corrHistory($person, $in));
+        case 'ot_rules_get':   ok(otRulesGet($person, $in));
+        case 'ot_rules_save':  ok(otRulesSave($person, $in));
         case 'steps_get':      ok(stepsGet($person, $in));
         case 'steps_save':     ok(stepsSave($person, $in));
         case 'period_view':    ok(periodView($person, $in));

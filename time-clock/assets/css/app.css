@@ -255,3 +255,4 @@ body.station { font-size: 18px; }
 }
 .approve-card { inline-size: 100%; text-align: start; border-color: var(--brand); background: var(--brand-soft); color: var(--ink); font: inherit; cursor: pointer; }
 .approve-card .btn { justify-self: start; margin-top: 4px; }
+.warn-box { background: color-mix(in srgb, var(--star) 14%, var(--surface)); border: 1px solid color-mix(in srgb, var(--star) 40%, transparent); border-radius: var(--r); padding: var(--s2) var(--s3); margin-bottom: var(--s3); font-size: .88rem; }
