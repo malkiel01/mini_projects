@@ -1275,9 +1275,13 @@ function export_docx(array $json, array $page, string $title = ''): string
     $evenOdd = !empty($page['even_odd']);
     $hfRefs = function (array $p, bool $first) use (&$files, &$hfRels, &$hfIds, $hf, $evenOdd): string {
         $nb = $p['numbering'];
-        $titlePg = $first && $nb['show'] && !$nb['first_page'];
+        // עמוד ראשון שונה (titlePg): במקטע עם first_diff — הכותרות לעמוד הראשון (המספר — כמו בשאר העמודים, חוץ מהעמוד
+        // הראשון של המסמך כשהמספור לא מוצג בו); בלי first_diff — רק כדי להסתיר את המספר בעמוד הראשון של המסמך
+        $fd = !empty($p['first_diff']);
+        $noFirstNum = $first && $nb['show'] && !$nb['first_page'];
+        $titlePg = $noFirstNum || $fd;
         $key = md5(json_encode([$p['header'], $p['footer'], $nb['show'], $nb['position'], $nb['align'], $nb['format'], $titlePg,
-            $evenOdd ? [$p['header_even'], $p['footer_even']] : null]));
+            $evenOdd ? [$p['header_even'], $p['footer_even']] : null, $fd ? [$p['header_first'], $p['footer_first'], $noFirstNum] : null]));
         if (!isset($hfIds[$key])) {
             $n = count($hfIds) + 1;
             $numTop = $nb['show'] && $nb['position'] === 'top';
@@ -1288,8 +1292,8 @@ function export_docx(array $json, array $page, string $title = ''): string
                 . '<Relationship Id="rIdF' . $n . '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer' . $n . '.xml"/>';
             $refs = '<w:headerReference w:type="default" r:id="rIdH' . $n . '"/><w:footerReference w:type="default" r:id="rIdF' . $n . '"/>';
             if ($titlePg) {
-                $files["word/header{$n}f.xml"] = $hf($p['header'], false, 'hdr', $nb);
-                $files["word/footer{$n}f.xml"] = $hf($p['footer'], false, 'ftr', $nb);
+                $files["word/header{$n}f.xml"] = $hf($fd ? $p['header_first'] : $p['header'], $fd && !$noFirstNum && $numTop, 'hdr', $nb);
+                $files["word/footer{$n}f.xml"] = $hf($fd ? $p['footer_first'] : $p['footer'], $fd && !$noFirstNum && $numBottom, 'ftr', $nb);
                 $hfRels .= '<Relationship Id="rIdH' . $n . 'f" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header' . $n . 'f.xml"/>'
                     . '<Relationship Id="rIdF' . $n . 'f" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer' . $n . 'f.xml"/>';
                 $refs .= '<w:headerReference w:type="first" r:id="rIdH' . $n . 'f"/><w:footerReference w:type="first" r:id="rIdF' . $n . 'f"/>';
@@ -1313,7 +1317,7 @@ function export_docx(array $json, array $page, string $title = ''): string
         $mg = $p['margins'];
         $nb = $p['numbering'];
         $first = $index === 0;
-        $titlePg = $first && $nb['show'] && !$nb['first_page'];
+        $titlePg = ($first && $nb['show'] && !$nb['first_page']) || !empty($p['first_diff']);
         // התחלת המספור: במקטע הראשון — של המסמך; במקטע עם num_restart — מחדש
         $start = $first ? (int)$page['numbering']['start'] : (!empty($p['num_restart']) ? (int)$p['num_start'] : null);
         $pgNum = '<w:pgNumType' . ($nb['format'] === 'hebrew' ? ' w:fmt="hebrew1"' : '') . ($start !== null ? ' w:start="' . $start . '"' : '') . '/>';

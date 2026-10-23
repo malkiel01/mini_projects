@@ -12,6 +12,9 @@ const USER_STYLE_RE = '/^u[1-9]\d{0,2}$/';
 const USER_STYLES_MAX = 60;
 /** סוגי קו תחתון (underline.attrs.ul) — מעבר ל"רגיל". */
 const UNDERLINES = ['double', 'dotted', 'dashed', 'wavy', 'thick'];
+/** כל הכותרות שבהגדרות העמוד: רגילה, לעמוד זוגי ולעמוד הראשון של המקטע. */
+const PAGE_HF_KEYS = ['header', 'footer', 'header_even', 'footer_even', 'header_first', 'footer_first'];
+
 /** עצירות טאב: כל חצי אינץ' (36 נק'), כמו ברירת המחדל של Word ו-tab-size בעורך. */
 const TAB_STOP = 36.0;
 const FONTS = ['Arial', 'David', 'Frank Ruehl', 'Narkisim', 'Miriam', 'Times New Roman', 'Calibri', 'Tahoma',
@@ -42,6 +45,8 @@ function page_defaults(): array
         'header' => '', 'footer' => '', 'heading_numbers' => false,
         // זוגי / אי-זוגי שונים (כמו ב-Word — לכל המסמך): בעמוד זוגי (לפי מספר העמוד) — header_even / footer_even של המקטע
         'even_odd' => false, 'header_even' => '', 'footer_even' => '',
+        // עמוד ראשון שונה (של המקטע, כמו titlePg ב-Word): בעמוד הראשון של המקטע — header_first / footer_first
+        'first_diff' => false, 'header_first' => '', 'footer_first' => '',
         // מקטע שמתחיל את מספור העמודים מחדש (num_start); לא עובר בירושה למקטע הבא (page_section)
         'num_restart' => false, 'num_start' => 1,
         // רקע הדף (כל המסמך): צבע עמוד, וסימן מים — טקסט באלכסון מאחורי הטקסט
@@ -114,11 +119,11 @@ function page_normalize($in, ?array $base = null): array
         if (isset($n['first_page'])) $p['numbering']['first_page'] = (bool)$n['first_page'];
     }
     // כותרת: טקסט פשוט, או עשירה — רשימת פסקאות (hf_rich_val); עשירה ריקה — כמו בלי כותרת
-    foreach (['header', 'footer', 'header_even', 'footer_even'] as $k) {
+    foreach (PAGE_HF_KEYS as $k) {
         if (is_string($in[$k] ?? null)) $p[$k] = mb_substr(str_replace(["\r", "\0"], '', $in[$k]), 0, 500);
         elseif (is_array($in[$k] ?? null)) $p[$k] = hf_rich_val($in[$k]) ?: '';
     }
-    foreach (['even_odd', 'num_restart'] as $k) if (isset($in[$k])) $p[$k] = (bool)$in[$k];
+    foreach (['even_odd', 'num_restart', 'first_diff'] as $k) if (isset($in[$k])) $p[$k] = (bool)$in[$k];
     if (($v = $num($in['num_start'] ?? null, 0, 9999)) !== null) $p['num_start'] = (int)$v;
     if (isset($in['heading_numbers'])) $p['heading_numbers'] = (bool)$in['heading_numbers'];
     if (array_key_exists('page_color', $in)) {

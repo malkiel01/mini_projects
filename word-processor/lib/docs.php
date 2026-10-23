@@ -69,7 +69,7 @@ function doc_migrate(array $json): array
  */
 function doc_schema_need(array $json, ?array $page = null): int
 {
-    $hfRich = fn($p) => is_array($p) && (bool)array_filter(['header', 'footer', 'header_even', 'footer_even'], fn($k) => is_array($p[$k] ?? null) && $p[$k]);
+    $hfRich = fn($p) => is_array($p) && (bool)array_filter(PAGE_HF_KEYS, fn($k) => is_array($p[$k] ?? null) && $p[$k]);
     $need = !empty($json['attrs']['track']) ? 4 : (empty($json['attrs']['comments']) ? 0 : 3);
     if ($hfRich($page) || $hfRich($json['attrs']['page'] ?? null)) $need = 8;   // ממשיכים לתוכן — בו יכולה להיות תמונה מעוגנת (9)
     $walk = function (array $nodes) use (&$walk, &$need, $hfRich) {
@@ -248,7 +248,7 @@ function doc_copy(array $row, string $space, string $title, array $replace, stri
     // תמונות בכותרות העשירות (בהגדרות העמוד) — עותק למסמך החדש, כמו בגוף
     $page = doc_page($row);
     $hfImg = false;
-    foreach (['header', 'footer', 'header_even', 'footer_even'] as $k) {
+    foreach (PAGE_HF_KEYS as $k) {
         if (!is_array($page[$k])) continue;
         foreach ($page[$k] as &$b) if (is_array($b['content'] ?? null)) foreach ($b['content'] as &$x) {
             if (($x['type'] ?? '') !== 'image' || empty($x['attrs']['media'])) continue;
