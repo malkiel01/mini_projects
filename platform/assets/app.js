@@ -453,10 +453,14 @@ function appIcon(app) {
 }
 
 // אייקון מצויר (icon_svg ב-app.json) במקום האמוג'י. לא נטען (רשת, השער) — האמוג'י נשאר.
+// תמונה (png/webp) באה עם רקע משלה — ממלאת את כל האריח (full).
 function svgIcon(ic, app) {
     if (!app.icon_svg) return;
     const img = el('img', { src: app.icon_svg, alt: '', className: 'app-ic-img', decoding: 'async' });
-    img.addEventListener('load', () => ic.replaceChildren(img), { once: true });
+    img.addEventListener('load', () => {
+        ic.replaceChildren(img);
+        if (!/\.svg$/i.test(app.icon_svg)) ic.classList.add('full');
+    }, { once: true });
 }
 
 // אפליקציה עם כניסה אחת — קישור. עם כמה כניסות, או עם התקנה/הורדה — גיליון בחירה.
