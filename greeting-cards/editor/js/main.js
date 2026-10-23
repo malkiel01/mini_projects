@@ -1,5 +1,6 @@
 // העורך החדש: מסך הבית (העיצובים שלי) ומסך העריכה. ‏spec/03-editor.md.
 
+import { log, logDump } from './log.js';
 import { h, $, toast, sheet, closeSheet, isSheetOpen, confirmDialog, field, rangeField, seg, colorField, toggle, pickFiles, download, timeAgo } from './ui.js';
 import { SIZES, newDoc, textLayer, shapeLayer, imageLayer, backgroundLayer, iconLayer, elementLayer, layerLabel, uid, clone, normalizeDoc } from './doc.js';
 import { ICONS, ICON_GROUPS } from './icons.js';
@@ -14,6 +15,9 @@ import { ingestImage, importFromChat, blobToImage, canvasToBlob, exportPdf, expo
 import * as sync from './sync.js';
 import { loadScript } from './io.js';
 import { docVariables, readSheetFile, readPasted, readPhoneContacts, guessColumns, normalizePhone, fileNames, fillText } from './merge.js';
+
+// הגרסה — מופיעה ביומן, כדי לדעת איזה קוד רץ בטלפון.
+const BUILD = '2026-10-23.touch-1';
 
 const app = $('#app');
 let ed = null;   // העיצוב הפתוח: { id, doc, history, canvas, dirty }
@@ -299,6 +303,7 @@ async function openDesign(id, preloaded, entry) {
         if (img) ed.canvas.setImage(aid, img);
     }
     await ensureDocFonts(ed.doc);
+    log('open', { w: ed.doc.page.width, h: ed.doc.page.height, layers: ed.doc.layers.length, sw: innerWidth, sh: innerHeight });
     ed.canvas.setDoc(ed.doc, { fit: true });
     history.reset(ed.doc);
     renderCtx();
@@ -314,17 +319,21 @@ function navBtn(icon, label, onclick) {
 /** סוף פעולה: רושם בהיסטוריה, מצייר ושומר. */
 function commit() {
     ed.canvas.render();
-    if (ed.history.commit(ed.doc)) scheduleSave();
+    const changed = ed.history.commit(ed.doc);
+    log('commit', { changed: changed ? 1 : 0, sel: ed.selection.join(',') || '-' });
+    if (changed) scheduleSave();
     renderCtx();
 }
 
 function undo() {
     const d = ed?.history.undo();
+    log('undo', { ok: d ? 1 : 0 });
     if (d) { ed.doc = d; ed.canvas.setDoc(d); ed.canvas.select(ed.selection); scheduleSave(); }
 }
 
 function redo() {
     const d = ed?.history.redo();
+    log('redo', { ok: d ? 1 : 0 });
     if (d) { ed.doc = d; ed.canvas.setDoc(d); ed.canvas.select(ed.selection); scheduleSave(); }
 }
 
@@ -1080,7 +1089,28 @@ function moreSheet() {
     sheet('עוד', h('div', { class: 'menu' },
         h('button', { class: 'menu-item', onclick: pageSizeSheet }, '📐 גודל הדף'),
         h('button', { class: 'menu-item', onclick: skillSheet }, '🤖 סקיל לצ\'אט'),
-        h('button', { class: 'menu-item', onclick: () => { closeSheet(); importSheet(); } }, '📥 ייבוא מהצ\'אט (עיצוב חדש)')));
+        h('button', { class: 'menu-item', onclick: () => { closeSheet(); importSheet(); } }, '📥 ייבוא מהצ\'אט (עיצוב חדש)'),
+        h('button', { class: 'menu-item', onclick: sendLog }, '🐞 שליחת יומן לבדיקה')));
+}
+
+/**
+ * היומן (js/log.js) נשלח לשרת, והמשתמש מקבל קוד קצר להעביר לקלוד. ביומן אין טקסטים ואין תמונות —
+ * רק נגיעות, בחירות, גדלים וזום.
+ */
+async function sendLog() {
+    closeSheet();
+    const v = ed?.canvas.view;
+    const dump = logDump({ build: BUILD, page: ed ? `${ed.doc.page.width}x${ed.doc.page.height}` : '-', layers: ed?.doc.layers.length ?? 0,
+        zoom: v ? Math.round(v.zoom * 1000) / 1000 : 0, apk: !!window.GreetingCardsAndroid });
+    try {
+        const r = await sync.sendLog(dump);
+        sheet('היומן נשלח', h('div', {},
+            h('p', {}, 'שלחו לקלוד את הקוד:'),
+            h('p', { class: 'log-code', dir: 'ltr' }, r.id),
+            h('div', { class: 'row-actions' },
+                h('button', { class: 'btn primary', onclick: async () => { try { await navigator.clipboard.writeText(r.id); toast('הקוד הועתק'); } catch { toast('לא הצלחתי להעתיק — העתיקו ידנית', 'error'); } } }, '📋 העתקת הקוד')),
+            h('p', { class: 'hint' }, `${dump.rows.length} רשומות: נגיעות, בחירות, גדלים וזום — בלי טקסטים ובלי תמונות.`)));
+    } catch (e) { toast('השליחה נכשלה: ' + e.message, 'error'); }
 }
 
 // ─── נמענים: כרטיס לכל שורה ───────────────────────────────────────────────

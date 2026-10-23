@@ -33,6 +33,11 @@ async function call(action, { method = 'GET', json, form, query = '' } = {}) {
     return data;
 }
 
+/** יומן אבחון לשרת. מחזיר {id} — הקוד שהמשתמש מעביר הלאה. */
+export function sendLog(dump) {
+    return call('log_put', { method: 'POST', json: dump });
+}
+
 // ─── משתמש ────────────────────────────────────────────────────────────────
 
 const USER_KEY = 'gc-studio-user';
