@@ -173,6 +173,7 @@ function absItem(a, actions = '', who = false) {
       <div class="l2">${absText(a)}</div>
       ${a.balance ? `<div class="l2">יתרת ${a.balance.name}: ${fmtD(a.balance.now)} ← <b${a.balance.after < 0 ? ' style="color:var(--danger)"' : ''}>${fmtD(a.balance.after)}</b></div>` : ''}
       ${a.note || a.decision_note ? `<div class="l2">${a.note ? escM(a.note) : ''}${a.note && a.decision_note ? ' · ' : ''}${a.decision_note ? '↩ ' + escM(a.decision_note) : ''}</div>` : ''}</div>
+    ${a.certs ? `<span class="chip ok" title="אישור">📎 ${a.certs}</span>` : a.cert_shown ? '<span class="chip">📎 הוצג</span>' : ''}
     ${who ? '' : `<span class="chip ${ASTATUS[a.status][0]}">${ASTATUS[a.status][1]}</span>`}${actions}</li>`;
 }
 
@@ -189,7 +190,8 @@ function absenceForm(types, unit, today) {
       <label><input type="radio" name="part" value="${v}"${i ? '' : ' checked'}><span>${l}</span></label>`).join('')}</fieldset></div>` : ''}
     ${unit === 'hours' ? `<div class="fields two" id="hours-f" style="margin-top:12px" hidden><label class="f"><span>כמה שעות ביום</span><input name="hours" dir="ltr" inputmode="numeric" placeholder="2:00"></label></div>` : ''}
     <label class="f" style="margin-top:12px"><span>הערה</span><input name="note" maxlength="200" placeholder="לא חובה"></label>
-    <p class="hint" id="sick-hint" hidden>🤒 על מחלה מדווחים ביום עצמו או אחריו. את האישור הרפואי מעבירים למנהל.</p>
+    <div id="sick-hint" hidden><p class="hint">🤒 על מחלה מדווחים ביום עצמו או אחריו.</p>
+      <label class="f" style="margin-top:8px"><span>📷 אישור מחלה (לא חובה — אפשר גם אחר כך)</span><input type="file" name="cert" accept="image/*,application/pdf"></label></div>
     <p class="hint">רק ימי עבודה נספרים — לא יום מנוחה ולא חג.</p>
     <p class="error" role="alert" hidden></p>`;
 }
@@ -214,4 +216,94 @@ function absenceBody(form) {
     body.minutes = +m[1] * 60 + +(m[2] || 0);
   }
   return body;
+}
+
+/* ===== אישורים להיעדרות (שלב 3) — משותף לעובד (emp_cert_*) ולבעלים / שכר (abs_cert_*) ===== */
+
+/** תמונה מהמצלמה — מקטינים לפני ההעלאה (צילום טלפון עובר בקלות 5MB). PDF עולה כמו שהוא. */
+async function shrinkImage(file) {
+  if (!/^image\/(jpeg|png|webp|heic|heif)$/.test(file.type) || file.size < 900 * 1024) return file;
+  try {
+    const bmp = await createImageBitmap(file);
+    // עד ~1.5MB: יש שרתים שמגבילים העלאה ל-2MB. קודם גודל וחדות סבירים לקריאה, ואם צריך — פחות.
+    let blob = null;
+    for (const [px, q] of [[2200, 0.85], [1800, 0.75], [1400, 0.7], [1100, 0.6]]) {
+      const k = Math.min(1, px / Math.max(bmp.width, bmp.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+      c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+      blob = await new Promise(r => c.toBlob(r, 'image/jpeg', q));
+      if (blob && blob.size <= 1.5 * 1024 * 1024) break;
+    }
+    return blob && blob.size < file.size ? new File([blob], 'cert.jpg', { type: 'image/jpeg' }) : file;
+  } catch { return file; }
+}
+
+/** קריאה לפעולת אישור: JSON, או קובץ (Blob) כשהתשובה אינה JSON. */
+async function certCall(base, action, body, file = null) {
+  let init;
+  if (file) {
+    const fd = new FormData();
+    for (const [k, v] of Object.entries(body)) fd.append(k, v);
+    fd.append('file', file);
+    init = { method: 'POST', body: fd, credentials: 'same-origin' };
+  } else init = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), credentials: 'same-origin' };
+  const res = await fetch(base + '?action=' + action, init);
+  if (!(res.headers.get('Content-Type') || '').includes('json')) { if (!res.ok) throw new Error('שגיאת תקשורת'); return res.blob(); }
+  const data = await res.json().catch(() => null);
+  if (!data || !data.success) throw new Error(data?.error || (res.status === 413 ? 'הקובץ גדול מדי — עד 5MB' : 'שגיאת תקשורת'));
+  return data;
+}
+
+async function uploadCert(base, prefix, params, file) {
+  if (!file) return;
+  const f = await shrinkImage(file);
+  if (f.size > 5 * 1024 * 1024) throw new Error('הקובץ גדול מדי — עד 5MB');
+  return certCall(base, prefix + '_upload', params, f);
+}
+
+/**
+ * גיליון האישורים של היעדרות: הקבצים, צפייה, הוספה ומחיקה.
+ * o: { base, prefix ('emp_cert' | 'abs_cert'), params, title, show(title, html), canAdd, askReason, after() }
+ */
+async function certSheet(o) {
+  let r;
+  try { r = await certCall(o.base, o.prefix + '_list', o.params); } catch (e) { alert(e.message); return; }
+  const kb = n => n > 1048576 ? (n / 1048576).toFixed(1) + 'MB' : Math.max(1, Math.round(n / 1024)) + 'KB';
+  const GONE = { retention: 'נמחק בתום משך השמירה', manual: 'נמחק', employee: 'נמחק' };
+  o.show(o.title, `
+    <p class="hint">🔒 מידע רפואי. רואים את הקובץ רק העובד, הבעלים ומנהלת השכר; מנהלים רואים רק שהוצג אישור.</p>
+    <ul class="list" id="cert-list">${r.certs.length ? r.certs.map((c, i) => `
+      <li class="card"><span class="avatar" style="--h:220" aria-hidden="true">${c.mime === 'application/pdf' ? '📄' : '🖼️'}</span>
+        <div class="body"><div class="l1"><span>אישור ${i + 1}</span><span class="t">${dHe(c.created_at)}</span></div>
+          <div class="l2">${c.deleted_at ? GONE[c.delete_reason] ?? 'נמחק' : kb(c.size) + (c.by === 'employee' ? ' · הועלה מהעובד' : c.by ? ' · ' + escM(c.by) : '')}</div></div>
+        ${c.deleted_at ? '' : `<button class="icon-btn" type="button" data-view="${c.id}" aria-label="צפייה">👁️</button>
+          ${r.can_delete && (o.prefix === 'abs_cert' || c.by === 'employee') ? `<button class="icon-btn" type="button" data-del="${c.id}" aria-label="מחיקה">🗑️</button>` : ''}`}
+      </li>`).join('') : '<li class="empty">עוד אין אישור.</li>'}</ul>
+    <div id="cert-view" style="margin-top:12px"></div>
+    ${o.canAdd ? `<label class="btn" style="margin-top:12px;width:100%">📷 צילום או קובץ<input type="file" id="cert-file" accept="image/*,application/pdf" hidden></label>
+      <p class="hint">תמונה (JPG, PNG) או PDF, עד 5MB. תמונה גדולה מוקטנת לפני ההעלאה.</p>` : ''}
+    <p class="error" role="alert" hidden></p>`);
+  const body = document.getElementById('sheet-body'), err = body.querySelector('.error');
+  const fail = m => { err.textContent = m; err.hidden = false; };
+  body.querySelector('#cert-file')?.addEventListener('change', async e => {
+    const f = e.target.files[0]; if (!f) return;
+    try { await uploadCert(o.base, o.prefix, o.params, f); o.after?.(); certSheet(o); } catch (ex) { fail(ex.message); }
+  });
+  body.querySelector('#cert-list').addEventListener('click', async e => {
+    const v = e.target.closest('[data-view]'), d = e.target.closest('[data-del]');
+    if (v) {
+      try {
+        const blob = await certCall(o.base, o.prefix + '_file', { ...o.params, id: +v.dataset.view });
+        const url = URL.createObjectURL(blob), box = body.querySelector('#cert-view');
+        box.innerHTML = blob.type.startsWith('image/') ? `<img src="${url}" alt="האישור" style="max-width:100%;border-radius:var(--r);border:1px solid var(--line)">`
+          : `<a class="btn primary" href="${url}" target="_blank" rel="noopener" style="width:100%">📄 פתיחת ה-PDF</a>`;
+      } catch (ex) { fail(ex.message); }
+    } else if (d) {
+      const reason = o.askReason ? prompt('למה למחוק? (נרשם ביומן)') : '';
+      if (o.askReason && !reason) return;
+      if (!o.askReason && !confirm('למחוק את הקובץ?')) return;
+      try { await certCall(o.base, o.prefix + '_delete', { ...o.params, id: +d.dataset.del, reason }); o.after?.(); certSheet(o); } catch (ex) { fail(ex.message); }
+    }
+  });
 }

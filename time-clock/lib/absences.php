@@ -21,7 +21,7 @@ const ABS_BUILTIN = [
 ];
 const ABS_UNITS = ['day', 'half', 'hours'];
 // vacation_table: law | extension (שבוע של 5 ימים; ב-6 ימים — החוק). sick_monthly / sick_max — בימים.
-const ABS_DEFAULTS = ['unit' => 'half', 'vacation_table' => 'extension', 'sick_monthly' => 1.5, 'sick_max' => 90];
+const ABS_DEFAULTS = ['unit' => 'half', 'vacation_table' => 'extension', 'sick_monthly' => 1.5, 'sick_max' => 90, 'cert_years' => 7];
 const ABS_MAX_DAYS = 92;
 
 /* ===== הגדרות וסוגים ===== */
@@ -50,6 +50,7 @@ function absTypes(int $companyId, bool $all = false): array {
 function absSettingsGet(array $person, array $in): array {
     $companyId = intIn($in, 'company_id');
     $me = requireMember($person, $companyId, MANAGE_ROLES);
+    if (function_exists('certPurge')) certPurge($companyId);   // משך השמירה של האישורים
     return ['settings' => absSettings($companyId), 'types' => array_values(absTypes($companyId, true)), 'can_edit' => $me['role'] === 'owner'];
 }
 
@@ -66,7 +67,7 @@ function absSettingsSave(array $person, array $in): array {
         $s['vacation_table'] = str($in, 'vacation_table', 10);
         if (!in_array($s['vacation_table'], ['law', 'extension'], true)) throw new AppError('טבלת חופשה לא מוכרת');
     }
-    foreach (['sick_monthly' => [0, 5], 'sick_max' => [0, 365]] as $k => [$lo, $hi]) {
+    foreach (['sick_monthly' => [0, 5], 'sick_max' => [0, 365], 'cert_years' => [1, 50]] as $k => [$lo, $hi]) {
         if (!array_key_exists($k, $in)) continue;
         if (!is_numeric($in[$k]) || $in[$k] < $lo || $in[$k] > $hi) throw new AppError("ערך לא תקין: $k");
         $s[$k] = round((float) $in[$k], 2);
@@ -217,7 +218,9 @@ function absDays(array $a): float {
 
 /** רשימת היעדרויות, עם מי, מה, כמה ימי עבודה, ומה הוחלט. */
 function absencesOf(string $where, array $args): array {
-    $st = db()->prepare("SELECT a.*, pe.name, m.site_id, m.company_id, m.religion, rp.name AS by_name
+    $st = db()->prepare("SELECT a.*, pe.name, m.site_id, m.company_id, m.religion, rp.name AS by_name,
+        (SELECT COUNT(*) FROM absence_certs c WHERE c.absence_id = a.id AND c.deleted_at IS NULL) AS certs,
+        (SELECT COUNT(*) FROM absence_certs c WHERE c.absence_id = a.id) AS certs_ever
         FROM absences a JOIN members m ON m.id = a.member_id JOIN people pe ON pe.id = m.person_id
         LEFT JOIN people rp ON rp.id = a.by_person
         WHERE $where ORDER BY a.from_date DESC, a.id DESC LIMIT 200");
@@ -231,7 +234,8 @@ function absencesOf(string $where, array $args): array {
                 'site_id' => $a['site_id'] === null ? null : (int) $a['site_id'], 'type' => $a['type'], 'type_name' => $t['name'], 'icon' => $t['icon'],
                 'from' => $a['from_date'], 'to' => $a['to_date'], 'part' => $a['part'], 'minutes' => $a['minutes'] === null ? null : (int) $a['minutes'],
                 'note' => $a['note'], 'status' => $a['status'], 'by' => $a['by_member'] !== null ? 'employee' : 'manager', 'by_name' => $a['by_name'],
-                'decision_note' => $a['decision_note'], 'created_at' => $a['created_at'], 'decided_at' => $a['decided_at']] + $span;
+                'decision_note' => $a['decision_note'], 'created_at' => $a['created_at'], 'decided_at' => $a['decided_at'],
+                'certs' => (int) $a['certs'], 'cert_shown' => $a['certs_ever'] > 0] + $span;
     }, $st->fetchAll());
 }
 
@@ -282,7 +286,7 @@ function absList(array $person, array $in): array {
         $a['balance'] = ['kind' => $kind, 'name' => BAL_KINDS[$kind], 'now' => $b['balance'], 'after' => round($b['balance'] - $b['planned'] - absDays($a), 2)];
     }
     unset($a);
-    return ['absences' => $list, 'can_decide' => in_array($me['role'], CORR_EDIT, true)];
+    return ['absences' => $list, 'can_decide' => in_array($me['role'], CORR_EDIT, true), 'can_certs' => in_array($me['role'], CERT_VIEW, true)];
 }
 
 /** היעדרות אחת בתחום של המנהל. */
@@ -347,7 +351,8 @@ function absHistory(array $person, array $in): array {
     $e = empRow($companyId, intIn($in, 'member_id'), $site);
     return ['absences' => absencesOf('a.member_id = ?', [$e['id']]), 'types' => array_values(absTypes($companyId)),
             'balances' => balancesToday((int) $e['id']), 'openings' => openingHistory((int) $e['id']),
-            'unit' => absSettings($companyId)['unit'], 'can_edit' => in_array($me['role'], CORR_EDIT, true) && $e['status'] === 'active'];
+            'unit' => absSettings($companyId)['unit'], 'can_edit' => in_array($me['role'], CORR_EDIT, true) && $e['status'] === 'active',
+            'can_certs' => in_array($me['role'], CERT_VIEW, true)];
 }
 
 require_once __DIR__ . '/corrections.php';   // CORR_EDIT, guardLocked, revokeAfterCorrection

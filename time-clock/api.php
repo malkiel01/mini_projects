@@ -43,6 +43,19 @@ function rollBack(): void {
 $raw = file_get_contents('php://input');
 $in = is_string($raw) && $raw !== '' ? (json_decode($raw, true) ?: []) : [];
 if (!is_array($in)) $in = [];
+// העלאת קובץ (אישור להיעדרות) — multipart: השדות ב-$_POST, הקובץ ב-$_FILES['file']
+if (!$in && $_POST) $in = $_POST;
+$upload = is_array($_FILES['file'] ?? null) ? $_FILES['file'] : ['error' => UPLOAD_ERR_NO_FILE];
+
+/** שליחת קובץ אישור — מידע רפואי: בלי מטמון, ולא כדף שמריץ משהו. */
+function sendFile(array $f): never {
+    header('Content-Type: ' . $f['mime']);
+    header('Content-Length: ' . filesize($f['path']));
+    header('Content-Disposition: inline; filename="' . $f['name'] . '"');
+    header("Content-Security-Policy: default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; sandbox");
+    readfile($f['path']);
+    exit;
+}
 $action = $_GET['action'] ?? (is_string($in['action'] ?? null) ? $in['action'] : '');
 
 try {
@@ -62,6 +75,10 @@ try {
         case 'emp_absences':    ok(empAbsences($in));
         case 'emp_absence_request': ok(empAbsenceRequest($in));
         case 'emp_absence_cancel':  ok(empAbsenceCancel($in));
+        case 'emp_cert_upload': ok(empCertUpload($in, $upload));
+        case 'emp_cert_list':   ok(empCertList($in));
+        case 'emp_cert_file':   sendFile(empCertFile($in));
+        case 'emp_cert_delete': ok(empCertDelete($in));
         case 'station_pair':    writeStationCookie(stationPair($in)); ok(stationState());
         case 'station_state':   ok(stationState());
         case 'station_check':   ok(stationCheck($in));
@@ -103,6 +120,10 @@ try {
         case 'abs_void':       ok(absVoid($person, $in));
         case 'abs_history':    ok(absHistory($person, $in));
         case 'abs_opening_save': ok(absOpeningSave($person, $in));
+        case 'abs_cert_upload': ok(absCertUpload($person, $in, $upload));
+        case 'abs_cert_list':   ok(absCertList($person, $in));
+        case 'abs_cert_file':   sendFile(absCertFile($person, $in));
+        case 'abs_cert_delete': ok(absCertDelete($person, $in));
         case 'abs_settings_get':  ok(absSettingsGet($person, $in));
         case 'abs_settings_save': ok(absSettingsSave($person, $in));
         case 'abs_type_save':  ok(absTypeSave($person, $in));
