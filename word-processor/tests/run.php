@@ -1198,6 +1198,42 @@ check('גרסת מבנה: כותרת עשירה (במסמך או במעבר מק
     && doc_schema_need(['type' => 'doc', 'content' => [['type' => 'sectionBreak', 'attrs' => ['page' => ['footer' => $rhHdr]]]]]) === 8);
 check('שכפול מסמך: גם התמונה שבכותרת מועתקת למסמך החדש', $cm !== '' && $cm !== $rhImg['id'] && media_row($cm), $cm);
 
+// טבלה בכותרת: סמליל בצד אחד, פרטים בצד השני — ניקוי, PDF, Word הלוך וחזור
+$thCell = fn(array $content, array $attrs = []) => ['type' => 'tableCell', 'attrs' => $attrs + ['colspan' => 1, 'rowspan' => 1, 'onclick' => 'x'], 'content' => $content];
+$thHdr = [['type' => 'table', 'attrs' => ['borders' => 'none', 'evil' => 1], 'content' => [['type' => 'tableRow', 'content' => [
+    $thCell([['type' => 'paragraph', 'content' => [['type' => 'image', 'attrs' => ['media' => $rhImg['id'], 'width' => 40, 'height' => 20]]]]]),
+    $thCell([['type' => 'paragraph', 'attrs' => ['textAlign' => 'left'], 'content' => [['type' => 'text', 'text' => 'LEFTCELL', 'marks' => [['type' => 'bold']]]]],
+        ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'SECONDLINE']]], ['type' => 'table']], ['valign' => 'middle', 'background' => '#EEEEEE']),
+]]]]];
+$th = page_normalize(['header' => $thHdr])['header'];
+$thC = $th[0]['content'][0]['content'] ?? [];
+check('hf_rich_val: טבלה בכותרת — גבולות, תאים עם פסקאות ותמונה, בלי מאפיינים זרים ובלי טבלה בתוך תא', ($th[0]['type'] ?? '') === 'table' && ($th[0]['attrs'] ?? null) === ['borders' => 'none']
+    && count($thC) === 2 && ($thC[0]['content'][0]['content'][0]['type'] ?? '') === 'image' && count($thC[1]['content']) === 2 && !isset($thC[1]['attrs']['onclick'])
+    && ($thC[1]['attrs']['valign'] ?? '') === 'middle' && ($thC[1]['attrs']['background'] ?? '') === '#eeeeee' && hf_text($th) === "\tLEFTCELL SECONDLINE",
+    json_encode($th, JSON_UNESCAPED_UNICODE));
+if (trim((string)shell_exec('command -v pdftotext'))) {
+    file_put_contents("$tmp/th.pdf", export_pdf($rhDoc, page_normalize(['header' => $thHdr]), 'טבלה'));
+    $thTxt = (string)shell_exec('pdftotext -bbox ' . escapeshellarg("$tmp/th.pdf") . ' - 2>&1');
+    $thY = fn($w) => preg_match('/yMin="([\d.]+)"[^>]*>' . $w . '</', $thTxt, $m) ? (float)$m[1] : null;
+    $thX = fn($w) => preg_match('/xMin="([\d.]+)"[^>]*>' . $w . '</', $thTxt, $m) ? (float)$m[1] : null;
+    // בראש הדף (בשוליים העליונים), בתא השמאלי (שני — בטבלה מימין לשמאל), השורה השנייה מתחת לראשונה
+    check('PDF: טבלה בכותרת — הטקסט בשוליים העליונים, בתא השמאלי, שתי שורות; התמונה מצוירת', $thY('LEFTCELL') !== null && $thY('LEFTCELL') < 70 && $thX('LEFTCELL') < 297
+        && $thY('SECONDLINE') > $thY('LEFTCELL') && str_contains(gzuncompress_pages(file_get_contents("$tmp/th.pdf")), ' Do'),
+        json_encode([$thY('LEFTCELL'), $thX('LEFTCELL'), $thY('SECONDLINE')]));
+}
+$thDocx = export_docx($rhDoc, page_normalize(['header' => $thHdr]), 'טבלה');
+file_put_contents("$tmp/th.docx", $thDocx);
+$zip->open("$tmp/th.docx");
+$thX1 = (string)$zip->getFromName('word/header1.xml');
+$zip->close();
+check('Word: טבלה בחלק הכותרת (w:tbl עם התמונה והטקסט)', str_contains($thX1, '<w:tbl>') && str_contains($thX1, 'LEFTCELL') && str_contains($thX1, '<w:drawing>'), substr($thX1, 0, 300));
+$thBack = import_docx($thDocx, $rhDocId);
+$tb = $thBack['page']['header'][0] ?? null;
+check('Word הלוך וחזור: הטבלה בכותרת חוזרת — שני תאים, התמונה והטקסט המודגש; בלי "כותרת מורכבת" בדוח', ($tb['type'] ?? '') === 'table'
+    && count($tb['content'][0]['content'] ?? []) === 2 && ($tb['content'][0]['content'][0]['content'][0]['content'][0]['type'] ?? '') === 'image'
+    && str_contains(json_encode($tb, JSON_UNESCAPED_UNICODE), 'LEFTCELL') && !in_array('hf_complex', array_column($thBack['report'], 'key'), true),
+    json_encode([$tb, array_column($thBack['report'], 'key')], JSON_UNESCAPED_UNICODE));
+
 section('כיתובים והפניות צולבות (שלב 4)');
 $cap = fn($label, $id, $text) => ['type' => 'paragraph', 'attrs' => ['pstyle' => 'caption'], 'content' => [
     ['type' => 'text', 'text' => "$label "], ['type' => 'seq', 'attrs' => ['label' => $label, 'id' => $id]], ['type' => 'text', 'text' => ": $text"]]];

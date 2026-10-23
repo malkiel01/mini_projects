@@ -10,7 +10,8 @@
  * ומספר עמוד בכל עמוד, וזום שמגדיל רק את הדפים.
  */
 import { Editor, Extension, Node as TNode, StarterKit, Superscript, Subscript, TextSelection, TextStyle, FontSize, TextAlign, getHTMLFromFragment } from '../../vendor/tiptap.js';
-import { extensions, imageBox, FONTS, FALLBACK, cssFont, safeHref, bookmarks, BOOKMARK_RE, USER_STYLE, styleKeyOf, UNDERLINES, TABLE_BORDERS, VALIGNS } from './extensions.js';
+import { extensions, imageBox, FONTS, FALLBACK, cssFont, safeHref, bookmarks, BOOKMARK_RE, USER_STYLE, styleKeyOf, UNDERLINES, TABLE_BORDERS, VALIGNS,
+    WpTable, WpTableRow, Cell, HeaderCell } from './extensions.js';
 import { Pages, pageLabel, pageNumbers, Endnotes } from './pagination.js';
 import { cleanPastedHtml } from './paste.js';
 import { migrate } from './schema.js';
@@ -22,6 +23,7 @@ import { captions, newSeqId, SEQ_LABELS, listTitle } from './caption.js';
 import { createComments } from './comments.js';
 import { TrackChanges, changes, resolveChanges, goToChange, setTracking, VIEWS as TRACK_VIEWS, authors as changeAuthors, authorColor } from './track.js';
 import { TabStops, tabsOf, ALIGNS as TAB_ALIGNS, LEADERS as TAB_LEADERS } from './tabs.js';
+import { createRuler } from './ruler.js';
 
 const MM = 96 / 25.4;
 const PT = 4 / 3;
@@ -207,6 +209,7 @@ export function createWordEditor(root, opts) {
     const trackStyle = h('style');
     const wmPrint = h('div.wp-wm-print', { 'aria-hidden': 'true' });   // סימן המים בהדפסה (בכל עמוד)
     const pagesLayer = h('div.wp-pages', { 'aria-hidden': 'true' });
+    let ruler = null;   // הסרגל (ruler.js) — נבנה אחרי העורך
     const host = h('div.wp-host');
     const sheetEl = h('div.wp-sheet', pagesLayer, host);
     const zoomEl = h('div.wp-zoom', sheetEl);
@@ -527,6 +530,7 @@ export function createWordEditor(root, opts) {
         pageCount = total;
         frameOf = physOf;
         placePageAnchored();
+        ruler?.update();
         setZoom();
         status();
         statusBarPage();
@@ -583,6 +587,7 @@ export function createWordEditor(root, opts) {
         editor.storage.wpPages.zoom = zoom;
         if (zoomLabel) zoomLabel.textContent = Math.round(zoom * 100) + '%';
         if (stZoom) stZoom.textContent = Math.round(zoom * 100) + '%';
+        ruler?.update();
     }
     const resizeObs = new ResizeObserver(() => { if (fit && !editor.isDestroyed) setZoom(); });
     resizeObs.observe(stage);
@@ -681,6 +686,7 @@ export function createWordEditor(root, opts) {
             wordCount: () => wordCountDialog(),
             navPane: () => { if (nav.isOpen()) nav.close(); else { if (phone.matches) openSheet(false); nav.open(); } refresh(); },
             navOn: () => nav.isOpen(),
+            ruler: () => ruler.toggle(), rulerOn: () => ruler.isOn(),
             showMarks: () => editor.commands.setMarks(!marksOn()),
             marksOn: () => marksOn(),
             stepFont: dir => stepFont(dir),
@@ -697,6 +703,17 @@ export function createWordEditor(root, opts) {
     const finder = createFindBar(h, { editor, notify: msg => toast(msg) });
     findSlot.append(finder.el);
     const nav = createNavPane({ editor, h, onClose: () => refresh() });
+    // הסרגל: מעל הדף (בטלפון — כבוי כברירת מחדל); גבול שוליים שנגרר — השוליים של המקטע שבו הסמן
+    ruler = createRuler({ editor, h, pagesLayer, defaultOn: !window.matchMedia('(max-width: 700px)').matches,
+        sectionPage: () => { const at = editor.state.selection.from; return sections().filter((x, k) => k === 0 || x.from < at).pop().page; },
+        setMargin: (side, mm) => {
+            const secs = sections();
+            const at = editor.state.selection.from;
+            const k = secs.reduce((acc, x, i) => (i && x.from < at ? i : acc), 0);
+            if (secs.length === 1) setPage({ margins: { [side]: mm } });
+            else setSections(k, { margins: { ...secs[k].page.margins, [side]: mm } }, {});
+        } });
+    stage.prepend(ruler.el);
     body.prepend(nav.el);
     const comments = createComments({ editor, h, user: opts.user, onChange: () => refresh() });
     body.append(comments.el);
@@ -766,6 +783,7 @@ export function createWordEditor(root, opts) {
         'footnote', 'sectionBreak', 'pageSetup', 'editStyles', 'print', 'zoomOut', 'zoomIn', 'zoomFit'].map(id => [id, cmdBtn(id)]));
     B.navPane = cmdBtn('navPane');
     B.showMarks = cmdBtn('showMarks');
+    B.ruler = cmdBtn('ruler');
     B.painter = cmdBtn('formatPainter', { ondblclick: () => cmds.run('formatPainter', true) });
     B.color = cmdColor('color', '#c00000');
     B.mark = cmdColor('highlight', '#ffff00', '.mark');
@@ -789,7 +807,7 @@ export function createWordEditor(root, opts) {
         ['review', 'סקירה', [grp('הערות', [cmdBtn('comment'), cmdBtn('commentsPane')]),
             grp('מעקב', [trackBtn, trackViewSel, cmdBtn('trackAuthors')]),
             grp('שינויים', changeBtns.slice(0, 4), changeBtns.slice(4))]],
-        ['view', 'תצוגה', [zoomGroup, grp('הצגה', [B.navPane, B.showMarks, cmdBtn('wordCount')]), grp('מסמך', [opts.save ? cmdBtn('save') : null, B.print, cmdBtn('printPreview'), opts.versions ? cmdBtn('versions') : null, ...(opts.menu || [])])]],
+        ['view', 'תצוגה', [zoomGroup, grp('הצגה', [B.navPane, B.ruler, B.showMarks, cmdBtn('wordCount')]), grp('מסמך', [opts.save ? cmdBtn('save') : null, B.print, cmdBtn('printPreview'), opts.versions ? cmdBtn('versions') : null, ...(opts.menu || [])])]],
     ];
     const uid = Math.random().toString(36).slice(2, 8);
     const tabsEl = h('div.rb-tabs', { role: 'tablist', 'aria-label': 'לשוניות הסרט' });
@@ -1038,7 +1056,7 @@ export function createWordEditor(root, opts) {
         changeBtns.forEach((b, i) => { b.disabled = !anyChange || (i !== 2 && i !== 3 && !editor.isEditable); });
         for (const b of numBtns) b.disabled = !editor.isActive('orderedList') || !editor.isEditable;
         hnumBtn.classList.toggle('on', !!page.heading_numbers);
-        for (const [b, on] of [[B.navPane, nav.isOpen()], [B.showMarks, marksOn()], [trackBtn, !!editor.state.doc.attrs.track]]) { b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }
+        for (const [b, on] of [[B.navPane, nav.isOpen()], [B.ruler, !!ruler?.isOn()], [B.showMarks, marksOn()], [trackBtn, !!editor.state.doc.attrs.track]]) { b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }
         hnumBtn.setAttribute('aria-pressed', String(!!page.heading_numbers));
         contextBar();
         statusBarPage();
@@ -1687,7 +1705,10 @@ export function createWordEditor(root, opts) {
             tool('מודגש', h('b', 'B'), c => c.toggleBold(), 'bold'), tool('נטוי', h('i', 'I'), c => c.toggleItalic(), 'italic'),
             tool('קו תחתון', h('u', 'U'), c => c.toggleUnderline(), 'underline'), sizeSel,
             tool('יישור לימין', '⇥', c => c.setTextAlign('right')), tool('מרכז', '≡', c => c.setTextAlign('center')), tool('יישור לשמאל', '⇤', c => c.setTextAlign('left')),
-            opts.upload ? tool('תמונה (סמליל)', '🖼', c => { pick.click(); return c; }) : null, pick);
+            opts.upload ? tool('תמונה (סמליל)', '🖼', c => { pick.click(); return c; }) : null, pick,
+            // טבלה (כמו בכותרת של Word — סמליל בצד אחד, פרטים בצד השני): שני תאים בלי גבולות; עמודה נוספת; מחיקה
+            tool('טבלה בכותרת (שני תאים, בלי גבולות)', '⊞', c => c.insertTable({ rows: 1, cols: 2, withHeaderRow: false }).updateAttributes('table', { borders: 'none' })),
+            tool('עמודה נוספת בטבלה', '⊞+', c => c.addColumnAfter()), tool('מחיקת הטבלה', '⊟', c => c.deleteTable()));
         const el = h('div.f.hf-field', h('span', label), tools, box);
         // תמונה בשורה — בלי גלישה וידיות (כותרת קטנה)
         const HfImage = TNode.create({
@@ -1702,6 +1723,7 @@ export function createWordEditor(root, opts) {
                 StarterKit.configure({ heading: false, bulletList: false, orderedList: false, listItem: false, listKeymap: false, blockquote: false,
                     code: false, codeBlock: false, horizontalRule: false, link: false, trailingNode: false, dropcursor: false, gapcursor: false }),
                 TextStyle, FontSize, TextAlign.configure({ types: ['paragraph'], alignments: ['right', 'center', 'left'], defaultAlignment: null }), HfImage,
+                WpTable.configure({ resizable: false }), WpTableRow, Cell, HeaderCell,
             ],
             content: { type: 'doc', content: blocks.length ? blocks : [{ type: 'paragraph', attrs: { textAlign: 'center' } }] },
             editorProps: { attributes: { class: 'fn-edit-doc hf-edit-doc', dir: 'rtl', lang: 'he', role: 'textbox', 'aria-multiline': 'true', 'aria-label': label } },
@@ -1711,10 +1733,11 @@ export function createWordEditor(root, opts) {
             el,
             destroy: () => mini.destroy(),
             get() {
-                const ps = (mini.getJSON().content || []).filter(b => b.type === 'paragraph');
-                const plain = ps.every(b => (b.attrs?.textAlign || 'center') === 'center' && (b.content || []).every(n => n.type === 'text' && !n.marks?.length));
+                const ps = (mini.getJSON().content || []).filter(b => b.type === 'paragraph' || b.type === 'table');
+                const plain = ps.every(b => b.type === 'paragraph' && (b.attrs?.textAlign || 'center') === 'center' && (b.content || []).every(n => n.type === 'text' && !n.marks?.length));
                 if (plain) return ps.map(b => (b.content || []).map(n => n.text).join('')).join('\n').trim();
-                return ps.map(b => ({ ...b, attrs: b.attrs?.textAlign ? { textAlign: b.attrs.textAlign } : undefined }));
+                // טבלה — כמו שהיא (השרת מנקה: hf_rich_val)
+                return ps.map(b => b.type === 'table' ? b : { ...b, attrs: b.attrs?.textAlign ? { textAlign: b.attrs.textAlign } : undefined });
             },
         };
     }

@@ -1,7 +1,7 @@
 // קלט ופלט: תמונות, ייבוא מהצ'אט (design.json, ‏design.gcard), ייצוא PNG/JPG/PDF, והסקיל.
 // הספריות הכבדות (JSZip, pdf-lib) נטענות רק כשצריך אותן.
 
-import { normalizeDoc, extractJson, newDoc, backgroundLayer, clone } from './doc.js';
+import { normalizeDoc, extractJson, newDoc, backgroundLayer, imageLayer, clone } from './doc.js';
 import { assets } from './db.js';
 import { FONTS } from './fonts.js';
 import { SIZES } from './doc.js';
@@ -97,27 +97,64 @@ export async function importFromChat(files, pastedText) {
     }
 
     if (!json) {
-        const first = [...images.values()][0];
-        if (!first) throw new Error('לא נבחרו תמונה או קובץ עיצוב');
-        const im = await ingestImage(first);
-        const doc = newDoc(im.w, im.h, 'רקע מהצ\'אט');
+        // בלי קובץ עיצוב: התמונה הגדולה היא הרקע, וכל השאר נכנסות כשכבות שאפשר להזיז (מדבקות, אלמנטים).
+        const all = [...images.values()];
+        if (!all.length) throw new Error('לא נבחרו תמונה או קובץ עיצוב');
+        const ins = [];
+        for (const f of all) ins.push(await ingestImage(f));
+        const bi = ins.reduce((b, im, i) => (im.w * im.h > ins[b].w * ins[b].h ? i : b), 0);
+        const bg = ins[bi];
+        const doc = newDoc(bg.w, bg.h, 'עיצוב מהצ\'אט');
         doc.source = { app: 'chat' };
-        doc.assets.bg = { type: 'image', src: im.src };
-        doc.layers.push(backgroundLayer(doc, 'bg', im.w, im.h));
-        if (images.size > 1) fixes.push(`בלי קובץ עיצוב — נכנסה רק התמונה הראשונה (${first.name})`);
-        return { doc, loaded: new Map([['bg', im.img]]), fixes };
+        doc.assets.bg = { type: 'image', src: bg.src };
+        doc.layers.push(backgroundLayer(doc, 'bg', bg.w, bg.h));
+        const loaded = new Map([['bg', bg.img]]);
+        let n = 0;
+        ins.forEach((im, i) => {
+            if (i === bi) return;
+            const id = 'a' + (++n);
+            doc.assets[id] = { type: 'image', src: im.src };
+            const l = imageLayer(doc, id, im.w, im.h, 'decoration');
+            // מדבקה בגודל סביר, מדורגת קצת כדי שלא יישבו אחת על השנייה.
+            const k = Math.min(1, (Math.min(bg.w, bg.h) * 0.35) / Math.max(l.w, l.h));
+            l.w *= k; l.h *= k;
+            l.x = (bg.w - l.w) / 2 + (n - 1) * bg.w * 0.06;
+            l.y = (bg.h - l.h) / 2 + (n - 1) * bg.h * 0.06;
+            doc.layers.push(l);
+            loaded.set(id, im.img);
+        });
+        if (n) fixes.push(`בלי קובץ עיצוב — התמונה הגדולה נכנסה כרקע, ועוד ${n} כשכבות שאפשר להזיז`);
+        return { doc, loaded, fixes };
     }
 
     const { doc, fixes: f2 } = normalizeDoc(json);
     fixes.push(...f2);
     const loaded = new Map();
-    const unnamed = [...images.values()];
+    const used = new Set();
+    const pending = [];
     for (const [id, a] of Object.entries(doc.assets)) {
-        // התאמה לפי שם הקובץ; אם הצ'אט שינה את השם — תמונה אחת שנשארה תותאם לנכס אחד שנשאר.
-        let file = images.get((a.file || '').toLowerCase());
-        if (!file && Object.keys(doc.assets).length === 1 && unnamed.length === 1) file = unnamed[0];
-        if (!file) { fixes.push(`חסרה התמונה "${a.file || id}"`); continue; }
-        const im = await ingestImage(file);
+        const file = images.get((a.file || '').toLowerCase());
+        if (file && !used.has(file)) { used.add(file); pending.push([id, a, file]); }
+        else pending.push([id, a, null]);
+    }
+    // הצ'אט לא שולט בשם הקובץ שיורד (ב-ChatGPT: "ChatGPT Image …png"). תמונה שלא הותאמה בשם מותאמת
+    // לנכס לפי הצורה — היחס רוחב/גובה של השכבה שמשתמשת בו — ואז לפי הסדר (שמות הקבצים כוללים שעה).
+    const free = [...images.values()].filter(f => !used.has(f)).sort((x, y) => x.name.localeCompare(y.name));
+    const freeIn = [];
+    for (const f of free) { try { freeIn.push({ f, im: await ingestImage(f) }); } catch (e) { fixes.push(e.message); } }
+    for (const row of pending) {
+        if (row[2] || !freeIn.length) continue;
+        const [id] = row;
+        const l = doc.layers.find(x => x.asset === id);
+        const want = l ? l.w / l.h : doc.page.width / doc.page.height;
+        let best = 0;
+        freeIn.forEach((c, i) => { if (Math.abs(Math.log(c.im.w / c.im.h / want)) < Math.abs(Math.log(freeIn[best].im.w / freeIn[best].im.h / want))) best = i; });
+        row[3] = freeIn.splice(best, 1)[0].im;
+    }
+    for (const [id, a, file, pre] of pending) {
+        let im = pre;
+        if (!im && file) im = await ingestImage(file);
+        if (!im) { fixes.push(`חסרה התמונה "${a.file || id}"`); continue; }
         a.src = im.src;
         delete a.file;
         loaded.set(id, im.img);

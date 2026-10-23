@@ -62,6 +62,7 @@ main { max-width: 860px; margin: 0 auto; padding: var(--s2) var(--s3) calc(var(-
 .seg-tabs { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 4px; margin-bottom: var(--s3); }
 .seg-tabs button { min-height: 40px; padding: 4px 2px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface);
     font-size: .82rem; line-height: 1.15; cursor: pointer; }
+.seg-tabs.many { grid-template-columns: repeat(4, minmax(0, 1fr)); }   /* הרבה לשוניות — שתי שורות, לא גלילה */
 .seg-tabs button small { display: inline-block; min-width: 1.4em; padding: 0 4px; border-radius: 999px; background: var(--brand-soft); color: var(--brand); font-size: .72rem; }
 .seg-tabs button small:empty { display: none; }
 .seg-tabs button[aria-selected="true"] { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }

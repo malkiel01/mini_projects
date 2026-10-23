@@ -167,14 +167,18 @@ function monthReport(int $memberId, string $month, string $tz, ?string $now = nu
     [$first, $last] = monthBounds($month);
     $today = utc($now ?? nowIso())->setTimezone(new DateTimeZone($tz))->format('Y-m-d');
     $days = daysReport($memberId, $first, $last, $tz, $now);
-    $sum = ['days' => 0, 'minutes' => 0, 'standard' => 0, 'missing' => 0];
-    foreach ($days as $d) {
+    // היעדרויות (גרסה 3): מאושרת זוקפת את התקן של היום; ממתינה — רק סימון
+    $abs = function_exists('absenceDays') ? absenceDays($memberId, $first, $last) : [];
+    $sum = ['days' => 0, 'minutes' => 0, 'standard' => 0, 'missing' => 0, 'absence' => 0];
+    foreach ($days as &$d) {
+        $d['absence'] = $abs[$d['date']] ?? null;
         if ($d['pairs'] || $d['open']) $sum['days']++;
         $sum['minutes'] += $d['minutes'];
-        if ($d['date'] <= $today) $sum['standard'] += $d['standard'];
+        if ($d['date'] <= $today) { $sum['standard'] += $d['standard']; $sum['absence'] += $d['absence']['credit'] ?? 0; }
         $sum['missing'] += $d['missing_out'] + $d['missing_in'];
     }
-    $sum['diff'] = $sum['minutes'] - $sum['standard'];
+    unset($d);
+    $sum['diff'] = $sum['minutes'] + $sum['absence'] - $sum['standard'];
     return ['month' => $month, 'today' => $today, 'days' => $days, 'summary' => $sum];
 }
 
