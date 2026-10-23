@@ -1,7 +1,7 @@
 // העורך החדש: מסך הבית (העיצובים שלי) ומסך העריכה. ‏spec/03-editor.md.
 
 import { h, $, toast, sheet, closeSheet, isSheetOpen, confirmDialog, field, rangeField, seg, colorField, toggle, pickFiles, download, timeAgo } from './ui.js';
-import { SIZES, newDoc, textLayer, shapeLayer, imageLayer, backgroundLayer, layerLabel, uid, clone } from './doc.js';
+import { SIZES, newDoc, textLayer, shapeLayer, imageLayer, backgroundLayer, layerLabel, uid, clone, normalizeDoc } from './doc.js';
 import { FONTS, ensureFont, ensureDocFonts, nearestWeight } from './fonts.js';
 import { History } from './history.js';
 import { designs, assets } from './db.js';
@@ -19,7 +19,10 @@ let ed = null;   // העיצוב הפתוח: { id, doc, history, canvas, dirty }
 async function showHome() {
     ed = null;
     document.title = 'סטודיו עיצוב';
-    const { list, online } = await sync.listDesigns().catch(() => ({ list: [], online: false }));
+    const [{ list, online }, pending] = await Promise.all([
+        sync.listDesigns().catch(() => ({ list: [], online: false })),
+        sync.pendingImports(),
+    ]);
     const me = sync.currentUser();
     const tiles = h('div', { class: 'tiles' },
         tile('➕', 'עיצוב חדש', newDesignSheet),
@@ -46,6 +49,12 @@ async function showHome() {
             me ? h('button', { class: 'icon-btn', 'aria-label': `החשבון: ${me.name || me.email || ''}`, onclick: accountSheet }, '👤') : null),
         h('main', { class: 'home' },
             online ? null : h('p', { class: 'hint warn' }, 'אין חיבור לשרת — העבודה נשמרת במכשיר, ותישלח כשהחיבור יחזור.'),
+            pending.length ? h('ul', { class: 'list pending', 'aria-label': 'ממתינים מ-ChatGPT' }, pending.map(p => h('li', { class: 'row' },
+                h('button', { class: 'row-main', onclick: () => openChatImport(p.code) },
+                    h('span', { class: 'thumb', 'aria-hidden': 'true' }, '📥'),
+                    h('span', { class: 'row-text' }, h('span', { class: 'row-title' }, p.title),
+                        h('span', { class: 'row-sub' }, `מ-ChatGPT · ${p.files} תמונות · ${timeAgo(p.createdAt)}`)),
+                    h('span', { class: 'chev', 'aria-hidden': 'true' }, '‹'))))) : null,
             h('p', { class: 'hint' }, 'מבקשים מהצ\'אט רקע עם הסקיל, מייבאים אותו לכאן, ומוסיפים טקסטים, תמונות וצורות.'),
             tiles,
             h('h2', { class: 'section' }, 'העיצובים שלי'),
@@ -1057,6 +1066,7 @@ function accountSheet() {
         me.email ? h('p', { class: 'hint', dir: 'ltr' }, me.email) : null,
         h('p', { class: 'hint' }, me.platform ? 'מחובר דרך הכלים הדיגיטליים.' : 'מחובר עם קוד במייל.',
             me.role === 'owner' ? ' · מנהל המערכת' : ''),
+        me.role === 'owner' ? h('button', { class: 'btn ghost block', onclick: gptSetupSheet }, '🤖 הגדרת ה-GPT ב-ChatGPT') : null,
         me.role === 'owner' ? h('a', { class: 'btn ghost block', href: '../admin.html' }, '⚙️ ממשק הניהול') : null,
         me.platform ? null : h('button', { class: 'btn ghost block', onclick: async () => { await sync.logout(); closeSheet(); showLogin(); } }, '🚪 יציאה')));
 }
@@ -1085,7 +1095,7 @@ function showLogin() {
                 code.focus();
             } else {
                 await sync.verifyCode(email.value, code.value);
-                showHome();
+                start();   // כולל קישור ייבוא מ-ChatGPT שחיכה לכניסה
             }
         } catch (err) { msg.textContent = err.message; }
         btn.disabled = false;
@@ -1095,9 +1105,99 @@ function showLogin() {
         h('main', { class: 'home' }, h('h2', { class: 'section' }, 'כניסה'), h('p', { class: 'hint' }, 'בלי סיסמה: נשלח אליכם קוד במייל.'), form));
 }
 
+// ─── ייבוא מ-ChatGPT ("שלח לעורך") ──────────────────────────────────────
+
+/** קישור מה-GPT: ‎#import=ABCD-EFGH. התמונות כבר בשרת; כאן הן יורדות, והעיצוב נפתח עם שכבות חיות. */
+async function openChatImport(code) {
+    toast('מקבל את העיצוב מ-ChatGPT…');
+    try {
+        const { design, files, blobs } = await sync.claimImport(code);
+        const byName = new Map([...blobs].map(([n, b]) => [n.toLowerCase(), { blob: b, remote: files[n].id }]));
+        let doc, fixes = [];
+        const loaded = new Map();
+        const ingest = async (key, item) => {
+            const src = await assets.put(item.blob);
+            loaded.set(key, await blobToImage(item.blob));
+            return { type: 'image', src, remote: item.remote };
+        };
+        if (design) {
+            ({ doc, fixes } = normalizeDoc(design));
+            const left = [...byName.values()];
+            for (const [key, a] of Object.entries(doc.assets)) {
+                // לפי שם הקובץ; ‏ChatGPT לפעמים משנה שמות — אז תמונה יחידה לנכס יחיד.
+                const item = byName.get((a.file || '').toLowerCase()) || (Object.keys(doc.assets).length === 1 && left.length === 1 ? left[0] : null);
+                if (!item) { fixes.push(`חסרה התמונה "${a.file || key}"`); continue; }
+                doc.assets[key] = await ingest(key, item);
+            }
+        } else {
+            const first = [...byName.values()][0];
+            if (!first) throw new Error('לא התקבלו תמונות');
+            const img = await blobToImage(first.blob);
+            doc = newDoc(img.naturalWidth, img.naturalHeight, 'רקע מ-ChatGPT');
+            doc.assets.bg = await ingest('bg', first);
+            doc.layers.push(backgroundLayer(doc, 'bg', img.naturalWidth, img.naturalHeight));
+        }
+        doc.source = { app: 'chat' };
+        const id = uid('d');
+        await designs.put({ id, title: doc.title, doc, updatedAt: Date.now(), owner: sync.currentUser()?.id, synced: false });
+        history.replaceState(null, '', location.pathname + location.search);
+        await openDesign(id, loaded);
+        if (fixes.length) {
+            sheet(`${fixes.length} תיקונים בייבוא`, h('div', {}, h('ul', { class: 'fixes' }, fixes.map(f => h('li', {}, f))),
+                h('button', { class: 'btn primary block', onclick: closeSheet }, 'הבנתי')));
+        } else toast('העיצוב מ-ChatGPT נפתח ✓');
+    } catch (e) {
+        history.replaceState(null, '', location.pathname + location.search);
+        toast(e.message || 'הייבוא נכשל', 'error');
+        showHome();
+    }
+}
+
+/** הגדרת ה-GPT (לבעלים): כל מה שמדביקים ב-GPT Builder, עם כפתורי העתקה. */
+async function gptSetupSheet(regenerate = false) {
+    let cfg, instructions = '';
+    try {
+        cfg = await sync.gptSetup(regenerate === true);
+        instructions = (await (await fetch('gpt/instructions.md', { cache: 'no-cache' })).text()).replace(/<!--[\s\S]*?-->\n*/, '');
+    } catch (e) { toast(e.message, 'error'); return; }
+    const base = new URL('.', location.href).href;
+    const copyRow = (label, value, secret) => h('div', { class: 'field' },
+        h('label', {}, label),
+        h('div', { class: 'copy-row' },
+            h('input', { type: 'text', value, readOnly: true, dir: 'ltr', class: 'mono' + (secret ? ' secret' : ''), 'aria-label': label }),
+            h('button', { class: 'icon-btn', 'aria-label': `העתקת ${label}`, onclick: async () => {
+                try { await navigator.clipboard.writeText(value); toast('הועתק ✓'); } catch { toast('ההעתקה נחסמה — סמנו והעתיקו', 'error'); }
+            } }, '📋')));
+    sheet('הגדרת ה-GPT', h('div', {},
+        h('p', { class: 'hint' }, 'ב-ChatGPT: Explore GPTs ← Create ← Configure. ממלאים לפי הסדר. הסבר מלא: spec/04-ai-chat-skill.md.'),
+        h('ol', { class: 'steps' },
+            h('li', {}, 'Name: מעצב הכרטיסים · Description: רקעים ועיצובים לסטודיו עיצוב'),
+            h('li', {}, 'Instructions — להדביק את הטקסט (כפתור 📋 למטה)'),
+            h('li', {}, 'Capabilities: Image Generation ✓, Code Interpreter ✓'),
+            h('li', {}, 'Actions ← Create new action ← Import from URL: כתובת הסכמה'),
+            h('li', {}, 'Authentication: None — כל אחד מקבל קישור עם קוד. או OAuth — מתחברים פעם אחת, והעיצובים נכנסים ישר לחשבון (פרטים למטה)'),
+            h('li', {}, 'Privacy policy: הכתובת למטה'),
+            h('li', {}, 'Share: Anyone with the link (לא ב-GPT Store, לפי ההחלטה)')),
+        copyRow('Instructions', instructions),
+        copyRow('כתובת הסכמה (Import from URL)', base + 'gpt/openapi.json'),
+        copyRow('Privacy policy', new URL('../privacy.html', location.href).href),
+        h('h3', { class: 'section' }, 'OAuth (לא חובה)'),
+        copyRow('Client ID', cfg.client_id),
+        cfg.client_secret ? copyRow('Client Secret — מוצג רק עכשיו, שמרו אותו', cfg.client_secret, true)
+            : h('p', { class: 'hint' }, 'ה-Client Secret הוצג כשנוצר. איבדתם? ', h('button', { class: 'btn ghost sm', onclick: async () => {
+                if (await confirmDialog('ליצור סוד חדש? ב-GPT Builder יהיה צריך להדביק אותו מחדש.', 'יצירה')) gptSetupSheet(true);
+            } }, 'סוד חדש')),
+        copyRow('Authorization URL', base + 'oauth/authorize.php'),
+        copyRow('Token URL', base + 'oauth/token.php'),
+        copyRow('Scope', 'designs'),
+        h('p', { class: 'hint' }, 'Token Exchange Method: Default (POST request). אחרי השמירה, ChatGPT מציג Callback URL — אין צורך להעתיק אותו לכאן.')), { wide: true });
+}
+
 async function start() {
     try {
         const { user } = await sync.whoami();
+        const importCode = /^#import=([A-Za-z0-9-]{9})$/.exec(location.hash)?.[1];
+        if (user && importCode) return openChatImport(importCode);
         if (user) return showHome();
         showLogin();
     } catch (e) {

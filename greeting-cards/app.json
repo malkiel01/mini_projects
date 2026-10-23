@@ -13,7 +13,10 @@
     "privacy.html",
     "manifest.webmanifest",
     "service-worker.js",
-    "assets/icons/**"
+    "assets/icons/**",
+    "editor/gpt.php",
+    "editor/oauth/token.php",
+    "editor/gpt/openapi.json"
   ],
   "links": [
     {
