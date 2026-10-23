@@ -368,6 +368,34 @@ class Store(context: Context) {
         (0 until a.length()).map { a.getString(it) }
     } catch (e: Exception) { emptyList() }
 
+    /* ── הדפדפן (BrowserActivity): גודל טקסט, תצוגת מחשב, ומועדפים מכל דף ── */
+
+    var browserZoom: Int
+        get() = prefs.getInt("browser_zoom", 100)
+        set(v) { prefs.edit().putInt("browser_zoom", v).apply() }
+    var browserDesktop: Boolean
+        get() = prefs.getBoolean("browser_desktop", false)
+        set(v) { prefs.edit().putBoolean("browser_desktop", v).apply() }
+
+    /** מועדפים מהדפדפן — (שם, כתובת). נפתחים כמו כל ניווט: מותר רק מה שמותר. */
+    fun bookmarks(): List<Pair<String, String>> = try {
+        val a = JSONArray(prefs.getString("bookmarks", "[]") ?: "[]")
+        (0 until a.length()).mapNotNull { a.optJSONObject(it) }.map { it.optString("t") to it.optString("u") }.filter { it.second.isNotEmpty() }
+    } catch (e: Exception) { emptyList() }
+
+    fun isBookmarked(url: String): Boolean = bookmarks().any { it.second == url }
+
+    /** מוסיף או מסיר. ‏true — נוסף. עד 100. */
+    fun toggleBookmark(title: String, url: String): Boolean {
+        val list = bookmarks().toMutableList()
+        val had = list.removeAll { it.second == url }
+        if (!had) list.add(0, title.ifEmpty { url } to url)
+        val arr = JSONArray()
+        for ((t, u) in list.take(100)) arr.put(JSONObject().put("t", t.take(120)).put("u", u))
+        prefs.edit().putString("bookmarks", arr.toString()).apply()
+        return !had
+    }
+
     fun toggleFavorite(url: String): Boolean {
         val list = favorites().toMutableList()
         val on = !list.remove(url)

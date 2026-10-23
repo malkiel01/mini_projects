@@ -3,23 +3,36 @@
     android:layout_width="match_parent" android:layout_height="match_parent"
     android:orientation="vertical" android:layoutDirection="rtl">
 
+    <!--
+      סרגל הדפדפן (בעל המערכת, 2026-10-23): סגירה, אחורה וקדימה, הכתובת, רכיבים שנחסמו (🧩 — רק כשיש), רענון,
+      ותפריט ⋮ — מועדפים, חיפוש בדף, גודל טקסט, תצוגת מחשב, תרגום, חלון צף ושיתוף.
+    -->
     <LinearLayout android:id="@+id/bar"
-        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_width="match_parent" android:layout_height="48dp"
         android:orientation="horizontal" android:gravity="center_vertical"
-        android:paddingHorizontal="8dp">
-        <Button android:id="@+id/close" android:layout_width="wrap_content"
-            android:layout_height="wrap_content" android:text="סגירה"
-            style="?attr/borderlessButtonStyle"/>
+        android:background="@color/surface" android:elevation="2dp"
+        android:paddingHorizontal="2dp">
+        <TextView android:id="@+id/close" style="@style/MgBarButton" android:text="✕"
+            android:contentDescription="סגירה"/>
+        <TextView android:id="@+id/back" style="@style/MgBarButton" android:text="→"
+            android:contentDescription="אחורה"/>
+        <TextView android:id="@+id/forward" style="@style/MgBarButton" android:text="←"
+            android:contentDescription="קדימה"/>
         <TextView android:id="@+id/address" android:layout_width="0dp" android:layout_weight="1"
-            android:layout_height="wrap_content" android:textSize="12sp"
-            android:textColor="@color/dim" android:maxLines="1" android:ellipsize="middle"
+            android:layout_height="36dp" android:textSize="13sp" android:gravity="center_vertical"
+            android:paddingHorizontal="10dp" android:paddingVertical="0dp" android:background="@drawable/bg_input"
+            android:textColor="@color/ink" android:maxLines="1" android:ellipsize="end"
             android:layoutDirection="ltr" android:textDirection="ltr"/>
-        <Button android:id="@+id/pip" android:layout_width="wrap_content"
-            android:layout_height="wrap_content" android:text="חלון צף"
-            android:visibility="gone" style="?attr/borderlessButtonStyle"/>
-        <Button android:id="@+id/reload" android:layout_width="wrap_content"
-            android:layout_height="wrap_content" android:text="רענון"
-            style="?attr/borderlessButtonStyle"/>
+        <TextView android:id="@+id/parts" style="@style/MgBarButton" android:text="🧩"
+            android:textSize="14sp" android:visibility="gone"
+            android:contentDescription="רכיבים שנחסמו בדף"/>
+        <TextView android:id="@+id/reload" style="@style/MgBarButton" android:text="⟳"
+            android:contentDescription="רענון"/>
+        <TextView android:id="@+id/menu" style="@style/MgBarButton" android:text="⋮"
+            android:contentDescription="תפריט"/>
+        <!-- חלון צף — עבר לתפריט ⋮; הכפתור נשאר בלי תצוגה, כי הקוד של המצב משתמש בו. -->
+        <Button android:id="@+id/pip" android:layout_width="0dp" android:layout_height="0dp"
+            android:visibility="gone"/>
     </LinearLayout>
 
     <ProgressBar android:id="@+id/progress" style="?android:attr/progressBarStyleHorizontal"

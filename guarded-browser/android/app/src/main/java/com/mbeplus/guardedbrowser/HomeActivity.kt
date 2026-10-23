@@ -214,7 +214,10 @@ class HomeActivity : AppCompatActivity() {
         b.sections.removeAllViews()
         var any = false
 
-        val favs = favUrls.mapNotNull { u -> shown.firstOrNull { it.url == u } }
+        // ועוד מועדפים שנוספו מהדפדפן (⋮ ← ☆) — אותה הכרעה כשנפתחים, כמו כל ניווט.
+        val marks = if (has("favorites")) store.bookmarks().filter { (t, u) -> favUrls.none { it == u } && match(t, u) }
+            .map { (t, u) -> Tile(t, u, "url") } else emptyList()
+        val favs = favUrls.mapNotNull { u -> shown.firstOrNull { it.url == u } } + marks.filter { m -> shown.none { it.url == m.url } }
         if (favs.isNotEmpty()) { section("⭐ מועדפים", favs, true); any = true }
         val rest = shown.filter { it.url !in favUrls }
         val tasks = rest.filter { it.kind == "task" }
@@ -267,6 +270,12 @@ class HomeActivity : AppCompatActivity() {
             v.findViewById<TextView>(R.id.tileStar).visibility = if (fav) View.VISIBLE else View.GONE
             v.setOnClickListener { if (allowed) open(t.url) }
             if (has("favorites")) v.setOnLongClickListener {
+                // מועדף מהדפדפן — לחיצה ארוכה מסירה אותו משם.
+                if (fav && store.isBookmarked(t.url)) {
+                    store.toggleBookmark("", t.url)
+                    Toast.makeText(this, "הוסר מהמועדפים", Toast.LENGTH_SHORT).show()
+                    draw(); return@setOnLongClickListener true
+                }
                 val on = store.toggleFavorite(t.url)
                 Toast.makeText(this, if (on) "⭐ נוסף למועדפים" else "הוסר מהמועדפים", Toast.LENGTH_SHORT).show()
                 draw(); true
