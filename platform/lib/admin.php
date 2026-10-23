@@ -53,10 +53,11 @@ function admin_state(array $admin): never
         'apps'       => array_map(fn($a) => [
             'id' => $a['id'], 'name' => $a['name'], 'icon' => $a['icon'], 'icon_svg' => $a['icon_svg'] ?? null,
             'category' => $a['category'], 'default_category' => $a['default_category'],
-            'hidden' => $a['hidden'], 'install_ok' => $a['install_ok'], 'restricted' => $a['restricted'],
+            'hidden' => $a['hidden'], 'install_ok' => $a['install_ok'], 'restricted' => $a['restricted'], 'plugin' => $a['plugin'],
             'gate' => (bool)$a['gate'], 'external' => $a['external'], 'detached' => $a['detached'], 'connected' => $a['connected'],
             'login' => $a['login'],
             'can_install' => $a['install']['pwa'] || $a['install']['apk'] || $a['install']['store'],
+            'description' => $a['description'], 'href' => $a['href'], 'links' => $a['links'],
         ], apps_effective()),
     ]);
 }

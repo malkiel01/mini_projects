@@ -44,10 +44,12 @@ function registry_load(): array
             'icon_svg'    => isset($app['icon_svg']) ? registry_href($folder, $app['icon_svg']) : null,
             'description' => $app['description'],
             'restricted'  => $app['restricted'] ?? false,
+            // תוסף (plugin): רכיב משותף לאפליקציות — רק למנהל, באזור "🧩 תוספים" ולא ברשימת הכלים
+            'plugin'      => $app['plugin'] ?? false,
             'gate'        => $app['gate'] ?? false,
             'sso_returns' => array_values($app['sso']['return'] ?? []),
             'provision_key_url' => $app['provision']['key_url'] ?? null,
-            'category'    => $app['category'],
+            'category'    => !empty($app['plugin']) ? PLUGIN_CATEGORY : $app['category'],
             'href'        => registry_href($folder, $app['entry'] ?? ''),
             'external'    => registry_is_external($app['entry'] ?? ''),
             'install'     => registry_install($folder, $app['install'] ?? []),
@@ -76,6 +78,9 @@ function registry_load(): array
  *             הקבצים מוגשים מהשרת שלנו: הפריסה מעתיקה כל Release ל-platform/downloads/<app>/
  *             (platform/tools/store-mirror.sh) עם meta.json — גרסה וחבילה. בלי העותק — מ-GitHub.
  */
+/** הקטגוריה הפנימית של תוספים — לא בטבלת הקטגוריות, ולא מוצגת ברשימת הכלים. */
+const PLUGIN_CATEGORY = 'plugins';
+
 const REGISTRY_RELEASES = 'https://github.com/malkiel01/mini_projects/releases/download/';
 const REGISTRY_DOWNLOADS = 'platform/downloads';
 
@@ -122,10 +127,15 @@ function registry_validate(string $folder, $app, array $categoryIds): ?string
 {
     if (!is_array($app)) return 'JSON לא תקין';
     if (($app['id'] ?? null) !== $folder) return "id חייב להיות שם התיקייה ('$folder')";
-    foreach (['name', 'icon', 'description', 'category'] as $key) {
+    if (isset($app['plugin']) && !is_bool($app['plugin'])) return 'plugin חייב להיות true או false';
+    $plugin = !empty($app['plugin']);
+    // לתוסף אין קטגוריה — הוא לא ברשימת הכלים
+    foreach ($plugin ? ['name', 'icon', 'description'] : ['name', 'icon', 'description', 'category'] as $key) {
         if (!is_string($app[$key] ?? null) || trim($app[$key]) === '') return "חסר '$key'";
     }
-    if (!in_array($app['category'], $categoryIds, true)) return "קטגוריה לא מוכרת: '{$app['category']}'";
+    if (!$plugin && !in_array($app['category'], $categoryIds, true)) return "קטגוריה לא מוכרת: '{$app['category']}'";
+    // תוסף בלי שער היה פתוח לכל העולם — והוא אמור להיות רק למנהל
+    if ($plugin && empty($app['gate'])) return 'תוסף (plugin) חייב "gate": true — רק המנהל נכנס אליו';
     if (isset($app['icon_svg']) && (!registry_safe_path($app['icon_svg']) || !preg_match('/\.(svg|png|webp)$/i', (string)$app['icon_svg']))) {
         return 'icon_svg: נתיב יחסי לקובץ ‎.svg / ‎.png / ‎.webp בתיקיית הכלי';
     }
