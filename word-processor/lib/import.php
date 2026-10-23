@@ -1068,14 +1068,17 @@ final class DocxCtx
     }
 
     /**
-     * כותרת עליונה ותחתונה של מקטע: הטקסט, ומספר העמוד (שדה PAGE) → numbering. רק הכותרת הרגילה (default);
-     * כותרת לעמוד הראשון שהיא אותו טקסט בלי מספר = first_page:false. כל כותרת אחרת — לדוח. בלי PAGE — בלי מספור.
+     * כותרת עליונה ותחתונה של מקטע: הטקסט, ומספר העמוד (שדה PAGE) → numbering. כותרת לעמוד הראשון (titlePg) שהיא
+     * אותו טקסט בלי מספר = first_page:false; עם טקסט אחר — עמוד ראשון שונה (first_diff, header_first / footer_first).
+     * לעמוד זוגי — header_even / footer_even. בלי PAGE — בלי מספור.
      */
     private function headerFooter(DOMElement $sect, DOMXPath $xp): array
     {
         $out = [];
         $num = null;
         $firstNum = false;
+        $titlePg = $xp->query('w:titlePg', $sect)->length && (string)$xp->evaluate('string(w:titlePg/@w:val)', $sect) !== '0';
+        $first = [];   // הכותרות לעמוד הראשון, אם אחת מהן שונה מהרגילה
         foreach (['header', 'footer'] as $kind) {
             $parts = [];
             foreach ($xp->query("w:{$kind}Reference", $sect) as $ref) {
@@ -1094,7 +1097,14 @@ final class DocxCtx
                 if ($type === 'default') continue;
                 // כותרת לעמוד זוגי (evenAndOddHeaders) — הטקסט שלה; המספור — כמו בכותרת הרגילה
                 if ($type === 'even') { $out[$kind . '_even'] = $part['rich'] ?: implode("\n", $part['text']); continue; }
-                if ($type === 'first' && $part['text'] === ($def['text'] ?? [])) { $firstNum = $firstNum || (bool)$part['num']; continue; }
+                if ($type === 'first') {
+                    if (!$titlePg) continue;   // בלי titlePg Word לא מציג אותה
+                    $firstNum = $firstNum || (bool)$part['num'];
+                    $same = $part['text'] === ($def['text'] ?? []) && !$part['rich'] && !($def['rich'] ?? null);
+                    $first[$kind] = $same ? ($out[$kind] ?? '') : ($part['rich'] ?: implode("\n", $part['text']));
+                    if (!$same) $first['diff'] = true;
+                    continue;
+                }
                 if ($part['text'] || $part['num']) $this->note('hf_extra', 1, $type . $kind);
             }
         }
@@ -1103,10 +1113,12 @@ final class DocxCtx
             if (in_array($fmt, ['hebrew1', 'hebrew2'], true)) $num['format'] = 'hebrew';
             $start = (string)$xp->evaluate('string(w:pgNumType/@w:start)', $sect);
             if (is_numeric($start)) $num['start'] = (int)$start;
-            $titlePg = $xp->query('w:titlePg', $sect)->length && (string)$xp->evaluate('string(w:titlePg/@w:val)', $sect) !== '0';
             $num['first_page'] = !$titlePg || $firstNum;
         }
         $out['numbering'] = $num ?: ['show' => false];
+        // במפורש גם כשאין — מקטע אצלנו יורש מהקודם, וב-Word titlePg הוא של המקטע בלבד
+        $out['first_diff'] = !empty($first['diff']);
+        if ($out['first_diff']) $out += ['header_first' => $first['header'] ?? '', 'footer_first' => $first['footer'] ?? ''];
         return $out;
     }
 
@@ -1124,6 +1136,7 @@ final class DocxCtx
         }
         $blocks = [];
         $rich = false;
+        $seenTbl = [];
         foreach ($hx->query('//w:p') as $hp) {
             $instr = '';
             foreach ($hx->query('.//w:instrText', $hp) as $n) $instr .= ' ' . $n->textContent;
@@ -1142,6 +1155,15 @@ final class DocxCtx
                 continue;
             }
             if (trim($line) !== '') $text[] = trim($line);
+            // פסקה בתוך טבלה: הטבלה כולה נכנסת כבלוק אחד — בפסקה הראשונה שלה (הטבלה החיצונית)
+            $tbl = $hx->query('ancestor::w:tbl[last()]', $hp)->item(0);
+            if ($tbl instanceof DOMElement) {
+                if (isset($seenTbl[spl_object_id($tbl)])) continue;
+                $seenTbl[spl_object_id($tbl)] = true;
+                $b = hf_rich_val([$this->table($tbl, $hx)])[0] ?? null;
+                if ($b && ($b['type'] ?? '') === 'table') { $blocks[] = $b; $rich = true; }
+                continue;
+            }
             if (trim($line) !== '' || $hx->query('.//w:drawing', $hp)->length) {
                 [$b] = $this->para($hp, $hx);
                 $b = hf_rich_val([$b])[0] ?? null;
@@ -1158,8 +1180,8 @@ final class DocxCtx
         // סימן מים: צורת WordArt (VML) עם textpath — כך Word שומר "סימן מים" מותאם. היא לא נחשבת "כותרת מורכבת"
         $wm = $hx->query('//*[local-name()="textpath"][@string]')->item(0);
         if ($wm instanceof DOMElement && $this->watermark === '') $this->watermark = mb_substr(trim($wm->getAttribute('string')), 0, 40);
-        // תמונה בשורה — נכנסת לכותרת העשירה; טבלה, צורה, תמונה צפה — "כותרת מורכבת" (לדוח)
-        $complex = $hx->query('//w:tbl|//w:drawing[not(wp:inline)]|//w:pict[not(.//*[local-name()="textpath"])]')->length > 0;
+        // תמונה בשורה וטבלה — נכנסות לכותרת העשירה; צורה, תמונה צפה, טבלה בתוך טבלה — "כותרת מורכבת" (לדוח)
+        $complex = $hx->query('//w:tbl//w:tbl|//w:drawing[not(wp:inline)]|//w:pict[not(.//*[local-name()="textpath"])]')->length > 0;
         return ['text' => $text, 'num' => $num, 'complex' => $complex, 'rich' => $rich ? $blocks : null];
     }
 }
@@ -1176,7 +1198,7 @@ const IMPORT_REPORT = [
     'tracked' => ['שינויי עיצוב פסקה במעקב', 'התקבלו (תוספות, מחיקות ועיצוב תווים — יובאו עם המעקב)'],
     'fields' => ['שדות (תוכן עניינים, תאריך, הפניות)', 'יובאו כטקסט קבוע — לא יתעדכנו'],
     'hf_extra' => ['כותרת שונה לעמוד הראשון או לעמודים זוגיים', 'יובאה רק הכותרת הרגילה'],
-    'hf_complex' => ['תמונה או טבלה בכותרת עליונה / תחתונה', 'יובא רק הטקסט'],
+    'hf_complex' => ['צורה, תמונה צפה או טבלה בתוך טבלה בכותרת עליונה / תחתונה', 'יובא רק הטקסט'],
     'styles' => ['סגנונות תו מותאמים', 'העיצוב שבא מסגנון התו לא יובא; סגנונות פסקה ועיצוב ישיר — כן'],
     'pborder' => ['גבולות והצללה של פסקה', 'לא יובאו'],
     'fonts' => ['גופנים שאינם זמינים', 'מוצגים ב-Heebo, זהה במסך, בהדפסה וב-PDF'],

@@ -2,6 +2,7 @@
 // כל העורך עובד על אובייקט JSON אחד. הקנבס רק מצייר אותו, וההיסטוריה שומרת צילומים שלו.
 
 import { FONTS, DEFAULT_FONT } from './fonts.js';
+import { ELEMENTS } from './elements.js';
 
 export const SIZES = [
     { id: 'post', label: 'פוסט', w: 1080, h: 1350 },
@@ -66,6 +67,18 @@ export function iconLayer(doc, name) {
     return { id: uid(), type: 'icon', role: 'decoration', icon: name, x: (W - s) / 2, y: (H - s) / 2, w: s, h: s, rotation: 0, opacity: 1, color: '#2d4a8a', strokeWidth: 2 };
 }
 
+/** אלמנט מעוצב (elements.js): בגודל היחסי של הציור שלו, במרכז הדף. */
+export function elementLayer(doc, name) {
+    const { width: W, height: H } = doc.page;
+    const el = ELEMENTS[name];
+    const k = (Math.min(W, H) * 0.45) / Math.max(el.vb[0], el.vb[1]);
+    const w = el.vb[0] * k, h = el.vb[1] * k;
+    const base = { id: uid(), type: 'shape', role: 'decoration', shape: 'element', element: name, x: (W - w) / 2, y: (H - h) / 2, w, h, rotation: 0, opacity: 1, radius: 0, points: 5 };
+    return el.stroke
+        ? { ...base, fill: '#00000000', stroke: { width: Math.max(3, Math.min(W, H) * 0.008), color: '#b8924a' } }
+        : { ...base, fill: '#e0457b' };
+}
+
 export function imageLayer(doc, assetId, natW, natH, role = 'photo') {
     const { width: W, height: H } = doc.page;
     const k = Math.min((W * 0.7) / natW, (H * 0.7) / natH, 1);
@@ -90,6 +103,7 @@ export function layerLabel(l) {
     if (l.type === 'text') return (l.text || '').split('\n')[0].slice(0, 40) || 'טקסט';
     if (l.type === 'image') return l.role === 'background' ? 'רקע' : 'תמונה';
     if (l.type === 'icon') return 'אייקון';
+    if (l.type === 'shape' && l.shape === 'element') return ELEMENTS[l.element]?.label || 'אלמנט';
     if (l.type === 'shape') return { rect: 'מלבן', ellipse: 'עיגול', line: 'קו', star: 'כוכב', polygon: 'מצולע', arrow: 'חץ' }[l.shape] || 'צורה';
     return 'שכבה';
 }
@@ -99,6 +113,14 @@ export function layerLabel(l) {
 const isColor = c => typeof c === 'string' && /^#([0-9a-f]{6}|[0-9a-f]{8})$/i.test(c);
 const num = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+
+/** מדרג: ‏{type: linear|radial, angle, colors: [2–5 צבעים]}. כל דבר אחר — אין מדרג. */
+function gradient(g) {
+    if (!g || !Array.isArray(g.colors)) return null;
+    const colors = g.colors.filter(isColor).slice(0, 5);
+    if (colors.length < 2) return null;
+    return { type: g.type === 'radial' ? 'radial' : 'linear', angle: ((Math.round(num(g.angle, 180)) % 360) + 360) % 360, colors };
+}
 
 /** מוצא את בלוק ה-JSON בתוך טקסט שהודבק מהצ'אט (גם עם ```json וגם בלי). */
 export function extractJson(text) {
@@ -122,6 +144,8 @@ export function normalizeDoc(input) {
     const doc = newDoc(pw, ph, String(input.title || 'עיצוב מהצ\'אט').slice(0, 120));
     doc.source = { app: ['chat', 'ai', 'template', 'editor'].includes(input.source?.app) ? input.source.app : 'chat' };
     if (isColor(input.page?.background)) doc.page.background = input.page.background;
+    const pg = gradient(input.page?.gradient);
+    if (pg) doc.page.gradient = pg;
 
     for (const [id, a] of Object.entries(input.assets || {})) {
         if (!/^[A-Za-z0-9_-]{1,64}$/.test(id) || !a || a.type !== 'image') continue;
@@ -197,8 +221,14 @@ export function normalizeDoc(input) {
             l.strokeWidth = clamp(num(raw.strokeWidth, 2), 0.5, 4);
             if (raw.filled) l.filled = true;
         } else if (raw.type === 'shape') {
-            l.shape = ['rect', 'ellipse', 'line', 'star', 'polygon', 'arrow'].includes(raw.shape) ? raw.shape : 'rect';
-            l.fill = isColor(raw.fill) ? raw.fill : '#2d4a8a';
+            l.shape = ['rect', 'ellipse', 'line', 'star', 'polygon', 'arrow', 'element'].includes(raw.shape) ? raw.shape : 'rect';
+            if (l.shape === 'element') {
+                if (ELEMENTS[raw.element]) l.element = raw.element;
+                else { fixes.push(`אלמנט לא מוכר (${String(raw.element).slice(0, 30)}) — הוחלף במלבן`); l.shape = 'rect'; }
+            }
+            const sg = gradient(raw.gradient);
+            if (sg) l.gradient = sg;
+            l.fill = isColor(raw.fill) ? raw.fill : raw.fill === 'none' ? '#00000000' : '#2d4a8a';
             l.radius = Math.max(0, num(raw.radius, 0));
             l.points = clamp(Math.round(num(raw.points, 5)), 3, 24);
             if (raw.stroke && isColor(raw.stroke.color)) l.stroke = { width: clamp(num(raw.stroke.width, 2), 0, 200), color: raw.stroke.color };

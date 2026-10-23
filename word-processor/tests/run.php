@@ -387,13 +387,13 @@ $wordDocx = $mkDocx([
     'word/comments.xml' => '<w:comments ' . $WN . '><w:comment w:id="0"><w:p>' . $run('הערה') . '</w:p></w:comment></w:comments>',
     'word/_rels/document.xml.rels' => '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rH" Target="header1.xml"/><Relationship Id="rE" Target="header2.xml"/><Relationship Id="rF" Target="footer1.xml"/></Relationships>',
     'word/header1.xml' => $hdr('hdr', '<w:p><w:pPr><w:bidi/></w:pPr>' . $run('חברה בע"מ') . '</w:p>'),
-    'word/header2.xml' => $hdr('hdr', '<w:p>' . $run('ראשון שונה') . '</w:p>'),   // כותרת שונה לעמוד הראשון — עדיין לא נתמכת
+    'word/header2.xml' => $hdr('hdr', '<w:p>' . $run('ראשון שונה') . '</w:p>'),   // לעמוד הראשון, בלי titlePg — Word לא מציג אותה, ולא נכנסת (וגם לא לדוח)
     'word/footer1.xml' => $hdr('ftr', '<w:p><w:pPr><w:bidi/><w:jc w:val="center"/></w:pPr><w:r><w:t xml:space="preserve">- </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> PAGE </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>1</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:t xml:space="preserve"> -</w:t></w:r></w:p>'),
 ]);
 $w = import_docx($wordDocx, $docC);
 $rep = array_column($w['report'], 'count', 'key');
 check('דוח ייבוא: כל מה שלא נתמך מופיע (וטורים — כבר נתמכים, לא בדוח)', $rep == ['shapes' => 1, 'math' => 1, 'nested' => 1, 'fields' => 1,
-    'hf_extra' => 1, 'styles' => 1, 'pborder' => 1, 'fonts' => 1], json_encode($rep));
+    'styles' => 1, 'pborder' => 1, 'fonts' => 1], json_encode($rep));
 check('ייבוא: סגנון פסקה מותאם → סגנון שלנו (שם ועיצוב), והפסקה בו', ($w['page']['styles']['u1'] ?? null) == ['name' => 'ציטוט', 'italic' => true, 'color' => '#595959', 'align' => 'center', 'after' => 12.0]
     && ($w['json']['content'][0]['attrs']['pstyle'] ?? '') === 'u1', json_encode($w['page']['styles'] ?? null, JSON_UNESCAPED_UNICODE));
 $fontRow = array_values(array_filter($w['report'], fn($r) => $r['key'] === 'fonts'))[0] ?? [];
@@ -1115,6 +1115,47 @@ check('Word הלוך וחזור: זוגי / אי-זוגי, הכותרת הזוג
     && !empty($eoSb[0]['attrs']['page']['num_restart']) && ($eoSb[0]['attrs']['page']['num_start'] ?? 0) === 1 && empty($eoSb[1]['attrs']['page']['num_restart'])
     && !array_filter($eoBack['report'], fn($r) => $r['key'] === 'hf_extra'), json_encode([$eoBack['page']['even_odd'] ?? null, $eoSb[0]['attrs']['page']['num_restart'] ?? null, $eoSb[1]['attrs']['page']['num_restart'] ?? null], JSON_UNESCAPED_UNICODE));
 
+section('עמוד ראשון שונה לכל מקטע (שלב 3)');
+// שלושה מקטעים: הראשון — עמוד שער (COVER, בלי תחתונה); השני — בלי עמוד ראשון שונה; השלישי — OPENING בעמוד הראשון שלו
+$fdPage = page_normalize(['first_diff' => true, 'header' => 'REGULAR', 'header_first' => 'COVER', 'footer' => 'FOOT', 'footer_first' => '']);
+$fdDoc = ['type' => 'doc', 'content' => array_merge(array_map($eoPara, range(1, 6)),
+    [['type' => 'sectionBreak', 'attrs' => ['page' => ['first_diff' => false]]]], array_map($eoPara, range(7, 12)),
+    [['type' => 'sectionBreak', 'attrs' => ['page' => ['first_diff' => true, 'header_first' => 'OPENING', 'footer_first' => 'FOOT']]]], array_map($eoPara, range(13, 18)))];
+check('page_normalize: first_diff, header_first / footer_first; מקטע יורש ומבטל', $fdPage['first_diff'] === true && $fdPage['header_first'] === 'COVER'
+    && page_section(['first_diff' => false], $fdPage)['first_diff'] === false && page_section([], $fdPage)['header_first'] === 'COVER');
+if (trim((string)shell_exec('command -v pdftotext'))) {
+    file_put_contents("$tmp/fd.pdf", export_pdf($fdDoc, $fdPage, 'ראשון'));
+    $fdPages = explode("\f", (string)shell_exec('pdftotext -layout ' . escapeshellarg("$tmp/fd.pdf") . ' - 2>&1'));
+    array_pop($fdPages);
+    $fdSeq = array_map(fn($t) => (preg_match('/\b(COVER|REGULAR|OPENING)\b/', $t, $m) ? $m[1] : '-') . (str_contains($t, 'FOOT') ? '+F' : ''), $fdPages);
+    // הראשון: COVER בלי תחתונה; אחר כך REGULAR; השני (בלי עמוד ראשון שונה) — REGULAR מההתחלה; השלישי — OPENING ואז REGULAR
+    $fdOk = count($fdPages) >= 5 && $fdSeq[0] === 'COVER' && $fdSeq[1] === 'REGULAR+F' && count(array_keys($fdSeq, 'COVER')) === 1
+        && count(array_keys($fdSeq, 'OPENING+F')) === 1 && array_search('OPENING+F', $fdSeq) > 2 && ($fdSeq[array_search('OPENING+F', $fdSeq) + 1] ?? '') === 'REGULAR+F';
+    check('PDF: הכותרת לעמוד הראשון — רק בעמוד הראשון של מקטע עם first_diff', $fdOk, implode(' ', $fdSeq));
+}
+file_put_contents("$tmp/fd.docx", export_docx($fdDoc, $fdPage, 'ראשון'));
+$zip->open("$tmp/fd.docx");
+$fdMain = (string)$zip->getFromName('word/document.xml');
+$fdFiles = [];
+for ($i = 0; $i < $zip->numFiles; $i++) $fdFiles[$zip->getNameIndex($i)] = (string)$zip->getFromIndex($i);
+$zip->close();
+preg_match_all('#<w:sectPr>.*?</w:sectPr>#s', $fdMain, $fdSect);
+$fdFirstHdr = array_filter($fdFiles, fn($x, $k) => preg_match('#^word/header\d+f\.xml$#', $k) === 1, ARRAY_FILTER_USE_BOTH);
+check('Word: titlePg במקטעים הראשון והשלישי בלבד, עם כותרות לעמוד ראשון (COVER, OPENING)', count($fdSect[0]) === 3
+    && str_contains($fdSect[0][0], '<w:titlePg/>') && !str_contains($fdSect[0][1], '<w:titlePg/>') && str_contains($fdSect[0][2], '<w:titlePg/>')
+    && count(array_filter($fdFirstHdr, fn($x) => str_contains($x, 'COVER'))) === 1 && count(array_filter($fdFirstHdr, fn($x) => str_contains($x, 'OPENING'))) === 1,
+    implode(' | ', array_map(fn($x) => (int)str_contains($x, 'titlePg'), $fdSect[0])));
+$fdBack = import_docx(file_get_contents("$tmp/fd.docx"), 'fd');
+$fdSb = array_values(array_filter($fdBack['json']['content'], fn($n) => ($n['type'] ?? '') === 'sectionBreak'));
+check('Word הלוך וחזור: עמוד ראשון שונה לכל מקטע, עם הכותרות שלו; בלי "כותרת שלא יובאה" בדוח', !empty($fdBack['page']['first_diff']) && ($fdBack['page']['header_first'] ?? '') === 'COVER'
+    && ($fdBack['page']['footer_first'] ?? null) === '' && ($fdBack['page']['footer'] ?? '') === 'FOOT'
+    && ($fdSb[0]['attrs']['page']['first_diff'] ?? null) === false && !empty($fdSb[1]['attrs']['page']['first_diff']) && ($fdSb[1]['attrs']['page']['header_first'] ?? '') === 'OPENING'
+    && !array_filter($fdBack['report'], fn($r) => $r['key'] === 'hf_extra'),
+    json_encode([$fdBack['page']['first_diff'] ?? null, $fdBack['page']['header_first'] ?? null, $fdSb[0]['attrs']['page']['first_diff'] ?? null, $fdSb[1]['attrs']['page']['header_first'] ?? null], JSON_UNESCAPED_UNICODE));
+$fdNum = import_docx(export_docx($eoDoc, page_normalize(['numbering' => ['first_page' => false]]), 'x'), 'fd2')['page'];
+check('Word: "בלי מספר בעמוד הראשון" (בלי first_diff) — עדיין first_page:false, לא עמוד ראשון שונה', empty($fdNum['first_diff']) && ($fdNum['numbering']['first_page'] ?? true) === false,
+    json_encode([$fdNum['first_diff'] ?? null, $fdNum['numbering'] ?? null]));
+
 section('כותרת עליונה / תחתונה עשירה (שלב 3)');
 $rhDocId = doc_new('a:99', 'בסיס כותרת', null, null, 'u1', 'דנה');
 $rhImg = media_store($rhDocId, $png);
@@ -1156,6 +1197,42 @@ $cm = $rhCopy['header'][0]['content'][0]['attrs']['media'] ?? '';
 check('גרסת מבנה: כותרת עשירה (במסמך או במעבר מקטע) צריכה 8', doc_schema_need($rhDoc, $rhPage) === 8 && doc_schema_need($rhDoc, page_normalize(['header' => 'פשוטה'])) === 0
     && doc_schema_need(['type' => 'doc', 'content' => [['type' => 'sectionBreak', 'attrs' => ['page' => ['footer' => $rhHdr]]]]]) === 8);
 check('שכפול מסמך: גם התמונה שבכותרת מועתקת למסמך החדש', $cm !== '' && $cm !== $rhImg['id'] && media_row($cm), $cm);
+
+// טבלה בכותרת: סמליל בצד אחד, פרטים בצד השני — ניקוי, PDF, Word הלוך וחזור
+$thCell = fn(array $content, array $attrs = []) => ['type' => 'tableCell', 'attrs' => $attrs + ['colspan' => 1, 'rowspan' => 1, 'onclick' => 'x'], 'content' => $content];
+$thHdr = [['type' => 'table', 'attrs' => ['borders' => 'none', 'evil' => 1], 'content' => [['type' => 'tableRow', 'content' => [
+    $thCell([['type' => 'paragraph', 'content' => [['type' => 'image', 'attrs' => ['media' => $rhImg['id'], 'width' => 40, 'height' => 20]]]]]),
+    $thCell([['type' => 'paragraph', 'attrs' => ['textAlign' => 'left'], 'content' => [['type' => 'text', 'text' => 'LEFTCELL', 'marks' => [['type' => 'bold']]]]],
+        ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'SECONDLINE']]], ['type' => 'table']], ['valign' => 'middle', 'background' => '#EEEEEE']),
+]]]]];
+$th = page_normalize(['header' => $thHdr])['header'];
+$thC = $th[0]['content'][0]['content'] ?? [];
+check('hf_rich_val: טבלה בכותרת — גבולות, תאים עם פסקאות ותמונה, בלי מאפיינים זרים ובלי טבלה בתוך תא', ($th[0]['type'] ?? '') === 'table' && ($th[0]['attrs'] ?? null) === ['borders' => 'none']
+    && count($thC) === 2 && ($thC[0]['content'][0]['content'][0]['type'] ?? '') === 'image' && count($thC[1]['content']) === 2 && !isset($thC[1]['attrs']['onclick'])
+    && ($thC[1]['attrs']['valign'] ?? '') === 'middle' && ($thC[1]['attrs']['background'] ?? '') === '#eeeeee' && hf_text($th) === "\tLEFTCELL SECONDLINE",
+    json_encode($th, JSON_UNESCAPED_UNICODE));
+if (trim((string)shell_exec('command -v pdftotext'))) {
+    file_put_contents("$tmp/th.pdf", export_pdf($rhDoc, page_normalize(['header' => $thHdr]), 'טבלה'));
+    $thTxt = (string)shell_exec('pdftotext -bbox ' . escapeshellarg("$tmp/th.pdf") . ' - 2>&1');
+    $thY = fn($w) => preg_match('/yMin="([\d.]+)"[^>]*>' . $w . '</', $thTxt, $m) ? (float)$m[1] : null;
+    $thX = fn($w) => preg_match('/xMin="([\d.]+)"[^>]*>' . $w . '</', $thTxt, $m) ? (float)$m[1] : null;
+    // בראש הדף (בשוליים העליונים), בתא השמאלי (שני — בטבלה מימין לשמאל), השורה השנייה מתחת לראשונה
+    check('PDF: טבלה בכותרת — הטקסט בשוליים העליונים, בתא השמאלי, שתי שורות; התמונה מצוירת', $thY('LEFTCELL') !== null && $thY('LEFTCELL') < 70 && $thX('LEFTCELL') < 297
+        && $thY('SECONDLINE') > $thY('LEFTCELL') && str_contains(gzuncompress_pages(file_get_contents("$tmp/th.pdf")), ' Do'),
+        json_encode([$thY('LEFTCELL'), $thX('LEFTCELL'), $thY('SECONDLINE')]));
+}
+$thDocx = export_docx($rhDoc, page_normalize(['header' => $thHdr]), 'טבלה');
+file_put_contents("$tmp/th.docx", $thDocx);
+$zip->open("$tmp/th.docx");
+$thX1 = (string)$zip->getFromName('word/header1.xml');
+$zip->close();
+check('Word: טבלה בחלק הכותרת (w:tbl עם התמונה והטקסט)', str_contains($thX1, '<w:tbl>') && str_contains($thX1, 'LEFTCELL') && str_contains($thX1, '<w:drawing>'), substr($thX1, 0, 300));
+$thBack = import_docx($thDocx, $rhDocId);
+$tb = $thBack['page']['header'][0] ?? null;
+check('Word הלוך וחזור: הטבלה בכותרת חוזרת — שני תאים, התמונה והטקסט המודגש; בלי "כותרת מורכבת" בדוח', ($tb['type'] ?? '') === 'table'
+    && count($tb['content'][0]['content'] ?? []) === 2 && ($tb['content'][0]['content'][0]['content'][0]['content'][0]['type'] ?? '') === 'image'
+    && str_contains(json_encode($tb, JSON_UNESCAPED_UNICODE), 'LEFTCELL') && !in_array('hf_complex', array_column($thBack['report'], 'key'), true),
+    json_encode([$tb, array_column($thBack['report'], 'key')], JSON_UNESCAPED_UNICODE));
 
 section('כיתובים והפניות צולבות (שלב 4)');
 $cap = fn($label, $id, $text) => ['type' => 'paragraph', 'attrs' => ['pstyle' => 'caption'], 'content' => [

@@ -453,5 +453,20 @@ holidayDelete($owner, ['company_id' => $cid, 'id' => $hg['company'][0]['id']]);
 check('מחיקת יום של החברה', holidayOn($cid, 'muslim', '2027-03-10') === null);
 unset($GLOBALS['TC_NOW']);
 
+// ===== גרסה 2: תצוגה וייצוא =====
+$GLOBALS['TC_NOW'] = $z('2027-12-01 10:00');
+$mo = empMonthManager($owner, ['company_id' => $cid, 'id' => $w, 'month' => '2027-04']);
+$d22 = array_values(array_filter($mo['days'], fn($d) => $d['date'] === '2027-04-22'))[0];
+check('בחודש: לכל יום הסיווג, ובסיכום הסלים', $d22['ot']['holiday'] === 'פסח' && $mo['summary']['ot']['rest'] === 480 && $mo['ot_rules']['rate_ot1'] === 125);
+$csv = periodCsv($owner, ['company_id' => $cid, 'month' => '2027-01']);
+check('CSV: עמודות הסיווג עם השיעורים', str_contains($csv, 'נוספות 125%') && str_contains($csv, 'מנוחה/חג 150%') && str_contains($csv, 'חג במנוחה'));
+recordPunch($w, 'out', 'manager', null, null, $z('2027-03-03 17:00'));
+check('דיווח שמוזן לאחור (לפני האחרון) — לא נחסם ככפול', (bool) db()->query("SELECT COUNT(*) FROM punches WHERE member_id = $w AND at_utc = '" . $z('2027-03-03 17:00') . "'")->fetchColumn());
+check('CSV: שורת שבת מסומנת "מנוחה"', (bool) preg_match('/2027-01-09,[^\n]*מנוחה/u', $csv));
+$pv = periodView($owner, ['company_id' => $cid, 'month' => '2027-01']);
+$pw = array_values(array_filter($pv['employees'], fn($e) => $e['id'] === $w))[0];
+check('מסך "חודש": הסלים לכל עובד', isset($pw['summary']['ot']['ot1']) && $pw['summary']['ot']['ot1'] > 0);
+unset($GLOBALS['TC_NOW']);
+
 echo "\n" . ($n - $fails) . "/$n עברו\n";
 exit($fails ? 1 : 0);
