@@ -17,6 +17,15 @@ import { drafts } from './saver.js';
 
 const DELAYS = [2000, 5000, 10000, 30000];
 
+/**
+ * לפני עסקה שלא באה מהמקלדת (שינויים מאחרים, אישור, סמנים): ProseMirror קורא את מה שהוקלד מה-DOM קצת אחרי ההקלדה
+ * (MutationObserver). עסקה שנכנסת באמצע — מציירת מחדש ומאבדת את התו שעוד לא נקרא (למשל רווח בסוף שורה).
+ * לכן קודם קוראים את מה שממתין.
+ */
+function syncDom(view) {
+    try { view.domObserver.forceFlush(); view.domObserver.flush(); } catch { /* גרסה אחרת של ProseMirror — בלי */ }
+}
+
 export function createCollabSaver(o) {
     const { editor } = o;
     let state = 'saved';
@@ -54,6 +63,7 @@ export function createCollabSaver(o) {
         if (!r.ok) return false;   // מישהו הקדים — מושכים ושולחים שוב
         version = r.version;
         // השרת קיבל בדיוק את הצעדים האלה, מיד אחרי הגרסה שלנו — מאשרים אותם כאן (בלי לחכות למשיכה)
+        syncDom(editor.view);
         if (getVersion(editor.state) === s.version) {
             editor.view.dispatch(receiveTransaction(editor.state, s.steps, s.steps.map(() => o.clientID)));
         }
@@ -64,11 +74,13 @@ export function createCollabSaver(o) {
         const since = getVersion(editor.state);
         // הבחירה שלי — רק כשאין צעדים שלא אושרו: אז המיקומים הם של הגרסה since, וכך גם האחרים יודעים לפרש אותם
         const sel = editor.state.selection;
+        lastPull = Date.now();   // גם ניסיון שנכשל — המשיכה הבאה לפי הקצב, לא מיד
         const r = await o.send('pull', { epoch: o.epoch, since, client: o.clientID, ...(pending() ? {} : { sel: [sel.from, sel.to, since] }) });
-        lastPull = Date.now();
         if (r.reload) { gone = true; o.onReload?.(); return; }
         o.onPeers?.(r.others || [], r.lock || null);
-        if (!r.steps?.length || getVersion(editor.state) !== since) return;
+        if (!r.steps?.length) return;
+        syncDom(editor.view);
+        if (getVersion(editor.state) !== since) return;
         const steps = r.steps.map(([j]) => Step.fromJSON(editor.schema, j));
         editor.view.dispatch(receiveTransaction(editor.state, steps, r.steps.map(([, c]) => c), { mapSelectionBackward: true }));
     }
@@ -97,6 +109,7 @@ export function createCollabSaver(o) {
                     set('locked', { message: e.message });
                 } else {
                     stopped = true;   // הרשאה, מבנה חדש יותר וכו' — לא מנסים שוב לבד
+                    if (code === 'not_found' || code === 'link_invalid') gone = true;   // המסמך / הקישור כבר לא שלי — גם לא מושכים
                     set('error', { code, message: e.message });
                 }
                 return { ok: false, code, message: e.message || 'השמירה נכשלה' };
@@ -114,7 +127,9 @@ export function createCollabSaver(o) {
 
     // משיכה קבועה: כל שנייה, וכל 5 שניות כשהלשונית מוסתרת
     const poll = setInterval(() => {
-        if (gone || busy || Date.now() - lastPull < (document.hidden ? 5000 : 900)) return;
+        // מנותק — לפי ההמתנה ההולכת וגדלה (DELAYS); מוסתר — כל 5 שניות; אחרת — כל שנייה
+        const wait = state === 'offline' ? DELAYS[Math.min(Math.max(retry - 1, 0), DELAYS.length - 1)] : document.hidden ? 5000 : 900;
+        if (gone || busy || Date.now() - lastPull < wait) return;
         tick();
     }, 250);
     tick();
@@ -219,7 +234,8 @@ export function setPeers(editor, others) {
     const list = others.map(p => (Array.isArray(p.sel) && p.sel[2] === v ? { client: p.client, name: p.name, sel: [map(p.sel[0]), map(p.sel[1])] }
         : { client: p.client, name: p.name, keep: true }));
     const key = JSON.stringify(list.map(p => [p.client, p.name, p.sel, p.keep]));
-    if (lastPeers.get(editor) === key) return;   // כל שנייה מגיעה משיכה — מציירים רק כשמשהו זז
+    if (lastPeers.get(editor) === key || (!lastPeers.has(editor) && !list.length)) { lastPeers.set(editor, key); return; }   // כל שנייה מגיעה משיכה — מציירים רק כשמשהו זז
     lastPeers.set(editor, key);
+    syncDom(editor.view);   // (המיקומים חושבו מול המצב שלפני — הפרש של תווים בודדים, עד המשיכה הבאה)
     editor.view.dispatch(editor.state.tr.setMeta(peersKey, list).setMeta('addToHistory', false));
 }
