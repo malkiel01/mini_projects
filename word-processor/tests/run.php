@@ -1528,12 +1528,12 @@ $r1 = collab_push($coRow, 'owner', ['epoch' => $c0['epoch'], 'v' => 0, 'client' 
 $r2 = collab_push($coRow, 'edit', ['epoch' => $c0['epoch'], 'v' => 0, 'client' => 'clientb1', 'steps' => [$ins(1, 'ז')], 'json' => $jsonWith('זאבג')], 'a:602', 'יוסי');
 check('שליחה: מעודכן — מתקבל (v=1) והמסמך נשמר; מאחור — נדחה עם הגרסה הנוכחית', $r1['ok'] && $r1['v'] === 1 && !$r2['ok'] && $r2['v'] === 1
     && doc_json(doc_find($coDoc, 'a:601'))['content'][0]['content'][0]['text'] === 'אבגד', json_encode([$r1, $r2]));
-$p = collab_pull(doc_find($coDoc, 'a:601'), 'edit', ['epoch' => $c0['epoch'], 'since' => 0, 'client' => 'clientb1', 'sel' => [2, 2]], 'a:602', 'יוסי');
+$p = collab_pull(doc_find($coDoc, 'a:601'), 'edit', ['epoch' => $c0['epoch'], 'since' => 0, 'client' => 'clientb1', 'sel' => [2, 2, 0]], 'a:602', 'יוסי');
 check('משיכה: הצעד של דנה, עם הלקוח שלה; ודנה לא "אחרים" של עצמה', $p['v'] === 1 && count($p['steps']) === 1 && $p['steps'][0][1] === 'clienta1' && $p['steps'][0][0]['slice']['content'][0]['text'] === 'ד', json_encode($p, JSON_UNESCAPED_UNICODE));
 $r3 = collab_push(doc_find($coDoc, 'a:601'), 'edit', ['epoch' => $c0['epoch'], 'v' => 1, 'client' => 'clientb1', 'steps' => [$ins(1, 'ז')], 'json' => $jsonWith('זאבגד')], 'a:602', 'יוסי');
 $pa = collab_pull(doc_find($coDoc, 'a:601'), 'owner', ['epoch' => $c0['epoch'], 'since' => 1, 'client' => 'clienta1'], 'a:601', 'דנה');
 check('אחרי משיכה — יוסי שולח שוב ומתקבל; דנה מושכת את שלו, ורואה שיוסי במסמך', $r3['ok'] && $r3['v'] === 2 && count($pa['steps']) === 1
-    && $pa['others'][0]['name'] === 'יוסי' && $pa['others'][0]['sel'] === [2, 2], json_encode($pa, JSON_UNESCAPED_UNICODE));
+    && $pa['others'][0]['name'] === 'יוסי' && $pa['others'][0]['sel'] === [2, 2, 0], json_encode($pa, JSON_UNESCAPED_UNICODE));
 $vs = versions_list(doc_find($coDoc, 'a:601'));
 check('גרסאות: השמירות של שניהם — גרסה אחת עם שני השמות', $vs[0]['by'] === 'דנה, יוסי', json_encode(array_column($vs, 'by'), JSON_UNESCAPED_UNICODE));
 check('נעילה ישנה (הטמעה / קישור לזר) לא נכנסת כשעורכים במסמך', lock_take($coDoc, 'g:zzz', 'אורח', 'h')['ok'] === false);

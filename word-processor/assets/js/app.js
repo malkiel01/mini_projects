@@ -4,7 +4,7 @@
  */
 import { createWordEditor, h, toast, sheet, when } from './editor.js';
 import { createSaver, findDraft, drafts, downloadLocalCopy, STATE_TEXT } from './saver.js';
-import { createCollabSaver } from './collab.js';
+import { createCollabSaver, setPeers } from './collab.js';
 
 const tab = Math.random().toString(36).slice(2);
 const GUIDE = 'https://github.com/malkiel01/mini_projects/blob/main/word-processor/docs/integration.md';
@@ -269,6 +269,7 @@ async function openDoc(id) {
         send: (op, body) => api('my_collab', { doc: id, op, ...body }),
         onPeers: (others, lock) => {
             showPeers(others);
+            setPeers(ed.editor, others.filter(o => !o.me && o.role !== 'view'));   // הסמנים שלהם בדף (צופה — בלי סמן)
             if (lock && writable()) lockedBy(`פתוח לעריכה אצל ${lock.by}`);
             else if (!lock && cur.blocked) showBanner('המסמך התפנה לעריכה.', ['מעבר לעריכה', reopen]);
         },

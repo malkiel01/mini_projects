@@ -505,3 +505,10 @@ html.wp-no-page-zoom, html.wp-no-page-zoom body, .wp-editor, .wp-stage { touch-a
 .wp-ruler-guide { position: absolute; top: 0; block-size: 100vh; inline-size: 0; border-left: 1px dashed #2d4a8a; pointer-events: none; }
 .wp-preview .wp-ruler { display: none; }
 @media print { .wp-ruler { display: none !important; } }
+
+/* עריכה משותפת: הסמן והבחירה של עורך אחר (collab.js, Peers) — בצבע שלו, השם מעל הסמן */
+.wp-peer-sel { background: color-mix(in srgb, var(--wpp) 18%, transparent); }
+.wp-peer-caret { position: relative; display: inline; border-inline-start: 2px solid var(--wpp); margin-inline: -1px; pointer-events: none; }
+.wp-peer-name { position: absolute; bottom: 100%; inset-inline-start: -2px; font: 600 10px/1.3 system-ui, sans-serif; color: #fff;
+    background: var(--wpp); padding: 0 4px; border-radius: 3px 3px 3px 0; white-space: nowrap; user-select: none; }
+@media print { .wp-peer-caret, .wp-peer-sel { all: unset; } .wp-peer-name { display: none; } }

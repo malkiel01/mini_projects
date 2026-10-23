@@ -11,7 +11,8 @@
  * - עידן אחר (שחזור גרסה, שמירה מבחוץ) או מאחור מדי — onReload: האפליקציה פותחת את המסמך מחדש.
  * בקשה אחת לשרת בכל רגע (busy) — כך אין משיכה ושליחה שחולפות זו על פני זו.
  */
-import { Step, sendableSteps, receiveTransaction, getVersion } from '../../vendor/tiptap.js';
+import { Step, sendableSteps, receiveTransaction, getVersion, Extension, Plugin, PluginKey, Decoration, DecorationSet } from '../../vendor/tiptap.js';
+import { authorColor } from './track.js';
 import { drafts } from './saver.js';
 
 const DELAYS = [2000, 5000, 10000, 30000];
@@ -61,8 +62,9 @@ export function createCollabSaver(o) {
 
     async function pull() {
         const since = getVersion(editor.state);
+        // הבחירה שלי — רק כשאין צעדים שלא אושרו: אז המיקומים הם של הגרסה since, וכך גם האחרים יודעים לפרש אותם
         const sel = editor.state.selection;
-        const r = await o.send('pull', { epoch: o.epoch, since, client: o.clientID, sel: [sel.from, sel.to] });
+        const r = await o.send('pull', { epoch: o.epoch, since, client: o.clientID, ...(pending() ? {} : { sel: [sel.from, sel.to, since] }) });
         lastPull = Date.now();
         if (r.reload) { gone = true; o.onReload?.(); return; }
         o.onPeers?.(r.others || [], r.lock || null);
@@ -160,4 +162,64 @@ export function createCollabSaver(o) {
             Promise.resolve(busy).finally(() => o.send('leave', { client: o.clientID }).catch(() => {}));
         },
     };
+}
+
+/**
+ * הסמנים של האחרים (נוכחות): לכל עורך אחר — קו סמן בצבע שלו עם השם, והבחירה שלו מודגשת. המיקומים מגיעים מהמשיכה
+ * (presence.sel = [from, to, גרסה]) וזזים עם השינויים עד המשיכה הבאה. מיקום של גרסה אחרת משלי — לא מפורש (המיקומים
+ * לא תואמים): הסמן הקודם נשאר במקומו. setPeers(editor, [{client, name, sel}]).
+ */
+const peersKey = new PluginKey('wpPeers');
+
+export const Peers = Extension.create({
+    name: 'wpPeers',
+    addProseMirrorPlugins: () => [new Plugin({
+        key: peersKey,
+        state: {
+            init: () => DecorationSet.empty,
+            apply(tr, set) {
+                const list = tr.getMeta(peersKey);
+                if (!list) return set.map(tr.mapping, tr.doc);
+                const max = tr.doc.content.size;
+                const decos = [];
+                for (const p of list) {
+                    // גרסה אחרת — משאירים את הסמן הקודם שלו (כבר הוזז עם השינויים)
+                    if (p.keep) { decos.push(...set.find(undefined, undefined, s => s.client === p.client)); continue; }
+                    if (!Array.isArray(p.sel)) continue;
+                    const clamp = n => Math.max(0, Math.min(max, +n || 0));
+                    const [a, b] = [clamp(p.sel[0]), clamp(p.sel[1])];
+                    const color = authorColor(p.name);
+                    if (b > a) decos.push(Decoration.inline(a, b, { class: 'wp-peer-sel', style: `--wpp:${color}` }, { client: p.client }));
+                    decos.push(Decoration.widget(b, () => {
+                        const el = document.createElement('span');
+                        el.className = 'wp-peer-caret';
+                        el.style.setProperty('--wpp', color);
+                        el.setAttribute('aria-hidden', 'true');
+                        const tag = document.createElement('span');
+                        tag.className = 'wp-peer-name';
+                        tag.textContent = p.name;
+                        el.append(tag);
+                        return el;
+                    }, { key: 'peer-' + p.client + '-' + p.name, side: 1, ignoreSelection: true, client: p.client }));
+                }
+                try { return DecorationSet.create(tr.doc, decos); } catch { return DecorationSet.empty; }
+            },
+        },
+        props: { decorations: state => peersKey.getState(state) },
+    })],
+});
+
+const lastPeers = new WeakMap();
+export function setPeers(editor, others) {
+    if (editor.isDestroyed) return;
+    // מיקום של הגרסה שלי — עובר גם דרך הצעדים שלי שעוד לא אושרו (הם כבר במסמך שלי)
+    const v = getVersion(editor.state);
+    const mine = sendableSteps(editor.state)?.steps || [];
+    const map = n => mine.reduce((pos, s) => s.getMap().map(pos, 1), n);
+    const list = others.map(p => (Array.isArray(p.sel) && p.sel[2] === v ? { client: p.client, name: p.name, sel: [map(p.sel[0]), map(p.sel[1])] }
+        : { client: p.client, name: p.name, keep: true }));
+    const key = JSON.stringify(list.map(p => [p.client, p.name, p.sel, p.keep]));
+    if (lastPeers.get(editor) === key) return;   // כל שנייה מגיעה משיכה — מציירים רק כשמשהו זז
+    lastPeers.set(editor, key);
+    editor.view.dispatch(editor.state.tr.setMeta(peersKey, list).setMeta('addToHistory', false));
 }
