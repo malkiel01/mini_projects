@@ -448,7 +448,15 @@ function openProps(href) {
 function appIcon(app) {
     const ic = el('span', { className: 'app-ic', textContent: app.icon, ariaHidden: 'true' });
     ic.style.setProperty('--h', hue(app.id));
+    svgIcon(ic, app);
     return ic;
+}
+
+// אייקון מצויר (icon_svg ב-app.json) במקום האמוג'י. לא נטען (רשת, השער) — האמוג'י נשאר.
+function svgIcon(ic, app) {
+    if (!app.icon_svg) return;
+    const img = el('img', { src: app.icon_svg, alt: '', className: 'app-ic-img', decoding: 'async' });
+    img.addEventListener('load', () => ic.replaceChildren(img), { once: true });
 }
 
 // אפליקציה עם כניסה אחת — קישור. עם כמה כניסות, או עם התקנה/הורדה — גיליון בחירה.
