@@ -2,8 +2,8 @@
  * Service worker — כדי שהאפליקציה תהיה ניתנת להתקנה, ותיפתח גם כשהרשת חלשה.
  * קודם רשת; המטמון רק לגיבוי של המעטפת. API לעולם לא נשמר במטמון.
  */
-const CACHE = 'ob-shell-v1';
-const SHELL = ['./', 'index.html', 'assets/css/app.css', 'assets/js/app.js', 'assets/icon.svg', 'manifest.webmanifest'];
+const CACHE = 'ob-shell-v2';
+const SHELL = ['./', 'index.html', 'assets/css/app.css', 'assets/js/app.js', 'assets/icon-192.png', 'manifest.webmanifest'];
 
 self.addEventListener('install', e => {
     e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).catch(() => {}));

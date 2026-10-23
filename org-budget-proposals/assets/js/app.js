@@ -280,7 +280,7 @@ function viewLink(fromMenu) {
 // ── כניסה והרשמה ────────────────────────────────────────────
 
 function brand(sub) {
-    return h('div.brand', h('img', { src: 'assets/icon.svg', alt: '' }),
+    return h('div.brand', h('img', { src: 'assets/icon-192.png', alt: '' }),
         h('div', h('h2', 'הצעות תקציב לארגונים'), h('p', sub)));
 }
 
