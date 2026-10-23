@@ -4,6 +4,7 @@
  */
 import { createWordEditor, h, toast, sheet, when } from './editor.js';
 import { createSaver, findDraft, drafts, downloadLocalCopy, STATE_TEXT } from './saver.js';
+import { createCollabSaver } from './collab.js';
 
 const tab = Math.random().toString(36).slice(2);
 const GUIDE = 'https://github.com/malkiel01/mini_projects/blob/main/word-processor/docs/integration.md';
@@ -173,7 +174,8 @@ async function openDoc(id) {
     main.append(h('p.empty', 'פותח…'));
     let d;
     try {
-        d = await api('my_open', { doc: id });
+        // עריכה משותפת (collab.js): כמה עורכים יחד, בלי נעילה; d.collab — כשהשרת מאפשר (בלי נעילה ישנה של מישהו)
+        d = await api('my_open', { doc: id, collab: 1 });
     } catch (e) {
         main.textContent = '';
         main.append(h('p.error', e.message), h('p', h('a', { href: '#/' }, 'חזרה לרשימה')));
@@ -182,10 +184,12 @@ async function openDoc(id) {
     const titleIn = h('input.title-in', { value: d.title, 'aria-label': 'שם המסמך', placeholder: 'ללא שם', maxlength: 200 });
     const state = h('span.save-state', { role: 'status' }, '');
     const pagesEl = h('span.save-state.pages-count', { 'aria-live': 'off' });
-    const cur = current = { id, can: d.can, title: d.title, role: d.role || 'owner' };
+    const cur = current = { id, can: d.can, title: d.title, role: d.role || 'owner', collab: d.collab || null };
+    const clientID = tab + Math.random().toString(36).slice(2, 8);
+    const peersEl = h('span.peers', { 'aria-live': 'polite' });
     // שומרים — עורך, וגם מעיר (רק הערות; השרת בודק)
     const writable = () => cur.can === 'edit' || cur.can === 'comment';
-    header({ back: true, title: titleIn, actions: [pagesEl, state, h('button.icon-btn', { 'aria-label': 'עוד', title: 'עוד', onclick: e => docMenu(e.currentTarget) }, '⋯')] });
+    header({ back: true, title: titleIn, actions: [peersEl, pagesEl, state, h('button.icon-btn', { 'aria-label': 'עוד', title: 'עוד', onclick: e => docMenu(e.currentTarget) }, '⋯')] });
     titleIn.readOnly = !['owner', 'edit'].includes(cur.role);
     titleIn.addEventListener('change', async () => {
         try { await api('my_rename', { doc: id, title: titleIn.value }); cur.title = titleIn.value; } catch (e) { toast(e.message, true); }
@@ -198,6 +202,7 @@ async function openDoc(id) {
     main.classList.add('editor-main');
     const ed = createWordEditor(root, {
         json: d.json, page: d.page, editable: d.can === 'edit', user: me,
+        collab: cur.collab ? { version: cur.collab.v, clientID } : null,
         // מעיר: המסמך לקריאה בלבד, ההערות — כן
         commentOnly: () => cur.can === 'comment',
         // מקטעים עם מספר טורים שונה — ההדפסה מה-PDF של השרת (שם הטורים נפרסים בכל מקטע לחוד)
@@ -222,7 +227,8 @@ async function openDoc(id) {
             // המשוחזר כשתי גרסאות נפרדות (לא מתאחדות). מחזיר false כשלא נשמר — ואז לא משחזרים
             restore: async vid => {
                 if ((await ensureSaved(cur, 'השחזור')) !== 'ok') return false;
-                const r = await api('my_version_restore', { doc: id, id: vid, base_version: cur.saver.version });
+                const r = await api('my_version_restore', { doc: id, id: vid, base_version: cur.collab ? null : cur.saver.version, collab: cur.collab ? 1 : 0 });   // משותף: אחרים שומרים כל הזמן — בלי בדיקת בסיס
+                if (cur.collab) { reopen(); return true; }   // עידן חדש בעריכה המשותפת — כולם טוענים מחדש
                 ed.setContent(r.json);
                 cur.saver.reset(r.version);
                 return true;
@@ -241,12 +247,7 @@ async function openDoc(id) {
 
     // שמירה: טיוטה במכשיר מיד, לשרת אחרי שנייה וחצי; תוכן והגדרות עמוד — בבקשה אחת ובגרסה אחת
     const draftKey = `app:${me.id}:${id}`;
-    const saver = cur.saver = createSaver({
-        version: d.version,
-        draftKey,
-        snapshot: () => ed.getJSON(),
-        send: (json, base) => api('my_save', { doc: id, json, base_version: base }),
-        onState: (s, info) => {
+    const onState = (s, info) => {
             state.textContent = writable() || s !== 'saved' ? STATE_TEXT[s] : readOnlyText();
             state.classList.toggle('bad', ['offline', 'conflict', 'error'].includes(s));
             // "שמורים במכשיר" — רק כשהטיוטה באמת נכתבה (ביקורת 03, F01)
@@ -262,7 +263,22 @@ async function openDoc(id) {
             if (info.localFailed && s !== 'saved') showBanner('אי אפשר לשמור טיוטה במכשיר (האחסון חסום או מלא). השינויים נשמרים רק בשרת — כשיש חיבור.',
                 ['הורדת עותק', () => downloadLocalCopy(ed.getJSON(), cur.title)], 'local');
             else if (info.localFailed === false && banner.dataset.kind === 'local') hideBanner();
+    };
+    const saver = cur.saver = cur.collab ? createCollabSaver({
+        editor: ed.editor, version: d.version, epoch: cur.collab.epoch, clientID, draftKey, onState,
+        send: (op, body) => api('my_collab', { doc: id, op, ...body }),
+        onPeers: (others, lock) => {
+            showPeers(others);
+            if (lock && writable()) lockedBy(`פתוח לעריכה אצל ${lock.by}`);
+            else if (!lock && cur.blocked) showBanner('המסמך התפנה לעריכה.', ['מעבר לעריכה', reopen]);
         },
+        onReload: () => reopen(true),
+    }) : createSaver({
+        version: d.version,
+        draftKey,
+        snapshot: () => ed.getJSON(),
+        send: (json, base) => api('my_save', { doc: id, json, base_version: base }),
+        onState,
     });
     state.textContent = writable() ? STATE_TEXT.saved : readOnlyText();
     cur.save = () => saver.flush();
@@ -277,7 +293,28 @@ async function openDoc(id) {
         banner.hidden = false;
     }
     function hideBanner() { banner.hidden = true; banner.dataset.kind = ''; }
+    /** מי עוד במסמך (עריכה משותפת): שמות, ולמי שרק צופה — "צופה". */
+    function showPeers(others) {
+        const names = new Map();
+        for (const o of others) if (!o.me) names.set(o.name, names.has(o.name) && names.get(o.name) !== 'view' ? names.get(o.name) : o.role);
+        peersEl.textContent = '';
+        peersEl.title = names.size ? 'גם במסמך עכשיו: ' + [...names.keys()].join(', ') : '';
+        for (const [n, role] of names) peersEl.append(h('span.peer', { title: n + (role === 'view' ? ' (צופה)' : '') }, n.trim().slice(0, 1) || '?'));
+    }
+    /** פתיחה מחדש (עריכה משותפת: עידן חדש בשרת, או נעילה שהתפנתה) — מה שלא נשלח נשמר בנפרד במכשיר. */
+    async function reopen(notice = false) {
+        if (current !== cur) return;
+        const kept = saver.dirty && await saver.keepConflictCopy();
+        current = null;
+        clearInterval(cur.beat);
+        saver.destroy(!kept);
+        if (kept) await drafts.del(draftKey);   // ההצעה אחרי הטעינה — מהעותק הנפרד בלבד, לא גם מהטיוטה
+        ed.destroy();
+        await openDoc(id);
+        if (notice) toast(kept ? 'המסמך נטען מחדש (שוחזרה בו גרסה או שנשמר במקום אחר). השינויים שלך שמורים בנפרד במכשיר.' : 'המסמך נטען מחדש — הוא השתנה במקום אחר.');
+    }
     function lockedBy(msg) {
+        cur.blocked = true;
         cur.can = 'view';
         saver.stop();
         ed.setEditable(false);
@@ -286,6 +323,7 @@ async function openDoc(id) {
             saver.dirty ? ['הורדת השינויים', () => downloadLocalCopy(ed.getJSON(), cur.title)] : null);
     }
     async function reloadFromServer() {
+        if (cur.collab) return reopen();
         // ביקורת 03, F09: טעינה מחדש אחרי התנגשות לא מוחקת את העבודה המקומית — היא נשמרת בנפרד עד החלטה
         const kept = saver.dirty && await saver.keepConflictCopy();
         const fresh = await api('my_open', { doc: id });
@@ -324,7 +362,7 @@ async function openDoc(id) {
     });
 
     // דופק: מחזיק את הנעילה; כשהיא תפוסה — בודק אם התפנתה
-    cur.beat = setInterval(async () => {
+    cur.beat = cur.collab ? 0 : setInterval(async () => {
         try {
             const l = await api('my_lock', { doc: id, op: 'beat' });
             if (l.ok && !writable() && cur.role !== 'view') {

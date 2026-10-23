@@ -4,7 +4,7 @@
  * אין כאן שום require לקובץ מחוץ לתיקייה (CLAUDE.md: אפליקציה עצמאית מהמעטפת).
  */
 
-const WP_SCHEMA_VERSION = 5;
+const WP_SCHEMA_VERSION = 6;
 
 function wp_data_dir(): string
 {
@@ -183,6 +183,31 @@ function wp_migrate(PDO $pdo): void
             created_at INTEGER NOT NULL,
             approved_by INTEGER,
             expires_at INTEGER NOT NULL DEFAULT 0
+        );
+
+        -- עריכה משותפת (שלב 5, החלטה 2 — lib/collab.php): הצעדים (ProseMirror steps) לפי הסדר, מצב לכל מסמך, ומי במסמך
+        CREATE TABLE IF NOT EXISTS collab (
+            doc TEXT PRIMARY KEY,
+            epoch TEXT NOT NULL,
+            v INTEGER NOT NULL,
+            doc_version INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS collab_steps (
+            doc TEXT NOT NULL,
+            v INTEGER NOT NULL,
+            step TEXT NOT NULL,
+            client TEXT NOT NULL,
+            PRIMARY KEY (doc, v)
+        );
+        CREATE TABLE IF NOT EXISTS presence (
+            doc TEXT NOT NULL,
+            client TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            user_name TEXT NOT NULL,
+            role TEXT NOT NULL,
+            sel TEXT NOT NULL DEFAULT '',
+            beat INTEGER NOT NULL,
+            PRIMARY KEY (doc, client)
         );
         CREATE TABLE IF NOT EXISTS settings (
             k TEXT PRIMARY KEY,

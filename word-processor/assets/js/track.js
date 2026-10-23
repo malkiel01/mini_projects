@@ -112,7 +112,7 @@ export function trackPlugin(author) {
         key: trackKey,
         appendTransaction(trs, oldState, state) {
             if (!state.doc.attrs.track) return null;
-            const k0 = trs.findIndex(t => t.docChanged && !t.getMeta(SKIP) && !t.getMeta('history$') && !t.getMeta(trackKey));
+            const k0 = trs.findIndex(t => t.docChanged && !t.getMeta(SKIP) && !t.getMeta('history$') && !t.getMeta(trackKey) && !t.getMeta('collab$'));   // collab$ — שינוי מעורך אחר (עריכה משותפת), כבר נרשם אצלו
             if (k0 < 0) return null;
             const tr0 = trs[k0];
             // עסקאות שתוספים אחרים הוסיפו אחרי העסקה של המשתמש — המיקומים עוברים גם דרכן

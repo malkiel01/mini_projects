@@ -1517,6 +1517,41 @@ link_request($lnRow, $lnAdmin);
 doc_delete(doc_find($lnDoc, 'a:501'));
 check('מחיקה לצמיתות — גם הקישור', link_row($lnDoc) === null);
 
+section('עריכה משותפת (שלב 5)');
+require_once __DIR__ . '/../lib/collab.php';
+$coDoc = doc_new('a:601', 'משותף', ['type' => 'doc', 'content' => [para([text_node('אבג')])]], null, 'a:601', 'דנה');
+$coRow = doc_find($coDoc, 'a:601');
+$c0 = collab_state($coRow);
+$ins = fn(int $pos, string $t) => ['stepType' => 'replace', 'from' => $pos, 'to' => $pos, 'slice' => ['content' => [['type' => 'text', 'text' => $t]]]];
+$jsonWith = fn(string $t) => ['type' => 'doc', 'attrs' => ['schema' => SCHEMA_VERSION], 'content' => [para([text_node($t)])]];
+$r1 = collab_push($coRow, 'owner', ['epoch' => $c0['epoch'], 'v' => 0, 'client' => 'clienta1', 'steps' => [$ins(4, 'ד')], 'json' => $jsonWith('אבגד')], 'a:601', 'דנה');
+$r2 = collab_push($coRow, 'edit', ['epoch' => $c0['epoch'], 'v' => 0, 'client' => 'clientb1', 'steps' => [$ins(1, 'ז')], 'json' => $jsonWith('זאבג')], 'a:602', 'יוסי');
+check('שליחה: מעודכן — מתקבל (v=1) והמסמך נשמר; מאחור — נדחה עם הגרסה הנוכחית', $r1['ok'] && $r1['v'] === 1 && !$r2['ok'] && $r2['v'] === 1
+    && doc_json(doc_find($coDoc, 'a:601'))['content'][0]['content'][0]['text'] === 'אבגד', json_encode([$r1, $r2]));
+$p = collab_pull(doc_find($coDoc, 'a:601'), 'edit', ['epoch' => $c0['epoch'], 'since' => 0, 'client' => 'clientb1', 'sel' => [2, 2]], 'a:602', 'יוסי');
+check('משיכה: הצעד של דנה, עם הלקוח שלה; ודנה לא "אחרים" של עצמה', $p['v'] === 1 && count($p['steps']) === 1 && $p['steps'][0][1] === 'clienta1' && $p['steps'][0][0]['slice']['content'][0]['text'] === 'ד', json_encode($p, JSON_UNESCAPED_UNICODE));
+$r3 = collab_push(doc_find($coDoc, 'a:601'), 'edit', ['epoch' => $c0['epoch'], 'v' => 1, 'client' => 'clientb1', 'steps' => [$ins(1, 'ז')], 'json' => $jsonWith('זאבגד')], 'a:602', 'יוסי');
+$pa = collab_pull(doc_find($coDoc, 'a:601'), 'owner', ['epoch' => $c0['epoch'], 'since' => 1, 'client' => 'clienta1'], 'a:601', 'דנה');
+check('אחרי משיכה — יוסי שולח שוב ומתקבל; דנה מושכת את שלו, ורואה שיוסי במסמך', $r3['ok'] && $r3['v'] === 2 && count($pa['steps']) === 1
+    && $pa['others'][0]['name'] === 'יוסי' && $pa['others'][0]['sel'] === [2, 2], json_encode($pa, JSON_UNESCAPED_UNICODE));
+$vs = versions_list(doc_find($coDoc, 'a:601'));
+check('גרסאות: השמירות של שניהם — גרסה אחת עם שני השמות', $vs[0]['by'] === 'דנה, יוסי', json_encode(array_column($vs, 'by'), JSON_UNESCAPED_UNICODE));
+check('נעילה ישנה (הטמעה / קישור לזר) לא נכנסת כשעורכים במסמך', lock_take($coDoc, 'g:zzz', 'אורח', 'h')['ok'] === false);
+check('מעיר: צעד שאינו הערה — 403', throws(fn() => collab_push(doc_find($coDoc, 'a:601'), 'comment', ['epoch' => $c0['epoch'], 'v' => 2, 'client' => 'clientc1',
+    'steps' => [$ins(1, 'x')], 'json' => $jsonWith('xזאבגד')], 'a:603', 'מעיר'), 'forbidden'));
+$cmt = ['stepType' => 'addMark', 'from' => 1, 'to' => 3, 'mark' => ['type' => 'comment', 'attrs' => ['id' => 'c1']]];
+$cj = ['type' => 'doc', 'attrs' => ['schema' => SCHEMA_VERSION], 'content' => [para([['type' => 'text', 'text' => 'זא', 'marks' => [['type' => 'comment', 'attrs' => ['id' => 'c1']]]], text_node('בגד')])]];
+$rc = collab_push(doc_find($coDoc, 'a:601'), 'comment', ['epoch' => $c0['epoch'], 'v' => 2, 'client' => 'clientc1', 'steps' => [$cmt], 'json' => $cj], 'a:603', 'מעיר');
+check('מעיר: צעד הערה — מתקבל', $rc['ok'] && $rc['v'] === 3);
+// שמירה מבחוץ (שחזור / הטמעה) — עידן חדש: כולם טוענים מחדש
+doc_save(doc_find($coDoc, 'a:601'), $jsonWith('חדש'), null, 'x', 'מבחוץ');
+$pr = collab_pull(doc_find($coDoc, 'a:601'), 'owner', ['epoch' => $c0['epoch'], 'since' => 3, 'client' => 'clienta1'], 'a:601', 'דנה');
+$c1 = collab_state(doc_find($coDoc, 'a:601'));
+check('שמירה מבחוץ — עידן חדש: משיכה מחזירה reload, והצעדים הישנים נמחקו', ($pr['reload'] ?? false) && $c1['epoch'] !== $c0['epoch'] && (int)$c1['v'] === 0
+    && (int)db()->query("SELECT COUNT(*) FROM collab_steps WHERE doc = " . db()->quote($coDoc))->fetchColumn() === 0);
+check('שליחה בעידן ישן — reload', (collab_push(doc_find($coDoc, 'a:601'), 'owner', ['epoch' => $c0['epoch'], 'v' => 3, 'client' => 'clienta1', 'steps' => [$ins(1, 'x')], 'json' => $jsonWith('x')], 'a:601', 'דנה')['reload'] ?? false) === true);
+check('בקשה פגומה — שגיאה', throws(fn() => collab_push(doc_find($coDoc, 'a:601'), 'owner', ['epoch' => $c1['epoch'], 'v' => 0, 'client' => 'x', 'steps' => [], 'json' => []], 'a:601', 'דנה'), 'bad_request'));
+
 section('סל המחזור (ליקוי ה\')');
 $sp = 'a:trash-test';
 $tid = doc_new($sp, 'לסל', null, null, 'u1', 'דנה');
