@@ -234,7 +234,7 @@ final class PdfLayout
             $this->setSection($sections[$k]);
             $pi = $this->pdf->addPage($this->W, $this->H);
             $c = new PdfCanvas($this->pdf, $pi, $this->H);
-            $this->decorate($c, $i, $total, $nums[$i]);
+            $this->decorate($c, $i, $total, $nums[$i], $i === 0 || $all[$i - 1][0] !== $k);
             $used = 0.0;
             foreach ($columns as $j => [$placed, $notes]) {
                 $x = $this->colX($j);
@@ -1322,7 +1322,7 @@ final class PdfLayout
     }
 
     /** כותרת עליונה ותחתונה ומספר העמוד, בשוליים — כמו בעורך. */
-    private function decorate(PdfCanvas $c, int $i, int $total, int $n): void
+    private function decorate(PdfCanvas $c, int $i, int $total, int $n, bool $secFirst = false): void
     {
         // רקע הדף (של כל המסמך — מהמקטע הראשון): צבע עמוד, וסימן מים באלכסון — ראשונים בשכבה האחורית
         if (($pc = color_val($this->first['page_color'] ?? null))) $c->rect(0, 0, $this->W, $this->H, self::hex('#' . $pc), 'bg');
@@ -1332,7 +1332,8 @@ final class PdfLayout
             'color' => [85, 85, 85], 'bg' => null, 'va' => null, 'ls' => 0.0];
         $label = $nb['show'] && ($i > 0 || $nb['first_page']) ? page_label($n, $total, $nb['format']) : '';
         // זוגי / אי-זוגי שונים: בעמוד שמספרו זוגי — הכותרות לעמוד זוגי של המקטע
-        $even = !empty($this->first['even_odd']) && $n % 2 === 0 ? '_even' : '';
+        // עמוד ראשון שונה (במקטע) — קודם לזוגי / אי-זוגי, כמו ב-Word
+        $even = $secFirst && !empty($this->page['first_diff']) ? '_first' : (!empty($this->first['even_odd']) && $n % 2 === 0 ? '_even' : '');
         foreach (['top' => [$this->page['header' . $even], $this->mt / 2], 'bottom' => [$this->page['footer' . $even], $this->H - $this->mb / 2]] as $pos => [$text, $mid]) {
             $baseline = $mid + 9 * 0.35;
             $num = $label !== '' && $nb['position'] === $pos ? $label : '';

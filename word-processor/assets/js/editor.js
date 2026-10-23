@@ -63,6 +63,7 @@ export function defaultPage() {
         numbering: { show: true, position: 'bottom', align: 'center', format: 'n', start: 1, first_page: true },
         header: '', footer: '', heading_numbers: false, page_color: '', watermark: '',
         even_odd: false, header_even: '', footer_even: '', num_restart: false, num_start: 1,
+        first_diff: false, header_first: '', footer_first: '',
         columns: { n: 1, gap: 12.7, line: false },
     };
 }
@@ -396,8 +397,10 @@ export function createWordEditor(root, opts) {
         // מקטעים עם טורים שונים — הדפדפן לא מחליף מספר טורים באמצע; ההדפסה עוברת דרך ה-PDF מהשרת (print)
         // וגם זוגי / אי-זוגי ומספור שמתחיל מחדש במקטע — @page של הדפדפן לא יודע (מונה עמודים אחד, כותרת אחת)
         // וכותרת עשירה — בשולי @page יש רק טקסט
-        const rich = x => ['header', 'footer', 'header_even', 'footer_even'].some(k => Array.isArray(x.page[k]));
-        printViaPdf = (g.sections.length > 1 && g.sections.some(x => x.cols > 1)) || !!page.even_odd || g.sections.some((x, i) => (i > 0 && x.page.num_restart) || rich(x));
+        // ועמוד ראשון שונה — @page :first הוא רק העמוד הראשון של המסמך
+        const rich = x => HF_KEYS.some(k => Array.isArray(x.page[k]));
+        printViaPdf = (g.sections.length > 1 && g.sections.some(x => x.cols > 1)) || !!page.even_odd
+            || g.sections.some((x, i) => (i > 0 && x.page.num_restart) || rich(x) || x.page.first_diff);
         wmPrint.textContent = page.watermark || '';
         if (page.watermark) Object.assign(wmPrint.style, { fontSize: watermarkSize(page.watermark, wmm * 72 / 25.4, hmm * 72 / 25.4) + 'pt', fontFamily: cssFont(page.font.family) });
         setZoom();
@@ -489,8 +492,9 @@ export function createWordEditor(root, opts) {
             const hdr = h('div.wp-hf.wp-hdr', { style: { height: g.top + 'px', paddingInline: `${g.right}px ${g.left}px` } });
             const ftr = h('div.wp-hf.wp-ftr', { style: { height: g.bottom + 'px', paddingInline: `${g.right}px ${g.left}px` } });
             // זוגי / אי-זוגי שונים: בעמוד שמספרו זוגי — הכותרות לעמוד זוגי של המקטע
-            const even = page.even_odd && pageNums[pi] % 2 === 0;
-            const hText = even ? pp.header_even : pp.header, fText = even ? pp.footer_even : pp.footer;
+            // עמוד ראשון שונה (העמוד הראשון של המקטע) — קודם לזוגי / אי-זוגי, כמו ב-Word ו-ב-PDF
+            const kind = pp.first_diff && (pi === 0 || secOfPhys[pi] !== secOfPhys[pi - 1]) ? '_first' : page.even_odd && pageNums[pi] % 2 === 0 ? '_even' : '';
+            const hText = pp['header' + kind], fText = pp['footer' + kind];
             // כותרת עשירה: הפסקאות עצמן, במרחק הכותרת מקצה הדף (כמו ב-PDF — drawRichHf), ומספר העמוד — שורה אחריהן
             const rich = (v, el, top) => {
                 const box = hfNode(v, g, top);
@@ -1684,7 +1688,8 @@ export function createWordEditor(root, opts) {
         const nb = page.numbering;
         const wmInput = h('input', { name: 'watermark', value: page.watermark || '', maxlength: 40 });
         const hfe = { header: hfEditor('כותרת עליונה', p.header), footer: hfEditor('כותרת תחתונה', p.footer),
-            header_even: hfEditor('עליונה — עמוד זוגי', p.header_even), footer_even: hfEditor('תחתונה — עמוד זוגי', p.footer_even) };
+            header_even: hfEditor('עליונה — עמוד זוגי', p.header_even), footer_even: hfEditor('תחתונה — עמוד זוגי', p.footer_even),
+            header_first: hfEditor('עליונה — עמוד ראשון', p.header_first), footer_first: hfEditor('תחתונה — עמוד ראשון', p.footer_first) };
         sheet('הגדרות עמוד', (body, dlg) => {
             dlg?.addEventListener('close', () => Object.values(hfe).forEach(x => x.destroy()), { once: true });
             body.append(
@@ -1718,7 +1723,10 @@ export function createWordEditor(root, opts) {
                     // כמו "זוגי ואי-זוגי שונים" ב-Word — לכל המסמך; הטקסט — לכל מקטע
                     sw('even_odd', 'זוגי ואי-זוגי שונים (לכל המסמך)', page.even_odd),
                     hfe.header_even.el, hfe.footer_even.el,
-                    h('p.hint', 'עמוד זוגי לפי מספר העמוד. שני השדות שלמעלה — לעמודים האי-זוגיים.')),
+                    h('p.hint', 'עמוד זוגי לפי מספר העמוד. שני השדות שלמעלה — לעמודים האי-זוגיים.'),
+                    // כמו "עמוד ראשון שונה" ב-Word — של המקטע: בעמוד הראשון שלו (ריק — בלי כותרת)
+                    sw('first_diff', secs.length > 1 ? 'עמוד ראשון שונה (במקטע)' : 'עמוד ראשון שונה', p.first_diff),
+                    hfe.header_first.el, hfe.footer_first.el),
                 // מקטע (לא הראשון): התחלת מספור העמודים מחדש — כמו "התחל ב-" בתבנית מספרי העמודים של Word
                 k > 0 ? h('section.group', h('h3', 'מספור במקטע הזה'),
                     sw('num_restart', 'להתחיל את מספור העמודים מחדש', p.num_restart),
@@ -1736,6 +1744,7 @@ export function createWordEditor(root, opts) {
                 size: f.get('size'), orientation: f.get('orientation'),
                 margins: { top: n('m_top'), bottom: n('m_bottom'), right: n('m_right'), left: n('m_left') },
                 header: hfe.header.get(), footer: hfe.footer.get(), header_even: hfe.header_even.get(), footer_even: hfe.footer_even.get(),
+                first_diff: !!f.get('first_diff'), header_first: hfe.header_first.get(), footer_first: hfe.footer_first.get(),
                 ...(k > 0 ? { num_restart: !!f.get('num_restart'), num_start: Math.max(0, Math.round(n('num_start') || 0)) } : {}),
                 columns: { n: Math.max(1, Math.min(3, n('cols_n') || 1)), gap: Math.max(0, Math.min(50, n('cols_gap'))), line: !!f.get('cols_line') },
             };
@@ -1761,6 +1770,7 @@ export function createWordEditor(root, opts) {
     function setSections(k, sec, whole) {
         const pick = q => ({ size: q.size, orientation: q.orientation, margins: { ...q.margins }, header: q.header, footer: q.footer,
             header_even: q.header_even || '', footer_even: q.footer_even || '', num_restart: !!q.num_restart, num_start: q.num_start ?? 1,
+            first_diff: !!q.first_diff, header_first: q.header_first || '', footer_first: q.footer_first || '',
             columns: { ...(q.columns || { n: 1, gap: 12.7, line: false }) } });
         const secs = sections();
         const tr = editor.state.tr;
@@ -2088,11 +2098,15 @@ export function createWordEditor(root, opts) {
     return api;
 }
 
+/** כל הכותרות שבהגדרות העמוד (כמו PAGE_HF_KEYS בשרת). */
+const HF_KEYS = ['header', 'footer', 'header_even', 'footer_even', 'header_first', 'footer_first'];
+
 /** מיזוג הגדרות עמוד חלקיות (כמו page_normalize בשרת, בלי הניקוי). */
 export function mergePage(base, p, replaceStyles = false) {
     const out = structuredClone(base);
     if (!p || typeof p !== 'object') return out;
-    for (const k of ['size', 'orientation', 'header', 'footer', 'heading_numbers', 'page_color', 'watermark', 'even_odd', 'header_even', 'footer_even', 'num_restart', 'num_start'])
+    for (const k of ['size', 'orientation', 'header', 'footer', 'heading_numbers', 'page_color', 'watermark', 'even_odd', 'header_even', 'footer_even', 'num_restart', 'num_start',
+        'first_diff', 'header_first', 'footer_first'])
         if (p[k] !== undefined && p[k] !== null) out[k] = p[k];
     if (p.margins) Object.assign(out.margins, Object.fromEntries(Object.entries(p.margins).filter(([, v]) => isFinite(v) && v !== ''))
     );

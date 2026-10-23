@@ -1065,14 +1065,17 @@ final class DocxCtx
     }
 
     /**
-     * כותרת עליונה ותחתונה של מקטע: הטקסט, ומספר העמוד (שדה PAGE) → numbering. רק הכותרת הרגילה (default);
-     * כותרת לעמוד הראשון שהיא אותו טקסט בלי מספר = first_page:false. כל כותרת אחרת — לדוח. בלי PAGE — בלי מספור.
+     * כותרת עליונה ותחתונה של מקטע: הטקסט, ומספר העמוד (שדה PAGE) → numbering. כותרת לעמוד הראשון (titlePg) שהיא
+     * אותו טקסט בלי מספר = first_page:false; עם טקסט אחר — עמוד ראשון שונה (first_diff, header_first / footer_first).
+     * לעמוד זוגי — header_even / footer_even. בלי PAGE — בלי מספור.
      */
     private function headerFooter(DOMElement $sect, DOMXPath $xp): array
     {
         $out = [];
         $num = null;
         $firstNum = false;
+        $titlePg = $xp->query('w:titlePg', $sect)->length && (string)$xp->evaluate('string(w:titlePg/@w:val)', $sect) !== '0';
+        $first = [];   // הכותרות לעמוד הראשון, אם אחת מהן שונה מהרגילה
         foreach (['header', 'footer'] as $kind) {
             $parts = [];
             foreach ($xp->query("w:{$kind}Reference", $sect) as $ref) {
@@ -1091,7 +1094,14 @@ final class DocxCtx
                 if ($type === 'default') continue;
                 // כותרת לעמוד זוגי (evenAndOddHeaders) — הטקסט שלה; המספור — כמו בכותרת הרגילה
                 if ($type === 'even') { $out[$kind . '_even'] = $part['rich'] ?: implode("\n", $part['text']); continue; }
-                if ($type === 'first' && $part['text'] === ($def['text'] ?? [])) { $firstNum = $firstNum || (bool)$part['num']; continue; }
+                if ($type === 'first') {
+                    if (!$titlePg) continue;   // בלי titlePg Word לא מציג אותה
+                    $firstNum = $firstNum || (bool)$part['num'];
+                    $same = $part['text'] === ($def['text'] ?? []) && !$part['rich'] && !($def['rich'] ?? null);
+                    $first[$kind] = $same ? ($out[$kind] ?? '') : ($part['rich'] ?: implode("\n", $part['text']));
+                    if (!$same) $first['diff'] = true;
+                    continue;
+                }
                 if ($part['text'] || $part['num']) $this->note('hf_extra', 1, $type . $kind);
             }
         }
@@ -1100,10 +1110,12 @@ final class DocxCtx
             if (in_array($fmt, ['hebrew1', 'hebrew2'], true)) $num['format'] = 'hebrew';
             $start = (string)$xp->evaluate('string(w:pgNumType/@w:start)', $sect);
             if (is_numeric($start)) $num['start'] = (int)$start;
-            $titlePg = $xp->query('w:titlePg', $sect)->length && (string)$xp->evaluate('string(w:titlePg/@w:val)', $sect) !== '0';
             $num['first_page'] = !$titlePg || $firstNum;
         }
         $out['numbering'] = $num ?: ['show' => false];
+        // במפורש גם כשאין — מקטע אצלנו יורש מהקודם, וב-Word titlePg הוא של המקטע בלבד
+        $out['first_diff'] = !empty($first['diff']);
+        if ($out['first_diff']) $out += ['header_first' => $first['header'] ?? '', 'footer_first' => $first['footer'] ?? ''];
         return $out;
     }
 
