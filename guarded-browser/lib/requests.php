@@ -81,6 +81,7 @@ function requestList(int $accountId): array {
         'scopes' => $r['kind'] === 'app' ? [] : requestScopesFor($r['host']),
         // בקשת אפליקציה (lib/apprequests.php): מה החליטו, והאם המכשיר באמת פתח.
         'kind' => $r['kind'], 'package' => $r['package'], 'device' => (string) ($r['device_name'] ?? ''),
+        'code' => (string) ($r['code'] ?? ''),
         'minutes' => (int) $r['minutes'], 'apply_state' => $r['apply_state'], 'apply_error' => $r['apply_error'],
         'applied_at' => $r['applied_at'], 'ends_at' => $r['ends_at'],
     ], $rows);

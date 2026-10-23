@@ -147,6 +147,8 @@ class Store(context: Context) {
             .putString("apps_chrome", a?.optJSONObject("chrome")?.toString() ?: "{}")
             // המרקט (lib/market.php): מה ששוחרר — [{p, n, c, icon, note}].
             .putString("apps_market", a?.optJSONArray("market")?.toString() ?: "[]")
+            // מה עוד אפשר לבקש מהמרקט — [{p, n, c, note}].
+            .putString("apps_market_more", a?.optJSONArray("market_more")?.toString() ?: "[]")
             // זמן מסך: {package: דקות ליום} (AppTimeMath).
             .putString("app_limits", a?.optJSONObject("limits")?.toString() ?: "{}")
             .apply()
@@ -200,6 +202,18 @@ class Store(context: Context) {
         val a = JSONArray(prefs.getString("apps_market", "[]") ?: "[]")
         (0 until a.length()).mapNotNull { a.optJSONObject(it) }.map { it.optString("p") to it.optString("n") }.filter { it.first.isNotEmpty() }
     } catch (e: Exception) { emptyList() }
+
+    /** מה עוד אפשר לבקש מהמרקט (marketRequestCreate) — (חבילה, שם, קטגוריה). */
+    val marketMore: List<Triple<String, String, String>> get() = try {
+        val a = JSONArray(prefs.getString("apps_market_more", "[]") ?: "[]")
+        (0 until a.length()).mapNotNull { a.optJSONObject(it) }
+            .map { Triple(it.optString("p"), it.optString("n"), it.optString("c")) }.filter { it.first.isNotEmpty() }
+    } catch (e: Exception) { emptyList() }
+
+    /** בקשות מהמרקט שנשלחו מהמכשיר הזה — "🕓 ממתין להורה" ברשימה. */
+    var marketAsked: Set<String>
+        get() = strSet("market_asked")
+        set(v) { prefs.edit().putString("market_asked", JSONArray(v.toList()).toString()).apply() }
 
     /** חלון ההתקנה מהמרקט (MarketMath): מה מתקינים, ועד מתי Play פתוחה. */
     var marketTarget: String

@@ -234,6 +234,10 @@ object Api {
     fun appRequest(token: String, pkg: String, note: String, cb: (Result) -> Unit) =
         call("app_request", JSONObject().apply { put("package", pkg); put("note", note) }, token, cb)
 
+    /** בקשה מהמרקט: אפליקציה מהמלאי שעוד לא שוחררה (lib/apprequests.php, marketRequestCreate). */
+    fun marketRequest(token: String, pkg: String, note: String, cb: (Result) -> Unit) =
+        call("market_request", JSONObject().apply { put("package", pkg); put("note", note) }, token, cb)
+
     /** אישור ביצוע: ההחלטה הוחלה במכשיר (או נכשלה, עם הסיבה). ‏endsMs — סוף היתר זמני כפי שהמכשיר חישב. */
     fun appRequestApplied(token: String, id: Int, ok: Boolean, error: String, endsMs: Long, cb: (Result) -> Unit = {}) =
         call("app_request_applied", JSONObject().apply {

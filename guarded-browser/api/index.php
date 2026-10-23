@@ -449,6 +449,14 @@ try {
         pushAfterResponse();
         out(['ok' => true, 'id' => $id, 'message' => $msg]);
     }
+    // בקשה מהמרקט (lib/apprequests.php): הילד מבקש אפליקציה מהמלאי שעוד לא שוחררה לו.
+    if ($do === 'market_request') {
+        $user = requireUser();
+        [$id, $msg, $err] = marketRequestCreate($user, field('package'), field('note'));
+        if ($err) bad($err, 'request_refused');
+        pushAfterResponse();
+        out(['ok' => true, 'id' => $id, 'message' => $msg]);
+    }
     if ($do === 'app_request_applied') {
         $user = requireUser();
         $b = body();

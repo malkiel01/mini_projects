@@ -51,6 +51,17 @@ object MarketMath {
         else -> "wait"
     }
 
+    /** הקטגוריות של המלאי (lib/market.php, ‏MARKET_CATEGORIES) — לרשימת "🛒 עוד אפליקציות". */
+    private val CATEGORIES = linkedMapOf(
+        "learn" to "🎓 לימוד", "school" to "🏫 בית ספר", "tools" to "🧰 כלים", "transport" to "🚌 תחבורה",
+        "music" to "🎵 מוזיקה", "video" to "🎬 וידאו", "social" to "💬 תקשורת", "games" to "🎮 משחקים", "other" to "📦 אחר")
+
+    fun categoryLabel(c: String): String = CATEGORIES[c] ?: CATEGORIES.getValue("other")
+
+    /** הסדר ברשימה: לפי סדר הקטגוריות, ובתוך כל אחת — לפי השם. */
+    fun sortKey(c: String, name: String): String =
+        "%02d".format(CATEGORIES.keys.indexOf(c).let { if (it < 0) CATEGORIES.size else it }) + name.lowercase()
+
     /** הכפתור ברובריקה: מותקנת — "פתיחה"; לא — "התקנה"; בהתקנה עכשיו — "⏳". */
     fun action(installed: Boolean, pkg: String, target: String, untilMs: Long, nowMs: Long): String = when {
         installed -> "open"
