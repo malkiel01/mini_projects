@@ -26,6 +26,7 @@
         "unit": { "enum": ["px"], "default": "px" },
         "dpi": { "type": "integer", "minimum": 72, "maximum": 600, "default": 300 },
         "background": { "$ref": "#/$defs/color" },
+        "gradient": { "$ref": "#/$defs/gradient" },
         "bleed": { "type": "number", "minimum": 0, "maximum": 200, "default": 0 }
       }
     },
@@ -59,6 +60,15 @@
   "$defs": {
     "id": { "type": "string", "pattern": "^[A-Za-z0-9_\\-]{1,64}$" },
     "color": { "type": "string", "pattern": "^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$" },
+    "gradient": {
+      "type": "object",
+      "required": ["colors"],
+      "properties": {
+        "type": { "enum": ["linear", "radial"], "default": "linear" },
+        "angle": { "type": "number", "description": "כמו ב-CSS: 0 — למעלה, 90 — ימינה, 180 — למטה", "default": 180 },
+        "colors": { "type": "array", "items": { "$ref": "#/$defs/color" }, "minItems": 2, "maxItems": 5 }
+      }
+    },
     "shadow": {
       "type": "object",
       "properties": {
@@ -136,8 +146,10 @@
         {
           "properties": {
             "type": { "const": "shape" },
-            "shape": { "enum": ["rect", "ellipse", "line", "arrow", "polygon", "star"] },
-            "fill": { "$ref": "#/$defs/color" },
+            "shape": { "enum": ["rect", "ellipse", "line", "arrow", "polygon", "star", "element"] },
+            "element": { "type": "string", "maxLength": 40, "description": "כש-shape=element: שם מ-editor/js/elements.js (סרט, תג, מסגרת…)" },
+            "fill": { "anyOf": [{ "$ref": "#/$defs/color" }, { "const": "none" }] },
+            "gradient": { "$ref": "#/$defs/gradient" },
             "stroke": { "type": "object", "properties": { "width": { "type": "number" }, "color": { "$ref": "#/$defs/color" } } },
             "radius": { "type": "number" },
             "points": { "type": "integer", "minimum": 3, "maximum": 24 }

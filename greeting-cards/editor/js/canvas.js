@@ -8,6 +8,7 @@
 import { nearestWeight } from './fonts.js';
 import { fillText } from './merge.js';
 import { ICONS } from './icons.js';
+import { ELEMENTS, scalePath } from './elements.js';
 
 const SNAP_PX = 6;           // מרחק הצמדה, בפיקסלי מסך
 const MIN_ZOOM = 0.05, MAX_ZOOM = 8;
@@ -77,7 +78,7 @@ export class Canvas {
         if (!doc) return;
         const { width: W, height: H, background } = doc.page;
         this.pageShadow.size({ width: W, height: H });
-        this.pageBg.setAttrs({ width: W, height: H, fill: background || '#fff' });
+        this.pageBg.setAttrs({ width: W, height: H, fill: background || '#fff', ...gradientAttrs(doc.page.gradient, W, H) });
         this.page.clip({ x: 0, y: 0, width: W, height: H });
 
         const ids = new Set(doc.layers.map(l => l.id));
@@ -167,15 +168,26 @@ export class Canvas {
             const st = { fill: l.fill, stroke: l.stroke?.width ? l.stroke.color : undefined, strokeWidth: l.stroke?.width || 0, ...shadow };
             let node;
             switch (l.shape) {
-                case 'ellipse': node = new Konva.Ellipse({ x: l.w / 2, y: l.h / 2, radiusX: l.w / 2, radiusY: l.h / 2, ...st }); break;
+                case 'element': {
+                    const el = ELEMENTS[l.element] || ELEMENTS['badge-scallop'];
+                    node = new Konva.Path({ data: scalePath(el.d, l.w / el.vb[0], l.h / el.vb[1]), ...st, ...gradientAttrs(l.gradient, l.w, l.h), lineCap: 'round', lineJoin: 'round', fillRule: 'nonzero' });
+                    break;
+                }
+                case 'ellipse': node = new Konva.Ellipse({ x: l.w / 2, y: l.h / 2, radiusX: l.w / 2, radiusY: l.h / 2, ...st, ...gradientAttrs(l.gradient, l.w, l.h, -l.w / 2, -l.h / 2) }); break;
                 case 'star': node = new Konva.Star({ x: l.w / 2, y: l.h / 2, numPoints: l.points || 5, innerRadius: 0.4, outerRadius: 1, scaleX: l.w / 2, scaleY: l.h / 2, ...st, strokeScaleEnabled: false }); break;
                 case 'polygon': node = new Konva.RegularPolygon({ x: l.w / 2, y: l.h / 2, sides: l.points || 6, radius: 1, scaleX: l.w / 2, scaleY: l.h / 2, ...st, strokeScaleEnabled: false }); break;
                 case 'arrow': node = new Konva.Arrow({ points: [0, l.h / 2, l.w, l.h / 2], pointerLength: l.h, pointerWidth: l.h, strokeWidth: l.h / 3, stroke: l.fill, fill: l.fill }); break;
-                default: node = new Konva.Rect({ width: l.w, height: l.h, cornerRadius: Math.min(l.radius || 0, l.w / 2, l.h / 2), ...st });
+                default: node = new Konva.Rect({ width: l.w, height: l.h, cornerRadius: Math.min(l.radius || 0, l.w / 2, l.h / 2), ...st, ...gradientAttrs(l.gradient, l.w, l.h) });
             }
             g.add(node);
             // אזור לחיצה מלא, גם לצורה דקה או לחץ.
             g.add(new Konva.Rect({ width: l.w, height: l.h, fill: 'transparent', name: 'hit' }));
+        }
+        // היפוך של צורה או אייקון (בתמונה ההיפוך כבר על הצומת עצמו).
+        if ((l.flipX || l.flipY) && (l.type === 'shape' || l.type === 'icon')) {
+            const inner = new Konva.Group({ scaleX: l.flipX ? -1 : 1, x: l.flipX ? l.w : 0, scaleY: l.flipY ? -1 : 1, y: l.flipY ? l.h : 0 });
+            g.getChildren().slice().forEach(k => k.moveTo(inner));
+            g.add(inner);
         }
     }
 
@@ -465,4 +477,23 @@ export class Canvas {
         const z = this.view.zoom;
         return this.page.toCanvas({ x: p.x, y: p.y, width: W * z, height: H * z, pixelRatio: scale / z });
     }
+}
+
+/**
+ * מדרג (page.gradient או gradient של צורה) — לתכונות של Konva. הזווית כמו ב-CSS: ‏0 — כלפי מעלה,
+ * ‏90 — ימינה, ‏180 — כלפי מטה. ‏ox/oy — היכן ראשית הצורה ביחס לפינה (באליפסה — המרכז).
+ */
+export function gradientAttrs(g, w, h, ox = 0, oy = 0) {
+    if (!g || !Array.isArray(g.colors) || g.colors.length < 2) return { fillPriority: 'color' };   // גם מחזיר רקע שהמדרג שלו הוסר
+    const stops = g.colors.flatMap((c, i) => [i / (g.colors.length - 1), c]);
+    const cx = w / 2 + ox, cy = h / 2 + oy;
+    if (g.type === 'radial') {
+        return { fillPriority: 'radial-gradient', fillRadialGradientStartPoint: { x: cx, y: cy }, fillRadialGradientEndPoint: { x: cx, y: cy },
+            fillRadialGradientStartRadius: 0, fillRadialGradientEndRadius: Math.hypot(w, h) / 2, fillRadialGradientColorStops: stops };
+    }
+    const a = ((g.angle ?? 180) * Math.PI) / 180;
+    const dx = Math.sin(a), dy = -Math.cos(a);
+    const half = (Math.abs(w * dx) + Math.abs(h * dy)) / 2;
+    return { fillPriority: 'linear-gradient', fillLinearGradientStartPoint: { x: cx - dx * half, y: cy - dy * half },
+        fillLinearGradientEndPoint: { x: cx + dx * half, y: cy + dy * half }, fillLinearGradientColorStops: stops };
 }

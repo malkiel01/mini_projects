@@ -78,6 +78,12 @@ Rules:
   If it isn't, add a `shadow` or a `background`.
 - `file` must match the image file names exactly.
 - For a list of recipients, use variables in double braces in the text: `"שלום {{שם}}"`.
+- Simple decorations don't need an image — the editor draws them, and they stay editable:
+  - a gradient page: `"page": { ..., "gradient": { "type": "linear", "angle": 180, "colors": ["#ff7e5f", "#feb47b"] } }`
+    (`angle` like CSS; `"type": "radial"` has no angle);
+  - a ready element: `{ "type": "shape", "shape": "element", "element": "ribbon", "fill": "#e0457b", ... }`.
+    Available elements: badge-scallop, starburst, starburst-sharp, seal, price-tag, label-flag, circle-badge, sparkle, ribbon, ribbon-fold, ribbon-arc, banner-tab, pill, bubble, bubble-round, thought, frame, frame-double, frame-corners, frame-round, frame-arch, ring, divider-diamond, divider-dots, divider-heart, underline, arrow-hand, blob-1, blob-2, blob-3, wave-bottom, wave-top, half-circle, arch, heart-big, brush, confetti-dots, sunburst, stars-3, laurel. For an outline only (frames), set `"fill": "none"` and add a `stroke`;
+  - `rect`, `ellipse` and `element` shapes can also take a `gradient`, in the same format.
 
 ## Step 5 — hand it over
 
