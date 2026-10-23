@@ -11,17 +11,21 @@ import android.net.Uri
  *
  *   ההגנות: החלון נסגר ברגע שהאפליקציה הותקנה, או כשהזמן עבר (tick — גם בלי שירות, בכל החלה). אפליקציה *אחרת*
  *   שהותקנה בחלון — "זרה": חסומה (AppPolicy) עד שההורה מאשר, ומדווחת לו מיד. עדכונים שבאו מ-Play לא נחשבים.
- *   ההתקנה הרובוטית (בלי Play גלוי לילד) — שלב 3.
+ *   שלב 3: כשהנגישות פועלת — ההתקנה רובוטית (MarketRobot): Play מאחורי מסך מכסה, ומגדלור לוחץ "התקנה".
+ *   כשלא — או כשהרובוט לא מצליח — Play גלויה, כמו כאן.
  */
 object MarketInstall {
 
-    fun start(ctx: Context, pkg: String) {
+    /** ‏true — ההתקנה רובוטית (מסך מכסה); false — Play גלויה. */
+    fun start(ctx: Context, pkg: String, name: String): Boolean {
         val store = Store(ctx)
         store.marketTarget = pkg
         store.marketUntil = System.currentTimeMillis() + MarketMath.WINDOW_MS
         Trace.log("market.start", pkg)
         // לפני הפתיחה: Play יוצאת מההשעיה, וההתקנה נפתחת (Enforcer.apply קורא את החלון).
         try { if (!store.released) Enforcer.apply(ctx, store) } catch (e: Exception) { Trace.log("market.apply", e.message ?: "") }
+        // המסך המכסה עולה לפני Play — הילד לא רואה את החנות לרגע.
+        val robot = MarketRobot.active?.start(name) ?: false
         val flags = Intent.FLAG_ACTIVITY_NEW_TASK
         try {
             ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$pkg")).setPackage(MarketMath.PLAY).addFlags(flags))
@@ -30,6 +34,15 @@ object MarketInstall {
             close(ctx, store)
             throw e
         }
+        return robot
+    }
+
+    /** "ביטול" במסך המכסה. */
+    fun cancel(ctx: Context) {
+        val store = Store(ctx)
+        if (store.marketTarget.isEmpty()) return
+        Trace.log("market.cancel", store.marketTarget)
+        close(ctx, store)
     }
 
     /** חבילה חדשה הותקנה (AppGuardService). ‏replacing — עדכון של קיימת: לא נוגעים. */
@@ -73,6 +86,7 @@ object MarketInstall {
     private fun close(ctx: Context, store: Store) {
         store.marketTarget = ""
         store.marketUntil = 0L
+        MarketRobot.active?.stop()
         // Play חוזרת להיות חסומה (אם ההורה חסם), וההתקנה — לבחירת ההורה.
         try { if (!store.released) Enforcer.apply(ctx, store) } catch (e: Exception) { Trace.log("market.apply", e.message ?: "") }
     }

@@ -208,6 +208,13 @@ class Store(context: Context) {
     var marketUntil: Long
         get() = prefs.getLong("market_until", 0L)
         set(v) { prefs.edit().putLong("market_until", v).apply() }
+    /** ההתקנה הרובוטית (MarketRobot): מתי התחילה (0 — לא פעילה), ומתי לחצנו "התקנה" (0 — עוד לא). */
+    var marketRobotAt: Long
+        get() = prefs.getLong("market_robot_at", 0L)
+        set(v) { prefs.edit().putLong("market_robot_at", v).apply() }
+    var marketClickedAt: Long
+        get() = prefs.getLong("market_clicked_at", 0L)
+        set(v) { prefs.edit().putLong("market_clicked_at", v).apply() }
 
     /** "זרות": הותקנו בחלון ולא אושרו — חסומות עד שההורה יחליט (AppPolicy). */
     var marketStrays: Set<String>

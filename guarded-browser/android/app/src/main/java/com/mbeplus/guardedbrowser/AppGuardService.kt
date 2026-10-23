@@ -48,6 +48,7 @@ class AppGuardService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        MarketRobot.active = MarketRobot(this)
         try {
             registerReceiver(installs, android.content.IntentFilter(Intent.ACTION_PACKAGE_ADDED).apply { addDataScheme("package") })
         } catch (e: Exception) { Trace.log("appguard.installs", e.message ?: "") }
@@ -63,6 +64,7 @@ class AppGuardService : AccessibilityService() {
 
     override fun onDestroy() {
         timer.removeCallbacksAndMessages(null)
+        MarketRobot.active?.stop(); MarketRobot.active = null
         try { unregisterReceiver(installs) } catch (e: Exception) {}
         super.onDestroy()
     }
