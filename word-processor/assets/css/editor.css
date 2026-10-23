@@ -194,6 +194,12 @@ html.wp-no-page-zoom, html.wp-no-page-zoom body, .wp-editor, .wp-stage { touch-a
 .wp-hf-rich p { margin: 0; min-block-size: 1em; }
 .wp-hf-rich img { max-inline-size: 100%; vertical-align: bottom; }
 .wp-hf-rich .wp-hf-num { color: #555; font-size: 9pt; }
+/* טבלה בכותרת (ובעורך הקטן שלה): כמו בגוף; בלי גבולות — בעורך הקטן קו מקווקו, כדי לראות את התאים */
+:is(.wp-hf-rich, .hf-edit-doc) table { border-collapse: collapse; table-layout: fixed; inline-size: 100%; margin: 0; }
+:is(.wp-hf-rich, .hf-edit-doc) :is(td, th) { border: 1px solid var(--wpt-bc, #888); padding: 2pt 4pt; vertical-align: top; box-sizing: border-box; }
+:is(.wp-hf-rich, .hf-edit-doc) :is(td, th) > p { margin: 0; }
+.wp-hf-rich table[data-borders=none] :is(td, th) { border-color: transparent; }
+.hf-edit-doc table[data-borders=none] :is(td, th) { border: 1px dashed rgb(0 0 0 / .2); }
 /* טורים — תצוגת טיוטה: כל טור במסגרת משלו; תווית "עמוד · טור" בפינת השוליים העליונים (לא מודפסת — השכבה לא מודפסת) */
 .wp-col-badge { position: absolute; inset-inline-start: 8px; top: 6px; font-size: 8pt; color: #2d4a8a; background: #eef2fb; border-radius: 3px; padding: 1px 6px; }
 .wp-num.al-center { inset-inline: 0; text-align: center; }
