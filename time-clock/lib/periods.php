@@ -115,7 +115,7 @@ function periodView(array $person, array $in): array {
     $rows = [];
     $done = 0;
     foreach (periodEmployees($companyId, $month, $site) as $e) {
-        $r = monthReport((int) $e['id'], $month, $tz);
+        $r = monthReportOt((int) $e['id'], $month, $tz);
         $st = db()->prepare("SELECT COUNT(*) FROM corrections WHERE member_id = ? AND status = 'pending'");
         $st->execute([$e['id']]);
         $mine = $so[(int) $e['id']] ?? [];
@@ -294,20 +294,28 @@ function periodCsv(array $person, array $in): string {
     $hm = fn(int $m) => ($m < 0 ? '-' : '') . intdiv(abs($m), 60) . ':' . str_pad((string) (abs($m) % 60), 2, '0', STR_PAD_LEFT);
     $f = fopen('php://temp', 'w+');
     fwrite($f, "\xEF\xBB\xBF");
-    fputcsv($f, ['עובד', 'מס׳ עובד', 'תאריך', 'כניסה', 'יציאה', 'סה״כ', 'תקן', 'הפרש', 'תוקן', 'הערה'], ',', '"', '');
+    // הסיווג (גרסה 2) — עמודה לכל סל, עם השיעור שבכללי החברה בכותרת
+    $rules = otRulesAt($companyId, monthBounds($month)[1]);
+    $otCols = ['reg' => 'רגילות', 'ot1' => "נוספות {$rules['rate_ot1']}%", 'ot2' => "נוספות {$rules['rate_ot2']}%",
+               'rest' => "מנוחה/חג {$rules['rate_rest']}%", 'rest_ot1' => "מנוחה {$rules['rate_rest_ot1']}%",
+               'rest_ot2' => "מנוחה {$rules['rate_rest_ot2']}%", 'holiday_rest' => "חג במנוחה {$rules['rate_holiday_rest']}%"];
+    fputcsv($f, array_merge(['עובד', 'מס׳ עובד', 'תאריך', 'כניסה', 'יציאה', 'סה״כ', 'תקן', 'הפרש'], array_values($otCols), ['יום', 'תוקן', 'הערה']), ',', '"', '');
     foreach (periodEmployees($companyId, $month, $site) as $e) {
-        $r = monthReport((int) $e['id'], $month, $tz);
+        $r = monthReportOt((int) $e['id'], $month, $tz);
         foreach ($r['days'] as $d) {
             if (!$d['pairs'] && !$d['standard'] && !$d['missing_in'] && !$d['missing_out']) continue;
             if ($d['date'] > $r['today']) continue;
             $note = trim(($d['missing_out'] ? 'חסר יציאה ' : '') . ($d['missing_in'] ? 'חסר כניסה ' : '') . (!$d['pairs'] && $d['standard'] ? 'לא דווח' : ''));
             $ins = implode(' ', array_map(fn($p) => $t($p['in']), $d['pairs']));
             $outs = implode(' ', array_map(fn($p) => $t($p['out']), $d['pairs']));
-            fputcsv($f, [$e['name'], $e['employee_no'] ?? '', $d['date'], $ins, $outs, $hm($d['minutes']), $hm($d['standard']),
-                         $hm($d['minutes'] - $d['standard']), $d['corrected'] ? 'כן' : '', $note], ',', '"', '');
+            $ot = $d['ot']['b'] ?? array_fill_keys(OT_BUCKETS, 0);
+            $kind = trim(($d['ot']['holiday'] ?? '') . (!empty($d['ot']['rest']) ? ' מנוחה' : '') . (!empty($d['ot']['night']) ? ' לילה' : ''));
+            fputcsv($f, array_merge([$e['name'], $e['employee_no'] ?? '', $d['date'], $ins, $outs, $hm($d['minutes']), $hm($d['standard']), $hm($d['minutes'] - $d['standard'])],
+                                    array_map(fn($k) => $ot[$k] ? $hm($ot[$k]) : '', array_keys($otCols)), [$kind, $d['corrected'] ? 'כן' : '', $note]), ',', '"', '');
         }
         $s = $r['summary'];
-        fputcsv($f, [$e['name'], $e['employee_no'] ?? '', 'סה״כ ' . $month, '', '', $hm($s['minutes']), $hm($s['standard']), $hm($s['diff']), '', $s['days'] . ' ימים'], ',', '"', '');
+        fputcsv($f, array_merge([$e['name'], $e['employee_no'] ?? '', 'סה״כ ' . $month, '', '', $hm($s['minutes']), $hm($s['standard']), $hm($s['diff'])],
+                                array_map(fn($k) => $hm($s['ot'][$k]), array_keys($otCols)), ['', '', $s['days'] . ' ימים']), ',', '"', '');
     }
     rewind($f);
     return stream_get_contents($f);

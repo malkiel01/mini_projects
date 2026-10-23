@@ -210,3 +210,16 @@ function classifyMonth(int $memberId, string $month, string $tz): array {
     foreach ($days as $d) foreach ($d['b'] as $k => $v) $sum[$k] += $v;
     return ['days' => $days, 'summary' => $sum, 'rules' => otRulesAt((int) $m['company_id'], $last)];
 }
+
+/** monthReport ועוד הסיווג: לכל יום 'ot' (סלים, מנוחה, חג, לילה), ובסיכום 'ot'. משמש את המסכים ואת הייצוא. */
+function monthReportOt(int $memberId, string $month, string $tz, ?string $now = null): array {
+    $r = monthReport($memberId, $month, $tz, $now);
+    $c = classifyMonth($memberId, $month, $tz);
+    foreach ($r['days'] as &$d) $d['ot'] = $c['days'][$d['date']] ?? null;
+    unset($d);
+    $r['summary']['ot'] = $c['summary'];
+    $r['ot_rules'] = ['rate_ot1' => $c['rules']['rate_ot1'], 'rate_ot2' => $c['rules']['rate_ot2'], 'rate_rest' => $c['rules']['rate_rest'],
+                      'rate_rest_ot1' => $c['rules']['rate_rest_ot1'], 'rate_rest_ot2' => $c['rules']['rate_rest_ot2'],
+                      'rate_holiday_rest' => $c['rules']['rate_holiday_rest'], 'holiday_rest_cumulative' => $c['rules']['holiday_rest_cumulative']];
+    return $r;
+}

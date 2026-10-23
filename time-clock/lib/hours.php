@@ -203,7 +203,7 @@ function recordPunch(int $memberId, string $kind, string $source, ?int $deviceId
     if (!in_array($kind, ['in', 'out'], true)) throw new AppError('דיווח לא מוכר');
     $now = $now ?? nowIso();
     $last = lastPunch($memberId);
-    if ($last && $last['kind'] === $kind && utc($now)->getTimestamp() - utc($last['at_utc'])->getTimestamp() < DUP_SECONDS) {
+    if ($last && $last['kind'] === $kind && abs(utc($now)->getTimestamp() - utc($last['at_utc'])->getTimestamp()) < DUP_SECONDS) {
         throw new AppError($kind === 'in' ? 'הכניסה כבר נרשמה' : 'היציאה כבר נרשמה', 409);
     }
     db()->prepare('INSERT INTO punches (member_id, kind, at_utc, source, station_id, device_id, created_at) VALUES (?,?,?,?,?,?,?)')

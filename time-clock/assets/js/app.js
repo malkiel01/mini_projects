@@ -590,6 +590,7 @@ async function renderMonth(delta = 0) {
         ${mine ? `<input type="checkbox" class="pick" value="${e.id}" aria-label="סימון ${esc(e.name)}">` : ''}
         <div class="body" data-emp="${e.id}" style="cursor:pointer"><div class="l1"><span>${esc(e.name)}</span><span class="t">${hm(s.minutes)} / ${hm(s.standard)}</span></div>
           <div class="l2">הפרש ${hmS(s.diff)}${s.missing ? ` · <b style="color:var(--danger)">${s.missing} חסרים</b>` : ''}${e.pending ? ` · ${e.pending} תיקונים ממתינים` : ''}</div>
+          ${s.ot && (s.ot.ot1 + s.ot.ot2 + s.ot.rest + s.ot.rest_ot1 + s.ot.rest_ot2 + s.ot.holiday_rest) ? `<div class="l2" style="font-size:.78rem">נוספות ${hm(s.ot.ot1 + s.ot.ot2)} · מנוחה/חג ${hm(s.ot.rest + s.ot.rest_ot1 + s.ot.rest_ot2 + s.ot.holiday_rest)}</div>` : ''}
           ${v.status !== 'open' ? `<div class="steps" style="margin-top:4px">${stepChips(e)}</div>` : ''}</div>
         ${behalf ? `<button class="btn sm" type="button" data-behalf="${e.id}">במקום העובד</button>` : ''}
       </li>`;
@@ -642,11 +643,12 @@ async function renderMonth(delta = 0) {
     let box = $('#print-box');
     if (!box) { box = document.createElement('div'); box.id = 'print-box'; box.className = 'print-only'; document.body.append(box); }
     box.innerHTML = `<h1>${esc(state.data.company.name)} — נוכחות ${title} (${status})</h1>
-      <table><thead><tr><th>עובד</th><th>מס׳</th><th>ימים</th><th>שעות</th><th>תקן</th><th>הפרש</th><th>חסרים</th>${v.steps.map(k => `<th>${v.labels[k]}</th>`).join('')}</tr></thead>
+      <table><thead><tr><th>עובד</th><th>מס׳</th><th>ימים</th><th>שעות</th><th>תקן</th><th>הפרש</th><th>חסרים</th><th>רגילות</th><th>נוספות</th><th>מנוחה/חג</th>${v.steps.map(k => `<th>${v.labels[k]}</th>`).join('')}</tr></thead>
       <tbody>${v.employees.map(e => `<tr><td>${esc(e.name)}</td><td>${esc(e.employee_no ?? '')}</td><td>${e.summary.days}</td><td>${hm(e.summary.minutes)}</td>
         <td>${hm(e.summary.standard)}</td><td>${hmS(e.summary.diff)}</td><td>${e.summary.missing || ''}</td>
+        <td>${hm(e.summary.ot?.reg ?? 0)}</td><td>${hm((e.summary.ot?.ot1 ?? 0) + (e.summary.ot?.ot2 ?? 0))}</td><td>${hm(['rest', 'rest_ot1', 'rest_ot2', 'holiday_rest'].reduce((a, k) => a + (e.summary.ot?.[k] ?? 0), 0))}</td>
         ${v.steps.map((k, i) => { const s = e.signoffs.find(x => x.step === i); return `<td>${s ? new Date(s.at).toLocaleDateString('he-IL', { timeZone: TZ }) + (s.on_behalf ? '*' : '') : ''}</td>`; }).join('')}</tr>`).join('')}</tbody></table>
-      <p style="margin-top:8px;font-size:9pt">"הפרש" — מול שעות התקן בלבד, ואינו חישוב שעות נוספות. * — אושר במקום העובד.</p>`;
+      <p style="margin-top:8px;font-size:9pt">"הפרש" — מול שעות התקן של העובד. "נוספות" ו"מנוחה/חג" — לפי כללי החברה (הפירוט לפי שיעור — בייצוא לאקסל). * — אושר במקום העובד.</p>`;
     window.print();
   });
 }

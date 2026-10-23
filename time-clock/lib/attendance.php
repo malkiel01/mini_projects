@@ -24,7 +24,7 @@ function empPunch(array $in): array {
 function empMonth(array $in): array {
     $m = sessionMember(intIn($in, 'member_id'));
     $month = str($in, 'month', 7) ?: substr(todayIn($m['tz']), 0, 7);
-    return monthReport((int) $m['id'], $month, $m['tz']) + ['period' => empPeriodInfo((int) $m['company_id'], (int) $m['id'], $month)];
+    return monthReportOt((int) $m['id'], $month, $m['tz']) + ['period' => empPeriodInfo((int) $m['company_id'], (int) $m['id'], $month)];
 }
 
 /** המסך "היום" של המנהל: מי בעבודה, מי לא דיווח ביום עבודה, ומי שכח לצאת אתמול. מנהל סניף — הסניף שלו. */
@@ -62,5 +62,5 @@ function empMonthManager(array $person, array $in): array {
     $e = empRow($companyId, intIn($in, 'id'), $site);
     $tz = companyRow($companyId)['tz'];
     $month = str($in, 'month', 7) ?: substr(todayIn($tz), 0, 7);
-    return monthReport((int) $e['id'], $month, $tz);
+    return monthReportOt((int) $e['id'], $month, $tz);
 }
