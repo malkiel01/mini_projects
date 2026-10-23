@@ -189,7 +189,7 @@ function importSheet() {
     drop.addEventListener('drop', e => { e.preventDefault(); add([...e.dataTransfer.files]); });
 
     sheet('ייבוא מהצ\'אט', h('div', {},
-        h('p', { class: 'hint' }, 'הצ\'אט נותן תמונת רקע (בלי טקסט) ובלוק JSON. בחרו את התמונות והדביקו את ה-JSON — הטקסטים יהפכו לשכבות שאפשר לערוך. תמונה לבד — נכנסת כרקע.'),
+        h('p', { class: 'hint' }, 'בוחרים את כל התמונות מהצ\'אט יחד (השמות לא משנים). אם הצ\'אט נתן גם בלוק JSON — מדביקים אותו, והטקסטים נכנסים כשכבות לעריכה. בלי JSON: התמונה הגדולה נכנסת כרקע, והשאר — כשכבות.'),
         drop, list,
         field('ה-JSON מהצ\'אט (לא חובה)', text),
         h('div', { class: 'row-actions' },
