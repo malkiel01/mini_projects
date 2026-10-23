@@ -19,7 +19,7 @@ android {
         minSdk = 24
         targetSdk = 36
         versionCode = ((findProperty("versionCode") as String?) ?: "1").toInt()
-        versionName = "3.1"
+        versionName = "3.2"
 
         // כתובת האתר נקבעת בזמן בנייה
         buildConfigField("String", "WEB_URL",

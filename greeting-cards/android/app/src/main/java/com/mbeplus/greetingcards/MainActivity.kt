@@ -100,7 +100,7 @@ class MainActivity : AppCompatActivity() {
                     val buf = input.readBytes()
                     if (buf.size > 25 * 1024 * 1024) null else buf
                 } ?: continue
-                val ext = when { mime.contains("png") -> "png"; mime.contains("webp") -> "webp"; mime.contains("json") -> "json"; mime.contains("zip") -> "gcard"; else -> "jpg" }
+                val ext = when { mime.contains("png") -> "png"; mime.contains("webp") -> "webp"; mime.contains("json") -> "json"; mime.contains("zip") || mime.contains("octet") -> "gcard"; mime.startsWith("image/") -> "jpg"; else -> "gcard" }
                 files.put(JSONObject().put("name", uri.lastPathSegment?.substringAfterLast('/')?.takeIf { it.contains('.') } ?: "shared-${i + 1}.$ext")
                     .put("mime", mime).put("base64", android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)))
             } catch (e: Exception) {
@@ -172,7 +172,18 @@ class MainActivity : AppCompatActivity() {
                 fileUploadCallback?.onReceiveValue(null)
                 fileUploadCallback = filePathCallback
 
-                val intent = fileChooserParams.createIntent()
+                // בחירת תמונות בלבד — הבורר הרגיל (גלריה). כל השאר — כל סוגי הקבצים: קובץ ‎.gcard מהצ'אט
+                // מגיע כ-application/octet-stream, ובורר שמסנן לפי סוג פשוט לא מציג אותו.
+                val types = fileChooserParams.acceptTypes.filter { it.isNotBlank() }
+                val intent = if (types.isNotEmpty() && types.all { it.startsWith("image/") }) {
+                    fileChooserParams.createIntent()
+                } else {
+                    Intent(Intent.ACTION_GET_CONTENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        type = "*/*"
+                        putExtra(Intent.EXTRA_ALLOW_MULTIPLE, fileChooserParams.mode == FileChooserParams.MODE_OPEN_MULTIPLE)
+                    }
+                }
                 try {
                     startActivityForResult(intent, FILE_CHOOSER_REQUEST)
                 } catch (e: Exception) {
@@ -222,8 +233,10 @@ class MainActivity : AppCompatActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == FILE_CHOOSER_REQUEST) {
+            // כמה קבצים מגיעים ב-clipData; ‏parseResult קורא רק קובץ אחד.
             val result = if (resultCode == Activity.RESULT_OK && data != null) {
-                WebChromeClient.FileChooserParams.parseResult(resultCode, data)
+                data.clipData?.let { c -> Array(c.itemCount) { c.getItemAt(it).uri } }
+                    ?: WebChromeClient.FileChooserParams.parseResult(resultCode, data)
             } else null
             fileUploadCallback?.onReceiveValue(result)
             fileUploadCallback = null

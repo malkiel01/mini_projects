@@ -55,6 +55,8 @@
                 <data android:mimeType="text/plain"/>
                 <data android:mimeType="application/json"/>
                 <data android:mimeType="application/zip"/>
+                <!-- design.gcard מהצ'אט: אנדרואיד לא מכיר את הסיומת, ומשתף אותו כקובץ בינארי -->
+                <data android:mimeType="application/octet-stream"/>
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.SEND_MULTIPLE"/>
