@@ -11,6 +11,8 @@ description: Creates backgrounds and design elements for the Greeting Cards edit
 
 # Background and elements for the Greeting Cards editor
 
+_Instructions version 4 (23.10.2026) — a round is two replies: image, then text._
+
 You are helping the user create **a background and design elements** for an image editor. The user will
 **add and edit all the text there**. Talk to the user in the language they write in (usually Hebrew).
 

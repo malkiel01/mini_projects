@@ -1476,7 +1476,7 @@ async function gptSetupSheet(regenerate = false) {
     let cfg, instructions = '';
     try {
         cfg = await sync.gptSetup(regenerate === true);
-        instructions = (await (await fetch('gpt/instructions.md', { cache: 'no-cache' })).text()).replace(/<!--[\s\S]*?-->\n*/, '');
+        instructions = (await (await fetch('gpt/instructions.md?v=' + Date.now(), { cache: 'no-store' })).text()).replace(/<!--[\s\S]*?-->\n*/, '');
     } catch (e) { toast(e.message, 'error'); return; }
     const base = new URL('.', location.href).href;
     const copyRow = (label, value, secret) => h('div', { class: 'field' },

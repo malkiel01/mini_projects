@@ -213,11 +213,14 @@ export function safeName(s) {
 
 /** הסקיל הבסיסי (skill/SKILL.md), עם הפונטים והגדלים של העורך. */
 export async function personalSkill() {
-    const res = await fetch('skill/SKILL.md', { cache: 'no-cache' });
+    // ‏?v= — כדי שגם WebView ששומר עותק בצד לא יחזיר הוראות ישנות.
+    const res = await fetch('skill/SKILL.md?v=' + Date.now(), { cache: 'no-store' });
     if (!res.ok) throw new Error('הסקיל לא נטען');
     const base = await res.text();
     return base
         .replace(/<!--[\s\S]*?-->\n*/, '')
+        .replace(/ The default sizes:\n[^\n]*\n/, '\n')
+        .replace(/ The default list:[^.]*\./, '')
         .replaceAll('{{FONTS}}', FONTS.map(f => f.family).join(', '))
         .replaceAll('{{SIZES}}', SIZES.map(s => `${s.label} ${s.w}×${s.h}`).join(' · '))
         .replaceAll('{{BRAND}}', '');
