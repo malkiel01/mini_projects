@@ -1,9 +1,11 @@
 // העורך החדש: מסך הבית (העיצובים שלי) ומסך העריכה. ‏spec/03-editor.md.
 
 import { h, $, toast, sheet, closeSheet, isSheetOpen, confirmDialog, field, rangeField, seg, colorField, toggle, pickFiles, download, timeAgo } from './ui.js';
-import { SIZES, newDoc, textLayer, shapeLayer, imageLayer, backgroundLayer, iconLayer, layerLabel, uid, clone, normalizeDoc } from './doc.js';
-import { ICONS } from './icons.js';
-import { TEMPLATES } from './templates.js';
+import { SIZES, newDoc, textLayer, shapeLayer, imageLayer, backgroundLayer, iconLayer, elementLayer, layerLabel, uid, clone, normalizeDoc } from './doc.js';
+import { ICONS, ICON_GROUPS } from './icons.js';
+import { ELEMENTS, ELEMENT_GROUPS } from './elements.js';
+import { TEXT_STYLES, SOLIDS, GRADIENTS, gradientCss } from './presets.js';
+import { TEMPLATES, TEMPLATE_CATS } from './templates.js';
 import { FONTS, ensureFont, ensureDocFonts, nearestWeight } from './fonts.js';
 import { History } from './history.js';
 import { designs, assets } from './db.js';
@@ -73,14 +75,8 @@ function newDesignSheet() {
     const wIn = h('input', { type: 'number', min: 16, max: 10000, value: 1080, inputMode: 'numeric' });
     const hIn = h('input', { type: 'number', min: 16, max: 10000, value: 1350, inputMode: 'numeric' });
     sheet('עיצוב חדש', h('div', {},
-        h('h3', { class: 'section' }, 'מתבנית'),
-        h('div', { class: 'tiles templates' }, TEMPLATES.map(t => {
-            const img = h('img', { alt: '', class: 'tpl-img' });
-            templateThumb(t).then(url => { img.src = url; }).catch(() => {});
-            return h('button', { class: 'tile tpl', onclick: () => createFromTemplate(t) },
-                h('span', { class: 'tpl-frame', style: { aspectRatio: `${t.doc.page.width} / ${t.doc.page.height}` } }, img),
-                h('span', {}, t.label));
-        })),
+        h('h3', { class: 'section' }, `מתבנית (${TEMPLATES.length})`),
+        tabs(['הכול', ...TEMPLATE_CATS], cat => templateGrid(cat === 'הכול' ? TEMPLATES : TEMPLATES.filter(t => t.cat === cat)), 'tpl'),
         h('h3', { class: 'section' }, 'דף ריק'),
         h('div', { class: 'tiles sizes' }, SIZES.map(s => h('button', { class: 'tile size', onclick: () => createDesign(s.w, s.h, s.label) },
             h('span', { class: 'size-box', style: { aspectRatio: `${s.w} / ${s.h}` }, 'aria-hidden': 'true' }),
@@ -94,24 +90,45 @@ function newDesignSheet() {
 
 const thumbs = new Map();
 
+/**
+ * רשת תבניות. התצוגה המקדימה מצוירת רק כשהכרטיס נכנס למסך, ואחת אחרי השנייה — עשרות תבניות לא
+ * תוקעות את הטלפון בפתיחת הגיליון.
+ */
+function templateGrid(list) {
+    const io = 'IntersectionObserver' in window ? new IntersectionObserver(entries => {
+        for (const e of entries) if (e.isIntersecting) { io.unobserve(e.target); e.target._load(); }
+    }, { rootMargin: '200px' }) : null;
+    return h('div', { class: 'tiles templates' }, list.map(t => {
+        const img = h('img', { alt: '', class: 'tpl-img' });
+        const frame = h('span', { class: 'tpl-frame', style: { aspectRatio: `${t.doc.page.width} / ${t.doc.page.height}` } }, img);
+        frame._load = () => queueThumb(t).then(url => { img.src = url; }).catch(() => {});
+        if (io) io.observe(frame); else frame._load();
+        return h('button', { class: 'tile tpl', onclick: () => createFromTemplate(t) }, frame, h('span', {}, t.label));
+    }));
+}
+
+let thumbQueue = Promise.resolve();
+function queueThumb(t) {
+    if (thumbs.has(t.id)) return thumbs.get(t.id);
+    const p = thumbQueue.then(() => templateThumb(t));
+    thumbQueue = p.catch(() => {}).then(() => new Promise(r => setTimeout(r, 0)));
+    thumbs.set(t.id, p);
+    return p;
+}
+
 /** תצוגה מקדימה של תבנית: מצוירת פעם אחת בקנבס נסתר, ונשמרת לכל הפעלה. */
-function templateThumb(t) {
-    if (!thumbs.has(t.id)) {
-        thumbs.set(t.id, (async () => {
-            const { doc } = normalizeDoc(t.doc);
-            await ensureDocFonts(doc);
-            const holder = h('div', { style: { position: 'fixed', insetInlineStart: '-10000px', top: '0', width: '100px', height: '100px' }, 'aria-hidden': 'true' });
-            document.body.append(holder);
-            try {
-                const c = new Canvas(holder, {});
-                c.setDoc(doc);
-                const url = c.pageCanvas(320 / Math.max(doc.page.width, doc.page.height)).toDataURL('image/jpeg', 0.82);
-                c.stage.destroy();
-                return url;
-            } finally { holder.remove(); }
-        })());
-    }
-    return thumbs.get(t.id);
+async function templateThumb(t) {
+    const { doc } = normalizeDoc(t.doc);
+    await ensureDocFonts(doc);
+    const holder = h('div', { style: { position: 'fixed', insetInlineStart: '-10000px', top: '0', width: '100px', height: '100px' }, 'aria-hidden': 'true' });
+    document.body.append(holder);
+    try {
+        const c = new Canvas(holder, {});
+        c.setDoc(doc);
+        const url = c.pageCanvas(320 / Math.max(doc.page.width, doc.page.height)).toDataURL('image/jpeg', 0.82);
+        c.stage.destroy();
+        return url;
+    } finally { holder.remove(); }
 }
 
 async function createFromTemplate(t) {
@@ -493,7 +510,7 @@ function distribute(axis) {
 
 function addSheet() {
     const t = (icon, label, fn) => tile(icon, label, () => { closeSheet(); fn(); });
-    sheet('הוספה', h('div', {},
+    const basic = () => h('div', {},
         h('div', { class: 'tiles' },
             t('🔠', 'כותרת', () => addText('title')),
             t('🔤', 'כותרת משנה', () => addText('subtitle')),
@@ -506,10 +523,120 @@ function addSheet() {
             t('⭐', 'כוכב', () => addLayer({ ...shapeLayer(ed.doc, 'star'), fill: '#e19a00' })),
             t('➖', 'קו', () => addLayer(shapeLayer(ed.doc, 'line'))),
             t('⬢', 'מצולע', () => addLayer({ ...shapeLayer(ed.doc, 'polygon'), points: 6 })),
-            t('➡️', 'חץ', () => addLayer({ ...shapeLayer(ed.doc, 'arrow'), h: Math.min(ed.doc.page.width, ed.doc.page.height) * 0.08 }))),
-        h('h3', { class: 'section' }, 'אייקונים'),
-        h('div', { class: 'icon-grid' }, Object.entries(ICONS).map(([name, ic]) =>
-            h('button', { class: 'icon-pick', 'aria-label': ic.label, title: ic.label, onclick: () => { closeSheet(); addLayer(iconLayer(ed.doc, name)); } }, iconSvg(ic))))), { wide: true });
+            t('➡️', 'חץ', () => addLayer({ ...shapeLayer(ed.doc, 'arrow'), h: Math.min(ed.doc.page.width, ed.doc.page.height) * 0.08 }))));
+    const styles = () => h('div', { class: 'style-grid' }, TEXT_STYLES.map(p => {
+        ensureFont(p.font, p.weight);
+        const light = parseInt(p.color.slice(1, 3), 16) * 0.3 + parseInt(p.color.slice(3, 5), 16) * 0.59 + parseInt(p.color.slice(5, 7), 16) * 0.11 > 170 && !p.background && !p.stroke;
+        return h('button', { class: 'style-pick' + (light ? ' dark' : ''), onclick: () => { closeSheet(); addStyledText(p); } },
+            h('span', { style: styleCss(p) }, p.sample));
+    }));
+    const elements = () => h('div', {}, Object.entries(ELEMENT_GROUPS).flatMap(([g, names]) => [
+        h('h3', { class: 'section' }, g),
+        h('div', { class: 'el-grid' }, names.map(name => h('button', { class: 'el-pick', 'aria-label': ELEMENTS[name].label, title: ELEMENTS[name].label,
+            onclick: () => { closeSheet(); addLayer(elementLayer(ed.doc, name)); } }, elementSvg(ELEMENTS[name])))),
+    ]));
+    const icons = () => iconPicker(name => { closeSheet(); addLayer(iconLayer(ed.doc, name)); });
+    const panels = { 'בסיסי': basic, 'טקסטים מעוצבים': styles, 'אלמנטים': elements, 'אייקונים': icons };
+    sheet('הוספה', tabs(Object.keys(panels), name => panels[name](), 'add'), { wide: true });
+}
+
+/**
+ * לשוניות: שורת כפתורים מעל אזור אחד שמתמלא מחדש בבחירה. הלשונית האחרונה נזכרת (לפי key) —
+ * מי שמוסיף אייקון אחרי אייקון לא צריך לחזור אליה כל פעם.
+ */
+const lastTab = {};
+function tabs(names, render, key) {
+    const panel = h('div', { class: 'tab-panel', role: 'tabpanel', tabindex: '-1' });
+    const bar = h('div', { class: 'tabbar', role: 'tablist' });
+    const btns = names.map((name, i) => h('button', { role: 'tab', class: 'tab', onclick: () => pick(i), onkeydown: e => {
+        // חצים בין לשוניות, לפי כיוון הקריאה (ימין לשמאל: חץ שמאלה — הבאה).
+        const d = { ArrowLeft: 1, ArrowRight: -1 }[e.key];
+        if (d) { e.preventDefault(); const j = (i + d + names.length) % names.length; pick(j); btns[j].focus(); }
+    } }, name));
+    bar.append(...btns);
+    const pick = i => {
+        btns.forEach((b, j) => { b.setAttribute('aria-selected', String(i === j)); b.tabIndex = i === j ? 0 : -1; });
+        panel.replaceChildren(render(names[i], i));
+        if (key) lastTab[key] = i;
+    };
+    pick(Math.min(lastTab[key] || 0, names.length - 1));
+    return h('div', { class: 'tabs' }, bar, panel);
+}
+
+/** בחירת אייקון: קבוצות וחיפוש (בעברית או באנגלית). ‏current — מסמן את הנוכחי (בעריכה). */
+function iconPicker(onPick, current) {
+    const grid = h('div', { class: 'icon-grid' });
+    const show = names => {
+        grid.replaceChildren(...(names.length ? names.filter(n => ICONS[n]).map(name =>
+            h('button', { class: 'icon-pick' + (name === current ? ' on' : ''), 'aria-label': ICONS[name].label, title: ICONS[name].label,
+                'aria-pressed': current === undefined ? undefined : String(name === current),
+                onclick: e => {
+                    if (current !== undefined) {
+                        current = name;
+                        grid.querySelectorAll('.icon-pick').forEach(b => { b.classList.toggle('on', b === e.currentTarget); b.setAttribute('aria-pressed', String(b === e.currentTarget)); });
+                    }
+                    onPick(name);
+                } }, iconSvg(ICONS[name]))) : [h('p', { class: 'muted' }, 'לא נמצא אייקון כזה')]));
+    };
+    const groups = Object.keys(ICON_GROUPS);
+    const chips = groups.map(g => h('button', { class: 'chip-btn', 'aria-pressed': 'false', onclick: () => choose(g) }, g));
+    const choose = g => {
+        search.value = '';
+        chips.forEach((c, i) => c.setAttribute('aria-pressed', String(groups[i] === g)));
+        show(ICON_GROUPS[g]);
+    };
+    const search = h('input', { type: 'search', class: 'search', placeholder: 'חיפוש: לב, עוגה, טלפון…', 'aria-label': 'חיפוש אייקון', oninput: () => {
+        const q = search.value.trim().toLowerCase();
+        if (!q) { choose(groups.find(g => ICON_GROUPS[g].includes(current)) || groups[0]); return; }
+        chips.forEach(c => c.setAttribute('aria-pressed', 'false'));
+        show(Object.keys(ICONS).filter(n => n.includes(q) || ICONS[n].label.toLowerCase().includes(q)));
+    } });
+    choose(groups.find(g => ICON_GROUPS[g].includes(current)) || groups[0]);
+    return h('div', {}, search, h('div', { class: 'chips' }, chips), grid);
+}
+
+/** תצוגת אלמנט לכפתור — ‏SVG בצמתים, בצבע הטקסט. */
+function elementSvg(el) {
+    const NS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('viewBox', `0 0 ${el.vb[0]} ${el.vb[1]}`);
+    svg.setAttribute('aria-hidden', 'true');
+    const p = document.createElementNS(NS, 'path');
+    p.setAttribute('d', el.d);
+    if (el.stroke) { p.setAttribute('fill', 'none'); p.setAttribute('stroke', 'currentColor'); p.setAttribute('stroke-width', String(Math.max(...el.vb) * 0.035)); p.setAttribute('stroke-linecap', 'round'); }
+    else p.setAttribute('fill', 'currentColor');
+    svg.append(p);
+    return svg;
+}
+
+/** סגנון טקסט מוכן בכפתור — אותו פונט וצבע, בגודל של כפתור. */
+function styleCss(p) {
+    const px = 21;
+    return {
+        fontFamily: `"${p.font}"`, fontWeight: String(nearestWeight(p.font, p.weight)), fontStyle: p.italic ? 'italic' : 'normal',
+        fontSize: px + 'px', color: p.color, lineHeight: '1.2',
+        background: p.background?.color || 'transparent', padding: p.background ? '2px 10px' : '0', borderRadius: p.background ? '999px' : '0',
+        textShadow: p.shadow ? `${p.shadow.x * px}px ${p.shadow.y * px}px ${p.shadow.blur * px}px ${p.shadow.color}` : 'none',
+        WebkitTextStroke: p.stroke ? `${Math.max(1, p.stroke.width * px)}px ${p.stroke.color}` : '0', paintOrder: 'stroke fill',
+    };
+}
+
+/** טקסט בסגנון מוכן: כל המידות יחסיות לגודל הטקסט, שיחסי לדף. */
+function addStyledText(p) {
+    const { width: W, height: H } = ed.doc.page;
+    const size = Math.round(Math.min(W, H) * p.size);
+    const l = textLayer(ed.doc, size > Math.min(W, H) * 0.08 ? 'title' : 'body');
+    l.text = p.sample;
+    l.h = size * 1.3;
+    l.y = H / 2 - size;
+    Object.assign(l.style, { font: p.font, weight: p.weight, size, color: p.color });
+    if (p.italic) l.style.italic = true;
+    if (p.stroke) l.style.stroke = { width: Math.max(1, size * p.stroke.width), color: p.stroke.color };
+    if (p.shadow) l.style.shadow = { x: size * p.shadow.x, y: size * p.shadow.y, blur: size * p.shadow.blur, color: p.shadow.color };
+    if (p.background) l.style.background = { color: p.background.color, radius: size * p.background.radius, padding: size * p.background.padding };
+    addLayer(l);
+    editTextInPlace(l, true);
+    ensureFont(p.font, p.weight).then(() => ed?.canvas.render());
 }
 
 // סינכרוני בכוונה: בטלפון (בעיקר iOS) המקלדת נפתחת רק כש-focus קורה בתוך ההקשה עצמה. הפונט נטען
@@ -621,13 +748,11 @@ function iconSvg(ic) {
 function iconProps(l) {
     const ic = ICONS[l.icon];
     return h('div', {},
-        h('div', { class: 'icon-grid' }, Object.entries(ICONS).map(([name, x]) =>
-            h('button', { class: 'icon-pick' + (name === l.icon ? ' on' : ''), 'aria-label': x.label, 'aria-pressed': String(name === l.icon), onclick: e => {
-                l.icon = name;
-                if (!x.filled) delete l.filled;
-                e.currentTarget.parentNode.querySelectorAll('.icon-pick').forEach(b => { b.classList.toggle('on', b === e.currentTarget); b.setAttribute('aria-pressed', String(b === e.currentTarget)); });
-                commit();
-            } }, iconSvg(x)))),
+        iconPicker(name => {
+            l.icon = name;
+            if (!ICONS[name].filled) delete l.filled;
+            commit();
+        }, l.icon),
         colorField('צבע', l.color, live(v => { l.color = v; }), commit),
         ic?.filled ? toggle('מלא', !!l.filled, v => { if (v) l.filled = true; else delete l.filled; commit(); }) : null,
         rangeField('עובי קו', { min: 0.5, max: 4, step: 0.25, value: l.strokeWidth || 2, onInput: live(v => { l.strokeWidth = v; }), onCommit: commit }),
@@ -744,8 +869,19 @@ async function replaceImage(l) {
 }
 
 function shapeProps(l) {
+    const canGrad = ['rect', 'ellipse', 'element'].includes(l.shape);
+    const noFill = /^#[0-9a-f]{6}00$/i.test(l.fill);
     return h('div', {},
-        colorField('מילוי', l.fill, live(v => { l.fill = v; }), commit),
+        l.gradient ? null : colorField('מילוי', l.fill, live(v => { l.fill = v; }), commit),
+        canGrad && !l.gradient ? toggle('בלי מילוי (רק קו)', noFill, v => {
+            if (v) { l.fill = '#00000000'; l.stroke ||= { width: Math.max(2, Math.min(l.w, l.h) * 0.03), color: '#1b1e26' }; } else l.fill = '#2d4a8a';
+            commit(); closeSheet(); propsSheet(l);
+        }) : null,
+        canGrad && !noFill ? toggle('מדרג', !!l.gradient, v => {
+            if (v) l.gradient = { type: 'linear', angle: 180, colors: [l.fill.slice(0, 7), '#ffffff'] }; else delete l.gradient;
+            commit(); closeSheet(); propsSheet(l);
+        }) : null,
+        l.gradient ? gradientEditor(l.gradient) : null,
         l.shape === 'rect' ? rangeField('עיגול פינות', { min: 0, max: Math.round(Math.min(l.w, l.h) / 2), value: l.radius || 0, onInput: live(v => { l.radius = v; }), onCommit: commit }) : null,
         ['star', 'polygon'].includes(l.shape) ? rangeField(l.shape === 'star' ? 'קודקודים' : 'צלעות', { min: 3, max: 16, value: l.points || 5, onInput: live(v => { l.points = v; }), onCommit: commit }) : null,
         toggle('קו מתאר', !!l.stroke, v => { if (v) l.stroke = { width: Math.max(2, Math.min(l.w, l.h) * 0.03), color: '#1b1e26' }; else delete l.stroke; commit(); }),
@@ -818,10 +954,29 @@ function layersSheet() {
 
 // ─── רקע וגודל הדף ────────────────────────────────────────────────────────
 
+/** עריכת מדרג קיים: הצבעים, הסוג והזווית. משנה את האובייקט במקום. */
+function gradientEditor(g) {
+    return h('div', { class: 'grad-edit' },
+        h('div', { class: 'two' }, g.colors.slice(0, 2).map((c, i) => colorField(i ? 'צבע סיום' : 'צבע התחלה', c, live(v => { g.colors[i] = v; }), commit))),
+        seg('סוג', [{ value: 'linear', label: 'קווי' }, { value: 'radial', label: 'מעגלי' }], g.type, v => { g.type = v; commit(); }),
+        g.type === 'radial' ? null : rangeField('זווית', { min: 0, max: 360, step: 5, value: g.angle ?? 180, unit: '°', onInput: live(v => { g.angle = v; }), onCommit: commit }));
+}
+
 function backgroundSheet() {
     const bgLayer = ed.doc.layers.find(l => l.role === 'background' && l.type === 'image');
+    const pg = ed.doc.page;
+    const reopen = () => { commit(); closeSheet(); backgroundSheet(); };
+    const swatch = (label, css, on, fn) => h('button', { class: 'swatch' + (on ? ' on' : ''), 'aria-label': label, title: label, 'aria-pressed': String(on), style: { background: css }, onclick: fn });
     sheet('רקע', h('div', {},
-        colorField('צבע הדף', ed.doc.page.background, live(v => { ed.doc.page.background = v; }), commit),
+        h('h3', { class: 'section' }, 'צבע'),
+        h('div', { class: 'swatches' }, SOLIDS.map(c => swatch(c, c, !pg.gradient && pg.background === c, () => { pg.background = c; delete pg.gradient; reopen(); }))),
+        pg.gradient ? null : colorField('צבע אחר', pg.background, live(v => { pg.background = v; }), commit),
+        h('h3', { class: 'section' }, 'מדרג'),
+        h('div', { class: 'swatches grad' }, GRADIENTS.map(g => swatch(g.name, gradientCss(g), pg.gradient && JSON.stringify(pg.gradient.colors) === JSON.stringify(g.colors),
+            () => { pg.gradient = { type: g.type, angle: g.angle ?? 180, colors: g.colors.slice() }; pg.background = g.colors[0]; reopen(); }))),
+        pg.gradient ? gradientEditor(pg.gradient) : null,
+        pg.gradient ? h('button', { class: 'btn ghost', onclick: () => { delete pg.gradient; reopen(); } }, 'בלי מדרג') : null,
+        h('h3', { class: 'section' }, 'תמונה'),
         h('div', { class: 'row-actions' },
             h('button', { class: 'btn primary', onclick: async () => {
                 const [f] = await pickFiles('image/*');
