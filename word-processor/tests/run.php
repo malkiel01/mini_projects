@@ -644,6 +644,27 @@ check('Word → חזרה: סדר השכבות נשמר (הראשונה במסמ�
 $backL2 = import_docx(export_docx(['type' => 'doc', 'content' => [['type' => 'paragraph', 'content' => [$imgL(0, [255, 0, 0]), $imgL(0, [0, 0, 255]), ['type' => 'text', 'text' => 'שכבות']]]]], page_normalize([])), $docL)['json']['content'][0]['content'];
 check('Word → חזרה: בסדר הרגיל — בלי z', empty($backL2[0]['attrs']['z']) && empty($backL2[1]['attrs']['z']));
 
+// תמונה מעוגנת לעמוד (anchor: page): x, y מפינת העמוד — ב-PDF, ב-Word (relativeFrom="page") הלוך וחזור, וגרסת מבנה 9
+$imgP = fn(?string $anchor) => ['type' => 'image', 'attrs' => ['media' => $mR, 'width' => 100, 'height' => 100, 'wrap' => 'behind', 'x' => 40, 'y' => 60] + ($anchor ? ['anchor' => $anchor] : [])];
+$jP = fn(?string $anchor) => ['type' => 'doc', 'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'ראשונה']]],
+    ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'שנייה']]], ['type' => 'paragraph', 'content' => [$imgP($anchor), ['type' => 'text', 'text' => 'עם תמונה']]]]];
+// מרכז התמונה: x 40px + חצי רוחב 50px = 67.5 נק' משמאל; y 60px + 50px = 82.5 נק' מלמעלה → 841.89 − 82.5 = 759.39
+$pdfP = gzuncompress_pages($pdfOf($jP('page')));
+$pdfQ = gzuncompress_pages($pdfOf($jP(null)));
+check('PDF: תמונה מעוגנת לעמוד — במקום מפינת העמוד (לא מהפסקה); בלי עיגון — יחסית לפסקה', str_contains($pdfP, ' 67.5 759.39 cm') && !str_contains($pdfQ, ' 67.5 759.39 cm'),
+    implode(' | ', array_slice(preg_grep('/ cm$/', explode("\n", $pdfP)), 0, 3)));
+$oxP = export_ooxml($jP('page'), page_normalize([]))['body'];
+check('Word: מעוגנת לעמוד → positionH ו-positionV יחסית לעמוד', str_contains($oxP, '<wp:positionH relativeFrom="page"><wp:posOffset>' . (40 * 9525)) && str_contains($oxP, '<wp:positionV relativeFrom="page"><wp:posOffset>' . (60 * 9525))
+    && !str_contains(export_ooxml($jP(null), page_normalize([]))['body'], 'relativeFrom="page"'));
+$backP = null;
+walk_nodes(import_docx(export_docx($jP('page'), page_normalize([])), $docZ)['json'], function ($n) use (&$backP) { if (($n['type'] ?? '') === 'image') $backP = $n['attrs']; return $n; });
+$backQ = null;
+walk_nodes(import_docx(export_docx($jP(null), page_normalize([])), $docZ)['json'], function ($n) use (&$backQ) { if (($n['type'] ?? '') === 'image') $backQ = $n['attrs']; return $n; });
+check('Word → חזרה: העיגון לעמוד והמיקום חוזרים; בלי עיגון — בלי', ($backP['anchor'] ?? null) === 'page' && ($backP['x'] ?? null) === 40 && ($backP['y'] ?? null) === 60 && empty($backQ['anchor']),
+    json_encode([$backP, $backQ]));
+check('גרסת מבנה: תמונה מעוגנת לעמוד צריכה 9 (גם עם כותרת עשירה); בלי עיגון — 0', doc_schema_need($jP('page')) === 9 && doc_schema_need($jP(null)) === 0
+    && doc_schema_need($jP('page'), page_normalize(['header' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'כ', 'marks' => [['type' => 'bold']]]]]]])) === 9);
+
 // תוכן עניינים: Word (שדה TOC בתוך sdt) הלוך וחזור, HTML, PDF
 $toc = ['type' => 'toc', 'attrs' => ['levels' => 2, 'entries' => [['t' => 'מבוא', 'l' => 1, 'p' => '1', 'i' => 0], ['t' => 'רקע & הקשר', 'l' => 2, 'p' => '2', 'i' => 1]]]];
 $jT = ['type' => 'doc', 'content' => [$toc, ['type' => 'heading', 'attrs' => ['level' => 1], 'content' => [['type' => 'text', 'text' => 'מבוא']]]]];

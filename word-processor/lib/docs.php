@@ -14,7 +14,7 @@ const LOCK_SECONDS = 120;
 const MEDIA_MAX_BYTES = 10 * 1024 * 1024;
 const MEDIA_TYPES = ['image/png' => 'png', 'image/jpeg' => 'jpg', 'image/gif' => 'gif', 'image/webp' => 'webp'];
 /** גרסת המבנה של ה-JSON (attrs.schema). אותו מספר ב-assets/js/extensions.js; ההמרות — כאן וב-assets/js/schema.js. */
-const SCHEMA_VERSION = 8;
+const SCHEMA_VERSION = 9;
 
 class ApiError extends Exception
 {
@@ -70,13 +70,15 @@ function doc_migrate(array $json): array
 function doc_schema_need(array $json, ?array $page = null): int
 {
     $hfRich = fn($p) => is_array($p) && (bool)array_filter(['header', 'footer', 'header_even', 'footer_even'], fn($k) => is_array($p[$k] ?? null) && $p[$k]);
-    if ($hfRich($page) || $hfRich($json['attrs']['page'] ?? null)) return 8;
     $need = !empty($json['attrs']['track']) ? 4 : (empty($json['attrs']['comments']) ? 0 : 3);
+    if ($hfRich($page) || $hfRich($json['attrs']['page'] ?? null)) $need = 8;   // ממשיכים לתוכן — בו יכולה להיות תמונה מעוגנת (9)
     $walk = function (array $nodes) use (&$walk, &$need, $hfRich) {
         foreach ($nodes as $n) {
             if (!is_array($n) || $need >= SCHEMA_VERSION) return;
             $t = $n['type'] ?? '';
-            if ($t === 'sectionBreak' && $hfRich($n['attrs']['page'] ?? null)) { $need = 8; return; }
+            // תמונה שמעוגנת לעמוד — כותב ישן היה מאבד את העיגון (והתמונה הייתה קופצת לפסקה)
+            if ($t === 'image' && ($n['attrs']['anchor'] ?? null) === 'page') { $need = 9; return; }
+            if ($t === 'sectionBreak' && $hfRich($n['attrs']['page'] ?? null)) { $need = max($need, 8); continue; }
             if (in_array('fmt', array_column(array_filter(is_array($n['marks'] ?? null) ? $n['marks'] : [], 'is_array'), 'type'), true)) { $need = max($need, 7); continue; }
             if (!empty($n['attrs']['tabs'])) $need = max($need, 6);   // ממשיכים לתוכן — בו יכול להיות שינוי עיצוב (7)
             if ($t === 'columnBreak') { $need = max($need, 5); continue; }
