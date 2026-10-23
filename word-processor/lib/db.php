@@ -4,7 +4,7 @@
  * אין כאן שום require לקובץ מחוץ לתיקייה (CLAUDE.md: אפליקציה עצמאית מהמעטפת).
  */
 
-const WP_SCHEMA_VERSION = 4;
+const WP_SCHEMA_VERSION = 5;
 
 function wp_data_dir(): string
 {
@@ -173,6 +173,17 @@ function wp_migrate(PDO $pdo): void
             PRIMARY KEY (doc, email)
         );
         CREATE INDEX IF NOT EXISTS shares_email ON shares(email COLLATE NOCASE);
+
+        -- קישור עריכה לזר (שלב 5, החלטה 4): מסמך אחד, באישור המנהל. pending → active (תוקף expires_at) — lib/links.php
+        CREATE TABLE IF NOT EXISTS links (
+            doc TEXT PRIMARY KEY,
+            token TEXT NOT NULL UNIQUE,
+            status TEXT NOT NULL,
+            created_by INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            approved_by INTEGER,
+            expires_at INTEGER NOT NULL DEFAULT 0
+        );
         CREATE TABLE IF NOT EXISTS settings (
             k TEXT PRIMARY KEY,
             v TEXT NOT NULL
