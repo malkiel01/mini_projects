@@ -102,6 +102,7 @@ try {
         case 'abs_direct':     ok(absDirect($person, $in));
         case 'abs_void':       ok(absVoid($person, $in));
         case 'abs_history':    ok(absHistory($person, $in));
+        case 'abs_opening_save': ok(absOpeningSave($person, $in));
         case 'abs_settings_get':  ok(absSettingsGet($person, $in));
         case 'abs_settings_save': ok(absSettingsSave($person, $in));
         case 'abs_type_save':  ok(absTypeSave($person, $in));

@@ -299,9 +299,10 @@ function periodCsv(array $person, array $in): string {
     $otCols = ['reg' => 'רגילות', 'ot1' => "נוספות {$rules['rate_ot1']}%", 'ot2' => "נוספות {$rules['rate_ot2']}%",
                'rest' => "מנוחה/חג {$rules['rate_rest']}%", 'rest_ot1' => "מנוחה {$rules['rate_rest_ot1']}%",
                'rest_ot2' => "מנוחה {$rules['rate_rest_ot2']}%", 'holiday_rest' => "חג במנוחה {$rules['rate_holiday_rest']}%"];
-    fputcsv($f, array_merge(['עובד', 'מס׳ עובד', 'תאריך', 'כניסה', 'יציאה', 'סה״כ', 'תקן', 'הפרש'], array_values($otCols), ['היעדרות', 'זיכוי', 'יום', 'תוקן', 'הערה']), ',', '"', '');
+    fputcsv($f, array_merge(['עובד', 'מס׳ עובד', 'תאריך', 'כניסה', 'יציאה', 'סה״כ', 'תקן', 'הפרש'], array_values($otCols), ['היעדרות', 'זיכוי', 'יום מחלה ברצף', 'יום', 'תוקן', 'הערה']), ',', '"', '');
     foreach (periodEmployees($companyId, $month, $site) as $e) {
         $r = monthReportOt((int) $e['id'], $month, $tz);
+        $runs = sickRuns((int) $e['id'], ...monthBounds($month));
         foreach ($r['days'] as $d) {
             if (!$d['pairs'] && !$d['standard'] && !$d['missing_in'] && !$d['missing_out']) continue;
             if ($d['date'] > $r['today']) continue;
@@ -315,11 +316,15 @@ function periodCsv(array $person, array $in): string {
             $ot = $d['ot']['b'] ?? array_fill_keys(OT_BUCKETS, 0);
             $kind = trim(($d['ot']['holiday'] ?? '') . (!empty($d['ot']['rest']) ? ' מנוחה' : '') . (!empty($d['ot']['night']) ? ' לילה' : ''));
             fputcsv($f, array_merge([$e['name'], $e['employee_no'] ?? '', $d['date'], $ins, $outs, $hm($d['minutes']), $hm($d['standard']), $hm($d['minutes'] + $credit - $d['standard'])],
-                                    array_map(fn($k) => $ot[$k] ? $hm($ot[$k]) : '', array_keys($otCols)), [$absCol, $credit ? $hm($credit) : '', $kind, $d['corrected'] ? 'כן' : '', $note]), ',', '"', '');
+                                    array_map(fn($k) => $ot[$k] ? $hm($ot[$k]) : '', array_keys($otCols)), [$absCol, $credit ? $hm($credit) : '', $credit && isset($runs[$d['date']]) ? sickRunLabel($runs[$d['date']]) : '', $kind, $d['corrected'] ? 'כן' : '', $note]), ',', '"', '');
         }
         $s = $r['summary'];
+        // היתרות בסוף החודש (או היום, אם החודש עוד לא נגמר)
+        $at = min(monthBounds($month)[1], $r['today']);
+        $balNote = implode('', array_map(fn($b) => " · יתרת {$b['name']} " . rtrim(rtrim(number_format($b['balance'], 2, '.', ''), '0'), '.'),
+                                         memberBalances(memberRow((int) $e['id']), $at)));
         fputcsv($f, array_merge([$e['name'], $e['employee_no'] ?? '', 'סה״כ ' . $month, '', '', $hm($s['minutes']), $hm($s['standard']), $hm($s['diff'])],
-                                array_map(fn($k) => $hm($s['ot'][$k]), array_keys($otCols)), ['', $s['absence'] ? $hm($s['absence']) : '', '', '', $s['days'] . ' ימים']), ',', '"', '');
+                                array_map(fn($k) => $hm($s['ot'][$k]), array_keys($otCols)), ['', $s['absence'] ? $hm($s['absence']) : '', '', '', '', $s['days'] . ' ימים' . $balNote]), ',', '"', '');
     }
     rewind($f);
     return stream_get_contents($f);

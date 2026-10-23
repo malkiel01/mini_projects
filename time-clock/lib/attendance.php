@@ -66,3 +66,4 @@ function empMonthManager(array $person, array $in): array {
 }
 
 require_once __DIR__ . '/absences.php';   // היעדרויות — monthReport זוקף אותן (function_exists)
+require_once __DIR__ . '/balances.php';   // יתרות חופשה ומחלה

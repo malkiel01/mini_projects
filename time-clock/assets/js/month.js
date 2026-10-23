@@ -155,12 +155,23 @@ function absText(a) {
   return [range, part, days].filter(Boolean).join(' · ');
 }
 
+const fmtD = n => (Math.round(n * 100) / 100).toLocaleString('he-IL', { maximumFractionDigits: 2 });
+
+/** היתרות: חופשה ומחלה, בימים. מתוכננות — חופשה שאושרה וטרם הגיעה. */
+function balancesHtml(bs) {
+  return `<dl class="cells" style="grid-template-columns:repeat(2,1fr)">${bs.map(b => `
+      <div><dt>${b.kind === 'sick' ? '🤒' : '🌴'} יתרת ${b.name}</dt><dd${b.balance < 0 ? ' style="color:var(--danger)"' : ''}>${fmtD(b.balance)}</dd></div>`).join('')}</dl>
+    ${bs.some(b => b.planned) ? `<p class="hint">מתוכננות (אושרו, עוד לא הגיעו): ${bs.filter(b => b.planned).map(b => `${b.name} ${fmtD(b.planned)}`).join(' · ')}</p>` : ''}
+    <p class="hint">בימי עבודה. ${bs.some(b => b.as_of) ? 'נצבר בסוף כל חודש עבודה מלא.' : 'עוד לא הוזנו יתרה ותאריך התחלה — אין ממה לחשב.'}</p>`;
+}
+
 /** שורה ברשימה. $actions — הכפתורים בסוף (לפי מי שמציג). */
 function absItem(a, actions = '', who = false) {
   return `<li class="card" data-abs="${a.id}">
     <span class="avatar" style="--h:${a.type === 'sick' ? 10 : a.type === 'vacation' ? 140 : 220}" aria-hidden="true">${a.icon}</span>
     <div class="body"><div class="l1"><span>${who ? escM(a.name) + ' · ' : ''}${escM(a.type_name)}</span></div>
       <div class="l2">${absText(a)}</div>
+      ${a.balance ? `<div class="l2">יתרת ${a.balance.name}: ${fmtD(a.balance.now)} ← <b${a.balance.after < 0 ? ' style="color:var(--danger)"' : ''}>${fmtD(a.balance.after)}</b></div>` : ''}
       ${a.note || a.decision_note ? `<div class="l2">${a.note ? escM(a.note) : ''}${a.note && a.decision_note ? ' · ' : ''}${a.decision_note ? '↩ ' + escM(a.decision_note) : ''}</div>` : ''}</div>
     ${who ? '' : `<span class="chip ${ASTATUS[a.status][0]}">${ASTATUS[a.status][1]}</span>`}${actions}</li>`;
 }
