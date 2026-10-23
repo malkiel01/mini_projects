@@ -8,6 +8,7 @@
  * אישור חודשי: שלבים, פתיחה, אישור לפי תפקיד, במקום העובד, נעילה, פתיחה מחדש, ייצוא (שלב 6);
  * גרסה 2 — סיווג שעות: יומי, נוספות, לילה, מנוחה, חציית חצות לשבת, שבועי, דת, כללים בגרסאות;
  * חגים: לוח יהודי מובנה, ימים של החברה לפי דת, חג במנוחה (מצטבר / לא), חודש נעול.
+ * גרסה 3 — היעדרויות: בקשה, אישור ודחייה, רישום ישיר וביטול, יחידה, סוגי החברה, זיכוי התקן, חג, ייצוא, חודש נעול.
  * הרצה: php time-clock/tests/run.php — על מסד זמני, בלי לגעת ב-data/.
  */
 
@@ -466,6 +467,96 @@ check('CSV: שורת שבת מסומנת "מנוחה"', (bool) preg_match('/2027
 $pv = periodView($owner, ['company_id' => $cid, 'month' => '2027-01']);
 $pw = array_values(array_filter($pv['employees'], fn($e) => $e['id'] === $w))[0];
 check('מסך "חודש": הסלים לכל עובד', isset($pw['summary']['ot']['ot1']) && $pw['summary']['ot']['ot1'] > 0);
+unset($GLOBALS['TC_NOW']);
+
+// ===== גרסה 3: היעדרויות =====
+$GLOBALS['TC_NOW'] = $z('2028-02-20 10:00');   // ראשון
+$owner = as_(['sub' => 'u-owner']); $sara = as_(['sub' => 'u-sara']); $yossi = as_(['sub' => 'u-yossi']);
+$a = empAdd($owner, ['company_id' => $cid, 'name' => 'נעדרת', 'site_id' => $s1, 'start_date' => '2028-01-01', 'days_per_week' => 5, 'daily_minutes' => 504])['employee']['id'];
+$_COOKIE = [];
+empActivateAndLogin(['token' => empInvite($owner, ['company_id' => $cid, 'id' => $a])['invite_token'], 'pin' => '3579']);
+$R = fn(array $x) => empAbsenceRequest(['member_id' => $a] + $x)['id'];
+$dayOf = function (string $date) use ($a) { foreach (empMonth(['member_id' => $a, 'month' => substr($date, 0, 7)])['days'] as $d) if ($d['date'] === $date) return $d; };
+$ea = empAbsences(['member_id' => $a]);
+check('לעובד: שלושת הסוגים המובנים, וברירת המחדל — יום או חצי', count($ea['types']) === 3 && $ea['unit'] === 'half');
+throws('סוג לא מוכר', fn() => $R(['type' => 'x', 'from' => '2028-02-06']));
+throws('"עד" לפני "מ"', fn() => $R(['type' => 'vacation', 'from' => '2028-02-08', 'to' => '2028-02-06']));
+throws('מחלה עתידית', fn() => $R(['type' => 'sick', 'from' => '2028-02-24']));
+throws('רק סוף שבוע — אין ימי עבודה', fn() => $R(['type' => 'vacation', 'from' => '2028-02-11', 'to' => '2028-02-12']));
+throws('שעות כשהיחידה חצי יום', fn() => $R(['type' => 'vacation', 'from' => '2028-02-06', 'part' => 'hours', 'minutes' => 60]));
+$v1 = $R(['type' => 'vacation', 'from' => '2028-02-06', 'to' => '2028-02-12', 'note' => 'אילת']);
+throws('חפיפה לבקשה קיימת', fn() => $R(['type' => 'sick', 'from' => '2028-02-08']));
+check('בקשה ממתינה: מסומנת, בלי זיכוי', $dayOf('2028-02-07')['absence']['status'] === 'pending' && $dayOf('2028-02-07')['absence']['credit'] === 0);
+$lst = absList($owner, ['company_id' => $cid])['absences'];
+check('ברשימת האישורים: 5 ימי עבודה (שישי-שבת לא נספרים)', count($lst) === 1 && $lst[0]['workdays'] === 5 && $lst[0]['credit'] === 5 * 504);
+check('מנהל סניף לא רואה בקשה מסניף אחר', absList($yossi, ['company_id' => $cid])['absences'] === []);
+throws('מנהל סניף אחר לא מחליט', fn() => absDecide($yossi, ['company_id' => $cid, 'id' => $v1, 'approve' => true]), 404);
+throws('מנהלת שכר לא מחליטה', fn() => absDecide($sara, ['company_id' => $cid, 'id' => $v1, 'approve' => true]), 403);
+throws('דחייה בלי הסבר', fn() => absDecide($owner, ['company_id' => $cid, 'id' => $v1, 'approve' => false]));
+absDecide($owner, ['company_id' => $cid, 'id' => $v1, 'approve' => true]);
+$mo = empMonth(['member_id' => $a, 'month' => '2028-02']);
+check('אושרה: היום זוקף את התקן', $dayOf('2028-02-07')['absence']['credit'] === 504 && $dayOf('2028-02-07')['absence']['name'] === 'חופשה');
+check('שישי בתוך הטווח — לא מסומן', $dayOf('2028-02-11')['absence'] === null);
+check('הסיכום: זיכוי 5 ימים, וההפרש מולו', $mo['summary']['absence'] === 5 * 504 && $mo['summary']['diff'] === 5 * 504 - $mo['summary']['standard']);
+
+// חצי יום מחלה, ועבד את החצי השני
+$s14 = $R(['type' => 'sick', 'from' => '2028-02-14', 'part' => 'half']);
+absDecide($owner, ['company_id' => $cid, 'id' => $s14, 'approve' => true]);
+recordPunch($a, 'in', 'phone', null, null, $z('2028-02-14 08:00')); recordPunch($a, 'out', 'phone', null, null, $z('2028-02-14 12:12'));
+$d14 = $dayOf('2028-02-14');
+check('חצי יום: זוקף חצי תקן, והדיווחים נספרים', $d14['absence']['credit'] === 252 && $d14['minutes'] === 252);
+
+// יחידה — רק הבעלים
+throws('מנהלת שכר לא משנה יחידה', fn() => absSettingsSave($sara, ['company_id' => $cid, 'unit' => 'day']), 403);
+absSettingsSave($owner, ['company_id' => $cid, 'unit' => 'day']);
+throws('יחידה "יום" — אין חצי יום', fn() => $R(['type' => 'vacation', 'from' => '2028-02-15', 'part' => 'half']));
+absSettingsSave($owner, ['company_id' => $cid, 'unit' => 'hours']);
+$h15 = $R(['type' => 'vacation', 'from' => '2028-02-15', 'part' => 'hours', 'minutes' => 120]);
+absDecide($owner, ['company_id' => $cid, 'id' => $h15, 'approve' => true]);
+check('שעות: שעתיים', $dayOf('2028-02-15')['absence']['credit'] === 120);
+
+// רישום ישיר, וביטול
+$r16 = absDirect($owner, ['company_id' => $cid, 'member_id' => $a, 'type' => 'reserve', 'from' => '2028-02-16', 'to' => '2028-02-17'])['id'];
+check('רישום ישיר — מאושר מיד', $dayOf('2028-02-17')['absence']['name'] === 'מילואים' && $dayOf('2028-02-17')['absence']['credit'] === 504);
+throws('העובד לא מבטל היעדרות שרשם המנהל', fn() => empAbsenceCancel(['member_id' => $a, 'id' => $r16]), 404);
+throws('ביטול בלי סיבה', fn() => absVoid($owner, ['company_id' => $cid, 'id' => $r16]));
+absVoid($owner, ['company_id' => $cid, 'id' => $r16, 'note' => 'נרשם בטעות']);
+check('בוטלה — אין זיכוי', $dayOf('2028-02-17')['absence'] === null);
+
+// סוג של החברה
+throws('רק הבעלים מוסיף סוג', fn() => absTypeSave($sara, ['company_id' => $cid, 'name' => 'אבל']), 403);
+$types = absTypeSave($owner, ['company_id' => $cid, 'name' => 'אבל', 'icon' => '🕯️'])['types'];
+$tk = end($types)['key'];
+$t17 = $R(['type' => $tk, 'from' => '2028-02-17']);
+check('סוג של החברה בבקשה', absList($owner, ['company_id' => $cid])['absences'][0]['type_name'] === 'אבל');
+empAbsenceCancel(['member_id' => $a, 'id' => $t17]);
+check('העובד ביטל בקשה ממתינה', absList($owner, ['company_id' => $cid])['absences'] === []);
+absTypeSave($owner, ['company_id' => $cid, 'id' => (int) substr($tk, 1), 'name' => 'אבל', 'active' => false]);
+throws('סוג שהושבת — אין בקשות חדשות', fn() => $R(['type' => $tk, 'from' => '2028-02-17']));
+
+// חג באמצע — לא נספר
+holidayAdd($owner, ['company_id' => $cid, 'date' => '2028-02-22', 'name' => 'יום החברה', 'religions' => 'all']);
+$f = $R(['type' => 'vacation', 'from' => '2028-02-21', 'to' => '2028-02-23']);
+check('חג בתוך הטווח לא יורד: 2 ימי עבודה', absList($owner, ['company_id' => $cid])['absences'][0]['workdays'] === 2);
+empAbsenceCancel(['member_id' => $a, 'id' => $f]);
+
+// ייצוא
+$csv = periodCsv($owner, ['company_id' => $cid, 'month' => '2028-02']);
+check('CSV: עמודות היעדרות וזיכוי', str_contains($csv, 'היעדרות,זיכוי'));
+check('CSV: יום חופשה — לא "לא דווח"', (bool) preg_match('/^נעדרת,,2028-02-07,[^\n]*,0:00,[^\n]*חופשה,8:24/mu', $csv) && !preg_match('/^נעדרת,,2028-02-07,[^\n]*לא דווח/mu', $csv));
+check('CSV: חצי יום מחלה', (bool) preg_match('/^נעדרת,,2028-02-14,[^\n]*"מחלה ½",4:12/mu', $csv));
+
+// חודש באישור וחודש נעול
+stepsSave($owner, ['company_id' => $cid, 'steps' => ['employee', 'manager']]);
+periodOpen($owner, ['company_id' => $cid, 'month' => '2028-02']);
+empApprove(['member_id' => $a, 'month' => '2028-02']);
+absDirect($owner, ['company_id' => $cid, 'member_id' => $a, 'type' => 'sick', 'from' => '2028-02-17']);
+check('היעדרות בחודש שבאישור — האישור של העובד בוטל', empMonth(['member_id' => $a, 'month' => '2028-02'])['period']['done'] === []);
+periodOpen($owner, ['company_id' => $cid, 'month' => '2028-01']);
+periodLock($owner, ['company_id' => $cid, 'month' => '2028-01', 'reason' => 'בדיקה']);
+throws('חודש נעול — אין בקשה', fn() => $R(['type' => 'vacation', 'from' => '2028-01-31', 'to' => '2028-02-01']));
+throws('חודש נעול — אין רישום ישיר', fn() => absDirect($owner, ['company_id' => $cid, 'member_id' => $a, 'type' => 'vacation', 'from' => '2028-01-10']));
+check('כל החלטה ביומן', (int) db()->query("SELECT COUNT(*) FROM audit WHERE action LIKE 'absence%'")->fetchColumn() >= 12);
 unset($GLOBALS['TC_NOW']);
 
 echo "\n" . ($n - $fails) . "/$n עברו\n";

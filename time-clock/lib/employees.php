@@ -222,7 +222,7 @@ function createInvite(int $memberId, int $by): string {
     db()->prepare('UPDATE devices SET revoked_at = ? WHERE member_id = ? AND revoked_at IS NULL')->execute([$now, $memberId]);
     $token = newToken();
     db()->prepare('INSERT INTO invites (member_id, token_hash, created_by, created_at, expires_at) VALUES (?,?,?,?,?)')
-        ->execute([$memberId, tokenHash($token), $by, $now, gmdate('Y-m-d\TH:i:s\Z', time() + INVITE_DAYS * 86400)]);
+        ->execute([$memberId, tokenHash($token), $by, $now, utc($now)->modify('+' . INVITE_DAYS . ' days')->format('Y-m-d\TH:i:s\Z')]);
     return $token;
 }
 

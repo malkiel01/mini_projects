@@ -26,6 +26,7 @@ function monthHtml(r) {
       <div><dt>הפרש</dt><dd>${hm(s.diff)}</dd></div>
     </dl>
     ${otCells(r)}
+    ${s.absence ? `<p class="hint">🌴 היעדרויות מאושרות: ${hm(s.absence)} — נזקפות כשעות תקן בהפרש.</p>` : ''}
     ${s.missing ? `<p class="hint">⚠️ ${s.missing} דיווחים חסרים. לוחצים על היום כדי לתקן.</p>` : ''}
     <p class="hint">ההפרש הוא מול שעות התקן שלך; השעות הנוספות מסווגות בנפרד.</p>
     <ul class="list">${rows.length ? rows.map(d => {
@@ -33,7 +34,8 @@ function monthHtml(r) {
       if (d.open) spans.push(t(d.open) + '–…');
       const chips = [d.missing_out ? '<span class="chip bad">חסר יציאה</span>' : '', d.missing_in ? '<span class="chip bad">חסר כניסה</span>' : '',
         d.open ? '<span class="chip ok">בעבודה</span>' : '',
-        !spans.length && !d.missing_out && !d.missing_in && d.standard ? '<span class="chip">לא דווח</span>' : '',
+        !spans.length && !d.missing_out && !d.missing_in && d.standard && !d.absence?.credit && d.absence?.status !== 'pending' ? '<span class="chip">לא דווח</span>' : '',
+        d.absence ? `<span class="chip ${d.absence.status === 'approved' ? 'ok' : 'warn'}">${d.absence.icon} ${escM(d.absence.name)}${ABS_PART[d.absence.part]}${d.absence.status === 'pending' ? ' · ממתין' : ''}</span>` : '',
         d.pending ? '<span class="chip warn">ממתין לאישור</span>' : d.corrected ? '<span class="chip">תוקן</span>' : '',
         d.ot?.holiday ? `<span class="chip ok">${escM(d.ot.holiday)}</span>` : d.ot?.rest && d.pairs.length ? '<span class="chip ok">מנוחה</span>' : ''].join('');
       return `<li class="card" tabindex="0" role="button" data-date="${d.date}"><div class="body"><div class="l1"><span>${dayName(d.date)}</span><span class="t">${d.minutes ? hm(d.minutes) : ''}</span></div>
@@ -135,4 +137,70 @@ function otLine(d, r) {
                  ['rest_ot2', q.rate_rest_ot2 + '%'], ['holiday_rest', 'חג ' + q.rate_holiday_rest + '%']].filter(([k]) => b[k]).map(([k, l]) => `${l} ${hm(b[k])}`);
   if (d.ot.night) parts.unshift('🌙 לילה');
   return parts.length ? `<div class="l2" style="font-size:.78rem">${parts.join(' · ')}</div>` : '';
+}
+
+/* ===== היעדרויות (גרסה 3) — משותף לעובד ולמנהל ===== */
+
+const ABS_PART = { full: '', half: ' ½', hours: ' (שעות)' };
+const ASTATUS = { pending: ['warn', 'ממתין'], approved: ['ok', 'אושר'], rejected: ['bad', 'נדחה'], cancelled: ['', 'בוטל'] };
+const dShort = d => new Date(d + 'T12:00:00Z').toLocaleDateString('he-IL', { weekday: 'short', day: 'numeric', month: 'numeric', timeZone: 'UTC' });
+const hmA = m => Math.floor(m / 60) + ':' + String(m % 60).padStart(2, '0');
+
+/** "7.2–10.2 · 5 ימי עבודה" · "ב׳ 14.2 · חצי יום" · "ג׳ 15.2 · 2:00 שעות" */
+function absText(a) {
+  const dm = d => +d.slice(8) + '.' + +d.slice(5, 7);
+  const range = a.from === a.to ? dShort(a.from) : `${dm(a.from)}–${dm(a.to)}`;
+  const part = a.part === 'half' ? 'חצי יום' : a.part === 'hours' ? `${hmA(a.minutes)} שעות ביום` : '';
+  const days = a.from !== a.to || a.part === 'full' ? `${a.workdays} ${a.workdays === 1 ? 'יום עבודה' : 'ימי עבודה'}` : '';
+  return [range, part, days].filter(Boolean).join(' · ');
+}
+
+/** שורה ברשימה. $actions — הכפתורים בסוף (לפי מי שמציג). */
+function absItem(a, actions = '', who = false) {
+  return `<li class="card" data-abs="${a.id}">
+    <span class="avatar" style="--h:${a.type === 'sick' ? 10 : a.type === 'vacation' ? 140 : 220}" aria-hidden="true">${a.icon}</span>
+    <div class="body"><div class="l1"><span>${who ? escM(a.name) + ' · ' : ''}${escM(a.type_name)}</span></div>
+      <div class="l2">${absText(a)}</div>
+      ${a.note || a.decision_note ? `<div class="l2">${a.note ? escM(a.note) : ''}${a.note && a.decision_note ? ' · ' : ''}${a.decision_note ? '↩ ' + escM(a.decision_note) : ''}</div>` : ''}</div>
+    ${who ? '' : `<span class="chip ${ASTATUS[a.status][0]}">${ASTATUS[a.status][1]}</span>`}${actions}</li>`;
+}
+
+/** טופס היעדרות: הסוג, מתאריך עד תאריך, והמשך לפי היחידה של החברה (day | half | hours). */
+function absenceForm(types, unit, today) {
+  const parts = unit === 'half' ? [['full', 'יום מלא'], ['half', 'חצי יום']] : unit === 'hours' ? [['full', 'יום מלא'], ['hours', 'שעות']] : [];
+  return `
+    <div class="f"><span id="at">סוג</span><fieldset class="seg grid" style="--cols:${Math.min(types.length, 3)}" aria-labelledby="at">${types.map((t, i) => `
+      <label><input type="radio" name="type" value="${t.key}"${i ? '' : ' checked'}><span>${t.icon} ${escM(t.name)}</span></label>`).join('')}</fieldset></div>
+    <div class="fields two" style="margin-top:12px">
+      <label class="f"><span>מתאריך</span><input name="from" type="date" value="${today}" required></label>
+      <label class="f"><span>עד תאריך</span><input name="to" type="date" value="${today}" required></label></div>
+    ${parts.length ? `<div class="f" style="margin-top:12px"><span id="ap">משך בכל יום</span><fieldset class="seg" aria-labelledby="ap">${parts.map(([v, l], i) => `
+      <label><input type="radio" name="part" value="${v}"${i ? '' : ' checked'}><span>${l}</span></label>`).join('')}</fieldset></div>` : ''}
+    ${unit === 'hours' ? `<div class="fields two" id="hours-f" style="margin-top:12px" hidden><label class="f"><span>כמה שעות ביום</span><input name="hours" dir="ltr" inputmode="numeric" placeholder="2:00"></label></div>` : ''}
+    <label class="f" style="margin-top:12px"><span>הערה</span><input name="note" maxlength="200" placeholder="לא חובה"></label>
+    <p class="hint" id="sick-hint" hidden>🤒 על מחלה מדווחים ביום עצמו או אחריו. את האישור הרפואי מעבירים למנהל.</p>
+    <p class="hint">רק ימי עבודה נספרים — לא יום מנוחה ולא חג.</p>
+    <p class="error" role="alert" hidden></p>`;
+}
+
+/** אחרי שהטופס בדף: "עד" לא לפני "מ", שדה השעות, וההערה למחלה. */
+function absenceWire(form) {
+  form.from.addEventListener('change', () => { if (form.to.value < form.from.value) form.to.value = form.from.value; });
+  const sync = () => {
+    if (form.querySelector('#hours-f')) form.querySelector('#hours-f').hidden = form.part?.value !== 'hours';
+    form.querySelector('#sick-hint').hidden = form.type.value !== 'sick';
+  };
+  form.addEventListener('change', sync);
+  sync();
+}
+
+function absenceBody(form) {
+  const body = { type: form.type.value, from: form.from.value, to: form.to.value || form.from.value, part: form.part?.value || 'full', note: form.note.value.trim() };
+  if (!body.from) throw new Error('מאיזה תאריך?');
+  if (body.part === 'hours') {
+    const m = /^(\d{1,2})(?::(\d{2}))?$/.exec(form.hours.value.trim());
+    if (!m) throw new Error('כמה שעות? למשל 2:00');
+    body.minutes = +m[1] * 60 + +(m[2] || 0);
+  }
+  return body;
 }
