@@ -98,6 +98,12 @@ button { cursor: pointer; }
 .row-title { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .row-sub { font-size: .8125rem; color: var(--muted); }
 .chev { color: var(--muted); font-size: 1.25rem; }
+.legacy-link {
+    display: flex; align-items: center; justify-content: space-between; gap: var(--s2); margin-top: var(--s4);
+    min-height: var(--tap); padding: var(--s2) var(--s3); border: 1px solid var(--line); border-radius: var(--r);
+    background: var(--surface); color: var(--ink); text-decoration: none; font-weight: 600; font-size: .9rem;
+}
+.legacy-link:hover { border-color: var(--brand); }
 
 /* ─── העורך ─── */
 /* העורך הוא מסך קבוע בגובה החלון: הדף עצמו לא נגלל, והקנבס ממלא את מה שנשאר בין הסרגלים. */

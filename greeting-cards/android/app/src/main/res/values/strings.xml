@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">כרטיסי ברכה</string>
+    <string name="app_name">סטודיו עיצוב</string>
     <string name="whatsapp_not_installed">WhatsApp אינו מותקן במכשיר</string>
     <!-- ‏הצהרה שהאפליקציה מטפלת בקישורי mbe-plus.com — כך הכלים הדיגיטליים יודעים שהיא מותקנת. -->
     <string name="asset_statements" translatable="false">[{\"relation\": [\"delegate_permission/common.handle_all_urls\"], \"target\": {\"namespace\": \"web\", \"site\": \"https://mbe-plus.com\"}}]</string>
