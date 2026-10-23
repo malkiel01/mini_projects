@@ -45,6 +45,20 @@ creative-suite/mbe-core/
 קובץ דוגמה מכל `kind`, שנפתח ונשמר ב-JS וב-PHP **זהה בית-לבית במודל**; בדיקות עוינות נדחות; README; PR ממוזג
 ופריסה `conclusion: success`.
 
+## התקדמות
+
+היעדים של גרסה 1 (מ"מה נדרש" ו"סיום"). מסמנים `[x]` כשהושלם — הדשבורד (`creative-suite/dashboard/`) מחשב מזה.
+
+- [x] קריאה — `open` ב-JS וב-PHP
+- [x] כתיבה — `save`, ‏`mimetype` ראשון, גיבובים, `media/` לפי sha256, שמירה בית-לבית
+- [x] אימות — Schema + כללי האבטחה (zip-slip, zip-bomb, SVG, הפניות חיצוניות)
+- [x] ייצוגים — `sourceSha256`, מיושנים, `preview.png` חובה
+- [x] גרסאות — סירוב ל-major גבוה, שלד ממיר 1→2
+- [x] סנכרון — `tools/sync.php` + שער בפריסה
+- [x] דף בדיקה (`inspector/`)
+- [x] קבצי דוגמה לכל `kind` זהים בית-לבית ב-JS וב-PHP; קבצים עוינים נדחים
+- [x] README, PR ממוזג ופריסה `conclusion: success`
+
 ## סטטוס
 
 **גרסה 1 — מוכנה** (2026-10-23). מה נבנה ומה טרם הוכרע — `creative-suite/mbe-core/README.md`. בקשות לצ'אט
