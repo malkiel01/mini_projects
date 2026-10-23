@@ -14,6 +14,9 @@ import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
+import androidx.core.content.IntentCompat
+import org.json.JSONArray
+import org.json.JSONObject
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import com.mbeplus.greetingcards.databinding.ActivityMainBinding
@@ -31,6 +34,7 @@ import com.mbeplus.greetingcards.databinding.ActivityMainBinding
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
+    private lateinit var bridge: WhatsAppBridge
     private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
 
     companion object {
@@ -64,7 +68,8 @@ class MainActivity : AppCompatActivity() {
         })
 
         setupWebView()
-        binding.webView.loadUrl(launchUrl(intent) ?: BuildConfig.WEB_URL)
+        val shared = captureShare(intent)
+        binding.webView.loadUrl(launchUrl(intent) ?: (BuildConfig.WEB_URL + if (shared) "#shared" else ""))
     }
 
     // ‏launchMode="singleTask": "פתיחה" כשהאפליקציה כבר פתוחה מגיעה לכאן ולא ל-onCreate.
@@ -72,6 +77,40 @@ class MainActivity : AppCompatActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         launchUrl(intent)?.let { binding.webView.loadUrl(it) }
+        if (captureShare(intent)) binding.webView.loadUrl(BuildConfig.WEB_URL + "#shared")
+    }
+
+    /**
+     * ‏"שיתוף" מאפליקציה אחרת: התמונות והטקסט נקראים כאן (לדף אין גישה ל-content://) ונשמרים בגשר, והדף
+     * לוקח אותם ב-takeShared(). עד 10 קבצים, עד 25MB כל אחד — כמו בייבוא רגיל.
+     */
+    private fun captureShare(intent: Intent?): Boolean {
+        if (intent == null || (intent.action != Intent.ACTION_SEND && intent.action != Intent.ACTION_SEND_MULTIPLE)) return false
+        val uris = mutableListOf<Uri>()
+        if (intent.action == Intent.ACTION_SEND) {
+            IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)?.let { uris.add(it) }
+        } else {
+            IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)?.let { uris.addAll(it) }
+        }
+        val files = JSONArray()
+        for ((i, uri) in uris.take(10).withIndex()) {
+            try {
+                val mime = contentResolver.getType(uri) ?: "application/octet-stream"
+                val bytes = contentResolver.openInputStream(uri)?.use { input ->
+                    val buf = input.readBytes()
+                    if (buf.size > 25 * 1024 * 1024) null else buf
+                } ?: continue
+                val ext = when { mime.contains("png") -> "png"; mime.contains("webp") -> "webp"; mime.contains("json") -> "json"; mime.contains("zip") -> "gcard"; else -> "jpg" }
+                files.put(JSONObject().put("name", uri.lastPathSegment?.substringAfterLast('/')?.takeIf { it.contains('.') } ?: "shared-${i + 1}.$ext")
+                    .put("mime", mime).put("base64", android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)))
+            } catch (e: Exception) {
+                // קובץ שאי אפשר לקרוא — מדלגים; השאר נכנסים.
+            }
+        }
+        val text = intent.getStringExtra(Intent.EXTRA_TEXT) ?: ""
+        if (files.length() == 0 && text.isBlank()) return false
+        bridge.pendingShare = JSONObject().put("files", files).put("text", text).toString()
+        return true
     }
 
     /**
@@ -104,7 +143,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         // Add JavaScript bridge for WhatsApp sending
-        val bridge = WhatsAppBridge(this)
+        bridge = WhatsAppBridge(this)
         webView.addJavascriptInterface(bridge, "GreetingCardsAndroid")
 
         webView.webViewClient = object : WebViewClient() {

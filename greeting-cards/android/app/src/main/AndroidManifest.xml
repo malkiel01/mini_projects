@@ -44,6 +44,23 @@
                 <data android:scheme="https" android:host="mbe-plus.com"
                       android:pathPrefix="/mini_projects/greeting-cards/"/>
             </intent-filter>
+            <!--
+              ‏"שיתוף" מאפליקציה אחרת (למשל ChatGPT או Gemini): תמונות וטקסט (ה-JSON) נכנסים לעורך כ"ייבוא
+              מהצ'אט". הקבצים עוברים לדף דרך הגשר (takeShared).
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="image/*"/>
+                <data android:mimeType="text/plain"/>
+                <data android:mimeType="application/json"/>
+                <data android:mimeType="application/zip"/>
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="image/*"/>
+            </intent-filter>
         </activity>
 
         <!-- FileProvider for sharing images with WhatsApp -->

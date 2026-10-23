@@ -91,7 +91,10 @@ export async function importFromChat(files, pastedText) {
             images.set(name, f);
         }
     }
-    if (!json && pastedText && pastedText.trim()) json = extractJson(pastedText);
+    if (!json && pastedText && pastedText.trim()) {
+        // טקסט בלי JSON (למשל כיתוב ששותף יחד עם התמונה) — לא חוסם, כל עוד יש תמונה.
+        try { json = extractJson(pastedText); } catch (e) { if (!images.size) throw e; }
+    }
 
     if (!json) {
         const first = [...images.values()][0];

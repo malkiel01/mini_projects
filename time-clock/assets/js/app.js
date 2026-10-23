@@ -245,13 +245,15 @@ function renderSettings() {
       <button role="tab" data-tab="team" aria-selected="${tab === 'team'}">👥 צוות <small>${d.team.length}</small></button>
       ${canStations() ? `<button role="tab" data-tab="stations" aria-selected="${tab === 'stations'}">📟 עמדות</button>` : ''}
       <button role="tab" data-tab="steps" aria-selected="${tab === 'steps'}">✍️ אישור</button>
+      <button role="tab" data-tab="ot" aria-selected="${tab === 'ot'}">⏱️ נוספות</button>
+      <button role="tab" data-tab="hol" aria-selected="${tab === 'hol'}">📅 חגים</button>
     </div><div id="pane"></div>`;
   main.querySelector('.seg-tabs').addEventListener('click', e => {
     const b = e.target.closest('[data-tab]'); if (!b) return;
     try { sessionStorage.setItem('tc-tab', b.dataset.tab); } catch { /* */ }
     renderSettings();
   });
-  ({ details: paneDetails, sites: paneSites, team: paneTeam, stations: canStations() ? paneStations : paneDetails, steps: paneSteps })[tab]($('#pane'));
+  ({ details: paneDetails, sites: paneSites, team: paneTeam, stations: canStations() ? paneStations : paneDetails, steps: paneSteps, ot: paneOt, hol: paneHolidays })[tab]($('#pane'));
 }
 
 const isOwner = () => state.data.my_role === 'owner';
@@ -392,6 +394,117 @@ async function renderApprovals() {
         <p class="error" role="alert" hidden></p>`,
         async f => { await api('corr_decide', { company_id: state.companyId, id: c.id, approve: false, note: f.note.value }); return 'נדחה'; });
     }
+  });
+}
+
+/* ===== M7 · כללי שעות נוספות (גרסה 2) ===== */
+
+async function paneOt(pane) {
+  let r;
+  try { r = await api('ot_rules_get', { company_id: state.companyId }); }
+  catch (e) { pane.innerHTML = `<p class="error" role="alert">${esc(e.message)}</p>`; return; }
+  const c = r.current, ro = r.can_edit ? '' : ' disabled';
+  const t = (k, label) => `<label class="f"><span>${label}</span><input name="${k}" dir="ltr" inputmode="numeric" value="${hm(c[k])}"${ro}></label>`;
+  const p = (k, label) => `<label class="f"><span>${label}</span><input name="${k}" type="number" min="100" max="500" dir="ltr" value="${c[k]}"${ro}></label>`;
+  pane.innerHTML = `
+    <p class="warn-box">⚠️ ברירות המחדל נגזרות מחוק שעות עבודה ומנוחה ואינן ייעוץ משפטי. לפני שימוש — אישור של רואה חשבון או יועץ שכר. הסכם או חוזה יכולים לקבוע אחרת.</p>
+    <form class="form" id="ot-form" novalidate>
+      <h3 class="sec-title" style="margin:0">מתי שעה נעשית נוספת</h3>
+      <div class="fields two">${t('daily5', 'ביום — שבוע של 5 ימים')}${t('daily6', 'ביום — שבוע של 6 ימים')}</div>
+      <div class="fields two">${t('night', 'משמרת לילה')}${t('night_min', 'מינימום לילה (22:00–06:00)')}</div>
+      <div class="fields two">${t('ot1_minutes', 'השעות הנוספות הראשונות')}${t('weekly', 'תקן שבועי')}</div>
+      <h3 class="sec-title" style="margin:0">שיעורים (%)</h3>
+      <div class="fields two">${p('rate_ot1', 'נוספות ראשונות')}${p('rate_ot2', 'נוספות אחריהן')}</div>
+      <div class="fields" style="grid-template-columns:repeat(3,minmax(0,1fr))">${p('rate_rest', 'מנוחה / חג')}${p('rate_rest_ot1', 'נוספות במנוחה')}${p('rate_rest_ot2', 'ואחריהן')}</div>
+      <label class="switch"><input type="checkbox" name="holiday_rest_cumulative"${c.holiday_rest_cumulative ? ' checked' : ''}${ro}><span>חג שחל ביום המנוחה — מצטבר (סיווג נפרד)</span></label>
+      <div class="fields two" id="hr-rate"${c.holiday_rest_cumulative ? '' : ' hidden'}>${p('rate_holiday_rest', 'חג במנוחה')}</div>
+      ${r.can_edit ? `<div class="fields two"><label class="f"><span>בתוקף מתאריך</span><input name="effective_from" type="date" value="${new Date().toLocaleDateString('en-CA', { timeZone: TZ })}"></label></div>
+        <p class="error" role="alert" hidden></p>
+        <div class="actions"><button class="btn" type="button" id="ot-defaults">ברירות המחדל</button><span style="flex:1"></span><button class="btn primary" type="submit">שמירה</button></div>`
+        : '<p class="hint">רק הבעלים משנה את הכללים.</p>'}
+    </form>
+    <p class="hint" style="margin-top:8px">הסיווג נעשה לכל יום (כולל לילה ומנוחה) ואחר כך לכל שבוע (ראשון–שבת). "שעות התקן" של העובד ממשיכות לשמש ל"הפרש".</p>
+    ${r.history.length ? `<h3 class="sec-title">גרסאות</h3><ul class="list">${r.history.map(h => `<li class="card"><div class="body"><div class="l1"><span>מ-${dateHe(h.effective_from)}</span></div>
+      <div class="l2">${hm(h.rules.daily5)} / ${hm(h.rules.daily6)} ליום · לילה ${hm(h.rules.night)} · שבוע ${hm(h.rules.weekly)} · ${h.rules.rate_ot1}%/${h.rules.rate_ot2}%</div></div></li>`).join('')}</ul>` : ''}`;
+  const form = $('#ot-form');
+  form.holiday_rest_cumulative.addEventListener('change', e => { $('#hr-rate').hidden = !e.target.checked; });
+  $('#ot-defaults')?.addEventListener('click', () => {
+    for (const [k, v] of Object.entries(r.defaults)) {
+      const el = form.elements[k]; if (!el) continue;
+      if (el.type === 'checkbox') el.checked = !!v; else el.value = el.type === 'number' ? v : hm(v);
+    }
+    $('#hr-rate').hidden = !r.defaults.holiday_rest_cumulative;
+  });
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    const rules = {};
+    try {
+      for (const k of ['daily5', 'daily6', 'night', 'night_min', 'ot1_minutes', 'weekly']) {
+        const m = parseHm(form.elements[k].value); if (Number.isNaN(m)) throw new Error('שעה לא תקינה — למשל 8:36');
+        rules[k] = m;
+      }
+      for (const k of ['rate_ot1', 'rate_ot2', 'rate_rest', 'rate_rest_ot1', 'rate_rest_ot2', 'rate_holiday_rest']) rules[k] = +form.elements[k].value;
+      rules.holiday_rest_cumulative = form.holiday_rest_cumulative.checked;
+      r = await api('ot_rules_save', { company_id: state.companyId, effective_from: form.effective_from.value, rules });
+      toast('נשמר'); paneOt(pane);
+    } catch (err) { showError(form, err.message); }
+  });
+}
+
+/* ===== M7 · חגים (גרסה 2) ===== */
+
+async function paneHolidays(pane, year = null) {
+  let r;
+  try { r = await api('holidays_get', { company_id: state.companyId, year }); }
+  catch (e) { pane.innerHTML = `<p class="error" role="alert">${esc(e.message)}</p>`; return; }
+  const dd = d => new Date(d + 'T12:00:00Z').toLocaleDateString('he-IL', { weekday: 'short', day: 'numeric', month: 'numeric', timeZone: 'UTC' });
+  const relText = h => h.religions === 'all' ? 'כולם' : h.religions.map(x => r.religions[x]).join(', ');
+  pane.innerHTML = `<div>
+    <div class="toolbar month-nav">
+      <button class="icon-btn" id="hy-prev" type="button" aria-label="השנה הקודמת">‹</button>
+      <b class="one" style="flex:1;text-align:center">${r.year}</b>
+      <button class="icon-btn" id="hy-next" type="button" aria-label="השנה הבאה">›</button>
+    </div>
+    <p class="hint">יום חג נספר כמו יום מנוחה (⏱️ נוספות). כל עובד מקבל את החגים של הדת שנבחרה בכרטיס שלו.</p>
+    <h3 class="sec-title">ימים של החברה</h3>
+    ${r.can_edit ? '<div class="toolbar"><span></span><button class="btn primary" id="add-hol" type="button"><span aria-hidden="true">+</span> יום</button></div>' : ''}
+    <ul class="list">${r.company.length ? r.company.map(h => `
+      <li class="card"><span class="avatar" style="--h:${hue(h.name)}" aria-hidden="true">📅</span>
+        <div class="body"><div class="l1"><span>${esc(h.name)}</span><span class="t">${dd(h.date)}</span></div><div class="l2">${relText(h)}</div></div>
+        ${r.can_edit ? `<button class="icon-btn" type="button" data-del="${h.id}" aria-label="מחיקת ${esc(h.name)}">🗑️</button>` : ''}</li>`).join('')
+      : '<li class="empty">אין ימים של החברה בשנה הזו.</li>'}</ul>
+    <p class="hint" style="margin-top:8px">חגי המוסלמים, הנוצרים והדרוזים נקבעים בהחלטת ממשלה, ומוסיפים אותם כאן עם הדתות שהם חלים עליהן (החגים המוסלמיים תלויים גם בראיית הירח).</p>
+    <h3 class="sec-title">חגי ישראל — מובנה (לעובדים יהודים)</h3>
+    <ul class="list">${r.jewish.length ? r.jewish.map(h => `<li class="card"><div class="body"><div class="l1"><span>${esc(h.name)}</span><span class="t">${dd(h.date)}</span></div></div></li>`).join('')
+      : `<li class="empty">הלוח המובנה עד ${r.built_in_until.slice(0, 4)}.</li>`}</ul>
+    <p class="hint" style="margin-top:8px">מחושב מהלוח העברי: ימי המנוחה של סעיף 18א לפקודת סדרי השלטון והמשפט, ויום העצמאות (כולל הקדמה ודחייה).</p>
+  </div>`;
+  const view = pane.firstElementChild;
+  view.querySelector('#hy-prev').addEventListener('click', () => paneHolidays(pane, r.year - 1));
+  view.querySelector('#hy-next').addEventListener('click', () => paneHolidays(pane, r.year + 1));
+  view.addEventListener('click', async e => {
+    const del = e.target.closest('[data-del]'); if (!del) return;
+    const h = r.company.find(x => x.id === +del.dataset.del);
+    if (!confirm(`למחוק את "${h.name}"?`)) return;
+    try { await api('holiday_delete', { company_id: state.companyId, id: h.id }); toast('נמחק'); paneHolidays(pane, r.year); }
+    catch (err) { toast(err.message, true); }
+  });
+  view.querySelector('#add-hol')?.addEventListener('click', () => { openSheet('יום חג של החברה', `
+      <div class="fields">
+        <label class="f"><span>תאריך *</span><input name="date" type="date" value="${r.year}-01-01" required></label>
+        <label class="f"><span>שם *</span><input name="name" maxlength="60" required placeholder="למשל: עיד אל-פיטר"></label>
+      </div>
+      <div class="f" style="margin-top:12px"><span>חל על</span>
+        <label class="switch"><input type="checkbox" name="all" checked><span>כל העובדים</span></label>
+        <div class="chips" id="rels" hidden>${Object.entries(r.religions).map(([k, v]) => `<label><input type="checkbox" name="rel" value="${k}"><span>${v}</span></label>`).join('')}</div>
+      </div>
+      <p class="error" role="alert" hidden></p>`,
+    async f => {
+      const religions = f.all.checked ? 'all' : [...f.querySelectorAll('[name=rel]:checked')].map(x => x.value);
+      await api('holiday_add', { company_id: state.companyId, date: f.date.value, name: f.name.value, religions });
+      return () => { toast('נוסף'); paneHolidays(pane, +f.date.value.slice(0, 4)); };
+    });
+    $('#sheet form').elements.all.addEventListener('change', e => { $('#rels').hidden = e.target.checked; });
   });
 }
 
@@ -800,6 +913,10 @@ function paneEmpDetails(pane, d, canEdit) {
         <label class="f"><span>מס׳ עובד</span><input name="employee_no" dir="ltr" inputmode="numeric" value="${esc(e.employee_no ?? '')}"${ro}></label>
         ${siteSelect(e.site_id, !canEdit || siteOnly !== null)}
         <label class="f"><span>תאריך התחלה</span><input name="start_date" type="date" value="${esc(e.start_date ?? '')}"${ro}></label>
+        <label class="f"><span>דת (לוח חגים ויום מנוחה)</span><select name="religion"${ro}>
+          ${[['', 'לא צוין (יהודי)'], ['jewish', 'יהודי'], ['muslim', 'מוסלמי'], ['christian', 'נוצרי'], ['druze', 'דרוזי'], ['other', 'אחר']].map(([v, l]) => `<option value="${v}"${(e.religion ?? '') === v ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
+        <label class="f"><span>יום מנוחה</span><select name="rest_day"${ro}>
+          <option value="">לפי הדת</option>${['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'].map((n, i) => `<option value="${i}"${e.rest_day === i ? ' selected' : ''}>${n}</option>`).join('')}</select></label>
       </div>
       <p class="error" role="alert" hidden></p>
       ${canEdit ? `<div class="actions"><button class="btn danger" type="button" id="end-emp">סיום העסקה</button><span style="flex:1"></span><button class="btn primary" type="submit">שמירה</button></div>` : ''}
@@ -810,7 +927,8 @@ function paneEmpDetails(pane, d, canEdit) {
     ev.preventDefault();
     try {
       await api('emp_update', { company_id: state.companyId, id: e.id, name: form.name.value, phone: form.phone.value, email: form.email.value,
-        employee_no: form.employee_no.value, site_id: +(form.site_id?.value || 0), start_date: form.start_date.value });
+        employee_no: form.employee_no.value, site_id: +(form.site_id?.value || 0), start_date: form.start_date.value,
+        religion: form.religion.value, rest_day: form.rest_day.value });
       toast('נשמר'); renderEmployee(e.id);
     } catch (err) { showError(form, err.message); }
   });

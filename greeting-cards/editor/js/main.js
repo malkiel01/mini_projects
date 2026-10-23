@@ -1,7 +1,9 @@
 // העורך החדש: מסך הבית (העיצובים שלי) ומסך העריכה. ‏spec/03-editor.md.
 
 import { h, $, toast, sheet, closeSheet, isSheetOpen, confirmDialog, field, rangeField, seg, colorField, toggle, pickFiles, download, timeAgo } from './ui.js';
-import { SIZES, newDoc, textLayer, shapeLayer, imageLayer, backgroundLayer, layerLabel, uid, clone, normalizeDoc } from './doc.js';
+import { SIZES, newDoc, textLayer, shapeLayer, imageLayer, backgroundLayer, iconLayer, layerLabel, uid, clone, normalizeDoc } from './doc.js';
+import { ICONS } from './icons.js';
+import { TEMPLATES } from './templates.js';
 import { FONTS, ensureFont, ensureDocFonts, nearestWeight } from './fonts.js';
 import { History } from './history.js';
 import { designs, assets } from './db.js';
@@ -71,12 +73,55 @@ function newDesignSheet() {
     const wIn = h('input', { type: 'number', min: 16, max: 10000, value: 1080, inputMode: 'numeric' });
     const hIn = h('input', { type: 'number', min: 16, max: 10000, value: 1350, inputMode: 'numeric' });
     sheet('עיצוב חדש', h('div', {},
+        h('h3', { class: 'section' }, 'מתבנית'),
+        h('div', { class: 'tiles templates' }, TEMPLATES.map(t => {
+            const img = h('img', { alt: '', class: 'tpl-img' });
+            templateThumb(t).then(url => { img.src = url; }).catch(() => {});
+            return h('button', { class: 'tile tpl', onclick: () => createFromTemplate(t) },
+                h('span', { class: 'tpl-frame', style: { aspectRatio: `${t.doc.page.width} / ${t.doc.page.height}` } }, img),
+                h('span', {}, t.label));
+        })),
+        h('h3', { class: 'section' }, 'דף ריק'),
         h('div', { class: 'tiles sizes' }, SIZES.map(s => h('button', { class: 'tile size', onclick: () => createDesign(s.w, s.h, s.label) },
             h('span', { class: 'size-box', style: { aspectRatio: `${s.w} / ${s.h}` }, 'aria-hidden': 'true' }),
             h('span', {}, s.label), h('span', { class: 'muted small', dir: 'ltr' }, `${s.w}×${s.h}`)))),
         h('h3', { class: 'section' }, 'גודל אחר'),
         h('div', { class: 'two' }, field('רוחב (px)', wIn), field('גובה (px)', hIn)),
         h('button', { class: 'btn primary block', onclick: () => createDesign(+wIn.value, +hIn.value, 'מותאם') }, 'יצירה')));
+}
+
+// ─── תבניות ──────────────────────────────────────────────────────────────
+
+const thumbs = new Map();
+
+/** תצוגה מקדימה של תבנית: מצוירת פעם אחת בקנבס נסתר, ונשמרת לכל הפעלה. */
+function templateThumb(t) {
+    if (!thumbs.has(t.id)) {
+        thumbs.set(t.id, (async () => {
+            const { doc } = normalizeDoc(t.doc);
+            await ensureDocFonts(doc);
+            const holder = h('div', { style: { position: 'fixed', insetInlineStart: '-10000px', top: '0', width: '100px', height: '100px' }, 'aria-hidden': 'true' });
+            document.body.append(holder);
+            try {
+                const c = new Canvas(holder, {});
+                c.setDoc(doc);
+                const url = c.pageCanvas(320 / Math.max(doc.page.width, doc.page.height)).toDataURL('image/jpeg', 0.82);
+                c.stage.destroy();
+                return url;
+            } finally { holder.remove(); }
+        })());
+    }
+    return thumbs.get(t.id);
+}
+
+async function createFromTemplate(t) {
+    closeSheet();
+    const { doc } = normalizeDoc(t.doc);
+    doc.source = { app: 'template' };
+    const id = uid('d');
+    await designs.put({ id, title: doc.title, doc, updatedAt: Date.now(), owner: sync.currentUser()?.id, synced: false });
+    await openDesign(id);
+    toast('מתבנית — כל טקסט נערך בהקשה כפולה');
 }
 
 async function createDesign(w, hgt, label) {
@@ -333,6 +378,7 @@ function renderCtx() {
         one ? b('📐', 'מיקום', () => positionSheet(l)) : null,
         b('⧉', 'שכפול', duplicate),
         b('⇅', 'סדר', orderSheet),
+        ls.length > 1 ? b('⊞', 'יישור', orderSheet) : null,
         b(ls.every(x => x.locked) ? '🔒' : '🔓', ls.every(x => x.locked) ? 'נעול' : 'נעילה', toggleLock, { 'aria-pressed': String(ls.every(x => x.locked)) }),
         b('🗑️', 'מחיקה', removeSelected)].filter(Boolean));
 }
@@ -390,21 +436,56 @@ function move(dir) {
 }
 
 function orderSheet() {
-    sheet('סדר שכבות', h('div', { class: 'menu' },
-        h('button', { class: 'menu-item', onclick: () => move(Infinity) }, '⤒ לראש'),
-        h('button', { class: 'menu-item', onclick: () => move(1) }, '↑ קדימה'),
-        h('button', { class: 'menu-item', onclick: () => move(-1) }, '↓ אחורה'),
-        h('button', { class: 'menu-item', onclick: () => move(-Infinity) }, '⤓ לתחתית'),
-        h('hr'),
-        h('button', { class: 'menu-item', onclick: () => alignPage('x') }, '↔ מרכז אופקי בדף'),
-        h('button', { class: 'menu-item', onclick: () => alignPage('y') }, '↕ מרכז אנכי בדף')));
+    const many = sel().length > 1;
+    const a = (icon, label, fn) => h('button', { class: 'tile small', onclick: fn, 'aria-label': label, title: label }, h('span', { class: 'tile-icon', 'aria-hidden': 'true' }, icon), h('span', { class: 'small' }, label));
+    sheet('סדר ויישור', h('div', {},
+        h('h3', { class: 'section' }, many ? `יישור ${sel().length} שכבות (זו לזו)` : 'יישור בדף'),
+        h('div', { class: 'tiles six' },
+            a('⇥', 'ימין', () => align('right')), a('↔', 'מרכז', () => align('cx')), a('⇤', 'שמאל', () => align('left')),
+            a('⤒', 'למעלה', () => align('top')), a('↕', 'אמצע', () => align('cy')), a('⤓', 'למטה', () => align('bottom'))),
+        sel().length > 2 ? h('div', { class: 'row-actions' },
+            h('button', { class: 'btn ghost', onclick: () => distribute('x') }, '⟷ פיזור שווה לרוחב'),
+            h('button', { class: 'btn ghost', onclick: () => distribute('y') }, '⟷ פיזור שווה לגובה')) : null,
+        h('h3', { class: 'section' }, 'סדר'),
+        h('div', { class: 'menu' },
+            h('button', { class: 'menu-item', onclick: () => move(Infinity) }, '⤒ לראש'),
+            h('button', { class: 'menu-item', onclick: () => move(1) }, '↑ קדימה'),
+            h('button', { class: 'menu-item', onclick: () => move(-1) }, '↓ אחורה'),
+            h('button', { class: 'menu-item', onclick: () => move(-Infinity) }, '⤓ לתחתית'))));
 }
 
-function alignPage(axis) {
-    for (const l of sel()) {
-        if (axis === 'x') l.x = (ed.doc.page.width - l.w) / 2;
-        else l.y = (ed.doc.page.height - l.h) / 2;
+/**
+ * יישור: שכבה אחת — לדף; כמה — למסגרת המשותפת שלהן. לפי x/y/w/h של המסמך (בלי סיבוב) — זה מה שהמשתמש
+ * מצפה לו גם בשכבה מסובבת קלות.
+ */
+function align(how) {
+    const ls = sel().filter(l => !l.locked);
+    if (!ls.length) return;
+    const box = ls.length > 1
+        ? { x: Math.min(...ls.map(l => l.x)), y: Math.min(...ls.map(l => l.y)), r: Math.max(...ls.map(l => l.x + l.w)), b: Math.max(...ls.map(l => l.y + l.h)) }
+        : { x: 0, y: 0, r: ed.doc.page.width, b: ed.doc.page.height };
+    for (const l of ls) {
+        if (how === 'left') l.x = box.x;
+        if (how === 'right') l.x = box.r - l.w;
+        if (how === 'cx') l.x = (box.x + box.r) / 2 - l.w / 2;
+        if (how === 'top') l.y = box.y;
+        if (how === 'bottom') l.y = box.b - l.h;
+        if (how === 'cy') l.y = (box.y + box.b) / 2 - l.h / 2;
     }
+    commit();
+}
+
+/** פיזור שווה: הראשונה והאחרונה במקומן, והרווחים ביניהן שווים. */
+function distribute(axis) {
+    const ls = sel().filter(l => !l.locked);
+    if (ls.length < 3) return;
+    const [p, s] = axis === 'x' ? ['x', 'w'] : ['y', 'h'];
+    ls.sort((a, b) => a[p] - b[p]);
+    const total = ls.reduce((t, l) => t + l[s], 0);
+    const span = ls[ls.length - 1][p] + ls[ls.length - 1][s] - ls[0][p];
+    const gap = (span - total) / (ls.length - 1);
+    let at = ls[0][p];
+    for (const l of ls) { l[p] = at; at += l[s] + gap; }
     commit();
 }
 
@@ -425,7 +506,10 @@ function addSheet() {
             t('⭐', 'כוכב', () => addLayer({ ...shapeLayer(ed.doc, 'star'), fill: '#e19a00' })),
             t('➖', 'קו', () => addLayer(shapeLayer(ed.doc, 'line'))),
             t('⬢', 'מצולע', () => addLayer({ ...shapeLayer(ed.doc, 'polygon'), points: 6 })),
-            t('➡️', 'חץ', () => addLayer({ ...shapeLayer(ed.doc, 'arrow'), h: Math.min(ed.doc.page.width, ed.doc.page.height) * 0.08 })))));
+            t('➡️', 'חץ', () => addLayer({ ...shapeLayer(ed.doc, 'arrow'), h: Math.min(ed.doc.page.width, ed.doc.page.height) * 0.08 }))),
+        h('h3', { class: 'section' }, 'אייקונים'),
+        h('div', { class: 'icon-grid' }, Object.entries(ICONS).map(([name, ic]) =>
+            h('button', { class: 'icon-pick', 'aria-label': ic.label, title: ic.label, onclick: () => { closeSheet(); addLayer(iconLayer(ed.doc, name)); } }, iconSvg(ic))))), { wide: true });
 }
 
 // סינכרוני בכוונה: בטלפון (בעיקר iOS) המקלדת נפתחת רק כש-focus קורה בתוך ההקשה עצמה. הפונט נטען
@@ -517,8 +601,78 @@ function propsSheet(l) {
     let body;
     if (l.type === 'text') body = textProps(l);
     else if (l.type === 'image') body = imageProps(l);
+    else if (l.type === 'icon') body = iconProps(l);
     else body = shapeProps(l);
-    sheet(l.type === 'text' ? 'עיצוב טקסט' : l.type === 'image' ? 'תמונה' : 'צורה', body, { onClose: commit });
+    sheet({ text: 'עיצוב טקסט', image: 'תמונה', icon: 'אייקון' }[l.type] || 'צורה', body, { onClose: commit });
+}
+
+/** ‏SVG של אייקון לכפתור — נבנה בצמתים (לא innerHTML). */
+function iconSvg(ic) {
+    const NS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('aria-hidden', 'true');
+    const p = document.createElementNS(NS, 'path');
+    p.setAttribute('d', ic.d);
+    svg.append(p);
+    return svg;
+}
+
+function iconProps(l) {
+    const ic = ICONS[l.icon];
+    return h('div', {},
+        h('div', { class: 'icon-grid' }, Object.entries(ICONS).map(([name, x]) =>
+            h('button', { class: 'icon-pick' + (name === l.icon ? ' on' : ''), 'aria-label': x.label, 'aria-pressed': String(name === l.icon), onclick: e => {
+                l.icon = name;
+                if (!x.filled) delete l.filled;
+                e.currentTarget.parentNode.querySelectorAll('.icon-pick').forEach(b => { b.classList.toggle('on', b === e.currentTarget); b.setAttribute('aria-pressed', String(b === e.currentTarget)); });
+                commit();
+            } }, iconSvg(x)))),
+        colorField('צבע', l.color, live(v => { l.color = v; }), commit),
+        ic?.filled ? toggle('מלא', !!l.filled, v => { if (v) l.filled = true; else delete l.filled; commit(); }) : null,
+        rangeField('עובי קו', { min: 0.5, max: 4, step: 0.25, value: l.strokeWidth || 2, onInput: live(v => { l.strokeWidth = v; }), onCommit: commit }),
+        rangeField('שקיפות', { min: 0, max: 100, value: Math.round((l.opacity ?? 1) * 100), unit: '%', onInput: live(v => { l.opacity = v / 100; }), onCommit: commit }),
+        toggle('צל', !!l.shadow, v => { if (v) l.shadow = { x: 0, y: 6, blur: 16, color: '#00000055' }; else delete l.shadow; commit(); }));
+}
+
+/**
+ * חיתוך תמונה: כמה לקצוץ מכל צד (באחוזים), או יחס מוכן. קנה המידה של התמונה נשמר — השכבה מתכווצת
+ * סביב מה שנשאר, והחלק שנשאר לא זז בדף.
+ */
+function cropSheet(l) {
+    const img = ed.canvas.images.get(l.asset);
+    if (!img) { toast('התמונה עוד לא נטענה', 'error'); return; }
+    const nw = img.naturalWidth, nh = img.naturalHeight;
+    const c0 = l.crop || { x: 0, y: 0, w: 1, h: 1 };
+    const scale = l.w / (c0.w * nw);           // פיקסלי דף לכל פיקסל של התמונה המקורית
+    const cut = { top: c0.y, bottom: 1 - c0.y - c0.h, left: c0.x, right: 1 - c0.x - c0.w };
+    const apply = () => {
+        const c = { x: cut.left, y: cut.top, w: Math.max(0.02, 1 - cut.left - cut.right), h: Math.max(0.02, 1 - cut.top - cut.bottom) };
+        const prev = l.crop || { x: 0, y: 0, w: 1, h: 1 };
+        // ‏x/y — הפינה השמאלית-עליונה של מה שנשאר; היא זזה בדיוק כמו קצה החיתוך, כך שהתמונה לא "קופצת".
+        l.x += (c.x - prev.x) * nw * scale;
+        l.y += (c.y - prev.y) * nh * scale;
+        l.w = c.w * nw * scale;
+        l.h = c.h * nh * scale;
+        if (c.x === 0 && c.y === 0 && c.w === 1 && c.h === 1) delete l.crop; else l.crop = c;
+        ed.canvas.render();
+    };
+    const slider = (label, key) => rangeField(label, { min: 0, max: 90, value: Math.round(cut[key] * 100), unit: '%', onInput: v => { cut[key] = v / 100; apply(); }, onCommit: commit });
+    /** יחס מוכן, במרכז התמונה. */
+    const ratio = r => {
+        let w = 1, hh = 1;
+        if (nw / nh > r) w = (nh * r) / nw; else hh = nw / r / nh;
+        Object.assign(cut, { left: (1 - w) / 2, right: (1 - w) / 2, top: (1 - hh) / 2, bottom: (1 - hh) / 2 });
+        apply(); commit(); closeSheet(); cropSheet(l);
+    };
+    sheet('חיתוך', h('div', {},
+        h('div', { class: 'row-actions' },
+            h('button', { class: 'btn ghost', onclick: () => ratio(1) }, 'ריבוע'),
+            h('button', { class: 'btn ghost', onclick: () => ratio(4 / 5) }, '4:5'),
+            h('button', { class: 'btn ghost', onclick: () => ratio(9 / 16) }, '9:16'),
+            h('button', { class: 'btn ghost', onclick: () => ratio(16 / 9) }, '16:9'),
+            h('button', { class: 'btn ghost', onclick: () => { Object.assign(cut, { top: 0, bottom: 0, left: 0, right: 0 }); apply(); commit(); closeSheet(); cropSheet(l); } }, 'בלי חיתוך')),
+        slider('מלמעלה', 'top'), slider('מלמטה', 'bottom'), slider('מימין', 'right'), slider('משמאל', 'left')), { onClose: commit });
 }
 
 function textProps(l) {
@@ -563,7 +717,8 @@ function imageProps(l) {
         h('div', { class: 'row-actions' },
             h('button', { class: 'btn ghost', 'aria-pressed': String(!!l.flipX), onclick: () => { l.flipX = !l.flipX; commit(); } }, '⇋ היפוך אופקי'),
             h('button', { class: 'btn ghost', 'aria-pressed': String(!!l.flipY), onclick: () => { l.flipY = !l.flipY; commit(); } }, '⇵ היפוך אנכי'),
-            h('button', { class: 'btn ghost', onclick: () => replaceImage(l) }, '🔄 החלפה')),
+            h('button', { class: 'btn ghost', onclick: () => replaceImage(l) }, '🔄 החלפה'),
+            h('button', { class: 'btn ghost', onclick: () => { closeSheet(); cropSheet(l); } }, '✂️ חיתוך')),
         seg('צורה', [{ value: 'none', label: 'רגיל' }, { value: 'rounded', label: 'מעוגל' }, { value: 'circle', label: 'עיגול' }], l.mask || 'none', v => { if (v === 'none') delete l.mask; else l.mask = v; commit(); }),
         rangeField('בהירות', { min: -0.5, max: 0.5, step: 0.01, value: f.brightness, onInput: live(v => { f.brightness = v; }), onCommit: commit }),
         rangeField('ניגודיות', { min: -60, max: 60, value: f.contrast, onInput: live(v => { f.contrast = v; }), onCommit: commit }),
@@ -639,9 +794,14 @@ function layersSheet() {
         const L = ed.doc.layers.slice().reverse();
         ul.replaceChildren(...(L.length ? L.map(l => {
             const on = ed.selection.includes(l.id);
-            const icon = l.type === 'text' ? '🔤' : l.type === 'image' ? '🖼️' : '⬛';
+            const icon = { text: '🔤', image: '🖼️', icon: '⭐' }[l.type] || '⬛';
             return h('li', { class: 'layer-row' + (on ? ' on' : ''), 'data-id': l.id },
-                h('button', { class: 'layer-main', 'aria-pressed': String(on), onclick: () => { ed.canvas.select([l.id]); draw(); } },
+                h('button', { class: 'layer-main', 'aria-pressed': String(on), onclick: () => {
+                    // בחירה מרובה (גם בטלפון, שאין בו Shift): הקשה מוסיפה או מורידה מהבחירה.
+                    if (multi.checked) ed.canvas.select(on ? ed.selection.filter(x => x !== l.id) : [...ed.selection, l.id]);
+                    else ed.canvas.select([l.id]);
+                    draw();
+                } },
                     h('span', { 'aria-hidden': 'true' }, icon), h('span', { class: 'layer-name' }, layerLabel(l))),
                 h('button', { class: 'icon-btn', 'aria-label': l.hidden ? `הצגת ${layerLabel(l)}` : `הסתרת ${layerLabel(l)}`, 'aria-pressed': String(!!l.hidden), onclick: () => { l.hidden = !l.hidden; if (!l.hidden) delete l.hidden; commit(); draw(); } }, l.hidden ? '🚫' : '👁️'),
                 h('button', { class: 'icon-btn', 'aria-label': l.locked ? `שחרור ${layerLabel(l)}` : `נעילת ${layerLabel(l)}`, 'aria-pressed': String(!!l.locked), onclick: () => { if (l.locked) delete l.locked; else l.locked = true; commit(); draw(); } }, l.locked ? '🔒' : '🔓'),
@@ -649,8 +809,11 @@ function layersSheet() {
                 h('button', { class: 'icon-btn', 'aria-label': `הורדת ${layerLabel(l)}`, onclick: () => { ed.canvas.select([l.id]); move(-1); draw(); } }, '▼'));
         }) : [h('li', { class: 'empty' }, 'אין שכבות עדיין — ➕ הוספה')]));
     };
+    const multi = h('input', { type: 'checkbox' });
     draw();
-    sheet('שכבות', ul);
+    sheet('שכבות', h('div', {},
+        h('label', { class: 'toggle' }, multi, h('span', {}, 'בחירה מרובה — ליישור, פיזור והזזה יחד')),
+        ul));
 }
 
 // ─── רקע וגודל הדף ────────────────────────────────────────────────────────
@@ -1193,11 +1356,38 @@ async function gptSetupSheet(regenerate = false) {
         h('p', { class: 'hint' }, 'Token Exchange Method: Default (POST request). אחרי השמירה, ChatGPT מציג Callback URL — אין צורך להעתיק אותו לכאן.')), { wide: true });
 }
 
+/**
+ * "שיתוף" מאפליקציה אחרת לאפליקציית האנדרואיד (למשל תמונה ו-JSON מ-ChatGPT): הגשר מחזיק את מה ששותף,
+ * וזה נכנס בדיוק כמו "ייבוא מהצ'אט". מחזיר true כשהיה מה לייבא.
+ */
+function takeShared() {
+    const bridge = window.GreetingCardsAndroid;
+    if (!bridge?.takeShared) return false;
+    let data;
+    try { data = JSON.parse(bridge.takeShared() || 'null'); } catch { return false; }
+    if (location.hash === '#shared') history.replaceState(null, '', location.pathname + location.search);
+    if (!data || (!data.files?.length && !data.text?.trim())) return false;
+    const files = (data.files || []).map(f => {
+        const bin = atob(f.base64);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        return new File([bytes], f.name, { type: f.mime });
+    });
+    // בלי תמונות — רק טקסט (JSON): פותחים את מסך הייבוא כדי שיוסיפו את התמונה.
+    if (!files.some(f => f.type.startsWith('image/') || /\.(gcard|zip|json)$/i.test(f.name))) {
+        showHome().then(() => { importSheet(); const ta = document.querySelector('.sheet textarea'); if (ta) ta.value = data.text; });
+        return true;
+    }
+    showHome().then(() => runImport(files, data.text || ''));
+    return true;
+}
+
 async function start() {
     try {
         const { user } = await sync.whoami();
         const importCode = /^#import=([A-Za-z0-9-]{9})$/.exec(location.hash)?.[1];
         if (user && importCode) return openChatImport(importCode);
+        if (user && takeShared()) return;
         if (user) return showHome();
         showLogin();
     } catch (e) {

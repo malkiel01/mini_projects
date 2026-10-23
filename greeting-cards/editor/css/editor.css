@@ -259,3 +259,22 @@ progress { width: 100%; height: 12px; accent-color: var(--brand); }
 .copy-row { display: flex; gap: var(--s1); align-items: center; }
 .copy-row input { flex: 1; min-width: 0; min-height: var(--tap); padding: 0 var(--s2); border: 1px solid var(--line); border-radius: var(--r); background: var(--bg); }
 .copy-row input.secret { border-color: var(--danger); }
+
+/* ─── אייקונים, יישור ─── */
+.icon-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(48px, 1fr)); gap: var(--s1); margin-bottom: var(--s3); }
+.icon-pick { aspect-ratio: 1; min-height: var(--tap); display: grid; place-items: center; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); color: var(--ink); }
+.icon-pick svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.icon-pick:hover, .icon-pick.on { border-color: var(--brand); background: var(--brand-soft); }
+.tiles.six { grid-template-columns: repeat(3, 1fr); }
+@media (min-width: 600px) { .tiles.six { grid-template-columns: repeat(6, 1fr); } }
+.tile.small { min-height: 64px; padding: var(--s2); }
+.tile.small .tile-icon { font-size: 1.2rem; }
+
+/* ─── תבניות ─── */
+.tiles.templates { grid-template-columns: repeat(3, 1fr); }
+@media (min-width: 600px) { .tiles.templates { grid-template-columns: repeat(6, 1fr); } }
+.tile.tpl { min-height: 0; padding: var(--s2); gap: var(--s2); font-size: .8125rem; }
+.tpl-frame { width: 100%; max-height: 140px; display: grid; place-items: center; background: var(--bg); border-radius: 6px; overflow: hidden; }
+.tpl-img { width: 100%; height: 100%; object-fit: contain; }
+.tpl-img:not([src]) { visibility: hidden; }
+

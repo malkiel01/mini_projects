@@ -158,6 +158,29 @@ function migrate(PDO $pdo): void {
         );
         CREATE INDEX IF NOT EXISTS corrections_member ON corrections (member_id, status);
 
+        -- כללי שעות נוספות של החברה, בגרסאות (JSON; ברירות המחדל — lib/overtime.php). גרסה 2.
+        CREATE TABLE IF NOT EXISTS ot_rules (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            company_id     INTEGER NOT NULL REFERENCES companies(id),
+            effective_from TEXT NOT NULL,
+            rules          TEXT NOT NULL,
+            created_by     INTEGER,
+            created_at     TEXT NOT NULL,
+            UNIQUE (company_id, effective_from)
+        );
+
+        -- ימי חג של החברה (גרסה 2): לכל הדתות או לחלקן. החגים היהודיים — מובנים (lib/holidays/jewish.json).
+        CREATE TABLE IF NOT EXISTS company_holidays (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            company_id INTEGER NOT NULL REFERENCES companies(id),
+            date       TEXT NOT NULL,
+            name       TEXT NOT NULL,
+            religions  TEXT NOT NULL DEFAULT 'all',
+            created_by INTEGER,
+            created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS company_holidays_date ON company_holidays (company_id, date);
+
         -- מסלול האישור החודשי של החברה: שלבים לפי סדר, כל שלב — תפקיד. ברירת מחדל: עובד ← מנהל.
         CREATE TABLE IF NOT EXISTS approval_steps (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -231,6 +254,14 @@ function migrate(PDO $pdo): void {
             at         TEXT NOT NULL
         );
     ");
+    // עמודות שנוספו אחרי שהטבלה כבר קיימת בשרת — ALTER, פעם אחת.
+    addColumn($pdo, 'members', 'religion', "TEXT CHECK (religion IN ('jewish','muslim','christian','druze','other'))");
+    addColumn($pdo, 'members', 'rest_day', 'INTEGER CHECK (rest_day BETWEEN 0 AND 6)');
+}
+
+function addColumn(PDO $pdo, string $table, string $column, string $type): void {
+    foreach ($pdo->query("PRAGMA table_info($table)") as $c) if ($c['name'] === $column) return;
+    $pdo->exec("ALTER TABLE $table ADD COLUMN $column $type");
 }
 
 function audit(?int $companyId, ?int $actor, string $action, string $entity, ?array $before, ?array $after): void {
