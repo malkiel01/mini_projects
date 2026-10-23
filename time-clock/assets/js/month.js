@@ -25,17 +25,19 @@ function monthHtml(r) {
       <div><dt>תקן עד היום</dt><dd>${hm(s.standard)}</dd></div>
       <div><dt>הפרש</dt><dd>${hm(s.diff)}</dd></div>
     </dl>
+    ${otCells(r)}
     ${s.missing ? `<p class="hint">⚠️ ${s.missing} דיווחים חסרים. לוחצים על היום כדי לתקן.</p>` : ''}
-    <p class="hint">ההפרש הוא מול שעות התקן בלבד, ואינו חישוב שעות נוספות.</p>
+    <p class="hint">ההפרש הוא מול שעות התקן שלך; השעות הנוספות מסווגות בנפרד.</p>
     <ul class="list">${rows.length ? rows.map(d => {
       const spans = d.pairs.map(p => t(p.in) + '–' + t(p.out));
       if (d.open) spans.push(t(d.open) + '–…');
       const chips = [d.missing_out ? '<span class="chip bad">חסר יציאה</span>' : '', d.missing_in ? '<span class="chip bad">חסר כניסה</span>' : '',
         d.open ? '<span class="chip ok">בעבודה</span>' : '',
         !spans.length && !d.missing_out && !d.missing_in && d.standard ? '<span class="chip">לא דווח</span>' : '',
-        d.pending ? '<span class="chip warn">ממתין לאישור</span>' : d.corrected ? '<span class="chip">תוקן</span>' : ''].join('');
+        d.pending ? '<span class="chip warn">ממתין לאישור</span>' : d.corrected ? '<span class="chip">תוקן</span>' : '',
+        d.ot?.holiday ? `<span class="chip ok">${escM(d.ot.holiday)}</span>` : d.ot?.rest && d.pairs.length ? '<span class="chip ok">מנוחה</span>' : ''].join('');
       return `<li class="card" tabindex="0" role="button" data-date="${d.date}"><div class="body"><div class="l1"><span>${dayName(d.date)}</span><span class="t">${d.minutes ? hm(d.minutes) : ''}</span></div>
-        <div class="l2" dir="ltr" style="text-align:end">${spans.join(' · ') || '—'}</div></div>${chips}</li>`;
+        <div class="l2" dir="ltr" style="text-align:end">${spans.join(' · ') || '—'}</div>${otLine(d, r)}</div>${chips}</li>`;
     }).join('') : '<li class="empty">אין ימים להצגה בחודש הזה.</li>'}</ul>`;
 }
 
@@ -105,4 +107,32 @@ function correctionBody(op, form, punch) {
     body.at = form.date.value + 'T' + form.time.value;
   }
   return body;
+}
+
+/* ===== הסיווג (גרסה 2) ===== */
+
+/** סיכום הסלים של החודש: רגילות · נוספות · מנוחה/חג. */
+function otCells(r) {
+  const o = r.summary.ot, q = r.ot_rules;
+  if (!o) return '';
+  const hm = m => Math.floor(m / 60) + ':' + String(m % 60).padStart(2, '0');
+  const rest = o.rest + o.rest_ot1 + o.rest_ot2 + o.holiday_rest;
+  return `<dl class="cells" style="grid-template-columns:repeat(4,1fr)">
+      <div><dt>רגילות</dt><dd>${hm(o.reg)}</dd></div>
+      <div><dt>${q.rate_ot1}%</dt><dd>${hm(o.ot1)}</dd></div>
+      <div><dt>${q.rate_ot2}%</dt><dd>${hm(o.ot2)}</dd></div>
+      <div><dt>מנוחה/חג</dt><dd>${hm(rest)}</dd></div></dl>
+    ${rest ? `<p class="hint">במנוחה/חג: ${q.rate_rest}% ${hm(o.rest)}${o.rest_ot1 ? ` · ${q.rate_rest_ot1}% ${hm(o.rest_ot1)}` : ''}${o.rest_ot2 ? ` · ${q.rate_rest_ot2}% ${hm(o.rest_ot2)}` : ''}${o.holiday_rest ? ` · חג במנוחה ${q.rate_holiday_rest}% ${hm(o.holiday_rest)}` : ''}</p>` : ''}
+    <p class="hint">הסיווג לפי כללי החברה. סכומים — בשכר.</p>`;
+}
+
+/** שורה קטנה ליום שיש בו שעות נוספות או מנוחה: "125% 1:20 · 150% 0:24". */
+function otLine(d, r) {
+  const b = d.ot?.b, q = r.ot_rules;
+  if (!b) return '';
+  const hm = m => Math.floor(m / 60) + ':' + String(m % 60).padStart(2, '0');
+  const parts = [['ot1', q.rate_ot1 + '%'], ['ot2', q.rate_ot2 + '%'], ['rest', q.rate_rest + '%'], ['rest_ot1', q.rate_rest_ot1 + '%'],
+                 ['rest_ot2', q.rate_rest_ot2 + '%'], ['holiday_rest', 'חג ' + q.rate_holiday_rest + '%']].filter(([k]) => b[k]).map(([k, l]) => `${l} ${hm(b[k])}`);
+  if (d.ot.night) parts.unshift('🌙 לילה');
+  return parts.length ? `<div class="l2" style="font-size:.78rem">${parts.join(' · ')}</div>` : '';
 }
