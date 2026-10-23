@@ -1,7 +1,7 @@
 /**
  * Service worker של איחוד PDF — מה שמאפשר להתקין את הכלי כאפליקציה בטלפון,
  * ולעבוד בו גם בלי רשת: הכלי כולו רץ בדפדפן, ולכן כל מה שצריך לעבודה נשמר
- * כאן מראש — הדף, העיצוב, הקוד והספריות (pdf-lib, pdf.js והעובד שלו).
+ * כאן מראש — הדף, העיצוב, הקוד והספריות (pdf-lib, pdf.js והעובד שלו, JSZip).
  *
  * רשת קודם: מה שחוזר מהרשת מעדכן את המטמון, והמטמון משמש רק כשהרשת נכשלה —
  * כך אחרי פריסה מקבלים מיד את הגרסה החדשה. תשובה שהופנתה (השער של הפלטפורמה
@@ -10,7 +10,7 @@
  * אחרי שינוי ברשימה — להעלות את CACHE_VERSION.
  */
 
-const CACHE_VERSION = 'pdf-merger-v1';
+const CACHE_VERSION = 'pdf-merger-v2';
 
 const OFFLINE = [
   './index.html',
@@ -20,6 +20,7 @@ const OFFLINE = [
   './assets/vendor/pdf-lib.min.js',
   './assets/vendor/pdf.min.js',
   './assets/vendor/pdf.worker.min.js',
+  './assets/vendor/jszip.min.js',
   './assets/icon.svg',
   './assets/icons/icon-192.png',
 ];
