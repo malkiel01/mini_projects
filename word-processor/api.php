@@ -4,7 +4,7 @@
  *  1. שרת-לשרת, חתום (platform/docs/embed.md, פרק 3): client_register, embed_session, doc_*.
  *  2. ה-iframe המוטמע, בסשן Bearer (פרק 4): embed_open/load/save/upload/lock/page. וגם media (כתובת חתומה).
  *  3. האפליקציה עצמה, למשתמשי האפליקציה (השער / כניסה עם הכלים הדיגיטליים): me, my_*, admin_*.
- *  4. זר עם קישור עריכה (lib/links.php): guest_open/lock/save/upload — מסמך אחד, לפי הטוקן שבקישור.
+ *  4. זר עם קישור עריכה (lib/links.php): guest_open/lock/save/upload/collab — מסמך אחד, לפי הטוקן שבקישור.
  * קבוצות 1–2 ו-4 ב-"public" של app.json (פרק 7) — ההגנה שלהן היא החתימה, הטוקן והסשן; קבוצה 3 עוברת בשער.
  */
 
@@ -256,6 +256,7 @@ try {
         case 'guest_lock':
         case 'guest_save':
         case 'guest_upload':
+        case 'guest_collab':
             guest_action($action, $in);
 
         // ================= 3. האפליקציה =================
@@ -321,6 +322,14 @@ function guest_action(string $action, array $in): never
     $holder = 'guest:' . $in['gid'];
     switch ($action) {
         case 'guest_open':
+            if (!empty($in['collab'])) {
+                // עריכה משותפת (lib/collab.php) — כמו באפליקציה: בלי נעילה, רק נעילה ישנה של מישהו אחר עוצרת
+                $l = collab_blocked($row['id'], $uid);
+                for ($i = 0; ($c = collab_state($row)) && (int)$c['doc_version'] !== (int)$row['version'] && $i < 5; $i++) $row = guest_doc($k);
+                out(doc_public($row) + ['can' => $l ? 'view' : 'edit', 'lock' => $l, 'user' => ['id' => $uid, 'name' => $uname],
+                    'collab' => ['epoch' => $c['epoch'], 'v' => (int)$c['v']]]);
+            }
+            // (בלי collab — לשונית ישנה של guest.js: נעילה)
         case 'guest_lock':
             $l = lock_op((string)($in['op'] ?? 'beat'), 'edit', $row['id'], $uid, $uname, $holder);
             if ($action === 'guest_lock') out($l);
@@ -332,8 +341,15 @@ function guest_action(string $action, array $in): never
             $row = doc_save($row, $in['json'] ?? null, null, $uid, $uname, $in['base_version'] ?? null);
             out(['doc' => $row['id'], 'version' => (int)$row['version'], 'updated_at' => (int)$row['updated_at']]);
         case 'guest_upload':
-            require_edit('edit', $row['id'], $uid, $uname, $holder);
+            if (empty($in['collab'])) require_edit('edit', $row['id'], $uid, $uname, $holder);
+            elseif ($l = collab_blocked($row['id'], $uid)) throw new ApiError('המסמך פתוח לעריכה אצל ' . $l['by'], 'locked', 423);
             out(media_store($row['id'], uploaded_bytes($in)));
+        case 'guest_collab':
+            $op = (string)($in['op'] ?? '');
+            if ($op === 'push') out(collab_push($row, 'edit', $in, $uid, $uname));
+            if ($op === 'pull') out(collab_pull($row, 'edit', $in, $uid, $uname));
+            if ($op === 'leave') { collab_leave($row['id'], $in['client'] ?? ''); out(['ok' => true]); }
+            throw new ApiError('פעולה לא תקינה', 'bad_op');
     }
     throw new ApiError('פעולה לא מוכרת', 'unknown_action', 404);
 }
