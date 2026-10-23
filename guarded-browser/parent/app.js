@@ -1411,13 +1411,14 @@ function renderRequests() {
         el('div', { class: 'body' }, [
             el('div', { class: 'l1' }, [el('span', { text: r.child }), el('span', { class: 't', text: ago(r.created_at).replace('מחובר עכשיו', 'עכשיו') })]),
             r.kind === 'app'
-                ? el('div', { class: 'l2', text: `📱 ${r.host}${r.device ? ' · ' + r.device : ''}` })
+                ? el('div', { class: 'l2', text: `${r.code === 'market' ? '🛒 מהמרקט: ' : '📱 '}${r.host}${r.device ? ' · ' + r.device : ''}` })
                 : el('div', { class: 'l2', dir: 'ltr', style: 'text-align:end', text: r.host }),
             r.note ? el('div', { class: 'l2', text: `"${r.note}"` }) : null,
         ]),
         el('button', { type: 'button', class: 'icon-btn', text: '✕', ariaLabel: `דחייה — ${r.host}`,
             onclick: () => r.kind === 'app' ? decideApp(r, 'deny') : decide(r, 'deny') }),
-        el('button', { type: 'button', class: 'btn primary sm', text: '✓ אישור', onclick: () => r.kind === 'app' ? openAppDecide(r) : openDecide(r) }),
+        el('button', { type: 'button', class: 'btn primary sm', text: '✓ אישור', onclick: () => r.code === 'market' ? decideApp(r, 'permanent')
+            : r.kind === 'app' ? openAppDecide(r) : openDecide(r) }),
     ])));
     $('#req-recent').hidden = !done.length;
     $('#req-done').replaceChildren(...done.slice(0, 15).map(r => el('li', { class: 'card', style: 'cursor:default' }, [
@@ -1433,6 +1434,7 @@ function renderRequests() {
 /** בקשת אפליקציה שטופלה: ההחלטה, ומה המכשיר באמת עשה (לא רק "אושר"). */
 function appDoneLine(r) {
     if (r.status === 'denied') return 'נדחה';
+    if (r.code === 'market') return '🛒 שוחררה במרקט — אצל הילד עם "📥 התקנה"';
     const what = r.scope === 'temporary' ? `אושר ל-${minsLabel(r.minutes)}` : 'אושר — קבוע';
     if (r.apply_state === 'pending') return `${what} · ⏳ ממתין שהמכשיר יחיל`;
     if (r.apply_state === 'failed') return `${what} · ❌ לא נפתחה במכשיר: ${r.apply_error || 'סיבה לא ידועה'}`;

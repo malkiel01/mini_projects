@@ -196,3 +196,11 @@ function marketPayload(int $childId): array {
     return array_values(array_map(fn($a) => ['p' => $a['package'], 'n' => $a['name'], 'c' => $a['category'], 'icon' => $a['icon'], 'note' => $a['note']],
         array_filter(marketCatalog($acc), fn($a) => isset($released[$a['package']]))));
 }
+
+/** מה הילד יכול לבקש: המלאי שהחשבון רואה, בלי מה שכבר שוחרר — [{p, n, c, note}]. */
+function marketRequestable(int $childId): array {
+    $acc = (int) (one('SELECT account_id FROM users WHERE id = ?', [$childId])['account_id'] ?? 0);
+    $released = array_flip(marketReleased($childId));
+    return array_values(array_map(fn($a) => ['p' => $a['package'], 'n' => $a['name'], 'c' => $a['category'], 'note' => $a['note']],
+        array_filter(marketCatalog($acc), fn($a) => !isset($released[$a['package']]))));
+}

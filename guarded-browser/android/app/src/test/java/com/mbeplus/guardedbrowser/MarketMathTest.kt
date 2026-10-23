@@ -45,6 +45,14 @@ class MarketMathTest {
         assertEquals("fallback", MarketMath.robotStep(t, t + 1000, t + 1001 + MarketMath.ROBOT_INSTALL_MS, false, false))
     }
 
+    @Test fun categories() {
+        assertEquals("🎓 לימוד", MarketMath.categoryLabel("learn"))
+        assertEquals("קטגוריה לא מוכרת — אחר", "📦 אחר", MarketMath.categoryLabel("xyz"))
+        assertTrue("לימוד לפני משחקים", MarketMath.sortKey("learn", "Zebra") < MarketMath.sortKey("games", "Alpha"))
+        assertTrue("בתוך קטגוריה — לפי שם", MarketMath.sortKey("games", "Alpha") < MarketMath.sortKey("games", "beta"))
+        assertTrue("לא מוכרת — בסוף", MarketMath.sortKey("other", "a") < MarketMath.sortKey("xyz", "a"))
+    }
+
     @Test fun buttons() {
         assertEquals("open", MarketMath.action(true, "com.duolingo", "", 0, t))
         assertEquals("install", MarketMath.action(false, "com.duolingo", "", 0, t))
