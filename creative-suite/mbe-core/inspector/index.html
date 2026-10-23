@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="theme-color" content="#2d4a8a">
+  <title>בודק mbe</title>
+  <link rel="stylesheet" href="assets/css/tokens.css">
+  <link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body>
+  <a class="skip" href="#main">דילוג לתוכן</a>
+  <header class="top">
+    <div class="titles"><h1>בודק <bdi dir="ltr">.mbe</bdi></h1><div class="sub" id="sub">ליבת הפורמט · גרסה 1.0</div></div>
+    <label class="icon-btn" aria-label="פתיחת קובץ" title="פתיחת קובץ">📂<input type="file" id="pick" accept=".mbe,application/vnd.mbe+zip,application/zip" hidden></label>
+  </header>
+  <main id="main" tabindex="-1">
+    <section id="drop" class="drop">
+      <p class="drop-ic" aria-hidden="true">📦</p>
+      <p><b>גוררים לכאן קובץ <bdi dir="ltr">.mbe</bdi></b></p>
+      <p class="hint">הקובץ נבדק כאן בדפדפן ולא עולה לשום מקום. רואים את ה-manifest, עץ השכבות, הייצוגים, והבעיות — כולל קבצים פגומים ועוינים.</p>
+      <label class="btn primary"><span aria-hidden="true">📂</span> פתיחת קובץ<input type="file" id="pick2" accept=".mbe,application/vnd.mbe+zip,application/zip" hidden></label>
+    </section>
+    <section id="view" hidden>
+      <div class="summary" id="summary"></div>
+      <div class="seg-tabs" role="tablist" id="tabs">
+        <button role="tab" data-tab="issues" aria-selected="true">בעיות <small id="n-issues"></small></button>
+        <button role="tab" data-tab="layers" aria-selected="false">שכבות <small id="n-layers"></small></button>
+        <button role="tab" data-tab="renditions" aria-selected="false">ייצוגים <small id="n-renditions"></small></button>
+        <button role="tab" data-tab="parts" aria-selected="false">חלקים <small id="n-parts"></small></button>
+        <button role="tab" data-tab="manifest" aria-selected="false">manifest</button>
+      </div>
+      <div id="panel" role="tabpanel"></div>
+    </section>
+  </main>
+  <div class="toast" role="status" hidden></div>
+  <script type="module" src="assets/js/app.js"></script>
+</body>
+</html>
