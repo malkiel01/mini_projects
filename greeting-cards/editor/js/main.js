@@ -3,6 +3,7 @@
 import { h, $, toast, sheet, closeSheet, isSheetOpen, confirmDialog, field, rangeField, seg, colorField, toggle, pickFiles, download, timeAgo } from './ui.js';
 import { SIZES, newDoc, textLayer, shapeLayer, imageLayer, backgroundLayer, iconLayer, layerLabel, uid, clone, normalizeDoc } from './doc.js';
 import { ICONS } from './icons.js';
+import { TEMPLATES } from './templates.js';
 import { FONTS, ensureFont, ensureDocFonts, nearestWeight } from './fonts.js';
 import { History } from './history.js';
 import { designs, assets } from './db.js';
@@ -72,12 +73,55 @@ function newDesignSheet() {
     const wIn = h('input', { type: 'number', min: 16, max: 10000, value: 1080, inputMode: 'numeric' });
     const hIn = h('input', { type: 'number', min: 16, max: 10000, value: 1350, inputMode: 'numeric' });
     sheet('עיצוב חדש', h('div', {},
+        h('h3', { class: 'section' }, 'מתבנית'),
+        h('div', { class: 'tiles templates' }, TEMPLATES.map(t => {
+            const img = h('img', { alt: '', class: 'tpl-img' });
+            templateThumb(t).then(url => { img.src = url; }).catch(() => {});
+            return h('button', { class: 'tile tpl', onclick: () => createFromTemplate(t) },
+                h('span', { class: 'tpl-frame', style: { aspectRatio: `${t.doc.page.width} / ${t.doc.page.height}` } }, img),
+                h('span', {}, t.label));
+        })),
+        h('h3', { class: 'section' }, 'דף ריק'),
         h('div', { class: 'tiles sizes' }, SIZES.map(s => h('button', { class: 'tile size', onclick: () => createDesign(s.w, s.h, s.label) },
             h('span', { class: 'size-box', style: { aspectRatio: `${s.w} / ${s.h}` }, 'aria-hidden': 'true' }),
             h('span', {}, s.label), h('span', { class: 'muted small', dir: 'ltr' }, `${s.w}×${s.h}`)))),
         h('h3', { class: 'section' }, 'גודל אחר'),
         h('div', { class: 'two' }, field('רוחב (px)', wIn), field('גובה (px)', hIn)),
         h('button', { class: 'btn primary block', onclick: () => createDesign(+wIn.value, +hIn.value, 'מותאם') }, 'יצירה')));
+}
+
+// ─── תבניות ──────────────────────────────────────────────────────────────
+
+const thumbs = new Map();
+
+/** תצוגה מקדימה של תבנית: מצוירת פעם אחת בקנבס נסתר, ונשמרת לכל הפעלה. */
+function templateThumb(t) {
+    if (!thumbs.has(t.id)) {
+        thumbs.set(t.id, (async () => {
+            const { doc } = normalizeDoc(t.doc);
+            await ensureDocFonts(doc);
+            const holder = h('div', { style: { position: 'fixed', insetInlineStart: '-10000px', top: '0', width: '100px', height: '100px' }, 'aria-hidden': 'true' });
+            document.body.append(holder);
+            try {
+                const c = new Canvas(holder, {});
+                c.setDoc(doc);
+                const url = c.pageCanvas(320 / Math.max(doc.page.width, doc.page.height)).toDataURL('image/jpeg', 0.82);
+                c.stage.destroy();
+                return url;
+            } finally { holder.remove(); }
+        })());
+    }
+    return thumbs.get(t.id);
+}
+
+async function createFromTemplate(t) {
+    closeSheet();
+    const { doc } = normalizeDoc(t.doc);
+    doc.source = { app: 'template' };
+    const id = uid('d');
+    await designs.put({ id, title: doc.title, doc, updatedAt: Date.now(), owner: sync.currentUser()?.id, synced: false });
+    await openDesign(id);
+    toast('מתבנית — כל טקסט נערך בהקשה כפולה');
 }
 
 async function createDesign(w, hgt, label) {
