@@ -203,11 +203,16 @@ class BrowserActivity : AppCompatActivity() {
         })
         b.close.setOnClickListener { finish() }
         b.reload.setOnClickListener { b.web.reload() }
-        b.pip.setOnClickListener { onPipButton() }
-        // לחיצה ארוכה שולחת את רישום האבחון. מוסתר מהמשתמש הרגיל,
+        b.back.setOnClickListener { if (b.web.canGoBack()) b.web.goBack() }
+        b.forward.setOnClickListener { if (b.web.canGoForward()) b.web.goForward() }
+        b.menu.setOnClickListener { showMenu() }
+        // לחיצה ארוכה על התפריט שולחת את רישום האבחון. מוסתר מהמשתמש הרגיל,
         // וזמין מיד למי שמנסה להבין למה משהו לא עבד.
-        b.pip.setOnLongClickListener { sendTrace(); true }
-        b.pip.visibility = View.VISIBLE
+        b.menu.setOnLongClickListener { sendTrace(); true }
+        b.parts.setOnClickListener { showBlockedParts() }
+        // הקלדת כתובת — רק במצב "דפדפן" (במצב רשימה אין לאן להקליד).
+        b.address.setOnClickListener { if (policy.mode == Policy.MODE_BROWSER) typeAddress() }
+        updateNav()
 
         /*
          * הרשאת התראות נדרשת מאנדרואיד 13 ומעלה.
@@ -249,6 +254,12 @@ class BrowserActivity : AppCompatActivity() {
         // ‏UA של דפדפן אמיתי: אתרים מאחורי שירותי הגנה מגישים מסך
         // אתגר לכל מי שאינו נראה כדפדפן.
         userAgentString = userAgentString.replace("; wv", "")
+        mobileUa = userAgentString
+        if (store.browserDesktop) userAgentString = BrowserMath.desktopUa(mobileUa)
+        textZoom = store.browserZoom
+        // נגנים רבים טוענים קטעי וידאו ב-http מתוך דף ב-https; בלי זה הם נחסמים בשקט. הסינון לא משתנה —
+        // כל משאב עדיין עובר ב-shouldInterceptRequest.
+        mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
 
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(b.web, true)
@@ -263,6 +274,16 @@ class BrowserActivity : AppCompatActivity() {
             }
 
             /*
+             * שידורים מוגנים (Widevine — שירותי טלוויזיה וספורט בתשלום) מבקשים "מזהה מדיה מוגנת". בלי היתר
+             * הנגן נשאר שחור. רק את זה מתירים; מצלמה ומיקרופון — לא.
+             */
+            override fun onPermissionRequest(request: PermissionRequest) {
+                val drm = request.resources.filter { it == PermissionRequest.RESOURCE_PROTECTED_MEDIA_ID }
+                Trace.log("permission", request.resources.joinToString(",") + " → " + drm.joinToString(","))
+                if (drm.isNotEmpty()) request.grant(drm.toTypedArray()) else request.deny()
+            }
+
+            /*
              * ‏WebView אינו מציג וידאו במסך מלא בעצמו — הוא מוסר את
              * התצוגה לאפליקציה. בלי המימוש הזה כפתור המסך המלא של
              * יוטיוב אינו עושה דבר, ובחלון צף מוצג כל הדף מוקטן
@@ -271,6 +292,8 @@ class BrowserActivity : AppCompatActivity() {
             override fun onShowCustomView(view: View, cb: CustomViewCallback) {
                 Trace.log("onShowCustomView", view.javaClass.simpleName + " " + state())
                 if (customView != null) { cb.onCustomViewHidden(); return }
+                // וידאו במסך מלא — לרוחב, לפי איך שמחזיקים את הטלפון.
+                requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
                 customView = view
                 customCallback = cb
                 b.fullscreen.addView(view)
@@ -281,6 +304,7 @@ class BrowserActivity : AppCompatActivity() {
 
             override fun onHideCustomView() {
                 Trace.log("onHideCustomView", state())
+                requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
                 b.fullscreen.removeAllViews()
                 b.fullscreen.visibility = View.GONE
                 b.web.visibility = View.VISIBLE
@@ -328,18 +352,24 @@ class BrowserActivity : AppCompatActivity() {
             ): WebResourceResponse? {
                 val url = request.url.toString()
                 if (!url.startsWith("http")) return null
+                // תרגום שהמשתמש ביקש (BrowserTools): רק שרתי התרגום, רק כמשאב בתוך הדף.
+                if (translating && !request.isForMainFrame && BrowserMath.isTranslateHost(request.url.host ?: "")) return null
 
                 val v = decide(url, request.isForMainFrame)
 
                 // משאב שדורש הכרעת שרת אינו נחסם: חסימה שקטה של
                 // משאב היא מסך שבור בלי הסבר. הניווט כבר נבדק.
-                return if (v.allow || v.needsServer) null
-                else WebResourceResponse("text/plain", "utf-8",
-                                         ByteArrayInputStream(ByteArray(0)))
+                if (v.allow || v.needsServer) return null
+                // נחסם רכיב בתוך הדף (נגן, שרת וידאו, סקריפט) — נרשם, כדי שהמשתמש יראה מה ויוכל לבקש (🧩).
+                if (!request.isForMainFrame) notePart(url, v.code)
+                return WebResourceResponse("text/plain", "utf-8", ByteArrayInputStream(ByteArray(0)))
             }
 
             override fun onPageStarted(view: WebView?, url: String?, icon: Bitmap?) {
                 b.address.text = url ?: ""
+                // דף חדש — הרשימה של מה שנחסם מתחילה מחדש, וגם התרגום (הוא של הדף הקודם).
+                resetParts()
+                translating = false
                 // דף חדש — עדיין לא מתנגן בו דבר. בלי האיפוס, יציאה
                 // מדף טקסט הייתה פותחת חלון צף על סמך הדף הקודם.
                 mediaPlaying = false
@@ -358,6 +388,7 @@ class BrowserActivity : AppCompatActivity() {
              */
             override fun doUpdateVisitedHistory(view: WebView, url: String, isReload: Boolean) {
                 b.address.text = url
+                updateNav()
                 enforceCurrent(url)
                 styleRestrictedYouTube(url)
                 hideAds()
@@ -366,6 +397,7 @@ class BrowserActivity : AppCompatActivity() {
 
             override fun onPageFinished(view: WebView, url: String) {
                 b.address.text = url
+                updateNav()
                 enforceCurrent(url)
                 styleRestrictedYouTube(url)
                 hideAds()
@@ -933,6 +965,185 @@ class BrowserActivity : AppCompatActivity() {
         }
     }
 
+    /* ── סרגל ותפריט (2026-10-23) ── */
+
+    private var mobileUa = ""
+    /** הדף ביקש תרגום (BrowserTools) — שרתי התרגום מותרים כמשאב, עד הדף הבא. */
+    @Volatile private var translating = false
+    private val partsLock = Any()
+    private var parts: Map<String, BrowserMath.Part> = emptyMap()
+
+    private fun updateNav() {
+        b.back.alpha = if (b.web.canGoBack()) 1f else 0.3f
+        b.forward.alpha = if (b.web.canGoForward()) 1f else 0.3f
+    }
+
+    /** נקרא מ-shouldInterceptRequest (לא בתהליך הראשי). */
+    private fun notePart(url: String, code: String) {
+        val n = synchronized(partsLock) { parts = BrowserMath.addBlocked(parts, url, code); parts.size }
+        if (n > 0) runOnUiThread { b.parts.text = "🧩$n"; b.parts.visibility = View.VISIBLE }
+    }
+
+    private fun resetParts() {
+        synchronized(partsLock) { parts = emptyMap() }
+        b.parts.visibility = View.GONE
+    }
+
+    /** מה נחסם בדף הזה — לפי שרת. בחירה ← בקשה מההורה לאשר את השרת (כשזה משהו שאפשר לבקש). */
+    private fun showBlockedParts() {
+        val list = synchronized(partsLock) { BrowserMath.sorted(parts) }
+        if (list.isEmpty()) { toast("לא נחסם שום רכיב בדף הזה"); return }
+        val why = mapOf("not_listed" to "לא ברשימה", "category_deny" to "קטגוריה חסומה", "rule_deny" to "נחסם בידי ההורה",
+                        "type_blocked" to "סוג תוכן חסום", "yt_not_approved" to "יוטיוב — לא מאושר")
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+            .setTitle("🧩 רכיבים שנחסמו בדף")
+            .setItems(list.map { "${it.host} · ${why[it.code] ?: it.code} · ×${it.count}" }.toTypedArray()) { _, i ->
+                val p = list[i]
+                if (AccessRequest.canAsk(p.code, p.sample)) AccessRequest.ask(this, store, p.sample) { watcher.kick() }
+                else toast("את ${p.host} אי אפשר לבקש — ${why[p.code] ?: "חסום"}")
+            }
+            .setPositiveButton("סגירה", null)
+            .show()
+        toast("נגן שלא עובד — לרוב שרת הווידאו שלו כאן. בחירה שולחת להורה בקשה לאשר אותו")
+    }
+
+    private fun showMenu() {
+        val url = b.web.url ?: ""
+        val title = b.web.title ?: ""
+        val n = synchronized(partsLock) { parts.size }
+        val items = mutableListOf<Pair<String, () -> Unit>>()
+        if (url.startsWith("http")) items += (if (store.isBookmarked(url)) "★ הסרה מהמועדפים" else "☆ הוספה למועדפים") to {
+            toast(if (store.toggleBookmark(title, url)) "⭐ נוסף למועדפים" else "הוסר מהמועדפים")
+        }
+        items += "📑 המועדפים שלי" to { showBookmarks() }
+        items += "🔍 חיפוש בדף" to { findInPage() }
+        items += "🔠 גודל טקסט — ${store.browserZoom}%" to { zoomDialog() }
+        items += (if (store.browserDesktop) "📱 חזרה לתצוגת טלפון" else "🖥️ תצוגת מחשב") to { toggleDesktop() }
+        for (t in BrowserTools.ALL) items += t.label to { runTool(t) }
+        if (n > 0) items += "🧩 רכיבים שנחסמו בדף ($n)" to { showBlockedParts() }
+        items += "⧉ חלון צף" to { onPipButton() }
+        if (url.startsWith("http")) items += "📋 העתקת הכתובת" to {
+            (getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager)
+                .setPrimaryClip(android.content.ClipData.newPlainText("url", url))
+            toast("הכתובת הועתקה")
+        }
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+            .setItems(items.map { it.first }.toTypedArray()) { _, i -> items[i].second() }
+            .show()
+    }
+
+    private fun runTool(t: BrowserTools.Tool) {
+        if (t.needsTranslateHosts) translating = true
+        Trace.log("tool", t.id)
+        b.web.evaluateJavascript(t.js, null)
+        if (t.id == "translate") toast("מתרגם… (באתרים שחוסמים סקריפטים חיצוניים — התרגום לא יעבוד)")
+    }
+
+    /** ניווט מהסרגל (מועדף, כתובת שהוקלדה) — אותה הכרעה כמו כל ניווט. */
+    private fun navigateTo(url: String) {
+        val target = PolicyEngine.googleSafeUrl(url) ?: url
+        val v = decide(target, true)
+        if (v.allow || v.needsServer) { b.web.loadUrl(target); return }
+        // הדף הנוכחי נשאר; רק הסבר — ובקשה, כשאפשר.
+        val msg = v.reason.ifEmpty { "הכתובת אינה מותרת בחשבון שלך" }
+        if (AccessRequest.canAsk(v.code, target)) com.google.android.material.snackbar.Snackbar.make(b.root, msg, 7000)
+            .setAction("🙋 בקש גישה") { AccessRequest.ask(this, store, target) { watcher.kick() } }.show()
+        else toast(msg)
+    }
+
+    private fun showBookmarks() {
+        val list = store.bookmarks()
+        if (list.isEmpty()) { toast("עוד אין מועדפים — ⋮ ← ☆ הוספה למועדפים"); return }
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+            .setTitle("📑 המועדפים שלי")
+            .setItems(list.map { "${it.first}\n${AccessRequest.hostOf(it.second)}" }.toTypedArray()) { _, i -> navigateTo(list[i].second) }
+            .setPositiveButton("סגירה", null)
+            .show()
+    }
+
+    private fun findInPage() {
+        val field = android.widget.EditText(this).apply { hint = "מה לחפש בדף"; setSingleLine() }
+        val pad = (20 * resources.displayMetrics.density).toInt()
+        val box = android.widget.FrameLayout(this).apply { setPadding(pad, pad / 2, pad, 0); addView(field) }
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+            .setTitle("🔍 חיפוש בדף")
+            .setView(box)
+            .setNegativeButton("ביטול", null)
+            .setPositiveButton("חיפוש") { _, _ ->
+                val q = field.text.toString().trim()
+                if (q.isEmpty()) return@setPositiveButton
+                b.web.setFindListener { active, count, done ->
+                    if (!done) return@setFindListener
+                    if (count == 0) { toast("\"$q\" לא נמצא בדף"); return@setFindListener }
+                    com.google.android.material.snackbar.Snackbar.make(b.root, "${active + 1} מתוך $count", 6000)
+                        .setAction("הבא ▾") { b.web.findNext(true) }.show()
+                }
+                b.web.findAllAsync(q)
+            }
+            .show()
+    }
+
+    private fun zoomDialog() {
+        val dp = resources.displayMetrics.density
+        val label = android.widget.TextView(this).apply {
+            text = "${store.browserZoom}%"; textSize = 18f; gravity = android.view.Gravity.CENTER
+            minWidth = (80 * dp).toInt()
+        }
+        fun btn(t: String, up: Boolean) = android.widget.Button(this).apply {
+            text = t
+            setOnClickListener {
+                store.browserZoom = BrowserMath.zoomStep(store.browserZoom, up)
+                b.web.settings.textZoom = store.browserZoom
+                label.text = "${store.browserZoom}%"
+            }
+        }
+        val row = android.widget.LinearLayout(this).apply {
+            gravity = android.view.Gravity.CENTER
+            setPadding(0, (16 * dp).toInt(), 0, 0)
+            addView(btn("א−", false)); addView(label); addView(btn("א+", true))
+        }
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+            .setTitle("🔠 גודל טקסט")
+            .setView(row)
+            .setNeutralButton("רגיל") { _, _ -> store.browserZoom = 100; b.web.settings.textZoom = 100 }
+            .setPositiveButton("סגירה", null)
+            .show()
+    }
+
+    private fun toggleDesktop() {
+        store.browserDesktop = !store.browserDesktop
+        b.web.settings.userAgentString = if (store.browserDesktop) BrowserMath.desktopUa(mobileUa) else mobileUa
+        b.web.settings.useWideViewPort = true
+        b.web.settings.loadWithOverviewMode = true
+        toast(if (store.browserDesktop) "🖥️ תצוגת מחשב" else "📱 תצוגת טלפון")
+        b.web.reload()
+    }
+
+    private fun typeAddress() {
+        val field = android.widget.EditText(this).apply {
+            setText(b.web.url ?: ""); setSingleLine(); selectAll()
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
+            textDirection = View.TEXT_DIRECTION_LTR
+        }
+        val pad = (20 * resources.displayMetrics.density).toInt()
+        val box = android.widget.FrameLayout(this).apply { setPadding(pad, pad / 2, pad, 0); addView(field) }
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+            .setTitle("כתובת או חיפוש")
+            .setView(box)
+            .setNegativeButton("ביטול", null)
+            .setPositiveButton("מעבר") { _, _ ->
+                val t = field.text.toString().trim()
+                if (t.isEmpty()) return@setPositiveButton
+                val looksUrl = !t.contains(' ') && (t.contains('.') || t.startsWith("http"))
+                when {
+                    looksUrl -> navigateTo(normalizedToUrl(t))
+                    policy.searchEngine == "google" -> navigateTo(PolicyEngine.googleSearchUrl(t))
+                    else -> toast("הקלידו כתובת. את החיפוש — בשורת החיפוש במסך הבית")
+                }
+            }
+            .show()
+    }
+
     /**
      * כפתור מפורש לחלון צף.
      *
@@ -1116,7 +1327,6 @@ class BrowserActivity : AppCompatActivity() {
             ruleSet = store.ruleSet()
             applySecureFlag()
             nextExpiry = UsageMath.nextExpiry(store.ruleExpiries(), TrustedClock.now(store))
-            b.pip.visibility = View.VISIBLE
             if (Updater.required(this)) { Updater.lock(this); finish() }
             else recheckCurrent("policy")
         }

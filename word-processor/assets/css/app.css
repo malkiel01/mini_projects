@@ -272,3 +272,9 @@ body.embed #app { flex: 1; min-height: 0; display: flex; flex-direction: column;
 .list-title:first-child { margin-top: 0; }
 /* הזר: השם שלו בפס העליון */
 body.guest .embed-bar .chip { max-inline-size: 40vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* עריכה משותפת: מי עוד במסמך — עיגול עם האות הראשונה (השם המלא בריחוף) */
+.peers { display: inline-flex; gap: 2px; flex: none; }
+.peers:empty { display: none; }
+.peer { inline-size: 26px; block-size: 26px; border-radius: 50%; display: inline-grid; place-items: center; font-size: .8rem; font-weight: 700;
+    color: #fff; background: var(--accent, #2d4a8a); border: 2px solid var(--surface); }

@@ -274,7 +274,7 @@ function listContinue() {
     return new Plugin({
         key: new PluginKey('wpListContinue'),
         appendTransaction(trs, old, state) {
-            if (!trs.some(t => t.docChanged)) return null;
+            if (!trs.some(t => t.docChanged && !t.getMeta('collab$'))) return null;
             const tr = state.tr;
             const walk = (parent, base) => {
                 let last = null;   // {start, count} של הרשימה הממוספרת האחרונה בהורה הזה
@@ -390,7 +390,7 @@ export const SectionBreak = Node.create({
         };
         return [new Plugin({
             key: new PluginKey('wpSectionTop'),
-            appendTransaction: (trs, _, state) => (trs.some(t => t.docChanged) ? lift(state) : null),
+            appendTransaction: (trs, _, state) => (trs.some(t => t.docChanged && !t.getMeta('collab$')) ? lift(state) : null),
             // מסמך שנטען כך (בלי עסקה) — מתוקן מיד אחרי הפתיחה
             view: v => { queueMicrotask(() => { const tr = !v.isDestroyed && lift(v.state); if (tr) v.dispatch(tr); }); return {}; },
         })];

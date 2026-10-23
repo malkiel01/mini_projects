@@ -1,4 +1,8 @@
-/** שמירה אמינה באפליקציה: מצבים, הגדרות עמוד באותה גרסה, ביטול, ניתוק, טיוטה, עצירת ייצוא ויציאה, התנגשות. */
+/**
+ * שמירה אמינה באפליקציה: מצבים, הגדרות עמוד באותה גרסה, ביטול, ניתוק, טיוטה, עצירת ייצוא ויציאה, ושמירה ממקום אחר.
+ * האפליקציה שומרת בעריכה המשותפת (my_collab — collab.js): ניתוק = my_collab חסום; שמירה ממקום אחר — המסמך נטען מחדש,
+ * והשינויים שלי נשמרים בנפרד במכשיר.
+ */
 export default async function (t) {
     const p = await t.page();
     const { doc } = await t.api(p, 'my_new', { title: 'בדיקת שמירה' });
@@ -40,7 +44,7 @@ export default async function (t) {
     s = await srv();
     t.ok('הביטול נשמר, והטקסט נשאר', s.page.orientation === 'portrait' && JSON.stringify(s.json).includes('שלום עולם'));
 
-    await p.route('**/api.php?action=my_save', r => r.abort());
+    await p.route('**/api.php?action=my_collab', r => r.abort());
     await p.click('.wp-doc');
     await p.keyboard.press('End');
     await p.keyboard.type(' בלי רשת');
@@ -66,7 +70,7 @@ export default async function (t) {
     await p.waitForTimeout(500);
     t.ok('"לצאת בכל זאת" → הרשימה', !p.url().includes('#/d/'));
 
-    await p.unroute('**/api.php?action=my_save');
+    await p.unroute('**/api.php?action=my_collab');
     await p.goto(t.editor + '#/d/' + doc);
     await p.reload();
     await p.waitForSelector('.wp-doc');
@@ -81,10 +85,9 @@ export default async function (t) {
     await p.click('.wp-doc');
     await p.keyboard.type('!');
     await p.waitForTimeout(2500);
-    t.ok('התנגשות: מצב והסבר', (await state()).includes('התנגשות') && (await p.locator('.banner').textContent()).includes('השתנה במקום אחר'), await state());
-    await p.click('.banner button:has-text("טעינה מחדש")');
-    await p.waitForTimeout(500);
-    t.ok('טעינה מחדש → נשמר', (await state()).includes('נשמר'), await state());
+    await p.waitForSelector('.banner[data-kind=conflict-copy]:not([hidden])').catch(() => {});
+    t.ok('שמירה ממקום אחר: המסמך נטען מחדש, והשינוי שלי שמור בנפרד במכשיר', (await p.locator('.banner').textContent()).includes('מלפני הטעינה מחדש')
+        && (await state()).includes('נשמר'), await p.locator('.banner').textContent());
 
     await t.api(p, 'my_page', { doc, page: { size: 'Letter' } });
     s = await srv();

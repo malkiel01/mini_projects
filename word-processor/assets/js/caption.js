@@ -98,7 +98,7 @@ export const Seq = Node.create({
             },
             // כיתוב בלי מזהה, או מזהה כפול (הדבקה של כיתוב שהועתק) — מזהה חדש; ההפניות נשארות על המקור
             appendTransaction: (trs, _, state) => {
-                if (!trs.some(t => t.docChanged)) return null;
+                if (!trs.some(t => t.docChanged && !t.getMeta('collab$'))) return null;
                 const seen = new Set();
                 let tr = null;
                 state.doc.descendants((node, pos) => {

@@ -6,7 +6,7 @@
 | `fonts/*.woff2` | David Libre, Frank Ruhl Libre, Miriam Libre, Heebo, Assistant, Rubik, Alef (עברית + לטינית, 400/700, מ-@fontsource) | OFL-1.1 |
 | `fonts/pdf/*.woff` | אותם גופנים ב-WOFF 1 (zlib) — ש-PHP פותח בלי הרחבה, להטמעה ב-PDF מהשרת (`lib/pdf/font.php`) | OFL-1.1 |
 
-רק החבילות החינמיות של TipTap: `core`, `pm`, `starter-kit`, `extension-text-style`, `text-align`,
+(prosemirror-collab — לעריכה המשותפת, `assets/js/collab.js`.) רק החבילות החינמיות של TipTap: `core`, `pm`, `starter-kit`, `extension-text-style`, `text-align`,
 `highlight`, `subscript`, `superscript`, `table`. **ההרחבות בתשלום אסורות** (embed.md, פרק 0) — העימוד,
 מספור העמודים וגלישת התמונות הם קוד שלנו ב-`assets/js/`.
 
@@ -16,7 +16,8 @@
 npm i @tiptap/core@3.31.3 @tiptap/pm@3.31.3 @tiptap/starter-kit@3.31.3 \
   @tiptap/extension-text-style@3.31.3 @tiptap/extension-text-align@3.31.3 \
   @tiptap/extension-highlight@3.31.3 @tiptap/extension-subscript@3.31.3 \
-  @tiptap/extension-superscript@3.31.3 @tiptap/extension-table@3.31.3 esbuild
+  @tiptap/extension-superscript@3.31.3 @tiptap/extension-table@3.31.3 @tiptap/extension-list@3.31.3 \
+  prosemirror-collab@1.3.1 esbuild
 npx esbuild entry.js --bundle --format=esm --minify --legal-comments=none --outfile=tiptap.js
 ```
 
@@ -35,6 +36,8 @@ export { Plugin, PluginKey, TextSelection, NodeSelection } from '@tiptap/pm/stat
 export { Decoration, DecorationSet } from '@tiptap/pm/view';
 export { DOMParser as PMDOMParser, Fragment, Slice } from '@tiptap/pm/model';
 export { OrderedList, BulletList, ListItem } from '@tiptap/extension-list';
+export { collab, sendableSteps, receiveTransaction, getVersion } from 'prosemirror-collab';
+export { Step } from '@tiptap/pm/transform';
 ```
 
 ## רישיונות

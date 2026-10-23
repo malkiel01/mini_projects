@@ -100,6 +100,40 @@ try {
             }
             out(['client_id' => $cfg['client_id'], 'new' => false]);
 
+        // יומן אבחון מהעורך (js/log.js): נשמר בקובץ, ומוחזר קוד. editor/log.php מחזיר אותו לפי הקוד.
+        case 'log_put':
+            $u = requireUser();
+            if ($u['role'] !== 'owner') throw new ApiError('רק למפתח', 403);
+            $raw = file_get_contents('php://input') ?: '';
+            if (strlen($raw) > 3 * 1024 * 1024) throw new ApiError('היומן גדול מדי', 413);
+            $in = json_decode($raw, true);
+            if (!is_array($in) || !is_array($in['rows'] ?? null)) throw new ApiError('יומן לא תקין', 400);
+            $dir = STUDIO_DATA . '/logs';
+            if (!is_dir($dir)) mkdir($dir, 0770, true);
+            foreach (glob($dir . '/*.json') ?: [] as $old) {
+                if (filemtime($old) < time() - 30 * 86400) @unlink($old);
+            }
+            $id = bin2hex(random_bytes(6));
+            $in['user'] = (int)$u['id'];
+            $in['received'] = gmdate('c');
+            file_put_contents($dir . "/$id.json", json_encode($in, JSON_UNESCAPED_UNICODE), LOCK_EX);
+            audit((int)$u['id'], 'log.put', ['id' => $id, 'rows' => count($in['rows'])]);
+            out(['id' => $id]);
+
+        // אזור הפיתוח: היומנים שנשלחו, מהחדש לישן — רק המפתח.
+        case 'log_list':
+            $u = requireUser();
+            if ($u['role'] !== 'owner') throw new ApiError('רק למפתח', 403);
+            $files = glob(STUDIO_DATA . '/logs/*.json') ?: [];
+            usort($files, fn($a, $b) => filemtime($b) <=> filemtime($a));
+            $logs = [];
+            foreach (array_slice($files, 0, 30) as $f) {
+                $d = json_decode((string)file_get_contents($f), true) ?: [];
+                $logs[] = ['id' => basename($f, '.json'), 'received' => $d['received'] ?? gmdate('c', filemtime($f)),
+                    'rows' => count($d['rows'] ?? []), 'page' => $d['app']['page'] ?? null, 'apk' => !empty($d['app']['apk'])];
+            }
+            out(['logs' => $logs]);
+
         default:
             throw new ApiError('פעולה לא קיימת', 404);
     }
