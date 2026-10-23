@@ -1526,6 +1526,40 @@ foreach (['סימון תוספת' => ['type' => 'doc', 'attrs' => ['schema' => 3
 }
 
 // ======================================================================
+section('ייבוא ODT, HTML וטקסט (import_file — לפי התוכן)');
+// tests/fixtures/libreoffice.odt — נוצר ב-LibreOffice (מ-docx שלנו): כותרות, עיצוב, קישור, הערה, רשימות, טבלה עם מיזוג,
+// תמונה, הזחה, פסקה באנגלית, דף לרוחב עם שוליים וכותרת עליונה
+$odDoc = doc_new("c:$A", 'ODT', null, null, 'u1', 'דנה');
+$od = import_file(file_get_contents(__DIR__ . '/fixtures/libreoffice.odt'), 'מסמך.odt', $odDoc);
+$oc = $od['json']['content'];
+$types = array_column($oc, 'type');
+$p1 = $oc[1]['content'] ?? [];
+$mk = fn($t) => array_column(array_values(array_filter($p1, fn($n) => ($n['text'] ?? '') === $t))[0]['marks'] ?? [], 'type');
+check('ODT: כותרות 1 ו-2, פסקאות, תבליטים, רשימה ממוספרת וטבלה — בסדר', array_slice($types, 0, 7) === ['heading', 'paragraph', 'paragraph', 'heading', 'bulletList', 'orderedList', 'table']
+    && $oc[0]['attrs'] === ['level' => 1] && $oc[3]['attrs'] === ['level' => 2], json_encode($types));
+check('ODT: מודגש, נטוי + צבע וגודל, קישור, הערת שוליים', $mk('מודגש') === ['bold'] && $mk('נטוי אדום') === ['italic', 'textStyle']
+    && in_array('link', $mk(' וקישור'), true) && in_array(['type' => 'footnote', 'attrs' => ['text' => 'הערת שוליים כאן', 'content' => null]], $p1, true), json_encode($p1, JSON_UNESCAPED_UNICODE));
+check('ODT: יישור למרכז ורווח אחרי; פסקה מימין לשמאל בלי יישור מפורש; הזחה ושורה ראשונה; אנגלית משמאל לימין',
+    ($oc[2]['attrs'] ?? null) === ['textAlign' => 'center', 'spaceAfter' => 12.0] && !isset($oc[1]['attrs'])
+    && ($oc[9]['attrs'] ?? null) == ['indent' => 1, 'firstLine' => 18] && ($oc[10]['attrs'] ?? null) === ['dir' => 'ltr'], json_encode(array_column($oc, 'attrs'), JSON_UNESCAPED_UNICODE));
+$tb = $oc[6]['content'];
+check('ODT: טבלה — שתי שורות, התא הממוזג (colspan 2)', count($tb) === 2 && count($tb[0]['content']) === 2 && ($tb[1]['content'][0]['attrs']['colspan'] ?? 0) === 2);
+$oimg = array_values(array_filter($oc[8]['content'] ?? [], fn($n) => ($n['type'] ?? '') === 'image'))[0]['attrs'] ?? null;
+check('ODT: התמונה נשמרה כתמונה של המסמך, בגודל שלה (80×40)', $oimg && media_of_doc($oimg['media'], $odDoc) !== null && $oimg['width'] === 80 && $oimg['height'] === 40, json_encode($oimg));
+check('ODT: הגדרות הדף — לרוחב, שוליים (גם עם הכותרת), כותרת עליונה ומספור למטה; דוח ריק',
+    ($od['page']['orientation'] ?? '') === 'landscape' && ($od['page']['margins'] ?? null) == ['top' => 20, 'bottom' => 20, 'right' => 30, 'left' => 15]
+    && ($od['page']['header'] ?? '') === 'כותרת עליונה' && ($od['page']['numbering'] ?? null) === ['show' => true, 'position' => 'bottom'] && $od['report'] === [],
+    json_encode([$od['page'], $od['report']], JSON_UNESCAPED_UNICODE));
+check('ODT: נכנס כמו שהוא לשמירה (doc_save) — בלי שגיאה', (bool)doc_save(doc_find($odDoc, "c:$A"), $od['json'], null, 'u1', 'דנה'));
+// לפי התוכן: docx, HTML (גם מסמך שלם), טקסט (UTF-8 / Windows-1255), RTF ו-doc ישן — שגיאה מובנת
+check('import_file: docx לפי התוכן (גם בלי סיומת)', import_file(export_docx(['type' => 'doc', 'content' => [para([text_node('מוורד')])]], page_normalize([])), '', $odDoc)['json']['content'][0]['content'][0]['text'] === 'מוורד');
+$ih = import_file("<!DOCTYPE html><html><head><title>x</title></head><body><h1>כותרת</h1><p>פסקה <b>מודגשת</b></p></body></html>", 'a.html', $odDoc)['json']['content'];
+check('import_file: מסמך HTML שלם — רק הגוף, כותרת ופסקה עם מודגש', ($ih[0]['type'] ?? '') === 'heading' && str_contains(json_encode($ih, JSON_UNESCAPED_UNICODE), '"bold"') && !str_contains(json_encode($ih, JSON_UNESCAPED_UNICODE), '"x"'), json_encode($ih, JSON_UNESCAPED_UNICODE));
+$it = import_file("# פרק\nשורה ראשונה\n- תבליט", 'a.txt', $odDoc)['json']['content'];
+$i1255 = import_file(iconv('UTF-8', 'WINDOWS-1255', "שלום עולם"), 'old.txt', $odDoc)['json']['content'][0]['content'][0]['text'] ?? '';
+check('import_file: טקסט — שורות, # כותרת, - תבליט; וגם Windows-1255', array_column($it, 'type') === ['heading', 'paragraph', 'bulletList'] && $i1255 === 'שלום עולם', $i1255);
+check('import_file: RTF ו-doc ישן — שגיאה עם הסבר', throws(fn() => import_file('{\rtf1\ansi hello}', 'a.rtf', $odDoc), 'bad_file') && throws(fn() => import_file("\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1" . str_repeat("\0", 50), 'a.doc', $odDoc), 'bad_file'));
+
 section('אוסף המסמכים (tests/corpus) — Word הלוך וחזור');
 $words = fn(string $s) => preg_split('/\s+/u', trim(preg_replace('/[^\p{L}\p{N}\s]+/u', ' ', $s)), -1, PREG_SPLIT_NO_EMPTY);
 foreach (glob(__DIR__ . '/corpus/*.json') as $f) {
