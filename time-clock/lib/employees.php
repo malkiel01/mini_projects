@@ -89,7 +89,19 @@ function empOut(array $e, string $today): array {
             'employee_no' => $e['employee_no'], 'site_id' => $e['site_id'] === null ? null : (int) $e['site_id'],
             'start_date' => $e['start_date'], 'end_date' => $e['end_date'], 'status' => $e['status'],
             'has_pin' => $e['pin_hash'] !== null, 'invite' => inviteStatus((int) $e['id']),
-            'terms' => termsOut(termsAt((int) $e['id'], $today))];
+            'terms' => termsOut(termsAt((int) $e['id'], $today)),
+            'religion' => $e['religion'] ?? null, 'rest_day' => isset($e['rest_day']) ? (int) $e['rest_day'] : null];
+}
+
+/** דת ויום מנוחה (גרסה 2). ריק — ברירת המחדל (יהודי, שבת). יום מנוחה ריק — לפי הדת. */
+function religionFields(array $in): array {
+    $rel = str($in, 'religion', 12);
+    if ($rel !== '' && !in_array($rel, ['jewish', 'muslim', 'christian', 'druze', 'other'], true)) throw new AppError('דת לא מוכרת');
+    $rd = $in['rest_day'] ?? '';
+    if ($rd === '' || $rd === null) $rd = null;
+    elseif (!is_numeric($rd) || (int) $rd < 0 || (int) $rd > 6) throw new AppError('יום מנוחה לא תקין');
+    else $rd = (int) $rd;
+    return [$rel ?: null, $rd];
 }
 
 function empList(array $person, array $in): array {
@@ -173,6 +185,11 @@ function empUpdate(array $person, array $in): array {
     [$name, $phone, $email, $no, $siteId, $start] = empFields($companyId, $in, $site, (int) $e['id']);
     db()->prepare('UPDATE people SET name = ?, phone = ?, email = ? WHERE id = ?')->execute([$name, $phone, $email, $e['person_id']]);
     db()->prepare('UPDATE members SET employee_no = ?, site_id = ?, start_date = ? WHERE id = ?')->execute([$no, $siteId, $start, $e['id']]);
+    if (array_key_exists('religion', $in) || array_key_exists('rest_day', $in)) {
+        [$rel, $rd] = religionFields($in);
+        db()->prepare('UPDATE members SET religion = ?, rest_day = ? WHERE id = ?')->execute([$rel, $rd, $e['id']]);
+        audit($companyId, (int) $person['id'], 'employee.religion', 'members:' . $e['id'], ['religion' => $e['religion'], 'rest_day' => $e['rest_day']], ['religion' => $rel, 'rest_day' => $rd]);
+    }
     audit($companyId, (int) $person['id'], 'employee.update', 'members:' . $e['id'],
           ['name' => $e['name'], 'phone' => $e['phone'], 'email' => $e['email'], 'employee_no' => $e['employee_no'], 'site_id' => $e['site_id'], 'start_date' => $e['start_date']],
           ['name' => $name, 'phone' => $phone, 'email' => $email, 'employee_no' => $no, 'site_id' => $siteId, 'start_date' => $start]);

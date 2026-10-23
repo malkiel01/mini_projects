@@ -5,7 +5,7 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/hours.php';
+require_once __DIR__ . '/overtime.php';
 require_once __DIR__ . '/session.php';
 
 /** החברוּת של העובד מתוך העוגייה — רק אחת שהמכשיר הזה מחובר אליה. */
