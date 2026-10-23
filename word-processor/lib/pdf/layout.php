@@ -694,7 +694,9 @@ final class PdfLayout
                     foreach ($absImgs as $img) {
                         // שכבה: bg:z / fg:z — הכותב מצייר את השכבות לפי z (שווה — לפי הסדר במסמך), כמו z-index בעורך
                         $z = max(-50, min(50, (int)($img['a']['z'] ?? 0)));
-                        $this->drawImage($c, $img, $x + (float)($img['a']['x'] ?? 0) * PT_PER_PX, $y + (float)($img['a']['y'] ?? 0) * PT_PER_PX,
+                        // מעוגנת לעמוד: x, y מהפינה השמאלית העליונה של העמוד (הקנבס — בקואורדינטות של העמוד), לא מהפסקה
+                        $page = ($img['a']['anchor'] ?? null) === 'page';
+                        $this->drawImage($c, $img, ($page ? 0 : $x) + (float)($img['a']['x'] ?? 0) * PT_PER_PX, ($page ? 0 : $y) + (float)($img['a']['y'] ?? 0) * PT_PER_PX,
                             ($img['g']['wrap'] === 'behind' ? 'bg' : 'fg') . ":$z");
                     }
                     if ($list) $this->drawMarker($c, $list['marker'], $base, $ln, $x, $top, $width, $ind, $rtl);

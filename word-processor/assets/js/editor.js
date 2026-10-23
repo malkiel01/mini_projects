@@ -522,6 +522,7 @@ export function createWordEditor(root, opts) {
         sheetEl.style.height = H + 'px';
         pageCount = total;
         frameOf = physOf;
+        placePageAnchored();
         setZoom();
         status();
         statusBarPage();
@@ -540,6 +541,27 @@ export function createWordEditor(root, opts) {
             fontFamily: cssFont(page.font.family), fontSize: page.font.size + 'pt' } });
         box.innerHTML = hfHtml.get(key);
         return box;
+    }
+    /**
+     * תמונות שמעוגנות לעמוד (מאחורי / לפני הטקסט, anchor: 'page'): x, y הם מהפינה של העמוד שבו הפסקה שלהן מתחילה.
+     * התמונה עצמה ממוקמת יחסית לפסקה (absolute), לכן: המקום של הפסקה בעמוד → ox / oy, ו-left / top = x − ox, y − oy.
+     * אחרי כל עימוד — הפסקה יכולה לזוז לעמוד אחר, והתמונה נשארת במקום שלה על הדף (כמו ב-Word).
+     */
+    function placePageAnchored() {
+        const frames = [...pagesLayer.children];
+        for (const el of editor.view.dom.querySelectorAll('.wp-img[data-anchor="page"]')) {
+            const par = el.offsetParent;
+            if (!par || !frames.length) continue;
+            const pr = par.getBoundingClientRect();
+            const frame = frames.find(f => { const r = f.getBoundingClientRect(); return pr.top >= r.top - 1 && pr.top < r.bottom; }) || frames[0];
+            const fr = frame.getBoundingClientRect();
+            const z = fr.width / frame.offsetWidth || 1;
+            // מקום הפסקה בעמוד: מקצה הריפוד שלה (שממנו נמדד absolute)
+            const ox = (pr.left - fr.left) / z + par.clientLeft, oy = (pr.top - fr.top) / z + par.clientTop;
+            Object.assign(el.dataset, { ox: Math.round(ox * 10) / 10, oy: Math.round(oy * 10) / 10 });
+            el.style.left = (+el.dataset.px || 0) - ox + 'px';
+            el.style.top = (+el.dataset.py || 0) - oy + 'px';
+        }
     }
     let pageCount = 1;
     let pageNums = [1];   // מספר כל עמוד פיזי (drawPages) — לתוכן העניינים ולכותרות
@@ -1332,7 +1354,9 @@ export function createWordEditor(root, opts) {
                 h('section.group', h('h3', 'גודל ', h('small', 'בס"מ')),
                     h('div.fields.two', field('רוחב', wIn), field('גובה', hIn)),
                     h('label.switch', lock, h('span', 'נעילת יחס גובה-רוחב'))),
-                free ? h('section.group', h('h3', 'מיקום ', h('small', 'בס"מ, מהמקום של התמונה בטקסט')),
+                // מיקום: מהפסקה (זזה עם הטקסט) או מהפינה השמאלית העליונה של העמוד (נשארת במקום — כמו "יחסית לעמוד" ב-Word)
+                free ? h('section.group', h('h3', 'מיקום ', h('small', 'בס"מ')),
+                    seg('anchor', { para: 'יחסית לפסקה (זזה עם הטקסט)', page: 'יחסית לעמוד (נשארת במקום)' }, a.anchor === 'page' ? 'page' : 'para', 'עיגון'),
                     h('div.fields.two', field('אופקי (שמאלה — שלילי)', numInput('px', cm(a.x || 0), { min: -50, max: 50, step: 0.01 })),
                         field('אנכי (למטה — חיובי)', numInput('py', cm(a.y || 0), { min: -50, max: 50, step: 0.01 })))) : null,
                 field('כיתוב מתחת לתמונה', h('input', { name: 'caption', value: a.caption || '', maxlength: 300 })),
@@ -1350,7 +1374,22 @@ export function createWordEditor(root, opts) {
                 attrs.width = Math.round(g.w * (turned ? sy : sx));
                 attrs.height = Math.round(g.h * (turned ? sx : sy));
             }
-            if (free) { attrs.x = Math.round(+f.get('px') / CM) || 0; attrs.y = Math.round(+f.get('py') / CM) || 0; }
+            if (free) {
+                attrs.x = Math.round(+f.get('px') / CM) || 0; attrs.y = Math.round(+f.get('py') / CM) || 0;
+                const anchor = f.get('anchor') === 'page' ? 'page' : null;
+                // עיגון אחר והמיקום לא נגעו בו — התמונה נשארת באותו מקום על הדף (ההפרש: המקום של הפסקה בעמוד)
+                if (anchor !== (a.anchor || null) && attrs.x === (a.x || 0) && attrs.y === (a.y || 0)) {
+                    const el = ed.view.nodeDOM(pos);
+                    const pl = el?.offsetParent, frame = pl && [...pagesLayer.children].find(fr => { const r = fr.getBoundingClientRect(); const t = pl.getBoundingClientRect().top; return t >= r.top - 1 && t < r.bottom; });
+                    if (pl && frame) {
+                        const fr = frame.getBoundingClientRect(), pr = pl.getBoundingClientRect(), z = fr.width / frame.offsetWidth || 1;
+                        const ox = (pr.left - fr.left) / z + pl.clientLeft, oy = (pr.top - fr.top) / z + pl.clientTop;
+                        const k = anchor === 'page' ? 1 : -1;
+                        attrs.x = Math.round(attrs.x + k * ox); attrs.y = Math.round(attrs.y + k * oy);
+                    }
+                }
+                attrs.anchor = anchor;
+            }
             ed.chain().focus().setNodeSelection(pos).updateAttributes('image', attrs).setNodeSelection(pos).run();
         });
     }

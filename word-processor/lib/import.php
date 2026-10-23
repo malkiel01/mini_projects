@@ -908,6 +908,9 @@ final class DocxCtx
                 $attrs['x'] = (int)round(((int)$xp->evaluate('string(wp:positionH/wp:posOffset)', $anchor)) / EMU_PER_PX_IMPORT);
                 $attrs['y'] = (int)round(((int)$xp->evaluate('string(wp:positionV/wp:posOffset)', $anchor)) / EMU_PER_PX_IMPORT);
                 $attrs['_rh'] = (int)$anchor->getAttribute('relativeHeight');   // שכבה — import_layers()
+                // יחסית לעמוד בשני הצירים — מעוגנת לעמוד (נשארת במקום); אחרת — מהפסקה (העמודה / השוליים ≈ קצה התוכן)
+                if ($xp->evaluate('string(wp:positionH/@relativeFrom)', $anchor) === 'page' && $xp->evaluate('string(wp:positionV/@relativeFrom)', $anchor) === 'page')
+                    $attrs['anchor'] = 'page';
             }
         }
         return ['type' => 'image', 'attrs' => $attrs];

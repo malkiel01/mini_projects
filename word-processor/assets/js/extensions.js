@@ -702,6 +702,8 @@ export const WpImage = Node.create({
             rotate: { default: 0, parseHTML: el => num(el.getAttribute('data-rotate')) || 0 },
             x: { default: 0, parseHTML: el => num(el.getAttribute('data-x')) || 0 },
             y: { default: 0, parseHTML: el => num(el.getAttribute('data-y')) || 0 },
+            // מאחורי / לפני הטקסט: x, y מהפסקה (ברירת מחדל) או מהפינה של העמוד ('page' — כמו "יחסית לעמוד" ב-Word)
+            anchor: { default: null, parseHTML: el => el.getAttribute('data-anchor') === 'page' ? 'page' : null },
             caption: { default: '', parseHTML: el => el.getAttribute('data-caption') || '' },
             // שכבה (תמונה מאחורי / לפני הטקסט): גבוה יותר — מעל. שווה — לפי הסדר במסמך
             z: { default: 0, parseHTML: el => Math.max(-50, Math.min(50, num(el.getAttribute('data-z')) || 0)) },
@@ -713,7 +715,7 @@ export const WpImage = Node.create({
     renderHTML({ HTMLAttributes: a }) {
         return ['img', mergeAttributes({ src: a.src, alt: a.alt, width: a.width, height: a.height, 'data-media': a.media, 'data-wrap': a.wrap,
             'data-align': a.align, 'data-dist': a.dist, 'data-crop': a.crop ? JSON.stringify(a.crop) : null, 'data-rotate': a.rotate || null,
-            'data-x': a.x || null, 'data-y': a.y || null, 'data-caption': a.caption || null, 'data-z': a.z || null })];
+            'data-x': a.x || null, 'data-y': a.y || null, 'data-caption': a.caption || null, 'data-z': a.z || null, 'data-anchor': a.anchor || null })];
     },
     addNodeView() {
         return ({ node, getPos, editor }) => {
@@ -747,8 +749,12 @@ export const WpImage = Node.create({
                 dom.style.setProperty('--bh', g.bh + 'px');
                 // צמוד — כמו ריבוע סביב מלבן התמונה (כך גם ב-Word וב-PDF), במרחק קטן יותר
                 dom.style.setProperty('--dist', (a.dist ?? (wrap === 'tight' ? 4 : FLOATING.includes(wrap) || wrap === 'topBottom' ? 9 : 0)) + 'pt');
-                dom.style.left = ABSOLUTE.includes(wrap) ? (a.x || 0) + 'px' : '';
-                dom.style.top = ABSOLUTE.includes(wrap) ? (a.y || 0) + 'px' : '';
+                // עיגון לעמוד: המיקום על הדף פחות המקום של הפסקה בעמוד (ox / oy — editor.js מודד אחרי כל עימוד)
+                const page = ABSOLUTE.includes(wrap) && a.anchor === 'page';
+                dom.dataset.anchor = page ? 'page' : '';
+                Object.assign(dom.dataset, { px: a.x || 0, py: a.y || 0 });
+                dom.style.left = ABSOLUTE.includes(wrap) ? (a.x || 0) - (page ? +dom.dataset.ox || 0 : 0) + 'px' : '';
+                dom.style.top = ABSOLUTE.includes(wrap) ? (a.y || 0) - (page ? +dom.dataset.oy || 0 : 0) + 'px' : '';
                 // שכבות: מאחורי הטקסט — מתחת לטקסט (שלילי) ומעל הדפים (‎-200); לפני הטקסט — מעליו
                 dom.style.zIndex = ABSOLUTE.includes(wrap) ? String((wrap === 'behind' ? -100 : 10) + Math.max(-50, Math.min(50, a.z || 0))) : '';
                 cap.textContent = a.caption || '';
@@ -802,8 +808,9 @@ export const WpImage = Node.create({
                 const move = ev => {
                     x = Math.round(x0 + (ev.clientX - sx) / zoom());
                     y = Math.round(y0 + (ev.clientY - sy) / zoom());
-                    dom.style.left = x + 'px';
-                    dom.style.top = y + 'px';
+                    const page = cur.attrs.anchor === 'page';
+                    dom.style.left = x - (page ? +dom.dataset.ox || 0 : 0) + 'px';
+                    dom.style.top = y - (page ? +dom.dataset.oy || 0 : 0) + 'px';
                 };
                 const up = () => {
                     box.removeEventListener('pointermove', move);
@@ -865,8 +872,9 @@ export const LetterSpacing = Extension.create({
  * 6: עצירות טאב מותאמות (attrs.tabs בפסקה).
  * 7: שינויי עיצוב במעקב (סימון fmt).
  * 8: כותרת עליונה / תחתונה עשירה (header / footer כפסקאות בהגדרות העמוד).
+ * 9: תמונה שמעוגנת לעמוד (attrs.anchor = 'page' — x, y מפינת העמוד).
  */
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 9;
 
 /**
  * מאפיינים של המסמך עצמו (צומת השורש): הגדרות העמוד וגרסת המבנה.
