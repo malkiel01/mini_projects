@@ -11,6 +11,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/lib/db.php';
 require_once __DIR__ . '/lib/auth.php';
 require_once __DIR__ . '/lib/store.php';
+require_once __DIR__ . '/lib/chat.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
@@ -77,6 +78,27 @@ try {
         case 'file':
             $u = requireUser();
             sendFile((int)$u['id'], (string)($_GET['id'] ?? ''));
+
+        // ─── מ-ChatGPT ────────────────────────────────────────────────
+        case 'chat_claim':
+            $u = requireUser();
+            out(claimChatImport((int)$u['id'], (string)(body()['code'] ?? '')));
+
+        case 'chat_pending':
+            $u = requireUser();
+            out(['imports' => pendingChatImports((int)$u['id'])]);
+
+        // הגדרת ה-GPT — רק לבעלים: פרטי OAuth ל-GPT Builder. ‏regenerate מחליף את הסוד (החיבורים הקיימים נשארים).
+        case 'gpt_setup':
+            $u = requireUser();
+            if ($u['role'] !== 'owner') throw new ApiError('רק מנהל המערכת', 403);
+            $cfg = gptConfig();
+            if ($method === 'POST' || empty($cfg['client_id'])) {
+                $new = regenerateGptClient();
+                audit((int)$u['id'], 'gpt.client_regenerated');
+                out($new + ['new' => true]);
+            }
+            out(['client_id' => $cfg['client_id'], 'new' => false]);
 
         default:
             throw new ApiError('פעולה לא קיימת', 404);
