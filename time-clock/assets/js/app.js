@@ -425,11 +425,32 @@ async function paneAbsences(pane, d) {
   try { r = await api('abs_history', { company_id: state.companyId, member_id: id }); }
   catch (e) { pane.innerHTML = `<p class="error" role="alert">${esc(e.message)}</p>`; return; }
   pane.innerHTML = `
-    ${r.can_edit ? '<div class="toolbar"><span style="flex:1"></span><button class="btn primary" id="abs-add" type="button"><span aria-hidden="true">+</span> היעדרות</button></div>' : ''}
-    <p class="hint">היעדרות שהמנהל רושם מאושרת מיד ונרשמת ביומן. יום שאושר זוקף את שעות התקן בהפרש. היתרות — בשלב הבא.</p>
+    ${r.can_edit ? `<div class="toolbar"><button class="btn" type="button" id="opening">⚖️ יתרת פתיחה</button><span style="flex:1"></span>
+      <button class="btn primary" id="abs-add" type="button"><span aria-hidden="true">+</span> היעדרות</button></div>` : ''}
+    ${balancesHtml(r.balances)}
+    <p class="hint">היעדרות שהמנהל רושם מאושרת מיד ונרשמת ביומן. יום שאושר זוקף את שעות התקן בהפרש.</p>
     <ul class="list" id="abs-hist">${r.absences.length ? r.absences.map(a => absItem(a,
       r.can_edit && a.status === 'approved' ? `<button class="icon-btn" type="button" data-void="${a.id}" aria-label="ביטול ההיעדרות">🗑️</button>` : '')).join('')
-      : '<li class="empty">אין היעדרויות.</li>'}</ul>`;
+      : '<li class="empty">אין היעדרויות.</li>'}</ul>
+    ${r.openings.length ? `<h3 class="sec-title">יתרות פתיחה</h3><ul class="list">${r.openings.map(o => `<li class="card"><div class="body">
+      <div class="l1"><span>${o.kind === 'sick' ? '🤒 מחלה' : '🌴 חופשה'}: ${fmtD(o.days)}</span><span class="t">${dateHe(o.as_of)}</span></div>
+      <div class="l2">${o.by_name ? esc(o.by_name) : ''}${o.note ? ' · ' + esc(o.note) : ''}</div></div></li>`).join('')}</ul>` : ''}`;
+  $('#opening')?.addEventListener('click', () => openSheet('יתרת פתיחה · ' + d.employee.name, `
+      <p class="hint">היתרה בתחילת התאריך, בימים. משם המערכת צוברת ומורידה. יתרה חדשה לא מוחקת את הקודמת — היא נשמרת ביומן.</p>
+      <div class="f" style="margin-top:12px"><span id="ok-k">יתרה</span><fieldset class="seg" aria-labelledby="ok-k">
+        <label><input type="radio" name="kind" value="vacation" checked><span>🌴 חופשה</span></label>
+        <label><input type="radio" name="kind" value="sick"><span>🤒 מחלה</span></label></fieldset></div>
+      <div class="fields two" style="margin-top:12px">
+        <label class="f"><span>לתאריך</span><input name="as_of" type="date" value="${isoToday().slice(0, 8)}01"></label>
+        <label class="f"><span>ימים</span><input name="days" dir="ltr" inputmode="decimal" required placeholder="7.5"></label></div>
+      <label class="f" style="margin-top:12px"><span>הערה</span><input name="note" maxlength="200" placeholder="למשל: לפי תלוש ספטמבר"></label>
+      <p class="error" role="alert" hidden></p>`,
+    async f => {
+      const days = f.days.value.trim().replace(',', '.');
+      if (!/^-?\d+(\.\d+)?$/.test(days)) throw new Error('כמה ימים? מספר, למשל 7.5');
+      await api('abs_opening_save', { company_id: state.companyId, member_id: id, kind: f.kind.value, as_of: f.as_of.value, days: +days, note: f.note.value });
+      return () => { toast('נשמר'); paneAbsences(pane, d); };
+    }));
   $('#abs-add')?.addEventListener('click', () => {
     openSheet('היעדרות · ' + d.employee.name, absenceForm(r.types, r.unit, isoToday()),
       async f => { await api('abs_direct', { company_id: state.companyId, member_id: id, ...absenceBody(f) }); return () => { toast('נרשם'); paneAbsences(pane, d); }; });
@@ -461,6 +482,13 @@ async function paneAbs(pane) {
     <form class="form" id="abs-form" novalidate>
       <div class="f"><span id="au">איך מבקשים</span><fieldset class="seg grid" style="--cols:3" aria-labelledby="au">${Object.entries(UNIT).map(([k, l]) => `
         <label><input type="radio" name="unit" value="${k}"${r.settings.unit === k ? ' checked' : ''}${ro}><span>${l}</span></label>`).join('')}</fieldset></div>
+      <div class="f"><span id="av">טבלת החופשה (שבוע של 5 ימים)</span><fieldset class="seg" aria-labelledby="av">
+        <label><input type="radio" name="vacation_table" value="extension"${r.settings.vacation_table === 'extension' ? ' checked' : ''}${ro}><span>צו הרחבה</span></label>
+        <label><input type="radio" name="vacation_table" value="law"${r.settings.vacation_table === 'law' ? ' checked' : ''}${ro}><span>חוק</span></label></fieldset></div>
+      <p class="hint" style="margin:0">לפי שנת הוותק. "צו הרחבה" — הגבוה מבין השניים. בשבוע של 6 ימים — טבלת החוק.</p>
+      <div class="fields two">
+        <label class="f"><span>מחלה — ימים לחודש</span><input name="sick_monthly" dir="ltr" inputmode="decimal" value="${r.settings.sick_monthly}"${ro}></label>
+        <label class="f"><span>מחלה — תקרה (ימים)</span><input name="sick_max" dir="ltr" inputmode="numeric" value="${r.settings.sick_max}"${ro}></label></div>
       ${r.can_edit ? '<p class="error" role="alert" hidden></p><div class="actions"><span style="flex:1"></span><button class="btn primary" type="submit">שמירה</button></div>' : '<p class="hint">רק הבעלים משנה את ההגדרות.</p>'}
     </form>
     <div class="toolbar" style="margin-top:16px"><h3 class="sec-title" style="margin:0;flex:1">סוגים</h3>
@@ -475,7 +503,11 @@ async function paneAbs(pane) {
   const form = $('#abs-form');
   form.addEventListener('submit', async e => {
     e.preventDefault();
-    try { await api('abs_settings_save', { company_id: state.companyId, unit: form.unit.value }); toast('נשמר'); paneAbs(pane); }
+    try {
+      await api('abs_settings_save', { company_id: state.companyId, unit: form.unit.value, vacation_table: form.vacation_table.value,
+        sick_monthly: +form.sick_monthly.value.replace(',', '.'), sick_max: +form.sick_max.value });
+      toast('נשמר'); paneAbs(pane);
+    }
     catch (err) { showError(form, err.message); }
   });
   const sheet = (t = null) => {

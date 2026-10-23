@@ -20,7 +20,8 @@ const ABS_BUILTIN = [
     'reserve'  => ['name' => 'מילואים', 'icon' => '🪖', 'deducts' => null],
 ];
 const ABS_UNITS = ['day', 'half', 'hours'];
-const ABS_DEFAULTS = ['unit' => 'half'];
+// vacation_table: law | extension (שבוע של 5 ימים; ב-6 ימים — החוק). sick_monthly / sick_max — בימים.
+const ABS_DEFAULTS = ['unit' => 'half', 'vacation_table' => 'extension', 'sick_monthly' => 1.5, 'sick_max' => 90];
 const ABS_MAX_DAYS = 92;
 
 /* ===== הגדרות וסוגים ===== */
@@ -55,10 +56,21 @@ function absSettingsGet(array $person, array $in): array {
 function absSettingsSave(array $person, array $in): array {
     $companyId = intIn($in, 'company_id');
     requireMember($person, $companyId, ['owner']);
-    $unit = str($in, 'unit', 5);
-    if (!in_array($unit, ABS_UNITS, true)) throw new AppError('יחידה לא מוכרת');
     $before = absSettings($companyId);
-    $s = array_merge($before, ['unit' => $unit]);
+    $s = $before;
+    if (array_key_exists('unit', $in)) {
+        $s['unit'] = str($in, 'unit', 5);
+        if (!in_array($s['unit'], ABS_UNITS, true)) throw new AppError('יחידה לא מוכרת');
+    }
+    if (array_key_exists('vacation_table', $in)) {
+        $s['vacation_table'] = str($in, 'vacation_table', 10);
+        if (!in_array($s['vacation_table'], ['law', 'extension'], true)) throw new AppError('טבלת חופשה לא מוכרת');
+    }
+    foreach (['sick_monthly' => [0, 5], 'sick_max' => [0, 365]] as $k => [$lo, $hi]) {
+        if (!array_key_exists($k, $in)) continue;
+        if (!is_numeric($in[$k]) || $in[$k] < $lo || $in[$k] > $hi) throw new AppError("ערך לא תקין: $k");
+        $s[$k] = round((float) $in[$k], 2);
+    }
     db()->prepare('INSERT INTO absence_settings (company_id, settings, updated_by, updated_at) VALUES (?,?,?,?)
         ON CONFLICT (company_id) DO UPDATE SET settings = excluded.settings, updated_by = excluded.updated_by, updated_at = excluded.updated_at')
         ->execute([$companyId, json_encode($s), $person['id'], nowIso()]);
@@ -194,6 +206,15 @@ function insertAbsence(int $memberId, array $row, ?int $byMember, ?int $byPerson
     return (int) db()->lastInsertId();
 }
 
+/** כמה ימים בקשה מורידה מהיתרה (ימי עבודה מלאים, חצאים, או שעות חלקי התקן). */
+function absDays(array $a): float {
+    $member = memberRow($a['member_id']);
+    $row = ['part' => $a['part'], 'minutes' => $a['minutes']];
+    $sum = 0.0;
+    for ($d = new DateTimeImmutable($a['from']); $d->format('Y-m-d') <= $a['to']; $d = $d->modify('+1 day')) $sum += absDeduction($row, $member, $d->format('Y-m-d'));
+    return $sum;
+}
+
 /** רשימת היעדרויות, עם מי, מה, כמה ימי עבודה, ומה הוחלט. */
 function absencesOf(string $where, array $args): array {
     $st = db()->prepare("SELECT a.*, pe.name, m.site_id, m.company_id, m.religion, rp.name AS by_name
@@ -222,6 +243,7 @@ function empAbsences(array $in): array {
     $company = (int) $m['company_id'];
     $since = (new DateTimeImmutable(todayIn($m['tz'])))->modify('-90 days')->format('Y-m-d');
     return ['types' => array_values(absTypes($company)), 'unit' => absSettings($company)['unit'], 'today' => todayIn($m['tz']),
+            'balances' => balancesToday((int) $m['id']),
             'absences' => absencesOf("a.member_id = ? AND a.status <> 'cancelled' AND (a.status = 'pending' OR a.to_date >= ?)", [$m['id'], $since])];
 }
 
@@ -250,8 +272,17 @@ function absList(array $person, array $in): array {
     $companyId = intIn($in, 'company_id');
     [$me, $site] = empScope($person, $companyId, EMP_VIEW);
     $where = "m.company_id = ? AND a.status = 'pending'" . ($site !== null ? ' AND m.site_id = ?' : '');
-    return ['absences' => absencesOf($where, $site !== null ? [$companyId, $site] : [$companyId]),
-            'can_decide' => in_array($me['role'], CORR_EDIT, true)];
+    $list = absencesOf($where, $site !== null ? [$companyId, $site] : [$companyId]);
+    // מה יישאר ביתרה אם הבקשה תאושר — כדי שהמנהל יראה חריגה לפני שהוא מאשר
+    $types = absTypes($companyId, true);
+    foreach ($list as &$a) {
+        $kind = $types[$a['type']]['deducts'] ?? null;
+        if (!$kind) continue;
+        $b = memberBalance(memberRow($a['member_id']), $kind, todayIn(companyRow($companyId)['tz']));
+        $a['balance'] = ['kind' => $kind, 'name' => BAL_KINDS[$kind], 'now' => $b['balance'], 'after' => round($b['balance'] - $b['planned'] - absDays($a), 2)];
+    }
+    unset($a);
+    return ['absences' => $list, 'can_decide' => in_array($me['role'], CORR_EDIT, true)];
 }
 
 /** היעדרות אחת בתחום של המנהל. */
@@ -315,6 +346,7 @@ function absHistory(array $person, array $in): array {
     [$me, $site] = empScope($person, $companyId, EMP_VIEW);
     $e = empRow($companyId, intIn($in, 'member_id'), $site);
     return ['absences' => absencesOf('a.member_id = ?', [$e['id']]), 'types' => array_values(absTypes($companyId)),
+            'balances' => balancesToday((int) $e['id']), 'openings' => openingHistory((int) $e['id']),
             'unit' => absSettings($companyId)['unit'], 'can_edit' => in_array($me['role'], CORR_EDIT, true) && $e['status'] === 'active'];
 }
 
