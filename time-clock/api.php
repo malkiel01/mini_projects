@@ -17,6 +17,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/lib/attendance.php';
 require_once __DIR__ . '/lib/station.php';
 require_once __DIR__ . '/lib/corrections.php';
+require_once __DIR__ . '/lib/holidays.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -95,6 +96,9 @@ try {
         case 'corr_history':   ok(corrHistory($person, $in));
         case 'ot_rules_get':   ok(otRulesGet($person, $in));
         case 'ot_rules_save':  ok(otRulesSave($person, $in));
+        case 'holidays_get':   ok(holidaysGet($person, $in));
+        case 'holiday_add':    ok(holidayAdd($person, $in));
+        case 'holiday_delete': ok(holidayDelete($person, $in));
         case 'steps_get':      ok(stepsGet($person, $in));
         case 'steps_save':     ok(stepsSave($person, $in));
         case 'period_view':    ok(periodView($person, $in));
