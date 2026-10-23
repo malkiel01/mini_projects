@@ -126,8 +126,8 @@ function registry_validate(string $folder, $app, array $categoryIds): ?string
         if (!is_string($app[$key] ?? null) || trim($app[$key]) === '') return "חסר '$key'";
     }
     if (!in_array($app['category'], $categoryIds, true)) return "קטגוריה לא מוכרת: '{$app['category']}'";
-    if (isset($app['icon_svg']) && (!registry_safe_path($app['icon_svg']) || !str_ends_with((string)$app['icon_svg'], '.svg'))) {
-        return 'icon_svg: נתיב יחסי לקובץ ‎.svg בתיקיית הכלי';
+    if (isset($app['icon_svg']) && (!registry_safe_path($app['icon_svg']) || !preg_match('/\.(svg|png|webp)$/i', (string)$app['icon_svg']))) {
+        return 'icon_svg: נתיב יחסי לקובץ ‎.svg / ‎.png / ‎.webp בתיקיית הכלי';
     }
     if (isset($app['entry']) && !registry_safe_path($app['entry']) && !registry_is_external($app['entry'])) {
         return "entry: נתיב יחסי בתיקייה, או כתובת https של אפליקציה חיצונית";
