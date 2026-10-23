@@ -355,7 +355,7 @@ Google (`sso.php?action=config`). ההרשאה בפלטפורמה היא האי�
 
 | רמה | כלים |
 | --- | --- |
-| חסום לגמרי | database-analyzer, frame-browser, pdf-merger, sketches-3d, sukkah-sketch, git-deploy, file-merger (חוץ מקובצי ה-PWA) |
+| חסום לגמרי | database-analyzer, frame-browser, pdf-merger, sketches-3d, sukkah-sketch, git-deploy |
 | חסום, עם `public` | camera-app (הגשר, העלאות, cron), carpentry-3d (קישור הצפייה ללקוח), catering-menu (התפריט הציבורי וההזמנות), claude-tasks (ה-API — יש לו אסימוני עובד משלו), data-embed-for-clients (חתימה ומעקב), renovation-punchlist (סנכרון), whatsapp-ai-scanner ו-guarded-browser (אפליקציות האנדרואיד), project-manager ו-document-templates (כניסה משלהן + קישורים למשתתפים מבחוץ), greeting-cards (2026-10-19, #422 — כניסה רק דרך הפלטפורמה) |
 | בלי שער | kadisha (חיצונית, עצמאית לגמרי). recipes-app — עוברת (PR #423): הסאב-דומיין `recipes.mbe-plus.com` מפנה (301, ב-cPanel) לתיקייה, כי השער לא עובד בסאב-דומיין: העוגייה לא מגיעה אליו (נקבעת בלי `domain`), ובלוק ה-rewrite מפנה ל-`/mini_projects/platform/gate.php` — נתיב שלא קיים תחת השורש שלו |
 
@@ -432,7 +432,7 @@ AAB וקובץ ההגדרות — רק למנהל (גיליון האפליקצי
 | מה | אפליקציות כרגע |
 | --- | --- |
 | offline | pdf-merger, sukkah-sketch, sketches-3d |
-| pwa (מזוהה לבד) | file-merger, recipes-app, renovation-punchlist, carpentry-3d |
+| pwa (מזוהה לבד) | recipes-app, renovation-punchlist, carpentry-3d |
 | apk | whatsapp-ai-scanner, guarded-browser, greeting-cards — קישור הורדה ישיר מ-Release ב-GitHub (תגים `wascanner-apk`, `guarded-browser-apk`, `greeting-cards-apk`), שה-workflow של כל אחד מעדכן בכל בנייה מ-main |
 | store | אין עדיין — המתכונים (`com.mbeplus.recipes`) יקבלו קישור כשיפורסמו |
 
@@ -442,3 +442,11 @@ AAB וקובץ ההגדרות — רק למנהל (גיליון האפליקצי
   (שלב 1).
 - **`guarded-browser`** (דפדפן מנוהל) — היה בריפו בלי כרטיס. נרשם בפלטפורמה,
   והכניסה אליו היא פאנל הניהול (שלב 1).
+
+## אפליקציה שנסגרת
+
+מוחקים את התיקייה מהריפו **ומוסיפים אותה ל-`platform/retired.json`** (`id`, `merged_into`, תאריך וסיבה). בלי הרשומה
+התיקייה נשארת בשרת (rsync בלי `--delete`) וממשיכה להופיע. הפריסה מריצה `platform/tools/retire-apps.php`: מי שהיה
+רשאי לפתוח אותה ולא את `merged_into` — מקבל הרשאה ישירה אליה; ההרשאות, ההגדרות ורישומי ההתקנה שלה נמחקים; התיקייה
+ותיקיית החנות שלה נמחקות. לפני שמוסיפים לרשימה — כל מקרה שבו ההעברה משנה הרשאה מכוונת (חסימה) מובא להכרעת בעל
+המערכת. הראשונה: `file-merger` → `pdf-merger` (2026-10-23).

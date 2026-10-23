@@ -1,0 +1,8 @@
+[
+  {
+    "id": "file-merger",
+    "merged_into": "pdf-merger",
+    "at": "2026-10-23",
+    "why": "שתי אפליקציות איחוד — בעל המערכת השאיר את pdf-merger, והיכולות של file-merger עברו אליה"
+  }
+]
