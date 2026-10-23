@@ -71,6 +71,39 @@ function appRequestCreate(array $user, string $pkg, string $note = ''): array {
 }
 
 /**
+ * בקשה מהמרקט (בעל המערכת, 2026-10-23): הילד רואה במגדלור את המלאי שההורה עוד לא שחרר לו, ומבקש אפליקציה.
+ * אותה טבלה ואותה התראה (kind='app', ‏code='market'); אישור = שחרור במרקט (marketRelease), והאפליקציה מופיעה
+ * אצל הילד עם "📥 התקנה". אין "זמני" — זו התקנה, לא פתיחה לזמן. אין אישור ביצוע מהמכשיר: השחרור מגיע אליו
+ * במדיניות (market), וההתקנה היא בחירה של הילד.
+ */
+function marketRequestCreate(array $user, string $pkg, string $note = ''): array {
+    $uid = (int) $user['id'];
+    $accountId = (int) $user['account_id'];
+    if (!accountAppsAllowed($accountId)) return [0, '', 'ניהול אפליקציות אינו פעיל בחשבון'];
+    $pkg = marketPackage($pkg);
+    $item = $pkg === '' ? null : one('SELECT * FROM market_apps WHERE package = ? AND active = 1 AND account_id IN (0, ?)
+                                       ORDER BY account_id DESC LIMIT 1', [$pkg, $accountId]);
+    if (!$item) return [0, '', 'האפליקציה לא במרקט'];
+    if (in_array($pkg, marketReleased($uid), true)) return [0, '', 'ההורה כבר שחרר אותה — היא ב"📲 אפליקציות"'];
+    $same = one("SELECT id FROM access_requests WHERE child_id = ? AND kind = 'app' AND package = ? AND status = 'pending'", [$uid, $pkg]);
+    if ($same) return [(int) $same['id'], 'הבקשה כבר אצל ההורה — נודיע כשיענה', ''];
+
+    $pending = (int) one("SELECT COUNT(*) n FROM access_requests WHERE child_id = ? AND status = 'pending'", [$uid])['n'];
+    if ($pending >= REQUEST_MAX_PENDING) return [0, '', 'יש כבר הרבה בקשות שמחכות להורה. חכו שיענה עליהן.'];
+    $day = gmdate('Y-m-d\TH:i:s\Z', time() - 86400);
+    if ((int) one('SELECT COUNT(*) n FROM access_requests WHERE child_id = ? AND created_at > ?', [$uid, $day])['n'] >= REQUEST_MAX_DAY) {
+        return [0, '', 'הגעתם למספר הבקשות המרבי להיום'];
+    }
+    q("INSERT INTO access_requests (account_id, child_id, kind, url, host, package, device_id, note, code, created_at)
+       VALUES (?, ?, 'app', ?, ?, ?, ?, ?, 'market', ?)",
+      [$accountId, $uid, 'market:' . $pkg, mb_substr((string) $item['name'], 0, 80), $pkg, (int) ($user['device_row_id'] ?? 0),
+       mb_substr(trim($note), 0, 200), nowIso()]);
+    $id = (int) db()->lastInsertId();
+    audit($uid, 'market_request', false, 'market:' . $pkg, 'pending', mb_substr(trim($note), 0, 200));
+    return [$id, 'הבקשה נשלחה להורה. כשיאשר — היא תופיע כאן עם "📥 התקנה".', ''];
+}
+
+/**
  * ההורה מכריע: permanent / temporary (+ דקות) / deny. מוחזר [הודעה, שגיאה].
  * רק בקשה ממתינה, ורק של ילד בחשבון של ההורה.
  */
@@ -88,6 +121,14 @@ function appRequestDecide(int $accountId, int $parentId, int $id, string $decisi
         q("UPDATE access_requests SET status = 'denied', decided_by = ?, decided_at = ? WHERE id = ?", [$parentId, $now, $id]);
         audit($cid, 'app_request_denied', false, $r['url'], 'denied');
         return ['הבקשה נדחתה', ''];
+    }
+    if (($r['code'] ?? '') === 'market') {
+        if ($decision !== 'permanent') return ['', 'בקשה מהמרקט — מאשרים או דוחים'];
+        if ($err = marketRelease($cid, (string) $r['package'], true)) return ['', $err];
+        q("UPDATE access_requests SET status = 'approved', scope = 'permanent', decided_by = ?, decided_at = ?, apply_state = 'applied'
+           WHERE id = ?", [$parentId, $now, $id]);
+        audit($cid, 'market_request_approved', true, $r['url'], 'release');
+        return ["{$r['host']} שוחררה ל{$name} — היא תופיע אצלו/ה עם \"📥 התקנה\"", ''];
     }
     if ($decision === 'permanent') {
         if ($err = appsSaveRule($cid, (string) $r['package'], 'allow')) return ['', $err];
@@ -133,7 +174,7 @@ function appTempActive(int $childId, string $pkg): bool {
 function appDecisions(int $childId): array {
     return array_map(fn($r) => ['id' => (int) $r['id'], 'package' => $r['package'], 'status' => $r['status'],
                                 'scope' => $r['scope'], 'minutes' => (int) $r['minutes'], 'apply_state' => $r['apply_state']],
-        all("SELECT * FROM access_requests WHERE child_id = ? AND kind = 'app' AND status != 'pending' AND decided_at > ?
+        all("SELECT * FROM access_requests WHERE child_id = ? AND kind = 'app' AND code != 'market' AND status != 'pending' AND decided_at > ?
              ORDER BY id DESC LIMIT 30", [$childId, gmdate('Y-m-d\TH:i:s\Z', time() - 86400)]));
 }
 

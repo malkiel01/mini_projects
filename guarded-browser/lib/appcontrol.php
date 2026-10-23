@@ -165,6 +165,8 @@ function appsPayload(array $user): array {
         'chrome'  => chromePolicy($childId),
         // המרקט (רובריקת "📲 אפליקציות"): מה ששוחרר, עם שם ואייקון.
         'market'  => marketPayload($childId),
+        // מה עוד אפשר לבקש מהמרקט (lib/apprequests.php, marketRequestCreate).
+        'market_more' => marketRequestable($childId),
         'allowed' => array_values(array_unique(array_merge(array_keys(array_filter($rules, fn($a) => $a === 'allow')), UPDATE_PACKAGES, SHELL_PACKAGES))),
     ];
 }

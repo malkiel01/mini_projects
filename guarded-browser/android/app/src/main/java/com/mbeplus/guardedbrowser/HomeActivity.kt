@@ -226,7 +226,8 @@ class HomeActivity : AppCompatActivity() {
         if (has("apps") && store.appsManage) {
             val apps = appsCache.filter { match(it.second, it.first) }
             val market = marketCache.filter { match(it.second, it.first) }
-            if (apps.isNotEmpty() || market.isNotEmpty()) { appsSection(apps, market); any = true }
+            val more = q.isEmpty() && !store.released && store.marketMore.isNotEmpty()
+            if (apps.isNotEmpty() || market.isNotEmpty() || more) { appsSection(apps, market); any = true }
         }
         if (has("requests") && q.isEmpty() && myRequests.isNotEmpty()) { requestsSection(); any = true }
 
@@ -323,6 +324,14 @@ class HomeActivity : AppCompatActivity() {
             v.findViewById<TextView>(R.id.tileUrl).text = if (busy) "⏳ בהתקנה…" else "התקנה"
             v.setOnClickListener { if (allowed) confirmInstall(pkg, label) }
         }
+        // בקשה מהמרקט: מה שההורה עוד לא שחרר — הילד מבקש, וההורה מאשר בלחיצה.
+        if (!store.released && store.marketMore.isNotEmpty()) {
+            val v = tile(g)
+            v.findViewById<TextView>(R.id.tileIcon).text = "🛒"
+            v.findViewById<TextView>(R.id.tileLabel).text = "עוד אפליקציות"
+            v.findViewById<TextView>(R.id.tileUrl).text = "לבקש מההורה"
+            v.setOnClickListener { showMarketMore() }
+        }
         for ((pkg, label) in apps) {
             val v = tile(g)
             v.findViewById<TextView>(R.id.tileIcon).apply {
@@ -336,6 +345,44 @@ class HomeActivity : AppCompatActivity() {
                 if (allowed && i != null) startActivity(i)
             }
         }
+    }
+
+    /** "🛒 עוד אפליקציות": המלאי לפי קטגוריות; בחירה ← בקשה להורה (עם סיבה, לא חובה). */
+    private fun showMarketMore() {
+        val more = store.marketMore
+        // מה שכבר שוחרר יוצא מהרשימה — וגם מ"ממתין".
+        val asked = store.marketAsked intersect more.map { it.first }.toSet()
+        store.marketAsked = asked
+        val items = more.sortedBy { MarketMath.sortKey(it.third, it.second) }
+        MaterialAlertDialogBuilder(this)
+            .setTitle("🛒 עוד אפליקציות — לבקש מההורה")
+            .setItems(items.map { (p, n, c) -> MarketMath.categoryLabel(c) + " · " + n + if (p in asked) " — 🕓 ממתין להורה" else "" }
+                .toTypedArray()) { _, i -> askMarket(items[i].first, items[i].second) }
+            .setPositiveButton("סגירה", null)
+            .show()
+    }
+
+    private fun askMarket(pkg: String, name: String) {
+        val note = android.widget.EditText(this).apply { hint = "למה? (לא חובה)"; setSingleLine() }
+        val box = LinearLayout(this).apply { setPadding(dp(24), dp(8), dp(24), 0); addView(note) }
+        MaterialAlertDialogBuilder(this)
+            .setTitle("🙋 לבקש את $name")
+            .setMessage("ההורה יקבל התראה. כשיאשר — $name תופיע כאן עם \"📥 התקנה\".")
+            .setView(box)
+            .setNegativeButton("ביטול", null)
+            .setPositiveButton("שליחה") { _, _ ->
+                Api.marketRequest(store.token, pkg, note.text.toString().trim()) { r ->
+                    if (r.ok) {
+                        store.marketAsked = store.marketAsked + pkg
+                        Toast.makeText(this, r.json?.optString("message")?.ifEmpty { null } ?: "נשלח", Toast.LENGTH_LONG).show()
+                        loadRequests()
+                    } else {
+                        Toast.makeText(this, r.json?.optString("reason")?.ifEmpty { null } ?: r.error.ifEmpty { "השליחה נכשלה" },
+                                       Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+            .show()
     }
 
     /** התקנה מהמרקט: Google Play נפתחת לכמה דקות, רק לאפליקציה הזו. */
