@@ -1078,18 +1078,19 @@ final class DocxCtx
             foreach ($xp->query("w:{$kind}Reference", $sect) as $ref) {
                 $target = $this->rels[$ref->getAttributeNS(R_NS, 'id')] ?? '';
                 $xml = $target === '' || str_contains($target, '..') ? null : ($this->read)('word/' . ltrim($target, '/'));
-                if ($xml !== null) $parts[$ref->getAttributeNS(W, 'type') ?: 'default'] = $this->hfPart(xml_dom($xml), $kind);
+                if ($xml !== null) $parts[$ref->getAttributeNS(W, 'type') ?: 'default'] = $this->hfPart(xml_dom($xml), $kind, ltrim($target, '/'));
             }
             $def = $parts['default'] ?? null;
             if ($def) {
-                if ($def['text']) $out[$kind] = implode("\n", $def['text']);
+                if ($def['rich']) $out[$kind] = $def['rich'];
+                elseif ($def['text']) $out[$kind] = implode("\n", $def['text']);
                 $num ??= $def['num'];
                 if ($def['complex']) $this->note('hf_complex', 1, $kind);
             }
             foreach ($parts as $type => $part) {
                 if ($type === 'default') continue;
                 // כותרת לעמוד זוגי (evenAndOddHeaders) — הטקסט שלה; המספור — כמו בכותרת הרגילה
-                if ($type === 'even') { $out[$kind . '_even'] = implode("\n", $part['text']); continue; }
+                if ($type === 'even') { $out[$kind . '_even'] = $part['rich'] ?: implode("\n", $part['text']); continue; }
                 if ($type === 'first' && $part['text'] === ($def['text'] ?? [])) { $firstNum = $firstNum || (bool)$part['num']; continue; }
                 if ($part['text'] || $part['num']) $this->note('hf_extra', 1, $type . $kind);
             }
@@ -1107,11 +1108,19 @@ final class DocxCtx
     }
 
     /** חלק כותרת: שורות הטקסט, המספור (הפסקה עם PAGE) והאם יש בו טבלה / תמונה. */
-    private function hfPart(DOMDocument $d, string $kind): array
+    private function hfPart(DOMDocument $d, string $kind, string $target = ''): array
     {
         $hx = $this->xp($d);
         $text = [];
         $num = null;
+        // כותרת עשירה: הפסקאות (בלי פסקת מספר העמוד) כמו בגוף — עם הקשרים של חלק הכותרת (לתמונה)
+        $saved = $this->rels;
+        if ($target !== '' && !str_contains($target, '..') && ($rs = ($this->read)('word/_rels/' . basename($target) . '.rels'))) {
+            $rd = xml_dom($rs);
+            foreach ($rd->getElementsByTagName('Relationship') as $r) $this->rels[$r->getAttribute('Id')] = $r->getAttribute('Target');
+        }
+        $blocks = [];
+        $rich = false;
         foreach ($hx->query('//w:p') as $hp) {
             $instr = '';
             foreach ($hx->query('.//w:instrText', $hp) as $n) $instr .= ' ' . $n->textContent;
@@ -1130,12 +1139,25 @@ final class DocxCtx
                 continue;
             }
             if (trim($line) !== '') $text[] = trim($line);
+            if (trim($line) !== '' || $hx->query('.//w:drawing', $hp)->length) {
+                [$b] = $this->para($hp, $hx);
+                $b = hf_rich_val([$b])[0] ?? null;
+                if (!$b) continue;
+                $blocks[] = $b;
+                // עשירה רק אם יש בה משהו שטקסט פשוט ממורכז לא מחזיק: עיצוב, יישור אחר, תמונה
+                // (גודל 9 נק' בלבד — כך כותרת פשוטה נכתבת, ב-Word ואצלנו — לא נחשב עיצוב)
+                $plain9 = fn($m) => ($m['type'] ?? '') === 'textStyle' && ($m['attrs'] ?? []) == ['fontSize' => '9pt'];
+                foreach ($b['content'] ?? [] as $x) if (array_filter($x['marks'] ?? [], fn($m) => !$plain9($m)) || ($x['type'] ?? '') === 'image') $rich = true;
+                if (isset($b['attrs']['textAlign']) && $b['attrs']['textAlign'] !== 'center') $rich = true;
+            }
         }
+        $this->rels = $saved;
         // סימן מים: צורת WordArt (VML) עם textpath — כך Word שומר "סימן מים" מותאם. היא לא נחשבת "כותרת מורכבת"
         $wm = $hx->query('//*[local-name()="textpath"][@string]')->item(0);
         if ($wm instanceof DOMElement && $this->watermark === '') $this->watermark = mb_substr(trim($wm->getAttribute('string')), 0, 40);
-        $complex = $hx->query('//w:tbl|//w:drawing|//w:pict[not(.//*[local-name()="textpath"])]')->length > 0;
-        return ['text' => $text, 'num' => $num, 'complex' => $complex];
+        // תמונה בשורה — נכנסת לכותרת העשירה; טבלה, צורה, תמונה צפה — "כותרת מורכבת" (לדוח)
+        $complex = $hx->query('//w:tbl|//w:drawing[not(wp:inline)]|//w:pict[not(.//*[local-name()="textpath"])]')->length > 0;
+        return ['text' => $text, 'num' => $num, 'complex' => $complex, 'rich' => $rich ? $blocks : null];
     }
 }
 

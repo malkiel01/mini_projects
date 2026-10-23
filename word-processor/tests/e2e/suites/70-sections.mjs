@@ -50,7 +50,9 @@ export default async function (t) {
     await p.click('.wp-doc > p:last-of-type');
     await setup(async d => {
         await d.locator('input[name=m_top]').fill('40');
-        await d.locator('input[name=header]').fill('כותרת לרוחב');
+        // הכותרת — בעורך הקטן (כותרת עשירה); בלי עיצוב היא נשמרת כטקסט
+        await d.locator('.hf-field').first().locator('.hf-edit-doc').click();
+        await p.keyboard.type('כותרת לרוחב');
     }, 'section');
     await p.waitForTimeout(2500);
     s = await t.api(p, 'my_open', { doc });
