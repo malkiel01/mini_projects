@@ -1094,6 +1094,48 @@ check('Word הלוך וחזור: זוגי / אי-זוגי, הכותרת הזוג
     && !empty($eoSb[0]['attrs']['page']['num_restart']) && ($eoSb[0]['attrs']['page']['num_start'] ?? 0) === 1 && empty($eoSb[1]['attrs']['page']['num_restart'])
     && !array_filter($eoBack['report'], fn($r) => $r['key'] === 'hf_extra'), json_encode([$eoBack['page']['even_odd'] ?? null, $eoSb[0]['attrs']['page']['num_restart'] ?? null, $eoSb[1]['attrs']['page']['num_restart'] ?? null], JSON_UNESCAPED_UNICODE));
 
+section('כותרת עליונה / תחתונה עשירה (שלב 3)');
+$rhDocId = doc_new('a:99', 'בסיס כותרת', null, null, 'u1', 'דנה');
+$rhImg = media_store($rhDocId, $png);
+$rhHdr = [['type' => 'paragraph', 'attrs' => ['textAlign' => 'left'], 'content' => [
+        ['type' => 'image', 'attrs' => ['media' => $rhImg['id'], 'width' => 40, 'height' => 20]],
+        ['type' => 'text', 'text' => ' חברה בע"מ', 'marks' => [['type' => 'bold'], ['type' => 'textStyle', 'attrs' => ['fontSize' => '14pt', 'onclick' => 'x']], ['type' => 'link', 'attrs' => ['href' => 'x']]]]]],
+    ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'שורה שנייה']]], ['type' => 'table'], 'x'];
+$rhPage = page_normalize(['header' => $rhHdr, 'footer' => 'פשוטה', 'numbering' => ['position' => 'bottom']]);
+$rh = $rhPage['header'];
+check('hf_rich_val: פסקאות עם יישור, עיצוב מותר בלבד (בלי קישור ומאפיינים זרים), תמונה; בלי טבלה', count($rh) === 2 && $rh[0]['attrs'] === ['textAlign' => 'left']
+    && $rh[0]['content'][0]['type'] === 'image' && $rh[0]['content'][1]['marks'] === [['type' => 'bold'], ['type' => 'textStyle', 'attrs' => ['fontSize' => '14pt']]]
+    && hf_text($rh) === " חברה בע\"מ\nשורה שנייה" && $rhPage['footer'] === 'פשוטה' && page_normalize(['header' => [['type' => 'paragraph']]])['header'] === '', json_encode($rh, JSON_UNESCAPED_UNICODE));
+$rhDoc = ['type' => 'doc', 'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'גוף']]]]];
+if (trim((string)shell_exec('command -v pdftotext'))) {
+    file_put_contents("$tmp/rh.pdf", export_pdf($rhDoc, $rhPage, 'כותרת'));
+    $x = (string)shell_exec('pdftotext -bbox ' . escapeshellarg("$tmp/rh.pdf") . ' - 2>&1');
+    preg_match_all('#xMin="([\d.]+)" yMin="([\d.]+)" xMax="([\d.]+)" yMax="([\d.]+)">([^<]*)<#', $x, $ws, PREG_SET_ORDER);
+    $w = []; foreach ($ws as $m) $w[$m[5]] ??= [(float)$m[1], (float)$m[2]];
+    $co = $w['הרבח'] ?? $w['חברה'] ?? null;
+    check('PDF: כותרת עשירה — במרחק הכותרת מראש הדף, מיושרת לשמאל (אחרי הסמליל), והשורה השנייה מימין', $co && $co[1] < 25 * PT_PER_MM && $co[0] < 150
+        && isset($w['הרוש']) && $w['הרוש'][0] > 300, json_encode($w, JSON_UNESCAPED_UNICODE));
+}
+file_put_contents("$tmp/rh.docx", export_docx($rhDoc, $rhPage, 'כותרת'));
+$zip->open("$tmp/rh.docx");
+$rhX = (string)$zip->getFromName('word/header1.xml');
+$rhR = (string)$zip->getFromName('word/_rels/header1.xml.rels');
+
+$zip->close();
+check('Word: הכותרת העשירה כפסקאות (מודגש, 14, יישור), והתמונה עם קובץ קשרים של חלק הכותרת', str_contains($rhX, '<w:b/>') && str_contains($rhX, 'w:val="28"')
+    && str_contains($rhX, '<w:drawing>') && preg_match('/r:embed="([^"]+)"/', $rhX, $em) && str_contains($rhR, 'Id="' . $em[1] . '"') && str_contains($rhR, 'media/'), $rhR);
+$rhBack = import_docx(file_get_contents("$tmp/rh.docx"), $rhDocId);
+$bh = $rhBack['page']['header'] ?? null;
+check('Word הלוך וחזור: הכותרת חוזרת עשירה — התמונה, המודגש והיישור; התחתונה הפשוטה — טקסט', is_array($bh) && ($bh[0]['content'][0]['type'] ?? '') === 'image'
+    && in_array(['type' => 'bold'], $bh[0]['content'][1]['marks'] ?? [], true) && ($bh[0]['attrs']['textAlign'] ?? '') === 'left' && ($rhBack['page']['footer'] ?? '') === 'פשוטה',
+    json_encode([$bh, $rhBack['page']['footer'] ?? null], JSON_UNESCAPED_UNICODE));
+$rhRow = doc_find(doc_new('a:99', 'כותרת עשירה', $rhDoc, $rhPage, 'u1', 'דנה'), 'a:99');
+$rhCopy = doc_page(doc_find(doc_copy($rhRow, 'a:99', 'עותק', [], 'u1', 'דנה'), 'a:99'));
+$cm = $rhCopy['header'][0]['content'][0]['attrs']['media'] ?? '';
+check('גרסת מבנה: כותרת עשירה (במסמך או במעבר מקטע) צריכה 8', doc_schema_need($rhDoc, $rhPage) === 8 && doc_schema_need($rhDoc, page_normalize(['header' => 'פשוטה'])) === 0
+    && doc_schema_need(['type' => 'doc', 'content' => [['type' => 'sectionBreak', 'attrs' => ['page' => ['footer' => $rhHdr]]]]]) === 8);
+check('שכפול מסמך: גם התמונה שבכותרת מועתקת למסמך החדש', $cm !== '' && $cm !== $rhImg['id'] && media_row($cm), $cm);
+
 section('כיתובים והפניות צולבות (שלב 4)');
 $cap = fn($label, $id, $text) => ['type' => 'paragraph', 'attrs' => ['pstyle' => 'caption'], 'content' => [
     ['type' => 'text', 'text' => "$label "], ['type' => 'seq', 'attrs' => ['label' => $label, 'id' => $id]], ['type' => 'text', 'text' => ": $text"]]];

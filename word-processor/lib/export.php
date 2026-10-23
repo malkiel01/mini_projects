@@ -546,6 +546,14 @@ final class Ooxml
         return $this->prefix === '' ? $base : $this->prefix . $base;
     }
 
+    /** פסקאות של כותרת עשירה — באותו עיצוב כמו בגוף; התמונות נרשמות כרגיל (הקשרים שלהן — hf_rels). */
+    public function hfBlocks(array $blocks): string
+    {
+        $out = '';
+        foreach ($blocks as $n) $out .= $this->block($n, []);
+        return $out;
+    }
+
     public function body(array $json): string
     {
         $this->seqNums = seq_numbers($json);
@@ -1240,10 +1248,13 @@ function export_docx(array $json, array $page, string $title = ''): string
             . '</w:pict></w:r></w:p>';
     })();
     // כותרת עליונה ותחתונה: טקסט חופשי + מספר העמוד (בצד שנבחר). עמוד ראשון בלי מספר — titlePg.
-    $hf = function (string $text, bool $withNumber, string $tag, array $nb) use ($wmXml) {
+    $hf = function (string|array $text, bool $withNumber, string $tag, array $nb) use ($wmXml, $o) {
         $paras = $tag === 'hdr' ? $wmXml : '';
         $jcNum = ['right' => null, 'center' => 'center', 'left' => 'end'][$nb['align']] ?? 'center';
-        if ($text !== '') {
+        if (is_array($text)) {
+            // עשירה: הפסקאות כמו בגוף (עיצוב, יישור, תמונה)
+            $paras .= $o->hfBlocks($text);
+        } elseif ($text !== '') {
             foreach (preg_split('/\R/u', $text) as $line) {
                 $paras .= '<w:p><w:pPr><w:bidi/><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:rtl/><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr><w:t xml:space="preserve">' . xml($line) . '</w:t></w:r></w:p>';
             }
@@ -1392,7 +1403,17 @@ function export_docx(array $json, array $page, string $title = ''): string
     $zip->addFromString('word/numbering.xml', $numbering);
     $zip->addFromString('word/settings.xml', $settings);
     $zip->addFromString('word/_rels/document.xml.rels', $docRels);
-    foreach ($files as $p => $x) $zip->addFromString($p, $x);
+    foreach ($files as $p => $x) {
+        $zip->addFromString($p, $x);
+        // תמונה בכותרת: לכל חלק כותרת — קובץ קשרים משלו, עם התמונות שהוא מפנה אליהן
+        if (preg_match_all('/r:embed="([^"]+)"/', $x, $em) && preg_match('#^word/((header|footer)[^/]+\.xml)$#', $p, $pm)) {
+            $rels = '';
+            foreach ($o->media as $m) if (in_array($m['rid'], $em[1], true)) {
+                $rels .= '<Relationship Id="' . $m['rid'] . '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/' . $m['name'] . '"/>';
+            }
+            $zip->addFromString('word/_rels/' . $pm[1] . '.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' . $rels . '</Relationships>');
+        }
+    }
     foreach ($o->media as $m) $zip->addFromString('word/media/' . $m['name'], $m['bytes']);
     $zip->close();
     $bytes = file_get_contents($tmp);

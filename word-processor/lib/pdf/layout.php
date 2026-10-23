@@ -1306,6 +1306,21 @@ final class PdfLayout
         return $pages;
     }
 
+    /**
+     * כותרת עשירה (פסקאות): כמו ב-Word — העליונה מתחילה במרחק הכותרת מראש הדף (חצי מהשוליים, עד 12.5 מ"מ), התחתונה
+     * נגמרת במרחק הזה מהתחתית; מספר העמוד — שורה משלו אחרי התוכן. כמו בעורך (editor.js, hfRich).
+     */
+    private function drawRichHf(PdfCanvas $c, array $blocks, string $pos, string $num, array $st, string $align): void
+    {
+        $width = $this->W - $this->ml - $this->mr;
+        $items = $this->blocks($blocks, $width, 0, [], -1, true);
+        $h = array_sum(array_map(fn($it) => $it->h, $items)) + ($num !== '' ? 12.0 : 0.0);
+        $dist = min(12.5 * PT_PER_MM, ($pos === 'top' ? $this->mt : $this->mb) / 2);
+        $y = $pos === 'top' ? $dist : $this->H - $dist - $h;
+        foreach ($items as $it) { ($it->draw)($c, $this->ml, $y); $y += $it->h; }
+        if ($num !== '') $this->drawTextCentered($c, $num, $st, $this->ml, $this->W - $this->mr, $y + 9, 'main', $align);
+    }
+
     /** כותרת עליונה ותחתונה ומספר העמוד, בשוליים — כמו בעורך. */
     private function decorate(PdfCanvas $c, int $i, int $total, int $n): void
     {
@@ -1321,6 +1336,7 @@ final class PdfLayout
         foreach (['top' => [$this->page['header' . $even], $this->mt / 2], 'bottom' => [$this->page['footer' . $even], $this->H - $this->mb / 2]] as $pos => [$text, $mid]) {
             $baseline = $mid + 9 * 0.35;
             $num = $label !== '' && $nb['position'] === $pos ? $label : '';
+            if (is_array($text)) { $this->drawRichHf($c, $text, $pos, $num, $st, $nb['align']); continue; }
             $text = trim(preg_replace('/\s+/u', ' ', $text));
             if ($num !== '' && $nb['align'] === 'center') {
                 $this->drawTextCentered($c, $text !== '' ? "$text   $num" : $num, $st, $this->ml, $this->W - $this->mr, $baseline);

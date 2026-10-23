@@ -9,7 +9,7 @@
  * מה שעל המסך הוא מה שיודפס: עמודים בגודל אמיתי (מ"מ → פיקסלים ב-96 לאינץ'), שוליים, כותרת עליונה ותחתונה
  * ומספר עמוד בכל עמוד, וזום שמגדיל רק את הדפים.
  */
-import { Editor, Extension, StarterKit, Superscript, Subscript, TextSelection } from '../../vendor/tiptap.js';
+import { Editor, Extension, Node as TNode, StarterKit, Superscript, Subscript, TextSelection, TextStyle, FontSize, TextAlign, getHTMLFromFragment } from '../../vendor/tiptap.js';
 import { extensions, imageBox, FONTS, FALLBACK, cssFont, safeHref, bookmarks, BOOKMARK_RE, USER_STYLE, styleKeyOf, UNDERLINES, TABLE_BORDERS, VALIGNS } from './extensions.js';
 import { Pages, pageLabel, pageNumbers, Endnotes } from './pagination.js';
 import { cleanPastedHtml } from './paste.js';
@@ -348,7 +348,8 @@ export function createWordEditor(root, opts) {
         const fmt = { n: 'counter(page)', page_n: `"עמ' " counter(page)`, n_of_m: 'counter(page) " מתוך " counter(pages)',
             dash_n: '"- " counter(page) " -"', hebrew: 'counter(page, hebrew)' }[nb.format] || 'counter(page)';
         const box = (pos, al) => `@${pos}-${{ right: 'right', center: 'center', left: 'left' }[al]}`;
-        const q = t => '"' + String(t).replace(/["\\]/g, '\\$&').replace(/\n/g, ' ') + '"';
+        // כותרת עשירה — כאן רק הטקסט שלה (ממילא מודפסת דרך ה-PDF מהשרת — printViaPdf)
+        const q = t => '"' + String(Array.isArray(t) ? t.map(b => (b.content || []).map(n => n.text || '').join('')).join(' ') : t).replace(/["\\]/g, '\\$&').replace(/\n/g, ' ') + '"';
         // תוכן השוליים (כותרות ומספר עמוד) — לכל מקטע לפי הכותרות שלו
         const marginOf = pp => {
             const slots = {};
@@ -394,7 +395,9 @@ export function createWordEditor(root, opts) {
                 + '.wp-break:has(.wp-colskip)::before,.wp-colskip::after{content:"\\200b";display:block;height:0;overflow:hidden}' : '');
         // מקטעים עם טורים שונים — הדפדפן לא מחליף מספר טורים באמצע; ההדפסה עוברת דרך ה-PDF מהשרת (print)
         // וגם זוגי / אי-זוגי ומספור שמתחיל מחדש במקטע — @page של הדפדפן לא יודע (מונה עמודים אחד, כותרת אחת)
-        printViaPdf = (g.sections.length > 1 && g.sections.some(x => x.cols > 1)) || !!page.even_odd || g.sections.some((x, i) => i > 0 && x.page.num_restart);
+        // וכותרת עשירה — בשולי @page יש רק טקסט
+        const rich = x => ['header', 'footer', 'header_even', 'footer_even'].some(k => Array.isArray(x.page[k]));
+        printViaPdf = (g.sections.length > 1 && g.sections.some(x => x.cols > 1)) || !!page.even_odd || g.sections.some((x, i) => (i > 0 && x.page.num_restart) || rich(x));
         wmPrint.textContent = page.watermark || '';
         if (page.watermark) Object.assign(wmPrint.style, { fontSize: watermarkSize(page.watermark, wmm * 72 / 25.4, hmm * 72 / 25.4) + 'pt', fontFamily: cssFont(page.font.family) });
         setZoom();
@@ -488,9 +491,18 @@ export function createWordEditor(root, opts) {
             // זוגי / אי-זוגי שונים: בעמוד שמספרו זוגי — הכותרות לעמוד זוגי של המקטע
             const even = page.even_odd && pageNums[pi] % 2 === 0;
             const hText = even ? pp.header_even : pp.header, fText = even ? pp.footer_even : pp.footer;
-            if (hText) hdr.append(h('span.wp-hf-text', hText));
-            if (fText) ftr.append(h('span.wp-hf-text', fText));
-            if (label) (nb.position === 'top' ? hdr : ftr).append(h('span.wp-num.al-' + nb.align, { style: nb.align === 'right' ? { right: g.right + 'px' } : nb.align === 'left' ? { left: g.left + 'px' } : {} }, label));
+            // כותרת עשירה: הפסקאות עצמן, במרחק הכותרת מקצה הדף (כמו ב-PDF — drawRichHf), ומספר העמוד — שורה אחריהן
+            const rich = (v, el, top) => {
+                const box = hfNode(v, g, top);
+                const num = label && nb.position === (top ? 'top' : 'bottom');
+                if (num) box.append(h('p.wp-hf-num', { style: { textAlign: nb.align } }, label));
+                el.append(box);
+                return num;
+            };
+            const numDone = (Array.isArray(hText) && rich(hText, hdr, true)) | (Array.isArray(fText) && rich(fText, ftr, false));
+            if (hText && !Array.isArray(hText)) hdr.append(h('span.wp-hf-text', hText));
+            if (fText && !Array.isArray(fText)) ftr.append(h('span.wp-hf-text', fText));
+            if (label && !numDone) (nb.position === 'top' ? hdr : ftr).append(h('span.wp-num.al-' + nb.align, { style: nb.align === 'right' ? { right: g.right + 'px' } : nb.align === 'left' ? { left: g.left + 'px' } : {} }, label));
             pg.append(hdr, ftr);
             if (g.cols > 1) {
                 // תצוגת טיוטה של טורים (כמו "טיוטה" ב-Word): כל טור במסגרת משלו, ברוחב שלו; הטורים זה לצד זה — בהדפסה וב-PDF
@@ -513,6 +525,21 @@ export function createWordEditor(root, opts) {
         setZoom();
         status();
         statusBarPage();
+    }
+    /** כותרת עשירה → אלמנט (מהסכמה של העורך — אותו עיצוב כמו בגוף), במרחק הכותרת: חצי מהשוליים, עד 12.5 מ"מ. */
+    const hfHtml = new Map();
+    function hfNode(blocks, g, top) {
+        const key = JSON.stringify(blocks);
+        if (!hfHtml.has(key)) {
+            let html = '';
+            try { html = getHTMLFromFragment(editor.schema.nodeFromJSON({ type: 'doc', content: blocks }).content, editor.schema); } catch { /* תוכן לא תקין — ריק */ }
+            hfHtml.set(key, html);
+        }
+        const dist = Math.min(12.5 * MM, (top ? g.top : g.bottom) / 2);
+        const box = h('div.wp-hf-rich', { style: { [top ? 'top' : 'bottom']: dist + 'px', left: g.left + 'px', right: g.right + 'px',
+            fontFamily: cssFont(page.font.family), fontSize: page.font.size + 'pt' } });
+        box.innerHTML = hfHtml.get(key);
+        return box;
     }
     let pageCount = 1;
     let pageNums = [1];   // מספר כל עמוד פיזי (drawPages) — לתוכן העניינים ולכותרות
@@ -1589,6 +1616,66 @@ export function createWordEditor(root, opts) {
      * הגדרות עמוד. במסמך עם מקטעים — לפי המקטע שבו הסמן (כמו ב-Word): גודל, כיוון, שוליים וכותרות — "המקטע
      * הזה" או "כל המסמך"; הגופן והמספור — תמיד לכל המסמך.
      */
+    /**
+     * עורך קטן לכותרת (עליונה / תחתונה): מודגש, נטוי, קו, גודל, יישור, ותמונה (סמליל) — כמו "עריכת כותרת" ב-Word.
+     * value — טקסט פשוט או פסקאות; get() מחזיר טקסט פשוט כשאין בו עיצוב (כך הוא נשמר ונכתב ל-Word כמו קודם).
+     */
+    function hfEditor(label, value) {
+        const box = h('div.hf-edit');
+        const blocks = Array.isArray(value) ? value : String(value || '').split('\n').filter((l, i, a) => l || a.length === 1)
+            .map(l => ({ type: 'paragraph', attrs: { textAlign: 'center' }, content: l ? [{ type: 'text', text: l }] : [] }));
+        let mini = null;
+        const run = f => () => f(mini.chain().focus()).run();
+        const tool = (title, icon, f, mark) => h('button.fn-tool', { type: 'button', title, 'aria-label': title, 'data-mark': mark || '', onmousedown: e => e.preventDefault(), onclick: run(f) }, icon);
+        const sizeSel = h('select.hf-size', { 'aria-label': 'גודל', onchange: e => { mini.chain().focus().setFontSize(e.target.value ? e.target.value + 'pt' : null).run(); } },
+            h('option', { value: '' }, 'גודל'), [8, 9, 10, 11, 12, 14, 16, 18, 24].map(v => h('option', { value: v }, String(v))));
+        const pick = h('input', { type: 'file', accept: 'image/png,image/jpeg,image/gif,image/webp', hidden: true, onchange: async e => {
+            const f = e.target.files[0];
+            e.target.value = '';
+            if (!f || !opts.upload) return;
+            try {
+                const m = await opts.upload(f);
+                // סמליל: עד 2.5 ס"מ גובה (בכותרת אין מקום ליותר)
+                const hh = Math.min(m.height || 60, 2.5 * 10 * MM), w = m.height ? Math.round(hh * m.width / m.height) : 120;
+                mini.chain().focus().insertContent({ type: 'image', attrs: { media: m.id, src: m.url, width: w, height: Math.round(hh) } }).run();
+            } catch (err) { toast(err.message || 'העלאה נכשלה', true); }
+        } });
+        const tools = h('div.fn-tools', { role: 'toolbar', 'aria-label': 'עיצוב ' + label },
+            tool('מודגש', h('b', 'B'), c => c.toggleBold(), 'bold'), tool('נטוי', h('i', 'I'), c => c.toggleItalic(), 'italic'),
+            tool('קו תחתון', h('u', 'U'), c => c.toggleUnderline(), 'underline'), sizeSel,
+            tool('יישור לימין', '⇥', c => c.setTextAlign('right')), tool('מרכז', '≡', c => c.setTextAlign('center')), tool('יישור לשמאל', '⇤', c => c.setTextAlign('left')),
+            opts.upload ? tool('תמונה (סמליל)', '🖼', c => { pick.click(); return c; }) : null, pick);
+        const el = h('div.f.hf-field', h('span', label), tools, box);
+        // תמונה בשורה — בלי גלישה וידיות (כותרת קטנה)
+        const HfImage = TNode.create({
+            name: 'image', inline: true, group: 'inline', atom: true, draggable: false,
+            addAttributes: () => ({ media: { default: null }, src: { default: null }, width: { default: null }, height: { default: null }, wrap: { default: 'inline' } }),
+            parseHTML: () => [{ tag: 'img[data-media]' }],
+            renderHTML: ({ HTMLAttributes: a }) => ['img', { src: a.src, width: a.width, height: a.height, 'data-media': a.media, alt: '' }],
+        });
+        mini = new Editor({
+            element: box,
+            extensions: [
+                StarterKit.configure({ heading: false, bulletList: false, orderedList: false, listItem: false, listKeymap: false, blockquote: false,
+                    code: false, codeBlock: false, horizontalRule: false, link: false, trailingNode: false, dropcursor: false, gapcursor: false }),
+                TextStyle, FontSize, TextAlign.configure({ types: ['paragraph'], alignments: ['right', 'center', 'left'], defaultAlignment: null }), HfImage,
+            ],
+            content: { type: 'doc', content: blocks.length ? blocks : [{ type: 'paragraph', attrs: { textAlign: 'center' } }] },
+            editorProps: { attributes: { class: 'fn-edit-doc hf-edit-doc', dir: 'rtl', lang: 'he', role: 'textbox', 'aria-multiline': 'true', 'aria-label': label } },
+        });
+        mini.on('transaction', () => tools.querySelectorAll('[data-mark]').forEach(b => b.dataset.mark && b.classList.toggle('on', mini.isActive(b.dataset.mark))));
+        return {
+            el,
+            destroy: () => mini.destroy(),
+            get() {
+                const ps = (mini.getJSON().content || []).filter(b => b.type === 'paragraph');
+                const plain = ps.every(b => (b.attrs?.textAlign || 'center') === 'center' && (b.content || []).every(n => n.type === 'text' && !n.marks?.length));
+                if (plain) return ps.map(b => (b.content || []).map(n => n.text).join('')).join('\n').trim();
+                return ps.map(b => ({ ...b, attrs: b.attrs?.textAlign ? { textAlign: b.attrs.textAlign } : undefined }));
+            },
+        };
+    }
+
     function pageDialog() {
         const secs = sections();
         const at = editor.state.selection.from;
@@ -1596,7 +1683,10 @@ export function createWordEditor(root, opts) {
         const p = secs[k].page;
         const nb = page.numbering;
         const wmInput = h('input', { name: 'watermark', value: page.watermark || '', maxlength: 40 });
-        sheet('הגדרות עמוד', body => {
+        const hfe = { header: hfEditor('כותרת עליונה', p.header), footer: hfEditor('כותרת תחתונה', p.footer),
+            header_even: hfEditor('עליונה — עמוד זוגי', p.header_even), footer_even: hfEditor('תחתונה — עמוד זוגי', p.footer_even) };
+        sheet('הגדרות עמוד', (body, dlg) => {
+            dlg?.addEventListener('close', () => Object.values(hfe).forEach(x => x.destroy()), { once: true });
             body.append(
                 secs.length > 1 ? h('section.group', h('h3', 'להחיל על'),
                     seg('scope', { section: `המקטע הזה (${k + 1} מתוך ${secs.length})`, all: 'כל המסמך' }, 'section', 'להחיל על')) : null,
@@ -1624,13 +1714,10 @@ export function createWordEditor(root, opts) {
                         field('מתחיל מ-', numInput('n_start', nb.start, { min: 0, max: 9999, step: 1 }))),
                     sw('n_first', 'מספר גם בעמוד הראשון', nb.first_page)),
                 h('section.group', h('h3', 'כותרת עליונה ותחתונה'),
-                    field('כותרת עליונה', h('input', { name: 'header', value: p.header, maxlength: 500 })),
-                    field('כותרת תחתונה', h('input', { name: 'footer', value: p.footer, maxlength: 500 })),
+                    hfe.header.el, hfe.footer.el,
                     // כמו "זוגי ואי-זוגי שונים" ב-Word — לכל המסמך; הטקסט — לכל מקטע
                     sw('even_odd', 'זוגי ואי-זוגי שונים (לכל המסמך)', page.even_odd),
-                    h('div.fields.two',
-                        field('עליונה — עמוד זוגי', h('input', { name: 'header_even', value: p.header_even || '', maxlength: 500 })),
-                        field('תחתונה — עמוד זוגי', h('input', { name: 'footer_even', value: p.footer_even || '', maxlength: 500 }))),
+                    hfe.header_even.el, hfe.footer_even.el,
                     h('p.hint', 'עמוד זוגי לפי מספר העמוד. שני השדות שלמעלה — לעמודים האי-זוגיים.')),
                 // מקטע (לא הראשון): התחלת מספור העמודים מחדש — כמו "התחל ב-" בתבנית מספרי העמודים של Word
                 k > 0 ? h('section.group', h('h3', 'מספור במקטע הזה'),
@@ -1648,7 +1735,7 @@ export function createWordEditor(root, opts) {
             const sec = {
                 size: f.get('size'), orientation: f.get('orientation'),
                 margins: { top: n('m_top'), bottom: n('m_bottom'), right: n('m_right'), left: n('m_left') },
-                header: f.get('header'), footer: f.get('footer'), header_even: f.get('header_even'), footer_even: f.get('footer_even'),
+                header: hfe.header.get(), footer: hfe.footer.get(), header_even: hfe.header_even.get(), footer_even: hfe.footer_even.get(),
                 ...(k > 0 ? { num_restart: !!f.get('num_restart'), num_start: Math.max(0, Math.round(n('num_start') || 0)) } : {}),
                 columns: { n: Math.max(1, Math.min(3, n('cols_n') || 1)), gap: Math.max(0, Math.min(50, n('cols_gap'))), line: !!f.get('cols_line') },
             };

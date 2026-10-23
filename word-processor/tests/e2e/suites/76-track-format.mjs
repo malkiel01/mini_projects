@@ -61,7 +61,7 @@ export default async function (t) {
     await p.waitForTimeout(2500);
     const s = await t.api(p, 'my_open', { doc });
     const flat = JSON.stringify(s.json);
-    t.ok('נשמר: סימון fmt עם העיצוב הקודם, גרסת מבנה 7', flat.includes('"fmt"') && flat.includes('"old"') && s.json.attrs.schema === 7, flat.slice(0, 300));
+    t.ok('נשמר: סימון fmt עם העיצוב הקודם, גרסת מבנה 7', flat.includes('"fmt"') && flat.includes('"old"') && s.json.attrs.schema >= 7, flat.slice(0, 300));
 
     // דחייה — העיצוב הקודם חוזר; אישור — החדש נשאר
     await select('שתיים');

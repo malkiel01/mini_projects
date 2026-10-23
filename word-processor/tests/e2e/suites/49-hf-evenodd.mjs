@@ -34,7 +34,7 @@ export default async function (t) {
     await t.tool(p, 'הגדרות עמוד ומספור עמודים');
     const d = p.locator('dialog[open]');
     t.ok('חלון הגדרות העמוד: זוגי / אי-זוגי ושדות הכותרת הזוגית, ומספור למקטע', await d.locator('input[name=even_odd]').isChecked()
-        && await d.locator('input[name=header_even]').inputValue() === 'כותרת זוגית' && await d.locator('input[name=num_restart]').isChecked());
+        && (await d.locator('.hf-field', { hasText: 'עליונה — עמוד זוגי' }).locator('.hf-edit-doc').textContent()) === 'כותרת זוגית' && await d.locator('input[name=num_restart]').isChecked());
     await d.locator('input[name=scope][value=section]').check({ force: true });
     await d.locator('input[name=num_start]').fill('5');
     await d.locator('button[type=submit]').click();

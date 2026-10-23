@@ -113,8 +113,10 @@ function page_normalize($in, ?array $base = null): array
         if (($v = $num($n['start'] ?? null, 0, 9999)) !== null) $p['numbering']['start'] = (int)$v;
         if (isset($n['first_page'])) $p['numbering']['first_page'] = (bool)$n['first_page'];
     }
+    // כותרת: טקסט פשוט, או עשירה — רשימת פסקאות (hf_rich_val); עשירה ריקה — כמו בלי כותרת
     foreach (['header', 'footer', 'header_even', 'footer_even'] as $k) {
         if (is_string($in[$k] ?? null)) $p[$k] = mb_substr(str_replace(["\r", "\0"], '', $in[$k]), 0, 500);
+        elseif (is_array($in[$k] ?? null)) $p[$k] = hf_rich_val($in[$k]) ?: '';
     }
     foreach (['even_odd', 'num_restart'] as $k) if (isset($in[$k])) $p[$k] = (bool)$in[$k];
     if (($v = $num($in['num_start'] ?? null, 0, 9999)) !== null) $p['num_start'] = (int)$v;
@@ -185,6 +187,61 @@ function page_mm(array $p): array
 {
     [$w, $h] = PAGE_SIZES[$p['size']] ?? PAGE_SIZES['A4'];
     return $p['orientation'] === 'landscape' ? [$h, $w] : [$w, $h];
+}
+
+const HF_MARKS = ['bold', 'italic', 'underline', 'strike', 'textStyle', 'highlight', 'superscript', 'subscript'];
+
+/**
+ * כותרת עליונה / תחתונה עשירה (כמו ב-Word): עד 10 פסקאות עם יישור, ובהן טקסט מעוצב (מודגש, נטוי, קו, צבע, גודל,
+ * גופן, הדגשה), שבירת שורה ותמונה בשורה (סמליל). כל דבר אחר — לא נכנס. מחזיר [] כשאין בה טקסט ותמונה.
+ */
+function hf_rich_val(array $v): array
+{
+    $out = [];
+    $chars = 0;
+    foreach (array_slice(array_values($v), 0, 10) as $b) {
+        if (!is_array($b) || ($b['type'] ?? '') !== 'paragraph') continue;
+        $para = ['type' => 'paragraph'];
+        if (in_array($b['attrs']['textAlign'] ?? null, ['right', 'center', 'left', 'justify'], true)) $para['attrs'] = ['textAlign' => $b['attrs']['textAlign']];
+        $content = [];
+        foreach (is_array($b['content'] ?? null) ? $b['content'] : [] as $n) {
+            $t = is_array($n) ? ($n['type'] ?? '') : '';
+            if ($t === 'text' && is_string($n['text'] ?? null) && $n['text'] !== '' && $chars < 2000) {
+                $x = ['type' => 'text', 'text' => mb_substr(str_replace(["\r", "\0", "\n"], '', $n['text']), 0, 2000 - $chars)];
+                $chars += mb_strlen($x['text']);
+                $marks = [];
+                foreach (is_array($n['marks'] ?? null) ? $n['marks'] : [] as $m) {
+                    if (!is_array($m) || !in_array($m['type'] ?? '', HF_MARKS, true)) continue;
+                    $mm = ['type' => $m['type']];
+                    if (is_array($m['attrs'] ?? null)) $mm['attrs'] = array_filter(array_intersect_key($m['attrs'], array_flip(['color', 'fontSize', 'fontFamily', 'ul'])), 'is_string');
+                    if (empty($mm['attrs'])) unset($mm['attrs']);
+                    $marks[] = $mm;
+                }
+                if ($marks) $x['marks'] = $marks;
+                $content[] = $x;
+            } elseif ($t === 'hardBreak') {
+                $content[] = ['type' => 'hardBreak'];
+            } elseif ($t === 'image' && is_string($n['attrs']['media'] ?? null) && preg_match('/^[a-z0-9]{24}$/', $n['attrs']['media'])) {
+                $a = $n['attrs'];
+                $content[] = ['type' => 'image', 'attrs' => ['media' => $a['media'], 'src' => is_string($a['src'] ?? null) ? $a['src'] : (function_exists('media_url') ? media_url($a['media']) : ''),
+                    'width' => is_numeric($a['width'] ?? null) ? max(4, min(800, (int)$a['width'])) : null,
+                    'height' => is_numeric($a['height'] ?? null) ? max(4, min(400, (int)$a['height'])) : null, 'wrap' => 'inline']];
+            }
+        }
+        if ($content) $para['content'] = $content;
+        $out[] = $para;
+    }
+    $any = false;
+    foreach ($out as $b) if (!empty($b['content'])) $any = true;
+    return $any ? $out : [];
+}
+
+/** הטקסט של כותרת (פשוטה או עשירה) — שורה לכל פסקה. */
+function hf_text($v): string
+{
+    if (is_string($v)) return $v;
+    if (!is_array($v)) return '';
+    return implode("\n", array_map(fn($b) => implode('', array_map(fn($n) => $n['text'] ?? (($n['type'] ?? '') === 'hardBreak' ? ' ' : ''), $b['content'] ?? [])), $v));
 }
 
 /** הגדרות מקטע שמתחיל במעבר מקטע: יורש מהקודם, חוץ מהתחלת המספור מחדש (רק אם המעבר אומר). */

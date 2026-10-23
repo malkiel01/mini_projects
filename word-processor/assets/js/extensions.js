@@ -864,8 +864,9 @@ export const LetterSpacing = Extension.create({
  * 5: מעבר טור ידני (columnBreak).
  * 6: עצירות טאב מותאמות (attrs.tabs בפסקה).
  * 7: שינויי עיצוב במעקב (סימון fmt).
+ * 8: כותרת עליונה / תחתונה עשירה (header / footer כפסקאות בהגדרות העמוד).
  */
-export const SCHEMA_VERSION = 7;
+export const SCHEMA_VERSION = 8;
 
 /**
  * מאפיינים של המסמך עצמו (צומת השורש): הגדרות העמוד וגרסת המבנה.
