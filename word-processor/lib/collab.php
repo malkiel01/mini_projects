@@ -16,17 +16,37 @@
 const COLLAB_KEEP = 500;     // צעדים שנשמרים למשיכה; מי שמאחור יותר — טוען מחדש
 const COLLAB_MAX = 2000;     // צעדים בשליחה אחת
 
-function collab_state(array $row): array
+/**
+ * המצב של המסמך. עידן חדש רק כשהמסמך נשמר מבחוץ (docs.version שונה ממה שהשליחה האחרונה רשמה). הבדיקה — על שתי
+ * הטבלאות מהמסד, ואיפוס — רק בתוך עסקה נעולה: שורת מסמך שנקראה בתחילת הבקשה כבר ישנה כששליחה של מישהו אחר נגמרה
+ * בינתיים, ואיפוס בגללה היה מוחק את הצעדים של כולם. $locked — כבר בתוך BEGIN IMMEDIATE (collab_push).
+ */
+function collab_state(array $row, bool $locked = false): array
 {
-    $st = db()->prepare('SELECT * FROM collab WHERE doc = ?');
-    $st->execute([$row['id']]);
-    $c = $st->fetch();
-    $st->closeCursor();
-    if ($c && (int)$c['doc_version'] === (int)$row['version']) return $c;
-    // מסמך חדש לעריכה משותפת, או שנשמר מבחוץ — עידן חדש
-    $c = ['doc' => $row['id'], 'epoch' => rand_id(12), 'v' => 0, 'doc_version' => (int)$row['version']];
-    db()->prepare('DELETE FROM collab_steps WHERE doc = ?')->execute([$row['id']]);
-    db()->prepare('INSERT OR REPLACE INTO collab (doc, epoch, v, doc_version) VALUES (?, ?, ?, ?)')->execute([$c['doc'], $c['epoch'], 0, $c['doc_version']]);
+    $read = function () use ($row) {
+        $st = db()->prepare('SELECT c.*, d.version AS cur FROM docs d LEFT JOIN collab c ON c.doc = d.id WHERE d.id = ?');
+        $st->execute([$row['id']]);
+        $c = $st->fetch();
+        $st->closeCursor();
+        return $c;
+    };
+    $c = $read();
+    if ($c && $c['epoch'] !== null && (int)$c['doc_version'] === (int)$c['cur']) return $c;
+    $pdo = db();
+    if (!$locked) $pdo->exec('BEGIN IMMEDIATE');
+    try {
+        $c = $read();
+        if (!$c || $c['epoch'] === null || (int)$c['doc_version'] !== (int)$c['cur']) {
+            // מסמך חדש לעריכה משותפת, או שנשמר מבחוץ — עידן חדש
+            $c = ['doc' => $row['id'], 'epoch' => rand_id(12), 'v' => 0, 'doc_version' => (int)($c['cur'] ?? $row['version'])];
+            $pdo->prepare('DELETE FROM collab_steps WHERE doc = ?')->execute([$row['id']]);
+            $pdo->prepare('INSERT OR REPLACE INTO collab (doc, epoch, v, doc_version) VALUES (?, ?, ?, ?)')->execute([$c['doc'], $c['epoch'], 0, $c['doc_version']]);
+        }
+        if (!$locked) $pdo->exec('COMMIT');
+    } catch (Throwable $e) {
+        if (!$locked) $pdo->exec('ROLLBACK');
+        throw $e;
+    }
     return $c;
 }
 
@@ -67,7 +87,7 @@ function collab_push(array $row, string $role, array $in, string $uid, string $u
         $row = $st->fetch() ?: throw new ApiError('המסמך לא נמצא', 'not_found', 404);
         $st->closeCursor();
         if ($l = collab_blocked($row['id'], $uid)) throw new ApiError('המסמך פתוח לעריכה אצל ' . $l['by'], 'locked', 423);
-        $c = collab_state($row);
+        $c = collab_state($row, true);
         if ((string)($in['epoch'] ?? '') !== $c['epoch']) { $pdo->exec('COMMIT'); return ['ok' => false, 'reload' => true]; }
         if ((int)($in['v'] ?? -1) !== (int)$c['v']) { $pdo->exec('COMMIT'); return ['ok' => false, 'v' => (int)$c['v']]; }
         $json = $in['json'];
@@ -98,10 +118,12 @@ function collab_pull(array $row, string $role, array $in, string $uid, string $u
     $client = (string)($in['client'] ?? '');
     if (!preg_match('/^[a-z0-9]{6,40}$/', $client)) throw new ApiError('בקשה לא תקינה', 'bad_request');
     $now = time();
-    $sel = is_array($in['sel'] ?? null) ? json_encode(array_map('intval', array_slice(array_values($in['sel']), 0, 2))) : '';
+    // הבחירה: [from, to, הגרסה שאליה המיקומים שייכים]; בלי — נשארת הקודמת (ללקוח יש צעדים שלא אושרו)
+    $sel = is_array($in['sel'] ?? null) && count($in['sel']) === 3 ? json_encode(array_map('intval', array_values($in['sel']))) : null;
     db()->prepare('INSERT INTO presence (doc, client, user_id, user_name, role, sel, beat) VALUES (?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT (doc, client) DO UPDATE SET user_id = excluded.user_id, user_name = excluded.user_name, role = excluded.role, sel = excluded.sel, beat = excluded.beat')
-        ->execute([$row['id'], $client, $uid, $uname, $role, $sel, $now]);
+        ON CONFLICT (doc, client) DO UPDATE SET user_id = excluded.user_id, user_name = excluded.user_name, role = excluded.role,
+        sel = CASE WHEN ? IS NULL THEN presence.sel ELSE excluded.sel END, beat = excluded.beat')
+        ->execute([$row['id'], $client, $uid, $uname, $role, $sel ?? '', $now, $sel]);
     if (random_int(1, 100) === 1) db()->prepare('DELETE FROM presence WHERE beat < ?')->execute([$now - 3600]);
     $c = collab_state($row);
     $since = (int)($in['since'] ?? -1);

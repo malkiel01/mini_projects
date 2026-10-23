@@ -381,7 +381,8 @@ function app_action(string $action, array $in): never
                 $l = collab_blocked($row['id'], $uid);
                 $can = $l || $role === 'view' ? 'view' : ($role === 'comment' ? 'comment' : 'edit');
                 if ($action === 'my_lock') out(['ok' => !$l, 'can' => $can, 'lock' => $l]);
-                $c = collab_state($row);
+                // התוכן והגרסה — מאותו רגע: שליחה של מישהו אחר בין קריאת המסמך לקריאת המצב — קוראים שוב
+                for ($i = 0; ($c = collab_state($row)) && (int)$c['doc_version'] !== (int)$row['version'] && $i < 5; $i++) $row = doc_access($row['id'], $acc)[0];
                 out(doc_public($row) + ['can' => $can, 'lock' => $l, 'role' => $role, 'collab' => ['epoch' => $c['epoch'], 'v' => (int)$c['v']],
                     'shares' => $role === 'owner' ? count(shares_of($row['id'])) : null]);
             }
