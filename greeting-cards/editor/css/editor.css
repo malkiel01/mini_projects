@@ -233,3 +233,23 @@ details summary { cursor: pointer; font-weight: 600; min-height: var(--tap); dis
 }
 .toast.show { opacity: 1; transform: none; }
 .toast.error { background: var(--danger); color: #fff; }
+
+/* ─── נמענים ─── */
+.previewbar {
+    position: absolute; inset-block-start: var(--s2); inset-inline-start: var(--s2); z-index: 3; display: flex; align-items: center;
+    max-width: calc(100% - 200px); background: var(--brand); color: var(--brand-ink); border-radius: var(--r); box-shadow: var(--shadow);
+}
+.previewbar .icon-btn { color: inherit; min-width: 40px; min-height: 40px; }
+.previewbar .icon-btn:hover { background: color-mix(in srgb, var(--brand-ink) 18%, transparent); }
+.pv-label { font-size: .8125rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.vars { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1); margin-bottom: var(--s3); }
+.chip-btn { min-height: 36px; padding: 0 var(--s3); border: 1px solid var(--brand); border-radius: 999px; background: var(--brand-soft); color: var(--ink); font-weight: 600; font-size: .875rem; }
+.card.summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s1); }
+.table-wrap { overflow-x: auto; max-height: 300px; overflow-y: auto; border: 1px solid var(--line); border-radius: var(--r); }
+.grid { border-collapse: collapse; width: 100%; font-size: .8125rem; }
+.grid th, .grid td { padding: var(--s1) var(--s2); border-bottom: 1px solid var(--line); text-align: start; white-space: nowrap; }
+.grid th { position: sticky; top: 0; background: var(--bg); }
+progress { width: 100%; height: 12px; accent-color: var(--brand); }
+.warn-box { margin-bottom: var(--s3); }
+.field select { width: 100%; min-height: var(--tap); padding: 0 var(--s3); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); font-size: 16px; }
+

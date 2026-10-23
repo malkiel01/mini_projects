@@ -6,6 +6,7 @@
 
 /* global Konva */
 import { nearestWeight } from './fonts.js';
+import { fillText } from './merge.js';
 
 const SNAP_PX = 6;           // מרחק הצמדה, בפיקסלי מסך
 const MIN_ZOOM = 0.05, MAX_ZOOM = 8;
@@ -26,6 +27,7 @@ export class Canvas {
         this.nodes = new Map();       // layerId → Konva.Group
         this.selected = [];
         this.view = { zoom: 1, x: 0, y: 0 };
+        this.vars = null;             // שורת נמען בתצוגה מקדימה / בייצוא — {{משתנה}} מוחלף בערך
 
         this.stage = new Konva.Stage({ container: el, width: el.clientWidth || 300, height: el.clientHeight || 300 });
         this.main = new Konva.Layer();
@@ -112,7 +114,7 @@ export class Canvas {
         if (l.type === 'text') {
             const s = l.style;
             const t = new Konva.Text({
-                name: 'text', text: l.text, width: l.w, fontFamily: `"${s.font}"`,
+                name: 'text', text: this.vars ? fillText(l.text, this.vars) : l.text, width: l.w, fontFamily: `"${s.font}"`,
                 fontStyle: `${s.italic ? 'italic ' : ''}${nearestWeight(s.font, s.weight)}`, fontSize: s.size,
                 fill: s.color, align: s.align === 'justify' ? 'justify' : s.align, direction: s.dir === 'ltr' ? 'ltr' : 'rtl',
                 lineHeight: s.lineHeight || 1.2, wrap: 'word',
@@ -120,10 +122,12 @@ export class Canvas {
                 ...(s.shadow ? { shadowColor: s.shadow.color, shadowBlur: s.shadow.blur, shadowOffsetX: s.shadow.x, shadowOffsetY: s.shadow.y } : {}),
             });
             // הגובה של טקסט נגזר מהתוכן; הוא נשמר במסמך כדי שהייבוא והייצוא יראו אותו דבר.
-            l.h = t.height();
+            // בתצוגת נמען — לא: הגובה של התבנית הוא מה שנשמר.
+            if (!this.vars) l.h = t.height();
+            else g.setAttr('filledH', t.height());
             if (s.background) {
                 const p = s.background.padding || 0;
-                g.add(new Konva.Rect({ x: -p, y: -p, width: l.w + 2 * p, height: l.h + 2 * p, fill: s.background.color, cornerRadius: s.background.radius || 0 }));
+                g.add(new Konva.Rect({ x: -p, y: -p, width: l.w + 2 * p, height: t.height() + 2 * p, fill: s.background.color, cornerRadius: s.background.radius || 0 }));
             }
             g.add(t);
         } else if (l.type === 'image') {
