@@ -32,7 +32,7 @@ async function api(action, body = {}, isForm = false) {
     return data;
 }
 
-// ---------- ניתוב: #/ רשימה · #/d/<id> מסמך · #/trash סל המחזור · #/admin לקוחות ----------
+// ---------- ניתוב: #/ רשימה · #/d/<id> מסמך · #/trash סל המחזור · #/admin ניהול (קישורים לזרים, לקוחות) ----------
 window.addEventListener('hashchange', route);
 async function route() {
     const hash = location.hash || '#/';
@@ -56,7 +56,7 @@ async function listView() {
     document.body.classList.remove('editing');
     header({ title: 'עורך התמלילים', sub: me?.name || '', actions: [
         h('button.icon-btn', { 'aria-label': 'סל המחזור', title: 'סל המחזור', onclick: () => { location.hash = '#/trash'; } }, '🗑'),
-        me?.admin ? h('button.icon-btn', { 'aria-label': 'לקוחות הטמעה', title: 'לקוחות הטמעה', onclick: () => { location.hash = '#/admin'; } }, '🔗') : null,
+        me?.admin ? h('button.icon-btn', { 'aria-label': 'ניהול העורך', title: 'ניהול העורך — קישורים לזרים ולקוחות הטמעה', onclick: () => { location.hash = '#/admin'; } }, '🔗') : null,
     ] });
     const search = h('input', { type: 'search', placeholder: 'חיפוש', 'aria-label': 'חיפוש' });
     const list = h('ul.list', h('li.empty', 'טוען…'));
@@ -448,7 +448,7 @@ function popMenu(anchor, items) {
  * ושיתוף חדש לפי מייל — פעיל גם לפני שבעל המייל נכנס לעורך בפעם הראשונה.
  */
 async function shareDialog(id) {
-    let shares = (await api('my_shares', { doc: id })).shares;
+    let { shares, link } = await api('my_shares', { doc: id });
     const rows = h('ul.share-list');
     const roleSel = (value, onchange) => h('select', { 'aria-label': 'תפקיד', onchange },
         ['view', 'comment', 'edit'].map(r => h('option', { value: r, selected: r === value }, ROLE_TEXT[r])));
@@ -466,13 +466,40 @@ async function shareDialog(id) {
                 h('button.btn.sm.ghost', { type: 'button', 'aria-label': 'הסרת השיתוף עם ' + x.email, onclick: () => set(x.email, '') }, 'הסרה')));
         }
     };
+    // קישור עריכה לזר (lib/links.php): מסמך אחד, בלי חשבון — באישור מנהל העורך
+    const linkBox = h('div.link-box');
+    const linkOp = async op => {
+        if (op === 'revoke' && !confirm('לבטל את הקישור? מי שקיבל אותו לא יוכל להמשיך לערוך.')) return;
+        try { link = (await api('my_link', { doc: id, op })).link; paintLink(); } catch (e) { toast(e.message, true); }
+    };
+    const paintLink = () => {
+        linkBox.textContent = '';
+        const btn = (label, op, cls = 'ghost') => h('button.btn.sm.' + cls, { type: 'button', onclick: () => linkOp(op) }, label);
+        if (!link) {
+            linkBox.append(h('p.hint', 'מי שיקבל את הקישור יוכל לערוך את המסמך הזה בלבד, בלי חשבון. הקישור פעיל אחרי אישור של מנהל העורך.'),
+                btn('🔗 בקשת קישור עריכה', 'request', 'primary'));
+        } else if (link.status === 'pending') {
+            linkBox.append(h('p', h('span.chip.warn', 'ממתין לאישור'), ' מנהל העורך יאשר את הקישור, ואז הוא יופיע כאן.'), btn('ביטול הבקשה', 'revoke'));
+        } else if (link.status === 'expired') {
+            linkBox.append(h('p', h('span.chip.bad', 'פג תוקף'), ' הקישור כבר לא עובד.'), btn('בקשת קישור חדש', 'request', 'primary'), btn('הסרה', 'revoke'));
+        } else {
+            const url = h('input.link-url', { value: link.url, readOnly: true, dir: 'ltr', 'aria-label': 'קישור העריכה', onfocus: e => e.target.select() });
+            linkBox.append(h('p', h('span.chip.ok', 'פעיל'), ` עד ${new Date(link.expires_at * 1000).toLocaleDateString('he-IL')}. מי שיש לו את הקישור — עורך.`),
+                h('div.share-add', url, h('button.btn.sm', { type: 'button', onclick: async () => {
+                    try { await navigator.clipboard.writeText(link.url); toast('הקישור הועתק'); } catch { url.focus(); url.select(); }
+                } }, 'העתקה')),
+                h('div.row', btn('קישור חדש (הישן יפסיק לעבוד)', 'request'), btn('ביטול הקישור', 'revoke')));
+        }
+    };
     const email = h('input', { type: 'email', name: 'email', placeholder: 'מייל', autocomplete: 'off', dir: 'ltr', 'aria-label': 'מייל לשיתוף' });
     const role = roleSel('edit');
     paint();
+    paintLink();
     sheet('שיתוף המסמך', body => {
         body.append(h('section.group', h('h3', 'שיתוף עם'), h('div.share-add', email, role)),
             h('p.hint', 'מי ששיתפת איתו רואה את המסמך ב"משותף איתי". עריכה — כמוך (חוץ משיתוף ומחיקה); הערות — קריאה והוספת הערות; צפייה — קריאה והורדה.'),
-            h('section.group', h('h3', 'משותף כרגע'), rows));
+            h('section.group', h('h3', 'משותף כרגע'), rows),
+            h('section.group', h('h3', 'קישור עריכה לזר'), linkBox));
     }, async () => {
         const v = email.value.trim();
         if (!v) return true;   // בלי מייל — "שיתוף" רק סוגר
@@ -484,11 +511,33 @@ async function shareDialog(id) {
 // ---------- לקוחות ההטמעה (מנהל העורך) ----------
 async function adminView() {
     document.body.classList.remove('editing');
-    header({ back: true, title: 'לקוחות הטמעה', sub: 'אפליקציות שמטמיעות את העורך' });
+    header({ back: true, title: 'ניהול העורך', sub: 'קישורי עריכה לזרים, ואפליקציות שמטמיעות את העורך' });
     const list = h('ul.list', h('li.empty', 'טוען…'));
+    const links = h('ul.list.admin-links', h('li.empty', 'טוען…'));
     main.textContent = '';
-    main.append(h('p.hint', 'אפליקציה נרשמת לבד. מאותו דומיין ומהתיקייה שלה — פעילה מיד; מדומיין אחר, או אחרי שינוי כתובות — ממתינה לאישור כאן. ',
+    main.append(h('h2.list-title', 'קישורי עריכה לזרים'),
+        h('p.hint', 'בעל מסמך מבקש קישור — ומי שמקבל אותו עורך את המסמך הזה בלבד, בלי חשבון, עד 14 יום מהאישור.'), links,
+        h('h2.list-title', 'לקוחות הטמעה'),
+        h('p.hint', 'אפליקציה נרשמת לבד. מאותו דומיין ומהתיקייה שלה — פעילה מיד; מדומיין אחר, או אחרי שינוי כתובות — ממתינה לאישור כאן. ',
         h('a', { href: GUIDE, target: '_blank', rel: 'noopener' }, 'מדריך ההתממשקות')), list);
+    const paintLinks = all => {
+        links.textContent = '';
+        if (!all.length) links.append(h('li.empty', 'אין קישורים'));
+        for (const l of all) {
+            const chip = { active: ['ok', 'פעיל'], pending: ['warn', 'ממתין לאישור'], expired: ['bad', 'פג תוקף'] }[l.status];
+            const decide = async approve => {
+                try { paintLinks((await api('admin_link_set', { doc: l.doc, approve })).links); } catch (e) { toast(e.message, true); }
+            };
+            links.append(h('li.card', { style: { cursor: 'default' } },
+                h('span.doc-ic', { 'aria-hidden': 'true' }, '🔗'),
+                h('div.body', h('div.l1', h('span', l.title || 'ללא שם'), h('span.chip.' + chip[0], chip[1])),
+                    h('div.l2', `של ${l.owner || '—'} · ` + (l.status === 'active' ? `עד ${new Date(l.expires_at * 1000).toLocaleDateString('he-IL')}` : `ביקש ${when(l.created_at)}`))),
+                l.status === 'pending' ? h('button.btn.sm.primary', { onclick: () => decide(true) }, 'אישור') : null,
+                h('button.btn.sm.ghost', { onclick: () => (l.status !== 'active' || confirm(`לבטל את הקישור ל"${l.title || 'ללא שם'}"? מי שקיבל אותו לא יוכל להמשיך לערוך.`)) && decide(false) },
+                    l.status === 'pending' ? 'דחייה' : 'ביטול')));
+        }
+    };
+    api('admin_links').then(r => paintLinks(r.links), e => { links.textContent = ''; links.append(h('li.error', e.message)); });
     const load = async () => {
         try {
             const { clients } = await api('admin_clients');

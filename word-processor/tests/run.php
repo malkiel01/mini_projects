@@ -1480,6 +1480,43 @@ doc_delete($shRow);
 $cnt = db()->prepare('SELECT COUNT(*) FROM shares WHERE doc = ?'); $cnt->execute([$shDoc]);
 check('מחיקה לצמיתות — גם השיתופים', (int)$cnt->fetchColumn() === 0);
 
+section('קישור עריכה לזר (שלב 5)');
+require_once __DIR__ . '/../lib/links.php';
+$lnOwner = ['id' => 501, 'role' => 'user'];
+$lnAdmin = ['id' => 502, 'role' => 'admin'];
+$lnDoc = doc_new('a:501', 'לזר', ['type' => 'doc', 'content' => [para([text_node('טקסט')])]], null, 'a:501', 'בעלים');
+$lnRow = doc_find($lnDoc, 'a:501');
+$l = link_request($lnRow, $lnOwner);
+$tok = link_row($lnDoc)['token'];
+check('בעלים שאינו מנהל — הקישור ממתין, בלי כתובת; הזר מקבל "ממתין לאישור"', $l['status'] === 'pending' && $l['url'] === null && throws(fn() => guest_doc($tok), 'link_pending'));
+link_decide($lnDoc, true, $lnAdmin);
+$l = link_public(link_row($lnDoc));
+check('אחרי אישור המנהל — פעיל ל-' . LINK_DAYS . ' יום, הכתובת עם הטוקן אחרי #', $l['status'] === 'active' && str_ends_with($l['url'], 'guest.html#k=' . $tok)
+    && abs($l['expires_at'] - time() - LINK_DAYS * 86400) < 5 && guest_doc($tok)['id'] === $lnDoc, json_encode($l));
+[$gu1] = guest_identity($tok, 'device0001', 'רות');
+[$gu2, $gn2] = guest_identity($tok, 'device0002', '  רות   כהן ');
+check('זהות הזר: לפי המכשיר (שני מכשירים — שני מזהים), השם מנוקה ו"(אורח)"', $gu1 !== $gu2 && str_starts_with($gu1, 'g:') && $gn2 === 'רות כהן (אורח)'
+    && throws(fn() => guest_identity($tok, 'device0001', ' '), 'bad_name') && throws(fn() => guest_identity($tok, 'x', 'רות'), 'bad_guest'));
+check('טוקן שגוי / לא בפורמט — "לא בתוקף"', throws(fn() => guest_doc(str_repeat('a', 32)), 'link_invalid') && throws(fn() => guest_doc('../x'), 'link_invalid') && throws(fn() => guest_doc(null), 'link_invalid'));
+link_request($lnRow, $lnAdmin);
+$tok2 = link_row($lnDoc)['token'];
+check('קישור חדש (מנהל — פעיל מיד) מחליף את הקודם: הישן מפסיק לעבוד', $tok2 !== $tok && link_public(link_row($lnDoc))['status'] === 'active'
+    && throws(fn() => guest_doc($tok), 'link_invalid') && guest_doc($tok2)['id'] === $lnDoc);
+db()->prepare('UPDATE links SET expires_at = ? WHERE doc = ?')->execute([time() - 1, $lnDoc]);
+check('פג תוקף — "לא בתוקף", ולבעלים: expired', throws(fn() => guest_doc($tok2), 'link_invalid') && link_public(link_row($lnDoc))['status'] === 'expired');
+link_request($lnRow, $lnAdmin);
+$tok3 = link_row($lnDoc)['token'];
+$adm = links_all();
+check('מסך המנהל: הקישור, שם המסמך והסטטוס', count(array_filter($adm, fn($x) => $x['doc'] === $lnDoc && $x['title'] === 'לזר' && $x['status'] === 'active')) === 1, json_encode($adm, JSON_UNESCAPED_UNICODE));
+doc_trash($lnRow);
+check('מסמך בסל — הקישור לא עובד', throws(fn() => guest_doc($tok3), 'link_invalid'));
+doc_restore(doc_find($lnDoc, 'a:501', true));
+link_decide($lnDoc, false, $lnAdmin);
+check('דחייה / ביטול — הקישור נמחק', link_row($lnDoc) === null && throws(fn() => guest_doc($tok3), 'link_invalid'));
+link_request($lnRow, $lnAdmin);
+doc_delete(doc_find($lnDoc, 'a:501'));
+check('מחיקה לצמיתות — גם הקישור', link_row($lnDoc) === null);
+
 section('סל המחזור (ליקוי ה\')');
 $sp = 'a:trash-test';
 $tid = doc_new($sp, 'לסל', null, null, 'u1', 'דנה');

@@ -261,3 +261,14 @@ body.embed #app { flex: 1; min-height: 0; display: flex; flex-direction: column;
 .share-row .who { flex: 1; min-inline-size: 0; display: grid; }
 .share-row .who small { color: var(--muted, #667); overflow: hidden; text-overflow: ellipsis; }
 .share-list .empty { color: var(--muted, #667); }
+/* קישור עריכה לזר — בחלון השיתוף */
+.link-box { display: grid; gap: var(--s2); }
+.link-box p { margin: 0; }
+.link-box .row { display: flex; flex-wrap: wrap; gap: var(--s2); }
+.link-box > .btn { justify-self: start; }
+.link-url { font-size: .8rem; }
+/* מסך הניהול: כותרת לכל רשימה */
+.list-title { font-size: 1rem; margin: var(--s4) 0 var(--s1); }
+.list-title:first-child { margin-top: 0; }
+/* הזר: השם שלו בפס העליון */
+body.guest .embed-bar .chip { max-inline-size: 40vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

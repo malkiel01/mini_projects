@@ -4,7 +4,8 @@
  *  1. שרת-לשרת, חתום (platform/docs/embed.md, פרק 3): client_register, embed_session, doc_*.
  *  2. ה-iframe המוטמע, בסשן Bearer (פרק 4): embed_open/load/save/upload/lock/page. וגם media (כתובת חתומה).
  *  3. האפליקציה עצמה, למשתמשי האפליקציה (השער / כניסה עם הכלים הדיגיטליים): me, my_*, admin_*.
- * קבוצות 1–2 ב-"public" של app.json (פרק 7) — ההגנה שלהן היא החתימה, הטוקן והסשן; קבוצה 3 עוברת בשער.
+ *  4. זר עם קישור עריכה (lib/links.php): guest_open/lock/save/upload — מסמך אחד, לפי הטוקן שבקישור.
+ * קבוצות 1–2 ו-4 ב-"public" של app.json (פרק 7) — ההגנה שלהן היא החתימה, הטוקן והסשן; קבוצה 3 עוברת בשער.
  */
 
 declare(strict_types=1);
@@ -16,6 +17,7 @@ require_once __DIR__ . '/lib/pdf.php';
 require_once __DIR__ . '/lib/compare.php';
 require_once __DIR__ . '/lib/users.php';
 require_once __DIR__ . '/lib/share.php';
+require_once __DIR__ . '/lib/links.php';
 
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: no-referrer');
@@ -248,6 +250,13 @@ try {
             require_once __DIR__ . '/lib/selftest.php';
             out(selftest());
 
+        // ================= 4. זר עם קישור עריכה =================
+        case 'guest_open':
+        case 'guest_lock':
+        case 'guest_save':
+        case 'guest_upload':
+            guest_action($action, $in);
+
         // ================= 3. האפליקציה =================
         case 'sso_start':
             sso_start();
@@ -293,6 +302,36 @@ function lock_op(string $op, string $can, string $doc, string $uid, string $unam
     if ($op === 'release') { lock_release($doc, $uid); return ['ok' => true, 'can' => 'edit', 'lock' => null]; }
     $r = lock_take($doc, $uid, $uname, hash('sha256', $holder));
     return $r['ok'] ? ['ok' => true, 'can' => 'edit', 'lock' => null] : ['ok' => false, 'can' => 'view', 'lock' => ['by' => $r['by'], 'since' => $r['since']]];
+}
+
+/**
+ * הזר (lib/links.php): כל בקשה נושאת את הטוקן (k), את המזהה מהמכשיר (gid) ואת השם — ונבדקת מחדש: קישור שבוטל
+ * או פג מפסיק לעבוד מיד, גם באמצע עריכה. עורך ושומר כמו עורך רגיל, בלי שינוי שם המסמך.
+ */
+function guest_action(string $action, array $in): never
+{
+    need_post();
+    if (($_SERVER['HTTP_X_WP'] ?? '') !== '1') throw new ApiError('בקשה לא תקינה', 'csrf', 403);
+    // JSON, או טופס (העלאת תמונה) — שם $in הוא $_POST
+    $k = $in['k'] ?? '';
+    $row = guest_doc($k);
+    [$uid, $uname] = guest_identity($k, $in['gid'] ?? '', $in['name'] ?? '');
+    $holder = 'guest:' . $in['gid'];
+    switch ($action) {
+        case 'guest_open':
+        case 'guest_lock':
+            $l = lock_op((string)($in['op'] ?? 'beat'), 'edit', $row['id'], $uid, $uname, $holder);
+            if ($action === 'guest_lock') out($l);
+            out(doc_public($row) + ['can' => $l['can'], 'lock' => $l['lock'], 'user' => ['id' => $uid, 'name' => $uname]]);
+        case 'guest_save':
+            require_edit('edit', $row['id'], $uid, $uname, $holder);
+            $row = doc_save($row, $in['json'] ?? null, null, $uid, $uname, $in['base_version'] ?? null);
+            out(['doc' => $row['id'], 'version' => (int)$row['version'], 'updated_at' => (int)$row['updated_at']]);
+        case 'guest_upload':
+            require_edit('edit', $row['id'], $uid, $uname, $holder);
+            out(media_store($row['id'], uploaded_bytes($in)));
+    }
+    throw new ApiError('פעולה לא מוכרת', 'unknown_action', 404);
 }
 
 function app_action(string $action, array $in): never
@@ -412,11 +451,25 @@ function app_action(string $action, array $in): never
         // שיתוף (שלב 5): רק הבעלים רואה ומשנה
         case 'my_shares':
             [$row] = doc_access($in['doc'] ?? '', $acc, 'owner');
-            out(['shares' => shares_of($row['id'])]);
+            out(['shares' => shares_of($row['id']), 'link' => link_public(link_row($row['id']))]);
         case 'my_share':
             [$row] = doc_access($in['doc'] ?? '', $acc, 'owner');
             share_set($row, $acc, $in['email'] ?? '', $in['role'] ?? '');
             out(['shares' => shares_of($row['id'])]);
+        // קישור עריכה לזר (lib/links.php): op = request (חדש / חידוש) | revoke
+        case 'my_link':
+            [$row] = doc_access($in['doc'] ?? '', $acc, 'owner');
+            $op = (string)($in['op'] ?? '');
+            if ($op === 'request') out(['link' => link_request($row, $acc)]);
+            if ($op === 'revoke') { link_revoke($row['id']); out(['link' => null]); }
+            throw new ApiError('פעולה לא תקינה', 'bad_op');
+        case 'admin_links':
+            need_admin($acc);
+            out(['links' => links_all()]);
+        case 'admin_link_set':
+            need_admin($acc);
+            link_decide((string)($in['doc'] ?? ''), !empty($in['approve']), $acc);
+            out(['links' => links_all()]);
         case 'admin_clients':
             need_admin($acc);
             $rows = db()->query('SELECT id, name, key_url, origins, status, created_at, updated_at FROM clients ORDER BY created_at')->fetchAll();
