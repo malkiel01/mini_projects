@@ -467,3 +467,32 @@ html.wp-no-page-zoom, html.wp-no-page-zoom body, .wp-editor, .wp-stage { touch-a
 .wp-doc .wp-toc-l4, .wp-doc .wp-toc-l5, .wp-doc .wp-toc-l6, .wp-doc .wp-toc-l7, .wp-doc .wp-toc-l8, .wp-doc .wp-toc-l9 { padding-inline-start: 42pt; }
 .wp-doc .wp-toc-empty { color: #888; cursor: default; }
 .wp-doc .wp-toc.ProseMirror-selectednode { outline: 2px solid #2d4a8a; outline-offset: 2px; }
+
+/* הסרגל (ruler.js): מעל הדף, דביק בראש אזור הגלילה; הרצועה — ברוחב העמוד ובזום שלו */
+.wp-ruler { position: sticky; top: calc(var(--s3) * -1); z-index: 5; block-size: 22px; margin: calc(var(--s3) * -1) calc(var(--s2) * -1) var(--s2); background: #e9ebef;
+    border-bottom: 1px solid rgb(0 0 0 / .08); direction: ltr; user-select: none; -webkit-user-select: none; }
+@media (prefers-color-scheme: dark) { .wp-ruler { background: #0c0e12; border-color: rgb(255 255 255 / .08); } }
+.wp-ruler[hidden] { display: none; }
+.wp-ruler-track { position: absolute; top: 3px; bottom: 3px; background: #fff; border: 1px solid #c8ccd4; box-sizing: border-box; cursor: copy; }
+.wp-ruler-margin { position: absolute; top: 0; bottom: 0; background: #d4d8df; pointer-events: none; }
+.wp-ruler-tick { position: absolute; bottom: 0; inline-size: 1px; block-size: 3px; background: #888; pointer-events: none; }
+.wp-ruler-tick.half { block-size: 6px; }
+.wp-ruler-num { position: absolute; top: 1px; font: 9px/1 system-ui, sans-serif; color: #555; transform: translateX(-50%); pointer-events: none; }
+.wp-ruler-mk { position: absolute; z-index: 1; cursor: ew-resize; touch-action: none; transform: translateX(-50%); }
+.wp-ruler-mk.out { opacity: .35; }
+/* הזחה: ריבוע בתחתית; שורה ראשונה: משולש למטה בראש; תלויה: משולש למעלה מעל הריבוע */
+.wp-ruler-indent { bottom: -3px; inline-size: 9px; block-size: 4px; background: #5f6b7c; }
+.wp-ruler-first, .wp-ruler-hang { inline-size: 0; block-size: 0; border-inline: 5px solid transparent; }
+.wp-ruler-first { top: -3px; border-top: 6px solid #5f6b7c; }
+.wp-ruler-hang { bottom: 1px; border-bottom: 6px solid #5f6b7c; }
+.wp-ruler-edge { top: 0; bottom: 0; inline-size: 7px; }
+.wp-ruler-edge:hover { background: rgb(45 74 138 / .25); }
+/* עצירת טאב: סימן לפי היישור (כמו ב-Word) */
+.wp-ruler-tab { bottom: 0; inline-size: 7px; block-size: 7px; box-sizing: border-box; border-bottom: 2px solid #222; }
+.wp-ruler-tab.al-start { border-right: 2px solid #222; }
+.wp-ruler-tab.al-end { border-left: 2px solid #222; }
+.wp-ruler-tab.al-center, .wp-ruler-tab.al-decimal { background: linear-gradient(#222, #222) center / 2px 100% no-repeat; }
+.wp-ruler-tab.al-decimal::after { content: ''; position: absolute; top: 1px; right: -1px; inline-size: 2px; block-size: 2px; background: #222; }
+.wp-ruler-guide { position: absolute; top: 0; block-size: 100vh; inline-size: 0; border-left: 1px dashed #2d4a8a; pointer-events: none; }
+.wp-preview .wp-ruler { display: none; }
+@media print { .wp-ruler { display: none !important; } }
