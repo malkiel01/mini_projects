@@ -235,6 +235,30 @@ jobs:
           files: ${{ env.OUT }}/store/*
           fail_on_unmatched_files: true
 
+      # השתקפות האפליקציה בקונסולת המפתח (guarded-browser/dev, "📱"): אותו APK, בטלפון וירטואלי של Appetize.io.
+      # רק כשיש סוד APPETIZE_API_TOKEN. יש מפתח ב-dev/appetize.json — מעדכנים את אותה אפליקציה (הקישור לא משתנה);
+      # אין — יוצרים אחת, והמפתח מודפס בסיכום, לשמירה ב-dev/appetize.json. כישלון כאן לא מכשיל את הבנייה.
+      - name: Upload to the virtual phone (Appetize.io)
+        if: github.ref == 'refs/heads/main' && steps.key.outputs.signed == '1'
+        continue-on-error: true
+        env:
+          APPETIZE_API_TOKEN: ${{ secrets.APPETIZE_API_TOKEN }}
+        shell: bash
+        run: |
+          if [ -z "$APPETIZE_API_TOKEN" ]; then echo "אין APPETIZE_API_TOKEN — מדלגים"; exit 0; fi
+          KEY=$(jq -r '.publicKey // ""' ../dev/appetize.json)
+          APK="https://github.com/${{ github.repository }}/releases/download/guarded-browser-apk/migdalor.apk"
+          BODY=$(jq -n --arg u "$APK" '{url: $u, platform: "android", fileType: "apk", note: "מגדלור 1.${{ github.run_number }}"}')
+          if [ -n "$KEY" ]; then URL="https://api.appetize.io/v1/apps/$KEY"; else URL="https://api.appetize.io/v1/apps"; fi
+          RES=$(curl -sS --fail-with-body -X POST "$URL" -H "X-API-KEY: $APPETIZE_API_TOKEN" -H 'Content-Type: application/json' -d "$BODY")
+          NEW=$(echo "$RES" | jq -r '.publicKey // ""')
+          echo "Appetize: publicKey=$NEW versionCode=$(echo "$RES" | jq -r '.versionCode // ""')"
+          {
+            echo "### 📱 הטלפון הווירטואלי (Appetize.io)"
+            if [ -n "$KEY" ]; then echo "- עודכן לגרסה 1.${{ github.run_number }} — \`$NEW\`"
+            else echo "- נוצרה אפליקציה חדשה. לשמור את המפתח \`$NEW\` ב-\`guarded-browser/dev/appetize.json\`"; fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Summary
         if: always()
         env:

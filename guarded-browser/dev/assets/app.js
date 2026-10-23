@@ -605,6 +605,30 @@ function renderSearch(x) {
 $('#menu-btn').addEventListener('click', () => { $('#pass-box').hidden = true; $('#menu-dlg').showModal(); });
 $('#m-pass').addEventListener('click', () => { $('#pass-box').hidden = false; $('#p-cur').focus(); });
 $('#m-admin').addEventListener('click', () => { location.href = '../admin/'; });
+
+/* ── השתקפות האפליקציה: ה-APK האמיתי בטלפון וירטואלי (Appetize.io) ── */
+async function openPhone() {
+    $('#menu-dlg').close();
+    const dlg = $('#phone-dlg'), frame = $('#phone-frame'), note = $('#phone-note');
+    frame.replaceChildren();
+    let key = '';
+    try { key = String((await (await fetch('appetize.json', { cache: 'no-store' })).json()).publicKey || ''); } catch (e) { /* אין קובץ */ }
+    if (!/^[A-Za-z0-9_]{6,64}$/.test(key)) {
+        note.textContent = 'הטלפון הווירטואלי עוד לא מחובר. צריך מפתח API של Appetize.io בסודות של GitHub (APPETIZE_API_TOKEN); ' +
+            'הבנייה הבאה של האפליקציה מעלה אותה לשם, ואת המפתח שמתקבל שומרים ב-dev/appetize.json.';
+    } else {
+        note.textContent = 'זו האפליקציה האמיתית — אותה גרסה שהילדים מקבלים, בטלפון וירטואלי. בכניסה הראשונה מצמידים אותה לילד לבדיקה, כמו בטלפון.';
+        frame.append(el('iframe', {
+            src: `https://appetize.io/embed/${key}?device=pixel7&scale=auto&autoplay=true&locale=he`,
+            title: 'מגדלור בטלפון וירטואלי', allow: 'autoplay; clipboard-read; clipboard-write', loading: 'eager',
+        }));
+    }
+    if (!dlg.open) dlg.showModal();
+}
+$('#phone-btn').addEventListener('click', openPhone);
+$('#m-phone').addEventListener('click', openPhone);
+// סגירה — ה-iframe מתרוקן, כדי שהטלפון הווירטואלי ייעצר (דקות השימוש נספרות רק כשהוא פתוח).
+$('#phone-dlg').addEventListener('close', () => $('#phone-frame').replaceChildren());
 $('#m-link').addEventListener('click', () => { $('#menu-dlg').close(); showAuth(false, true); });
 $('#auth-new').addEventListener('click', async () => {
     if (state.me) return location.reload();
