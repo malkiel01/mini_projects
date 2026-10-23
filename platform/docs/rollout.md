@@ -78,7 +78,7 @@
 | catering-menu | ✅ | רק קוד מנהל | — | — (נבדק 2026-10-19) |
 | claude-tasks | ✅ | ✅ (לבדוק) | — | 3 אם יש משתמשים |
 | git-deploy | ✅ | רק סיסמת כניסה | — | לדלג על login.php למשתמש פלטפורמה, ולבטל את חסימת ה-IP |
-| data-embed-for-clients, renovation-punchlist, file-merger | ✅ | — | — | — |
+| data-embed-for-clients, renovation-punchlist | ✅ | — | — | — |
 | database-analyzer, frame-browser, pdf-merger, sketches-3d, sukkah-sketch | ✅ | — | — | — |
 
 ## צעד 6 — מה חסר לכל אפליקציה (2026-10-19)
@@ -88,7 +88,7 @@
 | recipes-app | ✅ | ✅ — הדוגמה |
 | project-manager | ✅ | ✅ (#442) |
 | greeting-cards | **חסר** | ✅ |
-| document-templates, carpentry-3d, org-budget-proposals, file-merger, renovation-punchlist | ✅ | **חסר** |
+| document-templates, carpentry-3d, org-budget-proposals, renovation-punchlist | ✅ | **חסר** |
 | camera-app, claude-tasks, git-deploy, catering-menu, data-embed-for-clients, database-analyzer, frame-browser, pdf-merger, sketches-3d, sukkah-sketch | **חסר** | **חסר** |
 | whatsapp-ai-scanner, guarded-browser | — (נייטיב) | ✅ |
 

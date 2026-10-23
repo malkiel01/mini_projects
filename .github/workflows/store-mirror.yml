@@ -18,7 +18,6 @@ on:
       - 'Build Data Embed app (Google Play)'
       - 'Build Database Analyzer app (Google Play)'
       - 'Build Document Templates app (Google Play)'
-      - 'Build File Merger app (Google Play)'
       - 'Build Frame Browser app (Google Play)'
       - 'Build git-deploy app (Google Play)'
       - 'Build Greeting Cards app (APK + Google Play)'

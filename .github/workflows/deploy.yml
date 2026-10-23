@@ -271,6 +271,23 @@ jobs:
           echo "Deploy complete (נסיון $attempt מתוך $max)"
 
       # Digital Asset Links: קובץ אחד לכל הדומיין (https://mbe-plus.com/.well-known/assetlinks.json) — בלעדיו
+      # אפליקציות שנסגרו (platform/retired.json): rsync בלי --delete משאיר בשרת תיקייה שנמחקה מהריפו, והרישום
+      # היה ממשיך להציג אותה. platform/tools/retire-apps.php מעביר את ההרשאות לאפליקציה שנשארה, מנקה את המסד
+      # ומוחק את התיקייה ואת תיקיית החנות. חוזר על עצמו בלי נזק. לא מפיל את הפריסה.
+      - name: אפליקציות שנסגרו — העברת הרשאות ומחיקה מהשרת
+        if: success()
+        continue-on-error: true
+        env:
+          DEST: ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          SSH="ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ConnectTimeout=30"
+          for w in 0 30 90; do
+            sleep $w
+            if $SSH "$DEST" "cd '${DEPLOY_PATH%/}' && php platform/tools/retire-apps.php"; then exit 0; fi
+          done
+          echo "::warning::retire-apps.php לא רץ — ינסה שוב בפריסה הבאה"
+
       # אפליקציית אנדרואיד (TWA) נפתחת עם שורת כתובת. הקובץ יושב בשורש הדומיין, מחוץ ל-DEPLOY_PATH (הותר
       # במפורש, 2026-10-19). מאוחד מהקיים בשרת (שום רשומה לא נמחקת), מתיקיית החנות של כל אפליקציה
       # ("install.release") ומ-<app>/.well-known/assetlinks.json — platform/tools/assetlinks.php.

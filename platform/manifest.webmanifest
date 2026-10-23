@@ -74,26 +74,82 @@
       "platform": "webapp",
       "url": "https://mbe-plus.com/mini_projects/platform/manifest.webmanifest"
     },
-    { "platform": "play", "id": "com.mbeplus.camera" },
-    { "platform": "play", "id": "com.mbeplus.carpentry" },
-    { "platform": "play", "id": "com.mbeplus.catering" },
-    { "platform": "play", "id": "com.mbeplus.claudetasks" },
-    { "platform": "play", "id": "com.mbeplus.dataembed" },
-    { "platform": "play", "id": "com.mbeplus.dbanalyzer" },
-    { "platform": "play", "id": "com.mbeplus.doctemplates" },
-    { "platform": "play", "id": "com.mbeplus.filemerger" },
-    { "platform": "play", "id": "com.mbeplus.framebrowser" },
-    { "platform": "play", "id": "com.mbeplus.gitdeploy" },
-    { "platform": "play", "id": "com.mbeplus.greetingcards" },
-    { "platform": "play", "id": "com.mbeplus.guardedbrowser" },
-    { "platform": "play", "id": "com.mbeplus.orgbudget" },
-    { "platform": "play", "id": "com.mbeplus.pdfmerger" },
-    { "platform": "play", "id": "com.mbeplus.projectmanager" },
-    { "platform": "play", "id": "com.mbeplus.punchlist" },
-    { "platform": "play", "id": "com.mbeplus.recipes" },
-    { "platform": "play", "id": "com.mbeplus.sketches3d" },
-    { "platform": "play", "id": "com.mbeplus.sukkah" },
-    { "platform": "play", "id": "com.mbeplus.wascanner" }
+    {
+      "platform": "play",
+      "id": "com.mbeplus.camera"
+    },
+    {
+      "platform": "play",
+      "id": "com.mbeplus.carpentry"
+    },
+    {
+      "platform": "play",
+      "id": "com.mbeplus.catering"
+    },
+    {
+      "platform": "play",
+      "id": "com.mbeplus.claudetasks"
+    },
+    {
+      "platform": "play",
+      "id": "com.mbeplus.dataembed"
+    },
+    {
+      "platform": "play",
+      "id": "com.mbeplus.dbanalyzer"
+    },
+    {
+      "platform": "play",
+      "id": "com.mbeplus.doctemplates"
+    },
+    {
+      "platform": "play",
+      "id": "com.mbeplus.framebrowser"
+    },
+    {
+      "platform": "play",
+      "id": "com.mbeplus.gitdeploy"
+    },
+    {
+      "platform": "play",
+      "id": "com.mbeplus.greetingcards"
+    },
+    {
+      "platform": "play",
+      "id": "com.mbeplus.guardedbrowser"
+    },
+    {
+      "platform": "play",
+      "id": "com.mbeplus.orgbudget"
+    },
+    {
+      "platform": "play",
+      "id": "com.mbeplus.pdfmerger"
+    },
+    {
+      "platform": "play",
+      "id": "com.mbeplus.projectmanager"
+    },
+    {
+      "platform": "play",
+      "id": "com.mbeplus.punchlist"
+    },
+    {
+      "platform": "play",
+      "id": "com.mbeplus.recipes"
+    },
+    {
+      "platform": "play",
+      "id": "com.mbeplus.sketches3d"
+    },
+    {
+      "platform": "play",
+      "id": "com.mbeplus.sukkah"
+    },
+    {
+      "platform": "play",
+      "id": "com.mbeplus.wascanner"
+    }
   ],
   "prefer_related_applications": false
 }
