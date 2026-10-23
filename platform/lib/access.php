@@ -12,6 +12,7 @@
  *   3. אחרת — הרשאה לקטגוריה שהאפליקציה נמצאת בה. חוץ מאפליקציה "restricted"
  *      ב-app.json: היא נפתחת רק בהרשאה ישירה (סעיף 2).
  *   4. אחרת — לא.
+ * תוסף ("plugin" ב-app.json) — רק למנהל, תמיד; גם הרשאה ישירה לא פותחת אותו.
  * הרשאה לקטגוריה כוללת גם אפליקציות שיתווספו אליה בעתיד.
  */
 
@@ -98,8 +99,9 @@ function apps_effective(): array
         $o = $overrides[$app['id']] ?? null;
         $app['default_category'] = $app['category'];
         if ($o && $o['category'] && in_array($o['category'], $known, true)) $app['category'] = $o['category'];
-        // קטגוריה שנמחקה — האפליקציה לא נעלמת, היא עוברת ל"אחר".
-        if (!in_array($app['category'], $known, true)) $app['category'] = 'other';
+        // קטגוריה שנמחקה — האפליקציה לא נעלמת, היא עוברת ל"אחר". לתוסף — קטגוריה פנימית משלו.
+        if ($app['plugin']) $app['category'] = PLUGIN_CATEGORY;
+        elseif (!in_array($app['category'], $known, true)) $app['category'] = 'other';
         $app['hidden'] = (bool)($o['hidden'] ?? false);
         $app['install_ok'] = !isset($installHidden[$app['id']]);
         // מחוברת = השער פעיל: נכנסים רק עם חשבון בפלטפורמה והרשאה לאפליקציה.
@@ -134,7 +136,7 @@ function grants_of(int $userId): array
 
 function can_see(array $app, array $grants): bool
 {
-    if ($app['hidden']) return false;
+    if ($app['hidden'] || $app['plugin']) return false;
     if (array_key_exists($app['id'], $grants['apps'])) return $grants['apps'][$app['id']];
     // restricted: הרשאה לקטגוריה לא פותחת אותה — רק אישור ישיר לאפליקציה.
     if ($app['restricted']) return false;
@@ -158,7 +160,12 @@ function visible_for(array $user): array
         $categories[] = ['id' => 'other', 'name' => 'אחר', 'icon' => '📦'];
     }
     $admin = $user['role'] === 'admin';
-    return ['categories' => $categories, 'apps' => array_map(fn($a) => app_public($a, $admin), $apps)];
+    // תוספים לא ברשימת הכלים — הם באזור "🧩 תוספים" של המנהל
+    $plugins = array_values(array_filter($apps, fn($a) => $a['plugin']));
+    $apps = array_values(array_filter($apps, fn($a) => !$a['plugin']));
+    $out = ['categories' => $categories, 'apps' => array_map(fn($a) => app_public($a, $admin), $apps)];
+    if ($admin) $out['plugins'] = array_map(fn($a) => app_public($a, true), $plugins);
+    return $out;
 }
 
 function app_public(array $a, bool $admin = false): array

@@ -52,6 +52,7 @@ window.PlatformAdmin = (() => {
             ['users', '👥', 'משתמשים', n],
             ['usage', '📊', 'שימוש', 0],
             ['catalog', '🗂️', 'אפליקציות', 0],
+            ['plugins', '🧩', 'תוספים', 0],
             ['sso', '🔗', 'חיבורים', 0],
             ['diag', '📜', 'יומן', 0],
             ['probe', '🩺', 'שרת', 0],
@@ -65,7 +66,7 @@ window.PlatformAdmin = (() => {
             return b;
         }));
         const body = tab === 'users' ? renderUsers() : tab === 'usage' ? renderUsage()
-            : tab === 'catalog' ? renderCatalog() : tab === 'sso' ? renderSso() : tab === 'diag' ? renderDiag() : renderProbe();
+            : tab === 'catalog' ? renderCatalog() : tab === 'plugins' ? renderPlugins() : tab === 'sso' ? renderSso() : tab === 'diag' ? renderDiag() : renderProbe();
         root.replaceChildren(el('div', { className: 'admin' }, [tabs, body]));
     }
 
@@ -830,7 +831,7 @@ window.PlatformAdmin = (() => {
         const add = el('div', { className: 'cat-row' }, [newIcon, newName,
             button('➕ הוספה', () => act('admin_category_save', { name: newName.value, icon: newIcon.value }, 'נוספה'), 'primary')]);
 
-        const apps = state.apps.map(app => {
+        const apps = state.apps.filter(a => !a.plugin).map(app => {
             const sel = el('select', {}, state.categories.map(c =>
                 el('option', { value: c.id, textContent: `${c.icon} ${c.name}` })));
             sel.value = app.category;
@@ -861,6 +862,30 @@ window.PlatformAdmin = (() => {
                 '"🔌 מחוברת" — נכנסים לאפליקציה רק עם חשבון בפלטפורמה והרשאה אליה, והכניסה אליה אוטומטית. מורידים את הסימון כדי לנתק אותה: היא תעמוד לבד, ' +
                 'ובוחרים איך עוד אפשר להיכנס אליה (סיסמה משלה, Google). אפשר לחבר מחדש בכל רגע.' }),
             ...apps,
+        ]);
+    }
+
+    // ---------- תוספים ----------
+    // רכיב משותף לאפליקציות (למשל תשלומים) — "plugin": true ב-app.json. רק המנהל רואה ונכנס (השער),
+    // ולא ברשימת הכלים. האפליקציות מתחברות אליו ב-API חתום, לא ב-require לקבצים שלו.
+    function renderPlugins() {
+        const plugins = state.apps.filter(a => a.plugin);
+        const rows = plugins.map(p => {
+            const entries = p.links.length ? p.links : [{ label: 'פתיחה', href: p.href }];
+            return el('div', { className: 'app-row' }, [
+                appIc(p.id),
+                el('div', { className: 'plugin-tx' }, [
+                    el('strong', { textContent: p.name }),
+                    el('span', { className: 'muted small', textContent: p.description }),
+                ]),
+                ...entries.map(l => el('a', { className: 'btn', href: l.href, textContent: l.label })),
+            ]);
+        });
+        return el('div', {}, [
+            el('h3', { textContent: '🧩 תוספים' }),
+            el('p', { className: 'muted small', textContent: 'רכיבים משותפים שהאפליקציות משתמשות בהם — רק למנהל, ולא ברשימת הכלים. ' +
+                'תוסף נרשם ב-app.json עם "plugin": true (ראו platform/README.md, "תוספים").' }),
+            ...(rows.length ? rows : [el('p', { className: 'muted', textContent: 'עוד אין תוספים.' })]),
         ]);
     }
 

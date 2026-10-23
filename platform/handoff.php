@@ -54,7 +54,8 @@ try {
         exit;
     }
     $found = null;
-    foreach (visible_for($user)['apps'] as $a) if ($a['id'] === $app) $found = $a;
+    $visible = visible_for($user);
+    foreach ([...$visible['apps'], ...($visible['plugins'] ?? [])] as $a) if ($a['id'] === $app) $found = $a;
     $cfg = \Platform\Gate\app_config($app);
     if (!$found || !$cfg || empty($cfg['gate']) || \Platform\Gate\is_detached($app)) {
         handoff_log('handoff:forbidden', $app, $user);

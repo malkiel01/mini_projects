@@ -116,6 +116,7 @@ function pdo(): \PDO
 function can_use(array $user, string $app, array $cfg): bool
 {
     if ($user['role'] === 'admin') return true;
+    if (!empty($cfg['plugin'])) return false; // תוסף — רק למנהל
     $o = pdo()->prepare('SELECT category, hidden FROM app_overrides WHERE app_id = ?');
     try {
         $o->execute([$app]);
