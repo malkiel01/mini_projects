@@ -226,7 +226,7 @@ async function skillSheet() {
     const pane = (name, steps, buttons) => h('section', { class: 'card' }, h('h3', {}, name), h('ol', { class: 'steps' }, steps.map(s => h('li', {}, s))), h('div', { class: 'row-actions' }, buttons));
     sheet('סקיל לצ\'אט', h('div', {},
         h('p', { class: 'hint' }, 'הסקיל מלמד את הצ\'אט ליצור רקע בלי טקסט, ולתת קובץ פריסה שהעורך הופך לשכבות. בלי טוקנים — על החשבון שלכם בצ\'אט.'),
-        pane('ChatGPT', ['להעתיק את ההוראות', 'להדביק בתחילת שיחה חדשה (או ב-Project / GPT משלכם)', 'לבקש: "רקע למודעה של…"', 'להוריד את התמונה ולהעתיק את ה-JSON → "ייבוא מהצ\'אט"'],
+        pane('ChatGPT', ['להעתיק את ההוראות', 'להדביק בתחילת שיחה חדשה (או ב-Project / GPT משלכם)', 'לבקש: "רקע למודעה של…"', 'בכל סבב: JSON ותפריט "מה עכשיו?", ואז תמונה. חסר משהו? לכתוב "json"', 'בסוף: להוריד את כל התמונות ולהעתיק את ה-JSON האחרון → "ייבוא מהצ\'אט"'],
             [h('button', { class: 'btn primary', onclick: () => copy(prompt, 'הסקיל') }, '📋 העתקה'), h('a', { class: 'btn ghost', href: 'https://chatgpt.com/', target: '_blank', rel: 'noopener' }, '↗ ChatGPT')]),
         pane('Gemini', ['להעתיק את ההוראות', 'ליצור Gem חדש ולהדביק, או להדביק בתחילת שיחה', 'לבקש רקע, ולייבא כמו למעלה'],
             [h('button', { class: 'btn primary', onclick: () => copy(prompt, 'הסקיל') }, '📋 העתקה'), h('a', { class: 'btn ghost', href: 'https://gemini.google.com/', target: '_blank', rel: 'noopener' }, '↗ Gemini')]),
