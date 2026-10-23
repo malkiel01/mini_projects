@@ -57,12 +57,12 @@ async function listView() {
     ] });
     const search = h('input', { type: 'search', placeholder: 'חיפוש', 'aria-label': 'חיפוש' });
     const list = h('ul.list', h('li.empty', 'טוען…'));
-    const fileIn = h('input', { type: 'file', accept: '.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document', hidden: true, onchange: importDocx });
+    const fileIn = h('input', { type: 'file', accept: '.docx,.odt,.html,.htm,.txt,.md,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.oasis.opendocument.text,text/html,text/plain', hidden: true, onchange: importFile });
     main.textContent = '';
     main.append(
         h('div.toolbar', search, h('button.btn.primary', { onclick: newDoc }, h('span', { 'aria-hidden': 'true' }, '+'), ' מסמך')),
         h('div.tiles', { style: { marginBottom: '12px' } },
-            h('button.tile', { type: 'button', onclick: () => fileIn.click() }, h('span.tile-ic', { 'aria-hidden': 'true' }, '📥'), 'ייבוא מסמך Word (‎.docx)')),
+            h('button.tile', { type: 'button', onclick: () => fileIn.click() }, h('span.tile-ic', { 'aria-hidden': 'true' }, '📥'), 'ייבוא מסמך — Word, ‏ODT, ‏HTML או טקסט')),
         fileIn, list);
     let docs = [];
     const paint = () => {
@@ -127,7 +127,7 @@ async function newDoc() {
     } catch (e) { toast(e.message, true); }
 }
 
-async function importDocx(e) {
+async function importFile(e) {
     const f = e.target.files[0];
     e.target.value = '';
     if (!f) return;
@@ -135,7 +135,7 @@ async function importDocx(e) {
     fd.append('file', f);
     toast('מייבא…');
     try {
-        const r = await fetch('api.php?action=my_new&title=', { method: 'POST', body: withTitle(fd, f.name.replace(/\.docx$/i, '')), headers: { 'X-WP': '1', 'X-Tab': tab } });
+        const r = await fetch('api.php?action=my_new&title=', { method: 'POST', body: withTitle(fd, f.name.replace(/\.(docx|odt|html?|txt|md)$/i, '')), headers: { 'X-WP': '1', 'X-Tab': tab } });
         const d = await r.json();
         if (!r.ok) throw new Error(d.error || 'הייבוא נכשל');
         importReport = d.report || [];

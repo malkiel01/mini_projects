@@ -1204,3 +1204,38 @@ const IMPORT_REPORT = [
     'fonts' => ['גופנים שאינם זמינים', 'מוצגים ב-Heebo, זהה במסך, בהדפסה וב-PDF'],
 ];
 const TWIP_PER_MM_IMPORT = 56.6929;
+
+// ======================================================================
+// קובץ שהועלה — לפי התוכן (לא לפי הסיומת): docx, ODT, HTML, טקסט
+// ======================================================================
+
+require_once __DIR__ . '/import_odt.php';
+
+/**
+ * ייבוא קובץ שהמשתמש העלה (my_new): Word (docx), OpenDocument (ODT), HTML, או טקסט (UTF-8 / Windows-1255) — כל
+ * שורה פסקה, "# " כותרת, "- " תבליט (import_lines). RTF / doc ישן — שגיאה עם הסבר. מחזיר ['json', 'page', 'report'].
+ */
+function import_file(string $bytes, string $name, string $docId): array
+{
+    $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+    if (str_starts_with($bytes, 'PK')) {
+        if (is_odt($bytes)) return import_odt($bytes, $docId);
+        return import_docx($bytes, $docId);
+    }
+    if (str_starts_with($bytes, '{\\rtf')) throw new ApiError('קובץ RTF עדיין לא נתמך — שמרו אותו ב-Word או ב-LibreOffice כ-docx או כ-ODT', 'bad_file');
+    if (str_starts_with($bytes, "\xD0\xCF\x11\xE0")) throw new ApiError('קובץ Word ישן (‎.doc) לא נתמך — שמרו אותו כ-docx', 'bad_file');
+    if (!mb_check_encoding($bytes, 'UTF-8')) {
+        $conv = @iconv('WINDOWS-1255', 'UTF-8//IGNORE', $bytes);
+        if ($conv === false) throw new ApiError('הקובץ אינו מסמך שאפשר לייבא', 'bad_file');
+        $bytes = $conv;
+    }
+    $bytes = preg_replace('/^\xEF\xBB\xBF/', '', $bytes);
+    if (in_array($ext, ['html', 'htm'], true) || preg_match('/^\s*(<!doctype html|<html|<body|<meta|<p[\s>]|<div[\s>]|<h[1-6][\s>])/i', $bytes)) {
+        // מסמך שלם — רק מה שבתוך body
+        if (preg_match('#<body[^>]*>(.*)</body>#is', $bytes, $m)) $bytes = $m[1];
+        return import_html($bytes, $docId) + ['report' => []];
+    }
+    if (str_contains($bytes, "\0")) throw new ApiError('הקובץ אינו מסמך שאפשר לייבא', 'bad_file');
+    return import_lines($bytes) + ['report' => []];
+}
+

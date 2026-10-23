@@ -1,5 +1,9 @@
-/** ייבוא Word (ליקוי ו' באפיון): מה שלא עבר בדיוק — בדוח שנפתח עם המסמך; מסמך שעבר כולו — הודעה קצרה בלבד. */
+/**
+ * ייבוא Word (ליקוי ו' באפיון): מה שלא עבר בדיוק — בדוח שנפתח עם המסמך; מסמך שעבר כולו — הודעה קצרה בלבד.
+ * אותו כפתור מייבא גם ODT (LibreOffice), HTML וטקסט — לפי התוכן.
+ */
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 
 // docx קטן: טקסט, הערה (comment), גופן שאינו זמין, ומספר עמוד בכותרת התחתונה
 const docx = (extra) => execFileSync('php', ['-r', `
@@ -16,8 +20,8 @@ const docx = (extra) => execFileSync('php', ['-r', `
 
 export default async function (t) {
     const p = await t.page();
-    const upload = async (buffer, name) => {
-        await p.setInputFiles('input[type=file][accept*=docx]', { name, mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', buffer });
+    const upload = async (buffer, name, mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') => {
+        await p.setInputFiles('input[type=file][accept*=docx]', { name, mimeType, buffer });
         await p.waitForSelector('.wp-doc');
     };
 
@@ -55,5 +59,20 @@ export default async function (t) {
     await p.waitForTimeout(300);
     t.ok('מסמך שעבר כולו — בלי דוח, רק הודעה', await p.locator('dialog').count() === 0
         && (await p.locator('.toast:not([hidden])').textContent()).includes('יובא במלואו'));
+
+    // ODT מ-LibreOffice (tests/fixtures): כותרת, טבלה, תמונה; השם — בלי הסיומת
+    await p.click('button[aria-label="חזרה לרשימה"]');
+    await p.waitForSelector('h1:text-is("עורך התמלילים")');
+    await upload(readFileSync(new URL('../../fixtures/libreoffice.odt', import.meta.url)), 'מליברה.odt', 'application/vnd.oasis.opendocument.text');
+    await t.settle(p);
+    const odt = await p.evaluate(() => ({ h1: document.querySelector('.wp-doc h1')?.textContent, td: document.querySelectorAll('.wp-doc td').length,
+        img: !!document.querySelector('.wp-doc img[src]'), doc: location.hash.split('/').pop() }));
+    odt.title = (await t.api(p, 'my_open', { doc: odt.doc })).title;
+    t.ok('ODT: נפתח עם הכותרת, הטבלה והתמונה, והשם בלי הסיומת', odt.h1 === 'כותרת ראשית' && odt.td === 3 && odt.img && odt.title === 'מליברה', JSON.stringify(odt));
+    await p.click('button[aria-label="חזרה לרשימה"]');
+    await p.waitForSelector('h1:text-is("עורך התמלילים")');
+    await upload(Buffer.from('<html><body><h2>מדף אינטרנט</h2><p>פסקה <i>נטויה</i></p></body></html>'), 'דף.html', 'text/html');
+    await t.settle(p);
+    t.ok('HTML: נפתח עם הכותרת והעיצוב', (await p.locator('.wp-doc h2').textContent()) === 'מדף אינטרנט' && await p.locator('.wp-doc em').count() === 1);
     t.ok('בלי שגיאות JS', !p.errors.length, p.errors.join(' | '));
 }

@@ -321,7 +321,8 @@ function app_action(string $action, array $in): never
             $id = doc_new($space, (string)($in['title'] ?? ''), null, $in['page'] ?? null, $uid, $uname);
             if (!empty($_FILES['file']['tmp_name']) || is_string($in['import'] ?? null)) {
                 $bytes = !empty($_FILES['file']['tmp_name']) ? uploaded_bytes($in) : base64_decode((string)$in['import']);
-                $imp = import_docx($bytes, $id);
+                // Word, ODT, HTML או טקסט — לפי התוכן (import_file)
+                $imp = import_file($bytes, (string)($_FILES['file']['name'] ?? ''), $id);
                 $row = doc_find($id, $space);
                 if ($imp['page']) $row = doc_set_page($row, $imp['page']);
                 doc_save($row, $imp['json'], null, $uid, $uname);
