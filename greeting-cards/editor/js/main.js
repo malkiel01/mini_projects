@@ -7,6 +7,7 @@ import { History } from './history.js';
 import { designs, assets } from './db.js';
 import { Canvas } from './canvas.js';
 import { ingestImage, importFromChat, blobToImage, canvasToBlob, exportPdf, exportGcard, safeName, personalSkill, skillAsPrompt, skillZip } from './io.js';
+import * as sync from './sync.js';
 
 const app = $('#app');
 let ed = null;   // העיצוב הפתוח: { id, doc, history, canvas, dirty }
@@ -16,7 +17,8 @@ let ed = null;   // העיצוב הפתוח: { id, doc, history, canvas, dirty }
 async function showHome() {
     ed = null;
     document.title = 'סטודיו עיצוב';
-    const list = await designs.list().catch(() => []);
+    const { list, online } = await sync.listDesigns().catch(() => ({ list: [], online: false }));
+    const me = sync.currentUser();
     const tiles = h('div', { class: 'tiles' },
         tile('➕', 'עיצוב חדש', newDesignSheet),
         tile('📥', 'ייבוא מהצ\'אט', importSheet),
@@ -25,19 +27,23 @@ async function showHome() {
 
     const rows = list.length
         ? h('ul', { class: 'list', 'aria-label': 'העיצובים שלי' }, list.map(d => h('li', { class: 'row' },
-            h('button', { class: 'row-main', onclick: () => openDesign(d.id) },
+            h('button', { class: 'row-main', onclick: () => openDesign(d.id, null, d) },
                 h('span', { class: 'thumb', style: { aspectRatio: `${d.w} / ${d.h}` } },
-                    d.thumb ? h('img', { src: URL.createObjectURL(d.thumb), alt: '' }) : null),
+                    d.thumb ? h('img', { src: URL.createObjectURL(d.thumb), alt: '' })
+                        : d.remoteThumb ? h('img', { src: sync.fileUrl(d.remoteThumb), alt: '', loading: 'lazy' }) : null),
                 h('span', { class: 'row-text' },
                     h('span', { class: 'row-title' }, d.title),
-                    h('span', { class: 'row-sub' }, `\u2066${d.w}×${d.h}\u2069 · ${timeAgo(d.updatedAt)}`)),
+                    h('span', { class: 'row-sub' }, `\u2066${d.w}×${d.h}\u2069 · ${timeAgo(d.updatedAt)}`,
+                        d.remoteOnly ? ' · ☁️' : !d.synced && online ? ' · ⏳' : '')),
                 h('span', { class: 'chev', 'aria-hidden': 'true' }, '‹')),
             h('button', { class: 'icon-btn', 'aria-label': `פעולות על ${d.title}`, onclick: () => designMenu(d) }, '⋯'))))
         : h('p', { class: 'empty' }, 'עוד אין עיצובים. התחילו מעיצוב חדש, או ייבאו רקע מהצ\'אט.');
 
     app.replaceChildren(
-        h('header', { class: 'topbar' }, h('h1', {}, '🎨 סטודיו עיצוב')),
+        h('header', { class: 'topbar' }, h('h1', { style: { flex: '1' } }, '🎨 סטודיו עיצוב'),
+            me ? h('button', { class: 'icon-btn', 'aria-label': `החשבון: ${me.name || me.email || ''}`, onclick: accountSheet }, '👤') : null),
         h('main', { class: 'home' },
+            online ? null : h('p', { class: 'hint warn' }, 'אין חיבור לשרת — העבודה נשמרת במכשיר, ותישלח כשהחיבור יחזור.'),
             h('p', { class: 'hint' }, 'מבקשים מהצ\'אט רקע עם הסקיל, מייבאים אותו לכאן, ומוסיפים טקסטים, תמונות וצורות.'),
             tiles,
             h('h2', { class: 'section' }, 'העיצובים שלי'),
@@ -68,26 +74,30 @@ async function createDesign(w, hgt, label) {
     closeSheet();
     const doc = newDoc(w, hgt, `${label} חדש`);
     const id = uid('d');
-    await designs.put({ id, title: doc.title, doc, updatedAt: Date.now() });
+    await designs.put({ id, title: doc.title, doc, updatedAt: Date.now(), owner: sync.currentUser()?.id, synced: false });
     openDesign(id);
 }
 
 function designMenu(d) {
     sheet(d.title, h('div', { class: 'menu' },
-        h('button', { class: 'menu-item', onclick: () => openDesign(d.id) }, '✏️ פתיחה'),
+        h('button', { class: 'menu-item', onclick: () => openDesign(d.id, null, d) }, '✏️ פתיחה'),
         h('button', { class: 'menu-item', onclick: async () => {
+            if (d.remoteOnly) await sync.pull(d.id);
             const rec = await designs.get(d.id);
             const id = uid('d');
-            await designs.put({ ...rec, id, title: rec.title + ' (עותק)', updatedAt: Date.now() });
+            await designs.put({ ...rec, id, title: rec.title + ' (עותק)', updatedAt: Date.now(), serverVersion: 0, synced: false });
+            sync.push(id).catch(() => {});
             closeSheet(); showHome(); toast('שוכפל');
         } }, '⧉ שכפול'),
         h('button', { class: 'menu-item', onclick: async () => {
+            if (d.remoteOnly) await sync.pull(d.id);
             const rec = await designs.get(d.id);
             await download(await exportGcard(rec.doc), safeName(rec.title) + '.gcard').catch(e => toast(e.message, 'error'));
         } }, '⬇️ הורדה כקובץ עיצוב'),
         h('button', { class: 'menu-item danger', onclick: async () => {
             if (!(await confirmDialog(`למחוק את "${d.title}"? אי אפשר לבטל.`, 'מחיקה', true))) return;
             await designs.remove(d.id);
+            try { await sync.removeRemote(d.id); } catch { toast('נמחק מהמכשיר; מהשרת — כשיהיה חיבור', 'error'); }
             showHome(); toast('נמחק');
         } }, '🗑️ מחיקה')));
 }
@@ -120,7 +130,7 @@ async function runImport(files, pasted) {
     try {
         const { doc, loaded, fixes } = await importFromChat(files, pasted);
         const id = uid('d');
-        await designs.put({ id, title: doc.title, doc, updatedAt: Date.now() });
+        await designs.put({ id, title: doc.title, doc, updatedAt: Date.now(), owner: sync.currentUser()?.id, synced: false });
         closeSheet();
         await openDesign(id, loaded);
         if (fixes.length) {
@@ -154,7 +164,12 @@ async function skillSheet() {
 
 // ═══ מסך העריכה ═══════════════════════════════════════════════════════════
 
-async function openDesign(id, preloaded) {
+async function openDesign(id, preloaded, entry) {
+    // עיצוב ממכשיר אחר, או שהשתנה שם — מורידים את הגרסה העדכנית לפני הפתיחה.
+    if (entry?.remoteOnly || entry?.stale) {
+        toast('מוריד מהשרת…');
+        try { await sync.pull(id); } catch (e) { if (entry.remoteOnly) { toast('ההורדה נכשלה: ' + e.message, 'error'); return; } }
+    }
     const rec = await designs.get(id);
     if (!rec) { toast('העיצוב לא נמצא', 'error'); return showHome(); }
     closeSheet();
@@ -169,7 +184,12 @@ async function openDesign(id, preloaded) {
 
     app.replaceChildren(
         h('header', { class: 'topbar editor-top' },
-            h('button', { class: 'icon-btn', 'aria-label': 'חזרה לעיצובים', onclick: async () => { await saveNow(); showHome(); } }, '›'),
+            h('button', { class: 'icon-btn', 'aria-label': 'חזרה לעיצובים', onclick: async () => {
+                const id = ed.id;
+                await saveNow();
+                showHome();
+                sync.push(id, { withThumb: true }).catch(() => {});
+            } }, '›'),
             titleBtn, saveState, undoBtn, redoBtn,
             h('button', { class: 'btn primary sm', onclick: exportSheet }, '⬇️ ייצוא')),
         h('main', { class: 'editor' },
@@ -252,14 +272,32 @@ async function saveNow() {
     try {
         const big = Math.max(cur.doc.page.width, cur.doc.page.height);
         const thumb = await canvasToBlob(cur.canvas.pageCanvas(360 / big), 'image/jpeg', 0.8).catch(() => undefined);
-        await designs.put({ id: cur.id, title: cur.doc.title, doc: clone(cur.doc), updatedAt: Date.now(), thumb });
+        const prev = await designs.get(cur.id);
+        await designs.put({ ...prev, id: cur.id, title: cur.doc.title, doc: clone(cur.doc), updatedAt: Date.now(), thumb, owner: prev?.owner ?? sync.currentUser()?.id, synced: false });
         if (ed === cur) cur.saveState.textContent = 'נשמר ✓';
+        pushSoon(cur.id);
     } catch (e) {
         cur.dirty = true;
         cur.saveState.textContent = 'לא נשמר';
         toast('השמירה במכשיר נכשלה: ' + (e.message || e), 'error');
     }
 }
+
+// שליחה לשרת: כמה שניות אחרי השמירה במכשיר, כדי לא לשלוח בכל תזוזה.
+let pushTimer = null;
+function pushSoon(id) {
+    clearTimeout(pushTimer);
+    pushTimer = setTimeout(() => sync.push(id).catch(() => { if (ed?.id === id) ed.saveState.textContent = 'נשמר במכשיר'; }), 3000);
+}
+
+sync.onSync((type, data) => {
+    if (type === 'pushed' && ed?.id === data.id) {
+        // מזהי התמונות בשרת — גם לעותק שפתוח בעורך, כדי שהשמירה הבאה לא תעלה אותן שוב.
+        for (const [key, remote] of Object.entries(data.remotes)) if (ed.doc.assets[key]) ed.doc.assets[key].remote = remote;
+        if (data.synced) ed.saveState.textContent = '☁️ נשמר';
+    }
+    if (type === 'conflict') toast('העיצוב השתנה במכשיר אחר — השינויים מכאן נשמרו כעותק', 'error');
+});
 
 window.addEventListener('pagehide', () => { saveNow(); });
 document.addEventListener('visibilitychange', () => { if (document.hidden) saveNow(); });
@@ -743,4 +781,62 @@ function announce(l, pos) {
 
 // ═══ התחלה ════════════════════════════════════════════════════════════════
 
-showHome();
+// ─── חשבון ────────────────────────────────────────────────────────────────
+
+function accountSheet() {
+    const me = sync.currentUser();
+    sheet('החשבון', h('div', {},
+        h('p', { class: 'lead' }, me.name || me.email || 'משתמש'),
+        me.email ? h('p', { class: 'hint', dir: 'ltr' }, me.email) : null,
+        h('p', { class: 'hint' }, me.platform ? 'מחובר דרך הכלים הדיגיטליים.' : 'מחובר עם קוד במייל.',
+            me.role === 'owner' ? ' · מנהל המערכת' : ''),
+        me.role === 'owner' ? h('a', { class: 'btn ghost block', href: '../admin.html' }, '⚙️ ממשק הניהול') : null,
+        me.platform ? null : h('button', { class: 'btn ghost block', onclick: async () => { await sync.logout(); closeSheet(); showLogin(); } }, '🚪 יציאה')));
+}
+
+/** כניסה בלי סיסמה: קוד בן 6 ספרות במייל. בתוך הכלים הדיגיטליים המסך הזה לא מופיע — הכניסה אוטומטית. */
+function showLogin() {
+    document.title = 'כניסה — סטודיו עיצוב';
+    const email = h('input', { type: 'email', autocomplete: 'email', inputMode: 'email', dir: 'ltr', required: true, autofocus: true });
+    const code = h('input', { type: 'text', autocomplete: 'one-time-code', inputMode: 'numeric', maxLength: 6, dir: 'ltr' });
+    const codeField = field('הקוד מהמייל', code);
+    codeField.hidden = true;
+    const btn = h('button', { class: 'btn primary block', type: 'submit' }, 'שליחת קוד');
+    const msg = h('p', { class: 'hint', role: 'status', 'aria-live': 'polite' });
+    let step = 'email';
+    const form = h('form', { class: 'login', onsubmit: async e => {
+        e.preventDefault();
+        btn.disabled = true;
+        try {
+            if (step === 'email') {
+                await sync.requestCode(email.value);
+                step = 'code';
+                codeField.hidden = false;
+                email.readOnly = true;
+                btn.textContent = 'כניסה';
+                msg.textContent = `נשלח קוד ל-${email.value}. בדקו גם בספאם.`;
+                code.focus();
+            } else {
+                await sync.verifyCode(email.value, code.value);
+                showHome();
+            }
+        } catch (err) { msg.textContent = err.message; }
+        btn.disabled = false;
+    } }, field('מייל', email), codeField, btn, msg);
+    app.replaceChildren(
+        h('header', { class: 'topbar' }, h('h1', {}, '🎨 סטודיו עיצוב')),
+        h('main', { class: 'home' }, h('h2', { class: 'section' }, 'כניסה'), h('p', { class: 'hint' }, 'בלי סיסמה: נשלח אליכם קוד במייל.'), form));
+}
+
+async function start() {
+    try {
+        const { user } = await sync.whoami();
+        if (user) return showHome();
+        showLogin();
+    } catch (e) {
+        app.replaceChildren(h('main', { class: 'home' }, h('p', { class: 'empty' }, 'השרת לא זמין: ' + e.message),
+            h('button', { class: 'btn primary block', onclick: start }, 'ניסיון נוסף')));
+    }
+}
+
+start();

@@ -10,3 +10,4 @@ word-processor/data/media/
 word-processor/data/sso-config.json
 word-processor/tests/e2e/node_modules/
 time-clock/data/*.sqlite*
+greeting-cards/data/studio/
