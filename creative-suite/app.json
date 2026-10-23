@@ -6,8 +6,19 @@
   "description": "תוכנית האב לחבילת אפליקציות לעריכת מסמכים ותמונות (עימוד, רסטר, וקטורי ועורך התמלילים) עם קובץ משותף אחד — ‎.mbe. בשלב האפיון; ליבת הפורמט — גרסה 1.",
   "category": "documents",
   "links": [
-    { "label": "🧰 תוכנית האב", "href": "" },
-    { "label": "🔎 בודק ‎.mbe", "href": "mbe-core/inspector/" }
+    {
+      "label": "🧰 תוכנית האב",
+      "href": ""
+    },
+    {
+      "label": "🔎 בודק ‎.mbe",
+      "href": "mbe-core/inspector/"
+    },
+    {
+      "label": "📊 דשבורד",
+      "href": "dashboard/"
+    }
   ],
-  "gate": true
+  "gate": true,
+  "restricted": true
 }
