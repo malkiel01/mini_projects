@@ -966,9 +966,11 @@ final class Ooxml
         }
         $d = (int)round($g['dist'] * 12700);   // נקודות → EMU
         $abs = in_array($g['wrap'], ['behind', 'front'], true);
-        $posH = $abs ? '<wp:positionH relativeFrom="column"><wp:posOffset>' . (int)round((float)($a['x'] ?? 0) * EMU_PER_PX) . '</wp:posOffset></wp:positionH>'
+        // מעוגנת לעמוד: שני הצירים יחסית לעמוד (relativeFrom="page"), כמו בעורך
+        $pg = $abs && ($a['anchor'] ?? null) === 'page';
+        $posH = $abs ? '<wp:positionH relativeFrom="' . ($pg ? 'page' : 'column') . '"><wp:posOffset>' . (int)round((float)($a['x'] ?? 0) * EMU_PER_PX) . '</wp:posOffset></wp:positionH>'
             : '<wp:positionH relativeFrom="column"><wp:align>' . $g['align'] . '</wp:align></wp:positionH>';
-        $posV = '<wp:positionV relativeFrom="paragraph"><wp:posOffset>' . ($abs ? (int)round((float)($a['y'] ?? 0) * EMU_PER_PX) : 0) . '</wp:posOffset></wp:positionV>';
+        $posV = '<wp:positionV relativeFrom="' . ($pg ? 'page' : 'paragraph') . '"><wp:posOffset>' . ($abs ? (int)round((float)($a['y'] ?? 0) * EMU_PER_PX) : 0) . '</wp:posOffset></wp:positionV>';
         $wrapXml = match ($g['wrap']) {
             'square' => '<wp:wrapSquare wrapText="bothSides"/>',
             'tight' => '<wp:wrapTight wrapText="bothSides"><wp:wrapPolygon edited="0"><wp:start x="0" y="0"/><wp:lineTo x="0" y="21600"/>'

@@ -70,6 +70,11 @@ jobs:
       - name: DevLoop gate (every copy matches devloop/src)
         run: php devloop/tools/sync.php --check
 
+      # ליבת ‎.mbe (creative-suite/mbe-core/src) — מועתקת לאפליקציות שב-creative-suite/mbe-core/apps.json.
+      # עותק ששונה בתוך אפליקציה, או schemas.* שלא נבנו מ-schema/ — נעצר כאן. עורכים במקור ומריצים sync.php.
+      - name: mbe-core gate (every copy matches creative-suite/mbe-core/src)
+        run: php creative-suite/mbe-core/tools/sync.php --check
+
       # השער: לכל אפליקציה שב-app.json שלה "gate": true — .user.ini ובלוק בראש
       # ה-.htaccess, בעותק שבמכונה הזו בלבד (לא בגיט). ראו platform/build-gate.php.
       - name: Build the platform gate
@@ -177,6 +182,7 @@ jobs:
           max=4
           until rsync -rlptz \
             --exclude='.git' --exclude='.github' --exclude='/devloop/' --exclude='/.devloop.json' --exclude='/.claude/skills/devloop/assets/' \
+            --exclude='/creative-suite/mbe-core/tools/' --exclude='/creative-suite/mbe-core/tests/' \
             --exclude='git-deploy/data/config.json' \
             --exclude='git-deploy/data/logs/' --exclude='git-deploy/data/cache/' \
             --exclude='renovation-punchlist/data/config.json' \

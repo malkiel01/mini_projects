@@ -1,0 +1,262 @@
+[
+  {
+    "file": "hostile/zip-slip-dotdot.mbe",
+    "codes": [
+      "zip-slip"
+    ]
+  },
+  {
+    "file": "hostile/zip-slip-absolute.mbe",
+    "codes": [
+      "zip-slip"
+    ]
+  },
+  {
+    "file": "hostile/zip-slip-backslash.mbe",
+    "codes": [
+      "zip-slip"
+    ]
+  },
+  {
+    "file": "hostile/zip-slip-drive.mbe",
+    "codes": [
+      "zip-slip"
+    ]
+  },
+  {
+    "file": "hostile/name-control-char.mbe",
+    "codes": [
+      "name-invalid"
+    ]
+  },
+  {
+    "file": "hostile/duplicate-name.mbe",
+    "codes": [
+      "duplicate-name"
+    ]
+  },
+  {
+    "file": "hostile/zip-bomb.mbe",
+    "codes": [
+      "zip-bomb"
+    ]
+  },
+  {
+    "file": "hostile/size-lie.mbe",
+    "codes": [
+      "size-mismatch"
+    ]
+  },
+  {
+    "file": "hostile/crc-mismatch.mbe",
+    "codes": [
+      "crc-mismatch"
+    ]
+  },
+  {
+    "file": "hostile/encrypted.mbe",
+    "codes": [
+      "encrypted"
+    ]
+  },
+  {
+    "file": "hostile/compression-bzip2.mbe",
+    "codes": [
+      "compression-unsupported"
+    ]
+  },
+  {
+    "file": "hostile/zip64.mbe",
+    "codes": [
+      "zip64-unsupported"
+    ]
+  },
+  {
+    "file": "hostile/too-many-entries.mbe",
+    "codes": [
+      "too-many-entries"
+    ],
+    "limits": {
+      "maxEntries": 8
+    }
+  },
+  {
+    "file": "hostile/too-large.mbe",
+    "codes": [
+      "too-large"
+    ],
+    "limits": {
+      "maxTotalBytes": 2048
+    }
+  },
+  {
+    "file": "hostile/not-zip.mbe",
+    "codes": [
+      "not-zip"
+    ]
+  },
+  {
+    "file": "hostile/truncated.mbe",
+    "codes": [
+      "zip-invalid"
+    ]
+  },
+  {
+    "file": "hostile/not-mbe.mbe",
+    "codes": [
+      "not-mbe"
+    ]
+  },
+  {
+    "file": "hostile/mimetype-wrong.mbe",
+    "codes": [
+      "mimetype-invalid"
+    ]
+  },
+  {
+    "file": "hostile/mimetype-compressed-not-first.mbe",
+    "codes": [
+      "mimetype-not-first"
+    ],
+    "ok": true
+  },
+  {
+    "file": "hostile/version-2.mbe",
+    "codes": [
+      "version-unsupported"
+    ]
+  },
+  {
+    "file": "hostile/version-newer-minor.mbe",
+    "codes": [
+      "version-newer-minor"
+    ],
+    "ok": true
+  },
+  {
+    "file": "hostile/manifest-not-json.mbe",
+    "codes": [
+      "manifest-invalid"
+    ]
+  },
+  {
+    "file": "hostile/manifest-schema.mbe",
+    "codes": [
+      "manifest-schema"
+    ]
+  },
+  {
+    "file": "hostile/hash-mismatch.mbe",
+    "codes": [
+      "hash-mismatch"
+    ]
+  },
+  {
+    "file": "hostile/json-too-deep.mbe",
+    "codes": [
+      "json-too-deep"
+    ]
+  },
+  {
+    "file": "hostile/document-bad-utf8.mbe",
+    "codes": [
+      "document-invalid"
+    ]
+  },
+  {
+    "file": "hostile/document-lone-surrogate.mbe",
+    "codes": [
+      "document-invalid"
+    ]
+  },
+  {
+    "file": "hostile/document-schema.mbe",
+    "codes": [
+      "document-schema"
+    ]
+  },
+  {
+    "file": "hostile/svg-script.mbe",
+    "codes": [
+      "svg-unsafe"
+    ]
+  },
+  {
+    "file": "hostile/svg-external.mbe",
+    "codes": [
+      "svg-unsafe",
+      "rendition-unlisted"
+    ]
+  },
+  {
+    "file": "hostile/external-ref.mbe",
+    "codes": [
+      "external-ref"
+    ]
+  },
+  {
+    "file": "hostile/ref-missing.mbe",
+    "codes": [
+      "ref-missing"
+    ]
+  },
+  {
+    "file": "hostile/duplicate-id.mbe",
+    "codes": [
+      "duplicate-id"
+    ]
+  },
+  {
+    "file": "hostile/flow-missing.mbe",
+    "codes": [
+      "flow-missing"
+    ]
+  },
+  {
+    "file": "hostile/media-name-mismatch.mbe",
+    "codes": [
+      "media-name-mismatch",
+      "media-unlisted"
+    ]
+  },
+  {
+    "file": "hostile/media-missing.mbe",
+    "codes": [
+      "media-missing"
+    ]
+  },
+  {
+    "file": "hostile/rendition-missing.mbe",
+    "codes": [
+      "rendition-missing"
+    ]
+  },
+  {
+    "file": "hostile/rendition-stale.mbe",
+    "codes": [
+      "rendition-stale"
+    ],
+    "ok": true
+  },
+  {
+    "file": "hostile/preview-missing.mbe",
+    "codes": [
+      "preview-missing"
+    ],
+    "ok": true
+  },
+  {
+    "file": "hostile/preview-too-big.mbe",
+    "codes": [
+      "preview-invalid"
+    ],
+    "ok": true
+  },
+  {
+    "file": "hostile/privacy-email.mbe",
+    "codes": [
+      "privacy"
+    ],
+    "ok": true
+  }
+]
