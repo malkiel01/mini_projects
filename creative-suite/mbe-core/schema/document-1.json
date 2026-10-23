@@ -1,0 +1,81 @@
+{
+  "$id": "https://mbe-plus.com/mini_projects/creative-suite/mbe-core/schema/document-1.json",
+  "title": "mbe document 1.x",
+  "description": "המודל הקנוני (document.json) — mbe-format.md סעיף 3. רק המעטפת המשותפת; התוכן לפי סוג — במסמכי הפרויקטים. רשימות פתוחות (סוגי שכבות, משטחים, יחידות) נבדקות בתבנית ולא ברשימה סגורה, כדי שקורא 1.0 יפתח קובץ 1.x.",
+  "type": "object",
+  "required": ["surfaces"],
+  "properties": {
+    "units": { "$ref": "#/$defs/token" },
+    "color": {
+      "type": "object",
+      "properties": { "space": { "type": "string", "maxLength": 64 } }
+    },
+    "fonts": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "type": "object",
+        "required": ["family"],
+        "properties": {
+          "family": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "embedded": { "$ref": "#/$defs/mediaRef" }
+        }
+      }
+    },
+    "styles": { "type": "object" },
+    "surfaces": {
+      "type": "array",
+      "maxItems": 100000,
+      "items": { "$ref": "#/$defs/surface" }
+    },
+    "flows": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/flow" }
+    }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9_.:-]{1,128}$" },
+    "token": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,31}$" },
+    "mediaRef": { "type": "string", "pattern": "^media/[0-9a-f]{64}(\\.[a-z0-9]{1,8})?$" },
+    "surface": {
+      "type": "object",
+      "required": ["id", "type"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "type": { "$ref": "#/$defs/token" },
+        "size": {
+          "type": "array", "minItems": 2, "maxItems": 2,
+          "items": { "type": "number", "exclusiveMinimum": 0 }
+        },
+        "master": { "type": ["string", "null"] },
+        "layers": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/layer" } }
+      }
+    },
+    "layer": {
+      "type": "object",
+      "required": ["id", "type"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "type": { "$ref": "#/$defs/token" },
+        "name": { "type": "string", "maxLength": 500 },
+        "src": { "$ref": "#/$defs/mediaRef" },
+        "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "blend": { "$ref": "#/$defs/token" },
+        "visible": { "type": "boolean" },
+        "locked": { "type": "boolean" },
+        "box": { "type": "array", "minItems": 4, "maxItems": 4, "items": { "type": "number" } },
+        "flow": { "type": "string" },
+        "paths": { "type": "array" },
+        "children": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/layer" } }
+      }
+    },
+    "flow": {
+      "type": "object",
+      "required": ["engine"],
+      "properties": {
+        "engine": { "$ref": "#/$defs/token" },
+        "doc": { "type": "object" }
+      }
+    }
+  }
+}
