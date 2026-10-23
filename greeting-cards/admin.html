@@ -248,14 +248,10 @@
 <!-- ─── Auth Gate ──────────────────────────────────── -->
 <div id="authGate" class="auth-gate">
     <h2>🔒 אזור ניהול</h2>
-    <p style="color:#666;margin-bottom:20px">הזינו את סיסמת הניהול</p>
+    <p style="color:#666;margin-bottom:20px">בכניסה דרך הכלים הדיגיטליים — הבעלים נכנס בלי סיסמה. אחרת: סיסמת הניהול</p>
     <div class="error-msg" id="authError"></div>
     <input type="password" id="adminPass" placeholder="סיסמת ניהול" onkeydown="if(event.key==='Enter')checkAdminPass()">
     <button class="btn btn-primary" style="width:100%;padding:14px" onclick="checkAdminPass()">כניסה</button>
-    <p style="margin-top:16px;font-size:0.8rem;color:#999">
-        סיסמת ברירת מחדל: <code>admin123</code><br>
-        שנו אותה בקובץ <code>admin_config.json</code>
-    </p>
 </div>
 
 <!-- ─── Admin Panel (hidden until auth) ───────────── -->
@@ -663,7 +659,19 @@ async function loadUsers() {
 }
 
 /* ─── Init Upload Zones ──────────────────────────── */
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+    // הבעלים מזוהה לפי חשבון הפלטפורמה — אז אין שער סיסמה בכלל.
+    try {
+        const res = await fetch(API + '?action=admin_check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        const data = await res.json();
+        if (data.success && data.owner) {
+            document.getElementById('authGate').style.display = 'none';
+            document.getElementById('adminPanel').style.display = 'block';
+            if (data.claimed) toast('נקבעת כבעלים של המערכת');
+            loadAll();
+        }
+    } catch (e) {}
+
     // Bg upload
     const bgZone = document.getElementById('bgUpload');
     const bgInput = document.getElementById('bgFileInput');

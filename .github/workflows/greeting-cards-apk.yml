@@ -28,7 +28,7 @@ on:
       webUrl:
         description: 'כתובת אתר כרטיסי הברכה'
         required: false
-        default: 'https://mbe-plus.com/mini_projects/greeting-cards/'
+        default: 'https://mbe-plus.com/mini_projects/greeting-cards/editor/'
 
 permissions:
   contents: write   # ה-Release, ושמירת המפתח המוצפן בריפו
@@ -45,7 +45,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      WEB_URL: ${{ inputs.webUrl || 'https://mbe-plus.com/mini_projects/greeting-cards/' }}
+      WEB_URL: ${{ inputs.webUrl || 'https://mbe-plus.com/mini_projects/greeting-cards/editor/' }}
       ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
       KS_ENC: keystore/upload.jks.enc
       PUBLISH: ${{ github.ref == 'refs/heads/main' }}

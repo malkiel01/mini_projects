@@ -15,7 +15,7 @@ let ed = null;   // העיצוב הפתוח: { id, doc, history, canvas, dirty }
 
 async function showHome() {
     ed = null;
-    document.title = 'העיצובים שלי';
+    document.title = 'סטודיו עיצוב';
     const list = await designs.list().catch(() => []);
     const tiles = h('div', { class: 'tiles' },
         tile('➕', 'עיצוב חדש', newDesignSheet),
@@ -36,12 +36,14 @@ async function showHome() {
         : h('p', { class: 'empty' }, 'עוד אין עיצובים. התחילו מעיצוב חדש, או ייבאו רקע מהצ\'אט.');
 
     app.replaceChildren(
-        h('header', { class: 'topbar' }, h('h1', {}, '🎨 העיצובים שלי')),
+        h('header', { class: 'topbar' }, h('h1', {}, '🎨 סטודיו עיצוב')),
         h('main', { class: 'home' },
             h('p', { class: 'hint' }, 'מבקשים מהצ\'אט רקע עם הסקיל, מייבאים אותו לכאן, ומוסיפים טקסטים, תמונות וצורות.'),
             tiles,
-            h('h2', { class: 'section' }, 'אחרונים'),
-            rows));
+            h('h2', { class: 'section' }, 'העיצובים שלי'),
+            rows,
+            // מיזוג נמענים ושליחה בוואטסאפ עוד לא עברו לעורך (spec/09-roadmap.md, שלב 4).
+            h('a', { class: 'legacy-link', href: '../index.html' }, h('span', {}, '🗂️ הגרסה הקודמת: נמענים ווואטסאפ'), h('span', { class: 'chev', 'aria-hidden': 'true' }, '‹'))));
 }
 
 function tile(icon, label, onclick) {
