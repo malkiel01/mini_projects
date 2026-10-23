@@ -7,6 +7,7 @@
 /* global Konva */
 import { nearestWeight } from './fonts.js';
 import { fillText } from './merge.js';
+import { ICONS } from './icons.js';
 
 const SNAP_PX = 6;           // מרחק הצמדה, בפיקסלי מסך
 const MIN_ZOOM = 0.05, MAX_ZOOM = 8;
@@ -133,7 +134,9 @@ export class Canvas {
         } else if (l.type === 'image') {
             const img = this.images.get(l.asset);
             const node = img
-                ? new Konva.Image({ image: img, width: l.w, height: l.h, ...shadow })
+                ? new Konva.Image({ image: img, width: l.w, height: l.h, ...shadow,
+                    // חיתוך: שברים (0–1) מהתמונה המקורית — נשארים נכונים גם אם התמונה הוחלפה בגודל אחר.
+                    ...(l.crop ? { crop: { x: l.crop.x * img.naturalWidth, y: l.crop.y * img.naturalHeight, width: l.crop.w * img.naturalWidth, height: l.crop.h * img.naturalHeight } } : {}) })
                 : new Konva.Rect({ width: l.w, height: l.h, fill: '#e3e6eb', stroke: '#9aa1b2', dash: [8, 6] });
             if (l.flipX) node.setAttrs({ scaleX: -1, x: l.w });
             if (l.flipY) node.setAttrs({ scaleY: -1, y: l.h });
@@ -150,6 +153,16 @@ export class Canvas {
                 g.clipFunc(ctx => { ctx.roundRect(0, 0, l.w, l.h, r); });
             }
             g.add(node);
+        } else if (l.type === 'icon') {
+            const ic = ICONS[l.icon] || ICONS.star;
+            const filled = l.filled && ic.filled;
+            const k = Math.min(l.w, l.h) / 24;
+            g.add(new Konva.Path({
+                data: filled ? ic.filled : ic.d, x: (l.w - 24 * k) / 2, y: (l.h - 24 * k) / 2, scaleX: k, scaleY: k,
+                stroke: filled ? undefined : l.color, strokeWidth: l.strokeWidth || 2, fill: filled ? l.color : undefined,
+                lineCap: 'round', lineJoin: 'round', ...shadow,
+            }));
+            g.add(new Konva.Rect({ width: l.w, height: l.h, fill: 'transparent', name: 'hit' }));
         } else if (l.type === 'shape') {
             const st = { fill: l.fill, stroke: l.stroke?.width ? l.stroke.color : undefined, strokeWidth: l.stroke?.width || 0, ...shadow };
             let node;
