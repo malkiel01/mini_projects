@@ -19,11 +19,11 @@ android {
         minSdk = 24
         targetSdk = 36
         versionCode = ((findProperty("versionCode") as String?) ?: "1").toInt()
-        versionName = "2.2"
+        versionName = "3.0"
 
         // כתובת האתר נקבעת בזמן בנייה
         buildConfigField("String", "WEB_URL",
-            "\"${project.findProperty("webUrl") ?: "https://mbe-plus.com/mini_projects/greeting-cards/"}\"")
+            "\"${project.findProperty("webUrl") ?: "https://mbe-plus.com/mini_projects/greeting-cards/editor/"}\"")
     }
 
     buildFeatures {

@@ -36,13 +36,23 @@ async function tx(store, mode, fn) {
 const req2p = r => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
 
 export const designs = {
-    /** הרשימה בלי המסמך עצמו — רק מה שצריך לשורה. */
-    async list() {
+    /**
+     * הרשימה בלי המסמך עצמו — רק מה שצריך לשורה. ‏owner — רק של המשתמש הזה (ועיצובים שנוצרו לפני
+     * שהיה חשבון, שיעברו אליו בסנכרון). כך שני משתמשים באותו מכשיר לא רואים זה את זה.
+     */
+    async list(owner) {
         const all = await tx('designs', 'readonly', s => req2p(s.getAll()));
         return all
-            .map(d => ({ id: d.id, title: d.title, updatedAt: d.updatedAt, thumb: d.thumb, w: d.doc.page.width, h: d.doc.page.height }))
+            .filter(d => d.owner == null || d.owner === owner)
+            .map(d => ({ id: d.id, title: d.title, updatedAt: d.updatedAt, thumb: d.thumb, w: d.doc.page.width, h: d.doc.page.height, synced: !!d.synced, serverVersion: d.serverVersion || 0 }))
             .sort((a, b) => b.updatedAt - a.updatedAt);
     },
+    async unsynced(owner) {
+        const all = await tx('designs', 'readonly', s => req2p(s.getAll()));
+        return all.filter(d => !d.synced && (d.owner == null || d.owner === owner));
+    },
+    /** מחיקה מהמכשיר בלבד (העיצוב נמחק במכשיר אחר). */
+    removeLocal(id) { return this.remove(id); },
     get(id) { return tx('designs', 'readonly', s => req2p(s.get(id))); },
     put(rec) { return tx('designs', 'readwrite', s => req2p(s.put(rec))); },
     async remove(id) {
