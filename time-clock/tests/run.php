@@ -6,7 +6,8 @@
  * עמדה: הצמדה, קוד שגוי ונעילה, סניף, ביטול (שלב 4);
  * תיקונים: בקשה, אישור ודחייה, תיקון ישיר, המקור לא משתנה, הרשאות (שלב 5);
  * אישור חודשי: שלבים, פתיחה, אישור לפי תפקיד, במקום העובד, נעילה, פתיחה מחדש, ייצוא (שלב 6);
- * גרסה 2 — סיווג שעות: יומי, נוספות, לילה, מנוחה, חציית חצות לשבת, שבועי, דת, כללים בגרסאות.
+ * גרסה 2 — סיווג שעות: יומי, נוספות, לילה, מנוחה, חציית חצות לשבת, שבועי, דת, כללים בגרסאות;
+ * חגים: לוח יהודי מובנה, ימים של החברה לפי דת, חג במנוחה (מצטבר / לא), חודש נעול.
  * הרצה: php time-clock/tests/run.php — על מסד זמני, בלי לגעת ב-data/.
  */
 
@@ -421,6 +422,36 @@ check('מהתאריך: תקן 8:00 — 36 דק׳ ב-125% בכל יום, ובלי
 check('לפני התאריך — הכלל הקודם', $B('2027-01-04', 'reg') === 516);
 unset($GLOBALS['TC_NOW']);
 
+
+// ===== גרסה 2: חגים =====
+$GLOBALS['TC_NOW'] = $z('2027-12-01 10:00');
+check('לוח יהודי: פסח, יום העצמאות, ראש השנה, יום כיפור 2027', holidayOn($cid, 'jewish', '2027-04-22') === 'פסח'
+      && holidayOn($cid, 'jewish', '2027-05-12') === 'יום העצמאות' && holidayOn($cid, 'jewish', '2027-10-02') === 'ראש השנה' && holidayOn($cid, 'jewish', '2027-10-11') === 'יום כיפור');
+check('יום העצמאות שחל בשני נדחה לשלישי (2028)', holidayOn($cid, 'jewish', '2028-05-02') === 'יום העצמאות' && holidayOn($cid, 'jewish', '2028-05-01') === null);
+check('לעובד מוסלמי אין את הלוח היהודי', holidayOn($cid, 'muslim', '2027-10-11') === null);
+throws('מנהלת שכר לא מוסיפה חג', fn() => holidayAdd($sara, ['company_id' => $cid, 'date' => '2027-03-10', 'name' => 'עיד אל-פיטר', 'religions' => ['muslim']]), 403);
+throws('חג בלי דתות', fn() => holidayAdd($owner, ['company_id' => $cid, 'date' => '2027-03-10', 'name' => 'x', 'religions' => []]));
+$hg = holidayAdd($owner, ['company_id' => $cid, 'date' => '2027-03-10', 'name' => 'עיד אל-פיטר', 'religions' => ['muslim', 'druze']]);
+check('יום של החברה למוסלמים ודרוזים', holidayOn($cid, 'muslim', '2027-03-10') === 'עיד אל-פיטר' && holidayOn($cid, 'druze', '2027-03-10') === 'עיד אל-פיטר' && holidayOn($cid, 'jewish', '2027-03-10') === null);
+holidayAdd($owner, ['company_id' => $cid, 'date' => '2027-06-01', 'name' => 'יום החברה', 'religions' => 'all']);
+check('יום של החברה לכולם', holidayOn($cid, 'christian', '2027-06-01') === 'יום החברה' && holidayOn($cid, 'jewish', '2027-06-01') === 'יום החברה');
+check('הלוח של השנה: מובנה + של החברה', count(holidaysGet($owner, ['company_id' => $cid, 'year' => 2027])['company']) === 2 && count(holidaysGet($owner, ['company_id' => $cid, 'year' => 2027])['jewish']) === 9);
+
+// סיווג ביום חג: עובד יהודי עובד בפסח (חמישי 22.4.2027) — מנוחה/חג
+$P('2027-04-22 08:00', '2027-04-22 18:00');
+$c = classifyMonth($w, '2027-04', $tz)['days'];
+check('עבודה בחג: 150% ואחר כך 175%', $c['2027-04-22']['holiday'] === 'פסח' && $B('2027-04-22', 'rest') === 480 && $B('2027-04-22', 'rest_ot1') === 120);   // התקן מ-10.1.2027: 8:00
+// חג במנוחה: יום החברה בשבת 2027-06-05? — בונים: יום חברה בשבת, ומצטבר
+holidayAdd($owner, ['company_id' => $cid, 'date' => '2027-06-05', 'name' => 'חג בשבת', 'religions' => 'all']);
+$P('2027-06-05 08:00', '2027-06-05 12:00');
+$c = classifyMonth($w, '2027-06', $tz)['days'];
+check('חג בשבת — לא מצטבר (ברירת מחדל): מנוחה', $B('2027-06-05', 'rest') === 240 && $B('2027-06-05', 'holiday_rest') === 0);
+otRulesSave($owner, ['company_id' => $cid, 'effective_from' => '2027-06-01', 'rules' => ['daily5' => 480, 'holiday_rest_cumulative' => true] + OT_DEFAULTS]);
+$c = classifyMonth($w, '2027-06', $tz)['days'];
+check('המעסיק בחר "מצטבר": סל נפרד', $B('2027-06-05', 'holiday_rest') === 240 && $B('2027-06-05', 'rest') === 0);
+holidayDelete($owner, ['company_id' => $cid, 'id' => $hg['company'][0]['id']]);
+check('מחיקת יום של החברה', holidayOn($cid, 'muslim', '2027-03-10') === null);
+unset($GLOBALS['TC_NOW']);
 
 echo "\n" . ($n - $fails) . "/$n עברו\n";
 exit($fails ? 1 : 0);

@@ -169,6 +169,18 @@ function migrate(PDO $pdo): void {
             UNIQUE (company_id, effective_from)
         );
 
+        -- ימי חג של החברה (גרסה 2): לכל הדתות או לחלקן. החגים היהודיים — מובנים (lib/holidays/jewish.json).
+        CREATE TABLE IF NOT EXISTS company_holidays (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            company_id INTEGER NOT NULL REFERENCES companies(id),
+            date       TEXT NOT NULL,
+            name       TEXT NOT NULL,
+            religions  TEXT NOT NULL DEFAULT 'all',
+            created_by INTEGER,
+            created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS company_holidays_date ON company_holidays (company_id, date);
+
         -- מסלול האישור החודשי של החברה: שלבים לפי סדר, כל שלב — תפקיד. ברירת מחדל: עובד ← מנהל.
         CREATE TABLE IF NOT EXISTS approval_steps (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
