@@ -8,6 +8,8 @@ import { designs, assets } from './db.js';
 import { Canvas } from './canvas.js';
 import { ingestImage, importFromChat, blobToImage, canvasToBlob, exportPdf, exportGcard, safeName, personalSkill, skillAsPrompt, skillZip } from './io.js';
 import * as sync from './sync.js';
+import { loadScript } from './io.js';
+import { docVariables, readSheetFile, readPasted, readPhoneContacts, guessColumns, normalizePhone, fileNames, fillText } from './merge.js';
 
 const app = $('#app');
 let ed = null;   // העיצוב הפתוח: { id, doc, history, canvas, dirty }
@@ -181,6 +183,7 @@ async function openDesign(id, preloaded, entry) {
     const redoBtn = h('button', { class: 'icon-btn', 'aria-label': 'חזרה', onclick: redo }, '↷');
     const titleBtn = h('button', { class: 'title-btn', onclick: renameSheet }, rec.title);
     const ctx = h('div', { class: 'ctxbar', role: 'toolbar', 'aria-label': 'פעולות על השכבה הנבחרת' });
+    const previewBar = h('div', { class: 'previewbar', role: 'group', 'aria-label': 'תצוגה לפי נמען', hidden: true });
 
     app.replaceChildren(
         h('header', { class: 'topbar editor-top' },
@@ -198,16 +201,17 @@ async function openDesign(id, preloaded, entry) {
                 h('button', { class: 'icon-btn', 'aria-label': 'הקטנה', onclick: () => ed.canvas.zoomBy(1 / 1.25) }, '−'),
                 zoomLabel,
                 h('button', { class: 'icon-btn', 'aria-label': 'הגדלה', onclick: () => ed.canvas.zoomBy(1.25) }, '+')),
+            previewBar,
             ctx),
         h('nav', { class: 'bottomnav', 'aria-label': 'כלים' },
             navBtn('➕', 'הוספה', addSheet),
             navBtn('🧱', 'שכבות', layersSheet),
             navBtn('🖼️', 'רקע', backgroundSheet),
-            navBtn('📐', 'גודל', pageSizeSheet),
-            navBtn('🤖', 'צ\'אט', skillSheet)));
+            navBtn('👥', 'נמענים', recipientsSheet),
+            navBtn('⋯', 'עוד', moreSheet)));
 
     const history = new History(() => { undoBtn.disabled = !history.canUndo; redoBtn.disabled = !history.canRedo; });
-    ed = { id, doc: rec.doc, history, ctx, saveState, titleBtn, zoomLabel, stageEl, selection: [] };
+    ed = { id, doc: rec.doc, history, ctx, saveState, titleBtn, zoomLabel, stageEl, previewBar, selection: [], preview: null };
     document.title = rec.title;
 
     ed.canvas = new Canvas(stageEl, {
@@ -521,7 +525,11 @@ function textProps(l) {
         ensureFont(f.family, 400);
         return btn;
     }));
+    const cols = ed.doc.merge?.columns || [];
     return h('div', {},
+        cols.length ? h('div', { class: 'vars' }, h('span', { class: 'muted small' }, 'הוספת משתנה:'),
+            cols.slice(0, 12).map(c => h('button', { class: 'chip-btn', onclick: () => { l.text = (l.text ? l.text + ' ' : '') + `{{${c}}}`; commit(); toast(`נוסף {{${c}}}`); } }, c)))
+            : h('p', { class: 'hint' }, 'כרטיס לכל נמען: 👥 נמענים ← טעינת רשימה, ואז כאן "הוספת משתנה".'),
         fontList,
         rangeField('גודל', { min: 6, max: Math.round(Math.max(ed.doc.page.width, ed.doc.page.height) / 3), value: s.size, onInput: live(v => { s.size = v; }), onCommit: commit }),
         h('div', { class: 'two' },
@@ -737,6 +745,265 @@ function exportSheet() {
         h('div', { class: 'row-actions' },
             h('button', { class: 'btn primary', onclick: () => go(false) }, '⬇️ הורדה'),
             canShare ? h('button', { class: 'btn ghost', onclick: () => go(true) }, '↗ שיתוף') : null)));
+}
+
+// ─── עוד ──────────────────────────────────────────────────────────────────
+
+function moreSheet() {
+    sheet('עוד', h('div', { class: 'menu' },
+        h('button', { class: 'menu-item', onclick: pageSizeSheet }, '📐 גודל הדף'),
+        h('button', { class: 'menu-item', onclick: skillSheet }, '🤖 סקיל לצ\'אט'),
+        h('button', { class: 'menu-item', onclick: () => { closeSheet(); importSheet(); } }, '📥 ייבוא מהצ\'אט (עיצוב חדש)')));
+}
+
+// ─── נמענים: כרטיס לכל שורה ───────────────────────────────────────────────
+
+/** תצוגה לפי נמען: הקנבס מציג את הערכים של שורה אחת. null — חזרה לתבנית. */
+function setPreview(index) {
+    const m = ed.doc.merge;
+    if (index == null || !m?.rows?.length) {
+        ed.preview = null;
+        ed.canvas.vars = null;
+        ed.previewBar.hidden = true;
+        ed.canvas.render();
+        return;
+    }
+    const n = m.rows.length;
+    ed.preview = ((index % n) + n) % n;
+    ed.canvas.vars = m.rows[ed.preview];
+    ed.canvas.render();
+    const name = (m.nameColumn && m.rows[ed.preview][m.nameColumn]) || 'נמען';
+    ed.previewBar.hidden = false;
+    ed.previewBar.replaceChildren(
+        h('button', { class: 'icon-btn', 'aria-label': 'הנמען הקודם', onclick: () => setPreview(ed.preview - 1) }, '›'),
+        h('span', { class: 'pv-label', 'aria-live': 'polite' }, `${name} · ${ed.preview + 1}/${n}`),
+        h('button', { class: 'icon-btn', 'aria-label': 'הנמען הבא', onclick: () => setPreview(ed.preview + 1) }, '‹'),
+        h('button', { class: 'icon-btn', 'aria-label': 'סגירת התצוגה לפי נמען', onclick: () => setPreview(null) }, '✕'));
+}
+
+async function loadRecipients(read) {
+    try {
+        const t = await read();
+        if (!t) return;
+        ed.doc.merge = { ...t, ...guessColumns(t) };
+        commit();
+        closeSheet();
+        recipientsSheet();
+        toast(`נטענו ${t.rows.length} נמענים`);
+    } catch (e) { toast(e.message || 'הטעינה נכשלה', 'error'); }
+}
+
+function recipientSources() {
+    return h('div', { class: 'tiles' },
+        tile('📊', 'אקסל / CSV', () => loadRecipients(async () => { const [f] = await pickFiles('.xlsx,.xls,.csv,.ods'); return f && readSheetFile(f); })),
+        tile('📋', 'הדבקה מגיליון', pasteRecipientsSheet),
+        window.GreetingCardsAndroid?.readContacts ? tile('📱', 'אנשי קשר', () => loadRecipients(async () => readPhoneContacts())) : null);
+}
+
+function pasteRecipientsSheet() {
+    const ta = h('textarea', { rows: 8, placeholder: 'שם\tטלפון\nדנה\t050-1234567', autofocus: true });
+    sheet('הדבקה מגיליון', h('div', {},
+        h('p', { class: 'hint' }, 'מסמנים בגיליון (Excel / Google Sheets) את הטבלה כולל שורת הכותרות, מעתיקים ומדביקים כאן.'),
+        field('הטבלה', ta),
+        h('button', { class: 'btn primary block', onclick: () => loadRecipients(async () => readPasted(ta.value)) }, 'טעינה')));
+}
+
+function recipientsSheet() {
+    const m = ed.doc.merge;
+    if (!m?.rows?.length) {
+        sheet('נמענים', h('div', {},
+            h('p', { class: 'hint' }, 'כרטיס לכל נמען: טוענים רשימה (שורה ראשונה — כותרות), ובטקסט כותבים {{שם העמודה}} — למשל "שלום {{שם}}".'),
+            recipientSources()));
+        return;
+    }
+    const vars = docVariables(ed.doc);
+    const missing = vars.filter(v => !m.columns.includes(v));
+    const colSelect = (label, key) => {
+        const sel = h('select', {}, h('option', { value: '' }, '—'), m.columns.map(c => h('option', { value: c, selected: m[key] === c }, c)));
+        sel.addEventListener('change', () => { m[key] = sel.value || null; commit(); });
+        return field(label, sel);
+    };
+    const withPhone = m.phoneColumn ? m.rows.filter(r => normalizePhone(r[m.phoneColumn])).length : 0;
+    const shown = m.columns.slice(0, 4);
+    const bridge = window.GreetingCardsAndroid;
+    sheet('נמענים', h('div', {},
+        h('div', { class: 'card summary' }, h('strong', {}, `${m.rows.length} נמענים`),
+            h('span', { class: 'muted' }, ` · ${m.columns.length} עמודות${m.phoneColumn ? ` · ${withPhone} עם טלפון` : ''}`)),
+        vars.length
+            ? h('p', { class: 'hint' }, 'משתנים בעיצוב: ', h('bdi', {}, vars.map(v => `{{${v}}}`).join(' ')))
+            : h('p', { class: 'hint warn' }, 'עוד אין משתנים בעיצוב. בחרו טקסט ← 🎨 עיצוב ← "הוספת משתנה", או כתבו {{שם}}.'),
+        missing.length ? h('p', { class: 'hint warn' }, `אין ברשימה עמודה בשם: ${missing.join(', ')}`) : null,
+        h('div', { class: 'two' }, colSelect('עמודת שם', 'nameColumn'), colSelect('עמודת טלפון', 'phoneColumn')),
+        colSelect('שם הקובץ לפי', 'fileColumn'),
+        h('div', { class: 'row-actions' },
+            h('button', { class: 'btn primary', onclick: () => { closeSheet(); setPreview(0); } }, '👁️ תצוגה לפי נמען'),
+            h('button', { class: 'btn ghost', onclick: batchExportSheet }, '⬇️ ייצוא לכולם'),
+            bridge?.openWhatsAppChat ? h('button', { class: 'btn ghost', onclick: whatsappSheet }, '💬 וואטסאפ') : null),
+        h('details', {}, h('summary', {}, `הרשימה (${m.rows.length})`),
+            h('div', { class: 'table-wrap' }, h('table', { class: 'grid' },
+                h('thead', {}, h('tr', {}, shown.map(c => h('th', { scope: 'col' }, c)))),
+                h('tbody', {}, m.rows.slice(0, 200).map(r => h('tr', {}, shown.map(c => h('td', {}, r[c])))))))),
+        h('h3', { class: 'section' }, 'החלפת הרשימה'),
+        recipientSources(),
+        h('button', { class: 'btn ghost danger block', onclick: async () => {
+            if (!(await confirmDialog('למחוק את רשימת הנמענים מהעיצוב?', 'מחיקה', true))) return;
+            delete ed.doc.merge;
+            setPreview(null);
+            commit();
+            toast('הרשימה נמחקה');
+        } }, '🗑️ מחיקת הרשימה')), { wide: true });
+}
+
+/**
+ * טקסט שלא נכנס: לכל נמען ולכל טקסט עם משתנה — האם הטקסט המלא גבוה בהרבה מהתבנית (שבירה לעוד שורות).
+ * מדידה בלבד (Konva.Text בלי ציור), ולכן מהירה גם לאלפי שורות.
+ */
+function overflowWarnings() {
+    const m = ed.doc.merge;
+    const out = [];
+    const layers = ed.doc.layers.filter(l => l.type === 'text' && /\{\{/.test(l.text));
+    for (const l of layers) {
+        const s = l.style;
+        const t = new Konva.Text({ width: l.w, fontFamily: `"${s.font}"`, fontStyle: String(nearestWeight(s.font, s.weight)), fontSize: s.size, lineHeight: s.lineHeight || 1.2, wrap: 'word' });
+        const base = l.h || t.text(l.text).height();
+        m.rows.forEach((r, i) => {
+            if (t.text(fillText(l.text, r)).height() > base * 1.45) out.push(`שורה ${i + 1} (${(m.nameColumn && r[m.nameColumn]) || ''}): "${String(l.text).slice(0, 20)}…" יוצא ארוך — נשבר לעוד שורה`);
+        });
+        t.destroy();
+    }
+    return out;
+}
+
+/** ייצוא כרטיס לכל נמען, ב-ZIP אחד. נמען אחרי נמען, עם התקדמות ועצירה. */
+function batchExportSheet() {
+    const m = ed.doc.merge;
+    let fmt = 'jpg', stop = false;
+    const warns = overflowWarnings();
+    const prog = h('progress', { max: m.rows.length, value: 0, 'aria-label': 'התקדמות הייצוא' });
+    const status = h('p', { class: 'hint', role: 'status', 'aria-live': 'polite' }, `${m.rows.length} קבצים`);
+    const go = async () => {
+        stop = false;
+        btn.disabled = true;
+        const names = fileNames(m);
+        const keep = ed.canvas.vars;
+        ed.canvas.select([]);
+        try {
+            await loadScript('vendor/jszip.min.js');
+            const zip = new window.JSZip();
+            for (let i = 0; i < m.rows.length; i++) {
+                if (stop) throw new Error('הייצוא נעצר');
+                ed.canvas.vars = m.rows[i];
+                ed.canvas.render();
+                const c = ed.canvas.pageCanvas(1);
+                const blob = fmt === 'pdf' ? await exportPdf(c, ed.doc) : await canvasToBlob(c, fmt === 'png' ? 'image/png' : 'image/jpeg', 0.9);
+                zip.file(`${names[i]}.${fmt}`, blob);
+                prog.value = i + 1;
+                status.textContent = `${i + 1} מתוך ${m.rows.length}`;
+                await new Promise(r => setTimeout(r, 0));   // נותנים לממשק לנשום בין כרטיס לכרטיס
+            }
+            status.textContent = 'אורז…';
+            const out = await zip.generateAsync({ type: 'blob', mimeType: 'application/zip' });
+            await download(out, safeName(ed.doc.title) + '.zip');
+            status.textContent = `מוכן ✓ — ${m.rows.length} קבצים`;
+        } catch (e) {
+            status.textContent = e.message || 'הייצוא נכשל';
+        } finally {
+            ed.canvas.vars = keep;
+            ed.canvas.render();
+            btn.disabled = false;
+        }
+    };
+    const btn = h('button', { class: 'btn primary', onclick: go }, `⬇️ ייצוא ${m.rows.length} קבצים`);
+    sheet('ייצוא לכולם', h('div', {},
+        seg('פורמט', [{ value: 'jpg', label: 'JPG' }, { value: 'png', label: 'PNG' }, { value: 'pdf', label: 'PDF' }], fmt, v => { fmt = v; }),
+        warns.length ? h('details', { class: 'warn-box' }, h('summary', {}, `⚠️ ${warns.length} נמענים שהטקסט שלהם ארוך`),
+            h('ul', { class: 'fixes' }, warns.slice(0, 30).map(w => h('li', {}, w)))) : null,
+        prog, status,
+        h('div', { class: 'row-actions' }, btn, h('button', { class: 'btn ghost', onclick: () => { stop = true; } }, '⏹ עצירה'))),
+    { onClose: () => { stop = true; } });
+}
+
+/**
+ * שליחה בוואטסאפ (רק באפליקציית האנדרואיד). חצי-אוטומטית, כמו בגרסה הקודמת: לכל נמען נפתח הצ'אט שלו עם
+ * הכרטיס מצורף, והלחיצה על "שלח" — של המשתמש. החזרה לאפליקציה (onReturnedFromWhatsApp) מקדמת את התור.
+ * שירות נגישות היה חוסך את הלחיצה, אבל גורר חסימות התקנה, אזהרות וסיכון לחשבון הוואטסאפ.
+ */
+function whatsappSheet() {
+    const bridge = window.GreetingCardsAndroid;
+    const m = ed.doc.merge;
+    if (!m.phoneColumn) { toast('בחרו קודם עמודת טלפון', 'error'); return; }
+    const items = m.rows.map(r => ({ row: r, phone: normalizePhone(r[m.phoneColumn]), name: (m.nameColumn && r[m.nameColumn]) || r[m.phoneColumn] })).filter(x => x.phone);
+    if (!items.length) { toast('אין ברשימה מספרי טלפון תקינים', 'error'); return; }
+    let pkgs = [];
+    try { pkgs = JSON.parse(bridge.getWhatsAppPackages()); } catch { /* ישן */ }
+    let pkg = pkgs[0]?.packageName || 'com.whatsapp';
+    const q = { active: false, idx: 0, sent: 0, awaiting: false, timer: null };
+    const delayIn = h('input', { type: 'number', min: 1, max: 30, value: 3, inputMode: 'numeric' });
+    const prog = h('progress', { max: items.length, value: 0, 'aria-label': 'התקדמות השליחה' });
+    const status = h('p', { class: 'lead', role: 'status', 'aria-live': 'polite' }, `${items.length} נמענים עם טלפון`);
+    const keep = ed.canvas.vars;
+
+    const finish = msg => {
+        q.active = false;
+        clearTimeout(q.timer);
+        window.onReturnedFromWhatsApp = null;
+        try { bridge.clearSentCards(); } catch { /* ישן */ }
+        ed.canvas.vars = keep;
+        ed.canvas.render();
+        status.textContent = msg || `הסתיים — נפתחו ${q.sent} מתוך ${items.length}`;
+        startBtn.disabled = false;
+    };
+    const sendCurrent = async () => {
+        const it = items[q.idx];
+        prog.value = q.idx;
+        ed.canvas.vars = it.row;
+        ed.canvas.render();
+        const blob = await canvasToBlob(ed.canvas.pageCanvas(1), 'image/jpeg', 0.88);
+        const b64 = await new Promise(res => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.readAsDataURL(blob); });
+        const res = JSON.parse(bridge.openWhatsAppChat(JSON.stringify({ phone: it.phone, imageBase64: b64, imageFormat: 'jpg', whatsappPackage: pkg })));
+        if (!res.ok) {
+            status.textContent = `לא נפתח עבור ${it.name} (${res.error === 'bad_phone' ? 'מספר לא תקין' : res.error}) — ממשיכים`;
+            return next();
+        }
+        q.awaiting = true;
+        status.textContent = `נפתח וואטסאפ עבור ${it.name} — לחצו "שלח", ואז חזרה לכאן`;
+    };
+    const next = () => {
+        q.idx++;
+        if (q.idx >= items.length) return finish();
+        let left = Math.max(1, +delayIn.value || 3);
+        const tick = () => {
+            if (!q.active) return;
+            if (left <= 0) return sendCurrent();
+            status.textContent = `הבא: ${items[q.idx].name} — בעוד ${left}`;
+            left--;
+            q.timer = setTimeout(tick, 1000);
+        };
+        tick();
+    };
+    // onResume באפליקציה קורא לזה גם בפתיחה רגילה — לכן רק כשמחכים לחזרה.
+    window.onReturnedFromWhatsApp = () => {
+        if (!q.active || !q.awaiting) return;
+        q.awaiting = false;
+        q.sent++;
+        next();
+    };
+    const startBtn = h('button', { class: 'btn primary', onclick: () => {
+        if (!bridge.isWhatsAppAvailable()) { toast('וואטסאפ אינו מותקן', 'error'); return; }
+        Object.assign(q, { active: true, idx: 0, sent: 0, awaiting: false });
+        startBtn.disabled = true;
+        ed.canvas.select([]);
+        sendCurrent();
+    } }, '▶️ התחלה');
+    sheet('שליחה בוואטסאפ', h('div', {},
+        h('p', { class: 'hint' }, 'לכל נמען נפתח הצ\'אט שלו עם הכרטיס מצורף. לוחצים "שלח", חוזרים לאפליקציה — והבא נפתח לבד.'),
+        pkgs.length > 1 ? seg('אפליקציה', pkgs.map(p => ({ value: p.packageName, label: p.label })), pkg, v => { pkg = v; }) : null,
+        field('השהיה בין נמענים (שניות)', delayIn),
+        prog, status,
+        h('div', { class: 'row-actions' }, startBtn,
+            h('button', { class: 'btn ghost', onclick: () => { if (q.active) { clearTimeout(q.timer); q.awaiting = false; next(); } } }, '⏭ דילוג'),
+            h('button', { class: 'btn ghost danger', onclick: () => finish('נעצר') }, '⏹ עצירה'))),
+    { onClose: () => { if (q.active) finish('נעצר'); } });
 }
 
 // ─── מקלדת ────────────────────────────────────────────────────────────────

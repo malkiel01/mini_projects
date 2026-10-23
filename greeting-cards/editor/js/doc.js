@@ -121,6 +121,17 @@ export function normalizeDoc(input) {
         doc.assets[id] = { type: 'image', file: String(a.file || '').slice(0, 100), src: a.src && String(a.src).startsWith('idb:') ? a.src : undefined };
     }
 
+    // רשימת נמענים (מקובץ עיצוב שיוצא מכאן) — נשמרת כמו שהיא, רק טקסט.
+    const m = input.merge;
+    if (m && Array.isArray(m.columns) && Array.isArray(m.rows)) {
+        const columns = m.columns.map(c => String(c).slice(0, 60)).slice(0, 50);
+        doc.merge = {
+            columns,
+            rows: m.rows.slice(0, 5000).filter(r => r && typeof r === 'object').map(r => Object.fromEntries(columns.map(c => [c, String(r[c] ?? '').slice(0, 500)]))),
+        };
+        for (const k of ['nameColumn', 'phoneColumn', 'fileColumn']) doc.merge[k] = columns.includes(m[k]) ? m[k] : null;
+    }
+
     const fontNames = FONTS.map(f => f.family);
     const seen = new Set();
     for (const raw of (Array.isArray(input.layers) ? input.layers : []).slice(0, MAX_LAYERS)) {
