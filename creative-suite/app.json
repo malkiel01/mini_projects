@@ -1,11 +1,11 @@
 {
   "id": "creative-suite",
   "name": "חבילת היצירה",
-  "icon": "🎨",
+  "icon": "🧩",
   "description": "תוכנית האב לחבילת אפליקציות לעריכת מסמכים ותמונות (עימוד, רסטר, וקטורי ועורך התמלילים) עם קובץ משותף אחד — ‎.mbe. בשלב האפיון; ליבת הפורמט — גרסה 1.",
   "category": "documents",
   "links": [
-    { "label": "🎨 תוכנית האב", "href": "" },
+    { "label": "🧩 תוכנית האב", "href": "" },
     { "label": "🔎 בודק ‎.mbe", "href": "mbe-core/inspector/" }
   ],
   "gate": true
