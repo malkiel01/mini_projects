@@ -40,6 +40,7 @@
     <header class="top">
       <span class="logo" aria-hidden="true">🗼</span>
       <div class="titles"><h1>מגדלור</h1><div class="sub" id="who">מנהל מערכת</div></div>
+      <button class="icon-btn" id="phone-btn" aria-label="האפליקציה בטלפון וירטואלי" title="האפליקציה בטלפון וירטואלי">📱</button>
       <button class="icon-btn" id="menu-btn" aria-label="תפריט">⋮</button>
     </header>
     <nav class="tabs" aria-label="לשוניות">
@@ -123,6 +124,24 @@
   </dialog>
 
   <!-- תפריט -->
+  <!--
+    השתקפות האפליקציה (בעל המערכת, 2026-10-23): ה-APK האמיתי — אותה גרסה שהילדים מקבלים — רץ בטלפון
+    וירטואלי של Appetize.io. כל בנייה מ-main מעלה אותו לשם לבד (.github/workflows/android.yml).
+    המפתח של האפליקציה שם — dev/appetize.json. ה-iframe נטען רק כשפותחים, ומתרוקן בסגירה (דקות השימוש נספרות).
+  -->
+  <dialog id="phone-dlg" aria-labelledby="phone-title" class="phone-dlg">
+    <div class="sheet">
+      <header class="sheet-head">
+        <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+        <h2 id="phone-title">📱 מגדלור — טלפון וירטואלי</h2>
+      </header>
+      <div class="phone-body">
+        <p class="hint" id="phone-note"></p>
+        <div class="phone-frame" id="phone-frame"></div>
+      </div>
+    </div>
+  </dialog>
+
   <dialog id="menu-dlg" aria-labelledby="menu-title">
     <form method="dialog">
       <header class="sheet-head">
@@ -133,6 +152,7 @@
         <ul class="menu-list list">
           <li><button type="button" id="m-pass">🔑 החלפת סיסמה</button></li>
           <li><button type="button" id="m-link" hidden>🔗 חיבור חשבון ישן</button></li>
+          <li><button type="button" id="m-phone">📱 האפליקציה בטלפון וירטואלי</button></li>
           <li><button type="button" id="m-admin">🔐 פאנל ההרשאות (זמני, עד אפליקציית ההורה)</button></li>
           <li><button type="button" id="m-out">🚪 יציאה</button></li>
         </ul>
