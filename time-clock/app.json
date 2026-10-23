@@ -10,6 +10,6 @@
     "e/**",
     "s/**",
     "assets/**",
-    "api.php?action=emp_invite_info|emp_activate|emp_state|emp_punch|emp_month|emp_correct|emp_correct_cancel|emp_corrections|emp_approve|emp_absences|emp_absence_request|emp_absence_cancel|station_pair|station_state|station_check|station_punch"
+    "api.php?action=emp_invite_info|emp_activate|emp_state|emp_punch|emp_month|emp_correct|emp_correct_cancel|emp_corrections|emp_approve|emp_absences|emp_absence_request|emp_absence_cancel|emp_cert_upload|emp_cert_list|emp_cert_file|emp_cert_delete|station_pair|station_state|station_check|station_punch"
   ]
 }
