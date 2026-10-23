@@ -71,6 +71,8 @@ function provisionConfig(): ?array {
 
 /* ── הרשאות המכשיר (מסלול ההקמה) — אותם ביטים כמו Setup.kt ── */
 const PERM_NOTIF = 1, PERM_BATTERY = 2, PERM_ADMIN = 4, PERM_INSTALL = 8, PERM_ACCESS = 16, PERM_OWNER = 32;
+/** מגדלור הוא מסך הבית של הטלפון (לא חובה) — כך 👻 הסתרה עובדת גם בלי "בעל מכשיר" (Setup.isHome). */
+const PERM_HOME = 64;
 // כל ההרשאות שאפליקציה יכולה לבקש — חובה (בעל המערכת, 2026-10-20). "בעל מכשיר" אינו נכלל: אנדרואיד
 // מאפשר אותו רק בהקמה של מכשיר מאופס, ולכן הוא "מומלץ" ומוצג להורה כ"אכיפה חלקית" כשהוא חסר.
 const PERM_REQUIRED = 31;  // NOTIF | BATTERY | ADMIN | INSTALL | ACCESS

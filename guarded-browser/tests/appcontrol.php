@@ -81,6 +81,13 @@ $g = array_values(array_filter($l['apps'], fn($a) => $a['package'] === 'com.supe
 check('אצל ההורה: 👻, נחשבת חסומה, ומונה מוסתרות', [$g['action'], $g['blocked'], $l['hidden_count']], ['hide', true, 1]);
 check('בלי מכשיר עם "בעל מכשיר" — owner_missing לפי המכשירים', $l['owner_missing'],
       (int) one('SELECT COUNT(*) n FROM devices WHERE user_id = ? AND (perms & 32) = 0', [$kid])['n']);
+// מכשיר בלי "בעל מכשיר" שמגדלור הוא מסך הבית שלו — ההסתרה פועלת (הילד רואה רק את דף הבית של מגדלור).
+q("INSERT INTO devices (user_id, device_name, token_hash, perms, created_at) VALUES (?, 'בלי בעלות', 'hh1', 31, ?)", [$kid, nowIso()]);
+$noHome = appsList($aApps, $kid)['hide_missing'];
+q("UPDATE devices SET perms = 95 WHERE token_hash = 'hh1'");
+check('מסך הבית של מגדלור (64) — ההסתרה פועלת גם בלי "בעל מכשיר"', $noHome - appsList($aApps, $kid)['hide_missing'], 1);
+check('...ו"בעל מכשיר" עדיין חסר בו', appsList($aApps, $kid)['owner_missing'] >= 1, true);
+q("DELETE FROM devices WHERE token_hash = 'hh1'");
 check('גם ב"הכול פתוח" — מוסתרת חסומה', appBlocked('allow_all', 'hide'), true);
 check('ההגדרות — אי אפשר להסתיר', appsSaveRule($kid, 'com.android.settings', 'hide'),
       'את ההגדרות אפשר לחסום, לא להסתיר — מגדלור צריך אותן להקמה ולעדכון');

@@ -74,7 +74,15 @@
         <activity android:name="com.journeyapps.barcodescanner.CaptureActivity"
             android:screenOrientation="fullSensor" tools:replace="screenOrientation"/>
 
-        <activity android:name=".HomeActivity" android:exported="false"/>
+        <!-- מגדלור יכול להיות מסך הבית של הטלפון (Setup.isHome) — כך אפליקציה מוסתרת לא מופיעה לילד גם בלי
+             "בעל מכשיר": הוא רואה רק את דף הבית של מגדלור, ושם רק מה שמותר. -->
+        <activity android:name=".HomeActivity" android:exported="true" android:launchMode="singleTask">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.HOME"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+        </activity>
         <activity android:name=".SetupActivity" android:exported="false"/>
         <activity android:name=".FullSetupActivity" android:exported="false"/>
         <activity android:name=".BlockedActivity" android:exported="false"
