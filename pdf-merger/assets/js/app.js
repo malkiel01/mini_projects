@@ -45,13 +45,51 @@
   var $previewTitle   = $('preview-title');
   var $previewClose   = $('preview-close');
   var $toastContainer = $('toast-container');
+  var $margin         = $('opt-margin');
+  var $mergeResultMeta = $('merge-result-meta');
 
-  var ACCEPTED_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
   var PAGE_SIZES = {
     a4:       { width: 595.28, height: 841.89 },
     letter:   { width: 612,    height: 792 },
+    legal:    { width: 612,    height: 1008 },
     original: null,
   };
+  var MM_TO_PT = 72 / 25.4;
+
+  function isPdfFile(file) { return file.type === 'application/pdf' || /\.pdf$/i.test(file.name); }
+  function isImageFile(file) {
+    return (file.type || '').indexOf('image/') === 0 || /\.(jpe?g|png|gif|bmp|webp|avif)$/i.test(file.name);
+  }
+
+  /** מנקה שם קובץ מתווים אסורים; ריק → ברירת המחדל. */
+  function safeName(raw, fallback) {
+    var clean = String(raw || '').trim().replace(/[\\/:*?"<>|]/g, '_');
+    return clean || fallback;
+  }
+
+  function formatBytes(n) {
+    if (n < 1024) return n + ' B';
+    if (n < 1024 * 1024) return Math.round(n / 1024) + ' KB';
+    return (n / 1024 / 1024).toFixed(1) + ' MB';
+  }
+
+  function pagesLabel(n) { return n === 1 ? 'עמוד אחד' : n + ' עמודים'; }
+
+  /** "שם · 6 עמודים · 64 KB" — כל פיסה ב-<bdi>, אחרת "64 KB" מתהפך בתוך שורה עברית. */
+  function setBidiText(el, parts) {
+    el.textContent = '';
+    parts.forEach(function (part, i) {
+      if (i) el.appendChild(document.createTextNode(' · '));
+      var bdi = document.createElement('bdi');
+      bdi.textContent = part;
+      el.appendChild(bdi);
+    });
+  }
+
+  /** pdf.js מדווח על קובץ נעול ב-PasswordException — מתרגמים להודעה ברורה. */
+  function pdfErrorText(err) {
+    return err && err.name === 'PasswordException' ? 'הקובץ מוגן בסיסמה' : (err && err.message) || 'לא ניתן לקרוא את הקובץ';
+  }
   var QUALITY_MAP = { high: 0.95, medium: 0.8, low: 0.6 };
 
   function getRadioValue(name) {
@@ -166,7 +204,8 @@
     fileList = Array.from(fileList);
     for (var i = 0; i < fileList.length; i++) {
       var file = fileList[i];
-      if (ACCEPTED_TYPES.indexOf(file.type) === -1) {
+      var type = isPdfFile(file) ? 'application/pdf' : (isImageFile(file) ? (file.type || 'image/*') : '');
+      if (!type) {
         showToast('סוג קובץ לא נתמך: ' + file.name, 'error');
         continue;
       }
@@ -175,7 +214,7 @@
         var entry = {
           id: ++fileIdCounter,
           name: file.name,
-          type: file.type,
+          type: type,
           data: buf,
           pageCount: 1,
           thumbnail: '',
@@ -189,11 +228,11 @@
           entry.thumbnail = await generatePdfThumbnail(pdfDoc, 0);
           pdfDoc.destroy();
         } else {
-          entry.thumbnail = await generateImageThumbnail(buf, file.type);
+          entry.thumbnail = await generateImageThumbnail(buf, type);
         }
         files.push(entry);
       } catch (err) {
-        showToast('שגיאה בקריאת ' + file.name + ': ' + err.message, 'error');
+        showToast('שגיאה בקריאת ' + file.name + ': ' + pdfErrorText(err), 'error');
       }
     }
     updateTotalPageCount();
@@ -253,8 +292,15 @@
 
       if (isPdfEntry(f) && f.pageCount > 1) {
         actions.appendChild(makeBtn('תצוגה מקדימה', '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>', function () { showPreview(f.id); }));
-        actions.appendChild(makeBtn('פיצול', '<path d="M16 3h5v5"/><path d="M8 3H3v5"/><path d="M12 22V8"/><path d="M21 3l-9 9"/><path d="M3 3l9 9"/>', function () { splitPdf(f.id); }));
+        actions.appendChild(makeBtn('פיצול לדפי PDF', '<path d="M16 3h5v5"/><path d="M8 3H3v5"/><path d="M12 22V8"/><path d="M21 3l-9 9"/><path d="M3 3l9 9"/>', function () { splitPdf(f.id); }));
       }
+
+      var upBtn = makeBtn('הזזה למעלה', '<path d="M12 19V5m0 0-6 6m6-6 6 6"/>', function () { moveFile(f.id, -1); });
+      upBtn.disabled = idx === 0;
+      var downBtn = makeBtn('הזזה למטה', '<path d="M12 5v14m0 0 6-6m-6 6-6-6"/>', function () { moveFile(f.id, 1); });
+      downBtn.disabled = idx === files.length - 1;
+      actions.appendChild(upBtn);
+      actions.appendChild(downBtn);
 
       if (!isPdfEntry(f)) {
         actions.appendChild(makeBtn('סיבוב', '<path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>', function () { rotateFile(f.id, 90); }));
@@ -281,8 +327,10 @@
 
   function makeBtn(title, svgInner, onClick) {
     var btn = document.createElement('button');
+    btn.type = 'button';
     btn.className = 'file-btn';
     btn.title = title;
+    btn.setAttribute('aria-label', title);
     btn.innerHTML = '<svg viewBox="0 0 24 24">' + svgInner + '</svg>';
     btn.addEventListener('click', onClick);
     return btn;
@@ -383,6 +431,23 @@
     card.addEventListener('pointercancel', onUp);
   }
 
+  // ── Order ──────────────────────────────────────────
+  function moveFile(id, delta) {
+    var i = files.findIndex(function (x) { return x.id === id; });
+    var j = i + delta;
+    if (i < 0 || j < 0 || j >= files.length) return;
+    var t = files[i]; files[i] = files[j]; files[j] = t;
+    renderFileList();
+  }
+
+  // מיון "טבעי" — img2 לפני img10
+  function sortFilesByName() {
+    files.sort(function (a, b) {
+      return a.name.localeCompare(b.name, 'he', { numeric: true, sensitivity: 'base' });
+    });
+    renderFileList();
+  }
+
   // ── Rotation ───────────────────────────────────────
   function rotateFile(id, angle) {
     var f = files.find(function (x) { return x.id === id; });
@@ -478,10 +543,11 @@
     $previewContent.innerHTML = '';
   }
 
-  // ── WEBP to PNG ────────────────────────────────────
-  function webpToPng(arrayBuffer) {
+  // ── WEBP / GIF / BMP / AVIF to PNG ─────────────────
+  // pdf-lib מטמיע רק JPG ו-PNG; את השאר הדפדפן מפענח ואנחנו מטמיעים כ-PNG
+  function imageToPng(arrayBuffer, mimeType) {
     return new Promise(function (resolve, reject) {
-      var blob = new Blob([arrayBuffer], { type: 'image/webp' });
+      var blob = new Blob([arrayBuffer], { type: mimeType });
       var url = URL.createObjectURL(blob);
       var img = new Image();
       img.onload = function () {
@@ -491,11 +557,11 @@
         canvas.getContext('2d').drawImage(img, 0, 0);
         URL.revokeObjectURL(url);
         canvas.toBlob(function (b) {
-          if (!b) { reject(new Error('המרת WEBP נכשלה')); return; }
+          if (!b) { reject(new Error('המרת התמונה נכשלה')); return; }
           b.arrayBuffer().then(resolve).catch(reject);
         }, 'image/png');
       };
-      img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('שגיאה בטעינת WEBP')); };
+      img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('הדפדפן לא מצליח לפענח את התמונה')); };
       img.src = url;
     });
   }
@@ -540,7 +606,9 @@
     var orientKey   = getRadioValue('orientation') || 'auto';
     var qualityKey  = getRadioValue('image-quality') || 'high';
     var quality     = QUALITY_MAP[qualityKey] || 0.95;
-    var outputName  = ($outputFilename.value || 'merged').replace(/\.pdf$/i, '') + '.pdf';
+    var marginPt    = pageSizeKey === 'original' ? 0 : Math.min(50, Math.max(0, Number($margin.value) || 0)) * MM_TO_PT;
+    var outputName  = safeName(($outputFilename.value || '').replace(/\.pdf$/i, ''), 'merged') + '.pdf';
+    var failures    = [];
 
     try {
       var mergedPdf = await PDFLib.PDFDocument.create();
@@ -550,12 +618,19 @@
         var f = files[i];
         updateProgress((i / total) * 90, 'מעבד: ' + f.name);
 
-        if (isPdfEntry(f)) {
-          await addPdfToMerged(mergedPdf, f, pageSizeKey, orientKey);
-        } else {
-          await addImageToMerged(mergedPdf, f, pageSizeKey, orientKey, quality);
+        // קובץ אחד פגום לא מפיל את כל האיחוד — מדלגים עליו ומדווחים בסוף
+        try {
+          if (isPdfEntry(f)) {
+            await addPdfToMerged(mergedPdf, f, pageSizeKey, orientKey);
+          } else {
+            await addImageToMerged(mergedPdf, f, pageSizeKey, orientKey, quality, marginPt);
+          }
+        } catch (fileErr) {
+          failures.push(f.name + ' — ' + pdfErrorText(fileErr));
         }
       }
+
+      if (mergedPdf.getPageCount() === 0) throw new Error(failures.join(' · ') || 'לא נוצר אף עמוד');
 
       updateProgress(95, 'שומר PDF...');
       var pdfBytes = await mergedPdf.save();
@@ -567,8 +642,10 @@
 
       updateProgress(100, 'הושלם!');
       $progressContainer.style.display = 'none';
+      setBidiText($mergeResultMeta, [outputName, pagesLabel(mergedPdf.getPageCount()), formatBytes(blob.size)]);
       $exportSuccess.style.display = '';
-      showToast('הקובץ המאוחד הורד בהצלחה', 'success');
+      if (failures.length) showToast('דילגתי על ' + failures.length + ': ' + failures.join(' · '), 'warning');
+      else showToast('הקובץ המאוחד הורד בהצלחה', 'success');
     } catch (err) {
       showToast('שגיאה באיחוד: ' + err.message, 'error');
       updateProgress(0, '');
@@ -579,7 +656,7 @@
   }
 
   async function addPdfToMerged(mergedPdf, fileEntry, pageSizeKey, orientKey) {
-    var srcDoc = await PDFLib.PDFDocument.load(fileEntry.data);
+    var srcDoc = await PDFLib.PDFDocument.load(fileEntry.data, { ignoreEncryption: true });
     var indices = [];
     for (var k = 0; k < srcDoc.getPageCount(); k++) indices.push(k);
     var copiedPages = await mergedPdf.copyPages(srcDoc, indices);
@@ -609,12 +686,12 @@
     });
   }
 
-  async function addImageToMerged(mergedPdf, fileEntry, pageSizeKey, orientKey, quality) {
+  async function addImageToMerged(mergedPdf, fileEntry, pageSizeKey, orientKey, quality, marginPt) {
     var imgData = fileEntry.data;
     var imgType = fileEntry.type;
 
-    if (imgType === 'image/webp') {
-      imgData = await webpToPng(imgData);
+    if (imgType !== 'image/jpeg' && imgType !== 'image/png') {
+      imgData = await imageToPng(imgData, imgType);
       imgType = 'image/png';
     }
 
@@ -660,7 +737,11 @@
     }
 
     var page = mergedPdf.addPage([pageW, pageH]);
-    var scale = Math.min(pageW / effectiveW, pageH / effectiveH, 1);
+    // שוליים (רק בגודל דף קבוע): התמונה נכנסת למלבן שבתוך השוליים, ממורכזת
+    var m = marginPt || 0;
+    var availW = Math.max(1, pageW - 2 * m);
+    var availH = Math.max(1, pageH - 2 * m);
+    var scale = Math.min(availW / effectiveW, availH / effectiveH, 1);
     var drawW = imgW * scale;
     var drawH = imgH * scale;
 
@@ -809,7 +890,286 @@
     setTimeout(function () { URL.revokeObjectURL(url); }, 5000);
   }
 
+  // ══ פיצול PDF לתמונות בתוך ZIP ══════════════════════
+  var splitFiles = [];
+  var lastSplitBlob = null;
+  var lastSplitName = '';
+  var SPLIT_EXT = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' };
+
+  /**
+   * מפרש טווח עמודים בסגנון "1-3, 7, 10-" למספרי עמודים (מ-1, ממוינים, בלי כפילויות).
+   * ריק → כל העמודים. עמודים שמעבר לסוף הקובץ נחתכים בשקט.
+   */
+  function parsePageRange(spec, total) {
+    var text = String(spec || '').trim();
+    var all = [];
+    if (!text) { for (var a = 1; a <= total; a++) all.push(a); return all; }
+
+    var wanted = {};
+    text.split(/[,،]/).forEach(function (chunk) {
+      var part = chunk.trim();
+      if (!part) return;
+      var m = part.match(/^(\d+)?\s*([-–])?\s*(\d+)?$/);
+      if (!m || (!m[1] && !m[3])) throw new Error('טווח עמודים לא תקין: "' + part + '"');
+      var from = m[1] ? Number(m[1]) : 1;
+      var to = m[2] ? (m[3] ? Number(m[3]) : total) : from;
+      // "10-" בקובץ של 3 עמודים אינו שגיאה — פשוט אין בו עמודים מהטווח הזה
+      if (m[3] && from > to) throw new Error('טווח עמודים הפוך: "' + part + '"');
+      for (var p = Math.max(1, from); p <= Math.min(total, to); p++) wanted[p] = true;
+    });
+    var pages = Object.keys(wanted).map(Number).sort(function (x, y) { return x - y; });
+    if (!pages.length) throw new Error('הטווח לא כולל אף עמוד קיים');
+    return pages;
+  }
+
+  function updateSplitStats() {
+    var pages = 0;
+    splitFiles.forEach(function (f) { pages += f.pageCount || 0; });
+    $('split-files').textContent = splitFiles.length;
+    $('split-pages').textContent = pages;
+    $('split-stats').hidden = splitFiles.length === 0;
+    $('split-options').hidden = splitFiles.length === 0;
+  }
+
+  function renderSplitList() {
+    var $list = $('split-list');
+    $list.innerHTML = '';
+    splitFiles.forEach(function (f) {
+      var li = document.createElement('li');
+      li.className = 'file-card compact';
+
+      var thumb = document.createElement('img');
+      thumb.className = 'file-thumb';
+      thumb.alt = '';
+      if (f.thumbnail) thumb.src = f.thumbnail;
+
+      var info = document.createElement('div');
+      info.className = 'file-info';
+      var nameEl = document.createElement('p');
+      nameEl.className = 'file-name';
+      nameEl.textContent = f.name;
+      nameEl.title = f.name;
+      var meta = document.createElement('p');
+      meta.className = 'file-meta' + (f.error ? ' bad' : '');
+      if (f.error) meta.textContent = f.error;
+      else setBidiText(meta, [pagesLabel(f.pageCount), formatBytes(f.data.byteLength)]);
+      info.appendChild(nameEl);
+      info.appendChild(meta);
+
+      var actions = document.createElement('div');
+      actions.className = 'file-actions';
+      var del = makeBtn('הסרה', '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>', function () {
+        splitFiles = splitFiles.filter(function (x) { return x.id !== f.id; });
+        renderSplitList();
+      });
+      del.classList.add('danger');
+      actions.appendChild(del);
+
+      li.appendChild(thumb);
+      li.appendChild(info);
+      li.appendChild(actions);
+      $list.appendChild(li);
+    });
+    updateSplitStats();
+  }
+
+  async function addSplitFiles(list) {
+    list = Array.from(list);
+    for (var i = 0; i < list.length; i++) {
+      var file = list[i];
+      if (!isPdfFile(file)) { showToast('לפיצול אפשר לבחור קבצי PDF בלבד: ' + file.name, 'error'); continue; }
+      var entry = { id: ++fileIdCounter, name: file.name, data: await file.arrayBuffer(), pageCount: 0, thumbnail: '', error: '' };
+      try {
+        var doc = await openPdfJs(entry.data);
+        entry.pageCount = doc.numPages;
+        entry.thumbnail = await generatePdfThumbnail(doc, 0);
+        doc.destroy();
+      } catch (err) {
+        entry.error = pdfErrorText(err);
+      }
+      splitFiles.push(entry);
+    }
+    $('split-result').hidden = true;
+    renderSplitList();
+  }
+
+  function setSplitProgress(ratio, message) {
+    var pct = Math.round(Math.min(1, Math.max(0, ratio)) * 100);
+    $('split-progress-bar').style.width = pct + '%';
+    $('split-progress-text').textContent = pct + '%';
+    if (message != null) $('split-progress-message').textContent = message;
+  }
+
+  var yieldToPaint = function () { return new Promise(function (r) { setTimeout(r, 0); }); };
+
+  async function splitToImages() {
+    var items = splitFiles.filter(function (f) { return !f.error; });
+    if (!items.length) { showToast('אין קבצי PDF תקינים לפיצול', 'error'); return; }
+
+    var mime = getRadioValue('split-format') || 'image/png';
+    var ext = SPLIT_EXT[mime] || 'png';
+    var quality = mime === 'image/png' ? undefined : Number($('split-quality').value);
+    var scale = (Number(getRadioValue('split-dpi')) || 150) / 72;
+    var rangeSpec = $('split-range').value;
+    var zipName = safeName($('split-zipname').value.replace(/\.zip$/i, ''), 'pages') + '.zip';
+    // כמה קבצים — לכל אחד תיקייה משלו ב-ZIP, כדי שהעמודים לא יתערבבו
+    var useFolders = items.length > 1;
+
+    var $run = $('split-run');
+    $run.disabled = true;
+    $('split-result').hidden = true;
+    $('split-progress').hidden = false;
+    setSplitProgress(0, 'מתחיל…');
+
+    var failures = [];
+    var docs = [];
+    try {
+      // קודם מפרשים את הטווח לכל הקבצים — כדי שההתקדמות תהיה רציפה, ושטווח שגוי ייעצר לפני העבודה
+      var totalPages = 0;
+      for (var i = 0; i < items.length; i++) {
+        try {
+          var doc = await openPdfJs(items[i].data);
+          var pages = parsePageRange(rangeSpec, doc.numPages);
+          docs.push({ item: items[i], doc: doc, pages: pages });
+          totalPages += pages.length;
+        } catch (err) {
+          failures.push(items[i].name + ' — ' + pdfErrorText(err));
+        }
+      }
+      if (!totalPages) throw new Error(failures.join(' · ') || 'אין עמודים לייצוא');
+
+      var zip = new JSZip();
+      var canvas = document.createElement('canvas');
+      var ctx = canvas.getContext('2d');
+      var done = 0;
+      var count = 0;
+
+      for (var d = 0; d < docs.length; d++) {
+        var plan = docs[d];
+        var folder = useFolders ? safeName(plan.item.name.replace(/\.pdf$/i, ''), 'pdf' + (d + 1)) + '/' : '';
+        var pad = Math.max(3, String(plan.doc.numPages).length);
+        try {
+          for (var k = 0; k < plan.pages.length; k++) {
+            var pageNum = plan.pages[k];
+            setSplitProgress(done / totalPages, (done + 1) + '/' + totalPages + ' · ' + plan.item.name);
+            await yieldToPaint();
+
+            var page = await plan.doc.getPage(pageNum);
+            var viewport = page.getViewport({ scale: scale });
+            canvas.width = Math.max(1, Math.ceil(viewport.width));
+            canvas.height = Math.max(1, Math.ceil(viewport.height));
+            // רקע לבן: PDF מניח נייר לבן, ו-JPG לא תומך בשקיפות
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+            page.cleanup();
+
+            var blob = await new Promise(function (res, rej) {
+              canvas.toBlob(function (b) { b ? res(b) : rej(new Error('יצירת התמונה נכשלה')); }, mime, quality);
+            });
+            zip.file(folder + 'page-' + String(pageNum).padStart(pad, '0') + '.' + ext, blob);
+            count++;
+            done++;
+          }
+        } catch (err) {
+          failures.push(plan.item.name + ' — ' + pdfErrorText(err));
+        }
+      }
+      if (!count) throw new Error(failures.join(' · ') || 'לא נוצרה אף תמונה');
+
+      setSplitProgress(1, 'אורז את ה-ZIP…');
+      var zipBlob = await zip.generateAsync(
+        { type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } },
+        function (m) { setSplitProgress(1, 'אורז את ה-ZIP… ' + Math.round(m.percent) + '%'); }
+      );
+
+      lastSplitBlob = zipBlob;
+      lastSplitName = zipName;
+      triggerDownload(zipBlob, zipName);
+
+      $('split-result-title').textContent = zipName;
+      setBidiText($('split-result-meta'), [count === 1 ? 'תמונה אחת' : count + ' תמונות', formatBytes(zipBlob.size)]);
+      $('split-result').hidden = false;
+      if (failures.length) showToast('דילגתי על ' + failures.length + ': ' + failures.join(' · '), 'warning');
+      else showToast('ה-ZIP הורד — ' + count + ' תמונות', 'success');
+    } catch (err) {
+      showToast('שגיאה בפיצול: ' + err.message, 'error');
+    } finally {
+      docs.forEach(function (p) { p.doc.destroy(); });
+      $('split-progress').hidden = true;
+      $run.disabled = false;
+    }
+  }
+
+  // ── Mode tabs ──────────────────────────────────────
+  function setMode(mode) {
+    document.querySelectorAll('.mode-tab').forEach(function (t) {
+      var on = t.dataset.mode === mode;
+      t.classList.toggle('active', on);
+      t.setAttribute('aria-selected', String(on));
+    });
+    $('mode-merge').hidden = mode !== 'merge';
+    $('mode-split').hidden = mode !== 'split';
+  }
+
   // ── Event listeners ────────────────────────────────
+
+  document.querySelectorAll('.mode-tab').forEach(function (t) {
+    t.addEventListener('click', function () { setMode(t.dataset.mode); });
+  });
+
+  // split mode
+  var $splitDrop = $('split-drop');
+  var $splitInput = $('split-input');
+  $splitDrop.addEventListener('click', function () { $splitInput.click(); });
+  $splitDrop.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $splitInput.click(); }
+  });
+  ['dragenter', 'dragover'].forEach(function (type) {
+    $splitDrop.addEventListener(type, function (e) { e.preventDefault(); $splitDrop.classList.add('dragover'); });
+  });
+  $splitDrop.addEventListener('dragleave', function () { $splitDrop.classList.remove('dragover'); });
+  $splitDrop.addEventListener('drop', function (e) {
+    e.preventDefault();
+    $splitDrop.classList.remove('dragover');
+    if (e.dataTransfer.files.length) addSplitFiles(e.dataTransfer.files);
+  });
+  $splitInput.addEventListener('change', function () {
+    if ($splitInput.files.length) { addSplitFiles($splitInput.files); $splitInput.value = ''; }
+  });
+  $('split-clear').addEventListener('click', function () {
+    splitFiles = [];
+    $('split-result').hidden = true;
+    renderSplitList();
+  });
+  document.querySelectorAll('input[name="split-format"]').forEach(function (r) {
+    r.addEventListener('change', function () {
+      $('split-quality-group').hidden = getRadioValue('split-format') === 'image/png';
+    });
+  });
+  $('split-quality').addEventListener('input', function (e) {
+    $('split-quality-out').textContent = Math.round(Number(e.target.value) * 100) + '%';
+  });
+  $('split-run').addEventListener('click', function () { splitToImages(); });
+  $('split-download-again').addEventListener('click', function () {
+    if (lastSplitBlob) triggerDownload(lastSplitBlob, lastSplitName);
+  });
+
+  // merge: מיון, ניקוי, שוליים
+  $('btn-sort-name').addEventListener('click', sortFilesByName);
+  $('btn-clear-all').addEventListener('click', function () {
+    files = [];
+    updateTotalPageCount();
+    renderFileList();
+  });
+  // שוליים רלוונטיים רק בגודל דף קבוע — "לפי המקור" הדף הוא בדיוק גודל התמונה
+  document.querySelectorAll('input[name="page-size"]').forEach(function (r) {
+    r.addEventListener('change', function () {
+      var fixed = getRadioValue('page-size') !== 'original';
+      $margin.disabled = !fixed;
+      $('margin-hint').textContent = fixed ? 'התמונה ממורכזת בתוך השוליים' : 'בגודל דף קבוע (A4 / Letter / Legal)';
+    });
+  });
 
   // drop zone
   $dropZone.addEventListener('dragenter', function (e) { e.preventDefault(); $dropZone.classList.add('dragover'); });

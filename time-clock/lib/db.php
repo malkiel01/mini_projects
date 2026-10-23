@@ -282,6 +282,36 @@ function migrate(PDO $pdo): void {
         );
         CREATE INDEX IF NOT EXISTS absences_member ON absences (member_id, from_date);
 
+        -- יתרת פתיחה (גרסה 3, שלב 2): היתרה בתחילת as_of, בימים. האחרונה (לפי תאריך) היא נקודת המוצא לחישוב;
+        -- הקודמות נשמרות לתיעוד.
+        CREATE TABLE IF NOT EXISTS absence_balances (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            member_id  INTEGER NOT NULL REFERENCES members(id),
+            kind       TEXT NOT NULL CHECK (kind IN ('vacation','sick')),
+            as_of      TEXT NOT NULL,
+            days       REAL NOT NULL,
+            note       TEXT,
+            by_person  INTEGER,
+            created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS absence_balances_member ON absence_balances (member_id, kind, as_of);
+
+        -- אישור להיעדרות (גרסה 3, שלב 3): קובץ ב-data/certs/ בשם אקראי. מידע רפואי — מוגש רק דרך api.php.
+        -- deleted_at — נמחק (ידנית, או בתום משך השמירה); הרשומה נשארת — הוצג אישור.
+        CREATE TABLE IF NOT EXISTS absence_certs (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            absence_id   INTEGER NOT NULL REFERENCES absences(id),
+            file         TEXT NOT NULL,
+            mime         TEXT NOT NULL,
+            size         INTEGER NOT NULL,
+            by_member    INTEGER,
+            by_person    INTEGER,
+            created_at   TEXT NOT NULL,
+            deleted_at   TEXT,
+            delete_reason TEXT
+        );
+        CREATE INDEX IF NOT EXISTS absence_certs_absence ON absence_certs (absence_id);
+
         -- כל שינוי: מי, מה, לפני ואחרי.
         CREATE TABLE IF NOT EXISTS audit (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,

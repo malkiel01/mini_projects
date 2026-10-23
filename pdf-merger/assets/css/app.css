@@ -992,6 +992,156 @@ img, svg, canvas { display: block; max-width: 100%; }
   border: 0;
 }
 
+/* ── mode tabs: איחוד / פיצול לתמונות ─────────────────────────────── */
+.mode-tabs {
+  display: flex;
+  gap: 4px;
+  margin-top: 1rem;
+  padding: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.mode-tab {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .4rem;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: .9rem;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background var(--transition), color var(--transition);
+}
+
+.mode-tab svg {
+  width: 1.1em;
+  height: 1.1em;
+  flex-shrink: 0;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.mode-tab.active {
+  background: var(--surface);
+  color: var(--accent);
+  box-shadow: var(--shadow);
+}
+
+.mode-tab:focus-visible,
+.btn-ghost:focus-visible,
+.file-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+#mode-split { padding-top: 1.25rem; }
+
+/* ── list head: מונה + מיון / ניקוי ───────────────────────────────── */
+.list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem;
+  margin-bottom: .5rem;
+  min-width: 0;
+}
+
+.list-head > span:first-child {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.list-tools {
+  display: flex;
+  gap: .25rem;
+  flex-shrink: 0;
+}
+
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  min-height: 36px;
+  padding: .3rem .6rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--accent);
+  font-size: .85rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition), border-color var(--transition);
+}
+
+.btn-ghost:hover { background: var(--accent-soft); }
+.btn-ghost.danger { color: var(--danger); }
+.btn-ghost.danger:hover { background: var(--danger-soft); }
+
+.btn-ghost svg {
+  width: 1em;
+  height: 1em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.file-btn:disabled { opacity: .35; cursor: default; pointer-events: none; }
+
+.file-meta.bad { color: var(--danger); }
+
+.text-input:disabled { opacity: .5; cursor: not-allowed; }
+
+#split-range, #opt-margin { text-align: end; }
+
+.range-input {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+/* ── result card (פיצול) ──────────────────────────────────────────── */
+.result-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  margin-top: 1rem;
+  padding: .75rem 1rem;
+  background: var(--ok-soft);
+  border: 1px solid var(--ok);
+  border-radius: var(--radius-sm);
+}
+
+.result-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.result-title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* ── responsive ────────────────────────────────────────────────────── */
 @media (max-width: 600px) {
   .settings-grid {
@@ -1021,6 +1171,9 @@ img, svg, canvas { display: block; max-width: 100%; }
 
   .file-card { flex-wrap: wrap; }
   .file-actions { width: 100%; justify-content: flex-end; margin-top: .25rem; }
+  /* שורה עם פעולה אחת (פיצול) — הכפתור נשאר בשורה, לא יורד לבד */
+  .file-card.compact { flex-wrap: nowrap; }
+  .file-card.compact .file-actions { width: auto; margin-top: 0; }
 
   .btn { padding: .6rem 1rem; font-size: .85rem; }
 }

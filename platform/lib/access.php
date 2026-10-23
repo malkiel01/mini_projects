@@ -164,7 +164,7 @@ function visible_for(array $user): array
 function app_public(array $a, bool $admin = false): array
 {
     return [
-        'id' => $a['id'], 'name' => $a['name'], 'icon' => $a['icon'],
+        'id' => $a['id'], 'name' => $a['name'], 'icon' => $a['icon'], 'icon_svg' => $a['icon_svg'] ?? null,
         'description' => $a['description'], 'category' => $a['category'],
         'href' => $a['href'], 'links' => $a['links'], 'external' => $a['external'],
         // מה שהמנהל לא אישר — לא נשלח לדפדפן בכלל. "הורדת המשפחה" אינה התקנה

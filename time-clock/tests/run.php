@@ -8,6 +8,8 @@
  * אישור חודשי: שלבים, פתיחה, אישור לפי תפקיד, במקום העובד, נעילה, פתיחה מחדש, ייצוא (שלב 6);
  * גרסה 2 — סיווג שעות: יומי, נוספות, לילה, מנוחה, חציית חצות לשבת, שבועי, דת, כללים בגרסאות;
  * חגים: לוח יהודי מובנה, ימים של החברה לפי דת, חג במנוחה (מצטבר / לא), חודש נעול.
+ * גרסה 3 — אישורי מחלה: סוג לפי התוכן, הרשאות צפייה, מחיקה ידנית ובתום משך השמירה, יומן.
+ * גרסה 3 — יתרות: טבלת הוותק, יתרת פתיחה, צבירה, הורדה, תקרת מחלה, רצף מחלה, ייצוא.
  * גרסה 3 — היעדרויות: בקשה, אישור ודחייה, רישום ישיר וביטול, יחידה, סוגי החברה, זיכוי התקן, חג, ייצוא, חודש נעול.
  * הרצה: php time-clock/tests/run.php — על מסד זמני, בלי לגעת ב-data/.
  */
@@ -557,6 +559,99 @@ periodLock($owner, ['company_id' => $cid, 'month' => '2028-01', 'reason' => 'ב�
 throws('חודש נעול — אין בקשה', fn() => $R(['type' => 'vacation', 'from' => '2028-01-31', 'to' => '2028-02-01']));
 throws('חודש נעול — אין רישום ישיר', fn() => absDirect($owner, ['company_id' => $cid, 'member_id' => $a, 'type' => 'vacation', 'from' => '2028-01-10']));
 check('כל החלטה ביומן', (int) db()->query("SELECT COUNT(*) FROM audit WHERE action LIKE 'absence%'")->fetchColumn() >= 12);
+unset($GLOBALS['TC_NOW']);
+
+// ===== גרסה 3: יתרות =====
+$GLOBALS['TC_NOW'] = $z('2028-03-10 10:00');
+$owner = as_(['sub' => 'u-owner']); $sara = as_(['sub' => 'u-sara']); $yossi = as_(['sub' => 'u-yossi']);
+check('טבלת חופשה: שנה 6 — חוק 14, צו הרחבה 17, שבוע של 6 ימים 16', vacationEntitlement(6, 5, 'law') === 14 && vacationEntitlement(6, 5, 'extension') === 17 && vacationEntitlement(6, 6, 'law') === 16);
+check('טבלת חופשה: 14 שנה ומעלה', vacationEntitlement(20, 5, 'law') === 20 && vacationEntitlement(14, 6, 'extension') === 24);
+$b = empAdd($owner, ['company_id' => $cid, 'name' => 'יתרות', 'site_id' => $s1, 'start_date' => '2025-01-01', 'days_per_week' => 5, 'daily_minutes' => 504])['employee']['id'];
+$bal = fn(string $k) => memberBalance(memberRow($b), $k, '2028-03-10');
+check('בלי יתרת פתיחה: צבירה מתאריך ההתחלה — 38 חודשים', $bal('vacation')['balance'] === 38.0 && $bal('sick')['balance'] === 57.0);
+throws('מנהלת שכר לא מזינה יתרה', fn() => absOpeningSave($sara, ['company_id' => $cid, 'member_id' => $b, 'kind' => 'vacation', 'as_of' => '2028-01-01', 'days' => 10]), 403);
+throws('מנהל סניף אחר לא מזין יתרה', fn() => absOpeningSave($yossi, ['company_id' => $cid, 'member_id' => $b, 'kind' => 'vacation', 'as_of' => '2028-01-01', 'days' => 10]), 404);
+throws('יתרה לא מספר', fn() => absOpeningSave($owner, ['company_id' => $cid, 'member_id' => $b, 'kind' => 'vacation', 'as_of' => '2028-01-01', 'days' => 'x']));
+absOpeningSave($owner, ['company_id' => $cid, 'member_id' => $b, 'kind' => 'vacation', 'as_of' => '2028-01-01', 'days' => 10, 'note' => 'מהמערכת הקודמת']);
+check('יתרת פתיחה 10 ב-1.1 + ינואר ופברואר', $bal('vacation')['balance'] === 12.0 && $bal('vacation')['accrued'] === 2.0);
+absDirect($owner, ['company_id' => $cid, 'member_id' => $b, 'type' => 'vacation', 'from' => '2028-02-06', 'to' => '2028-02-07']);
+absDirect($owner, ['company_id' => $cid, 'member_id' => $b, 'type' => 'vacation', 'from' => '2028-02-08', 'part' => 'hours', 'minutes' => 252]);
+absDirect($owner, ['company_id' => $cid, 'member_id' => $b, 'type' => 'vacation', 'from' => '2028-03-12']);
+absDirect($owner, ['company_id' => $cid, 'member_id' => $b, 'type' => 'reserve', 'from' => '2028-02-09']);
+$v = $bal('vacation');
+check('הורדה: יומיים, וחצי (שעות חלקי התקן); מילואים לא מוריד', $v['used'] === 2.5 && $v['balance'] === 9.5);
+check('חופשה עתידית — מתוכננת, עוד לא ירדה', $v['planned'] === 1.0);
+absOpeningSave($owner, ['company_id' => $cid, 'member_id' => $b, 'kind' => 'sick', 'as_of' => '2027-12-01', 'days' => 89.5]);
+check('מחלה: עד התקרה של 90', $bal('sick')['balance'] === 90.0);
+absDirect($owner, ['company_id' => $cid, 'member_id' => $b, 'type' => 'sick', 'from' => '2028-02-13']);
+absDirect($owner, ['company_id' => $cid, 'member_id' => $b, 'type' => 'sick', 'from' => '2028-02-17']);
+absDirect($owner, ['company_id' => $cid, 'member_id' => $b, 'type' => 'sick', 'from' => '2028-02-20', 'to' => '2028-02-21']);
+check('מחלה: 4 ימים ירדו, ואז צבירה של החודש (86 + 1.5)', $bal('sick')['balance'] === 87.5 && $bal('sick')['used'] === 4.0);
+check('רצף מחלה: שישי-שבת באמצע לא שוברים, יום עבודה בלי מחלה כן', sickRuns($b, '2028-02-01', '2028-02-29') === ['2028-02-13' => 1, '2028-02-17' => 1, '2028-02-20' => 4, '2028-02-21' => 5]);
+check('תוויות הרצף', sickRunLabel(1) === 'יום 1' && sickRunLabel(3) === 'יום 2–3' && sickRunLabel(4) === 'יום 4+');
+absSettingsSave($owner, ['company_id' => $cid, 'sick_monthly' => 2, 'sick_max' => 100]);
+check('כללי המחלה של החברה (2 לחודש, עד 100)', $bal('sick')['balance'] === 91.5);
+throws('ערך מחלה לא תקין', fn() => absSettingsSave($owner, ['company_id' => $cid, 'sick_max' => -1]));
+absSettingsSave($owner, ['company_id' => $cid, 'sick_monthly' => 1.5, 'sick_max' => 90]);
+$p = empAdd($owner, ['company_id' => $cid, 'name' => 'באמצע החודש', 'site_id' => $s1, 'start_date' => '2028-01-15', 'days_per_week' => 5, 'daily_minutes' => 504])['employee']['id'];
+check('התחיל באמצע ינואר — ינואר לא נצבר', memberBalance(memberRow($p), 'vacation', '2028-03-10')['accrued'] === 1.0);
+insertAbsence($b, ['type' => 'vacation', 'from_date' => '2028-03-13', 'to_date' => '2028-03-13', 'part' => 'full', 'minutes' => null, 'note' => null], $b, null, false);
+$pa = array_values(array_filter(absList($owner, ['company_id' => $cid])['absences'], fn($a) => $a['member_id'] === $b))[0];
+check('באישורים: היתרה אחרי האישור (9.5 − מתוכננת − הבקשה)', $pa['balance']['now'] === 9.5 && $pa['balance']['after'] === 7.5);
+$h = absHistory($owner, ['company_id' => $cid, 'member_id' => $b]);
+check('בכרטיס העובד: היתרות והיסטוריית הפתיחה', count($h['balances']) === 2 && count($h['openings']) === 2 && $h['openings'][0]['note'] === 'מהמערכת הקודמת');
+$csv = periodCsv($owner, ['company_id' => $cid, 'month' => '2028-02']);
+check('CSV: יום מחלה ברצף', str_contains($csv, 'יום מחלה ברצף') && (bool) preg_match('/^יתרות,,2028-02-20,[^\n]*מחלה,8:24,"יום 4\+"/mu', $csv) && (bool) preg_match('/^יתרות,,2028-02-17,[^\n]*"יום 1"/mu', $csv));
+check('CSV: היתרות בשורת הסיכום', (bool) preg_match('/^יתרות,,"סה״כ 2028-02"[^\n]*יתרת חופשה 9\.5 · יתרת מחלה 87\.5/mu', $csv));
+check('יתרת פתיחה ביומן', (int) db()->query("SELECT COUNT(*) FROM audit WHERE action = 'balance.opening'")->fetchColumn() === 2);
+unset($GLOBALS['TC_NOW']);
+
+// ===== גרסה 3: אישורי מחלה =====
+$GLOBALS['TC_NOW'] = $z('2028-03-10 10:00');
+$owner = as_(['sub' => 'u-owner']); $sara = as_(['sub' => 'u-sara']); $yossi = as_(['sub' => 'u-yossi']);
+$tmpf = function (string $bytes) { $f = tempnam(sys_get_temp_dir(), 'tc'); file_put_contents($f, $bytes); return ['tmp_name' => $f, 'error' => UPLOAD_ERR_OK]; };
+$png = $tmpf(base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='));
+$pdf = $tmpf("%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n");
+$html = $tmpf('<html><script>alert(1)</script></html>');
+$_COOKIE = [];
+empActivateAndLogin(['token' => empInvite($owner, ['company_id' => $cid, 'id' => $b])['invite_token'], 'pin' => '7391']);
+$sk = empAbsenceRequest(['member_id' => $b, 'type' => 'sick', 'from' => '2028-03-08'])['id'];
+throws('קובץ שאינו תמונה או PDF (לפי התוכן)', fn() => empCertUpload(['member_id' => $b, 'absence_id' => $sk], $html));
+throws('בלי קובץ', fn() => empCertUpload(['member_id' => $b, 'absence_id' => $sk], ['error' => UPLOAD_ERR_NO_FILE]));
+throws('גדול מדי', fn() => empCertUpload(['member_id' => $b, 'absence_id' => $sk], ['error' => UPLOAD_ERR_INI_SIZE]));
+$c1 = empCertUpload(['member_id' => $b, 'absence_id' => $sk], $png)['certs'];
+check('העובד העלה תמונה', count($c1) === 1 && $c1[0]['mime'] === 'image/png');
+$c2 = empCertUpload(['member_id' => $b, 'absence_id' => $sk], $pdf)['certs'];
+$file = empCertFile(['member_id' => $b, 'absence_id' => $sk, 'id' => $c2[1]['id']]);
+check('PDF נשמר בשם אקראי, מחוץ לתיקיית האפליקציה בבדיקות, והתוכן זהה', $file['mime'] === 'application/pdf'
+      && preg_match('/^[0-9a-f]{32}\.pdf$/', basename($file['path'])) && file_get_contents($file['path']) === file_get_contents($pdf['tmp_name']));
+throws('עובד לא רואה היעדרות של אחר', fn() => empCertList(['member_id' => $b, 'absence_id' => $v1]), 404);
+$row = array_values(array_filter(absList($owner, ['company_id' => $cid])['absences'], fn($a) => $a['id'] === $sk))[0];
+check('ברשימה: מספר הקבצים', $row['certs'] === 2 && $row['cert_shown']);
+check('מנהל סניף אחר לא ניגש', (function () use ($yossi, $cid, $sk) { try { absCertList($yossi, ['company_id' => $cid, 'absence_id' => $sk]); return false; } catch (AppError $e) { return $e->status === 403; } })());
+$_SERVER['PLATFORM_USER'] = json_encode(['sub' => 'u-sara']);
+check('מנהלת השכר רואה את הקובץ', absCertFile($sara, ['company_id' => $cid, 'absence_id' => $sk, 'id' => $c1[0]['id']])['mime'] === 'image/png');
+check('צפייה במידע רפואי נרשמת ביומן', (int) db()->query("SELECT COUNT(*) FROM audit WHERE action = 'cert.view'")->fetchColumn() === 1);
+absDecide($owner, ['company_id' => $cid, 'id' => $sk, 'approve' => true]);
+throws('אחרי ההחלטה העובד לא מוחק', fn() => empCertDelete(['member_id' => $b, 'absence_id' => $sk, 'id' => $c1[0]['id']]), 403);
+throws('מחיקה בלי סיבה', fn() => absCertDelete($owner, ['company_id' => $cid, 'absence_id' => $sk, 'id' => $c1[0]['id']]));
+$path1 = empCertFile(['member_id' => $b, 'absence_id' => $sk, 'id' => $c1[0]['id']])['path'];
+absCertDelete($owner, ['company_id' => $cid, 'absence_id' => $sk, 'id' => $c1[0]['id'], 'reason' => 'הועלה בטעות']);
+check('נמחק: הקובץ מהדיסק, הרשומה נשארת', !is_file($path1) && empCertList(['member_id' => $b, 'absence_id' => $sk])['certs'][0]['delete_reason'] === 'manual');
+throws('קובץ שנמחק — לא מוגש', fn() => empCertFile(['member_id' => $b, 'absence_id' => $sk, 'id' => $c1[0]['id']]), 404);
+// משך השמירה: היעדרות ישנה, ושמירה של שנתיים
+$old = absDirect($owner, ['company_id' => $cid, 'member_id' => $b, 'type' => 'sick', 'from' => '2025-03-03'])['id'];
+$co = absCertUpload($owner, ['company_id' => $cid, 'absence_id' => $old], $tmpf(file_get_contents($pdf['tmp_name'])))['certs'];
+$pathOld = absCertFile($owner, ['company_id' => $cid, 'absence_id' => $old, 'id' => $co[0]['id']])['path'];
+absSettingsSave($owner, ['company_id' => $cid, 'cert_years' => 2]);
+absSettingsGet($owner, ['company_id' => $cid]);
+check('בתום משך השמירה: הקובץ נמחק, "הוצג אישור" נשאר', !is_file($pathOld) && is_file(empCertFile(['member_id' => $b, 'absence_id' => $sk, 'id' => $c2[1]['id']])['path'])
+      && absencesOf('a.id = ?', [$old])[0]['cert_shown'] && absencesOf('a.id = ?', [$old])[0]['certs'] === 0);
+check('מחיקה בתום השמירה ביומן', (int) db()->query("SELECT COUNT(*) FROM audit WHERE action = 'cert.expire'")->fetchColumn() === 1);
+throws('משך שמירה לא תקין', fn() => absSettingsSave($owner, ['company_id' => $cid, 'cert_years' => 0]));
+check('היומן לא שומר את שם הקובץ', !str_contains((string) db()->query("SELECT GROUP_CONCAT(after) FROM audit WHERE action LIKE 'cert.%'")->fetchColumn(), basename($file['path'])));
+foreach (glob(dirname(DB_FILE) . '/certs/*') as $f) @unlink($f);
+@rmdir(dirname(DB_FILE) . '/certs');
 unset($GLOBALS['TC_NOW']);
 
 echo "\n" . ($n - $fails) . "/$n עברו\n";

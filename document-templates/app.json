@@ -1,7 +1,8 @@
 {
   "id": "document-templates",
   "name": "תבניות מסמכים",
-  "icon": "📝",
+  "icon": "🧾",
+  "icon_svg": "assets/icon.svg",
   "description": "יוצרים תבנית פעם אחת, ומנפיקים ממנה מסמכים: ממלאים לבד או שולחים קישור למילוי ולחתימה. בבנייה.",
   "category": "documents",
   "entry": "index.html",

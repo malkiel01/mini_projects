@@ -32,7 +32,7 @@ async function showHome() {
         tile('➕', 'עיצוב חדש', newDesignSheet),
         tile('📥', 'ייבוא מהצ\'אט', importSheet),
         tile('🤖', 'סקיל לצ\'אט', skillSheet),
-        tile('📂', 'פתיחת קובץ', async () => { const f = await pickFiles('.gcard,.zip,.json'); if (f.length) runImport(f, ''); }));
+        tile('📂', 'פתיחת קובץ', async () => { const f = await pickFiles(''); if (f.length) runImport(f, ''); }));
 
     const rows = list.length
         ? h('ul', { class: 'list', 'aria-label': 'העיצובים שלי' }, list.map(d => h('li', { class: 'row' },
@@ -181,7 +181,7 @@ function importSheet() {
     const files = [];
     const list = h('ul', { class: 'file-list', 'aria-live': 'polite' });
     const text = h('textarea', { rows: 5, dir: 'ltr', placeholder: '{ "version": 1, "page": … }', class: 'mono' });
-    const drop = h('button', { class: 'drop', onclick: async () => add(await pickFiles('image/*,.json,.gcard,.zip', true)) },
+    const drop = h('button', { class: 'drop', onclick: async () => add(await pickFiles('', true)) },
         h('span', { class: 'tile-icon', 'aria-hidden': 'true' }, '📎'), h('span', {}, 'בחירת תמונות או קובץ מהצ\'אט'),
         h('span', { class: 'muted small' }, 'design.gcard · תמונות · design.json'));
     const add = fs => { for (const f of fs) { files.push(f); list.append(h('li', {}, `${f.type.startsWith('image/') ? '🖼️' : '📄'} ${f.name}`)); } };

@@ -69,7 +69,10 @@ export async function importFromChat(files, pastedText) {
 
     for (const f of files) {
         const name = f.name.toLowerCase();
-        if (name.endsWith('.gcard') || name.endsWith('.zip')) {
+        // קובץ מהצ'אט יכול להגיע בשם אחר או בלי סיומת (אנדרואיד לא מכיר ‎.gcard) — מזהים ZIP לפי התוכן.
+        const isZip = name.endsWith('.gcard') || name.endsWith('.zip')
+            || (!f.type.startsWith('image/') && !name.endsWith('.json') && await f.slice(0, 2).text() === 'PK');
+        if (isZip) {
             await loadScript('vendor/jszip.min.js');
             const zip = await window.JSZip.loadAsync(f);
             let total = 0;

@@ -164,6 +164,9 @@ main {
     background: hsl(var(--h, 240) 70% 95%);
 }
 @media (prefers-color-scheme: dark) { .app-ic { background: hsl(var(--h, 240) 25% 22%); } }
+.app-ic-img { width: 78%; height: 78%; object-fit: contain; display: block; }
+.app-ic.full { background: none; }
+.app-ic.full .app-ic-img { width: 100%; height: 100%; border-radius: inherit; }
 .app-tx { flex: 1; min-width: 0; display: grid; gap: 1px; }
 .app-tx b { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .app-tx small { color: var(--muted); font-size: .84rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

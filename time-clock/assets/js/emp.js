@@ -247,19 +247,31 @@ async function absences() {
   catch (e) { toast(e.message, true); if (e.status === 401) boot(); return; }
   main.innerHTML = `
     <div class="toolbar"><h2 class="sec-title" style="margin:0;flex:1">חופשה ומחלה</h2><button class="btn primary" type="button" id="abs-new"><span aria-hidden="true">+</span> בקשה</button></div>
+    <h3 class="sec-title" style="margin-top:0">היתרות שלי</h3>
+    ${balancesHtml(r.balances)}
     <p class="hint">בוחרים סוג ותאריכים, והמנהל מאשר. יום שאושר נחשב כיום עבודה מלא בשעות התקן.</p>
     <ul class="list" id="abs-list">${r.absences.length ? r.absences.map(a => absItem(a,
-      a.status === 'pending' && a.by === 'employee' ? `<button class="icon-btn" type="button" data-cancel="${a.id}" aria-label="ביטול הבקשה">✕</button>` : '')).join('')
+      (['pending', 'approved'].includes(a.status) ? `<button class="icon-btn" type="button" data-certs="${a.id}" aria-label="אישורים">📎</button>` : '')
+      + (a.status === 'pending' && a.by === 'employee' ? `<button class="icon-btn" type="button" data-cancel="${a.id}" aria-label="ביטול הבקשה">✕</button>` : ''))).join('')
       : '<li class="empty">אין בקשות. לחופשה או למחלה — "+ בקשה".</li>'}</ul>`;
   $('#abs-new').addEventListener('click', () => {
     openSheet('בקשת היעדרות', absenceForm(r.types, r.unit, r.today), async form => {
-      await api('emp_absence_request', { member_id: m.id, ...absenceBody(form) });
+      const body = absenceBody(form);
+      const file = body.type === 'sick' ? form.cert?.files[0] : null;
+      const { id } = await api('emp_absence_request', { member_id: m.id, ...body });
+      if (file) {
+        try { await uploadCert('../api.php', 'emp_cert', { member_id: m.id, absence_id: id }, file); }
+        catch (ex) { toast('הבקשה נשלחה, אבל האישור לא עלה: ' + ex.message, true); absences(); return; }
+      }
       toast('הבקשה נשלחה למנהל');
       absences();
     });
     absenceWire($('#sheet form'));
   });
   $('#abs-list').addEventListener('click', async e => {
+    const c = e.target.closest('[data-certs]');
+    if (c) return certSheet({ base: '../api.php', prefix: 'emp_cert', params: { member_id: m.id, absence_id: +c.dataset.certs }, title: 'אישורים',
+      show: (t, h) => openSheet(t, h, null), canAdd: true, after: absences });
     const b = e.target.closest('[data-cancel]'); if (!b) return;
     if (!confirm('לבטל את הבקשה?')) return;
     try { await api('emp_absence_cancel', { member_id: m.id, id: +b.dataset.cancel }); toast('הבקשה בוטלה'); absences(); }

@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- הצבעים של האתר (manifest.webmanifest) -->
-<resources>
-    <color name="colorPrimary">#0F172A</color>
-    <color name="navigationColor">#FFFFFF</color>
-    <color name="backgroundColor">#F4F6FB</color>
-    <color name="iconBackground">#1D4ED8</color>
-</resources>

@@ -491,6 +491,13 @@ window.PlatformAdmin = (() => {
     function appIc(id) {
         const a = appInfo(id);
         const ic = el('span', { className: 'app-ic sm', textContent: a.icon, ariaHidden: 'true' });
+        if (a.icon_svg) {
+            const img = el('img', { src: a.icon_svg, alt: '', className: 'app-ic-img', decoding: 'async' });
+            img.addEventListener('load', () => {
+                ic.replaceChildren(img);
+                if (!/\.svg$/i.test(a.icon_svg)) ic.classList.add('full');
+            }, { once: true });
+        }
         ic.style.setProperty('--h', P().hue(a.id));
         return ic;
     }

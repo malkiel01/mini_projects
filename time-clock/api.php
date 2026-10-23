@@ -43,10 +43,26 @@ function rollBack(): void {
 $raw = file_get_contents('php://input');
 $in = is_string($raw) && $raw !== '' ? (json_decode($raw, true) ?: []) : [];
 if (!is_array($in)) $in = [];
+// העלאת קובץ (אישור להיעדרות) — multipart: השדות ב-$_POST, הקובץ ב-$_FILES['file']
+if (!$in && $_POST) $in = $_POST;
+// מעבר ל-post_max_size של השרת PHP מרוקן את $_POST ואת $_FILES — בלי זה העובד היה מקבל "המכשיר לא מחובר"
+$tooBig = !$_POST && !$_FILES && (int) ($_SERVER['CONTENT_LENGTH'] ?? 0) > 0 && str_starts_with((string) ($_SERVER['CONTENT_TYPE'] ?? ''), 'multipart/');
+$upload = is_array($_FILES['file'] ?? null) ? $_FILES['file'] : ['error' => UPLOAD_ERR_NO_FILE];
+
+/** שליחת קובץ אישור — מידע רפואי: בלי מטמון, ולא כדף שמריץ משהו. */
+function sendFile(array $f): never {
+    header('Content-Type: ' . $f['mime']);
+    header('Content-Length: ' . filesize($f['path']));
+    header('Content-Disposition: inline; filename="' . $f['name'] . '"');
+    header("Content-Security-Policy: default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; sandbox");
+    readfile($f['path']);
+    exit;
+}
 $action = $_GET['action'] ?? (is_string($in['action'] ?? null) ? $in['action'] : '');
 
 try {
     if ($action !== 'me' && ($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') fail('נדרש POST', 405);
+    if ($tooBig) fail('הקובץ גדול מדי בשביל השרת. נסו קובץ קטן יותר או צילום.', 413);
 
     // עובד — לפני הבדיקה של צוות הניהול: אין לו PLATFORM_USER.
     switch ($action) {
@@ -62,6 +78,10 @@ try {
         case 'emp_absences':    ok(empAbsences($in));
         case 'emp_absence_request': ok(empAbsenceRequest($in));
         case 'emp_absence_cancel':  ok(empAbsenceCancel($in));
+        case 'emp_cert_upload': ok(empCertUpload($in, $upload));
+        case 'emp_cert_list':   ok(empCertList($in));
+        case 'emp_cert_file':   sendFile(empCertFile($in));
+        case 'emp_cert_delete': ok(empCertDelete($in));
         case 'station_pair':    writeStationCookie(stationPair($in)); ok(stationState());
         case 'station_state':   ok(stationState());
         case 'station_check':   ok(stationCheck($in));
@@ -102,6 +122,11 @@ try {
         case 'abs_direct':     ok(absDirect($person, $in));
         case 'abs_void':       ok(absVoid($person, $in));
         case 'abs_history':    ok(absHistory($person, $in));
+        case 'abs_opening_save': ok(absOpeningSave($person, $in));
+        case 'abs_cert_upload': ok(absCertUpload($person, $in, $upload));
+        case 'abs_cert_list':   ok(absCertList($person, $in));
+        case 'abs_cert_file':   sendFile(absCertFile($person, $in));
+        case 'abs_cert_delete': ok(absCertDelete($person, $in));
         case 'abs_settings_get':  ok(absSettingsGet($person, $in));
         case 'abs_settings_save': ok(absSettingsSave($person, $in));
         case 'abs_type_save':  ok(absTypeSave($person, $in));
