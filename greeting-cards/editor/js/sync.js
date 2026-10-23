@@ -200,6 +200,32 @@ export async function pushAll() {
     } finally { pushingAll = false; }
 }
 
+// ─── מ-ChatGPT ────────────────────────────────────────────────────────────
+
+/** ייבואים שה-GPT שלח לחשבון (OAuth) ועוד לא נפתחו. */
+export async function pendingImports() {
+    if (!user) return [];
+    try { return (await call('chat_pending')).imports; } catch { return []; }
+}
+
+/**
+ * מימוש קוד ייבוא: התמונות כבר בחשבון (השרת העביר אותן), וכאן הן יורדות למכשיר.
+ * @returns {{design: object|null, files: Object<string,{id:string,width:number,height:number}>, blobs: Map<string,Blob>}}
+ */
+export async function claimImport(code) {
+    const r = await call('chat_claim', { method: 'POST', json: { code } });
+    const blobs = new Map();
+    for (const [name, f] of Object.entries(r.files || {})) {
+        const res = await fetch(fileUrl(f.id), { credentials: 'same-origin' });
+        if (res.ok) blobs.set(name, await res.blob());
+    }
+    return { design: r.design, files: r.files || {}, blobs };
+}
+
+export async function gptSetup(regenerate = false) {
+    return call('gpt_setup', regenerate ? { method: 'POST', json: {} } : {});
+}
+
 export async function removeRemote(id) {
     if (user) await call('design_delete', { method: 'POST', json: { id } });
 }

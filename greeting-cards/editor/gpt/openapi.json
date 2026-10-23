@@ -1,0 +1,67 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "סטודיו עיצוב — שליחה לעורך",
+    "description": "Sends the background images created in this conversation, plus a design.json layout, to the Design Studio editor (mbe-plus.com). Returns a link that opens the design with editable text layers.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    { "url": "https://mbe-plus.com/mini_projects/greeting-cards/editor" }
+  ],
+  "paths": {
+    "/gpt.php": {
+      "post": {
+        "operationId": "sendToEditor",
+        "summary": "Send the design and its images to the editor",
+        "description": "Call this after creating the background (and any transparent element images) and the design.json. Attach ALL images that design.json references, by the same file names. Never put text inside the images; the text lives in design.json layers. Return the 'message' field to the user as is.",
+        "x-openai-isConsequential": false,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["openaiFileIdRefs"],
+                "properties": {
+                  "openaiFileIdRefs": {
+                    "type": "array",
+                    "description": "The images generated in this conversation that the design uses: the background and any element PNGs. Up to 10. Their names must match the 'file' values in design.assets.",
+                    "items": { "type": "string" }
+                  },
+                  "design": {
+                    "type": "object",
+                    "description": "The design.json layout: { version: 1, page: {width, height, background}, assets: { key: {type: 'image', file: '<image file name>'} }, layers: [...] }. Text layers: {type:'text', role, text, x, y, w, h, style:{font, size, weight, color, align:'center'|'right'|'left', dir:'rtl'}}. Image layers: {type:'image', asset:'<key>', x, y, w, h, locked?}. Coordinates in page pixels from the top-left. Fonts: Heebo, Assistant, Rubik, Secular One, Frank Ruhl Libre, Suez One, Varela Round, Alef, Karantina, Amatic SC.",
+                    "additionalProperties": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved. Give the user the message (it includes the link).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": { "type": "boolean" },
+                    "url": { "type": "string", "description": "Opens the design in the editor" },
+                    "code": { "type": "string", "description": "One-time code, valid 24 hours" },
+                    "images": { "type": "integer" },
+                    "message": { "type": "string", "description": "Hebrew text to show the user as is" }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Error — tell the user the 'error' text",
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "error": { "type": "string" } } } } }
+          }
+        }
+      }
+    }
+  }
+}
