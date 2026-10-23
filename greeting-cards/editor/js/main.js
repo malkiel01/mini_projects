@@ -17,7 +17,7 @@ import { loadScript } from './io.js';
 import { docVariables, readSheetFile, readPasted, readPhoneContacts, guessColumns, normalizePhone, fileNames, fillText } from './merge.js';
 
 // הגרסה — מופיעה ביומן, כדי לדעת איזה קוד רץ בטלפון.
-const BUILD = '2026-10-23.touch-1';
+const BUILD = '2026-10-23.dev-1';
 
 const app = $('#app');
 let ed = null;   // העיצוב הפתוח: { id, doc, history, canvas, dirty }
@@ -1090,7 +1090,33 @@ function moreSheet() {
         h('button', { class: 'menu-item', onclick: pageSizeSheet }, '📐 גודל הדף'),
         h('button', { class: 'menu-item', onclick: skillSheet }, '🤖 סקיל לצ\'אט'),
         h('button', { class: 'menu-item', onclick: () => { closeSheet(); importSheet(); } }, '📥 ייבוא מהצ\'אט (עיצוב חדש)'),
-        h('button', { class: 'menu-item', onclick: sendLog }, '🐞 שליחת יומן לבדיקה')));
+        sync.currentUser()?.role === 'owner' ? h('button', { class: 'menu-item', onclick: devSheet }, '🛠️ אזור פיתוח') : null));
+}
+
+/**
+ * אזור הפיתוח — רק למפתח (בעל המערכת): הגרסה שרצה, היומן של המכשיר הזה, ויומנים שנשלחו.
+ * משתמש רגיל לא רואה אותו, והשרת מסרב לפעולות היומן בשבילו.
+ */
+async function devSheet() {
+    closeSheet();
+    const list = h('ul', { class: 'dev-logs' }, h('li', { class: 'muted' }, 'טוען…'));
+    sheet('🛠️ אזור פיתוח', h('div', {},
+        h('p', { class: 'hint' }, `גרסה \u2066${BUILD}\u2069 · ${logDump().rows.length} רשומות ביומן של המכשיר הזה (נגיעות, בחירות, גדלים וזום — בלי טקסטים ובלי תמונות).`),
+        h('button', { class: 'btn primary block', onclick: sendLog }, '🐞 שליחת היומן לקלוד'),
+        h('h3', { class: 'section' }, 'יומנים שנשלחו'),
+        list));
+    try {
+        const { logs } = await sync.listLogs();
+        list.replaceChildren(...(logs.length ? logs.map(l => h('li', { class: 'dev-log' },
+            h('span', { class: 'dev-log-code', dir: 'ltr' }, l.id),
+            h('span', { class: 'muted small' }, `${timeAgo(Date.parse(l.received))} · ${l.rows} רשומות · ${l.page || ''}${l.apk ? ' · APK' : ''}`),
+            h('button', { class: 'icon-btn', 'aria-label': `העתקת הקוד ${l.id}`, onclick: () => copyText(l.id) }, '📋')))
+            : [h('li', { class: 'muted' }, 'עוד לא נשלחו יומנים')]));
+    } catch (e) { list.replaceChildren(h('li', { class: 'muted' }, 'הרשימה לא נטענה: ' + e.message)); }
+}
+
+async function copyText(t) {
+    try { await navigator.clipboard.writeText(t); toast('הקוד הועתק'); } catch { toast('לא הצלחתי להעתיק — העתיקו ידנית', 'error'); }
 }
 
 /**
@@ -1108,7 +1134,7 @@ async function sendLog() {
             h('p', {}, 'שלחו לקלוד את הקוד:'),
             h('p', { class: 'log-code', dir: 'ltr' }, r.id),
             h('div', { class: 'row-actions' },
-                h('button', { class: 'btn primary', onclick: async () => { try { await navigator.clipboard.writeText(r.id); toast('הקוד הועתק'); } catch { toast('לא הצלחתי להעתיק — העתיקו ידנית', 'error'); } } }, '📋 העתקת הקוד')),
+                h('button', { class: 'btn primary', onclick: () => copyText(r.id) }, '📋 העתקת הקוד')),
             h('p', { class: 'hint' }, `${dump.rows.length} רשומות: נגיעות, בחירות, גדלים וזום — בלי טקסטים ובלי תמונות.`)));
     } catch (e) { toast('השליחה נכשלה: ' + e.message, 'error'); }
 }
@@ -1416,6 +1442,7 @@ function accountSheet() {
             me.role === 'owner' ? ' · מנהל המערכת' : ''),
         me.role === 'owner' ? h('button', { class: 'btn ghost block', onclick: gptSetupSheet }, '🤖 הגדרת ה-GPT ב-ChatGPT') : null,
         me.role === 'owner' ? h('a', { class: 'btn ghost block', href: '../admin.html' }, '⚙️ ממשק הניהול') : null,
+        me.role === 'owner' ? h('button', { class: 'btn ghost block', onclick: devSheet }, '🛠️ אזור פיתוח') : null,
         me.platform ? null : h('button', { class: 'btn ghost block', onclick: async () => { await sync.logout(); closeSheet(); showLogin(); } }, '🚪 יציאה')));
 }
 
