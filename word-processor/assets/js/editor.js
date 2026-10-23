@@ -23,6 +23,7 @@ import { captions, newSeqId, SEQ_LABELS, listTitle } from './caption.js';
 import { createComments } from './comments.js';
 import { TrackChanges, changes, resolveChanges, goToChange, setTracking, VIEWS as TRACK_VIEWS, authors as changeAuthors, authorColor } from './track.js';
 import { TabStops, tabsOf, ALIGNS as TAB_ALIGNS, LEADERS as TAB_LEADERS } from './tabs.js';
+import { createRuler } from './ruler.js';
 
 const MM = 96 / 25.4;
 const PT = 4 / 3;
@@ -208,6 +209,7 @@ export function createWordEditor(root, opts) {
     const trackStyle = h('style');
     const wmPrint = h('div.wp-wm-print', { 'aria-hidden': 'true' });   // סימן המים בהדפסה (בכל עמוד)
     const pagesLayer = h('div.wp-pages', { 'aria-hidden': 'true' });
+    let ruler = null;   // הסרגל (ruler.js) — נבנה אחרי העורך
     const host = h('div.wp-host');
     const sheetEl = h('div.wp-sheet', pagesLayer, host);
     const zoomEl = h('div.wp-zoom', sheetEl);
@@ -528,6 +530,7 @@ export function createWordEditor(root, opts) {
         pageCount = total;
         frameOf = physOf;
         placePageAnchored();
+        ruler?.update();
         setZoom();
         status();
         statusBarPage();
@@ -584,6 +587,7 @@ export function createWordEditor(root, opts) {
         editor.storage.wpPages.zoom = zoom;
         if (zoomLabel) zoomLabel.textContent = Math.round(zoom * 100) + '%';
         if (stZoom) stZoom.textContent = Math.round(zoom * 100) + '%';
+        ruler?.update();
     }
     const resizeObs = new ResizeObserver(() => { if (fit && !editor.isDestroyed) setZoom(); });
     resizeObs.observe(stage);
@@ -682,6 +686,7 @@ export function createWordEditor(root, opts) {
             wordCount: () => wordCountDialog(),
             navPane: () => { if (nav.isOpen()) nav.close(); else { if (phone.matches) openSheet(false); nav.open(); } refresh(); },
             navOn: () => nav.isOpen(),
+            ruler: () => ruler.toggle(), rulerOn: () => ruler.isOn(),
             showMarks: () => editor.commands.setMarks(!marksOn()),
             marksOn: () => marksOn(),
             stepFont: dir => stepFont(dir),
@@ -698,6 +703,17 @@ export function createWordEditor(root, opts) {
     const finder = createFindBar(h, { editor, notify: msg => toast(msg) });
     findSlot.append(finder.el);
     const nav = createNavPane({ editor, h, onClose: () => refresh() });
+    // הסרגל: מעל הדף (בטלפון — כבוי כברירת מחדל); גבול שוליים שנגרר — השוליים של המקטע שבו הסמן
+    ruler = createRuler({ editor, h, pagesLayer, defaultOn: !window.matchMedia('(max-width: 700px)').matches,
+        sectionPage: () => { const at = editor.state.selection.from; return sections().filter((x, k) => k === 0 || x.from < at).pop().page; },
+        setMargin: (side, mm) => {
+            const secs = sections();
+            const at = editor.state.selection.from;
+            const k = secs.reduce((acc, x, i) => (i && x.from < at ? i : acc), 0);
+            if (secs.length === 1) setPage({ margins: { [side]: mm } });
+            else setSections(k, { margins: { ...secs[k].page.margins, [side]: mm } }, {});
+        } });
+    stage.prepend(ruler.el);
     body.prepend(nav.el);
     const comments = createComments({ editor, h, user: opts.user, onChange: () => refresh() });
     body.append(comments.el);
@@ -767,6 +783,7 @@ export function createWordEditor(root, opts) {
         'footnote', 'sectionBreak', 'pageSetup', 'editStyles', 'print', 'zoomOut', 'zoomIn', 'zoomFit'].map(id => [id, cmdBtn(id)]));
     B.navPane = cmdBtn('navPane');
     B.showMarks = cmdBtn('showMarks');
+    B.ruler = cmdBtn('ruler');
     B.painter = cmdBtn('formatPainter', { ondblclick: () => cmds.run('formatPainter', true) });
     B.color = cmdColor('color', '#c00000');
     B.mark = cmdColor('highlight', '#ffff00', '.mark');
@@ -790,7 +807,7 @@ export function createWordEditor(root, opts) {
         ['review', 'סקירה', [grp('הערות', [cmdBtn('comment'), cmdBtn('commentsPane')]),
             grp('מעקב', [trackBtn, trackViewSel, cmdBtn('trackAuthors')]),
             grp('שינויים', changeBtns.slice(0, 4), changeBtns.slice(4))]],
-        ['view', 'תצוגה', [zoomGroup, grp('הצגה', [B.navPane, B.showMarks, cmdBtn('wordCount')]), grp('מסמך', [opts.save ? cmdBtn('save') : null, B.print, cmdBtn('printPreview'), opts.versions ? cmdBtn('versions') : null, ...(opts.menu || [])])]],
+        ['view', 'תצוגה', [zoomGroup, grp('הצגה', [B.navPane, B.ruler, B.showMarks, cmdBtn('wordCount')]), grp('מסמך', [opts.save ? cmdBtn('save') : null, B.print, cmdBtn('printPreview'), opts.versions ? cmdBtn('versions') : null, ...(opts.menu || [])])]],
     ];
     const uid = Math.random().toString(36).slice(2, 8);
     const tabsEl = h('div.rb-tabs', { role: 'tablist', 'aria-label': 'לשוניות הסרט' });
@@ -1039,7 +1056,7 @@ export function createWordEditor(root, opts) {
         changeBtns.forEach((b, i) => { b.disabled = !anyChange || (i !== 2 && i !== 3 && !editor.isEditable); });
         for (const b of numBtns) b.disabled = !editor.isActive('orderedList') || !editor.isEditable;
         hnumBtn.classList.toggle('on', !!page.heading_numbers);
-        for (const [b, on] of [[B.navPane, nav.isOpen()], [B.showMarks, marksOn()], [trackBtn, !!editor.state.doc.attrs.track]]) { b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }
+        for (const [b, on] of [[B.navPane, nav.isOpen()], [B.ruler, !!ruler?.isOn()], [B.showMarks, marksOn()], [trackBtn, !!editor.state.doc.attrs.track]]) { b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }
         hnumBtn.setAttribute('aria-pressed', String(!!page.heading_numbers));
         contextBar();
         statusBarPage();
