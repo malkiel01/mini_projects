@@ -11,6 +11,7 @@ const DOC_MAX_BYTES = 8 * 1024 * 1024;
 const VERSION_MERGE_SECONDS = 600;
 const VERSION_MAX = 100;
 const LOCK_SECONDS = 120;
+const PRESENCE_SECONDS = 15;   // עריכה משותפת: מי שלא משך שינויים 15 שניות — כבר לא במסמך
 const MEDIA_MAX_BYTES = 10 * 1024 * 1024;
 const MEDIA_TYPES = ['image/png' => 'png', 'image/jpeg' => 'jpg', 'image/gif' => 'gif', 'image/webp' => 'webp'];
 /** גרסת המבנה של ה-JSON (attrs.schema). אותו מספר ב-assets/js/extensions.js; ההמרות — כאן וב-assets/js/schema.js. */
@@ -159,7 +160,7 @@ function doc_page(array $row): array
  * שמירה. $base — הגרסה שעליה נערך; גרסה אחרת בשרת → 409 conflict (embed.md, פרק 4).
  * מחזיר את השורה המעודכנת.
  */
-function doc_save(array $row, $json, ?string $title, string $userId, string $userName, $base = null, $page = null): array
+function doc_save(array $row, $json, ?string $title, string $userId, string $userName, $base = null, $page = null, bool $shared = false): array
 {
     if ($base !== null && (int)$base !== (int)$row['version']) {
         throw new ApiError('המסמך השתנה בינתיים — טענו אותו מחדש', 'conflict', 409);
@@ -182,7 +183,7 @@ function doc_save(array $row, $json, ?string $title, string $userId, string $use
     $st->execute($args);
     if ($st->rowCount() !== 1) throw new ApiError('המסמך השתנה בינתיים — טענו אותו מחדש', 'conflict', 409);
     $row = doc_find($row['id'], $row['space']);
-    version_record($row, $userId, $userName);
+    version_record($row, $userId, $userName, '', $shared);
     return $row;
 }
 
@@ -315,15 +316,17 @@ function with_media_src(array $json, bool $absolute = false): array
  * רישום גרסה. רגילה ($kind '') — מתאחדת עם הגרסה הקודמת של אותו משתמש בחלון 10 הדקות; גרסת שחזור ('restore') —
  * תמיד שורה חדשה, ואף שמירה לא מתאחדת לתוכה. כך המצב שלפני שחזור והמצב המשוחזר נשמרים שניהם (ביקורת 03 / 04, F06 / R07).
  */
-function version_record(array $row, string $userId, string $userName, string $kind = ''): void
+function version_record(array $row, string $userId, string $userName, string $kind = '', bool $shared = false): void
 {
     $now = time();
-    $st = db()->prepare('SELECT id, user_id, started_at, kind FROM versions WHERE doc = ? ORDER BY id DESC LIMIT 1');
+    $st = db()->prepare('SELECT id, user_id, user_name, started_at, kind FROM versions WHERE doc = ? ORDER BY id DESC LIMIT 1');
     $st->execute([$row['id']]);
     $last = $st->fetch(); $st->closeCursor();
-    if ($kind === '' && $last && $last['kind'] === '' && $last['user_id'] === $userId && $now - (int)$last['started_at'] < VERSION_MERGE_SECONDS) {
+    // עריכה משותפת ($shared — lib/collab.php): כמה כותבים לסירוגין — גרסה אחת לחלון, עם שמות כולם (אחרת כל שנייה גרסה חדשה)
+    if ($kind === '' && $last && $last['kind'] === '' && ($shared || $last['user_id'] === $userId) && $now - (int)$last['started_at'] < VERSION_MERGE_SECONDS) {
+        $names = $shared && !in_array($userName, explode(', ', $last['user_name']), true) ? mb_substr($last['user_name'] . ', ' . $userName, 0, 200) : ($shared ? $last['user_name'] : $userName);
         db()->prepare('UPDATE versions SET version = ?, title = ?, json = ?, page = ?, user_name = ?, saved_at = ? WHERE id = ?')
-            ->execute([$row['version'], $row['title'], $row['json'], $row['page'], $userName, $now, $last['id']]);
+            ->execute([$row['version'], $row['title'], $row['json'], $row['page'], $names, $now, $last['id']]);
         return;
     }
     db()->prepare('INSERT INTO versions (doc, version, title, json, page, user_id, user_name, started_at, saved_at, kind) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
@@ -420,6 +423,11 @@ function lock_take(string $doc, string $userId, string $userName, string $holder
     $now = time();
     $l = lock_get($doc);
     if ($l && $l['user_id'] !== $userId) return ['ok' => false, 'by' => $l['user_name'], 'since' => (int)$l['since']];
+    // עורכים במצב עריכה משותפת (lib/collab.php) לא נועלים — אבל כותב בשיטה הישנה (הטמעה, קישור לזר) לא נכנס כשהם שם
+    $st = db()->prepare("SELECT user_name, MIN(beat) AS since FROM presence WHERE doc = ? AND user_id != ? AND beat > ? AND role IN ('owner', 'edit', 'comment')");
+    $st->execute([$doc, $userId, $now - PRESENCE_SECONDS]);
+    $p = $st->fetch(); $st->closeCursor();
+    if ($p && $p['user_name'] !== null) return ['ok' => false, 'by' => $p['user_name'], 'since' => (int)$p['since']];
     $since = $l ? (int)$l['since'] : $now;
     db()->prepare('INSERT INTO locks (doc, user_id, user_name, holder, since, beat) VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT(doc) DO UPDATE SET user_id = excluded.user_id, user_name = excluded.user_name, holder = excluded.holder,

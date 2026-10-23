@@ -9,7 +9,7 @@
  * מה שעל המסך הוא מה שיודפס: עמודים בגודל אמיתי (מ"מ → פיקסלים ב-96 לאינץ'), שוליים, כותרת עליונה ותחתונה
  * ומספר עמוד בכל עמוד, וזום שמגדיל רק את הדפים.
  */
-import { Editor, Extension, Node as TNode, StarterKit, Superscript, Subscript, TextSelection, TextStyle, FontSize, TextAlign, getHTMLFromFragment } from '../../vendor/tiptap.js';
+import { Editor, Extension, Node as TNode, StarterKit, Superscript, Subscript, TextSelection, TextStyle, FontSize, TextAlign, getHTMLFromFragment, collab } from '../../vendor/tiptap.js';
 import { extensions, imageBox, FONTS, FALLBACK, cssFont, safeHref, bookmarks, BOOKMARK_RE, USER_STYLE, styleKeyOf, UNDERLINES, TABLE_BORDERS, VALIGNS,
     WpTable, WpTableRow, Cell, HeaderCell } from './extensions.js';
 import { Pages, pageLabel, pageNumbers, Endnotes } from './pagination.js';
@@ -274,7 +274,9 @@ export function createWordEditor(root, opts) {
     const editor = new Editor({
         element: host,
         extensions: extensions([Pages.configure({ geometry, onLayout: drawPages }), FindReplace, ParagraphMarks, Endnotes, TabStops,
-            TrackChanges.configure({ author: () => opts.user?.name || '' })]),
+            TrackChanges.configure({ author: () => opts.user?.name || '' }),
+            // עריכה משותפת (collab.js): הצעדים שעוד לא אושרו בשרת, ומספר הגרסה — מכאן נשלחים ומתקבלים
+            ...(opts.collab ? [Extension.create({ name: 'wpCollab', addProseMirrorPlugins: () => [collab({ version: opts.collab.version, clientID: opts.collab.clientID })] })] : [])]),
         content: initial,
         editable: opts.editable !== false,
         editorProps: {

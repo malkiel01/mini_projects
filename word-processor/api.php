@@ -18,6 +18,7 @@ require_once __DIR__ . '/lib/compare.php';
 require_once __DIR__ . '/lib/users.php';
 require_once __DIR__ . '/lib/share.php';
 require_once __DIR__ . '/lib/links.php';
+require_once __DIR__ . '/lib/collab.php';
 
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: no-referrer');
@@ -375,6 +376,15 @@ function app_action(string $action, array $in): never
             // צפייה — בלי נעילה; מעיר ועורך — לוקחים את הנעילה (מעיר כותב הערות למסמך)
             [$row, $role] = doc_access($in['doc'] ?? '', $acc);
             $op = (string)($in['op'] ?? 'beat');
+            if (!empty($in['collab'])) {
+                // עריכה משותפת (lib/collab.php): בלי נעילה — רק כשמישהו מחזיק נעילה ישנה, קריאה בלבד עד שתתפנה
+                $l = collab_blocked($row['id'], $uid);
+                $can = $l || $role === 'view' ? 'view' : ($role === 'comment' ? 'comment' : 'edit');
+                if ($action === 'my_lock') out(['ok' => !$l, 'can' => $can, 'lock' => $l]);
+                $c = collab_state($row);
+                out(doc_public($row) + ['can' => $can, 'lock' => $l, 'role' => $role, 'collab' => ['epoch' => $c['epoch'], 'v' => (int)$c['v']],
+                    'shares' => $role === 'owner' ? count(shares_of($row['id'])) : null]);
+            }
             $l = lock_op($op, $role === 'view' ? 'view' : 'edit', $row['id'], $uid, $uname, $holder);
             if ($l['can'] === 'edit' && $role === 'comment') $l['can'] = 'comment';
             if ($action === 'my_lock') out($l);
@@ -394,7 +404,9 @@ function app_action(string $action, array $in): never
             out(['doc' => $row['id'], 'version' => (int)$row['version'], 'updated_at' => (int)$row['updated_at']]);
         case 'my_version_restore':   // שחזור גרסה — פעולה אחת בשרת (doc_restore_version)
             [$row] = doc_access($in['doc'] ?? '', $acc, 'edit');
-            require_edit('edit', $row['id'], $uid, $uname, $holder);
+            // בעריכה משותפת — בלי נעילה (רק נעילה ישנה של מישהו אחר עוצרת); השאר נטענים מחדש (עידן חדש — lib/collab.php)
+            if (empty($in['collab'])) require_edit('edit', $row['id'], $uid, $uname, $holder);
+            elseif ($l = collab_blocked($row['id'], $uid)) throw new ApiError('המסמך פתוח לעריכה אצל ' . $l['by'], 'locked', 423);
             $row = doc_restore_version($row, $in['id'] ?? 0, $uid, $uname, $in['base_version'] ?? null);
             out(['doc' => $row['id'], 'version' => (int)$row['version'], 'json' => editor_json(doc_json($row), doc_page($row)), 'page' => doc_page($row)]);
         case 'my_page':
@@ -448,6 +460,14 @@ function app_action(string $action, array $in): never
             // PDF בתצוגת השינויים שבעורך: track=final|original, hide=מחברים (JSON) — כמו שההדפסה מהעורך נראית
             $hide = json_decode((string)($_GET['hide'] ?? '[]'), true);
             do_export($row, $fmt === 'pdf' ? 'pdf' : 'docx', null, true, ['view' => (string)($_GET['track'] ?? 'all'), 'hide' => is_array($hide) ? array_slice($hide, 0, 50) : []]);
+        // עריכה משותפת (lib/collab.php): op = push (מעיר ומעלה) | pull | leave
+        case 'my_collab':
+            $op = (string)($in['op'] ?? '');
+            [$row, $role] = doc_access($in['doc'] ?? '', $acc, $op === 'push' ? 'comment' : 'view');
+            if ($op === 'push') out(collab_push($row, $role, $in, $uid, $uname));
+            if ($op === 'pull') out(collab_pull($row, $role, $in, $uid, $uname));
+            if ($op === 'leave') { collab_leave($row['id'], $in['client'] ?? ''); out(['ok' => true]); }
+            throw new ApiError('פעולה לא תקינה', 'bad_op');
         // שיתוף (שלב 5): רק הבעלים רואה ומשנה
         case 'my_shares':
             [$row] = doc_access($in['doc'] ?? '', $acc, 'owner');
