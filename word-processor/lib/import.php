@@ -1136,6 +1136,7 @@ final class DocxCtx
         }
         $blocks = [];
         $rich = false;
+        $seenTbl = [];
         foreach ($hx->query('//w:p') as $hp) {
             $instr = '';
             foreach ($hx->query('.//w:instrText', $hp) as $n) $instr .= ' ' . $n->textContent;
@@ -1154,6 +1155,15 @@ final class DocxCtx
                 continue;
             }
             if (trim($line) !== '') $text[] = trim($line);
+            // פסקה בתוך טבלה: הטבלה כולה נכנסת כבלוק אחד — בפסקה הראשונה שלה (הטבלה החיצונית)
+            $tbl = $hx->query('ancestor::w:tbl[last()]', $hp)->item(0);
+            if ($tbl instanceof DOMElement) {
+                if (isset($seenTbl[spl_object_id($tbl)])) continue;
+                $seenTbl[spl_object_id($tbl)] = true;
+                $b = hf_rich_val([$this->table($tbl, $hx)])[0] ?? null;
+                if ($b && ($b['type'] ?? '') === 'table') { $blocks[] = $b; $rich = true; }
+                continue;
+            }
             if (trim($line) !== '' || $hx->query('.//w:drawing', $hp)->length) {
                 [$b] = $this->para($hp, $hx);
                 $b = hf_rich_val([$b])[0] ?? null;
@@ -1170,8 +1180,8 @@ final class DocxCtx
         // סימן מים: צורת WordArt (VML) עם textpath — כך Word שומר "סימן מים" מותאם. היא לא נחשבת "כותרת מורכבת"
         $wm = $hx->query('//*[local-name()="textpath"][@string]')->item(0);
         if ($wm instanceof DOMElement && $this->watermark === '') $this->watermark = mb_substr(trim($wm->getAttribute('string')), 0, 40);
-        // תמונה בשורה — נכנסת לכותרת העשירה; טבלה, צורה, תמונה צפה — "כותרת מורכבת" (לדוח)
-        $complex = $hx->query('//w:tbl|//w:drawing[not(wp:inline)]|//w:pict[not(.//*[local-name()="textpath"])]')->length > 0;
+        // תמונה בשורה וטבלה — נכנסות לכותרת העשירה; צורה, תמונה צפה, טבלה בתוך טבלה — "כותרת מורכבת" (לדוח)
+        $complex = $hx->query('//w:tbl//w:tbl|//w:drawing[not(wp:inline)]|//w:pict[not(.//*[local-name()="textpath"])]')->length > 0;
         return ['text' => $text, 'num' => $num, 'complex' => $complex, 'rich' => $rich ? $blocks : null];
     }
 }
@@ -1188,7 +1198,7 @@ const IMPORT_REPORT = [
     'tracked' => ['שינויי עיצוב פסקה במעקב', 'התקבלו (תוספות, מחיקות ועיצוב תווים — יובאו עם המעקב)'],
     'fields' => ['שדות (תוכן עניינים, תאריך, הפניות)', 'יובאו כטקסט קבוע — לא יתעדכנו'],
     'hf_extra' => ['כותרת שונה לעמוד הראשון או לעמודים זוגיים', 'יובאה רק הכותרת הרגילה'],
-    'hf_complex' => ['תמונה או טבלה בכותרת עליונה / תחתונה', 'יובא רק הטקסט'],
+    'hf_complex' => ['צורה, תמונה צפה או טבלה בתוך טבלה בכותרת עליונה / תחתונה', 'יובא רק הטקסט'],
     'styles' => ['סגנונות תו מותאמים', 'העיצוב שבא מסגנון התו לא יובא; סגנונות פסקה ועיצוב ישיר — כן'],
     'pborder' => ['גבולות והצללה של פסקה', 'לא יובאו'],
     'fonts' => ['גופנים שאינם זמינים', 'מוצגים ב-Heebo, זהה במסך, בהדפסה וב-PDF'],

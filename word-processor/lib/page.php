@@ -198,14 +198,14 @@ const HF_MARKS = ['bold', 'italic', 'underline', 'strike', 'textStyle', 'highlig
 
 /**
  * כותרת עליונה / תחתונה עשירה (כמו ב-Word): עד 10 פסקאות עם יישור, ובהן טקסט מעוצב (מודגש, נטוי, קו, צבע, גודל,
- * גופן, הדגשה), שבירת שורה ותמונה בשורה (סמליל). כל דבר אחר — לא נכנס. מחזיר [] כשאין בה טקסט ותמונה.
+ * גופן, הדגשה), שבירת שורה ותמונה בשורה (סמליל); ועד 2 טבלאות קטנות של פסקאות כאלה. כל דבר אחר — לא נכנס.
+ * מחזיר [] כשאין בה טקסט ותמונה.
  */
 function hf_rich_val(array $v): array
 {
-    $out = [];
     $chars = 0;
-    foreach (array_slice(array_values($v), 0, 10) as $b) {
-        if (!is_array($b) || ($b['type'] ?? '') !== 'paragraph') continue;
+    $para = function ($b) use (&$chars): ?array {
+        if (!is_array($b) || ($b['type'] ?? '') !== 'paragraph') return null;
         $para = ['type' => 'paragraph'];
         if (in_array($b['attrs']['textAlign'] ?? null, ['right', 'center', 'left', 'justify'], true)) $para['attrs'] = ['textAlign' => $b['attrs']['textAlign']];
         $content = [];
@@ -234,10 +234,52 @@ function hf_rich_val(array $v): array
             }
         }
         if ($content) $para['content'] = $content;
-        $out[] = $para;
+        return $para;
+    };
+    // טבלה (כמו בכותרת של Word: סמליל בצד אחד, פרטים בצד השני): עד 4 שורות × 6 תאים, בכל תא עד 3 פסקאות
+    $table = function ($b) use ($para): ?array {
+        $rows = [];
+        foreach (array_slice(array_values(is_array($b['content'] ?? null) ? $b['content'] : []), 0, 4) as $r) {
+            if (!is_array($r) || ($r['type'] ?? '') !== 'tableRow') continue;
+            $cells = [];
+            foreach (array_slice(array_values(is_array($r['content'] ?? null) ? $r['content'] : []), 0, 6) as $c) {
+                if (!is_array($c) || !in_array($c['type'] ?? '', ['tableCell', 'tableHeader'], true)) continue;
+                $ca = is_array($c['attrs'] ?? null) ? $c['attrs'] : [];
+                $attrs = ['colspan' => max(1, min(6, (int)($ca['colspan'] ?? 1))), 'rowspan' => max(1, min(4, (int)($ca['rowspan'] ?? 1)))];
+                if (is_array($ca['colwidth'] ?? null) && count($ca['colwidth']) === $attrs['colspan']) $attrs['colwidth'] = array_map(fn($w) => max(10, min(2000, (int)$w)), array_values($ca['colwidth']));
+                if (is_string($ca['background'] ?? null) && preg_match('/^#[0-9a-f]{6}$/i', $ca['background'])) $attrs['background'] = strtolower($ca['background']);
+                if (in_array($ca['valign'] ?? null, ['middle', 'bottom'], true)) $attrs['valign'] = $ca['valign'];
+                $ps = array_values(array_filter(array_map($para, array_slice(array_values(is_array($c['content'] ?? null) ? $c['content'] : []), 0, 3))));
+                $cells[] = ['type' => 'tableCell', 'attrs' => $attrs, 'content' => $ps ?: [['type' => 'paragraph']]];
+            }
+            if ($cells) $rows[] = ['type' => 'tableRow', 'content' => $cells];
+        }
+        if (!$rows) return null;
+        $t = ['type' => 'table', 'content' => $rows];
+        $ta = is_array($b['attrs'] ?? null) ? $b['attrs'] : [];
+        $attrs = [];
+        if (in_array($ta['borders'] ?? null, ['none', 'outer', 'inner'], true)) $attrs['borders'] = $ta['borders'];
+        if (is_string($ta['borderColor'] ?? null) && preg_match('/^#[0-9a-f]{6}$/i', $ta['borderColor'])) $attrs['borderColor'] = strtolower($ta['borderColor']);
+        if (is_numeric($ta['width'] ?? null)) $attrs['width'] = max(10, min(100, (int)$ta['width']));
+        if (in_array($ta['align'] ?? null, ['center', 'left'], true)) $attrs['align'] = $ta['align'];
+        if ($attrs) $t['attrs'] = $attrs;
+        return $t;
+    };
+    $out = [];
+    $tables = 0;
+    foreach (array_slice(array_values($v), 0, 10) as $b) {
+        $x = ($b['type'] ?? '') === 'table' && $tables < 2 ? $table($b) : $para($b);
+        if (!$x) continue;
+        if ($x['type'] === 'table') $tables++;
+        $out[] = $x;
     }
+    // ריקה (בלי טקסט ובלי תמונה, גם בטבלה) — כמו בלי כותרת
     $any = false;
-    foreach ($out as $b) if (!empty($b['content'])) $any = true;
+    $walk = function ($n) use (&$walk, &$any) {
+        if (in_array($n['type'] ?? '', ['text', 'image'], true)) $any = true;
+        foreach ($n['content'] ?? [] as $c) $walk($c);
+    };
+    foreach ($out as $b) $walk($b);
     return $any ? $out : [];
 }
 
@@ -246,7 +288,11 @@ function hf_text($v): string
 {
     if (is_string($v)) return $v;
     if (!is_array($v)) return '';
-    return implode("\n", array_map(fn($b) => implode('', array_map(fn($n) => $n['text'] ?? (($n['type'] ?? '') === 'hardBreak' ? ' ' : ''), $b['content'] ?? [])), $v));
+    $line = fn($b) => implode('', array_map(fn($n) => $n['text'] ?? (($n['type'] ?? '') === 'hardBreak' ? ' ' : ''), $b['content'] ?? []));
+    // טבלה — שורה לכל שורה שלה, התאים מופרדים בטאב
+    return implode("\n", array_map(fn($b) => ($b['type'] ?? '') === 'table'
+        ? implode("\n", array_map(fn($r) => implode("\t", array_map(fn($c) => implode(' ', array_map($line, $c['content'] ?? [])), $r['content'] ?? [])), $b['content'] ?? []))
+        : $line($b), $v));
 }
 
 /** הגדרות מקטע שמתחיל במעבר מקטע: יורש מהקודם, חוץ מהתחלת המספור מחדש (רק אם המעבר אומר). */

@@ -10,7 +10,8 @@
  * ומספר עמוד בכל עמוד, וזום שמגדיל רק את הדפים.
  */
 import { Editor, Extension, Node as TNode, StarterKit, Superscript, Subscript, TextSelection, TextStyle, FontSize, TextAlign, getHTMLFromFragment } from '../../vendor/tiptap.js';
-import { extensions, imageBox, FONTS, FALLBACK, cssFont, safeHref, bookmarks, BOOKMARK_RE, USER_STYLE, styleKeyOf, UNDERLINES, TABLE_BORDERS, VALIGNS } from './extensions.js';
+import { extensions, imageBox, FONTS, FALLBACK, cssFont, safeHref, bookmarks, BOOKMARK_RE, USER_STYLE, styleKeyOf, UNDERLINES, TABLE_BORDERS, VALIGNS,
+    WpTable, WpTableRow, Cell, HeaderCell } from './extensions.js';
 import { Pages, pageLabel, pageNumbers, Endnotes } from './pagination.js';
 import { cleanPastedHtml } from './paste.js';
 import { migrate } from './schema.js';
@@ -1687,7 +1688,10 @@ export function createWordEditor(root, opts) {
             tool('מודגש', h('b', 'B'), c => c.toggleBold(), 'bold'), tool('נטוי', h('i', 'I'), c => c.toggleItalic(), 'italic'),
             tool('קו תחתון', h('u', 'U'), c => c.toggleUnderline(), 'underline'), sizeSel,
             tool('יישור לימין', '⇥', c => c.setTextAlign('right')), tool('מרכז', '≡', c => c.setTextAlign('center')), tool('יישור לשמאל', '⇤', c => c.setTextAlign('left')),
-            opts.upload ? tool('תמונה (סמליל)', '🖼', c => { pick.click(); return c; }) : null, pick);
+            opts.upload ? tool('תמונה (סמליל)', '🖼', c => { pick.click(); return c; }) : null, pick,
+            // טבלה (כמו בכותרת של Word — סמליל בצד אחד, פרטים בצד השני): שני תאים בלי גבולות; עמודה נוספת; מחיקה
+            tool('טבלה בכותרת (שני תאים, בלי גבולות)', '⊞', c => c.insertTable({ rows: 1, cols: 2, withHeaderRow: false }).updateAttributes('table', { borders: 'none' })),
+            tool('עמודה נוספת בטבלה', '⊞+', c => c.addColumnAfter()), tool('מחיקת הטבלה', '⊟', c => c.deleteTable()));
         const el = h('div.f.hf-field', h('span', label), tools, box);
         // תמונה בשורה — בלי גלישה וידיות (כותרת קטנה)
         const HfImage = TNode.create({
@@ -1702,6 +1706,7 @@ export function createWordEditor(root, opts) {
                 StarterKit.configure({ heading: false, bulletList: false, orderedList: false, listItem: false, listKeymap: false, blockquote: false,
                     code: false, codeBlock: false, horizontalRule: false, link: false, trailingNode: false, dropcursor: false, gapcursor: false }),
                 TextStyle, FontSize, TextAlign.configure({ types: ['paragraph'], alignments: ['right', 'center', 'left'], defaultAlignment: null }), HfImage,
+                WpTable.configure({ resizable: false }), WpTableRow, Cell, HeaderCell,
             ],
             content: { type: 'doc', content: blocks.length ? blocks : [{ type: 'paragraph', attrs: { textAlign: 'center' } }] },
             editorProps: { attributes: { class: 'fn-edit-doc hf-edit-doc', dir: 'rtl', lang: 'he', role: 'textbox', 'aria-multiline': 'true', 'aria-label': label } },
@@ -1711,10 +1716,11 @@ export function createWordEditor(root, opts) {
             el,
             destroy: () => mini.destroy(),
             get() {
-                const ps = (mini.getJSON().content || []).filter(b => b.type === 'paragraph');
-                const plain = ps.every(b => (b.attrs?.textAlign || 'center') === 'center' && (b.content || []).every(n => n.type === 'text' && !n.marks?.length));
+                const ps = (mini.getJSON().content || []).filter(b => b.type === 'paragraph' || b.type === 'table');
+                const plain = ps.every(b => b.type === 'paragraph' && (b.attrs?.textAlign || 'center') === 'center' && (b.content || []).every(n => n.type === 'text' && !n.marks?.length));
                 if (plain) return ps.map(b => (b.content || []).map(n => n.text).join('')).join('\n').trim();
-                return ps.map(b => ({ ...b, attrs: b.attrs?.textAlign ? { textAlign: b.attrs.textAlign } : undefined }));
+                // טבלה — כמו שהיא (השרת מנקה: hf_rich_val)
+                return ps.map(b => b.type === 'table' ? b : { ...b, attrs: b.attrs?.textAlign ? { textAlign: b.attrs.textAlign } : undefined });
             },
         };
     }
