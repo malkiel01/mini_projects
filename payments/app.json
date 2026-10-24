@@ -7,6 +7,9 @@
   "gate": true,
   "entry": "index.html",
   "public": [
-    "api.php"
+    "api.php",
+    "pay/**",
+    "portal/**",
+    "assets/**"
   ]
 }

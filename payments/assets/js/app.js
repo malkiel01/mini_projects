@@ -59,6 +59,7 @@ document.addEventListener('click', e => { if (e.target.closest('[data-close]')) 
 // ---------- לשוניות ----------
 const loaders = {};
 function show() {
+  if (sheet.open) sheet.close();
   const id = (location.hash || '#overview').slice(1);
   const target = $('#p-' + id) ? id : 'overview';
   for (const p of document.querySelectorAll('.panel')) p.hidden = p.id !== 'p-' + target;
@@ -72,9 +73,9 @@ addEventListener('hashchange', show);
 // ---------- סקירה ----------
 const STAGES = [
   ['שלד', 'רישום, מסך, מסד ריק, החרגה בפריסה', 'done'],
-  ['ליבה בלי כסף', 'מערכות וקודים, לקוחות, מוצרים ומחירים, זכאות, שימוש, ארנק', 'now'],
-  ['דף תשלום ו"החשבון שלי"', 'מנויים חודשיים ושנתיים, ניסיון, מבצעים, ביטול, הודעות לפי החוק, סולק מדומה', ''],
-  ['סולק אמיתי ראשון', 'Morning והסליקה שלה, בסביבת בדיקות', ''],
+  ['ליבה בלי כסף', 'מערכות וקודים, לקוחות, מוצרים ומחירים, זכאות, שימוש, ארנק', 'done'],
+  ['דף תשלום ו"החשבון שלי"', 'מנויים חודשיים ושנתיים, ניסיון, מבצעים, ביטול, הודעות לפי החוק, סולק מדומה', 'done'],
+  ['סולק אמיתי ראשון', 'Morning והסליקה שלה, בסביבת בדיקות', 'now'],
   ['חשבוניות', 'Morning — קבלות, חשבוניות מס/קבלה, זיכויים', ''],
   ['ספריות, קישורים וכללים', 'ספריות קוד, קישורי תשלום, כפתור, מנוע הכללים, תיעוד', ''],
   ['מנויים מאושרים', 'אזור ניהול לכל מי שהמנהל מאשר', ''],
@@ -140,6 +141,7 @@ loaders.settings = async () => {
       await api('tenant_status', { id: b.dataset.ten, status: b.dataset.to }).catch(fail); loaders.settings();
     });
   }
+  loadClock().catch(fail);
   const au = (await api('audit')).data;
   $('#audit-list').innerHTML = au.length ? au.map(a => `<li class="card"><div class="body">
       <div class="l1"><span>${esc(a.action)}</span><span class="t">${when(a.created_at)}</span></div>
@@ -182,7 +184,7 @@ async function clientSheet(id, newKey = null) {
       ${k.status === 'active' ? `<button type="button" class="icon-btn" data-revoke="${esc(k.id)}" aria-label="ביטול הקוד">🗑️</button>` : chip(k.status === 'expired' ? 'פג' : 'בוטל', 'bad')}</li>`;
   const priceTxt = (p, pr) => p.type === 'metered'
     ? `${nisMicros(pr.amount_micros)} לכל ${Number(pr.package_size).toLocaleString('he-IL')} ${esc(p.unit_label || 'יחידות')}${pr.prepaid ? ' · מראש' : ' · בדיעבד'}${pr.included ? ' · כלול ' + pr.included : ''}`
-    : `${nis(pr.amount)} ${INTERVAL[pr.interval]}${pr.trial_days ? ' · ניסיון ' + pr.trial_days + ' ימים' : ''}`;
+    : `${nis(pr.amount)} ${INTERVAL[pr.interval]}${pr.intro_amount !== null ? ' · מבצע ' + nis(pr.intro_amount) + ' × ' + pr.intro_periods : ''}${pr.trial_days ? ' · ניסיון ' + pr.trial_days + ' ימים' : ''}${pr.renewal === 'consent' ? ' · חידוש באישור' : ''}`;
   const prodRow = p => `<li class="card" data-prod="${esc(p.id)}" tabindex="0" role="button"><div class="body">
       <div class="l1"><span>${esc(p.name)}</span><span class="t" dir="ltr">${esc(p.code)}</span></div>
       <div class="l2">${esc(PTYPE[p.type])} · ${p.prices.length ? priceTxt(p, p.prices[0]) + (p.prices.length > 1 ? ` · עוד ${p.prices.length - 1} גרסאות פעילות` : '') : 'אין מחיר'}</div></div>
@@ -274,7 +276,7 @@ function productSheet(clientId, p) {
     </div>
     ${isNew ? '' : `<div class="group"><h3>מחירים <small>מחיר לא נערך — כל שינוי הוא גרסה חדשה</small></h3>
       <ul class="list">${p.prices.length ? p.prices.map(pr => `<li class="card"><div class="body"><div class="l1"><span>גרסה ${pr.version}</span></div>
-        <div class="l2">${p.type === 'metered' ? nisMicros(pr.amount_micros) + ' / ' + pr.package_size + (pr.prepaid ? ' · מראש' : ' · בדיעבד') + ' · ' + pr.aggregate : nis(pr.amount) + ' ' + INTERVAL[pr.interval]}</div></div>
+        <div class="l2">${p.type === 'metered' ? nisMicros(pr.amount_micros) + ' / ' + pr.package_size + (pr.prepaid ? ' · מראש' : ' · בדיעבד') + ' · ' + pr.aggregate : nis(pr.amount) + ' ' + INTERVAL[pr.interval] + (pr.intro_amount !== null ? ' · מבצע ' + nis(pr.intro_amount) + ' × ' + pr.intro_periods : '') + (pr.trial_days ? ' · ניסיון ' + pr.trial_days + ' ימים' : '') + (pr.renewal === 'consent' ? ' · חידוש באישור' : '')}</div></div>
         <button type="button" class="btn sm ghost" data-deact="${esc(pr.id)}">הפסקה</button></li>`).join('') : empty('אין מחיר פעיל')}</ul>
       <div class="fields">
         ${p.type === 'metered' ? `
@@ -285,8 +287,10 @@ function productSheet(clientId, p) {
           <label class="switch wide"><input type="checkbox" name="prepaid" checked><span>יורד מהקרדיט (מראש). כבוי — חיוב בדיעבד</span></label>`
         : `
           <label class="f"><span>מחיר (₪)</span><input name="price_nis" inputmode="decimal" dir="ltr"></label>
-          ${['plan', 'seat', 'addon'].includes(p.type) ? `<label class="f"><span>מחזור</span><select name="interval"><option value="month">חודשי</option><option value="year">שנתי</option></select></label>
-          <label class="f"><span>ימי ניסיון</span><input name="trial_days" inputmode="numeric" dir="ltr" value="0"></label>` : ''}`}
+          ${['plan', 'seat', 'addon'].includes(p.type) ? `<label class="f"><span>מחזור</span><select name="interval"><option value="month">חודשי</option><option value="year">שנתי (חידוש רק באישור הלקוח)</option></select></label>
+          <label class="f"><span>ימי ניסיון</span><input name="trial_days" inputmode="numeric" dir="ltr" value="0"></label>
+          <label class="f"><span>מחיר מבצע (₪, ריק — בלי)</span><input name="intro_nis" inputmode="decimal" dir="ltr"></label>
+          <label class="f"><span>מבצע — כמה מחזורים</span><input name="intro_periods" inputmode="numeric" dir="ltr" value="0"></label>` : ''}`}
       </div>
       <div class="row-btns"><button type="button" class="btn sm primary" id="add-price">+ מחיר</button></div></div>`}`,
   async fd => {
@@ -301,7 +305,8 @@ function productSheet(clientId, p) {
     if (!(nisVal >= 0) || fd.get('price_nis') === '') return toast('חסר מחיר', true);
     const body = p.type === 'metered'
       ? { amount_micros: Math.round(nisVal * 1e6), package_size: fd.get('package_size'), included: fd.get('included'), aggregate: fd.get('aggregate'), prepaid: !!fd.get('prepaid') }
-      : { amount: Math.round(nisVal * 100), interval: fd.get('interval') || 'none', trial_days: fd.get('trial_days') || 0 };
+      : { amount: Math.round(nisVal * 100), interval: fd.get('interval') || 'none', trial_days: fd.get('trial_days') || 0,
+          ...(fd.get('intro_nis') ? { intro_amount: Math.round(Number(String(fd.get('intro_nis')).replace(',', '.')) * 100), intro_periods: fd.get('intro_periods') } : {}) };
     try { await api('price_create', { product: p.id, ...body }); toast('מחיר נוסף'); clientSheet(clientId); } catch (e) { fail(e); }
   });
   for (const b of document.querySelectorAll('[data-deact]')) b.addEventListener('click', async () => {
@@ -387,6 +392,65 @@ function walletSheet(d, kind) {
     await api('wallet_adjust', { account: d.account.id, agorot: ag, kind, note: fd.get('note') });
     toast('נרשם'); customerSheet(d.customer.id); return false;
   });
+}
+
+// ---------- כספים ----------
+let moneyView = 'payments';
+for (const b of document.querySelectorAll('[data-money]')) b.addEventListener('click', () => {
+  moneyView = b.dataset.money;
+  for (const x of document.querySelectorAll('[data-money]')) x.setAttribute('aria-selected', String(x === b));
+  loaders.money().catch(fail);
+});
+const PST = { succeeded: ['עבר', 'ok'], failed: ['נכשל', 'bad'], refunded: ['הוחזר', ''], partially_refunded: ['הוחזר חלקית', 'warn'] };
+const IST = { paid: ['שולמה', 'ok'], open: ['פתוחה', 'warn'], uncollectible: ['לא נגבתה', 'bad'], void: ['בוטלה', ''], draft: ['טיוטה', ''] };
+loaders.money = async () => {
+  const [p, i] = await Promise.all([api('payments'), api('invoices')]);
+  $('#n-pay').textContent = p.data.length || ''; $('#n-inv').textContent = i.data.length || '';
+  $('#money-hint').textContent = moneyView === 'payments' ? 'כל תשלום שעבר או נכשל. לחיצה על תשלום שעבר — החזר כספי.' : 'חשבוניות פנימיות. המסמך החשבונאי (קבלה / חשבונית מס) — בשלב 5, דרך מורנינג.';
+  if (moneyView === 'payments') {
+    $('#money-list').innerHTML = p.data.length ? p.data.map(r => `<li class="card" ${['succeeded', 'partially_refunded'].includes(r.status) ? `data-pay="${esc(r.id)}" tabindex="0" role="button"` : ''}>
+        <div class="body"><div class="l1"><span>${esc(r.customer_name || r.external_id || '—')}</span><span class="t">${when(r.created_at)}</span></div>
+        <div class="l2">${nis(r.amount)}${r.refunded > 0 ? ' · הוחזרו ' + nis(r.refunded) : ''} · ${esc(r.provider)}${r.failure_message ? ' · ' + esc(r.failure_message) : ''}${r.env === 'test' ? ' · בדיקות' : ''}</div></div>
+        ${chip(...(PST[r.status] || [r.status, '']))}</li>`).join('') : empty('עוד אין תשלומים.');
+    for (const li of document.querySelectorAll('[data-pay]')) li.addEventListener('click', () => refundSheet(p.data.find(x => x.id === li.dataset.pay)));
+  } else {
+    $('#money-list').innerHTML = i.data.length ? i.data.map(r => `<li class="card"><div class="body">
+        <div class="l1"><span>${esc(r.description || '—')}</span><span class="t">${when(r.created_at)}</span></div>
+        <div class="l2">${esc(r.customer_name || '')} · ${nis(r.total)}${r.vat ? ' · מע"מ ' + nis(r.vat) : ''}${r.attempts > 1 ? ' · ' + r.attempts + ' ניסיונות' : ''}</div></div>
+        ${chip(...(IST[r.status] || [r.status, '']))}</li>`).join('') : empty('עוד אין חשבוניות.');
+  }
+};
+function refundSheet(p) {
+  const left = p.amount - p.refunded;
+  openSheet('החזר כספי — ' + (p.customer_name || p.external_id || ''), `
+    <p class="hint">שולם ${nis(p.amount)}${p.refunded ? ', הוחזרו כבר ' + nis(p.refunded) : ''}. אפשר להחזיר עד ${nis(left)}. ההחזר יוצא דרך חברת הסליקה, לאותו אמצעי.</p>
+    <div class="fields">
+      <label class="f"><span>סכום (₪)</span><input name="amount" inputmode="decimal" dir="ltr" value="${(left / 100).toFixed(2)}"></label>
+      <label class="f wide"><span>סיבה * (נשמרת ונשלחת ללקוח)</span><input name="reason" required maxlength="240"></label>
+    </div>`,
+  async fd => {
+    const ag = Math.round(Number(String(fd.get('amount')).replace(',', '.')) * 100);
+    if (!confirm(`להחזיר ${nis(ag)}?`)) return false;
+    await api('refund', { payment: p.id, agorot: ag, reason: fd.get('reason') });
+    toast('ההחזר בוצע'); loaders.money();
+  }, 'החזר');
+}
+
+async function loadClock() {
+  const c = await api('clock');
+  const ago = t => t ? Math.round((c.now - t) / 60) + ' דק׳' : 'אף פעם';
+  const cmd = `curl -s -b 'humans_21909=1' "${c.url}" >/dev/null`;
+  const cronOk = c.cron && c.now - c.cron < 20 * 60 || c.external && c.now - c.external < 20 * 60;
+  $('#clock').innerHTML = `<div class="line"><span class="muted">ריצה אחרונה</span> <b>${ago(c.last)}</b>${chip(cronOk ? 'משימה מתוזמנת פועלת ✓' : 'אין משימה מתוזמנת', cronOk ? 'ok' : 'warn')}</div>
+    ${cronOk ? '' : `<p class="hint">בלוח הבקרה של האחסון: "Cron Jobs" ← כל 5 דקות ← להדביק בשדה הפקודה:</p>
+    <input readonly dir="ltr" value="${esc(cmd)}" aria-label="הפקודה" onclick="this.select()">`}
+    <div class="row-btns">${cronOk ? '' : '<button class="btn sm primary" id="copy-cmd">📋 העתקת הפקודה</button>'}<button class="btn sm ghost" id="tick-now">הרצה עכשיו</button></div>`;
+  $('#copy-cmd')?.addEventListener('click', () => navigator.clipboard.writeText(cmd).then(() => toast('הועתק')));
+  $('#tick-now').addEventListener('click', async () => { try { const r = await api('tick_now'); toast('רץ: ' + Object.entries(r).filter(([, v]) => v).map(([k, v]) => k + ' ' + v).join(', ') || 'אין מה לעשות'); loadClock(); } catch (e) { fail(e); } });
+  const NST = { sent: ['נשלח', 'ok'], pending: ['בתור', 'warn'], failed: ['נכשל', 'bad'], no_provider: ['אין ספק מסרונים', 'bad'] };
+  $('#ntf-list').innerHTML = c.notifications.length ? c.notifications.map(n => `<li class="card"><div class="body">
+      <div class="l1"><span>${n.channel === 'sms' ? '📱' : '✉️'} ${esc(n.template)}</span><span class="t">${when(n.created_at)}</span></div>
+      <div class="l2" dir="ltr" style="text-align:end">${esc(n.to_addr || '—')}</div></div>${chip(...(NST[n.status] || [n.status, '']))}</li>`).join('') : empty('עוד לא נשלחו הודעות.');
 }
 
 // ---------- התחלה ----------

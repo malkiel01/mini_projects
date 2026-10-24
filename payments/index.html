@@ -38,7 +38,12 @@
   </section>
 
   <section class="panel" id="p-money" hidden>
-    <p class="empty">תשלומים, חשבוניות והחזרים — משלב 3 (דף תשלום) ושלב 5 (חשבוניות).</p>
+    <div class="seg-tabs" role="tablist">
+      <button role="tab" aria-selected="true" data-money="payments">💳 תשלומים <small id="n-pay"></small></button>
+      <button role="tab" aria-selected="false" data-money="invoices">🧾 חשבוניות <small id="n-inv"></small></button>
+    </div>
+    <p class="hint" id="money-hint">כל תשלום שעבר או נכשל. לחיצה — החזר כספי.</p>
+    <ul class="list" id="money-list"></ul>
   </section>
 
   <section class="panel" id="p-systems" hidden>
@@ -57,6 +62,11 @@
       <p class="hint">מי שקיבל גישה לתוסף. ממתין — עד שתאשר.</p>
       <ul class="list" id="ten-list"></ul>
     </div>
+    <h2 class="sec-title">⏰ השעון</h2>
+    <p class="hint">חידושים, ניסיונות חוזרים, הודעות ללקוחות — רצים לבד עם כל פנייה לתוסף. כדי שירוצו גם כשאין פניות, צריך משימה מתוזמנת אחת בלוח הבקרה של האחסון.</p>
+    <div class="summary" id="clock"></div>
+    <h2 class="sec-title">הודעות ללקוחות</h2>
+    <ul class="list" id="ntf-list"></ul>
     <h2 class="sec-title">יומן ביקורת</h2>
     <ul class="list" id="audit-list"></ul>
   </section>

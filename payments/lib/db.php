@@ -10,7 +10,7 @@
 
 declare(strict_types=1);
 
-const PAY_SCHEMA_VERSION = 1;
+const PAY_SCHEMA_VERSION = 2;
 
 function pay_data_dir(): string
 {
@@ -88,6 +88,13 @@ function pay_migrate(PDO $pdo): void
 {
     $v = (int)$pdo->query('PRAGMA user_version')->fetchColumn();
     if ($v >= PAY_SCHEMA_VERSION) return;
+    if ($v < 1) pay_migrate_v1($pdo);
+    if ($v < 2) pay_migrate_v2($pdo);
+    $pdo->exec('PRAGMA user_version = ' . PAY_SCHEMA_VERSION);
+}
+
+function pay_migrate_v1(PDO $pdo): void
+{
     $pdo->exec(<<<SQL
         -- מנוי מאושר (פרק 12): משתמש פלטפורמה שהמנהל אישר. המנהל עצמו — המנוי הראשון (role=owner)
         CREATE TABLE IF NOT EXISTS tenant (
@@ -354,5 +361,176 @@ function pay_migrate(PDO $pdo): void
             value TEXT NOT NULL
         );
     SQL);
-    $pdo->exec('PRAGMA user_version = ' . PAY_SCHEMA_VERSION);
+}
+
+/** שלב 3: תשלום, אמצעי תשלום (טוקן), חשבוניות פנימיות, החזרים, מנויים מלאים, הודעות ללקוח, הסולק המדומה. */
+function pay_migrate_v2(PDO $pdo): void
+{
+    $pdo->exec(<<<SQL
+        -- מבצע: ‏intro_amount ל-intro_periods המחזורים הראשונים. ‏renewal: ‏auto (חודשי ללא הגבלה) | consent (שנתי — חידוש רק בהסכמה, §13א)
+        ALTER TABLE price ADD COLUMN intro_amount INTEGER;
+        ALTER TABLE price ADD COLUMN intro_periods INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE price ADD COLUMN renewal TEXT NOT NULL DEFAULT 'auto';
+
+        ALTER TABLE subscription ADD COLUMN trial_end INTEGER;
+        ALTER TABLE subscription ADD COLUMN period_index INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE subscription ADD COLUMN cancel_at_period_end INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE subscription ADD COLUMN renew_consent_until INTEGER;
+        ALTER TABLE subscription ADD COLUMN cancel_reason TEXT NOT NULL DEFAULT '';
+        ALTER TABLE subscription ADD COLUMN first_paid_at INTEGER;
+        ALTER TABLE subscription ADD COLUMN past_due_since INTEGER;
+        ALTER TABLE subscription ADD COLUMN pending_items TEXT;          -- שנמוך שנכנס בסוף המחזור
+
+        ALTER TABLE account ADD COLUMN default_method TEXT;
+        ALTER TABLE account ADD COLUMN phone TEXT NOT NULL DEFAULT '';
+
+        -- אמצעי תשלום: רק טוקן של הסולק + 4 ספרות. אין מספר כרטיס, אין CVV
+        CREATE TABLE IF NOT EXISTS payment_method (
+            id TEXT PRIMARY KEY,
+            account TEXT NOT NULL REFERENCES account(id),
+            provider TEXT NOT NULL,
+            kind TEXT NOT NULL,                        -- card | bit | …
+            token_enc TEXT NOT NULL,
+            brand TEXT NOT NULL DEFAULT '',
+            last4 TEXT NOT NULL DEFAULT '',
+            exp TEXT NOT NULL DEFAULT '',              -- MM/YY
+            status TEXT NOT NULL DEFAULT 'active',
+            created_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS checkout (
+            id TEXT PRIMARY KEY,
+            client TEXT NOT NULL REFERENCES client(id),
+            env TEXT NOT NULL,
+            customer TEXT NOT NULL REFERENCES customer(id),
+            account TEXT NOT NULL REFERENCES account(id),
+            mode TEXT NOT NULL,                        -- payment | subscription | topup | setup
+            items TEXT NOT NULL DEFAULT '[]',
+            amount INTEGER NOT NULL,                   -- אגורות לחיוב עכשיו (0 בניסיון/החלפת כרטיס)
+            currency TEXT NOT NULL DEFAULT 'ILS',
+            status TEXT NOT NULL DEFAULT 'open',       -- open | completed | expired | canceled
+            return_url TEXT NOT NULL,
+            cancel_url TEXT NOT NULL,
+            provider TEXT NOT NULL DEFAULT '',
+            provider_ref TEXT NOT NULL DEFAULT '',
+            consent_at INTEGER,
+            result TEXT NOT NULL DEFAULT '{}',
+            meta TEXT NOT NULL DEFAULT '{}',
+            expires_at INTEGER NOT NULL,
+            created_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS checkout_open ON checkout(status, created_at);
+
+        -- חשבונית פנימית (המסמך החשבונאי — שלב 5, דרך Morning)
+        CREATE TABLE IF NOT EXISTS invoice (
+            id TEXT PRIMARY KEY,
+            account TEXT NOT NULL REFERENCES account(id),
+            merchant TEXT NOT NULL REFERENCES merchant(id),
+            env TEXT NOT NULL,
+            subscription TEXT,
+            checkout TEXT,
+            period_start INTEGER,
+            period_end INTEGER,
+            subtotal INTEGER NOT NULL,                 -- לפני מע"מ
+            vat_rate INTEGER NOT NULL,
+            vat INTEGER NOT NULL,
+            total INTEGER NOT NULL,
+            status TEXT NOT NULL,                      -- draft | open | paid | void | uncollectible
+            attempts INTEGER NOT NULL DEFAULT 0,
+            next_attempt_at INTEGER,
+            paid_at INTEGER,
+            created_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS invoice_due ON invoice(status, next_attempt_at);
+        CREATE TABLE IF NOT EXISTS invoice_line (
+            id TEXT PRIMARY KEY,
+            invoice TEXT NOT NULL REFERENCES invoice(id),
+            client TEXT NOT NULL,
+            product TEXT,
+            price TEXT,
+            description TEXT NOT NULL,
+            quantity REAL NOT NULL,
+            amount INTEGER NOT NULL                    -- אגורות, כפי שהוצג (כולל/לא כולל לפי המחיר)
+        );
+
+        CREATE TABLE IF NOT EXISTS payment (
+            id TEXT PRIMARY KEY,
+            account TEXT NOT NULL REFERENCES account(id),
+            env TEXT NOT NULL,
+            invoice TEXT,
+            checkout TEXT,
+            method TEXT,
+            provider TEXT NOT NULL,
+            amount INTEGER NOT NULL,
+            refunded INTEGER NOT NULL DEFAULT 0,
+            currency TEXT NOT NULL DEFAULT 'ILS',
+            status TEXT NOT NULL,                      -- succeeded | failed | refunded | partially_refunded
+            provider_txn TEXT NOT NULL DEFAULT '',
+            failure_code TEXT NOT NULL DEFAULT '',
+            failure_message TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS payment_txn ON payment(provider, provider_txn) WHERE provider_txn <> '';
+
+        CREATE TABLE IF NOT EXISTS refund (
+            id TEXT PRIMARY KEY,
+            payment TEXT NOT NULL REFERENCES payment(id),
+            amount INTEGER NOT NULL,
+            reason TEXT NOT NULL,
+            provider_ref TEXT NOT NULL DEFAULT '',
+            actor TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+        );
+
+        -- הודעות ללקוח (מייל / מסרון). ‏dedupe מונע שליחה כפולה של אותה הודעה חוקית
+        CREATE TABLE IF NOT EXISTS notification (
+            id TEXT PRIMARY KEY,
+            account TEXT NOT NULL,
+            channel TEXT NOT NULL,                     -- email | sms
+            template TEXT NOT NULL,
+            dedupe TEXT NOT NULL UNIQUE,
+            to_addr TEXT NOT NULL DEFAULT '',
+            subject TEXT NOT NULL DEFAULT '',
+            body TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',    -- pending | sent | failed | no_provider
+            created_at INTEGER NOT NULL,
+            sent_at INTEGER
+        );
+
+        -- סשן "החשבון שלי" (חד-פעמי, קצר)
+        CREATE TABLE IF NOT EXISTS portal_session (
+            hash TEXT PRIMARY KEY,
+            customer TEXT NOT NULL REFERENCES customer(id),
+            return_url TEXT NOT NULL,
+            expires_at INTEGER NOT NULL
+        );
+
+        -- הסולק המדומה (פרק 5.4) — מתנהג כמו סולק חיצוני; רק בסביבת בדיקות
+        CREATE TABLE IF NOT EXISTS fake_session (
+            ref TEXT PRIMARY KEY,
+            checkout TEXT NOT NULL,
+            amount INTEGER NOT NULL,
+            save_token INTEGER NOT NULL,
+            methods TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'open',       -- open | paid | declined
+            txn TEXT,
+            created_at INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS fake_txn (
+            id TEXT PRIMARY KEY,
+            kind TEXT NOT NULL,                        -- charge | refund
+            amount INTEGER NOT NULL,
+            status TEXT NOT NULL,
+            token TEXT,
+            card_last4 TEXT NOT NULL DEFAULT '',
+            method TEXT NOT NULL DEFAULT 'card',
+            idem TEXT UNIQUE,
+            created_at INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS fake_token (
+            token TEXT PRIMARY KEY,
+            last4 TEXT NOT NULL,
+            behavior TEXT NOT NULL DEFAULT 'ok'        -- ok | decline (כרטיס בדיקה שנדחה בחיוב הבא)
+        );
+    SQL);
 }
