@@ -290,7 +290,11 @@ async function main() {
   check('🔒 נעילה — מחיקה ואטימות כבויות', await page.$eval('[data-act="remove"]', b => b.disabled) && await page.$eval('#layer-opacity', b => b.disabled));
   await page.click('.layer-row[aria-selected="true"] .lock');
   await page.click('[data-act="remove"]');
-  check('🗑️ מחיקה (אחרי אישור) — האריחים שוחררו', (await rows()).join() === 'שכבה 2,רקע');
+  check('🗑️ מחיקה — בלי שאלה (יש ביטול)', (await rows()).join() === 'שכבה 2,רקע');
+  await page.keyboard.press('Control+z');
+  check('Ctrl+Z — השכבה שנמחקה חוזרת, עם התוכן', (await rows()).join() === 'שכבה 2,אדום,רקע' && near(await px(), [255, 0, 0, 255]));
+  await page.keyboard.press('Control+Shift+z');
+  check('Ctrl+Shift+Z — נמחקת שוב', (await rows()).join() === 'שכבה 2,רקע');
   // גרירה: הרקע (למטה) אל מעל העליונה
   const hBox = await page.$eval('.layer-row:last-child .drag', el => { const r = el.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; });
   const topBox = await page.$eval('.layer-row:first-child', el => { const r = el.getBoundingClientRect(); return [r.x + r.width / 2, r.y + 4]; });
@@ -298,11 +302,53 @@ async function main() {
   await page.mouse.down();
   await page.mouse.move(topBox[0], topBox[1], { steps: 6 });
   await page.mouse.up();
-  check('⋮⋮ גרירה — הרקע עבר למעלה', (await rows()).join() === 'רקע,שכבה 2');
+  check('⋮⋮ גרירה — הרקע עבר למעלה', (await rows()).join() === 'רקע,שכבה 2', (await rows()).join());
+  await page.keyboard.press('Control+z');
+  check('ביטול גרירה — הסדר חוזר', (await rows()).join() === 'שכבה 2,רקע');
+  await page.keyboard.press('Control+y');
+  check('Ctrl+Y — ביצוע מחדש', (await rows()).join() === 'רקע,שכבה 2');
   check('אחרי הגרירה — הלבן מכסה את האדום', near(await px(), [255, 255, 255, 255]));
   await page.click('[data-act="add"]'); await page.click('[data-act="add"]');
   check('מונה השכבות', await page.$eval('#layers-btn', b => b.dataset.layerCount) === '4');
   if (SHOTS) await page.screenshot({ path: join(SHOTS, 'layers-desktop.png') });
+  // ---- ביטול / ביצוע ----
+  await page.goto(BASE + '/editor.html?doc=' + id);
+  await page.waitForFunction(() => window.__rs?.doc);
+  check('בהתחלה — אין מה לבטל', await page.$eval('#undo-btn', b => b.disabled) && await page.$eval('#redo-btn', b => b.disabled));
+  await page.click('[data-act="add"]');
+  check('אחרי פעולה — ↷ פעיל, עם שם הפעולה', !(await page.$eval('#undo-btn', b => b.disabled)) && (await page.$eval('#undo-btn', b => b.title)) === 'ביטול: שכבה חדשה');
+  // פיקסלים דרך ההיסטוריה: צילום "לפני", מילוי, רשומה — ביטול מחליף מרקמים
+  const swap = await page.evaluate(() => {
+    const { doc, renderer: r, history: h } = __rs;
+    const l = doc.active;
+    const before = r.snapshot(l, [...new Set([...l.tiles.keys(), '0,0', '1,0', '2,0', '0,1', '1,1', '2,1'])]);
+    r.fill(doc, l, [0, 0, 255, 255]);
+    h.pixels(doc, l, before, 'מילוי');
+    const p = () => Array.from(r.readPixels(doc, 10, 10, 1, 1)).join();
+    const after = p();
+    h.undo(); const undone = p();
+    h.redo(); const redone = p();
+    h.undo();
+    return { after, undone, redone };
+  });
+  check('פיקסלים: מילוי ← ביטול ← ביצוע', swap.after === '0,0,255,255' && swap.undone === '255,255,255,255' && swap.redone === '0,0,255,255', JSON.stringify(swap));
+  await page.selectOption('#layer-blend', 'screen');
+  await page.$eval('#layer-opacity', el => { for (const v of ['80', '60', '40']) { el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); } el.dispatchEvent(new Event('change', { bubbles: true })); });
+  check('גרירת אטימות — רשומה אחת', await page.evaluate(() => __rs.history.undoStack.map(e => e.label).join()) === 'שכבה חדשה,מילוי,מצב מיזוג,אטימות'.replace('מילוי,', ''), await page.evaluate(() => __rs.history.undoStack.map(e => e.label).join()));
+  await page.click('#undo-btn');
+  check('↷ — האטימות חוזרת ל-100%', await page.evaluate(() => __rs.doc.active.opacity) === 1 && (await page.textContent('#layer-opacity-out')) === '100%');
+  await page.click('#undo-btn');
+  check('↷ — המיזוג חוזר לרגיל', await page.evaluate(() => __rs.doc.active.blend) === 'normal' && (await page.$eval('#layer-blend', s => s.value)) === 'normal');
+  await page.click('#undo-btn');
+  check('↷ — השכבה החדשה בוטלה', (await rows()).join() === 'רקע' && await page.$eval('#undo-btn', b => b.disabled));
+  await page.click('#redo-btn'); await page.click('#redo-btn');
+  check('↶ ↶ — חוזרים קדימה', (await rows()).join() === 'שכבה 2,רקע' && await page.evaluate(() => __rs.doc.active.blend) === 'screen');
+  await page.click('.layer-row[aria-selected="true"] .layer-name');
+  await page.fill('.layer-name-input', 'ניסיון');
+  await page.keyboard.press('Control+z');   // בתוך השדה — לא מבטל פעולות בקנבס
+  check('Ctrl+Z בתוך שדה השם — לא נוגע בהיסטוריה', (await page.evaluate(() => __rs.history.undoStack.length)) === 2);
+  await page.keyboard.press('Escape');
+
 
   check('אין שגיאות בקונסול', errors.length === 0, errors.join(' | '));
 

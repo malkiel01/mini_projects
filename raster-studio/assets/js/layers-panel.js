@@ -1,6 +1,5 @@
 // לוח השכבות: רשימה (העליונה למעלה, כמו בכל עורך), מאפייני השכבה הפעילה, ופעולות.
-// במחשב — לוח בצד; בטלפון — גיליון מלמטה (editor.html, CSS). כל שינוי עובר דרך onChange — כך
-// ייכנס כאן "ביטול / ביצוע" בשלב הבא בלי לגעת בלוח.
+// במחשב — לוח בצד; בטלפון — גיליון מלמטה (editor.html, CSS). כל שינוי נרשם בהיסטוריה (ביטול / ביצוע).
 
 import { BLEND_MODES } from './engine/doc.js';
 
@@ -13,10 +12,11 @@ const $ = (s, el = document) => el.querySelector(s);
  * @param {HTMLElement} o.root   ה-aside של הלוח
  * @param {() => import('./engine/doc.js').RasterDocument} o.doc
  * @param {object} o.renderer
+ * @param {import('./engine/history.js').History} o.history
  * @param {(what: string) => void} o.onChange  אחרי כל שינוי (לצייר מחדש)
  * @param {(msg: string, err?: boolean) => void} o.toast
  */
-export function createLayersPanel({ root, doc, renderer, onChange, toast }) {
+export function createLayersPanel({ root, doc, renderer, history, onChange, toast }) {
   const list = $('.layer-list', root);
   const opacity = $('#layer-opacity', root);
   const opacityOut = $('#layer-opacity-out', root);
@@ -27,28 +27,47 @@ export function createLayersPanel({ root, doc, renderer, onChange, toast }) {
 
   const changed = what => { renderer.invalidate(doc()); onChange(what); render(); };
 
+  /** שינוי מאפיין של שכבה — מיושם ונרשם בהיסטוריה. */
+  function setProp(layer, key, value, label) {
+    if (layer[key] === value) return;
+    const before = { [key]: layer[key] };
+    layer[key] = value;
+    history.props(doc(), layer, before, { [key]: value }, label);
+    changed(key);
+  }
+
   // ---- מאפיינים ----
+  // האטימות משתנה חיה בזמן הגרירה, ונרשמת בהיסטוריה פעם אחת — כשהגרירה נגמרת
+  let opacityStart = null;
   opacity.addEventListener('input', () => {
     const l = doc().active;
     if (!l || l.locked) return;
+    opacityStart ??= { layer: l, value: l.opacity };
     l.opacity = Number(opacity.value) / 100;
     opacityOut.textContent = opacity.value + '%';
     renderer.invalidate(doc());
     onChange('opacity');
   });
-  opacity.addEventListener('change', () => render());
+  opacity.addEventListener('change', () => {
+    const s = opacityStart;
+    opacityStart = null;
+    if (s && s.layer.opacity !== s.value) {
+      history.props(doc(), s.layer, { opacity: s.value }, { opacity: s.layer.opacity }, 'אטימות');
+    }
+    render();
+  });
   blend.addEventListener('change', () => {
     const l = doc().active;
     if (!l || l.locked) return;
-    l.blend = blend.value;
-    changed('blend');
+    setProp(l, 'blend', blend.value, 'מצב מיזוג');
   });
 
   // ---- פעולות ----
   const act = {
     add() {
       const d = doc();
-      d.addLayer({ index: d.indexOf(d.active) + 1 });
+      const l = d.addLayer({ index: d.indexOf(d.active) + 1 });
+      history.addLayer(d, l, 'שכבה חדשה');
       changed('add');
     },
     duplicate() {
@@ -56,22 +75,30 @@ export function createLayersPanel({ root, doc, renderer, onChange, toast }) {
       const copy = d.addLayer({ name: src.name + ' עותק', index: d.indexOf(src) + 1,
         opacity: src.opacity, blend: src.blend, visible: src.visible });
       renderer.copyLayer(src, copy);
+      history.addLayer(d, copy, 'שכפול שכבה');
       changed('duplicate');
     },
-    up() { const d = doc(), l = d.active; if (d.moveLayer(l, d.indexOf(l) + 1)) changed('move'); },
-    down() { const d = doc(), l = d.active; if (d.moveLayer(l, d.indexOf(l) - 1)) changed('move'); },
+    up() { move(doc().active, doc().indexOf(doc().active) + 1); },
+    down() { move(doc().active, doc().indexOf(doc().active) - 1); },
     remove() {
       const d = doc(), l = d.active;
       if (d.layers.length <= 1) { toast('זו השכבה היחידה'); return; }
       if (l.locked) { toast('השכבה נעולה'); return; }
-      // עד שיהיה "ביטול" — שאלה לפני מחיקה של שכבה שיש בה תוכן
-      if (l.tiles.size && !confirm(`למחוק את השכבה "${l.name}"?`)) return;
+      // בלי שאלה: יש ביטול (Ctrl+Z / ↶), והאריחים נשמרים בהיסטוריה עד שהרשומה נזרקת
+      const i = d.indexOf(l);
       d.removeLayer(l);
-      renderer.freeLayer(l);
-      thumbs.delete(l.id);
+      history.removeLayer(d, l, i, 'מחיקת שכבה');
       changed('remove');
+      toast(`"${l.name}" נמחקה — אפשר לבטל`);
     },
   };
+
+  function move(layer, to) {
+    const d = doc(), from = d.indexOf(layer);
+    d.activeId = layer.id;
+    if (d.moveLayer(layer, to)) { history.moveLayer(d, layer, from, d.indexOf(layer), 'סדר השכבות'); changed('move'); }
+    else render();
+  }
   root.addEventListener('click', e => {
     const b = e.target.closest('[data-act]');
     if (b && !b.disabled) act[b.dataset.act]();
@@ -128,8 +155,8 @@ export function createLayersPanel({ root, doc, renderer, onChange, toast }) {
       doc().activeId = layer.id;
       render();
     });
-    eye.addEventListener('click', () => { layer.visible = !layer.visible; changed('visible'); });
-    lock.addEventListener('click', () => { layer.locked = !layer.locked; render(); });
+    eye.addEventListener('click', () => setProp(layer, 'visible', !layer.visible, layer.visible ? 'הסתרת שכבה' : 'הצגת שכבה'));
+    lock.addEventListener('click', () => setProp(layer, 'locked', !layer.locked, layer.locked ? 'שחרור נעילה' : 'נעילת שכבה'));
     $('.drag', li).addEventListener('pointerdown', e => drag(e, layer, li));
     return li;
   }
@@ -149,8 +176,8 @@ export function createLayersPanel({ root, doc, renderer, onChange, toast }) {
       if (done) return;
       done = true;
       const v = input.value.trim();
-      if (save && v && v !== layer.name) { layer.name = v; onChange('rename'); }
-      render();
+      if (save && v && v !== layer.name) setProp(layer, 'name', v, 'שם השכבה');
+      else render();
     };
     input.addEventListener('keydown', e => {
       if (e.key === 'Enter') { e.preventDefault(); finish(true); }
@@ -167,7 +194,7 @@ export function createLayersPanel({ root, doc, renderer, onChange, toast }) {
     li.classList.add('dragging');
     let target = null, after = false;
     const clear = () => list.querySelectorAll('.drop-before, .drop-after').forEach(r => r.classList.remove('drop-before', 'drop-after'));
-    const move = ev => {
+    const onMove = ev => {
       clear();
       target = null;
       for (const r of list.children) {
@@ -182,7 +209,7 @@ export function createLayersPanel({ root, doc, renderer, onChange, toast }) {
       }
     };
     const up = () => {
-      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointermove', onMove);
       handle.removeEventListener('pointerup', up);
       handle.removeEventListener('pointercancel', up);
       li.classList.remove('dragging');
@@ -193,10 +220,9 @@ export function createLayersPanel({ root, doc, renderer, onChange, toast }) {
       const t = d.layer(target.dataset.id);
       let to = d.indexOf(t) + (after ? 0 : 1);
       if (d.indexOf(layer) < to) to--;
-      d.activeId = layer.id;
-      if (d.moveLayer(layer, to)) changed('move'); else render();
+      move(layer, to);
     };
-    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointermove', onMove);
     handle.addEventListener('pointerup', up);
     handle.addEventListener('pointercancel', up);
   }
