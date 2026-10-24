@@ -369,3 +369,6 @@ details.more > summary { cursor: pointer; color: var(--muted); padding: var(--s2
 .seg-tabs.scroll { display: flex; overflow-x: auto; scrollbar-width: none; scroll-snap-type: x proximity; padding-bottom: 2px; }
 .seg-tabs.scroll::-webkit-scrollbar { display: none; }
 .seg-tabs.scroll button { flex: none; padding: 4px 14px; white-space: nowrap; scroll-snap-align: center; }
+
+/* שורות עם הסבר שלא נחתך (מסך הדפדפנים) */
+.rows.wrap small { white-space: normal; overflow: visible; text-overflow: clip; }

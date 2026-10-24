@@ -233,17 +233,22 @@ async function loadKids() {
 /* ── גיליון ילד ────────────────────────────────────────────────── */
 
 let K = null, tab = 'sum';
+/*
+ * הסדר (בעל המערכת, 2026-10-24): כל נושא במסך אחד — 🌐 דפדפנים (אילו דפדפנים, קטגוריות, אתרים), 🛒 חנות (המרקט),
+ * 📲 אפליקציות (מה שמותקן במכשיר), ו-🔐 גישה להגדרות הכלליות בלבד.
+ */
 const TABS_BASE = [['sum', '📋 סיכום'], ['act', '📊 פעילות'], ['access', '🔐 גישה'], ['time', '⏰ זמנים'],
-                   ['yt', '▶️ יוטיוב'], ['sites', '🌐 אתרים'], ['dev', '📱 מכשירים'], ['hist', '🕓 שינויים']];
-// לשונית "אפליקציות" רק לחשבון ברמת אפליקציות/מכשיר (המפתח פותח).
+                   ['web', '🌐 דפדפנים'], ['yt', '▶️ יוטיוב'], ['dev', '📱 מכשירים'], ['hist', '🕓 שינויים']];
+// "חנות" ו"אפליקציות" רק לחשבון ברמת אפליקציות/מכשיר (המפתח פותח).
 const appsAllowed = () => S.account && (S.account.level_max === 'apps' || S.account.level_max === 'device');
 const tabsFor = () => appsAllowed()
-    ? [...TABS_BASE.slice(0, 6), ['apps', '📲 אפליקציות'], ...TABS_BASE.slice(6)] : TABS_BASE;
+    ? [...TABS_BASE.slice(0, 6), ['store', '🛒 חנות'], ['apps', '📲 אפליקציות'], ...TABS_BASE.slice(6)] : TABS_BASE;
 
 async function openKid(id) {
     try { K = (await call('child', { id })).child; } catch (e) { toast(e.message, true); return; }
     A = null; AP = null;
     tab = sessionStorage.getItem('mg:tab') || 'sum';
+    if (tab === 'sites') tab = 'web';   // הלשונית הישנה
     if (!tabsFor().some(([k]) => k === tab)) tab = 'sum';
     renderKid();
     const d = $('#kid-dlg'); if (!d.open) d.showModal();
@@ -269,7 +274,7 @@ function renderKid() {
     const tabs = el('div', { class: 'seg-tabs scroll', role: 'tablist' },
         T.map(([k, label]) => el('button', { type: 'button', role: 'tab', ariaSelected: String(tab === k),
             text: label, onclick: () => { tab = k; sessionStorage.setItem('mg:tab', k); renderKid(); } })));
-    const body = { sum: kidSum, act: kidAct, access: kidAccess, time: kidTime, yt: kidYt, sites: kidSites, dev: kidDev, apps: kidApps,
+    const body = { sum: kidSum, act: kidAct, access: kidAccess, time: kidTime, yt: kidYt, web: kidWeb, store: kidStore, dev: kidDev, apps: kidApps,
                    hist: kidHist }[tab]();
     $('#kid-body').replaceChildren(tabs, ...body.filter(Boolean));
     tabs.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest', inline: 'center' });
@@ -502,10 +507,6 @@ function kidAccess() {
                 'מתאים בעיקר ל"הכול פתוח": ב"הכול חסום" רוב התוצאות יובילו לדף חסימה. גוגל מציגה תמונות ותקצירים גם מאתרים שחסומים לילד.',
     };
     const searchHint = el('p', { class: 'hint', text: SEARCH_HINTS[p.search_engine || 'migdalor'] });
-    const cats = Object.entries(C.categories).map(([k, c]) => el('li', {}, [
-        el('span', { text: c.icon, ariaHidden: 'true' }), el('span', { class: 'nm', text: c.name }),
-        seg(`cat_${k}`, [['', '—'], ['allow', 'מותר'], ['deny', 'חסום']], K.categories[k] || '', { cls: 'seg mini' }),
-    ]));
     return [
         el('label', { class: 'f' }, [el('span', { text: 'שם' }), el('input', { name: 'display_name', value: K.name, maxLength: 40 })]),
         // מתגים כמו בשאר הטופס (תקלת עיצוב, 2026-10-24: תיבות סימון גדולות שצפו באמצע השורה והטקסט נדחס).
@@ -524,7 +525,6 @@ function kidAccess() {
             seg('search_engine', [['migdalor', '🗼 מגדלור'], ['google', '🔎 גוגל']], p.search_engine || 'migdalor', { cols: 2,
                 onchange: v => { searchHint.textContent = SEARCH_HINTS[v]; } }),
             searchHint]),
-        group('סוגי אתרים', 'מותר / חסום לפי סוג, לא רק לפי כתובת', [el('ul', { class: 'rows' }, cats)]),
         group('לחסום תמיד', 'גם באתר שמותר', [el('div', { class: 'chips' }, Object.entries(C.types).map(([k, t]) =>
             el('label', {}, [el('input', { type: 'checkbox', name: 'types', value: k, checked: p.types.includes(k) }),
                 el('span', { text: `${t.icon} ${t.name}` })])))]),
@@ -573,12 +573,9 @@ $('#kid-form').addEventListener('submit', async e => {
     const f = e.target, checked = n => [...f.querySelectorAll(`[name=${n}]:checked`)].map(i => i.value);
     let policy;
     if (tab === 'access') {
-        const categories = {};
-        for (const k of Object.keys(S.catalogs.categories)) {
-            const v = f.querySelector(`[name=cat_${k}]:checked`)?.value; if (v) categories[k] = v;
-        }
+        // הקטגוריות עברו ל"🌐 דפדפנים" ונשמרות שם מיד — לא נשלחות מכאן (שליחה ריקה הייתה מוחקת אותן).
         policy = { display_name: f.display_name.value, mode: f.querySelector('[name=mode]:checked').value,
-            posture: f.querySelector('[name=posture]:checked').value, home_sections: checked('home_sections'), search_engine: f.querySelector('[name=search_engine]:checked').value, categories, types: checked('types'), ads: checked('ads'),
+            posture: f.querySelector('[name=posture]:checked').value, home_sections: checked('home_sections'), search_engine: f.querySelector('[name=search_engine]:checked').value, types: checked('types'), ads: checked('ads'),
             allow_downloads: f.allow_downloads.checked, allow_pip: f.allow_pip.checked,
             allow_background: f.allow_background.checked, block_screenshots: f.block_screenshots.checked };
     } else if (tab === 'time') {
@@ -644,6 +641,77 @@ function learnCheck(y) {
             style: c.state === 'failed' ? 'color:var(--danger)' : '' })),
         el('div', { text: 'בכל מקרה: סרטון שאינו בתור — לא נפתח, וסרטון שמתחיל לבד מיד אחרי סוף הקודם — נעצר.' }),
     ]);
+}
+
+/*
+ * 🌐 דפדפנים (lib/browsers.php, 2026-10-24): אילו דפדפנים יש במכשירים שלו ומה כל אחד מקבל — ובאותו מסך הכללים
+ * שחלים עליהם: קטגוריות, פתיחת אתר, והאתרים שלו. הכללים אחד לכל הדפדפנים שאפשר לסנן (מגדלור, כרום מנוהל).
+ */
+let BR = null;
+async function loadBrowsers() {
+    const kid = K.id;
+    try { BR = { ...(await call('browsers', { id: kid })), kid }; } catch (e) { BR = { kid, error: e.message }; }
+    if (tab === 'web' && K && K.id === kid) renderKid();
+}
+
+function browsersGroup() {
+    if (!BR || BR.kid !== K.id) { loadBrowsers(); return group('הדפדפנים במכשיר', '', [el('p', { class: 'muted', text: 'טוען…' })]); }
+    if (BR.error) return group('הדפדפנים במכשיר', '', [el('p', { class: 'error', text: BR.error })]);
+    const save = async (calls, ok) => {
+        try { for (const [action, data] of calls) await call(action, { id: K.id, ...data }); toast(ok); }
+        catch (e) { toast(e.message, true); }
+        BR = null; AP = null; renderKid();
+    };
+    const ownerOk = (BR.chrome?.devices || []).some(d => d.owner);
+    const row = b => {
+        let line, ctl = null;
+        if (b.kind === 'migdalor') line = 'מסנן מלא — כל ההגדרות שלכם, בכל מכשיר';
+        else if (b.kind === 'chrome') {
+            const v = b.blocked ? 'block' : b.managed ? 'managed' : 'open';
+            line = { block: 'חסום — לא נפתח', managed: ownerOk ? 'מסונן — אותם אתרים וקטגוריות, חיפוש בטוח, בלי גלישה בסתר'
+                       : 'מסונן — רק במכשיר עם "הקמה מלאה" (בעל מכשיר); בלעדיה כדאי לחסום', open: '⚠️ פתוח בלי סינון' }[v];
+            ctl = seg(`br_${b.package}`, [['block', '🚫 חסום'], ['managed', '✅ מסונן'], ['open', 'פתוח']], v, { cls: 'seg mini', onchange: x => save(
+                x === 'block' ? [['app_rule', { package: b.package, app_action: 'block' }]]
+                : [['app_rule', { package: b.package, app_action: 'allow' }], ['chrome_managed', { on: x === 'managed' ? 1 : 0 }]],
+                x === 'block' ? `${b.name} נחסם` : x === 'managed' ? `${b.name} מסונן — המכשיר יתעדכן תוך דקה` : `${b.name} פתוח בלי סינון`) });
+        } else {
+            line = b.blocked ? 'חסום — לא נפתח' : '⚠️ פתוח בלי סינון — אנדרואיד לא מאפשר לסנן בתוכו';
+            ctl = seg(`br_${b.package}`, [['block', '🚫 חסום'], ['open', 'פתוח']], b.blocked ? 'block' : 'open', { cls: 'seg mini',
+                onchange: x => save([['app_rule', { package: b.package, app_action: x === 'block' ? 'block' : 'allow' }]],
+                    x === 'block' ? `${b.name} נחסם` : `${b.name} פתוח בלי סינון`) });
+        }
+        return el('li', {}, [
+            el('span', { text: b.kind === 'migdalor' ? '🗼' : b.kind === 'chrome' ? '🌐' : '🧭', ariaHidden: 'true' }),
+            el('span', { class: 'nm' }, [b.name, el('small', { text: line + (b.devices.length ? ` · ${b.devices.join(', ')}` : '') })]),
+            ctl]);
+    };
+    return group('הדפדפנים במכשיר', 'באיזה דפדפן הוא גולש — ומה כל אחד מקבל', [
+        el('ul', { class: 'rows wrap' }, BR.browsers.map(row)),
+        !BR.apps ? el('p', { class: 'hint', text: 'בחשבון הזה מגדלור הוא הדפדפן היחיד שמנוהל. ניהול כרום ודפדפנים אחרים — ברמת "אפליקציות".' })
+            : !BR.reported ? el('p', { class: 'hint', text: 'המכשיר עוד לא דיווח אילו דפדפנים מותקנים בו. זה קורה כשמגדלור פתוח וההרשאות ניתנו.' }) : null,
+    ]);
+}
+
+/** הקטגוריות — נשמרות מיד בבחירה (child_save עם categories בלבד). */
+function categoriesGroup() {
+    const C = S.catalogs;
+    const saveCats = () => {
+        const categories = {};
+        for (const k of Object.keys(C.categories)) {
+            const v = document.querySelector(`[name=cat_${k}]:checked`)?.value; if (v) categories[k] = v;
+        }
+        act('child_save', { policy: { categories } }, 'נשמר — המכשיר יתעדכן תוך דקה');
+    };
+    return group('קטגוריות', 'מותר / חסום לפי סוג אתר. אתר שפתחתם בנפרד — נפתח גם כשהקטגוריה שלו חסומה', [el('ul', { class: 'rows' },
+        Object.entries(C.categories).map(([k, c]) => el('li', {}, [
+            el('span', { text: c.icon, ariaHidden: 'true' }), el('span', { class: 'nm', text: c.name }),
+            seg(`cat_${k}`, [['', '—'], ['allow', 'מותר'], ['deny', 'חסום']], K.categories[k] || '', { cls: 'seg mini', onchange: saveCats }),
+        ])))]);
+}
+
+function kidWeb() {
+    const [finder, ...rest] = kidSites();
+    return [browsersGroup(), finder, categoriesGroup(), ...rest];
 }
 
 function kidSites() {
@@ -743,7 +811,7 @@ let TS = null, TK = 0;
 function tasksGroup() {
     if (TK !== K.id) {
         TK = K.id; TS = null;
-        call('tasks', { id: K.id }).then(r => { TS = r.tasks; if (tab === 'sites') renderKid(); }).catch(e => toast(e.message, true));
+        call('tasks', { id: K.id }).then(r => { TS = r.tasks; if (tab === 'web') renderKid(); }).catch(e => toast(e.message, true));
     }
     const list = (TS || []).filter(t => t.active || Date.now() - new Date(t.ends_at) < 86400e3).map(t => el('li', { style: t.active ? '' : 'opacity:.55' }, [
         el('span', { text: t.active ? '📝' : '✔️', ariaHidden: 'true' }),
@@ -1304,7 +1372,16 @@ async function loadMarket() {
     const kid = K.id;
     try { MK = { ...(await call('market', { id: kid })).market, kid }; }
     catch (e) { MK = { kid, error: e.message }; }
-    if (tab === 'apps' && K && K.id === kid) renderKid();
+    if (tab === 'store' && K && K.id === kid) renderKid();
+}
+
+/** 🛒 חנות — המרקט במסך משלו. */
+function kidStore() {
+    return [
+        el('p', { class: 'hint', text: `מה ש${K.name} יכול להתקין. משוחררת מופיעה אצלו ברובריקת "📲 אפליקציות" עם "📥 התקנה"; ` +
+            'את השאר הוא רואה ב"🛒 עוד אפליקציות" ויכול לבקש — הבקשה מגיעה אליכם כמו כל בקשה.' }),
+        marketGroup(),
+    ];
 }
 
 function marketGroup() {
@@ -1344,7 +1421,6 @@ function marketGroup() {
         save('market_add', { link: link.value.trim(), category: cat.value, min_age: 0 }, 'נוספה ושוחררה לו');
     } });
     return group('🛒 מרקט', released ? `${released} משוחררות` : 'בוחרים מה הוא יכול להתקין', [
-        el('p', { class: 'hint', text: 'מה שמשחררים מופיע אצלו ברובריקת "📲 אפליקציות" עם "התקנה", ומותר לו לפתוח אותו — גם כשאפליקציה חדשה נחסמת.' }),
         ...cats,
         el('details', { class: 'group' }, [el('summary', {}, [el('b', { text: '➕ אפליקציה שאין במלאי' })]),
             el('p', { class: 'hint', text: 'מדביקים קישור מ-Google Play. היא נוספת למלאי שלכם בלבד, ומשוחררת לילד הזה.' }),
@@ -1416,29 +1492,10 @@ function kidApps() {
             try { AP = { ...(await call('apps_new', { id: K.id, new_apps: v })).apps, kid: K.id }; toast('נשמר — המכשיר יתעדכן תוך דקה'); }
             catch (e) { toast(e.message, true); } renderKid();
         } });
-    // כרום מנוהל (lib/chrome.php): הכללים של הילד גם בתוך Google Chrome — רק ב"הקמה מלאה".
-    const CH = AP.chrome || { managed: false, devices: [] };
-    const CHR = { verified: '✅ נאכף בכרום', fail: '⚠️ ההחלה נכשלה — מגדלור ינסה שוב', no_owner: '⚠️ דורש הקמה מלאה',
-                  not_installed: '· כרום לא מותקן', '': '⏳ עוד לא דווח' };
-    const chrome = group('🌐 כרום מנוהל', '', [
-        seg('chrome_managed', [['0', 'כבוי'], ['1', 'מנוהל']], CH.managed ? '1' : '0', { cols: 2, onchange: async v => {
-            try { AP = { ...(await call('chrome_managed', { id: K.id, on: Number(v) })).apps, kid: K.id }; toast('נשמר — המכשיר יתעדכן תוך דקה'); }
-            catch (e) { toast(e.message, true); } renderKid();
-        } }),
-        el('p', { class: 'hint', text: CH.managed
-            ? 'בכרום: רק האתרים שמותרים לפי ההגדרות, חיפוש בטוח בגוגל, סינון תוכן למבוגרים, ובלי גלישה בסתר. ' +
-              (CH.youtube ? 'יוטיוב פתוח (במצב מוגבל), כי ביוטיוב מוגדר "הכול מותר". ' : 'יוטיוב חסום בכרום — צופים בו דרך מגדלור, עם הערוצים שאישרתם. ') +
-              'לא עובר לכרום: זמנים ומכסה (הגבילו את כרום ב-⏱️), סוגי תוכן וחסימת פרסומות. כרום עצמו צריך להיות מותר ברשימה למטה.'
-            : 'כבוי: מה שקורה בכרום לא מסונן — לכן כדאי לחסום אותו (🚫 או 👻) ברשימה למטה. "מנוהל" מעביר לכרום את רשימות האתרים, חיפוש בטוח וחסימת גלישה בסתר — רק במכשיר עם הקמה מלאה.' }),
-        CH.managed && CH.truncated ? el('p', { class: 'hint', style: 'color:var(--danger)', text: 'יותר מ-1000 כתובות ברשימה — כרום מקבל רק את ה-1000 הראשונות.' }) : null,
-        CH.managed && CH.devices.length ? el('ul', { class: 'hint' }, CH.devices.map(d =>
-            el('li', { text: `${d.name || 'מכשיר'}: ${d.owner ? (CHR[d.result] ?? d.result) : CHR.no_owner}` }))) : null,
-    ].filter(Boolean));
     return [
         warn,
         hideWarn,
-        chrome,
-        marketGroup(),
+        el('p', { class: 'hint', text: 'כרום ושאר הדפדפנים — במסך "🌐 דפדפנים". מה אפשר להתקין — במסך "🛒 חנות".' }),
         group('ברירת מחדל', '', [posture, hint]),
         group('אפליקציה חדשה שתותקן', '', [newApps, el('p', { class: 'hint', text: AP.new_apps === 'block'
             ? 'כל אפליקציה שתותקן מעכשיו — חסומה מיד, גם בלי אינטרנט. היא תופיע כאן ברשימה עם 🚫, ותוכלו לפתוח אותה. הילד יכול לבקש.'
