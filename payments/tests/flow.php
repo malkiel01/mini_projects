@@ -297,10 +297,10 @@ check('בדיקת שלמות: יתרה = סכום התנועות', (function () 
 // ---------------------------------------------------------------
 section('הדפים ב-HTTP');
 putenv('PAY_NOW');
-$port = 18100 + getmypid() % 800;
+$sock = stream_socket_server('tcp://127.0.0.1:0'); $port = (int)explode(':', stream_socket_get_name($sock, false))[1]; fclose($sock); // פורט פנוי
 $docroot = dirname(__DIR__);
 $base = "http://127.0.0.1:$port/";
-$srv = proc_open("PAY_DATA_DIR=$tmp PAY_ALLOW_HTTP=1 PAY_BASE_URL=$base php -S 127.0.0.1:$port -t " . escapeshellarg($docroot), [1 => ['file', '/dev/null', 'w'], 2 => ['file', '/dev/null', 'w']], $pipes);
+$srv = proc_open("exec env PAY_DATA_DIR=$tmp PAY_ALLOW_HTTP=1 PAY_BASE_URL=$base php -S 127.0.0.1:$port -t " . escapeshellarg($docroot), [1 => ['file', '/dev/null', 'w'], 2 => ['file', '/dev/null', 'w']], $pipes);
 usleep(400_000);
 putenv("PAY_BASE_URL=$base");
 $get = function (string $path, ?array $post = null, array &$cookies = []) use ($base) {

@@ -12,7 +12,7 @@ $tmp = sys_get_temp_dir() . '/pay-links-' . getmypid();
 @mkdir($tmp, 0775, true);
 putenv("PAY_DATA_DIR=$tmp");
 putenv('PAY_ALLOW_HTTP=1');
-$port = 18900 + getmypid() % 90;
+$sock = stream_socket_server('tcp://127.0.0.1:0'); $port = (int)explode(':', stream_socket_get_name($sock, false))[1]; fclose($sock); // פורט פנוי
 $base = "http://127.0.0.1:$port/";
 putenv("PAY_BASE_URL=$base");
 putenv('PAY_DEV_USER=' . json_encode(['sub' => '1', 'name' => 'המנהל']));

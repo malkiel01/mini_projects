@@ -277,10 +277,10 @@ check('בדיקת שלמות: יתרה = סכום התנועות', (function () 
 
 // ---------------------------------------------------------------
 section('HTTP אמיתי (שרת PHP מקומי)');
-$port = 18000 + getmypid() % 1000;
+$sock = stream_socket_server('tcp://127.0.0.1:0'); $port = (int)explode(':', stream_socket_get_name($sock, false))[1]; fclose($sock); // פורט פנוי
 $docroot = dirname(__DIR__);
 $env = "PAY_DATA_DIR=$tmp PAY_ALLOW_HTTP=1";
-$srv = proc_open("$env php -S 127.0.0.1:$port -t " . escapeshellarg($docroot), [1 => ['file', '/dev/null', 'w'], 2 => ['file', '/dev/null', 'w']], $pipes);
+$srv = proc_open("exec env $env php -S 127.0.0.1:$port -t " . escapeshellarg($docroot), [1 => ['file', '/dev/null', 'w'], 2 => ['file', '/dev/null', 'w']], $pipes);
 usleep(400_000);
 $call = function (string $action, array $payload, ?string $key, string $method = 'POST') use ($port) {
     $body = json_encode($payload);
