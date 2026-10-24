@@ -65,7 +65,9 @@ function share_set(array $row, array $owner, $email, $role): void
     if (!in_array($role, ['view', 'comment', 'edit'], true)) throw new ApiError('תפקיד לא תקין', 'bad_role');
     $st = db()->prepare('SELECT COUNT(*) FROM shares WHERE doc = ? AND email != ? COLLATE NOCASE');
     $st->execute([$row['id'], $email]);
-    if ((int)$st->fetchColumn() >= SHARE_MAX) throw new ApiError('אפשר לשתף מסמך עם עד ' . SHARE_MAX . ' אנשים', 'too_many');
+    $n = (int)$st->fetchColumn();
+    $st->closeCursor();   // לפני הכתיבה — אחרת היא נכשלת מיד אם בקשה אחרת כתבה בינתיים (db.php)
+    if ($n >= SHARE_MAX) throw new ApiError('אפשר לשתף מסמך עם עד ' . SHARE_MAX . ' אנשים', 'too_many');
     db()->prepare('INSERT INTO shares (doc, email, role, by_account, created_at) VALUES (?, ?, ?, ?, ?)
         ON CONFLICT (doc, email) DO UPDATE SET role = excluded.role')->execute([$row['id'], $email, $role, (int)$owner['id'], time()]);
     wp_log('share_set', "{$row['id']} → $email ($role)");
