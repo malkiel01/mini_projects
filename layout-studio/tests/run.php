@@ -11,6 +11,7 @@ register_shutdown_function(fn() => array_map('unlink', glob($tmp . '*') ?: []));
 
 require_once __DIR__ . '/../lib/auth.php';
 require_once __DIR__ . '/../lib/docs.php';
+require_once __DIR__ . '/../lib/model.php';
 
 $fails = 0;
 $n = 0;
@@ -81,6 +82,44 @@ check('משתמש אחר לא מוחק', ls_doc_delete($uidB, $d['id']) === fals
 check('הבעלים מוחק', ls_doc_delete($uidA, $d['id']) === true);
 check('מחיקה שנייה — לא נמצא', ls_doc_delete($uidA, $d['id']) === false);
 check('נמחק — לא ברשימה', count(ls_docs_list($uidA)) === 1);
+
+// ---- מודל: פתיחה ושמירה ----
+$doc = ls_doc_create($uidA, 'ספר', '17x24');
+$g = ls_doc_get($uidA, $doc['id']);
+check('מסמך חדש — 4 עמודים, כפולים, כריכה מימין', count($g['model']->surfaces) === 4 && $g['model']->layout->facing === true && $g['model']->layout->binding === 'right');
+check('מסמך חדש — rev 1', $g['rev'] === 1);
+check('flows ריק נשאר אובייקט', json_encode($g['model']->flows) === '{}');
+check('משתמש אחר לא פותח', ls_doc_get($uidB, $doc['id']) === null);
+
+$m = json_decode(json_encode($g['model']), true);
+$m['surfaces'][] = ['id' => 'pX', 'type' => 'page', 'size' => $m['surfaces'][0]['size'], 'master' => null, 'layers' => []];
+$m['futureField'] = ['x' => 1];   // שדה שאיננו מכירים — נשמר כמו שהוא
+$raw = json_encode($m, JSON_UNESCAPED_UNICODE);
+$rev = ls_doc_save($uidA, $doc['id'], 1, $raw);
+check('שמירה — rev עולה', $rev === 2);
+$g2 = ls_doc_get($uidA, $doc['id']);
+check('נשמר — 5 עמודים, ושדה לא מוכר נשאר', count($g2['model']->surfaces) === 5 && $g2['model']->futureField->x === 1);
+check('שמירה עם rev ישן — conflict', throws(fn() => ls_doc_save($uidA, $doc['id'], 1, $raw), 'conflict'));
+check('שמירה למסמך של אחר — not_found', throws(fn() => ls_doc_save($uidB, $doc['id'], 2, $raw), 'not_found'));
+
+$bad = function (callable $mut, string $code) use ($m, $uidA, $doc) {
+    $x = $m; $mut($x);
+    return throws(fn() => ls_doc_save($uidA, $doc['id'], 2, json_encode($x)), 'bad_model:' . $code);
+};
+check('כריכה לא מוכרת — נדחה', $bad(function (&$x) { $x['layout']['binding'] = 'top'; }, 'binding'));
+check('שוליים שליליים — נדחה', $bad(function (&$x) { $x['layout']['margins']['top'] = -1; }, 'margins'));
+check('שוליים שלא משאירים מקום — נדחה', $bad(function (&$x) { $x['layout']['margins']['inside'] = 450; }, 'margins'));
+check('מזהה עמוד כפול — נדחה', $bad(function (&$x) { $x['surfaces'][1]['id'] = $x['surfaces'][0]['id']; }, 'page_id'));
+check('עמודים בגדלים שונים — נדחה', $bad(function (&$x) { $x['surfaces'][1]['size'] = [300, 500]; }, 'mixed_size'));
+check('בלי עמודים — נדחה', $bad(function (&$x) { $x['surfaces'] = []; }, 'pages'));
+check('JSON פגום — נדחה', throws(fn() => ls_doc_save($uidA, $doc['id'], 2, '{oops'), 'bad_model:root'));
+check('משטח מסוג אחר — נשמר בלי בדיקת גודל', ls_doc_save($uidA, $doc['id'], 2, json_encode(array_merge($m, ['surfaces' => array_merge($m['surfaces'], [['id' => 'm1', 'type' => 'master']])]))) === 3);
+
+// מסמך מגרסת מסד 1 (בלי model) — מקבל מודל בפתיחה
+ls_db()->prepare('INSERT INTO docs (owner_id, title, page_w, page_h, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
+    ->execute([$uidA, 'ישן', 419.53, 595.28, ls_now(), ls_now()]);
+$old = ls_doc_get($uidA, (int)ls_db()->lastInsertId());
+check('מסמך ישן — מודל בגודל שלו', $old && $old['model']->surfaces[0]->size[0] == 419.53 && $old['rev'] === 1);
 
 echo "\n" . ($n - $fails) . " / $n עברו\n";
 exit($fails ? 1 : 0);

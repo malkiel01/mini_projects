@@ -1,4 +1,4 @@
-// העימוד — דף הפתיחה: מי אני, והספרייה בשרת (רשימה, מסמך חדש, מחיקה).
+// העימוד — דף הפתיחה: מי אני, והספרייה בשרת (רשימה, מסמך חדש, מחיקה). מסמך נפתח ב-editor.html.
 
 const $ = (s, el = document) => el.querySelector(s);
 
@@ -85,15 +85,17 @@ function render(docs) {
     const li = document.createElement('li');
     li.className = 'doc-row';
     li.innerHTML = `
-      <div class="use-row">
+      <a class="use-row">
         <span class="page-ic" aria-hidden="true"></span>
         <span class="use-tx"><b class="one"></b><small></small></span>
-      </div>
+        <span class="use-go" aria-hidden="true">‹</span>
+      </a>
       <button class="icon-btn" type="button" aria-label="מחיקה">🗑️</button>`;
     const ic = $('.page-ic', li);
     const short = sizeLabel(d.page).split(' ')[0];
     ic.textContent = short.length <= 3 ? short : '';   // A4 / A5 / B5 — מידה ארוכה לא נכנסת בצלמית
     if (d.page[0] > d.page[1]) ic.classList.add('wide');   // לרוחב — הצלמית שוכבת
+    $('a', li).href = 'editor.html?id=' + d.id;
     $('b', li).textContent = d.title;
     // bdi — כדי ש-"A5" או "17×24" לא יתערבבו עם התאריך העברי
     const size = document.createElement('bdi');
@@ -152,10 +154,8 @@ form.addEventListener('submit', async e => {
   if (data.size === 'custom') data.mm = [form.w.value, form.h.value];
   btn.disabled = true;
   try {
-    await api('doc_create', data);
-    dlg.close();
-    toast('המסמך נוצר');
-    load();
+    const { doc } = await api('doc_create', data);
+    location.href = 'editor.html?id=' + doc.id;   // מסמך חדש — נפתח מיד
   } catch (err) {
     dlgErr.textContent = errText(err.message);
     dlgErr.hidden = false;
