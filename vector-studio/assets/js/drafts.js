@@ -38,3 +38,9 @@ export function remove(id) {
 export function newId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 }
+
+// גיבוי של ציור מהספרייה כשהשמירה בשרת נכשלה (בלי חיבור). לא נכנס לרשימת הטיוטות.
+const BKEY = (id) => 'vector-studio:backup:' + id;
+export const loadBackup = (id) => read(BKEY(id), null);
+export const saveBackup = (id, value) => write(BKEY(id), value);
+export function removeBackup(id) { try { localStorage.removeItem(BKEY(id)); } catch { /* חסום */ } }

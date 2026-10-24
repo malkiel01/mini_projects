@@ -336,13 +336,53 @@ try {
   assert.match(toastText, /סקריפט/);
   step('ייבוא SVG: צורות חיות, סגנון ותורשה, טרנספורמציה ו-viewBox, ודוח על מה שלא עבר');
 
-  // הטיוטה נשמרה ומופיעה ברשימה
-  await page.waitForTimeout(600);
+  // שמירה בשרת: אחרי שקט קצר — "נשמר"; טעינה מחדש מחזירה את אותו מסמך; ברשימה — עם תמונה ממוזערת
+  await page.waitForFunction(() => document.getElementById('doc-status').textContent === 'נשמר', null, { timeout: 10000 });
   if (shots) await page.screenshot({ path: `${shots}/editor-1280.png` });
+  const savedId = await page.evaluate(() => window.__vs.S.id);
+  const docBefore = await page.evaluate(() => JSON.stringify(window.__vs.S.doc));
+  await page.reload();
+  await page.waitForFunction(() => window.__vs?.S.doc);
+  assert.equal(await page.evaluate(() => JSON.stringify(window.__vs.S.doc)), docBefore, 'המסמך חזר מהשרת זהה');
+  assert.equal(await page.evaluate(() => location.hash), '#d' + savedId);
+  // שינוי שם מהכותרת
+  page.once('dialog', d => d.accept('לוגו לבדיקה'));
+  await page.click('#doc-name');
+  await page.waitForFunction(() => document.getElementById('doc-status').textContent === 'נשמר', null, { timeout: 10000 });
   await page.click('a[href="./"]');
-  await page.waitForSelector('#drafts .card');
-  assert.match(await page.textContent('#drafts'), /6 אובייקטים/);
-  step('הטיוטה נשמרה במכשיר ומופיעה ברשימה');
+  await page.waitForSelector(`#drafts .card[data-id="${savedId}"] img.thumb`);
+  assert.match(await page.textContent(`#drafts .card[data-id="${savedId}"]`), /לוגו לבדיקה/);
+  const thumbOk = await page.evaluate((id) => { const i = document.querySelector(`.card[data-id="${id}"] img`); return i.complete && i.naturalWidth > 0; }, savedId);
+  assert.ok(thumbOk, 'התמונה הממוזערת נטענת');
+  step('ספרייה בשרת: שמירה אוטומטית, טעינה מחדש זהה, שינוי שם, תמונה ממוזערת ברשימה');
+
+  // שני חלונות על אותו ציור: השני ששומר מקבל "נשמר מחלון אחר" ולא דורס
+  const p2 = await browser.newPage();
+  await p2.goto(base + 'editor.html#d' + savedId);
+  await p2.waitForFunction(() => window.__vs?.S.doc);
+  await page.goto(base + 'editor.html#d' + savedId);
+  await page.waitForFunction(() => window.__vs?.S.doc);
+  await page.keyboard.press('Control+a'); await page.keyboard.press('ArrowRight');
+  await page.waitForFunction(() => document.getElementById('doc-status').textContent === 'נשמר', null, { timeout: 10000 });
+  await p2.keyboard.press('Control+a'); await p2.keyboard.press('ArrowDown');
+  await p2.waitForFunction(() => /מחלון אחר/.test(document.getElementById('doc-status').textContent), null, { timeout: 10000 });
+  await p2.close();
+  step('התנגשות בין שני חלונות — השני לא דורס, ואומר לפתוח מחדש');
+
+  // טיוטה ישנה מהמכשיר: מופיעה ברשימה, ובפתיחה עוברת לספרייה
+  await page.goto(base);
+  await page.evaluate(() => {
+    const doc = { units: 'pt', color: { space: 'sRGB' }, surfaces: [{ id: 's1', type: 'artboard', name: 'לוח 1', size: [300, 200], layers: [{ id: 'L1', name: 'שכבה 1', type: 'vector', paths: [{ id: 'p1', d: 'M10 10 L100 10 L100 80 Z', fill: { color: '#2d4a8a' } }] }] }] };
+    localStorage.setItem('vector-studio:draft:old1', JSON.stringify({ name: 'טיוטה ישנה', doc }));
+    localStorage.setItem('vector-studio:drafts', JSON.stringify([{ id: 'old1', name: 'טיוטה ישנה', updated: new Date().toISOString() }]));
+  });
+  await page.reload();
+  await page.waitForSelector('#drafts .card[data-local="old1"]');
+  await page.click('#drafts .card[data-local="old1"] a');
+  await page.waitForFunction(() => /^#d\d+$/.test(location.hash) && window.__vs?.S.doc);
+  assert.equal(await page.evaluate(() => window.__vs.S.doc.surfaces[0].layers[0].paths.length), 1);
+  assert.equal(await page.evaluate(() => localStorage.getItem('vector-studio:draft:old1')), null, 'נמחקה מהמכשיר אחרי שנשמרה בשרת');
+  step('טיוטה ישנה מהמכשיר עוברת לספרייה בשרת');
   await page.close();
 
   // ---- טלפון ----
