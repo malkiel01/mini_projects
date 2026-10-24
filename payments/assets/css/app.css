@@ -157,6 +157,17 @@ button:disabled { opacity: .55; cursor: default; }
 .track { display: block; block-size: 6px; border-radius: 99px; background: var(--bg); overflow: hidden; }
 .track > span { display: block; block-size: 100%; background: var(--ok); border-radius: 99px; }
 .cells { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 140px), 1fr)); gap: var(--s2); margin: 0; }
+/* דוחות: עמודות לפי חודש — סדרה אחת, צבע המותג; בסיס דק; ערך בריחוף/מיקוד */
+.chart { position: relative; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; align-items: end; gap: 2px; height: 160px;
+    padding-top: 22px; border-bottom: 1px solid var(--line); }
+.chart .bar { position: relative; height: 100%; display: flex; align-items: flex-end; cursor: default; outline-offset: 0; }
+.chart .bar i { display: block; width: 100%; min-height: 1px; background: var(--brand); border-radius: 4px 4px 0 0; }
+.chart .bar.neg i { background: var(--danger); }
+.chart .bar:hover i, .chart .bar:focus-visible i { filter: brightness(1.15); }
+.chart-x { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 2px; margin-top: 4px; font-size: .68rem; color: var(--muted); text-align: center; }
+.chart-tip { position: absolute; top: 0; inset-inline-start: 0; z-index: 2; padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface);
+    color: var(--ink); font-size: .75rem; white-space: nowrap; pointer-events: none; box-shadow: 0 2px 8px rgb(0 0 0 / .08); }
+.hbar { height: 6px; border-radius: 0 4px 4px 0; background: var(--brand); margin-top: 6px; }
 .cells div { border: 1px solid var(--line); border-radius: var(--r); padding: var(--s2); background: var(--surface); }
 .cells dt { font-size: .75rem; color: var(--muted); } .cells dd { margin: 0; font-weight: 600; }
 
