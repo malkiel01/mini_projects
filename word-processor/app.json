@@ -9,6 +9,6 @@
   "sso": { "return": ["https://mbe-plus.com/mini_projects/word-processor/api.php?action=sso_callback"] },
   "public": [
     "embed.php", "guest.html", "assets/**", "vendor/**",
-    "api.php?action=client_register|embed_session|embed_open|embed_load|embed_save|embed_upload|embed_lock|embed_page|media|doc_create|doc_copy|doc_get|doc_export|doc_import|doc_delete|doc_list|embed_key|selftest|guest_open|guest_lock|guest_save|guest_upload|guest_collab"
+    "api.php?action=client_register|embed_session|embed_open|embed_load|embed_save|embed_upload|embed_lock|embed_page|embed_version_restore|embed_collab|media|doc_create|doc_copy|doc_get|doc_export|doc_import|doc_delete|doc_list|embed_key|selftest|guest_open|guest_lock|guest_save|guest_upload|guest_collab"
   ]
 }

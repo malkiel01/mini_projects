@@ -182,7 +182,7 @@ try {
             $s = token_consume((string)($in['t'] ?? ''));
             $row = doc_find($s['doc'], 'c:' . $s['client']);
             out(['session' => $s['session'], 'mode' => $s['mode'], 'return_origin' => $s['return_origin'],
-                'client' => $s['client'], 'user' => ['id' => $s['user_id'], 'name' => $s['user_name']]] + embed_state($s, $row, $s['session']));
+                'client' => $s['client'], 'user' => ['id' => $s['user_id'], 'name' => $s['user_name']]] + embed_state($s, $row, $s['session'], !empty($in['collab'])));
 
         case 'embed_load':
             need_post();
@@ -195,7 +195,21 @@ try {
                 $vp = page_normalize(json_decode($v['page'], true) ?: []);
                 out(['json' => editor_json(json_decode($v['json'], true) ?: empty_doc_json(), $vp), 'page' => $vp, 'title' => $v['title'], 'version' => (int)$v['version']]);
             }
-            out(embed_state($s, $row, $s['token']));
+            out(embed_state($s, $row, $s['token'], !empty($in['collab'])));
+
+        // עריכה משותפת בהטמעה (lib/collab.php) — כמו באפליקציה ובקישור לזר; צופה — רק משיכה (רואה את השינויים חיים)
+        case 'embed_collab':
+            need_post();
+            $s = embed_auth();
+            $row = doc_find($s['doc'], 'c:' . $s['client']);
+            $op = (string)($in['op'] ?? '');
+            if ($op === 'push') {
+                if ($s['can'] !== 'edit') throw new ApiError('צפייה בלבד', 'readonly', 403);
+                out(collab_push($row, 'edit', $in, $s['user_id'], $s['user_name']));
+            }
+            if ($op === 'pull') out(collab_pull($row, $s['can'] === 'edit' ? 'edit' : 'view', $in, $s['user_id'], $s['user_name']));
+            if ($op === 'leave') { collab_leave($row['id'], $in['client'] ?? ''); out(['ok' => true]); }
+            throw new ApiError('פעולה לא תקינה', 'bad_op');
 
         case 'embed_save':
             need_post();
@@ -209,7 +223,7 @@ try {
             need_post();
             $s = embed_auth();
             $row = doc_find($s['doc'], 'c:' . $s['client']);
-            require_edit($s['can'], $row['id'], $s['user_id'], $s['user_name'], $s['token']);
+            embed_write($s, $row, $in);
             $row = doc_restore_version($row, $in['id'] ?? 0, $s['user_id'], $s['user_name'], $in['base_version'] ?? null);
             out(['doc' => $row['id'], 'version' => (int)$row['version'], 'json' => editor_json(doc_json($row), doc_page($row)), 'page' => doc_page($row)]);
 
@@ -217,14 +231,14 @@ try {
             need_post();
             $s = embed_auth();
             $row = doc_find($s['doc'], 'c:' . $s['client']);
-            require_edit($s['can'], $row['id'], $s['user_id'], $s['user_name'], $s['token']);
+            embed_write($s, $row, $in);
             out(['page' => doc_page(doc_set_page($row, $in['page'] ?? null))]);
 
         case 'embed_upload':
             need_post();
             $s = embed_auth();
             $row = doc_find($s['doc'], 'c:' . $s['client']);
-            require_edit($s['can'], $row['id'], $s['user_id'], $s['user_name'], $s['token']);
+            embed_write($s, $row, $in);
             out(media_store($row['id'], uploaded_bytes($in)));
 
         case 'embed_lock':
@@ -281,17 +295,34 @@ try {
     out(['error' => 'שגיאה בשרת', 'code' => 'server'], 500);
 }
 
-/** מצב המסמך ל-iframe: התוכן, ההרשאה בפועל (view אם מישהו אחר נועל), והנעילה. */
-function embed_state(array $s, array $row, string $holder): array
+/**
+ * מצב המסמך ל-iframe: התוכן, ההרשאה בפועל (view אם מישהו אחר נועל), והנעילה. $collab — עריכה משותפת (embed.js
+ * החדש): בלי נעילה, רק נעילה ישנה של מישהו אחר עוצרת; ועם העידן והגרסה של העריכה המשותפת (גם לצופה — שינויים חיים).
+ */
+function embed_state(array $s, array $row, string $holder, bool $collab = false): array
 {
     $can = $s['can'];
     $lock = null;
+    if ($collab) {
+        if ($can === 'edit' && ($lock = collab_blocked($row['id'], $s['user_id']))) $can = 'view';
+        // התוכן והגרסה המשותפת — מאותו רגע (שליחה שנגמרה בין הקריאות — קוראים שוב)
+        for ($i = 0; ($c = collab_state($row)) && (int)$c['doc_version'] !== (int)$row['version'] && $i < 5; $i++) $row = doc_find($row['id'], $row['space']);
+        return doc_public($row) + ['can' => $can, 'lock' => $lock, 'requested' => $s['can'], 'collab' => ['epoch' => $c['epoch'], 'v' => (int)$c['v']]];
+    }
     if ($can === 'edit') {
         $r = lock_take($row['id'], $s['user_id'], $s['user_name'], hash('sha256', $holder));
         if (!$r['ok']) { $can = 'view'; $lock = ['by' => $r['by'], 'since' => $r['since']]; }
         else $row = doc_find($row['id'], $row['space']);   // אחרי הנעילה — כולל שליחה משותפת שנכנסה לפניה
     }
     return doc_public($row) + ['can' => $can, 'lock' => $lock, 'requested' => $s['can']];
+}
+
+/** כתיבה מההטמעה שאינה צעד משותף (תמונה, שחזור, הגדרות עמוד): בעריכה משותפת — בלי נעילה של מישהו אחר; אחרת — הנעילה. */
+function embed_write(array $s, array $row, array $in): void
+{
+    if (empty($in['collab'])) { require_edit($s['can'], $row['id'], $s['user_id'], $s['user_name'], $s['token']); return; }
+    if ($s['can'] !== 'edit') throw new ApiError('צפייה בלבד', 'readonly', 403);
+    if ($l = collab_blocked($row['id'], $s['user_id'])) throw new ApiError('המסמך פתוח לעריכה אצל ' . $l['by'], 'locked', 423);
 }
 
 function require_edit(string $can, string $doc, string $uid, string $uname, string $holder): void

@@ -9,7 +9,8 @@ const s = document.createElement('script');
 s.src = new URLSearchParams(location.search).get('editor') + 'assets/js/host.js';
 s.onload = () => {
   window.ed = WordProcessor.mount(document.getElementById('box'), {
-    session: () => fetch('api.php?action=editor_session').then(r => r.json()),
+    // ?u=u2 — משתמש אחר של המארחת (עריכה משותפת: שני חלונות על אותו מסמך)
+    session: () => fetch('api.php?action=editor_session&u=' + (new URLSearchParams(location.search).get('u') || 'u1')).then(r => r.json()),
     onReady: e => log('ready', e), onChange: d => log('change', d), onSaved: e => log('saved', e), onPage: s => log('page', s && s.orientation),
     onLock: l => log('lock', l), onClose: e => log('close', e), onError: e => log('error', e),
   });

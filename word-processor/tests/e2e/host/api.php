@@ -16,7 +16,7 @@ try {
         case 'register': echo json_encode(['status' => wp()->register()]); exit;
         case 'editor_session':
             $p = db()->query('SELECT * FROM proposals WHERE id = 1')->fetch(PDO::FETCH_ASSOC);
-            $s = wp()->embedSession($p['plan_doc'] ?: null, ['id' => $_GET['u'] ?? 'u1', 'name' => 'רינה'], 'edit');
+            $s = wp()->embedSession($p['plan_doc'] ?: null, ['id' => $_GET['u'] ?? 'u1', 'name' => ($_GET['u'] ?? 'u1') === 'u2' ? 'משה' : 'רינה'], 'edit');
             if (!$p['plan_doc']) db()->prepare('UPDATE proposals SET plan_doc = ? WHERE id = 1')->execute([$s['doc']]);
             echo json_encode(['embed_url' => $s['embed_url'], 'doc' => $s['doc']]); exit;
         case 'export':
