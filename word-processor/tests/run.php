@@ -1563,6 +1563,34 @@ check('שמירה מבחוץ — עידן חדש: משיכה מחזירה reload
 check('שליחה בעידן ישן — reload', (collab_push(doc_find($coDoc, 'a:601'), 'owner', ['epoch' => $c0['epoch'], 'v' => 3, 'client' => 'clienta1', 'steps' => [$ins(1, 'x')], 'json' => $jsonWith('x')], 'a:601', 'דנה')['reload'] ?? false) === true);
 check('בקשה פגומה — שגיאה', throws(fn() => collab_push(doc_find($coDoc, 'a:601'), 'owner', ['epoch' => $c1['epoch'], 'v' => 0, 'client' => 'x', 'steps' => [], 'json' => []], 'a:601', 'דנה'), 'bad_request'));
 
+section('תיקיות ומועדפים (שלב 5)');
+require_once __DIR__ . '/../lib/folders.php';
+$fs = 'a:701';
+$fA = folder_create($fs, ' פרויקטים ', null);
+$fB = folder_create($fs, 'לקוחות', $fA);
+$fC = folder_create($fs, 'דנה', $fB);
+$names = array_column(folders_of($fs), 'name', 'id');
+check('תיקיות בתוך תיקיות: שלוש רמות, השם מנוקה', $names[$fA] === 'פרויקטים' && folder_ancestors($fs, $fC) === [$fC, $fB, $fA]);
+check('תיקייה לתוך עצמה / לתוך תיקייה שבתוכה — שגיאה', throws(fn() => folder_move($fs, $fA, $fC), 'cycle') && throws(fn() => folder_move($fs, $fA, $fA), 'cycle'));
+check('תיקייה של חשבון אחר — "לא נמצאה"; שם ריק — שגיאה', throws(fn() => folder_get('a:702', $fA), 'not_found') && throws(fn() => folder_create($fs, '  ', null), 'bad_name'));
+$fd = doc_new($fs, 'בתיקייה', null, null, 'a:701', 'דנה');
+doc_move(doc_find($fd, $fs), $fC);
+$fold = fn() => db()->query('SELECT folder FROM docs WHERE id = ' . db()->quote($fd))->fetchColumn();
+check('מסמך לתיקייה; לתיקייה של חשבון אחר — שגיאה', $fold() === $fC && throws(fn() => doc_move(doc_find($fd, $fs), folder_create('a:702', 'זרה', null)), 'not_found'));
+folder_delete($fs, $fC);
+check('מחיקת תיקייה: המסמך שבתוכה עובר לתיקייה שמעליה, לא נמחק', $fold() === $fB && doc_find($fd, $fs)['title'] === 'בתיקייה');
+folder_move($fs, $fB, null);
+folder_delete($fs, $fA);
+check('העברת תיקייה לראש, ומחיקת התיקייה שהייתה מעליה — התת-תיקייה נשארת', array_column(folders_of($fs), 'name') === ['לקוחות']);
+$deep = null; for ($i = 0; $i < FOLDER_DEPTH; $i++) $deep = folder_create($fs, "רמה $i", $deep);
+check('עד ' . FOLDER_DEPTH . ' רמות', throws(fn() => folder_create($fs, 'עמוק מדי', $deep), 'too_deep'));
+$favAcc = ['id' => 701];
+fav_set($favAcc, $fd, true); fav_set($favAcc, $fd, true);
+check('מועדפים: כוכב (פעמיים — פעם אחת), והסרה', favs_of($favAcc) === [$fd] && (fav_set($favAcc, $fd, false) || true) && favs_of($favAcc) === []);
+fav_set($favAcc, $fd, true);
+doc_delete(doc_find($fd, $fs));
+check('מחיקה לצמיתות — גם מהמועדפים', favs_of($favAcc) === []);
+
 section('סל המחזור (ליקוי ה\')');
 $sp = 'a:trash-test';
 $tid = doc_new($sp, 'לסל', null, null, 'u1', 'דנה');
