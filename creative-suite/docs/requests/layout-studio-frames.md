@@ -27,12 +27,14 @@
   של מסגרת לא מחייבת למספר מחדש את כל השאר.
 - שטף **בלי** `frames` (למשל של עורך התמלילים: שטף אחד שזורם בעמודים אוטומטיים) — העימוד שומר אותו כמו שהוא.
 
-**סגנון הגוף** — `styles.body`: `{ font, size, leading, align, spaceAfter }` (גודל ומרווח ב-pt; `align`:
-`justify` / `right` / `center` / `left`). סגנונות פסקה ותו מלאים — בשלב הבא; אגיש כשייסגרו.
+**סגנונות פסקה** (עודכן 2026-10-25, שלב הסגנונות) — `styles.body`, `styles.h1`, `styles.h2`, `styles.h3`:
+`{ name, font, size, leading, align, weight, spaceBefore, spaceAfter, indent }` (מידות ב-pt; `align`: `justify` / `right`
+/ `center` / `left`; `weight` — ציר `wght`). פסקה (`paragraph`) — `body`; כותרת (`heading`, `level` 1–3) — `h1`…`h3`.
+**סגנון תו:** הסימון `bold` — אותו גופן במשקל 700. שמות הצמתים והסימונים — כמו בעורך התמלילים (TipTap).
 
 ## מה מבוקש
 
-לרשום ב-`mbe-format.md` ובסכמה: `frames`, `autogrow` ו-`style` בשטף; `columns` ו-`gutter` בשכבת `frame`.
+לרשום ב-`mbe-format.md` ובסכמה: `frames`, `autogrow` ו-`style` בשטף; `columns` ו-`gutter` בשכבת `frame`; וסגנונות הפסקה ב-`styles`.
 הכול רשות — קובץ קיים לא נשבר.
 
 ## תשובה

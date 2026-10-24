@@ -176,5 +176,15 @@ check('יישור לא מוכר — נדחה', $tryF(function (&$x) { $x['styles
 check('שטף של אפליקציה אחרת (בלי frames) — נשמר כמו שהוא', ls_doc_save($uidA, $d4['id'], 2, json_encode(array_merge($withFrame($base),
     ['flows' => $withFrame($base)['flows'] + ['f7' => ['engine' => 'other', 'doc' => ['x' => 1]]]]), JSON_UNESCAPED_UNICODE)) === 3);
 
+// ---- סגנונות ----
+$st = $withFrame($base);
+$st['styles']['h1'] = ['name' => 'כותרת 1', 'font' => 'Noto Serif Hebrew', 'size' => 20, 'leading' => 26, 'align' => 'center', 'weight' => 700, 'spaceBefore' => 12, 'spaceAfter' => 10, 'indent' => 0];
+$st['styles']['other'] = ['x' => 'של אפליקציה אחרת'];
+$st['flows']['f1']['doc']['content'][] = ['type' => 'heading', 'attrs' => ['level' => 1], 'content' => [['type' => 'text', 'text' => 'פרק', 'marks' => [['type' => 'bold']]]]];
+check('כותרת, הדגשה וסגנון זר — נשמרים', ls_doc_save($uidA, $d4['id'], 3, json_encode($st, JSON_UNESCAPED_UNICODE)) === 4);
+$rv = 4;
+check('משקל 1000 — נדחה', $tryF(function (&$x) { $x['styles']['h2'] = ['font' => 'a', 'size' => 12, 'leading' => 18, 'align' => 'right', 'spaceAfter' => 0, 'weight' => 1000]; }, 'style'));
+check('הזחה שלילית — נדחה', $tryF(function (&$x) { $x['styles']['body']['indent'] = -5; }, 'style'));
+
 echo "\n" . ($n - $fails) . " / $n עברו\n";
 exit($fails ? 1 : 0);
