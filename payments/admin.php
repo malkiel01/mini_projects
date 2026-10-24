@@ -103,6 +103,15 @@ try {
             return payment_refund($p['id'], (int)($in['agorot'] ?? 0), $s('reason'), 'admin:' . $t['id'], !empty($in['manual']));
         })(),
 
+        // גיבוי וייצוא
+        'backups' => $owner ? ['data' => backups_list()] : throw new ApiError('רק לבעלים', 'forbidden', 403),
+        'backup_now' => $owner ? ['name' => backup_daily(true)] : throw new ApiError('רק לבעלים', 'forbidden', 403),
+        'backup_get' => $owner ? (function () use ($s, $t) {
+            audit('admin', $t['id'], 'backup.downloaded', 'backup', $s('name'), [], $t['id']);
+            return ['name' => preg_replace('/\.enc$/', '', $s('name')), 'base64' => base64_encode(backup_read($s('name')))];
+        })() : throw new ApiError('רק לבעלים', 'forbidden', 403),
+        'export_month' => ['csv' => export_month($t, $s('period'), $s('env') === 'test' ? 'test' : 'live')],
+
         // קישורי תשלום וכללים (שלב 6)
         'links' => ['data' => array_map('link_public', db_all('SELECT l.* FROM payment_link l JOIN client c ON c.id = l.client WHERE c.tenant = ? AND (? = \'\' OR l.client = ?) ORDER BY l.created_at DESC', [$t['id'], $s('client'), $s('client')]))],
         'link_save' => ['link' => link_save($t, $in)],

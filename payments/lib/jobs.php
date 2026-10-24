@@ -11,6 +11,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/subscriptions.php';
 require_once __DIR__ . '/documents.php';
+require_once __DIR__ . '/backup.php';
 
 const TICK_EVERY = 55;
 
@@ -30,6 +31,7 @@ function tick(string $source, bool $force = false): ?array
         'documents' => tax_docs_issue(),
         'mails' => notifications_send(),
     ];
+    $out['backup'] = (int)(backup_daily() !== null);
     $w = webhooks_deliver(100);
     $out['webhooks'] = $w['sent'];
     db_run('DELETE FROM nonce WHERE t < ?', [$now - NONCE_TTL]);
