@@ -217,6 +217,7 @@ function afterChange() {
 }
 
 function undo() {
+  if (tools.drawing) { tools.undoPoint(); return; } // באמצע נתיב — כמו Ctrl+Z בעט
   if (!S.undo.length) return;
   S.redo.push(JSON.stringify(S.doc));
   S.doc = JSON.parse(S.undo.pop());
@@ -224,6 +225,7 @@ function undo() {
   tools.reload();
 }
 function redo() {
+  if (tools.drawing) tools.finish();
   if (!S.redo.length) return;
   S.undo.push(JSON.stringify(S.doc));
   S.doc = JSON.parse(S.redo.pop());
@@ -322,6 +324,7 @@ function updateBar() {
   const drawing = tools.drawing, ed = tools.editing;
   const show = (id, on) => { $(id).hidden = !on; };
   show('pen-done', drawing);
+  $('undo').disabled = !S.undo.length && !drawing; // באמצע נתיב ↶ מוחק נקודה
   show('pen-cancel', drawing);
   show('node-smooth', !!ed?.node);
   show('node-del', !!ed?.node);
@@ -526,6 +529,7 @@ async function booleanSelection(kind) {
   const ds = await outlineTexts([...S.sel]);
   const { region, combine, toD } = await import('./geometry/boolean.js');
   let made = null;
+  const untouched = JSON.stringify(S.doc);
   change(() => {
     replaceTexts(ds);
     const lay = layout(S.doc);
@@ -533,7 +537,11 @@ async function booleanSelection(kind) {
     const reg = new Map(); // מאיזו עקומה באה כל נקודה — כדי שהעקומות יחזרו בתוצאה
     const regions = picked.map(o => combine('union', [...leaves(o.path)].filter(p => p.d).map(p => region(p.d, pathMatrix(p, lay.get(o.surface.id)), reg))));
     const result = toD(combine(kind, regions), reg);
-    if (!result) { toast('לא נשאר שום שטח — הצורות לא נחתכות', true); return; }
+    if (!result) {
+      S.doc = JSON.parse(untouched); // גם הטקסט נשאר טקסט — לא קרה כלום
+      toast('לא נשאר שום שטח — הצורות לא נחתכות', true);
+      return;
+    }
     const ref = kind === 'subtract' ? picked[0] : picked[picked.length - 1];
     const styleFrom = [...leaves(ref.path)].find(p => p.d) || {};
     const [ox, oy] = lay.get(ref.surface.id);
@@ -720,7 +728,7 @@ canvas.addEventListener('pointerdown', (e) => {
 
   if (pointers.size === 2) {           // שתי אצבעות: זום וגלילה, ומבטלים את מה שהתחיל
     if (op && op.before) { S.doc = JSON.parse(op.before); afterChangeSilent(); }
-    if (op?.type === 'tool') tools.cancelDrag();
+    if (op?.type === 'tool') tools.abortDown();
     const [a, b] = [...pointers.values()];
     op = { type: 'pinch', d0: Math.hypot(a[0] - b[0], a[1] - b[1]) || 1, m0: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], view0: { ...S.view } };
     S.marquee = null;
@@ -831,6 +839,7 @@ canvas.addEventListener('pointermove', (e) => {
       break;
     }
     case 'pinch': {
+      if (pointers.size < 2) break; // אצבע אחת הורמה — מחכים לשנייה או לסיום
       const [a, b] = [...pointers.values()];
       const d = Math.hypot(a[0] - b[0], a[1] - b[1]);
       const m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
@@ -901,7 +910,11 @@ canvas.addEventListener('pointermove', (e) => {
       let syF = hd.includes('n') || hd.includes('s') ? (wy - ay) / ((hd.includes('n') ? y : y + h) - ay) : 1;
       if (!Number.isFinite(sxF)) sxF = 1;
       if (!Number.isFinite(syF)) syF = 1;
-      if (e.shiftKey && hd.length === 2) { const s = Math.max(Math.abs(sxF), Math.abs(syF)); sxF = Math.sign(sxF || 1) * s; syF = Math.sign(syF || 1) * s; }
+      // טקסט נקודה לבד — תמיד ביחס קבוע (הגופן גדל כולו), כדי שהפינה / הצלע הנגדית יישארו במקום
+      const one = S.sel.size === 1 ? findPath(S.doc, [...S.sel][0])?.path : null;
+      const pointText = one?.type === 'text' && one.auto !== false;
+      if (pointText && hd.length === 1) { const s = hd === 'e' || hd === 'w' ? sxF : syF; sxF = syF = s; }
+      if ((e.shiftKey || pointText) && hd.length === 2) { const s = Math.max(Math.abs(sxF), Math.abs(syF)); sxF = Math.sign(sxF || 1) * s; syF = Math.sign(syF || 1) * s; }
       // לא מכווצים לאפס: לפחות 0.5pt
       if (Math.abs(sxF * w) < 0.5) sxF = Math.sign(sxF || 1) * 0.5 / (w || 1);
       if (Math.abs(syF * h) < 0.5) syF = Math.sign(syF || 1) * 0.5 / (h || 1);
@@ -1161,6 +1174,7 @@ textEl.addEventListener('input', () => {
   relayout(o.path);
   positionTextEditor();
   draw();
+  persist(); // נשמר גם תוך כדי הקלדה — סגירת הלשונית או מעבר לאפליקציה אחרת לא מאבדים טקסט (ההיסטוריה — ב-blur)
 });
 textEl.addEventListener('blur', () => closeTextEditor());
 textEl.addEventListener('keydown', (e) => {
@@ -1258,6 +1272,7 @@ $('versions').addEventListener('click', async (e) => {
     $('file-dlg').close();
     afterChangeQuiet();
     fit();
+    persist(); // התמונה הממוזערת בספרייה — של הגרסה המשוחזרת (השרת מחליף רק את המסמך)
     toast('הגרסה שוחזרה');
   } catch (err) {
     $('file-err').textContent = 'השחזור נכשל: ' + err.message;

@@ -71,6 +71,12 @@ function ownStyle(el) {
 }
 
 const num = (v, d = 0) => { const n = parseFloat(v); return Number.isFinite(n) ? n : d; };
+/** רוחב / גובה של ה-<svg> ב-pt (יחידת SVG = 1pt); אחוזים או ערך לא תקין — null (אז לפי ה-viewBox). */
+function length(v) {
+  const m = /^\s*([\d.]+(?:e[-+]?\d+)?)\s*(px|pt|mm|cm|in|pc)?\s*$/i.exec(v || '');
+  if (!m || !(parseFloat(m[1]) > 0)) return null;
+  return parseFloat(m[1]) * ({ mm: 72 / 25.4, cm: 72 / 2.54, in: 72, pc: 12 }[(m[2] || '').toLowerCase()] || 1);
+}
 const styleProp = (el, k) => ownStyleAny(el)[k];
 function ownStyleAny(el) {
   const s = {};
@@ -95,11 +101,20 @@ export function importSVG(text, next) {
   // viewBox → גודל: יחידה אחת של SVG = 1pt (כמו ב-Illustrator)
   const vb = (root.getAttribute('viewBox') || '').split(/[\s,]+/).map(Number);
   let base = IDENTITY, size = null;
+  let w = length(root.getAttribute('width')), h = length(root.getAttribute('height'));
   if (vb.length === 4 && vb.every(Number.isFinite) && vb[2] > 0 && vb[3] > 0) {
-    const w = num(root.getAttribute('width'), vb[2]), h = num(root.getAttribute('height'), vb[3]);
-    base = multiply([w / vb[2], 0, 0, h / vb[3], 0, 0], translate(-vb[0], -vb[1]));
+    // גודל חסר (או באחוזים) — לפי ה-viewBox ויחס הצלעות שלו
+    if (w == null && h == null) [w, h] = [vb[2], vb[3]];
+    else if (w == null) w = h * vb[2] / vb[3];
+    else if (h == null) h = w * vb[3] / vb[2];
+    if (root.getAttribute('preserveAspectRatio')?.trim() === 'none') base = multiply([w / vb[2], 0, 0, h / vb[3], 0, 0], translate(-vb[0], -vb[1]));
+    else {
+      // ברירת המחדל של SVG: קנה מידה אחיד, במרכז (xMidYMid meet)
+      const k = Math.min(w / vb[2], h / vb[3]);
+      base = multiply([k, 0, 0, k, (w - vb[2] * k) / 2, (h - vb[3] * k) / 2], translate(-vb[0], -vb[1]));
+    }
     size = [w, h];
-  } else if (root.hasAttribute('width') && root.hasAttribute('height')) size = [num(root.getAttribute('width')), num(root.getAttribute('height'))];
+  } else if (w != null && h != null) size = [w, h];
 
   const walk = (el, m, style) => {
     const tag = el.nodeName.replace(/^svg:/, '').toLowerCase();
@@ -108,7 +123,10 @@ export function importSVG(text, next) {
       if (tag === 'script') gap('סקריפט — הושמט');
       return [];
     }
-    const st = { ...style, ...ownStyle(el) };
+    const own = ownStyle(el);
+    const st = { ...style, ...own };
+    // opacity מצטברת (קבוצה חצי שקופה ובתוכה צורה חצי שקופה — רבע), לא מחליפה
+    if (own.opacity != null) st.opacity = num(style.opacity, 1) * num(own.opacity, 1);
     if (st.display === 'none' || st.visibility === 'hidden') return [];
     const mm = el.hasAttribute('transform') ? multiply(m, parseTransform(el.getAttribute('transform'))) : m;
     if (tag === 'g' || tag === 'svg' || tag === 'a') {
@@ -164,9 +182,10 @@ export function importSVG(text, next) {
     if (item.stroke && num(st['stroke-opacity'], 1) * op < 1) item.stroke.opacity = num(st['stroke-opacity'], 1) * op;
     if (st['fill-rule'] === 'evenodd') item.fillRule = 'evenodd';
     applyMatrix(item, mm);
-    // קנה מידה בקובץ — עובי המתאר ורדיוס הפינות גדלים איתו (הטרנספורמציה נאפתה ל-d, אז מתקנים אותם)
+    // קנה מידה בקובץ — עובי המתאר ורדיוס הפינות גדלים איתו (הטרנספורמציה נאפתה ל-d, אז מתקנים אותם). סיבוב או
+    // היפוך נשמרים ב-transform, ושם הקנבס כבר מגדיל את המתאר — אז לא פעמיים.
     const k = Math.sqrt(Math.abs(mm[0] * mm[3] - mm[1] * mm[2])) || 1;
-    if (Math.abs(k - 1) > 1e-6) {
+    if (Math.abs(k - 1) > 1e-6 && !item.transform) {
       const r3 = (v) => Math.round(v * 1000) / 1000;
       if (item.stroke) { item.stroke.width = r3(item.stroke.width * k); item.stroke.dash = item.stroke.dash.map(v => r3(v * k)); }
       if (item.shape?.type === 'rect' && item.shape.radius) setShape(item, { ...item.shape, radius: item.shape.radius * k });
@@ -174,7 +193,7 @@ export function importSVG(text, next) {
     return [item];
   };
 
-  // מעברי צבע ליניאריים מ-<defs> (גם עם href לשרשרת stops); רדיאלי — לא בגרסה 1
+  // מעברי צבע (ישר ועגול) מ-<defs>, גם עם href לשרשרת stops
   const grads = new Map();
   const stopsOf = (el, seen = new Set()) => {
     const own = [...el.children].filter(c => c.nodeName.replace(/^svg:/, '').toLowerCase() === 'stop');

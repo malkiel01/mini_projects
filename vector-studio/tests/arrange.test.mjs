@@ -114,7 +114,23 @@ test('סיבוב: צורה חיה נשארת, הסיבוב ב-transform; תיב�
   setShape(star, { type: 'star', box: [0, 0, 10, 10], points: 5, inner: 0.5 });
   applyMatrix(star, scaleAt(1, -1, 0, 5));
   assert.equal(star.shape.type, 'star');
-  assert.deepEqual(star.transform, [1, 0, 0, -1, 0, 10]);
+  assert.deepEqual(star.transform, [1, 0, 0, -1, 0, 0], 'רק ההיפוך');
+  assert.deepEqual(star.shape.box, [0, -10, 10, 10]); // במראה: y בין 0 ל-10, כמו קודם
+});
+
+test('היפוך ואז שינוי גודל: התיבה גדלה, המתאר לא נמתח (transform נשאר היפוך בלבד)', () => {
+  const doc = docWith([[0, 0, 100, 50]]);
+  const p = findPath(doc, 'p1').path;
+  p.stroke = { color: '#000000', width: 2 };
+  applyMatrix(p, scaleAt(-1, 1, 50, 0));
+  applyMatrix(p, scaleAt(3, 1, 0, 0));
+  assert.deepEqual(p.transform, [-1, 0, 0, 1, 0, 0]);
+  assert.equal(p.shape.box[2], 300, 'הרוחב בתיבה, לא במטריצה');
+  const b = box(doc, 'p1');
+  b.forEach((v, i) => assert.ok(Math.abs(v - [0, 0, 300, 50][i]) < 1e-6, 'box ' + b));
+  // היפוך חוזר — בלי transform
+  applyMatrix(p, scaleAt(-1, 1, 150, 0));
+  assert.equal(p.transform, undefined);
 });
 
 test('סיבוב טקסט: transform, והתיבה בעולם מסתובבת איתו', () => {
@@ -127,4 +143,16 @@ test('סיבוב טקסט: transform, והתיבה בעולם מסתובבת א�
   const b = worldBox(t, [0, 0]);
   assert.ok(Math.abs(b[2] - h) < 1e-6 && Math.abs(b[3] - w) < 1e-6, 'רוחב וגובה מתחלפים');
   assert.equal(t.font.size, 20, 'הגופן לא משתנה בסיבוב');
+});
+
+test('טקסט נקודה: גודל ביחס אחיד סביב פינה — הפינה נשארת; הזזה — זז', () => {
+  const t = { id: 't1', type: 'text', text: 'אבג', box: [60, 100, 0, 0], font: { family: 'Heebo', size: 20, weight: 400 }, align: 'right', lineHeight: 1.25, auto: true };
+  relayout(t);
+  const [x, y, w, h] = t.box;
+  applyMatrix(t, scaleAt(2, 2, x, y)); // ידית se, נעוץ ב-nw
+  assert.equal(t.font.size, 40);
+  t.box.forEach((v, i) => assert.ok(Math.abs(v - [x, y, w * 2, h * 2][i]) < 0.01, 'box ' + t.box));
+  applyMatrix(t, translate(5, 7));
+  assert.ok(Math.abs(t.box[0] - (x + 5)) < 0.01 && Math.abs(t.box[1] - (y + 7)) < 0.01);
+  assert.equal(t.font.size, 40);
 });
