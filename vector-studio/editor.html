@@ -21,20 +21,30 @@
     <nav class="tools" aria-label="כלים">
       <button class="tool" data-tool="select" aria-pressed="true" title="בחירה (V)" aria-label="בחירה">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3l12 9-5.5 1L15 19l-2.5 1-2.5-6L6 17z"/></svg></button>
-      <button class="tool" data-tool="rect" aria-pressed="false" title="מלבן (M)" aria-label="מלבן">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="6" width="16" height="12" rx="1"/></svg></button>
-      <button class="tool" data-tool="ellipse" aria-pressed="false" title="אליפסה (L)" aria-label="אליפסה">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="12" rx="8" ry="6"/></svg></button>
-      <button class="tool" data-tool="polygon" aria-pressed="false" title="מצולע" aria-label="מצולע">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 5v8l-8 5-8-5V8z"/></svg></button>
-      <button class="tool" data-tool="star" aria-pressed="false" title="כוכב" aria-label="כוכב">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.4 6.7 19.4l1.2-6L3.4 9.3l6-.7z"/></svg></button>
-      <button class="tool" data-tool="line" aria-pressed="false" title="קו (\)" aria-label="קו">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19L19 5" fill="none"/></svg></button>
+      <button class="tool" data-tool="node" aria-pressed="false" title="עריכת נקודות (A)" aria-label="עריכת נקודות">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3l12 9-5.5 1L15 19l-2.5 1-2.5-6L6 17z" class="hollow"/></svg></button>
+      <button class="tool" data-tool="pen" aria-pressed="false" title="עט (P)" aria-label="עט">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l5 9-3 7h-4l-3-7z"/><circle cx="12" cy="11" r="1.4"/><path d="M10 19h4"/></svg></button>
+      <button class="tool more" data-tool="shape" aria-pressed="false" aria-haspopup="true" aria-expanded="false" title="צורות" aria-label="צורות: מלבן">
+        <svg viewBox="0 0 24 24" aria-hidden="true" id="shape-icon"><rect x="4" y="6" width="16" height="12" rx="1"/></svg></button>
+      <div class="shape-pick" id="shape-pick" role="menu" hidden>
+        <button role="menuitem" data-shape="rect" title="מלבן (M)" aria-label="מלבן"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="6" width="16" height="12" rx="1"/></svg></button>
+        <button role="menuitem" data-shape="ellipse" title="אליפסה (L)" aria-label="אליפסה"><svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="12" rx="8" ry="6"/></svg></button>
+        <button role="menuitem" data-shape="polygon" title="מצולע" aria-label="מצולע"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 5v8l-8 5-8-5V8z"/></svg></button>
+        <button role="menuitem" data-shape="star" title="כוכב" aria-label="כוכב"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.4 6.7 19.4l1.2-6L3.4 9.3l6-.7z"/></svg></button>
+        <button role="menuitem" data-shape="line" title="קו (\\)" aria-label="קו"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19L19 5" fill="none"/></svg></button>
+      </div>
     </nav>
 
     <div class="stage" id="stage">
       <canvas id="canvas" aria-label="לוח העבודה" role="img"></canvas>
+      <div class="pen-bar" id="pen-bar" hidden>
+        <button class="btn sm ghost" id="pen-done" hidden>✓ סיום</button>
+        <button class="btn sm ghost" id="pen-cancel" hidden>✕ ביטול</button>
+        <button class="btn sm ghost" id="node-smooth" hidden>חלקה ↔ פינה</button>
+        <button class="btn sm ghost danger" id="node-del" hidden>🗑️ נקודה</button>
+        <span class="muted pen-hint" id="pen-hint"></span>
+      </div>
       <div class="zoom" role="group" aria-label="זום">
         <button class="icon-btn" id="zoom-out" aria-label="הקטנה">−</button>
         <button class="btn sm" id="zoom-pct" aria-label="התאמה למסך">100%</button>

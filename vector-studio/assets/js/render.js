@@ -150,6 +150,10 @@ export function render(canvas, state) {
     ctx.strokeRect(x + .5, y + .5, w, h);
     ctx.setLineDash([]);
   }
+  if (state.overlay) {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    state.overlay(ctx, colors);
+  }
 }
 
 const probe = typeof document !== 'undefined' ? document.createElement('canvas').getContext('2d') : null;
