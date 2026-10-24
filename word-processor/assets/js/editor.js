@@ -718,6 +718,7 @@ export function createWordEditor(root, opts) {
             else setSections(k, { margins: { ...secs[k].page.margins, [side]: mm } }, {});
         } });
     stage.prepend(ruler.el);
+    stage.before(ruler.vel);   // האנכי — עמודה צרה בצד הדף, מחוץ לגלילה (צמוד לעמוד בגלילה)
     body.prepend(nav.el);
     // מעיר (שלב 5): המסמך לקריאה בלבד — העורך לא מקבל מקלדת, ולכן Ctrl+Alt+M (הערה חדשה) נתפס כאן, ברמת הדף
     const commentKey = e => {

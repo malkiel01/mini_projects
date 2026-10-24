@@ -221,7 +221,10 @@ function trackDelete(editor, dir, who) {
         }
         [from, to] = dir < 0 ? [from - 1, from] : [from, from + 1];
     }
-    const prev = state.doc.resolve(from).nodeBefore?.marks.find(m => m.type.name === 'del' && m.attrs.author === who);
+    // מחיקה צמודה של אותו מחבר — לפני (Delete קדימה) או אחרי (Backspace אחורה): אותו סימון, כך שהמחיקה נשארת רצף אחד
+    // גם כשהלחיצות חוצות שנייה (תאריך אחר היה מפצל אותה לשתיים)
+    const mine = n => n?.marks.find(m => m.type.name === 'del' && m.attrs.author === who);
+    const prev = mine(state.doc.resolve(from).nodeBefore) || mine(state.doc.resolve(to).nodeAfter);
     const del = schema.marks.del.create(prev ? prev.attrs : { author: who, date: now() });
     const kill = [];
     state.doc.nodesBetween(from, to, (node, pos) => {

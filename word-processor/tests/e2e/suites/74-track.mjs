@@ -29,7 +29,8 @@ export default async function (t) {
     t.ok('Backspace על תוספת — נמחקת באמת', (await shown()) === '+[חדש]אחת שתיים שלוש / ארבע חמש', await shown());
     // Backspace אחרי "שתיים" — המילה נשארת, מסומנת כמחיקה, והסמן זז שמאלה
     await at((await find('שתיים'))[1]);
-    for (let i = 0; i < 5; i++) await p.keyboard.press('Backspace');
+    // (עם הפסקה בין הלחיצות — חוצות שנייה: המחיקה עדיין רצף אחד, לא שני סימונים בתאריכים שונים)
+    for (let i = 0; i < 5; i++) { await p.keyboard.press('Backspace'); await p.waitForTimeout(250); }
     t.ok('Backspace על טקסט — מסומן כמחיקה, לא נמחק', (await shown()) === '+[חדש]אחת -[שתיים] שלוש / ארבע חמש', await shown());
     // בחירה והקלדה במקום — מחיקה ותוספת
     const [a4, b4] = await find('ארבע');

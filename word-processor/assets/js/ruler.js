@@ -6,8 +6,11 @@
  * גרירה: סמן — הפסקאות שבבחירה (צעד ביטול אחד, כשעוזבים); גבול השוליים — השוליים של המקטע; לחיצה על הסרגל —
  * עצירת טאב חדשה; גרירת עצירה אל מחוץ לסרגל — מחיקה. המיקומים נמדדים מה-DOM (גם בתא של טבלה ובפסקה משמאל לימין).
  *
+ * והסרגל האנכי (vel — כמו ב-Word): בצד הדף, בגובה העמוד שבו הסמן (ואם הוא מחוץ לתצוגה — העמוד שבמרכזה) ובזום שלו,
+ * צמוד אליו גם בגלילה: השוליים העליונים והתחתונים באפור, שנתות בס"מ מהשוליים העליונים; גבולות השוליים נגררים.
+ *
  *   const ruler = createRuler({ editor, h, pagesLayer, zoom: () => z, sectionPage: () => page, setMargin: (side, mm) => … });
- *   stage.prepend(ruler.el); ruler.update() — אחרי עימוד / זום / תזוזת סמן; ruler.toggle(), ruler.isOn()
+ *   stage.prepend(ruler.el); stage.before(ruler.vel); ruler.update() — אחרי עימוד / זום / תזוזת סמן; ruler.toggle(), ruler.isOn()
  */
 
 import { tabsOf } from './tabs.js';
@@ -21,9 +24,11 @@ const KEY = 'wp-ruler';
 export function createRuler({ editor, h, pagesLayer, sectionPage, setMargin, defaultOn = true }) {
     const track = h('div.wp-ruler-track');
     const el = h('div.wp-ruler', { role: 'group', 'aria-label': 'סרגל' }, track);
+    const vtrack = h('div.wp-vruler-track');
+    const vel = h('div.wp-vruler', { role: 'group', 'aria-label': 'סרגל אנכי' }, vtrack);
     let on = defaultOn;
     try { const v = localStorage.getItem(KEY); if (v !== null) on = v === '1'; } catch { /* בלי אחסון — ברירת המחדל */ }
-    el.hidden = !on;
+    el.hidden = vel.hidden = !on;
     let drag = null;   // בזמן גרירה לא בונים מחדש (הסמן הנגרר זז לבד)
     let geo = null;    // הגיאומטריה האחרונה (update) — לחישוב בזמן גרירה ולחיצה
     let raf = 0;
@@ -121,10 +126,66 @@ export function createRuler({ editor, h, pagesLayer, sectionPage, setMargin, def
         return m;
     }
 
+    /**
+     * הסרגל האנכי: העמוד שבו הסמן — ואם הוא מחוץ לתצוגה, העמוד שבמרכז התצוגה. השוליים העליונים / התחתונים של המקטע,
+     * שנתות כל רבע ס"מ מהשוליים העליונים (מספר כל ס"מ), וגבולות שנגררים (setMargin('top' | 'bottom', מ"מ)).
+     */
+    function renderV() {
+        vtrack.textContent = '';
+        const frames = [...pagesLayer.children];
+        if (!frames.length || vel.hidden) return;
+        const vr = vel.getBoundingClientRect();
+        let y = null;
+        try { y = editor.view.coordsAtPos(editor.state.selection.from).top; } catch { /* לפני הציור */ }
+        const seen = f => { const r = f.getBoundingClientRect(); return r.bottom > vr.top && r.top < vr.bottom; };
+        const mid = (vr.top + vr.bottom) / 2;
+        const frame = (y !== null && frames.find(f => { const r = f.getBoundingClientRect(); return y >= r.top - 1 && y < r.bottom && seen(f); }))
+            || frames.reduce((best, f) => { const r = f.getBoundingClientRect(); const d = Math.abs((r.top + r.bottom) / 2 - mid); return !best || d < best.d ? { f, d } : best; }, null).f;
+        const fr = frame.getBoundingClientRect();
+        const z = fr.width / frame.offsetWidth || 1;
+        const p = sectionPage();
+        const top = p.margins.top * MM * z, bottom = p.margins.bottom * MM * z, H = fr.height;
+        Object.assign(vtrack.style, { top: fr.top - vr.top + 'px', height: H + 'px' });
+        vtrack.append(h('div.wp-vruler-margin', { style: { top: 0, height: top + 'px' } }), h('div.wp-vruler-margin', { style: { bottom: 0, height: bottom + 'px' } }));
+        const cmPx = 10 * MM * z;
+        for (let q = 1; top + q * cmPx / 4 < H - bottom - 1; q++) {
+            const y0 = top + q * cmPx / 4;
+            vtrack.append(q % 4 ? h('div.wp-vruler-tick' + (q % 2 ? '' : '.half'), { style: { top: y0 + 'px' } })
+                : h('div.wp-vruler-num', { style: { top: y0 + 'px' } }, String(q / 4)));
+        }
+        const mm = (side, Y) => Math.max(0, Math.min(80, Math.round((side === 'top' ? Y - fr.top : fr.bottom - Y) / z / MM)));
+        for (const side of ['top', 'bottom']) {
+            const m = h('div.wp-vruler-edge', { title: side === 'top' ? 'שוליים עליונים — גרירה' : 'שוליים תחתונים — גרירה',
+                style: { top: (side === 'top' ? top : H - bottom) + 'px' } });
+            m.dataset.side = side;
+            m.addEventListener('pointerdown', e => {
+                e.preventDefault();
+                m.setPointerCapture(e.pointerId);
+                drag = { m };
+                let Y = e.clientY;
+                const snap = Y0 => (side === 'top' ? fr.top + mm(side, Y0) * MM * z : fr.bottom - mm(side, Y0) * MM * z) - fr.top;
+                const move = ev => { Y = ev.clientY; m.style.top = snap(Y) + 'px'; };
+                const up = () => {
+                    m.removeEventListener('pointermove', move);
+                    m.removeEventListener('pointerup', up);
+                    m.removeEventListener('pointercancel', up);
+                    drag = null;
+                    if (Math.abs(Y - e.clientY) > 1) setMargin(side, mm(side, Y));
+                    schedule();
+                };
+                m.addEventListener('pointermove', move);
+                m.addEventListener('pointerup', up);
+                m.addEventListener('pointercancel', up);
+            });
+            vtrack.append(m);
+        }
+    }
+
     function render() {
         raf = 0;
         if (!on || drag || editor.isDestroyed) return;
-        el.hidden = false;
+        el.hidden = vel.hidden = false;
+        renderV();
         track.textContent = '';
         geo = null;
         const g = measure();
@@ -190,14 +251,20 @@ export function createRuler({ editor, h, pagesLayer, sectionPage, setMargin, def
     function schedule() { if (on && !raf) raf = requestAnimationFrame(render); }
     editor.on('selectionUpdate', schedule);
     editor.on('transaction', schedule);
+    // האנכי צמוד לעמוד — גם בגלילה (אזור הגלילה — ההורה של הסרגל האופקי, כשהוא כבר בדף)
+    let scroller = null;
+    const watch = () => { const s = el.parentElement; if (s && s !== scroller) { scroller?.removeEventListener('scroll', schedule); scroller = s; s.addEventListener('scroll', schedule, { passive: true }); } };
+    editor.on('transaction', watch);
+    window.addEventListener('resize', schedule);
 
     return {
         el,
-        update: schedule,
+        vel,
+        update: () => { watch(); schedule(); },
         isOn: () => on,
         toggle() {
             on = !on;
-            el.hidden = !on;
+            el.hidden = vel.hidden = !on;
             try { localStorage.setItem(KEY, on ? '1' : '0'); } catch { /* בלי אחסון */ }
             schedule();
         },
