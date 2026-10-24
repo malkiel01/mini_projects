@@ -14,14 +14,37 @@
     <div class="titles"><h1 id="title">&nbsp;</h1><div class="sub" id="meta">&nbsp;</div></div>
   </header>
 
-  <main class="stage" id="stage" aria-label="קנבס">
-    <canvas id="canvas"></canvas>
-    <p class="stage-msg" id="msg" role="status">טוען…</p>
-  </main>
+  <div class="work">
+    <main class="stage" id="stage" aria-label="קנבס">
+      <canvas id="canvas"></canvas>
+      <p class="stage-msg" id="msg" role="status">טוען…</p>
+    </main>
+
+    <aside class="panel" id="layers" aria-labelledby="layers-title">
+      <header class="panel-head">
+        <h2 id="layers-title">שכבות</h2>
+        <button class="icon-btn panel-close" type="button" aria-label="סגירת השכבות">✕</button>
+      </header>
+      <div class="layer-props">
+        <label class="f blend-f"><span>מיזוג</span><select id="layer-blend"></select></label>
+        <label class="f opacity-f"><span>אטימות <output id="layer-opacity-out" for="layer-opacity">100%</output></span>
+          <input id="layer-opacity" type="range" min="0" max="100" step="1" value="100"></label>
+      </div>
+      <ul class="layer-list" role="listbox" aria-label="השכבות, העליונה ראשונה"></ul>
+      <div class="layer-actions">
+        <button class="btn ghost" type="button" data-act="add"><span aria-hidden="true">+</span> שכבה</button>
+        <button class="icon-btn" type="button" data-act="duplicate" aria-label="שכפול השכבה">⧉</button>
+        <button class="icon-btn" type="button" data-act="up" aria-label="העלאה בשכבה">▲</button>
+        <button class="icon-btn" type="button" data-act="down" aria-label="הורדה בשכבה">▼</button>
+        <button class="icon-btn" type="button" data-act="remove" aria-label="מחיקת השכבה">🗑️</button>
+      </div>
+    </aside>
+  </div>
 
   <footer class="bar">
     <button class="icon-btn" id="open-btn" type="button" aria-label="הוספת תמונה כשכבה" disabled>🖼️</button>
     <input type="file" id="file" accept="image/png,image/jpeg,image/webp" hidden>
+    <button class="btn ghost layers-btn" id="layers-btn" type="button" aria-controls="layers" aria-expanded="false" data-layer-count="1" aria-label="שכבות" disabled><span class="lbl">שכבות</span></button>
     <span class="grow hint one" id="hint" aria-live="polite"></span>
     <div class="zoom" role="group" aria-label="זום">
       <button class="icon-btn" id="zoom-out" type="button" aria-label="הקטנה">−</button>

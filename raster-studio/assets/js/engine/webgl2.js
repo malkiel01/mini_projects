@@ -83,6 +83,23 @@ void main() {
   o = vec4(enc(c.rgb + bg * (1.0 - c.a)), 1.0);
 }`,
 
+  // תמונה ממוזערת של שכבה: 4×4 דגימות לכל פיקסל (לשכבה אין mipmaps), מעל משבצות, ב-sRGB
+  thumb: `#version 300 es
+precision highp float;
+uniform sampler2D u_tex;
+uniform vec2 u_step;    // רבע מטביעת הרגל של פיקסל ממוזער, ב-uv של האריח
+in vec2 v_uv; out vec4 o;
+${ENCODE}
+void main() {
+  vec4 c = vec4(0.0);
+  for (int j = 0; j < 4; j++) for (int i = 0; i < 4; i++)
+    c += texture(u_tex, v_uv + (vec2(i, j) - 1.5) * u_step);
+  c /= 16.0;
+  float k = mod(floor(gl_FragCoord.x / 4.0) + floor(gl_FragCoord.y / 4.0), 2.0);
+  vec3 bg = mix(vec3(1.0), vec3(0.6038), k);
+  o = vec4(enc(c.rgb + bg * (1.0 - c.a)), 1.0);
+}`,
+
   // קריאה החוצה: פיקסל-פיקסל (texelFetch, בלי סינון) → sRGB ישר של 8 ביט
   read: `#version 300 es
 precision highp float;
@@ -229,6 +246,87 @@ export class WebGL2Renderer {
     this.#dirty(doc, 0, 0, doc.width, doc.height);
   }
 
+  // ---------- שכבות ----------
+
+  /** משחרר את האריחים של שכבה (אחרי מחיקה מהמסמך). */
+  freeLayer(layer) {
+    for (const t of layer.tiles.values()) { this.gl.deleteTexture(t); this.textures--; }
+    layer.tiles.clear();
+  }
+
+  /** מעתיק את כל האריחים של src ל-dst (שכפול שכבה). dst מתרוקנת קודם. */
+  copyLayer(src, dst) {
+    const gl = this.gl;
+    this.freeLayer(dst);
+    for (const [k, t] of src.tiles) {
+      const c = this.#tileTexture(1);
+      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, this.fboRead);
+      gl.framebufferTexture2D(gl.READ_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+      gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, this.fbo);
+      gl.framebufferTexture2D(gl.DRAW_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, c, 0);
+      gl.blitFramebuffer(0, 0, TILE, TILE, 0, 0, TILE, TILE, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+      dst.tiles.set(k, c);
+    }
+    dst.rev = (dst.rev ?? 0) + 1;
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  }
+
+  /**
+   * תמונה ממוזערת של שכבה אחת (בלי אטימות ומיזוג — השכבה כמו שהיא), מעל משבצות שקיפות.
+   * מחזיר ImageData; הצלע הארוכה = max פיקסלים.
+   */
+  thumbnail(doc, layer, max = 64) {
+    const gl = this.gl;
+    const k = Math.min(1, max / Math.max(doc.width, doc.height));
+    const tw = Math.max(1, Math.round(doc.width * k)), th = Math.max(1, Math.round(doc.height * k));
+    if (!this.thumbTex || this.thumbSize !== max) {
+      if (this.thumbTex) gl.deleteTexture(this.thumbTex);
+      this.thumbTex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, this.thumbTex);
+      gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, max, max);
+      this.#nearest();
+      this.thumbSize = max;
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.thumbTex, 0);
+    gl.viewport(0, 0, max, max);
+    // רקע: משבצות — מציירים "אריח ריק" על כל השטח
+    const p = this.prog.thumb;
+    gl.useProgram(p.p);
+    gl.bindVertexArray(this.vao);
+    gl.disable(gl.BLEND);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.uniform1i(p.u.u_tex, 0);
+    gl.bindTexture(gl.TEXTURE_2D, this.scratch[1]);
+    gl.clearColor(0, 0, 0, 0);
+    this.#target(this.scratch[1]);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.thumbTex, 0);
+    gl.viewport(0, 0, max, max);
+    gl.bindTexture(gl.TEXTURE_2D, this.scratch[1]);
+    gl.uniform2f(p.u.u_step, 0, 0);
+    this.#quad(p, [0, 0, tw, th], [0, 0, 1, 1], [max, max], -1);
+    // האריחים של השכבה שבתוך הקנבס
+    const step = 1 / k / TILE / 4;
+    gl.uniform2f(p.u.u_step, step, step);
+    for (const [tx, ty] of tilesInRect(0, 0, doc.width, doc.height)) {
+      const t = layer.tiles.get(key(tx, ty));
+      if (!t) continue;
+      gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      const x0 = tx * TILE, y0 = ty * TILE;
+      const x1 = Math.min(doc.width, x0 + TILE), y1 = Math.min(doc.height, y0 + TILE);
+      this.#quad(p, [x0 * k, y0 * k, x1 * k, y1 * k], [0, 0, (x1 - x0) / TILE, (y1 - y0) / TILE], [max, max], -1);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    }
+    const px = new Uint8ClampedArray(tw * th * 4);
+    gl.readPixels(0, 0, tw, th, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    return new ImageData(px, tw, th);
+  }
+
   // ---------- כתיבה לשכבות ----------
 
   /** ממלא את כל הקנבס בשכבה בצבע אחיד. rgba — sRGB של 8 ביט, אלפא 0–255. */
@@ -245,6 +343,7 @@ export class WebGL2Renderer {
       const w = Math.min(TILE, doc.width - tx * TILE), h = Math.min(TILE, doc.height - ty * TILE);
       this.#quad(p, [0, 0, w, h], [0, 0, 1, 1], [TILE, TILE], -1);
     }
+    layer.rev = (layer.rev ?? 0) + 1;   // התוכן השתנה — התמונה הממוזערת מתעדכנת
     this.invalidate(doc);
   }
 
@@ -292,6 +391,7 @@ export class WebGL2Renderer {
       }
     }
     gl.deleteTexture(src);
+    layer.rev = (layer.rev ?? 0) + 1;
     this.#dirty(doc, dx, dy, W, H);
   }
 

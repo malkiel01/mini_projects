@@ -7,6 +7,7 @@ import { RasterDocument } from './engine/doc.js';
 import { WebGL2Renderer, decodeImage } from './engine/webgl2.js';
 import * as V from './engine/view.js';
 import { deviceBudget, suggestSize, megapixels } from './engine/budget.js';
+import { createLayersPanel } from './layers-panel.js';
 
 const $ = s => document.querySelector(s);
 const stage = $('#stage');
@@ -19,6 +20,7 @@ const budget = deviceBudget({ deviceMemory: navigator.deviceMemory, mobile });
 
 let renderer = null;
 let doc = null;
+let panel = null;
 let view = { zoom: 1, x: 0, y: 0 };
 let fitted = false;
 let changed = false;   // יש תוכן שלא נשמר (השמירה — בשלב הבא)
@@ -69,6 +71,8 @@ function setDoc(d) {
   $('#title').textContent = d.title;
   $('#meta').replaceChildren(dims([d.width, d.height]), ' · ' + renderer.name);
   $('#open-btn').disabled = false;
+  $('#layers-btn').disabled = false;
+  panel.render();
   showMsg('');
   if (stage.clientWidth) { fitted = true; fit(); }
   if (d.width * d.height > budget.maxPixels()) {
@@ -110,6 +114,7 @@ async function addImageLayer(blob) {
   bmp.close();
   changed = true;
   draw();
+  panel.render();
   toast('נוספה שכבה: ' + layer.name);
 }
 
@@ -120,6 +125,16 @@ $('#file').addEventListener('change', async e => {
   if (!f || !doc) return;
   try { await addImageLayer(f); } catch (err) { toast(errText(err.message), true); }
 });
+
+// ---------- לוח השכבות ----------
+
+const layersEl = $('#layers');
+function toggleLayers(open = !layersEl.classList.contains('open')) {
+  layersEl.classList.toggle('open', open);
+  $('#layers-btn').setAttribute('aria-expanded', String(open));
+}
+$('#layers-btn').addEventListener('click', () => toggleLayers());
+$('.panel-close').addEventListener('click', () => toggleLayers(false));
 
 addEventListener('beforeunload', e => { if (changed) e.preventDefault(); });
 
@@ -212,6 +227,10 @@ $('#hint').textContent = coarse ? 'צביטה — זום' : 'גרירה — הז
   try {
     if (!WebGL2Renderer.supported()) throw new Error('no_webgl2');
     renderer = new WebGL2Renderer(canvas);
+    panel = createLayersPanel({
+      root: layersEl, doc: () => doc, renderer, toast,
+      onChange: () => { changed = true; draw(); },
+    });
     renderer.onLost = () => showMsg('הגרפיקה של הדפדפן אופסה, והתמונה שבזיכרון אבדה. טענו את הדף מחדש.', true);
 
     const q = new URLSearchParams(location.search);
@@ -240,6 +259,8 @@ window.__rs = {
   get doc() { return doc; },
   get renderer() { return renderer; },
   get view() { return view; },
+  get panel() { return panel; },
+  toggleLayers,
   setView,
   fit,
   openAsDocument,

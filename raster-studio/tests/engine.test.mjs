@@ -113,3 +113,26 @@ test('tilesInRect: גבולות אריחים, וגם מחוץ לקנבס', () =>
   assert.deepEqual(tilesInRect(-1, -1, 2, 2), [[-1, -1], [0, -1], [-1, 0], [0, 0]]);
   assert.deepEqual(tilesInRect(5, 5, 0, 10), []);
 });
+
+test('מסמך: שכבה פעילה, הזזה ומחיקה', () => {
+  const d = new RasterDocument(10, 10);
+  const a = d.addLayer({ name: 'א' }), b = d.addLayer({ name: 'ב' }), c = d.addLayer({ name: 'ג' });
+  assert.equal(d.active, c, 'שכבה חדשה — פעילה');
+  const mid = d.addLayer({ name: 'אמצע', index: 1 });
+  assert.deepEqual(d.layers.map(l => l.name), ['א', 'אמצע', 'ב', 'ג']);
+  assert.equal(d.moveLayer(mid, 99), true);
+  assert.deepEqual(d.layers.map(l => l.name), ['א', 'ב', 'ג', 'אמצע']);
+  assert.equal(d.moveLayer(mid, 3), false, 'אותו מקום — לא זז');
+  d.moveLayer(mid, -5);
+  assert.equal(d.indexOf(mid), 0);
+  d.activeId = b.id;
+  assert.equal(d.removeLayer(b), true);
+  assert.equal(d.active, c, 'אחרי מחיקת הפעילה — השכנה שמעל');
+  d.activeId = c.id;
+  d.removeLayer(c);
+  assert.equal(d.active, a, 'מחיקת העליונה — זו שמתחת');
+  d.removeLayer(mid);
+  assert.equal(d.removeLayer(a), false, 'השכבה האחרונה לא נמחקת');
+  assert.equal(d.layer(a.id), a);
+  assert.equal(d.layer('אין'), null);
+});
