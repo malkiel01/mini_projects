@@ -10,7 +10,7 @@
 
 declare(strict_types=1);
 
-const PAY_SCHEMA_VERSION = 4;
+const PAY_SCHEMA_VERSION = 5;
 
 function pay_data_dir(): string
 {
@@ -92,6 +92,7 @@ function pay_migrate(PDO $pdo): void
     if ($v < 2) pay_migrate_v2($pdo);
     if ($v < 3) pay_migrate_v3($pdo);
     if ($v < 4) pay_migrate_v4($pdo);
+    if ($v < 5) pay_migrate_v5($pdo);
     $pdo->exec('PRAGMA user_version = ' . PAY_SCHEMA_VERSION);
 }
 
@@ -609,5 +610,46 @@ function pay_migrate_v4(PDO $pdo): void
         ALTER TABLE payment ADD COLUMN doc_error TEXT NOT NULL DEFAULT '';
         ALTER TABLE refund ADD COLUMN doc_attempts INTEGER NOT NULL DEFAULT 0;
         ALTER TABLE refund ADD COLUMN doc_error TEXT NOT NULL DEFAULT '';
+    SQL);
+}
+
+/** שלב 6: קישורי תשלום (בלי קוד) וכללים. */
+function pay_migrate_v5(PDO $pdo): void
+{
+    $pdo->exec(<<<SQL
+        CREATE TABLE IF NOT EXISTS payment_link (
+            id TEXT PRIMARY KEY,
+            code TEXT NOT NULL UNIQUE,                 -- בכתובת: pay/link.php?k=<code>
+            client TEXT NOT NULL REFERENCES client(id),
+            env TEXT NOT NULL,
+            title TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            product TEXT,                              -- קוד מוצר (יחידה / חבילה) — או ריק לסכום לבחירה
+            quantity INTEGER NOT NULL DEFAULT 1,
+            amount_mode TEXT NOT NULL DEFAULT 'fixed', -- fixed | custom
+            min_amount INTEGER NOT NULL DEFAULT 0,
+            max_amount INTEGER NOT NULL DEFAULT 0,
+            fields TEXT NOT NULL DEFAULT '["name","email"]',
+            success_url TEXT NOT NULL DEFAULT '',
+            max_uses INTEGER NOT NULL DEFAULT 0,       -- 0 = ללא הגבלה
+            uses INTEGER NOT NULL DEFAULT 0,
+            expires_at INTEGER,
+            active INTEGER NOT NULL DEFAULT 1,
+            created_at INTEGER NOT NULL
+        );
+        -- כללים וקריטריונים (פרק 12.4): "כש… אז…". ‏scope_client ריק = לכל המערכות של המנוי
+        CREATE TABLE IF NOT EXISTS rule (
+            id TEXT PRIMARY KEY,
+            tenant TEXT NOT NULL REFERENCES tenant(id),
+            name TEXT NOT NULL,
+            scope_client TEXT,
+            priority INTEGER NOT NULL DEFAULT 100,
+            cond TEXT NOT NULL DEFAULT '{}',
+            act TEXT NOT NULL DEFAULT '{}',
+            active INTEGER NOT NULL DEFAULT 1,
+            version INTEGER NOT NULL DEFAULT 1,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
     SQL);
 }

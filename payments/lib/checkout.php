@@ -65,7 +65,7 @@ function invoice_create(array $acc, array $lines, string $status, array $extra =
  * checkout_create (פרק 4.3): ‏{external_id, mode, items?, amount?, return_url, cancel_url, meta?}
  * → {checkout, url, expires_at, amount}. הסכום נקבע **כאן**, מהמחירים שבמסך הניהול — לא מהמערכת ולא מהדפדפן.
  */
-function checkout_create(array $client, string $env, array $in): array
+function checkout_create(array $client, string $env, array $in, array $internal = []): array
 {
     $cus = customer_find($client, $env, external_id($in));
     $acc = db_one('SELECT * FROM account WHERE id = ?', [$cus['account']]);
@@ -95,7 +95,9 @@ function checkout_create(array $client, string $env, array $in): array
                 $trialDays = max($trialDays, (int)$pr['trial_days']);
             }
             $items[] = ['product' => $p['code'], 'price' => $pr['id'], 'quantity' => $qty];
-            $amount += $mode === 'subscription' ? item_amount($pr, $qty, 0) : (int)$pr['amount'] * $qty;
+            // סכום לבחירת הלקוח — רק מקישור תשלום (פנימי), אף פעם לא מה-API
+            $unit = $mode === 'payment' && isset($internal['unit_amount']) ? (int)$internal['unit_amount'] : (int)$pr['amount'];
+            $amount += $mode === 'subscription' ? item_amount($pr, $qty, 0) : $unit * $qty;
         }
         // ניסיון חינם — רק בפעם הראשונה במערכת הזו
         if ($trialDays && db_one('SELECT 1 FROM subscription WHERE customer = ?', [$cus['id']])) $trialDays = 0;
@@ -110,7 +112,13 @@ function checkout_create(array $client, string $env, array $in): array
         $amount = (int)$inv['total'];
         $invoiceId = $inv['id'];
     }
-    $meta = is_array($in['meta'] ?? null) ? $in['meta'] : [];
+    // כללים (פרק 12.4): חסימה לפני שנוצרת קנייה
+    if (function_exists('rules_eval')) {
+        $rr = rules_eval($client['tenant'], ['client' => $client['id'], 'env' => $env, 'mode' => $mode, 'amount' => $amount,
+            'customer_type' => $acc['customer_type'], 'products' => array_column($items, 'product')]);
+        if ($rr['block'] !== null) throw new ApiError($rr['block'], 'blocked_by_rule', 403);
+    }
+    $meta = (is_array($in['meta'] ?? null) ? $in['meta'] : []) + array_intersect_key($internal, ['unit_amount' => 1, 'link' => 1, 'form' => 1]);
     $id = new_id('chk');
     db_run('INSERT INTO checkout (id, client, env, customer, account, mode, items, amount, return_url, cancel_url, meta, invoice, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [
         $id, $client['id'], $env, $cus['id'], $acc['id'], $mode, json_encode($items), $amount,
@@ -148,7 +156,7 @@ function checkout_view(array $c): array
     foreach (json_decode($c['items'], true) ?: [] as $it) {
         $pr = db_one('SELECT pr.*, p.name, p.type, p.code FROM price pr JOIN product p ON p.id = pr.product WHERE pr.id = ?', [$it['price']]);
         $qty = (int)$it['quantity'];
-        $now = $c['mode'] === 'subscription' ? item_amount($pr, $qty, 0) : (int)$pr['amount'] * $qty;
+        $now = $c['mode'] === 'subscription' ? item_amount($pr, $qty, 0) : (int)($meta['unit_amount'] ?? $pr['amount']) * $qty;
         $lines[] = ['name' => $pr['name'] . ($qty > 1 ? " × $qty" : ''), 'amount' => $now];
         if ($c['mode'] === 'subscription') {
             $interval = $pr['interval'];
@@ -190,6 +198,12 @@ function checkout_methods(array $c, array $m): array
     if ((int)$c['amount'] === 0 && !$p->capabilities()['zero_amount']) return $c['mode'] === 'subscription' ? ['none'] : [];
     $out = [];
     foreach ($p->methods() as $method => $modes) if (in_array($c['mode'], $modes, true)) $out[] = $method;
+    // כללים: הסתרת אמצעים / רק אמצעים מסוימים
+    if (function_exists('rules_eval')) {
+        $rr = rules_eval(db_one('SELECT tenant FROM client WHERE id = ?', [$c['client']])['tenant'], checkout_rule_ctx($c));
+        $out = array_values(array_diff($out, $rr['hide']));
+        if ($rr['only'] !== null) $out = array_values(array_intersect($out, $rr['only']));
+    }
     return $out;
 }
 
@@ -293,7 +307,9 @@ function checkout_complete(array $c, Txn $txn): void
         $result['subscription'] = $subId;
         webhook_emit($c['client'], $c['env'], 'subscription.created', $cus['external_id'], ['subscription' => $subId, 'status' => $trial ? 'trialing' : 'active', 'period_end' => $end]);
     } elseif ($c['mode'] === 'payment') {
-        $lines = array_map(fn($it) => $lineFor($it, (int)db_one('SELECT amount FROM price WHERE id = ?', [$it['price']])['amount'] * (int)$it['quantity']), $items);
+        $meta = json_obj($c['meta']);
+        $lines = array_map(fn($it) => $lineFor($it, (int)($meta['unit_amount'] ?? db_one('SELECT amount FROM price WHERE id = ?', [$it['price']])['amount']) * (int)$it['quantity']), $items);
+        if (!empty($meta['link'])) db_run('UPDATE payment_link SET uses = uses + 1 WHERE code = ?', [(string)$meta['link']]);
         $inv = invoice_create($acc, $lines, 'paid', ['checkout' => $c['id']]);
         db_run('UPDATE invoice SET paid_at = ? WHERE id = ?', [now(), $inv['id']]);
         $result['invoice'] = $inv['id'];

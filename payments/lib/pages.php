@@ -7,6 +7,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/jobs.php';
+require_once __DIR__ . '/links.php';
 
 const PORTAL_TTL = 1800;
 const PORTAL_COOKIE = 'payments_portal';
