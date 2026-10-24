@@ -688,6 +688,53 @@ export class WebGL2Renderer {
     return this.endStroke(doc);
   }
 
+  // ---------- חיתוך: הזזה של כל האריחים בפיקסלים שלמים ----------
+
+  /**
+   * עותק של מפת אריחים, מוזז ב-(dx, dy) פיקסלים שלמים — לחיתוך הקנבס. לא נוגע במקור (הוא להיסטוריה).
+   * כל אריח יעד מורכב מעד ארבעה אריחי מקור, בדגימה NEAREST — מדויק פיקסל-פיקסל.
+   */
+  shiftTiles(tiles, dx, dy) {
+    const gl = this.gl;
+    const dest = new Map();
+    for (const k of tiles.keys()) {
+      const [tx, ty] = k.split(',').map(Number);
+      for (const [ux, uy] of tilesInRect(tx * TILE + dx, ty * TILE + dy, TILE, TILE)) {
+        const dk = key(ux, uy);
+        if (!dest.has(dk)) dest.set(dk, []);
+        dest.get(dk).push([tx, ty, tiles.get(k)]);
+      }
+    }
+    const out = new Map();
+    const p = this.prog.copy;
+    for (const [dk, srcs] of dest) {
+      const [ux, uy] = dk.split(',').map(Number);
+      const t = this.#tileTexture(1);
+      this.#target(t);
+      gl.useProgram(p.p);
+      gl.bindVertexArray(this.vao);
+      gl.disable(gl.BLEND);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.uniform1i(p.u.u_tex, 0);
+      for (const [tx, ty, src] of srcs) {
+        const ox = tx * TILE + dx - ux * TILE, oy = ty * TILE + dy - uy * TILE;
+        gl.bindTexture(gl.TEXTURE_2D, src);
+        this.#quad(p, [ox, oy, ox + TILE, oy + TILE], [0, 0, 1, 1], [TILE, TILE], -1);
+      }
+      out.set(dk, t);
+    }
+    gl_unbind(gl);
+    return out;
+  }
+
+  /** גודל הקנבס השתנה — העותק המורכב נבנה מחדש מאפס. */
+  resetComposite(doc) {
+    if (doc._comp) this.freeTextures(doc._comp.values());
+    doc._comp = new Map();
+    doc._dirty = new Set();
+    this.selectionChanged(doc);
+  }
+
   // ---------- תוכן צף: הזזה, קנה מידה, סיבוב ----------
   //
   // beginFloat מחלץ את התוכן (הבחירה, או כל השכבה) למרקם אחד עם mipmaps ומוחק אותו מהשכבה — האריחים המקוריים

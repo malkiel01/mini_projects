@@ -141,6 +141,27 @@ export class History {
     this.push({ label, bytes: 0, undo: () => set(before), redo: () => set(after) });
   }
 
+  /**
+   * חיתוך / שינוי גודל הקנבס. state = { w, h, maps: Map(layer → tiles), sel } — לפני ואחרי.
+   * ביטול וביצוע מחליפים את מפות האריחים של כל השכבות ואת הגודל.
+   */
+  crop(doc, before, after, label) {
+    const r = this.renderer;
+    const set = st => {
+      doc.width = st.w; doc.height = st.h;
+      for (const [layer, tiles] of st.maps) { layer.tiles = tiles; layer.rev = (layer.rev ?? 0) + 1; }
+      doc.selection = st.sel;
+      r.resetComposite(doc);
+    };
+    const count = st => [...st.maps.values()].reduce((n, m) => n + m.size, 0);
+    this.push({
+      label, bytes: count(before) * TILE_BYTES,
+      undo: () => set(before), redo: () => set(after),
+      // נזרקת: המצב שאינו פעיל משתחרר
+      discard: applied => { for (const m of (applied ? before : after).maps.values()) r.freeTextures(m.values()); },
+    });
+  }
+
   /** שכבה עברה מ-from ל-to. */
   moveLayer(doc, layer, from, to, label) {
     const r = this.renderer;
