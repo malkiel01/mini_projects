@@ -4,7 +4,7 @@
 `drawing.svg`, ‏`document.pdf` ו-`preview.png` מוכנים בפנים. פרויקט 3 בחבילת היצירה; ההנחיות:
 `creative-suite/docs/projects/vector-studio.md`.
 
-> סטטוס: **שלד** — רישום, דף פתיחה ומשתמשים משלה דרך השער. העורך עצמו — בשלבים הבאים. ההכרעות — בטבלה למטה.
+> סטטוס: **עורך ראשון** — לוח עבודה, זום, בחירה, הזזה ושינוי גודל, צורות, מילוי ומתאר; טיוטות במכשיר. הבא: עט. ההכרעות — בטבלה למטה.
 
 ## גרסה 1 — מה בפנים
 
@@ -57,13 +57,28 @@
 ## מבנה ובדיקות
 
 ```
-app.json            gate + restricted (בפיתוח — רק באישור ישיר בממשק המנהל)
-index.html          דף הפתיחה: מי נכנס, והספרייה (ריקה עד שלב השמירה)
-api.php             action=me
-lib/db.php          SQLite: data/vector.sqlite (לא בגיט; מוחרג ב-deploy.yml, גם data/files/)
-lib/auth.php        משתמשים משלה: הזהות מהשער → חשבון מקושר / לפי מייל / חדש. הראשון — מנהל
-tests/run.php       php vector-studio/tests/run.php
+app.json                 gate + restricted (בפיתוח — רק באישור ישיר בממשק המנהל)
+index.html               דף הפתיחה: מי נכנס, הטיוטות, "+ ציור חדש" (גדלים מוכנים או חופשי)
+editor.html              העורך
+api.php                  action=me
+lib/db.php · auth.php    SQLite (data/vector.sqlite — לא בגיט, מוחרג ב-deploy.yml, גם data/files/) · משתמשים מהשער
+assets/js/geometry/      גאומטריה ונתיבים — המודול המשותף שבבעלותנו (בלי DOM; נבדק ב-node)
+  path.js                d של SVG → M L C Q Z מוחלטים (כולל S T H V A), כתיבה, טרנספורמציה, תיבה חוסמת
+  matrix.js · shapes.js  מטריצות [a b c d e f] · צורות חיות (מלבן, אליפסה, מצולע, כוכב, קו) → d
+assets/js/model.js       המסמך בצורת document.json; הזזה ושינוי גודל נאפים ל-d ולפרמטרי הצורה
+assets/js/render.js      ציור הקנבס ובדיקת פגיעה (isPointInPath / isPointInStroke)
+assets/js/editor.js      קלט, היסטוריה, טיוטה · props.js — לוח המאפיינים · drafts.js — localStorage
+tests/run.php            php vector-studio/tests/run.php
+tests/geometry.test.mjs  node --test vector-studio/tests/geometry.test.mjs
+tests/e2e.mjs            node vector-studio/tests/e2e.mjs <כתובת> — דפדפן: מחשב, 390px ו-320px
 ```
+
+**שליטה:** עכבר — גרירה על רקע בוחרת במלבן, Ctrl+גלגלת — זום, רווח+גרירה — הזזת תצוגה. מגע — אצבע על רקע
+מזיזה את התצוגה, שתיים — זום. הקשה עם כלי צורה — צורה בגודל 100pt. Shift — ריבוע / יחס קבוע / קו ב-45° / ציר
+אחד בהזזה. מקשים: V M L \ · Delete · חיצים (Shift — 10pt) · Ctrl+Z / Ctrl+Shift+Z · Ctrl+D · Ctrl+A · Ctrl+0.
+
+**טיוטות:** עד שלב השמירה, כל ציור נשמר ב-localStorage של המכשיר. גלישה בסתר / אחסון חסום — העורך אומר
+"לא נשמר".
 
 **כניסה:** רק דרך השער (האפליקציה מחוברת). אין סיסמה ואין מסך חיבור — אין חשבונות ישנים לחבר. כשהאפליקציה
 תצא לדומיין משלה — "כניסה עם הכלים הדיגיטליים" (`platform/docs/sso.md`) וסיסמה משלה.
@@ -80,4 +95,5 @@ tests/run.php       php vector-studio/tests/run.php
 ## מה טרם הוכרע
 
 - מודל הנתיבים והצטרפות לליבה — בקשה לצ'אט המתכלל: `creative-suite/docs/requests/vector-studio-paths.md`.
+- מעבר צבע ליניארי — נכנס עם שלב הקבוצות והיישור (המודל כבר מוכן לו בבקשה).
 - טקסט כקווי מתאר דורש לקרוא גופן (ספרייה כמו opentype.js, או קוד שלנו) — ייקבע בשלב הטקסט.
