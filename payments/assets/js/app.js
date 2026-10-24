@@ -91,6 +91,7 @@ loaders.overview = async () => {
   const alerts = [];
   if (!o.merchants) alerts.push(chip('אין עוסק — הגדרות ‹', 'warn'));
   if (o.webhooks_failed) alerts.push(chip(o.webhooks_failed + ' הודעות למערכות נכשלו', 'bad'));
+  if (o.refunds_pending) alerts.push(`<a href="#money">${chip(o.refunds_pending + ' החזרים לביצוע בממשק הסולק', 'bad')}</a>`);
   if (o.pending_tenants) alerts.push(chip(o.pending_tenants + ' ממתינים לאישור', 'warn'));
   $('#ov-alerts').innerHTML = alerts.join('');
   $('#stages').innerHTML = STAGES.map(([t, s, st], i) => `<li class="card"><span class="stage-n" aria-hidden="true">${st === 'done' ? '✓' : i + 1}</span>
@@ -579,7 +580,7 @@ loaders.money = async () => {
     $('#money-list').innerHTML = p.data.length ? p.data.map(r => `<li class="card" ${['succeeded', 'partially_refunded'].includes(r.status) ? `data-pay="${esc(r.id)}" tabindex="0" role="button"` : ''}>
         <div class="body"><div class="l1"><span>${esc(r.customer_name || r.external_id || '—')}</span><span class="t">${when(r.created_at)}</span></div>
         <div class="l2">${nis(r.amount)}${r.refunded > 0 ? ' · הוחזרו ' + nis(r.refunded) : ''} · ${r.provider === 'fake' ? 'סולק מדומה' : r.provider_type === 'morning' ? 'מורנינג' : esc(r.provider)}${r.doc_number ? ' · ' + (Number(r.doc_type) === 400 ? 'קבלה' : 'חשבונית') + ' ' + esc(r.doc_number) : ''}${r.failure_message ? ' · ' + esc(r.failure_message) : ''}${r.env === 'test' ? ' · בדיקות' : ''}</div></div>
-        ${chip(...(PST[r.status] || [r.status, '']))}${r.status !== 'failed' && !Number(r.has_doc) && r.provider_type !== 'morning' && r.amount > 0 ? chip(r.doc_error ? 'מסמך נכשל' : 'חסר מסמך', r.doc_error ? 'bad' : 'warn') : ''}</li>`).join('') : empty('עוד אין תשלומים.');
+        ${chip(...(PST[r.status] || [r.status, '']))}${r.status !== 'failed' && !Number(r.has_doc) && r.provider_type !== 'morning' && r.amount > 0 ? chip(r.doc_error ? 'מסמך נכשל' : 'חסר מסמך', r.doc_error ? 'bad' : 'warn') : ''}${r.refund_pending > 0 ? chip('להחזיר ' + nis(r.refund_pending), 'bad') : ''}</li>`).join('') : empty('עוד אין תשלומים.');
     for (const li of document.querySelectorAll('[data-pay]')) li.addEventListener('click', () => refundSheet(p.data.find(x => x.id === li.dataset.pay)));
   } else {
     $('#money-list').innerHTML = i.data.length ? i.data.map(r => `<li class="card"><div class="body">
@@ -590,14 +591,15 @@ loaders.money = async () => {
 };
 function refundSheet(p) {
   const left = p.amount - p.refunded;
+  const pendLine = p.refund_pending > 0 ? `<p class="error">↩️ הלקוח ביטל (${esc(p.refund_pending_reason)}): להחזיר ${nis(p.refund_pending)} בממשק הסולק, ואז "רישום החזר" כאן.</p>` : '';
   const docLine = Number(p.has_doc) ? `<p class="hint">🧾 ${Number(p.doc_type) === 400 ? 'קבלה' : 'חשבונית מס/קבלה'} ${esc(p.doc_number || '')}</p>`
     : p.provider_type === 'morning' ? '' : `<p class="${p.doc_error ? 'error' : 'hint'}">${p.doc_error ? 'המסמך החשבונאי נכשל: ' + esc(p.doc_error) : 'עוד אין מסמך חשבונאי. הוא נוצר לבד דרך מורנינג, אם לעוסק יש חיבור.'}</p>
       <div class="row-btns"><button type="button" class="btn sm ghost" id="doc-retry">הפקת המסמך עכשיו</button></div>`;
-  openSheet('החזר כספי — ' + (p.customer_name || p.external_id || ''), docLine + `
+  openSheet('החזר כספי — ' + (p.customer_name || p.external_id || ''), pendLine + docLine + `
     <p class="hint">שולם ${nis(p.amount)}${p.refunded ? ', הוחזרו כבר ' + nis(p.refunded) : ''}. אפשר להחזיר עד ${nis(left)}. ההחזר יוצא דרך חברת הסליקה, לאותו אמצעי.</p>
     <div class="fields">
-      <label class="f"><span>סכום (₪)</span><input name="amount" inputmode="decimal" dir="ltr" value="${(left / 100).toFixed(2)}"></label>
-      <label class="f wide"><span>סיבה * (נשמרת ונשלחת ללקוח)</span><input name="reason" required maxlength="240"></label>
+      <label class="f"><span>סכום (₪)</span><input name="amount" inputmode="decimal" dir="ltr" value="${((p.refund_pending > 0 ? Math.min(left, p.refund_pending) : left) / 100).toFixed(2)}"></label>
+      <label class="f wide"><span>סיבה * (נשמרת ונשלחת ללקוח)</span><input name="reason" required maxlength="240" value="${esc(p.refund_pending > 0 ? p.refund_pending_reason : '')}"></label>
     </div>
     ${p.provider_type === 'morning' ? `<p class="hint">במורנינג ההחזר נעשה בממשק שלהם (שם נוצרת גם חשבונית הזיכוי). בצע אותו שם, ואז רשום כאן.</p>
       <label class="switch"><input type="checkbox" name="manual" checked disabled><span>ההחזר כבר בוצע במורנינג — רק לרשום</span></label>` : ''}`,

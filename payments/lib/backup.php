@@ -71,11 +71,18 @@ function export_month(array $tenant, string $period, string $env = 'live'): stri
         $docs = implode(' ', array_map(function ($d) use ($DOC) { [$t, $n] = array_pad(explode(':', $d, 2), 2, ''); return ($DOC[$t] ?? $t) . " $n"; }, array_filter(explode(' ', (string)$r['docs']))));
         $provider = $r['provider'] === 'manual' ? 'ידני' : ($r['provider'] === 'fake' ? 'מדומה' : (str_starts_with((string)$r['provider'], 'pa_') ? 'מורנינג' : $r['provider']));
         fputcsv($fh, [
-            gmdate('d/m/Y', (int)$r['created_at']), $r['merchant_name'], $r['account_name'], $r['tax_id'], $r['lines'] ?? '',
+            gmdate('d/m/Y', (int)$r['created_at']), csv_text($r['merchant_name']), csv_text($r['account_name']), csv_text($r['tax_id']), csv_text($r['lines'] ?? ''),
             number_format((int)$r['amount'] / 100, 2, '.', ''), $vat === '' ? '' : number_format($vat / 100, 2, '.', ''),
             number_format((int)$r['refunded'] / 100, 2, '.', ''), $r['status'], $r['pay_method'] ?: 'כרטיס', $provider, $docs, $r['id'],
         ]);
     }
     rewind($fh);
     return (string)stream_get_contents($fh);
+}
+
+/** טקסט שמשתמש הקליד (שם מטופס ציבורי) — בלי נוסחה: תא שמתחיל ב-= + - @ נפתח באקסל כטקסט. */
+function csv_text(?string $v): string
+{
+    $v = (string)$v;
+    return $v !== '' && strpbrk($v[0], "=+-@\t\r") !== false ? "'" . $v : $v;
 }

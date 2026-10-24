@@ -254,9 +254,9 @@ function auth_request(string $action, string $body, array $h): array
         $client = active_client($k['client'], $k['env']);
         $ips = json_obj($k['ips']);
         if ($ips && !in_array(client_ip(), $ips, true)) throw $fail('ip_not_allowed', 'הכתובת לא מורשית לקוד הזה');
-        check_time_nonce($client['id'], $time, $nonce);
         $want = hash_hmac('sha256', sign_string($action, $time, $nonce, $body), unseal($k['secret_enc']));
         if (!hash_equals($want, $sig)) throw $fail('bad_signature', 'החתימה לא תקינה');
+        check_time_nonce($client['id'], $time, $nonce); // אחרי החתימה — בקשה מזויפת לא כותבת למסד
         db_run('UPDATE api_key SET last_used = ? WHERE id = ?', [now(), $keyId]);
         return ['client' => $client, 'env' => $k['env'], 'key' => $keyId];
     }
@@ -268,7 +268,7 @@ function auth_request(string $action, string $body, array $h): array
         [$kid, $b64] = array_pad(explode('.', (string)($h['X-EMBED-SIGNATURE'] ?? ''), 2), 2, '');
         $client = active_client($cid, $env);
         if ($client['key_url'] === '') throw $fail('unknown_client', 'למערכת אין מפתח Ed25519 רשום');
-        check_time_nonce($client['id'], $time, $nonce);
+        if (!ctype_digit($time) || abs(now() - (int)$time) > SIG_WINDOW) throw new ApiError('הזמן בבקשה רחוק מדי (±5 דקות)', 'stale', 401);
         $sig = base64_decode($b64, true);
         $msg = sign_string($action, $time, $nonce, $body);
         $keys = ed_keys($client, false);
@@ -276,6 +276,7 @@ function auth_request(string $action, string $body, array $h): array
             $keys = ed_keys($client, true); // אולי הוחלף מפתח — הורדה אחת מחדש
             if (!$sig || !ed_verify($keys, $kid, $sig, $msg)) throw $fail('bad_signature', 'החתימה לא תקינה');
         }
+        check_time_nonce($client['id'], $time, $nonce);
         return ['client' => $client, 'env' => $env, 'key' => null];
     }
     throw $fail('no_auth', 'חסרה חתימה');
@@ -321,6 +322,7 @@ function ed_keys(array $client, bool $refresh): array
 {
     $cached = json_obj($client['ed_keys'] ?? '');
     if (!$refresh && $cached && now() - (int)$client['ed_keys_at'] < ED_KEY_CACHE) return $cached;
+    if ($refresh && $cached && now() - (int)$client['ed_keys_at'] < 60) return $cached; // חתימות שגויות לא יורידו את המפתח שוב ושוב
     $raw = fetch_url($client['key_url']);
     $j = $raw !== null ? json_decode($raw, true) : null;
     $keys = [];

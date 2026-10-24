@@ -264,6 +264,28 @@ $r = charge_api($app, 'test', ['external_id' => 'user:1', 'items' => [['product'
 $r2 = charge_api($app, 'test', ['external_id' => 'user:1', 'items' => [['product' => 'report']], 'idempotency_key' => 'rep-1']);
 check('חיוב בלחיצה מכרטיס שמור, ובלי כפילות', $r['status'] === 'succeeded' && !empty($r2['duplicate']) && entitlement($app, 'test', ['external_id' => 'user:1'])['purchased']->report == 3);
 check('מנוי ב"קנייה" — נדחה', throws(fn() => checkout_create($app, 'test', ['external_id' => 'user:1', 'mode' => 'payment', 'items' => [['product' => 'apps']]] + $urls), 'bad_items'));
+$fake = checkout_create($app, 'test', ['external_id' => 'user:1', 'mode' => 'payment', 'items' => [['product' => 'credits50']], 'meta' => ['unit_amount' => 1_000_000, 'link' => 'XXXXXXXXXX', 'trial_days' => 3650, 'order' => 7]] + $urls);
+$fm = json_obj(checkout_load($fake['checkout'])['meta']);
+check('meta של המערכת לא משנה סכום, קרדיט או ניסיון', $fake['amount'] === 5000 && !isset($fm['unit_amount']) && !isset($fm['link']) && !isset($fm['trial_days']) && $fm['order'] === 7);
+$bal = entitlement($app, 'test', ['external_id' => 'user:1'])['balance'];
+pay($fake);
+check('…והקרדיט — לפי מה ששולם', entitlement($app, 'test', ['external_id' => 'user:1'])['balance'] === $bal + 5000);
+$trialSub = checkout_create($app, 'test', ['external_id' => 'user:1', 'mode' => 'subscription', 'items' => [['product' => 'apps']], 'meta' => ['trial_days' => 3650]] + $urls);
+check('ניסיון של 10 שנים מ-meta — לא', (json_obj(checkout_load($trialSub['checkout'])['meta'])['trial_days'] ?? 0) !== 3650);
+$excl = product_save($owner, 'guarded-browser', ['code' => 'consult', 'name' => 'ייעוץ', 'type' => 'unit']);
+price_create($owner, $excl['id'], ['amount' => 10000, 'tax_behavior' => 'exclusive']);
+$ex = checkout_create($app, 'test', ['external_id' => 'user:1', 'mode' => 'payment', 'items' => [['product' => 'consult']]] + $urls);
+check('מחיר "לא כולל מע"מ" — הלקוח משלם כולל (₪118), גם בדף', $ex['amount'] === 11800 && checkout_view(checkout_load($ex['checkout']))['lines'][0]['amount'] === 11800);
+pay($ex);
+$exInv = db_one('SELECT * FROM invoice WHERE checkout = ?', [$ex['checkout']]);
+$exPay = db_one('SELECT * FROM payment WHERE invoice = ?', [$exInv['id']]);
+check('…והחשבונית תואמת את מה שנגבה', (int)$exInv['total'] === 11800 && (int)$exPay['amount'] === 11800 && (int)$exInv['vat'] === 1800);
+$n = (int)db_one('SELECT COUNT(*) AS n FROM payment')['n'];
+db_run("UPDATE invoice SET status = 'open' WHERE checkout = 'charge:rep-1'"); // כאילו הקריאה הראשונה עדיין באמצע החיוב
+$r3 = charge_api($app, 'test', ['external_id' => 'user:1', 'items' => [['product' => 'report']], 'idempotency_key' => 'rep-1']);
+check('חיוב במקביל עם אותו מפתח — "בטיפול", בלי חיוב נוסף', $r3['status'] === 'processing' && !empty($r3['duplicate']) && (int)db_one('SELECT COUNT(*) AS n FROM payment')['n'] === $n);
+db_run("UPDATE invoice SET status = 'paid' WHERE checkout = 'charge:rep-1'");
+check('ייצוא: תא שמתחיל ב-= נשמר כטקסט', csv_text('=HYPERLINK("x")') === "'=HYPERLINK(\"x\")" && csv_text('דנה') === 'דנה' && csv_text('-5') === "'-5");
 check('הסכום נקבע אצלנו — לא מהבקשה', checkout_create($app, 'test', ['external_id' => 'user:1', 'mode' => 'payment', 'items' => [['product' => 'report']], 'amount' => 1] + $urls)['amount'] === 1500);
 
 section('החזר');

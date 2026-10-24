@@ -291,6 +291,23 @@ manual_payment($owner, ['account' => $accL['id'], 'method' => 'transfer', 'purpo
 check('העברה על חשבונית פתוחה → המנוי חוזר לפעיל', db_one('SELECT status FROM subscription WHERE id = ?', [$open['subscription']])['status'] === 'active'
     && db_one('SELECT status FROM invoice WHERE id = ?', [$open['id']])['status'] === 'paid');
 
+section('ביטול תוך 14 יום כשהסולק בלי החזר בממשק');
+customer_upsert($app, 'test', ['external_id' => 'family:9', 'name' => 'לוי', 'email' => 'levi@example.com']);
+$c9 = checkout_create($app, 'test', ['external_id' => 'family:9', 'mode' => 'subscription', 'items' => [['product' => 'apps']]] + $urls);
+checkout_start(checkout_load($c9['checkout']), 'card');
+morning_pays($c9['checkout']);
+checkout_sync(checkout_load($c9['checkout']));
+$cus9 = customer_find($app, 'test', 'family:9');
+$sub9 = db_one('SELECT * FROM subscription WHERE customer = ?', [$cus9['id']]);
+$q9 = subscription_cooling_off($cus9, $sub9['id']);
+$pay9 = db_one('SELECT * FROM payment WHERE id = ?', [$q9['payment']]);
+check('המנוי בוטל, וההחזר נרשם כחוב לביצוע (לא נעלם)', $q9['refund_status'] === 'pending' && $q9['refund'] > 0
+    && db_one('SELECT status FROM subscription WHERE id = ?', [$sub9['id']])['status'] === 'canceled'
+    && (int)$pay9['refund_pending'] === $q9['refund'] && (int)$pay9['refunded'] === 0);
+check('ביטול שני — לא זכאי', throws(fn() => subscription_cooling_off($cus9, $sub9['id']), 'not_eligible'));
+payment_refund($pay9['id'], $q9['refund'], 'ביטול עסקה תוך 14 יום', 'admin:x', true);
+check('רישום ההחזר הידני סוגר את החוב', (int)db_one('SELECT refund_pending FROM payment WHERE id = ?', [$pay9['id']])['refund_pending'] === 0);
+
 section('מוכנות לכסף אמיתי');
 require_once __DIR__ . '/../lib/readiness.php';
 $st = fn() => array_column(readiness($owner)['items'], 'state', 'key');

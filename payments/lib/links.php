@@ -89,16 +89,19 @@ function link_checkout(string $code, array $form): string
         $unit = (int)round((float)str_replace(',', '.', (string)($form['amount'] ?? '0')) * 100);
         if ($unit < (int)$l['min_amount'] || $unit > (int)$l['max_amount']) throw new ApiError('הסכום בין ' . money_text((int)$l['min_amount']) . ' ל-' . money_text((int)$l['max_amount']), 'bad_amount');
     }
-    $key = mb_strtolower($vals['email'] ?? '') ?: preg_replace('/\D/', '', $vals['phone'] ?? '');
-    $ext = 'link:' . ($key !== '' ? substr(hash('sha256', $key), 0, 24) : substr(new_id('x'), 2));
+    // לקוח חדש לכל תשלום מקישור: טופס ציבורי לא מוכיח בעלות על מייל, ולכן לא נוגע בחשבון קיים (שם, ח"פ, כרטיס)
+    $ext = 'link:' . substr(new_id('x'), 2);
     customer_upsert($client, $l['env'], ['external_id' => $ext, 'name' => $vals['name'] ?? '', 'email' => $vals['email'] ?? '', 'tax_id' => $vals['tax_id'] ?? '',
         'customer_type' => ($vals['tax_id'] ?? '') !== '' ? 'business' : 'private']);
     if (($vals['phone'] ?? '') !== '') db_run('UPDATE account SET phone = ? WHERE id = (SELECT account FROM customer WHERE client = ? AND env = ? AND external_id = ?)', [$vals['phone'], $client['id'], $l['env'], $ext]);
     $back = $l['success_url'] !== '' ? $l['success_url'] : base_url() . 'pay/link.php?k=' . $l['code'] . '&done=1';
-    $c = checkout_create($client, $l['env'], ['external_id' => $ext, 'mode' => 'payment', 'items' => [['product' => $l['product'], 'quantity' => (int)$l['quantity']]],
-        'return_url' => $back, 'cancel_url' => base_url() . 'pay/link.php?k=' . $l['code']],
-        ['unit_amount' => $unit, 'link' => $l['code'], 'form' => $vals]);
-    return $c['url'];
+    // השימוש נספר כשנפתחת קנייה (ומשתחרר אם היא פגה) — אחרת כמה קונים במקביל עוברים את המגבלה
+    return db_tx(function () use ($client, $l, $ext, $back, $unit, $vals) {
+        if (db_run('UPDATE payment_link SET uses = uses + 1 WHERE id = ? AND (max_uses = 0 OR uses < max_uses)', [$l['id']]) !== 1) throw new ApiError('הקישור כבר נוצל', 'used_up', 410);
+        return checkout_create($client, $l['env'], ['external_id' => $ext, 'mode' => 'payment', 'items' => [['product' => $l['product'], 'quantity' => (int)$l['quantity']]],
+            'return_url' => $back, 'cancel_url' => base_url() . 'pay/link.php?k=' . $l['code']],
+            ['unit_amount' => $unit, 'link' => $l['code'], 'form' => $vals])['url'];
+    });
 }
 
 // ---------- כללים (פרק 12.4) ----------

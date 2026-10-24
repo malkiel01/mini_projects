@@ -2,7 +2,7 @@
 // רק בשרת! הקוד הסודי לא נכנס לדפדפן לעולם. המדריך: payments/docs/connect.md
 //
 //   import { PaymentsClient } from './payments-client.mjs';
-//   const pay = new PaymentsClient({ baseUrl: 'https://mbe-plus.com/mini_projects/payments/', key: process.env.PAY_KEY,
+//   const pay = new PaymentsClient({ baseUrl: 'https://mbe-plus.com/mini_projects/payments/', key: process.env.PAY_KEY, app: 'my-app',
 //                                    webhookSecret: process.env.PAY_WHSEC });
 //   const { url } = await pay.checkout('user:7', 'payment', [{ product: 'report' }], returnUrl, cancelUrl);
 //   const ent = await pay.entitlement('user:7');
@@ -15,13 +15,15 @@ export class PaymentsError extends Error {
 }
 
 export class PaymentsClient {
-  static VERSION = '1.0.0';
+  static VERSION = '1.1.0';
 
-  constructor({ baseUrl, key, webhookSecret = '', fail = 'open', timeoutMs = 10000 }) {
+  constructor({ baseUrl, key, webhookSecret = '', app = null, env = null, fail = 'open', timeoutMs = 10000 }) {
     if (!key) throw new Error('צריך key (קוד סודי)');
     this.base = baseUrl.replace(/\/?$/, '/');
     [this.keyId, this.secret] = key.split('.', 2);
     this.webhookSecret = webhookSecret.includes('.') ? webhookSecret.split('.', 2)[1] : webhookSecret;
+    this.app = app;
+    this.env = env ?? (key.startsWith('sk_live_') ? 'live' : key.startsWith('sk_test_') ? 'test' : null);
     this.fail = fail;
     this.timeoutMs = timeoutMs;
     this.cache = new Map();
@@ -88,6 +90,9 @@ export class PaymentsClient {
     if (!ok) throw new PaymentsError('חתימה לא תקינה', 'bad_signature', 401);
     const j = JSON.parse(body.toString('utf8'));
     if (j.id !== evt) throw new PaymentsError('גוף לא תקין', 'bad_body', 400);
+    // אותו מפתח חותם לכל המערכות ולשתי הסביבות — הודעה של מערכת אחרת, או מבדיקות, לא מתקבלת כאן
+    if (this.env && j.env !== this.env) throw new PaymentsError('הודעה מסביבה אחרת', 'wrong_env', 400);
+    if (this.app && j.app !== this.app) throw new PaymentsError('הודעה של מערכת אחרת', 'wrong_app', 400);
     if (j.external_id) this.cache.delete(j.external_id);
     return j;
   }

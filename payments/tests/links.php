@@ -78,7 +78,15 @@ checkout_sync(checkout_load($chk2['id']));
 check('תרומה: חשבונית ₪180, פטור — בלי מע"מ', (int)db_one("SELECT total, vat FROM invoice WHERE checkout = ?", [$chk2['id']])['total'] === 18000
     && (int)db_one("SELECT vat FROM invoice WHERE checkout = ?", [$chk2['id']])['vat'] === 0);
 check('הטופס נשמר בקנייה ונשלח בהודעה', json_obj(checkout_load($chk2['id'])['meta'])['form']['phone'] === '050-1234567');
-check('אותו מייל — אותו לקוח', db_one("SELECT COUNT(*) AS n FROM customer WHERE client = 'shul' AND external_id = ?", ['link:' . substr(hash('sha256', 'dana@example.com'), 0, 24)])['n'] == 1);
+// טופס ציבורי לא מוכיח בעלות על מייל: מי שמקליד מייל של אחר לא נוגע בחשבון שלו
+$accDana = db_one("SELECT a.* FROM account a JOIN customer c ON c.account = a.id WHERE c.id = ?", [$chk['customer']]);
+$url3 = link_checkout($L2['code'], ['name' => '=HYPERLINK("x")', 'email' => 'dana@example.com', 'phone' => '050-9999999', 'amount' => '20']);
+$chk3 = checkout_load(explode('c=', $url3)[1]);
+check('אותו מייל מטופס — לקוח נפרד, החשבון הקיים לא השתנה', $chk3['account'] !== $accDana['id']
+    && db_one('SELECT name FROM account WHERE id = ?', [$accDana['id']])['name'] === $accDana['name']);
+check('שימוש נספר כשנפתחת קנייה, ומשתחרר כשהיא פגה', (int)db_one('SELECT uses FROM payment_link WHERE id = ?', [$L2['id']])['uses'] === 2
+    && (db_run('UPDATE checkout SET expires_at = 1 WHERE id = ?', [$chk3['id']]) || true) && checkout_load($chk3['id'])['status'] === 'expired'
+    && (int)db_one('SELECT uses FROM payment_link WHERE id = ?', [$L2['id']])['uses'] === 1);
 link_save($owner, ['id' => $L2['id'], 'client' => 'shul', 'title' => 'תרומה', 'product' => 'donation', 'amount_mode' => 'custom', 'min_amount' => 1800, 'max_amount' => 100000, 'active' => false]);
 check('קישור כבוי — לא נפתח', throws(fn() => link_open($L2['code']), 'not_found'));
 check('קוד לא קיים — לא נפתח', throws(fn() => link_open('AAAAAAAAAA'), 'not_found'));
@@ -138,7 +146,7 @@ check('portalUrl', str_contains($pay->portalUrl('user:7', 'https://example.com/a
 check('שגיאה מהתוסף — PaymentsError עם קוד', throws(fn() => $pay->usage('nobody', 'ai', 1, 'x'), 'not_found'));
 // webhook — HMAC
 $evtId = 'evt_' . str_repeat('a', 20);
-$body = json_encode(['id' => $evtId, 'type' => 'ping', 'external_id' => 'user:7', 'data' => []]);
+$body = json_encode(['id' => $evtId, 'type' => 'ping', 'app' => 'recipes', 'env' => 'test', 'external_id' => 'user:7', 'data' => []]);
 $hdr = webhook_headers(client_get($owner, 'recipes'), 'test', $evtId, $body);
 $hh = [];
 foreach ($hdr as $line) { [$k, $v] = explode(': ', $line, 2); $hh[strtolower($k)] = $v; }
@@ -146,6 +154,17 @@ check('webhook HMAC — מאומת', $pay->webhook($body, $hh)['id'] === $evtId)
 check('webhook — גוף ששונה נדחה', throws(fn() => $pay->webhook($body . ' ', $hh), 'bad_signature'));
 $old = $hh; $old['x-payments-time'] = (string)(time() - 1000);
 check('webhook — ישן נדחה', throws(fn() => $pay->webhook($body, $old), 'stale'));
+$sign = function (array $b) use ($owner, $evtId) {
+    $raw = json_encode($b + ['id' => $evtId, 'type' => 'ping', 'external_id' => 'user:7', 'data' => []]);
+    $h = [];
+    foreach (webhook_headers(client_get($owner, 'recipes'), 'test', $evtId, $raw) as $line) { [$k, $v] = explode(': ', $line, 2); $h[strtolower($k)] = $v; }
+    return [$raw, $h];
+};
+[$rawLive, $hLive] = $sign(['app' => 'recipes', 'env' => 'live']);
+check('webhook — סביבה אחרת (חי לקוד בדיקות) נדחה', throws(fn() => $pay->webhook($rawLive, $hLive), 'wrong_env'));
+[$rawOther, $hOther] = $sign(['app' => 'other-site', 'env' => 'test']);
+$payApp = new PaymentsClient(['base_url' => $base, 'key' => $sk['key'], 'webhook_secret' => $wh['key'], 'app' => 'recipes']);
+check('webhook — מערכת אחרת נדחית', throws(fn() => $payApp->webhook($rawOther, $hOther), 'wrong_app'));
 // webhook — Ed25519 (מערכת עם key_url)
 client_update($owner, 'recipes', ['key_url' => 'https://example.com/key']);
 $hdr2 = webhook_headers(client_get($owner, 'recipes'), 'test', $evtId, $body);
@@ -155,13 +174,14 @@ check('webhook Ed25519 — מאומת במפתח הציבורי של התוסף'
 // JS
 $js = sys_get_temp_dir() . "/pay-js-test-" . getmypid() . '.mjs';
 file_put_contents($js, "import { PaymentsClient } from " . json_encode(realpath(__DIR__ . '/../sdk/js/payments-client.mjs')) . ";\n"
-    . "const pay = new PaymentsClient({ baseUrl: " . json_encode($base) . ", key: " . json_encode($sk['key']) . ", webhookSecret: " . json_encode($wh['key']) . " });\n"
+    . "const pay = new PaymentsClient({ baseUrl: " . json_encode($base) . ", key: " . json_encode($sk['key']) . ", webhookSecret: " . json_encode($wh['key']) . ", app: 'recipes' });\n"
     . "const p = await pay.ping(); const e = await pay.entitlement('user:7');\n"
     . "const ev = await pay.webhook(Buffer.from(" . json_encode($body) . "), " . json_encode($h2) . ");\n"
     . "let bad = false; try { await pay.webhook(Buffer.from(" . json_encode($body . 'x') . "), " . json_encode($h2) . "); } catch (x) { bad = x.code === 'bad_signature'; }\n"
-    . "console.log(JSON.stringify({ client: p.client, balance: e.balance, ev: ev.id, bad }));\n");
+    . "let other = false; try { await pay.webhook(Buffer.from(" . json_encode($rawOther) . "), " . json_encode($hOther) . "); } catch (x) { other = x.code === 'wrong_app' || x.code === 'bad_signature'; }\n"
+    . "console.log(JSON.stringify({ client: p.client, balance: e.balance, ev: ev.id, bad, other }));\n");
 $out = json_decode((string)shell_exec('node ' . escapeshellarg($js) . ' 2>&1'), true);
-check('ספריית JS: חתימה, זכאות, אימות Ed25519 ודחיית זיוף', ($out['client'] ?? '') === 'recipes' && ($out['balance'] ?? null) === 180 && ($out['ev'] ?? '') === $evtId && ($out['bad'] ?? false) === true, json_encode($out));
+check('ספריית JS: חתימה, זכאות, אימות Ed25519 ודחיית זיוף', ($out['client'] ?? '') === 'recipes' && ($out['balance'] ?? null) === 180 && ($out['ev'] ?? '') === $evtId && ($out['bad'] ?? false) === true && ($out['other'] ?? false) === true, json_encode($out));
 @unlink($js);
 // התוסף לא זמין — fail-open, ומטמון (ההודעות למעלה ניקו את המטמון של user:7 — כמתוכנן; קוראים שוב)
 $pay->entitlement('user:7', true);

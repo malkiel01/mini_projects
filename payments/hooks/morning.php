@@ -24,10 +24,10 @@ $sig = (string)($_SERVER['HTTP_X_WEBHOOK_SIGNATURE'] ?? '');
 $delivery = (string)($_SERVER['HTTP_X_WEBHOOK_DELIVERY_ID'] ?? '');
 if ($delivery !== '') {
     $ok = $p instanceof MorningProvider && $p->verifyWebhook($raw, $sig);
+    if (!$ok) { http_response_code(401); echo '{"ok":false}'; exit; } // לא חתום — לא נשמר
     db_run('INSERT OR IGNORE INTO provider_event (id, provider_account, delivery_id, topic, payload, verified, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [
         new_id('pev'), $pa['id'], mb_substr($delivery, 0, 120), mb_substr((string)($_SERVER['HTTP_X_WEBHOOK_TOPIC'] ?? ''), 0, 60), mb_substr($raw, 0, 200_000), (int)$ok, now(),
     ]);
-    if (!$ok) { http_response_code(401); echo '{"ok":false}'; exit; }
     if (preg_match_all('/chk_[a-z0-9]{20}/', $raw, $m)) $checkoutIds = array_unique($m[0]);
     if (preg_match_all('/inv_[a-z0-9]{20}/', $raw, $m)) foreach (array_unique($m[0]) as $invId) {
         // חידוש שעבר אצל מורנינג אבל לא אצלנו (ניתוק באמצע) — יתגלה בניסיון הבא; כאן רק מתעדים
@@ -39,7 +39,8 @@ if ($delivery !== '') {
 }
 
 foreach ($checkoutIds as $id) {
-    $c = db_one("SELECT * FROM checkout WHERE id = ? AND provider = ?", [$id, $pa['id']]);
+    // קנייה שנסגרה — אין מה לשאול; קריאה לא חתומה לא מפעילה שאלה למורנינג שוב ושוב
+    $c = db_one("SELECT * FROM checkout WHERE id = ? AND provider = ? AND status <> 'completed'", [$id, $pa['id']]);
     if (!$c) continue;
     try {
         checkout_sync($c);
