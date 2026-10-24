@@ -40,6 +40,10 @@ const ICONS = {
   forward: '<path d="M10 16V4M5 9l5-5 5 5"/>',
   backward: '<path d="M10 4v12M5 11l5 5 5-5"/>',
   back: '<path d="M10 4v12M5 11l5 5 5-5M4 18h12"/>',
+  union: '<path d="M3 3h9v5h5v9H8v-5H3z" fill="currentColor" stroke="none"/>',
+  subtract: '<path d="M3 3h9v5H8v4H3z" fill="currentColor" stroke="none"/><path d="M8 8h9v9H8z"/>',
+  intersect: '<path d="M3 3h9v9H3zM8 8h9v9H8z"/><path d="M8 8h4v4H8z" fill="currentColor" stroke="none"/>',
+  xor: '<path d="M3 3h9v5H8v4H3zM12 8h5v9H8v-5h4z" fill="currentColor" stroke="none"/>',
 };
 const ib = (act, label, arg = '') => `<button class="icon-btn" type="button" data-arr="${act}" data-arg="${arg}" aria-label="${esc(label)}" title="${esc(label)}"><svg viewBox="0 0 20 20" aria-hidden="true">${ICONS[arg || act]}</svg></button>`;
 
@@ -102,6 +106,9 @@ export function renderProps(el, ctx) {
         ${ib('align', 'יישור למעלה', 'top')}${ib('align', 'מרכוז אנכי', 'vcenter')}${ib('align', 'יישור למטה', 'bottom')}
       </div>
       ${items.length >= 3 ? `<div class="icon-row phys" role="group" aria-label="פיזור">${ib('distribute', 'פיזור אופקי', 'dh')}${ib('distribute', 'פיזור אנכי', 'dv')}</div>` : ''}
+      ${items.length > 1 ? `<div class="icon-row phys" role="group" aria-label="פעולות צורה">
+        ${ib('bool', 'איחוד', 'union')}${ib('bool', 'חיסור — התחתון פחות העליונים', 'subtract')}${ib('bool', 'חיתוך — רק החפיפה', 'intersect')}${ib('bool', 'הפרדה — בלי החפיפה', 'xor')}
+      </div>` : ''}
       <div class="icon-row" role="group" aria-label="סיבוב והיפוך">
         <button class="icon-btn" type="button" data-arr="rotate" data-arg="-90" aria-label="סיבוב 90° נגד השעון" title="‎-90°">⟲</button>
         <button class="icon-btn" type="button" data-arr="rotate" data-arg="90" aria-label="סיבוב 90° עם השעון" title="90°">⟳</button>
@@ -126,7 +133,8 @@ export function renderProps(el, ctx) {
   const f = text?.font || {};
   const textFields = !text ? '' : `<section class="group" aria-labelledby="g-text">
       <div class="g-row"><h3 id="g-text">טקסט</h3>
-        <button class="btn sm ghost" type="button" data-act="edit-text">✏️ עריכה</button></div>
+        <button class="btn sm ghost" type="button" data-act="edit-text">✏️ עריכה</button>
+        <button class="btn sm ghost" type="button" data-arr="outline" title="הופך לנתיבים — אפשר לערוך בעט">לקווי מתאר</button></div>
       <div class="fields two">
         <label class="f wide"><span>גופן</span><select data-t="family">${ctx.fonts.map(x => `<option value="${esc(x.family)}"${x.family === f.family ? ' selected' : ''} style="font-family:'${esc(x.family)}'">${esc(x.label)}</option>`).join('')}</select></label>
         <label class="f"><span>גודל (pt)</span><input data-t="size" inputmode="decimal" dir="ltr" value="${n(f.size)}"></label>

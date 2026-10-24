@@ -8,14 +8,15 @@ import { apply, invert, scaleAt, translate, rotateAt } from './geometry/matrix.j
 import { shapeFromDrag, DEFAULTS } from './geometry/shapes.js';
 import {
   SIZES, DEFAULT_STYLE, newDocument, nextId, layout, objects, findPath, selectionBox, applyMatrix, setShape, clone,
-  leaves, cloneItem, ids, worldBox,
+  leaves, cloneItem, ids, worldBox, pathMatrix,
 } from './model.js';
 import { group, ungroup, reorder, align, distribute, addLayer, removeLayer, moveLayer, moveToLayer } from './arrange.js';
 import { render, hitTest, inRect, handlePoints, readColors, HANDLE, viewMatrix } from './render.js';
 import { renderProps, renderLayers } from './props.js';
 import { createPenTools } from './pen.js';
 import { snapper } from './snap.js';
-import { parse, bbox } from './geometry/path.js';
+import { parse, bbox, serialize, transform as transformSegs } from './geometry/path.js';
+const pathOps = { parse, serialize, transform: transformSegs };
 import { FONTS, TEXT_DEFAULT, fontCss, setMeasure, relayout, lineHeight } from './text.js';
 import * as drafts from './drafts.js';
 import * as library from './library.js';
@@ -485,8 +486,71 @@ function reparentMoved() {
   }
 }
 
+// ---------- קווי מתאר ופעולות צורה ----------
+
+/** הטקסטים שבבחירה → נתיבים (אותו מילוי, מתאר וסיבוב). הצורות כבר קיימות — נשארות. */
+async function outlineTexts(ids) {
+  const { textToD } = await import('./outline.js');
+  await fontsReady;
+  const ds = new Map();
+  for (const id of ids) {
+    const o = findPath(S.doc, id);
+    if (!o) continue;
+    for (const p of leaves(o.path)) if (p.type === 'text') ds.set(p.id, await textToD(p, getFont));
+  }
+  return ds;
+}
+
+function replaceTexts(ds) {
+  const swap = (items) => items.map(it => {
+    if (it.type === 'group') return { ...it, children: swap(it.children || []) };
+    if (it.type !== 'text' || !ds.has(it.id)) return it;
+    const p = { id: it.id, name: it.text.slice(0, 60), d: ds.get(it.id), fill: it.fill || null, stroke: it.stroke || null };
+    if (it.transform) p.transform = it.transform;
+    return p;
+  }).filter(it => it.type === 'group' || it.d !== '');
+  for (const s of S.doc.surfaces) for (const l of s.layers || []) if (Array.isArray(l.paths)) l.paths = swap(l.paths);
+}
+
+async function outlineSelection() {
+  const ds = await outlineTexts([...S.sel]);
+  if (!ds.size) return;
+  change(() => replaceTexts(ds));
+  tools.reload();
+  toast('הטקסט הומר לקווי מתאר — אפשר לערוך אותו בעט');
+}
+
+/** איחוד / חיסור / חיתוך / הפרדה בין הנבחרים (טקסט הופך קודם לקווי מתאר). חיסור: התחתון פחות כל השאר. */
+async function booleanSelection(kind) {
+  if (S.sel.size < 2) return;
+  const ds = await outlineTexts([...S.sel]);
+  const { region, combine, toD } = await import('./geometry/boolean.js');
+  let made = null;
+  change(() => {
+    replaceTexts(ds);
+    const lay = layout(S.doc);
+    const picked = [...objects(S.doc)].filter(o => S.sel.has(o.path.id));
+    const regions = picked.map(o => combine('union', [...leaves(o.path)].filter(p => p.d).map(p => region(p.d, pathMatrix(p, lay.get(o.surface.id))))));
+    const result = toD(combine(kind, regions));
+    if (!result) { toast('לא נשאר שום שטח — הצורות לא נחתכות', true); return; }
+    const ref = kind === 'subtract' ? picked[0] : picked[picked.length - 1];
+    const styleFrom = [...leaves(ref.path)].find(p => p.d) || {};
+    const [ox, oy] = lay.get(ref.surface.id);
+    const { parse: P, serialize: Z, transform: T } = pathOps;
+    const item = { id: nextId(S.doc, 'p'), d: Z(T(P(result), translate(-ox, -oy))), fill: clone(styleFrom.fill ?? null), stroke: clone(styleFrom.stroke ?? null) };
+    if (styleFrom.fillRule) item.fillRule = styleFrom.fillRule;
+    const at = ref.layer.paths.indexOf(ref.path);
+    ref.layer.paths.splice(at, 0, item);
+    for (const o of picked) o.layer.paths = o.layer.paths.filter(p => p !== o.path);
+    made = item.id;
+  });
+  if (made) select([made]);
+}
+
 function arrangeAction(a, arg) {
   if (!S.sel.size) return;
+  if (a === 'bool') return booleanSelection(arg);
+  if (a === 'outline') return outlineSelection();
   let next = null;
   change(() => {
     if (a === 'align') align(S.doc, S.sel, arg);
