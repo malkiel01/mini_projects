@@ -12,6 +12,19 @@ const shots = process.argv[3] || null;
 const errors = [];
 const step = (name) => console.log('✓ ' + name);
 
+/** בחירת צורה מכפתור הצורות: לחיצה ראשונה — הצורה האחרונה; אחרת פותחים את הבחירה. */
+async function pickShape(page, shape, tap = false) {
+  const click = (sel) => tap ? page.tap(sel) : page.click(sel);
+  const current = await page.evaluate(() => window.__vs.S.tool);
+  if (current === shape) return;
+  if (!['rect', 'ellipse', 'polygon', 'star', 'line'].includes(current)) {
+    await click('[data-tool="shape"]');
+    if (await page.evaluate(() => window.__vs.S.tool) === shape) return;
+  }
+  await click('[data-tool="shape"]');
+  await click(`#shape-pick [data-shape="${shape}"]`);
+}
+
 const browser = await chromium.launch();
 try {
   // ---- מחשב ----
@@ -34,7 +47,7 @@ try {
   const W = async (x, y) => { const { view } = await st(); return [box.x + view.x + x * view.z, box.y + view.y + y * view.z]; };
 
   // מלבן בגרירה
-  await page.click('[data-tool="rect"]');
+  await pickShape(page, 'rect');
   let [a, b] = [await W(100, 100), await W(400, 300)];
   await page.mouse.move(...a); await page.mouse.down(); await page.mouse.move(...b, { steps: 5 }); await page.mouse.up();
   let s = await st();
@@ -71,7 +84,7 @@ try {
   step('ביטול וביצוע מחדש');
 
   // אליפסה בהקשה (גודל ברירת מחדל), ואז בחירה במלבן של שתיהן
-  await page.click('[data-tool="ellipse"]');
+  await pickShape(page, 'ellipse');
   await page.mouse.click(...await W(850, 850));
   s = await st();
   assert.equal(s.paths.length, 2);
@@ -107,12 +120,60 @@ try {
   assert.ok(Math.abs((await st()).view.z - z0) < 1e-6);
   step('זום בגלגלת והתאמה למסך');
 
+  // עט: שתי נקודות חדות, אחת בגרירה (עקומה), סגירה בהקשה על הראשונה
+  await page.click('[data-tool="pen"]');
+  await page.mouse.click(...await W(100, 600));
+  await page.mouse.click(...await W(300, 600));
+  [a, b] = [await W(300, 900), await W(400, 900)];
+  await page.mouse.move(...a); await page.mouse.down(); await page.mouse.move(...b, { steps: 5 }); await page.mouse.up();
+  await page.mouse.click(...await W(100, 600));
+  s = await st();
+  const pen = s.paths[s.paths.length - 1];
+  assert.match(pen.d, /^M100 600 L300 600 C/);
+  assert.match(pen.d, /Z$/);
+  assert.equal(pen.fill, null);
+  assert.equal(await page.isHidden('#pen-done'), true, 'אחרי סגירה — לא בציור');
+  step('עט: נקודות חדות, עקומה בגרירה, סגירה על הנקודה הראשונה');
+
+  // עריכת נקודות: גרירת נקודה, נקודה חדשה על הקו, מחיקה
+  await page.click('[data-tool="node"]');
+  [a, b] = [await W(300, 600), await W(350, 550)];
+  await page.mouse.move(...a); await page.mouse.down(); await page.mouse.move(...b, { steps: 5 }); await page.mouse.up();
+  s = await st();
+  let ed = s.paths[s.paths.length - 1];
+  assert.match(ed.d, /^M100 600 L350 550 /);
+  await page.mouse.click(...await W(225, 575)); // אמצע הקו הראשון
+  s = await st();
+  ed = s.paths[s.paths.length - 1];
+  assert.match(ed.d, /^M100 600 L22[45](\.\d+)? 57[45](\.\d+)? L350 550 /);
+  assert.equal(await page.isVisible('#node-del'), true);
+  await page.click('#node-del');
+  s = await st();
+  assert.match(s.paths[s.paths.length - 1].d, /^M100 600 L350 550 /);
+  await page.keyboard.press('Control+z');
+  s = await st();
+  assert.match(s.paths[s.paths.length - 1].d, /^M100 600 L22[45](\.\d+)? 57[45](\.\d+)? /);
+  step('עריכת נקודות: גרירה, נקודה חדשה על הקו, מחיקה וביטול');
+
+  // מלבן שנערך בנקודות — הופך לנתיב רגיל
+  await page.click('[data-tool="node"]');
+  await page.mouse.click(...await W(300, 250)); // בתוך המלבן — נבחר לעריכה
+  [a, b] = [await W(200, 150), await W(180, 130)];
+  await page.mouse.move(...a); await page.mouse.down(); await page.mouse.move(...b, { steps: 3 }); await page.mouse.up();
+  s = await st();
+  assert.equal(s.paths[0].shape, undefined);
+  await page.keyboard.press('Control+z');
+  s = await st();
+  assert.equal(s.paths[0].shape.type, 'rect');
+  await page.click('[data-tool="select"]');
+  step('צורה חיה שנערכת בנקודות הופכת לנתיב; ביטול מחזיר אותה');
+
   // הטיוטה נשמרה ומופיעה ברשימה
   await page.waitForTimeout(600);
   if (shots) await page.screenshot({ path: `${shots}/editor-1280.png` });
   await page.click('a[href="./"]');
   await page.waitForSelector('#drafts .card');
-  assert.match(await page.textContent('#drafts'), /2 אובייקטים/);
+  assert.match(await page.textContent('#drafts'), /3 אובייקטים/);
   step('הטיוטה נשמרה במכשיר ומופיעה ברשימה');
   await page.close();
 
@@ -125,15 +186,23 @@ try {
     await p.waitForFunction(() => window.__vs?.S.doc);
     const sw = await p.evaluate(() => document.documentElement.scrollWidth);
     assert.equal(sw, width, 'אין גלילה אופקית');
-    await p.tap('[data-tool="star"]');
+    await pickShape(p, 'star', true);
     const cb = await p.locator('#canvas').boundingBox();
     await p.touchscreen.tap(cb.x + cb.width / 2, cb.y + cb.height / 2);
-    const n = await p.evaluate(() => window.__vs.S.doc.surfaces[0].layers[0].paths.length);
+    let n = await p.evaluate(() => window.__vs.S.doc.surfaces[0].layers[0].paths.length);
     assert.equal(n, 1);
+    // עט במגע: שלוש הקשות ו"✓ סיום"
+    await p.tap('[data-tool="pen"]');
+    for (const [dx, dy] of [[-60, 80], [0, 120], [60, 80]]) await p.touchscreen.tap(cb.x + cb.width / 2 + dx, cb.y + cb.height / 2 + dy);
+    await p.tap('#pen-done');
+    n = await p.evaluate(() => window.__vs.S.doc.surfaces[0].layers[0].paths.length);
+    assert.equal(n, 2);
+    await p.tap('[data-tool="select"]');
+    await p.evaluate(() => window.__vs.select([window.__vs.S.doc.surfaces[0].layers[0].paths[0].id]));
     await p.tap('#props-btn');
     await p.waitForSelector('.props-open #props-body .props-head');
     if (shots) await p.screenshot({ path: `${shots}/editor-${width}.png` });
-    step(`טלפון ${width}px: כוכב בהקשה, לוח מאפיינים נפתח, בלי גלילה אופקית`);
+    step(`טלפון ${width}px: כוכב בהקשה, עט ב-3 הקשות ו"סיום", לוח מאפיינים, בלי גלילה אופקית`);
     await ctx.close();
   }
 } finally {

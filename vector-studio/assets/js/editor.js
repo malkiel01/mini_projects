@@ -11,6 +11,7 @@ import {
 } from './model.js';
 import { render, hitTest, inRect, handlePoints, readColors, HANDLE, viewMatrix } from './render.js';
 import { renderProps } from './props.js';
+import { createPenTools } from './pen.js';
 import * as drafts from './drafts.js';
 
 const $ = (id) => document.getElementById(id);
@@ -79,6 +80,15 @@ function commitFrom(before) {
   afterChange();
 }
 
+const tools = createPenTools({
+  S, DEFAULT_STYLE,
+  surfaceAt: (...a) => surfaceAt(...a), targetLayer: (...a) => targetLayer(...a),
+  commitFrom: (...a) => commitFrom(...a), toWorld: (...a) => toWorld(...a),
+  hitTest: (sx, sy, t) => hitTest(S, sx, sy, t),
+  draw: () => draw(), updateBar: () => updateBar(),
+  refresh: () => { updatePanel(); draw(); },
+});
+
 function afterChange() {
   // נתיב שנמחק לא נשאר בבחירה
   for (const id of [...S.sel]) if (!findPath(S.doc, id)) S.sel.delete(id);
@@ -94,12 +104,14 @@ function undo() {
   S.redo.push(JSON.stringify(S.doc));
   S.doc = JSON.parse(S.undo.pop());
   afterChange();
+  tools.reload();
 }
 function redo() {
   if (!S.redo.length) return;
   S.undo.push(JSON.stringify(S.doc));
   S.doc = JSON.parse(S.redo.pop());
   afterChange();
+  tools.reload();
 }
 
 // ---------- ציור ----------
@@ -109,7 +121,11 @@ function draw() {
   if (frame) return;
   frame = requestAnimationFrame(() => {
     frame = 0;
-    render(canvas, { ...S, selBox: S.sel.size ? selectionBox(S.doc, S.sel) : null, handles: !op || op.type !== 'move' });
+    const pathMode = S.tool === 'pen' || S.tool === 'node';
+    render(canvas, {
+      ...S, selBox: S.sel.size && !pathMode ? selectionBox(S.doc, S.sel) : null, handles: !op || op.type !== 'move',
+      overlay: pathMode ? tools.overlay : null,
+    });
     $('zoom-pct').textContent = Math.round(S.view.z * 100) + '%';
   });
 }
@@ -159,10 +175,40 @@ function zoomStep(dir) {
 
 // ---------- בחירה וממשק ----------
 
+const SHAPES = ['rect', 'ellipse', 'polygon', 'star', 'line'];
+let lastShape = 'rect';
+
 function setTool(t) {
   S.tool = t;
-  document.querySelectorAll('.tool').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.tool === t)));
-  canvas.style.cursor = t === 'select' ? 'default' : 'crosshair';
+  if (SHAPES.includes(t)) {
+    lastShape = t;
+    const src = document.querySelector(`[data-shape="${t}"]`);
+    $('shape-icon').innerHTML = src.querySelector('svg').innerHTML;
+    document.querySelector('[data-tool="shape"]').setAttribute('aria-label', 'צורות: ' + src.getAttribute('aria-label'));
+  }
+  document.querySelectorAll('.tool').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.tool === t || (b.dataset.tool === 'shape' && SHAPES.includes(t)))));
+  canvas.style.cursor = t === 'select' || t === 'node' ? 'default' : 'crosshair';
+  showShapePick(false);
+  tools.activate(t);
+  draw();
+}
+
+function showShapePick(open) {
+  $('shape-pick').hidden = !open;
+  document.querySelector('[data-tool="shape"]').setAttribute('aria-expanded', String(open));
+}
+
+/** סרגל צף לעט ולעריכת נקודות — בטלפון אין Enter ו-Delete. */
+function updateBar() {
+  const drawing = tools.drawing, ed = tools.editing;
+  const show = (id, on) => { $(id).hidden = !on; };
+  show('pen-done', drawing);
+  show('pen-cancel', drawing);
+  show('node-smooth', !!ed?.node);
+  show('node-del', !!ed?.node);
+  $('pen-hint').textContent = drawing ? '' : S.tool === 'pen' ? 'הקשה — נקודה, גרירה — עקומה'
+    : S.tool === 'node' ? (ed ? (ed.node ? '' : 'גוררים נקודה או ידית; הקשה על הקו — נקודה חדשה') : 'בוחרים צורה לעריכה') : '';
+  $('pen-bar').hidden = !(S.tool === 'pen' || S.tool === 'node');
 }
 
 function select(ids) {
@@ -293,6 +339,7 @@ canvas.addEventListener('pointerdown', (e) => {
 
   if (pointers.size === 2) {           // שתי אצבעות: זום וגלילה, ומבטלים את מה שהתחיל
     if (op && op.before) { S.doc = JSON.parse(op.before); afterChangeSilent(); }
+    if (op?.type === 'tool') tools.cancelDrag();
     const [a, b] = [...pointers.values()];
     op = { type: 'pinch', d0: Math.hypot(a[0] - b[0], a[1] - b[1]) || 1, m0: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], view0: { ...S.view } };
     S.marquee = null;
@@ -305,6 +352,12 @@ canvas.addEventListener('pointerdown', (e) => {
   if (e.button !== 0 && !touch) return;
 
   const [wx, wy] = toWorld(sx, sy);
+  if (S.tool === 'pen' || S.tool === 'node') {
+    const r = tools.down(e, sx, sy, wx, wy);
+    if (r === 'background' && touch) { op = { type: 'pan', s0: [sx, sy], view0: { ...S.view } }; return; }
+    op = r === 'background' ? null : { type: 'tool' };
+    return;
+  }
   if (S.tool !== 'select') {
     const surface = surfaceAt(wx, wy);
     const [ox, oy] = layout(S.doc).get(surface.id);
@@ -347,6 +400,7 @@ canvas.addEventListener('pointermove', (e) => {
   if (pointers.has(e.pointerId)) pointers.set(e.pointerId, [sx, sy]);
 
   if (!op) {
+    if (S.tool === 'pen') tools.hover(sx, sy);
     if (e.pointerType === 'mouse' && S.tool === 'select') {
       const h = handleAt(sx, sy);
       canvas.style.cursor = h ? ({ n: 'ns', s: 'ns', e: 'ew', w: 'ew', nw: 'nwse', se: 'nwse', ne: 'nesw', sw: 'nesw' }[h] + '-resize') : (spaceDown ? 'grab' : 'default');
@@ -357,6 +411,11 @@ canvas.addEventListener('pointermove', (e) => {
   }
 
   switch (op.type) {
+    case 'tool': {
+      const [wx, wy] = toWorld(sx, sy);
+      tools.move(sx, sy, wx, wy);
+      break;
+    }
     case 'pinch': {
       const [a, b] = [...pointers.values()];
       const d = Math.hypot(a[0] - b[0], a[1] - b[1]);
@@ -436,6 +495,10 @@ function endPointer(e) {
   }
   const [sx, sy] = local(e);
   switch (op.type) {
+    case 'tool':
+      tools.up();
+      updatePanel();
+      break;
     case 'pan':
       if (op.tap) select([]);
       break;
@@ -482,10 +545,11 @@ canvas.addEventListener('wheel', (e) => {
 
 // ---------- מקלדת ----------
 
-const TOOL_KEYS = { v: 'select', m: 'rect', l: 'ellipse', '\\': 'line' };
+const TOOL_KEYS = { v: 'select', a: 'node', p: 'pen', m: 'rect', l: 'ellipse', '\\': 'line' };
 
 document.addEventListener('keydown', (e) => {
   if (e.target.closest('input, textarea, select')) return;
+  if (tools.key(e)) { e.preventDefault(); return; }
   const mod = e.ctrlKey || e.metaKey;
   const k = e.key.toLowerCase();
   if (mod && k === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
@@ -508,7 +572,19 @@ document.addEventListener('keyup', (e) => { if (e.key === ' ') { spaceDown = fal
 
 // ---------- כפתורים ----------
 
-document.querySelectorAll('.tool').forEach(b => b.addEventListener('click', () => setTool(b.dataset.tool)));
+document.querySelectorAll('.tool').forEach(b => b.addEventListener('click', () => {
+  const t = b.dataset.tool;
+  if (t !== 'shape') return setTool(t);
+  // צורות: לחיצה ראשונה — הצורה האחרונה; כשכבר בצורה — בחירת צורה אחרת
+  if (SHAPES.includes(S.tool)) showShapePick($('shape-pick').hidden);
+  else setTool(lastShape);
+}));
+document.querySelectorAll('[data-shape]').forEach(b => b.addEventListener('click', () => setTool(b.dataset.shape)));
+document.addEventListener('pointerdown', (e) => { if (!e.target.closest('#shape-pick, [data-tool="shape"]')) showShapePick(false); });
+$('pen-done').addEventListener('click', () => tools.finish());
+$('pen-cancel').addEventListener('click', () => tools.cancel());
+$('node-smooth').addEventListener('click', () => tools.toggleSelected());
+$('node-del').addEventListener('click', () => tools.deleteNode());
 $('undo').addEventListener('click', undo);
 $('redo').addEventListener('click', redo);
 $('zoom-in').addEventListener('click', () => zoomStep(1));

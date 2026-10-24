@@ -93,3 +93,52 @@ test('טרנספורמציה של צורה: תיבה זזה וגדלה; סיבו
   assert.equal(transformShape(r, [0, 1, -1, 0, 0, 0]), null);
   assert.deepEqual(transformShape({ type: 'line', from: [0, 0], to: [1, 1] }, translate(1, 2)).to, [2, 3]);
 });
+
+// ---- נקודות עיגון ----
+import { toNodes, fromNodes, splitAt, toggleSmooth, removeNode, moveHandle, nearest } from '../assets/js/geometry/nodes.js';
+
+const roundTrip = (d) => serialize(fromNodes(toNodes(parse(d))));
+
+test('נקודות: הלוך ושוב שומר על הנתיב', () => {
+  assert.equal(roundTrip('M0 0 L10 0 L10 10 Z'), 'M0 0 L10 0 L10 10 Z');
+  assert.equal(roundTrip('M0 0 C0 10 10 10 10 0'), 'M0 0 C0 10 10 10 10 0');
+  // אליפסה: מקטע הסגירה עקום, והנקודה הכפולה מתאחדת
+  const ell = shapeToD({ type: 'ellipse', box: [0, 0, 100, 50] });
+  const subs = toNodes(parse(ell));
+  assert.equal(subs[0].nodes.length, 4);
+  assert.equal(subs[0].closed, true);
+  closeBox(bbox(fromNodes(subs)), [0, 0, 100, 50]);
+  // Q נהפך ל-C שקול
+  closeBox(bbox(fromNodes(toNodes(parse('M0 0 Q5 10 10 0')))), [0, 0, 10, 5]);
+  // שני תת-נתיבים
+  assert.equal(toNodes(parse('M0 0 L1 1 M5 5 L6 6')).length, 2);
+});
+
+test('נקודות: פיצול לא משנה צורה', () => {
+  const subs = toNodes(parse('M0 0 C0 -10 10 -10 10 0'));
+  splitAt(subs[0], 0, 0.5);
+  assert.equal(subs[0].nodes.length, 3);
+  closeBox(bbox(fromNodes(subs)), [0, -7.5, 10, 7.5]);
+  const line = toNodes(parse('M0 0 L10 0'));
+  splitAt(line[0], 0, 0.3);
+  assert.equal(serialize(fromNodes(line)), 'M0 0 L3 0 L10 0');
+});
+
+test('נקודות: חלקה ↔ פינה, מחיקה, ידית ששומרת על החלקות', () => {
+  const subs = toNodes(parse('M0 0 L10 0 L20 0'));
+  toggleSmooth(subs[0], 1);
+  assert.ok(subs[0].nodes[1].i && subs[0].nodes[1].o);
+  moveHandle(subs[0].nodes[1], 'o', [10, 5]);
+  const n = subs[0].nodes[1];
+  close(n.i[0], 10); assert.ok(n.i[1] < 0); // הידית הנגדית מסתובבת לצד השני
+  toggleSmooth(subs[0], 1);
+  assert.equal(subs[0].nodes[1].i, null);
+  assert.equal(removeNode(subs, 0, 1), true);
+  assert.equal(serialize(fromNodes(subs)), 'M0 0 L20 0');
+  assert.equal(removeNode(subs, 0, 0), false);
+});
+
+test('נקודות: הקרובה ביותר על עקומה', () => {
+  const r = nearest(toNodes(parse('M0 0 L10 0 L10 10')), [12, 5]);
+  assert.equal(r.seg, 1); close(r.point[0], 10, 1e-3); close(r.point[1], 5, 1e-3); close(r.dist, 2, 1e-3);
+});
