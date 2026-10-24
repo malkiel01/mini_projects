@@ -1,23 +1,33 @@
 // ייצוא: SVG ו-PDF וקטוריים (טקסט — כקווי מתאר), ודוח פערים לכל ייצוג. בלי DOM — רץ גם ב-node.
 // PNG — בעורך (צריך קנבס), עם render.js.
 
-import { parse } from './geometry/path.js';
+import { parse, bbox } from './geometry/path.js';
 import { isIdentity } from './geometry/matrix.js';
 import { isGroup, isText } from './model.js';
 import { textToD } from './outline.js';
+import { frameItem } from './text.js';
+import { drawable } from './gradient.js';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const r = (v) => String(Math.round(v * 1000) / 1000);
 
 /**
  * מכין את הלוח לייצוא: טקסטים → נתיבים (עם אותו מילוי ומתאר), ורשימת פערים.
- * מחזיר { surface, items: [{ layer, items }], gaps }.
+ * שכבות של אפליקציות אחרות: רסטר / מסגרת עם תמונה — getImage(src) → { href, w, h, rgb, alpha } (rgb ו-alpha
+ * דחוסים ב-zlib, alpha = null כשהתמונה אטומה), או null; מסגרת טקסט — הטקסט שלה כקווי מתאר.
+ * מחזיר { surface, layers: [{ layer, opacity, items } | { layer, opacity, image, box }], gaps }.
  */
-export async function prepare(doc, surfaceId, getFont) {
+export async function prepare(doc, surfaceId, getFont, getImage = null) {
   const surface = doc.surfaces.find(s => s.id === surfaceId) || doc.surfaces[0];
   const gaps = new Set();
   const conv = async (item) => {
     if (isGroup(item)) return { ...item, children: await Promise.all((item.children || []).map(conv)) };
+    const g = item.fill?.gradient;
+    if (g && !drawable(g)) {
+      gaps.add(`gradient:${g.type} → צבע אחיד`);
+      const { gradient, ...rest } = item.fill;
+      item = { ...item, fill: { ...rest, color: g.stops?.[0]?.color || '#000000' } };
+    }
     if (isText(item)) {
       gaps.add('text → outlines');
       return { id: item.id, d: await textToD(item, getFont), fill: item.fill, stroke: item.stroke, label: item.text, ...(item.transform ? { transform: item.transform } : {}) };
@@ -25,21 +35,37 @@ export async function prepare(doc, surfaceId, getFont) {
     return item;
   };
   const layers = [];
-  for (const l of surface.layers || []) {
-    if (l.type !== 'vector' || l.visible === false) { if (l.type !== 'vector') gaps.add(`layer:${l.type} — לא נכלל (רק ב-PNG)`); continue; }
-    if (l.blend && l.blend !== 'normal') gaps.add(`blend-mode:${l.blend} → normal`);
-    layers.push({ layer: l, items: await Promise.all((l.paths || []).map(conv)) });
-  }
+  const walk = async (list, alpha) => {
+    for (const l of list || []) {
+      if (l.visible === false) continue;
+      const opacity = alpha * (l.opacity ?? 1);
+      if (l.blend && l.blend !== 'normal') gaps.add(`blend-mode:${l.blend} → normal`);
+      if (l.type === 'group') { await walk(l.children, opacity); continue; }
+      if (l.type === 'vector') { layers.push({ layer: l, opacity, items: await Promise.all((l.paths || []).map(conv)) }); continue; }
+      const box = Array.isArray(l.box) ? l.box : [0, 0, surface.size[0], surface.size[1]];
+      if (l.src) {
+        const image = getImage ? await getImage(l.src) : null;
+        if (image) layers.push({ layer: l, opacity, image, box });
+        else gaps.add(`layer:${l.type} — התמונה חסרה, לא נכללה`);
+      } else if (l.type === 'frame' && l.flow && doc.flows?.[l.flow]) {
+        layers.push({ layer: l, opacity, items: [await conv(frameItem(l, doc.flows[l.flow], box))] });
+        gaps.add('frame → טקסט פשוט');
+      } else gaps.add(`layer:${l.type} — לא נכלל`);
+    }
+  };
+  await walk(surface.layers, 1);
   return { surface, layers, gaps: [...gaps] };
 }
 
 // ---------- SVG ----------
 
-/** מעבר צבע → <linearGradient> ב-defs (במרחב המשתמש — אותן קואורדינטות של הנתיב). מחזיר את המזהה. */
+/** מעבר צבע → <linearGradient> / <radialGradient> ב-defs (במרחב המשתמש — אותן קואורדינטות של הנתיב). מחזיר את המזהה. */
 function svgGradient(g, defs) {
   const id = 'grad' + (defs.length + 1);
   const stops = (g.stops || []).map(st => `<stop offset="${r(st.at)}" stop-color="${esc(st.color)}"${(st.opacity ?? 1) < 1 ? ` stop-opacity="${r(st.opacity)}"` : ''}/>`).join('');
-  defs.push(`<linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="${r(g.from[0])}" y1="${r(g.from[1])}" x2="${r(g.to[0])}" y2="${r(g.to[1])}">${stops}</linearGradient>`);
+  defs.push(g.type === 'radial'
+    ? `<radialGradient id="${id}" gradientUnits="userSpaceOnUse" cx="${r(g.center[0])}" cy="${r(g.center[1])}" r="${r(g.radius)}">${stops}</radialGradient>`
+    : `<linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="${r(g.from[0])}" y1="${r(g.from[1])}" x2="${r(g.to[0])}" y2="${r(g.to[1])}">${stops}</linearGradient>`);
   return id;
 }
 
@@ -82,11 +108,15 @@ export function toSVG(prepared) {
   const [w, h] = surface.size;
   const defs = [];
   let body = '';
-  for (const { layer, items } of layers) {
-    const op = (layer.opacity ?? 1) < 1 ? ` opacity="${r(layer.opacity)}"` : '';
-    body += `  <g id="${esc(layer.id)}" data-name="${esc(layer.name || '')}"${op}>\n${items.map(i => svgItem(i, '    ', defs)).join('')}  </g>\n`;
+  for (const { layer, opacity, items, image, box } of layers) {
+    const op = opacity < 1 ? ` opacity="${r(opacity)}"` : '';
+    const inner = image
+      ? `    <image x="${r(box[0])}" y="${r(box[1])}" width="${r(box[2])}" height="${r(box[3])}" preserveAspectRatio="none" href="${esc(image.href)}" xlink:href="${esc(image.href)}"/>\n`
+      : items.map(i => svgItem(i, '    ', defs)).join('');
+    body += `  <g id="${esc(layer.id)}" data-name="${esc(layer.name || '')}"${op}>\n${inner}  </g>\n`;
   }
-  const head = `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${r(w)}pt" height="${r(h)}pt" viewBox="0 0 ${r(w)} ${r(h)}">\n`;
+  const xlink = layers.some(l => l.image) ? ' xmlns:xlink="http://www.w3.org/1999/xlink"' : '';
+  const head = `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg"${xlink} width="${r(w)}pt" height="${r(h)}pt" viewBox="0 0 ${r(w)} ${r(h)}">\n`;
   return head + (defs.length ? `  <defs>\n    ${defs.join('\n    ')}\n  </defs>\n` : '') + body + '</svg>\n';
 }
 
@@ -115,7 +145,7 @@ function pdfPath(d) {
 }
 
 /**
- * PDF וקטורי: עמוד לכל לוח שהועבר. בלי דחיסה ובלי גופנים (הטקסט כבר נתיבים) — קובץ פשוט שכל קורא פותח.
+ * PDF וקטורי: עמוד לכל לוח שהועבר. בלי גופנים (הטקסט כבר נתיבים) ובלי דחיסה של התוכן — רק התמונות דחוסות.
  * pages: [prepared]. מחזיר Uint8Array.
  */
 export function toPDF(pages) {
@@ -134,21 +164,37 @@ export function toPDF(pages) {
     };
     const ops = [`1 0 0 -1 0 ${r(H)} cm`]; // ראשית למעלה-שמאל, כמו בלוח
     const flip = [1, 0, 0, -1, 0, H];
-    const patterns = [];
-    /** מעבר צבע → Pattern עם Shading צירי. המטריצה ממפה למרחב ברירת המחדל של העמוד (לא ל-CTM הנוכחי). */
+    const patterns = [], xobjs = [];
+    /** הפונקציה של מעבר הצבע: values(stop) → מערך רכיבים (צבע — 3, אטימות — 1). */
+    const gradFn = (stops, values) => {
+      const c = (st) => `[${values(st)}]`;
+      if (stops.length <= 2) return `<< /FunctionType 2 /Domain [0 1] /C0 ${c(stops[0])} /C1 ${c(stops[stops.length - 1])} /N 1 >>`;
+      const parts = stops.slice(1).map((st, i) => `<< /FunctionType 2 /Domain [0 1] /C0 ${c(stops[i])} /C1 ${c(st)} /N 1 >>`);
+      return `<< /FunctionType 3 /Domain [0 1] /Functions [${parts.join(' ')}] /Bounds [${stops.slice(1, -1).map(st => r(st.at)).join(' ')}] /Encode [${parts.map(() => '0 1').join(' ')}] >>`;
+    };
+    /** Shading צירי (ישר) או רדיאלי (עגול), בקואורדינטות של הנתיב. */
+    const shading = (g, cs, values) => {
+      const stops = (g.stops || []).slice().sort((x, y) => x.at - y.at);
+      const coords = g.type === 'radial' ? [g.center[0], g.center[1], 0, g.center[0], g.center[1], Math.max(g.radius, 0.001)] : [...g.from, ...g.to];
+      return `<< /ShadingType ${g.type === 'radial' ? 3 : 2} /ColorSpace /${cs} /Coords [${coords.map(r).join(' ')}] /Function ${gradFn(stops, values)} /Extend [true true] >>`;
+    };
+    /** מעבר צבע → Pattern. המטריצה ממפה למרחב ברירת המחדל של העמוד (לא ל-CTM הנוכחי). */
     const patternFor = (g, m) => {
-      const stops = (g.stops || []).slice().sort((a, b) => a.at - b.at);
-      const c = (st) => `[${rgb(st.color)}]`;
-      let fn;
-      if (stops.length <= 2) fn = `<< /FunctionType 2 /Domain [0 1] /C0 ${c(stops[0])} /C1 ${c(stops[stops.length - 1])} /N 1 >>`;
-      else {
-        const parts = stops.slice(1).map((st, i) => `<< /FunctionType 2 /Domain [0 1] /C0 ${c(stops[i])} /C1 ${c(st)} /N 1 >>`);
-        fn = `<< /FunctionType 3 /Domain [0 1] /Functions [${parts.join(' ')}] /Bounds [${stops.slice(1, -1).map(st => r(st.at)).join(' ')}] /Encode [${parts.map(() => '0 1').join(' ')}] >>`;
-      }
       const name = 'P' + (patterns.length + 1);
-      patterns.push(`/${name} ${add(`<< /PatternType 2 /Matrix [${m.map(r).join(' ')}] /Shading << /ShadingType 2 /ColorSpace /DeviceRGB /Coords [${[...g.from, ...g.to].map(r).join(' ')}] /Function ${fn} /Extend [true true] >> >>`)} 0 R`);
+      patterns.push(`/${name} ${add(`<< /PatternType 2 /Matrix [${m.map(r).join(' ')}] /Shading ${shading(g, 'DeviceRGB', st => rgb(st.color))} >>`)} 0 R`);
       return name;
     };
+    /** שקיפות בתוך המעבר: מסכה רכה (Luminosity) — אותו מעבר באפור, ערך האטימות של כל עצירה. */
+    const maskFor = (g, d, ca) => {
+      const b = bbox(parse(d)) || [0, 0, 1, 1];
+      const sh = shading(g, 'DeviceGray', st => r(st.opacity ?? 1));
+      const body = '/Sh1 sh';
+      const form = add(`<< /Type /XObject /Subtype /Form /BBox [${[b[0] - 1, b[1] - 1, b[0] + b[2] + 1, b[1] + b[3] + 1].map(r).join(' ')}] /Group << /S /Transparency /CS /DeviceGray >> /Resources << /Shading << /Sh1 ${sh} >> >> /Length ${body.length} >>\nstream\n${body}\nendstream`);
+      const name = 'GM' + (masks.length + 1);
+      masks.push(`/${name} << /Type /ExtGState /ca ${r(ca)} /SMask << /Type /Mask /S /Luminosity /G ${form} 0 R >> >>`);
+      return name;
+    };
+    const masks = [];
     const emit = (item, alpha) => {
       if (item.hidden) return;
       if (isGroup(item)) { for (const c of item.children || []) emit(c, alpha); return; }
@@ -156,36 +202,56 @@ export function toPDF(pages) {
       const fill = item.fill?.color || item.fill?.gradient ? item.fill : null;
       const st = item.stroke?.color && (item.stroke.width ?? 1) > 0 ? item.stroke : null;
       if (!fill && !st) return;
-      ops.push('q');
-      if (item.transform && !isIdentity(item.transform)) ops.push(`${item.transform.map(r).join(' ')} cm`);
+      const g = fill?.gradient;
+      const t = item.transform && !isIdentity(item.transform) ? item.transform : null;
+      const path = pdfPath(item.d), eo = item.fillRule === 'evenodd' ? '*' : '';
       const ca = alpha * (fill?.opacity ?? 1), CA = alpha * (st?.opacity ?? 1);
-      if (ca < 1 || CA < 1) ops.push(`/${gsName(ca, CA)} gs`);
-      if (fill?.gradient) {
-        const t = item.transform && !isIdentity(item.transform) ? item.transform : [1, 0, 0, 1, 0, 0];
-        ops.push(`/Pattern cs /${patternFor(fill.gradient, mul(flip, t))} scn`);
-      } else if (fill) ops.push(`${rgb(fill.color)} rg`);
+      // מעבר עם שקיפות בעצירות — המילוי לבד, עם המסכה; המתאר אחריו בלי מסכה
+      const masked = g && (g.stops || []).some(x => (x.opacity ?? 1) < 1);
+      ops.push('q');
+      if (t) ops.push(`${t.map(r).join(' ')} cm`);
+      if (masked) {
+        ops.push('q', `/${maskFor(g, item.d, ca)} gs`, `/Pattern cs /${patternFor(g, mul(flip, t || [1, 0, 0, 1, 0, 0]))} scn`, path, 'f' + eo, 'Q');
+        if (!st) { ops.push('Q'); return; }
+      }
+      const doFill = fill && !masked;
+      if ((doFill && ca < 1) || (st && CA < 1)) ops.push(`/${gsName(doFill ? ca : 1, CA)} gs`);
+      if (doFill && g) ops.push(`/Pattern cs /${patternFor(g, mul(flip, t || [1, 0, 0, 1, 0, 0]))} scn`);
+      else if (doFill) ops.push(`${rgb(fill.color)} rg`);
       if (st) {
         ops.push(`${rgb(st.color)} RG`, `${r(st.width ?? 1)} w`);
         ops.push(`${{ butt: 0, round: 1, square: 2 }[st.cap] ?? 0} J`, `${{ miter: 0, round: 1, bevel: 2 }[st.join] ?? 0} j`);
         ops.push(`${r(st.miter ?? 4)} M`);
         if (st.dash?.length) ops.push(`[${st.dash.map(r).join(' ')}] 0 d`);
       }
-      ops.push(pdfPath(item.d));
-      const eo = item.fillRule === 'evenodd' ? '*' : '';
-      ops.push(fill && st ? 'B' + eo : fill ? 'f' + eo : 'S');
+      ops.push(path);
+      ops.push(doFill && st ? 'B' + eo : doFill ? 'f' + eo : 'S');
       ops.push('Q');
     };
-    for (const { layer, items } of prep.layers) for (const it of items) emit(it, layer.opacity ?? 1);
+    /** תמונה (רסטר של אפליקציה אחרת): XObject עם מסכה רכה לשקיפות. בלוח y למטה — לכן ההיפוך במטריצה. */
+    const image = ({ image: im, box, opacity }) => {
+      const smask = im.alpha ? add(`<< /Type /XObject /Subtype /Image /Width ${im.w} /Height ${im.h} /ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /FlateDecode /Length ${im.alpha.length} >>\nstream\n${bin(im.alpha)}\nendstream`) : 0;
+      const ref = add(`<< /Type /XObject /Subtype /Image /Width ${im.w} /Height ${im.h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode${smask ? ` /SMask ${smask} 0 R` : ''} /Length ${im.rgb.length} >>\nstream\n${bin(im.rgb)}\nendstream`);
+      const name = 'Im' + (xobjs.length + 1);
+      xobjs.push(`/${name} ${ref} 0 R`);
+      ops.push('q');
+      if (opacity < 1) ops.push(`/${gsName(opacity, opacity)} gs`);
+      ops.push(`${r(box[2])} 0 0 ${r(-box[3])} ${r(box[0])} ${r(box[1] + box[3])} cm`, `/${name} Do`, 'Q');
+    };
+    for (const entry of prep.layers) {
+      if (entry.image) image(entry);
+      else for (const it of entry.items) emit(it, entry.opacity ?? entry.layer.opacity ?? 1);
+    }
 
     const stream = ops.join('\n');
     const content = add(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
-    const ext = [...gs.values()].map(g => `/${g.name} << /Type /ExtGState /ca ${r(g.ca)} /CA ${r(g.CA)} >>`).join(' ');
-    kids.push(add(`<< /Type /Page /Parent ${pagesObj} 0 R /MediaBox [0 0 ${r(W)} ${r(H)}] /Contents ${content} 0 R /Resources << /ExtGState << ${ext} >> /Pattern << ${patterns.join(' ')} >> >> >>`));
+    const ext = [...[...gs.values()].map(g => `/${g.name} << /Type /ExtGState /ca ${r(g.ca)} /CA ${r(g.CA)} >>`), ...masks].join(' ');
+    kids.push(add(`<< /Type /Page /Parent ${pagesObj} 0 R /MediaBox [0 0 ${r(W)} ${r(H)}] /Contents ${content} 0 R /Resources << /ExtGState << ${ext} >> /Pattern << ${patterns.join(' ')} >> /XObject << ${xobjs.join(' ')} >> >> >>`));
   }
   objs[catalog - 1] = `<< /Type /Catalog /Pages ${pagesObj} 0 R >>`;
   objs[pagesObj - 1] = `<< /Type /Pages /Kids [${kids.map(k => k + ' 0 R').join(' ')}] /Count ${kids.length} >>`;
 
-  // הכול ASCII — אורך המחרוזת הוא מספר הבתים
+  // תווים עד 0xFF בלבד (זרמי תמונה — בתים כמו שהם) — אורך המחרוזת הוא מספר הבתים
   let out = '%PDF-1.4\n%\xE2\xE3\xCF\xD3\n';
   const offsets = [];
   objs.forEach((o, i) => { offsets.push(byteLen(out)); out += `${i + 1} 0 obj\n${o}\nendobj\n`; });
@@ -196,6 +262,12 @@ export function toPDF(pages) {
 }
 
 const mul = (a, b) => [a[0] * b[0] + a[2] * b[1], a[1] * b[0] + a[3] * b[1], a[0] * b[2] + a[2] * b[3], a[1] * b[2] + a[3] * b[3], a[0] * b[4] + a[2] * b[5] + a[4], a[1] * b[4] + a[3] * b[5] + a[5]];
+/** בתים → מחרוזת latin1 (תו לכל בית), כדי שיישבו בתוך הקובץ כמו שהם. */
+function bin(bytes) {
+  let s = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return s;
+}
 const byteLen = (s) => s.length; // רק תווים עד 0xFF — תו אחד = בית אחד
 function latin1(s) {
   const b = new Uint8Array(s.length);

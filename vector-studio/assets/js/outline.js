@@ -3,6 +3,17 @@
 
 import { lines, lineHeight, FONTS, TEXT_DEFAULT } from './text.js';
 import { normalize } from './geometry/path.js';
+import { parseMarks, markOffset } from './marks.js';
+
+/** טעינת גופן: opentype.parse ועוד עוגני הסימנים (ניקוד) מ-GPOS, שאותם opentype.js לא קורא. */
+export function loadFont(lib, buffer) {
+  const ot = lib.parse(buffer);
+  ot.marks = parseMarks(buffer);
+  return ot;
+}
+
+// סימנים צמודים בעברית (ניקוד, דגש, טעמים) — בלי מקף, פסק, סוף פסוק ונו"ן הפוכה, שהם תווים עם רוחב
+const MARK = /[\u0591-\u05BD\u05BF\u05C1\u05C2\u05C4\u05C5\u05C7]/;
 
 const RTL = /[֐-׿יִ-ﭏ؀-ۿ]/;
 const LTR = /[A-Za-zÀ-ɏͰ-ϿЀ-ӿ0-9]/;
@@ -63,7 +74,8 @@ export async function textToD(item, getFont) {
     const by = y + i * lh + (lh - font.size) / 2 + font.size * 0.8;
     const at = (width) => (item.align === 'left' ? x : item.align === 'center' ? x + w / 2 - width / 2 : x + w - width);
     let d;
-    try {
+    if (ot.marks?.length && MARK.test(vis)) d = withMarks(ot, vis, at, by, font.size, opts);
+    else try {
       const width = ot.getAdvanceWidth(vis, font.size, opts);
       d = toD(ot.getPath(vis, at(width), by, font.size, opts));
     } catch {
@@ -73,6 +85,47 @@ export async function textToD(item, getFont) {
     if (d) parts.push(d);
   });
   return parts.length ? normalize(parts.join(' ')) : '';
+}
+
+/**
+ * שורה עם ניקוד: אות אחר אות, וכל סימן במקום שהגופן קובע לו (עוגנים של GPOS) — opentype.js לבדו מצייר את הניקוד
+ * ליד האות ולא עליה. בסדר החזותי הסימן בא לפני האות שלו (הרצף העברי התהפך).
+ */
+function withMarks(ot, vis, at, by, size, opts) {
+  const scale = size / ot.unitsPerEm;
+  const clusters = [];
+  let pending = [];
+  for (const c of vis) {
+    if (MARK.test(c)) { pending.push(c); continue; }
+    clusters.push({ base: c, marks: pending });
+    pending = [];
+  }
+  if (pending.length) { if (clusters.length) clusters[clusters.length - 1].marks.push(...pending); else return ''; }
+  const adv = clusters.map(k => {
+    try { return ot.getAdvanceWidth(k.base, size, opts); } catch { return (ot.charToGlyph(k.base).advanceWidth || 0) * scale; } // GSUB שלא נתמך
+  });
+  let x = at(adv.reduce((a, b) => a + b, 0));
+  const out = [];
+  clusters.forEach((k, i) => {
+    const g = ot.charToGlyph(k.base);
+    const d = toD(g.getPath(x, by, size, opts, ot));
+    if (d) out.push(d);
+    for (const m of k.marks) {
+      const mg = ot.charToGlyph(m);
+      const off = markOffset(ot.marks, g.index, mg.index);
+      let mx = x, my = by;
+      if (off) { mx += off.x * scale; my -= off.y * scale; }
+      else {
+        // אין עוגן — הסימן ממורכז מעל/מתחת לאות
+        const gb = g.getBoundingBox(), mb = mg.getBoundingBox();
+        mx += ((gb.x1 + gb.x2) / 2 - (mb.x1 + mb.x2) / 2) * scale;
+      }
+      const md = toD(mg.getPath(mx, my, size, opts, ot));
+      if (md) out.push(md);
+    }
+    x += adv[i];
+  });
+  return out.join(' ');
 }
 
 function glyphByGlyph(ot, str, at, by, size, opts) {

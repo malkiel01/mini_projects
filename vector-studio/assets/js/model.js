@@ -147,6 +147,8 @@ export function applyMatrix(path, m) {
   for (const k of ['fill', 'stroke']) {
     const g = path[k]?.gradient;
     if (g?.from && g?.to) { g.from = apply(m, ...g.from).map(r3); g.to = apply(m, ...g.to).map(r3); }
+    // עגול: המרכז זז, והרדיוס לפי קנה המידה הממוצע (במתיחה לא שווה — קירוב: נשאר עיגול)
+    if (g?.center) { g.center = apply(m, ...g.center).map(r3); g.radius = r3(g.radius * Math.sqrt(Math.abs(m[0] * m[3] - m[1] * m[2]))); }
   }
   if (path.shape) {
     const s = transformShape(path.shape, m);

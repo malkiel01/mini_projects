@@ -8,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import * as opentype from '../assets/js/vendor/opentype.min.mjs';
-import { visualOrder, fontFile, textToD } from '../assets/js/outline.js';
+import { visualOrder, fontFile, textToD, loadFont } from '../assets/js/outline.js';
 import { prepare, toSVG, toPDF } from '../assets/js/export.js';
 import { newDocument, setShape } from '../assets/js/model.js';
 import { relayout, setMeasure } from '../assets/js/text.js';
@@ -19,7 +19,7 @@ const cache = new Map();
 async function getFont(file) {
   if (!cache.has(file)) {
     const b = fs.readFileSync(new URL(file, FONT_DIR));
-    cache.set(file, opentype.parse(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength)));
+    cache.set(file, loadFont(opentype, b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength)));
   }
   return cache.get(file);
 }
@@ -126,4 +126,99 @@ test('מעבר צבע: נקודות לפי זווית, ייצוא ל-SVG ול-PD
     fs.unlinkSync(f);
     for (const x of fs.readdirSync(os.tmpdir())) if (x.startsWith(path.basename(png))) fs.unlinkSync(path.join(os.tmpdir(), x));
   } catch (e) { if (e.code !== 'ENOENT') throw e; }
+});
+
+import zlib from 'node:zlib';
+
+test('מעבר עגול ושקיפות בעצירות: SVG ‏radialGradient, ‏PDF ‏ShadingType 3 עם מסכה רכה', async () => {
+  const doc = textDoc();
+  const r = doc.surfaces[0].layers[0].paths[0];
+  r.fill = { gradient: makeGradient([20, 20, 100, 60], 0, '#ffffff', '#2d4a8a', 'radial') };
+  assert.deepEqual(r.fill.gradient.center, [70, 50]);
+  r.fill.gradient.stops[1].opacity = 0;
+  const prep = await prepare(doc, 's1', getFont);
+  const svg = toSVG(prep);
+  assert.match(svg, /<radialGradient id="grad1" gradientUnits="userSpaceOnUse" cx="70" cy="50" r="[\d.]+"><stop offset="0" stop-color="#ffffff"\/><stop offset="1" stop-color="#2d4a8a" stop-opacity="0"\/>/);
+  const pdf = toPDF([prep]);
+  const s = Buffer.from(pdf).toString('latin1');
+  assert.match(s, /\/ShadingType 3 \/ColorSpace \/DeviceRGB \/Coords \[70 50 0 70 50 /);
+  assert.match(s, /\/ShadingType 3 \/ColorSpace \/DeviceGray [^>]*\/C0 \[1\] \/C1 \[0\]/);
+  assert.match(s, /\/SMask << \/Type \/Mask \/S \/Luminosity \/G \d+ 0 R >>/);
+  // המתאר — מחוץ למסכה
+  assert.match(s, /f\nQ\n[\d. ]+RG/);
+  pdfCheck(pdf);
+});
+
+test('שכבות של אחרים: תמונה ב-SVG וב-PDF, מסגרת טקסט כקווי מתאר, וחסרה — בדוח', async () => {
+  const doc = textDoc();
+  doc.flows = { f1: { doc: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'שלום' }] }] } } };
+  doc.surfaces[0].layers.push(
+    { id: 'r1', type: 'raster', src: 'media/a.png', box: [10, 10, 40, 20], opacity: 0.5 },
+    { id: 'gr', type: 'group', children: [{ id: 'fr', type: 'frame', flow: 'f1', box: [200, 10, 150, 40] }] },
+    { id: 'r2', type: 'raster', src: 'media/missing.png' },
+  );
+  const px = new Uint8Array([255, 0, 0, 0, 255, 0]);
+  const getImage = async (src) => (src === 'media/a.png'
+    ? { href: 'data:image/png;base64,AAAA', w: 2, h: 1, rgb: zlib.deflateSync(px), alpha: zlib.deflateSync(new Uint8Array([255, 128])) }
+    : null);
+  const prep = await prepare(doc, 's1', getFont, getImage);
+  assert.ok(prep.gaps.some(g => g.includes('חסרה')));
+  const svg = toSVG(prep);
+  assert.match(svg, /xmlns:xlink=/);
+  assert.match(svg, /<g id="r1" data-name="" opacity="0.5">\s*<image x="10" y="10" width="40" height="20" preserveAspectRatio="none" href="data:image\/png;base64,AAAA"/);
+  assert.match(svg, /<g id="fr"[^>]*>\s*<path id="fr" d="M/);
+  const pdf = toPDF([prep]);
+  const s = Buffer.from(pdf).toString('latin1');
+  assert.match(s, /\/Subtype \/Image \/Width 2 \/Height 1 \/ColorSpace \/DeviceRGB [^>]*\/SMask \d+ 0 R/);
+  assert.match(s, /40 0 0 -20 10 30 cm\n\/Im1 Do/);
+  pdfCheck(pdf);
+});
+
+function pdfCheck(pdf) {
+  const s = Buffer.from(pdf).toString('latin1');
+  const xref = Number(/startxref\n(\d+)/.exec(s)[1]);
+  const entries = s.slice(xref).split('\n').slice(3).filter(l => /^\d{10} 00000 n/.test(l));
+  entries.forEach((e, i) => assert.ok(s.startsWith(`${i + 1} 0 obj`, Number(e.slice(0, 10))), 'אובייקט ' + (i + 1)));
+  try {
+    const f = path.join(os.tmpdir(), `vsc-${process.pid}-${Math.random().toString(36).slice(2)}.pdf`);
+    fs.writeFileSync(f, pdf);
+    const out = execFileSync('pdftoppm', ['-png', '-r', '36', f, f], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    for (const x of fs.readdirSync(os.tmpdir())) if (x.startsWith(path.basename(f))) fs.unlinkSync(path.join(os.tmpdir(), x));
+    assert.equal(out, '');
+  } catch (e) { if (e.code !== 'ENOENT') throw e; }
+}
+
+import { markOffset } from '../assets/js/marks.js';
+
+test('ניקוד: עוגנים מ-GPOS, והסימן יושב על האות שלו', async () => {
+  for (const file of ['Heebo.ttf', 'FrankRuhlLibre.ttf', 'DavidLibre-Regular.ttf']) {
+    const ot = await getFont(file);
+    assert.ok(ot.marks.length, file + ': יש טבלאות עוגנים');
+    const bet = ot.charToGlyph('ב'), dagesh = ot.charToGlyph('\u05BC');
+    assert.ok(markOffset(ot.marks, bet.index, dagesh.index), file + ': לדגש יש עוגן בב');
+  }
+  // "בּ" — הדגש בתוך התיבה של הב (ולא לצידה)
+  const item = { id: 't', type: 'text', text: 'בּ', box: [0, 0, 200, 0], font: { family: 'Heebo', size: 100, weight: 400 }, align: 'left', lineHeight: 1.25, auto: true };
+  relayout(item);
+  const plain = bbox(parse(await textToD({ ...item, text: 'ב' }, getFont)));
+  const d = await textToD(item, getFont);
+  const subs = d.split(/(?=M)/).map(x => bbox(parse(x)));
+  const dot = subs.reduce((a, b) => (b[2] * b[3] < a[2] * a[3] ? b : a));
+  const cx = dot[0] + dot[2] / 2, cy = dot[1] + dot[3] / 2;
+  assert.ok(cx > plain[0] && cx < plain[0] + plain[2], `הדגש באמצע האות: ${cx} ב-[${plain[0]}, ${plain[0] + plain[2]}]`);
+  assert.ok(cy > plain[1] && cy < plain[1] + plain[3], 'ובגובה שלה');
+  // קמץ מתחת לאות
+  const q = await textToD({ ...item, text: 'בָ' }, getFont);
+  const qb = bbox(parse(q));
+  assert.ok(qb[1] + qb[3] > plain[1] + plain[3] + 5, 'הקמץ מתחת לשורה של האות');
+});
+
+test('מעבר מסוג לא מוכר (מגרסה עתידית): צבע העצירה הראשונה, ובדוח', async () => {
+  const doc = textDoc();
+  doc.surfaces[0].layers[0].paths[0].fill = { gradient: { type: 'conic', angle: 0, stops: [{ at: 0, color: '#123456' }] } };
+  const prep = await prepare(doc, 's1', getFont);
+  assert.ok(prep.gaps.includes('gradient:conic → צבע אחיד'));
+  assert.match(toSVG(prep), /<path id="p1"[^>]*fill="#123456"/);
+  pdfCheck(toPDF([prep]));
+  assert.equal(doc.surfaces[0].layers[0].paths[0].fill.gradient.type, 'conic', 'המסמך עצמו לא משתנה');
 });

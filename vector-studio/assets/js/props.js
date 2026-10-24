@@ -2,7 +2,7 @@
 // כל שינוי עובר ב-`edit(fn, commit)`: fn משנה את הנתיבים שנבחרו; commit=false — תצוגה חיה (גרירת צבע),
 // commit=true — נכנס להיסטוריה.
 
-import { makeGradient, endpoints, angleOf, hasPaint } from './gradient.js';
+import { makeGradient, endpoints, angleOf, hasPaint, isRadial, radialFor, drawable } from './gradient.js';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 // בשדות — עד 2 ספרות אחרי הנקודה; המודל עצמו שומר 3.
@@ -89,7 +89,7 @@ export function renderProps(el, ctx) {
   }
 
   const p = paths[0] || {};
-  const fillOn = hasPaint(p.fill), grad = p.fill?.gradient || null;
+  const fillOn = hasPaint(p.fill), grad = drawable(p.fill?.gradient) ? p.fill.gradient : null; // סוג לא מוכר — כמו צבע
   const single = items.length === 1 && items[0].type !== 'group';
   const grp = items.length === 1 && items[0].type === 'group';
   const fill = p.fill || null, stroke = p.stroke || null;
@@ -163,12 +163,12 @@ export function renderProps(el, ctx) {
       <div class="g-row"><h3 id="g-fill">מילוי</h3>
         <label class="switch"><input type="checkbox" data-on="fill"${fillOn ? ' checked' : ''}><span class="sr">מילוי</span></label></div>
       <div class="g-stack"${fillOn ? '' : ' hidden'}>
-        ${seg('fillmode', grad ? 'gradient' : 'color', { label: 'סוג מילוי', items: [['color', 'צבע'], ['gradient', 'מעבר צבע']] })}
+        ${seg('fillmode', grad ? (isRadial(grad) ? 'radial' : 'gradient') : 'color', { label: 'סוג מילוי', items: [['color', 'צבע'], ['gradient', 'מעבר ישר'], ['radial', 'מעבר עגול']] })}
         <div class="g-row">
           ${grad
             ? `<input type="color" data-g="0" value="${esc(grad.stops[0]?.color || '#ffffff')}" aria-label="צבע התחלה">
                <input type="color" data-g="1" value="${esc(grad.stops[grad.stops.length - 1]?.color || '#000000')}" aria-label="צבע סוף">
-               <label class="f grow"><span>זווית (°)</span><input data-ga type="number" min="0" max="359" dir="ltr" value="${angleOf(grad)}"></label>`
+               ${isRadial(grad) ? '' : `<label class="f grow"><span>זווית (°)</span><input data-ga type="number" min="0" max="359" dir="ltr" value="${angleOf(grad)}"></label>`}`
             : `<input type="color" data-c="fill" value="${esc(fill?.color || '#2d4a8a')}" aria-label="צבע מילוי">`}
           <label class="f grow"><span>אטימות (%)</span><input data-o="fill" type="number" min="0" max="100" dir="ltr" value="${Math.round((fill?.opacity ?? 1) * 100)}"></label>
         </div>
@@ -256,7 +256,7 @@ export function renderProps(el, ctx) {
     const a = ((Number(ga.value) % 360) + 360) % 360;
     ctx.edit(each(item => {
       const g = item.fill?.gradient;
-      if (g) Object.assign(g, endpoints(ctx.pathBox(item), a));
+      if (g && !isRadial(g)) Object.assign(g, endpoints(ctx.pathBox(item), a));
     }), true);
   });
 
@@ -287,9 +287,15 @@ export function renderProps(el, ctx) {
     const k = fs.dataset.k, v = e.target.value;
     if (k === 'fillmode') {
       return ctx.edit(each(item => {
-        const f = item.fill || {};
-        if (v === 'gradient' && !f.gradient) item.fill = { ...(f.opacity != null ? { opacity: f.opacity } : {}), gradient: makeGradient(ctx.pathBox(item), 0, f.color || '#2d4a8a', '#ffffff') };
-        if (v === 'color' && f.gradient) item.fill = { ...(f.opacity != null ? { opacity: f.opacity } : {}), color: f.gradient.stops[0]?.color || '#2d4a8a' };
+        const f = item.fill || {}, op = f.opacity != null ? { opacity: f.opacity } : {};
+        const box = ctx.pathBox(item);
+        if (v === 'color') { if (f.gradient) item.fill = { ...op, color: f.gradient.stops[0]?.color || '#2d4a8a' }; return; }
+        const type = v === 'radial' ? 'radial' : 'linear';
+        if (!f.gradient) { item.fill = { ...op, gradient: makeGradient(box, 0, f.color || '#2d4a8a', '#ffffff', type) }; return; }
+        if ((f.gradient.type || 'linear') === type) return;
+        // ישר ↔ עגול: אותם צבעים, גאומטריה חדשה לפי התיבה
+        const stops = f.gradient.stops;
+        f.gradient = type === 'radial' ? { type, ...radialFor(box), stops } : { type, ...endpoints(box, 0), stops };
       }), true);
     }
     if (k === 'weight' || k === 'align') {

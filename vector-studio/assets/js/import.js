@@ -150,7 +150,7 @@ export function importSVG(text, next) {
     const fillC = parseColor(st.fill ?? '#000000');
     const url = /^url\(\s*['"]?#([^'")\s]+)/.exec(String(st.fill || ''));
     const grad = url && tag !== 'line' ? gradientFor(url[1], item) : null;
-    if (fillC === undefined && !grad) gap(url ? 'מעבר צבע רדיאלי / דוגמה במילוי → שחור' : 'צבע לא מוכר → שחור');
+    if (fillC === undefined && !grad) gap(url ? 'מעבר צבע או דוגמה שלא נמצאו → שחור' : 'צבע לא מוכר → שחור');
     const fc = fillC === undefined ? '#000000' : fillC;
     item.fill = grad ? { gradient: grad } : fc && tag !== 'line' ? { color: fc } : null; // לקו אין מילוי; לקו שבור — יש, כמו ב-SVG
     if (item.fill && num(st['fill-opacity'], 1) * op < 1) item.fill.opacity = num(st['fill-opacity'], 1) * op;
@@ -188,7 +188,7 @@ export function importSVG(text, next) {
     const ref = href && !seen.has(href) ? dom.getElementById(href) : null;
     return ref ? stopsOf(ref, new Set([...seen, href])) : [];
   };
-  for (const el of dom.getElementsByTagName('linearGradient')) {
+  for (const tag of ['linearGradient', 'radialGradient']) for (const el of dom.getElementsByTagName(tag)) {
     if (el.id) grads.set(el.id, el);
   }
   gradientFor = (ref, item) => {
@@ -199,6 +199,16 @@ export function importSVG(text, next) {
     if (el.hasAttribute('gradientTransform')) gap('טרנספורמציה של מעבר צבע — הושמטה');
     const user = el.getAttribute('gradientUnits') === 'userSpaceOnUse';
     const pc = (k, d) => { const v = el.getAttribute(k); if (v == null) return d; return v.endsWith('%') ? parseFloat(v) / 100 : num(v); };
+    if (el.localName === 'radialGradient') {
+      let cx = pc('cx', 0.5), cy = pc('cy', 0.5), rr = pc('r', 0.5);
+      if ((el.hasAttribute('fx') && pc('fx', cx) !== cx) || (el.hasAttribute('fy') && pc('fy', cy) !== cy)) gap('מוקד של מעבר עגול — במרכז');
+      if (!user) {
+        const b = bbox(parse(item.d)) || [0, 0, 1, 1];
+        if (Math.abs(b[2] - b[3]) > 1e-6) gap('מעבר עגול בתיבה לא ריבועית — עיגול');
+        [cx, cy, rr] = [b[0] + cx * b[2], b[1] + cy * b[3], rr * Math.sqrt((b[2] * b[2] + b[3] * b[3]) / 2)];
+      }
+      return { type: 'radial', center: [cx, cy], radius: rr, stops };
+    }
     let x1 = pc('x1', 0), y1 = pc('y1', 0), x2 = pc('x2', user ? 0 : 1), y2 = pc('y2', 0);
     if (!user) {
       const b = bbox(parse(item.d)) || [0, 0, 1, 1];
