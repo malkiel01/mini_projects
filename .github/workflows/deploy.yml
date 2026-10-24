@@ -239,6 +239,9 @@ jobs:
             --exclude='word-processor/data/media/' \
             --exclude='time-clock/data/*.sqlite*' \
             --exclude='time-clock/data/certs/' \
+            --exclude='payments/data/*.sqlite*' --exclude='payments/data/*.key' \
+            --exclude='payments/data/config.json' --exclude='payments/data/backups/' \
+            --exclude='payments/data/docs/' --exclude='payments/data/logs/' \
             --exclude='*.log' --exclude='error_log' \
             --exclude='.DS_Store' --exclude='._*' \
             -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ConnectTimeout=30" \
