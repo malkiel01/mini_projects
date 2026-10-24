@@ -1,0 +1,11 @@
+{
+  "id": "raster-studio",
+  "name": "עיצוב רסטר",
+  "icon": "🎨",
+  "icon_svg": "assets/icon.svg",
+  "description": "עורך תמונות בשכבות כמו Photoshop: מכחול, בחירות, מצבי מיזוג ותיקוני צבע, עם עברית מימין לשמאל. שומר ‎.mbe ומייצא PNG, JPG ו-ORA. בבנייה — גרסה 1.",
+  "category": "design",
+  "entry": "index.html",
+  "gate": true,
+  "restricted": true
+}
