@@ -42,6 +42,7 @@
       <button role="tab" aria-selected="true" data-money="payments">💳 תשלומים <small id="n-pay"></small></button>
       <button role="tab" aria-selected="false" data-money="invoices">🧾 חשבוניות <small id="n-inv"></small></button>
     </div>
+    <div class="toolbar"><input type="month" id="exp-month" aria-label="חודש לייצוא"><button class="btn ghost" id="exp-btn">📤 לרואה החשבון</button></div>
     <p class="hint" id="money-hint">כל תשלום שעבר או נכשל. לחיצה — החזר כספי.</p>
     <ul class="list" id="money-list"></ul>
   </section>
@@ -66,6 +67,12 @@
     <p class="hint">"כש… אז…" — לכל הקניות: אילו אמצעים להציג, ומתי לחסום. למשל: ביט רק עד 500 ₪.</p>
     <ul class="list" id="rule-list"></ul>
     <div class="row-btns" style="margin-top:8px"><button class="btn ghost" id="add-rule"><span aria-hidden="true">+</span> כלל</button><button class="btn ghost" id="test-rules">בדיקה</button></div>
+    <div id="backup-box" hidden>
+      <h2 class="sec-title">גיבויים</h2>
+      <p class="hint">גיבוי מוצפן כל יום, 30 יום אחורה, בשרת. מומלץ להוריד מדי פעם עותק ולשמור מחוץ לשרת.</p>
+      <ul class="list" id="backup-list"></ul>
+      <div class="row-btns" style="margin-top:8px"><button class="btn ghost" id="backup-now">גיבוי עכשיו</button></div>
+    </div>
     <h2 class="sec-title">⏰ השעון</h2>
     <p class="hint">חידושים, ניסיונות חוזרים, הודעות ללקוחות — רצים לבד עם כל פנייה לתוסף. כדי שירוצו גם כשאין פניות, צריך משימה מתוזמנת אחת בלוח הבקרה של האחסון.</p>
     <div class="summary" id="clock"></div>

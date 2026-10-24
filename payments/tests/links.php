@@ -174,6 +174,16 @@ check('בלי מטמון — fail-open: מותר', $pay2->entitlement('user:7')[
 $pay3 = new PaymentsClient(['base_url' => $base, 'key' => $sk['key'], 'fail' => 'closed']);
 check('fail-closed — חסום', $pay3->entitlement('user:7')['active'] === false);
 
+section('גיבוי וייצוא');
+$name = backup_daily(true);
+check('גיבוי נוצר, מוצפן', $name !== null && !str_contains((string)file_get_contents(pay_data_dir() . '/backups/' . $name), 'SQLite format'));
+$plain = backup_read($name);
+check('ונפתח במפתח למסד תקין', str_starts_with($plain, 'SQLite format 3'));
+check('פעם ביום — השני מדלג', backup_daily() === null);
+check('שם קובץ זר — נדחה', throws(fn() => backup_read('../payments.sqlite'), 'not_found'));
+$csv = export_month($owner, gmdate('Y-m', now()), 'test');
+check('ייצוא לרואה החשבון: כותרות, ושורה לכל תשלום', str_contains($csv, 'סכום') && str_contains($csv, 'כרטיס לאירוע') && substr_count($csv, "\n") >= 3, substr($csv, 0, 300));
+
 exec('rm -rf ' . escapeshellarg($tmp));
 echo "\n" . ($fail ? "✗ $fail נכשלו, $pass עברו\n" : "✓ כל $pass הבדיקות עברו\n");
 exit($fail ? 1 : 0);

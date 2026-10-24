@@ -77,7 +77,7 @@ const STAGES = [
   ['דף תשלום ו"החשבון שלי"', 'מנויים חודשיים ושנתיים, ניסיון, מבצעים, ביטול, הודעות לפי החוק, סולק מדומה', 'done'],
   ['סולק אמיתי ראשון', 'מורנינג והסליקה שלה — כולל הקבלה או החשבונית עם כל תשלום', 'done'],
   ['חשבוניות', 'מסמכים לתשלומים שלא דרך מורנינג (מזומן, העברה, סולקים אחרים), זיכויים', 'done'],
-  ['ספריות, קישורים וכללים', 'ספריות קוד, קישורי תשלום, כפתור, מנוע הכללים, תיעוד', 'now'],
+  ['ספריות, קישורים וכללים', 'ספריות קוד, קישורי תשלום, כפתור, מנוע הכללים, תיעוד', 'done'],
   ['מנויים מאושרים', 'אזור ניהול לכל מי שהמנהל מאשר', ''],
   ['מגדלור מתחבר', 'האפליקציה הראשונה, בצ\'אט שלה', ''],
   ['עלייה לאוויר', 'תשלום אמיתי קטן והחזר, בדיקה משפטית', ''],
@@ -197,6 +197,7 @@ loaders.settings = async () => {
   }
   loadClock().catch(fail);
   loadRules().catch(fail);
+  loadBackups().catch(fail);
   const au = (await api('audit')).data;
   $('#audit-list').innerHTML = au.length ? au.map(a => `<li class="card"><div class="body">
       <div class="l1"><span>${esc(a.action)}</span><span class="t">${when(a.created_at)}</span></div>
@@ -665,6 +666,34 @@ function ruleTestSheet() {
     return false;
   }, 'בדיקה');
 }
+
+function download(name, blob) {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.append(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+$('#exp-month').value = new Date().toISOString().slice(0, 7);
+$('#exp-btn').addEventListener('click', async () => {
+  try {
+    const period = $('#exp-month').value;
+    const { csv } = await api('export_month', { period });
+    download(`תשלומים-${period}.csv`, new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  } catch (e) { fail(e); }
+});
+async function loadBackups() {
+  $('#backup-box').hidden = me.role !== 'owner';
+  if (me.role !== 'owner') return;
+  const { data } = await api('backups');
+  $('#backup-list').innerHTML = data.length ? data.slice(0, 7).map(b => `<li class="card"><div class="body"><div class="l1"><span>${when(b.at)}</span><span class="t">${Math.round(b.size / 1024)} ק״ב</span></div></div>
+      <button type="button" class="icon-btn" data-bk="${esc(b.name)}" aria-label="הורדה">⬇️</button></li>`).join('') : empty('עוד אין גיבוי — ייווצר היום.');
+  for (const b of document.querySelectorAll('[data-bk]')) b.addEventListener('click', async () => {
+    try {
+      const r = await api('backup_get', { name: b.dataset.bk });
+      const bin = Uint8Array.from(atob(r.base64), c => c.charCodeAt(0));
+      download(r.name, new Blob([bin], { type: 'application/x-sqlite3' }));
+    } catch (e) { fail(e); }
+  });
+}
+$('#backup-now').addEventListener('click', async () => { try { await api('backup_now'); toast('נוצר גיבוי'); loadBackups(); } catch (e) { fail(e); } });
 
 async function loadClock() {
   const c = await api('clock');
