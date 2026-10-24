@@ -283,6 +283,23 @@ try {
   await page.click('#grid-btn');
   step('הצמדה ללוח עם קו עזר, והצמדה לרשת');
 
+  // מעבר צבע מהלוח: מלבן → מעבר, צבע סוף, זווית 90
+  await page.evaluate(() => { const p = window.__vs.S.doc.surfaces[0].layers[0].paths; window.__vs.select([p[0].id]); });
+  await page.click('fieldset[data-k="fillmode"] label:nth-child(2)');
+  await page.locator('[data-g="1"]').evaluate((el) => { el.value = '#1e7b3a'; el.dispatchEvent(new Event('change', { bubbles: true })); });
+  await page.fill('[data-ga]', '90'); await page.press('[data-ga]', 'Enter');
+  s = await st();
+  const g0 = s.paths[0].fill.gradient;
+  const rb = s.paths[0].shape.box;
+  assert.equal(g0.stops[1].color, '#1e7b3a');
+  assert.deepEqual([g0.from[0], g0.to[0]], [rb[0] + rb[2] / 2, rb[0] + rb[2] / 2], 'אנכי: אותו x');
+  assert.deepEqual([g0.from[1], g0.to[1]], [rb[1], rb[1] + rb[3]]);
+  [a, b] = [await W(rb[0] + 20, rb[1] + 20), await W(rb[0] + 70, rb[1] + 20)];
+  await page.mouse.move(...a); await page.mouse.down(); await page.mouse.move(...b, { steps: 3 }); await page.mouse.up();
+  s = await st();
+  assert.equal(s.paths[0].fill.gradient.from[0], g0.from[0] + 50, 'המעבר זז עם הצורה');
+  step('מעבר צבע: צבעים וזווית מהלוח, וזז עם הצורה');
+
   // ייצוא: SVG, PDF ו-PNG יורדים, עם טקסט כקווי מתאר
   const grab = async (kind) => {
     await page.click('#file-btn');
@@ -297,6 +314,8 @@ try {
   assert.match(svgText, /viewBox="0 0 1080 1080"/);
   assert.match(svgText, /aria-label="שלום עולם/);
   assert.doesNotMatch(svgText, /<text/);
+  assert.match(svgText, /<linearGradient id="grad1" gradientUnits="userSpaceOnUse"/);
+  assert.match(svgText, /fill="url\(#grad1\)"/);
   assert.match(await page.textContent('.toast'), /קווי מתאר/);
   const pdfOut = await grab('pdf');
   assert.equal(pdfOut.buf.subarray(0, 5).toString(), '%PDF-');
@@ -318,7 +337,11 @@ try {
   assert.deepEqual(s.sel, [imp.id]);
   const flat = (it) => it.type === 'group' ? it.children.flatMap(flat) : [it];
   const parts = flat(imp);
-  assert.equal(parts.length, 5); // מלבן, עיגול, נתיב, קו, מלבן עם מעבר צבע (שחור)
+  assert.equal(parts.length, 6); // מלבן, עיגול, נתיב, קו, מלבן עם מעבר ליניארי, מלבן עם מעבר שלא קיים (שחור)
+  const lg = parts.find(p => p.fill?.gradient);
+  assert.deepEqual(lg.fill.gradient.from, [100, 60]); // objectBoundingBox של המלבן (200,120 → חצי בגלל viewBox)
+  assert.deepEqual(lg.fill.gradient.to, [140, 60]);
+  assert.equal(lg.fill.gradient.stops[1].opacity, 0.5);
   const rect = parts.find(p => p.shape?.type === 'rect' && p.shape.radius > 0);
   assert.deepEqual(rect.shape.box, [5, 5, 50, 30]); // viewBox 400 → width 200: חצי
   assert.equal(rect.shape.radius, 4);

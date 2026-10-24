@@ -100,3 +100,30 @@ test('PDF: מבנה תקין, עמוד לכל לוח, שקיפות', async () =>
   if (info) assert.match(info, /Pages:\s+2/);
 });
 
+import { endpoints, angleOf, makeGradient } from '../assets/js/gradient.js';
+
+test('מעבר צבע: נקודות לפי זווית, ייצוא ל-SVG ול-PDF (Pattern)', async () => {
+  assert.deepEqual(endpoints([0, 0, 100, 50], 0), { from: [0, 25], to: [100, 25] });
+  assert.deepEqual(endpoints([0, 0, 100, 50], 90), { from: [50, 0], to: [50, 50] });
+  assert.equal(angleOf(makeGradient([0, 0, 10, 10], 45, '#000000', '#ffffff')), 45);
+  const doc = textDoc();
+  const r = doc.surfaces[0].layers[0].paths[0];
+  r.fill = { gradient: makeGradient([20, 20, 100, 60], 0, '#ffffff', '#2d4a8a') };
+  r.fill.gradient.stops.splice(1, 0, { at: 0.5, color: '#e19a00' });
+  const prep = await prepare(doc, 's1', getFont);
+  const svg = toSVG(prep);
+  assert.match(svg, /<defs>\s*<linearGradient id="grad1" gradientUnits="userSpaceOnUse" x1="20" y1="50" x2="120" y2="50"><stop offset="0" stop-color="#ffffff"\/><stop offset="0.5"/);
+  assert.match(svg, /<path id="p1"[^>]*fill="url\(#grad1\)"/);
+  const pdf = Buffer.from(toPDF([prep])).toString('latin1');
+  assert.match(pdf, /\/PatternType 2 \/Matrix \[1 0 0 -1 0 300\]/);
+  assert.match(pdf, /\/FunctionType 3/);
+  assert.match(pdf, /\/Pattern cs \/P1 scn/);
+  try {
+    const f = path.join(os.tmpdir(), `vsg-${process.pid}.pdf`);
+    fs.writeFileSync(f, toPDF([prep]));
+    const png = f.replace(/\.pdf$/, '');
+    execFileSync('pdftoppm', ['-png', '-r', '72', '-f', '1', '-l', '1', f, png]);
+    fs.unlinkSync(f);
+    for (const x of fs.readdirSync(os.tmpdir())) if (x.startsWith(path.basename(png))) fs.unlinkSync(path.join(os.tmpdir(), x));
+  } catch (e) { if (e.code !== 'ENOENT') throw e; }
+});
