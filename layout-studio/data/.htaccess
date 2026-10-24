@@ -1,0 +1,9 @@
+# חסימת גישה ישירה: layout.sqlite מחזיק את המשתמשים והמסמכים, ו-files/ — את המשאבים.
+# הכול מוגש רק דרך api.php.
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+</IfModule>
