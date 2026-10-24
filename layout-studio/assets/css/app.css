@@ -225,6 +225,18 @@ body.editor > .error { margin: var(--s2); }
 /* עורך הטקסט: גיליון מלא, ותיבת טקסט שממלאת אותו */
 dialog.story { width: min(860px, 100vw - 32px); height: min(90dvh, 900px); }
 dialog.story .sheet-body { grid-template-rows: auto 1fr; height: 100%; }
-dialog.story textarea { min-height: 50vh; height: 100%; font: 18px/1.7 'Noto Serif Hebrew', 'Frank Ruhl Libre', serif; resize: none; }
+.story-bar { display: flex; align-items: center; gap: var(--s2); padding: var(--s2) var(--s3) 0; flex: none; }
+.story-styles { flex: 1; }
+.story-styles button { flex: 1 0 auto; min-height: 36px; padding: 0 var(--s2); border: 0; background: none; font-size: .85rem; cursor: pointer; white-space: nowrap; }
+.story-styles button + button { border-inline-start: 1px solid var(--line); }
+.story-styles button[aria-pressed="true"] { background: var(--brand); color: var(--brand-ink); }
+.story-b[aria-pressed="true"] { background: var(--brand); color: var(--brand-ink); }
+.story-host { min-height: 50vh; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); overflow: auto; }
+.story-pm { min-height: 50vh; padding: var(--s3); outline: 0; white-space: pre-wrap; word-wrap: break-word;
+    font: 18px/1.7 'Noto Serif Hebrew', 'Frank Ruhl Libre', serif; }
+.story-pm p { margin: 0 0 .4em; }
+.story-pm h1, .story-pm h2, .story-pm h3 { margin: .4em 0; font-weight: 700; }
+.story-pm h1 { font-size: 1.6em; text-align: center; } .story-pm h2 { font-size: 1.3em; } .story-pm h3 { font-size: 1.1em; }
+.story-pm:focus-visible { box-shadow: inset 0 0 0 2px var(--brand-soft); }
 @font-face { font-family: 'Noto Serif Hebrew'; src: url(../fonts/NotoSerifHebrew.ttf) format('truetype'); font-display: swap; }
 @font-face { font-family: 'Frank Ruhl Libre'; src: url(../fonts/FrankRuhlLibre.ttf) format('truetype'); font-display: swap; }

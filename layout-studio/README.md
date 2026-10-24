@@ -4,7 +4,7 @@
 תמונה, סגנונות, ופלט PDF להדפסה. שומרת ופותחת `.mbe` מסוג `layout`. פרויקט 4 בחבילת היצירה — ההנחיות:
 `creative-suite/docs/projects/layout-studio.md`.
 
-> סטטוס: **מסגרות טקסט** — ספרייה בשרת, ועורך בקנבס: שוליים, עמודים כפולים, עמודי אב, ומסגרות טקסט שהטקסט (מנוקד, עם טעמים) זורם ביניהן ומעמוד לעמוד.
+> סטטוס: **סגנונות** — ספרייה בשרת, ועורך בקנבס: שוליים, עמודים כפולים, עמודי אב, מסגרות טקסט עם שטף, וסגנונות פסקה ותו (גוף, כותרות 1–3, מודגש).
 > ההכרעות של בעל המערכת (2026-10-24) — בטבלה למטה.
 
 כתובת: https://mbe-plus.com/mini_projects/layout-studio/
@@ -44,14 +44,19 @@
     ➕ אדום בסוף המסגרת האחרונה. אותן שורות ואותם גליפים ישמשו את ה-PDF.
   - **מסגרת נבחרת** ("▭ מסגרת"): עריכת הטקסט, המשך בעמוד הבא, עמודים עד סוף הטקסט, מחיקה; טורים (1–3) ורווח ביניהם;
     מיקום וגודל במ"מ, ו"מילוי אזור התוכן".
-  - **עריכת הטקסט:** בינתיים בחלון טקסט מלא (כמו Story Editor של InDesign) — שורה = פסקה, ניקוד וטעמים מהמקלדת.
+  - **עריכת הטקסט** (`assets/js/story.js`): עורך עשיר בחלון מלא (כמו Story Editor של InDesign) — ProseMirror (MIT,
+    `assets/vendor/prosemirror`, נטען רק כשפותחים). סגנון לכל פסקה (גוף / כותרת 1–3, גם Ctrl+0…3), **מודגש** (Ctrl+B),
+    Shift+Enter — שורה חדשה באותה פסקה, ביטול וביצוע. **השמות כמו בעורך התמלילים (TipTap):** `paragraph`, `heading`,
+    `hardBreak`, `bold` — מסמך שלו ייכנס בלי תרגום. רכיב שעוד לא נתמך (רשימה, טבלה…) — שאלה לפני שהופך לפסקה.
     עריכה ישירות על הקנבס — בהמשך.
-  - **טקסט הגוף** (בהגדרות): גופן (Noto Serif Hebrew / Frank Ruhl Libre, עם Noto לטעמים), גודל, מרווח שורות, יישור.
+  - **סגנונות** (בהגדרות, לשונית לכל סגנון): גוף וכותרות 1–3 — גופן (Noto Serif Hebrew / Frank Ruhl Libre, עם Noto
+    לטעמים), גודל, מרווח שורות, רווח לפני ואחרי, הזחת שורה ראשונה, מודגש, יישור.
+  - **מודגש בלי קובץ נוסף:** שני הגופנים משתנים (ציר `wght`), ו-`fontVariant` יוצר מאותו קובץ את משקל 700.
   - גם מספר העמוד והכותרת הרצה מצוירים עכשיו ב-HarfBuzz ובגופן הגוף.
 - **הגאומטריה** (`assets/js/pages.js`, בלי DOM): פריסות, צד השדרה, שוליים פנימיים/חיצוניים ומיקום כל עמוד.
   **כריכה מימין** (ספר עברי): עמוד 1 לבד משמאל לשדרה, ואחריו זוגות — זוגי מימין, אי-זוגי משמאל.
 
-**בדיקות:** `php layout-studio/tests/run.php` (62) · `node --test layout-studio/tests/*.test.mjs` (36: גאומטריה, עיצוב גליפים, מסגרות ושטף) — משתמשים (זהות חסרה/פגומה, ראשון מנהל, איחוד לפי מייל) ומסמכים
+**בדיקות:** `php layout-studio/tests/run.php` (65) · `node --test layout-studio/tests/*.test.mjs` (41: גאומטריה, עיצוב גליפים, מסגרות, שטף וסגנונות) — משתמשים (זהות חסרה/פגומה, ראשון מנהל, איחוד לפי מייל) ומסמכים
 (גדלים, ולידציה, בעלות, מחיקה, שמירה עם `rev`, בדיקת המודל, מסמך מגרסת מסד 1).
 
 ## העיקרון
@@ -99,7 +104,9 @@ IDML, CMYK והפרדות צבע, צורות לא-מלבניות (מגיעות �
   ‏`arabic` / `hebrew`).
 - **מסגרת טקסט** = שכבה `{type: "frame", box, flow, columns, gutter}` על עמוד. **שטף** = `flows[id]`:
   `{engine: "prosemirror", doc, frames: [סדר המסגרות], autogrow, style}`. סדר השרשור — ברשימה `frames` של השטף
-  (מקום אחד, בלי מספור בכל מסגרת). **סגנון הגוף** — `styles.body` `{font, size, leading, align, spaceAfter}`.
+  (מקום אחד, בלי מספור בכל מסגרת). **סגנונות פסקה** — `styles.body`, `styles.h1`…`h3`:
+  `{name, font, size, leading, align, weight, spaceBefore, spaceAfter, indent}`; פסקה (`paragraph`) — גוף, כותרת
+  (`heading` עם `level`) — h1…h3. **סגנון תו** — הסימון `bold` בטקסט.
 - **עמוד אב** = משטח `{type: "master", id, name, size, layers, running}`; ‏`running.folio` (מספר עמוד) ו-`running.header`
   (‏`odd` / `even`) — מיקום סמנטי (‏`position`: ‏`top` / `bottom`, ‏`align`: ‏`outside` / `center` / `inside`), לא
   קואורדינטות, כך ששינוי שוליים או כריכה מזיז אותם לבד. מסגרות על עמוד האב — ב-`layers`, בשלב המסגרות. לאפליקציות אחרות זה שדה לא מוכר —
@@ -144,6 +151,7 @@ IDML, CMYK והפרדות צבע, צורות לא-מלבניות (מגיעות �
 | --- | --- | --- | --- |
 | harfbuzzjs (HarfBuzz 15.0.0) | 1.6.4 | MIT | `assets/vendor/harfbuzzjs/` |
 | bidi-js | 1.1.0 | MIT | `assets/vendor/bidi-js/` |
+| ProseMirror (model 1.25, view 1.42, state, commands, keymap, history) | נארז ב-esbuild | MIT | `assets/vendor/prosemirror/` |
 | Noto Serif Hebrew | Google Fonts | OFL | `assets/fonts/` |
 | Frank Ruhl Libre | Google Fonts | OFL | `assets/fonts/` |
 

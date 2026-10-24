@@ -4,21 +4,36 @@
 // שטף   = flows[id]:       { engine: 'prosemirror', doc, frames: [מזהי מסגרות בסדר הזרימה], autogrow, style }
 //   doc — JSON של ProseMirror (כמו שעורך התמלילים שומר): פסקאות עם טקסט.
 //   autogrow — טקסט שלא נכנס מוסיף עמודים ומסגרות בסוף, עד שנגמר ("זרימה אוטומטית").
-// סגנון  = styles[name]:   { font, size, leading, align, spaceAfter } — בינתיים "body" בלבד; סגנונות מלאים בשלב הבא.
+// סגנון פסקה = styles[key]: { name, font, size, leading, align, weight, spaceBefore, spaceAfter, indent }
+//   body — פסקה רגילה; h1…h3 — כותרות (בצומת heading של ProseMirror, לפי level). מידות ב-pt; weight — ציר wght.
+// סגנון תו: סימון bold בטקסט (mark של ProseMirror) — אותו גופן במשקל 700.
 
 import { pagesOf, contentBox, setPageCount } from './pages.js';
 
-export const DEFAULT_STYLE = { font: 'Noto Serif Hebrew', size: 12, leading: 18, align: 'justify', spaceAfter: 6 };
+export const DEFAULT_STYLE = { name: 'גוף', font: 'Noto Serif Hebrew', size: 12, leading: 18, align: 'justify', weight: 400,
+  spaceBefore: 0, spaceAfter: 6, indent: 0 };
+export const DEFAULT_STYLES = {
+  body: DEFAULT_STYLE,
+  h1: { ...DEFAULT_STYLE, name: 'כותרת 1', size: 20, leading: 26, align: 'center', weight: 700, spaceBefore: 12, spaceAfter: 10 },
+  h2: { ...DEFAULT_STYLE, name: 'כותרת 2', size: 16, leading: 22, align: 'right', weight: 700, spaceBefore: 10, spaceAfter: 6 },
+  h3: { ...DEFAULT_STYLE, name: 'כותרת 3', size: 13, leading: 18, align: 'right', weight: 700, spaceBefore: 8, spaceAfter: 4 },
+};
+export const STYLE_KEYS = Object.keys(DEFAULT_STYLES);
 export const FONTS = { 'Noto Serif Hebrew': 'NotoSerifHebrew.ttf', 'Frank Ruhl Libre': 'FrankRuhlLibre.ttf' };
 
-/** סגנון הגוף — ברירת מחדל למסמך שאין בו. */
-export function bodyStyle(model) {
-  return { ...DEFAULT_STYLE, ...(model.styles && model.styles.body) };
+/** סגנון פסקה עם ברירות המחדל (מסמך ישן בלי חלק מהשדות או בלי הסגנון כולו). */
+export function styleOf(model, key) {
+  const def = DEFAULT_STYLES[key] || DEFAULT_STYLE;
+  return { ...def, ...(model.styles && model.styles[key]) };
 }
 
-export function setBodyStyle(model, patch) {
-  return { ...model, styles: { ...(model.styles || {}), body: { ...bodyStyle(model), ...patch } } };
+export const bodyStyle = model => styleOf(model, 'body');
+
+export function setStyle(model, key, patch) {
+  return { ...model, styles: { ...(model.styles || {}), [key]: { ...styleOf(model, key), ...patch } } };
 }
+
+export const setBodyStyle = (model, patch) => setStyle(model, 'body', patch);
 
 const flowsOf = model => (model.flows && typeof model.flows === 'object' ? model.flows : {});
 
@@ -133,8 +148,32 @@ export function flowText(model, flowId) {
 
 /** פסקאות כמחרוזות. צמתים שאינם פסקה (כותרת, רשימה…) — הטקסט שבתוכם, כפסקה. */
 export function docParagraphs(doc) {
-  const text = n => n.type === 'text' ? n.text || '' : (n.content || []).map(text).join('');
-  return (doc?.content || []).map(text);
+  return docBlocks(doc).map(b => b.runs.map(r => r.text).join(''));
+}
+
+/**
+ * ProseMirror → בלוקים לפריסה: [{ style, runs: [{ text, bold }] }].
+ *   paragraph → body; heading (level 1–3) → h1…h3; צומת אחר ברמה העליונה — הטקסט שבו, כגוף.
+ *   סימון bold / strong → מודגש. hard_break → רווח (שבירת שורה ידנית — בהמשך).
+ */
+export function docBlocks(doc) {
+  const out = [];
+  for (const n of doc?.content || []) {
+    const style = n.type === 'heading' ? 'h' + Math.min(3, Math.max(1, n.attrs?.level || 1)) : 'body';
+    const runs = [];
+    const walk = (node, bold) => {
+      if (node.type === 'text') {
+        const b = bold || (node.marks || []).some(m => m.type === 'bold' || m.type === 'strong');
+        const last = runs[runs.length - 1];
+        if (last && last.bold === b) last.text += node.text || '';
+        else runs.push({ text: node.text || '', bold: b });
+      } else if (node.type === 'hard_break' || node.type === 'hardBreak') walk({ type: 'text', text: ' ' }, bold);
+      else for (const c of node.content || []) walk(c, bold);
+    };
+    walk(n, false);
+    out.push({ style, runs });
+  }
+  return out;
 }
 
 export function textToDoc(text) {
