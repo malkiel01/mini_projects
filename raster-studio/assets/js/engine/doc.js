@@ -1,5 +1,5 @@
-// מודל המסמך בזיכרון — לפי mbe-format.md: משטח אחד (canvas) בפיקסלים, ושכבות raster עם
-// opacity / blend / visible / locked. הפיקסלים עצמם — באריחים שהרנדרר מחזיק (layer.tiles).
+// מודל המסמך בזיכרון — לפי mbe-format.md: משטח אחד (canvas) בפיקסלים, ועץ שכבות: raster ו-group (עם children),
+// כל אחת עם opacity / blend / visible / locked. הפיקסלים עצמם — באריחים שהרנדרר מחזיק (layer.tiles).
 
 export const TILE = 256;
 export const BLEND_MODES = ['normal', 'multiply', 'screen', 'overlay'];
@@ -22,36 +22,87 @@ export class RasterDocument {
     this.activeId = null;
   }
 
-  get active() { return this.layers.find(l => l.id === this.activeId) ?? this.layers.at(-1) ?? null; }
-  layer(id) { return this.layers.find(l => l.id === id) ?? null; }
-  indexOf(layer) { return this.layers.indexOf(layer); }
+  // ---- העץ: שכבות וקבוצות. קבוצה = { type: 'group', children: [...] } (מלמטה למעלה, כמו layers) ----
 
-  /** מוציא שכבה מהמסמך (האריחים — באחריות הרנדרר). השכבה האחרונה לא נמחקת. הפעילה עוברת לשכנה. */
+  /** כל הפריטים בעץ, לעומק (קבוצה לפני הילדים שלה) */
+  *walk(list = this.layers, depth = 0, parent = null) {
+    for (const l of list) {
+      yield { layer: l, depth, parent, list };
+      if (l.type === 'group') yield* this.walk(l.children, depth + 1, l);
+    }
+  }
+  /** כל שכבות הרסטר (בלי קבוצות), מלמטה למעלה */
+  rasters() { return [...this.walk()].map(w => w.layer).filter(l => l.type !== 'group'); }
+  layer(id) { for (const w of this.walk()) if (w.layer.id === id) return w.layer; return null; }
+  /** המערך שהשכבה יושבת בו (layers או children של קבוצה) */
+  listOf(layer) { for (const w of this.walk()) if (w.layer === layer) return w.list; return null; }
+  parentOf(layer) { for (const w of this.walk()) if (w.layer === layer) return w.parent; return null; }
+  /** המקום בתוך המערך שלה */
+  indexOf(layer) { return this.listOf(layer)?.indexOf(layer) ?? -1; }
+  /** הקבוצות שמעל השכבה, מהקרובה החוצה */
+  ancestors(layer) {
+    const out = [];
+    for (let p = this.parentOf(layer); p; p = this.parentOf(p)) out.push(p);
+    return out;
+  }
+  /** a בתוך b (או a הוא b)? — כדי שקבוצה לא תיכנס לתוך עצמה */
+  contains(group, layer) {
+    if (group === layer) return true;
+    return group.type === 'group' && group.children.some(c => this.contains(c, layer));
+  }
+
+  get active() {
+    return this.layer(this.activeId) ?? this.layers.at(-1) ?? null;
+  }
+
+  /** מוציא שכבה (או קבוצה) מהעץ. הפריט האחרון במסמך לא נמחק. הפעילה עוברת לשכנה. */
   removeLayer(layer) {
-    const i = this.layers.indexOf(layer);
-    if (i < 0 || this.layers.length <= 1) return false;
-    this.layers.splice(i, 1);
-    if (this.activeId === layer.id) this.activeId = this.layers[Math.min(i, this.layers.length - 1)].id;
+    const list = this.listOf(layer);
+    if (!list || [...this.walk()].length <= 1 || (list === this.layers && this.layers.length <= 1)) return false;
+    const parent = this.parentOf(layer);
+    const i = list.indexOf(layer);
+    list.splice(i, 1);
+    if (this.activeId === layer.id || this.contains(layer, this.layer(this.activeId) ?? layer)) {
+      this.activeId = (list[Math.min(i, list.length - 1)] ?? parent ?? this.layers.at(-1))?.id ?? null;
+    }
     return true;
   }
 
-  /** מעביר שכבה למקום to (0 = למטה). מחזיר אם זזה. */
+  /** מעביר שכבה למקום to בתוך המערך שלה (0 = למטה). מחזיר אם זזה. */
   moveLayer(layer, to) {
-    const i = this.layers.indexOf(layer);
-    to = Math.max(0, Math.min(this.layers.length - 1, to));
-    if (i < 0 || i === to) return false;
-    this.layers.splice(i, 1);
-    this.layers.splice(to, 0, layer);
+    const list = this.listOf(layer);
+    if (!list) return false;
+    const i = list.indexOf(layer);
+    to = Math.max(0, Math.min(list.length - 1, to));
+    if (i === to) return false;
+    list.splice(i, 1);
+    list.splice(to, 0, layer);
+    return true;
+  }
+
+  /** מעביר שכבה למערך אחר (לתוך קבוצה / החוצה) במקום index. קבוצה לא נכנסת לתוך עצמה. */
+  reparent(layer, toList, index) {
+    const from = this.listOf(layer);
+    if (!from) return false;
+    for (const w of this.walk()) if (w.layer.type === 'group' && w.layer.children === toList && this.contains(layer, w.layer)) return false;
+    const i = from.indexOf(layer);
+    from.splice(i, 1);
+    if (from === toList && index > i) index--;
+    toList.splice(Math.max(0, Math.min(toList.length, index)), 0, layer);
     return true;
   }
 
   get tilesX() { return Math.ceil(this.width / TILE); }
   get tilesY() { return Math.ceil(this.height / TILE); }
 
+  /**
+   * שכבה חדשה. בלי index — בסוף (למעלה) של props.parent או של המסמך. עם index — במערך של props.parent,
+   * או (בלי parent) במערך של השכבה הפעילה — "מעל הפעילה" נשאר באותה קבוצה.
+   */
   addLayer(props = {}) {
     const layer = {
       id: newId('L'),
-      name: props.name || 'שכבה ' + (this.layers.length + 1),
+      name: props.name || 'שכבה ' + (this.rasters().length + 1),
       type: 'raster',
       opacity: props.opacity ?? 1,
       blend: props.blend ?? 'normal',
@@ -60,9 +111,32 @@ export class RasterDocument {
       /** "tx,ty" → אריח של הרנדרר. אריח חסר = שקוף. מותר גם מחוץ לקנבס — התוכן נשמר להזזה. */
       tiles: new Map(),
     };
-    this.layers.splice(props.index ?? this.layers.length, 0, layer);
-    this.activeId = layer.id;
+    this.#insert(layer, props);
     return layer;
+  }
+
+  /** קבוצה חדשה (ריקה) — אותם כללי מיקום כמו addLayer */
+  addGroup(props = {}) {
+    const g = {
+      id: newId('G'),
+      name: props.name || 'קבוצה ' + ([...this.walk()].filter(w => w.layer.type === 'group').length + 1),
+      type: 'group',
+      opacity: props.opacity ?? 1,
+      blend: props.blend ?? 'normal',
+      visible: props.visible ?? true,
+      locked: props.locked ?? false,
+      collapsed: false,
+      children: [],
+    };
+    this.#insert(g, props);
+    return g;
+  }
+
+  #insert(item, props) {
+    const list = props.parent ? props.parent.children
+      : props.index === undefined ? this.layers : (this.listOf(this.active) ?? this.layers);
+    list.splice(props.index ?? list.length, 0, item);
+    this.activeId = item.id;
   }
 }
 

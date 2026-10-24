@@ -573,3 +573,76 @@ test('unzip: נתיב עוין, פצצת דחיסה וקובץ שבור — נד
   await assert.rejects(unzip(bomb), /zip-too-big/);
   await assert.rejects(unzip(new Uint8Array([1, 2, 3])), /zip/);
 });
+
+// ---- קבוצות ----
+test('קבוצות: עץ, חיפוש, הוספה ליד הפעילה בתוך הקבוצה', () => {
+  const d = new RasterDocument(10, 10);
+  const bg = d.addLayer({ name: 'רקע' });
+  const g = d.addGroup({ name: 'קבוצה' });
+  const a = d.addLayer({ name: 'א', parent: g });
+  assert.equal(d.active, a);
+  const b = d.addLayer({ name: 'ב', index: d.indexOf(a) + 1 });   // ליד הפעילה — באותה קבוצה
+  assert.deepEqual(g.children.map(l => l.name), ['א', 'ב']);
+  assert.equal(d.listOf(b), g.children);
+  assert.equal(d.parentOf(b), g);
+  assert.equal(d.layer(b.id), b);
+  assert.deepEqual(d.rasters().map(l => l.name), ['רקע', 'א', 'ב']);
+  assert.deepEqual([...d.walk()].map(w => w.layer.name + '/' + w.depth), ['רקע/0', 'קבוצה/0', 'א/1', 'ב/1']);
+  const top = d.addLayer({ name: 'עליונה' });   // בלי index — למעלה במסמך
+  assert.equal(d.layers.at(-1), top);
+  void bg;
+});
+
+test('קבוצות: העברה פנימה והחוצה, וקבוצה לא נכנסת לתוך עצמה', () => {
+  const d = new RasterDocument(10, 10);
+  const x = d.addLayer({ name: 'x' });
+  const g = d.addGroup();
+  const inner = d.addGroup({ parent: g });
+  assert.equal(d.reparent(x, g.children, 0), true);
+  assert.deepEqual(g.children.map(l => l.name), ['x', inner.name]);
+  assert.equal(d.reparent(g, inner.children, 0), false, 'לא לתוך צאצא');
+  assert.equal(d.reparent(g, g.children, 0), false, 'לא לתוך עצמה');
+  assert.equal(d.reparent(x, d.layers, d.layers.length), true);
+  assert.equal(d.layers.at(-1), x);
+  assert.equal(d.contains(g, inner), true);
+});
+
+test('קבוצות: מחיקת קבוצה עם הפעילה בתוכה — הפעילה עוברת החוצה', () => {
+  const d = new RasterDocument(10, 10);
+  const bg = d.addLayer();
+  const g = d.addGroup();
+  const a = d.addLayer({ parent: g });
+  assert.equal(d.active, a);
+  assert.equal(d.removeLayer(g), true);
+  assert.equal(d.active, bg);
+  assert.equal(d.removeLayer(bg), false, 'הפריט האחרון לא נמחק');
+});
+
+test('ORA: קבוצות — stack מקונן, וחזרה לעץ', () => {
+  const tree = [
+    { name: 'רקע', src: 'data/0.png', opacity: 1, visible: true, blend: 'normal', locked: false },
+    { type: 'group', name: 'קבוצה', opacity: 0.5, visible: true, blend: 'screen', locked: false, children: [
+      { name: 'א', src: 'data/1.png', opacity: 1, visible: true, blend: 'normal', locked: false },
+      { type: 'group', name: 'פנימית', opacity: 1, visible: false, blend: 'normal', locked: true, children: [
+        { name: 'ב', src: 'data/2.png', opacity: 1, visible: true, blend: 'multiply', locked: false }] },
+    ] },
+  ];
+  const xml = oraStack(10, 10, tree);
+  assert.match(xml, /<stack name="קבוצה" opacity="0.5" visibility="visible" composite-op="svg:screen" isolation="isolate">/);
+  assert.ok(xml.indexOf('קבוצה') < xml.indexOf('רקע'), 'העליונה ראשונה');
+  const back = parseOraStack(xml);
+  const show = l => l.map(x => x.type === 'group' ? `${x.name}[${show(x.children)}]${x.opacity}${x.visible ? '' : 'H'}${x.locked ? 'L' : ''}` : `${x.name}:${x.src}:${x.blend}`).join(',');
+  assert.equal(show(back.layers), show(tree));
+  assert.equal(back.w, 10);
+});
+
+test('פערים: קבוצות נספרות כשכבות', () => {
+  assert.deepEqual(gapsFor('png', [{ type: 'group', children: [{ blend: 'normal', opacity: 1, visible: true }], visible: true, blend: 'normal', opacity: 1 }]), ['layers → flattened']);
+});
+
+test('‎.mbe: קבוצה עם children', () => {
+  const d = mbeDocument({ width: 5, height: 5 }, [{ id: 'G1', type: 'group', name: 'ק', opacity: 1, blend: 'normal', visible: true, locked: false,
+    children: [{ id: 'L1', name: 'א', src: 'media/x.png', opacity: 1, blend: 'normal', visible: true, locked: false }] }]);
+  assert.equal(d.surfaces[0].layers[0].type, 'group');
+  assert.equal(d.surfaces[0].layers[0].children[0].src, 'media/x.png');
+});

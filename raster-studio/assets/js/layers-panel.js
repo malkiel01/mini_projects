@@ -74,22 +74,53 @@ export function createLayersPanel({ root, doc, renderer, history, onChange, toas
     },
     duplicate() {
       const d = doc(), src = d.active;
-      const copy = d.addLayer({ name: src.name + ' עותק', index: d.indexOf(src) + 1,
-        opacity: src.opacity, blend: src.blend, visible: src.visible });
-      renderer.copyLayer(src, copy);
-      history.addLayer(d, copy, 'שכפול שכבה');
+      // עותק עמוק — לקבוצה גם כל השכבות שבתוכה
+      const copyInto = (item, props) => {
+        if (item.type === 'group') {
+          const g = d.addGroup({ ...props, opacity: item.opacity, blend: item.blend, visible: item.visible });
+          for (const c of item.children) copyInto(c, { name: c.name, parent: g });
+          return g;
+        }
+        const l = d.addLayer({ ...props, opacity: item.opacity, blend: item.blend, visible: item.visible });
+        renderer.copyLayer(item, l);
+        return l;
+      };
+      const copy = copyInto(src, { name: src.name + ' עותק', index: d.indexOf(src) + 1 });
+      d.activeId = copy.id;
+      history.addLayer(d, copy, src.type === 'group' ? 'שכפול קבוצה' : 'שכפול שכבה');
       changed('duplicate');
+    },
+    /** קבוצה חדשה במקום הפעילה, והפעילה בתוכה (Ctrl+G) */
+    group() {
+      const d = doc(), l = d.active;
+      const list = d.listOf(l), before = [...list];
+      const i = list.indexOf(l);
+      const g = d.addGroup({ index: i + 1 });
+      d.reparent(l, g.children, 0);
+      d.activeId = g.id;
+      history.structure(d, [[list, before, [...list]], [g.children, [], [...g.children]]], 'קיבוץ');
+      changed('group');
+    },
+    /** פירוק קבוצה: הילדים יוצאים למקומה (Ctrl+Shift+G) */
+    ungroup() {
+      const d = doc(), g = d.active;
+      if (g.type !== 'group') return;
+      const list = d.listOf(g), before = [...list], kids = [...g.children];
+      list.splice(list.indexOf(g), 1, ...kids);
+      g.children.length = 0;
+      d.activeId = (kids.at(-1) ?? list.at(-1))?.id;
+      history.structure(d, [[list, before, [...list]], [g.children, kids, []]], 'פירוק קבוצה');
+      changed('ungroup');
     },
     up() { move(doc().active, doc().indexOf(doc().active) + 1); },
     down() { move(doc().active, doc().indexOf(doc().active) - 1); },
     remove() {
       const d = doc(), l = d.active;
-      if (d.layers.length <= 1) { toast('זו השכבה היחידה'); return; }
       if (l.locked) { toast('השכבה נעולה'); return; }
       // בלי שאלה: יש ביטול (Ctrl+Z / ↶), והאריחים נשמרים בהיסטוריה עד שהרשומה נזרקת
-      const i = d.indexOf(l);
-      d.removeLayer(l);
-      history.removeLayer(d, l, i, 'מחיקת שכבה');
+      const list = d.listOf(l), i = list.indexOf(l);
+      if (!d.removeLayer(l)) { toast('זו השכבה היחידה'); return; }
+      history.removeLayer(d, l, i, l.type === 'group' ? 'מחיקת קבוצה' : 'מחיקת שכבה', list);
       changed('remove');
       toast(`"${l.name}" נמחקה — אפשר לבטל`);
     },
@@ -118,24 +149,33 @@ export function createLayersPanel({ root, doc, renderer, history, onChange, toas
     return t.data;
   }
 
-  function row(layer) {
+  function row(layer, depth) {
     const d = doc();
     const li = document.createElement('li');
-    li.className = 'layer-row';
+    li.className = 'layer-row' + (layer.type === 'group' ? ' group-row' : '');
+    li.style.setProperty('--depth', depth);
     li.dataset.id = layer.id;
     li.setAttribute('role', 'option');
     li.setAttribute('aria-selected', String(layer === d.active));
     li.classList.toggle('hidden-layer', !layer.visible);
     li.innerHTML = `
       <span class="drag" aria-hidden="true">⋮⋮</span>
-      <canvas class="thumb" aria-hidden="true"></canvas>
+      ${layer.type === 'group' ? '<button class="icon-btn fold" type="button"></button><span class="thumb folder" aria-hidden="true">📁</span>' : '<canvas class="thumb" aria-hidden="true"></canvas>'}
       <button class="layer-name one" type="button"></button>
       <button class="icon-btn eye" type="button"></button>
       <button class="icon-btn lock" type="button"></button>`;
-    const img = thumb(layer);
-    const c = $('canvas', li);
-    c.width = img.width; c.height = img.height;
-    c.getContext('2d').putImageData(img, 0, 0);
+    if (layer.type === 'group') {
+      const fold = $('.fold', li);
+      fold.textContent = layer.collapsed ? '‹' : '⌄';
+      fold.setAttribute('aria-label', (layer.collapsed ? 'פתיחת ' : 'קיפול ') + layer.name);
+      fold.setAttribute('aria-expanded', String(!layer.collapsed));
+      fold.addEventListener('click', () => { layer.collapsed = !layer.collapsed; render(); });
+    } else {
+      const img = thumb(layer);
+      const c = $('canvas', li);
+      c.width = img.width; c.height = img.height;
+      c.getContext('2d').putImageData(img, 0, 0);
+    }
     const name = $('.layer-name', li);
     name.textContent = layer.name;
     name.title = layer.name;
@@ -195,8 +235,8 @@ export function createLayersPanel({ root, doc, renderer, history, onChange, toas
     const handle = e.currentTarget;
     handle.setPointerCapture(e.pointerId);
     li.classList.add('dragging');
-    let target = null, after = false;
-    const clear = () => list.querySelectorAll('.drop-before, .drop-after').forEach(r => r.classList.remove('drop-before', 'drop-after'));
+    let target = null, after = false, into = false;
+    const clear = () => list.querySelectorAll('.drop-before, .drop-after, .drop-into').forEach(r => r.classList.remove('drop-before', 'drop-after', 'drop-into'));
     const onMove = ev => {
       clear();
       target = null;
@@ -205,8 +245,11 @@ export function createLayersPanel({ root, doc, renderer, history, onChange, toas
         if (ev.clientY >= b.top && ev.clientY < b.bottom) {
           if (r === li) break;
           target = r;
-          after = ev.clientY > b.top + b.height / 2;
-          r.classList.add(after ? 'drop-after' : 'drop-before');
+          // שליש אמצעי של שורת קבוצה — לתוך הקבוצה
+          const rel = (ev.clientY - b.top) / b.height;
+          into = r.classList.contains('group-row') && rel > 1 / 3 && rel < 2 / 3;
+          after = rel > 0.5;
+          r.classList.add(into ? 'drop-into' : after ? 'drop-after' : 'drop-before');
           break;
         }
       }
@@ -219,11 +262,23 @@ export function createLayersPanel({ root, doc, renderer, history, onChange, toas
       clear();
       if (!target) return;
       const d = doc();
-      // הרשימה מוצגת מלמעלה למטה = מהסוף להתחלה. "לפני" שורה בתצוגה = מעליה בערימה.
       const t = d.layer(target.dataset.id);
-      let to = d.indexOf(t) + (after ? 0 : 1);
-      if (d.indexOf(layer) < to) to--;
-      move(layer, to);
+      if (!t || d.contains(layer, t)) return;   // קבוצה לא נגררת לתוך עצמה
+      // הרשימה מוצגת מלמעלה למטה = מהסוף להתחלה. "לפני" שורה בתצוגה = מעליה בערימה.
+      const toList = into ? t.children : d.listOf(t);
+      let to = into ? t.children.length : toList.indexOf(t) + (after ? 0 : 1);
+      if (toList === d.listOf(layer)) {
+        if (d.indexOf(layer) < to) to--;
+        move(layer, to);
+      } else {
+        beforeChange();
+        const from = d.listOf(layer), fromIdx = from.indexOf(layer);
+        d.reparent(layer, toList, to);
+        if (into) t.collapsed = false;
+        d.activeId = layer.id;
+        history.reparent(d, layer, from, fromIdx, toList, toList.indexOf(layer), into ? 'העברה לקבוצה' : 'סדר השכבות');
+        changed('reparent');
+      }
     };
     handle.addEventListener('pointermove', onMove);
     handle.addEventListener('pointerup', up);
@@ -233,17 +288,28 @@ export function createLayersPanel({ root, doc, renderer, history, onChange, toas
   function render() {
     const d = doc();
     if (!d) return;
-    list.replaceChildren(...[...d.layers].reverse().map(row));
+    // עץ: העליונה למעלה בכל רמה, וילדי קבוצה פתוחה — מתחתיה, מוזחים
+    const rows = [];
+    const add = (items, depth) => {
+      for (const item of [...items].reverse()) {
+        rows.push(row(item, depth));
+        if (item.type === 'group' && !item.collapsed) add(item.children, depth + 1);
+      }
+    };
+    add(d.layers, 0);
+    list.replaceChildren(...rows);
     const l = d.active;
     opacity.value = Math.round(l.opacity * 100);
     opacityOut.textContent = opacity.value + '%';
     blend.value = l.blend;
     opacity.disabled = blend.disabled = l.locked;
-    const i = d.indexOf(l);
-    $('[data-act="up"]', root).disabled = i >= d.layers.length - 1;
+    const sib = d.listOf(l), i = sib.indexOf(l);
+    $('[data-act="up"]', root).disabled = i >= sib.length - 1;
     $('[data-act="down"]', root).disabled = i <= 0;
-    $('[data-act="remove"]', root).disabled = d.layers.length <= 1 || l.locked;
-    for (const b of document.querySelectorAll('[data-layer-count]')) b.dataset.layerCount = d.layers.length;
+    $('[data-act="remove"]', root).disabled = [...d.walk()].length <= 1 || l.locked;
+    $('[data-act="ungroup"]', root).hidden = l.type !== 'group';
+    $('[data-act="group"]', root).hidden = l.type === 'group';
+    for (const b of document.querySelectorAll('[data-layer-count]')) b.dataset.layerCount = d.rasters().length;
   }
 
   return { render, act };

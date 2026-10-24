@@ -314,6 +314,7 @@ export class WebGL2Renderer {
     this.strokeTmp = this.#tileTexture(1);   // השכבה הפעילה + המשיכה, לתצוגה בזמן ציור
     this.floatTmp = this.#tileTexture(1);    // השכבה + התוכן הצף, לתצוגה בזמן שינוי צורה
     this.adjTmp = this.#tileTexture(1);      // השכבה אחרי תיקון, לתצוגה חיה
+    this.shiftTmp = this.#tileTexture(1);    // שכבה בהזזת קבוצה, לתצוגה בזמן הגרירה
     // טשטוש: אריח מרופד בשכניו (256 + 2·64), ותוצאת המעבר האופקי
     this.padTex = this.#floatTex(TILE + 128, TILE + 128);
     this.blurTmp = this.#floatTex(TILE, TILE + 128);
@@ -1140,62 +1141,9 @@ export class WebGL2Renderer {
     doc._comp ??= new Map();
     let out = doc._comp.get(key(tx, ty));
     if (!out) { out = this.#tileTexture(MIP_LEVELS); doc._comp.set(key(tx, ty), out); }
+    const a = this.#compositeList(doc, doc.layers, tx, ty, 0);
 
-    let [a, b] = this.scratch;
-    this.#target(a);
-    gl.clearColor(0, 0, 0, 0);
-    gl.clear(gl.COLOR_BUFFER_BIT);
-    const p = this.prog.blend;
-    gl.useProgram(p.p);
-    gl.bindVertexArray(this.vao);
-    gl.disable(gl.BLEND);
-    gl.uniform1i(p.u.u_dst, 0);
-    gl.uniform1i(p.u.u_src, 1);
-    const st = doc._stroke;
-    for (const layer of doc.layers) {
-      if (!layer.visible || layer.opacity <= 0) continue;
-      let t = layer.tiles.get(key(tx, ty));
-      // משיכה פתוחה על השכבה הזו — מציגים את התוצאה בלי לגעת בשכבה עד שהאצבע מורמת
-      const m = st && st.layer === layer ? st.mask.get(key(tx, ty)) : null;
-      if (m) {
-        this.#applyStroke(st, t || this.emptyTex, m, this.strokeTmp, key(tx, ty));
-        t = this.strokeTmp;
-        gl.useProgram(p.p);
-        gl.bindVertexArray(this.vao);
-        gl.uniform1i(p.u.u_dst, 0);
-        gl.uniform1i(p.u.u_src, 1);
-      }
-      const fl = doc._float;
-      if (fl && fl.layer === layer && this.#floatTouches(fl, tx, ty)) {
-        this.#floatInto(this.floatTmp, t || this.emptyTex, fl, tx, ty);
-        t = this.floatTmp;
-        gl.useProgram(p.p);
-        gl.bindVertexArray(this.vao);
-        gl.uniform1i(p.u.u_dst, 0);
-        gl.uniform1i(p.u.u_src, 1);
-      }
-      const adj = doc._adjust;
-      if (adj && adj.layer === layer && this.#adjustTouches(adj, layer, tx, ty)) {
-        this.#adjustTile(doc, adj, layer, tx, ty, t, this.adjTmp);
-        t = this.adjTmp;
-        gl.useProgram(p.p);
-        gl.bindVertexArray(this.vao);
-        gl.uniform1i(p.u.u_dst, 0);
-        gl.uniform1i(p.u.u_src, 1);
-      }
-      if (!t) continue;
-      this.#target(b);
-      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, a);
-      gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, t);
-      gl.uniform1f(p.u.u_opacity, layer.opacity);
-      gl.uniform1i(p.u.u_mode, Math.max(0, BLEND_MODES.indexOf(layer.blend)));
-      this.#quad(p, [0, 0, TILE, TILE], [0, 0, 1, 1], [TILE, TILE], -1);
-      [a, b] = [b, a];
-    }
-    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, null);
-    gl.activeTexture(gl.TEXTURE0);
-
-    // a → העותק המורכב (רמה 0), ואז mipmaps
+    // התוצאה → העותק המורכב (רמה 0), ואז mipmaps
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, this.fboRead);
     gl.framebufferTexture2D(gl.READ_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, a, 0);
     gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, this.fbo);
@@ -1206,6 +1154,93 @@ export class WebGL2Renderer {
     gl.generateMipmap(gl.TEXTURE_2D);
     doc._dirty?.delete(key(tx, ty));
     return out;
+  }
+
+  /** זוג מרקמי עבודה לכל עומק — קבוצה בתוך קבוצה לא דורסת את מה שההורה שלה צבר */
+  #scratchAt(depth) {
+    this.scratchStack ??= [this.scratch];
+    return (this.scratchStack[depth] ??= [this.#tileTexture(1), this.#tileTexture(1)]);
+  }
+
+  /** האריח של שכבת רסטר, אחרי משיכה / תוכן צף / תיקון / הזזת קבוצה פתוחים — או undefined */
+  #layerTileFor(doc, layer, tx, ty) {
+    let t = layer.tiles.get(key(tx, ty));
+    const sh = doc._shift;
+    if (sh && sh.layers.has(layer)) t = this.#shiftedTile(layer, tx, ty, sh.dx, sh.dy, this.shiftTmp);
+    // משיכה פתוחה על השכבה הזו — מציגים את התוצאה בלי לגעת בשכבה עד שהאצבע מורמת
+    const st = doc._stroke;
+    const m = st && st.layer === layer ? st.mask.get(key(tx, ty)) : null;
+    if (m) { this.#applyStroke(st, t || this.emptyTex, m, this.strokeTmp, key(tx, ty)); t = this.strokeTmp; }
+    const fl = doc._float;
+    if (fl && fl.layer === layer && this.#floatTouches(fl, tx, ty)) { this.#floatInto(this.floatTmp, t || this.emptyTex, fl, tx, ty); t = this.floatTmp; }
+    const adj = doc._adjust;
+    if (adj && adj.layer === layer && this.#adjustTouches(adj, layer, tx, ty)) { this.#adjustTile(doc, adj, layer, tx, ty, t, this.adjTmp); t = this.adjTmp; }
+    return t;
+  }
+
+  /**
+   * מרכיב רשימה (המסמך או קבוצה) לאריח אחד. קבוצה מורכבת קודם לבד, ורק אז נממזגת פנימה
+   * עם האטימות ומצב המיזוג שלה (קבוצה "מבודדת").
+   */
+  #compositeList(doc, list, tx, ty, depth) {
+    const gl = this.gl;
+    let [a, b] = this.#scratchAt(depth);
+    this.#target(a);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    const p = this.prog.blend;
+    for (const layer of list) {
+      if (!layer.visible || layer.opacity <= 0) continue;
+      const t = layer.type === 'group'
+        ? (layer.children.length ? this.#compositeList(doc, layer.children, tx, ty, depth + 1) : null)
+        : this.#layerTileFor(doc, layer, tx, ty);
+      if (!t) continue;
+      this.#target(b);
+      gl.useProgram(p.p);
+      gl.bindVertexArray(this.vao);
+      gl.disable(gl.BLEND);
+      gl.uniform1i(p.u.u_dst, 0);
+      gl.uniform1i(p.u.u_src, 1);
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, a);
+      gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.uniform1f(p.u.u_opacity, layer.opacity);
+      gl.uniform1i(p.u.u_mode, Math.max(0, BLEND_MODES.indexOf(layer.blend)));
+      this.#quad(p, [0, 0, TILE, TILE], [0, 0, 1, 1], [TILE, TILE], -1);
+      [a, b] = [b, a];
+    }
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, null);
+    gl.activeTexture(gl.TEXTURE0);
+    return a;
+  }
+
+  /** אריח של שכבה כשהיא מוזזת ב-(dx, dy) שלמים — לתצוגה בזמן הזזת קבוצה (עד ארבעה אריחי מקור) */
+  #shiftedTile(layer, tx, ty, dx, dy, out) {
+    const gl = this.gl;
+    const x = tx * TILE - dx, y = ty * TILE - dy;   // המקור שמגיע לאריח הזה
+    const srcs = tilesInRect(x, y, TILE, TILE).map(([sx, sy]) => [sx, sy, layer.tiles.get(key(sx, sy))]).filter(s => s[2]);
+    if (!srcs.length) return undefined;
+    this.#target(out);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    const c = this.prog.copy;
+    gl.useProgram(c.p);
+    gl.bindVertexArray(this.vao);
+    gl.disable(gl.BLEND);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.uniform1i(c.u.u_tex, 0);
+    for (const [sx, sy, t] of srcs) {
+      const ox = sx * TILE + dx - tx * TILE, oy = sy * TILE + dy - ty * TILE;
+      gl.bindTexture(gl.TEXTURE_2D, t);
+      this.#quad(c, [ox, oy, ox + TILE, oy + TILE], [0, 0, 1, 1], [TILE, TILE], -1);
+    }
+    return out;
+  }
+
+  /** הזזת קבוצה בזמן גרירה: layers — כל שכבות הרסטר שבה (או null לסיום) */
+  setShift(doc, layers, dx = 0, dy = 0) {
+    const old = doc._shift;
+    doc._shift = layers ? { layers: new Set(layers), dx, dy } : null;
+    if (old || layers) this.invalidate(doc);
   }
 
   #compositeTile(doc, tx, ty) {
@@ -1302,7 +1337,7 @@ export class WebGL2Renderer {
 
   /** כמה מרקמים וכמה זיכרון GPU (בערך) — למדידה ולתקציב. */
   stats(doc) {
-    const layerTiles = doc ? doc.layers.reduce((n, l) => n + l.tiles.size, 0) : 0;
+    const layerTiles = doc ? doc.rasters().reduce((n, l) => n + l.tiles.size, 0) : 0;
     const compTiles = doc?._comp?.size ?? 0;
     return {
       layerTiles, compTiles,

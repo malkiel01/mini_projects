@@ -327,6 +327,10 @@ async function main() {
   check('אחרי הגרירה — הלבן מכסה את האדום', near(await px(), [255, 255, 255, 255]));
   await page.click('[data-act="add"]'); await page.click('[data-act="add"]');
   check('מונה השכבות', await page.$eval('#layers-btn', b => b.dataset.layerCount) === '4');
+  const stageL = await page.$eval('#stage', el => el.getBoundingClientRect().left);
+  await page.click('.layer-row:last-child .layer-name');
+  await page.evaluate(() => { __rs.doc.active.name = 'שם ארוך מאוד מאוד מאוד שלא נכנס בשורה אחת בכלל'; __rs.panel.render(); });
+  check('הבמה לא זזה כשתוכן הלוח משתנה', await page.$eval('#stage', el => el.getBoundingClientRect().left) === stageL);
   if (SHOTS) await page.screenshot({ path: join(SHOTS, 'layers-desktop.png') });
   // ---- ביטול / ביצוע ----
   await openEd(page);
@@ -422,6 +426,7 @@ async function main() {
   await page.$eval('#color', el => { el.value = '#000000'; el.dispatchEvent(new Event('input', { bubbles: true })); });
   await setOpt('size', 40);
   await stroke([[2, 180], [598, 180]]);   // הרדיוס (20px) מכסה עד הקצוות
+  check('הקו מגיע עד הנקודה האחרונה (גם כשהתנועה האחרונה מגיעה רק עם ההרמה)', near(await px(598, 180), [0, 0, 0, 255]), await px(598, 180));
   await page.keyboard.press('g');
   check('G — דלי, עם סבולת', await page.isVisible('#opt-tolerance') && !(await page.isVisible('#opt-size')));
   await page.$eval('#color', el => { el.value = '#00ff00'; el.dispatchEvent(new Event('input', { bubbles: true })); });
@@ -837,6 +842,76 @@ async function main() {
   await ctx.setOffline(false);
   // השגיאות של בדיקת "בלי רשת" (בקשות לשרת שנכשלו) — צפויות
   for (let i = errors.length - 1; i >= 0; i--) if (/INTERNET_DISCONNECTED|Failed to fetch|network/i.test(errors[i])) errors.splice(i, 1);
+
+  // ---- קבוצות ----
+  await openEd(page);
+  await page.waitForFunction(() => window.__rs?.doc);
+  await page.evaluate(() => __rs.setView({ zoom: 1, x: 20, y: 20 }));
+  const tree = () => page.$$eval('.layer-row', rs => rs.map(r => '·'.repeat(Number(r.style.getPropertyValue('--depth')) || 0) + (r.querySelector('.layer-name')?.textContent ?? '')).join(','));
+  await page.click('[data-act="add"]');
+  await page.keyboard.press('m');
+  await drag([100, 100], [200, 200]);
+  await color('#ff0000');
+  await page.keyboard.press('Alt+Backspace');
+  await page.keyboard.press('Control+d');
+  await page.keyboard.press('Control+g');
+  check('Ctrl+G — קבוצה, והשכבה בתוכה (מוזחת)', await tree() === 'קבוצה 1,·שכבה 2,רקע', await tree());
+  check('רשומת "קיבוץ"', await page.evaluate(() => __rs.history.undoStack.at(-1).label) === 'קיבוץ');
+  check('הקבוצה מורכבת כמו קודם — אדום', near(await px(150, 150), [255, 0, 0, 255]));
+  await page.$eval('#layer-opacity', el => { el.value = '50'; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); });
+  check('אטימות הקבוצה 50% — חצי אדום על לבן', near(await px(150, 150), [255, 188, 188, 255]), await px(150, 150));
+  await page.click('.group-row .eye');
+  check('הסתרת הקבוצה — לבן', near(await px(150, 150), [255, 255, 255, 255]));
+  await page.keyboard.press('b');
+  await page.click('.layer-row:nth-child(2)');   // השכבה שבתוך הקבוצה
+  const nG = await page.evaluate(() => __rs.history.undoStack.length);
+  await stroke([[300, 300], [350, 300]]);
+  check('ציור על שכבה בקבוצה מוסתרת — חסום, עם הודעה', await page.evaluate(() => __rs.history.undoStack.length) === nG && /מוסתרת/.test(await page.textContent('.toast')));
+  await page.click('.group-row .eye');
+  await page.click('.group-row .layer-name');
+  await stroke([[300, 300], [350, 300]]);
+  check('ציור על הקבוצה עצמה — חסום', /על קבוצה לא מציירים/.test(await page.textContent('.toast')));
+  // שכבה חדשה ליד שכבה בקבוצה — נכנסת לקבוצה
+  await page.click('.layer-row:nth-child(2)');
+  await page.click('[data-act="add"]');
+  check('+ שכבה ליד שכבה בקבוצה — בתוך הקבוצה', await tree() === 'קבוצה 1,·שכבה 3,·שכבה 2,רקע', await tree());
+  // קיפול
+  await page.click('.group-row .fold');
+  check('קיפול — הילדים מוסתרים', await tree() === 'קבוצה 1,רקע');
+  await page.click('.group-row .fold');
+  // הזזת קבוצה
+  await page.click('.group-row .layer-name');
+  await page.keyboard.press('v');
+  await drag([150, 150], [250, 170]);
+  check('✥ על קבוצה — כל השכבות זזות יחד', near(await px(250, 170), [255, 188, 188, 255]) && near(await px(120, 120), [255, 255, 255, 255]), [await px(250, 170), await px(120, 120)].join(' | '));
+  check('רשומת "הזזת קבוצה"', await page.evaluate(() => __rs.history.undoStack.at(-1).label) === 'הזזת קבוצה');
+  await page.keyboard.press('Control+z');
+  check('ביטול — חוזרת למקום', near(await px(150, 150), [255, 188, 188, 255]));
+  // גרירה לתוך קבוצה: הרקע נכנס לקבוצה
+  const bgH = await page.$eval('.layer-row:last-child .drag', el => { const r = el.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; });
+  const gRow = await page.$eval('.group-row', el => { const r = el.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; });
+  await page.mouse.move(...bgH); await page.mouse.down();
+  await page.mouse.move(...gRow, { steps: 6 }); await page.mouse.up();
+  check('גרירה לאמצע שורת קבוצה — לתוכה, למעלה', await tree() === 'קבוצה 1,·רקע,·שכבה 3,·שכבה 2', await tree());
+  await page.keyboard.press('Control+z');
+  check('ביטול — הרקע יצא', await tree() === 'קבוצה 1,·שכבה 3,·שכבה 2,רקע', await tree());
+  // ORA וטיוטה שומרים את הקבוצה
+  await page.evaluate(() => __rs.flushDraft());
+  await page.reload();
+  await page.waitForFunction(() => window.__rs?.doc && __rs.doc.layers.length === 2, null, { timeout: 8000 }).catch(() => {});
+  check('טיוטה — הקבוצה משוחזרת עם האטימות', await tree() === 'קבוצה 1,·שכבה 3,·שכבה 2,רקע' && near(await px(150, 150), [255, 188, 188, 255]), await tree());
+  const oraG = await page.evaluate(async () => { const { buildORA } = await import('./assets/js/export.js'); return Array.from(await buildORA(__rs.renderer, __rs.doc)); });
+  const oraTmp = join(tmp, 'g.ora');
+  (await import('node:fs')).writeFileSync(oraTmp, Buffer.from(oraG));
+  const stackG = (await import('node:child_process')).execFileSync('unzip', ['-p', oraTmp, 'stack.xml']).toString();
+  check('ORA — הקבוצה כ-stack מקונן', /<stack name="קבוצה 1" opacity="0.5"[^>]*isolation="isolate">/.test(stackG), stackG);
+  // פירוק
+  await page.click('.group-row .layer-name');
+  await page.keyboard.press('Control+Shift+g');
+  check('Ctrl+Shift+G — פירוק', await tree() === 'שכבה 3,שכבה 2,רקע', await tree());
+  await page.keyboard.press('Control+z');
+  check('ביטול — הקבוצה חוזרת', await tree() === 'קבוצה 1,·שכבה 3,·שכבה 2,רקע', await tree());
+  if (SHOTS) await page.screenshot({ path: join(SHOTS, 'groups-desktop.png') });
 
   check('אין שגיאות בקונסול', errors.length === 0, errors.join(' | '));
 

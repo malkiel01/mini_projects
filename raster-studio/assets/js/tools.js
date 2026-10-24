@@ -46,6 +46,7 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
   let lasso = null;    // גרירת בחירה: { type, mode, start, pts, shape }
   let xf = null;       // גרירה בכלי ההזזה: { kind, handle, t0, start }
   let floatSel = null; // הבחירה כשהתוכן הצף התחיל — זזה איתו
+  let groupMove = null; // הזזת קבוצה: { layers, start, dx, dy } — כל השכבות שבה, בפיקסלים שלמים
   let cropRect = null; // { x0, y0, x1, y1 } — אזור החיתוך המוצע
   let cropDrag = null; // { kind: 'new' | 'move' | 'handle', handle, r0, start }
   let textEdit = null; // { anchor } — תיבת טקסט פתוחה
@@ -332,8 +333,8 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     const w = r.x1 - r.x0, h = r.y1 - r.y0;
     if (w < 1 || h < 1) { toast('האזור ריק'); return; }
     if (r.x0 === 0 && r.y0 === 0 && w === d.width && h === d.height) { cancelCrop(); return; }
-    const before = { w: d.width, h: d.height, maps: new Map(d.layers.map(l => [l, l.tiles])), sel: d.selection ?? null };
-    const maps = new Map(d.layers.map(l => [l, renderer.shiftTiles(l.tiles, -r.x0, -r.y0)]));
+    const before = { w: d.width, h: d.height, maps: new Map(d.rasters().map(l => [l, l.tiles])), sel: d.selection ?? null };
+    const maps = new Map(d.rasters().map(l => [l, renderer.shiftTiles(l.tiles, -r.x0, -r.y0)]));
     const m = [1, 0, 0, 1, -r.x0, -r.y0];
     const sel = d.selection ? { ...d.selection, shapes: d.selection.shapes.map(s => XF.transformShape(s, m)) } : null;
     const after = { w, h, maps, sel };
@@ -415,6 +416,10 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
   /** אפשר לצייר על השכבה? אחרת — הודעה, ולא מציירים. */
   function canEdit(layer) {
     if (!layer) return false;
+    if (layer.type === 'group') { toast('בחרו שכבה בתוך הקבוצה — על קבוצה לא מציירים', true); return false; }
+    const up = doc().ancestors(layer);
+    if (up.some(g => g.locked)) { toast('הקבוצה נעולה — 🔓 בלוח השכבות', true); return false; }
+    if (up.some(g => !g.visible)) { toast('הקבוצה מוסתרת — 👁️ בלוח השכבות', true); return false; }
     if (layer.locked) { toast('השכבה נעולה — 🔓 בלוח השכבות', true); return false; }
     if (!layer.visible) { toast('השכבה מוסתרת — 👁️ בלוח השכבות', true); return false; }
     return true;
@@ -456,6 +461,15 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
       if (textEdit) commitText(); else startText(pt);
       return true;
     }
+    if (state.tool === 'move' && doc().active?.type === 'group') {
+      const g = doc().active;
+      if (g.locked || doc().ancestors(g).some(a => a.locked)) { toast('הקבוצה נעולה — 🔓 בלוח השכבות', true); return true; }
+      const layers = [...doc().walk(g.children)].map(w => w.layer).filter(l => l.type !== 'group');
+      if (!layers.some(l => l.tiles.size)) { toast('הקבוצה ריקה — אין מה להזיז'); return true; }
+      groupMove = { layers, start: pt, dx: 0, dy: 0 };
+      renderer.setShift(doc(), layers, 0, 0);
+      return true;
+    }
     if (state.tool === 'move') {
       if (!fl() && !startFloat()) return true;
       const f = fl();
@@ -491,6 +505,14 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
 
   /** points — נקודות במסמך עם לחץ: [{x, y, pressure}] (כולל האירועים המאוחדים) */
   function move(points, e) {
+    if (groupMove) {
+      const q = points.at(-1);
+      groupMove.dx = Math.round(q.x - groupMove.start[0]);
+      groupMove.dy = Math.round(q.y - groupMove.start[1]);
+      renderer.setShift(doc(), groupMove.layers, groupMove.dx, groupMove.dy);
+      draw();
+      return;
+    }
     if (cropDrag) { const q = points.at(-1); cropMove([q.x, q.y]); return; }
     if (xf) {
       const q = points.at(-1), p = [q.x, q.y];
@@ -530,7 +552,21 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     draw();
   }
 
+  /** סיום הזזת קבוצה: כל שכבה עוברת באותה הזזה שלמה; צעד ביטול אחד */
+  function commitGroupMove(dx, dy, layers) {
+    const d = doc();
+    renderer.setShift(d, null);
+    if (!dx && !dy) return;
+    const before = { w: d.width, h: d.height, maps: new Map(layers.map(l => [l, l.tiles])), sel: d.selection ?? null };
+    const maps = new Map(layers.map(l => [l, renderer.shiftTiles(l.tiles, dx, dy)]));
+    for (const [l, t] of maps) { l.tiles = t; l.rev = (l.rev ?? 0) + 1; }
+    renderer.resetComposite(d);
+    history.crop(d, before, { ...before, maps }, 'הזזת קבוצה');
+    onChange('group-move');
+  }
+
   function up() {
+    if (groupMove) { const g = groupMove; groupMove = null; commitGroupMove(g.dx, g.dy, g.layers); return; }
     if (cropDrag) { cropDrag = null; return; }
     if (xf) { xf = null; return; }
     if (lasso) {
@@ -553,6 +589,7 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
 
   /** משיכה פתוחה בוטלה (אצבע שנייה → צביטה). */
   function cancel() {
+    if (groupMove) { groupMove = null; renderer.setShift(doc(), null); draw(); return; }
     if (lasso) { lasso = null; overlay.preview(null); return; }
     if (!stroke) return;
     stroke = null;
@@ -577,6 +614,12 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     if (cropRect) {
       if (k === 'enter') { applyCrop(); return true; }
       if (k === 'escape') { cancelCrop(); return true; }
+    }
+    if (state.tool === 'move' && k.startsWith('arrow') && doc().active?.type === 'group') {
+      const step = e.shiftKey ? 10 : 1, g = doc().active;
+      const layers = [...doc().walk(g.children)].map(w => w.layer).filter(l => l.type !== 'group');
+      commitGroupMove(k === 'arrowleft' ? -step : k === 'arrowright' ? step : 0, k === 'arrowup' ? -step : k === 'arrowdown' ? step : 0, layers);
+      return true;
     }
     if (state.tool === 'move' && k.startsWith('arrow')) {
       const step = e.shiftKey ? 10 : 1;
@@ -607,7 +650,7 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
   return {
     state, setTool, down, move, up, cancel, key, updateCursor, hideCursor, selAction, commitFloat, cancelFloat, commitText,
     get editingText() { return !!textEdit; },
-    get stroking() { return !!stroke || !!lasso || !!xf || !!cropDrag; },
+    get stroking() { return !!stroke || !!lasso || !!xf || !!cropDrag || !!groupMove; },
     get floating() { return !!fl(); },
   };
 }

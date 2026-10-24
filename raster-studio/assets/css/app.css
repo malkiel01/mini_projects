@@ -259,13 +259,14 @@ body.editor { display: flex; flex-direction: column; block-size: 100dvh; min-hei
 .layer-name-input { flex: 1; min-inline-size: 0; font-size: 16px; }
 .layer-row .icon-btn { flex: none; font-size: 1rem; }
 .layer-row .lock.off { opacity: .45; }
-.layer-actions { display: flex; align-items: center; gap: var(--s1); padding: var(--s1) var(--s2); border-top: 1px solid var(--line); }
+.layer-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1); padding: var(--s1) var(--s2); border-top: 1px solid var(--line); }
 .layer-actions .btn { margin-inline-end: auto; }
 .layer-actions :disabled, .layer-props :disabled { opacity: .4; cursor: default; }
 .layers-btn::after { content: attr(data-layer-count); min-inline-size: 1.4em; padding: 0 4px; border-radius: 99px; background: var(--brand-soft); color: var(--brand); font-size: .75rem; }
 
 @media (min-width: 900px) {
-    .panel { inline-size: 300px; flex: none; border-inline-start: 1px solid var(--line); }
+    /* רוחב קבוע — תוכן רחב (שם ארוך, עוד כפתור) לא מזיז את הבמה */
+    .panel { inline-size: 300px; min-inline-size: 300px; max-inline-size: 300px; flex: none; overflow: hidden; border-inline-start: 1px solid var(--line); }
     .panel-close, .layers-btn { display: none; }
 }
 @media (max-width: 899.98px) {
@@ -362,3 +363,11 @@ body.editor { display: flex; flex-direction: column; block-size: 100dvh; min-hei
 .export-tiles .tile small { color: var(--muted); font-size: .75rem; }
 .export-tiles .tile:disabled { opacity: .5; cursor: default; }
 .export-tiles .tile[aria-busy="true"] { opacity: .6; }
+
+/* ===== קבוצות בלוח השכבות ===== */
+.layer-row { padding-inline-start: calc(var(--s2) + var(--depth, 0) * 18px); }
+.layer-row .fold { flex: none; min-inline-size: 28px; inline-size: 28px; font-size: 1rem; color: var(--muted); }
+.layer-row .folder { display: grid; place-items: center; font-size: 1.3rem; background: none; }
+.group-row .layer-name { font-weight: 600; }
+.layer-row.drop-into { box-shadow: inset 0 0 0 2px var(--brand); background: var(--brand-soft); }
+.layer-actions .icon-btn { min-inline-size: 36px; }
