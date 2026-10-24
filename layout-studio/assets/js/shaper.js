@@ -22,7 +22,22 @@ export async function loadFont(src) {
   }
   const face = new H.Face(new H.Blob(data));
   const font = new H.Font(face);
-  return { H, face, font, upem: face.upem, paths: new Map() };
+  return { H, face, font, upem: face.upem, paths: new Map(), cmap: new Set(face.collectUnicodes()) };
+}
+
+/** האם בגופן יש גליף לכל התווים במחרוזת. */
+const covers = (f, str) => { for (const ch of str) if (!f.cmap.has(ch.codePointAt(0))) return false; return true; };
+
+/** אשכולות: אות וכל הסימנים שאחריה (ניקוד, טעמים, דגש) — יחידה אחת שלא מפצלים בין גופנים. */
+function clusters(text) {
+  const out = [];
+  for (let i = 0; i < text.length; ) {
+    let j = i + (text.codePointAt(i) > 0xffff ? 2 : 1);
+    while (j < text.length && /\p{M}/u.test(text[j])) j++;
+    out.push([i, j]);
+    i = j;
+  }
+  return out;
 }
 
 /**
@@ -63,15 +78,17 @@ export function glyphPath(f, gid) {
 
 /**
  * ציור רצף מעוצב על קנבס. (x, y) — תחילת קו הבסיס משמאל; size — גודל הגופן ביחידות של ההקשר.
+ * גליף מגופן חלופי (g.f) — הנתיב שלו מאותו גופן, והמידות כבר ביחידות של הגופן הראשי.
  */
 export function drawGlyphs(ctx, f, glyphs, x, y, size) {
   const s = size / f.upem;
   let pen = 0;
   for (const g of glyphs) {
+    const gf = g.f || f, ps = s * f.upem / gf.upem;
     ctx.save();
     ctx.translate(x + (pen + g.dx) * s, y - g.dy * s);
-    ctx.scale(s, -s);
-    ctx.fill(glyphPath(f, g.gid));
+    ctx.scale(ps, -ps);
+    ctx.fill(glyphPath(gf, g.gid));
     ctx.restore();
     pen += g.ax;
   }
@@ -80,11 +97,18 @@ export function drawGlyphs(ctx, f, glyphs, x, y, size) {
 /**
  * עיצוב שורה שלמה עם bidi: רצפים לפי רמות ההטבעה (UAX #9), כל רצף בכיוון שלו, וסדר חזותי לפי L2.
  * מחזיר גליפים בסדר חזותי (משמאל לימין); cluster — אינדקס בטקסט המקורי.
+ * fonts: גופן, או [ראשי, חלופי…] — אשכול (אות וסימניה) שחסר בו גליף בראשי מעוצב כולו בחלופי הראשון שמכסה אותו
+ *        (למשל טעמים, שאין ב-Frank Ruhl Libre). הגליף מסומן ב-f, ומידותיו מומרות ליחידות הגופן הראשי.
  * base: 'rtl' (ברירת מחדל — פסקה עברית) או 'ltr'.
  */
-export function shapeLine(f, text, base = 'rtl') {
+export function shapeLine(fonts, text, base = 'rtl') {
   bidi ||= bidiFactory();
-  const { levels } = bidi.getEmbeddingLevels(text, base);
+  const list = Array.isArray(fonts) ? fonts : [fonts];
+  const f = list[0];
+  // טווח מספרים "3–4": לפי UAX #9 המקף (U+2013) ניטרלי, ובפסקה עברית הוא הופך את הסדר ל-"4–3". בספר מצפים ל-3–4,
+  // ולכן לחישוב הכיוון בלבד מקף בין שתי ספרות נחשב כמו מקף רגיל (ES). התו עצמו לא משתנה.
+  const forLevels = text.replace(/(?<=\d)[\u2012\u2013\u2212](?=\d)/g, '-');
+  const { levels } = bidi.getEmbeddingLevels(forLevels, base);
   // רצפים לוגיים של אותה רמה
   const runs = [];
   for (let i = 0; i < text.length; i++) {
@@ -107,8 +131,25 @@ export function shapeLine(f, text, base = 'rtl') {
   }
   const out = [];
   for (const r of order) {
-    const g = shape(f, text.slice(r.start, r.end), r.level % 2 ? 'rtl' : 'ltr');
-    for (const x of g) { x.cluster += r.start; out.push(x); }
+    const dir = r.level % 2 ? 'rtl' : 'ltr';
+    // תתי-רצפים לפי גופן: אשכולות רצופים שאותו גופן מכסה
+    const parts = [];
+    for (const [a, b] of clusters(text.slice(r.start, r.end))) {
+      const piece = text.slice(r.start + a, r.start + b);
+      const pick = list.find(x => covers(x, piece)) || f;   // אף גופן לא מכסה — הראשי (ריבוע, ונספר כחסר)
+      const last = parts[parts.length - 1];
+      if (last && last.font === pick) last.end = r.start + b;
+      else parts.push({ font: pick, start: r.start + a, end: r.start + b });
+    }
+    if (dir === 'rtl') parts.reverse();
+    for (const p of parts) {
+      const k = f.upem / p.font.upem;
+      for (const x of shape(p.font, text.slice(p.start, p.end), dir)) {
+        x.cluster += p.start;
+        if (p.font !== f) { x.f = p.font; x.ax *= k; x.dx *= k; x.dy *= k; }
+        out.push(x);
+      }
+    }
   }
   return out;
 }

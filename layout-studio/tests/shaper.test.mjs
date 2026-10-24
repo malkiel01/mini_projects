@@ -49,3 +49,26 @@ test('bidi: מילה באנגלית ומספר בתוך משפט עברי נשא
 test('רוחב — סכום ההתקדמויות, זהה בין shape ו-shapeLine לטקסט עברי בלבד', () => {
   assert.equal(advance(shapeLine(noto, NIQQUD)), advance(shape(noto, NIQQUD, 'rtl')));
 });
+
+test('גופן חלופי: טעמים שאין ב-Frank מגיעים מ-Noto — בלי ריבועים, והאות נשארת עם הסימנים שלה', () => {
+  const g = shapeLine([frank, noto], TAAMIM);
+  assert.equal(g.filter(x => x.gid === 0).length, 0);
+  const fromNoto = g.filter(x => x.f === noto);
+  assert.ok(fromNoto.length > 0);
+  // כל אשכול שהגיע מ-Noto — כולו מ-Noto (אות + סימנים), לא חצי-חצי
+  const byCluster = new Map();
+  for (const x of g) {
+    byCluster.set(x.cluster, (byCluster.get(x.cluster) || new Set()).add(x.f ? 'noto' : 'frank'));
+  }
+  for (const set of byCluster.values()) assert.equal(set.size, 1);
+  // ניקוד בלבד — הכול מ-Frank
+  assert.equal(shapeLine([frank, noto], NIQQUD).filter(x => x.f).length, 0);
+});
+
+test('טווח מספרים "3–4" בתוך עברית — 3 משמאל ל-4 (כמו בספר)', () => {
+  const text = 'עמוד 3–4';
+  const vis = shapeLine(noto, text).map(x => x.cluster);
+  assert.ok(vis.indexOf(text.indexOf('3')) < vis.indexOf(text.indexOf('4')));
+  // והמקף עצמו נשאר מקף ארוך
+  assert.ok(vis.includes(text.indexOf('–')));
+});

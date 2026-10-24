@@ -50,11 +50,13 @@ function canvasFor(box, h) {
         box.innerHTML = '<h3></h3>';
         box.firstChild.textContent = `${S.title} · ${F.name}`;
         $('#samples').append(box);
-        const g = shapeBidi(F.f, S.text, 'rtl');
+        // גופן חלופי: Noto משלים מה שחסר (טעמים ב-Frank)
+        const g = shapeBidi(F.f === fonts[0].f ? F.f : [F.f, fonts[0].f], S.text, 'rtl');
         const missing = g.filter(x => x.gid === 0).length;
+        const filled = new Set(g.filter(x => x.f).map(x => x.cluster)).size;
         const lbl = (t) => { const d = document.createElement('div'); d.className = 'row-lbl'; d.textContent = t; box.append(d); };
         // HarfBuzz — מיושר לימין
-        lbl('HarfBuzz' + (missing ? ` — ⚠ ${missing} סימנים חסרים בגופן` : ''));
+        lbl('HarfBuzz' + (missing ? ` — ⚠ ${missing} סימנים חסרים` : '') + (filled ? ` — ${filled} אותיות עם טעמים הושלמו מ-Noto` : ''));
         const a = canvasFor(box, SIZE * 1.9);
         const size = Math.min(SIZE, SIZE * (a.w - 8) / (advance(g) * SIZE / F.f.upem));   // שהשורה תיכנס כולה
         const wHb = advance(g) * size / F.f.upem;
@@ -69,7 +71,7 @@ function canvasFor(box, h) {
         b.ctx.textAlign = 'right';
         b.ctx.fillText(S.text, b.w - 4, SIZE * 1.25);
         const wBr = b.ctx.measureText(S.text).width;
-        lines.push(`${F.name.split(' ')[0]}: רוחב ${wHb.toFixed(1)} מול ${wBr.toFixed(1)}, חסרים ${missing}`);
+        lines.push(`${F.name.split(' ')[0]}: רוחב ${wHb.toFixed(1)} מול ${wBr.toFixed(1)}, חסרים ${missing}, הושלמו ${filled}`);
       }
     }
 
