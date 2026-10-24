@@ -17,7 +17,13 @@ export default async function (t) {
     await d.locator('input[name=email]').fill('Yossi@Example.com');
     await d.locator('select[aria-label="תפקיד"]').last().selectOption('view');
     await d.locator('button[type=submit]').click();
-    await d.locator('.share-row').first().waitFor();
+    // אבחון (כשל שלא שוחזר מקומית): אם השורה לא הופיעה — מה אמרה ההודעה, ומה השרת שמר
+    if (!(await d.locator('.share-row').first().waitFor({ timeout: 10000 }).then(() => true, () => false))) {
+        const why = { toast: await dana.locator('.toast').textContent().catch(() => ''), dialogs: await dana.locator('dialog[open]').count(),
+            email: await d.locator('input[name=email]').inputValue().catch(() => '?'), server: await t.api(dana, 'my_shares', { doc }) };
+        t.ok('חלון השיתוף: יוסי נוסף', false, JSON.stringify(why));
+        return;
+    }
     t.ok('חלון השיתוף: יוסי נוסף (צפייה), "עוד לא נכנס לעורך"', (await d.locator('.share-row').count()) === 1
         && (await d.locator('.share-row').textContent()).includes('yossi@example.com') && (await d.locator('.share-row').textContent()).includes('עוד לא נכנס'),
         await d.locator('.share-row').textContent());
