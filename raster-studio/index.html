@@ -17,11 +17,13 @@
   <main id="main" tabindex="-1">
     <div class="toolbar">
       <p class="hint one" style="flex:1;margin:0">תמונות בשכבות</p>
+      <button class="icon-btn ghost" id="open-btn" type="button" aria-label="פתיחת תמונה מהמכשיר">📂</button>
+      <input type="file" id="file" accept="image/png,image/jpeg,image/webp" hidden>
       <button class="btn primary" id="new-btn" type="button" disabled><span aria-hidden="true">+</span> תמונה</button>
     </div>
     <p class="error" id="load-err" role="alert" hidden></p>
     <ul class="list" id="docs" aria-label="התמונות שלי" aria-busy="true"></ul>
-    <p class="hint" style="margin-top:var(--s3)">העריכה עצמה — בשלב הבא.</p>
+    <p class="hint" style="margin-top:var(--s3)">בשלב הזה: קנבס, זום ופתיחת PNG / JPG / WebP. שמירה — בשלב הבא.</p>
   </main>
 
   <dialog id="new-dlg" aria-labelledby="new-title">
