@@ -11,7 +11,7 @@
 <body>
 <a class="skip" href="#main">דילוג לתוכן</a>
 <header class="top">
-  <div class="titles"><h1>💳 תשלומים</h1><div class="sub">תוסף גבייה · שלד</div></div>
+  <div class="titles"><h1>💳 תשלומים</h1><div class="sub" id="who">תוסף גבייה</div></div>
 </header>
 <nav class="tabs" aria-label="לשוניות">
   <a href="#overview" aria-current="page">סקירה</a>
@@ -22,31 +22,57 @@
 </nav>
 
 <main id="main" tabindex="-1">
-  <section class="panel" id="p-overview">
-    <p class="hint">התוסף בבנייה. כאן תופיע ההכנסה, המנויים והגבייה שדורשת טיפול. בינתיים — מה כבר מוכן ומה הבא.</p>
-    <div class="summary">
-      <div class="line"><span class="muted">שלב</span> <b>1</b> <span class="muted">מתוך 10 — השלד</span><span class="pct">10%</span></div>
-      <span class="track" role="progressbar" aria-label="התקדמות" aria-valuemin="0" aria-valuemax="100" aria-valuenow="10"><span style="inline-size:10%"></span></span>
-      <div class="chips"><span class="chip ok">אפיון הושלם</span><span class="chip">גישה סגורה — רק המנהל</span></div>
-    </div>
+  <p class="error" id="fatal" role="alert" hidden></p>
 
+  <section class="panel" id="p-overview">
+    <dl class="cells" id="ov-cells"></dl>
+    <div class="row-btns wrap" id="ov-alerts" style="margin-top:8px"></div>
     <h2 class="sec-title">השלבים</h2>
     <ul class="list" id="stages"></ul>
   </section>
 
   <section class="panel" id="p-customers" hidden>
-    <p class="empty">עוד אין לקוחות. הם יופיעו כשמערכת ראשונה תתחבר (שלב 2).</p>
+    <p class="hint">כל מי שמשלם דרך המערכות המחוברות. לחיצה על שורה — חשבון, ארנק, מנויים ושימוש.</p>
+    <div class="toolbar"><input type="search" id="cus-q" placeholder="חיפוש: שם, מייל, מזהה, ח״פ" aria-label="חיפוש לקוחות"></div>
+    <ul class="list" id="cus-list"></ul>
   </section>
+
   <section class="panel" id="p-money" hidden>
-    <p class="empty">תשלומים, חשבוניות והחזרים — משלב 3.</p>
+    <p class="empty">תשלומים, חשבוניות והחזרים — משלב 3 (דף תשלום) ושלב 5 (חשבוניות).</p>
   </section>
+
   <section class="panel" id="p-systems" hidden>
-    <p class="empty">מערכות מחוברות וקודי גישה — משלב 2. הראשונה: מגדלור.</p>
+    <p class="hint">אתרים ואפליקציות שגובים דרך התוסף. לכל מערכת — קודי גישה, מוצרים ומחירים.</p>
+    <div class="toolbar"><span class="muted" style="flex:1"></span><button class="btn primary" id="add-client"><span aria-hidden="true">+</span> מערכת</button></div>
+    <ul class="list" id="client-list"></ul>
   </section>
+
   <section class="panel" id="p-settings" hidden>
-    <p class="empty">עוסקים, חברות סליקה, Morning וכללים — משלב 2.</p>
+    <h2 class="sec-title">עוסקים</h2>
+    <p class="hint">מי מוציא את הקבלה או החשבונית. כל מערכת משויכת לעוסק אחד.</p>
+    <ul class="list" id="mer-list"></ul>
+    <div class="row-btns" style="margin-top:8px"><button class="btn ghost" id="add-merchant"><span aria-hidden="true">+</span> עוסק</button></div>
+    <div id="tenants-box" hidden>
+      <h2 class="sec-title">מנויים מאושרים</h2>
+      <p class="hint">מי שקיבל גישה לתוסף. ממתין — עד שתאשר.</p>
+      <ul class="list" id="ten-list"></ul>
+    </div>
+    <h2 class="sec-title">יומן ביקורת</h2>
+    <ul class="list" id="audit-list"></ul>
   </section>
 </main>
+
+<dialog id="sheet" aria-labelledby="sheet-title">
+  <form method="dialog" novalidate>
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+      <h2 id="sheet-title"></h2>
+      <button type="submit" class="btn primary" id="sheet-save" hidden>שמירה</button>
+    </header>
+    <div class="sheet-body" id="sheet-body"></div>
+  </form>
+</dialog>
+<div class="toast" role="status" hidden></div>
 
 <script src="assets/js/app.js"></script>
 </body>
