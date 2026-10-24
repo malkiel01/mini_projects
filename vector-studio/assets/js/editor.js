@@ -24,7 +24,7 @@ const $ = (id) => document.getElementById(id);
 const canvas = $('canvas'), stage = $('stage');
 
 const S = {
-  id: null, rev: 0, name: 'ציור', doc: null,
+  id: null, rev: 0, name: 'ציור', doc: null, media: new Map(),
   view: { x: 0, y: 0, z: 1 }, dpr: 1,
   sel: new Set(), hover: null, marquee: null, tool: 'select', active: null, board: null, // board — הלוח הנוכחי (בלי בחירה) guides: null,
   snap: pref('snap', true), grid: pref('grid', false), editingText: null, // active — השכבה לאובייקטים חדשים
@@ -82,6 +82,7 @@ async function boot() {
     return;
   }
   history.replaceState(null, '', '#d' + S.id);
+  if (S.container) loadMedia();
   // גיבוי שנשאר במכשיר משמירה שנכשלה — חדש יותר ממה שבשרת? מציעים לשחזר
   const backup = drafts.loadBackup(S.id);
   if (backup?.doc && backup.rev === S.rev && JSON.stringify(backup.doc) !== JSON.stringify(S.doc)
@@ -94,6 +95,24 @@ async function boot() {
   fit();
   updatePanel();
   fontsReady.then(() => { if (!S.rev || S.rev === 1) persist(); }); // תמונה ממוזערת לציור חדש
+}
+
+/** תמונות של שכבות מאפליקציות אחרות (רסטר, מסגרות) — מתוך ה-‎.mbe המקורי. תצוגה בלבד. */
+async function loadMedia() {
+  const srcs = new Set();
+  const walk = (layers) => { for (const l of layers || []) { if (l.src) srcs.add(l.src); if (l.children) walk(l.children); } };
+  for (const s of S.doc.surfaces) walk(s.layers);
+  if (!srcs.size) return;
+  try {
+    const { open } = await import('./mbe/mbe.js');
+    const f = await open(await library.container(S.id));
+    for (const src of srcs) {
+      const bytes = f.getMedia(src);
+      if (!bytes) continue;
+      try { S.media.set(src, await createImageBitmap(new Blob([bytes]))); } catch { /* לא תמונה — מסגרת אפורה */ }
+    }
+    draw();
+  } catch (e) { toast('התמונות של הקובץ לא נטענו: ' + e.message, true); }
 }
 
 function showName() {
@@ -113,7 +132,7 @@ function thumbnail() {
   const k = Math.min(240 / s.size[0], 240 / s.size[1], 1);
   const c = document.createElement('canvas');
   c.width = Math.max(1, Math.round(s.size[0] * k)); c.height = Math.max(1, Math.round(s.size[1] * k));
-  render(c, { doc: { ...S.doc, surfaces: [s] }, view: { x: 0, y: 0, z: k }, dpr: 1, sel: new Set(), exportMode: true, bg: true });
+  render(c, { doc: { ...S.doc, surfaces: [s] }, view: { x: 0, y: 0, z: k }, dpr: 1, sel: new Set(), exportMode: true, bg: true, media: S.media });
   return c.toDataURL('image/png');
 }
 
@@ -1194,7 +1213,7 @@ async function pngOf(surface, k, bg) {
   const c = document.createElement('canvas');
   c.width = Math.max(1, Math.round(surface.size[0] * k));
   c.height = Math.max(1, Math.round(surface.size[1] * k));
-  render(c, { doc: { ...S.doc, surfaces: [surface] }, view: { x: 0, y: 0, z: k }, dpr: 1, sel: new Set(), exportMode: true, bg });
+  render(c, { doc: { ...S.doc, surfaces: [surface] }, view: { x: 0, y: 0, z: k }, dpr: 1, sel: new Set(), exportMode: true, bg, media: S.media });
   const blob = await new Promise(res => c.toBlob(res, 'image/png'));
   if (!blob) throw new Error('יצירת התמונה נכשלה');
   return new Uint8Array(await blob.arrayBuffer());

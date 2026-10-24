@@ -80,7 +80,7 @@ export async function readMbe(bytes) {
   for (const s of doc.surfaces) {
     if (!Array.isArray(s.size) || !(s.size[0] > 0 && s.size[1] > 0)) s.size = [595.3, 841.9];
     s.layers ||= [];
-    for (const l of s.layers) if (l.type !== 'vector') notes.add(`שכבות ${l.type} — לא מוצגות כאן, ונשמרות כמו שהן`);
+    for (const l of s.layers) if (l.type !== 'vector') notes.add(`שכבות ${l.type} — מוצגות לקריאה בלבד, ונשמרות כמו שהן`);
     if (!s.layers.some(l => l.type === 'vector')) s.layers.push({ id: ids(doc, 'L')(), name: 'שכבה', type: 'vector', visible: true, locked: false, paths: [] });
   }
   return { doc, notes: [...notes], kind: f.kind, issues: f.issues };

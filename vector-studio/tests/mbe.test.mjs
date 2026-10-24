@@ -73,7 +73,7 @@ test('פתיחה: המסמך חוזר כמו שהוא; שמירה חוזרת ש�
   const base = await save(other, { app: 'raster-studio' });
 
   const { doc, notes } = await readMbe(base);
-  assert.deepEqual(notes, ['שכבות raster — לא מוצגות כאן, ונשמרות כמו שהן']);
+  assert.deepEqual(notes, ['שכבות raster — מוצגות לקריאה בלבד, ונשמרות כמו שהן']);
   assert.deepEqual(doc.custom, { keep: true });
   doc.surfaces[0].layers[1].paths.push({ id: 'p2', d: 'M20 20 L30 20 L30 30 Z', fill: { color: '#2d4a8a' } });
 
