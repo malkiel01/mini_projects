@@ -31,6 +31,14 @@ export function scaleAt(sx, sy, ox = 0, oy = 0) {
   return [sx, 0, 0, sy, ox - sx * ox, oy - sy * oy];
 }
 
+/** סיבוב ברדיאנים סביב נקודה (בכיוון השעון במסך — ציר y למטה). */
+export function rotateAt(rad, cx = 0, cy = 0) {
+  const c = Math.cos(rad), s = Math.sin(rad);
+  return [c, s, -s, c, cx - c * cx + s * cy, cy - s * cx - c * cy];
+}
+
+export const hasRotation = (m) => Math.abs(m[1]) > 1e-9 || Math.abs(m[2]) > 1e-9;
+
 export function isIdentity(m) {
   return !m || (m[0] === 1 && m[1] === 0 && m[2] === 0 && m[3] === 1 && m[4] === 0 && m[5] === 0);
 }

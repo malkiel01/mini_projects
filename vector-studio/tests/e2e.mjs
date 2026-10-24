@@ -302,6 +302,60 @@ try {
   assert.equal(s.paths[0].fill.gradient.from[0], g0.from[0] + 50, 'המעבר זז עם הצורה');
   step('מעבר צבע: צבעים וזווית מהלוח, וזז עם הצורה');
 
+  // סיבוב: ידית הסיבוב (Shift — 15°), כפתור 90°, היפוך; הצורה נשארת חיה
+  await page.evaluate(() => { const p = window.__vs.S.doc.surfaces[0].layers[0].paths; window.__vs.select([p[1].id]); }); // האליפסה
+  s = await st();
+  const eb = s.paths[1].shape.box;
+  const rc = [eb[0] + eb[2] / 2, eb[1] + eb[3] / 2];
+  const hTop = await W(rc[0], eb[1]);
+  const hRot = [hTop[0], hTop[1] - 26];
+  const cS = await W(...rc);
+  await page.keyboard.down('Shift');
+  await page.mouse.move(...hRot); await page.mouse.down();
+  await page.mouse.move(cS[0] + 80, cS[1], { steps: 6 }); // 90° עם השעון
+  await page.mouse.up();
+  await page.keyboard.up('Shift');
+  s = await st();
+  const T = s.paths[1].transform;
+  assert.ok(T && Math.abs(T[0]) < 1e-6 && Math.abs(T[1] - 1) < 1e-6, 'סיבוב 90°: ' + JSON.stringify(T));
+  assert.equal(s.paths[1].shape.type, 'ellipse');
+  await page.click('[data-arr="rotate"][data-arg="-90"]');
+  s = await st();
+  assert.equal(s.paths[1].transform, undefined, 'סיבוב חזרה — בלי transform');
+  step('סיבוב בידית (Shift — 90°) ובכפתור; הצורה נשארת חיה');
+
+  // לוחות: לוח שני, ואובייקט שנגרר אליו עובר אליו
+  await page.mouse.click(...await W(1000, 1060)); // רקע בלוח — בלי בחירה
+  await page.click('[data-board="add"]');
+  let surf = await page.evaluate(() => window.__vs.S.doc.surfaces.map(x => x.id));
+  assert.equal(surf.length, 2);
+  await page.click('#zoom-pct'); // התאמה — שני הלוחות במסך
+  s = await st();
+  const eb2 = s.paths[1].shape.box;
+  [a, b] = [await W(eb2[0] + eb2[2] / 2, eb2[1] + eb2[3] / 2), await W(1080 + 48 + 300, 300)];
+  await page.mouse.move(...a); await page.mouse.down(); await page.mouse.move(...b, { steps: 6 }); await page.mouse.up();
+  const moved = await page.evaluate(() => window.__vs.S.doc.surfaces[1].layers[0].paths.map(p => p.shape?.box));
+  assert.equal(moved.length, 1, 'האליפסה עברה ללוח השני');
+  assert.ok(Math.abs(moved[0][0] + moved[0][2] / 2 - 300) < 3, 'באותו מקום על המסך: ' + moved[0]);
+  await page.keyboard.press('Control+z');
+  surf = await page.evaluate(() => window.__vs.S.doc.surfaces[1].layers[0].paths.length);
+  assert.equal(surf, 0, 'ביטול מחזיר ללוח הראשון');
+  await page.mouse.click(...await W(1080 + 48 + 500, 500));
+  await page.click('.boards [data-id="s2"] [data-board="remove"]');
+  assert.equal(await page.evaluate(() => window.__vs.S.doc.surfaces.length), 1);
+  step('לוחות: הוספה, מעבר אובייקט בין לוחות בגרירה, מחיקה');
+
+  // העתקה והדבקה: Ctrl+C / Ctrl+V באותו ציור (מוזז 10pt)
+  await page.evaluate(() => { const p = window.__vs.S.doc.surfaces[0].layers[0].paths; window.__vs.select([p[0].id]); });
+  const before2 = (await st()).paths.length;
+  await page.keyboard.press('Control+c');
+  await page.keyboard.press('Control+v');
+  s = await st();
+  assert.equal(s.paths.length, before2 + 1);
+  assert.equal(s.paths[s.paths.length - 1].shape.box[0], s.paths[0].shape.box[0] + 10);
+  await page.keyboard.press('Delete');
+  step('העתקה והדבקה (Ctrl+C / Ctrl+V)');
+
   // ייצוא: SVG, PDF ו-PNG יורדים, עם טקסט כקווי מתאר
   const grab = async (kind) => {
     await page.click('#file-btn');

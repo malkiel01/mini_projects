@@ -7,7 +7,7 @@
 // משלה — הזזה ושינוי גודל עוברים לילדים.
 
 import { parse, bbox, transform, serialize, unionBox } from './geometry/path.js';
-import { multiply, translate, isIdentity, IDENTITY, apply } from './geometry/matrix.js';
+import { multiply, translate, isIdentity, IDENTITY, apply, hasRotation } from './geometry/matrix.js';
 import { shapeToD, transformShape } from './geometry/shapes.js';
 import { transformText } from './text.js';
 
@@ -108,7 +108,12 @@ export function pathMatrix(path, offset) {
 /** תיבה חוסמת במרחב העבודה — של נתיב או של קבוצה. */
 export function worldBox(item, offset) {
   if (isGroup(item)) return unionBox([...leaves(item)].map(p => worldBox(p, offset)));
-  if (isText(item)) { const [x, y, w, h] = item.box; return [x + offset[0], y + offset[1], w, h]; }
+  if (isText(item)) {
+    const [x, y, w, h] = item.box, m = pathMatrix(item, offset);
+    const pts = [[x, y], [x + w, y], [x + w, y + h], [x, y + h]].map(([px, py]) => apply(m, px, py));
+    const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+    return [Math.min(...xs), Math.min(...ys), Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)];
+  }
   try { return bbox(transform(parse(item.d), pathMatrix(item, offset))); } catch { return null; }
 }
 
@@ -128,11 +133,16 @@ export function selectionBox(doc, ids) {
  */
 export function applyMatrix(path, m) {
   if (isGroup(path)) { for (const c of path.children || []) applyMatrix(c, m); return; }
-  if (isText(path)) { transformText(path, m); return; }
-  if (path.transform && !isIdentity(path.transform)) {
-    path.transform = multiply(m, path.transform);
+  // סיבוב (או פריט שכבר מסובב) — נכנס ל-transform, כדי שצורה חיה וטקסט יישארו עריכים
+  const rotated = path.transform && !isIdentity(path.transform);
+  // היפוך של צורה חיה או טקסט — גם הוא ב-transform (כוכב הפוך נשאר כוכב שאפשר לערוך)
+  const flips = (m[0] < 0 || m[3] < 0) && (path.shape || isText(path));
+  if (hasRotation(m) || rotated || flips) {
+    path.transform = multiply(m, path.transform || IDENTITY).map(v => Math.round(v * 1e6) / 1e6 || 0);
+    if (isIdentity(path.transform)) delete path.transform;
     return;
   }
+  if (isText(path)) { transformText(path, m); return; }
   // מעבר צבע — הנקודות שלו במרחב הנתיב, והן זזות איתו
   for (const k of ['fill', 'stroke']) {
     const g = path[k]?.gradient;

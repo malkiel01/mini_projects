@@ -20,7 +20,7 @@ export async function prepare(doc, surfaceId, getFont) {
     if (isGroup(item)) return { ...item, children: await Promise.all((item.children || []).map(conv)) };
     if (isText(item)) {
       gaps.add('text → outlines');
-      return { id: item.id, d: await textToD(item, getFont), fill: item.fill, stroke: item.stroke, label: item.text };
+      return { id: item.id, d: await textToD(item, getFont), fill: item.fill, stroke: item.stroke, label: item.text, ...(item.transform ? { transform: item.transform } : {}) };
     }
     return item;
   };
