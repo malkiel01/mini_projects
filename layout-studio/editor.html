@@ -52,7 +52,9 @@
           <div class="tiles">
             <button class="tile" type="button" id="pm-frame"><span class="tile-ic" aria-hidden="true">▭</span>מסגרת טקסט בעמוד</button>
             <button class="tile" type="button" id="pm-flow"><span class="tile-ic" aria-hidden="true">⤓</span>זרימה אוטומטית מכאן</button>
+            <button class="tile" type="button" id="pm-image"><span class="tile-ic" aria-hidden="true">🖼</span>תמונה</button>
           </div>
+          <input type="file" id="img-file" accept="image/png,image/jpeg,image/webp" hidden>
           <p class="hint">זרימה אוטומטית — מסגרת בכל עמוד מכאן ועד הסוף, והטקסט זורם ביניהן; טקסט שלא נכנס מוסיף עמודים.</p>
         </section>
       </div>
@@ -69,12 +71,36 @@
       <div class="sheet-body">
         <p class="error" id="fr-overset" hidden></p>
         <div class="tiles">
-          <button class="tile" type="button" id="fr-edit"><span class="tile-ic" aria-hidden="true">✏️</span>עריכת הטקסט</button>
-          <button class="tile" type="button" id="fr-next"><span class="tile-ic" aria-hidden="true">↲</span>המשך בעמוד הבא</button>
-          <button class="tile" type="button" id="fr-grow"><span class="tile-ic" aria-hidden="true">⤓</span>עמודים עד סוף הטקסט</button>
+          <button class="tile" type="button" id="fr-edit" data-kind="text"><span class="tile-ic" aria-hidden="true">✏️</span>עריכת הטקסט</button>
+          <button class="tile" type="button" id="fr-next" data-kind="text"><span class="tile-ic" aria-hidden="true">↲</span>המשך בעמוד הבא</button>
+          <button class="tile" type="button" id="fr-grow" data-kind="text"><span class="tile-ic" aria-hidden="true">⤓</span>עמודים עד סוף הטקסט</button>
+          <button class="tile" type="button" id="fr-replace" data-kind="image"><span class="tile-ic" aria-hidden="true">🔄</span>החלפת תמונה</button>
           <button class="tile" type="button" id="fr-del"><span class="tile-ic" aria-hidden="true">🗑️</span>מחיקת המסגרת</button>
         </div>
-        <section class="group" aria-labelledby="fr-g-cols"><h3 id="fr-g-cols">טורים</h3>
+        <section class="group" aria-labelledby="fr-g-img" data-kind="image"><h3 id="fr-g-img">התמונה במסגרת</h3>
+          <fieldset class="seg" aria-label="התאמה">
+            <label><input type="radio" name="fit" value="contain"><span>כולה נראית</span></label>
+            <label><input type="radio" name="fit" value="cover"><span>ממלאת (חיתוך)</span></label>
+          </fieldset>
+          <div class="fields two">
+            <fieldset class="seg" aria-label="איזה צד נשאר — אופקי">
+              <label><input type="radio" name="focx" value="1"><span>ימין</span></label>
+              <label><input type="radio" name="focx" value="0.5"><span>מרכז</span></label>
+              <label><input type="radio" name="focx" value="0"><span>שמאל</span></label>
+            </fieldset>
+            <fieldset class="seg" aria-label="איזה צד נשאר — אנכי">
+              <label><input type="radio" name="focy" value="0"><span>למעלה</span></label>
+              <label><input type="radio" name="focy" value="0.5"><span>מרכז</span></label>
+              <label><input type="radio" name="focy" value="1"><span>למטה</span></label>
+            </fieldset>
+          </div>
+          <label class="f"><span>הגדלה: <output id="zoom-out-v">100%</output></span><input type="range" name="zoom" min="100" max="300" step="5"></label>
+          <button class="btn ghost sm" type="button" id="fr-fitframe">התאמת המסגרת ליחס התמונה</button>
+          <label class="switch"><input type="checkbox" name="wrap"><span>הטקסט עוקף את התמונה</span></label>
+          <label class="f"><span>מרווח מהטקסט (מ"מ)</span><input name="wrapgap" inputmode="decimal" dir="ltr"></label>
+          <p class="hint" id="img-info"></p>
+        </section>
+        <section class="group" aria-labelledby="fr-g-cols" data-kind="text"><h3 id="fr-g-cols">טורים</h3>
           <div class="fields two">
             <fieldset class="seg" aria-label="מספר טורים">
               <label><input type="radio" name="columns" value="1"><span>1</span></label>

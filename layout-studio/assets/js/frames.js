@@ -190,3 +190,46 @@ export function frameAt(model, pageIndex, x, y) {
   }
   return null;
 }
+
+// ===== מסגרות תמונה =====
+// מסגרת תמונה = { id, type: 'frame', name, box, src: 'media/<sha256>.<ext>', px: [w, h] (פיקסלים),
+//   fit: 'contain' (כל התמונה נראית) | 'cover' (ממלאת, נחתכת), focus: [fx, fy] (0–1: איזה חלק נשאר בחיתוך),
+//   zoom: 1–10, wrap: 'none' | 'box' (הטקסט עוקף), wrapGap: pt }
+
+export const isImage = frame => typeof frame.src === 'string';
+
+/**
+ * תמונה חדשה בעמוד: באזור התוכן, ביחס של התמונה, צמודה לימין ולמעלה (עברית). מחזיר { model, frameId }.
+ */
+export function addImageFrame(model, pageIndex, { src, px, newId }) {
+  const [cx, cy, cw, ch] = contentBox(model, pageIndex + 1);
+  const s = Math.min(cw / px[0], ch / px[1], 1e9);
+  const w = px[0] * s, h = px[1] * s;
+  const frameId = newId('i');
+  const frame = { id: frameId, type: 'frame', name: 'תמונה', box: [cx + cw - w, cy, w, h].map(v => Math.round(v * 100) / 100),
+    src, px: [...px], fit: 'contain', focus: [0.5, 0.5], zoom: 1, wrap: 'none', wrapGap: 8 };
+  return { model: withPageLayers(model, pageIndex, layers => [...layers, frame]), frameId };
+}
+
+/**
+ * היכן מצוירת התמונה (קואורדינטות העמוד) — היא נחתכת לגבולות המסגרת: { x, y, w, h }.
+ * contain — כולה בפנים; cover — ממלאת; zoom — הגדלה נוספת; focus — איזה חלק נשאר כשהיא גדולה מהמסגרת
+ * (0 — הקצה השמאלי / העליון, 1 — הימני / התחתון), או היכן היא יושבת כשהיא קטנה ממנה.
+ */
+export function imagePlacement(frame) {
+  const [bx, by, bw, bh] = frame.box;
+  const [iw, ih] = frame.px;
+  const base = frame.fit === 'cover' ? Math.max(bw / iw, bh / ih) : Math.min(bw / iw, bh / ih);
+  const s = base * (frame.zoom || 1);
+  const w = iw * s, h = ih * s;
+  const [fx, fy] = frame.focus || [0.5, 0.5];
+  return { x: bx + (bw - w) * fx, y: by + (bh - h) * fy, w, h };
+}
+
+/** האזורים שהטקסט עוקף בעמוד: [{ x, y, w, h }] — מסגרות עם wrap: 'box', מורחבות במרווח. */
+export function wrapRects(model, pageIndex) {
+  return framesOnPage(model, pageIndex).filter(f => f.wrap === 'box').map(f => {
+    const g = f.wrapGap || 0, [x, y, w, h] = f.box;
+    return { id: f.id, x: x - g, y: y - g, w: w + 2 * g, h: h + 2 * g };
+  });
+}

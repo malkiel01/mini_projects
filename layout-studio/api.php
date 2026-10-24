@@ -1,11 +1,13 @@
 <?php
 // ה-API של העימוד. פעולות: me, docs_list, doc_create, doc_get, doc_save, doc_delete.
 // כל בקשה: POST עם JSON {"action": …} וכותרת X-Layout-Studio: 1.
+// תמונות: העלאה — POST ?action=media_upload, גוף = הקובץ עצמו (עם אותה כותרת); הצגה — GET ?media=<sha256>.<ext>.
 // הכותרת היא ההגנה מ-CSRF: טופס או קישור מאתר אחר לא יכולים להוסיף כותרת משלהם.
 
 require_once __DIR__ . '/lib/auth.php';
 require_once __DIR__ . '/lib/docs.php';
 require_once __DIR__ . '/lib/model.php';
+require_once __DIR__ . '/lib/media.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
@@ -23,12 +25,11 @@ function ls_fail(string $code, int $status = 400): never
     ls_out(['ok' => false, 'error' => $code], $status);
 }
 
-if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') ls_fail('method', 405);
-if (($_SERVER['HTTP_X_LAYOUT_STUDIO'] ?? '') !== '1') ls_fail('csrf', 403);
-
-$in = json_decode(file_get_contents('php://input') ?: '', true);
-if (!is_array($in)) ls_fail('bad_json');
-$action = (string)($in['action'] ?? '');
+$method = $_SERVER['REQUEST_METHOD'] ?? '';
+$isMedia = $method === 'GET' && isset($_GET['media']);
+if ($method !== 'POST' && !$isMedia) ls_fail('method', 405);
+// קריאה (GET של תמונה) לא משנה כלום — בלי כותרת, כדי ש-<img> יוכל לטעון. כל השאר — רק עם הכותרת (CSRF).
+if (!$isMedia && ($_SERVER['HTTP_X_LAYOUT_STUDIO'] ?? '') !== '1') ls_fail('csrf', 403);
 
 try {
     $me = ls_account();
@@ -38,6 +39,23 @@ try {
 }
 if (!$me) ls_fail('no_user', 401);
 $uid = (int)$me['id'];
+
+if ($isMedia) ls_media_send($uid, (string)$_GET['media']);
+
+if (($_GET['action'] ?? '') === 'media_upload') {
+    try {
+        ls_out(['ok' => true] + ls_media_put($uid, file_get_contents('php://input') ?: ''));
+    } catch (InvalidArgumentException $e) {
+        ls_fail($e->getMessage(), $e->getMessage() === 'too_big' ? 413 : 400);
+    } catch (Throwable $e) {
+        error_log('layout-studio: ' . $e->getMessage());
+        ls_fail('server', 500);
+    }
+}
+
+$in = json_decode(file_get_contents('php://input') ?: '', true);
+if (!is_array($in)) ls_fail('bad_json');
+$action = (string)($in['action'] ?? '');
 
 try {
     switch ($action) {
@@ -55,7 +73,8 @@ try {
             ls_out(['ok' => true] + $got);
         case 'doc_save':
             // המודל מגיע כמחרוזת JSON — נשמר בדיוק כמו שנשלח, בלי פענוח וקידוד מחדש שמשנים אותו
-            $rev = ls_doc_save($uid, (int)($in['id'] ?? 0), (int)($in['rev'] ?? -1), $in['model'] ?? null);
+            $rev = ls_doc_save($uid, (int)($in['id'] ?? 0), (int)($in['rev'] ?? -1), $in['model'] ?? null,
+                fn(string $src) => ls_media_path($uid, substr($src, 6)) !== null);
             ls_out(['ok' => true, 'rev' => $rev]);
         case 'doc_delete':
             if (!ls_doc_delete($uid, (int)($in['id'] ?? 0))) ls_fail('not_found', 404);
