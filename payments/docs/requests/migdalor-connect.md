@@ -12,7 +12,7 @@
 
 ## מה לחבר
 
-1. **להעתיק** את `payments/sdk/php/PaymentsClient.php` ל-`guarded-browser/lib/PaymentsClient.php`.
+1. **להעתיק** את `payments/sdk/php/PaymentsClient.php` (גרסה 1.1.0 ומעלה) ל-`guarded-browser/lib/PaymentsClient.php`, ובבנאי — `'app' => 'guarded-browser'`.
 2. **סודות** (בהגדרות של מגדלור, לא בגיט): קוד סודי `sk_test_…` וסוד הודעות `whsec_…` — בעל המערכת יוצר אותם בתוסף:
    מערכות ← "+ מערכת" (מזהה `guarded-browser`, סוג "אפליקציה שלי") ← "+ סודי · בדיקות", "+ סוד webhook".
 3. **`external_id` = `family:<accounts.id>`.** בפתיחת חשבון / שינוי מייל של ההורה: `$pay->customer('family:12', ['name' => …, 'email' => <מייל ההורה>])`.

@@ -15,6 +15,13 @@ const TOPUP_MIN = 500;          // אגורות
 const TOPUP_MAX = 500_000;
 const CHECKOUT_MODES = ['payment', 'subscription', 'topup', 'setup', 'invoice'];
 const RECURRING_TYPES = ['plan', 'seat', 'addon'];
+const CHECKOUT_INTERNAL_META = ['unit_amount' => 1, 'link' => 1, 'form' => 1, 'trial_days' => 1];
+
+/** סכום שורה כפי שהלקוח משלם — מחיר "לא כולל מע"מ" עם המע"מ. */
+function gross_amount(int $amount, string $taxBehavior, int $vatRate): int
+{
+    return $taxBehavior === 'exclusive' && $vatRate ? $amount + (int)round($amount * $vatRate / 10_000) : $amount;
+}
 
 // ---------- סכומים ----------
 
@@ -76,6 +83,7 @@ function checkout_create(array $client, string $env, array $in, array $internal 
     }
     $items = [];
     $amount = 0;
+    $taxLines = [];
     $trialDays = 0;
     if ($mode === 'payment' || $mode === 'subscription') {
         $raw = $in['items'] ?? null;
@@ -97,8 +105,10 @@ function checkout_create(array $client, string $env, array $in, array $internal 
             $items[] = ['product' => $p['code'], 'price' => $pr['id'], 'quantity' => $qty];
             // סכום לבחירת הלקוח — רק מקישור תשלום (פנימי), אף פעם לא מה-API
             $unit = $mode === 'payment' && isset($internal['unit_amount']) ? (int)$internal['unit_amount'] : (int)$pr['amount'];
-            $amount += $mode === 'subscription' ? item_amount($pr, $qty, 0) : $unit * $qty;
+            $taxLines[] = ['amount' => $mode === 'subscription' ? item_amount($pr, $qty, 0) : $unit * $qty, 'tax_behavior' => $pr['tax_behavior']];
         }
+        // מחיר "לא כולל מע"מ" — הלקוח משלם כולל; אותו חישוב כמו בחשבונית, כדי שהסכום אצל הסולק יתאים לה
+        $amount = invoice_totals(db_one('SELECT * FROM merchant WHERE id = ?', [$acc['merchant']]), $taxLines)['total'];
         // ניסיון חינם — רק בפעם הראשונה במערכת הזו
         if ($trialDays && db_one('SELECT 1 FROM subscription WHERE customer = ?', [$cus['id']])) $trialDays = 0;
         if ($mode === 'subscription' && $trialDays) $amount = 0;
@@ -118,11 +128,14 @@ function checkout_create(array $client, string $env, array $in, array $internal 
             'customer_type' => $acc['customer_type'], 'products' => array_column($items, 'product')]);
         if ($rr['block'] !== null) throw new ApiError($rr['block'], 'blocked_by_rule', 403);
     }
-    $meta = (is_array($in['meta'] ?? null) ? $in['meta'] : []) + array_intersect_key($internal, ['unit_amount' => 1, 'link' => 1, 'form' => 1]);
+    // ‏meta של המערכת — רק להחזרה אליה. המפתחות הפנימיים (סכום מקישור, ניסיון) נקבעים כאן בלבד
+    $meta = array_diff_key(is_array($in['meta'] ?? null) ? $in['meta'] : [], CHECKOUT_INTERNAL_META);
+    $meta = array_intersect_key($internal, CHECKOUT_INTERNAL_META) + $meta;
+    if ($trialDays) $meta['trial_days'] = $trialDays;
     $id = new_id('chk');
     db_run('INSERT INTO checkout (id, client, env, customer, account, mode, items, amount, return_url, cancel_url, meta, invoice, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [
         $id, $client['id'], $env, $cus['id'], $acc['id'], $mode, json_encode($items), $amount,
-        $in['return_url'], $in['cancel_url'], json_encode((object)($meta + ($trialDays ? ['trial_days' => $trialDays] : [])), JSON_UNESCAPED_UNICODE),
+        $in['return_url'], $in['cancel_url'], json_encode((object)$meta, JSON_UNESCAPED_UNICODE),
         $invoiceId ?? null, now() + CHECKOUT_TTL, now(),
     ]);
     return ['checkout' => $id, 'url' => base_url() . 'pay/?c=' . $id, 'expires_at' => now() + CHECKOUT_TTL, 'amount' => $amount, 'trial_days' => $trialDays];
@@ -133,7 +146,9 @@ function checkout_load(string $id): ?array
     $c = db_one('SELECT * FROM checkout WHERE id = ?', [$id]);
     if (!$c) return null;
     if ($c['status'] === 'open' && (int)$c['expires_at'] < now()) {
-        db_run("UPDATE checkout SET status = 'expired' WHERE id = ? AND status = 'open'", [$id]);
+        if (db_run("UPDATE checkout SET status = 'expired' WHERE id = ? AND status = 'open'", [$id]) === 1 && ($link = json_obj($c['meta'])['link'] ?? '') !== '') {
+            db_run('UPDATE payment_link SET uses = MAX(0, uses - 1) WHERE code = ? AND client = ? AND env = ?', [(string)$link, $c['client'], $c['env']]);
+        }
         $c['status'] = 'expired';
         $cus = db_one('SELECT * FROM customer WHERE id = ?', [$c['customer']]);
         webhook_emit($c['client'], $c['env'], 'checkout.expired', $cus['external_id'], ['checkout' => $id]);
@@ -157,15 +172,15 @@ function checkout_view(array $c): array
         $pr = db_one('SELECT pr.*, p.name, p.type, p.code FROM price pr JOIN product p ON p.id = pr.product WHERE pr.id = ?', [$it['price']]);
         $qty = (int)$it['quantity'];
         $now = $c['mode'] === 'subscription' ? item_amount($pr, $qty, 0) : (int)($meta['unit_amount'] ?? $pr['amount']) * $qty;
-        $lines[] = ['name' => $pr['name'] . ($qty > 1 ? " × $qty" : ''), 'amount' => $now];
+        $lines[] = ['name' => $pr['name'] . ($qty > 1 ? " × $qty" : ''), 'amount' => gross_amount($now, $pr['tax_behavior'], (int)$m['vat_rate'])];
         if ($c['mode'] === 'subscription') {
             $interval = $pr['interval'];
             $per = $interval === 'year' ? 'לשנה' : ($interval === 'week' ? 'לשבוע' : 'לחודש');
-            $recurring += (int)$pr['amount'] * $qty;
+            $recurring += gross_amount((int)$pr['amount'] * $qty, $pr['tax_behavior'], (int)$m['vat_rate']);
             if ($pr['intro_amount'] !== null && (int)$pr['intro_periods'] > 0) {
                 $n = (int)$pr['intro_periods'];
                 $unit = $pr['interval'] === 'year' ? ['לשנה הראשונה', 'השנים הראשונות'] : ['לחודש הראשון', 'החודשים הראשונים'];
-                $disclose[] = 'מחיר מבצע ' . ($n === 1 ? $unit[0] : "ל-$n {$unit[1]}") . ', ואחר כך ' . money_text((int)$pr['amount'] * $qty) . " $per — " . $pr['name'] . '.';
+                $disclose[] = 'מחיר מבצע ' . ($n === 1 ? $unit[0] : "ל-$n {$unit[1]}") . ', ואחר כך ' . money_text(gross_amount((int)$pr['amount'] * $qty, $pr['tax_behavior'], (int)$m['vat_rate'])) . " $per — " . $pr['name'] . '.';
             }
             if ($pr['renewal'] === 'consent') $disclose[] = 'המנוי לתקופה קצובה. לפני סוף התקופה תקבל הודעה, והוא יחודש רק אם תאשר.';
         }
@@ -311,7 +326,6 @@ function checkout_complete(array $c, Txn $txn): void
     } elseif ($c['mode'] === 'payment') {
         $meta = json_obj($c['meta']);
         $lines = array_map(fn($it) => $lineFor($it, (int)($meta['unit_amount'] ?? db_one('SELECT amount FROM price WHERE id = ?', [$it['price']])['amount']) * (int)$it['quantity']), $items);
-        if (!empty($meta['link'])) db_run('UPDATE payment_link SET uses = uses + 1 WHERE code = ?', [(string)$meta['link']]);
         $inv = invoice_create($acc, $lines, 'paid', ['checkout' => $c['id']]);
         db_run('UPDATE invoice SET paid_at = ? WHERE id = ?', [now(), $inv['id']]);
         $result['invoice'] = $inv['id'];
@@ -407,13 +421,20 @@ function charge_api(array $client, string $env, array $in): array
         $lines[] = ['client' => $client['id'], 'product' => $p['id'], 'price' => $pr['id'], 'description' => $p['name'], 'quantity' => $q, 'amount' => (int)$pr['amount'] * $q, 'tax_behavior' => $pr['tax_behavior'], 'type' => $p['type']];
     }
     $key = (string)($in['idempotency_key'] ?? '');
-    if ($key !== '') {
-        $dup = db_one("SELECT i.* FROM invoice i WHERE i.account = ? AND i.checkout = ?", [$acc['id'], 'charge:' . $key]);
-        if ($dup) return ['status' => $dup['status'] === 'paid' ? 'succeeded' : 'failed', 'invoice' => $dup['id'], 'duplicate' => true];
+    $ref = $key !== '' ? 'charge:' . mb_substr($key, 0, 120) : null;
+    // שלב 1, בטרנזקציה קצרה: בדיקת כפילות ופתיחת החשבונית — שתי קריאות במקביל עם אותו מפתח לא יחייבו פעמיים
+    $inv = db_tx(function () use ($acc, $lines, $ref) {
+        $dup = $ref ? db_one('SELECT * FROM invoice WHERE account = ? AND checkout = ?', [$acc['id'], $ref]) : null;
+        return $dup ? ['dup' => $dup] : invoice_create($acc, $lines, 'open', ['checkout' => $ref]);
+    });
+    if (isset($inv['dup'])) {
+        $d = $inv['dup'];
+        return ['status' => $d['status'] === 'paid' ? 'succeeded' : ($d['status'] === 'open' ? 'processing' : 'failed'), 'invoice' => $d['id'], 'duplicate' => true];
     }
-    return db_tx(function () use ($acc, $lines, $client, $env, $cus, $key) {
-        $inv = invoice_create($acc, $lines, 'open', ['checkout' => $key !== '' ? 'charge:' . $key : null]);
-        $txn = invoice_charge($inv);
+    // שלב 2, מחוץ לטרנזקציה: החיוב אצל הסולק (קריאת רשת — לא נועלים את המסד בזמנה)
+    $txn = invoice_charge($inv);
+    // שלב 3: רישום התוצאה
+    return db_tx(function () use ($acc, $lines, $client, $env, $cus, $inv, $txn) {
         if ($txn->status !== 'succeeded') {
             db_run("UPDATE invoice SET status = 'void' WHERE id = ?", [$inv['id']]);
             webhook_emit($client['id'], $env, 'payment.failed', $cus['external_id'], ['invoice' => $inv['id'], 'code' => $txn->failureCode]);
@@ -443,7 +464,7 @@ function payment_refund(string $paymentId, int $amount, string $reason, string $
         $ref = $manual ? 'manual' : provider($p['provider'])->refund($p['provider_txn'], $amount, $id);
         db_run('INSERT INTO refund (id, payment, amount, reason, provider_ref, actor, manual, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [$id, $paymentId, $amount, mb_substr($reason, 0, 240), $ref, $actor, (int)$manual, now()]);
         $refunded = (int)$p['refunded'] + $amount;
-        db_run('UPDATE payment SET refunded = ?, status = ? WHERE id = ?', [$refunded, $refunded >= (int)$p['amount'] ? 'refunded' : 'partially_refunded', $paymentId]);
+        db_run('UPDATE payment SET refunded = ?, status = ?, refund_pending = MAX(0, refund_pending - ?) WHERE id = ?', [$refunded, $refunded >= (int)$p['amount'] ? 'refunded' : 'partially_refunded', $amount, $paymentId]);
         // החזר על טעינת יתרה — יורד מהארנק (רק מה שלא נוצל; נבדק לפני הקריאה במסך הניהול)
         $inv = $p['invoice'] ? db_one('SELECT * FROM invoice WHERE id = ?', [$p['invoice']]) : null;
         if ($inv && db_one("SELECT 1 FROM wallet_tx WHERE ref_type = 'invoice' AND ref_id = ? AND kind = 'topup'", [$inv['id']])) {

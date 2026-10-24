@@ -27,7 +27,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             case 'consent': subscription_consent($cus, $sub); $msg = 'אישרת חידוש לתקופה נוספת. תודה!'; break;
             case 'cooling_off':
                 $q = subscription_cooling_off($cus, $sub);
-                $msg = 'העסקה בוטלה. יוחזרו ' . money_text($q['refund']) . ' (בניכוי ' . money_text($q['used']) . ' על השימוש ו-' . money_text($q['fee']) . ' דמי ביטול).';
+                $msg = 'העסקה בוטלה. ' . ($q['refund_status'] === 'pending' ? 'ההחזר — ' . money_text($q['refund']) . ', בתוך 14 ימים' : 'יוחזרו ' . money_text($q['refund'])) . ' (בניכוי ' . money_text($q['used']) . ' על השימוש ו-' . money_text($q['fee']) . ' דמי ביטול).';
                 break;
             case 'topup':
                 $ag = (int)round((float)str_replace(',', '.', (string)($_POST['amount'] ?? '0')) * 100);

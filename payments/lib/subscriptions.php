@@ -337,10 +337,28 @@ function cooling_off_quote(array $s): ?array
 
 function subscription_cooling_off(array $cus, string $subId): array
 {
-    $s = sub_for_customer($cus, $subId);
-    $q = cooling_off_quote($s);
-    if (!$q) throw new ApiError('עברו 14 יום מהעסקה — אפשר לבטל רק מסוף התקופה', 'not_eligible', 409);
-    sub_end($s, 'cooling_off');
-    if ($q['refund'] > 0) payment_refund($q['payment'], $q['refund'], 'ביטול עסקה תוך 14 יום', 'customer:' . $cus['id']);
-    return $q;
+    // בטרנזקציה אחת, ההחזר קודם: שתי לחיצות במקביל לא יחזירו פעמיים, וביטול לא נשאר בלי החזר
+    return db_tx(function () use ($cus, $subId) {
+        $s = sub_for_customer($cus, $subId);
+        $q = cooling_off_quote($s);
+        if (!$q) throw new ApiError('עברו 14 יום מהעסקה — אפשר לבטל רק מסוף התקופה', 'not_eligible', 409);
+        $reason = 'ביטול עסקה תוך 14 יום';
+        $q['refund_status'] = 'none';
+        if ($q['refund'] > 0) {
+            $p = db_one('SELECT * FROM payment WHERE id = ?', [$q['payment']]);
+            if (provider($p['provider'])->capabilities()['refund_api']) {
+                payment_refund($q['payment'], $q['refund'], $reason, 'customer:' . $cus['id']);
+                $q['refund_status'] = 'refunded';
+            } else {
+                // סולק בלי החזר בממשק (מורנינג) — החוב נרשם, המנהל מבצע בממשק הסולק ו"רישום החזר" סוגר אותו
+                db_run('UPDATE payment SET refund_pending = refund_pending + ?, refund_pending_reason = ? WHERE id = ?', [$q['refund'], $reason, $p['id']]);
+                audit('customer', $cus['id'], 'refund.requested', 'payment', $p['id'], ['amount' => $q['refund']]);
+                notify($p['account'], 'email', 'refund_pending', 'refund_pending:' . $p['id'] . ':' . now(), 'ביטול העסקה התקבל',
+                    "שלום,\n\nביטול העסקה התקבל. החזר של " . money_text($q['refund']) . " יבוצע לאמצעי התשלום שלך בתוך 14 ימים.");
+                $q['refund_status'] = 'pending';
+            }
+        }
+        sub_end($s, 'cooling_off');
+        return $q;
+    });
 }
