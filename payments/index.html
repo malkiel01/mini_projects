@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="theme-color" content="#2d4a8a">
+<title>תשלומים</title>
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body>
+<a class="skip" href="#main">דילוג לתוכן</a>
+<header class="top">
+  <div class="titles"><h1>💳 תשלומים</h1><div class="sub">תוסף גבייה · שלד</div></div>
+</header>
+<nav class="tabs" aria-label="לשוניות">
+  <a href="#overview" aria-current="page">סקירה</a>
+  <a href="#customers">לקוחות</a>
+  <a href="#money">כספים</a>
+  <a href="#systems">מערכות</a>
+  <a href="#settings">הגדרות</a>
+</nav>
+
+<main id="main" tabindex="-1">
+  <section class="panel" id="p-overview">
+    <p class="hint">התוסף בבנייה. כאן תופיע ההכנסה, המנויים והגבייה שדורשת טיפול. בינתיים — מה כבר מוכן ומה הבא.</p>
+    <div class="summary">
+      <div class="line"><span class="muted">שלב</span> <b>1</b> <span class="muted">מתוך 10 — השלד</span><span class="pct">10%</span></div>
+      <span class="track" role="progressbar" aria-label="התקדמות" aria-valuemin="0" aria-valuemax="100" aria-valuenow="10"><span style="inline-size:10%"></span></span>
+      <div class="chips"><span class="chip ok">אפיון הושלם</span><span class="chip">גישה סגורה — רק המנהל</span></div>
+    </div>
+
+    <h2 class="sec-title">השלבים</h2>
+    <ul class="list" id="stages"></ul>
+  </section>
+
+  <section class="panel" id="p-customers" hidden>
+    <p class="empty">עוד אין לקוחות. הם יופיעו כשמערכת ראשונה תתחבר (שלב 2).</p>
+  </section>
+  <section class="panel" id="p-money" hidden>
+    <p class="empty">תשלומים, חשבוניות והחזרים — משלב 3.</p>
+  </section>
+  <section class="panel" id="p-systems" hidden>
+    <p class="empty">מערכות מחוברות וקודי גישה — משלב 2. הראשונה: מגדלור.</p>
+  </section>
+  <section class="panel" id="p-settings" hidden>
+    <p class="empty">עוסקים, חברות סליקה, Morning וכללים — משלב 2.</p>
+  </section>
+</main>
+
+<script src="assets/js/app.js"></script>
+</body>
+</html>
