@@ -1,8 +1,10 @@
-// עורך המסמך — שלב העמודים: תצוגה, זום, דפדוף, והגדרות (גודל, שוליים, עמודים כפולים, מספר עמודים).
+// עורך המסמך: תצוגה, זום, דפדוף; הגדרות (גודל, שוליים, עמודים כפולים, מספר עמודים, מספור, עמוד אב);
+// הקשה על עמוד — בחירה, ו"עמוד N" בסרגל קובע לו עמוד אב.
 // כל שינוי נשמר לשרת אחרי רגע (doc_save עם rev — שמירה מלשונית ישנה נדחית במקום לדרוס).
 
 import { PageView } from './view.js';
-import { pagesOf, pageSize, setPageCount, setPageSize, marginsFit, mmToPt, ptToMm } from './pages.js';
+import { pagesOf, pageSize, setPageCount, setPageSize, marginsFit, mmToPt, ptToMm,
+  mastersOf, masterOf, setMaster, updateMaster, ensureMasters, spreadOfPage } from './pages.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 
@@ -45,7 +47,7 @@ const newId = () => 'p' + Array.from(crypto.getRandomValues(new Uint8Array(6)), 
 // ---- מצב ----
 const id = Number(new URLSearchParams(location.search).get('id'));
 let doc = null, model = null, rev = 0;
-const view = new PageView($('#stage'), { onChange: updateBar });
+const view = new PageView($('#stage'), { onChange: updateBar, onPick: updatePageBtn });
 
 // ---- שמירה ----
 const saveState = $('#save-state');
@@ -127,6 +129,51 @@ $('#add-page').addEventListener('click', () => {
   toast(`${pagesOf(model).length} עמודים`);
 });
 
+// ---- עמוד נבחר: עמוד אב ----
+const pageBtn = $('#page-btn'), pdlg = $('#page-dlg'), pform = $('form', pdlg);
+
+function updatePageBtn() {
+  const i = view.selected;
+  pageBtn.hidden = i < 0;
+  $('#add-page').hidden = i >= 0;
+  if (i >= 0) pageBtn.textContent = `📄 עמוד ${i + 1}`;
+}
+
+pageBtn.addEventListener('click', () => {
+  const i = view.selected;
+  if (i < 0) return;
+  const page = pagesOf(model)[i];
+  $('#page-title').textContent = `עמוד ${i + 1}`;
+  const seg = $('#pm-seg');
+  seg.replaceChildren();
+  for (const [value, label] of [...mastersOf(model).map(m => [m.id, m.name]), ['', 'ללא']]) {
+    const l = document.createElement('label');
+    l.innerHTML = '<input type="radio" name="master"><span></span>';
+    l.firstChild.value = value;
+    l.lastChild.textContent = label;
+    seg.append(l);
+  }
+  pform.master.value = page.master || '';
+  const s = view.lay.spreads[spreadOfPage(view.lay, i)];
+  $('#pm-both-row').hidden = s.pages.length < 2;
+  pform.both.checked = false;
+  pform.rest.checked = false;
+  pdlg.showModal();
+});
+
+pform.addEventListener('submit', e => {
+  e.preventDefault();
+  const i = view.selected;
+  const s = view.lay.spreads[spreadOfPage(view.lay, i)];
+  let idx = [i];
+  if (pform.both.checked) idx = s.pages.map(p => p.index);
+  if (pform.rest.checked) for (let k = Math.min(...idx); k < pagesOf(model).length; k++) idx.push(k);
+  pdlg.close();
+  changed(setMaster(model, idx, pform.master.value || null));
+});
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !e.target.closest('dialog')) view.select(-1); });
+
 // ---- הגדרות ----
 const dlg = $('#set-dlg'), form = $('form', dlg), dlgErr = $('.error', dlg);
 const num = v => { const n = parseFloat(String(v).replace(',', '.')); return Number.isFinite(n) ? n : NaN; };
@@ -141,12 +188,35 @@ function fillSettings() {
   form.facing.checked = model.layout.facing;
   form.binding.value = model.layout.binding;
   form.count.value = pagesOf(model).length;
+  const nb = model.layout.numbering;
+  form.start.value = nb.start;
+  form.nstyle.value = nb.style;
+  const run = mastersOf(model)[0].running || {};
+  const fo = run.folio, hd = run.header;
+  form.folio.checked = !!fo;
+  form.fpos.value = fo?.position || 'bottom';
+  form.falign.value = fo?.align || 'outside';
+  form.header.checked = !!hd;
+  form.hodd.value = hd?.odd || '';
+  form.heven.value = hd?.even || '';
+  form.hpos.value = hd?.position || 'top';
+  form.halign.value = hd?.align || 'center';
+  syncMasterOpts();
   dlgErr.hidden = true;
+}
+
+// אפשרויות שתלויות במתג — מוסתרות כשהוא כבוי; בלי עמודים כפולים יש כותרת אחת
+function syncMasterOpts() {
+  $('.folio-opts', form).hidden = !form.folio.checked;
+  $('.header-opts', form).hidden = !form.header.checked;
+  $('.h-even', form).hidden = !form.facing.checked;
+  $('.h-odd-lbl', form).textContent = form.facing.checked ? 'בעמוד אי-זוגי' : 'הכותרת';
 }
 
 form.addEventListener('change', e => {
   if (e.target.name === 'size' && SIZES[form.size.value]) [form.w.value, form.h.value] = SIZES[form.size.value];
   if (e.target.name === 'w' || e.target.name === 'h') form.size.value = 'custom';
+  syncMasterOpts();
 });
 
 $('#settings-btn').addEventListener('click', () => { fillSettings(); dlg.showModal(); });
@@ -165,11 +235,23 @@ form.addEventListener('submit', e => {
   const count = Math.round(num(form.count.value));
   if (!(count >= 1 && count <= 2000)) return fail('מספר העמודים — בין 1 ל-2000');
 
+  const start = Math.round(num(form.start.value));
+  if (!(start >= 1 && start <= 99999)) return fail('מספור העמודים — מתחיל ב-1 או יותר');
+  const hodd = form.hodd.value.trim(), heven = form.heven.value.trim();
+  if (form.header.checked && !hodd && !(form.facing.checked && heven)) return fail('כותרת רצה — צריך טקסט');
+
   const cur = pagesOf(model).length;
   if (count < cur && !confirm(`להוריד ${cur - count} עמודים מסוף המסמך?`)) return;
 
   let next = setPageSize(model, [mmToPt(w), mmToPt(h)]);
-  next = { ...next, layout: { ...next.layout, facing: form.facing.checked, binding: form.binding.value, margins } };
+  next = { ...next, layout: { ...next.layout, facing: form.facing.checked, binding: form.binding.value, margins,
+    numbering: { start, style: form.nstyle.value } } };
+  const master = mastersOf(next)[0];
+  next = updateMaster(next, master.id, { running: {
+    folio: form.folio.checked ? { position: form.fpos.value, align: form.falign.value, size: master.running?.folio?.size || 10 } : null,
+    header: form.header.checked ? { odd: hodd, even: form.facing.checked ? heven : hodd,
+      position: form.hpos.value, align: form.halign.value, size: master.running?.header?.size || 9 } : null,
+  } });
   next = setPageCount(next, count, newId);
   if (!marginsFit(next)) return fail('השוליים גדולים מדי לעמוד — צריך להישאר לפחות 1 ס"מ לתוכן');
   dlg.close();
@@ -182,7 +264,7 @@ form.addEventListener('submit', e => {
   if (!id) { location.replace('index.html'); return; }
   try {
     const got = await api('doc_get', { id });
-    doc = got.doc; model = got.model; rev = got.rev;
+    doc = got.doc; model = ensureMasters(got.model); rev = got.rev;   // מסמך ישן — עמוד אב נוסף מקומית, נשמר בשינוי הבא
     document.title = doc.title + ' — עימוד';
     $('#doc-title').textContent = doc.title;
     setState('נשמר');

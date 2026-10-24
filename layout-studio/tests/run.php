@@ -86,7 +86,8 @@ check('נמחק — לא ברשימה', count(ls_docs_list($uidA)) === 1);
 // ---- מודל: פתיחה ושמירה ----
 $doc = ls_doc_create($uidA, 'ספר', '17x24');
 $g = ls_doc_get($uidA, $doc['id']);
-check('מסמך חדש — 4 עמודים, כפולים, כריכה מימין', count($g['model']->surfaces) === 4 && $g['model']->layout->facing === true && $g['model']->layout->binding === 'right');
+$pagesIn = fn($m) => count(array_filter((array)$m->surfaces, fn($x) => $x->type === 'page'));
+check('מסמך חדש — 4 עמודים, כפולים, כריכה מימין', $pagesIn($g['model']) === 4 && $g['model']->layout->facing === true && $g['model']->layout->binding === 'right');
 check('מסמך חדש — rev 1', $g['rev'] === 1);
 check('flows ריק נשאר אובייקט', json_encode($g['model']->flows) === '{}');
 check('משתמש אחר לא פותח', ls_doc_get($uidB, $doc['id']) === null);
@@ -98,7 +99,7 @@ $raw = json_encode($m, JSON_UNESCAPED_UNICODE);
 $rev = ls_doc_save($uidA, $doc['id'], 1, $raw);
 check('שמירה — rev עולה', $rev === 2);
 $g2 = ls_doc_get($uidA, $doc['id']);
-check('נשמר — 5 עמודים, ושדה לא מוכר נשאר', count($g2['model']->surfaces) === 5 && $g2['model']->futureField->x === 1);
+check('נשמר — 5 עמודים, ושדה לא מוכר נשאר', $pagesIn($g2['model']) === 5 && $g2['model']->futureField->x === 1);
 check('שמירה עם rev ישן — conflict', throws(fn() => ls_doc_save($uidA, $doc['id'], 1, $raw), 'conflict'));
 check('שמירה למסמך של אחר — not_found', throws(fn() => ls_doc_save($uidB, $doc['id'], 2, $raw), 'not_found'));
 
@@ -120,6 +121,33 @@ ls_db()->prepare('INSERT INTO docs (owner_id, title, page_w, page_h, created_at,
     ->execute([$uidA, 'ישן', 419.53, 595.28, ls_now(), ls_now()]);
 $old = ls_doc_get($uidA, (int)ls_db()->lastInsertId());
 check('מסמך ישן — מודל בגודל שלו', $old && $old['model']->surfaces[0]->size[0] == 419.53 && $old['rev'] === 1);
+
+// ---- עמודי אב ומספור ----
+$mm = json_decode(json_encode($g['model']), true);
+$master = array_values(array_filter($mm['surfaces'], fn($x) => $x['type'] === 'master'))[0] ?? null;
+check('מסמך חדש — עמוד אב A עם מספר עמוד', $master && $master['id'] === 'mA' && $master['running']['folio']['align'] === 'outside');
+check('מסמך חדש — כל העמודים על A', count(array_filter($mm['surfaces'], fn($x) => $x['type'] === 'page' && $x['master'] === 'mA')) === 4);
+check('מסמך חדש — מספור מ-1 בספרות', $mm['layout']['numbering'] === ['start' => 1, 'style' => 'arabic']);
+$d3 = ls_doc_create($uidA, 'אב', 'a5');
+$try = function (callable $mut, string $code) use ($uidA, $d3) {
+    $x = json_decode(json_encode(ls_doc_get($uidA, $d3['id'])['model']), true);
+    $mut($x);
+    return throws(fn() => ls_doc_save($uidA, $d3['id'], 1, json_encode($x)), 'bad_model:' . $code);
+};
+check('עמוד שמפנה לעמוד אב שלא קיים — נדחה', $try(function (&$x) { $x['surfaces'][0]['master'] = 'mZ'; }, 'master_ref'));
+check('מספור מ-0 — נדחה', $try(function (&$x) { $x['layout']['numbering']['start'] = 0; }, 'numbering'));
+check('סגנון מספור לא מוכר — נדחה', $try(function (&$x) { $x['layout']['numbering']['style'] = 'roman'; }, 'numbering'));
+check('מיקום מספר לא מוכר — נדחה', $try(function (&$x) { $x['surfaces'][4]['running']['folio']['align'] = 'middle'; }, 'running'));
+check('כותרת רצה בלי טקסט זוגי — נדחה', $try(function (&$x) {
+    $x['surfaces'][4]['running']['header'] = ['odd' => 'פרק', 'position' => 'top', 'align' => 'center', 'size' => 9]; }, 'running'));
+$ok = json_decode(json_encode(ls_doc_get($uidA, $d3['id'])['model']), true);
+$ok['surfaces'][0]['master'] = null;
+$ok['surfaces'][4]['running']['header'] = ['odd' => 'פרק א', 'even' => 'סידור לשבת', 'position' => 'top', 'align' => 'center', 'size' => 9];
+$ok['layout']['numbering'] = ['start' => 3, 'style' => 'hebrew'];
+check('עמוד בלי אב, כותרת רצה ומספור עברי — נשמר', ls_doc_save($uidA, $d3['id'], 1, json_encode($ok, JSON_UNESCAPED_UNICODE)) === 2);
+$mOld = json_decode(json_encode($ok), true);
+unset($mOld['layout']['numbering']);
+check('מסמך בלי numbering (לפני עמודי האב) — נשמר', ls_doc_save($uidA, $d3['id'], 2, json_encode($mOld)) === 3);
 
 echo "\n" . ($n - $fails) . " / $n עברו\n";
 exit($fails ? 1 : 0);
