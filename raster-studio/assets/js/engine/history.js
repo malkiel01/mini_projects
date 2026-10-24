@@ -127,6 +127,13 @@ export class History {
     });
   }
 
+  /** הבחירה השתנתה (before / after — אובייקטי בחירה או null). */
+  selection(doc, before, after, label) {
+    const r = this.renderer;
+    const set = v => { doc.selection = v; r.selectionChanged(doc); };
+    this.push({ label, bytes: 0, undo: () => set(before), redo: () => set(after) });
+  }
+
   /** שכבה עברה מ-from ל-to. */
   moveLayer(doc, layer, from, to, label) {
     const r = this.renderer;

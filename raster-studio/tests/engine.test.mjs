@@ -344,3 +344,31 @@ test('משיכה: נקודות במרחק קבוע, גם בין קטעים', () 
   assert.equal(tiny.dabs.length, 0);
   near(tiny.carry, 2);
 });
+
+// ---- בחירה ----
+import { shapeBox, selectionBox, combine, isEmptyShape } from '../assets/js/engine/selection.js';
+
+test('בחירה: מלבן חוסם, חתוך לקנבס ובמספרים שלמים', () => {
+  const sel = { shapes: [{ op: 'add', type: 'rect', x: -10, y: 5.5, w: 50, h: 20 }], inverted: false };
+  assert.deepEqual(selectionBox(sel, 100, 100), [0, 5, 40, 26]);
+  assert.deepEqual(selectionBox({ ...sel, inverted: true }, 100, 100), [0, 0, 100, 100]);
+  assert.equal(selectionBox({ shapes: [{ op: 'add', type: 'rect', x: 200, y: 0, w: 10, h: 10 }] }, 100, 100), null, 'מחוץ לקנבס');
+  assert.equal(selectionBox(null, 10, 10), null);
+  assert.deepEqual(shapeBox({ type: 'poly', pts: [[5, 1], [2, 9], [8, 4]] }), [2, 1, 8, 9]);
+});
+
+test('בחירה: חדשה / הוספה / חיסור, וגם בבחירה הפוכה', () => {
+  const a = { type: 'rect', x: 0, y: 0, w: 10, h: 10 }, b = { type: 'ellipse', x: 5, y: 5, w: 10, h: 10 };
+  const s1 = combine(null, a, 'new');
+  assert.deepEqual(s1.shapes.map(s => s.op), ['add']);
+  assert.equal(combine(null, a, 'sub'), null, 'חיסור מכלום — כלום');
+  assert.deepEqual(combine(null, a, 'add').shapes.length, 1);
+  const s2 = combine(s1, b, 'sub');
+  assert.deepEqual(s2.shapes.map(s => s.op), ['add', 'sub']);
+  assert.equal(combine(s2, b, 'new').shapes.length, 1);
+  const inv = { ...s1, inverted: true };
+  assert.equal(combine(inv, b, 'add').shapes.at(-1).op, 'sub', 'בהפוכה, הוספה = חיסור מהצורות');
+  assert.equal(combine(inv, b, 'sub').shapes.at(-1).op, 'add');
+  assert.equal(isEmptyShape({ type: 'rect', x: 3, y: 3, w: 0, h: 9 }), true);
+  assert.equal(isEmptyShape({ type: 'poly', pts: [[0, 0], [9, 9]] }), true);
+});
