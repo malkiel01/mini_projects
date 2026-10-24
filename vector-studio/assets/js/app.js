@@ -59,6 +59,21 @@ function setupNew() {
   const dlg = $('new-dlg');
   $('sizes').innerHTML = SIZES.map(s => `<button class="tile" type="button" data-size="${s.id}"><span class="tile-ic" aria-hidden="true">${s.icon}</span>${esc(s.name)}</button>`).join('');
   $('new-btn').addEventListener('click', () => dlg.showModal());
+  $('open-btn').addEventListener('click', () => $('open-file').click());
+  $('open-file').addEventListener('change', async () => {
+    const f = $('open-file').files[0];
+    $('open-file').value = '';
+    if (!f) return;
+    $('open-err').hidden = true;
+    try {
+      const { id, notes } = await library.importMbe(f);
+      if (notes.length) alert('נפתח. שימו לב:\n' + notes.join('\n'));
+      location.href = 'editor.html#d' + id;
+    } catch (e) {
+      $('open-err').textContent = 'הפתיחה נכשלה: ' + e.message;
+      $('open-err').hidden = false;
+    }
+  });
   $('sizes').addEventListener('click', e => { const b = e.target.closest('[data-size]'); if (b) newDrawing('new:' + b.dataset.size); });
   $('custom-go').addEventListener('click', () => {
     const w = Number($('cw').value), h = Number($('ch').value);

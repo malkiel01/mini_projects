@@ -20,9 +20,12 @@
     <section id="home" hidden>
       <div class="toolbar">
         <h2 class="sec-title" style="flex:1;margin:0">הציורים שלי</h2>
+        <button class="btn ghost" id="open-btn" type="button" title="פתיחת קובץ ‎.mbe מהמכשיר"><span aria-hidden="true">📂</span> פתיחה</button>
+        <input type="file" id="open-file" accept=".mbe,application/vnd.mbe+zip" hidden>
         <button class="btn primary" id="new-btn" type="button"><span aria-hidden="true">+</span> ציור חדש</button>
       </div>
-      <p class="hint">הציורים נשמרים בספרייה בשרת, אוטומטית תוך כדי עבודה. ייצוא ל-SVG, PDF ו-PNG — מתוך הציור (📁).</p>
+      <p class="hint">הציורים נשמרים בספרייה בשרת, אוטומטית. קובץ ‎.mbe (לכל החבילה), SVG, PDF ו-PNG — מתוך הציור (📁).</p>
+      <p class="error" role="alert" id="open-err" hidden></p>
       <ul class="list" id="drafts"></ul>
     </section>
 

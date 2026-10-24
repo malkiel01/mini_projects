@@ -2,7 +2,7 @@
 /**
  * API של וקטורי. בקשה אחת = action אחד (ב-query או בגוף ה-JSON).
  *
- * me — מי נכנס. הספרייה: list, get, create, save, delete, thumb (GET, PNG), versions, restore.
+ * me — מי נכנס. הספרייה: list, get, create, save, delete, thumb (GET, PNG), container (GET, ‎.mbe המקורי), versions, restore.
  * כתיבה רק ב-POST עם Content-Type: application/json — טופס מאתר אחר לא יכול לשלוח כזה בלי preflight.
  */
 
@@ -53,6 +53,13 @@ try {
             reply(['success' => true, 'versions' => listVersions(requireUser(), $id)]);
         case 'restore':
             reply(['success' => true, 'drawing' => restoreVersion(requireUser(), $id, (int) ($in['version'] ?? 0), (int) ($in['rev'] ?? 0))]);
+        case 'container': {
+            $b = drawingContainer(requireUser(), $id);
+            if ($b === null) { http_response_code(404); exit; }
+            header('Content-Type: application/vnd.mbe+zip');
+            echo $b;
+            exit;
+        }
         case 'thumb': {
             $png = drawingThumb(requireUser(), $id);
             if ($png === null) { http_response_code(404); exit; }
