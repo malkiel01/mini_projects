@@ -6,7 +6,7 @@ import { idbGet, idbDel } from './idb.js';
 import { RasterDocument } from './engine/doc.js';
 import { WebGL2Renderer, decodeImage } from './engine/webgl2.js';
 import * as V from './engine/view.js';
-import { deviceBudget, suggestSize, megapixels } from './engine/budget.js';
+import { deviceBudget, suggestSize, megapixels, perfFactor, perfLabel, perfCacheValid } from './engine/budget.js';
 import { createLayersPanel } from './layers-panel.js';
 import { History } from './engine/history.js';
 import { createTools } from './tools.js';
@@ -25,7 +25,26 @@ const overlay = createOverlay($('#overlay'), { doc: () => doc, view: () => view 
 
 const coarse = matchMedia('(pointer: coarse)').matches;
 const mobile = coarse || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-const budget = deviceBudget({ deviceMemory: navigator.deviceMemory, mobile });
+// מדידת הביצועים — מהמטמון אם יש; אחרת נמדדת אחרי שהמסמך נפתח (פעם אחת למכשיר)
+const PERF_KEY = 'raster-studio:perf';
+let perfCache = null;
+try { perfCache = JSON.parse(localStorage.getItem(PERF_KEY) || 'null'); } catch { /* פרטי / חסום */ }
+let budget = deviceBudget({ deviceMemory: navigator.deviceMemory, mobile, perf: perfFactor(perfCache?.score) });
+
+function measurePerf() {
+  const key = renderer.gpuKey() + '|' + navigator.userAgent;
+  if (perfCacheValid(perfCache, key)) return;
+  const score = renderer.benchmark(RasterDocument);
+  perfCache = { v: 1, key, score, at: Date.now() };
+  try { localStorage.setItem(PERF_KEY, JSON.stringify(perfCache)); } catch { /* לא נורא — יימדד שוב */ }
+  budget = deviceBudget({ deviceMemory: navigator.deviceMemory, mobile, perf: perfFactor(score) });
+  if (history) history.limitBytes = budget.bytes / 4;
+  updateMetaTitle();
+}
+
+function updateMetaTitle() {
+  $('#meta').title = `מנוע: ${renderer?.name ?? '—'} · ביצועים: ${perfLabel(perfCache?.score)} · תמונה עד ~${megapixels(budget.maxPixels(), 1)} מגה-פיקסל`;
+}
 
 let renderer = null;
 let doc = null;
@@ -105,6 +124,7 @@ function updateMeta() {
   const resized = updateMeta.last != null;
   updateMeta.last = key;
   $('#meta').replaceChildren(dims([doc.width, doc.height]), ' · ' + renderer.name);
+  updateMetaTitle();
   if (resized) fit();   // הגודל השתנה (חיתוך / ביטול שלו) — המסמך כולו בתמונה
 }
 
@@ -501,6 +521,8 @@ $('#hint').textContent = coarse ? 'צביטה — זום' : 'גרירה — הז
     } else {
       throw new Error('no_file');
     }
+    // אחרי שהמסמך על המסך — מדידה קצרה בזמן שקט (פעם אחת למכשיר)
+    (window.requestIdleCallback || setTimeout)(() => { try { measurePerf(); draw(); } catch (err) { console.warn('perf', err); } }, { timeout: 2000 });
   } catch (e) {
     const code = e.message;
     showMsg(code === 'no_file' ? 'לא נבחרה תמונה. חזרו לרשימה ופתחו תמונה או צרו חדשה.' : errText(code), true);
@@ -524,5 +546,7 @@ window.__rs = {
   flushDraft,
   get changed() { return changed; },
   addImageLayer,
-  budget,
+  get budget() { return budget; },
+  get perf() { return perfCache; },
+  measurePerf,
 };
