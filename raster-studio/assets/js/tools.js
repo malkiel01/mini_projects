@@ -4,6 +4,7 @@
 import { dabsAlong, floodFill, hexToRgb, rgbToHex } from './engine/fill.js';
 import { combine, isEmptyShape, selectionBox } from './engine/selection.js';
 import * as XF from './engine/transform.js';
+import { FONTS, LINE_HEIGHT, cssFont, renderText, textDirection } from './engine/text.js';
 
 export const TOOLS = {
   hand: { label: 'יד', icon: '✋', key: 'h', hint: 'גרירה — הזזה' },
@@ -15,6 +16,7 @@ export const TOOLS = {
   brush: { label: 'מכחול', icon: '🖌️', key: 'b', hint: 'Alt+לחיצה — דגימת צבע · [ ] — גודל' },
   eraser: { label: 'מחק', icon: '🧽', key: 'e', hint: '[ ] — גודל' },
   bucket: { label: 'דלי', icon: '🪣', key: 'g', hint: 'לחיצה — מילוי אזור בשכבה הפעילה' },
+  text: { label: 'טקסט', icon: '𝐓', key: 't', hint: 'לחיצה — תיבת טקסט · Ctrl+Enter או לחיצה בחוץ — אישור · Esc — ביטול' },
   picker: { label: 'טפטפת', icon: '💧', key: 'i', hint: 'לחיצה — הצבע מהתמונה' },
 };
 
@@ -36,13 +38,18 @@ const $ = (s, el = document) => el.querySelector(s);
  * @param {(m: string, err?: boolean) => void} o.toast
  */
 export function createTools({ doc, renderer, history, view, onChange, draw, toast, overlay }) {
-  const state = { tool: 'brush', color: '#1b1e26', size: 12, hardness: 0.8, opacity: 1, tolerance: 32, selMode: 'new' };
+  const state = {
+    tool: 'brush', color: '#1b1e26', size: 12, hardness: 0.8, opacity: 1, tolerance: 32, selMode: 'new',
+    font: FONTS[0].family, fontSize: 48, bold: false, align: 'start',
+  };
   let stroke = null;   // { layer, last, carry, pen }
   let lasso = null;    // גרירת בחירה: { type, mode, start, pts, shape }
   let xf = null;       // גרירה בכלי ההזזה: { kind, handle, t0, start }
   let floatSel = null; // הבחירה כשהתוכן הצף התחיל — זזה איתו
   let cropRect = null; // { x0, y0, x1, y1 } — אזור החיתוך המוצע
   let cropDrag = null; // { kind: 'new' | 'move' | 'handle', handle, r0, start }
+  let textEdit = null; // { anchor } — תיבת טקסט פתוחה
+  const textBox = $('#text-edit');
 
   const strip = $('#tools');
   const opts = $('#tool-opts');
@@ -75,7 +82,23 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     bindRange('opacity', v => { state.opacity = v / 100; }, s => Math.round(s.opacity * 100), s => Math.round(s.opacity * 100) + '%'),
     bindRange('tolerance', v => { state.tolerance = v; }, s => s.tolerance, s => String(s.tolerance)),
   ];
-  colorIn.addEventListener('input', () => { state.color = colorIn.value; syncColor(); });
+  colorIn.addEventListener('input', () => { state.color = colorIn.value; syncColor(); styleText(); });
+  // טקסט: גופן, גודל, מודגש, יישור
+  const fontSel = $('#opt-font');
+  fontSel.replaceChildren(...FONTS.map(f => { const o = new Option(f.label, f.family); o.style.fontFamily = `"${f.family}"`; return o; }));
+  fontSel.addEventListener('change', () => { state.font = fontSel.value; styleText(); });
+  $('#opt-font-size').addEventListener('input', e => {
+    const v = Math.round(Number(e.target.value));
+    if (v >= 4 && v <= 1000) { state.fontSize = v; styleText(); }
+  });
+  $('#opt-bold').addEventListener('click', e => {
+    state.bold = !state.bold;
+    e.currentTarget.setAttribute('aria-pressed', String(state.bold));
+    styleText();
+  });
+  for (const r of opts.querySelectorAll('input[name="align"]')) {
+    r.addEventListener('change', () => { if (r.checked) { state.align = r.value; styleText(); } });
+  }
   for (const r of opts.querySelectorAll('input[name="selmode"]')) {
     r.addEventListener('change', () => { if (r.checked) state.selMode = r.value; });
   }
@@ -84,6 +107,8 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     if (b) selAction(b.dataset.sel);
     const x = e.target.closest('[data-xf]');
     if (x) { if (x.dataset.xf === 'apply') commitFloat(); else cancelFloat(); }
+    const tb = e.target.closest('[data-text]');
+    if (tb) { if (tb.dataset.text === 'apply') commitText(); else cancelText(); }
     const c = e.target.closest('[data-crop]');
     if (c) { if (c.dataset.crop === 'apply') applyCrop(); else cancelCrop(); }
   });
@@ -97,6 +122,7 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     cancel();
     if (id !== 'move') commitFloat();
     if (id !== 'crop') cancelCrop();
+    if (id !== 'text') commitText();
     state.tool = id;
     for (const b of strip.querySelectorAll('.tool')) b.setAttribute('aria-pressed', String(b.dataset.tool === id));
     for (const f of opts.querySelectorAll('[data-for]')) f.hidden = !f.dataset.for.split(' ').includes(id);
@@ -115,6 +141,7 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
   // ---- סמן המכחול: עיגול בגודל האמיתי, עוקב אחרי העכבר / העט ----
   let lastHover = null;
   function updateCursor(e) {
+    if (!e) styleText();   // זום / הזזה — התיבה עוקבת
     if (e) lastHover = e;
     const show = lastHover && (state.tool === 'brush' || state.tool === 'eraser') && lastHover.pointerType !== 'touch';
     cursor.hidden = !show;
@@ -319,6 +346,69 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     onChange('crop');
   }
 
+  // ---- טקסט ----
+  /** התיבה בגודל, בגופן ובמקום האמיתיים, לפי הזום */
+  function styleText() {
+    if (!textEdit) return;
+    const v = view(), z = v.zoom;
+    const r = $('#stage').getBoundingClientRect();
+    const sx = v.x + textEdit.anchor[0] * z, sy = v.y + textEdit.anchor[1] * z;
+    const dir = textDirection(textBox.value || 'א');
+    const side = state.align === 'center' ? 'center' : (state.align === 'start') === (dir === 'rtl') ? 'right' : 'left';
+    Object.assign(textBox.style, {
+      font: cssFont({ family: state.font, size: state.fontSize * z, bold: state.bold }),
+      lineHeight: String(LINE_HEIGHT), color: state.color, textAlign: side, direction: dir,
+      top: sy + 'px', left: '', right: '', transform: '',
+    });
+    if (side === 'right') textBox.style.right = (r.width - sx) + 'px';
+    else textBox.style.left = sx + 'px';
+    if (side === 'center') textBox.style.transform = 'translateX(-50%)';
+    // גודל התיבה לפי התוכן
+    textBox.style.width = '0px';
+    textBox.style.height = '0px';
+    textBox.style.width = Math.max(state.fontSize * z, textBox.scrollWidth + 4) + 'px';
+    textBox.style.height = textBox.scrollHeight + 'px';
+    for (const b of opts.querySelectorAll('[data-text]')) b.disabled = false;
+  }
+
+  function startText(pt) {
+    textEdit = { anchor: pt };
+    textBox.value = '';
+    textBox.hidden = false;
+    styleText();
+    textBox.focus();
+    requestAnimationFrame(() => textEdit && textBox.focus());   // ליתר ביטחון — אחרי שהלחיצה הסתיימה
+  }
+
+  function closeText() {
+    textEdit = null;
+    textBox.hidden = true;
+    textBox.value = '';
+    for (const b of opts.querySelectorAll('[data-text]')) b.disabled = true;
+  }
+
+  function cancelText() { if (textEdit) closeText(); }
+
+  async function commitText() {
+    if (!textEdit) return;
+    const text = textBox.value, anchor = textEdit.anchor;
+    closeText();
+    const d = doc();
+    const r = await renderText(text, { family: state.font, size: state.fontSize, bold: state.bold, color: state.color, align: state.align }, anchor);
+    if (!r) return;
+    const layer = d.addLayer({ name: text.trim().split('\n')[0].slice(0, 24) || 'טקסט', index: d.indexOf(d.active) + 1 });
+    await renderer.drawImage(d, layer, r.bitmap, r.x, r.y);
+    r.bitmap.close();
+    history.addLayer(d, layer, 'טקסט');
+    onChange('text');
+  }
+
+  textBox.addEventListener('input', styleText);
+  textBox.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { e.preventDefault(); cancelText(); }
+    else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); commitText(); }
+  });
+
   // ---- ציור ----
   const painting = () => state.tool === 'brush' || state.tool === 'eraser';
 
@@ -359,6 +449,13 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
   function down(e, pt) {
     if (state.tool === 'hand') return false;
     if (state.tool === 'crop') { cropDown(e, pt); return true; }
+    if (state.tool === 'text') {
+      // ברירת המחדל של הלחיצה מעבירה את הפוקוס לגוף הדף — היא חוסמת את ההקלדה בתיבה
+      e.preventDefault();
+      // לחיצה בזמן עריכה — אישור; אחרת — תיבה חדשה בנקודה
+      if (textEdit) commitText(); else startText(pt);
+      return true;
+    }
     if (state.tool === 'move') {
       if (!fl() && !startFloat()) return true;
       const f = fl();
@@ -508,7 +605,8 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
   sync();
   setTool(state.tool);
   return {
-    state, setTool, down, move, up, cancel, key, updateCursor, hideCursor, selAction, commitFloat, cancelFloat,
+    state, setTool, down, move, up, cancel, key, updateCursor, hideCursor, selAction, commitFloat, cancelFloat, commitText,
+    get editingText() { return !!textEdit; },
     get stroking() { return !!stroke || !!lasso || !!xf || !!cropDrag; },
     get floating() { return !!fl(); },
   };

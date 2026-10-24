@@ -206,7 +206,7 @@ const toDoc = p => V.screenToDoc(view, p[0], p[1]);
 stage.addEventListener('pointerdown', e => {
   if (!doc) return;
   // הכלים והאפשרויות יושבים מעל הבמה — לחיצה עליהם היא לחיצה על כפתור, לא ציור (ובלי לתפוס את המצביע)
-  if (e.target.closest('.tools, .tool-opts, .adjust')) return;
+  if (e.target.closest('.tools, .tool-opts, .adjust, .text-edit')) return;
   if (e.pointerType === 'mouse' && e.button !== 0 && e.button !== 1) return;
   stage.setPointerCapture(e.pointerId);
   const p = local(e);

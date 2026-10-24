@@ -682,6 +682,62 @@ async function main() {
     await page.click('[data-adj-act="cancel"]');
   }
 
+  // ---- טקסט ----
+  await page.goto(BASE + '/editor.html?doc=' + id);
+  await page.waitForFunction(() => window.__rs?.doc);
+  await page.evaluate(() => __rs.setView({ zoom: 1, x: 20, y: 20 }));
+  const ink = (x0, y0, x1, y1) => page.evaluate(([x0, y0, x1, y1]) => {
+    const p = __rs.renderer.readPixels(__rs.doc, x0, y0, x1 - x0, y1 - y0);
+    let n = 0; for (let i = 0; i < p.length; i += 4) if (p[i] < 200) n++; return n;
+  }, [x0, y0, x1, y1]);
+  await page.keyboard.press('t');
+  check('T — טקסט, עם גופן ויישור', await page.evaluate(() => __rs.tools.state.tool) === 'text' && await page.isVisible('#opt-font') && (await page.$$eval('#opt-font option', o => o.length)) === 3);
+  await page.mouse.click(...at(300, 100));
+  check('לחיצה — תיבת טקסט בפוקוס', await page.isVisible('#text-edit') && await page.evaluate(() => document.activeElement.id) === 'text-edit');
+  await page.keyboard.type('שלום עולם');
+  await page.keyboard.press('Control+Enter');
+  await page.waitForFunction(() => __rs.history.undoStack.at(-1)?.label === 'טקסט', null, { timeout: 5000 }).catch(() => {});
+  check('Ctrl+Enter — שכבה חדשה בשם הטקסט', await page.evaluate(() => __rs.doc.active.name) === 'שלום עולם' && !(await page.isVisible('#text-edit')));
+  check('הגופן העברי נטען (Heebo)', await page.evaluate(() => document.fonts.check('48px "Heebo"', 'שלום')));
+  const left = await ink(60, 100, 300, 165), right = await ink(305, 95, 420, 165);
+  check('עברית: הטקסט נמשך שמאלה מנקודת הלחיצה (ימין = התחלה)', left > 300 && right === 0, `${left} / ${right}`);
+  await page.keyboard.press('Control+z');
+  check('ביטול — שכבת הטקסט נעלמת', await ink(60, 100, 300, 165) === 0);
+  // אנגלית: התחלה = שמאל
+  await page.mouse.click(...at(100, 250));
+  await page.keyboard.type('Hello');
+  await page.click('[data-text="apply"]');
+  await page.waitForTimeout(300);
+  const l2 = await ink(0, 250, 95, 310), r2 = await ink(100, 250, 300, 310);
+  check('אנגלית: נמשך ימינה מהנקודה', r2 > 200 && l2 === 0, `${l2} / ${r2}`);
+  // Esc — בלי שכבה
+  const nL = await page.evaluate(() => __rs.doc.layers.length);
+  await page.mouse.click(...at(100, 350));
+  await page.keyboard.type('בדיקה');
+  await page.keyboard.press('Escape');
+  check('Esc — ביטול, בלי שכבה', await page.evaluate(() => __rs.doc.layers.length) === nL && !(await page.isVisible('#text-edit')));
+  // מודגש וגודל משפיעים על הדיו
+  await page.fill('#opt-font-size', '80');
+  await page.mouse.click(...at(500, 300));
+  await page.keyboard.type('אבג');
+  if (SHOTS) await page.screenshot({ path: join(SHOTS, 'text-editing.png') });
+  await page.keyboard.press('Control+Enter');
+  await page.waitForTimeout(300);
+  const thin = await ink(300, 300, 500, 400);
+  await page.keyboard.press('Control+z');
+  await page.click('#opt-bold');
+  await page.mouse.click(...at(500, 300));
+  await page.keyboard.type('אבג');
+  await page.keyboard.press('Control+Enter');
+  await page.waitForTimeout(300);
+  const bold = await ink(300, 300, 500, 400);
+  check('מודגש — יותר דיו', bold > thin * 1.2 && thin > 0, `${thin} / ${bold}`);
+  // מעבר כלי באמצע עריכה — מאשר
+  await page.mouse.click(...at(300, 50));
+  await page.keyboard.type('ט');
+  await page.keyboard.press('Escape');
+  if (SHOTS) await page.screenshot({ path: join(SHOTS, 'text-desktop.png') });
+
   check('אין שגיאות בקונסול', errors.length === 0, errors.join(' | '));
 
   // ---- טלפון ----
