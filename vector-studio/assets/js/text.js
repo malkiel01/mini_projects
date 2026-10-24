@@ -68,16 +68,23 @@ export function relayout(item) {
 }
 const r3 = (v) => Math.round(v * 1000) / 1000 || 0;
 
-/** הזזה / שינוי גודל במטריצה בלי סיבוב: טקסט נקודה — הגופן גדל עם הגובה; טקסט בתיבה — התיבה גדלה. */
+/**
+ * הזזה / שינוי גודל במטריצה בלי סיבוב: טקסט בתיבה — התיבה גדלה; טקסט נקודה — הגופן גדל באותו יחס בשני הצירים
+ * (במתיחה לא שווה — הממוצע), והטקסט נשאר במרכז של התיבה שהמטריצה נותנת. כך הזזה מזיזה, וגודל סביב פינה
+ * (העורך שולח לטקסט נקודה יחס אחיד) משאיר את הפינה במקום.
+ */
 export function transformText(item, m) {
   const [x, y, w, h] = item.box;
   const ax = m[0] * x + m[4], ay = m[3] * y + m[5];
   const bx = m[0] * (x + w) + m[4], by = m[3] * (y + h) + m[5];
   const box = [Math.min(ax, bx), Math.min(ay, by), Math.abs(bx - ax), Math.abs(by - ay)];
-  if (item.auto !== false && Math.abs(m[3] - 1) > 1e-9) {
-    item.font = { ...item.font, size: r3(Math.max(1, (item.font?.size || TEXT_DEFAULT.size) * Math.abs(m[3]))) };
-  }
-  item.box = box.map(r3);
+  if (item.auto !== false) {
+    const sx = Math.abs(m[0]), sy = Math.abs(m[3]), ch = (v) => Math.abs(v - 1) > 1e-9;
+    const k = ch(sx) && ch(sy) ? Math.sqrt(sx * sy) : ch(sy) ? sy : sx;
+    if (ch(k)) item.font = { ...item.font, size: r3(Math.max(1, (item.font?.size || TEXT_DEFAULT.size) * k)) };
+    const cx = box[0] + box[2] / 2, cy = box[1] + box[3] / 2;
+    item.box = [cx - w * k / 2, cy - h * k / 2, w * k, h * k].map(r3);
+  } else item.box = box.map(r3);
   relayout(item);
 }
 

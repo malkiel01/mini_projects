@@ -404,6 +404,12 @@ try {
   assert.equal((cu.d.match(/L/g) || []).length, 0, 'בלי קווים: ' + cu.d);
   assert.ok((cu.d.match(/C/g) || []).length <= 10, 'מעט עקומות: ' + cu.d);
   await page.keyboard.press('Control+z');
+  // חיתוך בלי חפיפה עם טקסט: "לא נשאר שטח", והטקסט נשאר טקסט
+  const tid0 = (await st()).paths.find(p => p.type === 'text').id;
+  await page.evaluate((t) => window.__vs.select(['c1', t]), tid0);
+  await page.click('[data-arr="bool"][data-arg="intersect"]');
+  await page.waitForFunction(() => /לא נשאר/.test(document.querySelector('.toast').textContent));
+  assert.equal((await st()).paths.find(p => p.id === tid0).type, 'text');
   await page.evaluate(() => { const L = window.__vs.S.doc.surfaces[0].layers[0]; L.paths = L.paths.filter(p => !['c1', 'c2'].includes(p.id)); });
   await page.evaluate(() => window.__vs.select(['b1', 'b2']));
   await page.keyboard.press('Delete');
@@ -492,7 +498,19 @@ try {
   assert.match(toastText, /<text>/);
   assert.match(toastText, /מעבר צבע/);
   assert.match(toastText, /סקריפט/);
-  step('ייבוא SVG: צורות חיות, סגנון ותורשה, טרנספורמציה ו-viewBox, ודוח על מה שלא עבר');
+  // גודל לפי viewBox כשהרוחב באחוזים / חסר; שקיפות מצטברת; מתאר של מסובב לא מוכפל פעמיים
+  const imp2 = await page.evaluate(async () => {
+    const { importSVG } = await import('./assets/js/import.js');
+    let n = 0; const next = () => 'q' + (++n);
+    const a = importSVG('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="100%" height="100%"><rect width="800" height="600"/></svg>', next).size;
+    const b = importSVG('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50" width="200"><rect width="100" height="50"/></svg>', next).size;
+    const c = importSVG('<svg xmlns="http://www.w3.org/2000/svg"><g opacity=".5"><rect width="10" height="10" opacity=".5"/></g></svg>', next).items[0].fill.opacity;
+    const d = importSVG('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10" width="100" height="100"><rect width="4" height="4" transform="rotate(45 5 5)" stroke="#000" stroke-width="1"/></svg>', next).items[0];
+    return { a, b, c, w: d.stroke.width, k: Math.hypot(d.transform[0], d.transform[1]) };
+  });
+  assert.deepEqual([imp2.a, imp2.b, imp2.c], [[800, 600], [200, 100], 0.25]);
+  assert.ok(Math.abs(imp2.w * imp2.k - 10) < 1e-3, 'מתאר 10pt בפועל: ' + JSON.stringify(imp2));
+  step('ייבוא SVG: צורות חיות, סגנון ותורשה, טרנספורמציה ו-viewBox (גם באחוזים), ודוח על מה שלא עבר');
 
   // שמירה בשרת: אחרי שקט קצר — "נשמר"; טעינה מחדש מחזירה את אותו מסמך; ברשימה — עם תמונה ממוזערת
   await page.waitForFunction(() => document.getElementById('doc-status').textContent === 'נשמר', null, { timeout: 10000 });
@@ -633,6 +651,28 @@ try {
     await p.tap('#pen-done');
     n = await p.evaluate(() => window.__vs.S.doc.surfaces[0].layers[0].paths.length);
     assert.equal(n, 2);
+    // צביטה באמצע עט לא מוסיפה נקודה; הרמת אצבע אחת אחרי צביטה — בלי שגיאות; ↶ באמצע נתיב מוחק נקודה
+    const cdp = await ctx.newCDPSession(p);
+    const cx0 = cb.x + cb.width / 2, cy0 = cb.y + cb.height / 2;
+    const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y], id) => ({ x, y, id })) });
+    await p.tap('[data-tool="pen"]');
+    for (const [dx, dy] of [[-80, -100], [-20, -100]]) await p.touchscreen.tap(cx0 + dx, cy0 + dy);
+    const nodesOf = () => p.evaluate(() => { const L = window.__vs.S.doc.surfaces[0].layers[0].paths; return (L[L.length - 1].d.match(/[ML]/g) || []).length; });
+    assert.equal(await nodesOf(), 2);
+    await touch('touchStart', [[cx0 + 40, cy0 - 40]]);
+    await touch('touchStart', [[cx0 + 40, cy0 - 40], [cx0 + 100, cy0 + 20]]);
+    await touch('touchMove', [[cx0 + 30, cy0 - 50], [cx0 + 120, cy0 + 40]]);
+    await touch('touchEnd', [[cx0 + 30, cy0 - 50]]);
+    await touch('touchMove', [[cx0 + 20, cy0 - 60]]);
+    await touch('touchEnd', []);
+    assert.equal(await nodesOf(), 2, 'הצביטה לא הוסיפה נקודה');
+    await p.tap('#undo');
+    assert.equal(await nodesOf(), 1, '↶ מחק את הנקודה האחרונה');
+    await p.touchscreen.tap(cx0 + 40, cy0 - 100);
+    await p.tap('#pen-done');
+    assert.equal(await p.evaluate(() => window.__vs.S.doc.surfaces[0].layers[0].paths.length), 3);
+    await p.tap('#undo');
+    assert.equal(await p.evaluate(() => window.__vs.S.doc.surfaces[0].layers[0].paths.length), 2, 'ואחרי הסיום — ↶ רגיל');
     // טקסט במגע
     await p.tap('[data-tool="text"]');
     await p.touchscreen.tap(cb.x + cb.width / 2 + 80, cb.y + 60);
@@ -656,7 +696,7 @@ try {
     assert.deepEqual(over, [], 'גולש ברוחב');
     assert.ok(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'גלילה אופקית');
     if (shots) { await p.locator('fieldset[data-k="fillmode"]').scrollIntoViewIfNeeded(); await p.screenshot({ path: `${shots}/fill-${width}.png` }); }
-    step(`טלפון ${width}px: כוכב בהקשה, עט ב-3 הקשות ו"סיום", טקסט, לוח מאפיינים, בלי גלילה אופקית`);
+    step(`טלפון ${width}px: כוכב בהקשה, עט ב-3 הקשות ו"סיום", צביטה ו-↶ באמצע עט, טקסט, לוח מאפיינים, בלי גלילה אופקית`);
     await ctx.close();
   }
 } finally {

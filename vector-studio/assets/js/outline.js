@@ -110,8 +110,11 @@ function withMarks(ot, vis, at, by, size, opts) {
     const g = ot.charToGlyph(k.base);
     const d = toD(g.getPath(x, by, size, opts, ot));
     if (d) out.push(d);
+    // כמו במנוע עיצוב: כל סימן קודם על האות; ואם לגופן יש עוגן לסימן על הסימן שלפניו — הוא גובר (טעם מעל ניקוד)
+    let prev = null;
     for (const m of k.marks) {
       const mg = ot.charToGlyph(m);
+      if (!mg.index) continue; // אין בגופן (טעמים, בדרך כלל) — עדיף בלי מאשר ריבוע ריק
       const off = markOffset(ot.marks, g.index, mg.index);
       let mx = x, my = by;
       if (off) { mx += off.x * scale; my -= off.y * scale; }
@@ -120,8 +123,11 @@ function withMarks(ot, vis, at, by, size, opts) {
         const gb = g.getBoundingBox(), mb = mg.getBoundingBox();
         mx += ((gb.x1 + gb.x2) / 2 - (mb.x1 + mb.x2) / 2) * scale;
       }
+      const mm = prev && markOffset(ot.marks, prev.g.index, mg.index, 'mark');
+      if (mm) { mx = prev.x + mm.x * scale; my = prev.y - mm.y * scale; }
       const md = toD(mg.getPath(mx, my, size, opts, ot));
       if (md) out.push(md);
+      prev = { g: mg, x: mx, y: my };
     }
     x += adv[i];
   });

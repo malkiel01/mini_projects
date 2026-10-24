@@ -1,7 +1,7 @@
 // העט ועריכת הנקודות.
 //
 // עט: הקשה — נקודה חדה; גרירה — נקודה חלקה (הידיות נמשכות אחרי האצבע); הקשה על הנקודה הראשונה — סוגרת.
-//   Enter / "✓ סיום" — מסיים נתיב פתוח; Esc / "✕" — מבטל; Ctrl+Z בזמן ציור — מוחק את הנקודה האחרונה.
+//   Enter / Esc / "✓ סיום" — מסיים נתיב פתוח; "✕" — מבטל; Ctrl+Z או ↶ בזמן ציור — מוחק את הנקודה האחרונה.
 // עריכת נקודות: גרירת נקודה או ידית; הקשה על המקטע — נקודה חדשה; לחיצה כפולה / Alt על נקודה — חלקה ↔ פינה;
 //   Delete — מחיקת הנקודה שנבחרה. נתיב שהיה צורה חיה (מלבן…) הופך לנתיב רגיל בעריכה הראשונה.
 
@@ -19,6 +19,7 @@ export function createPenTools(api) {
   let drag = null;  // { kind: 'anchor'|'handle'|'pen', ... }
   let hoverPt = null;
   let lastTap = null;
+  let snap = null;  // המצב לפני ה-down האחרון — אם מתברר שזו צביטה (אצבע שנייה), חוזרים אליו
 
   // ---------- המרות קואורדינטות ----------
 
@@ -297,6 +298,7 @@ export function createPenTools(api) {
     get drawing() { return !!pen; },
     get editing() { return edit; },
     down(e, sx, sy, wx, wy) {
+      snap = { doc: JSON.stringify(S.doc), pen: pen && JSON.stringify(pen), edit: edit && JSON.stringify(edit), sel: [...S.sel] };
       if (S.tool === 'pen') { penDown(e, sx, sy, wx, wy); api.draw(); return null; }
       return nodeDown(e, sx, sy, wx, wy);
     },
@@ -312,19 +314,32 @@ export function createPenTools(api) {
     },
     /** מצב חוזר מההיסטוריה — הנקודות נטענות מחדש מה-d. */
     reload() { if (edit) startEdit(edit.id); },
-    cancelDrag() { drag = null; },
+    /** אצבע שנייה הגיעה — מה שה-down הראשון עשה (נקודה בעט, הזזה בעריכה) מתבטל, והציור ממשיך משם. */
+    abortDown() {
+      drag = null;
+      if (!snap) return;
+      S.doc = JSON.parse(snap.doc);
+      pen = snap.pen && JSON.parse(snap.pen);
+      edit = snap.edit && JSON.parse(snap.edit);
+      S.sel = new Set(snap.sel);
+      snap = null;
+      api.refresh();
+      api.updateBar();
+    },
+    /** ↶ בזמן ציור: הנקודה האחרונה (ואם היא היחידה — הנתיב כולו). */
+    undoPoint() {
+      if (!pen) return;
+      const nodes = pen.subs[0].nodes;
+      if (nodes.length > 1) { nodes.pop(); write(findPath(S.doc, pen.id).path, pen.subs); api.draw(); }
+      else cancel();
+    },
     finish, cancel, deleteNode, toggleSelected,
     key(e) {
       const k = e.key;
       if (pen) {
         if (k === 'Enter') { finish(); return true; }
         if (k === 'Escape') { finish(); return true; }
-        if ((e.ctrlKey || e.metaKey) && k.toLowerCase() === 'z') {
-          const nodes = pen.subs[0].nodes;
-          if (nodes.length > 1) { nodes.pop(); write(findPath(S.doc, pen.id).path, pen.subs); api.draw(); }
-          else cancel();
-          return true;
-        }
+        if ((e.ctrlKey || e.metaKey) && k.toLowerCase() === 'z') { this.undoPoint(); return true; }
       }
       if (edit && (k === 'Delete' || k === 'Backspace') && edit.node) { deleteNode(); return true; }
       return false;
