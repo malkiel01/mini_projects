@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#2d4a8a">
+  <title>ניסוי ניקוד — עימוד</title>
+  <link rel="icon" href="../assets/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/css/app.css">
+  <style>
+    .sample { background: #fff; border: 1px solid var(--line); border-radius: var(--r); padding: var(--s2); margin-bottom: var(--s3); }
+    .sample h3 { font-size: .85rem; color: #5d6475; font-weight: 600; margin-bottom: 4px; }
+    .sample canvas { display: block; width: 100%; }
+    .row-lbl { font-size: .75rem; color: #5d6475; margin-top: 6px; }
+    .stats { font-variant-numeric: tabular-nums; }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <a class="icon-btn" href="../index.html" aria-label="חזרה" style="color:inherit;text-decoration:none">→</a>
+    <div class="titles"><h1>ניסוי ניקוד וטעמים</h1><div class="sub">HarfBuzz מול הדפדפן</div></div>
+  </header>
+  <main id="main">
+    <p class="hint">בכל דוגמה שתי שורות: <b>למעלה — HarfBuzz</b> (כך העימוד יצייר וימדוד), <b>למטה — הדפדפן</b> (fillText, לשם השוואה).
+      אם הניקוד והטעמים יושבים נכון בשורה העליונה בכל מכשיר — הניסוי הצליח.</p>
+    <div class="summary stats" id="stats">טוען…</div>
+    <div id="samples"></div>
+  </main>
+  <script type="module" src="shaping.js"></script>
+</body>
+</html>
