@@ -10,7 +10,7 @@
 
 declare(strict_types=1);
 
-const PAY_SCHEMA_VERSION = 3;
+const PAY_SCHEMA_VERSION = 4;
 
 function pay_data_dir(): string
 {
@@ -91,6 +91,7 @@ function pay_migrate(PDO $pdo): void
     if ($v < 1) pay_migrate_v1($pdo);
     if ($v < 2) pay_migrate_v2($pdo);
     if ($v < 3) pay_migrate_v3($pdo);
+    if ($v < 4) pay_migrate_v4($pdo);
     $pdo->exec('PRAGMA user_version = ' . PAY_SCHEMA_VERSION);
 }
 
@@ -594,5 +595,19 @@ function pay_migrate_v3(PDO $pdo): void
         ALTER TABLE checkout ADD COLUMN provider_account TEXT;
         ALTER TABLE checkout ADD COLUMN invoice TEXT;                     -- ‏mode=invoice: תשלום חשבונית פתוחה
         ALTER TABLE refund ADD COLUMN manual INTEGER NOT NULL DEFAULT 0;  -- בוצע בממשק הסולק, נרשם כאן
+    SQL);
+}
+
+/** שלב 5: מסמכים חשבונאיים לתשלומים שלא דרך מורנינג (ידני, סולקים אחרים), וזיכויים. */
+function pay_migrate_v4(PDO $pdo): void
+{
+    $pdo->exec(<<<SQL
+        ALTER TABLE tax_document ADD COLUMN refund TEXT;
+        ALTER TABLE payment ADD COLUMN pay_method TEXT NOT NULL DEFAULT '';      -- ‏card | bit | cash | transfer | cheque | other
+        ALTER TABLE payment ADD COLUMN reference TEXT NOT NULL DEFAULT '';       -- אסמכתא (העברה, צ'ק)
+        ALTER TABLE payment ADD COLUMN doc_attempts INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE payment ADD COLUMN doc_error TEXT NOT NULL DEFAULT '';
+        ALTER TABLE refund ADD COLUMN doc_attempts INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE refund ADD COLUMN doc_error TEXT NOT NULL DEFAULT '';
     SQL);
 }

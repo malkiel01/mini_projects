@@ -76,8 +76,8 @@ const STAGES = [
   ['ליבה בלי כסף', 'מערכות וקודים, לקוחות, מוצרים ומחירים, זכאות, שימוש, ארנק', 'done'],
   ['דף תשלום ו"החשבון שלי"', 'מנויים חודשיים ושנתיים, ניסיון, מבצעים, ביטול, הודעות לפי החוק, סולק מדומה', 'done'],
   ['סולק אמיתי ראשון', 'מורנינג והסליקה שלה — כולל הקבלה או החשבונית עם כל תשלום', 'done'],
-  ['חשבוניות', 'מסמכים לתשלומים שלא דרך מורנינג (מזומן, העברה, סולקים אחרים), זיכויים', 'now'],
-  ['ספריות, קישורים וכללים', 'ספריות קוד, קישורי תשלום, כפתור, מנוע הכללים, תיעוד', ''],
+  ['חשבוניות', 'מסמכים לתשלומים שלא דרך מורנינג (מזומן, העברה, סולקים אחרים), זיכויים', 'done'],
+  ['ספריות, קישורים וכללים', 'ספריות קוד, קישורי תשלום, כפתור, מנוע הכללים, תיעוד', 'now'],
   ['מנויים מאושרים', 'אזור ניהול לכל מי שהמנהל מאשר', ''],
   ['מגדלור מתחבר', 'האפליקציה הראשונה, בצ\'אט שלה', ''],
   ['עלייה לאוויר', 'תשלום אמיתי קטן והחזר, בדיקה משפטית', ''],
@@ -398,6 +398,7 @@ async function customerSheet(id) {
       <button type="button" class="tile" data-w="grant"><span class="tile-ic" aria-hidden="true">🎁</span>מתנה</button>
       <button type="button" class="tile" data-w="adjust"><span class="tile-ic" aria-hidden="true">✏️</span>תיקון</button>
       <button type="button" class="tile" id="grant-sub"><span class="tile-ic" aria-hidden="true">📦</span>הענקת מנוי</button>
+      <button type="button" class="tile" id="manual-pay"><span class="tile-ic" aria-hidden="true">💵</span>תשלום ידני</button>
     </div>
     <div class="group"><h3>מנויים</h3><ul class="list">${d.subscriptions.length ? d.subscriptions.map(s => `<li class="card"><div class="body">
       <div class="l1"><span>${s.items.map(i => esc(i.name) + (i.quantity > 1 ? ' ×' + i.quantity : '')).join(' + ')}</span></div>
@@ -412,6 +413,7 @@ async function customerSheet(id) {
 
   const body = $('#sheet-body');
   for (const b of body.querySelectorAll('[data-w]')) b.addEventListener('click', () => walletSheet(d, b.dataset.w));
+  $('#manual-pay').addEventListener('click', () => manualPaySheet(d));
   for (const b of body.querySelectorAll('[data-cancel]')) b.addEventListener('click', async () => {
     if (!confirm('לבטל את המנוי עכשיו?')) return;
     await api('subscription_cancel', { id: b.dataset.cancel }).catch(fail); customerSheet(id);
@@ -430,6 +432,31 @@ async function customerSheet(id) {
       toast('הוענק'); customerSheet(id); return false;
     }, 'הענקה');
   });
+}
+
+const MANUAL = { cash: 'מזומן', transfer: 'העברה', cheque: 'צ׳ק', bit: 'ביט', other: 'אחר' };
+async function manualPaySheet(d) {
+  const inv = (await api('invoices')).data.filter(i => i.account === d.account.id && i.status === 'open');
+  openSheet('תשלום ידני — ' + (d.customer.name || d.customer.external_id), `
+    <p class="hint">כסף שהגיע ישירות אליך. הקבלה או החשבונית יוצאות לבד דרך מורנינג (אם לעוסק יש חיבור).</p>
+    <fieldset class="seg grid" style="--cols:5" aria-label="אמצעי">${Object.entries(MANUAL).map(([k, l], i) => `<label><input type="radio" name="method" value="${k}" ${i === 0 ? 'checked' : ''}><span>${l}</span></label>`).join('')}</fieldset>
+    ${inv.length ? `<label class="f"><span>על מה</span><select name="purpose"><option value="topup">טעינת יתרה</option>${inv.map(i => `<option value="${esc(i.id)}">חשבונית פתוחה — ${nis(i.total)}</option>`).join('')}</select></label>` : '<input type="hidden" name="purpose" value="topup">'}
+    <div class="fields">
+      <label class="f"><span>סכום (₪) — לטעינה</span><input name="amount" inputmode="decimal" dir="ltr"></label>
+      <label class="f"><span>אסמכתא (העברה / צ׳ק)</span><input name="reference" dir="ltr"></label>
+      <label class="f wide"><span>הערה</span><input name="note" maxlength="240"></label>
+    </div>`,
+  async fd => {
+    const purpose = fd.get('purpose');
+    const body = { account: d.account.id, method: fd.get('method'), reference: fd.get('reference'), note: fd.get('note') };
+    if (purpose === 'topup') {
+      body.purpose = 'topup'; body.agorot = Math.round(Number(String(fd.get('amount') || '').replace(',', '.')) * 100);
+      if (!body.agorot) { toast('חסר סכום', true); return false; }
+    } else { body.purpose = 'invoice'; body.invoice = purpose; }
+    if (!confirm('לרשום את התשלום?')) return false;
+    await api('manual_payment', body);
+    toast('נרשם'); customerSheet(d.customer.id); return false;
+  }, 'רישום');
 }
 
 function walletSheet(d, kind) {
@@ -465,7 +492,7 @@ loaders.money = async () => {
     $('#money-list').innerHTML = p.data.length ? p.data.map(r => `<li class="card" ${['succeeded', 'partially_refunded'].includes(r.status) ? `data-pay="${esc(r.id)}" tabindex="0" role="button"` : ''}>
         <div class="body"><div class="l1"><span>${esc(r.customer_name || r.external_id || '—')}</span><span class="t">${when(r.created_at)}</span></div>
         <div class="l2">${nis(r.amount)}${r.refunded > 0 ? ' · הוחזרו ' + nis(r.refunded) : ''} · ${r.provider === 'fake' ? 'סולק מדומה' : r.provider_type === 'morning' ? 'מורנינג' : esc(r.provider)}${r.doc_number ? ' · ' + (Number(r.doc_type) === 400 ? 'קבלה' : 'חשבונית') + ' ' + esc(r.doc_number) : ''}${r.failure_message ? ' · ' + esc(r.failure_message) : ''}${r.env === 'test' ? ' · בדיקות' : ''}</div></div>
-        ${chip(...(PST[r.status] || [r.status, '']))}</li>`).join('') : empty('עוד אין תשלומים.');
+        ${chip(...(PST[r.status] || [r.status, '']))}${r.status !== 'failed' && !Number(r.has_doc) && r.provider_type !== 'morning' && r.amount > 0 ? chip(r.doc_error ? 'מסמך נכשל' : 'חסר מסמך', r.doc_error ? 'bad' : 'warn') : ''}</li>`).join('') : empty('עוד אין תשלומים.');
     for (const li of document.querySelectorAll('[data-pay]')) li.addEventListener('click', () => refundSheet(p.data.find(x => x.id === li.dataset.pay)));
   } else {
     $('#money-list').innerHTML = i.data.length ? i.data.map(r => `<li class="card"><div class="body">
@@ -476,7 +503,10 @@ loaders.money = async () => {
 };
 function refundSheet(p) {
   const left = p.amount - p.refunded;
-  openSheet('החזר כספי — ' + (p.customer_name || p.external_id || ''), `
+  const docLine = Number(p.has_doc) ? `<p class="hint">🧾 ${Number(p.doc_type) === 400 ? 'קבלה' : 'חשבונית מס/קבלה'} ${esc(p.doc_number || '')}</p>`
+    : p.provider_type === 'morning' ? '' : `<p class="${p.doc_error ? 'error' : 'hint'}">${p.doc_error ? 'המסמך החשבונאי נכשל: ' + esc(p.doc_error) : 'עוד אין מסמך חשבונאי. הוא נוצר לבד דרך מורנינג, אם לעוסק יש חיבור.'}</p>
+      <div class="row-btns"><button type="button" class="btn sm ghost" id="doc-retry">הפקת המסמך עכשיו</button></div>`;
+  openSheet('החזר כספי — ' + (p.customer_name || p.external_id || ''), docLine + `
     <p class="hint">שולם ${nis(p.amount)}${p.refunded ? ', הוחזרו כבר ' + nis(p.refunded) : ''}. אפשר להחזיר עד ${nis(left)}. ההחזר יוצא דרך חברת הסליקה, לאותו אמצעי.</p>
     <div class="fields">
       <label class="f"><span>סכום (₪)</span><input name="amount" inputmode="decimal" dir="ltr" value="${(left / 100).toFixed(2)}"></label>
@@ -490,6 +520,9 @@ function refundSheet(p) {
     await api('refund', { payment: p.id, agorot: ag, reason: fd.get('reason'), manual: p.provider_type === 'morning' });
     toast('ההחזר בוצע'); loaders.money();
   }, 'החזר');
+  $('#doc-retry')?.addEventListener('click', async () => {
+    try { const r = await api('doc_retry', { payment: p.id }); toast(r.issued ? 'המסמך הופק ✓' : 'עדיין לא — בדוק את חיבור מורנינג של העוסק', !r.issued); loaders.money(); sheet.close(); } catch (e) { fail(e); }
+  });
 }
 
 async function loadClock() {

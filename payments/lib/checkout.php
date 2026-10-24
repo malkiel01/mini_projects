@@ -421,6 +421,7 @@ function payment_refund(string $paymentId, int $amount, string $reason, string $
         if (trim($reason) === '') throw new ApiError('חובה לכתוב סיבה', 'note_required');
         $id = new_id('rf');
         // ‏manual — ההחזר כבר בוצע בממשק הסולק (למשל מורנינג, שאין בה החזר דרך הממשק); כאן רק רושמים
+        $manual = $manual || in_array($p['provider'], ['manual', 'none'], true); // תשלום ידני — ההחזר ידני
         $ref = $manual ? 'manual' : provider($p['provider'])->refund($p['provider_txn'], $amount, $id);
         db_run('INSERT INTO refund (id, payment, amount, reason, provider_ref, actor, manual, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [$id, $paymentId, $amount, mb_substr($reason, 0, 240), $ref, $actor, (int)$manual, now()]);
         $refunded = (int)$p['refunded'] + $amount;

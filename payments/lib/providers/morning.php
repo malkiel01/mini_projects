@@ -255,6 +255,26 @@ final class MorningProvider implements Provider
         throw new ApiError('במורנינג ההחזר נעשה בממשק שלהם (שם גם נוצרת חשבונית הזיכוי). אחרי שביצעת — "רישום החזר שבוצע ידנית".', 'manual_refund', 409);
     }
 
+    // ---------- מסמכים (שלב 5) — לתשלומים שלא עברו בסליקה של מורנינג ----------
+
+    /**
+     * מסמך חשבונאי: ‏POST /documents. ‏$payments — שורות תשלום ‏{type, price, date, …} (קודי מורנינג).
+     * ‏$linked — מסמך מקורי (לזיכוי: ‏linkType=cancel). מחזיר ‏{id, type, number, url}.
+     */
+    public function issueDocument(array $acc, int $type, array $lines, array $payments, array $linked = [], string $remarks = ''): array
+    {
+        $body = [
+            'description' => mb_substr((string)($lines[0]['description'] ?? 'תשלום'), 0, 200), 'type' => $type, 'lang' => 'he', 'currency' => 'ILS', 'vatType' => 0,
+            'client' => ['id' => $this->clientRef($acc)], 'income' => self::income($lines), 'signed' => true, 'attachment' => true,
+        ];
+        if ($payments) $body['payment'] = $payments;
+        if ($linked) { $body['linkedDocumentIds'] = array_values($linked); $body['linkType'] = 'cancel'; }
+        if ($remarks !== '') $body['remarks'] = mb_substr($remarks, 0, 500);
+        [$st, $j] = $this->call('/documents', $body);
+        if ($st >= 300 || empty($j['id'])) throw new ApiError('הפקת המסמך במורנינג נכשלה: ' . self::err($j, "קוד $st"), 'provider_error', 502);
+        return ['id' => (string)$j['id'], 'type' => (int)($j['type'] ?? $type), 'number' => (string)($j['number'] ?? ''), 'url' => (string)($j['url']['he'] ?? $j['url']['origin'] ?? '')];
+    }
+
     // ---------- הודעות נכנסות (webhooks) ----------
 
     /** אימות הודעה חתומה: ‏HMAC-SHA256 על הגוף הגולמי בסוד שהוגדר במורנינג, ‏hex. */

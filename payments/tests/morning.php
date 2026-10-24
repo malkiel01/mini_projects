@@ -79,6 +79,13 @@ $GLOBALS['PAY_HTTP_HOOK'] = function (string $url, ?string $post, array $headers
         $M['docs'][] = $doc;
         return $j(200, $doc + ['signed' => true, 'lang' => 'he', 'client' => ['id' => $M['tokens'][$mm[1]]['externalKey']], 'url' => ['he' => 'https://docs.morning.test/' . $doc['id']], 'transactionId' => 'tx-' . $M['n']]);
     }
+    if ($api === '/documents') {
+        if (!empty($M['docs_down'])) return $j(503, ['errorMessage' => 'תחזוקה']);
+        foreach (['type', 'lang', 'currency', 'vatType', 'income'] as $k) if (!isset($body[$k])) return $j(400, ['errorMessage' => "missing $k"]);
+        $M['n']++;
+        $M['issued'][] = $body;
+        return $j(201, ['id' => 'mdoc-' . $M['n'], 'type' => $body['type'], 'number' => (string)$M['n'], 'url' => ['he' => 'https://docs.morning.test/mdoc-' . $M['n']]]);
+    }
     return $j(404, ['errorMessage' => "unknown $api"]);
 };
 /** הלקוח משלם בדף של מורנינג: נוצר מסמך (ואם כרטיס — טוקן) */
@@ -224,6 +231,65 @@ check('חתימה נכונה — מתקבלת', $mp->verifyWebhook($raw, hash_hm
 check('חתימה שגויה — נדחית', !$mp->verifyWebhook($raw, hash_hmac('sha256', $raw, 'other')));
 check('גוף ששונה — נדחה', !$mp->verifyWebhook($raw . ' ', hash_hmac('sha256', $raw, 'whs-1')));
 check('בלי סוד מוגדר — נדחית', !provider($pa2['id'])->verifyWebhook($raw, hash_hmac('sha256', $raw, '')));
+
+section('מסמכים לתשלומים שלא דרך מורנינג (שלב 5)');
+$M['issued'] = [];
+at(200);
+$issued0 = tax_docs_issue();
+check('תשלומים שעברו בסליקה של מורנינג — לא מקבלים מסמך נוסף', $issued0 === 0 && !$M['issued'], json_encode($M['issued'], JSON_UNESCAPED_UNICODE));
+$accL = db_one("SELECT a.* FROM account a JOIN customer c ON c.account = a.id WHERE c.external_id = 'family:1'");
+$mp1 = manual_payment($owner, ['account' => $accL['id'], 'method' => 'cash', 'agorot' => 5000, 'purpose' => 'topup', 'note' => 'שילם במשרד']);
+check('תשלום ידני במזומן → ₪50 ביתרה', customer_view(customer_find($app, 'test', 'family:1'))['account']['balance'] === 5000);
+check('תשלום ידני בכרטיס — נדחה (רק דרך סולק)', throws(fn() => manual_payment($owner, ['account' => $accL['id'], 'method' => 'card', 'agorot' => 100]), 'bad_method'));
+$M['docs_down'] = true;
+tax_docs_issue();
+check('מורנינג לא זמינה — נרשם ניסיון ושגיאה, בלי לעצור', (int)db_one('SELECT doc_attempts FROM payment WHERE id = ?', [$mp1['payment']])['doc_attempts'] === 1
+    && db_one('SELECT doc_error FROM payment WHERE id = ?', [$mp1['payment']])['doc_error'] !== '');
+$M['docs_down'] = false;
+tax_docs_issue();
+$d = end($M['issued']);
+check('המסמך הופק: חשבונית מס/קבלה, תשלום במזומן (1), ₪50', $d['type'] === 320 && $d['payment'][0]['type'] === 1 && $d['payment'][0]['price'] == 50 && $d['income'][0]['price'] == 50);
+check('ונשמר אצלנו', (bool)db_one('SELECT 1 FROM tax_document WHERE payment = ? AND refund IS NULL', [$mp1['payment']]));
+check('ריצה נוספת — לא מפיקה שוב', tax_docs_issue() === 0);
+$mp2 = manual_payment($owner, ['account' => $accL['id'], 'method' => 'transfer', 'agorot' => 2000, 'reference' => 'ASM-77', 'purpose' => 'topup']);
+tax_docs_issue();
+$d = end($M['issued']);
+check('העברה בנקאית (4) עם אסמכתא', $d['payment'][0]['type'] === 4 && $d['payment'][0]['transactionId'] === 'ASM-77');
+// החזר על תשלום ידני → זיכוי 330 שמבטל את המקור
+$r = payment_refund($mp1['payment'], 1000, 'החזר חלקי', 'admin:x');
+check('החזר על תשלום ידני — נרשם ידנית', (int)db_one('SELECT manual FROM refund WHERE id = ?', [$r['refund']])['manual'] === 1);
+tax_docs_issue();
+$d = end($M['issued']);
+$orig = db_one('SELECT external_id FROM tax_document WHERE payment = ? AND refund IS NULL', [$mp1['payment']])['external_id'];
+check('חשבונית זיכוי (330) שמבטלת את המקור, ₪10', $d['type'] === 330 && $d['linkedDocumentIds'] === [$orig] && $d['linkType'] === 'cancel' && $d['income'][0]['price'] == 10);
+// עוסק פטור: קבלה (400), בלי חשבונית זיכוי
+$accE = db_one("SELECT a.* FROM account a JOIN customer c ON c.account = a.id WHERE c.external_id = 'user:9'");
+$mp3 = manual_payment($owner, ['account' => $accE['id'], 'method' => 'bit', 'agorot' => 1900, 'reference' => 'BIT-1', 'purpose' => 'topup']);
+tax_docs_issue();
+$d = end($M['issued']);
+check('פטור: קבלה (400), ביט כאפליקציית תשלום (10/1)', $d['type'] === 400 && $d['payment'][0]['type'] === 10 && $d['payment'][0]['appType'] === 1);
+$before = count($M['issued']);
+payment_refund($mp3['payment'], 1900, 'ביטול', 'admin:x');
+tax_docs_issue();
+check('פטור — אין חשבונית זיכוי', count($M['issued']) === $before);
+// עוסק בלי חיבור — אין מסמך, ואין שגיאה
+$noDoc = merchant_save($owner, ['name' => 'בלי מורנינג', 'tax_status' => 'licensed']);
+client_create($owner, ['id' => 'nodoc', 'name' => 'בלי', 'merchant' => $noDoc['id']]);
+customer_upsert(client_get($owner, 'nodoc'), 'test', ['external_id' => 'z']);
+$accZ = db_one("SELECT a.* FROM account a JOIN customer c ON c.account = a.id WHERE c.external_id = 'z'");
+$mp4 = manual_payment($owner, ['account' => $accZ['id'], 'method' => 'cash', 'agorot' => 100, 'purpose' => 'topup']);
+$before = count($M['issued']);
+tax_docs_issue();
+check('עוסק בלי חיבור — אין מסמך, אין שגיאה (מסומן "חסר מסמך")', count($M['issued']) === $before && (int)db_one('SELECT doc_attempts FROM payment WHERE id = ?', [$mp4['payment']])['doc_attempts'] === 0);
+// תשלום ידני על חשבונית פתוחה מחזיר מנוי לפעיל
+at(240);
+$M['decline'] = true;
+subscriptions_renew();
+$M['decline'] = false;
+$open = db_one("SELECT i.* FROM invoice i JOIN subscription s ON s.id = i.subscription JOIN customer c ON c.id = s.customer WHERE c.external_id = 'family:1' AND i.status = 'open'");
+manual_payment($owner, ['account' => $accL['id'], 'method' => 'transfer', 'purpose' => 'invoice', 'invoice' => $open['id'], 'reference' => 'X']);
+check('העברה על חשבונית פתוחה → המנוי חוזר לפעיל', db_one('SELECT status FROM subscription WHERE id = ?', [$open['subscription']])['status'] === 'active'
+    && db_one('SELECT status FROM invoice WHERE id = ?', [$open['id']])['status'] === 'paid');
 
 exec('rm -rf ' . escapeshellarg($tmp));
 echo "\n" . ($fail ? "✗ $fail נכשלו, $pass עברו\n" : "✓ כל $pass הבדיקות עברו\n");
