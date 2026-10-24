@@ -10,16 +10,31 @@
 
 | | |
 | --- | --- |
-| שלב | **1 — שלד** (רישום, מסך פתיחה, תיקיית נתונים מוגנת, החרגה בפריסה) |
+| שלב | **2 — ליבה בלי כסף** ✓ · הבא: שלב 3 — דף תשלום, "החשבון שלי", מנויים מלאים, סולק מדומה |
 | מי נכנס | רק המנהל (`"plugin": true`, `"gate": true`). מנויים נוספים — אחרי [`docs/requests/plugin-direct-grants.md`](docs/requests/plugin-direct-grants.md) |
-| הבא | שלב 2 — ליבה בלי כסף, מול סולק מדומה |
+| בדיקות | `php payments/tests/run.php` — מסד זמני, כולל בקשות HTTP אמיתיות |
+
+## מה עובד (שלב 2)
+
+- **ממשק ניהול:** עוסקים (פטור / מורשה / חברה), מערכות מחוברות, קודי גישה (סודי, גלוי, סוד webhook — בדיקות וחי),
+  מוצרים ומחירים בגרסאות, לקוחות עם ארנק, טעינה/מתנה/תיקון ידניים, הענקת מנוי בלי חיוב, הודעות ויומן קריאות, ביקורת.
+- **API חתום** (`api.php`): `ping`, `catalog`, `customer_upsert`, `customer_get`, `entitlement`, `wallet_get`,
+  `usage_record`, `usage_batch`, `usage_reserve`, `usage_commit`, `usage_release`, `usage_summary`.
+  חתימה בקוד סודי (HMAC) או Ed25519 (כמו `platform/docs/embed.md`). `api.php?action=key` — המפתח הציבורי של התוסף.
+- **הודעות למערכות** (webhooks) חתומות, בתור עם ניסיונות חוזרים. `cron.php` — כל 5 דקות.
+- **הארנק** במיליוניות ₪ — טוקן בודד יכול לעלות שבר אגורה בלי עיגול בכל אירוע.
 
 ## מבנה
 
 ```
 payments/
-  app.json              תוסף, מאחורי השער
+  app.json              תוסף, מאחורי השער; api.php ציבורי (ההגנה — החתימה)
   index.html            ממשק המנהל (RTL, הטלפון קודם)
+  admin.php             ה-API של ממשק הניהול (מאחורי השער)
+  api.php               ה-API החתום למערכות מחוברות
+  cron.php              עבודות מתוזמנות (שורת פקודה)
+  lib/                  db, util, clients (מנויים, מערכות, קודים, חתימה), billing, webhooks
+  tests/                run.php — הבדיקות; sign.php — בקשה חתומה לבדיקה ידנית
   assets/css/app.css    שפת העיצוב (מהסקיל phone-first-design)
   assets/js/app.js
   assets/icon.svg
