@@ -6,10 +6,10 @@
 import { PageView } from './view.js';
 import { pagesOf, pageSize, setPageCount, setPageSize, marginsFit, mmToPt, ptToMm,
   mastersOf, masterOf, setMaster, updateMaster, ensureMasters, spreadOfPage, contentBox } from './pages.js';
-import { addFrame, autoflow, growFlow, removeFrame, pruneFlows, updateFrame, setFlow, flowText, textToDoc, thread,
-  allFrames, bodyStyle, setBodyStyle, FONTS } from './frames.js';
+import { addFrame, autoflow, growFlow, removeFrame, pruneFlows, updateFrame, setFlow, flowText, thread,
+  allFrames, bodyStyle, styleOf, setStyle, STYLE_KEYS, FONTS } from './frames.js';
 import { layoutFlows } from './flow.js';
-import { loadFont } from './shaper.js';
+import { loadFont, fontVariant } from './shaper.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 
@@ -68,17 +68,26 @@ function ensureFonts() {
     loaded[name] = await loadFont('assets/fonts/' + file, name);
   })));
 }
-// גופן הגוף, ו-Noto כחלופי (טעמים שאין ב-Frank Ruhl Libre)
-const fontsFor = family => {
-  const main = loaded[family] || loaded['Noto Serif Hebrew'];
-  return main === loaded['Noto Serif Hebrew'] ? [main] : [main, loaded['Noto Serif Hebrew']];
+// גופן במשקל (wght — הגופנים משתנים, אז מודגש בא מאותו קובץ), במטמון
+const variants = new Map();
+const weighted = (f, weight) => {
+  if (!weight || weight === 400) return f;
+  const k = f.name + '@' + weight;
+  if (!variants.has(k)) variants.set(k, fontVariant(f, { wght: weight }));
+  return variants.get(k);
+};
+// הגופן של הסגנון, ו-Noto כחלופי (טעמים שאין ב-Frank Ruhl Libre) — באותו משקל
+const fontsFor = (family, weight = 400) => {
+  const noto = weighted(loaded['Noto Serif Hebrew'], weight);
+  const main = loaded[family] && family !== 'Noto Serif Hebrew' ? weighted(loaded[family], weight) : noto;
+  return main === noto ? [noto] : [main, noto];
 };
 let text = null;
 
 function relayout() {
   if (!loaded['Noto Serif Hebrew']) return;
   text = layoutFlows(model, fontsFor);
-  view.setText(text, fontsFor(bodyStyle(model).font));
+  view.setText(text, fontsFor(bodyStyle(model).font, bodyStyle(model).weight));
   updatePageBtn();
 }
 
@@ -338,19 +347,35 @@ $('#fr-del').addEventListener('click', () => {
   changed(removeFrame(model, x.frame.id));
 });
 
-// ---- עריכת הטקסט (Story Editor) ----
+// ---- עריכת הטקסט (Story Editor): ProseMirror, בשמות של עורך התמלילים ----
 const sdlg = $('#story-dlg'), sform = $('form', sdlg);
-let storyFlow = null;
-function openStory(flowId) {
+let storyFlow = null, story = null;
+async function openStory(flowId) {
+  const { openStory: open, sanitize } = await import('./story.js');
+  const doc = model.flows[flowId]?.doc;
+  const { lost } = sanitize(doc);
+  if (lost.length && !confirm(`בטקסט יש רכיבים שהעימוד עוד לא תומך בהם (${lost.join(', ')}). עריכה כאן תהפוך אותם לפסקאות רגילות. להמשיך?`)) return;
   storyFlow = flowId;
-  sform.text.value = flowText(model, flowId);
   sdlg.showModal();
-  sform.text.focus();
+  story = await open($('.story-host', sdlg), doc, {
+    onState({ style, bold }) {
+      for (const b of sdlg.querySelectorAll('.story-styles [data-cmd]')) b.setAttribute('aria-pressed', String(b.dataset.cmd === style));
+      $('.story-b', sdlg).setAttribute('aria-pressed', String(bold));
+    },
+  });
+  story.view.focus();
 }
+sdlg.addEventListener('click', e => {
+  const b = e.target.closest('[data-cmd]');
+  if (b && story) story.command(b.dataset.cmd);
+});
+sdlg.addEventListener('close', () => { story?.destroy(); story = null; });
 sform.addEventListener('submit', e => {
   e.preventDefault();
+  const doc = story?.getDoc();
   sdlg.close();
-  changed(setFlow(model, storyFlow, { doc: textToDoc(sform.text.value) }));
+  if (!doc) return;
+  changed(setFlow(model, storyFlow, { doc }));
   const r = text?.flows.get(storyFlow);
   if (r?.overset) toast('הטקסט לא נכנס — ➕ אדום בסוף המסגרת האחרונה', true);
 });
@@ -358,6 +383,38 @@ sform.addEventListener('submit', e => {
 // ---- הגדרות ----
 const dlg = $('#set-dlg'), form = $('form', dlg), dlgErr = $('.error', dlg);
 const num = v => { const n = parseFloat(String(v).replace(',', '.')); return Number.isFinite(n) ? n : NaN; };
+
+// עריכת סגנונות: לשונית לכל סגנון; הערכים של כל אחד נשמרים בטיוטה עד "שמירה"
+let drafts = {}, curStyle = 'body';
+function showStyle(key) {
+  curStyle = key;
+  const st = drafts[key];
+  form.font.value = st.font;
+  form.tsize.value = st.size; form.tlead.value = st.leading;
+  form.tbefore.value = st.spaceBefore; form.tafter.value = st.spaceAfter; form.tindent.value = st.indent;
+  form.tbold.checked = st.weight >= 600;
+  form.talign.value = st.align === 'left' ? 'right' : st.align;
+  for (const b of $('#st-tabs').children) b.setAttribute('aria-selected', String(b.dataset.key === key));
+}
+/** קריאת הלשונית הנוכחית לטיוטה. מחזיר הודעת שגיאה, או null. */
+function readStyle() {
+  const v = { size: num(form.tsize.value), leading: num(form.tlead.value), spaceBefore: num(form.tbefore.value),
+    spaceAfter: num(form.tafter.value), indent: num(form.tindent.value) };
+  if (!(v.size >= 4 && v.size <= 200)) return 'גודל — 4 עד 200 נקודות';
+  if (!(v.leading >= 4 && v.leading <= 400)) return 'מרווח שורות — 4 עד 400 נקודות';
+  if (!(v.spaceBefore >= 0 && v.spaceBefore <= 200 && v.spaceAfter >= 0 && v.spaceAfter <= 200)) return 'רווח לפני ואחרי — 0 עד 200 נקודות';
+  if (!(v.indent >= 0 && v.indent <= 500)) return 'הזחה — 0 עד 500 נקודות';
+  drafts[curStyle] = { ...drafts[curStyle], ...v, font: form.font.value, align: form.talign.value, weight: form.tbold.checked ? 700 : 400 };
+  return null;
+}
+$('#st-tabs').addEventListener('click', e => {
+  const b = e.target.closest('[data-key]');
+  if (!b || b.dataset.key === curStyle) return;
+  const err = readStyle();
+  if (err) { dlgErr.textContent = `${drafts[curStyle].name}: ${err}`; dlgErr.hidden = false; return; }
+  dlgErr.hidden = true;
+  showStyle(b.dataset.key);
+});
 
 function fillSettings() {
   const [w, h] = pageSize(model).map(ptToMm);
@@ -369,11 +426,8 @@ function fillSettings() {
   form.facing.checked = model.layout.facing;
   form.binding.value = model.layout.binding;
   form.count.value = pagesOf(model).length;
-  const st = bodyStyle(model);
-  form.font.value = st.font;
-  form.tsize.value = st.size;
-  form.tlead.value = st.leading;
-  form.talign.value = st.align === 'left' ? 'right' : st.align;
+  drafts = Object.fromEntries(STYLE_KEYS.map(k => [k, styleOf(model, k)]));
+  showStyle('body');
   const nb = model.layout.numbering;
   form.start.value = nb.start;
   form.nstyle.value = nb.style;
@@ -421,9 +475,8 @@ form.addEventListener('submit', e => {
   const count = Math.round(num(form.count.value));
   if (!(count >= 1 && count <= 2000)) return fail('מספר העמודים — בין 1 ל-2000');
 
-  const tsize = num(form.tsize.value), tlead = num(form.tlead.value);
-  if (!(tsize >= 4 && tsize <= 200)) return fail('גודל הטקסט — 4 עד 200 נקודות');
-  if (!(tlead >= 4 && tlead <= 400)) return fail('מרווח השורות — 4 עד 400 נקודות');
+  const serr = readStyle();
+  if (serr) return fail(`${drafts[curStyle].name}: ${serr}`);
   const start = Math.round(num(form.start.value));
   if (!(start >= 1 && start <= 99999)) return fail('מספור העמודים — מתחיל ב-1 או יותר');
   const hodd = form.hodd.value.trim(), heven = form.heven.value.trim();
@@ -442,7 +495,7 @@ form.addEventListener('submit', e => {
       position: form.hpos.value, align: form.halign.value, size: master.running?.header?.size || 9 } : null,
   } });
   next = pruneFlows(setPageCount(next, count, () => newId('p')));
-  next = setBodyStyle(next, { font: form.font.value, size: tsize, leading: tlead, align: form.talign.value });
+  for (const k of STYLE_KEYS) next = setStyle(next, k, drafts[k]);
   if (!marginsFit(next)) return fail('השוליים גדולים מדי לעמוד — צריך להישאר לפחות 1 ס"מ לתוכן');
   dlg.close();
   changed(next);

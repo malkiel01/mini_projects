@@ -12,6 +12,16 @@ const hb = () => (hbPromise ||= import('../vendor/harfbuzzjs/index.mjs'));
 let bidi = null;
 
 /**
+ * עותק של גופן בציר משתנה אחר (למשל wght 700 — מודגש), מאותו קובץ: בלי טעינה נוספת. הנתיבים מצוירים במשקל החדש.
+ */
+export function fontVariant(f, axes) {
+  const font = new f.H.Font(f.face);
+  font.setVariations(Object.entries(axes).map(([tag, v]) => new f.H.Variation(tag, v)));
+  const key = Object.entries(axes).map(([t, v]) => t + v).join(',');
+  return { ...f, font, name: f.name + '@' + key, paths: new Map() };
+}
+
+/**
  * טעינת גופן (TTF/OTF — לא woff2: HarfBuzz קורא את הטבלאות עצמן). src — כתובת, או ArrayBuffer (בבדיקות).
  * name — שם הגופן (מפתח למטמונים של המדידה).
  */
@@ -103,11 +113,14 @@ export function drawGlyphs(ctx, f, glyphs, x, y, size) {
  * fonts: גופן, או [ראשי, חלופי…] — אשכול (אות וסימניה) שחסר בו גליף בראשי מעוצב כולו בחלופי הראשון שמכסה אותו
  *        (למשל טעמים, שאין ב-Frank Ruhl Libre). הגליף מסומן ב-f, ומידותיו מומרות ליחידות הגופן הראשי.
  * base: 'rtl' (ברירת מחדל — פסקה עברית) או 'ltr'.
+ * spans: טווחים עם גופנים אחרים (מודגש) — שוברים רצפים בגבולות שלהם, וה-bidi נשאר של השורה כולה.
  */
-export function shapeLine(fonts, text, base = 'rtl') {
+export function shapeLine(fonts, text, base = 'rtl', spans = null) {
   bidi ||= bidiFactory();
   const list = Array.isArray(fonts) ? fonts : [fonts];
   const f = list[0];
+  // spans: [{ start, end, fonts }] — טווחים בטקסט עם רשימת גופנים משלהם (למשל מודגש); מחוץ להם — fonts
+  const listAt = i => { if (spans) for (const s of spans) if (i >= s.start && i < s.end) return s.fonts; return list; };
   // טווח מספרים "3–4": לפי UAX #9 המקף (U+2013) ניטרלי, ובפסקה עברית הוא הופך את הסדר ל-"4–3". בספר מצפים ל-3–4,
   // ולכן לחישוב הכיוון בלבד מקף בין שתי ספרות נחשב כמו מקף רגיל (ES). התו עצמו לא משתנה.
   const forLevels = text.replace(/(?<=\d)[\u2012\u2013\u2212](?=\d)/g, '-');
@@ -139,7 +152,8 @@ export function shapeLine(fonts, text, base = 'rtl') {
     const parts = [];
     for (const [a, b] of clusters(text.slice(r.start, r.end))) {
       const piece = text.slice(r.start + a, r.start + b);
-      const pick = list.find(x => covers(x, piece)) || f;   // אף גופן לא מכסה — הראשי (ריבוע, ונספר כחסר)
+      const here = listAt(r.start + a);
+      const pick = here.find(x => covers(x, piece)) || here[0];   // אף גופן לא מכסה — הראשי (ריבוע, ונספר כחסר)
       const last = parts[parts.length - 1];
       if (last && last.font === pick) last.end = r.start + b;
       else parts.push({ font: pick, start: r.start + a, end: r.start + b });

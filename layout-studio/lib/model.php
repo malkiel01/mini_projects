@@ -189,17 +189,26 @@ function ls_flows_check($flows, array $frames, callable $bad): void
     }
 }
 
-/** סגנון הגוף (styles.body) — אם קיים. */
+/**
+ * סגנונות הפסקה שלנו (body, h1–h3) — אם קיימים. סגנון בשם אחר — של אפליקציה אחרת, נשמר כמו שהוא.
+ * font, size, leading, align, spaceAfter — חובה; name, weight, spaceBefore, indent — רשות (נוספו בשלב הסגנונות).
+ */
 function ls_style_check($styles, callable $bad): void
 {
     if ($styles === null) return;
     if (!is_array($styles)) throw $bad('styles');
-    $b = $styles['body'] ?? null;
-    if ($b === null) return;
-    if (!is_array($b)) throw $bad('style');
     $num = fn($v, $min, $max) => (is_int($v) || is_float($v)) && $v >= $min && $v <= $max;
-    if (!is_string($b['font'] ?? null) || mb_strlen($b['font']) > 100) throw $bad('style');
-    if (!$num($b['size'] ?? null, 4, 200) || !$num($b['leading'] ?? null, 4, 400)) throw $bad('style');
-    if (!in_array($b['align'] ?? null, ['justify', 'right', 'center', 'left'], true)) throw $bad('style');
-    if (!$num($b['spaceAfter'] ?? null, 0, 200)) throw $bad('style');
+    foreach (['body', 'h1', 'h2', 'h3'] as $key) {
+        $b = $styles[$key] ?? null;
+        if ($b === null) continue;
+        if (!is_array($b)) throw $bad('style');
+        if (!is_string($b['font'] ?? null) || mb_strlen($b['font']) > 100) throw $bad('style');
+        if (!$num($b['size'] ?? null, 4, 200) || !$num($b['leading'] ?? null, 4, 400)) throw $bad('style');
+        if (!in_array($b['align'] ?? null, ['justify', 'right', 'center', 'left'], true)) throw $bad('style');
+        if (!$num($b['spaceAfter'] ?? null, 0, 200)) throw $bad('style');
+        if (array_key_exists('name', $b) && (!is_string($b['name']) || mb_strlen($b['name']) > 40)) throw $bad('style');
+        if (array_key_exists('weight', $b) && !$num($b['weight'], 100, 900)) throw $bad('style');
+        if (array_key_exists('spaceBefore', $b) && !$num($b['spaceBefore'], 0, 200)) throw $bad('style');
+        if (array_key_exists('indent', $b) && !$num($b['indent'], 0, 500)) throw $bad('style');
+    }
 }

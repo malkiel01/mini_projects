@@ -2,16 +2,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { loadFont, advance } from '../assets/js/shaper.js';
+import { loadFont, fontVariant, advance } from '../assets/js/shaper.js';
 import { layoutFlow, layoutFlows, columnsOf } from '../assets/js/flow.js';
 import { addFrame, autoflow, growFlow, removeFrame, pruneFlows, thread, flowText, textToDoc, setFlow, frameAt,
-  allFrames, bodyStyle, DEFAULT_STYLE } from '../assets/js/frames.js';
+  allFrames, bodyStyle, DEFAULT_STYLE, docBlocks, styleOf, setStyle } from '../assets/js/frames.js';
 import { setPageCount, pagesOf } from '../assets/js/pages.js';
 
 const buf = n => { const b = readFileSync(new URL('../assets/fonts/' + n, import.meta.url)); return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength); };
 const noto = await loadFont(buf('NotoSerifHebrew.ttf'), 'noto');
+const notoBold = fontVariant(noto, { wght: 700 });
 const FONTS = [noto];
-const fontsFor = () => FONTS;
+const fontsFor = (family, weight) => weight >= 700 ? [notoBold] : FONTS;
+const B = paras => paras.map(t => ({ style: 'body', runs: [{ text: t, bold: false }] }));
+const lay = (paras, frames, st) => layoutFlow(B(paras), frames, () => st, fontsFor);
 
 let seq = 0;
 const newId = (p = 'x') => p + (++seq);
@@ -42,7 +45,7 @@ test('טורים מימין לשמאל', () => {
 test('שורות: מיושרות לשני הצדדים, האחרונה לימין', () => {
   const st = { ...DEFAULT_STYLE, size: 12, leading: 18 };
   const fr = { id: 'a', box: [0, 0, 200, 400], columns: 1 };
-  const r = layoutFlow([LOREM], [fr], st, FONTS);
+  const r = lay([LOREM], [fr], st);
   const lines = r.frames.get('a').lines;
   assert.ok(lines.length >= 3);
   assert.equal(r.overset, false);
@@ -60,7 +63,7 @@ test('גלישה בין מסגרות, ו-overset כשנגמר המקום', () =>
   const st = { ...DEFAULT_STYLE };
   const a = { id: 'a', box: [0, 0, 150, 60] }, b = { id: 'b', box: [0, 0, 150, 60] };
   const paras = Array(6).fill(LOREM);
-  const r = layoutFlow(paras, [a, b], st, FONTS);
+  const r = lay(paras, [a, b], st);
   assert.ok(r.frames.get('a').lines.length > 0);
   assert.ok(r.frames.get('b').lines.length > 0);
   assert.equal(r.overset, true);
@@ -73,8 +76,8 @@ test('גלישה בין מסגרות, ו-overset כשנגמר המקום', () =>
 test('פסקה ריקה תופסת שורה', () => {
   const st = { ...DEFAULT_STYLE, spaceAfter: 0 };
   const fr = { id: 'a', box: [0, 0, 300, 300] };
-  const one = layoutFlow(['א', 'ב'], [fr], st, FONTS).frames.get('a').lines;
-  const two = layoutFlow(['א', '', 'ב'], [fr], st, FONTS).frames.get('a').lines;
+  const one = lay(['א', 'ב'], [fr], st).frames.get('a').lines;
+  const two = lay(['א', '', 'ב'], [fr], st).frames.get('a').lines;
   assert.ok(Math.abs(two[two.length - 1].y - one[one.length - 1].y - 18) < 1e-9);
 });
 
@@ -117,4 +120,53 @@ test('איזו מסגרת בנקודה', () => {
   const { model: m, frameId } = addFrame(model(), 0, { newId });
   assert.equal(frameAt(m, 0, 100, 100).id, frameId);
   assert.equal(frameAt(m, 0, 5, 5), null);
+});
+
+// ===== סגנונות =====
+const docOf = content => ({ type: 'doc', content });
+const para = (...runs) => ({ type: 'paragraph', content: runs });
+const txt = (text, bold) => ({ type: 'text', text, ...(bold ? { marks: [{ type: 'bold' }] } : {}) });
+
+test('ProseMirror → בלוקים: כותרות, הדגשה, ושבירת שורה', () => {
+  const b = docBlocks(docOf([{ type: 'heading', attrs: { level: 2 }, content: [txt('פרק')] },
+    para(txt('אחת '), txt('שתיים', true), { type: 'hard_break' }, txt('שלוש'))]));
+  assert.equal(b[0].style, 'h2');
+  assert.equal(b[1].style, 'body');
+  assert.deepEqual(b[1].runs, [{ text: 'אחת ', bold: false }, { text: 'שתיים', bold: true }, { text: ' שלוש', bold: false }]);
+});
+
+test('סגנון ברירת מחדל, ועדכון שמשאיר את השאר', () => {
+  const m = setStyle({ styles: {} }, 'h1', { size: 24 });
+  assert.equal(styleOf(m, 'h1').size, 24);
+  assert.equal(styleOf(m, 'h1').weight, 700);
+  assert.equal(styleOf(m, 'body').size, 12);
+});
+
+test('כותרת: גודל ומרווח משלה, ממורכזת; גוף אחריה עם רווח', () => {
+  const blocks = [{ style: 'h1', runs: [{ text: 'בְּרֵאשִׁית', bold: false }] }, ...B([LOREM])];
+  const r = layoutFlow(blocks, [{ id: 'a', box: [0, 0, 300, 600] }], key => styleOf({}, key), fontsFor);
+  const [h, b1] = r.frames.get('a').lines;
+  assert.equal(h.size, 20);
+  assert.equal(h.font, notoBold);   // כותרת — משקל 700
+  const w = advance(h.glyphs) * 20 / noto.upem;
+  assert.ok(Math.abs(h.x - (300 - w) / 2) < 0.01);   // במרכז
+  assert.equal(b1.size, 12);
+  assert.ok(Math.abs(b1.y - h.y - (10 + 18)) < 1e-9);   // רווח אחרי הכותרת + מרווח שורה של הגוף
+});
+
+test('מילה מודגשת — הגליפים שלה מהגופן המודגש', () => {
+  const blocks = [{ style: 'body', runs: [{ text: 'אחת ', bold: false }, { text: 'שתיים', bold: true }, { text: ' שלוש', bold: false }] }];
+  const r = layoutFlow(blocks, [{ id: 'a', box: [0, 0, 300, 100] }], () => ({ ...DEFAULT_STYLE, align: 'right' }), fontsFor);
+  const g = r.frames.get('a').lines[0].glyphs;
+  const boldCl = g.filter(x => x.f === notoBold).map(x => x.cluster);
+  assert.ok(boldCl.length >= 5);
+  assert.ok(boldCl.every(c => c >= 4 && c < 9));   // רק "שתיים"
+});
+
+test('הזחת שורה ראשונה — מימין, רק בשורה הראשונה', () => {
+  const st = { ...DEFAULT_STYLE, align: 'right', indent: 20 };
+  const lines = lay([LOREM], [{ id: 'a', box: [0, 0, 200, 400] }], st).frames.get('a').lines;
+  const k = 12 / noto.upem;
+  assert.ok(Math.abs(lines[0].x + advance(lines[0].glyphs) * k - 180) < 0.01);
+  assert.ok(Math.abs(lines[1].x + advance(lines[1].glyphs) * k - 200) < 0.01);
 });

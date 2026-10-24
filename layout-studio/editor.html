@@ -105,9 +105,19 @@
         <h2 id="story-title">עריכת הטקסט</h2>
         <button type="submit" class="btn primary">שמירה</button>
       </header>
+      <div class="story-bar" role="toolbar" aria-label="סגנון">
+        <div class="seg story-styles" role="group" aria-label="סגנון פסקה">
+          <button type="button" data-cmd="body">גוף</button>
+          <button type="button" data-cmd="h1">כותרת 1</button>
+          <button type="button" data-cmd="h2">כותרת 2</button>
+          <button type="button" data-cmd="h3">כותרת 3</button>
+        </div>
+        <button type="button" class="icon-btn story-b" data-cmd="bold" aria-label="מודגש" aria-pressed="false"><b>ב</b></button>
+      </div>
       <div class="sheet-body">
-        <p class="hint">כל שורה — פסקה. הטקסט זורם בכל המסגרות של השרשור. ניקוד וטעמים — מהמקלדת, כרגיל.</p>
-        <textarea name="text" dir="rtl" lang="he" spellcheck="false" aria-label="הטקסט"></textarea>
+        <p class="hint">הטקסט זורם בכל המסגרות של השרשור. Enter — פסקה חדשה, Shift+Enter — שורה חדשה באותה פסקה.
+          ניקוד וטעמים — מהמקלדת, כרגיל.</p>
+        <div class="story-host"></div>
       </div>
     </form>
   </dialog>
@@ -166,7 +176,13 @@
           </div>
         </section>
 
-        <section class="group" aria-labelledby="g-text"><h3 id="g-text">טקסט <small>הגוף, בכל המסגרות</small></h3>
+        <section class="group" aria-labelledby="g-text"><h3 id="g-text">סגנונות <small>בכל המסגרות</small></h3>
+          <div class="seg-tabs" role="tablist" id="st-tabs">
+            <button type="button" role="tab" data-key="body" aria-selected="true">גוף</button>
+            <button type="button" role="tab" data-key="h1" aria-selected="false">כותרת 1</button>
+            <button type="button" role="tab" data-key="h2" aria-selected="false">כותרת 2</button>
+            <button type="button" role="tab" data-key="h3" aria-selected="false">כותרת 3</button>
+          </div>
           <fieldset class="seg" aria-label="גופן">
             <label><input type="radio" name="font" value="Noto Serif Hebrew"><span>Noto Serif Hebrew</span></label>
             <label><input type="radio" name="font" value="Frank Ruhl Libre"><span>Frank Ruhl Libre</span></label>
@@ -174,13 +190,18 @@
           <div class="fields two">
             <label class="f"><span>גודל (נק')</span><input name="tsize" inputmode="decimal" dir="ltr"></label>
             <label class="f"><span>מרווח שורות (נק')</span><input name="tlead" inputmode="decimal" dir="ltr"></label>
+            <label class="f"><span>רווח לפני (נק')</span><input name="tbefore" inputmode="decimal" dir="ltr"></label>
+            <label class="f"><span>רווח אחרי (נק')</span><input name="tafter" inputmode="decimal" dir="ltr"></label>
+            <label class="f"><span>הזחת שורה ראשונה (נק')</span><input name="tindent" inputmode="decimal" dir="ltr"></label>
+            <label class="switch"><input type="checkbox" name="tbold"><span>מודגש</span></label>
           </div>
           <fieldset class="seg" aria-label="יישור">
             <label><input type="radio" name="talign" value="justify"><span>לשני הצדדים</span></label>
             <label><input type="radio" name="talign" value="right"><span>לימין</span></label>
             <label><input type="radio" name="talign" value="center"><span>למרכז</span></label>
           </fieldset>
-          <p class="hint">Noto — כל הניקוד והטעמים. Frank Ruhl Libre — בלי טעמים: אות עם טעם מגיעה מ-Noto.</p>
+          <p class="hint">Noto — כל הניקוד והטעמים. Frank Ruhl Libre — בלי טעמים: אות עם טעם מגיעה מ-Noto.
+            סגנון לכל פסקה — בעורך הטקסט.</p>
         </section>
 
         <section class="group" aria-labelledby="g-master"><h3 id="g-master">עמוד אב A <small>על כל העמודים שמשויכים אליו</small></h3>
