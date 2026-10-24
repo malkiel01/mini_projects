@@ -14,6 +14,9 @@
 | [`docs/mbe-format.md`](docs/mbe-format.md) | אפיון הקובץ `.mbe` — המבנה, גרסאות, ייצוגים, עריכה זרה, גודל, אבטחה |
 | [`docs/projects/mbe-core.md`](docs/projects/mbe-core.md) | הנחיות לפרויקט 0 — ליבת הפורמט |
 | [`docs/projects/word-processor-request.md`](docs/projects/word-processor-request.md) | בקשה לצ'אט עורך התמלילים |
+| [`docs/projects/raster-studio.md`](docs/projects/raster-studio.md) | הנחיות לפרויקט 2 — עיצוב רסטר |
+| [`docs/projects/vector-studio.md`](docs/projects/vector-studio.md) | הנחיות לפרויקט 3 — וקטורי |
+| [`docs/projects/layout-studio.md`](docs/projects/layout-studio.md) | הנחיות לפרויקט 4 — עימוד |
 
 **דשבורד:** [`dashboard/`](dashboard/) — כל אפליקציה בחבילה, סיכום האפיון שלה ואחוז ההתקדמות מתוך היעדים (`## התקדמות`
 במסמך הפרויקט). נקרא מהמסמכים בכל טעינה. **החבילה כולה `restricted`** — רק מי שאושר ישירות בממשק המנהל.
