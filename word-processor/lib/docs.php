@@ -174,6 +174,7 @@ function doc_save(array $row, $json, ?string $title, string $userId, string $use
     if ($writer !== null && $writer < doc_schema_need(doc_json($row), doc_page($row))) throw new ApiError('המסמך נשמר בגרסה חדשה יותר של העורך — רעננו את הדף', 'schema_newer', 409);
     $json = doc_json_valid($json);
     $page = take_page($json) ?? $page;   // הגדרות העמוד שבתוך המסמך — באותה שמירה ובאותה גרסה
+    $before = doc_json($row);
     $now = time();
     $sets = 'json = ?, version = version + 1, updated_at = ?, updated_by = ?, updated_by_id = ?';
     $args = [json_encode(strip_media_src($json), JSON_UNESCAPED_UNICODE), $now, $userName, $userId];
@@ -186,7 +187,8 @@ function doc_save(array $row, $json, ?string $title, string $userId, string $use
     if ($st->rowCount() !== 1) throw new ApiError('המסמך השתנה בינתיים — טענו אותו מחדש', 'conflict', 409);
     $row = doc_find($row['id'], $row['space']);
     version_record($row, $userId, $userName, '', $shared);
-    activity($row['id'], $userId, $userName, 'edit');
+    // ביומן: הערות שנוספו / נענו / נפתרו / נמחקו; ו"עריכה" — רק אם השתנה גם משהו מלבד ההערות
+    if (!activity_comments($row['id'], $userId, $userName, $before, is_array($json) ? $json : (json_decode((string)$json, true) ?: []))) activity($row['id'], $userId, $userName, 'edit');
     return $row;
 }
 

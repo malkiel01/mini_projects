@@ -666,7 +666,8 @@ async function shareDialog(id) {
 async function activityDialog(id) {
     const { activity } = await api('my_activity', { doc: id });
     const ICON = { create: '✨', open: '👁', edit: '✏️', rename: '🏷', restore: '⏪', share: '👥', unshare: '👥', link: '🔗', link_ok: '🔗',
-        unlink: '🔗', trash: '🗑', untrash: '♻️', export: '⬇️', copy: '📑' };
+        unlink: '🔗', trash: '🗑', untrash: '♻️', export: '⬇️', copy: '📑',
+        comment: '💬', reply: '💬', resolve: '✅', reopen: '↩️', uncomment: '🗑' };
     sheet('פעילות במסמך', body => {
         if (!activity.length) { body.append(h('p.empty', 'עוד אין פעילות רשומה.')); return; }
         const list = h('ul.activity');

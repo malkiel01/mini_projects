@@ -1,5 +1,6 @@
 /**
- * יומן פעילות לכל מסמך (שלב 5): דנה יוצרת, פותחת, עורכת, משנה שם, משתפת עם יוסי ומורידה כ-Word; יוסי (עריכה) עורך.
+ * יומן פעילות לכל מסמך (שלב 5): דנה יוצרת, פותחת, עורכת, משנה שם, משתפת עם יוסי ומורידה כ-Word; יוסי (עריכה) עורך
+ * ומוסיף הערה (שורה "הערה" עם תחילת הטקסט — והשמירה של ההערה לבדה אינה "עריכה").
  * ⋯ ← "פעילות במסמך" — כל אלה, מהחדש לישן, עם השמות; מי שרק צופה — בלי "פעילות" בתפריט, והשרת דוחה.
  */
 const P = text => ({ type: 'paragraph', content: [{ type: 'text', text }] });
@@ -25,6 +26,14 @@ export default async function (t) {
     await yossi.evaluate(() => document.querySelector('.wp-doc').editor.chain().focus('end').insertContent(' ויוסי').run());
     await yossi.keyboard.press('Control+s');
     await yossi.waitForTimeout(1200);
+    await yossi.evaluate(() => document.querySelector('.wp-doc').editor.chain().focus().setTextSelection({ from: 1, to: 5 }).run());
+    await yossi.keyboard.press('Control+Alt+KeyM');
+    await yossi.waitForSelector('.wp-comments:not([hidden]) .cm-edit');
+    await yossi.keyboard.type('לבדוק את הפתיחה');
+    await yossi.keyboard.press('Control+Enter');
+    await yossi.waitForSelector('.wp-comments .cm-card .cm-text');
+    await yossi.keyboard.press('Control+s');
+    await yossi.waitForTimeout(1500);
 
     // היומן אצל דנה
     await dana.click('button[aria-label="עוד"]');
@@ -33,8 +42,8 @@ export default async function (t) {
     await d.locator('.activity li:not(.day)').first().waitFor();
     const rows = await d.locator('.activity li:not(.day) .what').allTextContents();
     const has = s => rows.some(r => r.includes(s));
-    t.ok('היומן: יוסי ערך (הכי חדש), הורדה, שיתוף עם יוסי, שינוי שם, עריכה, פתיחה ויצירה של דנה',
-        rows[0].includes('יוסי כהן') && rows[0].includes('עריכה') && has('דנה לוי — הורדה · Word') && has('שיתוף · yossi@example.com — עריכה')
+    t.ok('היומן: יוסי הוסיף הערה (הכי חדש, עם הטקסט) וערך, הורדה, שיתוף עם יוסי, שינוי שם, עריכה, פתיחה ויצירה של דנה',
+        rows[0] === 'יוסי כהן — הערה · לבדוק את הפתיחה' && has('יוסי כהן — עריכה') && has('דנה לוי — הורדה · Word') && has('שיתוף · yossi@example.com — עריכה')
         && has('שינוי שם · שם חדש') && has('דנה לוי — עריכה') && has('דנה לוי — פתיחה') && has('דנה לוי — יצירה'), JSON.stringify(rows));
     t.ok('קבוצה לפי יום, עם שעה בכל שורה', await d.locator('.activity li.day').count() >= 1 && /^\d\d:\d\d$/.test(await d.locator('.activity time').first().textContent()));
     await d.locator('button[aria-label="סגירה"]').click();
