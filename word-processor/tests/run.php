@@ -1606,6 +1606,24 @@ check('פתיחה אחרי עריכה של אחרים — אותה שורה (ב�
 $vsA = versions_list($acR);
 doc_restore_version($acR, end($vsA)['id'], 'a:801', 'דנה', null);
 check('שחזור גרסה — נרשם, עם מספר הגרסה', activity_of($acD)[0]['what'] === 'restore' && str_starts_with(activity_of($acD)[0]['detail'], 'גרסה '));
+// הערות: הערה חדשה, תשובה, "נפתר" ופתיחה מחדש, מחיקה — שורה לכל אחת (עם תחילת הטקסט); שמירה שרק הערות השתנו בה — לא "עריכה"
+$cmJ = fn(array $comments, string $t = 'אבג') => ['type' => 'doc', 'attrs' => ['comments' => $comments],
+    'content' => [para([text_node($t, $comments ? [['type' => 'comment', 'attrs' => ['id' => 'c1']]] : [])])]];
+$long = str_repeat('מילה ', 20);
+$acR = doc_save(doc_find($acD, 'a:801'), $cmJ(['c1' => ['author' => 'יוסי', 'text' => $long, 'replies' => []]]), null, 'a:802', 'יוסי');
+$acR = doc_save($acR, $cmJ(['c1' => ['author' => 'יוסי', 'text' => $long, 'replies' => [['author' => 'דנה', 'text' => 'מסכימה']]]]), null, 'a:801', 'דנה');
+$acR = doc_save($acR, $cmJ(['c1' => ['author' => 'יוסי', 'text' => $long, 'done' => true, 'replies' => [['author' => 'דנה', 'text' => 'מסכימה']]]]), null, 'a:801', 'דנה');
+$acR = doc_save($acR, $cmJ(['c1' => ['author' => 'יוסי', 'text' => $long, 'done' => false, 'replies' => [['author' => 'דנה', 'text' => 'מסכימה']]]]), null, 'a:802', 'יוסי');
+$acR = doc_save($acR, $cmJ([]), null, 'a:801', 'דנה');
+$cl = array_slice(activity_of($acD), 0, 6);
+check('יומן: הערה, תשובה, "נפתרה", פתיחה מחדש ומחיקה — על שם מי ששמר, עם תחילת הטקסט; בלי "עריכה" כשרק הערות השתנו',
+    array_map(fn($a) => $a['what'] . ':' . $a['who'], $cl) === ['uncomment:דנה', 'reopen:יוסי', 'resolve:דנה', 'reply:דנה', 'comment:יוסי', 'restore:דנה']
+    && $cl[3]['detail'] === 'מסכימה' && mb_strlen($cl[4]['detail']) === 60 && str_ends_with($cl[4]['detail'], '…') && $cl[4]['text'] === 'הערה',
+    json_encode($cl, JSON_UNESCAPED_UNICODE));
+$acR = doc_save($acR, $cmJ(['c2' => ['author' => 'דנה', 'text' => 'עוד']], 'שונה'), null, 'a:801', 'דנה');
+// (העריכה מתאחדת עם שורת העריכה הקודמת של אותו אדם — היא באותה שנייה, לא בהכרח ראשונה)
+$now2 = array_values(array_filter(activity_of($acD), fn($a) => $a['t'] === activity_of($acD)[0]['t']));
+check('הערה יחד עם שינוי בטקסט — גם "הערה" וגם "עריכה"', in_array('comment', array_column($now2, 'what'), true) && in_array('edit', array_column($now2, 'what'), true), json_encode($now2, JSON_UNESCAPED_UNICODE));
 doc_delete(doc_find($acD, 'a:801'));
 check('מחיקה לצמיתות — גם היומן', activity_of($acD) === []);
 
