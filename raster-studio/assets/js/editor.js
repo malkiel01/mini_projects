@@ -9,6 +9,7 @@ import * as V from './engine/view.js';
 import { deviceBudget, suggestSize, megapixels } from './engine/budget.js';
 import { createLayersPanel } from './layers-panel.js';
 import { History } from './engine/history.js';
+import { createTools } from './tools.js';
 
 const $ = s => document.querySelector(s);
 const stage = $('#stage');
@@ -23,6 +24,7 @@ let renderer = null;
 let doc = null;
 let panel = null;
 let history = null;
+let tools = null;
 let view = { zoom: 1, x: 0, y: 0 };
 let fitted = false;
 let changed = false;   // יש תוכן שלא נשמר (השמירה — בשלב הבא)
@@ -50,6 +52,7 @@ function draw() {
 function setView(v) {
   view = v;
   draw();
+  tools?.updateCursor();
 }
 
 const center = () => [stage.clientWidth / 2, stage.clientHeight / 2];
@@ -167,9 +170,12 @@ stage.addEventListener('wheel', e => {
   }
 }, { passive: false });
 
-// מצביעים: אחד — הזזה (עד שיהיו כלים), שניים — צביטה והזזה
+// מצביעים: כלי הציור — אצבע / עט / עכבר אחד. יד, רווח או גלגלת לחוצה — הזזה. שתי אצבעות — צביטה והזזה
+// (ואם משיכה כבר התחילה באצבע הראשונה — היא מבוטלת, בלי עקבות).
 const pointers = new Map();
 let gesture = null;
+let painter = null;   // pointerId של המשיכה
+let spaceDown = false;
 
 function startGesture() {
   const pts = [...pointers.values()];
@@ -178,13 +184,40 @@ function startGesture() {
   stage.classList.toggle('panning', !!gesture);
 }
 
+const toDoc = p => V.screenToDoc(view, p[0], p[1]);
+
 stage.addEventListener('pointerdown', e => {
+  if (!doc) return;
+  // הכלים והאפשרויות יושבים מעל הבמה — לחיצה עליהם היא לחיצה על כפתור, לא ציור (ובלי לתפוס את המצביע)
+  if (e.target.closest('.tools, .tool-opts')) return;
   if (e.pointerType === 'mouse' && e.button !== 0 && e.button !== 1) return;
   stage.setPointerCapture(e.pointerId);
-  pointers.set(e.pointerId, local(e));
+  const p = local(e);
+  // אצבע שנייה בזמן משיכה — זו צביטה: המשיכה מבוטלת
+  if (painter !== null && e.pointerType === 'touch') {
+    tools.cancel();
+    painter = null;
+  }
+  pointers.set(e.pointerId, p);
+  const panOnly = e.button === 1 || spaceDown || pointers.size > 1;
+  if (!panOnly && pointers.size === 1 && tools.down(e, toDoc(p))) {
+    if (tools.stroking) painter = e.pointerId;
+    else pointers.delete(e.pointerId);   // דלי / טפטפת — לחיצה אחת
+    return;
+  }
   startGesture();
 });
 stage.addEventListener('pointermove', e => {
+  tools?.updateCursor(e);
+  if (e.pointerId === painter) {
+    const evs = e.getCoalescedEvents?.() || [];
+    const list = (evs.length ? evs : [e]).map(ev => {
+      const [x, y] = toDoc(local(ev));
+      return { x, y, pressure: ev.pressure };
+    });
+    tools.move(list);
+    return;
+  }
   if (!pointers.has(e.pointerId) || !gesture) return;
   pointers.set(e.pointerId, local(e));
   const pts = [...pointers.values()];
@@ -196,14 +229,34 @@ stage.addEventListener('pointermove', e => {
   }
 });
 const lift = e => {
+  if (e.pointerId === painter) {
+    painter = null;
+    pointers.delete(e.pointerId);
+    if (e.type === 'pointercancel') tools.cancel(); else tools.up();
+    return;
+  }
   if (!pointers.delete(e.pointerId)) return;
   startGesture();   // מצביטה לאצבע אחת — ממשיכים להזיז מהמקום הנוכחי, בלי קפיצה
 };
 stage.addEventListener('pointerup', lift);
 stage.addEventListener('pointercancel', lift);
+stage.addEventListener('pointerleave', () => tools?.hideCursor());
+
+// רווח לחוץ — יד זמנית (כמו בכל עורך)
+addEventListener('keydown', e => {
+  if (e.code === 'Space' && !e.target.closest?.('input, textarea, select, button')) {
+    spaceDown = true;
+    stage.dataset.tool = 'hand';
+    e.preventDefault();
+  }
+});
+addEventListener('keyup', e => {
+  if (e.code === 'Space') { spaceDown = false; if (tools) stage.dataset.tool = tools.state.tool; }
+});
 
 // לחיצה כפולה: מ"התאמה למסך" ל-100% בנקודה, ובחזרה
 stage.addEventListener('dblclick', e => {
+  if (tools && tools.state.tool !== 'hand') return;
   const f = fitView();
   if (f && Math.abs(view.zoom - f.zoom) < 1e-6) setView(V.zoomTo(view, 1, ...local(e)));
   else fit();
@@ -227,6 +280,8 @@ undoBtn.addEventListener('click', undo);
 redoBtn.addEventListener('click', redo);
 
 addEventListener('keydown', e => {
+  const typingAny = e.target.closest?.('input:not([type=range]):not([type=color]), textarea, select');
+  if (!typingAny && tools?.key(e)) { e.preventDefault(); return; }
   if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
   const k = e.key.toLowerCase();
   // בתוך שדה טקסט (שם שכבה) — הביטול של השדה עצמו
@@ -254,6 +309,10 @@ $('#hint').textContent = coarse ? 'צביטה — זום' : 'גרירה — הז
     renderer = new WebGL2Renderer(canvas);
     // ההיסטוריה — עד רבע מתקציב הזיכרון של המכשיר
     history = new History({ renderer, limitBytes: budget.bytes / 4, onChange: syncHistory });
+    tools = createTools({
+      doc: () => doc, renderer, history, view: () => view, toast, draw,
+      onChange: () => { changed = true; draw(); panel.render(); },
+    });
     panel = createLayersPanel({
       root: layersEl, doc: () => doc, renderer, history, toast,
       onChange: () => { changed = true; draw(); },
@@ -288,6 +347,7 @@ window.__rs = {
   get view() { return view; },
   get panel() { return panel; },
   get history() { return history; },
+  get tools() { return tools; },
   undo, redo,
   toggleLayers,
   setView,

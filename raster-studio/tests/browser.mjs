@@ -169,6 +169,7 @@ async function main() {
   await page.goto(BASE + '/editor.html?doc=' + id);
   await page.waitForFunction(() => window.__rs?.doc);
   await page.waitForTimeout(100);
+  await page.click('.tool[data-tool="hand"]');   // גרירה = הזזה (ברירת המחדל — מכחול)
   const box = await page.$eval('#stage', el => { const r = el.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; });
   const v0 = await page.evaluate(() => __rs.view);
   check('בהתחלה: התאמה למסך, לא מעל 100%', v0.zoom === 1 && Math.abs(v0.x - (box.w - 600) / 2) < 0.5, JSON.stringify(v0));
@@ -215,6 +216,7 @@ async function main() {
   check('Ctrl+0 — התאמה', (await page.evaluate(() => __rs.view.zoom)) === 1);
 
   // צביטה במגע (CDP: שתי אצבעות)
+  await page.click('.tool[data-tool="brush"]');   // צביטה גם כשכלי ציור פעיל
   const cdp = await ctx.newCDPSession(page);
   const cx = box.x + box.w / 2, cy = box.y + box.h / 2;
   const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y], i) => ({ x, y, id: i })) });
@@ -224,6 +226,7 @@ async function main() {
   await page.waitForTimeout(100);
   const vp = await page.evaluate(() => __rs.view);
   check('צביטה בשתי אצבעות — זום ×2 (רק המסמך)', Math.abs(vp.zoom - 2) < 0.02, JSON.stringify(vp));
+  check('צביטה — המשיכה שהתחילה באצבע הראשונה בוטלה, בלי עקבות', await page.evaluate(() => !__rs.doc._stroke && !__rs.history.canUndo));
   check('צביטה — הדף עצמו לא הוגדל ולא נגלל', await page.evaluate(() => (visualViewport.scale === 1) && scrollX === 0 && scrollY === 0));
 
   // ---- תקציב: תמונה גדולה מהתקציב → הצעה להקטין ----
@@ -349,6 +352,91 @@ async function main() {
   check('Ctrl+Z בתוך שדה השם — לא נוגע בהיסטוריה', (await page.evaluate(() => __rs.history.undoStack.length)) === 2);
   await page.keyboard.press('Escape');
 
+
+  // ---- כלי ציור ----
+  await page.goto(BASE + '/editor.html?doc=' + id);
+  await page.waitForFunction(() => window.__rs?.doc);
+  await page.evaluate(() => __rs.setView({ zoom: 1, x: 20, y: 20 }));
+  const sb = await page.$eval('#stage', el => { const r = el.getBoundingClientRect(); return [r.left, r.top]; });
+  const at = (x, y) => [sb[0] + 20 + x, sb[1] + 20 + y];   // נקודה במסמך → מסך (זום 100%)
+  const setOpt = (id, v) => page.$eval('#opt-' + id, (el, v) => { el.value = String(v); el.dispatchEvent(new Event('input', { bubbles: true })); }, v);
+  const stroke = async pts => {
+    await page.mouse.move(...at(...pts[0]));
+    await page.mouse.down();
+    for (const p of pts.slice(1)) await page.mouse.move(...at(...p), { steps: 8 });
+    await page.mouse.up();
+  };
+  const def = await page.evaluate(() => [document.querySelector('.tool[data-tool="brush"]').getAttribute('aria-pressed'), getComputedStyle(document.querySelector('#opt-size')).display, document.querySelector('#opt-size').closest('[data-for]').hidden].join());
+  check('ברירת מחדל — מכחול, ולוח אפשרויות', /^true,[a-z-]+,false$/.test(def) && await page.isVisible('#opt-size'), def);
+  await page.$eval('#color', el => { el.value = '#ff0000'; el.dispatchEvent(new Event('input', { bubbles: true })); });
+  await setOpt('size', 48);   // ≈ 20px
+  await setOpt('hardness', 100);
+  await setOpt('opacity', 100);
+  const sz = await page.evaluate(() => __rs.tools.state.size);
+  check('מחוון גודל לוגריתמי', sz >= 18 && sz <= 22 && (await page.textContent('output[for="opt-size"]')) === sz + 'px', String(sz));
+  await stroke([[100, 100], [300, 100]]);
+  check('מכחול: קו אדום', near(await px(200, 100), [255, 0, 0, 255]) && near(await px(200, 140), [255, 255, 255, 255]), await px(200, 100));
+  check('מכחול: רשומה אחת בהיסטוריה', await page.evaluate(() => __rs.history.undoStack.map(e => e.label).join()) === 'מכחול');
+  await page.keyboard.press('Control+z');
+  check('ביטול משיכה — חוזר ללבן', near(await px(200, 100), [255, 255, 255, 255]));
+  await page.keyboard.press('Control+Shift+z');
+  check('ביצוע — הקו חוזר', near(await px(200, 100), [255, 0, 0, 255]));
+  // משיכה באטימות 50% שחוצה את עצמה — לא מתעבה (מסכה עם מקסימום)
+  await setOpt('opacity', 50);
+  await page.$eval('#color', el => { el.value = '#0000ff'; el.dispatchEvent(new Event('input', { bubbles: true })); });
+  await stroke([[150, 250], [350, 250], [350, 300], [250, 300], [250, 200]]);
+  const cross = await px(250, 250), single = await px(300, 250);
+  check('אטימות 50%: חצי כחול על לבן', near(single, [188, 188, 255, 255]), single);
+  check('קו שחוצה את עצמו — לא מתעבה', cross === single, cross + ' / ' + single);
+  // מחק על שכבה
+  await page.click('[data-act="add"]');
+  await page.evaluate(() => { __rs.renderer.fill(__rs.doc, __rs.doc.active, [0, 160, 0, 255]); __rs.renderer.invalidate(__rs.doc); });
+  await page.keyboard.press('e');
+  check('E — מחק', await page.evaluate(() => __rs.tools.state.tool) === 'eraser');
+  await setOpt('opacity', 100);
+  await stroke([[400, 300], [500, 300]]);
+  check('מחק: השכבה העליונה נמחקה — רואים את הלבן שמתחת', near(await px(450, 300), [255, 255, 255, 255]) && near(await px(450, 350), [0, 160, 0, 255]), await px(450, 300));
+  // נעילה
+  await page.click('.layer-row[aria-selected="true"] .lock');
+  const n0 = await page.evaluate(() => __rs.history.undoStack.length);
+  await stroke([[400, 50], [500, 50]]);
+  check('שכבה נעולה — לא מציירים, והודעה', await page.evaluate(() => __rs.history.undoStack.length) === n0 && /נעולה/.test(await page.textContent('.toast')));
+  await page.click('.layer-row[aria-selected="true"] .lock');
+  // דלי: רקע עם קו אופקי לכל הרוחב — מילוי רק מעל הקו
+  await page.click('[data-act="remove"]');
+  await page.keyboard.press('b');
+  await page.$eval('#color', el => { el.value = '#000000'; el.dispatchEvent(new Event('input', { bubbles: true })); });
+  await setOpt('size', 40);
+  await stroke([[2, 180], [598, 180]]);   // הרדיוס (20px) מכסה עד הקצוות
+  await page.keyboard.press('g');
+  check('G — דלי, עם סבולת', await page.isVisible('#opt-tolerance') && !(await page.isVisible('#opt-size')));
+  await page.$eval('#color', el => { el.value = '#00ff00'; el.dispatchEvent(new Event('input', { bubbles: true })); });
+  await page.mouse.click(...at(30, 120));   // לא בראש הבמה — שם לוח האפשרויות
+  check('דלי: מעל הקו — ירוק', near(await px(20, 20), [0, 255, 0, 255]) && near(await px(590, 120), [0, 255, 0, 255]), await px(20, 20));
+  check('דלי: מתחת לקו — לא נגע', !near(await px(20, 380), [0, 255, 0, 255]), await px(20, 380));
+  check('דלי: רשומה בהיסטוריה', await page.evaluate(() => __rs.history.undoStack.at(-1).label) === 'דלי');
+  // טפטפת
+  await page.keyboard.press('i');
+  await page.mouse.click(...at(20, 380));
+  const picked = await page.$eval('#color', el => el.value);
+  check('I — טפטפת: הצבע מהתמונה (לבן מתחת לקו)', picked === '#ffffff', picked);
+  await page.mouse.click(...at(30, 120));
+  check('טפטפת על הירוק', await page.$eval('#color', el => el.value) === '#00ff00');
+  // [ ] — גודל
+  await page.keyboard.press('b');
+  const s0 = await page.evaluate(() => __rs.tools.state.size);
+  await page.keyboard.press(']');
+  check('] — מגדיל את המכחול', (await page.evaluate(() => __rs.tools.state.size)) > s0);
+  // מגע: אצבע אחת מציירת
+  const cdp2 = await ctx.newCDPSession(page);
+  const t2 = (type, pts) => cdp2.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y], i) => ({ x, y, id: i })) });
+  const nT = await page.evaluate(() => __rs.history.undoStack.length);
+  await t2('touchStart', [at(100, 330)]);
+  for (let k = 1; k <= 6; k++) await t2('touchMove', [at(100 + 30 * k, 330)]);
+  await t2('touchEnd', []);
+  await page.waitForTimeout(100);
+  check('מגע: אצבע אחת מציירת', (await page.evaluate(() => __rs.history.undoStack.length)) === nT + 1 && near(await px(200, 330), [0, 255, 0, 255]), await px(200, 330));
+  if (SHOTS) await page.screenshot({ path: join(SHOTS, 'paint-desktop.png') });
 
   check('אין שגיאות בקונסול', errors.length === 0, errors.join(' | '));
 
