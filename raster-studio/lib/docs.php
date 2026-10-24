@@ -37,6 +37,15 @@ function rs_docs_list(int $owner): array
     return array_map('rs_doc_row', $q->fetchAll());
 }
 
+/** מסמך אחד של הבעלים, או null. */
+function rs_doc_get(int $owner, int $id): ?array
+{
+    $q = rs_db()->prepare('SELECT * FROM docs WHERE id = ? AND owner_id = ? AND deleted_at IS NULL');
+    $q->execute([$id, $owner]);
+    $r = $q->fetch();
+    return $r ? rs_doc_row($r) : null;
+}
+
 /** @throws InvalidArgumentException עם קוד שגיאה קצר */
 function rs_doc_create(int $owner, string $title, string $preset, ?array $customPx = null): array
 {

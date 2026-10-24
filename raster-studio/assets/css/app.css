@@ -211,3 +211,22 @@ dialog > form { display: flex; flex-direction: column; max-height: inherit; heig
 .canvas-ic { inline-size: 36px; block-size: 36px; display: grid; place-items: center; flex: none; }
 .canvas-ic i { display: block; border: 1px solid var(--line); border-radius: 2px;
     background: repeating-conic-gradient(color-mix(in srgb, var(--muted) 22%, var(--surface)) 0 25%, var(--surface) 0 50%) 0 0 / 8px 8px; }
+
+/* ===== העורך (editor.html) ===== */
+/* כל המסך: כותרת, במה, סרגל תחתון. הדף עצמו לא נגלל ולא מוגדל — רק המסמך (taste.md, "צביטה"). */
+body.editor { display: flex; flex-direction: column; block-size: 100dvh; min-height: 0; overflow: hidden; overscroll-behavior: none; }
+.stage { position: relative; flex: 1; inline-size: 100%; max-inline-size: none; margin: 0; padding: 0; min-block-size: 0; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none;
+    background: color-mix(in srgb, var(--ink) 14%, var(--bg)); cursor: grab; }
+.stage.panning { cursor: grabbing; }
+.stage canvas { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; display: block; }
+.stage .stage-msg { position: absolute; inset: 0; display: grid; place-items: center; padding: var(--s4); text-align: center; color: var(--muted); }
+.stage .stage-msg.error { color: var(--danger); }
+.bar { display: flex; align-items: center; gap: var(--s1); padding: var(--s1) var(--s2) calc(var(--s1) + env(safe-area-inset-bottom));
+    background: var(--surface); border-top: 1px solid var(--line); }
+.bar .grow { flex: 1; min-inline-size: 0; }
+.zoom { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+.zoom .icon-btn { border-radius: 0; }
+.zoom .zoom-lbl { min-inline-size: 64px; padding: 0 var(--s1); font-variant-numeric: tabular-nums; border-inline: 1px solid var(--line); border-radius: 0; }
+.bar .hint { font-size: .75rem; margin: 0; }
+.doc-row a.use-row { color: inherit; text-decoration: none; cursor: pointer; }
+.doc-row a.use-row:hover { background: var(--bg); }

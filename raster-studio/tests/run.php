@@ -81,10 +81,13 @@ check('שלילי — נדחה', throws(fn() => rs_doc_create($uidA, 'x', 'custo
 check('לא מספר — נדחה', throws(fn() => rs_doc_create($uidA, 'x', 'custom', ['abc', 200]), 'bad_size'));
 check('רשימה — שלוש תמונות', count(rs_docs_list($uidA)) === 3);
 check('משתמש אחר לא רואה', rs_docs_list($uidB) === []);
+check('קריאה — הבעלים', rs_doc_get($uidA, $d['id'])['size'] === [1920, 1080]);
+check('קריאה — משתמש אחר לא רואה', rs_doc_get($uidB, $d['id']) === null);
 check('משתמש אחר לא מוחק', rs_doc_delete($uidB, $d['id']) === false);
 check('הבעלים מוחק', rs_doc_delete($uidA, $d['id']) === true);
 check('מחיקה שנייה — לא נמצא', rs_doc_delete($uidA, $d['id']) === false);
 check('נמחק — לא ברשימה', count(rs_docs_list($uidA)) === 2);
+check('נמחק — לא נקרא', rs_doc_get($uidA, $d['id']) === null);
 
 echo "\n" . ($n - $fails) . " / $n עברו\n";
 exit($fails ? 1 : 0);

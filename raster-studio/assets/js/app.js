@@ -1,42 +1,9 @@
 // עיצוב רסטר — דף הפתיחה: מי אני, והספרייה בשרת (רשימה, תמונה חדשה, מחיקה).
 
+import { api, errText, toast, dims } from './api.js';
+import { idbSet } from './idb.js';
+
 const $ = (s, el = document) => el.querySelector(s);
-
-const ERRORS = {
-  title_required: 'צריך שם לתמונה',
-  title_too_long: 'השם ארוך מדי',
-  bad_size: 'גודל הקנבס לא תקין — מספר שלם בין 1 ל-30000 פיקסלים',
-  no_user: 'אין משתמש — צריך להיכנס דרך הכלים הדיגיטליים',
-  not_found: 'התמונה לא נמצאה',
-  network: 'אין חיבור לשרת',
-};
-const errText = code => ERRORS[code] || 'משהו השתבש (' + code + ')';
-
-async function api(action, data = {}) {
-  let res;
-  try {
-    res = await fetch('api.php', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Raster-Studio': '1' },
-      body: JSON.stringify({ action, ...data }),
-      credentials: 'same-origin',
-    });
-  } catch {
-    throw new Error('network');
-  }
-  const out = await res.json().catch(() => ({ ok: false, error: 'server' }));
-  if (!out.ok) throw new Error(out.error || 'server');
-  return out;
-}
-
-function toast(msg, err = false) {
-  const el = $('.toast');
-  el.textContent = msg;
-  el.classList.toggle('err', err);
-  el.hidden = false;
-  clearTimeout(toast.t);
-  toast.t = setTimeout(() => { el.hidden = true; }, 2600);
-}
 
 // --vvh: הגובה הנראה בלי המקלדת — הגיליון מתקצר והכול נגלל
 (() => {
@@ -54,14 +21,6 @@ document.addEventListener('click', e => {
 
 // ---- גודל קנבס ----
 const PRESETS = { screen: [1920, 1080], square: [1080, 1080], story: [1080, 1920], a4: [1240, 1754] };
-// "1920×1080" בתוך טקסט עברי מתהפך ל-"1080×1920" — מבודדים אותו באלמנט LTR
-function dims([w, h]) {
-  const el = document.createElement('bdi');
-  el.dir = 'ltr';
-  el.textContent = w + '×' + h;
-  return el;
-}
-
 const dateFmt = new Intl.DateTimeFormat('he-IL', { day: 'numeric', month: 'short', year: 'numeric' });
 
 // ---- הרשימה ----
@@ -81,10 +40,11 @@ function render(docs) {
     const li = document.createElement('li');
     li.className = 'doc-row';
     li.innerHTML = `
-      <div class="use-row">
+      <a class="use-row">
         <span class="canvas-ic" aria-hidden="true"><i></i></span>
         <span class="use-tx"><b class="one"></b><small></small></span>
-      </div>
+        <span class="use-go" aria-hidden="true">‹</span>
+      </a>
       <button class="icon-btn" type="button" aria-label="מחיקה">🗑️</button>`;
     // הצלמית ביחס הקנבס: הצלע הארוכה 30px
     const [w, h] = d.size;
@@ -92,6 +52,7 @@ function render(docs) {
     const ic = $('.canvas-ic i', li);
     ic.style.inlineSize = Math.max(4, Math.round(w * k)) + 'px';
     ic.style.blockSize = Math.max(4, Math.round(h * k)) + 'px';
+    $('a', li).href = 'editor.html?doc=' + d.id;
     $('b', li).textContent = d.title;
     $('small', li).append(dims(d.size), ' · ' + dateFmt.format(new Date(d.updated_at)));
     $('button', li).addEventListener('click', () => remove(d, li));
@@ -159,6 +120,21 @@ form.addEventListener('submit', async e => {
     dlgErr.hidden = false;
   } finally {
     btn.disabled = false;
+  }
+});
+
+// ---- פתיחת תמונה מהמכשיר ----
+// הקובץ עובר לעורך דרך IndexedDB (קובץ גדול לא נכנס לכתובת או ל-sessionStorage)
+$('#open-btn').addEventListener('click', () => $('#file').click());
+$('#file').addEventListener('change', async e => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (!f) return;
+  try {
+    await idbSet('pending-open', f);
+    location.href = 'editor.html?open=pending';
+  } catch {
+    toast('לא הצלחתי להעביר את הקובץ לעורך', true);
   }
 });
 

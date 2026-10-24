@@ -43,6 +43,10 @@ try {
             rs_out(['ok' => true, 'me' => ['name' => $me['name'], 'email' => $me['email'], 'role' => $me['role']]]);
         case 'docs_list':
             rs_out(['ok' => true, 'docs' => rs_docs_list($uid)]);
+        case 'doc_get':
+            $doc = rs_doc_get($uid, (int)($in['id'] ?? 0));
+            if (!$doc) rs_fail('not_found', 404);
+            rs_out(['ok' => true, 'doc' => $doc]);
         case 'doc_create':
             $doc = rs_doc_create($uid, (string)($in['title'] ?? ''), (string)($in['size'] ?? ''), $in['px'] ?? null);
             rs_out(['ok' => true, 'doc' => $doc]);

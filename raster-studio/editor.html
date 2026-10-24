@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="theme-color" content="#2d4a8a">
+  <title>עיצוב רסטר</title>
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body class="editor">
+  <header class="top">
+    <a class="icon-btn" href="index.html" aria-label="חזרה לתמונות שלי">→</a>
+    <div class="titles"><h1 id="title">&nbsp;</h1><div class="sub" id="meta">&nbsp;</div></div>
+  </header>
+
+  <main class="stage" id="stage" aria-label="קנבס">
+    <canvas id="canvas"></canvas>
+    <p class="stage-msg" id="msg" role="status">טוען…</p>
+  </main>
+
+  <footer class="bar">
+    <button class="icon-btn" id="open-btn" type="button" aria-label="הוספת תמונה כשכבה" disabled>🖼️</button>
+    <input type="file" id="file" accept="image/png,image/jpeg,image/webp" hidden>
+    <span class="grow hint one" id="hint" aria-live="polite"></span>
+    <div class="zoom" role="group" aria-label="זום">
+      <button class="icon-btn" id="zoom-out" type="button" aria-label="הקטנה">−</button>
+      <button class="btn zoom-lbl" id="zoom-lbl" type="button">100%</button>
+      <button class="icon-btn" id="zoom-in" type="button" aria-label="הגדלה">+</button>
+    </div>
+    <button class="icon-btn" id="fit-btn" type="button" aria-label="התאמה למסך">⛶</button>
+  </footer>
+
+  <div class="toast" role="status" hidden></div>
+  <script src="assets/js/editor.js" type="module"></script>
+</body>
+</html>
