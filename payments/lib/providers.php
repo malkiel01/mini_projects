@@ -56,8 +56,16 @@ interface Provider
 }
 
 require_once __DIR__ . '/providers/morning.php';
+require_once __DIR__ . '/providers/cardcom.php';
 
-const PROVIDER_TYPES = ['morning' => 'מורנינג (חשבונית ירוקה)'];
+const PROVIDER_TYPES = ['morning' => 'מורנינג (חשבונית ירוקה)', 'cardcom' => 'קארדקום'];
+/** השדות של כל חיבור: מפתח ⇐ [תווית, סודי?, חובה?]. הסודות לא חוזרים למסך. */
+const PROVIDER_FIELDS = [
+    'morning' => ['client_id' => ['מזהה הממשק', false, true], 'client_secret' => ['סוד הממשק', true, true], 'webhook_secret' => ['סוד ההודעות', true, false]],
+    'cardcom' => ['terminal' => ['מספר מסוף', false, true], 'api_name' => ['שם משתמש לממשק', false, true], 'api_password' => ['סיסמת ממשק (להחזרים)', true, false]],
+];
+/** כשלעוסק כמה חיבורים באותה סביבה — מי סולק. מורנינג לצד קארדקום משמשת רק למסמכים. */
+const PROVIDER_CLEARING_ORDER = ['cardcom' => 0, 'morning' => 1];
 
 /** סולק לפי המפתח שנשמר: ‏"fake" או "pa_…" (חיבור של עוסק). */
 function provider(string $key): Provider
@@ -73,6 +81,7 @@ function provider_from_account(array $pa): Provider
     $cred = json_decode(unseal($pa['credentials_enc']), true) ?: [];
     return match ($pa['provider']) {
         'morning' => new MorningProvider($pa, $cred),
+        'cardcom' => new CardcomProvider($pa, $cred),
         default => throw new ApiError("סולק לא מוכר: {$pa['provider']}", 'unknown_provider', 500),
     };
 }
@@ -83,8 +92,9 @@ function provider_from_account(array $pa): Provider
  */
 function provider_for(array $merchant, string $env): Provider
 {
-    $pa = db_one("SELECT * FROM provider_account WHERE merchant = ? AND env = ? AND status = 'active' ORDER BY created_at LIMIT 1", [$merchant['id'], $env]);
-    if ($pa) return provider_from_account($pa);
+    $all = db_all("SELECT * FROM provider_account WHERE merchant = ? AND env = ? AND status = 'active' ORDER BY created_at", [$merchant['id'], $env]);
+    usort($all, fn($a, $b) => (PROVIDER_CLEARING_ORDER[$a['provider']] ?? 9) <=> (PROVIDER_CLEARING_ORDER[$b['provider']] ?? 9));
+    if ($all) return provider_from_account($all[0]);
     if ($env === 'test') return new FakeProvider();
     throw new ApiError('לעוסק עוד לא חוברה חברת סליקה לכסף אמיתי', 'no_provider', 409);
 }

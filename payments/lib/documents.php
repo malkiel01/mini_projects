@@ -28,8 +28,12 @@ function docs_provider(array $merchant, string $env): ?MorningProvider
 function payment_self_documented(array $pay): bool
 {
     if (!str_starts_with((string)$pay['provider'], 'pa_')) return false;
-    $pa = db_one('SELECT provider FROM provider_account WHERE id = ?', [$pay['provider']]);
-    return $pa && $pa['provider'] === 'morning';
+    $pa = db_one('SELECT * FROM provider_account WHERE id = ?', [$pay['provider']]);
+    try {
+        return $pa && provider_from_account($pa)->capabilities()['documents'];
+    } catch (ApiError) {
+        return false;
+    }
 }
 
 /** שורת התשלום במסמך — בקודים של מורנינג. */

@@ -133,15 +133,19 @@ export function selectionBox(doc, ids) {
  */
 export function applyMatrix(path, m) {
   if (isGroup(path)) { for (const c of path.children || []) applyMatrix(c, m); return; }
-  // סיבוב (או פריט שכבר מסובב) — נכנס ל-transform, כדי שצורה חיה וטקסט יישארו עריכים
-  const rotated = path.transform && !isIdentity(path.transform);
-  // היפוך של צורה חיה או טקסט — גם הוא ב-transform (כוכב הפוך נשאר כוכב שאפשר לערוך)
-  const flips = (m[0] < 0 || m[3] < 0) && (path.shape || isText(path));
-  if (hasRotation(m) || rotated || flips) {
-    path.transform = multiply(m, path.transform || IDENTITY).map(v => Math.round(v * 1e6) / 1e6 || 0);
-    if (isIdentity(path.transform)) delete path.transform;
+  const t = path.transform && !isIdentity(path.transform) ? path.transform : null;
+  const total = (t ? multiply(m, t) : m).map(v => Math.round(v * 1e6) / 1e6 || 0);
+  // סיבוב — נכנס ל-transform, כדי שצורה חיה וטקסט יישארו עריכים
+  if (hasRotation(total)) {
+    path.transform = total;
     return;
   }
+  // בלי סיבוב — הזזה וגודל נאפים לצורה (כדי שהמתאר לא יימתח). בצורה חיה ובטקסט ההיפוך לבדו נשאר ב-transform
+  // (מראה סביב הראשית) — כוכב הפוך נשאר כוכב שאפשר לערוך, וגם אחרי ההיפוך שינוי גודל משנה את התיבה.
+  const live = path.shape || isText(path);
+  const flip = live && (total[0] < 0 || total[3] < 0) ? [total[0] < 0 ? -1 : 1, 0, 0, total[3] < 0 ? -1 : 1, 0, 0] : null;
+  if (flip) path.transform = flip; else delete path.transform;
+  m = flip ? multiply(flip, total) : total;
   if (isText(path)) { transformText(path, m); return; }
   // מעבר צבע — הנקודות שלו במרחב הנתיב, והן זזות איתו
   for (const k of ['fill', 'stroke']) {

@@ -81,7 +81,7 @@ const STAGES = [
   ['מנויים מאושרים', 'אזור ניהול לכל מי שהמנהל מאשר', ''],
   ['מגדלור מתחבר', 'האפליקציה הראשונה, בצ\'אט שלה', ''],
   ['עלייה לאוויר', 'תשלום אמיתי קטן והחזר, בדיקה משפטית — הרשימה למעלה', 'now'],
-  ['התרחבות', 'סולקים ואפליקציות נוספים, ביט, הוראת קבע, דוחות', ''],
+  ['התרחבות', 'קארדקום ✓ · סולקים ואפליקציות נוספים, הוראת קבע, דוחות', 'now'],
 ];
 loaders.overview = async () => {
   const o = await api('overview');
@@ -127,8 +127,9 @@ function merchantForm(m = {}) {
     <p class="hint">פטור — קבלה בלי מע"מ. מורשה וחברה — חשבונית מס/קבלה עם מע"מ 18%.</p>
     ${m.id ? `<div class="group"><h3>חברת סליקה <small>הכסף נכנס ישר לחשבון שלך אצלה</small></h3>
       <ul class="list" id="pa-list"><li><p class="empty">טוען…</p></li></ul>
-      <div class="row-btns wrap"><button type="button" class="btn sm ghost" data-pa-new="test">+ מורנינג · בדיקות</button>
-      ${me.role === 'owner' ? '<button type="button" class="btn sm ghost" data-pa-new="live">+ מורנינג · כסף אמיתי</button>' : ''}</div>
+      <div class="row-btns wrap"><button type="button" class="btn sm ghost" data-pa-new="morning:test">+ מורנינג · בדיקות</button>
+      <button type="button" class="btn sm ghost" data-pa-new="cardcom:test">+ קארדקום · בדיקות</button>
+      ${me.role === 'owner' ? '<button type="button" class="btn sm ghost" data-pa-new="morning:live">+ מורנינג · כסף אמיתי</button><button type="button" class="btn sm ghost" data-pa-new="cardcom:live">+ קארדקום · כסף אמיתי</button>' : ''}</div>
       <p class="hint">בלי חיבור — סביבת הבדיקות עובדת מול הסולק המדומה, וכסף אמיתי לא נגבה.</p></div>` : ''}`,
   async fd => {
     await api('merchant_save', { id: m.id || '', ...Object.fromEntries(fd) });
@@ -138,42 +139,60 @@ function merchantForm(m = {}) {
 }
 
 const PROV_METHODS = { card: '💳 כרטיס', bit: 'ביט', apple: 'אפל', google: 'גוגל' };
+const PROV_NAME = { morning: 'מורנינג', cardcom: 'קארדקום' };
+const PROV_FIELDS = {
+  morning: [['client_id', 'מזהה הממשק', false], ['client_secret', 'סוד הממשק', true], ['webhook_secret', 'סוד ההודעות (מומלץ)', true]],
+  cardcom: [['terminal', 'מספר מסוף', false], ['api_name', 'שם משתמש לממשק', false], ['api_password', 'סיסמת ממשק — להחזרים מכאן', true]],
+};
+const PROV_HINT = {
+  morning: live => live ? 'הקודים מחשבון מורנינג האמיתי שלך (תוכנית "בסט" ומעלה): כלי פיתוח ← מפתחות ממשק.' : 'הקודים מסביבת הניסוי של מורנינג למפתחים — שם לא נגבה כסף אמיתי.',
+  cardcom: live => live ? 'בממשק קארדקום: הגדרות ← הגדרות חברה ← ניהול מפתחות ממשק. מספר המסוף — בראש המסך.' : 'מסוף בדיקות מקארדקום (מבקשים מהם) — שם לא נגבה כסף אמיתי.',
+};
 async function loadProviders(m) {
   const { data } = await api('providers', { merchant: m.id });
   const box = $('#pa-list');
   if (!box) return;
   box.innerHTML = data.length ? data.map(p => `<li class="card" data-pa="${esc(p.id)}" tabindex="0" role="button"><span class="use-ic" aria-hidden="true">🏦</span>
-      <div class="body"><div class="l1"><span>מורנינג · ${p.env === 'live' ? 'כסף אמיתי' : 'בדיקות'}</span></div>
-      <div class="l2">${(p.settings.methods || []).map(x => PROV_METHODS[x] || x).join(' · ')}${p.checked_at ? ' · נבדק ' + when(p.checked_at) : ''}</div></div>
+      <div class="body"><div class="l1"><span>${PROV_NAME[p.provider] || esc(p.provider)} · ${p.env === 'live' ? 'כסף אמיתי' : 'בדיקות'}</span></div>
+      <div class="l2">${(p.settings.methods || []).map(x => PROV_METHODS[x] || x).join(' · ')}${p.provider === 'cardcom' ? ' · מסמך: ' + (p.settings.documents === 'morning' ? 'מורנינג' : 'קארדקום') : ''}${p.checked_at ? ' · נבדק ' + when(p.checked_at) : ''}</div></div>
       ${p.status !== 'active' ? chip('כבוי', '') : !p.checked_at ? chip('לא נבדק', 'warn') : p.check_error ? chip('תקלה', 'bad') : chip('תקין', 'ok')}</li>`).join('')
     : empty('עוד אין חיבור');
   for (const li of box.querySelectorAll('[data-pa]')) li.addEventListener('click', () => providerSheet(m, data.find(x => x.id === li.dataset.pa)));
-  for (const b of document.querySelectorAll('[data-pa-new]')) b.addEventListener('click', () => providerSheet(m, { env: b.dataset.paNew, settings: { methods: ['card', 'bit'] } }));
+  for (const b of document.querySelectorAll('[data-pa-new]')) b.addEventListener('click', () => {
+    const [provider, env] = b.dataset.paNew.split(':');
+    providerSheet(m, { provider, env, fields: {}, settings: { methods: ['card', 'bit'], documents: 'cardcom' } });
+  });
 }
 
 function providerSheet(m, p) {
   const isNew = !p.id;
   const live = p.env === 'live';
-  openSheet(`מורנינג · ${live ? 'כסף אמיתי' : 'בדיקות'} — ${m.name}`, `
-    <p class="hint">${live ? 'הקודים מחשבון מורנינג האמיתי שלך (תוכנית "בסט" ומעלה): כלי פיתוח ← מפתחות ממשק.' : 'הקודים מסביבת הניסוי של מורנינג למפתחים — שם לא נגבה כסף אמיתי.'}</p>
-    <div class="fields">
-      <label class="f wide"><span>מזהה הממשק${p.client_id ? ' (שמור: ' + esc(p.client_id) + ')' : ''}</span><input name="client_id" dir="ltr" autocomplete="off" placeholder="${p.client_id ? 'ריק — בלי שינוי' : ''}"></label>
-      <label class="f wide"><span>סוד הממשק${p.has_secret ? ' (שמור)' : ''}</span><input name="client_secret" type="password" dir="ltr" autocomplete="new-password" placeholder="${p.has_secret ? 'ריק — בלי שינוי' : ''}"></label>
-      <label class="f wide"><span>סוד ההודעות (מומלץ)${p.has_webhook_secret ? ' (שמור)' : ''}</span><input name="webhook_secret" type="password" dir="ltr" autocomplete="new-password" placeholder="${p.has_webhook_secret ? 'ריק — בלי שינוי' : ''}"></label>
-    </div>
+  const kind = p.provider || 'morning';
+  const f = p.fields || {};
+  const field = ([k, label, secret]) => `<label class="f wide"><span>${label}${f[k] ? (secret ? ' (שמור)' : ' (שמור: ' + esc(f[k]) + ')') : ''}</span>
+    <input name="${k}" dir="ltr" ${secret ? 'type="password" autocomplete="new-password"' : 'autocomplete="off"'} ${k === 'terminal' ? 'inputmode="numeric"' : ''} placeholder="${f[k] ? 'ריק — בלי שינוי' : ''}"></label>`;
+  openSheet(`${PROV_NAME[kind]} · ${live ? 'כסף אמיתי' : 'בדיקות'} — ${m.name}`, `
+    <p class="hint">${PROV_HINT[kind](live)}</p>
+    <div class="fields">${PROV_FIELDS[kind].map(field).join('')}</div>
     <div class="chips" aria-label="אמצעי תשלום">${Object.entries(PROV_METHODS).map(([k, l]) => `<label><input type="checkbox" name="m_${k}" ${(p.settings.methods || []).includes(k) || k === 'card' ? 'checked' : ''} ${k === 'card' ? 'disabled' : ''}><span>${l}</span></label>`).join('')}</div>
+    ${kind === 'cardcom' ? `<fieldset class="seg" aria-label="מי מפיק את הקבלה">
+        <label><input type="radio" name="documents" value="cardcom" ${p.settings.documents !== 'morning' ? 'checked' : ''}><span>הקבלה מקארדקום</span></label>
+        <label><input type="radio" name="documents" value="morning" ${p.settings.documents === 'morning' ? 'checked' : ''}><span>הקבלה ממורנינג</span></label></fieldset>
+      <p class="hint">קארדקום — רק אם במסוף יש מודול מסמכים. מורנינג — צריך גם חיבור מורנינג לעוסק (הסליקה תישאר בקארדקום).</p>` : ''}
     ${!isNew ? `<label class="switch"><input type="checkbox" name="active" ${p.status === 'active' ? 'checked' : ''}><span>פעיל</span></label>
     <div class="group"><h3>בדיקת חיבור</h3>
       ${p.check_error ? `<p class="error">${esc(p.check_error)}</p>` : p.checked_at ? '<p class="hint">✓ החיבור עובד.</p>' : ''}
       <div class="row-btns"><button type="button" class="btn sm primary" id="pa-check">בדיקה עכשיו</button></div></div>
-    <div class="group"><h3>הודעות ממורנינג <small>פעם אחת, בממשק מורנינג</small></h3>
+    ${kind === 'morning' ? `<div class="group"><h3>הודעות ממורנינג <small>פעם אחת, בממשק מורנינג</small></h3>
       <p class="hint">כלי פיתוח ← וובהוקים ← הוספה: להדביק את הכתובת, לסמן "מסמך נוצר" ו"תשלום התקבל", ולהגדיר סוד — אותו סוד שבשדה למעלה. כך תשלום נקלט גם אם הלקוח סגר את החלון.</p>
       <input readonly dir="ltr" value="${esc(p.webhook_url)}" aria-label="כתובת ההודעות" onclick="this.select()">
-      <div class="row-btns"><button type="button" class="btn sm ghost" id="pa-copy">📋 העתקה</button></div></div>` : ''}`,
+      <div class="row-btns"><button type="button" class="btn sm ghost" id="pa-copy">📋 העתקה</button></div></div>`
+      : '<p class="hint">הודעות מקארדקום מגיעות לבד — כתובת ההודעות נשלחת עם כל דף תשלום.</p>'}` : ''}`,
   async fd => {
     const methods = Object.keys(PROV_METHODS).filter(k => k === 'card' || fd.get('m_' + k));
-    const r = await api('provider_save', { merchant: m.id, provider: 'morning', env: p.env, client_id: fd.get('client_id'), client_secret: fd.get('client_secret'),
-      webhook_secret: fd.get('webhook_secret'), methods, ...(isNew ? {} : { status: fd.get('active') ? 'active' : 'disabled' }) });
+    const creds = Object.fromEntries(PROV_FIELDS[kind].map(([k]) => [k, fd.get(k)]));
+    const r = await api('provider_save', { merchant: m.id, provider: kind, env: p.env, ...creds, methods, documents: fd.get('documents') || '',
+      ...(isNew ? {} : { status: fd.get('active') ? 'active' : 'disabled' }) });
     const checked = (await api('provider_check', { id: r.provider.id })).provider;
     toast(checked.check_error ? 'נשמר, אבל הבדיקה נכשלה' : 'נשמר והחיבור עובד ✓', !!checked.check_error);
     merchantForm(m);
@@ -579,8 +598,8 @@ loaders.money = async () => {
   if (moneyView === 'payments') {
     $('#money-list').innerHTML = p.data.length ? p.data.map(r => `<li class="card" ${['succeeded', 'partially_refunded'].includes(r.status) ? `data-pay="${esc(r.id)}" tabindex="0" role="button"` : ''}>
         <div class="body"><div class="l1"><span>${esc(r.customer_name || r.external_id || '—')}</span><span class="t">${when(r.created_at)}</span></div>
-        <div class="l2">${nis(r.amount)}${r.refunded > 0 ? ' · הוחזרו ' + nis(r.refunded) : ''} · ${r.provider === 'fake' ? 'סולק מדומה' : r.provider_type === 'morning' ? 'מורנינג' : esc(r.provider)}${r.doc_number ? ' · ' + (Number(r.doc_type) === 400 ? 'קבלה' : 'חשבונית') + ' ' + esc(r.doc_number) : ''}${r.failure_message ? ' · ' + esc(r.failure_message) : ''}${r.env === 'test' ? ' · בדיקות' : ''}</div></div>
-        ${chip(...(PST[r.status] || [r.status, '']))}${r.status !== 'failed' && !Number(r.has_doc) && r.provider_type !== 'morning' && r.amount > 0 ? chip(r.doc_error ? 'מסמך נכשל' : 'חסר מסמך', r.doc_error ? 'bad' : 'warn') : ''}${r.refund_pending > 0 ? chip('להחזיר ' + nis(r.refund_pending), 'bad') : ''}</li>`).join('') : empty('עוד אין תשלומים.');
+        <div class="l2">${nis(r.amount)}${r.refunded > 0 ? ' · הוחזרו ' + nis(r.refunded) : ''} · ${r.provider === 'fake' ? 'סולק מדומה' : PROV_NAME[r.provider_type] || esc(r.provider)}${r.doc_number ? ' · ' + (Number(r.doc_type) === 400 ? 'קבלה' : 'חשבונית') + ' ' + esc(r.doc_number) : ''}${r.failure_message ? ' · ' + esc(r.failure_message) : ''}${r.env === 'test' ? ' · בדיקות' : ''}</div></div>
+        ${chip(...(PST[r.status] || [r.status, '']))}${r.status !== 'failed' && !Number(r.has_doc) && !r.self_documented && r.amount > 0 ? chip(r.doc_error ? 'מסמך נכשל' : 'חסר מסמך', r.doc_error ? 'bad' : 'warn') : ''}${r.refund_pending > 0 ? chip('להחזיר ' + nis(r.refund_pending), 'bad') : ''}</li>`).join('') : empty('עוד אין תשלומים.');
     for (const li of document.querySelectorAll('[data-pay]')) li.addEventListener('click', () => refundSheet(p.data.find(x => x.id === li.dataset.pay)));
   } else {
     $('#money-list').innerHTML = i.data.length ? i.data.map(r => `<li class="card"><div class="body">
@@ -593,7 +612,7 @@ function refundSheet(p) {
   const left = p.amount - p.refunded;
   const pendLine = p.refund_pending > 0 ? `<p class="error">↩️ הלקוח ביטל (${esc(p.refund_pending_reason)}): להחזיר ${nis(p.refund_pending)} בממשק הסולק, ואז "רישום החזר" כאן.</p>` : '';
   const docLine = Number(p.has_doc) ? `<p class="hint">🧾 ${Number(p.doc_type) === 400 ? 'קבלה' : 'חשבונית מס/קבלה'} ${esc(p.doc_number || '')}</p>`
-    : p.provider_type === 'morning' ? '' : `<p class="${p.doc_error ? 'error' : 'hint'}">${p.doc_error ? 'המסמך החשבונאי נכשל: ' + esc(p.doc_error) : 'עוד אין מסמך חשבונאי. הוא נוצר לבד דרך מורנינג, אם לעוסק יש חיבור.'}</p>
+    : p.self_documented ? '' : `<p class="${p.doc_error ? 'error' : 'hint'}">${p.doc_error ? 'המסמך החשבונאי נכשל: ' + esc(p.doc_error) : 'עוד אין מסמך חשבונאי. הוא נוצר לבד דרך מורנינג, אם לעוסק יש חיבור.'}</p>
       <div class="row-btns"><button type="button" class="btn sm ghost" id="doc-retry">הפקת המסמך עכשיו</button></div>`;
   openSheet('החזר כספי — ' + (p.customer_name || p.external_id || ''), pendLine + docLine + `
     <p class="hint">שולם ${nis(p.amount)}${p.refunded ? ', הוחזרו כבר ' + nis(p.refunded) : ''}. אפשר להחזיר עד ${nis(left)}. ההחזר יוצא דרך חברת הסליקה, לאותו אמצעי.</p>
@@ -601,12 +620,12 @@ function refundSheet(p) {
       <label class="f"><span>סכום (₪)</span><input name="amount" inputmode="decimal" dir="ltr" value="${((p.refund_pending > 0 ? Math.min(left, p.refund_pending) : left) / 100).toFixed(2)}"></label>
       <label class="f wide"><span>סיבה * (נשמרת ונשלחת ללקוח)</span><input name="reason" required maxlength="240" value="${esc(p.refund_pending > 0 ? p.refund_pending_reason : '')}"></label>
     </div>
-    ${p.provider_type === 'morning' ? `<p class="hint">במורנינג ההחזר נעשה בממשק שלהם (שם נוצרת גם חשבונית הזיכוי). בצע אותו שם, ואז רשום כאן.</p>
-      <label class="switch"><input type="checkbox" name="manual" checked disabled><span>ההחזר כבר בוצע במורנינג — רק לרשום</span></label>` : ''}`,
+    ${p.manual_refund ? `<p class="hint">ב${PROV_NAME[p.provider_type] || 'סולק'} ההחזר נעשה בממשק שלהם (שם נוצרת גם חשבונית הזיכוי). בצע אותו שם, ואז רשום כאן.</p>
+      <label class="switch"><input type="checkbox" name="manual" checked disabled><span>ההחזר כבר בוצע אצלם — רק לרשום</span></label>` : ''}`,
   async fd => {
     const ag = Math.round(Number(String(fd.get('amount')).replace(',', '.')) * 100);
-    if (!confirm(`${p.provider_type === 'morning' ? 'לרשום החזר' : 'להחזיר'} ${nis(ag)}?`)) return false;
-    await api('refund', { payment: p.id, agorot: ag, reason: fd.get('reason'), manual: p.provider_type === 'morning' });
+    if (!confirm(`${p.manual_refund ? 'לרשום החזר' : 'להחזיר'} ${nis(ag)}?`)) return false;
+    await api('refund', { payment: p.id, agorot: ag, reason: fd.get('reason'), manual: !!p.manual_refund });
     toast('ההחזר בוצע'); loaders.money();
   }, 'החזר');
   $('#doc-retry')?.addEventListener('click', async () => {

@@ -88,13 +88,13 @@ try {
         'tenant_status' => $owner ? tenant_set_status($t, $s('id'), $s('status')) : throw new ApiError('רק לבעלים', 'forbidden', 403),
 
         // כספים (שלב 3)
-        'payments' => ['data' => db_all("SELECT p.*, cu.name AS customer_name, cu.external_id, cu.client, cu.id AS customer_id,
+        'payments' => ['data' => payments_rows(db_all("SELECT p.*, cu.name AS customer_name, cu.external_id, cu.client, cu.id AS customer_id,
                 (SELECT number FROM tax_document d WHERE d.payment = p.id LIMIT 1) AS doc_number,
                 (SELECT type FROM tax_document d WHERE d.payment = p.id LIMIT 1) AS doc_type,
                 pa.provider AS provider_type,
                 (SELECT COUNT(*) FROM tax_document d WHERE d.payment = p.id AND d.refund IS NULL) AS has_doc
             FROM payment p JOIN account a ON a.id = p.account JOIN merchant m ON m.id = a.merchant
-            LEFT JOIN customer cu ON cu.account = a.id LEFT JOIN provider_account pa ON pa.id = p.provider WHERE m.tenant = ? GROUP BY p.id ORDER BY p.created_at DESC LIMIT 200", [$t['id']])],
+            LEFT JOIN customer cu ON cu.account = a.id LEFT JOIN provider_account pa ON pa.id = p.provider WHERE m.tenant = ? GROUP BY p.id ORDER BY p.created_at DESC LIMIT 200", [$t['id']]))],
         'invoices' => ['data' => db_all("SELECT i.*, (SELECT description FROM invoice_line WHERE invoice = i.id LIMIT 1) AS description,
                 (SELECT name FROM customer WHERE account = i.account LIMIT 1) AS customer_name
             FROM invoice i JOIN merchant m ON m.id = i.merchant WHERE m.tenant = ? ORDER BY i.created_at DESC LIMIT 200", [$t['id']])],
@@ -237,4 +237,23 @@ function customer_detail(array $t, string $id): array
         'wallet' => db_all('SELECT amount, kind, note, actor, created_at FROM wallet_tx WHERE account = ? ORDER BY created_at DESC LIMIT 50', [$cus['account']]),
         'usage' => db_all('SELECT u.quantity, u.cost_micros, u.occurred_at, p.code FROM usage_event u JOIN product p ON p.id = u.product WHERE u.customer = ? ORDER BY u.occurred_at DESC LIMIT 50', [$id]),
     ];
+}
+
+/** לכל תשלום: האם הסולק הפיק מסמך בעצמו, והאם ההחזר נעשה רק בממשק שלו (ונרשם כאן). */
+function payments_rows(array $rows): array
+{
+    $caps = [];
+    foreach ($rows as &$r) {
+        $key = (string)$r['provider'];
+        if (!isset($caps[$key])) {
+            try {
+                $caps[$key] = in_array($key, ['manual', 'none'], true) ? ['documents' => false, 'refund_api' => false] : provider($key)->capabilities();
+            } catch (Throwable) {
+                $caps[$key] = ['documents' => false, 'refund_api' => false];
+            }
+        }
+        $r['self_documented'] = (bool)$caps[$key]['documents'];
+        $r['manual_refund'] = str_starts_with($key, 'pa_') && !$caps[$key]['refund_api']; // מזומן וכו' — ההחזר ממילא נרשם ידנית
+    }
+    return $rows;
 }
