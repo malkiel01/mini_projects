@@ -2,7 +2,7 @@
 /**
  * הודעות ללקוח המשלם — מייל ומסרון (פרק 8.5, ופרק 10.6: ההודעות שהחוק מחייב).
  * כל הודעה נכנסת לטבלה עם מפתח ייחודי (dedupe) — אותה הודעה חוקית לא נשלחת פעמיים, וגם יש תיעוד שנשלחה.
- * מסרון: עוד אין ספק (הכרעה פתוחה) — נרשם "no_provider" ומופיע אצל המנהל, והמייל יוצא במקומו.
+ * מסרון: דרך הספק שהמנוי הגדיר (lib/sms.php). בלי ספק — נרשם "no_provider" ומופיע אצל המנהל, וחוזר לתור כשמגדירים.
  */
 
 declare(strict_types=1);
@@ -37,7 +37,13 @@ function notifications_send(int $limit = 50): int
     $sent = 0;
     foreach (db_all("SELECT * FROM notification WHERE status = 'pending' ORDER BY created_at LIMIT ?", [$limit]) as $n) {
         if ($n['channel'] === 'sms') {
-            db_run("UPDATE notification SET status = 'no_provider' WHERE id = ?", [$n['id']]);
+            $tenant = db_one('SELECT m.tenant FROM account a JOIN merchant m ON m.id = a.merchant WHERE a.id = ?', [$n['account']])['tenant'] ?? '';
+            $cfg = function_exists('sms_config') ? sms_config((string)$tenant) : null;
+            if (!$cfg) { db_run("UPDATE notification SET status = 'no_provider' WHERE id = ?", [$n['id']]); continue; }
+            $hook = $GLOBALS['PAY_SMS_HOOK'] ?? null;
+            [$ok] = is_callable($hook) ? [(bool)$hook($n['to_addr'], $n['body'])] : sms_send($cfg, $n['to_addr'], $n['body']);
+            db_run('UPDATE notification SET status = ?, sent_at = ? WHERE id = ?', [$ok ? 'sent' : 'failed', now(), $n['id']]);
+            $sent += (int)$ok;
             continue;
         }
         $ok = send_mail($n['to_addr'], $n['subject'], $n['body'], $n['account']);

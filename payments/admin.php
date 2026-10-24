@@ -145,6 +145,9 @@ try {
         'tick_now' => tick('admin', true) ?? [],
 
         'readiness' => readiness($t),
+        'sms' => sms_public($t['id']),
+        'sms_save' => sms_save($t, $in),
+        'sms_test' => sms_test($t, $s('to')),
         'reports' => reports($t, $s('env') === 'test' ? 'test' : 'live', (int)($in['months'] ?? 12)),
         'readiness_mark' => readiness_mark($t, $s('key'), !empty($in['done'])),
         'audit' => ['data' => db_all('SELECT actor_type, actor_id, action, object_type, object_id, detail, created_at FROM audit WHERE tenant = ? ORDER BY id DESC LIMIT 100', [$t['id']])],
