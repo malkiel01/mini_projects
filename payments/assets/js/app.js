@@ -196,6 +196,7 @@ loaders.settings = async () => {
     });
   }
   loadClock().catch(fail);
+  loadRules().catch(fail);
   const au = (await api('audit')).data;
   $('#audit-list').innerHTML = au.length ? au.map(a => `<li class="card"><div class="body">
       <div class="l1"><span>${esc(a.action)}</span><span class="t">${when(a.created_at)}</span></div>
@@ -270,6 +271,11 @@ async function clientSheet(id, newKey = null) {
       <div class="row-btns"><button type="button" class="btn sm ghost" id="add-prod">+ מוצר</button></div>
     </div>
 
+    <div class="group"><h3>קישורי תשלום <small>בלי קוד — לוואטסאפ, למייל, לאתר</small></h3>
+      <ul class="list" id="link-list"><li><p class="empty">טוען…</p></li></ul>
+      <div class="row-btns"><button type="button" class="btn sm ghost" id="add-link">+ קישור</button></div>
+    </div>
+
     <div class="group"><h3>הודעות למערכת <small>${d.webhooks.length}</small></h3>
       <div class="row-btns"><button type="button" class="btn sm ghost" id="wh-test" ${c.webhook_url ? '' : 'disabled'}>שליחת בדיקה</button></div>
       <ul class="list">${d.webhooks.length ? d.webhooks.map(w => `<li class="card"><div class="body"><div class="l1"><span dir="ltr">${esc(w.type)}</span><span class="t">${when(w.created_at)}</span></div>
@@ -309,11 +315,76 @@ async function clientSheet(id, newKey = null) {
     await api('key_revoke', { id: b.dataset.revoke }).catch(fail); clientSheet(id);
   });
   for (const li of body.querySelectorAll('[data-prod]')) li.addEventListener('click', () => productSheet(id, d.products.find(p => p.id === li.dataset.prod)));
+  loadLinks(c, d.products);
   $('#add-prod').addEventListener('click', () => productSheet(id, null));
   $('#wh-test')?.addEventListener('click', async () => {
     try { const { event } = await api('webhook_test', { client: id, env: 'test' }); toast(event.status === 'delivered' ? 'נמסר ✓' : 'לא נמסר (קוד ' + (event.response_code || 0) + ')', event.status !== 'delivered'); clientSheet(id); } catch (e) { fail(e); }
   });
   for (const b of body.querySelectorAll('[data-retry]')) b.addEventListener('click', async () => { await api('webhook_retry', { id: b.dataset.retry }).catch(fail); clientSheet(id); });
+}
+
+async function loadLinks(c, products) {
+  const { data } = await api('links', { client: c.id });
+  const box = $('#link-list');
+  if (!box) return;
+  box.innerHTML = data.length ? data.map(l => `<li class="card" data-link="${esc(l.id)}" tabindex="0" role="button"><span class="use-ic" aria-hidden="true">🔗</span>
+      <div class="body"><div class="l1"><span>${esc(l.title)}</span><span class="t">${l.uses}${l.max_uses ? '/' + l.max_uses : ''} שימושים</span></div>
+      <div class="l2">${l.amount_mode === 'custom' ? 'סכום לבחירה ' + nis(l.min_amount) + '–' + nis(l.max_amount) : esc(l.product) + (l.quantity > 1 ? ' × ' + l.quantity : '')}${l.env === 'test' ? ' · בדיקות' : ''}</div></div>
+      ${l.active ? '' : chip('כבוי', '')}</li>`).join('') : empty('אין קישורים');
+  for (const li of box.querySelectorAll('[data-link]')) li.addEventListener('click', () => linkSheet(c, products, data.find(x => x.id === li.dataset.link)));
+  $('#add-link').onclick = () => linkSheet(c, products, null);
+}
+
+function linkSheet(c, products, l) {
+  const sellable = products.filter(p => ['unit', 'credit_pack'].includes(p.type) && p.prices.length);
+  if (!l && !sellable.length) return toast('צריך קודם מוצר לפי יחידה או חבילה, עם מחיר', true);
+  const isNew = !l;
+  l = l || { title: '', description: '', product: sellable[0].code, quantity: 1, amount_mode: 'fixed', min_amount: 1000, max_amount: 100000, fields: ['name', 'email', 'phone'], max_uses: 0, env: 'test', active: true };
+  const FIELDS = { name: 'שם', email: 'מייל', phone: 'טלפון', tax_id: 'ח״פ', note: 'הערה' };
+  const embed = l.url ? `<script src="${location.origin + location.pathname.replace(/[^/]*$/, '')}assets/embed.js" async></script>\n<a class="mbe-pay" href="${l.url}">לתשלום</a>` : '';
+  openSheet(isNew ? 'קישור תשלום חדש' : l.title, `
+    ${l.url ? `<div class="summary"><div class="line"><b>הקישור</b></div>
+      <input readonly dir="ltr" value="${esc(l.url)}" onclick="this.select()" aria-label="הקישור">
+      <div id="qr" style="display:grid;place-items:center;padding:8px;background:#fff;border-radius:10px"></div>
+      <div class="row-btns wrap"><button type="button" class="btn sm primary" id="copy-link">📋 העתקת הקישור</button>
+        <a class="btn sm ghost" href="https://wa.me/?text=${encodeURIComponent(l.title + ' ' + l.url)}" target="_blank" rel="noopener">וואטסאפ</a>
+        <button type="button" class="btn sm ghost" id="copy-embed">כפתור לאתר</button></div></div>` : ''}
+    <div class="fields">
+      <label class="f wide"><span>כותרת *</span><input name="title" required maxlength="120" value="${esc(l.title)}" placeholder="תרומה לבית הכנסת"></label>
+      <label class="f wide"><span>תיאור</span><textarea name="description" rows="2">${esc(l.description)}</textarea></label>
+      <label class="f"><span>מוצר</span><select name="product">${sellable.map(p => `<option value="${esc(p.code)}" ${p.code === l.product ? 'selected' : ''}>${esc(p.name)} — ${nis(p.prices[0].amount)}</option>`).join('')}</select></label>
+      <label class="f"><span>כמות</span><input name="quantity" inputmode="numeric" dir="ltr" value="${l.quantity}"></label>
+    </div>
+    <fieldset class="seg" aria-label="סכום"><label><input type="radio" name="amount_mode" value="fixed" ${l.amount_mode === 'fixed' ? 'checked' : ''}><span>מחיר המוצר</span></label>
+      <label><input type="radio" name="amount_mode" value="custom" ${l.amount_mode === 'custom' ? 'checked' : ''}><span>סכום לבחירה</span></label></fieldset>
+    <div class="fields two">
+      <label class="f"><span>מינימום (₪)</span><input name="min" inputmode="decimal" dir="ltr" value="${l.min_amount / 100}"></label>
+      <label class="f"><span>מקסימום (₪)</span><input name="max" inputmode="decimal" dir="ltr" value="${l.max_amount / 100}"></label>
+    </div>
+    <p class="hint">מה הלקוח ממלא:</p>
+    <div class="chips">${Object.entries(FIELDS).map(([k, t]) => `<label><input type="checkbox" name="f_${k}" ${l.fields.includes(k) ? 'checked' : ''}><span>${t}</span></label>`).join('')}</div>
+    <div class="fields">
+      <label class="f"><span>מגבלת שימושים (0 — בלי)</span><input name="max_uses" inputmode="numeric" dir="ltr" value="${l.max_uses}"></label>
+      <label class="f"><span>אחרי התשלום — לכתובת (רשות)</span><input name="success_url" type="url" dir="ltr" value="${esc(l.success_url || '')}"></label>
+    </div>
+    ${isNew && c.live_ok ? `<fieldset class="seg" aria-label="סביבה"><label><input type="radio" name="env" value="test" checked><span>בדיקות</span></label><label><input type="radio" name="env" value="live"><span>כסף אמיתי</span></label></fieldset>` : ''}
+    ${!isNew ? `<label class="switch"><input type="checkbox" name="active" ${l.active ? 'checked' : ''}><span>פעיל</span></label>` : ''}`,
+  async fd => {
+    const r = await api('link_save', { id: l.id || '', client: c.id, env: fd.get('env') || l.env, title: fd.get('title'), description: fd.get('description'),
+      product: fd.get('product'), quantity: fd.get('quantity'), amount_mode: fd.get('amount_mode'),
+      min_amount: Math.round(Number(fd.get('min')) * 100), max_amount: Math.round(Number(fd.get('max')) * 100),
+      fields: Object.keys(FIELDS).filter(k => fd.get('f_' + k)), max_uses: fd.get('max_uses') || 0, success_url: fd.get('success_url'),
+      active: isNew ? true : !!fd.get('active') });
+    toast('נשמר'); linkSheet(c, products, r.link); return false;
+  });
+  if (l.url) {
+    try {
+      const qr = qrcode(0, 'M'); qr.addData(l.url); qr.make();
+      $('#qr').innerHTML = qr.createSvgTag({ cellSize: 5, margin: 2, scalable: true }).replace('<svg ', '<svg style="width:180px;height:180px" role="img" aria-label="קוד לסריקה" ');
+    } catch (e) { $('#qr').hidden = true; }
+    $('#copy-link').onclick = () => navigator.clipboard.writeText(l.url).then(() => toast('הועתק'));
+    $('#copy-embed').onclick = () => navigator.clipboard.writeText(embed).then(() => toast('קוד הכפתור הועתק — להדביק באתר'));
+  }
 }
 
 function productSheet(clientId, p) {
@@ -523,6 +594,76 @@ function refundSheet(p) {
   $('#doc-retry')?.addEventListener('click', async () => {
     try { const r = await api('doc_retry', { payment: p.id }); toast(r.issued ? 'המסמך הופק ✓' : 'עדיין לא — בדוק את חיבור מורנינג של העוסק', !r.issued); loaders.money(); sheet.close(); } catch (e) { fail(e); }
   });
+}
+
+const MODES = { payment: 'קנייה', subscription: 'מנוי', topup: 'טעינה', invoice: 'חשבונית פתוחה' };
+const RMETH = { card: 'כרטיס', bit: 'ביט', apple: 'אפל', google: 'גוגל' };
+async function loadRules() {
+  const { data } = await api('rules');
+  const desc = r => [
+    r.cond.modes ? r.cond.modes.map(m => MODES[m] || m).join('/') : 'כל קנייה',
+    r.cond.min_amount !== undefined ? 'מעל ' + nis(r.cond.min_amount) : '', r.cond.max_amount !== undefined ? 'עד ' + nis(r.cond.max_amount) : '',
+    r.cond.customer_type ? (r.cond.customer_type === 'business' ? 'עסק' : 'פרטי') : '',
+  ].filter(Boolean).join(' · ') + ' ← ' + [
+    r.act.block ? 'חסימה' : '', r.act.hide_methods ? 'בלי ' + r.act.hide_methods.map(m => RMETH[m] || m).join(', ') : '',
+    r.act.only_methods ? 'רק ' + r.act.only_methods.map(m => RMETH[m] || m).join(', ') : '',
+  ].filter(Boolean).join(' · ');
+  $('#rule-list').innerHTML = data.length ? data.map(r => `<li class="card" data-rule="${esc(r.id)}" tabindex="0" role="button"><div class="body">
+      <div class="l1"><span>${esc(r.name)}</span><span class="t">${r.priority}</span></div><div class="l2">${esc(desc(r))}</div></div>${r.active ? '' : chip('כבוי', '')}</li>`).join('')
+    : empty('אין כללים — הכול לפי ברירת המחדל.');
+  for (const li of document.querySelectorAll('[data-rule]')) li.addEventListener('click', () => ruleSheet(data.find(x => x.id === li.dataset.rule)));
+}
+$('#add-rule')?.addEventListener('click', () => ruleSheet(null));
+$('#test-rules')?.addEventListener('click', () => ruleTestSheet());
+
+function ruleSheet(r) {
+  const isNew = !r;
+  r = r || { name: '', priority: 100, cond: {}, act: {}, active: true };
+  const ck = (name, on) => on ? 'checked' : '';
+  openSheet(isNew ? 'כלל חדש' : r.name, `
+    <p class="hint">כש… (כל מה שמילאת חייב להתקיים) ← אז…</p>
+    <label class="f"><span>שם *</span><input name="name" required value="${esc(r.name)}" placeholder="ביט רק עד 500 ₪"></label>
+    <div class="group"><h3>כש…</h3>
+      <div class="chips">${Object.entries(MODES).map(([k, t]) => `<label><input type="checkbox" name="m_${k}" ${ck(k, (r.cond.modes || []).includes(k))}><span>${t}</span></label>`).join('')}</div>
+      <div class="fields two">
+        <label class="f"><span>סכום מעל (₪)</span><input name="min" inputmode="decimal" dir="ltr" value="${r.cond.min_amount !== undefined ? r.cond.min_amount / 100 : ''}"></label>
+        <label class="f"><span>סכום עד (₪)</span><input name="max" inputmode="decimal" dir="ltr" value="${r.cond.max_amount !== undefined ? r.cond.max_amount / 100 : ''}"></label>
+      </div>
+      <label class="f"><span>סוג לקוח</span><select name="ctype"><option value="">כל לקוח</option><option value="private" ${r.cond.customer_type === 'private' ? 'selected' : ''}>פרטי</option><option value="business" ${r.cond.customer_type === 'business' ? 'selected' : ''}>עסק</option></select></label>
+    </div>
+    <div class="group"><h3>אז…</h3>
+      <p class="hint">להסתיר:</p>
+      <div class="chips">${Object.entries(RMETH).map(([k, t]) => `<label><input type="checkbox" name="h_${k}" ${ck(k, (r.act.hide_methods || []).includes(k))}><span>${t}</span></label>`).join('')}</div>
+      <p class="hint">או רק:</p>
+      <div class="chips">${Object.entries(RMETH).map(([k, t]) => `<label><input type="checkbox" name="o_${k}" ${ck(k, (r.act.only_methods || []).includes(k))}><span>${t}</span></label>`).join('')}</div>
+      <label class="f"><span>או חסימה — ההודעה ללקוח</span><input name="block" value="${esc(r.act.block || '')}" placeholder="לסכום כזה — צור קשר"></label>
+    </div>
+    <div class="fields two"><label class="f"><span>סדר (קטן קודם)</span><input name="priority" inputmode="numeric" dir="ltr" value="${r.priority}"></label></div>
+    ${!isNew ? `<label class="switch"><input type="checkbox" name="active" ${r.active ? 'checked' : ''}><span>פעיל</span></label>` : ''}`,
+  async fd => {
+    const nisOrEmpty = v => v === '' || v === null ? '' : Math.round(Number(String(v).replace(',', '.')) * 100);
+    await api('rule_save', { id: r.id || '', name: fd.get('name'), priority: fd.get('priority'), active: isNew ? true : !!fd.get('active'),
+      cond: { modes: Object.keys(MODES).filter(k => fd.get('m_' + k)), min_amount: nisOrEmpty(fd.get('min')), max_amount: nisOrEmpty(fd.get('max')), customer_type: fd.get('ctype') },
+      act: { hide_methods: Object.keys(RMETH).filter(k => fd.get('h_' + k)), only_methods: Object.keys(RMETH).filter(k => fd.get('o_' + k)), block: fd.get('block') } });
+    toast('נשמר'); loaders.settings();
+  });
+}
+
+function ruleTestSheet() {
+  openSheet('בדיקת כללים — עסקה דמיונית', `
+    <div class="fields two">
+      <label class="f"><span>סוג</span><select name="mode">${Object.entries(MODES).map(([k, t]) => `<option value="${k}">${t}</option>`).join('')}</select></label>
+      <label class="f"><span>סכום (₪)</span><input name="amount" inputmode="decimal" dir="ltr" value="100"></label>
+      <label class="f"><span>סוג לקוח</span><select name="ctype"><option value="private">פרטי</option><option value="business">עסק</option></select></label>
+    </div>
+    <div id="rule-result"></div>`,
+  async fd => {
+    const r = await api('rule_test', { mode: fd.get('mode'), amount: Math.round(Number(fd.get('amount')) * 100), customer_type: fd.get('ctype') });
+    $('#rule-result').innerHTML = `<div class="summary">${r.matched.length ? '<div class="line"><b>חלים:</b> ' + r.matched.map(m => esc(m.name)).join(', ') + '</div>' : '<div class="line">אף כלל לא חל.</div>'}
+      ${r.block ? `<p class="error">נחסם: ${esc(r.block)}</p>` : ''}${r.hide.length ? '<div class="line">מוסתרים: ' + r.hide.map(m => RMETH[m] || m).join(', ') + '</div>' : ''}
+      ${r.only ? '<div class="line">רק: ' + r.only.map(m => RMETH[m] || m).join(', ') + '</div>' : ''}</div>`;
+    return false;
+  }, 'בדיקה');
 }
 
 async function loadClock() {

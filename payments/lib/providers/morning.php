@@ -296,7 +296,7 @@ function checkout_lines(array $c): array
     foreach (json_decode($c['items'], true) ?: [] as $it) {
         $pr = db_one('SELECT pr.*, p.name FROM price pr JOIN product p ON p.id = pr.product WHERE pr.id = ?', [$it['price']]);
         $qty = (int)$it['quantity'];
-        $amount = $c['mode'] === 'subscription' ? item_amount($pr, $qty, 0) : (int)$pr['amount'] * $qty;
+        $amount = $c['mode'] === 'subscription' ? item_amount($pr, $qty, 0) : (int)(json_obj($c['meta'])['unit_amount'] ?? $pr['amount']) * $qty;
         $out[] = ['description' => $pr['name'], 'quantity' => $qty, 'amount' => $amount, 'tax_behavior' => $pr['tax_behavior']];
     }
     return $out;

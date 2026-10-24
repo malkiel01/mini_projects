@@ -7,7 +7,7 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/lib/jobs.php';
+require_once __DIR__ . '/lib/pages.php';
 
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: same-origin');
@@ -102,6 +102,16 @@ try {
             if (!$p) throw new ApiError('התשלום לא נמצא', 'not_found', 404);
             return payment_refund($p['id'], (int)($in['agorot'] ?? 0), $s('reason'), 'admin:' . $t['id'], !empty($in['manual']));
         })(),
+
+        // קישורי תשלום וכללים (שלב 6)
+        'links' => ['data' => array_map('link_public', db_all('SELECT l.* FROM payment_link l JOIN client c ON c.id = l.client WHERE c.tenant = ? AND (? = \'\' OR l.client = ?) ORDER BY l.created_at DESC', [$t['id'], $s('client'), $s('client')]))],
+        'link_save' => ['link' => link_save($t, $in)],
+        'rules' => ['data' => array_map(fn($r) => ['cond' => json_obj($r['cond']), 'act' => json_obj($r['act'])] + $r, db_all('SELECT * FROM rule WHERE tenant = ? ORDER BY priority, created_at', [$t['id']]))],
+        'rule_save' => ['rule' => rule_save($t, $in)],
+        'rule_test' => rules_eval($t['id'], [
+            'client' => $s('client'), 'env' => $s('env') ?: 'test', 'mode' => $s('mode') ?: 'payment', 'amount' => (int)($in['amount'] ?? 0),
+            'customer_type' => $s('customer_type') ?: 'private', 'products' => array_filter([(string)($in['product'] ?? '')]),
+        ]),
 
         // מסמכים ותשלום ידני (שלב 5)
         'manual_payment' => manual_payment($t, $in),
