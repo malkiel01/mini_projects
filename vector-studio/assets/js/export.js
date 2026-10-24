@@ -26,7 +26,7 @@ export async function prepare(doc, surfaceId, getFont) {
   };
   const layers = [];
   for (const l of surface.layers || []) {
-    if (l.type !== 'vector' || l.visible === false) { if (l.type !== 'vector') gaps.add(`layer:${l.type} — לא נכלל`); continue; }
+    if (l.type !== 'vector' || l.visible === false) { if (l.type !== 'vector') gaps.add(`layer:${l.type} — לא נכלל (רק ב-PNG)`); continue; }
     if (l.blend && l.blend !== 'normal') gaps.add(`blend-mode:${l.blend} → normal`);
     layers.push({ layer: l, items: await Promise.all((l.paths || []).map(conv)) });
   }

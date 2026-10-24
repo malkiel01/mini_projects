@@ -474,6 +474,38 @@ try {
   fs.unlinkSync(tmpMbe);
   step('פתיחת ‎.mbe מהמכשיר — ציור חדש בספרייה, עם אותו תוכן (טקסט נשאר טקסט)');
 
+  // ‎.mbe של אפליקציה אחרת: שכבת רסטר ומסגרת טקסט מוצגות (לא נערכות), ונשמרות כמו שהן
+  const { create: mbeCreate, save: mbeSave } = await import('../assets/js/mbe/mbe.js');
+  const red = Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEElEQVR4nGP4z8AARAwQCgAf7gP9i18U1AAAAABJRU5ErkJggg==', 'base64'));
+  const of = mbeCreate('raster', { units: 'pt', color: { space: 'sRGB' }, surfaces: [], flows: { f1: { engine: 'prosemirror', doc: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'פסקה מהעימוד' }] }] } } } });
+  const imgPath = await of.addMedia(red, 'image/png');
+  of.document.surfaces.push({ id: 's1', type: 'canvas', size: [200, 200], layers: [
+    { id: 'R1', type: 'raster', name: 'תמונה', src: imgPath, box: [0, 0, 100, 100] },
+    { id: 'F1', type: 'frame', name: 'מסגרת', box: [100, 120, 90, 60], flow: 'f1' },
+  ] });
+  of.setRendition('renditions/preview.png', red);
+  const foreignFile = `${os.tmpdir()}/vs-foreign-${process.pid}.mbe`;
+  fs.writeFileSync(foreignFile, await mbeSave(of, { app: 'raster-studio' }));
+  await page.goto(base);
+  await page.waitForSelector('#home:not([hidden])');
+  page.once('dialog', d => d.accept());
+  const [fch] = await Promise.all([page.waitForEvent('filechooser'), page.click('#open-btn')]);
+  await fch.setFiles(foreignFile);
+  await page.waitForFunction(() => /^#d\d+$/.test(location.hash) && window.__vs?.S.doc && window.__vs.S.media.size === 1, null, { timeout: 15000 });
+  await page.waitForTimeout(200);
+  const px = await page.evaluate(() => {
+    const { S } = window.__vs, c = document.getElementById('canvas');
+    const x = (50 * S.view.z + S.view.x) * S.dpr, y = (50 * S.view.z + S.view.y) * S.dpr;
+    return [...c.getContext('2d').getImageData(Math.round(x), Math.round(y), 1, 1).data];
+  });
+  assert.ok(px[0] > 200 && px[1] < 60 && px[2] < 60, 'שכבת הרסטר מצוירת: ' + px);
+  await page.click('[data-tab="layers"]');
+  assert.match(await page.textContent('#layers-body'), /רסטר/);
+  assert.match(await page.textContent('#layers-body'), /מסגרת/);
+  await page.click('[data-tab="props"]');
+  fs.unlinkSync(foreignFile);
+  step('‎.mbe של אפליקציה אחרת: רסטר ומסגרת טקסט מוצגים, ומופיעים בשכבות לקריאה בלבד');
+
   // טיוטה ישנה מהמכשיר: מופיעה ברשימה, ובפתיחה עוברת לספרייה
   await page.goto(base);
   await page.evaluate(() => {

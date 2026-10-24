@@ -72,6 +72,23 @@ export function strokeStyle(ctx, st) {
   ctx.setLineDash(Array.isArray(st.dash) ? st.dash : []);
 }
 
+/** הטקסט של שטף ProseMirror — פסקה בכל שורה. */
+export function flowText(flow) {
+  const out = [];
+  const walk = (n, para) => {
+    if (!n || typeof n !== 'object') return para;
+    if (n.type === 'text') return para + (n.text || '');
+    if (n.type === 'hard_break') return para + '\n';
+    let p = para;
+    for (const c of n.content || []) p = walk(c, p);
+    if (n.type === 'paragraph' || n.type === 'heading') { out.push(p); return ''; }
+    return p;
+  };
+  const rest = walk(flow?.doc, '');
+  if (rest) out.push(rest);
+  return out.join('\n');
+}
+
 /** טקסט: שורה אחר שורה, מימין לשמאל; המיקום האנכי — בערך כמו בדפדפן (גובה השורה סביב הגופן). */
 export function drawText(ctx, item) {
   const font = item.font || {};
@@ -153,19 +170,46 @@ export function render(canvas, state) {
     }
   }
 
-  // האובייקטים (קבוצה — הילדים לפי הסדר)
-  for (const { path: item, layer, surface } of objects(doc)) {
-    if (layer.visible === false || item.hidden) continue;
-    const off = lay.get(surface.id);
-    for (const path of leaves(item)) {
-      if (path.hidden || path.id === state.editingText) continue;
-      setT(pathMatrix(path, off));
-      ctx.save();
-      if ((layer.opacity ?? 1) < 1) ctx.globalAlpha = layer.opacity;
-      try { drawPath(ctx, path); } catch { /* d פגום — לא מציירים, לא קורסים */ }
-      ctx.restore();
+  // השכבות לפי הסדר: וקטוריות — הנתיבים (קבוצה — הילדים לפי הסדר); של אפליקציות אחרות — תצוגה בלבד
+  const drawLayers = (layers, off, alpha) => {
+    for (const layer of layers || []) {
+      if (layer.visible === false) continue;
+      const a = alpha * (layer.opacity ?? 1);
+      if (layer.type === 'vector') {
+        for (const item of layer.paths || []) {
+          if (item.hidden) continue;
+          for (const path of leaves(item)) {
+            if (path.hidden || path.id === state.editingText) continue;
+            setT(pathMatrix(path, off));
+            ctx.save();
+            if (a < 1) ctx.globalAlpha = a;
+            try { drawPath(ctx, path); } catch { /* d פגום — לא מציירים, לא קורסים */ }
+            ctx.restore();
+          }
+        }
+      } else if (layer.type === 'group') drawLayers(layer.children, off, a);
+      else drawForeign(layer, off, a);
     }
-  }
+  };
+  /** רסטר / מסגרת: תמונה מ-media (אם נטענה) בתיבה או על כל המשטח; מסגרת טקסט — הטקסט של השטף, בפשטות. */
+  const drawForeign = (layer, off, a) => {
+    const surface = state.doc.surfaces.find(s => lay.get(s.id) === off);
+    const box = Array.isArray(layer.box) ? layer.box : [0, 0, surface?.size[0] || 0, surface?.size[1] || 0];
+    setT([1, 0, 0, 1, off[0], off[1]]);
+    ctx.save();
+    if (a < 1) ctx.globalAlpha = a;
+    const img = layer.src && state.media?.get(layer.src);
+    if (img) ctx.drawImage(img, box[0], box[1], box[2], box[3]);
+    else if (layer.type === 'frame' && layer.flow && state.doc.flows?.[layer.flow]) {
+      drawText(ctx, { text: flowText(state.doc.flows[layer.flow]), box, auto: false, align: 'right', lineHeight: 1.4,
+        font: { family: 'David Libre', size: 11, weight: 400 }, fill: { color: '#16192b' } });
+    } else if (layer.src) {
+      // התמונה עוד לא נטענה (או חסרה) — מסגרת אפורה במקומה
+      ctx.fillStyle = 'rgba(93,100,117,.12)'; ctx.fillRect(...box);
+    }
+    ctx.restore();
+  };
+  for (const s of doc.surfaces) drawLayers(s.layers, lay.get(s.id), 1);
 
   // שכבת-על במסך
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);

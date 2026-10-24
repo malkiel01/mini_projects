@@ -20,6 +20,7 @@ function dashName(d) {
   return d[0] <= 1.5 ? 'dot' : 'dash';
 }
 
+const TYPE_NAMES = { raster: 'רסטר', frame: 'מסגרת', group: 'קבוצת שכבות' };
 const SHAPE_NAMES = { rect: 'מלבן', ellipse: 'אליפסה', polygon: 'מצולע', star: 'כוכב', line: 'קו' };
 
 /**
@@ -304,6 +305,7 @@ export function renderProps(el, ctx) {
  */
 export function renderLayers(el, ctx) {
   const layers = ctx.surface.layers.filter(l => l.type === 'vector').slice().reverse();
+  const foreign = ctx.surface.layers.filter(l => l.type !== 'vector').slice().reverse();
   el.innerHTML = `
     <div class="props-head"><h2 class="sec-title one">שכבות · ${esc(ctx.surface.name || '')}</h2>
       <button class="btn sm primary" type="button" data-l="add"><span aria-hidden="true">+</span> שכבה</button></div>
@@ -319,7 +321,10 @@ export function renderLayers(el, ctx) {
         <button class="icon-btn" type="button" data-l="rename" aria-label="שינוי שם">✏️</button>
         ${layers.length > 1 ? '<button class="icon-btn" type="button" data-l="remove" aria-label="מחיקת שכבה">🗑️</button>' : ''}
       </li>`).join('')}
-    </ul>`;
+    </ul>
+    ${foreign.length ? `<p class="hint" style="margin-top:12px">שכבות של אפליקציות אחרות — מוצגות ונשמרות כמו שהן, בלי עריכה כאן:</p>
+    <ul class="list">${foreign.map(l => `<li class="layer-row"><span class="use-ic" aria-hidden="true">${l.type === 'raster' ? '🖼️' : l.type === 'frame' ? '📰' : '📁'}</span>
+      <span class="layer-name"><b class="one">${esc(l.name || l.id)}</b><small>${esc(TYPE_NAMES[l.type] || l.type)}${l.visible === false ? ' · מוסתרת' : ''}</small></span></li>`).join('')}</ul>` : ''}`;
   el.querySelectorAll('[data-l]').forEach(b => b.addEventListener('click', () => {
     const a = b.dataset.l, id = b.closest('[data-id]')?.dataset.id;
     if (a === 'add') return ctx.add();
