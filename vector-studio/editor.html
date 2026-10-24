@@ -79,6 +79,7 @@
           <h3 id="exp-title">ייצוא</h3>
           <label class="f" id="exp-board-wrap" hidden><span>לוח</span><select id="exp-board"></select></label>
           <div class="tiles">
+            <button class="tile" type="button" data-export="mbe"><span class="tile-ic" aria-hidden="true">📦</span><span>‎.mbe <small class="muted">לכל החבילה</small></span></button>
             <button class="tile" type="button" data-export="svg"><span class="tile-ic" aria-hidden="true">🖋️</span>SVG</button>
             <button class="tile" type="button" data-export="pdf"><span class="tile-ic" aria-hidden="true">📄</span><span>PDF <small class="muted" id="pdf-note"></small></span></button>
             <button class="tile" type="button" data-export="png"><span class="tile-ic" aria-hidden="true">🖼️</span>PNG</button>
@@ -98,8 +99,12 @@
         </section>
         <section class="group" aria-labelledby="imp-title">
           <h3 id="imp-title">ייבוא</h3>
-          <div class="tiles"><button class="tile" type="button" id="imp-svg"><span class="tile-ic" aria-hidden="true">📥</span>SVG מהמכשיר</button></div>
+          <div class="tiles">
+            <button class="tile" type="button" id="imp-svg"><span class="tile-ic" aria-hidden="true">📥</span>SVG לתוך הציור</button>
+            <button class="tile" type="button" id="open-mbe"><span class="tile-ic" aria-hidden="true">📂</span>פתיחת ‎.mbe</button>
+          </div>
           <input type="file" id="imp-file" accept=".svg,image/svg+xml" hidden>
+          <input type="file" id="mbe-file" accept=".mbe,application/vnd.mbe+zip" hidden>
         </section>
         <section class="group" aria-labelledby="ver-title">
           <h3 id="ver-title">גרסאות קודמות <small>נשמרת גרסה כל 10 דקות של עבודה</small></h3>

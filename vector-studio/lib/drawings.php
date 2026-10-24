@@ -17,6 +17,7 @@ const DOC_MAX = 8 * 1024 * 1024;   // 8MB של JSON
 const THUMB_MAX = 300 * 1024;      // תמונה ממוזערת PNG
 const VERSION_EVERY = 600;         // שניות בין גרסאות
 const VERSIONS_KEEP = 30;
+const CONTAINER_MAX = 25 * 1024 * 1024; // ‎.mbe מקורי שנפתח מהמכשיר
 
 function migrateDrawings(PDO $pdo): void {
     $pdo->exec("
@@ -41,6 +42,9 @@ function migrateDrawings(PDO $pdo): void {
         );
         CREATE INDEX IF NOT EXISTS versions_drawing ON drawing_versions (drawing_id, id);
     ");
+    // ה-‎.mbe המקורי של ציור שנפתח מקובץ: כל מה שהעורך לא מבין (מדיה, apps/ של אחרים) נשמר ממנו בהורדה
+    $cols = array_column($pdo->query('PRAGMA table_info(drawings)')->fetchAll(), 'name');
+    if (!in_array('container', $cols, true)) $pdo->exec('ALTER TABLE drawings ADD COLUMN container BLOB');
 }
 
 function drawingName(mixed $v): string {
@@ -70,6 +74,18 @@ function checkThumb(mixed $v): ?string {
     return $b;
 }
 
+/** ‎.mbe מקורי (base64) — נבדק בליבה, וקובץ עם שגיאה נדחה. */
+function checkContainer(mixed $v): ?string {
+    if ($v === null || $v === '') return null;
+    $b = is_string($v) ? base64_decode($v, true) : false;
+    if ($b === false) throw new AppError('הקובץ לא תקין');
+    if (strlen($b) > CONTAINER_MAX) throw new AppError('הקובץ גדול מ-25MB', 413);
+    require_once __DIR__ . '/mbe/mbe.php';
+    $errors = array_filter(Mbe::validate($b), fn ($i) => ($i['level'] ?? '') === 'error');
+    if ($errors) throw new AppError('קובץ ‎.mbe פגום: ' . implode(' · ', array_map(fn ($i) => $i['message'] ?? $i['code'] ?? '', $errors)));
+    return $b;
+}
+
 function ownDrawing(array $user, int $id): array {
     $st = db()->prepare('SELECT * FROM drawings WHERE id = ? AND user_id = ?');
     $st->execute([$id, $user['id']]);
@@ -87,21 +103,24 @@ function listDrawings(array $user): array {
 
 function getDrawing(array $user, int $id): array {
     $d = ownDrawing($user, $id);
-    return ['id' => (int) $d['id'], 'name' => $d['name'], 'rev' => (int) $d['rev'], 'updated' => $d['updated_at'], 'doc' => $d['doc']];
+    return ['id' => (int) $d['id'], 'name' => $d['name'], 'rev' => (int) $d['rev'], 'updated' => $d['updated_at'], 'doc' => $d['doc'],
+            'container' => $d['container'] !== null];
 }
 
 function createDrawing(array $user, array $in): array {
     $name = drawingName($in['name'] ?? '');
     $doc = checkDoc($in['doc'] ?? null);
     $thumb = checkThumb($in['thumb'] ?? null);
+    $container = checkContainer($in['container'] ?? null);
     $now = nowIso();
-    $st = db()->prepare('INSERT INTO drawings (user_id, name, doc, thumb, rev, created_at, updated_at) VALUES (?,?,?,?,1,?,?)');
+    $st = db()->prepare('INSERT INTO drawings (user_id, name, doc, thumb, rev, created_at, updated_at, container) VALUES (?,?,?,?,1,?,?,?)');
     $st->bindValue(1, $user['id'], PDO::PARAM_INT);
     $st->bindValue(2, $name);
     $st->bindValue(3, $doc);
     $st->bindValue(4, $thumb, $thumb === null ? PDO::PARAM_NULL : PDO::PARAM_LOB);
     $st->bindValue(5, $now);
     $st->bindValue(6, $now);
+    $st->bindValue(7, $container, $container === null ? PDO::PARAM_NULL : PDO::PARAM_LOB);
     $st->execute();
     return ['id' => (int) db()->lastInsertId(), 'rev' => 1, 'updated' => $now];
 }
@@ -177,4 +196,9 @@ function restoreVersion(array $user, int $id, int $versionId, int $rev): array {
     $now = nowIso();
     $pdo->prepare('UPDATE drawings SET doc = ?, rev = rev + 1, updated_at = ? WHERE id = ?')->execute([$v['doc'], $now, $id]);
     return getDrawing($user, $id);
+}
+
+function drawingContainer(array $user, int $id): ?string {
+    $d = ownDrawing($user, $id);
+    return $d['container'] === null ? null : (string) $d['container'];
 }

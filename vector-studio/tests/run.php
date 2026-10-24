@@ -95,6 +95,16 @@ try {
     $r = restoreVersion($a, $c['id'], $v['id'], 4);
     check('שחזור גרסה — המסמך הישן חוזר, והנוכחי נשמר בהיסטוריה', $r['doc'] === $doc && $r['rev'] === 5 && count(listVersions($a, $c['id'])) === 2);
     check('תמונה ממוזערת נשמרה', str_starts_with((string) drawingThumb($a, $c['id']), "\x89PNG"));
+    // ‎.mbe מקורי: נבדק בליבה; פגום — נדחה
+    check('container פגום — נדחה', throws(fn () => createDrawing($a, ['name' => 'x', 'doc' => $doc, 'container' => base64_encode('PK not a zip')]), 400));
+    require_once __DIR__ . '/../lib/mbe/mbe.php';
+    $mf = Mbe::create('vector', json_decode($doc, true));
+    $mf->setRendition('renditions/preview.png', base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='));
+    $mbe = Mbe::save($mf, ['app' => 'vector-studio']);
+    $cc = createDrawing($a, ['name' => 'מקובץ', 'doc' => $doc, 'container' => base64_encode($mbe)]);
+    check('container תקין — נשמר וחוזר', drawingContainer($a, $cc['id']) === $mbe && getDrawing($a, $cc['id'])['container'] === true);
+    check('בלי container — false', getDrawing($a, $c['id'])['container'] === false);
+    deleteDrawing($a, $cc['id']);
     deleteDrawing($a, $c['id']);
     check('מחיקה — הגרסאות נמחקות איתו', listDrawings($a) === [] && (int) db()->query('SELECT COUNT(*) FROM drawing_versions')->fetchColumn() === 0);
 } finally {

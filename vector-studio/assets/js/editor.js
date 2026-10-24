@@ -65,7 +65,7 @@ async function boot() {
       S.id = r.id; S.rev = r.rev;
     } else if (/^d\d+$/.test(hash)) {
       const d = await library.get(Number(hash.slice(1)));
-      S.id = d.id; S.rev = d.rev; S.name = d.name; S.doc = JSON.parse(d.doc);
+      S.id = d.id; S.rev = d.rev; S.name = d.name; S.doc = JSON.parse(d.doc); S.container = d.container;
     } else {
       const d = drafts.load(hash);
       if (!d || !d.doc) return leave();
@@ -1023,6 +1023,17 @@ function afterChangeQuiet() {
   updatePanel(); draw();
 }
 
+/** הלוח כ-PNG בקנה מידה k (בייטים). */
+async function pngOf(surface, k, bg) {
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(surface.size[0] * k));
+  c.height = Math.max(1, Math.round(surface.size[1] * k));
+  render(c, { doc: { ...S.doc, surfaces: [surface] }, view: { x: 0, y: 0, z: k }, dpr: 1, sel: new Set(), exportMode: true, bg });
+  const blob = await new Promise(res => c.toBlob(res, 'image/png'));
+  if (!blob) throw new Error('יצירת התמונה נכשלה');
+  return new Uint8Array(await blob.arrayBuffer());
+}
+
 async function doExport(kind) {
   const btn = document.querySelector(`[data-export="${kind}"]`);
   btn.disabled = true;
@@ -1031,7 +1042,20 @@ async function doExport(kind) {
     const surface = S.doc.surfaces.find(s => s.id === $('exp-board').value) || S.doc.surfaces[0];
     const { prepare, toSVG, toPDF } = await import('./export.js');
     let gaps = [];
-    if (kind === 'svg') {
+    if (kind === 'mbe') {
+      clearTimeout(saveTimer);
+      if (dirty) await flush();
+      await fontsReady;
+      const { buildMbe } = await import('./mbefile.js');
+      const base = S.container ? await library.container(S.id) : null; // נפתח מ-‎.mbe — שומרים את מה שלא הבנו
+      const r = await buildMbe({
+        doc: S.doc, base, getFont,
+        fontBytes: async (file) => new Uint8Array(await (await fetch('assets/fonts/' + file)).arrayBuffer()),
+        preview: (surface, max) => pngOf(surface, Math.min(max / surface.size[0], max / surface.size[1], 4), true),
+      });
+      gaps = r.gaps;
+      download(new Blob([r.bytes], { type: 'application/vnd.mbe+zip' }), fileName('mbe'));
+    } else if (kind === 'svg') {
       const prep = await prepare(S.doc, surface.id, getFont);
       gaps = prep.gaps;
       download(new Blob([toSVG(prep)], { type: 'image/svg+xml' }), fileName('svg', surface));
@@ -1044,14 +1068,8 @@ async function doExport(kind) {
       const scale = Number(document.querySelector('[name="png-scale"]:checked').value);
       // קנבס עד ~16 מיליון פיקסלים — יותר מזה הטלפון נכשל בשקט
       const k = Math.min(scale, Math.sqrt(16e6 / (surface.size[0] * surface.size[1])));
-      const c = document.createElement('canvas');
-      c.width = Math.max(1, Math.round(surface.size[0] * k));
-      c.height = Math.max(1, Math.round(surface.size[1] * k));
-      render(c, { doc: { ...S.doc, surfaces: [surface] }, view: { x: 0, y: 0, z: k }, dpr: 1, sel: new Set(), exportMode: true,
-        bg: document.querySelector('[name="png-bg"]:checked').value === '1' });
-      const blob = await new Promise(res => c.toBlob(res, 'image/png'));
-      if (!blob) throw new Error('יצירת התמונה נכשלה');
-      download(blob, fileName('png', surface));
+      const png = await pngOf(surface, k, document.querySelector('[name="png-bg"]:checked').value === '1');
+      download(new Blob([png], { type: 'image/png' }), fileName('png', surface));
       if (k < scale) gaps.push(`גודל מוקטן ל-×${Math.round(k * 10) / 10} (מגבלת זיכרון)`);
     }
     $('file-dlg').close();
@@ -1104,6 +1122,21 @@ $('doc-name').addEventListener('click', () => {
 });
 document.querySelectorAll('[data-export]').forEach(b => b.addEventListener('click', () => doExport(b.dataset.export)));
 $('imp-svg').addEventListener('click', () => $('imp-file').click());
+$('open-mbe').addEventListener('click', () => $('mbe-file').click());
+$('mbe-file').addEventListener('change', async () => {
+  const f = $('mbe-file').files[0];
+  $('mbe-file').value = '';
+  if (!f) return;
+  try {
+    const { id, notes } = await library.importMbe(f);
+    if (notes.length) alert('נפתח. שימו לב:\n' + notes.join('\n'));
+    location.href = 'editor.html#d' + id;
+    location.reload();
+  } catch (e) {
+    $('file-err').textContent = 'הפתיחה נכשלה: ' + e.message;
+    $('file-err').hidden = false;
+  }
+});
 $('imp-file').addEventListener('change', () => { const f = $('imp-file').files[0]; $('imp-file').value = ''; if (f) importFile(f); });
 document.addEventListener('click', e => { const b = e.target.closest('[data-close]'); if (b) b.closest('dialog').close(); });
 

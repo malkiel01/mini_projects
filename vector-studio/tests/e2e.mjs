@@ -4,6 +4,8 @@
 import { createRequire } from 'node:module';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
+import { execFileSync } from 'node:child_process';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -322,6 +324,21 @@ try {
   const pngOut = await grab('png');
   assert.equal(pngOut.buf.subarray(1, 4).toString(), 'PNG');
   assert.equal(pngOut.buf.readUInt32BE(16), 2160, 'רוחב ×2');
+  // ‎.mbe: עובר את הליבה בשתי השפות, עם הגופן והייצוגים
+  const mbeOut = await grab('mbe');
+  const { open: mbeOpen } = await import('../assets/js/mbe/mbe.js');
+  const mf = await mbeOpen(new Uint8Array(mbeOut.buf));
+  assert.equal(mf.ok, true, JSON.stringify(mf.issues));
+  assert.equal(mf.kind, 'vector');
+  assert.ok(mf.document.fonts?.some(x => x.family === 'Heebo'));
+  assert.deepEqual(mf.renditions().map(r => r.path).sort(), ['renditions/document.pdf', 'renditions/drawing.svg', 'renditions/preview.png']);
+  assert.ok(mf.renditions().every(r => !r.stale));
+  const tmpMbe = `${os.tmpdir()}/vs-e2e-${process.pid}.mbe`;
+  fs.writeFileSync(tmpMbe, mbeOut.buf);
+  const phpIssues = JSON.parse(execFileSync('php', ['-r', `require '${new URL('../lib/mbe/mbe.php', import.meta.url).pathname}'; echo json_encode(Mbe::validate(file_get_contents($argv[1])));`, tmpMbe], { encoding: 'utf8' }));
+  assert.deepEqual(phpIssues.filter(i => i.level === 'error'), []);
+  const docPaths = (await st()).paths.length;
+  step('הורדה כ-‎.mbe: עובר את הליבה ב-JS וב-PHP, עם גופן מוטמע ושלושה ייצוגים עדכניים');
   if (shots) { fs.writeFileSync(`${shots}/export.svg`, svgOut.buf); fs.writeFileSync(`${shots}/export.pdf`, pdfOut.buf); fs.writeFileSync(`${shots}/export.png`, pngOut.buf); }
   step('ייצוא SVG, PDF ו-PNG (×2), טקסט כקווי מתאר');
 
@@ -391,6 +408,17 @@ try {
   await p2.waitForFunction(() => /מחלון אחר/.test(document.getElementById('doc-status').textContent), null, { timeout: 10000 });
   await p2.close();
   step('התנגשות בין שני חלונות — השני לא דורס, ואומר לפתוח מחדש');
+
+  // פתיחת ה-‎.mbe מהמכשיר (דף הפתיחה): ציור חדש בספרייה עם אותו תוכן
+  await page.goto(base);
+  await page.waitForSelector('#home:not([hidden])');
+  const [mbeChooser] = await Promise.all([page.waitForEvent('filechooser'), page.click('#open-btn')]);
+  await mbeChooser.setFiles(tmpMbe);
+  await page.waitForFunction(() => /^#d\d+$/.test(location.hash) && window.__vs?.S.doc, null, { timeout: 15000 });
+  assert.equal(await page.evaluate(() => window.__vs.S.doc.surfaces[0].layers[0].paths.length), docPaths);
+  assert.ok(await page.evaluate(() => window.__vs.S.doc.surfaces[0].layers[0].paths.some(p => p.type === 'text')), 'הטקסט חזר כטקסט');
+  fs.unlinkSync(tmpMbe);
+  step('פתיחת ‎.mbe מהמכשיר — ציור חדש בספרייה, עם אותו תוכן (טקסט נשאר טקסט)');
 
   // טיוטה ישנה מהמכשיר: מופיעה ברשימה, ובפתיחה עוברת לספרייה
   await page.goto(base);
