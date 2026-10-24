@@ -353,3 +353,12 @@ body.editor { display: flex; flex-direction: column; block-size: 100dvh; min-hei
 .tool-opts .opt-num input { min-block-size: 32px; }
 #opt-bold[aria-pressed="true"] { background: var(--brand-soft); box-shadow: inset 0 0 0 1px var(--brand); }
 .stage[data-tool="text"] { cursor: text; }
+
+/* ===== הורדה ===== */
+.export-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s2); }
+.export-tiles .tile { display: grid; justify-items: center; gap: 2px; padding: var(--s3) var(--s2); border: 1px solid var(--line);
+    border-radius: var(--r); background: var(--surface); cursor: pointer; text-align: center; }
+.export-tiles .tile:hover { background: var(--bg); }
+.export-tiles .tile small { color: var(--muted); font-size: .75rem; }
+.export-tiles .tile:disabled { opacity: .5; cursor: default; }
+.export-tiles .tile[aria-busy="true"] { opacity: .6; }

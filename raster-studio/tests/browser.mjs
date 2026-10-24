@@ -63,6 +63,14 @@ async function waitServer() {
   throw new Error('php -S לא עלה');
 }
 
+// כל קטע מתחיל ממסמך נקי: הטיוטה במכשיר (IndexedDB) נמחקת, ואז נפתח העורך
+let id;
+async function openEd(pg) {
+  await pg.goto(BASE + '/index.html');
+  await pg.evaluate(() => new Promise(r => { const q = indexedDB.deleteDatabase('raster-studio'); q.onsuccess = q.onerror = q.onblocked = () => r(); }));
+  await pg.goto(BASE + '/editor.html?doc=' + id);
+}
+
 async function main() {
   await waitServer();
   const browser = await chromium.launch();
@@ -75,7 +83,7 @@ async function main() {
   // ---- מסמך מהספרייה ----
   await page.goto(BASE + '/index.html');
   await page.waitForSelector('#new-btn:not([disabled])');
-  const id = await page.evaluate(async () => {
+  id = await page.evaluate(async () => {
     const r = await fetch('api.php', { method: 'POST', headers: { 'X-Raster-Studio': '1' },
       body: JSON.stringify({ action: 'doc_create', title: 'בדיקה', size: 'custom', px: ['600', '400'] }) });
     return (await r.json()).doc.id;
@@ -84,7 +92,7 @@ async function main() {
   await page.waitForSelector('.doc-row a');
   check('בספרייה: שורה שמובילה לעורך', await page.$eval('.doc-row a', a => a.getAttribute('href')) === 'editor.html?doc=' + id);
 
-  await page.goto(BASE + '/editor.html?doc=' + id);
+  await openEd(page);
   await page.waitForFunction(() => window.__rs?.doc);
   const info = await page.evaluate(() => ({
     name: __rs.renderer.name, w: __rs.doc.width, h: __rs.doc.height, title: document.querySelector('#title').textContent,
@@ -166,7 +174,7 @@ async function main() {
   check('אטימות 0 ← 1 — ההרכבה מתעדכנת', blends.zero && blends.black);
 
   // ---- זום והזזה ----
-  await page.goto(BASE + '/editor.html?doc=' + id);
+  await openEd(page);
   await page.waitForFunction(() => window.__rs?.doc);
   await page.waitForTimeout(100);
   await page.click('.tool[data-tool="hand"]');   // גרירה = הזזה (ברירת המחדל — מכחול)
@@ -249,10 +257,16 @@ async function main() {
   await page.waitForFunction(() => window.__rs?.doc);
   const opened = await page.evaluate(() => [__rs.doc.width, __rs.doc.height, document.querySelector('#title').textContent]);
   check('📂 בספרייה — נפתח בעורך בגודל התמונה', opened[0] === IMG_W && opened[1] === IMG_H && opened[2] === 'בדיקה', opened.join());
+  await page.waitForTimeout(500);
+  check('הכתובת עוברת ל-?draft=local (טעינה מחדש תשחזר)', page.url().endsWith('editor.html?draft=local'), page.url());
+  await page.evaluate(() => __rs.flushDraft());
+  await page.reload();
+  await page.waitForFunction(() => window.__rs?.doc, null, { timeout: 8000 }).catch(() => {});
+  check('טעינה מחדש של קובץ מהמכשיר — משוחזר מהטיוטה', await page.evaluate(() => __rs.doc && __rs.doc.width) === IMG_W);
 
   // ---- לוח השכבות (מחשב: לוח בצד) ----
   page.on('dialog', d => d.accept());
-  await page.goto(BASE + '/editor.html?doc=' + id);
+  await openEd(page);
   await page.waitForFunction(() => window.__rs?.doc);
   const rows = () => page.$$eval('.layer-row', rs => rs.map(r => r.querySelector('.layer-name, .layer-name-input').textContent || r.querySelector('input')?.value));
   const px = (x = 300, y = 200) => page.evaluate(([x, y]) => Array.from(__rs.renderer.readPixels(__rs.doc, x, y, 1, 1)).join(), [x, y]);
@@ -315,7 +329,7 @@ async function main() {
   check('מונה השכבות', await page.$eval('#layers-btn', b => b.dataset.layerCount) === '4');
   if (SHOTS) await page.screenshot({ path: join(SHOTS, 'layers-desktop.png') });
   // ---- ביטול / ביצוע ----
-  await page.goto(BASE + '/editor.html?doc=' + id);
+  await openEd(page);
   await page.waitForFunction(() => window.__rs?.doc);
   check('בהתחלה — אין מה לבטל', await page.$eval('#undo-btn', b => b.disabled) && await page.$eval('#redo-btn', b => b.disabled));
   await page.click('[data-act="add"]');
@@ -354,7 +368,7 @@ async function main() {
 
 
   // ---- כלי ציור ----
-  await page.goto(BASE + '/editor.html?doc=' + id);
+  await openEd(page);
   await page.waitForFunction(() => window.__rs?.doc);
   await page.evaluate(() => __rs.setView({ zoom: 1, x: 20, y: 20 }));
   const sb = await page.$eval('#stage', el => { const r = el.getBoundingClientRect(); return [r.left, r.top]; });
@@ -439,7 +453,7 @@ async function main() {
   if (SHOTS) await page.screenshot({ path: join(SHOTS, 'paint-desktop.png') });
 
   // ---- בחירות ----
-  await page.goto(BASE + '/editor.html?doc=' + id);
+  await openEd(page);
   await page.waitForFunction(() => window.__rs?.doc);
   await page.evaluate(() => __rs.setView({ zoom: 1, x: 20, y: 20 }));
   const drag = async (a, b, mods = []) => {
@@ -521,7 +535,7 @@ async function main() {
   }
 
   // ---- הזזה ושינוי צורה ----
-  await page.goto(BASE + '/editor.html?doc=' + id);
+  await openEd(page);
   await page.waitForFunction(() => window.__rs?.doc);
   await page.evaluate(() => __rs.setView({ zoom: 1, x: 20, y: 20 }));
   await page.click('[data-act="add"]');
@@ -585,7 +599,7 @@ async function main() {
   }
 
   // ---- חיתוך ----
-  await page.goto(BASE + '/editor.html?doc=' + id);
+  await openEd(page);
   await page.waitForFunction(() => window.__rs?.doc);
   await page.evaluate(() => __rs.setView({ zoom: 1, x: 20, y: 20 }));
   await page.keyboard.press('m');
@@ -623,7 +637,7 @@ async function main() {
   check('Esc — ביטול האזור', (await page.textContent('#crop-info')) === '' && await page.evaluate(() => __rs.doc.width) === 800);
 
   // ---- תיקונים ----
-  await page.goto(BASE + '/editor.html?doc=' + id);
+  await openEd(page);
   await page.waitForFunction(() => window.__rs?.doc);
   await page.evaluate(() => __rs.setView({ zoom: 1, x: 20, y: 20 }));
   const adj = async (tab, vals) => {
@@ -683,7 +697,7 @@ async function main() {
   }
 
   // ---- טקסט ----
-  await page.goto(BASE + '/editor.html?doc=' + id);
+  await openEd(page);
   await page.waitForFunction(() => window.__rs?.doc);
   await page.evaluate(() => __rs.setView({ zoom: 1, x: 20, y: 20 }));
   const ink = (x0, y0, x1, y1) => page.evaluate(([x0, y0, x1, y1]) => {
@@ -737,6 +751,48 @@ async function main() {
   await page.keyboard.type('ט');
   await page.keyboard.press('Escape');
   if (SHOTS) await page.screenshot({ path: join(SHOTS, 'text-desktop.png') });
+
+  // ---- טיוטה במכשיר ----
+  await openEd(page);
+  await page.waitForFunction(() => window.__rs?.doc);
+  await page.evaluate(() => __rs.setView({ zoom: 1, x: 20, y: 20 }));
+  await page.click('[data-act="add"]');
+  await page.keyboard.press('m');
+  await drag([100, 100], [200, 200]);
+  await color('#0000ff');
+  await page.keyboard.press('Alt+Backspace');
+  await page.evaluate(() => __rs.doc.active.name = 'כחול');
+  await page.evaluate(() => __rs.flushDraft());
+  await page.reload();
+  await page.waitForFunction(() => window.__rs?.doc && __rs.doc.layers.length === 2, null, { timeout: 8000 }).catch(() => {});
+  check('טעינה מחדש — הטיוטה משוחזרת (שכבות, שמות ופיקסלים)', await page.evaluate(() => __rs.doc.layers.map(l => l.name).join()) === 'רקע,כחול' && near(await px(150, 150), [0, 0, 255, 255]), await page.evaluate(() => __rs.doc.layers.map(l => l.name).join()));
+  check('הודעה על השחזור', /שוחזרה הטיוטה/.test(await page.textContent('.toast')));
+  // ייצוא
+  await page.click('#export-btn');
+  check('⬇️ — חלון הורדה עם PNG / JPG / ORA, ו-‎.mbe כבוי עד הליבה', await page.isVisible('#export-dlg') && await page.$eval('[data-export="mbe"]', b => b.disabled));
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.click('[data-export="png"]')]);
+  const pngBuf = await (await import('node:fs/promises')).readFile(await dl.path());
+  // Chromium בלי ממשק מתעלם משם הורדה שאינו ASCII ("download") — שם הקובץ עצמו נבדק ישירות
+  const okName = (d, ext) => ['בדיקה.' + ext, 'download'].includes(d.suggestedFilename());
+  check('PNG — חתימה, וגודל הקנבס', pngBuf.subarray(1, 4).toString() === 'PNG' && pngBuf.readUInt32BE(16) === 600 && pngBuf.readUInt32BE(20) === 400 && okName(dl, 'png'), dl.suggestedFilename());
+  check('שם הקובץ — מהכותרת, בלי תווים אסורים', await page.evaluate(async () => {
+    const { fileName } = await import('./assets/js/export.js');
+    return fileName('בדיקה', 'png') === 'בדיקה.png' && fileName('a/b:c?', 'ora') === 'a b c.ora' && fileName('', 'jpg') === 'תמונה.jpg';
+  }));
+  await page.click('#export-btn');
+  const [dl2] = await Promise.all([page.waitForEvent('download'), page.click('[data-export="ora"]')]);
+  const oraPath = await dl2.path();
+  const { execFileSync } = await import('node:child_process');
+  const list = execFileSync('unzip', ['-l', oraPath]).toString();
+  const stack = execFileSync('unzip', ['-p', oraPath, 'stack.xml']).toString();
+  const first = (await import('node:fs')).readFileSync(oraPath).subarray(30, 54).toString();
+  check('ORA — mimetype ראשון, שתי שכבות, mergedimage ותמונה ממוזערת',
+    first === 'mimetypeimage/openraster' && /data\/layer0\.png/.test(list) && /data\/layer1\.png/.test(list) && /mergedimage\.png/.test(list) && /Thumbnails\/thumbnail\.png/.test(list), list);
+  check('ORA — stack.xml: העליונה ראשונה, בגודל הקנבס', stack.indexOf('layer1.png') < stack.indexOf('layer0.png') && /w="600" h="400"/.test(stack));
+  await page.click('#export-btn');
+  const [dl3] = await Promise.all([page.waitForEvent('download'), page.click('[data-export="jpg"]')]);
+  const jpg = (await import('node:fs')).readFileSync(await dl3.path());
+  check('JPG — חתימה', jpg[0] === 0xFF && jpg[1] === 0xD8 && okName(dl3, 'jpg'));
 
   check('אין שגיאות בקונסול', errors.length === 0, errors.join(' | '));
 

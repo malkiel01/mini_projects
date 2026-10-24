@@ -448,3 +448,96 @@ test('שינוי צורה: הבחירה זזה עם התוכן', () => {
   assert.equal(p.type, 'poly');
   near(p.pts[0][0], 10); near(p.pts[0][1], 10);
 });
+
+// ---- קבצים: PNG, ZIP, ORA, ‎.mbe ----
+import { encodePNG, crc32, sha256Hex } from '../assets/js/engine/png.js';
+import { zipStore } from '../assets/js/engine/zip.js';
+import { oraStack, parseOraStack, mbeDocument, gapsFor } from '../assets/js/engine/formats.js';
+import { inflateSync } from 'node:zlib';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+test('CRC-32 — וקטור ידוע', () => {
+  assert.equal(crc32(new TextEncoder().encode('123456789')), 0xCBF43926);
+});
+
+test('PNG: הבתים חוזרים בדיוק, כולל שקיפות חלקית', async () => {
+  const w = 37, h = 5;
+  const px = new Uint8Array(w * h * 4).map((_, i) => (i * 37 + (i >> 2)) & 0xFF);
+  const png = await encodePNG(px, w, h);
+  assert.deepEqual([...png.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+  // פענוח ידני: IDAT → inflate → ביטול מסנן Sub
+  let o = 8, idat = [];
+  while (o < png.length) {
+    const len = new DataView(png.buffer, png.byteOffset + o).getUint32(0);
+    const type = String.fromCharCode(...png.subarray(o + 4, o + 8));
+    const body = png.subarray(o + 8, o + 8 + len);
+    assert.equal(new DataView(png.buffer, png.byteOffset + o + 8 + len).getUint32(0), crc32(png.subarray(o + 4, o + 8 + len)), 'CRC של ' + type);
+    if (type === 'IDAT') idat.push(body);
+    o += 12 + len;
+  }
+  const raw = inflateSync(Buffer.concat(idat));
+  const back = new Uint8Array(w * h * 4);
+  for (let y = 0; y < h; y++) {
+    assert.equal(raw[y * (w * 4 + 1)], 1);
+    for (let i = 0; i < w * 4; i++) back[y * w * 4 + i] = (raw[y * (w * 4 + 1) + 1 + i] + (i >= 4 ? back[y * w * 4 + i - 4] : 0)) & 0xFF;
+  }
+  assert.deepEqual([...back], [...px]);
+});
+
+test('SHA-256 — בהקס', async () => {
+  assert.equal(await sha256Hex(new TextEncoder().encode('abc')), 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
+});
+
+test('ZIP: mimetype ראשון ולא דחוס, ו-unzip קורא הכול', () => {
+  const zip = zipStore([{ name: 'mimetype', data: 'image/openraster' }, { name: 'data/שכבה.png', data: new Uint8Array([1, 2, 3]) }]);
+  assert.equal(new TextDecoder().decode(zip.subarray(30, 38)), 'mimetype');
+  assert.equal(new TextDecoder().decode(zip.subarray(38, 54)), 'image/openraster');
+  const dir = mkdtempSync(join(tmpdir(), 'rs-zip-'));
+  try {
+    writeFileSync(join(dir, 'a.ora'), zip);
+    const out = execFileSync('unzip', ['-t', join(dir, 'a.ora')]).toString();
+    assert.match(out, /No errors detected/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('ORA: stack.xml — העליונה ראשונה, מצבי מיזוג, הסתרה ונעילה; ובחזרה', () => {
+  const layers = [
+    { name: 'רקע', src: 'data/0.png', opacity: 1, visible: true, blend: 'normal', locked: true },
+    { name: 'צל "כהה" & <עמוק>', src: 'data/1.png', opacity: 0.5, visible: false, blend: 'multiply', locked: false },
+  ];
+  const xml = oraStack(600, 400, layers);
+  assert.ok(xml.indexOf('data/1.png') < xml.indexOf('data/0.png'));
+  assert.match(xml, /composite-op="svg:multiply"/);
+  assert.match(xml, /visibility="hidden"/);
+  assert.match(xml, /edit-locked="true"/);
+  assert.match(xml, /&quot;כהה&quot; &amp; &lt;עמוק&gt;/);
+  const back = parseOraStack(xml);
+  assert.equal(back.w, 600);
+  assert.deepEqual(back.layers.map(l => [l.name, l.src, l.opacity, l.visible, l.blend, l.locked]),
+    layers.map(l => [l.name, l.src, l.opacity, l.visible, l.blend, l.locked]));
+});
+
+test('‎.mbe: document.json — canvas אחד, שכבות raster, ושמירת מה שלא הבנו', () => {
+  const doc = { width: 600, height: 400 };
+  const layers = [{ id: 'L1', name: 'רקע', src: 'media/ab.png', opacity: 1, blend: 'normal', visible: true, locked: false }];
+  const d = mbeDocument(doc, layers);
+  assert.equal(d.units, 'pt');
+  assert.deepEqual(d.surfaces[0].size, [600, 400]);
+  assert.equal(d.surfaces[0].type, 'canvas');
+  assert.equal(d.surfaces[0].layers[0].src, 'media/ab.png');
+  const base = { surfaceId: 'c9', document: { fonts: [{ family: 'X' }], future: 7, surfaces: [{ id: 'c9' }, { id: 'other', type: 'page' }] } };
+  const d2 = mbeDocument(doc, layers, base);
+  assert.equal(d2.future, 7, 'שדה לא מוכר נשמר');
+  assert.deepEqual(d2.surfaces.map(s => s.id), ['c9', 'other'], 'משטח של אפליקציה אחרת נשמר');
+});
+
+test('פערים: ORA — מיזוג; PNG — שכבות ומוסתרות; JPG — שקיפות', () => {
+  const L = [{ blend: 'multiply', opacity: 1, visible: true }, { blend: 'normal', opacity: 1, visible: false }];
+  assert.deepEqual(gapsFor('ora', L), ['blend-space:linear → srgb']);
+  assert.deepEqual(gapsFor('ora', [{ blend: 'normal', opacity: 1, visible: true }]), []);
+  assert.deepEqual(gapsFor('png', L), ['layers → flattened', 'hidden-layers → omitted']);
+  assert.deepEqual(gapsFor('jpg', [L[0]]), ['alpha → white']);
+});
