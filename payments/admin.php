@@ -183,6 +183,7 @@ function overview(array $t): array
         'wallets' => micros_to_agorot((int)(db_one('SELECT SUM(b.micros) AS n FROM wallet_balance b JOIN account a ON a.id = b.account JOIN merchant m ON m.id = a.merchant WHERE m.tenant = ? AND a.env = \'live\'', [$t['id']])['n'] ?? 0)),
         'usage_month' => micros_to_agorot((int)(db_one('SELECT SUM(u.cost_micros) AS n FROM usage_event u JOIN client c ON c.id = u.client WHERE c.tenant = ? AND u.env = \'live\' AND u.occurred_at >= ?', [$t['id'], $from])['n'] ?? 0)),
         'webhooks_failed' => $one("SELECT COUNT(*) AS n FROM webhook_delivery d JOIN client c ON c.id = d.client WHERE c.tenant = ? AND d.status = 'failed'"),
+        'refunds_pending' => $one("SELECT COUNT(*) AS n FROM payment p JOIN account a ON a.id = p.account JOIN merchant m ON m.id = a.merchant WHERE m.tenant = ? AND p.refund_pending > 0"),
         'pending_tenants' => $t['role'] === 'owner' ? (int)(db_one("SELECT COUNT(*) AS n FROM tenant WHERE status = 'pending'")['n'] ?? 0) : 0,
     ];
 }

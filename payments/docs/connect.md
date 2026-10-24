@@ -28,6 +28,7 @@ $pay = new PaymentsClient([
     'base_url' => 'https://mbe-plus.com/mini_projects/payments/',
     'key' => $secrets['payments_key'],               // sk_test_….…  (בחי: sk_live_….…)
     'webhook_secret' => $secrets['payments_whsec'],  // whsec_….…
+    'app' => 'guarded-browser',                      // המזהה שלכם — הודעה של מערכת אחרת נדחית
     'cache' => my_db(),                              // PDO — מטמון זכאות (טבלה payments_cache נוצרת לבד)
 ]);
 ```

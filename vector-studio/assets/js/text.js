@@ -80,3 +80,26 @@ export function transformText(item, m) {
   item.box = box.map(r3);
   relayout(item);
 }
+
+/** הטקסט של שטף ProseMirror — פסקה בכל שורה. */
+export function flowText(flow) {
+  const out = [];
+  const walk = (n, para) => {
+    if (!n || typeof n !== 'object') return para;
+    if (n.type === 'text') return para + (n.text || '');
+    if (n.type === 'hard_break') return para + '\n';
+    let p = para;
+    for (const c of n.content || []) p = walk(c, p);
+    if (n.type === 'paragraph' || n.type === 'heading') { out.push(p); return ''; }
+    return p;
+  };
+  const rest = walk(flow?.doc, '');
+  if (rest) out.push(rest);
+  return out.join('\n');
+}
+
+/** מסגרת טקסט של אפליקציה אחרת → פריט טקסט לתצוגה (בפשטות: גופן אחד, מיושר לימין). */
+export function frameItem(layer, flow, box) {
+  return { id: layer.id, type: 'text', text: flowText(flow), box, auto: false, align: 'right', lineHeight: 1.4,
+    font: { family: 'David Libre', size: 11, weight: 400 }, fill: { color: '#16192b' } };
+}

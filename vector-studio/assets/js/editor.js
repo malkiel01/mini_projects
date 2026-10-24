@@ -83,7 +83,7 @@ async function boot() {
     return;
   }
   history.replaceState(null, '', '#d' + S.id);
-  if (S.container) loadMedia();
+  if (S.container) S.mediaReady = loadMedia();
   // גיבוי שנשאר במכשיר משמירה שנכשלה — חדש יותר ממה שבשרת? מציעים לשחזר
   const backup = drafts.loadBackup(S.id);
   if (backup?.doc && backup.rev === S.rev && JSON.stringify(backup.doc) !== JSON.stringify(S.doc)
@@ -530,8 +530,9 @@ async function booleanSelection(kind) {
     replaceTexts(ds);
     const lay = layout(S.doc);
     const picked = [...objects(S.doc)].filter(o => S.sel.has(o.path.id));
-    const regions = picked.map(o => combine('union', [...leaves(o.path)].filter(p => p.d).map(p => region(p.d, pathMatrix(p, lay.get(o.surface.id))))));
-    const result = toD(combine(kind, regions));
+    const reg = new Map(); // מאיזו עקומה באה כל נקודה — כדי שהעקומות יחזרו בתוצאה
+    const regions = picked.map(o => combine('union', [...leaves(o.path)].filter(p => p.d).map(p => region(p.d, pathMatrix(p, lay.get(o.surface.id)), reg))));
+    const result = toD(combine(kind, regions), reg);
     if (!result) { toast('לא נשאר שום שטח — הצורות לא נחתכות', true); return; }
     const ref = kind === 'subtract' ? picked[0] : picked[picked.length - 1];
     const styleFrom = [...leaves(ref.path)].find(p => p.d) || {};
@@ -1189,9 +1190,10 @@ async function getFont(file) {
   if (!fontCache.has(file)) {
     fontCache.set(file, (async () => {
       opentypeLib ||= await import('./vendor/opentype.min.mjs');
+      const { loadFont } = await import('./outline.js');
       const res = await fetch('assets/fonts/' + file);
       if (!res.ok) throw new Error('הגופן לא נטען: ' + file);
-      return opentypeLib.parse(await res.arrayBuffer());
+      return loadFont(opentypeLib, await res.arrayBuffer());
     })());
   }
   return fontCache.get(file);
@@ -1283,6 +1285,34 @@ async function pngOf(surface, k, bg) {
   return new Uint8Array(await blob.arrayBuffer());
 }
 
+/** zlib (deflate) — מה ש-FlateDecode ב-PDF קורא. */
+async function deflate(bytes) {
+  const out = new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream('deflate')));
+  return new Uint8Array(await out.arrayBuffer());
+}
+
+/** תמונה של שכבה מאפליקציה אחרת לייצוא: PNG ל-SVG, ופיקסלים דחוסים (צבע + אטימות) ל-PDF. עד 4096 לצלע. */
+async function exportImage(src) {
+  await S.mediaReady;
+  const bmp = S.media.get(src);
+  if (!bmp) return null;
+  const k = Math.min(1, 4096 / Math.max(bmp.width, bmp.height));
+  const w = Math.max(1, Math.round(bmp.width * k)), h = Math.max(1, Math.round(bmp.height * k));
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const cx = c.getContext('2d');
+  cx.drawImage(bmp, 0, 0, w, h);
+  const px = cx.getImageData(0, 0, w, h).data;
+  const rgb = new Uint8Array(w * h * 3), alpha = new Uint8Array(w * h);
+  let opaque = true;
+  for (let i = 0, j = 0; i < w * h; i++, j += 4) {
+    rgb[i * 3] = px[j]; rgb[i * 3 + 1] = px[j + 1]; rgb[i * 3 + 2] = px[j + 2];
+    alpha[i] = px[j + 3];
+    if (px[j + 3] !== 255) opaque = false;
+  }
+  return { href: c.toDataURL('image/png'), w, h, rgb: await deflate(rgb), alpha: opaque ? null : await deflate(alpha) };
+}
+
 async function doExport(kind) {
   const btn = document.querySelector(`[data-export="${kind}"]`);
   btn.disabled = true;
@@ -1301,16 +1331,17 @@ async function doExport(kind) {
         doc: S.doc, base, getFont,
         fontBytes: async (file) => new Uint8Array(await (await fetch('assets/fonts/' + file)).arrayBuffer()),
         preview: (surface, max) => pngOf(surface, Math.min(max / surface.size[0], max / surface.size[1], 4), true),
+        getImage: exportImage,
       });
       gaps = r.gaps;
       download(new Blob([r.bytes], { type: 'application/vnd.mbe+zip' }), fileName('mbe'));
     } else if (kind === 'svg') {
-      const prep = await prepare(S.doc, surface.id, getFont);
+      const prep = await prepare(S.doc, surface.id, getFont, exportImage);
       gaps = prep.gaps;
       download(new Blob([toSVG(prep)], { type: 'image/svg+xml' }), fileName('svg', surface));
     } else if (kind === 'pdf') {
       const pages = [];
-      for (const s of S.doc.surfaces) { const p = await prepare(S.doc, s.id, getFont); pages.push(p); gaps.push(...p.gaps); }
+      for (const s of S.doc.surfaces) { const p = await prepare(S.doc, s.id, getFont, exportImage); pages.push(p); gaps.push(...p.gaps); }
       download(new Blob([toPDF(pages)], { type: 'application/pdf' }), fileName('pdf'));
     } else {
       await fontsReady;

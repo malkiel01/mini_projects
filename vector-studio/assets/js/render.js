@@ -3,7 +3,9 @@
 
 import { multiply, apply, invert } from './geometry/matrix.js';
 import { objects, layout, pathMatrix, worldBox, findPath, leaves, isText } from './model.js';
-import { lines, lineHeight, fontCss } from './text.js';
+import { lines, lineHeight, fontCss, flowText, frameItem } from './text.js';
+
+export { flowText };
 import { canvasPaint, hasPaint } from './gradient.js';
 
 import { GRID } from './snap.js';
@@ -70,23 +72,6 @@ export function strokeStyle(ctx, st) {
   ctx.lineJoin = st.join || 'miter';
   ctx.miterLimit = st.miter ?? 4;
   ctx.setLineDash(Array.isArray(st.dash) ? st.dash : []);
-}
-
-/** הטקסט של שטף ProseMirror — פסקה בכל שורה. */
-export function flowText(flow) {
-  const out = [];
-  const walk = (n, para) => {
-    if (!n || typeof n !== 'object') return para;
-    if (n.type === 'text') return para + (n.text || '');
-    if (n.type === 'hard_break') return para + '\n';
-    let p = para;
-    for (const c of n.content || []) p = walk(c, p);
-    if (n.type === 'paragraph' || n.type === 'heading') { out.push(p); return ''; }
-    return p;
-  };
-  const rest = walk(flow?.doc, '');
-  if (rest) out.push(rest);
-  return out.join('\n');
 }
 
 /** טקסט: שורה אחר שורה, מימין לשמאל; המיקום האנכי — בערך כמו בדפדפן (גובה השורה סביב הגופן). */
@@ -201,8 +186,7 @@ export function render(canvas, state) {
     const img = layer.src && state.media?.get(layer.src);
     if (img) ctx.drawImage(img, box[0], box[1], box[2], box[3]);
     else if (layer.type === 'frame' && layer.flow && state.doc.flows?.[layer.flow]) {
-      drawText(ctx, { text: flowText(state.doc.flows[layer.flow]), box, auto: false, align: 'right', lineHeight: 1.4,
-        font: { family: 'David Libre', size: 11, weight: 400 }, fill: { color: '#16192b' } });
+      drawText(ctx, frameItem(layer, state.doc.flows[layer.flow], box));
     } else if (layer.src) {
       // התמונה עוד לא נטענה (או חסרה) — מסגרת אפורה במקומה
       ctx.fillStyle = 'rgba(93,100,117,.12)'; ctx.fillRect(...box);

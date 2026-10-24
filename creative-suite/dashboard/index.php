@@ -69,6 +69,19 @@ function roadmap(string $rel): ?array
     return ['file' => $rel, 'missing' => false, 'stages' => $stages, 'pct' => $pct];
 }
 
+/** פריטי `- [ ]` / `- [x]` בקטע שכותרתו מתחילה ב-$title. */
+function checklist(string $md, string $title): array
+{
+    $out = [];
+    foreach (section($md, $title) as $line) {
+        if (preg_match('/^\s*[-*] \[([ xX])\] (.+)$/u', $line, $m)) $out[] = ['done' => $m[1] !== ' ', 'text' => trim($m[2])];
+    }
+    return $out;
+}
+
+/** כמה פתוחים. */
+function open_count(array $items): int { return count(array_filter($items, fn($i) => !$i['done'])); }
+
 /** מסמך פרויקט: כותרת, פסקת סיכום, יעדים, ומסמך המעקב של האפליקציה (אם יש). */
 function project_doc(string $rel): ?array
 {
@@ -85,14 +98,10 @@ function project_doc(string $rel): ?array
         if (str_starts_with($line, '#')) break;
         $started = true; $summary[] = trim($line);
     }
-    $goals = [];
-    foreach (section($md, 'התקדמות') as $line) {
-        if (preg_match('/^\s*[-*] \[([ xX])\] (.+)$/u', $line, $m)) {
-            $goals[] = ['done' => $m[1] !== ' ', 'text' => trim($m[2])];
-        }
-    }
+    $goals = checklist($md, 'התקדמות');
     $app = preg_match('/\*\*מעקב האפליקציה:\*\*\s*`([^`]+)`/u', $md, $m) ? roadmap($m[1]) : null;
     return ['file' => $rel, 'missing' => false, 'app' => $app, 'title' => $title, 'summary' => implode(' ', $summary), 'goals' => $goals,
+            'owner' => checklist($md, 'ממתין לבעל המערכת'), 'ideas' => checklist($md, 'שיפורים מומלצים'),
             'updated' => filemtime($file)];
 }
 
@@ -122,6 +131,8 @@ function projects(): array
             'icon'    => KIND_ICON[$kindKey] ?? ($num === '0' ? '⚙️' : '📦'),
             'doc'     => $doc,
             'goals'   => $goals,
+            'owner'   => $doc['owner'] ?? [],
+            'ideas'   => $doc['ideas'] ?? [],
             'done'    => $done,
             'gpct'    => $gpct = $goals ? (int)round(100 * $done / count($goals)) : 0,
             'app'     => $app = $doc['app'] ?? null,
@@ -222,6 +233,27 @@ $started  = count(array_filter($all, fn($p) => $p['pct'] > 0 && $p['pct'] < 100)
   <?php else: ?>
     <p class="empty">אין עדיין יעדים — ייקבעו במסמך הפרויקט, בקטע "התקדמות".</p>
   <?php endif; ?>
+  <h2 class="sec-title">👤 ממתין לך — <?= open_count($p['owner']) ?></h2>
+  <?php if (open_count($p['owner'])): ?>
+    <ul class="list goals mine">
+      <?php foreach ($p['owner'] as $g): if ($g['done']) continue; ?>
+        <li><span class="mk" aria-hidden="true">👤</span><span><?= inline($g['text']) ?></span></li>
+      <?php endforeach; ?>
+    </ul>
+  <?php else: ?>
+    <p class="empty">אין כרגע משימות בשבילך בפרויקט הזה.</p>
+  <?php endif; ?>
+  <h2 class="sec-title">💡 שיפורים מומלצים — <?= open_count($p['ideas']) ?></h2>
+  <?php if ($p['ideas']): ?>
+    <ul class="list goals">
+      <?php foreach ($p['ideas'] as $g): ?>
+        <li class="<?= $g['done'] ? 'done' : '' ?>"><span class="mk" aria-hidden="true"><?= $g['done'] ? '✅' : '💡' ?></span><span><?= inline($g['text']) ?></span></li>
+      <?php endforeach; ?>
+    </ul>
+  <?php else: ?>
+    <p class="empty">אין הצעות כרגע.</p>
+  <?php endif; ?>
+  <p class="hint">מהמסמך <code><?= h($p['doc']['file'] ?? '') ?></code> — הקטעים "התקדמות" (הצ'אט), "ממתין לבעל המערכת" (אתה) ו"שיפורים מומלצים".</p>
 <?php else: ?>
   <p class="hint">כל אפליקציה בחבילה, האפיון שלה ומה הושלם מתוך היעדים שבמסמך שלה. מתעדכן לבד בכל פריסה של המסמכים.</p>
   <div class="summary">
@@ -229,6 +261,18 @@ $started  = count(array_filter($all, fn($p) => $p['pct'] > 0 && $p['pct'] < 100)
     <span class="track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<?= $avg ?>"><span style="inline-size:<?= $avg ?>%"></span></span>
     <div class="chips"><span class="chip"><?= count($all) ?> פרויקטים</span><span class="chip ok"><?= $ready ?> הושלמו</span><span class="chip warn"><?= $started ?> בתהליך</span><span class="chip"><?= count($all) - $ready - $started ?> טרם התחילו</span></div>
   </div>
+  <?php $mine = []; foreach ($all as $p) foreach ($p['owner'] as $g) if (!$g['done']) $mine[] = [$p, $g]; ?>
+  <h2 class="sec-title">👤 ממתין לך — <?= count($mine) ?></h2>
+  <?php if ($mine): ?>
+    <ul class="list goals mine">
+      <?php foreach ($mine as [$p, $g]): ?>
+        <li><span class="mk" aria-hidden="true"><?= $p['icon'] ?></span><span><b><?= h($p['name']) ?>:</b> <?= inline($g['text']) ?></span></li>
+      <?php endforeach; ?>
+    </ul>
+  <?php else: ?>
+    <p class="empty">אין כרגע משימות בשבילך. 🎉</p>
+  <?php endif; ?>
+  <h2 class="sec-title">הפרויקטים</h2>
   <ul class="list">
     <?php foreach ($all as $p): ?>
       <li><a class="use-row" href="?p=<?= h(rawurlencode($p['id'])) ?>">
@@ -241,12 +285,13 @@ $started  = count(array_filter($all, fn($p) => $p['pct'] > 0 && $p['pct'] < 100)
           <?php else: ?>
           <span class="bar"><span class="track" role="progressbar" aria-label="התקדמות" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<?= $p['pct'] ?>"><span style="inline-size:<?= $p['pct'] ?>%"></span></span><b><?= $p['pct'] ?>%</b></span>
           <?php endif; ?>
+          <span class="counts"><span title="משימות פתוחות לצ'אט">🤖 <?= open_count($p['goals']) ?></span><span title="ממתין לך">👤 <?= open_count($p['owner']) ?></span><span title="שיפורים מומלצים">💡 <?= open_count($p['ideas']) ?></span></span>
         </span>
         <span class="use-go" aria-hidden="true">‹</span>
       </a></li>
     <?php endforeach; ?>
   </ul>
-  <p class="hint">האחוז הכולל — ממוצע הפרויקטים (כל פרויקט באותו משקל). אפליקציה עם מסמך מעקב משלה — ממוצע של האפליקציה עצמה ושל החיבור לחבילה (‎.mbe). פרויקט בלי יעדים — 0%.</p>
+  <p class="hint">🤖 משימות פתוחות לצ'אט · 👤 ממתין לך · 💡 שיפורים מומלצים. האחוז הכולל — ממוצע הפרויקטים (כל פרויקט באותו משקל). אפליקציה עם מסמך מעקב משלה — ממוצע של האפליקציה עצמה ושל החיבור לחבילה (‎.mbe). פרויקט בלי יעדים — 0%.</p>
 <?php endif; ?>
 </main>
 </body>

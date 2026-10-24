@@ -31,7 +31,7 @@ final class PaymentsError extends RuntimeException
 
 final class PaymentsClient
 {
-    public const VERSION = '1.0.0';
+    public const VERSION = '1.1.0';
 
     private string $base;
     private array $o;
@@ -154,6 +154,12 @@ final class PaymentsClient
         }
         $j = json_decode($raw, true);
         if (!is_array($j) || ($j['id'] ?? '') !== $evt) throw new PaymentsError('גוף לא תקין', 'bad_body', 400);
+        // אותו מפתח חותם לכל המערכות ולשתי הסביבות — הודעה של מערכת אחרת, או מבדיקות, לא מתקבלת כאן
+        $key = (string)($this->o['key'] ?? '');
+        $env = $this->o['env'] ?? (str_starts_with($key, 'sk_live_') ? 'live' : (str_starts_with($key, 'sk_test_') ? 'test' : (empty($this->o['client']) ? null : 'live')));
+        $app = $this->o['app'] ?? $this->o['client'] ?? null;
+        if ($env !== null && ($j['env'] ?? '') !== $env) throw new PaymentsError('הודעה מסביבה אחרת', 'wrong_env', 400);
+        if ($app !== null && ($j['app'] ?? '') !== $app) throw new PaymentsError('הודעה של מערכת אחרת', 'wrong_app', 400);
         if (!empty($j['external_id'])) $this->cacheDrop((string)$j['external_id']); // משהו השתנה — הזכאות תיקרא מחדש
         return $j;
     }

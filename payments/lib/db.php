@@ -10,7 +10,7 @@
 
 declare(strict_types=1);
 
-const PAY_SCHEMA_VERSION = 6;
+const PAY_SCHEMA_VERSION = 7;
 
 function pay_data_dir(): string
 {
@@ -94,6 +94,7 @@ function pay_migrate(PDO $pdo): void
     if ($v < 4) pay_migrate_v4($pdo);
     if ($v < 5) pay_migrate_v5($pdo);
     if ($v < 6) pay_migrate_v6($pdo);
+    if ($v < 7) pay_migrate_v7($pdo);
     $pdo->exec('PRAGMA user_version = ' . PAY_SCHEMA_VERSION);
 }
 
@@ -662,5 +663,15 @@ function pay_migrate_v6(PDO $pdo): void
         ALTER TABLE merchant ADD COLUMN phone TEXT NOT NULL DEFAULT '';
         ALTER TABLE client ADD COLUMN terms_url TEXT NOT NULL DEFAULT '';
         ALTER TABLE client ADD COLUMN privacy_url TEXT NOT NULL DEFAULT '';
+    SQL);
+}
+
+/** גרסה 7: החזר שממתין לביצוע ידני (סולק בלי החזר בממשק), וחיוב יזום אחד לכל מפתח. */
+function pay_migrate_v7(PDO $pdo): void
+{
+    $pdo->exec(<<<SQL
+        ALTER TABLE payment ADD COLUMN refund_pending INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE payment ADD COLUMN refund_pending_reason TEXT NOT NULL DEFAULT '';
+        CREATE UNIQUE INDEX IF NOT EXISTS invoice_charge_key ON invoice(account, checkout) WHERE checkout LIKE 'charge:%';
     SQL);
 }
