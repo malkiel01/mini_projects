@@ -2,6 +2,7 @@
  * הסרגל (שלב 3, כמו הסרגל האופקי של Word): מעל הדף, ברוחב העמוד; השוליים באפור; סמני הפסקה שבה הסמן (הזחה, שורה
  * ראשונה, עצירות טאב) — במקום שלהם על הדף. גרירה: הזחה (בצעדים של 36 נק'), שורה ראשונה, גבול השוליים (המקטע);
  * לחיצה — עצירת טאב חדשה; גרירת עצירה אל מחוץ לסרגל — מחיקה. כל פעולה — צעד ביטול אחד. "סרגל" בתצוגה — מסתיר.
+ * הסרגל האנכי: בצד הדף, בגובה העמוד ובמקום שלו (גם אחרי גלילה); השוליים העליונים באפור; גרירת הגבול העליון.
  */
 const P = (text, attrs = {}) => ({ type: 'paragraph', attrs, content: [{ type: 'text', text }] });
 
@@ -82,11 +83,41 @@ export default async function (t) {
     const m = await E(() => document.querySelector('.wp-doc').editor.state.doc.attrs.page.margins);
     t.ok('גרירת גבול השוליים — השוליים הימניים 40 מ"מ', m.right === 40 && m.left === 25, JSON.stringify(m));
 
-    // הסתרה: "סרגל" בתצוגה
+    // הסרגל האנכי
+    const vgeo = () => E(() => {
+        const v = document.querySelector('.wp-vruler-track')?.getBoundingClientRect();
+        const pg = document.querySelector('.wp-pages .wp-page').getBoundingClientRect();
+        const mg = document.querySelector('.wp-vruler-margin')?.getBoundingClientRect();
+        const z = pg.width / document.querySelector('.wp-pages .wp-page').offsetWidth;
+        const side = document.querySelector('.wp-vruler').getBoundingClientRect();
+        return { v: v && { top: v.top, h: v.height }, pg: { top: pg.top, h: pg.height, right: pg.right }, side: { left: side.left, right: side.right }, z,
+            topMargin: mg?.height, nums: document.querySelectorAll('.wp-vruler-num').length };
+    });
+    let vg = await vgeo();
+    t.ok('הסרגל האנכי: בגובה העמוד ובמקום שלו, בצד ההתחלה (מימין לדף), עם מספרי ס"מ', vg.v && near(vg.v.top, vg.pg.top) && near(vg.v.h, vg.pg.h)
+        && vg.side.left >= vg.pg.right && vg.nums >= 20, JSON.stringify(vg));
+    t.ok('השוליים העליונים באפור — 25 מ"מ', near(vg.topMargin, 25 * 96 / 25.4 * vg.z), JSON.stringify(vg));
+    await E(() => { document.querySelector('.wp-stage').scrollTop += 120; });
+    await p.waitForTimeout(150);
+    const vg2 = await vgeo();
+    t.ok('גלילה — הסרגל האנכי זז עם העמוד', near(vg2.v.top, vg2.pg.top) && near(vg2.v.top, vg.v.top - 120, 3), JSON.stringify([vg.v, vg2.v]));
+    await E(() => { document.querySelector('.wp-stage').scrollTop = 0; });
+    await p.waitForTimeout(150);
+    vg = await vgeo();
+    const tb = await p.locator('.wp-vruler-edge[data-side=top]').boundingBox();
+    await p.mouse.move(tb.x + tb.width / 2, tb.y + tb.height / 2);
+    await p.mouse.down();
+    await p.mouse.move(tb.x + tb.width / 2, vg.pg.top + 35 * 96 / 25.4 * vg.z, { steps: 6 });
+    await p.mouse.up();
+    await t.settle(p);
+    const m2 = await E(() => document.querySelector('.wp-doc').editor.state.doc.attrs.page.margins);
+    t.ok('גרירת הגבול העליון — השוליים העליונים 35 מ"מ', m2.top === 35 && m2.bottom === 25, JSON.stringify(m2));
+
+    // הסתרה: "סרגל" בתצוגה — שני הסרגלים
     await t.tool(p, 'סרגל');
-    t.ok('"סרגל" — מסתיר, ושוב — מציג', await p.locator('.wp-ruler').isHidden());
+    t.ok('"סרגל" — מסתיר (גם את האנכי), ושוב — מציג', await p.locator('.wp-ruler').isHidden() && await p.locator('.wp-vruler').isHidden());
     await t.tool(p, 'סרגל');
-    t.ok('…ומציג שוב', await p.locator('.wp-ruler').isVisible());
+    t.ok('…ומציג שוב', await p.locator('.wp-ruler').isVisible() && await p.locator('.wp-vruler').isVisible());
     t.ok('בלי שגיאות JS', !p.errors.length, p.errors.join(' | '));
     await p.context().close();
 }

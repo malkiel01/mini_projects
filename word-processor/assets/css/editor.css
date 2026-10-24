@@ -71,7 +71,7 @@
 .wp-preview-bar { display: flex; align-items: center; gap: var(--s2); flex: none; padding: 6px var(--s2); background: var(--surface); border-bottom: 1px solid var(--line); }
 .wp-preview-bar[hidden] { display: none; }
 .wp-preview-bar .pv-pages { color: var(--muted); font-size: .85rem; }
-.wp-editor.wp-preview .wp-ribbon, .wp-editor.wp-preview .wp-statusbar, .wp-editor.wp-preview .wp-mobilebar { display: none !important; }
+.wp-editor.wp-preview .wp-ribbon, .wp-editor.wp-preview .wp-statusbar, .wp-editor.wp-preview .wp-mobilebar, .wp-editor.wp-preview .wp-vruler { display: none !important; }
 .wp-editor.wp-preview .wp-page-break { border: 0; }
 .wp-editor.wp-preview .wp-page-break::after, .wp-editor.wp-preview .wp-section-break::before, .wp-editor.wp-preview .wp-section-break::after,
 .wp-editor.wp-preview .wp-img-handle, .wp-editor.wp-preview .selectedCell::after { display: none !important; }
@@ -353,7 +353,7 @@ html.wp-no-page-zoom, html.wp-no-page-zoom body, .wp-editor, .wp-stage { touch-a
 @media print {
     /* שקוף — הדף עצמו לבן; רקע לבן כאן היה מסתיר את צבע העמוד ואת סימן המים בעמוד הראשון */
     html, body { background: transparent !important; height: auto !important; overflow: visible !important; }
-    .no-print, header.top, .banner, .wp-toolbar, .wp-findbar, .wp-nav, .wp-comments, .wp-paste, .wp-statusbar, .wp-mobilebar, .wp-sheet-shade, .wp-preview-bar, .toast, dialog { display: none !important; }
+    .no-print, header.top, .banner, .wp-toolbar, .wp-findbar, .wp-nav, .wp-ruler, .wp-vruler, .wp-comments, .wp-paste, .wp-statusbar, .wp-mobilebar, .wp-sheet-shade, .wp-preview-bar, .toast, dialog { display: none !important; }
     .wp-doc .wp-find, .wp-doc .wp-find-cur { background: none !important; }
     main, .wp-editor, .wp-stage, .wp-zoom-box, .wp-zoom, .wp-sheet { display: block !important; overflow: visible !important; padding: 0 !important; margin: 0 !important;
         background: none !important; transform: none !important; inline-size: auto !important; block-size: auto !important; height: auto !important; width: auto !important; }
@@ -482,6 +482,18 @@ html.wp-no-page-zoom, html.wp-no-page-zoom body, .wp-editor, .wp-stage { touch-a
     border-bottom: 1px solid rgb(0 0 0 / .08); direction: ltr; user-select: none; -webkit-user-select: none; }
 @media (prefers-color-scheme: dark) { .wp-ruler { background: #0c0e12; border-color: rgb(255 255 255 / .08); } }
 .wp-ruler[hidden] { display: none; }
+/* הסרגל האנכי: עמודה צרה בצד ההתחלה של הדף (מחוץ לגלילה); הרצועה — בגובה העמוד ובמקום שלו */
+.wp-vruler { position: relative; flex: none; inline-size: 22px; overflow: hidden; background: #e9ebef; border-inline-end: 1px solid rgb(0 0 0 / .08);
+    direction: ltr; user-select: none; -webkit-user-select: none; }
+@media (prefers-color-scheme: dark) { .wp-vruler { background: #0c0e12; border-color: rgb(255 255 255 / .08); } }
+.wp-vruler[hidden] { display: none; }
+.wp-vruler-track { position: absolute; left: 3px; right: 3px; background: #fff; border: 1px solid #c8ccd4; box-sizing: border-box; }
+.wp-vruler-margin { position: absolute; left: 0; right: 0; background: #d4d8df; pointer-events: none; }
+.wp-vruler-tick { position: absolute; right: 0; block-size: 1px; inline-size: 3px; background: #888; pointer-events: none; }
+.wp-vruler-tick.half { inline-size: 6px; }
+.wp-vruler-num { position: absolute; left: 50%; font: 9px/1 system-ui, sans-serif; color: #555; transform: translate(-50%, -50%); pointer-events: none; }
+.wp-vruler-edge { position: absolute; left: 0; right: 0; block-size: 7px; transform: translateY(-50%); cursor: ns-resize; touch-action: none; z-index: 1; }
+.wp-vruler-edge:hover { background: rgb(45 74 138 / .25); }
 .wp-ruler-track { position: absolute; top: 3px; bottom: 3px; background: #fff; border: 1px solid #c8ccd4; box-sizing: border-box; cursor: copy; }
 .wp-ruler-margin { position: absolute; top: 0; bottom: 0; background: #d4d8df; pointer-events: none; }
 .wp-ruler-tick { position: absolute; bottom: 0; inline-size: 1px; block-size: 3px; background: #888; pointer-events: none; }
