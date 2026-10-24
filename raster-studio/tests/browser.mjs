@@ -15,6 +15,9 @@ const { chromium } = require('playwright');
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SHOTS = process.argv[2] || null;
+// המנוע שנבדק: RS_RENDERER=webgpu מפעיל את WebGPU ב-Chromium (בלי הדגל — אין מתאם, והעורך נופל ל-WebGL2)
+const MODE = process.env.RS_RENDERER === 'webgpu' ? 'webgpu' : 'webgl2';
+const ENGINE = MODE === 'webgpu' ? 'WebGPU' : 'WebGL2';
 const PORT = 8700 + Math.floor(Math.random() * 200);
 const BASE = `http://127.0.0.1:${PORT}`;
 const tmp = mkdtempSync(join(tmpdir(), 'rs-browser-'));
@@ -73,12 +76,17 @@ async function openEd(pg) {
 
 async function main() {
   await waitServer();
-  const browser = await chromium.launch();
+  // WebGPU בלי כרטיס: SwiftShader דרך Vulkan; בלי --disable-gpu-compositing אין שכבת הצגה לקנבס של WebGPU,
+  // והמכשיר נהרס בציור הראשון ("Could not find SharedImageBackingFactory")
+  const browser = await chromium.launch(MODE === 'webgpu' ? {
+    args: ['--enable-unsafe-webgpu', '--enable-unsafe-swiftshader', '--use-angle=swiftshader', '--enable-features=Vulkan', '--use-vulkan=swiftshader', '--disable-gpu-compositing'],
+  } : {});
   const ctx = await browser.newContext({ viewport: { width: 1000, height: 760 }, hasTouch: true });
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
   page.on('console', m => m.type() === 'error' && errors.push(m.text()));
+  if (process.env.RS_DEBUG) page.on('console', m => console.log('[console]', m.type(), m.text()));
 
   // ---- מסמך מהספרייה ----
   await page.goto(BASE + '/index.html');
@@ -98,7 +106,7 @@ async function main() {
     name: __rs.renderer.name, w: __rs.doc.width, h: __rs.doc.height, title: document.querySelector('#title').textContent,
     px: Array.from(await __rs.renderer.readPixels(__rs.doc, 599, 399, 1, 1)), msg: document.querySelector('#msg').hidden,
   }));
-  check('העורך עולה עם WebGL2', info.name === 'WebGL2', info.name);
+  check(`העורך עולה עם ${ENGINE}`, info.name === ENGINE, info.name);
   await page.waitForFunction(() => __rs.perf?.score > 0, null, { timeout: 8000 }).catch(() => {});
   const perf = await page.evaluate(() => ({ p: __rs.perf, title: document.querySelector('#meta').title, f: __rs.budget.perf }));
   check('מדידת ביצועים — נמדדה, נשמרה, ומופיעה בכותרת', perf.p?.score > 0 && /ביצועים: (מהיר|בינוני|איטי)/.test(perf.title) && perf.f >= 0.5 && perf.f <= 1, JSON.stringify(perf));
@@ -276,7 +284,8 @@ async function main() {
   await openEd(page);
   await page.waitForFunction(() => window.__rs?.doc);
   const rows = () => page.$$eval('.layer-row', rs => rs.map(r => r.querySelector('.layer-name, .layer-name-input').textContent || r.querySelector('input')?.value));
-  const px = (x = 300, y = 200) => page.evaluate(async ([x, y]) => Array.from(await __rs.renderer.readPixels(__rs.doc, x, y, 1, 1)).join(), [x, y]);
+  // קודם מחכים לכלים (דלי / טפטפת / הזזה קוראים מהכרטיס — ב-WebGPU זה לוקח זמן אמיתי)
+  const px = (x = 300, y = 200) => page.evaluate(async ([x, y]) => { await __rs.tools.settle(); return Array.from(await __rs.renderer.readPixels(__rs.doc, x, y, 1, 1)).join(); }, [x, y]);
   const near = (got, exp) => got.split(',').every((v, i) => Math.abs(v - exp[i]) <= 1);
   check('לוח השכבות גלוי בצד, עם הרקע', await page.isVisible('#layers') && (await rows()).join() === 'רקע' && !(await page.isVisible('#layers-btn')));
   await page.click('[data-act="add"]');
@@ -659,6 +668,7 @@ async function main() {
   await drag([450, 250], [470, 260]);   // ידית פינה
   check('ידית — כיוונון', (await page.textContent('#crop-info')) === '220 × 210');
   await page.keyboard.press('Enter');
+  await page.waitForFunction(() => document.querySelector('#meta').textContent.includes('220×210'), null, { timeout: 3000 }).catch(() => {});   // הכותרת מתעדכנת בפריים הבא
   const cropped = await page.evaluate(() => [__rs.doc.width, __rs.doc.height, document.querySelector('#meta').textContent]);
   check('Enter — הקנבס בגודל החדש, גם בכותרת', cropped[0] === 220 && cropped[1] === 210 && cropped[2].includes('220×210'), cropped.join());
   check('התוכן זז בדיוק: הריבוע האדום ב-(50..150, 50..150)', near(await px(50, 50), [255, 0, 0, 255]) && near(await px(149, 149), [255, 0, 0, 255]) && near(await px(49, 50), [255, 255, 255, 255]) && near(await px(150, 149), [255, 255, 255, 255]));
@@ -954,6 +964,91 @@ async function main() {
   if (SHOTS) await page.screenshot({ path: join(SHOTS, 'groups-desktop.png') });
 
   check('אין שגיאות בקונסול', errors.length === 0, errors.join(' | '));
+
+  // ---- WebGPU מול WebGL2: אותה סצנה בשני המנועים, פיקסל-פיקסל ----
+  if (MODE === 'webgpu') {
+    const cmp = await page.evaluate(async () => {
+      const { WebGPURenderer } = await import('./assets/js/engine/webgpu.js');
+      const { WebGL2Renderer, decodeImage } = await import('./assets/js/engine/webgl2.js');
+      const { RasterDocument } = await import('./assets/js/engine/doc.js');
+      // תמונה: מעבר צבע + עיגולים חצי-שקופים (PNG, כדי ששני המנועים יקבלו בדיוק אותם בתים)
+      const src = new OffscreenCanvas(420, 300);
+      const g2 = src.getContext('2d');
+      const grad = g2.createLinearGradient(0, 0, 420, 300);
+      grad.addColorStop(0, '#ff2050'); grad.addColorStop(0.5, '#20c0ff'); grad.addColorStop(1, '#ffe040');
+      g2.fillStyle = grad; g2.fillRect(0, 0, 420, 300);
+      for (let i = 0; i < 6; i++) { g2.fillStyle = `hsla(${i * 60},80%,50%,0.5)`; g2.beginPath(); g2.arc(60 + i * 60, 150 + (i % 2) * 60, 50, 0, 7); g2.fill(); }
+      g2.clearRect(380, 0, 40, 40);
+      const png = await src.convertToBlob({ type: 'image/png' });
+      const scene = async r => {
+        const d = new RasterDocument(700, 500);
+        r.fill(d, d.addLayer({ name: 'רקע' }), [240, 230, 210, 255]);
+        const A = d.addLayer();
+        const bmp = await decodeImage(png);
+        await r.drawImage(d, A, bmp, 30, 20);
+        bmp.close();
+        const B = d.addLayer({ blend: 'multiply', opacity: 0.7 });
+        r.beginStroke(d, B, { color: [20, 90, 200], opacity: 0.8 });
+        for (let t = 0; t <= 1; t += 0.01) r.dab(d, 80 + t * 540, 250 + Math.sin(t * 9) * 120, 18 + 10 * t, 0.3);
+        r.endStroke(d);
+        r.beginStroke(d, B, { color: [200, 40, 20] });
+        for (let t = 0; t <= 1; t += 0.02) r.dab(d, 600 - t * 500, 80 + t * 340, 6, 1);
+        r.endStroke(d);
+        const G = d.addGroup({ blend: 'screen', opacity: 0.8 });
+        const C = d.addLayer({ parent: G, blend: 'overlay' });
+        d.selection = { shapes: [{ op: 'add', type: 'ellipse', x: 200, y: 120, w: 330, h: 230 }], inverted: false };
+        r.selectionChanged(d);
+        r.fillSelection(d, C, 'paint', [120, 30, 160], 0.9);
+        const D = d.addLayer({ parent: G });
+        r.fill(d, D, [30, 160, 60, 200]);
+        d.selection = null; r.selectionChanged(d);
+        r.beginStroke(d, D, { mode: 'erase' });
+        for (let t = 0; t <= 1; t += 0.02) r.dab(d, 50 + t * 600, 450 - t * 100, 30, 0.6);
+        r.endStroke(d);
+        // תיקונים: גוון / רוויה ל-A, בהירות / ניגודיות ל-C, טשטוש בבחירה ל-D
+        r.setAdjust(d, A, { kind: 'hsl', hue: 40, saturation: -30, lightness: 10 }); r.commitAdjust(d);
+        r.setAdjust(d, C, { kind: 'bc', brightness: 30, contrast: 40 }); r.commitAdjust(d);
+        d.selection = { shapes: [{ op: 'add', type: 'rect', x: 240, y: 200, w: 300, h: 260 }], inverted: false };
+        r.selectionChanged(d);
+        r.setAdjust(d, D, { kind: 'blur', radius: 14 }); r.commitAdjust(d);
+        d.selection = null; r.selectionChanged(d);
+        // שינוי צורה: סיבוב וקנה מידה (דגימה לינארית ו-mipmaps)
+        const rect = await r.layerBounds(B);
+        r.beginFloat(d, B, rect, { cx: rect[0] + rect[2] / 2, cy: rect[1] + rect[3] / 2, sx: 0.8, sy: 0.8, angle: 0.3 });
+        r.commitFloat(d);
+        // הזזה בפיקסלים שלמים (חיתוך / הזזת קבוצה)
+        const old = A.tiles;
+        A.tiles = r.shiftTiles(old, -13, 7);
+        r.freeTextures(old.values());
+        r.resetComposite(d);
+        const px = await r.readPixels(d, 0, 0, d.width, d.height);
+        const th = await r.thumbnail(d, A, 64);
+        return { px, th: th.data, layers: d.rasters().map(l => l.tiles.size).join() };
+      };
+      const mk = () => { const c = document.createElement('canvas'); c.width = 64; c.height = 64; return c; };
+      const gpu = await WebGPURenderer.create(mk());
+      const gl = new WebGL2Renderer(mk());
+      const a = await scene(gpu), b = await scene(gl);
+      const diff = (x, y) => {
+        let max = 0, over1 = 0, at = '';
+        for (let i = 0; i < x.length; i++) {
+          const e = Math.abs(x[i] - y[i]);
+          if (e > max) { max = e; at = `(${(i >> 2) % 700},${Math.floor((i >> 2) / 700)}) ${Array.from(x.slice(i & ~3, (i & ~3) + 4))} / ${Array.from(y.slice(i & ~3, (i & ~3) + 4))}`; }
+          if (e > 1) over1++;
+        }
+        return { max, over1, share: over1 / x.length, at };
+      };
+      return { px: diff(a.px, b.px), th: diff(a.th, b.th), tiles: a.layers === b.layers, la: a.layers, lb: b.layers, n: a.px.length };
+    });
+    if (process.env.RS_DEBUG) console.log('[cmp]', JSON.stringify(cmp));
+    check('WebGPU ↔ WebGL2: אותם אריחים בכל שכבה', cmp.tiles, `${cmp.la} / ${cmp.lb}`);
+    check('WebGPU ↔ WebGL2: הסצנה המלאה (תמונה, משיכות, מיזוג, קבוצה, בחירה, תיקונים, סיבוב, הזזה) — ±1 בכל פיקסל',
+      cmp.px.max <= 1, JSON.stringify(cmp.px));
+    check('WebGPU ↔ WebGL2: תמונה ממוזערת', cmp.th.max <= 1, JSON.stringify(cmp.th));
+    await page.goto(BASE + '/editor.html?doc=' + id + '&renderer=webgl2');
+    await page.waitForFunction(() => window.__rs?.doc);
+    check('‎?renderer=webgl2 — מכריח את הגיבוי גם כש-WebGPU זמין', await page.evaluate(() => __rs.renderer.name) === 'WebGL2');
+  }
 
   // ---- טלפון ----
   for (const [w, dark] of [[390, false], [320, false], [390, true]]) {

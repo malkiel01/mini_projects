@@ -46,6 +46,9 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
   let lasso = null;    // גרירת בחירה: { type, mode, start, pts, shape }
   let xf = null;       // גרירה בכלי ההזזה: { kind, handle, t0, start }
   let grabPending = null; // לחיצה בכלי ההזזה שמחכה לתוכן הצף: { last, up, cancelled }
+  // פעולות שמחכות לקריאה מהכרטיס (דלי, טפטפת, הזזה) — settle מחכה שכולן יסתיימו
+  const ops = new Set();
+  const track = p => { ops.add(p); const del = () => ops.delete(p); p.then(del, del); return p; };
   let floatSel = null; // הבחירה כשהתוכן הצף התחיל — זזה איתו
   let groupMove = null; // הזזת קבוצה: { layers, start, dx, dy } — כל השכבות שבה, בפיקסלים שלמים
   let cropRect = null; // { x0, y0, x1, y1 } — אזור החיתוך המוצע
@@ -498,13 +501,13 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
       if (fl()) { grab(); return true; }
       // התוכן הצף עוד לא מוכן (גבולות השכבה נקראים): התנועות וההרמה נשמרות עד שהוא מוכן
       const g = grabPending = { last: null, up: false, cancelled: false };
-      startFloat().then(ok => {
+      track(startFloat().then(ok => {
         if (grabPending === g) grabPending = null;
         if (!ok || g.cancelled || !fl()) return;
         grab();
         if (g.last) move(...g.last);
         if (g.up) up();
-      }, err => { if (grabPending === g) grabPending = null; console.warn('float', err); });
+      }, err => { if (grabPending === g) grabPending = null; console.warn('float', err); }));
       return true;
     }
     if (selecting()) {
@@ -513,8 +516,8 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
       overlay.preview(lassoShape());
       return true;
     }
-    if (state.tool === 'picker' || (e.altKey && painting())) { pick(pt); return true; }
-    if (state.tool === 'bucket') { bucket(pt); return true; }
+    if (state.tool === 'picker' || (e.altKey && painting())) { track(pick(pt)); return true; }
+    if (state.tool === 'bucket') { track(bucket(pt)); return true; }
     const d = doc(), layer = d.active;
     if (!canEdit(layer)) return true;
     const pen = e.pointerType === 'pen';
@@ -655,7 +658,7 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     }
     if (state.tool === 'move' && k.startsWith('arrow')) {
       const step = e.shiftKey ? 10 : 1;
-      nudge(k === 'arrowleft' ? -step : k === 'arrowright' ? step : 0, k === 'arrowup' ? -step : k === 'arrowdown' ? step : 0);
+      track(nudge(k === 'arrowleft' ? -step : k === 'arrowright' ? step : 0, k === 'arrowup' ? -step : k === 'arrowdown' ? step : 0));
       return true;
     }
     if (k === 'delete' || k === 'backspace') {
@@ -684,5 +687,7 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     get editingText() { return !!textEdit; },
     get stroking() { return !!stroke || !!lasso || !!xf || !!cropDrag || !!groupMove || !!grabPending; },
     get floating() { return !!fl(); },
+    /** מחכה שכל הפעולות שממתינות לקריאה מהכרטיס יסתיימו (גם אלה שנוספו בזמן ההמתנה) */
+    async settle() { while (ops.size) await Promise.allSettled([...ops]); },
   };
 }
