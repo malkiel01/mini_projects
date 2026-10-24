@@ -372,3 +372,79 @@ test('בחירה: חדשה / הוספה / חיסור, וגם בבחירה הפו
   assert.equal(isEmptyShape({ type: 'rect', x: 3, y: 3, w: 0, h: 9 }), true);
   assert.equal(isEmptyShape({ type: 'poly', pts: [[0, 0], [9, 9]] }), true);
 });
+
+// ---- שינוי צורה ----
+import * as T from '../assets/js/engine/transform.js';
+
+test('שינוי צורה: זהות — הפינות במקום, והמטריצה הפיכה', () => {
+  const t = T.identity(10, 20, 100, 50);
+  assert.deepEqual(T.corners(t, 100, 50), [[10, 20], [110, 20], [110, 70], [10, 70]]);
+  assert.deepEqual(T.bounds(t, 100, 50), [10, 20, 110, 70]);
+  assert.equal(T.isIdentityAt(t, 10, 20, 100, 50), true);
+  const m = T.matrix({ ...t, angle: 0.7, sx: 1.3, sy: 0.4 }, 100, 50);
+  const [x, y] = T.apply(T.invert(m), ...T.apply(m, 33, 17));
+  near(x, 33); near(y, 17);
+});
+
+test('שינוי צורה: סיבוב 90° סביב המרכז', () => {
+  const t = { ...T.identity(0, 0, 100, 50), angle: Math.PI / 2 };
+  const c = T.corners(t, 100, 50);
+  near(c[0][0], 75); near(c[0][1], -25);   // הפינה השמאלית-עליונה מסתובבת לימין-למעלה
+  assert.deepEqual(T.bounds(t, 100, 50), [25, -25, 75, 75]);
+});
+
+test('שינוי צורה: גרירת פינה — יחס נשמר, הפינה שממול במקום', () => {
+  const t0 = T.identity(0, 0, 100, 50);
+  const t = T.dragHandle(t0, 100, 50, [1, 1], [200, 100]);
+  near(t.sx, 2); near(t.sy, 2);
+  const c = T.corners(t, 100, 50);
+  near(c[0][0], 0); near(c[0][1], 0);
+  near(c[2][0], 200); near(c[2][1], 100);
+  // גרירה לא על האלכסון — עדיין שומר יחס (הטלה)
+  const t2 = T.dragHandle(t0, 100, 50, [1, 1], [200, 50]);
+  near(t2.sx / t2.sy, 1);
+  // חופשי
+  const t3 = T.dragHandle(t0, 100, 50, [1, 1], [200, 50], true);
+  near(t3.sx, 2); near(t3.sy, 1);
+});
+
+test('שינוי צורה: צלע — ציר אחד; גם בתוכן מסובב; ולא פחות מפיקסל', () => {
+  const t0 = T.identity(0, 0, 100, 50);
+  const t = T.dragHandle(t0, 100, 50, [-1, 0], [-100, 999]);
+  near(t.sx, 2); near(t.sy, 1);
+  near(T.corners(t, 100, 50)[1][0], 100, 1e-9);   // הצלע הימנית לא זזה
+  const r = { ...t0, angle: Math.PI / 2 };
+  // מסובב 90°: הצלע "הימנית" של התוכן פונה למטה; גרירתה ל-y=125 (מרכז 25, עוגן ב-25−50) → רוחב 150
+  const tr = T.dragHandle(r, 100, 50, [1, 0], [50, 125]);
+  near(tr.sx, 1.5, 1e-9); near(tr.sy, 1);
+  const tiny = T.dragHandle(t0, 100, 50, [1, 0], [-500, 0]);
+  near(tiny.sx, 1 / 100);
+});
+
+test('שינוי צורה: סיבוב בגרירה, ועם Shift — מדרגות 15°', () => {
+  const t0 = T.identity(0, 0, 100, 100);   // מרכז (50, 50)
+  const t = T.dragRotate(t0, [100, 50], [50, 100]);
+  near(t.angle, Math.PI / 2);
+  const s = T.dragRotate(t0, [100, 50], [100, 62], true);
+  near(s.angle, Math.PI / 12);
+});
+
+test('שינוי צורה: פגיעה — ידית, בפנים, סיבוב ליד פינה, כלום רחוק', () => {
+  const t = T.identity(0, 0, 100, 100);
+  assert.deepEqual(T.hit(t, 100, 100, [101, 99], 4), { kind: 'handle', handle: [1, 1] });
+  assert.equal(T.hit(t, 100, 100, [50, 50], 4).kind, 'move');
+  assert.equal(T.hit(t, 100, 100, [108, 108], 4).kind, 'rotate');
+  assert.equal(T.hit(t, 100, 100, [300, 300], 4), null);
+  assert.equal(T.hit(t, 100, 100, [150, 50], 4), null, 'ליד צלע, לא פינה — לא סיבוב');
+});
+
+test('שינוי צורה: הבחירה זזה עם התוכן', () => {
+  const t = { ...T.identity(10, 10, 20, 20), cx: 120, cy: 20 };   // הזזה ב-100 בציר x
+  const m = T.docMatrix(t, 20, 20, 10, 10);
+  assert.deepEqual(T.transformShape({ op: 'add', type: 'rect', x: 10, y: 10, w: 20, h: 20 }, m),
+    { op: 'add', type: 'rect', x: 110, y: 10, w: 20, h: 20 });
+  const rot = T.docMatrix({ ...T.identity(0, 0, 10, 10), angle: Math.PI }, 10, 10, 0, 0);
+  const p = T.transformShape({ op: 'add', type: 'rect', x: 0, y: 0, w: 10, h: 10 }, rot);
+  assert.equal(p.type, 'poly');
+  near(p.pts[0][0], 10); near(p.pts[0][1], 10);
+});

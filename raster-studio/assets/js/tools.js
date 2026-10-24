@@ -2,10 +2,12 @@
 // הציור עצמו: משיכה במנוע (beginStroke → dab → endStroke), ובסופה רשומה אחת בהיסטוריה.
 
 import { dabsAlong, floodFill, hexToRgb, rgbToHex } from './engine/fill.js';
-import { combine, isEmptyShape } from './engine/selection.js';
+import { combine, isEmptyShape, selectionBox } from './engine/selection.js';
+import * as XF from './engine/transform.js';
 
 export const TOOLS = {
   hand: { label: 'יד', icon: '✋', key: 'h', hint: 'גרירה — הזזה' },
+  move: { label: 'הזזה ושינוי צורה', icon: '✥', key: 'v', hint: 'גרירה — הזזה · ידיות — גודל (Shift — חופשי) · ליד פינה — סיבוב · Enter — החלה · Esc — ביטול' },
   rect: { label: 'בחירה מלבנית', icon: '⬚', key: 'm', hint: 'Shift — הוספה · Alt — חיסור · Ctrl+D — ביטול הבחירה' },
   ellipse: { label: 'בחירה אליפטית', icon: '◯', key: null, hint: 'Shift — הוספה · Alt — חיסור · M — מעבר בין מלבן לאליפסה' },
   lasso: { label: 'לאסו', icon: '➰', key: 'l', hint: 'גרירה סביב האזור · Shift — הוספה · Alt — חיסור' },
@@ -36,6 +38,8 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
   const state = { tool: 'brush', color: '#1b1e26', size: 12, hardness: 0.8, opacity: 1, tolerance: 32, selMode: 'new' };
   let stroke = null;   // { layer, last, carry, pen }
   let lasso = null;    // גרירת בחירה: { type, mode, start, pts, shape }
+  let xf = null;       // גרירה בכלי ההזזה: { kind, handle, t0, start }
+  let floatSel = null; // הבחירה כשהתוכן הצף התחיל — זזה איתו
 
   const strip = $('#tools');
   const opts = $('#tool-opts');
@@ -75,6 +79,8 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
   opts.addEventListener('click', e => {
     const b = e.target.closest('[data-sel]');
     if (b) selAction(b.dataset.sel);
+    const x = e.target.closest('[data-xf]');
+    if (x) { if (x.dataset.xf === 'apply') commitFloat(); else cancelFloat(); }
   });
   function syncColor() {
     colorIn.value = state.color;
@@ -84,6 +90,7 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
   function setTool(id) {
     if (!TOOLS[id]) return;
     cancel();
+    if (id !== 'move') commitFloat();
     state.tool = id;
     for (const b of strip.querySelectorAll('.tool')) b.setAttribute('aria-pressed', String(b.dataset.tool === id));
     for (const f of opts.querySelectorAll('[data-for]')) f.hidden = !f.dataset.for.split(' ').includes(id);
@@ -155,6 +162,88 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     return { type: lasso.type, ...snapRect(lasso.start, lasso.pts.at(-1)) };
   }
 
+  // ---- הזזה ושינוי צורה ----
+  const selectionBoxOf = d => selectionBox(d.selection, d.width, d.height);
+  const fl = () => doc()?._float;
+
+  function showBox() {
+    const f = fl();
+    overlay.box(f ? XF.corners(f.t, f.w, f.h) : null, f ? XF.HANDLES.map(h => XF.handlePos(f.t, f.w, f.h, h)) : null);
+    const info = $('#xf-info');
+    if (info) {
+      info.textContent = f ? `${Math.round(Math.abs(f.t.sx) * 100)}% × ${Math.round(Math.abs(f.t.sy) * 100)}% · ${Math.round(f.t.angle * 180 / Math.PI)}°` : '';
+    }
+    for (const b of opts.querySelectorAll('[data-xf]')) b.disabled = !f;
+  }
+
+  /** מתחיל תוכן צף מהבחירה (או מכל השכבה). מחזיר אם הצליח. */
+  function startFloat() {
+    const d = doc(), layer = d.active;
+    if (fl()) return true;
+    if (!canEdit(layer)) return false;
+    let rect;
+    if (d.selection) {
+      const b = selectionBoxOf(d);
+      if (!b) { toast('הבחירה ריקה'); return false; }
+      rect = [b[0], b[1], b[2] - b[0], b[3] - b[1]];
+    } else {
+      rect = renderer.layerBounds(layer);
+      if (!rect) { toast('השכבה ריקה — אין מה להזיז'); return false; }
+    }
+    try {
+      renderer.beginFloat(d, layer, rect, XF.identity(...rect));
+    } catch (err) {
+      toast(err.message === 'too_big' ? 'האזור גדול מדי להזזה בבת אחת — בחרו חלק ממנו' : 'לא הצלחתי להתחיל הזזה', true);
+      return false;
+    }
+    floatSel = d.selection ?? null;
+    showBox();
+    draw();
+    return true;
+  }
+
+  function commitFloat() {
+    const d = doc(), f = d?._float;
+    if (!f) return;
+    xf = null;
+    if (XF.isIdentityAt(f.t, f.x, f.y, f.w, f.h)) { renderer.cancelFloat(d); finishFloat(); return; }
+    const m = XF.docMatrix(f.t, f.w, f.h, f.x, f.y);
+    const before = renderer.commitFloat(d);
+    let sel = null;
+    if (floatSel) {
+      const moved = { ...floatSel, shapes: floatSel.shapes.map(s => XF.transformShape(s, m)) };
+      d.selection = moved;
+      renderer.selectionChanged(d);
+      sel = { before: floatSel, after: moved };
+    }
+    const pure = f.t.sx === 1 && f.t.sy === 1 && f.t.angle === 0;
+    history.pixels(d, f.layer, before, pure ? 'הזזה' : 'שינוי צורה', sel);
+    finishFloat();
+    onChange('transform');
+  }
+
+  function cancelFloat() {
+    const d = doc();
+    if (!d?._float) return;
+    xf = null;
+    renderer.cancelFloat(d);
+    finishFloat();
+  }
+
+  function finishFloat() {
+    floatSel = null;
+    showBox();
+    draw();
+  }
+
+  function nudge(dx, dy) {
+    if (!startFloat()) return;
+    const f = fl();
+    renderer.setFloatTransform(doc(), { ...f.t, cx: f.t.cx + dx, cy: f.t.cy + dy });
+    showBox();
+    draw();
+  }
+
   // ---- ציור ----
   const painting = () => state.tool === 'brush' || state.tool === 'eraser';
 
@@ -194,6 +283,14 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
   /** e — אירוע ה-pointerdown; pt — הנקודה במסמך. מחזיר true אם הכלי לקח את המצביע. */
   function down(e, pt) {
     if (state.tool === 'hand') return false;
+    if (state.tool === 'move') {
+      if (!fl() && !startFloat()) return true;
+      const f = fl();
+      const tol = (e.pointerType === 'touch' ? 22 : 10) / view().zoom;
+      const h = XF.hit(f.t, f.w, f.h, pt, tol) ?? { kind: 'move' };
+      xf = { ...h, t0: f.t, start: pt };
+      return true;
+    }
     if (selecting()) {
       const mode = e.shiftKey ? 'add' : e.altKey ? 'sub' : state.selMode;
       lasso = { type: state.tool, mode, start: pt, pts: [pt] };
@@ -220,7 +317,23 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
   }
 
   /** points — נקודות במסמך עם לחץ: [{x, y, pressure}] (כולל האירועים המאוחדים) */
-  function move(points) {
+  function move(points, e) {
+    if (xf) {
+      const q = points.at(-1), p = [q.x, q.y];
+      let t;
+      if (xf.kind === 'move') {
+        // הזזה בפיקסלים שלמים — התוכן נשאר חד
+        t = { ...xf.t0, cx: xf.t0.cx + Math.round(p[0] - xf.start[0]), cy: xf.t0.cy + Math.round(p[1] - xf.start[1]) };
+      } else if (xf.kind === 'handle') {
+        t = XF.dragHandle(xf.t0, fl().w, fl().h, xf.handle, p, !!e?.shiftKey);
+      } else {
+        t = XF.dragRotate(xf.t0, xf.start, p, !!e?.shiftKey);
+      }
+      renderer.setFloatTransform(doc(), t);
+      showBox();
+      draw();
+      return;
+    }
     if (lasso) {
       for (const q of points) {
         const p = [q.x, q.y];
@@ -244,6 +357,7 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
   }
 
   function up() {
+    if (xf) { xf = null; return; }
     if (lasso) {
       const shape = lassoShape(), mode = lasso.mode;
       lasso = null;
@@ -281,6 +395,15 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
       if (k === 'i' && e.shiftKey) { selAction('invert'); return true; }
       return false;
     }
+    if (fl()) {
+      if (k === 'enter') { commitFloat(); return true; }
+      if (k === 'escape') { cancelFloat(); return true; }
+    }
+    if (state.tool === 'move' && k.startsWith('arrow')) {
+      const step = e.shiftKey ? 10 : 1;
+      nudge(k === 'arrowleft' ? -step : k === 'arrowright' ? step : 0, k === 'arrowup' ? -step : k === 'arrowdown' ? step : 0);
+      return true;
+    }
     if (k === 'delete' || k === 'backspace') {
       if (!doc().selection) return false;
       selAction(e.altKey ? 'fill' : 'delete');
@@ -302,5 +425,9 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
 
   sync();
   setTool(state.tool);
-  return { state, setTool, down, move, up, cancel, key, updateCursor, hideCursor, selAction, get stroking() { return !!stroke || !!lasso; } };
+  return {
+    state, setTool, down, move, up, cancel, key, updateCursor, hideCursor, selAction, commitFloat, cancelFloat,
+    get stroking() { return !!stroke || !!lasso || !!xf; },
+    get floating() { return !!fl(); },
+  };
 }
