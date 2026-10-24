@@ -3,9 +3,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { loadFont, fontVariant, advance } from '../assets/js/shaper.js';
-import { layoutFlow, layoutFlows, columnsOf } from '../assets/js/flow.js';
+import { layoutFlow, layoutFlows, columnsOf, freeSegment } from '../assets/js/flow.js';
 import { addFrame, autoflow, growFlow, removeFrame, pruneFlows, thread, flowText, textToDoc, setFlow, frameAt,
-  allFrames, bodyStyle, DEFAULT_STYLE, docBlocks, styleOf, setStyle } from '../assets/js/frames.js';
+  allFrames, bodyStyle, DEFAULT_STYLE, docBlocks, styleOf, setStyle, addImageFrame, imagePlacement, wrapRects, isImage,
+  updateFrame } from '../assets/js/frames.js';
 import { setPageCount, pagesOf } from '../assets/js/pages.js';
 
 const buf = n => { const b = readFileSync(new URL('../assets/fonts/' + n, import.meta.url)); return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength); };
@@ -169,4 +170,46 @@ test('הזחת שורה ראשונה — מימין, רק בשורה הראשו�
   const k = 12 / noto.upem;
   assert.ok(Math.abs(lines[0].x + advance(lines[0].glyphs) * k - 180) < 0.01);
   assert.ok(Math.abs(lines[1].x + advance(lines[1].glyphs) * k - 200) < 0.01);
+});
+
+// ===== תמונות =====
+test('תמונה חדשה: ביחס שלה, באזור התוכן, צמודה לימין', () => {
+  const { model: m, frameId } = addImageFrame(model(), 0, { src: 'media/' + 'a'.repeat(64) + '.png', px: [1600, 800], newId });
+  const fr = pagesOf(m)[0].layers.find(l => l.id === frameId);
+  assert.ok(isImage(fr));
+  assert.deepEqual(fr.box, [30, 40, 320, 160]);   // רוחב אזור התוכן 320, יחס 2:1
+  assert.equal(fr.fit, 'contain');
+});
+
+test('מיקום התמונה: contain, cover, zoom ו-focus', () => {
+  const f = { box: [0, 0, 100, 100], px: [200, 100], fit: 'contain', focus: [0.5, 0.5], zoom: 1 };
+  assert.deepEqual(imagePlacement(f), { x: 0, y: 25, w: 100, h: 50 });
+  assert.deepEqual(imagePlacement({ ...f, fit: 'cover' }), { x: -50, y: 0, w: 200, h: 100 });
+  assert.deepEqual(imagePlacement({ ...f, fit: 'cover', focus: [1, 0.5] }), { x: -100, y: 0, w: 200, h: 100 });   // הצד הימני נשאר
+  assert.deepEqual(imagePlacement({ ...f, zoom: 2 }), { x: -50, y: 0, w: 200, h: 100 });
+});
+
+test('קטע פנוי בשורה: הרחב ביותר, ובשוויון — הימני', () => {
+  const s = { x: 0, w: 300, rects: [{ x: 100, y: 0, w: 100, h: 50 }] };
+  assert.deepEqual(freeSegment(s, 10, 20, 24), { x: 200, w: 100 });   // שני קטעים של 100 — הימני
+  assert.deepEqual(freeSegment(s, 60, 70, 24), { x: 0, w: 300 });     // מתחת לתמונה — כל השורה
+  assert.deepEqual(freeSegment({ ...s, rects: [{ x: 50, y: 0, w: 200, h: 50 }] }, 10, 20, 24), { x: 250, w: 50 });   // שווים — הימני
+  assert.equal(freeSegment({ ...s, rects: [{ x: 0, y: 0, w: 290, h: 50 }] }, 10, 20, 24), null);   // 10pt — צר מדי
+});
+
+test('גלישת טקסט: שורות לצד התמונה קצרות, ומתחתיה — מלאות', () => {
+  let { model: m, frameId, flowId } = addFrame(model(1), 0, { box: [0, 0, 300, 400], newId });
+  m = setFlow(m, flowId, { doc: textToDoc(Array(8).fill(LOREM).join('\n')) });
+  let r0 = layoutFlows(m, fontsFor).frames.get(frameId).lines;
+  ({ model: m } = addImageFrame(m, 0, { src: 'media/' + 'b'.repeat(64) + '.png', px: [100, 100], newId }));
+  const img = pagesOf(m)[0].layers.find(l => l.src);
+  m = updateFrame(m, img.id, { box: [0, 0, 150, 150], wrap: 'box', wrapGap: 10 });   // פינה שמאלית עליונה
+  assert.equal(wrapRects(m, 0).length, 1);
+  const lines = layoutFlows(m, fontsFor).frames.get(frameId).lines;
+  const k = 12 / noto.upem;
+  const beside = lines.filter(l => l.y < 160), below = lines.filter(l => l.y - 12 * 0.9 > 160);
+  assert.ok(beside.length > 3 && below.length > 3);
+  for (const l of beside) assert.ok(l.x >= 160 - 0.01, 'לצד התמונה — מימין לה');
+  assert.ok(below.some(l => l.x < 1 && advance(l.glyphs) * k > 290), 'מתחת — שורה מלאה');
+  assert.ok(lines.length < r0.length + 20);
 });

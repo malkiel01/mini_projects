@@ -7,8 +7,9 @@ import { PageView } from './view.js';
 import { pagesOf, pageSize, setPageCount, setPageSize, marginsFit, mmToPt, ptToMm,
   mastersOf, masterOf, setMaster, updateMaster, ensureMasters, spreadOfPage, contentBox } from './pages.js';
 import { addFrame, autoflow, growFlow, removeFrame, pruneFlows, updateFrame, setFlow, flowText, thread,
-  allFrames, bodyStyle, styleOf, setStyle, STYLE_KEYS, FONTS } from './frames.js';
+  allFrames, bodyStyle, styleOf, setStyle, STYLE_KEYS, FONTS, addImageFrame, isImage } from './frames.js';
 import { layoutFlows } from './flow.js';
+import { imagePlacement } from './frames.js';
 import { loadFont, fontVariant } from './shaper.js';
 
 const $ = (s, el = document) => el.querySelector(s);
@@ -206,8 +207,9 @@ function updatePageBtn() {
   $('#add-page').hidden = i >= 0;
   if (i < 0) return;
   if (view.frameSel) {
+    const fr = allFrames(model).find(x => x.frame.id === view.frameSel)?.frame;
     const over = text?.frames.get(view.frameSel)?.overset;
-    pageBtn.textContent = over ? '▭ מסגרת · ⚠ גולש' : '▭ מסגרת';
+    pageBtn.textContent = fr && isImage(fr) ? '🖼 תמונה' : over ? '▭ מסגרת · ⚠ גולש' : '▭ מסגרת';
   } else pageBtn.textContent = `📄 עמוד ${i + 1}`;
 }
 
@@ -275,7 +277,22 @@ function openFrame() {
   const x = selFrame();
   if (!x) return;
   const { frame, pageIndex } = x;
-  $('#frame-title').textContent = `מסגרת טקסט · עמוד ${pageIndex + 1}`;
+  const kind = isImage(frame) ? 'image' : 'text';
+  $('#frame-title').textContent = `${kind === 'image' ? 'תמונה' : 'מסגרת טקסט'} · עמוד ${pageIndex + 1}`;
+  for (const el of fdlg.querySelectorAll('[data-kind]')) el.hidden = el.dataset.kind !== kind;
+  if (kind === 'image') {
+    fform.fit.value = frame.fit || 'contain';
+    const [fx, fy] = frame.focus || [0.5, 0.5];
+    fform.focx.value = String(fx); fform.focy.value = String(fy);
+    fform.zoom.value = Math.round((frame.zoom || 1) * 100);
+    $('#zoom-out-v').textContent = fform.zoom.value + '%';
+    fform.wrap.checked = frame.wrap === 'box';
+    fform.wrapgap.value = ptToMm(frame.wrapGap ?? 8);
+    // רזולוציה להדפסה: פיקסלים לאינץ' בגודל שבו התמונה מצוירת
+    const r = imagePlacement(frame);
+    const ppi = Math.round(frame.px[0] / (r.w / 72));
+    $('#img-info').textContent = `${frame.px[0]}×${frame.px[1]} פיקסלים · ${ppi} לאינץ' בגודל הזה` + (ppi < 200 ? ' — ⚠ נמוך להדפסה (מומלץ 300)' : '');
+  }
   fform.columns.value = String(frame.columns || 1);
   fform.gutter.value = ptToMm(frame.gutter || 0);
   // x בטופס — מימין (מתאים לעברית): המרחק מקצה העמוד הימני לקצה המסגרת הימני
@@ -286,7 +303,7 @@ function openFrame() {
   const ov = $('#fr-overset');
   ov.hidden = !fl?.overset;
   if (fl?.overset) ov.textContent = `⚠ הטקסט לא נכנס — נשארו עוד ${fl.rest.of - fl.rest.paragraph} פסקאות. "עמודים עד סוף הטקסט" — מוסיף עמודים.`;
-  $('#fr-grow').hidden = !!model.flows[frame.flow]?.autogrow && !fl?.overset;
+  if (kind === 'text') $('#fr-grow').hidden = !!model.flows[frame.flow]?.autogrow && !fl?.overset;
   fErr.hidden = true;
   fdlg.showModal();
 }
@@ -308,9 +325,77 @@ fform.addEventListener('submit', e => {
   const [fx, fy, fw, fh, gut] = v.map(mmToPt);
   if (fw < 10 || fh < 10) return fail('המסגרת קטנה מדי');
   if (fx + fw > w + 0.5 || fy + fh > h + 0.5) return fail('המסגרת יוצאת מהעמוד');
+  const patch = { box: [w - fx - fw, fy, fw, fh].map(n => Math.round(n * 100) / 100) };
+  if (isImage(x.frame)) {
+    const gap = num(fform.wrapgap.value);
+    if (!(gap >= 0 && gap <= 100)) return fail('מרווח מהטקסט — 0 עד 100 מ"מ');
+    Object.assign(patch, { fit: fform.fit.value, focus: [Number(fform.focx.value), Number(fform.focy.value)],
+      zoom: Number(fform.zoom.value) / 100, wrap: fform.wrap.checked ? 'box' : 'none', wrapGap: mmToPt(gap) });
+  } else Object.assign(patch, { columns: Number(fform.columns.value), gutter: gut });
   fdlg.close();
-  changed(updateFrame(model, x.frame.id, { box: [w - fx - fw, fy, fw, fh].map(n => Math.round(n * 100) / 100),
-    columns: Number(fform.columns.value), gutter: gut }));
+  changed(updateFrame(model, x.frame.id, patch));
+});
+
+fform.zoom.addEventListener('input', () => { $('#zoom-out-v').textContent = fform.zoom.value + '%'; });
+
+// התאמת המסגרת ליחס התמונה: שומרים את הרוחב ואת הצד הימני, משנים את הגובה
+$('#fr-fitframe').addEventListener('click', () => {
+  const { frame } = selFrame();
+  const fw = num(fform.fw.value);
+  if (fw > 0) fform.fh.value = Math.round(fw * frame.px[1] / frame.px[0] * 10) / 10;
+  fform.fit.value = 'contain';
+  fform.zoom.value = 100; $('#zoom-out-v').textContent = '100%';
+});
+
+// ---- תמונות: בחירה, הקטנה (אם צריך) והעלאה ----
+const MAX_SIDE = 3000, MAX_BYTES = 6 * 1024 * 1024;
+async function prepareImage(file) {
+  if (!/^image\/(png|jpeg|webp)$/.test(file.type)) throw new Error('רק PNG, JPEG או WebP');
+  const bmp = await createImageBitmap(file);
+  const big = Math.max(bmp.width, bmp.height);
+  if (file.size <= MAX_BYTES && big <= MAX_SIDE) { bmp.close?.(); return file; }
+  // גדולה מדי לשרת — מקטינים ל-3000 פיקסלים בצד הארוך (300 לאינץ' עד ~25 ס"מ) ושומרים כ-JPEG
+  const k = Math.min(1, MAX_SIDE / big);
+  const c = new OffscreenCanvas(Math.round(bmp.width * k), Math.round(bmp.height * k));
+  const g = c.getContext('2d');
+  g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
+  g.drawImage(bmp, 0, 0, c.width, c.height);
+  bmp.close?.();
+  return c.convertToBlob({ type: 'image/jpeg', quality: 0.9 });
+}
+async function uploadImage(file) {
+  const body = await prepareImage(file);
+  let res;
+  try {
+    res = await fetch('api.php?action=media_upload', { method: 'POST', credentials: 'same-origin',
+      headers: { 'X-Layout-Studio': '1', 'Content-Type': body.type || 'application/octet-stream' }, body });
+  } catch { throw new Error('אין חיבור לשרת'); }
+  const out = await res.json().catch(() => ({ ok: false, error: res.status === 413 ? 'too_big' : 'server' }));
+  if (!out.ok) throw new Error(out.error === 'too_big' ? 'התמונה גדולה מדי' : out.error === 'bad_image' ? 'הקובץ אינו תמונה תקינה' : 'ההעלאה נכשלה');
+  return out;   // { src, px }
+}
+let imageTarget = null;   // { page } — תמונה חדשה; { frameId } — החלפה
+const imgInput = $('#img-file');
+$('#pm-image').addEventListener('click', () => { imageTarget = { page: view.selected }; pdlg.close(); imgInput.click(); });
+$('#fr-replace').addEventListener('click', () => { imageTarget = { frameId: view.frameSel }; fdlg.close(); imgInput.click(); });
+imgInput.addEventListener('change', async () => {
+  const file = imgInput.files[0];
+  imgInput.value = '';
+  if (!file || !imageTarget) return;
+  toast('מעלה תמונה…');
+  try {
+    const { src, px } = await uploadImage(file);
+    if (imageTarget.frameId) {
+      changed(updateFrame(model, imageTarget.frameId, { src, px }));
+    } else {
+      const r = addImageFrame(model, imageTarget.page, { src, px, newId });
+      changed(r.model);
+      view.select(imageTarget.page, r.frameId);
+    }
+    toast('התמונה נוספה');
+  } catch (err) {
+    toast(err.message, true);
+  }
 });
 
 $('#fr-edit').addEventListener('click', () => { const x = selFrame(); fdlg.close(); openStory(x.frame.flow); });
@@ -338,7 +423,7 @@ $('#fr-grow').addEventListener('click', () => {
 
 $('#fr-del').addEventListener('click', () => {
   const x = selFrame();
-  if (!confirm('למחוק את המסגרת? הטקסט נשאר וזורם למסגרות האחרות בשרשור (אם יש).')) return;
+  if (!confirm(isImage(x.frame) ? 'למחוק את התמונה מהעמוד?' : 'למחוק את המסגרת? הטקסט נשאר וזורם למסגרות האחרות בשרשור (אם יש).')) return;
   fdlg.close();
   const fid = x.frame.flow;
   const wasLast = thread(model, fid).length === 1;

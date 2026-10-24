@@ -108,13 +108,14 @@ function ls_doc_get(int $owner, int $id): ?array
 /**
  * שמירת המודל. $rev — הגרסה שהדפדפן ערך; לא תואמת → conflict (נשמר בינתיים ממקום אחר).
  * מחזיר את ה-rev החדש. @throws InvalidArgumentException (not_found / conflict / bad_model:… / too_big)
+ * $mediaExists(src) — האם התמונה שמסגרת מפנה אליה קיימת אצל המשתמש (בלי — לא נבדק).
  */
-function ls_doc_save(int $owner, int $id, int $rev, $modelJson): int
+function ls_doc_save(int $owner, int $id, int $rev, $modelJson, ?callable $mediaExists = null): int
 {
     if (!is_string($modelJson)) throw new InvalidArgumentException('bad_model:root');
     if (strlen($modelJson) > LS_MODEL_MAX_BYTES) throw new InvalidArgumentException('too_big');
     $m = json_decode($modelJson, true);
-    [$w, $h] = ls_model_check($m);
+    [$w, $h] = ls_model_check($m, $mediaExists);
     $db = ls_db();
     $q = $db->prepare('UPDATE docs SET model = ?, page_w = ?, page_h = ?, rev = rev + 1, updated_at = ?
         WHERE id = ? AND owner_id = ? AND deleted_at IS NULL AND rev = ?');

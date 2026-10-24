@@ -58,7 +58,7 @@ function ls_model_new(float $w, float $h, int $pages = 4): array
  * בדיקת מודל שהגיע מהדפדפן. מחזיר את גודל העמוד [w, h] (לרשימה), או זורק InvalidArgumentException('bad_model:<מה>').
  * גרסה 1: כל העמודים באותו גודל.
  */
-function ls_model_check($m): array
+function ls_model_check($m, ?callable $mediaExists = null): array
 {
     $bad = fn(string $what) => new InvalidArgumentException('bad_model:' . $what);
     if (!is_array($m)) throw $bad('root');
@@ -110,7 +110,10 @@ function ls_model_check($m): array
             $lid = $l['id'] ?? null;
             if (!is_string($lid) || !preg_match('/^[A-Za-z0-9_.:-]{1,128}$/', $lid) || isset($ids[$lid])) throw $bad('layer_id');
             $ids[$lid] = true;   // מזהים ייחודיים בכל המסמך — משטחים ושכבות יחד
-            if (($l['type'] ?? null) === 'frame') { ls_frame_check($l, $bad); $frames[$lid] = $l['flow'] ?? null; }
+            if (($l['type'] ?? null) === 'frame') {
+                ls_frame_check($l, $bad, $mediaExists);
+                if (array_key_exists('flow', $l)) $frames[$lid] = $l['flow'];
+            }
         }
     }
     ls_flows_check($m['flows'] ?? null, $frames, $bad);
@@ -150,9 +153,25 @@ function ls_master_check(array $s, callable $bad): void
     }
 }
 
-/** מסגרת טקסט: box — 4 מספרים, רוחב וגובה חיוביים; טורים 1–12. */
-function ls_frame_check(array $l, callable $bad): void
+/**
+ * מסגרת: box — 4 מספרים, רוחב וגובה חיוביים. טקסט (flow): טורים 1–12. תמונה (src): media/<sha256>.<ext> שקיים,
+ * px — גודל התמונה בפיקסלים, fit (contain / cover), focus [0–1, 0–1], zoom 1–10; גלישת טקסט (wrap: none / box, wrapGap).
+ */
+function ls_frame_check(array $l, callable $bad, ?callable $mediaExists = null): void
 {
+    $num = fn($v, $min, $max) => (is_int($v) || is_float($v)) && $v >= $min && $v <= $max;
+    if (array_key_exists('wrap', $l) && !in_array($l['wrap'], ['none', 'box'], true)) throw $bad('frame');
+    if (array_key_exists('wrapGap', $l) && !$num($l['wrapGap'], 0, 500)) throw $bad('frame');
+    if (array_key_exists('src', $l)) {
+        if (!is_string($l['src']) || !preg_match('#^media/[0-9a-f]{64}\.(png|jpg|webp)$#', $l['src'])) throw $bad('image');
+        if ($mediaExists && !$mediaExists($l['src'])) throw $bad('image_missing');
+        $px = $l['px'] ?? null;
+        if (!is_array($px) || count($px) !== 2 || !is_int($px[0]) || !is_int($px[1]) || $px[0] < 1 || $px[1] < 1) throw $bad('image');
+        if (!in_array($l['fit'] ?? 'contain', ['contain', 'cover'], true)) throw $bad('image');
+        $fo = $l['focus'] ?? [0.5, 0.5];
+        if (!is_array($fo) || count($fo) !== 2 || !$num($fo[0], 0, 1) || !$num($fo[1], 0, 1)) throw $bad('image');
+        if (!$num($l['zoom'] ?? 1, 1, 10)) throw $bad('image');
+    }
     $b = $l['box'] ?? null;
     if (!is_array($b) || !array_is_list($b) || count($b) !== 4) throw $bad('frame');
     foreach ($b as $v) if (!is_int($v) && !is_float($v)) throw $bad('frame');

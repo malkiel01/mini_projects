@@ -5,11 +5,12 @@
 //   3. שבירת שורות חמדנית לפי רוחב הטור; מילה ארוכה מהטור — לבד בשורה.
 //   4. השורה הסופית מעוצבת שלמה (bidi נכון בין מילים), ויישור לשני הצדדים מרחיב את הרווחים בלבד.
 //   5. טורים מימין לשמאל; מסגרת אחרי מסגרת לפי סדר השרשור. מה שלא נכנס — "גלישה" (overset).
+//   6. גלישה סביב תמונה (wrap): כל שורה ברווח הפנוי הרחב ביותר לצד התמונה; אין מקום — השורה מדלגת מטה.
 //
 // הפלט — במידות העמוד (pt), מוכן לציור (view.js) ובהמשך ל-PDF: אותן שורות, אותם גליפים.
 
 import { shapeLine, advance } from './shaper.js';
-import { thread, styleOf, docBlocks } from './frames.js';
+import { thread, styleOf, docBlocks, wrapRects } from './frames.js';
 
 const wordCache = new Map();   // מפתח: גופנים + מסכת הדגשה + מילה → רוחב ביחידות הגופן
 
@@ -33,7 +34,11 @@ export function layoutFlows(model, fontsFor) {
   const frames = new Map(), flows = new Map();
   for (const [flowId, flow] of Object.entries(model.flows || {})) {
     if (flow.engine !== 'prosemirror' || !Array.isArray(flow.frames)) continue;
-    const res = layoutFlow(docBlocks(flow.doc), thread(model, flowId).map(t => t.frame), key => styleOf(model, key), fontsFor);
+    const th = thread(model, flowId);
+    const page = new Map(th.map(t => [t.frame.id, t.pageIndex]));
+    // מה שהטקסט עוקף בעמוד של המסגרת — חוץ מהמסגרת עצמה
+    const avoid = id => page.has(id) ? wrapRects(model, page.get(id)).filter(r => r.id !== id) : [];
+    const res = layoutFlow(docBlocks(flow.doc), th.map(t => t.frame), key => styleOf(model, key), fontsFor, avoid);
     res.frames.forEach((v, k) => frames.set(k, v));
     flows.set(flowId, { overset: res.overset, rest: res.rest });
   }
@@ -66,19 +71,29 @@ const spansIn = (bold, a, b, fontsB) => bold.filter(s => s.end > a && s.start < 
  * פריסת שטף אחד במסגרות שלו.
  *   blocks — docBlocks(doc); styleFor(key) — סגנון פסקה; fontsFor(family, weight).
  */
-export function layoutFlow(blocks, frameList, styleFor, fontsFor) {
+export function layoutFlow(blocks, frameList, styleFor, fontsFor, avoid = () => []) {
   const out = new Map(frameList.map(fr => [fr.id, { lines: [], overset: false }]));
-  const slots = [];   // טורים בסדר הזרימה
-  for (const fr of frameList) for (const c of columnsOf(fr)) slots.push({ frameId: fr.id, ...c });
+  const slots = [];   // טורים בסדר הזרימה, כל אחד עם מה שהוא עוקף
+  for (const fr of frameList) {
+    const rects = avoid(fr.id);
+    for (const c of columnsOf(fr)) slots.push({ frameId: fr.id, ...c, rects });
+  }
+  const MIN_W = 24;   // רווח צר מזה לצד תמונה — לא כותבים בו
 
   let si = 0, y = null;   // טור נוכחי, וקו הבסיס האחרון בו (null — עוד לא נכתב בו כלום)
-  // מקום לשורה הבאה: הטור והבסיס, או null אם נגמר המקום. before — רווח לפני פסקה (לא בראש טור).
+  /**
+   * מקום לשורה הבאה: { s: הטור, x, w: הקטע הפנוי בשורה }, או null אם נגמר המקום. before — רווח לפני פסקה
+   * (לא בראש טור). שורה שתמונה חוסמת — מדלגים עליה מטה.
+   */
   const place = (st, before) => {
     while (si < slots.length) {
       const s = slots[si];
       const base = y === null ? s.y + st.size * 0.9 : y + before + st.leading;
-      if (base + st.size * 0.3 <= s.y + s.h + 0.01) { y = base; return s; }
-      si++; y = null; before = 0;
+      if (base + st.size * 0.3 > s.y + s.h + 0.01) { si++; y = null; before = 0; continue; }
+      y = base;
+      const seg = freeSegment(s, base - st.size * 0.9, base + st.size * 0.3, MIN_W);
+      if (seg) return { s, ...seg };
+      before = 0;   // חסום — השורה הבאה למטה
     }
     return null;
   };
@@ -110,8 +125,9 @@ export function layoutFlow(blocks, frameList, styleFor, fontsFor) {
     }
     let wi = 0;
     while (wi < words.length) {
-      const s = place(st, wi === 0 ? st.spaceBefore : 0);
-      if (!s) return finish(out, frameList, { paragraph: bi, word: wi, of: blocks.length });
+      const p = place(st, wi === 0 ? st.spaceBefore : 0);
+      if (!p) return finish(out, frameList, { paragraph: bi, word: wi, of: blocks.length });
+      const s = { frameId: p.s.frameId, x: p.x, w: p.w };   // הקטע הפנוי בשורה הזו
       const indent = wi === 0 ? Math.min(st.indent || 0, s.w / 2) : 0;   // הזחת שורה ראשונה — מימין
       const avail = s.w - indent;
       let width = wordW(words[wi]), j = wi + 1;
@@ -142,6 +158,22 @@ export function layoutFlow(blocks, frameList, styleFor, fontsFor) {
     y += st.spaceAfter;
   }
   return finish(out, frameList, null);
+}
+
+/**
+ * הקטע הפנוי הרחב ביותר בשורה [top, bottom] של הטור, אחרי שמורידים את מה שהיא עוקפת. שוויון — הימני (עברית).
+ * מחזיר { x, w } או null (אין קטע ברוחב min).
+ */
+export function freeSegment(s, top, bottom, min) {
+  let segs = [[s.x, s.x + s.w]];
+  for (const r of s.rects || []) {
+    if (r.y >= bottom || r.y + r.h <= top) continue;
+    const a = r.x, b = r.x + r.w;
+    segs = segs.flatMap(([x0, x1]) => (b <= x0 || a >= x1) ? [[x0, x1]] : [[x0, Math.max(x0, a)], [Math.min(x1, b), x1]].filter(([p, q]) => q - p > 0.01));
+  }
+  let best = null;
+  for (const [x0, x1] of segs) if (x1 - x0 >= min && (!best || x1 - x0 > best.w + 0.01 || (Math.abs(x1 - x0 - best.w) <= 0.01 && x0 > best.x))) best = { x: x0, w: x1 - x0 };
+  return best;
 }
 
 function finish(out, frameList, rest) {
