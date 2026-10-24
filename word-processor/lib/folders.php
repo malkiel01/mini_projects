@@ -55,7 +55,9 @@ function folder_create(string $space, $name, $parent): string
     if ($p && count(folder_ancestors($space, $p['id'])) >= FOLDER_DEPTH) throw new ApiError('אפשר עד ' . FOLDER_DEPTH . ' רמות של תיקיות', 'too_deep');
     $st = db()->prepare('SELECT COUNT(*) FROM folders WHERE space = ?');
     $st->execute([$space]);
-    if ((int)$st->fetchColumn() >= FOLDERS_MAX) throw new ApiError('הגעת למספר התיקיות המרבי (' . FOLDERS_MAX . ')', 'too_many');
+    $n = (int)$st->fetchColumn();
+    $st->closeCursor();   // לפני הכתיבה (db.php)
+    if ($n >= FOLDERS_MAX) throw new ApiError('הגעת למספר התיקיות המרבי (' . FOLDERS_MAX . ')', 'too_many');
     $id = rand_id(16);
     db()->prepare('INSERT INTO folders (id, space, parent, name, created_at) VALUES (?, ?, ?, ?, ?)')
         ->execute([$id, $space, $p['id'] ?? null, folder_name($name), time()]);
