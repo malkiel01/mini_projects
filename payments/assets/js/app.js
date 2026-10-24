@@ -80,7 +80,7 @@ const STAGES = [
   ['ספריות, קישורים וכללים', 'ספריות קוד, קישורי תשלום, כפתור, מנוע הכללים, תיעוד', 'done'],
   ['מנויים מאושרים', 'אזור ניהול לכל מי שהמנהל מאשר', ''],
   ['מגדלור מתחבר', 'האפליקציה הראשונה, בצ\'אט שלה', ''],
-  ['עלייה לאוויר', 'תשלום אמיתי קטן והחזר, בדיקה משפטית', ''],
+  ['עלייה לאוויר', 'תשלום אמיתי קטן והחזר, בדיקה משפטית — הרשימה למעלה', 'now'],
   ['התרחבות', 'סולקים ואפליקציות נוספים, ביט, הוראת קבע, דוחות', ''],
 ];
 loaders.overview = async () => {
@@ -96,7 +96,19 @@ loaders.overview = async () => {
   $('#stages').innerHTML = STAGES.map(([t, s, st], i) => `<li class="card"><span class="stage-n" aria-hidden="true">${st === 'done' ? '✓' : i + 1}</span>
     <div class="body"><div class="l1"><span>${esc(t)}</span></div><div class="l2">${esc(s)}</div></div>
     ${st === 'now' ? chip('עכשיו', 'warn') : st === 'done' ? chip('הושלם', 'ok') : ''}</li>`).join('');
+  renderReady(await api('readiness'));
 };
+function renderReady(r) {
+  $('#ready-n').textContent = r.ready ? '✓ הכול מוכן' : `${r.open} פתוחים`;
+  const ICON = { ok: '✓', todo: '○', warn: '!' };
+  $('#ready').innerHTML = r.items.map(i => `<li class="card"><span class="stage-n" aria-hidden="true">${ICON[i.state]}</span>
+    <div class="body"><div class="l1" style="white-space:normal"><span>${esc(i.title)}</span></div>${i.todo ? `<div class="l2" style="white-space:normal">${esc(i.todo)}</div>` : ''}</div>
+    ${i.manual ? `<label class="switch"><input type="checkbox" data-ready="${esc(i.key)}" aria-label="בוצע: ${esc(i.title)}" ${i.state === 'ok' ? 'checked' : ''}><span></span></label>`
+      : i.state === 'ok' ? chip('מוכן', 'ok') : chip(i.state === 'warn' ? 'מומלץ' : 'חסר', i.state === 'warn' ? 'warn' : 'bad')}</li>`).join('');
+  for (const b of document.querySelectorAll('[data-ready]')) b.addEventListener('change', async () => {
+    try { renderReady(await api('readiness_mark', { key: b.dataset.ready, done: b.checked })); } catch (e) { fail(e); }
+  });
+}
 
 // ---------- עוסקים ----------
 async function loadMerchants() { cache.merchants = (await api('merchants')).data; return cache.merchants; }
@@ -107,6 +119,7 @@ function merchantForm(m = {}) {
       <label class="f wide"><span>שם העוסק (כפי שיופיע בקבלה) *</span><input name="name" required maxlength="120" value="${esc(m.name)}"></label>
       <label class="f"><span>ע"מ / ח"פ</span><input name="tax_id" inputmode="numeric" dir="ltr" value="${esc(m.tax_id)}"></label>
       <label class="f"><span>מייל</span><input name="email" type="email" dir="ltr" value="${esc(m.email)}"></label>
+      <label class="f"><span>טלפון</span><input name="phone" type="tel" dir="ltr" value="${esc(m.phone)}"></label>
       <label class="f wide"><span>כתובת</span><input name="address" value="${esc(m.address)}"></label>
     </div>
     <fieldset class="seg" aria-label="סוג העוסק">${opt('exempt', 'פטור')}${opt('licensed', 'מורשה')}${opt('company', 'חברה')}</fieldset>
@@ -249,6 +262,8 @@ async function clientSheet(id, newKey = null) {
     <div class="fields">
       <label class="f"><span>שם</span><input name="name" value="${esc(c.name)}"></label>
       <label class="f"><span>עוסק</span><select name="merchant"><option value="">— אין —</option>${ms.map(m => `<option value="${esc(m.id)}" ${m.id === c.merchant ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</select></label>
+      <label class="f wide"><span>כתובת התנאים (מופיעה בדף התשלום) — חובה לכסף אמיתי</span><input name="terms_url" dir="ltr" type="url" value="${esc(c.terms_url)}" placeholder="https://…/terms"></label>
+      <label class="f wide"><span>כתובת מדיניות הפרטיות</span><input name="privacy_url" dir="ltr" type="url" value="${esc(c.privacy_url)}"></label>
       <label class="f wide"><span>כתובת webhook (לאן נשלחות הודעות)</span><input name="webhook_url" dir="ltr" type="url" value="${esc(c.webhook_url)}" placeholder="https://…/api.php?action=payments_webhook"></label>
       <label class="f wide"><span>כתובת מפתח Ed25519 (רק למי שחותם כך)</span><input name="key_url" dir="ltr" type="url" value="${esc(c.key_url)}"></label>
       <label class="f wide"><span>אתרים מותרים לקוד הגלוי</span><input name="origins" dir="ltr" value="${esc((c.origins || []).join(' '))}" placeholder="https://example.co.il"></label>
@@ -290,7 +305,7 @@ async function clientSheet(id, newKey = null) {
     </div>`,
   async fd => {
     const o = Object.fromEntries(fd);
-    await api('client_update', { id, name: o.name, merchant: o.merchant, webhook_url: o.webhook_url, key_url: o.key_url, origins: o.origins,
+    await api('client_update', { id, name: o.name, merchant: o.merchant, webhook_url: o.webhook_url, key_url: o.key_url, origins: o.origins, terms_url: o.terms_url, privacy_url: o.privacy_url,
       status: fd.get('active') ? 'active' : 'disabled', ...(me.role === 'owner' ? { live_ok: !!fd.get('live_ok') } : {}) });
     toast('נשמר'); loaders.systems();
   });

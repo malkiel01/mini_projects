@@ -10,7 +10,7 @@
 
 declare(strict_types=1);
 
-const PAY_SCHEMA_VERSION = 5;
+const PAY_SCHEMA_VERSION = 6;
 
 function pay_data_dir(): string
 {
@@ -93,6 +93,7 @@ function pay_migrate(PDO $pdo): void
     if ($v < 3) pay_migrate_v3($pdo);
     if ($v < 4) pay_migrate_v4($pdo);
     if ($v < 5) pay_migrate_v5($pdo);
+    if ($v < 6) pay_migrate_v6($pdo);
     $pdo->exec('PRAGMA user_version = ' . PAY_SCHEMA_VERSION);
 }
 
@@ -651,5 +652,15 @@ function pay_migrate_v5(PDO $pdo): void
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
         );
+    SQL);
+}
+
+/** גרסה 6: פרטי המוכר ותנאי הרכישה — חובת גילוי בעסקה מרחוק (§14ג), תנאי לאישור "כסף אמיתי". */
+function pay_migrate_v6(PDO $pdo): void
+{
+    $pdo->exec(<<<SQL
+        ALTER TABLE merchant ADD COLUMN phone TEXT NOT NULL DEFAULT '';
+        ALTER TABLE client ADD COLUMN terms_url TEXT NOT NULL DEFAULT '';
+        ALTER TABLE client ADD COLUMN privacy_url TEXT NOT NULL DEFAULT '';
     SQL);
 }
