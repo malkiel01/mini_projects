@@ -711,7 +711,8 @@ function categoriesGroup() {
 
 function kidWeb() {
     const [finder, ...rest] = kidSites();
-    return [browsersGroup(), finder, categoriesGroup(), ...rest];
+    // הוספת אתר — ראשונה: זו הפעולה שבאים בשבילה (2026-10-25).
+    return [finder, browsersGroup(), categoriesGroup(), ...rest];
 }
 
 function kidSites() {
@@ -756,8 +757,8 @@ function kidSites() {
  */
 let SF = { q: '', res: null, busy: false };
 function siteFinder() {
-    const q = el('input', { type: 'search', value: SF.q, placeholder: 'שם של אתר, או כתובת', autocapitalize: 'off',
-        enterKeyHint: 'search', ariaLabel: 'שם של אתר או כתובת', onkeydown: e => { if (e.key === 'Enter') { e.preventDefault(); find(); } } });
+    const q = el('input', { type: 'search', value: SF.q, placeholder: 'כתובת אתר (wikipedia.org) או שם לחיפוש', autocapitalize: 'off',
+        inputMode: 'url', enterKeyHint: 'go', ariaLabel: 'שם של אתר או כתובת', onkeydown: e => { if (e.key === 'Enter') { e.preventDefault(); find(); } } });
     const find = async () => {
         SF.q = q.value.trim(); if (!SF.q || SF.busy) return;
         SF.busy = true; renderKid();
@@ -790,9 +791,11 @@ function siteFinder() {
             ]),
     ]);
     const res = SF.res;
-    return group('🔎 פתיחת אתר', 'מחפשים, רואים באיזו קטגוריה הוא — ופותחים רק אותו', [
+    // "הוספה" ולא "חיפוש" (בעל המערכת, 2026-10-25: "אין מקום להוסיף אתרים") — כתובת מוצגת מיד עם הקטגוריות
+    // וכפתור "✅ לפתוח"; שם — חיפוש.
+    return group('➕ הוספת אתר', `כותבים כתובת או שם — רואים באיזו קטגוריה האתר, ופותחים אותו ל${K.name}`, [
         el('div', { class: 'toolbar' }, [q,
-            el('button', { type: 'button', class: 'btn primary', text: SF.busy ? '…' : '🗼 חיפוש', disabled: SF.busy, onclick: find })]),
+            el('button', { type: 'button', class: 'btn primary', text: SF.busy ? '…' : '➕ הוספה', disabled: SF.busy, onclick: find })]),
         el('div', { class: 'row-btns' }, [
             el('button', { type: 'button', class: 'btn ghost sm', text: '🔎 חיפוש בגוגל', onclick: () => {
                 window.open('https://www.google.com/search?' + new URLSearchParams({ q: q.value.trim() }), '_blank', 'noopener');
