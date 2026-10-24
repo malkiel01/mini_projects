@@ -1,6 +1,6 @@
 /**
  * ייבוא Word (ליקוי ו' באפיון): מה שלא עבר בדיוק — בדוח שנפתח עם המסמך; מסמך שעבר כולו — הודעה קצרה בלבד.
- * אותו כפתור מייבא גם ODT (LibreOffice), HTML וטקסט — לפי התוכן.
+ * אותו כפתור מייבא גם ODT (LibreOffice), RTF, HTML וטקסט — לפי התוכן.
  */
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -69,6 +69,16 @@ export default async function (t) {
         img: !!document.querySelector('.wp-doc img[src]'), doc: location.hash.split('/').pop() }));
     odt.title = (await t.api(p, 'my_open', { doc: odt.doc })).title;
     t.ok('ODT: נפתח עם הכותרת, הטבלה והתמונה, והשם בלי הסיומת', odt.h1 === 'כותרת ראשית' && odt.td === 3 && odt.img && odt.title === 'מליברה', JSON.stringify(odt));
+    await p.click('button[aria-label="חזרה לרשימה"]');
+    await p.waitForSelector('h1:text-is("עורך התמלילים")');
+    // RTF מ-LibreOffice (tests/fixtures): כותרת, ומעקב השינויים — מי הוסיף ומי מחק
+    await upload(readFileSync(new URL('../../fixtures/libreoffice-track.rtf', import.meta.url)), 'שינויים.rtf', 'application/rtf');
+    await t.settle(p);
+    const rtf = await p.evaluate(() => ({ h1: document.querySelector('.wp-doc h1')?.textContent, ins: document.querySelectorAll('.wp-doc ins.wp-ins').length,
+        del: document.querySelectorAll('.wp-doc del.wp-del').length, who: document.querySelector('.wp-doc ins.wp-ins')?.dataset.author, doc: location.hash.split('/').pop() }));
+    rtf.title = (await t.api(p, 'my_open', { doc: rtf.doc })).title;
+    t.ok('RTF: נפתח עם הכותרת והשינויים במעקב (עם השם), והשם בלי הסיומת', rtf.h1 === 'מעקב שינויים' && rtf.ins >= 12 && rtf.del >= 12
+        && ['יוסי כהן', 'דנה לוי', 'רונית'].includes(rtf.who) && rtf.title === 'שינויים', JSON.stringify(rtf));
     await p.click('button[aria-label="חזרה לרשימה"]');
     await p.waitForSelector('h1:text-is("עורך התמלילים")');
     await upload(Buffer.from('<html><body><h2>מדף אינטרנט</h2><p>פסקה <i>נטויה</i></p></body></html>'), 'דף.html', 'text/html');
