@@ -4,7 +4,7 @@
  *  1. שרת-לשרת, חתום (platform/docs/embed.md, פרק 3): client_register, embed_session, doc_*.
  *  2. ה-iframe המוטמע, בסשן Bearer (פרק 4): embed_open/load/save/upload/lock/page. וגם media (כתובת חתומה).
  *  3. האפליקציה עצמה, למשתמשי האפליקציה (השער / כניסה עם הכלים הדיגיטליים): me, my_*, admin_*.
- *  4. זר עם קישור עריכה (lib/links.php): guest_open/lock/save/upload — מסמך אחד, לפי הטוקן שבקישור.
+ *  4. זר עם קישור עריכה (lib/links.php): guest_open/lock/save/upload/collab — מסמך אחד, לפי הטוקן שבקישור.
  * קבוצות 1–2 ו-4 ב-"public" של app.json (פרק 7) — ההגנה שלהן היא החתימה, הטוקן והסשן; קבוצה 3 עוברת בשער.
  */
 
@@ -19,6 +19,7 @@ require_once __DIR__ . '/lib/users.php';
 require_once __DIR__ . '/lib/share.php';
 require_once __DIR__ . '/lib/links.php';
 require_once __DIR__ . '/lib/collab.php';
+require_once __DIR__ . '/lib/folders.php';
 
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: no-referrer');
@@ -256,6 +257,7 @@ try {
         case 'guest_lock':
         case 'guest_save':
         case 'guest_upload':
+        case 'guest_collab':
             guest_action($action, $in);
 
         // ================= 3. האפליקציה =================
@@ -285,6 +287,7 @@ function embed_state(array $s, array $row, string $holder): array
     if ($can === 'edit') {
         $r = lock_take($row['id'], $s['user_id'], $s['user_name'], hash('sha256', $holder));
         if (!$r['ok']) { $can = 'view'; $lock = ['by' => $r['by'], 'since' => $r['since']]; }
+        else $row = doc_find($row['id'], $row['space']);   // אחרי הנעילה — כולל שליחה משותפת שנכנסה לפניה
     }
     return doc_public($row) + ['can' => $can, 'lock' => $lock, 'requested' => $s['can']];
 }
@@ -320,17 +323,34 @@ function guest_action(string $action, array $in): never
     $holder = 'guest:' . $in['gid'];
     switch ($action) {
         case 'guest_open':
+            if (!empty($in['collab'])) {
+                // עריכה משותפת (lib/collab.php) — כמו באפליקציה: בלי נעילה, רק נעילה ישנה של מישהו אחר עוצרת
+                $l = collab_blocked($row['id'], $uid);
+                for ($i = 0; ($c = collab_state($row)) && (int)$c['doc_version'] !== (int)$row['version'] && $i < 5; $i++) $row = guest_doc($k);
+                out(doc_public($row) + ['can' => $l ? 'view' : 'edit', 'lock' => $l, 'user' => ['id' => $uid, 'name' => $uname],
+                    'collab' => ['epoch' => $c['epoch'], 'v' => (int)$c['v']]]);
+            }
+            // (בלי collab — לשונית ישנה של guest.js: נעילה)
         case 'guest_lock':
             $l = lock_op((string)($in['op'] ?? 'beat'), 'edit', $row['id'], $uid, $uname, $holder);
             if ($action === 'guest_lock') out($l);
+            // המסמך — אחרי הנעילה: שליחה של עורך משותף שנכנסה בין הקריאה לנעילה כבר בפנים, ומעכשיו הן חסומות (collab_blocked)
+            if ($l['ok']) $row = guest_doc($k);
             out(doc_public($row) + ['can' => $l['can'], 'lock' => $l['lock'], 'user' => ['id' => $uid, 'name' => $uname]]);
         case 'guest_save':
             require_edit('edit', $row['id'], $uid, $uname, $holder);
             $row = doc_save($row, $in['json'] ?? null, null, $uid, $uname, $in['base_version'] ?? null);
             out(['doc' => $row['id'], 'version' => (int)$row['version'], 'updated_at' => (int)$row['updated_at']]);
         case 'guest_upload':
-            require_edit('edit', $row['id'], $uid, $uname, $holder);
+            if (empty($in['collab'])) require_edit('edit', $row['id'], $uid, $uname, $holder);
+            elseif ($l = collab_blocked($row['id'], $uid)) throw new ApiError('המסמך פתוח לעריכה אצל ' . $l['by'], 'locked', 423);
             out(media_store($row['id'], uploaded_bytes($in)));
+        case 'guest_collab':
+            $op = (string)($in['op'] ?? '');
+            if ($op === 'push') out(collab_push($row, 'edit', $in, $uid, $uname));
+            if ($op === 'pull') out(collab_pull($row, 'edit', $in, $uid, $uname));
+            if ($op === 'leave') { collab_leave($row['id'], $in['client'] ?? ''); out(['ok' => true]); }
+            throw new ApiError('פעולה לא תקינה', 'bad_op');
     }
     throw new ApiError('פעולה לא מוכרת', 'unknown_action', 404);
 }
@@ -354,13 +374,16 @@ function app_action(string $action, array $in): never
     switch ($action) {
         case 'my_docs':
             trash_purge($space);
-            $st = db()->prepare('SELECT id, title, version, updated_at, updated_by FROM docs WHERE space = ? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 500');
+            $st = db()->prepare('SELECT id, title, version, updated_at, updated_by, folder FROM docs WHERE space = ? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 2000');
             $st->execute([$space]);
-            // ושותפו איתי (שלב 5) — ברשימה נפרדת, עם התפקיד והבעלים
+            // ושותפו איתי (שלב 5) — ברשימה נפרדת, עם התפקיד והבעלים; התיקיות והמועדפים — הרשימה בונה מהם את התצוגה
             out(['docs' => array_map(fn($r) => ['doc' => $r['id'], 'title' => $r['title'], 'version' => (int)$r['version'],
-                'updated_at' => (int)$r['updated_at'], 'updated_by' => $r['updated_by']], $st->fetchAll()), 'shared' => shared_with($acc)]);
+                'updated_at' => (int)$r['updated_at'], 'updated_by' => $r['updated_by'], 'folder' => $r['folder']], $st->fetchAll()),
+                'shared' => shared_with($acc), 'folders' => folders_of($space), 'favs' => favs_of($acc)]);
         case 'my_new':
+            $folder = folder_get($space, $in['folder'] ?? null);   // בתיקייה שבה הרשימה פתוחה
             $id = doc_new($space, (string)($in['title'] ?? ''), null, $in['page'] ?? null, $uid, $uname);
+            if ($folder) doc_move(doc_find($id, $space), $folder['id']);
             if (!empty($_FILES['file']['tmp_name']) || is_string($in['import'] ?? null)) {
                 $bytes = !empty($_FILES['file']['tmp_name']) ? uploaded_bytes($in) : base64_decode((string)$in['import']);
                 // Word, ODT, HTML או טקסט — לפי התוכן (import_file)
@@ -381,13 +404,15 @@ function app_action(string $action, array $in): never
                 $l = collab_blocked($row['id'], $uid);
                 $can = $l || $role === 'view' ? 'view' : ($role === 'comment' ? 'comment' : 'edit');
                 if ($action === 'my_lock') out(['ok' => !$l, 'can' => $can, 'lock' => $l]);
-                $c = collab_state($row);
+                // התוכן והגרסה — מאותו רגע: שליחה של מישהו אחר בין קריאת המסמך לקריאת המצב — קוראים שוב
+                for ($i = 0; ($c = collab_state($row)) && (int)$c['doc_version'] !== (int)$row['version'] && $i < 5; $i++) $row = doc_access($row['id'], $acc)[0];
                 out(doc_public($row) + ['can' => $can, 'lock' => $l, 'role' => $role, 'collab' => ['epoch' => $c['epoch'], 'v' => (int)$c['v']],
                     'shares' => $role === 'owner' ? count(shares_of($row['id'])) : null]);
             }
             $l = lock_op($op, $role === 'view' ? 'view' : 'edit', $row['id'], $uid, $uname, $holder);
             if ($l['can'] === 'edit' && $role === 'comment') $l['can'] = 'comment';
             if ($action === 'my_lock') out($l);
+            if ($l['ok']) $row = doc_access($row['id'], $acc)[0];   // אחרי הנעילה — כולל שליחה משותפת שנכנסה לפניה
             out(doc_public($row) + ['can' => $l['can'], 'lock' => $l['lock'], 'role' => $role,
                 'shares' => $role === 'owner' ? count(shares_of($row['id'])) : null]);
         case 'my_save':
@@ -460,6 +485,22 @@ function app_action(string $action, array $in): never
             // PDF בתצוגת השינויים שבעורך: track=final|original, hide=מחברים (JSON) — כמו שההדפסה מהעורך נראית
             $hide = json_decode((string)($_GET['hide'] ?? '[]'), true);
             do_export($row, $fmt === 'pdf' ? 'pdf' : 'docx', null, true, ['view' => (string)($_GET['track'] ?? 'all'), 'hide' => is_array($hide) ? array_slice($hide, 0, 50) : []]);
+        // תיקיות (lib/folders.php): op = create {name, parent} | rename {id, name} | move {id, parent} | delete {id}
+        case 'my_folder':
+            $op = (string)($in['op'] ?? '');
+            if ($op === 'create') out(['id' => folder_create($space, $in['name'] ?? '', $in['parent'] ?? null), 'folders' => folders_of($space)]);
+            if ($op === 'rename') folder_rename($space, $in['id'] ?? '', $in['name'] ?? '');
+            elseif ($op === 'move') folder_move($space, $in['id'] ?? '', $in['parent'] ?? null);
+            elseif ($op === 'delete') folder_delete($space, $in['id'] ?? '');
+            else throw new ApiError('פעולה לא תקינה', 'bad_op');
+            out(['folders' => folders_of($space)]);
+        case 'my_move':
+            doc_move(doc_access($in['doc'] ?? '', $acc, 'owner')[0], $in['folder'] ?? null);
+            out(['ok' => true]);
+        case 'my_fav':
+            [$row] = doc_access($in['doc'] ?? '', $acc);
+            fav_set($acc, $row['id'], !empty($in['on']));
+            out(['favs' => favs_of($acc)]);
         // עריכה משותפת (lib/collab.php): op = push (מעיר ומעלה) | pull | leave
         case 'my_collab':
             $op = (string)($in['op'] ?? '');

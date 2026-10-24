@@ -278,3 +278,14 @@ body.guest .embed-bar .chip { max-inline-size: 40vw; overflow: hidden; text-over
 .peers:empty { display: none; }
 .peer { inline-size: 26px; block-size: 26px; border-radius: 50%; display: inline-grid; place-items: center; font-size: .8rem; font-weight: 700;
     color: #fff; background: var(--accent, #2d4a8a); border: 2px solid var(--surface); }
+
+/* תיקיות ומועדפים (שלב 5): פירורי לחם, כוכב ו-⋯ בכל שורה, שדה בחלון */
+.crumbs { font-size: .85rem; color: var(--muted); margin: 0 0 var(--s2); }
+.crumbs:empty { display: none; }
+.crumbs a { color: inherit; }
+.list .card .star { flex: none; background: none; border: 0; font-size: 1.15rem; line-height: 1; padding: var(--s1); color: var(--muted); cursor: pointer; min-inline-size: 36px; min-block-size: 36px; }
+.list .card .star[aria-pressed="true"] { color: var(--star); }
+.list .card .more { flex: none; }
+.list .card.folder .doc-ic { filter: saturate(.8); }
+label.field { display: grid; gap: var(--s1); }
+label.field > span { font-size: .85rem; color: var(--muted); }

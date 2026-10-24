@@ -24,6 +24,7 @@ import { createComments } from './comments.js';
 import { TrackChanges, changes, resolveChanges, goToChange, setTracking, VIEWS as TRACK_VIEWS, authors as changeAuthors, authorColor } from './track.js';
 import { TabStops, tabsOf, ALIGNS as TAB_ALIGNS, LEADERS as TAB_LEADERS } from './tabs.js';
 import { createRuler } from './ruler.js';
+import { Peers } from './collab.js';
 
 const MM = 96 / 25.4;
 const PT = 4 / 3;
@@ -276,7 +277,7 @@ export function createWordEditor(root, opts) {
         extensions: extensions([Pages.configure({ geometry, onLayout: drawPages }), FindReplace, ParagraphMarks, Endnotes, TabStops,
             TrackChanges.configure({ author: () => opts.user?.name || '' }),
             // עריכה משותפת (collab.js): הצעדים שעוד לא אושרו בשרת, ומספר הגרסה — מכאן נשלחים ומתקבלים
-            ...(opts.collab ? [Extension.create({ name: 'wpCollab', addProseMirrorPlugins: () => [collab({ version: opts.collab.version, clientID: opts.collab.clientID })] })] : [])]),
+            ...(opts.collab ? [Extension.create({ name: 'wpCollab', addProseMirrorPlugins: () => [collab({ version: opts.collab.version, clientID: opts.collab.clientID })] }), Peers] : [])]),
         content: initial,
         editable: opts.editable !== false,
         editorProps: {

@@ -1,7 +1,7 @@
 /**
  * קישור עריכה לזר (שלב 5, החלטה 4): יוסי (לא מנהל) מבקש קישור בחלון השיתוף — "ממתין לאישור"; דנה (מנהלת העורך)
  * מאשרת במסך הניהול; הקישור מופיע אצל יוסי. זר בלי חשבון (בלי משתמש מהשער) פותח אותו, מקליד שם, עורך ושומר —
- * יוסי רואה את השינוי ואת השם. ביטול הקישור — הזר כבר לא נכנס.
+ * יוסי רואה את השינוי ואת השם; כשיוסי נכנס — הם עורכים יחד (עריכה משותפת). ביטול הקישור — הזר כבר לא נכנס.
  */
 const P = text => ({ type: 'paragraph', content: [{ type: 'text', text }] });
 
@@ -65,12 +65,28 @@ export default async function (t) {
         title: document.querySelector('.embed-bar .titles').textContent }));
     t.ok('הזר: שם → המסמך נפתח לעריכה, "רות (אורח)" בפס', gs.editable && gs.who === 'רות (אורח)' && gs.title === 'מסמך לזר', JSON.stringify(gs));
     await g.evaluate(() => document.querySelector('.wp-doc').editor.chain().focus('end').run());
+    await t.settle(g);   // כמו משתמש: מקלידים אחרי שהעורך נטען (הקלדה בעשרות המ"ש הראשונים — ראו README, "עריכה משותפת")
     await g.keyboard.type(' ורות מוסיפה');
     await g.keyboard.press('Control+s');
     await g.waitForTimeout(1500);
     const s = await t.api(yossi, 'my_open', { doc });
     t.ok('יוסי רואה את מה שהזר הקליד, ואת השם שלו', JSON.stringify(s.json).includes('ורות מוסיפה') && s.updated_by === 'רות (אורח)' && s.can === 'view'
         && s.lock?.by === 'רות (אורח)', JSON.stringify({ by: s.updated_by, can: s.can, lock: s.lock }));
+
+    // עריכה משותפת: יוסי פותח את המסמך באפליקציה בזמן שהזר בפנים — שניהם עורכים, כל אחד רואה את השני
+    await t.openDoc(yossi, doc);
+    t.ok('יוסי והזר יחד: יוסי פותח לעריכה (בלי "פתוח אצל…")', await yossi.evaluate(() => document.querySelector('.wp-doc').editor.isEditable)
+        && await yossi.locator('.banner:not([hidden])').count() === 0);
+    await yossi.evaluate(() => document.querySelector('.wp-doc').editor.chain().focus('end').insertContent(' ויוסי עונה').run());
+    const gText = () => g.evaluate(() => document.querySelector('.wp-doc').editor.state.doc.textContent);
+    let gt = '';
+    for (let i = 0; i < 40 && !gt.includes('ויוסי עונה'); i++) { await g.waitForTimeout(250); gt = await gText(); }
+    t.ok('…מה שיוסי כתב מגיע לזר תוך שניות', gt.includes('ורות מוסיפה') && gt.includes('ויוסי עונה'), gt);
+    let peer = '';
+    for (let i = 0; i < 20 && !peer; i++) { await g.waitForTimeout(250); peer = await g.locator('.peers .peer').first().getAttribute('title').catch(() => ''); }
+    t.ok('…והזר רואה שיוסי במסמך', peer === 'יוסי כהן', peer);
+    await yossi.click('button[aria-label="חזרה לרשימה"]');
+    await yossi.waitForSelector('.list');
 
     // ביטול — הזר כבר לא נכנס
     await t.api(yossi, 'my_link', { doc, op: 'revoke' });

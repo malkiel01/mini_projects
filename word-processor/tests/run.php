@@ -425,6 +425,17 @@ $backL = import_docx(export_docx($jl, page_normalize([])), $docL)['json'];
 $fl = json_encode($backL, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 check('Word → חזרה: שני הקישורים, הסימניה, והמודגש — בלי צבע וקו תחתון נוספים', str_contains($fl, '"href":"https://example.com/a?b=1&c=2"') && str_contains($fl, '"href":"#פרק_א"')
     && str_contains($fl, '{"type":"bookmark","attrs":{"name":"פרק_א"}}') && str_contains($fl, '"type":"bold"') && !str_contains($fl, '0563c1') && !str_contains($fl, 'underline'), $fl);
+// רשימת תבליטים ומיד אחריה רשימה ממוספרת (ובתוך פריט — תת-רשימה ממוספרת ואחריה תבליטים) — כל אחת רשימה משלה
+$li = fn(string $t, array $sub = []) => ['type' => 'listItem', 'content' => array_merge([para([text_node($t)])], $sub)];
+$jm = ['type' => 'doc', 'content' => [
+    ['type' => 'bulletList', 'content' => [$li('תבליט א'), $li('תבליט ב', [['type' => 'orderedList', 'attrs' => ['start' => 1], 'content' => [$li('פנימי 1')]], ['type' => 'bulletList', 'content' => [$li('פנימי •')]]])]],
+    ['type' => 'orderedList', 'attrs' => ['start' => 1], 'content' => [$li('מספר 1'), $li('מספר 2')]],
+]];
+$backM = import_docx(export_docx($jm, page_normalize([])), $docL)['json']['content'];
+$inner = array_map(fn($b) => $b['type'], array_slice($backM[0]['content'][1]['content'] ?? [], 1));
+check('Word → חזרה: תבליטים ואחריהם רשימה ממוספרת — שתי רשימות (לא מתאחדות); גם בתוך פריט', array_column($backM, 'type') === ['bulletList', 'orderedList']
+    && count($backM[0]['content']) === 2 && count($backM[1]['content']) === 2 && $inner === ['orderedList', 'bulletList'],
+    json_encode([array_column($backM, 'type'), $inner], JSON_UNESCAPED_UNICODE));
 $fieldDocx = $mkDocx(['word/document.xml' => '<w:document ' . $WN . '><w:body><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> HYPERLINK "https://gov.il" </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>'
     . $run('אתר הממשלה') . '<w:r><w:fldChar w:fldCharType="end"/></w:r>' . $run(' סוף') . '<w:bookmarkStart w:id="0" w:name="_GoBack"/><w:bookmarkEnd w:id="0"/></w:p></w:body></w:document>']);
 $fi = import_docx($fieldDocx, $docL);
@@ -1528,12 +1539,12 @@ $r1 = collab_push($coRow, 'owner', ['epoch' => $c0['epoch'], 'v' => 0, 'client' 
 $r2 = collab_push($coRow, 'edit', ['epoch' => $c0['epoch'], 'v' => 0, 'client' => 'clientb1', 'steps' => [$ins(1, 'ז')], 'json' => $jsonWith('זאבג')], 'a:602', 'יוסי');
 check('שליחה: מעודכן — מתקבל (v=1) והמסמך נשמר; מאחור — נדחה עם הגרסה הנוכחית', $r1['ok'] && $r1['v'] === 1 && !$r2['ok'] && $r2['v'] === 1
     && doc_json(doc_find($coDoc, 'a:601'))['content'][0]['content'][0]['text'] === 'אבגד', json_encode([$r1, $r2]));
-$p = collab_pull(doc_find($coDoc, 'a:601'), 'edit', ['epoch' => $c0['epoch'], 'since' => 0, 'client' => 'clientb1', 'sel' => [2, 2]], 'a:602', 'יוסי');
+$p = collab_pull(doc_find($coDoc, 'a:601'), 'edit', ['epoch' => $c0['epoch'], 'since' => 0, 'client' => 'clientb1', 'sel' => [2, 2, 0]], 'a:602', 'יוסי');
 check('משיכה: הצעד של דנה, עם הלקוח שלה; ודנה לא "אחרים" של עצמה', $p['v'] === 1 && count($p['steps']) === 1 && $p['steps'][0][1] === 'clienta1' && $p['steps'][0][0]['slice']['content'][0]['text'] === 'ד', json_encode($p, JSON_UNESCAPED_UNICODE));
 $r3 = collab_push(doc_find($coDoc, 'a:601'), 'edit', ['epoch' => $c0['epoch'], 'v' => 1, 'client' => 'clientb1', 'steps' => [$ins(1, 'ז')], 'json' => $jsonWith('זאבגד')], 'a:602', 'יוסי');
 $pa = collab_pull(doc_find($coDoc, 'a:601'), 'owner', ['epoch' => $c0['epoch'], 'since' => 1, 'client' => 'clienta1'], 'a:601', 'דנה');
 check('אחרי משיכה — יוסי שולח שוב ומתקבל; דנה מושכת את שלו, ורואה שיוסי במסמך', $r3['ok'] && $r3['v'] === 2 && count($pa['steps']) === 1
-    && $pa['others'][0]['name'] === 'יוסי' && $pa['others'][0]['sel'] === [2, 2], json_encode($pa, JSON_UNESCAPED_UNICODE));
+    && $pa['others'][0]['name'] === 'יוסי' && $pa['others'][0]['sel'] === [2, 2, 0], json_encode($pa, JSON_UNESCAPED_UNICODE));
 $vs = versions_list(doc_find($coDoc, 'a:601'));
 check('גרסאות: השמירות של שניהם — גרסה אחת עם שני השמות', $vs[0]['by'] === 'דנה, יוסי', json_encode(array_column($vs, 'by'), JSON_UNESCAPED_UNICODE));
 check('נעילה ישנה (הטמעה / קישור לזר) לא נכנסת כשעורכים במסמך', lock_take($coDoc, 'g:zzz', 'אורח', 'h')['ok'] === false);
@@ -1551,6 +1562,34 @@ check('שמירה מבחוץ — עידן חדש: משיכה מחזירה reload
     && (int)db()->query("SELECT COUNT(*) FROM collab_steps WHERE doc = " . db()->quote($coDoc))->fetchColumn() === 0);
 check('שליחה בעידן ישן — reload', (collab_push(doc_find($coDoc, 'a:601'), 'owner', ['epoch' => $c0['epoch'], 'v' => 3, 'client' => 'clienta1', 'steps' => [$ins(1, 'x')], 'json' => $jsonWith('x')], 'a:601', 'דנה')['reload'] ?? false) === true);
 check('בקשה פגומה — שגיאה', throws(fn() => collab_push(doc_find($coDoc, 'a:601'), 'owner', ['epoch' => $c1['epoch'], 'v' => 0, 'client' => 'x', 'steps' => [], 'json' => []], 'a:601', 'דנה'), 'bad_request'));
+
+section('תיקיות ומועדפים (שלב 5)');
+require_once __DIR__ . '/../lib/folders.php';
+$fs = 'a:701';
+$fA = folder_create($fs, ' פרויקטים ', null);
+$fB = folder_create($fs, 'לקוחות', $fA);
+$fC = folder_create($fs, 'דנה', $fB);
+$names = array_column(folders_of($fs), 'name', 'id');
+check('תיקיות בתוך תיקיות: שלוש רמות, השם מנוקה', $names[$fA] === 'פרויקטים' && folder_ancestors($fs, $fC) === [$fC, $fB, $fA]);
+check('תיקייה לתוך עצמה / לתוך תיקייה שבתוכה — שגיאה', throws(fn() => folder_move($fs, $fA, $fC), 'cycle') && throws(fn() => folder_move($fs, $fA, $fA), 'cycle'));
+check('תיקייה של חשבון אחר — "לא נמצאה"; שם ריק — שגיאה', throws(fn() => folder_get('a:702', $fA), 'not_found') && throws(fn() => folder_create($fs, '  ', null), 'bad_name'));
+$fd = doc_new($fs, 'בתיקייה', null, null, 'a:701', 'דנה');
+doc_move(doc_find($fd, $fs), $fC);
+$fold = fn() => db()->query('SELECT folder FROM docs WHERE id = ' . db()->quote($fd))->fetchColumn();
+check('מסמך לתיקייה; לתיקייה של חשבון אחר — שגיאה', $fold() === $fC && throws(fn() => doc_move(doc_find($fd, $fs), folder_create('a:702', 'זרה', null)), 'not_found'));
+folder_delete($fs, $fC);
+check('מחיקת תיקייה: המסמך שבתוכה עובר לתיקייה שמעליה, לא נמחק', $fold() === $fB && doc_find($fd, $fs)['title'] === 'בתיקייה');
+folder_move($fs, $fB, null);
+folder_delete($fs, $fA);
+check('העברת תיקייה לראש, ומחיקת התיקייה שהייתה מעליה — התת-תיקייה נשארת', array_column(folders_of($fs), 'name') === ['לקוחות']);
+$deep = null; for ($i = 0; $i < FOLDER_DEPTH; $i++) $deep = folder_create($fs, "רמה $i", $deep);
+check('עד ' . FOLDER_DEPTH . ' רמות', throws(fn() => folder_create($fs, 'עמוק מדי', $deep), 'too_deep'));
+$favAcc = ['id' => 701];
+fav_set($favAcc, $fd, true); fav_set($favAcc, $fd, true);
+check('מועדפים: כוכב (פעמיים — פעם אחת), והסרה', favs_of($favAcc) === [$fd] && (fav_set($favAcc, $fd, false) || true) && favs_of($favAcc) === []);
+fav_set($favAcc, $fd, true);
+doc_delete(doc_find($fd, $fs));
+check('מחיקה לצמיתות — גם מהמועדפים', favs_of($favAcc) === []);
 
 section('סל המחזור (ליקוי ה\')');
 $sp = 'a:trash-test';

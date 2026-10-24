@@ -3,9 +3,11 @@
  * הזר מקליד שם (נשמר במכשיר), ומקבל מזהה אקראי במכשיר (gid) — הנעילה, ההערות ומעקב השינויים לפיהם.
  * הטוקן אחרי # — לא נשלח לשרת בטעינת הדף ולא ב-Referer; רק בגוף הבקשות ל-API. כל בקשה נבדקת מחדש בשרת:
  * קישור שבוטל או פג מפסיק לעבוד מיד.
+ * עריכה משותפת (collab.js) — כמו באפליקציה: הזר עורך יחד עם הבעלים ועם מי ששותף, בלי נעילה, ורואה מי במסמך ואיפה.
  */
 import { createWordEditor, h, toast } from './editor.js';
-import { createSaver, findDraft, STATE_TEXT } from './saver.js';
+import { findDraft, STATE_TEXT } from './saver.js';
+import { createCollabSaver, setPeers } from './collab.js';
 
 const app = document.getElementById('app');
 const k = new URLSearchParams(location.hash.slice(1)).get('k') || '';
@@ -17,6 +19,8 @@ let gid = store.get('id');
 if (!/^[a-z0-9]{8,40}$/.test(gid)) { gid = Array.from(crypto.getRandomValues(new Uint8Array(12)), b => (b % 36).toString(36)).join(''); store.set('id', gid); }
 let name = store.get('name');
 let can = 'view';
+let blocked = false;   // קריאה בלבד בגלל נעילה ישנה של מישהו אחר — עד שתתפנה
+const clientID = Array.from(crypto.getRandomValues(new Uint8Array(10)), b => (b % 36).toString(36)).join('');
 let ed = null;
 let saver = null;
 const ui = {};
@@ -24,7 +28,7 @@ const ui = {};
 async function api(action, body = {}, form = null) {
     let res;
     try {
-        if (form) { form.append('k', k); form.append('gid', gid); form.append('name', name); }
+        if (form) { form.append('k', k); form.append('gid', gid); form.append('name', name); form.append('collab', '1'); }
         res = await fetch('api.php?action=' + action, {
             method: 'POST',
             headers: form ? { 'X-WP': '1' } : { 'Content-Type': 'application/json', 'X-WP': '1' },
@@ -50,6 +54,7 @@ function showBanner(text, label, onClick) {
 }
 
 function readOnly(text) {
+    blocked = true;
     can = 'view';
     saver?.stop();
     ed?.setEditable(false);
@@ -84,7 +89,7 @@ function askName(error = '') {
     let d;
     for (;;) {
         try {
-            d = await api('guest_open');
+            d = await api('guest_open', { collab: 1 });
             break;
         } catch (e) {
             if (e.code === 'bad_name') { await askName(e.message); continue; }
@@ -95,33 +100,43 @@ function askName(error = '') {
     app.textContent = '';
     ui.state = h('span.save-state', { role: 'status' });
     ui.pages = h('span.save-state.pages-count');
-    ui.bar = h('div.embed-bar', h('div.titles.one', d.title || 'מסמך'), ui.pages, ui.state,
+    ui.peers = h('span.peers', { 'aria-live': 'polite' });
+    ui.bar = h('div.embed-bar', h('div.titles.one', d.title || 'מסמך'), ui.peers, ui.pages, ui.state,
         h('span.chip', { title: 'עריכה בקישור, בלי חשבון' }, d.user.name));
     ui.banner = h('div.banner', { hidden: true });
     const root = h('div');
     app.append(ui.bar, ui.banner, root);
     ed = createWordEditor(root, {
         json: d.json, page: d.page, editable: can === 'edit', user: d.user,
+        collab: { version: d.collab.v, clientID },
         upload: file => { const fd = new FormData(); fd.append('file', file); return api('guest_upload', {}, fd); },
         onUpdate: () => { if (can === 'edit') saver?.changed(); },
         save: async () => { const r = await saver?.flush(); if (r?.ok) toast('נשמר'); },
     });
     ed.statusTarget(ui.pages);
     const draftKey = `guest:${gid}:${d.doc}`;
-    saver = createSaver({
-        version: d.version,
-        draftKey,
-        snapshot: () => ed.getJSON(),
-        send: (json, base) => api('guest_save', { json, base_version: base }),
+    saver = createCollabSaver({
+        editor: ed.editor, version: d.version, epoch: d.collab.epoch, clientID, draftKey,
+        send: (op, body) => api('guest_collab', { op, ...body }),
         onState: (s, info) => {
             ui.state.textContent = can === 'edit' || s !== 'saved' ? STATE_TEXT[s] : 'קריאה בלבד';
             ui.state.classList.toggle('bad', ['offline', 'conflict', 'error'].includes(s));
-            if (s === 'conflict') showBanner('המסמך השתנה במקום אחר. השינויים שלך שמורים במכשיר.', 'טעינה מחדש', () => location.reload());
-            else if (s === 'locked') readOnly((info.message || 'המסמך פתוח לעריכה אצל מישהו אחר') + ' — קריאה בלבד.');
+            if (s === 'locked') readOnly((info.message || 'המסמך פתוח לעריכה אצל מישהו אחר') + ' — קריאה בלבד.');
             else if (s === 'offline') showBanner('אין חיבור לשרת. ממשיכים לעבוד — הכול נשמר במכשיר ויישלח כשהחיבור יחזור.');
             else if (s === 'error' && info.code !== 'link_invalid') toast(info.message || 'השמירה נכשלה', true);
             else if (s === 'saved' && !ui.banner.hidden && can === 'edit') ui.banner.hidden = true;
         },
+        onPeers: (others, lock) => {
+            const names = [...new Set(others.filter(o => !o.me).map(o => o.name))];
+            ui.peers.textContent = '';
+            ui.peers.title = names.length ? 'גם במסמך עכשיו: ' + names.join(', ') : '';
+            for (const n of names) ui.peers.append(h('span.peer', { title: n }, n.trim().slice(0, 1) || '?'));
+            setPeers(ed.editor, others.filter(o => !o.me && o.role !== 'view'));
+            if (lock && can === 'edit') readOnly(`המסמך פתוח לעריכה אצל ${lock.by} — קריאה בלבד.`);
+            else if (!lock && blocked) showBanner('המסמך התפנה לעריכה.', 'טעינה מחדש', () => location.reload());
+        },
+        // שמירה מבחוץ / שחזור גרסה — טוענים מחדש (מה שלא נשלח — טיוטה במכשיר, ומוצע לשחזור)
+        onReload: () => { saver.flushDraft().finally(() => location.reload()); },
     });
     ui.state.textContent = can === 'edit' ? STATE_TEXT.saved : 'קריאה בלבד';
     if (d.lock) readOnly(`המסמך פתוח לעריכה אצל ${d.lock.by} — קריאה בלבד. נסו שוב כשיתפנה.`);
@@ -134,19 +149,6 @@ function askName(error = '') {
         });
     });
 
-    // דופק כל 30 שניות: מחזיק את הנעילה, ובודק שהקישור עדיין בתוקף
-    setInterval(async () => {
-        try {
-            const l = await api('guest_lock', { op: 'beat' });
-            if (l.ok && can !== 'edit' && !ui.banner.hidden) showBanner('המסמך התפנה לעריכה.', 'טעינה מחדש', () => location.reload());
-            else if (!l.ok && can === 'edit') readOnly(`המסמך פתוח לעריכה אצל ${l.lock?.by || 'מישהו אחר'} — קריאה בלבד.`);
-        } catch { /* רשת — בדופק הבא; קישור שבוטל — api() כבר עבר לקריאה בלבד */ }
-    }, 30000);
-    window.addEventListener('pagehide', () => {
-        if (saver?.dirty) saver.flush();   // ואם לא יספיק — הטיוטה במכשיר
-        if (can === 'edit') {
-            fetch('api.php?action=guest_lock', { method: 'POST', keepalive: true, credentials: 'omit',
-                headers: { 'Content-Type': 'application/json', 'X-WP': '1' }, body: JSON.stringify({ op: 'release', k, gid, name }) }).catch(() => {});
-        }
-    });
+    // יציאה: מה שלא נשלח — לשרת אם אפשר, ובכל מקרה טיוטה במכשיר; ויציאה מהנוכחות
+    window.addEventListener('pagehide', () => { if (saver?.dirty) saver.flush(); saver?.destroy(); });
 })();

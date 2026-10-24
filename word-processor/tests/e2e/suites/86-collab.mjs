@@ -49,6 +49,17 @@ export default async function (t) {
     t.ok('גם בשרת — המסמך עם שני השינויים', srv.json.content[0].content.map(n => n.text).join('') === 'פסקה ראשונה +דנה עוד'
         && srv.json.content[1].content.map(n => n.text).join('') === 'פסקה שנייה +יוסי ועוד', JSON.stringify(srv.json.content));
     const peers = await dana.locator('.peers .peer').getAttribute('title').catch(() => '');
+    // הסמן של יוסי אצל דנה: בפסקה השנייה, עם השם
+    let caret = null;
+    for (let i = 0; i < 20 && caret?.para !== 'פסקה שנייה +יוסי ועוד'; i++) {
+        caret = await dana.evaluate(() => {
+            const c = document.querySelector('.wp-doc .wp-peer-caret');
+            const e = document.querySelector('.wp-doc').editor;
+            return c && { name: c.textContent, para: e.state.doc.resolve(e.view.posAtDOM(c, 0)).parent.textContent };
+        });
+        if (caret?.para !== 'פסקה שנייה +יוסי ועוד') await dana.waitForTimeout(250);
+    }
+    t.ok('הסמן של יוסי בדף של דנה — בפסקה שלו, עם השם', caret?.name === 'יוסי כהן' && caret.para === 'פסקה שנייה +יוסי ועוד', JSON.stringify(caret));
     t.ok('דנה רואה שיוסי במסמך', peers === 'יוסי כהן', peers);
 
     // ביטול — רק מה שאני הקלדתי
