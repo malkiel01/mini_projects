@@ -94,9 +94,9 @@ async function main() {
 
   await openEd(page);
   await page.waitForFunction(() => window.__rs?.doc);
-  const info = await page.evaluate(() => ({
+  const info = await page.evaluate(async () => ({
     name: __rs.renderer.name, w: __rs.doc.width, h: __rs.doc.height, title: document.querySelector('#title').textContent,
-    px: Array.from(__rs.renderer.readPixels(__rs.doc, 599, 399, 1, 1)), msg: document.querySelector('#msg').hidden,
+    px: Array.from(await __rs.renderer.readPixels(__rs.doc, 599, 399, 1, 1)), msg: document.querySelector('#msg').hidden,
   }));
   check('העורך עולה עם WebGL2', info.name === 'WebGL2', info.name);
   await page.waitForFunction(() => __rs.perf?.score > 0, null, { timeout: 8000 }).catch(() => {});
@@ -115,7 +115,7 @@ async function main() {
     const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
     await __rs.openAsDocument(new File([bytes], 'בדיקה.png', { type: 'image/png' }));
     const f = eval(PAT);
-    const got = __rs.renderer.readPixels(__rs.doc, 0, 0, W, H);
+    const got = await __rs.renderer.readPixels(__rs.doc, 0, 0, W, H);
     let bad = 0, maxErr = 0, first = '';
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
       const e = f(x, y), i = (y * W + x) * 4;
@@ -157,7 +157,7 @@ async function main() {
         r.fill(d, d.addLayer(), bg);
         const top = d.addLayer({ blend: mode, opacity: op });
         r.fill(d, top, fg);
-        const got = Array.from(r.readPixels(d, 290, 250, 1, 1));
+        const got = Array.from(await r.readPixels(d, 290, 250, 1, 1));
         const exp = ref(bg, fg, op, mode);
         const err = Math.max(...exp.map((v, i) => Math.abs(v - got[i])));
         out.push({ mode, fg: fg.join(), op, got: got.join(), exp: exp.join(), ok: err <= 1 && got[3] === 255 });
@@ -168,12 +168,12 @@ async function main() {
     r.fill(d, d.addLayer(), bg);
     const hid = d.addLayer({ visible: false });
     r.fill(d, hid, [0, 0, 0, 255]);
-    const hidden = Array.from(r.readPixels(d, 5, 5, 1, 1)).join() === bg.join();
+    const hidden = Array.from(await r.readPixels(d, 5, 5, 1, 1)).join() === bg.join();
     // שינוי אטימות אחרי הרכבה — מתעדכן אחרי invalidate
     hid.visible = true; hid.opacity = 0; r.invalidate(d);
-    const zero = Array.from(r.readPixels(d, 5, 5, 1, 1)).join() === bg.join();
+    const zero = Array.from(await r.readPixels(d, 5, 5, 1, 1)).join() === bg.join();
     hid.opacity = 1; r.invalidate(d);
-    const black = Array.from(r.readPixels(d, 5, 5, 1, 1)).join() === '0,0,0,255';
+    const black = Array.from(await r.readPixels(d, 5, 5, 1, 1)).join() === '0,0,0,255';
     return { out, hidden, zero, black };
   });
   for (const b of blends.out) check(`מיזוג ${b.mode}, ${b.fg} באטימות ${b.op}`, b.ok, `קיבלתי ${b.got}, ציפיתי ${b.exp}`);
@@ -276,7 +276,7 @@ async function main() {
   await openEd(page);
   await page.waitForFunction(() => window.__rs?.doc);
   const rows = () => page.$$eval('.layer-row', rs => rs.map(r => r.querySelector('.layer-name, .layer-name-input').textContent || r.querySelector('input')?.value));
-  const px = (x = 300, y = 200) => page.evaluate(([x, y]) => Array.from(__rs.renderer.readPixels(__rs.doc, x, y, 1, 1)).join(), [x, y]);
+  const px = (x = 300, y = 200) => page.evaluate(async ([x, y]) => Array.from(await __rs.renderer.readPixels(__rs.doc, x, y, 1, 1)).join(), [x, y]);
   const near = (got, exp) => got.split(',').every((v, i) => Math.abs(v - exp[i]) <= 1);
   check('לוח השכבות גלוי בצד, עם הרקע', await page.isVisible('#layers') && (await rows()).join() === 'רקע' && !(await page.isVisible('#layers-btn')));
   await page.click('[data-act="add"]');
@@ -346,16 +346,16 @@ async function main() {
   await page.click('[data-act="add"]');
   check('אחרי פעולה — ↷ פעיל, עם שם הפעולה', !(await page.$eval('#undo-btn', b => b.disabled)) && (await page.$eval('#undo-btn', b => b.title)) === 'ביטול: שכבה חדשה');
   // פיקסלים דרך ההיסטוריה: צילום "לפני", מילוי, רשומה — ביטול מחליף מרקמים
-  const swap = await page.evaluate(() => {
+  const swap = await page.evaluate(async () => {
     const { doc, renderer: r, history: h } = __rs;
     const l = doc.active;
     const before = r.snapshot(l, [...new Set([...l.tiles.keys(), '0,0', '1,0', '2,0', '0,1', '1,1', '2,1'])]);
     r.fill(doc, l, [0, 0, 255, 255]);
     h.pixels(doc, l, before, 'מילוי');
-    const p = () => Array.from(r.readPixels(doc, 10, 10, 1, 1)).join();
-    const after = p();
-    h.undo(); const undone = p();
-    h.redo(); const redone = p();
+    const p = async () => Array.from(await r.readPixels(doc, 10, 10, 1, 1)).join();
+    const after = await p();
+    h.undo(); const undone = await p();
+    h.redo(); const redone = await p();
     h.undo();
     return { after, undone, redone };
   });
@@ -609,6 +609,39 @@ async function main() {
     await page.screenshot({ path: join(SHOTS, 'transform-desktop.png') });
     await page.keyboard.press('Escape');
   }
+  // קריאה איטית מהכרטיס (כמו ב-WebGPU): הגרירה, הדלי והטפטפת מתחילים לפני שהקריאה חזרה — שום דבר לא הולך לאיבוד
+  await openEd(page);
+  await page.waitForFunction(() => window.__rs?.doc);
+  await page.evaluate(() => __rs.setView({ zoom: 1, x: 20, y: 20 }));
+  await page.click('[data-act="add"]');
+  await page.keyboard.press('m');
+  await drag([100, 100], [200, 200]);
+  await color('#ff0000');
+  await page.keyboard.press('Alt+Backspace');
+  await page.keyboard.press('Control+d');
+  await page.evaluate(() => {
+    const r = __rs.renderer;
+    const slow = f => async (...a) => { await new Promise(res => setTimeout(res, 400)); return f.apply(r, a); };
+    r._fast = { layerBounds: r.layerBounds, readLayerPixels: r.readLayerPixels, readPixels: r.readPixels };
+    for (const k of Object.keys(r._fast)) r[k] = slow(r._fast[k]);
+  });
+  await page.keyboard.press('v');
+  await drag([150, 150], [250, 180]);
+  const early = await page.evaluate(() => __rs.tools.floating);
+  await page.waitForFunction(() => __rs.tools.floating && !__rs.tools.stroking);
+  check('קריאה איטית: הגרירה לפני שהגבולות ידועים — התוכן זז עד הסוף', !early && near(await px(250, 180), [255, 0, 0, 255]) && near(await px(120, 120), [255, 255, 255, 255]));
+  await page.keyboard.press('Enter');
+  check('קריאה איטית: הוחל, הזזה מדויקת', await page.evaluate(() => __rs.history.undoStack.at(-1).label) === 'הזזה' && near(await px(200, 130), [255, 0, 0, 255]) && near(await px(199, 130), [255, 255, 255, 255]));
+  await page.keyboard.press('g');
+  await color('#0000ff');
+  await page.mouse.click(...at(30, 350));
+  await page.waitForFunction(() => __rs.history.undoStack.at(-1).label === 'דלי');
+  check('קריאה איטית: הדלי ממלא אחרי שהקריאה חזרה', near(await px(30, 350), [0, 0, 255, 255]) && near(await px(250, 180), [255, 0, 0, 255]));
+  await page.keyboard.press('i');
+  await page.mouse.click(...at(250, 180));
+  await page.waitForFunction(() => document.querySelector('#color').value === '#ff0000');
+  check('קריאה איטית: הטפטפת דוגמת', true);
+  await page.evaluate(() => { const r = __rs.renderer; Object.assign(r, r._fast); delete r._fast; });
 
   // ---- חיתוך ----
   await openEd(page);
@@ -641,7 +674,7 @@ async function main() {
   await page.mouse.move(sb[0] + 120 - 50, sb[1] + 120 - 25); await page.mouse.down();
   await page.mouse.move(sb[0] + 120 + 350, sb[1] + 120 + 225, { steps: 5 }); await page.mouse.up();
   await page.keyboard.press('Enter');
-  const big = await page.evaluate(() => [__rs.doc.width, __rs.doc.height, Array.from(__rs.renderer.readPixels(__rs.doc, 5, 5, 1, 1)).join(), Array.from(__rs.renderer.readPixels(__rs.doc, 450, 200, 1, 1)).join()]);   // הריבוע עבר ל-(400..500, 150..250)
+  const big = await page.evaluate(async () => [__rs.doc.width, __rs.doc.height, Array.from(await __rs.renderer.readPixels(__rs.doc, 5, 5, 1, 1)).join(), Array.from(await __rs.renderer.readPixels(__rs.doc, 450, 200, 1, 1)).join()]);   // הריבוע עבר ל-(400..500, 150..250)
   check('חיתוך מעבר לקנבס — הגדלה, השוליים שקופים, התוכן במקום', big[0] === 800 && big[1] === 500 && big[2] === '0,0,0,0' && near(big[3], [255, 0, 0, 255]), big.join(' | '));
   await page.keyboard.press('c');
   await drag([10, 10], [20, 20]);
@@ -691,7 +724,7 @@ async function main() {
   await page.keyboard.press('Control+d');
   await adj('blur', { radius: 30 });
   await page.click('[data-adj-act="apply"]');
-  const bl = await page.evaluate(() => [[200, 100], [256, 100], [296, 100], [250, 255], [250, 256], [240, 300]].map(([x, y]) => Array.from(__rs.renderer.readPixels(__rs.doc, x, y, 1, 1))));
+  const bl = await page.evaluate(() => Promise.all([[200, 100], [256, 100], [296, 100], [250, 255], [250, 256], [240, 300]].map(async ([x, y]) => Array.from(await __rs.renderer.readPixels(__rs.doc, x, y, 1, 1)))));
   check('טשטוש: הרחק מהקצה — שחור, בקצה — אפור, מעבר לגרעין — לבן', bl[0][0] < 3 && bl[1][0] > 60 && bl[1][0] < 200 && bl[2][0] > 252, JSON.stringify(bl.slice(0, 3)));
   check('טשטוש: בלי תפר בגבול אריחים (y 255/256)', Math.abs(bl[3][0] - bl[4][0]) <= 1, JSON.stringify(bl.slice(3, 5)));
   check('טשטוש "נשפך" לאריח שכן שהיה ריק', await page.evaluate(() => __rs.doc.active.tiles.has('1,0')) && bl[1][3] === 255);
@@ -712,8 +745,8 @@ async function main() {
   await openEd(page);
   await page.waitForFunction(() => window.__rs?.doc);
   await page.evaluate(() => __rs.setView({ zoom: 1, x: 20, y: 20 }));
-  const ink = (x0, y0, x1, y1) => page.evaluate(([x0, y0, x1, y1]) => {
-    const p = __rs.renderer.readPixels(__rs.doc, x0, y0, x1 - x0, y1 - y0);
+  const ink = (x0, y0, x1, y1) => page.evaluate(async ([x0, y0, x1, y1]) => {
+    const p = await __rs.renderer.readPixels(__rs.doc, x0, y0, x1 - x0, y1 - y0);
     let n = 0; for (let i = 0; i < p.length; i += 4) if (p[i] < 200) n++; return n;
   }, [x0, y0, x1, y1]);
   await page.keyboard.press('t');
