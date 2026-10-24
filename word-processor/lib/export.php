@@ -1456,3 +1456,5 @@ function page_number_runs(string $format): string
         default => $field('PAGE'),
     };
 }
+
+require_once __DIR__ . '/export_odt.php';

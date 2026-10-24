@@ -493,6 +493,7 @@ async function openDoc(id) {
         const items = [
             ['⬇️', 'הורדה כ-Word', download('docx', 'ההורדה')],
             ['📕', 'הורדה כ-PDF', download('pdf', 'ההורדה')],
+            ['📄', 'הורדה כ-ODT (LibreOffice)', download('odt', 'ההורדה')],
             ['🖨', 'הדפסה', () => ed.print()],
             ['📝', 'הורדה כטקסט', download('text', 'ההורדה')],
             ['🧾', 'גיבוי (JSON)', download('json', 'הגיבוי')],

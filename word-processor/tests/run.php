@@ -1725,7 +1725,7 @@ section('ייבוא RTF (lib/import_rtf.php)');
 // כמו ש-Word בעברית שומר: ansicpg1255, גופן עברי ב-\af, עברית ב-\'hh וב-\uN, סגנון "כותרת 1" (שם ב-\'hh), כותרת עם
 // מספר עמוד, הערת שוליים, רשימות (\listtext), טבלה, קישור, צבע וסימון, מעקב שינויים, תמונה. § = לוכסן הפוך.
 $R = fn(string $s) => str_replace('§', chr(92), $s);
-$png = bin2hex(base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='));
+$rpng = bin2hex(base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='));
 $rtf = $R('{§rtf1§ansi§ansicpg1255§deff0§uc1{§fonttbl{§f0§froman§fcharset0 Times New Roman;}{§f1§fbidi§fswiss§fcharset177 Arial;}'
     . '{§f3§froman§fcharset2 Symbol;}}{§colortbl;§red255§green0§blue0;§red255§green255§blue0;}'
     . '{§stylesheet{§qr§rtlpar§sa160§fs22§lang1037 Normal;}{§s1§qr§rtlpar§sb240§sa120§b§fs32§ab§afs32 §\'eb§\'e5§\'fa§\'f8§\'fa 1;}{§*§cs10 Default Paragraph Font;}}'
@@ -1744,7 +1744,7 @@ $rtf = $R('{§rtf1§ansi§ansicpg1255§deff0§uc1{§fonttbl{§f0§froman§fchars
     . '{§listtext§pard§plain§f0§fs22 2.§tab}§pard§ls2§ilvl1§fi-360§li1440§rtlpar§fs22 {§rtlch§af1 §\'f9§\'ec§\'e5§\'f9}§par'
     . '§trowd§rtlrow§cellx3000§cellx6000§pard§intbl§rtlpar§fs22 {§rtlch§af1 §\'e01}§cell {§rtlch§af1 §\'e02}§cell§row'
     . '§trowd§rtlrow§cellx3000§cellx6000§pard§intbl§rtlpar§fs22 {§rtlch§af1 §\'e11}§cell §pard§intbl {§b B2}§cell§row'
-    . '§pard§rtlpar§fs22 {§*§shppict{§pict§pngblip§picw1§pich1§picwgoal1500§pichgoal750 ' . $png . '}}{§nonshppict{§pict§wmetafile8 0100}}'
+    . '§pard§rtlpar§fs22 {§*§shppict{§pict§pngblip§picw1§pich1§picwgoal1500§pichgoal750 ' . $rpng . '}}{§nonshppict{§pict§wmetafile8 0100}}'
     . ' {§pict§emfblip 0100}§page §pard§rtlpar§fs22 {§headerf ignored}{§field{§*§fldinst { TOC §§o "1-3" }}{§fldrslt toc}}§par}');
 $rt = import_file($rtf, 'מסמך.rtf', $odDoc);
 $rc = $rt['json']['content'];
@@ -1817,6 +1817,78 @@ foreach (['numbering', 'track'] as $f) {
         json_encode([count($wa), count($wb), array_slice(array_diff_assoc($wa, $wb), 0, 5), $a, $b], JSON_UNESCAPED_UNICODE));
 }
 
+section('ייצוא ל-ODT (lib/export_odt.php)');
+// מסמך עם כל מה שהייצוא יודע: כותרת, עיצוב תווים, קישור, הערות שוליים וסיום, רשימה מקוננת (מ-3), טבלה עם מיזוג ושורת
+// כותרת, תמונה, מעבר עמוד, רווחים כפולים וטאב, סימניה, הערה, מעקב שינויים, תוכן עניינים, מקטע לרוחב, כותרת עליונה ומספור
+$oDoc = doc_new("c:$A", 'ODT', null, null, 'u1', 'דנה');
+$om = media_store($oDoc, $png);
+$T = fn(string $t, array $m = []) => ['type' => 'text', 'text' => $t] + ($m ? ['marks' => $m] : []);
+$Pp = fn(array $c, array $a = []) => ['type' => 'paragraph', 'attrs' => $a, 'content' => $c];
+$LI = fn(string $t, array $sub = []) => ['type' => 'listItem', 'content' => array_merge([$Pp([$T($t)])], $sub)];
+$Cell = fn(string $t, string $type = 'tableCell', array $a = []) => ['type' => $type, 'attrs' => $a, 'content' => [$Pp([$T($t)])]];
+$oj = ['type' => 'doc', 'attrs' => ['comments' => ['k1' => ['author' => 'דנה לוי', 'date' => '2026-10-22T10:00:00Z', 'text' => 'לבדוק', 'replies' => [['author' => 'יוסי', 'text' => 'בסדר']]]]], 'content' => [
+    ['type' => 'heading', 'attrs' => ['level' => 2], 'content' => [$T('פרק ראשון')]],
+    ['type' => 'toc', 'attrs' => ['levels' => 2, 'entries' => [['l' => 2, 't' => 'פרק ראשון', 'p' => '1']]]],
+    $Pp([$T('מודגש', [['type' => 'bold']]), $T('  רווחים'), $T("\tטאב"), $T(' גלי', [['type' => 'underline', 'attrs' => ['ul' => 'wavy']]]),
+        $T(' אדום', [['type' => 'textStyle', 'attrs' => ['color' => '#c00000', 'fontSize' => '14pt']]]), $T(' קישור', [['type' => 'link', 'attrs' => ['href' => 'https://example.com/']]]),
+        ['type' => 'footnote', 'attrs' => ['text' => 'הערת שוליים']], ['type' => 'hardBreak'], $T('שורה שנייה', [['type' => 'comment', 'attrs' => ['id' => 'k1']]]),
+        ['type' => 'bookmark', 'attrs' => ['name' => 'סימניה']], ['type' => 'footnote', 'attrs' => ['text' => 'הערת סיום', 'end' => true]],
+        $T(' נוסף', [['type' => 'ins', 'attrs' => ['author' => 'יוסי', 'date' => '2026-10-22T10:00:00Z']]]), $T(' נמחק', [['type' => 'del', 'attrs' => ['author' => 'רונית', 'date' => '2026-10-22T11:00:00Z']]])],
+        ['textAlign' => 'center', 'spaceAfter' => 12]),
+    ['type' => 'orderedList', 'attrs' => ['start' => 3], 'content' => [$LI('שלוש', [['type' => 'bulletList', 'content' => [$LI('תבליט')]]]), $LI('ארבע')]],
+    ['type' => 'pageBreak'],
+    ['type' => 'table', 'content' => [
+        ['type' => 'tableRow', 'content' => [$Cell('א', 'tableHeader'), $Cell('ב', 'tableHeader'), $Cell('ג', 'tableHeader')]],
+        ['type' => 'tableRow', 'content' => [$Cell('ממוזג', 'tableCell', ['colspan' => 2]), $Cell('גבוה', 'tableCell', ['rowspan' => 2])]],
+        ['type' => 'tableRow', 'content' => [$Cell('1'), $Cell('2')]],
+    ]],
+    $Pp([['type' => 'image', 'attrs' => ['media' => $om['id'], 'src' => $om['url'], 'width' => 80, 'height' => 40]]]),
+    ['type' => 'sectionBreak', 'attrs' => ['page' => ['orientation' => 'landscape']]],
+    $Pp([$T('English paragraph')], ['dir' => 'ltr', 'indent' => 1]),
+]];
+$opage = page_normalize(['header' => 'כותרת עליונה', 'numbering' => ['show' => true, 'position' => 'bottom', 'format' => 'n_of_m'], 'margins' => ['top' => 30, 'bottom' => 20, 'right' => 25, 'left' => 20]]);
+$odt = export_odt($oj, $opage, 'ייצוא');
+file_put_contents("$tmp/x.odt", $odt);
+$oz = new ZipArchive();
+$oz->open("$tmp/x.odt");
+$okXml = true;
+foreach (['content.xml', 'styles.xml', 'meta.xml', 'META-INF/manifest.xml'] as $x) { $dx = new DOMDocument(); $okXml = $okXml && @$dx->loadXML((string)$oz->getFromName($x)); }
+$ost = $oz->statIndex(0);
+$ocontent = (string)$oz->getFromName('content.xml');
+$ostyles = (string)$oz->getFromName('styles.xml');
+check('ODT: mimetype ראשון ובלי דחיסה, XML תקין, התמונה בפנים (Pictures/)', $ost['name'] === 'mimetype' && $ost['comp_method'] === 0 && $okXml
+    && $oz->locateName('Pictures/' . $om['id'] . '.png') !== false);
+check('ODT: הערה עם תשובה (office:annotation + loext:parent-name), תוכן עניינים שאפשר לעדכן, מעקב שינויים, הערת סיום',
+    substr_count($ocontent, '<office:annotation ') === 2 && str_contains($ocontent, 'loext:parent-name="cm0"') && str_contains($ocontent, '<text:table-of-content ')
+    && str_contains($ocontent, '<text:tracked-changes') && str_contains($ocontent, 'text:note-class="endnote"'));
+check('ODT: עמוד-אב למקטע לרוחב; כותרת עליונה ומספור "N מתוך M" למטה; שוליים: הכותרות בתוכם (חצי מהקצה)',
+    str_contains($ostyles, 'style:print-orientation="landscape"') && str_contains($ocontent, 'style:master-page-name="MP1"') && str_contains($ostyles, '<text:page-count>')
+    && str_contains($ostyles, 'כותרת עליונה') && str_contains($ostyles, 'fo:margin-top="12.5mm" fo:margin-bottom="10mm"'), substr($ostyles, strpos($ostyles, '<style:page-layout '), 400));
+$ob = import_file($odt, 'x.odt', $oDoc);
+$oc = $ob['json']['content'];
+$ofind = function (array $nodes, string $type) use (&$ofind): array { $o = []; foreach ($nodes as $n) { if (($n['type'] ?? '') === $type) $o[] = $n; array_push($o, ...$ofind($n['content'] ?? [], $type)); } return $o; };
+$op = array_values(array_filter($ofind($oc, 'paragraph'), fn($p) => str_starts_with($p['content'][0]['text'] ?? '', 'מודגש')))[0] ?? [];
+$otext = implode('', array_map(fn($n) => $n['text'] ?? '', $op['content'] ?? []));
+$omk = fn(string $t) => array_column(array_values(array_filter($op['content'] ?? [], fn($n) => ($n['text'] ?? '') === $t))[0]['marks'] ?? [], 'type');
+check('ODT הלוך וחזור: כותרת 2, פסקה ממורכזת עם רווח אחרי, רווחים כפולים וטאב, מודגש / קו גלי / צבע וגודל / קישור, שבירת שורה',
+    ($oc[0]['type'] ?? '') === 'heading' && ($oc[0]['attrs']['level'] ?? 0) === 2 && ($op['attrs']['textAlign'] ?? '') === 'center' && ($op['attrs']['spaceAfter'] ?? 0) == 12
+    && str_contains($otext, "מודגש  רווחים\tטאב") && $omk('מודגש') === ['bold'] && $omk(' גלי') === ['underline'] && $omk(' אדום') === ['textStyle'] && in_array('link', $omk(' קישור'), true)
+    && in_array('hardBreak', array_column($op['content'], 'type'), true), json_encode($op, JSON_UNESCAPED_UNICODE));
+$ofn = $ofind($oc, 'footnote');
+check('ODT הלוך וחזור: הערת שוליים והערת סיום (עם הטקסט), סימניה, הוספה ומחיקה במעקב (עם השמות)',
+    count($ofn) === 2 && $ofn[0]['attrs']['text'] === 'הערת שוליים' && !empty($ofn[1]['attrs']['end']) && count($ofind($oc, 'bookmark')) === 1
+    && $omk(' נוסף') === ['ins'] && $omk(' נמחק') === ['del'] && array_values(array_filter($op['content'], fn($n) => ($n['text'] ?? '') === ' נמחק'))[0]['marks'][0]['attrs']['author'] === 'רונית',
+    json_encode($op['content'], JSON_UNESCAPED_UNICODE));
+$ol = $ofind($oc, 'orderedList')[0] ?? null;
+check('ODT הלוך וחזור: רשימה ממוספרת מ-3 ובתוכה תבליט', $ol && ($ol['attrs']['start'] ?? 0) === 3 && count($ol['content']) === 2 && ($ol['content'][0]['content'][1]['type'] ?? '') === 'bulletList', json_encode($ol, JSON_UNESCAPED_UNICODE));
+$otb = $ofind($oc, 'table')[0]['content'] ?? [];
+check('ODT הלוך וחזור: מעבר עמוד, טבלה 3 שורות עם מיזוג (colspan 2, rowspan 2) ושורת כותרת, תמונה 80×40, פסקה באנגלית מוזחת',
+    count($ofind($oc, 'pageBreak')) === 1 && count($otb) === 3 && ($otb[1]['content'][0]['attrs']['colspan'] ?? 0) === 2 && ($otb[1]['content'][1]['attrs']['rowspan'] ?? 0) === 2
+    && ($otb[0]['content'][0]['type'] ?? '') === 'tableHeader' && (($ofind($oc, 'image')[0]['attrs']['width'] ?? 0) === 80) && ((end($oc)['attrs'] ?? []) == ['dir' => 'ltr', 'indent' => 1]),
+    json_encode([count($otb), $otb[1] ?? null, end($oc)], JSON_UNESCAPED_UNICODE));
+check('ODT הלוך וחזור: הגדרות הדף — שוליים, כותרת עליונה, מספור למטה', ($ob['page']['margins'] ?? null) == ['top' => 30, 'bottom' => 20, 'right' => 25, 'left' => 20]
+    && ($ob['page']['header'] ?? '') === 'כותרת עליונה' && ($ob['page']['numbering']['position'] ?? '') === 'bottom', json_encode($ob['page'], JSON_UNESCAPED_UNICODE));
+
 section('אוסף המסמכים (tests/corpus) — Word הלוך וחזור');
 $words = fn(string $s) => preg_split('/\s+/u', trim(preg_replace('/[^\p{L}\p{N}\s]+/u', ' ', $s)), -1, PREG_SPLIT_NO_EMPTY);
 foreach (glob(__DIR__ . '/corpus/*.json') as $f) {
@@ -1857,6 +1929,30 @@ foreach (glob(__DIR__ . '/corpus/*.json') as $f) {
     check("{$c['title']}: Word תקין, וחוזר עם אותו טקסט ואותן הגדרות עמוד",
         !$bad && $a === $b && $bp['size'] === $page['size'] && $bp['orientation'] === $page['orientation'] && $bp['margins'] == $page['margins'],
         $bad ? 'XML שבור: ' . implode(', ', $bad) : (count($a) . ' מילים מול ' . count($b) . ($a !== $b ? ' — מילה ראשונה שונה: ' . json_encode(array_values(array_diff_assoc($a, $b))[0] ?? '', JSON_UNESCAPED_UNICODE) : '')));
+    // ODT הלוך וחזור: אותן מילים (גם בהערות), כותרות, רשימות, טבלאות, הערות שוליים, שינויים במעקב והגדרות הדף
+    $oback = import_file(export_odt($c['json'], $page, $c['title']), 'c.odt', $oDoc);
+    $shape = function (array $json) {
+        $acc = [];
+        $walk = function ($n) use (&$walk, &$acc) {
+            $t = $n['type'] ?? '';
+            $k = $t === 'heading' ? 'h' . ($n['attrs']['level'] ?? 1) : (in_array($t, ['listItem', 'table', 'tableRow', 'footnote', 'image'], true) ? $t : null);
+            if ($k) $acc[$k] = ($acc[$k] ?? 0) + 1;
+            foreach ($n['marks'] ?? [] as $m) if (in_array($m['type'] ?? '', ['ins', 'del'], true)) $acc[$m['type']] = ($acc[$m['type']] ?? 0) + 1;
+            foreach ($n['content'] ?? [] as $ch) if (is_array($ch)) $walk($ch);
+        };
+        $walk($json);
+        ksort($acc);
+        return $acc;
+    };
+    // הטקסט (כמו בבדיקת Word — כיתובים, הפניות ותוכן עניינים כפי שהם מוצגים) ועוד הטקסט של הערות השוליים
+    $fnt = function (array $n) use (&$fnt): string { $o = ($n['type'] ?? '') === 'footnote' ? ($n['attrs']['text'] ?? '') : ''; foreach ($n['content'] ?? [] as $ch) if (is_array($ch)) $o .= ' ' . $fnt($ch); return $o; };
+    $all = fn(array $json) => export_text($json) . ' ' . $fnt($json);
+    $op2 = page_normalize($oback['page'] ?? []);
+    $wa = $words($all($c['json']));
+    $wb = $words($all($oback['json']));
+    check("{$c['title']}: ODT חוזר עם אותן מילים, אותו מבנה ואותן הגדרות עמוד", $wa === $wb && $shape($c['json']) === $shape($oback['json'])
+        && $op2['size'] === $page['size'] && $op2['orientation'] === $page['orientation'] && $op2['margins'] == $page['margins'],
+        json_encode([count($wa), count($wb), $shape($c['json']), $shape($oback['json']), $op2['margins']], JSON_UNESCAPED_UNICODE));
 }
 
 // ניקוי
