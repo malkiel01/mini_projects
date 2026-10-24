@@ -609,6 +609,7 @@ async function main() {
   check('ביצוע — שוב 220×210', await page.evaluate(() => __rs.doc.width) === 220 && near(await px(50, 50), [255, 0, 0, 255]));
   // הגדלה: אזור מעבר לקנבס
   await page.keyboard.press('Control+z');
+  await page.waitForTimeout(150);   // הביטול משנה גודל → התאמה למסך בפריים הבא; רק אחריה קובעים זום
   await page.evaluate(() => __rs.setView({ zoom: 0.5, x: 120, y: 120 }));
   await page.click('.tool[data-tool="crop"]');
   await page.mouse.move(sb[0] + 120 - 50, sb[1] + 120 - 25); await page.mouse.down();
@@ -620,6 +621,66 @@ async function main() {
   await drag([10, 10], [20, 20]);
   await page.keyboard.press('Escape');
   check('Esc — ביטול האזור', (await page.textContent('#crop-info')) === '' && await page.evaluate(() => __rs.doc.width) === 800);
+
+  // ---- תיקונים ----
+  await page.goto(BASE + '/editor.html?doc=' + id);
+  await page.waitForFunction(() => window.__rs?.doc);
+  await page.evaluate(() => __rs.setView({ zoom: 1, x: 20, y: 20 }));
+  const adj = async (tab, vals) => {
+    if (!(await page.isVisible('#adjust'))) await page.click('#adjust-btn');
+    await page.click(`[data-adj-tab="${tab}"]`);
+    for (const [f, v] of Object.entries(vals)) {
+      await page.$eval('#adj-' + f, (el, v) => { el.value = String(v); el.dispatchEvent(new Event('input', { bubbles: true })); }, v);
+    }
+  };
+  const fillLayer = c => page.evaluate(c => { __rs.renderer.fill(__rs.doc, __rs.doc.active, c); __rs.renderer.invalidate(__rs.doc); }, c);
+  await fillLayer([128, 128, 128, 255]);
+  await adj('bc', { brightness: 100 });
+  check('בהירות +100 — תצוגה חיה (128 → ~181), לפני החלה', near(await px(), [181, 181, 181, 255]), await px());
+  await page.click('[data-adj-act="cancel"]');
+  check('✕ — חוזר בלי שינוי ובלי רשומה', near(await px(), [128, 128, 128, 255]) && !(await page.evaluate(() => __rs.history.canUndo)));
+  await adj('bc', { brightness: 100 });
+  await page.click('[data-adj-act="apply"]');
+  check('✓ — הוחל, רשומת "בהירות וניגודיות"', near(await px(), [181, 181, 181, 255]) && await page.evaluate(() => __rs.history.undoStack.at(-1).label) === 'בהירות וניגודיות' && !(await page.isVisible('#adjust')));
+  await page.keyboard.press('Control+z');
+  check('ביטול — 128 חוזר', near(await px(), [128, 128, 128, 255]));
+  await fillLayer([64, 64, 64, 255]);
+  await adj('bc', { contrast: 50 });
+  check('ניגודיות +50 — כהה נעשה כהה יותר', near(await px(), [2, 2, 2, 255]), await px());
+  await page.click('[data-adj-act="cancel"]');
+  await fillLayer([255, 0, 0, 255]);
+  await adj('hsl', { hue: 120 });
+  check('גוון +120° — אדום → ירוק', near(await px(), [0, 255, 0, 255]), await px());
+  await adj('hsl', { saturation: -100 });
+  check('רוויה −100 — אפור', near(await px(), [128, 128, 128, 255]), await px());
+  await adj('hsl', { lightness: 50 });
+  check('בהירות +50 ב-HSL — אדום → ורוד', near(await px(), [255, 128, 128, 255]), await px());
+  await page.click('[data-adj-act="cancel"]');
+  // טשטוש: שחור ב-x 0..256 (בדיוק עד גבול האריח) על שכבה שקופה מעל לבן
+  await page.click('[data-act="add"]');
+  await page.keyboard.press('m');
+  await drag([0, 60], [256, 400]);   // לא מראש הבמה — שם לוח האפשרויות
+  await color('#000000');
+  await page.keyboard.press('Alt+Backspace');
+  await page.keyboard.press('Control+d');
+  await adj('blur', { radius: 30 });
+  await page.click('[data-adj-act="apply"]');
+  const bl = await page.evaluate(() => [[200, 100], [256, 100], [296, 100], [250, 255], [250, 256], [240, 300]].map(([x, y]) => Array.from(__rs.renderer.readPixels(__rs.doc, x, y, 1, 1))));
+  check('טשטוש: הרחק מהקצה — שחור, בקצה — אפור, מעבר לגרעין — לבן', bl[0][0] < 3 && bl[1][0] > 60 && bl[1][0] < 200 && bl[2][0] > 252, JSON.stringify(bl.slice(0, 3)));
+  check('טשטוש: בלי תפר בגבול אריחים (y 255/256)', Math.abs(bl[3][0] - bl[4][0]) <= 1, JSON.stringify(bl.slice(3, 5)));
+  check('טשטוש "נשפך" לאריח שכן שהיה ריק', await page.evaluate(() => __rs.doc.active.tiles.has('1,0')) && bl[1][3] === 255);
+  // תיקון רק בבחירה
+  await page.keyboard.press('Control+z');
+  await page.keyboard.press('m');
+  await drag([0, 60], [100, 400]);
+  await adj('hsl', { lightness: 100 });
+  await page.click('[data-adj-act="apply"]');
+  check('בחירה: רק בתוכה — לבן; מחוצה לה — עדיין שחור', near(await px(50, 100), [255, 255, 255, 255]) && near(await px(150, 100), [0, 0, 0, 255]));
+  if (SHOTS) {
+    await adj('hsl', { hue: 90 });
+    await page.screenshot({ path: join(SHOTS, 'adjust-desktop.png') });
+    await page.click('[data-adj-act="cancel"]');
+  }
 
   check('אין שגיאות בקונסול', errors.length === 0, errors.join(' | '));
 
@@ -665,6 +726,11 @@ async function main() {
       return r.left >= o.left - 0.5 && r.right <= o.right + 0.5 && el.scrollWidth <= el.clientWidth + 1;
     }));
     if (SHOTS) await ph.screenshot({ path: join(SHOTS, `select-${w}${dark ? '-dark' : ''}.png`) });
+    await ph.click('#adjust-btn');
+    const adjFit = await ph.evaluate(() => { const r = document.querySelector('#adjust').getBoundingClientRect(); return r.left >= -0.5 && r.right <= innerWidth + 0.5 && r.height > 50; });
+    if (SHOTS) await ph.screenshot({ path: join(SHOTS, `adjust-${w}${dark ? '-dark' : ''}.png`) });
+    await ph.click('[data-adj-act="cancel"]');
+    check(`טלפון ${w}px${dark ? ' כהה' : ''}: לוח התיקונים בתוך המסך`, adjFit);
     check(`טלפון ${w}px${dark ? ' כהה' : ''}: אפשרויות הבחירה נכנסות בלי חפיפה`, optsFit);
     await ph.keyboard.press('b');
     await ph.close();
