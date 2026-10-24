@@ -11,6 +11,7 @@
 
 import { TILE, BLEND_MODES, tilesInRect } from './doc.js';
 import { rasterTile, selectionBox } from './selection.js';
+import { matrix as xfMatrix, bounds as xfBounds } from './transform.js';
 
 const VERT = `#version 300 es
 in vec2 a;
@@ -23,6 +24,22 @@ void main() {
   vec2 p = mix(u_rect.xy, u_rect.zw, a);
   v_uv = mix(u_uv.xy, u_uv.zw, a);
   gl_Position = vec4(p.x / u_size.x * 2.0 - 1.0, u_flip * (1.0 - p.y / u_size.y * 2.0), 0.0, 1.0);
+}`;
+
+// קודקודים דרך מטריצה אפינית — לתוכן צף (הזזה / קנה מידה / סיבוב). a ∈ [0,1]² → פיקסל במרקם הצף → מסמך → אריח
+const VERT_M = `#version 300 es
+in vec2 a;
+uniform vec2 u_wh;      // גודל המרקם הצף
+uniform vec4 u_m0;      // a b c d
+uniform vec2 u_m1;      // e f
+uniform vec2 u_org;     // פינת האריח במסמך
+uniform vec2 u_size;    // גודל היעד
+out vec2 v_uv;
+void main() {
+  vec2 p = a * u_wh;
+  vec2 d = vec2(u_m0.x * p.x + u_m0.z * p.y + u_m1.x, u_m0.y * p.x + u_m0.w * p.y + u_m1.y) - u_org;
+  v_uv = a;
+  gl_Position = vec4(d.x / u_size.x * 2.0 - 1.0, d.y / u_size.y * 2.0 - 1.0, 0.0, 1.0);
 }`;
 
 const ENCODE = `
@@ -97,6 +114,20 @@ void main() {
   if (u_useSel == 1) m *= texture(u_sel, v_uv).r;   // בחירה פעילה — רק בתוכה
   o = u_erase == 1 ? l * (1.0 - m) : u_color * m + l * (1.0 - m);
 }`,
+
+  copy: `#version 300 es
+precision highp float;
+uniform sampler2D u_tex;
+in vec2 v_uv; out vec4 o;
+void main() { o = texture(u_tex, v_uv); }`,
+
+  // חילוץ לתוכן צף: השכבה כפול מסכת הבחירה
+  extract: `#version 300 es
+precision highp float;
+uniform sampler2D u_tex, u_sel;
+uniform int u_useSel;
+in vec2 v_uv; out vec4 o;
+void main() { o = texture(u_tex, v_uv) * (u_useSel == 1 ? texture(u_sel, v_uv).r : 1.0); }`,
 
   // התצוגה: מעל משבצות שקיפות, בלינארי, ואז sRGB
   display: `#version 300 es
@@ -175,6 +206,7 @@ export class WebGL2Renderer {
 
     this.prog = {};
     for (const [name, src] of Object.entries(FRAG)) this.prog[name] = this.#program(VERT, src);
+    this.prog.float = this.#program(VERT_M, FRAG.copy);
 
     this.vao = gl.createVertexArray();
     gl.bindVertexArray(this.vao);
@@ -188,6 +220,7 @@ export class WebGL2Renderer {
     this.fboRead = gl.createFramebuffer();
     this.scratch = [this.#tileTexture(1), this.#tileTexture(1)];
     this.strokeTmp = this.#tileTexture(1);   // השכבה הפעילה + המשיכה, לתצוגה בזמן ציור
+    this.floatTmp = this.#tileTexture(1);    // השכבה + התוכן הצף, לתצוגה בזמן שינוי צורה
     this.emptyTex = this.#tileTexture(1);    // אריח שקוף — במקום אריח שעוד לא קיים
     // מסכות קבועות (R8): הכול / כלום — משותפות, לא משתחררות
     this.fullMask = this.#r8(new Uint8Array(TILE * TILE).fill(255));
@@ -655,6 +688,169 @@ export class WebGL2Renderer {
     return this.endStroke(doc);
   }
 
+  // ---------- תוכן צף: הזזה, קנה מידה, סיבוב ----------
+  //
+  // beginFloat מחלץ את התוכן (הבחירה, או כל השכבה) למרקם אחד עם mipmaps ומוחק אותו מהשכבה — האריחים המקוריים
+  // נשמרים ב-before. בזמן שינוי הצורה ההרכבה מציגה שכבה + תוכן צף. commitFloat כותב אותו לאריחים חדשים, ו-before
+  // (המקוריים, בלי העתקה) הולך להיסטוריה. cancelFloat מחזיר את המקוריים.
+
+  /** גבולות התוכן של שכבה (בלי בחירה): [x, y, w, h] מדויק לפי האלפא, או null לשכבה ריקה. */
+  layerBounds(layer) {
+    if (!layer.tiles.size) return null;
+    let tx0 = Infinity, ty0 = Infinity, tx1 = -Infinity, ty1 = -Infinity;
+    for (const k of layer.tiles.keys()) {
+      const [tx, ty] = k.split(',').map(Number);
+      tx0 = Math.min(tx0, tx); ty0 = Math.min(ty0, ty); tx1 = Math.max(tx1, tx); ty1 = Math.max(ty1, ty);
+    }
+    const X = tx0 * TILE, Y = ty0 * TILE, W = (tx1 - tx0 + 1) * TILE, H = (ty1 - ty0 + 1) * TILE;
+    const px = this.readLayerPixels(layer, X, Y, W, H);
+    let x0 = W, y0 = H, x1 = -1, y1 = -1;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      if (px[(y * W + x) * 4 + 3]) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    }
+    return x1 < 0 ? null : [X + x0, Y + y0, x1 - x0 + 1, y1 - y0 + 1];
+  }
+
+  /**
+   * מתחיל תוכן צף בשכבה: rect = [x, y, w, h] במסמך. עם doc.selection — רק מה שבתוכה.
+   * מחזיר את התוכן הצף, או זורק 'too_big' כשהמלבן גדול ממרקם אחד.
+   */
+  beginFloat(doc, layer, [x, y, w, h], t) {
+    const gl = this.gl;
+    if (w > this.maxTexture || h > this.maxTexture) throw new Error('too_big');
+    const levels = Math.floor(Math.log2(Math.max(w, h))) + 1;
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texStorage2D(gl.TEXTURE_2D, levels, gl.RGBA16F, w, h);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    this.textures++;
+
+    // חילוץ: כל אריח של השכבה שבמלבן → למקומו במרקם הצף (כפול הבחירה)
+    const useSel = !!doc.selection;
+    const sels = new Map();
+    if (useSel) for (const [tx, ty] of tilesInRect(x, y, w, h)) sels.set(key(tx, ty), this.#selTex(doc, key(tx, ty)));
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    gl.viewport(0, 0, w, h);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    const p = this.prog.extract;
+    gl.useProgram(p.p);
+    gl.bindVertexArray(this.vao);
+    gl.disable(gl.BLEND);
+    gl.uniform1i(p.u.u_tex, 0);
+    gl.uniform1i(p.u.u_sel, 1);
+    gl.uniform1i(p.u.u_useSel, useSel ? 1 : 0);
+    for (const [tx, ty] of tilesInRect(x, y, w, h)) {
+      const lt = layer.tiles.get(key(tx, ty));
+      if (!lt) continue;
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, lt);
+      gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, useSel ? sels.get(key(tx, ty)) : this.fullMask);
+      const ox = tx * TILE - x, oy = ty * TILE - y;
+      this.#quad(p, [ox, oy, ox + TILE, oy + TILE], [0, 0, 1, 1], [w, h], -1);
+    }
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, null);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+    // מחיקה מהשכבה: עם בחירה — רק מה שבתוכה; בלי — כל האריחים עוברים ל-before כמו שהם
+    let before;
+    if (useSel) before = this.fillSelection(doc, layer, 'erase');
+    else { before = new Map(layer.tiles); layer.tiles.clear(); layer.rev = (layer.rev ?? 0) + 1; }
+    doc._float = { layer, tex, x, y, w, h, t, before };
+    this.invalidateTiles(doc, [...before.keys()]);
+    this.#dirty(doc, x, y, w, h);
+    return doc._float;
+  }
+
+  #floatTouches(fl, tx, ty) {
+    const [x0, y0, x1, y1] = xfBounds(fl.t, fl.w, fl.h);
+    return tx * TILE < x1 + 1 && (tx + 1) * TILE > x0 - 1 && ty * TILE < y1 + 1 && (ty + 1) * TILE > y0 - 1;
+  }
+
+  /** בסיס (אריח) + התוכן הצף בשינוי הצורה הנוכחי → out */
+  #floatInto(out, base, fl, tx, ty) {
+    const gl = this.gl;
+    this.#target(out);
+    const c = this.prog.copy;
+    gl.useProgram(c.p);
+    gl.bindVertexArray(this.vao);
+    gl.disable(gl.BLEND);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, base);
+    gl.uniform1i(c.u.u_tex, 0);
+    this.#quad(c, [0, 0, TILE, TILE], [0, 0, 1, 1], [TILE, TILE], -1);
+    const p = this.prog.float;
+    gl.useProgram(p.p);
+    gl.bindTexture(gl.TEXTURE_2D, fl.tex);
+    gl.uniform1i(p.u.u_tex, 0);
+    const m = xfMatrix(fl.t, fl.w, fl.h);
+    gl.uniform2f(p.u.u_wh, fl.w, fl.h);
+    gl.uniform4f(p.u.u_m0, m[0], m[1], m[2], m[3]);
+    gl.uniform2f(p.u.u_m1, m[4], m[5]);
+    gl.uniform2f(p.u.u_org, tx * TILE, ty * TILE);
+    gl.uniform2f(p.u.u_size, TILE, TILE);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);   // source-over, מוכפל
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.disable(gl.BLEND);
+  }
+
+  /** שינוי צורה חדש לתוכן הצף (מתעדכן בתצוגה) */
+  setFloatTransform(doc, t) {
+    const fl = doc._float;
+    if (!fl) return;
+    const a = xfBounds(fl.t, fl.w, fl.h), b = xfBounds(t, fl.w, fl.h);
+    fl.t = t;
+    for (const r of [a, b]) this.#dirty(doc, r[0] - 1, r[1] - 1, r[2] - r[0] + 2, r[3] - r[1] + 2);
+  }
+
+  /** כותב את התוכן הצף לשכבה. מחזיר before להיסטוריה (המקוריים של כל אריח שהשתנה). */
+  commitFloat(doc) {
+    const fl = doc._float;
+    if (!fl) return new Map();
+    doc._float = null;
+    const { layer, before } = fl;
+    const [x0, y0, x1, y1] = xfBounds(fl.t, fl.w, fl.h);
+    for (const [tx, ty] of tilesInRect(x0 - 1, y0 - 1, x1 - x0 + 2, y1 - y0 + 2)) {
+      const k = key(tx, ty);
+      const cur = layer.tiles.get(k) ?? null;
+      const out = this.#tileTexture(1);
+      this.#floatInto(out, cur || this.emptyTex, fl, tx, ty);
+      layer.tiles.set(k, out);
+      // אריח שכבר ב-before — הנוכחי הוא שלב ביניים (אחרי המחיקה), ולא שייך לאף אחד
+      if (before.has(k)) { if (cur) this.freeTextures([cur]); }
+      else before.set(k, cur);
+    }
+    this.freeTextures([fl.tex]);
+    gl_unbind(this.gl);
+    layer.rev = (layer.rev ?? 0) + 1;
+    this.invalidateTiles(doc, [...before.keys()]);
+    return before;
+  }
+
+  /** מבטל את התוכן הצף — השכבה חוזרת בדיוק למה שהייתה. */
+  cancelFloat(doc) {
+    const fl = doc._float;
+    if (!fl) return;
+    doc._float = null;
+    for (const [k, orig] of fl.before) {
+      const cur = fl.layer.tiles.get(k);
+      if (cur) this.freeTextures([cur]);
+      if (orig) fl.layer.tiles.set(k, orig); else fl.layer.tiles.delete(k);
+    }
+    this.freeTextures([fl.tex]);
+    fl.layer.rev = (fl.layer.rev ?? 0) + 1;
+    this.invalidateTiles(doc, [...fl.before.keys()]);
+    const [x0, y0, x1, y1] = xfBounds(fl.t, fl.w, fl.h);
+    this.#dirty(doc, x0 - 1, y0 - 1, x1 - x0 + 2, y1 - y0 + 2);
+  }
+
   // ---------- הרכבה ----------
 
   #composite(doc, tx, ty) {
@@ -682,6 +878,15 @@ export class WebGL2Renderer {
       if (m) {
         this.#applyStroke(st, t || this.emptyTex, m, this.strokeTmp, key(tx, ty));
         t = this.strokeTmp;
+        gl.useProgram(p.p);
+        gl.bindVertexArray(this.vao);
+        gl.uniform1i(p.u.u_dst, 0);
+        gl.uniform1i(p.u.u_src, 1);
+      }
+      const fl = doc._float;
+      if (fl && fl.layer === layer && this.#floatTouches(fl, tx, ty)) {
+        this.#floatInto(this.floatTmp, t || this.emptyTex, fl, tx, ty);
+        t = this.floatTmp;
         gl.useProgram(p.p);
         gl.bindVertexArray(this.vao);
         gl.uniform1i(p.u.u_dst, 0);

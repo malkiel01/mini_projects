@@ -218,7 +218,7 @@ stage.addEventListener('pointermove', e => {
       const [x, y] = toDoc(local(ev));
       return { x, y, pressure: ev.pressure };
     });
-    tools.move(list);
+    tools.move(list, e);
     return;
   }
   if (!pointers.has(e.pointerId) || !gesture) return;
@@ -277,8 +277,14 @@ function syncHistory(h) {
   undoBtn.title = h.canUndo ? 'ביטול: ' + h.undoStack.at(-1).label : 'ביטול';
   redoBtn.title = h.canRedo ? 'ביצוע מחדש: ' + h.redoStack.at(-1).label : 'ביצוע מחדש';
 }
-function undo() { if (history?.undo()) { changed = true; draw(); panel.render(); } }
-function redo() { if (history?.redo()) { changed = true; draw(); panel.render(); } }
+function undo() {
+  if (tools?.floating) { tools.cancelFloat(); return; }   // באמצע שינוי צורה — הביטול מבטל אותו
+  if (history?.undo()) { changed = true; draw(); panel.render(); }
+}
+function redo() {
+  tools?.commitFloat();
+  if (history?.redo()) { changed = true; draw(); panel.render(); }
+}
 undoBtn.addEventListener('click', undo);
 redoBtn.addEventListener('click', redo);
 
@@ -318,6 +324,7 @@ $('#hint').textContent = coarse ? 'צביטה — זום' : 'גרירה — הז
     });
     panel = createLayersPanel({
       root: layersEl, doc: () => doc, renderer, history, toast,
+      beforeChange: () => tools.commitFloat(),
       onChange: () => { changed = true; draw(); },
     });
     renderer.onLost = () => showMsg('הגרפיקה של הדפדפן אופסה, והתמונה שבזיכרון אבדה. טענו את הדף מחדש.', true);

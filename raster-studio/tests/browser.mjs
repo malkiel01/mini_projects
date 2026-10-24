@@ -520,6 +520,70 @@ async function main() {
     await page.screenshot({ path: join(SHOTS, 'select-desktop.png') });
   }
 
+  // ---- הזזה ושינוי צורה ----
+  await page.goto(BASE + '/editor.html?doc=' + id);
+  await page.waitForFunction(() => window.__rs?.doc);
+  await page.evaluate(() => __rs.setView({ zoom: 1, x: 20, y: 20 }));
+  await page.click('[data-act="add"]');
+  await page.keyboard.press('m');
+  await drag([100, 100], [200, 200]);
+  await color('#ff0000');
+  await page.keyboard.press('Alt+Backspace');
+  await page.keyboard.press('Control+d');
+  await page.keyboard.press('v');
+  check('V — כלי ההזזה, עם החלה וביטול', await page.evaluate(() => __rs.tools.state.tool) === 'move' && await page.isVisible('[data-xf="apply"]'));
+  await drag([150, 150], [250, 180]);
+  check('גרירה — התוכן צף וזז (לפני החלה)', await page.evaluate(() => __rs.tools.floating) && near(await px(250, 180), [255, 0, 0, 255]) && near(await px(120, 120), [255, 255, 255, 255]));
+  await page.keyboard.press('Enter');
+  check('Enter — הוחל, רשומת "הזזה"', !(await page.evaluate(() => __rs.tools.floating)) && await page.evaluate(() => __rs.history.undoStack.at(-1).label) === 'הזזה');
+  check('הזזה מדויקת: קצוות חדים בפיקסל השלם', near(await px(200, 130), [255, 0, 0, 255]) && near(await px(199, 130), [255, 255, 255, 255]) && near(await px(299, 229), [255, 0, 0, 255]) && near(await px(300, 229), [255, 255, 255, 255]));
+  await page.keyboard.press('Control+z');
+  check('ביטול — חוזר למקום', near(await px(150, 150), [255, 0, 0, 255]) && near(await px(250, 180), [255, 255, 255, 255]));
+  await page.keyboard.press('Control+Shift+z');
+  // קנה מידה מהפינה: 100×100 → 200×200, הפינה השמאלית-עליונה נשארת
+  await drag([250, 180], [250, 180]);   // מתחיל צף בלי לזוז
+  await drag([300, 230], [400, 330]);
+  await page.click('[data-xf="apply"]');
+  check('ידית פינה — הגדלה ×2 ששומרת יחס', near(await px(390, 320), [255, 0, 0, 255]) && near(await px(410, 320), [255, 255, 255, 255]) && near(await px(205, 135), [255, 0, 0, 255]),
+    [await px(390, 320), await px(410, 320)].join(' | '));
+  check('רשומת "שינוי צורה"', await page.evaluate(() => __rs.history.undoStack.at(-1).label) === 'שינוי צורה');
+  // סיבוב ← Esc מבטל בלי עקבות
+  const beforeRot = await px(390, 140);
+  const n1 = await page.evaluate(() => __rs.history.undoStack.length);
+  await drag([300, 230], [300, 230]);
+  await drag([412, 342], [300, 395]);
+  const rot = await page.evaluate(() => __rs.renderer && __rs.doc._float?.t.angle);
+  check('ליד פינה מבחוץ — סיבוב', Math.abs(rot - Math.PI / 4) < 0.05, String(rot));
+  await page.keyboard.press('Escape');
+  check('Esc — ביטול, בלי רשומה', (await page.evaluate(() => __rs.history.undoStack.length)) === n1 && (await px(390, 140)) === beforeRot);
+  // חצים
+  await page.keyboard.press('ArrowRight'); await page.keyboard.press('ArrowRight'); await page.keyboard.press('Shift+ArrowDown');
+  await page.keyboard.press('Enter');
+  check('חצים — 2 ימינה ו-10 למטה', near(await px(202, 140), [255, 0, 0, 255]) && near(await px(201, 140), [255, 255, 255, 255]) && near(await px(250, 139), [255, 255, 255, 255]));
+  // בחירה זזה עם התוכן
+  await page.keyboard.press('m');
+  await drag([202, 140], [302, 240]);
+  await page.keyboard.press('v');
+  await drag([250, 190], [300, 190]);
+  await page.keyboard.press('Enter');
+  const movedSel = await page.evaluate(() => __rs.doc.selection.shapes[0]);
+  check('הבחירה זזה יחד עם התוכן', movedSel.x === 252 && movedSel.y === 140, JSON.stringify(movedSel));
+  check('רק מה שבבחירה זז', near(await px(270, 190), [255, 0, 0, 255]) && near(await px(320, 300), [255, 0, 0, 255]) && near(await px(220, 190), [255, 255, 255, 255]), [await px(270, 190), await px(320, 300), await px(220, 190)].join(' | '));
+  await page.keyboard.press('Control+z');
+  check('ביטול — גם הבחירה חוזרת', await page.evaluate(() => __rs.doc.selection.shapes[0].x) === 202);
+  // שכבה ריקה
+  await page.keyboard.press('Control+d');
+  await page.click('[data-act="add"]');
+  await drag([50, 50], [80, 80]);
+  check('שכבה ריקה — הודעה', /ריקה/.test(await page.textContent('.toast')) && !(await page.evaluate(() => __rs.tools.floating)));
+  if (SHOTS) {
+    await page.click('.layer-row:nth-child(2)');
+    await drag([300, 300], [300, 300]);
+    await drag([402, 342], [330, 400]);
+    await page.screenshot({ path: join(SHOTS, 'transform-desktop.png') });
+    await page.keyboard.press('Escape');
+  }
+
   check('אין שגיאות בקונסול', errors.length === 0, errors.join(' | '));
 
   // ---- טלפון ----

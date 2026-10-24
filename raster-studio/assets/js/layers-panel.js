@@ -16,7 +16,7 @@ const $ = (s, el = document) => el.querySelector(s);
  * @param {(what: string) => void} o.onChange  אחרי כל שינוי (לצייר מחדש)
  * @param {(msg: string, err?: boolean) => void} o.toast
  */
-export function createLayersPanel({ root, doc, renderer, history, onChange, toast }) {
+export function createLayersPanel({ root, doc, renderer, history, onChange, toast, beforeChange = () => {} }) {
   const list = $('.layer-list', root);
   const opacity = $('#layer-opacity', root);
   const opacityOut = $('#layer-opacity-out', root);
@@ -30,6 +30,7 @@ export function createLayersPanel({ root, doc, renderer, history, onChange, toas
   /** שינוי מאפיין של שכבה — מיושם ונרשם בהיסטוריה. */
   function setProp(layer, key, value, label) {
     if (layer[key] === value) return;
+    beforeChange();
     const before = { [key]: layer[key] };
     layer[key] = value;
     history.props(doc(), layer, before, { [key]: value }, label);
@@ -42,6 +43,7 @@ export function createLayersPanel({ root, doc, renderer, history, onChange, toas
   opacity.addEventListener('input', () => {
     const l = doc().active;
     if (!l || l.locked) return;
+    if (!opacityStart) beforeChange();
     opacityStart ??= { layer: l, value: l.opacity };
     l.opacity = Number(opacity.value) / 100;
     opacityOut.textContent = opacity.value + '%';
@@ -94,6 +96,7 @@ export function createLayersPanel({ root, doc, renderer, history, onChange, toas
   };
 
   function move(layer, to) {
+    beforeChange();
     const d = doc(), from = d.indexOf(layer);
     d.activeId = layer.id;
     if (d.moveLayer(layer, to)) { history.moveLayer(d, layer, from, d.indexOf(layer), 'סדר השכבות'); changed('move'); }
@@ -101,7 +104,7 @@ export function createLayersPanel({ root, doc, renderer, history, onChange, toas
   }
   root.addEventListener('click', e => {
     const b = e.target.closest('[data-act]');
-    if (b && !b.disabled) act[b.dataset.act]();
+    if (b && !b.disabled) { beforeChange(); act[b.dataset.act](); }
   });
 
   // ---- הרשימה ----

@@ -80,10 +80,17 @@ export class History {
    * שינוי פיקסלים בשכבה. before — מה ש-renderer.snapshot החזיר *לפני* השינוי.
    * ביטול וביצוע — אותה פעולה: החלפה של מרקמי האריחים בין השכבה לרשומה.
    */
-  pixels(doc, layer, before, label) {
+  pixels(doc, layer, before, label, sel = null) {
     const r = this.renderer;
     const stored = before;
+    // sel = { before, after } — בחירה שזזה יחד עם הפיקסלים (הזזה / שינוי צורה): אותו צעד ביטול
+    let selNow = sel?.after;
     const swap = () => {
+      if (sel) {
+        selNow = selNow === sel.after ? sel.before : sel.after;
+        doc.selection = selNow;
+        r.selectionChanged(doc);
+      }
       for (const [k, t] of stored) {
         const cur = layer.tiles.get(k) ?? null;
         if (t) layer.tiles.set(k, t); else layer.tiles.delete(k);
