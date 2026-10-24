@@ -12,6 +12,9 @@ import { History } from './engine/history.js';
 import { createTools } from './tools.js';
 import { createOverlay } from './overlay.js';
 import { createAdjustPanel } from './adjust-panel.js';
+import { exportPNG, exportJPG, exportORA, download, fileName } from './export.js';
+import { saveDraft, loadDraft, restoreDraft, draftKey } from './draft.js';
+import { gapsFor } from './engine/formats.js';
 
 const $ = s => document.querySelector(s);
 const stage = $('#stage');
@@ -85,6 +88,7 @@ function setDoc(d) {
   $('#open-btn').disabled = false;
   $('#layers-btn').disabled = false;
   $('#adjust-btn').disabled = false;
+  $('#export-btn').disabled = false;
   panel.render();
   showMsg('');
   if (stage.clientWidth) { fitted = true; fit(); }
@@ -116,6 +120,7 @@ async function decodeWithBudget(blob) {
   return bmp;
 }
 
+const history_replace = q => window.history.replaceState(null, '', location.pathname + q);
 const baseName = name => (name || '').replace(/\.[a-z0-9]+$/i, '') || 'תמונה';
 
 /** מסמך חדש מקובץ: בגודל התמונה, והתמונה — השכבה היחידה. */
@@ -125,8 +130,10 @@ async function openAsDocument(blob) {
   const layer = d.addLayer({ name: baseName(blob.name) });
   await renderer.drawImage(d, layer, bmp, 0, 0);
   bmp.close();
-  changed = true;
   setDoc(d);
+  // טעינה מחדש (גם אחרי שהגרפיקה אופסה) — משחזרת מהטיוטה, לא מקובץ שכבר נמחק מהתור
+  history_replace('?draft=local');
+  scheduleDraft(0);
 }
 
 /** תמונה כשכבה חדשה מעל, באמצע הקנבס. מה שגולש מהקנבס נשמר בשכבה (להזזה בהמשך). */
@@ -160,7 +167,65 @@ function toggleLayers(open = !layersEl.classList.contains('open')) {
 $('#layers-btn').addEventListener('click', () => toggleLayers());
 $('.panel-close').addEventListener('click', () => toggleLayers(false));
 
-addEventListener('beforeunload', e => { if (changed) e.preventDefault(); });
+// ---------- טיוטה במכשיר ----------
+let draftTimer = 0, draftBusy = false;
+function scheduleDraft(ms = 1500) {
+  changed = true;
+  clearTimeout(draftTimer);
+  draftTimer = setTimeout(flushDraft, ms);
+}
+async function flushDraft() {
+  clearTimeout(draftTimer);
+  if (!doc || !renderer || renderer.lost || draftBusy || !changed) return;
+  draftBusy = true;
+  try {
+    tools?.commitFloat();
+    await saveDraft(renderer, doc);
+    changed = false;
+  } catch (e) {
+    console.warn('draft', e);
+  } finally {
+    draftBusy = false;
+  }
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushDraft(); });
+// הגרפיקה אופסה וחזרה — הכי בטוח לטעון מחדש מהטיוטה
+canvas.addEventListener('webglcontextrestored', () => location.reload());
+
+addEventListener('beforeunload', e => { if (changed) { flushDraft(); e.preventDefault(); } });
+
+// ---------- הורדה ----------
+const exportDlg = $('#export-dlg');
+$('#export-btn').addEventListener('click', () => {
+  tools.commitFloat(); tools.commitText(); adjust.close();
+  const g = ['png', 'ora'].flatMap(k => gapsFor(k, doc.layers).map(x => k.toUpperCase() + ': ' + GAP_TEXT[x]));
+  $('#export-gaps').textContent = g.length ? 'שימו לב — ' + g.join(' · ') : '';
+  exportDlg.showModal();
+});
+const GAP_TEXT = {
+  'layers → flattened': 'השכבות מתמזגות לתמונה אחת',
+  'hidden-layers → omitted': 'שכבות מוסתרות לא נכנסות',
+  'blend-space:linear → srgb': 'GIMP / Krita ממזגים ב-sRGB — שכבות שקופות ומצבי מיזוג עשויים להיראות מעט שונה',
+  'alpha → white': 'בלי שקיפות',
+};
+exportDlg.addEventListener('click', async e => {
+  if (e.target.closest('[data-close]')) { exportDlg.close(); return; }
+  const b = e.target.closest('[data-export]');
+  if (!b || b.disabled) return;
+  const kind = b.dataset.export;
+  b.setAttribute('aria-busy', 'true');
+  try {
+    const blob = kind === 'png' ? await exportPNG(renderer, doc) : kind === 'jpg' ? await exportJPG(renderer, doc) : await exportORA(renderer, doc);
+    download(blob, fileName(doc.title, kind));
+    exportDlg.close();
+    toast('ירד: ' + fileName(doc.title, kind));
+  } catch (err) {
+    console.error(err);
+    toast('ההורדה נכשלה', true);
+  } finally {
+    b.removeAttribute('aria-busy');
+  }
+});
 
 // ---------- זום והזזה ----------
 
@@ -288,6 +353,8 @@ for (const t of ['gesturestart', 'gesturechange']) document.addEventListener(t, 
 
 const undoBtn = $('#undo-btn'), redoBtn = $('#redo-btn');
 function syncHistory(h) {
+  // מסמך שרק נפתח (היסטוריה ריקה) — אין מה לשמור; אחרת — טיוטה
+  if (doc && (h.canUndo || h.canRedo)) scheduleDraft();
   undoBtn.disabled = !h.canUndo;
   redoBtn.disabled = !h.canRedo;
   undoBtn.title = h.canUndo ? 'ביטול: ' + h.undoStack.at(-1).label : 'ביטול';
@@ -355,10 +422,22 @@ $('#hint').textContent = coarse ? 'צביטה — זום' : 'גרירה — הז
     const q = new URLSearchParams(location.search);
     if (q.get('doc')) {
       const { doc: meta } = await api('doc_get', { id: Number(q.get('doc')) });
-      const d = new RasterDocument(meta.size[0], meta.size[1], meta.title);
-      d.serverId = meta.id;
-      renderer.fill(d, d.addLayer({ name: 'רקע' }), [255, 255, 255, 255]);
-      setDoc(d);
+      const draft = await loadDraft('draft:doc:' + meta.id);
+      if (draft) {
+        const d = await restoreDraft(renderer, draft);
+        d.title = meta.title;
+        setDoc(d);
+        toast('שוחזרה הטיוטה מהמכשיר — ' + new Date(draft.savedAt).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' }));
+      } else {
+        const d = new RasterDocument(meta.size[0], meta.size[1], meta.title);
+        d.serverId = meta.id;
+        renderer.fill(d, d.addLayer({ name: 'רקע' }), [255, 255, 255, 255]);
+        setDoc(d);
+      }
+    } else if (q.get('draft') === 'local') {
+      const draft = await loadDraft('draft:local');
+      if (!draft) throw new Error('no_file');
+      setDoc(await restoreDraft(renderer, draft));
     } else if (q.get('open') === 'pending') {
       const blob = await idbGet('pending-open');
       await idbDel('pending-open');
@@ -387,6 +466,8 @@ window.__rs = {
   setView,
   fit,
   openAsDocument,
+  flushDraft,
+  get changed() { return changed; },
   addImageLayer,
   budget,
 };

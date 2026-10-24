@@ -1,0 +1,77 @@
+// ייצוא: PNG / JPG (משוטחת) ו-ORA (שכבות — GIMP, Krita). ‎.mbe — כשהליבה תצורף (requests/raster-studio-core.md).
+
+import { encodePNG } from './engine/png.js';
+import { zipStore } from './engine/zip.js';
+import { oraStack } from './engine/formats.js';
+
+/** התמונה המשוטחת (רק שכבות גלויות): RGBA ישר של 8 ביט בגודל הקנבס */
+export const flatRGBA = (renderer, doc) => renderer.readPixels(doc, 0, 0, doc.width, doc.height);
+
+/** שכבה אחת בגודל הקנבס, כ-PNG (התוכן שמחוץ לקנבס לא נכנס) */
+export const layerPNG = (renderer, doc, layer) =>
+  encodePNG(renderer.readLayerPixels(layer, 0, 0, doc.width, doc.height), doc.width, doc.height);
+
+/** תמונה מוקטנת (הצלע הארוכה ≤ max) כ-PNG — לתמונה ממוזערת / preview */
+export async function scaledPNG(rgba, w, h, max) {
+  const k = Math.min(1, max / Math.max(w, h));
+  if (k === 1) return encodePNG(rgba, w, h);
+  const tw = Math.max(1, Math.round(w * k)), th = Math.max(1, Math.round(h * k));
+  const bmp = await createImageBitmap(new ImageData(new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, rgba.length), w, h),
+    { resizeWidth: tw, resizeHeight: th, resizeQuality: 'high', premultiplyAlpha: 'none' });
+  const cv = new OffscreenCanvas(tw, th);
+  const ctx = cv.getContext('2d');
+  ctx.drawImage(bmp, 0, 0);
+  bmp.close();
+  return encodePNG(ctx.getImageData(0, 0, tw, th).data, tw, th);
+}
+
+export async function exportPNG(renderer, doc) {
+  return new Blob([await encodePNG(flatRGBA(renderer, doc), doc.width, doc.height)], { type: 'image/png' });
+}
+
+/** JPG: בלי שקיפות — מעל לבן */
+export async function exportJPG(renderer, doc, quality = 0.92) {
+  const rgba = flatRGBA(renderer, doc);
+  const bmp = await createImageBitmap(new ImageData(rgba, doc.width, doc.height), { premultiplyAlpha: 'none' });
+  const cv = new OffscreenCanvas(doc.width, doc.height);
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, doc.width, doc.height);
+  ctx.drawImage(bmp, 0, 0);
+  bmp.close();
+  return cv.convertToBlob({ type: 'image/jpeg', quality });
+}
+
+/** ORA — שכבה לכל שכבה, mergedimage.png ותמונה ממוזערת. מחזיר Uint8Array. */
+export async function buildORA(renderer, doc) {
+  const files = [{ name: 'mimetype', data: 'image/openraster' }];
+  const layers = [];
+  for (let i = 0; i < doc.layers.length; i++) {
+    const l = doc.layers[i];
+    const src = `data/layer${i}.png`;
+    files.push({ name: src, data: await layerPNG(renderer, doc, l) });
+    layers.push({ ...l, src });
+  }
+  const flat = flatRGBA(renderer, doc);
+  files.splice(1, 0, { name: 'stack.xml', data: oraStack(doc.width, doc.height, layers) });
+  files.push({ name: 'mergedimage.png', data: await encodePNG(flat, doc.width, doc.height) });
+  files.push({ name: 'Thumbnails/thumbnail.png', data: await scaledPNG(flat, doc.width, doc.height, 256) });
+  return zipStore(files);
+}
+
+export async function exportORA(renderer, doc) {
+  return new Blob([await buildORA(renderer, doc)], { type: 'image/openraster' });
+}
+
+/** שם קובץ בטוח מהכותרת */
+export const fileName = (title, ext) => (String(title || 'תמונה').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ').trim().slice(0, 80) || 'תמונה') + '.' + ext;
+
+export function download(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 30_000);
+}
