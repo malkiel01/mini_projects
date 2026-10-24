@@ -50,8 +50,8 @@ function blockText(block) {
   let text = '';
   const bold = [];
   for (const r of block.runs) {
-    for (const ch of r.text.replace(/\s/g, ' ')) {
-      if (ch === ' ' && (text === '' || text.endsWith(' '))) continue;
+    for (const ch of r.text.replace(/[^\S\n]/g, ' ')) {   // רווחים מכל סוג → רווח; \n — שבירת שורה, נשארת
+      if (ch === ' ' && (text === '' || text.endsWith(' ') || text.endsWith('\n'))) continue;
       if (r.bold) {
         const last = bold[bold.length - 1];
         if (last && last.end === text.length) last.end += ch.length;
@@ -60,7 +60,7 @@ function blockText(block) {
       text += ch;
     }
   }
-  return { text: text.trimEnd(), bold };
+  return { text: text.replace(/\s+$/, ''), bold };
 }
 
 // טווחי הדגשה בתוך קטע [a, b) — במיקומים יחסיים, עם הגופנים המודגשים
@@ -106,9 +106,10 @@ export function layoutFlow(blocks, frameList, styleFor, fontsFor, avoid = () => 
     const { text, bold } = blockText(blocks[bi]);
     const key = fontsR.map(x => x.name).join('+') + '|' + fontsB[0].name;
 
-    // מילים: [start, end) בטקסט
+    // מילים: [start, end) בטקסט; '\n' — אסימון של שבירת שורה (hardBreak)
     const words = [];
-    for (const m of text.matchAll(/[^ ]+/g)) words.push([m.index, m.index + m[0].length]);
+    for (const m of text.matchAll(/[^ \n]+|\n/g)) words.push([m.index, m.index + m[0].length]);
+    const isBreak = i => i < words.length && text[words[i][0]] === '\n';
     const wordW = ([a, b]) => {
       const sp = spansIn(bold, a, b, fontsB);
       const ck = key + '|' + sp.map(s => s.start + '-' + s.end).join(',') + '|' + text.slice(a, b);
@@ -127,11 +128,12 @@ export function layoutFlow(blocks, frameList, styleFor, fontsFor, avoid = () => 
     while (wi < words.length) {
       const p = place(st, wi === 0 ? st.spaceBefore : 0);
       if (!p) return finish(out, frameList, { paragraph: bi, word: wi, of: blocks.length });
+      if (isBreak(wi)) { wi++; continue; }   // שבירה בתחילת שורה — שורה ריקה
       const s = { frameId: p.s.frameId, x: p.x, w: p.w };   // הקטע הפנוי בשורה הזו
       const indent = wi === 0 ? Math.min(st.indent || 0, s.w / 2) : 0;   // הזחת שורה ראשונה — מימין
       const avail = s.w - indent;
       let width = wordW(words[wi]), j = wi + 1;
-      while (j < words.length) {
+      while (j < words.length && !isBreak(j)) {
         const ww = width + spaceW + wordW(words[j]);
         if (ww > avail + 0.01) break;
         width = ww; j++;
@@ -141,7 +143,7 @@ export function layoutFlow(blocks, frameList, styleFor, fontsFor, avoid = () => 
       const sp = spansIn(bold, a, b, fontsB);
       const glyphs = shapeLine(fontsR, lineText, 'rtl', sp.length ? sp : null);
       const natural = advance(glyphs) * k;
-      const last = j >= words.length;
+      const last = j >= words.length || isBreak(j);   // סוף פסקה או שבירת שורה — לא מיושרת לשני הצדדים
       const right = s.x + s.w - indent;
       let x;
       if (st.align === 'justify' && !last && j - wi > 1) {
@@ -153,7 +155,7 @@ export function layoutFlow(blocks, frameList, styleFor, fontsFor, avoid = () => 
       else if (st.align === 'center') x = s.x + (avail - natural) / 2;
       else x = right - natural;   // ימין — ובסוף פסקה מיושרת
       out.get(s.frameId).lines.push({ x, y, glyphs, size: st.size, font: f });
-      wi = j;
+      wi = isBreak(j) ? j + 1 : j;   // השבירה שסגרה את השורה — נבלעת
     }
     y += st.spaceAfter;
   }

@@ -347,6 +347,41 @@ $('#fr-fitframe').addEventListener('click', () => {
   fform.zoom.value = 100; $('#zoom-out-v').textContent = '100%';
 });
 
+// ---- ייבוא מ-Word (docx) ----
+const docxInput = $('#docx-file');
+let docxTarget = null;   // { page } — זרימה אוטומטית מהעמוד; { flowId } — החלפת הטקסט של שטף
+$('#pm-docx').addEventListener('click', () => { docxTarget = { page: view.selected }; pdlg.close(); docxInput.click(); });
+$('#fr-docx').addEventListener('click', () => {
+  const x = selFrame();
+  if (flowText(model, x.frame.flow).trim() && !confirm('הטקסט במסגרת (ובכל השרשור שלה) יוחלף בטקסט מהקובץ. להמשיך?')) return;
+  docxTarget = { flowId: x.frame.flow };
+  fdlg.close();
+  docxInput.click();
+});
+docxInput.addEventListener('change', async () => {
+  const file = docxInput.files[0];
+  docxInput.value = '';
+  if (!file || !docxTarget) return;
+  toast('קורא את הקובץ…');
+  try {
+    const [{ docxToDoc, reportLines }] = await Promise.all([import('./docx.js'), ensureFonts()]);
+    const { doc, report } = await docxToDoc(await file.arrayBuffer());
+    if (docxTarget.flowId) changed(setFlow(model, docxTarget.flowId, { doc }));
+    else {
+      const r = autoflow(model, docxTarget.page, { newId });
+      changed(setFlow(r.model, r.flowId, { doc }));
+      view.select(docxTarget.page, thread(model, r.flowId)[0]?.frame.id || null);
+    }
+    // דוח: כמה עבר, ומה לא
+    const lines = reportLines(report);
+    $('#report-sum').textContent = `${report.paragraphs} פסקאות יובאו מ-"${file.name}"` + (lines.length ? '. מה שלא עבר במדויק:' : ' — הכול עבר.');
+    $('#report-list').replaceChildren(...lines.map(t => Object.assign(document.createElement('li'), { textContent: t })));
+    $('#report-dlg').showModal();
+  } catch (err) {
+    toast(err.message === 'not_zip' || err.message === 'not_docx' ? 'זה לא קובץ Word (docx)' : 'הייבוא נכשל: ' + err.message, true);
+  }
+});
+
 // ---- תמונות: בחירה, הקטנה (אם צריך) והעלאה ----
 const MAX_SIDE = 3000, MAX_BYTES = 6 * 1024 * 1024;
 async function prepareImage(file) {
