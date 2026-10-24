@@ -240,3 +240,5 @@ dialog.story .sheet-body { grid-template-rows: auto 1fr; height: 100%; }
 .story-pm:focus-visible { box-shadow: inset 0 0 0 2px var(--brand-soft); }
 @font-face { font-family: 'Noto Serif Hebrew'; src: url(../fonts/NotoSerifHebrew.ttf) format('truetype'); font-display: swap; }
 @font-face { font-family: 'Frank Ruhl Libre'; src: url(../fonts/FrankRuhlLibre.ttf) format('truetype'); font-display: swap; }
+#frame-dlg [data-kind][hidden] { display: none !important; }
+#frame-dlg input[type=range] { padding: 0; accent-color: var(--brand); }

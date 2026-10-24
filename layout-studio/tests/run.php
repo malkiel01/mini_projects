@@ -7,11 +7,19 @@ if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 $tmp = sys_get_temp_dir() . '/layout-studio-test-' . getmypid() . '.sqlite';
 @unlink($tmp);
 putenv('LAYOUT_STUDIO_DB=' . $tmp);
+$tmpFiles = sys_get_temp_dir() . '/layout-studio-files-' . getmypid();
+putenv('LAYOUT_STUDIO_FILES=' . $tmpFiles);
+register_shutdown_function(function () use ($tmpFiles) {
+    foreach (glob($tmpFiles . '/*/*') ?: [] as $f) unlink($f);
+    foreach (glob($tmpFiles . '/*') ?: [] as $d) rmdir($d);
+    @rmdir($tmpFiles);
+});
 register_shutdown_function(fn() => array_map('unlink', glob($tmp . '*') ?: []));
 
 require_once __DIR__ . '/../lib/auth.php';
 require_once __DIR__ . '/../lib/docs.php';
 require_once __DIR__ . '/../lib/model.php';
+require_once __DIR__ . '/../lib/media.php';
 
 $fails = 0;
 $n = 0;
@@ -185,6 +193,35 @@ check('כותרת, הדגשה וסגנון זר — נשמרים', ls_doc_save($
 $rv = 4;
 check('משקל 1000 — נדחה', $tryF(function (&$x) { $x['styles']['h2'] = ['font' => 'a', 'size' => 12, 'leading' => 18, 'align' => 'right', 'spaceAfter' => 0, 'weight' => 1000]; }, 'style'));
 check('הזחה שלילית — נדחה', $tryF(function (&$x) { $x['styles']['body']['indent'] = -5; }, 'style'));
+
+// ---- תמונות ----
+$png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAIAAAADCAIAAAA2iEnWAAAAEklEQVR4nGP4z8DAwMDAxMAAAAs/AQX+M4EaAAAAAElFTkSuQmCC');
+$m1 = ls_media_put($uidA, $png);
+check('העלאת PNG — src לפי הגיבוב, וגודל בפיקסלים', $m1['src'] === 'media/' . hash('sha256', $png) . '.png' && $m1['px'] === [2, 3]);
+check('אותה תמונה פעמיים — אותו קובץ', ls_media_put($uidA, $png)['src'] === $m1['src']);
+check('הקובץ קיים אצל הבעלים בלבד', ls_media_path($uidA, substr($m1['src'], 6)) !== null && ls_media_path($uidB, substr($m1['src'], 6)) === null);
+check('שם עם נתיב — נדחה', ls_media_path($uidA, '../../x.png') === null);
+check('לא תמונה — נדחה', throws(fn() => ls_media_put($uidA, '<?php echo 1;'), 'bad_image'));
+check('PNG פגום (רק החתימה) — נדחה', throws(fn() => ls_media_put($uidA, "\x89PNG\r\n\x1a\n" . str_repeat('x', 40)), 'bad_image'));
+check('SVG — נדחה', throws(fn() => ls_media_put($uidA, '<svg xmlns="http://www.w3.org/2000/svg"/>'), 'bad_image'));
+
+$img = $withFrame($base);
+$img['styles'] = $st['styles'];
+$img['surfaces'][2]['layers'][] = ['id' => 'i1', 'type' => 'frame', 'name' => 'תמונה', 'box' => [40, 40, 200, 300], 'src' => $m1['src'],
+    'px' => [2, 3], 'fit' => 'cover', 'focus' => [0.5, 0.2], 'zoom' => 1.5, 'wrap' => 'box', 'wrapGap' => 8];
+$exists = fn($src) => ls_media_path($uidA, substr($src, 6)) !== null;
+$rv = ls_doc_save($uidA, $d4['id'], $rv, json_encode($img, JSON_UNESCAPED_UNICODE), $exists);
+check('מסגרת תמונה עם חיתוך וגלישה — נשמרת', $rv === 5);
+$tryI = function (callable $mut, string $code) use ($uidA, $d4, $img, $exists, &$rv) {
+    $x = $img; $mut($x);
+    return throws(fn() => ls_doc_save($uidA, $d4['id'], $rv, json_encode($x), $exists), 'bad_model:' . $code);
+};
+check('תמונה שלא הועלתה — נדחה', $tryI(function (&$x) { $x['surfaces'][2]['layers'][0]['src'] = 'media/' . str_repeat('a', 64) . '.png'; }, 'image_missing'));
+check('src עם https — נדחה', $tryI(function (&$x) { $x['surfaces'][2]['layers'][0]['src'] = 'https://x.y/a.png'; }, 'image'));
+check('התאמה לא מוכרת — נדחה', $tryI(function (&$x) { $x['surfaces'][2]['layers'][0]['fit'] = 'stretch'; }, 'image'));
+check('מיקוד מחוץ ל-0..1 — נדחה', $tryI(function (&$x) { $x['surfaces'][2]['layers'][0]['focus'] = [2, 0]; }, 'image'));
+check('גלישה לא מוכרת — נדחה', $tryI(function (&$x) { $x['surfaces'][2]['layers'][0]['wrap'] = 'around'; }, 'frame'));
+check('מסגרת תמונה בשרשור — נדחה', $tryI(function (&$x) { $x['flows']['f1']['frames'][] = 'i1'; }, 'thread'));
 
 echo "\n" . ($n - $fails) . " / $n עברו\n";
 exit($fails ? 1 : 0);

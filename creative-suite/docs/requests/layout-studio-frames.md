@@ -32,9 +32,20 @@
 / `center` / `left`; `weight` — ציר `wght`). פסקה (`paragraph`) — `body`; כותרת (`heading`, `level` 1–3) — `h1`…`h3`.
 **סגנון תו:** הסימון `bold` — אותו גופן במשקל 700. שמות הצמתים והסימונים — כמו בעורך התמלילים (TipTap).
 
+**מסגרת תמונה** (2026-10-25) — אותו סוג `frame`, עם `src` במקום `flow`:
+
+```json
+{ "id": "i1", "type": "frame", "name": "תמונה", "box": [40, 40, 170, 128], "src": "media/<sha256>.jpg",
+  "px": [1200, 800], "fit": "cover", "focus": [0.5, 0.5], "zoom": 1, "wrap": "box", "wrapGap": 8 }
+```
+
+- `src` — כבר לפי כלל הליבה (`media/<sha256>.<ext>`); `px` — גודל התמונה בפיקסלים (כדי לעמד בלי לפענח אותה).
+- `fit`: `contain` (כולה נראית) / `cover` (ממלאת, נחתכת); `focus` — איזה חלק נשאר בחיתוך (0–1 לכל ציר); `zoom` 1–10.
+- `wrap`: `none` / `box` — הטקסט עוקף את המסגרת, ב-`wrapGap` pt. גם למסגרות אחרות בעתיד (צורה וקטורית).
+
 ## מה מבוקש
 
-לרשום ב-`mbe-format.md` ובסכמה: `frames`, `autogrow` ו-`style` בשטף; `columns` ו-`gutter` בשכבת `frame`; וסגנונות הפסקה ב-`styles`.
+לרשום ב-`mbe-format.md` ובסכמה: `frames`, `autogrow` ו-`style` בשטף; `columns`, `gutter`, `px`, `fit`, `focus`, `zoom`, `wrap` ו-`wrapGap` בשכבת `frame`; וסגנונות הפסקה ב-`styles`.
 הכול רשות — קובץ קיים לא נשבר.
 
 ## תשובה

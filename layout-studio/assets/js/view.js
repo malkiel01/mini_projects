@@ -5,7 +5,7 @@
 // הבמה ב-direction: ltr — חשבון הגלילה פשוט; העמודים עצמם ממוקמים לפי צד הכריכה (pages.js).
 
 import { layoutDoc, contentBox, runningItems, pagesOf, masterOf, pageAt } from './pages.js';
-import { framesOnPage, frameAt } from './frames.js';
+import { framesOnPage, frameAt, isImage, imagePlacement } from './frames.js';
 import { drawGlyphs, shapeLine, advance } from './shaper.js';
 
 const MIN_Z = 0.1, MAX_Z = 8;
@@ -19,6 +19,7 @@ export class PageView {
     this.frameSel = null; // מזהה המסגרת הנבחרת, או null
     this.text = null;     // פריסת הטקסט (flow.js: layoutFlows) — null עד שהגופנים נטענו
     this.fonts = null;    // [גופן, חלופי] לכותרת הרצה ולמספר העמוד
+    this.images = new Map();   // src → HTMLImageElement (נטען פעם אחת מהשרת)
     host.classList.add('stage');
     host.innerHTML = '<div class="scroller" tabindex="0" aria-label="העמודים"><div class="spacer"></div></div><canvas aria-hidden="true"></canvas>';
     this.scroller = host.querySelector('.scroller');
@@ -192,6 +193,20 @@ export class PageView {
     this.draw();
   }
 
+  /** התמונה של src (media/<sha>.<ext>) — מהמטמון, או מתחילה להיטען ומציירת שוב כשמגיעה. */
+  image(src) {
+    let img = this.images.get(src);
+    if (!img) {
+      img = new Image();
+      img.decoding = 'async';
+      img.onload = () => this.draw();
+      img.onerror = () => { img.failed = true; this.draw(); };
+      img.src = 'api.php?media=' + encodeURIComponent(src.slice(6));
+      this.images.set(src, img);
+    }
+    return img;
+  }
+
   /** פריסת הטקסט החדשה (אחרי כל שינוי במודל) — וציור. */
   setText(text, fonts) {
     this.text = text;
@@ -266,6 +281,27 @@ export class PageView {
         for (const fr of framesOnPage(model, p.index)) {
           const [fx, fy, fw, fh] = fr.box;
           const sel = fr.id === this.frameSel;
+          if (isImage(fr)) {   // תמונה: בתוך המסגרת (נחתכת לגבולותיה), ועד שנטענה — רקע אפור
+            const img = this.image(fr.src);
+            ctx.save();
+            ctx.beginPath(); ctx.rect(p.x + fx, p.y + fy, fw, fh); ctx.clip();
+            if (img.complete && img.naturalWidth) {
+              const r = imagePlacement(fr);
+              ctx.drawImage(img, p.x + r.x, p.y + r.y, r.w, r.h);
+            } else {
+              ctx.fillStyle = col('--paste');
+              ctx.fillRect(p.x + fx, p.y + fy, fw, fh);
+              ctx.fillStyle = col('--muted');
+              ctx.font = `${Math.min(fw, fh) / 4}px system-ui, sans-serif`;
+              ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+              ctx.fillText(img.failed ? '⚠' : '🖼', p.x + fx + fw / 2, p.y + fy + fh / 2);
+            }
+            ctx.restore();
+            ctx.lineWidth = (sel ? 2 : 1) * px;
+            ctx.strokeStyle = sel ? col('--select') : col('--frame');
+            ctx.strokeRect(p.x + fx, p.y + fy, fw, fh);
+            continue;
+          }
           ctx.lineWidth = (sel ? 2 : 1) * px;
           ctx.strokeStyle = sel ? col('--select') : col('--frame');
           ctx.strokeRect(p.x + fx, p.y + fy, fw, fh);
