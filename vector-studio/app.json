@@ -1,0 +1,11 @@
+{
+  "id": "vector-studio",
+  "name": "וקטורי",
+  "icon": "✒️",
+  "icon_svg": "assets/icon.svg",
+  "description": "עורך גרפיקה וקטורית — לוגואים, אייקונים, איורים ושרטוטים: צורות, נתיבי בזייה וטקסט בעברית. שומר ‎.mbe עם SVG ו-PDF מוכנים בפנים. בבנייה — גרסה 1.",
+  "category": "design",
+  "entry": "index.html",
+  "gate": true,
+  "restricted": true
+}
