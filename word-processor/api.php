@@ -507,9 +507,12 @@ function app_action(string $action, array $in): never
             // השוואת גרסאות (כמו ב-Word): מסמך חדש — הגרסה מול המצב הנוכחי, ההבדלים כמעקב שינויים
             [$row] = doc_access($in['doc'] ?? '', $acc);
             $v = version_get($row, $in['id'] ?? 0);
-            $cmp = track_compare(json_decode($v['json'], true) ?: empty_doc_json(), doc_json($row));
+            $vj = json_decode($v['json'], true) ?: empty_doc_json();
+            $cur = doc_json($row);
+            $cmp = track_compare($vj, $cur);
             $title = clean_title(mb_substr('השוואה: ' . ($row['title'] ?: 'מסמך') . ' — גרסה ' . (int)$v['version'] . ' מול הנוכחית', 0, 200));
-            out(['doc' => doc_copy($row, $space, $title, [], $uid, $uname, $cmp)]);
+            // pending — באחת הגרסאות היו שינויים במעקב שעוד לא אושרו: ההשוואה כאילו אושרו (כמו ב-Word), והעורך אומר את זה
+            out(['doc' => doc_copy($row, $space, $title, [], $uid, $uname, $cmp), 'pending' => track_pending($vj) || track_pending($cur)]);
         case 'my_upload':
             [$row] = doc_access($in['doc'] ?? ($_POST['doc'] ?? ''), $acc, 'edit');
             out(media_store($row['id'], uploaded_bytes($in)));
