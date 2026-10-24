@@ -4,6 +4,7 @@
 import { multiply } from './geometry/matrix.js';
 import { objects, layout, pathMatrix, worldBox, findPath, leaves, isText } from './model.js';
 import { lines, lineHeight, fontCss } from './text.js';
+import { canvasPaint, hasPaint } from './gradient.js';
 
 import { GRID } from './snap.js';
 
@@ -81,7 +82,7 @@ export function drawText(ctx, item) {
   const tx = item.align === 'left' ? x : item.align === 'center' ? x + w / 2 : x + w;
   lines(item).forEach((l, i) => {
     const by = y + i * lh + (lh - font.size) / 2 + font.size * 0.8;
-    if (item.fill?.color) { ctx.globalAlpha = item.fill.opacity ?? 1; ctx.fillStyle = item.fill.color; ctx.fillText(l.text, tx, by); }
+    if (hasPaint(item.fill)) { ctx.globalAlpha = item.fill.opacity ?? 1; ctx.fillStyle = canvasPaint(ctx, item.fill); ctx.fillText(l.text, tx, by); }
     if (item.stroke?.color && (item.stroke.width ?? 1) > 0) {
       ctx.globalAlpha = item.stroke.opacity ?? 1; ctx.strokeStyle = item.stroke.color; strokeStyle(ctx, item.stroke); ctx.strokeText(l.text, tx, by);
     }
@@ -93,9 +94,9 @@ function drawPath(ctx, path) {
   if (isText(path)) return drawText(ctx, path);
   const p = path2d(path.d);
   const fill = path.fill, stroke = path.stroke;
-  if (fill && fill.color) {
+  if (hasPaint(fill)) {
     ctx.globalAlpha = fill.opacity ?? 1;
-    ctx.fillStyle = fill.color;
+    ctx.fillStyle = canvasPaint(ctx, fill);
     ctx.fill(p, path.fillRule === 'evenodd' ? 'evenodd' : 'nonzero');
   }
   if (stroke && stroke.color && (stroke.width ?? 1) > 0) {

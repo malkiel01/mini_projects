@@ -15,14 +15,16 @@ import { render, hitTest, inRect, handlePoints, readColors, HANDLE, viewMatrix }
 import { renderProps, renderLayers } from './props.js';
 import { createPenTools } from './pen.js';
 import { snapper } from './snap.js';
+import { parse, bbox } from './geometry/path.js';
 import { FONTS, TEXT_DEFAULT, fontCss, setMeasure, relayout, lineHeight } from './text.js';
 import * as drafts from './drafts.js';
+import * as library from './library.js';
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('canvas'), stage = $('stage');
 
 const S = {
-  id: null, name: 'ציור', doc: null,
+  id: null, rev: 0, name: 'ציור', doc: null,
   view: { x: 0, y: 0, z: 1 }, dpr: 1,
   sel: new Set(), hover: null, marquee: null, tool: 'select', active: null, guides: null,
   snap: pref('snap', true), grid: pref('grid', false), editingText: null, // active — השכבה לאובייקטים חדשים
@@ -45,42 +47,118 @@ function makeSnap(exclude, surface, touch) {
 
 // ---------- טעינה ----------
 
-function boot() {
+/**
+ * כתובות: #new:<גודל> — ציור חדש (נוצר בשרת); #d<מספר> — ציור מהספרייה; כל דבר אחר — טיוטה ישנה מהמכשיר,
+ * שעוברת עכשיו לשרת (ונמחקת מהמכשיר רק אחרי שנשמרה שם).
+ */
+async function boot() {
   const hash = decodeURIComponent(location.hash.slice(1));
-  if (hash.startsWith('new:')) {
-    const [, sizeId, w, h] = hash.split(':');
-    const preset = SIZES.find(s => s.id === sizeId);
-    const size = preset ? preset.size : [Number(w), Number(h)];
-    if (!(size[0] > 0 && size[1] > 0)) return leave();
-    S.id = drafts.newId();
-    S.name = 'ציור ' + new Date().toLocaleDateString('he-IL');
-    S.doc = newDocument(size);
-    history.replaceState(null, '', '#' + S.id);
-    persist();
-  } else {
-    const d = drafts.load(hash);
-    if (!d || !d.doc) return leave();
-    S.id = hash; S.name = d.name || 'ציור'; S.doc = d.doc;
+  try {
+    if (hash.startsWith('new:')) {
+      const [, sizeId, w, h] = hash.split(':');
+      const preset = SIZES.find(s => s.id === sizeId);
+      const size = preset ? preset.size : [Number(w), Number(h)];
+      if (!(size[0] > 0 && size[1] > 0)) return leave();
+      S.name = 'ציור ' + new Date().toLocaleDateString('he-IL');
+      S.doc = newDocument(size);
+      const r = await library.create(S.name, S.doc, null);
+      S.id = r.id; S.rev = r.rev;
+    } else if (/^d\d+$/.test(hash)) {
+      const d = await library.get(Number(hash.slice(1)));
+      S.id = d.id; S.rev = d.rev; S.name = d.name; S.doc = JSON.parse(d.doc);
+    } else {
+      const d = drafts.load(hash);
+      if (!d || !d.doc) return leave();
+      S.name = d.name || 'ציור'; S.doc = d.doc;
+      const r = await library.create(S.name, S.doc, thumbnail());
+      S.id = r.id; S.rev = r.rev;
+      drafts.remove(hash);
+      toast('הטיוטה מהמכשיר עברה לספרייה בשרת');
+    }
+  } catch (e) {
+    document.body.classList.add('failed');
+    $('doc-status').textContent = e.message;
+    toast('הציור לא נטען: ' + e.message, true);
+    return;
   }
-  $('doc-name').textContent = S.name;
-  document.title = S.name + ' — וקטורי';
+  history.replaceState(null, '', '#d' + S.id);
+  // גיבוי שנשאר במכשיר משמירה שנכשלה — חדש יותר ממה שבשרת? מציעים לשחזר
+  const backup = drafts.loadBackup(S.id);
+  if (backup?.doc && backup.rev === S.rev && JSON.stringify(backup.doc) !== JSON.stringify(S.doc)
+      && confirm('יש במכשיר שינויים שלא הגיעו לשרת. לשחזר אותם?')) {
+    S.doc = backup.doc; dirty = true; persist();
+  }
+  drafts.removeBackup(S.id);
+  showName();
   resize();
   fit();
   updatePanel();
+  fontsReady.then(() => { if (!S.rev || S.rev === 1) persist(); }); // תמונה ממוזערת לציור חדש
+}
+
+function showName() {
+  $('doc-name').textContent = S.name;
+  document.title = S.name + ' — וקטורי';
 }
 
 function leave() { location.replace('./'); }
 
-// ---------- שמירת טיוטה ----------
+// ---------- שמירה בשרת ----------
 
-let saveTimer = 0;
-function persist() {
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    const ok = drafts.save(S.id, S.name, { name: S.name, doc: S.doc, saved: new Date().toISOString() });
-    $('doc-status').textContent = ok ? 'טיוטה במכשיר · נשמר' : 'לא נשמר — האחסון במכשיר חסום';
-  }, 400);
+let saveTimer = 0, saving = false, dirty = false, stopped = false;
+
+/** תמונה ממוזערת של הלוח הראשון, עד 240px, ל-PNG. */
+function thumbnail() {
+  const s = S.doc.surfaces[0];
+  const k = Math.min(240 / s.size[0], 240 / s.size[1], 1);
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(s.size[0] * k)); c.height = Math.max(1, Math.round(s.size[1] * k));
+  render(c, { doc: { ...S.doc, surfaces: [s] }, view: { x: 0, y: 0, z: k }, dpr: 1, sel: new Set(), exportMode: true, bg: true });
+  return c.toDataURL('image/png');
 }
+
+function status(text) { $('doc-status').textContent = text; }
+
+/** שמירה אחרי שקט קצר; שמירה אחת בכל רגע, ואם היו שינויים בזמן השמירה — עוד אחת אחריה. */
+function persist() {
+  dirty = true;
+  if (stopped || !S.id) return;
+  clearTimeout(saveTimer);
+  status('לא נשמר…');
+  saveTimer = setTimeout(flush, 1200);
+}
+
+async function flush() {
+  if (saving || !dirty || stopped) return;
+  saving = true; dirty = false;
+  status('שומר…');
+  const doc = S.doc;
+  try {
+    const r = await library.save(S.id, S.rev, { doc, name: S.name, thumb: thumbnail() });
+    S.rev = r.rev;
+    drafts.removeBackup(S.id);
+    status(dirty ? 'לא נשמר…' : 'נשמר');
+  } catch (e) {
+    if (e.status === 409) {
+      stopped = true;
+      status('נשמר מחלון אחר — פתחו מחדש');
+      toast('הציור נשמר בינתיים מחלון אחר. השינויים כאן לא נשמרו — פתחו אותו מחדש מהספרייה.', true);
+    } else {
+      dirty = true;
+      // בלי חיבור: גיבוי במכשיר, ועוד ניסיון בעוד 15 שניות
+      const ok = drafts.saveBackup(S.id, { name: S.name, doc, rev: S.rev });
+      status(e.offline ? (ok ? 'אין חיבור — נשמר במכשיר' : 'אין חיבור — לא נשמר') : 'השמירה נכשלה: ' + e.message);
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(flush, 15000);
+    }
+  } finally {
+    saving = false;
+    if (dirty && !stopped) { clearTimeout(saveTimer); saveTimer = setTimeout(flush, 1200); }
+  }
+}
+
+window.addEventListener('beforeunload', (e) => { if ((dirty || saving) && !stopped) { flush(); e.preventDefault(); } });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); });
 
 // ---------- היסטוריה ----------
 
@@ -140,6 +218,7 @@ function draw() {
   if (frame) return;
   frame = requestAnimationFrame(() => {
     frame = 0;
+    if (!S.doc) return; // עוד נטען מהשרת
     const pathMode = S.tool === 'pen' || S.tool === 'node';
     render(canvas, {
       ...S, selBox: S.sel.size && !pathMode && !S.editingText ? selectionBox(S.doc, S.sel) : null, handles: !op || op.type !== 'move',
@@ -260,6 +339,7 @@ function targetLayer(surface) {
 }
 
 function updatePanel() {
+  if (!S.doc) return;
   const picked = [...S.sel].map(id => findPath(S.doc, id)).filter(Boolean);
   const surface = picked[0]?.surface || S.doc.surfaces[0];
   const off = layout(S.doc).get(surface.id);
@@ -294,6 +374,8 @@ function updatePanel() {
     }),
     action: (a) => a === 'delete' ? removeSelection() : a === 'edit-text' ? openTextEditor(picked[0].path.id) : duplicateSelection(),
     fonts: FONTS, relayout,
+    // התיבה של נתיב במרחב שלו (בלי היסט הלוח) — לנקודות של מעבר צבע
+    pathBox: (p) => (p.type === 'text' ? p.box : (() => { try { return bbox(parse(p.d)) || [0, 0, 1, 1]; } catch { return [0, 0, 1, 1]; } })()),
     arrange: (a, arg) => arrangeAction(a, arg),
   });
   const counts = new Map();
@@ -896,6 +978,49 @@ function openFileDialog() {
   $('exp-note').hidden = ![...objects(S.doc)].some(o => [...leaves(o.path)].some(p => p.type === 'text'));
   $('file-err').hidden = true;
   $('file-dlg').showModal();
+  showVersions();
+}
+
+async function showVersions() {
+  const ul = $('versions');
+  ul.innerHTML = '<li class="empty">טוען…</li>';
+  try {
+    const vs = await library.versions(S.id);
+    if (!vs.length) { ul.innerHTML = '<li class="empty">עוד אין גרסאות קודמות.</li>'; return; }
+    ul.innerHTML = vs.map(v => `<li class="card"><span class="body"><span class="l1"><span>${new Date(v.saved).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' })}</span></span>
+      <span class="l2">${v.name.replace(/[<&]/g, '')} · שמירה ${v.rev}</span></span>
+      <button class="btn sm ghost" type="button" data-ver="${v.id}">שחזור</button></li>`).join('');
+  } catch (e) {
+    ul.innerHTML = `<li class="empty">${e.message.replace(/[<&]/g, '')}</li>`;
+  }
+}
+
+$('versions').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-ver]');
+  if (!b || !confirm('לשחזר את הגרסה הזו? הנוכחית תישמר בגרסאות, ואפשר לחזור אליה.')) return;
+  b.disabled = true;
+  try {
+    clearTimeout(saveTimer);
+    if (dirty) { await flush(); }
+    const d = await library.restore(S.id, Number(b.dataset.ver), S.rev);
+    S.doc = JSON.parse(d.doc); S.rev = d.rev; S.undo = []; S.redo = []; S.sel = new Set();
+    $('file-dlg').close();
+    afterChangeQuiet();
+    fit();
+    toast('הגרסה שוחזרה');
+  } catch (err) {
+    $('file-err').textContent = 'השחזור נכשל: ' + err.message;
+    $('file-err').hidden = false;
+    b.disabled = false;
+  }
+});
+
+/** אחרי שהמסמך הוחלף מבחוץ (שחזור) — רענון בלי שמירה. */
+function afterChangeQuiet() {
+  $('undo').disabled = true; $('redo').disabled = true;
+  status('נשמר');
+  tools.reload();
+  updatePanel(); draw();
 }
 
 async function doExport(kind) {
@@ -968,6 +1093,15 @@ async function importFile(file) {
 }
 
 $('file-btn').addEventListener('click', openFileDialog);
+// שינוי שם: הקשה על הכותרת
+$('doc-name').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('doc-name').click(); });
+$('doc-name').addEventListener('click', () => {
+  const name = prompt('שם הציור', S.name);
+  if (!name || !name.trim() || name.trim() === S.name) return;
+  S.name = name.trim().slice(0, 120);
+  showName();
+  persist();
+});
 document.querySelectorAll('[data-export]').forEach(b => b.addEventListener('click', () => doExport(b.dataset.export)));
 $('imp-svg').addEventListener('click', () => $('imp-file').click());
 $('imp-file').addEventListener('change', () => { const f = $('imp-file').files[0]; $('imp-file').value = ''; if (f) importFile(f); });

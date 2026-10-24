@@ -283,6 +283,23 @@ try {
   await page.click('#grid-btn');
   step('הצמדה ללוח עם קו עזר, והצמדה לרשת');
 
+  // מעבר צבע מהלוח: מלבן → מעבר, צבע סוף, זווית 90
+  await page.evaluate(() => { const p = window.__vs.S.doc.surfaces[0].layers[0].paths; window.__vs.select([p[0].id]); });
+  await page.click('fieldset[data-k="fillmode"] label:nth-child(2)');
+  await page.locator('[data-g="1"]').evaluate((el) => { el.value = '#1e7b3a'; el.dispatchEvent(new Event('change', { bubbles: true })); });
+  await page.fill('[data-ga]', '90'); await page.press('[data-ga]', 'Enter');
+  s = await st();
+  const g0 = s.paths[0].fill.gradient;
+  const rb = s.paths[0].shape.box;
+  assert.equal(g0.stops[1].color, '#1e7b3a');
+  assert.deepEqual([g0.from[0], g0.to[0]], [rb[0] + rb[2] / 2, rb[0] + rb[2] / 2], 'אנכי: אותו x');
+  assert.deepEqual([g0.from[1], g0.to[1]], [rb[1], rb[1] + rb[3]]);
+  [a, b] = [await W(rb[0] + 20, rb[1] + 20), await W(rb[0] + 70, rb[1] + 20)];
+  await page.mouse.move(...a); await page.mouse.down(); await page.mouse.move(...b, { steps: 3 }); await page.mouse.up();
+  s = await st();
+  assert.equal(s.paths[0].fill.gradient.from[0], g0.from[0] + 50, 'המעבר זז עם הצורה');
+  step('מעבר צבע: צבעים וזווית מהלוח, וזז עם הצורה');
+
   // ייצוא: SVG, PDF ו-PNG יורדים, עם טקסט כקווי מתאר
   const grab = async (kind) => {
     await page.click('#file-btn');
@@ -297,6 +314,8 @@ try {
   assert.match(svgText, /viewBox="0 0 1080 1080"/);
   assert.match(svgText, /aria-label="שלום עולם/);
   assert.doesNotMatch(svgText, /<text/);
+  assert.match(svgText, /<linearGradient id="grad1" gradientUnits="userSpaceOnUse"/);
+  assert.match(svgText, /fill="url\(#grad1\)"/);
   assert.match(await page.textContent('.toast'), /קווי מתאר/);
   const pdfOut = await grab('pdf');
   assert.equal(pdfOut.buf.subarray(0, 5).toString(), '%PDF-');
@@ -318,7 +337,11 @@ try {
   assert.deepEqual(s.sel, [imp.id]);
   const flat = (it) => it.type === 'group' ? it.children.flatMap(flat) : [it];
   const parts = flat(imp);
-  assert.equal(parts.length, 5); // מלבן, עיגול, נתיב, קו, מלבן עם מעבר צבע (שחור)
+  assert.equal(parts.length, 6); // מלבן, עיגול, נתיב, קו, מלבן עם מעבר ליניארי, מלבן עם מעבר שלא קיים (שחור)
+  const lg = parts.find(p => p.fill?.gradient);
+  assert.deepEqual(lg.fill.gradient.from, [100, 60]); // objectBoundingBox של המלבן (200,120 → חצי בגלל viewBox)
+  assert.deepEqual(lg.fill.gradient.to, [140, 60]);
+  assert.equal(lg.fill.gradient.stops[1].opacity, 0.5);
   const rect = parts.find(p => p.shape?.type === 'rect' && p.shape.radius > 0);
   assert.deepEqual(rect.shape.box, [5, 5, 50, 30]); // viewBox 400 → width 200: חצי
   assert.equal(rect.shape.radius, 4);
@@ -336,13 +359,53 @@ try {
   assert.match(toastText, /סקריפט/);
   step('ייבוא SVG: צורות חיות, סגנון ותורשה, טרנספורמציה ו-viewBox, ודוח על מה שלא עבר');
 
-  // הטיוטה נשמרה ומופיעה ברשימה
-  await page.waitForTimeout(600);
+  // שמירה בשרת: אחרי שקט קצר — "נשמר"; טעינה מחדש מחזירה את אותו מסמך; ברשימה — עם תמונה ממוזערת
+  await page.waitForFunction(() => document.getElementById('doc-status').textContent === 'נשמר', null, { timeout: 10000 });
   if (shots) await page.screenshot({ path: `${shots}/editor-1280.png` });
+  const savedId = await page.evaluate(() => window.__vs.S.id);
+  const docBefore = await page.evaluate(() => JSON.stringify(window.__vs.S.doc));
+  await page.reload();
+  await page.waitForFunction(() => window.__vs?.S.doc);
+  assert.equal(await page.evaluate(() => JSON.stringify(window.__vs.S.doc)), docBefore, 'המסמך חזר מהשרת זהה');
+  assert.equal(await page.evaluate(() => location.hash), '#d' + savedId);
+  // שינוי שם מהכותרת
+  page.once('dialog', d => d.accept('לוגו לבדיקה'));
+  await page.click('#doc-name');
+  await page.waitForFunction(() => document.getElementById('doc-status').textContent === 'נשמר', null, { timeout: 10000 });
   await page.click('a[href="./"]');
-  await page.waitForSelector('#drafts .card');
-  assert.match(await page.textContent('#drafts'), /6 אובייקטים/);
-  step('הטיוטה נשמרה במכשיר ומופיעה ברשימה');
+  await page.waitForSelector(`#drafts .card[data-id="${savedId}"] img.thumb`);
+  assert.match(await page.textContent(`#drafts .card[data-id="${savedId}"]`), /לוגו לבדיקה/);
+  const thumbOk = await page.evaluate((id) => { const i = document.querySelector(`.card[data-id="${id}"] img`); return i.complete && i.naturalWidth > 0; }, savedId);
+  assert.ok(thumbOk, 'התמונה הממוזערת נטענת');
+  step('ספרייה בשרת: שמירה אוטומטית, טעינה מחדש זהה, שינוי שם, תמונה ממוזערת ברשימה');
+
+  // שני חלונות על אותו ציור: השני ששומר מקבל "נשמר מחלון אחר" ולא דורס
+  const p2 = await browser.newPage();
+  await p2.goto(base + 'editor.html#d' + savedId);
+  await p2.waitForFunction(() => window.__vs?.S.doc);
+  await page.goto(base + 'editor.html#d' + savedId);
+  await page.waitForFunction(() => window.__vs?.S.doc);
+  await page.keyboard.press('Control+a'); await page.keyboard.press('ArrowRight');
+  await page.waitForFunction(() => document.getElementById('doc-status').textContent === 'נשמר', null, { timeout: 10000 });
+  await p2.keyboard.press('Control+a'); await p2.keyboard.press('ArrowDown');
+  await p2.waitForFunction(() => /מחלון אחר/.test(document.getElementById('doc-status').textContent), null, { timeout: 10000 });
+  await p2.close();
+  step('התנגשות בין שני חלונות — השני לא דורס, ואומר לפתוח מחדש');
+
+  // טיוטה ישנה מהמכשיר: מופיעה ברשימה, ובפתיחה עוברת לספרייה
+  await page.goto(base);
+  await page.evaluate(() => {
+    const doc = { units: 'pt', color: { space: 'sRGB' }, surfaces: [{ id: 's1', type: 'artboard', name: 'לוח 1', size: [300, 200], layers: [{ id: 'L1', name: 'שכבה 1', type: 'vector', paths: [{ id: 'p1', d: 'M10 10 L100 10 L100 80 Z', fill: { color: '#2d4a8a' } }] }] }] };
+    localStorage.setItem('vector-studio:draft:old1', JSON.stringify({ name: 'טיוטה ישנה', doc }));
+    localStorage.setItem('vector-studio:drafts', JSON.stringify([{ id: 'old1', name: 'טיוטה ישנה', updated: new Date().toISOString() }]));
+  });
+  await page.reload();
+  await page.waitForSelector('#drafts .card[data-local="old1"]');
+  await page.click('#drafts .card[data-local="old1"] a');
+  await page.waitForFunction(() => /^#d\d+$/.test(location.hash) && window.__vs?.S.doc);
+  assert.equal(await page.evaluate(() => window.__vs.S.doc.surfaces[0].layers[0].paths.length), 1);
+  assert.equal(await page.evaluate(() => localStorage.getItem('vector-studio:draft:old1')), null, 'נמחקה מהמכשיר אחרי שנשמרה בשרת');
+  step('טיוטה ישנה מהמכשיר עוברת לספרייה בשרת');
   await page.close();
 
   // ---- טלפון ----

@@ -11,7 +11,7 @@
 <body class="editor">
   <header class="top">
     <a class="icon-btn" href="./" aria-label="חזרה לציורים">→</a>
-    <div class="titles"><h1 id="doc-name">ציור</h1><div class="sub" id="doc-status">טיוטה במכשיר</div></div>
+    <div class="titles"><h1 id="doc-name" role="button" tabindex="0" title="שינוי שם">ציור</h1><div class="sub" id="doc-status">טוען…</div></div>
     <button class="icon-btn" id="file-btn" aria-label="קובץ: ייצוא וייבוא" title="ייצוא וייבוא">📁</button>
     <button class="icon-btn" id="undo" aria-label="ביטול" title="ביטול (Ctrl+Z)" disabled>↶</button>
     <button class="icon-btn" id="redo" aria-label="ביצוע מחדש" title="ביצוע מחדש (Ctrl+Shift+Z)" disabled>↷</button>
@@ -100,6 +100,10 @@
           <h3 id="imp-title">ייבוא</h3>
           <div class="tiles"><button class="tile" type="button" id="imp-svg"><span class="tile-ic" aria-hidden="true">📥</span>SVG מהמכשיר</button></div>
           <input type="file" id="imp-file" accept=".svg,image/svg+xml" hidden>
+        </section>
+        <section class="group" aria-labelledby="ver-title">
+          <h3 id="ver-title">גרסאות קודמות <small>נשמרת גרסה כל 10 דקות של עבודה</small></h3>
+          <ul class="list" id="versions"></ul>
         </section>
         <p class="error" role="alert" id="file-err" hidden></p>
       </div>

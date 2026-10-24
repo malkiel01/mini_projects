@@ -55,4 +55,6 @@ function migrate(PDO $pdo): void {
             last_login_at TEXT
         );
     ");
+    require_once __DIR__ . '/drawings.php';
+    migrateDrawings($pdo);
 }

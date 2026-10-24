@@ -10,6 +10,7 @@ if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 
 define('DB_FILE', sys_get_temp_dir() . '/vector-studio-test-' . getmypid() . '.sqlite');
 require_once __DIR__ . '/../lib/auth.php';
+require_once __DIR__ . '/../lib/drawings.php';
 
 $fails = 0; $n = 0;
 function check(string $name, bool $ok): void {
@@ -65,6 +66,37 @@ try {
     check('זהות פגומה — אין משתמש', currentUser() === null);
 
     check('publicUser לא חושף sub', !array_key_exists('platform_sub', publicUser($a)));
+
+    // ---- הספרייה ----
+    $doc = '{"units":"pt","surfaces":[{"id":"s1","type":"artboard","size":[100,100],"layers":[]}],"x":{}}';
+    $png = 'data:image/png;base64,' . base64_encode("\x89PNG\r\n\x1a\n" . str_repeat('x', 20));
+    $c = createDrawing($a, ['name' => '  לוגו ', 'doc' => $doc, 'thumb' => $png]);
+    check('יצירה — rev 1', $c['rev'] === 1);
+    $list = listDrawings($a);
+    check('רשימה — של המשתמש, עם שם מנוקה ותמונה', count($list) === 1 && $list[0]['name'] === 'לוגו' && $list[0]['thumb'] === true);
+    check('המסמך חוזר בית-לבית ({} נשאר {})', getDrawing($a, $c['id'])['doc'] === $doc);
+    check('משתמש אחר לא רואה — 404', throws(fn () => getDrawing(getUser((int) $d["id"]), $c["id"]), 404));
+    check('רשימה של משתמש אחר ריקה', listDrawings(getUser((int) $d['id'])) === []);
+
+    $doc2 = str_replace('[100,100]', '[200,100]', $doc);
+    $sv = saveDrawing($a, $c['id'], ['rev' => 1, 'doc' => $doc2]);
+    check('שמירה — rev עולה', $sv['rev'] === 2 && getDrawing($a, $c['id'])['doc'] === $doc2);
+    check('גרסה נשמרה לפני השינוי', count(listVersions($a, $c['id'])) === 1 && listVersions($a, $c['id'])[0]['rev'] === 1);
+    saveDrawing($a, $c['id'], ['rev' => 2, 'doc' => str_replace('[200,100]', '[300,100]', $doc)]);
+    check('שמירה צמודה — בלי גרסה נוספת (פחות מ-10 דקות)', count(listVersions($a, $c['id'])) === 1);
+    check('rev ישן — 409, לא דורס', throws(fn () => saveDrawing($a, $c['id'], ['rev' => 1, 'doc' => $doc]), 409));
+    check('מסמך פגום — נדחה', throws(fn () => saveDrawing($a, $c['id'], ['rev' => 3, 'doc' => '{"surfaces":[]}']), 400));
+    check('JSON לא תקין — נדחה', throws(fn () => createDrawing($a, ['name' => 'x', 'doc' => '{nope']), 400));
+    check('תמונה שאינה PNG — נדחית', throws(fn () => createDrawing($a, ['name' => 'x', 'doc' => $doc, 'thumb' => 'data:image/png;base64,' . base64_encode('GIF89a')]), 400));
+    check('שם ריק — נדחה', throws(fn () => createDrawing($a, ['name' => ' ', 'doc' => $doc]), 400));
+    check('שינוי שם בלי מסמך', saveDrawing($a, $c['id'], ['rev' => 3, 'name' => 'לוגו חדש'])['rev'] === 4 && getDrawing($a, $c['id'])['name'] === 'לוגו חדש');
+
+    $v = listVersions($a, $c['id'])[0];
+    $r = restoreVersion($a, $c['id'], $v['id'], 4);
+    check('שחזור גרסה — המסמך הישן חוזר, והנוכחי נשמר בהיסטוריה', $r['doc'] === $doc && $r['rev'] === 5 && count(listVersions($a, $c['id'])) === 2);
+    check('תמונה ממוזערת נשמרה', str_starts_with((string) drawingThumb($a, $c['id']), "\x89PNG"));
+    deleteDrawing($a, $c['id']);
+    check('מחיקה — הגרסאות נמחקות איתו', listDrawings($a) === [] && (int) db()->query('SELECT COUNT(*) FROM drawing_versions')->fetchColumn() === 0);
 } finally {
     foreach (glob(DB_FILE . '*') ?: [] as $f) @unlink($f);
 }
