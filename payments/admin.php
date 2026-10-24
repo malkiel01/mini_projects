@@ -106,7 +106,9 @@ try {
         })(),
 
         // גיבוי וייצוא
-        'backups' => $owner ? ['data' => backups_list()] : throw new ApiError('רק לבעלים', 'forbidden', 403),
+        'backups' => $owner ? ['data' => backups_list(), 'offsite' => offsite_public()] : throw new ApiError('רק לבעלים', 'forbidden', 403),
+        'offsite_save' => ['offsite' => offsite_save($t, $in)],
+        'offsite_send' => $owner ? ['sent' => offsite_weekly(true), 'offsite' => offsite_public()] : throw new ApiError('רק לבעלים', 'forbidden', 403),
         'backup_now' => $owner ? ['name' => backup_daily(true)] : throw new ApiError('רק לבעלים', 'forbidden', 403),
         'backup_get' => $owner ? (function () use ($s, $t) {
             audit('admin', $t['id'], 'backup.downloaded', 'backup', $s('name'), [], $t['id']);
