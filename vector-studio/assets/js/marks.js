@@ -1,9 +1,11 @@
-// עוגני סימנים (ניקוד, דגש) מטבלת GPOS של הגופן — MarkBasePos (lookup 4, גם בתוך Extension 9).
+// עוגני סימנים (ניקוד, דגש, טעמים) מטבלת GPOS של הגופן — MarkBasePos (lookup 4) ו-MarkMarkPos (lookup 6), גם בתוך
+// Extension (9).
 // opentype.js לא קורא אותם, אז כאן קוראים את הבתים ישירות. בלי DOM.
 
 /**
- * buffer (ArrayBuffer של הקובץ) → [{ marks: Map(glyph → { cls, x, y }), bases: Map(glyph → [{ x, y } | null]) }]
- * — תת-טבלה לכל רשומה, כי המחלקות של הסימנים מקומיות לתת-הטבלה. גופן בלי GPOS → [].
+ * buffer (ArrayBuffer של הקובץ) → [{ kind, marks: Map(glyph → { cls, x, y }), bases: Map(glyph → [{ x, y } | null]) }]
+ * — תת-טבלה לכל רשומה, כי המחלקות של הסימנים מקומיות לתת-הטבלה. kind: 'base' (סימן על אות) או 'mark' (סימן על
+ * סימן — אז bases הם הסימנים שמתחת). שתי הטבלאות באותו מבנה בקובץ. גופן בלי GPOS → [].
  */
 export function parseMarks(buffer) {
   try {
@@ -51,7 +53,7 @@ export function parseMarks(buffer) {
       for (let s = 0, sc = u16(lk + 4); s < sc; s++) {
         let st = lk + u16(lk + 6 + s * 2), t = type;
         if (t === 9) { t = u16(st + 2); st += u32(st + 4); }
-        if (t === 4) { const mb = markBase(st); if (mb) out.push(mb); }
+        if (t === 4 || t === 6) { const mb = markBase(st); if (mb) out.push({ kind: t === 4 ? 'base' : 'mark', ...mb }); }
       }
     }
     return out;
@@ -60,9 +62,10 @@ export function parseMarks(buffer) {
   }
 }
 
-/** ההיסט (ביחידות הגופן, y למעלה) של סימן מעל/מתחת לאות — או null אם אין עוגן מתאים. */
-export function markOffset(tables, base, mark) {
+/** ההיסט (ביחידות הגופן, y למעלה) של סימן מעל/מתחת לאות (kind 'base') או לסימן אחר ('mark') — או null. */
+export function markOffset(tables, base, mark, kind = 'base') {
   for (const t of tables || []) {
+    if ((t.kind || 'base') !== kind) continue;
     const m = t.marks.get(mark), b = t.bases.get(base);
     const a = m && b?.[m.cls];
     if (a) return { x: a.x - m.x, y: a.y - m.y };

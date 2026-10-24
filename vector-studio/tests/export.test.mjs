@@ -222,3 +222,13 @@ test('מעבר מסוג לא מוכר (מגרסה עתידית): צבע העצי
   pdfCheck(toPDF([prep]));
   assert.equal(doc.surfaces[0].layers[0].paths[0].fill.gradient.type, 'conic', 'המסמך עצמו לא משתנה');
 });
+
+test('ניקוד: טעם שאין בגופן — מושמט (לא ריבוע ריק); טבלאות סימן-על-סימן נקראות', async () => {
+  const ot = await getFont('Heebo.ttf');
+  assert.ok(ot.marks.some(t => t.kind === 'mark'), 'יש mark-to-mark');
+  assert.equal(ot.charToGlyph('֖').index, 0, 'טרחא — לא בגופן');
+  const item = { id: 't', type: 'text', text: 'בָּ', box: [0, 0, 200, 0], font: { family: 'Heebo', size: 100, weight: 400 }, align: 'left', lineHeight: 1.25, auto: true };
+  relayout(item);
+  const withTa = await textToD({ ...item, text: 'בָּ֖' }, getFont);
+  assert.equal(withTa, await textToD(item, getFont));
+});
