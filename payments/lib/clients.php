@@ -61,19 +61,31 @@ function merchant_save(array $tenant, array $in): array
     $vat = $tax === 'exempt' ? 0 : (int)($in['vat_rate'] ?? 1800);
     if ($vat < 0 || $vat > 5000) throw new ApiError('שיעור מע"מ לא תקין', 'bad_vat');
     $taxId = preg_replace('/\D/', '', (string)($in['tax_id'] ?? ''));
-    $fields = [$name, $taxId, $tax, $vat, mb_substr((string)($in['email'] ?? ''), 0, 160), mb_substr((string)($in['address'] ?? ''), 0, 240)];
+    $phone = preg_replace('/[^\d+\-]/', '', mb_substr((string)($in['phone'] ?? ''), 0, 30));
+    $fields = [$name, $taxId, $tax, $vat, mb_substr((string)($in['email'] ?? ''), 0, 160), mb_substr((string)($in['address'] ?? ''), 0, 240), $phone];
     $id = (string)($in['id'] ?? '');
     if ($id !== '') {
         merchant_get($tenant, $id);
-        db_run('UPDATE merchant SET name = ?, tax_id = ?, tax_status = ?, vat_rate = ?, email = ?, address = ? WHERE id = ?', [...$fields, $id]);
+        db_run('UPDATE merchant SET name = ?, tax_id = ?, tax_status = ?, vat_rate = ?, email = ?, address = ?, phone = ? WHERE id = ?', [...$fields, $id]);
         audit('admin', $tenant['id'], 'merchant.updated', 'merchant', $id, ['tax_status' => $tax], $tenant['id']);
     } else {
         $id = new_id('mer');
-        db_run('INSERT INTO merchant (id, tenant, name, tax_id, tax_status, vat_rate, email, address, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        db_run('INSERT INTO merchant (id, tenant, name, tax_id, tax_status, vat_rate, email, address, phone, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             [$id, $tenant['id'], ...$fields, now()]);
         audit('admin', $tenant['id'], 'merchant.created', 'merchant', $id, ['tax_status' => $tax], $tenant['id']);
     }
     return merchant_get($tenant, $id);
+}
+
+/** מה חסר בפרטי העוסק כדי להציג אותם בדף התשלום כמו שהחוק דורש (שם, מספר, כתובת, דרך קשר). */
+function merchant_missing(?array $m): array
+{
+    if (!$m) return ['עוסק משויך'];
+    $out = [];
+    if ($m['tax_id'] === '') $out[] = 'ע"מ / ח"פ';
+    if ($m['address'] === '') $out[] = 'כתובת העוסק';
+    if ($m['phone'] === '' && $m['email'] === '') $out[] = 'טלפון או מייל של העוסק';
+    return $out;
 }
 
 function merchant_get(array $tenant, string $id): array
@@ -114,14 +126,26 @@ function client_update(array $tenant, string $id, array $in): array
     $keyUrl = array_key_exists('key_url', $in) ? trim((string)$in['key_url']) : $c['key_url'];
     if ($keyUrl !== '' && !valid_url($keyUrl)) throw new ApiError('כתובת המפתח — https מלאה', 'bad_url');
     $origins = array_key_exists('origins', $in) ? clean_origins($in['origins']) : json_obj($c['origins']);
+    $urls = [];
+    foreach (['terms_url' => 'התנאים', 'privacy_url' => 'מדיניות הפרטיות'] as $k => $label) {
+        $urls[$k] = array_key_exists($k, $in) ? trim((string)$in[$k]) : $c[$k];
+        if ($urls[$k] !== '' && !valid_url($urls[$k])) throw new ApiError("כתובת $label — https מלאה", 'bad_url');
+    }
     $status = array_key_exists('status', $in) ? (string)$in['status'] : $c['status'];
     if (!in_array($status, ['active', 'disabled'], true)) throw new ApiError('מצב לא תקין', 'bad_status');
     $liveOk = array_key_exists('live_ok', $in) ? (int)(bool)$in['live_ok'] : (int)$c['live_ok'];
     if ($liveOk && $tenant['role'] !== 'owner') $liveOk = (int)$c['live_ok']; // ‏live — רק הבעלים מאשר
+    if ($liveOk && !$c['live_ok']) {
+        // בלי זה דף התשלום מבקש "קראתי ואני מסכים" לתנאים שאין, ובלי לומר ממי קונים
+        $m = $merchant !== '' ? merchant_get($tenant, $merchant) : null;
+        $missing = merchant_missing($m);
+        if ($urls['terms_url'] === '') $missing[] = 'כתובת התנאים של המערכת';
+        if ($missing) throw new ApiError('לפני כסף אמיתי חסר: ' . implode(', ', $missing), 'not_ready');
+    }
     $keysReset = $keyUrl !== $c['key_url'];
-    db_run('UPDATE client SET name = ?, merchant = ?, webhook_url = ?, key_url = ?, origins = ?, status = ?, live_ok = ?'
+    db_run('UPDATE client SET name = ?, merchant = ?, webhook_url = ?, key_url = ?, origins = ?, status = ?, live_ok = ?, terms_url = ?, privacy_url = ?'
         . ($keysReset ? ', ed_keys = NULL, ed_keys_at = 0' : '') . ' WHERE id = ?',
-        [$name, $merchant ?: null, $webhook, $keyUrl, json_encode($origins), $status, $liveOk, $id]);
+        [$name, $merchant ?: null, $webhook, $keyUrl, json_encode($origins), $status, $liveOk, $urls['terms_url'], $urls['privacy_url'], $id]);
     audit('admin', $tenant['id'], 'client.updated', 'client', $id, ['status' => $status, 'live_ok' => $liveOk, 'key_url_changed' => $keysReset], $tenant['id']);
     return client_get($tenant, $id);
 }

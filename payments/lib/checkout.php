@@ -187,6 +187,8 @@ function checkout_view(array $c): array
         'vat_note' => $vat ? 'המחירים כוללים מע"מ ' . ($vat / 100) . '%' : 'עוסק פטור — ללא מע"מ',
         'disclose' => $disclose, 'status' => $c['status'], 'env' => $c['env'],
         'methods' => checkout_methods($c, $m),
+        'seller' => array_filter(['name' => $m['name'], 'tax_id' => $m['tax_id'], 'address' => $m['address'], 'phone' => $m['phone'], 'email' => $m['email']]),
+        'terms_url' => $client['terms_url'], 'privacy_url' => $client['privacy_url'],
     ];
 }
 

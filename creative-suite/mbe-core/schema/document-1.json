@@ -23,6 +23,29 @@
       }
     },
     "styles": { "type": "object" },
+    "layout": {
+      "type": "object",
+      "properties": {
+        "facing": { "type": "boolean" },
+        "binding": { "$ref": "#/$defs/token" },
+        "margins": {
+          "type": "object",
+          "properties": {
+            "top": { "type": "number", "minimum": 0 },
+            "bottom": { "type": "number", "minimum": 0 },
+            "inside": { "type": "number", "minimum": 0 },
+            "outside": { "type": "number", "minimum": 0 }
+          }
+        },
+        "numbering": {
+          "type": "object",
+          "properties": {
+            "start": { "type": "number" },
+            "style": { "$ref": "#/$defs/token" }
+          }
+        }
+      }
+    },
     "surfaces": {
       "type": "array",
       "maxItems": 100000,
@@ -48,6 +71,8 @@
           "items": { "type": "number", "exclusiveMinimum": 0 }
         },
         "master": { "type": ["string", "null"] },
+        "name": { "type": "string", "maxLength": 500 },
+        "running": { "type": "object" },
         "layers": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/layer" } }
       }
     },

@@ -88,7 +88,14 @@ putenv('PAY_NOW');
 check('בלי חתימה — נדחה', throws(fn() => auth_request('entitlement', $body, []), 'no_auth'));
 $skLive = key_create($owner, 'guarded-browser', 'live', 'sk');
 check('live לפני אישור — נדחה', throws(fn() => auth_request('entitlement', $body, hmac_headers($skLive['key'], 'entitlement', $body)), 'live_not_approved'));
-client_update($owner, 'guarded-browser', ['live_ok' => true]);
+check('אישור חי בלי עוסק ותנאים — נדחה', throws(fn() => client_update($owner, 'guarded-browser', ['live_ok' => true]), 'not_ready'));
+check('כתובת תנאים לא https — נדחתה', throws(fn() => client_update($owner, 'guarded-browser', ['terms_url' => 'javascript:alert(1)']), 'bad_url'));
+check('עוסק בלי כתובת — עוד חסר', throws(fn() => client_update($owner, 'guarded-browser', ['merchant' => $mer['id'], 'terms_url' => 'https://x.co/terms', 'live_ok' => true]), 'not_ready'));
+$mer = merchant_save($owner, ['id' => $mer['id'], 'name' => $mer['name'], 'tax_status' => 'exempt', 'tax_id' => '012345678', 'address' => 'הרצל 1, ירושלים', 'phone' => '050-000 0000']);
+check('טלפון נשמר נקי', $mer['phone'] === '050-0000000' && merchant_missing($mer) === []);
+$okApp = client_update($owner, 'guarded-browser', ['merchant' => $mer['id'], 'terms_url' => 'https://x.co/terms', 'live_ok' => true]);
+check('פרטים מלאים — אושר לחי', (int)$okApp['live_ok'] === 1 && $okApp['terms_url'] === 'https://x.co/terms');
+client_update($owner, 'guarded-browser', ['merchant' => '']); // הבדיקות שאחרי — מערכת בלי עוסק
 check('live אחרי אישור — עובד', auth_request('entitlement', $body, hmac_headers($skLive['key'], 'entitlement', $body))['env'] === 'live');
 $sk2 = key_create($owner, 'guarded-browser', 'test', 'sk');
 check('החלפה — הישן עובד בחפיפה', auth_request('entitlement', $body, hmac_headers($sk['key'], 'entitlement', $body))['env'] === 'test');

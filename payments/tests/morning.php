@@ -291,6 +291,19 @@ manual_payment($owner, ['account' => $accL['id'], 'method' => 'transfer', 'purpo
 check('העברה על חשבונית פתוחה → המנוי חוזר לפעיל', db_one('SELECT status FROM subscription WHERE id = ?', [$open['subscription']])['status'] === 'active'
     && db_one('SELECT status FROM invoice WHERE id = ?', [$open['id']])['status'] === 'paid');
 
+section('מוכנות לכסף אמיתי');
+require_once __DIR__ . '/../lib/readiness.php';
+$st = fn() => array_column(readiness($owner)['items'], 'state', 'key');
+$r = $st();
+check('ניסיון דרך הסולק ומסמך — מוכן', $r['provider_test'] === 'ok' && $r['sandbox_payment'] === 'ok' && $r['sandbox_document'] === 'ok');
+check('בלי חיבור חי, תנאים ובדיקה בכסף אמיתי — פתוח', $r['provider_live'] === 'todo' && $r['terms'] === 'todo' && $r['live_test'] === 'todo' && $r['merchant'] === 'todo');
+check('משימה מתוזמנת — רק המלצה', $r['clock'] === 'warn');
+check('פריט ידני לא מוכר — נדחה', throws(fn() => readiness_mark($owner, 'nope', true), 'bad_key'));
+readiness_mark($owner, 'legal_review', true);
+check('סימון ידני נשמר, וביטול שלו', $st()['legal_review'] === 'ok' && readiness_mark($owner, 'legal_review', false)['items'] && $st()['legal_review'] === 'todo');
+$pv = checkout_view(db_one("SELECT * FROM checkout WHERE client = 'guarded-browser' ORDER BY created_at DESC LIMIT 1"));
+check('דף התשלום מקבל את פרטי המוכר', ($pv['seller']['name'] ?? '') === 'חברה בע"מ' && ($pv['seller']['email'] ?? '') === 'b@example.com' && $pv['terms_url'] === '');
+
 exec('rm -rf ' . escapeshellarg($tmp));
 echo "\n" . ($fail ? "✗ $fail נכשלו, $pass עברו\n" : "✓ כל $pass הבדיקות עברו\n");
 exit($fail ? 1 : 0);

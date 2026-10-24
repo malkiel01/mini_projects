@@ -66,8 +66,11 @@ foreach ($v['methods'] as $i => $m) {
     echo '<label><input type="radio" name="method" value="' . h($m) . '"' . ($i === 0 ? ' checked' : '') . '><span>' . h($METHOD[$m] ?? $m) . '</span></label>';
 }
 echo '</fieldset>'
-    . '<label class="switch"><input type="checkbox" name="agree" value="1" required><span>קראתי ואני מסכים לתנאים' . ($c['mode'] === 'subscription' ? ' ולחיוב החוזר' : '') . '</span></label>'
+    . '<label class="switch"><input type="checkbox" name="agree" value="1" required><span>קראתי ואני מסכים '
+    . ($v['terms_url'] !== '' ? '<a href="' . h($v['terms_url']) . '" target="_blank" rel="noopener">לתנאים</a>' : 'לתנאים שלמעלה')
+    . ($c['mode'] === 'subscription' ? ' ולחיוב החוזר' : '') . '</span></label>'
     . '<button class="btn primary" type="submit">' . ($c['mode'] === 'setup' ? 'המשך לעדכון' : ($v['amount'] ? 'המשך לתשלום ' . money_html($v['amount']) : 'התחלת הניסיון')) . '</button>'
     . '<a class="btn ghost" href="' . h($c['cancel_url']) . '">ביטול וחזרה</a>'
     . '</form>';
+echo seller_html($v);
 page_close('🔒 פרטי הכרטיס מוקלדים רק בדף של חברת הסליקה. אנחנו לא רואים ולא שומרים אותם.');
