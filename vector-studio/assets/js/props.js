@@ -23,9 +23,26 @@ const SHAPE_NAMES = { rect: 'מלבן', ellipse: 'אליפסה', polygon: 'מצ�
 /**
  * ctx: { doc, surface, paths: [path], box: [x y w h] יחסית ללוח, edit, setBox, setArtboard, action }
  */
+// אייקוני יישור וסידור — קווים פשוטים, 20×20
+const ICONS = {
+  left: '<path d="M3 2v16M6 5h10M6 12h6"/>',
+  hcenter: '<path d="M10 2v16M4 5h12M6 12h8"/>',
+  right: '<path d="M17 2v16M4 5h10M8 12h6"/>',
+  top: '<path d="M2 3h16M5 6v10M12 6v6"/>',
+  vcenter: '<path d="M2 10h16M5 4v12M12 6v8"/>',
+  bottom: '<path d="M2 17h16M5 4v10M12 8v6"/>',
+  dh: '<path d="M3 3v14M17 3v14M8 6v8M12 6v8"/>',
+  dv: '<path d="M3 3h14M3 17h14M6 8h8M6 12h8"/>',
+  front: '<path d="M10 16V4M5 9l5-5 5 5M4 2h12"/>',
+  forward: '<path d="M10 16V4M5 9l5-5 5 5"/>',
+  backward: '<path d="M10 4v12M5 11l5 5 5-5"/>',
+  back: '<path d="M10 4v12M5 11l5 5 5-5M4 18h12"/>',
+};
+const ib = (act, label, arg = '') => `<button class="icon-btn" type="button" data-arr="${act}" data-arg="${arg}" aria-label="${esc(label)}" title="${esc(label)}"><svg viewBox="0 0 20 20" aria-hidden="true">${ICONS[arg || act]}</svg></button>`;
+
 export function renderProps(el, ctx) {
-  const { paths } = ctx;
-  if (!paths.length) {
+  const { paths, items } = ctx;
+  if (!items.length) {
     const s = ctx.surface;
     el.innerHTML = `
       <h2 class="sec-title">לוח עבודה</h2>
@@ -47,13 +64,29 @@ export function renderProps(el, ctx) {
     return;
   }
 
-  const p = paths[0];
-  const single = paths.length === 1;
+  const p = paths[0] || {};
+  const single = items.length === 1 && items[0].type !== 'group';
+  const grp = items.length === 1 && items[0].type === 'group';
   const fill = p.fill || null, stroke = p.stroke || null;
   const shape = single && p.shape ? p.shape : null;
   const isLine = shape?.type === 'line';
   const [bx, by, bw, bh] = ctx.box;
-  const title = single ? (shape ? SHAPE_NAMES[shape.type] || 'צורה' : 'נתיב') : `${paths.length} אובייקטים`;
+  const title = single ? (shape ? SHAPE_NAMES[shape.type] || 'צורה' : 'נתיב') : grp ? `קבוצה · ${paths.length}` : `${items.length} אובייקטים`;
+  const layers = ctx.surface.layers.filter(l => l.type === 'vector');
+  const arrange = `<section class="group" aria-labelledby="g-arr">
+      <h3 id="g-arr">סידור</h3>
+      <div class="icon-row phys" role="group" aria-label="יישור${items.length === 1 ? ' ללוח' : ''}">
+        ${ib('align', 'יישור לשמאל', 'left')}${ib('align', 'מרכוז אופקי', 'hcenter')}${ib('align', 'יישור לימין', 'right')}
+        ${ib('align', 'יישור למעלה', 'top')}${ib('align', 'מרכוז אנכי', 'vcenter')}${ib('align', 'יישור למטה', 'bottom')}
+      </div>
+      ${items.length >= 3 ? `<div class="icon-row phys" role="group" aria-label="פיזור">${ib('distribute', 'פיזור אופקי', 'dh')}${ib('distribute', 'פיזור אנכי', 'dv')}</div>` : ''}
+      <div class="icon-row" role="group" aria-label="סדר הצגה">
+        ${ib('order', 'לחזית (Ctrl+Shift+])', 'front')}${ib('order', 'קדימה (Ctrl+])', 'forward')}${ib('order', 'אחורה (Ctrl+[)', 'backward')}${ib('order', 'לרקע (Ctrl+Shift+[)', 'back')}
+        ${items.length > 1 ? '<button class="btn sm ghost" type="button" data-arr="group" title="Ctrl+G">קיבוץ</button>' : ''}
+        ${grp ? '<button class="btn sm ghost" type="button" data-arr="ungroup" title="Ctrl+Shift+G">פירוק</button>' : ''}
+      </div>
+      ${layers.length > 1 ? `<label class="f"><span>שכבה</span><select data-layer>${layers.slice().reverse().map(l => `<option value="${esc(l.id)}"${l.id === ctx.layerId ? ' selected' : ''}>${esc(l.name || l.id)}</option>`).join('')}</select></label>` : ''}
+    </section>`;
 
   let shapeFields = '';
   if (shape?.type === 'rect') shapeFields = `<label class="f"><span>פינות (pt)</span><input data-s="radius" inputmode="decimal" dir="ltr" value="${n(shape.radius)}"></label>`;
@@ -72,6 +105,7 @@ export function renderProps(el, ctx) {
       <label class="f"><span>גובה</span><input data-b="3" inputmode="decimal" dir="ltr" value="${n(bh)}"></label>
     </div>
     ${shapeFields ? `<div class="fields two" style="margin-top:8px">${shapeFields}</div>` : ''}
+    ${arrange}
 
     ${isLine ? '' : `<section class="group" aria-labelledby="g-fill">
       <div class="g-row"><h3 id="g-fill">מילוי</h3>
@@ -99,6 +133,9 @@ export function renderProps(el, ctx) {
 
   const each = (fn) => (path) => fn(path);
 
+  el.querySelectorAll('[data-arr]').forEach(b => b.addEventListener('click', () => ctx.arrange(b.dataset.arr, b.dataset.arg)));
+  const ls = el.querySelector('[data-layer]');
+  if (ls) ls.addEventListener('change', () => ctx.arrange('layer', ls.value));
   el.querySelector('[data-act="duplicate"]').addEventListener('click', () => ctx.action('duplicate'));
   el.querySelector('[data-act="delete"]').addEventListener('click', () => ctx.action('delete'));
 
@@ -160,5 +197,47 @@ export function renderProps(el, ctx) {
       if (k === 'dash') path.stroke.dash = DASHES[v].map(d => d * Math.max(1, path.stroke.width ?? 1));
       else path.stroke[k] = v;
     }), true);
+  }));
+}
+
+/**
+ * לשונית השכבות של הלוח: העליונה ראשונה. ctx: { surface, activeId, counts: Map, setActive, toggle, rename, move,
+ * add, remove }.
+ */
+export function renderLayers(el, ctx) {
+  const layers = ctx.surface.layers.filter(l => l.type === 'vector').slice().reverse();
+  el.innerHTML = `
+    <div class="props-head"><h2 class="sec-title one">שכבות · ${esc(ctx.surface.name || '')}</h2>
+      <button class="btn sm primary" type="button" data-l="add"><span aria-hidden="true">+</span> שכבה</button></div>
+    <p class="hint">אובייקט חדש נכנס לשכבה המסומנת. 🔒 — אי אפשר לבחור בה.</p>
+    <ul class="list layers">${layers.map(l => `
+      <li class="layer-row${l.id === ctx.activeId ? ' on' : ''}" data-id="${esc(l.id)}">
+        <button class="icon-btn" type="button" data-l="visible" aria-pressed="${l.visible !== false}" aria-label="${l.visible === false ? 'הצגה' : 'הסתרה'}">${l.visible === false ? '🙈' : '👁️'}</button>
+        <button class="icon-btn" type="button" data-l="locked" aria-pressed="${!!l.locked}" aria-label="${l.locked ? 'שחרור נעילה' : 'נעילה'}">${l.locked ? '🔒' : '🔓'}</button>
+        <button class="layer-name" type="button" data-l="active" aria-pressed="${l.id === ctx.activeId}">
+          <b class="one">${esc(l.name || l.id)}</b><small>${ctx.counts.get(l.id) || 0} אובייקטים</small></button>
+        <button class="icon-btn" type="button" data-l="up" aria-label="למעלה">▲</button>
+        <button class="icon-btn" type="button" data-l="down" aria-label="למטה">▼</button>
+        <button class="icon-btn" type="button" data-l="rename" aria-label="שינוי שם">✏️</button>
+        ${layers.length > 1 ? '<button class="icon-btn" type="button" data-l="remove" aria-label="מחיקת שכבה">🗑️</button>' : ''}
+      </li>`).join('')}
+    </ul>`;
+  el.querySelectorAll('[data-l]').forEach(b => b.addEventListener('click', () => {
+    const a = b.dataset.l, id = b.closest('[data-id]')?.dataset.id;
+    if (a === 'add') return ctx.add();
+    if (a === 'active') return ctx.setActive(id);
+    if (a === 'visible' || a === 'locked') return ctx.toggle(id, a);
+    if (a === 'up' || a === 'down') return ctx.move(id, a === 'up' ? 1 : -1);
+    if (a === 'rename') {
+      const l = ctx.surface.layers.find(x => x.id === id);
+      const name = prompt('שם השכבה', l.name || '');
+      if (name && name.trim()) ctx.rename(id, name.trim().slice(0, 60));
+      return;
+    }
+    if (a === 'remove') {
+      const n = ctx.counts.get(id) || 0;
+      if (n && !confirm(`בשכבה ${n} אובייקטים. למחוק אותה יחד איתם?`)) return;
+      ctx.remove(id);
+    }
   }));
 }
