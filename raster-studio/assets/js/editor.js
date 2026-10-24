@@ -11,6 +11,7 @@ import { createLayersPanel } from './layers-panel.js';
 import { History } from './engine/history.js';
 import { createTools } from './tools.js';
 import { createOverlay } from './overlay.js';
+import { createAdjustPanel } from './adjust-panel.js';
 
 const $ = s => document.querySelector(s);
 const stage = $('#stage');
@@ -27,6 +28,7 @@ let doc = null;
 let panel = null;
 let history = null;
 let tools = null;
+let adjust = null;
 let view = { zoom: 1, x: 0, y: 0 };
 let fitted = false;
 let changed = false;   // יש תוכן שלא נשמר (השמירה — בשלב הבא)
@@ -82,6 +84,7 @@ function setDoc(d) {
   updateMeta();
   $('#open-btn').disabled = false;
   $('#layers-btn').disabled = false;
+  $('#adjust-btn').disabled = false;
   panel.render();
   showMsg('');
   if (stage.clientWidth) { fitted = true; fit(); }
@@ -203,7 +206,7 @@ const toDoc = p => V.screenToDoc(view, p[0], p[1]);
 stage.addEventListener('pointerdown', e => {
   if (!doc) return;
   // הכלים והאפשרויות יושבים מעל הבמה — לחיצה עליהם היא לחיצה על כפתור, לא ציור (ובלי לתפוס את המצביע)
-  if (e.target.closest('.tools, .tool-opts')) return;
+  if (e.target.closest('.tools, .tool-opts, .adjust')) return;
   if (e.pointerType === 'mouse' && e.button !== 0 && e.button !== 1) return;
   stage.setPointerCapture(e.pointerId);
   const p = local(e);
@@ -214,6 +217,8 @@ stage.addEventListener('pointerdown', e => {
   }
   pointers.set(e.pointerId, p);
   const panOnly = e.button === 1 || spaceDown || pointers.size > 1;
+  // ציור בזמן שתיקון פתוח — התיקון נסגר בלי להחיל (אחרת התצוגה מטעה)
+  if (!panOnly && adjust?.open && tools.state.tool !== 'hand') adjust.close();
   if (!panOnly && pointers.size === 1 && tools.down(e, toDoc(p))) {
     if (tools.stroking) painter = e.pointerId;
     else pointers.delete(e.pointerId);   // דלי / טפטפת — לחיצה אחת
@@ -290,6 +295,7 @@ function syncHistory(h) {
 }
 function undo() {
   if (tools?.floating) { tools.cancelFloat(); return; }   // באמצע שינוי צורה — הביטול מבטל אותו
+  if (adjust?.open) { adjust.close(); return; }
   if (history?.undo()) { changed = true; draw(); panel.render(); }
 }
 function redo() {
@@ -333,9 +339,15 @@ $('#hint').textContent = coarse ? 'צביטה — זום' : 'גרירה — הז
       doc: () => doc, renderer, history, view: () => view, toast, draw, overlay,
       onChange: () => { changed = true; draw(); panel.render(); },
     });
+    adjust = createAdjustPanel({
+      root: $('#adjust'), doc: () => doc, renderer, history, toast, draw,
+      beforeOpen: () => tools.commitFloat(),
+      onChange: () => { changed = true; draw(); panel.render(); },
+    });
+    $('#adjust-btn').addEventListener('click', () => (adjust.open ? adjust.close() : adjust.show()));
     panel = createLayersPanel({
       root: layersEl, doc: () => doc, renderer, history, toast,
-      beforeChange: () => tools.commitFloat(),
+      beforeChange: () => { tools.commitFloat(); adjust.close(); },
       onChange: () => { changed = true; draw(); },
     });
     renderer.onLost = () => showMsg('הגרפיקה של הדפדפן אופסה, והתמונה שבזיכרון אבדה. טענו את הדף מחדש.', true);
@@ -369,6 +381,7 @@ window.__rs = {
   get panel() { return panel; },
   get history() { return history; },
   get tools() { return tools; },
+  get adjust() { return adjust; },
   undo, redo,
   toggleLayers,
   setView,
