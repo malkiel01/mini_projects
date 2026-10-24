@@ -359,7 +359,9 @@ function doc_restore_version(array $row, $versionId, string $userId, string $use
     if ($base !== null && (int)$base !== (int)$row['version']) throw new ApiError('המסמך השתנה בינתיים — טענו אותו מחדש', 'conflict', 409);
     $v = version_get($row, $versionId);
     $pdo = db();
-    $pdo->beginTransaction();
+    // IMMEDIATE: נועלים לכתיבה מההתחלה. טרנזקציה רגילה קוראת קודם ונכשלת מיד ("database is locked", בלי busy_timeout)
+    // אם בקשה אחרת כתבה בינתיים — בעריכה משותפת זה קורה כל הזמן (נכשל ב-CI, קבוצה 86)
+    $pdo->exec('BEGIN IMMEDIATE');
     try {
         // המצב הנוכחי — כגרסה בפני עצמה, אם עוד לא רשום בדיוק כך (מסמך שנשמר לפני שהיו גרסאות, או בלי רישום)
         $st = $pdo->prepare('SELECT version, json FROM versions WHERE doc = ? ORDER BY id DESC LIMIT 1');
@@ -379,10 +381,10 @@ function doc_restore_version(array $row, $versionId, string $userId, string $use
         if ($st->rowCount() !== 1) throw new ApiError('המסמך השתנה בינתיים — טענו אותו מחדש', 'conflict', 409);
         $row = doc_find($row['id'], $row['space']);
         version_record($row, $userId, $userName, 'restore');
-        $pdo->commit();
+        $pdo->exec('COMMIT');
         activity($row['id'], $userId, $userName, 'restore', 'גרסה ' . (int)$v['version']);
     } catch (Throwable $e) {
-        $pdo->rollBack();
+        $pdo->exec('ROLLBACK');
         throw $e;
     }
     return $row;
