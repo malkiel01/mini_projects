@@ -18,14 +18,38 @@
     <div class="state" id="loading"><p class="muted">טוען…</p></div>
 
     <section id="home" hidden>
-      <h2 class="sec-title">הציורים שלי</h2>
-      <ul class="list"><li class="empty">עוד אין ציורים. העורך — לוח עבודה, צורות ועט — נפתח בשלבים הבאים.</li></ul>
+      <div class="toolbar">
+        <h2 class="sec-title" style="flex:1;margin:0">הציורים שלי</h2>
+        <button class="btn primary" id="new-btn" type="button"><span aria-hidden="true">+</span> ציור חדש</button>
+      </div>
+      <p class="hint">בינתיים הציורים נשמרים כטיוטה במכשיר הזה. השמירה בשרת ובקובץ ‎.mbe — בשלב הבא.</p>
+      <ul class="list" id="drafts"></ul>
     </section>
 
     <div class="state" id="denied" hidden>
       <p class="error" role="alert" id="denied-msg"></p>
     </div>
   </main>
+  <dialog id="new-dlg" aria-labelledby="new-title">
+    <form method="dialog" novalidate>
+      <header class="sheet-head">
+        <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+        <h2 id="new-title">ציור חדש</h2>
+      </header>
+      <div class="sheet-body">
+        <p class="hint">גודל לוח העבודה. אפשר לשנות אחר כך.</p>
+        <div class="tiles" id="sizes"></div>
+        <section class="group" aria-labelledby="custom-title">
+          <h3 id="custom-title">גודל אחר <small>בנקודות (pt)</small></h3>
+          <div class="fields two">
+            <label class="f"><span>רוחב</span><input id="cw" inputmode="decimal" dir="ltr" value="800"></label>
+            <label class="f"><span>גובה</span><input id="ch" inputmode="decimal" dir="ltr" value="600"></label>
+          </div>
+          <button class="btn ghost" type="button" id="custom-go">יצירה בגודל הזה</button>
+        </section>
+      </div>
+    </form>
+  </dialog>
   <script type="module" src="assets/js/app.js"></script>
 </body>
 </html>

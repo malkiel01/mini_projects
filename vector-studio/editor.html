@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="theme-color" content="#2d4a8a">
+  <title>וקטורי — עורך</title>
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body class="editor">
+  <header class="top">
+    <a class="icon-btn" href="./" aria-label="חזרה לציורים">→</a>
+    <div class="titles"><h1 id="doc-name">ציור</h1><div class="sub" id="doc-status">טיוטה במכשיר</div></div>
+    <button class="icon-btn" id="undo" aria-label="ביטול" title="ביטול (Ctrl+Z)" disabled>↶</button>
+    <button class="icon-btn" id="redo" aria-label="ביצוע מחדש" title="ביצוע מחדש (Ctrl+Shift+Z)" disabled>↷</button>
+    <button class="icon-btn" id="props-btn" aria-label="מאפיינים" aria-expanded="false" aria-controls="props">🎨</button>
+  </header>
+
+  <div class="work">
+    <nav class="tools" aria-label="כלים">
+      <button class="tool" data-tool="select" aria-pressed="true" title="בחירה (V)" aria-label="בחירה">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3l12 9-5.5 1L15 19l-2.5 1-2.5-6L6 17z"/></svg></button>
+      <button class="tool" data-tool="rect" aria-pressed="false" title="מלבן (M)" aria-label="מלבן">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="6" width="16" height="12" rx="1"/></svg></button>
+      <button class="tool" data-tool="ellipse" aria-pressed="false" title="אליפסה (L)" aria-label="אליפסה">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="12" rx="8" ry="6"/></svg></button>
+      <button class="tool" data-tool="polygon" aria-pressed="false" title="מצולע" aria-label="מצולע">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 5v8l-8 5-8-5V8z"/></svg></button>
+      <button class="tool" data-tool="star" aria-pressed="false" title="כוכב" aria-label="כוכב">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.4 6.7 19.4l1.2-6L3.4 9.3l6-.7z"/></svg></button>
+      <button class="tool" data-tool="line" aria-pressed="false" title="קו (\)" aria-label="קו">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19L19 5" fill="none"/></svg></button>
+    </nav>
+
+    <div class="stage" id="stage">
+      <canvas id="canvas" aria-label="לוח העבודה" role="img"></canvas>
+      <div class="zoom" role="group" aria-label="זום">
+        <button class="icon-btn" id="zoom-out" aria-label="הקטנה">−</button>
+        <button class="btn sm" id="zoom-pct" aria-label="התאמה למסך">100%</button>
+        <button class="icon-btn" id="zoom-in" aria-label="הגדלה">+</button>
+      </div>
+    </div>
+
+    <aside class="props" id="props" aria-label="מאפיינים">
+      <div id="props-body"></div>
+    </aside>
+  </div>
+
+  <div class="toast" role="status" hidden></div>
+  <script type="module" src="assets/js/editor.js"></script>
+</body>
+</html>

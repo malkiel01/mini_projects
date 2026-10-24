@@ -1,0 +1,95 @@
+// בדיקות מודול הגאומטריה: node --test vector-studio/tests/geometry.test.mjs
+
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { parse, serialize, normalize, bbox, transform, unionBox } from '../assets/js/geometry/path.js';
+import { multiply, apply, invert, scaleAt, translate } from '../assets/js/geometry/matrix.js';
+import { shapeToD, shapeFromDrag, transformShape, normBox } from '../assets/js/geometry/shapes.js';
+
+const close = (a, b, eps = 1e-6) => assert.ok(Math.abs(a - b) < eps, `${a} ≉ ${b}`);
+const closeBox = (a, b, eps = 1e-3) => a.forEach((v, i) => close(v, b[i], eps));
+
+test('נרמול: יחסי → מוחלט, H/V → L, זוגות אחרי M → L', () => {
+  assert.equal(normalize('m10 10 20 0 v10 h-20 z'), 'M10 10 L30 10 L30 20 L10 20 Z');
+  assert.equal(normalize('M0,0L1e1,5'), 'M0 0 L10 5');
+});
+
+test('נרמול: S ו-T משקפים את נקודת הבקרה', () => {
+  assert.equal(normalize('M0 0 C0 10 10 10 10 0 S20 -10 20 0'), 'M0 0 C0 10 10 10 10 0 C10 -10 20 -10 20 0');
+  assert.equal(normalize('M0 0 Q5 10 10 0 T20 0'), 'M0 0 Q5 10 10 0 Q15 -10 20 0');
+});
+
+test('קשת → בזייה, גם עם דגלים צמודים', () => {
+  const segs = parse('M0 0 a10 10 0 0120 0');
+  assert.equal(segs[0].c, 'M');
+  assert.ok(segs.slice(1).every(s => s.c === 'C'));
+  const last = segs[segs.length - 1].p;
+  close(last[4], 20); close(last[5], 0);
+  // חצי עיגול ברדיוס 10 מעל הציר: התיבה מגיעה ל-y=-10 (sweep=1 → עם כיוון השעון, למעלה במסך)
+  closeBox(bbox(segs), [0, -10, 20, 10], 0.01);
+});
+
+test('קשת עם רדיוס קטן מדי מוגדלת לפי התקן', () => {
+  const b = bbox(parse('M0 0 A1 1 0 0 1 10 0'));
+  closeBox(b, [0, -5, 10, 5], 0.01);
+});
+
+test('נתיב שגוי זורק', () => {
+  assert.throws(() => parse('L10 10'));
+  assert.throws(() => parse('M10'));
+  assert.throws(() => parse('10 10'));
+});
+
+test('כתיבה: 3 ספרות, בלי -0', () => {
+  assert.equal(serialize([{ c: 'M', p: [1.23456, -0.0001] }, { c: 'Z', p: [] }]), 'M1.235 0 Z');
+});
+
+test('תיבה חוסמת כוללת קיצוני עקומה', () => {
+  closeBox(bbox(parse('M0 0 C0 -10 10 -10 10 0')), [0, -7.5, 10, 7.5]);
+  closeBox(bbox(parse('M0 0 Q5 10 10 0')), [0, 0, 10, 5]);
+  assert.equal(bbox([]), null);
+});
+
+test('טרנספורמציה ומטריצות', () => {
+  const m = multiply(translate(10, 0), scaleAt(2, 2));
+  assert.deepEqual(apply(m, 1, 1), [12, 2]);
+  const inv = invert(m);
+  const [x, y] = apply(inv, 12, 2);
+  close(x, 1); close(y, 1);
+  const segs = transform(parse('M0 0 L1 1'), m);
+  assert.equal(serialize(segs), 'M10 0 L12 2');
+  assert.deepEqual(scaleAt(2, 3, 10, 10), [2, 0, 0, 3, -10, -20]);
+});
+
+test('איחוד תיבות', () => {
+  assert.deepEqual(unionBox([[0, 0, 10, 10], null, [5, -5, 10, 10]]), [0, -5, 15, 15]);
+  assert.equal(unionBox([]), null);
+});
+
+test('צורות: מלבן, פינות מעוגלות, אליפסה, מצולע, כוכב, קו', () => {
+  closeBox(bbox(parse(shapeToD({ type: 'rect', box: [10, 10, 80, 40], radius: 0 }))), [10, 10, 80, 40]);
+  closeBox(bbox(parse(shapeToD({ type: 'rect', box: [10, 10, 80, 40], radius: 100 }))), [10, 10, 80, 40]); // רדיוס נחתך לחצי הצלע
+  closeBox(bbox(parse(shapeToD({ type: 'ellipse', box: [0, 0, 100, 50] }))), [0, 0, 100, 50]);
+  const hex = parse(shapeToD({ type: 'polygon', box: [0, 0, 100, 100], sides: 6 }));
+  assert.equal(hex.filter(s => s.c === 'L').length, 5);
+  close(hex[0].p[0], 50); close(hex[0].p[1], 0); // מתחיל למעלה
+  const star = parse(shapeToD({ type: 'star', box: [0, 0, 100, 100], points: 5, inner: 0.5 }));
+  assert.equal(star.length, 11); // M + 9 L + Z
+  assert.equal(shapeToD({ type: 'line', from: [0, 0], to: [10, 5] }), 'M0 0 L10 5');
+});
+
+test('גרירה: הפוכה, ריבוע עם shift, קו ב-45°', () => {
+  assert.deepEqual(shapeFromDrag('rect', 50, 50, 10, 20).box, [10, 20, 40, 30]);
+  assert.deepEqual(shapeFromDrag('ellipse', 0, 0, 30, 10, true).box, [0, 0, 30, 30]);
+  const l = shapeFromDrag('line', 0, 0, 10, 9, true);
+  close(l.to[0], l.to[1]);
+  assert.deepEqual(normBox([10, 10, -5, -5]), [5, 5, 5, 5]);
+});
+
+test('טרנספורמציה של צורה: תיבה זזה וגדלה; סיבוב → null', () => {
+  const r = { type: 'rect', box: [0, 0, 10, 10], radius: 2 };
+  assert.deepEqual(transformShape(r, multiply(translate(5, 5), scaleAt(2, 1))).box, [5, 5, 20, 10]);
+  assert.deepEqual(transformShape(r, scaleAt(-1, 1, 10, 0)).box, [10, 0, 10, 10]); // היפוך → תיבה חיובית
+  assert.equal(transformShape(r, [0, 1, -1, 0, 0, 0]), null);
+  assert.deepEqual(transformShape({ type: 'line', from: [0, 0], to: [1, 1] }, translate(1, 2)).to, [2, 3]);
+});
