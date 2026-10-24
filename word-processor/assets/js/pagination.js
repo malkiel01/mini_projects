@@ -7,7 +7,9 @@
  * מצוירים בשכבה נפרדת מאחורי הטקסט (onLayout), לפי מספר העמודים.
  *
  * כללים: פסקה נשברת בין שורות (לפחות 2 שורות בכל צד — כמו "בקרת שורות יתומות" ב-Word); כותרת לא
- * נשארת לבד בתחתית עמוד; טבלה ותמונה לא נשברות (גבוהה מעמוד — חורגת); מעבר עמוד ידני — תמיד.
+ * נשארת לבד בתחתית עמוד; טבלה נשברת בין שורות, ותוכן עניינים — בין רשומות (הכותרת שלו נשארת עם הראשונה); תמונה
+ * לא נשברת (גבוהה מעמוד — חורגת); מעבר עמוד ידני — תמיד. בתוך תוכן עניינים (צומת אטומי, בלי מיקומים בפנים) הרווח
+ * וההערות של העמוד עוברים כ-Decoration.node עם spec.toc = {k, order, make}, וה-NodeView (toc.js) מכניס אותם לפני השורה k.
  */
 import { Extension, Plugin, PluginKey, Decoration, DecorationSet } from '../../vendor/tiptap.js';
 
@@ -75,7 +77,12 @@ export const Pages = Extension.create({
                         tried.set(res.sig, res);
                         ext.storage.pages = pick.pages;
                         ext.options.onLayout(pick);
+                        const tocPart = (t, order, make, key) => {
+                            const n = view.state.doc.nodeAt(t.pos);
+                            return n ? [Decoration.node(t.pos, t.pos + n.nodeSize, {}, { toc: { k: t.k, order, make, key } })] : [];
+                        };
                         const deco = DecorationSet.create(view.state.doc, pick.breaks.flatMap(b => {
+                            if (b.toc) return tocPart(b.toc, 1, () => spacer(b.h, b.page, 0, b.sec, b.skip || 0), `pb${b.page}-${Math.round(b.h)}`);
                             const out = [Decoration.widget(b.pos, spacer(b.h, b.page, b.row, b.sec, b.skip || 0), {
                                 side: b.side ?? -2, key: `pb${b.page}-${Math.round(b.h)}${b.row ? 'r' : ''}${b.skip ? 's' + b.skip : ''}`, ignoreSelection: true,
                                 marks: [],   // מחוץ לכל סימון (גודל גופן וכו'): בהדפסה Chrome לא שובר עמוד בתוך span
@@ -86,11 +93,11 @@ export const Pages = Extension.create({
                                 if (hdr) out.push(Decoration.widget(b.pos, repeatRow(hdr), { side: -1, key: `rp${b.page}-${b.repeat}`, ignoreSelection: true, marks: [] }));
                             }
                             return out;
-                        }).concat((pick.notesArea || []).map(a => Decoration.widget(a.pos, notesAreaEl(a), {
+                        }).concat((pick.notesArea || []).flatMap(a => a.toc ? tocPart(a.toc, 0, () => notesAreaEl(a), `fn${Math.round(a.fill)}-${a.notes.map(n => n.n).join('.')}`) : [Decoration.widget(a.pos, notesAreaEl(a), {
                             // אזור ההערות של העמוד האחרון — אחרי הכול (גם אחרי הערות הסיום); עמוד שנגמר בין הערות סיום — לפני המעבר שלו
                             side: a.end ? a.end : a.side != null ? a.side - 0.25 : -3, key: `fn${a.pos}-${a.end || ''}-${Math.round(a.fill)}-${a.notes.map(n => n.n).join('.')}-${a.style ? hash(a.style) : ''}-${hash(a.notes.map(n => n.text + JSON.stringify(n.content || '') + (n.clip || '') + (n.skip || '')).join('|'))}`,
                             ignoreSelection: true, marks: [],
-                        }))));
+                        })])));
                         view.dispatch(view.state.tr.setMeta(pagesKey, { deco, sig: pick.sig }).setMeta('addToHistory', false));
                     });
                 };
@@ -329,6 +336,7 @@ function measure(view, g) {
             if (CONTAINERS.has(name)) { visit(child, cpos + 1, name === 'listItem' ? brk : (offset === 0 ? at : null)); return; }
             if (TEXTBLOCKS.has(name)) { lines(view, dom, child, cpos, brk, logical, rr, zoom, units, name === 'heading', maxH); return; }
             if (name === 'table') { rows(view, child, cpos, brk, box, units); return; }
+            if (name === 'toc') { tocLines(dom, cpos, brk, box, units); return; }
             const b = box(dom);
             units.push({ top: b.top, bottom: b.bottom, pos: brk, kind: 'block' });
         });
@@ -409,7 +417,8 @@ function measure(view, g) {
         if (!list.length) return brk;
         const fill = Math.max(0, secs[s].contentH - used - areaH(list));
         // בתוך בלוק (שבירה באמצע פסקה, ברשימה) — הבלוק העליון כבר ברוחב המקטע; רק בין בלוקים — האזור צריך אותו בעצמו
-        notesArea.push({ pos: brk.pos, side: brk.side, fill, notes: list, row: brk.row || 0, style: brk.row || view.state.doc.resolve(brk.pos).depth ? '' : secStyle() });
+        notesArea.push({ pos: brk.pos, side: brk.side, fill, notes: list, row: brk.row || 0, toc: brk.toc || null,
+            style: brk.row || brk.toc || view.state.doc.resolve(brk.pos).depth ? '' : secStyle() });
         brk.h = Math.max(0, brk.h - fill - areaH(list));
         return brk;
     };
@@ -496,7 +505,8 @@ function measure(view, g) {
         if (j <= firstOnPage) j = i;
         const used = units[j].top - pageTop;
         const rep = units[j].repeat;   // שורה באמצע טבלה: גם השבירה בתוך הטבלה, וגם שורת הכותרת חוזרת (תופסת מקום)
-        breaks.push(closePage({ pos: units[j].pos, side: units[j].side, h: Math.max(0, secs[s].pageH + g.gap - used), page: page + 1, row: units[j].row || 0, repeat: rep ? rep.pos : null },
+        breaks.push(closePage({ pos: units[j].pos, side: units[j].side, h: Math.max(0, secs[s].pageH + g.gap - used), page: page + 1, row: units[j].row || 0, repeat: rep ? rep.pos : null,
+            toc: units[j].toc || null },
             used, notesOf(firstOnPage, j)));
         pageTop = units[j].top - (rep ? rep.h : 0);
         page++;
@@ -522,7 +532,7 @@ function measure(view, g) {
         pending = rest;
         notesArea.push({ pos: docEnd, fill: Math.max(0, secs[s].contentH - areaH(here)), notes: here, row: 0, end: 1000 + 2 * m, style: secStyle() });
     }
-    const sig = breaks.map(b => `${b.pos}${b.side ? '~' + b.side : ''}:${Math.round(b.h)}`).join('|')
+    const sig = breaks.map(b => `${b.pos}${b.side ? '~' + b.side : ''}${b.toc ? 't' + b.toc.k : ''}:${Math.round(b.h)}`).join('|')
         + '§' + notesArea.map(a => `${a.pos}:${Math.round(a.fill)}:${a.notes.map(n => n.n + n.text + (n.content ? JSON.stringify(n.content).length : '') + (n.clip ? '<' + Math.round(n.clip) : '') + (n.skip ? '>' + Math.round(n.skip) : '')).join(',')}`).join('|');
     // טורים: כל "עמוד" כאן הוא טור (ברוחב הטור). העמוד הפיזי של כל אחד — n טורים לעמוד; מקטע חדש או מעבר עמוד ידני
     // פותחים עמוד חדש. מעבר ידני באמצע העמוד מדלג על הטורים שנשארו (skip — בהדפסה: עוד מעברי טור)
@@ -543,6 +553,21 @@ function measure(view, g) {
  * השורות של פסקה/כותרת: מלבנים של הטקסט והתמונות שבשורה (לא של הרווחים שלנו), מקובצים לפי גובה.
  * לכל שורה — המיקום במסמך שבו היא מתחילה (חיפוש בינארי ב-coordsAtPos).
  */
+/**
+ * תוכן עניינים: הכותרת וכל רשומה — יחידה (שבירה בין רשומות); הכותרת נשארת עם הרשומה הראשונה (heading). השבירה לפני
+ * הבלוק — כרגיל (brk); בתוכו — toc: {pos, k}, לפני הרשומה k (0 — הכותרת).
+ */
+function tocLines(dom, tpos, brk, box, units) {
+    const els = [...dom.children].filter(el => el.classList.contains('wp-toc-title') || el.classList.contains('wp-toc-line'));
+    const all = box(dom);
+    if (els.length < 2) { units.push({ top: all.top, bottom: all.bottom, pos: brk, kind: 'block' }); return; }
+    els.forEach((el, k) => {
+        const b = box(el);
+        units.push({ top: k ? b.top : all.top, bottom: k === els.length - 1 ? all.bottom : b.bottom, pos: k ? tpos : brk, kind: 'block',
+            heading: k === 0, toc: k ? { pos: tpos, k } : null });
+    });
+}
+
 /**
  * טבלה: כל שורה — יחידה (שבירה בין שורות, לא בתוך שורה). שורת כותרת (כל התאים th) בראש הטבלה נשארת עם השורה
  * שאחריה, וחוזרת בראש כל עמוד שהטבלה נמשכת אליו — repeat: {pos, h}.

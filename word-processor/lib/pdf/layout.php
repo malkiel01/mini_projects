@@ -441,7 +441,7 @@ final class PdfLayout
                     $new = [new FlowItem(0, fn() => null, 'column')];
                     break;
                 case 'toc':
-                    $new = [$this->toc($n['attrs'] ?? [], $width, $indent)];
+                    $new = $this->toc($n['attrs'] ?? [], $width, $indent);
                     break;
                 case 'horizontalRule':
                     $new = [new FlowItem(12, function (PdfCanvas $c, float $x, float $yy) use ($width) {
@@ -458,10 +458,12 @@ final class PdfLayout
     }
 
     /**
-     * תוכן עניינים — בלוק אחד (כמו בעורך, toc.js): כותרת (גופן × 1.25, שורה × 1.5, ואחריה 6 נק'), ולכל רשומה שורה
-     * (גופן × 1.6): הטקסט מימין (מוזח לפי הרמה), נקודות, ומספר העמוד משמאל. טקסט ארוך מדי — נחתך עם "…".
+     * תוכן עניינים (כמו בעורך, toc.js): כותרת (גופן × 1.25, שורה × 1.5, ואחריה 6 נק'), ולכל רשומה שורה (גופן × 1.6):
+     * הטקסט מימין (מוזח לפי הרמה), נקודות, ומספר העמוד משמאל; טקסט ארוך — נשבר. פריט לכותרת (נשאר עם הרשומה הראשונה)
+     * ופריט לכל רשומה — כך שתוכן עניינים ארוך מעמוד נשבר בין רשומות, כמו בעורך.
+     * @return FlowItem[]
      */
-    private function toc(array $a, float $width, float $indent): FlowItem
+    private function toc(array $a, float $width, float $indent): array
     {
         $S = (float)$this->page['font']['size'];
         $entries = is_array($a['entries'] ?? null) ? array_values(array_filter($a['entries'], 'is_array')) : [];
@@ -474,7 +476,6 @@ final class PdfLayout
             'strike' => false, 'color' => $rgb, 'bg' => null, 'va' => null, 'ls' => 0.0];
         // כל רשומה — שורה אחת או כמה: טקסט ארוך נשבר (כמו בעורך, ולא נחתך); מספר העמוד והנקודות — בשורה האחרונה
         $plan = [];
-        $lines = 0;
         foreach ($rows as $e) {
             $lvl = max(0, min(9, (int)($e['l'] ?? 1)));
             $s = $st($S, $lvl === 1, $entries ? [0, 0, 0] : [136, 136, 136]);
@@ -485,22 +486,24 @@ final class PdfLayout
             $wrapped = $this->wrapText(trim((string)($e['t'] ?? '')), $s, max(10.0, $room));
             $href = isset($e['i']) && is_numeric($e['i']) ? '#' . (empty($a['seq']) ? '_h' : '_c' . seq_label($a['seq']) . '_') . (int)$e['i'] : null;
             $plan[] = [$wrapped, $s, $pg, $pw, $start, $room, $href];
-            $lines += count($wrapped);
         }
-        $h = $titleH + 6 + $lines * $lineH + 6;
-        return new FlowItem($h, function (PdfCanvas $c, float $x, float $y) use ($plan, $S, $titleH, $lineH, $width, $indent, $title, $st) {
-            $left = $x + $indent;
-            $right = $x + $width;
-            $this->drawTextCentered($c, $title, $st($S * 1.25, true), $left, $right, $y + $titleH / 2 + 0.32 * $S * 1.25, 'main', 'right');
-            $yy = $y + $titleH + 6;
-            foreach ($plan as [$wrapped, $s, $pg, $pw, $start, $room, $href]) {
+        $head = new FlowItem($titleH + 6, function (PdfCanvas $c, float $x, float $y) use ($S, $titleH, $width, $indent, $title, $st) {
+            $this->drawTextCentered($c, $title, $st($S * 1.25, true), $x + $indent, $x + $width, $y + $titleH / 2 + 0.32 * $S * 1.25, 'main', 'right');
+        });
+        $head->keepNext = true;
+        $items = [$head];
+        foreach ($plan as $k => [$wrapped, $s, $pg, $pw, $start, $room, $href]) {
+            $last = $k === count($plan) - 1;
+            $items[] = new FlowItem(count($wrapped) * $lineH + ($last ? 6 : 0), function (PdfCanvas $c, float $x, float $yy) use ($wrapped, $s, $pg, $pw, $start, $room, $href, $S, $lineH, $width, $indent) {
+                $left = $x + $indent;
+                $right = $x + $width;
                 $start += $x;
                 // כל הרשומה לחיצה (כמו בעורך ובתוכן העניינים של Word) — אל הכותרת / הכיתוב
                 if ($href) $c->link($left, $yy, $start - $left, count($wrapped) * $lineH, $href);
-                foreach ($wrapped as $k => $line) {
+                foreach ($wrapped as $i => $line) {
                     $base = $yy + $lineH / 2 + 0.32 * $S;
                     $this->drawTextCentered($c, $line, $s, $left, $start, $base, 'main', 'right');
-                    if ($k === count($wrapped) - 1 && $pg !== '') {
+                    if ($i === count($wrapped) - 1 && $pg !== '') {
                         // הטקסט תופס את רוחבו — או את כל המקום, כשנשבר (כמו פריט flex שהתכווץ)
                         $tw = count($wrapped) > 1 ? $room : min($room, $this->textWidth($line, $s));
                         $this->drawTextCentered($c, $pg, $s, $left, $right, $base, 'main', 'left');
@@ -508,8 +511,9 @@ final class PdfLayout
                     }
                     $yy += $lineH;
                 }
-            }
-        });
+            });
+        }
+        return $items;
     }
 
     /** שבירת טקסט לשורות ברוחב $room (מילה אחרי מילה; מילה ארוכה מהשורה — נשברת באמצע, כמו overflow-wrap: anywhere). */

@@ -5,6 +5,8 @@
  * entries: [{ t: טקסט, l: רמה, p: מספר העמוד כפי שמוצג, i: מספר הכותרת במסמך (לפי הסדר) }]
  * רשימת איורים (attrs.seq = תווית הכיתוב, כמו TOC \c ב-Word): אותו בלוק, והשורות — הכיתובים עם התווית (l: 0, בלי הדגשה);
  * i — מספר הכיתוב בין הכיתובים עם התווית.
+ * תוכן עניינים ארוך מעמוד נשבר בין רשומות: העימוד (pagination.js) מעביר את הרווח של מעבר העמוד ואת אזור ההערות של
+ * העמוד ב-Decoration.node — spec.toc = {k, order, make, key}; כאן הם נכנסים לפני הרשומה k (0 — הכותרת).
  */
 import { Node } from '../../vendor/tiptap.js';
 import { captions, listTitle } from './caption.js';
@@ -49,11 +51,14 @@ export const Toc = Node.create({
         return ['div', { 'data-toc': '', 'data-seq': node.attrs.seq, 'data-levels': node.attrs.levels, 'data-entries': JSON.stringify(node.attrs.entries), class: 'wp-toc' }];
     },
     addNodeView() {
-        return ({ node, editor }) => {
+        return ({ node, editor, decorations }) => {
             const dom = document.createElement('div');
             dom.className = 'wp-toc';
             dom.contentEditable = 'false';
             dom.setAttribute('role', 'navigation');
+            const partsOf = decos => (decos || []).map(d => d.spec?.toc).filter(Boolean).sort((a, b) => a.k - b.k || a.order - b.order);
+            let parts = partsOf(decorations);
+            let partsKey = parts.map(p => p.k + ':' + p.key).join('|');
             const paint = n => {
                 dom.textContent = '';
                 dom.setAttribute('aria-label', tocTitle(n.attrs));
@@ -83,6 +88,9 @@ export const Toc = Node.create({
                     line.append(t, dots, p);
                     dom.append(line);
                 }
+                // מעברי העמוד (והערות העמוד) בתוך תוכן העניינים — לפני הרשומה שלהם
+                const rows = [...dom.children];
+                for (const part of parts) rows[part.k]?.before(part.make());
             };
             paint(node);
             // לחיצה על שורה — הסמן עובר לכותרת (כמו קישור בתוכן העניינים של Word)
@@ -99,7 +107,17 @@ export const Toc = Node.create({
             });
             return {
                 dom,
-                update(n) { if (n.type.name !== 'toc') return false; node = n; paint(n); return true; },
+                update(n, decos) {
+                    if (n.type.name !== 'toc') return false;
+                    const next = partsOf(decos);
+                    const key = next.map(p => p.k + ':' + p.key).join('|');
+                    if (n === node && key === partsKey) return true;
+                    node = n;
+                    parts = next;
+                    partsKey = key;
+                    paint(n);
+                    return true;
+                },
                 ignoreMutation: () => true,
                 stopEvent: ev => ev.type === 'mousedown',
             };
