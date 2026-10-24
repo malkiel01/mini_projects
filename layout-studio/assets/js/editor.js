@@ -1,10 +1,15 @@
-// עורך המסמך: תצוגה, זום, דפדוף; הגדרות (גודל, שוליים, עמודים כפולים, מספר עמודים, מספור, עמוד אב);
-// הקשה על עמוד — בחירה, ו"עמוד N" בסרגל קובע לו עמוד אב.
+// עורך המסמך: תצוגה, זום, דפדוף; הגדרות (גודל, שוליים, עמודים כפולים, מספר עמודים, מספור, עמוד אב, טקסט);
+// הקשה על עמוד — בחירה ("עמוד N": עמוד אב, מסגרת טקסט, זרימה אוטומטית); הקשה על מסגרת — "מסגרת" (טקסט, טורים, גודל).
+// הטקסט נפרס מחדש בכל שינוי (flow.js); שטף עם זרימה אוטומטית שלא נכנס — מוסיף עמודים.
 // כל שינוי נשמר לשרת אחרי רגע (doc_save עם rev — שמירה מלשונית ישנה נדחית במקום לדרוס).
 
 import { PageView } from './view.js';
 import { pagesOf, pageSize, setPageCount, setPageSize, marginsFit, mmToPt, ptToMm,
-  mastersOf, masterOf, setMaster, updateMaster, ensureMasters, spreadOfPage } from './pages.js';
+  mastersOf, masterOf, setMaster, updateMaster, ensureMasters, spreadOfPage, contentBox } from './pages.js';
+import { addFrame, autoflow, growFlow, removeFrame, pruneFlows, updateFrame, setFlow, flowText, textToDoc, thread,
+  allFrames, bodyStyle, setBodyStyle, FONTS } from './frames.js';
+import { layoutFlows } from './flow.js';
+import { loadFont } from './shaper.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 
@@ -42,7 +47,7 @@ function toast(msg, err = false) {
 })();
 document.addEventListener('click', e => { const b = e.target.closest('[data-close]'); if (b) b.closest('dialog').close(); });
 
-const newId = () => 'p' + Array.from(crypto.getRandomValues(new Uint8Array(6)), b => b.toString(16).padStart(2, '0')).join('');
+const newId = (prefix = 'p') => prefix + Array.from(crypto.getRandomValues(new Uint8Array(6)), b => b.toString(16).padStart(2, '0')).join('');
 
 // ---- מצב ----
 const id = Number(new URLSearchParams(location.search).get('id'));
@@ -55,9 +60,63 @@ let dirty = false, saving = false, saveTimer = 0, blocked = false;
 
 function setState(text) { saveState.textContent = text; }
 
+// ---- הטקסט: גופנים, פריסה וזרימה אוטומטית ----
+const loaded = {};   // שם גופן → גופן טעון
+let fontsReady = null;
+function ensureFonts() {
+  return (fontsReady ||= Promise.all(Object.entries(FONTS).map(async ([name, file]) => {
+    loaded[name] = await loadFont('assets/fonts/' + file, name);
+  })));
+}
+// גופן הגוף, ו-Noto כחלופי (טעמים שאין ב-Frank Ruhl Libre)
+const fontsFor = family => {
+  const main = loaded[family] || loaded['Noto Serif Hebrew'];
+  return main === loaded['Noto Serif Hebrew'] ? [main] : [main, loaded['Noto Serif Hebrew']];
+};
+let text = null;
+
+function relayout() {
+  if (!loaded['Noto Serif Hebrew']) return;
+  text = layoutFlows(model, fontsFor);
+  view.setText(text, fontsFor(bodyStyle(model).font));
+  updatePageBtn();
+}
+
+/**
+ * זרימה אוטומטית: שטף עם autogrow שלא נכנס — מוסיפים עמודים לפי הערכה (כמה מהטקסט נכנס בעמודים הקיימים), ופורסים
+ * שוב, עד שנכנס. עמודים מיותרים שנוספו כאן ונשארו ריקים — יורדים. מחזיר את המודל (אולי עם עמודים חדשים).
+ */
+function grow(m) {
+  if (!loaded['Noto Serif Hebrew']) return m;
+  const startCount = pagesOf(m).length;
+  const step = m.layout.facing ? 2 : 1;
+  for (let round = 0; round < 30; round++) {
+    const t = layoutFlows(m, fontsFor);
+    const need = [...t.flows].find(([fid, r]) => r.overset && m.flows[fid].autogrow);
+    if (!need) break;
+    const [fid, r] = need;
+    const used = Math.max(1, thread(m, fid).length);
+    const done = Math.max(0.5, r.rest.paragraph + (r.rest.word ? 0.5 : 0));
+    let add = Math.ceil(used * r.rest.of / done) - used;
+    add = Math.max(step, Math.min(400, Math.ceil(add / step) * step));
+    if (pagesOf(m).length + add > 2000) { toast('הטקסט ארוך מדי — הגעתי ל-2000 עמודים', true); break; }
+    m = growFlow(m, fid, add, newId);
+  }
+  // עמודים שנוספו עכשיו ונשארו ריקים (ההערכה הייתה גבוהה מדי) — יורדים מהסוף, בזוגות בעמודים כפולים
+  if (pagesOf(m).length > startCount) {
+    const t = layoutFlows(m, fontsFor);
+    let n = pagesOf(m).length;
+    const emptyPage = i => allFrames(m).filter(x => x.pageIndex === i).every(x => !t.frames.get(x.frame.id)?.lines.length);
+    while (n - step >= startCount && Array.from({ length: step }, (_, k) => n - 1 - k).every(emptyPage)) n -= step;
+    if (n < pagesOf(m).length) m = pruneFlows(setPageCount(m, n, () => newId('p')));
+  }
+  return m;
+}
+
 function changed(next) {
-  model = next;
+  model = grow(next);
   view.setModel(model);
+  relayout();
   dirty = true;
   setState('לא נשמר');
   clearTimeout(saveTimer);
@@ -124,7 +183,7 @@ document.addEventListener('keydown', e => {
 // הוספת עמודים: שניים בעמודים כפולים (פריסה שלמה), אחד בלי
 $('#add-page').addEventListener('click', () => {
   const n = pagesOf(model).length + (model.layout.facing ? 2 : 1);
-  changed(setPageCount(model, n, newId));
+  changed(pruneFlows(setPageCount(model, n, () => newId('p'))));
   view.goSpread(view.lay.spreads.length - 1);
   toast(`${pagesOf(model).length} עמודים`);
 });
@@ -136,12 +195,17 @@ function updatePageBtn() {
   const i = view.selected;
   pageBtn.hidden = i < 0;
   $('#add-page').hidden = i >= 0;
-  if (i >= 0) pageBtn.textContent = `📄 עמוד ${i + 1}`;
+  if (i < 0) return;
+  if (view.frameSel) {
+    const over = text?.frames.get(view.frameSel)?.overset;
+    pageBtn.textContent = over ? '▭ מסגרת · ⚠ גולש' : '▭ מסגרת';
+  } else pageBtn.textContent = `📄 עמוד ${i + 1}`;
 }
 
 pageBtn.addEventListener('click', () => {
   const i = view.selected;
   if (i < 0) return;
+  if (view.frameSel) return openFrame();
   const page = pagesOf(model)[i];
   $('#page-title').textContent = `עמוד ${i + 1}`;
   const seg = $('#pm-seg');
@@ -174,6 +238,123 @@ pform.addEventListener('submit', e => {
 
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !e.target.closest('dialog')) view.select(-1); });
 
+// מסגרת טקסט בעמוד הנבחר (שטף חדש), או זרימה אוטומטית מכאן ועד הסוף — ומיד לעריכת הטקסט
+$('#pm-frame').addEventListener('click', async () => {
+  pdlg.close();
+  await ensureFonts();
+  const i = view.selected;
+  const r = addFrame(model, i, { newId });
+  changed(r.model);
+  view.select(i, r.frameId);
+  openStory(r.flowId);
+});
+$('#pm-flow').addEventListener('click', async () => {
+  pdlg.close();
+  await ensureFonts();
+  const i = view.selected;
+  const r = autoflow(model, i, { newId });
+  changed(r.model);
+  view.select(i, thread(model, r.flowId)[0]?.frame.id || null);
+  openStory(r.flowId);
+});
+
+// ---- מסגרת נבחרת ----
+const fdlg = $('#frame-dlg'), fform = $('form', fdlg), fErr = $('.error[role=alert]', fdlg);
+const selFrame = () => allFrames(model).find(x => x.frame.id === view.frameSel);
+
+function openFrame() {
+  const x = selFrame();
+  if (!x) return;
+  const { frame, pageIndex } = x;
+  $('#frame-title').textContent = `מסגרת טקסט · עמוד ${pageIndex + 1}`;
+  fform.columns.value = String(frame.columns || 1);
+  fform.gutter.value = ptToMm(frame.gutter || 0);
+  // x בטופס — מימין (מתאים לעברית): המרחק מקצה העמוד הימני לקצה המסגרת הימני
+  const [w] = pageSize(model);
+  const [bx, by, bw, bh] = frame.box;
+  fform.fx.value = ptToMm(w - bx - bw); fform.fy.value = ptToMm(by); fform.fw.value = ptToMm(bw); fform.fh.value = ptToMm(bh);
+  const fl = text?.flows.get(frame.flow);
+  const ov = $('#fr-overset');
+  ov.hidden = !fl?.overset;
+  if (fl?.overset) ov.textContent = `⚠ הטקסט לא נכנס — נשארו עוד ${fl.rest.of - fl.rest.paragraph} פסקאות. "עמודים עד סוף הטקסט" — מוסיף עמודים.`;
+  $('#fr-grow').hidden = !!model.flows[frame.flow]?.autogrow && !fl?.overset;
+  fErr.hidden = true;
+  fdlg.showModal();
+}
+
+$('#fr-fill').addEventListener('click', () => {
+  const x = selFrame();
+  const [w] = pageSize(model);
+  const [bx, by, bw, bh] = contentBox(model, x.pageIndex + 1);
+  fform.fx.value = ptToMm(w - bx - bw); fform.fy.value = ptToMm(by); fform.fw.value = ptToMm(bw); fform.fh.value = ptToMm(bh);
+});
+
+fform.addEventListener('submit', e => {
+  e.preventDefault();
+  const x = selFrame();
+  const fail = msg => { fErr.textContent = msg; fErr.hidden = false; };
+  const [w, h] = pageSize(model);
+  const v = ['fx', 'fy', 'fw', 'fh', 'gutter'].map(k => num(fform[k].value));
+  if (v.some(n => !(n >= 0))) return fail('מספרים, 0 או יותר');
+  const [fx, fy, fw, fh, gut] = v.map(mmToPt);
+  if (fw < 10 || fh < 10) return fail('המסגרת קטנה מדי');
+  if (fx + fw > w + 0.5 || fy + fh > h + 0.5) return fail('המסגרת יוצאת מהעמוד');
+  fdlg.close();
+  changed(updateFrame(model, x.frame.id, { box: [w - fx - fw, fy, fw, fh].map(n => Math.round(n * 100) / 100),
+    columns: Number(fform.columns.value), gutter: gut }));
+});
+
+$('#fr-edit').addEventListener('click', () => { const x = selFrame(); fdlg.close(); openStory(x.frame.flow); });
+
+// המשך בעמוד הבא: מסגרת חדשה בעמוד הבא שממשיכה את השרשור (אין עמוד — מוסיפים)
+$('#fr-next').addEventListener('click', () => {
+  const x = selFrame();
+  fdlg.close();
+  let m = model, next = x.pageIndex + 1;
+  if (next >= pagesOf(m).length) m = setPageCount(m, next + 1, () => newId('p'));
+  const r = addFrame(m, next, { flowId: x.frame.flow, newId });
+  changed(r.model);
+  view.select(next, r.frameId);
+  view.goSpread(spreadOfPage(view.lay, next));
+});
+
+$('#fr-grow').addEventListener('click', () => {
+  const x = selFrame();
+  fdlg.close();
+  const before = pagesOf(model).length;
+  changed(setFlow(model, x.frame.flow, { autogrow: true }));
+  const added = pagesOf(model).length - before;
+  toast(added ? `נוספו ${added} עמודים` : 'הטקסט נכנס');
+});
+
+$('#fr-del').addEventListener('click', () => {
+  const x = selFrame();
+  if (!confirm('למחוק את המסגרת? הטקסט נשאר וזורם למסגרות האחרות בשרשור (אם יש).')) return;
+  fdlg.close();
+  const fid = x.frame.flow;
+  const wasLast = thread(model, fid).length === 1;
+  if (wasLast && flowText(model, fid).trim() && !confirm('זו המסגרת האחרונה של הטקסט — הטקסט יימחק איתה. להמשיך?')) return;
+  view.select(x.pageIndex, null);
+  changed(removeFrame(model, x.frame.id));
+});
+
+// ---- עריכת הטקסט (Story Editor) ----
+const sdlg = $('#story-dlg'), sform = $('form', sdlg);
+let storyFlow = null;
+function openStory(flowId) {
+  storyFlow = flowId;
+  sform.text.value = flowText(model, flowId);
+  sdlg.showModal();
+  sform.text.focus();
+}
+sform.addEventListener('submit', e => {
+  e.preventDefault();
+  sdlg.close();
+  changed(setFlow(model, storyFlow, { doc: textToDoc(sform.text.value) }));
+  const r = text?.flows.get(storyFlow);
+  if (r?.overset) toast('הטקסט לא נכנס — ➕ אדום בסוף המסגרת האחרונה', true);
+});
+
 // ---- הגדרות ----
 const dlg = $('#set-dlg'), form = $('form', dlg), dlgErr = $('.error', dlg);
 const num = v => { const n = parseFloat(String(v).replace(',', '.')); return Number.isFinite(n) ? n : NaN; };
@@ -188,6 +369,11 @@ function fillSettings() {
   form.facing.checked = model.layout.facing;
   form.binding.value = model.layout.binding;
   form.count.value = pagesOf(model).length;
+  const st = bodyStyle(model);
+  form.font.value = st.font;
+  form.tsize.value = st.size;
+  form.tlead.value = st.leading;
+  form.talign.value = st.align === 'left' ? 'right' : st.align;
   const nb = model.layout.numbering;
   form.start.value = nb.start;
   form.nstyle.value = nb.style;
@@ -235,6 +421,9 @@ form.addEventListener('submit', e => {
   const count = Math.round(num(form.count.value));
   if (!(count >= 1 && count <= 2000)) return fail('מספר העמודים — בין 1 ל-2000');
 
+  const tsize = num(form.tsize.value), tlead = num(form.tlead.value);
+  if (!(tsize >= 4 && tsize <= 200)) return fail('גודל הטקסט — 4 עד 200 נקודות');
+  if (!(tlead >= 4 && tlead <= 400)) return fail('מרווח השורות — 4 עד 400 נקודות');
   const start = Math.round(num(form.start.value));
   if (!(start >= 1 && start <= 99999)) return fail('מספור העמודים — מתחיל ב-1 או יותר');
   const hodd = form.hodd.value.trim(), heven = form.heven.value.trim();
@@ -252,7 +441,8 @@ form.addEventListener('submit', e => {
     header: form.header.checked ? { odd: hodd, even: form.facing.checked ? heven : hodd,
       position: form.hpos.value, align: form.halign.value, size: master.running?.header?.size || 9 } : null,
   } });
-  next = setPageCount(next, count, newId);
+  next = pruneFlows(setPageCount(next, count, () => newId('p')));
+  next = setBodyStyle(next, { font: form.font.value, size: tsize, leading: tlead, align: form.talign.value });
   if (!marginsFit(next)) return fail('השוליים גדולים מדי לעמוד — צריך להישאר לפחות 1 ס"מ לתוכן');
   dlg.close();
   changed(next);
@@ -271,6 +461,8 @@ form.addEventListener('submit', e => {
     view.setModel(model, { keep: false });
     view.fit();
     view.goSpread(0);
+    // הגופנים ו-HarfBuzz — ברקע; כשמוכנים, הטקסט והכותרות מצוירים בהם
+    ensureFonts().then(relayout).catch(err => toast('הגופנים לא נטענו: ' + err.message, true));
     $('#settings-btn').disabled = false;
     $('#add-page').disabled = false;
   } catch (e) {

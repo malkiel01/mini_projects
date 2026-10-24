@@ -5,6 +5,8 @@
 // הבמה ב-direction: ltr — חשבון הגלילה פשוט; העמודים עצמם ממוקמים לפי צד הכריכה (pages.js).
 
 import { layoutDoc, contentBox, runningItems, pagesOf, masterOf, pageAt } from './pages.js';
+import { framesOnPage, frameAt } from './frames.js';
+import { drawGlyphs, shapeLine, advance } from './shaper.js';
 
 const MIN_Z = 0.1, MAX_Z = 8;
 
@@ -14,6 +16,9 @@ export class PageView {
     this.onChange = onChange || (() => {});
     this.onPick = onPick || (() => {});
     this.selected = -1;   // העמוד הנבחר (0-based), או -1
+    this.frameSel = null; // מזהה המסגרת הנבחרת, או null
+    this.text = null;     // פריסת הטקסט (flow.js: layoutFlows) — null עד שהגופנים נטענו
+    this.fonts = null;    // [גופן, חלופי] לכותרת הרצה ולמספר העמוד
     host.classList.add('stage');
     host.innerHTML = '<div class="scroller" tabindex="0" aria-label="העמודים"><div class="spacer"></div></div><canvas aria-hidden="true"></canvas>';
     this.scroller = host.querySelector('.scroller');
@@ -169,14 +174,28 @@ export class PageView {
       if (moved > 8 || !quick) return;
       const r = this.scroller.getBoundingClientRect();
       const p = this.docPointAt(e.clientX - r.left, e.clientY - r.top);
-      this.select(pageAt(this.lay, p.x, p.y));
+      const index = pageAt(this.lay, p.x, p.y);
+      let frame = null;
+      if (index >= 0) {   // מסגרת קודמת לעמוד: הקשה בתוך מסגרת בוחרת אותה
+        const pg = this.lay.spreads.flatMap(s => s.pages).find(q => q.index === index);
+        frame = frameAt(this.model, index, p.x - pg.x, p.y - pg.y)?.id || null;
+      }
+      this.select(index, frame);
     });
   }
 
-  select(index) {
-    if (index === this.selected) return;
+  select(index, frame = null) {
+    if (index === this.selected && frame === this.frameSel) return;
     this.selected = index;
-    this.onPick(index);
+    this.frameSel = index >= 0 ? frame : null;
+    this.onPick(index, this.frameSel);
+    this.draw();
+  }
+
+  /** פריסת הטקסט החדשה (אחרי כל שינוי במודל) — וציור. */
+  setText(text, fonts) {
+    this.text = text;
+    if (fonts) this.fonts = fonts;
     this.draw();
   }
 
@@ -223,18 +242,53 @@ export class PageView {
         ctx.strokeStyle = col('--spine');
         ctx.beginPath(); ctx.moveTo(xs, s.y); ctx.lineTo(xs, s.y + h); ctx.stroke();
       }
-      // מה שעמוד האב מצייר: מספר עמוד וכותרת רצה. (גופן מערכת בינתיים — הגופנים המוטמעים ו-HarfBuzz בשלב הטקסט)
+      // מה שעמוד האב מצייר: מספר עמוד וכותרת רצה — ב-HarfBuzz ובגופן הגוף, כשהגופנים נטענו
       ctx.fillStyle = col('--running');
       ctx.textBaseline = 'middle';
       for (const p of s.pages) {
         for (const it of runningItems(model, p.num)) {
-          ctx.font = `${it.size}px 'Frank Ruhl Libre', 'David Libre', 'Times New Roman', serif`;
-          ctx.direction = 'rtl';
-          ctx.textAlign = it.align;
-          ctx.fillText(it.text, p.x + it.x, p.y + it.y);
+          if (this.fonts) {
+            const g = shapeLine(this.fonts, it.text);
+            const width = advance(g) * it.size / this.fonts[0].upem;
+            const x0 = it.align === 'left' ? it.x : it.align === 'right' ? it.x - width : it.x - width / 2;
+            drawGlyphs(ctx, this.fonts[0], g, p.x + x0, p.y + it.y + it.size * 0.3, it.size);
+          } else {
+            ctx.font = `${it.size}px serif`;
+            ctx.direction = 'rtl';
+            ctx.textAlign = it.align;
+            ctx.fillText(it.text, p.x + it.x, p.y + it.y);
+          }
         }
       }
       ctx.direction = 'ltr';
+      // מסגרות טקסט: קו דק (לא מודפס), הטקסט, וסימן גלישה ➕ אדום כשהטקסט לא נכנס
+      for (const p of s.pages) {
+        for (const fr of framesOnPage(model, p.index)) {
+          const [fx, fy, fw, fh] = fr.box;
+          const sel = fr.id === this.frameSel;
+          ctx.lineWidth = (sel ? 2 : 1) * px;
+          ctx.strokeStyle = sel ? col('--select') : col('--frame');
+          ctx.strokeRect(p.x + fx, p.y + fy, fw, fh);
+          const tl = this.text?.frames.get(fr.id);
+          if (!tl) continue;
+          ctx.fillStyle = col('--ink-print');
+          for (const l of tl.lines) {
+            if (p.y + l.y < top - 40 || p.y + l.y - l.size > bottom + 40) continue;
+            drawGlyphs(ctx, l.font, l.glyphs, p.x + l.x, p.y + l.y, l.size);
+          }
+          if (tl.overset) {   // בפינה השמאלית התחתונה — סוף המסגרת בעברית
+            const m = 10 * px;
+            ctx.fillStyle = col('--overset');
+            ctx.fillRect(p.x + fx - m / 2, p.y + fy + fh - m / 2, m, m);
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 1.5 * px;
+            ctx.beginPath();
+            ctx.moveTo(p.x + fx - m / 3, p.y + fy + fh); ctx.lineTo(p.x + fx + m / 3, p.y + fy + fh);
+            ctx.moveTo(p.x + fx, p.y + fy + fh - m / 3); ctx.lineTo(p.x + fx, p.y + fy + fh + m / 3);
+            ctx.stroke();
+          }
+        }
+      }
       // העמוד הנבחר
       for (const p of s.pages) {
         if (p.index !== this.selected) continue;

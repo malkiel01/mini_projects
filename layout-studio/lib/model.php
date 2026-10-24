@@ -87,6 +87,7 @@ function ls_model_check($m): array
     $ids = [];
     $masters = [];
     $refs = [];
+    $frames = [];   // מזהה מסגרת → השטף שלה
     foreach ($S as $s) {
         if (!is_array($s)) throw $bad('page');
         $id = $s['id'] ?? null;
@@ -102,7 +103,18 @@ function ls_model_check($m): array
         }
         if ($size === null) $size = [(float)$sz[0], (float)$sz[1]];
         elseif (abs($size[0] - $sz[0]) > 0.01 || abs($size[1] - $sz[1]) > 0.01) throw $bad('mixed_size');
+        $layers = $s['layers'] ?? [];
+        if (!is_array($layers) || !array_is_list($layers)) throw $bad('layers');
+        foreach ($layers as $l) {
+            if (!is_array($l)) throw $bad('layer');
+            $lid = $l['id'] ?? null;
+            if (!is_string($lid) || !preg_match('/^[A-Za-z0-9_.:-]{1,128}$/', $lid) || isset($ids[$lid])) throw $bad('layer_id');
+            $ids[$lid] = true;   // מזהים ייחודיים בכל המסמך — משטחים ושכבות יחד
+            if (($l['type'] ?? null) === 'frame') { ls_frame_check($l, $bad); $frames[$lid] = $l['flow'] ?? null; }
+        }
     }
+    ls_flows_check($m['flows'] ?? null, $frames, $bad);
+    ls_style_check($m['styles'] ?? null, $bad);
     if ($size === null) throw $bad('pages');
     foreach ($refs as $r) {
         if (!is_string($r) || !isset($masters[$r])) throw $bad('master_ref');   // עמוד שמפנה לעמוד אב שלא קיים
@@ -136,4 +148,58 @@ function ls_master_check(array $s, callable $bad): void
             if (!is_string($h[$k] ?? null) || mb_strlen($h[$k]) > 200) throw $bad('running');
         }
     }
+}
+
+/** מסגרת טקסט: box — 4 מספרים, רוחב וגובה חיוביים; טורים 1–12. */
+function ls_frame_check(array $l, callable $bad): void
+{
+    $b = $l['box'] ?? null;
+    if (!is_array($b) || !array_is_list($b) || count($b) !== 4) throw $bad('frame');
+    foreach ($b as $v) if (!is_int($v) && !is_float($v)) throw $bad('frame');
+    if ($b[2] <= 0 || $b[3] <= 0) throw $bad('frame');
+    $c = $l['columns'] ?? 1;
+    if (!is_int($c) || $c < 1 || $c > 12) throw $bad('frame');
+    $g = $l['gutter'] ?? 0;
+    if ((!is_int($g) && !is_float($g)) || $g < 0) throw $bad('frame');
+    if (array_key_exists('flow', $l) && !is_string($l['flow'])) throw $bad('frame');
+}
+
+/**
+ * שטפים: מסגרת שמפנה לשטף — השטף קיים (כלל של הליבה). שטף שלנו (frames) — כל מסגרת בשרשור קיימת, שייכת אליו
+ * ומופיעה פעם אחת.
+ */
+function ls_flows_check($flows, array $frames, callable $bad): void
+{
+    if ($flows === null) $flows = [];
+    if (!is_array($flows)) throw $bad('flows');
+    foreach ($frames as $fid => $flow) {
+        if ($flow !== null && !isset($flows[$flow])) throw $bad('flow_ref');
+    }
+    foreach ($flows as $id => $f) {
+        if (!is_array($f) || !is_string($f['engine'] ?? null)) throw $bad('flow');
+        if (array_key_exists('doc', $f) && !is_array($f['doc'])) throw $bad('flow');
+        if (!array_key_exists('frames', $f)) continue;   // שטף של אפליקציה אחרת — נשמר כמו שהוא
+        if (!is_array($f['frames']) || !array_is_list($f['frames'])) throw $bad('thread');
+        $seen = [];
+        foreach ($f['frames'] as $fid) {
+            if (!is_string($fid) || !array_key_exists($fid, $frames) || $frames[$fid] !== (string)$id || isset($seen[$fid])) throw $bad('thread');
+            $seen[$fid] = true;
+        }
+        if (array_key_exists('autogrow', $f) && !is_bool($f['autogrow'])) throw $bad('flow');
+    }
+}
+
+/** סגנון הגוף (styles.body) — אם קיים. */
+function ls_style_check($styles, callable $bad): void
+{
+    if ($styles === null) return;
+    if (!is_array($styles)) throw $bad('styles');
+    $b = $styles['body'] ?? null;
+    if ($b === null) return;
+    if (!is_array($b)) throw $bad('style');
+    $num = fn($v, $min, $max) => (is_int($v) || is_float($v)) && $v >= $min && $v <= $max;
+    if (!is_string($b['font'] ?? null) || mb_strlen($b['font']) > 100) throw $bad('style');
+    if (!$num($b['size'] ?? null, 4, 200) || !$num($b['leading'] ?? null, 4, 400)) throw $bad('style');
+    if (!in_array($b['align'] ?? null, ['justify', 'right', 'center', 'left'], true)) throw $bad('style');
+    if (!$num($b['spaceAfter'] ?? null, 0, 200)) throw $bad('style');
 }

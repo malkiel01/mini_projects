@@ -11,8 +11,11 @@ let hbPromise = null;
 const hb = () => (hbPromise ||= import('../vendor/harfbuzzjs/index.mjs'));
 let bidi = null;
 
-/** טעינת גופן (TTF/OTF — לא woff2: HarfBuzz קורא את הטבלאות עצמן). src — כתובת, או ArrayBuffer (בבדיקות). */
-export async function loadFont(src) {
+/**
+ * טעינת גופן (TTF/OTF — לא woff2: HarfBuzz קורא את הטבלאות עצמן). src — כתובת, או ArrayBuffer (בבדיקות).
+ * name — שם הגופן (מפתח למטמונים של המדידה).
+ */
+export async function loadFont(src, name = typeof src === 'string' ? src : 'font') {
   const H = await hb();
   let data = src;
   if (typeof src === 'string') {
@@ -22,7 +25,7 @@ export async function loadFont(src) {
   }
   const face = new H.Face(new H.Blob(data));
   const font = new H.Font(face);
-  return { H, face, font, upem: face.upem, paths: new Map(), cmap: new Set(face.collectUnicodes()) };
+  return { name, H, face, font, upem: face.upem, paths: new Map(), cmap: new Set(face.collectUnicodes()) };
 }
 
 /** האם בגופן יש גליף לכל התווים במחרוזת. */
