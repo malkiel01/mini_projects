@@ -298,6 +298,19 @@ payment_refund($pay1['id'], 6500, 'ביטול', 'admin:x');
 check('השלמה להחזר מלא', db_one('SELECT status FROM payment WHERE id = ?', [$pay1['id']])['status'] === 'refunded');
 check('אחרי החזר מלא — הדוחות לא נספרים', entitlement($app, 'test', ['external_id' => 'user:1'])['purchased']->report == 1);
 
+section('דוחות');
+require_once __DIR__ . '/../lib/reports.php';
+$rep = reports($owner, 'test');
+$from = strtotime('-11 months', month_range('')[0]);
+$sumPaid = (int)db_one("SELECT SUM(p.amount) AS s FROM payment p WHERE p.env = 'test' AND p.status <> 'failed' AND p.amount > 0 AND p.created_at >= ?", [$from])['s'];
+$sumRef = (int)db_one("SELECT SUM(amount) AS s FROM refund WHERE created_at >= ?", [$from])['s'];
+$net12 = array_sum(array_column($rep['months'], 'net'));
+check('12 חודשים, והסכום = כל מה שנגבה פחות ההחזרים', count($rep['months']) === 12 && $net12 === $sumPaid - $sumRef, "$net12 vs " . ($sumPaid - $sumRef));
+check('הכנסה קבועה ממנויים — חיובית, ושנתי מחולק ל-12', $rep['mrr'] > 0 && $rep['subs']['active'] > 0);
+check('בחי — אין כלום', reports($owner, 'live')['month']['gross'] === 0 && reports($owner, 'live')['mrr'] === 0);
+check('פילוח לפי מערכת ולפי מוצר', ($rep['by_client'][0]['name'] ?? '') === 'מגדלור' && count($rep['by_product']) > 1);
+check('סביבה לא מוכרת — נדחה', throws(fn() => reports($owner, 'prod'), 'bad_env'));
+
 section('השעון');
 db_run("UPDATE setting SET value = '0' WHERE key = 'tick_at'");
 check('ריצה ראשונה', tick('test') !== null);

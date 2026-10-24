@@ -591,7 +591,11 @@ for (const b of document.querySelectorAll('[data-money]')) b.addEventListener('c
 });
 const PST = { succeeded: ['עבר', 'ok'], failed: ['נכשל', 'bad'], refunded: ['הוחזר', ''], partially_refunded: ['הוחזר חלקית', 'warn'] };
 const IST = { paid: ['שולמה', 'ok'], open: ['פתוחה', 'warn'], uncollectible: ['לא נגבתה', 'bad'], void: ['בוטלה', ''], draft: ['טיוטה', ''] };
+let reportEnv = 'live';
 loaders.money = async () => {
+  const rep = moneyView === 'reports';
+  $('#reports').hidden = !rep; $('#money-list').hidden = rep; $('#money-hint').hidden = rep; $('#p-money .toolbar').hidden = rep;
+  if (rep) return renderReports(await api('reports', { env: reportEnv }));
   const [p, i] = await Promise.all([api('payments'), api('invoices')]);
   $('#n-pay').textContent = p.data.length || ''; $('#n-inv').textContent = i.data.length || '';
   $('#money-hint').textContent = moneyView === 'payments' ? 'כל תשלום שעבר או נכשל. לחיצה על תשלום שעבר — החזר כספי.' : 'חשבוניות פנימיות. המסמך החשבונאי (קבלה / חשבונית מס) — בשלב 5, דרך מורנינג.';
@@ -608,6 +612,56 @@ loaders.money = async () => {
         ${chip(...(IST[r.status] || [r.status, '']))}</li>`).join('') : empty('עוד אין חשבוניות.');
   }
 };
+function renderReports(r) {
+  const MON = ['ינו׳', 'פבר׳', 'מרץ', 'אפר׳', 'מאי', 'יוני', 'יולי', 'אוג׳', 'ספט׳', 'אוק׳', 'נוב׳', 'דצמ׳'];
+  const label = p => MON[Number(p.slice(5)) - 1] + (p.slice(5) === '01' ? ' ' + p.slice(2, 4) : '');
+  const max = Math.max(1, ...r.months.map(m => Math.abs(m.net)));
+  const full = p => MON[Number(p.slice(5)) - 1] + ' ' + p.slice(0, 4);
+  const cell = (k, v, sub = '') => `<div><dt>${k}</dt><dd>${v}</dd>${sub ? `<span class="muted" style="font-size:.75rem">${sub}</span>` : ''}</div>`;
+  const list = (rows, empty_) => rows.length ? (() => { const top = Math.max(1, ...rows.map(x => x.amount)); return rows.map(x => `<li class="card"><div class="body">
+      <div class="l1"><span>${esc(x.name || '—')}</span><span class="t">${nis(x.amount)}</span></div>
+      <div class="hbar" style="width:${Math.max(2, Math.round(x.amount * 100 / top))}%" aria-hidden="true"></div></div></li>`).join(''); })() : empty(empty_);
+  const total = r.months.reduce((a, m) => a + m.net, 0);
+  $('#reports').innerHTML = `
+    <fieldset class="seg" aria-label="סביבה" style="margin-bottom:8px">
+      <label><input type="radio" name="renv" value="live" ${r.env === 'live' ? 'checked' : ''}><span>כסף אמיתי</span></label>
+      <label><input type="radio" name="renv" value="test" ${r.env === 'test' ? 'checked' : ''}><span>בדיקות</span></label></fieldset>
+    <dl class="cells">
+      ${cell('הכנסה החודש', nis(r.month.net), r.month.refunds ? 'אחרי החזרים של ' + nis(r.month.refunds) : r.month.count + ' תשלומים')}
+      ${cell('קבועה ממנויים (לחודש)', nis(r.mrr), r.subs.active + ' מנויים פעילים')}
+      ${cell('מנויים החודש', r.subs.new_month + ' נוספו · ' + r.subs.canceled_month + ' בוטלו', 'נטישה ' + r.subs.churn_pct + '%')}
+      ${cell('מצב המנויים', r.subs.past_due + ' באיחור', r.subs.trialing + ' בניסיון חינם')}
+      ${cell('חיובים שנכשלו החודש', r.month.failed)}
+      ${cell('יתרות בארנקים', nis(r.wallets), 'קרדיט ששולם ועוד לא נוצל')}
+    </dl>
+    <h2 class="sec-title">הכנסה לפי חודש <small>${nis(total)} ב-12 חודשים</small></h2>
+    <div class="chart" role="img" aria-label="הכנסה נטו לפי חודש, 12 החודשים האחרונים">
+      ${r.months.map((m, i) => `<div class="bar${m.net < 0 ? ' neg' : ''}" tabindex="0" data-i="${i}" aria-label="${full(m.period)}: ${nis(m.net)}">
+        <i style="height:${m.net ? Math.max(2, Math.round(Math.abs(m.net) * 100 / max)) : 0}%"></i></div>`).join('')}
+      <div class="chart-tip" id="chart-tip" hidden></div>
+    </div>
+    <div class="chart-x" aria-hidden="true">${r.months.map((m, i) => `<span>${i % 2 === (r.months.length - 1) % 2 ? label(m.period) : ''}</span>`).join('')}</div>
+    <details style="margin-top:8px"><summary class="hint">כטבלה</summary>
+      <ul class="list">${r.months.slice().reverse().map(m => `<li class="card"><div class="body"><div class="l1"><span>${full(m.period)}</span><span class="t">${nis(m.net)}</span></div>
+        <div class="l2">נגבה ${nis(m.gross)} · ${m.count} תשלומים${m.refunds ? ' · הוחזרו ' + nis(m.refunds) : ''}${m.failed ? ' · ' + m.failed + ' נכשלו' : ''}</div></div></li>`).join('')}</ul></details>
+    <h2 class="sec-title">לפי מערכת <small>12 חודשים</small></h2><ul class="list">${list(r.by_client, 'עוד אין הכנסות.')}</ul>
+    <h2 class="sec-title">לפי מוצר <small>12 חודשים</small></h2><ul class="list">${list(r.by_product, 'עוד אין הכנסות.')}</ul>`;
+  const tip = $('#chart-tip');
+  const showTip = el => {
+    const m = r.months[Number(el.dataset.i)];
+    tip.innerHTML = `<b>${full(m.period)}</b> · ${nis(m.net)}${m.refunds ? ` <span class="muted">(נגבה ${nis(m.gross)}, הוחזרו ${nis(m.refunds)})</span>` : ''} · ${m.count} תשלומים`;
+    tip.hidden = false;
+    const box = el.parentElement.getBoundingClientRect(), b = el.getBoundingClientRect();
+    const x = Math.min(Math.max(0, box.right - b.right - tip.offsetWidth / 2 + b.width / 2), box.width - tip.offsetWidth);
+    tip.style.insetInlineStart = x + 'px';
+  };
+  for (const el of document.querySelectorAll('.chart .bar')) {
+    el.addEventListener('mouseenter', () => showTip(el)); el.addEventListener('focus', () => showTip(el));
+    el.addEventListener('mouseleave', () => { tip.hidden = true; }); el.addEventListener('blur', () => { tip.hidden = true; });
+    el.addEventListener('click', () => showTip(el));
+  }
+  for (const x of document.querySelectorAll('[name=renv]')) x.addEventListener('change', () => { reportEnv = x.value; loaders.money().catch(fail); });
+}
 function refundSheet(p) {
   const left = p.amount - p.refunded;
   const pendLine = p.refund_pending > 0 ? `<p class="error">↩️ הלקוח ביטל (${esc(p.refund_pending_reason)}): להחזיר ${nis(p.refund_pending)} בממשק הסולק, ואז "רישום החזר" כאן.</p>` : '';

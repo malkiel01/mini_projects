@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/lib/pages.php';
 require_once __DIR__ . '/lib/readiness.php';
+require_once __DIR__ . '/lib/reports.php';
 
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: same-origin');
@@ -144,6 +145,7 @@ try {
         'tick_now' => tick('admin', true) ?? [],
 
         'readiness' => readiness($t),
+        'reports' => reports($t, $s('env') === 'test' ? 'test' : 'live', (int)($in['months'] ?? 12)),
         'readiness_mark' => readiness_mark($t, $s('key'), !empty($in['done'])),
         'audit' => ['data' => db_all('SELECT actor_type, actor_id, action, object_type, object_id, detail, created_at FROM audit WHERE tenant = ? ORDER BY id DESC LIMIT 100', [$t['id']])],
         default => throw new ApiError('פעולה לא מוכרת', 'unknown_action', 404),
