@@ -74,6 +74,12 @@ check('למכשיר: משוחררת = מותרת, גם ב"רק מה שאישרת
 $mk = array_column($p['market'], 'n', 'p');
 check('למכשיר: המרקט עם שם (פרטית — בשם שההורה נתן) ואייקון', [count($mk), $mk['com.example.private'] ?? '', str_contains($p['market'][0]['icon'], '=s96')],
       [2, 'המשחק של נועה', true]);
+// מוסתרת (👻) שההורה גם שחרר — נשארת מוסתרת אחרי ההתקנה (בעל המערכת, 2026-10-24).
+q("UPDATE app_rules SET action = 'hide' WHERE child_id = ? AND package = 'com.duolingo'", [$kid]);
+$p = appsPayload($user($kid, $acc));
+check('מוסתרת ומשוחררת — נשארת מוסתרת (וחסומה), לא "מותרת"',
+      [in_array('com.duolingo', $p['hidden'], true), in_array('com.duolingo', $p['blocked'], true), in_array('com.duolingo', $p['allowed'], true)], [true, true, false]);
+q("UPDATE app_rules SET action = 'block' WHERE child_id = ? AND package = 'com.duolingo'", [$kid]);
 $r1 = policyRev($kid);
 marketRelease($kid, 'com.example.math', true);
 check('שחרור — המכשיר מושך מחדש', policyRev($kid) !== $r1, true);

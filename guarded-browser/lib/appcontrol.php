@@ -146,8 +146,9 @@ function appsPayload(array $user): array {
     if (!accountAppsAllowed((int) $user['account_id'])) return ['manage' => false];
     $rules = appRules($childId);
     // מה שההורה שחרר במרקט — מותר, גם כשאפליקציה חדשה נחסמת וגם ב"רק מה שאישרתי" (lib/market.php).
+    // חוץ ממוסתרת (👻): ההורה בחר להסתיר — היא נשארת מוסתרת גם אחרי שהותקנה מהמרקט (בעל המערכת, 2026-10-24).
     $released = marketReleased($childId);
-    foreach ($released as $pkg) if (($rules[$pkg] ?? '') !== 'allow') $rules[$pkg] = 'allow';
+    foreach ($released as $pkg) if (!in_array($rules[$pkg] ?? '', ['allow', 'hide'], true)) $rules[$pkg] = 'allow';
     $never = array_merge(UPDATE_PACKAGES, SHELL_PACKAGES, [SELF_PACKAGE]);
     $hidden = array_values(array_diff(array_keys(array_filter($rules, fn($a) => $a === 'hide')), $never));
     return [
