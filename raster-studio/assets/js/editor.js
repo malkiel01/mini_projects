@@ -31,10 +31,10 @@ let perfCache = null;
 try { perfCache = JSON.parse(localStorage.getItem(PERF_KEY) || 'null'); } catch { /* פרטי / חסום */ }
 let budget = deviceBudget({ deviceMemory: navigator.deviceMemory, mobile, perf: perfFactor(perfCache?.score) });
 
-function measurePerf() {
+async function measurePerf() {
   const key = renderer.gpuKey() + '|' + navigator.userAgent;
   if (perfCacheValid(perfCache, key)) return;
-  const score = renderer.benchmark(RasterDocument);
+  const score = await renderer.benchmark(RasterDocument);
   perfCache = { v: 1, key, score, at: Date.now() };
   try { localStorage.setItem(PERF_KEY, JSON.stringify(perfCache)); } catch { /* לא נורא — יימדד שוב */ }
   budget = deviceBudget({ deviceMemory: navigator.deviceMemory, mobile, perf: perfFactor(score) });
@@ -522,7 +522,7 @@ $('#hint').textContent = coarse ? 'צביטה — זום' : 'גרירה — הז
       throw new Error('no_file');
     }
     // אחרי שהמסמך על המסך — מדידה קצרה בזמן שקט (פעם אחת למכשיר)
-    (window.requestIdleCallback || setTimeout)(() => { try { measurePerf(); draw(); } catch (err) { console.warn('perf', err); } }, { timeout: 2000 });
+    (window.requestIdleCallback || setTimeout)(() => { measurePerf().then(draw, err => console.warn('perf', err)); }, { timeout: 2000 });
   } catch (e) {
     const code = e.message;
     showMsg(code === 'no_file' ? 'לא נבחרה תמונה. חזרו לרשימה ופתחו תמונה או צרו חדשה.' : errText(code), true);

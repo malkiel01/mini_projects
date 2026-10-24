@@ -45,6 +45,7 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
   let stroke = null;   // { layer, last, carry, pen }
   let lasso = null;    // גרירת בחירה: { type, mode, start, pts, shape }
   let xf = null;       // גרירה בכלי ההזזה: { kind, handle, t0, start }
+  let grabPending = null; // לחיצה בכלי ההזזה שמחכה לתוכן הצף: { last, up, cancelled }
   let floatSel = null; // הבחירה כשהתוכן הצף התחיל — זזה איתו
   let groupMove = null; // הזזת קבוצה: { layers, start, dx, dy } — כל השכבות שבה, בפיקסלים שלמים
   let cropRect = null; // { x0, y0, x1, y1 } — אזור החיתוך המוצע
@@ -210,10 +211,19 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     for (const b of opts.querySelectorAll('[data-xf]')) b.disabled = !f;
   }
 
-  /** מתחיל תוכן צף מהבחירה (או מכל השכבה). מחזיר אם הצליח. */
+  /**
+   * מתחיל תוכן צף מהבחירה (או מכל השכבה). מחזיר Promise — אם הצליח. גבולות השכבה נקראים מהכרטיס (אסינכרוני),
+   * ולכן קריאה שנייה בזמן ההמתנה מקבלת את אותה הבטחה.
+   */
+  let floatPending = null;
   function startFloat() {
+    if (fl()) return Promise.resolve(true);
+    floatPending ??= beginFloatFrom().finally(() => { floatPending = null; });
+    return floatPending;
+  }
+
+  async function beginFloatFrom() {
     const d = doc(), layer = d.active;
-    if (fl()) return true;
     if (!canEdit(layer)) return false;
     let rect;
     if (d.selection) {
@@ -221,7 +231,9 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
       if (!b) { toast('הבחירה ריקה'); return false; }
       rect = [b[0], b[1], b[2] - b[0], b[3] - b[1]];
     } else {
-      rect = renderer.layerBounds(layer);
+      rect = await renderer.layerBounds(layer);
+      // בזמן ההמתנה המסמך או השכבה הפעילה התחלפו — לא מתחילים
+      if (doc() !== d || d.active !== layer || fl()) return !!fl();
       if (!rect) { toast('השכבה ריקה — אין מה להזיז'); return false; }
     }
     try {
@@ -270,8 +282,8 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     draw();
   }
 
-  function nudge(dx, dy) {
-    if (!startFloat()) return;
+  async function nudge(dx, dy) {
+    if (!await startFloat()) return;
     const f = fl();
     renderer.setFloatTransform(doc(), { ...f.t, cx: f.t.cx + dx, cy: f.t.cy + dy });
     showBox();
@@ -425,22 +437,28 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     return true;
   }
 
-  function pick([x, y]) {
+  async function pick([x, y]) {
     const d = doc();
     const xi = Math.floor(x), yi = Math.floor(y);
     if (xi < 0 || yi < 0 || xi >= d.width || yi >= d.height) return;
-    const p = renderer.readPixels(d, xi, yi, 1, 1);
+    const p = await renderer.readPixels(d, xi, yi, 1, 1);
+    if (doc() !== d) return;
     if (!p[3]) { toast('כאן שקוף — אין צבע לדגום'); return; }
     state.color = rgbToHex([p[0], p[1], p[2]]);
     syncColor();
   }
 
-  function bucket([x, y]) {
+  let filling = false;
+  async function bucket([x, y]) {
     const d = doc(), layer = d.active;
-    if (!canEdit(layer)) return;
+    if (filling || !canEdit(layer)) return;
     const xi = Math.floor(x), yi = Math.floor(y);
     if (xi < 0 || yi < 0 || xi >= d.width || yi >= d.height) return;
-    const px = renderer.readLayerPixels(layer, 0, 0, d.width, d.height);
+    filling = true;
+    let px;
+    try { px = await renderer.readLayerPixels(layer, 0, 0, d.width, d.height); } finally { filling = false; }
+    // בזמן הקריאה: מסמך אחר, שכבה אחרת, משיכה או תוכן צף — הפיקסלים כבר לא מה שנקרא
+    if (doc() !== d || d.active !== layer || stroke || fl() || !canEdit(layer)) return;
     const r = floodFill(px, d.width, d.height, xi, yi, state.tolerance);
     if (!r.count) return;
     renderer.beginStroke(d, layer, { mode: 'paint', color: hexToRgb(state.color), opacity: state.opacity });
@@ -471,11 +489,22 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
       return true;
     }
     if (state.tool === 'move') {
-      if (!fl() && !startFloat()) return true;
-      const f = fl();
       const tol = (e.pointerType === 'touch' ? 22 : 10) / view().zoom;
-      const h = XF.hit(f.t, f.w, f.h, pt, tol) ?? { kind: 'move' };
-      xf = { ...h, t0: f.t, start: pt };
+      const grab = () => {
+        const f = fl();
+        const h = XF.hit(f.t, f.w, f.h, pt, tol) ?? { kind: 'move' };
+        xf = { ...h, t0: f.t, start: pt };
+      };
+      if (fl()) { grab(); return true; }
+      // התוכן הצף עוד לא מוכן (גבולות השכבה נקראים): התנועות וההרמה נשמרות עד שהוא מוכן
+      const g = grabPending = { last: null, up: false, cancelled: false };
+      startFloat().then(ok => {
+        if (grabPending === g) grabPending = null;
+        if (!ok || g.cancelled || !fl()) return;
+        grab();
+        if (g.last) move(...g.last);
+        if (g.up) up();
+      }, err => { if (grabPending === g) grabPending = null; console.warn('float', err); });
       return true;
     }
     if (selecting()) {
@@ -505,6 +534,7 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
 
   /** points — נקודות במסמך עם לחץ: [{x, y, pressure}] (כולל האירועים המאוחדים) */
   function move(points, e) {
+    if (grabPending) { grabPending.last = [points, e]; return; }
     if (groupMove) {
       const q = points.at(-1);
       groupMove.dx = Math.round(q.x - groupMove.start[0]);
@@ -566,6 +596,7 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
   }
 
   function up() {
+    if (grabPending) { grabPending.up = true; grabPending = null; return; }
     if (groupMove) { const g = groupMove; groupMove = null; commitGroupMove(g.dx, g.dy, g.layers); return; }
     if (cropDrag) { cropDrag = null; return; }
     if (xf) { xf = null; return; }
@@ -589,6 +620,7 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
 
   /** משיכה פתוחה בוטלה (אצבע שנייה → צביטה). */
   function cancel() {
+    if (grabPending) { grabPending.cancelled = true; grabPending = null; return; }
     if (groupMove) { groupMove = null; renderer.setShift(doc(), null); draw(); return; }
     if (lasso) { lasso = null; overlay.preview(null); return; }
     if (!stroke) return;
@@ -650,7 +682,7 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
   return {
     state, setTool, down, move, up, cancel, key, updateCursor, hideCursor, selAction, commitFloat, cancelFloat, commitText,
     get editingText() { return !!textEdit; },
-    get stroking() { return !!stroke || !!lasso || !!xf || !!cropDrag || !!groupMove; },
+    get stroking() { return !!stroke || !!lasso || !!xf || !!cropDrag || !!groupMove || !!grabPending; },
     get floating() { return !!fl(); },
   };
 }

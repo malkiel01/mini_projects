@@ -4,12 +4,12 @@ import { encodePNG } from './engine/png.js';
 import { zipStore } from './engine/zip.js';
 import { oraStack } from './engine/formats.js';
 
-/** התמונה המשוטחת (רק שכבות גלויות): RGBA ישר של 8 ביט בגודל הקנבס */
+/** התמונה המשוטחת (רק שכבות גלויות): Promise ל-RGBA ישר של 8 ביט בגודל הקנבס */
 export const flatRGBA = (renderer, doc) => renderer.readPixels(doc, 0, 0, doc.width, doc.height);
 
 /** שכבה אחת בגודל הקנבס, כ-PNG (התוכן שמחוץ לקנבס לא נכנס) */
-export const layerPNG = (renderer, doc, layer) =>
-  encodePNG(renderer.readLayerPixels(layer, 0, 0, doc.width, doc.height), doc.width, doc.height);
+export const layerPNG = async (renderer, doc, layer) =>
+  encodePNG(await renderer.readLayerPixels(layer, 0, 0, doc.width, doc.height), doc.width, doc.height);
 
 /** תמונה מוקטנת (הצלע הארוכה ≤ max) כ-PNG — לתמונה ממוזערת / preview */
 export async function scaledPNG(rgba, w, h, max) {
@@ -26,12 +26,12 @@ export async function scaledPNG(rgba, w, h, max) {
 }
 
 export async function exportPNG(renderer, doc) {
-  return new Blob([await encodePNG(flatRGBA(renderer, doc), doc.width, doc.height)], { type: 'image/png' });
+  return new Blob([await encodePNG(await flatRGBA(renderer, doc), doc.width, doc.height)], { type: 'image/png' });
 }
 
 /** JPG: בלי שקיפות — מעל לבן */
 export async function exportJPG(renderer, doc, quality = 0.92) {
-  const rgba = flatRGBA(renderer, doc);
+  const rgba = await flatRGBA(renderer, doc);
   const bmp = await createImageBitmap(new ImageData(rgba, doc.width, doc.height), { premultiplyAlpha: 'none' });
   const cv = new OffscreenCanvas(doc.width, doc.height);
   const ctx = cv.getContext('2d');
@@ -58,7 +58,7 @@ export async function buildORA(renderer, doc) {
     return out;
   };
   const layers = await walk(doc.layers);
-  const flat = flatRGBA(renderer, doc);
+  const flat = await flatRGBA(renderer, doc);
   files.splice(1, 0, { name: 'stack.xml', data: oraStack(doc.width, doc.height, layers) });
   files.push({ name: 'mergedimage.png', data: await encodePNG(flat, doc.width, doc.height) });
   files.push({ name: 'Thumbnails/thumbnail.png', data: await scaledPNG(flat, doc.width, doc.height, 256) });

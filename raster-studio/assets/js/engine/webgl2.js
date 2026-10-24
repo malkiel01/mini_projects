@@ -487,9 +487,9 @@ export class WebGL2Renderer {
 
   /**
    * תמונה ממוזערת של שכבה אחת (בלי אטימות ומיזוג — השכבה כמו שהיא), מעל משבצות שקיפות.
-   * מחזיר ImageData; הצלע הארוכה = max פיקסלים.
+   * מחזיר Promise ל-ImageData; הצלע הארוכה = max פיקסלים.
    */
-  thumbnail(doc, layer, max = 64) {
+  async thumbnail(doc, layer, max = 64) {
     const gl = this.gl;
     const k = Math.min(1, max / Math.max(doc.width, doc.height));
     const tw = Math.max(1, Math.round(doc.width * k)), th = Math.max(1, Math.round(doc.height * k));
@@ -977,8 +977,8 @@ export class WebGL2Renderer {
   // נשמרים ב-before. בזמן שינוי הצורה ההרכבה מציגה שכבה + תוכן צף. commitFloat כותב אותו לאריחים חדשים, ו-before
   // (המקוריים, בלי העתקה) הולך להיסטוריה. cancelFloat מחזיר את המקוריים.
 
-  /** גבולות התוכן של שכבה (בלי בחירה): [x, y, w, h] מדויק לפי האלפא, או null לשכבה ריקה. */
-  layerBounds(layer) {
+  /** גבולות התוכן של שכבה (בלי בחירה): Promise ל-[x, y, w, h] מדויק לפי האלפא, או null לשכבה ריקה. */
+  async layerBounds(layer) {
     if (!layer.tiles.size) return null;
     let tx0 = Infinity, ty0 = Infinity, tx1 = -Infinity, ty1 = -Infinity;
     for (const k of layer.tiles.keys()) {
@@ -986,7 +986,7 @@ export class WebGL2Renderer {
       tx0 = Math.min(tx0, tx); ty0 = Math.min(ty0, ty); tx1 = Math.max(tx1, tx); ty1 = Math.max(ty1, ty);
     }
     const X = tx0 * TILE, Y = ty0 * TILE, W = (tx1 - tx0 + 1) * TILE, H = (ty1 - ty0 + 1) * TILE;
-    const px = this.readLayerPixels(layer, X, Y, W, H);
+    const px = this.#readLayerSync(layer, X, Y, W, H);
     let x0 = W, y0 = H, x1 = -1, y1 = -1;
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
       if (px[(y * W + x) * 4 + 3]) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
@@ -1294,14 +1294,24 @@ export class WebGL2Renderer {
   }
 
   // ---------- קריאה החוצה ----------
+  // הקריאות החוצה אסינכרוניות בממשק (Promise): ב-WebGPU קריאה מהכרטיס אסינכרונית מעצם טבעה, ושני המנועים
+  // חולקים ממשק אחד. כאן היא מסתיימת מיד.
 
-  /** הפיקסלים המורכבים של מלבן במסמך — sRGB ישר, RGBA של 8 ביט, שורה 0 למעלה. */
-  readPixels(doc, x, y, w, h) {
-    return this.#read((tx, ty) => this.#compositeTile(doc, tx, ty), x, y, w, h);
+  /** הפיקסלים המורכבים של מלבן במסמך — Promise ל-sRGB ישר, RGBA של 8 ביט, שורה 0 למעלה. */
+  async readPixels(doc, x, y, w, h) {
+    return this.#readCompositeSync(doc, x, y, w, h);
   }
 
   /** הפיקסלים של שכבה אחת (בלי אטימות ומיזוג) — לדלי. אריח חסר = שקוף. */
-  readLayerPixels(layer, x, y, w, h) {
+  async readLayerPixels(layer, x, y, w, h) {
+    return this.#readLayerSync(layer, x, y, w, h);
+  }
+
+  #readCompositeSync(doc, x, y, w, h) {
+    return this.#read((tx, ty) => this.#compositeTile(doc, tx, ty), x, y, w, h);
+  }
+
+  #readLayerSync(layer, x, y, w, h) {
     return this.#read((tx, ty) => layer.tiles.get(key(tx, ty)) ?? this.emptyTex, x, y, w, h);
   }
 
@@ -1344,19 +1354,19 @@ export class WebGL2Renderer {
 
   /**
    * מדידה קצרה: מסמך זמני של 1024×1024 עם 4 שכבות, הרכבה מלאה כמה פעמים. מחזיר ציון — אריחי-שכבה במילישנייה.
-   * readPixels מחכה לסיום העבודה בכרטיס, כך שהזמן אמיתי. כ-50–300 מ"ש, פעם אחת למכשיר.
+   * readPixels מחכה לסיום העבודה בכרטיס, כך שהזמן אמיתי. כ-50–300 מ"ש, פעם אחת למכשיר. מחזיר Promise.
    */
-  benchmark(DocClass) {
+  async benchmark(DocClass) {
     const d = new DocClass(1024, 1024);
     for (let i = 0; i < 4; i++) this.fill(d, d.addLayer({ blend: ['normal', 'multiply', 'screen', 'overlay'][i], opacity: 0.8 }), [40 * i, 90, 200 - 30 * i, 200]);
     const ops = 16 * 4;
     this.invalidate(d);
-    this.readPixels(d, 0, 0, 1024, 1024);   // חימום: הידור ה-shaders והקצאות
+    this.#readCompositeSync(d, 0, 0, 1024, 1024);   // חימום: הידור ה-shaders והקצאות
     let best = Infinity;
     for (let k = 0; k < 3; k++) {
       this.invalidate(d);
       const t0 = performance.now();
-      this.readPixels(d, 0, 0, 1024, 1024);
+      this.#readCompositeSync(d, 0, 0, 1024, 1024);
       best = Math.min(best, performance.now() - t0);
     }
     for (const l of d.rasters()) this.freeLayer(l);

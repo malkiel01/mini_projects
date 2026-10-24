@@ -139,14 +139,18 @@ export function createLayersPanel({ root, doc, renderer, history, onChange, toas
   });
 
   // ---- הרשימה ----
-  function thumb(layer) {
+  // הקריאה מהכרטיס אסינכרונית: הקנבס מצויר כשהתמונה מוכנה (ואם השכבה השתנתה בינתיים — תמונה חדשה תבוא)
+  function thumb(layer, canvas) {
     const rev = layer.rev ?? 0;
     let t = thumbs.get(layer.id);
     if (!t || t.rev !== rev) {
       t = { rev, data: renderer.thumbnail(doc(), layer, 64) };
       thumbs.set(layer.id, t);
     }
-    return t.data;
+    t.data.then(img => {
+      canvas.width = img.width; canvas.height = img.height;
+      canvas.getContext('2d').putImageData(img, 0, 0);
+    }, err => console.warn('thumbnail', err));
   }
 
   function row(layer, depth) {
@@ -171,10 +175,7 @@ export function createLayersPanel({ root, doc, renderer, history, onChange, toas
       fold.setAttribute('aria-expanded', String(!layer.collapsed));
       fold.addEventListener('click', () => { layer.collapsed = !layer.collapsed; render(); });
     } else {
-      const img = thumb(layer);
-      const c = $('canvas', li);
-      c.width = img.width; c.height = img.height;
-      c.getContext('2d').putImageData(img, 0, 0);
+      thumb(layer, $('canvas', li));
     }
     const name = $('.layer-name', li);
     name.textContent = layer.name;
