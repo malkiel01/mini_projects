@@ -33,7 +33,7 @@ async function api(action, body = {}, isForm = false) {
     return data;
 }
 
-// ---------- ניתוב: #/ רשימה · #/d/<id> מסמך · #/trash סל המחזור · #/admin ניהול (קישורים לזרים, לקוחות) ----------
+// ---------- ניתוב: #/ רשימה · #/f/<id> תיקייה · #/d/<id> מסמך · #/trash סל המחזור · #/admin ניהול (קישורים לזרים, לקוחות) ----------
 window.addEventListener('hashchange', route);
 async function route() {
     const hash = location.hash || '#/';
@@ -43,6 +43,7 @@ async function route() {
     if (hash.startsWith('#/d/')) return openDoc(hash.slice(4));
     if (hash === '#/admin' && me?.admin) return adminView();
     if (hash === '#/trash') return trashView();
+    if (hash.startsWith('#/f/')) return listView(hash.slice(4));
     return listView();
 }
 
@@ -53,44 +54,153 @@ function header({ back = false, title = '', sub = '', actions = [] } = {}) {
 }
 
 // ---------- רשימת המסמכים ----------
-async function listView() {
+/**
+ * הרשימה, בתיקייה folder (או בראש). למעלה — מועדפים (רק בראש), אחר כך תיקיות המשנה, המסמכים שבתיקייה, ו"משותף איתי"
+ * (רק בראש). חיפוש — בכל המסמכים, עם התיקייה של כל אחד. ⋯ על מסמך / תיקייה — העברה, שינוי שם, מחיקת תיקייה.
+ */
+let currentFolder = null;   // לתיקייה שבה נוצר "מסמך חדש" / ייבוא
+async function listView(folder = null) {
     document.body.classList.remove('editing');
-    header({ title: 'עורך התמלילים', sub: me?.name || '', actions: [
-        h('button.icon-btn', { 'aria-label': 'סל המחזור', title: 'סל המחזור', onclick: () => { location.hash = '#/trash'; } }, '🗑'),
-        me?.admin ? h('button.icon-btn', { 'aria-label': 'ניהול העורך', title: 'ניהול העורך — קישורים לזרים ולקוחות הטמעה', onclick: () => { location.hash = '#/admin'; } }, '🔗') : null,
-    ] });
-    const search = h('input', { type: 'search', placeholder: 'חיפוש', 'aria-label': 'חיפוש' });
+    currentFolder = folder;
+    const search = h('input', { type: 'search', placeholder: 'חיפוש בכל המסמכים', 'aria-label': 'חיפוש' });
     const list = h('ul.list', h('li.empty', 'טוען…'));
+    const crumbs = h('nav.crumbs', { 'aria-label': 'תיקיות' });
     const fileIn = h('input', { type: 'file', accept: '.docx,.odt,.html,.htm,.txt,.md,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.oasis.opendocument.text,text/html,text/plain', hidden: true, onchange: importFile });
+    let docs = [], shared = [], folders = [], favs = new Set();
+    const byId = () => new Map(folders.map(f => [f.id, f]));
+    const pathOf = id => { const m = byId(), out = []; for (let f = m.get(id); f && out.length < 12; f = m.get(f.parent)) out.unshift(f); return out; };
+    const head = () => {
+        const here = folder && byId().get(folder);
+        header({ back: !!folder, title: here ? '📁 ' + here.name : 'עורך התמלילים', sub: here ? '' : me?.name || '', actions: [
+            h('button.icon-btn', { 'aria-label': 'סל המחזור', title: 'סל המחזור', onclick: () => { location.hash = '#/trash'; } }, '🗑'),
+            me?.admin ? h('button.icon-btn', { 'aria-label': 'ניהול העורך', title: 'ניהול העורך — קישורים לזרים ולקוחות הטמעה', onclick: () => { location.hash = '#/admin'; } }, '🔗') : null,
+        ] });
+        // "חזרה" בתיקייה — לתיקייה שמעליה
+        const back = top.querySelector('button[aria-label="חזרה לרשימה"]');
+        if (back) back.onclick = () => { location.hash = here?.parent ? '#/f/' + here.parent : '#/'; };
+        crumbs.textContent = '';
+        if (folder) {
+            crumbs.append(h('a', { href: '#/' }, 'כל המסמכים'));
+            for (const f of pathOf(folder)) crumbs.append(h('span', { 'aria-hidden': 'true' }, ' › '), f.id === folder ? h('span', f.name) : h('a', { href: '#/f/' + f.id }, f.name));
+        }
+    };
+    head();
     main.textContent = '';
-    main.append(
-        h('div.toolbar', search, h('button.btn.primary', { onclick: newDoc }, h('span', { 'aria-hidden': 'true' }, '+'), ' מסמך')),
+    main.append(crumbs,
+        h('div.toolbar', search, h('button.btn', { onclick: () => newFolder() }, h('span', { 'aria-hidden': 'true' }, '📁'), ' תיקייה'),
+            h('button.btn.primary', { onclick: newDoc }, h('span', { 'aria-hidden': 'true' }, '+'), ' מסמך')),
         h('div.tiles', { style: { marginBottom: '12px' } },
             h('button.tile', { type: 'button', onclick: () => fileIn.click() }, h('span.tile-ic', { 'aria-hidden': 'true' }, '📥'), 'ייבוא מסמך — Word, ‏ODT, ‏HTML או טקסט')),
         fileIn, list);
-    let docs = [], shared = [];
+
+    const star = d => h('button.star', { type: 'button', 'aria-pressed': String(favs.has(d.doc)), 'aria-label': favs.has(d.doc) ? 'הסרה מהמועדפים' : 'הוספה למועדפים',
+        title: favs.has(d.doc) ? 'הסרה מהמועדפים' : 'הוספה למועדפים', onclick: async e => {
+            e.stopPropagation();
+            try { favs = new Set((await api('my_fav', { doc: d.doc, on: !favs.has(d.doc) })).favs); paint(); } catch (ex) { toast(ex.message, true); }
+        } }, favs.has(d.doc) ? '★' : '☆');
+    const more = (label, items) => h('button.icon-btn.more', { type: 'button', 'aria-label': label, title: label,
+        onclick: e => { e.stopPropagation(); popMenu(e.currentTarget, items()); } }, '⋯');
     const card = (d, l2) => h('li.card', { tabindex: 0, role: 'button', onclick: () => { location.hash = '#/d/' + d.doc; },
-        onkeydown: e => { if (e.key === 'Enter') location.hash = '#/d/' + d.doc; } },
+        onkeydown: e => { if (e.key === 'Enter' && e.target === e.currentTarget) location.hash = '#/d/' + d.doc; } },
         h('span.doc-ic', { 'aria-hidden': 'true' }, d.role ? '👥' : '📄'),
-        h('div.body', h('div.l1', h('span', d.title || 'ללא שם'), h('span.t', when(d.updated_at))), h('div.l2', l2)));
-    const paint = () => {
-        const q = search.value.trim();
-        const shown = docs.filter(d => !q || (d.title || '').includes(q));
-        const sh = shared.filter(d => !q || (d.title || '').includes(q));
-        list.textContent = '';
-        if (!shown.length) list.append(h('li.empty', docs.length ? 'אין מסמך כזה' : 'עוד אין מסמכים. "+ מסמך" כדי להתחיל.'));
-        for (const d of shown) list.append(card(d, d.updated_by ? `נערך על ידי ${d.updated_by}` : ''));
-        // משותף איתי (שלב 5): מסמכים של אחרים, עם התפקיד שלי והבעלים
-        if (sh.length) list.append(h('li.list-head', 'משותף איתי'));
-        for (const d of sh) list.append(card(d, `${ROLE_TEXT[d.role] || ''} · של ${d.owner || 'משתמש אחר'}`));
+        h('div.body', h('div.l1', h('span', d.title || 'ללא שם'), h('span.t', when(d.updated_at))), h('div.l2', l2)),
+        star(d),
+        d.role ? null : more('עוד — ' + (d.title || 'ללא שם'), () => [['📁', 'העברה לתיקייה…', () => moveDialog({ doc: d })]]));
+    const folderCard = f => {
+        const n = docs.filter(d => d.folder === f.id).length + folders.filter(x => x.parent === f.id).length;
+        return h('li.card.folder', { tabindex: 0, role: 'button', onclick: () => { location.hash = '#/f/' + f.id; },
+            onkeydown: e => { if (e.key === 'Enter' && e.target === e.currentTarget) location.hash = '#/f/' + f.id; } },
+            h('span.doc-ic', { 'aria-hidden': 'true' }, '📁'),
+            h('div.body', h('div.l1', h('span', f.name)), h('div.l2', n === 1 ? 'פריט אחד' : n ? `${n} פריטים` : 'ריקה')),
+            more('עוד — ' + f.name, () => [
+                ['✏️', 'שינוי שם…', () => renameFolder(f)],
+                ['📁', 'העברה לתיקייה…', () => moveDialog({ folder: f })],
+                ['🗑', 'מחיקת התיקייה', () => deleteFolder(f)],
+            ]));
     };
+    const where = d => { const p = pathOf(d.folder); return p.length ? '📁 ' + p.map(f => f.name).join(' › ') : ''; };
+    const by = d => (d.updated_by ? `נערך על ידי ${d.updated_by}` : '');
+    function paint() {
+        head();
+        const q = search.value.trim();
+        list.textContent = '';
+        if (q) {   // חיפוש — בכל המסמכים, עם המיקום
+            const hit = d => (d.title || '').includes(q);
+            const found = [...docs.filter(hit), ...shared.filter(hit)];
+            if (!found.length) list.append(h('li.empty', 'אין מסמך כזה'));
+            for (const d of found) list.append(card(d, d.role ? `${ROLE_TEXT[d.role] || ''} · של ${d.owner || 'משתמש אחר'}` : [where(d), by(d)].filter(Boolean).join(' · ')));
+            return;
+        }
+        if (folder && !byId().has(folder)) { list.append(h('li.empty', 'התיקייה לא נמצאה'), h('li', h('a', { href: '#/' }, 'לכל המסמכים'))); return; }
+        if (!folder) {
+            const fav = [...docs, ...shared].filter(d => favs.has(d.doc));
+            if (fav.length) {
+                list.append(h('li.list-head', '★ מועדפים'));
+                for (const d of fav) list.append(card(d, d.role ? `${ROLE_TEXT[d.role] || ''} · של ${d.owner || 'משתמש אחר'}` : [where(d), by(d)].filter(Boolean).join(' · ')));
+                list.append(h('li.list-head', 'המסמכים שלי'));
+            }
+        }
+        const subs = folders.filter(f => (f.parent || null) === folder);
+        // מסמך בתיקייה שכבר לא קיימת (נמחקה כשהוא היה בסל) — בראש
+        const here = docs.filter(d => (folder ? d.folder === folder : !d.folder || !byId().has(d.folder)));
+        for (const f of subs) list.append(folderCard(f));
+        for (const d of here) list.append(card(d, by(d)));
+        if (!subs.length && !here.length) list.append(h('li.empty', folder ? 'התיקייה ריקה. "+ מסמך" יוצר מסמך כאן.' : 'עוד אין מסמכים. "+ מסמך" כדי להתחיל.'));
+        // משותף איתי (שלב 5): מסמכים של אחרים, עם התפקיד שלי והבעלים — רק בראש
+        if (!folder && shared.length) list.append(h('li.list-head', 'משותף איתי'));
+        if (!folder) for (const d of shared) list.append(card(d, `${ROLE_TEXT[d.role] || ''} · של ${d.owner || 'משתמש אחר'}`));
+    }
     search.addEventListener('input', paint);
-    try {
+
+    /** חלון עם שדה שם; save(name) — אם נכשל, החלון נשאר פתוח עם ההודעה. */
+    function nameSheet(title, value, label, save) {
+        const input = h('input', { name: 'folder', value, maxlength: 100, required: true, 'aria-label': 'שם התיקייה', autocomplete: 'off' });
+        sheet(title, body => { body.append(h('label.field', h('span', 'שם'), input)); setTimeout(() => input.select(), 50); }, async () => {
+            const v = input.value.trim();
+            if (!v) return false;
+            try { folders = (await save(v)).folders; paint(); return true; } catch (e) { toast(e.message, true); return false; }
+        }, label);
+    }
+    const newFolder = () => nameSheet('תיקייה חדשה', '', 'יצירה', name => api('my_folder', { op: 'create', name, parent: folder }));
+    const renameFolder = f => nameSheet('שינוי שם התיקייה', f.name, 'שמירה', name => api('my_folder', { op: 'rename', id: f.id, name }));
+    async function deleteFolder(f) {
+        if (!confirm(`למחוק את התיקייה "${f.name}"? המסמכים והתיקיות שבתוכה יעברו ${f.parent ? 'לתיקייה שמעליה' : 'לראש הרשימה'} — שום מסמך לא נמחק.`)) return;
+        folders = (await api('my_folder', { op: 'delete', id: f.id })).folders;
+        await reload();
+        toast(`התיקייה "${f.name}" נמחקה`);
+    }
+    /** לאן להעביר: עץ התיקיות (בלי התיקייה עצמה ומה שבתוכה, כשמעבירים תיקייה). */
+    function moveDialog({ doc, folder: fold }) {
+        const banned = new Set();
+        if (fold) { const walk = id => { banned.add(id); folders.filter(x => x.parent === id).forEach(x => walk(x.id)); }; walk(fold.id); }
+        const opts = [h('option', { value: '' }, 'ראש הרשימה (בלי תיקייה)')];
+        const tree = (parent, depth) => folders.filter(f => (f.parent || null) === parent && !banned.has(f.id)).forEach(f => {
+            opts.push(h('option', { value: f.id }, ' '.repeat(depth * 3) + '📁 ' + f.name));
+            tree(f.id, depth + 1);
+        });
+        tree(null, 0);
+        const cur = doc ? doc.folder || '' : fold.parent || '';
+        const sel = h('select', { 'aria-label': 'תיקייה' }, opts);
+        sel.value = byId().has(cur) ? cur : '';
+        sheet(doc ? `העברת "${doc.title || 'ללא שם'}"` : `העברת התיקייה "${fold.name}"`, body => body.append(h('label.field', h('span', 'לתיקייה'), sel)), async () => {
+            try {
+                if (doc) await api('my_move', { doc: doc.doc, folder: sel.value || null });
+                else folders = (await api('my_folder', { op: 'move', id: fold.id, parent: sel.value || null })).folders;
+                await reload();
+                toast('הועבר');
+                return true;
+            } catch (e) { toast(e.message, true); return false; }
+        }, 'העברה');
+    }
+    async function reload() {
         const r = await api('my_docs');
         docs = r.docs;
         shared = r.shared || [];
+        folders = r.folders || [];
+        favs = new Set(r.favs || []);
         paint();
-    } catch (e) {
+    }
+    try { await reload(); } catch (e) {
         list.textContent = '';
         list.append(h('li.error', e.message));
     }
@@ -130,7 +240,7 @@ async function trashView() {
 
 async function newDoc() {
     try {
-        const r = await api('my_new', { title: 'מסמך חדש' });
+        const r = await api('my_new', { title: 'מסמך חדש', folder: currentFolder });
         location.hash = '#/d/' + r.doc;
     } catch (e) { toast(e.message, true); }
 }
@@ -141,6 +251,7 @@ async function importFile(e) {
     if (!f) return;
     const fd = new FormData();
     fd.append('file', f);
+    if (currentFolder) fd.append('folder', currentFolder);
     toast('מייבא…');
     try {
         const r = await fetch('api.php?action=my_new&title=', { method: 'POST', body: withTitle(fd, f.name.replace(/\.(docx|odt|html?|txt|md)$/i, '')), headers: { 'X-WP': '1', 'X-Tab': tab } });

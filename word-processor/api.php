@@ -19,6 +19,7 @@ require_once __DIR__ . '/lib/users.php';
 require_once __DIR__ . '/lib/share.php';
 require_once __DIR__ . '/lib/links.php';
 require_once __DIR__ . '/lib/collab.php';
+require_once __DIR__ . '/lib/folders.php';
 
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: no-referrer');
@@ -373,13 +374,16 @@ function app_action(string $action, array $in): never
     switch ($action) {
         case 'my_docs':
             trash_purge($space);
-            $st = db()->prepare('SELECT id, title, version, updated_at, updated_by FROM docs WHERE space = ? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 500');
+            $st = db()->prepare('SELECT id, title, version, updated_at, updated_by, folder FROM docs WHERE space = ? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 2000');
             $st->execute([$space]);
-            // ושותפו איתי (שלב 5) — ברשימה נפרדת, עם התפקיד והבעלים
+            // ושותפו איתי (שלב 5) — ברשימה נפרדת, עם התפקיד והבעלים; התיקיות והמועדפים — הרשימה בונה מהם את התצוגה
             out(['docs' => array_map(fn($r) => ['doc' => $r['id'], 'title' => $r['title'], 'version' => (int)$r['version'],
-                'updated_at' => (int)$r['updated_at'], 'updated_by' => $r['updated_by']], $st->fetchAll()), 'shared' => shared_with($acc)]);
+                'updated_at' => (int)$r['updated_at'], 'updated_by' => $r['updated_by'], 'folder' => $r['folder']], $st->fetchAll()),
+                'shared' => shared_with($acc), 'folders' => folders_of($space), 'favs' => favs_of($acc)]);
         case 'my_new':
+            $folder = folder_get($space, $in['folder'] ?? null);   // בתיקייה שבה הרשימה פתוחה
             $id = doc_new($space, (string)($in['title'] ?? ''), null, $in['page'] ?? null, $uid, $uname);
+            if ($folder) doc_move(doc_find($id, $space), $folder['id']);
             if (!empty($_FILES['file']['tmp_name']) || is_string($in['import'] ?? null)) {
                 $bytes = !empty($_FILES['file']['tmp_name']) ? uploaded_bytes($in) : base64_decode((string)$in['import']);
                 // Word, ODT, HTML או טקסט — לפי התוכן (import_file)
@@ -481,6 +485,22 @@ function app_action(string $action, array $in): never
             // PDF בתצוגת השינויים שבעורך: track=final|original, hide=מחברים (JSON) — כמו שההדפסה מהעורך נראית
             $hide = json_decode((string)($_GET['hide'] ?? '[]'), true);
             do_export($row, $fmt === 'pdf' ? 'pdf' : 'docx', null, true, ['view' => (string)($_GET['track'] ?? 'all'), 'hide' => is_array($hide) ? array_slice($hide, 0, 50) : []]);
+        // תיקיות (lib/folders.php): op = create {name, parent} | rename {id, name} | move {id, parent} | delete {id}
+        case 'my_folder':
+            $op = (string)($in['op'] ?? '');
+            if ($op === 'create') out(['id' => folder_create($space, $in['name'] ?? '', $in['parent'] ?? null), 'folders' => folders_of($space)]);
+            if ($op === 'rename') folder_rename($space, $in['id'] ?? '', $in['name'] ?? '');
+            elseif ($op === 'move') folder_move($space, $in['id'] ?? '', $in['parent'] ?? null);
+            elseif ($op === 'delete') folder_delete($space, $in['id'] ?? '');
+            else throw new ApiError('פעולה לא תקינה', 'bad_op');
+            out(['folders' => folders_of($space)]);
+        case 'my_move':
+            doc_move(doc_access($in['doc'] ?? '', $acc, 'owner')[0], $in['folder'] ?? null);
+            out(['ok' => true]);
+        case 'my_fav':
+            [$row] = doc_access($in['doc'] ?? '', $acc);
+            fav_set($acc, $row['id'], !empty($in['on']));
+            out(['favs' => favs_of($acc)]);
         // עריכה משותפת (lib/collab.php): op = push (מעיר ומעלה) | pull | leave
         case 'my_collab':
             $op = (string)($in['op'] ?? '');

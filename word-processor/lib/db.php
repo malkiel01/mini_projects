@@ -4,7 +4,7 @@
  * אין כאן שום require לקובץ מחוץ לתיקייה (CLAUDE.md: אפליקציה עצמאית מהמעטפת).
  */
 
-const WP_SCHEMA_VERSION = 6;
+const WP_SCHEMA_VERSION = 7;
 
 function wp_data_dir(): string
 {
@@ -209,6 +209,21 @@ function wp_migrate(PDO $pdo): void
             beat INTEGER NOT NULL,
             PRIMARY KEY (doc, client)
         );
+        -- תיקיות (תיקיות בתוך תיקיות) ומועדפים (שלב 5 — lib/folders.php). המסמך עצמו: docs.folder (גרסה 7)
+        CREATE TABLE IF NOT EXISTS folders (
+            id TEXT PRIMARY KEY,
+            space TEXT NOT NULL,
+            parent TEXT,
+            name TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS folders_space ON folders(space);
+        CREATE TABLE IF NOT EXISTS favorites (
+            account INTEGER NOT NULL,
+            doc TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            PRIMARY KEY (account, doc)
+        );
         CREATE TABLE IF NOT EXISTS settings (
             k TEXT PRIMARY KEY,
             v TEXT NOT NULL
@@ -226,6 +241,9 @@ function wp_migrate(PDO $pdo): void
     // גרסה 3: סוג גרסה — '' רגילה (מתאחדת בחלון 10 הדקות), 'restore' — שחזור (לא מתאחדת, וגם לא מתאחדים לתוכה)
     $vcols = array_column($pdo->query('PRAGMA table_info(versions)')->fetchAll(), 'name');
     if (!in_array('kind', $vcols, true)) $pdo->exec("ALTER TABLE versions ADD COLUMN kind TEXT NOT NULL DEFAULT ''");
+    // גרסה 7: התיקייה של המסמך (null — בראש הרשימה)
+    $cols = array_column($pdo->query('PRAGMA table_info(docs)')->fetchAll(), 'name');
+    if (!in_array('folder', $cols, true)) $pdo->exec('ALTER TABLE docs ADD COLUMN folder TEXT');
     $pdo->exec('PRAGMA user_version = ' . WP_SCHEMA_VERSION);
 }
 
