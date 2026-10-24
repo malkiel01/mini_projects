@@ -213,3 +213,5 @@ a.use-row { color: inherit; text-decoration: none; }
 .prose p + p { margin-block-start: var(--s2); }
 code { font-size: .85em; background: var(--brand-soft); padding: 0 .3em; border-radius: 4px; }
 .use-tx .bar i { font-style: normal; font-size: .75rem; color: var(--muted); min-inline-size: 5.5em; }
+.use-tx .counts { display: flex; gap: var(--s3); font-size: .8rem; color: var(--muted); margin-block-start: var(--s1); }
+.goals.mine li { background: color-mix(in srgb, var(--star) 10%, transparent); }
