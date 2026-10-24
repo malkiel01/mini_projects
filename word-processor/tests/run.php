@@ -1086,6 +1086,22 @@ $big2 = $big; $big2['content'][450] = $cp('פסקה שונתה');
 $t0 = microtime(true);
 $r6 = $show(track_compare($big, $big2));
 check('השוואה: 900 פסקאות עם שינוי באמצע — מהר, ורק הפסקה ההיא מסומנת', microtime(true) - $t0 < 2 && substr_count($r6, '-[') === 1 && substr_count($r6, '+[') === 1, round(microtime(true) - $t0, 2) . 's');
+// מעקב שינויים וגרסאות לא דורסים זה את זה (תנאי הקבלה של שלב 4): גרסאות עם שינויים שעוד לא אושרו — מושוות כאילו
+// הכול אושר (כמו ב-Word). קודם: מחיקה במעקב חזרה כטקסט רגיל בפסקה שהשתנתה, ובפסקה שלא השתנתה נשארו הסימונים הישנים
+$dn = fn($t) => ['type' => 'text', 'text' => $t, 'marks' => [['type' => 'del', 'attrs' => ['author' => 'דנה', 'date' => '2026-10-20T10:00:00Z']]]];
+$in = fn($t) => ['type' => 'text', 'text' => $t, 'marks' => [['type' => 'ins', 'attrs' => ['author' => 'דנה', 'date' => '2026-10-20T10:00:00Z']]]];
+$r7 = $show(track_compare($cd($cp('אחת ', $dn('שתיים '), 'שלוש')), $cd($cp('אחת ', $dn('שתיים '), 'חמש'))));
+check('השוואה עם מעקב: מחיקה שעוד לא אושרה — לא חוזרת כטקסט רגיל; ההבדל — רק מה שהשתנה', $r7 === 'paragraph:אחת -[שלוש]+[חמש]', $r7);
+$r8 = track_compare($cd($cp('ישן', $in(' כבר')), $cp('משתנה')), $cd($cp('ישן', $in(' כבר')), $cp('השתנה')));
+check('השוואה עם מעקב: פסקה שלא השתנתה — בלי הסימונים הישנים (כל סימון בתוצאה — הבדל בין הגרסאות)',
+    $show($r8) === 'paragraph:ישן כבר / paragraph:-[משתנה]+[השתנה]' && !str_contains(json_encode($r8, JSON_UNESCAPED_UNICODE), 'דנה'), $show($r8));
+$fm = ['type' => 'text', 'text' => 'מודגש', 'marks' => [['type' => 'bold'], ['type' => 'fmt', 'attrs' => ['author' => 'דנה', 'old' => []]]]];
+$pc = ['type' => 'paragraph', 'attrs' => ['textAlign' => 'center', 'pchg' => ['author' => 'דנה', 'old' => ['type' => 'paragraph', 'attrs' => []]]], 'content' => [$fm]];
+$r9 = track_compare($cd($pc), $cd($pc));
+check('השוואה עם מעקב: שינויי עיצוב (תווים ופסקה) שעוד לא אושרו — העיצוב הנוכחי, בלי הסימון',
+    $show($r9) === 'paragraph:מודגש' && ($r9['content'][0]['content'][0]['marks'] ?? null) === [['type' => 'bold']] && !isset($r9['content'][0]['attrs']['pchg'])
+    && ($r9['content'][0]['attrs']['textAlign'] ?? '') === 'center', json_encode($r9['content'][0], JSON_UNESCAPED_UNICODE));
+check('השוואה עם מעקב: track_pending — מזהה גרסה עם שינויים שלא אושרו', track_pending($cd($cp('אחת ', $dn('שתיים')))) && track_pending($cd($pc)) && !track_pending($d0));
 section('כותרות זוגי / אי-זוגי והתחלת מספור במקטע (שלב 3)');
 $eoPage = page_normalize(['even_odd' => true, 'header' => 'אי-זוגי', 'header_even' => 'זוגי', 'numbering' => ['position' => 'bottom']]);
 $eoPara = fn($i) => ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => "פסקה$i " . str_repeat('מילים רבות למלא עמוד. ', 30)]]];

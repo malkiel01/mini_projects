@@ -2044,11 +2044,14 @@ export function createWordEditor(root, opts) {
             }
         });
         async function compare(v) {
+            let r;
             try {
-                if (!(await opts.versions.compare(v.id))) return;
+                if (!(r = await opts.versions.compare(v.id))) return;
             } catch (e) { return toast(e.message || 'ההשוואה נכשלה', true); }
             document.querySelector('dialog[open]')?.close();
-            toast('נפתח מסמך השוואה — אשרו או דחו כל שינוי');
+            // שינויים במעקב שעוד לא אושרו — ההשוואה כאילו אושרו (כמו ב-Word); המסמך עצמו לא השתנה
+            toast(r.pending ? 'נפתח מסמך השוואה — כאילו כל השינויים במעקב אושרו (כמו ב-Word). אשרו או דחו כל הבדל'
+                : 'נפתח מסמך השוואה — אשרו או דחו כל שינוי');
         }
         async function restore(v, current) {
             if (current) return toast('זו הגרסה הנוכחית');

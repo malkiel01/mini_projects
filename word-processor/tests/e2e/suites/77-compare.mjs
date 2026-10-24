@@ -47,6 +47,41 @@ export default async function (t) {
     await t.settle(p);
     const after = await p.evaluate(() => [...document.querySelectorAll('.wp-doc p')].map(el => el.textContent).join(' / '));
     t.ok('אישור הכול במסמך ההשוואה — התוכן הנוכחי', after === 'אחת ארבע שלוש / פסקה קבועה / פסקה חדשה' && !await p.locator('.wp-doc ins, .wp-doc del').count(), after);
+
+    // מעקב שינויים וגרסאות לא דורסים זה את זה (תנאי הקבלה של שלב 4): בשתי הגרסאות מחיקה של דנה שעוד לא אושרה
+    const D = text => ({ type: 'text', text, marks: [{ type: 'del', attrs: { author: 'דנה לוי', date: '2026-10-20T10:00:00Z' } }] });
+    const tracked = rest => ({ type: 'doc', attrs: { track: true }, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'אחת ' }, D('שתיים '), { type: 'text', text: rest }] }] });
+    const doc2 = await t.newDoc(p, 'מעקב וגרסאות', tracked('שלוש'));
+    const age = () => execFileSync('php', ['-r', `$d = new PDO('sqlite:' . $argv[1]); $d->prepare('UPDATE versions SET started_at = started_at - 700 WHERE doc = ?')->execute([$argv[2]]);`,
+        join(t.data, 'word-processor.sqlite'), doc2]);
+    age();
+    const o2 = await t.api(p, 'my_open', { doc: doc2 });
+    await t.api(p, 'my_save', { doc: doc2, json: tracked('חמש'), base_version: o2.version });
+    await t.api(p, 'my_lock', { doc: doc2, op: 'release' });
+    await t.openDoc(p, doc2);
+    await t.tool(p, 'גרסאות');
+    await p.waitForSelector('dialog .ver-cmp');
+    await p.locator('dialog .ver-cmp').last().click();
+    await p.waitForFunction(id => !location.hash.includes(id) && location.hash.startsWith('#/d/'), doc2);
+    await p.waitForSelector('.wp-doc ins, .wp-doc del');
+    const note = await p.locator('.toast').textContent();
+    await t.settle(p);
+    const shown2 = await p.evaluate(() => [...document.querySelectorAll('.wp-doc p')].map(el => [...el.childNodes].map(n =>
+        n.nodeName === 'INS' ? `+[${n.textContent}]` : n.nodeName === 'DEL' ? `-[${n.textContent}]` : n.textContent).join('')).join(' / '));
+    t.ok('השוואה עם שינויים שלא אושרו: כאילו אושרו (כמו ב-Word) — המחיקה הממתינה לא חוזרת כטקסט, וכל סימון הוא הבדל בין הגרסאות',
+        shown2 === 'אחת -[שלוש]+[חמש]' && !(await p.evaluate(() => document.querySelector('.wp-doc').innerHTML.includes('דנה לוי'))), shown2);
+    t.ok('…והעורך אומר את זה', note.includes('כאילו כל השינויים במעקב אושרו'), note);
+    // שחזור הגרסה הקודמת: המחיקה הממתינה של דנה נשמרת — גם במסמך המשוחזר וגם בגרסה של מה שהיה לפניו
+    const vs2 = (await t.api(p, 'my_versions', { doc: doc2 })).versions;
+    const o3 = await t.api(p, 'my_open', { doc: doc2 });
+    await t.api(p, 'my_version_restore', { doc: doc2, id: vs2[vs2.length - 1].id, base_version: o3.version });
+    const back = await t.api(p, 'my_open', { doc: doc2 });
+    const before = (await t.api(p, 'my_versions', { doc: doc2 })).versions.find(v => v.kind === 'before');
+    const bj = before && (await t.api(p, 'my_version', { doc: doc2, id: before.id })).json;
+    const delOf = j => JSON.stringify(j).includes('"type":"del"') && JSON.stringify(j).includes('דנה לוי');
+    t.ok('שחזור גרסה: המחיקה הממתינה נשארת (במשוחזר — "שלוש", ובגרסה שלפני — "חמש"), והמעקב עדיין פועל',
+        delOf(back.json) && JSON.stringify(back.json).includes('שלוש') && back.json.attrs?.track === true && bj && delOf(bj) && JSON.stringify(bj).includes('חמש'),
+        JSON.stringify([back.json.content, bj?.content]).slice(0, 400));
     t.ok('בלי שגיאות JS', !p.errors.length, p.errors.join(' | '));
     await p.context().close();
 }
