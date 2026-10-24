@@ -332,7 +332,7 @@ async function openDoc(id) {
                 if ((await ensureSaved(cur, 'ההשוואה')) !== 'ok') return false;
                 const r = await api('my_compare', { doc: id, id: vid });
                 location.hash = '#/d/' + r.doc;
-                return true;
+                return { pending: !!r.pending };   // pending — היו שינויים במעקב שעוד לא אושרו (ההודעה — בחלון הגרסאות)
             },
             // שחזור — פעולה אחת בשרת (ביקורת 04, R07): קודם כל השינויים נשמרים, ואז השרת רושם את המצב הנוכחי ואת
             // המשוחזר כשתי גרסאות נפרדות (לא מתאחדות). מחזיר false כשלא נשמר — ואז לא משחזרים

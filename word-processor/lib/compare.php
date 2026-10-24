@@ -7,6 +7,10 @@
  * שהשתנו מוצמדים לפי הסדר — פסקה מול פסקה (או כותרת מול כותרת) — ובתוכם השוואה מילה-מילה (LCS על מילים, רווחים
  * וצמתים שבשורה). בלוק שנמחק / נוסף כולו — כל הטקסט שבו (גם בטבלה, ברשימה) מסומן. בלוק שאינו טקסט (תמונה בפני
  * עצמה, מעבר עמוד) — נשאר מהחדש.
+ *
+ * שינויים במעקב שעוד לא אושרו (בגרסה אחת או בשתיהן) — כמו ב-Word, ההשוואה היא של המסמכים כאילו הכול אושר
+ * (track_view 'final'): מחיקה יוצאת, תוספת ושינוי עיצוב — טקסט רגיל. כך כל סימון בתוצאה הוא הבדל בין הגרסאות,
+ * ומחיקה שממתינה לא חוזרת כטקסט רגיל (שלב 4: "מעקב שינויים וגרסאות לא דורסים זה את זה"). track_pending — להודעה.
  */
 
 require_once __DIR__ . '/track.php';
@@ -18,6 +22,8 @@ const COMPARE_MAX_CELLS = 250000;   // טבלת LCS עד גודל זה; מעלי
 function track_compare(array $old, array $new, string $date = ''): array
 {
     $date = $date ?: gmdate('Y-m-d\TH:i:s\Z');
+    $old = track_view($old, 'final');
+    $new = track_view($new, 'final');
     $a = array_values(array_filter($old['content'] ?? [], 'is_array'));
     $b = array_values(array_filter($new['content'] ?? [], 'is_array'));
     $sig = fn(array $n) => json_encode(compare_plain($n), JSON_UNESCAPED_UNICODE);
@@ -47,7 +53,22 @@ function track_compare(array $old, array $new, string $date = ''): array
     return $new;
 }
 
-/** בלי סימוני מעקב קיימים (ins / del / fmt) — ההשוואה היא של הטקסט והעיצוב, לא של סימונים ישנים. */
+/** האם יש במסמך שינויים במעקב שעוד לא אושרו (ins / del / fmt, או שינוי עיצוב פסקה). */
+function track_pending(array $json): bool
+{
+    $found = false;
+    $walk = function (array $nodes) use (&$walk, &$found) {
+        foreach ($nodes as $n) {
+            if ($found || !is_array($n)) continue;
+            if (isset($n['attrs']['pchg']) || array_intersect(array_column($n['marks'] ?? [], 'type'), ['ins', 'del', 'fmt'])) { $found = true; return; }
+            if (is_array($n['content'] ?? null)) $walk($n['content']);
+        }
+    };
+    $walk($json['content'] ?? []);
+    return $found;
+}
+
+/** בלי סימוני מעקב (ins / del / fmt) — ההשוואה היא של הטקסט והעיצוב. (אחרי track_view כבר אין כאלה; נשאר כהגנה.) */
 function compare_plain(array $n): array
 {
     if (isset($n['marks'])) {
