@@ -4,14 +4,16 @@
 // הקנבס יושב מעל התיבה בגודל החלון בלבד, ומצייר רק את הפריסות שנראות — כך גם ספר של 600 עמודים מהיר.
 // הבמה ב-direction: ltr — חשבון הגלילה פשוט; העמודים עצמם ממוקמים לפי צד הכריכה (pages.js).
 
-import { layoutDoc, contentBox } from './pages.js';
+import { layoutDoc, contentBox, runningItems, pagesOf, masterOf, pageAt } from './pages.js';
 
 const MIN_Z = 0.1, MAX_Z = 8;
 
 export class PageView {
-  constructor(host, { onChange } = {}) {
+  constructor(host, { onChange, onPick } = {}) {
     this.host = host;
     this.onChange = onChange || (() => {});
+    this.onPick = onPick || (() => {});
+    this.selected = -1;   // העמוד הנבחר (0-based), או -1
     host.classList.add('stage');
     host.innerHTML = '<div class="scroller" tabindex="0" aria-label="העמודים"><div class="spacer"></div></div><canvas aria-hidden="true"></canvas>';
     this.scroller = host.querySelector('.scroller');
@@ -22,6 +24,7 @@ export class PageView {
     this.model = null;
     this.lay = null;
     this.raf = 0;
+    this.bindPick();
 
     this.scroller.addEventListener('scroll', () => this.draw(), { passive: true });
     new ResizeObserver(() => { this.resize(); }).observe(host);
@@ -34,6 +37,7 @@ export class PageView {
     const center = keep && this.lay ? this.docPointAt(this.viewW / 2, this.viewH / 2) : null;
     this.model = model;
     this.lay = layoutDoc(model);
+    if (this.selected >= pagesOf(model).length) { this.selected = -1; this.onPick(-1); }
     this.applySize();
     if (center) this.scrollDocTo(center.x, center.y, this.viewW / 2, this.viewH / 2);
     this.draw();
@@ -153,6 +157,29 @@ export class PageView {
     this.scroller.addEventListener('gesturestart', e => e.preventDefault());
   }
 
+  // הקשה על עמוד בוחרת אותו; הקשה על הרקע — מבטלת. גרירה (גלילה) אינה הקשה.
+  bindPick() {
+    let down = null;
+    this.scroller.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY, t: Date.now() }; });
+    this.scroller.addEventListener('pointerup', e => {
+      if (!down || !this.lay) return;
+      const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
+      const quick = Date.now() - down.t < 500;
+      down = null;
+      if (moved > 8 || !quick) return;
+      const r = this.scroller.getBoundingClientRect();
+      const p = this.docPointAt(e.clientX - r.left, e.clientY - r.top);
+      this.select(pageAt(this.lay, p.x, p.y));
+    });
+  }
+
+  select(index) {
+    if (index === this.selected) return;
+    this.selected = index;
+    this.onPick(index);
+    this.draw();
+  }
+
   draw() {
     if (this.raf) return;
     this.raf = requestAnimationFrame(() => { this.raf = 0; this.paint(); this.onChange(); });
@@ -196,12 +223,36 @@ export class PageView {
         ctx.strokeStyle = col('--spine');
         ctx.beginPath(); ctx.moveTo(xs, s.y); ctx.lineTo(xs, s.y + h); ctx.stroke();
       }
-      // מספר עמוד מתחת לדף
+      // מה שעמוד האב מצייר: מספר עמוד וכותרת רצה. (גופן מערכת בינתיים — הגופנים המוטמעים ו-HarfBuzz בשלב הטקסט)
+      ctx.fillStyle = col('--running');
+      ctx.textBaseline = 'middle';
+      for (const p of s.pages) {
+        for (const it of runningItems(model, p.num)) {
+          ctx.font = `${it.size}px 'Frank Ruhl Libre', 'David Libre', 'Times New Roman', serif`;
+          ctx.direction = 'rtl';
+          ctx.textAlign = it.align;
+          ctx.fillText(it.text, p.x + it.x, p.y + it.y);
+        }
+      }
+      ctx.direction = 'ltr';
+      // העמוד הנבחר
+      for (const p of s.pages) {
+        if (p.index !== this.selected) continue;
+        ctx.lineWidth = 3 * px;
+        ctx.strokeStyle = col('--select');
+        ctx.strokeRect(p.x - 1.5 * px, p.y - 1.5 * px, w + 3 * px, h + 3 * px);
+      }
+      // מספר עמוד ועמוד האב מתחת לדף ("5 · A")
+      const pages = pagesOf(model);
       ctx.fillStyle = col('--muted');
       ctx.font = `${12 * px}px system-ui, sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
-      for (const p of s.pages) ctx.fillText(String(p.num), p.x + w / 2, p.y + h + 6 * px);
+      for (const p of s.pages) {
+        const ms = masterOf(model, pages[p.index]);
+        ctx.fillStyle = p.index === this.selected ? col('--select') : col('--muted');
+        ctx.fillText(String(p.num) + (ms ? ' · ' + ms.name : ''), p.x + w / 2, p.y + h + 6 * px);
+      }
     }
   }
 }

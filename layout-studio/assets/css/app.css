@@ -196,9 +196,10 @@ dialog > form { display: flex; flex-direction: column; max-height: inherit; heig
 .custom-size[hidden] { display: none; }
 
 /* ===== העורך: כותרת, במה בקנבס, סרגל תחתון ===== */
-.stage { --paste: #dfe2e8; --page: #fff; --page-shadow: rgba(16, 24, 40, .18); --guide: #d63bd0; --spine: rgba(16, 24, 40, .25); }
+.stage { --paste: #dfe2e8; --page: #fff; --page-shadow: rgba(16, 24, 40, .18); --guide: #d63bd0; --spine: rgba(16, 24, 40, .25);
+    --running: #16192b; --select: var(--brand); }
 @media (prefers-color-scheme: dark) {
-    .stage { --paste: #0c0e12; --page-shadow: rgba(0, 0, 0, .6); --guide: #e06bdc; }   /* הדף נשאר לבן — זה נייר */
+    .stage { --paste: #0c0e12; --page-shadow: rgba(0, 0, 0, .6); --guide: #e06bdc; }   /* הדף והדיו נשארים — זה נייר */
 }
 body.editor { display: flex; flex-direction: column; height: 100dvh; overflow: hidden; }
 body.editor .top a.icon-btn { color: inherit; text-decoration: none; }
@@ -218,3 +219,5 @@ body.editor > .error { margin: var(--s2); }
 /* דף הפתיחה — שורת מסמך לחיצה */
 .doc-row a.use-row { cursor: pointer; text-decoration: none; color: inherit; }
 .doc-row a.use-row:hover, .doc-row a.use-row:focus-visible { background: var(--bg); }
+.folio-opts[hidden], .header-opts[hidden], .h-even[hidden], #pm-both-row[hidden], .bar [hidden] { display: none !important; }
+.header-opts .seg, .folio-opts .seg { align-self: end; }

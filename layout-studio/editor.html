@@ -30,7 +30,27 @@
       <button class="icon-btn" id="zoom-in" type="button" aria-label="הגדלה">+</button>
     </div>
     <button class="btn sm ghost" id="add-page" type="button" disabled><span aria-hidden="true">+</span> עמודים</button>
+    <button class="btn sm primary" id="page-btn" type="button" hidden></button>
   </nav>
+
+  <dialog id="page-dlg" aria-labelledby="page-title">
+    <form method="dialog" novalidate>
+      <header class="sheet-head">
+        <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+        <h2 id="page-title">עמוד</h2>
+        <button type="submit" class="btn primary">שמירה</button>
+      </header>
+      <div class="sheet-body">
+        <div class="f">
+          <span id="pm-lbl">עמוד אב</span>
+          <fieldset class="seg" id="pm-seg" aria-labelledby="pm-lbl"></fieldset>
+        </div>
+        <p class="hint">עמוד אב מצייר על העמוד את מספר העמוד ואת הכותרת הרצה. "ללא" — לשער, לעמוד ריק או לתמונה על כל העמוד.</p>
+        <label class="switch" id="pm-both-row"><input type="checkbox" name="both"><span>גם לעמוד השני בפריסה</span></label>
+        <label class="switch"><input type="checkbox" name="rest"><span>וגם לכל העמודים שאחריו</span></label>
+      </div>
+    </form>
+  </dialog>
 
   <dialog id="set-dlg" aria-labelledby="set-title">
     <form method="dialog" novalidate>
@@ -71,6 +91,49 @@
           </fieldset>
           <label class="f"><span>מספר עמודים</span><input name="count" inputmode="numeric" dir="ltr"></label>
           <p class="hint">כריכה מימין — ספר עברי: עמוד 1 משמאל לשדרה, והזוגיים מימין. הורדת עמודים מורידה מהסוף.</p>
+        </section>
+
+        <section class="group" aria-labelledby="g-num"><h3 id="g-num">מספור עמודים</h3>
+          <div class="fields two">
+            <label class="f"><span>העמוד הראשון הוא</span><input name="start" inputmode="numeric" dir="ltr"></label>
+            <div class="f">
+              <span id="ns-lbl">בספרות או באותיות</span>
+              <fieldset class="seg" aria-labelledby="ns-lbl">
+                <label><input type="radio" name="nstyle" value="arabic"><span><bdi dir="ltr">1 2 3</bdi></span></label>
+                <label><input type="radio" name="nstyle" value="hebrew"><span>א ב ג</span></label>
+              </fieldset>
+            </div>
+          </div>
+        </section>
+
+        <section class="group" aria-labelledby="g-master"><h3 id="g-master">עמוד אב A <small>על כל העמודים שמשויכים אליו</small></h3>
+          <label class="switch"><input type="checkbox" name="folio"><span>מספר עמוד</span></label>
+          <div class="fields two folio-opts">
+            <fieldset class="seg" aria-label="מיקום מספר העמוד">
+              <label><input type="radio" name="fpos" value="bottom"><span>למטה</span></label>
+              <label><input type="radio" name="fpos" value="top"><span>למעלה</span></label>
+            </fieldset>
+            <fieldset class="seg" aria-label="צד מספר העמוד">
+              <label><input type="radio" name="falign" value="outside"><span>בחוץ</span></label>
+              <label><input type="radio" name="falign" value="center"><span>באמצע</span></label>
+              <label><input type="radio" name="falign" value="inside"><span>בפנים</span></label>
+            </fieldset>
+          </div>
+          <label class="switch"><input type="checkbox" name="header"><span>כותרת רצה</span></label>
+          <div class="fields two header-opts">
+            <label class="f"><span class="h-odd-lbl">בעמוד אי-זוגי</span><input name="hodd" maxlength="200" placeholder="למשל: שם הפרק"></label>
+            <label class="f h-even"><span>בעמוד זוגי</span><input name="heven" maxlength="200" placeholder="למשל: שם הספר"></label>
+            <fieldset class="seg" aria-label="מיקום הכותרת">
+              <label><input type="radio" name="hpos" value="top"><span>למעלה</span></label>
+              <label><input type="radio" name="hpos" value="bottom"><span>למטה</span></label>
+            </fieldset>
+            <fieldset class="seg" aria-label="צד הכותרת">
+              <label><input type="radio" name="halign" value="outside"><span>בחוץ</span></label>
+              <label><input type="radio" name="halign" value="center"><span>באמצע</span></label>
+              <label><input type="radio" name="halign" value="inside"><span>בפנים</span></label>
+            </fieldset>
+          </div>
+          <p class="hint">"בחוץ" — בצד הרחוק מהשדרה, ומתחלף לבד בין עמוד זוגי לאי-זוגי.</p>
         </section>
         <p class="error" role="alert" hidden></p>
       </div>

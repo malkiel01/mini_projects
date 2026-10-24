@@ -1,7 +1,8 @@
 // בדיקות הגאומטריה: node --test layout-studio/tests/pages.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { spreads, pageSide, sideMargins, contentBox, layoutDoc, setPageCount, setPageSize, marginsFit, spreadOfPage, PAD } from '../assets/js/pages.js';
+import { spreads, pageSide, sideMargins, contentBox, layoutDoc, setPageCount, setPageSize, marginsFit, spreadOfPage, PAD,
+  hebrewNumeral, folioText, runningItems, setMaster, ensureMasters, pageAt, mastersOf } from '../assets/js/pages.js';
 
 const model = (n, { facing = true, binding = 'right' } = {}) => ({
   units: 'pt',
@@ -79,4 +80,78 @@ test('גודל עמוד לכל העמודים, ובדיקת שוליים', () =>
   assert.ok(marginsFit(m));
   m.layout = { ...m.layout, margins: { top: 10, bottom: 10, inside: 150, outside: 130 } };
   assert.equal(marginsFit(m), false);
+});
+
+// ===== עמודי אב ומספור =====
+const withMaster = (n, opts, running = { folio: { position: 'bottom', align: 'outside', size: 10 }, header: null }) => {
+  const m = model(n, opts);
+  m.surfaces.forEach(p => { p.master = 'mA'; });
+  m.surfaces.push({ id: 'mA', type: 'master', name: 'A', size: [400, 600], layers: [], running });
+  m.layout.numbering = { start: 1, style: 'arabic' };
+  return m;
+};
+
+test('מספרים עבריים', () => {
+  const t = [[1, 'א'], [10, 'י'], [15, 'טו'], [16, 'טז'], [21, 'כא'], [115, 'קטו'], [400, 'ת'], [500, 'תק'], [1000, 'א׳'], [1016, 'א׳טז']];
+  for (const [n, h] of t) assert.equal(hebrewNumeral(n), h, String(n));
+});
+
+test('מספר העמוד לפי המספור', () => {
+  const m = withMaster(4);
+  assert.equal(folioText(m, 3), '3');
+  m.layout.numbering = { start: 14, style: 'hebrew' };
+  assert.equal(folioText(m, 2), 'טו');
+});
+
+test('מספר עמוד בצד החיצוני — מתחלף בין זוגי לאי-זוגי (כריכה מימין)', () => {
+  const m = withMaster(4);
+  const [f1] = runningItems(m, 1);   // עמוד 1 משמאל לשדרה → החוץ משמאל
+  assert.equal(f1.align, 'left');
+  assert.equal(f1.x, 30);
+  assert.equal(f1.y, 600 - 25);
+  const [f2] = runningItems(m, 2);   // עמוד 2 מימין לשדרה → החוץ מימין
+  assert.equal(f2.align, 'right');
+  assert.equal(f2.x, 400 - 30);
+});
+
+test('כריכה משמאל — הפוך', () => {
+  const [f1] = runningItems(withMaster(4, { binding: 'left' }), 1);
+  assert.equal(f1.align, 'right');
+});
+
+test('כותרת רצה: אי-זוגי וזוגי, למעלה במרכז', () => {
+  const m = withMaster(4, {}, { folio: null, header: { odd: 'פרק', even: 'הספר', position: 'top', align: 'center', size: 9 } });
+  const [h1] = runningItems(m, 1), [h2] = runningItems(m, 2);
+  assert.equal(h1.text, 'פרק');
+  assert.equal(h2.text, 'הספר');
+  assert.equal(h1.align, 'center');
+  assert.equal(h1.y, 20);
+});
+
+test('עמוד בלי עמוד אב — בלי מספר וכותרת', () => {
+  const m = setMaster(withMaster(4), [0], null);
+  assert.deepEqual(runningItems(m, 1), []);
+  assert.equal(runningItems(m, 2).length, 1);
+});
+
+test('עמוד חדש מקבל את עמוד האב של האחרון; גודל חל גם על עמוד האב', () => {
+  const m = setPageCount(withMaster(2), 4, (() => { let i = 0; return () => 'n' + i++; })());
+  assert.ok(m.surfaces.filter(s => s.type === 'page').every(p => p.master === 'mA'));
+  assert.deepEqual(mastersOf(setPageSize(m, [300, 500]))[0].size, [300, 500]);
+});
+
+test('מסמך ישן מקבל עמוד אב ומספור, בלי לשייך עמודים', () => {
+  const m = ensureMasters(model(2));
+  assert.equal(mastersOf(m).length, 1);
+  assert.deepEqual(m.layout.numbering, { start: 1, style: 'arabic' });
+  assert.ok(m.surfaces.filter(s => s.type === 'page').every(p => p.master === null));
+  assert.equal(ensureMasters(m), m);   // כבר יש — בלי שינוי
+});
+
+test('איזה עמוד בנקודה', () => {
+  const lay = layoutDoc(model(4));
+  const s2 = lay.spreads[1];
+  assert.equal(pageAt(lay, PAD + 10, s2.y + 10), 2);         // שמאל → עמוד 3
+  assert.equal(pageAt(lay, PAD + 410, s2.y + 10), 1);        // ימין → עמוד 2
+  assert.equal(pageAt(lay, PAD + 410, lay.spreads[0].y + 10), -1);   // ליד עמוד 1 אין עמוד
 });

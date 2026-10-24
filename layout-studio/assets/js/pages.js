@@ -43,16 +43,20 @@ export function pageSide(model, num) {
   return odd ? 'right' : 'left';
 }
 
+/** האם הצד הפנימי (השדרה / הכריכה) של העמוד מימין. */
+export function insideOnRight(model, num) {
+  if (model.layout.facing) return pageSide(model, num) === 'left';   // עמוד משמאל לשדרה — השדרה מימינו
+  return model.layout.binding === 'right';
+}
+
 /** שולי העמוד בפועל — שמאל/ימין במקום פנימי/חיצוני. */
 export function sideMargins(model, num) {
   const m = model.layout.margins;
-  let insideOnRight;
-  if (model.layout.facing) insideOnRight = pageSide(model, num) === 'left';   // עמוד משמאל לשדרה — השדרה מימינו
-  else insideOnRight = model.layout.binding === 'right';
+  const insideOnRight_ = insideOnRight(model, num);
   return {
     top: m.top, bottom: m.bottom,
-    left: insideOnRight ? m.outside : m.inside,
-    right: insideOnRight ? m.inside : m.outside,
+    left: insideOnRight_ ? m.outside : m.inside,
+    right: insideOnRight_ ? m.inside : m.outside,
   };
 }
 
@@ -93,20 +97,115 @@ export function spreadOfPage(lay, index) {
   return lay.spreads.findIndex(s => s.pages.some(p => p.index === index));
 }
 
-/** שינוי מספר העמודים — מוסיף בסוף או מוריד מהסוף. מחזיר מודל חדש. */
+/** שינוי מספר העמודים — מוסיף בסוף או מוריד מהסוף. עמוד חדש מקבל את עמוד האב של האחרון. מחזיר מודל חדש. */
 export function setPageCount(model, count, newId) {
   const pages = pagesOf(model);
   const size = pageSize(model);
   count = Math.max(1, Math.min(2000, Math.round(count)));
-  let others = model.surfaces.filter(s => s.type !== 'page');
-  let next = pages.slice(0, count);
-  while (next.length < count) next.push({ id: newId(), type: 'page', size: [...size], master: null, layers: [] });
+  const others = model.surfaces.filter(s => s.type !== 'page');
+  const next = pages.slice(0, count);
+  const master = pages.length ? pages[pages.length - 1].master ?? null : (mastersOf(model)[0]?.id ?? null);
+  while (next.length < count) next.push({ id: newId(), type: 'page', size: [...size], master, layers: [] });
   return { ...model, surfaces: [...next, ...others] };
 }
 
-/** גודל עמוד חדש לכל העמודים. */
+/** גודל עמוד חדש לכל העמודים ולעמודי האב. */
 export function setPageSize(model, size) {
-  return { ...model, surfaces: model.surfaces.map(s => s.type === 'page' ? { ...s, size: [...size] } : s) };
+  return { ...model, surfaces: model.surfaces.map(s => s.type === 'page' || s.type === 'master' ? { ...s, size: [...size] } : s) };
+}
+
+// ===== עמודי אב ומספור =====
+
+export const mastersOf = model => model.surfaces.filter(s => s.type === 'master');
+
+export function masterOf(model, page) {
+  return page.master ? model.surfaces.find(s => s.type === 'master' && s.id === page.master) || null : null;
+}
+
+/** עמוד אב לכל העמודים שבאינדקסים — או null (בלי עמוד אב). */
+export function setMaster(model, indexes, masterId) {
+  const set = new Set(indexes);
+  let i = -1;
+  return { ...model, surfaces: model.surfaces.map(s => s.type !== 'page' ? s : (++i, set.has(i) ? { ...s, master: masterId } : s)) };
+}
+
+/** עדכון עמוד אב (לפי id) — מיזוג שדות. */
+export function updateMaster(model, id, patch) {
+  return { ...model, surfaces: model.surfaces.map(s => s.type === 'master' && s.id === id ? { ...s, ...patch } : s) };
+}
+
+/** מסמך מלפני עמודי האב — מקבל עמוד אב A (בלי לשייך אליו עמודים) ומספור. */
+export function ensureMasters(model) {
+  let m = model;
+  if (!m.layout.numbering) m = { ...m, layout: { ...m.layout, numbering: { start: 1, style: 'arabic' } } };
+  if (!mastersOf(m).length) {
+    const size = pageSize(m);
+    m = { ...m, surfaces: [...m.surfaces, { id: 'mA', type: 'master', name: 'A', size: [...size], layers: [],
+      running: { folio: { position: 'bottom', align: 'outside', size: 10 }, header: null } }] };
+  }
+  return m;
+}
+
+const HEB_ONES = ['', 'א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ז', 'ח', 'ט'];
+const HEB_TENS = ['', 'י', 'כ', 'ל', 'מ', 'נ', 'ס', 'ע', 'פ', 'צ'];
+const HEB_HUNDREDS = ['', 'ק', 'ר', 'ש', 'ת', 'תק', 'תר', 'תש', 'תת', 'תתק'];
+
+/** מספר באותיות: 1 → א, 15 → טו, 16 → טז, 115 → קטו, 1005 → א׳ה. בלי גרשיים — כמו במספור עמודים בספר. */
+export function hebrewNumeral(n) {
+  n = Math.floor(n);
+  if (n <= 0) return String(n);
+  let out = '';
+  if (n >= 1000) { out += hebrewNumeral(Math.floor(n / 1000)) + '׳'; n %= 1000; }
+  out += HEB_HUNDREDS[Math.floor(n / 100)];
+  const r = n % 100;
+  if (r === 15) return out + 'טו';     // לא י+ה
+  if (r === 16) return out + 'טז';     // לא י+ו
+  return out + HEB_TENS[Math.floor(r / 10)] + HEB_ONES[r % 10];
+}
+
+/** מספר העמוד כפי שמודפס (לפי מספור המסמך). num — מספר העמוד בקובץ, 1-based. */
+export function folioText(model, num) {
+  const nb = model.layout.numbering || { start: 1, style: 'arabic' };
+  const n = nb.start + num - 1;
+  return nb.style === 'hebrew' ? hebrewNumeral(n) : String(n);
+}
+
+/**
+ * מה שעמוד האב מצייר על העמוד: [{ kind, text, x, y, align: 'left'|'center'|'right', size }] בקואורדינטות העמוד.
+ * y — אמצע השורה, באמצע השוליים (למטה או למעלה). חיצוני/פנימי — לפי צד השדרה של העמוד.
+ */
+export function runningItems(model, num) {
+  const page = pagesOf(model)[num - 1];
+  const master = page && masterOf(model, page);
+  if (!master || !master.running) return [];
+  const [w, h] = pageSize(model);
+  const [cx, , cw] = contentBox(model, num);
+  const m = model.layout.margins;
+  const inRight = insideOnRight(model, num);
+  const place = o => {
+    const y = o.position === 'top' ? m.top / 2 : h - m.bottom / 2;
+    if (o.align === 'center') return { x: cx + cw / 2, y, align: 'center' };
+    const right = (o.align === 'inside') === inRight;   // פנימי והשדרה מימין, או חיצוני והשדרה משמאל — לצד ימין
+    return right ? { x: cx + cw, y, align: 'right' } : { x: cx, y, align: 'left' };
+  };
+  const out = [];
+  const { folio, header } = master.running;
+  if (folio) out.push({ kind: 'folio', text: folioText(model, num), size: folio.size, ...place(folio) });
+  if (header) {
+    const even = model.layout.facing && num % 2 === 0;
+    const text = even ? header.even : header.odd;
+    if (text) out.push({ kind: 'header', text, size: header.size, ...place(header) });
+  }
+  return out;
+}
+
+/** העמוד (אינדקס 0-based) שבנקודה במרחב המסמך, או -1. */
+export function pageAt(lay, x, y) {
+  for (const s of lay.spreads) {
+    if (y < s.y || y > s.y + lay.pageH) continue;
+    for (const p of s.pages) if (x >= p.x && x <= p.x + lay.pageW) return p.index;
+  }
+  return -1;
 }
 
 /** בדיקה בצד הדפדפן — אותם כללים כמו lib/model.php, כדי לא לשלוח מודל שהשרת ידחה. */
