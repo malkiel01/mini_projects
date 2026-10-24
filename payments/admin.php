@@ -87,17 +87,25 @@ try {
         'tenant_status' => $owner ? tenant_set_status($t, $s('id'), $s('status')) : throw new ApiError('רק לבעלים', 'forbidden', 403),
 
         // כספים (שלב 3)
-        'payments' => ['data' => db_all("SELECT p.*, cu.name AS customer_name, cu.external_id, cu.client, cu.id AS customer_id
+        'payments' => ['data' => db_all("SELECT p.*, cu.name AS customer_name, cu.external_id, cu.client, cu.id AS customer_id,
+                (SELECT number FROM tax_document d WHERE d.payment = p.id LIMIT 1) AS doc_number,
+                (SELECT type FROM tax_document d WHERE d.payment = p.id LIMIT 1) AS doc_type,
+                pa.provider AS provider_type
             FROM payment p JOIN account a ON a.id = p.account JOIN merchant m ON m.id = a.merchant
-            LEFT JOIN customer cu ON cu.account = a.id WHERE m.tenant = ? GROUP BY p.id ORDER BY p.created_at DESC LIMIT 200", [$t['id']])],
+            LEFT JOIN customer cu ON cu.account = a.id LEFT JOIN provider_account pa ON pa.id = p.provider WHERE m.tenant = ? GROUP BY p.id ORDER BY p.created_at DESC LIMIT 200", [$t['id']])],
         'invoices' => ['data' => db_all("SELECT i.*, (SELECT description FROM invoice_line WHERE invoice = i.id LIMIT 1) AS description,
                 (SELECT name FROM customer WHERE account = i.account LIMIT 1) AS customer_name
             FROM invoice i JOIN merchant m ON m.id = i.merchant WHERE m.tenant = ? ORDER BY i.created_at DESC LIMIT 200", [$t['id']])],
         'refund' => (function () use ($t, $s, $in) {
             $p = db_one('SELECT p.* FROM payment p JOIN account a ON a.id = p.account JOIN merchant m ON m.id = a.merchant WHERE p.id = ? AND m.tenant = ?', [$s('payment'), $t['id']]);
             if (!$p) throw new ApiError('התשלום לא נמצא', 'not_found', 404);
-            return payment_refund($p['id'], (int)($in['agorot'] ?? 0), $s('reason'), 'admin:' . $t['id']);
+            return payment_refund($p['id'], (int)($in['agorot'] ?? 0), $s('reason'), 'admin:' . $t['id'], !empty($in['manual']));
         })(),
+
+        // חברות סליקה (שלב 4)
+        'providers' => ['data' => provider_accounts($t, $s('merchant')), 'types' => PROVIDER_TYPES],
+        'provider_save' => ['provider' => provider_account_save($t, $in)],
+        'provider_check' => ['provider' => provider_account_check($t, $s('id'))],
         'clock' => [
             'last' => (int)setting('tick_last', '0'), 'cron' => (int)setting('tick_last_cron', '0'), 'external' => (int)setting('tick_last_external', '0'),
             'url' => base_url() . 'api.php?action=tick', 'now' => now(),

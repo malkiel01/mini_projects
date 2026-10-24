@@ -13,7 +13,7 @@ require_once __DIR__ . '/notify.php';
 const CHECKOUT_TTL = 3600;
 const TOPUP_MIN = 500;          // אגורות
 const TOPUP_MAX = 500_000;
-const CHECKOUT_MODES = ['payment', 'subscription', 'topup', 'setup'];
+const CHECKOUT_MODES = ['payment', 'subscription', 'topup', 'setup', 'invoice'];
 const RECURRING_TYPES = ['plan', 'seat', 'addon'];
 
 // ---------- סכומים ----------
@@ -103,12 +103,19 @@ function checkout_create(array $client, string $env, array $in): array
     } elseif ($mode === 'topup') {
         $amount = (int)($in['amount'] ?? 0);
         if ($amount < TOPUP_MIN || $amount > TOPUP_MAX) throw new ApiError('סכום טעינה: ₪5 עד ₪5,000', 'bad_amount');
+    } elseif ($mode === 'invoice') {
+        // תשלום חשבונית פתוחה (חידוש שנכשל) — מהחשבון שלי או מקישור במייל
+        $inv = db_one("SELECT * FROM invoice WHERE id = ? AND account = ? AND status = 'open'", [(string)($in['invoice'] ?? ''), $acc['id']]);
+        if (!$inv) throw new ApiError('אין חשבונית פתוחה לתשלום', 'not_found', 404);
+        $amount = (int)$inv['total'];
+        $invoiceId = $inv['id'];
     }
     $meta = is_array($in['meta'] ?? null) ? $in['meta'] : [];
     $id = new_id('chk');
-    db_run('INSERT INTO checkout (id, client, env, customer, account, mode, items, amount, return_url, cancel_url, meta, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [
+    db_run('INSERT INTO checkout (id, client, env, customer, account, mode, items, amount, return_url, cancel_url, meta, invoice, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [
         $id, $client['id'], $env, $cus['id'], $acc['id'], $mode, json_encode($items), $amount,
-        $in['return_url'], $in['cancel_url'], json_encode((object)($meta + ($trialDays ? ['trial_days' => $trialDays] : [])), JSON_UNESCAPED_UNICODE), now() + CHECKOUT_TTL, now(),
+        $in['return_url'], $in['cancel_url'], json_encode((object)($meta + ($trialDays ? ['trial_days' => $trialDays] : [])), JSON_UNESCAPED_UNICODE),
+        $invoiceId ?? null, now() + CHECKOUT_TTL, now(),
     ]);
     return ['checkout' => $id, 'url' => base_url() . 'pay/?c=' . $id, 'expires_at' => now() + CHECKOUT_TTL, 'amount' => $amount, 'trial_days' => $trialDays];
 }
@@ -157,6 +164,7 @@ function checkout_view(array $c): array
     }
     if ($c['mode'] === 'topup') $lines[] = ['name' => 'טעינת יתרה', 'amount' => (int)$c['amount']];
     if ($c['mode'] === 'setup') $lines[] = ['name' => 'עדכון אמצעי תשלום — בלי חיוב', 'amount' => 0];
+    if ($c['mode'] === 'invoice') foreach (db_all('SELECT description, amount FROM invoice_line WHERE invoice = ?', [$c['invoice']]) as $l) $lines[] = ['name' => $l['description'], 'amount' => (int)$l['amount']];
     if ($c['mode'] === 'subscription') {
         $trial = (int)($meta['trial_days'] ?? 0);
         array_unshift($disclose, $trial
@@ -178,6 +186,8 @@ function checkout_view(array $c): array
 function checkout_methods(array $c, array $m): array
 {
     $p = provider_for($m, $c['env']);
+    // סולק שלא שומר כרטיס בלי חיוב: ניסיון חינם מתחיל בלי כרטיס (התשלום — בסוף הניסיון, בקישור), והחלפת כרטיס — בתשלום הבא
+    if ((int)$c['amount'] === 0 && !$p->capabilities()['zero_amount']) return $c['mode'] === 'subscription' ? ['none'] : [];
     $out = [];
     foreach ($p->methods() as $method => $modes) if (in_array($c['mode'], $modes, true)) $out[] = $method;
     return $out;
@@ -190,6 +200,11 @@ function checkout_start(array $c, string $method): string
     $acc = db_one('SELECT * FROM account WHERE id = ?', [$c['account']]);
     $m = db_one('SELECT * FROM merchant WHERE id = ?', [$acc['merchant']]);
     if (!in_array($method, checkout_methods($c, $m), true)) throw new ApiError('אמצעי התשלום לא זמין כאן', 'bad_method');
+    if ($method === 'none') { // ניסיון בלי כרטיס
+        db_run('UPDATE checkout SET provider = ?, consent_at = ? WHERE id = ?', ['none', now(), $c['id']]);
+        db_tx(fn() => checkout_complete(db_one('SELECT * FROM checkout WHERE id = ?', [$c['id']]), new Txn('', 'succeeded', 0)));
+        return base_url() . 'pay/?c=' . $c['id'];
+    }
     $p = provider_for($m, $c['env']);
     $save = $method === 'card';
     [$url, $ref] = $p->createSession($c, (int)$c['amount'], $save, [$method], base_url() . 'pay/return.php?c=' . $c['id']);
@@ -229,6 +244,11 @@ function save_method(array $acc, string $provider, Txn $txn): ?string
 function payment_record(array $acc, string $provider, Txn $txn, ?string $invoice, ?string $checkout, ?string $method): string
 {
     $id = new_id('pay');
+    if ($txn->status === 'succeeded' && $txn->doc) {
+        db_run('INSERT OR IGNORE INTO tax_document (id, payment, invoice, provider, external_id, type, number, allocation_number, url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [
+            new_id('doc'), $id, $invoice, $provider, $txn->doc['id'], (int)$txn->doc['type'], (string)$txn->doc['number'], (string)($txn->doc['allocation'] ?? ''), (string)($txn->doc['url'] ?? ''), now(),
+        ]);
+    }
     db_run('INSERT INTO payment (id, account, env, invoice, checkout, method, provider, amount, status, provider_txn, failure_code, failure_message, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [
         $id, $acc['id'], $acc['env'], $invoice, $checkout, $method, $provider, $txn->amount,
         $txn->status === 'succeeded' ? 'succeeded' : 'failed', $txn->ref, $txn->failureCode, $txn->failureMessage, now(),
@@ -288,6 +308,16 @@ function checkout_complete(array $c, Txn $txn): void
         $result['payment'] = payment_record($acc, $c['provider'], $txn, $inv['id'], $c['id'], $methodId);
         $bal = wallet_post($acc['id'], agorot_to_micros((int)$c['amount']), 'topup', 'invoice', $inv['id'], 'טעינה');
         webhook_emit($c['client'], $c['env'], 'wallet.topped_up', $cus['external_id'], ['amount' => (int)$c['amount'], 'balance' => micros_to_agorot($bal)]);
+    } elseif ($c['mode'] === 'invoice') {
+        $inv = db_one('SELECT * FROM invoice WHERE id = ?', [$c['invoice']]);
+        $result['invoice'] = $inv['id'];
+        $result['payment'] = payment_record($acc, $c['provider'], $txn, $inv['id'], $c['id'], $methodId);
+        db_run("UPDATE invoice SET status = 'paid', paid_at = ?, next_attempt_at = NULL WHERE id = ? AND status = 'open'", [now(), $inv['id']]);
+        if ($inv['subscription']) {
+            db_run("UPDATE subscription SET status = 'active', past_due_since = NULL, first_paid_at = COALESCE(first_paid_at, ?) WHERE id = ? AND status IN ('past_due','active','trialing')", [now(), $inv['subscription']]);
+            $result['subscription'] = $inv['subscription'];
+            webhook_emit($c['client'], $c['env'], 'subscription.renewed', $cus['external_id'], ['subscription' => $inv['subscription'], 'invoice' => $inv['id'], 'amount' => (int)$inv['total']]);
+        }
     } elseif ($c['mode'] === 'setup') {
         $result['method'] = $methodId;
     }
@@ -332,7 +362,7 @@ function invoice_charge(array $inv): Txn
     if (!$pm) {
         $txn = new Txn('', 'failed', (int)$inv['total'], 'ILS', null, 'card', '', '', '', 'no_payment_method', 'אין אמצעי תשלום שמור');
     } else {
-        $txn = provider($pm['provider'])->chargeToken(unseal($pm['token_enc']), (int)$inv['total'], $inv['id'] . ':' . $attempt);
+        $txn = provider($pm['provider'])->chargeToken(unseal($pm['token_enc']), (int)$inv['total'], $inv['id'] . ':' . $attempt, ['invoice' => $inv['id']]);
     }
     payment_record($acc, $pm['provider'] ?? 'none', $txn, $inv['id'], null, $pm['id'] ?? null);
     if ($txn->status === 'succeeded') db_run("UPDATE invoice SET status = 'paid', paid_at = ?, next_attempt_at = NULL WHERE id = ?", [now(), $inv['id']]);
@@ -381,17 +411,18 @@ function charge_api(array $client, string $env, array $in): array
 // ---------- החזר ----------
 
 /** החזר מלא או חלקי, דרך אותו סולק. ‏$actor: ‏admin:<id> / customer:<id> / system. */
-function payment_refund(string $paymentId, int $amount, string $reason, string $actor): array
+function payment_refund(string $paymentId, int $amount, string $reason, string $actor, bool $manual = false): array
 {
-    return db_tx(function () use ($paymentId, $amount, $reason, $actor) {
+    return db_tx(function () use ($paymentId, $amount, $reason, $actor, $manual) {
         $p = db_one('SELECT * FROM payment WHERE id = ?', [$paymentId]);
         if (!$p || !in_array($p['status'], ['succeeded', 'partially_refunded'], true)) throw new ApiError('התשלום לא נמצא או לא ניתן להחזר', 'not_refundable', 409);
         $left = (int)$p['amount'] - (int)$p['refunded'];
         if ($amount <= 0 || $amount > $left) throw new ApiError('סכום ההחזר לא תקין (נשאר ' . money_text($left) . ')', 'bad_amount');
         if (trim($reason) === '') throw new ApiError('חובה לכתוב סיבה', 'note_required');
         $id = new_id('rf');
-        $ref = provider($p['provider'])->refund($p['provider_txn'], $amount, $id);
-        db_run('INSERT INTO refund (id, payment, amount, reason, provider_ref, actor, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [$id, $paymentId, $amount, mb_substr($reason, 0, 240), $ref, $actor, now()]);
+        // ‏manual — ההחזר כבר בוצע בממשק הסולק (למשל מורנינג, שאין בה החזר דרך הממשק); כאן רק רושמים
+        $ref = $manual ? 'manual' : provider($p['provider'])->refund($p['provider_txn'], $amount, $id);
+        db_run('INSERT INTO refund (id, payment, amount, reason, provider_ref, actor, manual, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [$id, $paymentId, $amount, mb_substr($reason, 0, 240), $ref, $actor, (int)$manual, now()]);
         $refunded = (int)$p['refunded'] + $amount;
         db_run('UPDATE payment SET refunded = ?, status = ? WHERE id = ?', [$refunded, $refunded >= (int)$p['amount'] ? 'refunded' : 'partially_refunded', $paymentId]);
         // החזר על טעינת יתרה — יורד מהארנק (רק מה שלא נוצל; נבדק לפני הקריאה במסך הניהול)

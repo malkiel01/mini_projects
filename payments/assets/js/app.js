@@ -75,8 +75,8 @@ const STAGES = [
   ['שלד', 'רישום, מסך, מסד ריק, החרגה בפריסה', 'done'],
   ['ליבה בלי כסף', 'מערכות וקודים, לקוחות, מוצרים ומחירים, זכאות, שימוש, ארנק', 'done'],
   ['דף תשלום ו"החשבון שלי"', 'מנויים חודשיים ושנתיים, ניסיון, מבצעים, ביטול, הודעות לפי החוק, סולק מדומה', 'done'],
-  ['סולק אמיתי ראשון', 'Morning והסליקה שלה, בסביבת בדיקות', 'now'],
-  ['חשבוניות', 'Morning — קבלות, חשבוניות מס/קבלה, זיכויים', ''],
+  ['סולק אמיתי ראשון', 'מורנינג והסליקה שלה — כולל הקבלה או החשבונית עם כל תשלום', 'done'],
+  ['חשבוניות', 'מסמכים לתשלומים שלא דרך מורנינג (מזומן, העברה, סולקים אחרים), זיכויים', 'now'],
   ['ספריות, קישורים וכללים', 'ספריות קוד, קישורי תשלום, כפתור, מנוע הכללים, תיעוד', ''],
   ['מנויים מאושרים', 'אזור ניהול לכל מי שהמנהל מאשר', ''],
   ['מגדלור מתחבר', 'האפליקציה הראשונה, בצ\'אט שלה', ''],
@@ -110,11 +110,65 @@ function merchantForm(m = {}) {
       <label class="f wide"><span>כתובת</span><input name="address" value="${esc(m.address)}"></label>
     </div>
     <fieldset class="seg" aria-label="סוג העוסק">${opt('exempt', 'פטור')}${opt('licensed', 'מורשה')}${opt('company', 'חברה')}</fieldset>
-    <p class="hint">פטור — קבלה בלי מע"מ. מורשה וחברה — חשבונית מס/קבלה עם מע"מ 18%.</p>`,
+    <p class="hint">פטור — קבלה בלי מע"מ. מורשה וחברה — חשבונית מס/קבלה עם מע"מ 18%.</p>
+    ${m.id ? `<div class="group"><h3>חברת סליקה <small>הכסף נכנס ישר לחשבון שלך אצלה</small></h3>
+      <ul class="list" id="pa-list"><li><p class="empty">טוען…</p></li></ul>
+      <div class="row-btns wrap"><button type="button" class="btn sm ghost" data-pa-new="test">+ מורנינג · בדיקות</button>
+      ${me.role === 'owner' ? '<button type="button" class="btn sm ghost" data-pa-new="live">+ מורנינג · כסף אמיתי</button>' : ''}</div>
+      <p class="hint">בלי חיבור — סביבת הבדיקות עובדת מול הסולק המדומה, וכסף אמיתי לא נגבה.</p></div>` : ''}`,
   async fd => {
     await api('merchant_save', { id: m.id || '', ...Object.fromEntries(fd) });
     toast('נשמר'); loaders.settings();
   });
+  if (m.id) loadProviders(m);
+}
+
+const PROV_METHODS = { card: '💳 כרטיס', bit: 'ביט', apple: 'אפל', google: 'גוגל' };
+async function loadProviders(m) {
+  const { data } = await api('providers', { merchant: m.id });
+  const box = $('#pa-list');
+  if (!box) return;
+  box.innerHTML = data.length ? data.map(p => `<li class="card" data-pa="${esc(p.id)}" tabindex="0" role="button"><span class="use-ic" aria-hidden="true">🏦</span>
+      <div class="body"><div class="l1"><span>מורנינג · ${p.env === 'live' ? 'כסף אמיתי' : 'בדיקות'}</span></div>
+      <div class="l2">${(p.settings.methods || []).map(x => PROV_METHODS[x] || x).join(' · ')}${p.checked_at ? ' · נבדק ' + when(p.checked_at) : ''}</div></div>
+      ${p.status !== 'active' ? chip('כבוי', '') : !p.checked_at ? chip('לא נבדק', 'warn') : p.check_error ? chip('תקלה', 'bad') : chip('תקין', 'ok')}</li>`).join('')
+    : empty('עוד אין חיבור');
+  for (const li of box.querySelectorAll('[data-pa]')) li.addEventListener('click', () => providerSheet(m, data.find(x => x.id === li.dataset.pa)));
+  for (const b of document.querySelectorAll('[data-pa-new]')) b.addEventListener('click', () => providerSheet(m, { env: b.dataset.paNew, settings: { methods: ['card', 'bit'] } }));
+}
+
+function providerSheet(m, p) {
+  const isNew = !p.id;
+  const live = p.env === 'live';
+  openSheet(`מורנינג · ${live ? 'כסף אמיתי' : 'בדיקות'} — ${m.name}`, `
+    <p class="hint">${live ? 'הקודים מחשבון מורנינג האמיתי שלך (תוכנית "בסט" ומעלה): כלי פיתוח ← מפתחות ממשק.' : 'הקודים מסביבת הניסוי של מורנינג למפתחים — שם לא נגבה כסף אמיתי.'}</p>
+    <div class="fields">
+      <label class="f wide"><span>מזהה הממשק${p.client_id ? ' (שמור: ' + esc(p.client_id) + ')' : ''}</span><input name="client_id" dir="ltr" autocomplete="off" placeholder="${p.client_id ? 'ריק — בלי שינוי' : ''}"></label>
+      <label class="f wide"><span>סוד הממשק${p.has_secret ? ' (שמור)' : ''}</span><input name="client_secret" type="password" dir="ltr" autocomplete="new-password" placeholder="${p.has_secret ? 'ריק — בלי שינוי' : ''}"></label>
+      <label class="f wide"><span>סוד ההודעות (מומלץ)${p.has_webhook_secret ? ' (שמור)' : ''}</span><input name="webhook_secret" type="password" dir="ltr" autocomplete="new-password" placeholder="${p.has_webhook_secret ? 'ריק — בלי שינוי' : ''}"></label>
+    </div>
+    <div class="chips" aria-label="אמצעי תשלום">${Object.entries(PROV_METHODS).map(([k, l]) => `<label><input type="checkbox" name="m_${k}" ${(p.settings.methods || []).includes(k) || k === 'card' ? 'checked' : ''} ${k === 'card' ? 'disabled' : ''}><span>${l}</span></label>`).join('')}</div>
+    ${!isNew ? `<label class="switch"><input type="checkbox" name="active" ${p.status === 'active' ? 'checked' : ''}><span>פעיל</span></label>
+    <div class="group"><h3>בדיקת חיבור</h3>
+      ${p.check_error ? `<p class="error">${esc(p.check_error)}</p>` : p.checked_at ? '<p class="hint">✓ החיבור עובד.</p>' : ''}
+      <div class="row-btns"><button type="button" class="btn sm primary" id="pa-check">בדיקה עכשיו</button></div></div>
+    <div class="group"><h3>הודעות ממורנינג <small>פעם אחת, בממשק מורנינג</small></h3>
+      <p class="hint">כלי פיתוח ← וובהוקים ← הוספה: להדביק את הכתובת, לסמן "מסמך נוצר" ו"תשלום התקבל", ולהגדיר סוד — אותו סוד שבשדה למעלה. כך תשלום נקלט גם אם הלקוח סגר את החלון.</p>
+      <input readonly dir="ltr" value="${esc(p.webhook_url)}" aria-label="כתובת ההודעות" onclick="this.select()">
+      <div class="row-btns"><button type="button" class="btn sm ghost" id="pa-copy">📋 העתקה</button></div></div>` : ''}`,
+  async fd => {
+    const methods = Object.keys(PROV_METHODS).filter(k => k === 'card' || fd.get('m_' + k));
+    const r = await api('provider_save', { merchant: m.id, provider: 'morning', env: p.env, client_id: fd.get('client_id'), client_secret: fd.get('client_secret'),
+      webhook_secret: fd.get('webhook_secret'), methods, ...(isNew ? {} : { status: fd.get('active') ? 'active' : 'disabled' }) });
+    const checked = (await api('provider_check', { id: r.provider.id })).provider;
+    toast(checked.check_error ? 'נשמר, אבל הבדיקה נכשלה' : 'נשמר והחיבור עובד ✓', !!checked.check_error);
+    merchantForm(m);
+    return false;
+  });
+  $('#pa-check')?.addEventListener('click', async () => {
+    try { const r = (await api('provider_check', { id: p.id })).provider; toast(r.check_error || 'החיבור עובד ✓', !!r.check_error); providerSheet(m, r); } catch (e) { fail(e); }
+  });
+  $('#pa-copy')?.addEventListener('click', () => navigator.clipboard.writeText(p.webhook_url).then(() => toast('הועתק')));
 }
 $('#add-merchant').addEventListener('click', () => merchantForm());
 
@@ -410,7 +464,7 @@ loaders.money = async () => {
   if (moneyView === 'payments') {
     $('#money-list').innerHTML = p.data.length ? p.data.map(r => `<li class="card" ${['succeeded', 'partially_refunded'].includes(r.status) ? `data-pay="${esc(r.id)}" tabindex="0" role="button"` : ''}>
         <div class="body"><div class="l1"><span>${esc(r.customer_name || r.external_id || '—')}</span><span class="t">${when(r.created_at)}</span></div>
-        <div class="l2">${nis(r.amount)}${r.refunded > 0 ? ' · הוחזרו ' + nis(r.refunded) : ''} · ${esc(r.provider)}${r.failure_message ? ' · ' + esc(r.failure_message) : ''}${r.env === 'test' ? ' · בדיקות' : ''}</div></div>
+        <div class="l2">${nis(r.amount)}${r.refunded > 0 ? ' · הוחזרו ' + nis(r.refunded) : ''} · ${r.provider === 'fake' ? 'סולק מדומה' : r.provider_type === 'morning' ? 'מורנינג' : esc(r.provider)}${r.doc_number ? ' · ' + (Number(r.doc_type) === 400 ? 'קבלה' : 'חשבונית') + ' ' + esc(r.doc_number) : ''}${r.failure_message ? ' · ' + esc(r.failure_message) : ''}${r.env === 'test' ? ' · בדיקות' : ''}</div></div>
         ${chip(...(PST[r.status] || [r.status, '']))}</li>`).join('') : empty('עוד אין תשלומים.');
     for (const li of document.querySelectorAll('[data-pay]')) li.addEventListener('click', () => refundSheet(p.data.find(x => x.id === li.dataset.pay)));
   } else {
@@ -427,11 +481,13 @@ function refundSheet(p) {
     <div class="fields">
       <label class="f"><span>סכום (₪)</span><input name="amount" inputmode="decimal" dir="ltr" value="${(left / 100).toFixed(2)}"></label>
       <label class="f wide"><span>סיבה * (נשמרת ונשלחת ללקוח)</span><input name="reason" required maxlength="240"></label>
-    </div>`,
+    </div>
+    ${p.provider_type === 'morning' ? `<p class="hint">במורנינג ההחזר נעשה בממשק שלהם (שם נוצרת גם חשבונית הזיכוי). בצע אותו שם, ואז רשום כאן.</p>
+      <label class="switch"><input type="checkbox" name="manual" checked disabled><span>ההחזר כבר בוצע במורנינג — רק לרשום</span></label>` : ''}`,
   async fd => {
     const ag = Math.round(Number(String(fd.get('amount')).replace(',', '.')) * 100);
-    if (!confirm(`להחזיר ${nis(ag)}?`)) return false;
-    await api('refund', { payment: p.id, agorot: ag, reason: fd.get('reason') });
+    if (!confirm(`${p.provider_type === 'morning' ? 'לרשום החזר' : 'להחזיר'} ${nis(ag)}?`)) return false;
+    await api('refund', { payment: p.id, agorot: ag, reason: fd.get('reason'), manual: p.provider_type === 'morning' });
     toast('ההחזר בוצע'); loaders.money();
   }, 'החזר');
 }

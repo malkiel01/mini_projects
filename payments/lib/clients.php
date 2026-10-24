@@ -340,3 +340,71 @@ function http_request(string $url, ?string $post = null, array $headers = [], in
     curl_close($ch);
     return ['status' => $body === false ? 0 : $status, 'body' => $body === false ? '' : (string)$body];
 }
+
+// ---------- חיבורים לחברות סליקה (שלב 4) ----------
+
+/** בלי סודות: רק מה שמותר להציג. */
+function provider_account_public(array $pa): array
+{
+    $cred = json_decode(unseal($pa['credentials_enc']), true) ?: [];
+    $tail = fn(string $k) => isset($cred[$k]) && $cred[$k] !== '' ? '…' . substr((string)$cred[$k], -4) : '';
+    return [
+        'id' => $pa['id'], 'merchant' => $pa['merchant'], 'provider' => $pa['provider'], 'env' => $pa['env'], 'status' => $pa['status'],
+        'settings' => json_obj($pa['settings']), 'checked_at' => $pa['checked_at'] ? (int)$pa['checked_at'] : null, 'check_error' => $pa['check_error'],
+        'client_id' => $tail('client_id'), 'has_secret' => !empty($cred['client_secret']), 'has_webhook_secret' => !empty($cred['webhook_secret']),
+        'webhook_url' => base_url() . 'hooks/' . $pa['provider'] . '.php?pa=' . $pa['id'],
+    ];
+}
+
+function provider_accounts(array $tenant, string $merchantId): array
+{
+    merchant_get($tenant, $merchantId);
+    return array_map('provider_account_public', db_all('SELECT * FROM provider_account WHERE merchant = ? ORDER BY env, created_at', [$merchantId]));
+}
+
+/** שמירת חיבור. סוד ריק = לא משנים את הקיים (הסודות לא חוזרים למסך אף פעם). */
+function provider_account_save(array $tenant, array $in): array
+{
+    $m = merchant_get($tenant, (string)($in['merchant'] ?? ''));
+    $provider = (string)($in['provider'] ?? 'morning');
+    if (!array_key_exists($provider, PROVIDER_TYPES)) throw new ApiError('חברת סליקה לא מוכרת', 'bad_provider');
+    $env = (string)($in['env'] ?? 'test');
+    if (!in_array($env, ['test', 'live'], true)) throw new ApiError('סביבה: בדיקות או חי', 'bad_env');
+    if ($env === 'live' && $tenant['role'] !== 'owner') throw new ApiError('חיבור לכסף אמיתי — רק הבעלים', 'forbidden', 403);
+    $existing = db_one('SELECT * FROM provider_account WHERE merchant = ? AND provider = ? AND env = ?', [$m['id'], $provider, $env]);
+    $cred = $existing ? (json_decode(unseal($existing['credentials_enc']), true) ?: []) : [];
+    foreach (['client_id', 'client_secret', 'webhook_secret'] as $k) {
+        $v = trim((string)($in[$k] ?? ''));
+        if ($v !== '') $cred[$k] = mb_substr($v, 0, 200);
+    }
+    if (empty($cred['client_id']) || empty($cred['client_secret'])) throw new ApiError('חסרים מזהה וסוד של הממשק', 'missing_credentials');
+    $methods = array_values(array_intersect((array)($in['methods'] ?? ['card', 'bit']), ['card', 'bit', 'apple', 'google']));
+    if (!in_array('card', $methods, true)) array_unshift($methods, 'card');
+    $settings = ['methods' => $methods, 'plugin_id' => trim((string)($in['plugin_id'] ?? ''))];
+    if ($existing) {
+        db_run('UPDATE provider_account SET credentials_enc = ?, settings = ?, status = ? WHERE id = ?', [seal(json_encode($cred)), json_encode($settings), (string)($in['status'] ?? $existing['status']) === 'disabled' ? 'disabled' : 'active', $existing['id']]);
+        $id = $existing['id'];
+        db_run('DELETE FROM setting WHERE key = ?', ['morning_token:' . $id]); // קודים חדשים — טוקן חדש
+    } else {
+        $id = new_id('pa');
+        db_run('INSERT INTO provider_account (id, merchant, provider, env, credentials_enc, settings, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [$id, $m['id'], $provider, $env, seal(json_encode($cred)), json_encode($settings), now()]);
+    }
+    audit('admin', $tenant['id'], 'provider.saved', 'provider_account', $id, ['provider' => $provider, 'env' => $env, 'methods' => $methods], $tenant['id']);
+    return provider_account_public(db_one('SELECT * FROM provider_account WHERE id = ?', [$id]));
+}
+
+/** בדיקת חיבור: נכנס לסולק עם הקודים ושואל שאלה קלה. */
+function provider_account_check(array $tenant, string $id): array
+{
+    $pa = db_one('SELECT pa.* FROM provider_account pa JOIN merchant m ON m.id = pa.merchant WHERE pa.id = ? AND m.tenant = ?', [$id, $tenant['id']]);
+    if (!$pa) throw new ApiError('החיבור לא נמצא', 'not_found', 404);
+    $err = '';
+    try {
+        $p = provider_from_account($pa);
+        if (method_exists($p, 'check')) $p->check();
+    } catch (ApiError $e) {
+        $err = $e->getMessage();
+    }
+    db_run('UPDATE provider_account SET checked_at = ?, check_error = ? WHERE id = ?', [now(), $err, $id]);
+    return provider_account_public(db_one('SELECT * FROM provider_account WHERE id = ?', [$id]));
+}

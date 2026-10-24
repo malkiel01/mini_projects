@@ -12,8 +12,8 @@ $id = (string)($_GET['c'] ?? '');
 $c = preg_match('/^chk_[a-z0-9]{20}$/', $id) ? checkout_load($id) : null;
 if (!$c) page_error('הקישור לתשלום לא תקין או שפג.');
 $v = checkout_view($c);
-$METHOD = ['card' => '💳 כרטיס אשראי', 'bit' => 'ביט', 'paypal' => 'PayPal', 'apple' => 'Apple Pay', 'google' => 'Google Pay'];
-$err = '';
+$METHOD = ['card' => '💳 כרטיס אשראי', 'bit' => 'ביט', 'paypal' => 'פייפאל', 'apple' => 'תשלום אפל', 'google' => 'תשלום גוגל', 'none' => '🎁 התחלת הניסיון — בלי כרטיס עכשיו'];
+$err = isset($_GET['failed']) ? 'התשלום לא הושלם. אפשר לנסות שוב.' : '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     form_check($c['id']);
@@ -67,7 +67,7 @@ foreach ($v['methods'] as $i => $m) {
 }
 echo '</fieldset>'
     . '<label class="switch"><input type="checkbox" name="agree" value="1" required><span>קראתי ואני מסכים לתנאים' . ($c['mode'] === 'subscription' ? ' ולחיוב החוזר' : '') . '</span></label>'
-    . '<button class="btn primary" type="submit">' . ($c['mode'] === 'setup' ? 'המשך לעדכון' : 'המשך לתשלום ' . money_html($v['amount'])) . '</button>'
+    . '<button class="btn primary" type="submit">' . ($c['mode'] === 'setup' ? 'המשך לעדכון' : ($v['amount'] ? 'המשך לתשלום ' . money_html($v['amount']) : 'התחלת הניסיון')) . '</button>'
     . '<a class="btn ghost" href="' . h($c['cancel_url']) . '">ביטול וחזרה</a>'
     . '</form>';
 page_close('🔒 פרטי הכרטיס מוקלדים רק בדף של חברת הסליקה. אנחנו לא רואים ולא שומרים אותם.');
