@@ -3,9 +3,15 @@
   "name": "עיצוב רסטר",
   "icon": "🎨",
   "icon_svg": "assets/icon.svg",
-  "description": "עורך תמונות בשכבות כמו Photoshop: מכחול, בחירות, מצבי מיזוג ותיקוני צבע, עם עברית מימין לשמאל. שומר ‎.mbe ומייצא PNG, JPG ו-ORA. בבנייה — גרסה 1.",
+  "description": "עורך תמונות בשכבות כמו Photoshop: מכחול, בחירות, הזזה ושינוי צורה, תיקוני צבע וטקסט בעברית. מייצא PNG, JPG ו-ORA, וניתן להתקנה כאפליקציה. בבנייה — גרסה 1.",
   "category": "design",
   "entry": "index.html",
   "gate": true,
-  "restricted": true
+  "restricted": true,
+  "public": [
+    "manifest.webmanifest",
+    "service-worker.js",
+    "assets/icons/**",
+    "assets/icon.svg"
+  ]
 }

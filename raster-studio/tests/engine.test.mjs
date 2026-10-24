@@ -541,3 +541,35 @@ test('פערים: ORA — מיזוג; PNG — שכבות ומוסתרות; JPG �
   assert.deepEqual(gapsFor('png', L), ['layers → flattened', 'hidden-layers → omitted']);
   assert.deepEqual(gapsFor('jpg', [L[0]]), ['alpha → white']);
 });
+
+// ---- קריאת ZIP (לפתיחת ORA) ----
+import { unzip } from '../assets/js/engine/unzip.js';
+
+test('unzip: קורא את מה ש-zipStore כתב', async () => {
+  const z = zipStore([{ name: 'mimetype', data: 'image/openraster' }, { name: 'data/א.png', data: new Uint8Array([9, 8, 7]) }]);
+  const m = await unzip(z);
+  assert.equal(new TextDecoder().decode(m.get('mimetype')), 'image/openraster');
+  assert.deepEqual([...m.get('data/א.png')], [9, 8, 7]);
+});
+
+test('unzip: deflate (כמו ש-GIMP ו-zip כותבים)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'rs-unzip-'));
+  try {
+    writeFileSync(join(dir, 'stack.xml'), '<image w="5" h="5"><stack></stack></image>'.repeat(50));
+    execFileSync('zip', ['-q', '-9', join(dir, 'a.ora'), 'stack.xml'], { cwd: dir });
+    const m = await unzip((await import('node:fs')).readFileSync(join(dir, 'a.ora')));
+    assert.match(new TextDecoder().decode(m.get('stack.xml')), /^<image w="5"/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('unzip: נתיב עוין, פצצת דחיסה וקובץ שבור — נדחים', async () => {
+  const evil = zipStore([{ name: '../etc/passwd', data: 'x' }]);
+  await assert.rejects(unzip(evil), /zip-unsafe/);
+  const bomb = zipStore([{ name: 'a', data: new Uint8Array(10) }]);
+  // גודל פתוח מוצהר ענק מול דחוס קטן
+  const v = new DataView(bomb.buffer);
+  const cd = bomb.length - 22 - 47;
+  v.setUint32(cd + 24, 500 * 1024 ** 2, true);
+  await assert.rejects(unzip(bomb), /zip-too-big/);
+  await assert.rejects(unzip(new Uint8Array([1, 2, 3])), /zip/);
+});

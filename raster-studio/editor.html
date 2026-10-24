@@ -6,6 +6,8 @@
   <meta name="theme-color" content="#2d4a8a">
   <title>עיצוב רסטר</title>
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
   <link rel="stylesheet" href="vendor/fonts/fonts.css">
   <link rel="stylesheet" href="assets/css/app.css">
 </head>
@@ -154,6 +156,7 @@
   </dialog>
 
   <div class="toast" role="status" hidden></div>
+  <script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('service-worker.js').catch(() => {});</script>
   <script src="assets/js/editor.js" type="module"></script>
 </body>
 </html>
