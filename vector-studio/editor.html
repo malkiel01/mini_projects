@@ -12,6 +12,7 @@
   <header class="top">
     <a class="icon-btn" href="./" aria-label="חזרה לציורים">→</a>
     <div class="titles"><h1 id="doc-name">ציור</h1><div class="sub" id="doc-status">טיוטה במכשיר</div></div>
+    <button class="icon-btn" id="file-btn" aria-label="קובץ: ייצוא וייבוא" title="ייצוא וייבוא">📁</button>
     <button class="icon-btn" id="undo" aria-label="ביטול" title="ביטול (Ctrl+Z)" disabled>↶</button>
     <button class="icon-btn" id="redo" aria-label="ביצוע מחדש" title="ביצוע מחדש (Ctrl+Shift+Z)" disabled>↷</button>
     <button class="icon-btn" id="props-btn" aria-label="מאפיינים" aria-expanded="false" aria-controls="props">🎨</button>
@@ -66,6 +67,44 @@
       <div id="layers-body" hidden></div>
     </aside>
   </div>
+
+  <dialog id="file-dlg" aria-labelledby="file-title">
+    <form method="dialog" novalidate>
+      <header class="sheet-head">
+        <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+        <h2 id="file-title">קובץ</h2>
+      </header>
+      <div class="sheet-body">
+        <section class="group" aria-labelledby="exp-title">
+          <h3 id="exp-title">ייצוא</h3>
+          <label class="f" id="exp-board-wrap" hidden><span>לוח</span><select id="exp-board"></select></label>
+          <div class="tiles">
+            <button class="tile" type="button" data-export="svg"><span class="tile-ic" aria-hidden="true">🖋️</span>SVG</button>
+            <button class="tile" type="button" data-export="pdf"><span class="tile-ic" aria-hidden="true">📄</span><span>PDF <small class="muted" id="pdf-note"></small></span></button>
+            <button class="tile" type="button" data-export="png"><span class="tile-ic" aria-hidden="true">🖼️</span>PNG</button>
+          </div>
+          <div class="fields two">
+            <fieldset class="seg" aria-label="גודל PNG">
+              <label><input type="radio" name="png-scale" value="1"><span>×1</span></label>
+              <label><input type="radio" name="png-scale" value="2" checked><span>×2</span></label>
+              <label><input type="radio" name="png-scale" value="4"><span>×4</span></label>
+            </fieldset>
+            <fieldset class="seg" aria-label="רקע PNG">
+              <label><input type="radio" name="png-bg" value="1" checked><span>רקע לבן</span></label>
+              <label><input type="radio" name="png-bg" value="0"><span>שקוף</span></label>
+            </fieldset>
+          </div>
+          <p class="hint" id="exp-note">טקסט יוצא כקווי מתאר — נראה זהה בכל מקום, אבל אי אפשר לערוך אותו בקובץ שיוצא.</p>
+        </section>
+        <section class="group" aria-labelledby="imp-title">
+          <h3 id="imp-title">ייבוא</h3>
+          <div class="tiles"><button class="tile" type="button" id="imp-svg"><span class="tile-ic" aria-hidden="true">📥</span>SVG מהמכשיר</button></div>
+          <input type="file" id="imp-file" accept=".svg,image/svg+xml" hidden>
+        </section>
+        <p class="error" role="alert" id="file-err" hidden></p>
+      </div>
+    </form>
+  </dialog>
 
   <div class="toast" role="status" hidden></div>
   <script type="module" src="assets/js/editor.js"></script>

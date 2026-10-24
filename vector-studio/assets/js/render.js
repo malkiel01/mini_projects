@@ -116,8 +116,8 @@ export function render(canvas, state) {
   const { doc, view, dpr } = state;
   const W = canvas.width / dpr, H = canvas.height / dpr;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.fillStyle = colors.bg;
-  ctx.fillRect(0, 0, W, H);
+  if (state.exportMode) ctx.clearRect(0, 0, W, H); // ייצוא PNG: רק הלוח, בלי מרחב העבודה
+  else { ctx.fillStyle = colors.bg; ctx.fillRect(0, 0, W, H); }
 
   const lay = layout(doc);
   const vm = viewMatrix(view);
@@ -128,6 +128,10 @@ export function render(canvas, state) {
     const [ox, oy] = lay.get(s.id);
     const [x, y, w, h] = toScreenBox([ox, oy, s.size[0], s.size[1]], view);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (state.exportMode) {
+      if (state.bg) { ctx.fillStyle = '#fff'; ctx.fillRect(x, y, w, h); }
+      continue;
+    }
     ctx.fillStyle = 'rgba(0,0,0,.08)';
     ctx.fillRect(x + 1, y + 2, w, h);
     ctx.fillStyle = '#fff';
