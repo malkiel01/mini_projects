@@ -20,6 +20,7 @@ require_once __DIR__ . '/../lib/appcontrol.php';
 require_once __DIR__ . '/../lib/apprequests.php';
 require_once __DIR__ . '/../lib/simulator.php';
 require_once __DIR__ . '/../lib/sitefind.php';
+require_once __DIR__ . '/../lib/browsers.php';
 require_once __DIR__ . '/../lib/tasks.php';
 require_once __DIR__ . '/../lib/selftest.php';
 require_once __DIR__ . '/../lib/history.php';
@@ -173,6 +174,11 @@ try {
     switch ($action) {
         /* ── סימולטור הרשאות (שלב 12 ב) — קריאה בלבד ── */
         // פתיחת אתר ספציפי (lib/sitefind.php): חיפוש או כתובת — עם הקטגוריות ומה הילד מקבל עכשיו. קריאה בלבד.
+        // מסך הדפדפנים (lib/browsers.php): מה מותקן במכשירים, ומה כל דפדפן מקבל. קריאה בלבד.
+        case 'browsers':
+            $c = myChild($parent);
+            out(['ok' => true] + browsersFor($aid, (int) $c['id']));
+
         case 'site_find':
             out(['ok' => true] + siteFind(myChild($parent), str('q')));
 
