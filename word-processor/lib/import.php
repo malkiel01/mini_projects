@@ -448,7 +448,7 @@ final class DocxCtx
         $out = [];
         $listRun = [];
         $flush = function () use (&$out, &$listRun) {
-            if ($listRun) $out[] = $this->buildList($listRun, 0);
+            if ($listRun) array_push($out, ...$this->buildLists($listRun, 0));
             $listRun = [];
         };
         foreach ($parent->childNodes as $c) {
@@ -480,6 +480,27 @@ final class DocxCtx
         return $out;
     }
 
+    /**
+     * פסקאות רשימה רצופות → רשימה אחת או יותר: באותה רמה, סוג אחר (תבליטים / מספור) או רשימה אחרת (numId) — רשימה
+     * חדשה, כמו ב-Word (תבליטים ומיד אחריהם רשימה ממוספרת — שתי רשימות, לא אחת).
+     */
+    private function buildLists(array $items, int $lvl): array
+    {
+        $lists = [];
+        $run = [];
+        $key = null;
+        foreach ($items as $it) {
+            if ($it['num']['lvl'] <= $lvl) {
+                $k = ($it['num']['fmt'] === 'bullet' ? 'b' : 'o') . ':' . ($it['num']['id'] ?? '');
+                if ($run && $k !== $key) { $lists[] = $this->buildList($run, $lvl); $run = []; }
+                $key = $k;
+            }
+            $run[] = $it;
+        }
+        if ($run) $lists[] = $this->buildList($run, $lvl);
+        return $lists;
+    }
+
     private function buildList(array $items, int $lvl): array
     {
         $fmt = $items[0]['num']['fmt'];
@@ -500,7 +521,7 @@ final class DocxCtx
             $i++;
             $sub = [];
             while ($i < count($items) && $items[$i]['num']['lvl'] > $lvl) $sub[] = $items[$i++];
-            if ($sub) $li['content'][] = $this->buildList($sub, $lvl + 1);
+            if ($sub) array_push($li['content'], ...$this->buildLists($sub, $lvl + 1));
             $list['content'][] = $li;
         }
         if ($type === 'orderedList' && $lvl === 0 && $id !== '') $this->numSeen[$id] = $list['attrs']['start'] + count($list['content']);
