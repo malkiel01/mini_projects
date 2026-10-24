@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="theme-color" content="#2d4a8a">
+  <title>עימוד</title>
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body>
+  <a class="skip" href="#main">דילוג לתוכן</a>
+  <header class="top">
+    <div class="titles"><h1>📖 עימוד</h1><div class="sub" id="who">&nbsp;</div></div>
+  </header>
+
+  <main id="main" tabindex="-1">
+    <div class="toolbar">
+      <p class="hint one" style="flex:1;margin:0">ספרים, חוברות ועלונים</p>
+      <button class="btn primary" id="new-btn" type="button" disabled><span aria-hidden="true">+</span> מסמך</button>
+    </div>
+    <p class="error" id="load-err" role="alert" hidden></p>
+    <ul class="list" id="docs" aria-label="המסמכים שלי" aria-busy="true"></ul>
+    <p class="hint" style="margin-top:var(--s3)">עריכת העמודים עצמם — בשלב הבא.</p>
+  </main>
+
+  <dialog id="new-dlg" aria-labelledby="new-title">
+    <form method="dialog" novalidate>
+      <header class="sheet-head">
+        <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+        <h2 id="new-title">מסמך חדש</h2>
+        <button type="submit" class="btn primary">יצירה</button>
+      </header>
+      <div class="sheet-body">
+        <label class="f"><span>שם *</span><input name="title" required maxlength="120" autocomplete="off"></label>
+        <div class="f">
+          <span id="size-lbl">גודל עמוד</span>
+          <fieldset class="seg grid" style="--cols:5" aria-labelledby="size-lbl">
+            <label><input type="radio" name="size" value="a4"><span>A4</span></label>
+            <label><input type="radio" name="size" value="a5" checked><span>A5</span></label>
+            <label><input type="radio" name="size" value="b5"><span>B5</span></label>
+            <label><input type="radio" name="size" value="17x24"><span><bdi dir="ltr">17×24</bdi></span></label>
+            <label><input type="radio" name="size" value="custom"><span>אחר</span></label>
+          </fieldset>
+        </div>
+        <div class="fields two custom-size" hidden>
+          <label class="f"><span>רוחב (מ"מ)</span><input name="w" inputmode="decimal" dir="ltr" value="148"></label>
+          <label class="f"><span>גובה (מ"מ)</span><input name="h" inputmode="decimal" dir="ltr" value="210"></label>
+        </div>
+        <p class="error" role="alert" hidden></p>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast" role="status" hidden></div>
+  <script src="assets/js/app.js" type="module"></script>
+</body>
+</html>

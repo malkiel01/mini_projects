@@ -1,0 +1,11 @@
+{
+  "id": "layout-studio",
+  "name": "עימוד",
+  "icon": "📖",
+  "icon_svg": "assets/icon.svg",
+  "description": "תוכנת עימוד לספרים, חוברות ועלונים: עמודים ועמודי אב, טקסט שזורם בין מסגרות, ניקוד ועברית מימין לשמאל. שומרת ‎.mbe. בבנייה — גרסה 1.",
+  "category": "documents",
+  "entry": "index.html",
+  "gate": true,
+  "restricted": true
+}
