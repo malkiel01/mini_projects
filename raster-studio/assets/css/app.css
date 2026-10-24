@@ -221,7 +221,7 @@ body.editor { display: flex; flex-direction: column; block-size: 100dvh; min-hei
 .stage canvas { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; display: block; }
 .stage .stage-msg { position: absolute; inset: 0; display: grid; place-items: center; padding: var(--s4); text-align: center; color: var(--muted); }
 .stage .stage-msg.error { color: var(--danger); }
-.bar { display: flex; align-items: center; gap: var(--s1); padding: var(--s1) var(--s2) calc(var(--s1) + env(safe-area-inset-bottom));
+.bar { display: flex; align-items: center; gap: var(--s1); min-inline-size: 0; overflow: hidden; padding: var(--s1) var(--s2) calc(var(--s1) + env(safe-area-inset-bottom));
     background: var(--surface); border-top: 1px solid var(--line); }
 .bar .grow { flex: 1; min-inline-size: 0; }
 .zoom { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
@@ -230,3 +230,57 @@ body.editor { display: flex; flex-direction: column; block-size: 100dvh; min-hei
 .bar .hint { font-size: .75rem; margin: 0; }
 .doc-row a.use-row { color: inherit; text-decoration: none; cursor: pointer; }
 .doc-row a.use-row:hover { background: var(--bg); }
+
+/* ===== לוח השכבות ===== */
+/* מחשב (מ-900px): לוח בצד, תמיד גלוי. טלפון: גיליון מלמטה, נפתח מ"שכבות" בסרגל. */
+.work { flex: 1; min-block-size: 0; display: flex; position: relative; }
+.panel { display: flex; flex-direction: column; min-block-size: 0; background: var(--surface); }
+.panel-head { display: flex; align-items: center; gap: var(--s2); padding: var(--s1) var(--s2) var(--s1) var(--s1); border-bottom: 1px solid var(--line); }
+.panel-head h2 { flex: 1; font-size: .95rem; font-weight: 600; padding-inline-start: var(--s2); }
+.layer-props { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); padding: var(--s2) var(--s3); border-bottom: 1px solid var(--line); }
+.layer-props .f { margin: 0; min-inline-size: 0; }
+.layer-props .f > span { display: flex; justify-content: space-between; gap: var(--s1); }
+.layer-props output { font-variant-numeric: tabular-nums; color: var(--muted); }
+.layer-props select { inline-size: 100%; }
+.layer-props input[type=range] { inline-size: 100%; block-size: var(--tap); accent-color: var(--brand); padding: 0; border: 0; background: none; }
+.layer-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; min-block-size: 0; overscroll-behavior: contain; }
+.layer-row { display: flex; align-items: center; gap: var(--s1); padding: var(--s1) var(--s1) var(--s1) var(--s2);
+    border-bottom: 1px solid var(--line); cursor: pointer; }
+.layer-row[aria-selected="true"] { background: var(--brand-soft); }
+.layer-row.hidden-layer .thumb, .layer-row.hidden-layer .layer-name { opacity: .45; }
+.layer-row.dragging { opacity: .5; }
+.layer-row.drop-before { box-shadow: inset 0 2px 0 var(--brand); }
+.layer-row.drop-after { box-shadow: inset 0 -2px 0 var(--brand); }
+.layer-row .drag { flex: none; inline-size: 24px; block-size: var(--tap); display: grid; place-items: center; color: var(--muted);
+    cursor: grab; touch-action: none; letter-spacing: -3px; }
+.layer-row .thumb { flex: none; inline-size: 40px; block-size: 40px; object-fit: contain; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); }
+.layer-name { flex: 1; min-inline-size: 0; text-align: start; background: none; border: 0; padding: 0 var(--s1); min-block-size: var(--tap); cursor: pointer; }
+.layer-name-input { flex: 1; min-inline-size: 0; font-size: 16px; }
+.layer-row .icon-btn { flex: none; font-size: 1rem; }
+.layer-row .lock.off { opacity: .45; }
+.layer-actions { display: flex; align-items: center; gap: var(--s1); padding: var(--s1) var(--s2); border-top: 1px solid var(--line); }
+.layer-actions .btn { margin-inline-end: auto; }
+.layer-actions :disabled, .layer-props :disabled { opacity: .4; cursor: default; }
+.layers-btn::after { content: attr(data-layer-count); min-inline-size: 1.4em; padding: 0 4px; border-radius: 99px; background: var(--brand-soft); color: var(--brand); font-size: .75rem; }
+
+@media (min-width: 900px) {
+    .panel { inline-size: 300px; flex: none; border-inline-start: 1px solid var(--line); }
+    .panel-close, .layers-btn { display: none; }
+}
+@media (max-width: 899.98px) {
+    .panel { position: absolute; inset: auto 0 0 0; max-block-size: min(60dvh, 100%); z-index: 6; border-top: 1px solid var(--line);
+        border-start-start-radius: var(--r); border-start-end-radius: var(--r); box-shadow: 0 -6px 24px rgba(10, 15, 30, .18); }
+    .panel:not(.open) { display: none; }
+}
+
+/* טלפון: אין מקום לרמז (חתוך — עדיף שלא יהיה), והזום נצמד לקצה */
+@media (max-width: 479.98px) {
+    .bar .hint { display: none; }
+    .bar .zoom { margin-inline-start: auto; }
+}
+/* מסך צר (320px): "שכבות" — אייקון עם מונה. אחרת הסרגל רחב מהמסך. */
+@media (max-width: 379.98px) {
+    .layers-btn .lbl { display: none; }
+    .layers-btn::before { content: '◧'; font-size: 1.1rem; }
+    .zoom .zoom-lbl { min-inline-size: 52px; }
+}

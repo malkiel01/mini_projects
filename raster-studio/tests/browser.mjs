@@ -247,6 +247,63 @@ async function main() {
   const opened = await page.evaluate(() => [__rs.doc.width, __rs.doc.height, document.querySelector('#title').textContent]);
   check('📂 בספרייה — נפתח בעורך בגודל התמונה', opened[0] === IMG_W && opened[1] === IMG_H && opened[2] === 'בדיקה', opened.join());
 
+  // ---- לוח השכבות (מחשב: לוח בצד) ----
+  page.on('dialog', d => d.accept());
+  await page.goto(BASE + '/editor.html?doc=' + id);
+  await page.waitForFunction(() => window.__rs?.doc);
+  const rows = () => page.$$eval('.layer-row', rs => rs.map(r => r.querySelector('.layer-name, .layer-name-input').textContent || r.querySelector('input')?.value));
+  const px = (x = 300, y = 200) => page.evaluate(([x, y]) => Array.from(__rs.renderer.readPixels(__rs.doc, x, y, 1, 1)).join(), [x, y]);
+  const near = (got, exp) => got.split(',').every((v, i) => Math.abs(v - exp[i]) <= 1);
+  check('לוח השכבות גלוי בצד, עם הרקע', await page.isVisible('#layers') && (await rows()).join() === 'רקע' && !(await page.isVisible('#layers-btn')));
+  await page.click('[data-act="add"]');
+  check('+ שכבה — חדשה, למעלה ופעילה', (await rows()).join() === 'שכבה 2,רקע' &&
+    await page.$eval('.layer-row', r => r.getAttribute('aria-selected')) === 'true');
+  await page.evaluate(() => { __rs.renderer.fill(__rs.doc, __rs.doc.active, [255, 0, 0, 255]); __rs.panel.render(); });
+  check('שכבה אדומה מעל לבן — אדום', near(await px(), [255, 0, 0, 255]));
+  const thumbPx = await page.$eval('.layer-row .thumb', c => Array.from(c.getContext('2d').getImageData(c.width >> 1, c.height >> 1, 1, 1).data).join());
+  check('התמונה הממוזערת מתעדכנת (אדום)', near(thumbPx, [255, 0, 0, 255]), thumbPx);
+  await page.$eval('#layer-opacity', el => { el.value = '50'; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); });
+  check('אטימות 50% — חצי אדום על לבן (בלינארי)', near(await px(), [255, 188, 188, 255]), await px());
+  check('תווית האטימות', (await page.textContent('#layer-opacity-out')) === '50%');
+  check('מצבי מיזוג בעברית', (await page.$$eval('#layer-blend option', o => o.map(x => x.textContent))).join() === 'רגיל,הכפלה,מסך,שכבת-על');
+  await page.selectOption('#layer-blend', 'multiply');
+  check('בחירת מיזוג — נשמרת בשכבה', await page.evaluate(() => __rs.doc.active.blend) === 'multiply');
+  await page.selectOption('#layer-blend', 'normal');
+  await page.click('.layer-row .eye');
+  check('👁️ — הסתרה: חוזר ללבן', near(await px(), [255, 255, 255, 255]));
+  await page.click('.layer-row .eye');
+  await page.$eval('#layer-opacity', el => { el.value = '100'; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); });
+  await page.click('[data-act="duplicate"]');
+  const dup = await page.evaluate(() => ({ n: __rs.doc.layers.length, name: __rs.doc.active.name, tiles: __rs.doc.active.tiles.size, src: __rs.doc.layers[1].tiles.size }));
+  check('⧉ שכפול — עותק מעל, עם כל האריחים', dup.n === 3 && dup.name === 'שכבה 2 עותק' && dup.tiles === dup.src && dup.tiles > 0, JSON.stringify(dup));
+  await page.evaluate(() => { __rs.doc.layers[1].visible = false; __rs.renderer.invalidate(__rs.doc); });
+  check('העותק לבדו — אותם פיקסלים', near(await px(), [255, 0, 0, 255]));
+  await page.evaluate(() => { __rs.doc.layers[1].visible = true; __rs.renderer.invalidate(__rs.doc); __rs.panel.render(); });
+  check('▲ כבוי בשכבה העליונה', await page.$eval('[data-act="up"]', b => b.disabled));
+  await page.click('[data-act="down"]');
+  check('▼ — יורדת אחת', (await rows()).join() === 'שכבה 2,שכבה 2 עותק,רקע');
+  await page.click('.layer-row[aria-selected="true"] .layer-name');
+  await page.fill('.layer-name-input', 'אדום');
+  await page.keyboard.press('Enter');
+  check('שינוי שם — לחיצה על שם הפעילה', (await rows()).join() === 'שכבה 2,אדום,רקע');
+  await page.click('.layer-row[aria-selected="true"] .lock');
+  check('🔒 נעילה — מחיקה ואטימות כבויות', await page.$eval('[data-act="remove"]', b => b.disabled) && await page.$eval('#layer-opacity', b => b.disabled));
+  await page.click('.layer-row[aria-selected="true"] .lock');
+  await page.click('[data-act="remove"]');
+  check('🗑️ מחיקה (אחרי אישור) — האריחים שוחררו', (await rows()).join() === 'שכבה 2,רקע');
+  // גרירה: הרקע (למטה) אל מעל העליונה
+  const hBox = await page.$eval('.layer-row:last-child .drag', el => { const r = el.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; });
+  const topBox = await page.$eval('.layer-row:first-child', el => { const r = el.getBoundingClientRect(); return [r.x + r.width / 2, r.y + 4]; });
+  await page.mouse.move(...hBox);
+  await page.mouse.down();
+  await page.mouse.move(topBox[0], topBox[1], { steps: 6 });
+  await page.mouse.up();
+  check('⋮⋮ גרירה — הרקע עבר למעלה', (await rows()).join() === 'רקע,שכבה 2');
+  check('אחרי הגרירה — הלבן מכסה את האדום', near(await px(), [255, 255, 255, 255]));
+  await page.click('[data-act="add"]'); await page.click('[data-act="add"]');
+  check('מונה השכבות', await page.$eval('#layers-btn', b => b.dataset.layerCount) === '4');
+  if (SHOTS) await page.screenshot({ path: join(SHOTS, 'layers-desktop.png') });
+
   check('אין שגיאות בקונסול', errors.length === 0, errors.join(' | '));
 
   // ---- טלפון ----
@@ -262,11 +319,27 @@ async function main() {
       zoom: __rs.view.zoom,
       bar: document.querySelector('.bar').getBoundingClientRect().bottom <= innerHeight + 0.5,
       hint: document.querySelector('#hint').textContent,
+      hintShown: !!document.querySelector('#hint').offsetWidth,
     }));
+    await ph.click('#layers-btn');
+    const sheet = await ph.evaluate(() => {
+      const r = document.querySelector('#layers').getBoundingClientRect();
+      return { open: r.height > 100, inside: r.bottom <= innerHeight + 0.5 && r.left >= -0.5 && r.right <= innerWidth + 0.5, rows: document.querySelectorAll('.layer-row').length };
+    });
+    if (SHOTS) await ph.screenshot({ path: join(SHOTS, `layers-${w}${dark ? '-dark' : ''}.png`) });
+    await ph.click('.panel-close');
+    const closed = !(await ph.isVisible('#layers'));
+    const fits = await ph.evaluate(() => {
+      const bar = document.querySelector('.bar');
+      return bar.scrollWidth <= bar.clientWidth + 0.5 && document.scrollingElement.scrollLeft === 0 && document.body.scrollLeft === 0
+        && [...bar.children].every(c => { const r = c.getBoundingClientRect(); return !r.width || (r.left >= -0.5 && r.right <= innerWidth + 0.5); });
+    });
+    check(`טלפון ${w}px${dark ? ' כהה' : ''}: הסרגל התחתון נכנס כולו, גם אחרי לחיצה`, fits);
     const tag = `${w}px${dark ? ' כהה' : ''}`;
+    check(`טלפון ${tag}: "שכבות" פותח גיליון בתוך המסך, ✕ סוגר`, sheet.open && sheet.inside && sheet.rows === 1 && closed, JSON.stringify(sheet));
     check(`טלפון ${tag}: בלי גלילה אופקית, הסרגל בתוך המסך`, !r.over && r.bar);
     check(`טלפון ${tag}: המסמך מותאם לרוחב`, r.zoom < 1 && r.zoom > 0.4, String(r.zoom));
-    check(`טלפון ${tag}: רמז מגע`, /צביטה/.test(r.hint), r.hint);
+    check(`טלפון ${tag}: רמז מגע — מוסתר כשאין לו מקום`, /צביטה/.test(r.hint) && !r.hintShown, r.hint);
     check(`טלפון ${tag}: בלי שגיאות`, errs.length === 0, errs.join(' | '));
     if (SHOTS) await ph.screenshot({ path: join(SHOTS, `editor-${w}${dark ? '-dark' : ''}.png`) });
     await ph.close();

@@ -18,6 +18,31 @@ export class RasterDocument {
     this.title = title;
     /** מלמטה למעלה: layers[0] הוא הרקע. */
     this.layers = [];
+    /** השכבה הפעילה — עליה פועלים הכלים והמאפיינים. */
+    this.activeId = null;
+  }
+
+  get active() { return this.layers.find(l => l.id === this.activeId) ?? this.layers.at(-1) ?? null; }
+  layer(id) { return this.layers.find(l => l.id === id) ?? null; }
+  indexOf(layer) { return this.layers.indexOf(layer); }
+
+  /** מוציא שכבה מהמסמך (האריחים — באחריות הרנדרר). השכבה האחרונה לא נמחקת. הפעילה עוברת לשכנה. */
+  removeLayer(layer) {
+    const i = this.layers.indexOf(layer);
+    if (i < 0 || this.layers.length <= 1) return false;
+    this.layers.splice(i, 1);
+    if (this.activeId === layer.id) this.activeId = this.layers[Math.min(i, this.layers.length - 1)].id;
+    return true;
+  }
+
+  /** מעביר שכבה למקום to (0 = למטה). מחזיר אם זזה. */
+  moveLayer(layer, to) {
+    const i = this.layers.indexOf(layer);
+    to = Math.max(0, Math.min(this.layers.length - 1, to));
+    if (i < 0 || i === to) return false;
+    this.layers.splice(i, 1);
+    this.layers.splice(to, 0, layer);
+    return true;
   }
 
   get tilesX() { return Math.ceil(this.width / TILE); }
@@ -36,6 +61,7 @@ export class RasterDocument {
       tiles: new Map(),
     };
     this.layers.splice(props.index ?? this.layers.length, 0, layer);
+    this.activeId = layer.id;
     return layer;
   }
 }
