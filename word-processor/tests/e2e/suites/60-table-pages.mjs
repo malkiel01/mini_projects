@@ -26,6 +26,14 @@ export default async function (t) {
     const srv = await t.api(p, 'my_open', { doc });
     t.ok('הקלדה בתא בעמוד 2 נשמרת', JSON.stringify(srv.json).includes(' נוסף') && !JSON.stringify(srv.json).includes('wp-repeat'));
     t.ok('השורה החוזרת לא נכנסת למסמך', srv.json.content.find(n => n.type === 'table').content.length === c.json.content.find(n => n.type === 'table').content.length);
+
+    // הקלדה בשורת הכותרת עצמה (בלי שאף מעבר זז): גם העותקים בראש כל עמוד מתעדכנים
+    await p.locator('.wp-doc tr:not(.wp-repeat) th').first().click();
+    await p.keyboard.press('End');
+    await p.keyboard.type('ים');
+    await p.waitForFunction(() => [...document.querySelectorAll('.wp-doc tr.wp-repeat')].every(r => r.textContent.includes('סעיףים')), null, { timeout: 5000 }).catch(() => {});
+    const reps = await p.evaluate(() => [...document.querySelectorAll('.wp-doc tr.wp-repeat')].map(r => r.textContent));
+    t.ok('הקלדה בשורת הכותרת — מתעדכנת גם בעותקים', reps.length >= 3 && reps.every(x => x.includes('סעיףים')), JSON.stringify(reps.slice(0, 2)));
     t.ok('בלי שגיאות JS', !p.errors.length, p.errors.join(' | '));
     await p.context().close();
 }

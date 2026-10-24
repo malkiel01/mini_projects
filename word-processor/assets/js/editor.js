@@ -1358,6 +1358,14 @@ export function createWordEditor(root, opts) {
         const ref = e.target.closest?.('.wp-fn-ref, .wp-fn-area .wp-fn-note, .wp-en-area .wp-fn-note');
         if (!ref) return;
         let pos = ref.dataset.pos != null ? +ref.dataset.pos : null;
+        // הערה בתחתית העמוד: הסימן ה-n במסמך (כמו המספור בעימוד — בלי העותקים שבשורת כותרת חוזרת / באזורים)
+        if (ref.closest('.wp-fn-area')) {
+            const own = [...editor.view.dom.querySelectorAll('.wp-fn-ref:not(.wp-en-ref)')].filter(el => !el.closest('.wp-repeat, .wp-fn-area, .wp-en-area'));
+            const el = own[+ref.dataset.n - 1];
+            pos = null;
+            if (el) try { pos = editor.view.posAtDOM(el, 0); } catch { /* */ }
+            if (pos == null) return;
+        }
         if (pos == null) { try { pos = editor.view.posAtDOM(ref, 0); } catch { return; } }
         e.preventDefault();
         footnoteDialog(pos);
