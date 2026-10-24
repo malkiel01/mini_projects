@@ -1,7 +1,7 @@
 // ציור הקנבס: מרחב העבודה, הלוחות, הנתיבים, ושכבת-על של בחירה וידיות — בפיקסלים של המסך, כדי שיהיו
 // באותו עובי בכל זום. הלוח עצמו לבן תמיד (כמו נייר), גם במצב כהה.
 
-import { multiply } from './geometry/matrix.js';
+import { multiply, apply, invert } from './geometry/matrix.js';
 import { objects, layout, pathMatrix, worldBox, findPath, leaves, isText } from './model.js';
 import { lines, lineHeight, fontCss } from './text.js';
 import { canvasPaint, hasPaint } from './gradient.js';
@@ -42,10 +42,12 @@ export const HANDLE = 9; // גודל ידית בפיקסלים
 export const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 
 /** מיקום הידיות במסך: { name: [x, y] }. */
+export const ROT_OFFSET = 26; // ידית הסיבוב — מעל האמצע העליון
+
 export function handlePoints(box, view) {
   const [x, y, w, h] = toScreenBox(box, view);
   const mx = x + w / 2, my = y + h / 2;
-  return { nw: [x, y], n: [mx, y], ne: [x + w, y], e: [x + w, my], se: [x + w, y + h], s: [mx, y + h], sw: [x, y + h], w: [x, my] };
+  return { nw: [x, y], n: [mx, y], ne: [x + w, y], e: [x + w, my], se: [x + w, y + h], s: [mx, y + h], sw: [x, y + h], w: [x, my], rot: [mx, y - ROT_OFFSET] };
 }
 
 export function toScreenBox([x, y, w, h], v) {
@@ -175,10 +177,11 @@ export function render(canvas, state) {
     if (!o) return;
     for (const path of leaves(o.path)) {
       if (isText(path)) {
-        const [x, y, w, h] = toScreenBox(worldBox(path, lay.get(o.surface.id)), view);
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        ctx.lineWidth = 1;
-        ctx.strokeRect(x, y, w, h);
+        // מסגרת הטקסט — מסובבת יחד איתו
+        setT(pathMatrix(path, lay.get(o.surface.id)));
+        const t = ctx.getTransform();
+        ctx.lineWidth = 1 / Math.sqrt(Math.abs(t.a * t.d - t.b * t.c) / (dpr * dpr) || 1);
+        ctx.strokeRect(...path.box);
         continue;
       }
       setT(pathMatrix(path, lay.get(o.surface.id)));
@@ -196,7 +199,12 @@ export function render(canvas, state) {
     const [x, y, w, h] = toScreenBox(state.selBox, view);
     ctx.strokeRect(x, y, w, h);
     if (state.handles !== false) {
-      for (const [hx, hy] of Object.values(handlePoints(state.selBox, view))) {
+      const hp = handlePoints(state.selBox, view);
+      ctx.beginPath(); ctx.moveTo(hp.n[0], hp.n[1]); ctx.lineTo(hp.rot[0], hp.rot[1] + HANDLE / 2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(hp.rot[0], hp.rot[1], HANDLE / 2 + 1, 0, Math.PI * 2);
+      ctx.fillStyle = '#fff'; ctx.fill(); ctx.stroke();
+      for (const [name, [hx, hy]] of Object.entries(hp)) {
+        if (name === 'rot') continue;
         ctx.fillStyle = '#fff';
         ctx.fillRect(hx - HANDLE / 2, hy - HANDLE / 2, HANDLE, HANDLE);
         ctx.strokeRect(hx - HANDLE / 2 + .5, hy - HANDLE / 2 + .5, HANDLE - 1, HANDLE - 1);
@@ -253,8 +261,8 @@ export function hitTest(state, sx, sy, tol = 6) {
 function hitPath(path, t, sx, sy, tol) {
   if (isText(path)) {
     const [x, y, w, h] = path.box;
-    const px = (sx - t[4]) / t[0], py = (sy - t[5]) / t[3];
-    const pad = tol / t[0];
+    const [px, py] = apply(invert(t), sx, sy);
+    const pad = tol / (Math.sqrt(Math.abs(t[0] * t[3] - t[1] * t[2])) || 1);
     return px >= x - pad && px <= x + w + pad && py >= y - pad && py <= y + h + pad;
   }
   probe.setTransform(t[0], t[1], t[2], t[3], t[4], t[5]);

@@ -287,3 +287,4 @@ input[type="color"] { flex: none; width: 48px; padding: 3px; cursor: pointer; }
 #doc-name { cursor: pointer; }
 #versions .card { cursor: default; }
 .thumb { flex: none; width: 48px; height: 48px; border-radius: 8px; object-fit: contain; background: #fff; border: 1px solid var(--line); }
+.icon-row .f.rot { width: 76px; margin-inline-start: auto; }

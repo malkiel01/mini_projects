@@ -47,13 +47,30 @@ export function renderProps(el, ctx) {
   if (!items.length) {
     const s = ctx.surface;
     el.innerHTML = `
-      <h2 class="sec-title">לוח עבודה</h2>
+      <div class="props-head"><h2 class="sec-title one">לוח עבודה</h2>
+        ${ctx.canPaste ? '<button class="btn sm ghost" type="button" data-act="paste" title="הדבקה (Ctrl+V)">📋 הדבקה</button>' : ''}</div>
       <div class="fields two">
         <label class="f wide"><span>שם</span><input data-a="name" value="${esc(s.name || '')}" maxlength="60"></label>
         <label class="f"><span>רוחב (pt)</span><input data-a="w" inputmode="decimal" dir="ltr" value="${n(s.size[0])}"></label>
         <label class="f"><span>גובה (pt)</span><input data-a="h" inputmode="decimal" dir="ltr" value="${n(s.size[1])}"></label>
       </div>
+      <section class="group" aria-labelledby="g-boards">
+        <div class="g-row"><h3 id="g-boards">לוחות בציור</h3>
+          <button class="btn sm ghost" type="button" data-board="add"><span aria-hidden="true">+</span> לוח</button></div>
+        <ul class="list boards">${ctx.surfaces.map(b => `
+          <li class="layer-row${b.id === s.id ? ' on' : ''}" data-id="${esc(b.id)}">
+            <button class="layer-name" type="button" data-board="select" aria-pressed="${b.id === s.id}">
+              <b class="one">${esc(b.name || b.id)}</b><small dir="ltr">${n(b.size[0])} × ${n(b.size[1])}</small></button>
+            ${ctx.surfaces.length > 1 ? '<button class="icon-btn" type="button" data-board="remove" aria-label="מחיקת הלוח">🗑️</button>' : ''}
+          </li>`).join('')}
+        </ul>
+      </section>
       <p class="hint" style="margin-top:12px">בוחרים כלי צורה וגוררים על הלוח. בטלפון: אצבע אחת על רקע — הזזת התצוגה, שתיים — זום.</p>`;
+    el.querySelector('[data-act="paste"]')?.addEventListener('click', () => ctx.action('paste'));
+    el.querySelectorAll('[data-board]').forEach(b => b.addEventListener('click', () => {
+      const id = b.closest('[data-id]')?.dataset.id;
+      ctx.boards(b.dataset.board, id);
+    }));
     el.querySelectorAll('[data-a]').forEach(inp => inp.addEventListener('change', () => {
       const v = inp.value.trim();
       if (inp.dataset.a === 'name') ctx.setArtboard({ name: v || s.name });
@@ -84,6 +101,13 @@ export function renderProps(el, ctx) {
         ${ib('align', 'יישור למעלה', 'top')}${ib('align', 'מרכוז אנכי', 'vcenter')}${ib('align', 'יישור למטה', 'bottom')}
       </div>
       ${items.length >= 3 ? `<div class="icon-row phys" role="group" aria-label="פיזור">${ib('distribute', 'פיזור אופקי', 'dh')}${ib('distribute', 'פיזור אנכי', 'dv')}</div>` : ''}
+      <div class="icon-row" role="group" aria-label="סיבוב והיפוך">
+        <button class="icon-btn" type="button" data-arr="rotate" data-arg="-90" aria-label="סיבוב 90° נגד השעון" title="‎-90°">⟲</button>
+        <button class="icon-btn" type="button" data-arr="rotate" data-arg="90" aria-label="סיבוב 90° עם השעון" title="90°">⟳</button>
+        <button class="icon-btn" type="button" data-arr="flip" data-arg="h" aria-label="היפוך אופקי" title="היפוך אופקי">⇋</button>
+        <button class="icon-btn" type="button" data-arr="flip" data-arg="v" aria-label="היפוך אנכי" title="היפוך אנכי">⇵</button>
+        <label class="f rot"><span>סיבוב (°)</span><input data-rot inputmode="decimal" dir="ltr" placeholder="0"></label>
+      </div>
       <div class="icon-row" role="group" aria-label="סדר הצגה">
         ${ib('order', 'לחזית (Ctrl+Shift+])', 'front')}${ib('order', 'קדימה (Ctrl+])', 'forward')}${ib('order', 'אחורה (Ctrl+[)', 'backward')}${ib('order', 'לרקע (Ctrl+Shift+[)', 'back')}
         ${items.length > 1 ? '<button class="btn sm ghost" type="button" data-arr="group" title="Ctrl+G">קיבוץ</button>' : ''}
@@ -113,6 +137,7 @@ export function renderProps(el, ctx) {
 
   el.innerHTML = `
     <div class="props-head"><h2 class="sec-title one">${esc(title)}</h2>
+      <button class="icon-btn" data-act="copy" aria-label="העתקה" title="העתקה (Ctrl+C)">📋</button>
       <button class="icon-btn" data-act="duplicate" aria-label="שכפול" title="שכפול (Ctrl+D)">⧉</button>
       <button class="icon-btn" data-act="delete" aria-label="מחיקה" title="מחיקה (Delete)">🗑️</button></div>
     <div class="fields quad">
@@ -159,9 +184,12 @@ export function renderProps(el, ctx) {
   const each = (fn) => (path) => fn(path);
 
   el.querySelectorAll('[data-arr]').forEach(b => b.addEventListener('click', () => ctx.arrange(b.dataset.arr, b.dataset.arg)));
+  const rot = el.querySelector('[data-rot]');
+  if (rot) rot.addEventListener('change', () => { const v = Number(rot.value); if (v && Number.isFinite(v)) ctx.arrange('rotate', v); });
   const ls = el.querySelector('[data-layer]');
   if (ls) ls.addEventListener('change', () => ctx.arrange('layer', ls.value));
   el.querySelector('[data-act="duplicate"]').addEventListener('click', () => ctx.action('duplicate'));
+  el.querySelector('[data-act="copy"]').addEventListener('click', () => ctx.action('copy'));
   el.querySelector('[data-act="edit-text"]')?.addEventListener('click', () => ctx.action('edit-text'));
   el.querySelectorAll('[data-t]').forEach(inp => inp.addEventListener('change', () => {
     const k = inp.dataset.t;

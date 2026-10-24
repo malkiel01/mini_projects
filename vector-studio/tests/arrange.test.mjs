@@ -90,3 +90,41 @@ test('שכבות: הוספה, הזזה, העברת פריטים, מחיקה רק
   assert.equal(removeLayer(s, 'L1'), true);
   assert.equal(removeLayer(s, 'L2'), false);
 });
+
+import { rotateAt } from '../assets/js/geometry/matrix.js';
+import { relayout } from '../assets/js/text.js';
+
+test('סיבוב: צורה חיה נשארת, הסיבוב ב-transform; תיבה של מסובב; היפוך כוכב', () => {
+  const doc = docWith([[0, 0, 100, 50]]);
+  const p = findPath(doc, 'p1').path;
+  applyMatrix(p, rotateAt(Math.PI / 2, 50, 25));
+  assert.equal(p.shape.type, 'rect');
+  assert.deepEqual(p.shape.box, [0, 0, 100, 50], 'הפרמטרים לא השתנו');
+  const b = box(doc, 'p1');
+  b.forEach((v, i) => assert.ok(Math.abs(v - [25, -25, 50, 100][i]) < 1e-6, 'box ' + b));
+  applyMatrix(p, rotateAt(-Math.PI / 2, 50, 25));
+  assert.equal(p.transform, undefined, 'סיבוב חזרה — בלי transform');
+  // הזזה של מסובב — נשארת ב-transform, הצורה לא נאפית
+  applyMatrix(p, rotateAt(Math.PI / 4, 0, 0));
+  applyMatrix(p, translate(10, 0));
+  assert.deepEqual(p.shape.box, [0, 0, 100, 50]);
+  assert.equal(p.transform[4], 10);
+  // היפוך כוכב — נשאר כוכב
+  const star = { id: 's9', d: '', fill: { color: '#000' } };
+  setShape(star, { type: 'star', box: [0, 0, 10, 10], points: 5, inner: 0.5 });
+  applyMatrix(star, scaleAt(1, -1, 0, 5));
+  assert.equal(star.shape.type, 'star');
+  assert.deepEqual(star.transform, [1, 0, 0, -1, 0, 10]);
+});
+
+test('סיבוב טקסט: transform, והתיבה בעולם מסתובבת איתו', () => {
+  const doc = newDocument([500, 500]);
+  const t = { id: 't1', type: 'text', text: 'אבג', box: [100, 100, 0, 0], font: { family: 'Heebo', size: 20, weight: 400 }, align: 'right', lineHeight: 1, auto: true };
+  relayout(t);
+  doc.surfaces[0].layers[0].paths.push(t);
+  const [, , w, h] = t.box;
+  applyMatrix(t, rotateAt(Math.PI / 2, t.box[0], t.box[1]));
+  const b = worldBox(t, [0, 0]);
+  assert.ok(Math.abs(b[2] - h) < 1e-6 && Math.abs(b[3] - w) < 1e-6, 'רוחב וגובה מתחלפים');
+  assert.equal(t.font.size, 20, 'הגופן לא משתנה בסיבוב');
+});

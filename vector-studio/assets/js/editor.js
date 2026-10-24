@@ -4,11 +4,11 @@
 // מגע: אצבע על רקע — הזזת התצוגה; שתיים — זום וגלילה. עכבר: גרירה על רקע — בחירה במלבן; גלגלת — גלילה,
 // ועם Ctrl — זום. רווח + גרירה — הזזת התצוגה.
 
-import { apply, invert, scaleAt, translate } from './geometry/matrix.js';
+import { apply, invert, scaleAt, translate, rotateAt } from './geometry/matrix.js';
 import { shapeFromDrag, DEFAULTS } from './geometry/shapes.js';
 import {
   SIZES, DEFAULT_STYLE, newDocument, nextId, layout, objects, findPath, selectionBox, applyMatrix, setShape, clone,
-  leaves, cloneItem, ids,
+  leaves, cloneItem, ids, worldBox,
 } from './model.js';
 import { group, ungroup, reorder, align, distribute, addLayer, removeLayer, moveLayer, moveToLayer } from './arrange.js';
 import { render, hitTest, inRect, handlePoints, readColors, HANDLE, viewMatrix } from './render.js';
@@ -26,7 +26,7 @@ const canvas = $('canvas'), stage = $('stage');
 const S = {
   id: null, rev: 0, name: 'ציור', doc: null,
   view: { x: 0, y: 0, z: 1 }, dpr: 1,
-  sel: new Set(), hover: null, marquee: null, tool: 'select', active: null, guides: null,
+  sel: new Set(), hover: null, marquee: null, tool: 'select', active: null, board: null, // board — הלוח הנוכחי (בלי בחירה) guides: null,
   snap: pref('snap', true), grid: pref('grid', false), editingText: null, // active — השכבה לאובייקטים חדשים
   undo: [], redo: [],
 };
@@ -341,7 +341,7 @@ function targetLayer(surface) {
 function updatePanel() {
   if (!S.doc) return;
   const picked = [...S.sel].map(id => findPath(S.doc, id)).filter(Boolean);
-  const surface = picked[0]?.surface || S.doc.surfaces[0];
+  const surface = picked[0]?.surface || S.doc.surfaces.find(s => s.id === S.board) || S.doc.surfaces[0];
   const off = layout(S.doc).get(surface.id);
   const wb = picked.length ? selectionBox(S.doc, S.sel) : null;
   const leafIds = () => picked.flatMap(o => [...leaves(o.path)].map(p => p.id));
@@ -372,11 +372,15 @@ function updatePanel() {
       if (w) surface.size[0] = w;
       if (h) surface.size[1] = h;
     }),
-    action: (a) => a === 'delete' ? removeSelection() : a === 'edit-text' ? openTextEditor(picked[0].path.id) : duplicateSelection(),
+    action: (a) => a === 'delete' ? removeSelection() : a === 'edit-text' ? openTextEditor(picked[0].path.id)
+      : a === 'copy' ? copySelection() : a === 'paste' ? (clipboardItems() && pasteItems(clipboardItems())) : duplicateSelection(),
+    canPaste: !!clipboardItems(),
     fonts: FONTS, relayout,
     // התיבה של נתיב במרחב שלו (בלי היסט הלוח) — לנקודות של מעבר צבע
     pathBox: (p) => (p.type === 'text' ? p.box : (() => { try { return bbox(parse(p.d)) || [0, 0, 1, 1]; } catch { return [0, 0, 1, 1]; } })()),
     arrange: (a, arg) => arrangeAction(a, arg),
+    surfaces: S.doc.surfaces,
+    boards: (a, id) => boardAction(a, id),
   });
   const counts = new Map();
   for (const l of surface.layers || []) counts.set(l.id, (l.paths || []).length);
@@ -405,6 +409,63 @@ function targetLayerId(surface) {
   return (layers.find(l => l.id === S.active && usable(l)) || [...layers].reverse().find(usable))?.id || null;
 }
 
+/** לוחות: הוספה (באותו גודל, מימין בפריסה), בחירה (והתצוגה עוברת אליו), מחיקה. */
+function boardAction(a, id) {
+  if (a === 'select') { S.board = id; showBoard(id); updatePanel(); return; }
+  if (a === 'add') {
+    const cur = S.doc.surfaces.find(s => s.id === S.board) || S.doc.surfaces[S.doc.surfaces.length - 1];
+    let made;
+    change(() => {
+      const sid = nextId(S.doc, 's');
+      const lid = ids(S.doc, 'L')();
+      made = { id: sid, type: 'artboard', name: 'לוח ' + (S.doc.surfaces.length + 1), size: cur.size.slice(),
+        layers: [{ id: lid, name: 'שכבה 1', type: 'vector', opacity: 1, blend: 'normal', visible: true, locked: false, paths: [] }] };
+      S.doc.surfaces.push(made);
+    });
+    S.board = made.id;
+    showBoard(made.id);
+    updatePanel();
+    return;
+  }
+  if (a === 'remove') {
+    const s = S.doc.surfaces.find(x => x.id === id);
+    const n = (s.layers || []).reduce((k, l) => k + (l.paths?.length || 0), 0);
+    if (S.doc.surfaces.length < 2 || (n && !confirm(`בלוח ${n} אובייקטים. למחוק אותו יחד איתם?`))) return;
+    change(() => { S.doc.surfaces = S.doc.surfaces.filter(x => x.id !== id); });
+    if (S.board === id) S.board = null;
+    fit();
+  }
+}
+
+/** התצוגה על לוח אחד — כולו במסך. */
+function showBoard(id) {
+  const s = S.doc.surfaces.find(x => x.id === id);
+  if (!s) return;
+  const r = stage.getBoundingClientRect();
+  const [ox, oy] = layout(S.doc).get(id);
+  const pad = 32;
+  const z = Math.max(0.02, Math.min((r.width - pad * 2) / s.size[0], (r.height - pad * 2) / s.size[1], 8));
+  S.view = { z, x: (r.width - s.size[0] * z) / 2 - ox * z, y: (r.height - s.size[1] * z) / 2 - oy * z };
+  draw();
+}
+
+/** אחרי הזזה: פריט שהמרכז שלו עבר ללוח אחר — עובר ללוח ההוא (לשכבה הפעילה שבו), באותו מקום על המסך. */
+function reparentMoved() {
+  const lay = layout(S.doc);
+  const inside = (wx, wy) => S.doc.surfaces.find(s => { const [ox, oy] = lay.get(s.id); return wx >= ox && wx <= ox + s.size[0] && wy >= oy && wy <= oy + s.size[1]; });
+  for (const id of S.sel) {
+    const o = findPath(S.doc, id);
+    if (!o) continue;
+    const b = worldBox(o.path, lay.get(o.surface.id));
+    const to = b && inside(b[0] + b[2] / 2, b[1] + b[3] / 2);
+    if (!to || to === o.surface) continue;
+    const [ax, ay] = lay.get(o.surface.id), [bx, by] = lay.get(to.id);
+    o.layer.paths = o.layer.paths.filter(p => p !== o.path);
+    applyMatrix(o.path, translate(ax - bx, ay - by));
+    targetLayer(to).paths.push(o.path);
+  }
+}
+
 function arrangeAction(a, arg) {
   if (!S.sel.size) return;
   let next = null;
@@ -415,6 +476,19 @@ function arrangeAction(a, arg) {
     if (a === 'group') { const g = group(S.doc, S.sel); if (g) next = [g]; }
     if (a === 'ungroup') next = ungroup(S.doc, S.sel);
     if (a === 'layer') moveToLayer(S.doc, S.sel, arg);
+    if (a === 'rotate' || a === 'flip') {
+      const b = selectionBox(S.doc, S.sel);
+      const c = [b[0] + b[2] / 2, b[1] + b[3] / 2];
+      if (a === 'rotate') rotateSelection(Number(arg) * Math.PI / 180, c);
+      else {
+        const lay = layout(S.doc);
+        for (const id of S.sel) {
+          const o = findPath(S.doc, id);
+          const [ox, oy] = lay.get(o.surface.id);
+          applyMatrix(o.path, scaleAt(arg === 'h' ? -1 : 1, arg === 'v' ? -1 : 1, c[0] - ox, c[1] - oy));
+        }
+      }
+    }
   });
   if (next) select(next);
 }
@@ -424,6 +498,17 @@ let editBase = null;
 function transformSelection(t, sx, sy) {
   const m = [sx, 0, 0, sy, t[4], t[5]];
   for (const id of S.sel) { const o = findPath(S.doc, id); if (o) applyMatrix(o.path, m); }
+}
+
+/** סיבוב הנבחרים סביב נקודה במרחב העבודה (כל אחד במרחב הלוח שלו). */
+function rotateSelection(rad, c) {
+  const lay = layout(S.doc);
+  for (const id of S.sel) {
+    const o = findPath(S.doc, id);
+    if (!o) continue;
+    const [ox, oy] = lay.get(o.surface.id);
+    applyMatrix(o.path, rotateAt(rad, c[0] - ox, c[1] - oy));
+  }
 }
 
 function removeSelection() {
@@ -451,6 +536,65 @@ function duplicateSelection() {
   });
   select(fresh);
 }
+
+// ---------- העתקה והדבקה ----------
+// הלוח של העורך ב-localStorage — עובר גם בין ציורים ובין חלונות. הדבקה של SVG מתוכנה אחרת — דרך אירוע paste.
+
+const CLIP = 'vector-studio:clipboard';
+let pasteCount = 0;
+
+function copySelection(cut = false) {
+  if (!S.sel.size) return false;
+  const items = [...objects(S.doc)].filter(o => S.sel.has(o.path.id)).map(o => clone(o.path));
+  try { localStorage.setItem(CLIP, JSON.stringify({ from: S.id, items })); } catch { toast('ההעתקה נכשלה — האחסון במכשיר חסום', true); return false; }
+  pasteCount = 0;
+  if (cut) removeSelection();
+  toast(cut ? `נגזרו ${items.length}` : `הועתקו ${items.length}`);
+  updatePanel();
+  return true;
+}
+
+function clipboardItems() {
+  try { const c = JSON.parse(localStorage.getItem(CLIP) || 'null'); return c?.items?.length ? c : null; } catch { return null; }
+}
+
+/** הדבקה ללוח הנוכחי, לשכבה הפעילה. מאותו ציור — מוזז ב-10pt בכל הדבקה, כדי לא להסתיר את המקור. */
+function pasteItems(clip) {
+  const fresh = [];
+  const surface = S.doc.surfaces.find(s => s.id === S.board) || findPath(S.doc, [...S.sel][0] || '')?.surface || S.doc.surfaces[0];
+  change(() => {
+    const next = ids(S.doc, 'p');
+    const layer = targetLayer(surface);
+    const shift = clip.from === S.id ? 10 * ++pasteCount : 0;
+    for (const it of clip.items) {
+      const c = cloneItem(it, next);
+      if (shift) applyMatrix(c, translate(shift, shift));
+      layer.paths.push(c);
+      fresh.push(c.id);
+    }
+  });
+  setTool('select');
+  select(fresh);
+}
+
+document.addEventListener('copy', (e) => { if (!e.target.closest?.('input, textarea') && copySelection()) e.preventDefault(); });
+document.addEventListener('cut', (e) => { if (!e.target.closest?.('input, textarea') && copySelection(true)) e.preventDefault(); });
+document.addEventListener('paste', async (e) => {
+  if (e.target.closest?.('input, textarea') || !S.doc) return;
+  const text = e.clipboardData?.getData('text/plain') || '';
+  if (/^\s*(<\?xml[^>]*>\s*)?(<!--[\s\S]*?-->\s*)?<svg[\s>]/i.test(text)) {
+    e.preventDefault();
+    const { importSVG } = await import('./import.js');
+    try {
+      const r = importSVG(text, ids(S.doc, 'p'));
+      if (r.items.length) pasteItems({ from: null, items: r.items });
+      if (r.gaps.length) toast('הודבק · לא עבר: ' + r.gaps.join(' · '));
+    } catch (err) { toast('ההדבקה נכשלה: ' + err.message, true); }
+    return;
+  }
+  const clip = clipboardItems();
+  if (clip) { e.preventDefault(); pasteItems(clip); }
+});
 
 function nudge(dx, dy) {
   if (!S.sel.size) return;
@@ -538,6 +682,12 @@ canvas.addEventListener('pointerdown', (e) => {
   }
 
   const handle = handleAt(sx, sy);
+  if (handle === 'rot') {
+    const box = selectionBox(S.doc, S.sel);
+    const c = [box[0] + box[2] / 2, box[1] + box[3] / 2];
+    op = { type: 'rotate', c, a0: Math.atan2(wy - c[1], wx - c[0]), before: JSON.stringify(S.doc), box0: box };
+    return;
+  }
   if (handle) {
     op = { type: 'scale', handle, box0: selectionBox(S.doc, S.sel), before: JSON.stringify(S.doc), s0: [sx, sy], snap: makeSnap(S.sel, findPath(S.doc, [...S.sel][0])?.surface, touch) };
     return;
@@ -561,6 +711,8 @@ canvas.addEventListener('pointerdown', (e) => {
     op = { type: 'move', before: JSON.stringify(S.doc), w0: [wx, wy], s0: [sx, sy], moved: false, box0: selectionBox(S.doc, S.sel), snap: makeSnap(S.sel, findPath(S.doc, hit).surface, touch) };
     return;
   }
+  const under = S.doc.surfaces.find(s => { const [ox, oy] = layout(S.doc).get(s.id); return wx >= ox && wx <= ox + s.size[0] && wy >= oy && wy <= oy + s.size[1]; });
+  if (under && under.id !== S.board) { S.board = under.id; if (!S.sel.size) updatePanel(); }
   if (touch) { op = { type: 'pan', s0: [sx, sy], view0: { ...S.view }, tap: true }; return; }
   op = { type: 'marquee', s0: [sx, sy], add: e.shiftKey ? new Set(S.sel) : new Set() };
 });
@@ -575,7 +727,7 @@ canvas.addEventListener('pointermove', (e) => {
     if (S.tool === 'pen') tools.hover(sx, sy);
     if (e.pointerType === 'mouse' && S.tool === 'select') {
       const h = handleAt(sx, sy);
-      canvas.style.cursor = h ? ({ n: 'ns', s: 'ns', e: 'ew', w: 'ew', nw: 'nwse', se: 'nwse', ne: 'nesw', sw: 'nesw' }[h] + '-resize') : (spaceDown ? 'grab' : 'default');
+      canvas.style.cursor = h === 'rot' ? 'grab' : h ? ({ n: 'ns', s: 'ns', e: 'ew', w: 'ew', nw: 'nwse', se: 'nwse', ne: 'nesw', sw: 'nesw' }[h] + '-resize') : (spaceDown ? 'grab' : 'default');
       const hov = h ? null : hitTest(S, sx, sy, 5);
       if (hov !== S.hover) { S.hover = hov; draw(); }
     }
@@ -635,6 +787,16 @@ canvas.addEventListener('pointermove', (e) => {
       }
       S.doc = JSON.parse(op.before);
       transformSelection(translate(dx, dy), 1, 1);
+      draw();
+      break;
+    }
+    case 'rotate': {
+      const [wx, wy] = toWorld(sx, sy);
+      let a = Math.atan2(wy - op.c[1], wx - op.c[0]) - op.a0;
+      if (e.shiftKey) a = Math.round(a / (Math.PI / 12)) * (Math.PI / 12); // Shift — קפיצות של 15°
+      S.doc = JSON.parse(op.before);
+      rotateSelection(a, op.c);
+      $('doc-status').textContent = `סיבוב ${Math.round(((a * 180 / Math.PI) % 360 + 540) % 360 - 180)}°`;
       draw();
       break;
     }
@@ -717,7 +879,11 @@ function endPointer(e) {
       updatePanel();
       break;
     case 'move':
+      if (op.moved && S.doc.surfaces.length > 1) reparentMoved();
+      commitFrom(op.before);
+      break;
     case 'scale':
+    case 'rotate':
       commitFrom(op.before);
       break;
     case 'create': {
