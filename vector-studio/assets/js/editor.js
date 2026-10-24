@@ -1389,6 +1389,8 @@ $('mbe-file').addEventListener('change', async () => {
 $('imp-file').addEventListener('change', () => { const f = $('imp-file').files[0]; $('imp-file').value = ''; if (f) importFile(f); });
 document.addEventListener('click', e => { const b = e.target.closest('[data-close]'); if (b) b.closest('dialog').close(); });
 
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('service-worker.js').catch(() => { /* בלי מטמון */ });
+
 // לבדיקות (Playwright): גישה למצב בלי לחשוף אותו בממשק
 window.__vs = { S, select, setTool, fit, fontsReady };
 

@@ -1,0 +1,28 @@
+{
+  "id": "./",
+  "name": "וקטורי",
+  "short_name": "וקטורי",
+  "description": "עורך גרפיקה וקטורית — לוגואים, אייקונים ואיורים, עם טקסט בעברית. שומר ‎.mbe, SVG, PDF ו-PNG.",
+  "lang": "he",
+  "dir": "rtl",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f4f5f7",
+  "theme_color": "#2d4a8a",
+  "categories": ["design", "graphics", "productivity"],
+  "icons": [
+    { "src": "./assets/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./assets/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./assets/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "./assets/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ],
+  "file_handlers": [
+    { "action": "./index.html", "accept": { "application/vnd.mbe+zip": [".mbe"] } }
+  ],
+  "launch_handler": { "client_mode": "focus-existing" },
+  "shortcuts": [
+    { "name": "ציור חדש", "url": "./index.html#new", "icons": [{ "src": "./assets/icons/icon-192.png", "sizes": "192x192" }] }
+  ]
+}

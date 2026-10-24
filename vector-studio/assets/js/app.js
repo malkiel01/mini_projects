@@ -60,19 +60,10 @@ function setupNew() {
   $('sizes').innerHTML = SIZES.map(s => `<button class="tile" type="button" data-size="${s.id}"><span class="tile-ic" aria-hidden="true">${s.icon}</span>${esc(s.name)}</button>`).join('');
   $('new-btn').addEventListener('click', () => dlg.showModal());
   $('open-btn').addEventListener('click', () => $('open-file').click());
-  $('open-file').addEventListener('change', async () => {
+  $('open-file').addEventListener('change', () => {
     const f = $('open-file').files[0];
     $('open-file').value = '';
-    if (!f) return;
-    $('open-err').hidden = true;
-    try {
-      const { id, notes } = await library.importMbe(f);
-      if (notes.length) alert('נפתח. שימו לב:\n' + notes.join('\n'));
-      location.href = 'editor.html#d' + id;
-    } catch (e) {
-      $('open-err').textContent = 'הפתיחה נכשלה: ' + e.message;
-      $('open-err').hidden = false;
-    }
+    if (f) openFile(f);
   });
   $('sizes').addEventListener('click', e => { const b = e.target.closest('[data-size]'); if (b) newDrawing('new:' + b.dataset.size); });
   $('custom-go').addEventListener('click', () => {
@@ -96,6 +87,29 @@ function setupNew() {
   });
 }
 
+/** קובץ ‎.mbe שנפתח "באמצעות" האפליקציה המותקנת (file_handlers), או מכפתור הפתיחה. */
+async function openFile(f) {
+  $('open-err').hidden = true;
+  try {
+    const { id, notes } = await library.importMbe(f);
+    if (notes.length) alert('נפתח. שימו לב:\n' + notes.join('\n'));
+    location.href = 'editor.html#d' + id;
+  } catch (e) {
+    $('open-err').textContent = 'הפתיחה נכשלה: ' + e.message;
+    $('open-err').hidden = false;
+  }
+}
+
+function setupInstall() {
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('service-worker.js').catch(() => { /* בלי מטמון — עדיין עובד ברשת */ });
+  if ('launchQueue' in window) {
+    window.launchQueue.setConsumer(async (params) => {
+      for (const h of params.files || []) { await openFile(await h.getFile()); break; }
+    });
+  }
+  if (location.hash === '#new') { history.replaceState(null, '', location.pathname); $('new-dlg').showModal(); }
+}
+
 async function start() {
   try {
     const { user } = await api('me');
@@ -106,6 +120,7 @@ async function start() {
     me.hidden = false;
     setupNew();
     await showLibrary();
+    setupInstall();
     $('home').hidden = false;
   } catch (e) {
     $('denied-msg').textContent = e.message;
