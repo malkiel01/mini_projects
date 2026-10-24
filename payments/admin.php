@@ -90,7 +90,8 @@ try {
         'payments' => ['data' => db_all("SELECT p.*, cu.name AS customer_name, cu.external_id, cu.client, cu.id AS customer_id,
                 (SELECT number FROM tax_document d WHERE d.payment = p.id LIMIT 1) AS doc_number,
                 (SELECT type FROM tax_document d WHERE d.payment = p.id LIMIT 1) AS doc_type,
-                pa.provider AS provider_type
+                pa.provider AS provider_type,
+                (SELECT COUNT(*) FROM tax_document d WHERE d.payment = p.id AND d.refund IS NULL) AS has_doc
             FROM payment p JOIN account a ON a.id = p.account JOIN merchant m ON m.id = a.merchant
             LEFT JOIN customer cu ON cu.account = a.id LEFT JOIN provider_account pa ON pa.id = p.provider WHERE m.tenant = ? GROUP BY p.id ORDER BY p.created_at DESC LIMIT 200", [$t['id']])],
         'invoices' => ['data' => db_all("SELECT i.*, (SELECT description FROM invoice_line WHERE invoice = i.id LIMIT 1) AS description,
@@ -100,6 +101,15 @@ try {
             $p = db_one('SELECT p.* FROM payment p JOIN account a ON a.id = p.account JOIN merchant m ON m.id = a.merchant WHERE p.id = ? AND m.tenant = ?', [$s('payment'), $t['id']]);
             if (!$p) throw new ApiError('התשלום לא נמצא', 'not_found', 404);
             return payment_refund($p['id'], (int)($in['agorot'] ?? 0), $s('reason'), 'admin:' . $t['id'], !empty($in['manual']));
+        })(),
+
+        // מסמכים ותשלום ידני (שלב 5)
+        'manual_payment' => manual_payment($t, $in),
+        'doc_retry' => (function () use ($t, $s) {
+            $p = db_one('SELECT p.* FROM payment p JOIN account a ON a.id = p.account JOIN merchant m ON m.id = a.merchant WHERE p.id = ? AND m.tenant = ?', [$s('payment'), $t['id']]);
+            if (!$p) throw new ApiError('התשלום לא נמצא', 'not_found', 404);
+            db_run("UPDATE payment SET doc_attempts = 0, doc_error = '' WHERE id = ?", [$p['id']]);
+            return ['issued' => tax_docs_issue(5)];
         })(),
 
         // חברות סליקה (שלב 4)

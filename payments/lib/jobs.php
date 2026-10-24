@@ -10,6 +10,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/subscriptions.php';
+require_once __DIR__ . '/documents.php';
 
 const TICK_EVERY = 55;
 
@@ -26,6 +27,7 @@ function tick(string $source, bool $force = false): ?array
         'renewed' => subscriptions_renew(),
         'retried' => invoices_retry(),
         'notices' => subscriptions_notices(),
+        'documents' => tax_docs_issue(),
         'mails' => notifications_send(),
     ];
     $w = webhooks_deliver(100);
