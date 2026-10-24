@@ -49,11 +49,18 @@
         <button class="icon-btn" id="zoom-out" aria-label="הקטנה">−</button>
         <button class="btn sm" id="zoom-pct" aria-label="התאמה למסך">100%</button>
         <button class="icon-btn" id="zoom-in" aria-label="הגדלה">+</button>
+        <button class="icon-btn toggle" id="snap-btn" aria-pressed="true" aria-label="הצמדה לאובייקטים וללוח" title="הצמדה (Ctrl בזמן גרירה — בלי)">🧲</button>
+        <button class="icon-btn toggle" id="grid-btn" aria-pressed="false" aria-label="רשת" title="רשת 10pt">#</button>
       </div>
     </div>
 
     <aside class="props" id="props" aria-label="מאפיינים">
+      <div class="seg-tabs" role="tablist">
+        <button role="tab" type="button" data-tab="props" aria-selected="true">🎨 מאפיינים</button>
+        <button role="tab" type="button" data-tab="layers" aria-selected="false">🗂️ שכבות</button>
+      </div>
       <div id="props-body"></div>
+      <div id="layers-body" hidden></div>
     </aside>
   </div>
 

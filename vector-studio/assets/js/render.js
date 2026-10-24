@@ -2,7 +2,27 @@
 // באותו עובי בכל זום. הלוח עצמו לבן תמיד (כמו נייר), גם במצב כהה.
 
 import { multiply } from './geometry/matrix.js';
-import { objects, layout, pathMatrix, worldBox, findPath } from './model.js';
+import { objects, layout, pathMatrix, worldBox, findPath, leaves } from './model.js';
+
+import { GRID } from './snap.js';
+
+/** רשת על הלוח: כל GRID pt, ובזום רחוק — כל 5 / 25 קווים, כדי שלא תהיה צפופה מדי. */
+function drawGrid(ctx, x, y, w, h, z) {
+  let step = GRID;
+  while (step * z < 8) step *= 5;
+  const px = step * z;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y, w, h);
+  ctx.clip();
+  ctx.strokeStyle = 'rgba(45,74,138,.12)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let gx = x + px; gx < x + w; gx += px) { ctx.moveTo(Math.round(gx) + .5, y); ctx.lineTo(Math.round(gx) + .5, y + h); }
+  for (let gy = y + px; gy < y + h; gy += px) { ctx.moveTo(x, Math.round(gy) + .5); ctx.lineTo(x + w, Math.round(gy) + .5); }
+  ctx.stroke();
+  ctx.restore();
+}
 
 const pathCache = new Map();
 /** Path2D לפי `d` — נבנה פעם אחת לכל צורה. */
@@ -37,7 +57,7 @@ let colors = null;
 export function readColors() {
   const cs = getComputedStyle(document.documentElement);
   const get = (n) => cs.getPropertyValue(n).trim();
-  colors = { bg: get('--bg'), line: get('--line'), brand: get('--brand'), muted: get('--muted'), surface: get('--surface') };
+  colors = { bg: get('--bg'), line: get('--line'), brand: get('--brand'), muted: get('--muted'), surface: get('--surface'), star: get('--star') };
 }
 
 export function strokeStyle(ctx, st) {
@@ -90,6 +110,7 @@ export function render(canvas, state) {
     ctx.fillRect(x + 1, y + 2, w, h);
     ctx.fillStyle = '#fff';
     ctx.fillRect(x, y, w, h);
+    if (state.grid) drawGrid(ctx, x, y, w, h, view.z);
     ctx.strokeStyle = colors.line;
     ctx.lineWidth = 1;
     ctx.setLineDash([]);
@@ -103,14 +124,18 @@ export function render(canvas, state) {
     }
   }
 
-  // האובייקטים
-  for (const { path, layer, surface } of objects(doc)) {
-    if (layer.visible === false || path.hidden) continue;
-    setT(pathMatrix(path, lay.get(surface.id)));
-    ctx.save();
-    if ((layer.opacity ?? 1) < 1) ctx.globalAlpha = layer.opacity;
-    try { drawPath(ctx, path); } catch { /* d פגום — לא מציירים, לא קורסים */ }
-    ctx.restore();
+  // האובייקטים (קבוצה — הילדים לפי הסדר)
+  for (const { path: item, layer, surface } of objects(doc)) {
+    if (layer.visible === false || item.hidden) continue;
+    const off = lay.get(surface.id);
+    for (const path of leaves(item)) {
+      if (path.hidden) continue;
+      setT(pathMatrix(path, off));
+      ctx.save();
+      if ((layer.opacity ?? 1) < 1) ctx.globalAlpha = layer.opacity;
+      try { drawPath(ctx, path); } catch { /* d פגום — לא מציירים, לא קורסים */ }
+      ctx.restore();
+    }
   }
 
   // שכבת-על במסך
@@ -121,10 +146,12 @@ export function render(canvas, state) {
   const outline = (id) => {
     const o = findPath(doc, id);
     if (!o) return;
-    setT(pathMatrix(o.path, lay.get(o.surface.id)));
-    const t = ctx.getTransform();
-    ctx.lineWidth = 1 / Math.sqrt(Math.abs(t.a * t.d - t.b * t.c) / (dpr * dpr) || 1);
-    ctx.stroke(path2d(o.path.d));
+    for (const path of leaves(o.path)) {
+      setT(pathMatrix(path, lay.get(o.surface.id)));
+      const t = ctx.getTransform();
+      ctx.lineWidth = 1 / Math.sqrt(Math.abs(t.a * t.d - t.b * t.c) / (dpr * dpr) || 1);
+      try { ctx.stroke(path2d(path.d)); } catch { /* d פגום */ }
+    }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.lineWidth = 1;
   };
@@ -141,6 +168,17 @@ export function render(canvas, state) {
         ctx.strokeRect(hx - HANDLE / 2 + .5, hy - HANDLE / 2 + .5, HANDLE - 1, HANDLE - 1);
       }
     }
+  }
+  if (state.guides?.length) {
+    ctx.strokeStyle = colors.star;
+    ctx.lineWidth = 1;
+    for (const g of state.guides) {
+      ctx.beginPath();
+      if (g.axis === 'x') { const x = Math.round(g.v * view.z + view.x) + .5; ctx.moveTo(x, 0); ctx.lineTo(x, H); }
+      else { const y = Math.round(g.v * view.z + view.y) + .5; ctx.moveTo(0, y); ctx.lineTo(W, y); }
+      ctx.stroke();
+    }
+    ctx.strokeStyle = colors.brand;
   }
   if (state.marquee) {
     const [x, y, w, h] = state.marquee;
@@ -167,19 +205,26 @@ export function hitTest(state, sx, sy, tol = 6) {
   const lay = layout(doc);
   const vm = viewMatrix(view);
   const all = [...objects(doc)].reverse();
-  for (const { path, layer, surface } of all) {
-    if (layer.visible === false || layer.locked || path.hidden || path.locked) continue;
-    const t = multiply(vm, pathMatrix(path, lay.get(surface.id)));
-    probe.setTransform(t[0], t[1], t[2], t[3], t[4], t[5]);
-    let p;
-    try { p = path2d(path.d); } catch { continue; }
-    if (path.fill && path.fill.color && probe.isPointInPath(p, sx, sy, path.fillRule === 'evenodd' ? 'evenodd' : 'nonzero')) return path.id;
-    const scale = Math.sqrt(Math.abs(t[0] * t[3] - t[1] * t[2])) || 1;
-    probe.lineWidth = Math.max((path.stroke?.color ? path.stroke.width ?? 1 : 0), (tol * 2) / scale);
-    probe.lineCap = 'round'; probe.lineJoin = 'round';
-    if (probe.isPointInStroke(p, sx, sy)) return path.id;
+  for (const { path: item, layer, surface } of all) {
+    if (layer.visible === false || layer.locked || item.hidden || item.locked) continue;
+    const off = lay.get(surface.id);
+    // קבוצה — פוגעים באחד הילדים, ומחזירים את הקבוצה
+    for (const path of [...leaves(item)].reverse()) {
+      if (!path.hidden && hitPath(path, multiply(vm, pathMatrix(path, off)), sx, sy, tol)) return item.id;
+    }
   }
   return null;
+}
+
+function hitPath(path, t, sx, sy, tol) {
+  probe.setTransform(t[0], t[1], t[2], t[3], t[4], t[5]);
+  let p;
+  try { p = path2d(path.d); } catch { return false; }
+  if ((path.fill?.color || path.fill?.gradient) && probe.isPointInPath(p, sx, sy, path.fillRule === 'evenodd' ? 'evenodd' : 'nonzero')) return true;
+  const scale = Math.sqrt(Math.abs(t[0] * t[3] - t[1] * t[2])) || 1;
+  probe.lineWidth = Math.max((path.stroke?.color ? path.stroke.width ?? 1 : 0), (tol * 2) / scale);
+  probe.lineCap = 'round'; probe.lineJoin = 'round';
+  return probe.isPointInStroke(p, sx, sy);
 }
 
 /** האובייקטים שהתיבה שלהם נוגעת במלבן (במרחב העבודה). */

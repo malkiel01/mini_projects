@@ -37,6 +37,8 @@ try {
   await page.click('#new-btn');
   await page.click('[data-size="square"]');
   await page.waitForFunction(() => window.__vs?.S.doc);
+  // מספרים מדויקים בבדיקות — בלי הצמדה; היא נבדקת בנפרד בסוף
+  if (await page.getAttribute('#snap-btn', 'aria-pressed') === 'true') await page.click('#snap-btn');
   step('ציור חדש נפתח בעורך');
 
   const st = () => page.evaluate(() => {
@@ -168,12 +170,83 @@ try {
   await page.click('[data-tool="select"]');
   step('צורה חיה שנערכת בנקודות הופכת לנתיב; ביטול מחזיר אותה');
 
+  // קבוצה: הכול לקבוצה אחת, הקשה על חלק בוחרת את הקבוצה, הזזה מזיזה את כולם, פירוק
+  await page.keyboard.press('Control+a');
+  await page.keyboard.press('Control+g');
+  s = await st();
+  assert.equal(s.paths.length, 1);
+  assert.equal(s.paths[0].type, 'group');
+  assert.equal(s.paths[0].children.length, 3);
+  await page.mouse.click(...await W(800, 800)); // רקע
+  await page.mouse.click(...await W(300, 250)); // בתוך המלבן
+  s = await st();
+  assert.deepEqual(s.sel, [s.paths[0].id]);
+  [a, b] = [await W(300, 250), await W(310, 260)];
+  await page.mouse.move(...a); await page.mouse.down(); await page.mouse.move(...b, { steps: 3 }); await page.mouse.up();
+  s = await st();
+  assert.deepEqual(s.paths[0].children[0].shape.box.slice(0, 2), [210, 160]);
+  assert.deepEqual(s.paths[0].children[1].shape.box.slice(0, 2), [810, 810]);
+  await page.keyboard.press('Control+Shift+g');
+  s = await st();
+  assert.equal(s.paths.length, 3);
+  assert.equal(s.sel.length, 3);
+  step('קבוצה: קיבוץ, בחירה בהקשה, הזזה של כולם ופירוק');
+
+  // יישור לשמאל של מלבן ואליפסה
+  await page.evaluate(() => { const p = window.__vs.S.doc.surfaces[0].layers[0].paths; window.__vs.select([p[0].id, p[1].id]); });
+  await page.click('[data-arr="align"][data-arg="left"]');
+  s = await st();
+  assert.equal(s.paths[1].shape.box[0], s.paths[0].shape.box[0]);
+  await page.click('[data-arr="order"][data-arg="back"]'); // כבר בתחתית — בלי שינוי
+  step('יישור לשמאל ולחצני סדר הצגה');
+
+  // שכבות: שכבה חדשה מקבלת את הצורה הבאה; שכבה נעולה — לא נבחרת
+  await page.mouse.click(...await W(1000, 1000)); // רקע — בלי בחירה
+  await page.click('[data-tab="layers"]');
+  await page.click('[data-l="add"]');
+  let layers = await page.evaluate(() => window.__vs.S.doc.surfaces[0].layers.map(l => l.id));
+  assert.deepEqual(layers, ['L1', 'L2']);
+  await pickShape(page, 'rect');
+  [a, b] = [await W(600, 100), await W(700, 200)];
+  await page.mouse.move(...a); await page.mouse.down(); await page.mouse.move(...b, { steps: 3 }); await page.mouse.up();
+  const l2 = await page.evaluate(() => window.__vs.S.doc.surfaces[0].layers[1].paths.length);
+  assert.equal(l2, 1);
+  await page.click('.layer-row[data-id="L2"] [data-l="locked"]');
+  await page.mouse.click(...await W(1000, 1000));
+  await page.mouse.click(...await W(650, 150));
+  s = await st();
+  assert.deepEqual(s.sel, []);
+  await page.click('[data-tab="props"]');
+  step('שכבות: שכבה חדשה פעילה, ושכבה נעולה לא נבחרת');
+
+  // הצמדה: מלבן שנגרר קרוב לשפת הלוח נצמד אליה, ומוצג קו עזר; רשת — לכפולות של 10
+  await page.click('#snap-btn');
+  await page.click('[data-tool="select"]');
+  await page.evaluate(() => { const p = window.__vs.S.doc.surfaces[0].layers[0].paths; window.__vs.select([p[0].id]); });
+  s = await st();
+  let r0 = s.paths[0].shape.box;
+  [a, b] = [await W(r0[0] + 20, r0[1] + 20), await W(17, r0[1] + 20)]; // השמאל יגיע ל-x=-3
+  await page.mouse.move(...a); await page.mouse.down(); await page.mouse.move(...b, { steps: 4 });
+  const guides = await page.evaluate(() => window.__vs.S.guides);
+  await page.mouse.up();
+  s = await st();
+  assert.equal(s.paths[0].shape.box[0], 0, 'נצמד לשפת הלוח');
+  assert.ok(guides?.some(g => g.axis === 'x' && g.v === 0), 'קו עזר');
+  await page.click('#snap-btn');
+  await page.click('#grid-btn');
+  [a, b] = [await W(20, r0[1] + 20), await W(20 + 33, r0[1] + 20)];
+  await page.mouse.move(...a); await page.mouse.down(); await page.mouse.move(...b, { steps: 4 }); await page.mouse.up();
+  s = await st();
+  assert.equal(s.paths[0].shape.box[0] % 10, 0, 'רשת: ' + s.paths[0].shape.box[0]);
+  await page.click('#grid-btn');
+  step('הצמדה ללוח עם קו עזר, והצמדה לרשת');
+
   // הטיוטה נשמרה ומופיעה ברשימה
   await page.waitForTimeout(600);
   if (shots) await page.screenshot({ path: `${shots}/editor-1280.png` });
   await page.click('a[href="./"]');
   await page.waitForSelector('#drafts .card');
-  assert.match(await page.textContent('#drafts'), /3 אובייקטים/);
+  assert.match(await page.textContent('#drafts'), /4 אובייקטים/);
   step('הטיוטה נשמרה במכשיר ומופיעה ברשימה');
   await page.close();
 

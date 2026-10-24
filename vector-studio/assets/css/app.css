@@ -262,3 +262,20 @@ input[type="color"] { flex: none; width: 48px; padding: 3px; cursor: pointer; }
     .shape-pick { inset-inline-start: auto; top: auto; bottom: calc(100% + 4px); left: 50%; transform: translateX(-50%); }
 }
 .tool, .shape-pick button, .icon-btn, .btn { -webkit-tap-highlight-color: transparent; }
+
+/* סידור ושכבות */
+.icon-row { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; }
+.icon-row .icon-btn svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
+.icon-row .icon-btn:hover { background: var(--bg); }
+.icon-row .btn { margin-inline-start: var(--s1); }
+.props .seg-tabs { position: sticky; top: calc(-1 * var(--s2)); z-index: 1; background: var(--surface); padding-top: var(--s1); }
+.layers .layer-row { display: flex; align-items: center; gap: 0; padding-inline: var(--s1); border-top: 1px solid var(--line); }
+.layers .layer-row:first-child { border-top: 0; }
+.layers .layer-row.on { background: var(--brand-soft); }
+.layers .icon-btn { min-width: 32px; font-size: .95rem; }
+.layer-name { flex: 1; min-width: 0; display: grid; text-align: start; min-height: var(--tap); padding: 4px var(--s1); border: 0; background: none; cursor: pointer; }
+.layer-name small { color: var(--muted); font-size: .75rem; }
+.zoom .toggle { opacity: .45; font-size: 1rem; }
+.zoom .toggle[aria-pressed="true"] { opacity: 1; background: var(--brand-soft); }
+.icon-row.phys { direction: ltr; justify-content: flex-end; }   /* יישור — כיוונים פיזיים: שמאל משמאל */
+[role="tab"], .layer-name { -webkit-tap-highlight-color: transparent; }
