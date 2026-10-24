@@ -2,6 +2,8 @@
 // כל שינוי עובר ב-`edit(fn, commit)`: fn משנה את הנתיבים שנבחרו; commit=false — תצוגה חיה (גרירת צבע),
 // commit=true — נכנס להיסטוריה.
 
+import { makeGradient, endpoints, angleOf, hasPaint } from './gradient.js';
+
 const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 // בשדות — עד 2 ספרות אחרי הנקודה; המודל עצמו שומר 3.
 const n = (v) => String(Math.round((Number(v) || 0) * 100) / 100);
@@ -65,6 +67,7 @@ export function renderProps(el, ctx) {
   }
 
   const p = paths[0] || {};
+  const fillOn = hasPaint(p.fill), grad = p.fill?.gradient || null;
   const single = items.length === 1 && items[0].type !== 'group';
   const grp = items.length === 1 && items[0].type === 'group';
   const fill = p.fill || null, stroke = p.stroke || null;
@@ -124,10 +127,17 @@ export function renderProps(el, ctx) {
 
     ${isLine ? '' : `<section class="group" aria-labelledby="g-fill">
       <div class="g-row"><h3 id="g-fill">מילוי</h3>
-        <label class="switch"><input type="checkbox" data-on="fill"${fill?.color ? ' checked' : ''}><span class="sr">מילוי</span></label></div>
-      <div class="g-row"${fill?.color ? '' : ' hidden'}>
-        <input type="color" data-c="fill" value="${esc(fill?.color || '#2d4a8a')}" aria-label="צבע מילוי">
-        <label class="f grow"><span>אטימות (%)</span><input data-o="fill" type="number" min="0" max="100" dir="ltr" value="${Math.round((fill?.opacity ?? 1) * 100)}"></label>
+        <label class="switch"><input type="checkbox" data-on="fill"${fillOn ? ' checked' : ''}><span class="sr">מילוי</span></label></div>
+      <div class="g-stack"${fillOn ? '' : ' hidden'}>
+        ${seg('fillmode', grad ? 'gradient' : 'color', { label: 'סוג מילוי', items: [['color', 'צבע'], ['gradient', 'מעבר צבע']] })}
+        <div class="g-row">
+          ${grad
+            ? `<input type="color" data-g="0" value="${esc(grad.stops[0]?.color || '#ffffff')}" aria-label="צבע התחלה">
+               <input type="color" data-g="1" value="${esc(grad.stops[grad.stops.length - 1]?.color || '#000000')}" aria-label="צבע סוף">
+               <label class="f grow"><span>זווית (°)</span><input data-ga type="number" min="0" max="359" dir="ltr" value="${angleOf(grad)}"></label>`
+            : `<input type="color" data-c="fill" value="${esc(fill?.color || '#2d4a8a')}" aria-label="צבע מילוי">`}
+          <label class="f grow"><span>אטימות (%)</span><input data-o="fill" type="number" min="0" max="100" dir="ltr" value="${Math.round((fill?.opacity ?? 1) * 100)}"></label>
+        </div>
       </div>
     </section>`}
 
@@ -186,12 +196,32 @@ export function renderProps(el, ctx) {
 
   el.querySelectorAll('[data-on]').forEach(cb => cb.addEventListener('change', () => {
     const k = cb.dataset.on;
-    const color = el.querySelector(`[data-c="${k}"]`).value;
+    const color = el.querySelector(`[data-c="${k}"]`)?.value || '#2d4a8a';
     ctx.edit(each(path => {
       if (!cb.checked) path[k] = null;
       else path[k] = k === 'fill' ? { color } : { color, width: 1, cap: 'butt', join: 'miter', dash: [] };
     }), true);
   }));
+
+  el.querySelectorAll('[data-g]').forEach(inp => {
+    const i = Number(inp.dataset.g);
+    const set = (commit) => ctx.edit(each(item => {
+      const g = item.fill?.gradient;
+      if (!g) return;
+      const st = i === 0 ? g.stops[0] : g.stops[g.stops.length - 1];
+      st.color = inp.value;
+    }), commit);
+    inp.addEventListener('input', () => set(false));
+    inp.addEventListener('change', () => set(true));
+  });
+  const ga = el.querySelector('[data-ga]');
+  if (ga) ga.addEventListener('change', () => {
+    const a = ((Number(ga.value) % 360) + 360) % 360;
+    ctx.edit(each(item => {
+      const g = item.fill?.gradient;
+      if (g) Object.assign(g, endpoints(ctx.pathBox(item), a));
+    }), true);
+  });
 
   el.querySelectorAll('[data-c]').forEach(inp => {
     const k = inp.dataset.c;
@@ -218,6 +248,13 @@ export function renderProps(el, ctx) {
 
   el.querySelectorAll('fieldset.seg').forEach(fs => fs.addEventListener('change', (e) => {
     const k = fs.dataset.k, v = e.target.value;
+    if (k === 'fillmode') {
+      return ctx.edit(each(item => {
+        const f = item.fill || {};
+        if (v === 'gradient' && !f.gradient) item.fill = { ...(f.opacity != null ? { opacity: f.opacity } : {}), gradient: makeGradient(ctx.pathBox(item), 0, f.color || '#2d4a8a', '#ffffff') };
+        if (v === 'color' && f.gradient) item.fill = { ...(f.opacity != null ? { opacity: f.opacity } : {}), color: f.gradient.stops[0]?.color || '#2d4a8a' };
+      }), true);
+    }
     if (k === 'weight' || k === 'align') {
       return ctx.edit(each(item => {
         if (item.type !== 'text') return;

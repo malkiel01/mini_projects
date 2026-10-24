@@ -15,6 +15,7 @@ import { render, hitTest, inRect, handlePoints, readColors, HANDLE, viewMatrix }
 import { renderProps, renderLayers } from './props.js';
 import { createPenTools } from './pen.js';
 import { snapper } from './snap.js';
+import { parse, bbox } from './geometry/path.js';
 import { FONTS, TEXT_DEFAULT, fontCss, setMeasure, relayout, lineHeight } from './text.js';
 import * as drafts from './drafts.js';
 import * as library from './library.js';
@@ -373,6 +374,8 @@ function updatePanel() {
     }),
     action: (a) => a === 'delete' ? removeSelection() : a === 'edit-text' ? openTextEditor(picked[0].path.id) : duplicateSelection(),
     fonts: FONTS, relayout,
+    // התיבה של נתיב במרחב שלו (בלי היסט הלוח) — לנקודות של מעבר צבע
+    pathBox: (p) => (p.type === 'text' ? p.box : (() => { try { return bbox(parse(p.d)) || [0, 0, 1, 1]; } catch { return [0, 0, 1, 1]; } })()),
     arrange: (a, arg) => arrangeAction(a, arg),
   });
   const counts = new Map();
