@@ -323,6 +323,7 @@ function guest_action(string $action, array $in): never
     $holder = 'guest:' . $in['gid'];
     switch ($action) {
         case 'guest_open':
+            activity($row['id'], $uid, $uname, 'open');
             if (!empty($in['collab'])) {
                 // עריכה משותפת (lib/collab.php) — כמו באפליקציה: בלי נעילה, רק נעילה ישנה של מישהו אחר עוצרת
                 $l = collab_blocked($row['id'], $uid);
@@ -399,6 +400,7 @@ function app_action(string $action, array $in): never
             // צפייה — בלי נעילה; מעיר ועורך — לוקחים את הנעילה (מעיר כותב הערות למסמך)
             [$row, $role] = doc_access($in['doc'] ?? '', $acc);
             $op = (string)($in['op'] ?? 'beat');
+            if ($action === 'my_open') activity($row['id'], $uid, $uname, 'open');
             if (!empty($in['collab'])) {
                 // עריכה משותפת (lib/collab.php): בלי נעילה — רק כשמישהו מחזיק נעילה ישנה, קריאה בלבד עד שתתפנה
                 $l = collab_blocked($row['id'], $uid);
@@ -439,11 +441,15 @@ function app_action(string $action, array $in): never
             require_edit('edit', $row['id'], $uid, $uname, $holder);
             out(['page' => doc_page(doc_set_page($row, $in['page'] ?? null))]);
         case 'my_rename':
-            doc_rename(doc_access($in['doc'] ?? '', $acc, 'edit')[0], (string)($in['title'] ?? ''));
+            [$row] = doc_access($in['doc'] ?? '', $acc, 'edit');
+            doc_rename($row, (string)($in['title'] ?? ''));
+            activity($row['id'], $uid, $uname, 'rename', clean_title($in['title'] ?? ''));
             out(['ok' => true]);
         case 'my_delete':
             // מחיקה מהאפליקציה — לסל המחזור (ליקוי ה' באפיון). מחיקה לצמיתות — רק מתוך הסל (my_purge)
-            doc_trash(doc_access($in['doc'] ?? '', $acc, 'owner')[0]);
+            [$row] = doc_access($in['doc'] ?? '', $acc, 'owner');
+            doc_trash($row);
+            activity($row['id'], $uid, $uname, 'trash');
             out(['ok' => true, 'trash' => true, 'days' => TRASH_DAYS]);
         case 'my_trash':
             trash_purge($space);
@@ -452,7 +458,9 @@ function app_action(string $action, array $in): never
             out(['days' => TRASH_DAYS, 'docs' => array_map(fn($r) => ['doc' => $r['id'], 'title' => $r['title'], 'updated_at' => (int)$r['updated_at'],
                 'deleted_at' => (int)$r['deleted_at'], 'purge_at' => (int)$r['deleted_at'] + TRASH_DAYS * 86400], $st->fetchAll())]);
         case 'my_restore':
-            doc_restore(doc_find($in['doc'] ?? '', $space, true));
+            $row = doc_find($in['doc'] ?? '', $space, true);
+            doc_restore($row);
+            activity($row['id'], $uid, $uname, 'untrash');
             out(['ok' => true]);
         case 'my_purge':
             doc_delete(doc_find($in['doc'] ?? '', $space, true));
@@ -460,6 +468,7 @@ function app_action(string $action, array $in): never
         case 'my_copy':
             // העתק — אצלי (גם ממסמך ששותף איתי לצפייה)
             [$from] = doc_access($in['doc'] ?? '', $acc);
+            activity($from['id'], $uid, $uname, 'copy');
             out(['doc' => doc_copy($from, $space, clean_title(($in['title'] ?? '') ?: $from['title'] . ' (העתק)'), [], $uid, $uname)]);
         case 'my_compare':
             // השוואת גרסאות (כמו ב-Word): מסמך חדש — הגרסה מול המצב הנוכחי, ההבדלים כמעקב שינויים
@@ -480,6 +489,7 @@ function app_action(string $action, array $in): never
         case 'my_export':
             [$row] = doc_access($_GET['doc'] ?? '', $acc);
             $fmt = (string)($_GET['format'] ?? 'docx');
+            activity($row['id'], $uid, $uname, 'export', ['docx' => 'Word', 'pdf' => 'PDF', 'text' => 'טקסט', 'json' => 'גיבוי'][$fmt] ?? 'Word');
             if ($fmt === 'text') send_file(export_text(doc_json($row)), 'text/plain; charset=utf-8', ($row['title'] ?: 'מסמך') . '.txt');
             if ($fmt === 'json') send_file(json_encode(['title' => $row['title'], 'json' => doc_json($row), 'page' => doc_page($row)], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT), 'application/json', ($row['title'] ?: 'מסמך') . '.json');
             // PDF בתצוגת השינויים שבעורך: track=final|original, hide=מחברים (JSON) — כמו שההדפסה מהעורך נראית
@@ -509,6 +519,9 @@ function app_action(string $action, array $in): never
             if ($op === 'pull') out(collab_pull($row, $role, $in, $uid, $uname));
             if ($op === 'leave') { collab_leave($row['id'], $in['client'] ?? ''); out(['ok' => true]); }
             throw new ApiError('פעולה לא תקינה', 'bad_op');
+        // יומן הפעילות (lib/activity.php): הבעלים ומי שיש לו עריכה
+        case 'my_activity':
+            out(['activity' => activity_of(doc_access($in['doc'] ?? '', $acc, 'edit')[0]['id'])]);
         // שיתוף (שלב 5): רק הבעלים רואה ומשנה
         case 'my_shares':
             [$row] = doc_access($in['doc'] ?? '', $acc, 'owner');
@@ -516,13 +529,15 @@ function app_action(string $action, array $in): never
         case 'my_share':
             [$row] = doc_access($in['doc'] ?? '', $acc, 'owner');
             share_set($row, $acc, $in['email'] ?? '', $in['role'] ?? '');
+            $em = strtolower(trim((string)($in['email'] ?? '')));
+            activity($row['id'], $uid, $uname, ($in['role'] ?? '') === '' ? 'unshare' : 'share', $em . (($in['role'] ?? '') !== '' ? ' — ' . (SHARE_LABELS[$in['role']] ?? '') : ''));
             out(['shares' => shares_of($row['id'])]);
         // קישור עריכה לזר (lib/links.php): op = request (חדש / חידוש) | revoke
         case 'my_link':
             [$row] = doc_access($in['doc'] ?? '', $acc, 'owner');
             $op = (string)($in['op'] ?? '');
-            if ($op === 'request') out(['link' => link_request($row, $acc)]);
-            if ($op === 'revoke') { link_revoke($row['id']); out(['link' => null]); }
+            if ($op === 'request') { $l = link_request($row, $acc); activity($row['id'], $uid, $uname, $l['status'] === 'active' ? 'link_ok' : 'link'); out(['link' => $l]); }
+            if ($op === 'revoke') { link_revoke($row['id']); activity($row['id'], $uid, $uname, 'unlink'); out(['link' => null]); }
             throw new ApiError('פעולה לא תקינה', 'bad_op');
         case 'admin_links':
             need_admin($acc);
@@ -530,6 +545,7 @@ function app_action(string $action, array $in): never
         case 'admin_link_set':
             need_admin($acc);
             link_decide((string)($in['doc'] ?? ''), !empty($in['approve']), $acc);
+            activity((string)($in['doc'] ?? ''), $uid, $uname, !empty($in['approve']) ? 'link_ok' : 'unlink');
             out(['links' => links_all()]);
         case 'admin_clients':
             need_admin($acc);
