@@ -13,8 +13,9 @@ import { createTools } from './tools.js';
 import { createOverlay } from './overlay.js';
 import { createAdjustPanel } from './adjust-panel.js';
 import { exportPNG, exportJPG, exportORA, download, fileName } from './export.js';
-import { saveDraft, loadDraft, restoreDraft, draftKey } from './draft.js';
-import { gapsFor } from './engine/formats.js';
+import { saveDraft, loadDraft, restoreDraft } from './draft.js';
+import { gapsFor, parseOraStack } from './engine/formats.js';
+import { unzip } from './engine/unzip.js';
 
 const $ = s => document.querySelector(s);
 const stage = $('#stage');
@@ -123,8 +124,40 @@ async function decodeWithBudget(blob) {
 const history_replace = q => window.history.replaceState(null, '', location.pathname + q);
 const baseName = name => (name || '').replace(/\.[a-z0-9]+$/i, '') || 'תמונה';
 
-/** מסמך חדש מקובץ: בגודל התמונה, והתמונה — השכבה היחידה. */
+const isOra = blob => /\.ora$/i.test(blob.name || '') || blob.type === 'image/openraster';
+
+/** ORA (GIMP / Krita / ההורדה שלנו): השכבות עם השם, המיקום, האטימות, המיזוג, ההסתרה והנעילה. */
+async function openOra(blob) {
+  let files;
+  try { files = await unzip(await blob.arrayBuffer()); } catch (e) { throw new Error(e.message === 'zip-unsafe' || e.message === 'zip-too-big' ? e.message : 'decode'); }
+  const xml = files.get('stack.xml');
+  if (!xml) throw new Error('decode');
+  const text = new TextDecoder().decode(xml);
+  const st = parseOraStack(text);
+  if (!(st.w > 0 && st.h > 0)) throw new Error('decode');
+  const d = new RasterDocument(st.w, st.h, baseName(blob.name));
+  for (const l of st.layers) {
+    const png = files.get(l.src);
+    const layer = d.addLayer({ name: l.name, opacity: l.opacity, blend: l.blend, visible: l.visible, locked: l.locked });
+    if (!png) continue;
+    const bmp = await decodeImage(new Blob([png], { type: 'image/png' }));
+    await renderer.drawImage(d, layer, bmp, l.x, l.y);
+    bmp.close();
+  }
+  if (!d.layers.length) throw new Error('decode');
+  setDoc(d);
+  // קבוצות (stack בתוך stack) — בגרסה 1 נפרסות לשכבות רגילות
+  if ((text.match(/<stack\b/g) || []).length > 1) toast('הקבוצות שבקובץ נפרסו לשכבות רגילות');
+}
+
+/** מסמך חדש מקובץ: בגודל התמונה, והתמונה — השכבה היחידה (ORA — עם כל השכבות). */
 async function openAsDocument(blob) {
+  if (isOra(blob)) {
+    await openOra(blob);
+    history_replace('?draft=local');
+    scheduleDraft(0);
+    return;
+  }
   const bmp = await decodeWithBudget(blob);
   const d = new RasterDocument(bmp.width, bmp.height, baseName(blob.name));
   const layer = d.addLayer({ name: baseName(blob.name) });
@@ -434,6 +467,14 @@ $('#hint').textContent = coarse ? 'צביטה — זום' : 'גרירה — הז
         renderer.fill(d, d.addLayer({ name: 'רקע' }), [255, 255, 255, 255]);
         setDoc(d);
       }
+    } else if (q.get('launch') !== null && 'launchQueue' in window) {
+      // "פתיחה באמצעות" מהמכשיר (PWA מותקן, file_handlers)
+      const file = await new Promise(resolve => {
+        launchQueue.setConsumer(async p => resolve(p.files?.[0] ? await p.files[0].getFile() : null));
+        setTimeout(() => resolve(null), 3000);
+      });
+      if (!file) throw new Error('no_file');
+      await openAsDocument(file);
     } else if (q.get('draft') === 'local') {
       const draft = await loadDraft('draft:local');
       if (!draft) throw new Error('no_file');

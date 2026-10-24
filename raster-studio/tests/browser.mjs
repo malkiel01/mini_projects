@@ -794,6 +794,50 @@ async function main() {
   const jpg = (await import('node:fs')).readFileSync(await dl3.path());
   check('JPG — חתימה', jpg[0] === 0xFF && jpg[1] === 0xD8 && okName(dl3, 'jpg'));
 
+  // ---- ORA: הורדה ← פתיחה (שכבות, שמות, מיזוג, אטימות, הסתרה, נעילה) ----
+  await openEd(page);
+  await page.waitForFunction(() => window.__rs?.doc);
+  await page.evaluate(() => {
+    const { doc: d, renderer: r } = __rs;
+    const a = d.addLayer({ name: 'כפל', blend: 'multiply', opacity: 0.5 }); r.fill(d, a, [200, 50, 50, 255]);
+    const b = d.addLayer({ name: 'נסתר', visible: false, locked: true }); r.fill(d, b, [0, 0, 0, 255]);
+    r.invalidate(d);
+  });
+  const want = await px(10, 10);
+  await page.click('#export-btn');
+  const [dlo] = await Promise.all([page.waitForEvent('download'), page.click('[data-export="ora"]')]);
+  const oraBytes = (await import('node:fs')).readFileSync(await dlo.path());
+  await page.goto(BASE + '/index.html');
+  await page.waitForSelector('#new-btn:not([disabled])');
+  await Promise.all([page.waitForURL(/editor\.html\?open=pending/), page.setInputFiles('#file', { name: 'שכבות.ora', mimeType: 'image/openraster', buffer: oraBytes })]);
+  await page.waitForFunction(() => window.__rs?.doc?.layers.length === 3, null, { timeout: 8000 }).catch(() => {});
+  const back = await page.evaluate(() => __rs.doc.layers.map(l => [l.name, l.blend, l.opacity, l.visible, l.locked].join(':')).join(' | '));
+  check('ORA נפתח עם כל השכבות והמאפיינים', back === 'רקע:normal:1:true:false | כפל:multiply:0.5:true:false | נסתר:normal:1:false:true', back);
+  check('ORA — אותה תמונה מורכבת', (await px(10, 10)) === want, (await px(10, 10)) + ' / ' + want);
+  check('ORA — השם מהקובץ', await page.evaluate(() => __rs.doc.title) === 'שכבות');
+  // ---- התקנה ובלי רשת ----
+  const man = await page.evaluate(async () => {
+    const m = await (await fetch('manifest.webmanifest')).json();
+    const icons = await Promise.all(m.icons.map(i => fetch(i.src).then(r => r.ok)));
+    return { name: m.name, dir: m.dir, icons: icons.every(Boolean), handlers: m.file_handlers?.[0]?.accept?.['image/openraster']?.[0] };
+  });
+  check('manifest: עברית מימין לשמאל, אייקונים קיימים, פתיחת ORA', man.name === 'עיצוב רסטר' && man.dir === 'rtl' && man.icons && man.handlers === '.ora', JSON.stringify(man));
+  await page.goto(BASE + '/index.html');
+  await page.evaluate(() => navigator.serviceWorker.ready);
+  await page.reload();
+  const cdpI = await ctx.newCDPSession(page);
+  const inst = await cdpI.send('Page.getInstallabilityErrors');
+  check('Chromium: ניתן להתקנה, בלי שגיאות', inst.installabilityErrors.length === 0, JSON.stringify(inst.installabilityErrors));
+  await page.goto(BASE + '/editor.html?doc=' + id);   // נכנס למטמון
+  await page.waitForFunction(() => window.__rs?.doc);
+  await ctx.setOffline(true);
+  await page.goto(BASE + '/index.html').catch(() => {});
+  const offline = await page.evaluate(() => document.querySelector('h1')?.textContent || '').catch(() => '');
+  check('בלי רשת — הדף נפתח מהמטמון', /עיצוב רסטר/.test(offline), offline);
+  await ctx.setOffline(false);
+  // השגיאות של בדיקת "בלי רשת" (בקשות לשרת שנכשלו) — צפויות
+  for (let i = errors.length - 1; i >= 0; i--) if (/INTERNET_DISCONNECTED|Failed to fetch|network/i.test(errors[i])) errors.splice(i, 1);
+
   check('אין שגיאות בקונסול', errors.length === 0, errors.join(' | '));
 
   // ---- טלפון ----
