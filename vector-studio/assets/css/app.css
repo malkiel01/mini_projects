@@ -239,3 +239,43 @@ input[type="color"] { flex: none; width: 48px; padding: 3px; cursor: pointer; }
 }
 .list .card { padding: 0; padding-inline-end: var(--s1); cursor: default; }
 .list .card .use-row { flex: 1; min-width: 0; text-decoration: none; color: inherit; }
+
+/* העט, עריכת נקודות ובחירת צורה */
+.tool[data-tool="select"] svg path { fill: currentColor; }
+.tool { position: relative; }
+.tool.more::after { content: ''; position: absolute; inset-inline-end: 4px; bottom: 4px; border: 3px solid transparent;
+    border-bottom-color: currentColor; border-inline-end-color: currentColor; opacity: .7; }
+.tools { position: relative; }
+.shape-pick { position: absolute; z-index: 6; display: flex; gap: var(--s1); padding: var(--s1); background: var(--surface);
+    border: 1px solid var(--line); border-radius: var(--r); box-shadow: 0 6px 20px rgba(0, 0, 0, .18);
+    inset-inline-start: calc(100% + 4px); top: 120px; }
+.shape-pick button { width: var(--tap); height: var(--tap); display: grid; place-items: center; border: 0; border-radius: var(--r); background: none; cursor: pointer; color: var(--ink); }
+.shape-pick button:hover { background: var(--bg); }
+.shape-pick svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; }
+.pen-bar { position: absolute; top: var(--s2); left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: var(--s1);
+    max-width: calc(100% - 16px); padding: var(--s1); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r);
+    box-shadow: var(--shadow); direction: rtl; }
+.pen-bar:not(:has(button:not([hidden]))) .pen-hint { padding: 0 var(--s2); }
+.pen-hint { font-size: .8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pen-hint:empty { display: none; }
+@media (max-width: 899px) {
+    .shape-pick { inset-inline-start: auto; top: auto; bottom: calc(100% + 4px); left: 50%; transform: translateX(-50%); }
+}
+.tool, .shape-pick button, .icon-btn, .btn { -webkit-tap-highlight-color: transparent; }
+
+/* סידור ושכבות */
+.icon-row { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; }
+.icon-row .icon-btn svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
+.icon-row .icon-btn:hover { background: var(--bg); }
+.icon-row .btn { margin-inline-start: var(--s1); }
+.props .seg-tabs { position: sticky; top: calc(-1 * var(--s2)); z-index: 1; background: var(--surface); padding-top: var(--s1); }
+.layers .layer-row { display: flex; align-items: center; gap: 0; padding-inline: var(--s1); border-top: 1px solid var(--line); }
+.layers .layer-row:first-child { border-top: 0; }
+.layers .layer-row.on { background: var(--brand-soft); }
+.layers .icon-btn { min-width: 32px; font-size: .95rem; }
+.layer-name { flex: 1; min-width: 0; display: grid; text-align: start; min-height: var(--tap); padding: 4px var(--s1); border: 0; background: none; cursor: pointer; }
+.layer-name small { color: var(--muted); font-size: .75rem; }
+.zoom .toggle { opacity: .45; font-size: 1rem; }
+.zoom .toggle[aria-pressed="true"] { opacity: 1; background: var(--brand-soft); }
+.icon-row.phys { direction: ltr; justify-content: flex-end; }   /* יישור — כיוונים פיזיים: שמאל משמאל */
+[role="tab"], .layer-name { -webkit-tap-highlight-color: transparent; }

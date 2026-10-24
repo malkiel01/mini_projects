@@ -8,9 +8,13 @@ import { apply, invert, scaleAt, translate } from './geometry/matrix.js';
 import { shapeFromDrag, DEFAULTS } from './geometry/shapes.js';
 import {
   SIZES, DEFAULT_STYLE, newDocument, nextId, layout, objects, findPath, selectionBox, applyMatrix, setShape, clone,
+  leaves, cloneItem, ids,
 } from './model.js';
+import { group, ungroup, reorder, align, distribute, addLayer, removeLayer, moveLayer, moveToLayer } from './arrange.js';
 import { render, hitTest, inRect, handlePoints, readColors, HANDLE, viewMatrix } from './render.js';
-import { renderProps } from './props.js';
+import { renderProps, renderLayers } from './props.js';
+import { createPenTools } from './pen.js';
+import { snapper } from './snap.js';
 import * as drafts from './drafts.js';
 
 const $ = (id) => document.getElementById(id);
@@ -19,9 +23,24 @@ const canvas = $('canvas'), stage = $('stage');
 const S = {
   id: null, name: 'ציור', doc: null,
   view: { x: 0, y: 0, z: 1 }, dpr: 1,
-  sel: new Set(), hover: null, marquee: null, tool: 'select',
+  sel: new Set(), hover: null, marquee: null, tool: 'select', active: null, guides: null,
+  snap: pref('snap', true), grid: pref('grid', false), // active — השכבה לאובייקטים חדשים
   undo: [], redo: [],
 };
+
+// העדפות תצוגה (הצמדה, רשת) — נזכרות במכשיר
+function pref(k, d) { try { const v = localStorage.getItem('vector-studio:' + k); return v === null ? d : v === '1'; } catch { return d; } }
+function setPref(k, v) { try { localStorage.setItem('vector-studio:' + k, v ? '1' : '0'); } catch { /* חסום */ } }
+
+/** הצמדה לגרירה אחת. Ctrl / ⌘ בזמן הגרירה — בלי הצמדה. */
+function makeSnap(exclude, surface, touch) {
+  if (!S.snap && !S.grid) return null;
+  const sf = surface || S.doc.surfaces[0];
+  const sn = snapper({ doc: S.doc, exclude, tol: (touch ? 10 : 6) / S.view.z, grid: S.grid, origin: layout(S.doc).get(sf.id) });
+  if (S.snap) return sn;
+  // רשת בלבד — בלי קווים חכמים: מסננים את היעדים
+  return snapper({ doc: { surfaces: [] }, exclude, tol: (touch ? 10 : 6) / S.view.z, grid: true, origin: layout(S.doc).get(sf.id) });
+}
 
 // ---------- טעינה ----------
 
@@ -79,6 +98,15 @@ function commitFrom(before) {
   afterChange();
 }
 
+const tools = createPenTools({
+  S, DEFAULT_STYLE,
+  surfaceAt: (...a) => surfaceAt(...a), targetLayer: (...a) => targetLayer(...a),
+  commitFrom: (...a) => commitFrom(...a), toWorld: (...a) => toWorld(...a),
+  hitTest: (sx, sy, t) => hitTest(S, sx, sy, t),
+  draw: () => draw(), updateBar: () => updateBar(),
+  refresh: () => { updatePanel(); draw(); },
+});
+
 function afterChange() {
   // נתיב שנמחק לא נשאר בבחירה
   for (const id of [...S.sel]) if (!findPath(S.doc, id)) S.sel.delete(id);
@@ -94,12 +122,14 @@ function undo() {
   S.redo.push(JSON.stringify(S.doc));
   S.doc = JSON.parse(S.undo.pop());
   afterChange();
+  tools.reload();
 }
 function redo() {
   if (!S.redo.length) return;
   S.undo.push(JSON.stringify(S.doc));
   S.doc = JSON.parse(S.redo.pop());
   afterChange();
+  tools.reload();
 }
 
 // ---------- ציור ----------
@@ -109,7 +139,11 @@ function draw() {
   if (frame) return;
   frame = requestAnimationFrame(() => {
     frame = 0;
-    render(canvas, { ...S, selBox: S.sel.size ? selectionBox(S.doc, S.sel) : null, handles: !op || op.type !== 'move' });
+    const pathMode = S.tool === 'pen' || S.tool === 'node';
+    render(canvas, {
+      ...S, selBox: S.sel.size && !pathMode ? selectionBox(S.doc, S.sel) : null, handles: !op || op.type !== 'move',
+      overlay: pathMode ? tools.overlay : null,
+    });
     $('zoom-pct').textContent = Math.round(S.view.z * 100) + '%';
   });
 }
@@ -159,10 +193,40 @@ function zoomStep(dir) {
 
 // ---------- בחירה וממשק ----------
 
+const SHAPES = ['rect', 'ellipse', 'polygon', 'star', 'line'];
+let lastShape = 'rect';
+
 function setTool(t) {
   S.tool = t;
-  document.querySelectorAll('.tool').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.tool === t)));
-  canvas.style.cursor = t === 'select' ? 'default' : 'crosshair';
+  if (SHAPES.includes(t)) {
+    lastShape = t;
+    const src = document.querySelector(`[data-shape="${t}"]`);
+    $('shape-icon').innerHTML = src.querySelector('svg').innerHTML;
+    document.querySelector('[data-tool="shape"]').setAttribute('aria-label', 'צורות: ' + src.getAttribute('aria-label'));
+  }
+  document.querySelectorAll('.tool').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.tool === t || (b.dataset.tool === 'shape' && SHAPES.includes(t)))));
+  canvas.style.cursor = t === 'select' || t === 'node' ? 'default' : 'crosshair';
+  showShapePick(false);
+  tools.activate(t);
+  draw();
+}
+
+function showShapePick(open) {
+  $('shape-pick').hidden = !open;
+  document.querySelector('[data-tool="shape"]').setAttribute('aria-expanded', String(open));
+}
+
+/** סרגל צף לעט ולעריכת נקודות — בטלפון אין Enter ו-Delete. */
+function updateBar() {
+  const drawing = tools.drawing, ed = tools.editing;
+  const show = (id, on) => { $(id).hidden = !on; };
+  show('pen-done', drawing);
+  show('pen-cancel', drawing);
+  show('node-smooth', !!ed?.node);
+  show('node-del', !!ed?.node);
+  $('pen-hint').textContent = drawing ? '' : S.tool === 'pen' ? 'הקשה — נקודה, גרירה — עקומה'
+    : S.tool === 'node' ? (ed ? (ed.node ? '' : 'גוררים נקודה או ידית; הקשה על הקו — נקודה חדשה') : 'בוחרים צורה לעריכה') : '';
+  $('pen-bar').hidden = !(S.tool === 'pen' || S.tool === 'node');
 }
 
 function select(ids) {
@@ -184,7 +248,8 @@ function surfaceAt(wx, wy) {
 /** השכבה שאליה נכנסים אובייקטים חדשים: העליונה שאינה נעולה. */
 function targetLayer(surface) {
   const layers = (surface.layers ||= []);
-  let l = [...layers].reverse().find(l => l.type === 'vector' && !l.locked && l.visible !== false);
+  const usable = (l) => l.type === 'vector' && !l.locked && l.visible !== false;
+  let l = layers.find(l => l.id === S.active && usable(l)) || [...layers].reverse().find(usable);
   if (!l) {
     l = { id: nextId(S.doc, 'L'), name: 'שכבה ' + (layers.length + 1), type: 'vector', opacity: 1, blend: 'normal', visible: true, locked: false, paths: [] };
     layers.push(l);
@@ -193,16 +258,20 @@ function targetLayer(surface) {
 }
 
 function updatePanel() {
-  const paths = [...S.sel].map(id => findPath(S.doc, id)).filter(Boolean);
-  const surface = paths[0]?.surface || S.doc.surfaces[0];
+  const picked = [...S.sel].map(id => findPath(S.doc, id)).filter(Boolean);
+  const surface = picked[0]?.surface || S.doc.surfaces[0];
   const off = layout(S.doc).get(surface.id);
-  const wb = paths.length ? selectionBox(S.doc, S.sel) : null;
+  const wb = picked.length ? selectionBox(S.doc, S.sel) : null;
+  const leafIds = () => picked.flatMap(o => [...leaves(o.path)].map(p => p.id));
   renderProps($('props-body'), {
-    doc: S.doc, surface, paths: paths.map(o => o.path),
+    doc: S.doc, surface, items: picked.map(o => o.path), paths: picked.flatMap(o => [...leaves(o.path)]),
+    layerId: picked[0]?.layer.id,
     box: wb ? [wb[0] - off[0], wb[1] - off[1], wb[2], wb[3]] : null,
     edit: (fn, commit) => {
       const before = editBase ?? JSON.stringify(S.doc);
-      for (const o of paths) fn(findPath(S.doc, o.path.id).path);
+      // הנתיבים שבתוך הקבוצות — לפי מזהה, כי המסמך עשוי להתחלף בין קריאה לקריאה
+      const want = new Set(leafIds());
+      for (const { path: item } of objects(S.doc)) for (const p of leaves(item)) if (want.has(p.id)) fn(p);
       if (commit) { editBase = null; commitFrom(before); }
       else { editBase = before; draw(); }
     },
@@ -213,7 +282,7 @@ function updatePanel() {
       transformSelection(translate(box[0] - x * sx, box[1] - y * sy), sx, sy);
     }),
     setShape: (patch) => change(() => {
-      const o = findPath(S.doc, paths[0].path.id);
+      const o = findPath(S.doc, picked[0].path.id);
       setShape(o.path, { ...o.path.shape, ...patch });
     }),
     setArtboard: ({ name, w, h }) => change(() => {
@@ -222,7 +291,47 @@ function updatePanel() {
       if (h) surface.size[1] = h;
     }),
     action: (a) => a === 'delete' ? removeSelection() : duplicateSelection(),
+    arrange: (a, arg) => arrangeAction(a, arg),
   });
+  const counts = new Map();
+  for (const l of surface.layers || []) counts.set(l.id, (l.paths || []).length);
+  const active = targetLayerId(surface);
+  renderLayers($('layers-body'), {
+    surface, activeId: active, counts,
+    setActive: (id) => { S.active = id; updatePanel(); },
+    toggle: (id, k) => change(() => {
+      const l = surface.layers.find(x => x.id === id);
+      if (k === 'visible') l.visible = l.visible === false;
+      else l.locked = !l.locked;
+      // מה שנבחר בשכבה שננעלה או הוסתרה — יוצא מהבחירה
+      for (const p of l.paths || []) if (l.locked || l.visible === false) S.sel.delete(p.id);
+    }),
+    rename: (id, name) => change(() => { surface.layers.find(x => x.id === id).name = name; }),
+    move: (id, dir) => change(() => moveLayer(surface, id, dir)),
+    add: () => change(() => { S.active = addLayer(S.doc, surface).id; }),
+    remove: (id) => change(() => { removeLayer(surface, id); if (S.active === id) S.active = null; }),
+  });
+}
+
+/** השכבה הפעילה בלוח (בלי ליצור חדשה). */
+function targetLayerId(surface) {
+  const layers = surface.layers || [];
+  const usable = (l) => l.type === 'vector' && !l.locked && l.visible !== false;
+  return (layers.find(l => l.id === S.active && usable(l)) || [...layers].reverse().find(usable))?.id || null;
+}
+
+function arrangeAction(a, arg) {
+  if (!S.sel.size) return;
+  let next = null;
+  change(() => {
+    if (a === 'align') align(S.doc, S.sel, arg);
+    if (a === 'distribute') distribute(S.doc, S.sel, arg === 'dh' ? 'h' : 'v');
+    if (a === 'order') reorder(S.doc, S.sel, arg);
+    if (a === 'group') { const g = group(S.doc, S.sel); if (g) next = [g]; }
+    if (a === 'ungroup') next = ungroup(S.doc, S.sel);
+    if (a === 'layer') moveToLayer(S.doc, S.sel, arg);
+  });
+  if (next) select(next);
 }
 let editBase = null;
 
@@ -243,12 +352,12 @@ function duplicateSelection() {
   if (!S.sel.size) return;
   const fresh = [];
   change(() => {
+    const next = ids(S.doc, 'p');
     for (const s of S.doc.surfaces) for (const l of s.layers || []) {
       if (!Array.isArray(l.paths)) continue;
       for (let i = 0; i < l.paths.length; i++) {
         if (!S.sel.has(l.paths[i].id)) continue;
-        const c = clone(l.paths[i]);
-        c.id = nextId(S.doc, 'p');
+        const c = cloneItem(l.paths[i], next);
         applyMatrix(c, translate(10, 10));
         l.paths.splice(++i, 0, c); // מעל המקור, ומדלגים עליו
         fresh.push(c.id);
@@ -293,6 +402,7 @@ canvas.addEventListener('pointerdown', (e) => {
 
   if (pointers.size === 2) {           // שתי אצבעות: זום וגלילה, ומבטלים את מה שהתחיל
     if (op && op.before) { S.doc = JSON.parse(op.before); afterChangeSilent(); }
+    if (op?.type === 'tool') tools.cancelDrag();
     const [a, b] = [...pointers.values()];
     op = { type: 'pinch', d0: Math.hypot(a[0] - b[0], a[1] - b[1]) || 1, m0: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], view0: { ...S.view } };
     S.marquee = null;
@@ -304,16 +414,24 @@ canvas.addEventListener('pointerdown', (e) => {
   if (e.button === 1 || spaceDown) { op = { type: 'pan', s0: [sx, sy], view0: { ...S.view } }; return; }
   if (e.button !== 0 && !touch) return;
 
-  const [wx, wy] = toWorld(sx, sy);
+  let [wx, wy] = toWorld(sx, sy);
+  if (S.tool === 'pen' || S.tool === 'node') {
+    const r = tools.down(e, sx, sy, wx, wy);
+    if (r === 'background' && touch) { op = { type: 'pan', s0: [sx, sy], view0: { ...S.view } }; return; }
+    op = r === 'background' ? null : { type: 'tool' };
+    return;
+  }
   if (S.tool !== 'select') {
     const surface = surfaceAt(wx, wy);
     const [ox, oy] = layout(S.doc).get(surface.id);
+    const snap = makeSnap(new Set(), surface, touch);
+    if (snap && !(e.ctrlKey || e.metaKey)) [wx, wy] = (({ x, y }) => [x, y])(snap.point(wx, wy));
     const before = JSON.stringify(S.doc);
     const layer = targetLayer(surface);
     const path = { id: nextId(S.doc, 'p'), d: 'M0 0', ...clone(DEFAULT_STYLE) };
     if (S.tool === 'line') path.fill = null;
     layer.paths.push(path);
-    op = { type: 'create', id: path.id, before, p0: [wx - ox, wy - oy], off: [ox, oy], s0: [sx, sy], pointerType: e.pointerType };
+    op = { type: 'create', id: path.id, before, p0: [wx - ox, wy - oy], off: [ox, oy], s0: [sx, sy], pointerType: e.pointerType, snap };
     setShape(path, shapeFromDrag(S.tool, wx - ox, wy - oy, wx - ox, wy - oy));
     S.sel = new Set([path.id]);
     draw();
@@ -322,7 +440,7 @@ canvas.addEventListener('pointerdown', (e) => {
 
   const handle = handleAt(sx, sy);
   if (handle) {
-    op = { type: 'scale', handle, box0: selectionBox(S.doc, S.sel), before: JSON.stringify(S.doc), s0: [sx, sy] };
+    op = { type: 'scale', handle, box0: selectionBox(S.doc, S.sel), before: JSON.stringify(S.doc), s0: [sx, sy], snap: makeSnap(S.sel, findPath(S.doc, [...S.sel][0])?.surface, touch) };
     return;
   }
   const hit = hitTest(S, sx, sy, touch ? 12 : 5);
@@ -333,7 +451,7 @@ canvas.addEventListener('pointerdown', (e) => {
       select(next);
       if (!next.has(hit)) return;
     } else if (!S.sel.has(hit)) select([hit]);
-    op = { type: 'move', before: JSON.stringify(S.doc), w0: [wx, wy], s0: [sx, sy], moved: false };
+    op = { type: 'move', before: JSON.stringify(S.doc), w0: [wx, wy], s0: [sx, sy], moved: false, box0: selectionBox(S.doc, S.sel), snap: makeSnap(S.sel, findPath(S.doc, hit).surface, touch) };
     return;
   }
   if (touch) { op = { type: 'pan', s0: [sx, sy], view0: { ...S.view }, tap: true }; return; }
@@ -347,6 +465,7 @@ canvas.addEventListener('pointermove', (e) => {
   if (pointers.has(e.pointerId)) pointers.set(e.pointerId, [sx, sy]);
 
   if (!op) {
+    if (S.tool === 'pen') tools.hover(sx, sy);
     if (e.pointerType === 'mouse' && S.tool === 'select') {
       const h = handleAt(sx, sy);
       canvas.style.cursor = h ? ({ n: 'ns', s: 'ns', e: 'ew', w: 'ew', nw: 'nwse', se: 'nwse', ne: 'nesw', sw: 'nesw' }[h] + '-resize') : (spaceDown ? 'grab' : 'default');
@@ -357,6 +476,11 @@ canvas.addEventListener('pointermove', (e) => {
   }
 
   switch (op.type) {
+    case 'tool': {
+      const [wx, wy] = toWorld(sx, sy);
+      tools.move(sx, sy, wx, wy);
+      break;
+    }
     case 'pinch': {
       const [a, b] = [...pointers.values()];
       const d = Math.hypot(a[0] - b[0], a[1] - b[1]);
@@ -386,16 +510,32 @@ canvas.addEventListener('pointermove', (e) => {
       op.moved = true;
       const [wx, wy] = toWorld(sx, sy);
       let dx = wx - op.w0[0], dy = wy - op.w0[1];
-      if (e.shiftKey) { if (Math.abs(dx) > Math.abs(dy)) dy = 0; else dx = 0; }
+      let lock = '';
+      if (e.shiftKey) { if (Math.abs(dx) > Math.abs(dy)) { dy = 0; lock = 'y'; } else { dx = 0; lock = 'x'; } }
+      S.guides = null;
+      if (op.snap && op.box0 && !(e.ctrlKey || e.metaKey)) {
+        const [x, y, w, h] = op.box0;
+        const r = op.snap.box([x + dx, y + dy, w, h]);
+        if (lock !== 'x') dx += r.dx;
+        if (lock !== 'y') dy += r.dy;
+        S.guides = r.guides.filter(g => g.axis !== lock);
+      }
       S.doc = JSON.parse(op.before);
       transformSelection(translate(dx, dy), 1, 1);
       draw();
       break;
     }
     case 'scale': {
-      const [wx, wy] = toWorld(sx, sy);
+      let [wx, wy] = toWorld(sx, sy);
       const [x, y, w, h] = op.box0;
       const hd = op.handle;
+      S.guides = null;
+      // הצמדה של הקצה שזז (לא ביחס קבוע — שם הקצה נקבע מהציר השני)
+      if (op.snap && !(e.ctrlKey || e.metaKey) && !(e.shiftKey && hd.length === 2)) {
+        const axes = (/[ew]/.test(hd) ? 'x' : '') + (/[ns]/.test(hd) ? 'y' : '');
+        const r = op.snap.point(wx, wy, axes);
+        wx = r.x; wy = r.y; S.guides = r.guides;
+      }
       const ax = hd.includes('w') ? x + w : hd.includes('e') ? x : x + w / 2;
       const ay = hd.includes('n') ? y + h : hd.includes('s') ? y : y + h / 2;
       let sxF = hd.includes('e') || hd.includes('w') ? (wx - ax) / ((hd.includes('w') ? x : x + w) - ax) : 1;
@@ -418,7 +558,12 @@ canvas.addEventListener('pointermove', (e) => {
       break;
     }
     case 'create': {
-      const [wx, wy] = toWorld(sx, sy);
+      let [wx, wy] = toWorld(sx, sy);
+      S.guides = null;
+      if (op.snap && !(e.ctrlKey || e.metaKey) && !e.shiftKey) {
+        const r = op.snap.point(wx, wy);
+        wx = r.x; wy = r.y; S.guides = r.guides;
+      }
       const o = findPath(S.doc, op.id);
       setShape(o.path, shapeFromDrag(S.tool, op.p0[0], op.p0[1], wx - op.off[0], wy - op.off[1], e.shiftKey));
       draw();
@@ -429,6 +574,7 @@ canvas.addEventListener('pointermove', (e) => {
 
 function endPointer(e) {
   pointers.delete(e.pointerId);
+  S.guides = null;
   if (!op) return;
   if (op.type === 'pinch') {
     if (pointers.size === 0) op = null;
@@ -436,6 +582,10 @@ function endPointer(e) {
   }
   const [sx, sy] = local(e);
   switch (op.type) {
+    case 'tool':
+      tools.up();
+      updatePanel();
+      break;
     case 'pan':
       if (op.tap) select([]);
       break;
@@ -482,16 +632,24 @@ canvas.addEventListener('wheel', (e) => {
 
 // ---------- מקלדת ----------
 
-const TOOL_KEYS = { v: 'select', m: 'rect', l: 'ellipse', '\\': 'line' };
+const TOOL_KEYS = { v: 'select', a: 'node', p: 'pen', m: 'rect', l: 'ellipse', '\\': 'line' };
 
 document.addEventListener('keydown', (e) => {
   if (e.target.closest('input, textarea, select')) return;
+  if (tools.key(e)) { e.preventDefault(); return; }
   const mod = e.ctrlKey || e.metaKey;
   const k = e.key.toLowerCase();
   if (mod && k === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
   if (mod && k === 'y') { e.preventDefault(); redo(); return; }
   if (mod && k === 'a') { e.preventDefault(); select([...objects(S.doc)].filter(o => !o.layer.locked && o.layer.visible !== false).map(o => o.path.id)); return; }
   if (mod && k === 'd') { e.preventDefault(); duplicateSelection(); return; }
+  if (mod && k === 'g') { e.preventDefault(); arrangeAction(e.shiftKey ? 'ungroup' : 'group'); return; }
+  if (mod && (e.code === 'BracketRight' || e.code === 'BracketLeft')) {
+    e.preventDefault();
+    const up = e.code === 'BracketRight';
+    arrangeAction('order', e.shiftKey ? (up ? 'front' : 'back') : (up ? 'forward' : 'backward'));
+    return;
+  }
   if (mod && k === '0') { e.preventDefault(); fit(); return; }
   if (mod && (k === '=' || k === '+')) { e.preventDefault(); zoomStep(1); return; }
   if (mod && k === '-') { e.preventDefault(); zoomStep(-1); return; }
@@ -508,12 +666,34 @@ document.addEventListener('keyup', (e) => { if (e.key === ' ') { spaceDown = fal
 
 // ---------- כפתורים ----------
 
-document.querySelectorAll('.tool').forEach(b => b.addEventListener('click', () => setTool(b.dataset.tool)));
+document.querySelectorAll('.tool').forEach(b => b.addEventListener('click', () => {
+  const t = b.dataset.tool;
+  if (t !== 'shape') return setTool(t);
+  // צורות: לחיצה ראשונה — הצורה האחרונה; כשכבר בצורה — בחירת צורה אחרת
+  if (SHAPES.includes(S.tool)) showShapePick($('shape-pick').hidden);
+  else setTool(lastShape);
+}));
+document.querySelectorAll('[data-shape]').forEach(b => b.addEventListener('click', () => setTool(b.dataset.shape)));
+document.addEventListener('pointerdown', (e) => { if (!e.target.closest('#shape-pick, [data-tool="shape"]')) showShapePick(false); });
+$('pen-done').addEventListener('click', () => tools.finish());
+$('pen-cancel').addEventListener('click', () => tools.cancel());
+$('node-smooth').addEventListener('click', () => tools.toggleSelected());
+$('node-del').addEventListener('click', () => tools.deleteNode());
 $('undo').addEventListener('click', undo);
 $('redo').addEventListener('click', redo);
 $('zoom-in').addEventListener('click', () => zoomStep(1));
+for (const k of ['snap', 'grid']) {
+  const b = $(k + '-btn');
+  b.setAttribute('aria-pressed', String(S[k]));
+  b.addEventListener('click', () => { S[k] = !S[k]; setPref(k, S[k]); b.setAttribute('aria-pressed', String(S[k])); draw(); });
+}
 $('zoom-out').addEventListener('click', () => zoomStep(-1));
 $('zoom-pct').addEventListener('click', fit);
+document.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('[data-tab]').forEach(x => x.setAttribute('aria-selected', String(x === b)));
+  $('props-body').hidden = b.dataset.tab !== 'props';
+  $('layers-body').hidden = b.dataset.tab !== 'layers';
+}));
 $('props-btn').addEventListener('click', () => {
   const open = document.body.classList.toggle('props-open');
   $('props-btn').setAttribute('aria-expanded', String(open));

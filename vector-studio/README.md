@@ -4,7 +4,8 @@
 `drawing.svg`, ‏`document.pdf` ו-`preview.png` מוכנים בפנים. פרויקט 3 בחבילת היצירה; ההנחיות:
 `creative-suite/docs/projects/vector-studio.md`.
 
-> סטטוס: **עורך ראשון** — לוח עבודה, זום, בחירה, הזזה ושינוי גודל, צורות, מילוי ומתאר; טיוטות במכשיר. הבא: עט. ההכרעות — בטבלה למטה.
+> סטטוס: **עורך** — לוח עבודה, זום, בחירה, הזזה ושינוי גודל, צורות, מילוי ומתאר, עט ועריכת נקודות, קבוצות, שכבות,
+> יישור ופיזור, סדר הצגה, הצמדה ורשת; טיוטות במכשיר. הבא: טקסט בעברית. ההכרעות — בטבלה למטה.
 
 ## גרסה 1 — מה בפנים
 
@@ -65,17 +66,30 @@ lib/db.php · auth.php    SQLite (data/vector.sqlite — לא בגיט, מוחר
 assets/js/geometry/      גאומטריה ונתיבים — המודול המשותף שבבעלותנו (בלי DOM; נבדק ב-node)
   path.js                d של SVG → M L C Q Z מוחלטים (כולל S T H V A), כתיבה, טרנספורמציה, תיבה חוסמת
   matrix.js · shapes.js  מטריצות [a b c d e f] · צורות חיות (מלבן, אליפסה, מצולע, כוכב, קו) → d
+  nodes.js               נקודות עיגון וידיות ⇄ d, פיצול מקטע, חלקה ↔ פינה, הנקודה הקרובה
 assets/js/model.js       המסמך בצורת document.json; הזזה ושינוי גודל נאפים ל-d ולפרמטרי הצורה
 assets/js/render.js      ציור הקנבס ובדיקת פגיעה (isPointInPath / isPointInStroke)
 assets/js/editor.js      קלט, היסטוריה, טיוטה · props.js — לוח המאפיינים · drafts.js — localStorage
+assets/js/pen.js         העט ועריכת הנקודות
+assets/js/arrange.js     קבוצות, סדר הצגה, יישור ופיזור, שכבות (טהור — נבדק ב-node)
+assets/js/snap.js        הצמדה לקצוות ולמרכזים של לוחות ואובייקטים, ורשת 10pt
 tests/run.php            php vector-studio/tests/run.php
 tests/geometry.test.mjs  node --test vector-studio/tests/geometry.test.mjs
+tests/arrange.test.mjs   node --test vector-studio/tests/arrange.test.mjs
 tests/e2e.mjs            node vector-studio/tests/e2e.mjs <כתובת> — דפדפן: מחשב, 390px ו-320px
 ```
 
 **שליטה:** עכבר — גרירה על רקע בוחרת במלבן, Ctrl+גלגלת — זום, רווח+גרירה — הזזת תצוגה. מגע — אצבע על רקע
 מזיזה את התצוגה, שתיים — זום. הקשה עם כלי צורה — צורה בגודל 100pt. Shift — ריבוע / יחס קבוע / קו ב-45° / ציר
-אחד בהזזה. מקשים: V M L \ · Delete · חיצים (Shift — 10pt) · Ctrl+Z / Ctrl+Shift+Z · Ctrl+D · Ctrl+A · Ctrl+0.
+אחד בהזזה. מקשים: V (בחירה) A (נקודות) P (עט) M L \ · Delete · חיצים (Shift — 10pt) · Ctrl+Z / Ctrl+Shift+Z · Ctrl+D · Ctrl+A · Ctrl+0 · Ctrl+G / Ctrl+Shift+G (קיבוץ / פירוק) · Ctrl+] / Ctrl+[ (קדימה / אחורה; עם Shift — לקצה).
+🧲 — הצמדה (Ctrl בזמן גרירה — בלי), # — רשת.
+
+**עט:** הקשה — נקודה חדה, גרירה — עקומה, הקשה על הנקודה הראשונה — סגירה; "✓ סיום" / Enter — נתיב פתוח.
+**עריכת נקודות:** גרירת נקודה או ידית (Alt — שובר את החלקות); הקשה על הקו — נקודה חדשה; הקשה כפולה / Alt —
+חלקה ↔ פינה; "🗑️ נקודה" / Delete. צורה חיה שנערכת בנקודות הופכת לנתיב רגיל.
+
+**קבוצה** — פריט ב-`paths` עם `type: "group"` ו-`children` (נוסף לבקשה לצ'אט המתכלל). **שכבות** — לשונית בלוח
+המאפיינים: הצגה / הסתרה, נעילה, סדר, שם; אובייקט חדש נכנס לשכבה המסומנת.
 
 **טיוטות:** עד שלב השמירה, כל ציור נשמר ב-localStorage של המכשיר. גלישה בסתר / אחסון חסום — העורך אומר
 "לא נשמר".

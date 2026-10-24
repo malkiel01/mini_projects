@@ -2,9 +2,12 @@
 //
 // משטח = לוח עבודה (type: "artboard"), בו שכבות `vector`, ובכל שכבה `paths` (ההצעה בבקשה
 // creative-suite/docs/requests/vector-studio-paths.md). קואורדינטות של נתיב — ביחידות pt של המשטח שלו.
+//
+// פריט ב-`paths` = נתיב, או קבוצה: { id, type: "group", name?, children: [פריטים] }. לקבוצה אין טרנספורמציה
+// משלה — הזזה ושינוי גודל עוברים לילדים.
 
 import { parse, bbox, transform, serialize, unionBox } from './geometry/path.js';
-import { multiply, translate, isIdentity, IDENTITY } from './geometry/matrix.js';
+import { multiply, translate, isIdentity, IDENTITY, apply } from './geometry/matrix.js';
 import { shapeToD, transformShape } from './geometry/shapes.js';
 
 export const SIZES = [
@@ -30,16 +33,29 @@ export function newDocument(size) {
   };
 }
 
-/** מזהה חדש עם קידומת, שלא קיים בשום מקום במסמך (משטחים, שכבות ונתיבים יחד — כלל של הליבה). */
-export function nextId(doc, prefix) {
+function usedIds(doc) {
   const used = new Set();
   for (const s of doc.surfaces) {
     used.add(s.id);
-    for (const l of s.layers || []) { used.add(l.id); for (const p of l.paths || []) used.add(p.id); }
+    for (const l of s.layers || []) { used.add(l.id); for (const p of l.paths || []) for (const x of tree(p)) used.add(x.id); }
   }
+  return used;
+}
+
+/** מזהה חדש עם קידומת, שלא קיים בשום מקום במסמך (משטחים, שכבות ונתיבים יחד — כלל של הליבה). */
+export function nextId(doc, prefix) {
+  return ids(doc, prefix)();
+}
+
+/** מחולל מזהים: כל קריאה — מזהה חדש, גם לפני שהקודמים נכנסו למסמך. */
+export function ids(doc, prefix) {
+  const used = usedIds(doc);
   let n = 1;
-  while (used.has(prefix + n)) n++;
-  return prefix + n;
+  return () => {
+    while (used.has(prefix + n)) n++;
+    used.add(prefix + n);
+    return prefix + n;
+  };
 }
 
 /** מיקום הלוחות במרחב העבודה: זה לצד זה, ברווח של 48pt. */
@@ -53,7 +69,20 @@ export function layout(doc) {
   return out;
 }
 
-/** כל האובייקטים, מלמטה למעלה: { path, layer, surface }. */
+export const isGroup = (item) => item?.type === 'group';
+
+/** הפריט וכל הצאצאים שלו (קבוצות ונתיבים). */
+export function* tree(item) {
+  yield item;
+  if (isGroup(item)) for (const c of item.children || []) yield* tree(c);
+}
+
+/** הנתיבים שבפריט — הוא עצמו, או כל הנתיבים שבקבוצה. */
+export function* leaves(item) {
+  for (const x of tree(item)) if (!isGroup(x)) yield x;
+}
+
+/** כל האובייקטים העליונים בשכבות, מלמטה למעלה: { path: פריט (נתיב או קבוצה), layer, surface }. */
 export function* objects(doc) {
   for (const surface of doc.surfaces) {
     for (const layer of surface.layers || []) {
@@ -74,9 +103,10 @@ export function pathMatrix(path, offset) {
   return multiply(translate(offset[0], offset[1]), m);
 }
 
-/** תיבה חוסמת במרחב העבודה. */
-export function worldBox(path, offset) {
-  return bbox(transform(parse(path.d), pathMatrix(path, offset)));
+/** תיבה חוסמת במרחב העבודה — של נתיב או של קבוצה. */
+export function worldBox(item, offset) {
+  if (isGroup(item)) return unionBox([...leaves(item)].map(p => worldBox(p, offset)));
+  try { return bbox(transform(parse(item.d), pathMatrix(item, offset))); } catch { return null; }
 }
 
 export function selectionBox(doc, ids) {
@@ -94,9 +124,15 @@ export function selectionBox(doc, ids) {
  * נמתח והצורה נשארת עריכה. צורה שלא ניתן לשמר (סיבוב) — הופכת לנתיב.
  */
 export function applyMatrix(path, m) {
+  if (isGroup(path)) { for (const c of path.children || []) applyMatrix(c, m); return; }
   if (path.transform && !isIdentity(path.transform)) {
     path.transform = multiply(m, path.transform);
     return;
+  }
+  // מעבר צבע — הנקודות שלו במרחב הנתיב, והן זזות איתו
+  for (const k of ['fill', 'stroke']) {
+    const g = path[k]?.gradient;
+    if (g?.from && g?.to) { g.from = apply(m, ...g.from).map(r3); g.to = apply(m, ...g.to).map(r3); }
   }
   if (path.shape) {
     const s = transformShape(path.shape, m);
@@ -122,3 +158,10 @@ export function setShape(path, shape) {
 }
 
 export const clone = (v) => JSON.parse(JSON.stringify(v));
+
+/** עותק עם מזהים חדשים לכל הצאצאים. `next` — מחולל מ-ids(), כדי שכמה עותקים לא יקבלו אותו מזהה. */
+export function cloneItem(item, next) {
+  const c = clone(item);
+  for (const x of tree(c)) x.id = next();
+  return c;
+}
