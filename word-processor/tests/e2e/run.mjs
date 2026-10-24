@@ -60,7 +60,7 @@ const t = {
         const ctx = await t.browser.newContext({ viewport: { width: 1200, height: 900 }, ...opts });
         const p = await ctx.newPage();
         p.errors = [];
-        p.on('pageerror', e => p.errors.push(e.message));
+        p.on('pageerror', e => p.errors.push(e.message + ' @ ' + String(e.stack || '').split('\n').slice(1, 4).map(l => l.trim()).join(' ← ')));
         await p.goto(editor);
         await p.waitForSelector('.list, .login-box');
         return p;

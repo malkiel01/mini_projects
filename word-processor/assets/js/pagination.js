@@ -32,12 +32,14 @@ export const Pages = Extension.create({
         return [new Plugin({
             key: pagesKey,
             state: {
-                init: () => ({ deco: DecorationSet.empty, sig: '' }),
+                init: () => ({ deco: DecorationSet.empty, sig: '', layout: null }),
                 apply(tr, old) {
                     const next = tr.getMeta(pagesKey);
                     if (next) return next;
                     if (!tr.docChanged) return old;
-                    return { deco: old.deco.map(tr.mapping, tr.doc), sig: old.sig };
+                    // גם העימוד עצמו ממופה: הקלדה מזיזה את כל המעברים שאחריה, ובלי זה כל הקשה הייתה "עימוד חדש" —
+                    // DecorationSet חדש ועדכון של כל הווידג'טים, במסמך ארוך עשרות מילישניות. החתימה — רק כשמשווים
+                    return { deco: old.deco.map(tr.mapping, tr.doc), sig: null, layout: mapLayout(old.layout, tr.mapping) };
                 },
             },
             props: {
@@ -65,6 +67,7 @@ export const Pages = Extension.create({
                         }
                         const res = measure(view, ext.options.geometry());
                         const cur = pagesKey.getState(view.state);
+                        cur.sig ??= cur.layout ? signature(cur.layout) : '';
                         if (res.sig === cur.sig) { ext.storage.pages = res.pages; ext.options.onLayout(res); return; }
                         if (settled) return;
                         let pick = res;
@@ -90,21 +93,22 @@ export const Pages = Extension.create({
                             // טבלה שנמשכת: שורת הכותרת חוזרת בראש העמוד (כמו ב-Word וב-PDF)
                             if (b.repeat != null) {
                                 const hdr = view.nodeDOM(b.repeat);
-                                if (hdr) out.push(Decoration.widget(b.pos, repeatRow(hdr), { side: -1, key: `rp${b.page}-${b.repeat}`, ignoreSelection: true, marks: [] }));
+                                if (hdr) out.push(Decoration.widget(b.pos, repeatRow(hdr), { side: -1, key: `rp${b.page}-${b.repeat}-${b.rid}`, ignoreSelection: true, marks: [] }));
                             }
                             return out;
                         }).concat((pick.notesArea || []).flatMap(a => a.toc ? tocPart(a.toc, 0, () => notesAreaEl(a), `fn${Math.round(a.fill)}-${a.notes.map(n => n.n).join('.')}`) : [Decoration.widget(a.pos, notesAreaEl(a), {
                             // אזור ההערות של העמוד האחרון — אחרי הכול (גם אחרי הערות הסיום); עמוד שנגמר בין הערות סיום — לפני המעבר שלו
-                            side: a.end ? a.end : a.side != null ? a.side - 0.25 : -3, key: `fn${a.pos}-${a.end || ''}-${Math.round(a.fill)}-${a.notes.map(n => n.n).join('.')}-${a.style ? hash(a.style) : ''}-${hash(a.notes.map(n => n.text + JSON.stringify(n.content || '') + (n.clip || '') + (n.skip || '')).join('|'))}`,
+                            // בלי המיקום במפתח: הקלדה מזיזה את כל מה שאחריה, והאזורים (שבמסמך ארוך — עשרות) היו נבנים מחדש בכל הקשה
+                            side: a.end ? a.end : a.side != null ? a.side - 0.25 : -3, key: `fn-${a.end || ''}-${Math.round(a.fill)}-${a.notes.map(n => n.n).join('.')}-${a.style ? hash(a.style) : ''}-${hash(a.notes.map(n => n.text + JSON.stringify(n.content || '') + (n.clip || '') + (n.skip || '')).join('|'))}`,
                             ignoreSelection: true, marks: [],
                         })])));
-                        view.dispatch(view.state.tr.setMeta(pagesKey, { deco, sig: pick.sig }).setMeta('addToHistory', false));
+                        view.dispatch(view.state.tr.setMeta(pagesKey, { deco, sig: pick.sig, layout: pick }).setMeta('addToHistory', false));
                     });
                 };
                 // מדידה מחדש מבחוץ (הגדרות עמוד, גופן שנטען, שינוי רוחב) — פותחת מחדש את הבחירה
                 let clean = false;
                 // גם גובה ההערות נמדד מחדש: גופן שנטען משנה אותו, והמפתח במטמון (שם הגופן) — לא (ביקורת 04, F10)
-        const fresh = () => { tried = new Map(); settled = false; clean = true; fnCache.clear(); schedule(); };
+        const fresh = () => { tried = new Map(); settled = false; clean = true; fnCache.clear(); lineCache = new WeakMap(); schedule(); };
                 ext.storage.schedule = fresh;
                 // שינוי גובה — בדרך כלל הרווחים שלנו; שינוי רוחב — שבירת שורות חדשה, מתחילים מחדש
                 let width = 0;
@@ -163,6 +167,32 @@ export const Pages = Extension.create({
     },
 });
 
+/**
+ * העימוד אחרי שינוי במסמך — המיקומים ממופים כמו הקישוטים (רווח לפני המיקום / אחריו לפי side). מעבר שהמקום שלו נמחק —
+ * הקישוט שלו נעלם, ולכן אין עימוד ממופה (החתימה ריקה, והמדידה הבאה מציירת מחדש).
+ */
+function mapLayout(l, mapping) {
+    if (!l) return null;
+    let lost = false;
+    const at = (pos, assoc) => { const r = mapping.mapResult(pos, assoc); if (r.deleted) lost = true; return r.pos; };
+    const breaks = l.breaks.map(b => ({ ...b, pos: at(b.pos, (b.side ?? -2) < 0 ? -1 : 1), toc: b.toc && { ...b.toc, pos: at(b.toc.pos, 1) },
+        repeat: b.repeat != null ? at(b.repeat, 1) : null }));
+    const notesArea = l.notesArea.map(a => ({ ...a, pos: at(a.pos, a.end || (a.side ?? -3) >= 0 ? 1 : -1) }));
+    return lost ? null : { breaks, notesArea, pageSecs: l.pageSecs };
+}
+
+// מזהה לכל צומת (אובייקט) — בחתימה (rid): שורת כותרת שחוזרת היא עותק, ושינוי בתוכה (בלי שמעבר זז) צריך עותק חדש
+const nodeIds = new WeakMap();
+let nodeSeq = 0;
+const nodeId = n => { if (!n) return 0; if (!nodeIds.has(n)) nodeIds.set(n, ++nodeSeq); return nodeIds.get(n); };
+
+/** חתימת עימוד: אותה חתימה — אותם קישוטים. */
+function signature({ breaks, notesArea, pageSecs }) {
+    return breaks.map(b => `${b.pos}${b.side ? '~' + b.side : ''}${b.toc ? 't' + b.toc.k : ''}${b.rid ? 'r' + b.rid : ''}:${Math.round(b.h)}`).join('|')
+        + '§' + notesArea.map(a => `${a.pos}:${Math.round(a.fill)}:${a.notes.map(n => n.n + n.text + (n.content ? hash(JSON.stringify(n.content)) : '') + (n.clip ? '<' + Math.round(n.clip) : '') + (n.skip ? '>' + Math.round(n.skip) : '')).join(',')}`).join('|')
+        + '#' + pageSecs.join(',') + '#' + breaks.map(b => b.skip || 0).join('');
+}
+
 /** האם בעימוד a הדף הראשון ששונה נשבר מוקדם יותר (בטוח יותר: שום שורה לא גולשת). */
 function earlier(a, b) {
     for (let i = 0; i < Math.min(a.breaks.length, b.breaks.length); i++) {
@@ -176,9 +206,8 @@ const FN_LINE = 10 * 1.25 * 4 / 3;   // שורה של הערה (px): 10pt × lin
 const fnCache = new Map();
 let fnBox = null;
 /** גובה הערה אחת בתחתית העמוד — מדידה בקופסה נסתרת, באותו רוחב ובאותו גופן כמו אזור ההערות. */
-function noteHeight(root, note, g) {
+function noteHeight(root, note, g, font = getComputedStyle(root).fontFamily) {
     const w = Math.round(g.textW ?? (g.pageW - g.left - g.right));   // בטורים — רוחב הטור
-    const font = getComputedStyle(root).fontFamily;
     const key = `${w}|${font}|${note.n}|${note.text}|${note.content ? JSON.stringify(note.content) : ''}`;
     if (fnCache.has(key)) return fnCache.get(key);
     if (!fnBox || !fnBox.isConnected) {
@@ -202,6 +231,7 @@ function noteEl(note) {
     const d = document.createElement('div');
     d.className = 'wp-fn-note';
     if (note.pos != null) d.dataset.pos = note.pos;
+    d.dataset.n = note.n;   // באזור ההערות (ווידג'ט שנשמר כשהמסמך זז) data-pos מתיישן — שם מזהים לפי המספר
     const sup = document.createElement('sup');
     sup.textContent = note.n;
     d.append(sup, ' ', ...noteInline(note));
@@ -313,6 +343,12 @@ function measure(view, g) {
         for (const [t, h] of spacers) { if (t < physTop - 0.5) y -= h; else break; }
         return y;
     };
+    // ההפך: מלוגי למיקום במסך (clientY) — לשורה מהמטמון, שהמיקום הפיזי שלה לא נמדד הפעם
+    const toPhys = y => {
+        let p = y;
+        for (const [t, h] of spacers) { if (t < p - 0.5) p += h; else break; }
+        return p * zoom + rr.top;
+    };
     const units = [];   // {top, bottom, pos, kind: 'block'|'line'|'force'|'heading', first?: bool}
     const box = el => {
         const r = el.getBoundingClientRect();
@@ -334,7 +370,7 @@ function measure(view, g) {
                 return;
             }
             if (CONTAINERS.has(name)) { visit(child, cpos + 1, name === 'listItem' ? brk : (offset === 0 ? at : null)); return; }
-            if (TEXTBLOCKS.has(name)) { lines(view, dom, child, cpos, brk, logical, rr, zoom, units, name === 'heading', maxH); return; }
+            if (TEXTBLOCKS.has(name)) { lines(view, dom, child, cpos, brk, logical, rr, zoom, units, name === 'heading', maxH, toPhys); return; }
             if (name === 'table') { rows(view, child, cpos, brk, box, units); return; }
             if (name === 'toc') { tocLines(dom, cpos, brk, box, units); return; }
             const b = box(dom);
@@ -351,11 +387,18 @@ function measure(view, g) {
 
     // הערות שוליים: כל סימן משויך ליחידה (שורה / בלוק) שבה הוא נמצא; גובה ההערה נמדד מראש באותו רוחב ובאותו גופן
     const refs = [...root.querySelectorAll('.wp-fn-ref:not(.wp-en-ref)')].filter(el => !el.closest('.wp-repeat, .wp-fn-area, .wp-en-area'));
+    let refAt = 0;
     refs.forEach((el, k) => {
         const b = box(el);
         const mid = (b.top + b.bottom) / 2;
-        const u = units.find(x => x.kind !== 'force' && mid >= x.top - 0.5 && mid <= x.bottom + 0.5);
-        if (!u) return;
+        // הסימנים והיחידות באותו סדר (מלמעלה למטה) — ממשיכים מהיחידה של הסימן הקודם; לא נמצא שם — מההתחלה
+        const has = x => x.kind !== 'force' && mid >= x.top - 0.5 && mid <= x.bottom + 0.5;
+        let at = -1;
+        for (let x = refAt; x < units.length; x++) if (has(units[x])) { at = x; break; }
+        if (at < 0) at = units.findIndex(has);
+        if (at < 0) return;
+        refAt = at;
+        const u = units[at];
         let pos = null;
         try { pos = view.posAtDOM(el, 0); } catch { /* */ }
         let content = null;
@@ -370,7 +413,16 @@ function measure(view, g) {
     const secOf = pos => { let k = 0; for (let x = 1; x < secs.length; x++) if (pos > secs[x].from) k = x; return k; };
     let s = 0;                    // המקטע של העמוד הנוכחי
     // גובה הערה — ברוחב העמוד שהיא בו (ביקורת 04, F10: נמדד ברוחב המקטע הראשון)
-    const noteH = note => noteHeight(root, note, secs[s]);
+    // הסימולציה שואלת על כל הערה שוב ושוב (בכל יחידה בעמוד שלה) — פעם אחת לכל הערה ומקטע
+    const font = getComputedStyle(root).fontFamily;
+    const heights = new Map();
+    const noteH = note => {
+        const was = heights.get(note);
+        if (was?.s === s) return was.h;
+        const h = noteHeight(root, note, secs[s], font);
+        heights.set(note, { s, h });
+        return h;
+    };
     const pageSecs = [0];
     const breaks = [];
     let pageTop = g.top;          // הלוגי שבו מתחיל אזור הטקסט של העמוד הנוכחי
@@ -421,6 +473,15 @@ function measure(view, g) {
             style: brk.row || brk.toc || view.state.doc.resolve(brk.pos).depth ? '' : secStyle() });
         brk.h = Math.max(0, brk.h - fill - areaH(list));
         return brk;
+    };
+    // השורות של כל פסקה (רצופות) — לבדיקת השורות היתומות; נבנה פעם אחת ולא בסריקה לכל מעבר (מסמך ארוך)
+    let spans = null;
+    const paraSpan = para => {
+        if (!spans) {
+            spans = new Map();
+            units.forEach((y, k) => { if (y.para == null) return; const sp = spans.get(y.para); if (sp) sp.total++; else spans.set(y.para, { start: k, total: 1 }); });
+        }
+        return spans.get(para);
     };
     let i = 0;
     while (i < units.length) {
@@ -487,8 +548,7 @@ function measure(view, g) {
         const orphans = k => {
             const x = units[k];
             if (x.kind !== 'line' || x.first) return k;
-            const start = units.findIndex(y => y.para === x.para);
-            const total = units.filter(y => y.para === x.para).length;
+            const { start, total } = paraSpan(x.para);
             const before = k - start;
             if (before < 2) return start;
             if (total - before < 2 && before >= 3) return k - 1;
@@ -505,7 +565,7 @@ function measure(view, g) {
         if (j <= firstOnPage) j = i;
         const used = units[j].top - pageTop;
         const rep = units[j].repeat;   // שורה באמצע טבלה: גם השבירה בתוך הטבלה, וגם שורת הכותרת חוזרת (תופסת מקום)
-        breaks.push(closePage({ pos: units[j].pos, side: units[j].side, h: Math.max(0, secs[s].pageH + g.gap - used), page: page + 1, row: units[j].row || 0, repeat: rep ? rep.pos : null,
+        breaks.push(closePage({ pos: units[j].pos, side: units[j].side, h: Math.max(0, secs[s].pageH + g.gap - used), page: page + 1, row: units[j].row || 0, repeat: rep ? rep.pos : null, rid: rep ? nodeId(view.state.doc.nodeAt(rep.pos)) : 0,
             toc: units[j].toc || null },
             used, notesOf(firstOnPage, j)));
         pageTop = units[j].top - (rep ? rep.h : 0);
@@ -532,8 +592,6 @@ function measure(view, g) {
         pending = rest;
         notesArea.push({ pos: docEnd, fill: Math.max(0, secs[s].contentH - areaH(here)), notes: here, row: 0, end: 1000 + 2 * m, style: secStyle() });
     }
-    const sig = breaks.map(b => `${b.pos}${b.side ? '~' + b.side : ''}${b.toc ? 't' + b.toc.k : ''}:${Math.round(b.h)}`).join('|')
-        + '§' + notesArea.map(a => `${a.pos}:${Math.round(a.fill)}:${a.notes.map(n => n.n + n.text + (n.content ? JSON.stringify(n.content).length : '') + (n.clip ? '<' + Math.round(n.clip) : '') + (n.skip ? '>' + Math.round(n.skip) : '')).join(',')}`).join('|');
     // טורים: כל "עמוד" כאן הוא טור (ברוחב הטור). העמוד הפיזי של כל אחד — n טורים לעמוד; מקטע חדש או מעבר עמוד ידני
     // פותחים עמוד חדש. מעבר ידני באמצע העמוד מדלג על הטורים שנשארו (skip — בהדפסה: עוד מעברי טור)
     const byPage = new Map(breaks.map(b => [b.page, b]));
@@ -546,7 +604,7 @@ function measure(view, g) {
         } else { phys.push(phys[i - 1]); cols.push(cols[i - 1] + 1); }
     }
     // skip בחתימה: שינוי מספר הטורים בלבד (מסמך קצר עם מעבר ידני) לא מזיז אף מעבר, אבל משנה את מעברי הטור בהדפסה
-    return { breaks, notesArea, pages: page + 1, pageSecs, phys, cols, sig: sig + '#' + pageSecs.join(',') + '#' + breaks.map(b => b.skip || 0).join(''), zoom };
+    return { breaks, notesArea, pages: page + 1, pageSecs, phys, cols, sig: signature({ breaks, notesArea, pageSecs }), zoom };
 }
 
 /**
@@ -587,9 +645,40 @@ function rows(view, table, tpos, brk, box, units) {
     });
 }
 
-function lines(view, dom, node, pos, brk, logical, rr, zoom, units, heading, maxH) {
+/**
+ * מטמון השורות של פסקה, לפי הצומת עצמו (צומת שלא השתנה נשאר אותו אובייקט): הגבולות בין השורות יחסית לראש הבלוק
+ * (לוגיים — הרווחים שלנו לא משנים אותם), ותחילת כל שורה שנשברה. במסמך ארוך רוב הפסקאות לא משתנות בהקלדה, וקריאת
+ * המלבנים של כל הטקסט היא רוב זמן המדידה. נבדק בכל שימוש: אותו רוחב ואותו גובה (שבירת שורות אחרת משנה גובה);
+ * מדידה מחדש מבחוץ (גופן, רוחב, הגדרות, תצוגת שינויים) — מטמון חדש.
+ */
+let lineCache = new WeakMap();
+
+function lines(view, dom, node, pos, brk, logical, rr, zoom, units, heading, maxH, toPhys) {
     const para = pos;
     const { keepNext, keepLines, breakBefore } = node.attrs;
+    const box = dom.getBoundingClientRect();
+    const blockTop = logical((box.top - rr.top) / zoom);
+    const blockBottom = logical((box.bottom - rr.top) / zoom);
+    const key = `${Math.round(box.width / zoom)}|${maxH}|${heading}`;
+    const start = pos + 1;
+    const end = pos + node.nodeSize - 1;
+    const hit = lineCache.get(node);
+    if (hit && hit.key === key && Math.abs(hit.h - (blockBottom - blockTop)) < 0.5) {
+        hit.rel.forEach((r, k) => {
+            const u = { ...r, top: blockTop + r.top, bottom: blockTop + r.bottom, para };
+            delete u.lt;
+            if (k === 0) u.pos = brk;
+            else Object.defineProperty(u, 'pos', { get() { return this._p ??= lineStart(view, start, end, toPhys(blockTop + r.lt), hit.starts, k); } });
+            units.push(u);
+        });
+        return;
+    }
+    const entry = { key, h: blockBottom - blockTop, rel: [], starts: new Map() };
+    lineCache.set(node, entry);
+    const push = (u, lt) => {
+        units.push(u);
+        entry.rel.push({ ...u, top: u.top - blockTop, bottom: u.bottom - blockTop, lt: lt - blockTop, pos: undefined, para: undefined });
+    };
     const rects = [];
     const walker = document.createTreeWalker(dom, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, {
         acceptNode: n => {
@@ -617,11 +706,8 @@ function lines(view, dom, node, pos, brk, logical, rr, zoom, units, heading, max
             for (const r of range.getClientRects()) if (r.height) { const hl = (L - r.height) / 2; rects.push([r.top, r.bottom, r.top - hl, r.bottom + hl]); }
         } else { const r = n.getBoundingClientRect(); if (r.height) rects.push([r.top, r.bottom, r.top, r.bottom]); }
     }
-    const box = dom.getBoundingClientRect();
-    const blockTop = logical((box.top - rr.top) / zoom);
-    const blockBottom = logical((box.bottom - rr.top) / zoom);
     if (rects.length < 2) {
-        units.push({ top: blockTop, bottom: blockBottom, pos: brk, kind: 'block', para, heading: heading || !!keepNext, breakBefore: !!breakBefore, first: true, last: true });
+        push({ top: blockTop, bottom: blockBottom, pos: brk, kind: 'block', para, heading: heading || !!keepNext, breakBefore: !!breakBefore, first: true, last: true }, blockTop);
         return;
     }
     // קיבוץ לשורות: מלבן שמתחיל לפני סוף השורה הנוכחית (פחות חצי גובה) — באותה שורה
@@ -635,13 +721,11 @@ function lines(view, dom, node, pos, brk, logical, rr, zoom, units, heading, max
         } else ls.push([t, b, et, eb]);
     }
     if (ls.length < 2 || heading) {
-        units.push({ top: blockTop, bottom: blockBottom, pos: brk, kind: 'block', para, heading: heading || !!keepNext, breakBefore: !!breakBefore, first: true, last: true });
+        push({ top: blockTop, bottom: blockBottom, pos: brk, kind: 'block', para, heading: heading || !!keepNext, breakBefore: !!breakBefore, first: true, last: true }, blockTop);
         return;
     }
     // "שמור שורות יחד": כל שורה (חוץ מהאחרונה) נשארת עם הבאה — רק כשכל הפסקה נכנסת בעמוד (כמו ב-Word)
     const together = keepLines && blockBottom - blockTop <= maxH + 0.5;
-    const start = pos + 1;
-    const end = pos + node.nodeSize - 1;
     // שורה = כל גובה השורה (line-height), לא רק גובה האותיות — כך מודד גם ה-PDF מהשרת, ושורה שרק האותיות שלה
     // נכנסות בתחתית העמוד עוברת לעמוד הבא. הגבול בין שתי שורות: בין תחתית השורה המלאה של האחת לראש של הבאה
     // (כל קצה מומר ללוגי לבד: בין שתי השורות יכול לשבת רווח של מעבר עמוד)
@@ -654,19 +738,29 @@ function lines(view, dom, node, pos, brk, logical, rr, zoom, units, heading, max
         const last = k === ls.length - 1;
         const u = { top, bottom, kind: 'line', para, heading: last ? !!keepNext : !!together, breakBefore: k === 0 && !!breakBefore, first: k === 0, last };
         if (k === 0) u.pos = brk;
-        else Object.defineProperty(u, 'pos', { get() { return this._p ??= lineStart(view, start, end, t); } });
-        units.push(u);
+        else Object.defineProperty(u, 'pos', { get() { return this._p ??= lineStart(view, start, end, t, entry.starts, k); } });
+        push(u, lg(t));
     });
 }
 
-/** המיקום הראשון שהתו אחריו נמצא בשורה שמתחילה ב-lineTop (פיזי, במסך). */
-function lineStart(view, lo, hi, lineTop) {
-    let a = lo, b = hi;
-    while (a < b) {
-        const mid = (a + b) >> 1;
-        let top;
-        try { top = view.coordsAtPos(mid, 1).top; } catch { top = lineTop; }
-        if (top >= lineTop - 2) b = mid; else a = mid + 1;
+/**
+ * המיקום הראשון שהתו אחריו נמצא בשורה שמתחילה ב-lineTop (פיזי, במסך). starts — המטמון של הפסקה: לשורה k, המרחק
+ * מתחילת הפסקה (הפסקה זזה כשמקלידים לפניה). המטמון מתחלף כשהפסקה, הרוחב או הגובה שלה משתנים — אז חיפוש בינארי
+ * (coordsAtPos — יקר במסמך ארוך).
+ */
+function lineStart(view, lo, hi, lineTop, starts, k) {
+    let a;
+    if (starts.has(k)) a = lo + starts.get(k);
+    else {
+        a = lo;
+        let b = hi;
+        while (a < b) {
+            const mid = (a + b) >> 1;
+            let top;
+            try { top = view.coordsAtPos(mid, 1).top; } catch { top = lineTop; }
+            if (top >= lineTop - 2) b = mid; else a = mid + 1;
+        }
+        starts.set(k, a - lo);
     }
     // שורה שנשברה לא מתחילה ברווח / טאב: אלה "תלויים" בסוף השורה הקודמת (גם ב-PDF). טאב תלוי מדווח לפעמים
     // במיקום של השורה הבאה — והשבירה הייתה נכנסת לפניו, והטאב היה פותח את השורה בעמוד הבא (ומזיז אותה)
