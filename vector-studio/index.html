@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="theme-color" content="#2d4a8a">
+  <title>וקטורי</title>
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body>
+  <a class="skip" href="#main">דילוג לתוכן</a>
+  <header class="top">
+    <div class="titles"><h1>וקטורי</h1><div class="sub">לוגואים, אייקונים ואיורים</div></div>
+    <span class="avatar me" id="me" hidden></span>
+  </header>
+  <main id="main" tabindex="-1">
+    <div class="state" id="loading"><p class="muted">טוען…</p></div>
+
+    <section id="home" hidden>
+      <h2 class="sec-title">הציורים שלי</h2>
+      <ul class="list"><li class="empty">עוד אין ציורים. העורך — לוח עבודה, צורות ועט — נפתח בשלבים הבאים.</li></ul>
+    </section>
+
+    <div class="state" id="denied" hidden>
+      <p class="error" role="alert" id="denied-msg"></p>
+    </div>
+  </main>
+  <script type="module" src="assets/js/app.js"></script>
+</body>
+</html>

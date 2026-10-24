@@ -1,0 +1,7 @@
+# הדף והקוד נבדקים מול השרת בכל טעינה — אחרת הטלפון מחזיק app.js ישן ימים שלמים,
+# ותכונה שנפרסה לא מופיעה. כשלא השתנה דבר זו בקשה קטנה שמסתיימת ב-304.
+<IfModule mod_headers.c>
+    <FilesMatch "\.(html|js|mjs|css)$">
+        Header set Cache-Control "no-cache, must-revalidate"
+    </FilesMatch>
+</IfModule>
