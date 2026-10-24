@@ -20,6 +20,7 @@
   <div class="work">
     <main class="stage" id="stage" aria-label="קנבס">
       <canvas id="canvas"></canvas>
+      <canvas id="overlay" aria-hidden="true"></canvas>
       <div class="brush-cursor" id="brush-cursor" hidden></div>
       <p class="stage-msg" id="msg" role="status">טוען…</p>
       <nav class="tools" id="tools" aria-label="כלים">
@@ -34,6 +35,18 @@
           <input id="opt-opacity" type="range" min="1" max="100" step="1"></label>
         <label class="opt" data-for="bucket"><span>סבולת <output for="opt-tolerance"></output></span>
           <input id="opt-tolerance" type="range" min="0" max="255" step="1"></label>
+        <fieldset class="seg opt-seg" data-for="rect ellipse lasso" aria-label="מצב הבחירה">
+          <label><input type="radio" name="selmode" value="new" checked><span>חדשה</span></label>
+          <label><input type="radio" name="selmode" value="add"><span>הוספה</span></label>
+          <label><input type="radio" name="selmode" value="sub"><span>חיסור</span></label>
+        </fieldset>
+        <div class="opt-btns" data-for="rect ellipse lasso">
+          <button class="icon-btn" type="button" data-sel="all" aria-label="בחירת הכול (Ctrl+A)" title="בחירת הכול (Ctrl+A)">▣</button>
+          <button class="icon-btn" type="button" data-sel="none" aria-label="ביטול הבחירה (Ctrl+D)" title="ביטול הבחירה (Ctrl+D)">⊘</button>
+          <button class="icon-btn" type="button" data-sel="invert" aria-label="היפוך הבחירה (Ctrl+Shift+I)" title="היפוך הבחירה (Ctrl+Shift+I)">◐</button>
+          <button class="icon-btn" type="button" data-sel="fill" aria-label="מילוי הבחירה בצבע (Alt+Backspace)" title="מילוי הבחירה בצבע (Alt+Backspace)">🎨</button>
+          <button class="icon-btn" type="button" data-sel="delete" aria-label="מחיקת הבחירה (Delete)" title="מחיקת הבחירה (Delete)">🗑️</button>
+        </div>
       </div>
     </main>
 

@@ -10,11 +10,13 @@ import { deviceBudget, suggestSize, megapixels } from './engine/budget.js';
 import { createLayersPanel } from './layers-panel.js';
 import { History } from './engine/history.js';
 import { createTools } from './tools.js';
+import { createOverlay } from './overlay.js';
 
 const $ = s => document.querySelector(s);
 const stage = $('#stage');
 const canvas = $('#canvas');
 const msg = $('#msg');
+const overlay = createOverlay($('#overlay'), { doc: () => doc, view: () => view });
 
 const coarse = matchMedia('(pointer: coarse)').matches;
 const mobile = coarse || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -43,6 +45,7 @@ function draw() {
   raf = requestAnimationFrame(() => {
     raf = 0;
     renderer?.render(doc, view, devicePixelRatio || 1);
+    overlay.draw();
     const lbl = $('#zoom-lbl');
     lbl.textContent = V.zoomLabel(view.zoom);
     lbl.setAttribute('aria-label', 'זום ' + lbl.textContent + ' — לחיצה: גודל אמיתי (100%)');
@@ -310,7 +313,7 @@ $('#hint').textContent = coarse ? 'צביטה — זום' : 'גרירה — הז
     // ההיסטוריה — עד רבע מתקציב הזיכרון של המכשיר
     history = new History({ renderer, limitBytes: budget.bytes / 4, onChange: syncHistory });
     tools = createTools({
-      doc: () => doc, renderer, history, view: () => view, toast, draw,
+      doc: () => doc, renderer, history, view: () => view, toast, draw, overlay,
       onChange: () => { changed = true; draw(); panel.render(); },
     });
     panel = createLayersPanel({

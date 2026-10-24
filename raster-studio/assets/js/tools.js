@@ -2,9 +2,13 @@
 // הציור עצמו: משיכה במנוע (beginStroke → dab → endStroke), ובסופה רשומה אחת בהיסטוריה.
 
 import { dabsAlong, floodFill, hexToRgb, rgbToHex } from './engine/fill.js';
+import { combine, isEmptyShape } from './engine/selection.js';
 
 export const TOOLS = {
   hand: { label: 'יד', icon: '✋', key: 'h', hint: 'גרירה — הזזה' },
+  rect: { label: 'בחירה מלבנית', icon: '⬚', key: 'm', hint: 'Shift — הוספה · Alt — חיסור · Ctrl+D — ביטול הבחירה' },
+  ellipse: { label: 'בחירה אליפטית', icon: '◯', key: null, hint: 'Shift — הוספה · Alt — חיסור · M — מעבר בין מלבן לאליפסה' },
+  lasso: { label: 'לאסו', icon: '➰', key: 'l', hint: 'גרירה סביב האזור · Shift — הוספה · Alt — חיסור' },
   brush: { label: 'מכחול', icon: '🖌️', key: 'b', hint: 'Alt+לחיצה — דגימת צבע · [ ] — גודל' },
   eraser: { label: 'מחק', icon: '🧽', key: 'e', hint: '[ ] — גודל' },
   bucket: { label: 'דלי', icon: '🪣', key: 'g', hint: 'לחיצה — מילוי אזור בשכבה הפעילה' },
@@ -28,9 +32,10 @@ const $ = (s, el = document) => el.querySelector(s);
  * @param {() => void} o.draw
  * @param {(m: string, err?: boolean) => void} o.toast
  */
-export function createTools({ doc, renderer, history, view, onChange, draw, toast }) {
-  const state = { tool: 'brush', color: '#1b1e26', size: 12, hardness: 0.8, opacity: 1, tolerance: 32 };
+export function createTools({ doc, renderer, history, view, onChange, draw, toast, overlay }) {
+  const state = { tool: 'brush', color: '#1b1e26', size: 12, hardness: 0.8, opacity: 1, tolerance: 32, selMode: 'new' };
   let stroke = null;   // { layer, last, carry, pen }
+  let lasso = null;    // גרירת בחירה: { type, mode, start, pts, shape }
 
   const strip = $('#tools');
   const opts = $('#tool-opts');
@@ -43,7 +48,7 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     b.className = 'icon-btn tool';
     b.dataset.tool = id;
     b.textContent = t.icon;
-    b.setAttribute('aria-label', `${t.label} (${t.key.toUpperCase()})`);
+    b.setAttribute('aria-label', t.key ? `${t.label} (${t.key.toUpperCase()})` : t.label);
     b.title = b.getAttribute('aria-label');
     b.addEventListener('click', () => setTool(id));
     return b;
@@ -64,6 +69,13 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     bindRange('tolerance', v => { state.tolerance = v; }, s => s.tolerance, s => String(s.tolerance)),
   ];
   colorIn.addEventListener('input', () => { state.color = colorIn.value; syncColor(); });
+  for (const r of opts.querySelectorAll('input[name="selmode"]')) {
+    r.addEventListener('change', () => { if (r.checked) state.selMode = r.value; });
+  }
+  opts.addEventListener('click', e => {
+    const b = e.target.closest('[data-sel]');
+    if (b) selAction(b.dataset.sel);
+  });
   function syncColor() {
     colorIn.value = state.color;
     $('#color-wrap').style.setProperty('--swatch', state.color);
@@ -100,6 +112,48 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     cursor.style.transform = `translate(${lastHover.clientX - r.left - d / 2}px, ${lastHover.clientY - r.top - d / 2}px)`;
   }
   function hideCursor() { lastHover = null; cursor.hidden = true; }
+
+  // ---- בחירה ----
+  const selecting = () => state.tool === 'rect' || state.tool === 'ellipse' || state.tool === 'lasso';
+
+  function setSelection(next, label) {
+    const d = doc();
+    const before = d.selection ?? null;
+    if (!before && !next) return;
+    d.selection = next;
+    renderer.selectionChanged(d);
+    history.selection(d, before, next, label);
+    onChange('selection');
+  }
+
+  /** פעולות על הבחירה — מהכפתורים ומהמקלדת */
+  function selAction(a) {
+    const d = doc();
+    if (a === 'all') setSelection({ shapes: [{ op: 'add', type: 'rect', x: 0, y: 0, w: d.width, h: d.height }], inverted: false }, 'בחירת הכול');
+    else if (a === 'none') setSelection(null, 'ביטול הבחירה');
+    else if (a === 'invert') {
+      if (!d.selection) { toast('אין בחירה להפוך'); return; }
+      setSelection({ ...d.selection, inverted: !d.selection.inverted }, 'היפוך הבחירה');
+    } else if (a === 'delete' || a === 'fill') {
+      const layer = d.active;
+      if (!d.selection) { toast('קודם בוחרים אזור'); return; }
+      if (!canEdit(layer)) return;
+      const before = renderer.fillSelection(d, layer, a === 'delete' ? 'erase' : 'paint', hexToRgb(state.color), 1);
+      if (before.size) history.pixels(d, layer, before, a === 'delete' ? 'מחיקת הבחירה' : 'מילוי הבחירה');
+      onChange(a);
+    }
+  }
+
+  function snapRect(a, b) {
+    const x0 = Math.round(Math.min(a[0], b[0])), y0 = Math.round(Math.min(a[1], b[1]));
+    const x1 = Math.round(Math.max(a[0], b[0])), y1 = Math.round(Math.max(a[1], b[1]));
+    return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+  }
+
+  function lassoShape() {
+    if (lasso.type === 'lasso') return { type: 'poly', pts: lasso.pts };
+    return { type: lasso.type, ...snapRect(lasso.start, lasso.pts.at(-1)) };
+  }
 
   // ---- ציור ----
   const painting = () => state.tool === 'brush' || state.tool === 'eraser';
@@ -140,6 +194,12 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
   /** e — אירוע ה-pointerdown; pt — הנקודה במסמך. מחזיר true אם הכלי לקח את המצביע. */
   function down(e, pt) {
     if (state.tool === 'hand') return false;
+    if (selecting()) {
+      const mode = e.shiftKey ? 'add' : e.altKey ? 'sub' : state.selMode;
+      lasso = { type: state.tool, mode, start: pt, pts: [pt] };
+      overlay.preview(lassoShape());
+      return true;
+    }
     if (state.tool === 'picker' || (e.altKey && painting())) { pick(pt); return true; }
     if (state.tool === 'bucket') { bucket(pt); return true; }
     const d = doc(), layer = d.active;
@@ -161,6 +221,16 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
 
   /** points — נקודות במסמך עם לחץ: [{x, y, pressure}] (כולל האירועים המאוחדים) */
   function move(points) {
+    if (lasso) {
+      for (const q of points) {
+        const p = [q.x, q.y];
+        const last = lasso.pts.at(-1);
+        if (lasso.type !== 'lasso') lasso.pts = [lasso.start, p];
+        else if (Math.hypot(p[0] - last[0], p[1] - last[1]) * view().zoom >= 2) lasso.pts.push(p);
+      }
+      overlay.preview(lassoShape());
+      return;
+    }
     if (!stroke) return;
     const spacing = Math.max(0.5, state.size * 0.1);
     for (const q of points) {
@@ -174,6 +244,16 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
   }
 
   function up() {
+    if (lasso) {
+      const shape = lassoShape(), mode = lasso.mode;
+      lasso = null;
+      overlay.preview(null);
+      const d = doc();
+      // לחיצה בלי גרירה — ביטול הבחירה (כמו בכל עורך); בהוספה / חיסור — כלום
+      if (isEmptyShape(shape)) { if (mode === 'new') setSelection(null, 'ביטול הבחירה'); return; }
+      setSelection(combine(d.selection, shape, mode), mode === 'sub' ? 'חיסור מהבחירה' : mode === 'add' ? 'הוספה לבחירה' : 'בחירה');
+      return;
+    }
     if (!stroke) return;
     const d = doc(), s = stroke;
     stroke = null;
@@ -184,6 +264,7 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
 
   /** משיכה פתוחה בוטלה (אצבע שנייה → צביטה). */
   function cancel() {
+    if (lasso) { lasso = null; overlay.preview(null); return; }
     if (!stroke) return;
     stroke = null;
     renderer.cancelStroke(doc());
@@ -192,8 +273,21 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
 
   /** קיצורי מקלדת של הכלים. מחזיר true אם טופל. */
   function key(e) {
-    if (e.ctrlKey || e.metaKey || e.altKey) return false;
     const k = e.key.toLowerCase();
+    const mod = e.ctrlKey || e.metaKey;
+    if (mod && !e.altKey) {
+      if (k === 'a' && !e.shiftKey) { selAction('all'); return true; }
+      if (k === 'd' && !e.shiftKey) { selAction('none'); return true; }
+      if (k === 'i' && e.shiftKey) { selAction('invert'); return true; }
+      return false;
+    }
+    if (k === 'delete' || k === 'backspace') {
+      if (!doc().selection) return false;
+      selAction(e.altKey ? 'fill' : 'delete');
+      return true;
+    }
+    if (mod || e.altKey) return false;
+    if (k === 'm') { setTool(state.tool === 'rect' ? 'ellipse' : 'rect'); return true; }
     const t = Object.entries(TOOLS).find(([, v]) => v.key === k);
     if (t) { setTool(t[0]); return true; }
     if (k === '[' || k === ']') {
@@ -208,5 +302,5 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
 
   sync();
   setTool(state.tool);
-  return { state, setTool, down, move, up, cancel, key, updateCursor, hideCursor, get stroking() { return !!stroke; } };
+  return { state, setTool, down, move, up, cancel, key, updateCursor, hideCursor, selAction, get stroking() { return !!stroke || !!lasso; } };
 }

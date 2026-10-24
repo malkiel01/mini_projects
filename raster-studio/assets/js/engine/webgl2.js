@@ -10,6 +10,7 @@
 // מוסכמה: שורה 0 של כל אריח ושל כל FBO = הקצה העליון (y של המסמך גדל למטה). רק המסך עצמו הפוך.
 
 import { TILE, BLEND_MODES, tilesInRect } from './doc.js';
+import { rasterTile, selectionBox } from './selection.js';
 
 const VERT = `#version 300 es
 in vec2 a;
@@ -85,14 +86,15 @@ void main() {
   // מסכת משיכה (בערוץ r) על אריח של שכבה: צבע (מכחול, דלי) או מחיקה (מחק)
   stroke: `#version 300 es
 precision highp float;
-uniform sampler2D u_layer, u_mask;
+uniform sampler2D u_layer, u_mask, u_sel;
 uniform vec4 u_color;     // לינארי מוכפל, אלפא 1
 uniform float u_opacity;
-uniform int u_erase;
+uniform int u_erase, u_useSel;
 in vec2 v_uv; out vec4 o;
 void main() {
   vec4 l = texture(u_layer, v_uv);
   float m = clamp(texture(u_mask, v_uv).r, 0.0, 1.0) * u_opacity;
+  if (u_useSel == 1) m *= texture(u_sel, v_uv).r;   // בחירה פעילה — רק בתוכה
   o = u_erase == 1 ? l * (1.0 - m) : u_color * m + l * (1.0 - m);
 }`,
 
@@ -187,6 +189,9 @@ export class WebGL2Renderer {
     this.scratch = [this.#tileTexture(1), this.#tileTexture(1)];
     this.strokeTmp = this.#tileTexture(1);   // השכבה הפעילה + המשיכה, לתצוגה בזמן ציור
     this.emptyTex = this.#tileTexture(1);    // אריח שקוף — במקום אריח שעוד לא קיים
+    // מסכות קבועות (R8): הכול / כלום — משותפות, לא משתחררות
+    this.fullMask = this.#r8(new Uint8Array(TILE * TILE).fill(255));
+    this.zeroMask = this.#r8(new Uint8Array(TILE * TILE));
     this.readTex = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, this.readTex);
     gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, TILE, TILE);
@@ -218,6 +223,18 @@ export class WebGL2Renderer {
       u[name] = gl.getUniformLocation(p, name);
     }
     return { p, u };
+  }
+
+  /** מרקם R8 של אריח מתוך בתים */
+  #r8(bytes) {
+    const gl = this.gl;
+    const t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.R8, TILE, TILE);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, TILE, TILE, gl.RED, gl.UNSIGNED_BYTE, bytes);
+    this.#nearest();
+    return t;
   }
 
   #nearest() {
@@ -461,7 +478,7 @@ export class WebGL2Renderer {
   beginStroke(doc, layer, { mode = 'paint', color = [0, 0, 0], opacity = 1 } = {}) {
     if (doc._stroke) this.cancelStroke(doc);
     doc._stroke = {
-      layer, mode, opacity, mask: new Map(),
+      doc, layer, mode, opacity, mask: new Map(),
       color: [srgbToLinear(color[0]), srgbToLinear(color[1]), srgbToLinear(color[2]), 1],
     };
   }
@@ -538,21 +555,27 @@ export class WebGL2Renderer {
     this.invalidateTiles(doc, keys);
   }
 
-  #applyStroke(st, layerTex, maskTex, outTex) {
+  #applyStroke(st, layerTex, maskTex, outTex, k = null) {
     const gl = this.gl;
     const p = this.prog.stroke;
+    // מסכת הבחירה קודם — יצירתה קושרת מרקם, ואסור שזה יקרה אחרי שקשרנו את הקלט
+    const sel = k && st.doc.selection ? this.#selTex(st.doc, k) : null;
     this.#target(outTex);
     gl.useProgram(p.p);
     gl.bindVertexArray(this.vao);
     gl.disable(gl.BLEND);
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, layerTex);
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, maskTex);
+    gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, sel || this.fullMask);
     gl.uniform1i(p.u.u_layer, 0);
     gl.uniform1i(p.u.u_mask, 1);
+    gl.uniform1i(p.u.u_sel, 2);
+    gl.uniform1i(p.u.u_useSel, sel ? 1 : 0);
     gl.uniform4fv(p.u.u_color, st.color);
     gl.uniform1f(p.u.u_opacity, st.opacity);
     gl.uniform1i(p.u.u_erase, st.mode === 'erase' ? 1 : 0);
     this.#quad(p, [0, 0, TILE, TILE], [0, 0, 1, 1], [TILE, TILE], -1);
+    gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, null);
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, null);
     gl.activeTexture(gl.TEXTURE0);
   }
@@ -570,11 +593,11 @@ export class WebGL2Renderer {
       const old = st.layer.tiles.get(k) ?? null;
       if (!old && st.mode === 'erase') continue;   // אין מה למחוק
       const out = this.#tileTexture(1);
-      this.#applyStroke(st, old || this.emptyTex, m, out);
+      this.#applyStroke(st, old || this.emptyTex, m, out, k);
       st.layer.tiles.set(k, out);
       before.set(k, old);
     }
-    this.freeTextures(st.mask.values());
+    this.#freeMasks(st);
     gl_unbind(this.gl);
     st.layer.rev = (st.layer.rev ?? 0) + 1;
     this.invalidateTiles(doc, st.mask.keys());
@@ -586,8 +609,50 @@ export class WebGL2Renderer {
     const st = doc._stroke;
     if (!st) return;
     doc._stroke = null;
-    this.freeTextures(st.mask.values());
+    this.#freeMasks(st);
     this.invalidateTiles(doc, st.mask.keys());
+  }
+
+  #freeMasks(st) {
+    this.freeTextures([...st.mask.values()].filter(t => t !== this.fullMask && t !== this.zeroMask));
+  }
+
+  // ---------- בחירה ----------
+
+  /** הבחירה השתנתה (doc.selection) — המסכות שבמטמון נזרקות. */
+  selectionChanged(doc) {
+    if (doc._sel) this.freeTextures([...doc._sel.values()].filter(t => t !== this.fullMask && t !== this.zeroMask));
+    doc._sel = new Map();
+    if (doc._stroke) this.invalidate(doc);
+  }
+
+  /** מסכת הבחירה של אריח (R8) — מחושבת פעם אחת לכל בחירה. */
+  #selTex(doc, k) {
+    doc._sel ??= new Map();
+    let t = doc._sel.get(k);
+    if (t) return t;
+    const [tx, ty] = k.split(',').map(Number);
+    const box = selectionBox(doc.selection, doc.width, doc.height);
+    const inBox = box && tx * TILE < box[2] && (tx + 1) * TILE > box[0] && ty * TILE < box[3] && (ty + 1) * TILE > box[1];
+    const bytes = inBox ? rasterTile(doc.selection, tx, ty) : null;
+    t = bytes ? this.#r8(bytes) : this.zeroMask;
+    if (bytes) this.textures++;
+    doc._sel.set(k, t);
+    return t;
+  }
+
+  /**
+   * ממלא (mode 'paint', בצבע) או מוחק ('erase') את כל הבחירה בשכבה. מחזיר את ה-before להיסטוריה.
+   * בלי בחירה — כל הקנבס.
+   */
+  fillSelection(doc, layer, mode, color = [0, 0, 0], opacity = 1) {
+    const box = doc.selection ? selectionBox(doc.selection, doc.width, doc.height) : [0, 0, doc.width, doc.height];
+    if (!box) return new Map();
+    this.beginStroke(doc, layer, { mode, color, opacity });
+    for (const [tx, ty] of tilesInRect(box[0], box[1], box[2] - box[0], box[3] - box[1])) {
+      doc._stroke.mask.set(key(tx, ty), this.fullMask);
+    }
+    return this.endStroke(doc);
   }
 
   // ---------- הרכבה ----------
@@ -615,7 +680,7 @@ export class WebGL2Renderer {
       // משיכה פתוחה על השכבה הזו — מציגים את התוצאה בלי לגעת בשכבה עד שהאצבע מורמת
       const m = st && st.layer === layer ? st.mask.get(key(tx, ty)) : null;
       if (m) {
-        this.#applyStroke(st, t || this.emptyTex, m, this.strokeTmp);
+        this.#applyStroke(st, t || this.emptyTex, m, this.strokeTmp, key(tx, ty));
         t = this.strokeTmp;
         gl.useProgram(p.p);
         gl.bindVertexArray(this.vao);

@@ -438,6 +438,88 @@ async function main() {
   check('מגע: אצבע אחת מציירת', (await page.evaluate(() => __rs.history.undoStack.length)) === nT + 1 && near(await px(200, 330), [0, 255, 0, 255]), await px(200, 330));
   if (SHOTS) await page.screenshot({ path: join(SHOTS, 'paint-desktop.png') });
 
+  // ---- בחירות ----
+  await page.goto(BASE + '/editor.html?doc=' + id);
+  await page.waitForFunction(() => window.__rs?.doc);
+  await page.evaluate(() => __rs.setView({ zoom: 1, x: 20, y: 20 }));
+  const drag = async (a, b, mods = []) => {
+    for (const m of mods) await page.keyboard.down(m);
+    await page.mouse.move(...at(...a)); await page.mouse.down();
+    await page.mouse.move(...at(...b), { steps: 6 }); await page.mouse.up();
+    for (const m of mods) await page.keyboard.up(m);
+  };
+  const color = c => page.$eval('#color', (el, c) => { el.value = c; el.dispatchEvent(new Event('input', { bubbles: true })); }, c);
+  await page.keyboard.press('m');
+  check('M — בחירה מלבנית, עם מצב ופעולות', await page.evaluate(() => __rs.tools.state.tool) === 'rect' && await page.isVisible('[data-sel="invert"]'));
+  await drag([100, 120], [300, 220]);
+  const sel1 = await page.evaluate(() => __rs.doc.selection?.shapes[0]);
+  check('גרירה — מלבן בפיקסלים שלמים', sel1 && sel1.x === 100 && sel1.y === 120 && sel1.w === 200 && sel1.h === 100, JSON.stringify(sel1));
+  check('בחירה — רשומה בהיסטוריה', await page.evaluate(() => __rs.history.undoStack.at(-1).label) === 'בחירה');
+  // מכחול רק בתוך הבחירה
+  await page.keyboard.press('b');
+  await color('#ff0000');
+  await setOpt('size', 60); await setOpt('opacity', 100); await setOpt('hardness', 100);
+  await stroke([[50, 170], [400, 170]]);
+  check('מכחול נחתך לבחירה: בפנים אדום, בחוץ לבן', near(await px(200, 170), [255, 0, 0, 255]) && near(await px(60, 170), [255, 255, 255, 255]) && near(await px(350, 170), [255, 255, 255, 255]), [await px(200, 170), await px(60, 170)].join(' | '));
+  // מחיקה ומילוי
+  await page.click('[data-act="add"]');
+  await page.evaluate(() => { __rs.renderer.fill(__rs.doc, __rs.doc.active, [0, 0, 255, 255]); __rs.renderer.invalidate(__rs.doc); });
+  await page.keyboard.press('Delete');
+  check('Delete — הבחירה נמחקה מהשכבה', near(await px(200, 170), [255, 0, 0, 255]) && near(await px(60, 170), [0, 0, 255, 255]));
+  await color('#00ff00');
+  await page.keyboard.press('Alt+Backspace');
+  check('Alt+Backspace — מילוי הבחירה בצבע', near(await px(200, 140), [0, 255, 0, 255]) && near(await px(60, 140), [0, 0, 255, 255]));
+  // היפוך
+  await page.keyboard.press('Control+Shift+i');
+  check('Ctrl+Shift+I — בחירה הפוכה', await page.evaluate(() => __rs.doc.selection.inverted) === true);
+  await page.keyboard.press('Delete');
+  check('מחיקה בהפוכה — מה שבחוץ נמחק, מה שבפנים נשאר', near(await px(60, 140), [255, 255, 255, 255]) && near(await px(200, 140), [0, 255, 0, 255]));
+  await page.keyboard.press('Control+z'); await page.keyboard.press('Control+z');
+  check('ביטול ×2 — חוזרים לבחירה הרגילה, הפיקסלים חזרו', await page.evaluate(() => __rs.doc.selection.inverted) === false && near(await px(60, 140), [0, 0, 255, 255]));
+  // ביטול בחירה: Ctrl+D, ולחיצה בלי גרירה
+  await page.keyboard.press('Control+d');
+  check('Ctrl+D — אין בחירה', await page.evaluate(() => __rs.doc.selection) === null);
+  await page.keyboard.press('Control+z');
+  check('ביטול — הבחירה חוזרת', await page.evaluate(() => !!__rs.doc.selection));
+  await page.keyboard.press('m');
+  await page.mouse.click(...at(500, 300));
+  check('לחיצה בלי גרירה — ביטול הבחירה', await page.evaluate(() => __rs.doc.selection) === null);
+  // אליפסה וחיסור
+  await page.keyboard.press('m');
+  check('M שוב — אליפסה', await page.evaluate(() => __rs.tools.state.tool) === 'ellipse');
+  await drag([100, 100], [300, 300]);
+  await drag([180, 180], [220, 220], ['Alt']);
+  check('Alt+גרירה — חיסור', await page.evaluate(() => __rs.doc.selection.shapes.map(s => s.op).join()) === 'add,sub');
+  await color('#ffff00');
+  await page.keyboard.press('Alt+Backspace');
+  check('אליפסה: המילוי בפנים, הפינה של המלבן החוסם בחוץ, והחור ריק',
+    near(await px(150, 200), [255, 255, 0, 255]) && !near(await px(105, 105), [255, 255, 0, 255]) && !near(await px(200, 200), [255, 255, 0, 255]),
+    [await px(150, 200), await px(105, 105), await px(200, 200)].join(' | '));
+  // לאסו
+  await page.keyboard.press('l');
+  await page.mouse.move(...at(400, 100)); await page.mouse.down();
+  for (const p of [[550, 100], [550, 250], [400, 100]]) await page.mouse.move(...at(...p), { steps: 10 });
+  await page.mouse.up();
+  const poly = await page.evaluate(() => __rs.doc.selection.shapes[0]);
+  check('לאסו — מצולע', poly.type === 'poly' && poly.pts.length > 10, String(poly.pts?.length));
+  await color('#ff00ff');
+  await page.click('[data-sel="fill"]');
+  check('לאסו: מילוי בתוך המשולש בלבד', near(await px(520, 140), [255, 0, 255, 255]) && !near(await px(420, 230), [255, 0, 255, 255]));
+  // דלי נחתך לבחירה
+  await page.keyboard.press('Control+a');
+  check('Ctrl+A — הכול', await page.evaluate(() => { const s = __rs.doc.selection.shapes[0]; return [s.type, s.x, s.y, s.w, s.h, s.op].join(); }) === 'rect,0,0,600,400,add');
+  await page.keyboard.press('m');
+  await drag([0, 300], [600, 400]);
+  await page.keyboard.press('g');
+  await color('#008080');
+  await setOpt('tolerance', 255);
+  await page.mouse.click(...at(30, 350));
+  check('דלי עם סבולת מלאה — רק בתוך הבחירה', near(await px(30, 350), [0, 128, 128, 255]) && !near(await px(30, 250), [0, 128, 128, 255]));
+  if (SHOTS) {
+    await page.keyboard.press('l');
+    await page.screenshot({ path: join(SHOTS, 'select-desktop.png') });
+  }
+
   check('אין שגיאות בקונסול', errors.length === 0, errors.join(' | '));
 
   // ---- טלפון ----
@@ -476,6 +558,14 @@ async function main() {
     check(`טלפון ${tag}: רמז מגע — מוסתר כשאין לו מקום`, /צביטה/.test(r.hint) && !r.hintShown, r.hint);
     check(`טלפון ${tag}: בלי שגיאות`, errs.length === 0, errs.join(' | '));
     if (SHOTS) await ph.screenshot({ path: join(SHOTS, `editor-${w}${dark ? '-dark' : ''}.png`) });
+    await ph.keyboard.press('m');
+    const optsFit = await ph.evaluate(() => [...document.querySelectorAll('#tool-opts > :not([hidden])')].every(el => {
+      const r = el.getBoundingClientRect(), o = document.querySelector('#tool-opts').getBoundingClientRect();
+      return r.left >= o.left - 0.5 && r.right <= o.right + 0.5 && el.scrollWidth <= el.clientWidth + 1;
+    }));
+    if (SHOTS) await ph.screenshot({ path: join(SHOTS, `select-${w}${dark ? '-dark' : ''}.png`) });
+    check(`טלפון ${w}px${dark ? ' כהה' : ''}: אפשרויות הבחירה נכנסות בלי חפיפה`, optsFit);
+    await ph.keyboard.press('b');
     await ph.close();
   }
   if (SHOTS) {

@@ -218,6 +218,7 @@ body.editor { display: flex; flex-direction: column; block-size: 100dvh; min-hei
 .stage { position: relative; flex: 1; inline-size: 100%; max-inline-size: none; margin: 0; padding: 0; min-block-size: 0; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none;
     background: color-mix(in srgb, var(--ink) 14%, var(--bg)); cursor: grab; }
 .stage.panning { cursor: grabbing; }
+.stage canvas { pointer-events: none; }
 .stage canvas { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; display: block; }
 .stage .stage-msg { position: absolute; inset: 0; display: grid; place-items: center; padding: var(--s4); text-align: center; color: var(--muted); }
 .stage .stage-msg.error { color: var(--danger); }
@@ -299,9 +300,10 @@ body.editor { display: flex; flex-direction: column; block-size: 100dvh; min-hei
 .swatch input { position: absolute; inline-size: 1px; block-size: 1px; opacity: 0; pointer-events: none; }
 .swatch:focus-within::before { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--brand); }
 .tool-opts { position: absolute; z-index: 3; inset-block-start: var(--s2); inset-inline-start: calc(var(--tap) + 4px + var(--s2) * 2);
-    inset-inline-end: var(--s2); display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 130px), 1fr)); gap: 0 var(--s3);
+    inset-inline-end: var(--s2); display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--s3);
     padding: 2px var(--s3); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--shadow); }
-.tool-opts .opt { display: grid; min-inline-size: 0; font-size: .78rem; color: var(--muted); }
+.tool-opts > [hidden] { display: none !important; }
+.tool-opts .opt { flex: 1 1 130px; display: grid; min-inline-size: 0; font-size: .78rem; color: var(--muted); }
 .tool-opts .opt > span { display: flex; justify-content: space-between; gap: var(--s1); padding-top: 2px; }
 .tool-opts output { font-variant-numeric: tabular-nums; color: var(--ink); }
 .tool-opts input[type=range] { inline-size: 100%; min-block-size: 28px; padding: 0; border: 0; background: none; accent-color: var(--brand); }
@@ -313,5 +315,13 @@ body.editor { display: flex; flex-direction: column; block-size: 100dvh; min-hei
 /* טלפון: פס הכלים יורד לתחתית הבמה, והאפשרויות — לכל הרוחב למעלה, בשתי עמודות */
 @media (max-width: 479.98px) {
     .tools { inset-block-start: auto; inset-block-end: var(--s2); }
-    .tool-opts { inset-inline-start: var(--s2); grid-template-columns: repeat(auto-fill, minmax(min(100%, 112px), 1fr)); }
+    .tool-opts { inset-inline-start: var(--s2); }
+    .tool-opts .opt { flex-basis: 112px; }
 }
+
+/* בחירה: מצב (חדשה / הוספה / חיסור) ופעולות */
+.tool-opts .opt-seg { flex: 0 0 auto; margin: 4px 0; }
+.tool-opts .opt-seg span { min-block-size: 32px; font-size: .82rem; }
+.tool-opts .opt-btns { flex: 1 0 auto; display: flex; justify-content: flex-end; align-items: center; gap: 2px; }
+.tools { max-block-size: calc(100% - var(--s2) * 2); overflow-y: auto; scrollbar-width: none; }
+.stage[data-tool="rect"], .stage[data-tool="ellipse"], .stage[data-tool="lasso"] { cursor: crosshair; }
