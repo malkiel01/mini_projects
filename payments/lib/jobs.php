@@ -12,6 +12,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/subscriptions.php';
 require_once __DIR__ . '/documents.php';
 require_once __DIR__ . '/backup.php';
+require_once __DIR__ . '/offsite.php';
 require_once __DIR__ . '/sms.php';
 
 const TICK_EVERY = 55;
@@ -33,6 +34,11 @@ function tick(string $source, bool $force = false): ?array
         'mails' => notifications_send(),
     ];
     $out['backup'] = (int)(backup_daily() !== null);
+    try {
+        $out['offsite'] = (int)offsite_weekly();
+    } catch (Throwable $e) {
+        set_setting('offsite_error', mb_substr($e->getMessage(), 0, 200));
+    }
     $w = webhooks_deliver(100);
     $out['webhooks'] = $w['sent'];
     db_run('DELETE FROM nonce WHERE t < ?', [$now - NONCE_TTL]);

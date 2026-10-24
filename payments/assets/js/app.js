@@ -773,7 +773,8 @@ $('#exp-btn').addEventListener('click', async () => {
 async function loadBackups() {
   $('#backup-box').hidden = me.role !== 'owner';
   if (me.role !== 'owner') return;
-  const { data } = await api('backups');
+  const { data, offsite } = await api('backups');
+  renderOffsite(offsite);
   $('#backup-list').innerHTML = data.length ? data.slice(0, 7).map(b => `<li class="card"><div class="body"><div class="l1"><span>${when(b.at)}</span><span class="t">${Math.round(b.size / 1024)} ק״ב</span></div></div>
       <button type="button" class="icon-btn" data-bk="${esc(b.name)}" aria-label="הורדה">⬇️</button></li>`).join('') : empty('עוד אין גיבוי — ייווצר היום.');
   for (const b of document.querySelectorAll('[data-bk]')) b.addEventListener('click', async () => {
@@ -782,6 +783,23 @@ async function loadBackups() {
       const bin = Uint8Array.from(atob(r.base64), c => c.charCodeAt(0));
       download(r.name, new Blob([bin], { type: 'application/x-sqlite3' }));
     } catch (e) { fail(e); }
+  });
+}
+function renderOffsite(o) {
+  const box = $('#offsite-box');
+  box.innerHTML = `<div class="fields">
+      <label class="f wide"><span>לאיזה מייל</span><input id="os-email" type="email" dir="ltr" value="${esc(o.email)}" placeholder="me@example.com"></label>
+      <label class="f wide"><span>סיסמה לגיבוי${o.email ? ' (נשמרה — ריק בלי שינוי)' : ''} — 12 תווים לפחות</span><input id="os-pass" type="password" dir="ltr" autocomplete="new-password"></label></div>
+    <label class="switch"><input type="checkbox" id="os-on" ${o.enabled ? 'checked' : ''}><span>לשלוח כל שבוע</span></label>
+    ${o.last_error ? `<p class="error">${esc(o.last_error)}</p>` : o.last_at ? `<p class="hint">✓ נשלח לאחרונה ${when(o.last_at)} · ${Math.round(o.last_size / 1024)} ק״ב</p>` : ''}
+    <p class="hint">לפתוח את הקובץ (במחשב עם הקוד) — הפקודה, ואז הסיסמה. <b>שמור את הסיסמה במקום בטוח.</b></p>
+    <input readonly dir="ltr" value="php payments/tools/decrypt-backup.php FILE.mbepay payments.sqlite" aria-label="פקודת הפתיחה" onclick="this.select()">
+    <div class="row-btns wrap"><button type="button" class="btn sm primary" id="os-save">שמירה</button>${o.email ? '<button type="button" class="btn sm ghost" id="os-send">שליחה עכשיו</button>' : ''}</div>`;
+  $('#os-save').addEventListener('click', async () => {
+    try { const r = await api('offsite_save', { email: $('#os-email').value, passphrase: $('#os-pass').value, enabled: $('#os-on').checked }); toast('נשמר'); renderOffsite(r.offsite); } catch (e) { fail(e); }
+  });
+  $('#os-send')?.addEventListener('click', async () => {
+    try { const r = await api('offsite_send'); toast(r.sent ? 'נשלח ✓' : (r.offsite.last_error || 'לא נשלח'), !r.sent); renderOffsite(r.offsite); } catch (e) { fail(e); }
   });
 }
 $('#backup-now').addEventListener('click', async () => { try { await api('backup_now'); toast('נוצר גיבוי'); loadBackups(); } catch (e) { fail(e); } });

@@ -204,6 +204,26 @@ check('שם קובץ זר — נדחה', throws(fn() => backup_read('../payments
 $csv = export_month($owner, gmdate('Y-m', now()), 'test');
 check('ייצוא לרואה החשבון: כותרות, ושורה לכל תשלום', str_contains($csv, 'סכום') && str_contains($csv, 'כרטיס לאירוע') && substr_count($csv, "\n") >= 3, substr($csv, 0, 300));
 
+section('גיבוי מחוץ לשרת');
+require_once __DIR__ . '/../lib/offsite.php';
+check('סיסמה קצרה — נדחתה', throws(fn() => offsite_save($owner, ['email' => 'me@example.com', 'passphrase' => 'short', 'enabled' => true]), 'weak_passphrase'));
+check('מייל לא תקין — נדחה', throws(fn() => offsite_save($owner, ['email' => 'x', 'passphrase' => 'correct horse battery', 'enabled' => true]), 'bad_email'));
+$o = offsite_save($owner, ['email' => 'me@example.com', 'passphrase' => 'correct horse battery', 'enabled' => true]);
+check('נשמר — והסיסמה לא נשמרת בשום מקום', $o['enabled'] && !str_contains(json_encode(db_all('SELECT * FROM setting')), 'correct horse'));
+$sent = [];
+$GLOBALS['PAY_OFFSITE_HOOK'] = function ($to, $subj, $body, $file, $data) use (&$sent) { $sent[] = [$to, $file, $data]; return true; };
+check('שבועי: נשלח פעם אחת, לא שוב באותו שבוע', offsite_weekly() && !offsite_weekly() && count($sent) === 1 && $sent[0][0] === 'me@example.com' && str_ends_with($sent[0][1], '.mbepay'));
+check('הקובץ לא קריא בלי הסיסמה', !str_contains($sent[0][2], 'SQLite format') && offsite_decrypt($sent[0][2], 'wrong passphrase!!') === null);
+check('ונפתח בסיסמה — למסד תקין', str_starts_with((string)offsite_decrypt($sent[0][2], 'correct horse battery'), 'SQLite format 3'));
+$f = "$tmp/test.mbepay";
+file_put_contents($f, $sent[0][2]);
+$outDb = "$tmp/restored.sqlite";
+exec('BACKUP_PASSPHRASE=' . escapeshellarg('correct horse battery') . ' php ' . escapeshellarg(__DIR__ . '/../tools/decrypt-backup.php') . ' ' . escapeshellarg($f) . ' ' . escapeshellarg($outDb) . ' 2>&1', $o2, $rc);
+$restored = $rc === 0 ? (new PDO('sqlite:' . $outDb))->query("SELECT COUNT(*) FROM payment")->fetchColumn() : -1;
+check('כלי השחזור — בלי השרת, פותח למסד עם התשלומים', $rc === 0 && (int)$restored === (int)db_one('SELECT COUNT(*) AS n FROM payment')['n'], implode(' ', $o2));
+exec('BACKUP_PASSPHRASE=wrongwrongwrong php ' . escapeshellarg(__DIR__ . '/../tools/decrypt-backup.php') . ' ' . escapeshellarg($f) . ' ' . escapeshellarg("$tmp/x.sqlite") . ' 2>&1', $o3, $rc3);
+check('…ובסיסמה שגויה — נכשל בלי לכתוב קובץ', $rc3 === 1 && !file_exists("$tmp/x.sqlite"));
+
 exec('rm -rf ' . escapeshellarg($tmp));
 echo "\n" . ($fail ? "✗ $fail נכשלו, $pass עברו\n" : "✓ כל $pass הבדיקות עברו\n");
 exit($fail ? 1 : 0);

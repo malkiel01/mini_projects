@@ -9,6 +9,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/clients.php';
 require_once __DIR__ . '/backup.php';
 require_once __DIR__ . '/sms.php';
+require_once __DIR__ . '/offsite.php';
 
 /** פריטים שאדם מאשר — מפתח ⇐ [כותרת, הסבר]. */
 const READY_MANUAL = [
@@ -75,6 +76,11 @@ function readiness(array $t): array
         'קישור בסכום לבחירה ← לשלם ₪1 בכרטיס שלך ← החזר בממשק מורנינג ← "רישום החזר" כאן');
 
     $marks = json_obj(setting('ready_manual:' . $tid, '{}'));
+    // גיבוי מחוץ לשרת — מסומן לבד כשהגיבוי השבועי במייל יצא בשבוע האחרון
+    if ($t['role'] === 'owner' && function_exists('offsite_public')) {
+        $o = offsite_public();
+        if ($o['enabled'] && $o['last_at'] && $o['last_at'] > now() - 8 * 86400) $marks['backup_offsite'] = ['at' => $o['last_at'], 'auto' => true];
+    }
     foreach (READY_MANUAL as $key => [$title, $hint]) {
         $m = $marks[$key] ?? null;
         $items[] = ['key' => $key, 'title' => $title, 'state' => $m ? 'ok' : 'todo', 'todo' => $m ? '' : $hint, 'manual' => true, 'marked_at' => $m['at'] ?? null];
