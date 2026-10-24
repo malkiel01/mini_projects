@@ -7,7 +7,7 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/lib/billing.php';
+require_once __DIR__ . '/lib/jobs.php';
 
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: same-origin');
@@ -18,6 +18,7 @@ function out(array|object $data, int $status = 200): never
     header('Content-Type: application/json; charset=utf-8');
     header('Cache-Control: no-store');
     echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    tick_after_response('admin');
     exit;
 }
 
@@ -36,6 +37,8 @@ try {
 
     $t = current_tenant();
     if (!$t) throw new ApiError('לא מחובר', 'no_user', 401);
+    // כתובת הבסיס — לעבודות שרצות משורת הפקודה (אין שם כתובת בקשה)
+    if (!setting('base_url') && !getenv('PAY_BASE_URL')) set_setting('base_url', base_url());
     if ($action === 'me') out(['tenant' => tenant_public($t)]);
     if ($t['status'] !== 'active') throw new ApiError('הגישה ממתינה לאישור המנהל', 'pending', 403);
     $owner = $t['role'] === 'owner';
@@ -82,6 +85,25 @@ try {
         // מנויים מאושרים — רק הבעלים (פרק 12.5)
         'tenants' => $owner ? ['data' => array_map('tenant_public', db_all('SELECT * FROM tenant ORDER BY created_at'))] : throw new ApiError('רק לבעלים', 'forbidden', 403),
         'tenant_status' => $owner ? tenant_set_status($t, $s('id'), $s('status')) : throw new ApiError('רק לבעלים', 'forbidden', 403),
+
+        // כספים (שלב 3)
+        'payments' => ['data' => db_all("SELECT p.*, cu.name AS customer_name, cu.external_id, cu.client, cu.id AS customer_id
+            FROM payment p JOIN account a ON a.id = p.account JOIN merchant m ON m.id = a.merchant
+            LEFT JOIN customer cu ON cu.account = a.id WHERE m.tenant = ? GROUP BY p.id ORDER BY p.created_at DESC LIMIT 200", [$t['id']])],
+        'invoices' => ['data' => db_all("SELECT i.*, (SELECT description FROM invoice_line WHERE invoice = i.id LIMIT 1) AS description,
+                (SELECT name FROM customer WHERE account = i.account LIMIT 1) AS customer_name
+            FROM invoice i JOIN merchant m ON m.id = i.merchant WHERE m.tenant = ? ORDER BY i.created_at DESC LIMIT 200", [$t['id']])],
+        'refund' => (function () use ($t, $s, $in) {
+            $p = db_one('SELECT p.* FROM payment p JOIN account a ON a.id = p.account JOIN merchant m ON m.id = a.merchant WHERE p.id = ? AND m.tenant = ?', [$s('payment'), $t['id']]);
+            if (!$p) throw new ApiError('התשלום לא נמצא', 'not_found', 404);
+            return payment_refund($p['id'], (int)($in['agorot'] ?? 0), $s('reason'), 'admin:' . $t['id']);
+        })(),
+        'clock' => [
+            'last' => (int)setting('tick_last', '0'), 'cron' => (int)setting('tick_last_cron', '0'), 'external' => (int)setting('tick_last_external', '0'),
+            'url' => base_url() . 'api.php?action=tick', 'now' => now(),
+            'notifications' => db_all("SELECT n.channel, n.template, n.to_addr, n.status, n.created_at FROM notification n JOIN account a ON a.id = n.account JOIN merchant m ON m.id = a.merchant WHERE m.tenant = ? ORDER BY n.created_at DESC LIMIT 30", [$t['id']]),
+        ],
+        'tick_now' => tick('admin', true) ?? [],
 
         'audit' => ['data' => db_all('SELECT actor_type, actor_id, action, object_type, object_id, detail, created_at FROM audit WHERE tenant = ? ORDER BY id DESC LIMIT 100', [$t['id']])],
         default => throw new ApiError('פעולה לא מוכרת', 'unknown_action', 404),

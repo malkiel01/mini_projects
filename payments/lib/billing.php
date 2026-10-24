@@ -71,14 +71,20 @@ function price_create(array $tenant, string $productId, array $in): array
         'trial_days' => $int('trial_days', 0, 0, 365),
         'grace_days' => $int('grace_days', 7, 0, 60),
         'tax_behavior' => $tax,
+        'intro_amount' => isset($in['intro_amount']) && $in['intro_amount'] !== '' ? int_field($in, 'intro_amount', 0, 0, 100_000_000) : null,
+        'intro_periods' => int_field($in, 'intro_periods', 0, 0, 36),
+        'renewal' => (string)($in['renewal'] ?? ($interval === 'year' ? 'consent' : 'auto')),
     ];
+    if (!in_array($row['renewal'], ['auto', 'consent'], true)) throw new ApiError('חידוש: auto או consent', 'bad_price');
+    if ($row['intro_amount'] !== null && $row['intro_periods'] === 0) throw new ApiError('מחיר מבצע — כמה מחזורים?', 'bad_price');
     if ($p['type'] === 'metered' && $row['amount_micros'] === 0 && $row['amount'] > 0) $row['amount_micros'] = agorot_to_micros($row['amount']);
     $version = (int)(db_one('SELECT MAX(version) AS v FROM price WHERE product = ?', [$p['id']])['v'] ?? 0) + 1;
     $id = new_id('price');
-    db_run('INSERT INTO price (id, product, version, amount, amount_micros, currency, tax_behavior, interval, interval_count, package_size, included, aggregate, prepaid, trial_days, grace_days, active, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)', [
+    db_run('INSERT INTO price (id, product, version, amount, amount_micros, currency, tax_behavior, interval, interval_count, package_size, included, aggregate, prepaid, trial_days, grace_days, intro_amount, intro_periods, renewal, active, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)', [
         $id, $p['id'], $version, $row['amount'], $row['amount_micros'], 'ILS', $row['tax_behavior'], $row['interval'], $row['interval_count'],
-        $row['package_size'], $row['included'], $row['aggregate'], $row['prepaid'], $row['trial_days'], $row['grace_days'], now(),
+        $row['package_size'], $row['included'], $row['aggregate'], $row['prepaid'], $row['trial_days'], $row['grace_days'],
+        $row['intro_amount'], $row['intro_periods'], $row['renewal'], now(),
     ]);
     if (!empty($in['replace'])) db_run('UPDATE price SET active = 0 WHERE product = ? AND id <> ?', [$p['id'], $id]);
     audit('admin', $tenant['id'], 'price.created', 'price', $id, ['product' => $p['code'], 'version' => $version] + $row, $tenant['id']);
@@ -128,6 +134,7 @@ function price_public(array $pr): array
         'currency' => $pr['currency'], 'tax_behavior' => $pr['tax_behavior'], 'interval' => $pr['interval'], 'interval_count' => (int)$pr['interval_count'],
         'package_size' => (int)$pr['package_size'], 'included' => (int)$pr['included'], 'aggregate' => $pr['aggregate'],
         'prepaid' => (bool)$pr['prepaid'], 'trial_days' => (int)$pr['trial_days'],
+        'intro_amount' => $pr['intro_amount'] !== null ? (int)$pr['intro_amount'] : null, 'intro_periods' => (int)$pr['intro_periods'], 'renewal' => $pr['renewal'],
     ];
 }
 
@@ -465,8 +472,13 @@ function subscription_cancel_admin(array $tenant, string $subId): void
 /** מנוי שמעניק זכאות עכשיו: פעיל/ניסיון, או באיחור בתוך ימי החסד; ובתוך התקופה (אם יש סוף). */
 function subscription_live(array $s): bool
 {
-    if ($s['current_period_end'] && (int)$s['current_period_end'] < now() && $s['status'] !== 'past_due') return false;
-    return in_array($s['status'], ['trialing', 'active', 'past_due'], true);
+    if ($s['status'] === 'past_due') {
+        // בחסד: ימי החסד של המחיר (ברירת מחדל 7) מהכשל הראשון
+        $grace = (int)(db_one('SELECT MIN(pr.grace_days) AS g FROM subscription_item si JOIN price pr ON pr.id = si.price WHERE si.subscription = ?', [$s['id']])['g'] ?? 7);
+        return (int)($s['past_due_since'] ?? now()) + $grace * 86400 > now();
+    }
+    if ($s['current_period_end'] && (int)$s['current_period_end'] < now() && $s['source'] === 'manual') return false;
+    return in_array($s['status'], ['trialing', 'active'], true);
 }
 
 /**
@@ -503,8 +515,16 @@ function entitlement(array $client, string $env, array $in): array
         $pr = db_one('SELECT included, aggregate FROM price WHERE product = ? AND active = 1 ORDER BY version DESC LIMIT 1', [$p['id']]);
         $metered[$p['code']] = ['used' => $ev ? aggregate_quantity($ev, $pr['aggregate'] ?? 'sum') : 0, 'included' => (int)($pr['included'] ?? 0)];
     }
+    // קניות לפי יחידה ששולמו (בלי החזר מלא): ‏{code: כמות}
+    $purchased = [];
+    foreach (db_all("SELECT p.code, SUM(l.quantity) AS q FROM invoice_line l JOIN invoice i ON i.id = l.invoice JOIN product p ON p.id = l.product
+            LEFT JOIN payment pay ON pay.invoice = i.id AND pay.status IN ('succeeded','partially_refunded')
+            WHERE i.account = ? AND i.status = 'paid' AND p.type = 'unit' AND l.client = ? AND (pay.id IS NOT NULL OR i.total = 0) GROUP BY p.code", [$acc['id'], $client['id']]) as $row) {
+        $purchased[$row['code']] = (float)$row['q'];
+    }
     return [
         'active' => in_array($state, ['trialing', 'active', 'past_due'], true),
+        'purchased' => (object)$purchased,
         'state' => $state, 'plans' => array_values(array_unique($plans)),
         'features' => (object)$features, 'limits' => (object)$limits,
         'balance' => micros_to_agorot($bal), 'balance_micros' => $bal, 'can_spend' => wallet_available($acc) > 0,

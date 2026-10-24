@@ -7,7 +7,7 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/lib/billing.php';
+require_once __DIR__ . '/lib/pages.php';
 
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: no-referrer');
@@ -31,11 +31,8 @@ function out(array|object $data, int $status = 200): never
         ]);
     } catch (Throwable) {
     }
-    // אירועים שנוצרו בבקשה — יוצאים אחרי שהתשובה נשלחה, כדי לא לעכב את המערכת
-    if (function_exists('fastcgi_finish_request')) {
-        fastcgi_finish_request();
-        try { webhooks_deliver(10); } catch (Throwable) {}
-    }
+    // השעון (הודעות שנוצרו בבקשה, חידושים, ניסיונות חוזרים) — אחרי שהתשובה נשלחה, לכל היותר פעם בדקה
+    if ($action !== 'tick') tick_after_response('api');
     exit;
 }
 
@@ -49,12 +46,19 @@ function request_headers(): array
 const CLIENT_ACTIONS = [
     'catalog', 'customer_upsert', 'customer_get', 'entitlement', 'wallet_get',
     'usage_record', 'usage_batch', 'usage_reserve', 'usage_commit', 'usage_release', 'usage_summary', 'ping',
+    'checkout_create', 'checkout_get', 'charge', 'subscription_list', 'subscription_update', 'subscription_cancel', 'subscription_resume',
+    'portal_session', 'invoice_list',
 ];
 
 try {
     if ($action === 'key') {
         $k = signing_key();
         out(['service' => 'payments', 'keys' => [['kid' => $k['kid'], 'alg' => 'Ed25519', 'key' => base64_encode($k['public'])]]]);
+    }
+    if ($action === 'tick') {
+        // שעון חיצוני: בלי מידע ובלי פרמטרים; מוגבל בעצמו לפעם בדקה
+        $r = tick('external');
+        out(['ok' => true, 'ran' => $r !== null]);
     }
     if (!in_array($action, CLIENT_ACTIONS, true)) throw new ApiError('פעולה לא מוכרת', 'unknown_action', 404);
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') throw new ApiError('נדרש POST', 'method', 405);
@@ -99,6 +103,39 @@ try {
         'usage_commit' => usage_commit($client, $env, $in),
         'usage_release' => usage_release($client, $env, $in),
         'usage_summary' => usage_summary($client, $env, $in),
+        'checkout_create' => checkout_create($client, $env, $in),
+        'checkout_get' => (function () use ($client, $env, $in) {
+            $c = checkout_load((string)($in['checkout'] ?? ''));
+            if (!$c || $c['client'] !== $client['id'] || $c['env'] !== $env) throw new ApiError('הקנייה לא נמצאה', 'not_found', 404);
+            $c = checkout_sync($c);
+            return ['checkout' => $c['id'], 'status' => $c['status'], 'mode' => $c['mode'], 'amount' => (int)$c['amount'], 'result' => json_obj($c['result'])];
+        })(),
+        'charge' => charge_api($client, $env, $in),
+        'subscription_list' => (function () use ($client, $env, $in) {
+            $cus = customer_find($client, $env, external_id($in));
+            return ['data' => array_map(fn($s) => [
+                'id' => $s['id'], 'status' => $s['status'], 'period_start' => (int)$s['current_period_start'], 'period_end' => (int)$s['current_period_end'],
+                'trial_end' => $s['trial_end'] ? (int)$s['trial_end'] : null, 'cancel_at' => $s['cancel_at_period_end'] ? (int)$s['current_period_end'] : null,
+                'items' => array_map(fn($i) => ['product' => $i['code'], 'quantity' => (int)$i['quantity']], sub_items($s['id'])),
+            ], db_all('SELECT * FROM subscription WHERE customer = ? ORDER BY created_at DESC', [$cus['id']]))];
+        })(),
+        'subscription_update' => subscription_update($client, $env, $in),
+        'subscription_cancel' => (function () use ($client, $env, $in) {
+            $cus = customer_find($client, $env, external_id($in));
+            $s = subscription_cancel($cus, (string)($in['subscription'] ?? ''), ($in['at'] ?? '') === 'now' ? 'now' : 'period_end', 'client:' . $client['id']);
+            return ['subscription' => $s['id'], 'status' => $s['status'], 'cancel_at' => $s['cancel_at_period_end'] ? (int)$s['current_period_end'] : null];
+        })(),
+        'subscription_resume' => (function () use ($client, $env, $in) {
+            $s = subscription_resume(customer_find($client, $env, external_id($in)), (string)($in['subscription'] ?? ''));
+            return ['subscription' => $s['id'], 'status' => $s['status']];
+        })(),
+        'portal_session' => portal_session_create($client, $env, $in),
+        'invoice_list' => (function () use ($client, $env, $in) {
+            $cus = customer_find($client, $env, external_id($in));
+            return ['data' => array_map(fn($i) => ['id' => $i['id'], 'total' => (int)$i['total'], 'vat' => (int)$i['vat'], 'status' => $i['status'],
+                'created_at' => (int)$i['created_at'], 'paid_at' => $i['paid_at'] ? (int)$i['paid_at'] : null],
+                db_all("SELECT * FROM invoice WHERE account = ? AND status IN ('paid','open','uncollectible') ORDER BY created_at DESC LIMIT 100", [$cus['account']]))];
+        })(),
     });
 } catch (ApiError $e) {
     out(['error' => $e->getMessage(), 'code' => $e->codeName], $e->status);
