@@ -646,3 +646,29 @@ test('‎.mbe: קבוצה עם children', () => {
   assert.equal(d.surfaces[0].layers[0].type, 'group');
   assert.equal(d.surfaces[0].layers[0].children[0].src, 'media/x.png');
 });
+
+// ---- מדידת ביצועים ----
+import { perfFactor, perfLabel, perfCacheValid, PERF_FAST, PERF_SLOW } from '../assets/js/engine/budget.js';
+
+test('ביצועים: מקדם התקציב בין 0.5 ל-1, עולה עם הציון', () => {
+  assert.equal(perfFactor(undefined), 1, 'לא נמדד — לא מקטינים');
+  assert.equal(perfFactor(PERF_FAST * 3), 1);
+  assert.equal(perfFactor(PERF_SLOW / 10), 0.5);
+  const mid = perfFactor(Math.sqrt(PERF_FAST * PERF_SLOW));
+  assert.ok(mid > 0.7 && mid < 0.8, String(mid));
+  assert.ok(perfFactor(1) > perfFactor(0.5));
+  assert.equal(perfLabel(5), 'מהיר');
+  assert.equal(perfLabel(0.1), 'איטי');
+  assert.equal(perfLabel(0), 'לא נמדד');
+});
+
+test('ביצועים: התקציב מוקטן במכשיר איטי; המטמון פג לפי מפתח וזמן', () => {
+  const fast = deviceBudget({ deviceMemory: 4, perf: 1 }).maxPixels();
+  const slow = deviceBudget({ deviceMemory: 4, perf: 0.5 }).maxPixels();
+  assert.ok(Math.abs(slow - fast / 2) <= 1);
+  const c = { v: 1, key: 'k', score: 3, at: 1000 };
+  assert.equal(perfCacheValid(c, 'k', 2000), true);
+  assert.equal(perfCacheValid(c, 'אחר', 2000), false);
+  assert.equal(perfCacheValid(c, 'k', 1000 + 31 * 864e5), false);
+  assert.equal(perfCacheValid(null, 'k'), false);
+});

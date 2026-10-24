@@ -99,6 +99,13 @@ async function main() {
     px: Array.from(__rs.renderer.readPixels(__rs.doc, 599, 399, 1, 1)), msg: document.querySelector('#msg').hidden,
   }));
   check('העורך עולה עם WebGL2', info.name === 'WebGL2', info.name);
+  await page.waitForFunction(() => __rs.perf?.score > 0, null, { timeout: 8000 }).catch(() => {});
+  const perf = await page.evaluate(() => ({ p: __rs.perf, title: document.querySelector('#meta').title, f: __rs.budget.perf }));
+  check('מדידת ביצועים — נמדדה, נשמרה, ומופיעה בכותרת', perf.p?.score > 0 && /ביצועים: (מהיר|בינוני|איטי)/.test(perf.title) && perf.f >= 0.5 && perf.f <= 1, JSON.stringify(perf));
+  await page.reload();
+  await page.waitForFunction(() => window.__rs?.doc);
+  await page.waitForTimeout(300);
+  check('בפתיחה הבאה — מהמטמון, בלי מדידה חוזרת', await page.evaluate(p => __rs.perf?.at === p.at, perf.p));
   check('גודל ושם מהשרת', info.w === 600 && info.h === 400 && info.title === 'בדיקה');
   check('רקע לבן אטום עד הפיקסל האחרון', info.px.join() === '255,255,255,255', info.px.join());
   check('אין הודעת שגיאה על הבמה', info.msg);

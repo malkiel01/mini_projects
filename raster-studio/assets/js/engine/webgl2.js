@@ -1335,6 +1335,35 @@ export class WebGL2Renderer {
     return out;
   }
 
+  /** מזהה הכרטיס (לפי מה שהדפדפן מגלה) — מפתח למטמון המדידה */
+  gpuKey() {
+    const gl = this.gl;
+    const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+    return this.name + ':' + (dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+  }
+
+  /**
+   * מדידה קצרה: מסמך זמני של 1024×1024 עם 4 שכבות, הרכבה מלאה כמה פעמים. מחזיר ציון — אריחי-שכבה במילישנייה.
+   * readPixels מחכה לסיום העבודה בכרטיס, כך שהזמן אמיתי. כ-50–300 מ"ש, פעם אחת למכשיר.
+   */
+  benchmark(DocClass) {
+    const d = new DocClass(1024, 1024);
+    for (let i = 0; i < 4; i++) this.fill(d, d.addLayer({ blend: ['normal', 'multiply', 'screen', 'overlay'][i], opacity: 0.8 }), [40 * i, 90, 200 - 30 * i, 200]);
+    const ops = 16 * 4;
+    this.invalidate(d);
+    this.readPixels(d, 0, 0, 1024, 1024);   // חימום: הידור ה-shaders והקצאות
+    let best = Infinity;
+    for (let k = 0; k < 3; k++) {
+      this.invalidate(d);
+      const t0 = performance.now();
+      this.readPixels(d, 0, 0, 1024, 1024);
+      best = Math.min(best, performance.now() - t0);
+    }
+    for (const l of d.rasters()) this.freeLayer(l);
+    if (d._comp) this.freeTextures(d._comp.values());
+    return ops / Math.max(best, 0.01);
+  }
+
   /** כמה מרקמים וכמה זיכרון GPU (בערך) — למדידה ולתקציב. */
   stats(doc) {
     const layerTiles = doc ? doc.rasters().reduce((n, l) => n + l.tiles.size, 0) : 0;
