@@ -71,7 +71,8 @@ export function renderProps(el, ctx) {
   const shape = single && p.shape ? p.shape : null;
   const isLine = shape?.type === 'line';
   const [bx, by, bw, bh] = ctx.box;
-  const title = single ? (shape ? SHAPE_NAMES[shape.type] || 'צורה' : 'נתיב') : grp ? `קבוצה · ${paths.length}` : `${items.length} אובייקטים`;
+  const text = single && p.type === 'text' ? p : null;
+  const title = text ? 'טקסט' : single ? (shape ? SHAPE_NAMES[shape.type] || 'צורה' : 'נתיב') : grp ? `קבוצה · ${paths.length}` : `${items.length} אובייקטים`;
   const layers = ctx.surface.layers.filter(l => l.type === 'vector');
   const arrange = `<section class="group" aria-labelledby="g-arr">
       <h3 id="g-arr">סידור</h3>
@@ -94,6 +95,19 @@ export function renderProps(el, ctx) {
   if (shape?.type === 'star') shapeFields = `<label class="f"><span>קודקודים</span><input data-s="points" type="number" min="3" max="64" dir="ltr" value="${shape.points}"></label>
       <label class="f"><span>עומק (%)</span><input data-s="inner" type="number" min="5" max="100" dir="ltr" value="${Math.round((shape.inner ?? .5) * 100)}"></label>`;
 
+  const f = text?.font || {};
+  const textFields = !text ? '' : `<section class="group" aria-labelledby="g-text">
+      <div class="g-row"><h3 id="g-text">טקסט</h3>
+        <button class="btn sm ghost" type="button" data-act="edit-text">✏️ עריכה</button></div>
+      <div class="fields two">
+        <label class="f wide"><span>גופן</span><select data-t="family">${ctx.fonts.map(x => `<option value="${esc(x.family)}"${x.family === f.family ? ' selected' : ''} style="font-family:'${esc(x.family)}'">${esc(x.label)}</option>`).join('')}</select></label>
+        <label class="f"><span>גודל (pt)</span><input data-t="size" inputmode="decimal" dir="ltr" value="${n(f.size)}"></label>
+        <label class="f"><span>מרווח שורות</span><input data-t="lineHeight" inputmode="decimal" dir="ltr" value="${n(text.lineHeight || 1.25)}"></label>
+      </div>
+      ${seg('weight', (f.weight || 400) >= 600 ? 700 : 400, { label: 'עובי', items: [[400, 'רגיל'], [700, '<b>מודגש</b>', 'מודגש']] })}
+      ${seg('align', text.align || 'right', { label: 'יישור', items: [['right', 'ימין'], ['center', 'מרכז'], ['left', 'שמאל']] })}
+    </section>`;
+
   el.innerHTML = `
     <div class="props-head"><h2 class="sec-title one">${esc(title)}</h2>
       <button class="icon-btn" data-act="duplicate" aria-label="שכפול" title="שכפול (Ctrl+D)">⧉</button>
@@ -105,6 +119,7 @@ export function renderProps(el, ctx) {
       <label class="f"><span>גובה</span><input data-b="3" inputmode="decimal" dir="ltr" value="${n(bh)}"></label>
     </div>
     ${shapeFields ? `<div class="fields two" style="margin-top:8px">${shapeFields}</div>` : ''}
+    ${textFields}
     ${arrange}
 
     ${isLine ? '' : `<section class="group" aria-labelledby="g-fill">
@@ -137,6 +152,17 @@ export function renderProps(el, ctx) {
   const ls = el.querySelector('[data-layer]');
   if (ls) ls.addEventListener('change', () => ctx.arrange('layer', ls.value));
   el.querySelector('[data-act="duplicate"]').addEventListener('click', () => ctx.action('duplicate'));
+  el.querySelector('[data-act="edit-text"]')?.addEventListener('click', () => ctx.action('edit-text'));
+  el.querySelectorAll('[data-t]').forEach(inp => inp.addEventListener('change', () => {
+    const k = inp.dataset.t;
+    let v = inp.value;
+    if (k !== 'family') { v = Number(v); if (!(v > 0 && v <= (k === 'size' ? 2000 : 5))) { inp.value = k === 'size' ? n(f.size) : n(text.lineHeight || 1.25); return; } }
+    ctx.edit(each(item => {
+      if (item.type !== 'text') return;
+      if (k === 'lineHeight') item.lineHeight = v; else item.font = { ...item.font, [k]: v };
+      ctx.relayout(item);
+    }), true);
+  }));
   el.querySelector('[data-act="delete"]').addEventListener('click', () => ctx.action('delete'));
 
   el.querySelectorAll('[data-b]').forEach(inp => inp.addEventListener('change', () => {
@@ -192,6 +218,13 @@ export function renderProps(el, ctx) {
 
   el.querySelectorAll('fieldset.seg').forEach(fs => fs.addEventListener('change', (e) => {
     const k = fs.dataset.k, v = e.target.value;
+    if (k === 'weight' || k === 'align') {
+      return ctx.edit(each(item => {
+        if (item.type !== 'text') return;
+        if (k === 'weight') item.font = { ...item.font, weight: Number(v) }; else item.align = v;
+        ctx.relayout(item);
+      }), true);
+    }
     ctx.edit(each(path => {
       if (!path.stroke) return;
       if (k === 'dash') path.stroke.dash = DASHES[v].map(d => d * Math.max(1, path.stroke.width ?? 1));

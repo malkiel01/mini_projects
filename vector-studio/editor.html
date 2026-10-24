@@ -27,6 +27,8 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l5 9-3 7h-4l-3-7z"/><circle cx="12" cy="11" r="1.4"/><path d="M10 19h4"/></svg></button>
       <button class="tool more" data-tool="shape" aria-pressed="false" aria-haspopup="true" aria-expanded="false" title="צורות" aria-label="צורות: מלבן">
         <svg viewBox="0 0 24 24" aria-hidden="true" id="shape-icon"><rect x="4" y="6" width="16" height="12" rx="1"/></svg></button>
+      <button class="tool" data-tool="text" aria-pressed="false" title="טקסט (T)" aria-label="טקסט">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6V4h14v2M12 4v16M9 20h6"/></svg></button>
       <div class="shape-pick" id="shape-pick" role="menu" hidden>
         <button role="menuitem" data-shape="rect" title="מלבן (M)" aria-label="מלבן"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="6" width="16" height="12" rx="1"/></svg></button>
         <button role="menuitem" data-shape="ellipse" title="אליפסה (L)" aria-label="אליפסה"><svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="12" rx="8" ry="6"/></svg></button>
@@ -38,6 +40,7 @@
 
     <div class="stage" id="stage">
       <canvas id="canvas" aria-label="לוח העבודה" role="img"></canvas>
+      <textarea id="text-edit" class="text-edit" dir="rtl" hidden aria-label="עריכת טקסט" spellcheck="false"></textarea>
       <div class="pen-bar" id="pen-bar" hidden>
         <button class="btn sm ghost" id="pen-done" hidden>✓ סיום</button>
         <button class="btn sm ghost" id="pen-cancel" hidden>✕ ביטול</button>

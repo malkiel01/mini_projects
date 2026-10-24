@@ -112,7 +112,8 @@ export function createPenTools(api) {
 
   function startEdit(id) {
     const o = findPath(S.doc, id);
-    if (!o || o.path.type === 'group') { edit = null; api.updateBar(); return; } // בקבוצה — עורכים אחרי פירוק
+    // קבוצה — עורכים אחרי פירוק; טקסט — אין לו נקודות (עד שיהפוך לקווי מתאר)
+    if (!o || o.path.type === 'group' || o.path.type === 'text') { edit = null; api.updateBar(); return; }
     let subs;
     try { subs = toNodes(parse(o.path.d)); } catch { edit = null; return; }
     edit = { id, subs, node: null };

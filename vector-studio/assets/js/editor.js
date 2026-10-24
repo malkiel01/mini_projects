@@ -15,6 +15,7 @@ import { render, hitTest, inRect, handlePoints, readColors, HANDLE, viewMatrix }
 import { renderProps, renderLayers } from './props.js';
 import { createPenTools } from './pen.js';
 import { snapper } from './snap.js';
+import { FONTS, TEXT_DEFAULT, fontCss, setMeasure, relayout, lineHeight } from './text.js';
 import * as drafts from './drafts.js';
 
 const $ = (id) => document.getElementById(id);
@@ -24,7 +25,7 @@ const S = {
   id: null, name: 'ציור', doc: null,
   view: { x: 0, y: 0, z: 1 }, dpr: 1,
   sel: new Set(), hover: null, marquee: null, tool: 'select', active: null, guides: null,
-  snap: pref('snap', true), grid: pref('grid', false), // active — השכבה לאובייקטים חדשים
+  snap: pref('snap', true), grid: pref('grid', false), editingText: null, // active — השכבה לאובייקטים חדשים
   undo: [], redo: [],
 };
 
@@ -141,10 +142,11 @@ function draw() {
     frame = 0;
     const pathMode = S.tool === 'pen' || S.tool === 'node';
     render(canvas, {
-      ...S, selBox: S.sel.size && !pathMode ? selectionBox(S.doc, S.sel) : null, handles: !op || op.type !== 'move',
+      ...S, selBox: S.sel.size && !pathMode && !S.editingText ? selectionBox(S.doc, S.sel) : null, handles: !op || op.type !== 'move',
       overlay: pathMode ? tools.overlay : null,
     });
     $('zoom-pct').textContent = Math.round(S.view.z * 100) + '%';
+    positionTextEditor();
   });
 }
 
@@ -205,7 +207,7 @@ function setTool(t) {
     document.querySelector('[data-tool="shape"]').setAttribute('aria-label', 'צורות: ' + src.getAttribute('aria-label'));
   }
   document.querySelectorAll('.tool').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.tool === t || (b.dataset.tool === 'shape' && SHAPES.includes(t)))));
-  canvas.style.cursor = t === 'select' || t === 'node' ? 'default' : 'crosshair';
+  canvas.style.cursor = t === 'select' || t === 'node' ? 'default' : t === 'text' ? 'text' : 'crosshair';
   showShapePick(false);
   tools.activate(t);
   draw();
@@ -290,7 +292,8 @@ function updatePanel() {
       if (w) surface.size[0] = w;
       if (h) surface.size[1] = h;
     }),
-    action: (a) => a === 'delete' ? removeSelection() : duplicateSelection(),
+    action: (a) => a === 'delete' ? removeSelection() : a === 'edit-text' ? openTextEditor(picked[0].path.id) : duplicateSelection(),
+    fonts: FONTS, relayout,
     arrange: (a, arg) => arrangeAction(a, arg),
   });
   const counts = new Map();
@@ -375,6 +378,7 @@ function nudge(dx, dy) {
 // ---------- קלט מצביע ----------
 
 const pointers = new Map();
+let lastTap = null;
 let op = null;   // הפעולה הנוכחית
 let spaceDown = false;
 
@@ -396,6 +400,10 @@ function handleAt(sx, sy) {
 }
 
 canvas.addEventListener('pointerdown', (e) => {
+  // בלי אירועי עכבר "תואמים" אחרי מגע: ה-mousedown שלהם היה מוציא את הפוקוס משדה הטקסט שנפתח עכשיו
+  e.preventDefault();
+  // ...ולכן מוציאים את הפוקוס בעצמנו: שדה בלוח המאפיינים נשמר ב-change, ועריכת טקסט נסגרת ב-blur
+  if (document.activeElement?.matches('input, select, textarea')) document.activeElement.blur();
   canvas.setPointerCapture(e.pointerId);
   const [sx, sy] = local(e);
   pointers.set(e.pointerId, [sx, sy]);
@@ -421,6 +429,15 @@ canvas.addEventListener('pointerdown', (e) => {
     op = r === 'background' ? null : { type: 'tool' };
     return;
   }
+  if (S.tool === 'text') {
+    const hitT = hitTest(S, sx, sy, touch ? 12 : 5);
+    const o = hitT && findPath(S.doc, hitT);
+    if (o && o.path.type === 'text') { openTextEditor(hitT); return; }
+    const surface = surfaceAt(wx, wy);
+    const [ox, oy] = layout(S.doc).get(surface.id);
+    op = { type: 'text', before: JSON.stringify(S.doc), surface, p0: [wx - ox, wy - oy], off: [ox, oy], s0: [sx, sy] };
+    return;
+  }
   if (S.tool !== 'select') {
     const surface = surfaceAt(wx, wy);
     const [ox, oy] = layout(S.doc).get(surface.id);
@@ -444,6 +461,14 @@ canvas.addEventListener('pointerdown', (e) => {
     return;
   }
   const hit = hitTest(S, sx, sy, touch ? 12 : 5);
+  // הקשה כפולה על טקסט — עריכה
+  const now = performance.now();
+  if (hit && lastTap && lastTap.id === hit && now - lastTap.t < 350 && findPath(S.doc, hit)?.path.type === 'text') {
+    lastTap = null;
+    openTextEditor(hit);
+    return;
+  }
+  lastTap = hit ? { id: hit, t: now } : null;
   if (hit) {
     if (e.shiftKey) {
       const next = new Set(S.sel);
@@ -479,6 +504,12 @@ canvas.addEventListener('pointermove', (e) => {
     case 'tool': {
       const [wx, wy] = toWorld(sx, sy);
       tools.move(sx, sy, wx, wy);
+      break;
+    }
+    case 'text': {
+      const x = Math.min(op.s0[0], sx), y = Math.min(op.s0[1], sy);
+      S.marquee = [x, y, Math.abs(sx - op.s0[0]), Math.abs(sy - op.s0[1])];
+      draw();
       break;
     }
     case 'pinch': {
@@ -586,6 +617,15 @@ function endPointer(e) {
       tools.up();
       updatePanel();
       break;
+    case 'text': {
+      const [wx, wy] = toWorld(sx, sy);
+      S.marquee = null;
+      const p0 = op.p0, before = op.before, surface = op.surface, off = op.off;
+      op = null;
+      createText(surface, p0[0], p0[1], wx - off[0], wy - off[1], before);
+      setTool('select');
+      return;
+    }
     case 'pan':
       if (op.tap) select([]);
       break;
@@ -617,6 +657,12 @@ function endPointer(e) {
   draw();
 }
 canvas.addEventListener('pointerup', endPointer);
+canvas.addEventListener('dblclick', (e) => {
+  if (S.tool !== 'select') return;
+  const [sx, sy] = local(e);
+  const hit = hitTest(S, sx, sy, 5);
+  if (hit && findPath(S.doc, hit)?.path.type === 'text') openTextEditor(hit);
+});
 canvas.addEventListener('pointercancel', endPointer);
 canvas.addEventListener('pointerleave', () => { if (S.hover && !op) { S.hover = null; draw(); } });
 
@@ -632,7 +678,7 @@ canvas.addEventListener('wheel', (e) => {
 
 // ---------- מקלדת ----------
 
-const TOOL_KEYS = { v: 'select', a: 'node', p: 'pen', m: 'rect', l: 'ellipse', '\\': 'line' };
+const TOOL_KEYS = { v: 'select', a: 'node', p: 'pen', t: 'text', m: 'rect', l: 'ellipse', '\\': 'line' };
 
 document.addEventListener('keydown', (e) => {
   if (e.target.closest('input, textarea, select')) return;
@@ -703,7 +749,107 @@ $('props-btn').addEventListener('click', () => {
 new ResizeObserver(resize).observe(stage);
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { readColors(); draw(); });
 
+// ---------- טקסט ----------
+
+const measureCtx = document.createElement('canvas').getContext('2d');
+setMeasure((str, font) => { measureCtx.font = fontCss(font); measureCtx.direction = 'rtl'; return measureCtx.measureText(str).width; });
+
+/** הגופנים מקומיים (assets/fonts). כשגופן נטען — המידות משתנות, אז מחשבים מחדש את כל הטקסטים (בלי היסטוריה). */
+const fontsReady = Promise.all(FONTS.flatMap(f => f.files.map(({ file, weight }) => {
+  const face = new FontFace(f.family, `url(assets/fonts/${file})`, { weight, display: 'swap' });
+  document.fonts.add(face);
+  return face.load().catch(() => null);
+}))).then(() => {
+  for (const { path: item } of objects(S.doc || { surfaces: [] })) for (const p of leaves(item)) if (p.type === 'text') relayout(p);
+  updatePanel(); draw();
+});
+
+const textEl = $('text-edit');
+let textEdit = null; // { id, before }
+
+function positionTextEditor() {
+  if (!textEdit) return;
+  const o = findPath(S.doc, textEdit.id);
+  if (!o) return;
+  const t = o.path, [ox, oy] = layout(S.doc).get(o.surface.id);
+  const [x, y, w, h] = t.box, z = S.view.z;
+  const sx = (x + ox) * z + S.view.x, sy = (y + oy) * z + S.view.y;
+  const font = t.font || TEXT_DEFAULT;
+  const pad = 40; // מקום לתו הבא לפני שהתיבה מתעדכנת
+  // iOS מגדיל את הדף כשמתמקדים בשדה מתחת ל-16px — אז השדה בגודל 16px ומוקטן ב-transform
+  const fs = font.size * z, k = Math.min(1, fs / 16), u = z / k;
+  const width = t.auto === false ? w * z : w * z + pad;
+  const left = t.auto === false || t.align === 'left' ? sx : t.align === 'center' ? sx - pad / 2 : sx - pad;
+  Object.assign(textEl.style, {
+    font: fontCss({ ...font, size: font.size * u }),
+    lineHeight: lineHeight(t) * u + 'px',
+    textAlign: t.align === 'left' ? 'left' : t.align === 'center' ? 'center' : 'right',
+    whiteSpace: t.auto === false ? 'pre-wrap' : 'pre',
+    color: t.fill?.color || '#16192b',
+    top: sy + 'px', left: left + 'px',
+    width: width / k + 'px', height: Math.max(h, lineHeight(t)) * u + 'px',
+    transform: k < 1 ? `scale(${k})` : '', transformOrigin: '0 0',
+  });
+}
+
+function openTextEditor(id, before) {
+  const o = findPath(S.doc, id);
+  if (!o || o.path.type !== 'text') return;
+  if (textEdit) closeTextEditor();
+  textEdit = { id, before: before ?? JSON.stringify(S.doc) };
+  S.editingText = id;
+  S.sel = new Set([id]);
+  textEl.value = o.path.text || '';
+  textEl.hidden = false;
+  positionTextEditor();
+  textEl.focus();
+  textEl.select();
+  updatePanel(); draw();
+}
+
+function closeTextEditor() {
+  if (!textEdit) return;
+  const { id, before } = textEdit;
+  textEdit = null;
+  S.editingText = null;
+  textEl.hidden = true;
+  const o = findPath(S.doc, id);
+  if (o && !String(o.path.text || '').trim()) { // טקסט ריק — לא נשאר
+    o.layer.paths = o.layer.paths.filter(p => p.id !== id);
+    S.sel.delete(id);
+  }
+  commitFrom(before);
+  updatePanel(); draw(); // גם כשלא השתנה דבר (טקסט חדש שנשאר ריק)
+}
+
+textEl.addEventListener('input', () => {
+  const o = textEdit && findPath(S.doc, textEdit.id);
+  if (!o) return;
+  o.path.text = textEl.value;
+  relayout(o.path);
+  positionTextEditor();
+  draw();
+});
+textEl.addEventListener('blur', () => closeTextEditor());
+textEl.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' || (e.key === 'Enter' && (e.ctrlKey || e.metaKey))) { e.preventDefault(); textEl.blur(); }
+});
+
+/** טקסט חדש: הקשה — טקסט נקודה שהקצה הימני שלו בנקודה; גרירה — טקסט בתיבה. */
+function createText(surface, x0, y0, x1, y1, before) {
+  const layer = targetLayer(surface);
+  const area = Math.abs(x1 - x0) > 8 && Math.abs(y1 - y0) > 8;
+  const item = {
+    id: nextId(S.doc, 't'), type: 'text', text: '', font: { ...TEXT_DEFAULT }, align: 'right', lineHeight: 1.25, auto: !area,
+    box: area ? [Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0), 0] : [x0, y0 - TEXT_DEFAULT.size * 0.625, 0, 0],
+    fill: { color: '#16192b' }, stroke: null,
+  };
+  layer.paths.push(item);
+  relayout(item);
+  openTextEditor(item.id, before);
+}
+
 // לבדיקות (Playwright): גישה למצב בלי לחשוף אותו בממשק
-window.__vs = { S, select, setTool, fit };
+window.__vs = { S, select, setTool, fit, fontsReady };
 
 boot();
