@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/clients.php';
 require_once __DIR__ . '/backup.php';
+require_once __DIR__ . '/sms.php';
 
 /** פריטים שאדם מאשר — מפתח ⇐ [כותרת, הסבר]. */
 const READY_MANUAL = [
@@ -59,6 +60,9 @@ function readiness(array $t): array
     $add('webhook', 'הודעה למערכת נמסרה בהצלחה', $has("SELECT 1 FROM webhook_delivery d JOIN client c ON c.id = d.client
         WHERE c.tenant = ? AND d.status = 'delivered' LIMIT 1"), 'מערכות ← המערכת ← "שליחת בדיקה" (מערכת בלי כתובת — מדלגים)', false);
 
+    $sms = function_exists('sms_config') ? sms_config($tid) : null;
+    $add('sms', 'ספק מסרונים מחובר ובדיקה יצאה', $sms && !empty($sms['checked_at']) && ($sms['check_error'] ?? '') === '',
+        'הגדרות ← 📱 מסרונים — חובה אם יש מנוי שנתי או מחיר מבצע (הודעה 21 יום לפני)', false);
     $cron = max((int)setting('tick_last_cron', '0'), (int)setting('tick_last_external', '0'));
     $add('clock', 'משימה מתוזמנת פועלת', $cron > now() - 20 * 60, 'הגדרות ← ⏰ השעון — חידושים יקרו גם בלי זה, אבל באיחור', false);
     if ($t['role'] === 'owner') {

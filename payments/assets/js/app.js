@@ -229,6 +229,7 @@ loaders.settings = async () => {
     });
   }
   loadClock().catch(fail);
+  loadSms().catch(fail);
   loadRules().catch(fail);
   loadBackups().catch(fail);
   const au = (await api('audit')).data;
@@ -784,6 +785,33 @@ async function loadBackups() {
   });
 }
 $('#backup-now').addEventListener('click', async () => { try { await api('backup_now'); toast('נוצר גיבוי'); loadBackups(); } catch (e) { fail(e); } });
+
+async function loadSms(st) {
+  st = st || await api('sms');
+  const box = $('#sms-box');
+  const kind = box.dataset.kind ?? st.provider;
+  const prov = st.providers[kind];
+  const f = st.provider === kind ? st.fields : {};
+  box.innerHTML = `<fieldset class="seg" aria-label="ספק">
+      <label><input type="radio" name="smsp" value="" ${kind === '' ? 'checked' : ''}><span>בלי</span></label>
+      ${Object.entries(st.providers).map(([k, p]) => `<label><input type="radio" name="smsp" value="${k}" ${kind === k ? 'checked' : ''}><span>${esc(p.name)}</span></label>`).join('')}</fieldset>
+    ${prov ? `<div class="fields" style="margin-top:8px">${Object.entries(prov.fields).map(([k, x]) => `<label class="f wide"><span>${esc(x.label)}${f[k] ? (x.secret ? ' (שמור)' : ' (שמור: ' + esc(f[k]) + ')') : ''}</span>
+        <input name="sms_${k}" dir="ltr" ${x.secret ? 'type="password" autocomplete="new-password"' : 'autocomplete="off"'} placeholder="${f[k] ? 'ריק — בלי שינוי' : ''}"></label>`).join('')}</div>` : ''}
+    ${st.provider && st.provider === kind ? (st.check_error ? `<p class="error">${esc(st.check_error)}</p>` : st.checked_at ? '<p class="hint">✓ מסרון בדיקה יצא.</p>' : '<p class="hint">עוד לא נשלח מסרון בדיקה.</p>') : ''}
+    <div class="row-btns wrap"><button type="button" class="btn sm primary" id="sms-save">${kind === '' ? 'כיבוי' : 'שמירה'}</button>
+      ${st.provider && st.provider === kind ? '<input id="sms-to" type="tel" dir="ltr" placeholder="05…" aria-label="טלפון לבדיקה" style="max-width:9em"><button type="button" class="btn sm ghost" id="sms-test">שליחת בדיקה</button>' : ''}</div>`;
+  for (const r of box.querySelectorAll('[name=smsp]')) r.addEventListener('change', () => { box.dataset.kind = r.value; loadSms(st); });
+  $('#sms-save').addEventListener('click', async () => {
+    try {
+      const vals = Object.fromEntries([...box.querySelectorAll('input[name^=sms_]')].map(i => [i.name.slice(4), i.value]));
+      const r = await api('sms_save', { provider: kind, ...vals });
+      delete box.dataset.kind; toast(kind ? 'נשמר' : 'כובה'); loadSms(r);
+    } catch (e) { fail(e); }
+  });
+  $('#sms-test')?.addEventListener('click', async () => {
+    try { const r = await api('sms_test', { to: $('#sms-to').value }); toast(r.check_error || 'נשלח ✓', !!r.check_error); loadSms(r); } catch (e) { fail(e); }
+  });
+}
 
 async function loadClock() {
   const c = await api('clock');

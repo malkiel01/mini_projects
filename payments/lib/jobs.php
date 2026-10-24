@@ -12,6 +12,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/subscriptions.php';
 require_once __DIR__ . '/documents.php';
 require_once __DIR__ . '/backup.php';
+require_once __DIR__ . '/sms.php';
 
 const TICK_EVERY = 55;
 
