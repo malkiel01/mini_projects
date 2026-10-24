@@ -28,12 +28,13 @@ export default async function (t) {
     t.ok('הגדרות העמוד מהמארחת נשמרו', (await exp('json')).page.orientation === 'landscape');
     t.ok('אירוע page למארחת', (await log()).includes('page "landscape"'));
 
-    await p.route('**/api.php?action=embed_save', r => r.abort());
+    // (עריכה משותפת — השליחה והמשיכה ב-embed_collab)
+    await p.route('**/api.php?action=embed_collab', r => r.abort());
     await fr.locator('.wp-doc').click();
     await p.keyboard.type(' עוד');
     t.ok('בלי רשת: ed.save() → false, ומצב מנותק', await p.evaluate(() => window.ed.save()) === false
         && (await fr.locator('.embed-bar .save-state[role=status]').textContent()).includes('מנותק'));
-    await p.unroute('**/api.php?action=embed_save');
+    await p.unroute('**/api.php?action=embed_collab');
     await p.waitForTimeout(6000);
     t.ok('החיבור חזר → נשמר לבד', (await exp('text')).text.includes('עוד'));
     await fr.locator('button:has-text("סגירה")').click();

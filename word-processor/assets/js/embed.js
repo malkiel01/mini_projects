@@ -2,9 +2,13 @@
  * העורך בתוך iframe של מארחת — platform/docs/embed.md, פרקים 4 ו-6.
  * הטוקן מהכתובת → embed_open → סשן בזיכרון בלבד (Bearer, לא עוגייה). כל הודעה יוצאת רק ל-return_origin,
  * וכל הודעה נכנסת נבדקת: מ-origin הזה ומהחלון המארח בלבד.
+ * עריכה משותפת (collab.js / embed_collab) — כמו באפליקציה: כמה עורכים יחד (גם מהאפליקציה ומקישור לזר), בלי נעילה;
+ * רואים מי במסמך ואיפה. צופה — רואה את השינויים חיים. טעינה מחדש (שחזור גרסה, שמירה מבחוץ) — במקום, בלי לרענן
+ * את הדף (הטוקן כבר נוצל).
  */
 import { createWordEditor, h, toast } from './editor.js';
-import { createSaver, findDraft, drafts, STATE_TEXT } from './saver.js';
+import { findDraft, drafts, STATE_TEXT } from './saver.js';
+import { createCollabSaver, setPeers } from './collab.js';
 
 const app = document.getElementById('app');
 const params = new URLSearchParams(location.search);
@@ -21,6 +25,10 @@ let dirty = false;   // מה שהמארחת יודעת (ההודעה change)
 let ed = null;
 let saver = null;
 let ui = {};
+let blocked = false;   // קריאה בלבד בגלל נעילה ישנה של מישהו אחר — עד שתתפנה
+let user = null;
+let client = '';
+const clientID = Array.from(crypto.getRandomValues(new Uint8Array(10)), b => (b % 36).toString(36)).join('');
 
 function post(type, data = {}) {
     if (!returnOrigin || window.parent === window) return;
@@ -37,6 +45,7 @@ async function api(action, body = {}, form = null) {
             body: form || JSON.stringify(body),
             credentials: 'omit',
             cache: 'no-store',
+            keepalive: body.op === 'leave',   // יציאה מהנוכחות — גם כשהחלון נסגר
         });
     } catch {
         post('error', { code: 'offline', message: 'אין חיבור לעורך' });
@@ -88,36 +97,42 @@ async function save() {
     return r;
 }
 
+let lastState = 'saved';
 function onSaveState(s, info) {
     if (ui.state) ui.state.textContent = can === 'edit' || s !== 'saved' ? STATE_TEXT[s] : 'קריאה בלבד';
     ui.state?.classList.toggle('bad', ['offline', 'conflict', 'error'].includes(s));
-    if (s === 'saved' && info.version) post('saved', { doc: docId, version: info.version, updated_at: info.updated_at });
+    // saved למארחת — רק במעבר לשמור (כל משיכה בעריכה המשותפת מדווחת "נשמר" שוב)
+    if (s === 'saved' && info.version && lastState !== 'saved') post('saved', { doc: docId, version: info.version, updated_at: info.updated_at });
+    lastState = s;
     if (s === 'saved' || s === 'dirty') syncDirty();
     if (s === 'offline') showBanner(saver.local === 'failed' ? 'אין חיבור לשרת, ואי אפשר לשמור במכשיר (האחסון חסום או מלא) — אל תסגרו את החלון.'
         : 'אין חיבור לשרת. השינויים שמורים במכשיר ויישלחו כשהחיבור יחזור.');
     if (info.localFailed && s !== 'saved') showBanner('אי אפשר לשמור טיוטה במכשיר (האחסון חסום או מלא). השינויים נשמרים רק בשרת — כשיש חיבור.');   // error/offline — כבר נשלח מ-api()
     else if (s === 'saved' && ui.banner && !ui.banner.hidden && ui.banner.dataset.kind === 'offline') ui.banner.hidden = true;
-    if (s === 'conflict') {
-        post('error', { code: 'conflict', message: info.message || 'המסמך השתנה במקום אחר' });
-        showBanner('המסמך השתנה במקום אחר. ' + (saver.local === 'saved' ? 'השינויים שלך שמורים במכשיר' : 'השינויים שלך לא נשמרו במכשיר')
-            + ' — וגם יישמרו בנפרד בטעינה מחדש.', 'טעינה מחדש', reloadFromServer);
-    }
     if (s === 'locked') { post('error', { code: 'locked', message: info.message }); readOnlyBecause(info.message || 'המסמך פתוח לעריכה אצל משתמש אחר'); }
     if (s === 'error' && info.code !== 'expired') { post('error', { code: info.code === 'schema_newer' ? 'conflict' : 'save_failed', message: info.message }); toast(info.message || 'השמירה נכשלה', true); }
     if (ui.banner && s === 'offline') ui.banner.dataset.kind = 'offline';
 }
 
-async function reloadFromServer() {
-    // ביקורת 03, F09: העבודה המקומית לא נמחקת בטעינה מחדש — נשמרת בנפרד במכשיר (draftKey:conflict)
-    const kept = saver.dirty && await saver.keepConflictCopy();
-    const fresh = await api('embed_load');
-    ed.setContent(fresh.json);
-    can = fresh.can;
-    ed.setEditable(can === 'edit');
-    saver.reset(fresh.version);
-    ui.banner.hidden = can === 'edit';
-    syncDirty();
-    if (kept && can === 'edit') showBanner('הגרסה שלך מלפני הטעינה מחדש שמורה בנפרד במכשיר.', 'שחזור הגרסה שלי', restoreConflictCopy);
+/**
+ * טעינה מחדש במקום (עידן חדש בעריכה המשותפת: שחזור גרסה, שמירה מבחוץ; או מעבר לעריכה): מה שלא נשלח — נשמר בנפרד
+ * במכשיר (ביקורת 03, F09) ומוצע לשחזור; העורך נבנה מחדש מהמסמך שבשרת.
+ */
+async function reopen(notice = false) {
+    if (reopen.busy) return;
+    reopen.busy = true;
+    try {
+        const kept = saver?.dirty && await saver.keepConflictCopy();
+        saver?.destroy(!kept);
+        if (kept) await drafts.del(saver.draftKey);
+        const fresh = await api('embed_load', { collab: 1 });
+        ed?.destroy();
+        mount(fresh);
+        if (kept && can === 'edit') showBanner('הגרסה שלך מלפני הטעינה מחדש שמורה בנפרד במכשיר.', 'שחזור הגרסה שלי', restoreConflictCopy);
+        else if (notice) toast('המסמך נטען מחדש — הוא השתנה במקום אחר.');
+    } finally {
+        reopen.busy = false;
+    }
 }
 async function restoreConflictCopy() {
     const c = await drafts.get(saver.draftKey + ':conflict');
@@ -130,6 +145,7 @@ async function restoreConflictCopy() {
 }
 
 function readOnlyBecause(text, lock = null) {
+    blocked = !!lock || blocked;
     can = 'view';
     saver?.stop();
     ed?.setEditable(false);
@@ -154,11 +170,7 @@ window.addEventListener('message', async e => {
         case 'readonly':
             // קריאה בלבד מהמארחת — גם השמירה נעצרת (ביקורת 03, F09); בקשה שכבר יצאה — נגמרת כרגיל
             if (m.value) { can = 'view'; saver?.stop(); ed?.setEditable(false); }
-            else if (requested === 'edit') {
-                const l = await api('embed_lock', { op: 'take' }).catch(() => null);
-                if (l?.ok) await reloadFromServer();
-                else if (l?.lock) readOnlyBecause(`פתוח לעריכה אצל ${l.lock.by}`, l.lock);
-            }
+            else if (requested === 'edit') await reopen().catch(() => {});
             break;
         case 'focus':
             ed?.focus();
@@ -182,7 +194,7 @@ function reportHeight() {
     if (app.dataset.valid !== '1' || !token) return expired();
     let d;
     try {
-        const r = await fetch('api.php?action=embed_open', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ t: token }), credentials: 'omit' });
+        const r = await fetch('api.php?action=embed_open', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ t: token, collab: 1 }), credentials: 'omit' });
         d = await r.json();
         if (!r.ok) {
             if (d.code === 'expired') return expired();
@@ -200,29 +212,44 @@ function reportHeight() {
     requested = d.requested || d.can;
     mode = d.mode;
 
+    user = d.user;
+    client = d.client || '';
     app.textContent = '';
     ui.state = h('span.save-state', { role: 'status' });
     ui.pages = h('span.save-state.pages-count');
+    ui.peers = h('span.peers', { 'aria-live': 'polite' });
     ui.title = h('div.titles.one', d.title || (mode === 'section' ? 'עריכת קטע' : 'מסמך'));
-    ui.bar = h('div.embed-bar', ui.title, ui.pages, ui.state,
+    ui.bar = h('div.embed-bar', ui.title, ui.peers, ui.pages, ui.state,
         h('button.btn.sm.ghost', { onclick: async () => { const r = await save(); post('close', { saved: r.ok && !dirty }); } }, 'סגירה'));
     ui.banner = h('div.banner', { hidden: true });
-    const root = h('div');
-    app.append(ui.bar, ui.banner, root);
-    ed = createWordEditor(root, {
-        json: d.json, page: d.page, editable: can === 'edit', user: d.user,
-        upload: file => { const fd = new FormData(); fd.append('file', file); return api('embed_upload', {}, fd); },
+    ui.root = h('div');
+    app.append(ui.bar, ui.banner, ui.root);
+    mount(d);
+    post('ready', { doc: docId, can, version: d.version });
+
+    // יציאה: מה שלא נשלח — לשרת אם אפשר, ובכל מקרה טיוטה במכשיר; ויציאה מהנוכחות
+    window.addEventListener('pagehide', () => { if (saver?.dirty) save(); saver?.destroy(); });
+})();
+
+/** העורך והעריכה המשותפת על המסמך d (embed_open / embed_load עם collab). */
+function mount(d) {
+    can = d.can;
+    blocked = false;
+    ui.root.textContent = '';
+    ui.banner.hidden = true;
+    ed = createWordEditor(ui.root, {
+        json: d.json, page: d.page, editable: can === 'edit', user,
+        collab: { version: d.collab.v, clientID },
+        upload: file => { const fd = new FormData(); fd.append('file', file); fd.append('collab', '1'); return api('embed_upload', {}, fd); },
         versions: {
             list: async () => (await api('embed_load', { op: 'versions' })).versions,
             get: id => api('embed_load', { op: 'version', id }),
-            // שחזור בשרת (ביקורת 04, R07) — קודם כל השינויים נשמרים
+            // שחזור בשרת (ביקורת 04, R07) — קודם כל השינויים נשמרים; אחר כך עידן חדש, וכולם (גם אנחנו) טוענים מחדש
             restore: async id => {
                 const s = await save();
                 if (!s.ok || saver.dirty) { toast(s.message || 'לא ניתן לשמור לפני השחזור', true); return false; }
-                const r = await api('embed_version_restore', { id, base_version: saver.version });
-                ed.setContent(r.json);
-                saver.reset(r.version);
-                syncDirty();
+                await api('embed_version_restore', { id, collab: 1 });
+                await reopen();
                 return true;
             },
         },
@@ -233,18 +260,26 @@ function reportHeight() {
     });
     ed.statusTarget(ui.pages);
     // טיוטה במכשיר: לפי לקוח, משתמש ומסמך (session מתחלף בכל פתיחה)
-    const draftKey = `embed:${d.client || ''}:${d.user?.id || d.user?.name || ''}:${docId}`;
-    saver = createSaver({
-        version: d.version,
-        draftKey,
-        snapshot: () => ed.getJSON(),
-        send: (json, base) => api('embed_save', { json, base_version: base }),
+    const draftKey = `embed:${client}:${user?.id || user?.name || ''}:${docId}`;
+    saver = createCollabSaver({
+        editor: ed.editor, version: d.version, epoch: d.collab.epoch, clientID, draftKey,
+        send: (op, body) => api('embed_collab', { op, ...body }),
         onState: onSaveState,
+        onPeers: (others, lock) => {
+            const names = [...new Set(others.filter(o => !o.me).map(o => o.name))];
+            ui.peers.textContent = '';
+            ui.peers.title = names.length ? 'גם במסמך עכשיו: ' + names.join(', ') : '';
+            for (const n of names) ui.peers.append(h('span.peer', { title: n }, n.trim().slice(0, 1) || '?'));
+            setPeers(ed.editor, others.filter(o => !o.me && o.role !== 'view'));   // צופה — בלי סמן
+            if (lock && can === 'edit') readOnlyBecause(`פתוח לעריכה אצל ${lock.by} — קריאה בלבד`, lock);
+            else if (!lock && blocked && requested === 'edit') showBanner('המסמך התפנה לעריכה.', 'מעבר לעריכה', () => reopen());
+        },
+        onReload: () => reopen(true),
     });
     ui.state.textContent = can === 'edit' ? STATE_TEXT.saved : 'קריאה בלבד';
     if (d.lock) readOnlyBecause(`פתוח לעריכה אצל ${d.lock.by} — קריאה בלבד`, d.lock);
-    new ResizeObserver(reportHeight).observe(app.querySelector('.wp-zoom-box'));
-    post('ready', { doc: docId, can, version: d.version });
+    if (!mount.observed) { mount.observed = true; new ResizeObserver(reportHeight).observe(ui.root); }
+    syncDirty();
     findDraft(draftKey, JSON.stringify(ed.getJSON())).then(dr => {
         if (!dr || can !== 'edit') return;
         showBanner('נמצאו במכשיר שינויים שלא נשמרו' + (dr.base_version !== d.version ? ' (המסמך השתנה מאז — שחזור ידרוס)' : '') + '.', 'שחזור', () => {
@@ -254,25 +289,4 @@ function reportHeight() {
             syncDirty();
         });
     });
-
-    // דופק כל 30 שניות: מחזיק את הנעילה; כשמישהו אחר נעל — בודק אם התפנתה
-    setInterval(async () => {
-        if (!session || requested !== 'edit') return;
-        try {
-            const l = await api('embed_lock', { op: 'beat' });
-            if (l.ok && can !== 'edit') {
-                showBanner('המסמך התפנה לעריכה.', 'מעבר לעריכה', reloadFromServer);
-            } else if (!l.ok && can === 'edit') {
-                readOnlyBecause(`פתוח לעריכה אצל ${l.lock?.by || 'משתמש אחר'} — קריאה בלבד`, l.lock);
-            }
-        } catch { /* רשת — בדופק הבא */ }
-    }, 30000);
-    window.addEventListener('pagehide', () => {
-        if (saver?.dirty) save();   // ואם לא יספיק — הטיוטה במכשיר
-        if (can === 'edit' && session) {
-            fetch('api.php?action=embed_lock', { method: 'POST', keepalive: true, credentials: 'omit',
-                headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + session, 'X-Embed-Session': session },
-                body: JSON.stringify({ op: 'release' }) }).catch(() => {});
-        }
-    });
-})();
+}
