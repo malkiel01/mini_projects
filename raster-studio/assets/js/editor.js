@@ -5,6 +5,7 @@ import { api, errText, toast, dims } from './api.js';
 import { idbGet, idbDel } from './idb.js';
 import { RasterDocument } from './engine/doc.js';
 import { WebGL2Renderer, decodeImage } from './engine/webgl2.js';
+import { WebGPURenderer } from './engine/webgpu.js';
 import * as V from './engine/view.js';
 import { deviceBudget, suggestSize, megapixels, perfFactor, perfLabel, perfCacheValid } from './engine/budget.js';
 import { createLayersPanel } from './layers-panel.js';
@@ -19,7 +20,7 @@ import { unzip } from './engine/unzip.js';
 
 const $ = s => document.querySelector(s);
 const stage = $('#stage');
-const canvas = $('#canvas');
+let canvas = $('#canvas');
 const msg = $('#msg');
 const overlay = createOverlay($('#overlay'), { doc: () => doc, view: () => view });
 
@@ -245,8 +246,26 @@ async function flushDraft() {
   }
 }
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushDraft(); });
-// הגרפיקה אופסה וחזרה — הכי בטוח לטעון מחדש מהטיוטה
-canvas.addEventListener('webglcontextrestored', () => location.reload());
+
+/**
+ * המנוע: WebGPU היכן שיש (הכי מתקדם), אחרת WebGL2. ‎?renderer=webgl2 מכריח את הגיבוי.
+ * WebGPU נבנה על עותק של הקנבס — קנבס שקיבל הקשר webgpu לא יכול לקבל webgl2, וכך הגיבוי נשאר אפשרי.
+ */
+async function createRenderer() {
+  if (new URLSearchParams(location.search).get('renderer') !== 'webgl2' && navigator.gpu) {
+    const c = canvas.cloneNode();
+    try {
+      const r = await WebGPURenderer.create(c);
+      canvas.replaceWith(c);
+      canvas = c;
+      return r;
+    } catch (err) { console.warn('WebGPU לא זמין — WebGL2', err); }
+  }
+  if (!WebGL2Renderer.supported()) throw new Error('no_webgl2');
+  // הגרפיקה אופסה וחזרה — הכי בטוח לטעון מחדש מהטיוטה
+  canvas.addEventListener('webglcontextrestored', () => location.reload());
+  return new WebGL2Renderer(canvas);
+}
 
 addEventListener('beforeunload', e => { if (changed) { flushDraft(); e.preventDefault(); } });
 
@@ -465,8 +484,7 @@ $('#hint').textContent = coarse ? 'צביטה — זום' : 'גרירה — הז
 
 (async () => {
   try {
-    if (!WebGL2Renderer.supported()) throw new Error('no_webgl2');
-    renderer = new WebGL2Renderer(canvas);
+    renderer = await createRenderer();
     // ההיסטוריה — עד רבע מתקציב הזיכרון של המכשיר
     history = new History({ renderer, limitBytes: budget.bytes / 4, onChange: syncHistory });
     tools = createTools({
