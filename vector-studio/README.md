@@ -5,7 +5,8 @@
 `creative-suite/docs/projects/vector-studio.md`.
 
 > סטטוס: **עורך** — לוח עבודה, זום, בחירה, הזזה ושינוי גודל, צורות, מילוי ומתאר, עט ועריכת נקודות, קבוצות, שכבות,
-> יישור ופיזור, סדר הצגה, הצמדה ורשת, טקסט בעברית; טיוטות במכשיר. הבא: שמירה ופתיחה של ‎.mbe. ההכרעות — בטבלה למטה.
+> יישור ופיזור, סדר הצגה, הצמדה ורשת, טקסט בעברית, ייצוא SVG / PDF / PNG וייבוא SVG; טיוטות במכשיר.
+> הבא: שמירה ופתיחה של ‎.mbe — מחכה לצירוף לליבה (בקשה לצ'אט המתכלל). ההכרעות — בטבלה למטה.
 
 ## גרסה 1 — מה בפנים
 
@@ -74,10 +75,15 @@ assets/js/pen.js         העט ועריכת הנקודות
 assets/js/arrange.js     קבוצות, סדר הצגה, יישור ופיזור, שכבות (טהור — נבדק ב-node)
 assets/js/snap.js        הצמדה לקצוות ולמרכזים של לוחות ואובייקטים, ורשת 10pt
 assets/js/text.js        טקסט: שורות, גלישה, מדידה (מוזרקת מהעורך), שינוי גודל
+assets/js/outline.js     טקסט → קווי מתאר (opentype.js), וסדר חזותי לעברית (bidi מקוצר)
+assets/js/export.js      SVG ו-PDF וקטוריים (PDF — כותב משלנו, עמוד לכל לוח) עם דוח פערים
+assets/js/import.js      ייבוא SVG: צורות חיות, סגנון ותורשה, טרנספורמציות, viewBox; דוח על מה שלא עבר
+assets/js/vendor/        opentype.js 2.0.0 (MIT) — נטען רק בייצוא
 assets/fonts/            7 גופנים עבריים חופשיים (OFL, הרישיונות לידם): Heebo, Rubik, Assistant, פרנק רוהל, דוד, Secular One, Amatic
 tests/run.php            php vector-studio/tests/run.php
 tests/geometry.test.mjs  node --test vector-studio/tests/geometry.test.mjs
 tests/arrange.test.mjs   node --test vector-studio/tests/arrange.test.mjs
+tests/export.test.mjs    node --test vector-studio/tests/export.test.mjs (גם pdfinfo אם מותקן)
 tests/e2e.mjs            node vector-studio/tests/e2e.mjs <כתובת> — דפדפן: מחשב, 390px ו-320px
 ```
 
@@ -96,6 +102,9 @@ tests/e2e.mjs            node vector-studio/tests/e2e.mjs <כתובת> — דפ�
 **טקסט:** T — הקשה פותחת טקסט נקודה (הקצה הימני בנקודה), גרירה — טקסט בתיבה שגולש. הקלדה במקום; Esc / Ctrl+Enter
 — סיום; הקשה כפולה — עריכה. גופן, גודל, מודגש, יישור ומרווח — בלוח. טקסט ריק לא נשאר. פריט `text` בתוך `paths`
 (בבקשה לצ'אט המתכלל, סעיף 2).
+
+**קובץ (📁):** ייצוא SVG (הלוח שנבחר), PDF (כל הלוחות, עמוד לכל אחד), PNG (×1 / ×2 / ×4, רקע לבן או שקוף).
+טקסט יוצא כקווי מתאר. ייבוא SVG נכנס כקבוצה לשכבה הפעילה; טקסט, תמונות, מעברי צבע ו-CSS — נאמרים בהודעה.
 
 **טיוטות:** עד שלב השמירה, כל ציור נשמר ב-localStorage של המכשיר. גלישה בסתר / אחסון חסום — העורך אומר
 "לא נשמר".
@@ -116,4 +125,5 @@ tests/e2e.mjs            node vector-studio/tests/e2e.mjs <כתובת> — דפ�
 
 - מודל הנתיבים והצטרפות לליבה — בקשה לצ'אט המתכלל: `creative-suite/docs/requests/vector-studio-paths.md`.
 - מעבר צבע ליניארי — נכנס עם שלב הקבוצות והיישור (המודל כבר מוכן לו בבקשה).
-- טקסט כקווי מתאר בייצוא: הגופנים משתנים (variable) — צריך ספרייה שקוראת אותם (fontkit) או גרסאות סטטיות; ייקבע בשלב הייצוא.
+- טקסט כקווי מתאר: ניקוד וסימנים מעל אותיות — עוד לא ממוקמים כמו בקנבס (opentype.js בלי עיצוב מלא לעברית). מעבר
+  צבע — לא בגרסה הזו.

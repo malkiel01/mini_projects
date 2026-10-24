@@ -849,6 +849,130 @@ function createText(surface, x0, y0, x1, y1, before) {
   openTextEditor(item.id, before);
 }
 
+// ---------- קובץ: ייצוא וייבוא ----------
+
+let opentypeLib = null;
+const fontCache = new Map();
+/** גופן כאובייקט opentype — הספרייה והקובץ נטענים רק בייצוא הראשון. */
+async function getFont(file) {
+  if (!fontCache.has(file)) {
+    fontCache.set(file, (async () => {
+      opentypeLib ||= await import('./vendor/opentype.min.mjs');
+      const res = await fetch('assets/fonts/' + file);
+      if (!res.ok) throw new Error('הגופן לא נטען: ' + file);
+      return opentypeLib.parse(await res.arrayBuffer());
+    })());
+  }
+  return fontCache.get(file);
+}
+
+function toast(msg, err = false) {
+  const el = document.querySelector('.toast');
+  el.textContent = msg; el.classList.toggle('err', err); el.hidden = false;
+  clearTimeout(toast.t); toast.t = setTimeout(() => { el.hidden = true; }, 3500);
+}
+
+function download(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.hidden = true;
+  // בתוך החלון הפתוח (שכבה עליונה) — אחרת יש דפדפנים שמתעלמים מהשם
+  ($('file-dlg').open ? $('file-dlg') : document.body).appendChild(a);
+  a.click();
+  setTimeout(() => { a.remove(); URL.revokeObjectURL(a.href); }, 30000);
+}
+
+const fileName = (ext, surface) => {
+  const base = (S.name || 'ציור').replace(/[\\/:*?"<>|]+/g, '-').trim() || 'ציור';
+  return (surface && S.doc.surfaces.length > 1 ? `${base} - ${surface.name || surface.id}` : base) + '.' + ext;
+};
+
+function openFileDialog() {
+  const many = S.doc.surfaces.length > 1;
+  $('exp-board-wrap').hidden = !many;
+  $('exp-board').innerHTML = S.doc.surfaces.map(s => `<option value="${s.id}">${(s.name || s.id).replace(/[<&]/g, '')}</option>`).join('');
+  $('pdf-note').textContent = many ? `(${S.doc.surfaces.length} עמודים)` : '';
+  $('exp-note').hidden = ![...objects(S.doc)].some(o => [...leaves(o.path)].some(p => p.type === 'text'));
+  $('file-err').hidden = true;
+  $('file-dlg').showModal();
+}
+
+async function doExport(kind) {
+  const btn = document.querySelector(`[data-export="${kind}"]`);
+  btn.disabled = true;
+  $('file-err').hidden = true;
+  try {
+    const surface = S.doc.surfaces.find(s => s.id === $('exp-board').value) || S.doc.surfaces[0];
+    const { prepare, toSVG, toPDF } = await import('./export.js');
+    let gaps = [];
+    if (kind === 'svg') {
+      const prep = await prepare(S.doc, surface.id, getFont);
+      gaps = prep.gaps;
+      download(new Blob([toSVG(prep)], { type: 'image/svg+xml' }), fileName('svg', surface));
+    } else if (kind === 'pdf') {
+      const pages = [];
+      for (const s of S.doc.surfaces) { const p = await prepare(S.doc, s.id, getFont); pages.push(p); gaps.push(...p.gaps); }
+      download(new Blob([toPDF(pages)], { type: 'application/pdf' }), fileName('pdf'));
+    } else {
+      await fontsReady;
+      const scale = Number(document.querySelector('[name="png-scale"]:checked').value);
+      // קנבס עד ~16 מיליון פיקסלים — יותר מזה הטלפון נכשל בשקט
+      const k = Math.min(scale, Math.sqrt(16e6 / (surface.size[0] * surface.size[1])));
+      const c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round(surface.size[0] * k));
+      c.height = Math.max(1, Math.round(surface.size[1] * k));
+      render(c, { doc: { ...S.doc, surfaces: [surface] }, view: { x: 0, y: 0, z: k }, dpr: 1, sel: new Set(), exportMode: true,
+        bg: document.querySelector('[name="png-bg"]:checked').value === '1' });
+      const blob = await new Promise(res => c.toBlob(res, 'image/png'));
+      if (!blob) throw new Error('יצירת התמונה נכשלה');
+      download(blob, fileName('png', surface));
+      if (k < scale) gaps.push(`גודל מוקטן ל-×${Math.round(k * 10) / 10} (מגבלת זיכרון)`);
+    }
+    $('file-dlg').close();
+    toast(gaps.length ? `יוצא ${kind.toUpperCase()} · ${[...new Set(gaps)].map(g => g === 'text → outlines' ? 'טקסט → קווי מתאר' : g).join(' · ')}` : `יוצא ${kind.toUpperCase()}`);
+  } catch (e) {
+    $('file-err').textContent = 'הייצוא נכשל: ' + e.message;
+    $('file-err').hidden = false;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function importFile(file) {
+  $('file-err').hidden = true;
+  try {
+    if (file.size > 20 * 1024 * 1024) throw new Error('הקובץ גדול מ-20MB');
+    const { importSVG } = await import('./import.js');
+    const text = await file.text();
+    let made = null, gaps = [];
+    change(() => {
+      const r = importSVG(text, ids(S.doc, 'p'));
+      gaps = r.gaps;
+      if (!r.items.length) return;
+      const surface = findPath(S.doc, [...S.sel][0] || '')?.surface || S.doc.surfaces[0];
+      const layer = targetLayer(surface);
+      const item = r.items.length === 1 ? r.items[0] : { id: nextId(S.doc, 'g'), type: 'group', name: file.name.replace(/\.svg$/i, ''), children: r.items };
+      layer.paths.push(item);
+      made = item.id;
+    });
+    if (!made) throw new Error('לא נמצאו בקובץ צורות שאפשר לייבא' + (gaps.length ? ': ' + gaps.join(' · ') : ''));
+    $('file-dlg').close();
+    setTool('select');
+    select([made]);
+    toast(gaps.length ? 'יובא · לא עבר: ' + gaps.join(' · ') : 'יובא');
+  } catch (e) {
+    $('file-err').textContent = 'הייבוא נכשל: ' + e.message;
+    $('file-err').hidden = false;
+  }
+}
+
+$('file-btn').addEventListener('click', openFileDialog);
+document.querySelectorAll('[data-export]').forEach(b => b.addEventListener('click', () => doExport(b.dataset.export)));
+$('imp-svg').addEventListener('click', () => $('imp-file').click());
+$('imp-file').addEventListener('change', () => { const f = $('imp-file').files[0]; $('imp-file').value = ''; if (f) importFile(f); });
+document.addEventListener('click', e => { const b = e.target.closest('[data-close]'); if (b) b.closest('dialog').close(); });
+
 // לבדיקות (Playwright): גישה למצב בלי לחשוף אותו בממשק
 window.__vs = { S, select, setTool, fit, fontsReady };
 

@@ -3,6 +3,7 @@
 
 import { createRequire } from 'node:module';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -282,12 +283,65 @@ try {
   await page.click('#grid-btn');
   step('הצמדה ללוח עם קו עזר, והצמדה לרשת');
 
+  // ייצוא: SVG, PDF ו-PNG יורדים, עם טקסט כקווי מתאר
+  const grab = async (kind) => {
+    await page.click('#file-btn');
+    const [dl] = await Promise.all([page.waitForEvent('download'), page.click(`[data-export="${kind}"]`)]);
+    const buf = fs.readFileSync(await dl.path());
+    return { name: dl.suggestedFilename(), buf };
+  };
+  const svgOut = await grab('svg');
+  // Chromium בלי לוקאל UTF-8 (כמו בקונטיינר) מחליף שם בעברית ב-"download"; בטלפון ובמחשב השם נשמר
+  assert.match(svgOut.name, /\.svg$|^download$/);
+  const svgText = svgOut.buf.toString('utf8');
+  assert.match(svgText, /viewBox="0 0 1080 1080"/);
+  assert.match(svgText, /aria-label="שלום עולם/);
+  assert.doesNotMatch(svgText, /<text/);
+  assert.match(await page.textContent('.toast'), /קווי מתאר/);
+  const pdfOut = await grab('pdf');
+  assert.equal(pdfOut.buf.subarray(0, 5).toString(), '%PDF-');
+  const pngOut = await grab('png');
+  assert.equal(pngOut.buf.subarray(1, 4).toString(), 'PNG');
+  assert.equal(pngOut.buf.readUInt32BE(16), 2160, 'רוחב ×2');
+  if (shots) { fs.writeFileSync(`${shots}/export.svg`, svgOut.buf); fs.writeFileSync(`${shots}/export.pdf`, pdfOut.buf); fs.writeFileSync(`${shots}/export.png`, pngOut.buf); }
+  step('ייצוא SVG, PDF ו-PNG (×2), טקסט כקווי מתאר');
+
+  // ייבוא SVG: צורות, תורשת סגנון, טרנספורמציה, viewBox; מה שלא נתמך — בדוח
+  const before = (await st()).paths.length;
+  await page.click('#file-btn');
+  const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.click('#imp-svg')]);
+  await chooser.setFiles(new URL('./fixtures/sample.svg', import.meta.url).pathname);
+  await page.waitForFunction((n) => window.__vs.S.doc.surfaces[0].layers[0].paths.length > n, before);
+  s = await st();
+  const imp = s.paths[s.paths.length - 1];
+  assert.equal(imp.type, 'group');
+  assert.deepEqual(s.sel, [imp.id]);
+  const flat = (it) => it.type === 'group' ? it.children.flatMap(flat) : [it];
+  const parts = flat(imp);
+  assert.equal(parts.length, 5); // מלבן, עיגול, נתיב, קו, מלבן עם מעבר צבע (שחור)
+  const rect = parts.find(p => p.shape?.type === 'rect' && p.shape.radius > 0);
+  assert.deepEqual(rect.shape.box, [5, 5, 50, 30]); // viewBox 400 → width 200: חצי
+  assert.equal(rect.shape.radius, 4);
+  assert.equal(rect.fill.color, '#2d4a8a');
+  assert.equal(rect.stroke.width, 1); // 2 × חצי
+  const circ = parts.find(p => p.shape?.type === 'ellipse');
+  assert.equal(circ.fill.color, '#e19a00');
+  assert.equal(circ.stroke, null);
+  const dashed = parts.find(p => !p.shape && p.stroke?.dash?.length);
+  assert.match(dashed.d, /^M155 15 /);
+  assert.equal(dashed.fill, null);
+  const toastText = await page.textContent('.toast');
+  assert.match(toastText, /<text>/);
+  assert.match(toastText, /מעבר צבע/);
+  assert.match(toastText, /סקריפט/);
+  step('ייבוא SVG: צורות חיות, סגנון ותורשה, טרנספורמציה ו-viewBox, ודוח על מה שלא עבר');
+
   // הטיוטה נשמרה ומופיעה ברשימה
   await page.waitForTimeout(600);
   if (shots) await page.screenshot({ path: `${shots}/editor-1280.png` });
   await page.click('a[href="./"]');
   await page.waitForSelector('#drafts .card');
-  assert.match(await page.textContent('#drafts'), /5 אובייקטים/);
+  assert.match(await page.textContent('#drafts'), /6 אובייקטים/);
   step('הטיוטה נשמרה במכשיר ומופיעה ברשימה');
   await page.close();
 
