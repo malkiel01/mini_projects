@@ -3,9 +3,15 @@
   "name": "וקטורי",
   "icon": "✒️",
   "icon_svg": "assets/icon.svg",
-  "description": "עורך גרפיקה וקטורית — לוגואים, אייקונים, איורים ושרטוטים: צורות, נתיבי בזייה וטקסט בעברית. שומר ‎.mbe עם SVG ו-PDF מוכנים בפנים. בבנייה — גרסה 1.",
+  "description": "עורך גרפיקה וקטורית — לוגואים, אייקונים, איורים ושרטוטים: צורות, עט, טקסט בעברית, מעברי צבע ופעולות צורה. שומר ‎.mbe של החבילה, ומייצא SVG, PDF ו-PNG. ניתן להתקנה כאפליקציה.",
   "category": "design",
   "entry": "index.html",
   "gate": true,
-  "restricted": true
+  "restricted": true,
+  "public": [
+    "manifest.webmanifest",
+    "service-worker.js",
+    "assets/icons/**",
+    "assets/icon.svg"
+  ]
 }

@@ -558,6 +558,26 @@ try {
   step('טיוטה ישנה מהמכשיר עוברת לספרייה בשרת');
   await page.close();
 
+  // התקנה: manifest תקין ו-service worker — Chromium לא מוצא שגיאות התקנה; בלי רשת הדף נפתח מהמטמון
+  const pi = await browser.newPage();
+  await pi.goto(base);
+  await pi.waitForSelector('#home:not([hidden])');
+  await pi.evaluate(() => navigator.serviceWorker.ready);
+  await pi.reload();
+  await pi.waitForSelector('#home:not([hidden])');
+  const cdp = await pi.context().newCDPSession(pi);
+  const inst = await cdp.send('Page.getInstallabilityErrors');
+  assert.deepEqual(inst.installabilityErrors, [], JSON.stringify(inst.installabilityErrors));
+  const man = await cdp.send('Page.getAppManifest');
+  assert.deepEqual(man.errors, []);
+  assert.match(man.data, /"file_handlers"/);
+  await pi.context().setOffline(true);
+  await pi.reload();
+  assert.match(await pi.title(), /וקטורי/);
+  await pi.context().setOffline(false);
+  await pi.close();
+  step('התקנה: בלי שגיאות התקנה ב-Chromium, file_handlers ל-‎.mbe, והדף נפתח בלי רשת');
+
   // ---- טלפון ----
   for (const width of [390, 320]) {
     const ctx = await browser.newContext({ viewport: { width, height: 780 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
