@@ -65,7 +65,7 @@ async function listView(folder = null) {
     const search = h('input', { type: 'search', placeholder: 'חיפוש בכל המסמכים', 'aria-label': 'חיפוש' });
     const list = h('ul.list', h('li.empty', 'טוען…'));
     const crumbs = h('nav.crumbs', { 'aria-label': 'תיקיות' });
-    const fileIn = h('input', { type: 'file', accept: '.docx,.odt,.html,.htm,.txt,.md,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.oasis.opendocument.text,text/html,text/plain', hidden: true, onchange: importFile });
+    const fileIn = h('input', { type: 'file', accept: '.docx,.odt,.rtf,.html,.htm,.txt,.md,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.oasis.opendocument.text,application/rtf,text/rtf,text/html,text/plain', hidden: true, onchange: importFile });
     let docs = [], shared = [], folders = [], favs = new Set();
     const byId = () => new Map(folders.map(f => [f.id, f]));
     const pathOf = id => { const m = byId(), out = []; for (let f = m.get(id); f && out.length < 12; f = m.get(f.parent)) out.unshift(f); return out; };
@@ -254,7 +254,7 @@ async function importFile(e) {
     if (currentFolder) fd.append('folder', currentFolder);
     toast('מייבא…');
     try {
-        const r = await fetch('api.php?action=my_new&title=', { method: 'POST', body: withTitle(fd, f.name.replace(/\.(docx|odt|html?|txt|md)$/i, '')), headers: { 'X-WP': '1', 'X-Tab': tab } });
+        const r = await fetch('api.php?action=my_new&title=', { method: 'POST', body: withTitle(fd, f.name.replace(/\.(docx|odt|rtf|html?|txt|md)$/i, '')), headers: { 'X-WP': '1', 'X-Tab': tab } });
         const d = await r.json();
         if (!r.ok) throw new Error(d.error || 'הייבוא נכשל');
         importReport = d.report || [];

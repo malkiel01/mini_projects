@@ -1712,14 +1712,110 @@ check('ODT: הגדרות הדף — לרוחב, שוליים (גם עם הכות
     && ($od['page']['header'] ?? '') === 'כותרת עליונה' && ($od['page']['numbering'] ?? null) === ['show' => true, 'position' => 'bottom'] && $od['report'] === [],
     json_encode([$od['page'], $od['report']], JSON_UNESCAPED_UNICODE));
 check('ODT: נכנס כמו שהוא לשמירה (doc_save) — בלי שגיאה', (bool)doc_save(doc_find($odDoc, "c:$A"), $od['json'], null, 'u1', 'דנה'));
-// לפי התוכן: docx, HTML (גם מסמך שלם), טקסט (UTF-8 / Windows-1255), RTF ו-doc ישן — שגיאה מובנת
+// לפי התוכן: docx, HTML (גם מסמך שלם), טקסט (UTF-8 / Windows-1255), doc ישן — שגיאה מובנת
 check('import_file: docx לפי התוכן (גם בלי סיומת)', import_file(export_docx(['type' => 'doc', 'content' => [para([text_node('מוורד')])]], page_normalize([])), '', $odDoc)['json']['content'][0]['content'][0]['text'] === 'מוורד');
 $ih = import_file("<!DOCTYPE html><html><head><title>x</title></head><body><h1>כותרת</h1><p>פסקה <b>מודגשת</b></p></body></html>", 'a.html', $odDoc)['json']['content'];
 check('import_file: מסמך HTML שלם — רק הגוף, כותרת ופסקה עם מודגש', ($ih[0]['type'] ?? '') === 'heading' && str_contains(json_encode($ih, JSON_UNESCAPED_UNICODE), '"bold"') && !str_contains(json_encode($ih, JSON_UNESCAPED_UNICODE), '"x"'), json_encode($ih, JSON_UNESCAPED_UNICODE));
 $it = import_file("# פרק\nשורה ראשונה\n- תבליט", 'a.txt', $odDoc)['json']['content'];
 $i1255 = import_file(iconv('UTF-8', 'WINDOWS-1255', "שלום עולם"), 'old.txt', $odDoc)['json']['content'][0]['content'][0]['text'] ?? '';
 check('import_file: טקסט — שורות, # כותרת, - תבליט; וגם Windows-1255', array_column($it, 'type') === ['heading', 'paragraph', 'bulletList'] && $i1255 === 'שלום עולם', $i1255);
-check('import_file: RTF ו-doc ישן — שגיאה עם הסבר', throws(fn() => import_file('{\rtf1\ansi hello}', 'a.rtf', $odDoc), 'bad_file') && throws(fn() => import_file("\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1" . str_repeat("\0", 50), 'a.doc', $odDoc), 'bad_file'));
+check('import_file: doc ישן — שגיאה עם הסבר', throws(fn() => import_file("\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1" . str_repeat("\0", 50), 'a.doc', $odDoc), 'bad_file'));
+
+section('ייבוא RTF (lib/import_rtf.php)');
+// כמו ש-Word בעברית שומר: ansicpg1255, גופן עברי ב-\af, עברית ב-\'hh וב-\uN, סגנון "כותרת 1" (שם ב-\'hh), כותרת עם
+// מספר עמוד, הערת שוליים, רשימות (\listtext), טבלה, קישור, צבע וסימון, מעקב שינויים, תמונה. § = לוכסן הפוך.
+$R = fn(string $s) => str_replace('§', chr(92), $s);
+$png = bin2hex(base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='));
+$rtf = $R('{§rtf1§ansi§ansicpg1255§deff0§uc1{§fonttbl{§f0§froman§fcharset0 Times New Roman;}{§f1§fbidi§fswiss§fcharset177 Arial;}'
+    . '{§f3§froman§fcharset2 Symbol;}}{§colortbl;§red255§green0§blue0;§red255§green255§blue0;}'
+    . '{§stylesheet{§qr§rtlpar§sa160§fs22§lang1037 Normal;}{§s1§qr§rtlpar§sb240§sa120§b§fs32§ab§afs32 §\'eb§\'e5§\'fa§\'f8§\'fa 1;}{§*§cs10 Default Paragraph Font;}}'
+    . '{§*§revtbl {Unknown;}{§\'e9§\'e5§\'f1§\'e9;}}'
+    . '§paperw11906§paperh16838§margl1134§margr1701§margt1418§margb1418'
+    . '{§header §pard§qc§rtlpar {§rtlch§af1 §\'e3§\'e5"§\'e7 §\'f9§\'f0§\'fa§\'e9}§par}'
+    . '{§footer §pard§qc {§field{§*§fldinst { PAGE }}{§fldrslt {7}}}§par}'
+    . '§pard§plain§s1§qr§rtlpar§sb240§sa120§b§fs32 {§rtlch§af1§ab§afs32 §\'f4§\'f8§\'f7 §\'f8§\'e0§\'f9§\'e5§\'ef}§par'
+    . '§pard§plain§qr§rtlpar§sa160§fs22 {§rtlch§af1§afs22 §\'f9§\'ec§\'e5§\'ed }{§rtlch§af1§ab§afs22 §u1506?§u1493?§u1500?§u1501?}'
+    . '{§rtlch§af1§afs22 §\'ee§\'f4§\'e5§\'e8}{§super§chftn}{§*§footnote §pard§plain§fs20 {§super§chftn} §\'e4§\'f2§\'f8§\'e4 §\'eb§\'e0§\'ef}'
+    . '{§rtlch§af1§afs22 . }{§cf1 §\'e0§\'e3§\'e5§\'ed} {§highlight2 §\'ee§\'f1§\'e5§\'ee§\'ef} {§ltrch§fs28 Big}§par'
+    . '§pard§ltrpar§qj§li720§fi-360§sa160§fs22 English {§i italic} {§field{§*§fldinst {HYPERLINK "https://example.com/"}}{§fldrslt {§ul§cf2 link}}}§line'
+    . ' next {§uldb double} {§revised§revauth1§revdttm132825664 added}{§deleted§revauthdel1 gone}§par'
+    . '{§listtext§pard§plain§f3§fs22 §\'b7§tab}§pard§ls1§ilvl0§fi-360§li720§rtlpar§fs22 {§rtlch§af1 §\'e0§\'e7§\'fa}§par'
+    . '{§listtext§pard§plain§f0§fs22 1.§tab}§pard§ls2§ilvl1§fi-360§li1440§rtlpar§fs22 {§rtlch§af1 §\'f9§\'fa§\'e9§\'ed}§par'
+    . '{§listtext§pard§plain§f0§fs22 2.§tab}§pard§ls2§ilvl1§fi-360§li1440§rtlpar§fs22 {§rtlch§af1 §\'f9§\'ec§\'e5§\'f9}§par'
+    . '§trowd§rtlrow§cellx3000§cellx6000§pard§intbl§rtlpar§fs22 {§rtlch§af1 §\'e01}§cell {§rtlch§af1 §\'e02}§cell§row'
+    . '§trowd§rtlrow§cellx3000§cellx6000§pard§intbl§rtlpar§fs22 {§rtlch§af1 §\'e11}§cell §pard§intbl {§b B2}§cell§row'
+    . '§pard§rtlpar§fs22 {§*§shppict{§pict§pngblip§picw1§pich1§picwgoal1500§pichgoal750 ' . $png . '}}{§nonshppict{§pict§wmetafile8 0100}}'
+    . ' {§pict§emfblip 0100}§page §pard§rtlpar§fs22 {§headerf ignored}{§field{§*§fldinst { TOC §§o "1-3" }}{§fldrslt toc}}§par}');
+$rt = import_file($rtf, 'מסמך.rtf', $odDoc);
+$rc = $rt['json']['content'];
+$tx = fn(array $n) => implode('', array_map(fn($c) => $c['text'] ?? '', $n['content'] ?? []));
+$mk = fn(array $p, string $t) => array_column(array_values(array_filter($p['content'], fn($c) => ($c['text'] ?? '') === $t))[0]['marks'] ?? [], 'type');
+check('RTF: לפי התוכן (גם בלי סיומת .rtf) — הסוגים בסדר', array_column(import_file($rtf, 'x', $odDoc)['json']['content'], 'type')
+    === ['heading', 'paragraph', 'paragraph', 'bulletList', 'table', 'paragraph', 'pageBreak', 'paragraph'], json_encode(array_column($rc, 'type')));
+check('RTF: סגנון "כותרת 1" (שם בעברית) — כותרת רמה 1, בלי מודגש / גודל ישירים מהסגנון',
+    $rc[0]['attrs'] === ['level' => 1] && $tx($rc[0]) === 'פרק ראשון' && !isset($rc[0]['content'][0]['marks']), json_encode($rc[0], JSON_UNESCAPED_UNICODE));
+$p1 = $rc[1];
+check('RTF: עברית ב-\\\'hh (ansicpg1255 + \\af) וב-\\uN; מודגש מ-\\ab; צבע; סימון; גודל של טקסט אנגלי (\\fs)',
+    str_starts_with($tx($p1), 'שלום עולםמפוט') && $mk($p1, 'עולם') === ['bold'] && $mk($p1, 'אדום') === ['textStyle']
+    && $mk($p1, 'מסומן') === ['highlight'] && $mk($p1, 'Big') === ['textStyle'], json_encode($p1, JSON_UNESCAPED_UNICODE));
+check('RTF: הערת שוליים — במקומה, כטקסט; גודל Normal (\\fs22) — גודל המסמך, לא עיצוב ישיר',
+    in_array(['type' => 'footnote', 'attrs' => ['text' => 'הערה כאן', 'content' => null]], $p1['content'], true) && ($rt['page']['font']['size'] ?? 0) == 11
+    && !isset($p1['attrs']), json_encode([$p1['attrs'] ?? null, $rt['page']['font'] ?? null], JSON_UNESCAPED_UNICODE));
+$p2 = $rc[2];
+$link = array_values(array_filter($p2['content'], fn($c) => ($c['text'] ?? '') === 'link'))[0]['marks'] ?? [];
+$ins = array_values(array_filter($p2['content'], fn($c) => ($c['text'] ?? '') === 'added'))[0]['marks'][0] ?? null;
+check('RTF: שמאל לימין, מיושר לשני הצדדים, הזחה ושורה ראשונה תלויה; נטוי; קישור; מעבר שורה; קו כפול',
+    $p2['attrs'] == ['textAlign' => 'justify', 'dir' => 'ltr', 'indent' => 1, 'firstLine' => -18] && $mk($p2, 'italic') === ['italic']
+    && in_array(['type' => 'link', 'attrs' => ['href' => 'https://example.com/']], $link, true) && in_array('hardBreak', array_column($p2['content'], 'type'), true)
+    && in_array(['type' => 'underline', 'attrs' => ['ul' => 'double']], array_values(array_filter($p2['content'], fn($c) => ($c['text'] ?? '') === 'double'))[0]['marks'] ?? [], true),
+    json_encode($p2, JSON_UNESCAPED_UNICODE));
+check('RTF: מעקב שינויים — הוספה עם השם מ-\\revtbl והתאריך (\\revdttm), מחיקה',
+    $ins === ['type' => 'ins', 'attrs' => ['author' => 'יוסי', 'date' => '2026-10-24T09:00:00Z']] && $mk($p2, 'gone') === ['del'], json_encode($ins, JSON_UNESCAPED_UNICODE));
+$bl = $rc[3];
+check('RTF: רשימה — תבליט (Symbol \\\'b7), ובתוכה רשימה ממוספרת ברמה 2 (\\ilvl1)',
+    $bl['type'] === 'bulletList' && $tx($bl['content'][0]['content'][0]) === 'אחת' && ($bl['content'][0]['content'][1]['type'] ?? '') === 'orderedList'
+    && count($bl['content'][0]['content'][1]['content']) === 2 && !isset($bl['content'][0]['content'][0]['attrs']['indent']), json_encode($bl, JSON_UNESCAPED_UNICODE));
+$tb = $rc[4]['content'];
+check('RTF: טבלה 2×2 עם הטקסט ועיצוב בתא', count($tb) === 2 && count($tb[1]['content']) === 2 && $tx($tb[0]['content'][1]['content'][0]) === 'א2'
+    && $mk($tb[1]['content'][1]['content'][0], 'B2') === ['bold'], json_encode($tb, JSON_UNESCAPED_UNICODE));
+$rimg = array_values(array_filter($rc[5]['content'] ?? [], fn($n) => ($n['type'] ?? '') === 'image'));
+check('RTF: תמונת PNG (\\shppict) — אחת, בגודל התצוגה (100×50), ושל המסמך; ה-WMF החלופי לא נכנס',
+    count($rimg) === 1 && $rimg[0]['attrs']['width'] === 100 && $rimg[0]['attrs']['height'] === 50 && media_of_doc($rimg[0]['attrs']['media'], $odDoc) !== null, json_encode($rc[5], JSON_UNESCAPED_UNICODE));
+$rp = $rt['page'];
+check('RTF: הדף — A4, שוליים במ"מ, כותרת עליונה (הטקסט), מספור עמודים למטה (שדה PAGE — בלי המספר עצמו)',
+    $rp['size'] === 'A4' && $rp['margins'] == ['left' => 20, 'right' => 30, 'top' => 25, 'bottom' => 25] && $rp['header'] === 'דו"ח שנתי'
+    && $rp['numbering'] === ['show' => true, 'position' => 'bottom'] && !isset($rp['footer']), json_encode($rp, JSON_UNESCAPED_UNICODE));
+check('RTF: הדוח — תמונה בפורמט אחר (EMF), כותרת לעמוד הראשון, שדה TOC (כטקסט)', array_column($rt['report'], 'key') === ['images', 'fields', 'hf_extra']
+    && $tx($rc[7]) === 'toc', json_encode([$rt['report'], $rc[7]], JSON_UNESCAPED_UNICODE));
+check('RTF: נכנס כמו שהוא לשמירה (doc_save) — בלי שגיאה', (bool)doc_save(doc_find($odDoc, "c:$A"), $rt['json'], null, 'u1', 'דנה'));
+$re = import_file($R('{§rtf1§ansi{§stylesheet{§fs22 Normal;}{§s1§fs32{§*§keycode §shift}heading 1;}{§*§cs10 Default;}}§pard§s1 A§par§pard B §u-10179?§u-8704? §u x§par}'), 'a.rtf', $odDoc);
+check('RTF: סגנון עם קבוצה בתוכו וסגנון תו (\\*\\cs) אחריו — לא נפגעים; אימוג\'י (זוג surrogate); \\u בלי מספר',
+    $re['json']['content'][0]['attrs'] === ['dir' => 'ltr', 'level' => 1] && ($re['page']['font']['size'] ?? 0) == 11
+    && $re['json']['content'][1]['content'][0]['text'] === 'B 😀 x', json_encode($re, JSON_UNESCAPED_UNICODE));
+check('RTF: קובץ פגום / קטוע — לא נופל', is_array(import_file($R('{§rtf1§ansi {§b bold'), 'a.rtf', $odDoc)['json']) && is_array(import_file($R('{§rtf1 }}}§par{{'), 'a.rtf', $odDoc)['json']));
+// קבצים אמיתיים מ-LibreOffice (נשמרו כ-RTF מה-docx של האוסף): כל המילים, הכותרות, הרשימות, הערות השוליים ומעקב השינויים
+$count = function (array $n, array &$acc) use (&$count) {
+    $t = $n['type'] ?? '';
+    if ($t === 'heading') $acc['h' . $n['attrs']['level']] = ($acc['h' . $n['attrs']['level']] ?? 0) + 1;
+    if (in_array($t, ['footnote', 'listItem', 'orderedList', 'bulletList', 'table'], true)) $acc[$t] = ($acc[$t] ?? 0) + 1;
+    foreach ($n['marks'] ?? [] as $m) if (in_array($m['type'], ['ins', 'del'], true)) $acc[$m['type'] . ':' . $m['attrs']['author']] = ($acc[$m['type'] . ':' . $m['attrs']['author']] ?? 0) + 1;
+    foreach ($n['content'] ?? [] as $c) $count($c, $acc);
+};
+$rw = fn(string $s) => preg_split('/\s+/u', trim(preg_replace('/[^\p{L}\p{N}\s]+/u', ' ', $s)), -1, PREG_SPLIT_NO_EMPTY);
+$alltext = function (array $n) use (&$alltext): string { $o = $n['text'] ?? ($n['attrs']['text'] ?? ''); foreach ($n['content'] ?? [] as $c) $o .= ' ' . $alltext($c); return $o; };
+foreach (['numbering', 'track'] as $f) {
+    $src = json_decode(file_get_contents(__DIR__ . "/corpus/$f.json"), true)['json'];
+    $got = import_file(file_get_contents(__DIR__ . "/fixtures/libreoffice-$f.rtf"), "$f.rtf", $odDoc)['json'];
+    $a = []; $b = [];
+    $count($src, $a);
+    $count($got, $b);
+    ksort($a);
+    ksort($b);
+    $wa = $rw($alltext($src));
+    $wb = $rw($alltext($got));
+    check("RTF מ-LibreOffice ($f): כל המילים, וכותרות / רשימות / הערות / שינויים — כמו במקור", $wa === $wb && $a === $b,
+        json_encode([count($wa), count($wb), array_slice(array_diff_assoc($wa, $wb), 0, 5), $a, $b], JSON_UNESCAPED_UNICODE));
+}
 
 section('אוסף המסמכים (tests/corpus) — Word הלוך וחזור');
 $words = fn(string $s) => preg_split('/\s+/u', trim(preg_replace('/[^\p{L}\p{N}\s]+/u', ' ', $s)), -1, PREG_SPLIT_NO_EMPTY);

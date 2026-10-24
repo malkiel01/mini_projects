@@ -1246,10 +1246,11 @@ const TWIP_PER_MM_IMPORT = 56.6929;
 // ======================================================================
 
 require_once __DIR__ . '/import_odt.php';
+require_once __DIR__ . '/import_rtf.php';
 
 /**
- * ייבוא קובץ שהמשתמש העלה (my_new): Word (docx), OpenDocument (ODT), HTML, או טקסט (UTF-8 / Windows-1255) — כל
- * שורה פסקה, "# " כותרת, "- " תבליט (import_lines). RTF / doc ישן — שגיאה עם הסבר. מחזיר ['json', 'page', 'report'].
+ * ייבוא קובץ שהמשתמש העלה (my_new): Word (docx), OpenDocument (ODT), RTF, HTML, או טקסט (UTF-8 / Windows-1255) — כל
+ * שורה פסקה, "# " כותרת, "- " תבליט (import_lines). doc ישן — שגיאה עם הסבר. מחזיר ['json', 'page', 'report'].
  */
 function import_file(string $bytes, string $name, string $docId): array
 {
@@ -1258,7 +1259,7 @@ function import_file(string $bytes, string $name, string $docId): array
         if (is_odt($bytes)) return import_odt($bytes, $docId);
         return import_docx($bytes, $docId);
     }
-    if (str_starts_with($bytes, '{\\rtf')) throw new ApiError('קובץ RTF עדיין לא נתמך — שמרו אותו ב-Word או ב-LibreOffice כ-docx או כ-ODT', 'bad_file');
+    if (str_starts_with($bytes, '{\\rtf')) return import_rtf($bytes, $docId);
     if (str_starts_with($bytes, "\xD0\xCF\x11\xE0")) throw new ApiError('קובץ Word ישן (‎.doc) לא נתמך — שמרו אותו כ-docx', 'bad_file');
     if (!mb_check_encoding($bytes, 'UTF-8')) {
         $conv = @iconv('WINDOWS-1255', 'UTF-8//IGNORE', $bytes);
