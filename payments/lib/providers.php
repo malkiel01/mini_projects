@@ -26,42 +26,67 @@ final class Txn
         public readonly string $exp = '',
         public readonly string $failureCode = '',
         public readonly string $failureMessage = '',
+        /** מסמך חשבונאי שהסולק הפיק עם העסקה: ‏{id, type, number, url, allocation} */
+        public readonly ?array $doc = null,
     ) {}
 }
 
 interface Provider
 {
+    /** המפתח שנשמר בתשלום / בטוקן / בקנייה: ‏"fake", או מזהה החיבור ("pa_…"). */
     public function id(): string;
 
     /** אילו אמצעים הוא יודע ולאיזה שימוש (פרק 6.3). */
     public function methods(): array;
 
-    /** דף תשלום מתארח. מחזיר [url, ref]. ‏$amount = 0 → רק שמירת אמצעי (טוקן). */
+    /** ‏zero_amount — יודע לשמור כרטיס בלי חיוב; refund_api — החזר דרך הממשק; documents — מפיק מסמך חשבונאי בעצמו. */
+    public function capabilities(): array;
+
+    /** דף תשלום מתארח. מחזיר [url, ref]. ‏$amount = 0 → רק שמירת אמצעי (טוקן), אם zero_amount. */
     public function createSession(array $checkout, int $amount, bool $saveToken, array $methods, string $returnUrl): array;
 
     /** מקור האמת: מה מצב הסשן/העסקה. null = עוד לא שולם. */
     public function query(string $ref): ?Txn;
 
-    /** חיוב יזום מטוקן (חידוש, יחידה, טעינה אוטומטית). ‏$idem — אותו מפתח לא מחייב פעמיים. */
-    public function chargeToken(string $token, int $amount, string $idem): Txn;
+    /** חיוב יזום מטוקן (חידוש, יחידה, טעינה אוטומטית). ‏$idem — אותו מפתח לא מחייב פעמיים. ‏$ctx: ‏{invoice} */
+    public function chargeToken(string $token, int $amount, string $idem, array $ctx = []): Txn;
 
-    /** החזר מלא או חלקי. מחזיר מזהה החזר אצל הסולק. */
+    /** החזר מלא או חלקי. מחזיר מזהה החזר אצל הסולק. סולק בלי refund_api — זורק manual_refund. */
     public function refund(string $txnRef, int $amount, string $idem): string;
 }
 
-function provider(string $id): Provider
+require_once __DIR__ . '/providers/morning.php';
+
+const PROVIDER_TYPES = ['morning' => 'מורנינג (חשבונית ירוקה)'];
+
+/** סולק לפי המפתח שנשמר: ‏"fake" או "pa_…" (חיבור של עוסק). */
+function provider(string $key): Provider
 {
-    return match ($id) {
-        'fake' => new FakeProvider(),
-        default => throw new ApiError("סולק לא מוכר: $id", 'unknown_provider', 500),
+    if ($key === 'fake') return new FakeProvider();
+    $pa = db_one('SELECT * FROM provider_account WHERE id = ?', [$key]);
+    if (!$pa) throw new ApiError("סולק לא מוכר: $key", 'unknown_provider', 500);
+    return provider_from_account($pa);
+}
+
+function provider_from_account(array $pa): Provider
+{
+    $cred = json_decode(unseal($pa['credentials_enc']), true) ?: [];
+    return match ($pa['provider']) {
+        'morning' => new MorningProvider($pa, $cred),
+        default => throw new ApiError("סולק לא מוכר: {$pa['provider']}", 'unknown_provider', 500),
     };
 }
 
-/** הסולק לסביבה: בבדיקות — המדומה. בחי — מה שהוגדר לעוסק (שלב 4); עד אז אין סליקה חיה. */
+/**
+ * הסולק לסביבה: חיבור פעיל של העוסק לאותה סביבה; בבדיקות בלי חיבור — הסולק המדומה.
+ * בחי בלי חיבור — אין סליקה.
+ */
 function provider_for(array $merchant, string $env): Provider
 {
-    if ($env === 'test') return provider('fake');
-    throw new ApiError('לעוסק עוד לא חוברה חברת סליקה (שלב 4)', 'no_provider', 409);
+    $pa = db_one("SELECT * FROM provider_account WHERE merchant = ? AND env = ? AND status = 'active' ORDER BY created_at LIMIT 1", [$merchant['id'], $env]);
+    if ($pa) return provider_from_account($pa);
+    if ($env === 'test') return new FakeProvider();
+    throw new ApiError('לעוסק עוד לא חוברה חברת סליקה לכסף אמיתי', 'no_provider', 409);
 }
 
 // ---------------------------------------------------------------
@@ -77,6 +102,8 @@ final class FakeProvider implements Provider
     ];
 
     public function id(): string { return 'fake'; }
+
+    public function capabilities(): array { return ['zero_amount' => true, 'refund_api' => true, 'documents' => false]; }
 
     public function methods(): array
     {
@@ -136,7 +163,7 @@ final class FakeProvider implements Provider
         return $this->txn($id);
     }
 
-    public function chargeToken(string $token, int $amount, string $idem): Txn
+    public function chargeToken(string $token, int $amount, string $idem, array $ctx = []): Txn
     {
         $dup = db_one('SELECT id FROM fake_txn WHERE idem = ?', [$idem]);
         if ($dup) return $this->txn($dup['id']);

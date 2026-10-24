@@ -10,7 +10,7 @@
 
 declare(strict_types=1);
 
-const PAY_SCHEMA_VERSION = 2;
+const PAY_SCHEMA_VERSION = 3;
 
 function pay_data_dir(): string
 {
@@ -90,6 +90,7 @@ function pay_migrate(PDO $pdo): void
     if ($v >= PAY_SCHEMA_VERSION) return;
     if ($v < 1) pay_migrate_v1($pdo);
     if ($v < 2) pay_migrate_v2($pdo);
+    if ($v < 3) pay_migrate_v3($pdo);
     $pdo->exec('PRAGMA user_version = ' . PAY_SCHEMA_VERSION);
 }
 
@@ -532,5 +533,66 @@ function pay_migrate_v2(PDO $pdo): void
             last4 TEXT NOT NULL,
             behavior TEXT NOT NULL DEFAULT 'ok'        -- ok | decline (כרטיס בדיקה שנדחה בחיוב הבא)
         );
+    SQL);
+}
+
+/** שלב 4: סולקים אמיתיים לכל עוסק, הלקוח אצל הסולק, אירועים נכנסים, ומסמכים חשבונאיים שהסולק הפיק. */
+function pay_migrate_v3(PDO $pdo): void
+{
+    $pdo->exec(<<<SQL
+        -- חיבור לחברת סליקה, לכל עוסק ולכל סביבה. הקודים מוצפנים
+        CREATE TABLE IF NOT EXISTS provider_account (
+            id TEXT PRIMARY KEY,
+            merchant TEXT NOT NULL REFERENCES merchant(id),
+            provider TEXT NOT NULL,                    -- morning | …
+            env TEXT NOT NULL,                         -- test (סביבת הניסוי של הסולק) | live
+            credentials_enc TEXT NOT NULL,
+            settings TEXT NOT NULL DEFAULT '{}',       -- ‏{methods:[…], plugin_id, …} — לא סודי
+            status TEXT NOT NULL DEFAULT 'active',
+            checked_at INTEGER,
+            check_error TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL,
+            UNIQUE (merchant, provider, env)
+        );
+        -- הלקוח שלנו אצל הסולק (במורנינג: "לקוח" שהטוקנים והמסמכים שלו קשורים אליו)
+        CREATE TABLE IF NOT EXISTS provider_customer (
+            account TEXT NOT NULL REFERENCES account(id),
+            provider_account TEXT NOT NULL REFERENCES provider_account(id),
+            ref TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            PRIMARY KEY (account, provider_account)
+        );
+        -- אירוע נכנס מסולק — גולמי, פעם אחת (פרק 9.4)
+        CREATE TABLE IF NOT EXISTS provider_event (
+            id TEXT PRIMARY KEY,
+            provider_account TEXT NOT NULL,
+            delivery_id TEXT NOT NULL,
+            topic TEXT NOT NULL DEFAULT '',
+            payload TEXT NOT NULL,
+            verified INTEGER NOT NULL,
+            processed_at INTEGER,
+            error TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL,
+            UNIQUE (provider_account, delivery_id)
+        );
+        -- מסמך חשבונאי (קבלה / חשבונית מס-קבלה / זיכוי) שהופק אצל הסולק או ספק החשבוניות
+        CREATE TABLE IF NOT EXISTS tax_document (
+            id TEXT PRIMARY KEY,
+            payment TEXT,
+            invoice TEXT,
+            provider TEXT NOT NULL,
+            external_id TEXT NOT NULL,
+            type INTEGER NOT NULL,                     -- ‏320 חשבונית מס/קבלה · 400 קבלה · 330 זיכוי
+            number TEXT NOT NULL DEFAULT '',
+            allocation_number TEXT NOT NULL DEFAULT '',
+            url TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL,
+            UNIQUE (provider, external_id)
+        );
+        ALTER TABLE payment ADD COLUMN provider_account TEXT;
+        ALTER TABLE payment_method ADD COLUMN provider_account TEXT;
+        ALTER TABLE checkout ADD COLUMN provider_account TEXT;
+        ALTER TABLE checkout ADD COLUMN invoice TEXT;                     -- ‏mode=invoice: תשלום חשבונית פתוחה
+        ALTER TABLE refund ADD COLUMN manual INTEGER NOT NULL DEFAULT 0;  -- בוצע בממשק הסולק, נרשם כאן
     SQL);
 }

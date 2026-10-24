@@ -145,7 +145,7 @@ function invoice_settle(array $inv): void
     webhook_emit($s['client'], $cus['env'], 'payment.failed', $cus['external_id'], ['invoice' => $inv['id'], 'code' => $txn->failureCode]);
     if ($tries === 1) sub_event($s, 'subscription.past_due', ['invoice' => $inv['id']]);
     notify($s['account'], 'email', 'payment_failed', 'failed:' . $inv['id'] . ':' . $tries, 'החיוב לא עבר',
-        "שלום,\n\nהחיוב של " . money_text((int)$inv['total']) . " לא עבר ({$txn->failureMessage}).\nכדי שהשירות לא ייעצר — עדכן אמצעי תשלום בעמוד \"החשבון שלי\".");
+        "שלום,\n\nהחיוב של " . money_text((int)$inv['total']) . " לא עבר ({$txn->failureMessage}).\nכדי שהשירות לא ייעצר — היכנס לעמוד \"החשבון שלי\" באפליקציה ולחץ \"תשלום עכשיו\".");
 }
 
 /** גבייה של כשלים: ניסיון חוזר לפי הלוח; אחרי 14 יום — המנוי מסתיים והחשבונית "לא נגבתה". */

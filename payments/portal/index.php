@@ -34,6 +34,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $c = checkout_create($client, $cus['env'], ['external_id' => $cus['external_id'], 'mode' => 'topup', 'amount' => $ag, 'return_url' => $self, 'cancel_url' => $self]);
                 header('Location: ' . $c['url'], true, 303);
                 exit;
+            case 'pay_invoice':
+                $c = checkout_create($client, $cus['env'], ['external_id' => $cus['external_id'], 'mode' => 'invoice', 'invoice' => (string)($_POST['inv'] ?? ''), 'return_url' => $self, 'cancel_url' => $self]);
+                header('Location: ' . $c['url'], true, 303);
+                exit;
             case 'method':
                 $c = checkout_create($client, $cus['env'], ['external_id' => $cus['external_id'], 'mode' => 'setup', 'return_url' => $self, 'cancel_url' => $self]);
                 header('Location: ' . $c['url'], true, 303);
@@ -82,6 +86,11 @@ foreach ($subs as $s) {
         . '<span class="chip ' . $cls . '">' . h($st) . '</span>';
     if ($s['status'] !== 'canceled') {
         echo '<div class="row-btns wrap" style="flex-basis:100%;justify-content:flex-start">';
+        $openInv = db_one("SELECT id, total FROM invoice WHERE subscription = ? AND status = 'open' ORDER BY created_at DESC LIMIT 1", [$s['id']]);
+        if ($openInv) {
+            echo '<form method="post" style="display:inline"><input type="hidden" name="t" value="' . $t . '"><input type="hidden" name="do" value="pay_invoice">'
+                . '<input type="hidden" name="inv" value="' . h($openInv['id']) . '"><button class="btn sm primary" type="submit">תשלום עכשיו ' . money_html((int)$openInv['total']) . '</button></form>';
+        }
         if ($s['cancel_at_period_end']) echo $btn('resume', 'המשך המנוי', 'primary', $s['id']);
         else echo $btn('cancel', 'ביטול המנוי', 'ghost', $s['id'], 'לבטל? השירות ימשיך עד סוף התקופה ששולמה.');
         if (sub_needs_consent($s) && (int)($s['renew_consent_until'] ?? 0) < (int)$s['current_period_end'] && !$s['cancel_at_period_end']) {
@@ -112,7 +121,10 @@ foreach ($pms as $pm) {
         . '<form method="post"><input type="hidden" name="t" value="' . $t . '"><input type="hidden" name="do" value="remove_method"><input type="hidden" name="pm" value="' . h($pm['id']) . '">'
         . '<button class="icon-btn" type="submit" aria-label="הסרה" data-confirm="להסיר את הכרטיס?">🗑️</button></form></li>';
 }
-echo '</ul><div class="row-btns" style="margin-top:8px">' . $btn('method', $pms ? 'החלפת כרטיס' : 'הוספת כרטיס') . '</div>';
+$merchant = db_one('SELECT * FROM merchant WHERE id = ?', [$acc['merchant']]);
+$canSetup = provider_for($merchant, $cus['env'])->capabilities()['zero_amount'];
+echo '</ul>' . ($canSetup ? '<div class="row-btns" style="margin-top:8px">' . $btn('method', $pms ? 'החלפת כרטיס' : 'הוספת כרטיס') . '</div>'
+    : '<p class="hint">כרטיס חדש נשמר בתשלום הבא שתבצע בו.</p>');
 
 // חשבוניות
 echo '<h2 class="sec-title">תשלומים</h2><ul class="list">';
@@ -121,9 +133,11 @@ if (!$invs) echo '<li><p class="empty">עוד אין תשלומים.</p></li>';
 $IST = ['paid' => ['שולם', 'ok'], 'open' => ['ממתין', 'warn'], 'uncollectible' => ['לא נגבה', 'bad']];
 foreach ($invs as $i) {
     $desc = db_one('SELECT description FROM invoice_line WHERE invoice = ? LIMIT 1', [$i['id']])['description'] ?? '';
+    $doc = db_one('SELECT type, number FROM tax_document WHERE invoice = ? LIMIT 1', [$i['id']]);
     [$st, $cls] = $IST[$i['status']];
     echo '<li class="card"><div class="body"><div class="l1"><span>' . h($desc) . '</span><span class="t">' . h(date_text((int)$i['created_at'])) . '</span></div>'
-        . '<div class="l2">' . money_html((int)$i['total']) . ((int)$i['vat'] ? ' · מע"מ ' . money_html((int)$i['vat']) : '') . '</div></div><span class="chip ' . $cls . '">' . h($st) . '</span></li>';
+        . '<div class="l2">' . money_html((int)$i['total']) . ((int)$i['vat'] ? ' · מע"מ ' . money_html((int)$i['vat']) : '')
+        . ($doc ? ' · ' . ((int)$doc['type'] === 400 ? 'קבלה' : 'חשבונית מס/קבלה') . ' ' . h($doc['number']) : '') . '</div></div><span class="chip ' . $cls . '">' . h($st) . '</span></li>';
 }
 echo '</ul><p class="hint">הקבלות הרשמיות נשלחות במייל.</p>';
 echo '<div class="row-btns" style="margin-top:12px"><a class="btn ghost" href="' . h($cus['_return']) . '">חזרה ל' . h($client['name']) . '</a></div>';
