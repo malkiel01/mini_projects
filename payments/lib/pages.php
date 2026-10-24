@@ -55,6 +55,22 @@ function page_error(string $msg, string $brand = 'תשלום', int $depth = 1): 
     exit;
 }
 
+/** פרטי המוכר, התנאים והפרטיות — מה שהחוק מחייב להציג לפני עסקה מרחוק (§14ג). */
+function seller_html(array $v): string
+{
+    $s = $v['seller'];
+    $parts = [h($s['name'] ?? '')];
+    if (!empty($s['tax_id'])) $parts[] = 'ע"מ / ח"פ <span dir="ltr">' . h($s['tax_id']) . '</span>';
+    if (!empty($s['address'])) $parts[] = h($s['address']);
+    if (!empty($s['phone'])) $parts[] = '<a href="tel:' . h($s['phone']) . '" dir="ltr">' . h($s['phone']) . '</a>';
+    if (!empty($s['email'])) $parts[] = '<a href="mailto:' . h($s['email']) . '" dir="ltr">' . h($s['email']) . '</a>';
+    $links = [];
+    if ($v['terms_url'] !== '') $links[] = '<a href="' . h($v['terms_url']) . '" target="_blank" rel="noopener">תנאי הרכישה</a>';
+    if ($v['privacy_url'] !== '') $links[] = '<a href="' . h($v['privacy_url']) . '" target="_blank" rel="noopener">מדיניות הפרטיות</a>';
+    return '<details class="seller" style="margin-top:16px"><summary class="hint">המוכר: ' . h($s['name'] ?? '') . '</summary>'
+        . '<p class="hint">' . implode(' · ', $parts) . ($links ? '<br>' . implode(' · ', $links) : '') . '</p></details>';
+}
+
 function money_html(int $agorot): string
 {
     return h(money_text($agorot));
