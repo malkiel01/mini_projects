@@ -48,6 +48,66 @@
         <p class="hint">עמוד אב מצייר על העמוד את מספר העמוד ואת הכותרת הרצה. "ללא" — לשער, לעמוד ריק או לתמונה על כל העמוד.</p>
         <label class="switch" id="pm-both-row"><input type="checkbox" name="both"><span>גם לעמוד השני בפריסה</span></label>
         <label class="switch"><input type="checkbox" name="rest"><span>וגם לכל העמודים שאחריו</span></label>
+        <section class="group" aria-labelledby="pm-text"><h3 id="pm-text">טקסט</h3>
+          <div class="tiles">
+            <button class="tile" type="button" id="pm-frame"><span class="tile-ic" aria-hidden="true">▭</span>מסגרת טקסט בעמוד</button>
+            <button class="tile" type="button" id="pm-flow"><span class="tile-ic" aria-hidden="true">⤓</span>זרימה אוטומטית מכאן</button>
+          </div>
+          <p class="hint">זרימה אוטומטית — מסגרת בכל עמוד מכאן ועד הסוף, והטקסט זורם ביניהן; טקסט שלא נכנס מוסיף עמודים.</p>
+        </section>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="frame-dlg" aria-labelledby="frame-title">
+    <form method="dialog" novalidate>
+      <header class="sheet-head">
+        <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+        <h2 id="frame-title">מסגרת טקסט</h2>
+        <button type="submit" class="btn primary">שמירה</button>
+      </header>
+      <div class="sheet-body">
+        <p class="error" id="fr-overset" hidden></p>
+        <div class="tiles">
+          <button class="tile" type="button" id="fr-edit"><span class="tile-ic" aria-hidden="true">✏️</span>עריכת הטקסט</button>
+          <button class="tile" type="button" id="fr-next"><span class="tile-ic" aria-hidden="true">↲</span>המשך בעמוד הבא</button>
+          <button class="tile" type="button" id="fr-grow"><span class="tile-ic" aria-hidden="true">⤓</span>עמודים עד סוף הטקסט</button>
+          <button class="tile" type="button" id="fr-del"><span class="tile-ic" aria-hidden="true">🗑️</span>מחיקת המסגרת</button>
+        </div>
+        <section class="group" aria-labelledby="fr-g-cols"><h3 id="fr-g-cols">טורים</h3>
+          <div class="fields two">
+            <fieldset class="seg" aria-label="מספר טורים">
+              <label><input type="radio" name="columns" value="1"><span>1</span></label>
+              <label><input type="radio" name="columns" value="2"><span>2</span></label>
+              <label><input type="radio" name="columns" value="3"><span>3</span></label>
+            </fieldset>
+            <label class="f"><span>רווח בין טורים (מ"מ)</span><input name="gutter" inputmode="decimal" dir="ltr"></label>
+          </div>
+        </section>
+        <section class="group" aria-labelledby="fr-g-box"><h3 id="fr-g-box">מיקום וגודל <small>במ"מ, מקצה העמוד הימני והעליון</small></h3>
+          <div class="fields two">
+            <label class="f"><span>מימין (x)</span><input name="fx" inputmode="decimal" dir="ltr"></label>
+            <label class="f"><span>מלמעלה (y)</span><input name="fy" inputmode="decimal" dir="ltr"></label>
+            <label class="f"><span>רוחב</span><input name="fw" inputmode="decimal" dir="ltr"></label>
+            <label class="f"><span>גובה</span><input name="fh" inputmode="decimal" dir="ltr"></label>
+          </div>
+          <button class="btn ghost sm" type="button" id="fr-fill">מילוי אזור התוכן (בתוך השוליים)</button>
+        </section>
+        <p class="error" role="alert" hidden></p>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="story-dlg" class="story" aria-labelledby="story-title">
+    <form method="dialog" novalidate>
+      <header class="sheet-head">
+        <button type="button" class="icon-btn" data-close aria-label="סגירה בלי שמירה">✕</button>
+        <h2 id="story-title">עריכת הטקסט</h2>
+        <button type="submit" class="btn primary">שמירה</button>
+      </header>
+      <div class="sheet-body">
+        <p class="hint">כל שורה — פסקה. הטקסט זורם בכל המסגרות של השרשור. ניקוד וטעמים — מהמקלדת, כרגיל.</p>
+        <textarea name="text" dir="rtl" lang="he" spellcheck="false" aria-label="הטקסט"></textarea>
       </div>
     </form>
   </dialog>
@@ -104,6 +164,23 @@
               </fieldset>
             </div>
           </div>
+        </section>
+
+        <section class="group" aria-labelledby="g-text"><h3 id="g-text">טקסט <small>הגוף, בכל המסגרות</small></h3>
+          <fieldset class="seg" aria-label="גופן">
+            <label><input type="radio" name="font" value="Noto Serif Hebrew"><span>Noto Serif Hebrew</span></label>
+            <label><input type="radio" name="font" value="Frank Ruhl Libre"><span>Frank Ruhl Libre</span></label>
+          </fieldset>
+          <div class="fields two">
+            <label class="f"><span>גודל (נק')</span><input name="tsize" inputmode="decimal" dir="ltr"></label>
+            <label class="f"><span>מרווח שורות (נק')</span><input name="tlead" inputmode="decimal" dir="ltr"></label>
+          </div>
+          <fieldset class="seg" aria-label="יישור">
+            <label><input type="radio" name="talign" value="justify"><span>לשני הצדדים</span></label>
+            <label><input type="radio" name="talign" value="right"><span>לימין</span></label>
+            <label><input type="radio" name="talign" value="center"><span>למרכז</span></label>
+          </fieldset>
+          <p class="hint">Noto — כל הניקוד והטעמים. Frank Ruhl Libre — בלי טעמים: אות עם טעם מגיעה מ-Noto.</p>
         </section>
 
         <section class="group" aria-labelledby="g-master"><h3 id="g-master">עמוד אב A <small>על כל העמודים שמשויכים אליו</small></h3>

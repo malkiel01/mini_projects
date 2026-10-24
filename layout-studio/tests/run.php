@@ -149,5 +149,32 @@ $mOld = json_decode(json_encode($ok), true);
 unset($mOld['layout']['numbering']);
 check('מסמך בלי numbering (לפני עמודי האב) — נשמר', ls_doc_save($uidA, $d3['id'], 2, json_encode($mOld)) === 3);
 
+// ---- מסגרות טקסט ושטפים ----
+$d4 = ls_doc_create($uidA, 'טקסט', 'a5');
+$base = json_decode(json_encode(ls_doc_get($uidA, $d4['id'])['model']), true);
+$withFrame = function (array $m) {
+    $m['surfaces'][0]['layers'][] = ['id' => 't1', 'type' => 'frame', 'name' => 'טקסט', 'box' => [40, 40, 300, 500], 'flow' => 'f1', 'columns' => 1, 'gutter' => 12];
+    $m['surfaces'][1]['layers'][] = ['id' => 't2', 'type' => 'frame', 'box' => [40, 40, 300, 500], 'flow' => 'f1', 'columns' => 2, 'gutter' => 12];
+    $m['flows'] = ['f1' => ['engine' => 'prosemirror', 'doc' => ['type' => 'doc', 'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'שָׁלוֹם']]]]], 'frames' => ['t1', 't2'], 'autogrow' => true, 'style' => 'body']];
+    $m['styles'] = ['body' => ['font' => 'Noto Serif Hebrew', 'size' => 12, 'leading' => 18, 'align' => 'justify', 'spaceAfter' => 6]];
+    return $m;
+};
+$rv = 1;
+$tryF = function (callable $mut, string $code) use ($uidA, $d4, $base, $withFrame, &$rv) {
+    $x = $withFrame($base); $mut($x);
+    return throws(fn() => ls_doc_save($uidA, $d4['id'], $rv, json_encode($x)), 'bad_model:' . $code);
+};
+check('מסגרות בשרשור, שטף וסגנון — נשמר', ($rv = ls_doc_save($uidA, $d4['id'], 1, json_encode($withFrame($base), JSON_UNESCAPED_UNICODE))) === 2);
+check('מסגרת שמפנה לשטף שלא קיים — נדחה', $tryF(function (&$x) { $x['surfaces'][0]['layers'][0]['flow'] = 'f9'; }, 'flow_ref'));
+check('שרשור עם מסגרת שלא קיימת — נדחה', $tryF(function (&$x) { $x['flows']['f1']['frames'][] = 'tX'; }, 'thread'));
+check('מסגרת פעמיים בשרשור — נדחה', $tryF(function (&$x) { $x['flows']['f1']['frames'] = ['t1', 't1']; }, 'thread'));
+check('מזהה שכבה שזהה למזהה עמוד — נדחה', $tryF(function (&$x) { $x['surfaces'][0]['layers'][0]['id'] = $x['surfaces'][0]['id']; }, 'layer_id'));
+check('מסגרת ברוחב 0 — נדחה', $tryF(function (&$x) { $x['surfaces'][0]['layers'][0]['box'][2] = 0; }, 'frame'));
+check('13 טורים — נדחה', $tryF(function (&$x) { $x['surfaces'][1]['layers'][0]['columns'] = 13; }, 'frame'));
+check('גודל גופן 1 — נדחה', $tryF(function (&$x) { $x['styles']['body']['size'] = 1; }, 'style'));
+check('יישור לא מוכר — נדחה', $tryF(function (&$x) { $x['styles']['body']['align'] = 'middle'; }, 'style'));
+check('שטף של אפליקציה אחרת (בלי frames) — נשמר כמו שהוא', ls_doc_save($uidA, $d4['id'], 2, json_encode(array_merge($withFrame($base),
+    ['flows' => $withFrame($base)['flows'] + ['f7' => ['engine' => 'other', 'doc' => ['x' => 1]]]]), JSON_UNESCAPED_UNICODE)) === 3);
+
 echo "\n" . ($n - $fails) . " / $n עברו\n";
 exit($fails ? 1 : 0);

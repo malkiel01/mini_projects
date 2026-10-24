@@ -197,7 +197,7 @@ dialog > form { display: flex; flex-direction: column; max-height: inherit; heig
 
 /* ===== העורך: כותרת, במה בקנבס, סרגל תחתון ===== */
 .stage { --paste: #dfe2e8; --page: #fff; --page-shadow: rgba(16, 24, 40, .18); --guide: #d63bd0; --spine: rgba(16, 24, 40, .25);
-    --running: #16192b; --select: var(--brand); }
+    --running: #16192b; --select: var(--brand); --frame: rgba(45, 120, 220, .45); --ink-print: #111; --overset: #d93025; }
 @media (prefers-color-scheme: dark) {
     .stage { --paste: #0c0e12; --page-shadow: rgba(0, 0, 0, .6); --guide: #e06bdc; }   /* הדף והדיו נשארים — זה נייר */
 }
@@ -221,3 +221,10 @@ body.editor > .error { margin: var(--s2); }
 .doc-row a.use-row:hover, .doc-row a.use-row:focus-visible { background: var(--bg); }
 .folio-opts[hidden], .header-opts[hidden], .h-even[hidden], #pm-both-row[hidden], .bar [hidden] { display: none !important; }
 .header-opts .seg, .folio-opts .seg { align-self: end; }
+
+/* עורך הטקסט: גיליון מלא, ותיבת טקסט שממלאת אותו */
+dialog.story { width: min(860px, 100vw - 32px); height: min(90dvh, 900px); }
+dialog.story .sheet-body { grid-template-rows: auto 1fr; height: 100%; }
+dialog.story textarea { min-height: 50vh; height: 100%; font: 18px/1.7 'Noto Serif Hebrew', 'Frank Ruhl Libre', serif; resize: none; }
+@font-face { font-family: 'Noto Serif Hebrew'; src: url(../fonts/NotoSerifHebrew.ttf) format('truetype'); font-display: swap; }
+@font-face { font-family: 'Frank Ruhl Libre'; src: url(../fonts/FrankRuhlLibre.ttf) format('truetype'); font-display: swap; }
