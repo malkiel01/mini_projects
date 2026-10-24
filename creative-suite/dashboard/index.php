@@ -10,6 +10,9 @@
 declare(strict_types=1);
 
 const DOCS = __DIR__ . '/../docs';
+const ROOT = __DIR__ . '/../..';
+/** מצב שלב במסמך מעקב של אפליקציה → משקל. 👤 (ממתין לאימות) לא משנה את המשקל. */
+const STAGE_WEIGHT = ['✅' => 1.0, '🟡' => 0.5, '⏳' => 0.5, '⬜' => 0.0];
 const KIND_ICON = ['text' => '📝', 'raster' => '🖌️', 'vector' => '✒️', 'layout' => '📰'];
 
 function h(string $s): string { return htmlspecialchars($s, ENT_QUOTES, 'UTF-8'); }
@@ -43,7 +46,30 @@ function section(string $md, string $title): array
     return $out;
 }
 
-/** מסמך פרויקט: כותרת, פסקת סיכום, יעדים. */
+/**
+ * מסמך המעקב של האפליקציה עצמה (למשל word-processor/docs/roadmap.md) — רק קריאה.
+ * הטבלה בקטע "תמונת מצב": | שלב | שם | מצב | בקצרה |, והמצב — ✅ / 🟡 / ⏳ / ⬜.
+ */
+function roadmap(string $rel): ?array
+{
+    if (!preg_match('#^[a-z0-9-]+/docs/[a-z0-9-]+\.md$#', $rel)) return null;
+    $md = @file_get_contents(ROOT . '/' . $rel);
+    if ($md === false) return ['file' => $rel, 'missing' => true, 'stages' => [], 'pct' => 0];
+    $stages = [];
+    foreach (section($md, 'תמונת מצב') as $line) {
+        if (!preg_match('/^\|\s*(\d+)\s*\|/u', $line)) continue;
+        $c = array_map('trim', explode('|', trim($line, " |")));
+        if (count($c) < 3) continue;
+        preg_match('/✅|🟡|⏳|⬜/u', $c[2], $m);
+        $mark = $m[0] ?? '⬜';
+        $stages[] = ['num' => $c[0], 'name' => plain($c[1]), 'mark' => $mark, 'short' => $c[3] ?? '',
+                     'w' => STAGE_WEIGHT[$mark]];
+    }
+    $pct = $stages ? (int)round(100 * array_sum(array_column($stages, 'w')) / count($stages)) : 0;
+    return ['file' => $rel, 'missing' => false, 'stages' => $stages, 'pct' => $pct];
+}
+
+/** מסמך פרויקט: כותרת, פסקת סיכום, יעדים, ומסמך המעקב של האפליקציה (אם יש). */
 function project_doc(string $rel): ?array
 {
     // $rel כבר עבר את התבנית projects/[a-z0-9-]+.md — אין צורך ב-realpath (שמחזיר false בחלק מהשרתים)
@@ -65,7 +91,8 @@ function project_doc(string $rel): ?array
             $goals[] = ['done' => $m[1] !== ' ', 'text' => trim($m[2])];
         }
     }
-    return ['file' => $rel, 'missing' => false, 'title' => $title, 'summary' => implode(' ', $summary), 'goals' => $goals,
+    $app = preg_match('/\*\*מעקב האפליקציה:\*\*\s*`([^`]+)`/u', $md, $m) ? roadmap($m[1]) : null;
+    return ['file' => $rel, 'missing' => false, 'app' => $app, 'title' => $title, 'summary' => implode(' ', $summary), 'goals' => $goals,
             'updated' => filemtime($file)];
 }
 
@@ -96,7 +123,10 @@ function projects(): array
             'doc'     => $doc,
             'goals'   => $goals,
             'done'    => $done,
-            'pct'     => $goals ? (int)round(100 * $done / count($goals)) : 0,
+            'gpct'    => $gpct = $goals ? (int)round(100 * $done / count($goals)) : 0,
+            'app'     => $app = $doc['app'] ?? null,
+            // יש מסמך מעקב: ממוצע של האפליקציה עצמה ושל החיבור לחבילה; אחרת — היעדים בלבד
+            'pct'     => $app ? (int)round(($app['pct'] + $gpct) / 2) : $gpct,
         ];
     }
     return $list;
@@ -149,7 +179,11 @@ $started  = count(array_filter($all, fn($p) => $p['pct'] > 0 && $p['pct'] < 100)
 <main id="main" tabindex="-1">
 <?php if ($sel): $p = $sel; ?>
   <div class="summary">
+    <?php if ($p['app']): ?>
+    <div class="line"><span class="muted">האפליקציה</span> <b><?= $p['app']['pct'] ?>%</b> <span class="muted">· <bdi dir="ltr">.mbe</bdi></span> <b><?= $p['gpct'] ?>%</b><span class="pct"><?= $p['pct'] ?>%</span></div>
+    <?php else: ?>
     <div class="line"><span class="muted">הושלמו</span> <b><?= $p['done'] ?></b> <span class="muted">מתוך <?= count($p['goals']) ?> יעדים</span><span class="pct"><?= $p['pct'] ?>%</span></div>
+    <?php endif; ?>
     <span class="track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<?= $p['pct'] ?>"><span style="inline-size:<?= $p['pct'] ?>%"></span></span>
     <div class="chips"><?= chip($p['status']) ?><?php if ($p['kind'] && $p['kind'] !== '—'): ?><span class="chip"><?= h($p['kind']) ?></span><?php endif; ?></div>
   </div>
@@ -163,7 +197,22 @@ $started  = count(array_filter($all, fn($p) => $p['pct'] > 0 && $p['pct'] < 100)
       <p class="muted">המסמך ייכתב בצ'אט המתכלל לפני שייפתח לפרויקט צ'אט.</p>
     <?php endif; ?>
   </div>
+  <?php if ($p['app']): $a = $p['app']; ?>
+  <h2 class="sec-title">האפליקציה עצמה — <?= $a['pct'] ?>%</h2>
+  <?php if ($a['missing']): ?>
+    <p class="empty">⚠ מסמך המעקב לא נמצא בשרת: <code><?= h($a['file']) ?></code></p>
+  <?php else: ?>
+    <ul class="list goals">
+      <?php foreach ($a['stages'] as $st): ?>
+        <li class="<?= $st['mark'] === '✅' ? 'done' : '' ?>"><span class="mk" aria-hidden="true"><?= $st['mark'] ?></span><span><b><?= h($st['num'] . ' · ' . $st['name']) ?></b><?php if ($st['short'] !== ''): ?><br><small class="muted"><?= inline($st['short']) ?></small><?php endif; ?></span></li>
+      <?php endforeach; ?>
+    </ul>
+    <p class="hint">מתוך <code><?= h($a['file']) ?></code> (של הצ'אט של האפליקציה — לקריאה בלבד). ✅ = שלב מלא, 🟡 / ⏳ = חצי, ⬜ = אפס.</p>
+  <?php endif; ?>
+  <h2 class="sec-title">חיבור לחבילה (<bdi dir="ltr">.mbe</bdi>) — <?= $p['gpct'] ?>%</h2>
+  <?php else: ?>
   <h2 class="sec-title">יעדים</h2>
+  <?php endif; ?>
   <?php if ($p['goals']): ?>
     <ul class="list goals">
       <?php foreach ($p['goals'] as $g): ?>
@@ -186,13 +235,18 @@ $started  = count(array_filter($all, fn($p) => $p['pct'] > 0 && $p['pct'] < 100)
         <span class="use-ic" aria-hidden="true"><?= $p['icon'] ?></span>
         <span class="use-tx"><b class="one"><?= h($p['name']) ?></b>
           <small class="one"><?= !empty($p['doc']['missing']) ? '⚠ המסמך לא נמצא בשרת · ' : '' ?><?= h($p['style'] !== '—' ? 'בסגנון ' . $p['style'] : 'משותף') ?> · <?= h(status_label($p['status'])) ?></small>
+          <?php if ($p['app']): ?>
+          <span class="bar"><i>האפליקציה</i><span class="track" role="progressbar" aria-label="האפליקציה עצמה" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<?= $p['app']['pct'] ?>"><span style="inline-size:<?= $p['app']['pct'] ?>%"></span></span><b><?= $p['app']['pct'] ?>%</b></span>
+          <span class="bar"><i><bdi dir="ltr">.mbe</bdi></i><span class="track" role="progressbar" aria-label="חיבור לחבילה" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<?= $p['gpct'] ?>"><span style="inline-size:<?= $p['gpct'] ?>%"></span></span><b><?= $p['gpct'] ?>%</b></span>
+          <?php else: ?>
           <span class="bar"><span class="track" role="progressbar" aria-label="התקדמות" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<?= $p['pct'] ?>"><span style="inline-size:<?= $p['pct'] ?>%"></span></span><b><?= $p['pct'] ?>%</b></span>
+          <?php endif; ?>
         </span>
         <span class="use-go" aria-hidden="true">‹</span>
       </a></li>
     <?php endforeach; ?>
   </ul>
-  <p class="hint">האחוז הכולל — ממוצע הפרויקטים (כל פרויקט באותו משקל). פרויקט בלי יעדים — 0%.</p>
+  <p class="hint">האחוז הכולל — ממוצע הפרויקטים (כל פרויקט באותו משקל). אפליקציה עם מסמך מעקב משלה — ממוצע של האפליקציה עצמה ושל החיבור לחבילה (‎.mbe). פרויקט בלי יעדים — 0%.</p>
 <?php endif; ?>
 </main>
 </body>
