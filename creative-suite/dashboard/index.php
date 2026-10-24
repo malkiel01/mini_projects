@@ -46,9 +46,10 @@ function section(string $md, string $title): array
 /** מסמך פרויקט: כותרת, פסקת סיכום, יעדים. */
 function project_doc(string $rel): ?array
 {
-    $file = realpath(DOCS . '/' . $rel);
-    if (!$file || !str_starts_with($file, realpath(DOCS) . '/') || !is_file($file)) return null;
-    $md = (string)file_get_contents($file);
+    // $rel כבר עבר את התבנית projects/[a-z0-9-]+.md — אין צורך ב-realpath (שמחזיר false בחלק מהשרתים)
+    $file = DOCS . '/' . $rel;
+    $md = @file_get_contents($file);
+    if ($md === false) return ['file' => $rel, 'missing' => true, 'title' => '', 'summary' => '', 'goals' => [], 'updated' => 0];
     $lines = preg_split('/\R/u', $md);
     $title = ''; $summary = []; $started = false;
     foreach ($lines as $line) {
@@ -64,7 +65,7 @@ function project_doc(string $rel): ?array
             $goals[] = ['done' => $m[1] !== ' ', 'text' => trim($m[2])];
         }
     }
-    return ['file' => $rel, 'title' => $title, 'summary' => implode(' ', $summary), 'goals' => $goals,
+    return ['file' => $rel, 'missing' => false, 'title' => $title, 'summary' => implode(' ', $summary), 'goals' => $goals,
             'updated' => filemtime($file)];
 }
 
@@ -184,7 +185,7 @@ $started  = count(array_filter($all, fn($p) => $p['pct'] > 0 && $p['pct'] < 100)
       <li><a class="use-row" href="?p=<?= h(rawurlencode($p['id'])) ?>">
         <span class="use-ic" aria-hidden="true"><?= $p['icon'] ?></span>
         <span class="use-tx"><b class="one"><?= h($p['name']) ?></b>
-          <small class="one"><?= h($p['style'] !== '—' ? 'בסגנון ' . $p['style'] : 'משותף') ?> · <?= h(status_label($p['status'])) ?></small>
+          <small class="one"><?= !empty($p['doc']['missing']) ? '⚠ המסמך לא נמצא בשרת · ' : '' ?><?= h($p['style'] !== '—' ? 'בסגנון ' . $p['style'] : 'משותף') ?> · <?= h(status_label($p['status'])) ?></small>
           <span class="bar"><span class="track" role="progressbar" aria-label="התקדמות" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<?= $p['pct'] ?>"><span style="inline-size:<?= $p['pct'] ?>%"></span></span><b><?= $p['pct'] ?>%</b></span>
         </span>
         <span class="use-go" aria-hidden="true">‹</span>
