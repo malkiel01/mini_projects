@@ -425,6 +425,17 @@ $backL = import_docx(export_docx($jl, page_normalize([])), $docL)['json'];
 $fl = json_encode($backL, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 check('Word → חזרה: שני הקישורים, הסימניה, והמודגש — בלי צבע וקו תחתון נוספים', str_contains($fl, '"href":"https://example.com/a?b=1&c=2"') && str_contains($fl, '"href":"#פרק_א"')
     && str_contains($fl, '{"type":"bookmark","attrs":{"name":"פרק_א"}}') && str_contains($fl, '"type":"bold"') && !str_contains($fl, '0563c1') && !str_contains($fl, 'underline'), $fl);
+// רשימת תבליטים ומיד אחריה רשימה ממוספרת (ובתוך פריט — תת-רשימה ממוספרת ואחריה תבליטים) — כל אחת רשימה משלה
+$li = fn(string $t, array $sub = []) => ['type' => 'listItem', 'content' => array_merge([para([text_node($t)])], $sub)];
+$jm = ['type' => 'doc', 'content' => [
+    ['type' => 'bulletList', 'content' => [$li('תבליט א'), $li('תבליט ב', [['type' => 'orderedList', 'attrs' => ['start' => 1], 'content' => [$li('פנימי 1')]], ['type' => 'bulletList', 'content' => [$li('פנימי •')]]])]],
+    ['type' => 'orderedList', 'attrs' => ['start' => 1], 'content' => [$li('מספר 1'), $li('מספר 2')]],
+]];
+$backM = import_docx(export_docx($jm, page_normalize([])), $docL)['json']['content'];
+$inner = array_map(fn($b) => $b['type'], array_slice($backM[0]['content'][1]['content'] ?? [], 1));
+check('Word → חזרה: תבליטים ואחריהם רשימה ממוספרת — שתי רשימות (לא מתאחדות); גם בתוך פריט', array_column($backM, 'type') === ['bulletList', 'orderedList']
+    && count($backM[0]['content']) === 2 && count($backM[1]['content']) === 2 && $inner === ['orderedList', 'bulletList'],
+    json_encode([array_column($backM, 'type'), $inner], JSON_UNESCAPED_UNICODE));
 $fieldDocx = $mkDocx(['word/document.xml' => '<w:document ' . $WN . '><w:body><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> HYPERLINK "https://gov.il" </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>'
     . $run('אתר הממשלה') . '<w:r><w:fldChar w:fldCharType="end"/></w:r>' . $run(' סוף') . '<w:bookmarkStart w:id="0" w:name="_GoBack"/><w:bookmarkEnd w:id="0"/></w:p></w:body></w:document>']);
 $fi = import_docx($fieldDocx, $docL);
