@@ -20,7 +20,21 @@
   <div class="work">
     <main class="stage" id="stage" aria-label="קנבס">
       <canvas id="canvas"></canvas>
+      <div class="brush-cursor" id="brush-cursor" hidden></div>
       <p class="stage-msg" id="msg" role="status">טוען…</p>
+      <nav class="tools" id="tools" aria-label="כלים">
+        <label class="swatch" id="color-wrap" title="צבע"><input type="color" id="color" aria-label="צבע"></label>
+      </nav>
+      <div class="tool-opts" id="tool-opts" role="group" aria-label="אפשרויות הכלי">
+        <label class="opt" data-for="brush eraser"><span>גודל <output for="opt-size"></output></span>
+          <input id="opt-size" type="range" min="0" max="100" step="1"></label>
+        <label class="opt" data-for="brush eraser"><span>קשיות <output for="opt-hardness"></output></span>
+          <input id="opt-hardness" type="range" min="0" max="100" step="1"></label>
+        <label class="opt" data-for="brush eraser bucket"><span>אטימות <output for="opt-opacity"></output></span>
+          <input id="opt-opacity" type="range" min="1" max="100" step="1"></label>
+        <label class="opt" data-for="bucket"><span>סבולת <output for="opt-tolerance"></output></span>
+          <input id="opt-tolerance" type="range" min="0" max="255" step="1"></label>
+      </div>
     </main>
 
     <aside class="panel" id="layers" aria-labelledby="layers-title">

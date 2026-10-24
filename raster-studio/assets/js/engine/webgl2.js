@@ -69,6 +69,33 @@ void main() {
   o = vec4(s.rgb * (1.0 - ab) + b.rgb * (1.0 - as_) + as_ * ab * B, as_ + ab * (1.0 - as_));
 }`,
 
+  // נקודת מכחול במסכת המשיכה: v_uv = המרחק מהמרכז בפיקסלים. רך → קשה לפי u_hard, ולפחות פיקסל של החלקה
+  dab: `#version 300 es
+precision highp float;
+uniform float u_r, u_hard, u_alpha;
+in vec2 v_uv; out vec4 o;
+void main() {
+  float d = length(v_uv);
+  float inner = min(u_hard * u_r, u_r - 1.0);
+  float a = clamp((u_r - d) / max(u_r - inner, 1.0), 0.0, 1.0);
+  a = a * a * (3.0 - 2.0 * a);
+  o = vec4(a * u_alpha);
+}`,
+
+  // מסכת משיכה (בערוץ r) על אריח של שכבה: צבע (מכחול, דלי) או מחיקה (מחק)
+  stroke: `#version 300 es
+precision highp float;
+uniform sampler2D u_layer, u_mask;
+uniform vec4 u_color;     // לינארי מוכפל, אלפא 1
+uniform float u_opacity;
+uniform int u_erase;
+in vec2 v_uv; out vec4 o;
+void main() {
+  vec4 l = texture(u_layer, v_uv);
+  float m = clamp(texture(u_mask, v_uv).r, 0.0, 1.0) * u_opacity;
+  o = u_erase == 1 ? l * (1.0 - m) : u_color * m + l * (1.0 - m);
+}`,
+
   // התצוגה: מעל משבצות שקיפות, בלינארי, ואז sRGB
   display: `#version 300 es
 precision highp float;
@@ -113,6 +140,7 @@ void main() {
 };
 
 const MIP_LEVELS = Math.log2(TILE) + 1;
+const gl_unbind = gl => gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 const key = (tx, ty) => tx + ',' + ty;
 
 /** sRGB של 8 ביט → לינארי (0–1) */
@@ -157,6 +185,8 @@ export class WebGL2Renderer {
     this.fbo = gl.createFramebuffer();
     this.fboRead = gl.createFramebuffer();
     this.scratch = [this.#tileTexture(1), this.#tileTexture(1)];
+    this.strokeTmp = this.#tileTexture(1);   // השכבה הפעילה + המשיכה, לתצוגה בזמן ציור
+    this.emptyTex = this.#tileTexture(1);    // אריח שקוף — במקום אריח שעוד לא קיים
     this.readTex = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, this.readTex);
     gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, TILE, TILE);
@@ -422,6 +452,144 @@ export class WebGL2Renderer {
     this.#dirty(doc, dx, dy, W, H);
   }
 
+  // ---------- משיכות: מכחול, מחק, דלי ----------
+  //
+  // משיכה נצברת במסכה נפרדת (לכל אריח), וכל נקודה שומרת את המקסימום — כך משיכה באטימות 50% לא
+  // מתעבה כשהיא חוצה את עצמה. השכבה עצמה משתנה רק ב-endStroke. עד אז ההרכבה מציגה שכבה + מסכה.
+
+  /** opts: { mode: 'paint' | 'erase', color: [r, g, b] (sRGB), opacity: 0–1 } */
+  beginStroke(doc, layer, { mode = 'paint', color = [0, 0, 0], opacity = 1 } = {}) {
+    if (doc._stroke) this.cancelStroke(doc);
+    doc._stroke = {
+      layer, mode, opacity, mask: new Map(),
+      color: [srgbToLinear(color[0]), srgbToLinear(color[1]), srgbToLinear(color[2]), 1],
+    };
+  }
+
+  #maskTile(st, k) {
+    let m = st.mask.get(k);
+    if (!m) { m = this.#tileTexture(1); st.mask.set(k, m); }
+    return m;
+  }
+
+  /** נקודת מכחול: מרכז (x, y) במסמך, רדיוס r בפיקסלים, קשיות 0–1, עוצמה 0–1. */
+  dab(doc, x, y, r, hardness = 1, alpha = 1) {
+    const st = doc._stroke;
+    if (!st) return;
+    const gl = this.gl;
+    r = Math.max(0.5, r);
+    const R = r + 1;
+    const p = this.prog.dab;
+    gl.useProgram(p.p);
+    gl.bindVertexArray(this.vao);
+    gl.enable(gl.BLEND);
+    gl.blendEquation(gl.MAX);
+    gl.blendFunc(gl.ONE, gl.ONE);
+    gl.uniform1f(p.u.u_r, r);
+    gl.uniform1f(p.u.u_hard, hardness);
+    gl.uniform1f(p.u.u_alpha, alpha);
+    const x0 = Math.floor(x - R), y0 = Math.floor(y - R);
+    const keys = [];
+    for (const [tx, ty] of tilesInRect(x0, y0, Math.ceil(x + R) - x0, Math.ceil(y + R) - y0)) {
+      const k = key(tx, ty);
+      keys.push(k);
+      // אריח חדש נוצר עם bindTexture — לפני שקושרים את ה-FBO
+      this.#target(this.#maskTile(st, k));
+      const ox = tx * TILE, oy = ty * TILE;
+      this.#quad(p, [x - R - ox, y - R - oy, x + R - ox, y + R - oy], [-R, -R, R, R], [TILE, TILE], -1);
+    }
+    gl.disable(gl.BLEND);
+    gl.blendEquation(gl.FUNC_ADD);
+    this.invalidateTiles(doc, keys);
+  }
+
+  /**
+   * מסכה מוכנה מבחוץ (הדלי): alpha — Uint8Array של w×h (0–255) שמתחילה ב-(x, y) במסמך.
+   * box — [x0, y0, x1, y1] — רק האריחים שבתוכו.
+   */
+  maskFromAlpha(doc, alpha, x, y, w, h, box = [0, 0, w - 1, h - 1]) {
+    const st = doc._stroke;
+    if (!st) return;
+    const gl = this.gl;
+    const buf = new Uint8Array(TILE * TILE);
+    const keys = [];
+    for (const [tx, ty] of tilesInRect(x + box[0], y + box[1], box[2] - box[0] + 1, box[3] - box[1] + 1)) {
+      buf.fill(0);
+      const ox = tx * TILE, oy = ty * TILE;
+      for (let r = 0; r < TILE; r++) {
+        const sy = oy + r - y;
+        if (sy < 0 || sy >= h) continue;
+        const sx0 = Math.max(0, ox - x), sx1 = Math.min(w, ox + TILE - x);
+        if (sx1 > sx0) buf.set(alpha.subarray(sy * w + sx0, sy * w + sx1), r * TILE + (sx0 + x - ox));
+      }
+      const k = key(tx, ty);
+      const old = st.mask.get(k);
+      if (old) this.freeTextures([old]);
+      const t = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.texStorage2D(gl.TEXTURE_2D, 1, gl.R8, TILE, TILE);
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, TILE, TILE, gl.RED, gl.UNSIGNED_BYTE, buf);
+      this.#nearest();
+      this.textures++;
+      st.mask.set(k, t);
+      keys.push(k);
+    }
+    this.invalidateTiles(doc, keys);
+  }
+
+  #applyStroke(st, layerTex, maskTex, outTex) {
+    const gl = this.gl;
+    const p = this.prog.stroke;
+    this.#target(outTex);
+    gl.useProgram(p.p);
+    gl.bindVertexArray(this.vao);
+    gl.disable(gl.BLEND);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, layerTex);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, maskTex);
+    gl.uniform1i(p.u.u_layer, 0);
+    gl.uniform1i(p.u.u_mask, 1);
+    gl.uniform4fv(p.u.u_color, st.color);
+    gl.uniform1f(p.u.u_opacity, st.opacity);
+    gl.uniform1i(p.u.u_erase, st.mode === 'erase' ? 1 : 0);
+    this.#quad(p, [0, 0, TILE, TILE], [0, 0, 1, 1], [TILE, TILE], -1);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, null);
+    gl.activeTexture(gl.TEXTURE0);
+  }
+
+  /**
+   * מסיים את המשיכה: כל אריח שנגעו בו נכתב **למרקם חדש**, והישן עובר להיסטוריה כמו שהוא —
+   * בלי העתקה. מחזיר Map: מפתח → המרקם הישן (או null) — בדיוק מה ש-history.pixels מצפה לו.
+   */
+  endStroke(doc) {
+    const st = doc._stroke;
+    if (!st) return new Map();
+    doc._stroke = null;
+    const before = new Map();
+    for (const [k, m] of st.mask) {
+      const old = st.layer.tiles.get(k) ?? null;
+      if (!old && st.mode === 'erase') continue;   // אין מה למחוק
+      const out = this.#tileTexture(1);
+      this.#applyStroke(st, old || this.emptyTex, m, out);
+      st.layer.tiles.set(k, out);
+      before.set(k, old);
+    }
+    this.freeTextures(st.mask.values());
+    gl_unbind(this.gl);
+    st.layer.rev = (st.layer.rev ?? 0) + 1;
+    this.invalidateTiles(doc, st.mask.keys());
+    return before;
+  }
+
+  /** משיכה שבוטלה (למשל אצבע שנייה הפכה אותה לצביטה) — בלי שום שינוי בשכבה. */
+  cancelStroke(doc) {
+    const st = doc._stroke;
+    if (!st) return;
+    doc._stroke = null;
+    this.freeTextures(st.mask.values());
+    this.invalidateTiles(doc, st.mask.keys());
+  }
+
   // ---------- הרכבה ----------
 
   #composite(doc, tx, ty) {
@@ -440,9 +608,20 @@ export class WebGL2Renderer {
     gl.disable(gl.BLEND);
     gl.uniform1i(p.u.u_dst, 0);
     gl.uniform1i(p.u.u_src, 1);
+    const st = doc._stroke;
     for (const layer of doc.layers) {
       if (!layer.visible || layer.opacity <= 0) continue;
-      const t = layer.tiles.get(key(tx, ty));
+      let t = layer.tiles.get(key(tx, ty));
+      // משיכה פתוחה על השכבה הזו — מציגים את התוצאה בלי לגעת בשכבה עד שהאצבע מורמת
+      const m = st && st.layer === layer ? st.mask.get(key(tx, ty)) : null;
+      if (m) {
+        this.#applyStroke(st, t || this.emptyTex, m, this.strokeTmp);
+        t = this.strokeTmp;
+        gl.useProgram(p.p);
+        gl.bindVertexArray(this.vao);
+        gl.uniform1i(p.u.u_dst, 0);
+        gl.uniform1i(p.u.u_src, 1);
+      }
       if (!t) continue;
       this.#target(b);
       gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, a);
@@ -522,12 +701,21 @@ export class WebGL2Renderer {
 
   /** הפיקסלים המורכבים של מלבן במסמך — sRGB ישר, RGBA של 8 ביט, שורה 0 למעלה. */
   readPixels(doc, x, y, w, h) {
+    return this.#read((tx, ty) => this.#compositeTile(doc, tx, ty), x, y, w, h);
+  }
+
+  /** הפיקסלים של שכבה אחת (בלי אטימות ומיזוג) — לדלי. אריח חסר = שקוף. */
+  readLayerPixels(layer, x, y, w, h) {
+    return this.#read((tx, ty) => layer.tiles.get(key(tx, ty)) ?? this.emptyTex, x, y, w, h);
+  }
+
+  #read(source, x, y, w, h) {
     const gl = this.gl;
     const out = new Uint8ClampedArray(w * h * 4);
     const buf = new Uint8Array(TILE * TILE * 4);
     const p = this.prog.read;
     for (const [tx, ty] of tilesInRect(x, y, w, h)) {
-      const tex = this.#compositeTile(doc, tx, ty);
+      const tex = source(tx, ty);
       gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo);
       gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.readTex, 0);
       gl.viewport(0, 0, TILE, TILE);

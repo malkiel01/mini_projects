@@ -285,3 +285,62 @@ test('היסטוריה: clear', () => {
   h.clear();
   assert.equal(h.canUndo || h.canRedo, false);
 });
+
+// ---- מילוי ומשיכות ----
+import { floodFill, hexToRgb, rgbToHex, dabsAlong } from '../assets/js/engine/fill.js';
+
+function img(w, h, f) {
+  const px = new Uint8ClampedArray(w * h * 4);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) px.set(f(x, y), (y * w + x) * 4);
+  return px;
+}
+
+test('דלי: ממלא אזור סגור ולא חוצה קו', () => {
+  // מסגרת שחורה בעובי 1 סביב ריבוע 6×6 בתוך 10×10 לבן
+  const px = img(10, 10, (x, y) => (x === 2 || x === 7 || y === 2 || y === 7) && x >= 2 && x <= 7 && y >= 2 && y <= 7 ? [0, 0, 0, 255] : [255, 255, 255, 255]);
+  const inside = floodFill(px, 10, 10, 4, 4, 32);
+  assert.equal(inside.count, 16);
+  assert.deepEqual(inside.box, [3, 3, 6, 6]);
+  const outside = floodFill(px, 10, 10, 0, 0, 32);
+  assert.equal(outside.count, 100 - 36);
+  assert.equal(outside.mask[4 * 10 + 4], 0, 'לא נכנס פנימה');
+});
+
+test('דלי: סבולת — צבע קרוב נכלל, רחוק לא', () => {
+  const px = img(4, 1, x => [[100, 100, 100, 255], [120, 100, 100, 255], [140, 100, 100, 255], [100, 100, 100, 255]][x]);
+  assert.equal(floodFill(px, 4, 1, 0, 0, 20).count, 2);
+  assert.equal(floodFill(px, 4, 1, 0, 0, 40).count, 4);
+  assert.equal(floodFill(px, 4, 1, 0, 0, 0).count, 1);
+});
+
+test('דלי: שקוף — כל השקופים שווים, בלי קשר לצבע', () => {
+  const px = img(3, 1, x => [[0, 0, 0, 0], [255, 255, 255, 0], [9, 9, 9, 255]][x]);
+  assert.equal(floodFill(px, 3, 1, 0, 0, 0).count, 2);
+});
+
+test('דלי: מחוץ לתמונה — כלום; ספירלה גדולה בלי רקורסיה', () => {
+  const px = img(5, 5, () => [0, 0, 0, 255]);
+  assert.equal(floodFill(px, 5, 5, -1, 0).count, 0);
+  const big = img(800, 800, (x, y) => (x % 4 === 2 && y !== (x % 8 === 2 ? 0 : 799)) ? [0, 0, 0, 255] : [255, 255, 255, 255]);
+  const r = floodFill(big, 800, 800, 0, 0, 10);
+  assert.ok(r.count > 400 * 800, String(r.count));
+});
+
+test('צבע: hex ↔ rgb', () => {
+  assert.deepEqual(hexToRgb('#ff8000'), [255, 128, 0]);
+  assert.equal(rgbToHex([1, 2, 255]), '#0102ff');
+});
+
+test('משיכה: נקודות במרחק קבוע, גם בין קטעים', () => {
+  const a = { x: 0, y: 0, p: 0 }, b = { x: 10, y: 0, p: 1 };
+  const { dabs, carry } = dabsAlong(a, b, 4);
+  assert.deepEqual(dabs.map(d => d.x), [4, 8]);
+  near(dabs[0].p, 0.4);
+  near(carry, 2);
+  const next = dabsAlong(b, { x: 13, y: 0, p: 1 }, 4, carry);
+  assert.deepEqual(next.dabs.map(d => d.x), [12]);
+  near(next.carry, 1);
+  const tiny = dabsAlong(b, { x: 11, y: 0, p: 1 }, 4, 1);
+  assert.equal(tiny.dabs.length, 0);
+  near(tiny.carry, 2);
+});
