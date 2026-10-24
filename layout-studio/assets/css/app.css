@@ -242,3 +242,6 @@ dialog.story .sheet-body { grid-template-rows: auto 1fr; height: 100%; }
 @font-face { font-family: 'Frank Ruhl Libre'; src: url(../fonts/FrankRuhlLibre.ttf) format('truetype'); font-display: swap; }
 #frame-dlg [data-kind][hidden] { display: none !important; }
 #frame-dlg input[type=range] { padding: 0; accent-color: var(--brand); }
+.report-list li { padding: var(--s2) var(--s3); border-top: 1px solid var(--line); }
+.report-list li:first-child { border-top: 0; }
+.report-list:empty { display: none; }

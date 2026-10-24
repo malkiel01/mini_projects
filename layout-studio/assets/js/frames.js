@@ -154,7 +154,7 @@ export function docParagraphs(doc) {
 /**
  * ProseMirror → בלוקים לפריסה: [{ style, runs: [{ text, bold }] }].
  *   paragraph → body; heading (level 1–3) → h1…h3; צומת אחר ברמה העליונה — הטקסט שבו, כגוף.
- *   סימון bold / strong → מודגש. hard_break → רווח (שבירת שורה ידנית — בהמשך).
+ *   סימון bold / strong → מודגש. hardBreak → '\n' (שבירת שורה בתוך הפסקה).
  */
 export function docBlocks(doc) {
   const out = [];
@@ -167,7 +167,7 @@ export function docBlocks(doc) {
         const last = runs[runs.length - 1];
         if (last && last.bold === b) last.text += node.text || '';
         else runs.push({ text: node.text || '', bold: b });
-      } else if (node.type === 'hard_break' || node.type === 'hardBreak') walk({ type: 'text', text: ' ' }, bold);
+      } else if (node.type === 'hard_break' || node.type === 'hardBreak') walk({ type: 'text', text: '\n' }, bold);
       else for (const c of node.content || []) walk(c, bold);
     };
     walk(n, false);

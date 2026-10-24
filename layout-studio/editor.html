@@ -53,7 +53,9 @@
             <button class="tile" type="button" id="pm-frame"><span class="tile-ic" aria-hidden="true">▭</span>מסגרת טקסט בעמוד</button>
             <button class="tile" type="button" id="pm-flow"><span class="tile-ic" aria-hidden="true">⤓</span>זרימה אוטומטית מכאן</button>
             <button class="tile" type="button" id="pm-image"><span class="tile-ic" aria-hidden="true">🖼</span>תמונה</button>
+            <button class="tile" type="button" id="pm-docx"><span class="tile-ic" aria-hidden="true">📄</span>טקסט מ-Word</button>
           </div>
+          <input type="file" id="docx-file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
           <input type="file" id="img-file" accept="image/png,image/jpeg,image/webp" hidden>
           <p class="hint">זרימה אוטומטית — מסגרת בכל עמוד מכאן ועד הסוף, והטקסט זורם ביניהן; טקסט שלא נכנס מוסיף עמודים.</p>
         </section>
@@ -74,6 +76,7 @@
           <button class="tile" type="button" id="fr-edit" data-kind="text"><span class="tile-ic" aria-hidden="true">✏️</span>עריכת הטקסט</button>
           <button class="tile" type="button" id="fr-next" data-kind="text"><span class="tile-ic" aria-hidden="true">↲</span>המשך בעמוד הבא</button>
           <button class="tile" type="button" id="fr-grow" data-kind="text"><span class="tile-ic" aria-hidden="true">⤓</span>עמודים עד סוף הטקסט</button>
+          <button class="tile" type="button" id="fr-docx" data-kind="text"><span class="tile-ic" aria-hidden="true">📄</span>ייבוא מ-Word</button>
           <button class="tile" type="button" id="fr-replace" data-kind="image"><span class="tile-ic" aria-hidden="true">🔄</span>החלפת תמונה</button>
           <button class="tile" type="button" id="fr-del"><span class="tile-ic" aria-hidden="true">🗑️</span>מחיקת המסגרת</button>
         </div>
@@ -260,6 +263,19 @@
           <p class="hint">"בחוץ" — בצד הרחוק מהשדרה, ומתחלף לבד בין עמוד זוגי לאי-זוגי.</p>
         </section>
         <p class="error" role="alert" hidden></p>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="report-dlg" aria-labelledby="report-title">
+    <form method="dialog">
+      <header class="sheet-head">
+        <h2 id="report-title">דוח ייבוא</h2>
+        <button type="submit" class="btn primary">הבנתי</button>
+      </header>
+      <div class="sheet-body">
+        <p id="report-sum"></p>
+        <ul class="list report-list" id="report-list"></ul>
       </div>
     </form>
   </dialog>
