@@ -8,6 +8,13 @@ import { TILE } from './doc.js';
 
 export const TILE_BYTES = TILE * TILE * 8;   // אריח float16
 
+/** משחרר את כל האריחים של שכבה, או של כל השכבות שבקבוצה */
+function freeTree(r, layer) {
+  if (layer.type === 'group') for (const c of layer.children) freeTree(r, c);
+  else r.freeLayer(layer);
+}
+const tileCount = l => (l.type === 'group' ? l.children.reduce((n, c) => n + tileCount(c), 0) : l.tiles.size);
+
 export class History {
   /**
    * @param {object} o
@@ -108,30 +115,49 @@ export class History {
     });
   }
 
-  /** שכבה חדשה (גם שכפול, וגם תמונה שנוספה כשכבה). השכבה כבר במסמך במקום index. */
+  /** שכבה או קבוצה חדשה (גם שכפול, תמונה שנוספה, טקסט). הפריט כבר בעץ. */
   addLayer(doc, layer, label) {
     const r = this.renderer;
-    let index = doc.indexOf(layer);
+    const list = doc.listOf(layer);
+    let index = list.indexOf(layer);
     this.push({
       label, bytes: 0,
-      undo: () => { index = doc.indexOf(layer); doc.layers.splice(index, 1);
-        if (doc.activeId === layer.id) doc.activeId = doc.layers[Math.min(index, doc.layers.length - 1)]?.id ?? null;
+      undo: () => { index = list.indexOf(layer); list.splice(index, 1);
+        if (doc.activeId === layer.id) doc.activeId = (list[Math.min(index, list.length - 1)] ?? doc.layers.at(-1))?.id ?? null;
         r.invalidate(doc); },
-      redo: () => { doc.layers.splice(index, 0, layer); doc.activeId = layer.id; r.invalidate(doc); },
-      // נזרקת כשהיא מבוטלת (השכבה מחוץ למסמך) — האריחים משתחררים
-      discard: applied => { if (!applied) r.freeLayer(layer); },
+      redo: () => { list.splice(index, 0, layer); doc.activeId = layer.id; r.invalidate(doc); },
+      // נזרקת כשהיא מבוטלת (הפריט מחוץ למסמך) — האריחים משתחררים
+      discard: applied => { if (!applied) freeTree(r, layer); },
     });
   }
 
-  /** מחיקת שכבה. השכבה כבר הוצאה מהמסמך; index — המקום שבו הייתה. האריחים נשמרים עד שהרשומה נזרקת. */
-  removeLayer(doc, layer, index, label) {
+  /** מחיקת שכבה / קבוצה. הפריט כבר הוצא; list ו-index — איפה היה. האריחים נשמרים עד שהרשומה נזרקת. */
+  removeLayer(doc, layer, index, label, list = doc.layers) {
     const r = this.renderer;
     this.push({
-      label, bytes: layer.tiles.size * TILE_BYTES,
-      undo: () => { doc.layers.splice(index, 0, layer); doc.activeId = layer.id; r.invalidate(doc); },
+      label, bytes: tileCount(layer) * TILE_BYTES,
+      undo: () => { list.splice(index, 0, layer); doc.activeId = layer.id; r.invalidate(doc); },
       redo: () => { doc.removeLayer(layer); r.invalidate(doc); },
-      discard: applied => { if (applied) r.freeLayer(layer); },
+      discard: applied => { if (applied) freeTree(r, layer); },
     });
+  }
+
+  /** פריט עבר בין מערכים (לתוך קבוצה / החוצה). */
+  reparent(doc, layer, from, fromIdx, to, toIdx, label) {
+    const r = this.renderer;
+    const go = (list, i) => { const cur = doc.listOf(layer); cur.splice(cur.indexOf(layer), 1); list.splice(i, 0, layer); doc.activeId = layer.id; r.invalidate(doc); };
+    this.push({ label, bytes: 0, undo: () => go(from, fromIdx), redo: () => go(to, toIdx) });
+  }
+
+  /**
+   * מבנה העץ השתנה בבת אחת (קיבוץ / פירוק קבוצה): snapshot של מערכים — [מערך, תוכן לפני, תוכן אחרי].
+   * גם הפריטים עצמם לא משתנים — רק איפה הם יושבים.
+   */
+  structure(doc, lists, label) {
+    const r = this.renderer;
+    const set = which => { for (const [arr, before, after] of lists) arr.splice(0, arr.length, ...(which ? after : before)); r.invalidate(doc); };
+    const active = [doc.activeId];
+    this.push({ label, bytes: 0, undo: () => { set(false); }, redo: () => { set(true); doc.activeId = active[0]; } });
   }
 
   /** הבחירה השתנתה (before / after — אובייקטי בחירה או null). */

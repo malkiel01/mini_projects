@@ -45,13 +45,19 @@ export async function exportJPG(renderer, doc, quality = 0.92) {
 /** ORA — שכבה לכל שכבה, mergedimage.png ותמונה ממוזערת. מחזיר Uint8Array. */
 export async function buildORA(renderer, doc) {
   const files = [{ name: 'mimetype', data: 'image/openraster' }];
-  const layers = [];
-  for (let i = 0; i < doc.layers.length; i++) {
-    const l = doc.layers[i];
-    const src = `data/layer${i}.png`;
-    files.push({ name: src, data: await layerPNG(renderer, doc, l) });
-    layers.push({ ...l, src });
-  }
+  let n = 0;
+  // עץ: לכל שכבת רסטר — PNG; קבוצה — stack מקונן
+  const walk = async list => {
+    const out = [];
+    for (const l of list) {
+      if (l.type === 'group') { out.push({ ...l, children: await walk(l.children) }); continue; }
+      const src = `data/layer${n++}.png`;
+      files.push({ name: src, data: await layerPNG(renderer, doc, l) });
+      out.push({ ...l, src });
+    }
+    return out;
+  };
+  const layers = await walk(doc.layers);
   const flat = flatRGBA(renderer, doc);
   files.splice(1, 0, { name: 'stack.xml', data: oraStack(doc.width, doc.height, layers) });
   files.push({ name: 'mergedimage.png', data: await encodePNG(flat, doc.width, doc.height) });

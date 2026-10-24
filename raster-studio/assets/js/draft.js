@@ -12,15 +12,21 @@ const cache = new Map();   // layer.id → { rev, w, h, blob }
 export const draftKey = doc => (doc.serverId ? 'draft:doc:' + doc.serverId : 'draft:local');
 
 export async function saveDraft(renderer, doc) {
-  const layers = [];
-  for (const l of doc.layers) {
-    let c = cache.get(l.id);
-    if (!c || c.rev !== (l.rev ?? 0) || c.w !== doc.width || c.h !== doc.height) {
-      c = { rev: l.rev ?? 0, w: doc.width, h: doc.height, blob: new Blob([await layerPNG(renderer, doc, l)], { type: 'image/png' }) };
-      cache.set(l.id, c);
+  const walk = async list => {
+    const out = [];
+    for (const l of list) {
+      const props = { id: l.id, name: l.name, opacity: l.opacity, blend: l.blend, visible: l.visible, locked: l.locked };
+      if (l.type === 'group') { out.push({ ...props, type: 'group', collapsed: !!l.collapsed, children: await walk(l.children) }); continue; }
+      let c = cache.get(l.id);
+      if (!c || c.rev !== (l.rev ?? 0) || c.w !== doc.width || c.h !== doc.height) {
+        c = { rev: l.rev ?? 0, w: doc.width, h: doc.height, blob: new Blob([await layerPNG(renderer, doc, l)], { type: 'image/png' }) };
+        cache.set(l.id, c);
+      }
+      out.push({ ...props, png: c.blob });
     }
-    layers.push({ id: l.id, name: l.name, opacity: l.opacity, blend: l.blend, visible: l.visible, locked: l.locked, png: c.blob });
-  }
+    return out;
+  };
+  const layers = await walk(doc.layers);
   await idbSet(draftKey(doc), {
     v: 1, title: doc.title, width: doc.width, height: doc.height, serverId: doc.serverId ?? null,
     activeId: doc.activeId, layers, savedAt: new Date().toISOString(),
@@ -34,14 +40,25 @@ export const clearDraft = key => idbDel(key).catch(() => {});
 export async function restoreDraft(renderer, d) {
   const doc = new RasterDocument(d.width, d.height, d.title);
   doc.serverId = d.serverId ?? undefined;
-  for (const l of d.layers) {
-    const layer = doc.addLayer({ name: l.name, opacity: l.opacity, blend: l.blend, visible: l.visible, locked: l.locked });
-    layer.id = l.id;
-    const bmp = await decodeImage(l.png);
-    await renderer.drawImage(doc, layer, bmp, 0, 0);
-    bmp.close();
-    cache.set(layer.id, { rev: layer.rev ?? 0, w: d.width, h: d.height, blob: l.png });
-  }
+  const walk = async (list, parent) => {
+    for (const l of list) {
+      const props = { name: l.name, opacity: l.opacity, blend: l.blend, visible: l.visible, locked: l.locked, parent };
+      if (l.type === 'group') {
+        const g = doc.addGroup(props);
+        g.id = l.id;
+        g.collapsed = !!l.collapsed;
+        await walk(l.children, g);
+        continue;
+      }
+      const layer = doc.addLayer(props);
+      layer.id = l.id;
+      const bmp = await decodeImage(l.png);
+      await renderer.drawImage(doc, layer, bmp, 0, 0);
+      bmp.close();
+      cache.set(layer.id, { rev: layer.rev ?? 0, w: d.width, h: d.height, blob: l.png });
+    }
+  };
+  await walk(d.layers, undefined);
   doc.activeId = doc.layer(d.activeId) ? d.activeId : doc.layers.at(-1)?.id;
   return doc;
 }

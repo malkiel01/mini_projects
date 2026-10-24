@@ -136,18 +136,21 @@ async function openOra(blob) {
   const st = parseOraStack(text);
   if (!(st.w > 0 && st.h > 0)) throw new Error('decode');
   const d = new RasterDocument(st.w, st.h, baseName(blob.name));
-  for (const l of st.layers) {
-    const png = files.get(l.src);
-    const layer = d.addLayer({ name: l.name, opacity: l.opacity, blend: l.blend, visible: l.visible, locked: l.locked });
-    if (!png) continue;
-    const bmp = await decodeImage(new Blob([png], { type: 'image/png' }));
-    await renderer.drawImage(d, layer, bmp, l.x, l.y);
-    bmp.close();
-  }
-  if (!d.layers.length) throw new Error('decode');
+  const walk = async (list, parent) => {
+    for (const l of list) {
+      const props = { name: l.name, opacity: l.opacity, blend: l.blend, visible: l.visible, locked: l.locked, parent };
+      if (l.type === 'group') { await walk(l.children, d.addGroup(props)); continue; }
+      const layer = d.addLayer(props);
+      const png = files.get(l.src);
+      if (!png) continue;
+      const bmp = await decodeImage(new Blob([png], { type: 'image/png' }));
+      await renderer.drawImage(d, layer, bmp, l.x, l.y);
+      bmp.close();
+    }
+  };
+  await walk(st.layers, undefined);
+  if (!d.rasters().length) throw new Error('decode');
   setDoc(d);
-  // קבוצות (stack בתוך stack) — בגרסה 1 נפרסות לשכבות רגילות
-  if ((text.match(/<stack\b/g) || []).length > 1) toast('הקבוצות שבקובץ נפרסו לשכבות רגילות');
 }
 
 /** מסמך חדש מקובץ: בגודל התמונה, והתמונה — השכבה היחידה (ORA — עם כל השכבות). */
@@ -172,7 +175,7 @@ async function openAsDocument(blob) {
 /** תמונה כשכבה חדשה מעל, באמצע הקנבס. מה שגולש מהקנבס נשמר בשכבה (להזזה בהמשך). */
 async function addImageLayer(blob) {
   const bmp = await decodeWithBudget(blob);
-  const layer = doc.addLayer({ name: baseName(blob.name) });
+  const layer = doc.addLayer({ name: baseName(blob.name), index: doc.indexOf(doc.active) + 1 });
   await renderer.drawImage(doc, layer, bmp, Math.round((doc.width - bmp.width) / 2), Math.round((doc.height - bmp.height) / 2));
   bmp.close();
   history.addLayer(doc, layer, 'הוספת תמונה');
@@ -349,7 +352,11 @@ const lift = e => {
   if (e.pointerId === painter) {
     painter = null;
     pointers.delete(e.pointerId);
-    if (e.type === 'pointercancel') tools.cancel(); else tools.up();
+    if (e.type === 'pointercancel') { tools.cancel(); return; }
+    // הדפדפן מאחד תנועות לפי פריימים — הקטע האחרון יכול להגיע רק עם ההרמה. בלעדיו סוף הקו נחתך
+    const [x, y] = toDoc(local(e));
+    tools.move([{ x, y, pressure: e.pressure }], e);
+    tools.up();
     return;
   }
   if (!pointers.delete(e.pointerId)) return;
@@ -415,6 +422,13 @@ addEventListener('keydown', e => {
   if ((k === 'z' || k === 'y') && !typing) {
     e.preventDefault();
     if (k === 'y' || e.shiftKey) redo(); else undo();
+    return;
+  }
+  if (k === 'g' && !typing && panel) {
+    e.preventDefault();
+    tools.commitFloat();
+    if (e.shiftKey) panel.act.ungroup(); else panel.act.group();
+    draw(); panel.render();
     return;
   }
   if (k === '=' || k === '+') setView(V.zoomTo(view, V.nextStep(view.zoom, 1), ...center()));
