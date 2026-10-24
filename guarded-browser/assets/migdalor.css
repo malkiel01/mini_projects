@@ -347,3 +347,25 @@ dialog > form { display: flex; flex-direction: column; max-height: inherit; heig
 .phone-body { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 0 var(--s3, 16px) var(--s3, 16px); }
 .phone-frame { flex: 1; min-height: 0; display: flex; justify-content: center; }
 .phone-frame iframe { width: 100%; height: 100%; border: 0; border-radius: 12px; background: #0b0f1a; }
+
+/* 🔎 פתיחת אתר אצל ההורה (parent/app.js, siteFinder) */
+.sf-list { list-style: none; margin: var(--s2) 0 0; padding: 0; display: grid; gap: var(--s2); }
+.sf { padding: var(--s3); display: grid; gap: 8px; cursor: default; }
+.sf-head { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.sf-head b { overflow-wrap: anywhere; }
+.sf-host { font-size: .85rem; color: var(--muted); text-align: end; overflow-wrap: anywhere; }
+.sf .hint { margin: 0; }
+.sf-cats { gap: 6px; }
+.sf-cats .chip { font-size: .8rem; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); }
+.sf-cats .st-deny { border-color: var(--danger, #c0392b); color: var(--danger, #e57373); }
+.sf-cats .st-allow { border-color: var(--ok, #2e7d32); color: var(--ok, #81c784); }
+.sf-now { margin: 0; font-size: .9rem; }
+.sf-now.ok b { color: var(--ok, #81c784); }
+.sf-now.no b { color: var(--danger, #e57373); }
+details.more { margin-top: var(--s3); }
+details.more > summary { cursor: pointer; color: var(--muted); padding: var(--s2) 0; }
+
+/* לשוניות הילד — שורה אחת נגללת */
+.seg-tabs.scroll { display: flex; overflow-x: auto; scrollbar-width: none; scroll-snap-type: x proximity; padding-bottom: 2px; }
+.seg-tabs.scroll::-webkit-scrollbar { display: none; }
+.seg-tabs.scroll button { flex: none; padding: 4px 14px; white-space: nowrap; scroll-snap-align: center; }

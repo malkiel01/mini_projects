@@ -265,12 +265,14 @@ function renderKid() {
     $('#kid-title').textContent = K.name;
     $('#kid-save').hidden = !['access', 'time'].includes(tab);
     const T = tabsFor();
-    const tabs = el('div', { class: 'seg-tabs', role: 'tablist', style: `grid-template-columns:repeat(4,minmax(0,1fr))` },
+    // שורה אחת שנגללת לרוחב — קודם 9 לשוניות נפרסו על שלוש שורות ודחקו את התוכן למטה (2026-10-24).
+    const tabs = el('div', { class: 'seg-tabs scroll', role: 'tablist' },
         T.map(([k, label]) => el('button', { type: 'button', role: 'tab', ariaSelected: String(tab === k),
             text: label, onclick: () => { tab = k; sessionStorage.setItem('mg:tab', k); renderKid(); } })));
     const body = { sum: kidSum, act: kidAct, access: kidAccess, time: kidTime, yt: kidYt, sites: kidSites, dev: kidDev, apps: kidApps,
                    hist: kidHist }[tab]();
     $('#kid-body').replaceChildren(tabs, ...body.filter(Boolean));
+    tabs.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest', inline: 'center' });
 }
 
 /*
@@ -484,7 +486,7 @@ const HOME_SECTIONS = [
     ['search', '🔎 חיפוש ברשת', 'שורת החיפוש. כבוי — אין חיפוש (במצב "דפדפן" נשארת שורת כתובת).'],
     ['sites', '🌐 אתרים', 'האתרים שאישרתם, כאריחים.'],
     ['youtube', '▶️ יוטיוב', 'כבוי — יוטיוב סגור לגמרי, בלי קשר להגדרות בלשונית יוטיוב.'],
-    ['apps', '📲 אפליקציות', 'האפליקציות שמותר לו לפתוח (בקרוב — גם מרקט להתקנה).'],
+    ['apps', '📲 אפליקציות', 'האפליקציות שמותר לו לפתוח, ומהמרקט — להתקנה ולבקשה.'],
     ['favorites', '⭐ מועדפים', 'מה שהוא סימן בלחיצה ארוכה.'],
     ['tasks', '📝 משימות', 'דפים שפתחתם למשימה, עם הזמן שנשאר.'],
     ['requests', '🙋 הבקשות שלי', 'מה הוא ביקש, ומה עניתם.'],
@@ -506,10 +508,11 @@ function kidAccess() {
     ]));
     return [
         el('label', { class: 'f' }, [el('span', { text: 'שם' }), el('input', { name: 'display_name', value: K.name, maxLength: 40 })]),
-        group('🏠 דף הבית', 'הרובריקות שהוא רואה — כבויה לא מופיעה', [el('ul', { class: 'rows' }, HOME_SECTIONS.map(([k, name, hint]) =>
-            el('li', {}, [el('label', { class: 'check', style: 'display:flex;gap:10px;align-items:flex-start;width:100%' }, [
-                el('input', { type: 'checkbox', name: 'home_sections', value: k, checked: (p.home_sections || HOME_SECTIONS.map(s => s[0])).includes(k) }),
-                el('span', {}, [el('b', { text: name }), el('small', { class: 'muted', style: 'display:block', text: hint })])])])))]),
+        // מתגים כמו בשאר הטופס (תקלת עיצוב, 2026-10-24: תיבות סימון גדולות שצפו באמצע השורה והטקסט נדחס).
+        group('🏠 דף הבית', 'הרובריקות שהוא רואה — כבויה לא מופיעה', [el('div', { class: 'mods' }, HOME_SECTIONS.map(([k, name, hint]) => {
+            const n = sw('home_sections', name, (p.home_sections || HOME_SECTIONS.map(s => s[0])).includes(k), hint);
+            n.querySelector('input').value = k; return n;
+        }))]),
         group('מה הוא רואה', '', [
             seg('mode', Object.entries(MODES).map(([k, v]) => [k, v[0]]), p.mode, { cols: 2, onchange: v => { modeHint.textContent = MODES[v][1]; } }),
             modeHint]),
@@ -661,10 +664,10 @@ function kidSites() {
     const scope = el('select', {}, Object.entries(SCOPES).map(([k, v]) => el('option', { value: k, text: v, selected: k === 'domain' })));
     const action = seg('rule_action', [['allow', '✅ להתיר'], ['deny', '🚫 לחסום']], 'allow', { cols: 2 });
     return [
+        siteFinder(),
+        group(`האתרים של ${K.name}`, 'מה שאתם פותחים מופיע כאריח במסך הבית שלו', [rows]),
         tasksGroup(),
-        el('p', { class: 'hint', text: 'כתובת שאתם מתירים — מופיעה כאריח במסך הבית שלו. כלל שאתם כותבים גובר על "סוגי אתרים".' }),
-        rows,
-        group('אתר חדש', '', [
+        el('details', { class: 'more' }, [el('summary', { text: '⚙️ הוספה מתקדמת — דף אחד, אתר עם תתי-אתרים, או חסימה' }), group('', '', [
             el('div', { class: 'fields two' }, [el('label', { class: 'f' }, [el('span', { text: 'כתובת *' }), pattern]),
                 el('label', { class: 'f' }, [el('span', { text: 'שם' }), label])]),
             el('label', { class: 'f' }, [el('span', { text: 'מה נפתח' }), scope]),
@@ -674,8 +677,63 @@ function kidSites() {
                     rule_action: $('[name=rule_action]:checked').value, show_tile: true });
                 if (r) { pattern.value = ''; label.value = ''; }
             } }),
-        ]),
+        ])]),
     ];
+}
+
+/*
+ * 🔎 פתיחת אתר (lib/sitefind.php, 2026-10-24): מחפשים בשם או מדביקים כתובת — ולכל תוצאה רואים תחת אילו
+ * קטגוריות היא, מה מצבן אצל הילד, ומה הוא מקבל עכשיו. "פתיחה" מוסיפה היתר לאתר, והוא גובר על קטגוריה חסומה —
+ * בלי לפתוח את הקטגוריה כולה. בגוגל — אין API פתוח: נפתח בלשונית, ומדביקים את הכתובת חזרה לכאן.
+ */
+let SF = { q: '', res: null, busy: false };
+function siteFinder() {
+    const q = el('input', { type: 'search', value: SF.q, placeholder: 'שם של אתר, או כתובת', autocapitalize: 'off',
+        enterKeyHint: 'search', ariaLabel: 'שם של אתר או כתובת', onkeydown: e => { if (e.key === 'Enter') { e.preventDefault(); find(); } } });
+    const find = async () => {
+        SF.q = q.value.trim(); if (!SF.q || SF.busy) return;
+        SF.busy = true; renderKid();
+        try { SF.res = await call('site_find', { id: K.id, q: SF.q }); } catch (e) { toast(e.message, true); }
+        SF.busy = false; renderKid();
+    };
+    const STATE = { deny: ['🚫', 'חסומה', 'deny'], allow: ['✅', 'מותרת', 'allow'], '': ['—', 'בלי הגדרה', 'none'] };
+    const card = r => el('li', { class: 'card sf' }, [
+        el('div', { class: 'sf-head' }, [
+            r.title && r.title !== r.host ? el('b', { text: r.title }) : null,
+            el('a', { href: r.page, target: '_blank', rel: 'noopener', dir: 'ltr', class: 'sf-host', text: r.host }),
+        ]),
+        r.snippet ? el('p', { class: 'hint', text: r.snippet }) : null,
+        el('div', { class: 'chips sf-cats' }, r.categories.length
+            ? r.categories.map(c => el('span', { class: `chip st-${STATE[c.state][2]}`, title: `הקטגוריה ${STATE[c.state][1]} אצל ${K.name}`,
+                text: `${c.icon} ${c.label} · ${STATE[c.state][0]}` }))
+            : [el('span', { class: 'chip st-none', text: 'לא מסווג בשום קטגוריה' })]),
+        el('p', { class: r.allow ? 'sf-now ok' : 'sf-now no' },
+            [el('b', { text: r.allow ? `✅ פתוח ל${K.name}` : `🚫 חסום ל${K.name}` }), ` — ${r.where}`]),
+        r.rule === 'allow'
+            ? el('p', { class: 'hint', text: 'פתחתם אותו. לביטול — ברשימה למטה.' })
+            : el('div', { class: 'row-btns' }, [
+                el('button', { type: 'button', class: 'btn primary', text: `✅ לפתוח ל${K.name}`, onclick: async () => {
+                    if (await act('rule_add', { pattern: r.host, label: r.title !== r.host ? r.title : '', scope: 'domain', rule_action: 'allow', show_tile: true },
+                        r.categories.some(c => c.state === 'deny') ? `${r.host} נפתח — הקטגוריה עצמה נשארת חסומה` : `${r.host} נפתח`)) find();
+                } }),
+                r.rule !== 'deny' ? el('button', { type: 'button', class: 'btn ghost', text: '🚫 לחסום', onclick: async () => {
+                    if (await act('rule_add', { pattern: r.host, label: r.title !== r.host ? r.title : '', scope: 'domain', rule_action: 'deny', show_tile: false }, `${r.host} נחסם`)) find();
+                } }) : null,
+            ]),
+    ]);
+    const res = SF.res;
+    return group('🔎 פתיחת אתר', 'מחפשים, רואים באיזו קטגוריה הוא — ופותחים רק אותו', [
+        el('div', { class: 'toolbar' }, [q,
+            el('button', { type: 'button', class: 'btn primary', text: SF.busy ? '…' : '🗼 חיפוש', disabled: SF.busy, onclick: find })]),
+        el('div', { class: 'row-btns' }, [
+            el('button', { type: 'button', class: 'btn ghost sm', text: '🔎 חיפוש בגוגל', onclick: () => {
+                window.open('https://www.google.com/search?' + new URLSearchParams({ q: q.value.trim() }), '_blank', 'noopener');
+                toast('מצאתם? העתיקו את הכתובת והדביקו אותה כאן');
+            } }),
+        ]),
+        res && res.note ? el('p', { class: 'hint', text: res.note }) : null,
+        res && res.results.length ? el('ul', { class: 'sf-list' }, res.results.map(card)) : null,
+    ]);
 }
 
 /* ── אישור לפי משימה (שלב 12 ד) — דפים ומשאבים לזמן מוגבל (lib/tasks.php) ── */

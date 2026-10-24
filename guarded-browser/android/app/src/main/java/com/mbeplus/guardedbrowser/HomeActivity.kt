@@ -309,8 +309,10 @@ class HomeActivity : AppCompatActivity() {
             try {
                 AppPolicy.scan(this)
                 val pm = packageManager
+                // מוסתרת (👻) לא מופיעה לעולם — גם Play בזמן חלון ההתקנה, כשהיא פתוחה רק לרובוט.
+                val hidden = store.appsHidden
                 val list = (store.launchable - store.launchers - store.ownPackage)
-                    .filter { !AppPolicy.blocked(store, it) }
+                    .filter { it !in hidden && !AppPolicy.blocked(store, it) }
                     .map { it to (try { pm.getApplicationLabel(pm.getApplicationInfo(it, 0)).toString() } catch (e: Exception) { it }) }
                     .sortedBy { it.second.lowercase() }
                 appsCache = list
