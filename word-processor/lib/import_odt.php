@@ -3,7 +3,7 @@
  * ייבוא ODT (OpenDocument — LibreOffice, Google Docs "הורדה כ-ODT"), כמו import_docx: כותרות, פסקאות (יישור, כיוון,
  * ריווח, הזחה, שורה ראשונה, מעבר עמוד), עיצוב תווים (מודגש, נטוי, קו, קו חוצה, צבע, גודל, גופן, הדגשה, עילי / תחתי),
  * קישורים, רשימות (תבליטים / ממוספרות, מקוננות), טבלאות (עם מיזוג), תמונות (Pictures/), הערות שוליים וסיום,
- * גודל הדף, השוליים והכותרות. מה שלא נכנס — לדוח (IMPORT_REPORT, כמו ב-Word).
+ * מעקב שינויים (text:tracked-changes — הוספה ומחיקה, עם השם והתאריך), גודל הדף, השוליים והכותרות. מה שלא נכנס — לדוח (IMPORT_REPORT, כמו ב-Word).
  * מחזיר ['json', 'page', 'report'].
  */
 
@@ -58,6 +58,8 @@ final class OdtCtx
     private bool $rtl = false;     // כיוון ברירת המחדל של הפסקאות
     private ?array $page = null;
     private ?DOMXPath $xp = null;
+    private array $changes = [];   // מעקב שינויים: מזהה → ['type' => insertion|deletion, 'attrs' => {author, date}, 'node']
+    private array $insOpen = [];   // הוספות פתוחות (בין change-start ל-change-end) — גם על פני כמה פסקאות
 
     public function __construct(private $read, private string $docId, private ?string $stylesXml) {}
 
@@ -68,6 +70,14 @@ final class OdtCtx
         $this->loadStyles($d, false);
         $xp = $this->xpath($d);
         $body = $xp->query('/office:document-content/office:body/office:text')->item(0);
+        foreach ($xp->query('//text:tracked-changes/text:changed-region') as $cr) {
+            $id = $cr->getAttributeNS(ODF_NS['text'], 'id') ?: $cr->getAttributeNS('http://www.w3.org/XML/1998/namespace', 'id');
+            $ch = $xp->query('text:insertion|text:deletion', $cr)->item(0);
+            if (!$ch instanceof DOMElement || $id === '') continue;
+            $who = trim($xp->evaluate('string(office:change-info/dc:creator)', $ch));
+            $date = preg_match('/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d/', $xp->evaluate('string(office:change-info/dc:date)', $ch), $m) ? $m[0] . 'Z' : null;
+            $this->changes[$id] = ['type' => $ch->localName, 'attrs' => ['author' => $who !== '' ? mb_substr($who, 0, 120) : 'לא ידוע'] + ($date ? ['date' => $date] : []), 'node' => $ch];
+        }
         $blocks = $body ? $this->blocks($body) : [];
         $json = ['type' => 'doc', 'content' => $blocks ?: [para()]];
         return ['json' => $json, 'page' => $this->page, 'report' => $this->report()];
@@ -97,8 +107,8 @@ final class OdtCtx
             $name = $s->getAttributeNS(ODF_NS['style'], 'name');
             $st = ['auto' => $s->parentNode->localName === 'automatic-styles', 'family' => $s->getAttributeNS(ODF_NS['style'], 'family'), 'parent' => $s->getAttributeNS(ODF_NS['style'], 'parent-style-name'),
                 'outline' => (int)$s->getAttributeNS(ODF_NS['style'], 'default-outline-level'), 'list' => $s->getAttributeNS(ODF_NS['style'], 'list-style-name'),
-                'display' => $s->getAttributeNS(ODF_NS['style'], 'display-name') ?: $name, 'text' => [], 'para' => [], 'cell' => [], 'graphic' => []];
-            foreach (['text' => 'text-properties', 'para' => 'paragraph-properties', 'cell' => 'table-cell-properties', 'graphic' => 'graphic-properties'] as $k => $tag) {
+                'display' => $s->getAttributeNS(ODF_NS['style'], 'display-name') ?: $name, 'text' => [], 'para' => [], 'cell' => [], 'graphic' => [], 'table' => []];
+            foreach (['text' => 'text-properties', 'para' => 'paragraph-properties', 'cell' => 'table-cell-properties', 'graphic' => 'graphic-properties', 'table' => 'table-properties'] as $k => $tag) {
                 $el = $xp->query("style:$tag", $s)->item(0);
                 if ($el instanceof DOMElement) foreach ($el->attributes as $a) $st[$k][$a->prefix . ':' . $a->localName] = $a->value;
             }
@@ -209,13 +219,19 @@ final class OdtCtx
                     break;
                 case ODF_NS['table'] . '#table':
                     if ($depth > 0) { $this->note('nested'); break; }
+                    // מעבר עמוד לפני הטבלה (fo:break-before בסגנון שלה)
+                    if (($this->styles[$n->getAttributeNS(ODF_NS['table'], 'style-name')]['table']['fo:break-before'] ?? '') === 'page') $out[] = ['type' => 'pageBreak'];
                     $out[] = $this->table($n);
                     break;
+                case ODF_NS['text'] . '#index-title':   // הכותרת של תוכן העניינים
                 case ODF_NS['text'] . '#section':
                 case ODF_NS['text'] . '#index-body':
                     array_push($out, ...$this->blocks($n, $depth));
                     break;
                 case ODF_NS['text'] . '#table-of-content':
+                case ODF_NS['text'] . '#illustration-index':
+                    $out[] = $this->toc($n);
+                    break;
                 case ODF_NS['text'] . '#alphabetical-index':
                     $this->note('fields');
                     foreach ($this->xp->query('text:index-body', $n) as $ib) array_push($out, ...$this->blocks($ib, $depth));
@@ -223,6 +239,34 @@ final class OdtCtx
             }
         }
         return $out;
+    }
+
+    /**
+     * תוכן עניינים / רשימת איורים (כמו מ-Word): כל פסקה עם טאב — לפניו הכותרת, אחרי הטאב האחרון מספר העמוד; הרמה — מהסגנון
+     * (Contents N, או סגנון אוטומטי שמבוסס עליו), ואם אין — מההזחה. כמה רמות — מ-text:outline-level של המקור.
+     */
+    private function toc(DOMElement $el): array
+    {
+        $entries = [];
+        $levels = max(1, min(9, (int)($this->xp->evaluate('string(text:table-of-content-source/@text:outline-level)', $el) ?: 3)));
+        // רשימת איורים — לפי התווית של הכיתובים (כמו TOC \c ב-Word), שורות בלי רמה
+        $seq = $el->localName === 'illustration-index' ? seq_label($this->xp->evaluate('string(text:illustration-index-source/@text:caption-sequence-name)', $el)) : '';
+        foreach ($this->xp->query('text:index-body/text:p', $el) as $p) {
+            $parts = [''];
+            foreach ($this->xp->query('.//text()|.//text:tab', $p) as $n) {
+                if ($n instanceof DOMElement) $parts[] = '';
+                else $parts[count($parts) - 1] .= $n->textContent;
+            }
+            if (count($parts) < 2 || trim($parts[0]) === '') continue;
+            $style = $p->getAttributeNS(ODF_NS['text'], 'style-name');
+            $names = [$style, $this->styles[$style]['parent'] ?? '', $this->styles[$style]['display'] ?? ''];
+            $lvl = 0;
+            foreach ($names as $nm) if (preg_match('/^Contents(?:_20_| )(\d)$/', (string)$nm, $m)) { $lvl = (int)$m[1]; break; }
+            if (!$lvl) $lvl = 1 + (int)round((odf_pt($this->prop($style, 'para', 'fo:margin-left')) ?? 0) / 14);
+            $entries[] = ['t' => mb_substr(trim($parts[0]), 0, 300), 'l' => max(1, min(9, $lvl)), 'p' => mb_substr(trim(end($parts)), 0, 12), 'i' => count($entries)];
+        }
+        if ($seq !== '') return ['type' => 'toc', 'attrs' => ['seq' => $seq, 'levels' => 3, 'entries' => array_map(fn($e) => array_replace($e, ['l' => 0]), $entries)]];
+        return ['type' => 'toc', 'attrs' => ['levels' => $levels, 'entries' => $entries]];
     }
 
     /** פסקה / כותרת → [בלוק] (ומעבר עמוד לפניה, אם הסגנון אומר). */
@@ -319,14 +363,32 @@ final class OdtCtx
         };
         $walk = function (DOMNode $node, array $mk) use (&$walk, &$out, $push) {
             foreach ($node->childNodes as $c) {
-                if ($c instanceof DOMText) { $push(preg_replace('/[\r\n\t]+/', ' ', $c->data), $mk); continue; }
+                if ($c instanceof DOMText) { $push(preg_replace('/[\r\n\t]+/', ' ', $c->data), $this->insOpen ? [...$mk, ...array_values($this->insOpen)] : $mk); continue; }
                 if (!$c instanceof DOMElement) continue;
                 $ns = $c->namespaceURI;
                 $ln = $c->localName;
                 if ($ns === ODF_NS['text']) {
                     switch ($ln) {
-                        case 's': $push(str_repeat(' ', max(1, (int)$c->getAttributeNS(ODF_NS['text'], 'c'))), $mk); break;
-                        case 'tab': $push("\t", $mk); break;
+                        case 's': $push(str_repeat(' ', max(1, (int)$c->getAttributeNS(ODF_NS['text'], 'c'))), $this->insOpen ? [...$mk, ...array_values($this->insOpen)] : $mk); break;
+                        case 'tab': $push("\t", $this->insOpen ? [...$mk, ...array_values($this->insOpen)] : $mk); break;
+                        // מעקב שינויים: הוספה — הטקסט שבין change-start ל-change-end; מחיקה — הטקסט שנמחק, מה-changed-region
+                        case 'change-start':
+                            $ch = $this->changes[$c->getAttributeNS(ODF_NS['text'], 'change-id')] ?? null;
+                            if ($ch && $ch['type'] === 'insertion') $this->insOpen[$c->getAttributeNS(ODF_NS['text'], 'change-id')] = ['type' => 'ins', 'attrs' => $ch['attrs']];
+                            break;
+                        case 'change-end': unset($this->insOpen[$c->getAttributeNS(ODF_NS['text'], 'change-id')]); break;
+                        case 'change':
+                            $ch = $this->changes[$c->getAttributeNS(ODF_NS['text'], 'change-id')] ?? null;
+                            if (!$ch || $ch['type'] !== 'deletion') break;
+                            $del = ['type' => 'del', 'attrs' => $ch['attrs']];
+                            foreach ($this->xp->query('text:p|text:h', $ch['node']) as $k => $dp) {
+                                if ($k) $push(' ', [...$mk, $del]);
+                                foreach ($this->inline($dp, [...$mk, $del]) as $x) {
+                                    if (($x['type'] ?? '') === 'text') $push($x['text'], $x['marks'] ?? []);
+                                    else $out[] = $x;
+                                }
+                            }
+                            break;
                         case 'line-break': $out[] = ['type' => 'hardBreak']; break;
                         case 'span': $walk($c, self::mergeMarks($mk, $this->marksOf($c->getAttributeNS(ODF_NS['text'], 'style-name')))); break;
                         case 'a':
@@ -423,16 +485,19 @@ final class OdtCtx
         $rows = [];
         foreach ($this->xp->query('table:table-row|table:table-header-rows/table:table-row|table:table-rows/table:table-row', $tbl) as $tr) {
             $cells = [];
+            // שורות הכותרת (חוזרות בראש כל עמוד) — תאי כותרת, כמו בעורך
+            $head = $tr->parentNode instanceof DOMElement && $tr->parentNode->localName === 'table-header-rows';
             foreach ($this->xp->query('table:table-cell', $tr) as $tc) {
                 $attrs = ['colspan' => max(1, (int)($tc->getAttributeNS(ODF_NS['table'], 'number-columns-spanned') ?: 1)),
                     'rowspan' => max(1, (int)($tc->getAttributeNS(ODF_NS['table'], 'number-rows-spanned') ?: 1))];
                 $cs = $tc->getAttributeNS(ODF_NS['table'], 'style-name');
                 $bg = strtolower((string)($this->styles[$cs]['cell']['fo:background-color'] ?? ''));
-                if (preg_match('/^#[0-9a-f]{6}$/', $bg) && $bg !== '#ffffff') $attrs['background'] = $bg;
+                // רקע; בתא כותרת — האפור של ברירת המחדל (כך הייצוא כותב אותו) אינו עיצוב
+                if (preg_match('/^#[0-9a-f]{6}$/', $bg) && $bg !== '#ffffff' && !($head && $bg === '#f2f2f2')) $attrs['background'] = $bg;
                 $va = $this->styles[$cs]['cell']['style:vertical-align'] ?? '';
                 if ($va === 'middle' || $va === 'bottom') $attrs['valign'] = $va;
                 $content = array_values(array_filter($this->blocks($tc, 1), fn($b) => in_array($b['type'], ['paragraph', 'heading', 'bulletList', 'orderedList'], true)));
-                $cells[] = ['type' => 'tableCell', 'attrs' => $attrs, 'content' => $content ?: [para()]];
+                $cells[] = ['type' => $head ? 'tableHeader' : 'tableCell', 'attrs' => $attrs, 'content' => $content ?: [para()]];
             }
             if ($cells) $rows[] = ['type' => 'tableRow', 'content' => $cells];
         }

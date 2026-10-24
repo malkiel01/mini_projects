@@ -81,7 +81,9 @@ function do_export(array $row, string $format, $version, bool $absolute, array $
             send_file(export_docx($json, $page, $title), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', ($title ?: 'מסמך') . '.docx');
         case 'pdf':
             send_file(export_pdf($json, $page, $title, $track), 'application/pdf', ($title ?: 'מסמך') . '.pdf');
-        default: throw new ApiError('פורמט לא נתמך: html, ooxml, docx, pdf, text, json', 'bad_format');
+        case 'odt':
+            send_file(export_odt($json, $page, $title), 'application/vnd.oasis.opendocument.text', ($title ?: 'מסמך') . '.odt');
+        default: throw new ApiError('פורמט לא נתמך: html, ooxml, docx, odt, pdf, text, json', 'bad_format');
     }
 }
 
@@ -489,12 +491,12 @@ function app_action(string $action, array $in): never
         case 'my_export':
             [$row] = doc_access($_GET['doc'] ?? '', $acc);
             $fmt = (string)($_GET['format'] ?? 'docx');
-            activity($row['id'], $uid, $uname, 'export', ['docx' => 'Word', 'pdf' => 'PDF', 'text' => 'טקסט', 'json' => 'גיבוי'][$fmt] ?? 'Word');
+            activity($row['id'], $uid, $uname, 'export', ['docx' => 'Word', 'odt' => 'ODT', 'pdf' => 'PDF', 'text' => 'טקסט', 'json' => 'גיבוי'][$fmt] ?? 'Word');
             if ($fmt === 'text') send_file(export_text(doc_json($row)), 'text/plain; charset=utf-8', ($row['title'] ?: 'מסמך') . '.txt');
             if ($fmt === 'json') send_file(json_encode(['title' => $row['title'], 'json' => doc_json($row), 'page' => doc_page($row)], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT), 'application/json', ($row['title'] ?: 'מסמך') . '.json');
             // PDF בתצוגת השינויים שבעורך: track=final|original, hide=מחברים (JSON) — כמו שההדפסה מהעורך נראית
             $hide = json_decode((string)($_GET['hide'] ?? '[]'), true);
-            do_export($row, $fmt === 'pdf' ? 'pdf' : 'docx', null, true, ['view' => (string)($_GET['track'] ?? 'all'), 'hide' => is_array($hide) ? array_slice($hide, 0, 50) : []]);
+            do_export($row, in_array($fmt, ['pdf', 'odt'], true) ? $fmt : 'docx', null, true, ['view' => (string)($_GET['track'] ?? 'all'), 'hide' => is_array($hide) ? array_slice($hide, 0, 50) : []]);
         // תיקיות (lib/folders.php): op = create {name, parent} | rename {id, name} | move {id, parent} | delete {id}
         case 'my_folder':
             $op = (string)($in['op'] ?? '');
