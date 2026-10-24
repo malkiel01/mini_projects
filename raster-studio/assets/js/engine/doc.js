@@ -75,3 +75,8 @@ export function tilesInRect(x, y, w, h) {
   for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) out.push([tx, ty]);
   return out;
 }
+
+export const tileKey = (tx, ty) => tx + ',' + ty;
+
+/** המפתחות של האריחים שמלבן נוגע בהם. */
+export const tileKeysInRect = (x, y, w, h) => tilesInRect(x, y, w, h).map(([tx, ty]) => tileKey(tx, ty));

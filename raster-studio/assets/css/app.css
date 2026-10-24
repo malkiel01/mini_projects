@@ -284,3 +284,5 @@ body.editor { display: flex; flex-direction: column; block-size: 100dvh; min-hei
     .layers-btn::before { content: '◧'; font-size: 1.1rem; }
     .zoom .zoom-lbl { min-inline-size: 52px; }
 }
+
+.top .icon-btn:disabled { opacity: .4; cursor: default; }

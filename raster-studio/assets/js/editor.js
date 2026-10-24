@@ -8,6 +8,7 @@ import { WebGL2Renderer, decodeImage } from './engine/webgl2.js';
 import * as V from './engine/view.js';
 import { deviceBudget, suggestSize, megapixels } from './engine/budget.js';
 import { createLayersPanel } from './layers-panel.js';
+import { History } from './engine/history.js';
 
 const $ = s => document.querySelector(s);
 const stage = $('#stage');
@@ -21,6 +22,7 @@ const budget = deviceBudget({ deviceMemory: navigator.deviceMemory, mobile });
 let renderer = null;
 let doc = null;
 let panel = null;
+let history = null;
 let view = { zoom: 1, x: 0, y: 0 };
 let fitted = false;
 let changed = false;   // יש תוכן שלא נשמר (השמירה — בשלב הבא)
@@ -66,6 +68,7 @@ new ResizeObserver(() => {
 
 function setDoc(d) {
   doc = d;
+  history.clear();
   fitted = false;
   document.title = d.title + ' — עיצוב רסטר';
   $('#title').textContent = d.title;
@@ -112,6 +115,7 @@ async function addImageLayer(blob) {
   const layer = doc.addLayer({ name: baseName(blob.name) });
   await renderer.drawImage(doc, layer, bmp, Math.round((doc.width - bmp.width) / 2), Math.round((doc.height - bmp.height) / 2));
   bmp.close();
+  history.addLayer(doc, layer, 'הוספת תמונה');
   changed = true;
   draw();
   panel.render();
@@ -208,9 +212,30 @@ stage.addEventListener('dblclick', e => {
 // Safari: צביטה בדף מגדילה את כל הדף — רק המסמך מתקרב
 for (const t of ['gesturestart', 'gesturechange']) document.addEventListener(t, e => e.preventDefault());
 
+// ---------- ביטול / ביצוע ----------
+
+const undoBtn = $('#undo-btn'), redoBtn = $('#redo-btn');
+function syncHistory(h) {
+  undoBtn.disabled = !h.canUndo;
+  redoBtn.disabled = !h.canRedo;
+  undoBtn.title = h.canUndo ? 'ביטול: ' + h.undoStack.at(-1).label : 'ביטול';
+  redoBtn.title = h.canRedo ? 'ביצוע מחדש: ' + h.redoStack.at(-1).label : 'ביצוע מחדש';
+}
+function undo() { if (history?.undo()) { changed = true; draw(); panel.render(); } }
+function redo() { if (history?.redo()) { changed = true; draw(); panel.render(); } }
+undoBtn.addEventListener('click', undo);
+redoBtn.addEventListener('click', redo);
+
 addEventListener('keydown', e => {
   if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
-  const k = e.key;
+  const k = e.key.toLowerCase();
+  // בתוך שדה טקסט (שם שכבה) — הביטול של השדה עצמו
+  const typing = e.target.closest?.('input:not([type=range]), textarea, select');
+  if ((k === 'z' || k === 'y') && !typing) {
+    e.preventDefault();
+    if (k === 'y' || e.shiftKey) redo(); else undo();
+    return;
+  }
   if (k === '=' || k === '+') setView(V.zoomTo(view, V.nextStep(view.zoom, 1), ...center()));
   else if (k === '-') setView(V.zoomTo(view, V.nextStep(view.zoom, -1), ...center()));
   else if (k === '0') fit();
@@ -227,8 +252,10 @@ $('#hint').textContent = coarse ? 'צביטה — זום' : 'גרירה — הז
   try {
     if (!WebGL2Renderer.supported()) throw new Error('no_webgl2');
     renderer = new WebGL2Renderer(canvas);
+    // ההיסטוריה — עד רבע מתקציב הזיכרון של המכשיר
+    history = new History({ renderer, limitBytes: budget.bytes / 4, onChange: syncHistory });
     panel = createLayersPanel({
-      root: layersEl, doc: () => doc, renderer, toast,
+      root: layersEl, doc: () => doc, renderer, history, toast,
       onChange: () => { changed = true; draw(); },
     });
     renderer.onLost = () => showMsg('הגרפיקה של הדפדפן אופסה, והתמונה שבזיכרון אבדה. טענו את הדף מחדש.', true);
@@ -260,6 +287,8 @@ window.__rs = {
   get renderer() { return renderer; },
   get view() { return view; },
   get panel() { return panel; },
+  get history() { return history; },
+  undo, redo,
   toggleLayers,
   setView,
   fit,

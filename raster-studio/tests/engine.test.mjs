@@ -136,3 +136,152 @@ test('מסמך: שכבה פעילה, הזזה ומחיקה', () => {
   assert.equal(d.layer(a.id), a);
   assert.equal(d.layer('אין'), null);
 });
+
+// ---- ביטול / ביצוע, מול רנדרר מדומה (בלי GPU): "מרקם" = אובייקט עם ערך ----
+import { History, TILE_BYTES } from '../assets/js/engine/history.js';
+
+function fakeRenderer() {
+  const live = new Set();
+  const tex = v => { const t = { v }; live.add(t); return t; };
+  return {
+    live, tex,
+    snapshot: (layer, keys) => new Map(keys.map(k => [k, layer.tiles.has(k) ? tex(layer.tiles.get(k).v) : null])),
+    freeTextures: ts => { for (const t of ts) if (t) live.delete(t); },
+    freeLayer: l => { for (const t of l.tiles.values()) live.delete(t); l.tiles.clear(); },
+    invalidate() {}, invalidateTiles() {},
+  };
+}
+const paint = (r, layer, k, v) => { const old = layer.tiles.get(k); if (old) old.v = v; else layer.tiles.set(k, r.tex(v)); };
+const val = (layer, k) => layer.tiles.get(k)?.v ?? null;
+
+test('היסטוריה: פיקסלים — ביטול וביצוע בהחלפת מרקמים', () => {
+  const r = fakeRenderer();
+  const h = new History({ renderer: r, limitBytes: 1e9 });
+  const d = new RasterDocument(600, 300);
+  const l = d.addLayer();
+  paint(r, l, '0,0', 'לבן');
+  const before = r.snapshot(l, ['0,0', '1,0']);
+  paint(r, l, '0,0', 'אדום'); paint(r, l, '1,0', 'אדום');
+  h.pixels(d, l, before, 'מכחול');
+  h.undo();
+  assert.equal(val(l, '0,0'), 'לבן');
+  assert.equal(val(l, '1,0'), null, 'אריח שלא היה — נעלם');
+  h.redo();
+  assert.equal(val(l, '0,0'), 'אדום');
+  assert.equal(val(l, '1,0'), 'אדום');
+  assert.equal(h.canRedo, false);
+});
+
+test('היסטוריה: פעולה חדשה אחרי ביטול — הביצוע נזרק והמרקמים משתחררים', () => {
+  const r = fakeRenderer();
+  const h = new History({ renderer: r, limitBytes: 1e9 });
+  const d = new RasterDocument(300, 300);
+  const l = d.addLayer();
+  paint(r, l, '0,0', 'א');
+  const b1 = r.snapshot(l, ['0,0']); paint(r, l, '0,0', 'ב'); h.pixels(d, l, b1, '1');
+  h.undo();
+  const liveBefore = r.live.size;
+  const b2 = r.snapshot(l, ['0,0']); paint(r, l, '0,0', 'ג'); h.pixels(d, l, b2, '2');
+  assert.equal(h.canRedo, false);
+  assert.equal(r.live.size, liveBefore, 'העותק של "ב" שוחרר, ונוסף העותק של "א"');
+  h.undo();
+  assert.equal(val(l, '0,0'), 'א');
+});
+
+test('היסטוריה: תקרת זיכרון — הישנות נזרקות, האחרונה נשמרת', () => {
+  const r = fakeRenderer();
+  const h = new History({ renderer: r, limitBytes: TILE_BYTES * 3 });
+  const d = new RasterDocument(300, 300);
+  const l = d.addLayer();
+  for (let i = 0; i < 6; i++) {
+    paint(r, l, '0,0', i);
+    const b = r.snapshot(l, ['0,0']); paint(r, l, '0,0', i + 0.5); h.pixels(d, l, b, String(i));
+  }
+  assert.equal(h.undoStack.length, 3);
+  assert.ok(h.bytes <= TILE_BYTES * 3);
+  assert.equal(r.live.size, 1 + 3, 'אריח השכבה + 3 עותקים');
+  const big = new History({ renderer: r, limitBytes: 1 });
+  const b = r.snapshot(l, ['0,0']); big.pixels(d, l, b, 'גדולה');
+  assert.equal(big.undoStack.length, 1, 'רשומה גדולה מהתקרה — עדיין אפשר לבטל אותה');
+});
+
+test('היסטוריה: מספר צעדים מוגבל', () => {
+  const r = fakeRenderer();
+  const h = new History({ renderer: r, limitBytes: 1e12, maxSteps: 5 });
+  const d = new RasterDocument(10, 10);
+  const l = d.addLayer();
+  for (let i = 0; i < 9; i++) h.props(d, l, { opacity: i / 10 }, { opacity: (i + 1) / 10 }, 'אטימות');
+  assert.equal(h.undoStack.length, 5);
+});
+
+test('היסטוריה: שכבות — הוספה, מחיקה, הזזה ומאפיינים', () => {
+  const r = fakeRenderer();
+  const h = new History({ renderer: r, limitBytes: 1e9 });
+  const d = new RasterDocument(10, 10);
+  const a = d.addLayer({ name: 'א' });
+  const b = d.addLayer({ name: 'ב' });
+  h.addLayer(d, b, 'הוספה');
+  h.undo();
+  assert.deepEqual(d.layers.map(l => l.name), ['א']);
+  assert.equal(d.active, a);
+  h.redo();
+  assert.deepEqual(d.layers.map(l => l.name), ['א', 'ב']);
+  assert.equal(d.active, b);
+
+  paint(r, b, '0,0', 'תוכן');
+  const i = d.indexOf(b);
+  d.removeLayer(b);
+  h.removeLayer(d, b, i, 'מחיקה');
+  assert.deepEqual(d.layers.map(l => l.name), ['א']);
+  h.undo();
+  assert.deepEqual(d.layers.map(l => l.name), ['א', 'ב']);
+  assert.equal(val(b, '0,0'), 'תוכן', 'האריחים שרדו את המחיקה');
+  h.redo();
+  assert.deepEqual(d.layers.map(l => l.name), ['א']);
+
+  h.undo();
+  d.moveLayer(b, 0);
+  h.moveLayer(d, b, 1, 0, 'סדר');
+  h.undo();
+  assert.deepEqual(d.layers.map(l => l.name), ['א', 'ב']);
+  h.redo();
+  assert.deepEqual(d.layers.map(l => l.name), ['ב', 'א']);
+
+  b.opacity = 0.3;
+  h.props(d, b, { opacity: 1 }, { opacity: 0.3 }, 'אטימות');
+  h.undo();
+  assert.equal(b.opacity, 1);
+  h.redo();
+  assert.equal(b.opacity, 0.3);
+});
+
+test('היסטוריה: מחיקה שנזרקת מהעבר — האריחים משתחררים; הוספה שבוטלה ונזרקה — גם', () => {
+  const r = fakeRenderer();
+  const h = new History({ renderer: r, limitBytes: 1e9, maxSteps: 1 });
+  const d = new RasterDocument(10, 10);
+  d.addLayer();
+  const b = d.addLayer();
+  paint(r, b, '0,0', 'x');
+  d.removeLayer(b);
+  h.removeLayer(d, b, 1, 'מחיקה');
+  h.props(d, d.layers[0], { name: 'a' }, { name: 'b' }, 'שם');   // דוחק את המחיקה החוצה
+  assert.equal(b.tiles.size, 0, 'השכבה שנמחקה שוחררה');
+
+  const c = d.addLayer();
+  paint(r, c, '0,0', 'y');
+  h.addLayer(d, c, 'הוספה');
+  h.undo();
+  h.props(d, d.layers[0], { name: 'b' }, { name: 'c' }, 'שם');   // הביצוע של ההוספה נזרק
+  assert.equal(c.tiles.size, 0, 'שכבה שבוטלה ולא תחזור — שוחררה');
+});
+
+test('היסטוריה: clear', () => {
+  const r = fakeRenderer();
+  const h = new History({ renderer: r, limitBytes: 1e9 });
+  const d = new RasterDocument(10, 10);
+  const l = d.addLayer();
+  const b = r.snapshot(l, ['0,0']);
+  h.pixels(d, l, b, 'x');
+  h.clear();
+  assert.equal(h.canUndo || h.canRedo, false);
+});

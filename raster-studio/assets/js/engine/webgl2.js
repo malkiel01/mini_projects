@@ -246,6 +246,12 @@ export class WebGL2Renderer {
     this.#dirty(doc, 0, 0, doc.width, doc.height);
   }
 
+  /** רק האריחים האלה ישורטטו מחדש (keys — "tx,ty"). */
+  invalidateTiles(doc, keys) {
+    doc._dirty ??= new Set();
+    for (const k of keys) doc._dirty.add(k);
+  }
+
   // ---------- שכבות ----------
 
   /** משחרר את האריחים של שכבה (אחרי מחיקה מהמסמך). */
@@ -254,22 +260,43 @@ export class WebGL2Renderer {
     layer.tiles.clear();
   }
 
-  /** מעתיק את כל האריחים של src ל-dst (שכפול שכבה). dst מתרוקנת קודם. */
-  copyLayer(src, dst) {
+  /** עותק של אריח (מרקם חדש). */
+  #copyTile(t) {
     const gl = this.gl;
-    this.freeLayer(dst);
-    for (const [k, t] of src.tiles) {
-      const c = this.#tileTexture(1);
-      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, this.fboRead);
-      gl.framebufferTexture2D(gl.READ_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
-      gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, this.fbo);
-      gl.framebufferTexture2D(gl.DRAW_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, c, 0);
-      gl.blitFramebuffer(0, 0, TILE, TILE, 0, 0, TILE, TILE, gl.COLOR_BUFFER_BIT, gl.NEAREST);
-      dst.tiles.set(k, c);
-    }
-    dst.rev = (dst.rev ?? 0) + 1;
+    const c = this.#tileTexture(1);
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, this.fboRead);
+    gl.framebufferTexture2D(gl.READ_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, this.fbo);
+    gl.framebufferTexture2D(gl.DRAW_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, c, 0);
+    gl.blitFramebuffer(0, 0, TILE, TILE, 0, 0, TILE, TILE, gl.COLOR_BUFFER_BIT, gl.NEAREST);
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    return c;
+  }
+
+  /** מעתיק את כל האריחים של src ל-dst (שכפול שכבה). dst מתרוקנת קודם. */
+  copyLayer(src, dst) {
+    this.freeLayer(dst);
+    for (const [k, t] of src.tiles) dst.tiles.set(k, this.#copyTile(t));
+    dst.rev = (dst.rev ?? 0) + 1;
+  }
+
+  /**
+   * צילום "לפני" של אריחים — לביטול. מחזיר Map: מפתח → עותק, או null לאריח שעוד לא קיים.
+   * keys — מפתחות "tx,ty" (tileKeys). העותקים שייכים להיסטוריה, והיא משחררת אותם (freeTextures).
+   */
+  snapshot(layer, keys) {
+    const out = new Map();
+    for (const k of keys) {
+      const t = layer.tiles.get(k);
+      out.set(k, t ? this.#copyTile(t) : null);
+    }
+    return out;
+  }
+
+  /** משחרר מרקמים שאינם בשום שכבה (מהיסטוריה). */
+  freeTextures(texs) {
+    for (const t of texs) if (t) { this.gl.deleteTexture(t); this.textures--; }
   }
 
   /**
