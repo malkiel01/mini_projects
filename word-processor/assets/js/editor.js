@@ -1335,7 +1335,12 @@ export function createWordEditor(root, opts) {
             });
             const sync = () => tools.querySelectorAll('[data-mark]').forEach(b => b.classList.toggle('on', mini.isActive(b.dataset.mark)));
             mini.on('transaction', sync);
-            dlg.addEventListener('close', () => mini.destroy(), { once: true });
+            dlg.addEventListener('close', () => {
+                mini.destroy();
+                // המיקוד חוזר לעורך עם הבחירה שלו, מיד (לפני הקשה הבאה): בזמן שהחלון פתוח העימוד יכול לצייר מחדש את הטקסט
+                // שבו הייתה הבחירה של הדפדפן, ומקש חץ על בחירה בצומת שכבר לא בדף — שגיאה במנוע
+                if (!ed.isDestroyed) ed.view.focus();
+            }, { once: true });
         }, () => {
             const { text, content } = noteFromMini(mini.getJSON());
             if (!node) {
