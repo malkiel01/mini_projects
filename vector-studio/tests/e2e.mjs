@@ -99,7 +99,9 @@ try {
 
   // מאפיינים: צבע מילוי לשתיהן, עובי מתאר
   await page.locator('[data-c="fill"]').evaluate((el) => { el.value = '#e19a00'; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); });
-  await page.fill('[data-w]', '4'); await page.press('[data-w]', 'Enter');
+  await page.fill('[data-w]', '4');
+  await page.mouse.click(box.x + 5, box.y + box.height - 5); // לחיצה על הקנבס שומרת את השדה (blur → change)
+  await page.evaluate(() => { const p = window.__vs.S.doc.surfaces[0].layers[0].paths; window.__vs.select(p.map(x => x.id)); });
   s = await st();
   assert.ok(s.paths.every(p => p.fill.color === '#e19a00' && p.stroke.width === 4));
   step('מילוי ומתאר משתנים לכל הנבחרים');
@@ -219,6 +221,45 @@ try {
   await page.click('[data-tab="props"]');
   step('שכבות: שכבה חדשה פעילה, ושכבה נעולה לא נבחרת');
 
+  // טקסט: הקשה עם כלי הטקסט, הקלדה בעברית, Esc; הקשה כפולה — עריכה; גודל ומודגש מהלוח; ריק — נמחק
+  await page.evaluate(() => window.__vs.fontsReady);
+  await page.click('[data-tool="text"]');
+  await page.mouse.click(...await W(900, 100));
+  await page.keyboard.type('שלום עולם');
+  await page.keyboard.press('Escape');
+  s = await st();
+  let tx = s.paths.find(p => p.type === 'text');
+  assert.equal(tx.text, 'שלום עולם');
+  assert.ok(Math.abs(tx.box[0] + tx.box[2] - 900) < 1, 'הקצה הימני בנקודת ההקשה');
+  assert.ok(tx.box[2] > 100 && tx.box[2] < 250, 'רוחב לפי הגופן: ' + tx.box[2]);
+  const w36 = tx.box[2];
+  await page.mouse.dblclick(...await W(tx.box[0] + tx.box[2] / 2, tx.box[1] + tx.box[3] / 2));
+  assert.equal(await page.isVisible('#text-edit'), true);
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('שורה שנייה');
+  await page.keyboard.press('Escape');
+  s = await st();
+  tx = s.paths.find(p => p.type === 'text');
+  assert.equal(tx.text, 'שלום עולם\nשורה שנייה');
+  assert.ok(Math.abs(tx.box[3] - 2 * 36 * 1.25) < 0.01);
+  await page.fill('[data-t="size"]', '72'); await page.press('[data-t="size"]', 'Enter');
+  await page.click('fieldset[data-k="weight"] label:nth-child(2)');
+  s = await st();
+  tx = s.paths.find(p => p.type === 'text');
+  assert.equal(tx.font.size, 72);
+  assert.equal(tx.font.weight, 700);
+  assert.ok(tx.box[2] > w36 * 1.8, 'גדל עם הגופן');
+  await page.click('[data-tool="text"]');
+  await page.mouse.click(...await W(900, 1000));
+  await page.keyboard.press('Escape');
+  s = await st();
+  assert.equal(s.paths.filter(p => p.type === 'text').length, 1, 'טקסט ריק לא נשאר');
+  assert.deepEqual(s.sel, []);
+  assert.equal(await page.isVisible('[data-a="w"]'), true, 'הלוח מציג את הלוח, לא את הטקסט שנמחק');
+  if (shots) await page.screenshot({ path: `${shots}/text-1280.png` });
+  step('טקסט: הקלדה בעברית, עריכה בהקשה כפולה, גודל ומודגש, ריק נמחק');
+
   // הצמדה: מלבן שנגרר קרוב לשפת הלוח נצמד אליה, ומוצג קו עזר; רשת — לכפולות של 10
   await page.click('#snap-btn');
   await page.click('[data-tool="select"]');
@@ -246,7 +287,7 @@ try {
   if (shots) await page.screenshot({ path: `${shots}/editor-1280.png` });
   await page.click('a[href="./"]');
   await page.waitForSelector('#drafts .card');
-  assert.match(await page.textContent('#drafts'), /4 אובייקטים/);
+  assert.match(await page.textContent('#drafts'), /5 אובייקטים/);
   step('הטיוטה נשמרה במכשיר ומופיעה ברשימה');
   await page.close();
 
@@ -270,12 +311,22 @@ try {
     await p.tap('#pen-done');
     n = await p.evaluate(() => window.__vs.S.doc.surfaces[0].layers[0].paths.length);
     assert.equal(n, 2);
+    // טקסט במגע
+    await p.tap('[data-tool="text"]');
+    await p.touchscreen.tap(cb.x + cb.width / 2 + 80, cb.y + 60);
+    await p.keyboard.type('שלום');
+    const fs = await p.evaluate(() => parseFloat(getComputedStyle(document.getElementById('text-edit')).fontSize));
+    assert.ok(fs >= 16, 'שדה העריכה לפחות 16px (אחרת iOS מגדיל): ' + fs);
+    if (shots) await p.screenshot({ path: `${shots}/text-${width}.png` });
+    await p.evaluate(() => document.getElementById('text-edit').blur());
+    n = await p.evaluate(() => window.__vs.S.doc.surfaces[0].layers[0].paths.filter(x => x.type === 'text').length);
+    assert.equal(n, 1);
     await p.tap('[data-tool="select"]');
     await p.evaluate(() => window.__vs.select([window.__vs.S.doc.surfaces[0].layers[0].paths[0].id]));
     await p.tap('#props-btn');
     await p.waitForSelector('.props-open #props-body .props-head');
     if (shots) await p.screenshot({ path: `${shots}/editor-${width}.png` });
-    step(`טלפון ${width}px: כוכב בהקשה, עט ב-3 הקשות ו"סיום", לוח מאפיינים, בלי גלילה אופקית`);
+    step(`טלפון ${width}px: כוכב בהקשה, עט ב-3 הקשות ו"סיום", טקסט, לוח מאפיינים, בלי גלילה אופקית`);
     await ctx.close();
   }
 } finally {

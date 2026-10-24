@@ -2,7 +2,8 @@
 // באותו עובי בכל זום. הלוח עצמו לבן תמיד (כמו נייר), גם במצב כהה.
 
 import { multiply } from './geometry/matrix.js';
-import { objects, layout, pathMatrix, worldBox, findPath, leaves } from './model.js';
+import { objects, layout, pathMatrix, worldBox, findPath, leaves, isText } from './model.js';
+import { lines, lineHeight, fontCss } from './text.js';
 
 import { GRID } from './snap.js';
 
@@ -68,7 +69,28 @@ export function strokeStyle(ctx, st) {
   ctx.setLineDash(Array.isArray(st.dash) ? st.dash : []);
 }
 
+/** טקסט: שורה אחר שורה, מימין לשמאל; המיקום האנכי — בערך כמו בדפדפן (גובה השורה סביב הגופן). */
+export function drawText(ctx, item) {
+  const font = item.font || {};
+  const lh = lineHeight(item);
+  const [x, y, w] = item.box;
+  ctx.font = fontCss(font);
+  ctx.direction = 'rtl';
+  ctx.textBaseline = 'alphabetic';
+  ctx.textAlign = item.align === 'left' ? 'left' : item.align === 'center' ? 'center' : 'right';
+  const tx = item.align === 'left' ? x : item.align === 'center' ? x + w / 2 : x + w;
+  lines(item).forEach((l, i) => {
+    const by = y + i * lh + (lh - font.size) / 2 + font.size * 0.8;
+    if (item.fill?.color) { ctx.globalAlpha = item.fill.opacity ?? 1; ctx.fillStyle = item.fill.color; ctx.fillText(l.text, tx, by); }
+    if (item.stroke?.color && (item.stroke.width ?? 1) > 0) {
+      ctx.globalAlpha = item.stroke.opacity ?? 1; ctx.strokeStyle = item.stroke.color; strokeStyle(ctx, item.stroke); ctx.strokeText(l.text, tx, by);
+    }
+  });
+  ctx.globalAlpha = 1;
+}
+
 function drawPath(ctx, path) {
+  if (isText(path)) return drawText(ctx, path);
   const p = path2d(path.d);
   const fill = path.fill, stroke = path.stroke;
   if (fill && fill.color) {
@@ -129,7 +151,7 @@ export function render(canvas, state) {
     if (layer.visible === false || item.hidden) continue;
     const off = lay.get(surface.id);
     for (const path of leaves(item)) {
-      if (path.hidden) continue;
+      if (path.hidden || path.id === state.editingText) continue;
       setT(pathMatrix(path, off));
       ctx.save();
       if ((layer.opacity ?? 1) < 1) ctx.globalAlpha = layer.opacity;
@@ -147,6 +169,13 @@ export function render(canvas, state) {
     const o = findPath(doc, id);
     if (!o) return;
     for (const path of leaves(o.path)) {
+      if (isText(path)) {
+        const [x, y, w, h] = toScreenBox(worldBox(path, lay.get(o.surface.id)), view);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x, y, w, h);
+        continue;
+      }
       setT(pathMatrix(path, lay.get(o.surface.id)));
       const t = ctx.getTransform();
       ctx.lineWidth = 1 / Math.sqrt(Math.abs(t.a * t.d - t.b * t.c) / (dpr * dpr) || 1);
@@ -217,6 +246,12 @@ export function hitTest(state, sx, sy, tol = 6) {
 }
 
 function hitPath(path, t, sx, sy, tol) {
+  if (isText(path)) {
+    const [x, y, w, h] = path.box;
+    const px = (sx - t[4]) / t[0], py = (sy - t[5]) / t[3];
+    const pad = tol / t[0];
+    return px >= x - pad && px <= x + w + pad && py >= y - pad && py <= y + h + pad;
+  }
   probe.setTransform(t[0], t[1], t[2], t[3], t[4], t[5]);
   let p;
   try { p = path2d(path.d); } catch { return false; }

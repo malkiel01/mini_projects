@@ -279,3 +279,8 @@ input[type="color"] { flex: none; width: 48px; padding: 3px; cursor: pointer; }
 .zoom .toggle[aria-pressed="true"] { opacity: 1; background: var(--brand-soft); }
 .icon-row.phys { direction: ltr; justify-content: flex-end; }   /* יישור — כיוונים פיזיים: שמאל משמאל */
 [role="tab"], .layer-name { -webkit-tap-highlight-color: transparent; }
+
+/* עריכת טקסט במקום */
+.text-edit { position: absolute; z-index: 3; min-height: 0; padding: 0; border: 1px dashed var(--brand); border-radius: 0; background: transparent;
+    resize: none; overflow: hidden; white-space: pre; direction: rtl; outline: 0; box-shadow: none; }
+.text-edit:focus { border-color: var(--brand); box-shadow: none; }

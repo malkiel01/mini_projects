@@ -9,6 +9,7 @@
 import { parse, bbox, transform, serialize, unionBox } from './geometry/path.js';
 import { multiply, translate, isIdentity, IDENTITY, apply } from './geometry/matrix.js';
 import { shapeToD, transformShape } from './geometry/shapes.js';
+import { transformText } from './text.js';
 
 export const SIZES = [
   { id: 'a4', name: 'A4', size: [595.3, 841.9], icon: '📄' },
@@ -70,6 +71,7 @@ export function layout(doc) {
 }
 
 export const isGroup = (item) => item?.type === 'group';
+export const isText = (item) => item?.type === 'text';
 
 /** הפריט וכל הצאצאים שלו (קבוצות ונתיבים). */
 export function* tree(item) {
@@ -106,6 +108,7 @@ export function pathMatrix(path, offset) {
 /** תיבה חוסמת במרחב העבודה — של נתיב או של קבוצה. */
 export function worldBox(item, offset) {
   if (isGroup(item)) return unionBox([...leaves(item)].map(p => worldBox(p, offset)));
+  if (isText(item)) { const [x, y, w, h] = item.box; return [x + offset[0], y + offset[1], w, h]; }
   try { return bbox(transform(parse(item.d), pathMatrix(item, offset))); } catch { return null; }
 }
 
@@ -125,6 +128,7 @@ export function selectionBox(doc, ids) {
  */
 export function applyMatrix(path, m) {
   if (isGroup(path)) { for (const c of path.children || []) applyMatrix(c, m); return; }
+  if (isText(path)) { transformText(path, m); return; }
   if (path.transform && !isIdentity(path.transform)) {
     path.transform = multiply(m, path.transform);
     return;
