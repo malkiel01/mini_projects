@@ -133,7 +133,7 @@ test('ProseMirror → בלוקים: כותרות, הדגשה, ושבירת שו�
     para(txt('אחת '), txt('שתיים', true), { type: 'hard_break' }, txt('שלוש'))]));
   assert.equal(b[0].style, 'h2');
   assert.equal(b[1].style, 'body');
-  assert.deepEqual(b[1].runs, [{ text: 'אחת ', bold: false }, { text: 'שתיים', bold: true }, { text: ' שלוש', bold: false }]);
+  assert.deepEqual(b[1].runs, [{ text: 'אחת ', bold: false }, { text: 'שתיים', bold: true }, { text: '\nשלוש', bold: false }]);
 });
 
 test('סגנון ברירת מחדל, ועדכון שמשאיר את השאר', () => {
@@ -212,4 +212,16 @@ test('גלישת טקסט: שורות לצד התמונה קצרות, ומתחת
   for (const l of beside) assert.ok(l.x >= 160 - 0.01, 'לצד התמונה — מימין לה');
   assert.ok(below.some(l => l.x < 1 && advance(l.glyphs) * k > 290), 'מתחת — שורה מלאה');
   assert.ok(lines.length < r0.length + 20);
+});
+
+test('שבירת שורה בתוך פסקה: שורה חדשה, לא מיושרת לשני הצדדים; שתיים — שורה ריקה', () => {
+  const st = { ...DEFAULT_STYLE, spaceAfter: 0 };
+  const fr = { id: 'a', box: [0, 0, 300, 400] };
+  const lines = layoutFlow([{ style: 'body', runs: [{ text: 'שורה ראשונה\nשורה שנייה\n\nרביעית', bold: false }] }], [fr], () => st, fontsFor).frames.get('a').lines;
+  assert.equal(lines.length, 3);
+  const k = 12 / noto.upem;
+  for (const l of lines) assert.ok(Math.abs(l.x + advance(l.glyphs) * k - 300) < 0.01);   // לימין, לא מיושרת
+  assert.ok(Math.abs(lines[1].y - lines[0].y - 18) < 1e-9);
+  assert.ok(Math.abs(lines[2].y - lines[1].y - 36) < 1e-9);   // שורה ריקה ביניהן
+  assert.ok(lines.every(l => !l.glyphs.some(g => g.gid === 0)));   // ה-\n לא מצויר
 });
