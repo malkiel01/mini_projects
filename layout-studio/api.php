@@ -1,9 +1,11 @@
 <?php
-// ה-API של העימוד. כל בקשה: POST עם JSON {"action": …} וכותרת X-Layout-Studio: 1.
+// ה-API של העימוד. פעולות: me, docs_list, doc_create, doc_get, doc_save, doc_delete.
+// כל בקשה: POST עם JSON {"action": …} וכותרת X-Layout-Studio: 1.
 // הכותרת היא ההגנה מ-CSRF: טופס או קישור מאתר אחר לא יכולים להוסיף כותרת משלהם.
 
 require_once __DIR__ . '/lib/auth.php';
 require_once __DIR__ . '/lib/docs.php';
+require_once __DIR__ . '/lib/model.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
@@ -47,6 +49,14 @@ try {
         case 'doc_create':
             $doc = ls_doc_create($uid, (string)($in['title'] ?? ''), (string)($in['size'] ?? ''), $in['mm'] ?? null);
             ls_out(['ok' => true, 'doc' => $doc]);
+        case 'doc_get':
+            $got = ls_doc_get($uid, (int)($in['id'] ?? 0));
+            if (!$got) ls_fail('not_found', 404);
+            ls_out(['ok' => true] + $got);
+        case 'doc_save':
+            // המודל מגיע כמחרוזת JSON — נשמר בדיוק כמו שנשלח, בלי פענוח וקידוד מחדש שמשנים אותו
+            $rev = ls_doc_save($uid, (int)($in['id'] ?? 0), (int)($in['rev'] ?? -1), $in['model'] ?? null);
+            ls_out(['ok' => true, 'rev' => $rev]);
         case 'doc_delete':
             if (!ls_doc_delete($uid, (int)($in['id'] ?? 0))) ls_fail('not_found', 404);
             ls_out(['ok' => true]);
@@ -54,7 +64,8 @@ try {
             ls_fail('unknown_action');
     }
 } catch (InvalidArgumentException $e) {
-    ls_fail($e->getMessage());
+    $code = $e->getMessage();
+    ls_fail($code, match ($code) { 'not_found' => 404, 'conflict' => 409, 'too_big' => 413, default => 400 });
 } catch (Throwable $e) {
     error_log('layout-studio: ' . $e->getMessage());
     ls_fail('server', 500);

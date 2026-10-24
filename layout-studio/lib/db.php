@@ -2,7 +2,7 @@
 // המסד של העימוד — SQLite משלו, בלי שום קשר למסד הפלטפורמה.
 // הנתיב ב-deploy.yml מוחרג (data/*.sqlite*), כך שהפריסה לא דורסת אותו.
 
-const LS_DB_VERSION = 1;
+const LS_DB_VERSION = 2;
 
 function ls_db_path(): string
 {
@@ -51,6 +51,12 @@ function ls_db_migrate(PDO $pdo): void
             deleted_at TEXT
         )");
         $pdo->exec('CREATE INDEX docs_owner ON docs(owner_id, deleted_at)');
+    }
+    if ($v < 2) {
+        // model — document.json של המסמך (lib/model.php). מסמך ישן בלי model מקבל אותו בפתיחה הראשונה.
+        // rev — מונה שמירות: שמירה עם rev ישן נדחית (שתי לשוניות על אותו מסמך).
+        $pdo->exec('ALTER TABLE docs ADD COLUMN model TEXT');
+        $pdo->exec('ALTER TABLE docs ADD COLUMN rev INTEGER NOT NULL DEFAULT 0');
     }
     $pdo->exec('PRAGMA user_version = ' . LS_DB_VERSION);
     $pdo->commit();

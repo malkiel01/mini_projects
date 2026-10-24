@@ -1,7 +1,8 @@
 <?php
-// ספריית המסמכים בשרת — רשימה, יצירה ומחיקה. התוכן (עמודים, מסגרות, שטפים) — בשלב העמודים.
+// ספריית המסמכים בשרת — רשימה, יצירה, פתיחה, שמירה ומחיקה. מבנה המסמך עצמו — lib/model.php.
 
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/model.php';
 
 const LS_TITLE_MAX = 120;
 // גבולות גודל עמוד, ב-pt: מ-5 ס"מ ועד 120 ס"מ.
@@ -64,8 +65,9 @@ function ls_doc_create(int $owner, string $title, string $preset, ?array $custom
 
     $now = ls_now();
     $db = ls_db();
-    $db->prepare('INSERT INTO docs (owner_id, title, page_w, page_h, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
-        ->execute([$owner, $title, $w, $h, $now, $now]);
+    $model = json_encode(ls_model_new($w, $h), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    $db->prepare('INSERT INTO docs (owner_id, title, page_w, page_h, model, rev, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?)')
+        ->execute([$owner, $title, $w, $h, $model, $now, $now]);
     $q = $db->prepare('SELECT * FROM docs WHERE id = ?');
     $q->execute([(int)$db->lastInsertId()]);
     return ls_doc_row($q->fetch());
@@ -77,4 +79,47 @@ function ls_doc_delete(int $owner, int $id): bool
     $q = ls_db()->prepare('UPDATE docs SET deleted_at = ? WHERE id = ? AND owner_id = ? AND deleted_at IS NULL');
     $q->execute([ls_now(), $id, $owner]);
     return $q->rowCount() === 1;
+}
+
+function ls_doc_find(int $owner, int $id): ?array
+{
+    $q = ls_db()->prepare('SELECT * FROM docs WHERE id = ? AND owner_id = ? AND deleted_at IS NULL');
+    $q->execute([$id, $owner]);
+    return $q->fetch() ?: null;
+}
+
+/** המסמך עם המודל שלו. מסמך מלפני המודל (גרסת מסד 1) — מקבל מודל חדש בגודל שלו. */
+function ls_doc_get(int $owner, int $id): ?array
+{
+    $r = ls_doc_find($owner, $id);
+    if (!$r) return null;
+    $model = $r['model'] !== null ? json_decode($r['model']) : null;
+    if ($model === null) {
+        $model = ls_model_new((float)$r['page_w'], (float)$r['page_h']);
+        $r['model'] = json_encode($model, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $r['rev'] = (int)$r['rev'] + 1;
+        ls_db()->prepare('UPDATE docs SET model = ?, rev = ? WHERE id = ?')->execute([$r['model'], $r['rev'], $r['id']]);
+        $model = json_decode($r['model']);
+    }
+    // json_decode בלי assoc — כך {} נשאר {} ולא הופך ל-[] בדרך חזרה
+    return ['doc' => ls_doc_row($r), 'model' => $model, 'rev' => (int)$r['rev']];
+}
+
+/**
+ * שמירת המודל. $rev — הגרסה שהדפדפן ערך; לא תואמת → conflict (נשמר בינתיים ממקום אחר).
+ * מחזיר את ה-rev החדש. @throws InvalidArgumentException (not_found / conflict / bad_model:… / too_big)
+ */
+function ls_doc_save(int $owner, int $id, int $rev, $modelJson): int
+{
+    if (!is_string($modelJson)) throw new InvalidArgumentException('bad_model:root');
+    if (strlen($modelJson) > LS_MODEL_MAX_BYTES) throw new InvalidArgumentException('too_big');
+    $m = json_decode($modelJson, true);
+    [$w, $h] = ls_model_check($m);
+    $db = ls_db();
+    $q = $db->prepare('UPDATE docs SET model = ?, page_w = ?, page_h = ?, rev = rev + 1, updated_at = ?
+        WHERE id = ? AND owner_id = ? AND deleted_at IS NULL AND rev = ?');
+    $q->execute([$modelJson, $w, $h, ls_now(), $id, $owner, $rev]);
+    if ($q->rowCount() === 1) return $rev + 1;
+    if (!ls_doc_find($owner, $id)) throw new InvalidArgumentException('not_found');
+    throw new InvalidArgumentException('conflict');
 }
