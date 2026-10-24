@@ -21,7 +21,8 @@ export default async function (t) {
     await newFolder('חוזים');
     t.ok('"📁 תיקייה" — התיקייה ברשימה, לפני המסמכים', (await names()).indexOf('חוזים') < (await names()).indexOf('מסמך בראש'), JSON.stringify(await names()));
     await p.click('.list .card.folder:has-text("חוזים")');
-    await p.waitForSelector('.list .empty');
+    // ("טוען…" — גם הוא li.empty; מחכים שהרשימה נטענה: הפירורים עם שם התיקייה)
+    await p.waitForFunction(() => document.querySelector('.crumbs')?.textContent.includes('חוזים') && !document.querySelector('.list').textContent.includes('טוען'));
     t.ok('בתוך התיקייה: ריקה, הכותרת והפירורים', (await p.locator('.top h1').textContent()).includes('חוזים')
         && (await p.locator('.crumbs').textContent()).includes('כל המסמכים'), await p.locator('.crumbs').textContent());
     await p.click('.toolbar button:has-text("מסמך")');
@@ -40,7 +41,7 @@ export default async function (t) {
     await p.waitForSelector('.list .card');
     await newFolder('2026');
     await p.click('.list .card.folder:has-text("2026")');
-    await p.waitForSelector('.list .empty');
+    await p.waitForFunction(() => document.querySelector('.crumbs')?.textContent.includes('2026') && !document.querySelector('.list').textContent.includes('טוען'));
     const crumbs = await p.locator('.crumbs').textContent();
     t.ok('תיקייה בתוך תיקייה: כל המסמכים › חוזים › 2026', crumbs.replace(/\s+/g, ' ').trim() === 'כל המסמכים › חוזים › 2026', crumbs);
     await p.click('button[aria-label="חזרה לרשימה"]');

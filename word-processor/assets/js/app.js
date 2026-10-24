@@ -498,6 +498,8 @@ async function openDoc(id) {
             ['🧾', 'גיבוי (JSON)', download('json', 'הגיבוי')],
             // שיתוף — רק הבעלים; מי ששותף איתו רואה מה התפקיד שלו
             cur.role === 'owner' ? ['👥', 'שיתוף…', () => shareDialog(id)] : null,
+            // יומן הפעילות — הבעלים ומי שיש לו עריכה
+            ['owner', 'edit'].includes(cur.role) ? ['🕘', 'פעילות במסמך', () => activityDialog(id)] : null,
             ['📑', 'שכפול', async () => { if (!(await saved('השכפול'))) return; const r = await api('my_copy', { doc: id }); location.hash = '#/d/' + r.doc; }],
             // לסל — רק הבעלים
             cur.role !== 'owner' ? null : ['🗑', 'העברה לסל המחזור', async () => {
@@ -656,6 +658,27 @@ async function shareDialog(id) {
         if (await set(v, role.value)) { email.value = ''; toast('שותף עם ' + v); }
         return false;          // החלון נשאר פתוח — לראות את הרשימה ולשתף עוד
     }, 'שיתוף');
+}
+
+// ---------- יומן הפעילות (lib/activity.php) ----------
+/** מי עשה מה ומתי — מהחדש לישן, מקובץ לפי יום. */
+async function activityDialog(id) {
+    const { activity } = await api('my_activity', { doc: id });
+    const ICON = { create: '✨', open: '👁', edit: '✏️', rename: '🏷', restore: '⏪', share: '👥', unshare: '👥', link: '🔗', link_ok: '🔗',
+        unlink: '🔗', trash: '🗑', untrash: '♻️', export: '⬇️', copy: '📑' };
+    sheet('פעילות במסמך', body => {
+        if (!activity.length) { body.append(h('p.empty', 'עוד אין פעילות רשומה.')); return; }
+        const list = h('ul.activity');
+        let day = '';
+        for (const a of activity) {
+            const d = new Date(a.t * 1000).toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'numeric' });
+            if (d !== day) { day = d; list.append(h('li.day', d)); }
+            list.append(h('li', h('span.ic', { 'aria-hidden': 'true' }, ICON[a.what] || '•'),
+                h('span.what', h('b', a.who), ' — ', a.text, a.detail ? h('span.detail', ' · ' + a.detail) : null),
+                h('time', { datetime: new Date(a.t * 1000).toISOString() }, new Date(a.t * 1000).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }))));
+        }
+        body.append(h('p.hint', 'פתיחה ועריכה רצופות של אותו אדם — שורה אחת (השעה — האחרונה).'), list);
+    });
 }
 
 // ---------- לקוחות ההטמעה (מנהל העורך) ----------

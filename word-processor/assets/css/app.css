@@ -289,3 +289,12 @@ body.guest .embed-bar .chip { max-inline-size: 40vw; overflow: hidden; text-over
 .list .card.folder .doc-ic { filter: saturate(.8); }
 label.field { display: grid; gap: var(--s1); }
 label.field > span { font-size: .85rem; color: var(--muted); }
+
+/* יומן הפעילות */
+.activity { list-style: none; margin: 0; padding: 0; display: grid; }
+.activity li { display: flex; align-items: baseline; gap: var(--s2); padding: 6px 0; border-bottom: 1px solid var(--line); font-size: .9rem; }
+.activity li.day { font-size: .78rem; color: var(--muted); font-weight: 600; border: 0; padding-top: var(--s3); }
+.activity .ic { flex: none; inline-size: 1.4em; text-align: center; }
+.activity .what { flex: 1; min-inline-size: 0; }
+.activity .detail { color: var(--muted); overflow-wrap: anywhere; }
+.activity time { flex: none; color: var(--muted); font-size: .8rem; font-variant-numeric: tabular-nums; }

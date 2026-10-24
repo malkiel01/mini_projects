@@ -4,7 +4,7 @@
  * אין כאן שום require לקובץ מחוץ לתיקייה (CLAUDE.md: אפליקציה עצמאית מהמעטפת).
  */
 
-const WP_SCHEMA_VERSION = 7;
+const WP_SCHEMA_VERSION = 8;
 
 function wp_data_dir(): string
 {
@@ -224,6 +224,17 @@ function wp_migrate(PDO $pdo): void
             created_at INTEGER NOT NULL,
             PRIMARY KEY (account, doc)
         );
+        -- יומן פעילות לכל מסמך (גרסה 8 — lib/activity.php)
+        CREATE TABLE IF NOT EXISTS activity (
+            id INTEGER PRIMARY KEY,
+            doc TEXT NOT NULL,
+            t INTEGER NOT NULL,
+            who_id TEXT NOT NULL,
+            who TEXT NOT NULL,
+            what TEXT NOT NULL,
+            detail TEXT NOT NULL DEFAULT ''
+        );
+        CREATE INDEX IF NOT EXISTS activity_doc ON activity(doc, id);
         CREATE TABLE IF NOT EXISTS settings (
             k TEXT PRIMARY KEY,
             v TEXT NOT NULL

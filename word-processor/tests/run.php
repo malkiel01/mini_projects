@@ -1591,6 +1591,24 @@ fav_set($favAcc, $fd, true);
 doc_delete(doc_find($fd, $fs));
 check('מחיקה לצמיתות — גם מהמועדפים', favs_of($favAcc) === []);
 
+section('יומן פעילות (שלב 5)');
+$acD = doc_new('a:801', 'יומן', null, null, 'a:801', 'דנה');
+$acR = doc_find($acD, 'a:801');
+activity($acD, 'a:801', 'דנה', 'open'); activity($acD, 'a:801', 'דנה', 'open');
+$acR = doc_save($acR, ['type' => 'doc', 'content' => [para([text_node('א')])]], null, 'a:801', 'דנה');
+$acR = doc_save($acR, ['type' => 'doc', 'content' => [para([text_node('אב')])]], null, 'a:801', 'דנה');
+$acR = doc_save($acR, ['type' => 'doc', 'content' => [para([text_node('אבג')])]], null, 'a:802', 'יוסי');
+$log = activity_of($acD);
+check('יצירה, פתיחה ועריכה — פתיחות ועריכות רצופות של אותו אדם מתאחדות; עריכה של אחר — שורה משלה',
+    array_map(fn($a) => $a['what'] . ':' . $a['who'], $log) === ['edit:יוסי', 'edit:דנה', 'open:דנה', 'create:דנה'] && $log[0]['text'] === 'עריכה', json_encode($log, JSON_UNESCAPED_UNICODE));
+activity($acD, 'a:801', 'דנה', 'open');
+check('פתיחה אחרי עריכה של אחרים — אותה שורה (בתוך החלון), לא שורה חדשה', count(array_filter(activity_of($acD), fn($a) => $a['what'] === 'open')) === 1);
+$vsA = versions_list($acR);
+doc_restore_version($acR, end($vsA)['id'], 'a:801', 'דנה', null);
+check('שחזור גרסה — נרשם, עם מספר הגרסה', activity_of($acD)[0]['what'] === 'restore' && str_starts_with(activity_of($acD)[0]['detail'], 'גרסה '));
+doc_delete(doc_find($acD, 'a:801'));
+check('מחיקה לצמיתות — גם היומן', activity_of($acD) === []);
+
 section('סל המחזור (ליקוי ה\')');
 $sp = 'a:trash-test';
 $tid = doc_new($sp, 'לסל', null, null, 'u1', 'דנה');

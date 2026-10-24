@@ -6,6 +6,7 @@
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/page.php';
+require_once __DIR__ . '/activity.php';
 
 const DOC_MAX_BYTES = 8 * 1024 * 1024;
 const VERSION_MERGE_SECONDS = 600;
@@ -129,6 +130,7 @@ function doc_new(string $space, string $title, ?array $json, $page, string $user
         ->execute([$id, $space, clean_title($title), json_encode(strip_media_src($json), JSON_UNESCAPED_UNICODE),
             json_encode(page_normalize($page), JSON_UNESCAPED_UNICODE), $now, $now, $userName, $userId]);
     version_record(doc_find($id, $space), $userId, $userName);
+    activity($id, $userId, $userName, 'create');
     return $id;
 }
 
@@ -184,6 +186,7 @@ function doc_save(array $row, $json, ?string $title, string $userId, string $use
     if ($st->rowCount() !== 1) throw new ApiError('המסמך השתנה בינתיים — טענו אותו מחדש', 'conflict', 409);
     $row = doc_find($row['id'], $row['space']);
     version_record($row, $userId, $userName, '', $shared);
+    activity($row['id'], $userId, $userName, 'edit');
     return $row;
 }
 
@@ -238,6 +241,7 @@ function doc_delete(array $row): void
     db()->prepare('DELETE FROM shares WHERE doc = ?')->execute([$row['id']]);   // השיתופים שלו (שלב 5)
     db()->prepare('DELETE FROM links WHERE doc = ?')->execute([$row['id']]);    // וקישור העריכה לזר
     db()->prepare('DELETE FROM favorites WHERE doc = ?')->execute([$row['id']]);   // ומהמועדפים של כולם
+    db()->prepare('DELETE FROM activity WHERE doc = ?')->execute([$row['id']]);    // ויומן הפעילות
 }
 
 /** העתק במרחב, עם החלפות בטקסט בלבד (לפי הסדר), ועם עותק של כל תמונה. */
@@ -374,6 +378,7 @@ function doc_restore_version(array $row, $versionId, string $userId, string $use
         $row = doc_find($row['id'], $row['space']);
         version_record($row, $userId, $userName, 'restore');
         $pdo->commit();
+        activity($row['id'], $userId, $userName, 'restore', 'גרסה ' . (int)$v['version']);
     } catch (Throwable $e) {
         $pdo->rollBack();
         throw $e;
