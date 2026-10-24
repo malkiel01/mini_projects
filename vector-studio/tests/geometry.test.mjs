@@ -142,3 +142,27 @@ test('נקודות: הקרובה ביותר על עקומה', () => {
   const r = nearest(toNodes(parse('M0 0 L10 0 L10 10')), [12, 5]);
   assert.equal(r.seg, 1); close(r.point[0], 10, 1e-3); close(r.point[1], 5, 1e-3); close(r.dist, 2, 1e-3);
 });
+
+// ---- פעולות צורה ----
+import { region, combine, toD } from '../assets/js/geometry/boolean.js';
+
+test('פעולות צורה: איחוד, חיסור, חיתוך, xor; חור נשמר', () => {
+  const sq = (x, y, s) => `M${x} ${y} L${x + s} ${y} L${x + s} ${y + s} L${x} ${y + s} Z`;
+  const a = region(sq(0, 0, 10)), b = region(sq(5, 5, 10));
+  const area = (multi) => multi.reduce((n, poly) => n + poly.reduce((m, ring, i) => {
+    let s = 0; for (let k = 0; k < ring.length - 1; k++) s += ring[k][0] * ring[k + 1][1] - ring[k + 1][0] * ring[k][1];
+    return m + (i === 0 ? 1 : -1) * Math.abs(s / 2);
+  }, 0), 0);
+  close(area(combine('union', [a, b])), 175);
+  close(area(combine('subtract', [a, b])), 75);
+  close(area(combine('intersect', [a, b])), 25);
+  close(area(combine('xor', [a, b])), 150);
+  // ריבוע עם חור (שני תת-נתיבים) — השטח בלי החור
+  close(area(region(sq(0, 0, 10) + ' ' + sq(3, 3, 4))), 84);
+  // עיגול משוטח קרוב לשטח האמיתי
+  const circle = region(shapeToD({ type: 'ellipse', box: [0, 0, 20, 20] }));
+  assert.ok(Math.abs(area(circle) - Math.PI * 100) < 1.5, 'עיגול: ' + area(circle));
+  const d = toD(combine('subtract', [a, b]));
+  assert.match(d, /^M[\d.\s L]+ Z$/);
+  closeBox(bbox(parse(d)), [0, 0, 10, 10]);
+});

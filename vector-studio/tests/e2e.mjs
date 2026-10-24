@@ -356,6 +356,42 @@ try {
   await page.keyboard.press('Delete');
   step('העתקה והדבקה (Ctrl+C / Ctrl+V)');
 
+  // פעולות צורה: שני ריבועים חופפים → איחוד, ביטול → חיסור; טקסט → קווי מתאר
+  await page.evaluate(() => {
+    const { S, select } = window.__vs;
+    const L = S.doc.surfaces[0].layers[0];
+    L.paths.push({ id: 'b1', d: 'M600 600 L700 600 L700 700 L600 700 Z', fill: { color: '#2d4a8a' }, stroke: null },
+                 { id: 'b2', d: 'M650 650 L750 650 L750 750 L650 750 Z', fill: { color: '#e19a00' }, stroke: null });
+    select(['b1', 'b2']);
+  });
+  const nBool = (await st()).paths.length;
+  await page.click('[data-arr="bool"][data-arg="union"]');
+  await page.waitForFunction((n) => window.__vs.S.doc.surfaces[0].layers[0].paths.length === n - 1, nBool);
+  s = await st();
+  const un = s.paths.find(p => s.sel.includes(p.id));
+  assert.equal(un.fill.color, '#e19a00', 'איחוד — הסגנון של העליון');
+  assert.equal((un.d.match(/L/g) || []).length, 7, 'מצולע של 8 קודקודים: ' + un.d);
+  await page.keyboard.press('Control+z');
+  await page.evaluate(() => window.__vs.select(['b1', 'b2']));
+  await page.click('[data-arr="bool"][data-arg="subtract"]');
+  await page.waitForFunction((n) => window.__vs.S.doc.surfaces[0].layers[0].paths.length === n - 1, nBool);
+  s = await st();
+  const sub = s.paths.find(p => s.sel.includes(p.id));
+  assert.equal(sub.fill.color, '#2d4a8a', 'חיסור — הסגנון של התחתון');
+  await page.keyboard.press('Control+z');
+  await page.evaluate(() => window.__vs.select(['b1', 'b2']));
+  await page.keyboard.press('Delete');
+  const tid = (await st()).paths.find(p => p.type === 'text').id;
+  await page.evaluate((id) => window.__vs.select([id]), tid);
+  await page.click('[data-arr="outline"]');
+  await page.waitForFunction((id) => window.__vs.S.doc.surfaces[0].layers[0].paths.find(p => p.id === id)?.type !== 'text', tid);
+  s = await st();
+  const ol = s.paths.find(p => p.id === tid);
+  assert.ok(ol.d.length > 200 && ol.name.startsWith('שלום'), 'טקסט הפך לנתיב');
+  await page.keyboard.press('Control+z');
+  assert.equal((await st()).paths.find(p => p.id === tid).type, 'text');
+  step('פעולות צורה (איחוד, חיסור) וטקסט לקווי מתאר, עם ביטול');
+
   // ייצוא: SVG, PDF ו-PNG יורדים, עם טקסט כקווי מתאר
   const grab = async (kind) => {
     await page.click('#file-btn');

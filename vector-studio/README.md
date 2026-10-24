@@ -69,6 +69,7 @@ assets/js/geometry/      גאומטריה ונתיבים — המודול המש
   path.js                d של SVG → M L C Q Z מוחלטים (כולל S T H V A), כתיבה, טרנספורמציה, תיבה חוסמת
   matrix.js · shapes.js  מטריצות [a b c d e f] · צורות חיות (מלבן, אליפסה, מצולע, כוכב, קו) → d
   nodes.js               נקודות עיגון וידיות ⇄ d, פיצול מקטע, חלקה ↔ פינה, הנקודה הקרובה
+  boolean.js             פעולות צורה: שיטוח עקומות + polygon-clipping (vendor, MIT)
 assets/js/model.js       המסמך בצורת document.json; הזזה ושינוי גודל נאפים ל-d ולפרמטרי הצורה
 assets/js/render.js      ציור הקנבס ובדיקת פגיעה (isPointInPath / isPointInStroke)
 assets/js/editor.js      קלט, היסטוריה, שמירה אוטומטית · props.js — לוח המאפיינים · library.js — ה-API · drafts.js — טיוטות ישנות וגיבוי
@@ -80,7 +81,7 @@ assets/js/text.js        טקסט: שורות, גלישה, מדידה (מוזר�
 assets/js/outline.js     טקסט → קווי מתאר (opentype.js), וסדר חזותי לעברית (bidi מקוצר)
 assets/js/export.js      SVG ו-PDF וקטוריים (PDF — כותב משלנו, עמוד לכל לוח) עם דוח פערים
 assets/js/import.js      ייבוא SVG: צורות חיות, סגנון ותורשה, טרנספורמציות, viewBox; דוח על מה שלא עבר
-assets/js/vendor/        opentype.js 2.0.0 (MIT) — נטען רק בייצוא
+assets/js/vendor/        opentype.js 2.0.0 (MIT) — נטען רק בייצוא · polygon-clipping 0.15.7 (MIT, עם תלויותיו) — רק בפעולות צורה
 assets/js/mbefile.js     ‎.mbe: בנייה (גופנים ל-media, preview / svg / pdf עם gaps) וקריאה, דרך הליבה
 assets/js/mbe/ · lib/mbe/  ליבת ‎.mbe — עותק מסונכרן מ-creative-suite/mbe-core/src. **לא עורכים כאן**
 assets/fonts/            7 גופנים עבריים חופשיים (OFL, הרישיונות לידם): Heebo, Rubik, Assistant, פרנק רוהל, דוד, Secular One, Amatic
@@ -108,6 +109,10 @@ tests/e2e.mjs            node vector-studio/tests/e2e.mjs <כתובת> — דפ�
 — צורה חיה וטקסט נשארים עריכים. **לוחות:** בלי בחירה, בלוח המאפיינים — "+ לוח", מעבר בין לוחות, מחיקה; אובייקט שנגרר
 ללוח אחר עובר אליו. **העתקה והדבקה:** Ctrl+C / Ctrl+X / Ctrl+V, גם בין ציורים (📋 בלוח, לטלפון); SVG שהועתק מתוכנה
 אחרת — מודבק כצורות.
+
+**פעולות צורה** (שניים ומעלה נבחרים): איחוד, חיסור (התחתון פחות העליונים), חיתוך, הפרדה. טקסט הופך קודם לקווי
+מתאר. התוצאה — נתיב של קווים ישרים (העקומות משוטחות בסטייה של ~0.1pt). **לקווי מתאר** — בלוח של טקסט: הופך לנתיב
+שאפשר לערוך בעט.
 
 **טקסט:** T — הקשה פותחת טקסט נקודה (הקצה הימני בנקודה), גרירה — טקסט בתיבה שגולש. הקלדה במקום; Esc / Ctrl+Enter
 — סיום; הקשה כפולה — עריכה. גופן, גודל, מודגש, יישור ומרווח — בלוח. טקסט ריק לא נשאר. פריט `text` בתוך `paths`
