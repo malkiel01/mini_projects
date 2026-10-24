@@ -166,3 +166,28 @@ test('פעולות צורה: איחוד, חיסור, חיתוך, xor; חור נ�
   assert.match(d, /^M[\d.\s L]+ Z$/);
   closeBox(bbox(parse(d)), [0, 0, 10, 10]);
 });
+
+test('פעולות צורה: העקומות חוזרות — עיגול פחות ריבוע נשאר עם קשתות', () => {
+  const reg = new Map();
+  const circle = region(shapeToD({ type: 'ellipse', box: [0, 0, 100, 100] }), null, reg);
+  const sqr = region('M50 -10 L120 -10 L120 110 L50 110 Z', null, reg);
+  const d = toD(combine('subtract', [circle, sqr]), reg);
+  const segs = parse(d);
+  const curves = segs.filter(s => s.c === 'C').length, lines = segs.filter(s => s.c === 'L').length;
+  assert.ok(curves >= 2 && curves <= 4, `חצי עיגול בכמה עקומות בודדות: ${curves} (${d})`);
+  assert.ok(lines <= 1, 'קו החיתוך — קו אחד');
+  closeBox(bbox(segs), [0, 0, 50, 100], 0.05);
+  // כל נקודה על העקומה באמת על העיגול
+  for (const s of segs.filter(x => x.c === 'C')) {
+    const [x, y] = [s.p[4], s.p[5]];
+    close(Math.hypot(x - 50, y - 50), 50, 0.05);
+  }
+  // איחוד של שני עיגולים — רק עקומות
+  const reg2 = new Map();
+  const u = toD(combine('union', [region(shapeToD({ type: 'ellipse', box: [0, 0, 60, 60] }), null, reg2), region(shapeToD({ type: 'ellipse', box: [40, 0, 60, 60] }), null, reg2)]), reg2);
+  assert.ok(parse(u).filter(s => s.c === 'L').length === 0 && parse(u).filter(s => s.c === 'C').length <= 10, u);
+  // מלבן מעוגל פחות מלבן: קווים ישרים נשארים ישרים
+  const reg3 = new Map();
+  const rr = toD(combine('intersect', [region(shapeToD({ type: 'rect', box: [0, 0, 100, 50], radius: 10 }), null, reg3), region('M-5 -5 L60 -5 L60 60 L-5 60 Z', null, reg3)]), reg3);
+  assert.ok(parse(rr).length < 12, rr);
+});

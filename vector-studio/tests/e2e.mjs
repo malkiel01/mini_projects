@@ -300,7 +300,17 @@ try {
   await page.mouse.move(...a); await page.mouse.down(); await page.mouse.move(...b, { steps: 3 }); await page.mouse.up();
   s = await st();
   assert.equal(s.paths[0].fill.gradient.from[0], g0.from[0] + 50, 'המעבר זז עם הצורה');
-  step('מעבר צבע: צבעים וזווית מהלוח, וזז עם הצורה');
+  // מעבר עגול: מהמרכז של הצורה, אותם צבעים; וחזרה לישר
+  await page.click('fieldset[data-k="fillmode"] label:nth-child(3)');
+  s = await st();
+  const rg = s.paths[0].fill.gradient, rb2 = s.paths[0].shape.box;
+  assert.equal(rg.type, 'radial');
+  assert.deepEqual(rg.center, [rb2[0] + rb2[2] / 2, rb2[1] + rb2[3] / 2]);
+  assert.equal(rg.stops[1].color, '#1e7b3a');
+  assert.equal(await page.locator('[data-ga]').count(), 0, 'לעגול אין זווית');
+  await page.click('fieldset[data-k="fillmode"] label:nth-child(2)');
+  assert.equal((await st()).paths[0].fill.gradient.type, 'linear');
+  step('מעבר צבע: ישר ועגול, צבעים וזווית מהלוח, וזז עם הצורה');
 
   // סיבוב: ידית הסיבוב (Shift — 15°), כפתור 90°, היפוך; הצורה נשארת חיה
   await page.evaluate(() => { const p = window.__vs.S.doc.surfaces[0].layers[0].paths; window.__vs.select([p[1].id]); }); // האליפסה
@@ -379,6 +389,22 @@ try {
   const sub = s.paths.find(p => s.sel.includes(p.id));
   assert.equal(sub.fill.color, '#2d4a8a', 'חיסור — הסגנון של התחתון');
   await page.keyboard.press('Control+z');
+  // שני עיגולים: האיחוד נשאר עקומות (לא מצולע)
+  await page.evaluate(async () => {
+    const { S, select } = window.__vs;
+    const { shapeToD } = await import('./assets/js/geometry/shapes.js');
+    const c = (id, x) => { const shape = { type: 'ellipse', box: [x, 600, 100, 100] }; return { id, d: shapeToD(shape), shape, fill: { color: '#2d4a8a' }, stroke: null }; };
+    S.doc.surfaces[0].layers[0].paths.push(c('c1', 600), c('c2', 650));
+    select(['c1', 'c2']);
+  });
+  await page.click('[data-arr="bool"][data-arg="union"]');
+  await page.waitForFunction(() => !window.__vs.S.doc.surfaces[0].layers[0].paths.some(p => p.id === 'c1'));
+  s = await st();
+  const cu = s.paths.find(p => s.sel.includes(p.id));
+  assert.equal((cu.d.match(/L/g) || []).length, 0, 'בלי קווים: ' + cu.d);
+  assert.ok((cu.d.match(/C/g) || []).length <= 10, 'מעט עקומות: ' + cu.d);
+  await page.keyboard.press('Control+z');
+  await page.evaluate(() => { const L = window.__vs.S.doc.surfaces[0].layers[0]; L.paths = L.paths.filter(p => !['c1', 'c2'].includes(p.id)); });
   await page.evaluate(() => window.__vs.select(['b1', 'b2']));
   await page.keyboard.press('Delete');
   const tid = (await st()).paths.find(p => p.type === 'text').id;
@@ -390,7 +416,7 @@ try {
   assert.ok(ol.d.length > 200 && ol.name.startsWith('שלום'), 'טקסט הפך לנתיב');
   await page.keyboard.press('Control+z');
   assert.equal((await st()).paths.find(p => p.id === tid).type, 'text');
-  step('פעולות צורה (איחוד, חיסור) וטקסט לקווי מתאר, עם ביטול');
+  step('פעולות צורה (איחוד, חיסור, עיגולים נשארים עקומות) וטקסט לקווי מתאר, עם ביטול');
 
   // ייצוא: SVG, PDF ו-PNG יורדים, עם טקסט כקווי מתאר
   const grab = async (kind) => {
@@ -444,7 +470,9 @@ try {
   assert.deepEqual(s.sel, [imp.id]);
   const flat = (it) => it.type === 'group' ? it.children.flatMap(flat) : [it];
   const parts = flat(imp);
-  assert.equal(parts.length, 6); // מלבן, עיגול, נתיב, קו, מלבן עם מעבר ליניארי, מלבן עם מעבר שלא קיים (שחור)
+  assert.equal(parts.length, 7); // מלבן, עיגול, נתיב, קו, מלבן עם מעבר ליניארי, עיגול עם מעבר עגול, מלבן עם מעבר שלא קיים (שחור)
+  const rgi = parts.find(p => p.fill?.gradient?.type === 'radial');
+  assert.deepEqual([rgi.fill.gradient.center, rgi.fill.gradient.radius], [[170, 20], 10]); // objectBoundingBox, חצי בגלל viewBox
   const lg = parts.find(p => p.fill?.gradient);
   assert.deepEqual(lg.fill.gradient.from, [100, 60]); // objectBoundingBox של המלבן (200,120 → חצי בגלל viewBox)
   assert.deepEqual(lg.fill.gradient.to, [140, 60]);
@@ -540,7 +568,14 @@ try {
   assert.match(await page.textContent('#layers-body'), /מסגרת/);
   await page.click('[data-tab="props"]');
   fs.unlinkSync(foreignFile);
-  step('‎.mbe של אפליקציה אחרת: רסטר ומסגרת טקסט מוצגים, ומופיעים בשכבות לקריאה בלבד');
+  const fsvg = (await grab('svg')).buf.toString('utf8');
+  assert.match(fsvg, /<g id="R1"[^>]*>\s*<image x="0" y="0" width="100" height="100" preserveAspectRatio="none" href="data:image\/png;base64,/);
+  assert.match(fsvg, /<g id="F1"[^>]*>\s*<path id="F1" d="M/);
+  const fpdf = (await grab('pdf')).buf.toString('latin1');
+  assert.match(fpdf, /\/Subtype \/Image \/Width 2 \/Height 2 /);
+  assert.match(fpdf, /\/Im1 Do/);
+  if (shots) fs.writeFileSync(`${shots}/foreign.pdf`, Buffer.from(fpdf, 'latin1'));
+  step('‎.mbe של אפליקציה אחרת: רסטר ומסגרת טקסט מוצגים, בשכבות לקריאה בלבד, ונכללים בייצוא SVG ו-PDF');
 
   // טיוטה ישנה מהמכשיר: מופיעה ברשימה, ובפתיחה עוברת לספרייה
   await page.goto(base);
@@ -613,6 +648,14 @@ try {
     await p.tap('#props-btn');
     await p.waitForSelector('.props-open #props-body .props-head');
     if (shots) await p.screenshot({ path: `${shots}/editor-${width}.png` });
+    // סוג המילוי — שלוש אפשרויות שנכנסות ברוחב, בלי לגלוש
+    await p.locator('fieldset[data-k="fillmode"]').scrollIntoViewIfNeeded();
+    await p.tap('fieldset[data-k="fillmode"] label:nth-child(3)');
+    await p.waitForFunction(() => window.__vs.S.doc.surfaces[0].layers[0].paths[0].fill?.gradient?.type === 'radial');
+    const over = await p.evaluate(() => [...document.querySelectorAll('#props-body fieldset.seg, #props-body .g-row')].filter(e => e.scrollWidth > e.clientWidth + 1).map(e => e.outerHTML.slice(0, 80)));
+    assert.deepEqual(over, [], 'גולש ברוחב');
+    assert.ok(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'גלילה אופקית');
+    if (shots) { await p.locator('fieldset[data-k="fillmode"]').scrollIntoViewIfNeeded(); await p.screenshot({ path: `${shots}/fill-${width}.png` }); }
     step(`טלפון ${width}px: כוכב בהקשה, עט ב-3 הקשות ו"סיום", טקסט, לוח מאפיינים, בלי גלילה אופקית`);
     await ctx.close();
   }
