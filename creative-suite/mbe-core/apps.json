@@ -1,1 +1,6 @@
-{}
+{
+  "vector-studio": {
+    "js": "assets/js/mbe",
+    "php": "lib/mbe"
+  }
+}

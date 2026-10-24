@@ -121,6 +121,41 @@ my-book.mbe                 ZIP (Deflate; בלי ZIP64 בגרסה 1 — סעיף
 **משמעות לאפליקציות:** תמונה בתוך שטף טקסט (ProseMirror) צריכה `src: "media/…"` בתוך `.mbe` — אפליקציה שמחזיקה
 תמונות בכתובת שרת ממירה אותן בייצוא ובחזרה בייבוא.
 
+### תוכן שכבה `vector` (הכרעה 2026-10-24, מבקשת וקטורי)
+
+`paths` בשכבה `vector` — רשימת פריטים, **בסדר ההצגה** (הראשון מאחור). שלושה סוגים:
+
+**נתיב** (בלי `type`, או `type: "path"`):
+
+```json
+{ "id": "p1", "d": "M10 10 L90 10 C95 10 100 15 100 20 Z", "transform": [1, 0, 0, 1, 0, 0],
+  "fill": { "color": "#1f3a5f", "opacity": 1 },
+  "stroke": { "color": "#000000", "opacity": 1, "width": 1, "cap": "butt", "join": "miter", "miter": 4, "dash": [] },
+  "fillRule": "nonzero", "shape": { "type": "rect", "box": [10, 10, 90, 40], "radius": 6 }, "name": "כפתור" }
+```
+
+| שדה | חובה | מה |
+| --- | --- | --- |
+| `id` | כן | ייחודי בכל המסמך — יחד עם משטחים ושכבות |
+| `d` | כן | תחביר נתיב של SVG, **רק פקודות מוחלטות `M L C Q Z`**, ב-`pt` של המשטח. כל קורא מצייר אותו בלי ספרייה |
+| `transform` | לא | `[a b c d e f]` כמו ב-SVG; ברירת מחדל — זהות |
+| `fill` / `stroke` | לא | `null` = בלי. ‏`color` — `#rrggbb` ‏(sRGB), ‏`opacity` בנפרד. ב-`fill` אפשר `gradient` במקום `color`: `{ type: "linear", from, to, stops: [{ at, color, opacity }] }`. ‏`stroke`: ‏`width`, ‏`cap` (butt/round/square), ‏`join` (miter/round/bevel), ‏`miter`, ‏`dash` (ב-`pt`) |
+| `fillRule` | לא | `nonzero` / `evenodd` |
+| `shape` | לא | פרמטרים של צורה חיה (`rect`, `ellipse`, `polygon`, `star`, `line`). **`d` הוא תמיד האמת**; מי שלא מכיר `shape` מצייר את `d` ושומר את `shape` כמו שהוא |
+| `name` | לא | שם בלוח השכבות |
+
+**קבוצה:** `{ "id", "type": "group", "name", "children": [ …פריטים… ] }` — בלי `d` ובלי `transform` משלה; סדר הילדים =
+סדר ההצגה. קבוצה בתוך `paths` ולא שכבה `group`, כדי שקבוצה באמצע שכבה לא תשנה את סדר ההצגה.
+
+**טקסט קצר** (לוגו, כותרת — לא שטף): `{ "id", "type": "text", "text": "שלום\nעולם", "box": [x, y, w, h],
+"font": { "family", "size", "weight" }, "align", "lineHeight", "auto", "fill", "stroke" }`. ‏`auto: true` — רוחב לפי התוכן;
+`false` — גלישה ברוחב התיבה. כיוון — לפי התוכן (bidi). הגופן — ב-`fonts` של המעטפת עם `embedded: "media/…"`. בייצוא —
+**קווי מתאר**, עם `gaps: ["text → outlines"]`. טקסט ארוך שזורם בין מסגרות — שכבה `frame` עם `flows`, כמו קודם; שני
+המבנים חיים זה לצד זה.
+
+**מי שלא מבין:** פריט עם `type` לא מוכר — מדלגים עליו בציור ושומרים אותו כמו שהוא (סעיף 4).
+**בסכמה:** עד גרסה 1.1 של הליבה `paths` נבדק כרשימה בלבד; הבדיקה המלאה (`id`, ‏`d` בתבנית) — בקשה לליבה.
+
 ## 4. גרסאות של הפורמט
 
 - `version` = `major.minor`.
