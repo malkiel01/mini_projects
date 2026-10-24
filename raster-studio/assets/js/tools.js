@@ -7,6 +7,7 @@ import * as XF from './engine/transform.js';
 
 export const TOOLS = {
   hand: { label: 'יד', icon: '✋', key: 'h', hint: 'גרירה — הזזה' },
+  crop: { label: 'חיתוך', icon: '✂️', key: 'c', hint: 'גרירה — אזור (גם מעבר לקנבס, להגדלה) · ידיות — כיוונון · Enter — חיתוך · Esc — ביטול' },
   move: { label: 'הזזה ושינוי צורה', icon: '✥', key: 'v', hint: 'גרירה — הזזה · ידיות — גודל (Shift — חופשי) · ליד פינה — סיבוב · Enter — החלה · Esc — ביטול' },
   rect: { label: 'בחירה מלבנית', icon: '⬚', key: 'm', hint: 'Shift — הוספה · Alt — חיסור · Ctrl+D — ביטול הבחירה' },
   ellipse: { label: 'בחירה אליפטית', icon: '◯', key: null, hint: 'Shift — הוספה · Alt — חיסור · M — מעבר בין מלבן לאליפסה' },
@@ -40,6 +41,8 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
   let lasso = null;    // גרירת בחירה: { type, mode, start, pts, shape }
   let xf = null;       // גרירה בכלי ההזזה: { kind, handle, t0, start }
   let floatSel = null; // הבחירה כשהתוכן הצף התחיל — זזה איתו
+  let cropRect = null; // { x0, y0, x1, y1 } — אזור החיתוך המוצע
+  let cropDrag = null; // { kind: 'new' | 'move' | 'handle', handle, r0, start }
 
   const strip = $('#tools');
   const opts = $('#tool-opts');
@@ -81,6 +84,8 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     if (b) selAction(b.dataset.sel);
     const x = e.target.closest('[data-xf]');
     if (x) { if (x.dataset.xf === 'apply') commitFloat(); else cancelFloat(); }
+    const c = e.target.closest('[data-crop]');
+    if (c) { if (c.dataset.crop === 'apply') applyCrop(); else cancelCrop(); }
   });
   function syncColor() {
     colorIn.value = state.color;
@@ -91,6 +96,7 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     if (!TOOLS[id]) return;
     cancel();
     if (id !== 'move') commitFloat();
+    if (id !== 'crop') cancelCrop();
     state.tool = id;
     for (const b of strip.querySelectorAll('.tool')) b.setAttribute('aria-pressed', String(b.dataset.tool === id));
     for (const f of opts.querySelectorAll('[data-for]')) f.hidden = !f.dataset.for.split(' ').includes(id);
@@ -244,6 +250,75 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     draw();
   }
 
+  // ---- חיתוך ----
+  const CROP_HANDLES = [[-1, -1], [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0]];
+  const norm = r => ({ x0: Math.min(r.x0, r.x1), y0: Math.min(r.y0, r.y1), x1: Math.max(r.x0, r.x1), y1: Math.max(r.y0, r.y1) });
+  const cropHandlePos = (r, [hx, hy]) => [hx < 0 ? r.x0 : hx > 0 ? r.x1 : (r.x0 + r.x1) / 2, hy < 0 ? r.y0 : hy > 0 ? r.y1 : (r.y0 + r.y1) / 2];
+
+  function showCrop() {
+    const r = cropRect;
+    overlay.crop(r);
+    overlay.box(r ? [[r.x0, r.y0], [r.x1, r.y0], [r.x1, r.y1], [r.x0, r.y1]] : null, r ? CROP_HANDLES.map(h => cropHandlePos(r, h)) : null);
+    const info = $('#crop-info');
+    if (info) info.textContent = r ? `${r.x1 - r.x0} × ${r.y1 - r.y0}` : '';
+    for (const b of opts.querySelectorAll('[data-crop]')) b.disabled = !r;
+  }
+
+  function cropDown(e, pt) {
+    const tol = (e.pointerType === 'touch' ? 22 : 10) / view().zoom;
+    const r = cropRect;
+    if (r) {
+      for (const h of CROP_HANDLES) {
+        const q = cropHandlePos(r, h);
+        if (Math.hypot(q[0] - pt[0], q[1] - pt[1]) <= tol) { cropDrag = { kind: 'handle', handle: h, r0: r, start: pt }; return; }
+      }
+      if (pt[0] > r.x0 && pt[0] < r.x1 && pt[1] > r.y0 && pt[1] < r.y1) { cropDrag = { kind: 'move', r0: r, start: pt }; return; }
+    }
+    cropDrag = { kind: 'new', start: pt };
+  }
+
+  function cropMove(p) {
+    const g = cropDrag, R = Math.round;
+    if (g.kind === 'new') cropRect = norm({ x0: R(g.start[0]), y0: R(g.start[1]), x1: R(p[0]), y1: R(p[1]) });
+    else if (g.kind === 'move') {
+      const dx = R(p[0] - g.start[0]), dy = R(p[1] - g.start[1]);
+      cropRect = { x0: g.r0.x0 + dx, y0: g.r0.y0 + dy, x1: g.r0.x1 + dx, y1: g.r0.y1 + dy };
+    } else {
+      const [hx, hy] = g.handle, r = { ...g.r0 };
+      if (hx < 0) r.x0 = R(p[0]); if (hx > 0) r.x1 = R(p[0]);
+      if (hy < 0) r.y0 = R(p[1]); if (hy > 0) r.y1 = R(p[1]);
+      cropRect = norm(r);
+    }
+    showCrop();
+  }
+
+  function cancelCrop() {
+    cropRect = null;
+    cropDrag = null;
+    if (overlay) showCrop();
+  }
+
+  /** חיתוך הקנבס למלבן — כל השכבות זזות, הגודל משתנה. אזור מעבר לקנבס — הגדלה (שקוף). */
+  function applyCrop() {
+    const r = cropRect, d = doc();
+    if (!r) return;
+    const w = r.x1 - r.x0, h = r.y1 - r.y0;
+    if (w < 1 || h < 1) { toast('האזור ריק'); return; }
+    if (r.x0 === 0 && r.y0 === 0 && w === d.width && h === d.height) { cancelCrop(); return; }
+    const before = { w: d.width, h: d.height, maps: new Map(d.layers.map(l => [l, l.tiles])), sel: d.selection ?? null };
+    const maps = new Map(d.layers.map(l => [l, renderer.shiftTiles(l.tiles, -r.x0, -r.y0)]));
+    const m = [1, 0, 0, 1, -r.x0, -r.y0];
+    const sel = d.selection ? { ...d.selection, shapes: d.selection.shapes.map(s => XF.transformShape(s, m)) } : null;
+    const after = { w, h, maps, sel };
+    d.width = w; d.height = h;
+    for (const [l, t] of maps) { l.tiles = t; l.rev = (l.rev ?? 0) + 1; }
+    d.selection = sel;
+    renderer.resetComposite(d);
+    history.crop(d, before, after, 'חיתוך');
+    cancelCrop();
+    onChange('crop');
+  }
+
   // ---- ציור ----
   const painting = () => state.tool === 'brush' || state.tool === 'eraser';
 
@@ -283,6 +358,7 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
   /** e — אירוע ה-pointerdown; pt — הנקודה במסמך. מחזיר true אם הכלי לקח את המצביע. */
   function down(e, pt) {
     if (state.tool === 'hand') return false;
+    if (state.tool === 'crop') { cropDown(e, pt); return true; }
     if (state.tool === 'move') {
       if (!fl() && !startFloat()) return true;
       const f = fl();
@@ -318,6 +394,7 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
 
   /** points — נקודות במסמך עם לחץ: [{x, y, pressure}] (כולל האירועים המאוחדים) */
   function move(points, e) {
+    if (cropDrag) { const q = points.at(-1); cropMove([q.x, q.y]); return; }
     if (xf) {
       const q = points.at(-1), p = [q.x, q.y];
       let t;
@@ -357,6 +434,7 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
   }
 
   function up() {
+    if (cropDrag) { cropDrag = null; return; }
     if (xf) { xf = null; return; }
     if (lasso) {
       const shape = lassoShape(), mode = lasso.mode;
@@ -399,6 +477,10 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
       if (k === 'enter') { commitFloat(); return true; }
       if (k === 'escape') { cancelFloat(); return true; }
     }
+    if (cropRect) {
+      if (k === 'enter') { applyCrop(); return true; }
+      if (k === 'escape') { cancelCrop(); return true; }
+    }
     if (state.tool === 'move' && k.startsWith('arrow')) {
       const step = e.shiftKey ? 10 : 1;
       nudge(k === 'arrowleft' ? -step : k === 'arrowright' ? step : 0, k === 'arrowup' ? -step : k === 'arrowdown' ? step : 0);
@@ -427,7 +509,7 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
   setTool(state.tool);
   return {
     state, setTool, down, move, up, cancel, key, updateCursor, hideCursor, selAction, commitFloat, cancelFloat,
-    get stroking() { return !!stroke || !!lasso || !!xf; },
+    get stroking() { return !!stroke || !!lasso || !!xf || !!cropDrag; },
     get floating() { return !!fl(); },
   };
 }

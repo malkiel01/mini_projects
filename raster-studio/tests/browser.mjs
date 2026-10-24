@@ -584,6 +584,43 @@ async function main() {
     await page.keyboard.press('Escape');
   }
 
+  // ---- חיתוך ----
+  await page.goto(BASE + '/editor.html?doc=' + id);
+  await page.waitForFunction(() => window.__rs?.doc);
+  await page.evaluate(() => __rs.setView({ zoom: 1, x: 20, y: 20 }));
+  await page.keyboard.press('m');
+  await drag([300, 100], [400, 200]);
+  await color('#ff0000');
+  await page.keyboard.press('Alt+Backspace');
+  await page.keyboard.press('Control+d');
+  await page.keyboard.press('c');
+  check('C — חיתוך', await page.evaluate(() => __rs.tools.state.tool) === 'crop' && await page.isVisible('[data-crop="apply"]'));
+  await drag([250, 50], [450, 250]);
+  check('גרירה — אזור עם גודל', (await page.textContent('#crop-info')) === '200 × 200');
+  await drag([450, 250], [470, 260]);   // ידית פינה
+  check('ידית — כיוונון', (await page.textContent('#crop-info')) === '220 × 210');
+  await page.keyboard.press('Enter');
+  const cropped = await page.evaluate(() => [__rs.doc.width, __rs.doc.height, document.querySelector('#meta').textContent]);
+  check('Enter — הקנבס בגודל החדש, גם בכותרת', cropped[0] === 220 && cropped[1] === 210 && cropped[2].includes('220×210'), cropped.join());
+  check('התוכן זז בדיוק: הריבוע האדום ב-(50..150, 50..150)', near(await px(50, 50), [255, 0, 0, 255]) && near(await px(149, 149), [255, 0, 0, 255]) && near(await px(49, 50), [255, 255, 255, 255]) && near(await px(150, 149), [255, 255, 255, 255]));
+  await page.keyboard.press('Control+z');
+  check('ביטול — הגודל והתוכן חוזרים', await page.evaluate(() => __rs.doc.width) === 600 && near(await px(300, 100), [255, 0, 0, 255]) && near(await px(299, 100), [255, 255, 255, 255]));
+  await page.keyboard.press('Control+Shift+z');
+  check('ביצוע — שוב 220×210', await page.evaluate(() => __rs.doc.width) === 220 && near(await px(50, 50), [255, 0, 0, 255]));
+  // הגדלה: אזור מעבר לקנבס
+  await page.keyboard.press('Control+z');
+  await page.evaluate(() => __rs.setView({ zoom: 0.5, x: 120, y: 120 }));
+  await page.click('.tool[data-tool="crop"]');
+  await page.mouse.move(sb[0] + 120 - 50, sb[1] + 120 - 25); await page.mouse.down();
+  await page.mouse.move(sb[0] + 120 + 350, sb[1] + 120 + 225, { steps: 5 }); await page.mouse.up();
+  await page.keyboard.press('Enter');
+  const big = await page.evaluate(() => [__rs.doc.width, __rs.doc.height, Array.from(__rs.renderer.readPixels(__rs.doc, 5, 5, 1, 1)).join(), Array.from(__rs.renderer.readPixels(__rs.doc, 450, 200, 1, 1)).join()]);   // הריבוע עבר ל-(400..500, 150..250)
+  check('חיתוך מעבר לקנבס — הגדלה, השוליים שקופים, התוכן במקום', big[0] === 800 && big[1] === 500 && big[2] === '0,0,0,0' && near(big[3], [255, 0, 0, 255]), big.join(' | '));
+  await page.keyboard.press('c');
+  await drag([10, 10], [20, 20]);
+  await page.keyboard.press('Escape');
+  check('Esc — ביטול האזור', (await page.textContent('#crop-info')) === '' && await page.evaluate(() => __rs.doc.width) === 800);
+
   check('אין שגיאות בקונסול', errors.length === 0, errors.join(' | '));
 
   // ---- טלפון ----

@@ -35,6 +35,11 @@
           <input id="opt-opacity" type="range" min="1" max="100" step="1"></label>
         <label class="opt" data-for="bucket"><span>סבולת <output for="opt-tolerance"></output></span>
           <input id="opt-tolerance" type="range" min="0" max="255" step="1"></label>
+        <div class="opt-btns xf-opts" data-for="crop">
+          <span class="hint one" id="crop-info" dir="ltr"></span>
+          <button class="btn ghost" type="button" data-crop="cancel" disabled>✕ ביטול</button>
+          <button class="btn primary" type="button" data-crop="apply" disabled>✓ חיתוך</button>
+        </div>
         <div class="opt-btns xf-opts" data-for="move">
           <span class="hint one" id="xf-info" dir="ltr"></span>
           <button class="btn ghost" type="button" data-xf="cancel" disabled>✕ ביטול</button>

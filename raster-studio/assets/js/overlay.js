@@ -7,6 +7,7 @@ export function createOverlay(canvas, { doc, view }) {
   const ctx = canvas.getContext('2d');
   let preview = null;
   let box = null;   // { corners, handles } — שינוי צורה
+  let crop = null;  // { x0, y0, x1, y1 } — מה שמחוץ לו מוחשך
   let phase = 0;
   let timer = 0;
 
@@ -43,6 +44,15 @@ export function createOverlay(canvas, { doc, view }) {
     // בזמן שינוי צורה הבחירה זזה עם התוכן — במקום הנמלים, המסגרת
     if (sel && !box) ants(sel.shapes, dpr, sel.inverted ? { x: 0, y: 0, w: d.width, h: d.height } : null);
     if (preview) ants([preview], dpr);
+    if (crop) {
+      const v = view();
+      const X = x => (v.x + x * v.zoom) * dpr, Y = y => (v.y + y * v.zoom) * dpr;
+      ctx.beginPath();
+      ctx.rect(0, 0, canvas.width, canvas.height);
+      ctx.rect(X(crop.x0), Y(crop.y0), X(crop.x1) - X(crop.x0), Y(crop.y1) - Y(crop.y0));
+      ctx.fillStyle = 'rgba(10, 15, 30, .5)';
+      ctx.fill('evenodd');
+    }
     if (box) {
       const v = view();
       const map = ([x, y]) => [(v.x + x * v.zoom) * dpr, (v.y + y * v.zoom) * dpr];
@@ -72,5 +82,7 @@ export function createOverlay(canvas, { doc, view }) {
     preview(shape) { preview = shape; draw(); },
     /** מסגרת שינוי הצורה עם הידיות (או null) */
     box(corners, handles) { box = corners ? { corners, handles } : null; draw(); },
+    /** אזור חיתוך — מחוץ לו מוחשך (או null) */
+    crop(r) { crop = r; draw(); },
   };
 }

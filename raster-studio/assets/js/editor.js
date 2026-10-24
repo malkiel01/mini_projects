@@ -46,6 +46,7 @@ function draw() {
     raf = 0;
     renderer?.render(doc, view, devicePixelRatio || 1);
     overlay.draw();
+    updateMeta();
     const lbl = $('#zoom-lbl');
     lbl.textContent = V.zoomLabel(view.zoom);
     lbl.setAttribute('aria-label', 'זום ' + lbl.textContent + ' — לחיצה: גודל אמיתי (100%)');
@@ -78,7 +79,7 @@ function setDoc(d) {
   fitted = false;
   document.title = d.title + ' — עיצוב רסטר';
   $('#title').textContent = d.title;
-  $('#meta').replaceChildren(dims([d.width, d.height]), ' · ' + renderer.name);
+  updateMeta();
   $('#open-btn').disabled = false;
   $('#layers-btn').disabled = false;
   panel.render();
@@ -87,6 +88,16 @@ function setDoc(d) {
   if (d.width * d.height > budget.maxPixels()) {
     toast(`המסמך גדול לזיכרון של המכשיר (${megapixels(d.width, d.height)} מגה-פיקסל) — ייתכן שיהיה איטי`);
   }
+}
+
+function updateMeta() {
+  if (!doc) return;
+  const key = doc.width + 'x' + doc.height;
+  if (updateMeta.last === key) return;
+  const resized = updateMeta.last != null;
+  updateMeta.last = key;
+  $('#meta').replaceChildren(dims([doc.width, doc.height]), ' · ' + renderer.name);
+  if (resized) fit();   // הגודל השתנה (חיתוך / ביטול שלו) — המסמך כולו בתמונה
 }
 
 /** מפענח קובץ; אם הוא גדול מתקציב הזיכרון — מציע להקטין (הכרעה: "אפשר להקטין או להמשיך"). */
