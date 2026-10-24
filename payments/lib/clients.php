@@ -378,6 +378,8 @@ function provider_account_public(array $pa): array
         'id' => $pa['id'], 'merchant' => $pa['merchant'], 'provider' => $pa['provider'], 'env' => $pa['env'], 'status' => $pa['status'],
         'settings' => json_obj($pa['settings']), 'checked_at' => $pa['checked_at'] ? (int)$pa['checked_at'] : null, 'check_error' => $pa['check_error'],
         'client_id' => $tail('client_id'), 'has_secret' => !empty($cred['client_secret']), 'has_webhook_secret' => !empty($cred['webhook_secret']),
+        // לכל שדה: גלוי — הסוף שלו; סודי — רק שהוא שמור
+        'fields' => array_map(fn($k) => PROVIDER_FIELDS[$pa['provider']][$k][1] ? !empty($cred[$k]) : $tail($k), array_combine(array_keys(PROVIDER_FIELDS[$pa['provider']] ?? []), array_keys(PROVIDER_FIELDS[$pa['provider']] ?? []))),
         'webhook_url' => base_url() . 'hooks/' . $pa['provider'] . '.php?pa=' . $pa['id'],
     ];
 }
@@ -399,14 +401,18 @@ function provider_account_save(array $tenant, array $in): array
     if ($env === 'live' && $tenant['role'] !== 'owner') throw new ApiError('חיבור לכסף אמיתי — רק הבעלים', 'forbidden', 403);
     $existing = db_one('SELECT * FROM provider_account WHERE merchant = ? AND provider = ? AND env = ?', [$m['id'], $provider, $env]);
     $cred = $existing ? (json_decode(unseal($existing['credentials_enc']), true) ?: []) : [];
-    foreach (['client_id', 'client_secret', 'webhook_secret'] as $k) {
+    foreach (PROVIDER_FIELDS[$provider] as $k => [$label, , $required]) {
         $v = trim((string)($in[$k] ?? ''));
         if ($v !== '') $cred[$k] = mb_substr($v, 0, 200);
+        if ($required && empty($cred[$k])) throw new ApiError("חסר: $label", 'missing_credentials');
     }
-    if (empty($cred['client_id']) || empty($cred['client_secret'])) throw new ApiError('חסרים מזהה וסוד של הממשק', 'missing_credentials');
+    if ($provider === 'cardcom' && !ctype_digit((string)$cred['terminal'])) throw new ApiError('מספר המסוף — ספרות בלבד', 'bad_terminal');
     $methods = array_values(array_intersect((array)($in['methods'] ?? ['card', 'bit']), ['card', 'bit', 'apple', 'google']));
     if (!in_array('card', $methods, true)) array_unshift($methods, 'card');
-    $settings = ['methods' => $methods, 'plugin_id' => trim((string)($in['plugin_id'] ?? ''))];
+    $settings = ['methods' => $methods];
+    if ($provider === 'morning') $settings['plugin_id'] = trim((string)($in['plugin_id'] ?? ''));
+    // קארדקום: המסמך החשבונאי — מהמסוף (מודול מסמכים), או דרך מורנינג
+    if ($provider === 'cardcom') $settings['documents'] = ($in['documents'] ?? 'cardcom') === 'morning' ? 'morning' : 'cardcom';
     if ($existing) {
         db_run('UPDATE provider_account SET credentials_enc = ?, settings = ?, status = ? WHERE id = ?', [seal(json_encode($cred)), json_encode($settings), (string)($in['status'] ?? $existing['status']) === 'disabled' ? 'disabled' : 'active', $existing['id']]);
         $id = $existing['id'];
