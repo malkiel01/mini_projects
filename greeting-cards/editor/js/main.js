@@ -1,6 +1,7 @@
 // העורך החדש: מסך הבית (העיצובים שלי) ומסך העריכה. ‏spec/03-editor.md.
 
 import { log, logDump } from './log.js';
+import { buildMbe, importMbe, isMbe } from './mbe-io.js';
 import { h, $, toast, sheet, closeSheet, isSheetOpen, confirmDialog, field, rangeField, seg, colorField, toggle, pickFiles, download, timeAgo } from './ui.js';
 import { SIZES, newDoc, textLayer, shapeLayer, imageLayer, backgroundLayer, iconLayer, elementLayer, layerLabel, uid, clone, normalizeDoc } from './doc.js';
 import { ICONS, ICON_GROUPS } from './icons.js';
@@ -205,7 +206,16 @@ function importSheet() {
 
 async function runImport(files, pasted) {
     try {
-        const { doc, loaded, fixes } = await importFromChat(files, pasted);
+        // ‎.mbe של חבילת היצירה — נפתח דרך הליבה; הקובץ המקורי נשמר, כדי ששמירה חוזרת לא תאבד את מה שאינו שלנו
+        const mbe = [];
+        for (const f of files) if (await isMbe(f)) mbe.push(f);
+        let doc, loaded, fixes;
+        if (mbe.length) {
+            const r = await importMbe(mbe[0]);
+            ({ doc, loaded, fixes } = r);
+            doc.mbeBase = await assets.put(new Blob([r.bytes], { type: 'application/vnd.mbe+zip' }));
+            if (mbe.length < files.length) fixes.push('נפתח קובץ ‎.mbe — שאר הקבצים לא יובאו');
+        } else ({ doc, loaded, fixes } = await importFromChat(files, pasted));
         const id = uid('d');
         await designs.put({ id, title: doc.title, doc, updatedAt: Date.now(), owner: sync.currentUser()?.id, synced: false });
         closeSheet();
@@ -1048,7 +1058,8 @@ function exportSheet() {
     const { width: W, height: H } = ed.doc.page;
     const info = h('p', { class: 'hint' });
     const upd = () => {
-        info.textContent = fmt === 'gcard' ? 'קובץ עיצוב — לפתיחה מחדש בעורך או להעברה למכשיר אחר'
+        info.textContent = fmt === 'mbe' ? 'קובץ חבילת היצירה — כל שכבה נשמרת, ונפתח גם בעיצוב הרסטר ובווקטורי'
+            : fmt === 'gcard' ? 'קובץ עיצוב — לפתיחה מחדש בעורך או להעברה למכשיר אחר'
             : fmt === 'pdf' ? `PDF בגודל הדף, ${W >= 1700 ? 300 : 150}dpi`
                 : `\u2066${Math.round(W * scale)}×${Math.round(H * scale)}\u2069 פיקסלים`;
     };
@@ -1059,6 +1070,17 @@ function exportSheet() {
             toast('מכין…');
             let blob, file;
             if (fmt === 'gcard') { await saveNow(); blob = await exportGcard(ed.doc); file = name + '.gcard'; }
+            else if (fmt === 'mbe') {
+                await saveNow();
+                const base = ed.doc.mbeBase ? await assets.get(ed.doc.mbeBase) : null;
+                const r = await buildMbe(ed.doc, ed.canvas.images, { baseBytes: base ? new Uint8Array(await base.arrayBuffer()) : null });
+                blob = new Blob([r.bytes], { type: 'application/vnd.mbe+zip' });
+                file = name + '.mbe';
+                // הקובץ שנכתב הוא הבסיס של השמירה הבאה (המזהה, היומן ומה ששייך לאפליקציות אחרות נשמרים)
+                ed.doc.mbeBase = await assets.put(blob);
+                scheduleSave();
+                log('export-mbe', { bytes: r.bytes.length, gaps: r.gaps.join(',') || '-' });
+            }
             else {
                 const c = ed.canvas.pageCanvas(fmt === 'pdf' ? 1 : scale);
                 if (fmt === 'pdf') { blob = await exportPdf(c, ed.doc); file = name + '.pdf'; }
@@ -1075,7 +1097,7 @@ function exportSheet() {
     };
     const canShare = !!navigator.canShare?.({ files: [new File([''], 'x.png', { type: 'image/png' })] });
     sheet('ייצוא', h('div', {},
-        seg('פורמט', [{ value: 'png', label: 'PNG' }, { value: 'jpg', label: 'JPG' }, { value: 'pdf', label: 'PDF' }, { value: 'gcard', label: 'עיצוב' }], fmt, v => { fmt = v; upd(); }),
+        seg('פורמט', [{ value: 'png', label: 'PNG' }, { value: 'jpg', label: 'JPG' }, { value: 'pdf', label: 'PDF' }, { value: 'mbe', label: '‎.mbe' }, { value: 'gcard', label: 'עיצוב' }], fmt, v => { fmt = v; upd(); }),
         seg('גודל', [{ value: 1, label: '×1' }, { value: 2, label: '×2' }, { value: 0.5, label: '×½' }], scale, v => { scale = +v; upd(); }),
         info,
         h('div', { class: 'row-actions' },
