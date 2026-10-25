@@ -435,6 +435,11 @@ function checkDocument(f, issue) {
             if (l.type === 'frame' && typeof l.flow === 'string' && !Object.hasOwn(flows, l.flow)) {
                 issue('error', 'flow-missing', `המסגרת מפנה לשטף "${l.flow}" שאינו קיים`, `document.json#${at}/flow`);
             }
+            // מסכה וקטורית של שכבת raster (requests/raster-studio-r2.md) — אותה בדיקה כמו נתיבי vector
+            if (l.vectorMask && typeof l.vectorMask === 'object' && typeof l.vectorMask.d === 'string') {
+                const bad = pathProblem(l.vectorMask.d);
+                if (bad) issue('error', 'path-d-invalid', `d לא תקין: ${bad}`, `document.json#${at}/vectorMask/d`);
+            }
             walkLayers(l.children, `${at}/children`);
             walkPaths(l.paths, `${at}/paths`);
         });

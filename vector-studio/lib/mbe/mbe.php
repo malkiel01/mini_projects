@@ -538,6 +538,11 @@ final class Mbe
                 if (($l['type'] ?? null) === 'frame' && is_string($l['flow'] ?? null) && !array_key_exists($l['flow'], $flows)) {
                     $issue('error', 'flow-missing', "המסגרת מפנה לשטף \"{$l['flow']}\" שאינו קיים", "document.json#$at/flow");
                 }
+                // מסכה וקטורית של שכבת raster (requests/raster-studio-r2.md) — אותה בדיקה כמו נתיבי vector
+                $vm = $l['vectorMask'] ?? null;
+                if (is_array($vm) && is_string($vm['d'] ?? null) && ($bad = self::pathProblem($vm['d'])) !== null) {
+                    $issue('error', 'path-d-invalid', "d לא תקין: $bad", "document.json#$at/vectorMask/d");
+                }
                 $walkLayers($l['children'] ?? null, "$at/children");
                 $walkPaths($l['paths'] ?? null, "$at/paths");
             }

@@ -263,6 +263,9 @@ async function hostile() {
         add('para-id-missing-ok', zip(await base(flow([para(), para('p2')]))), [], { ok: true });
         add('group-boolean', zip(await base(vec([{ id: 'g', type: 'group', boolean: 'union', d: 'M0 0 L10 0 L10 10 Z', children: [
             { id: 'ga', d: 'M0 0 L5 0 L5 5 Z' }, { id: 'gb', d: 'M2 2 L10 2 L10 10 Z' }] }]))), [], { ok: true });
+        const raster = vectorMask => ({ surfaces: [{ id: 'c', type: 'canvas', layers: [{ id: 'r', type: 'raster', vectorMask }] }] });
+        add('vector-mask-ok', zip(await base(raster({ d: 'M0 0 L10 0 L10 10 Z', feather: 2, enabled: true }))), [], { ok: true });
+        add('vector-mask-bad-d', zip(await base(raster({ d: 'M0 0 C1 2' }))), ['path-d-invalid']);
         add('group-boolean-bad-d', zip(await base(vec([{ id: 'g', type: 'group', boolean: 'subtract', d: 'M0 0 L1', children: [] }]))), ['path-d-invalid']);
     }
     add('flow-missing', zip(await base({ surfaces: [{ id: 'p', type: 'page', layers: [{ id: 'f', type: 'frame', flow: 'nope' }] }], flows: {} })), ['flow-missing']);

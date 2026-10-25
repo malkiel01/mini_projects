@@ -322,6 +322,17 @@
     "ok": true
   },
   {
+    "file": "hostile/vector-mask-ok.mbe",
+    "codes": [],
+    "ok": true
+  },
+  {
+    "file": "hostile/vector-mask-bad-d.mbe",
+    "codes": [
+      "path-d-invalid"
+    ]
+  },
+  {
     "file": "hostile/group-boolean-bad-d.mbe",
     "codes": [
       "path-d-invalid"

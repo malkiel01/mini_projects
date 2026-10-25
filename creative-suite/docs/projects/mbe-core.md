@@ -159,3 +159,5 @@ creative-suite/mbe-core/
   `ensureParaIds`, `paragraphBookmark` / `bookmarkParaId` (`_mbe_p<id>`). בנוסף: קבוצה עם `boolean` — `d` מותר ונבדק,
   בלי `group-geometry` (`requests/spec-vector-g3.md`). בדיקה אחת של עורך התמלילים השוותה תוכן בלי `attrs.id` — ביקשתי
   ממנו להתאים לפני המיזוג.
+- 2026-10-25 — `layer.vectorMask.d` (רסטר ר2, `requests/raster-studio-r2.md`) — אותה בדיקת `pathProblem` כמו בנתיבי
+  vector (`path-d-invalid`); `baked` — בסכמה בלבד. נכנס ל-#822.
