@@ -51,7 +51,9 @@ async function valid() {
     const dir = join(out, 'valid');
     mkdirSync(dir, { recursive: true });
     const red = png(2, 2, [200, 40, 40]), blue = png(3, 2, [40, 40, 200]);
-    const pm = text => ({ type: 'doc', content: [{ type: 'paragraph', attrs: {}, content: [{ type: 'text', text }] }] });
+    // מזהי פסקה קבועים — אחרת save משלים מזהים אקראיים, וקבצי הבדיקה משתנים בכל הרצה
+    const pm = (text, id = 'p0000000001') => ({ type: 'doc', content: [{ type: 'paragraph', attrs: { id }, content: [{ type: 'text', text }] },
+        { type: 'heading', attrs: { level: 2, id: id + 'h' }, content: [{ type: 'text', text: 'כותרת' }] }] });
 
     const make = async (kind, build) => {
         const f = M.create(kind, { units: 'pt', color: { space: 'sRGB' }, styles: {}, surfaces: [], ...FUTURE });
@@ -250,6 +252,18 @@ async function hostile() {
         add('flow-frames', zip(await base({ surfaces: [page], flows })), ['flow-frames']);
         add('flow-frames-ok', zip(await base({ surfaces: [{ id: 'p', type: 'page', layers: [{ id: 'a', type: 'frame', flow: 's1' }, { id: 'b', type: 'frame', flow: 's1' }] }],
             flows: { s1: { engine: 'prosemirror', frames: ['b', 'a'] }, s2: { engine: 'prosemirror' } } })), [], { ok: true });
+    }
+    {
+        // מזהה פסקה (1.1): פגום / כפול — אזהרה (save מחליף); קבוצה בוליאנית — d מותר, ונבדק
+        const flow = content => ({ surfaces: [], flows: { f: { engine: 'prosemirror', doc: { type: 'doc', content } } } });
+        const para = (id, text = 'א') => ({ type: 'paragraph', attrs: id === undefined ? {} : { id }, content: [{ type: 'text', text }] });
+        add('para-id-invalid', zip(await base(flow([para('has-dash'), para('ok_1')]))), ['para-id-invalid'], { ok: true });
+        add('para-id-duplicate', zip(await base(flow([para('p1'), { type: 'bulletList', content: [{ type: 'listItem', content: [para('p1')] }] }]))),
+            ['para-id-duplicate'], { ok: true });
+        add('para-id-missing-ok', zip(await base(flow([para(), para('p2')]))), [], { ok: true });
+        add('group-boolean', zip(await base(vec([{ id: 'g', type: 'group', boolean: 'union', d: 'M0 0 L10 0 L10 10 Z', children: [
+            { id: 'ga', d: 'M0 0 L5 0 L5 5 Z' }, { id: 'gb', d: 'M2 2 L10 2 L10 10 Z' }] }]))), [], { ok: true });
+        add('group-boolean-bad-d', zip(await base(vec([{ id: 'g', type: 'group', boolean: 'subtract', d: 'M0 0 L1', children: [] }]))), ['path-d-invalid']);
     }
     add('flow-missing', zip(await base({ surfaces: [{ id: 'p', type: 'page', layers: [{ id: 'f', type: 'frame', flow: 'nope' }] }], flows: {} })), ['flow-missing']);
     {

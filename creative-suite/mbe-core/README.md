@@ -59,6 +59,9 @@ $out = Mbe::save($f, ['app' => 'word-processor', 'appVersion' => '2.3']);
   מפורש — `f.stage({ kind, who, note })`; חזרה — `f.restore('s3')` (נרשם `restore`, לא מוחק); `f.version(sha)`,
   `f.journal()`, `f.prune({ keep })`. ב-PHP: `$f->stage($kind, $who, $note)`, `$f->restore()`, `$f->prune($keep)`.
   היסטוריה פגומה — אזהרות בלבד; יומן פגום נשמר כמו שהוא.
+- **מזהה פסקה (`attrs.id`, מ-1.1):** `save` משלים לכל `paragraph` / `heading` בשטף `prosemirror` — חסר, פגום או כפול
+  מקבל `paraId()` (`p` + 10 אלפאנומריים); תקין לא משתנה לעולם. `[A-Za-z0-9_]{1,32}`, בלי מקף — כי שם סימנייה ב-Word
+  לא מקבל מקף. סימנייה ב-docx: `paragraphBookmark(id)` → `_mbe_p<id>`, וחזרה ב-`bookmarkParaId`.
 - **מזהה המסמך (`manifest.id`, מגרסת פורמט 1.1):** UUID v4 שנוצר בשמירה הראשונה ולא משתנה; `f.id` ב-JS, `$f->id()`
   ב-PHP. "שמירה כעותק" — `save(f, { asCopy: true })`: מזהה חדש ו-`created` חדש. קובץ 1.0 מקבל מזהה בשמירה הבאה.
 

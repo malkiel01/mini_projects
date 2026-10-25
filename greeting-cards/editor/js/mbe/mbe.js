@@ -454,7 +454,11 @@ function checkDocument(f, issue) {
                     if (bad) issue('error', 'path-d-invalid', `d לא תקין: ${bad}`, `document.json#${at}/d`);
                 }
             } else if (type === 'group') {
-                if (Object.hasOwn(p, 'd') || Object.hasOwn(p, 'transform')) {
+                // קבוצה בוליאנית חיה (union / subtract / intersect / exclude) נושאת d מחושב משלה — requests/spec-vector-g3.md
+                if (Object.hasOwn(p, 'boolean')) {
+                    const bad = typeof p.d === 'string' ? pathProblem(p.d) : null;
+                    if (bad) issue('error', 'path-d-invalid', `d לא תקין: ${bad}`, `document.json#${at}/d`);
+                } else if (Object.hasOwn(p, 'd') || Object.hasOwn(p, 'transform')) {
                     issue('error', 'group-geometry', 'לקבוצה אין d ו-transform משלה', `document.json#${at}`);
                 }
                 walkPaths(p.children, `${at}/children`);
@@ -466,6 +470,19 @@ function checkDocument(f, issue) {
         seeId(s.id, `/surfaces/${i}`);
         walkLayers(s.layers, `/surfaces/${i}/layers`);
     });
+    // מזהה פסקה (מ-1.1): ייחודי בשטף, [A-Za-z0-9_]{1,32}. חסר — תקין (1.0), ו-save משלים. פגום או כפול — אזהרה, ו-save מחליף.
+    for (const fid of Object.keys(flows).sort()) {
+        const fl = flows[fid];
+        if (!fl || fl.engine !== 'prosemirror' || !fl.doc || typeof fl.doc !== 'object') continue;
+        const seen = new Set();
+        walkBlocks(fl.doc, `/flows/${fid}/doc`, (node, at) => {
+            const id = node.attrs?.id;
+            if (id === undefined || id === null) return;
+            if (typeof id !== 'string' || !PARA_ID_RE.test(id)) issue('warning', 'para-id-invalid', 'מזהה פסקה לא תקין — יוחלף בשמירה', `document.json#${at}/attrs/id`);
+            else if (seen.has(id)) issue('warning', 'para-id-duplicate', `המזהה "${id}" מופיע פעמיים בשטף "${fid}" — השני יוחלף בשמירה`, `document.json#${at}/attrs/id`);
+            seen.add(id);
+        });
+    }
     // סדר השרשור (סעיף 3, "מסגרות, שטפים"): כל מזהה ב-frames — שכבת frame קיימת שה-flow שלה הוא השטף הזה, פעם אחת.
     for (const fid of Object.keys(flows).sort()) {
         const list = flows[fid]?.frames;
@@ -530,6 +547,65 @@ export function pathProblem(d) {
     return close();
 }
 
+// ---- מזהה פסקה (מ-1.1, mbe-format.md סעיף 3; requests/spec-para-id.md) ----
+
+export const PARA_ID_RE = /^[A-Za-z0-9_]{1,32}$/;
+const PARA_TYPES = new Set(['paragraph', 'heading']);
+const ALNUM = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+
+/** מזהה פסקה חדש: p + 10 תווים אלפאנומריים (בלי מקף — שם סימנייה ב-Word). */
+export function paraId() {
+    let out = 'p';
+    while (out.length < 11) {
+        for (const b of crypto.getRandomValues(new Uint8Array(16))) {
+            if (b < 248 && out.length < 11) out += ALNUM[b % 62]; // 248 = 4×62 — בלי הטיה
+        }
+    }
+    return out;
+}
+
+/** שם הסימנייה הנסתרת של פסקה ב-docx, וחזרה ממנו. */
+export const paragraphBookmark = id => `_mbe_p${id}`;
+export const bookmarkParaId = name => {
+    const m = /^_mbe_p([A-Za-z0-9_]{1,32})$/.exec(name);
+    return m ? m[1] : null;
+};
+
+/** עובר על כל צומת בלוק של טקסט (paragraph, heading) — גם בתוך רשימות וטבלאות, בסדר המסמך. */
+function walkBlocks(node, where, fn, depth = 0) {
+    if (!node || typeof node !== 'object' || depth > 200) return;
+    if (PARA_TYPES.has(node.type)) fn(node, where);
+    if (Array.isArray(node.content)) node.content.forEach((c, i) => walkBlocks(c, `${where}/content/${i}`, fn, depth + 1));
+}
+
+/** משלים מזהים בשטף אחד (ProseMirror JSON): חסר, פגום או כפול — מקבל חדש. מזהה תקין לא משתנה. מחזיר כמה הושלמו. */
+export function ensureIds(doc) {
+    const seen = new Set();
+    const fresh = () => { let id; do id = paraId(); while (seen.has(id)); return id; };
+    let n = 0;
+    walkBlocks(doc, '', node => {
+        const id = node.attrs?.id;
+        if (typeof id === 'string' && PARA_ID_RE.test(id) && !seen.has(id)) { seen.add(id); return; }
+        if (!node.attrs || typeof node.attrs !== 'object' || Array.isArray(node.attrs)) node.attrs = {};
+        node.attrs.id = fresh();
+        seen.add(node.attrs.id);
+        n++;
+    });
+    return n;
+}
+
+/** כל שטפי ה-prosemirror במסמך. רץ לבד ב-save. */
+export function ensureParaIds(document) {
+    const flows = document?.flows;
+    if (!flows || typeof flows !== 'object' || Array.isArray(flows)) return 0;
+    let n = 0;
+    for (const fid of Object.keys(flows).sort()) {
+        const fl = flows[fid];
+        if (fl && fl.engine === 'prosemirror' && fl.doc && typeof fl.doc === 'object') n += ensureIds(fl.doc);
+    }
+    return n;
+}
+
 /** null אם ה-SVG בטוח; אחרת — מה נמצא. ניקוי בפועל — באחריות האפליקציה שמייצרת את ה-SVG. */
 export function svgProblem(text) {
     const t = text.toLowerCase();
@@ -568,6 +644,7 @@ export async function save(f, { app, appVersion = '', who = null, now = new Date
         throw new MbeError('חסר renditions/preview.png — חובה בכל שמירה',
             [{ level: 'error', code: 'preview-missing', message: 'חסר preview.png', path: PREVIEW }]);
     }
+    ensureParaIds(f.document);
     let docBytes;
     try { docBytes = utf8(canonicalJson(f.document)); } catch (e) {
         throw new MbeError('document אינו JSON תקין: ' + e.message, [{ level: 'error', code: 'document-invalid', message: e.message }]);

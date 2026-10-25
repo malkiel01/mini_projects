@@ -77,7 +77,7 @@ creative-suite/mbe-core/
 
 - [x] `manifest.id` (UUID v4) — נוצר בשמירה הראשונה, נשמר בכל שמירה; משלים לקובץ 1.0; `VERSION` = `1.1`
 - [x] `history/` — `journal.json` + `<sha256>.json`; פעולות `journal` / `restore`; בדיקות תקינות (גיבוב, `base`/`result`)
-- [ ] מזהה פסקה `attrs.id` — בדיקת ייחודיות בשטף + השלמה למזהים חסרים
+- [x] מזהה פסקה `attrs.id` — בדיקת ייחודיות בשטף + השלמה למזהים חסרים
 - [ ] `identify(face)` ו-`reconcile(face)` — זיהוי פנים (docx/pdf/png) ומיזוג תלת-כיווני לפי פסקה, עם רשימת התנגשויות
 - [ ] ניסוי נ3 — Google Docs ו-LibreOffice (שורת פקודה): מה שורד מהמזהים ב-docx
 
@@ -153,3 +153,9 @@ creative-suite/mbe-core/
   `restore`, לא מוחק), `f.version(sha)`, ‏`f.journal()`, ‏`f.prune({ keep })` (`pruned: true`, היומן לא נגזם).
   `who` ב-`save`. אזהרות: `history-invalid` (יומן פגום — נשמר ולא נכתב עליו), `history-hash-mismatch`,
   `history-missing`, `history-base-missing`, `privacy` (מייל ב-`who`). ארבע האפליקציות עוברות (וורד 505/505).
+- 2026-10-25 — פורמט 1.1, שלב 3: מזהה פסקה. `save` משלים `attrs.id` לכל `paragraph` / `heading` בשטף `prosemirror` (גם
+  בתוך רשימות וטבלאות): חסר, פגום או כפול — חדש (`p` + 10 אלפאנומריים); תקין — לא משתנה. `[A-Za-z0-9_]{1,32}`, בלי מקף
+  (`requests/spec-para-id.md`). בפתיחה — אזהרות `para-id-invalid`, `para-id-duplicate`. חשופות: `paraId`, `ensureIds`,
+  `ensureParaIds`, `paragraphBookmark` / `bookmarkParaId` (`_mbe_p<id>`). בנוסף: קבוצה עם `boolean` — `d` מותר ונבדק,
+  בלי `group-geometry` (`requests/spec-vector-g3.md`). בדיקה אחת של עורך התמלילים השוותה תוכן בלי `attrs.id` — ביקשתי
+  ממנו להתאים לפני המיזוג.
