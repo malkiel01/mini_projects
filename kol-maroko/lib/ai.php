@@ -24,7 +24,7 @@ const AI_TIMEOUT = 150;
 const AI_QUOTA_DEFAULT = 300_000;                       // טוקנים לחודש לחבר, עד שהבעלים קובע אחרת
 const AI_ADD_TYPES = ['heading', 'text', 'button', 'divider', 'spacer'];
 const AI_TYPE_HE = ['heading' => 'כותרת', 'text' => 'טקסט', 'longtext' => 'טקסט ארוך', 'button' => 'כפתור', 'divider' => 'קו', 'spacer' => 'רווח',
-    'image' => 'תמונה', 'gallery' => 'גלריה', 'audio' => 'הקלטה', 'video' => 'וידאו', 'file' => 'קובץ', 'code' => 'קוד', 'raw' => 'קטע מקורי'];
+    'image' => 'תמונה', 'gallery' => 'גלריה', 'audio' => 'הקלטה', 'video' => 'וידאו', 'file' => 'קובץ', 'code' => 'קוד', 'raw' => 'קטע מקורי', 'lexicon' => 'המילון'];
 const AI_EDIT = [                                        // מה מותר לבינה לשנות בכל סוג
     'heading' => ['text', 'level'], 'text' => ['html'], 'button' => ['label', 'href'], 'image' => ['alt', 'caption'],
     'audio' => ['title'], 'file' => ['label'], 'spacer' => ['height'],
@@ -286,6 +286,8 @@ function ai_apply(array $page, array $ops): array
             else $skipped[] = ['op' => $op, 'why' => 'אין לאן להוסיף'];
         } elseif ($op === 'remove') {
             if (!$w) { $skipped[] = ['op' => $op, 'why' => 'רכיב לא נמצא']; continue; }
+            // המילון — כל העמוד באתר; מחיקה שלו רק ידנית
+            if ($w['type'] === 'lexicon') { $skipped[] = ['op' => $op, 'why' => 'המילון — מחיקה רק ידנית']; continue; }
             array_splice($page['sections'][$at['s']]['columns'][$at['c']]['widgets'], $at['w'], 1);
             $applied[] = $label('remove', $w['type']) + ['id' => $w['id']];
         } elseif ($op === 'move') {

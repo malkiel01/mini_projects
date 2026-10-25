@@ -19,6 +19,7 @@ const Studio = (() => {
     file: { icon: '📄', label: 'קובץ להורדה', media: 'doc', props: () => ({ file: '', label: '' }) },
     code: { icon: '</>', label: 'קוד להטמעה', props: () => ({ html: '', title: '', height: 300, auto: true }) },
     raw: { icon: '🏛️', label: 'קטע מקורי', hidden: true, props: () => ({ html: '' }) },
+    lexicon: { icon: '📚', label: 'המילון', props: () => ({ title_he: 'קול מרוקו', intro_before: '', intro_after: '', feedback: false }) },
   };
   const fileCache = {};   // מזהה → {name, url, kind…} — מה שהספרייה כבר החזירה
   const LAYOUTS = { '100': 'אחת', '50-50': '½ ½', '33-67': '⅓ ⅔', '67-33': '⅔ ⅓', '33-33-33': '⅓ ⅓ ⅓', '25-25-25-25': '¼ × 4' };
@@ -78,16 +79,25 @@ const Studio = (() => {
 .kol-sel{outline:2px solid #2d7ff9!important;outline-offset:2px}.kol-sec.kol-sel{outline-offset:-2px}
 .kol-empty{padding:48px 16px;text-align:center;color:#888}iframe.kol-code{pointer-events:none}</style><style id="page"></style></head>
 <body><div id="root"></div><script>
-const root=document.getElementById('root'),page=document.getElementById('page');let sel=null;
+const root=document.getElementById('root'),page=document.getElementById('page');let sel=null,lx=[],fonts='';
+// ה-JS של התבנית (המילון): רץ אחרי כל רינדור. DOMContentLoaded כבר עבר — מופעל מיד; מאזינים על document/window
+// מהריצה הקודמת מוסרים קודם, כדי שלא יצטברו
+function runJs(code){lx.forEach(([t,a,b,c])=>t.removeEventListener(a,b,c));lx=[];
+ const hook=t=>{t.addEventListener=function(a,b,c){if(a==='DOMContentLoaded'||(a==='load'&&t===window)){try{b.call(t,new Event(a))}catch(e){console.error(e)}return;}
+  lx.push([t,a,b,c]);EventTarget.prototype.addEventListener.call(t,a,b,c);};};
+ hook(document);hook(window);
+ try{const s=document.createElement('script');s.textContent=code;document.head.appendChild(s);s.remove();}finally{delete document.addEventListener;delete window.addEventListener;}}
 function mark(id){document.querySelectorAll('.kol-sel').forEach(e=>e.classList.remove('kol-sel'));sel=id;
  const el=id&&document.querySelector('[data-kid="'+id+'"]');if(el){el.classList.add('kol-sel');const r=el.getBoundingClientRect();
  if(r.bottom<0||r.top>innerHeight)el.scrollIntoView({block:'center'});}}
 addEventListener('message',e=>{const d=e.data||{};
  if(d.kolCode){const f=document.querySelector('iframe[data-kol-code="'+String(d.kolCode).replace(/[^a-z0-9]/g,'')+'"]');if(f&&e.source===f.contentWindow)f.style.height=Math.min(4000,Math.max(40,+d.h||0))+'px';return;}
  if(e.source!==parent)return;
- if(d.kol==='render'){page.textContent=d.css;root.innerHTML=d.html||'<p class="kol-empty">העמוד ריק. "+ רכיב" כדי להתחיל.</p>';mark(d.sel);}
+ if(d.kol==='render'){page.textContent=d.css;root.innerHTML=d.html||'<p class="kol-empty">העמוד ריק. "+ רכיב" כדי להתחיל.</p>';
+  if(d.fonts&&d.fonts!==fonts){fonts=d.fonts;const l=document.createElement('link');l.rel='stylesheet';l.href=d.fonts;document.head.appendChild(l);}
+  if(d.js)runJs(d.js);mark(d.sel);}
  if(d.kol==='sel')mark(d.sel);});
-addEventListener('click',e=>{if(!e.target.closest('audio,video'))e.preventDefault();const el=e.target.closest('[data-kid]');parent.postMessage({kol:'pick',id:el?el.dataset.kid:null},'*');},true);
+addEventListener('click',e=>{if(!e.target.closest('audio,video,input,label,select'))e.preventDefault();const el=e.target.closest('[data-kid]');parent.postMessage({kol:'pick',id:el?el.dataset.kid:null},'*');},true);
 parent.postMessage({kol:'ready'},'*');
 <\/script></body></html>`;
 
@@ -108,7 +118,7 @@ parent.postMessage({kol:'ready'},'*');
     try {
       const r = await api('render', { page: S.page });
       if (seq !== S.renderSeq) return;
-      S.frame.contentWindow.postMessage({ kol: 'render', html: r.html, css: r.css, sel: S.sel }, '*');
+      S.frame.contentWindow.postMessage({ kol: 'render', html: r.html, css: r.css, js: r.js || '', fonts: r.fonts || '', sel: S.sel }, '*');
     } catch (e) { toast(e.message, true); }
   }
 
@@ -187,6 +197,7 @@ parent.postMessage({kol:'ready'},'*');
       select(sec.id, true);
       return;
     }
+    if (type === 'lexicon' && S.page.sections.some(s => s.columns.some(c => c.widgets.some(w => w.type === 'lexicon')))) { toast('יש כבר מילון בעמוד'); return; }
     const w = { id: uid(), type, props: TYPES[type].props(), style: {} };
     if (TYPES[type].media) {
       const files = await Media.pick({ kind: TYPES[type].media, multiple: !!TYPES[type].multiple });
@@ -361,12 +372,14 @@ parent.postMessage({kol:'ready'},'*');
         h('label', { class: 'switch' }, h('input', { type: 'checkbox', checked: p.auto, disabled: S.readonly,
           onchange: e => { mutate(() => { p.auto = e.target.checked; }, { rebuild: false }); height.disabled = e.target.checked; } }), h('span', {}, 'גובה אוטומטי לפי התוכן')),
         field('גובה (פיקסלים)', height));
+    } else if (w.type === 'lexicon') {
+      parts.push(...lexiconFields(w));
     } else if (w.type === 'spacer') {
       parts.push(field('גובה (פיקסלים)', h('input', { type: 'number', min: 4, max: 400, value: p.height, dir: 'ltr', disabled: S.readonly,
         oninput: e => set(p, 'height')(Math.max(4, Math.min(400, +e.target.value || 4))) })));
     }
     else if (TYPES[w.type].media || w.type === 'video') parts.push(...mediaFields(w));
-    if (!['spacer', 'code', 'raw'].includes(w.type)) parts.push(styleGroup(w));
+    if (!['spacer', 'code', 'raw', 'lexicon'].includes(w.type)) parts.push(styleGroup(w));
     parts.push(h('button', { type: 'button', class: 'btn sm ghost st-up', onclick: () => select(f.sec.id, false) }, '🧱 הפס שמכיל אותו'));
     box.replaceChildren(...parts);
   }
@@ -531,11 +544,49 @@ parent.postMessage({kol:'ready'},'*');
     return h('section', { class: 'group' }, g);
   }
 
+  // ── המילון: הכותרת, הרקע, המבוא והגדלים. המילים עצמן — בלשונית 📚 מילים ──
+  function lexiconFields(w) {
+    const p = w.props;
+    const set = (k, coalesce = true) => v => mutate(() => { p[k] = v; }, { coalesce, rebuild: false });
+    const text = (label, k, max = 200) => field(label, h('input', { value: p[k], maxlength: max, disabled: S.readonly, dir: 'auto', oninput: e => set(k)(e.target.value) }));
+    const num = (label, k, min, max) => field(label, h('input', { type: 'number', min, max, value: p[k], dir: 'ltr', disabled: S.readonly,
+      onchange: e => set(k, false)(Math.max(min, Math.min(max, Math.round(+e.target.value || 0)))) }));
+    const sw = (label, k) => h('label', { class: 'switch' }, h('input', { type: 'checkbox', checked: !!p[k], disabled: S.readonly,
+      onchange: e => set(k, false)(e.target.checked) }), h('span', {}, label));
+    const group = (title, ...kids) => h('section', { class: 'group' }, h('h3', {}, title), ...kids);
+    const hero = p.hero_file ? fileSlot('image', p.hero_file, f => mutate(() => { p.hero_file = f.id; }), '🖼️ בחירה')
+      : h('div', { class: 'file-slot' },
+        p.hero_url ? h('img', { class: 'thumb lg', src: p.hero_url, alt: '' }) : null,
+        h('span', { class: 'use-tx' }, h('b', { class: 'one' }, p.hero_url ? 'התמונה שבאתר' : 'בלי תמונה')),
+        h('button', { type: 'button', class: 'btn sm ghost', disabled: S.readonly, onclick: async () => {
+          const [f] = await Media.pick({ kind: 'image' });
+          if (f) { fileCache[f.id] = f; mutate(() => { p.hero_file = f.id; }); }
+        } }, p.hero_url ? '🔁 החלפה' : '🖼️ בחירה'));
+    return [
+      h('p', { class: 'hint legacy-note' }, '📚 העמוד של המילון — באותו עיצוב ובאותה התנהגות כמו באתר (חיפוש, נושאים, השמעה). כאן — הכותרת והמבוא; המילים — בלשונית "📚 מילים".'),
+      h('a', { class: 'btn ghost', href: '#/words' }, '📚 המילים'),
+      group('כותרת', text('כותרת ראשית', 'title_he'), text('כותרת משנה (צמודה)', 'subtitle_main_he', 300), text('בצרפתית', 'title_fr'), text('באנגלית', 'title_en'),
+        text('שורת הסבר', 'subtitle_he', 500), text('קרדיט', 'credit_he', 300)),
+      group('רקע', hero, p.hero_file && p.hero_url ? h('button', { type: 'button', class: 'btn sm ghost', disabled: S.readonly,
+        onclick: () => mutate(() => { p.hero_file = ''; }) }, '↩️ חזרה לתמונה שבאתר') : null,
+        h('div', { class: 'fields two' }, num('הכהיה (0–100)', 'hero_overlay', 0, 100), num('גובה מינימלי (px)', 'hero_min_height', 0, 1500))),
+      group('מבוא', h('p', { class: 'hint' }, 'שני כפתורים מתחת לכותרת. כל אחד פותח את הטקסט שלו; "קרא עוד" בסוף הראשון פותח את השני. טקסט ריק — בלי כפתור.'),
+        text('הכפתור הראשון', 'gate_before', 40), richText(p, 'intro_before', 'הטקסט הראשון'),
+        text('הכפתור השני', 'gate_after', 40), richText(p, 'intro_after', 'הטקסט השני'),
+        h('div', { class: 'fields two' }, text('"קרא עוד"', 'more_label', 60), text('"הסתר"', 'less_label', 60)),
+        num('רוחב הטקסט (px, ‏0 — מלא)', 'intro_max_width', 0, 2400)),
+      group('גדלים', h('div', { class: 'fields two' }, num('כותרת ראשית', 'title_size', 10, 200), num('כותרת צמודה (0 — אוטומטי)', 'subtitle_main_size', 0, 200),
+        num('שורת הסבר', 'subtitle_size', 8, 120), num('לועזית', 'title_en_size', 8, 120)),
+        h('div', { class: 'f' }, h('span', {}, 'עובי'), seg('lxw', [['400', 'רגיל'], ['600', 'בינוני'], ['700', 'מודגש'], ['900', 'כבד']], String(p.title_weight), v => set('title_weight', false)(+v), 4))),
+      group('עוד', sw('כפתור "שלח משוב" בכל מילה (נשלח למייל דרך האתר)', 'feedback'), sw('מספר מהאקסל ליד כל מילה', 'show_ids')),
+    ];
+  }
+
   // טקסט עשיר: contenteditable קטן. השרת מסנן הכול (allowlist) — כאן רק נוחות.
-  function richText(p) {
-    const ed = h('div', { class: 'rte', contenteditable: S.readonly ? 'false' : 'true', role: 'textbox', 'aria-multiline': 'true', 'aria-label': 'הטקסט', dir: 'auto' });
-    ed.innerHTML = p.html;
-    const sync = () => mutate(() => { p.html = ed.innerHTML; }, { coalesce: true, rebuild: false });
+  function richText(p, key = 'html', label = 'הטקסט') {
+    const ed = h('div', { class: 'rte', contenteditable: S.readonly ? 'false' : 'true', role: 'textbox', 'aria-multiline': 'true', 'aria-label': label, dir: 'auto' });
+    ed.innerHTML = p[key];
+    const sync = () => mutate(() => { p[key] = ed.innerHTML; }, { coalesce: true, rebuild: false });
     ed.addEventListener('input', sync);
     ed.addEventListener('paste', e => {                    // הדבקה — כטקסט, בלי העיצוב של המקור
       e.preventDefault();
@@ -549,7 +600,7 @@ parent.postMessage({kol:'ready'},'*');
       b('•', 'רשימה', () => cmd('insertUnorderedList')), b('1.', 'רשימה ממוספרת', () => cmd('insertOrderedList')),
       b('🔗', 'קישור', () => { const u = prompt('כתובת הקישור (https://…)', 'https://'); if (u) cmd('createLink', u.trim()); }),
       b('⌫', 'ניקוי עיצוב', () => { cmd('removeFormat'); cmd('unlink'); }));
-    return h('div', { class: 'f' }, h('span', {}, 'הטקסט'), h('div', { class: 'rte-box' }, bar, ed));
+    return h('div', { class: 'f' }, h('span', {}, label), h('div', { class: 'rte-box' }, bar, ed));
   }
 
   // ── עוזר הבינה: בקשה → הצעה (תצוגה + מה השתנה) → החלה ──
@@ -646,6 +697,7 @@ parent.postMessage({kol:'ready'},'*');
     if (w.type === 'gallery') return `${w.props.files.length} תמונות`;
     if (w.type === 'code') return w.props.title || 'קוד להטמעה';
     if (w.type === 'raw') { const d = document.createElement('div'); d.innerHTML = w.props.html; return d.textContent.trim().slice(0, 60) || 'קטע מקורי'; }
+    if (w.type === 'lexicon') return w.props.title_he || 'המילון';
     if (w.type === 'longtext') return w.props.doc ? 'מעורך התמלילים' : 'עוד לא נכתב';
     if (w.type === 'audio') return w.props.title || fileCache[w.props.file]?.name || 'שמע';
     if (w.type === 'image') return w.props.alt || fileCache[w.props.file]?.name || 'תמונה';

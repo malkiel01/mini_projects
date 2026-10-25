@@ -10,12 +10,13 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/files.php';
 require_once __DIR__ . '/legacy.php';
+require_once __DIR__ . '/lexicon.php';
 
 const PAGE_MAX_BYTES = 1_000_000;
 const PAGE_MAX_SECTIONS = 120;
 const PAGE_MAX_WIDGETS = 120;          // בעמודה
 const TEXT_MAX = 60_000;
-const WIDGET_TYPES = ['heading', 'text', 'longtext', 'button', 'divider', 'spacer', 'image', 'gallery', 'audio', 'video', 'file', 'code', 'raw'];
+const WIDGET_TYPES = ['heading', 'text', 'longtext', 'button', 'divider', 'spacer', 'image', 'gallery', 'audio', 'video', 'file', 'code', 'raw', 'lexicon'];
 const CODE_MAX = 100_000;
 const COL_LAYOUTS = ['100', '50-50', '33-67', '67-33', '33-33-33', '25-25-25-25', '20-20-20-20-20', '16-16-16-16-16-16'];
 const SIZES = ['sm' => '.875em', 'md' => '1em', 'lg' => '1.25em', 'xl' => '1.6em', 'xxl' => '2.2em'];
@@ -172,6 +173,7 @@ function widget_norm(mixed $w, array &$seen): ?array
         'code' => ['html' => is_string($p['html'] ?? null) ? mb_substr($p['html'], 0, CODE_MAX) : '', 'title' => str($p['title'] ?? '', 100),
                    'height' => max(40, min(3000, (int)($p['height'] ?? 300))), 'auto' => ($p['auto'] ?? false) === true],
         'raw' => ['html' => sanitize_raw((string)($p['html'] ?? ''))],
+        'lexicon' => lexicon_props($p),
         'longtext' => ['doc' => is_string($p['doc'] ?? null) && preg_match('/^[A-Za-z0-9:_-]{1,40}$/', $p['doc']) ? $p['doc'] : ''],
     };
     $out = ['id' => id_norm($w['id'] ?? null, $seen), 'type' => $w['type'], 'props' => $props, 'style' => style_norm($w['style'] ?? [])];
@@ -206,7 +208,10 @@ function page_normalize(mixed $page): array
             $c = is_array($in[$i] ?? null) ? $in[$i] : [];
             $ws = [];
             foreach (array_slice(is_array($c['widgets'] ?? null) ? $c['widgets'] : [], 0, PAGE_MAX_WIDGETS) as $w) {
+                // מילון אחד בעמוד: המזהים שלו (חיפוש, רשימה) קבועים, כמו בתבנית של האתר
+                if (($w['type'] ?? '') === 'lexicon' && isset($seen['lexicon'])) continue;
                 if ($nw = widget_norm($w, $seen)) $ws[] = $nw;
+                if ($nw && $nw['type'] === 'lexicon') $seen['lexicon'] = true;
             }
             $col = ['id' => id_norm($c['id'] ?? null, $seen), 'widgets' => $ws];
             if (isset($c['legacy']) && is_array($c['legacy'])) $col['legacy'] = legacy_tags($c['legacy']);   // [] — עמודה מדומה (display:contents)
@@ -362,6 +367,11 @@ function page_render(array $page, bool $editor = false, ?callable $url = null): 
     if ($ic = imported_css()) $css[] = $ic;
     if ($editor && ($pc = setting('preview_css'))) $css[] = $pc;
     $out = ['html' => $html, 'css' => implode("\n", $css)];
+    // בסטודיו — ה-JS של התבנית (חיפוש, נושאים, שמע, מבוא), שבאתר נטען ממילא; רץ בתוך התצוגה המבודדת
+    if ($editor && str_contains($html, 'kadisha-lexicon-page')) {
+        if ($js = setting('preview_js')) $out['js'] = $js;
+        $out['fonts'] = LEX_FONTS;
+    }
     // kol-file:<מזהה> (בתוכן שיובא ובסגנונות) → הכתובת של הקובץ: בסטודיו חתומה, בפרסום — {{KOL_ASSETS}}
     foreach ($out as $k => $v) {
         $out[$k] = preg_replace_callback('/kol-file:([0-9a-f]{32})/', function ($m) {
@@ -399,6 +409,7 @@ function widget_render(array $w, bool $editor): array
     if ($w['type'] === 'gallery' && $p['cols'] !== 3) $css .= ".kol-page .kol-w-{$w['id']}{--cols:{$p['cols']}}";
     if (isset($w['legacy']) && ($lh = legacy_widget_render($w, $cls, $k, $f, $src, $editor)) !== null) return [$lh, $css];
     if ($w['type'] === 'raw') return [raw_render($p['html'], "$cls kol-raw", $k), $css];
+    if ($w['type'] === 'lexicon') { [$lh, $lc] = lexicon_render($w, $editor, $cls, $k); return [$lh, $css . $lc]; }
     $html = match ($w['type']) {
         'heading' => "<h{$p['level']} class=\"$cls\"$k>" . (e($p['text']) ?: ($editor ? '<span style="opacity:.4">כותרת</span>' : '')) . "</h{$p['level']}>",
         'text' => "<div class=\"$cls kol-text\"$k>" . ($p['html'] ?: ($editor ? '<p style="opacity:.4">טקסט</p>' : '')) . '</div>',

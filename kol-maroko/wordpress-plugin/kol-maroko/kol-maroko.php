@@ -2,7 +2,7 @@
 /**
  * Plugin Name: קול מרוקו — קבלת גרסאות
  * Description: מקבל מסטודיו "קול מרוקו" גרסאות חתומות של עמוד אחד (Ed25519), בודק חתימה, זמן, nonce וגרסה, ומציג אותן בתבנית של העמוד הזה בלבד. בלי סיסמאות ובלי גישה מבחוץ לשום דבר אחר. כולל ייצוא של העמוד הקיים לסטודיו.
- * Version: 1.1.0
+ * Version: 1.2.0
  * Requires PHP: 7.4
  * Author: הכלים הדיגיטליים
  * Text Domain: kol-maroko
@@ -11,6 +11,7 @@
  *   POST /wp-json/kol-maroko/v1/ping     — בדיקת חיבור (חתומה). מחזיר את מספר הגרסה החיה.
  *   POST /wp-json/kol-maroko/v1/asset    — חלק של קובץ (חתום). נשמר ב-uploads/kol-maroko/<sha256>.<ext>.
  *   POST /wp-json/kol-maroko/v1/publish  — גרסה חדשה (חתומה). נשמרת באפשרויות; post_content לא נדרס.
+ *   POST /wp-json/kol-maroko/v1/switch   — הפעלה או כיבוי של הגרסה מהסטודיו (חתומה). כיבוי = העמוד המקורי חוזר כמו שהיה.
  * כל בקשה נבדקת: חתימה מול המפתח הציבורי שהודבק בהגדרות, site = הדומיין הזה, page = lexicon, זמן ±5 דקות,
  * nonce שלא נראה, ולפרסום — מספר גרסה גבוה מהאחרון שהתקבל. שום נקודה לא מחזירה תוכן, משתמשים או קבצים.
  *
@@ -20,7 +21,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('KOL_MAROKO_VERSION', '1.1.0');
+define('KOL_MAROKO_VERSION', '1.2.0');
 define('KOL_MAROKO_PAGE', 'lexicon');
 define('KOL_MAROKO_SKEW', 300);
 define('KOL_MAROKO_KEEP', 10);
@@ -76,7 +77,7 @@ function kol_maroko_fail($code, $msg, $status = 400, $extra = [])
 // ── נקודות הקבלה ──────────────────────────────────────────
 
 add_action('rest_api_init', function () {
-    foreach (['ping', 'asset', 'publish'] as $action) {
+    foreach (['ping', 'asset', 'publish', 'switch'] as $action) {
         register_rest_route('kol-maroko/v1', '/' . $action, [
             'methods' => 'POST',
             'permission_callback' => '__return_true',     // ההגנה היא החתימה (נבדקת ב-kol_maroko_verify)
@@ -124,6 +125,7 @@ function kol_maroko_handle($action, WP_REST_Request $req)
             'enabled' => (bool)kol_maroko_opt('enabled', false), 'page_set' => (bool)kol_maroko_opt('page_id', 0), 'plugin' => KOL_MAROKO_VERSION]);
     }
     if ($action === 'asset') return kol_maroko_asset($b);
+    if ($action === 'switch') return kol_maroko_switch($b);
     return kol_maroko_publish($b);
 }
 
@@ -185,6 +187,17 @@ function kol_maroko_publish(array $b)
     kol_maroko_set('live', $n);
     kol_maroko_purge();
     return new WP_REST_Response(['ok' => true, 'version' => $n, 'url' => kol_maroko_opt('page_id') ? get_permalink((int)kol_maroko_opt('page_id')) : null]);
+}
+
+/** מתג מהסטודיו: enabled=false מחזיר את העמוד המקורי (התבנית, המילים בוורדפרס — שלא נגעו בהם); true מציג שוב את הגרסה מהסטודיו. */
+function kol_maroko_switch(array $b)
+{
+    $on = !empty($b['enabled']);
+    if ($on && !kol_maroko_opt('page_id', 0)) return kol_maroko_fail('no_page', 'לא נבחר העמוד בהגדרות התוסף', 409);
+    if ($on && !kol_maroko_opt('v_' . (int)kol_maroko_opt('live', 0))) return kol_maroko_fail('no_version', 'עוד לא התקבלה גרסה להציג', 409);
+    kol_maroko_set('enabled', $on);
+    kol_maroko_purge();
+    return new WP_REST_Response(['ok' => true, 'enabled' => $on, 'live' => (int)kol_maroko_opt('live', 0)]);
 }
 
 /** ניקוי מטמון של העמוד — וורדפרס ותוספי מטמון נפוצים, אם קיימים. */
@@ -300,7 +313,7 @@ function kol_maroko_admin()
     submit_button('חזרה לתוכן המקורי (כיבוי)', 'secondary', 'submit', false);
     echo '</form>';
 
-    echo '<h2>ייצוא העמוד הקיים לסטודיו</h2><p>קובץ ZIP אחד: העמוד כפי שהמבקר רואה אותו, העיצוב שלו (CSS), הרשומות של "קול מרוקו" (מילים, שדות) וכל הקבצים — תמונות והקלטות. אם יש הרבה הקלטות — הקובץ גדול וההכנה לוקחת כמה דקות. מעלים אותו בסטודיו: ⚙️ הגדרות ← "ייבוא מהאתר".</p>';
+    echo '<h2>ייצוא העמוד הקיים לסטודיו</h2><p>קובץ ZIP אחד: העמוד כפי שהמבקר רואה אותו, העיצוב שלו, ההגדרות והמבוא של המילון וכל המילים עם הנושאים שלהן. ההקלטות נשארות כאן באתר — הסטודיו מפנה אליהן. מעלים אותו בסטודיו: ⚙️ הגדרות ← "ייבוא מהאתר".</p>';
     echo '<form method="post" action="' . $post . '">' . wp_nonce_field('kol_maroko_export', '_wpnonce', true, false)
         . '<input type="hidden" name="action" value="kol_maroko_export">';
     submit_button('⬇️ ייצוא העמוד', 'primary', 'submit', false);
@@ -332,6 +345,7 @@ function kol_maroko_entry_types($html = '')
         if (in_array($pt->name, ['elementor_library', 'jet-engine', 'jet-smart-filters', 'jet-theme-core', 'jet-engine-booking', 'wp_block', 'wp_template', 'wp_template_part', 'wp_navigation'], true)) continue;
         $label = $pt->label . ' ' . ($pt->labels->singular_name ?? '') . ' ' . $pt->name;
         $hit = preg_match('/מרוק|maroc|morocc|kol|lexic|מילון|לקסיקון/iu', $label);
+        if (!$hit && $pt->name === 'kadisha_word') $hit = true;
         if (!$hit && $html !== '' && preg_match('/\b(?:post-type-|type-)' . preg_quote($pt->name, '/') . '\b/', $html)) $hit = true;
         if ($hit) $out[] = $pt->name;
     }
@@ -441,6 +455,47 @@ function kol_maroko_entries($types, &$urls)
     return $out;
 }
 
+/**
+ * עמוד המילון של התבנית (page-kadisha-lexicon.php) בנוי מהגדרות ומרשומות kadisha_word — לא מאלמנטור. מ-1.2 הם
+ * יוצאים כנתונים: ההגדרות, המבוא, כל המילים והנושאים. ההקלטות לא נכנסות לקובץ (1,500 קבצים) — רק הכתובות
+ * שלהן כאן באתר, והסטודיו מפנה אליהן. ה-CSS וה-JS של התבנית — לתצוגה בסטודיו בלבד (באתר הם נטענים ממילא).
+ */
+function kol_maroko_lexicon_data()
+{
+    if (!function_exists('kadisha_lexicon_get') || !function_exists('kadisha_lexicon_get_all_words')) return null;
+    $s = kadisha_lexicon_get();
+    $intro = function_exists('kadisha_lexicon_build_intro_html') ? kadisha_lexicon_build_intro_html($s) : (string)($s['intro_he'] ?? '');
+    $words = [];
+    foreach (kadisha_lexicon_get_all_words() as $w) {
+        $words[] = ['id' => (int)$w['id'], 'word' => (string)$w['word'], 'meaning' => (string)$w['meaning'],
+            'topics' => array_values((array)$w['topics']), 'audio_url' => (string)$w['audio_url'], 'external_id' => (string)($w['external_id'] ?? '')];
+    }
+    $topics = function_exists('kadisha_lexicon_get_all_topics') ? kadisha_lexicon_get_all_topics() : [];
+    $hero = (string)($s['hero_background_image'] ?? '');
+    $overlay = (int)($s['hero_background_overlay'] ?? 0);
+    if ($hero === '' && function_exists('kadisha_get_settings')) {
+        $kc = kadisha_get_settings();
+        $hero = (string)($kc['hero_background_image'] ?? '');
+        $overlay = (int)($kc['hero_background_overlay'] ?? 0);
+    }
+    unset($s['feedback_email']);                     // כתובת המייל נשארת באתר; הסטודיו צריך רק לדעת שהמשוב פעיל
+    return ['settings' => $s, 'intro_html' => $intro, 'hero_image' => $hero, 'hero_overlay' => $overlay,
+        'feedback' => !empty(kadisha_lexicon_get()['feedback_email']),
+        'show_external_id' => defined('KADISHA_LEXICON_SHOW_EXTERNAL_ID') && KADISHA_LEXICON_SHOW_EXTERNAL_ID,
+        'words' => $words, 'topics' => $topics];
+}
+
+/** קובץ של התבנית הפעילה, עם כתובות url(...) יחסיות שהופכות למלאות (כדי שיעבדו גם בתצוגה בסטודיו). */
+function kol_maroko_theme_file($rel)
+{
+    $f = get_stylesheet_directory() . '/' . $rel;
+    if (!is_file($f)) return null;
+    $c = (string)file_get_contents($f);
+    if (substr($rel, -4) !== '.css') return $c;
+    $base = trailingslashit(get_stylesheet_directory_uri() . '/' . dirname($rel));
+    return preg_replace_callback('~url\(\s*([\'"]?)(?!data:|https?:|//|#)([^\'")]+)\1\s*\)~i', fn($m) => 'url(' . $m[1] . $base . $m[2] . $m[1] . ')', $c);
+}
+
 /** דוח אבחון: איך העמוד בנוי. מוצג במסך ההגדרות ונכנס לייצוא. */
 function kol_maroko_diagnose($id, $render = null)
 {
@@ -524,13 +579,25 @@ add_action('admin_post_kol_maroko_export', function () {
     }
     if (defined('JET_ENGINE_PATH') && is_file(JET_ENGINE_PATH . 'assets/css/frontend.css')) $css['preview-jetengine'] = file_get_contents(JET_ENGINE_PATH . 'assets/css/frontend.css');
 
-    $types = kol_maroko_entry_types($render['full']);
+    $lex = kol_maroko_lexicon_data();
+    $js = [];
+    if ($lex) {
+        // התבנית של המילון: העיצוב שלה לתצוגה בסטודיו, וההתנהגות (חיפוש, נושאים, שמע) — אותו קובץ
+        foreach (['kadisha-assets/style.css' => 'preview-kadisha-style', 'kadisha-assets/lexicon.css' => 'preview-kadisha-lexicon'] as $rel => $k) {
+            $c = kol_maroko_theme_file($rel);
+            if ($c !== null) $css[$k] = $c;
+        }
+        $c = kol_maroko_theme_file('kadisha-assets/lexicon.js');
+        if ($c !== null) $js['lexicon'] = $c;
+    }
+    // המילים כבר בנתוני המילון (עם כתובות ההקלטות) — לא כרשומות גולמיות ולא כקבצים
+    $types = $lex ? array_values(array_diff(kol_maroko_entry_types($render['full']), ['kadisha_word'])) : kol_maroko_entry_types($render['full']);
     $urls = [];
     $entries = kol_maroko_entries($types, $urls);
 
-    // הקבצים: כל כתובת תחת uploads שמופיעה בתוכן, ב-CSS או ברשומות
+    // הקבצים: כל כתובת תחת uploads שמופיעה בתוכן, ב-CSS או ברשומות (בעמוד המילון — לא מהעמוד: שם כל ההקלטות)
     $media = [];
-    $all = $html . "\n" . implode("\n", $css) . "\n" . implode("\n", $urls);
+    $all = ($lex ? '' : $html) . "\n" . implode("\n", $css) . "\n" . implode("\n", $urls);
     $base = preg_quote(preg_replace('~^https?:~', '', $up['baseurl']), '~');
     if (preg_match_all('~(?:https?:)?' . $base . '/([^"\'\s<>()?#,]+)~i', $all, $m)) {
         foreach (array_unique($m[1]) as $rel) {
@@ -548,13 +615,16 @@ add_action('admin_post_kol_maroko_export', function () {
         'format' => 2, 'plugin' => KOL_MAROKO_VERSION, 'site' => home_url(), 'page_id' => $id, 'url' => get_permalink($id),
         'title' => get_the_title($id), 'builder' => strpos($html, 'data-elementor-type') !== false ? 'elementor' : 'classic',
         'source' => $render['source'], 'uploads' => $up['baseurl'], 'exported_at' => gmdate('c'),
-        'css' => array_keys($css), 'media' => array_keys($media), 'entry_types' => $types, 'entries' => count($entries),
+        'css' => array_keys($css), 'js' => array_keys($js), 'media' => array_keys($media), 'entry_types' => $types, 'entries' => count($entries),
+        'lexicon' => $lex ? count($lex['words']) : null,
         'diagnostics' => kol_maroko_diagnose($id, $render),
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT));
     $zip->addFromString('content.html', (string)$html);
     $zip->addFromString('page-full.html', (string)$render['full']);
     $zip->addFromString('data/entries.json', wp_json_encode($entries, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
     foreach ($css as $k => $c) $zip->addFromString("css/$k.css", $c);
+    foreach ($js as $k => $c) $zip->addFromString("js/$k.js", $c);
+    if ($lex) $zip->addFromString('data/lexicon.json', wp_json_encode($lex, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
     foreach ($media as $rel => $path) {
         $zip->addFile($path, 'media/' . $rel);
         $zip->setCompressionName('media/' . $rel, ZipArchive::CM_STORE);   // מדיה כבר דחוסה

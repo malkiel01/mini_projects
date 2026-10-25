@@ -499,6 +499,19 @@ final class Importer
         return $this->meta;
     }
 
+    /** נתוני המילון (תוסף 1.2): ההגדרות, המבוא, המילים והנושאים. null — העמוד אינו המילון של התבנית. */
+    public function lexicon(): ?array
+    {
+        $j = json_decode((string)$this->zip->getFromName('data/lexicon.json'), true);
+        return is_array($j) && is_array($j['words'] ?? null) ? $j : null;
+    }
+
+    /** ה-JS של התבנית — לתצוגה בסטודיו בלבד (באתר הוא נטען ממילא). */
+    public function js(): string
+    {
+        return (string)($this->zip->getFromName('js/lexicon.js') ?: '');
+    }
+
     /** הרשומות (מילים, הקלטות, שדות) והאבחון — נשמרים לשלב הבא; לא נכנסים לעמוד עצמו. */
     public function keepData(): void
     {
@@ -521,9 +534,14 @@ function import_run(array $owner, array $b): array
     if ((int)@filesize($zip) !== (int)$u['size']) throw new ApiError('ההעלאה לא הושלמה', 409);
 
     $imp = new Importer($owner, $zip);
-    $page = page_normalize($imp->run());
+    // עמוד המילון של התבנית: נבנה מהנתונים (רכיב מילון אחד), לא מה-HTML
+    $lex = $imp->lexicon();
+    $page = page_normalize($lex ? lexicon_page($lex, (string)($imp->meta()['title'] ?? '')) : $imp->run());
     $imp->keepData();
     [$css, $preview] = $imp->css();
+    // במילון כל העיצוב שייך לאתר (ערכת הנושא ואלמנטור טוענים אותו לעמוד ממילא) — לתצוגה בסטודיו בלבד
+    if ($lex) { $preview = trim($css . "\n" . $preview); $css = ''; }
+    $js = $imp->js();
     db()->prepare('DELETE FROM uploads WHERE id = ?')->execute([$u['id']]);
     @unlink($zip);
 
@@ -533,8 +551,15 @@ function import_run(array $owner, array $b): array
     lock_op($owner, ['op' => 'take']);
     $d = draft_row();
     revision_add($owner, $d['json'], (int)$d['rev'], 'לפני ייבוא');
+    if ($lex) {
+        $n = words_replace($lex['words'], is_array($lex['topics'] ?? null) ? $lex['topics'] : []);
+        $imp->stats['lexicon'] = ['words' => $n, 'audio' => count(array_filter($lex['words'], fn($w) => !empty($w['audio_url']))),
+            'topics' => count((array)($lex['topics'] ?? []))];
+        $imp->stats['source'] = 'lexicon';
+    }
     setting_set('imported_css', $css);
     setting_set('preview_css', $preview);
+    setting_set('preview_js', $js);
     setting_set('imported_from', json_encode(['at' => now_iso(), 'meta' => array_intersect_key($imp->meta(), array_flip(['url', 'title', 'builder', 'exported_at']))], JSON_UNESCAPED_UNICODE));
     $res = draft_write($owner, $page, (int)$d['rev'], 'ייבוא מהאתר');
     audit_as($owner, 'import', ($imp->meta()['url'] ?? '') . ' · ' . $imp->stats['files'] . ' קבצים');
