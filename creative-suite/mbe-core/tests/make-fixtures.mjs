@@ -60,6 +60,8 @@ async function valid() {
         f.setApp(kind === 'text' ? 'word-processor' : `${kind}-studio`, 'view.json', utf8('{"zoom":1.25,"panel":{}}'));
         f.files.set('extensions/future.bin', Uint8Array.of(0, 1, 2, 3, 255));
         f.manifest['x-future-manifest'] = { keep: true, empty: {} };
+        f.manifest.id = { text: '11111111-1111-4111-8111-111111111111', layout: '22222222-2222-4222-8222-222222222222',
+            raster: '33333333-3333-4333-8333-333333333333', vector: '44444444-4444-4444-8444-444444444444' }[kind]; // קבוע — קבצי בדיקה דטרמיניסטיים
         const bytes = await M.save(f, { app: 'mbe-core-tests', appVersion: '1', now: NOW });
         writeFileSync(join(dir, `${kind}.mbe`), bytes);
     };
@@ -191,6 +193,8 @@ async function hostile() {
         const files = await base();
         add('mimetype-compressed-not-first', zip([files[1], { ...files[0], store: false }, ...files.slice(2)]), ['mimetype-not-first'], { ok: true });
     }
+    add('manifest-id-invalid', zip(await base(undefined, { version: '1.1', id: 'NOT-A-UUID' })), ['manifest-id-invalid'], { ok: true });
+    add('manifest-id-missing', zip(await base(undefined, { version: '1.1' })), ['manifest-id-missing'], { ok: true });
     add('version-2', zip(await base(undefined, { version: '2.0' })), ['version-unsupported']);
     add('version-newer-minor', zip(await base(undefined, { version: '1.7', 'x-from-1.7': { a: [] } })), ['version-newer-minor'], { ok: true });
     add('manifest-not-json', zip((await base()).map(f => f.name === 'manifest.json' ? { ...f, data: utf8('{"format":"mbe",') } : f)), ['manifest-invalid']);
