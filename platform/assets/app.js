@@ -491,6 +491,37 @@ function appRow(app) {
     return li;
 }
 
+// תת-קטגוריה כשורה אחת — "מוצר" שנפתחים ממנו הילדים. פתוח / סגור נזכר במכשיר.
+function groupRemembered(id) {
+    try { return localStorage.getItem(`platform:group:${id}`) === 'open'; } catch { return false; }
+}
+function groupOpen(li, open) {
+    li.classList.toggle('open', open);
+    li.querySelector('.group-head').ariaExpanded = String(open);
+    li.querySelector('.group-kids').hidden = !open;
+}
+function groupRow(s, list) {
+    const head = el('button', { type: 'button', className: 'app group-head', ariaExpanded: 'false' }, [
+        // האייקון של האפליקציה הראשונה בקבוצה (בחבילת היצירה — החבילה עצמה)
+        appIcon({ ...list[0], icon: s.icon }),
+        el('span', { className: 'app-tx' }, [
+            el('b', { textContent: s.name }),
+            el('small', { textContent: `${list.length} אפליקציות · ${list.filter(a => a.name !== s.name).map(a => a.name).join(' · ')}` }),
+        ]),
+        el('span', { className: 'app-go group-chev', textContent: '⌄', ariaHidden: 'true' }),
+    ]);
+    const kids = el('ul', { className: 'group-kids', hidden: true }, list.map(appRow));
+    const li = el('li', { className: 'group' }, [head, kids]);
+    li.dataset.group = s.id;
+    head.addEventListener('click', () => {
+        const open = !li.classList.contains('open');
+        groupOpen(li, open);
+        try { localStorage.setItem(`platform:group:${s.id}`, open ? 'open' : 'closed'); } catch { /* בלי אחסון */ }
+    });
+    groupOpen(li, groupRemembered(s.id));
+    return li;
+}
+
 // ---------- מה באמת מותקן במכשיר הזה (lib/installs.php) ----------
 // לא "זוכרים שלחצו". הבדיקה נעשית במכשיר: בכל דף של אפליקציה מחוברת רץ pwa-beacon.js (השער
 // מוסיף אותו) ומדווח מה הדפדפן אומר — נפתחה מהאייקון / getInstalledRelatedApps / beforeinstallprompt.
@@ -1146,18 +1177,14 @@ async function showApps() {
                 el('span', { textContent: cat.name }),
                 el('span', { className: 'n', textContent: `· ${apps.length}` }),
             ]),
-            ...(apps.some(a => !a.subcategory) ? [el('ul', { className: 'apps' }, apps.filter(a => !a.subcategory).map(appRow))] : []),
-            // תת-קטגוריה (platform/subcategories.json) — קבוצה מתחת לאפליקציות הרגילות של הקטגוריה
-            ...subcategories.filter(s => s.parent === cat.id).map(s => ({ s, list: apps.filter(a => a.subcategory === s.id) }))
-                .filter(({ list }) => list.length)
-                .map(({ s, list }) => el('div', { className: 'subcategory' }, [
-                    el('h3', { className: 'category-title sub' }, [
-                        el('span', { textContent: s.icon, ariaHidden: 'true' }),
-                        el('span', { textContent: s.name }),
-                        el('span', { className: 'n', textContent: `· ${list.length}` }),
-                    ]),
-                    el('ul', { className: 'apps' }, list.map(appRow)),
-                ])),
+            el('ul', { className: 'apps' }, [
+                ...apps.filter(a => !a.subcategory).map(a => ({ name: a.name, node: () => appRow(a) })),
+                // תת-קטגוריה (platform/subcategories.json) — שורה אחת ברשימה, שנפתחים ממנה הילדים
+                ...subcategories.filter(s => s.parent === cat.id)
+                    .map(s => ({ s, list: apps.filter(a => a.subcategory === s.id) }))
+                    .filter(({ list }) => list.length)
+                    .map(({ s, list }) => ({ name: s.name, node: () => groupRow(s, list) })),
+            ].sort((a, b) => a.name.localeCompare(b.name, 'he')).map(x => x.node())),
         ]));
 
     const empty = el('p', { className: 'no-results', textContent: 'לא נמצאה אפליקציה בשם הזה', hidden: true });
@@ -1170,15 +1197,18 @@ async function showApps() {
         let any = false;
         for (const sec of sections) {
             let shown = 0;
-            for (const li of sec.querySelectorAll('li')) {
+            for (const li of sec.querySelectorAll('li[data-search]')) {
                 const hit = (!q || li.dataset.search.includes(q))
                     && (only === 'all' || (only === 'yes' ? li.dataset.inst === 'yes' : li.dataset.inst === 'can'));
                 li.hidden = !hit;
                 if (hit) shown++;
             }
+            // קבוצה: נשארת אם יש בה ילד שמתאים; בזמן חיפוש — נפתחת, כדי שיראו אותו
+            for (const g of sec.querySelectorAll('li.group')) {
+                g.hidden = ![...g.querySelectorAll('li[data-search]')].some(li => !li.hidden);
+                groupOpen(g, (q || only !== 'all') ? !g.hidden : groupRemembered(g.dataset.group));
+            }
             sec.hidden = !shown;
-            // רשימה או תת-קטגוריה שכל האפליקציות בה סוננו — נעלמת, בלי כרטיס ריק
-            for (const g of sec.querySelectorAll('.subcategory, .apps')) g.hidden = ![...g.querySelectorAll('li')].some(li => !li.hidden);
             any ||= shown > 0;
         }
         empty.textContent = only === 'yes' ? 'עוד לא סימנת אפליקציה כמותקנת במכשיר הזה'
