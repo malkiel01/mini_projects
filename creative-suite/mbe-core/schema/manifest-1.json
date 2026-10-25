@@ -8,6 +8,7 @@
     "format": { "const": "mbe" },
     "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+$" },
     "kind": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,31}$" },
+    "template": { "type": "boolean" },
     "id": { "type": "string", "maxLength": 64, "description": "מזהה המסמך (1.1) — UUID v4. תבנית לא תקינה: אזהרה manifest-id-invalid בליבה, לא שגיאה; נשמר כמו שהוא" },
     "created": { "$ref": "#/$defs/stamp" },
     "modified": { "$ref": "#/$defs/stamp" },
