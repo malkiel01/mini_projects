@@ -16,7 +16,7 @@
     <a class="icon-btn" href="index.html" aria-label="חזרה לתמונות שלי">→</a>
     <div class="titles"><h1 id="title">&nbsp;</h1><div class="sub" id="meta">&nbsp;</div></div>
     <!-- מימין לשמאל: החצים מראה — "ביטול" מצביע ימינה, כמו בגוגל דוקס בעברית -->
-    <button class="icon-btn" id="adjust-btn" type="button" aria-label="תיקונים: בהירות, גוון, טשטוש" title="תיקונים" disabled>🎚️</button>
+    <button class="icon-btn" id="adjust-btn" type="button" aria-label="תיקונים ופילטרים: בהירות, גוון, טשטוש, חידוד, תנועה, רעש" title="תיקונים" disabled>🎚️</button>
     <button class="icon-btn" id="save-btn" type="button" aria-label="שמירה בשרת" title="שמירה בשרת (Ctrl+S)" aria-keyshortcuts="Control+S" disabled>💾</button>
     <button class="icon-btn" id="versions-btn" type="button" aria-label="גרסאות קודמות" title="גרסאות" disabled>🕘</button>
     <button class="icon-btn" id="export-btn" type="button" aria-label="הורדה: PNG, JPG, ORA או ‎.mbe" title="הורדה" disabled>⬇️</button>
@@ -40,6 +40,9 @@
           <button type="button" role="tab" data-adj-tab="bc">בהירות</button>
           <button type="button" role="tab" data-adj-tab="hsl">גוון</button>
           <button type="button" role="tab" data-adj-tab="blur">טשטוש</button>
+          <button type="button" role="tab" data-adj-tab="sharpen">חידוד</button>
+          <button type="button" role="tab" data-adj-tab="motion">תנועה</button>
+          <button type="button" role="tab" data-adj-tab="noise">רעש</button>
         </div>
         <div class="adjust-fields" data-adj="bc">
           <label class="opt"><span>בהירות <output for="adj-brightness">0</output></span><input id="adj-brightness" type="range" min="-100" max="100" value="0"></label>
@@ -53,20 +56,36 @@
         <div class="adjust-fields" data-adj="blur" hidden>
           <label class="opt"><span>רדיוס <output for="adj-radius">0</output></span><input id="adj-radius" type="range" min="0" max="64" value="0"></label>
         </div>
+        <div class="adjust-fields" data-adj="sharpen" hidden>
+          <label class="opt"><span>כמות <output for="adj-amount">100%</output></span><input id="adj-amount" type="range" min="0" max="300" value="100"></label>
+          <label class="opt"><span>רדיוס <output for="adj-sradius">2px</output></span><input id="adj-sradius" type="range" min="0" max="16" value="2"></label>
+        </div>
+        <div class="adjust-fields" data-adj="motion" hidden>
+          <label class="opt"><span>זווית <output for="adj-angle">0°</output></span><input id="adj-angle" type="range" min="-180" max="180" value="0"></label>
+          <label class="opt"><span>מרחק <output for="adj-distance">0px</output></span><input id="adj-distance" type="range" min="0" max="128" value="0"></label>
+        </div>
+        <div class="adjust-fields" data-adj="noise" hidden>
+          <label class="opt"><span>כמות <output for="adj-noise">0%</output></span><input id="adj-noise" type="range" min="0" max="100" value="0"></label>
+        </div>
         <div class="adjust-actions">
           <button class="btn ghost" type="button" data-adj-act="cancel">✕ ביטול</button>
           <button class="btn primary" type="button" data-adj-act="apply">✓ החלה</button>
         </div>
       </section>
       <div class="tool-opts" id="tool-opts" role="group" aria-label="אפשרויות הכלי">
-        <label class="opt" data-for="brush eraser"><span>גודל <output for="opt-size"></output></span>
+        <label class="opt" data-for="brush eraser clone"><span>גודל <output for="opt-size"></output></span>
           <input id="opt-size" type="range" min="0" max="100" step="1"></label>
-        <label class="opt" data-for="brush eraser"><span>קשיות <output for="opt-hardness"></output></span>
+        <label class="opt" data-for="brush eraser clone"><span>קשיות <output for="opt-hardness"></output></span>
           <input id="opt-hardness" type="range" min="0" max="100" step="1"></label>
-        <label class="opt" data-for="brush eraser bucket"><span>אטימות <output for="opt-opacity"></output></span>
+        <label class="opt" data-for="brush eraser clone bucket"><span>אטימות <output for="opt-opacity"></output></span>
           <input id="opt-opacity" type="range" min="1" max="100" step="1"></label>
-        <label class="opt" data-for="bucket"><span>סבולת <output for="opt-tolerance"></output></span>
+        <label class="opt" data-for="bucket wand"><span>סבולת <output for="opt-tolerance"></output></span>
           <input id="opt-tolerance" type="range" min="0" max="255" step="1"></label>
+        <div class="opt-btns" data-for="clone">
+          <button class="btn ghost" type="button" data-clone="source" aria-pressed="false" title="הקשה הבאה — נקודת המקור (במחשב: Alt+לחיצה)">🎯 מקור</button>
+        </div>
+        <label class="opt-check" data-for="wand"><input id="opt-contiguous" type="checkbox" checked><span>רציף</span></label>
+        <label class="opt-check" data-for="wand"><input id="opt-sample-all" type="checkbox"><span>כל השכבות</span></label>
         <label class="opt opt-font" data-for="text"><span>גופן</span><select id="opt-font"></select></label>
         <label class="opt opt-num" data-for="text"><span>גודל</span><input id="opt-font-size" type="number" min="4" max="1000" value="48" inputmode="numeric" dir="ltr"></label>
         <div class="opt-btns" data-for="text">
@@ -89,12 +108,12 @@
           <button class="btn ghost" type="button" data-xf="cancel" disabled>✕ ביטול</button>
           <button class="btn primary" type="button" data-xf="apply" disabled>✓ החלה</button>
         </div>
-        <fieldset class="seg opt-seg" data-for="rect ellipse lasso" aria-label="מצב הבחירה">
+        <fieldset class="seg opt-seg" data-for="rect ellipse lasso wand" aria-label="מצב הבחירה">
           <label><input type="radio" name="selmode" value="new" checked><span>חדשה</span></label>
           <label><input type="radio" name="selmode" value="add"><span>הוספה</span></label>
           <label><input type="radio" name="selmode" value="sub"><span>חיסור</span></label>
         </fieldset>
-        <div class="opt-btns" data-for="rect ellipse lasso">
+        <div class="opt-btns" data-for="rect ellipse lasso wand">
           <button class="icon-btn" type="button" data-sel="all" aria-label="בחירת הכול (Ctrl+A)" title="בחירת הכול (Ctrl+A)">▣</button>
           <button class="icon-btn" type="button" data-sel="none" aria-label="ביטול הבחירה (Ctrl+D)" title="ביטול הבחירה (Ctrl+D)">⊘</button>
           <button class="icon-btn" type="button" data-sel="invert" aria-label="היפוך הבחירה (Ctrl+Shift+I)" title="היפוך הבחירה (Ctrl+Shift+I)">◐</button>

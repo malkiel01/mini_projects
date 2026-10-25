@@ -214,6 +214,32 @@ my-book.mbe                 ZIP (Deflate; בלי ZIP64 בגרסה 1 — סעיף
 **לאפליקציות שמציגות שכבות `vector` של אחרים** (עימוד, רסטר): `use` ו-`clip` הם הראשונים שכדאי לתמוך בהם — בלעדיהם תוכן
 חסר או גולש. עד אז — להציג את `renditions/drawing.svg`.
 
+### שכבת `raster` — עריכה לא הורסת (הכרעה 2026-10-25, `requests/raster-studio-r2.md`, ר2)
+
+**העיקרון: `src` הוא תמיד המראה הסופי, והשאר — מתכון.** קורא שלא מכיר מצייר את `src` ורואה בדיוק מה שהמחבר ראה; מי
+שמבין מחשב מחדש מהמתכון. **`baked`** = ה-sha256 של `src` שהמתכון הפיק (64 תווים הקסדצימליים, חובה כשיש מתכון). אפליקציה
+שערכה את הפיקסלים בלי להבין — `src` חדש לא תואם ל-`baked` → המתכון **לא תקף**, והשכבה מוצגת כרסטר רגיל.
+
+| שדה | מה |
+| --- | --- |
+| `source` | הפיקסלים לפני המתכון (`media/…`). בלעדיו — רק מה שלא תלוי בו (`adjust`, ‏`fill`, ‏`mask`) |
+| `crop` | `[x, y, w, h]` בפיקסלים של `source` |
+| `transform` | `[a b c d e f]` מ-`source` (אחרי חיתוך) אל המשטח, ביחידות המשטח — כמו ב-`vector` |
+| `mask` | `{ src, density 0–1, feather, enabled }` — PNG בגווני אפור (לבן = נראה), **נמתח על `box` של השכבה** (בלי `box` — על כל המשטח); `feather` ביחידות המשטח |
+| `vectorMask` | `{ d, feather, enabled }` — `d` באותן פקודות מוחלטות `M L C Q Z`, ביחידות המשטח |
+| `clipToBelow` | נגזרת לפי השכבה שמתחתיה (Clipping Mask) |
+| `filters` | רשימה לפי הסדר; `type` פתוח (לפחות `brightness-contrast`, `hue-saturation`, `gaussian-blur`, `motion-blur`, `unsharp`, `high-pass`, `noise`). `type` לא מוכר — לא מחשבים מחדש; מציגים `src` ושומרים |
+| `effects` | **אותו מבנה כמו `effects` ב-`vector`** — ראה למטה |
+| `adjust` | שכבת התאמה `{ type, … }` — `src` שלה = מה שנראה במקומה (ההרכב שמתחת אחרי ההתאמה, בגבולות המסכה). מי שמבין — מחיל בזמן אמת ומתעלם מ-`src`. השכבות שמתחת השתנו אצל מי שלא מבין → `src` מיושן אבל `baked` תקף; נכתב ב-`gaps` (`adjust → baked`). `type` פתוח: `levels`, `curves`, `hue-saturation`, `color-balance`, `black-white`, `gradient-map`, `channel-mixer`, `brightness-contrast`, `exposure`, `vibrance`, `photo-filter`, `invert`, `posterize`, `threshold`, `lut` (`src: media/….cube`) |
+| `fill` | שכבת מילוי: `{ color }` / `{ gradient }` (כמו ב-`vector`) / `{ pattern: "media/…" }` |
+| `smart` | Smart Object: `{ src: "media/…", size: [w, h] }` — המקור המוטמע (תמונה או `.mbe`), יחד עם `transform` ו-`filters` |
+
+**`effects` — מבנה אחד לכל החבילה (השלמה בהכרעה):** הצל נשמר ב-**`dx` / `dy`** (כמו שאושר לווקטורי), לא ב-`angle` /
+`distance` — אלה רק תצוגה בממשק (`dx = distance·cos(angle)`, ‏`dy = distance·sin(angle)`). ‏`spread` — תוספת רשות לצל ולזוהר.
+סוגים: `shadow`, `inner-shadow`, `glow`, `inner-glow`, `stroke`, `overlay`, `blur` — אותם שמות בכל אפליקציה.
+
+**לא כאן:** CMYK, ‏Lab, ‏ICC ו-16 / 32 ביט — בקשת "צבע" נפרדת לכל החבילה. ערוצים ובחירות שמורות — ב-`apps/raster-studio/`.
+
 ### הגדרות עימוד (`layout`) ועמודי אב (הכרעה 2026-10-24, מבקשת העימוד)
 
 **`layout` בשורש `document.json`** — שם שמור; אף אפליקציה לא משתמשת בו לדבר אחר:

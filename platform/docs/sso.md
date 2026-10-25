@@ -26,7 +26,9 @@ GET platform/sso.php?action=config&client=<id>
 → {"app":"…","connected":true,"login":{"platform":true,"password":false,"google":false}}
 ```
 
-**מחוברת:** `$_SERVER['PLATFORM_USER']` הוא JSON — `{"sub","name","email","email_verified"}` — ויש בו ערך
+**מחוברת:** `$_SERVER['PLATFORM_USER']` הוא JSON — `{"sub","name","email","email_verified","platform_admin"}`
+(`platform_admin` — `true` למנהל הפלטפורמה: כך אפליקציה יודעת מי הבעלים שלה, למשל מי מקבל את מסך התפקידים
+בפעם הראשונה. התפקידים **בתוך** האפליקציה — שלה, לא של הפלטפורמה) — ויש בו ערך
 רק למשתמש מחובר לפלטפורמה **עם הרשאה** לאפליקציה. המפתח אינו `HTTP_*`, כך שאי אפשר לזייף אותו
 בבקשה. בכל בקשה:
 

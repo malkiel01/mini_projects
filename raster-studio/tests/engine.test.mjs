@@ -730,3 +730,45 @@ test('עמוד של אפליקציה אחרת (pt): נפתח ברזולוציה 
   assert.deepEqual(s.layers[0].px, [900, 600]);
 });
 
+
+// ---- מטה קסם: טווח צבעים ומסכת פיקסלים בבחירה ----
+import { colorRange } from '../assets/js/engine/fill.js';
+import { maskShape, maskOutline, selectionBox as selBox } from '../assets/js/engine/selection.js';
+import { transformShape } from '../assets/js/engine/transform.js';
+
+test('טווח צבעים: כל הצבע בתמונה, גם לא רציף — ו-floodFill רק הרציף', () => {
+  // שני ריבועים אדומים נפרדים על לבן
+  const red = (x, y) => (x <= 1 || x >= 6) && y <= 1;
+  const px = img(8, 4, (x, y) => red(x, y) ? [255, 0, 0, 255] : [255, 255, 255, 255]);
+  const all = colorRange(px, 8, 4, 0, 0, 10);
+  assert.equal(all.count, 8);
+  assert.deepEqual(all.box, [0, 0, 7, 1]);
+  assert.equal(floodFill(px, 8, 4, 0, 0, 10).count, 4);
+  assert.equal(colorRange(px, 8, 4, 9, 0, 10).count, 0, 'מחוץ לתמונה');
+});
+
+test('maskShape: חותך למלבן; ריקה — null', () => {
+  const m = new Uint8Array(6 * 4);
+  m[1 * 6 + 2] = m[2 * 6 + 3] = 255;
+  const s = maskShape(m, 6, [2, 1, 3, 2]);
+  assert.deepEqual([s.type, s.x, s.y, s.w, s.h], ['mask', 2, 1, 2, 2]);
+  assert.deepEqual([...s.data], [255, 0, 0, 255]);
+  assert.equal(maskShape(m, 6, null), null);
+  assert.deepEqual(selBox({ shapes: [{ ...s, op: 'add' }], inverted: false }, 6, 4), [2, 1, 4, 3]);
+});
+
+test('maskOutline: ריבוע 2×2 — ארבעה קטעים מאוחדים; שני פיקסלים באלכסון — שישה (הקווים האמצעיים ממשיכים זה את זה)', () => {
+  const sq = maskOutline({ w: 2, h: 2, data: new Uint8Array([255, 255, 255, 255]) });
+  assert.deepEqual(sq.map(String).sort(), ['0,0,0,2', '0,0,2,0', '0,2,2,2', '2,0,2,2']);
+  assert.equal(maskOutline({ w: 2, h: 2, data: new Uint8Array([255, 0, 0, 255]) }).length, 6);
+});
+
+test('transformShape: מסכה — הזזה שלמה; היפוך אופקי — הפיקסלים מתהפכים', () => {
+  const s = { op: 'add', type: 'mask', x: 10, y: 5, w: 3, h: 1, data: new Uint8Array([255, 0, 0]) };
+  const moved = transformShape(s, [1, 0, 0, 1, 2.4, -1]);
+  assert.deepEqual([moved.x, moved.y, moved.data], [12, 4, s.data]);
+  // היפוך סביב x = 20: x' = 40 − x → המלבן 27..30, והפיקסל הנבחר עובר לקצה הימני
+  const flip = transformShape(s, [-1, 0, 0, 1, 40, 0]);
+  assert.deepEqual([flip.type, flip.x, flip.y, flip.w, flip.h, flip.op], ['mask', 27, 5, 3, 1, 'add']);
+  assert.deepEqual([...flip.data], [0, 0, 255]);
+});

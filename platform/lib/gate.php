@@ -103,6 +103,9 @@ function identity(array $user): array
         'name'           => (string)$user['display_name'],
         'email'          => $email ? mb_strtolower((string)$email) : null,
         'email_verified' => $verified,
+        // מנהל הפלטפורמה — כדי שאפליקציה תדע מי הבעלים שלה (למשל: מי מקבל את מסך התפקידים בפעם הראשונה).
+        // רק בזהות של השער (אותו שרת); לא בזהות החתומה של הכניסה המאוחדת לדומיין אחר.
+        'platform_admin' => ($user['role'] ?? '') === 'admin',
     ];
 }
 

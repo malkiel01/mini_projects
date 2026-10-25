@@ -561,6 +561,115 @@ async function main() {
     await page.screenshot({ path: join(SHOTS, 'select-desktop.png') });
   }
 
+  // ---- מטה קסם ----
+  await openEd(page);
+  await page.waitForFunction(() => window.__rs?.doc);
+  await page.evaluate(() => __rs.setView({ zoom: 1, x: 20, y: 20 }));
+  await page.click('[data-act="add"]');
+  await color('#ff0000');
+  await page.keyboard.press('m');
+  await drag([100, 100], [200, 200]);
+  await drag([400, 100], [500, 200], ['Shift']);
+  await page.keyboard.press('Alt+Backspace');
+  await page.keyboard.press('Control+d');
+  await page.keyboard.press('w');
+  check('W — מטה קסם, עם סבולת, רציף וכל השכבות', await page.evaluate(() => __rs.tools.state.tool) === 'wand'
+    && await page.isVisible('#opt-tolerance') && await page.isVisible('#opt-contiguous') && await page.isVisible('#opt-sample-all'));
+  await setOpt('tolerance', 10);
+  await page.mouse.click(...at(150, 150));
+  await page.evaluate(() => __rs.tools.settle());
+  const wand1 = await page.evaluate(() => { const s = __rs.doc.selection?.shapes[0]; return s && [s.type, s.x, s.y, s.w, s.h].join(); });
+  check('לחיצה — מסכת פיקסלים של הריבוע הרציף בלבד', wand1 === 'mask,100,100,100,100', wand1);
+  check('מטה קסם — רשומה בהיסטוריה', await page.evaluate(() => __rs.history.undoStack.at(-1).label) === 'מטה קסם');
+  await color('#00ff00');
+  await page.keyboard.press('Alt+Backspace');
+  check('מילוי בבחירת המטה: הריבוע הנבחר ירוק, השני נשאר אדום, והלבן בחוץ',
+    near(await px(150, 150), [0, 255, 0, 255]) && near(await px(450, 150), [255, 0, 0, 255]) && near(await px(250, 150), [255, 255, 255, 255]),
+    [await px(150, 150), await px(450, 150), await px(250, 150)].join(' | '));
+  await page.keyboard.press('Control+z');
+  await page.click('#opt-contiguous');
+  await page.mouse.click(...at(150, 150));
+  await page.evaluate(() => __rs.tools.settle());
+  const wand2 = await page.evaluate(() => { const s = __rs.doc.selection.shapes; return s.length + ':' + [s[0].type, s[0].x, s[0].w].join(); });
+  check('בלי "רציף" — טווח צבעים: שני הריבועים, בצורה אחת', wand2 === '1:mask,100,400', wand2);
+  await page.click('#opt-contiguous');
+  await page.keyboard.down('Alt');
+  await page.mouse.click(...at(450, 150));
+  await page.keyboard.up('Alt');
+  await page.evaluate(() => __rs.tools.settle());
+  await page.keyboard.press('Delete');
+  check('Alt+לחיצה — חיסור: מחיקה רק בריבוע שנשאר בבחירה', !near(await px(150, 150), [255, 0, 0, 255]) && near(await px(450, 150), [255, 0, 0, 255]),
+    [await px(150, 150), await px(450, 150)].join(' | '));
+  await page.keyboard.press('Control+z');
+  // השכבה הפעילה שקופה מחוץ לריבועים; "כל השכבות" רואה את הרקע הלבן — אותה תוצאה כאן, ורציף מהלבן לא נכנס לאדום
+  await page.click('#opt-sample-all');
+  await page.mouse.click(...at(300, 300));
+  await page.evaluate(() => __rs.tools.settle());
+  const wand3 = await page.evaluate(() => { const s = __rs.doc.selection.shapes[0]; return [s.x, s.y, s.w, s.h, s.data[150 * s.w + 150], s.data[0]].join(); });
+  check('כל השכבות: הלבן סביב — כל הקנבס, בלי הריבועים', wand3 === '0,0,600,400,0,255', wand3);
+  // בחירת מסכה זזה יחד עם התוכן
+  await page.keyboard.press('Control+d');
+  await page.click('#opt-sample-all');
+  await page.mouse.click(...at(150, 150));
+  await page.evaluate(() => __rs.tools.settle());
+  await page.keyboard.press('v');
+  await drag([150, 150], [170, 160]);
+  await page.keyboard.press('Enter');
+  const wand4 = await page.evaluate(() => { const s = __rs.doc.selection.shapes[0]; return [s.type, s.x, s.y].join(); });
+  check('הזזה — מסכת הבחירה זזה עם התוכן', wand4 === 'mask,120,110' && near(await px(210, 150), [255, 0, 0, 255]) && near(await px(110, 150), [255, 255, 255, 255]), wand4);
+  if (SHOTS) {
+    await page.keyboard.press('w');
+    await page.screenshot({ path: join(SHOTS, 'wand-desktop.png') });
+  }
+
+  // ---- חותמת שכפול ----
+  await openEd(page);
+  await page.waitForFunction(() => window.__rs?.doc);
+  await page.evaluate(() => __rs.setView({ zoom: 1, x: 20, y: 20 }));
+  await page.click('[data-act="add"]');
+  await color('#ff0000');
+  await page.keyboard.press('m');
+  await drag([100, 100], [150, 150]);
+  await page.keyboard.press('Alt+Backspace');
+  await page.keyboard.press('Control+d');
+  await page.keyboard.press('s');
+  check('S — חותמת שכפול, עם גודל, קשיות, אטימות ו-🎯', await page.evaluate(() => __rs.tools.state.tool) === 'clone'
+    && await page.isVisible('#opt-size') && await page.isVisible('[data-clone="source"]'));
+  await setOpt('size', 55); await setOpt('hardness', 100); await setOpt('opacity', 100);
+  const undo0 = await page.evaluate(() => __rs.history.undoStack.length);
+  await stroke([[325, 125], [330, 125]]);
+  check('בלי נקודת מקור — הודעה, ושום שינוי', await page.evaluate(() => __rs.history.undoStack.length) === undo0
+    && /נקודת המקור/.test(await page.textContent('.toast')));
+  await page.keyboard.down('Alt');
+  await page.mouse.click(...at(125, 125));
+  await page.keyboard.up('Alt');
+  await stroke([[325, 125], [330, 125]]);
+  check('Alt+לחיצה ואז משיכה — מועתק מהמקור, באותו מרחק', near(await px(325, 125), [255, 0, 0, 255]) && near(await px(325, 160), [255, 255, 255, 255])
+    && near(await px(125, 125), [255, 0, 0, 255]), [await px(325, 125), await px(325, 160)].join(' | '));
+  check('חותמת שכפול — רשומה בהיסטוריה', await page.evaluate(() => __rs.history.undoStack.at(-1).label) === 'חותמת שכפול');
+  // משיכה שנייה — אותו מרחק (המקור שמאלה ב-200): מעתיקה את מה שהמשיכה הקודמת ציירה
+  await stroke([[520, 125], [522, 125]]);
+  check('המרחק נשמר בין משיכות', near(await px(521, 125), [255, 0, 0, 255]) && near(await px(521, 160), [255, 255, 255, 255]), await px(521, 125));
+  await page.keyboard.press('Control+z');
+  // 🎯 (למסך מגע): הקשה קובעת מקור חדש, והמשיכה הבאה מחשבת מרחק חדש
+  await page.click('[data-clone="source"]');
+  check('🎯 — מחכה להקשה', await page.getAttribute('[data-clone="source"]', 'aria-pressed') === 'true');
+  await page.mouse.click(...at(140, 140));
+  check('הקשה — המקור נקבע, 🎯 כבה', await page.getAttribute('[data-clone="source"]', 'aria-pressed') === 'false');
+  await stroke([[500, 250], [505, 250]]);
+  check('מקור חדש — מרחק חדש', near(await px(502, 250), [255, 0, 0, 255]), await px(502, 250));
+  // בחירה חותכת גם את החותמת
+  await page.keyboard.press('m');
+  await drag([400, 300], [200, 0]);   // מתחילים בשטח פנוי — לא על פס הכלים
+  await page.keyboard.press('s');
+  await page.keyboard.down('Alt');
+  await page.mouse.click(...at(140, 125));
+  await page.keyboard.up('Alt');
+  await stroke([[425, 50], [380, 50]]);
+  check('חותמת בתוך בחירה — רק בתוכה', near(await px(390, 50), [255, 0, 0, 255]) && near(await px(420, 50), [255, 255, 255, 255]),
+    [await px(390, 50), await px(420, 50)].join(' | '));
+  if (SHOTS) await page.screenshot({ path: join(SHOTS, 'clone-desktop.png') });
+
   // ---- הזזה ושינוי צורה ----
   await openEd(page);
   await page.waitForFunction(() => window.__rs?.doc);
@@ -751,6 +860,35 @@ async function main() {
   await adj('hsl', { lightness: 100 });
   await page.click('[data-adj-act="apply"]');
   check('בחירה: רק בתוכה — לבן; מחוצה לה — עדיין שחור', near(await px(50, 100), [255, 255, 255, 255]) && near(await px(150, 100), [0, 0, 0, 255]));
+  // פילטרים: אפור 100 עם ריבוע 160 ב-(300..400, 100..200)
+  await page.keyboard.press('Control+d');
+  await fillLayer([100, 100, 100, 255]);
+  await page.evaluate(() => __rs.tools.setTool('rect'));   // M היה מחליף לאליפסה — הכלי כבר מלבן
+  await drag([400, 200], [300, 100]);
+  await color('#a0a0a0');
+  await page.keyboard.press('Alt+Backspace');
+  await page.keyboard.press('Control+d');
+  const r0 = async (x, y) => Number((await px(x, y)).split(',')[0]);
+  await adj('sharpen', { amount: 300, sradius: 4 });
+  const sh = [await r0(301, 150), await r0(298, 150), await r0(350, 150), await r0(500, 300)];
+  check('חידוד: ליד הקצה — בהיר מעל 160 מבפנים וכהה מתחת ל-100 מבחוץ; הרחק — בלי שינוי',
+    sh[0] > 175 && sh[1] < 85 && Math.abs(sh[2] - 160) <= 1 && Math.abs(sh[3] - 100) <= 1, sh.join());
+  await page.click('[data-adj-act="apply"]');
+  check('חידוד — רשומת "חידוד"', await page.evaluate(() => __rs.history.undoStack.at(-1).label) === 'חידוד');
+  await page.keyboard.press('Control+z');
+  await adj('motion', { angle: 0, distance: 40 });
+  const mo = [await r0(300, 150), await r0(350, 150), await r0(350, 96), await r0(500, 300)];
+  check('טשטוש תנועה אופקי: הקצה האנכי מטושטש, הקצה העליון חד', mo[0] > 110 && mo[0] < 150 && Math.abs(mo[1] - 160) <= 1 && Math.abs(mo[2] - 100) <= 1 && Math.abs(mo[3] - 100) <= 1, mo.join());
+  await adj('motion', { angle: 90, distance: 40 });
+  const mv = [await r0(350, 100), await r0(296, 150)];
+  check('טשטוש תנועה 90° — אנכי', mv[0] > 110 && mv[0] < 150 && Math.abs(mv[1] - 100) <= 1, mv.join());
+  await adj('noise', { noise: 40 });
+  const nz = await page.evaluate(async () => { await __rs.tools.settle(); return Array.from(await __rs.renderer.readPixels(__rs.doc, 450, 300, 32, 1)).filter((_, i) => i % 4 === 0); });
+  const mean = nz.reduce((a, b) => a + b, 0) / nz.length;
+  check('רעש: הפיקסלים שונים זה מזה, והממוצע קרוב למקור', new Set(nz).size > 10 && Math.abs(mean - 100) < 20, `${new Set(nz).size} · ${mean.toFixed(1)}`);
+  await adj('sharpen', { amount: 0 });
+  check('חידוד בכמות 0 — בלי שינוי (לא טשטוש)', Math.abs(await r0(300, 150) - 160) <= 1 && Math.abs(await r0(299, 150) - 100) <= 1);
+  await page.click('[data-adj-act="cancel"]');
   if (SHOTS) {
     await adj('hsl', { hue: 90 });
     await page.screenshot({ path: join(SHOTS, 'adjust-desktop.png') });
