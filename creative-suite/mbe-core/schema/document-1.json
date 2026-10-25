@@ -18,7 +18,7 @@
         "required": ["family"],
         "properties": {
           "family": { "type": "string", "minLength": 1, "maxLength": 200 },
-          "embedded": { "$ref": "#/$defs/mediaRef" }
+          "embedded": { "$ref": "#/$defs/mediaRef" }, "source": { "$ref": "#/$defs/token" }, "lib": { "$ref": "#/$defs/lib" }
         }
       }
     },
@@ -54,7 +54,7 @@
       "maxItems": 100000,
       "items": { "$ref": "#/$defs/surface" }
     },
-    "swatches": { "type": "object", "additionalProperties": { "type": "object", "properties": { "name": { "type": "string", "maxLength": 200 }, "color": { "type": "string", "maxLength": 64 } } } },
+    "swatches": { "type": "object", "additionalProperties": { "type": "object", "properties": { "name": { "type": "string", "maxLength": 200 }, "color": { "type": "string", "maxLength": 64 }, "lib": { "$ref": "#/$defs/lib" } } } },
     "flows": {
       "type": "object",
       "additionalProperties": { "$ref": "#/$defs/flow" }
@@ -63,6 +63,7 @@
   "$defs": {
     "id": { "type": "string", "pattern": "^[A-Za-z0-9_.:-]{1,128}$" },
     "token": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,31}$" },
+    "lib": { "type": "object", "required": ["cloud", "item"], "properties": { "cloud": { "type": "string", "maxLength": 128 }, "item": { "type": "string", "maxLength": 128 }, "rev": { "type": "string", "pattern": "^[0-9a-f]{64}$" } } },
     "mediaRef": { "type": "string", "pattern": "^media/[0-9a-f]{64}(\\.[a-z0-9]{1,8})?$" },
     "surface": {
       "type": "object",
@@ -152,6 +153,7 @@
     "paraStyle": {
       "type": "object",
       "properties": {
+        "lib": { "$ref": "#/$defs/lib" },
         "name": { "type": "string", "maxLength": 200 },
         "font": { "type": "string", "maxLength": 200 },
         "size": { "type": "number", "exclusiveMinimum": 0 },

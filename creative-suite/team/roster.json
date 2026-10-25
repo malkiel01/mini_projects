@@ -26,6 +26,9 @@
       "does": "עימוד בסגנון InDesign; ‎.mbe מסוג layout; בעלים של שטף טקסט במסגרות ו-shapeLine (עברית)" },
     { "role": "design-studio", "name": "סטודיו העיצוב", "session": "session_01JD5TDa42YrmsoeAfPtQ5qb",
       "owns": ["greeting-cards/"],
-      "does": "עורך בסגנון Canva — תבניות, טקסט, צורות ושכבות, בטלפון; ‎.mbe מסוג design" }
+      "does": "עורך בסגנון Canva — תבניות, טקסט, צורות ושכבות, בטלפון; ‎.mbe מסוג design" },
+    { "role": "suite-cloud", "name": "ענן החבילה", "session": "session_01Eca6GK5y7usjF6cfmuLBpq",
+      "owns": ["suite-cloud/"],
+      "does": "חשבון חבילה, כוננים (פנימי, Drive, Dropbox, FTP, מחשב) וספריות משותפות; בעלים של לקוח ענן החבילה" }
   ]
 }
