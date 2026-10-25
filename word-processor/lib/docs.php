@@ -193,15 +193,13 @@ function doc_save(array $row, $json, ?string $title, string $userId, string $use
 }
 
 /**
- * הגדרות עמוד בלבד — בלי גרסה חדשה של התוכן. לתאימות (embed_page, my_page של לשונית ישנה);
- * העורך שולח היום את ההגדרות בתוך המסמך, באותה שמירה (doc_save).
+ * הגדרות עמוד בלבד (embed_page, my_page של לשונית ישנה; העורך שולח היום את ההגדרות בתוך המסמך — doc_save).
+ * גם זו שמירה רגילה: מספר גרסה חדש והיסטוריית גרסאות, כך ששחזור גרסה מחזיר גם את הגדרות העמוד (ביקורת 04, F07).
+ * $base — כמו בשמירה: גרסה אחרת בשרת → 409.
  */
-function doc_set_page(array $row, $page): array
+function doc_set_page(array $row, $page, string $userId, string $userName, $base = null): array
 {
-    $p = page_normalize($page, doc_page($row));
-    db()->prepare('UPDATE docs SET page = ?, updated_at = ? WHERE id = ?')
-        ->execute([json_encode($p, JSON_UNESCAPED_UNICODE), time(), $row['id']]);
-    return doc_find($row['id'], $row['space']);
+    return doc_save($row, doc_json($row), null, $userId, $userName, $base, page_normalize($page, doc_page($row)));
 }
 
 function doc_rename(array $row, string $title): void

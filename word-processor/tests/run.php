@@ -2001,7 +2001,7 @@ $mbJson = ['type' => 'doc', 'content' => [
 $mbPage = page_normalize(['header' => [['type' => 'paragraph', 'content' => [['type' => 'image', 'attrs' => ['media' => $mbHdrImg, 'width' => 20, 'height' => 20]], ['type' => 'text', 'text' => ' לוגו']]]],
     'margins' => ['top' => 20, 'bottom' => 25, 'right' => 30, 'left' => 15], 'numbering' => ['format' => 'hebrew', 'start' => 3]]);
 $mbRow = doc_find($mbDocId, 'a:99');
-$mbRow = doc_save(doc_set_page($mbRow, $mbPage), $mbJson, 'מסמך לחבילה', 'u1', 'דנה');
+$mbRow = doc_save(doc_set_page($mbRow, $mbPage, 'u1', 'דנה'), $mbJson, 'מסמך לחבילה', 'u1', 'דנה');
 $mbBytes = export_mbe($mbRow);
 $mbV = Mbe::validate($mbBytes);
 $mbErr = array_values(array_filter($mbV, fn($i) => $i['level'] === 'error'));
@@ -2078,6 +2078,20 @@ check('‎.mbe מהעימוד, הורדה: המשטחים, השכבות והרק
     && ($mbLB->files[$mbLO->document['surfaces'][0]['layers'][0]['src']] ?? null) === $mbLO->files[$mbLO->document['surfaces'][0]['layers'][0]['src']]
     && str_contains($mbLFlow, 'שטף אחד שעובר') && !str_contains($mbLFlow, '"image"') && isset($mbLB->apps('layout-studio')['view.json']), $mbLFlow);
 check('‎.mbe: קובץ פגום — הודעה ברורה', throws(fn() => import_mbe(substr($mbBytes, 0, 200), $mbLId), 'bad_file'));
+
+section('F07 — הגדרות עמוד (my_page / embed_page) בהיסטוריית הגרסאות');
+$f7Id = doc_new('a:99', 'עמוד', null, null, 'u1', 'דנה');
+$f7 = doc_save(doc_find($f7Id, 'a:99'), ['type' => 'doc', 'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'תוכן']]]]], null, 'u1', 'דנה');
+$f7v = (int)$f7['version'];
+db()->prepare("UPDATE versions SET started_at = started_at - 3600 WHERE doc = ?")->execute([$f7Id]);   // מחוץ לחלון האיחוד
+$f7 = doc_set_page($f7, ['size' => 'Letter', 'orientation' => 'landscape'], 'u2', 'רון');
+$f7List = versions_list($f7);
+check('F07: שינוי הגדרות עמוד — גרסה חדשה (מספר עולה), ובהיסטוריה — על שם מי ששינה', (int)$f7['version'] === $f7v + 1 && doc_page($f7)['size'] === 'Letter'
+    && count($f7List) === 2 && $f7List[0]['by'] === 'רון' && $f7List[0]['version'] === $f7v + 1, json_encode($f7List, JSON_UNESCAPED_UNICODE));
+check('F07: התוכן לא משתנה, ובסיס ישן — התנגשות (כמו בשמירה)', json_encode(doc_json($f7)) === json_encode(doc_json(doc_find($f7Id, 'a:99')))
+    && str_contains(json_encode(doc_json($f7), JSON_UNESCAPED_UNICODE), 'תוכן') && throws(fn() => doc_set_page($f7, ['size' => 'A4'], 'u2', 'רון', $f7v), 'conflict'));
+$f7 = doc_restore_version($f7, $f7List[1]['id'], 'u1', 'דנה', $f7['version']);
+check('F07: שחזור הגרסה שלפני — מחזיר גם את הגדרות העמוד', doc_page($f7)['size'] === 'A4' && doc_page($f7)['orientation'] === 'portrait', json_encode(doc_page($f7)));
 array_map('unlink', glob("$tmp/media/mbe/*") ?: []);
 @rmdir("$tmp/media/mbe");
 

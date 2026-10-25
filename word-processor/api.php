@@ -233,7 +233,8 @@ try {
             $s = embed_auth();
             $row = doc_find($s['doc'], 'c:' . $s['client']);
             embed_write($s, $row, $in);
-            out(['page' => doc_page(doc_set_page($row, $in['page'] ?? null))]);
+            $row = doc_set_page($row, $in['page'] ?? null, $s['user_id'], $s['user_name'], $in['base_version'] ?? null);
+            out(['page' => doc_page($row), 'version' => (int)$row['version']]);
 
         case 'embed_upload':
             need_post();
@@ -473,7 +474,8 @@ function app_action(string $action, array $in): never
         case 'my_page':
             [$row] = doc_access($in['doc'] ?? '', $acc, 'edit');
             require_edit('edit', $row['id'], $uid, $uname, $holder);
-            out(['page' => doc_page(doc_set_page($row, $in['page'] ?? null))]);
+            $row = doc_set_page($row, $in['page'] ?? null, $uid, $uname, $in['base_version'] ?? null);
+            out(['page' => doc_page($row), 'version' => (int)$row['version']]);
         case 'my_rename':
             [$row] = doc_access($in['doc'] ?? '', $acc, 'edit');
             doc_rename($row, (string)($in['title'] ?? ''));
