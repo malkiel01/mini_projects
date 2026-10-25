@@ -485,6 +485,13 @@ function app_action(string $action, array $in): never
             doc_trash($row);
             activity($row['id'], $uid, $uname, 'trash');
             out(['ok' => true, 'trash' => true, 'days' => TRASH_DAYS]);
+        case 'my_discard':
+            // "+ מסמך" ויציאה בלי לכתוב בו: נמחק לגמרי (לא לסל) — רק אם לא נשמר מאז שנוצר (גרסה 1), בלי תמונות, בלי
+            // שיתוף ובשם ההתחלתי. כל השאר נשאר — כולל מסמך שיובא (שמור כבר בגרסה 2)
+            [$row] = doc_access($in['doc'] ?? '', $acc, 'owner');
+            $gone = doc_untouched($row);
+            if ($gone) doc_delete($row);
+            out(['discarded' => $gone]);
         case 'my_trash':
             trash_purge($space);
             $st = db()->prepare('SELECT id, title, updated_at, deleted_at FROM docs WHERE space = ? AND deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT 500');

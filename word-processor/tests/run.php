@@ -2079,6 +2079,18 @@ check('‎.mbe מהעימוד, הורדה: המשטחים, השכבות והרק
     && str_contains($mbLFlow, 'שטף אחד שעובר') && !str_contains($mbLFlow, '"image"') && isset($mbLB->apps('layout-studio')['view.json']), $mbLFlow);
 check('‎.mbe: קובץ פגום — הודעה ברורה', throws(fn() => import_mbe(substr($mbBytes, 0, 200), $mbLId), 'bad_file'));
 
+section('מסמך חדש שלא נכתב בו — לא נשאר (my_discard)');
+$enA = doc_new('a:99', 'מסמך חדש', null, null, 'u1', 'דנה');
+check('מסמך חדש, בלי שמירה — "לא נכתב בו"', doc_untouched(doc_find($enA, 'a:99')));
+$enB = doc_new('a:99', 'מסמך חדש', null, null, 'u1', 'דנה');
+doc_save(doc_find($enB, 'a:99'), ['type' => 'doc', 'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'א']]]]], null, 'u1', 'דנה');
+$enC = doc_new('a:99', 'מסמך חדש', null, null, 'u1', 'דנה');
+doc_rename(doc_find($enC, 'a:99'), 'שם שבחרתי');
+$enD = doc_new('a:99', 'מסמך חדש', null, null, 'u1', 'דנה');
+$enIm = imagecreatetruecolor(2, 2);
+ob_start(); imagepng($enIm); media_store($enD, (string)ob_get_clean());
+check('…אבל לא: אחרי שמירה, אחרי שינוי שם, או עם תמונה', !doc_untouched(doc_find($enB, 'a:99')) && !doc_untouched(doc_find($enC, 'a:99')) && !doc_untouched(doc_find($enD, 'a:99')));
+
 section('רשימת ציור → PDF (pdf-core: lib/pdf-core/draw.php — לעימוד)');
 require_once __DIR__ . '/../lib/pdf-core/draw.php';
 $dwFont = file_get_contents(__DIR__ . '/../vendor/fonts/pdf/frank-ruhl-libre-hebrew-400-normal.woff');
