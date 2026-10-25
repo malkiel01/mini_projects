@@ -187,17 +187,36 @@ final class OdtCtx
                 if ($v !== null) $p['margins'][$k] = round($v * 25.4 / 72, 1);
             }
         }
-        // כותרות: הטקסט (עם מספר עמוד — text:page-number — כמספור)
-        foreach (['header', 'footer'] as $k) {
-            $hf = $xp->query("style:$k", $mp)->item(0);
-            if (!$hf instanceof DOMElement) continue;
-            $lines = [];
+        // כותרות: הפסקאות כמו בגוף (טקסט, או עשירה — hf_from_blocks); מספר עמוד (text:page-number) — כמספור.
+        // לעמוד הראשון (style:header-first / footer-first, ODF 1.3) — first_diff, אם שונה מהרגילה
+        $num = null;
+        $firstNum = false;
+        $hfOf = function (string $el, string $k) use ($xp, $mp, &$num, &$firstNum): string|array|null {
+            $hf = $xp->query("style:$el", $mp)->item(0);
+            if (!$hf instanceof DOMElement || $hf->getAttributeNS(ODF_NS['style'], 'display') === 'false') return null;
+            $blocks = [];
             foreach ($xp->query('.//text:p|.//text:h', $hf) as $hp) {
-                if ($xp->query('.//text:page-number', $hp)->length) { $p['numbering'] = ['show' => true, 'position' => $k === 'header' ? 'top' : 'bottom']; continue; }
-                if (($t = trim($hp->textContent)) !== '') $lines[] = $t;
+                if ($xp->query('.//text:page-number', $hp)->length) {
+                    if (str_ends_with($el, '-first')) { $firstNum = true; continue; }
+                    $al = $this->prop($hp->getAttributeNS(ODF_NS['text'], 'style-name'), 'para', 'fo:text-align');
+                    $num ??= ['show' => true, 'position' => $k === 'header' ? 'top' : 'bottom']
+                        + ($al === 'center' ? ['align' => 'center'] : (in_array($al, ['end', 'right'], true) ? ['align' => 'right'] : (in_array($al, ['start', 'left'], true) ? ['align' => 'left'] : [])));
+                    continue;
+                }
+                if (trim($hp->textContent) === '' && !$xp->query('.//draw:frame', $hp)->length) continue;
+                foreach ($this->para($hp) as $b) $blocks[] = ($b['type'] ?? '') === 'heading' ? ['type' => 'paragraph'] + array_diff_key($b, ['type' => 1, 'attrs' => 1]) : $b;
             }
-            if ($lines) $p[$k] = implode("\n", $lines);
+            return hf_from_blocks($blocks);
+        };
+        foreach (['header', 'footer'] as $k) if (($v = $hfOf($k, $k)) !== null) $p[$k] = $v;
+        $hasFirst = $xp->query('style:header-first|style:footer-first', $mp)->length > 0;
+        if ($hasFirst) {
+            $fh = $hfOf('header-first', 'header');
+            $ff = $hfOf('footer-first', 'footer');
+            if ($fh != ($p['header'] ?? null) || $ff != ($p['footer'] ?? null)) $p += ['first_diff' => true, 'header_first' => $fh ?? '', 'footer_first' => $ff ?? ''];
+            if ($num) $num['first_page'] = $firstNum;
         }
+        if ($num) $p['numbering'] = $num;
         if (!isset($p['numbering'])) $p['numbering'] = ['show' => false];
         $this->page = $p;
     }
