@@ -218,7 +218,9 @@ dialog::backdrop { background: rgba(10, 12, 30, .45); }
 .sheet-head .tx { flex: 1; min-width: 0; display: grid; line-height: 1.3; }
 .sheet-head h2 { font-size: 1.05rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sheet-head small { color: var(--muted); font-size: .82rem; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.sheet-body { overflow-y: auto; padding: var(--s3); display: grid; gap: var(--s3); overscroll-behavior: contain; }
+/* grid-auto-rows: max-content — בלי זה, כשהתוכן גבוה מהגיליון, הגריד מכווץ שורות עם overflow: hidden (רשימות)
+   במקום שהגיליון ייגלל: "מי נכנס" נחתך אחרי שורה אחת. min-height: 0 — כדי שהגוף ייגלל בתוך ה-flex. */
+.sheet-body { overflow-y: auto; padding: var(--s3); display: grid; gap: var(--s3); grid-auto-rows: max-content; min-height: 0; overscroll-behavior: contain; }
 .sheet-sec { font-size: .78rem; font-weight: 700; color: var(--muted); }
 @media (max-width: 599px) {
     dialog { width: 100vw; max-width: 100vw; margin: auto 0 0; border-radius: 18px 18px 0 0; max-height: 88dvh; }
