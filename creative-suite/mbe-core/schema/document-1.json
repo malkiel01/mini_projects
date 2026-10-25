@@ -22,7 +22,10 @@
         }
       }
     },
-    "styles": { "type": "object" },
+    "styles": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/paraStyle" }
+    },
     "layout": {
       "type": "object",
       "properties": {
@@ -90,8 +93,36 @@
         "locked": { "type": "boolean" },
         "box": { "type": "array", "minItems": 4, "maxItems": 4, "items": { "type": "number" } },
         "flow": { "type": "string" },
+        "columns": { "type": "number", "minimum": 1, "maximum": 12 },
+        "gutter": { "type": "number", "minimum": 0 },
+        "px": {
+          "type": "array", "minItems": 2, "maxItems": 2,
+          "items": { "type": "number", "exclusiveMinimum": 0 }
+        },
+        "fit": { "$ref": "#/$defs/token" },
+        "focus": {
+          "type": "array", "minItems": 2, "maxItems": 2,
+          "items": { "type": "number", "minimum": 0, "maximum": 1 }
+        },
+        "zoom": { "type": "number", "minimum": 1, "maximum": 10 },
+        "wrap": { "$ref": "#/$defs/token" },
+        "wrapGap": { "type": "number", "minimum": 0 },
         "paths": { "type": "array" },
         "children": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/layer" } }
+      }
+    },
+    "paraStyle": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 200 },
+        "font": { "type": "string", "maxLength": 200 },
+        "size": { "type": "number", "exclusiveMinimum": 0 },
+        "leading": { "type": "number", "exclusiveMinimum": 0 },
+        "align": { "$ref": "#/$defs/token" },
+        "weight": { "type": "number", "minimum": 1, "maximum": 1000 },
+        "spaceBefore": { "type": "number" },
+        "spaceAfter": { "type": "number" },
+        "indent": { "type": "number" }
       }
     },
     "flow": {
@@ -99,7 +130,10 @@
       "required": ["engine"],
       "properties": {
         "engine": { "$ref": "#/$defs/token" },
-        "doc": { "type": "object" }
+        "doc": { "type": "object" },
+        "frames": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/id" } },
+        "autogrow": { "type": "boolean" },
+        "style": { "type": "string", "maxLength": 200 }
       }
     }
   }
