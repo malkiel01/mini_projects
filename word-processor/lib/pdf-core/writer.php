@@ -3,6 +3,7 @@
  * כותב PDF 1.7 מינימלי: עמודים עם שלוש שכבות (מאחורי הטקסט / הטקסט / לפני הטקסט), גופני TrueType מוטמעים
  * (Type0 + CIDFontType2, Identity-H, עם ToUnicode — כך שאפשר לחפש ולהעתיק עברית), ותמונות (JPEG כמו שהוא,
  * כל השאר דרך GD — RGB + שקיפות ב-SMask). הכול דחוס (Flate).
+ * (pdf-core — עורכים ב-creative-suite/pdf-core/src ומריצים tools/sync.php)
  */
 
 require_once __DIR__ . '/font.php';
@@ -17,9 +18,9 @@ final class PdfWriter
     private array $images = [];        // hash => [name, w, h, objects…]
     /** יעדים לקישורים פנימיים (סימניות): שם => [מספר עמוד, y בנקודות מראש העמוד] — הראשון בשם הזה */
     public array $dests = [];
-    /** ציור העמוד הראשון — לתמונה הממוזערת (preview.png ב-‎.mbe, lib/mbe_export.php); null — לא נרשם */
+    /** רישום ציור (למשל לתמונה ממוזערת — preview.png ב-‎.mbe של עורך התמלילים): לא null — image() מחזירה גם את ה-bytes */
     public ?array $rec = null;
-    /** להטמיע רק את הגליפים שבשימוש (lib/pdf/subset.php) — ברשימת ציור (draw.php); המסמכים של העורך — הגופן המלא */
+    /** להטמיע רק את הגליפים שבשימוש (subset.php) — ברשימת ציור (draw.php); המסמכים של עורך התמלילים — הגופן המלא */
     public bool $subset = false;
 
     /**
@@ -171,7 +172,7 @@ final class PdfWriter
         }
         $objs[$pagesId] = '<< /Type /Pages /Kids [' . implode(' ', $kids) . '] /Count ' . count($kids) . ' >>';
         $objs[$catalog] = "<< /Type /Catalog /Pages $pagesId 0 R /ViewerPreferences << /Direction /R2L /DisplayDocTitle true >> /Lang (he-IL) >>";
-        $objs[$info] = '<< /Title ' . self::text($title) . ' /Producer (word-processor) /CreationDate (D:' . gmdate('YmdHis') . "Z) >>";
+        $objs[$info] = '<< /Title ' . self::text($title) . ' /Producer (pdf-core) /CreationDate (D:' . gmdate('YmdHis') . "Z) >>";
 
         $out = "%PDF-1.7\n%\xE2\xE3\xCF\xD3\n";
         $offsets = [];

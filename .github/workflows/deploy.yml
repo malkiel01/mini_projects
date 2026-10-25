@@ -75,6 +75,11 @@ jobs:
       - name: mbe-core gate (every copy matches creative-suite/mbe-core/src)
         run: php creative-suite/mbe-core/tools/sync.php --check
 
+      # מנוע ה-PDF המשותף (creative-suite/pdf-core/src/php) — מועתק לאפליקציות שב-creative-suite/pdf-core/apps.json.
+      # עותק ששונה בתוך אפליקציה — נעצר כאן. עורכים במקור ומריצים sync.php.
+      - name: pdf-core gate (every copy matches creative-suite/pdf-core/src)
+        run: php creative-suite/pdf-core/tools/sync.php --check
+
       # השער: לכל אפליקציה שב-app.json שלה "gate": true — .user.ini ובלוק בראש
       # ה-.htaccess, בעותק שבמכונה הזו בלבד (לא בגיט). ראו platform/build-gate.php.
       - name: Build the platform gate
@@ -183,6 +188,7 @@ jobs:
           until rsync -rlptz \
             --exclude='.git' --exclude='.github' --exclude='/devloop/' --exclude='/.devloop.json' --exclude='/.claude/skills/devloop/assets/' \
             --exclude='/creative-suite/mbe-core/tools/' --exclude='/creative-suite/mbe-core/tests/' \
+            --exclude='/creative-suite/pdf-core/tools/' \
             --exclude='git-deploy/data/config.json' \
             --exclude='git-deploy/data/logs/' --exclude='git-deploy/data/cache/' \
             --exclude='renovation-punchlist/data/config.json' \

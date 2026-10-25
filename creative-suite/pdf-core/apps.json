@@ -1,0 +1,5 @@
+{
+  "word-processor": {
+    "php": "lib/pdf-core"
+  }
+}
