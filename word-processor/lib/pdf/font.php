@@ -19,15 +19,23 @@ final class TtfFont
     private array $tables = [];
     private array $cmap = [];       // codepoint => gid
     private array $widths = [];     // gid => advance (יחידות הגופן)
-    public array $used = [];        // gid => codepoint (ל-ToUnicode ול-W)
+    public array $used = [];        // gid => codepoint (ל-ToUnicode ול-W; -1 — גליף בלי תו, למשל אחרי עיצוב)
+    private ?array $rcmap = null;   // gid => codepoint (הראשון)
 
     public static function fromFile(string $path): self
     {
         $bytes = file_get_contents($path);
         if ($bytes === false) throw new RuntimeException("גופן חסר: $path");
+        return self::fromBytes($bytes, pathinfo($path, PATHINFO_FILENAME));
+    }
+
+    /** גופן מה-bytes (TTF / WOFF) — אותו קובץ שהלקוח עיצב איתו (HarfBuzz), כדי שמזהי הגליפים יתאימו. */
+    public static function fromBytes(string $bytes, string $name): self
+    {
         $f = new self();
-        $f->name = preg_replace('/[^A-Za-z0-9\-]/', '', pathinfo($path, PATHINFO_FILENAME));
+        $f->name = preg_replace('/[^A-Za-z0-9\-]/', '', $name) ?: 'Font';
         $f->sfnt = substr($bytes, 0, 4) === 'wOFF' ? self::woffToSfnt($bytes) : $bytes;
+        if (strlen($f->sfnt) < 12 || !in_array(substr($f->sfnt, 0, 4), ["\0\1\0\0", 'true'], true)) throw new InvalidArgumentException('גופן שאינו TrueType');
         $f->parse();
         return $f;
     }
@@ -163,6 +171,21 @@ final class TtfFont
         $g = $this->gid($cp);
         $this->used[$g] = $cp;
         return sprintf('%04X', $g);
+    }
+
+    /** מסמן גליף לפי מזהה (רצף שעוצב מבחוץ) ומחזיר אותו כ-hex. התו — מה-cmap אם יש (ל-ToUnicode), אחרת -1. */
+    public function encodeGid(int $gid): string
+    {
+        if (!isset($this->used[$gid])) {
+            if ($this->rcmap === null) { $this->rcmap = []; foreach ($this->cmap as $cp => $g) $this->rcmap[$g] ??= $cp; }
+            $this->used[$gid] = $this->rcmap[$gid] ?? -1;
+        }
+        return sprintf('%04X', $gid);
+    }
+
+    public function numGlyphs(): int
+    {
+        return count($this->widths);
     }
 
     public function widthUnits(int $gid): int
