@@ -250,6 +250,17 @@
     ]
   },
   {
+    "file": "hostile/flow-frames.mbe",
+    "codes": [
+      "flow-frames"
+    ]
+  },
+  {
+    "file": "hostile/flow-frames-ok.mbe",
+    "codes": [],
+    "ok": true
+  },
+  {
     "file": "hostile/flow-missing.mbe",
     "codes": [
       "flow-missing"

@@ -78,7 +78,7 @@ async function valid() {
                 { id: 'g1', type: 'group', name: 'כותרת', children: [{ id: 'logo', type: 'vector', paths: [{ id: 'logo-p', d: 'M0 0 L10 10', stroke: { color: '#000000', opacity: 1, width: 1 } }] }] },
                 { id: 'fa', type: 'frame', box: [56, 56, 483, 300], flow: 'story' }] },
             { id: 'p2', type: 'page', size: [595.3, 841.9], master: null, layers: [{ id: 'fb', type: 'frame', box: [56, 56, 483, 730], flow: 'story' }] });
-        f.document.flows = { story: { engine: 'prosemirror', doc: pm('שטף אחד שעובר בין שתי מסגרות.') } };
+        f.document.flows = { story: { engine: 'prosemirror', doc: pm('שטף אחד שעובר בין שתי מסגרות.'), frames: ['fa', 'fb'], autogrow: true, style: 'body' } };
         f.document.fonts = [{ family: 'David Libre' }];
         f.setRendition('renditions/document.pdf', PDF, { gaps: [] });
     });
@@ -227,6 +227,16 @@ async function hostile() {
     add('path-id-duplicate', zip(await base(vec([{ id: 'v', d: 'M0 0 L1 1' }, { id: 'g', type: 'group', children: [{ id: 'q', d: 'M0 0 L1 1' }, { id: 'q', d: 'M0 0 L2 2' }] }]))), ['duplicate-id']);
     add('path-transform', zip(await base(vec([{ id: 'p1', d: 'M0 0 L1 1', transform: [1, 0, 0, 1, 0] }]))), ['document-schema']);
     add('group-geometry', zip(await base(vec([{ id: 'g', type: 'group', d: 'M0 0 L1 1', children: [] }]))), ['group-geometry']);
+    {
+        // flows.<id>.frames (סעיף 3, "מסגרות, שטפים"): מזהה שלא קיים, מזהה כפול, שכבה שאינה frame, מסגרת של שטף אחר
+        const page = { id: 'p', type: 'page', layers: [
+            { id: 'a', type: 'frame', flow: 's1' }, { id: 'b', type: 'frame', flow: 's2' }, { id: 'r', type: 'raster', src: undefined }] };
+        delete page.layers[2].src;
+        const flows = { s1: { engine: 'prosemirror', frames: ['a', 'a', 'nope'] }, s2: { engine: 'prosemirror', frames: ['b', 'r', 'a'] } };
+        add('flow-frames', zip(await base({ surfaces: [page], flows })), ['flow-frames']);
+        add('flow-frames-ok', zip(await base({ surfaces: [{ id: 'p', type: 'page', layers: [{ id: 'a', type: 'frame', flow: 's1' }, { id: 'b', type: 'frame', flow: 's1' }] }],
+            flows: { s1: { engine: 'prosemirror', frames: ['b', 'a'] }, s2: { engine: 'prosemirror' } } })), [], { ok: true });
+    }
     add('flow-missing', zip(await base({ surfaces: [{ id: 'p', type: 'page', layers: [{ id: 'f', type: 'frame', flow: 'nope' }] }], flows: {} })), ['flow-missing']);
     {
         const data = png(2, 2, [9, 9, 9]);

@@ -280,12 +280,14 @@ function checkDocument(f, issue) {
         if (ids.has(id)) issue('error', 'duplicate-id', `המזהה "${id}" מופיע פעמיים`, 'document.json#' + where);
         ids.add(id);
     };
+    const layerById = new Map();
     const walkLayers = (layers, where) => {
         if (!Array.isArray(layers)) return;
         layers.forEach((l, i) => {
             if (!l || typeof l !== 'object') return;
             const at = `${where}/${i}`;
             seeId(l.id, at);
+            if (typeof l.id === 'string' && !layerById.has(l.id)) layerById.set(l.id, l);
             if (l.type === 'frame' && typeof l.flow === 'string' && !Object.hasOwn(flows, l.flow)) {
                 issue('error', 'flow-missing', `המסגרת מפנה לשטף "${l.flow}" שאינו קיים`, `document.json#${at}/flow`);
             }
@@ -320,6 +322,22 @@ function checkDocument(f, issue) {
         seeId(s.id, `/surfaces/${i}`);
         walkLayers(s.layers, `/surfaces/${i}/layers`);
     });
+    // סדר השרשור (סעיף 3, "מסגרות, שטפים"): כל מזהה ב-frames — שכבת frame קיימת שה-flow שלה הוא השטף הזה, פעם אחת.
+    for (const fid of Object.keys(flows).sort()) {
+        const list = flows[fid]?.frames;
+        if (!Array.isArray(list)) continue;
+        const seen = new Set();
+        list.forEach((id, j) => {
+            if (typeof id !== 'string') return;
+            const at = `document.json#/flows/${fid}/frames/${j}`;
+            const l = layerById.get(id);
+            if (seen.has(id)) issue('error', 'flow-frames', `המסגרת "${id}" מופיעה פעמיים בשטף "${fid}"`, at);
+            else if (!l) issue('error', 'flow-frames', `בשטף "${fid}" אין שכבה "${id}"`, at);
+            else if (l.type !== 'frame') issue('error', 'flow-frames', `"${id}" בשטף "${fid}" אינה מסגרת (${JSON.stringify(l.type ?? null)})`, at);
+            else if (l.flow !== fid) issue('error', 'flow-frames', `המסגרת "${id}" שייכת לשטף "${l.flow ?? '—'}" ולא ל-"${fid}"`, at);
+            seen.add(id);
+        });
+    }
     // הפניות למשאבים: כל src / embedded — רק ל-media/ שבתוך הקובץ. קישורים בטקסט (href) — מותרים.
     const walk = (v, where, depth) => {
         if (depth > 300 || v === null || typeof v !== 'object') return;
