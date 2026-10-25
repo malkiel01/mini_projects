@@ -860,6 +860,35 @@ async function main() {
   await adj('hsl', { lightness: 100 });
   await page.click('[data-adj-act="apply"]');
   check('בחירה: רק בתוכה — לבן; מחוצה לה — עדיין שחור', near(await px(50, 100), [255, 255, 255, 255]) && near(await px(150, 100), [0, 0, 0, 255]));
+  // פילטרים: אפור 100 עם ריבוע 160 ב-(300..400, 100..200)
+  await page.keyboard.press('Control+d');
+  await fillLayer([100, 100, 100, 255]);
+  await page.evaluate(() => __rs.tools.setTool('rect'));   // M היה מחליף לאליפסה — הכלי כבר מלבן
+  await drag([400, 200], [300, 100]);
+  await color('#a0a0a0');
+  await page.keyboard.press('Alt+Backspace');
+  await page.keyboard.press('Control+d');
+  const r0 = async (x, y) => Number((await px(x, y)).split(',')[0]);
+  await adj('sharpen', { amount: 300, sradius: 4 });
+  const sh = [await r0(301, 150), await r0(298, 150), await r0(350, 150), await r0(500, 300)];
+  check('חידוד: ליד הקצה — בהיר מעל 160 מבפנים וכהה מתחת ל-100 מבחוץ; הרחק — בלי שינוי',
+    sh[0] > 175 && sh[1] < 85 && Math.abs(sh[2] - 160) <= 1 && Math.abs(sh[3] - 100) <= 1, sh.join());
+  await page.click('[data-adj-act="apply"]');
+  check('חידוד — רשומת "חידוד"', await page.evaluate(() => __rs.history.undoStack.at(-1).label) === 'חידוד');
+  await page.keyboard.press('Control+z');
+  await adj('motion', { angle: 0, distance: 40 });
+  const mo = [await r0(300, 150), await r0(350, 150), await r0(350, 96), await r0(500, 300)];
+  check('טשטוש תנועה אופקי: הקצה האנכי מטושטש, הקצה העליון חד', mo[0] > 110 && mo[0] < 150 && Math.abs(mo[1] - 160) <= 1 && Math.abs(mo[2] - 100) <= 1 && Math.abs(mo[3] - 100) <= 1, mo.join());
+  await adj('motion', { angle: 90, distance: 40 });
+  const mv = [await r0(350, 100), await r0(296, 150)];
+  check('טשטוש תנועה 90° — אנכי', mv[0] > 110 && mv[0] < 150 && Math.abs(mv[1] - 100) <= 1, mv.join());
+  await adj('noise', { noise: 40 });
+  const nz = await page.evaluate(async () => { await __rs.tools.settle(); return Array.from(await __rs.renderer.readPixels(__rs.doc, 450, 300, 32, 1)).filter((_, i) => i % 4 === 0); });
+  const mean = nz.reduce((a, b) => a + b, 0) / nz.length;
+  check('רעש: הפיקסלים שונים זה מזה, והממוצע קרוב למקור', new Set(nz).size > 10 && Math.abs(mean - 100) < 20, `${new Set(nz).size} · ${mean.toFixed(1)}`);
+  await adj('sharpen', { amount: 0 });
+  check('חידוד בכמות 0 — בלי שינוי (לא טשטוש)', Math.abs(await r0(300, 150) - 160) <= 1 && Math.abs(await r0(299, 150) - 100) <= 1);
+  await page.click('[data-adj-act="cancel"]');
   if (SHOTS) {
     await adj('hsl', { hue: 90 });
     await page.screenshot({ path: join(SHOTS, 'adjust-desktop.png') });

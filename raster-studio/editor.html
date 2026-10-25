@@ -16,7 +16,7 @@
     <a class="icon-btn" href="index.html" aria-label="חזרה לתמונות שלי">→</a>
     <div class="titles"><h1 id="title">&nbsp;</h1><div class="sub" id="meta">&nbsp;</div></div>
     <!-- מימין לשמאל: החצים מראה — "ביטול" מצביע ימינה, כמו בגוגל דוקס בעברית -->
-    <button class="icon-btn" id="adjust-btn" type="button" aria-label="תיקונים: בהירות, גוון, טשטוש" title="תיקונים" disabled>🎚️</button>
+    <button class="icon-btn" id="adjust-btn" type="button" aria-label="תיקונים ופילטרים: בהירות, גוון, טשטוש, חידוד, תנועה, רעש" title="תיקונים" disabled>🎚️</button>
     <button class="icon-btn" id="save-btn" type="button" aria-label="שמירה בשרת" title="שמירה בשרת (Ctrl+S)" aria-keyshortcuts="Control+S" disabled>💾</button>
     <button class="icon-btn" id="versions-btn" type="button" aria-label="גרסאות קודמות" title="גרסאות" disabled>🕘</button>
     <button class="icon-btn" id="export-btn" type="button" aria-label="הורדה: PNG, JPG, ORA או ‎.mbe" title="הורדה" disabled>⬇️</button>
@@ -40,6 +40,9 @@
           <button type="button" role="tab" data-adj-tab="bc">בהירות</button>
           <button type="button" role="tab" data-adj-tab="hsl">גוון</button>
           <button type="button" role="tab" data-adj-tab="blur">טשטוש</button>
+          <button type="button" role="tab" data-adj-tab="sharpen">חידוד</button>
+          <button type="button" role="tab" data-adj-tab="motion">תנועה</button>
+          <button type="button" role="tab" data-adj-tab="noise">רעש</button>
         </div>
         <div class="adjust-fields" data-adj="bc">
           <label class="opt"><span>בהירות <output for="adj-brightness">0</output></span><input id="adj-brightness" type="range" min="-100" max="100" value="0"></label>
@@ -52,6 +55,17 @@
         </div>
         <div class="adjust-fields" data-adj="blur" hidden>
           <label class="opt"><span>רדיוס <output for="adj-radius">0</output></span><input id="adj-radius" type="range" min="0" max="64" value="0"></label>
+        </div>
+        <div class="adjust-fields" data-adj="sharpen" hidden>
+          <label class="opt"><span>כמות <output for="adj-amount">100%</output></span><input id="adj-amount" type="range" min="0" max="300" value="100"></label>
+          <label class="opt"><span>רדיוס <output for="adj-sradius">2px</output></span><input id="adj-sradius" type="range" min="0" max="16" value="2"></label>
+        </div>
+        <div class="adjust-fields" data-adj="motion" hidden>
+          <label class="opt"><span>זווית <output for="adj-angle">0°</output></span><input id="adj-angle" type="range" min="-180" max="180" value="0"></label>
+          <label class="opt"><span>מרחק <output for="adj-distance">0px</output></span><input id="adj-distance" type="range" min="0" max="128" value="0"></label>
+        </div>
+        <div class="adjust-fields" data-adj="noise" hidden>
+          <label class="opt"><span>כמות <output for="adj-noise">0%</output></span><input id="adj-noise" type="range" min="0" max="100" value="0"></label>
         </div>
         <div class="adjust-actions">
           <button class="btn ghost" type="button" data-adj-act="cancel">✕ ביטול</button>

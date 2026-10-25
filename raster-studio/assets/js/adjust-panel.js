@@ -1,4 +1,4 @@
-// לוח התיקונים: בהירות וניגודיות · גוון ורוויה · טשטוש — על השכבה הפעילה (ובבחירה, אם יש).
+// לוח התיקונים: בהירות וניגודיות · גוון ורוויה · טשטוש · חידוד · טשטוש תנועה · רעש — על השכבה הפעילה (ובבחירה, אם יש).
 // תצוגה חיה על הקנבס בזמן הגרירה; ✓ כותב לשכבה (רשומה אחת בהיסטוריה), ✕ מחזיר.
 
 const $ = (s, el = document) => el.querySelector(s);
@@ -7,7 +7,13 @@ export const ADJUSTMENTS = {
   bc: { label: 'בהירות וניגודיות', fields: { brightness: [-100, 100], contrast: [-100, 100] } },
   hsl: { label: 'גוון ורוויה', fields: { hue: [-180, 180], saturation: [-100, 100], lightness: [-100, 100] } },
   blur: { label: 'טשטוש', fields: { radius: [0, 64] } },
+  sharpen: { label: 'חידוד', fields: { amount: [0, 300, 100], sradius: [0, 16, 2] } },
+  motion: { label: 'טשטוש תנועה', fields: { angle: [-180, 180], distance: [0, 128] } },
+  noise: { label: 'רעש', fields: { noise: [0, 100] } },
 };
+
+// יחידה לכל מחוון (לתצוגה ליד הערך)
+const UNIT = { radius: 'px', sradius: 'px', distance: 'px', hue: '°', angle: '°', amount: '%', noise: '%' };
 
 export function createAdjustPanel({ root, doc, renderer, history, onChange, draw, toast, beforeOpen }) {
   let kind = 'bc';
@@ -21,10 +27,10 @@ export function createAdjustPanel({ root, doc, renderer, history, onChange, draw
 
   function reset() {
     for (const [k, a] of Object.entries(ADJUSTMENTS)) {
-      for (const f of Object.keys(a.fields)) {
+      for (const [f, [, , def = 0]] of Object.entries(a.fields)) {
         const el = $('#adj-' + f, root);
-        el.value = '0';
-        $(`output[for="adj-${f}"]`, root).textContent = '0';
+        el.value = String(def);
+        $(`output[for="adj-${f}"]`, root).textContent = def + (UNIT[f] ?? '');
       }
       $(`[data-adj="${k}"]`, root).hidden = k !== kind;
       $(`[data-adj-tab="${k}"]`, root).setAttribute('aria-selected', String(k === kind));
@@ -40,7 +46,7 @@ export function createAdjustPanel({ root, doc, renderer, history, onChange, draw
   root.addEventListener('input', e => {
     const el = e.target.closest('input[type=range]');
     if (!el) return;
-    $(`output[for="${el.id}"]`, root).textContent = el.value + (el.id === 'adj-radius' ? 'px' : el.id === 'adj-hue' ? '°' : '');
+    $(`output[for="${el.id}"]`, root).textContent = el.value + (UNIT[el.id.slice(4)] ?? '');
     preview();
   });
   root.addEventListener('click', e => {
@@ -76,7 +82,7 @@ export function createAdjustPanel({ root, doc, renderer, history, onChange, draw
   function apply() {
     const d = doc();
     const v = values();
-    const neutral = Object.keys(ADJUSTMENTS[kind].fields).every(f => v[f] === 0);
+    const neutral = Object.keys(ADJUSTMENTS[kind].fields).every(f => v[f] === 0) || renderer.constructor.adjustNoop?.(v);
     if (neutral) { close(); return; }
     const layer = d.active;
     renderer.setAdjust(d, layer, v);
