@@ -25,12 +25,15 @@ $action = (string)($_GET['action'] ?? '');
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 // embed_key — המפתח הציבורי לעורך התמלילים (שלב 4). אין בו סוד.
-const PUBLIC_ACTIONS = ['embed_key'];
-const POST_ACTIONS = ['member_add', 'member_set', 'member_remove', 'request_dismiss', 'lock', 'draft_save', 'render', 'revision_restore'];
+// media — קובץ בכתובת חתומה לזמן מוגבל (התצוגה המבודדת בסטודיו לא שולחת עוגייה). בלי חתימה — 403.
+const PUBLIC_ACTIONS = ['embed_key', 'media'];
+const POST_ACTIONS = ['member_add', 'member_set', 'member_remove', 'request_dismiss', 'lock', 'draft_save', 'render', 'revision_restore',
+                      'upload_init', 'upload_chunk', 'upload_done', 'file_delete', 'disk_cap'];
 
 try {
     if (in_array($action, POST_ACTIONS, true) && $method !== 'POST') throw new ApiError('נדרש POST', 405);
-    $body = $method === 'POST' ? (json_decode((string)file_get_contents('php://input'), true) ?: []) : [];
+    // upload_chunk — גוף גולמי (חלק מקובץ), לא JSON
+    $body = $method === 'POST' && $action !== 'upload_chunk' ? (json_decode((string)file_get_contents('php://input'), true) ?: []) : [];
     if (!is_array($body)) $body = [];
 
     $user = in_array($action, PUBLIC_ACTIONS, true) ? null : current_user();
@@ -52,6 +55,14 @@ try {
         'render' => (require_role($user, 'editor') ? render_preview($body) : []),
         'revisions' => (require_role($user, 'editor') ? revisions_list() : []),
         'revision_restore' => revision_restore(require_role($user, 'editor'), $body),
+        'files' => (require_role($user, 'editor') ? files_list() : []),
+        'upload_init' => upload_init(require_role($user, 'editor'), $body),
+        'upload_chunk' => upload_chunk(require_role($user, 'editor'), $_GET),
+        'upload_done' => upload_done(require_role($user, 'editor'), $body),
+        'file_delete' => file_delete(require_role($user, 'editor'), $body),
+        'disk_cap' => disk_cap_set(require_role($user, 'owner'), $body),
+        'file' => file_send(file_row((string)(require_role($user, 'editor') ? ($_GET['id'] ?? '') : '')), isset($_GET['download'])),
+        'media' => file_send(media_check($_GET)),
         'audit' => audit_list(require_role($user, 'owner'), $_GET),
         default => throw new ApiError('פעולה לא מוכרת', 404),
     };

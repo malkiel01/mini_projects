@@ -6,7 +6,7 @@ const main = $('#main');
 const state = { user: null, csrf: '', roles: {} };
 const ROLE_NAMES = { owner: 'בעלים', publisher: 'מפרסם', editor: 'עורך' };
 const ACTIONS = {
-  member_add: '➕ הוסיף חבר', member_role: '🔁 שינה תפקיד', member_remove: '➖ הסיר חבר', member_linked: '🔗 חבר נכנס לראשונה',
+  member_add: '➕ הוסיף חבר', file_add: '⬆️ העלה קובץ', file_delete: '🗑️ מחק קובץ', disk_cap: '💽 שינה תקרת קבצים', restore: '↺ שחזר טיוטה', member_role: '🔁 שינה תפקיד', member_remove: '➖ הסיר חבר', member_linked: '🔗 חבר נכנס לראשונה',
 };
 
 // ── עזרים ────────────────────────────────────────────────
@@ -73,6 +73,7 @@ function sheet(title, ...body) {
 // ── ניתוב ────────────────────────────────────────────────
 const TABS = [
   { id: 'studio', label: '🎨 סטודיו', min: 'editor' },
+  { id: 'files', label: '🗂️ קבצים', min: 'editor' },
   { id: 'members', label: '👥 חברים', min: 'owner' },
   { id: 'log', label: '📜 יומן', min: 'owner' },
 ];
@@ -85,7 +86,7 @@ function route() {
   nav.hidden = tabs.length < 2;
   nav.replaceChildren(...tabs.map(t => h('a', { href: '#/' + t.id, 'aria-current': t === cur ? 'page' : null }, t.label)));
   if (cur.id !== 'studio') Studio.unmount();
-  ({ studio: viewStudio, members: viewMembers, log: viewLog })[cur.id]();
+  ({ studio: viewStudio, files: () => Media.view(main, state.user.role === 'owner'), members: viewMembers, log: viewLog })[cur.id]();
 }
 window.addEventListener('hashchange', () => state.user?.role && route());
 
