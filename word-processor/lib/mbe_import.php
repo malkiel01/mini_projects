@@ -66,7 +66,7 @@ function import_mbe(string $bytes, string $docId): array
     $json = $media($json);
     $page = null;
     if (is_array($json['attrs']['page'] ?? null)) $page = page_normalize($json['attrs']['page']);
-    elseif ($pages) $page = mbe_page_of($pages[0], is_array($d['layout'] ?? null) ? $d['layout'] : []);
+    elseif ($pages) $page = mbe_page_of($pages[0], is_array($d['layout'] ?? null) ? $d['layout'] : [], is_array($d['styles'] ?? null) ? $d['styles'] : []);
     unset($json['attrs']['page']);
     if (empty($json['attrs'])) unset($json['attrs']);
     $json['type'] = 'doc';
@@ -96,7 +96,7 @@ function import_mbe(string $bytes, string $docId): array
 }
 
 /** הגדרות עמוד ממשטח של אפליקציה אחרת: הגודל (A4 / Letter, לאורך / לרוחב — הקרוב), השוליים מ-layout או מהמסגרת. */
-function mbe_page_of(array $surface, array $layout): array
+function mbe_page_of(array $surface, array $layout, array $styles = []): array
 {
     $mm = fn($pt) => round((float)$pt / PT_PER_MM, 1);
     [$w, $h] = array_map($mm, is_array($surface['size'] ?? null) ? $surface['size'] : [595.3, 841.9]);
@@ -123,6 +123,24 @@ function mbe_page_of(array $surface, array $layout): array
         }
     }
     if (($layout['numbering']['style'] ?? '') === 'hebrew') $p['numbering'] = ['format' => 'hebrew'];
+    // סגנונות הפסקה המשותפים (mbe-format.md סעיף 3): body → normal וגופן העמוד, h1–h3 → הכותרות. ערך לא תקין — נשאר ברירת המחדל
+    foreach (['body' => 'normal', 'h1' => 'h1', 'h2' => 'h2', 'h3' => 'h3'] as $k => $ours) {
+        $s = is_array($styles[$k] ?? null) ? $styles[$k] : null;
+        if (!$s) continue;
+        $o = [];
+        if (is_numeric($s['size'] ?? null)) $o['size'] = (float)$s['size'];
+        if (is_numeric($s['spaceBefore'] ?? null)) $o['before'] = (float)$s['spaceBefore'];
+        if (is_numeric($s['spaceAfter'] ?? null)) $o['after'] = (float)$s['spaceAfter'];
+        if (is_string($s['align'] ?? null)) $o['align'] = $s['align'];
+        if (is_numeric($s['weight'] ?? null)) $o['bold'] = (float)$s['weight'] >= 600;
+        if ($k === 'body') {
+            if (is_numeric($s['leading'] ?? null) && (float)($s['size'] ?? 0) > 0) $o['line'] = round((float)$s['leading'] / (float)$s['size'], 2);
+            if (is_string($s['font'] ?? null)) $p['font']['family'] = $s['font'];
+            if (isset($o['size'])) $p['font']['size'] = $o['size'];
+            unset($o['size']);
+        } elseif (is_string($s['font'] ?? null)) $o['font'] = $s['font'];
+        $p['styles'][$ours] = $o;
+    }
     return page_normalize($p);
 }
 
