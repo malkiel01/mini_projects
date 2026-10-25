@@ -184,6 +184,9 @@ export class Canvas {
                     node = new Konva.Path({ data: scalePath(el.d, l.w / el.vb[0], l.h / el.vb[1]), ...st, ...gradientAttrs(l.gradient, l.w, l.h), lineCap: 'round', lineJoin: 'round', fillRule: 'nonzero' });
                     break;
                 }
+                case 'path':
+                    node = new Konva.Path({ data: scalePath(l.path, l.w / l.vb[0], l.h / l.vb[1]), ...st, ...gradientAttrs(l.gradient, l.w, l.h), lineCap: 'round', lineJoin: 'round' });
+                    break;
                 case 'ellipse': node = new Konva.Ellipse({ x: l.w / 2, y: l.h / 2, radiusX: l.w / 2, radiusY: l.h / 2, ...st, ...gradientAttrs(l.gradient, l.w, l.h, -l.w / 2, -l.h / 2) }); break;
                 case 'star': node = new Konva.Star({ x: l.w / 2, y: l.h / 2, numPoints: l.points || 5, innerRadius: 0.4, outerRadius: 1, scaleX: l.w / 2, scaleY: l.h / 2, ...st, strokeScaleEnabled: false }); break;
                 case 'polygon': node = new Konva.RegularPolygon({ x: l.w / 2, y: l.h / 2, sides: l.points || 6, radius: 1, scaleX: l.w / 2, scaleY: l.h / 2, ...st, strokeScaleEnabled: false }); break;

@@ -104,6 +104,7 @@ export function layerLabel(l) {
     if (l.type === 'image') return l.role === 'background' ? 'רקע' : 'תמונה';
     if (l.type === 'icon') return 'אייקון';
     if (l.type === 'shape' && l.shape === 'element') return ELEMENTS[l.element]?.label || 'אלמנט';
+    if (l.type === 'shape' && l.shape === 'path') return 'צורה';
     if (l.type === 'shape') return { rect: 'מלבן', ellipse: 'עיגול', line: 'קו', star: 'כוכב', polygon: 'מצולע', arrow: 'חץ' }[l.shape] || 'צורה';
     return 'שכבה';
 }
@@ -221,7 +222,13 @@ export function normalizeDoc(input) {
             l.strokeWidth = clamp(num(raw.strokeWidth, 2), 0.5, 4);
             if (raw.filled) l.filled = true;
         } else if (raw.type === 'shape') {
-            l.shape = ['rect', 'ellipse', 'line', 'star', 'polygon', 'arrow', 'element'].includes(raw.shape) ? raw.shape : 'rect';
+            l.shape = ['rect', 'ellipse', 'line', 'star', 'polygon', 'arrow', 'element', 'path'].includes(raw.shape) ? raw.shape : 'rect';
+            // נתיב חופשי (מקובץ ‎.mbe של אפליקציה אחרת): רק פקודות ומספרים, ו-vb — הגודל שבו הנתיב צויר
+            if (l.shape === 'path') {
+                const okPath = typeof raw.path === 'string' && raw.path.length < 200000 && /^[MLCQZ0-9eE.,+\s-]*$/.test(raw.path);
+                const okVb = Array.isArray(raw.vb) && raw.vb.length === 2 && raw.vb.every(v => typeof v === 'number' && v > 0);
+                if (okPath && okVb) { l.path = raw.path; l.vb = raw.vb; } else { fixes.push('נתיב לא תקין — הוחלף במלבן'); l.shape = 'rect'; }
+            }
             if (l.shape === 'element') {
                 if (ELEMENTS[raw.element]) l.element = raw.element;
                 else { fixes.push(`אלמנט לא מוכר (${String(raw.element).slice(0, 30)}) — הוחלף במלבן`); l.shape = 'rect'; }
