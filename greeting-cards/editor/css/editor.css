@@ -312,3 +312,4 @@ input.search { width: 100%; min-height: var(--tap); margin-bottom: var(--s2); }
 .dev-log { display: flex; align-items: center; gap: var(--s2); padding: var(--s2) 0; border-bottom: 1px solid var(--line); }
 .dev-log-code { font: 700 1rem ui-monospace, monospace; }
 .dev-log .muted { flex: 1; }
+.range-row .step { flex: none; width: 40px; min-height: 40px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); font-size: 1.25rem; }

@@ -17,7 +17,7 @@ import { loadScript } from './io.js';
 import { docVariables, readSheetFile, readPasted, readPhoneContacts, guessColumns, normalizePhone, fileNames, fillText } from './merge.js';
 
 // הגרסה — מופיעה ביומן, כדי לדעת איזה קוד רץ בטלפון.
-const BUILD = '2026-10-23.dev-1';
+const BUILD = '2026-10-25.size-1';
 
 const app = $('#app');
 let ed = null;   // העיצוב הפתוח: { id, doc, history, canvas, dirty }
@@ -828,7 +828,7 @@ function textProps(l) {
             cols.slice(0, 12).map(c => h('button', { class: 'chip-btn', onclick: () => { l.text = (l.text ? l.text + ' ' : '') + `{{${c}}}`; commit(); toast(`נוסף {{${c}}}`); } }, c)))
             : h('p', { class: 'hint' }, 'כרטיס לכל נמען: 👥 נמענים ← טעינת רשימה, ואז כאן "הוספת משתנה".'),
         fontList,
-        rangeField('גודל', { min: 6, max: Math.round(Math.max(ed.doc.page.width, ed.doc.page.height) / 3), value: s.size, onInput: live(v => { s.size = v; }), onCommit: commit }),
+        rangeField('גודל', { log: true, min: 4, max: Math.round(Math.max(ed.doc.page.width, ed.doc.page.height) / 3), value: s.size, onInput: live(v => { s.size = v; }), onCommit: commit }),
         h('div', { class: 'two' },
             colorField('צבע', s.color, live(v => { s.color = v; }), commit),
             seg('משקל', [{ value: 400, label: 'רגיל' }, { value: 700, label: 'מודגש' }, { value: 800, label: 'שחור' }], nearestWeight(s.font, s.weight) >= 800 ? 800 : nearestWeight(s.font, s.weight) >= 700 ? 700 : 400,
