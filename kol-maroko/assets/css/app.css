@@ -274,3 +274,12 @@ body.studio-on main { max-width: none; padding: 0; }
 .rec audio { inline-size: 100%; }
 .rec .row-btns { inline-size: 100%; }
 .use-tx { grid-template-columns: minmax(0, 1fr); }   /* שם ארוך נחתך ב-… ולא דוחף את התגית מהשורה */
+
+/* ===== עורך התמלילים (מסך מלא) ===== */
+.wp-dlg { inset: 0; margin: 0; width: 100vw; max-width: 100vw; height: var(--vvh, 100dvh); max-height: none; border-radius: 0;
+    display: flex; flex-direction: column; padding: 0; }
+.wp-dlg:not([open]) { display: none; }
+.wp-head { flex: none; display: flex; align-items: center; gap: var(--s2); padding: calc(var(--s1) + env(safe-area-inset-top)) var(--s2) var(--s1);
+    border-bottom: 1px solid var(--line); background: var(--surface); }
+.wp-head b { flex: 1; }
+.wp-box { flex: 1; min-height: 0; }
