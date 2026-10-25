@@ -6,6 +6,7 @@
  */
 
 require_once __DIR__ . '/font.php';
+require_once __DIR__ . '/subset.php';
 
 final class PdfWriter
 {
@@ -18,10 +19,16 @@ final class PdfWriter
     public array $dests = [];
     /** ציור העמוד הראשון — לתמונה הממוזערת (preview.png ב-‎.mbe, lib/mbe_export.php); null — לא נרשם */
     public ?array $rec = null;
+    /** להטמיע רק את הגליפים שבשימוש (lib/pdf/subset.php) — ברשימת ציור (draw.php); המסמכים של העורך — הגופן המלא */
+    public bool $subset = false;
 
-    public function addPage(float $w, float $h): int
+    /**
+     * עמוד ברוחב $w ובגובה $h (נקודות). $bleed > 0 — גלישה: MediaBox ו-BleedBox גדלים בה מכל צד, ו-TrimBox הוא
+     * העמוד עצמו; w/h של העמוד ברשימה הם אז של MediaBox, והתוכן מוזז בעצמו (draw.php).
+     */
+    public function addPage(float $w, float $h, float $bleed = 0): int
     {
-        $this->pages[] = ['w' => $w, 'h' => $h, 'bg' => '', 'main' => '', 'fg' => '', 'links' => []];
+        $this->pages[] = ['w' => $w + 2 * $bleed, 'h' => $h + 2 * $bleed, 'bleed' => $bleed, 'bg' => '', 'main' => '', 'fg' => '', 'links' => []];
         return count($this->pages) - 1;
     }
 
@@ -110,7 +117,8 @@ final class PdfWriter
                 . " /FontDescriptor $desc 0 R /DW 0 /W [ $w] /CIDToGIDMap /Identity >>";
             $objs[$desc] = "<< /Type /FontDescriptor /FontName /$base /Flags 32 /FontBBox [$bbox] /ItalicAngle 0 /Ascent " . (int)round($f->ascent * $k)
                 . ' /Descent ' . (int)round($f->descent * $k) . ' /CapHeight ' . (int)round($f->capHeight * $k) . " /StemV 80 /FontFile2 $file 0 R >>";
-            $objs[$file] = self::stream("/Length1 " . strlen($f->sfnt), gzcompress($f->sfnt, 6), true);
+            $sfnt = $this->subset ? TtfSubset::make($f->sfnt, array_keys($f->used)) : $f->sfnt;
+            $objs[$file] = self::stream("/Length1 " . strlen($sfnt), gzcompress($sfnt, 6), true);
             $objs[$tou] = self::stream('', gzcompress(self::toUnicode($f->used), 6), true);
             $fontRefs .= "$name $type0 0 R ";
         }
@@ -155,7 +163,9 @@ final class PdfWriter
                 $objs[$aid] = '<< /Type /Annot /Subtype /Link /Rect [' . implode(' ', array_map([self::class, 'n'], [$x1, $y1, $x2, $y2])) . "] /Border [0 0 0] $act >>";
                 $annots[] = "$aid 0 R";
             }
-            $objs[$pid] = "<< /Type /Page /Parent $pagesId 0 R /MediaBox [0 0 " . self::n($p['w']) . ' ' . self::n($p['h']) . "] /Resources $res 0 R /Contents $cid 0 R"
+            $b = (float)($p['bleed'] ?? 0);
+            $box = $b > 0 ? ' /BleedBox [0 0 ' . self::n($p['w']) . ' ' . self::n($p['h']) . '] /TrimBox [' . implode(' ', array_map([self::class, 'n'], [$b, $b, $p['w'] - $b, $p['h'] - $b])) . ']' : '';
+            $objs[$pid] = "<< /Type /Page /Parent $pagesId 0 R /MediaBox [0 0 " . self::n($p['w']) . ' ' . self::n($p['h']) . "]$box /Resources $res 0 R /Contents $cid 0 R"
                 . ($annots ? ' /Annots [' . implode(' ', $annots) . ']' : '') . ' >>';
             $kids[] = "$pid 0 R";
         }
@@ -186,6 +196,7 @@ final class PdfWriter
     {
         $lines = [];
         foreach ($used as $gid => $cp) {
+            if ($cp < 0) continue;
             $u = mb_convert_encoding(mb_chr($cp, 'UTF-8'), 'UTF-16BE', 'UTF-8');
             $lines[] = sprintf('<%04X> <%s>', $gid, strtoupper(bin2hex($u)));
         }
