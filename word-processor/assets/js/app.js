@@ -65,7 +65,7 @@ async function listView(folder = null) {
     const search = h('input', { type: 'search', placeholder: 'חיפוש בכל המסמכים', 'aria-label': 'חיפוש' });
     const list = h('ul.list', h('li.empty', 'טוען…'));
     const crumbs = h('nav.crumbs', { 'aria-label': 'תיקיות' });
-    const fileIn = h('input', { type: 'file', accept: '.docx,.odt,.rtf,.mbe,.html,.htm,.txt,.md,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.oasis.opendocument.text,application/rtf,application/vnd.mbe+zip,text/rtf,text/html,text/plain', hidden: true, onchange: importFile });
+    const fileIn = h('input', { type: 'file', accept: '.docx,.doc,.odt,.rtf,.mbe,.html,.htm,.txt,.md,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword,application/vnd.oasis.opendocument.text,application/rtf,application/vnd.mbe+zip,text/rtf,text/html,text/plain', hidden: true, onchange: importFile });
     let docs = [], shared = [], folders = [], favs = new Set();
     const byId = () => new Map(folders.map(f => [f.id, f]));
     const pathOf = id => { const m = byId(), out = []; for (let f = m.get(id); f && out.length < 12; f = m.get(f.parent)) out.unshift(f); return out; };

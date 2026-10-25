@@ -1217,8 +1217,9 @@ final class DocxCtx
         // סימן מים: צורת WordArt (VML) עם textpath — כך Word שומר "סימן מים" מותאם. היא לא נחשבת "כותרת מורכבת"
         $wm = $hx->query('//*[local-name()="textpath"][@string]')->item(0);
         if ($wm instanceof DOMElement && $this->watermark === '') $this->watermark = mb_substr(trim($wm->getAttribute('string')), 0, 40);
-        // תמונה בשורה וטבלה — נכנסות לכותרת העשירה; צורה, תמונה צפה, טבלה בתוך טבלה — "כותרת מורכבת" (לדוח)
-        $complex = $hx->query('//w:tbl//w:tbl|//w:drawing[not(wp:inline)]|//w:pict[not(.//*[local-name()="textpath"])]')->length > 0;
+        // תמונה (גם צפה — נייר מכתבים: נכנסת בשורה) וטבלה — נכנסות לכותרת העשירה; צורה, תיבת טקסט, טבלה בתוך טבלה —
+        // "כותרת מורכבת" (לדוח)
+        $complex = $hx->query('//w:tbl//w:tbl|//w:drawing[not(wp:inline)][not(.//a:blip)]|//w:pict[not(.//*[local-name()="textpath"])]')->length > 0;
         return ['text' => $text, 'num' => $num, 'complex' => $complex, 'rich' => $rich ? $blocks : null];
     }
 }
@@ -1238,6 +1239,8 @@ const IMPORT_REPORT = [
     'styles' => ['סגנונות תו מותאמים', 'העיצוב שבא מסגנון התו לא יובא; סגנונות פסקה ועיצוב ישיר — כן'],
     'pborder' => ['גבולות והצללה של פסקה', 'לא יובאו'],
     'fonts' => ['גופנים שאינם זמינים', 'מוצגים ב-Heebo, זהה במסך, בהדפסה וב-PDF'],
+    'doc_hf' => ['כותרות עליונות / תחתונות (Word ישן — ‎.doc)', 'לא יובאו; אפשר להוסיף אותן כאן, או לשמור ב-Word כ-docx ולייבא'],
+    'doc_comments' => ['הערות (Word ישן — ‎.doc)', 'לא יובאו'],
 ];
 const TWIP_PER_MM_IMPORT = 56.6929;
 
@@ -1248,10 +1251,11 @@ const TWIP_PER_MM_IMPORT = 56.6929;
 require_once __DIR__ . '/import_odt.php';
 require_once __DIR__ . '/import_rtf.php';
 require_once __DIR__ . '/mbe_import.php';
+require_once __DIR__ . '/import_doc.php';
 
 /**
  * ייבוא קובץ שהמשתמש העלה (my_new): Word (docx), OpenDocument (ODT), RTF, HTML, או טקסט (UTF-8 / Windows-1255) — כל
- * שורה פסקה, "# " כותרת, "- " תבליט (import_lines). doc ישן — שגיאה עם הסבר. מחזיר ['json', 'page', 'report'].
+ * שורה פסקה, "# " כותרת, "- " תבליט (import_lines). Word ישן (‎.doc) — lib/import_doc.php. מחזיר ['json', 'page', 'report'].
  */
 function import_file(string $bytes, string $name, string $docId): array
 {
@@ -1262,7 +1266,7 @@ function import_file(string $bytes, string $name, string $docId): array
         return import_docx($bytes, $docId);
     }
     if (str_starts_with($bytes, '{\\rtf')) return import_rtf($bytes, $docId);
-    if (str_starts_with($bytes, "\xD0\xCF\x11\xE0")) throw new ApiError('קובץ Word ישן (‎.doc) לא נתמך — שמרו אותו כ-docx', 'bad_file');
+    if (is_doc($bytes)) return import_doc($bytes, $docId);   // Word 97–2003 (lib/import_doc.php)
     if (!mb_check_encoding($bytes, 'UTF-8')) {
         $conv = @iconv('WINDOWS-1255', 'UTF-8//IGNORE', $bytes);
         if ($conv === false) throw new ApiError('הקובץ אינו מסמך שאפשר לייבא', 'bad_file');
