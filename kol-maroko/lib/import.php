@@ -30,7 +30,7 @@ final class Importer
         $this->zip = new ZipArchive();
         if ($this->zip->open($zipPath) !== true) throw new ApiError('הקובץ אינו ZIP תקין');
         $meta = json_decode((string)$this->zip->getFromName('meta.json'), true);
-        if (!is_array($meta) || (int)($meta['format'] ?? 0) !== 1 || $this->zip->locateName('content.html') === false) {
+        if (!is_array($meta) || !in_array((int)($meta['format'] ?? 0), [1, 2], true) || $this->zip->locateName('content.html') === false) {
             throw new ApiError('זה לא קובץ ייצוא של קול מרוקו (חסרים meta.json / content.html)');
         }
         $this->meta = $meta;
@@ -140,17 +140,31 @@ final class Importer
         $xp = new DOMXPath($doc);
         foreach (iterator_to_array($xp->query('//comment()')) as $c) $c->parentNode->removeChild($c);
 
-        $el = $xp->query('.//*[@data-elementor-type]', $root)->item(0);
         $settings = ['title' => (string)($this->meta['title'] ?? 'קול מרוקו'), 'font' => 'theme', 'width' => 'boxed'];
-        if ($el instanceof DOMElement) {
-            $this->rewriteHtmlUrls($el);
-            $settings['legacy'] = [$this->tag($el)];
-            $sections = $this->elementorSections($el);
+        // מסמכי אלמנטור עליונים (תבנית של העמוד, העמוד עצמו…) — כל אחד עוטף את הפסים שלו, כדי שהבוררים של
+        // ה-CSS (.elementor-123 .elementor-element-…) ימשיכו לחול
+        $docs = [];
+        foreach ($xp->query('.//*[@data-elementor-type]', $root) as $d) {
+            for ($p = $d->parentNode; $p instanceof DOMElement && $p !== $root; $p = $p->parentNode) if ($p->hasAttribute('data-elementor-type')) continue 2;
+            $docs[] = $d;
+        }
+        if ($docs) {
+            $this->rewriteHtmlUrls($root);
+            $sections = [];
+            foreach ($docs as $d) {
+                foreach ($this->elementorSections($d) as $s) {
+                    $s['legacy'] = [$this->tag($d), ...$s['legacy']];
+                    $sections[] = $s;
+                }
+            }
         } else {
             $this->rewriteHtmlUrls($root);
             $sections = $this->classicSections($root);
         }
         $this->stats['sections'] = count($sections);
+        $this->stats['entries'] = (int)($this->meta['entries'] ?? 0);
+        $this->stats['entry_types'] = (array)($this->meta['entry_types'] ?? []);
+        $this->stats['source'] = (string)($this->meta['source'] ?? 'page');
         return ['settings' => $settings, 'sections' => $sections];
     }
 
@@ -484,6 +498,16 @@ final class Importer
     {
         return $this->meta;
     }
+
+    /** הרשומות (מילים, הקלטות, שדות) והאבחון — נשמרים לשלב הבא; לא נכנסים לעמוד עצמו. */
+    public function keepData(): void
+    {
+        $dir = files_dir() . '/import';
+        if (!is_dir($dir)) @mkdir($dir, 0775, true);
+        $entries = $this->zip->getFromName('data/entries.json');
+        if ($entries !== false) file_put_contents("$dir/entries.json", $entries);
+        file_put_contents("$dir/meta.json", json_encode($this->meta, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+    }
 }
 
 /** הייבוא: ZIP שהועלה (purpose=import) → הטיוטה. הטיוטה הקודמת נשמרת בהיסטוריה ("לפני ייבוא"). */
@@ -498,6 +522,7 @@ function import_run(array $owner, array $b): array
 
     $imp = new Importer($owner, $zip);
     $page = page_normalize($imp->run());
+    $imp->keepData();
     [$css, $preview] = $imp->css();
     db()->prepare('DELETE FROM uploads WHERE id = ?')->execute([$u['id']]);
     @unlink($zip);
