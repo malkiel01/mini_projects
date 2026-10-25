@@ -12,3 +12,6 @@ word-processor/tests/e2e/node_modules/
 time-clock/data/*.sqlite*
 time-clock/data/certs/
 greeting-cards/data/studio/
+kol-maroko/data/*.sqlite*
+kol-maroko/data/files/
+kol-maroko/data/secrets.json

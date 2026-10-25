@@ -241,6 +241,8 @@ jobs:
             --exclude='project-manager/data/tmp/' \
             --exclude='org-budget-proposals/data/*.sqlite*' \
             --exclude='org-budget-proposals/data/files/' \
+            --exclude='kol-maroko/data/*.sqlite*' --exclude='kol-maroko/data/files/' \
+            --exclude='kol-maroko/data/secrets.json' --exclude='/kol-maroko/wordpress-plugin/' \
             --exclude='word-processor/data/*.sqlite*' \
             --exclude='word-processor/data/media/' \
             --exclude='time-clock/data/*.sqlite*' \
