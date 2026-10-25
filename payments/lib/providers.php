@@ -57,15 +57,17 @@ interface Provider
 
 require_once __DIR__ . '/providers/morning.php';
 require_once __DIR__ . '/providers/cardcom.php';
+require_once __DIR__ . '/providers/payplus.php';
 
-const PROVIDER_TYPES = ['morning' => 'מורנינג (חשבונית ירוקה)', 'cardcom' => 'קארדקום'];
+const PROVIDER_TYPES = ['morning' => 'מורנינג (חשבונית ירוקה)', 'cardcom' => 'קארדקום', 'payplus' => 'פייפלוס'];
 /** השדות של כל חיבור: מפתח ⇐ [תווית, סודי?, חובה?]. הסודות לא חוזרים למסך. */
 const PROVIDER_FIELDS = [
     'morning' => ['client_id' => ['מזהה הממשק', false, true], 'client_secret' => ['סוד הממשק', true, true], 'webhook_secret' => ['סוד ההודעות', true, false]],
     'cardcom' => ['terminal' => ['מספר מסוף', false, true], 'api_name' => ['שם משתמש לממשק', false, true], 'api_password' => ['סיסמת ממשק (להחזרים)', true, false]],
+    'payplus' => ['api_key' => ['מפתח ממשק', false, true], 'secret_key' => ['מפתח סודי', true, true], 'payment_page_uid' => ['מזהה דף התשלום', false, true]],
 ];
 /** כשלעוסק כמה חיבורים באותה סביבה — מי סולק. מורנינג לצד קארדקום משמשת רק למסמכים. */
-const PROVIDER_CLEARING_ORDER = ['cardcom' => 0, 'morning' => 1];
+const PROVIDER_CLEARING_ORDER = ['cardcom' => 0, 'payplus' => 0, 'morning' => 1];
 
 /** סולק לפי המפתח שנשמר: ‏"fake" או "pa_…" (חיבור של עוסק). */
 function provider(string $key): Provider
@@ -82,6 +84,7 @@ function provider_from_account(array $pa): Provider
     return match ($pa['provider']) {
         'morning' => new MorningProvider($pa, $cred),
         'cardcom' => new CardcomProvider($pa, $cred),
+        'payplus' => new PayplusProvider($pa, $cred),
         default => throw new ApiError("סולק לא מוכר: {$pa['provider']}", 'unknown_provider', 500),
     };
 }

@@ -81,7 +81,7 @@ const STAGES = [
   ['מנויים מאושרים', 'אזור ניהול לכל מי שהמנהל מאשר', ''],
   ['מגדלור מתחבר', 'האפליקציה הראשונה, בצ\'אט שלה', ''],
   ['עלייה לאוויר', 'תשלום אמיתי קטן והחזר, בדיקה משפטית — הרשימה למעלה', 'now'],
-  ['התרחבות', 'קארדקום ✓ · סולקים ואפליקציות נוספים, הוראת קבע, דוחות', 'now'],
+  ['התרחבות', 'קארדקום ✓ · פייפלוס ✓ · דוחות ✓ · מסרונים ✓ · הוראת קבע, סולקים ואפליקציות נוספים', 'now'],
 ];
 loaders.overview = async () => {
   const o = await api('overview');
@@ -129,7 +129,8 @@ function merchantForm(m = {}) {
       <ul class="list" id="pa-list"><li><p class="empty">טוען…</p></li></ul>
       <div class="row-btns wrap"><button type="button" class="btn sm ghost" data-pa-new="morning:test">+ מורנינג · בדיקות</button>
       <button type="button" class="btn sm ghost" data-pa-new="cardcom:test">+ קארדקום · בדיקות</button>
-      ${me.role === 'owner' ? '<button type="button" class="btn sm ghost" data-pa-new="morning:live">+ מורנינג · כסף אמיתי</button><button type="button" class="btn sm ghost" data-pa-new="cardcom:live">+ קארדקום · כסף אמיתי</button>' : ''}</div>
+      <button type="button" class="btn sm ghost" data-pa-new="payplus:test">+ פייפלוס · בדיקות</button>
+      ${me.role === 'owner' ? '<button type="button" class="btn sm ghost" data-pa-new="morning:live">+ מורנינג · כסף אמיתי</button><button type="button" class="btn sm ghost" data-pa-new="cardcom:live">+ קארדקום · כסף אמיתי</button><button type="button" class="btn sm ghost" data-pa-new="payplus:live">+ פייפלוס · כסף אמיתי</button>' : ''}</div>
       <p class="hint">בלי חיבור — סביבת הבדיקות עובדת מול הסולק המדומה, וכסף אמיתי לא נגבה.</p></div>` : ''}`,
   async fd => {
     await api('merchant_save', { id: m.id || '', ...Object.fromEntries(fd) });
@@ -139,14 +140,16 @@ function merchantForm(m = {}) {
 }
 
 const PROV_METHODS = { card: '💳 כרטיס', bit: 'ביט', apple: 'אפל', google: 'גוגל' };
-const PROV_NAME = { morning: 'מורנינג', cardcom: 'קארדקום' };
+const PROV_NAME = { morning: 'מורנינג', cardcom: 'קארדקום', payplus: 'פייפלוס' };
 const PROV_FIELDS = {
   morning: [['client_id', 'מזהה הממשק', false], ['client_secret', 'סוד הממשק', true], ['webhook_secret', 'סוד ההודעות (מומלץ)', true]],
   cardcom: [['terminal', 'מספר מסוף', false], ['api_name', 'שם משתמש לממשק', false], ['api_password', 'סיסמת ממשק — להחזרים מכאן', true]],
+  payplus: [['api_key', 'מפתח ממשק', false], ['secret_key', 'מפתח סודי', true], ['payment_page_uid', 'מזהה דף התשלום', false]],
 };
 const PROV_HINT = {
   morning: live => live ? 'הקודים מחשבון מורנינג האמיתי שלך (תוכנית "בסט" ומעלה): כלי פיתוח ← מפתחות ממשק.' : 'הקודים מסביבת הניסוי של מורנינג למפתחים — שם לא נגבה כסף אמיתי.',
   cardcom: live => live ? 'בממשק קארדקום: הגדרות ← הגדרות חברה ← ניהול מפתחות ממשק. מספר המסוף — בראש המסך.' : 'מסוף בדיקות מקארדקום (מבקשים מהם) — שם לא נגבה כסף אמיתי.',
+  payplus: live => live ? 'בממשק פייפלוס: הגדרות ← הגדרות API — המפתחות; דפי תשלום — המזהה של הדף.' : 'סביבת הבדיקות של פייפלוס (מפתחות בדיקה מהם) — שם לא נגבה כסף אמיתי.',
 };
 async function loadProviders(m) {
   const { data } = await api('providers', { merchant: m.id });
@@ -154,13 +157,13 @@ async function loadProviders(m) {
   if (!box) return;
   box.innerHTML = data.length ? data.map(p => `<li class="card" data-pa="${esc(p.id)}" tabindex="0" role="button"><span class="use-ic" aria-hidden="true">🏦</span>
       <div class="body"><div class="l1"><span>${PROV_NAME[p.provider] || esc(p.provider)} · ${p.env === 'live' ? 'כסף אמיתי' : 'בדיקות'}</span></div>
-      <div class="l2">${(p.settings.methods || []).map(x => PROV_METHODS[x] || x).join(' · ')}${p.provider === 'cardcom' ? ' · מסמך: ' + (p.settings.documents === 'morning' ? 'מורנינג' : 'קארדקום') : ''}${p.checked_at ? ' · נבדק ' + when(p.checked_at) : ''}</div></div>
+      <div class="l2">${(p.settings.methods || []).map(x => PROV_METHODS[x] || x).join(' · ')}${p.provider !== 'morning' ? ' · מסמך: ' + (p.settings.documents === 'morning' ? 'מורנינג' : PROV_NAME[p.provider]) : ''}${p.checked_at ? ' · נבדק ' + when(p.checked_at) : ''}</div></div>
       ${p.status !== 'active' ? chip('כבוי', '') : !p.checked_at ? chip('לא נבדק', 'warn') : p.check_error ? chip('תקלה', 'bad') : chip('תקין', 'ok')}</li>`).join('')
     : empty('עוד אין חיבור');
   for (const li of box.querySelectorAll('[data-pa]')) li.addEventListener('click', () => providerSheet(m, data.find(x => x.id === li.dataset.pa)));
   for (const b of document.querySelectorAll('[data-pa-new]')) b.addEventListener('click', () => {
     const [provider, env] = b.dataset.paNew.split(':');
-    providerSheet(m, { provider, env, fields: {}, settings: { methods: ['card', 'bit'], documents: 'cardcom' } });
+    providerSheet(m, { provider, env, fields: {}, settings: { methods: ['card', 'bit'], documents: provider } });
   });
 }
 
@@ -175,10 +178,10 @@ function providerSheet(m, p) {
     <p class="hint">${PROV_HINT[kind](live)}</p>
     <div class="fields">${PROV_FIELDS[kind].map(field).join('')}</div>
     <div class="chips" aria-label="אמצעי תשלום">${Object.entries(PROV_METHODS).map(([k, l]) => `<label><input type="checkbox" name="m_${k}" ${(p.settings.methods || []).includes(k) || k === 'card' ? 'checked' : ''} ${k === 'card' ? 'disabled' : ''}><span>${l}</span></label>`).join('')}</div>
-    ${kind === 'cardcom' ? `<fieldset class="seg" aria-label="מי מפיק את הקבלה">
-        <label><input type="radio" name="documents" value="cardcom" ${p.settings.documents !== 'morning' ? 'checked' : ''}><span>הקבלה מקארדקום</span></label>
+    ${kind !== 'morning' ? `<fieldset class="seg" aria-label="מי מפיק את הקבלה">
+        <label><input type="radio" name="documents" value="${kind}" ${p.settings.documents !== 'morning' ? 'checked' : ''}><span>הקבלה מ${PROV_NAME[kind]}</span></label>
         <label><input type="radio" name="documents" value="morning" ${p.settings.documents === 'morning' ? 'checked' : ''}><span>הקבלה ממורנינג</span></label></fieldset>
-      <p class="hint">קארדקום — רק אם במסוף יש מודול מסמכים. מורנינג — צריך גם חיבור מורנינג לעוסק (הסליקה תישאר בקארדקום).</p>` : ''}
+      <p class="hint">${kind === 'cardcom' ? 'קארדקום — רק אם במסוף יש מודול מסמכים.' : 'פייפלוס — רק אם מחובר אצלם Invoice+ (או חברת חשבוניות).'} מורנינג — צריך גם חיבור מורנינג לעוסק (הסליקה תישאר ב${PROV_NAME[kind]}).</p>` : ''}
     ${!isNew ? `<label class="switch"><input type="checkbox" name="active" ${p.status === 'active' ? 'checked' : ''}><span>פעיל</span></label>
     <div class="group"><h3>בדיקת חיבור</h3>
       ${p.check_error ? `<p class="error">${esc(p.check_error)}</p>` : p.checked_at ? '<p class="hint">✓ החיבור עובד.</p>' : ''}
@@ -187,7 +190,7 @@ function providerSheet(m, p) {
       <p class="hint">כלי פיתוח ← וובהוקים ← הוספה: להדביק את הכתובת, לסמן "מסמך נוצר" ו"תשלום התקבל", ולהגדיר סוד — אותו סוד שבשדה למעלה. כך תשלום נקלט גם אם הלקוח סגר את החלון.</p>
       <input readonly dir="ltr" value="${esc(p.webhook_url)}" aria-label="כתובת ההודעות" onclick="this.select()">
       <div class="row-btns"><button type="button" class="btn sm ghost" id="pa-copy">📋 העתקה</button></div></div>`
-      : '<p class="hint">הודעות מקארדקום מגיעות לבד — כתובת ההודעות נשלחת עם כל דף תשלום.</p>'}` : ''}`,
+      : `<p class="hint">הודעות מ${PROV_NAME[kind]} מגיעות לבד — כתובת ההודעות נשלחת עם כל דף תשלום.</p>`}` : ''}`,
   async fd => {
     const methods = Object.keys(PROV_METHODS).filter(k => k === 'card' || fd.get('m_' + k));
     const creds = Object.fromEntries(PROV_FIELDS[kind].map(([k]) => [k, fd.get(k)]));
