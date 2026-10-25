@@ -127,6 +127,8 @@
         "fillRule": { "$ref": "#/$defs/token" },
         "shape": { "type": "object" },
         "text": { "type": "string" },
+        "src": { "$ref": "#/$defs/mediaRef" },
+        "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
         "children": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/pathItem" } }
       }
     },
