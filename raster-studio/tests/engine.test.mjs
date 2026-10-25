@@ -452,7 +452,7 @@ test('שינוי צורה: הבחירה זזה עם התוכן', () => {
 // ---- קבצים: PNG, ZIP, ORA, ‎.mbe ----
 import { encodePNG, crc32, sha256Hex } from '../assets/js/engine/png.js';
 import { zipStore } from '../assets/js/engine/zip.js';
-import { oraStack, parseOraStack, mbeDocument, gapsFor } from '../assets/js/engine/formats.js';
+import { oraStack, parseOraStack, mbeDocument, gapsFor, mediaRefs, canvasSurface } from '../assets/js/engine/formats.js';
 import { inflateSync } from 'node:zlib';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
@@ -671,4 +671,35 @@ test('ביצועים: התקציב מוקטן במכשיר איטי; המטמו�
   assert.equal(perfCacheValid(c, 'אחר', 2000), false);
   assert.equal(perfCacheValid(c, 'k', 1000 + 31 * 864e5), false);
   assert.equal(perfCacheValid(null, 'k'), false);
+});
+
+// ---- ‎.mbe: שמירת מה שלא שלנו ----
+test('‎.mbe: שכבה זרה כמו שהיא, שדות לא מוכרים בשכבה ובמשטח, והמשטח נשאר במקומו', () => {
+  const vec = { id: 'V1', type: 'vector', paths: [], z: 1 };
+  const layers = [
+    { id: 'R1', name: 'א', type: 'raster', opacity: 1, blend: 'normal', visible: true, locked: false, mbe: { id: 'R1', type: 'raster', src: 'media/old.png', tag: 7 } },
+    { id: 'V1', name: 'לוגו (vector)', type: 'raster', visible: true, locked: true, foreign: vec },
+    { id: 'V2', name: 'נסתר', type: 'raster', visible: false, locked: true, foreign: { id: 'V2', type: 'frame' } },
+  ];
+  const base = { surfaceId: 'c1', document: { units: 'pt', surfaces: [{ id: 'p0', type: 'page' }, { id: 'c1', type: 'canvas', size: [1, 1], note: 'x' }] } };
+  const d = mbeDocument({ width: 9, height: 8 }, layers, base, () => 'media/new.png');
+  assert.deepEqual(d.surfaces.map(s => s.id), ['p0', 'c1']);
+  const s = d.surfaces[1];
+  assert.equal(s.note, 'x');
+  assert.deepEqual(s.size, [9, 8]);
+  assert.equal(s.layers[0].tag, 7);
+  assert.equal(s.layers[0].src, 'media/new.png');
+  assert.equal(s.layers[1], vec, 'שכבה זרה — אותו אובייקט, בלי שינוי');
+  assert.equal(s.layers[2].visible, false, 'ההסתרה — שלנו');
+});
+
+test('‎.mbe: הפניות למשאבים בכל עומק, והקנבס הראשון', () => {
+  const doc = { fonts: [{ embedded: 'media/f.woff2' }], surfaces: [{ id: 'p', type: 'page', layers: [{ src: 'media/a.png', children: [{ src: 'media/b.png' }] }] }, { id: 'c', type: 'canvas', size: [1, 1] }] };
+  assert.deepEqual([...mediaRefs(doc)].sort(), ['media/a.png', 'media/b.png', 'media/f.woff2']);
+  assert.equal(canvasSurface(doc).id, 'c');
+  assert.equal(canvasSurface({ surfaces: [{ id: 'p', type: 'page' }] }), null);
+});
+
+test('פערים: שכבה זרה לא נכנסת לייצוגים', () => {
+  assert.deepEqual(gapsFor('ora', [{ blend: 'normal', opacity: 1, visible: true, foreign: { type: 'vector' } }]), ['layer:vector → omitted']);
 });

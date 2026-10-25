@@ -27,8 +27,8 @@ export function columnsOf(frame) {
 /**
  * פריסת כל השטפים.
  *   fontsFor(family, weight) → [גופן ראשי, חלופי…] טעונים (shaper.loadFont / fontVariant, עם name — מפתח המטמון).
- * מחזיר { frames: Map(frameId → { lines: [{ x, y, glyphs, size, font }], overset }), flows: Map(flowId → { overset, rest }) }
- *   y — קו הבסיס; x — תחילת השורה משמאל; rest — מאיזו פסקה (ומילה) לא נכנס, ומתוך כמה.
+ * מחזיר { frames: Map(frameId → { lines: [{ x, y, glyphs, size, font, text }], overset }), flows: Map(flowId → { overset, rest }) }
+ *   y — קו הבסיס; x — תחילת השורה משמאל; text — הטקסט הלוגי של השורה (ל-PDF: חיפוש והעתקה); rest — מאיזו פסקה (ומילה) לא נכנס, ומתוך כמה.
  */
 export function layoutFlows(model, fontsFor) {
   const frames = new Map(), flows = new Map();
@@ -154,7 +154,7 @@ export function layoutFlow(blocks, frameList, styleFor, fontsFor, avoid = () => 
       } else if (st.align === 'left') x = s.x;
       else if (st.align === 'center') x = s.x + (avail - natural) / 2;
       else x = right - natural;   // ימין — ובסוף פסקה מיושרת
-      out.get(s.frameId).lines.push({ x, y, glyphs, size: st.size, font: f });
+      out.get(s.frameId).lines.push({ x, y, glyphs, size: st.size, font: f, text: lineText });
       wi = isBreak(j) ? j + 1 : j;   // השבירה שסגרה את השורה — נבלעת
     }
     y += st.spaceAfter;

@@ -1,4 +1,4 @@
-// ייצוא: PNG / JPG (משוטחת) ו-ORA (שכבות — GIMP, Krita). ‎.mbe — כשהליבה תצורף (requests/raster-studio-core.md).
+// ייצוא: PNG / JPG (משוטחת) ו-ORA (שכבות — GIMP, Krita). ‎.mbe — ב-mbe-io.js, דרך הליבה.
 
 import { encodePNG } from './engine/png.js';
 import { zipStore } from './engine/zip.js';
@@ -51,6 +51,7 @@ export async function buildORA(renderer, doc) {
     const out = [];
     for (const l of list) {
       if (l.type === 'group') { out.push({ ...l, children: await walk(l.children) }); continue; }
+      if (l.foreign) continue;   // של אפליקציה אחרת — לא מצוירת אצלנו (פער בדוח)
       const src = `data/layer${n++}.png`;
       files.push({ name: src, data: await layerPNG(renderer, doc, l) });
       out.push({ ...l, src });

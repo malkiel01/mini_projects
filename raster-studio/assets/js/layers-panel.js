@@ -74,11 +74,12 @@ export function createLayersPanel({ root, doc, renderer, history, onChange, toas
     },
     duplicate() {
       const d = doc(), src = d.active;
+      if (src.foreign) { toast('שכבה של אפליקציה אחרת — אי אפשר לשכפל אותה כאן', true); return; }
       // עותק עמוק — לקבוצה גם כל השכבות שבתוכה
       const copyInto = (item, props) => {
         if (item.type === 'group') {
           const g = d.addGroup({ ...props, opacity: item.opacity, blend: item.blend, visible: item.visible });
-          for (const c of item.children) copyInto(c, { name: c.name, parent: g });
+          for (const c of item.children) if (!c.foreign) copyInto(c, { name: c.name, parent: g });
           return g;
         }
         const l = d.addLayer({ ...props, opacity: item.opacity, blend: item.blend, visible: item.visible });
@@ -164,7 +165,8 @@ export function createLayersPanel({ root, doc, renderer, history, onChange, toas
     li.classList.toggle('hidden-layer', !layer.visible);
     li.innerHTML = `
       <span class="drag" aria-hidden="true">⋮⋮</span>
-      ${layer.type === 'group' ? '<button class="icon-btn fold" type="button"></button><span class="thumb folder" aria-hidden="true">📁</span>' : '<canvas class="thumb" aria-hidden="true"></canvas>'}
+      ${layer.type === 'group' ? '<button class="icon-btn fold" type="button"></button><span class="thumb folder" aria-hidden="true">📁</span>'
+    : layer.foreign ? '<span class="thumb folder" aria-hidden="true">🧩</span>' : '<canvas class="thumb" aria-hidden="true"></canvas>'}
       <button class="layer-name one" type="button"></button>
       <button class="icon-btn eye" type="button"></button>
       <button class="icon-btn lock" type="button"></button>`;
@@ -174,7 +176,7 @@ export function createLayersPanel({ root, doc, renderer, history, onChange, toas
       fold.setAttribute('aria-label', (layer.collapsed ? 'פתיחת ' : 'קיפול ') + layer.name);
       fold.setAttribute('aria-expanded', String(!layer.collapsed));
       fold.addEventListener('click', () => { layer.collapsed = !layer.collapsed; render(); });
-    } else {
+    } else if (!layer.foreign) {
       thumb(layer, $('canvas', li));
     }
     const name = $('.layer-name', li);
@@ -200,7 +202,8 @@ export function createLayersPanel({ root, doc, renderer, history, onChange, toas
       render();
     });
     eye.addEventListener('click', () => setProp(layer, 'visible', !layer.visible, layer.visible ? 'הסתרת שכבה' : 'הצגת שכבה'));
-    lock.addEventListener('click', () => setProp(layer, 'locked', !layer.locked, layer.locked ? 'שחרור נעילה' : 'נעילת שכבה'));
+    if (layer.foreign) li.title = `של אפליקציה אחרת (${layer.foreign.type}) — נשמרת כמו שהיא, ולא נערכת כאן`;
+    lock.addEventListener('click', () => layer.foreign ? toast(li.title, true) : setProp(layer, 'locked', !layer.locked, layer.locked ? 'שחרור נעילה' : 'נעילת שכבה'));
     $('.drag', li).addEventListener('pointerdown', e => drag(e, layer, li));
     return li;
   }

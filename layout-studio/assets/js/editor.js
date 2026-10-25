@@ -11,6 +11,7 @@ import { addFrame, autoflow, growFlow, removeFrame, pruneFlows, updateFrame, set
 import { layoutFlows } from './flow.js';
 import { imagePlacement } from './frames.js';
 import { loadFont, fontVariant } from './shaper.js';
+import { drawList } from './pdf.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 
@@ -622,6 +623,41 @@ form.addEventListener('submit', e => {
   view.fit();
 });
 
+// ---- PDF להדפסה: הדפדפן מכין את רשימת הציור (pdf.js), השרת מריץ את pdf-core ----
+async function gzip(str) {
+  const cs = new CompressionStream('gzip');
+  return new Response(new Blob([str]).stream().pipeThrough(cs)).blob();
+}
+const pdfBtn = $('#pdf-btn');
+pdfBtn.addEventListener('click', async () => {
+  pdfBtn.disabled = true;
+  toast('מכין PDF…');
+  try {
+    await ensureFonts();
+    relayout();
+    const b = bodyStyle(model);
+    const list = drawList(model, text, fontsFor(b.font, b.weight), { title: doc.title });
+    let res;
+    try {
+      res = await fetch('api.php?action=pdf', { method: 'POST', credentials: 'same-origin',
+        headers: { 'X-Layout-Studio': '1', 'Content-Type': 'application/gzip' }, body: await gzip(JSON.stringify(list)) });
+    } catch { throw new Error('אין חיבור לשרת'); }
+    if (!res.ok || res.headers.get('Content-Type') !== 'application/pdf') {
+      const out = await res.json().catch(() => ({}));
+      throw new Error(out.error === 'too_big' ? 'המסמך גדול מדי ל-PDF' : out.detail ? 'ה-PDF לא נוצר: ' + out.detail : 'ה-PDF לא נוצר');
+    }
+    const url = URL.createObjectURL(await res.blob());
+    const a = Object.assign(document.createElement('a'), { href: url, download: (doc.title || 'עימוד') + '.pdf' });
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    toast('ה-PDF ירד');
+  } catch (e) {
+    toast(e.message, true);
+  } finally {
+    pdfBtn.disabled = false;
+  }
+});
+
 // ---- טעינה ----
 (async () => {
   if (!id) { location.replace('index.html'); return; }
@@ -637,6 +673,7 @@ form.addEventListener('submit', e => {
     // הגופנים ו-HarfBuzz — ברקע; כשמוכנים, הטקסט והכותרות מצוירים בהם
     ensureFonts().then(relayout).catch(err => toast('הגופנים לא נטענו: ' + err.message, true));
     $('#settings-btn').disabled = false;
+    $('#pdf-btn').disabled = false;
     $('#add-page').disabled = false;
   } catch (e) {
     const el = $('#load-err');

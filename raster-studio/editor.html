@@ -17,7 +17,9 @@
     <div class="titles"><h1 id="title">&nbsp;</h1><div class="sub" id="meta">&nbsp;</div></div>
     <!-- מימין לשמאל: החצים מראה — "ביטול" מצביע ימינה, כמו בגוגל דוקס בעברית -->
     <button class="icon-btn" id="adjust-btn" type="button" aria-label="תיקונים: בהירות, גוון, טשטוש" title="תיקונים" disabled>🎚️</button>
-    <button class="icon-btn" id="export-btn" type="button" aria-label="הורדה: PNG, JPG או ORA" title="הורדה" disabled>⬇️</button>
+    <button class="icon-btn" id="save-btn" type="button" aria-label="שמירה בשרת" title="שמירה בשרת (Ctrl+S)" aria-keyshortcuts="Control+S" disabled>💾</button>
+    <button class="icon-btn" id="versions-btn" type="button" aria-label="גרסאות קודמות" title="גרסאות" disabled>🕘</button>
+    <button class="icon-btn" id="export-btn" type="button" aria-label="הורדה: PNG, JPG, ORA או ‎.mbe" title="הורדה" disabled>⬇️</button>
     <button class="icon-btn" id="undo-btn" type="button" aria-label="ביטול" aria-keyshortcuts="Control+Z" disabled>↷</button>
     <button class="icon-btn" id="redo-btn" type="button" aria-label="ביצוע מחדש" aria-keyshortcuts="Control+Shift+Z" disabled>↶</button>
   </header>
@@ -150,9 +152,24 @@
           <button type="button" class="tile" data-export="png"><span class="tile-ic">🖼️</span><b>PNG</b><small>משוטחת, עם שקיפות</small></button>
           <button type="button" class="tile" data-export="jpg"><span class="tile-ic">📷</span><b>JPG</b><small>משוטחת, קטנה, רקע לבן</small></button>
           <button type="button" class="tile" data-export="ora"><span class="tile-ic">🗂️</span><b>ORA</b><small>עם השכבות — GIMP, Krita</small></button>
-          <button type="button" class="tile" data-export="mbe" disabled><span class="tile-ic">📦</span><b>‎.mbe</b><small>הקובץ של החבילה — אחרי החיבור לליבה</small></button>
+          <button type="button" class="tile" data-export="mbe"><span class="tile-ic">📦</span><b>‎.mbe</b><small>הקובץ של החבילה — כל השכבות, נפתח בכל האפליקציות</small></button>
         </div>
         <p class="hint" id="export-gaps"></p>
+        <button type="button" class="btn" id="versions-open" hidden>🕘 גרסאות קודמות בשרת</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="versions-dlg" aria-labelledby="versions-title">
+    <form method="dialog">
+      <header class="sheet-head">
+        <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+        <h2 id="versions-title">גרסאות</h2>
+        <span></span>
+      </header>
+      <div class="sheet-body">
+        <p class="hint">כל שמירה בשרת — גרסה. פתיחת גרסה ישנה לא מוחקת כלום: שמירה ממנה היא גרסה חדשה.</p>
+        <ul class="versions" id="versions-list" aria-live="polite"></ul>
       </div>
     </form>
   </dialog>
