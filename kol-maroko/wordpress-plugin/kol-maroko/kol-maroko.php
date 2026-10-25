@@ -2,7 +2,7 @@
 /**
  * Plugin Name: קול מרוקו — קבלת גרסאות
  * Description: מקבל מסטודיו "קול מרוקו" גרסאות חתומות של עמוד אחד (Ed25519), בודק חתימה, זמן, nonce וגרסה, ומציג אותן בתבנית של העמוד הזה בלבד. בלי סיסמאות ובלי גישה מבחוץ לשום דבר אחר. כולל ייצוא של העמוד הקיים לסטודיו.
- * Version: 1.2.0
+ * Version: 1.3.0
  * Requires PHP: 7.4
  * Author: הכלים הדיגיטליים
  * Text Domain: kol-maroko
@@ -21,7 +21,8 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('KOL_MAROKO_VERSION', '1.2.0');
+define('KOL_MAROKO_VERSION', '1.3.0');
+if (!defined('KOL_MAROKO_AUDIO_PART')) define('KOL_MAROKO_AUDIO_PART', 300 * 1024 * 1024);   // גודל של כל קובץ בייצוא ההקלטות
 define('KOL_MAROKO_PAGE', 'lexicon');
 define('KOL_MAROKO_SKEW', 300);
 define('KOL_MAROKO_KEEP', 10);
@@ -319,6 +320,21 @@ function kol_maroko_admin()
     submit_button('⬇️ ייצוא העמוד', 'primary', 'submit', false);
     echo '</form>';
 
+    // ההקלטות של המילים — בכמה קבצים, כדי שכל אחד יירד ויעלה בלי להיתקע
+    $audio = kol_maroko_audio_files();
+    if ($audio) {
+        $parts = kol_maroko_audio_parts($audio);
+        $total = array_sum(array_column($audio, 'size'));
+        echo '<h2>🎙️ ייצוא ההקלטות לסטודיו</h2><p>' . count($audio) . ' הקלטות, ' . esc_html(size_format($total)) . ', ב-' . count($parts)
+            . ' קבצים. מורידים את כולם ומעלים בסטודיו: ⚙️ הגדרות ← "ייבוא ההקלטות" (אפשר לבחור את כולם יחד). כל הקלטה נקשרת למילה שלה.</p><p>';
+        foreach ($parts as $i => $p) {
+            echo '<form method="post" action="' . $post . '" style="display:inline-block;margin:0 0 8px 8px">' . wp_nonce_field('kol_maroko_export_audio', '_wpnonce', true, false)
+                . '<input type="hidden" name="action" value="kol_maroko_export_audio"><input type="hidden" name="part" value="' . (int)$i . '">'
+                . '<button class="button">⬇️ חלק ' . ($i + 1) . ' מתוך ' . count($parts) . ' (' . esc_html(size_format(array_sum(array_column($p, 'size')))) . ')</button></form>';
+        }
+        echo '</p>';
+    }
+
     echo '<h2 id="kol-diag">🔎 אבחון</h2><p>איך העמוד בנוי: התבניות, סוגי התוכן, והרכיבים שהמבקר רואה. מעתיקים את כל הטקסט בתיבה ושולחים לצ\'אט של קול מרוקו.</p>';
     echo '<form method="post" action="' . $post . '">' . wp_nonce_field('kol_maroko_diagnose', '_wpnonce', true, false) . '<input type="hidden" name="action" value="kol_maroko_diagnose">';
     submit_button('🔎 הפקת אבחון', 'secondary', 'submit', false);
@@ -484,6 +500,68 @@ function kol_maroko_lexicon_data()
         'show_external_id' => defined('KADISHA_LEXICON_SHOW_EXTERNAL_ID') && KADISHA_LEXICON_SHOW_EXTERNAL_ID,
         'words' => $words, 'topics' => $topics];
 }
+
+/** ההקלטות של המילים: הכתובת, הקובץ בשרת והמילה. רק קבצים שקיימים תחת uploads. */
+function kol_maroko_audio_files()
+{
+    if (!function_exists('kadisha_lexicon_get_all_words')) return [];
+    $up = wp_upload_dir();
+    $base = preg_replace('~^https?:~', '', untrailingslashit($up['baseurl'])) . '/';
+    $out = [];
+    foreach (kadisha_lexicon_get_all_words() as $w) {
+        $u = (string)($w['audio_url'] ?? '');
+        $bare = preg_replace('~^https?:~', '', $u);
+        if ($u === '' || strpos($bare, $base) !== 0) continue;
+        $rel = rawurldecode(substr($bare, strlen($base)));
+        $path = $up['basedir'] . '/' . $rel;
+        if (strpos($rel, '..') !== false || !is_file($path)) continue;
+        $out[] = ['url' => $u, 'word_id' => (int)$w['id'], 'word' => (string)$w['word'], 'rel' => $rel, 'path' => $path, 'size' => (int)filesize($path)];
+    }
+    usort($out, fn($a, $b) => $a['word_id'] <=> $b['word_id']);   // סדר קבוע — כל חלק מכיל תמיד את אותם קבצים
+    return $out;
+}
+
+/** חלוקה לחלקים של עד KOL_MAROKO_AUDIO_PART. */
+function kol_maroko_audio_parts(array $files)
+{
+    $parts = [[]];
+    $size = 0;
+    foreach ($files as $f) {
+        if ($size > 0 && $size + $f['size'] > KOL_MAROKO_AUDIO_PART) { $parts[] = []; $size = 0; }
+        $parts[count($parts) - 1][] = $f;
+        $size += $f['size'];
+    }
+    return $files ? $parts : [];
+}
+
+add_action('admin_post_kol_maroko_export_audio', function () {
+    if (!current_user_can('manage_options')) wp_die('אין הרשאה');
+    check_admin_referer('kol_maroko_export_audio');
+    if (!class_exists('ZipArchive')) wp_die('בשרת אין ZipArchive.');
+    @set_time_limit(1800);
+    $parts = kol_maroko_audio_parts(kol_maroko_audio_files());
+    $i = (int)($_POST['part'] ?? 0);
+    if (!isset($parts[$i])) wp_die('החלק לא נמצא. רעננו את העמוד ונסו שוב.');
+    $zipPath = wp_tempnam('kol-maroko-audio.zip');
+    $zip = new ZipArchive();
+    $zip->open($zipPath, ZipArchive::OVERWRITE);
+    $list = [];
+    foreach ($parts[$i] as $f) {
+        $zip->addFile($f['path'], 'audio/' . $f['rel']);
+        $zip->setCompressionName('audio/' . $f['rel'], ZipArchive::CM_STORE);
+        $list[] = ['url' => $f['url'], 'file' => 'audio/' . $f['rel'], 'word_id' => $f['word_id'], 'word' => $f['word']];
+    }
+    $zip->addFromString('audio.json', wp_json_encode(['format' => 'kol-audio', 'plugin' => KOL_MAROKO_VERSION, 'site' => home_url(),
+        'part' => $i + 1, 'parts' => count($parts), 'files' => $list], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    $zip->close();
+    nocache_headers();
+    header('Content-Type: application/zip');
+    header('Content-Disposition: attachment; filename="kol-maroko-audio-' . ($i + 1) . '-of-' . count($parts) . '.zip"');
+    header('Content-Length: ' . filesize($zipPath));
+    readfile($zipPath);
+    @unlink($zipPath);
+    exit;
+});
 
 /** קובץ של התבנית הפעילה, עם כתובות url(...) יחסיות שהופכות למלאות (כדי שיעבדו גם בתצוגה בסטודיו). */
 function kol_maroko_theme_file($rel)

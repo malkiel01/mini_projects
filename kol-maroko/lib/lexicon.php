@@ -126,7 +126,8 @@ function words_list(): array
     $files = files_meta(array_values(array_unique(array_filter(array_map(fn($w) => file_id($w['audio']), $rows)))));
     foreach ($rows as &$w) {
         $w['audio_src'] = audio_src($w['audio']);
-        $w['audio_kind'] = $w['audio'] === '' ? '' : (file_id($w['audio']) ? (isset($files[$w['audio']]) ? 'file' : 'missing') : 'site');
+        $f = file_id($w['audio']) ? ($files[$w['audio']] ?? null) : null;
+        $w['audio_kind'] = $w['audio'] === '' ? '' : (!file_id($w['audio']) ? 'site' : (!$f ? 'missing' : (!empty($f['origin']) ? 'copy' : 'file')));
     }
     unset($w);
     return ['words' => $rows, 'topics' => topics_used($rows, $map)];
@@ -166,7 +167,37 @@ function word_save(array $user, array $b): array
     $add = $pdo->prepare('INSERT OR IGNORE INTO topics (slug, name) VALUES (?, ?)');
     foreach ($in['topics'] as $t) $add->execute([topic_slug($t, $map), $t]);
     audit_as($user, empty($b['id']) ? 'word_add' : 'word_edit', $in['word']);
+    if (!empty($b['light'])) {                       // עריכה בתא בטבלה — רק השורה, לא כל 1,500 המילים
+        foreach (words_list()['words'] as $w) if ($w['id'] === $id) return ['id' => $id, 'word' => $w];
+    }
     return ['id' => $id] + words_list();
+}
+
+/** נושא: שינוי שם (גם איחוד — אם השם החדש כבר קיים) או הסרה מכל המילים. */
+function topic_op(array $user, array $b): array
+{
+    $name = str($b['name'] ?? '', 80);
+    $to = str(preg_replace('/\s+/u', ' ', (string)($b['to'] ?? '')), 80);
+    $op = (string)($b['op'] ?? '');
+    if ($name === '' || !in_array($op, ['rename', 'delete'], true) || ($op === 'rename' && $to === '')) throw new ApiError('בקשה לא תקינה');
+    $pdo = db();
+    $st = $pdo->prepare('UPDATE words SET topics = ?, updated_at = ?, updated_by = ? WHERE id = ?');
+    $n = 0;
+    $pdo->beginTransaction();
+    foreach ($pdo->query('SELECT id, topics FROM words')->fetchAll() as $r) {
+        $t = json_decode($r['topics'], true) ?: [];
+        if (!in_array($name, $t, true)) continue;
+        $t = array_values(array_unique(array_filter(array_map(fn($x) => $x === $name ? ($op === 'rename' ? $to : '') : $x, $t))));
+        $st->execute([json_encode($t, JSON_UNESCAPED_UNICODE), now_iso(), $user['name'], $r['id']]);
+        $n++;
+    }
+    if ($op === 'rename') {
+        $map = topic_slugs();
+        $pdo->prepare('INSERT OR IGNORE INTO topics (slug, name) VALUES (?, ?)')->execute([topic_slug($to, $map), $to]);
+    }
+    $pdo->commit();
+    audit_as($user, 'topic_' . $op, $op === 'rename' ? "$name → $to ($n מילים)" : "$name ($n מילים)");
+    return words_list();
 }
 
 function word_delete(array $user, array $b): array
@@ -256,6 +287,8 @@ function lexicon_render(array $w, bool $editor, string $cls, string $k): array
     $ids = array_values(array_unique(array_filter(array_map(fn($x) => file_id($x['audio']), $words))));
     $GLOBALS['kol_files'] += files_meta(array_diff($ids, array_keys($GLOBALS['kol_files'])));
     $url = fn(string $id) => ($f = $GLOBALS['kol_files'][$id] ?? null) ? ($GLOBALS['kol_url'])($f) : '';
+    // הקלטה שהועתקה מהאתר ולא הוחלפה — באתר מפנים לקובץ שכבר שם (לא נשלח שוב); בסטודיו — העותק שלנו
+    $audioUrl = fn(string $id) => !$editor && ($o = $GLOBALS['kol_files'][$id]['origin'] ?? '') ? $o : $url($id);
     $hero = $p['hero_file'] ? $url($p['hero_file']) : $p['hero_url'];
 
     $sub = $p['subtitle_size'];
@@ -335,7 +368,7 @@ function lexicon_render(array $w, bool $editor, string $cls, string $k): array
 
     $o .= '<div class="kadisha-lexicon-grid" id="kadisha-lex-grid">';
     foreach ($editor ? array_slice($words, 0, LEX_PREVIEW_CARDS) : $words as $x) {
-        $o .= lexicon_card($x, $map, $p, $x['audio'] === '' ? '' : (file_id($x['audio']) ? $url($x['audio']) : $x['audio']));
+        $o .= lexicon_card($x, $map, $p, $x['audio'] === '' ? '' : (file_id($x['audio']) ? $audioUrl($x['audio']) : $x['audio']));
     }
     $o .= '</div>';
     if ($editor && $n > LEX_PREVIEW_CARDS) {
@@ -388,3 +421,167 @@ const LEX_FEEDBACK_MODAL = '<div class="kadisha-lex-feedback-modal" id="kadisha-
     . '<footer class="kadisha-lex-feedback-foot"><button type="button" class="kadisha-lex-feedback-cancel" data-klf-close="1">ביטול</button>'
     . '<button type="submit" class="kadisha-lex-feedback-send" id="kadisha-lex-feedback-send"><span aria-hidden="true">📨</span> שלח משוב</button>'
     . '<span class="kadisha-lex-feedback-status" id="kadisha-lex-feedback-status" aria-live="polite"></span></footer></form></div></div>';
+
+// ── ההקלטות מהאתר → עותק בכלי ─────────────────────────────
+
+/**
+ * קובץ הקלטות מהתוסף (1.3, "ייצוא ההקלטות", חלק אחד מכמה): audio.json + הקבצים. כל הקלטה נכנסת לספרייה (עם origin —
+ * הכתובת שלה באתר), ונקשרת לכל מילה שהצביעה על הכתובת הזו. קובץ שכבר הועתק — לא נכנס פעמיים.
+ */
+function audio_import(array $owner, array $b): array
+{
+    @set_time_limit(1800);
+    $u = upload_get($owner, (string)($b['id'] ?? ''));
+    if (($u['purpose'] ?? '') !== 'import') throw new ApiError('ההעלאה הזו אינה ייבוא');
+    $path = tmp_path($u['id']);
+    clearstatcache(true, $path);
+    if ((int)@filesize($path) !== (int)$u['size']) throw new ApiError('ההעלאה לא הושלמה', 409);
+    $zip = new ZipArchive();
+    if ($zip->open($path) !== true) throw new ApiError('הקובץ אינו ZIP תקין');
+    $j = json_decode((string)$zip->getFromName('audio.json'), true);
+    if (!is_array($j) || ($j['format'] ?? '') !== 'kol-audio' || !is_array($j['files'] ?? null)) {
+        $zip->close();
+        throw new ApiError('זה לא קובץ הקלטות של קול מרוקו (חסר audio.json). בוורדפרס: הגדרות ← קול מרוקו ← "ייצוא ההקלטות"');
+    }
+    $pdo = db();
+    $st = ['part' => (int)($j['part'] ?? 0), 'parts' => (int)($j['parts'] ?? 0), 'linked' => 0, 'files' => 0, 'already' => 0, 'unmatched' => 0, 'failed' => []];
+    $words = $pdo->prepare('SELECT word FROM words WHERE audio = ?');
+    $copy = $pdo->prepare('SELECT id FROM files WHERE origin = ?');
+    $link = $pdo->prepare('UPDATE words SET audio = ? WHERE audio = ?');
+    $dir = files_dir() . '/tmp';
+    if (!is_dir($dir)) @mkdir($dir, 0775, true);
+    foreach ($j['files'] as $f) {
+        $url = lex_url($f['url'] ?? '');
+        $entry = (string)($f['file'] ?? '');
+        if ($url === '') { $st['failed'][] = (string)($f['word'] ?? '?') . ' — כתובת לא מהאתר'; continue; }
+        $words->execute([$url]);
+        $ws = $words->fetchAll(PDO::FETCH_COLUMN);
+        $copy->execute([$url]);
+        $fid = $copy->fetchColumn();
+        if (!$ws) { $fid ? $st['already']++ : $st['unmatched']++; continue; }
+        if (!$fid) {
+            $stat = $zip->statName($entry);
+            if (!str_starts_with($entry, 'audio/') || str_contains($entry, '..') || !$stat || $stat['size'] > FILE_MAX) {
+                $st['failed'][] = $ws[0] . ' — הקובץ חסר או גדול מ-50MB';
+                continue;
+            }
+            $tmp = $dir . '/aud-' . bin2hex(random_bytes(8));
+            $in = $zip->getStream($entry);
+            $out = fopen($tmp, 'wb');
+            stream_copy_to_stream($in, $out);
+            fclose($in);
+            fclose($out);
+            $ext = strtolower(pathinfo($entry, PATHINFO_EXTENSION)) ?: 'mp3';
+            try {
+                $fid = file_store($tmp, mb_substr($ws[0], 0, 80) . '.' . $ext, $owner, 'audio/');
+            } catch (ApiError $e) {
+                $st['failed'][] = $ws[0] . ' — ' . $e->getMessage();
+                continue;
+            }
+            $pdo->prepare('UPDATE files SET origin = ? WHERE id = ?')->execute([$url, $fid]);
+            $st['files']++;
+        }
+        $link->execute([$fid, $url]);
+        $st['linked'] += count($ws);
+    }
+    $zip->close();
+    $pdo->prepare('DELETE FROM uploads WHERE id = ?')->execute([$u['id']]);
+    @unlink($path);
+    $st['remaining'] = (int)$pdo->query("SELECT COUNT(*) FROM words WHERE audio LIKE 'https://%'")->fetchColumn();
+    audit_as($owner, 'audio_import', "חלק {$st['part']} מתוך {$st['parts']} · {$st['files']} הקלטות");
+    return ['stats' => $st];
+}
+
+// ── אקסל (CSV) ────────────────────────────────────────────
+
+const CSV_COLS = ['id' => 'מזהה', 'word' => 'מילה', 'meaning' => 'פירוש', 'topics' => 'נושאים', 'audio' => 'הקלטה', 'external_id' => 'מספר מהאקסל'];
+
+/** פירוש (HTML) → טקסט: פסקה — שורה ריקה, שבירת שורה — שורה. */
+function lex_plain(string $html): string
+{
+    $t = preg_replace(['~</p>\s*~i', '~<br\s*/?>~i', '~</li>\s*~i'], ["\n\n", "\n", "\n"], $html);
+    $t = html_entity_decode(strip_tags($t), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    $t = preg_replace("/[ \t]+\n/", "\n", str_replace("\r", '', $t));
+    return trim(preg_replace("/\n{3,}/", "\n\n", $t));
+}
+
+function lex_from_plain(string $t): string
+{
+    $out = '';
+    foreach (preg_split("/\n\s*\n/", trim(str_replace("\r", '', $t))) as $p) {
+        if (trim($p) !== '') $out .= '<p>' . nl2br(e(trim($p)), false) . '</p>';
+    }
+    return $out;
+}
+
+function words_csv(): never
+{
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="kol-maroko-words-' . gmdate('Y-m-d') . '.csv"');
+    $out = fopen('php://output', 'w');
+    fwrite($out, "\xEF\xBB\xBF");                    // אקסל מזהה כך שזה UTF-8 (אחרת — ג'יבריש)
+    fputcsv($out, array_values(CSV_COLS), ',', '"', '');
+    foreach (words_rows() as $w) {
+        fputcsv($out, [$w['id'], $w['word'], lex_plain($w['meaning']), implode('; ', $w['topics']), $w['audio'] === '' ? '' : 'יש', $w['external_id']], ',', '"', '');
+    }
+    fclose($out);
+    exit;
+}
+
+/**
+ * חזרה מאקסל: שורה עם מזהה — עדכון המילה (רק מה שהשתנה; פירוש שלא שונה שומר את העיצוב שלו), בלי מזהה — מילה
+ * חדשה. שורה שנמחקה מהקובץ — לא נמחקת כאן (מחיקה רק במסך). ההקלטות לא משתנות מהקובץ.
+ */
+function words_csv_import(array $user, array $b): array
+{
+    $csv = (string)($b['csv'] ?? '');
+    if (strlen($csv) > 20 * 1024 * 1024) throw new ApiError('הקובץ גדול מדי');
+    if (!mb_check_encoding($csv, 'UTF-8')) $csv = (string)mb_convert_encoding($csv, 'UTF-8', 'Windows-1255');   // אקסל שומר "CSV" רגיל ב-ANSI
+    $csv = preg_replace('/^\xEF\xBB\xBF/', '', $csv);
+    $first = strtok($csv, "\n");
+    $sep = array_search(max($c = [',' => substr_count($first, ','), ';' => substr_count($first, ';'), "\t" => substr_count($first, "\t")]), $c, true);
+    $fh = fopen('php://temp', 'w+');
+    fwrite($fh, $csv);
+    rewind($fh);
+    $head = array_map(fn($h) => trim((string)$h), fgetcsv($fh, null, $sep, '"', '') ?: []);
+    $col = [];
+    foreach (CSV_COLS as $k => $label) if (($i = array_search($label, $head, true)) !== false) $col[$k] = $i;
+    if (!isset($col['word'])) throw new ApiError('לא מצאתי עמודה "מילה" בשורה הראשונה. כדאי להתחיל מקובץ שיוצא מכאן (⬇️ אקסל)');
+    $cur = [];
+    foreach (words_rows() as $w) $cur[$w['id']] = $w;
+    $st = ['updated' => 0, 'added' => 0, 'same' => 0, 'errors' => []];
+    $pdo = db();
+    $upd = $pdo->prepare('UPDATE words SET word = ?, meaning = ?, topics = ?, external_id = ?, updated_at = ?, updated_by = ? WHERE id = ?');
+    $ins = $pdo->prepare('INSERT INTO words (word, meaning, topics, external_id, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?)');
+    $addTopic = $pdo->prepare('INSERT OR IGNORE INTO topics (slug, name) VALUES (?, ?)');
+    $map = topic_slugs();
+    $pdo->beginTransaction();
+    for ($n = 2; ($r = fgetcsv($fh, null, $sep, '"', '')) !== false; $n++) {
+        $get = fn($k) => isset($col[$k]) ? trim((string)($r[$col[$k]] ?? '')) : null;
+        if (trim(implode('', $r)) === '') continue;
+        $id = (int)$get('id');
+        $old = $cur[$id] ?? null;
+        $plain = $get('meaning');
+        $meaning = $plain === null ? ($old['meaning'] ?? '') : ($old && lex_plain($old['meaning']) === lex_plain(lex_from_plain($plain)) ? $old['meaning'] : lex_from_plain($plain));
+        $topics = $get('topics') === null ? ($old['topics'] ?? []) : preg_split('/\s*[;,،]\s*/u', $get('topics'), -1, PREG_SPLIT_NO_EMPTY);
+        try {
+            $in = word_input(['word' => $get('word'), 'meaning' => $meaning, 'topics' => $topics, 'external_id' => $get('external_id') ?? ($old['external_id'] ?? '')]);
+        } catch (ApiError $e) {
+            $st['errors'][] = "שורה $n: " . $e->getMessage();
+            continue;
+        }
+        $json = json_encode($in['topics'], JSON_UNESCAPED_UNICODE);
+        foreach ($in['topics'] as $t) $addTopic->execute([topic_slug($t, $map), $t]);
+        if ($old) {
+            if ($old['word'] === $in['word'] && $old['meaning'] === $in['meaning'] && $old['topics'] === $in['topics'] && $old['external_id'] === $in['external_id']) { $st['same']++; continue; }
+            $upd->execute([$in['word'], $in['meaning'], $json, $in['external_id'], now_iso(), $user['name'], $id]);
+            $st['updated']++;
+        } else {
+            $ins->execute([$in['word'], $in['meaning'], $json, $in['external_id'], now_iso(), $user['name']]);
+            $st['added']++;
+        }
+    }
+    $pdo->commit();
+    audit_as($user, 'words_csv', "{$st['updated']} עודכנו · {$st['added']} נוספו");
+    return ['stats' => $st] + words_list();
+}

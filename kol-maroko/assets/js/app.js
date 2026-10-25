@@ -8,6 +8,7 @@ const ROLE_NAMES = { owner: 'בעלים', publisher: 'מפרסם', editor: 'עו
 const ACTIONS = {
   publish: '🚀 פרסם', publish_failed: '⚠️ פרסום נכשל', version_create: '📦 יצר גרסה', import: '📥 ייבא את העמוד מהאתר',
   word_add: '📚 הוסיף מילה', word_edit: '📚 ערך מילה', word_delete: '📚 מחק מילה', site_switch: '🔀 החליף את מה שהאתר מציג',
+  audio_import: '🎙️ ייבא הקלטות', words_csv: '📊 עדכן מילים מאקסל', topic_rename: '🏷️ שינה שם של נושא', topic_delete: '🏷️ הסיר נושא',
   key_rotate: '🔑 יצר מפתח חדש', key_activate: '🔑 הפעיל מפתח חדש', site_set: '🔗 שינה כתובת אתר',
   member_add: '➕ הוסיף חבר', file_add: '⬆️ העלה קובץ', file_delete: '🗑️ מחק קובץ', disk_cap: '💽 שינה תקרת קבצים', restore: '↺ שחזר טיוטה', member_role: '🔁 שינה תפקיד', member_remove: '➖ הסיר חבר', member_linked: '🔗 חבר נכנס לראשונה',
 };
