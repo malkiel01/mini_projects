@@ -9,8 +9,14 @@ const ERRORS = {
   no_user: 'אין משתמש — צריך להיכנס דרך הכלים הדיגיטליים',
   not_found: 'המסמך לא נמצא',
   network: 'אין חיבור לשרת',
+  too_big: 'הקובץ גדול מדי',
+  'mbe_kind:text': 'זה מסמך של עורך התמלילים. פתח מסמך עימוד וייבא אותו דרך "טקסט מ-Word או ‎.mbe"',
 };
-const errText = code => ERRORS[code] || 'משהו השתבש (' + code + ')';
+const errText = code => ERRORS[code]
+  || (code.startsWith('mbe_kind:') ? 'זה קובץ ‎.mbe מסוג אחר (' + code.slice(9) + ') — העימוד פותח רק מסמכי עימוד'
+  : code.startsWith('mbe_invalid') ? 'קובץ ה-‎.mbe פגום (' + code.slice(12) + ')'
+  : code.startsWith('bad_model') ? 'העימוד עוד לא יודע לפתוח את המסמך הזה (' + code.slice(10) + ')'
+  : 'משהו השתבש (' + code + ')');
 
 async function api(action, data = {}) {
   let res;
@@ -164,12 +170,35 @@ form.addEventListener('submit', async e => {
   }
 });
 
+// ---- פתיחת ‎.mbe מהמכשיר: הקובץ עולה לשרת, נבדק בליבה ונכנס לספרייה כמסמך חדש ----
+const mbeInput = $('#mbe-file');
+$('#open-btn').addEventListener('click', () => mbeInput.click());
+mbeInput.addEventListener('change', async () => {
+  const file = mbeInput.files[0];
+  mbeInput.value = '';
+  if (!file) return;
+  toast('פותח את הקובץ…');
+  try {
+    let res;
+    try {
+      res = await fetch('api.php?action=doc_import&name=' + encodeURIComponent(file.name), { method: 'POST', credentials: 'same-origin',
+        headers: { 'X-Layout-Studio': '1', 'Content-Type': 'application/vnd.mbe+zip' }, body: file });
+    } catch { throw new Error('network'); }
+    const out = await res.json().catch(() => ({ ok: false, error: res.status === 413 ? 'too_big' : 'server' }));
+    if (!out.ok) throw new Error(out.error || 'server');
+    location.href = 'editor.html?id=' + out.doc.id;
+  } catch (err) {
+    toast(errText(err.message), true);
+  }
+});
+
 // ---- התחלה ----
 (async () => {
   try {
     const { me } = await api('me');
     $('#who').textContent = me.name || me.email;
     $('#new-btn').disabled = false;
+    $('#open-btn').disabled = false;
     load();
   } catch (e) {
     $('#load-err').textContent = errText(e.message);

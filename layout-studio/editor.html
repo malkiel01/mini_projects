@@ -12,6 +12,7 @@
   <header class="top">
     <a class="icon-btn" href="index.html" aria-label="חזרה למסמכים">→</a>
     <div class="titles"><h1 id="doc-title">&nbsp;</h1><div class="sub" id="save-state" role="status">&nbsp;</div></div>
+    <button class="icon-btn" id="mbe-btn" type="button" aria-label="הורדה כקובץ ‎.mbe" title="הורדה כקובץ ‎.mbe" disabled>⬇️</button>
     <button class="icon-btn" id="pdf-btn" type="button" aria-label="PDF להדפסה" title="PDF להדפסה" disabled>🖨️</button>
     <button class="icon-btn" id="settings-btn" type="button" aria-label="הגדרות מסמך" disabled>⚙️</button>
   </header>
@@ -54,9 +55,9 @@
             <button class="tile" type="button" id="pm-frame"><span class="tile-ic" aria-hidden="true">▭</span>מסגרת טקסט בעמוד</button>
             <button class="tile" type="button" id="pm-flow"><span class="tile-ic" aria-hidden="true">⤓</span>זרימה אוטומטית מכאן</button>
             <button class="tile" type="button" id="pm-image"><span class="tile-ic" aria-hidden="true">🖼</span>תמונה</button>
-            <button class="tile" type="button" id="pm-docx"><span class="tile-ic" aria-hidden="true">📄</span>טקסט מ-Word</button>
+            <button class="tile" type="button" id="pm-docx"><span class="tile-ic" aria-hidden="true">📄</span>טקסט מ-Word או ‎.mbe</button>
           </div>
-          <input type="file" id="docx-file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
+          <input type="file" id="docx-file" accept=".docx,.mbe,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.mbe+zip" hidden>
           <input type="file" id="img-file" accept="image/png,image/jpeg,image/webp" hidden>
           <p class="hint">זרימה אוטומטית — מסגרת בכל עמוד מכאן ועד הסוף, והטקסט זורם ביניהן; טקסט שלא נכנס מוסיף עמודים.</p>
         </section>
@@ -77,7 +78,7 @@
           <button class="tile" type="button" id="fr-edit" data-kind="text"><span class="tile-ic" aria-hidden="true">✏️</span>עריכת הטקסט</button>
           <button class="tile" type="button" id="fr-next" data-kind="text"><span class="tile-ic" aria-hidden="true">↲</span>המשך בעמוד הבא</button>
           <button class="tile" type="button" id="fr-grow" data-kind="text"><span class="tile-ic" aria-hidden="true">⤓</span>עמודים עד סוף הטקסט</button>
-          <button class="tile" type="button" id="fr-docx" data-kind="text"><span class="tile-ic" aria-hidden="true">📄</span>ייבוא מ-Word</button>
+          <button class="tile" type="button" id="fr-docx" data-kind="text"><span class="tile-ic" aria-hidden="true">📄</span>ייבוא מ-Word או ‎.mbe</button>
           <button class="tile" type="button" id="fr-replace" data-kind="image"><span class="tile-ic" aria-hidden="true">🔄</span>החלפת תמונה</button>
           <button class="tile" type="button" id="fr-del"><span class="tile-ic" aria-hidden="true">🗑️</span>מחיקת המסגרת</button>
         </div>

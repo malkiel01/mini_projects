@@ -10,7 +10,8 @@ putenv('LAYOUT_STUDIO_DB=' . $tmp);
 $tmpFiles = sys_get_temp_dir() . '/layout-studio-files-' . getmypid();
 putenv('LAYOUT_STUDIO_FILES=' . $tmpFiles);
 register_shutdown_function(function () use ($tmpFiles) {
-    foreach (glob($tmpFiles . '/*/*') ?: [] as $f) unlink($f);
+    foreach (glob($tmpFiles . '/*/mbe/*') ?: [] as $f) unlink($f);
+    foreach (glob($tmpFiles . '/*/*') ?: [] as $f) is_dir($f) ? rmdir($f) : unlink($f);
     foreach (glob($tmpFiles . '/*') ?: [] as $d) rmdir($d);
     @rmdir($tmpFiles);
 });
@@ -21,6 +22,7 @@ require_once __DIR__ . '/../lib/docs.php';
 require_once __DIR__ . '/../lib/model.php';
 require_once __DIR__ . '/../lib/media.php';
 require_once __DIR__ . '/../lib/pdf.php';
+require_once __DIR__ . '/../lib/mbeio.php';
 
 $fails = 0;
 $n = 0;
@@ -246,6 +248,29 @@ check('גוף שאינו gzip — bad_list', throws(fn() => ls_pdf($uidA, '{"pag
 check('JSON פגום — bad_list', throws(fn() => ls_pdf($uidA, gzencode('{x')), 'bad_list'));
 $bad = $list; $bad['pages'][0]['ops'][0]['font'] = 'fonts/../api.php';
 check('גופן שלא ברשימה — שגיאה עם המקום', throws(fn() => ls_pdf($uidA, gzencode(json_encode($bad))), 'גופן חסר: fonts/../api.php'));
+
+
+// ===== ‎.mbe: פתיחה לספרייה וקובץ המקור =====
+$fx = file_get_contents(__DIR__ . '/fixtures/layout.mbe');
+$imp = ls_mbe_import($uidA, $fx, 'בראשית.mbe');
+check('‎.mbe עימוד → מסמך חדש בספרייה, הכותרת משם הקובץ', $imp['title'] === 'בראשית' && $imp['page'] === [400.0, 600.0]);
+$got = ls_doc_get($uidA, $imp['id']);
+$gm = json_decode(json_encode($got['model']), true);
+check('המודל נשמר — כולל שדה לא מוכר ומספור בעברית', ($gm['x-other']['keep'] ?? null) === true && $gm['layout']['numbering']['style'] === 'hebrew'
+    && $gm['flows']['f1']['doc']['content'][0]['attrs']['id'] === 'pa1');
+$src = $gm['surfaces'][0]['layers'][1]['src'];
+check('התמונה מהקובץ — אצל המשתמש, באותו שם', ls_media_path($uidA, substr($src, 6)) !== null);
+check('קובץ המקור נשמר — ורק לבעלים', ls_mbe_source_get($uidA, $imp['id']) === $fx && ls_mbe_source_get($uidB, $imp['id']) === null);
+check('קובץ שאינו ‎.mbe — mbe_invalid', throws(fn() => ls_mbe_import($uidA, 'PK not really', 'x.mbe'), 'mbe_invalid:not-zip'));
+check('‎.mbe של עורך התמלילים — mbe_kind:text', throws(fn() => ls_mbe_import($uidA, file_get_contents(__DIR__ . '/fixtures/text.mbe'), 't.mbe'), 'mbe_kind:text'));
+check('קובץ מקור למסמך של משתמש אחר — not_found', throws(fn() => ls_mbe_source_put($uidB, $imp['id'], $fx), 'not_found'));
+check('קובץ מקור שאינו עימוד — נדחה', throws(fn() => ls_mbe_source_put($uidA, $imp['id'], file_get_contents(__DIR__ . '/fixtures/text.mbe')), 'mbe_kind:text'));
+$bad = Mbe::open($fx); $bad->document['layout']['binding'] = 'up';
+$bad->setRendition('renditions/preview.png', $bad->getMedia($src) ?? '', ['type' => 'image/png']);
+$badBytes = Mbe::save($bad, ['app' => 'test']);
+$before = count(ls_docs_list($uidA));
+check('מודל שהעימוד לא מקבל — bad_model, ובלי מסמך חדש', throws(fn() => ls_mbe_import($uidA, $badBytes, 'b.mbe'), 'bad_model:binding')
+    && count(ls_docs_list($uidA)) === $before);
 
 echo "\n" . ($n - $fails) . " / $n עברו\n";
 exit($fails ? 1 : 0);
