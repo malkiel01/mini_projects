@@ -17,6 +17,7 @@ const Studio = (() => {
     audio: { icon: '🎙️', label: 'הקלטה / שמע', media: 'audio', props: () => ({ file: '', title: '' }) },
     video: { icon: '🎬', label: 'וידאו', props: () => ({ file: '', embed: '' }) },
     file: { icon: '📄', label: 'קובץ להורדה', media: 'doc', props: () => ({ file: '', label: '' }) },
+    code: { icon: '</>', label: 'קוד להטמעה', props: () => ({ html: '', title: '', height: 300, auto: true }) },
   };
   const fileCache = {};   // מזהה → {name, url, kind…} — מה שהספרייה כבר החזירה
   const LAYOUTS = { '100': 'אחת', '50-50': '½ ½', '33-67': '⅓ ⅔', '67-33': '⅔ ⅓', '33-33-33': '⅓ ⅓ ⅓', '25-25-25-25': '¼ × 4' };
@@ -74,13 +75,15 @@ const Studio = (() => {
 <style id="base">html,body{margin:0}body{font-family:system-ui,"Segoe UI",Arial,sans-serif;color:#1d1d1f;background:#fff}
 [data-kid]{cursor:pointer}.kol-col:empty{min-height:64px;outline:1px dashed #c8c8c8;outline-offset:-4px}
 .kol-sel{outline:2px solid #2d7ff9!important;outline-offset:2px}.kol-sec.kol-sel{outline-offset:-2px}
-.kol-empty{padding:48px 16px;text-align:center;color:#888}</style><style id="page"></style></head>
+.kol-empty{padding:48px 16px;text-align:center;color:#888}iframe.kol-code{pointer-events:none}</style><style id="page"></style></head>
 <body><div id="root"></div><script>
 const root=document.getElementById('root'),page=document.getElementById('page');let sel=null;
 function mark(id){document.querySelectorAll('.kol-sel').forEach(e=>e.classList.remove('kol-sel'));sel=id;
  const el=id&&document.querySelector('[data-kid="'+id+'"]');if(el){el.classList.add('kol-sel');const r=el.getBoundingClientRect();
  if(r.bottom<0||r.top>innerHeight)el.scrollIntoView({block:'center'});}}
-addEventListener('message',e=>{if(e.source!==parent)return;const d=e.data||{};
+addEventListener('message',e=>{const d=e.data||{};
+ if(d.kolCode){const f=document.querySelector('iframe[data-kol-code="'+String(d.kolCode).replace(/[^a-z0-9]/g,'')+'"]');if(f&&e.source===f.contentWindow)f.style.height=Math.min(4000,Math.max(40,+d.h||0))+'px';return;}
+ if(e.source!==parent)return;
  if(d.kol==='render'){page.textContent=d.css;root.innerHTML=d.html||'<p class="kol-empty">העמוד ריק. "+ רכיב" כדי להתחיל.</p>';mark(d.sel);}
  if(d.kol==='sel')mark(d.sel);});
 addEventListener('click',e=>{if(!e.target.closest('audio,video'))e.preventDefault();const el=e.target.closest('[data-kid]');parent.postMessage({kol:'pick',id:el?el.dataset.kid:null},'*');},true);
@@ -341,12 +344,23 @@ parent.postMessage({kol:'ready'},'*');
     } else if (w.type === 'longtext') {
       parts.push(h('p', { class: 'hint' }, 'טקסט ארוך נכתב בעורך התמלילים — כותרות, רשימות, טבלאות ותמונות, כמו ב-Word. כל שמירה שם מתעדכנת כאן.'),
         h('button', { type: 'button', class: 'btn primary', onclick: () => openLongText(w) }, S.readonly ? '👁️ צפייה בעורך' : '✍️ פתיחה בעורך התמלילים'));
+    } else if (w.type === 'code') {
+      const set2 = k => v => mutate(() => { p[k] = v; }, { coalesce: true, rebuild: false });
+      const height = h('input', { type: 'number', min: 40, max: 3000, value: p.height, dir: 'ltr', disabled: S.readonly || p.auto,
+        oninput: e => set2('height')(Math.max(40, Math.min(3000, +e.target.value || 40))) });
+      parts.push(h('p', { class: 'hint' }, 'הקוד רץ במסגרת מבודדת — גם כאן וגם באתר. הוא לא יכול לגעת בשאר העמוד, בעוגיות או בחשבונות. מתאים לנגנים, טפסים וווידג\'טים.'),
+        field('הקוד (HTML, ‏CSS, ‏JS)', h('textarea', { class: 'code-area', dir: 'ltr', spellcheck: 'false', rows: 10, maxlength: 100000, disabled: S.readonly,
+          oninput: e => set2('html')(e.target.value) }, p.html)),
+        field('תיאור (לקוראי מסך)', h('input', { value: p.title, maxlength: 100, disabled: S.readonly, oninput: e => set2('title')(e.target.value) })),
+        h('label', { class: 'switch' }, h('input', { type: 'checkbox', checked: p.auto, disabled: S.readonly,
+          onchange: e => { mutate(() => { p.auto = e.target.checked; }, { rebuild: false }); height.disabled = e.target.checked; } }), h('span', {}, 'גובה אוטומטי לפי התוכן')),
+        field('גובה (פיקסלים)', height));
     } else if (w.type === 'spacer') {
       parts.push(field('גובה (פיקסלים)', h('input', { type: 'number', min: 4, max: 400, value: p.height, dir: 'ltr', disabled: S.readonly,
         oninput: e => set(p, 'height')(Math.max(4, Math.min(400, +e.target.value || 4))) })));
     }
     else if (TYPES[w.type].media || w.type === 'video') parts.push(...mediaFields(w));
-    if (w.type !== 'spacer') parts.push(styleGroup(w));
+    if (!['spacer', 'code'].includes(w.type)) parts.push(styleGroup(w));
     parts.push(h('button', { type: 'button', class: 'btn sm ghost st-up', onclick: () => select(f.sec.id, false) }, '🧱 הפס שמכיל אותו'));
     box.replaceChildren(...parts);
   }
@@ -560,6 +574,7 @@ parent.postMessage({kol:'ready'},'*');
     if (w.type === 'button') return w.props.label || 'כפתור';
     if (w.type === 'spacer') return `${w.props.height}px`;
     if (w.type === 'gallery') return `${w.props.files.length} תמונות`;
+    if (w.type === 'code') return w.props.title || 'קוד להטמעה';
     if (w.type === 'longtext') return w.props.doc ? 'מעורך התמלילים' : 'עוד לא נכתב';
     if (w.type === 'audio') return w.props.title || fileCache[w.props.file]?.name || 'שמע';
     if (w.type === 'image') return w.props.alt || fileCache[w.props.file]?.name || 'תמונה';

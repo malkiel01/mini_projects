@@ -283,3 +283,5 @@ body.studio-on main { max-width: none; padding: 0; }
     border-bottom: 1px solid var(--line); background: var(--surface); }
 .wp-head b { flex: 1; }
 .wp-box { flex: 1; min-height: 0; }
+.code-area { font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; min-height: 180px; white-space: pre; overflow-x: auto; }
+.code-area { font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; min-height: 180px; white-space: pre; overflow-x: auto; }
