@@ -89,9 +89,11 @@ export default async function (t) {
     t.ok('שמירה ממקום אחר: המסמך נטען מחדש, והשינוי שלי שמור בנפרד במכשיר', (await p.locator('.banner').textContent()).includes('מלפני הטעינה מחדש')
         && (await state()).includes('נשמר'), await p.locator('.banner').textContent());
 
-    await t.api(p, 'my_page', { doc, page: { size: 'Letter' } });
+    const before = (await srv()).version;
+    const pg = await t.api(p, 'my_page', { doc, page: { size: 'Letter' } });
     s = await srv();
-    t.ok('תאימות: my_page של לשונית ישנה עדיין עובד', s.json.attrs.page.size === 'Letter' && s.json.attrs.schema === 10);
+    t.ok('תאימות: my_page של לשונית ישנה עדיין עובד — וגם הוא גרסה חדשה (F07)', s.json.attrs.page.size === 'Letter' && s.json.attrs.schema === 10
+        && pg.version === before + 1 && s.version === before + 1, JSON.stringify([before, pg.version, s.version]));
     t.ok('בלי שגיאות JS', !p.errors.length, p.errors.join(' | '));
     await p.context().close();
 }

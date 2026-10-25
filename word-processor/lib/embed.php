@@ -228,7 +228,7 @@ function embed_session(array $client, array $in): array
         $row = doc_find($docId, $space);
         if ($mode === 'section' && is_array($in['page'] ?? null)) {
             $merged = page_normalize($in['page'], doc_page($row));
-            if ($merged != doc_page($row)) doc_set_page($row, $merged);
+            if ($merged != doc_page($row)) doc_set_page($row, $merged, $uid, $uname);
         }
     }
 
