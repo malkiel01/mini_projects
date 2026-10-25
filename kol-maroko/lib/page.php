@@ -14,7 +14,8 @@ const PAGE_MAX_BYTES = 1_000_000;
 const PAGE_MAX_SECTIONS = 120;
 const PAGE_MAX_WIDGETS = 120;          // בעמודה
 const TEXT_MAX = 60_000;
-const WIDGET_TYPES = ['heading', 'text', 'longtext', 'button', 'divider', 'spacer', 'image', 'gallery', 'audio', 'video', 'file'];
+const WIDGET_TYPES = ['heading', 'text', 'longtext', 'button', 'divider', 'spacer', 'image', 'gallery', 'audio', 'video', 'file', 'code'];
+const CODE_MAX = 100_000;
 const COL_LAYOUTS = ['100', '50-50', '33-67', '67-33', '33-33-33', '25-25-25-25'];
 const SIZES = ['sm' => '.875em', 'md' => '1em', 'lg' => '1.25em', 'xl' => '1.6em', 'xxl' => '2.2em'];
 const PADS = ['0' => '0', 's' => '8px', 'm' => '16px', 'l' => '32px', 'xl' => '64px'];
@@ -158,6 +159,8 @@ function widget_norm(mixed $w, array &$seen): ?array
         'audio' => ['file' => file_id($p['file'] ?? ''), 'title' => str($p['title'] ?? '', 200)],
         'video' => ['file' => file_id($p['file'] ?? ''), 'embed' => video_embed($p['embed'] ?? '')],
         'file' => ['file' => file_id($p['file'] ?? ''), 'label' => str($p['label'] ?? '', 200)],
+        'code' => ['html' => is_string($p['html'] ?? null) ? mb_substr($p['html'], 0, CODE_MAX) : '', 'title' => str($p['title'] ?? '', 100),
+                   'height' => max(40, min(3000, (int)($p['height'] ?? 300))), 'auto' => ($p['auto'] ?? false) === true],
         'longtext' => ['doc' => is_string($p['doc'] ?? null) && preg_match('/^[A-Za-z0-9:_-]{1,40}$/', $p['doc']) ? $p['doc'] : ''],
     };
     return ['id' => id_norm($w['id'] ?? null, $seen), 'type' => $w['type'], 'props' => $props, 'style' => style_norm($w['style'] ?? [])];
@@ -305,6 +308,13 @@ function page_render(array $page, bool $editor = false, ?callable $url = null): 
         $css[] = preg_replace('/(^|[},])\s*\.wp-doc/', '$1' . $scope . '.wp-doc', $lt['css']);
     }
     $css[] = "$P .kol-long .wp-doc{color:inherit;max-width:100%}$P .kol-long img{max-width:100%}";
+    $css[] = "$P iframe.kol-code{display:block;width:100%;border:0;background:transparent}";
+    // גובה אוטומטי לקטעי קוד: המסגרת מדווחת את הגובה שלה. בסטודיו — התצוגה כבר מקשיבה (studio.js)
+    if (!$editor && str_contains($html, 'data-kol-auto')) {
+        $html .= '<script>addEventListener("message",function(e){var d=e.data;if(!d||!d.kolCode)return;'
+            . 'var f=document.querySelector(\'iframe[data-kol-code="\'+String(d.kolCode).replace(/[^a-z0-9]/g,"")+\'"]\');'
+            . 'if(f&&e.source===f.contentWindow)f.style.height=Math.min(4000,Math.max(40,+d.h||0))+"px";});</script>';
+    }
     return ['html' => $html, 'css' => implode("\n", $css)];
 }
 
@@ -348,6 +358,7 @@ function widget_render(array $w, bool $editor): array
               . '<audio controls preload="metadata" src="' . $src($a) . '"></audio></div>'
             : $missing('🎙️ בחרו הקלטה'),
         'video' => video_render($p, $cls, $k, $f, $src, $editor) ?: $missing('🎬 בחרו וידאו או הדביקו קישור'),
+        'code' => trim($p['html']) !== '' ? "<div class=\"$cls\"$k>" . code_frame($w['id'], $p) . '</div>' : $missing('&lt;/&gt; הדביקו קוד להטמעה'),
         'longtext' => ($lt = $GLOBALS['kol_long'][$p['doc']] ?? null) && $lt['html'] !== ''
             ? "<div class=\"$cls kol-long kol-lt-" . substr(md5($p['doc']), 0, 10) . "\"$k>" . $lt['html'] . '</div>'
             : $missing($p['doc'] ? '✍️ הטקסט עוד לא נשמר בעורך' : '✍️ פתחו את עורך התמלילים כדי לכתוב'),
@@ -378,4 +389,20 @@ function video_render(array $p, string $cls, string $k, callable $f, callable $s
 function size_label(int $b): string
 {
     return $b >= 1 << 20 ? round($b / (1 << 20), 1) . 'MB' : max(1, round($b / 1024)) . 'KB';
+}
+
+/**
+ * קטע קוד — תמיד במסגרת מבודדת (docs/spec.md, הכרעה 4): sandbox בלי allow-same-origin, ולכן אין לו גישה לעוגיות,
+ * ל-DOM או לאחסון של הדף שמכיל אותו — לא בסטודיו ולא באתר. גובה אוטומטי — סקריפט קטן בתוך המסגרת מדווח את הגובה.
+ */
+function code_frame(string $id, array $p): string
+{
+    $doc = '<!doctype html><html dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+        . '<style>html,body{margin:0}body{font-family:system-ui,Arial,sans-serif}</style></head><body>' . $p['html']
+        . ($p['auto'] ? '<script>(function(){var s=function(){parent.postMessage({kolCode:"' . $id . '",h:document.documentElement.scrollHeight},"*")};'
+            . 'addEventListener("load",s);if(window.ResizeObserver)new ResizeObserver(s).observe(document.documentElement);s();})();</script>' : '')
+        . '</body></html>';
+    return '<iframe class="kol-code" data-kol-code="' . $id . '"' . ($p['auto'] ? ' data-kol-auto' : '')
+        . ' sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-forms" referrerpolicy="no-referrer" loading="lazy"'
+        . ' title="' . e($p['title'] ?: 'תוכן מוטמע') . '" style="height:' . $p['height'] . 'px" srcdoc="' . e($doc) . '"></iframe>';
 }
