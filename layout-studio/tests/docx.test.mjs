@@ -19,7 +19,8 @@ test('מפרק XML: מאפיינים, ישויות ותגית סגורה', () =>
 
 test('docx → ProseMirror: כותרות, מודגש, ניקוד וטעמים, שבירת שורה', async () => {
   const { doc } = await docxToDoc(bytes);
-  const c = doc.content;
+  // מזהי הפסקה אקראיים — נבדקים ב-ids.test.mjs; כאן משווים בלעדיהם
+  const c = doc.content.map(({ attrs: { id, ...attrs } = {}, ...n }) => (Object.keys(attrs).length ? { ...n, attrs } : n));
   assert.deepEqual(c[0], { type: 'heading', attrs: { level: 1 }, content: [{ type: 'text', text: 'פרק א' }] });
   assert.equal(c[1].type, 'paragraph');
   assert.deepEqual(c[1].content.map(n => n.marks ? 'B' : '-'), ['-', 'B', '-']);

@@ -5,6 +5,8 @@
 // מה עובר: פסקאות, כותרות 1–3 (לפי שם הסגנון — באנגלית או בעברית), מודגש, שבירת שורה, טאב (כרווח), ניקוד וטעמים.
 // מה לא — ונכתב בדוח: טבלאות (התאים הופכים לפסקאות), תמונות, מספור רשימות, הערות שוליים, תיבות טקסט.
 
+import { withParaIds } from './frames.js';
+
 // ===== ZIP =====
 const u32 = (b, o) => (b[o] | b[o + 1] << 8 | b[o + 2] << 16 | b[o + 3] << 24) >>> 0;
 const u16 = (b, o) => b[o] | b[o + 1] << 8;
@@ -159,7 +161,7 @@ export async function docxToDoc(bytes) {
   block(body || {});
   // פסקאות ריקות בסוף — יורדות
   while (out.length > 1 && !out[out.length - 1].content) out.pop();
-  return { doc: { type: 'doc', content: out.length ? out : [{ type: 'paragraph' }] }, report };
+  return { doc: withParaIds({ type: 'doc', content: out.length ? out : [{ type: 'paragraph' }] }), report };
 }
 
 /** דוח הייבוא בעברית: מה לא עבר. מערך שורות; ריק — הכול עבר. */
