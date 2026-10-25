@@ -194,15 +194,27 @@ function doc_save(array $row, $json, ?string $title, string $userId, string $use
 }
 
 /**
- * הגדרות עמוד בלבד — בלי גרסה חדשה של התוכן. לתאימות (embed_page, my_page של לשונית ישנה);
- * העורך שולח היום את ההגדרות בתוך המסמך, באותה שמירה (doc_save).
+ * הגדרות עמוד בלבד (embed_page, my_page של לשונית ישנה; העורך שולח היום את ההגדרות בתוך המסמך — doc_save).
+ * גם זו שמירה רגילה: מספר גרסה חדש והיסטוריית גרסאות, כך ששחזור גרסה מחזיר גם את הגדרות העמוד (ביקורת 04, F07).
+ * $base — כמו בשמירה: גרסה אחרת בשרת → 409.
  */
-function doc_set_page(array $row, $page): array
+function doc_set_page(array $row, $page, string $userId, string $userName, $base = null): array
 {
-    $p = page_normalize($page, doc_page($row));
-    db()->prepare('UPDATE docs SET page = ?, updated_at = ? WHERE id = ?')
-        ->execute([json_encode($p, JSON_UNESCAPED_UNICODE), time(), $row['id']]);
-    return doc_find($row['id'], $row['space']);
+    return doc_save($row, doc_json($row), null, $userId, $userName, $base, page_normalize($page, doc_page($row)));
+}
+
+/** מסמך שנוצר ולא נכתב בו דבר: לא נשמר מאז שנוצר (גרסה 1), בשם ההתחלתי, בלי תמונות ובלי שיתוף. */
+function doc_untouched(array $row): bool
+{
+    if ((int)$row['version'] !== 1 || !in_array((string)$row['title'], ['', 'מסמך חדש'], true)) return false;
+    foreach (['SELECT 1 FROM media WHERE doc = ?', 'SELECT 1 FROM shares WHERE doc = ?', 'SELECT 1 FROM links WHERE doc = ?'] as $q) {
+        $st = db()->prepare($q . ' LIMIT 1');
+        $st->execute([$row['id']]);
+        $hit = $st->fetchColumn();
+        $st->closeCursor();
+        if ($hit) return false;
+    }
+    return true;
 }
 
 function doc_rename(array $row, string $title): void

@@ -143,8 +143,7 @@ try {
                     if (is_array($in['import'] ?? null)) {
                         $imp = do_import((string)($in['import']['format'] ?? ''), $in['import']['content'] ?? null, $id);
                         $row = doc_find($id, $space);
-                        if ($imp['page']) doc_set_page($row, $imp['page']);
-                        doc_save(doc_find($id, $space), $imp['json'], null, $who['id'], $who['name']);
+                        doc_save($row, $imp['json'], null, $who['id'], $who['name'], null, $imp['page'] ?: null);   // התוכן והגדרות העמוד — גרסה אחת
                     }
                     out(['doc' => $id]);
                 case 'doc_copy':
@@ -233,7 +232,8 @@ try {
             $s = embed_auth();
             $row = doc_find($s['doc'], 'c:' . $s['client']);
             embed_write($s, $row, $in);
-            out(['page' => doc_page(doc_set_page($row, $in['page'] ?? null))]);
+            $row = doc_set_page($row, $in['page'] ?? null, $s['user_id'], $s['user_name'], $in['base_version'] ?? null);
+            out(['page' => doc_page($row), 'version' => (int)$row['version']]);
 
         case 'embed_upload':
             need_post();
@@ -424,8 +424,7 @@ function app_action(string $action, array $in): never
                 // Word, ODT, HTML או טקסט — לפי התוכן (import_file)
                 $imp = import_file($bytes, (string)($_FILES['file']['name'] ?? ''), $id);
                 $row = doc_find($id, $space);
-                if ($imp['page']) $row = doc_set_page($row, $imp['page']);
-                doc_save($row, $imp['json'], null, $uid, $uname);
+                doc_save($row, $imp['json'], null, $uid, $uname, null, $imp['page'] ?: null);   // התוכן והגדרות העמוד — גרסה אחת
                 out(['doc' => $id, 'report' => $imp['report']]);
             }
             out(['doc' => $id]);
@@ -473,7 +472,8 @@ function app_action(string $action, array $in): never
         case 'my_page':
             [$row] = doc_access($in['doc'] ?? '', $acc, 'edit');
             require_edit('edit', $row['id'], $uid, $uname, $holder);
-            out(['page' => doc_page(doc_set_page($row, $in['page'] ?? null))]);
+            $row = doc_set_page($row, $in['page'] ?? null, $uid, $uname, $in['base_version'] ?? null);
+            out(['page' => doc_page($row), 'version' => (int)$row['version']]);
         case 'my_rename':
             [$row] = doc_access($in['doc'] ?? '', $acc, 'edit');
             doc_rename($row, (string)($in['title'] ?? ''));
@@ -500,6 +500,13 @@ function app_action(string $action, array $in): never
             if ($created < time() - 600 || (int)$row['version'] > 3 || $shared) throw new ApiError('המסמך כבר נערך — אפשר למחוק אותו מהתפריט (העברה לסל)', 'too_late', 409);
             doc_delete($row);
             out(['ok' => true]);
+        case 'my_discard':
+            // "+ מסמך" ויציאה בלי לכתוב בו: נמחק לגמרי (לא לסל) — רק אם לא נשמר מאז שנוצר (גרסה 1), בלי תמונות, בלי
+            // שיתוף ובשם ההתחלתי. כל השאר נשאר — כולל מסמך שיובא (שמור כבר בגרסה 2)
+            [$row] = doc_access($in['doc'] ?? '', $acc, 'owner');
+            $gone = doc_untouched($row);
+            if ($gone) doc_delete($row);
+            out(['discarded' => $gone]);
         case 'my_trash':
             trash_purge($space);
             $st = db()->prepare('SELECT id, title, updated_at, deleted_at FROM docs WHERE space = ? AND deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT 500');

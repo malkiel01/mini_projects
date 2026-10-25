@@ -629,6 +629,42 @@ try {
   if (shots) fs.writeFileSync(`${shots}/foreign.pdf`, Buffer.from(fpdf, 'latin1'));
   step('‎.mbe של אפליקציה אחרת: רסטר ומסגרת טקסט מוצגים, בשכבות לקריאה בלבד, ונכללים בייצוא SVG ו-PDF');
 
+  // מסמך של מעבד תמלילים (שני עמודים ב-PDF שלו, לוח אחד במסמך): העמודים מוצגים כמו שהוא צייר — האדום של ה-PDF,
+  // לא הטקסט הפשוט של המסגרת; בייצוא — שני עמודים עם תמונה; ב-‎.mbe — עותק של ה-PDF ב-apps/vector-studio/
+  const { toPDF: pdfOf } = await import('../assets/js/export.js');
+  const redPage = (n) => ({ surface: { id: 'p' + n, size: [200, 200] }, layers: [{ layer: { id: 'L' }, opacity: 1, items: [{ id: 'r', d: 'M0 0 L200 0 L200 200 L0 200 Z', fill: { color: n === 1 ? '#ff0000' : '#0000ff' } }] }], gaps: [] });
+  const wp = mbeCreate('text', { units: 'pt', color: { space: 'sRGB' }, flows: { f1: { engine: 'prosemirror', doc: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'מכתב' }] }] } } },
+    surfaces: [{ id: 'p1', type: 'page', size: [200, 200], layers: [{ id: 'fr1', type: 'frame', box: [10, 10, 180, 180], flow: 'f1' }] }] });
+  wp.setRendition('renditions/preview.png', red);
+  wp.setRendition('renditions/document.pdf', pdfOf([redPage(1), redPage(2)]), { by: 'word-processor' });
+  const wpFile = `${os.tmpdir()}/vs-wp-${process.pid}.mbe`;
+  fs.writeFileSync(wpFile, await mbeSave(wp, { app: 'word-processor' }));
+  await page.goto(base);
+  await page.waitForSelector('#home:not([hidden])');
+  page.once('dialog', d => d.accept());
+  const [wch] = await Promise.all([page.waitForEvent('filechooser'), page.click('#open-btn')]);
+  await wch.setFiles(wpFile);
+  await page.waitForFunction(() => window.__vs?.S.pageImgs?.length === 2, null, { timeout: 30000 });
+  await page.waitForTimeout(300);
+  const pix = (x, y) => page.evaluate(([x, y]) => {
+    const { S } = window.__vs, c = document.getElementById('canvas');
+    return [...c.getContext('2d').getImageData(Math.round((x * S.view.z + S.view.x) * S.dpr), Math.round((y * S.view.z + S.view.y) * S.dpr), 1, 1).data];
+  }, [x, y]);
+  const pg1 = await pix(100, 100), pg2 = await pix(200 + 48 + 100, 100);
+  assert.ok(pg1[0] > 200 && pg1[2] < 60, 'עמוד 1 מה-PDF: ' + pg1);
+  assert.ok(pg2[2] > 200 && pg2[0] < 60, 'עמוד 2 — אחרי הלוח, לתצוגה: ' + pg2);
+  const wpdf = (await grab('pdf')).buf.toString('latin1');
+  assert.match(wpdf, /\/Count 2/);
+  assert.equal((wpdf.match(/\/Subtype \/Image/g) || []).length, 2);
+  const { open: mbeOpen2 } = await import('../assets/js/mbe/mbe.js');
+  const wmbe = await mbeOpen2(new Uint8Array((await grab('mbe')).buf));
+  assert.equal(wmbe.ok, true, JSON.stringify(wmbe.issues));
+  assert.equal(wmbe.kind, 'text', 'סוג המסמך נשמר');
+  assert.ok(wmbe.apps('vector-studio').get('background.pdf')?.length > 100, 'עותק של ה-PDF של המקור');
+  assert.deepEqual(wmbe.document.flows, wp.document.flows, 'הטקסט של מעבד התמלילים לא השתנה');
+  fs.unlinkSync(wpFile);
+  step('מסמך של מעבד תמלילים: העמודים כמו שהוא צייר (גם עמוד שגלש), בייצוא PDF, וה-PDF נשמר ב-‎.mbe');
+
   // טיוטה ישנה מהמכשיר: מופיעה ברשימה, ובפתיחה עוברת לספרייה
   await page.goto(base);
   await page.evaluate(() => {

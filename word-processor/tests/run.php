@@ -1753,7 +1753,39 @@ check('import_file: מסמך HTML שלם — רק הגוף, כותרת ופסק�
 $it = import_file("# פרק\nשורה ראשונה\n- תבליט", 'a.txt', $odDoc)['json']['content'];
 $i1255 = import_file(iconv('UTF-8', 'WINDOWS-1255', "שלום עולם"), 'old.txt', $odDoc)['json']['content'][0]['content'][0]['text'] ?? '';
 check('import_file: טקסט — שורות, # כותרת, - תבליט; וגם Windows-1255', array_column($it, 'type') === ['heading', 'paragraph', 'bulletList'] && $i1255 === 'שלום עולם', $i1255);
-check('import_file: doc ישן — שגיאה עם הסבר', throws(fn() => import_file("\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1" . str_repeat("\0", 50), 'a.doc', $odDoc), 'bad_file'));
+check('import_file: קובץ OLE פגום (‎.doc חתוך) — שגיאה עם הסבר, לא שגיאת שרת', throws(fn() => import_file("\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1" . str_repeat("\0", 50), 'a.doc', $odDoc), 'bad_file'));
+
+// ‎.doc (Word 97–2003, lib/import_doc.php) — tests/fixtures/libreoffice*.doc: נוצרו ב-LibreOffice מ-docx שלנו
+$dc = import_file(file_get_contents(__DIR__ . '/fixtures/libreoffice.doc'), 'ישן.doc', $odDoc);
+$dcB = $dc['json']['content'];
+$dcT = fn($b) => implode('', array_map(fn($n) => $n['text'] ?? '', $b['content'] ?? []));
+$dcM = fn($b, $t) => array_values(array_filter($b['content'] ?? [], fn($n) => ($n['text'] ?? '') === $t))[0]['marks'] ?? [];
+check('‎.doc: כותרות 1 ו-2 (לפי הסגנון), והדוח ריק', ($dcB[0]['type'] ?? '') === 'heading' && $dcB[0]['attrs']['level'] === 1 && $dcT($dcB[0]) === 'כותרת ראשית'
+    && ($dcB[3]['attrs']['level'] ?? 0) === 2 && $dc['report'] === [], json_encode($dc['report'], JSON_UNESCAPED_UNICODE));
+check('‎.doc: מודגש, נטוי, קו תחתון, וצבע וגודל', $dcM($dcB[1], 'מודגש') == [['type' => 'bold']] && $dcM($dcB[1], 'נטוי') == [['type' => 'italic']]
+    && $dcM($dcB[1], 'קו תחתון') == [['type' => 'underline']] && $dcM($dcB[1], 'אדום גדול') == [['type' => 'textStyle', 'attrs' => ['fontSize' => '16pt', 'color' => '#ff0000']]],
+    json_encode($dcB[1], JSON_UNESCAPED_UNICODE));
+check('‎.doc: יישור למרכז, ופסקה באנגלית — משמאל לימין', ($dcB[2]['attrs']['textAlign'] ?? '') === 'center'
+    && (array_values(array_filter($dcB, fn($b) => str_starts_with($dcT($b), 'English')))[0]['attrs']['dir'] ?? '') === 'ltr');
+check('‎.doc: רשימת תבליטים ורשימה ממוספרת — נפרדות', ($dcB[4]['type'] ?? '') === 'bulletList' && count($dcB[4]['content']) === 2 && ($dcB[5]['type'] ?? '') === 'orderedList'
+    && str_contains(json_encode($dcB[5], JSON_UNESCAPED_UNICODE), 'צעד שניים'));
+$dcTbl = array_values(array_filter($dcB, fn($b) => $b['type'] === 'table'))[0] ?? [];
+check('‎.doc: טבלה 2×2, כל תא במקומו', count($dcTbl['content'] ?? []) === 2 && count($dcTbl['content'][0]['content']) === 2
+    && $dcT($dcTbl['content'][1]['content'][1]['content'][0]) === 'תא ב2', json_encode($dcTbl, JSON_UNESCAPED_UNICODE));
+$dcLink = array_values(array_filter($dcB, fn($b) => str_contains($dcT($b), 'קישור')))[0] ?? [];
+check('‎.doc: קישור (שדה HYPERLINK) ושבירת שורה', ($dcM($dcLink, 'קישור')[0]['attrs']['href'] ?? '') === 'https://example.com/'
+    && in_array('hardBreak', array_column($dcLink['content'] ?? [], 'type'), true));
+$dcImg = array_values(array_filter($dcB, fn($b) => ($b['content'][0]['type'] ?? '') === 'image'))[0]['content'][0] ?? [];
+check('‎.doc: תמונה (PNG מזרם Data) — באחסון שלנו ובגודל המקורי', media_of_doc($dcImg['attrs']['media'] ?? '', $odDoc) && ($dcImg['attrs']['width'] ?? 0) === 60 && ($dcImg['attrs']['height'] ?? 0) === 30);
+$dc2 = import_file(file_get_contents(__DIR__ . '/fixtures/libreoffice-notes.doc'), 'x.bin', $odDoc);
+$dc2B = $dc2['json']['content'];
+check('‎.doc: הערת שוליים במקומה, עם הטקסט שלה', ($dc2B[0]['content'][1]['type'] ?? '') === 'footnote' && ($dc2B[0]['content'][1]['attrs']['text'] ?? '') === 'זו ההערה');
+check('‎.doc: רשימה מקוננת (רמה 2 בתוך רמה 1)', ($dc2B[1]['content'][0]['content'][1]['type'] ?? '') === 'bulletList' && count($dc2B[1]['content']) === 2,
+    json_encode($dc2B[1], JSON_UNESCAPED_UNICODE));
+check('‎.doc: מעבר עמוד → breakBefore, ותמונת JPEG בתוך תא', ($dc2B[2]['attrs']['breakBefore'] ?? false) === true
+    && ($dc2B[3]['content'][0]['content'][0]['content'][0]['content'][0]['type'] ?? '') === 'image' && $dc2['report'] === []);
+check('‎.doc → Word: נשמר כ-docx (אין כתיבה של ‎.doc) ונפתח בחזרה עם אותו טקסט', str_contains(export_text(import_docx(export_docx($dc['json'], page_normalize([]), 'x'), $odDoc)['json']), 'תא ב2'));
+check('קובץ Office שאינו Word (OLE בלי WordDocument) — הודעה ברורה', throws(fn() => import_doc(substr(file_get_contents(__DIR__ . '/fixtures/libreoffice.doc'), 0, 1536), $odDoc), 'bad_file'));
 
 section('ייבוא RTF (lib/import_rtf.php)');
 // כמו ש-Word בעברית שומר: ansicpg1255, גופן עברי ב-\af, עברית ב-\'hh וב-\uN, סגנון "כותרת 1" (שם ב-\'hh), כותרת עם
@@ -2001,7 +2033,7 @@ $mbJson = ['type' => 'doc', 'content' => [
 $mbPage = page_normalize(['header' => [['type' => 'paragraph', 'content' => [['type' => 'image', 'attrs' => ['media' => $mbHdrImg, 'width' => 20, 'height' => 20]], ['type' => 'text', 'text' => ' לוגו']]]],
     'margins' => ['top' => 20, 'bottom' => 25, 'right' => 30, 'left' => 15], 'numbering' => ['format' => 'hebrew', 'start' => 3]]);
 $mbRow = doc_find($mbDocId, 'a:99');
-$mbRow = doc_save(doc_set_page($mbRow, $mbPage), $mbJson, 'מסמך לחבילה', 'u1', 'דנה');
+$mbRow = doc_save(doc_set_page($mbRow, $mbPage, 'u1', 'דנה'), $mbJson, 'מסמך לחבילה', 'u1', 'דנה');
 $mbBytes = export_mbe($mbRow);
 $mbV = Mbe::validate($mbBytes);
 $mbErr = array_values(array_filter($mbV, fn($i) => $i['level'] === 'error'));
@@ -2078,6 +2110,32 @@ check('‎.mbe מהעימוד, הורדה: המשטחים, השכבות והרק
     && ($mbLB->files[$mbLO->document['surfaces'][0]['layers'][0]['src']] ?? null) === $mbLO->files[$mbLO->document['surfaces'][0]['layers'][0]['src']]
     && str_contains($mbLFlow, 'שטף אחד שעובר') && !str_contains($mbLFlow, '"image"') && isset($mbLB->apps('layout-studio')['view.json']), $mbLFlow);
 check('‎.mbe: קובץ פגום — הודעה ברורה', throws(fn() => import_mbe(substr($mbBytes, 0, 200), $mbLId), 'bad_file'));
+
+section('מסמך חדש שלא נכתב בו — לא נשאר (my_discard)');
+$enA = doc_new('a:99', 'מסמך חדש', null, null, 'u1', 'דנה');
+check('מסמך חדש, בלי שמירה — "לא נכתב בו"', doc_untouched(doc_find($enA, 'a:99')));
+$enB = doc_new('a:99', 'מסמך חדש', null, null, 'u1', 'דנה');
+doc_save(doc_find($enB, 'a:99'), ['type' => 'doc', 'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'א']]]]], null, 'u1', 'דנה');
+$enC = doc_new('a:99', 'מסמך חדש', null, null, 'u1', 'דנה');
+doc_rename(doc_find($enC, 'a:99'), 'שם שבחרתי');
+$enD = doc_new('a:99', 'מסמך חדש', null, null, 'u1', 'דנה');
+$enIm = imagecreatetruecolor(2, 2);
+ob_start(); imagepng($enIm); media_store($enD, (string)ob_get_clean());
+check('…אבל לא: אחרי שמירה, אחרי שינוי שם, או עם תמונה', !doc_untouched(doc_find($enB, 'a:99')) && !doc_untouched(doc_find($enC, 'a:99')) && !doc_untouched(doc_find($enD, 'a:99')));
+
+section('F07 — הגדרות עמוד (my_page / embed_page) בהיסטוריית הגרסאות');
+$f7Id = doc_new('a:99', 'עמוד', null, null, 'u1', 'דנה');
+$f7 = doc_save(doc_find($f7Id, 'a:99'), ['type' => 'doc', 'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'תוכן']]]]], null, 'u1', 'דנה');
+$f7v = (int)$f7['version'];
+db()->prepare("UPDATE versions SET started_at = started_at - 3600 WHERE doc = ?")->execute([$f7Id]);   // מחוץ לחלון האיחוד
+$f7 = doc_set_page($f7, ['size' => 'Letter', 'orientation' => 'landscape'], 'u2', 'רון');
+$f7List = versions_list($f7);
+check('F07: שינוי הגדרות עמוד — גרסה חדשה (מספר עולה), ובהיסטוריה — על שם מי ששינה', (int)$f7['version'] === $f7v + 1 && doc_page($f7)['size'] === 'Letter'
+    && count($f7List) === 2 && $f7List[0]['by'] === 'רון' && $f7List[0]['version'] === $f7v + 1, json_encode($f7List, JSON_UNESCAPED_UNICODE));
+check('F07: התוכן לא משתנה, ובסיס ישן — התנגשות (כמו בשמירה)', json_encode(doc_json($f7)) === json_encode(doc_json(doc_find($f7Id, 'a:99')))
+    && str_contains(json_encode(doc_json($f7), JSON_UNESCAPED_UNICODE), 'תוכן') && throws(fn() => doc_set_page($f7, ['size' => 'A4'], 'u2', 'רון', $f7v), 'conflict'));
+$f7 = doc_restore_version($f7, $f7List[1]['id'], 'u1', 'דנה', $f7['version']);
+check('F07: שחזור הגרסה שלפני — מחזיר גם את הגדרות העמוד', doc_page($f7)['size'] === 'A4' && doc_page($f7)['orientation'] === 'portrait', json_encode(doc_page($f7)));
 
 section('EMF / WMF — נייר מכתבים מ-Word (lib/metafile.php)');
 // DIB של 2×2, 24 ביט (שורה — 8 בתים עם ריפוד), מלמטה למעלה: שורה תחתונה כחולה, עליונה אדומה
