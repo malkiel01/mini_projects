@@ -207,6 +207,49 @@
     ]
   },
   {
+    "file": "hostile/path-d-missing.mbe",
+    "codes": [
+      "path-d-missing"
+    ]
+  },
+  {
+    "file": "hostile/path-d-relative.mbe",
+    "codes": [
+      "path-d-invalid",
+      "document-schema"
+    ]
+  },
+  {
+    "file": "hostile/path-d-args.mbe",
+    "codes": [
+      "path-d-invalid"
+    ]
+  },
+  {
+    "file": "hostile/path-id-missing.mbe",
+    "codes": [
+      "document-schema"
+    ]
+  },
+  {
+    "file": "hostile/path-id-duplicate.mbe",
+    "codes": [
+      "duplicate-id"
+    ]
+  },
+  {
+    "file": "hostile/path-transform.mbe",
+    "codes": [
+      "document-schema"
+    ]
+  },
+  {
+    "file": "hostile/group-geometry.mbe",
+    "codes": [
+      "group-geometry"
+    ]
+  },
+  {
     "file": "hostile/flow-missing.mbe",
     "codes": [
       "flow-missing"
