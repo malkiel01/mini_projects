@@ -10,6 +10,15 @@ import { canvasPaint, hasPaint } from './gradient.js';
 
 import { GRID } from './snap.js';
 
+/** מקום העמודים העודפים: אחרי הלוח האחרון, באותו מרווח. → [{ x, n, page }] */
+export function extraPages(doc, pages) {
+  if (!pages?.extra?.length) return [];
+  const lay = layout(doc);
+  const last = doc.surfaces[doc.surfaces.length - 1];
+  let x = (last ? lay.get(last.id)[0] + last.size[0] : 0) + 48;
+  return pages.extra.map((page, i) => { const e = { x, n: doc.surfaces.length + i + 1, page }; x += page.w + 48; return e; });
+}
+
 /** רשת על הלוח: כל GRID pt, ובזום רחוק — כל 5 / 25 קווים, כדי שלא תהיה צפופה מדי. */
 function drawGrid(ctx, x, y, w, h, z) {
   let step = GRID;
@@ -128,19 +137,21 @@ export function render(canvas, state) {
   const vm = viewMatrix(view);
   const setT = (m) => { const t = multiply(vm, m); ctx.setTransform(dpr * t[0], dpr * t[1], dpr * t[2], dpr * t[3], dpr * t[4], dpr * t[5]); };
 
-  // הלוחות
-  for (const s of doc.surfaces) {
-    const [ox, oy] = lay.get(s.id);
-    const [x, y, w, h] = toScreenBox([ox, oy, s.size[0], s.size[1]], view);
+  // הלוחות (עם עמוד המקור כרקע, אם יש — מסמך של אפליקציה אחרת)
+  const pageOf = (id) => state.pages?.bySurface.get(id);
+  const board = (box, name, page) => {
+    const [x, y, w, h] = toScreenBox(box, view);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     if (state.exportMode) {
-      if (state.bg) { ctx.fillStyle = '#fff'; ctx.fillRect(x, y, w, h); }
-      continue;
+      if (state.bg || page) { ctx.fillStyle = '#fff'; ctx.fillRect(x, y, w, h); }
+      if (page) ctx.drawImage(page.bmp, x, y, w, h);
+      return;
     }
     ctx.fillStyle = 'rgba(0,0,0,.08)';
     ctx.fillRect(x + 1, y + 2, w, h);
     ctx.fillStyle = '#fff';
     ctx.fillRect(x, y, w, h);
+    if (page) ctx.drawImage(page.bmp, x, y, w, h);
     if (state.grid) drawGrid(ctx, x, y, w, h, view.z);
     ctx.strokeStyle = colors.line;
     ctx.lineWidth = 1;
@@ -151,14 +162,22 @@ export function render(canvas, state) {
       ctx.font = '12px system-ui, sans-serif';
       ctx.textAlign = 'right';
       ctx.direction = 'rtl';
-      ctx.fillText(s.name || '', x + w, y - 6);
+      ctx.fillText(name, x + w, y - 6);
     }
+  };
+  for (const s of doc.surfaces) {
+    const [ox, oy] = lay.get(s.id);
+    board([ox, oy, s.size[0], s.size[1]], s.name || '', pageOf(s.id));
   }
+  // עמודים עודפים של המקור (הטקסט גלש לעמוד נוסף) — תצוגה בלבד, אחרי הלוחות
+  if (!state.exportMode) for (const e of extraPages(doc, state.pages)) board([e.x, 0, e.page.w, e.page.h], `עמוד ${e.n} · תצוגה`, e.page);
 
   // השכבות לפי הסדר: וקטוריות — הנתיבים (קבוצה — הילדים לפי הסדר); של אפליקציות אחרות — תצוגה בלבד
-  const drawLayers = (layers, off, alpha) => {
+  const drawLayers = (layers, off, alpha, paged) => {
     for (const layer of layers || []) {
       if (layer.visible === false) continue;
+      // על עמוד מקור — הוא כבר מראה את המסגרות והתמונות של האפליקציה האחרת, כמו שהיא ציירה אותן
+      if (paged && layer.type !== 'vector' && layer.type !== 'group') continue;
       const a = alpha * (layer.opacity ?? 1);
       if (layer.type === 'vector') {
         for (const item of layer.paths || []) {
@@ -172,7 +191,7 @@ export function render(canvas, state) {
             ctx.restore();
           }
         }
-      } else if (layer.type === 'group') drawLayers(layer.children, off, a);
+      } else if (layer.type === 'group') drawLayers(layer.children, off, a, paged);
       else drawForeign(layer, off, a);
     }
   };
@@ -186,6 +205,7 @@ export function render(canvas, state) {
     const img = layer.src && state.media?.get(layer.src);
     if (img) ctx.drawImage(img, box[0], box[1], box[2], box[3]);
     else if (layer.type === 'frame' && layer.flow && state.doc.flows?.[layer.flow]) {
+      ctx.beginPath(); ctx.rect(...box); ctx.clip(); // טקסט שלא נכנס — לא גולש מתחת לעמוד
       drawText(ctx, frameItem(layer, state.doc.flows[layer.flow], box));
     } else if (layer.src) {
       // התמונה עוד לא נטענה (או חסרה) — מסגרת אפורה במקומה
@@ -193,7 +213,7 @@ export function render(canvas, state) {
     }
     ctx.restore();
   };
-  for (const s of doc.surfaces) drawLayers(s.layers, lay.get(s.id), 1);
+  for (const s of doc.surfaces) drawLayers(s.layers, lay.get(s.id), 1, !!pageOf(s.id));
 
   // שכבת-על במסך
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
