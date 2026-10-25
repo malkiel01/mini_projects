@@ -2,7 +2,7 @@
 /**
  * ‎.mbe — קובץ ההחלפה של חבילת היצירה (creative-suite/docs/mbe-format.md), דרך הליבה (lib/mbe — עותק של
  * creative-suite/mbe-core/src/php, לא עורכים כאן). הורדה: kind "text" — שטף אחד (flows.f1) עם ה-JSON של המסמך כמו
- * שהוא (כולל attrs.page), משטח עמוד ומסגרת בשוליים, layout ו-styles מהגדרות העמוד, תמונות ב-media/<sha256>,
+ * שהוא (כולל attrs.page), משטח עמוד ומסגרת בשוליים, layout מהגדרות העמוד, styles במבנה המשותף (mbe_styles_of), תמונות ב-media/<sha256>,
  * וייצוגים: preview.png (העמוד הראשון, מאותו עימוד של ה-PDF), document.pdf, document.docx.
  *
  * מסמך שיובא מ-‎.mbe: הקובץ המקורי נשמר ליד המסמך (mbe_source_path), ובהורדה הבאה מחליפים בו רק את השטף שלנו,
@@ -54,7 +54,7 @@ function export_mbe(array $row): string
             'margins' => ['top' => $mm($m['top']), 'bottom' => $mm($m['bottom']), 'inside' => $mm($m['right']), 'outside' => $mm($m['left'])],
             'numbering' => ['start' => (int)($num['start'] ?? 1), 'style' => ($num['format'] ?? '') === 'hebrew' ? 'hebrew' : 'arabic']];
         $f->document['fonts'] = [['family' => (string)($page['font']['family'] ?? 'David')]];
-        $f->document['styles'] = $page['styles'] ? $page['styles'] : new stdClass();
+        $f->document['styles'] = mbe_styles_of($page);
     } else {
         $flow = (string)($meta['flow'] ?? 'f1');
     }
@@ -69,6 +69,26 @@ function export_mbe(array $row): string
     $f->setRendition('renditions/document.pdf', $pdf, ['type' => 'application/pdf', 'by' => MBE_APP, 'gaps' => $gaps]);
     $f->setRendition('renditions/document.docx', export_docx($json, $page, $title), ['by' => MBE_APP, 'gaps' => $gaps]);
     return Mbe::save($f, ['app' => MBE_APP, 'appVersion' => MBE_APP_VERSION]);
+}
+
+/**
+ * סגנונות הפסקה במבנה המשותף (mbe-format.md סעיף 3): body מ-normal ומגופן העמוד, h1–h3 מהכותרות שלנו. מידות ב-pt;
+ * leading = גודל × מרווח השורות של normal (הכותרות יורשות אותו, כמו בעורך). שאר הסגנונות שלנו — ב-attrs.page של השטף.
+ */
+function mbe_styles_of(array $page): array
+{
+    $st = $page['styles'];
+    $family = (string)($page['font']['family'] ?? 'David');
+    $base = (float)($page['font']['size'] ?? 12);
+    $line = (float)($st['normal']['line'] ?? 1.15);
+    $one = function (string $name, array $s, float $size) use ($family, $line) {
+        return ['name' => $name, 'font' => (string)($s['font'] ?? $family), 'size' => $size, 'leading' => round($size * $line, 2),
+            'align' => (string)($s['align'] ?? 'right'), 'weight' => !empty($s['bold']) ? 700 : 400,
+            'spaceBefore' => (float)($s['before'] ?? 0), 'spaceAfter' => (float)($s['after'] ?? 0), 'indent' => 0];
+    };
+    $out = ['body' => $one('גוף', $st['normal'] ?? [], (float)($st['normal']['size'] ?? $base))];
+    foreach ([1, 2, 3] as $n) $out["h$n"] = $one("כותרת $n", $st["h$n"] ?? [], (float)($st["h$n"]['size'] ?? $base));
+    return $out;
 }
 
 /**

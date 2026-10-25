@@ -2109,6 +2109,26 @@ $mbLFlow = json_encode($mbLB->document['flows']['story']['doc'] ?? null, JSON_UN
 check('‎.mbe מהעימוד, הורדה: המשטחים, השכבות והרקע — זהים בבתים; השטף story בלי התמונה שהוספנו', MbeCanonical::encode($mbLB->document['surfaces']) === MbeCanonical::encode($mbLO->document['surfaces'])
     && ($mbLB->files[$mbLO->document['surfaces'][0]['layers'][0]['src']] ?? null) === $mbLO->files[$mbLO->document['surfaces'][0]['layers'][0]['src']]
     && str_contains($mbLFlow, 'שטף אחד שעובר') && !str_contains($mbLFlow, '"image"') && isset($mbLB->apps('layout-studio')['view.json']), $mbLFlow);
+$mbSt = $mbDoc['styles'] ?? [];
+check('‎.mbe: סגנונות פסקה במבנה המשותף — body מגופן העמוד ומ-normal, h1–h3 מהכותרות (pt, weight, leading)', array_keys($mbSt) === ['body', 'h1', 'h2', 'h3']
+    && $mbSt['body'] == ['name' => 'גוף', 'font' => 'David', 'size' => 12, 'leading' => 13.8, 'align' => 'right', 'weight' => 400, 'spaceBefore' => 0, 'spaceAfter' => 6, 'indent' => 0]
+    && $mbSt['h1']['size'] == 16 && $mbSt['h1']['weight'] === 700 && $mbSt['h1']['spaceBefore'] == 12 && $mbSt['h2']['size'] == 14 && !isset($mbSt['normal']),
+    json_encode($mbSt, JSON_UNESCAPED_UNICODE));
+$mbSP = mbe_page_of(['size' => [595.3, 841.9]], [], ['body' => ['font' => 'Noto Serif Hebrew', 'size' => 11, 'leading' => 15, 'align' => 'justify', 'weight' => 400, 'spaceAfter' => 4],
+    'h1' => ['size' => 20, 'weight' => 700, 'spaceBefore' => 18], 'h2' => ['size' => 'x', 'align' => 'nope']]);
+check('‎.mbe מאפליקציה אחרת (בלי attrs.page): הסגנונות המשותפים → גופן העמוד, normal ו-h1; ערך לא תקין — ברירת המחדל', $mbSP['font'] == ['family' => 'Noto Serif Hebrew', 'size' => 11.0]
+    && $mbSP['styles']['normal']['line'] == 1.36 && $mbSP['styles']['normal']['align'] === 'justify' && $mbSP['styles']['normal']['after'] == 4
+    && $mbSP['styles']['h1']['size'] == 20 && $mbSP['styles']['h1']['before'] == 18 && $mbSP['styles']['h1']['color'] === '#1f3864'
+    && $mbSP['styles']['h2'] == page_defaults()['styles']['h2'], json_encode([$mbSP['font'], $mbSP['styles']['normal'], $mbSP['styles']['h1'], $mbSP['styles']['h2']], JSON_UNESCAPED_UNICODE));
+// layout בשורש גובר על attrs.page (העימוד שינה שוליים ומספור — מגיע לעורך); מה שאין במעטפת — מ-attrs.page
+$mbLy = Mbe::open($mbBytes);
+$mbLy->document['layout']['margins']['top'] = round(40 * PT_PER_MM, 2);
+$mbLy->document['layout']['numbering'] = ['start' => 7, 'style' => 'arabic'];
+$mbLyId = doc_new('a:99', 'layout גובר', null, null, 'u1', 'דנה');
+$mbLyP = import_mbe(Mbe::save($mbLy, ['app' => 'layout-studio', 'appVersion' => '1']), $mbLyId)['page'];
+check('‎.mbe: layout בשורש גובר על attrs.page — שוליים ומספור מהמעטפת, הכותרת העליונה מ-attrs.page', $mbLyP['margins'] == ['top' => 40.0, 'bottom' => 25.0, 'right' => 30.0, 'left' => 15.0]
+    && $mbLyP['numbering']['start'] === 7 && $mbLyP['numbering']['format'] === 'n' && str_contains(json_encode($mbLyP['header'], JSON_UNESCAPED_UNICODE), 'לוגו'),
+    json_encode([$mbLyP['margins'], $mbLyP['numbering']], JSON_UNESCAPED_UNICODE));
 check('‎.mbe: קובץ פגום — הודעה ברורה', throws(fn() => import_mbe(substr($mbBytes, 0, 200), $mbLId), 'bad_file'));
 
 section('מסמך חדש שלא נכתב בו — לא נשאר (my_discard)');
