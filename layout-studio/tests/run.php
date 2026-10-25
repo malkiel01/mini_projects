@@ -20,6 +20,7 @@ require_once __DIR__ . '/../lib/auth.php';
 require_once __DIR__ . '/../lib/docs.php';
 require_once __DIR__ . '/../lib/model.php';
 require_once __DIR__ . '/../lib/media.php';
+require_once __DIR__ . '/../lib/pdf.php';
 
 $fails = 0;
 $n = 0;
@@ -222,6 +223,29 @@ check('התאמה לא מוכרת — נדחה', $tryI(function (&$x) { $x['surf
 check('מיקוד מחוץ ל-0..1 — נדחה', $tryI(function (&$x) { $x['surfaces'][2]['layers'][0]['focus'] = [2, 0]; }, 'image'));
 check('גלישה לא מוכרת — נדחה', $tryI(function (&$x) { $x['surfaces'][2]['layers'][0]['wrap'] = 'around'; }, 'frame'));
 check('מסגרת תמונה בשרשור — נדחה', $tryI(function (&$x) { $x['flows']['f1']['frames'][] = 'i1'; }, 'thread'));
+
+
+// ===== PDF (pdf-core דרך lib/pdf.php) =====
+check('גופן מהרשימה — נטען', strlen((string)ls_pdf_resolve($uidA, 'fonts/NotoSerifHebrew.ttf')) > 1000);
+check('מופע מודגש סטטי — נטען', strlen((string)ls_pdf_resolve($uidA, 'fonts/static/FrankRuhlLibre-700.ttf')) > 1000);
+check('נתיב יוצא מתיקיית הגופנים — נדחה', ls_pdf_resolve($uidA, 'fonts/../api.php') === null && ls_pdf_resolve($uidA, 'fonts/../../lib/db.php') === null);
+check('תמונה של משתמש אחר — לא נמצאת', ls_pdf_resolve($uidB, $m1['src']) === null && ls_pdf_resolve($uidA, $m1['src']) === $png);
+check('מפתח לא מוכר — null', ls_pdf_resolve($uidA, '/etc/passwd') === null && ls_pdf_resolve($uidA, 'data/layout.sqlite') === null);
+$gd = imagecreatetruecolor(20, 10); imagefill($gd, 0, 0, imagecolorallocate($gd, 200, 30, 30));
+ob_start(); imagepng($gd); $png2 = ob_get_clean();
+$m2 = ls_media_put($uidA, $png2);
+$list = ['title' => 'ספר', 'pages' => [['size' => [400, 600], 'bleed' => 9, 'ops' => [
+    ['op' => 'glyphs', 'font' => 'fonts/NotoSerifHebrew.ttf', 'size' => 12, 'color' => '#000000', 'x' => 50, 'y' => 80,
+     'glyphs' => [[40, 0, 0, 7.2], [50, 0, 0, 6.8]], 'text' => 'שלום'],
+    ['op' => 'glyphs', 'font' => 'fonts/static/NotoSerifHebrew-700.ttf', 'size' => 12, 'x' => 50, 'y' => 100, 'glyphs' => [[40, 0, 0, 7.4]]],
+    ['op' => 'image', 'src' => $m2['src'], 'box' => [40, 40, 200, 300], 'clip' => [40, 40, 200, 200]]]]]];
+$pdf = ls_pdf($uidA, gzencode(json_encode($list, JSON_UNESCAPED_UNICODE)));
+check('רשימת ציור → PDF עם גלישה (TrimBox / BleedBox)', str_starts_with($pdf, '%PDF') && str_contains($pdf, '/TrimBox') && str_contains($pdf, '/BleedBox'));
+check('שני גופנים מוטמעים (רגיל ומודגש)', substr_count($pdf, '/FontFile2') === 2);
+check('גוף שאינו gzip — bad_list', throws(fn() => ls_pdf($uidA, '{"pages":[]}'), 'bad_list'));
+check('JSON פגום — bad_list', throws(fn() => ls_pdf($uidA, gzencode('{x')), 'bad_list'));
+$bad = $list; $bad['pages'][0]['ops'][0]['font'] = 'fonts/../api.php';
+check('גופן שלא ברשימה — שגיאה עם המקום', throws(fn() => ls_pdf($uidA, gzencode(json_encode($bad))), 'גופן חסר: fonts/../api.php'));
 
 echo "\n" . ($n - $fails) . " / $n עברו\n";
 exit($fails ? 1 : 0);

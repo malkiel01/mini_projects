@@ -1,5 +1,8 @@
 {
   "word-processor": {
     "php": "lib/pdf-core"
+  },
+  "layout-studio": {
+    "php": "lib/pdf-core"
   }
 }
