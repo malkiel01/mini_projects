@@ -2,7 +2,7 @@
 /**
  * Plugin Name: קול מרוקו — קבלת גרסאות
  * Description: מקבל מסטודיו "קול מרוקו" גרסאות חתומות של עמוד אחד (Ed25519), בודק חתימה, זמן, nonce וגרסה, ומציג אותן בתבנית של העמוד הזה בלבד. בלי סיסמאות ובלי גישה מבחוץ לשום דבר אחר. כולל ייצוא של העמוד הקיים לסטודיו.
- * Version: 1.0.0
+ * Version: 1.1.0
  * Requires PHP: 7.4
  * Author: הכלים הדיגיטליים
  * Text Domain: kol-maroko
@@ -20,7 +20,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('KOL_MAROKO_VERSION', '1.0.0');
+define('KOL_MAROKO_VERSION', '1.1.0');
 define('KOL_MAROKO_PAGE', 'lexicon');
 define('KOL_MAROKO_SKEW', 300);
 define('KOL_MAROKO_KEEP', 10);
@@ -213,7 +213,7 @@ function kol_maroko_active_version()
 
 add_filter('template_include', function ($template) {
     $id = (int)kol_maroko_opt('page_id', 0);
-    if (!$id || !is_page($id) || !kol_maroko_active_version()) return $template;
+    if (!$id || !is_page($id) || !kol_maroko_active_version() || isset($_GET['kol-maroko-original'])) return $template;
     return __DIR__ . '/template.php';
 }, 99);
 
@@ -300,65 +300,242 @@ function kol_maroko_admin()
     submit_button('חזרה לתוכן המקורי (כיבוי)', 'secondary', 'submit', false);
     echo '</form>';
 
-    echo '<h2>ייצוא העמוד הקיים לסטודיו</h2><p>קובץ ZIP אחד: התוכן של העמוד כפי שהוא מוצג היום, העיצוב שלו (CSS), וכל הקבצים שהוא משתמש בהם — תמונות, הקלטות ומסמכים. מעלים אותו בסטודיו: ⚙️ הגדרות ← "ייבוא מהאתר".</p>';
+    echo '<h2>ייצוא העמוד הקיים לסטודיו</h2><p>קובץ ZIP אחד: העמוד כפי שהמבקר רואה אותו, העיצוב שלו (CSS), הרשומות של "קול מרוקו" (מילים, שדות) וכל הקבצים — תמונות והקלטות. אם יש הרבה הקלטות — הקובץ גדול וההכנה לוקחת כמה דקות. מעלים אותו בסטודיו: ⚙️ הגדרות ← "ייבוא מהאתר".</p>';
     echo '<form method="post" action="' . $post . '">' . wp_nonce_field('kol_maroko_export', '_wpnonce', true, false)
         . '<input type="hidden" name="action" value="kol_maroko_export">';
     submit_button('⬇️ ייצוא העמוד', 'primary', 'submit', false);
-    echo '</form></div>';
+    echo '</form>';
+
+    echo '<h2 id="kol-diag">🔎 אבחון</h2><p>איך העמוד בנוי: התבניות, סוגי התוכן, והרכיבים שהמבקר רואה. מעתיקים את כל הטקסט בתיבה ושולחים לצ\'אט של קול מרוקו.</p>';
+    echo '<form method="post" action="' . $post . '">' . wp_nonce_field('kol_maroko_diagnose', '_wpnonce', true, false) . '<input type="hidden" name="action" value="kol_maroko_diagnose">';
+    submit_button('🔎 הפקת אבחון', 'secondary', 'submit', false);
+    echo '</form>';
+    $diag = get_transient('kol_maroko_diag');
+    if ($diag) {
+        echo '<textarea readonly rows="18" dir="ltr" style="width:100%;max-width:900px;font:12px monospace" onclick="this.select()">'
+            . esc_textarea(wp_json_encode($diag, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT)) . '</textarea>';
+    }
+    echo '</div>';
 }
 
 // ── ייצוא העמוד הקיים ─────────────────────────────────────
+//
+// גרסה 1.0 ייצאה רק את הטקסט ששמור בתוך העמוד — ובאתר מגרב העמוד מציג את רשומות "קול מרוקו" (סוג תוכן של
+// JetEngine) דרך תבנית, כך שכמעט כלום לא יצא. מ-1.1: (1) העמוד כפי שהמבקר רואה אותו — בקשה מהשרת לעצמו, ואם
+// היא נכשלת, רינדור של התבנית של אלמנטור; (2) הרשומות עצמן כנתונים, עם הקבצים שלהן; (3) דוח אבחון.
+
+/** סוגי התוכן שהעמוד מציג: שהשם שלהם מזכיר מרוקו, או שהרשומות שלהם מופיעות ב-HTML של העמוד. */
+function kol_maroko_entry_types($html = '')
+{
+    $out = [];
+    foreach (get_post_types(['_builtin' => false], 'objects') as $pt) {
+        if (in_array($pt->name, ['elementor_library', 'jet-engine', 'jet-smart-filters', 'jet-theme-core', 'jet-engine-booking', 'wp_block', 'wp_template', 'wp_template_part', 'wp_navigation'], true)) continue;
+        $label = $pt->label . ' ' . ($pt->labels->singular_name ?? '') . ' ' . $pt->name;
+        $hit = preg_match('/מרוק|maroc|morocc|kol|lexic|מילון|לקסיקון/iu', $label);
+        if (!$hit && $html !== '' && preg_match('/\b(?:post-type-|type-)' . preg_quote($pt->name, '/') . '\b/', $html)) $hit = true;
+        if ($hit) $out[] = $pt->name;
+    }
+    return $out;
+}
+
+/** העמוד כפי שהמבקר רואה: בקשה לעצמנו (בלי התבנית שלנו), ואם לא — רינדור בשרת. */
+function kol_maroko_render_page($id)
+{
+    $url = add_query_arg(['kol-maroko-original' => '1', 'nocache' => time()], get_permalink($id));
+    $r = wp_remote_get($url, ['timeout' => 25, 'sslverify' => false, 'redirection' => 3, 'headers' => ['Cache-Control' => 'no-cache']]);
+    $code = is_wp_error($r) ? 0 : (int)wp_remote_retrieve_response_code($r);
+    $body = is_wp_error($r) ? '' : (string)wp_remote_retrieve_body($r);
+    if ($code === 200 && stripos($body, '<body') !== false) {
+        return ['source' => 'loopback', 'full' => $body, 'error' => null];
+    }
+    $err = is_wp_error($r) ? $r->get_error_message() : "HTTP $code";
+    // רינדור בשרת: התבניות של אלמנטור פרו שחלות על עמוד יחיד, ואחריהן התוכן של העמוד
+    global $post, $wp_query;
+    $post = get_post($id);
+    $wp_query = new WP_Query(['page_id' => $id]);
+    $wp_query->the_post();
+    $html = '';
+    try {
+        if (class_exists('\ElementorPro\Modules\ThemeBuilder\Module')) {
+            $docs = \ElementorPro\Modules\ThemeBuilder\Module::instance()->get_conditions_manager()->get_documents_for_location('single');
+            foreach ((array)$docs as $doc_id => $doc) $html .= \Elementor\Plugin::$instance->frontend->get_builder_content_for_display($doc_id, true);
+        }
+        if (did_action('elementor/loaded') && get_post_meta($id, '_elementor_edit_mode', true) === 'builder') {
+            $html .= \Elementor\Plugin::$instance->frontend->get_builder_content_for_display($id, true);
+        } elseif (strpos($html, 'elementor-widget-theme-post-content') === false) {
+            $html .= apply_filters('the_content', get_post_field('post_content', $id));
+        }
+    } catch (Throwable $e) {
+        $err .= ' · ' . $e->getMessage();
+    }
+    wp_reset_postdata();
+    return ['source' => 'server', 'full' => '<html><body>' . $html . '</body></html>', 'error' => $err];
+}
+
+/** מתוך עמוד מלא: אזור התוכן (מסמכי אלמנטור שאינם כותרת / תחתית / חלון קופץ), ו-CSS של אלמנטור מה-head. */
+function kol_maroko_extract($full)
+{
+    $doc = new DOMDocument();
+    libxml_use_internal_errors(true);
+    $doc->loadHTML('<?xml encoding="UTF-8">' . $full);
+    libxml_clear_errors();
+    $xp = new DOMXPath($doc);
+    $parts = [];
+    foreach ($xp->query('//*[@data-elementor-type]') as $el) {
+        $type = $el->getAttribute('data-elementor-type');
+        if (in_array($type, ['header', 'footer', 'popup'], true)) continue;
+        // רק מסמך עליון (לא מסמך שמקונן בתוך מסמך שכבר נלקח)
+        for ($p = $el->parentNode; $p instanceof DOMElement; $p = $p->parentNode) if ($p->hasAttribute('data-elementor-type') && !in_array($p->getAttribute('data-elementor-type'), ['header', 'footer', 'popup'], true)) continue 2;
+        $parts[] = $doc->saveHTML($el);
+    }
+    if (!$parts) {
+        $main = $xp->query('//main')->item(0) ?: $xp->query('//*[contains(concat(" ", normalize-space(@class), " "), " entry-content ")]')->item(0) ?: $xp->query('//body')->item(0);
+        if ($main) foreach ($main->childNodes as $c) $parts[] = $doc->saveHTML($c);
+    }
+    $css = [];
+    $links = [];
+    foreach ($xp->query('//style') as $i => $st) {
+        $id = $st->getAttribute('id');
+        if ($id === '' || preg_match('/elementor|jet|kit|post-\d|global/i', $id)) $css['inline-' . $i] = $st->textContent;
+    }
+    foreach ($xp->query('//link[@rel="stylesheet"]') as $l) $links[] = $l->getAttribute('href');
+    return ['html' => implode("\n", $parts), 'css' => $css, 'links' => $links];
+}
+
+/** רשומות של סוג תוכן: שדות, מונחים, תמונה ראשית — וכל קובץ שהן מפנות אליו. */
+function kol_maroko_entries($types, &$urls)
+{
+    $out = [];
+    $skip = '/^(_edit_|_wp_old|_wp_trash|_encloseme|_pingme|_elementor_css|_elementor_page_assets|_oembed)/';
+    foreach ($types as $t) {
+        $q = get_posts(['post_type' => $t, 'post_status' => ['publish', 'draft', 'private', 'pending'], 'numberposts' => 5000, 'orderby' => 'menu_order title', 'order' => 'ASC']);
+        foreach ($q as $p) {
+            $meta = [];
+            foreach (get_post_meta($p->ID) as $k => $vals) {
+                if (preg_match($skip, $k)) continue;
+                $v = count($vals) === 1 ? maybe_unserialize($vals[0]) : array_map('maybe_unserialize', $vals);
+                $meta[$k] = $v;
+            }
+            $terms = [];
+            foreach (get_object_taxonomies($t) as $tax) {
+                $tt = wp_get_post_terms($p->ID, $tax, ['fields' => 'names']);
+                if ($tt && !is_wp_error($tt)) $terms[$tax] = $tt;
+            }
+            $thumb = get_the_post_thumbnail_url($p->ID, 'full');
+            // קבצים: מזהי קבצים בשדות → כתובות; וכל כתובת uploads בשדות ובתוכן
+            $files = [];
+            array_walk_recursive($meta, function ($v) use (&$files) {
+                if (is_numeric($v) && (int)$v > 0 && get_post_type((int)$v) === 'attachment') $files[(int)$v] = wp_get_attachment_url((int)$v);
+                if (is_string($v) && preg_match_all('~https?://[^"\'\s<>]+/wp-content/uploads/[^"\'\s<>?#]+~i', $v, $m)) foreach ($m[0] as $u) $files[$u] = $u;
+            });
+            if (preg_match_all('~https?://[^"\'\s<>]+/wp-content/uploads/[^"\'\s<>?#]+~i', $p->post_content, $m)) foreach ($m[0] as $u) $files[$u] = $u;
+            foreach (get_attached_media('', $p->ID) as $a) $files[$a->ID] = wp_get_attachment_url($a->ID);
+            if ($thumb) $files['thumb'] = $thumb;
+            foreach ($files as $u) if ($u) $urls[] = $u;
+            $out[] = ['id' => $p->ID, 'type' => $t, 'title' => $p->post_title, 'slug' => $p->post_name, 'status' => $p->post_status,
+                'date' => $p->post_date_gmt, 'order' => $p->menu_order, 'link' => get_permalink($p->ID), 'content' => $p->post_content,
+                'excerpt' => $p->post_excerpt, 'thumbnail' => $thumb ?: null, 'terms' => $terms, 'meta' => $meta,
+                'files' => array_values(array_filter(array_unique($files)))];
+        }
+    }
+    return $out;
+}
+
+/** דוח אבחון: איך העמוד בנוי. מוצג במסך ההגדרות ונכנס לייצוא. */
+function kol_maroko_diagnose($id, $render = null)
+{
+    $d = ['plugin' => KOL_MAROKO_VERSION, 'wp' => get_bloginfo('version'), 'php' => PHP_VERSION, 'site' => home_url(),
+        'theme' => get_stylesheet() . (get_template() !== get_stylesheet() ? ' (parent ' . get_template() . ')' : ''),
+        'block_theme' => function_exists('wp_is_block_theme') && wp_is_block_theme()];
+    $p = $id ? get_post($id) : null;
+    $d['page'] = $p ? ['id' => $p->ID, 'title' => $p->post_title, 'slug' => $p->post_name, 'url' => get_permalink($p->ID), 'status' => $p->post_status,
+        'template' => get_post_meta($p->ID, '_wp_page_template', true), 'elementor_mode' => get_post_meta($p->ID, '_elementor_edit_mode', true),
+        'elementor_data_len' => strlen((string)get_post_meta($p->ID, '_elementor_data', true)), 'content_len' => strlen($p->post_content),
+        'shortcodes' => preg_match_all('/\[([a-z0-9_-]+)/i', $p->post_content, $m) ? array_values(array_unique($m[1])) : []] : null;
+    $d['active_plugins'] = array_values(array_map(fn($f) => dirname($f) === '.' ? $f : dirname($f), (array)get_option('active_plugins', [])));
+    $d['post_types'] = [];
+    foreach (get_post_types(['_builtin' => false], 'objects') as $pt) {
+        $c = wp_count_posts($pt->name);
+        $d['post_types'][] = ['name' => $pt->name, 'label' => $pt->label, 'publish' => (int)($c->publish ?? 0), 'public' => (bool)$pt->public];
+    }
+    $d['entry_types'] = kol_maroko_entry_types($render['full'] ?? '');
+    // תבניות אלמנטור (Theme Builder / JetThemeCore) ותנאיהן
+    $d['templates'] = [];
+    foreach (get_posts(['post_type' => ['elementor_library', 'jet-theme-core'], 'numberposts' => 80, 'post_status' => 'publish']) as $t) {
+        $d['templates'][] = ['id' => $t->ID, 'title' => $t->post_title, 'type' => get_post_meta($t->ID, '_elementor_template_type', true),
+            'conditions' => get_post_meta($t->ID, '_elementor_conditions', true) ?: get_post_meta($t->ID, '_jet_template_conditions', true) ?: null];
+    }
+    if ($render) {
+        $h = $render['full'];
+        $d['render'] = ['source' => $render['source'], 'error' => $render['error'], 'bytes' => strlen($h),
+            'audio' => substr_count(strtolower($h), '<audio'), 'img' => substr_count(strtolower($h), '<img'),
+            'elementor_docs' => preg_match_all('/data-elementor-type="([^"]+)"[^>]*data-elementor-id="(\d+)"/', $h, $m, PREG_SET_ORDER) ? array_map(fn($x) => $x[1] . '#' . $x[2], array_slice($m, 0, 40)) : [],
+            'widgets' => preg_match_all('/data-widget_type="([^"]+)"/', $h, $m) ? array_count_values($m[1]) : []];
+    }
+    return $d;
+}
+
+function kol_maroko_page_id()
+{
+    $id = (int)kol_maroko_opt('page_id', 0);
+    if (!$id) { $p = get_page_by_path(KOL_MAROKO_PAGE); $id = $p ? (int)$p->ID : 0; }
+    return $id;
+}
+
+add_action('admin_post_kol_maroko_diagnose', function () {
+    if (!current_user_can('manage_options')) wp_die('אין הרשאה');
+    check_admin_referer('kol_maroko_diagnose');
+    $id = kol_maroko_page_id();
+    $d = kol_maroko_diagnose($id, $id ? kol_maroko_render_page($id) : null);
+    set_transient('kol_maroko_diag', $d, HOUR_IN_SECONDS);
+    wp_safe_redirect(admin_url('options-general.php?page=kol-maroko#kol-diag'));
+    exit;
+});
 
 add_action('admin_post_kol_maroko_export', function () {
     if (!current_user_can('manage_options')) wp_die('אין הרשאה');
     check_admin_referer('kol_maroko_export');
-    $id = (int)kol_maroko_opt('page_id', 0);
-    if (!$id) $id = (int)(get_page_by_path(KOL_MAROKO_PAGE)->ID ?? 0);
+    $id = kol_maroko_page_id();
     if (!$id) wp_die('לא נמצא העמוד. בחרו אותו בהגדרות ושמרו.');
     if (!class_exists('ZipArchive')) wp_die('בשרת אין ZipArchive.');
-    @set_time_limit(600);
+    @set_time_limit(1800);
+    @ini_set('memory_limit', '1024M');
 
-    global $post;
-    $post = get_post($id);
-    setup_postdata($post);
-    $builder = 'classic';
-    if (did_action('elementor/loaded') && get_post_meta($id, '_elementor_edit_mode', true) === 'builder') {
-        $builder = 'elementor';
-        $html = \Elementor\Plugin::$instance->frontend->get_builder_content_for_display($id, true);
-    } else {
-        $html = apply_filters('the_content', get_post_field('post_content', $id));
-    }
-    wp_reset_postdata();
-
+    $render = kol_maroko_render_page($id);
+    $ex = kol_maroko_extract($render['full']);
+    $html = $ex['html'];
     $up = wp_upload_dir();
-    $css = [];
-    if ($builder === 'elementor') {
-        $kit = (int)get_option('elementor_active_kit');
-        foreach (['post' => $id, 'kit' => $kit] as $k => $pid) {
-            if (!$pid) continue;
-            $f = $up['basedir'] . "/elementor/css/post-$pid.css";
-            if (is_file($f)) $css[$k] = file_get_contents($f);
-        }
-        // הבסיס של אלמנטור — לתצוגה בסטודיו בלבד (באתר הוא נטען ממילא)
-        foreach (['ELEMENTOR_ASSETS_PATH' => 'el', 'ELEMENTOR_PRO_ASSETS_PATH' => 'pro'] as $const => $p) {
-            if (!defined($const)) continue;
-            $dir = constant($const) . 'css/';
-            foreach (array_merge([$dir . 'frontend.min.css'], glob($dir . 'widget-*.min.css') ?: []) as $f) {
-                if (is_file($f)) $css['preview-' . $p . '-' . preg_replace('/[^a-z0-9_-]/', '', basename($f, '.min.css'))] = file_get_contents($f);
-            }
-        }
-        $custom = get_post_meta($id, '_elementor_page_settings', true);
-        if (is_array($custom) && !empty($custom['custom_css'])) $css['custom'] = (string)$custom['custom_css'];
+    $css = $ex['css'];
+    // קובצי ה-CSS של אלמנטור שהעמוד טוען (העמוד, התבנית, פריטי הרשימה של JetEngine, הערכה)
+    foreach ($ex['links'] as $href) {
+        if (!preg_match('~/wp-content/uploads/(elementor/css/[a-z0-9_.-]+\.css)~i', $href, $m)) continue;
+        $f = $up['basedir'] . '/' . $m[1];
+        if (is_file($f)) $css[preg_replace('/[^a-z0-9_-]/', '', basename($m[1], '.css'))] = file_get_contents($f);
     }
+    $custom = get_post_meta($id, '_elementor_page_settings', true);
+    if (is_array($custom) && !empty($custom['custom_css'])) $css['custom'] = (string)$custom['custom_css'];
+    // הבסיס של אלמנטור ושל JetEngine — לתצוגה בסטודיו בלבד (באתר הם נטענים ממילא)
+    foreach (['ELEMENTOR_ASSETS_PATH' => 'el', 'ELEMENTOR_PRO_ASSETS_PATH' => 'pro'] as $const => $p) {
+        if (!defined($const)) continue;
+        $dir = constant($const) . 'css/';
+        foreach (array_merge([$dir . 'frontend.min.css'], glob($dir . 'widget-*.min.css') ?: []) as $f) {
+            if (is_file($f)) $css['preview-' . $p . '-' . preg_replace('/[^a-z0-9_-]/', '', basename($f, '.min.css'))] = file_get_contents($f);
+        }
+    }
+    if (defined('JET_ENGINE_PATH') && is_file(JET_ENGINE_PATH . 'assets/css/frontend.css')) $css['preview-jetengine'] = file_get_contents(JET_ENGINE_PATH . 'assets/css/frontend.css');
 
-    // הקבצים: כל כתובת תחת uploads שמופיעה בתוכן או ב-CSS
+    $types = kol_maroko_entry_types($render['full']);
+    $urls = [];
+    $entries = kol_maroko_entries($types, $urls);
+
+    // הקבצים: כל כתובת תחת uploads שמופיעה בתוכן, ב-CSS או ברשומות
     $media = [];
-    $all = $html . "\n" . implode("\n", $css);
+    $all = $html . "\n" . implode("\n", $css) . "\n" . implode("\n", $urls);
     $base = preg_quote(preg_replace('~^https?:~', '', $up['baseurl']), '~');
     if (preg_match_all('~(?:https?:)?' . $base . '/([^"\'\s<>()?#,]+)~i', $all, $m)) {
         foreach (array_unique($m[1]) as $rel) {
             $rel = rawurldecode($rel);
-            if (strpos($rel, '..') !== false) continue;
+            if (strpos($rel, '..') !== false || strpos($rel, 'elementor/css/') === 0) continue;
             $path = $up['basedir'] . '/' . $rel;
             if (is_file($path) && filesize($path) <= KOL_MAROKO_MAX_FILE) $media[$rel] = $path;
         }
@@ -368,11 +545,15 @@ add_action('admin_post_kol_maroko_export', function () {
     $zip = new ZipArchive();
     $zip->open($zipPath, ZipArchive::OVERWRITE);
     $zip->addFromString('meta.json', wp_json_encode([
-        'format' => 1, 'plugin' => KOL_MAROKO_VERSION, 'site' => home_url(), 'page_id' => $id, 'url' => get_permalink($id),
-        'title' => get_the_title($id), 'builder' => $builder, 'uploads' => $up['baseurl'], 'exported_at' => gmdate('c'),
-        'css' => array_keys($css), 'media' => array_keys($media),
+        'format' => 2, 'plugin' => KOL_MAROKO_VERSION, 'site' => home_url(), 'page_id' => $id, 'url' => get_permalink($id),
+        'title' => get_the_title($id), 'builder' => strpos($html, 'data-elementor-type') !== false ? 'elementor' : 'classic',
+        'source' => $render['source'], 'uploads' => $up['baseurl'], 'exported_at' => gmdate('c'),
+        'css' => array_keys($css), 'media' => array_keys($media), 'entry_types' => $types, 'entries' => count($entries),
+        'diagnostics' => kol_maroko_diagnose($id, $render),
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT));
     $zip->addFromString('content.html', (string)$html);
+    $zip->addFromString('page-full.html', (string)$render['full']);
+    $zip->addFromString('data/entries.json', wp_json_encode($entries, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
     foreach ($css as $k => $c) $zip->addFromString("css/$k.css", $c);
     foreach ($media as $rel => $path) {
         $zip->addFile($path, 'media/' . $rel);

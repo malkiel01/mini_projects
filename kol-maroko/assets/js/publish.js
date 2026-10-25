@@ -186,6 +186,10 @@ const Publish = (() => {
           h('p', {}, `${st.sections} פסים · ${Object.values(st.widgets).reduce((a, b) => a + b, 0)} רכיבים · ${st.files} קבצים`),
           h('p', { class: 'hint' }, Object.entries(st.widgets).map(([t, n]) => `${TYPE_NAMES[t] || t} ${n}`).join(' · ')),
           st.raw ? h('p', { class: 'hint' }, `${st.raw} קטעים מקוריים (🏛️) — מוצגים כמו באתר, ונערכים כ-HTML.`) : null,
+          st.entries ? h('p', { class: 'hint' }, `${st.entries} רשומות של ${(st.entry_types || []).join(', ')} נשמרו (מילים והקלטות).`) : null,
+          st.source === 'server' ? h('p', { class: 'hint' }, 'העמוד צולם בשרת (לא כמו שהמבקר רואה) — אם משהו חסר, שלחו את האבחון לצ\'אט.') : null,
+          (st.widgets.text || 0) + (st.widgets.raw || 0) <= 1 && !st.files ? h('div', { class: 'warnbox' }, h('b', {}, 'נראה שכמעט כלום לא יובא.'),
+            ' כנראה תוסף ישן (1.0) באתר. התקינו את 1.1, ושלחו את "🔎 אבחון" מהגדרות התוסף לצ\'אט.') : null,
           st.missing.length ? h('div', { class: 'warnbox' }, h('b', {}, `${st.missing.length} קבצים לא נמצאו בייצוא:`), h('ul', {}, st.missing.slice(0, 20).map(m => h('li', { dir: 'ltr' }, m)))) : null,
           h('a', { class: 'btn primary', href: '#/studio' }, '🎨 לסטודיו')));
       } catch (e) {
