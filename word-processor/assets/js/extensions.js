@@ -13,6 +13,8 @@ import { CommentMark } from './comments.js';
 import { InsMark, DelMark, FmtMark, authorColor as changeColor } from './track.js';
 
 const BLOCKS = ['paragraph', 'heading'];
+/** מזהה פסקה (mbe-format.md סעיף 3): אותיות לטיניות, ספרות וקו תחתון, עד 32 — כך הוא גם שם סימנייה ב-Word */
+export const PARA_ID = /^[A-Za-z0-9_]{1,32}$/;
 /** מפתח של סגנון שהמשתמש יצר (u1, u2…) — כמו USER_STYLE_RE ב-lib/page.php. */
 export const USER_STYLE = /^u[1-9]\d{0,2}$/;
 /** מפתח הסגנון של בלוק: h1..h9, title, caption (כיתוב), u<N>, או normal. */
@@ -145,6 +147,14 @@ export const ParagraphFormat = Extension.create({
                     renderHTML: a => a.pchg ? { class: 'wp-pchg', 'data-pchg': JSON.stringify(a.pchg), 'data-pchg-author': a.pchg.author || '', style: `--wpc:${changeColor(a.pchg.author)}`,
                         title: `עיצוב פסקה — ${a.pchg.author || ''}` } : {},
                 },
+                // מזהה פסקה של חבילת היצירה (mbe-format.md סעיף 3): נשמר בהקלדה ובשינוי סגנון; בפיצול — לחצי הראשון בלבד;
+                // עותק (הדבקה, שכפול) — בלי מזהה (wpParaIds). ב-Word — סימנייה נסתרת _mbe_p<id>
+                id: {
+                    default: null,
+                    keepOnSplit: false,
+                    parseHTML: el => (PARA_ID.test(el.getAttribute('data-pid') || '') ? el.getAttribute('data-pid') : null),
+                    renderHTML: a => (a.id ? { 'data-pid': a.id } : {}),
+                },
             },
         }, {
             types: ['paragraph'],
@@ -205,6 +215,25 @@ export const ParagraphFormat = Extension.create({
             'Mod-Enter': () => this.editor.commands.insertPageBreak(),
             'Mod-Shift-Enter': () => this.editor.commands.insertColumnBreak(),
         };
+    },
+    addProseMirrorPlugins() {
+        // מזהה פסקה פעמיים במסמך (הדבקה של פסקאות מאותו מסמך, שכפול) — המופע הראשון שומר, השאר בלי
+        const dedupe = state => {
+            const seen = new Set();
+            let tr = null;
+            state.doc.descendants((n, pos) => {
+                if (!n.isTextblock) return true;
+                const id = n.attrs.id;
+                if (id && seen.has(id)) (tr ||= state.tr.setMeta('addToHistory', false)).setNodeAttribute(pos, 'id', null);
+                else if (id) seen.add(id);
+                return false;
+            });
+            return tr;
+        };
+        return [new Plugin({
+            key: new PluginKey('wpParaIds'),
+            appendTransaction: (trs, _, state) => (trs.some(t => t.docChanged && !t.getMeta('collab$')) ? dedupe(state) : null),
+        })];
     },
 });
 
@@ -882,8 +911,9 @@ export const LetterSpacing = Extension.create({
  * 8: כותרת עליונה / תחתונה עשירה (header / footer כפסקאות בהגדרות העמוד).
  * 9: תמונה שמעוגנת לעמוד (attrs.anchor = 'page' — x, y מפינת העמוד).
  * 10: שינוי עיצוב פסקה במעקב (attrs.pchg בפסקה / בכותרת).
+ * 11: מזהה פסקה (attrs.id בפסקה / בכותרת — חבילת היצירה).
  */
-export const SCHEMA_VERSION = 10;
+export const SCHEMA_VERSION = 11;
 
 /**
  * מאפיינים של המסמך עצמו (צומת השורש): הגדרות העמוד וגרסת המבנה.

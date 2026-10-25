@@ -505,6 +505,7 @@ final class Ooxml
     private array $lastOrdered = []; // "רמה:סוג" => numId של הרשימה הממוספרת האחרונה (להמשך מספור)
     private ?int $headingNum = null; // numId של מספור הכותרות (מקושר לסגנונות Heading1–9)
     private int $bookmarkId = 0;     // w:id של סימניות; בגוף לשילוב — מ-900000, כדי לא להתנגש בסימניות של המארחת
+    private array $paraIds = [];     // מזהי פסקה שכבר נכתבו כסימנייה (_mbe_p<id>) — שם סימנייה ב-Word ייחודי
     public array $nums = [];         // [numId => ['abstract' => id]]
     public array $abstracts = [];    // [abstractId => ['type' => ..]]
     private int $docPr = 1;
@@ -792,6 +793,14 @@ final class Ooxml
             $ends();
         }
         if ($openLink !== null) $runs .= '</w:hyperlink>';
+        // מזהה פסקה של חבילת היצירה: סימנייה נסתרת _mbe_p<id> סביב הפסקה (mbe-format.md סעיף 7) — כך פסקה שחזרה מ-Word
+        // מזוהה. לא בגוף לשילוב (prefix) — שם זו פסקה של המארחת
+        $pid = $a['id'] ?? null;
+        if ($this->prefix === '' && is_string($pid) && preg_match(PARA_ID_RE, $pid) && !isset($this->paraIds[$pid])) {
+            $this->paraIds[$pid] = true;
+            $bid = ++$this->bookmarkId;
+            $runs = '<w:bookmarkStart w:id="' . $bid . '" w:name="' . MBE_PARA_BOOKMARK . $pid . '"/>' . $runs . '<w:bookmarkEnd w:id="' . $bid . '"/>';
+        }
         return '<w:p>' . ($ppr !== '' ? "<w:pPr>$ppr</w:pPr>" : '') . $anchors . $runs . '</w:p>' . $captions;
     }
 

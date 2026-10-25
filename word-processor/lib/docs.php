@@ -17,7 +17,7 @@ const PRESENCE_SECONDS = 15;   // עריכה משותפת: מי שלא משך ש
 const MEDIA_MAX_BYTES = 10 * 1024 * 1024;
 const MEDIA_TYPES = ['image/png' => 'png', 'image/jpeg' => 'jpg', 'image/gif' => 'gif', 'image/webp' => 'webp'];
 /** גרסת המבנה של ה-JSON (attrs.schema). אותו מספר ב-assets/js/extensions.js; ההמרות — כאן וב-assets/js/schema.js. */
-const SCHEMA_VERSION = 10;
+const SCHEMA_VERSION = 11;
 
 class ApiError extends Exception
 {
@@ -68,7 +68,8 @@ function doc_migrate(array $json): array
  * עם מבנה של גרסה 3 עוד כשהמספר היה 2). צומת או סימון של גרסה 3 → 3; קישור / סימניה → 2; אחרת 0.
  * מאפיינים שנוספו לצמתים קיימים (למשל סגנון קו תחתון) — לא נבדקים כאן; מעכשיו כל תוספת כזו מעלה את המספר.
  * 4 — מעקב שינויים; 5 — מעבר טור; 6 — עצירות טאב (attrs.tabs בפסקה); 7 — שינוי עיצוב במעקב (fmt); 8 — כותרת עשירה
- * (header / footer כפסקאות — בהגדרות העמוד של המסמך, $page, או של מעבר מקטע).
+ * (header / footer כפסקאות — בהגדרות העמוד של המסמך, $page, או של מעבר מקטע); 9 — תמונה מעוגנת לעמוד; 10 — שינוי עיצוב
+ * פסקה במעקב (pchg); 11 — מזהה פסקה (attrs.id).
  */
 function doc_schema_need(array $json, ?array $page = null): int
 {
@@ -80,7 +81,9 @@ function doc_schema_need(array $json, ?array $page = null): int
             if (!is_array($n) || $need >= SCHEMA_VERSION) return;
             $t = $n['type'] ?? '';
             // שינוי עיצוב פסקה במעקב — כותב ישן היה מאבד אותו (והשינוי היה "מתקבל" בשקט)
-            if (!empty($n['attrs']['pchg'])) { $need = 10; return; }
+            if (!empty($n['attrs']['pchg'])) $need = max($need, 10);
+            // מזהה פסקה (חבילת היצירה) — כותב ישן היה מוחק אותו, והמיזוג עם הקובץ היה מאבד את הפסקאות
+            if (in_array($t, ['paragraph', 'heading'], true) && is_string($n['attrs']['id'] ?? null) && $n['attrs']['id'] !== '') { $need = 11; return; }
             // תמונה שמעוגנת לעמוד — כותב ישן היה מאבד את העיגון (והתמונה הייתה קופצת לפסקה)
             if ($t === 'image' && ($n['attrs']['anchor'] ?? null) === 'page') { $need = max($need, 9); continue; }
             if ($t === 'sectionBreak' && $hfRich($n['attrs']['page'] ?? null)) { $need = max($need, 8); continue; }

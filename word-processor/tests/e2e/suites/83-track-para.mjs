@@ -1,7 +1,7 @@
 /**
  * מעקב שינויים — עיצוב פסקה (כמו pPrChange ב-Word): יישור, הזחה וסגנון (פסקה → כותרת) במעקב נרשמים עם הפסקה
  * כפי שהייתה (attrs.pchg) ופס שינוי בשוליים; חזרה למקור — כבר לא שינוי; דחייה מחזירה את הפסקה (גם את הסוג), אישור
- * משאיר. הבא / הקודם עוברים גם עליהם; בתצוגה הסופית — בלי הפס. נשמר (גרסת מבנה 10); PDF במקור — הפסקה הקודמת.
+ * משאיר. הבא / הקודם עוברים גם עליהם; בתצוגה הסופית — בלי הפס. נשמר (גרסת מבנה 11); PDF במקור — הפסקה הקודמת.
  */
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -58,7 +58,7 @@ export default async function (t) {
     await p.keyboard.press('Control+s');
     await p.waitForTimeout(800);
     const s = await t.api(p, 'my_open', { doc });
-    t.ok('נשמר: pchg בשלוש הפסקאות, גרסת מבנה 10', s.json.content.filter(n => n.attrs?.pchg).length === 3 && s.json.attrs.schema === 10, String(s.json.attrs.schema));
+    t.ok('נשמר: pchg בשלוש הפסקאות, גרסת מבנה 11', s.json.content.filter(n => n.attrs?.pchg).length === 3 && s.json.attrs.schema === 11, String(s.json.attrs.schema));
     const f = join(t.data, 'pc-orig.pdf'), g = join(t.data, 'pc-all.pdf');
     writeFileSync(f, await (await p.request.get(t.editor + `api.php?action=my_export&format=pdf&doc=${doc}&track=original`)).body());
     writeFileSync(g, await (await p.request.get(t.editor + `api.php?action=my_export&format=pdf&doc=${doc}`)).body());

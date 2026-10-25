@@ -1430,6 +1430,26 @@ check('Word הלוך וחזור: שינוי עיצוב הפסקה חוזר — �
     && ($pb['attrs']['pchg']['old']['attrs']['spaceAfter'] ?? null) == 12 && empty($pcBack['json']['content'][1]['attrs']['pchg']) && !$pcBack['report'],
     json_encode([$pb['attrs'], $pcBack['report']], JSON_UNESCAPED_UNICODE));
 check('גרסת מבנה: שינוי עיצוב פסקה צריך 10; גוף לשילוב — בלי pPrChange', doc_schema_need($pcDoc) === 10 && !str_contains(export_ooxml($pcDoc, page_normalize([]))['body'], 'pPrChange'));
+// מזהה פסקה (חבילת היצירה, mbe-format.md סעיפים 3 ו-7): attrs.id ↔ סימנייה נסתרת _mbe_p<id> ב-Word
+$pidDoc = ['type' => 'doc', 'content' => [
+    ['type' => 'heading', 'attrs' => ['level' => 1, 'id' => 'pAbc123XYZ0'], 'content' => [['type' => 'text', 'text' => 'כותרת']]],
+    ['type' => 'paragraph', 'attrs' => ['id' => 'p_2'], 'content' => [['type' => 'text', 'text' => 'פסקה']]],
+    ['type' => 'paragraph', 'attrs' => ['id' => 'p_2'], 'content' => [['type' => 'text', 'text' => 'כפולה']]],
+    ['type' => 'paragraph', 'attrs' => ['id' => 'bad-id'], 'content' => [['type' => 'text', 'text' => 'פסולה']]],
+    ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'בלי']]],
+]];
+$pidX = export_docx($pidDoc, page_normalize([]), 'x');
+file_put_contents("$tmp/pid.docx", $pidX);
+$pidZ = new ZipArchive();
+$pidZ->open("$tmp/pid.docx");
+preg_match_all('/w:name="(_mbe_p[^"]*)"/', (string)$pidZ->getFromName('word/document.xml'), $pidM);
+check('מזהה פסקה → Word: סימנייה נסתרת _mbe_p<id> לכל פסקה עם מזהה תקין, פעם אחת לכל מזהה', $pidM[1] === ['_mbe_ppAbc123XYZ0', '_mbe_pp_2'], json_encode($pidM[1]));
+$pidB = array_map(fn($b) => [$b['type'], $b['attrs']['id'] ?? null], import_docx($pidX, 'x')['json']['content']);
+check('Word → מזהה פסקה: הסימנייה חוזרת ל-attrs.id (גם בכותרת), ולא כסימנייה רגילה', $pidB === [['heading', 'pAbc123XYZ0'], ['paragraph', 'p_2'], ['paragraph', null], ['paragraph', null], ['paragraph', null]]
+    && !str_contains(json_encode(import_docx($pidX, 'x')['json']), '"bookmark"'), json_encode($pidB));
+check('גרסת מבנה: מזהה פסקה צריך 11; כותב בגרסה 10 על מסמך עם מזהה → schema_newer', doc_schema_need($pidDoc) === 11
+    && doc_schema_need(['type' => 'doc', 'content' => [['type' => 'paragraph', 'attrs' => ['id' => null, 'pchg' => ['author' => 'א', 'old' => ['type' => 'paragraph', 'attrs' => []]]]]]]) === 10);
+check('מזהה פסקה: לא בגוף לשילוב במארחת (export_ooxml)', !str_contains(export_ooxml($pidDoc, page_normalize([]))['body'], '_mbe_p'));
 $trDocx = export_docx($trDoc, page_normalize([]), 'מעקב');
 file_put_contents("$tmp/tr.docx", $trDocx);
 $zip->open("$tmp/tr.docx");
@@ -2086,12 +2106,17 @@ section('‎.mbe — פתיחה ושמירה בית-לבית');
 // הלוך וחזור: הקובץ שלנו נפתח כמסמך זהה — אותו תוכן, אותן הגדרות עמוד, והתמונות (גם בכותרת) באחסון שלנו
 $mbInId = doc_new('a:99', 'מ-mbe', null, null, 'u1', 'דנה');
 $mbIn = import_file($mbBytes, 'x.bin', $mbInId);
-$mbNorm = function ($v) use (&$mbNorm) { if (!is_array($v)) return $v; unset($v['media'], $v['src']); return array_map($mbNorm, $v); };
+// מזהי הפסקה — הליבה משלימה בשמירה (פורמט 1.1); נבדקים בנפרד, למטה
+$mbNorm = function ($v) use (&$mbNorm) { if (!is_array($v)) return $v; unset($v['media'], $v['src']); if (is_array($v['attrs'] ?? null)) { unset($v['attrs']['id']); if (!$v['attrs']) unset($v['attrs']); } return array_map($mbNorm, $v); };
+$mbIds = function ($v) use (&$mbIds): array { if (!is_array($v)) return []; $o = in_array($v['type'] ?? '', ['paragraph', 'heading'], true) && isset($v['attrs']['id']) ? [$v['attrs']['id']] : [];
+    foreach ($v as $c) if (is_array($c)) array_push($o, ...$mbIds($c)); return $o; };
 $mbPics = [];
 array_walk_recursive($mbIn, function ($v, $k) use (&$mbPics, $mbInId) { if ($k === 'media') $mbPics[] = media_of_doc($v, $mbInId) ? 'ok' : 'bad'; });
 check('‎.mbe → מסמך: מזוהה לפי החתימה (גם בלי סיומת), אותו תוכן ואותן הגדרות עמוד, בלי דוח', $mbNorm($mbIn['json']) == $mbNorm(doc_migrate($mbJson))
     && $mbIn['page']['margins'] == $mbPage['margins'] && $mbIn['page']['numbering']['format'] === 'hebrew' && $mbIn['report'] === [],
     json_encode([$mbIn['json'], $mbIn['report']], JSON_UNESCAPED_UNICODE));
+check('‎.mbe → מסמך: מזהי הפסקה של הקובץ נשמרים כמו שהם (אותם מזהים, באותו סדר)', $mbIds($mbIn['json']) === $mbIds(Mbe::open($mbBytes)->document['flows']['f1']['doc'] ?? []),
+    json_encode([$mbIds($mbIn['json']), $mbIds(Mbe::open($mbBytes)->document['flows']['f1']['doc'] ?? [])]));
 check('‎.mbe → מסמך: התמונות — בשטף ובכותרת העליונה — באחסון של המסמך החדש', $mbPics === ['ok', 'ok'], json_encode($mbPics));
 // קובץ של מישהו אחר (הדוגמה של הליבה — text.mbe): שדות, חלקים ו-apps/ שלא שלנו נשמרים בית-לבית; רק השטף מתחלף
 $mbFix = __DIR__ . '/../../creative-suite/mbe-core/tests/fixtures/valid/';
