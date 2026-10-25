@@ -33,7 +33,7 @@ export async function saveDraft(renderer, doc) {
     v: 1, title: doc.title, width: doc.width, height: doc.height, serverId: doc.serverId ?? null, serverVersion: doc.serverVersion ?? 0,
     activeId: doc.activeId, layers, savedAt: new Date().toISOString(),
     // הקובץ שנפתח — הבסיס לשמירה הבאה (כל מה שלא הבנו עובר ממנו)
-    mbe: doc.mbe ? { bytes: doc.mbe.bytes, surfaceId: doc.mbe.surfaceId } : null,
+    mbe: doc.mbe ? { bytes: doc.mbe.bytes, surfaceId: doc.mbe.surfaceId, scale: doc.mbe.scale ?? 1 } : null,
   });
 }
 
@@ -45,7 +45,7 @@ export async function restoreDraft(renderer, d) {
   const doc = new RasterDocument(d.width, d.height, d.title);
   doc.serverId = d.serverId ?? undefined;
   doc.serverVersion = d.serverVersion ?? 0;
-  if (d.mbe) doc.mbe = { bytes: d.mbe.bytes, surfaceId: d.mbe.surfaceId };
+  if (d.mbe) doc.mbe = { bytes: d.mbe.bytes, surfaceId: d.mbe.surfaceId, scale: d.mbe.scale ?? 1 };
   const walk = async (list, parent) => {
     for (const l of list) {
       const props = { name: l.name, opacity: l.opacity, blend: l.blend, visible: l.visible, locked: l.locked, parent };

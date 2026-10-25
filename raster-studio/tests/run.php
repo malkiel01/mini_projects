@@ -125,6 +125,12 @@ check('גרסה ישנה עדיין נקראת', rs_doc_file($uidA, $doc['id'], 
 $vs = rs_doc_versions($uidA, $doc['id']);
 check('רשימת הגרסאות — מהחדשה', array_column($vs, 'n') === [3, 2, 1] && $vs[0]['bytes'] === strlen($m1));
 check('קובץ פגום — נדחה עם הבעיות מהליבה', rejected(fn() => rs_doc_save($uidA, $doc['id'], 'PK' . str_repeat('x', 50), null), 'mbe_invalid'));
+$fd = Mbe::create('design', ['units' => 'pt', 'surfaces' => []]);
+$srcD = $fd->addMedia($png, 'image/png');
+$fd->document['surfaces'] = [['id' => 'gc', 'type' => 'page', 'size' => [225, 150], 'layers' => [['id' => 'R1', 'type' => 'raster', 'src' => $srcD, 'px' => [300, 200]]]]];
+$fd->setRendition(Mbe::PREVIEW, $png);
+$docD = rs_doc_create($uidA, 'עמוד', 'square');
+check('עמוד של סטודיו העיצוב (pt, עם רסטר) — נשמר, בגודל הפיקסלים של הרסטר', rs_doc_save($uidA, $docD['id'], Mbe::save($fd, ['app' => 'greeting-cards']), null)['doc']['size'] === [300, 200]);
 check('‎.mbe בלי קנבס (מסמך טקסט) — נדחה', rejected(fn() => rs_doc_save($uidA, $doc['id'], mbe_bytes('text', [595, 842], $png), null), 'not_raster'));
 check('משתמש אחר — לא נמצא (לא שומר, לא קורא)', rejected(fn() => rs_doc_save($uidB, $doc['id'], $m1, null), 'not_found')
     && rs_doc_file($uidB, $doc['id']) === null && rs_doc_preview($uidB, $doc['id']) === null && rejected(fn() => rs_doc_versions($uidB, $doc['id']), 'not_found'));
