@@ -7,6 +7,7 @@
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/page.php';
 require_once __DIR__ . '/activity.php';
+require_once __DIR__ . '/metafile.php';
 
 const DOC_MAX_BYTES = 8 * 1024 * 1024;
 const VERSION_MERGE_SECONDS = 600;
@@ -481,6 +482,8 @@ function media_store(string $doc, string $bytes): array
 {
     if (strlen($bytes) === 0) throw new ApiError('הקובץ ריק', 'bad_file');
     if (strlen($bytes) > MEDIA_MAX_BYTES) throw new ApiError('התמונה גדולה מ-10MB', 'too_large', 413);
+    // EMF / WMF (לוגו ונייר מכתבים מ-Word) שהם תמונה אחת עטופה — כ-PNG (lib/metafile.php)
+    if (($png = metafile_to_png($bytes)) !== null) $bytes = $png;
     $info = @getimagesizefromstring($bytes);
     $type = $info['mime'] ?? '';
     if (!isset(MEDIA_TYPES[$type])) throw new ApiError('רק תמונות PNG, JPEG, GIF או WebP', 'bad_type', 415);

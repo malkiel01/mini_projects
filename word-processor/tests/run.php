@@ -1753,7 +1753,39 @@ check('import_file: מסמך HTML שלם — רק הגוף, כותרת ופסק�
 $it = import_file("# פרק\nשורה ראשונה\n- תבליט", 'a.txt', $odDoc)['json']['content'];
 $i1255 = import_file(iconv('UTF-8', 'WINDOWS-1255', "שלום עולם"), 'old.txt', $odDoc)['json']['content'][0]['content'][0]['text'] ?? '';
 check('import_file: טקסט — שורות, # כותרת, - תבליט; וגם Windows-1255', array_column($it, 'type') === ['heading', 'paragraph', 'bulletList'] && $i1255 === 'שלום עולם', $i1255);
-check('import_file: doc ישן — שגיאה עם הסבר', throws(fn() => import_file("\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1" . str_repeat("\0", 50), 'a.doc', $odDoc), 'bad_file'));
+check('import_file: קובץ OLE פגום (‎.doc חתוך) — שגיאה עם הסבר, לא שגיאת שרת', throws(fn() => import_file("\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1" . str_repeat("\0", 50), 'a.doc', $odDoc), 'bad_file'));
+
+// ‎.doc (Word 97–2003, lib/import_doc.php) — tests/fixtures/libreoffice*.doc: נוצרו ב-LibreOffice מ-docx שלנו
+$dc = import_file(file_get_contents(__DIR__ . '/fixtures/libreoffice.doc'), 'ישן.doc', $odDoc);
+$dcB = $dc['json']['content'];
+$dcT = fn($b) => implode('', array_map(fn($n) => $n['text'] ?? '', $b['content'] ?? []));
+$dcM = fn($b, $t) => array_values(array_filter($b['content'] ?? [], fn($n) => ($n['text'] ?? '') === $t))[0]['marks'] ?? [];
+check('‎.doc: כותרות 1 ו-2 (לפי הסגנון), והדוח ריק', ($dcB[0]['type'] ?? '') === 'heading' && $dcB[0]['attrs']['level'] === 1 && $dcT($dcB[0]) === 'כותרת ראשית'
+    && ($dcB[3]['attrs']['level'] ?? 0) === 2 && $dc['report'] === [], json_encode($dc['report'], JSON_UNESCAPED_UNICODE));
+check('‎.doc: מודגש, נטוי, קו תחתון, וצבע וגודל', $dcM($dcB[1], 'מודגש') == [['type' => 'bold']] && $dcM($dcB[1], 'נטוי') == [['type' => 'italic']]
+    && $dcM($dcB[1], 'קו תחתון') == [['type' => 'underline']] && $dcM($dcB[1], 'אדום גדול') == [['type' => 'textStyle', 'attrs' => ['fontSize' => '16pt', 'color' => '#ff0000']]],
+    json_encode($dcB[1], JSON_UNESCAPED_UNICODE));
+check('‎.doc: יישור למרכז, ופסקה באנגלית — משמאל לימין', ($dcB[2]['attrs']['textAlign'] ?? '') === 'center'
+    && (array_values(array_filter($dcB, fn($b) => str_starts_with($dcT($b), 'English')))[0]['attrs']['dir'] ?? '') === 'ltr');
+check('‎.doc: רשימת תבליטים ורשימה ממוספרת — נפרדות', ($dcB[4]['type'] ?? '') === 'bulletList' && count($dcB[4]['content']) === 2 && ($dcB[5]['type'] ?? '') === 'orderedList'
+    && str_contains(json_encode($dcB[5], JSON_UNESCAPED_UNICODE), 'צעד שניים'));
+$dcTbl = array_values(array_filter($dcB, fn($b) => $b['type'] === 'table'))[0] ?? [];
+check('‎.doc: טבלה 2×2, כל תא במקומו', count($dcTbl['content'] ?? []) === 2 && count($dcTbl['content'][0]['content']) === 2
+    && $dcT($dcTbl['content'][1]['content'][1]['content'][0]) === 'תא ב2', json_encode($dcTbl, JSON_UNESCAPED_UNICODE));
+$dcLink = array_values(array_filter($dcB, fn($b) => str_contains($dcT($b), 'קישור')))[0] ?? [];
+check('‎.doc: קישור (שדה HYPERLINK) ושבירת שורה', ($dcM($dcLink, 'קישור')[0]['attrs']['href'] ?? '') === 'https://example.com/'
+    && in_array('hardBreak', array_column($dcLink['content'] ?? [], 'type'), true));
+$dcImg = array_values(array_filter($dcB, fn($b) => ($b['content'][0]['type'] ?? '') === 'image'))[0]['content'][0] ?? [];
+check('‎.doc: תמונה (PNG מזרם Data) — באחסון שלנו ובגודל המקורי', media_of_doc($dcImg['attrs']['media'] ?? '', $odDoc) && ($dcImg['attrs']['width'] ?? 0) === 60 && ($dcImg['attrs']['height'] ?? 0) === 30);
+$dc2 = import_file(file_get_contents(__DIR__ . '/fixtures/libreoffice-notes.doc'), 'x.bin', $odDoc);
+$dc2B = $dc2['json']['content'];
+check('‎.doc: הערת שוליים במקומה, עם הטקסט שלה', ($dc2B[0]['content'][1]['type'] ?? '') === 'footnote' && ($dc2B[0]['content'][1]['attrs']['text'] ?? '') === 'זו ההערה');
+check('‎.doc: רשימה מקוננת (רמה 2 בתוך רמה 1)', ($dc2B[1]['content'][0]['content'][1]['type'] ?? '') === 'bulletList' && count($dc2B[1]['content']) === 2,
+    json_encode($dc2B[1], JSON_UNESCAPED_UNICODE));
+check('‎.doc: מעבר עמוד → breakBefore, ותמונת JPEG בתוך תא', ($dc2B[2]['attrs']['breakBefore'] ?? false) === true
+    && ($dc2B[3]['content'][0]['content'][0]['content'][0]['content'][0]['type'] ?? '') === 'image' && $dc2['report'] === []);
+check('‎.doc → Word: נשמר כ-docx (אין כתיבה של ‎.doc) ונפתח בחזרה עם אותו טקסט', str_contains(export_text(import_docx(export_docx($dc['json'], page_normalize([]), 'x'), $odDoc)['json']), 'תא ב2'));
+check('קובץ Office שאינו Word (OLE בלי WordDocument) — הודעה ברורה', throws(fn() => import_doc(substr(file_get_contents(__DIR__ . '/fixtures/libreoffice.doc'), 0, 1536), $odDoc), 'bad_file'));
 
 section('ייבוא RTF (lib/import_rtf.php)');
 // כמו ש-Word בעברית שומר: ansicpg1255, גופן עברי ב-\af, עברית ב-\'hh וב-\uN, סגנון "כותרת 1" (שם ב-\'hh), כותרת עם
@@ -2092,6 +2124,40 @@ check('F07: התוכן לא משתנה, ובסיס ישן — התנגשות (כ
     && str_contains(json_encode(doc_json($f7), JSON_UNESCAPED_UNICODE), 'תוכן') && throws(fn() => doc_set_page($f7, ['size' => 'A4'], 'u2', 'רון', $f7v), 'conflict'));
 $f7 = doc_restore_version($f7, $f7List[1]['id'], 'u1', 'דנה', $f7['version']);
 check('F07: שחזור הגרסה שלפני — מחזיר גם את הגדרות העמוד', doc_page($f7)['size'] === 'A4' && doc_page($f7)['orientation'] === 'portrait', json_encode(doc_page($f7)));
+
+section('EMF / WMF — נייר מכתבים מ-Word (lib/metafile.php)');
+// DIB של 2×2, 24 ביט (שורה — 8 בתים עם ריפוד), מלמטה למעלה: שורה תחתונה כחולה, עליונה אדומה
+$mfDib = pack('VVVvvVVVVVV', 40, 2, 2, 1, 24, 0, 16, 0, 0, 0, 0);
+$mfBits = "\xFF\x00\x00\xFF\x00\x00\0\0" . "\x00\x00\xFF\x00\x00\xFF\0\0";
+$mfHead = pack('VV', 1, 88) . str_repeat("\0", 32) . ' EMF' . str_repeat("\0", 44);
+$mfStretch = fn() => pack('VV', 81, 80 + 40 + 16) . str_repeat("\0", 16) . pack('V6', 0, 0, 0, 0, 2, 2) . pack('V4', 80, 40, 120, 16) . pack('V4', 0, 0xCC0020, 2, 2) . $mfDib . $mfBits;
+$mfEof = pack('VVVVV', 14, 20, 0, 16, 20);
+$mfEmf = $mfHead . $mfStretch() . $mfEof;
+$mfPng = metafile_to_png($mfEmf);
+$mfIm = $mfPng ? imagecreatefrompng('data://image/png;base64,' . base64_encode($mfPng)) : null;
+check('EMF שהוא תמונה אחת → PNG באותו גודל ובאותם צבעים (למעלה אדום, למטה כחול)', $mfIm && imagesx($mfIm) === 2 && imagesy($mfIm) === 2
+    && (imagecolorat($mfIm, 0, 0) & 0xFFFFFF) === 0xFF0000 && (imagecolorat($mfIm, 1, 1) & 0xFFFFFF) === 0x0000FF);
+$mfWmf = pack('vvvVvVv', 1, 9, 0x300, 0, 1, 0, 0)   // META_HEADER (9 מילים)
+    . pack('Vv', (6 + 22 + 56) / 2, 0x0F43) . pack('Vv', 0xCC0020, 0) . pack('v8', 2, 2, 0, 0, 2, 2, 0, 0) . $mfDib . $mfBits . pack('Vv', 3, 0);
+check('WMF שהוא תמונה אחת (META_STRETCHDIB) → PNG', ($w2 = metafile_to_png($mfWmf)) !== null && getimagesizefromstring($w2)[0] === 2);
+check('EMF עם ציור נוסף (קו) — לא מומר (נספר בדוח), וקובץ שאינו EMF — כמו שהוא', metafile_to_png($mfHead . pack('VVVV', 54, 16, 1, 1) . $mfStretch() . $mfEof) === null
+    && metafile_to_png($mfHead . $mfStretch() . $mfStretch() . $mfEof) === null && metafile_to_png('GIF89a') === null);
+$mfDoc = doc_new('a:99', 'נייר מכתבים', null, null, 'u1', 'דנה');
+check('media_store: EMF נשמר כ-PNG', (media_store($mfDoc, $mfEmf)['width'] ?? 0) === 2 && media_of_doc(media_store($mfDoc, $mfEmf)['id'], $mfDoc));
+// docx עם נייר מכתבים: תמונה צפה (wp:anchor) בכותרת העליונה, בפורמט EMF
+$mfAnchor = '<w:p><w:r><w:drawing><wp:anchor behindDoc="0" relativeHeight="1"><wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH>'
+    . '<wp:positionV relativeFrom="page"><wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx="5618480" cy="889635"/><wp:wrapNone/><a:graphic><a:graphicData><a:blip r:embed="rI"/></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r></w:p>';
+$mfDocx = $mkDocx([
+    'word/document.xml' => '<w:document ' . $WN . '><w:body><w:p>' . $run('גוף המכתב') . '</w:p><w:sectPr><w:headerReference w:type="default" r:id="rH"/><w:pgSz w:w="11906" w:h="16838"/></w:sectPr></w:body></w:document>',
+    'word/_rels/document.xml.rels' => '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rH" Target="header1.xml"/></Relationships>',
+    'word/header1.xml' => $hdr('hdr', $mfAnchor),
+    'word/_rels/header1.xml.rels' => '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rI" Target="media/image1.emf"/></Relationships>',
+    'word/media/image1.emf' => $mfEmf,
+]);
+$mfImp = import_docx($mfDocx, $mfDoc);
+$mfHdr = $mfImp['page']['header'][0]['content'][0] ?? [];
+check('docx עם נייר מכתבים (EMF צף בכותרת): התמונה בכותרת העליונה, והדוח ריק', ($mfHdr['type'] ?? '') === 'image' && media_of_doc($mfHdr['attrs']['media'] ?? '', $mfDoc)
+    && ($mfHdr['attrs']['width'] ?? 0) === 590 && $mfImp['report'] === [], json_encode([$mfImp['page']['header'] ?? null, $mfImp['report']], JSON_UNESCAPED_UNICODE));
 
 section('רשימת ציור → PDF (pdf-core: lib/pdf-core/draw.php — לעימוד)');
 require_once __DIR__ . '/../lib/pdf-core/draw.php';
