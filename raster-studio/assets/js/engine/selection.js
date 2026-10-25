@@ -1,7 +1,8 @@
 // בחירה: רשימת צורות (מלבן / אליפסה / לאסו) עם פעולה — הוספה או חיסור — ואפשרות להיפוך.
 // נשמרת כווקטור (קטן, מדויק, בלי תלות בגודל התמונה), והופכת למסכה רק לאריחים שצריך — rasterTile.
 //
-// sel = { shapes: [{ op: 'add' | 'sub', type: 'rect' | 'ellipse' | 'poly', x, y, w, h, pts }], inverted }
+// sel = { shapes: [{ op: 'add' | 'sub', type: 'rect' | 'ellipse' | 'poly' | 'mask', x, y, w, h, pts, data }], inverted }
+// mask — מסכת פיקסלים (מטה הקסם, טווח צבעים): data — Uint8Array של w×h (0–255), שפינתה ב-(x, y).
 
 import { TILE } from './doc.js';
 
@@ -49,9 +50,57 @@ export function combine(sel, shape, mode) {
   return { shapes: [...sel.shapes, { ...shape, op }], inverted: sel.inverted };
 }
 
-/** מתווה צורה בהקשר דו-ממדי. map — פונקציה ממסמך למסך (או זהות). */
+/**
+ * מסכת פיקסלים מתוך מסכה בגודל התמונה (כמו של floodFill), חתוכה למלבן box = [x0, y0, x1, y1] (כולל).
+ * null — אין בה כלום.
+ */
+export function maskShape(mask, W, box) {
+  if (!box) return null;
+  const [x0, y0, x1, y1] = box, w = x1 - x0 + 1, h = y1 - y0 + 1;
+  const data = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) data.set(mask.subarray((y0 + y) * W + x0, (y0 + y) * W + x0 + w), y * w);
+  return { type: 'mask', x: x0, y: y0, w, h, data };
+}
+
+const outlines = new WeakMap();   // data → קטעי הגבול (מחושבים פעם אחת)
+/**
+ * גבול מסכה: קטעים אופקיים ואנכיים בין פיקסל נבחר (≥128) לפיקסל שלא, ביחידות המסכה.
+ * כל קטע — [x0, y0, x1, y1]; רצפים באותה שורה / עמודה מאוחדים לקטע אחד.
+ */
+export function maskOutline(s) {
+  let segs = outlines.get(s.data);
+  if (segs) return segs;
+  segs = [];
+  const { w, h, data } = s;
+  const on = (x, y) => x >= 0 && y >= 0 && x < w && y < h && data[y * w + x] >= 128;
+  for (let y = 0; y <= h; y++) {
+    let start = -1;
+    for (let x = 0; x <= w; x++) {
+      const edge = x < w && on(x, y - 1) !== on(x, y);
+      if (edge && start < 0) start = x;
+      else if (!edge && start >= 0) { segs.push([start, y, x, y]); start = -1; }
+    }
+  }
+  for (let x = 0; x <= w; x++) {
+    let start = -1;
+    for (let y = 0; y <= h; y++) {
+      const edge = y < h && on(x - 1, y) !== on(x, y);
+      if (edge && start < 0) start = y;
+      else if (!edge && start >= 0) { segs.push([x, start, x, y]); start = -1; }
+    }
+  }
+  outlines.set(s.data, segs);
+  return segs;
+}
+
+/** מתווה צורה בהקשר דו-ממדי. map — פונקציה ממסמך למסך (או זהות). מסכה — הגבול שלה, לקו בלבד (לא למילוי). */
 export function tracePath(ctx, s, map = (x, y) => [x, y]) {
-  if (s.type === 'rect') {
+  if (s.type === 'mask') {
+    for (const [x0, y0, x1, y1] of maskOutline(s)) {
+      ctx.moveTo(...map(s.x + x0, s.y + y0));
+      ctx.lineTo(...map(s.x + x1, s.y + y1));
+    }
+  } else if (s.type === 'rect') {
     const pts = [[s.x, s.y], [s.x + s.w, s.y], [s.x + s.w, s.y + s.h], [s.x, s.y + s.h]].map(([x, y]) => map(x, y));
     ctx.moveTo(...pts[0]);
     for (const p of pts.slice(1)) ctx.lineTo(...p);
@@ -72,6 +121,21 @@ export function tracePath(ctx, s, map = (x, y) => [x, y]) {
   }
 }
 
+const maskCanvases = new WeakMap();   // data → OffscreenCanvas: לבן, והאלפא — המסכה
+function maskCanvas(s) {
+  let c = maskCanvases.get(s.data);
+  if (c) return c;
+  c = new OffscreenCanvas(s.w, s.h);
+  const img = new ImageData(s.w, s.h);
+  for (let i = 0; i < s.data.length; i++) {
+    img.data[i * 4] = img.data[i * 4 + 1] = img.data[i * 4 + 2] = 255;
+    img.data[i * 4 + 3] = s.data[i];
+  }
+  c.getContext('2d').putImageData(img, 0, 0);
+  maskCanvases.set(s.data, c);
+  return c;
+}
+
 let tileCtx = null;
 /**
  * מסכת הבחירה של אריח: Uint8Array של 256×256 (0–255, קצוות רכים בפיקסל אחד), או null אם האריח כולו מחוץ.
@@ -89,6 +153,12 @@ export function rasterTile(sel, tx, ty) {
   for (const s of sel.shapes) {
     const adds = (s.op === 'add') !== sel.inverted;
     ctx.globalCompositeOperation = adds ? 'source-over' : 'destination-out';
+    if (s.type === 'mask') {
+      // אריח שהמסכה לא נוגעת בו — דילוג (לא מציירים קנבס שלם בשביל כלום)
+      if (s.x >= ox + TILE || s.y >= oy + TILE || s.x + s.w <= ox || s.y + s.h <= oy) continue;
+      ctx.drawImage(maskCanvas(s), s.x, s.y);
+      continue;
+    }
     ctx.fillStyle = '#fff';
     ctx.beginPath();
     tracePath(ctx, s);

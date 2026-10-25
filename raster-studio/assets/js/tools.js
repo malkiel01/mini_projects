@@ -1,8 +1,9 @@
-// הכלים: ✋ יד · 🖌️ מכחול · 🧽 מחק · 🪣 דלי · 💧 טפטפת, הצבע, ולוח האפשרויות של הכלי הפעיל.
+// הכלים: ✋ יד · בחירות (מלבן, אליפסה, לאסו, 🪄 מטה קסם) · 🖌️ מכחול · 🧽 מחק · 🪣 דלי · 💧 טפטפת, הצבע,
+// ולוח האפשרויות של הכלי הפעיל.
 // הציור עצמו: משיכה במנוע (beginStroke → dab → endStroke), ובסופה רשומה אחת בהיסטוריה.
 
-import { dabsAlong, floodFill, hexToRgb, rgbToHex } from './engine/fill.js';
-import { combine, isEmptyShape, selectionBox } from './engine/selection.js';
+import { colorRange, dabsAlong, floodFill, hexToRgb, rgbToHex } from './engine/fill.js';
+import { combine, isEmptyShape, maskShape, selectionBox } from './engine/selection.js';
 import * as XF from './engine/transform.js';
 import { FONTS, LINE_HEIGHT, cssFont, renderText, textDirection } from './engine/text.js';
 
@@ -13,6 +14,7 @@ export const TOOLS = {
   rect: { label: 'בחירה מלבנית', icon: '⬚', key: 'm', hint: 'Shift — הוספה · Alt — חיסור · Ctrl+D — ביטול הבחירה' },
   ellipse: { label: 'בחירה אליפטית', icon: '◯', key: null, hint: 'Shift — הוספה · Alt — חיסור · M — מעבר בין מלבן לאליפסה' },
   lasso: { label: 'לאסו', icon: '➰', key: 'l', hint: 'גרירה סביב האזור · Shift — הוספה · Alt — חיסור' },
+  wand: { label: 'מטה קסם', icon: '🪄', key: 'w', hint: 'לחיצה — האזור בצבע דומה · בלי "רציף" — כל הצבע בתמונה · Shift — הוספה · Alt — חיסור' },
   brush: { label: 'מכחול', icon: '🖌️', key: 'b', hint: 'Alt+לחיצה — דגימת צבע · [ ] — גודל' },
   eraser: { label: 'מחק', icon: '🧽', key: 'e', hint: '[ ] — גודל' },
   bucket: { label: 'דלי', icon: '🪣', key: 'g', hint: 'לחיצה — מילוי אזור בשכבה הפעילה' },
@@ -40,6 +42,7 @@ const $ = (s, el = document) => el.querySelector(s);
 export function createTools({ doc, renderer, history, view, onChange, draw, toast, overlay }) {
   const state = {
     tool: 'brush', color: '#1b1e26', size: 12, hardness: 0.8, opacity: 1, tolerance: 32, selMode: 'new',
+    contiguous: true, sampleAll: false,
     font: FONTS[0].family, fontSize: 48, bold: false, align: 'start',
   };
   let stroke = null;   // { layer, last, carry, pen }
@@ -107,6 +110,8 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
   for (const r of opts.querySelectorAll('input[name="selmode"]')) {
     r.addEventListener('change', () => { if (r.checked) state.selMode = r.value; });
   }
+  $('#opt-contiguous').addEventListener('change', e => { state.contiguous = e.target.checked; });
+  $('#opt-sample-all').addEventListener('change', e => { state.sampleAll = e.target.checked; });
   opts.addEventListener('click', e => {
     const b = e.target.closest('[data-sel]');
     if (b) selAction(b.dataset.sel);
@@ -198,6 +203,28 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
   function lassoShape() {
     if (lasso.type === 'lasso') return { type: 'poly', pts: lasso.pts };
     return { type: lasso.type, ...snapRect(lasso.start, lasso.pts.at(-1)) };
+  }
+
+  /**
+   * מטה קסם: האזור בצבע דומה לנקודה — בשכבה הפעילה, או בתמונה כולה (sampleAll). בלי contiguous — כל הפיקסלים
+   * בצבע הזה (טווח צבעים). התוצאה — צורת מסכה בבחירה, עם אותם מצבים (חדשה / הוספה / חיסור).
+   */
+  let wanding = false;
+  async function wand([x, y], mode) {
+    const d = doc(), layer = d.active;
+    const xi = Math.floor(x), yi = Math.floor(y);
+    if (wanding || xi < 0 || yi < 0 || xi >= d.width || yi >= d.height) return;
+    const merged = state.sampleAll || !layer || layer.type === 'group';
+    wanding = true;
+    let px;
+    try {
+      px = merged ? await renderer.readPixels(d, 0, 0, d.width, d.height) : await renderer.readLayerPixels(layer, 0, 0, d.width, d.height);
+    } finally { wanding = false; }
+    if (doc() !== d || fl()) return;
+    const r = (state.contiguous ? floodFill : colorRange)(px, d.width, d.height, xi, yi, state.tolerance);
+    const shape = maskShape(r.mask, d.width, r.box);
+    if (!shape) { if (mode === 'new') setSelection(null, 'ביטול הבחירה'); return; }
+    setSelection(combine(d.selection, shape, mode), mode === 'sub' ? 'חיסור מהבחירה' : mode === 'add' ? 'הוספה לבחירה' : 'מטה קסם');
   }
 
   // ---- הזזה ושינוי צורה ----
@@ -517,6 +544,7 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
       overlay.preview(lassoShape());
       return true;
     }
+    if (state.tool === 'wand') { track(wand(pt, e.shiftKey ? 'add' : e.altKey ? 'sub' : state.selMode)); return true; }
     if (state.tool === 'picker' || (e.altKey && painting())) { track(pick(pt)); return true; }
     if (state.tool === 'bucket') { track(bucket(pt)); return true; }
     const d = doc(), layer = d.active;

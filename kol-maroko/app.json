@@ -1,0 +1,15 @@
+{
+  "id": "kol-maroko",
+  "name": "קול מרוקו",
+  "icon": "🎙️",
+  "icon_svg": "assets/icon.svg",
+  "description": "סטודיו עריכה חזותי לעמוד קול מרוקו באתר מגרב: טקסטים, תמונות, הקלטות ועוזר בינה — טיוטה, ופרסום חתום לאתר.",
+  "category": "web",
+  "entry": "index.html",
+  "gate": true,
+  "restricted": true,
+  "version": "0.1",
+  "public": [
+    "api.php?action=embed_key"
+  ]
+}

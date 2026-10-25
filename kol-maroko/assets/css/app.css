@@ -1,0 +1,24 @@
+/* קול מרוקו — שלד. השפה: phone-first-design. */
+:root {
+  --brand: #b4372f;
+  --bg: #f6f5f3;
+  --surface: #fff;
+  --text: #1d1d1f;
+  --muted: #6b6b70;
+  --line: #e4e2de;
+  --radius: 14px;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #141416; --surface: #1e1e21; --text: #f2f2f4; --muted: #a0a0a8; --line: #2e2e33; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 system-ui, "Segoe UI", Arial, sans-serif; }
+.top { position: sticky; top: 0; display: flex; align-items: center; gap: 10px; padding: 10px 16px;
+  background: var(--surface); border-bottom: 1px solid var(--line); }
+.top h1 { margin: 0; font-size: 18px; }
+.logo { border-radius: 8px; }
+main { max-width: 720px; margin: 0 auto; padding: 16px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
+.card h2 { margin: 0 0 8px; font-size: 17px; }
+.muted { color: var(--muted); font-size: 14px; }

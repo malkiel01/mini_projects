@@ -452,7 +452,7 @@ test('שינוי צורה: הבחירה זזה עם התוכן', () => {
 // ---- קבצים: PNG, ZIP, ORA, ‎.mbe ----
 import { encodePNG, crc32, sha256Hex } from '../assets/js/engine/png.js';
 import { zipStore } from '../assets/js/engine/zip.js';
-import { oraStack, parseOraStack, mbeDocument, gapsFor, mediaRefs, canvasSurface } from '../assets/js/engine/formats.js';
+import { oraStack, parseOraStack, mbeDocument, gapsFor, mediaRefs, canvasSurface, editSurface } from '../assets/js/engine/formats.js';
 import { inflateSync } from 'node:zlib';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
@@ -711,3 +711,64 @@ test('התאמה למסך: המסמך בשטח הפנוי — לא מתחת לפ
   assert.ok(Math.abs(v.x - 16) < 1e-9 || v.x > 16);
 });
 
+test('עמוד של אפליקציה אחרת (pt): נפתח ברזולוציה של הרסטר החד, ונשמר כעמוד ביחידות שלו', () => {
+  const doc = { units: 'pt', surfaces: [{ id: 'gc', type: 'page', size: [225, 150], layers: [
+    { id: 'R1', type: 'raster', src: 'media/a.png', px: [300, 200] },
+    { id: 'R2', type: 'raster', src: 'media/b.png', box: [10, 10, 50, 50], px: [200, 200] },
+  ] }] };
+  const es = editSurface(doc);
+  assert.equal(es.surface.id, 'gc');
+  assert.equal(es.scale, 4, 'הכי חד: 200px על 50pt');
+  assert.equal(editSurface({ units: 'pt', surfaces: [{ id: 'p', type: 'page', size: [595, 842], layers: [] }] }), null, 'מסמך טקסט — אין מה לערוך');
+  assert.ok(Math.abs(editSurface({ units: 'pt', surfaces: [{ id: 'p', type: 'page', size: [75, 75], layers: [{ id: 'x', type: 'raster', src: 'media/c.png' }] }] }).scale - 4 / 3) < 1e-9, 'בלי px — 96dpi');
+  const layers = [{ id: 'R2', name: 'ב', type: 'raster', opacity: 1, blend: 'normal', visible: true, locked: false, mbe: doc.surfaces[0].layers[1] }];
+  const out = mbeDocument({ width: 900, height: 600 }, layers, { document: doc, surfaceId: 'gc', scale: 4 }, () => 'media/n.png');
+  const s = out.surfaces[0];
+  assert.equal(s.type, 'page', 'העמוד נשאר עמוד');
+  assert.deepEqual(s.size, [225, 150], 'ביחידות שלו');
+  assert.equal(s.layers[0].box, undefined, 'המיקום אפוי ל-PNG בגודל העמוד');
+  assert.deepEqual(s.layers[0].px, [900, 600]);
+});
+
+
+// ---- מטה קסם: טווח צבעים ומסכת פיקסלים בבחירה ----
+import { colorRange } from '../assets/js/engine/fill.js';
+import { maskShape, maskOutline, selectionBox as selBox } from '../assets/js/engine/selection.js';
+import { transformShape } from '../assets/js/engine/transform.js';
+
+test('טווח צבעים: כל הצבע בתמונה, גם לא רציף — ו-floodFill רק הרציף', () => {
+  // שני ריבועים אדומים נפרדים על לבן
+  const red = (x, y) => (x <= 1 || x >= 6) && y <= 1;
+  const px = img(8, 4, (x, y) => red(x, y) ? [255, 0, 0, 255] : [255, 255, 255, 255]);
+  const all = colorRange(px, 8, 4, 0, 0, 10);
+  assert.equal(all.count, 8);
+  assert.deepEqual(all.box, [0, 0, 7, 1]);
+  assert.equal(floodFill(px, 8, 4, 0, 0, 10).count, 4);
+  assert.equal(colorRange(px, 8, 4, 9, 0, 10).count, 0, 'מחוץ לתמונה');
+});
+
+test('maskShape: חותך למלבן; ריקה — null', () => {
+  const m = new Uint8Array(6 * 4);
+  m[1 * 6 + 2] = m[2 * 6 + 3] = 255;
+  const s = maskShape(m, 6, [2, 1, 3, 2]);
+  assert.deepEqual([s.type, s.x, s.y, s.w, s.h], ['mask', 2, 1, 2, 2]);
+  assert.deepEqual([...s.data], [255, 0, 0, 255]);
+  assert.equal(maskShape(m, 6, null), null);
+  assert.deepEqual(selBox({ shapes: [{ ...s, op: 'add' }], inverted: false }, 6, 4), [2, 1, 4, 3]);
+});
+
+test('maskOutline: ריבוע 2×2 — ארבעה קטעים מאוחדים; שני פיקסלים באלכסון — שישה (הקווים האמצעיים ממשיכים זה את זה)', () => {
+  const sq = maskOutline({ w: 2, h: 2, data: new Uint8Array([255, 255, 255, 255]) });
+  assert.deepEqual(sq.map(String).sort(), ['0,0,0,2', '0,0,2,0', '0,2,2,2', '2,0,2,2']);
+  assert.equal(maskOutline({ w: 2, h: 2, data: new Uint8Array([255, 0, 0, 255]) }).length, 6);
+});
+
+test('transformShape: מסכה — הזזה שלמה; היפוך אופקי — הפיקסלים מתהפכים', () => {
+  const s = { op: 'add', type: 'mask', x: 10, y: 5, w: 3, h: 1, data: new Uint8Array([255, 0, 0]) };
+  const moved = transformShape(s, [1, 0, 0, 1, 2.4, -1]);
+  assert.deepEqual([moved.x, moved.y, moved.data], [12, 4, s.data]);
+  // היפוך סביב x = 20: x' = 40 − x → המלבן 27..30, והפיקסל הנבחר עובר לקצה הימני
+  const flip = transformShape(s, [-1, 0, 0, 1, 40, 0]);
+  assert.deepEqual([flip.type, flip.x, flip.y, flip.w, flip.h, flip.op], ['mask', 27, 5, 3, 1, 'add']);
+  assert.deepEqual([...flip.data], [0, 0, 255]);
+});

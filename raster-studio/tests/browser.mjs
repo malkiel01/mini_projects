@@ -561,6 +561,67 @@ async function main() {
     await page.screenshot({ path: join(SHOTS, 'select-desktop.png') });
   }
 
+  // ---- מטה קסם ----
+  await openEd(page);
+  await page.waitForFunction(() => window.__rs?.doc);
+  await page.evaluate(() => __rs.setView({ zoom: 1, x: 20, y: 20 }));
+  await page.click('[data-act="add"]');
+  await color('#ff0000');
+  await page.keyboard.press('m');
+  await drag([100, 100], [200, 200]);
+  await drag([400, 100], [500, 200], ['Shift']);
+  await page.keyboard.press('Alt+Backspace');
+  await page.keyboard.press('Control+d');
+  await page.keyboard.press('w');
+  check('W — מטה קסם, עם סבולת, רציף וכל השכבות', await page.evaluate(() => __rs.tools.state.tool) === 'wand'
+    && await page.isVisible('#opt-tolerance') && await page.isVisible('#opt-contiguous') && await page.isVisible('#opt-sample-all'));
+  await setOpt('tolerance', 10);
+  await page.mouse.click(...at(150, 150));
+  await page.evaluate(() => __rs.tools.settle());
+  const wand1 = await page.evaluate(() => { const s = __rs.doc.selection?.shapes[0]; return s && [s.type, s.x, s.y, s.w, s.h].join(); });
+  check('לחיצה — מסכת פיקסלים של הריבוע הרציף בלבד', wand1 === 'mask,100,100,100,100', wand1);
+  check('מטה קסם — רשומה בהיסטוריה', await page.evaluate(() => __rs.history.undoStack.at(-1).label) === 'מטה קסם');
+  await color('#00ff00');
+  await page.keyboard.press('Alt+Backspace');
+  check('מילוי בבחירת המטה: הריבוע הנבחר ירוק, השני נשאר אדום, והלבן בחוץ',
+    near(await px(150, 150), [0, 255, 0, 255]) && near(await px(450, 150), [255, 0, 0, 255]) && near(await px(250, 150), [255, 255, 255, 255]),
+    [await px(150, 150), await px(450, 150), await px(250, 150)].join(' | '));
+  await page.keyboard.press('Control+z');
+  await page.click('#opt-contiguous');
+  await page.mouse.click(...at(150, 150));
+  await page.evaluate(() => __rs.tools.settle());
+  const wand2 = await page.evaluate(() => { const s = __rs.doc.selection.shapes; return s.length + ':' + [s[0].type, s[0].x, s[0].w].join(); });
+  check('בלי "רציף" — טווח צבעים: שני הריבועים, בצורה אחת', wand2 === '1:mask,100,400', wand2);
+  await page.click('#opt-contiguous');
+  await page.keyboard.down('Alt');
+  await page.mouse.click(...at(450, 150));
+  await page.keyboard.up('Alt');
+  await page.evaluate(() => __rs.tools.settle());
+  await page.keyboard.press('Delete');
+  check('Alt+לחיצה — חיסור: מחיקה רק בריבוע שנשאר בבחירה', !near(await px(150, 150), [255, 0, 0, 255]) && near(await px(450, 150), [255, 0, 0, 255]),
+    [await px(150, 150), await px(450, 150)].join(' | '));
+  await page.keyboard.press('Control+z');
+  // השכבה הפעילה שקופה מחוץ לריבועים; "כל השכבות" רואה את הרקע הלבן — אותה תוצאה כאן, ורציף מהלבן לא נכנס לאדום
+  await page.click('#opt-sample-all');
+  await page.mouse.click(...at(300, 300));
+  await page.evaluate(() => __rs.tools.settle());
+  const wand3 = await page.evaluate(() => { const s = __rs.doc.selection.shapes[0]; return [s.x, s.y, s.w, s.h, s.data[150 * s.w + 150], s.data[0]].join(); });
+  check('כל השכבות: הלבן סביב — כל הקנבס, בלי הריבועים', wand3 === '0,0,600,400,0,255', wand3);
+  // בחירת מסכה זזה יחד עם התוכן
+  await page.keyboard.press('Control+d');
+  await page.click('#opt-sample-all');
+  await page.mouse.click(...at(150, 150));
+  await page.evaluate(() => __rs.tools.settle());
+  await page.keyboard.press('v');
+  await drag([150, 150], [170, 160]);
+  await page.keyboard.press('Enter');
+  const wand4 = await page.evaluate(() => { const s = __rs.doc.selection.shapes[0]; return [s.type, s.x, s.y].join(); });
+  check('הזזה — מסכת הבחירה זזה עם התוכן', wand4 === 'mask,120,110' && near(await px(210, 150), [255, 0, 0, 255]) && near(await px(110, 150), [255, 255, 255, 255]), wand4);
+  if (SHOTS) {
+    await page.keyboard.press('w');
+    await page.screenshot({ path: join(SHOTS, 'wand-desktop.png') });
+  }
+
   // ---- הזזה ושינוי צורה ----
   await openEd(page);
   await page.waitForFunction(() => window.__rs?.doc);
@@ -984,6 +1045,32 @@ async function main() {
     return { ok: out.ok, vec: s?.layers[1]?.type, app: new TextDecoder().decode(out.apps('vector-studio').get('state.json') ?? new Uint8Array()) };
   });
   check('‎.mbe זר — אחרי טעינה מהטיוטה: עדיין נשמר הכול', fromDraft.ok && fromDraft.vec === 'vector' && fromDraft.app === '{"z":3}', JSON.stringify(fromDraft));
+  // עמוד של סטודיו העיצוב (kind design, ‏pt, רסטר עם px ותמונה ממוקמת ב-box) — נפתח בפיקסלים ונשמר כעמוד
+  const gc = await page.evaluate(async () => {
+    const { create, save, open, PREVIEW } = await import('./assets/js/mbe/mbe.js');
+    const { encodePNG } = await import('./assets/js/engine/png.js');
+    const solid = (w, h, c) => { const a = new Uint8ClampedArray(w * h * 4); for (let i = 0; i < a.length; i += 4) a.set(c, i); return encodePNG(a, w, h); };
+    const f = create('design', { units: 'pt', color: { space: 'sRGB' }, surfaces: [] });
+    const bg = await f.addMedia(await solid(300, 200, [255, 0, 0, 255]), 'image/png');
+    const sq = await f.addMedia(await solid(100, 100, [0, 0, 255, 255]), 'image/png');
+    const vec = { id: 'T1', type: 'vector', paths: [{ id: 't1', type: 'path', d: 'M0 0 L10 10 Z' }] };
+    f.document.surfaces = [{ id: 'gc-page-1', type: 'page', size: [225, 150], layers: [
+      { id: 'R1', name: 'רקע', type: 'raster', src: bg, px: [300, 200], opacity: 1, blend: 'normal', visible: true, locked: false },
+      { id: 'R2', name: 'ריבוע', type: 'raster', src: sq, box: [75, 37.5, 75, 75], px: [100, 100], opacity: 1, blend: 'normal', visible: true, locked: false },
+      vec,
+    ] }];
+    f.setRendition(PREVIEW, await solid(30, 20, [255, 0, 0, 255]));
+    await __rs.openAsDocument(new File([await save(f, { app: 'greeting-cards' })], 'כרטיס.mbe'));
+    const r = __rs.renderer, d = __rs.doc;
+    const at = async (x, y) => Array.from(await r.readPixels(d, x, y, 1, 1)).join();
+    const opened = { size: [d.width, d.height].join(), bg: await at(10, 10), sq: await at(150, 100), out: await at(95, 100) };
+    const back = await open(await __rs.buildMbe());
+    const s = back.document.surfaces[0];
+    return { ...opened, ok: back.ok, kind: back.kind, type: s.type, ssize: s.size.join(), units: back.document.units,
+      px: s.layers.filter(l => l.type === 'raster').map(l => (l.px || []).join('x') + (l.box ? '+box' : '')).join(), vec: s.layers.some(l => l.id === 'T1' && l.type === 'vector') };
+  });
+  check('עמוד של סטודיו העיצוב — נפתח בגודל הפיקסלים של הרסטר, והתמונה הממוקמת (box) במקומה', gc.size === '300,200' && gc.bg === '255,0,0,255' && gc.sq === '0,0,255,255' && gc.out === '255,0,0,255', JSON.stringify(gc));
+  check('עמוד של סטודיו העיצוב — נשמר כעמוד ב-pt (kind design), הרסטר בגודל העמוד עם px, הווקטורי נשמר', gc.ok && gc.kind === 'design' && gc.type === 'page' && gc.ssize === '225,150' && gc.units === 'pt' && gc.px === '300x200,300x200' && gc.vec, JSON.stringify(gc));
   // קובץ פגום ומסמך שאינו רסטר — הודעה ברורה
   const bad = await page.evaluate(async () => {
     const { create, save, PREVIEW } = await import('./assets/js/mbe/mbe.js');
