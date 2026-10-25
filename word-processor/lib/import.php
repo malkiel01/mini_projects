@@ -1217,8 +1217,9 @@ final class DocxCtx
         // סימן מים: צורת WordArt (VML) עם textpath — כך Word שומר "סימן מים" מותאם. היא לא נחשבת "כותרת מורכבת"
         $wm = $hx->query('//*[local-name()="textpath"][@string]')->item(0);
         if ($wm instanceof DOMElement && $this->watermark === '') $this->watermark = mb_substr(trim($wm->getAttribute('string')), 0, 40);
-        // תמונה בשורה וטבלה — נכנסות לכותרת העשירה; צורה, תמונה צפה, טבלה בתוך טבלה — "כותרת מורכבת" (לדוח)
-        $complex = $hx->query('//w:tbl//w:tbl|//w:drawing[not(wp:inline)]|//w:pict[not(.//*[local-name()="textpath"])]')->length > 0;
+        // תמונה (גם צפה — נייר מכתבים: נכנסת בשורה) וטבלה — נכנסות לכותרת העשירה; צורה, תיבת טקסט, טבלה בתוך טבלה —
+        // "כותרת מורכבת" (לדוח)
+        $complex = $hx->query('//w:tbl//w:tbl|//w:drawing[not(wp:inline)][not(.//a:blip)]|//w:pict[not(.//*[local-name()="textpath"])]')->length > 0;
         return ['text' => $text, 'num' => $num, 'complex' => $complex, 'rich' => $rich ? $blocks : null];
     }
 }

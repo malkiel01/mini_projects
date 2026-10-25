@@ -2079,6 +2079,40 @@ check('‎.mbe מהעימוד, הורדה: המשטחים, השכבות והרק
     && str_contains($mbLFlow, 'שטף אחד שעובר') && !str_contains($mbLFlow, '"image"') && isset($mbLB->apps('layout-studio')['view.json']), $mbLFlow);
 check('‎.mbe: קובץ פגום — הודעה ברורה', throws(fn() => import_mbe(substr($mbBytes, 0, 200), $mbLId), 'bad_file'));
 
+section('EMF / WMF — נייר מכתבים מ-Word (lib/metafile.php)');
+// DIB של 2×2, 24 ביט (שורה — 8 בתים עם ריפוד), מלמטה למעלה: שורה תחתונה כחולה, עליונה אדומה
+$mfDib = pack('VVVvvVVVVVV', 40, 2, 2, 1, 24, 0, 16, 0, 0, 0, 0);
+$mfBits = "\xFF\x00\x00\xFF\x00\x00\0\0" . "\x00\x00\xFF\x00\x00\xFF\0\0";
+$mfHead = pack('VV', 1, 88) . str_repeat("\0", 32) . ' EMF' . str_repeat("\0", 44);
+$mfStretch = fn() => pack('VV', 81, 80 + 40 + 16) . str_repeat("\0", 16) . pack('V6', 0, 0, 0, 0, 2, 2) . pack('V4', 80, 40, 120, 16) . pack('V4', 0, 0xCC0020, 2, 2) . $mfDib . $mfBits;
+$mfEof = pack('VVVVV', 14, 20, 0, 16, 20);
+$mfEmf = $mfHead . $mfStretch() . $mfEof;
+$mfPng = metafile_to_png($mfEmf);
+$mfIm = $mfPng ? imagecreatefrompng('data://image/png;base64,' . base64_encode($mfPng)) : null;
+check('EMF שהוא תמונה אחת → PNG באותו גודל ובאותם צבעים (למעלה אדום, למטה כחול)', $mfIm && imagesx($mfIm) === 2 && imagesy($mfIm) === 2
+    && (imagecolorat($mfIm, 0, 0) & 0xFFFFFF) === 0xFF0000 && (imagecolorat($mfIm, 1, 1) & 0xFFFFFF) === 0x0000FF);
+$mfWmf = pack('vvvVvVv', 1, 9, 0x300, 0, 1, 0, 0)   // META_HEADER (9 מילים)
+    . pack('Vv', (6 + 22 + 56) / 2, 0x0F43) . pack('Vv', 0xCC0020, 0) . pack('v8', 2, 2, 0, 0, 2, 2, 0, 0) . $mfDib . $mfBits . pack('Vv', 3, 0);
+check('WMF שהוא תמונה אחת (META_STRETCHDIB) → PNG', ($w2 = metafile_to_png($mfWmf)) !== null && getimagesizefromstring($w2)[0] === 2);
+check('EMF עם ציור נוסף (קו) — לא מומר (נספר בדוח), וקובץ שאינו EMF — כמו שהוא', metafile_to_png($mfHead . pack('VVVV', 54, 16, 1, 1) . $mfStretch() . $mfEof) === null
+    && metafile_to_png($mfHead . $mfStretch() . $mfStretch() . $mfEof) === null && metafile_to_png('GIF89a') === null);
+$mfDoc = doc_new('a:99', 'נייר מכתבים', null, null, 'u1', 'דנה');
+check('media_store: EMF נשמר כ-PNG', (media_store($mfDoc, $mfEmf)['width'] ?? 0) === 2 && media_of_doc(media_store($mfDoc, $mfEmf)['id'], $mfDoc));
+// docx עם נייר מכתבים: תמונה צפה (wp:anchor) בכותרת העליונה, בפורמט EMF
+$mfAnchor = '<w:p><w:r><w:drawing><wp:anchor behindDoc="0" relativeHeight="1"><wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH>'
+    . '<wp:positionV relativeFrom="page"><wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx="5618480" cy="889635"/><wp:wrapNone/><a:graphic><a:graphicData><a:blip r:embed="rI"/></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r></w:p>';
+$mfDocx = $mkDocx([
+    'word/document.xml' => '<w:document ' . $WN . '><w:body><w:p>' . $run('גוף המכתב') . '</w:p><w:sectPr><w:headerReference w:type="default" r:id="rH"/><w:pgSz w:w="11906" w:h="16838"/></w:sectPr></w:body></w:document>',
+    'word/_rels/document.xml.rels' => '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rH" Target="header1.xml"/></Relationships>',
+    'word/header1.xml' => $hdr('hdr', $mfAnchor),
+    'word/_rels/header1.xml.rels' => '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rI" Target="media/image1.emf"/></Relationships>',
+    'word/media/image1.emf' => $mfEmf,
+]);
+$mfImp = import_docx($mfDocx, $mfDoc);
+$mfHdr = $mfImp['page']['header'][0]['content'][0] ?? [];
+check('docx עם נייר מכתבים (EMF צף בכותרת): התמונה בכותרת העליונה, והדוח ריק', ($mfHdr['type'] ?? '') === 'image' && media_of_doc($mfHdr['attrs']['media'] ?? '', $mfDoc)
+    && ($mfHdr['attrs']['width'] ?? 0) === 590 && $mfImp['report'] === [], json_encode([$mfImp['page']['header'] ?? null, $mfImp['report']], JSON_UNESCAPED_UNICODE));
+
 section('רשימת ציור → PDF (pdf-core: lib/pdf-core/draw.php — לעימוד)');
 require_once __DIR__ . '/../lib/pdf-core/draw.php';
 $dwFont = file_get_contents(__DIR__ . '/../vendor/fonts/pdf/frank-ruhl-libre-hebrew-400-normal.woff');
