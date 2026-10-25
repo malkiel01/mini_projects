@@ -147,9 +147,14 @@ main {
 .category { margin-bottom: var(--s5); }
 .category-title { display: flex; align-items: center; gap: var(--s2); font-size: .82rem; font-weight: 700; color: var(--muted); letter-spacing: .02em; margin: 0 var(--s1) var(--s2); }
 .category-title .n { font-weight: 500; }
-.subcategory { margin-top: var(--s4); }
-.category-title.sub { font-size: .78rem; margin-inline-start: var(--s3); }
-.subcategory > .apps { margin-inline-start: var(--s3); }
+/* תת-קטגוריה: שורה אחת שנפתחים ממנה הילדים — מוזחים, עם קו עץ בצד */
+.group-chev { transition: transform .18s; font-size: 1.1rem; }
+.group.open .group-chev { transform: rotate(180deg); }
+.group.open > .group-head { background: var(--bg); }
+.group-kids { list-style: none; margin: 0; padding: 0 0 var(--s2); margin-inline-start: calc(var(--s3) + 21px);
+    border-inline-start: 2px solid var(--line); background: var(--surface); }
+.group-kids .app { min-height: 56px; border-top: 0; padding-inline-start: var(--s3); }
+.group-kids .app-ic { width: 38px; height: 38px; font-size: 1.25rem; }
 
 /* בטלפון: שורות בתוך מסגרת אחת. במחשב: גריד של כרטיסים. */
 .apps {
@@ -192,6 +197,13 @@ main {
     .app-tx { gap: 4px; }
     .app-tx small { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.45; }
     .app-go { display: none; }
+    .app-go.group-chev { display: block; margin-inline-start: auto; }
+    /* קבוצה פתוחה — תופסת שורה שלמה, והילדים בגריד מתחתיה */
+    .group.open { grid-column: 1 / -1; }
+    .group.open > .group-head { height: auto; min-height: 0; flex-direction: row; align-items: center; }
+    .group-kids { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--s3);
+        padding: var(--s3) 0 0 0; padding-inline-start: var(--s3); background: none; }
+    .group-kids .app { min-height: 120px; padding: var(--s3); border: 1px solid var(--line); }
 }
 .no-results { text-align: center; color: var(--muted); padding: var(--s5) var(--s2); }
 
