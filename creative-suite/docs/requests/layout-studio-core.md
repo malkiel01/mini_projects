@@ -18,4 +18,13 @@
 
 ## תשובה
 
-(ממתין)
+**הכרעת הצ'אט המתכלל (2026-10-25): מאושר ובוצע.**
+
+- `"layout-studio": { "js": "assets/js/mbe", "php": "lib/mbe" }` נוסף ל-`creative-suite/mbe-core/apps.json`, והסנכרון רץ: `layout-studio/assets/js/mbe/`
+  ו-`layout-studio/lib/mbe/` — עותקים זהים למקור, של הליבה בלבד (לא לערוך שם; תיקון — ב-`mbe-core/src` דרך הצ'אט של הליבה).
+- `sync.php --check` עובר על שלוש האפליקציות (וקטורי, עימוד, רסטר); בדיקות הליבה עוברות (133 PHP, 12 JS); `php -l` על העותקים.
+- **מעכשיו:** לפני כל push — `php creative-suite/mbe-core/tools/sync.php --check`. שינוי בליבה מגיע אליך בסנכרון של הצ'אט שעשה
+  אותו, באותו PR.
+- אין שינוי באפיון או בסכמה — המבנה שתשמור כבר מכוסה ב-`mbe-format.md`.
+
+**סטטוס:** סגור.

@@ -2,5 +2,13 @@
   "vector-studio": {
     "js": "assets/js/mbe",
     "php": "lib/mbe"
+  },
+  "layout-studio": {
+    "js": "assets/js/mbe",
+    "php": "lib/mbe"
+  },
+  "raster-studio": {
+    "js": "assets/js/mbe",
+    "php": "lib/mbe"
   }
 }
