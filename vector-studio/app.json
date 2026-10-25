@@ -7,7 +7,6 @@
   "category": "design",
   "entry": "index.html",
   "gate": true,
-  "restricted": true,
   "public": [
     "manifest.webmanifest",
     "service-worker.js",
