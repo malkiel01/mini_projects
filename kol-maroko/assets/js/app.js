@@ -1,4 +1,4 @@
-// קול מרוקו — המעטפת: מי אני, לשוניות, חברים ויומן. הסטודיו נבנה בשלב 2 (docs/spec.md, פרק 13).
+// קול מרוקו — המעטפת: מי אני, לשוניות, חברים ויומן. הסטודיו — studio.js.
 'use strict';
 
 const $ = (s, el = document) => el.querySelector(s);
@@ -84,6 +84,7 @@ function route() {
   const nav = $('#tabs');
   nav.hidden = tabs.length < 2;
   nav.replaceChildren(...tabs.map(t => h('a', { href: '#/' + t.id, 'aria-current': t === cur ? 'page' : null }, t.label)));
+  if (cur.id !== 'studio') Studio.unmount();
   ({ studio: viewStudio, members: viewMembers, log: viewLog })[cur.id]();
 }
 window.addEventListener('hashchange', () => state.user?.role && route());
@@ -96,11 +97,7 @@ function viewGate(icon, title, text) {
 }
 
 function viewStudio() {
-  main.replaceChildren(
-    h('div', { class: 'summary' },
-      h('div', { class: 'line' }, h('b', {}, 'הסטודיו בבנייה')),
-      h('p', { class: 'muted' }, 'עריכת העמוד ', h('span', { dir: 'ltr' }, 'maghreb.co.il/lexicon'), ' תגיע בשלב הבא.')),
-    h('p', { class: 'hint' }, `התפקיד שלך: ${ROLE_NAMES[state.user.role]}.`));
+  Studio.mount(main);
 }
 
 async function viewMembers() {

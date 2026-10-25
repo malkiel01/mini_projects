@@ -69,6 +69,33 @@ function migrate(PDO $pdo): void
             CREATE INDEX idx_audit_at ON audit(at);
             CREATE TABLE settings (k TEXT PRIMARY KEY, v TEXT NOT NULL);
             SQL,
+        // שלב 2: הטיוטה, היסטוריית השמירות ונעילת העריכה (lib/draft.php)
+        2 => <<<'SQL'
+            CREATE TABLE draft (
+                id         INTEGER PRIMARY KEY CHECK (id = 1),
+                json       TEXT NOT NULL,
+                rev        INTEGER NOT NULL,
+                updated_by TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE revisions (
+                id   INTEGER PRIMARY KEY,
+                at   TEXT NOT NULL,
+                ts   INTEGER NOT NULL,
+                sub  TEXT NOT NULL,
+                name TEXT NOT NULL,
+                rev  INTEGER NOT NULL,
+                json TEXT NOT NULL,
+                note TEXT NOT NULL DEFAULT ''
+            );
+            CREATE TABLE edit_lock (
+                id    INTEGER PRIMARY KEY CHECK (id = 1),
+                sub   TEXT NOT NULL,
+                name  TEXT NOT NULL,
+                since INTEGER NOT NULL,
+                beat  INTEGER NOT NULL
+            );
+            SQL,
     ];
     foreach ($steps as $n => $sql) {
         if ($v >= $n) continue;
