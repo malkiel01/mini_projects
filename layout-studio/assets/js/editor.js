@@ -365,8 +365,21 @@ docxInput.addEventListener('change', async () => {
   if (!file || !docxTarget) return;
   toast('קורא את הקובץ…');
   try {
-    const [{ docxToDoc, reportLines }] = await Promise.all([import('./docx.js'), ensureFonts()]);
-    const { doc, report } = await docxToDoc(await file.arrayBuffer());
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const io = await import('./mbe-io.js');
+    let doc, sum, lines;
+    if (io.isMbe(bytes)) {   // ‎.mbe — בדרך כלל של עורך התמלילים: השטף שלו, דרך הליבה
+      const [r] = await Promise.all([io.readTextMbe(bytes), ensureFonts()]);
+      doc = r.doc;
+      lines = io.textReportLines(r.report);
+      sum = `${r.report.paragraphs} פסקאות יובאו מ-"${file.name}"`;
+    } else {
+      const [{ docxToDoc, reportLines }] = await Promise.all([import('./docx.js'), ensureFonts()]);
+      const r = await docxToDoc(bytes);
+      doc = r.doc;
+      lines = reportLines(r.report);
+      sum = `${r.report.paragraphs} פסקאות יובאו מ-"${file.name}"`;
+    }
     if (docxTarget.flowId) changed(setFlow(model, docxTarget.flowId, { doc }));
     else {
       const r = autoflow(model, docxTarget.page, { newId });
@@ -374,12 +387,14 @@ docxInput.addEventListener('change', async () => {
       view.select(docxTarget.page, thread(model, r.flowId)[0]?.frame.id || null);
     }
     // דוח: כמה עבר, ומה לא
-    const lines = reportLines(report);
-    $('#report-sum').textContent = `${report.paragraphs} פסקאות יובאו מ-"${file.name}"` + (lines.length ? '. מה שלא עבר במדויק:' : ' — הכול עבר.');
+    $('#report-sum').textContent = sum + (lines.length ? '. מה שלא עבר במדויק:' : ' — הכול עבר.');
     $('#report-list').replaceChildren(...lines.map(t => Object.assign(document.createElement('li'), { textContent: t })));
     $('#report-dlg').showModal();
   } catch (err) {
-    toast(err.message === 'not_zip' || err.message === 'not_docx' ? 'זה לא קובץ Word (docx)' : 'הייבוא נכשל: ' + err.message, true);
+    const m = err.message;
+    toast(m === 'not_zip' || m === 'not_docx' ? 'זה לא קובץ Word (docx) ולא ‎.mbe'
+      : m === 'no_text' ? 'אין בקובץ הזה טקסט לייבוא'
+      : m.startsWith('mbe_invalid') ? 'קובץ ה-‎.mbe פגום (' + m.slice(12) + ')' : 'הייבוא נכשל: ' + m, true);
   }
 });
 
@@ -628,33 +643,79 @@ async function gzip(str) {
   const cs = new CompressionStream('gzip');
   return new Response(new Blob([str]).stream().pipeThrough(cs)).blob();
 }
+// רשימת הציור → PDF (bytes). זורק Error עם הודעה למשתמש.
+async function makePdf() {
+  await ensureFonts();
+  relayout();
+  const b = bodyStyle(model);
+  const list = drawList(model, text, fontsFor(b.font, b.weight), { title: doc.title });
+  let res;
+  try {
+    res = await fetch('api.php?action=pdf', { method: 'POST', credentials: 'same-origin',
+      headers: { 'X-Layout-Studio': '1', 'Content-Type': 'application/gzip' }, body: await gzip(JSON.stringify(list)) });
+  } catch { throw new Error('אין חיבור לשרת'); }
+  if (!res.ok || res.headers.get('Content-Type') !== 'application/pdf') {
+    const out = await res.json().catch(() => ({}));
+    throw new Error(out.error === 'too_big' ? 'המסמך גדול מדי ל-PDF' : out.detail ? 'ה-PDF לא נוצר: ' + out.detail : 'ה-PDF לא נוצר');
+  }
+  return new Uint8Array(await res.arrayBuffer());
+}
+function download(bytes, type, name) {
+  const url = URL.createObjectURL(new Blob([bytes], { type }));
+  const a = Object.assign(document.createElement('a'), { href: url, download: name });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
 const pdfBtn = $('#pdf-btn');
 pdfBtn.addEventListener('click', async () => {
   pdfBtn.disabled = true;
   toast('מכין PDF…');
   try {
-    await ensureFonts();
-    relayout();
-    const b = bodyStyle(model);
-    const list = drawList(model, text, fontsFor(b.font, b.weight), { title: doc.title });
-    let res;
-    try {
-      res = await fetch('api.php?action=pdf', { method: 'POST', credentials: 'same-origin',
-        headers: { 'X-Layout-Studio': '1', 'Content-Type': 'application/gzip' }, body: await gzip(JSON.stringify(list)) });
-    } catch { throw new Error('אין חיבור לשרת'); }
-    if (!res.ok || res.headers.get('Content-Type') !== 'application/pdf') {
-      const out = await res.json().catch(() => ({}));
-      throw new Error(out.error === 'too_big' ? 'המסמך גדול מדי ל-PDF' : out.detail ? 'ה-PDF לא נוצר: ' + out.detail : 'ה-PDF לא נוצר');
-    }
-    const url = URL.createObjectURL(await res.blob());
-    const a = Object.assign(document.createElement('a'), { href: url, download: (doc.title || 'עימוד') + '.pdf' });
-    document.body.append(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    download(await makePdf(), 'application/pdf', (doc.title || 'עימוד') + '.pdf');
     toast('ה-PDF ירד');
   } catch (e) {
     toast(e.message, true);
   } finally {
     pdfBtn.disabled = false;
+  }
+});
+
+// ---- הורדה כ-‎.mbe: המודל + התמונות + preview + PDF, דרך הליבה; קובץ המקור (אם יש) — נשמר מה שלא שלנו ----
+const loadImg = src => new Promise(ok => {
+  const im = new Image();
+  im.onload = () => ok(im); im.onerror = () => ok(null);
+  im.src = 'api.php?media=' + encodeURIComponent(src.slice(6));
+});
+const mbeBtn = $('#mbe-btn');
+mbeBtn.addEventListener('click', async () => {
+  mbeBtn.disabled = true;
+  toast('מכין קובץ ‎.mbe…');
+  try {
+    const [io, { renderPreview }] = await Promise.all([import('./mbe-io.js'), import('./preview.js'), ensureFonts()]);
+    relayout();
+    const b = bodyStyle(model);
+    const preview = new Uint8Array(await (await renderPreview(model, text, fontsFor(b.font, b.weight), loadImg)).arrayBuffer());
+    let pdf = null;
+    try { pdf = await makePdf(); } catch { /* ה-PDF מומלץ, לא חובה — הקובץ יוצא בלעדיו */ }
+    const srcRes = await fetch('api.php?mbe_source=' + id, { credentials: 'same-origin' }).catch(() => null);
+    const source = srcRes && srcRes.ok ? new Uint8Array(await srcRes.arrayBuffer()) : null;
+    const { bytes } = await io.buildMbe({
+      model, source, preview, pdf,
+      fetchMedia: async path => {
+        const r = await fetch('api.php?media=' + encodeURIComponent(path.slice(6)), { credentials: 'same-origin' });
+        if (!r.ok) throw new Error('תמונה חסרה בשרת');
+        return r.arrayBuffer();
+      },
+    });
+    download(bytes, 'application/vnd.mbe+zip', (doc.title || 'עימוד') + '.mbe');
+    // הקובץ שירד הוא המקור של ההורדה הבאה — כך manifest.id ומה שאחרים כתבו נשארים
+    fetch('api.php?action=mbe_source&id=' + id, { method: 'POST', credentials: 'same-origin',
+      headers: { 'X-Layout-Studio': '1', 'Content-Type': 'application/vnd.mbe+zip' }, body: bytes }).catch(() => {});
+    toast(pdf ? 'הקובץ ירד' : 'הקובץ ירד (בלי PDF — לא נוצר)');
+  } catch (e) {
+    toast('ההורדה נכשלה: ' + e.message, true);
+  } finally {
+    mbeBtn.disabled = false;
   }
 });
 
@@ -674,6 +735,7 @@ pdfBtn.addEventListener('click', async () => {
     ensureFonts().then(relayout).catch(err => toast('הגופנים לא נטענו: ' + err.message, true));
     $('#settings-btn').disabled = false;
     $('#pdf-btn').disabled = false;
+    $('#mbe-btn').disabled = false;
     $('#add-page').disabled = false;
   } catch (e) {
     const el = $('#load-err');

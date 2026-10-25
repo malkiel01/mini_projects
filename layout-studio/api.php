@@ -3,6 +3,8 @@
 // כל בקשה: POST עם JSON {"action": …} וכותרת X-Layout-Studio: 1.
 // תמונות: העלאה — POST ?action=media_upload, גוף = הקובץ עצמו (עם אותה כותרת); הצגה — GET ?media=<sha256>.<ext>.
 // PDF: POST ?action=pdf, גוף = רשימת הציור (JSON דחוס ב-gzip, assets/js/pdf.js) → application/pdf.
+// ‎.mbe: POST ?action=doc_import&name=<שם הקובץ>, גוף = הקובץ → מסמך חדש; POST ?action=mbe_source&id=<מסמך>,
+// גוף = הקובץ שירד (קובץ המקור להורדה הבאה); GET ?mbe_source=<מסמך> → הקובץ, או 404.
 // הכותרת היא ההגנה מ-CSRF: טופס או קישור מאתר אחר לא יכולים להוסיף כותרת משלהם.
 
 require_once __DIR__ . '/lib/auth.php';
@@ -10,6 +12,7 @@ require_once __DIR__ . '/lib/docs.php';
 require_once __DIR__ . '/lib/model.php';
 require_once __DIR__ . '/lib/media.php';
 require_once __DIR__ . '/lib/pdf.php';
+require_once __DIR__ . '/lib/mbeio.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
@@ -28,7 +31,7 @@ function ls_fail(string $code, int $status = 400): never
 }
 
 $method = $_SERVER['REQUEST_METHOD'] ?? '';
-$isMedia = $method === 'GET' && isset($_GET['media']);
+$isMedia = $method === 'GET' && (isset($_GET['media']) || isset($_GET['mbe_source']));
 if ($method !== 'POST' && !$isMedia) ls_fail('method', 405);
 // קריאה (GET של תמונה) לא משנה כלום — בלי כותרת, כדי ש-<img> יוכל לטעון. כל השאר — רק עם הכותרת (CSRF).
 if (!$isMedia && ($_SERVER['HTTP_X_LAYOUT_STUDIO'] ?? '') !== '1') ls_fail('csrf', 403);
@@ -42,7 +45,32 @@ try {
 if (!$me) ls_fail('no_user', 401);
 $uid = (int)$me['id'];
 
+if ($isMedia && isset($_GET['mbe_source'])) {
+    $src = ls_mbe_source_get($uid, (int)$_GET['mbe_source']);
+    if ($src === null) { http_response_code(404); exit; }
+    header('Content-Type: application/vnd.mbe+zip');
+    header('Content-Length: ' . strlen($src));
+    header("Content-Security-Policy: default-src 'none'");
+    echo $src;
+    exit;
+}
 if ($isMedia) ls_media_send($uid, (string)$_GET['media']);
+
+if (in_array($_GET['action'] ?? '', ['doc_import', 'mbe_source'], true)) {
+    @ini_set('memory_limit', '512M');
+    try {
+        $body = file_get_contents('php://input') ?: '';
+        if ($_GET['action'] === 'doc_import') ls_out(['ok' => true, 'doc' => ls_mbe_import($uid, $body, (string)($_GET['name'] ?? ''))]);
+        ls_mbe_source_put($uid, (int)($_GET['id'] ?? 0), $body);
+        ls_out(['ok' => true]);
+    } catch (InvalidArgumentException $e) {
+        $code = $e->getMessage();
+        ls_fail($code, match (true) { $code === 'not_found' => 404, $code === 'too_big' => 413, default => 400 });
+    } catch (Throwable $e) {
+        error_log('layout-studio: ' . $e->getMessage());
+        ls_fail('server', 500);
+    }
+}
 
 if (($_GET['action'] ?? '') === 'media_upload') {
     try {
