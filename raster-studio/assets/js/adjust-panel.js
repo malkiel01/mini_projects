@@ -54,6 +54,7 @@ export function createAdjustPanel({ root, doc, renderer, history, onChange, draw
     const d = doc(), layer = d?.active;
     if (!layer) return;
     if (layer.type === 'group') { toast('בחרו שכבה בתוך הקבוצה — תיקון חל על שכבה', true); return; }
+    if (layer.foreign) { toast(`שכבה של אפליקציה אחרת (${layer.foreign.type}) — לא נערכת כאן`, true); return; }
     if (layer.locked) { toast('השכבה נעולה — 🔓 בלוח השכבות', true); return; }
     if (!layer.visible) { toast('השכבה מוסתרת — 👁️ בלוח השכבות', true); return; }
     beforeOpen?.();

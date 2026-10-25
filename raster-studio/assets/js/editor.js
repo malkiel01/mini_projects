@@ -17,6 +17,7 @@ import { exportPNG, exportJPG, exportORA, download, fileName } from './export.js
 import { saveDraft, loadDraft, restoreDraft } from './draft.js';
 import { gapsFor, parseOraStack } from './engine/formats.js';
 import { unzip } from './engine/unzip.js';
+import { buildMbe, openMbe, sniffZip, MbeOpenError } from './mbe-io.js';
 
 const $ = s => document.querySelector(s);
 const stage = $('#stage');
@@ -174,9 +175,33 @@ async function openOra(blob) {
   setDoc(d);
 }
 
-/** מסמך חדש מקובץ: בגודל התמונה, והתמונה — השכבה היחידה (ORA — עם כל השכבות). */
+/** ‎.mbe: השכבות, הקבוצות ומצב התצוגה; מה שלא שלנו נשמר לשמירה הבאה */
+async function openMbeFile(blob) {
+  const { doc: d, view: v, warnings } = await openMbe(renderer, await blob.arrayBuffer(), baseName(blob.name));
+  setDoc(d);
+  if (v) {
+    if (Number.isFinite(v.zoom) && Number.isFinite(v.x) && Number.isFinite(v.y)) setView({ zoom: V.clampZoom(v.zoom), x: v.x, y: v.y });
+    if (typeof v.tool === 'string') tools.setTool(v.tool);
+    if (typeof v.color === 'string') tools.setColor(v.color);
+  }
+  const foreign = d.rasters().filter(l => l.foreign).length;
+  if (foreign) toast(`${foreign} שכבות של אפליקציות אחרות — נשמרות כמו שהן, ולא מוצגות כאן`);
+  else if (warnings.length) toast('נפתח, עם הערות: ' + warnings.map(w => w.message).join(' · '));
+}
+
+/** מצב התצוגה — נשמר ב-‎.mbe (apps/raster-studio/view.json) */
+const viewState = () => ({ zoom: view.zoom, x: view.x, y: view.y, tool: tools.state.tool, color: tools.state.color });
+
+/** מסמך חדש מקובץ: בגודל התמונה, והתמונה — השכבה היחידה (ORA ו-‎.mbe — עם כל השכבות). */
 async function openAsDocument(blob) {
-  if (isOra(blob)) {
+  const zip = await sniffZip(blob);
+  if (zip === 'mbe' || (!zip && /\.mbe$/i.test(blob.name || ''))) {
+    await openMbeFile(blob);
+    history_replace('?draft=local');
+    scheduleDraft(0);
+    return;
+  }
+  if (zip === 'ora' || isOra(blob)) {
     await openOra(blob);
     history_replace('?draft=local');
     scheduleDraft(0);
@@ -273,7 +298,7 @@ addEventListener('beforeunload', e => { if (changed) { flushDraft(); e.preventDe
 const exportDlg = $('#export-dlg');
 $('#export-btn').addEventListener('click', () => {
   tools.commitFloat(); tools.commitText(); adjust.close();
-  const g = ['png', 'ora'].flatMap(k => gapsFor(k, doc.layers).map(x => k.toUpperCase() + ': ' + GAP_TEXT[x]));
+  const g = ['png', 'ora'].flatMap(k => gapsFor(k, doc.layers).map(x => k.toUpperCase() + ': ' + gapText(x)));
   $('#export-gaps').textContent = g.length ? 'שימו לב — ' + g.join(' · ') : '';
   exportDlg.showModal();
 });
@@ -283,6 +308,10 @@ const GAP_TEXT = {
   'blend-space:linear → srgb': 'GIMP / Krita ממזגים ב-sRGB — שכבות שקופות ומצבי מיזוג עשויים להיראות מעט שונה',
   'alpha → white': 'בלי שקיפות',
 };
+const gapText = x => {
+  const m = /^layer:(.+) → omitted$/.exec(x);
+  return GAP_TEXT[x] ?? (m ? `שכבות ${m[1]} של אפליקציה אחרת לא נכנסות (ב-‎.mbe הן נשמרות)` : x);
+};
 exportDlg.addEventListener('click', async e => {
   if (e.target.closest('[data-close]')) { exportDlg.close(); return; }
   const b = e.target.closest('[data-export]');
@@ -290,13 +319,15 @@ exportDlg.addEventListener('click', async e => {
   const kind = b.dataset.export;
   b.setAttribute('aria-busy', 'true');
   try {
-    const blob = kind === 'png' ? await exportPNG(renderer, doc) : kind === 'jpg' ? await exportJPG(renderer, doc) : await exportORA(renderer, doc);
+    const blob = kind === 'png' ? await exportPNG(renderer, doc) : kind === 'jpg' ? await exportJPG(renderer, doc)
+      : kind === 'mbe' ? new Blob([await buildMbe(renderer, doc, { view: viewState() })], { type: 'application/vnd.mbe+zip' })
+      : await exportORA(renderer, doc);
     download(blob, fileName(doc.title, kind));
     exportDlg.close();
     toast('ירד: ' + fileName(doc.title, kind));
   } catch (err) {
     console.error(err);
-    toast('ההורדה נכשלה', true);
+    toast('ההורדה נכשלה' + (err.issues?.length ? ': ' + err.issues.map(i => i.code).join(', ') : ''), true);
   } finally {
     b.removeAttribute('aria-busy');
   }
@@ -543,7 +574,7 @@ $('#hint').textContent = coarse ? 'צביטה — זום' : 'גרירה — הז
     (window.requestIdleCallback || setTimeout)(() => { measurePerf().then(draw, err => console.warn('perf', err)); }, { timeout: 2000 });
   } catch (e) {
     const code = e.message;
-    showMsg(code === 'no_file' ? 'לא נבחרה תמונה. חזרו לרשימה ופתחו תמונה או צרו חדשה.' : errText(code), true);
+    showMsg(code === 'no_file' ? 'לא נבחרה תמונה. חזרו לרשימה ופתחו תמונה או צרו חדשה.' : errText(code) + (e.detail ? ' — ' + e.detail : ''), true);
   }
 })();
 
@@ -567,4 +598,5 @@ window.__rs = {
   get budget() { return budget; },
   get perf() { return perfCache; },
   measurePerf,
+  buildMbe: opts => buildMbe(renderer, doc, { view: viewState(), ...opts }),
 };

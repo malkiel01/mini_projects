@@ -6,7 +6,7 @@
  * אחרי שינוי ברשימת השלד — להעלות את CACHE_VERSION.
  */
 
-const CACHE_VERSION = 'raster-studio-v2';
+const CACHE_VERSION = 'raster-studio-v3';
 
 const SHELL = [
   './index.html',
@@ -39,6 +39,13 @@ const SHELL = [
   './assets/js/engine/zip.js',
   './assets/js/engine/unzip.js',
   './assets/js/engine/formats.js',
+  './assets/js/mbe-io.js',
+  './assets/js/mbe/mbe.js',
+  './assets/js/mbe/canonical.js',
+  './assets/js/mbe/schema.js',
+  './assets/js/mbe/schemas.js',
+  './assets/js/mbe/zip.js',
+  './assets/js/mbe/vendor/fflate.js',
 ];
 
 self.addEventListener('install', (event) => {

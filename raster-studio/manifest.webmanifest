@@ -25,7 +25,8 @@
         "image/png": [".png"],
         "image/jpeg": [".jpg", ".jpeg"],
         "image/webp": [".webp"],
-        "image/openraster": [".ora"]
+        "image/openraster": [".ora"],
+        "application/vnd.mbe+zip": [".mbe"]
       }
     }
   ],
