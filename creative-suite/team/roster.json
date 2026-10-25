@@ -13,7 +13,7 @@
       "owns": ["creative-suite/mbe-core/ (חוץ מ-apps.json ו-schema/)"],
       "does": "הספרייה שקוראת, כותבת ומאמתת ‎.mbe ב-JS וב-PHP, והסנכרון לאפליקציות" },
     { "role": "word-processor", "name": "עורך התמלילים", "session": "session_017KKsWRcifACujfzwHe4n3H",
-      "owns": ["word-processor/"],
+      "owns": ["word-processor/", "creative-suite/pdf-core/"],
       "does": "עורך בסגנון Word; ‎.mbe מסוג text; מנוע ה-PDF שהעימוד מחכה לו" },
     { "role": "raster", "name": "עיצוב רסטר", "session": "session_015VvPDp3j9unKW83bB6sFMA",
       "owns": ["raster-studio/"],
