@@ -164,6 +164,24 @@ function migrate(PDO $pdo): void
         6 => <<<'SQL'
             ALTER TABLE uploads ADD COLUMN purpose TEXT NOT NULL DEFAULT 'file';
             SQL,
+        // שלב 7: עוזר הבינה — כל קריאה (request_id) ומכסה לכל חבר (lib/ai.php)
+        7 => <<<'SQL'
+            CREATE TABLE ai_usage (
+                request_id    TEXT PRIMARY KEY,
+                sub           TEXT NOT NULL,
+                name          TEXT NOT NULL DEFAULT '',
+                at            TEXT NOT NULL,
+                model         TEXT NOT NULL,
+                input_tokens  INTEGER NOT NULL DEFAULT 0,
+                output_tokens INTEGER NOT NULL DEFAULT 0,
+                status        TEXT NOT NULL CHECK (status IN ('pending','ok','refused','error')),
+                prompt        TEXT NOT NULL DEFAULT '',
+                error         TEXT,
+                reported_at   TEXT
+            );
+            CREATE INDEX idx_ai_usage_sub_at ON ai_usage(sub, at);
+            ALTER TABLE members ADD COLUMN ai_quota INTEGER;
+            SQL,
     ];
     foreach ($steps as $n => $sql) {
         if ($v >= $n) continue;

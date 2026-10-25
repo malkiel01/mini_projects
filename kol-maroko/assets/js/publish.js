@@ -155,7 +155,8 @@ const Publish = (() => {
         h('a', { class: 'btn ghost', href: DOCS + 'install.md', target: '_blank', rel: 'noopener' }, '📘 מדריך התקנה'),
         h('a', { class: 'btn ghost', href: DOCS + 'cloudflare.md', target: '_blank', rel: 'noopener' }, '☁️ Cloudflare')),
       ping,
-      importBlock(host, imp.imported));
+      importBlock(host, imp.imported),
+      aiBlock(host));
   }
 
   function copyBtn(text) {
@@ -196,6 +197,34 @@ const Publish = (() => {
       h('p', { class: 'hint' }, 'כל התוכן, ההקלטות והעיצוב של העמוד היום — לטיוטה, לעריכה. בוורדפרס: הגדרות ← קול מרוקו ← "⬇️ ייצוא העמוד", ואת הקובץ שירד מעלים כאן.'),
       last ? h('p', { class: 'hint' }, `ייבוא אחרון: ${when(last.at)} · ${last.meta?.url || ''}`) : null,
       input, h('button', { type: 'button', class: 'btn primary', onclick: () => input.click() }, '📥 העלאת קובץ הייצוא'), ups, result);
+  }
+
+  function aiBlock(host) {
+    const box = h('section', {}, h('h2', { class: 'sec-title' }, '✨ עוזר הבינה'), h('p', { class: 'empty' }, 'טוען…'));
+    api('ai_admin').then(d => {
+      const s = d.secret.anthropic_api_key;
+      const key = h('input', { type: 'password', dir: 'ltr', autocomplete: 'off', placeholder: s.set ? `מוגדר ${s.hint}` : 'sk-ant-…' });
+      const quota = h('input', { type: 'number', min: 0, step: 10000, dir: 'ltr', value: d.quota_default });
+      const k = n => n >= 1000 ? Math.round(n / 1000) + 'K' : String(n);
+      box.replaceChildren(
+        h('h2', { class: 'sec-title' }, '✨ עוזר הבינה'),
+        h('p', { class: 'hint' }, `המודל: ${d.model}. המפתח נשמר רק בשרת, ולא חוזר לדפדפן לעולם.`),
+        h('div', { class: 'toolbar' }, h('label', { class: 'f', style: 'flex:1' }, h('span', {}, s.set ? `מפתח API · מוגדר ${s.hint}` : 'מפתח API של Anthropic'), key),
+          h('button', { type: 'button', class: 'btn ghost', style: 'align-self:end', onclick: async () => {
+            if (!key.value.trim() && !confirm('להסיר את המפתח? העוזר יפסיק לעבוד.')) return;
+            try { await api('secret_set', { key: 'anthropic_api_key', value: key.value }); toast('נשמר'); Publish.settings(host); } catch (e) { toast(e.message, true); }
+          } }, 'שמירה')),
+        h('div', { class: 'toolbar' }, h('label', { class: 'f', style: 'flex:1' }, h('span', {}, 'מכסה לחודש לכל חבר (טוקנים)'), quota),
+          h('button', { type: 'button', class: 'btn ghost', style: 'align-self:end', onclick: async () => {
+            try { await api('ai_quota_set', { tokens: +quota.value }); toast('נשמר'); } catch (e) { toast(e.message, true); }
+          } }, 'שמירה')),
+        h('p', { class: 'hint' }, 'מכסה אישית — במסך החברים. לבעלים אין מכסה.'),
+        d.month.length ? h('ul', { class: 'list' }, d.month.map(m => h('li', { class: 'card' },
+          h('div', { class: 'body' }, h('div', { class: 'l1' }, h('span', {}, m.name || 'בלי שם'), h('span', { class: 't' }, `${k(+m.tokens)} טוקנים`)),
+            h('div', { class: 'l2' }, `${m.calls} בקשות החודש`)))))
+          : h('p', { class: 'hint' }, 'עוד לא היה שימוש החודש.'));
+    }).catch(e => box.replaceChildren(h('p', { class: 'error' }, e.message)));
+    return box;
   }
 
   return { view, settings };

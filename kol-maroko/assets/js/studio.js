@@ -552,6 +552,70 @@ parent.postMessage({kol:'ready'},'*');
     return h('div', { class: 'f' }, h('span', {}, 'הטקסט'), h('div', { class: 'rte-box' }, bar, ed));
   }
 
+  // ── עוזר הבינה: בקשה → הצעה (תצוגה + מה השתנה) → החלה ──
+  async function aiSheet() {
+    if (S.readonly) { toast('הטיוטה בעריכה אצל מישהו אחר', true); return; }
+    const body = h('div', { class: 'ai' }, h('p', { class: 'empty' }, 'טוען…'));
+    sheet('✨ עוזר הבינה', body);
+    let st;
+    try { st = await api('ai_status'); } catch (e) { body.replaceChildren(h('p', { class: 'error' }, e.message)); return; }
+    if (!st.ready) { body.replaceChildren(h('p', { class: 'empty' }, 'העוזר עוד לא מחובר. בעל המערכת מגדיר את המפתח ב-⚙️ הגדרות.')); return; }
+    const f = S.sel && find(S.sel);
+    const ids = f ? (f.kind === 'widget' ? [f.w.id] : f.sec.columns.flatMap(c => c.widgets.map(w => w.id))) : [];
+    const prompt = h('textarea', { rows: 4, maxlength: 4000, placeholder: 'למשל: "תקצר את הפסקה הראשונה", "תוסיף כותרת מעל ההקלטות", "תתקן שגיאות כתיב"' });
+    const only = h('input', { type: 'checkbox', checked: !!ids.length });
+    const quota = h('p', { class: 'hint' }, quotaLine(st.used, st.quota));
+    const go = h('button', { type: 'button', class: 'btn primary' }, '✨ הצעה');
+    const out = h('div', { class: 'ai-out' });
+    go.onclick = async () => {
+      if (prompt.value.trim().length < 3) { prompt.focus(); return; }
+      go.disabled = true; out.replaceChildren(h('p', { class: 'hint' }, 'חושב… (עד דקה)'));
+      try {
+        await saveNow();
+        const r = await api('ai_suggest', { prompt: prompt.value, only: only.checked ? ids : [] });
+        quota.textContent = quotaLine(r.usage.used, r.usage.quota);
+        showSuggestion(r, out);
+      } catch (e) { out.replaceChildren(h('p', { class: 'error' }, e.message)); }
+      go.disabled = false;
+    };
+    body.replaceChildren(...[
+      h('p', { class: 'hint' }, 'כתבו מה לשנות בעמוד. העוזר מציע — אתם רואים את התוצאה ומחליטים. שום דבר לא נשמר בלי "החלה".'),
+      h('label', { class: 'f' }, h('span', {}, 'הבקשה'), prompt),
+      ids.length ? h('label', { class: 'switch' }, only, h('span', {}, f.kind === 'widget' ? `רק על הרכיב שנבחר (${TYPES[f.w.type].label})` : 'רק על הפס שנבחר')) : null,
+      go, quota, out].filter(Boolean));
+    prompt.focus();
+  }
+
+  function quotaLine(used, quota) {
+    const k = n => n >= 1000 ? Math.round(n / 1000) + 'K' : String(n);
+    return quota == null ? `החודש: ${k(used)} טוקנים (בלי מכסה)` : `החודש: ${k(used)} מתוך ${k(quota)} טוקנים`;
+  }
+
+  async function showSuggestion(r, out) {
+    const OPS = { update: '✏️ שינוי', add: '➕ הוספה', remove: '➖ מחיקה', move: '↕️ הזזה' };
+    const frame = h('iframe', { class: 'ver-frame', sandbox: 'allow-scripts', title: 'התוצאה המוצעת' });
+    const apply = h('button', { type: 'button', class: 'btn primary', disabled: !r.applied.length }, '✓ החלה');
+    apply.onclick = () => {
+      const page = r.page;
+      page.sections.forEach(s => s.columns.forEach(c => c.widgets.forEach(w => { if (Array.isArray(w.style)) w.style = {}; if (Array.isArray(w.props)) w.props = {}; })));
+      mutate(() => { S.page = page; });
+      fixSel(); $('#sheet').close(); toast('הוחל · ↶ לביטול');
+    };
+    out.replaceChildren(...[
+      h('div', { class: 'summary' }, h('b', {}, r.summary || 'בלי הסבר')),
+      r.applied.length ? h('ul', { class: 'diff' }, r.applied.map(a => h('li', {}, `${OPS[a.op] || a.op}: ${TYPES[a.type]?.label || a.type}`)))
+        : h('p', { class: 'hint' }, 'אין שינויים להחיל.'),
+      r.skipped.length ? h('div', { class: 'warnbox' }, h('b', {}, 'לא בוצע:'), h('ul', {}, r.skipped.map(x => h('li', {}, x.why)))) : null,
+      h('div', { class: 'row-btns' }, apply, h('button', { type: 'button', class: 'btn ghost', onclick: () => out.replaceChildren() }, '✕ לא')),
+      r.applied.length ? frame : null,
+    ].filter(Boolean));
+    if (!r.applied.length) return;
+    try {
+      const v = await api('render', { page: r.page });
+      frame.srcdoc = `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><style>body{margin:0;font-family:system-ui,Arial,sans-serif}${v.css.replace(/<\/style/gi, '')}</style></head><body>${v.html}</body></html>`;
+    } catch (e) { frame.replaceWith(h('p', { class: 'error' }, e.message)); }
+  }
+
   // ── גיליונות: הוספה, מבנה, היסטוריה, הגדרות ─────────────
   function addSheet() {
     const tile = (type, icon, label) => h('button', { type: 'button', class: 'tile', onclick: () => { $('#sheet').close(); add(type); } },
@@ -660,6 +724,7 @@ parent.postMessage({kol:'ready'},'*');
       h('div', { class: 'st-bar' },
         btn('add', h('span', {}, h('span', { 'aria-hidden': 'true' }, '+'), ' רכיב'), 'הוספת רכיב', addSheet, 'btn primary'),
         btn('undo', '↶', 'ביטול', undo), btn('redo', '↷', 'חזרה', redo),
+        btn('ai', '✨', 'עוזר הבינה', aiSheet),
         btn('tree', '🧱', 'מבנה העמוד', structureSheet), btn('hist', '🕘', 'היסטוריה', historySheet), btn('set', '⚙️', 'הגדרות העמוד', settingsSheet),
         device, h('span', { class: 'chip st-status' })),
       h('div', { class: 'st-banner', role: 'status', hidden: true }),

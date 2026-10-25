@@ -172,14 +172,21 @@ function requestSheet(r) {
 
 function memberSheet(m) {
   const role = roleSelect(m.role);
+  const quota = h('input', { type: 'number', min: 0, step: 10000, dir: 'ltr', value: m.ai_quota ?? '', placeholder: 'ברירת המחדל' });
   const dlg = sheet(m.name || m.email,
     h('dl', { class: 'cells' },
       h('div', {}, h('dt', {}, 'מייל'), h('dd', { dir: 'ltr', class: 'one' }, m.email || '—')),
       h('div', {}, h('dt', {}, 'נוסף'), h('dd', {}, when(m.added_at))),
       h('div', {}, h('dt', {}, 'כניסה אחרונה'), h('dd', {}, m.last_seen ? when(m.last_seen) : '—'))),
     h('label', { class: 'f' }, h('span', {}, 'תפקיד'), role),
+    h('label', { class: 'f' }, h('span', {}, '✨ מכסת בינה לחודש (טוקנים) — ריק: ברירת המחדל'), quota),
     h('div', { class: 'row-btns' },
-      h('button', { type: 'button', class: 'btn primary', onclick: async () => { if (await act('member_set', { id: m.id, role: role.value }, 'נשמר')) dlg.close(); } }, 'שמירה'),
+      h('button', { type: 'button', class: 'btn primary', onclick: async () => {
+        try {
+          await api('ai_quota_set', { member: m.id, tokens: +quota.value || 0, inherit: quota.value === '' });
+        } catch (e) { toast(e.message, true); return; }
+        if (await act('member_set', { id: m.id, role: role.value }, 'נשמר')) dlg.close();
+      } }, 'שמירה'),
       h('button', {
         type: 'button', class: 'btn ghost danger', onclick: async () => {
           if (confirm(`להסיר את ${m.name || m.email} מהכלי?`) && await act('member_remove', { id: m.id }, 'הוסר')) dlg.close();

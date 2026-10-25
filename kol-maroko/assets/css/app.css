@@ -238,7 +238,8 @@ body.studio-on main { max-width: none; padding: 0; }
     .st-side { display: grid; overflow-y: auto; padding: var(--s3); background: var(--surface); border-inline-start: 1px solid var(--line); }
     .st-device { display: flex; margin-inline-start: var(--s2); }
 }
-@media (max-width: 380px) { .st-bar [data-a=redo] { display: none; } }
+@media (max-width: 440px) { .st-bar [data-a=redo] { display: none; } .st-bar .icon-btn { min-width: 36px; } .st-bar { gap: 2px; padding-inline: 6px; } .st-bar .btn.primary { padding: 0 8px; } }
+@media (max-width: 340px) { .st-bar .icon-btn { min-width: 32px; font-size: 1rem; } .st-status { padding: 0 6px; } }
 
 /* ===== קבצים ===== */
 .thumb { flex: none; inline-size: 40px; block-size: 40px; border-radius: 8px; object-fit: cover; background: var(--bg); display: grid; place-items: center; }
@@ -299,3 +300,5 @@ body.studio-on main { max-width: none; padding: 0; }
 .summary .btn { justify-self: start; }
 .endpoint { overflow-wrap: anywhere; text-align: left; }
 .row-btns.wrap .btn { flex: 1 1 auto; }
+.ai, .ai-out { display: grid; gap: var(--s3); }
+.ai-out:empty { display: none; }

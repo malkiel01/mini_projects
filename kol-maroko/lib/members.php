@@ -10,7 +10,7 @@ function members_state(?array $owner = null): array
 {
     $pdo = db();
     return [
-        'members' => $pdo->query('SELECT id, sub IS NOT NULL AS joined, email, name, role, added_at, last_seen FROM members ORDER BY name, email')->fetchAll(),
+        'members' => $pdo->query('SELECT id, sub IS NOT NULL AS joined, email, name, role, added_at, last_seen, ai_quota FROM members ORDER BY name, email')->fetchAll(),
         'requests' => $pdo->query('SELECT sub, name, email, at FROM access_requests ORDER BY at DESC LIMIT 50')->fetchAll(),
         'roles' => ROLES,
     ];
