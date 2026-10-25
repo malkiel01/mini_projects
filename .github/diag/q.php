@@ -1,30 +1,20 @@
 <?php
-// זמני: למה הרשימה / הניהול נשברו אחרי #776 (מיקומים וקבוצות). מריץ את הקוד האמיתי ולוכד שגיאות.
-$out = [];
-try {
-    $ro = new PDO('sqlite:platform/data/platform.sqlite', null, null, [PDO::SQLITE_ATTR_OPEN_FLAGS => PDO::SQLITE_OPEN_READONLY]);
-    $out['tables'] = $ro->query("SELECT name, sql FROM sqlite_master WHERE type='table' AND name IN ('grants','groups','placements','app_placed','seeded_groups')")->fetchAll(PDO::FETCH_ASSOC);
-    foreach (['groups','placements','app_placed','seeded_groups'] as $t) {
-        try { $out['rows'][$t] = $ro->query("SELECT * FROM $t")->fetchAll(PDO::FETCH_ASSOC); } catch (Throwable $e) { $out['rows'][$t] = 'ERR ' . $e->getMessage(); }
-    }
-    $out['grants_kinds'] = $ro->query("SELECT kind, COUNT(*) n FROM grants GROUP BY kind")->fetchAll(PDO::FETCH_ASSOC);
-    $out['sqlite'] = $ro->query('SELECT sqlite_version()')->fetchColumn();
-    $out['diag_recent'] = $ro->query("SELECT at, event, app, user_id, path, info FROM diag_log WHERE at >= strftime('%Y-%m-%dT%H:%M:%SZ','now','-30 minutes') ORDER BY id DESC LIMIT 40")->fetchAll(PDO::FETCH_ASSOC);
-} catch (Throwable $e) { $out['ro_error'] = $e->getMessage(); }
-try {
-    require 'platform/lib/access.php';
-    $admin = ['id' => 1, 'role' => 'admin', 'status' => 'active'];
-    $v = visible_for($admin);
-    $out['admin_apps'] = count($v['apps']);
-    $out['admin_groups'] = $v['groups'];
-    $out['admin_cats'] = array_column($v['categories'], 'id');
-    $out['sample'] = array_map(fn($a) => [$a['id'], $a['placements']], array_slice($v['apps'], 0, 40));
-    foreach ($ro->query("SELECT id, role, status FROM users WHERE role <> 'admin'")->fetchAll(PDO::FETCH_ASSOC) as $u) {
-        try { $out['users'][$u['id']] = array_column(visible_for($u + ['id' => (int)$u['id']])['apps'], 'id'); }
-        catch (Throwable $e) { $out['users'][$u['id']] = 'ERR ' . $e->getMessage(); }
-    }
-} catch (Throwable $e) { $out['code_error'] = get_class($e) . ': ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine(); }
-foreach (['error_log', 'platform/error_log', 'platform/lib/error_log'] as $f) {
-    if (is_file($f)) $out['errlog'][$f] = array_slice(file($f, FILE_IGNORE_NEW_LINES), -40);
-}
+// זמני: מה זמין לכלי חדש בשרת — PHP, מגבלות, הרחבות, Node, HTTPS החוצה, נפח. בלי נתוני משתמשים.
+$sh = fn($c) => trim((string)@shell_exec($c . ' 2>&1'));
+$out = [
+    'php' => PHP_VERSION, 'sapi_cli' => PHP_SAPI,
+    'ini_cli' => array_combine($k = ['upload_max_filesize','post_max_size','memory_limit','max_execution_time','max_input_time','allow_url_fopen','disable_functions'], array_map('ini_get', $k)),
+    'ext' => array_values(array_intersect(get_loaded_extensions(), ['pdo_sqlite','sqlite3','pdo_mysql','mysqli','curl','openssl','sodium','gd','imagick','fileinfo','zip','mbstring','intl','exif','xml','dom'])),
+    'sqlite' => class_exists('SQLite3') ? SQLite3::version()['versionString'] : null,
+    'node' => $sh('command -v node; node -v'), 'npm' => $sh('command -v npm'), 'python3' => $sh('python3 -V'),
+    'ffmpeg' => $sh('command -v ffmpeg'), 'crontab' => $sh('crontab -l | head -3 | sed "s/[A-Za-z0-9]\{20,\}/…/g"'),
+    'disk' => $sh('df -h . | tail -1'), 'quota' => $sh('quota -s 2>/dev/null | tail -2'),
+    'du_platform_data' => $sh('du -sh platform/data | cut -f1'),
+];
+// מגבלות ה-PHP של השרת (לא CLI): מה .user.ini / php.ini של האתר קובעים
+foreach (['.user.ini', 'php.ini', '.htaccess'] as $f) if (is_file($f)) $out['root_' . $f] = array_values(array_filter(file($f, FILE_IGNORE_NEW_LINES), fn($l) => preg_match('/upload|post_max|memory|php_value|execution/i', $l)));
+$ch = curl_init('https://api.anthropic.com/v1/models'); curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 8, CURLOPT_NOBODY => true]);
+curl_exec($ch); $out['https_out_anthropic'] = curl_getinfo($ch, CURLINFO_HTTP_CODE) ?: curl_error($ch);
+$ch = curl_init('https://maghreb.co.il/'); curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 8, CURLOPT_NOBODY => true]);
+curl_exec($ch); $out['https_out_maghreb'] = curl_getinfo($ch, CURLINFO_HTTP_CODE) ?: curl_error($ch);
 echo json_encode($out, JSON_UNESCAPED_UNICODE);
