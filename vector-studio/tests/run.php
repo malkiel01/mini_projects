@@ -104,6 +104,16 @@ try {
     $cc = createDrawing($a, ['name' => 'מקובץ', 'doc' => $doc, 'container' => base64_encode($mbe)]);
     check('container תקין — נשמר וחוזר', drawingContainer($a, $cc['id']) === $mbe && getDrawing($a, $cc['id'])['container'] === true);
     check('בלי container — false', getDrawing($a, $c['id'])['container'] === false);
+    // תמונות בציור
+    $pngB = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==');
+    $m1 = putMedia($a, base64_encode($pngB));
+    check('תמונה — src לפי sha256', $m1['src'] === 'media/' . hash('sha256', $pngB) . '.png');
+    check('אותה תמונה פעמיים — אותו src, שורה אחת', putMedia($a, base64_encode($pngB))['src'] === $m1['src'] && (int) db()->query('SELECT COUNT(*) FROM media')->fetchColumn() === 1);
+    check('קריאה חזרה — הבתים והסוג', getMedia($a, $m1['src']) === [$pngB, 'image/png']);
+    check('משתמש אחר — לא רואה', getMedia(getUser((int) $d['id']), $m1['src']) === null);
+    check('src עם נתיב זר — null', getMedia($a, '../data/x.png') === null);
+    check('לא תמונה — נדחה', throws(fn () => putMedia($a, base64_encode('<svg/>')), 400));
+    check('JPEG ו-WebP — מזוהים', imageExt("\xFF\xD8\xFF\xE0xx") === 'jpg' && imageExt('RIFF0000WEBPVP8 ') === 'webp');
     deleteDrawing($a, $cc['id']);
     deleteDrawing($a, $c['id']);
     check('מחיקה — הגרסאות נמחקות איתו', listDrawings($a) === [] && (int) db()->query('SELECT COUNT(*) FROM drawing_versions')->fetchColumn() === 0);

@@ -3,7 +3,7 @@
 
 import { parse, bbox } from './geometry/path.js';
 import { isIdentity } from './geometry/matrix.js';
-import { isGroup, isText } from './model.js';
+import { isGroup, isText, isImage } from './model.js';
 import { textToD } from './outline.js';
 import { frameItem } from './text.js';
 import { drawable } from './gradient.js';
@@ -29,6 +29,11 @@ export async function prepare(doc, surfaceId, getFont, getImage = null, backgrou
       gaps.add(`gradient:${g.type} → צבע אחיד`);
       const { gradient, ...rest } = item.fill;
       item = { ...item, fill: { ...rest, color: g.stops?.[0]?.color || '#000000' } };
+    }
+    if (isImage(item)) {
+      const img = getImage ? await getImage(item.src) : null;
+      if (!img) gaps.add('image — התמונה חסרה, לא נכללה');
+      return { ...item, img };
     }
     if (isText(item)) {
       gaps.add('text → outlines');
@@ -112,8 +117,13 @@ function svgItem(item, indent, defs) {
   if (isGroup(item)) {
     return `${indent}<g id="${esc(item.id)}">\n${(item.children || []).map(c => svgItem(c, indent + '  ', defs)).join('')}${indent}</g>\n`;
   }
-  if (!item.d) return '';
   const t = item.transform && !isIdentity(item.transform) ? ` transform="matrix(${item.transform.map(r).join(' ')})"` : '';
+  if (isImage(item)) {
+    if (!item.img) return '';
+    const [x, y, w, h] = item.box, op = (item.opacity ?? 1) < 1 ? ` opacity="${r(item.opacity)}"` : '';
+    return `${indent}<image id="${esc(item.id)}" x="${r(x)}" y="${r(y)}" width="${r(w)}" height="${r(h)}" preserveAspectRatio="none" href="${esc(item.img.href)}" xlink:href="${esc(item.img.href)}"${op}${t}/>\n`;
+  }
+  if (!item.d) return '';
   const label = item.label ? ` aria-label="${esc(item.label)}"` : '';
   return `${indent}<path id="${esc(item.id)}" d="${esc(item.d)}" ${svgStyle(item, defs)}${t}${label}/>\n`;
 }
@@ -131,7 +141,8 @@ export function toSVG(prepared) {
       : items.map(i => svgItem(i, '    ', defs)).join('');
     body += `  <g id="${esc(layer.id)}" data-name="${esc(layer.name || '')}"${op}>\n${inner}  </g>\n`;
   }
-  const xlink = layers.some(l => l.image) ? ' xmlns:xlink="http://www.w3.org/1999/xlink"' : '';
+  const hasImg = (it) => isImage(it) || (isGroup(it) && (it.children || []).some(hasImg));
+  const xlink = layers.some(l => l.image || l.items?.some(hasImg)) ? ' xmlns:xlink="http://www.w3.org/1999/xlink"' : '';
   const head = `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg"${xlink} width="${r(w)}pt" height="${r(h)}pt" viewBox="0 0 ${r(w)} ${r(h)}">\n`;
   return head + (defs.length ? `  <defs>\n    ${defs.join('\n    ')}\n  </defs>\n` : '') + body + '</svg>\n';
 }
@@ -214,6 +225,10 @@ export function toPDF(pages) {
     const emit = (item, alpha) => {
       if (item.hidden) return;
       if (isGroup(item)) { for (const c of item.children || []) emit(c, alpha); return; }
+      if (isImage(item)) {
+        if (item.img) image({ image: item.img, box: item.box, opacity: alpha * (item.opacity ?? 1), transform: item.transform });
+        return;
+      }
       if (!item.d) return;
       const fill = item.fill?.color || item.fill?.gradient ? item.fill : null;
       const st = item.stroke?.color && (item.stroke.width ?? 1) > 0 ? item.stroke : null;
@@ -245,12 +260,13 @@ export function toPDF(pages) {
       ops.push('Q');
     };
     /** תמונה (רסטר של אפליקציה אחרת): XObject עם מסכה רכה לשקיפות. בלוח y למטה — לכן ההיפוך במטריצה. */
-    const image = ({ image: im, box, opacity }) => {
+    const image = ({ image: im, box, opacity, transform }) => {
       const smask = im.alpha ? add(`<< /Type /XObject /Subtype /Image /Width ${im.w} /Height ${im.h} /ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /FlateDecode /Length ${im.alpha.length} >>\nstream\n${bin(im.alpha)}\nendstream`) : 0;
       const ref = add(`<< /Type /XObject /Subtype /Image /Width ${im.w} /Height ${im.h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode${smask ? ` /SMask ${smask} 0 R` : ''} /Length ${im.rgb.length} >>\nstream\n${bin(im.rgb)}\nendstream`);
       const name = 'Im' + (xobjs.length + 1);
       xobjs.push(`/${name} ${ref} 0 R`);
       ops.push('q');
+      if (transform && !isIdentity(transform)) ops.push(`${transform.map(r).join(' ')} cm`);
       if (opacity < 1) ops.push(`/${gsName(opacity, opacity)} gs`);
       ops.push(`${r(box[2])} 0 0 ${r(-box[3])} ${r(box[0])} ${r(box[1] + box[3])} cm`, `/${name} Do`, 'Q');
     };

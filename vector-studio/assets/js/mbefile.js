@@ -30,10 +30,11 @@ function usedFonts(doc) {
  * opts: { doc, base: Uint8Array | null, getFont, fontBytes(file) → Uint8Array, preview(surface, maxPx) → Uint8Array (PNG),
  *         getImage(src) — תמונות של שכבות מאפליקציות אחרות לייצוגים (export.prepare),
  *         getBackground(surfaceId) — עמוד המקור של לוח (מסמך של אפליקציה אחרת), extraPages — עמודי PDF עודפים שלו,
- *         sourcePdf — ה-PDF של המקור: נשמר ב-apps/vector-studio/, כי הייצוג document.pdf מוחלף כאן בשלנו }
+ *         sourcePdf — ה-PDF של המקור: נשמר ב-apps/vector-studio/, כי הייצוג document.pdf מוחלף כאן בשלנו,
+ *         mediaBytes(src) — הבתים של תמונה בתוך הציור (פריט image) שעוד אין בקובץ }
  * מחזיר { bytes, gaps }.
  */
-export async function buildMbe({ doc, base = null, getFont, fontBytes, preview, getImage = null, getBackground = null, extraPages = [], sourcePdf = null }) {
+export async function buildMbe({ doc, base = null, getFont, fontBytes, preview, getImage = null, getBackground = null, extraPages = [], sourcePdf = null, mediaBytes = null }) {
   const f = base ? await open(base) : create('vector', doc);
   if (base && !f.ok) throw new Error('הקובץ המקורי פגום: ' + f.issues.filter(i => i.level === 'error').map(i => i.message).join(' · '));
   const document = JSON.parse(JSON.stringify(doc));
@@ -56,6 +57,15 @@ export async function buildMbe({ doc, base = null, getFont, fontBytes, preview, 
 
   const gaps = new Set();
   if (sourcePdf) f.setApp(APP, KEEP, sourcePdf);
+  // תמונות בתוך הציור: הבתים נכנסים ל-media/ באותו שם (sha256) — הליבה רושמת אותם ב-manifest
+  for (const { path } of objects(document)) {
+    for (const p of leaves(path)) {
+      if (p.type !== 'image' || !p.src || f.files.has(p.src)) continue;
+      const bytes = mediaBytes ? await mediaBytes(p.src) : null;
+      if (!bytes) throw new Error('תמונה בציור לא נטענה — נסו שוב בעוד רגע');
+      f.files.set(p.src, bytes);
+    }
+  }
   const bg = async (id) => (getBackground ? getBackground(id) : null);
   const first = await prepare(document, document.surfaces[0].id, getFont, getImage, await bg(document.surfaces[0].id));
   first.gaps.forEach(g => gaps.add(g));

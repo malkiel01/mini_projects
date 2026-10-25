@@ -93,7 +93,7 @@ async function boot() {
     return;
   }
   history.replaceState(null, '', '#d' + S.id);
-  if (S.container) S.mediaReady = loadMedia();
+  S.mediaReady = loadMedia();
   // גיבוי שנשאר במכשיר משמירה שנכשלה — חדש יותר ממה שבשרת? מציעים לשחזר
   const backup = drafts.loadBackup(S.id);
   if (backup?.doc && backup.rev === S.rev && JSON.stringify(backup.doc) !== JSON.stringify(S.doc)
@@ -113,13 +113,15 @@ async function loadMedia() {
   const srcs = new Set();
   const walk = (layers) => { for (const l of layers || []) { if (l.src) srcs.add(l.src); if (l.children) walk(l.children); } };
   for (const s of S.doc.surfaces) walk(s.layers);
-  const paged = needsPages(S.doc);
+  for (const { path } of objects(S.doc)) for (const p of leaves(path)) if (p.type === 'image' && p.src) srcs.add(p.src);
+  const paged = S.container && needsPages(S.doc);
   if (!srcs.size && !paged) return;
   try {
     const { open } = await import('./mbe/mbe.js');
-    const f = await open(await library.container(S.id));
+    const f = S.container ? await open(await library.container(S.id)) : null;
     for (const src of srcs) {
-      const bytes = f.getMedia(src);
+      // מה-‎.mbe המקורי, ואם אין שם — תמונה שהועלתה לציור הזה
+      const bytes = f?.getMedia(src) || await library.media(src);
       if (!bytes) continue;
       try { S.media.set(src, await createImageBitmap(new Blob([bytes]))); } catch { /* לא תמונה — מסגרת אפורה */ }
     }
@@ -135,6 +137,47 @@ async function loadMedia() {
       toast(`מסמך של אפליקציה אחרת — ${S.pageImgs.length} עמודים כמו שהיא ציירה אותם. אפשר לצייר מעליהם; את הטקסט עורכים שם.`);
     }
   } catch (e) { toast('התמונות של הקובץ לא נטענו: ' + e.message, true); }
+}
+
+/** תמונה מהמכשיר או מהלוח → מועלית לשרת (לפי sha256) ונכנסת כאובייקט באמצע המסך, עד 80% מהלוח. */
+async function placeImage(file) {
+  if (!/^image\/(png|jpeg|webp)$/.test(file.type)) { toast('רק PNG, JPG או WebP', true); return; }
+  if (file.size > 12 * 1024 * 1024) { toast('התמונה גדולה מדי (מעל 12MB)', true); return; }
+  status('מעלה תמונה…');
+  try {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const [src, bmp] = await Promise.all([library.putMedia(bytes), createImageBitmap(new Blob([bytes]))]);
+    S.media.set(src, bmp);
+    const r = stage.getBoundingClientRect();
+    const [cx, cy] = toWorld(r.width / 2, r.height / 2);
+    const surface = surfaceAt(cx, cy);
+    const [ox, oy] = layout(S.doc).get(surface.id);
+    const k = Math.min(1, surface.size[0] * 0.8 / bmp.width, surface.size[1] * 0.8 / bmp.height);
+    const w = Math.round(bmp.width * k * 100) / 100, h = Math.round(bmp.height * k * 100) / 100;
+    // באמצע המסך, אבל בתוך הלוח
+    const x = Math.max(0, Math.min(surface.size[0] - w, cx - ox - w / 2)), y = Math.max(0, Math.min(surface.size[1] - h, cy - oy - h / 2));
+    let id = null;
+    change(() => {
+      id = nextId(S.doc, 'i');
+      targetLayer(surface).paths.push({ id, type: 'image', src, box: [x, y, w, h].map(v => Math.round(v * 100) / 100) });
+    });
+    setTool('select');
+    select([id]);
+    status(dirty ? 'לא נשמר…' : 'נשמר');
+  } catch (e) {
+    status('');
+    toast('התמונה לא נכנסה: ' + e.message, true);
+  }
+}
+
+/** "יחס מקורי": הגובה לפי הרוחב, ביחס של התמונה עצמה. */
+function imageRatio(item) {
+  const bmp = S.media.get(item.src);
+  if (!bmp) return;
+  change(() => {
+    const o = findPath(S.doc, item.id);
+    if (o) o.path.box[3] = Math.round(o.path.box[2] * bmp.height / bmp.width * 100) / 100;
+  });
 }
 
 function showName() {
@@ -439,11 +482,12 @@ function updatePanel() {
       if (h) surface.size[1] = h;
     }),
     action: (a) => a === 'delete' ? removeSelection() : a === 'edit-text' ? openTextEditor(picked[0].path.id)
+      : a === 'image-ratio' ? imageRatio(picked[0].path)
       : a === 'copy' ? copySelection() : a === 'paste' ? (clipboardItems() && pasteItems(clipboardItems())) : duplicateSelection(),
     canPaste: !!clipboardItems(),
     fonts: FONTS, relayout,
     // התיבה של נתיב במרחב שלו (בלי היסט הלוח) — לנקודות של מעבר צבע
-    pathBox: (p) => (p.type === 'text' ? p.box : (() => { try { return bbox(parse(p.d)) || [0, 0, 1, 1]; } catch { return [0, 0, 1, 1]; } })()),
+    pathBox: (p) => (p.box && (p.type === 'text' || p.type === 'image') ? p.box : (() => { try { return bbox(parse(p.d)) || [0, 0, 1, 1]; } catch { return [0, 0, 1, 1]; } })()),
     arrange: (a, arg) => arrangeAction(a, arg),
     surfaces: S.doc.surfaces,
     boards: (a, id) => boardAction(a, id),
@@ -716,6 +760,9 @@ document.addEventListener('copy', (e) => { if (!e.target.closest?.('input, texta
 document.addEventListener('cut', (e) => { if (!e.target.closest?.('input, textarea') && copySelection(true)) e.preventDefault(); });
 document.addEventListener('paste', async (e) => {
   if (e.target.closest?.('input, textarea') || !S.doc) return;
+  // תמונה מהלוח (צילום מסך, "העתק תמונה") — נכנסת לציור
+  const img = [...(e.clipboardData?.files || [])].find(f => /^image\/(png|jpeg|webp)$/.test(f.type));
+  if (img) { e.preventDefault(); placeImage(img); return; }
   const text = e.clipboardData?.getData('text/plain') || '';
   if (/^\s*(<\?xml[^>]*>\s*)?(<!--[\s\S]*?-->\s*)?<svg[\s>]/i.test(text)) {
     e.preventDefault();
@@ -1474,6 +1521,7 @@ async function doExport(kind) {
         fontBytes: async (file) => new Uint8Array(await (await fetch('assets/fonts/' + file)).arrayBuffer()),
         preview: (surface, max) => pngOf(surface, Math.min(max / surface.size[0], max / surface.size[1], 4), true),
         getImage: exportImage, getBackground: exportPage, extraPages: await extraPdfPages(), sourcePdf: S.sourcePdf || null,
+        mediaBytes: (src) => library.media(src),
       });
       gaps = r.gaps;
       download(new Blob([r.bytes], { type: 'application/vnd.mbe+zip' }), fileName('mbe'));
@@ -1545,6 +1593,12 @@ $('doc-name').addEventListener('click', () => {
 });
 document.querySelectorAll('[data-export]').forEach(b => b.addEventListener('click', () => doExport(b.dataset.export)));
 $('imp-svg').addEventListener('click', () => $('imp-file').click());
+$('imp-image').addEventListener('click', () => $('image-file').click());
+$('image-file').addEventListener('change', () => {
+  const f = $('image-file').files[0];
+  $('image-file').value = '';
+  if (f) { $('file-dlg').close(); placeImage(f); }
+});
 $('open-mbe').addEventListener('click', () => $('mbe-file').click());
 $('mbe-file').addEventListener('change', async () => {
   const f = $('mbe-file').files[0];

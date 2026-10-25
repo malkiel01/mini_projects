@@ -498,6 +498,35 @@ try {
   if (shots) { fs.writeFileSync(`${shots}/export.svg`, svgOut.buf); fs.writeFileSync(`${shots}/export.pdf`, pdfOut.buf); fs.writeFileSync(`${shots}/export.png`, pngOut.buf); }
   step('ייצוא SVG, PDF ו-PNG (×2), טקסט כקווי מתאר');
 
+  // תמונה בתוך הציור: מהמכשיר → עולה לשרת, אובייקט בלוח (בתוך 80%), אטימות ויחס מקורי, וביטול
+  const imgPng = `${os.tmpdir()}/vs-img-${process.pid}.png`;
+  fs.writeFileSync(imgPng, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAIAAAB7QOjdAAAADUlEQVR4nGP4z8AARAAI/gH/xp559wAAAABJRU5ErkJggg==', 'base64'));
+  const nImg = (await st()).paths.length;
+  await page.click('#file-btn');
+  const [ich] = await Promise.all([page.waitForEvent('filechooser'), page.click('#imp-image')]);
+  await ich.setFiles(imgPng);
+  await page.waitForFunction((n) => window.__vs.S.doc.surfaces[0].layers[0].paths.length === n + 1, nImg);
+  s = await st();
+  const im = s.paths[s.paths.length - 1];
+  assert.equal(im.type, 'image');
+  assert.match(im.src, /^media\/[0-9a-f]{64}\.png$/);
+  assert.deepEqual(s.sel, [im.id]);
+  assert.ok(Math.abs(im.box[2] / im.box[3] - 2) < 0.01 && im.box[2] <= 1080 * 0.8 + 0.01, 'יחס 2:1, עד 80% מהלוח: ' + im.box);
+  assert.equal(await page.textContent('#props-body h2'), 'תמונה');
+  await page.fill('[data-io]', '50'); await page.press('[data-io]', 'Enter');
+  assert.equal((await st()).paths.find(p => p.id === im.id).opacity, 0.5);
+  await page.evaluate((id) => { const p = window.__vs.S.doc.surfaces[0].layers[0].paths.find(x => x.id === id); p.box[3] = 10; }, im.id);
+  await page.click('[data-act="image-ratio"]');
+  const ib = (await st()).paths.find(p => p.id === im.id).box;
+  assert.ok(Math.abs(ib[2] / ib[3] - 2) < 0.01, 'יחס מקורי: ' + ib);
+  const isvg = (await grab('svg')).buf.toString('utf8');
+  assert.match(isvg, new RegExp(`<image id="${im.id}" [^>]*href="data:image/png;base64,`));
+  const imbe = await (await import('../assets/js/mbe/mbe.js')).open(new Uint8Array((await grab('mbe')).buf));
+  assert.equal(imbe.ok, true, JSON.stringify(imbe.issues));
+  assert.ok(imbe.media().some(m => m.path === im.src), 'התמונה ב-media/ של הקובץ');
+  fs.unlinkSync(imgPng);
+  step('תמונה בתוך הציור: מהמכשיר, אובייקט בלוח, אטימות ויחס מקורי, ב-SVG וב-‎.mbe');
+
   // ייבוא SVG: צורות, תורשת סגנון, טרנספורמציה, viewBox; מה שלא נתמך — בדוח
   const before = (await st()).paths.length;
   await page.click('#file-btn');
@@ -553,6 +582,8 @@ try {
   const docBefore = await page.evaluate(() => JSON.stringify(window.__vs.S.doc));
   await page.reload();
   await page.waitForFunction(() => window.__vs?.S.doc);
+  // התמונה שבציור — נטענת מהשרת
+  await page.waitForFunction(() => [...window.__vs.S.media.keys()].some(k => /^media\/[0-9a-f]{64}\.png$/.test(k)), null, { timeout: 10000 });
   assert.equal(await page.evaluate(() => JSON.stringify(window.__vs.S.doc)), docBefore, 'המסמך חזר מהשרת זהה');
   assert.equal(await page.evaluate(() => location.hash), '#d' + savedId);
   // שינוי שם מהכותרת

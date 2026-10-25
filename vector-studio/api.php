@@ -3,6 +3,7 @@
  * API של וקטורי. בקשה אחת = action אחד (ב-query או בגוף ה-JSON).
  *
  * me — מי נכנס. הספרייה: list, get, create, save, delete, thumb (GET, PNG), container (GET, ‎.mbe המקורי), versions, restore.
+ * תמונות בציור: media_put (POST, base64 → { src }), media (GET ?src=media/<sha>.<ext>).
  * כתיבה רק ב-POST עם Content-Type: application/json — טופס מאתר אחר לא יכול לשלוח כזה בלי preflight.
  */
 
@@ -26,7 +27,7 @@ $raw = file_get_contents('php://input');
 $in = is_string($raw) && $raw !== '' ? (json_decode($raw, true) ?: []) : [];
 $action = $_GET['action'] ?? (is_string($in['action'] ?? null) ? $in['action'] : '');
 
-const WRITES = ['create', 'save', 'delete', 'restore'];
+const WRITES = ['create', 'save', 'delete', 'restore', 'media_put'];
 
 try {
     if (in_array($action, WRITES, true)) {
@@ -58,6 +59,16 @@ try {
             if ($b === null) { http_response_code(404); exit; }
             header('Content-Type: application/vnd.mbe+zip');
             echo $b;
+            exit;
+        }
+        case 'media_put':
+            reply(['success' => true] + putMedia(requireUser(), $in['data'] ?? null));
+        case 'media': {
+            $m = getMedia(requireUser(), (string) ($_GET['src'] ?? ''));
+            if ($m === null) { http_response_code(404); exit; }
+            header('Content-Type: ' . $m[1]);
+            header('Cache-Control: private, max-age=31536000, immutable'); // לפי sha — לא משתנה לעולם
+            echo $m[0];
             exit;
         }
         case 'thumb': {

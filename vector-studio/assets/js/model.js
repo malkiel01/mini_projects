@@ -72,6 +72,10 @@ export function layout(doc) {
 
 export const isGroup = (item) => item?.type === 'group';
 export const isText = (item) => item?.type === 'text';
+/** תמונה בתוך הציור: { type: "image", src: "media/<sha>.<ext>", box: [x y w h], opacity? } — נמתחת לתיבה. */
+export const isImage = (item) => item?.type === 'image';
+/** פריט שמוגדר בתיבה (טקסט, תמונה) — לא ב-d. */
+export const isBoxed = (item) => isText(item) || isImage(item);
 
 /** הפריט וכל הצאצאים שלו (קבוצות ונתיבים). */
 export function* tree(item) {
@@ -108,7 +112,7 @@ export function pathMatrix(path, offset) {
 /** תיבה חוסמת במרחב העבודה — של נתיב או של קבוצה. */
 export function worldBox(item, offset) {
   if (isGroup(item)) return unionBox([...leaves(item)].map(p => worldBox(p, offset)));
-  if (isText(item)) {
+  if (isBoxed(item)) {
     const [x, y, w, h] = item.box, m = pathMatrix(item, offset);
     const pts = [[x, y], [x + w, y], [x + w, y + h], [x, y + h]].map(([px, py]) => apply(m, px, py));
     const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
@@ -142,11 +146,17 @@ export function applyMatrix(path, m) {
   }
   // בלי סיבוב — הזזה וגודל נאפים לצורה (כדי שהמתאר לא יימתח). בצורה חיה ובטקסט ההיפוך לבדו נשאר ב-transform
   // (מראה סביב הראשית) — כוכב הפוך נשאר כוכב שאפשר לערוך, וגם אחרי ההיפוך שינוי גודל משנה את התיבה.
-  const live = path.shape || isText(path);
+  const live = path.shape || isBoxed(path);
   const flip = live && (total[0] < 0 || total[3] < 0) ? [total[0] < 0 ? -1 : 1, 0, 0, total[3] < 0 ? -1 : 1, 0, 0] : null;
   if (flip) path.transform = flip; else delete path.transform;
   m = flip ? multiply(flip, total) : total;
   if (isText(path)) { transformText(path, m); return; }
+  if (isImage(path)) {
+    const [x, y, w, h] = path.box;
+    const [ax, ay] = apply(m, x, y), [bx, by] = apply(m, x + w, y + h);
+    path.box = [Math.min(ax, bx), Math.min(ay, by), Math.abs(bx - ax), Math.abs(by - ay)].map(r3);
+    return;
+  }
   // מעבר צבע — הנקודות שלו במרחב הנתיב, והן זזות איתו
   for (const k of ['fill', 'stroke']) {
     const g = path[k]?.gradient;
