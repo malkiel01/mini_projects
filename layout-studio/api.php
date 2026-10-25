@@ -2,12 +2,14 @@
 // ה-API של העימוד. פעולות: me, docs_list, doc_create, doc_get, doc_save, doc_delete.
 // כל בקשה: POST עם JSON {"action": …} וכותרת X-Layout-Studio: 1.
 // תמונות: העלאה — POST ?action=media_upload, גוף = הקובץ עצמו (עם אותה כותרת); הצגה — GET ?media=<sha256>.<ext>.
+// PDF: POST ?action=pdf, גוף = רשימת הציור (JSON דחוס ב-gzip, assets/js/pdf.js) → application/pdf.
 // הכותרת היא ההגנה מ-CSRF: טופס או קישור מאתר אחר לא יכולים להוסיף כותרת משלהם.
 
 require_once __DIR__ . '/lib/auth.php';
 require_once __DIR__ . '/lib/docs.php';
 require_once __DIR__ . '/lib/model.php';
 require_once __DIR__ . '/lib/media.php';
+require_once __DIR__ . '/lib/pdf.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
@@ -51,6 +53,26 @@ if (($_GET['action'] ?? '') === 'media_upload') {
         error_log('layout-studio: ' . $e->getMessage());
         ls_fail('server', 500);
     }
+}
+
+if (($_GET['action'] ?? '') === 'pdf') {
+    @set_time_limit(120);
+    @ini_set('memory_limit', '512M');
+    try {
+        $pdf = ls_pdf($uid, file_get_contents('php://input') ?: '');
+    } catch (InvalidArgumentException $e) {
+        $code = $e->getMessage();
+        if ($code === 'too_big') ls_fail('too_big', 413);
+        if ($code === 'bad_list') ls_fail('bad_list');
+        ls_out(['ok' => false, 'error' => 'pdf', 'detail' => $code], 400);   // של pdf-core: מה חסר ואיפה
+    } catch (Throwable $e) {
+        error_log('layout-studio: ' . $e->getMessage());
+        ls_fail('server', 500);
+    }
+    header('Content-Type: application/pdf');
+    header('Content-Length: ' . strlen($pdf));
+    echo $pdf;
+    exit;
 }
 
 $in = json_decode(file_get_contents('php://input') ?: '', true);
