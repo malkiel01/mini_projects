@@ -238,9 +238,12 @@ async function trashView() {
     load();
 }
 
+// מסמכים שנוצרו בלשונית הזו ב"+ מסמך": יוצאים מהם בלי שהוקלד בהם דבר — לא נשארים ברשימה (my_discard; השרת בודק שוב)
+const freshDocs = new Set();
 async function newDoc() {
     try {
         const r = await api('my_new', { title: 'מסמך חדש', folder: currentFolder });
+        freshDocs.add(r.doc);
         location.hash = '#/d/' + r.doc;
     } catch (e) { toast(e.message, true); }
 }
@@ -570,6 +573,10 @@ async function closeDoc() {
     if (canSave(cur)) api('my_lock', { doc: cur.id, op: 'release' }).catch(() => {});
     cur.ed?.destroy();
     main.classList.remove('editor-main');
+    // מסמך חדש שיצאו ממנו בלי לכתוב בו — נמחק (לפני שהרשימה נטענת, כדי שלא יופיע בה)
+    if (freshDocs.delete(cur.id) && !cur.deleted) {
+        try { if ((await api('my_discard', { doc: cur.id })).discarded) { drafts.del(`app:${me.id}:${cur.id}`); toast('מסמך ריק — לא נשמר'); } } catch { /* נשאר — לא נורא */ }
+    }
 }
 
 // סגירת לשונית / ניווט החוצה: הטיוטה כבר במכשיר; מנסים לשמור, משחררים את הנעילה, ומבקשים מהדפדפן לשאול
@@ -579,6 +586,9 @@ window.addEventListener('beforeunload', e => {
 window.addEventListener('pagehide', () => {
     const cur = current;
     if (!canSave(cur)) return;
+    // סגירת הלשונית על מסמך חדש וריק — גם הוא לא נשאר
+    if (freshDocs.has(cur.id) && !cur.saver?.dirty) fetch('api.php?action=my_discard', { method: 'POST', keepalive: true, credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-WP': '1', 'X-Tab': tab }, body: JSON.stringify({ doc: cur.id }) }).catch(() => {});
     fetch('api.php?action=my_lock', { method: 'POST', keepalive: true, credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json', 'X-WP': '1', 'X-Tab': tab },
         body: JSON.stringify({ doc: cur.id, op: 'release' }) }).catch(() => {});

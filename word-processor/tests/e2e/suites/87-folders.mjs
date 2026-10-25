@@ -28,6 +28,10 @@ export default async function (t) {
     await p.click('.toolbar button:has-text("מסמך")');
     await p.waitForSelector('.wp-doc');
     const inside = p.url().split('#/d/')[1];
+    // כותבים בו — מסמך חדש שיוצאים ממנו ריק לא נשאר (קבוצה 95)
+    await p.click('.wp-doc');
+    await p.keyboard.type('חוזה');
+    await t.settle(p);
     await p.click('button[aria-label="חזרה לרשימה"]');
     await p.waitForSelector('.list');
     await p.goto(t.editor + '#/');

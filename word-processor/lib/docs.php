@@ -203,6 +203,20 @@ function doc_set_page(array $row, $page, string $userId, string $userName, $base
     return doc_save($row, doc_json($row), null, $userId, $userName, $base, page_normalize($page, doc_page($row)));
 }
 
+/** מסמך שנוצר ולא נכתב בו דבר: לא נשמר מאז שנוצר (גרסה 1), בשם ההתחלתי, בלי תמונות ובלי שיתוף. */
+function doc_untouched(array $row): bool
+{
+    if ((int)$row['version'] !== 1 || !in_array((string)$row['title'], ['', 'מסמך חדש'], true)) return false;
+    foreach (['SELECT 1 FROM media WHERE doc = ?', 'SELECT 1 FROM shares WHERE doc = ?', 'SELECT 1 FROM links WHERE doc = ?'] as $q) {
+        $st = db()->prepare($q . ' LIMIT 1');
+        $st->execute([$row['id']]);
+        $hit = $st->fetchColumn();
+        $st->closeCursor();
+        if ($hit) return false;
+    }
+    return true;
+}
+
 function doc_rename(array $row, string $title): void
 {
     db()->prepare('UPDATE docs SET title = ? WHERE id = ?')->execute([clean_title($title), $row['id']]);
