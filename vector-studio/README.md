@@ -94,6 +94,7 @@ assets/js/pen.js         העט ועריכת הנקודות
 assets/js/arrange.js     קבוצות, סדר הצגה, יישור ופיזור, שכבות (טהור — נבדק ב-node)
 assets/js/gradient.js    מעבר צבע ישר ועגול: נקודות לפי זווית / מרכז ורדיוס, ציור בקנבס
 assets/js/marks.js       עוגני ניקוד מטבלת GPOS של הגופן (opentype.js לא קורא אותם) — לקווי המתאר
+assets/js/freehand.js    עיפרון ומברשת: פישוט (RDP), החלקה לבזייה, עובי לפי לחץ / מהירות, קו מתאר של מברשת
 assets/js/snap.js        הצמדה לקצוות ולמרכזים של לוחות ואובייקטים, ורשת 10pt
 assets/js/text.js        טקסט: שורות, גלישה, מדידה (מוזרקת מהעורך), שינוי גודל
 assets/js/outline.js     טקסט → קווי מתאר (opentype.js), וסדר חזותי לעברית (bidi מקוצר)
@@ -108,6 +109,7 @@ tests/geometry.test.mjs  node --test vector-studio/tests/geometry.test.mjs
 tests/arrange.test.mjs   node --test vector-studio/tests/arrange.test.mjs
 tests/export.test.mjs    node --test vector-studio/tests/export.test.mjs (גם pdfinfo אם מותקן)
 tests/mbe.test.mjs       node --test vector-studio/tests/mbe.test.mjs — גם Mbe::validate של PHP
+tests/freehand.test.mjs  node --test vector-studio/tests/freehand.test.mjs
 tests/e2e.mjs            node vector-studio/tests/e2e.mjs <כתובת> — דפדפן: מחשב, 390px ו-320px
 ```
 
@@ -115,6 +117,10 @@ tests/e2e.mjs            node vector-studio/tests/e2e.mjs <כתובת> — דפ�
 מזיזה את התצוגה, שתיים — זום. הקשה עם כלי צורה — צורה בגודל 100pt. Shift — ריבוע / יחס קבוע / קו ב-45° / ציר
 אחד בהזזה. מקשים: V (בחירה) A (נקודות) P (עט) M L \ · Delete · חיצים (Shift — 10pt) · Ctrl+Z / Ctrl+Shift+Z · Ctrl+D · Ctrl+A · Ctrl+0 · Ctrl+G / Ctrl+Shift+G (קיבוץ / פירוק) · Ctrl+] / Ctrl+[ (קדימה / אחורה; עם Shift — לקצה).
 🧲 — הצמדה (Ctrl בזמן גרירה — בלי), # — רשת.
+
+**עיפרון ומברשת** (✏️ בסרגל; N / B): גוררים ומציירים. העיפרון — קו שמוחלק לעקומות בזייה (נגמר ליד ההתחלה — נסגר);
+המברשת — צורה מלאה שהעובי שלה לפי לחץ העט, ובאצבע ובעכבר — לפי המהירות, עם קצוות מחודדים. צבע ועובי — בסרגל הצף,
+נזכרים במכשיר לכל כלי. אצבע שנייה באמצע — זום, והקו שהתחיל נמחק. התוצאה נתיב רגיל — עורכים אותו בעט.
 
 **עט:** הקשה — נקודה חדה, גרירה — עקומה, הקשה על הנקודה הראשונה — סגירה; "✓ סיום" / Enter / Esc — נתיב פתוח;
 "✕" — ביטול; ↶ / Ctrl+Z באמצע — מוחק את הנקודה האחרונה. צביטה בשתי אצבעות באמצע — זום, בלי נקודה מיותרת.
@@ -148,7 +154,7 @@ tests/e2e.mjs            node vector-studio/tests/e2e.mjs <כתובת> — דפ�
 **מעבר צבע:** במילוי — "צבע / מעבר ישר / מעבר עגול", שני צבעים, וזווית (בישר); זז וגדל עם הצורה; יוצא ל-SVG
 (‏linearGradient / radialGradient) ול-PDF (‏Shading צירי / רדיאלי; שקיפות בעצירות — במסכה רכה), ומיובא מ-SVG (גם
 objectBoundingBox). העגול — מהמרכז, בלי מוקד; במתיחה לא שווה הוא נשאר עיגול. סוג שהעורך לא מכיר — בצבע העצירה
-הראשונה, ובדוח הייצוא. ה-`radial` מחכה לאישור בפורמט: `creative-suite/docs/requests/vector-studio-radial.md`.
+הראשונה, ובדוח הייצוא. ה-`radial` אושר בפורמט (`mbe-format.md`, סעיף 3).
 
 **‎.mbe:** 📁 ← ‎.mbe — הקובץ של החבילה (`kind: "vector"`): המסמך כמו שהוא בספרייה, הגופנים של הטקסטים ב-media
 (OFL), ו-preview.png, ‏drawing.svg (הלוח הראשון) ו-document.pdf (כל הלוחות), כל אחד עם gaps. **📂 פתיחה** (בדף
@@ -178,6 +184,5 @@ objectBoundingBox). העגול — מהמרכז, בלי מוקד; במתיחה �
 
 - סכמת `paths` המלאה בליבה (גרסה 1.1) — אצל הליבה; עד אז הליבה מקבלת כל רשימה, והאפליקציה כותבת לפי המבנה שאושר
   (`mbe-format.md`, "תוכן שכבה `vector`").
-- מעבר צבע עגול (`radial`) — הצעה לצ'אט המתכלל (`requests/vector-studio-radial.md`); עד ההכרעה נכתב לפי ההצעה.
 - קווי מתאר עם ניקוד: הסימנים לפי העוגנים של הגופן (mark-to-base). סימן על סימן (mark-to-mark, טעמים צפופים) —
   עוד לא; בשורה עם ניקוד — בלי ליגטורות וקרנינג (כמו ברוב הגופנים העבריים, אין הבדל נראה).

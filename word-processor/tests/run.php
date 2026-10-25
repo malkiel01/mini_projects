@@ -2092,6 +2092,61 @@ check('F07: התוכן לא משתנה, ובסיס ישן — התנגשות (כ
     && str_contains(json_encode(doc_json($f7), JSON_UNESCAPED_UNICODE), 'תוכן') && throws(fn() => doc_set_page($f7, ['size' => 'A4'], 'u2', 'רון', $f7v), 'conflict'));
 $f7 = doc_restore_version($f7, $f7List[1]['id'], 'u1', 'דנה', $f7['version']);
 check('F07: שחזור הגרסה שלפני — מחזיר גם את הגדרות העמוד', doc_page($f7)['size'] === 'A4' && doc_page($f7)['orientation'] === 'portrait', json_encode(doc_page($f7)));
+
+section('רשימת ציור → PDF (pdf-core: lib/pdf-core/draw.php — לעימוד)');
+require_once __DIR__ . '/../lib/pdf-core/draw.php';
+$dwFont = file_get_contents(__DIR__ . '/../vendor/fonts/pdf/frank-ruhl-libre-hebrew-400-normal.woff');
+$dwF = TtfFont::fromBytes($dwFont, 'frank');
+$dwIm = imagecreatetruecolor(40, 40);
+imagefilledrectangle($dwIm, 0, 0, 40, 40, imagecolorallocate($dwIm, 30, 120, 220));
+ob_start(); imagepng($dwIm); $dwPng = ob_get_clean();
+// "שלום" בסדר חזותי (ם ו ל ש), ו-שׁ (U+FB2A — גליף מורכב: ש + נקודת שין) בעמוד השני
+$dwRun = fn(string $s, float $size) => array_map(fn($ch) => [$dwF->gid(mb_ord($ch)), 0, 0, $dwF->advance(mb_ord($ch), $size)], array_reverse(mb_str_split($s)));
+$dwList = ['title' => 'ציור', 'pages' => [
+    ['size' => [300, 200], 'bleed' => 9, 'ops' => [
+        ['op' => 'rect', 'box' => [-9, -9, 318, 40], 'fill' => '#ffeecc'],
+        ['op' => 'glyphs', 'font' => 'media/frank.woff', 'size' => 24, 'color' => '#202020', 'x' => 40, 'y' => 80, 'glyphs' => $dwRun('שלום', 24), 'text' => 'שלום'],
+        ['op' => 'image', 'src' => 'media/a.png', 'box' => [200, 100, 80, 80], 'clip' => [210, 110, 40, 40]],
+        ['op' => 'line', 'from' => [20, 150], 'to' => [180, 150], 'color' => '#cc0000', 'width' => 2],
+        ['op' => 'rect', 'box' => [20, 160, 100, 20], 'stroke' => '#0000ff'],
+    ]],
+    ['size' => [100, 100], 'ops' => [['op' => 'glyphs', 'font' => 'media/frank.woff', 'size' => 60, 'x' => 20, 'y' => 70, 'glyphs' => [[$dwF->gid(0xFB2A), 0, 0, 40]], 'text' => 'שׁ']]],
+]];
+$dwRes = fn($k) => ['media/frank.woff' => $dwFont, 'media/a.png' => $dwPng][$k] ?? null;
+$dwPdf = pdf_draw($dwList, $dwRes);
+$dwRaw = preg_replace_callback('/stream\n(.*?)\nendstream/s', fn($m) => 'stream ' . (@gzuncompress($m[1]) ?: '') . ' endstream', $dwPdf);
+preg_match('/\/Length1 (\d+)/', $dwPdf, $dwLen);
+check('ציור: עמוד בגודל חופשי עם גלישה — MediaBox ו-BleedBox מורחבים ב-9, TrimBox הוא העמוד', str_contains($dwPdf, '/MediaBox [0 0 318 218] /BleedBox [0 0 318 218] /TrimBox [9 9 309 209]')
+    && str_contains($dwPdf, '/MediaBox [0 0 100 100] /Resources'));
+check('ציור: הגופן מוטמע רק עם הגליפים שבשימוש (subset) — ומזהי הגליפים נשמרים', (int)($dwLen[1] ?? 0) > 0 && (int)$dwLen[1] < strlen($dwF->sfnt) / 3
+    && TtfFont::fromBytes(TtfSubset::make($dwF->sfnt, [$dwF->gid(0x5E9)]), 's')->numGlyphs() === $dwF->numGlyphs(), ($dwLen[1] ?? '?') . ' / ' . strlen($dwF->sfnt));
+check('ציור: רצף הגליפים — כל גליף במקומו (Tm), עם ActualText לחיפוש והעתקה', str_contains($dwRaw, '/Span << /ActualText ' . PdfWriter::text('שלום') . ' >> BDC')
+    && str_contains($dwRaw, '1 0 0 1 49 129 Tm <' . sprintf('%04X', $dwF->gid(0x5DD)) . '> Tj'), substr($dwRaw, strpos($dwRaw, 'BDC') ?: 0, 200));
+check('ציור: תמונה עם חיתוך, מלבן מלא, מסגרת וקו — בקואורדינטות של PDF (y למעלה)', str_contains($dwRaw, '219 59 40 40 re W n') && str_contains($dwRaw, '80 0 0 80 209 29 cm /Im1 Do')
+    && str_contains($dwRaw, '29 29 100 20 re S') && str_contains($dwRaw, '29 59 m 189 59 l S') && str_contains($dwRaw, '0 178 318 40 re f'), substr($dwRaw, strpos($dwRaw, ' re f') ?: 0, 300));
+if (trim((string)shell_exec('command -v pdftoppm'))) {
+    file_put_contents("$tmp/draw.pdf", $dwPdf);
+    shell_exec('pdftoppm -r 72 -png ' . escapeshellarg("$tmp/draw.pdf") . ' ' . escapeshellarg("$tmp/draw") . ' 2>&1');
+    $dwInk = function (string $png, array $r): int {
+        $im = @imagecreatefrompng($png); $n = 0;
+        if (!$im) return -1;
+        for ($y = $r[1]; $y < $r[3]; $y++) for ($x = $r[0]; $x < $r[2]; $x++) { $c = imagecolorat($im, $x, $y); if ((($c >> 16) & 255) + (($c >> 8) & 255) + ($c & 255) < 200) $n++; }
+        return $n;
+    };
+    $dwP1 = glob("$tmp/draw-*1.png")[0] ?? '';
+    $dwP2 = glob("$tmp/draw-*2.png")[0] ?? '';
+    check('ציור, כפי שמוצג (pdftoppm): הטקסט מצויר — והתמונה רק בתוך מלבן החיתוך', $dwInk($dwP1, [45, 65, 140, 95]) > 50
+        && (imagecolorat(imagecreatefrompng($dwP1), 235, 135) & 0xFF) > 200 && (imagecolorat(imagecreatefrompng($dwP1), 275, 175) & 0xFFFFFF) === 0xFFFFFF, (string)$dwInk($dwP1, [45, 65, 140, 95]));
+    check('ציור: גליף מורכב (שׁ — ש + נקודה) — גם הרכיבים שלו נכנסים ל-subset ומצוירים', $dwInk($dwP2, [15, 10, 70, 80]) > 200, (string)$dwInk($dwP2, [15, 10, 70, 80]));
+    array_map('unlink', glob("$tmp/draw*") ?: []);
+}
+$dwErr = function (array $list) use ($dwRes): string {
+    try { pdf_draw($list, $dwRes); return ''; } catch (InvalidArgumentException $e) { return $e->getMessage(); }
+};
+check('ציור: רשימה פגומה — הודעה ברורה עם מקום הבעיה', str_contains($dwErr(['pages' => [['size' => [10, 10], 'ops' => [['op' => 'circle']]]]]), 'עמוד 1, פעולה 1')
+    && str_contains($dwErr(['pages' => [['size' => [10, 10], 'ops' => [['op' => 'glyphs', 'font' => 'media/x.ttf', 'size' => 9, 'x' => 0, 'y' => 0, 'glyphs' => []]]]]]), 'גופן חסר')
+    && str_contains($dwErr(['pages' => [['size' => [10, 10], 'ops' => [['op' => 'glyphs', 'font' => 'media/frank.woff', 'size' => 9, 'x' => 0, 'y' => 0, 'glyphs' => [[999999, 0, 0, 1]]]]]]]), 'גליף')
+    && $dwErr(['pages' => []]) === 'אין עמודים');
 array_map('unlink', glob("$tmp/media/mbe/*") ?: []);
 @rmdir("$tmp/media/mbe");
 

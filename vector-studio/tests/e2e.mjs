@@ -424,6 +424,40 @@ try {
   assert.equal((await st()).paths.find(p => p.id === tid).type, 'text');
   step('פעולות צורה (איחוד, חיסור, עיגולים נשארים עקומות) וטקסט לקווי מתאר, עם ביטול');
 
+  // עיפרון ומברשת: גרירה בעכבר → נתיב חלק (עיפרון — מתאר עגול; מברשת — צורה מלאה), וביטול מוחק
+  const nFree = (await st()).paths.length;
+  await page.click('[data-tool="draw"]');
+  assert.equal(await page.evaluate(() => window.__vs.S.tool), 'pencil');
+  const wave = async () => {
+    const [x0, y0] = await W(150, 700);
+    await page.mouse.move(x0, y0); await page.mouse.down();
+    for (let i = 1; i <= 30; i++) await page.mouse.move(x0 + i * 8, y0 + Math.sin(i / 5) * 30);
+    await page.mouse.up();
+  };
+  await wave();
+  s = await st();
+  const pc = s.paths[s.paths.length - 1];
+  assert.equal(s.paths.length, nFree + 1);
+  assert.equal(pc.fill, null);
+  assert.deepEqual([pc.stroke.cap, pc.stroke.join, pc.stroke.width], ['round', 'round', 2]);
+  assert.match(pc.d, /^M[\d. ]+ C/);
+  assert.ok((pc.d.match(/C/g) || []).length < 15, 'מוחלק: ' + pc.d);
+  await page.click('[data-tool="draw"]');
+  await page.click('[data-free="brush"]');
+  await page.fill('#free-width', '20'); await page.press('#free-width', 'Enter');
+  await wave();
+  s = await st();
+  const br = s.paths[s.paths.length - 1];
+  assert.equal(s.paths.length, nFree + 2);
+  assert.equal(br.stroke, null);
+  assert.ok(br.fill.color && /Z$/.test(br.d), 'מברשת — צורה סגורה');
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('vector-studio:free')).brush.width), 20);
+  await page.keyboard.press('Control+z');
+  await page.keyboard.press('Control+z');
+  assert.equal((await st()).paths.length, nFree);
+  await page.keyboard.press('v');
+  step('עיפרון ומברשת: ציור בגרירה, מוחלק לעקומות, עובי וצבע נשמרים, ביטול');
+
   // ייצוא: SVG, PDF ו-PNG יורדים, עם טקסט כקווי מתאר
   const grab = async (kind) => {
     await page.click('#file-btn');
@@ -673,6 +707,23 @@ try {
     assert.equal(await p.evaluate(() => window.__vs.S.doc.surfaces[0].layers[0].paths.length), 3);
     await p.tap('#undo');
     assert.equal(await p.evaluate(() => window.__vs.S.doc.surfaces[0].layers[0].paths.length), 2, 'ואחרי הסיום — ↶ רגיל');
+    // מברשת באצבע: גרירה מציירת; אצבע שנייה באמצע — זום, והקו שהתחיל נמחק
+    await p.tap('[data-tool="draw"]');
+    await p.tap('[data-tool="draw"]');
+    await p.tap('[data-free="brush"]');
+    const before = await p.evaluate(() => window.__vs.S.doc.surfaces[0].layers[0].paths.length);
+    await touch('touchStart', [[cx0 - 60, cy0 + 40]]);
+    for (let i = 1; i <= 12; i++) await touch('touchMove', [[cx0 - 60 + i * 10, cy0 + 40 + Math.sin(i / 3) * 15]]);
+    await touch('touchEnd', []);
+    assert.equal(await p.evaluate(() => window.__vs.S.doc.surfaces[0].layers[0].paths.length), before + 1, 'מברשת באצבע');
+    await touch('touchStart', [[cx0 - 60, cy0 + 90]]);
+    await touch('touchMove', [[cx0 - 40, cy0 + 95]]);
+    await touch('touchStart', [[cx0 - 40, cy0 + 95], [cx0 + 40, cy0 + 140]]);
+    await touch('touchMove', [[cx0 - 50, cy0 + 90], [cx0 + 60, cy0 + 160]]);
+    await touch('touchEnd', []);
+    assert.equal(await p.evaluate(() => window.__vs.S.doc.surfaces[0].layers[0].paths.length), before + 1, 'צביטה ביטלה את הקו');
+    if (shots) await p.screenshot({ path: `${shots}/brush-${width}.png` });
+    await p.evaluate(() => { const L = window.__vs.S.doc.surfaces[0].layers[0]; L.paths.pop(); });
     // טקסט במגע
     await p.tap('[data-tool="text"]');
     await p.touchscreen.tap(cb.x + cb.width / 2 + 80, cb.y + 60);

@@ -257,6 +257,11 @@ input[type="color"] { flex: none; width: 48px; padding: 3px; cursor: pointer; }
     box-shadow: var(--shadow); direction: rtl; }
 .pen-bar:not(:has(button:not([hidden]))) .pen-hint { padding: 0 var(--s2); }
 .pen-hint { font-size: .8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.free-pick { top: 168px; }
+.free-opts:not([hidden]) { display: flex; align-items: center; gap: var(--s1); }
+.free-opts input[type="color"] { width: 40px; height: 32px; padding: 0; border: 1px solid var(--line); border-radius: var(--r); background: none; }
+.free-w { display: flex; align-items: center; gap: 4px; font-size: .85rem; }
+.free-w input { width: 64px; font-size: 16px; padding: 4px 6px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); color: var(--ink); }
 .pen-hint:empty { display: none; }
 @media (max-width: 899px) {
     .shape-pick { inset-inline-start: auto; top: auto; bottom: calc(100% + 4px); left: 50%; transform: translateX(-50%); }

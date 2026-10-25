@@ -359,13 +359,15 @@ final class Mbe
                 }
             }
         };
-        $walkLayers = function (mixed $layers, string $where) use (&$walkLayers, $walkPaths, $seeId, $flows, $issue) {
+        $layerById = [];
+        $walkLayers = function (mixed $layers, string $where) use (&$walkLayers, &$layerById, $walkPaths, $seeId, $flows, $issue) {
             if (MbeSchema::typeOf($layers) !== 'array') return;
             foreach ($layers as $i => $l) {
                 if (MbeSchema::typeOf($l) !== 'object') continue;
                 $l = (array)$l;
                 $at = "$where/$i";
                 $seeId($l['id'] ?? null, $at);
+                if (is_string($l['id'] ?? null) && !array_key_exists($l['id'], $layerById)) $layerById[$l['id']] = $l;
                 if (($l['type'] ?? null) === 'frame' && is_string($l['flow'] ?? null) && !array_key_exists($l['flow'], $flows)) {
                     $issue('error', 'flow-missing', "המסגרת מפנה לשטף \"{$l['flow']}\" שאינו קיים", "document.json#$at/flow");
                 }
@@ -379,6 +381,23 @@ final class Mbe
             $s = (array)$s;
             $seeId($s['id'] ?? null, "/surfaces/$i");
             $walkLayers($s['layers'] ?? null, "/surfaces/$i/layers");
+        }
+        // סדר השרשור (סעיף 3, "מסגרות, שטפים"): כל מזהה ב-frames — שכבת frame קיימת שה-flow שלה הוא השטף הזה, פעם אחת.
+        foreach (MbeCanonical::sortedKeys($flows) as $fid) {
+            $flow = $flows[$fid];
+            $list = MbeSchema::typeOf($flow) === 'object' ? (((array)$flow)['frames'] ?? null) : null;
+            if (MbeSchema::typeOf($list) !== 'array') continue;
+            $seen = [];
+            foreach ($list as $j => $id) {
+                if (!is_string($id)) continue;
+                $at = "document.json#/flows/$fid/frames/$j";
+                $l = $layerById[$id] ?? null;
+                if (isset($seen[$id])) $issue('error', 'flow-frames', "המסגרת \"$id\" מופיעה פעמיים בשטף \"$fid\"", $at);
+                elseif ($l === null) $issue('error', 'flow-frames', "בשטף \"$fid\" אין שכבה \"$id\"", $at);
+                elseif (($l['type'] ?? null) !== 'frame') $issue('error', 'flow-frames', "\"$id\" בשטף \"$fid\" אינה מסגרת (" . json_encode($l['type'] ?? null) . ')', $at);
+                elseif (($l['flow'] ?? null) !== $fid) $issue('error', 'flow-frames', "המסגרת \"$id\" שייכת לשטף \"" . (is_string($l['flow'] ?? null) ? $l['flow'] : '—') . "\" ולא ל-\"$fid\"", $at);
+                $seen[$id] = true;
+            }
         }
         // הפניות למשאבים: כל src / embedded — רק ל-media/ שבתוך הקובץ. קישורים בטקסט (href) — מותרים.
         $walk = function (mixed $v, string $where, int $depth) use (&$walk, $f, $issue) {

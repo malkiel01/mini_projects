@@ -32,6 +32,8 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l5 9-3 7h-4l-3-7z"/><circle cx="12" cy="11" r="1.4"/><path d="M10 19h4"/></svg></button>
       <button class="tool more" data-tool="shape" aria-pressed="false" aria-haspopup="true" aria-expanded="false" title="צורות" aria-label="צורות: מלבן">
         <svg viewBox="0 0 24 24" aria-hidden="true" id="shape-icon"><rect x="4" y="6" width="16" height="12" rx="1"/></svg></button>
+      <button class="tool more" data-tool="draw" aria-pressed="false" aria-haspopup="true" aria-expanded="false" title="ציור חופשי" aria-label="ציור חופשי: עיפרון">
+        <svg viewBox="0 0 24 24" aria-hidden="true" id="free-icon"><path d="M4 20l1.2-4.6L15.8 4.8a2 2 0 0 1 2.8 0l.6.6a2 2 0 0 1 0 2.8L8.6 18.8z"/><path d="M14 6.5l3.5 3.5"/></svg></button>
       <button class="tool" data-tool="text" aria-pressed="false" title="טקסט (T)" aria-label="טקסט">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6V4h14v2M12 4v16M9 20h6"/></svg></button>
       <div class="shape-pick" id="shape-pick" role="menu" hidden>
@@ -40,6 +42,10 @@
         <button role="menuitem" data-shape="polygon" title="מצולע" aria-label="מצולע"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 5v8l-8 5-8-5V8z"/></svg></button>
         <button role="menuitem" data-shape="star" title="כוכב" aria-label="כוכב"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.4 6.7 19.4l1.2-6L3.4 9.3l6-.7z"/></svg></button>
         <button role="menuitem" data-shape="line" title="קו (\\)" aria-label="קו"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19L19 5" fill="none"/></svg></button>
+      </div>
+      <div class="shape-pick free-pick" id="free-pick" role="menu" hidden>
+        <button role="menuitem" data-free="pencil" title="עיפרון (N)" aria-label="עיפרון"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l1.2-4.6L15.8 4.8a2 2 0 0 1 2.8 0l.6.6a2 2 0 0 1 0 2.8L8.6 18.8z"/><path d="M14 6.5l3.5 3.5"/></svg></button>
+        <button role="menuitem" data-free="brush" title="מברשת (B)" aria-label="מברשת"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 4c-3 1.5-7.5 6-9.5 9l1.5 1.5c3-2 7.5-6.5 9-9.5z"/><path d="M9.5 14.5c-2.5 0-4 1.5-4 3.5 0 1-.7 1.7-1.5 2 3.5.5 7-.5 7-4z"/></svg></button>
       </div>
     </nav>
 
@@ -51,6 +57,10 @@
         <button class="btn sm ghost" id="pen-cancel" hidden>✕ ביטול</button>
         <button class="btn sm ghost" id="node-smooth" hidden>חלקה ↔ פינה</button>
         <button class="btn sm ghost danger" id="node-del" hidden>🗑️ נקודה</button>
+        <span class="free-opts" id="free-opts" hidden>
+          <input type="color" id="free-color" aria-label="צבע" title="צבע">
+          <label class="free-w"><span>עובי</span><input type="number" id="free-width" min="0.5" max="200" step="0.5" dir="ltr" inputmode="decimal"></label>
+        </span>
         <span class="muted pen-hint" id="pen-hint"></span>
       </div>
       <div class="zoom" role="group" aria-label="זום">
