@@ -139,7 +139,7 @@ my-book.mbe                 ZIP (Deflate; בלי ZIP64 בגרסה 1 — סעיף
 | `id` | כן | ייחודי בכל המסמך — יחד עם משטחים ושכבות |
 | `d` | כן | תחביר נתיב של SVG, **רק פקודות מוחלטות `M L C Q Z`**, ב-`pt` של המשטח. כל קורא מצייר אותו בלי ספרייה |
 | `transform` | לא | `[a b c d e f]` כמו ב-SVG; ברירת מחדל — זהות |
-| `fill` / `stroke` | לא | `null` = בלי. ‏`color` — `#rrggbb` ‏(sRGB), ‏`opacity` בנפרד. ב-`fill` אפשר `gradient` במקום `color`: `{ type: "linear", from, to, stops: [{ at, color, opacity }] }`. ‏`stroke`: ‏`width`, ‏`cap` (butt/round/square), ‏`join` (miter/round/bevel), ‏`miter`, ‏`dash` (ב-`pt`) |
+| `fill` / `stroke` | לא | `null` = בלי. ‏`color` — `#rrggbb` ‏(sRGB), ‏`opacity` בנפרד. ב-`fill` אפשר `gradient` במקום `color`: `{ type: "linear", from, to, stops: [{ at, color, opacity }] }` או `{ type: "radial", center, radius, stops }` (מרכז בקואורדינטות הנתיב, רדיוס ב-`pt` גדול מ-0, בלי מוקד; מעבר להיקף — הצבע האחרון). סוג מעבר לא מוכר — מציירים בצבע העצירה הראשונה ושומרים כמו שהוא. ‏`stroke`: ‏`width`, ‏`cap` (butt/round/square), ‏`join` (miter/round/bevel), ‏`miter`, ‏`dash` (ב-`pt`) |
 | `fillRule` | לא | `nonzero` / `evenodd` |
 | `shape` | לא | פרמטרים של צורה חיה (`rect`, `ellipse`, `polygon`, `star`, `line`). **`d` הוא תמיד האמת**; מי שלא מכיר `shape` מצייר את `d` ושומר את `shape` כמו שהוא |
 | `name` | לא | שם בלוח השכבות |
