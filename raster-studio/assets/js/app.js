@@ -52,9 +52,14 @@ function render(docs) {
     const ic = $('.canvas-ic i', li);
     ic.style.inlineSize = Math.max(4, Math.round(w * k)) + 'px';
     ic.style.blockSize = Math.max(4, Math.round(h * k)) + 'px';
+    // נשמר בשרת — התמונה הממוזערת מתוך ה-‎.mbe (preview.png של הגרסה האחרונה)
+    if (d.version) {
+      ic.style.backgroundImage = `url("api.php?action=doc_preview&id=${d.id}&v=${d.version}")`;
+      ic.classList.add('has-preview');
+    }
     $('a', li).href = 'editor.html?doc=' + d.id;
     $('b', li).textContent = d.title;
-    $('small', li).append(dims(d.size), ' · ' + dateFmt.format(new Date(d.updated_at)));
+    $('small', li).append(dims(d.size), ' · ' + dateFmt.format(new Date(d.updated_at)) + (d.version ? ' · גרסה ' + d.version : ' · לא נשמר'));
     $('button', li).addEventListener('click', () => remove(d, li));
     list.append(li);
   }

@@ -1,7 +1,7 @@
 // העורך — שלב הקנבס: מסמך מהספרייה או תמונה מהמכשיר, זום והזזה, והוספת תמונה כשכבה.
 // הכלים (מכחול, בחירה…) והשמירה — בשלבים הבאים.
 
-import { api, errText, toast, dims } from './api.js';
+import { api, errText, toast, dims, uploadMbe, fetchMbe } from './api.js';
 import { idbGet, idbDel } from './idb.js';
 import { RasterDocument } from './engine/doc.js';
 import { WebGL2Renderer, decodeImage } from './engine/webgl2.js';
@@ -14,7 +14,7 @@ import { createTools } from './tools.js';
 import { createOverlay } from './overlay.js';
 import { createAdjustPanel } from './adjust-panel.js';
 import { exportPNG, exportJPG, exportORA, download, fileName } from './export.js';
-import { saveDraft, loadDraft, restoreDraft } from './draft.js';
+import { saveDraft, loadDraft, restoreDraft, clearDraft, draftKey } from './draft.js';
 import { gapsFor, parseOraStack } from './engine/formats.js';
 import { unzip } from './engine/unzip.js';
 import { buildMbe, openMbe, sniffZip, MbeOpenError } from './mbe-io.js';
@@ -56,7 +56,8 @@ let tools = null;
 let adjust = null;
 let view = { zoom: 1, x: 0, y: 0 };
 let fitted = false;
-let changed = false;   // יש תוכן שלא נשמר (השמירה — בשלב הבא)
+let changed = false;   // יש שינוי שעוד לא נכתב לטיוטה במכשיר
+let unsaved = false;   // יש שינוי שעוד לא נשמר בשרת
 
 function showMsg(text, error = false) {
   msg.textContent = text;
@@ -111,6 +112,9 @@ function setDoc(d) {
   $('#layers-btn').disabled = false;
   $('#adjust-btn').disabled = false;
   $('#export-btn').disabled = false;
+  $('#save-btn').disabled = false;
+  $('#versions-btn').disabled = !d.serverVersion;
+  $('#versions-open').hidden = !d.serverVersion;
   panel.render();
   showMsg('');
   if (stage.clientWidth) { fitted = true; fit(); }
@@ -253,6 +257,7 @@ $('.panel-close').addEventListener('click', () => toggleLayers(false));
 let draftTimer = 0, draftBusy = false;
 function scheduleDraft(ms = 1500) {
   changed = true;
+  unsaved = true;
   clearTimeout(draftTimer);
   draftTimer = setTimeout(flushDraft, ms);
 }
@@ -293,6 +298,115 @@ async function createRenderer() {
 }
 
 addEventListener('beforeunload', e => { if (changed) { flushDraft(); e.preventDefault(); } });
+
+// ---------- שמירה בשרת (גרסאות) ----------
+// ה-‎.mbe נבנה כאן (אותו קובץ כמו בהורדה), והשרת בודק אותו שוב בעותק הליבה ושומר כגרסה חדשה.
+// doc.serverVersion — הגרסה שהעורך התחיל ממנה: אם בינתיים נשמרה אחרת (מכשיר אחר) — שואלים לפני שדורסים.
+let saving = false;
+let maxUpload = null;
+async function saveToServer() {
+  if (!doc || saving) return;
+  saving = true;
+  const btn = $('#save-btn');
+  btn.setAttribute('aria-busy', 'true');
+  try {
+    tools.commitFloat(); tools.commitText(); adjust.close();
+    if (!doc.serverId) {
+      // מסמך מהמכשיר — נכנס לספרייה בשרת
+      const { doc: meta } = await api('doc_create', { title: doc.title || 'תמונה', size: 'custom', px: [doc.width, doc.height] });
+      await clearDraft(draftKey(doc));
+      doc.serverId = meta.id;
+      doc.serverVersion = 0;
+      history_replace('?doc=' + meta.id);
+    }
+    const bytes = await buildMbe(renderer, doc, { view: viewState() });
+    // התקרה של השרת (זיכרון ו-post_max_size שלו) — לפני ההעלאה, עם הודעה ברורה ודרך אחרת
+    maxUpload ??= (await api('me')).maxUpload ?? Infinity;
+    if (bytes.length > maxUpload) {
+      const mb = n => (n / 1024 / 1024).toFixed(1);
+      toast(`הקובץ (${mb(bytes.length)}MB) גדול מהתקרה של השרת (${mb(maxUpload)}MB) — אפשר להוריד אותו כ-‎.mbe (⬇️)`, true);
+      return;
+    }
+    let r;
+    try {
+      r = await uploadMbe(doc.serverId, bytes, doc.serverVersion ?? 0);
+    } catch (e) {
+      if (e.message !== 'conflict') throw e;
+      if (!confirm('בינתיים נשמרה בשרת גרסה אחרת (אולי ממכשיר אחר).\nלשמור את שלך כגרסה חדשה מעליה? הקודמת נשארת בגרסאות.')) return;
+      r = await uploadMbe(doc.serverId, bytes, doc.serverVersion ?? 0, true);
+    }
+    doc.serverVersion = r.version;
+    changed = false;
+    unsaved = false;
+    clearTimeout(draftTimer);
+    await clearDraft(draftKey(doc));   // נשמר — בפתיחה הבאה מהשרת
+    $('#versions-btn').disabled = false;
+    $('#versions-open').hidden = false;
+    toast('נשמר בשרת — גרסה ' + r.version);
+  } catch (e) {
+    console.error(e);
+    toast(errText(e.message) + (e.issues?.length ? ': ' + e.issues.map(i => i.code).join(', ') : ''), true);
+  } finally {
+    saving = false;
+    btn.removeAttribute('aria-busy');
+  }
+}
+$('#save-btn').addEventListener('click', saveToServer);
+
+/** גרסה מהשרת → המסמך בעורך. serverVersion נשאר האחרונה — שמירה ממנה היא גרסה חדשה מעל, לא התנגשות */
+async function openServerVersion(meta, v = null) {
+  const bytes = await fetchMbe(meta.id, v);
+  const { doc: d, view: vs } = await openMbe(renderer, bytes, meta.title);
+  d.serverId = meta.id;
+  d.serverVersion = meta.version;
+  setDoc(d);
+  if (vs && Number.isFinite(vs.zoom) && Number.isFinite(vs.x) && Number.isFinite(vs.y)) setView({ zoom: V.clampZoom(vs.zoom), x: vs.x, y: vs.y });
+  return d;
+}
+
+const versionsDlg = $('#versions-dlg');
+const timeFmt = new Intl.DateTimeFormat('he-IL', { dateStyle: 'short', timeStyle: 'short' });
+$('#versions-open').addEventListener('click', () => { exportDlg.close(); showVersions(); });
+$('#versions-btn').addEventListener('click', () => showVersions());
+async function showVersions() {
+  if (!doc?.serverId) return;
+  const ul = $('#versions-list');
+  ul.replaceChildren();
+  versionsDlg.showModal();
+  try {
+    const { versions } = await api('doc_versions', { id: doc.serverId });
+    if (!versions.length) { ul.innerHTML = '<li class="hint">עוד לא נשמרה גרסה</li>'; return; }
+    for (const v of versions) {
+      const li = document.createElement('li');
+      li.innerHTML = '<span class="v-tx"><b></b><small></small></span><button type="button" class="btn"></button>';
+      li.querySelector('b').textContent = 'גרסה ' + v.n + (v.n === doc.serverVersion ? ' · האחרונה' : '');
+      li.querySelector('small').textContent = timeFmt.format(new Date(v.created_at)) + ' · ' + (v.bytes / 1024 / 1024).toFixed(1) + 'MB';
+      const b = li.querySelector('button');
+      b.textContent = 'פתיחה';
+      b.dataset.v = v.n;
+      ul.append(li);
+    }
+  } catch (e) {
+    ul.innerHTML = '';
+    toast(errText(e.message), true);
+  }
+}
+versionsDlg.addEventListener('click', async e => {
+  if (e.target.closest('[data-close]')) { versionsDlg.close(); return; }
+  const b = e.target.closest('[data-v]');
+  if (!b) return;
+  if (unsaved && !confirm('יש שינויים שלא נשמרו בשרת. לפתוח את הגרסה בכל זאת? (השינויים יאבדו)')) return;
+  try {
+    const { doc: meta } = await api('doc_get', { id: doc.serverId });
+    await openServerVersion(meta, Number(b.dataset.v));
+    versionsDlg.close();
+    await clearDraft(draftKey(doc));
+    changed = unsaved = false;
+    toast('נפתחה גרסה ' + b.dataset.v + ' — שמירה ממנה תהיה גרסה חדשה');
+  } catch (err) {
+    toast(errText(err.message), true);
+  }
+});
 
 // ---------- הורדה ----------
 const exportDlg = $('#export-dlg');
@@ -489,6 +603,7 @@ addEventListener('keydown', e => {
   const k = e.key.toLowerCase();
   // בתוך שדה טקסט (שם שכבה) — הביטול של השדה עצמו
   const typing = e.target.closest?.('input:not([type=range]), textarea, select');
+  if (k === 's') { e.preventDefault(); saveToServer(); return; }
   if ((k === 'z' || k === 'y') && !typing) {
     e.preventDefault();
     if (k === 'y' || e.shiftKey) redo(); else undo();
@@ -538,15 +653,26 @@ $('#hint').textContent = coarse ? 'צביטה — זום' : 'גרירה — הז
     const q = new URLSearchParams(location.search);
     if (q.get('doc')) {
       const { doc: meta } = await api('doc_get', { id: Number(q.get('doc')) });
-      const draft = await loadDraft('draft:doc:' + meta.id);
+      let draft = await loadDraft('draft:doc:' + meta.id);
+      // בטיוטה יש שינויים שלא נשמרו, ובשרת בינתיים גרסה חדשה יותר (ממכשיר אחר) — המשתמש בוחר
+      if (draft && meta.version > (draft.serverVersion ?? 0) &&
+          !confirm(`בשרת יש גרסה חדשה יותר (גרסה ${meta.version}), ובמכשיר הזה — שינויים שלא נשמרו.\n"אישור" — להמשיך עם השינויים מהמכשיר. "ביטול" — לפתוח את הגרסה מהשרת.`)) {
+        await clearDraft('draft:doc:' + meta.id);
+        draft = null;
+      }
       if (draft) {
         const d = await restoreDraft(renderer, draft);
         d.title = meta.title;
+        d.serverId = meta.id;
         setDoc(d);
+        unsaved = true;   // הטיוטה עוד לא בשרת
         toast('שוחזרה הטיוטה מהמכשיר — ' + new Date(draft.savedAt).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' }));
+      } else if (meta.version) {
+        await openServerVersion(meta);
       } else {
         const d = new RasterDocument(meta.size[0], meta.size[1], meta.title);
         d.serverId = meta.id;
+        d.serverVersion = 0;
         renderer.fill(d, d.addLayer({ name: 'רקע' }), [255, 255, 255, 255]);
         setDoc(d);
       }
@@ -594,9 +720,11 @@ window.__rs = {
   openAsDocument,
   flushDraft,
   get changed() { return changed; },
+  get unsaved() { return unsaved; },
   addImageLayer,
   get budget() { return budget; },
   get perf() { return perfCache; },
   measurePerf,
   buildMbe: opts => buildMbe(renderer, doc, { view: viewState(), ...opts }),
+  saveToServer,
 };

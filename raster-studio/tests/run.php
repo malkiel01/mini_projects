@@ -8,9 +8,13 @@ $tmp = sys_get_temp_dir() . '/raster-studio-test-' . getmypid() . '.sqlite';
 @unlink($tmp);
 putenv('RASTER_STUDIO_DB=' . $tmp);
 register_shutdown_function(fn() => array_map('unlink', glob($tmp . '*') ?: []));
+$files = sys_get_temp_dir() . '/raster-studio-files-' . getmypid();
+putenv('RASTER_STUDIO_FILES=' . $files);
+register_shutdown_function(fn() => exec('rm -rf ' . escapeshellarg($files)));
 
 require_once __DIR__ . '/../lib/auth.php';
 require_once __DIR__ . '/../lib/docs.php';
+require_once __DIR__ . '/../lib/store.php';
 
 $fails = 0;
 $n = 0;
@@ -88,6 +92,49 @@ check('הבעלים מוחק', rs_doc_delete($uidA, $d['id']) === true);
 check('מחיקה שנייה — לא נמצא', rs_doc_delete($uidA, $d['id']) === false);
 check('נמחק — לא ברשימה', count(rs_docs_list($uidA)) === 2);
 check('נמחק — לא נקרא', rs_doc_get($uidA, $d['id']) === null);
+
+// ---- שמירה בשרת: ‎.mbe עם גרסאות ----
+// PNG של 1×1 (לבן) — לשכבה ול-preview
+$png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==');
+function mbe_bytes(string $kind, array $size, string $png, string $title = 'x'): string
+{
+    $f = Mbe::create($kind, ['units' => 'pt', 'surfaces' => []]);
+    $src = $f->addMedia($png, 'image/png');
+    $f->document['surfaces'] = $kind === 'raster'
+        ? [['id' => 's1', 'type' => 'canvas', 'size' => $size, 'layers' => [['id' => 'L1', 'name' => $title, 'type' => 'raster', 'src' => $src]]]]
+        : [['id' => 'p1', 'type' => 'page', 'size' => $size, 'layers' => []]];
+    $f->setRendition(Mbe::PREVIEW, $png);
+    return Mbe::save($f, ['app' => 'raster-studio']);
+}
+function rejected(callable $f, string $code): bool
+{
+    try { $f(); } catch (RsMbeRejected $e) { return $code === 'mbe_invalid' && count($e->issues) > 0; } catch (InvalidArgumentException $e) { return $e->getMessage() === $code; }
+    return false;
+}
+$doc = rs_doc_create($uidA, 'לשמירה', 'square');
+check('מסמך חדש — גרסה 0, בלי קובץ', $doc['version'] === 0 && rs_doc_file($uidA, $doc['id']) === null);
+$m1 = mbe_bytes('raster', [640, 480], $png);
+$r = rs_doc_save($uidA, $doc['id'], $m1, 0);
+check('שמירה ראשונה — גרסה 1, הגודל מהקנבס שבקובץ', $r['version'] === 1 && $r['doc']['version'] === 1 && $r['doc']['size'] === [640, 480]);
+check('הקובץ נשמר בדיוק', file_get_contents(rs_doc_file($uidA, $doc['id'])) === $m1);
+check('התמונה הממוזערת חולצה', file_get_contents(rs_doc_preview($uidA, $doc['id'])) === $png);
+check('base ישן — conflict', rejected(fn() => rs_doc_save($uidA, $doc['id'], $m1, 0), 'conflict'));
+check('force — נשמר בכל זאת', rs_doc_save($uidA, $doc['id'], $m1, 0, true)['version'] === 2);
+check('בלי base — נשמר', rs_doc_save($uidA, $doc['id'], $m1, null)['version'] === 3);
+check('גרסה ישנה עדיין נקראת', rs_doc_file($uidA, $doc['id'], 1) !== null && rs_doc_file($uidA, $doc['id'], 9) === null);
+$vs = rs_doc_versions($uidA, $doc['id']);
+check('רשימת הגרסאות — מהחדשה', array_column($vs, 'n') === [3, 2, 1] && $vs[0]['bytes'] === strlen($m1));
+check('קובץ פגום — נדחה עם הבעיות מהליבה', rejected(fn() => rs_doc_save($uidA, $doc['id'], 'PK' . str_repeat('x', 50), null), 'mbe_invalid'));
+check('‎.mbe בלי קנבס (מסמך טקסט) — נדחה', rejected(fn() => rs_doc_save($uidA, $doc['id'], mbe_bytes('text', [595, 842], $png), null), 'not_raster'));
+check('משתמש אחר — לא נמצא (לא שומר, לא קורא)', rejected(fn() => rs_doc_save($uidB, $doc['id'], $m1, null), 'not_found')
+    && rs_doc_file($uidB, $doc['id']) === null && rs_doc_preview($uidB, $doc['id']) === null && rejected(fn() => rs_doc_versions($uidB, $doc['id']), 'not_found'));
+check('גדול מהתקרה — נדחה', rs_mbe_max() > 0 && rejected(fn() => rs_doc_save($uidA, $doc['id'], str_repeat('x', rs_mbe_max() + 1), null), 'too_big'));
+for ($i = 0; $i < RS_KEEP_VERSIONS; $i++) rs_doc_save($uidA, $doc['id'], $m1, null);
+$vs = rs_doc_versions($uidA, $doc['id']);
+check('עד ' . RS_KEEP_VERSIONS . ' גרסאות — הישנות נמחקות (גם הקובץ)', count($vs) === RS_KEEP_VERSIONS && $vs[0]['n'] === 3 + RS_KEEP_VERSIONS
+    && !is_file(rs_doc_dir($uidA, $doc['id']) . '/1.mbe') && is_file(rs_doc_dir($uidA, $doc['id']) . '/' . (3 + RS_KEEP_VERSIONS) . '.mbe'));
+check('בלי קבצים זמניים שנשארו', glob(rs_doc_dir($uidA, $doc['id']) . '/*.tmp') === []);
+check('ברשימת המסמכים — מספר הגרסה', array_values(array_filter(rs_docs_list($uidA), fn($x) => $x['id'] === $doc['id']))[0]['version'] === 3 + RS_KEEP_VERSIONS);
 
 echo "\n" . ($n - $fails) . " / $n עברו\n";
 exit($fails ? 1 : 0);

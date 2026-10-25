@@ -55,7 +55,7 @@ function png(w, h, px) {
 const PNG = png(IMG_W, IMG_H, pattern);
 
 const server = spawn('php', ['-S', `127.0.0.1:${PORT}`, '-t', ROOT, join(ROOT, 'tests/serve.php')], {
-  env: { ...process.env, RASTER_STUDIO_DB: join(tmp, 'db.sqlite') }, stdio: 'ignore',
+  env: { ...process.env, RASTER_STUDIO_DB: join(tmp, 'db.sqlite'), RASTER_STUDIO_FILES: join(tmp, 'files') }, stdio: 'ignore',
 });
 
 async function waitServer() {
@@ -994,6 +994,83 @@ async function main() {
   });
   check('‎.mbe של עורך התמלילים — "פותחים אותו בעורך התמלילים"', /^mbe-not-raster:.*עורך התמלילים/.test(bad[0]), bad[0]);
   check('‎.mbe שבור — נדחה', /^mbe-invalid/.test(bad[1]), bad[1]);
+
+  // ---- שמירה בשרת: גרסאות, התנגשות ממכשיר אחר, פתיחה מהשרת ----
+  await page.goto(BASE + '/index.html');
+  await page.waitForSelector('#new-btn:not([disabled])');
+  const sid = await page.evaluate(async () => {
+    const r = await fetch('api.php', { method: 'POST', headers: { 'X-Raster-Studio': '1' },
+      body: JSON.stringify({ action: 'doc_create', title: 'בשרת', size: 'custom', px: ['300', '200'] }) });
+    return (await r.json()).doc.id;
+  });
+  await page.evaluate(() => new Promise(r => { const q = indexedDB.deleteDatabase('raster-studio'); q.onsuccess = q.onerror = q.onblocked = () => r(); }));
+  await page.goto(BASE + '/editor.html?doc=' + sid);
+  await page.waitForFunction(() => window.__rs?.doc);
+  check('מסמך שעוד לא נשמר — 💾 פעיל, 🕘 כבוי', !(await page.$eval('#save-btn', b => b.disabled)) && await page.$eval('#versions-btn', b => b.disabled));
+  await page.evaluate(() => { __rs.renderer.fill(__rs.doc, __rs.doc.layers[0], [255, 0, 0, 255]); __rs.history.clear(); });
+  await page.click('#save-btn');
+  await page.waitForFunction(() => /גרסה 1/.test(document.querySelector('.toast').textContent), null, { timeout: 8000 }).catch(() => {});
+  check('💾 — נשמר בשרת, גרסה 1', /נשמר בשרת — גרסה 1/.test(await page.textContent('.toast')) && await page.evaluate(() => __rs.doc.serverVersion === 1 && !__rs.unsaved));
+  await page.reload();
+  await page.waitForFunction(() => window.__rs?.doc?.serverVersion === 1, null, { timeout: 8000 }).catch(() => {});
+  check('טעינה מחדש — נפתח מהשרת (בלי טיוטה), אותם פיקסלים', near(await px(10, 10), [255, 0, 0, 255]) && await page.evaluate(() => __rs.doc.title) === 'בשרת', await px(10, 10));
+  // מכשיר אחר שומר בינתיים (גרסה 2) — השמירה מכאן שואלת לפני שהיא עולה מעליו
+  const other = await page.evaluate(async id => {
+    const bytes = await __rs.buildMbe();
+    const r = await fetch(`api.php?action=doc_upload&id=${id}&base=1`, { method: 'POST', headers: { 'X-Raster-Studio': '1' }, body: bytes });
+    return (await r.json()).version;
+  }, sid);
+  await page.evaluate(() => { __rs.renderer.fill(__rs.doc, __rs.doc.layers[0], [0, 0, 255, 255]); __rs.renderer.invalidate(__rs.doc); });
+  let asked = '';
+  // כל חלון שאלה מאושר (page.on מקטע השכבות) — כאן רק רושמים את הטקסט
+  page.once('dialog', d => { asked = d.message(); });
+  await page.keyboard.press('Control+s');
+  await page.waitForFunction(() => /גרסה 3/.test(document.querySelector('.toast').textContent), null, { timeout: 8000 }).catch(() => {});
+  check('גרסה ממכשיר אחר — השמירה שואלת, ואחרי אישור: גרסה חדשה מעליה (Ctrl+S)', other === 2 && /גרסה אחרת/.test(asked) && await page.evaluate(() => __rs.doc.serverVersion) === 3, asked);
+  // גרסאות: רשימה, ופתיחת גרסה ישנה
+  await page.click('#versions-btn');
+  await page.waitForSelector('#versions-list [data-v]');
+  const vRows = await page.$$eval('#versions-list li b', b => b.map(x => x.textContent));
+  check('🕘 — שלוש גרסאות, מהחדשה', vRows.length === 3 && vRows[0] === 'גרסה 3 · האחרונה' && vRows[2] === 'גרסה 1', vRows.join(' | '));
+  await page.click('#versions-list [data-v="1"]');
+  await page.waitForFunction(() => /נפתחה גרסה 1/.test(document.querySelector('.toast').textContent), null, { timeout: 8000 }).catch(() => {});
+  check('פתיחת גרסה 1 — הפיקסלים שלה, ושמירה ממנה תהיה גרסה 4 (לא התנגשות)', near(await px(10, 10), [255, 0, 0, 255]) && await page.evaluate(() => __rs.doc.serverVersion) === 3);
+  await page.click('#save-btn');
+  await page.waitForFunction(() => /גרסה 4/.test(document.querySelector('.toast').textContent), null, { timeout: 8000 }).catch(() => {});
+  check('שמירה מגרסה ישנה — גרסה 4, בלי שאלה', /גרסה 4/.test(await page.textContent('.toast')));
+  // הספרייה: מספר הגרסה ותמונה ממוזערת מתוך ה-‎.mbe
+  await page.goto(BASE + '/index.html');
+  await page.waitForSelector('.doc-row a');
+  const libRow = await page.evaluate(id => {
+    const a = [...document.querySelectorAll('.doc-row a')].find(x => x.getAttribute('href') === 'editor.html?doc=' + id);
+    const li = a.closest('.doc-row');
+    return { small: li.querySelector('small').textContent, bg: li.querySelector('.canvas-ic i').style.backgroundImage };
+  }, sid);
+  const prev = await page.evaluate(async id => { const r = await fetch(`api.php?action=doc_preview&id=${id}`); return [r.status, r.headers.get('content-type'), (await r.arrayBuffer()).byteLength]; }, sid);
+  check('בספרייה — "גרסה 4" ותמונה ממוזערת', /גרסה 4/.test(libRow.small) && /doc_preview/.test(libRow.bg) && prev[0] === 200 && prev[1] === 'image/png' && prev[2] > 50, JSON.stringify([libRow, prev]));
+  // השרת לא סומך על הלקוח: קובץ פגום — 422 עם הבעיות; בלי הכותרת — 403
+  const srv = await page.evaluate(async id => {
+    const up = (h, body) => fetch(`api.php?action=doc_upload&id=${id}`, { method: 'POST', headers: h, body })
+      .then(async r => { const j = await r.json(); return [r.status, j.error, (j.issues || []).length]; });
+    const junk = new Uint8Array(300); junk.set([80, 75, 3, 4]);
+    return { bad: await up({ 'X-Raster-Studio': '1' }, junk), csrf: await up({}, junk) };
+  }, sid);
+  check('השרת דוחה קובץ פגום (422, mbe_invalid, עם הבעיות) ובקשה בלי הכותרת (403)', srv.bad[0] === 422 && srv.bad[1] === 'mbe_invalid' && srv.bad[2] > 0 && srv.csrf[0] === 403, JSON.stringify(srv));
+  // מסמך מהמכשיר — 💾 מכניס אותו לספרייה בשרת
+  await page.goto(BASE + '/index.html');
+  await page.waitForSelector('#new-btn:not([disabled])');
+  const greenPng = Buffer.from(await page.evaluate(async () => {
+    const c = new OffscreenCanvas(50, 40); const g = c.getContext('2d'); g.fillStyle = '#00aa00'; g.fillRect(0, 0, 50, 40);
+    return Array.from(new Uint8Array(await (await c.convertToBlob({ type: 'image/png' })).arrayBuffer()));
+  }));
+  await Promise.all([page.waitForURL(/editor\.html\?open=pending/), page.setInputFiles('#file', { name: 'ירוק.png', mimeType: 'image/png', buffer: greenPng })]);
+  await page.waitForFunction(() => window.__rs?.doc?.width === 50, null, { timeout: 8000 }).catch(() => {});
+  await page.click('#save-btn');
+  await page.waitForFunction(() => /גרסה 1/.test(document.querySelector('.toast').textContent), null, { timeout: 8000 }).catch(() => {});
+  const localSaved = await page.evaluate(() => ({ id: __rs.doc.serverId, url: location.search, v: __rs.doc.serverVersion }));
+  // התשובות 409 / 422 / 403 שהבדיקות האלה ביקשו בכוונה — הדפדפן רושם אותן בקונסול
+  for (let i = errors.length - 1; i >= 0; i--) if (/status of (409|422|403)\b/.test(errors[i])) errors.splice(i, 1);
+  check('מסמך מהמכשיר — 💾 יוצר אותו בספרייה בשרת, והכתובת עוברת אליו', localSaved.id > 0 && localSaved.url === '?doc=' + localSaved.id && localSaved.v === 1, JSON.stringify(localSaved));
 
   // ---- התקנה ובלי רשת ----
   const man = await page.evaluate(async () => {
