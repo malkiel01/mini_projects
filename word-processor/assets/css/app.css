@@ -298,3 +298,12 @@ label.field > span { font-size: .85rem; color: var(--muted); }
 .activity .what { flex: 1; min-inline-size: 0; }
 .activity .detail { color: var(--muted); overflow-wrap: anywhere; }
 .activity time { flex: none; color: var(--muted); font-size: .8rem; font-variant-numeric: tabular-nums; }
+
+/* בחירה מרובה ברשימה: תיבת סימון בכרטיס, כרטיס שנבחר, ופס פעולות קבוע בתחתית */
+.card .pick { width: 20px; height: 20px; flex: none; accent-color: var(--brand); }
+.card.picked { background: color-mix(in srgb, var(--brand) 10%, transparent); }
+.select-toggle[aria-pressed="true"] { background: var(--brand); color: var(--brand-ink); }
+.select-bar { position: fixed; inset-inline: 0; bottom: 0; z-index: 30; display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2);
+    padding: var(--s2) var(--s3) calc(var(--s2) + env(safe-area-inset-bottom)); background: var(--surface); border-top: 1px solid var(--line); box-shadow: 0 -4px 16px rgb(0 0 0 / .08); }
+.select-bar .n { font-weight: 600; margin-inline-end: auto; }
+.select-bar[hidden] { display: none; }
