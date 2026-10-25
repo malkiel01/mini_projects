@@ -1,0 +1,28 @@
+{
+  "team": "חבילת היצירה",
+  "updated": "2026-10-25",
+  "note": "רשימת הצוות הקבועה. כל אחד שולח הודעות ישירות לאחרים לפי .claude/skills/creative-suite-team/SKILL.md. מוסיף או משנה חבר — רק הצ'אט המתכלל.",
+  "members": [
+    { "role": "coordinator", "name": "הצ'אט המתכלל", "session": "session_01XFFMNKh9yc4XGoUa7AYMfv",
+      "owns": ["creative-suite/docs/master-spec.md", "creative-suite/docs/mbe-format.md", "creative-suite/docs/projects/", "creative-suite/docs/requests/ (ההכרעות)", "creative-suite/dashboard/", "creative-suite/team/", "creative-suite/mbe-core/apps.json", "creative-suite/mbe-core/schema/"],
+      "does": "מכריע בבקשות, מעדכן את האפיון והסכמה, מנתב עבודה, מדבר עם בעל המערכת" },
+    { "role": "spec", "name": "הצ'אט המאפיין", "session": "session_01PBB4TeboGyjRGSR4xp6CbH",
+      "owns": ["creative-suite/docs/spec/"],
+      "does": "ניתוח ואפיון עומק של הרעיון \"קובץ אחד לכל המערכות\" עם בעל המערכת" },
+    { "role": "mbe-core", "name": "ליבת הפורמט ‎.mbe", "session": "session_01JHsQJ2dTKfzLrKtRrmj6d7",
+      "owns": ["creative-suite/mbe-core/ (חוץ מ-apps.json ו-schema/)"],
+      "does": "הספרייה שקוראת, כותבת ומאמתת ‎.mbe ב-JS וב-PHP, והסנכרון לאפליקציות" },
+    { "role": "word-processor", "name": "עורך התמלילים", "session": "session_017KKsWRcifACujfzwHe4n3H",
+      "owns": ["word-processor/"],
+      "does": "עורך בסגנון Word; ‎.mbe מסוג text; מנוע ה-PDF שהעימוד מחכה לו" },
+    { "role": "raster", "name": "עיצוב רסטר", "session": "session_015VvPDp3j9unKW83bB6sFMA",
+      "owns": ["raster-studio/"],
+      "does": "עורך בסגנון Photoshop; ‎.mbe מסוג raster; בעלים של שכבות וצבע ומעטפת הממשק" },
+    { "role": "vector", "name": "וקטורי", "session": "session_012KMgYSuoAYSRhgjremwWxb",
+      "owns": ["vector-studio/"],
+      "does": "עורך בסגנון Illustrator; ‎.mbe מסוג vector; בעלים של גאומטריה ונתיבים" },
+    { "role": "layout", "name": "עימוד", "session": "session_019sbyP5mHxwBKkbhmCj41Go",
+      "owns": ["layout-studio/"],
+      "does": "עימוד בסגנון InDesign; ‎.mbe מסוג layout; בעלים של שטף טקסט במסגרות ו-shapeLine (עברית)" }
+  ]
+}
