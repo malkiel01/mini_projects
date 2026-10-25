@@ -346,3 +346,31 @@ th.w-c-word { background: var(--bg); z-index: 2; }
 .w-audio { display: grid; gap: var(--s2); padding: var(--s2); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
 .w-audio audio { inline-size: 100%; }
 .site-state .line b { overflow-wrap: anywhere; }
+
+/* ── קבצי הקוד (code.js) ── */
+.code-wrap { display: flex; flex-direction: column; min-height: 420px; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; background: var(--surface); }
+.code-bar { display: flex; align-items: center; gap: var(--s1); padding: 6px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.code-files { flex: 1 1 auto; }
+.code-tab { padding: 6px 10px; border: 0; background: none; color: var(--muted); cursor: pointer; font: inherit; font-size: .85rem; white-space: nowrap; }
+.code-tab.on { background: var(--brand-soft); color: var(--ink); font-weight: 600; }
+.code-tab .dot { color: var(--star); margin-inline-start: 4px; }
+.code-main { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr); min-height: 0; }
+.code-ed { min-height: 0; height: 100%; }
+.code-fallback { width: 100%; height: 100%; border: 0; border-radius: 0; resize: none; font: 13px/1.5 ui-monospace, Consolas, monospace; }
+.code-pv { display: none; min-height: 0; border-top: 1px solid var(--line); }
+.code-frame { width: 100%; height: 100%; border: 0; background: #fff; }
+.code-wrap.show-pv .code-main { grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
+.code-wrap.show-pv .code-pv { display: block; }
+@media (min-width: 1000px) {
+  .code-main { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .code-pv { display: block; border-top: 0; border-inline-start: 1px solid var(--line); }
+  .code-pv-btn { display: none; }
+  .code-wrap.show-pv .code-main { grid-template-rows: none; }
+}
+.code-help dt { font-weight: 600; margin-top: var(--s2); }
+.code-help dd { margin: 4px 0 0; font: 12px/1.6 ui-monospace, Consolas, monospace; color: var(--muted); overflow-wrap: anywhere; }
+.code-intro h2 { margin: 0 0 var(--s2); }
+hr.sep { border: 0; border-top: 1px solid var(--line); margin: var(--s3) 0; }
+.agent .cells { grid-template-columns: minmax(0, 1fr); }
+.agent .cells dd { overflow-wrap: anywhere; font: 13px/1.5 ui-monospace, Consolas, monospace; }
+.agent textarea { font: 12px/1.5 ui-monospace, Consolas, monospace; }

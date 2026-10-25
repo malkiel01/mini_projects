@@ -616,8 +616,10 @@ parent.postMessage({kol:'ready'},'*');
     const body = h('div', { class: 'ai' }, h('p', { class: 'empty' }, 'טוען…'));
     sheet('✨ עוזר הבינה', body);
     let st;
-    try { st = await api('ai_status'); } catch (e) { body.replaceChildren(h('p', { class: 'error' }, e.message)); return; }
-    if (!st.ready) { body.replaceChildren(h('p', { class: 'empty' }, 'העוזר עוד לא מחובר. בעל המערכת מגדיר את המפתח ב-⚙️ הגדרות.')); return; }
+    // עבודה מצ'אט (Claude) — לא תלויה במפתח של העוזר
+    const chat = h('button', { type: 'button', class: 'btn ghost', onclick: () => Agent.sheet() }, '🤖 עבודה מצ\'אט — העתקת סקיל');
+    try { st = await api('ai_status'); } catch (e) { body.replaceChildren(h('p', { class: 'error' }, e.message), chat); return; }
+    if (!st.ready) { body.replaceChildren(h('p', { class: 'empty' }, 'העוזר עוד לא מחובר. בעל המערכת מגדיר את המפתח ב-⚙️ הגדרות.'), chat); return; }
     const f = S.sel && find(S.sel);
     const ids = f ? (f.kind === 'widget' ? [f.w.id] : f.sec.columns.flatMap(c => c.widgets.map(w => w.id))) : [];
     const prompt = h('textarea', { rows: 4, maxlength: 4000, placeholder: 'למשל: "תקצר את הפסקה הראשונה", "תוסיף כותרת מעל ההקלטות", "תתקן שגיאות כתיב"' });
@@ -640,7 +642,7 @@ parent.postMessage({kol:'ready'},'*');
       h('p', { class: 'hint' }, 'כתבו מה לשנות בעמוד. העוזר מציע — אתם רואים את התוצאה ומחליטים. שום דבר לא נשמר בלי "החלה".'),
       h('label', { class: 'f' }, h('span', {}, 'הבקשה'), prompt),
       ids.length ? h('label', { class: 'switch' }, only, h('span', {}, f.kind === 'widget' ? `רק על הרכיב שנבחר (${TYPES[f.w.type].label})` : 'רק על הפס שנבחר')) : null,
-      go, quota, out].filter(Boolean));
+      go, quota, out, h('hr', { class: 'sep' }), chat].filter(Boolean));
     prompt.focus();
   }
 

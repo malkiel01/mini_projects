@@ -15,6 +15,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/code.php';
+
 const LEX_TEXTS = ['title_he' => 200, 'subtitle_main_he' => 300, 'title_fr' => 200, 'title_en' => 200, 'subtitle_he' => 500, 'credit_he' => 300,
     'gate_before' => 40, 'gate_after' => 40, 'more_label' => 60, 'less_label' => 60];
 const LEX_NUMS = ['hero_overlay' => [0, 100, 0], 'hero_min_height' => [0, 1500, 0], 'title_size' => [10, 200, 56], 'subtitle_size' => [8, 120, 22],
@@ -290,137 +292,15 @@ function lexicon_render(array $w, bool $editor, string $cls, string $k): array
     // הקלטה שהועתקה מהאתר ולא הוחלפה — באתר מפנים לקובץ שכבר שם (לא נשלח שוב); בסטודיו — העותק שלנו
     $audioUrl = fn(string $id) => !$editor && ($o = $GLOBALS['kol_files'][$id]['origin'] ?? '') ? $o : $url($id);
     $hero = $p['hero_file'] ? $url($p['hero_file']) : $p['hero_url'];
-
-    $sub = $p['subtitle_size'];
-    $main = $p['subtitle_main_size'] > 0 ? $p['subtitle_main_size'] : max(14, (int)round($p['title_size'] * 0.6));
-    $L = '.kadisha-lexicon-page';
-    $css = "$L .kadisha-hero{" . ($p['hero_min_height'] > 0 ? "min-height:{$p['hero_min_height']}px;display:flex;align-items:center;justify-content:center;" : '') . '}'
-        . "$L .kadisha-hero-title,$L .kadisha-hero h1{font-size:{$p['title_size']}px!important;font-weight:{$p['title_weight']}!important;line-height:1.15;margin-bottom:0!important}"
-        . "$L .kadisha-hero-subtitle{font-size:{$sub}px!important;font-weight:{$p['title_weight']}!important}"
-        . "$L .kadisha-hero-credit{font-size:" . max(11, (int)round($sub * 0.75)) . 'px!important;margin-top:0!important;line-height:1.25!important;opacity:.92}'
-        . "$L .kadisha-hero-subtitle:has(+ .kadisha-hero-credit){margin-bottom:0!important;line-height:1.25!important}"
-        . "@supports not selector(:has(*)){{$L} .kadisha-hero-subtitle{margin-bottom:0!important}}"
-        . "$L .kadisha-hero-subtitle-main{font-family:'Frank Ruhl Libre','David Libre',serif!important;font-size:{$main}px!important;font-weight:{$p['title_weight']}!important;"
-        . 'line-height:1.1!important;color:var(--ka-cream,#f5ebd6)!important;text-shadow:0 2px 8px rgba(0,0,0,.3);margin:-.1em 0 1.1rem!important;padding:0!important;letter-spacing:.01em}'
-        . "$L .kadisha-hero-eyebrow--under{font-size:{$p['title_en_size']}px!important;margin-top:0;margin-bottom:.6rem;padding:.15rem 1.5rem}"
-        . '@media (max-width:600px){'
-        . "$L .kadisha-hero-title,$L .kadisha-hero h1{font-size:" . max(20, (int)round($p['title_size'] * 0.7)) . 'px!important}'
-        . "$L .kadisha-hero-subtitle-main{font-size:" . max(14, (int)round($main * 0.8)) . 'px!important}'
-        . "$L .kadisha-hero-subtitle{font-size:" . max(12, (int)round($sub * 0.85)) . 'px!important}'
-        . "$L .kadisha-hero-eyebrow--under{font-size:" . max(10, (int)round($p['title_en_size'] * 0.8)) . 'px!important}'
-        . "$L .kadisha-hero-credit{font-size:" . max(10, (int)round($sub * 0.85 * 0.75)) . 'px!important}}'
-        . ".kol-page .kol-w-{$w['id']}{margin:0}";
-
-    $gates = [];
-    if ($p['intro_before'] !== '') $gates[] = ['label' => $p['gate_before'], 'html' => $p['intro_before']];
-    if ($p['intro_after'] !== '') $gates[] = ['label' => $p['gate_after'], 'html' => $p['intro_after']];
-    if (count($gates) === 1 && $p['intro_after'] === '') $gates[0]['label'] = $p['gate_after'];
-
-    $o = "<div class=\"$cls kadisha-page kadisha-lexicon-page\" dir=\"rtl\" lang=\"he\"$k>";
-    $o .= '<section class="kadisha-hero' . ($hero ? ' kadisha-hero--has-image' : '') . '" aria-labelledby="lexicon-hero-title"'
-        . ($hero ? ' style="' . e("background-image:url('$hero'); --ka-hero-overlay:{$p['hero_overlay']};") . '"' : '') . '>'
-        . '<div class="kadisha-container"><div class="kadisha-hero-inner">'
-        . '<h1 id="lexicon-hero-title" class="kadisha-hero-title">' . e($p['title_he']) . '</h1>';
-    if ($p['subtitle_main_he'] !== '') $o .= '<p class="kadisha-hero-subtitle-main">' . e($p['subtitle_main_he']) . '</p>';
-    if ($p['title_en'] !== '' || $p['title_fr'] !== '') {
-        $o .= '<span class="kadisha-hero-eyebrow kadisha-hero-eyebrow--under" dir="ltr">'
-            . ($p['title_fr'] !== '' ? '<span class="kadisha-hero-eyebrow-line">' . e($p['title_fr']) . '</span>' : '')
-            . ($p['title_en'] !== '' ? '<span class="kadisha-hero-eyebrow-line">' . e($p['title_en']) . '</span>' : '') . '</span>';
-    }
-    if ($p['subtitle_he'] !== '') $o .= '<p class="kadisha-hero-subtitle">' . e($p['subtitle_he']) . '</p>';
-    if ($p['credit_he'] !== '') $o .= '<p class="kadisha-hero-subtitle kadisha-hero-credit">' . e($p['credit_he']) . '</p>';
-    if ($gates) {
-        $o .= '<div class="kadisha-lex-hero-actions">';
-        foreach ($gates as $i => $g) {
-            $o .= "<button type=\"button\" class=\"kadisha-lex-hero-btn kadisha-lex-gate\" data-panel=\"kadisha-lex-panel-$i\" aria-expanded=\"false\" aria-controls=\"kadisha-lex-panel-$i\">"
-                . '<span class="kadisha-lex-hero-btn-icon" aria-hidden="true">📖</span><span class="kadisha-lex-hero-btn-text">' . e($g['label']) . '</span></button>';
-        }
-        $o .= '</div>';
-    }
-    $o .= '</div></div></section>';
-
-    $o .= '<section class="kadisha-section" id="lexicon-main"><div class="kadisha-container">';
-    $iw = $p['intro_max_width'] > 0 ? "max-width:{$p['intro_max_width']}px;" : '';
-    foreach ($gates as $i => $g) {
-        $o .= "<div class=\"kadisha-lexicon-intro kadisha-lex-section-panel\" id=\"kadisha-lex-panel-$i\" style=\"$iw\" hidden><div class=\"kadisha-lexicon-intro-teaser\">" . $g['html'] . '</div>';
-        if ($i === 0 && isset($gates[1])) {
-            $o .= '<button type="button" class="kadisha-lexicon-intro-toggle kadisha-lex-gate" data-panel="kadisha-lex-panel-1" aria-expanded="false" aria-controls="kadisha-lex-panel-1"'
-                . ' data-more-text="' . e($p['more_label']) . '" data-less-text="' . e($p['less_label']) . '">' . e($p['more_label']) . ' <span aria-hidden="true">↓</span></button>';
-        }
-        $o .= '</div>';
-    }
-    if ($p['feedback']) $o .= LEX_FEEDBACK_MODAL;
-
-    $o .= '<div class="kadisha-lexicon-controls" id="kadisha-lex-panel-search" role="search"><label for="kadisha-lex-search" class="screen-reader-text">חיפוש מילה</label>'
-        . '<div class="kadisha-lexicon-search-wrap"><input id="kadisha-lex-search" type="search" autocomplete="off" placeholder="חפש מילה..." class="kadisha-lexicon-search">'
-        . '<span class="kadisha-lexicon-search-icon" aria-hidden="true">🔎</span></div>'
-        . '<label class="kadisha-lex-scope"><input type="checkbox" id="kadisha-lex-scope-full"><span>הרחב את החיפוש גם לפירוש ולנושאים</span></label>';
-    if ($topics) {
-        $o .= '<div class="kadisha-lexicon-topic-filter" role="group" aria-label="סינון לפי נושא"><button type="button" class="kadisha-lex-topic-btn is-active" data-topic="">הכל</button>';
-        foreach ($topics as $t) {
-            $o .= '<button type="button" class="kadisha-lex-topic-btn" data-topic="' . e($t['slug']) . '">' . e($t['name']) . ' <span class="kadisha-lex-topic-count">' . $t['count'] . '</span></button>';
-        }
-        $o .= '</div>';
-    }
-    $n = count($words);
-    $o .= "<div class=\"kadisha-lexicon-count\" aria-live=\"polite\"><span id=\"kadisha-lex-shown\">$n</span> מתוך <span id=\"kadisha-lex-total\">$n</span> מילים</div></div>";
-    if (!$words) $o .= '<p class="kadisha-lexicon-empty">המאגר עוד ריק. מילים יתווספו בהקדם.</p>';
-
-    $o .= '<div class="kadisha-lexicon-grid" id="kadisha-lex-grid">';
-    foreach ($editor ? array_slice($words, 0, LEX_PREVIEW_CARDS) : $words as $x) {
-        $o .= lexicon_card($x, $map, $p, $x['audio'] === '' ? '' : (file_id($x['audio']) ? $audioUrl($x['audio']) : $x['audio']));
-    }
-    $o .= '</div>';
-    if ($editor && $n > LEX_PREVIEW_CARDS) {
-        $o .= '<p class="kol-missing">כאן בתצוגה — ' . LEX_PREVIEW_CARDS . ' המילים הראשונות. באתר יופיעו כל ' . $n . ' המילים. עריכת המילים: 📚 מילים</p>';
-    }
-    $o .= '<p class="kadisha-lexicon-empty" id="kadisha-lex-no-matches" style="display:none;">לא נמצאו מילים להתאמת החיפוש.</p></div></section></div>';
-    return [$o, $css];
+    $ctx = lexicon_context($p, $words, $topics, $map, $audioUrl, $hero, $editor);
+    // קבצי הקוד (לשונית </> קוד) — או התבנית המובנית. עם קבצים: ה-CSS כולו שלנו, וה-JS רץ במקום של ערכת הנושא
+    $code = code_files();
+    $html = tpl_render($code['lexicon.html'] ?? LEX_TPL, $ctx);
+    $css = tpl_render($code['lexicon.css'] ?? LEX_TPL_SIZES, $ctx) . ".kol-page .kol-w-{$w['id']}{margin:0}";
+    if ($code !== null) $GLOBALS['kol_page_js'] = (string)($code['lexicon.js'] ?? '');
+    $own = $code !== null && !$editor ? ' data-kol-own="kadisha-lexicon"' : '';
+    return ["<div class=\"$cls\"$k$own>$html</div>", $css];
 }
-
-function lexicon_card(array $w, array &$map, array $p, string $audio): string
-{
-    $low = fn(string $t) => mb_strtolower(html_entity_decode($t, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'), 'UTF-8');
-    $plain = trim(preg_replace('/\s+/u', ' ', strip_tags(str_replace(['</p>', '<br>'], [' </p>', ' <br>'], $w['meaning']))));
-    $slugs = array_map(fn($t) => topic_slug($t, $map), $w['topics']);
-    $id = $w['wp_id'] ?? 'k' . $w['id'];
-    $o = '<article class="kadisha-word-card" data-id="' . e((string)$id) . '" data-search="' . e($low($w['word'])) . '" data-search-full="'
-        . e($low($w['word'] . ' ' . $plain . ' ' . implode(' ', $w['topics']))) . '" data-topics="' . e(implode(' ', $slugs)) . '">'
-        . '<header class="kadisha-word-head"><h3 class="kadisha-word-title">' . e($w['word']) . '</h3>';
-    if ($p['show_ids'] && $w['external_id'] !== '') $o .= '<span class="kadisha-word-extid" title="ID מהאקסל (זמני לפיתוח)">#' . e($w['external_id']) . '</span>';
-    $o .= '<div class="kadisha-word-actions">';
-    if ($audio !== '') {
-        $o .= '<button type="button" class="kadisha-word-audio-btn" data-audio-src="' . e($audio) . '" aria-label="השמע את המילה ' . e($w['word']) . '" title="השמע">'
-            . '<span class="kadisha-word-audio-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span></button>';
-    }
-    $o .= '</div></header>';
-    if ($w['topics']) {
-        $o .= '<div class="kadisha-word-topics' . (count($w['topics']) === 1 ? ' is-single' : '') . '">';
-        foreach ($w['topics'] as $t) $o .= '<span class="kadisha-word-topic">' . e($t) . '</span>';
-        $o .= '</div>';
-    }
-    $o .= '<div class="kadisha-word-meaning">' . $w['meaning'] . '</div>';
-    // משוב — נשלח למייל דרך האתר, ומזוהה שם לפי מספר הרשומה בוורדפרס; למילה שנוספה כאן אין כזה
-    if ($p['feedback'] && $w['wp_id']) {
-        $o .= '<footer class="kadisha-word-footer"><button type="button" class="kadisha-word-feedback-btn" data-word-id="' . (int)$w['wp_id'] . '" data-word-title="' . e($w['word'])
-            . '" aria-label="שלח משוב על המילה ' . e($w['word']) . '"><span aria-hidden="true">💬</span><span class="kadisha-word-feedback-label">שלח משוב</span></button></footer>';
-    }
-    return $o . '</article>';
-}
-
-const LEX_FEEDBACK_MODAL = '<div class="kadisha-lex-feedback-modal" id="kadisha-lex-feedback-modal" hidden role="dialog" aria-modal="true" aria-labelledby="kadisha-lex-feedback-title">'
-    . '<div class="kadisha-lex-feedback-backdrop" data-klf-close="1"></div><div class="kadisha-lex-feedback-window"><header class="kadisha-lex-feedback-head">'
-    . '<h2 id="kadisha-lex-feedback-title">שלח משוב על המילה</h2><button type="button" class="kadisha-lex-feedback-close" data-klf-close="1" aria-label="סגור">×</button></header>'
-    . '<form class="kadisha-lex-feedback-form" id="kadisha-lex-feedback-form" novalidate><div class="kadisha-lex-feedback-word"><span class="kadisha-lex-feedback-word-label">המילה:</span>'
-    . '<strong id="kadisha-lex-feedback-word-name"></strong></div>'
-    . '<label class="kadisha-lex-feedback-field"><span>שם (אופציונלי)</span><input type="text" name="name" id="kadisha-lex-feedback-name" autocomplete="name" maxlength="120"></label>'
-    . '<label class="kadisha-lex-feedback-field"><span>אימייל (אופציונלי — אם תרצו תשובה)</span><input type="email" name="email" id="kadisha-lex-feedback-email" autocomplete="email" dir="ltr" maxlength="160"></label>'
-    . '<label class="kadisha-lex-feedback-field"><span>ההערה / התיקון / התוספת <em>*</em></span><textarea name="message" id="kadisha-lex-feedback-message" rows="5" required minlength="3" maxlength="3000"'
-    . ' placeholder="כתבו כאן הערה לתיקון או תוספת על המילה..."></textarea></label>'
-    . '<div class="kadisha-lex-feedback-honeypot" aria-hidden="true"><label>אל תמלאו שדה זה<input type="text" name="website" tabindex="-1" autocomplete="off"></label></div>'
-    . '<footer class="kadisha-lex-feedback-foot"><button type="button" class="kadisha-lex-feedback-cancel" data-klf-close="1">ביטול</button>'
-    . '<button type="submit" class="kadisha-lex-feedback-send" id="kadisha-lex-feedback-send"><span aria-hidden="true">📨</span> שלח משוב</button>'
-    . '<span class="kadisha-lex-feedback-status" id="kadisha-lex-feedback-status" aria-live="polite"></span></footer></form></div></div>';
 
 // ── ההקלטות מהאתר → עותק בכלי ─────────────────────────────
 

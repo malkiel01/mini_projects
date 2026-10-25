@@ -8,7 +8,8 @@ const ROLE_NAMES = { owner: 'בעלים', publisher: 'מפרסם', editor: 'עו
 const ACTIONS = {
   publish: '🚀 פרסם', publish_failed: '⚠️ פרסום נכשל', version_create: '📦 יצר גרסה', import: '📥 ייבא את העמוד מהאתר',
   word_add: '📚 הוסיף מילה', word_edit: '📚 ערך מילה', word_delete: '📚 מחק מילה', site_switch: '🔀 החליף את מה שהאתר מציג',
-  audio_import: '🎙️ ייבא הקלטות', words_csv: '📊 עדכן מילים מאקסל', topic_rename: '🏷️ שינה שם של נושא', topic_delete: '🏷️ הסיר נושא',
+  audio_import: '🎙️ ייבא הקלטות', code_create: '</> יצר את קבצי הקוד', code_save: '</> שמר קובץ קוד', code_reset: '</> חזר לתבנית המובנית',
+  agent_create: '🤖 יצר כניסה לצ\'אט', agent_revoke: '🤖 ביטל כניסה לצ\'אט', words_csv: '📊 עדכן מילים מאקסל', topic_rename: '🏷️ שינה שם של נושא', topic_delete: '🏷️ הסיר נושא',
   key_rotate: '🔑 יצר מפתח חדש', key_activate: '🔑 הפעיל מפתח חדש', site_set: '🔗 שינה כתובת אתר',
   member_add: '➕ הוסיף חבר', file_add: '⬆️ העלה קובץ', file_delete: '🗑️ מחק קובץ', disk_cap: '💽 שינה תקרת קבצים', restore: '↺ שחזר טיוטה', member_role: '🔁 שינה תפקיד', member_remove: '➖ הסיר חבר', member_linked: '🔗 חבר נכנס לראשונה',
 };
@@ -78,6 +79,7 @@ function sheet(title, ...body) {
 const TABS = [
   { id: 'studio', label: '🎨 סטודיו', min: 'editor' },
   { id: 'words', label: '📚 מילים', min: 'editor' },
+  { id: 'code', label: '</> קוד', min: 'editor' },
   { id: 'files', label: '🗂️ קבצים', min: 'editor' },
   { id: 'publish', label: '🚀 פרסום', min: 'editor' },
   { id: 'members', label: '👥 חברים', min: 'owner' },
@@ -93,7 +95,8 @@ function route() {
   nav.hidden = tabs.length < 2;
   nav.replaceChildren(...tabs.map(t => h('a', { href: '#/' + t.id, 'aria-current': t === cur ? 'page' : null }, t.label)));
   if (cur.id !== 'studio') Studio.unmount();
-  ({ studio: viewStudio, words: () => Words.view(main), files: () => Media.view(main, state.user.role === 'owner'),
+  if (cur.id !== 'code') Code.unmount();
+  ({ studio: viewStudio, words: () => Words.view(main), code: () => Code.view(main), files: () => Media.view(main, state.user.role === 'owner'),
     publish: () => Publish.view(main, state.user.role), settings: () => Publish.settings(main), members: viewMembers, log: viewLog })[cur.id]();
 }
 window.addEventListener('hashchange', () => state.user?.role && route());

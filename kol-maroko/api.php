@@ -10,6 +10,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/lib/members.php';
 require_once __DIR__ . '/lib/import.php';
 require_once __DIR__ . '/lib/ai.php';
+require_once __DIR__ . '/lib/agent.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -31,7 +32,8 @@ const PUBLIC_ACTIONS = ['embed_key', 'media'];
 const POST_ACTIONS = ['member_add', 'member_set', 'member_remove', 'request_dismiss', 'lock', 'draft_save', 'render', 'revision_restore',
                       'upload_init', 'upload_chunk', 'upload_done', 'file_delete', 'disk_cap', 'editor_session', 'longtext_sync',
                       'publish', 'republish', 'version_send', 'key_rotate', 'key_activate', 'site_set', 'site_ping', 'import_run',
-                      'ai_suggest', 'secret_set', 'ai_quota_set', 'word_save', 'word_delete', 'site_switch', 'topic_op', 'words_csv_import', 'audio_import'];
+                      'ai_suggest', 'secret_set', 'ai_quota_set', 'word_save', 'word_delete', 'site_switch', 'topic_op', 'words_csv_import', 'audio_import',
+                      'code_create', 'code_save', 'code_reset', 'agent_token_create', 'agent_token_revoke'];
 
 try {
     if (in_array($action, POST_ACTIONS, true) && $method !== 'POST') throw new ApiError('נדרש POST', 405);
@@ -88,6 +90,15 @@ try {
         'words_csv' => (require_role($user, 'editor') ? words_csv() : []),
         'words_csv_import' => words_csv_import(require_role($user, 'editor'), $body),
         'audio_import' => audio_import(require_role($user, 'owner'), $body),
+        'code' => (require_role($user, 'editor') ? code_state() : []),
+        'code_create' => code_create(require_role($user, 'editor')),
+        'code_save' => code_save(require_role($user, 'editor'), $body),
+        'code_reset' => code_reset(require_role($user, 'editor')),
+        'code_history' => (require_role($user, 'editor') ? code_history($_GET) : []),
+        'code_history_get' => (require_role($user, 'editor') ? code_history_get($_GET) : []),
+        'agent_tokens' => agent_tokens(require_role($user, 'editor')),
+        'agent_token_create' => agent_token_create(require_role($user, 'editor'), $body),
+        'agent_token_revoke' => agent_token_revoke(require_role($user, 'editor'), $body),
         'import_info' => (require_role($user, 'owner') ? ['imported' => json_decode((string)setting('imported_from', 'null'), true)] : []),
         'ai_status' => ai_status(require_role($user, 'editor')),
         'ai_suggest' => ai_suggest(require_role($user, 'editor'), $body),
