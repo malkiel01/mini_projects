@@ -163,3 +163,75 @@ test('manifest.id (1.1): נוצר בשמירה הראשונה, נשמר, "שמי
     assert.equal(new Set(Array.from({ length: 200 }, M.newId)).size, 200);
 });
 
+
+test('יומן (1.1): create → שמירות רצופות = שלב אחד → אפליקציה אחרת = שלב חדש → stage, restore, prune; וגם ב-PHP', async () => {
+    const preview = (await M.open(fx('valid/text.mbe'))).files.get(M.PREVIEW);
+    const doc = t => ({ surfaces: [], flows: { f1: { engine: 'prosemirror', doc: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: t }] }] } } } });
+    const f = M.create('text', doc('א'));
+    f.setRendition(M.PREVIEW, preview);
+    await M.save(f, { app: 'word-processor' });
+    let j = f.journal();
+    assert.equal(j.length, 1);
+    assert.equal(j[0].kind, 'create');
+    assert.equal(j[0].base, null);
+    const v1 = j[0].result;
+
+    f.document = doc('ב');
+    await M.save(f, { app: 'word-processor' });
+    f.document = doc('ג');
+    await M.save(f, { app: 'word-processor' });
+    j = f.journal();
+    assert.equal(j.length, 1, 'שמירות רצופות באותה אפליקציה — שלב אחד');
+    assert.equal(j[0].result, f.documentSha256);
+    assert.deepEqual([...f.files.keys()].filter(p => /^history\/[0-9a-f]{64}\.json$/.test(p)), [`history/${f.documentSha256}.json`],
+        'העותקים של הקשות ביניים נמחקו');
+
+    await M.save(f, { app: 'word-processor' }); // בלי שינוי — לא נוגע ביומן
+    assert.equal(f.journal().length, 1);
+
+    f.document = doc('ד');
+    await M.save(f, { app: 'layout-studio', who: 'המעמד' });
+    j = f.journal();
+    assert.equal(j.length, 2);
+    assert.deepEqual([j[1].kind, j[1].app, j[1].who, j[1].id], ['edit', 'layout-studio', 'המעמד', 's2']);
+    assert.equal(j[1].base, j[0].result);
+
+    f.stage({ kind: 'export', who: 'המגיה', note: 'נשלח להגהה' });
+    await M.save(f, { app: 'layout-studio' });
+    assert.deepEqual(f.journal().at(-1), { ...f.journal().at(-1), kind: 'export', who: 'המגיה', note: 'נשלח להגהה' });
+
+    f.restore('s1');
+    assert.equal(f.document.flows.f1.doc.content[0].content[0].text, 'ג');
+    await M.save(f, { app: 'layout-studio' });
+    j = f.journal();
+    assert.deepEqual([j.at(-1).kind, j.at(-1).note], ['restore', 'שוחזר מ-s1']);
+    assert.equal(j.at(-1).result, j[0].result);
+    assert.equal(f.version(v1), null, 'גרסת ביניים שנמחקה — null');
+    assert.deepEqual(f.version(j[1].result), doc('ד'));
+
+    // אותו קובץ ב-PHP: נפתח בלי אזהרות, ושמירה עם שינוי מוסיפה שלב בהמשך המספור
+    const file = join(tmp, 'journal.mbe'), out = join(tmp, 'journal-php.mbe');
+    writeFileSync(file, await M.save(f, { app: 'layout-studio' }));
+    // הייצוגים מיושנים (preview לא חודש אחרי השינויים) — זו הכוונה; חוץ מזה — בלי בעיות
+    assert.deepEqual(JSON.parse(php('validate', file)), { ok: true, codes: ['rendition-stale'] });
+    php('resave', file, out, 'php-b');
+    const g = await M.open(readFileSync(out));
+    assert.deepEqual(g.journal(), f.journal(), 'שמירה ב-PHP בלי שינוי — לא נוגעת ביומן');
+    assert.deepEqual(codes(g), ['rendition-stale']);
+
+    const pruned = f.prune({ keep: 1 });
+    assert.ok(pruned >= 1);
+    await M.save(f, { app: 'layout-studio' });
+    assert.ok(f.journal().some(s => s.pruned));
+    assert.deepEqual(codes(f), ['rendition-stale'], 'אחרי גיזום — בלי אזהרות על ההיסטוריה');
+    assert.throws(() => f.restore('s2'), /לא נמצאה/);
+});
+
+test('יומן פגום — נשמר כמו שהוא, ולא נכתב עליו', async () => {
+    const f = await M.open(fx('hostile/history-invalid.mbe'));
+    const before = f.files.get(M.JOURNAL);
+    f.document.x = 1;
+    await M.save(f, { app: 'x' });
+    assert.deepEqual(Buffer.from(f.files.get(M.JOURNAL)), Buffer.from(before));
+    assert.deepEqual(f.journal(), []);
+});

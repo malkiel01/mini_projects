@@ -195,6 +195,16 @@ async function hostile() {
     }
     add('manifest-id-invalid', zip(await base(undefined, { version: '1.1', id: 'NOT-A-UUID' })), ['manifest-id-invalid'], { ok: true });
     add('manifest-id-missing', zip(await base(undefined, { version: '1.1' })), ['manifest-id-missing'], { ok: true });
+    {
+        // history/ (1.1) — אזהרות בלבד: יומן פגום, עותק שהשם שלו אינו הגיבוב, שלב בלי עותק
+        const files = await base({ surfaces: [] });
+        const docSha = await M.sha256(files.find(x => x.name === 'document.json').data);
+        add('history-invalid', zip([...files, { name: M.JOURNAL, data: utf8('{"stages":"x"}') }]), ['history-invalid'], { ok: true });
+        add('history-hash-mismatch', zip([...files, { name: `history/${'d'.repeat(64)}.json`, data: utf8('{"surfaces":[]}') }]), ['history-hash-mismatch'], { ok: true });
+        add('history-missing', zip([...files, { name: M.JOURNAL, data: utf8(canonicalJson({ stages: [
+            { id: 's1', at: '2026-10-25T09:00:00Z', app: 'x', kind: 'edit', base: 'e'.repeat(64), result: docSha, who: 'me@example.com' }] })) }]),
+            ['history-missing', 'history-base-missing', 'privacy'], { ok: true });
+    }
     add('version-2', zip(await base(undefined, { version: '2.0' })), ['version-unsupported']);
     add('version-newer-minor', zip(await base(undefined, { version: '1.7', 'x-from-1.7': { a: [] } })), ['version-newer-minor'], { ok: true });
     add('manifest-not-json', zip((await base()).map(f => f.name === 'manifest.json' ? { ...f, data: utf8('{"format":"mbe",') } : f)), ['manifest-invalid']);

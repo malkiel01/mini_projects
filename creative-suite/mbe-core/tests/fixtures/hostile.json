@@ -135,6 +135,29 @@
     "ok": true
   },
   {
+    "file": "hostile/history-invalid.mbe",
+    "codes": [
+      "history-invalid"
+    ],
+    "ok": true
+  },
+  {
+    "file": "hostile/history-hash-mismatch.mbe",
+    "codes": [
+      "history-hash-mismatch"
+    ],
+    "ok": true
+  },
+  {
+    "file": "hostile/history-missing.mbe",
+    "codes": [
+      "history-missing",
+      "history-base-missing",
+      "privacy"
+    ],
+    "ok": true
+  },
+  {
     "file": "hostile/version-2.mbe",
     "codes": [
       "version-unsupported"

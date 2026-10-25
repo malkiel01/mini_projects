@@ -76,7 +76,7 @@ creative-suite/mbe-core/
 הסדר מ-`spec/README.md` סעיף 7.4 — הליבה ראשונה. פרטי הממשק — מול הצ'אט המאפיין.
 
 - [x] `manifest.id` (UUID v4) — נוצר בשמירה הראשונה, נשמר בכל שמירה; משלים לקובץ 1.0; `VERSION` = `1.1`
-- [ ] `history/` — `journal.json` + `<sha256>.json`; פעולות `journal` / `restore`; בדיקות תקינות (גיבוב, `base`/`result`)
+- [x] `history/` — `journal.json` + `<sha256>.json`; פעולות `journal` / `restore`; בדיקות תקינות (גיבוב, `base`/`result`)
 - [ ] מזהה פסקה `attrs.id` — בדיקת ייחודיות בשטף + השלמה למזהים חסרים
 - [ ] `identify(face)` ו-`reconcile(face)` — זיהוי פנים (docx/pdf/png) ומיזוג תלת-כיווני לפי פסקה, עם רשימת התנגשויות
 - [ ] ניסוי נ3 — Google Docs ו-LibreOffice (שורת פקודה): מה שורד מהמזהים ב-docx
@@ -147,3 +147,9 @@ creative-suite/mbe-core/
   1.0 מקבל `id` בשמירה הבאה. `VERSION` = `1.1`. אזהרות: `manifest-id-invalid` (מזהה פגום — נשמר כמו שהוא),
   `manifest-id-missing` (קובץ 1.1 בלי `id`). הבדיקה בקוד — ביקשתי מהמתכלל להוסיף את `id` ל-`schema/manifest-1.json`.
   ארבע האפליקציות המסונכרנות עוברות (וורד 502/502).
+- 2026-10-25 — פורמט 1.1, שלב 2: יומן שלבים וגרסאות (`history/`), לפי `spec/hub-api.md` 2.5 והתשובה שלי למאפיין.
+  `save` רושם שלב לבד: מסמך חדש — `create`; שינוי — `edit`; שמירות רצופות של אותה אפליקציה ואותו `who` — מעדכנות את
+  ה-`result` של השלב האחרון, ועותק הביניים נמחק; שמירה בלי שינוי — לא נוגעת. `f.stage()`, ‏`f.restore(id|sha)` (שלב
+  `restore`, לא מוחק), `f.version(sha)`, ‏`f.journal()`, ‏`f.prune({ keep })` (`pruned: true`, היומן לא נגזם).
+  `who` ב-`save`. אזהרות: `history-invalid` (יומן פגום — נשמר ולא נכתב עליו), `history-hash-mismatch`,
+  `history-missing`, `history-base-missing`, `privacy` (מייל ב-`who`). ארבע האפליקציות עוברות (וורד 505/505).
