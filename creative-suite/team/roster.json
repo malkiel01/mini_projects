@@ -23,6 +23,9 @@
       "does": "עורך בסגנון Illustrator; ‎.mbe מסוג vector; בעלים של גאומטריה ונתיבים" },
     { "role": "layout", "name": "עימוד", "session": "session_019sbyP5mHxwBKkbhmCj41Go",
       "owns": ["layout-studio/"],
-      "does": "עימוד בסגנון InDesign; ‎.mbe מסוג layout; בעלים של שטף טקסט במסגרות ו-shapeLine (עברית)" }
+      "does": "עימוד בסגנון InDesign; ‎.mbe מסוג layout; בעלים של שטף טקסט במסגרות ו-shapeLine (עברית)" },
+    { "role": "design-studio", "name": "סטודיו העיצוב", "session": "session_01JD5TDa42YrmsoeAfPtQ5qb",
+      "owns": ["greeting-cards/"],
+      "does": "עורך בסגנון Canva — תבניות, טקסט, צורות ושכבות, בטלפון; ‎.mbe מסוג design" }
   ]
 }
