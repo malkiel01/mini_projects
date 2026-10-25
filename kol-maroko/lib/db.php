@@ -1,0 +1,93 @@
+<?php
+/**
+ * המסד: data/kol.sqlite (מוחרג בפריסה). מיגרציות לפי user_version — כל שלב מוסיף, לא משנה.
+ */
+
+declare(strict_types=1);
+
+if (!defined('KOL_DATA_DIR')) define('KOL_DATA_DIR', dirname(__DIR__) . '/data');
+
+final class ApiError extends RuntimeException
+{
+    public function __construct(string $message, int $code = 400, public readonly array $extra = [])
+    {
+        parent::__construct($message, $code);
+    }
+}
+
+function now_iso(): string
+{
+    return gmdate('Y-m-d\TH:i:s\Z');
+}
+
+function db(): PDO
+{
+    static $pdo = null;
+    if ($pdo) return $pdo;
+    if (!is_dir(KOL_DATA_DIR) && !@mkdir(KOL_DATA_DIR, 0775, true)) throw new ApiError('אין גישה לתיקיית הנתונים', 500);
+    $pdo = new PDO('sqlite:' . KOL_DATA_DIR . '/kol.sqlite', null, null, [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+    ]);
+    $pdo->exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
+    migrate($pdo);
+    return $pdo;
+}
+
+function migrate(PDO $pdo): void
+{
+    $v = (int)$pdo->query('PRAGMA user_version')->fetchColumn();
+    $steps = [
+        1 => <<<'SQL'
+            -- החברים בכלי. sub ריק — הוזמן לפי מייל ועוד לא נכנס.
+            CREATE TABLE members (
+                id        INTEGER PRIMARY KEY,
+                sub       TEXT UNIQUE,
+                email     TEXT,
+                name      TEXT NOT NULL DEFAULT '',
+                role      TEXT NOT NULL CHECK (role IN ('editor','publisher')),
+                added_by  TEXT NOT NULL,
+                added_at  TEXT NOT NULL,
+                last_seen TEXT
+            );
+            CREATE UNIQUE INDEX idx_members_email ON members(email) WHERE sub IS NULL;
+            -- מי שעבר את השער ואין לו תפקיד — רשימת "ביקשו גישה" אצל הבעלים.
+            CREATE TABLE access_requests (
+                sub     TEXT PRIMARY KEY,
+                name    TEXT NOT NULL DEFAULT '',
+                email   TEXT,
+                at      TEXT NOT NULL
+            );
+            CREATE TABLE audit (
+                id     INTEGER PRIMARY KEY,
+                at     TEXT NOT NULL,
+                sub    TEXT NOT NULL,
+                name   TEXT NOT NULL DEFAULT '',
+                action TEXT NOT NULL,
+                detail TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX idx_audit_at ON audit(at);
+            CREATE TABLE settings (k TEXT PRIMARY KEY, v TEXT NOT NULL);
+            SQL,
+    ];
+    foreach ($steps as $n => $sql) {
+        if ($v >= $n) continue;
+        $pdo->beginTransaction();
+        $pdo->exec($sql);
+        $pdo->exec("PRAGMA user_version = $n");
+        $pdo->commit();
+    }
+}
+
+function setting(string $k, ?string $default = null): ?string
+{
+    $st = db()->prepare('SELECT v FROM settings WHERE k = ?');
+    $st->execute([$k]);
+    $v = $st->fetchColumn();
+    return $v === false ? $default : (string)$v;
+}
+
+function setting_set(string $k, string $v): void
+{
+    db()->prepare('INSERT INTO settings (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v')->execute([$k, $v]);
+}
