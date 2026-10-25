@@ -831,11 +831,12 @@ window.PlatformAdmin = (() => {
         const cats = state.categories.map((cat, i) => {
             const icon = el('input', { value: cat.icon, className: 'icon-input', maxLength: 8, ariaLabel: 'אייקון' });
             const name = el('input', { value: cat.name, maxLength: 40, ariaLabel: 'שם' });
-            const count = state.apps.filter(a => a.category === cat.id).length;
+            const pic = iconPicker(cat.icon_app);
+            const count = state.apps.filter(a => a.placements.some(p => p.category === cat.id)).length;
             return el('div', { className: 'cat-row' }, [
-                icon, name,
+                icon, name, pic.node,
                 el('span', { className: 'muted small', textContent: `${count} אפליקציות` }),
-                button('שמירה', () => act('admin_category_save', { id: cat.id, name: name.value, icon: icon.value }, 'נשמר')),
+                button('שמירה', () => act('admin_category_save', { id: cat.id, name: name.value, icon: icon.value, icon_app: pic.value() }, 'נשמר')),
                 button('▲', () => act('admin_category_move', { id: cat.id, dir: -1 }), i === 0 ? 'hidden' : ''),
                 button('▼', () => act('admin_category_move', { id: cat.id, dir: 1 }), i === state.categories.length - 1 ? 'hidden' : ''),
                 button('מחיקה', () => confirm(`למחוק את הקטגוריה "${cat.name}"?`)
@@ -852,11 +853,12 @@ window.PlatformAdmin = (() => {
         const groups = state.groups.map((g, i) => {
             const icon = el('input', { value: g.icon, className: 'icon-input', maxLength: 8, ariaLabel: 'אייקון' });
             const name = el('input', { value: g.name, maxLength: 40, ariaLabel: 'שם' });
+            const pic = iconPicker(g.icon_app);
             const count = state.apps.filter(a => a.placements.some(p => p.group === g.id)).length;
             return el('div', { className: 'cat-row' }, [
-                icon, name,
+                icon, name, pic.node,
                 el('span', { className: 'muted small', textContent: `${count} אפליקציות` }),
-                button('שמירה', () => act('admin_group_save', { id: g.id, name: name.value, icon: icon.value }, 'נשמר')),
+                button('שמירה', () => act('admin_group_save', { id: g.id, name: name.value, icon: icon.value, icon_app: pic.value() }, 'נשמר')),
                 button('▲', () => act('admin_group_move', { id: g.id, dir: -1 }), i === 0 ? 'hidden' : ''),
                 button('▼', () => act('admin_group_move', { id: g.id, dir: 1 }), i === state.groups.length - 1 ? 'hidden' : ''),
                 button('מחיקה', () => confirm(`למחוק את הקבוצה "${g.name}"? האפליקציות שבה יחזרו לראשי של הקטגוריה.`)
@@ -881,6 +883,23 @@ window.PlatformAdmin = (() => {
                 '"🔌 מחוברת" — נכנסים רק עם חשבון בפלטפורמה והרשאה; מורידים כדי לנתק, ובוחרים איך עוד אפשר להיכנס.' }),
             ...apps,
         ]);
+    }
+
+    // אייקון מצויר לקטגוריה / קבוצה: האייקון של אחת האפליקציות (icon_svg). ריק — האימוג'י.
+    function iconPicker(current) {
+        const withPic = state.apps.filter(a => a.icon_svg);
+        const sel = el('select', { ariaLabel: 'אייקון מצויר' }, [
+            el('option', { value: '', textContent: '🖼 בלי — רק אימוג׳י' }),
+            ...withPic.map(a => el('option', { value: a.id, textContent: `🖼 ${a.name}` }))]);
+        sel.value = current && withPic.some(a => a.id === current) ? current : '';
+        const prev = el('span', { className: 'pic-prev' });
+        const paint = () => {
+            const a = withPic.find(x => x.id === sel.value);
+            prev.replaceChildren(...(a ? [el('img', { src: a.icon_svg, alt: '' })] : []));
+        };
+        sel.addEventListener('change', paint);
+        paint();
+        return { node: el('span', { className: 'pic-pick' }, [prev, sel]), value: () => sel.value || null };
     }
 
     // כרטיס אפליקציה בקטלוג: סגור — שם ואיפה היא מוצגת; פתוח — שורות המיקום ושאר ההגדרות.

@@ -491,6 +491,16 @@ function appRow(app) {
     return li;
 }
 
+// אייקון כותרת קטגוריה: המצויר שנבחר לה (icon_app), ואם לא נטען — האימוג'י
+function catIcon(cat) {
+    const ic = el('span', { className: 'cat-ic', textContent: cat.icon, ariaHidden: 'true' });
+    if (cat.icon_svg) {
+        const img = el('img', { src: cat.icon_svg, alt: '', decoding: 'async' });
+        img.addEventListener('load', () => ic.replaceChildren(img), { once: true });
+    }
+    return ic;
+}
+
 // תת-קטגוריה כשורה אחת — "מוצר" שנפתחים ממנו הילדים. פתוח / סגור נזכר במכשיר.
 function groupRemembered(id) {
     try { return localStorage.getItem(`platform:group:${id}`) === 'open'; } catch { return false; }
@@ -502,8 +512,8 @@ function groupOpen(li, open) {
 }
 function groupRow(s, list, cat) {
     const head = el('button', { type: 'button', className: 'app group-head', ariaExpanded: 'false' }, [
-        // אפליקציה באותו מזהה כמו הקבוצה (חבילת היצירה) — האייקון המצויר שלה; אחרת — האימוג'י של הקבוצה
-        appIcon({ id: s.id, icon: s.icon, icon_svg: list.find(a => a.id === s.id)?.icon_svg ?? null }),
+        // אייקון מצויר שנבחר לקבוצה (האייקון של אפליקציה — icon_app בניהול); אחרת — האימוג'י
+        appIcon({ id: s.id, icon: s.icon, icon_svg: s.icon_svg || null }),
         el('span', { className: 'app-tx' }, [
             el('b', { textContent: s.name }),
             el('small', { textContent: `${list.length} אפליקציות · ${list.filter(a => a.name !== s.name).map(a => a.name).join(' · ')}` }),
@@ -1176,7 +1186,7 @@ async function showApps() {
         .filter(s => s.apps.length)
         .map(({ cat, apps: inCat }) => el('section', { className: 'category' }, [
             el('h2', { className: 'category-title' }, [
-                el('span', { textContent: cat.icon, ariaHidden: 'true' }),
+                catIcon(cat),
                 el('span', { textContent: cat.name }),
                 el('span', { className: 'n', textContent: `· ${inCat.length}` }),
             ]),

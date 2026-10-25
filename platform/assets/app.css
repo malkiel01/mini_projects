@@ -147,6 +147,8 @@ main {
 .category { margin-bottom: var(--s5); }
 .category-title { display: flex; align-items: center; gap: var(--s2); font-size: .82rem; font-weight: 700; color: var(--muted); letter-spacing: .02em; margin: 0 var(--s1) var(--s2); }
 .category-title .n { font-weight: 500; }
+.cat-ic { display: inline-grid; place-items: center; width: 1.35em; height: 1.35em; }
+.cat-ic img { width: 100%; height: 100%; object-fit: contain; border-radius: 5px; }
 /* תת-קטגוריה: שורה אחת שנפתחים ממנה הילדים — מוזחים, עם קו עץ בצד */
 .group-chev { transition: transform .18s; font-size: 1.1rem; }
 .group.open .group-chev { transform: rotate(180deg); }
@@ -328,6 +330,10 @@ button:disabled { opacity: .55; cursor: default; }
 .place-rows { display: grid; gap: var(--s2); }
 .place-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: var(--s2); align-items: center; }
 .place-row select { min-width: 0; }
+.pic-pick { display: inline-flex; align-items: center; gap: 6px; }
+.pic-pick select { max-width: 11em; }
+.pic-prev { display: inline-grid; place-items: center; width: 28px; height: 28px; }
+.pic-prev img { width: 28px; height: 28px; object-fit: contain; border-radius: 7px; }
 .place-actions { display: flex; gap: var(--s2); flex-wrap: wrap; }
 .grant-group { display: flex; gap: var(--s2); align-items: baseline; padding: 6px 0; border-bottom: 1px dashed var(--line); font-size: .9rem; }
 .grant-group:last-child { border-bottom: 0; }
