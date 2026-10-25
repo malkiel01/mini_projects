@@ -106,28 +106,36 @@ void main() {
   o = vec4(a * u_alpha);
 }`,
 
-  // מסכת משיכה (בערוץ r) על אריח של שכבה: צבע (מכחול, דלי) או מחיקה (מחק)
+  // מסכת משיכה (בערוץ r) על אריח של שכבה: צבע (מכחול, דלי), מחיקה (מחק), או המקור המוזז (חותמת השכפול)
   stroke: `#version 300 es
 precision highp float;
-uniform sampler2D u_layer, u_mask, u_sel;
+uniform sampler2D u_layer, u_mask, u_sel, u_src;
 uniform vec4 u_color;     // לינארי מוכפל, אלפא 1
 uniform float u_opacity;
-uniform int u_erase, u_useSel;
+uniform int u_erase, u_useSel, u_clone;
 in vec2 v_uv; out vec4 o;
 void main() {
   vec4 l = texture(u_layer, v_uv);
   float m = clamp(texture(u_mask, v_uv).r, 0.0, 1.0) * u_opacity;
   if (u_useSel == 1) m *= texture(u_sel, v_uv).r;   // בחירה פעילה — רק בתוכה
-  o = u_erase == 1 ? l * (1.0 - m) : u_color * m + l * (1.0 - m);
+  vec4 c = u_clone == 1 ? texture(u_src, v_uv) : u_color;
+  o = u_erase == 1 ? l * (1.0 - m) : c * m + l * (1.0 - m);
 }`,
 
-  // תיקוני צבע — ב-sRGB (כמו שהעין רואה), וחזרה ללינארי. u_kind: 1 בהירות/ניגודיות, 2 גוון/רוויה/בהירות
+  // תיקוני צבע — ב-sRGB (כמו שהעין רואה), וחזרה ללינארי. u_kind: 1 בהירות/ניגודיות, 2 גוון/רוויה/בהירות,
+  // 3 רעש (u_p = עוצמה, פינת האריח במסמך) — לפי מיקום הפיקסל במסמך, כך שאין תפרים בין אריחים
   adjust: `#version 300 es
 precision highp float;
 uniform sampler2D u_tex, u_sel;
 uniform int u_kind, u_useSel;
 uniform vec4 u_p;
 in vec2 v_uv; out vec4 o;
+float noise(vec2 p) {
+  uvec2 q = uvec2(ivec2(floor(p)) + ivec2(1 << 20));
+  uint h = q.x * 1973u + q.y * 9277u + 26699u;
+  h = (h ^ (h >> 16u)) * 0x7feb352du; h ^= h >> 15u; h *= 0x846ca68bu; h ^= h >> 16u;
+  return float(h) / 4294967295.0;
+}
 ${ENCODE}
 ${DECODE}
 vec3 rgb2hsl(vec3 c) {
@@ -158,6 +166,8 @@ void main() {
       // בהירות: עקומת גמא (שחור ולבן נשארים); ניגודיות: סביב האמצע
       s = pow(s, vec3(exp2(-u_p.x)));
       s = (s - 0.5) * u_p.y + 0.5;
+    } else if (u_kind == 3) {
+      s = clamp(s + (noise(u_p.yz + v_uv * 256.0) - 0.5) * u_p.x, 0.0, 1.0);
     } else {
       vec3 h = rgb2hsl(clamp(s, 0.0, 1.0));
       h.x = fract(h.x + u_p.x);
@@ -188,11 +198,12 @@ void main() {
   }
   o = acc / wsum;
 }`,
+  // u_amount > 0 — חידוד (unsharp mask): המקור ועוד ההפרש מהטשטוש, פי u_amount; בגבולות מוכפל-תקין
   blurV: `#version 300 es
 precision highp float;
 uniform sampler2D u_tex, u_pad, u_sel;
 uniform int u_k, u_useSel;
-uniform float u_sigma;
+uniform float u_sigma, u_amount;
 out vec4 o;
 void main() {
   ivec2 p = ivec2(gl_FragCoord.xy);
@@ -203,8 +214,33 @@ void main() {
     acc += texelFetch(u_tex, ivec2(p.x, p.y + u_k + i), 0) * w; wsum += w;
   }
   vec4 orig = texelFetch(u_pad, p + ivec2(u_k), 0);
+  vec4 r = acc / wsum;
+  if (u_amount > 0.0) {
+    r = orig + (orig - r) * u_amount;
+    r.a = clamp(r.a, 0.0, 1.0);
+    r.rgb = clamp(r.rgb, vec3(0.0), vec3(r.a));
+  }
   float m = u_useSel == 1 ? texelFetch(u_sel, p, 0).r : 1.0;
-  o = mix(orig, acc / wsum, m);
+  o = mix(orig, r, m);
+}`,
+
+  // טשטוש תנועה: ממוצע לאורך קו בכיוון u_dir, על אריח מרופד (u_k — חצי האורך, עד 64)
+  motion: `#version 300 es
+precision highp float;
+uniform sampler2D u_pad, u_sel;
+uniform int u_k, u_useSel;
+uniform vec2 u_dir;
+out vec4 o;
+void main() {
+  ivec2 p = ivec2(gl_FragCoord.xy);
+  vec4 acc = vec4(0.0); float n = 0.0;
+  for (int i = -64; i <= 64; i++) {
+    if (i < -u_k || i > u_k) continue;
+    acc += texelFetch(u_pad, p + ivec2(u_k) + ivec2(round(u_dir * float(i))), 0); n += 1.0;
+  }
+  vec4 orig = texelFetch(u_pad, p + ivec2(u_k), 0);
+  float m = u_useSel == 1 ? texelFetch(u_sel, p, 0).r : 1.0;
+  o = mix(orig, acc / n, m);
 }`,
 
   copy: `#version 300 es
@@ -613,13 +649,46 @@ export class WebGL2Renderer {
   // משיכה נצברת במסכה נפרדת (לכל אריח), וכל נקודה שומרת את המקסימום — כך משיכה באטימות 50% לא
   // מתעבה כשהיא חוצה את עצמה. השכבה עצמה משתנה רק ב-endStroke. עד אז ההרכבה מציגה שכבה + מסכה.
 
-  /** opts: { mode: 'paint' | 'erase', color: [r, g, b] (sRGB), opacity: 0–1 } */
-  beginStroke(doc, layer, { mode = 'paint', color = [0, 0, 0], opacity = 1 } = {}) {
+  /**
+   * opts: { mode: 'paint' | 'erase' | 'clone', color: [r, g, b] (sRGB), opacity: 0–1, offset: [dx, dy] }
+   * clone — חותמת שכפול: כל פיקסל מקבל את הפיקסל של השכבה ב-offset ממנו (המקור פחות היעד, בפיקסלים שלמים),
+   * כפי שהשכבה הייתה בתחילת המשיכה — המשיכה לא משכפלת את עצמה.
+   */
+  beginStroke(doc, layer, { mode = 'paint', color = [0, 0, 0], opacity = 1, offset = [0, 0] } = {}) {
     if (doc._stroke) this.cancelStroke(doc);
     doc._stroke = {
       doc, layer, mode, opacity, mask: new Map(),
       color: [srgbToLinear(color[0]), srgbToLinear(color[1]), srgbToLinear(color[2]), 1],
+      ...(mode === 'clone' ? { from: new Map(layer.tiles), offset: offset.map(Math.round), src: new Map() } : {}),
     };
+  }
+
+  /** אריח המקור של חותמת השכפול ליעד k: עד ארבעה אריחים של השכבה (מתחילת המשיכה), מוזזים. נבנה פעם אחת. */
+  #cloneSrc(st, k) {
+    let t = st.src.get(k);
+    if (t) return t;
+    const gl = this.gl;
+    const [tx, ty] = k.split(',').map(Number);
+    const [dx, dy] = st.offset;
+    t = this.#tileTexture(1);
+    this.#target(t);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    const p = this.prog.copy;
+    gl.useProgram(p.p);
+    gl.bindVertexArray(this.vao);
+    gl.disable(gl.BLEND);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.uniform1i(p.u.u_tex, 0);
+    for (const [sx, sy] of tilesInRect(tx * TILE + dx, ty * TILE + dy, TILE, TILE)) {
+      const src = st.from.get(key(sx, sy));
+      if (!src) continue;
+      const ox = sx * TILE - dx - tx * TILE, oy = sy * TILE - dy - ty * TILE;
+      gl.bindTexture(gl.TEXTURE_2D, src);
+      this.#quad(p, [ox, oy, ox + TILE, oy + TILE], [0, 0, 1, 1], [TILE, TILE], -1);
+    }
+    st.src.set(k, t);
+    return t;
   }
 
   #maskTile(st, k) {
@@ -699,6 +768,7 @@ export class WebGL2Renderer {
     const p = this.prog.stroke;
     // מסכת הבחירה קודם — יצירתה קושרת מרקם, ואסור שזה יקרה אחרי שקשרנו את הקלט
     const sel = k && st.doc.selection ? this.#selTex(st.doc, k) : null;
+    const src = k && st.src ? this.#cloneSrc(st, k) : null;
     this.#target(outTex);
     gl.useProgram(p.p);
     gl.bindVertexArray(this.vao);
@@ -706,14 +776,18 @@ export class WebGL2Renderer {
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, layerTex);
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, maskTex);
     gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, sel || this.fullMask);
+    gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, src || this.emptyTex);
     gl.uniform1i(p.u.u_layer, 0);
     gl.uniform1i(p.u.u_mask, 1);
     gl.uniform1i(p.u.u_sel, 2);
+    gl.uniform1i(p.u.u_src, 3);
+    gl.uniform1i(p.u.u_clone, src ? 1 : 0);
     gl.uniform1i(p.u.u_useSel, sel ? 1 : 0);
     gl.uniform4fv(p.u.u_color, st.color);
     gl.uniform1f(p.u.u_opacity, st.opacity);
     gl.uniform1i(p.u.u_erase, st.mode === 'erase' ? 1 : 0);
     this.#quad(p, [0, 0, TILE, TILE], [0, 0, 1, 1], [TILE, TILE], -1);
+    gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, null);
     gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, null);
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, null);
     gl.activeTexture(gl.TEXTURE0);
@@ -754,6 +828,7 @@ export class WebGL2Renderer {
 
   #freeMasks(st) {
     this.freeTextures([...st.mask.values()].filter(t => t !== this.fullMask && t !== this.zeroMask));
+    if (st.src) this.freeTextures([...st.src.values()]);
   }
 
   // ---------- בחירה ----------
@@ -798,16 +873,31 @@ export class WebGL2Renderer {
   //
   // setAdjust מציג תיקון חי על השכבה (בלי לגעת בה); commitAdjust כותב לאריחים חדשים, והישנים להיסטוריה.
   // adj = { kind: 'bc', brightness, contrast } | { kind: 'hsl', hue, saturation, lightness } | { kind: 'blur', radius }
+  //     | { kind: 'sharpen', amount (%), sradius } | { kind: 'motion', angle (°), distance } | { kind: 'noise', noise (%) }
 
   setAdjust(doc, layer, adj) {
-    doc._adjust = adj ? { ...adj, layer } : null;
+    doc._adjust = adj && !WebGL2Renderer.adjustNoop(adj) ? { ...adj, layer } : null;
     this.invalidate(doc);
   }
 
-  /** האריחים שהתיקון יכול לשנות: הקיימים, ולטשטוש — גם השכנים (הטשטוש "נשפך") */
+  /** תיקון שלא משנה כלום (רדיוס / כמות 0) — לא מוצג ולא נכתב */
+  static adjustNoop(adj) {
+    if (adj.kind === 'blur' || adj.kind === 'motion') return !WebGL2Renderer.adjustReach(adj);
+    if (adj.kind === 'sharpen') return !WebGL2Renderer.adjustReach(adj) || !adj.amount;
+    if (adj.kind === 'noise') return !adj.noise;
+    return false;
+  }
+
+  /** כמה פיקסלים התיקון קורא מסביב לכל פיקסל (טשטוש, חידוד, תנועה) — 0: רק את הפיקסל עצמו. עד 64. */
+  static adjustReach(adj) {
+    const r = adj.kind === 'blur' ? adj.radius : adj.kind === 'sharpen' ? adj.sradius : adj.kind === 'motion' ? adj.distance / 2 : 0;
+    return Math.max(0, Math.min(64, Math.round(r || 0)));
+  }
+
+  /** האריחים שהתיקון יכול לשנות: הקיימים, ולמה שקורא שכנים — גם השכנים (הטשטוש "נשפך") */
   #adjustKeys(adj, layer) {
     const keys = new Set(layer.tiles.keys());
-    if (adj.kind === 'blur' && adj.radius > 0) {
+    if (WebGL2Renderer.adjustReach(adj) > 0) {
       for (const k of layer.tiles.keys()) {
         const [tx, ty] = k.split(',').map(Number);
         for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) keys.add(key(tx + dx, ty + dy));
@@ -818,7 +908,7 @@ export class WebGL2Renderer {
 
   #adjustTouches(adj, layer, tx, ty) {
     if (layer.tiles.has(key(tx, ty))) return true;
-    if (adj.kind !== 'blur') return false;
+    if (!WebGL2Renderer.adjustReach(adj)) return false;
     for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (layer.tiles.has(key(tx + dx, ty + dy))) return true;
     return false;
   }
@@ -829,6 +919,7 @@ export class WebGL2Renderer {
       const c = adj.contrast / 100;   // -1..1
       return [adj.brightness / 100, c >= 0 ? 1 / (1 - c * 0.99) : 1 + c, 0, 0];
     }
+    if (adj.kind === 'noise') return [adj.noise / 100 * 0.5, 0, 0, 0];
     return [adj.hue / 360, 1 + adj.saturation / 100, adj.lightness / 100, 0];
   }
 
@@ -837,8 +928,8 @@ export class WebGL2Renderer {
     const k = key(tx, ty);
     const sel = doc.selection ? this.#selTex(doc, k) : null;
     base ||= this.emptyTex;
-    if (adj.kind === 'blur') {
-      const K = Math.max(0, Math.min(64, Math.round(adj.radius)));
+    if (WebGL2Renderer.adjustReach(adj) > 0) {
+      const K = WebGL2Renderer.adjustReach(adj);
       const P = TILE + 2 * K;
       // ריפוד: האריח ושמונת שכניו, כל אחד במקומו
       gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo);
@@ -858,6 +949,22 @@ export class WebGL2Renderer {
         gl.bindTexture(gl.TEXTURE_2D, nt);
         const ox = K + dx * TILE, oy = K + dy * TILE;
         this.#quad(c, [ox, oy, ox + TILE, oy + TILE], [0, 0, 1, 1], [P, P], -1);
+      }
+      if (adj.kind === 'motion') {
+        const m = this.prog.motion, a = adj.angle * Math.PI / 180;
+        this.#target(out);
+        gl.useProgram(m.p);
+        gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.padTex);
+        gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, sel || this.fullMask);
+        gl.uniform1i(m.u.u_pad, 0); gl.uniform1i(m.u.u_sel, 1);
+        gl.uniform1i(m.u.u_k, K);
+        gl.uniform1i(m.u.u_useSel, sel ? 1 : 0);
+        // זווית נגד כיוון השעון, כמו בפוטושופ: y של המרקם כלפי מטה
+        gl.uniform2f(m.u.u_dir, Math.cos(a), -Math.sin(a));
+        this.#quad(m, [0, 0, TILE, TILE], [0, 0, 1, 1], [TILE, TILE], -1);
+        gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, null);
+        gl.activeTexture(gl.TEXTURE0);
+        return;
       }
       const sigma = Math.max(0.5, K / 3);
       const h = this.prog.blurH;
@@ -879,6 +986,7 @@ export class WebGL2Renderer {
       gl.uniform1i(v.u.u_k, K);
       gl.uniform1i(v.u.u_useSel, sel ? 1 : 0);
       gl.uniform1f(v.u.u_sigma, sigma);
+      gl.uniform1f(v.u.u_amount, adj.kind === 'sharpen' ? adj.amount / 100 : 0);
       this.#quad(v, [0, 0, TILE, TILE], [0, 0, 1, 1], [TILE, TILE], -1);
     } else {
       const a = this.prog.adjust;
@@ -889,9 +997,10 @@ export class WebGL2Renderer {
       gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, base);
       gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, sel || this.fullMask);
       gl.uniform1i(a.u.u_tex, 0); gl.uniform1i(a.u.u_sel, 1);
-      gl.uniform1i(a.u.u_kind, adj.kind === 'bc' ? 1 : 2);
+      gl.uniform1i(a.u.u_kind, adj.kind === 'bc' ? 1 : adj.kind === 'noise' ? 3 : 2);
       gl.uniform1i(a.u.u_useSel, sel ? 1 : 0);
-      gl.uniform4fv(a.u.u_p, WebGL2Renderer.adjustParams(adj));
+      const pp = WebGL2Renderer.adjustParams(adj);
+      gl.uniform4fv(a.u.u_p, adj.kind === 'noise' ? [pp[0], tx * TILE, ty * TILE, 0] : pp);
       this.#quad(a, [0, 0, TILE, TILE], [0, 0, 1, 1], [TILE, TILE], -1);
     }
     gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, null);

@@ -84,7 +84,8 @@ const now = () => new Date().toISOString().slice(0, 19) + 'Z';
 
 const TEXTBLOCKS = ['paragraph', 'heading'];
 /** הפסקה בלי סימון השינוי — מה שנשמר ב-pchg.old ומה שמשווים אליו. */
-const paraOf = node => { const { pchg, ...attrs } = node.attrs; return { type: node.type.name, attrs }; };
+// בלי המזהה: הוא של הפסקה עצמה, לא עיצוב — לא נרשם כשינוי, ודחייה לא מחזירה מזהה ישן
+const paraOf = node => { const { pchg, id, ...attrs } = node.attrs; return { type: node.type.name, attrs }; };
 const samePara = (a, b) => a.type === b.type && JSON.stringify(a.attrs) === JSON.stringify(b.attrs);
 /** פסקה שכל התוכן שלה נוסף במעקב — חדשה; העיצוב שלה לא נרשם. */
 const allIns = node => node.childCount > 0 && node.content.content.every(c => c.marks.some(m => m.type.name === 'ins'));
@@ -306,7 +307,7 @@ export function resolveChanges(editor, accept, all = false, hide = null) {
             const node = tr.doc.nodeAt(c.from);
             const old = node?.attrs.pchg?.old;
             const type = !accept && old && state.schema.nodes[old.type];
-            if (type) tr.setNodeMarkup(c.from, type, { ...old.attrs, pchg: null });
+            if (type) tr.setNodeMarkup(c.from, type, { ...old.attrs, id: node.attrs.id ?? null, pchg: null });
             else if (node) tr.setNodeMarkup(c.from, undefined, { ...node.attrs, pchg: null });
             continue;
         }

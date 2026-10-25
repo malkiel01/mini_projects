@@ -31,6 +31,7 @@ struct U {
 @group(0) @binding(2) var t0: texture_2d<f32>;
 @group(0) @binding(3) var t1: texture_2d<f32>;
 @group(0) @binding(4) var t2: texture_2d<f32>;
+@group(0) @binding(5) var t3: texture_2d<f32>;
 
 struct VO { @builtin(position) pos: vec4f, @location(0) uv: vec2f }
 
@@ -105,14 +106,16 @@ fn hardLight(b: vec3f, s: vec3f) -> vec3f { return mix(b * 2.0 * s, screenB(b, 2
   return vec4f(a * u.a.z);
 }
 
-// t0 שכבה, t1 מסכת המשיכה, t2 בחירה; a = צבע (לינארי מוכפל), b.x = אטימות, m = (מחיקה, בחירה)
+// t0 שכבה, t1 מסכת המשיכה, t2 בחירה, t3 מקור השכפול; a = צבע (לינארי מוכפל), b.x = אטימות,
+// m = (מחיקה, בחירה, שכפול)
 @fragment fn stroke(i: VO) -> @location(0) vec4f {
   let l = textureSample(t0, smp, i.uv);
   var m = clamp(textureSample(t1, smp, i.uv).r, 0.0, 1.0) * u.b.x;
   let s = textureSample(t2, smp, i.uv).r;
+  let src = textureSample(t3, smp, i.uv);
   if (u.m.y == 1) { m = m * s; }
   if (u.m.x == 1) { return l * (1.0 - m); }
-  return u.a * m + l * (1.0 - m);
+  return select(u.a, src, u.m.z == 1) * m + l * (1.0 - m);
 }
 
 fn rgb2hsl(c: vec3f) -> vec3f {
@@ -145,6 +148,15 @@ fn hsl2rgb(h: vec3f) -> vec3f {
 }
 
 // תיקוני צבע ב-sRGB: t0 אריח, t1 בחירה; m = (סוג: 1 בהירות/ניגודיות, 2 גוון/רוויה/בהירות; בחירה), a = פרמטרים
+// רעש לפי מיקום הפיקסל במסמך (כמו ב-WebGL2) — בלי תפרים בין אריחים
+fn noise(p: vec2f) -> f32 {
+  let q = vec2u(vec2i(floor(p)) + vec2i(1 << 20));
+  var h = q.x * 1973u + q.y * 9277u + 26699u;
+  h = (h ^ (h >> 16u)) * 0x7feb352du; h = h ^ (h >> 15u); h = h * 0x846ca68bu; h = h ^ (h >> 16u);
+  return f32(h) / 4294967295.0;
+}
+
+// m.x: 1 בהירות/ניגודיות, 2 גוון/רוויה/בהירות, 3 רעש (a = עוצמה, פינת האריח במסמך)
 @fragment fn adjust(i: VO) -> @location(0) vec4f {
   let c = textureSample(t0, smp, i.uv);
   let sel = textureSample(t1, smp, i.uv).r;
@@ -154,6 +166,8 @@ fn hsl2rgb(h: vec3f) -> vec3f {
     if (u.m.x == 1) {
       s = select(pow(max(s, vec3f(1e-9)), vec3f(exp2(-u.a.x))), vec3f(0.0), s <= vec3f(0.0));
       s = (s - 0.5) * u.a.y + 0.5;
+    } else if (u.m.x == 3) {
+      s = clamp(s + (noise(u.a.yz + i.uv * 256.0) - 0.5) * u.a.x, vec3f(0.0), vec3f(1.0));
     } else {
       var h = rgb2hsl(clamp(s, vec3f(0.0), vec3f(1.0)));
       h.x = fract(h.x + u.a.x);
@@ -193,9 +207,32 @@ fn hsl2rgb(h: vec3f) -> vec3f {
     wsum += w;
   }
   let orig = textureLoad(t1, p + vec2i(k), 0);
+  var r = acc / wsum;
+  // a.y > 0 — חידוד (unsharp mask)
+  if (u.a.y > 0.0) {
+    r = orig + (orig - r) * u.a.y;
+    r.a = clamp(r.a, 0.0, 1.0);
+    r = vec4f(clamp(r.rgb, vec3f(0.0), vec3f(r.a)), r.a);
+  }
   var m = 1.0;
   if (u.m.y == 1) { m = textureLoad(t2, p, 0).r; }
-  return mix(orig, acc / wsum, m);
+  return mix(orig, r, m);
+}
+
+// טשטוש תנועה: t0 אריח מרופד, t1 בחירה; m.x חצי האורך, a.xy כיוון
+@fragment fn motion(i: VO) -> @location(0) vec4f {
+  let p = vec2i(i.pos.xy);
+  let k = u.m.x;
+  var acc = vec4f(0.0);
+  var n = 0.0;
+  for (var j = -k; j <= k; j++) {
+    acc += textureLoad(t0, p + vec2i(k) + vec2i(round(u.a.xy * f32(j))), 0);
+    n += 1.0;
+  }
+  let orig = textureLoad(t0, p + vec2i(k), 0);
+  var m = 1.0;
+  if (u.m.y == 1) { m = textureLoad(t1, p, 0).r; }
+  return mix(orig, acc / n, m);
 }
 
 @fragment fn copy(i: VO) -> @location(0) vec4f { return textureSample(t0, smp, i.uv); }
@@ -289,6 +326,7 @@ export class WebGPURenderer {
         { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: tex },
         { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: tex },
         { binding: 4, visibility: GPUShaderStage.FRAGMENT, texture: tex },
+        { binding: 5, visibility: GPUShaderStage.FRAGMENT, texture: tex },
       ],
     });
     this.layout = device.createPipelineLayout({ bindGroupLayouts: [this.bgl] });
@@ -419,7 +457,7 @@ export class WebGPURenderer {
     };
     open(!!o.clear);
     return {
-      /** u: { rect, uv, size, a, b, c, m }; tex: [t0, t1, t2] (מרקמים או views); smp — שם הדוגם */
+      /** u: { rect, uv, size, a, b, c, m }; tex: [t0, t1, t2, t3] (מרקמים או views); smp — שם הדוגם */
       draw: (name, u, tex = [], smp = 'nearest') => {
         if (this.used + SLOT > RING) { pass.end(); this.#flush(); open(false); }
         const off = this.used;
@@ -441,6 +479,7 @@ export class WebGPURenderer {
             { binding: 2, resource: v(tex[0]) },
             { binding: 3, resource: v(tex[1]) },
             { binding: 4, resource: v(tex[2]) },
+            { binding: 5, resource: v(tex[3]) },
           ],
         });
         pass.setPipeline(this.#pipe(name));
@@ -598,11 +637,12 @@ export class WebGPURenderer {
 
   // ---------- משיכות ----------
 
-  beginStroke(doc, layer, { mode = 'paint', color = [0, 0, 0], opacity = 1 } = {}) {
+  beginStroke(doc, layer, { mode = 'paint', color = [0, 0, 0], opacity = 1, offset = [0, 0] } = {}) {
     if (doc._stroke) this.cancelStroke(doc);
     doc._stroke = {
       doc, layer, mode, opacity, mask: new Map(),
       color: [srgbToLinear(color[0]), srgbToLinear(color[1]), srgbToLinear(color[2]), 1],
+      ...(mode === 'clone' ? { from: new Map(layer.tiles), offset: offset.map(Math.round), src: new Map() } : {}),
     };
   }
 
@@ -656,9 +696,29 @@ export class WebGPURenderer {
 
   #applyStroke(st, layerTex, maskTex, outTex, k = null) {
     const sel = k && st.doc.selection ? this.#selTex(st.doc, k) : null;
+    const src = k && st.src ? this.#cloneSrc(st, k) : null;
     this.#drawTo(outTex, 'stroke', {
-      a: st.color, b: [st.opacity, 0, 0, 0], m: [st.mode === 'erase' ? 1 : 0, sel ? 1 : 0, 0, 0],
-    }, [layerTex, maskTex, sel || this.fullMask]);
+      a: st.color, b: [st.opacity, 0, 0, 0], m: [st.mode === 'erase' ? 1 : 0, sel ? 1 : 0, src ? 1 : 0, 0],
+    }, [layerTex, maskTex, sel || this.fullMask, src]);
+  }
+
+  /** אריח המקור של חותמת השכפול ליעד k (ראו WebGL2Renderer.beginStroke) */
+  #cloneSrc(st, k) {
+    let t = st.src.get(k);
+    if (t) return t;
+    const [tx, ty] = k.split(',').map(Number);
+    const [dx, dy] = st.offset;
+    t = this.#tileTexture(1);
+    const p = this.#pass(this.#view(t), { clear: true });
+    for (const [sx, sy] of tilesInRect(tx * TILE + dx, ty * TILE + dy, TILE, TILE)) {
+      const src = st.from.get(key(sx, sy));
+      if (!src) continue;
+      const ox = sx * TILE - dx - tx * TILE, oy = sy * TILE - dy - ty * TILE;
+      p.draw('copy', { rect: [ox, oy, ox + TILE, oy + TILE] }, [src]);
+    }
+    p.end();
+    st.src.set(k, t);
+    return t;
   }
 
   endStroke(doc) {
@@ -690,6 +750,7 @@ export class WebGPURenderer {
 
   #freeMasks(st) {
     this.freeTextures([...st.mask.values()].filter(t => t !== this.fullMask && t !== this.zeroMask));
+    if (st.src) this.freeTextures([...st.src.values()]);
   }
 
   // ---------- בחירה ----------
@@ -727,13 +788,13 @@ export class WebGPURenderer {
   // ---------- תיקונים ----------
 
   setAdjust(doc, layer, adj) {
-    doc._adjust = adj ? { ...adj, layer } : null;
+    doc._adjust = adj && !WebGL2Renderer.adjustNoop(adj) ? { ...adj, layer } : null;
     this.invalidate(doc);
   }
 
   #adjustKeys(adj, layer) {
     const keys = new Set(layer.tiles.keys());
-    if (adj.kind === 'blur' && adj.radius > 0) {
+    if (WebGL2Renderer.adjustReach(adj) > 0) {
       for (const k of layer.tiles.keys()) {
         const [tx, ty] = k.split(',').map(Number);
         for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) keys.add(key(tx + dx, ty + dy));
@@ -744,7 +805,7 @@ export class WebGPURenderer {
 
   #adjustTouches(adj, layer, tx, ty) {
     if (layer.tiles.has(key(tx, ty))) return true;
-    if (adj.kind !== 'blur') return false;
+    if (!WebGL2Renderer.adjustReach(adj)) return false;
     for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (layer.tiles.has(key(tx + dx, ty + dy))) return true;
     return false;
   }
@@ -755,8 +816,8 @@ export class WebGPURenderer {
     const k = key(tx, ty);
     const sel = doc.selection ? this.#selTex(doc, k) : null;
     base ||= this.emptyTex;
-    if (adj.kind === 'blur') {
-      const K = Math.max(0, Math.min(64, Math.round(adj.radius)));
+    const K = WebGL2Renderer.adjustReach(adj);
+    if (K > 0) {
       const P = TILE + 2 * K;
       const pad = this.#pass(this.#view(this.padTex), { clear: true, viewport: [P, P] });
       for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
@@ -766,13 +827,21 @@ export class WebGPURenderer {
         pad.draw('copy', { rect: [ox, oy, ox + TILE, oy + TILE], size: [P, P, 0, 0] }, [nt]);
       }
       pad.end();
+      if (adj.kind === 'motion') {
+        const a = adj.angle * Math.PI / 180;
+        this.#drawTo(out, 'motion', { a: [Math.cos(a), -Math.sin(a), 0, 0], m: [K, sel ? 1 : 0, 0, 0] }, [this.padTex, sel || this.fullMask]);
+        return;
+      }
       const sigma = Math.max(0.5, K / 3);
       this.#drawTo(this.blurTmp, 'blurH', { rect: [0, 0, TILE, P], size: [TILE, P, 0, 0], a: [sigma, 0, 0, 0], m: [K, 0, 0, 0] },
         [this.padTex], { viewport: [TILE, P] });
-      this.#drawTo(out, 'blurV', { a: [sigma, 0, 0, 0], m: [K, sel ? 1 : 0, 0, 0] }, [this.blurTmp, this.padTex, sel || this.fullMask]);
+      this.#drawTo(out, 'blurV', { a: [sigma, adj.kind === 'sharpen' ? adj.amount / 100 : 0, 0, 0], m: [K, sel ? 1 : 0, 0, 0] },
+        [this.blurTmp, this.padTex, sel || this.fullMask]);
     } else {
-      this.#drawTo(out, 'adjust', { a: WebGL2Renderer.adjustParams(adj), m: [adj.kind === 'bc' ? 1 : 2, sel ? 1 : 0, 0, 0] },
-        [base, sel || this.fullMask]);
+      const pp = WebGL2Renderer.adjustParams(adj);
+      this.#drawTo(out, 'adjust', {
+        a: adj.kind === 'noise' ? [pp[0], tx * TILE, ty * TILE, 0] : pp, m: [adj.kind === 'bc' ? 1 : adj.kind === 'noise' ? 3 : 2, sel ? 1 : 0, 0, 0],
+      }, [base, sel || this.fullMask]);
     }
   }
 
