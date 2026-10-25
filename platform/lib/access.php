@@ -110,6 +110,15 @@ function access_migrate(): void
             throw $e;
         }
     }
+    // אייקון מצויר לקטגוריה / לקבוצה: האייקון של אפליקציה (icon_app) — במקום האימוג'י, כשיש לה icon_svg
+    foreach (['categories', 'groups'] as $t) {
+        $cols = array_column(db()->query("PRAGMA table_info($t)")->fetchAll(), 'name');
+        if (!in_array('icon_app', $cols, true)) {
+            db()->exec("ALTER TABLE $t ADD COLUMN icon_app TEXT");
+            // קבוצה שנקראת כמו אפליקציה (חבילת היצירה) — האייקון שלה, כמו שהוצג עד עכשיו
+            if ($t === 'groups') db()->exec("UPDATE groups SET icon_app = id WHERE icon_app IS NULL");
+        }
+    }
     groups_seed();
 
     $seeded = db()->query('SELECT id FROM seeded_categories')->fetchAll(PDO::FETCH_COLUMN);
@@ -137,7 +146,9 @@ function groups_seed(): void
     $pdo->beginTransaction();
     $sort = (int)$pdo->query('SELECT COALESCE(MAX(sort), 0) FROM groups')->fetchColumn();
     foreach ($new as $s) {
-        $pdo->prepare('INSERT OR IGNORE INTO groups (id, name, icon, sort) VALUES (?,?,?,?)')->execute([$s['id'], $s['name'], $s['icon'], ++$sort]);
+        // קבוצה שנקראת כמו אפליקציה (חבילת היצירה) — האייקון המצויר שלה
+        $pdo->prepare('INSERT OR IGNORE INTO groups (id, name, icon, sort, icon_app) VALUES (?,?,?,?,?)')
+            ->execute([$s['id'], $s['name'], $s['icon'], ++$sort, in_array($s['id'], $s['apps'], true) ? $s['id'] : null]);
         foreach ($s['apps'] as $i => $app) {
             // אפליקציה שכבר הונחה — נוסיף לה את הקבוצה; אחרת — הקבוצה מחליפה את ברירת המחדל
             $pdo->prepare('INSERT OR IGNORE INTO placements (app_id, category, grp, sort) VALUES (?,?,?,?)')->execute([$app, $s['parent'], $s['id'], $i]);
@@ -151,13 +162,22 @@ function groups_seed(): void
 function groups_list(): array
 {
     access_migrate();
-    return db()->query('SELECT id, name, icon FROM groups ORDER BY sort, id')->fetchAll();
+    return array_map('icon_resolve', db()->query('SELECT id, name, icon, icon_app FROM groups ORDER BY sort, id')->fetchAll());
 }
 
 function categories_list(): array
 {
     access_migrate();
-    return db()->query('SELECT id, name, icon FROM categories ORDER BY sort, id')->fetchAll();
+    return array_map('icon_resolve', db()->query('SELECT id, name, icon, icon_app FROM categories ORDER BY sort, id')->fetchAll());
+}
+
+/** icon_app → icon_svg: הנתיב לאייקון המצויר של האפליקציה. אפליקציה שאין / בלי אייקון מצויר — רק האימוג'י. */
+function icon_resolve(array $row): array
+{
+    static $svg = null;
+    $svg ??= array_column(array_filter(registry_load()['apps'], fn($a) => $a['icon_svg']), 'icon_svg', 'id');
+    $row['icon_svg'] = $row['icon_app'] !== null ? ($svg[$row['icon_app']] ?? null) : null;
+    return $row;
 }
 
 /** כל האפליקציות, עם הקטגוריה בפועל והאם הוסתרה. */

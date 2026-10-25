@@ -219,6 +219,7 @@ function admin_category_save(array $body): never
         $st->execute([$name, $icon, $id]);
         if (!$st->rowCount()) throw new ApiError('הקטגוריה לא נמצאה', 404);
     }
+    if (array_key_exists('icon_app', $body)) db()->prepare('UPDATE categories SET icon_app = ? WHERE id = ?')->execute([icon_app_value($body['icon_app']), $id]);
     json_out(['ok' => true, 'id' => $id]);
 }
 
@@ -249,6 +250,14 @@ function admin_category_delete(array $body): never
     json_out(['ok' => true]);
 }
 
+/** אייקון מצויר לקטגוריה / קבוצה — מזהה של אפליקציה עם icon_svg, או ריק (רק האימוג'י). */
+function icon_app_value($v): ?string
+{
+    if ($v === null || $v === '') return null;
+    foreach (registry_load()['apps'] as $a) if ($a['id'] === $v && $a['icon_svg']) return $v;
+    throw new ApiError('לאפליקציה הזו אין אייקון מצויר', 422);
+}
+
 // ---------- קבוצות ----------
 // קבוצה — שורה אחת ברשימה שנפתחים ממנה הילדים (כמו חבילת היצירה). אותה קבוצה יכולה להופיע בכמה קטגוריות.
 
@@ -272,6 +281,7 @@ function admin_group_save(array $body): never
         $st->execute([$name, $icon, $id]);
         if (!$st->rowCount()) throw new ApiError('הקבוצה לא נמצאה', 404);
     }
+    if (array_key_exists('icon_app', $body)) db()->prepare('UPDATE groups SET icon_app = ? WHERE id = ?')->execute([icon_app_value($body['icon_app']), $id]);
     json_out(['ok' => true, 'id' => $id]);
 }
 
