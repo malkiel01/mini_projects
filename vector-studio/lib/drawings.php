@@ -18,6 +18,8 @@ const THUMB_MAX = 300 * 1024;      // תמונה ממוזערת PNG
 const VERSION_EVERY = 600;         // שניות בין גרסאות
 const VERSIONS_KEEP = 30;
 const CONTAINER_MAX = 25 * 1024 * 1024; // ‎.mbe מקורי שנפתח מהמכשיר
+const MEDIA_MAX = 12 * 1024 * 1024;     // תמונה בתוך ציור
+const MEDIA_TYPES = ['png' => 'image/png', 'jpg' => 'image/jpeg', 'webp' => 'image/webp'];
 
 function migrateDrawings(PDO $pdo): void {
     $pdo->exec("
@@ -45,6 +47,18 @@ function migrateDrawings(PDO $pdo): void {
     // ה-‎.mbe המקורי של ציור שנפתח מקובץ: כל מה שהעורך לא מבין (מדיה, apps/ של אחרים) נשמר ממנו בהורדה
     $cols = array_column($pdo->query('PRAGMA table_info(drawings)')->fetchAll(), 'name');
     if (!in_array('container', $cols, true)) $pdo->exec('ALTER TABLE drawings ADD COLUMN container BLOB');
+    // תמונות בתוך ציורים: לפי המשתמש וה-sha256 של הבתים — אותה תמונה פעמיים נשמרת פעם אחת, וה-src
+    // (media/<sha>.<ext>) הוא בדיוק הנתיב שלה ב-‎.mbe
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS media (
+            user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            sha         TEXT    NOT NULL,
+            ext         TEXT    NOT NULL,
+            data        BLOB    NOT NULL,
+            created_at  TEXT    NOT NULL,
+            PRIMARY KEY (user_id, sha)
+        );
+    ");
 }
 
 function drawingName(mixed $v): string {
@@ -201,4 +215,39 @@ function restoreVersion(array $user, int $id, int $versionId, int $rev): array {
 function drawingContainer(array $user, int $id): ?string {
     $d = ownDrawing($user, $id);
     return $d['container'] === null ? null : (string) $d['container'];
+}
+
+/** סוג התמונה לפי הבתים הראשונים (לא לפי מה שהדפדפן אמר) — רק PNG, JPEG ו-WebP. */
+function imageExt(string $b): ?string {
+    if (str_starts_with($b, "\x89PNG\r\n\x1a\n")) return 'png';
+    if (str_starts_with($b, "\xFF\xD8\xFF")) return 'jpg';
+    if (substr($b, 0, 4) === 'RIFF' && substr($b, 8, 4) === 'WEBP') return 'webp';
+    return null;
+}
+
+/** העלאת תמונה (base64). מחזיר { src } — media/<sha256>.<ext>. */
+function putMedia(array $user, mixed $data): array {
+    $b = is_string($data) ? base64_decode($data, true) : false;
+    if ($b === false || $b === '') throw new AppError('תמונה חסרה');
+    if (strlen($b) > MEDIA_MAX) throw new AppError('התמונה גדולה מדי (מעל 12MB)', 413);
+    $ext = imageExt($b);
+    if ($ext === null) throw new AppError('רק PNG, JPG או WebP');
+    $sha = hash('sha256', $b);
+    $st = db()->prepare('INSERT OR IGNORE INTO media (user_id, sha, ext, data, created_at) VALUES (?,?,?,?,?)');
+    $st->bindValue(1, (int) $user['id'], PDO::PARAM_INT);
+    $st->bindValue(2, $sha);
+    $st->bindValue(3, $ext);
+    $st->bindValue(4, $b, PDO::PARAM_LOB);
+    $st->bindValue(5, nowIso());
+    $st->execute();
+    return ['src' => "media/$sha.$ext"];
+}
+
+/** תמונה של המשתמש לפי ה-src → [בתים, סוג], או null. */
+function getMedia(array $user, string $src): ?array {
+    if (!preg_match('~^media/([0-9a-f]{64})\.(png|jpg|webp)$~', $src, $m)) return null;
+    $st = db()->prepare('SELECT data, ext FROM media WHERE user_id = ? AND sha = ?');
+    $st->execute([(int) $user['id'], $m[1]]);
+    $r = $st->fetch();
+    return $r ? [(string) $r['data'], MEDIA_TYPES[$r['ext']]] : null;
 }

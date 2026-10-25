@@ -115,8 +115,10 @@
           <h3 id="imp-title">ייבוא</h3>
           <div class="tiles">
             <button class="tile" type="button" id="imp-svg"><span class="tile-ic" aria-hidden="true">📥</span>SVG לתוך הציור</button>
+            <button class="tile" type="button" id="imp-image"><span class="tile-ic" aria-hidden="true">🖼️</span>תמונה <small class="muted">PNG / JPG</small></button>
             <button class="tile" type="button" id="open-mbe"><span class="tile-ic" aria-hidden="true">📂</span>פתיחת ‎.mbe</button>
           </div>
+          <input type="file" id="image-file" accept="image/png,image/jpeg,image/webp" hidden>
           <input type="file" id="imp-file" accept=".svg,image/svg+xml" hidden>
           <input type="file" id="mbe-file" accept=".mbe,application/vnd.mbe+zip" hidden>
         </section>

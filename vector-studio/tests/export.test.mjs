@@ -232,3 +232,22 @@ test('ניקוד: טעם שאין בגופן — מושמט (לא ריבוע ר�
   const withTa = await textToD({ ...item, text: 'בָּ֖' }, getFont);
   assert.equal(withTa, await textToD(item, getFont));
 });
+
+test('תמונה בתוך הציור: SVG ‏<image> עם סיבוב ואטימות, PDF — XObject, וחסרה — בדוח', async () => {
+  const doc = textDoc();
+  doc.surfaces[0].layers[0].paths.push(
+    { id: 'i1', type: 'image', src: 'media/aa.png', box: [10, 20, 40, 30], opacity: 0.5, transform: [0, 1, -1, 0, 100, 0] },
+    { id: 'i2', type: 'image', src: 'media/missing.png', box: [0, 0, 10, 10] });
+  const getImage = async (src) => (src === 'media/aa.png'
+    ? { href: 'data:image/png;base64,BBBB', w: 2, h: 1, rgb: zlib.deflateSync(new Uint8Array(6)), alpha: null } : null);
+  const prep = await prepare(doc, 's1', getFont, getImage);
+  assert.ok(prep.gaps.some(g => g.startsWith('image')));
+  const svg = toSVG(prep);
+  assert.match(svg, /xmlns:xlink=/);
+  assert.match(svg, /<image id="i1" x="10" y="20" width="40" height="30" preserveAspectRatio="none" href="data:image\/png;base64,BBBB" xlink:href="[^"]+" opacity="0.5" transform="matrix\(0 1 -1 0 100 0\)"\/>/);
+  assert.doesNotMatch(svg, /id="i2"/);
+  const pdf = toPDF([prep]);
+  const s = Buffer.from(pdf).toString('latin1');
+  assert.match(s, /q\n0 1 -1 0 100 0 cm\n\/GS\d+ gs\n40 0 0 -30 10 50 cm\n\/Im1 Do\nQ/);
+  pdfCheck(pdf);
+});

@@ -2,7 +2,7 @@
 // באותו עובי בכל זום. הלוח עצמו לבן תמיד (כמו נייר), גם במצב כהה.
 
 import { multiply, apply, invert } from './geometry/matrix.js';
-import { objects, layout, pathMatrix, worldBox, findPath, leaves, isText } from './model.js';
+import { objects, layout, pathMatrix, worldBox, findPath, leaves, isText, isImage, isBoxed } from './model.js';
 import { lines, lineHeight, fontCss, flowText, frameItem } from './text.js';
 
 export { flowText };
@@ -103,8 +103,22 @@ export function drawText(ctx, item) {
   ctx.globalAlpha = 1;
 }
 
-function drawPath(ctx, path) {
+/** תמונה בתוך הציור — נמתחת לתיבה; עוד לא נטענה (או חסרה) — מלבן אפור עם קו אלכסוני. */
+function drawImageItem(ctx, item, media) {
+  const [x, y, w, h] = item.box;
+  const img = media?.get(item.src);
+  ctx.globalAlpha *= item.opacity ?? 1;
+  if (img) { ctx.drawImage(img, x, y, w, h); return; }
+  ctx.fillStyle = 'rgba(93,100,117,.12)';
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = 'rgba(93,100,117,.4)';
+  ctx.lineWidth = Math.min(w, h) / 100 || 1;
+  ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + w, y + h); ctx.moveTo(x + w, y); ctx.lineTo(x, y + h); ctx.stroke();
+}
+
+function drawPath(ctx, path, media) {
   if (isText(path)) return drawText(ctx, path);
+  if (isImage(path)) return drawImageItem(ctx, path, media);
   const p = path2d(path.d);
   const fill = path.fill, stroke = path.stroke;
   if (hasPaint(fill)) {
@@ -187,7 +201,7 @@ export function render(canvas, state) {
             setT(pathMatrix(path, off));
             ctx.save();
             if (a < 1) ctx.globalAlpha = a;
-            try { drawPath(ctx, path); } catch { /* d פגום — לא מציירים, לא קורסים */ }
+            try { drawPath(ctx, path, state.media); } catch { /* d פגום — לא מציירים, לא קורסים */ }
             ctx.restore();
           }
         }
@@ -224,8 +238,8 @@ export function render(canvas, state) {
     const o = findPath(doc, id);
     if (!o) return;
     for (const path of leaves(o.path)) {
-      if (isText(path)) {
-        // מסגרת הטקסט — מסובבת יחד איתו
+      if (isBoxed(path)) {
+        // מסגרת הטקסט / התמונה — מסובבת יחד איתו
         setT(pathMatrix(path, lay.get(o.surface.id)));
         const t = ctx.getTransform();
         ctx.lineWidth = 1 / Math.sqrt(Math.abs(t.a * t.d - t.b * t.c) / (dpr * dpr) || 1);
@@ -307,7 +321,7 @@ export function hitTest(state, sx, sy, tol = 6) {
 }
 
 function hitPath(path, t, sx, sy, tol) {
-  if (isText(path)) {
+  if (isBoxed(path)) {
     const [x, y, w, h] = path.box;
     const [px, py] = apply(invert(t), sx, sy);
     const pad = tol / (Math.sqrt(Math.abs(t[0] * t[3] - t[1] * t[2])) || 1);

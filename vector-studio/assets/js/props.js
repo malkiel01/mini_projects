@@ -97,7 +97,8 @@ export function renderProps(el, ctx) {
   const isLine = shape?.type === 'line';
   const [bx, by, bw, bh] = ctx.box;
   const text = single && p.type === 'text' ? p : null;
-  const title = text ? 'טקסט' : single ? (shape ? SHAPE_NAMES[shape.type] || 'צורה' : 'נתיב') : grp ? `קבוצה · ${paths.length}` : `${items.length} אובייקטים`;
+  const image = single && p.type === 'image' ? p : null;
+  const title = text ? 'טקסט' : image ? 'תמונה' : single ? (shape ? SHAPE_NAMES[shape.type] || 'צורה' : 'נתיב') : grp ? `קבוצה · ${paths.length}` : `${items.length} אובייקטים`;
   const layers = ctx.surface.layers.filter(l => l.type === 'vector');
   const arrange = `<section class="group" aria-labelledby="g-arr">
       <h3 id="g-arr">סידור</h3>
@@ -159,7 +160,12 @@ export function renderProps(el, ctx) {
     ${textFields}
     ${arrange}
 
-    ${isLine ? '' : `<section class="group" aria-labelledby="g-fill">
+    ${image ? `<section class="group" aria-labelledby="g-img">
+      <div class="g-row"><h3 id="g-img">תמונה</h3>
+        <button class="btn sm ghost" type="button" data-act="image-ratio" title="מחזיר את היחס בין הרוחב לגובה של התמונה">יחס מקורי</button></div>
+      <label class="f"><span>אטימות (%)</span><input data-io type="number" min="0" max="100" dir="ltr" value="${Math.round((image.opacity ?? 1) * 100)}"></label>
+    </section>` : ''}
+    ${isLine || image ? '' : `<section class="group" aria-labelledby="g-fill">
       <div class="g-row"><h3 id="g-fill">מילוי</h3>
         <label class="switch"><input type="checkbox" data-on="fill"${fillOn ? ' checked' : ''}><span class="sr">מילוי</span></label></div>
       <div class="g-stack"${fillOn ? '' : ' hidden'}>
@@ -175,7 +181,7 @@ export function renderProps(el, ctx) {
       </div>
     </section>`}
 
-    <section class="group" aria-labelledby="g-stroke">
+    ${image ? '' : `<section class="group" aria-labelledby="g-stroke">
       <div class="g-row"><h3 id="g-stroke">מתאר</h3>
         <label class="switch"><input type="checkbox" data-on="stroke"${stroke?.color ? ' checked' : ''}><span class="sr">מתאר</span></label></div>
       <div${stroke?.color ? '' : ' hidden'} class="g-stack">
@@ -188,7 +194,7 @@ export function renderProps(el, ctx) {
         ${seg('cap', stroke?.cap || 'butt', { label: 'קצוות', items: [['butt', 'ישר'], ['round', 'עגול'], ['square', 'מרובע']] })}
         ${seg('join', stroke?.join || 'miter', { label: 'חיבורים', items: [['miter', 'חד'], ['round', 'עגול'], ['bevel', 'קטום']] })}
       </div>
-    </section>`;
+    </section>`}`;
 
   const each = (fn) => (path) => fn(path);
 
@@ -200,6 +206,12 @@ export function renderProps(el, ctx) {
   el.querySelector('[data-act="duplicate"]').addEventListener('click', () => ctx.action('duplicate'));
   el.querySelector('[data-act="copy"]').addEventListener('click', () => ctx.action('copy'));
   el.querySelector('[data-act="edit-text"]')?.addEventListener('click', () => ctx.action('edit-text'));
+  el.querySelector('[data-act="image-ratio"]')?.addEventListener('click', () => ctx.action('image-ratio'));
+  const io = el.querySelector('[data-io]');
+  if (io) io.addEventListener('change', () => {
+    const v = Math.max(0, Math.min(100, Number(io.value) || 0)) / 100;
+    ctx.edit(each(item => { if (item.type !== 'image') return; if (v === 1) delete item.opacity; else item.opacity = v; }), true);
+  });
   el.querySelectorAll('[data-t]').forEach(inp => inp.addEventListener('change', () => {
     const k = inp.dataset.t;
     let v = inp.value;

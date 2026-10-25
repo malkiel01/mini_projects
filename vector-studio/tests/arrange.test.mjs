@@ -156,3 +156,18 @@ test('טקסט נקודה: גודל ביחס אחיד סביב פינה — הפ
   assert.ok(Math.abs(t.box[0] - (x + 5)) < 0.01 && Math.abs(t.box[1] - (y + 7)) < 0.01);
   assert.equal(t.font.size, 40);
 });
+
+test('תמונה: הזזה וגודל — בתיבה; סיבוב — ב-transform; התיבה בעולם', () => {
+  const doc = newDocument([500, 500]);
+  const img = { id: 'i1', type: 'image', src: 'media/x.png', box: [10, 10, 100, 50] };
+  doc.surfaces[0].layers[0].paths.push(img);
+  applyMatrix(img, scaleAt(2, 2, 10, 10));
+  assert.deepEqual(img.box, [10, 10, 200, 100]);
+  assert.equal(img.transform, undefined);
+  applyMatrix(img, scaleAt(-1, 1, 110, 0));
+  assert.deepEqual(img.transform, [-1, 0, 0, 1, 0, 0], 'היפוך — רק ב-transform');
+  const b = worldBox(img, [0, 0]);
+  b.forEach((v, i) => assert.ok(Math.abs(v - [10, 10, 200, 100][i]) < 1e-6, 'box ' + b));
+  applyMatrix(img, rotateAt(Math.PI / 2, 110, 60));
+  assert.ok(img.transform && Math.abs(img.transform[1]) > 0.9, 'סיבוב');
+});

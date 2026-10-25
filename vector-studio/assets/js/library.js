@@ -30,6 +30,16 @@ export async function container(id) {
   return new Uint8Array(await res.arrayBuffer());
 }
 
+/** תמונה בתוך ציור: מעלים פעם אחת (לפי sha256) → src, ‏media/<sha>.<ext>. */
+export const putMedia = (bytes) => call('media_put', { body: { data: toBase64(bytes) } }).then(d => d.src);
+
+/** הבתים של תמונה שהועלתה, או null. */
+export async function media(src) {
+  const res = await fetch(`api.php?action=media&src=${encodeURIComponent(src)}`, { credentials: 'same-origin' });
+  if (!res.ok) return null;
+  return new Uint8Array(await res.arrayBuffer());
+}
+
 function toBase64(bytes) {
   let s = '';
   for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
