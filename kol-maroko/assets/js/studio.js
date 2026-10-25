@@ -97,7 +97,11 @@ addEventListener('message',e=>{const d=e.data||{};
   if(d.fonts&&d.fonts!==fonts){fonts=d.fonts;const l=document.createElement('link');l.rel='stylesheet';l.href=d.fonts;document.head.appendChild(l);}
   if(d.js)runJs(d.js);mark(d.sel);}
  if(d.kol==='sel')mark(d.sel);});
-addEventListener('click',e=>{if(!e.target.closest('audio,video,input,label,select'))e.preventDefault();const el=e.target.closest('[data-kid]');parent.postMessage({kol:'pick',id:el?el.dataset.kid:null},'*');},true);
+// בתוך המילון: כפתורים, חיפוש ונגן — עובדים כמו באתר, בלי בחירה. לחיצה אחרת בו בוחרת (soft) בלי לפתוח את העריכה
+addEventListener('click',e=>{const lx=e.target.closest('.kadisha-lexicon-page');
+ if(lx&&e.target.closest('button,input,label,select,textarea,audio,video'))return;
+ if(!e.target.closest('audio,video,input,label,select'))e.preventDefault();
+ const el=e.target.closest('[data-kid]');parent.postMessage({kol:'pick',id:el?el.dataset.kid:null,soft:!!lx},'*');},true);
 parent.postMessage({kol:'ready'},'*');
 <\/script></body></html>`;
 
@@ -107,7 +111,9 @@ parent.postMessage({kol:'ready'},'*');
     if (d.kol === 'ready') { S.frameReady = true; renderNow(); }
     if (d.kol === 'pick') {
       const f = d.id && find(d.id);
-      select(f ? (f.kind === 'column' ? f.sec.id : d.id) : null, true);
+      select(f ? (f.kind === 'column' ? f.sec.id : d.id) : null, !d.soft);
+      // המילון תופס את כל העמוד — בטלפון לחיצה בו לא פותחת את העריכה (היא הייתה מכסה את המסך בכל לחיצה)
+      if (d.soft && f && !WIDE.matches && !S.softHint) { S.softHint = true; toast('לעריכת המילון: ✏️ בסרגל למעלה'); }
     }
   }
 
@@ -275,6 +281,7 @@ parent.postMessage({kol:'ready'},'*');
     S.vsrc = null;
     syncSel();
     renderPanel();
+    updateBar();
     if (!WIDE.matches && id && openSheet) openPanelSheet();
   }
 
@@ -748,6 +755,7 @@ parent.postMessage({kol:'ready'},'*');
     q('[data-a=undo]').disabled = S.readonly || !S.undo.length;
     q('[data-a=redo]').disabled = S.readonly || !S.redo.length;
     q('[data-a=add]').disabled = S.readonly;
+    q('[data-a=edit]').disabled = !S.sel;
   }
 
   function onKey(e) {
@@ -774,8 +782,9 @@ parent.postMessage({kol:'ready'},'*');
         onchange: () => root.classList.toggle('phone', v === 'phone') }), h('span', { title: v === 'phone' ? 'טלפון' : 'מחשב' }, ic))));
     const root = h('div', { class: 'studio' },
       h('div', { class: 'st-bar' },
-        btn('add', h('span', {}, h('span', { 'aria-hidden': 'true' }, '+'), ' רכיב'), 'הוספת רכיב', addSheet, 'btn primary'),
+        btn('add', h('span', {}, h('span', { 'aria-hidden': 'true' }, '+'), h('span', { class: 'lbl' }, ' רכיב')), 'הוספת רכיב', addSheet, 'btn primary'),
         btn('undo', '↶', 'ביטול', undo), btn('redo', '↷', 'חזרה', redo),
+        btn('edit', '✏️', 'עריכת מה שנבחר', openPanelSheet),
         btn('ai', '✨', 'עוזר הבינה', aiSheet),
         btn('tree', '🧱', 'מבנה העמוד', structureSheet), btn('hist', '🕘', 'היסטוריה', historySheet), btn('set', '⚙️', 'הגדרות העמוד', settingsSheet),
         device, h('span', { class: 'chip st-status' })),
