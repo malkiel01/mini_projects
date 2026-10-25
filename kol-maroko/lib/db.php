@@ -206,6 +206,36 @@ function migrate(PDO $pdo): void
             ALTER TABLE files ADD COLUMN origin TEXT;
             CREATE INDEX idx_files_origin ON files(origin);
             SQL,
+        // קבצי הקוד של העמוד (lib/code.php), עם היסטוריה ועותק בכל גרסה; וכניסות של צ'אט (lib/agent.php)
+        10 => <<<'SQL'
+            CREATE TABLE code_files (
+                path       TEXT PRIMARY KEY,
+                content    TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                updated_by TEXT NOT NULL DEFAULT ''
+            );
+            CREATE TABLE code_history (
+                id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                path    TEXT NOT NULL,
+                content TEXT NOT NULL,
+                at      TEXT NOT NULL,
+                by_name TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX idx_code_history_path ON code_history(path, id);
+            ALTER TABLE versions ADD COLUMN code TEXT;
+            CREATE TABLE agent_tokens (
+                id         TEXT PRIMARY KEY,
+                sub        TEXT NOT NULL,
+                name       TEXT NOT NULL,
+                label      TEXT NOT NULL DEFAULT '',
+                hash       TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                last_used  TEXT,
+                revoked    INTEGER NOT NULL DEFAULT 0,
+                creator_role TEXT NOT NULL DEFAULT 'editor'
+            );
+            SQL,
     ];
     foreach ($steps as $n => $sql) {
         if ($v >= $n) continue;

@@ -368,10 +368,18 @@ function page_render(array $page, bool $editor = false, ?callable $url = null): 
     if ($editor && ($pc = setting('preview_css'))) $css[] = $pc;
     $out = ['html' => $html, 'css' => implode("\n", $css)];
     // בסטודיו — ה-JS של התבנית (חיפוש, נושאים, שמע, מבוא), שבאתר נטען ממילא; רץ בתוך התצוגה המבודדת
-    if ($editor && str_contains($html, 'kadisha-lexicon-page')) {
-        if ($js = setting('preview_js')) $out['js'] = $js;
-        $out['fonts'] = LEX_FONTS;
+    // ה-JS של המילון: מקבצי הקוד (אם יש) או של ערכת הנושא. בסטודיו — רץ בתוך התצוגה המבודדת; באתר — רק של הקבצים
+    // (את של ערכת הנושא האתר טוען ממילא), בסוף העמוד, והתוסף מוריד את של ערכת הנושא (data-kol-own)
+    if (str_contains($html, 'kadisha-lexicon-page')) {
+        $js = $GLOBALS['kol_page_js'] ?? null;
+        if ($editor) {
+            if ($js ??= setting('preview_js')) $out['js'] = $js;
+            $out['fonts'] = LEX_FONTS;
+        } elseif ($js) {
+            $out['html'] .= '<script id="kol-maroko-js">' . str_ireplace('</script', '<\\/script', $js) . '</script>';
+        }
     }
+    unset($GLOBALS['kol_page_js']);
     // kol-file:<מזהה> (בתוכן שיובא ובסגנונות) → הכתובת של הקובץ: בסטודיו חתומה, בפרסום — {{KOL_ASSETS}}
     foreach ($out as $k => $v) {
         $out[$k] = preg_replace_callback('/kol-file:([0-9a-f]{32})/', function ($m) {

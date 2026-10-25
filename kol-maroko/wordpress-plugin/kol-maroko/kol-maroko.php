@@ -2,7 +2,7 @@
 /**
  * Plugin Name: קול מרוקו — קבלת גרסאות
  * Description: מקבל מסטודיו "קול מרוקו" גרסאות חתומות של עמוד אחד (Ed25519), בודק חתימה, זמן, nonce וגרסה, ומציג אותן בתבנית של העמוד הזה בלבד. בלי סיסמאות ובלי גישה מבחוץ לשום דבר אחר. כולל ייצוא של העמוד הקיים לסטודיו.
- * Version: 1.3.0
+ * Version: 1.4.0
  * Requires PHP: 7.4
  * Author: הכלים הדיגיטליים
  * Text Domain: kol-maroko
@@ -21,7 +21,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('KOL_MAROKO_VERSION', '1.3.0');
+define('KOL_MAROKO_VERSION', '1.4.0');
 if (!defined('KOL_MAROKO_AUDIO_PART')) define('KOL_MAROKO_AUDIO_PART', 300 * 1024 * 1024);   // גודל של כל קובץ בייצוא ההקלטות
 define('KOL_MAROKO_PAGE', 'lexicon');
 define('KOL_MAROKO_SKEW', 300);
@@ -239,6 +239,30 @@ add_action('wp_enqueue_scripts', function () {
     if (method_exists($fe, 'enqueue_styles')) $fe->enqueue_styles();
 }, 20);
 
+/**
+ * גרסה עם קוד משלה למילון (data-kol-own, מלשונית "קוד" בסטודיו): ה-CSS וה-JS של ערכת הנושא לא נטענים בעמוד הזה —
+ * אחרת שני סקריפטים היו מטפלים באותם כפתורים. הנתונים שערכת הנושא מעבירה לסקריפט שלה (kadishaLex: כתובת ה-AJAX,
+ * nonce למשוב) — נשמרים ומודפסים לפני הקוד מהגרסה.
+ */
+const KOL_MAROKO_OWN = ['kadisha-lexicon'];
+
+function kol_maroko_own_handles()
+{
+    $v = kol_maroko_active_version();
+    if (!$v || !preg_match_all('/data-kol-own="([a-z0-9_-]+)"/', $v['html'], $m)) return [];
+    return array_values(array_intersect(KOL_MAROKO_OWN, $m[1]));
+}
+
+add_action('wp_enqueue_scripts', function () {
+    $id = (int)kol_maroko_opt('page_id', 0);
+    if (!$id || !is_page($id) || isset($_GET['kol-maroko-original'])) return;
+    foreach (kol_maroko_own_handles() as $h) {
+        $GLOBALS['kol_maroko_data'][$h] = wp_scripts()->get_data($h, 'data');
+        wp_dequeue_script($h);
+        wp_dequeue_style($h);
+    }
+}, 100);
+
 /** ה-HTML של הגרסה, עם הכתובת של הקבצים כאן. */
 function kol_maroko_render()
 {
@@ -246,7 +270,9 @@ function kol_maroko_render()
     if (!$v) return '';
     $base = esc_url(kol_maroko_dir()['url']);
     $css = str_ireplace('</style', '', str_replace('{{KOL_ASSETS}}', $base, $v['css']));
-    return '<style id="kol-maroko-css">' . $css . '</style>' . str_replace('{{KOL_ASSETS}}', $base, $v['html']);
+    $data = '';
+    foreach ((array)($GLOBALS['kol_maroko_data'] ?? []) as $d) if ($d) $data .= '<script>' . $d . '</script>';
+    return '<style id="kol-maroko-css">' . $css . '</style>' . $data . str_replace('{{KOL_ASSETS}}', $base, $v['html']);
 }
 
 // ── מסך ההגדרות ───────────────────────────────────────────

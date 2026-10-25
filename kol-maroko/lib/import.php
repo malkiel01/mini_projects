@@ -506,6 +506,13 @@ final class Importer
         return is_array($j) && is_array($j['words'] ?? null) ? $j : null;
     }
 
+    /** קובץ CSS אחד מהייצוא (כמו שהוא, עם ניקוי) — למשל ה-CSS של המילון לקבצי הקוד. */
+    public function themeCss(string $name): ?string
+    {
+        $c = $this->zip->getFromName("css/$name.css");
+        return $c === false ? null : sanitize_imported_css($this->rewriteCssUrls($c), $this->origin);
+    }
+
     /** ה-JS של התבנית — לתצוגה בסטודיו בלבד (באתר הוא נטען ממילא). */
     public function js(): string
     {
@@ -541,6 +548,7 @@ function import_run(array $owner, array $b): array
     [$css, $preview] = $imp->css();
     // במילון כל העיצוב שייך לאתר (ערכת הנושא ואלמנטור טוענים אותו לעמוד ממילא) — לתצוגה בסטודיו בלבד
     if ($lex) { $preview = trim($css . "\n" . $preview); $css = ''; }
+    $lexCss = $lex ? $imp->themeCss('preview-kadisha-lexicon') : null;
     $js = $imp->js();
     db()->prepare('DELETE FROM uploads WHERE id = ?')->execute([$u['id']]);
     @unlink($zip);
@@ -560,6 +568,7 @@ function import_run(array $owner, array $b): array
     setting_set('imported_css', $css);
     setting_set('preview_css', $preview);
     setting_set('preview_js', $js);
+    if ($lexCss !== null) setting_set('theme_lexicon_css', $lexCss);     // לקבצי הקוד (lib/code.php)
     setting_set('imported_from', json_encode(['at' => now_iso(), 'meta' => array_intersect_key($imp->meta(), array_flip(['url', 'title', 'builder', 'exported_at']))], JSON_UNESCAPED_UNICODE));
     $res = draft_write($owner, $page, (int)$d['rev'], 'ייבוא מהאתר');
     audit_as($owner, 'import', ($imp->meta()['url'] ?? '') . ' · ' . $imp->stats['files'] . ' קבצים');
