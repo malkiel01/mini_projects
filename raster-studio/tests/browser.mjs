@@ -824,7 +824,7 @@ async function main() {
   check('הודעה על השחזור', /שוחזרה הטיוטה/.test(await page.textContent('.toast')));
   // ייצוא
   await page.click('#export-btn');
-  check('⬇️ — חלון הורדה עם PNG / JPG / ORA, ו-‎.mbe כבוי עד הליבה', await page.isVisible('#export-dlg') && await page.$eval('[data-export="mbe"]', b => b.disabled));
+  check('⬇️ — חלון הורדה עם PNG / JPG / ORA / ‎.mbe', await page.isVisible('#export-dlg') && !(await page.$eval('[data-export="mbe"]', b => b.disabled)));
   const [dl] = await Promise.all([page.waitForEvent('download'), page.click('[data-export="png"]')]);
   const pngBuf = await (await import('node:fs/promises')).readFile(await dl.path());
   // Chromium בלי ממשק מתעלם משם הורדה שאינו ASCII ("download") — שם הקובץ עצמו נבדק ישירות
@@ -870,13 +870,138 @@ async function main() {
   check('ORA נפתח עם כל השכבות והמאפיינים', back === 'רקע:normal:1:true:false | כפל:multiply:0.5:true:false | נסתר:normal:1:false:true', back);
   check('ORA — אותה תמונה מורכבת', (await px(10, 10)) === want, (await px(10, 10)) + ' / ' + want);
   check('ORA — השם מהקובץ', await page.evaluate(() => __rs.doc.title) === 'שכבות');
+  // ---- ‎.mbe: הורדה, אימות בשתי השפות, פתיחה, ושמירת מה שלא שלנו ----
+  await openEd(page);
+  await page.waitForFunction(() => window.__rs?.doc);
+  await page.evaluate(() => {
+    const { doc: d, renderer: r } = __rs;
+    const a = d.addLayer({ name: 'כפל', blend: 'multiply', opacity: 0.5 }); r.fill(d, a, [200, 50, 50, 255]);
+    const g = d.addGroup({ name: 'קבוצה', blend: 'screen', opacity: 0.8 });
+    const c = d.addLayer({ name: 'בתוך', parent: g }); r.fill(d, c, [20, 90, 200, 160]);
+    const h = d.addLayer({ name: 'נסתר', visible: false, locked: true }); r.fill(d, h, [0, 0, 0, 255]);
+    d.activeId = a.id;
+    r.invalidate(d);
+  });
+  const mbeWant = await px(10, 10);
+  await page.click('#export-btn');
+  const [dlm] = await Promise.all([page.waitForEvent('download'), page.click('[data-export="mbe"]')]);
+  const mbePath = await dlm.path();
+  const mbeBytes = (await import('node:fs')).readFileSync(mbePath);
+  check('‎.mbe — שם, וחתימה: mimetype בהיסט 30', okName(dlm, 'mbe') && mbeBytes.subarray(30, 61).toString() === 'mimetypeapplication/vnd.mbe+zip', dlm.suggestedFilename());
+  const mInfo = await page.evaluate(async b64 => {
+    const { open } = await import('./assets/js/mbe/mbe.js');
+    const f = await open(Uint8Array.from(atob(b64), c => c.charCodeAt(0)));
+    const s = f.document.surfaces[0];
+    const tree = l => l.type === 'group' ? `${l.name}[${l.children.map(tree).join(',')}]` : `${l.name}:${l.blend}:${l.opacity}:${l.visible}:${l.locked}`;
+    return {
+      ok: f.ok, errors: f.issues.filter(i => i.level === 'error').map(i => i.code), kind: f.kind, app: f.manifest.modified.app,
+      type: s.type, size: s.size.join(), tree: s.layers.map(tree).join(' | '), media: f.media().length,
+      rend: f.renditions().map(r => r.path + (r.stale ? '!' : '')).join(), view: new TextDecoder().decode(f.apps('raster-studio').get('view.json') ?? new Uint8Array()),
+      units: f.document.units,
+    };
+  }, mbeBytes.toString('base64'));
+  check('‎.mbe — נפתח בליבה בלי שגיאות, kind raster, נשמר ע"י raster-studio', mInfo.ok && mInfo.kind === 'raster' && mInfo.app === 'raster-studio', JSON.stringify(mInfo.errors));
+  check('‎.mbe — משטח canvas בגודל הקנבס, units pt', mInfo.type === 'canvas' && mInfo.size === '600,400' && mInfo.units === 'pt', mInfo.size);
+  check('‎.mbe — עץ השכבות עם המאפיינים (קבוצה עם children)', mInfo.tree === 'רקע:normal:1:true:false | כפל:multiply:0.5:true:false | קבוצה[בתוך:normal:1:true:false] | נסתר:normal:1:false:true', mInfo.tree);
+  check('‎.mbe — PNG לכל שכבת רסטר, וייצוגים עדכניים: preview, image.png, image.ora', mInfo.media === 4 && mInfo.rend === 'renditions/image.ora,renditions/image.png,renditions/preview.png', `${mInfo.media} · ${mInfo.rend}`);
+  check('‎.mbe — מצב התצוגה ב-apps/raster-studio', /"zoom":/.test(mInfo.view) && /"tool":/.test(mInfo.view), mInfo.view);
+  // אותו קובץ — בבודק של PHP (עותק הליבה בשרת)
+  const phpIssues = execFileSync('php', ['-r', 'require $argv[1]; echo json_encode(Mbe::validate(file_get_contents($argv[2])));', join(ROOT, 'lib/mbe/mbe.php'), mbePath]).toString();
+  check('‎.mbe — עובר גם בליבת PHP, בלי שגיאות', !JSON.parse(phpIssues).some(i => i.level === 'error'), phpIssues);
+  // פתיחה חזרה
+  await page.goto(BASE + '/index.html');
+  await page.waitForSelector('#new-btn:not([disabled])');
+  await Promise.all([page.waitForURL(/editor\.html\?open=pending/), page.setInputFiles('#file', { name: 'חבילה.mbe', mimeType: 'application/vnd.mbe+zip', buffer: mbeBytes })]);
+  await page.waitForFunction(() => window.__rs?.doc?.layers.length === 4, null, { timeout: 8000 }).catch(() => {});
+  const mBack = await page.evaluate(() => [...__rs.doc.walk()].map(w => w.layer.name + (w.layer.type === 'group' ? '/' : '')).join(','));
+  check('‎.mbe נפתח מהספרייה — העץ במלואו', mBack === 'רקע,כפל,קבוצה/,בתוך,נסתר', mBack);
+  check('‎.mbe — אותה תמונה מורכבת, והשם מהקובץ', (await px(10, 10)) === mbeWant && await page.evaluate(() => __rs.doc.title) === 'חבילה', (await px(10, 10)) + ' / ' + mbeWant);
+  // שמירה חוזרת בלי שינוי — שכבות שלא השתנו נשמרות באותו משאב, והקובץ נשאר תקין
+  const again = await page.evaluate(async () => {
+    const { open } = await import('./assets/js/mbe/mbe.js');
+    const f = await open(await __rs.buildMbe());
+    return { ok: f.ok, media: f.media().length };
+  });
+  check('‎.mbe — שמירה חוזרת: תקין, בלי משאבים כפולים', again.ok && again.media === 4, JSON.stringify(again));
+
+  // קובץ של "אפליקציה אחרת": שכבה וקטורית, שדות לא מוכרים, משטח נוסף ו-apps/ של אחרים — הכול נשמר בית-לבית
+  const keep = await page.evaluate(async () => {
+    const { create, save, open, PREVIEW, canonicalJson } = await import('./assets/js/mbe/mbe.js');
+    const { encodePNG } = await import('./assets/js/engine/png.js');
+    const px = new Uint8ClampedArray(40 * 30 * 4).fill(255);
+    const png = await encodePNG(px, 40, 30);
+    const vec = { id: 'V1', name: 'לוגו', type: 'vector', paths: [{ id: 'p1', type: 'path', d: 'M0 0 L10 10 Z', future: [1, 2] }], visible: true, future: { x: 1 } };
+    const f = create('raster', { units: 'pt', color: { space: 'sRGB' }, future: 'שדה עתידי', surfaces: [] });
+    const src = await f.addMedia(png, 'image/png');
+    f.document.surfaces = [
+      { id: 'c1', type: 'canvas', size: [40, 30], note: 'לא שלנו', layers: [{ id: 'R1', name: 'רקע', type: 'raster', src, opacity: 1, blend: 'normal', visible: true, locked: false, tag: 7 }, vec] },
+      { id: 'p9', type: 'page', size: [595, 842], layers: [] },
+    ];
+    f.setRendition(PREVIEW, png);
+    f.setApp('vector-studio', 'state.json', new TextEncoder().encode('{"z":3}'));
+    f.files.set('extra/unknown.bin', new Uint8Array([1, 2, 3]));
+    const bytes = await save(f, { app: 'vector-studio' });
+    await __rs.openAsDocument(new File([bytes], 'זר.mbe'));
+    const d = __rs.doc;
+    const foreign = d.rasters().filter(l => l.foreign);
+    // מציירים על הרקע — שינוי שלנו; הווקטורית לא נערכת
+    __rs.renderer.fill(d, d.layers[0], [0, 128, 0, 255]);
+    d.activeId = foreign[0].id;
+    const out = await open(await __rs.buildMbe());
+    const s = out.document.surfaces.find(x => x.id === 'c1');
+    return {
+      opened: d.rasters().length, foreign: foreign.length, locked: foreign[0]?.locked, name: foreign[0]?.name,
+      ok: out.ok, vec: canonicalJson(s.layers[1]) === canonicalJson(vec), future: out.document.future, note: s.note,
+      tag: s.layers[0].tag, newSrc: s.layers[0].src !== src, oldGone: !out.files.has(src), page: out.document.surfaces.map(x => x.id).join(),
+      app: new TextDecoder().decode(out.apps('vector-studio').get('state.json')), extra: Array.from(out.files.get('extra/unknown.bin') ?? []).join(),
+      created: out.manifest.created.app, modified: out.manifest.modified.app,
+      gaps: out.renditions().find(r => r.path === 'renditions/image.png')?.gaps?.join(),
+    };
+  });
+  check('‎.mbe זר — שכבת vector נפתחת כנעולה, עם הסוג בשם', keep.opened === 2 && keep.foreign === 1 && keep.locked && /\(vector\)/.test(keep.name), JSON.stringify(keep));
+  check('‎.mbe זר — שמירה: השכבה הווקטורית זהה בית-לבית', keep.ok && keep.vec, JSON.stringify(keep));
+  check('‎.mbe זר — שדות לא מוכרים (במסמך, במשטח, בשכבה) ומשטח אחר נשמרים', keep.future === 'שדה עתידי' && keep.note === 'לא שלנו' && keep.tag === 7 && keep.page === 'c1,p9', JSON.stringify(keep));
+  check('‎.mbe זר — apps/ של אחרים וחלק לא מוכר נשמרים', keep.app === '{"z":3}' && keep.extra === '1,2,3', JSON.stringify(keep));
+  check('‎.mbe זר — הרקע שצויר מחדש: משאב חדש, הישן יצא מהקובץ', keep.newSrc && keep.oldGone, JSON.stringify(keep));
+  check('‎.mbe זר — created נשאר של היוצר, modified שלנו; הפער נרשם בייצוג', keep.created === 'vector-studio' && keep.modified === 'raster-studio' && /layer:vector → omitted/.test(keep.gaps), JSON.stringify(keep));
+  await page.evaluate(() => __rs.tools.setTool('brush'));
+  await page.mouse.click(...(await page.evaluate(() => { const r = document.querySelector('#stage').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })));
+  check('‎.mbe זר — לחיצה במכחול על הווקטורית: הודעה, בלי שינוי', /אפליקציה אחרת/.test(await page.textContent('.toast')));
+  // הטיוטה שומרת גם את מה שלא שלנו
+  await page.evaluate(() => __rs.flushDraft());
+  await page.reload();
+  await page.waitForFunction(() => window.__rs?.doc?.rasters().some(l => l.foreign), null, { timeout: 8000 }).catch(() => {});
+  const fromDraft = await page.evaluate(async () => {
+    const { open } = await import('./assets/js/mbe/mbe.js');
+    const out = await open(await __rs.buildMbe());
+    const s = out.document.surfaces.find(x => x.id === 'c1');
+    return { ok: out.ok, vec: s?.layers[1]?.type, app: new TextDecoder().decode(out.apps('vector-studio').get('state.json') ?? new Uint8Array()) };
+  });
+  check('‎.mbe זר — אחרי טעינה מהטיוטה: עדיין נשמר הכול', fromDraft.ok && fromDraft.vec === 'vector' && fromDraft.app === '{"z":3}', JSON.stringify(fromDraft));
+  // קובץ פגום ומסמך שאינו רסטר — הודעה ברורה
+  const bad = await page.evaluate(async () => {
+    const { create, save, PREVIEW } = await import('./assets/js/mbe/mbe.js');
+    const { encodePNG } = await import('./assets/js/engine/png.js');
+    const f = create('text', { units: 'pt', surfaces: [{ id: 'p1', type: 'page', size: [595, 842], layers: [] }] });
+    f.setRendition(PREVIEW, await encodePNG(new Uint8ClampedArray(4).fill(255), 1, 1));
+    const text = await save(f, { app: 'word-processor' });
+    const broken = text.slice(); broken[broken.length - 30] ^= 0xff;
+    const out = [];
+    for (const [b, n] of [[text, 'מסמך.mbe'], [broken.slice(0, 200), 'שבור.mbe']]) {
+      try { await __rs.openAsDocument(new File([b], n)); out.push('נפתח'); } catch (e) { out.push(e.message + (e.detail ? ':' + e.detail : '')); }
+    }
+    return out;
+  });
+  check('‎.mbe של עורך התמלילים — "פותחים אותו בעורך התמלילים"', /^mbe-not-raster:.*עורך התמלילים/.test(bad[0]), bad[0]);
+  check('‎.mbe שבור — נדחה', /^mbe-invalid/.test(bad[1]), bad[1]);
+
   // ---- התקנה ובלי רשת ----
   const man = await page.evaluate(async () => {
     const m = await (await fetch('manifest.webmanifest')).json();
     const icons = await Promise.all(m.icons.map(i => fetch(i.src).then(r => r.ok)));
-    return { name: m.name, dir: m.dir, icons: icons.every(Boolean), handlers: m.file_handlers?.[0]?.accept?.['image/openraster']?.[0] };
+    return { name: m.name, dir: m.dir, icons: icons.every(Boolean), handlers: m.file_handlers?.[0]?.accept?.['image/openraster']?.[0], mbe: m.file_handlers?.[0]?.accept?.['application/vnd.mbe+zip']?.[0] };
   });
-  check('manifest: עברית מימין לשמאל, אייקונים קיימים, פתיחת ORA', man.name === 'עיצוב רסטר' && man.dir === 'rtl' && man.icons && man.handlers === '.ora', JSON.stringify(man));
+  check('manifest: עברית מימין לשמאל, אייקונים קיימים, פתיחת ORA ו-‎.mbe', man.name === 'עיצוב רסטר' && man.dir === 'rtl' && man.icons && man.handlers === '.ora' && man.mbe === '.mbe', JSON.stringify(man));
   await page.goto(BASE + '/index.html');
   await page.evaluate(() => navigator.serviceWorker.ready);
   await page.reload();

@@ -61,32 +61,59 @@ export function parseOraStack(xml) {
 
 /**
  * document.json של ‎.mbe מסוג raster: משטח canvas אחד, size בפיקסלים (units: pt, ובקנבס רסטר 1pt = 1px).
- * layers — מלמטה למעלה, עם src = "media/<sha256>.png" (בגודל הקנבס). base — מסמך שנפתח (לשמור את מה שלא הבנו).
+ * layers — עץ המסמך (מלמטה למעלה); לשכבת רסטר src = "media/<sha256>.png" (בגודל הקנבס) ב-srcOf(layer).
+ * base — המסמך שנפתח: { document, surfaceId }. כל מה שלא הבנו נשמר — שדות לא מוכרים במסמך, במשטח ובכל שכבה
+ * (layer.mbe — ה-JSON המקורי), משטחים אחרים במקומם, ושכבות של אפליקציות אחרות (layer.foreign) כמו שהן.
  */
-export function mbeDocument(doc, layers, base = null) {
+export function mbeDocument(doc, layers, base = null, srcOf = l => l.src) {
+  const old = base?.document ?? {};
+  const surfaces = Array.isArray(old.surfaces) ? old.surfaces : [];
+  const i = surfaces.findIndex(s => s && s.id === base?.surfaceId);
   const surface = {
-    id: base?.surfaceId ?? 's1', type: 'canvas', size: [doc.width, doc.height],
-    layers: mbeLayers(layers),
+    ...(i >= 0 ? surfaces[i] : {}), id: i >= 0 ? surfaces[i].id : (base?.surfaceId ?? 's1'), type: 'canvas',
+    size: [doc.width, doc.height], layers: mbeLayers(layers, srcOf),
   };
-  const out = { ...(base?.document ?? {}), units: 'pt', color: { space: 'sRGB' } };
-  const others = (base?.document?.surfaces ?? []).filter(s => s.id !== surface.id);
-  out.surfaces = [surface, ...others];
+  const out = { ...old, units: old.units ?? 'pt', color: old.color ?? { space: 'sRGB' } };
+  out.surfaces = i >= 0 ? surfaces.map((s, j) => (j === i ? surface : s)) : [surface, ...surfaces];
   return out;
 }
 
-const mbeLayers = list => list.map(l => ({
-  id: l.id, name: l.name, type: l.type === 'group' ? 'group' : 'raster',
-  ...(l.type === 'group' ? { children: mbeLayers(l.children) } : { src: l.src }),
-  opacity: round(l.opacity), blend: l.blend, visible: !!l.visible, locked: !!l.locked,
-}));
+const mbeLayers = (list, srcOf) => list.map(l => {
+  // שכבה של אפליקציה אחרת (vector, frame…) — כמו שהגיעה; רק ההסתרה (מאפיין של המעטפת) אצלנו
+  if (l.foreign) return l.visible === (l.foreign.visible ?? true) ? l.foreign : { ...l.foreign, visible: !!l.visible };
+  const common = { ...(l.mbe ?? {}), id: l.id, name: l.name, type: l.type === 'group' ? 'group' : 'raster' };
+  const body = l.type === 'group' ? { children: mbeLayers(l.children, srcOf) } : { src: srcOf(l) };
+  return { ...common, ...body, opacity: round(l.opacity), blend: l.blend, visible: !!l.visible, locked: !!l.locked };
+});
+
+/** כל ההפניות למשאבים (מפתחות src / embedded, בכל עומק) — כמו שהליבה בודקת */
+export function mediaRefs(obj, out = new Set()) {
+  if (Array.isArray(obj)) for (const v of obj) mediaRefs(v, out);
+  else if (obj && typeof obj === 'object') {
+    for (const [k, v] of Object.entries(obj)) {
+      if ((k === 'src' || k === 'embedded') && typeof v === 'string') out.add(v);
+      else mediaRefs(v, out);
+    }
+  }
+  return out;
+}
+
+/** המשטח שנפתח בעורך: הקנבס הראשון. בלי קנבס — null (קובץ של אפליקציה אחרת) */
+export function canvasSurface(document) {
+  const s = (document?.surfaces ?? []).find(x => x && x.type === 'canvas' && Array.isArray(x.size));
+  return s ?? null;
+}
 
 /** מה לא עובר לכל ייצוג — כנות בייצוא (mbe-format.md עיקרון 3) */
 export function gapsFor(rendition, tree) {
   const g = [];
   const all = [], walk = l => l.forEach(x => { all.push(x); if (x.type === 'group') walk(x.children); });
   walk(tree);
-  const layers = all.filter(l => l.type !== 'group');
-  const groups = all.length > layers.length;
+  const foreign = all.filter(l => l.foreign);
+  const layers = all.filter(l => l.type !== 'group' && !l.foreign);
+  const groups = all.length > layers.length + foreign.length;
+  // שכבה של אפליקציה אחרת לא מצוירת אצלנו — לא נכנסת לשום ייצוג (ב-‎.mbe עצמו היא נשמרת כמו שהיא)
+  for (const t of new Set(foreign.map(l => l.foreign.type))) g.push(`layer:${t} → omitted`);
   if (rendition === 'ora') {
     // ORA (GIMP / Krita) ממזג ב-sRGB; אנחנו — בלינארי. מראה שכבות חצי-שקופות ומצבי מיזוג יכול להשתנות מעט
     if (all.some(l => l.blend !== 'normal' || l.opacity < 1)) g.push('blend-space:linear → srgb');

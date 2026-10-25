@@ -431,6 +431,7 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
   /** אפשר לצייר על השכבה? אחרת — הודעה, ולא מציירים. */
   function canEdit(layer) {
     if (!layer) return false;
+    if (layer.foreign) { toast(`שכבה של אפליקציה אחרת (${layer.foreign.type}) — נשמרת כמו שהיא, ולא נערכת כאן`, true); return false; }
     if (layer.type === 'group') { toast('בחרו שכבה בתוך הקבוצה — על קבוצה לא מציירים', true); return false; }
     const up = doc().ancestors(layer);
     if (up.some(g => g.locked)) { toast('הקבוצה נעולה — 🔓 בלוח השכבות', true); return false; }
@@ -683,7 +684,7 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
   sync();
   setTool(state.tool);
   return {
-    state, setTool, down, move, up, cancel, key, updateCursor, hideCursor, selAction, commitFloat, cancelFloat, commitText,
+    state, setTool, setColor(hex) { if (/^#[0-9a-f]{6}$/i.test(hex)) { state.color = hex; syncColor(); } }, down, move, up, cancel, key, updateCursor, hideCursor, selAction, commitFloat, cancelFloat, commitText,
     get editingText() { return !!textEdit; },
     get stroking() { return !!stroke || !!lasso || !!xf || !!cropDrag || !!groupMove || !!grabPending; },
     get floating() { return !!fl(); },
