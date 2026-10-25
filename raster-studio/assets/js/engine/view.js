@@ -8,11 +8,16 @@ export const STEPS = [0.01, 0.02, 0.03, 0.05, 0.08, 0.12, 0.17, 0.25, 0.33, 0.5,
 
 export const clampZoom = z => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
 
-/** המסמך כולו בתוך המסך, באמצע, לא יותר מ-100%. */
-export function fit(docW, docH, vw, vh, pad = 16) {
-  const aw = Math.max(1, vw - pad * 2), ah = Math.max(1, vh - pad * 2);
+/**
+ * המסמך כולו בתוך המסך, באמצע, לא יותר מ-100%.
+ * inset — מה שמכסה את הבמה מכל צד (פס הכלים, לוח האפשרויות): המסמך נכנס לשטח הפנוי, לא מתחתם.
+ */
+export function fit(docW, docH, vw, vh, pad = 16, inset = {}) {
+  const { l = 0, r = 0, t = 0, b = 0 } = inset;
+  const fw = Math.max(1, vw - l - r), fh = Math.max(1, vh - t - b);
+  const aw = Math.max(1, fw - pad * 2), ah = Math.max(1, fh - pad * 2);
   const zoom = clampZoom(Math.min(1, aw / docW, ah / docH));
-  return { zoom, x: (vw - docW * zoom) / 2, y: (vh - docH * zoom) / 2 };
+  return { zoom, x: l + (fw - docW * zoom) / 2, y: t + (fh - docH * zoom) / 2 };
 }
 
 /** זום לרמה חדשה, כשהנקודה (sx, sy) על המסך נשארת מעל אותה נקודה במסמך. */
