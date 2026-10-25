@@ -19,7 +19,7 @@ function draft_row(): array
 {
     $row = db()->query('SELECT * FROM draft WHERE id = 1')->fetch();
     if ($row) return $row;
-    $json = json_encode(page_template(), JSON_UNESCAPED_UNICODE);
+    $json = page_json(page_template());
     db()->prepare("INSERT INTO draft (id, json, rev, updated_by, updated_at) VALUES (1, ?, 1, '', ?)")->execute([$json, now_iso()]);
     return db()->query('SELECT * FROM draft WHERE id = 1')->fetch();
 }
@@ -66,7 +66,7 @@ function draft_get(array $user): array
 {
     $d = draft_row();
     return [
-        'page' => json_decode($d['json'], true),
+        'page' => json_decode($d['json']),          // אובייקטים — {} נשאר {} (page_json)
         'rev' => (int)$d['rev'],
         'updated_at' => $d['updated_at'],
         'lock' => lock_view($user),
@@ -96,7 +96,7 @@ function draft_write(array $user, array $page, int $rev, string $note = ''): arr
         if ((int)$d['rev'] !== $rev) throw new ApiError('מישהו אחר שינה את הטיוטה. רענן כדי לראות', 409, ['code' => 'conflict']);
         $l = lock_state();
         if (!$l || $l['sub'] !== $user['sub']) throw new ApiError($l ? "בעריכה אצל {$l['name']}" : 'העריכה שוחררה. רענן', 423, ['code' => 'locked']);
-        $json = json_encode($page, JSON_UNESCAPED_UNICODE);
+        $json = page_json($page);
         $new = $rev + 1;
         if ($json !== $d['json']) {
             $pdo->prepare('UPDATE draft SET json = ?, rev = ?, updated_by = ?, updated_at = ? WHERE id = 1')->execute([$json, $new, $user['sub'], now_iso()]);
@@ -110,7 +110,7 @@ function draft_write(array $user, array $page, int $rev, string $note = ''): arr
         $pdo->rollBack();
         throw $e;
     }
-    return ['rev' => $new, 'page' => $page];
+    return ['rev' => $new, 'page' => json_decode($json)];
 }
 
 function draft_save(array $user, array $b): array

@@ -130,6 +130,40 @@ function migrate(PDO $pdo): void
                 updated_by TEXT NOT NULL
             );
             SQL,
+        // שלב 6: פרסום — מפתח החתימה, הגרסאות, והקבצים שהאתר כבר אישר (lib/publish.php)
+        5 => <<<'SQL'
+            CREATE TABLE pub_keys (
+                kid        TEXT PRIMARY KEY,
+                public     TEXT NOT NULL,
+                secret     TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                retired    INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE TABLE versions (
+                n        INTEGER PRIMARY KEY,
+                at       TEXT NOT NULL,
+                sub      TEXT NOT NULL,
+                name     TEXT NOT NULL,
+                note     TEXT NOT NULL DEFAULT '',
+                json     TEXT NOT NULL,
+                html     TEXT NOT NULL,
+                css      TEXT NOT NULL,
+                assets   TEXT NOT NULL,
+                status   TEXT NOT NULL CHECK (status IN ('pending','live','failed','superseded')),
+                response TEXT,
+                sent_at  TEXT
+            );
+            CREATE TABLE site_assets (
+                sha  TEXT NOT NULL,
+                site TEXT NOT NULL,
+                at   TEXT NOT NULL,
+                PRIMARY KEY (sha, site)
+            );
+            SQL,
+        // ייבוא העמוד הקיים: העלאה גדולה (ZIP) מסומנת כייבוא
+        6 => <<<'SQL'
+            ALTER TABLE uploads ADD COLUMN purpose TEXT NOT NULL DEFAULT 'file';
+            SQL,
     ];
     foreach ($steps as $n => $sql) {
         if ($v >= $n) continue;

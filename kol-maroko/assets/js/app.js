@@ -6,6 +6,8 @@ const main = $('#main');
 const state = { user: null, csrf: '', roles: {} };
 const ROLE_NAMES = { owner: 'בעלים', publisher: 'מפרסם', editor: 'עורך' };
 const ACTIONS = {
+  publish: '🚀 פרסם', publish_failed: '⚠️ פרסום נכשל', version_create: '📦 יצר גרסה', import: '📥 ייבא את העמוד מהאתר',
+  key_rotate: '🔑 יצר מפתח חדש', key_activate: '🔑 הפעיל מפתח חדש', site_set: '🔗 שינה כתובת אתר',
   member_add: '➕ הוסיף חבר', file_add: '⬆️ העלה קובץ', file_delete: '🗑️ מחק קובץ', disk_cap: '💽 שינה תקרת קבצים', restore: '↺ שחזר טיוטה', member_role: '🔁 שינה תפקיד', member_remove: '➖ הסיר חבר', member_linked: '🔗 חבר נכנס לראשונה',
 };
 
@@ -35,7 +37,7 @@ async function api(action, body, query = '') {
   } catch {
     throw Object.assign(new Error(res ? 'תשובה לא תקינה מהשרת' : 'אין חיבור לשרת'), { status: res?.status || 0 });
   }
-  if (!data.ok) throw Object.assign(new Error(data.error || 'שגיאה'), { status: res.status });
+  if (!data.ok) throw Object.assign(new Error(data.error || 'שגיאה'), { status: res.status, data });
   return data;
 }
 
@@ -65,7 +67,7 @@ document.addEventListener('click', e => { const b = e.target.closest('[data-clos
 function sheet(title, ...body) {
   const dlg = $('#sheet');
   $('#sheet-title').textContent = title;
-  $('#sheet-body').replaceChildren(...body);
+  $('#sheet-body').replaceChildren(...body.flat().filter(x => x != null && x !== false));   // replaceChildren(null) כותב "null"
   if (!dlg.open) dlg.showModal();
   return dlg;
 }
@@ -74,8 +76,10 @@ function sheet(title, ...body) {
 const TABS = [
   { id: 'studio', label: '🎨 סטודיו', min: 'editor' },
   { id: 'files', label: '🗂️ קבצים', min: 'editor' },
+  { id: 'publish', label: '🚀 פרסום', min: 'editor' },
   { id: 'members', label: '👥 חברים', min: 'owner' },
   { id: 'log', label: '📜 יומן', min: 'owner' },
+  { id: 'settings', label: '⚙️ הגדרות', min: 'owner' },
 ];
 const RANK = { editor: 1, publisher: 2, owner: 3 };
 
@@ -86,7 +90,8 @@ function route() {
   nav.hidden = tabs.length < 2;
   nav.replaceChildren(...tabs.map(t => h('a', { href: '#/' + t.id, 'aria-current': t === cur ? 'page' : null }, t.label)));
   if (cur.id !== 'studio') Studio.unmount();
-  ({ studio: viewStudio, files: () => Media.view(main, state.user.role === 'owner'), members: viewMembers, log: viewLog })[cur.id]();
+  ({ studio: viewStudio, files: () => Media.view(main, state.user.role === 'owner'),
+    publish: () => Publish.view(main, state.user.role), settings: () => Publish.settings(main), members: viewMembers, log: viewLog })[cur.id]();
 }
 window.addEventListener('hashchange', () => state.user?.role && route());
 

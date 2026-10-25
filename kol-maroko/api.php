@@ -8,7 +8,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/lib/members.php';
-require_once __DIR__ . '/lib/longtext.php';
+require_once __DIR__ . '/lib/import.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -28,7 +28,8 @@ $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 // media — קובץ בכתובת חתומה לזמן מוגבל (התצוגה המבודדת בסטודיו לא שולחת עוגייה). בלי חתימה — 403.
 const PUBLIC_ACTIONS = ['embed_key', 'media'];
 const POST_ACTIONS = ['member_add', 'member_set', 'member_remove', 'request_dismiss', 'lock', 'draft_save', 'render', 'revision_restore',
-                      'upload_init', 'upload_chunk', 'upload_done', 'file_delete', 'disk_cap', 'editor_session', 'longtext_sync'];
+                      'upload_init', 'upload_chunk', 'upload_done', 'file_delete', 'disk_cap', 'editor_session', 'longtext_sync',
+                      'publish', 'republish', 'version_send', 'key_rotate', 'key_activate', 'site_set', 'site_ping', 'import_run'];
 
 try {
     if (in_array($action, POST_ACTIONS, true) && $method !== 'POST') throw new ApiError('נדרש POST', 405);
@@ -65,6 +66,19 @@ try {
         'media' => file_send(media_check($_GET)),
         'editor_session' => editor_session(require_role($user, 'editor'), $body),
         'longtext_sync' => longtext_sync(require_role($user, 'editor'), $body),
+        'publish_preview' => publish_preview(require_role($user, 'publisher')),
+        'publish' => publish(require_role($user, 'publisher'), $body),
+        'republish' => republish(require_role($user, 'publisher'), $body),
+        'version_send' => version_send(require_role($user, 'publisher'), (int)($body['n'] ?? 0)),
+        'versions' => (require_role($user, 'editor') ? versions_list() : []),
+        'version_preview' => (require_role($user, 'editor') ? version_preview($_GET) : []),
+        'publish_settings' => (require_role($user, 'owner') ? publish_settings() : []),
+        'key_rotate' => key_rotate(require_role($user, 'owner')),
+        'key_activate' => key_activate(require_role($user, 'owner')),
+        'site_set' => site_set(require_role($user, 'owner'), $body),
+        'site_ping' => site_ping(require_role($user, 'owner')),
+        'import_run' => import_run(require_role($user, 'owner'), $body),
+        'import_info' => (require_role($user, 'owner') ? ['imported' => json_decode((string)setting('imported_from', 'null'), true)] : []),
         'audit' => audit_list(require_role($user, 'owner'), $_GET),
         default => throw new ApiError('פעולה לא מוכרת', 404),
     };

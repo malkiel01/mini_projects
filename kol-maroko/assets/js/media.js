@@ -20,10 +20,11 @@ const Media = (() => {
 
   // ── העלאה בחלקים ────────────────────────────────────────
   // חלק שנכשל ברשת — עד 5 ניסיונות (1, 2, 4, 8, 16 שניות). 413 — חצי חלק. 409 — ממשיכים מהמקום שהשרת אומר.
-  async function upload(file, onProgress = () => {}) {
-    if (file.size > MAX) throw new Error(`"${file.name}" גדול מ-50MB`);
+  // purpose: 'import' — ZIP של העמוד מהאתר (עד 3GB); מחזיר את מזהה ההעלאה, בלי upload_done
+  async function upload(file, onProgress = () => {}, purpose = 'file') {
+    if (purpose === 'file' && file.size > MAX) throw new Error(`"${file.name}" גדול מ-50MB`);
     if (!file.size) throw new Error(`"${file.name}" ריק`);
-    const init = await api('upload_init', { name: file.name, size: file.size });
+    const init = await api('upload_init', { name: file.name, size: file.size, purpose });
     let chunk = init.chunk, off = 0, tries = 0;
     const t0 = Date.now();
     onProgress(0, file.size, null);
@@ -48,6 +49,7 @@ const Media = (() => {
       const rate = off / Math.max(1, Date.now() - t0);                          // בתים למילישנייה
       onProgress(off, file.size, rate > 0 ? Math.round((file.size - off) / rate / 1000) : null);
     }
+    if (purpose === 'import') return init.id;
     const done = await api('upload_done', { id: init.id, type: file.type });
     return done.file;
   }
@@ -296,5 +298,5 @@ const Media = (() => {
       } }, 'שמירה'));
   }
 
-  return { pick, view, upload, mb };
+  return { pick, view, upload, mb, progressRow };
 })();
