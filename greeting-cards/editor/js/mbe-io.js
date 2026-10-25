@@ -137,6 +137,41 @@ function textItems(l, measured) {
     return [{ id: l.id + '-g', type: 'group', name: 'טקסט עם רקע', children: [bg, item] }];
 }
 
+const shaOf = src => (/^media\/([0-9a-f]{64})\./.exec(src || '') || [])[1] || null;
+
+/**
+ * המתכון של שכבת תמונה בפורמט (mbe-format.md, "שכבת raster — עריכה לא הורסת", ר2): ‏src הוא התוצאה האפויה, ולצידו —
+ * המקור, החיתוך (בפיקסלים של המקור), הטרנספורמציה אל העמוד (pt), מסכה וקטורית, פילטרים וצל. ‏baked — הגיבוב של src:
+ * מי שערך את הפיקסלים בלי להבין את המתכון ישנה את src, והמתכון ייחשב לא תקף.
+ */
+async function recipe(f, doc, l, images, src) {
+    const img = images.get(l.asset);
+    const blob = await assets.get(doc.assets[l.asset]?.src);
+    if (!img || !blob) return {};
+    const nw = img.naturalWidth, nh = img.naturalHeight;
+    const c = l.crop || { x: 0, y: 0, w: 1, h: 1 };
+    const cw = c.w * nw, ch = c.h * nh;
+    const out = {
+        baked: shaOf(src),
+        source: await f.addMedia(new Uint8Array(await blob.arrayBuffer()), blob.type || 'image/png'),
+        transform: mul(layerToPage(l), [l.w / cw, 0, 0, l.h / ch, 0, 0]).map(v => Math.round(v * 10000) / 10000),
+    };
+    if (l.crop) out.crop = [c.x * nw, c.y * nh, cw, ch].map(v => Math.round(v * 10) / 10);
+    if (l.mask === 'circle' || l.mask === 'rounded') {
+        const d = l.mask === 'circle' ? ellipseD(l.w, l.h) : rectD(l.w, l.h, Math.min(l.w, l.h) * 0.12);
+        out.vectorMask = { d: toMbePath(d, layerToPage(l)), feather: 0, enabled: true };
+    }
+    const fl = l.filters || {};
+    const filters = [];
+    if (fl.brightness || fl.contrast) filters.push({ type: 'brightness-contrast', brightness: r2(fl.brightness || 0), contrast: r2((fl.contrast || 0) / 100) });
+    if (fl.saturation) filters.push({ type: 'hue-saturation', saturation: r2(fl.saturation) });
+    if (fl.blur) filters.push({ type: 'gaussian-blur', radius: r2(fl.blur * PT) });
+    if (filters.length) out.filters = filters;
+    const e = fx(l.shadow);
+    if (e) out.effects = e;
+    return out;
+}
+
 /** ציור מסמך (או חלק ממנו) לקנבס, בלי ידיות — לייצוגים ולשכבות "אפויות". */
 async function render(doc, images, scale) {
     await ensureDocFonts(doc);
@@ -185,7 +220,8 @@ export async function buildMbe(doc, images, { baseBytes = null } = {}) {
             delete solo.page.gradient;
             const c = await render(solo, images, 1);
             const src = await f.addMedia(await pngBytes(c), 'image/png');
-            layers.push({ ...common, type: 'raster', src, px: [c.width, c.height], box: [0, 0, r2(W * PT), r2(H * PT)] });
+            layers.push({ ...common, type: 'raster', src, px: [c.width, c.height], box: [0, 0, r2(W * PT), r2(H * PT)],
+                ...await recipe(f, doc, l, images, src) });
             baked[l.id] = src;
             if (l.crop || l.mask || l.filters && Object.values(l.filters).some(Boolean) || l.flipX || l.flipY || l.rotation) gaps.add('image-edits → baked');
         } else if (l.type === 'text') {
@@ -276,12 +312,15 @@ export async function importMbe(file) {
             for (const l of doc.layers) { const o = byId.get(l.id); if (o?.role) l.role = o.role; }
             // שכבת תמונה שהפיקסלים שלה לא השתנו מאז שאפינו — חוזרת עם המקור והפרמטרים (חיתוך, מסכה, פילטרים…)
             const srcOf = new Map();
-            const walk = list => (list || []).forEach(x => { if (x?.type === 'group') walk(x.children); else if (x?.type === 'raster') srcOf.set(x.id, x.src); });
+            const walk = list => (list || []).forEach(x => { if (x?.type === 'group') walk(x.children); else if (x?.type === 'raster') srcOf.set(x.id, x); });
             for (const sf of f.document.surfaces || []) walk(sf.layers);
             let restored = 0;
             for (let i = 0; i < doc.layers.length; i++) {
                 const l = doc.layers[i], o = byId.get(l.id);
-                if (l.type !== 'image' || o?.type !== 'image' || !saved.baked?.[l.id] || saved.baked[l.id] !== srcOf.get(l.id)) continue;
+                // המתכון תקף אם הפיקסלים לא השתנו: baked של הפורמט (ר2) תואם ל-src, או ה-src שרשמנו אצלנו
+                const raw = srcOf.get(l.id);
+                const intact = raw && (raw.baked ? raw.baked === shaOf(raw.src) : saved.baked?.[l.id] === raw.src);
+                if (l.type !== 'image' || o?.type !== 'image' || !intact) continue;
                 const a = saved.assets?.[o.asset];
                 const data = a?.media && f.getMedia(a.media);
                 if (!data) continue;
