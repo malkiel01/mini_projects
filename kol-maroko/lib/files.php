@@ -249,6 +249,9 @@ function files_in_use(): array
     // וגם הגרסה החיה והאחרונות — כדי ש"פרסום מחדש" של גרסה קודמת לא ייתקע על קובץ שנמחק
     $json .= implode('', db()->query("SELECT json FROM versions WHERE n > (SELECT COALESCE(MAX(n), 0) - 10 FROM versions)")->fetchAll(PDO::FETCH_COLUMN));
     $json .= (string)setting('imported_css', '');
+    // הקלטות של מילים: במילים עכשיו, ובעותקים שבגרסאות האחרונות
+    $json .= implode('', db()->query("SELECT '\"' || audio || '\"' FROM words WHERE length(audio) = 32")->fetchAll(PDO::FETCH_COLUMN));
+    $json .= implode('', db()->query("SELECT words FROM versions WHERE words IS NOT NULL AND n > (SELECT COALESCE(MAX(n), 0) - 10 FROM versions)")->fetchAll(PDO::FETCH_COLUMN));
     preg_match_all('/(?:"|kol-file:)([0-9a-f]{32})/', $json, $m);
     return array_flip($m[1]);
 }

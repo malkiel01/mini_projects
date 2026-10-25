@@ -31,7 +31,7 @@ const PUBLIC_ACTIONS = ['embed_key', 'media'];
 const POST_ACTIONS = ['member_add', 'member_set', 'member_remove', 'request_dismiss', 'lock', 'draft_save', 'render', 'revision_restore',
                       'upload_init', 'upload_chunk', 'upload_done', 'file_delete', 'disk_cap', 'editor_session', 'longtext_sync',
                       'publish', 'republish', 'version_send', 'key_rotate', 'key_activate', 'site_set', 'site_ping', 'import_run',
-                      'ai_suggest', 'secret_set', 'ai_quota_set'];
+                      'ai_suggest', 'secret_set', 'ai_quota_set', 'word_save', 'word_delete', 'site_switch'];
 
 try {
     if (in_array($action, POST_ACTIONS, true) && $method !== 'POST') throw new ApiError('נדרש POST', 405);
@@ -78,8 +78,12 @@ try {
         'key_rotate' => key_rotate(require_role($user, 'owner')),
         'key_activate' => key_activate(require_role($user, 'owner')),
         'site_set' => site_set(require_role($user, 'owner'), $body),
-        'site_ping' => site_ping(require_role($user, 'owner')),
+        'site_ping' => site_ping(require_role($user, 'publisher')),
+        'site_switch' => site_switch(require_role($user, 'publisher'), $body),
         'import_run' => import_run(require_role($user, 'owner'), $body),
+        'words' => (require_role($user, 'editor') ? words_list() : []),
+        'word_save' => word_save(require_role($user, 'editor'), $body),
+        'word_delete' => word_delete(require_role($user, 'editor'), $body),
         'import_info' => (require_role($user, 'owner') ? ['imported' => json_decode((string)setting('imported_from', 'null'), true)] : []),
         'ai_status' => ai_status(require_role($user, 'editor')),
         'ai_suggest' => ai_suggest(require_role($user, 'editor'), $body),

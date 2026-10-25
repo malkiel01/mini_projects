@@ -179,6 +179,18 @@ function site_ping(array $owner): array
     return ['ok' => true, 'site' => $r];
 }
 
+/**
+ * מה האתר מציג: הגרסה מהסטודיו (enabled) או העמוד המקורי. "חזרה לעמוד המקורי" — התוסף מכבה את ההחלפה, והאתר
+ * מציג שוב את התבנית שלו ואת המילים שבוורדפרס (הם לא נמחקו ולא שונו). אפשר להחליף שוב בכל רגע.
+ */
+function site_switch(array $user, array $b): array
+{
+    $on = ($b['enabled'] ?? null) === true;
+    $r = site_call('switch', ['enabled' => $on]);
+    audit_as($user, 'site_switch', $on ? 'האתר מציג את הגרסה מהסטודיו' : 'האתר חזר לעמוד המקורי');
+    return ['site' => $r];
+}
+
 // ── בניית גרסה ────────────────────────────────────────────
 
 /** בעיות שחוסמות פרסום (errors) ושכדאי לדעת (warnings). */
@@ -201,6 +213,15 @@ function publish_checks(array $page): array
         if ($w['type'] === 'video' && !$p['file'] && !$p['embed']) $warnings[] = ['id' => $w['id'], 'msg' => 'וידאו ריק — לא יוצג באתר'];
         if ($w['type'] === 'button' && $p['href'] === '') $warnings[] = ['id' => $w['id'], 'msg' => 'כפתור בלי קישור'];
         if ($w['type'] === 'longtext' && (!$p['doc'] || !isset($long[$p['doc']]))) $errors[] = ['id' => $w['id'], 'msg' => 'טקסט ארוך שעוד לא נשמר בעורך'];
+        if ($w['type'] === 'lexicon') {
+            if ($p['hero_file'] && !isset($known[$p['hero_file']])) $errors[] = ['id' => $w['id'], 'msg' => 'תמונת הרקע של המילון חסרה — בחרו אותה מחדש'];
+            $words = words_rows();
+            $ids = array_values(array_unique(array_filter(array_map(fn($x) => file_id($x['audio']), $words))));
+            $have = files_meta($ids);
+            foreach ($words as $x) if (file_id($x['audio']) && !isset($have[$x['audio']])) $errors[] = ['id' => $w['id'], 'msg' => "ההקלטה של \"{$x['word']}\" חסרה — הקליטו או בחרו אותה מחדש ב-📚 מילים"];
+            $files += $have;
+            if (!$words) $warnings[] = ['id' => $w['id'], 'msg' => 'אין מילים במילון'];
+        }
     }
     $total = array_sum(array_map(fn($f) => (int)$f['size'], $files));
     if ($total > PUB_MAX_TOTAL) $errors[] = ['id' => null, 'msg' => 'הקבצים בעמוד גדולים מ-400MB'];
@@ -219,7 +240,7 @@ function page_widgets(array $page): array
 function publish_diff(array $page): array
 {
     $live = db()->query("SELECT json FROM versions WHERE status = 'live' ORDER BY n DESC LIMIT 1")->fetchColumn();
-    if (!$live) return ['first' => true];
+    if (!$live) return ['first' => true, 'words' => words_diff($page)];
     $old = json_decode($live, true);
     $a = []; foreach (page_widgets($old) as $w) $a[$w['id']] = $w;
     $b = []; foreach (page_widgets($page) as $w) $b[$w['id']] = $w;
@@ -233,7 +254,35 @@ function publish_diff(array $page): array
         'changed' => $changed,
         'layout' => json_encode($ids($old)) !== json_encode($ids($page)),
         'settings' => json_encode($old['settings']) !== json_encode($page['settings']),
+        'words' => words_diff($page),
     ];
+}
+
+/** המילים מול הגרסה החיה: כמה נוספו, השתנו ונמחקו. null — אין מילון בעמוד. */
+function words_diff(array $page): ?array
+{
+    if (!page_has_lexicon($page)) return null;
+    $old = db()->query("SELECT words FROM versions WHERE status = 'live' ORDER BY n DESC LIMIT 1")->fetchColumn();
+    $key = fn($w) => $w['wp_id'] ? 'wp' . $w['wp_id'] : 'k' . $w['id'];
+    $a = []; foreach (json_decode((string)$old, true) ?: [] as $w) $a[$key($w)] = $w;
+    $b = []; foreach (words_rows() as $w) $b[$key($w)] = $w;
+    $changed = 0;
+    foreach ($b as $k => $w) if (isset($a[$k]) && json_encode($a[$k]) !== json_encode($w)) $changed++;
+    return ['total' => count($b), 'added' => count(array_diff_key($b, $a)), 'removed' => count(array_diff_key($a, $b)), 'changed' => $changed];
+}
+
+function page_has_lexicon(array $page): bool
+{
+    foreach (page_widgets($page) as $w) if ($w['type'] === 'lexicon') return true;
+    return false;
+}
+
+/** גרסה שמורה: המילים שלה (העותק), ולא הנוכחיות. */
+function with_version_words(?string $words, callable $fn): mixed
+{
+    if ($words === null) return $fn();
+    $GLOBALS['kol_words'] = json_decode($words, true) ?: [];
+    try { return $fn(); } finally { unset($GLOBALS['kol_words']); }
 }
 
 function publish_preview(array $user): array
@@ -305,13 +354,16 @@ function publish(array $user, array $b): array
 /** גרסה קודמת → גרסה חדשה עם אותו תוכן (האתר לעולם לא מקבל מספר ישן). */
 function republish(array $user, array $b): array
 {
-    $st = db()->prepare('SELECT json FROM versions WHERE n = ?');
+    $st = db()->prepare('SELECT json, words FROM versions WHERE n = ?');
     $st->execute([(int)($b['n'] ?? 0)]);
-    $json = $st->fetchColumn() ?: throw new ApiError('הגרסה לא נמצאה', 404);
-    $page = page_normalize(json_decode($json, true));
-    $checks = publish_checks($page);
-    if ($checks['errors']) throw new ApiError('הגרסה הזו מפנה לקבצים שכבר נמחקו', 422, ['checks' => $checks]);
-    return version_send($user, version_create($user, $page, 'חזרה לגרסה ' . (int)$b['n']));
+    $v = $st->fetch() ?: throw new ApiError('הגרסה לא נמצאה', 404);
+    $page = page_normalize(json_decode($v['json'], true));
+    $n = with_version_words($v['words'], function () use ($page, $user, $b) {
+        $checks = publish_checks($page);
+        if ($checks['errors']) throw new ApiError('הגרסה הזו מפנה לקבצים שכבר נמחקו', 422, ['checks' => $checks]);
+        return version_create($user, $page, 'חזרה לגרסה ' . (int)$b['n']);
+    });
+    return version_send($user, $n);
 }
 
 function version_create(array $user, array $page, string $note): int
@@ -319,9 +371,9 @@ function version_create(array $user, array $page, string $note): int
     $v = build_version($page);
     $pdo = db();
     $n = (int)$pdo->query('SELECT COALESCE(MAX(n), 0) + 1 FROM versions')->fetchColumn();
-    $pdo->prepare("INSERT INTO versions (n, at, sub, name, note, json, html, css, assets, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')")
+    $pdo->prepare("INSERT INTO versions (n, at, sub, name, note, json, html, css, assets, status, words) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)")
         ->execute([$n, now_iso(), $user['sub'], $user['name'], mb_substr($note, 0, 200), page_json($page),
-            $v['html'], $v['css'], json_encode($v['assets'], JSON_UNESCAPED_SLASHES)]);
+            $v['html'], $v['css'], json_encode($v['assets'], JSON_UNESCAPED_SLASHES), page_has_lexicon($page) ? words_snapshot() : null]);
     audit_as($user, 'version_create', "גרסה $n");
     return $n;
 }
@@ -394,8 +446,8 @@ function versions_list(): array
 
 function version_preview(array $b): array
 {
-    $st = db()->prepare('SELECT json FROM versions WHERE n = ?');
+    $st = db()->prepare('SELECT json, words FROM versions WHERE n = ?');
     $st->execute([(int)($b['n'] ?? 0)]);
-    $json = $st->fetchColumn() ?: throw new ApiError('הגרסה לא נמצאה', 404);
-    return page_render(page_normalize(json_decode($json, true)), true);
+    $v = $st->fetch() ?: throw new ApiError('הגרסה לא נמצאה', 404);
+    return with_version_words($v['words'], fn() => page_render(page_normalize(json_decode($v['json'], true)), true));
 }

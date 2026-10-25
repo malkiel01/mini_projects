@@ -8,7 +8,7 @@
   "entry": "index.html",
   "gate": true,
   "restricted": true,
-  "version": "0.9",
+  "version": "0.10",
   "public": [
     "api.php?action=embed_key|media"
   ]

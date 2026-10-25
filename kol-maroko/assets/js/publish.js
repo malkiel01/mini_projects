@@ -4,7 +4,7 @@
 const Publish = (() => {
   const STATUS = { live: ['באתר', 'ok'], failed: ['נכשלה', 'bad'], pending: ['לא נשלחה', 'warn'], superseded: ['הוחלפה', ''] };
   const TYPE_NAMES = { heading: 'כותרת', text: 'טקסט', longtext: 'טקסט ארוך', button: 'כפתור', divider: 'קו', spacer: 'רווח', image: 'תמונה',
-    gallery: 'גלריה', audio: 'הקלטה', video: 'וידאו', file: 'קובץ', code: 'קוד', raw: 'קטע מקורי' };
+    gallery: 'גלריה', audio: 'הקלטה', video: 'וידאו', file: 'קובץ', code: 'קוד', raw: 'קטע מקורי', lexicon: 'המילון' };
   const DOCS = 'https://github.com/malkiel01/mini_projects/blob/main/kol-maroko/docs/';
   const when = iso => new Date(iso).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Asia/Jerusalem' });
 
@@ -23,6 +23,7 @@ const Publish = (() => {
         canPublish
           ? h('button', { type: 'button', class: 'btn primary', onclick: () => publishSheet(host, role) }, '🚀 פרסום הטיוטה לאתר')
           : h('p', { class: 'hint' }, 'רק מפרסם יכול לשלוח לאתר. הטיוטה שלך נשמרת.')),
+      canPublish ? siteBlock(host, role, !!live) : null,
       h('h2', { class: 'sec-title' }, 'גרסאות'),
       d.versions.length
         ? h('ul', { class: 'list' }, d.versions.map(v => {
@@ -35,6 +36,33 @@ const Publish = (() => {
         : h('p', { class: 'empty' }, 'כל פרסום יוצר כאן גרסה קפואה. אפשר לחזור לכל אחת.'));
   }
 
+  // מה האתר מציג: הגרסה מהסטודיו, או העמוד המקורי (התבנית והמילים שבוורדפרס — לא נמחקו ולא שונו).
+  // המעבר בין השניים — בלחיצה, ואפשר לחזור בכל רגע.
+  function siteBlock(host, role, published) {
+    const line = h('div', { class: 'line' }, h('span', { class: 'muted' }, 'בודק מה האתר מציג…'));
+    const btns = h('div', { class: 'row-btns wrap' });
+    const box = h('div', { class: 'summary site-state' }, line, btns,
+      h('p', { class: 'hint' }, 'העמוד המקורי לא נמחק: חזרה אליו מחזירה את האתר בדיוק למה שהיה לפני הכלי, כולל המילים שבוורדפרס.'));
+    const flip = async on => {
+      const msg = on ? 'להציג באתר את הגרסה האחרונה מהסטודיו (במקום העמוד המקורי)?'
+        : 'להחזיר את האתר לעמוד המקורי, כמו שהיה לפני הכלי? הגרסאות כאן נשמרות, ואפשר להחליף שוב בכל רגע.';
+      if (!confirm(msg)) return;
+      btns.querySelectorAll('button').forEach(b => { b.disabled = true; });
+      try { const r = await api('site_switch', { enabled: on }); toast(r.site.enabled ? 'האתר מציג את הגרסה מהסטודיו ✓' : 'האתר חזר לעמוד המקורי ✓'); show(r.site); }
+      catch (e) { toast(e.message, true); btns.querySelectorAll('button').forEach(b => { b.disabled = false; }); }
+    };
+    const show = st => {
+      line.replaceChildren(h('span', { class: 'muted' }, 'האתר מציג:'),
+        st.enabled ? h('b', { style: 'color:var(--ok)' }, `🎨 הגרסה מהסטודיו (${st.live})`) : h('b', {}, '🏛️ העמוד המקורי'));
+      btns.replaceChildren(st.enabled
+        ? h('button', { type: 'button', class: 'btn ghost danger', onclick: () => flip(false) }, '↩️ חזרה לעמוד המקורי')
+        : h('button', { type: 'button', class: 'btn primary', disabled: !st.live, title: st.live ? null : 'קודם פרסום', onclick: () => flip(true) }, '▶️ להציג באתר את הגרסה מהסטודיו'));
+    };
+    if (!published) { line.replaceChildren(h('span', { class: 'muted' }, 'האתר מציג את העמוד המקורי. אחרי הפרסום הראשון — אפשר להחליף.')); return box; }
+    api('site_ping', {}).then(r => show(r.site)).catch(e => line.replaceChildren(h('span', { class: 'error' }, e.message), ' ', helpLink(e)));
+    return box;
+  }
+
   async function publishSheet(host, role) {
     const body = h('div', { class: 'pub' }, h('p', { class: 'empty' }, 'בודק את הטיוטה…'));
     const dlg = sheet('🚀 פרסום לאתר', body);
@@ -45,11 +73,13 @@ const Publish = (() => {
     const line = (ic, label, list) => list.length ? h('li', {}, h('span', { 'aria-hidden': 'true' }, ic), ` ${label}: `,
       Object.entries(names(list)).map(([t, n]) => `${t}${n > 1 ? ' ×' + n : ''}`).join(', ')) : null;
     const diffBox = df.first
-      ? h('p', { class: 'hint' }, 'הפרסום הראשון — כל העמוד נשלח.')
+      ? h('p', { class: 'hint' }, 'הפרסום הראשון — כל העמוד נשלח.', df.words ? ` 📚 ${df.words.total} מילים.` : '')
       : h('ul', { class: 'diff' },
         line('➕', 'נוספו', df.added), line('✏️', 'השתנו', df.changed), line('➖', 'נמחקו', df.removed),
-        df.layout ? h('li', {}, '🧱 סדר הפסים או העמודות השתנה') : null, df.settings ? h('li', {}, '⚙️ הגדרות העמוד השתנו') : null);
-    if (!df.first && !df.added.length && !df.changed.length && !df.removed.length && !df.layout && !df.settings) {
+        df.layout ? h('li', {}, '🧱 סדר הפסים או העמודות השתנה') : null, df.settings ? h('li', {}, '⚙️ הגדרות העמוד השתנו') : null,
+        wordsLine(df.words));
+    const wd = df.words;
+    if (!df.first && !df.added.length && !df.changed.length && !df.removed.length && !df.layout && !df.settings && !(wd && (wd.added || wd.changed || wd.removed))) {
       diffBox.replaceChildren(h('li', {}, '✓ אין שינויים מאז הגרסה שבאתר'));
     }
     const note = h('input', { maxlength: 200, placeholder: 'מה השתנה (לא חובה)' });
@@ -71,6 +101,12 @@ const Publish = (() => {
       c.warnings.length ? h('div', { class: 'warnbox' }, h('b', {}, 'כדאי לדעת:'), h('ul', {}, c.warnings.map(x => h('li', {}, x.msg)))) : null,
       h('p', { class: 'hint' }, `${c.files} קבצים · ${Media.mb(c.bytes)}. קבצים שכבר באתר לא נשלחים שוב.`),
       h('label', { class: 'f' }, h('span', {}, 'הערה לגרסה'), note), go, status].filter(Boolean));
+  }
+
+  function wordsLine(w) {
+    if (!w || !(w.added || w.changed || w.removed)) return null;
+    return h('li', {}, h('span', { 'aria-hidden': 'true' }, '📚'), ' מילים: ',
+      [w.added && `${w.added} נוספו`, w.changed && `${w.changed} השתנו`, w.removed && `${w.removed} נמחקו`].filter(Boolean).join(', '), ` (סך הכול ${w.total})`);
   }
 
   function helpLink(e) {
@@ -172,7 +208,7 @@ const Publish = (() => {
       const f = input.files[0];
       input.value = '';
       if (!f) return;
-      if (!confirm('הייבוא מחליף את הטיוטה בעמוד מהאתר. הטיוטה הנוכחית נשמרת בהיסטוריה (🕘). להמשיך?')) return;
+      if (!confirm('הייבוא מחליף את הטיוטה ואת המילים בכלי במה שבאתר. הטיוטה הנוכחית נשמרת בהיסטוריה (🕘). באתר עצמו שום דבר לא משתנה. להמשיך?')) return;
       const row = Media.progressRow();
       ups.replaceChildren(row.el);
       try {
@@ -183,13 +219,15 @@ const Publish = (() => {
         const st = r.stats;
         result.replaceChildren(h('div', { class: 'summary' },
           h('div', { class: 'line' }, h('b', { style: 'color:var(--ok)' }, '✓ העמוד יובא לטיוטה')),
-          h('p', {}, `${st.sections} פסים · ${Object.values(st.widgets).reduce((a, b) => a + b, 0)} רכיבים · ${st.files} קבצים`),
-          h('p', { class: 'hint' }, Object.entries(st.widgets).map(([t, n]) => `${TYPE_NAMES[t] || t} ${n}`).join(' · ')),
+          st.lexicon ? h('p', {}, h('b', {}, `📚 ${st.lexicon.words} מילים`), ` · ${st.lexicon.audio} עם הקלטה · ${st.lexicon.topics} נושאים. ההקלטות נשארות באתר; המילים — בלשונית 📚 מילים.`) : null,
+          st.lexicon ? h('p', { class: 'hint' }, 'העמוד נבנה באותו עיצוב כמו באתר. מה שבאתר לא משתנה עד שתפרסמו ותבחרו להציג את הגרסה מהסטודיו.') : null,
+          st.lexicon ? null : h('p', {}, `${st.sections} פסים · ${Object.values(st.widgets).reduce((a, b) => a + b, 0)} רכיבים · ${st.files} קבצים`),
+          st.lexicon ? null : h('p', { class: 'hint' }, Object.entries(st.widgets).map(([t, n]) => `${TYPE_NAMES[t] || t} ${n}`).join(' · ')),
           st.raw ? h('p', { class: 'hint' }, `${st.raw} קטעים מקוריים (🏛️) — מוצגים כמו באתר, ונערכים כ-HTML.`) : null,
           st.entries ? h('p', { class: 'hint' }, `${st.entries} רשומות של ${(st.entry_types || []).join(', ')} נשמרו (מילים והקלטות).`) : null,
           st.source === 'server' ? h('p', { class: 'hint' }, 'העמוד צולם בשרת (לא כמו שהמבקר רואה) — אם משהו חסר, שלחו את האבחון לצ\'אט.') : null,
-          (st.widgets.text || 0) + (st.widgets.raw || 0) <= 1 && !st.files ? h('div', { class: 'warnbox' }, h('b', {}, 'נראה שכמעט כלום לא יובא.'),
-            ' כנראה תוסף ישן (1.0) באתר. התקינו את 1.1, ושלחו את "🔎 אבחון" מהגדרות התוסף לצ\'אט.') : null,
+          !st.lexicon && (st.widgets.text || 0) + (st.widgets.raw || 0) <= 1 && !st.files ? h('div', { class: 'warnbox' }, h('b', {}, 'נראה שכמעט כלום לא יובא.'),
+            ' כנראה תוסף ישן באתר. התקינו את הגרסה האחרונה (1.2), ושלחו את "🔎 אבחון" מהגדרות התוסף לצ\'אט.') : null,
           st.missing.length ? h('div', { class: 'warnbox' }, h('b', {}, `${st.missing.length} קבצים לא נמצאו בייצוא:`), h('ul', {}, st.missing.slice(0, 20).map(m => h('li', { dir: 'ltr' }, m)))) : null,
           h('a', { class: 'btn primary', href: '#/studio' }, '🎨 לסטודיו')));
       } catch (e) {

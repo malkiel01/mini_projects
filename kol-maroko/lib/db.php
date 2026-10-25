@@ -182,6 +182,25 @@ function migrate(PDO $pdo): void
             CREATE INDEX idx_ai_usage_sub_at ON ai_usage(sub, at);
             ALTER TABLE members ADD COLUMN ai_quota INTEGER;
             SQL,
+        // המילון: המילים מנוהלות כאן בלבד (lib/lexicon.php). audio — מזהה קובץ שלנו, או כתובת באתר. לכל גרסה — עותק של המילים
+        8 => <<<'SQL'
+            CREATE TABLE words (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                wp_id       INTEGER,
+                word        TEXT NOT NULL,
+                meaning     TEXT NOT NULL DEFAULT '',
+                topics      TEXT NOT NULL DEFAULT '[]',
+                audio       TEXT NOT NULL DEFAULT '',
+                external_id TEXT NOT NULL DEFAULT '',
+                updated_at  TEXT NOT NULL,
+                updated_by  TEXT NOT NULL DEFAULT ''
+            );
+            CREATE TABLE topics (
+                slug TEXT PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE
+            );
+            ALTER TABLE versions ADD COLUMN words TEXT;
+            SQL,
     ];
     foreach ($steps as $n => $sql) {
         if ($v >= $n) continue;

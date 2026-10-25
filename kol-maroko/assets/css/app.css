@@ -302,3 +302,21 @@ body.studio-on main { max-width: none; padding: 0; }
 .row-btns.wrap .btn { flex: 1 1 auto; }
 .ai, .ai-out { display: grid; gap: var(--s3); }
 .ai-out:empty { display: none; }
+
+/* ── המילים (words.js) ── */
+.w-filters { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--s2); margin-bottom: var(--s2); }
+.w-filters select { max-width: 46vw; }
+.w-row { display: flex; align-items: center; min-width: 0; }
+.w-row + .w-row { border-top: 1px solid var(--line); }
+.w-row > .use-row { flex: 1; min-width: 0; border-top: 0; }
+.w-row > .w-play, .w-row > .use-ic { flex: none; margin-inline-start: var(--s2); }
+.w-play { inline-size: 40px; block-size: 40px; border-radius: 50%; background: color-mix(in srgb, var(--brand) 12%, var(--surface)); color: var(--brand); }
+.w-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.w-chips:empty { display: none; }
+.w-chips .chip { min-height: 28px; font-size: .8rem; color: var(--ink); gap: 4px; }
+.chip-x { border: 0; background: none; color: var(--muted); padding: 0 2px; cursor: pointer; font-size: .75rem; }
+.w-more { display: block; margin: var(--s2) auto 0; }
+.w-play.none { display: inline-block; background: none; border: 1px dashed var(--line); }
+.w-audio { display: grid; gap: var(--s2); padding: var(--s2); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+.w-audio audio { inline-size: 100%; }
+.site-state .line b { overflow-wrap: anywhere; }
