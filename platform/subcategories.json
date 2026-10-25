@@ -1,0 +1,9 @@
+[
+  {
+    "id": "creative-suite",
+    "parent": "documents",
+    "name": "חבילת היצירה",
+    "icon": "🧰",
+    "apps": ["creative-suite", "word-processor", "layout-studio", "raster-studio", "vector-studio"]
+  }
+]

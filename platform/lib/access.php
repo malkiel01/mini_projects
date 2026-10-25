@@ -94,14 +94,24 @@ function apps_effective(): array
     $login = [];
     foreach (db()->query('SELECT * FROM app_login') as $l) $login[$l['app_id']] = $l;
 
+    $groupOf = [];
+    foreach (registry_subcategories() as $s) {
+        foreach ($s['apps'] as $i => $id) $groupOf[$id] ??= ['sub' => $s, 'order' => $i];
+    }
+
     $apps = [];
     foreach (registry_load()['apps'] as $app) {
         $o = $overrides[$app['id']] ?? null;
+        // בתת-קטגוריה — קטגוריית ברירת המחדל היא האב; העברה מפורשת של המנהל עדיין גוברת
+        $g = $groupOf[$app['id']] ?? null;
+        if ($g && !$app['plugin']) $app['category'] = $g['sub']['parent'];
         $app['default_category'] = $app['category'];
         if ($o && $o['category'] && in_array($o['category'], $known, true)) $app['category'] = $o['category'];
         // קטגוריה שנמחקה — האפליקציה לא נעלמת, היא עוברת ל"אחר". לתוסף — קטגוריה פנימית משלו.
         if ($app['plugin']) $app['category'] = PLUGIN_CATEGORY;
         elseif (!in_array($app['category'], $known, true)) $app['category'] = 'other';
+        $app['subcategory'] = $g && $app['category'] === $g['sub']['parent'] ? $g['sub']['id'] : null;
+        $app['sub_order'] = $g['order'] ?? 0;
         $app['hidden'] = (bool)($o['hidden'] ?? false);
         $app['install_ok'] = !isset($installHidden[$app['id']]);
         // מחוברת = השער פעיל: נכנסים רק עם חשבון בפלטפורמה והרשאה לאפליקציה.
@@ -163,7 +173,13 @@ function visible_for(array $user): array
     // תוספים לא ברשימת הכלים — הם באזור "🧩 תוספים" של המנהל
     $plugins = array_values(array_filter($apps, fn($a) => $a['plugin']));
     $apps = array_values(array_filter($apps, fn($a) => !$a['plugin']));
-    $out = ['categories' => $categories, 'apps' => array_map(fn($a) => app_public($a, $admin), $apps)];
+    // תת-קטגוריות שיש בהן משהו בשביל המשתמש; האפליקציות שבהן — בסדר שבקובץ
+    $used = array_flip(array_filter(array_column($apps, 'subcategory')));
+    $subs = array_values(array_map(fn($s) => array_diff_key($s, ['apps' => 1]),
+        array_filter(registry_subcategories(), fn($s) => isset($used[$s['id']]))));
+    usort($apps, fn($a, $b) => [$a['subcategory'] ?? '', $a['sub_order']] <=> [$b['subcategory'] ?? '', $b['sub_order']]
+        ?: strcmp($a['name'], $b['name']));
+    $out = ['categories' => $categories, 'subcategories' => $subs, 'apps' => array_map(fn($a) => app_public($a, $admin), $apps)];
     if ($admin) $out['plugins'] = array_map(fn($a) => app_public($a, true), $plugins);
     return $out;
 }
@@ -172,7 +188,7 @@ function app_public(array $a, bool $admin = false): array
 {
     return [
         'id' => $a['id'], 'name' => $a['name'], 'icon' => $a['icon'], 'icon_svg' => $a['icon_svg'] ?? null,
-        'description' => $a['description'], 'category' => $a['category'],
+        'description' => $a['description'], 'category' => $a['category'], 'subcategory' => $a['subcategory'] ?? null,
         'href' => $a['href'], 'links' => $a['links'], 'external' => $a['external'],
         // מה שהמנהל לא אישר — לא נשלח לדפדפן בכלל. "הורדת המשפחה" אינה התקנה
         // של אפליקציה נפרדת, ולכן offline לא תלוי באישור.

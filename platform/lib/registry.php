@@ -78,6 +78,26 @@ function registry_load(): array
  *             הקבצים מוגשים מהשרת שלנו: הפריסה מעתיקה כל Release ל-platform/downloads/<app>/
  *             (platform/tools/store-mirror.sh) עם meta.json — גרסה וחבילה. בלי העותק — מ-GitHub.
  */
+/**
+ * תת-קטגוריות: קבוצת אפליקציות בתוך קטגוריה (למשל "חבילת היצירה" בתוך "מסמכים וקבצים").
+ * מוגדרות ב-platform/subcategories.json — {id, parent, name, icon, apps: [ids, לפי הסדר]}. אפליקציה בקבוצה
+ * עוברת לקטגוריית האב (אלא אם המנהל העביר אותה במפורש). קבוצה פגומה נשמטת.
+ * @return list<array{id:string, parent:string, name:string, icon:string, apps:string[]}>
+ */
+function registry_subcategories(): array
+{
+    $list = json_decode((string)@file_get_contents(__DIR__ . '/../subcategories.json'), true);
+    $out = [];
+    foreach (is_array($list) ? $list : [] as $s) {
+        if (!is_array($s) || !is_string($s['id'] ?? null) || !is_string($s['parent'] ?? null)
+            || !is_string($s['name'] ?? null) || !is_array($s['apps'] ?? null)) continue;
+        $out[] = ['id' => $s['id'], 'parent' => $s['parent'], 'name' => $s['name'],
+            'icon' => is_string($s['icon'] ?? null) ? $s['icon'] : '📁',
+            'apps' => array_values(array_filter($s['apps'], 'is_string'))];
+    }
+    return $out;
+}
+
 /** הקטגוריה הפנימית של תוספים — לא בטבלת הקטגוריות, ולא מוצגת ברשימת הכלים. */
 const PLUGIN_CATEGORY = 'plugins';
 

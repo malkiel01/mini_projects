@@ -1123,7 +1123,7 @@ async function clearFamilyCache() {
 }
 
 async function showApps() {
-    const [{ categories, apps }] = await Promise.all([api('apps'), loadInstalls()]);
+    const [{ categories, subcategories = [], apps }] = await Promise.all([api('apps'), loadInstalls()]);
     currentApps = apps;
     relatedRotate(apps);
     if (takeHandoffRequest()) return;
@@ -1146,7 +1146,18 @@ async function showApps() {
                 el('span', { textContent: cat.name }),
                 el('span', { className: 'n', textContent: `· ${apps.length}` }),
             ]),
-            el('ul', { className: 'apps' }, apps.map(appRow)),
+            ...(apps.some(a => !a.subcategory) ? [el('ul', { className: 'apps' }, apps.filter(a => !a.subcategory).map(appRow))] : []),
+            // תת-קטגוריה (platform/subcategories.json) — קבוצה מתחת לאפליקציות הרגילות של הקטגוריה
+            ...subcategories.filter(s => s.parent === cat.id).map(s => ({ s, list: apps.filter(a => a.subcategory === s.id) }))
+                .filter(({ list }) => list.length)
+                .map(({ s, list }) => el('div', { className: 'subcategory' }, [
+                    el('h3', { className: 'category-title sub' }, [
+                        el('span', { textContent: s.icon, ariaHidden: 'true' }),
+                        el('span', { textContent: s.name }),
+                        el('span', { className: 'n', textContent: `· ${list.length}` }),
+                    ]),
+                    el('ul', { className: 'apps' }, list.map(appRow)),
+                ])),
         ]));
 
     const empty = el('p', { className: 'no-results', textContent: 'לא נמצאה אפליקציה בשם הזה', hidden: true });
@@ -1166,6 +1177,8 @@ async function showApps() {
                 if (hit) shown++;
             }
             sec.hidden = !shown;
+            // רשימה או תת-קטגוריה שכל האפליקציות בה סוננו — נעלמת, בלי כרטיס ריק
+            for (const g of sec.querySelectorAll('.subcategory, .apps')) g.hidden = ![...g.querySelectorAll('li')].some(li => !li.hidden);
             any ||= shown > 0;
         }
         empty.textContent = only === 'yes' ? 'עוד לא סימנת אפליקציה כמותקנת במכשיר הזה'
