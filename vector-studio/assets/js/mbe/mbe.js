@@ -14,10 +14,20 @@ import { SCHEMAS } from './schemas.js';
 export { canonicalJson, LIMITS };
 
 export const FORMAT = 'mbe';
-export const VERSION = '1.0';
+export const VERSION = '1.1';
 export const CURRENT_MAJOR = 1;
 export const MIMETYPE = 'application/vnd.mbe+zip';
 export const PREVIEW = 'renditions/preview.png';
+export const ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+/** מזהה מסמך חדש — UUID v4 באותיות קטנות (mbe-format.md סעיף 3, manifest.id). ‏getRandomValues ולא randomUUID — זה עובד גם בדף שאינו https. */
+export function newId() {
+    const b = crypto.getRandomValues(new Uint8Array(16));
+    b[6] = (b[6] & 0x0f) | 0x40;
+    b[8] = (b[8] & 0x3f) | 0x80;
+    const h = Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
+    return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
 export const PREVIEW_MAX_PX = 1024;
 
 const MEDIA_RE = /^media\/([0-9a-f]{64})(\.[a-z0-9]{1,8})?$/;
@@ -79,6 +89,8 @@ export class MbeFile {
 
     get ok() { return !this.issues.some(i => i.level === 'error'); }
     get kind() { return this.manifest?.kind ?? null; }
+    /** מזהה המסמך — null עד השמירה הראשונה (או בקובץ 1.0). */
+    get id() { const v = this.manifest?.id; return typeof v === 'string' ? v : null; }
     get documentSha256() { const s = this.manifest?.document?.sha256; return typeof s === 'string' ? s : null; }
 
     media() {
@@ -196,6 +208,14 @@ export async function open(bytes, { limits = LIMITS } = {}) {
     for (const s of validateSchema(f.manifest, SCHEMAS.manifest)) issue('error', 'manifest-schema', s.message, 'manifest.json#' + s.path);
     if (ver && ver.minor > +VERSION.split('.')[1]) {
         issue('warning', 'version-newer-minor', `הקובץ בגרסה ${f.manifest.version}, חדשה מ-${VERSION} — מה שלא מוכר נשמר כמו שהוא`, 'manifest.json');
+    }
+    // manifest.id (מ-1.1): קובץ 1.0 בלי id — תקין, ויקבל בשמירה הבאה. מזהה פגום — נשמר כמו שהוא (לא משנים זהות בשקט).
+    if (Object.hasOwn(f.manifest, 'id')) {
+        if (typeof f.manifest.id !== 'string' || !ID_RE.test(f.manifest.id)) {
+            issue('warning', 'manifest-id-invalid', 'manifest.id אינו UUID v4 באותיות קטנות — נשמר כמו שהוא', 'manifest.json#/id');
+        }
+    } else if (ver && ver.minor >= 1) {
+        issue('warning', 'manifest-id-missing', `לקובץ בגרסה ${f.manifest.version} חסר manifest.id — יתווסף בשמירה הבאה`, 'manifest.json#/id');
     }
     let manifestText = '';
     try { manifestText = canonicalJson(f.manifest); } catch (e) {
@@ -415,8 +435,9 @@ export async function validate(bytes, opts) {
 /**
  * כותב קובץ. זורק MbeError כשהתוצאה לא הייתה עוברת אימות — ‎save לעולם לא מייצר קובץ פגום.
  * lite: true — "קובץ קל": preview בלבד (שאר הייצוגים נבנים בייצוא).
+ * asCopy: true — "שמירה כעותק": מסמך חדש — manifest.id חדש ו-created חדש.
  */
-export async function save(f, { app, appVersion = '', now = new Date(), lite = false } = {}) {
+export async function save(f, { app, appVersion = '', now = new Date(), lite = false, asCopy = false } = {}) {
     if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(app || '')) throw new MbeError('save צריך app — מזהה האפליקציה ששומרת');
     if (!f.files.has(PREVIEW)) {
         throw new MbeError('חסר renditions/preview.png — חובה בכל שמירה',
@@ -456,7 +477,9 @@ export async function save(f, { app, appVersion = '', now = new Date(), lite = f
     });
     const manifest = {
         ...old, format: FORMAT, version, kind: old.kind,
-        created: old.created || stamp, modified: stamp,
+        // id: נוצר בשמירה הראשונה ולא משתנה; asCopy ("שמירה כעותק") — מסמך חדש: id חדש ו-created חדש
+        id: !asCopy && Object.hasOwn(old, 'id') ? old.id : newId(),
+        created: (!asCopy && old.created) || stamp, modified: stamp,
         document: { ...(old.document || {}), path: 'document.json', sha256: docSha },
         media, renditions,
     };

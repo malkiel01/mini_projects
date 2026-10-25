@@ -69,6 +69,7 @@ test('JS → PHP → JS → PHP: המודל, החלקים והשדות הלא מ
             assert.deepEqual(parts(f), parts(start), `${k}: חלק השתנה בשלב ${i}`);
             assert.deepEqual(f.manifest['x-future-manifest'], { keep: true, empty: {} });
             assert.equal(f.manifest.created.app, 'mbe-core-tests');
+            assert.equal(f.id, start.id, `${k}: manifest.id השתנה בשלב ${i} (${lang})`);
             assert.equal(f.manifest.document.sha256, start.manifest.document.sha256);
             assert.ok(f.renditions().every(r => !r.stale), `${k}: ייצוג סומן מיושן בלי שהמסמך השתנה`);
         }
@@ -141,3 +142,24 @@ test('ZIP: כתיבה וקריאה של שם בעברית', () => {
     assert.equal(r.entries[0].name, 'apps/x/קובץ.txt');
     assert.equal(new TextDecoder().decode(r.entries[0].read()), 'שלום');
 });
+
+test('manifest.id (1.1): נוצר בשמירה הראשונה, נשמר, "שמירה כעותק" — חדש; קובץ 1.0 מקבל id', async () => {
+    const preview = (await M.open(fx('valid/text.mbe'))).files.get(M.PREVIEW);
+    const f = M.create('text', { surfaces: [] });
+    assert.equal(f.id, null);
+    f.setRendition(M.PREVIEW, preview);
+    const a = await M.open(await M.save(f, { app: 'x' }));
+    assert.match(a.id, M.ID_RE);
+    assert.equal(a.manifest.version, '1.1');
+    const b = await M.open(await M.save(a, { app: 'y' }));
+    assert.equal(b.id, a.id);
+    const c = await M.open(await M.save(b, { app: 'z', asCopy: true, now: new Date('2030-01-01T00:00:00Z') }));
+    assert.match(c.id, M.ID_RE);
+    assert.notEqual(c.id, a.id);
+    assert.equal(c.manifest.created.at, '2030-01-01T00:00:00Z');
+    const old = await M.open(fx('hostile/preview-too-big.mbe')); // קובץ 1.0 בלי id
+    assert.equal(old.id, null);
+    assert.match((await M.open(await M.save(old, { app: 'x' }))).id, M.ID_RE);
+    assert.equal(new Set(Array.from({ length: 200 }, M.newId)).size, 200);
+});
+

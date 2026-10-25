@@ -121,6 +121,20 @@
     "ok": true
   },
   {
+    "file": "hostile/manifest-id-invalid.mbe",
+    "codes": [
+      "manifest-id-invalid"
+    ],
+    "ok": true
+  },
+  {
+    "file": "hostile/manifest-id-missing.mbe",
+    "codes": [
+      "manifest-id-missing"
+    ],
+    "ok": true
+  },
+  {
     "file": "hostile/version-2.mbe",
     "codes": [
       "version-unsupported"

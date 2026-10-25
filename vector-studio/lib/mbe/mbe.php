@@ -40,6 +40,13 @@ final class MbeFile
     }
 
     public function kind(): ?string { return $this->manifest['kind'] ?? null; }
+
+    /** מזהה המסמך — null עד השמירה הראשונה (או בקובץ 1.0). */
+    public function id(): ?string
+    {
+        $v = $this->manifest['id'] ?? null;
+        return is_string($v) ? $v : null;
+    }
     public function documentSha256(): ?string
     {
         $d = $this->manifest['document'] ?? null;
@@ -118,7 +125,8 @@ final class MbeFile
 final class Mbe
 {
     public const FORMAT = 'mbe';
-    public const VERSION = '1.0';
+    public const VERSION = '1.1';
+    public const ID_RE = '/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/';
     public const CURRENT_MAJOR = 1;
     public const MIMETYPE = 'application/vnd.mbe+zip';
     public const PREVIEW = 'renditions/preview.png';
@@ -250,6 +258,14 @@ final class Mbe
         $ours = self::parseVersion(self::VERSION);
         if ($ver && $ver['minor'] > $ours['minor']) {
             $issue('warning', 'version-newer-minor', "הקובץ בגרסה {$manifest['version']}, חדשה מ-" . self::VERSION . ' — מה שלא מוכר נשמר כמו שהוא', 'manifest.json');
+        }
+        // manifest.id (מ-1.1): קובץ 1.0 בלי id — תקין, ויקבל בשמירה הבאה. מזהה פגום — נשמר כמו שהוא (לא משנים זהות בשקט).
+        if (array_key_exists('id', $manifest)) {
+            if (!is_string($manifest['id']) || !preg_match(self::ID_RE, $manifest['id'])) {
+                $issue('warning', 'manifest-id-invalid', 'manifest.id אינו UUID v4 באותיות קטנות — נשמר כמו שהוא', 'manifest.json#/id');
+            }
+        } elseif ($ver && $ver['minor'] >= 1) {
+            $issue('warning', 'manifest-id-missing', "לקובץ בגרסה {$manifest['version']} חסר manifest.id — יתווסף בשמירה הבאה", 'manifest.json#/id');
         }
         $text = MbeCanonical::encode($manifest);
         if (preg_match('/[^\s@"]+@[^\s@"]+\.[a-z]{2,}/i', $text)) {
@@ -480,9 +496,20 @@ final class Mbe
         return [unpack('N', $b, 16)[1], unpack('N', $b, 20)[1]];
     }
 
+    /** מזהה מסמך חדש — UUID v4 באותיות קטנות (mbe-format.md סעיף 3, manifest.id). */
+    public static function newId(): string
+    {
+        $b = random_bytes(16);
+        $b[6] = chr((ord($b[6]) & 0x0f) | 0x40);
+        $b[8] = chr((ord($b[8]) & 0x3f) | 0x80);
+        $h = bin2hex($b);
+        return substr($h, 0, 8) . '-' . substr($h, 8, 4) . '-' . substr($h, 12, 4) . '-' . substr($h, 16, 4) . '-' . substr($h, 20);
+    }
+
     /**
      * כותב קובץ. זורק MbeError כשהתוצאה לא הייתה עוברת אימות — save לעולם לא מייצר קובץ פגום.
-     * opts: app (חובה), appVersion, now (DateTimeInterface), lite (preview בלבד).
+     * opts: app (חובה), appVersion, now (DateTimeInterface), lite (preview בלבד),
+     * asCopy ("שמירה כעותק" — id חדש ו-created חדש).
      */
     public static function save(MbeFile $f, array $opts): string
     {
@@ -534,7 +561,9 @@ final class Mbe
         }
         $manifest = array_merge($old, [
             'format' => self::FORMAT, 'version' => $version, 'kind' => $old['kind'] ?? null,
-            'created' => $old['created'] ?? $stamp, 'modified' => $stamp,
+            // id: נוצר בשמירה הראשונה ולא משתנה; asCopy — מסמך חדש: id חדש ו-created חדש
+            'id' => empty($opts['asCopy']) && array_key_exists('id', $old) ? $old['id'] : self::newId(),
+            'created' => (empty($opts['asCopy']) ? ($old['created'] ?? null) : null) ?? $stamp, 'modified' => $stamp,
             'document' => array_merge(is_array($old['document'] ?? null) ? $old['document'] : [], ['path' => 'document.json', 'sha256' => $docSha]),
             'media' => $media, 'renditions' => $renditions,
         ]);
