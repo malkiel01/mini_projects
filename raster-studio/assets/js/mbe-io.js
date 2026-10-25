@@ -10,7 +10,7 @@ import { open, create, save, PREVIEW } from './mbe/mbe.js';
 import { encodePNG } from './engine/png.js';
 import { RasterDocument } from './engine/doc.js';
 import { decodeImage } from './engine/webgl2.js';
-import { mbeDocument, mediaRefs, canvasSurface, gapsFor } from './engine/formats.js';
+import { mbeDocument, mediaRefs, editSurface, gapsFor } from './engine/formats.js';
 import { flatRGBA, layerPNG, scaledPNG, buildORA } from './export.js';
 
 export const APP_ID = 'raster-studio';
@@ -46,7 +46,7 @@ export async function buildMbe(renderer, doc, { view = null, lite = false, now }
     }
   };
   await walk(doc.layers);
-  f.document = mbeDocument(doc, doc.layers, base && { document: f.document, surfaceId: base.surfaceId }, l => src.get(l));
+  f.document = mbeDocument(doc, doc.layers, base && { document: f.document, surfaceId: base.surfaceId, scale: base.scale ?? 1 }, l => src.get(l));
 
   // משאב שהשכבות הישנות הפנו אליו ואף אחד כבר לא — יוצא מהקובץ. משאב שאף אחד לא הפנה אליו גם קודם — לא שלנו לגעת
   const after = mediaRefs(f.document);
@@ -64,7 +64,7 @@ export async function buildMbe(renderer, doc, { view = null, lite = false, now }
   if (view) f.setApp(APP_ID, VIEW, new TextEncoder().encode(JSON.stringify({ v: 1, ...view })));
 
   const bytes = await save(f, { app: APP_ID, appVersion: APP_VERSION, ...(now ? { now } : {}) });
-  doc.mbe = { bytes, surfaceId: canvasSurface(f.document).id };
+  doc.mbe = { bytes, surfaceId: base?.surfaceId ?? editSurface(f.document).surface.id, scale: base?.scale ?? 1 };
   return bytes;
 }
 
@@ -84,12 +84,14 @@ export async function openMbe(renderer, bytes, title = '') {
   const f = await open(bytes);
   const errors = f.issues.filter(i => i.level === 'error');
   if (errors.length) throw new MbeOpenError('mbe-invalid', errors.map(e => e.message).join(' · '), errors);
-  const surface = canvasSurface(f.document);
-  if (!surface) {
+  // קנבס, ואם אין — העמוד הראשון (למשל של סטודיו העיצוב, ב-pt), ברזולוציה של שכבת הרסטר הכי חדה בו
+  const es = editSurface(f.document);
+  if (!es) {
     const app = KIND_APP[f.kind];
     throw new MbeOpenError('mbe-not-raster', app ? `הקובץ הוא מסמך מסוג "${f.kind}" — פותחים אותו ב${app}` : '');
   }
-  const [w, h] = surface.size.map(v => Math.max(1, Math.round(v)));
+  const { surface, scale } = es;
+  const [w, h] = surface.size.map(v => Math.max(1, Math.round(v * scale)));
   const d = new RasterDocument(w, h, title || 'תמונה');
   const walk = async (list, parent) => {
     for (const raw of list ?? []) {
@@ -113,8 +115,14 @@ export async function openMbe(renderer, bytes, title = '') {
         layer.mbe = raw;
         const data = f.getMedia(raw.src);
         if (data) {
-          const bmp = await decodeImage(new Blob([data], { type: 'image/png' }));
-          await renderer.drawImage(d, layer, bmp, 0, 0);
+          // box — מיקום וגודל ביחידות המשטח; בלי box — כל המשטח. תמונה בגודל אחר — מותאמת למקום שלה
+          const box = Array.isArray(raw.box) && raw.box.length === 4 ? raw.box.map(v => v * scale) : [0, 0, w, h];
+          const [bx, by] = [Math.round(box[0]), Math.round(box[1])];
+          const bw = Math.max(1, Math.round(box[2])), bh = Math.max(1, Math.round(box[3]));
+          const type = /\.jpe?g$/i.test(raw.src) ? 'image/jpeg' : /\.webp$/i.test(raw.src) ? 'image/webp' : 'image/png';
+          let bmp = await decodeImage(new Blob([data], { type }));
+          if (bmp.width !== bw || bmp.height !== bh) { bmp.close(); bmp = await decodeImage(new Blob([data], { type }), [bw, bh]); }
+          await renderer.drawImage(d, layer, bmp, bx, by);
           bmp.close();
         }
       } else {
@@ -128,7 +136,7 @@ export async function openMbe(renderer, bytes, title = '') {
   await walk(surface.layers, undefined);
   if (!d.layers.length) d.addLayer({ name: 'רקע' });
   d.activeId = d.rasters().filter(l => !l.foreign).at(-1)?.id ?? d.layers.at(-1).id;
-  d.mbe = { bytes, surfaceId: surface.id };
+  d.mbe = { bytes, surfaceId: surface.id, scale };
   let view = null;
   try { view = JSON.parse(new TextDecoder().decode(f.apps(APP_ID).get(VIEW))); } catch { /* אין / פגום — לא נורא */ }
   return { doc: d, view, warnings: f.issues.filter(i => i.level === 'warning') };

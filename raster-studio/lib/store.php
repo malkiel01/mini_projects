@@ -62,12 +62,9 @@ function rs_doc_save(int $owner, int $id, string $bytes, ?int $base, bool $force
 
     $f = Mbe::open($bytes);
     if (!$f->ok()) throw new RsMbeRejected(array_values(array_filter($f->issues, fn($i) => $i['level'] === 'error')));
-    $canvas = null;
-    foreach (is_array($f->document['surfaces'] ?? null) ? $f->document['surfaces'] : [] as $s) {
-        if (is_array($s) && ($s['type'] ?? '') === 'canvas' && is_array($s['size'] ?? null)) { $canvas = $s; break; }
-    }
-    if (!$canvas) throw new InvalidArgumentException('not_raster');
-    [$w, $h] = array_map(fn($v) => max(RS_SIDE_MIN, min(RS_SIDE_MAX, (int)round($v))), $canvas['size']);
+    $px = rs_mbe_pixel_size($f->document);
+    if (!$px) throw new InvalidArgumentException('not_raster');
+    [$w, $h] = array_map(fn($v) => max(RS_SIDE_MIN, min(RS_SIDE_MAX, (int)round($v))), $px);
 
     $db = rs_db();
     $db->exec('BEGIN IMMEDIATE');   // שתי שמירות בו-זמנית לא מקבלות אותו מספר גרסה
@@ -112,6 +109,39 @@ function rs_doc_save(int $owner, int $id, string $bytes, ?int $base, bool $force
         throw $e;
     }
     return ['version' => $n, 'doc' => rs_doc_get($owner, $id)];
+}
+
+/**
+ * גודל התמונה בפיקסלים — כמו editSurface בדפדפן (engine/formats.js): קנבס — ה-size שלו; אין קנבס — העמוד הראשון
+ * שיש בו שכבת רסטר (למשל של סטודיו העיצוב, ב-pt), לפי ה-px של השכבה הכי חדה בו, ובלי px — 96dpi (1px = 0.75pt). אין — null.
+ */
+function rs_mbe_pixel_size(mixed $document): ?array
+{
+    $surfaces = is_array($document['surfaces'] ?? null) ? $document['surfaces'] : [];
+    $ok = fn($s) => is_array($s) && is_array($s['size'] ?? null) && count($s['size']) === 2
+        && is_numeric($s['size'][0]) && is_numeric($s['size'][1]) && $s['size'][0] > 0 && $s['size'][1] > 0;
+    foreach ($surfaces as $s) if ($ok($s) && ($s['type'] ?? '') === 'canvas') return [(float)$s['size'][0], (float)$s['size'][1]];
+    foreach ($surfaces as $s) {
+        if (!$ok($s)) continue;
+        $scale = 0.0;
+        $rasters = 0;
+        $walk = function ($list) use (&$walk, &$scale, &$rasters, $s) {
+            foreach (is_array($list) ? $list : [] as $l) {
+                if (!is_array($l)) continue;
+                if (isset($l['children'])) $walk($l['children']);
+                if (($l['type'] ?? '') === 'raster') $rasters++;
+                if (($l['type'] ?? '') === 'raster' && is_array($l['px'] ?? null) && is_numeric($l['px'][0] ?? null) && $l['px'][0] > 0) {
+                    $w = is_array($l['box'] ?? null) && is_numeric($l['box'][2] ?? null) ? (float)$l['box'][2] : (float)$s['size'][0];
+                    if ($w > 0) $scale = max($scale, $l['px'][0] / $w);
+                }
+            }
+        };
+        $walk($s['layers'] ?? []);
+        if (!$rasters) continue;   // מסמך טקסט — אין כאן מה לערוך
+        if ($scale <= 0) $scale = (($document['units'] ?? 'pt') === 'pt') ? 1 / 0.75 : 1.0;
+        return [$s['size'][0] * $scale, $s['size'][1] * $scale];
+    }
+    return null;
 }
 
 /** הגרסאות של מסמך, מהחדשה לישנה */
