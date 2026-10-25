@@ -87,22 +87,28 @@ function access_migrate(): void
         SQL);
 
     // grants לפני 'group' — ה-CHECK הישן לא מכיר אותו; SQLite לא משנה CHECK, ולכן בונים את הטבלה מחדש.
-    $sql = (string)db()->query("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'grants'")->fetchColumn();
-    if (!str_contains($sql, "'group'")) {
-        db()->exec(<<<SQL
-            BEGIN;
-            CREATE TABLE grants_v2 (
-                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                kind    TEXT NOT NULL CHECK (kind IN ('app','category','group')),
-                target  TEXT NOT NULL,
-                allowed INTEGER NOT NULL,
-                PRIMARY KEY (user_id, kind, target)
-            );
-            INSERT INTO grants_v2 SELECT user_id, kind, target, allowed FROM grants;
-            DROP TABLE grants;
-            ALTER TABLE grants_v2 RENAME TO grants;
-            COMMIT;
-            SQL);
+    // הבדיקה חוזרת בתוך הטרנזקציה — שתי בקשות במקביל לא יבנו פעמיים.
+    $isOld = fn() => !str_contains((string)db()->query("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'grants'")->fetchColumn(), "'group'");
+    if ($isOld()) {
+        db()->exec('BEGIN IMMEDIATE');
+        try {
+            if ($isOld()) db()->exec(<<<SQL
+                CREATE TABLE grants_v2 (
+                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    kind    TEXT NOT NULL CHECK (kind IN ('app','category','group')),
+                    target  TEXT NOT NULL,
+                    allowed INTEGER NOT NULL,
+                    PRIMARY KEY (user_id, kind, target)
+                );
+                INSERT INTO grants_v2 SELECT user_id, kind, target, allowed FROM grants;
+                DROP TABLE grants;
+                ALTER TABLE grants_v2 RENAME TO grants;
+                SQL);
+            db()->exec('COMMIT');
+        } catch (Throwable $e) {
+            db()->exec('ROLLBACK');
+            throw $e;
+        }
     }
     groups_seed();
 
