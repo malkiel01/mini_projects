@@ -16,6 +16,8 @@ final class PdfWriter
     private array $images = [];        // hash => [name, w, h, objects…]
     /** יעדים לקישורים פנימיים (סימניות): שם => [מספר עמוד, y בנקודות מראש העמוד] — הראשון בשם הזה */
     public array $dests = [];
+    /** ציור העמוד הראשון — לתמונה הממוזערת (preview.png ב-‎.mbe, lib/mbe_export.php); null — לא נרשם */
+    public ?array $rec = null;
 
     public function addPage(float $w, float $h): int
     {
@@ -51,7 +53,8 @@ final class PdfWriter
             $cs = $ch === 1 ? '/DeviceGray' : ($ch === 4 ? '/DeviceCMYK' : '/DeviceRGB');
             $dict = "/Type /XObject /Subtype /Image /Width $w /Height $h /ColorSpace $cs /BitsPerComponent 8 /Filter /DCTDecode"
                 . ($ch === 4 ? ' /Decode [1 0 1 0 1 0 1 0]' : '');
-            return $this->images[$key] = ['name' => $name, 'w' => $w, 'h' => $h, 'dict' => $dict, 'data' => $bytes, 'smask' => null];
+            return $this->images[$key] = ['name' => $name, 'w' => $w, 'h' => $h, 'dict' => $dict, 'data' => $bytes, 'smask' => null]
+                + ($this->rec !== null ? ['bytes' => $bytes] : []);
         }
         $im = @imagecreatefromstring($bytes);
         if (!$im) return null;
@@ -77,7 +80,7 @@ final class PdfWriter
         imagedestroy($im);
         $dict = "/Type /XObject /Subtype /Image /Width $w /Height $h /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode";
         return $this->images[$key] = ['name' => $name, 'w' => $w, 'h' => $h, 'dict' => $dict, 'data' => gzcompress($rgb, 6),
-            'smask' => $hasAlpha ? gzcompress($alpha, 6) : null];
+            'smask' => $hasAlpha ? gzcompress($alpha, 6) : null] + ($this->rec !== null ? ['bytes' => $bytes] : []);
     }
 
     /** ה-PDF כולו. */

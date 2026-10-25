@@ -10,5 +10,8 @@
   "raster-studio": {
     "js": "assets/js/mbe",
     "php": "lib/mbe"
+  },
+  "word-processor": {
+    "php": "lib/mbe"
   }
 }

@@ -22,6 +22,12 @@ final class PdfCanvas
 {
     public function __construct(public PdfWriter $pdf, public int $page, public float $H) {}
 
+    /** רישום לתמונה הממוזערת (PdfWriter::$rec) — רק העמוד הראשון; y מלמעלה, נקודות */
+    private function rec(array $op): void
+    {
+        if ($this->pdf->rec !== null && $this->page === 0) $this->pdf->rec[] = $op;
+    }
+
     /** layer: bg / main / fg, או bg:z / fg:z — תת-שכבה של תמונות (מצוירת אחרי הבסיס, לפי z). */
     public function add(string $layer, string $ops): void
     {
@@ -36,16 +42,19 @@ final class PdfCanvas
 
     public function rect(float $x, float $y, float $w, float $h, array $rgb, string $layer = 'main'): void
     {
+        $this->rec(['rect', $x, $y, $w, $h, $rgb]);
         $this->add($layer, self::rgb($rgb, 'rg') . ' ' . self::n($x) . ' ' . self::n($this->H - $y - $h) . ' ' . self::n($w) . ' ' . self::n($h) . " re f\n");
     }
 
     public function strokeRect(float $x, float $y, float $w, float $h, array $rgb, float $lw): void
     {
+        $this->rec(['frame', $x, $y, $w, $h, $rgb, $lw]);
         $this->add('main', self::rgb($rgb, 'RG') . ' ' . self::n($lw) . ' w ' . self::n($x) . ' ' . self::n($this->H - $y - $h) . ' ' . self::n($w) . ' ' . self::n($h) . " re S\n");
     }
 
     public function line(float $x1, float $y1, float $x2, float $y2, array $rgb, float $lw, string $layer = 'main'): void
     {
+        $this->rec(['line', $x1, $y1, $x2, $y2, $rgb, $lw]);
         $this->add($layer, self::rgb($rgb, 'RG') . ' ' . self::n($lw) . ' w ' . self::n($x1) . ' ' . self::n($this->H - $y1) . ' m '
             . self::n($x2) . ' ' . self::n($this->H - $y2) . " l S\n");
     }
@@ -53,6 +62,7 @@ final class PdfCanvas
     /** קו מקווקו / מנוקד: dash — [קו, רווח] בנקודות. */
     public function dashLine(float $x1, float $y, float $x2, array $rgb, float $lw, array $dash): void
     {
+        $this->rec(['line', $x1, $y, $x2, $y, $rgb, $lw]);
         $this->add('main', 'q ' . self::rgb($rgb, 'RG') . ' ' . self::n($lw) . ' w [' . self::n($dash[0]) . ' ' . self::n($dash[1]) . '] 0 d ' . self::n($x1) . ' ' . self::n($this->H - $y) . ' m '
             . self::n($x2) . ' ' . self::n($this->H - $y) . " l S Q\n");
     }
@@ -60,6 +70,7 @@ final class PdfCanvas
     /** קו גלי (זיגזג רך) מ-x1 עד x2 סביב y. */
     public function waveLine(float $x1, float $y, float $x2, array $rgb, float $lw, float $amp): void
     {
+        $this->rec(['line', $x1, $y, $x2, $y, $rgb, $lw]);
         $step = $amp * 2;
         $ops = self::rgb($rgb, 'RG') . ' ' . self::n($lw) . ' w ' . self::n($x1) . ' ' . self::n($this->H - $y) . ' m';
         for ($x = $x1, $k = 0; $x < $x2; $x += $step, $k++) {
@@ -71,6 +82,7 @@ final class PdfCanvas
     /** טקסט: גליפים (hex) מקו בסיס y. italic — הטיה; rise — עילי/תחתי; tc — ריווח בין תווים. */
     public function glyphs(TtfFont $f, float $size, float $x, float $baseline, string $hex, array $rgb, bool $italic, float $rise, float $tc): void
     {
+        $this->rec(['glyphs', $f, $size, $x, $baseline - $rise, $hex, $rgb]);
         $name = $this->pdf->font($f);
         $skew = $italic ? ' 0.21' : ' 0';
         $this->add('main', 'BT ' . self::rgb($rgb, 'rg') . " $name " . self::n($size) . ' Tf ' . ($tc ? self::n($tc) . ' Tc ' : '') . ($rise ? self::n($rise) . ' Ts ' : '')
@@ -89,6 +101,7 @@ final class PdfCanvas
      */
     public function image(array $im, float $x, float $y, array $g, string $layer): void
     {
+        if (isset($im['bytes'])) $this->rec(['image', $im['bytes'], $x, $y, $g['bw'], $g['bh']]);
         $cx = $x + $g['bw'] / 2;
         $cy = $this->H - ($y + $g['bh'] / 2);
         $a = -$g['rot'] * M_PI / 180;   // CSS מסובב עם כיוון השעון; PDF — נגדו
@@ -160,6 +173,12 @@ final class PdfLayout
         $this->first = page_normalize($page);
         $this->setSection($this->first);
         $this->pdf = new PdfWriter();
+    }
+
+    /** הכותב — אחרי render: העמודים ומה שנרשם לתמונה הממוזערת (rec) */
+    public function writer(): PdfWriter
+    {
+        return $this->pdf;
     }
 
     private function setSection(array $p): void

@@ -20,6 +20,7 @@ require_once __DIR__ . '/lib/share.php';
 require_once __DIR__ . '/lib/links.php';
 require_once __DIR__ . '/lib/collab.php';
 require_once __DIR__ . '/lib/folders.php';
+require_once __DIR__ . '/lib/mbe_export.php';
 
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: no-referrer');
@@ -525,7 +526,9 @@ function app_action(string $action, array $in): never
         case 'my_export':
             [$row] = doc_access($_GET['doc'] ?? '', $acc);
             $fmt = (string)($_GET['format'] ?? 'docx');
-            activity($row['id'], $uid, $uname, 'export', ['docx' => 'Word', 'odt' => 'ODT', 'pdf' => 'PDF', 'text' => 'טקסט', 'json' => 'גיבוי'][$fmt] ?? 'Word');
+            activity($row['id'], $uid, $uname, 'export', ['docx' => 'Word', 'odt' => 'ODT', 'pdf' => 'PDF', 'text' => 'טקסט', 'json' => 'גיבוי', 'mbe' => '.mbe'][$fmt] ?? 'Word');
+            // ‎.mbe — קובץ ההחלפה של חבילת היצירה (lib/mbe_export.php)
+            if ($fmt === 'mbe') send_file(export_mbe($row), 'application/vnd.mbe+zip', ($row['title'] ?: 'מסמך') . '.mbe');
             if ($fmt === 'text') send_file(export_text(doc_json($row)), 'text/plain; charset=utf-8', ($row['title'] ?: 'מסמך') . '.txt');
             if ($fmt === 'json') send_file(json_encode(['title' => $row['title'], 'json' => doc_json($row), 'page' => doc_page($row)], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT), 'application/json', ($row['title'] ?: 'מסמך') . '.json');
             // PDF בתצוגת השינויים שבעורך: track=final|original, hide=מחברים (JSON) — כמו שההדפסה מהעורך נראית

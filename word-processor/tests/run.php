@@ -1989,6 +1989,54 @@ foreach (glob(__DIR__ . '/corpus/*.json') as $f) {
         json_encode([count($wa), count($wb), $shape($c['json']), $shape($oback['json']), $op2['margins']], JSON_UNESCAPED_UNICODE));
 }
 
+section('‎.mbe — הורדה (חבילת היצירה, mbe-core)');
+require_once __DIR__ . '/../lib/mbe_export.php';
+$mbDocId = doc_new('a:99', 'בסיס mbe', null, null, 'u1', 'דנה');
+$mbImg = media_store($mbDocId, $png)['id'];
+$mbHdrImg = media_store($mbDocId, $pngOf([0, 128, 0]))['id'];
+$mbJson = ['type' => 'doc', 'content' => [
+    ['type' => 'heading', 'attrs' => ['level' => 1], 'content' => [['type' => 'text', 'text' => 'כותרת המסמך']]],
+    ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'שלום עולם — ו-English באמצע.'], ['type' => 'image', 'attrs' => ['media' => $mbImg, 'width' => 40, 'height' => 40]]]],
+]];
+$mbPage = page_normalize(['header' => [['type' => 'paragraph', 'content' => [['type' => 'image', 'attrs' => ['media' => $mbHdrImg, 'width' => 20, 'height' => 20]], ['type' => 'text', 'text' => ' לוגו']]]],
+    'margins' => ['top' => 20, 'bottom' => 25, 'right' => 30, 'left' => 15], 'numbering' => ['format' => 'hebrew', 'start' => 3]]);
+$mbRow = doc_find($mbDocId, 'a:99');
+$mbRow = doc_save(doc_set_page($mbRow, $mbPage), $mbJson, 'מסמך לחבילה', 'u1', 'דנה');
+$mbBytes = export_mbe($mbRow);
+$mbV = Mbe::validate($mbBytes);
+$mbErr = array_values(array_filter($mbV, fn($i) => $i['level'] === 'error'));
+check('‎.mbe: עובר את הבודק של הליבה (Mbe::validate) בלי שגיאות, והחתימה בהיסט 30', !$mbErr && substr($mbBytes, 30, 31) === 'mimetypeapplication/vnd.mbe+zip', json_encode($mbV, JSON_UNESCAPED_UNICODE));
+$mbF = Mbe::open($mbBytes);
+$mbDoc = $mbF->document;
+$mbFlow = $mbDoc['flows']['f1']['doc'] ?? [];
+$mbSrcs = [];
+array_walk_recursive($mbFlow, function ($v, $k) use (&$mbSrcs) { if ($k === 'src' || $k === 'media') $mbSrcs[] = "$k=$v"; });
+check('‎.mbe: kind text — משטח עמוד בגודל A4 (pt), מסגרת בשוליים שמפנה לשטף f1, layout מהשוליים והמספור', $mbF->kind() === 'text'
+    && $mbDoc['surfaces'][0]['size'] == [round(210 * PT_PER_MM, 2), round(297 * PT_PER_MM, 2)] && $mbDoc['surfaces'][0]['layers'][0]['flow'] === 'f1'
+    && $mbDoc['surfaces'][0]['layers'][0]['box'][0] == round(15 * PT_PER_MM, 2) && $mbDoc['layout']['margins']['inside'] == round(30 * PT_PER_MM, 2)
+    && $mbDoc['layout']['numbering'] == ['start' => 3, 'style' => 'hebrew'], json_encode([$mbDoc['surfaces'], $mbDoc['layout']], JSON_UNESCAPED_UNICODE));
+check('‎.mbe: השטף — ה-JSON של המסמך כמו שהוא, עם הגדרות העמוד (attrs.page)', ($mbFlow['content'][0]['content'][0]['text'] ?? '') === 'כותרת המסמך'
+    && ($mbFlow['content'][1]['content'][0]['text'] ?? '') === 'שלום עולם — ו-English באמצע.' && ($mbFlow['attrs']['page']['numbering']['format'] ?? '') === 'hebrew');
+check('‎.mbe: כל התמונה — גם בכותרת העליונה — media/<sha256>.png שקיים בקובץ, בלי מזהה השרת', count($mbSrcs) === 2
+    && !array_filter($mbSrcs, fn($s) => !preg_match('~^src=media/[0-9a-f]{64}\.png$~', $s) || $mbF->getMedia(substr($s, 4)) === null), json_encode($mbSrcs));
+$mbR = [];
+foreach ($mbF->renditions() as $r) $mbR[$r['path']] = $r;
+$mbPrev = @imagecreatefromstring($mbR['renditions/preview.png']['data'] ?? '');
+check('‎.mbe: ייצוגים — preview.png (העמוד הראשון, עד 1024px), document.pdf, document.docx; עדכניים, מאת word-processor', $mbPrev && max(imagesx($mbPrev), imagesy($mbPrev)) <= 1024
+    && str_starts_with($mbR['renditions/document.pdf']['data'] ?? '', '%PDF') && str_starts_with($mbR['renditions/document.docx']['data'] ?? '', 'PK')
+    && !array_filter($mbR, fn($r) => $r['stale'] || ($r['by'] ?? '') !== 'word-processor'), json_encode(array_map(fn($r) => [$r['stale'], $r['by'] ?? null], $mbR)));
+// התמונה הממוזערת מציירת את העמוד: הכותרת (טקסט כהה) למעלה, הסמליל הירוק בכותרת העליונה
+$mbDark = 0; $mbGreen = 0;
+for ($y = 0; $y < imagesy($mbPrev) / 3; $y++) for ($x = 0; $x < imagesx($mbPrev); $x++) {
+    $c = imagecolorat($mbPrev, $x, $y); [$r, $g, $b] = [($c >> 16) & 255, ($c >> 8) & 255, $c & 255];
+    if ($r + $g + $b < 300) $mbDark++;
+    if ($g > 100 && $r < 60 && $b < 60) $mbGreen++;
+}
+check('‎.mbe: preview.png — העמוד עצמו: טקסט בשליש העליון, והתמונה מהכותרת העליונה', $mbDark > 30 && $mbGreen > 4, "dark $mbDark, green $mbGreen");
+check('‎.mbe: apps/word-processor/meta.json — שם המסמך', (json_decode($mbF->apps('word-processor')['meta.json'] ?? '', true)['title'] ?? '') === 'מסמך לחבילה');
+array_map('unlink', glob("$tmp/media/mbe/*") ?: []);
+@rmdir("$tmp/media/mbe");
+
 // ניקוי
 array_map('unlink', glob("$tmp/media/*") ?: []);
 @rmdir("$tmp/media");
