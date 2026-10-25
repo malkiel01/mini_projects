@@ -205,13 +205,43 @@ a.use-row { color: inherit; text-decoration: none; }
 .use-tx .bar .track { flex: 1; }
 .use-tx .bar b { font-size: .8rem; min-inline-size: 3ch; text-align: end; }
 .goals { list-style: none; }
-.goals li { display: flex; gap: var(--s2); padding: var(--s2) var(--s3); border-block-start: 1px solid var(--line); }
-.goals li:first-child { border-block-start: 0; }
-.goals li.done { color: var(--muted); }
+.goals > li { display: flex; gap: var(--s2); padding: var(--s2) var(--s3); border-block-start: 1px solid var(--line); }
+.goals > li:first-child { border-block-start: 0; }
+.goals > li.done { color: var(--muted); }
 .goals .mk { flex: none; inline-size: 1.4em; text-align: center; }
 .prose { padding: var(--s3); line-height: 1.6; }
 .prose p + p { margin-block-start: var(--s2); }
 code { font-size: .85em; background: var(--brand-soft); padding: 0 .3em; border-radius: 4px; }
 .use-tx .bar i { font-style: normal; font-size: .75rem; color: var(--muted); min-inline-size: 5.5em; }
 .use-tx .counts { display: flex; gap: var(--s3); font-size: .8rem; color: var(--muted); margin-block-start: var(--s1); }
-.goals.mine li { background: color-mix(in srgb, var(--star) 10%, transparent); }
+.goals.mine > li { background: color-mix(in srgb, var(--star) 10%, transparent); }
+
+/* ===== קבוצות ומשימות מתקפלות ===== */
+.sr-only { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+details.group > summary { list-style: none; display: flex; align-items: center; min-block-size: var(--tap); cursor: pointer;
+  padding-block: var(--s1); border-radius: var(--r); }
+details.group > summary::-webkit-details-marker, .task summary::-webkit-details-marker { display: none; }
+details.group > summary h2, details.group > summary h3 { font-size: 1rem; margin: 0; display: flex; align-items: center; gap: var(--s2); flex: 1; }
+details.group > summary::before { content: '◂'; color: var(--muted); margin-inline-end: var(--s2); transition: transform .15s; }
+details.group[open] > summary::before { transform: rotate(-90deg); }
+details.group > summary .count { font-size: .8rem; font-weight: 600; background: var(--brand-soft); color: var(--brand);
+  border-radius: 999px; padding: 0 .55em; min-inline-size: 1.6em; text-align: center; }
+details.group > :not(summary) { margin-block-end: var(--s3); }
+details.group.sub { margin-block-start: var(--s2); }
+.goals > li.task { display: block; padding: 0; }
+.task summary { list-style: none; display: flex; gap: var(--s2); align-items: flex-start; padding: var(--s2) var(--s3);
+  min-block-size: var(--tap); cursor: pointer; }
+.task summary .tx { flex: 1; }
+.task summary::after { content: '◂'; color: var(--muted); transition: transform .15s; }
+.task details[open] summary::after { transform: rotate(-90deg); }
+.task details[open] summary { border-block-end: 1px dashed var(--line); }
+.task-body { padding: var(--s2) var(--s3) var(--s3); display: grid; gap: var(--s2); }
+.task-body .label { font-size: .8rem; font-weight: 600; color: var(--muted); }
+.steps { padding-inline-start: 1.4em; display: grid; gap: var(--s1); }
+.prompt { border: 1px solid var(--line); border-radius: var(--r); background: var(--bg); overflow: hidden; }
+.prompt-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); padding: var(--s1) var(--s2);
+  border-block-end: 1px solid var(--line); }
+.prompt pre { margin: 0; padding: var(--s2) var(--s3); white-space: pre-wrap; overflow-wrap: anywhere; font: .85rem/1.5 ui-monospace, Menlo, Consolas, monospace;
+  max-block-size: 40vh; overflow: auto; unicode-bidi: plaintext; }
+.btn.copy { min-block-size: 36px; padding: 0 var(--s3); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); cursor: pointer; }
+.btn.copy.ok { border-color: var(--ok); color: var(--ok); }

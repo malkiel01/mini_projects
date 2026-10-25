@@ -72,11 +72,92 @@ function roadmap(string $rel): ?array
 /** פריטי `- [ ]` / `- [x]` בקטע שכותרתו מתחילה ב-$title. */
 function checklist(string $md, string $title): array
 {
-    $out = [];
+    // מתחת לפריט, בהזחה: "פרומפט:" ואחריו שורות הפרומפט, ו/או "מדריך:" ואחריו צעדים ממוספרים.
+    $out = []; $cur = null; $block = null;
     foreach (section($md, $title) as $line) {
-        if (preg_match('/^\s*[-*] \[([ xX])\] (.+)$/u', $line, $m)) $out[] = ['done' => $m[1] !== ' ', 'text' => trim($m[2])];
+        if (preg_match('/^[-*] \[([ xX])\] (.+)$/u', $line, $m)) {
+            $out[] = ['done' => $m[1] !== ' ', 'text' => trim($m[2]), 'prompt' => [], 'guide' => []];
+            $cur = count($out) - 1; $block = null;
+            continue;
+        }
+        if ($cur === null) continue;
+        if (trim($line) === '') { if ($block === 'prompt') $out[$cur]['prompt'][] = ''; continue; }
+        if (!preg_match('/^\s{2,}/u', $line)) { $cur = null; continue; }
+        $t = trim($line);
+        if ($t === 'פרומפט:') { $block = 'prompt'; continue; }
+        if ($t === 'מדריך:') { $block = 'guide'; continue; }
+        if ($block === 'prompt') $out[$cur]['prompt'][] = preg_replace('/^\s{4}/u', '', $line);
+        elseif ($block === 'guide') $out[$cur]['guide'][] = preg_replace('/^\d+[.)]\s*/u', '', $t);
+    }
+    foreach ($out as &$i) $i['prompt'] = trim(implode("\n", $i['prompt']));
+    return $out;
+}
+
+/** פרומפט ברירת מחדל למשימה של צ'אט או לשיפור, כשהמסמך לא כתב אחד. */
+function auto_prompt(array $p, string $kind, array $g): string
+{
+    $file = 'creative-suite/docs/' . ($p['doc']['file'] ?? '');
+    $task = plain($g['text']);
+    if ($kind === 'idea') {
+        return "חבילת היצירה · {$p['name']}: במסמך $file, בקטע \"שיפורים מומלצים\", מופיע:\n«{$task}»\n"
+             . "עשה git fetch origin main וקרא את המסמך. אם השיפור עדיין נכון ובהיקף קטן — בצע לפי CLAUDE.md (ענף מ-main, PR, מיזוג, "
+             . "conclusion: success) וסמן [x]. אם הוא גדול או דורש החלטה — כתוב תוכנית קצרה ושאל את בעל המערכת בכלי השאלות.";
+    }
+    return "חבילת היצירה · {$p['name']}: במסמך $file, בקטע \"התקדמות\", פתוחה המשימה:\n«{$task}»\n"
+         . "עשה git fetch origin main וקרא את המסמך. בצע לפי CLAUDE.md (ענף מ-main, PR, מיזוג, conclusion: success) וסמן [x] כשנפרס. "
+         . "צריך משהו מבעל המערכת — הוסף שורה בקטע \"ממתין לבעל המערכת\" ושאל בכלי השאלות.";
+}
+
+/** משימה אחת — מתקפלת; בפנים מדריך ו/או פרומפט להעתקה. $kind: chat | owner | idea */
+function task_html(array $p, array $g, string $kind, bool $withProject = false): string
+{
+    $mark = ['chat' => '⬜', 'owner' => '👤', 'idea' => '💡'][$kind];
+    $who = $withProject ? '<b>' . h($p['name']) . ':</b> ' : '';
+    if ($g['done']) {
+        return '<li class="done"><span class="mk" aria-label="הושלם">✅</span><span>' . $who . inline($g['text']) . '</span></li>';
+    }
+    $guide = $g['guide'];
+    $prompt = $g['prompt'] !== '' ? $g['prompt'] : ($kind === 'owner' ? '' : auto_prompt($p, $kind, $g));
+    if ($kind === 'owner' && !$guide) $guide = ['כשביצעת — כתוב לצ\'אט המתכלל: "בוצע: ' . plain($g['text']) . '", והוא יסמן.'];
+    $body = '';
+    if ($guide) {
+        $body .= '<p class="label">📋 מה לעשות</p><ol class="steps">';
+        foreach ($guide as $st) $body .= '<li>' . inline($st) . '</li>';
+        $body .= '</ol>';
+    }
+    if ($prompt !== '') {
+        $to = $kind === 'owner' ? 'להדבקה בצ\'אט' : 'להדבקה בצ\'אט של ' . h($p['name']);
+        $body .= '<div class="prompt"><div class="prompt-head"><span class="label">💬 ' . $to . '</span>'
+               . '<button type="button" class="btn copy" data-copy aria-label="העתקת הפרומפט">📋 העתקה</button></div>'
+               . '<pre dir="auto" tabindex="0">' . h($prompt) . '</pre></div>';
+    }
+    return '<li class="task ' . $kind . '"><details><summary><span class="mk" aria-hidden="true">' . $mark . '</span><span class="tx">'
+         . $who . inline($g['text']) . '</span></summary><div class="task-body">' . $body . '</div></details></li>';
+}
+
+/** בקשות ב-docs/requests/ שעוד אין עליהן הכרעה של הצ'אט המתכלל. */
+function pending_requests(): array
+{
+    $out = [];
+    foreach (glob(DOCS . '/requests/*.md') ?: [] as $f) {
+        $md = (string)file_get_contents($f);
+        if (str_contains($md, "הכרעת הצ'אט המתכלל") || str_contains($md, "**הצ'אט המתכלל (")) continue;
+        preg_match('/^# (.+)$/mu', $md, $m);
+        $rel = 'creative-suite/docs/requests/' . basename($f);
+        $out[] = ['done' => false, 'text' => plain($m[1] ?? basename($f)) . ' — `' . basename($f) . '`',
+            'guide' => ["פתח את הצ'אט \"חבילת היצירה · הצ'אט המתכלל\", לחץ \"📋 העתקה\" והדבק.",
+                        'הוא יכריע, יעדכן את האפיון אם צריך, ויכתוב את התשובה בקובץ הבקשה — והבקשה תיעלם מכאן.'],
+            'prompt' => "יש בקשה לצ'אט המתכלל ב-main: $rel. עשה git fetch origin main, קרא אותה והכרע — עדכן את האפיון והסכמה אם צריך, "
+                      . "כתוב את ההכרעה בקובץ הבקשה, ותן לי הודעה מוכנה להעביר לצ'אט שביקש."];
     }
     return $out;
+}
+
+/** קבוצה מתקפלת עם כותרת ומונה; $id נזכר בין טעינות. */
+function group_open(string $id, string $title, int $count, bool $open): string
+{
+    return '<details class="group" data-id="' . h($id) . '"' . ($open ? ' open' : '') . '><summary><h2>' . $title
+         . ' <span class="count">' . $count . '</span></h2></summary>';
 }
 
 /** כמה פתוחים. */
@@ -224,35 +305,32 @@ $started  = count(array_filter($all, fn($p) => $p['pct'] > 0 && $p['pct'] < 100)
   <?php else: ?>
   <h2 class="sec-title">יעדים</h2>
   <?php endif; ?>
+  <?php $openG = array_filter($p['goals'], fn($g) => !$g['done']); $doneG = array_filter($p['goals'], fn($g) => $g['done']); ?>
   <?php if ($p['goals']): ?>
-    <ul class="list goals">
-      <?php foreach ($p['goals'] as $g): ?>
-        <li class="<?= $g['done'] ? 'done' : '' ?>"><span class="mk" aria-label="<?= $g['done'] ? 'הושלם' : 'פתוח' ?>"><?= $g['done'] ? '✅' : '⬜' ?></span><span><?= inline($g['text']) ?></span></li>
-      <?php endforeach; ?>
-    </ul>
+    <?php if ($openG): ?><ul class="list goals"><?php foreach ($openG as $g) echo task_html($p, $g, 'chat'); ?></ul>
+    <?php else: ?><p class="empty">כל המשימות של הצ'אט הושלמו. ✅</p><?php endif; ?>
+    <?php if ($doneG): ?>
+      <details class="group sub" data-id="done-<?= h($p['id']) ?>"><summary><h3>✅ הושלמו <span class="count"><?= count($doneG) ?></span></h3></summary>
+        <ul class="list goals"><?php foreach ($doneG as $g) echo task_html($p, $g, 'chat'); ?></ul>
+      </details>
+    <?php endif; ?>
   <?php else: ?>
     <p class="empty">אין עדיין יעדים — ייקבעו במסמך הפרויקט, בקטע "התקדמות".</p>
   <?php endif; ?>
-  <h2 class="sec-title">👤 ממתין לך — <?= open_count($p['owner']) ?></h2>
+  <?= group_open('owner-' . $p['id'], '👤 ממתין לך', open_count($p['owner']), true) ?>
   <?php if (open_count($p['owner'])): ?>
-    <ul class="list goals mine">
-      <?php foreach ($p['owner'] as $g): if ($g['done']) continue; ?>
-        <li><span class="mk" aria-hidden="true">👤</span><span><?= inline($g['text']) ?></span></li>
-      <?php endforeach; ?>
-    </ul>
+    <ul class="list goals mine"><?php foreach ($p['owner'] as $g) if (!$g['done']) echo task_html($p, $g, 'owner'); ?></ul>
   <?php else: ?>
     <p class="empty">אין כרגע משימות בשבילך בפרויקט הזה.</p>
   <?php endif; ?>
-  <h2 class="sec-title">💡 שיפורים מומלצים — <?= open_count($p['ideas']) ?></h2>
+  </details>
+  <?= group_open('ideas-' . $p['id'], '💡 שיפורים מומלצים', open_count($p['ideas']), false) ?>
   <?php if ($p['ideas']): ?>
-    <ul class="list goals">
-      <?php foreach ($p['ideas'] as $g): ?>
-        <li class="<?= $g['done'] ? 'done' : '' ?>"><span class="mk" aria-hidden="true"><?= $g['done'] ? '✅' : '💡' ?></span><span><?= inline($g['text']) ?></span></li>
-      <?php endforeach; ?>
-    </ul>
+    <ul class="list goals"><?php foreach ($p['ideas'] as $g) echo task_html($p, $g, 'idea'); ?></ul>
   <?php else: ?>
     <p class="empty">אין הצעות כרגע.</p>
   <?php endif; ?>
+  </details>
   <p class="hint">מהמסמך <code><?= h($p['doc']['file'] ?? '') ?></code> — הקטעים "התקדמות" (הצ'אט), "ממתין לבעל המערכת" (אתה) ו"שיפורים מומלצים".</p>
 <?php else: ?>
   <p class="hint">כל אפליקציה בחבילה, האפיון שלה ומה הושלם מתוך היעדים שבמסמך שלה. מתעדכן לבד בכל פריסה של המסמכים.</p>
@@ -261,18 +339,40 @@ $started  = count(array_filter($all, fn($p) => $p['pct'] > 0 && $p['pct'] < 100)
     <span class="track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<?= $avg ?>"><span style="inline-size:<?= $avg ?>%"></span></span>
     <div class="chips"><span class="chip"><?= count($all) ?> פרויקטים</span><span class="chip ok"><?= $ready ?> הושלמו</span><span class="chip warn"><?= $started ?> בתהליך</span><span class="chip"><?= count($all) - $ready - $started ?> טרם התחילו</span></div>
   </div>
-  <?php $mine = []; foreach ($all as $p) foreach ($p['owner'] as $g) if (!$g['done']) $mine[] = [$p, $g]; ?>
-  <h2 class="sec-title">👤 ממתין לך — <?= count($mine) ?></h2>
-  <?php if ($mine): ?>
-    <ul class="list goals mine">
-      <?php foreach ($mine as [$p, $g]): ?>
-        <li><span class="mk" aria-hidden="true"><?= $p['icon'] ?></span><span><b><?= h($p['name']) ?>:</b> <?= inline($g['text']) ?></span></li>
-      <?php endforeach; ?>
-    </ul>
-  <?php else: ?>
-    <p class="empty">אין כרגע משימות בשבילך. 🎉</p>
+  <?php
+    $mine = []; $chat = []; $ideas = [];
+    foreach ($all as $p) {
+        foreach ($p['owner'] as $g) if (!$g['done']) $mine[] = [$p, $g];
+        foreach ($p['goals'] as $g) if (!$g['done']) $chat[] = [$p, $g];
+        foreach ($p['ideas'] as $g) if (!$g['done']) $ideas[] = [$p, $g];
+    }
+  ?>
+  <?php $reqs = pending_requests(); $coord = ['name' => "הצ'אט המתכלל", 'doc' => null]; ?>
+  <?php if ($reqs): ?>
+  <?= group_open('requests', "📨 בקשות לצ'אט המתכלל", count($reqs), true) ?>
+    <p class="hint">צ'אטים ביקשו הכרעה. אין צורך להעתיק את הבקשה עצמה — רק להזכיר לצ'אט המתכלל.</p>
+    <ul class="list goals mine"><?php foreach ($reqs as $g) echo task_html($coord, $g, 'owner'); ?></ul>
+  </details>
   <?php endif; ?>
-  <h2 class="sec-title">הפרויקטים</h2>
+  <?= group_open('mine', '👤 ממתין לך', count($mine), true) ?>
+    <?php if ($mine): ?>
+      <p class="hint">לחיצה על משימה פותחת מה לעשות בדיוק, ופרומפט להעתקה כשצריך להעביר הודעה לצ'אט.</p>
+      <ul class="list goals mine"><?php foreach ($mine as [$p, $g]) echo task_html($p, $g, 'owner', true); ?></ul>
+    <?php else: ?>
+      <p class="empty">אין כרגע משימות בשבילך. 🎉</p>
+    <?php endif; ?>
+  </details>
+  <?= group_open('chat', '🤖 משימות פתוחות לצ\'אטים', count($chat), false) ?>
+    <p class="hint">הצ'אטים עובדים עליהן לבד. כדי לדחוף אחת — פתח אותה, העתק את הפרומפט והדבק בצ'אט של הפרויקט.</p>
+    <?php if ($chat): ?><ul class="list goals"><?php foreach ($chat as [$p, $g]) echo task_html($p, $g, 'chat', true); ?></ul>
+    <?php else: ?><p class="empty">אין משימות פתוחות.</p><?php endif; ?>
+  </details>
+  <?= group_open('ideas', '💡 שיפורים מומלצים', count($ideas), false) ?>
+    <p class="hint">לא חובה. מתאים? העתק את הפרומפט לצ'אט של הפרויקט.</p>
+    <?php if ($ideas): ?><ul class="list goals"><?php foreach ($ideas as [$p, $g]) echo task_html($p, $g, 'idea', true); ?></ul>
+    <?php else: ?><p class="empty">אין הצעות כרגע.</p><?php endif; ?>
+  </details>
+  <?= group_open('projects', 'הפרויקטים', count($all), true) ?>
   <ul class="list">
     <?php foreach ($all as $p): ?>
       <li><a class="use-row" href="?p=<?= h(rawurlencode($p['id'])) ?>">
@@ -291,8 +391,11 @@ $started  = count(array_filter($all, fn($p) => $p['pct'] > 0 && $p['pct'] < 100)
       </a></li>
     <?php endforeach; ?>
   </ul>
+  </details>
   <p class="hint">🤖 משימות פתוחות לצ'אט · 👤 ממתין לך · 💡 שיפורים מומלצים. האחוז הכולל — ממוצע הפרויקטים (כל פרויקט באותו משקל). אפליקציה עם מסמך מעקב משלה — ממוצע של האפליקציה עצמה ושל החיבור לחבילה (‎.mbe). פרויקט בלי יעדים — 0%.</p>
 <?php endif; ?>
 </main>
+<p class="sr-only" role="status" aria-live="polite" id="live"></p>
+<script src="assets/app.js" defer></script>
 </body>
 </html>
