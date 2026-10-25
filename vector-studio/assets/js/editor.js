@@ -14,6 +14,7 @@ import { group, ungroup, reorder, align, distribute, addLayer, removeLayer, move
 import { render, hitTest, inRect, handlePoints, readColors, HANDLE, viewMatrix } from './render.js';
 import { renderProps, renderLayers } from './props.js';
 import { createPenTools } from './pen.js';
+import { pencilD, brushD, widths } from './freehand.js';
 import { snapper } from './snap.js';
 import { parse, bbox, serialize, transform as transformSegs } from './geometry/path.js';
 const pathOps = { parse, serialize, transform: transformSegs };
@@ -35,6 +36,14 @@ const S = {
 // העדפות תצוגה (הצמדה, רשת) — נזכרות במכשיר
 function pref(k, d) { try { const v = localStorage.getItem('vector-studio:' + k); return v === null ? d : v === '1'; } catch { return d; } }
 function setPref(k, v) { try { localStorage.setItem('vector-studio:' + k, v ? '1' : '0'); } catch { /* חסום */ } }
+
+// עיפרון ומברשת: צבע ועובי — נזכרים במכשיר, נפרד לכל כלי
+const FREE_DEFAULT = { pencil: { color: '#16192b', width: 2 }, brush: { color: '#2d4a8a', width: 12 } };
+function freePrefs() {
+  try { return { ...FREE_DEFAULT, ...JSON.parse(localStorage.getItem('vector-studio:free') || '{}') }; } catch { return { ...FREE_DEFAULT }; }
+}
+function saveFree() { try { localStorage.setItem('vector-studio:free', JSON.stringify(S.free)); } catch { /* חסום */ } }
+S.free = freePrefs();
 
 /** הצמדה לגרירה אחת. Ctrl / ⌘ בזמן הגרירה — בלי הצמדה. */
 function makeSnap(exclude, surface, touch) {
@@ -298,6 +307,8 @@ function zoomStep(dir) {
 
 const SHAPES = ['rect', 'ellipse', 'polygon', 'star', 'line'];
 let lastShape = 'rect';
+const FREE = ['pencil', 'brush'];
+let lastFree = 'pencil';
 
 function setTool(t) {
   S.tool = t;
@@ -307,16 +318,29 @@ function setTool(t) {
     $('shape-icon').innerHTML = src.querySelector('svg').innerHTML;
     document.querySelector('[data-tool="shape"]').setAttribute('aria-label', 'צורות: ' + src.getAttribute('aria-label'));
   }
-  document.querySelectorAll('.tool').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.tool === t || (b.dataset.tool === 'shape' && SHAPES.includes(t)))));
+  if (FREE.includes(t)) {
+    lastFree = t;
+    const src = document.querySelector(`[data-free="${t}"]`);
+    $('free-icon').innerHTML = src.querySelector('svg').innerHTML;
+    document.querySelector('[data-tool="draw"]').setAttribute('aria-label', 'ציור חופשי: ' + src.getAttribute('aria-label'));
+  }
+  document.querySelectorAll('.tool').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.tool === t
+    || (b.dataset.tool === 'shape' && SHAPES.includes(t)) || (b.dataset.tool === 'draw' && FREE.includes(t)))));
   canvas.style.cursor = t === 'select' || t === 'node' ? 'default' : t === 'text' ? 'text' : 'crosshair';
   showShapePick(false);
+  showFreePick(false);
   tools.activate(t);
+  updateBar();
   draw();
 }
 
 function showShapePick(open) {
   $('shape-pick').hidden = !open;
   document.querySelector('[data-tool="shape"]').setAttribute('aria-expanded', String(open));
+}
+function showFreePick(open) {
+  $('free-pick').hidden = !open;
+  document.querySelector('[data-tool="draw"]').setAttribute('aria-expanded', String(open));
 }
 
 /** סרגל צף לעט ולעריכת נקודות — בטלפון אין Enter ו-Delete. */
@@ -328,9 +352,12 @@ function updateBar() {
   show('pen-cancel', drawing);
   show('node-smooth', !!ed?.node);
   show('node-del', !!ed?.node);
+  const free = FREE.includes(S.tool);
   $('pen-hint').textContent = drawing ? '' : S.tool === 'pen' ? 'הקשה — נקודה, גרירה — עקומה'
     : S.tool === 'node' ? (ed ? (ed.node ? '' : 'גוררים נקודה או ידית; הקשה על הקו — נקודה חדשה') : 'בוחרים צורה לעריכה') : '';
-  $('pen-bar').hidden = !(S.tool === 'pen' || S.tool === 'node');
+  show('free-opts', free);
+  if (free) { $('free-color').value = S.free[S.tool].color; $('free-width').value = S.free[S.tool].width; }
+  $('pen-bar').hidden = !(S.tool === 'pen' || S.tool === 'node' || free);
 }
 
 function select(ids) {
@@ -705,6 +732,29 @@ function local(e) {
   return [e.clientX - r.left, e.clientY - r.top];
 }
 
+/** דגימות של ציור חופשי — גם הנקודות שהדפדפן איחד לאירוע אחד (קו חלק גם בתנועה מהירה). */
+function addSamples(e) {
+  const list = e.getCoalescedEvents?.().length ? e.getCoalescedEvents() : [e];
+  for (const ev of list) {
+    const [wx, wy] = toWorld(...local(ev));
+    op.samples.push({ x: wx - op.off[0], y: wy - op.off[1], p: op.pressure ? ev.pressure : null, t: ev.timeStamp });
+  }
+  const o = findPath(S.doc, op.id);
+  if (o) o.path.d = freeD(op, false);
+  draw();
+}
+
+/** הנתיב של ציור חופשי. בזמן הציור — עיפרון כקו גולמי (מהיר); בסיום — מוחלק. tol: ~1.5 פיקסלי מסך. */
+function freeD(o, final) {
+  const tol = 1.5 / S.view.z;
+  if (o.kind === 'brush') {
+    const st = S.free.brush;
+    return brushD(o.samples, widths(o.samples, st.width, { pressure: o.pressure, scale: 1 / S.view.z }), tol);
+  }
+  if (!final) return o.samples.length > 1 ? 'M' + o.samples.map(p => `${p.x} ${p.y}`).join(' L') : '';
+  return pencilD(o.samples, tol, 10 / S.view.z);
+}
+
 function handleAt(sx, sy) {
   if (!S.sel.size) return null;
   const box = selectionBox(S.doc, S.sel);
@@ -745,6 +795,19 @@ canvas.addEventListener('pointerdown', (e) => {
     const r = tools.down(e, sx, sy, wx, wy);
     if (r === 'background' && touch) { op = { type: 'pan', s0: [sx, sy], view0: { ...S.view } }; return; }
     op = r === 'background' ? null : { type: 'tool' };
+    return;
+  }
+  if (FREE.includes(S.tool)) {
+    const surface = surfaceAt(wx, wy);
+    const off = layout(S.doc).get(surface.id);
+    const before = JSON.stringify(S.doc);
+    const st = S.free[S.tool];
+    const path = S.tool === 'brush'
+      ? { id: nextId(S.doc, 'p'), d: '', fill: { color: st.color }, stroke: null }
+      : { id: nextId(S.doc, 'p'), d: '', fill: null, stroke: { color: st.color, width: st.width, cap: 'round', join: 'round', dash: [] } };
+    targetLayer(surface).paths.push(path);
+    op = { type: 'free', before, id: path.id, off, kind: S.tool, pressure: e.pointerType === 'pen', samples: [] };
+    addSamples(e);
     return;
   }
   if (S.tool === 'text') {
@@ -832,6 +895,9 @@ canvas.addEventListener('pointermove', (e) => {
       tools.move(sx, sy, wx, wy);
       break;
     }
+    case 'free':
+      addSamples(e);
+      break;
     case 'text': {
       const x = Math.min(op.s0[0], sx), y = Math.min(op.s0[1], sy);
       S.marquee = [x, y, Math.abs(sx - op.s0[0]), Math.abs(sy - op.s0[1])];
@@ -983,6 +1049,12 @@ function endPointer(e) {
     case 'rotate':
       commitFrom(op.before);
       break;
+    case 'free': {
+      const o = findPath(S.doc, op.id);
+      const d = o && freeD(op, true);
+      if (d) { o.path.d = d; commitFrom(op.before); } else { S.doc = JSON.parse(op.before); afterChangeSilent(); }
+      break;
+    }
     case 'create': {
       const o = findPath(S.doc, op.id);
       // הקשה בלי גרירה — צורה בגודל ברירת מחדל סביב הנקודה
@@ -1023,7 +1095,7 @@ canvas.addEventListener('wheel', (e) => {
 
 // ---------- מקלדת ----------
 
-const TOOL_KEYS = { v: 'select', a: 'node', p: 'pen', t: 'text', m: 'rect', l: 'ellipse', '\\': 'line' };
+const TOOL_KEYS = { v: 'select', a: 'node', p: 'pen', t: 'text', m: 'rect', l: 'ellipse', '\\': 'line', n: 'pencil', b: 'brush' };
 
 document.addEventListener('keydown', (e) => {
   if (e.target.closest('input, textarea, select')) return;
@@ -1059,13 +1131,27 @@ document.addEventListener('keyup', (e) => { if (e.key === ' ') { spaceDown = fal
 
 document.querySelectorAll('.tool').forEach(b => b.addEventListener('click', () => {
   const t = b.dataset.tool;
+  if (t === 'draw') {
+    // ציור חופשי: לחיצה ראשונה — הכלי האחרון; כשכבר בו — בחירה בין עיפרון למברשת
+    if (FREE.includes(S.tool)) showFreePick($('free-pick').hidden); else setTool(lastFree);
+    return;
+  }
   if (t !== 'shape') return setTool(t);
   // צורות: לחיצה ראשונה — הצורה האחרונה; כשכבר בצורה — בחירת צורה אחרת
   if (SHAPES.includes(S.tool)) showShapePick($('shape-pick').hidden);
   else setTool(lastShape);
 }));
 document.querySelectorAll('[data-shape]').forEach(b => b.addEventListener('click', () => setTool(b.dataset.shape)));
-document.addEventListener('pointerdown', (e) => { if (!e.target.closest('#shape-pick, [data-tool="shape"]')) showShapePick(false); });
+document.addEventListener('pointerdown', (e) => {
+  if (!e.target.closest('#shape-pick, [data-tool="shape"]')) showShapePick(false);
+  if (!e.target.closest('#free-pick, [data-tool="draw"]')) showFreePick(false);
+});
+document.querySelectorAll('[data-free]').forEach(b => b.addEventListener('click', () => setTool(b.dataset.free)));
+$('free-color').addEventListener('input', () => { S.free[S.tool].color = $('free-color').value; saveFree(); });
+$('free-width').addEventListener('change', () => {
+  const v = Number($('free-width').value);
+  if (v > 0 && v <= 200) { S.free[S.tool].width = v; saveFree(); } else $('free-width').value = S.free[S.tool].width;
+});
 $('pen-done').addEventListener('click', () => tools.finish());
 $('pen-cancel').addEventListener('click', () => tools.cancel());
 $('node-smooth').addEventListener('click', () => tools.toggleSelected());
