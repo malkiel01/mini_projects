@@ -71,6 +71,16 @@ creative-suite/mbe-core/
 - [x] בסכמה: מסגרות (`columns`, `gutter`, `px`, `fit`, `focus`, `zoom`, `wrap`, `wrapGap`), שטף (`frames`, `autogrow`, `style`) וסגנונות פסקה — הצ'אט המתכלל, 2026-10-25, תוספת בלבד
 - [x] בסכמה: `layout` בשורש ו-`name` / `running` במשטח (עמודי אב) — הצ'אט המתכלל, תוספת בלבד; הבדיקות עוברות
 
+## פורמט 1.1 — הממיר (הכרעה 2026-10-25, `requests/spec-hub.md`)
+
+הסדר מ-`spec/README.md` סעיף 7.4 — הליבה ראשונה. פרטי הממשק — מול הצ'אט המאפיין.
+
+- [ ] `manifest.id` (UUID v4) — נוצר בשמירה הראשונה, נשמר בכל שמירה; משלים לקובץ 1.0; `VERSION` = `1.1`
+- [ ] `history/` — `journal.json` + `<sha256>.json`; פעולות `journal` / `restore`; בדיקות תקינות (גיבוב, `base`/`result`)
+- [ ] מזהה פסקה `attrs.id` — בדיקת ייחודיות בשטף + השלמה למזהים חסרים
+- [ ] `identify(face)` ו-`reconcile(face)` — זיהוי פנים (docx/pdf/png) ומיזוג תלת-כיווני לפי פסקה, עם רשימת התנגשויות
+- [ ] ניסוי נ3 — Google Docs ו-LibreOffice (שורת פקודה): מה שורד מהמזהים ב-docx
+
 
 ## ממתין לבעל המערכת
 
