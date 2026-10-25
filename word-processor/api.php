@@ -143,8 +143,7 @@ try {
                     if (is_array($in['import'] ?? null)) {
                         $imp = do_import((string)($in['import']['format'] ?? ''), $in['import']['content'] ?? null, $id);
                         $row = doc_find($id, $space);
-                        if ($imp['page']) doc_set_page($row, $imp['page']);
-                        doc_save(doc_find($id, $space), $imp['json'], null, $who['id'], $who['name']);
+                        doc_save($row, $imp['json'], null, $who['id'], $who['name'], null, $imp['page'] ?: null);   // התוכן והגדרות העמוד — גרסה אחת
                     }
                     out(['doc' => $id]);
                 case 'doc_copy':
@@ -425,8 +424,7 @@ function app_action(string $action, array $in): never
                 // Word, ODT, HTML או טקסט — לפי התוכן (import_file)
                 $imp = import_file($bytes, (string)($_FILES['file']['name'] ?? ''), $id);
                 $row = doc_find($id, $space);
-                if ($imp['page']) $row = doc_set_page($row, $imp['page']);
-                doc_save($row, $imp['json'], null, $uid, $uname);
+                doc_save($row, $imp['json'], null, $uid, $uname, null, $imp['page'] ?: null);   // התוכן והגדרות העמוד — גרסה אחת
                 out(['doc' => $id, 'report' => $imp['report']]);
             }
             out(['doc' => $id]);
