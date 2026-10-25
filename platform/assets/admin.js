@@ -435,48 +435,65 @@ window.PlatformAdmin = (() => {
     // עורך ההרשאות: לכל קטגוריה "הכול", ולכל אפליקציה — לפי הקטגוריה / מותר / חסום.
     function grantsEditor(u) {
         const cats = new Set(Object.keys(u.grants.categories).filter(c => u.grants.categories[c]));
+        const groups = new Set(Object.keys(u.grants.groups || {}).filter(g => u.grants.groups[g]));
         const apps = { ...u.grants.apps };
+        const listed = state.apps.filter(a => !a.hidden && !a.plugin);
+        // מה המשתמש רואה בפועל — כמו can_see ב-lib/access.php
+        const sees = (app) => app.id in apps ? apps[app.id]
+            : app.placements.some(p => p.group && groups.has(p.group))
+              || (!app.restricted && app.placements.some(p => cats.has(p.category)));
+        const rows = [];   // כל שורות האפליקציות, בכל הקטגוריות — אותה אפליקציה יכולה להופיע בכמה
+        function refresh() {
+            for (const r of rows) {
+                r.sel.value = r.app.id in apps ? (apps[r.app.id] ? 'allow' : 'deny') : '';
+                const seen = sees(r.app);
+                r.result.textContent = seen ? '👁️ רואה' : '— לא רואה';
+                r.result.className = `small ${seen ? 'yes' : 'no'}`;
+            }
+        }
+        function appRowEl(app) {
+            const sel = el('select', {}, [
+                ['', app.restricted ? '🔒 רק באישור ישיר' : 'לפי הקטגוריה'], ['allow', '✓ מותר'], ['deny', '✕ חסום'],
+            ].map(([v, t]) => el('option', { value: v, textContent: t })));
+            const result = el('span', { className: 'small' });
+            sel.addEventListener('change', () => {
+                if (sel.value === '') delete apps[app.id]; else apps[app.id] = sel.value === 'allow';
+                refresh();
+            });
+            rows.push({ app, sel, result });
+            return el('div', { className: 'grant-app' }, [el('span', { textContent: `${app.icon} ${app.name}` }), sel, result]);
+        }
+
+        // קבוצה שלמה — סימון אחד פותח את כל הסט, גם אפליקציות 🔒
+        const groupBoxes = state.groups.map(g => {
+            const inGroup = listed.filter(a => a.placements.some(p => p.group === g.id));
+            if (!inGroup.length) return null;
+            const box = el('input', { type: 'checkbox', checked: groups.has(g.id) });
+            box.addEventListener('change', () => { box.checked ? groups.add(g.id) : groups.delete(g.id); refresh(); });
+            return el('label', { className: 'grant-group' }, [box, el('span', {}, [
+                el('b', { textContent: ` ${g.icon} ${g.name}` }),
+                el('small', { className: 'muted', textContent: ` — ${inGroup.map(a => a.name).join(' · ')}` }),
+            ])]);
+        }).filter(Boolean);
 
         const sections = state.categories.map(cat => {
-            const catApps = state.apps.filter(a => a.category === cat.id && !a.hidden);
+            const catApps = listed.filter(a => a.placements.some(p => p.category === cat.id));
             const box = el('input', { type: 'checkbox', checked: cats.has(cat.id) });
             box.addEventListener('change', () => { box.checked ? cats.add(cat.id) : cats.delete(cat.id); refresh(); });
-
-            const rows = catApps.map(app => {
-                const sel = el('select', {}, [
-                    ['', app.restricted ? '🔒 רק באישור ישיר' : 'לפי הקטגוריה'], ['allow', '✓ מותר'], ['deny', '✕ חסום'],
-                ].map(([v, t]) => el('option', { value: v, textContent: t })));
-                sel.value = app.id in apps ? (apps[app.id] ? 'allow' : 'deny') : '';
-                const result = el('span', { className: 'small' });
-                sel.addEventListener('change', () => {
-                    if (sel.value === '') delete apps[app.id]; else apps[app.id] = sel.value === 'allow';
-                    refresh();
-                });
-                return { app, sel, result, node: el('div', { className: 'grant-app' }, [
-                    el('span', { textContent: `${app.icon} ${app.name}` }), sel, result,
-                ]) };
-            });
-
-            function refresh() {
-                for (const r of rows) {
-                    const seen = r.app.id in apps ? apps[r.app.id] : (!r.app.restricted && cats.has(cat.id));
-                    r.result.textContent = seen ? '👁️ רואה' : '— לא רואה';
-                    r.result.className = `small ${seen ? 'yes' : 'no'}`;
-                }
-            }
-            refresh();
-
             return el('fieldset', { className: 'grant-cat' }, [
                 el('legend', {}, [el('label', {}, [box, ` ${cat.icon} ${cat.name} — כל הקטגוריה`])]),
-                ...(rows.length ? rows.map(r => r.node) : [el('div', { className: 'muted small', textContent: 'אין בה אפליקציות' })]),
+                ...(catApps.length ? catApps.map(appRowEl) : [el('div', { className: 'muted small', textContent: 'אין בה אפליקציות' })]),
             ]);
         });
+        refresh();
 
         const save = button('💾 שמירת ההרשאות', () => act('admin_grants_set',
-            { id: u.id, categories: [...cats], apps }, `✓ ההרשאות של ${u.display_name} נשמרו`), 'primary save-grants');
+            { id: u.id, categories: [...cats], groups: [...groups], apps }, `✓ ההרשאות של ${u.display_name} נשמרו`), 'primary save-grants');
         return el('div', { className: 'grants' }, [
             el('p', { className: 'muted small', textContent:
-                'קטגוריה מסומנת כוללת גם אפליקציות שיתווספו אליה בעתיד. הרשאה לאפליקציה גוברת על הקטגוריה.' }),
+                'קטגוריה מסומנת כוללת גם אפליקציות שיתווספו אליה בעתיד. קבוצה מסומנת פותחת את כל הסט — גם 🔒. ' +
+                'הרשאה לאפליקציה (מותר / חסום) גוברת על הכול.' }),
+            ...(groupBoxes.length ? [el('fieldset', { className: 'grant-cat' }, [el('legend', { textContent: '🧰 קבוצות — כל הסט' }), ...groupBoxes])] : []),
             ...sections, save,
         ]);
     }
@@ -831,38 +848,106 @@ window.PlatformAdmin = (() => {
         const add = el('div', { className: 'cat-row' }, [newIcon, newName,
             button('➕ הוספה', () => act('admin_category_save', { name: newName.value, icon: newIcon.value }, 'נוספה'), 'primary')]);
 
-        const apps = state.apps.filter(a => !a.plugin).map(app => {
-            const sel = el('select', {}, state.categories.map(c =>
-                el('option', { value: c.id, textContent: `${c.icon} ${c.name}` })));
-            sel.value = app.category;
-            sel.addEventListener('change', () => act('admin_app_update', { id: app.id, category: sel.value }, `${app.name} הועברה`));
-            const hidden = el('input', { type: 'checkbox', checked: app.hidden });
-            hidden.addEventListener('change', () => act('admin_app_update', { id: app.id, hidden: hidden.checked },
-                hidden.checked ? `${app.name} מוסתרת מכולם` : `${app.name} גלויה שוב`));
-            const row = [
-                el('span', { textContent: `${app.icon} ${app.name}` }), sel,
-                el('label', { className: 'small' }, [hidden, ' מוסתרת']),
-            ];
-            // התקנה נפרדת / APK / חנות — מוצגים לכולם (כמו בחנות); כאן אפשר להסתיר.
-            if (app.can_install) {
-                const inst = el('input', { type: 'checkbox', checked: app.install_ok });
-                inst.addEventListener('change', () => act('admin_app_update', { id: app.id, install_ok: inst.checked },
-                    inst.checked ? `${app.name}: התקנה והורדה מוצגות` : `${app.name}: התקנה והורדה הוסתרו`));
-                row.push(el('label', { className: 'small' }, [inst, ' 📲 התקנה והורדה']));
-            }
-            row.push(connectionControl(app), loginControl(app));
-            return el('div', { className: `app-row${app.hidden ? ' is-hidden' : ''}` }, row);
+        // קבוצות — כמו הקטגוריות: שם, אייקון, סדר. קבוצה היא שורה אחת ברשימה שנפתחים ממנה הילדים.
+        const groups = state.groups.map((g, i) => {
+            const icon = el('input', { value: g.icon, className: 'icon-input', maxLength: 8, ariaLabel: 'אייקון' });
+            const name = el('input', { value: g.name, maxLength: 40, ariaLabel: 'שם' });
+            const count = state.apps.filter(a => a.placements.some(p => p.group === g.id)).length;
+            return el('div', { className: 'cat-row' }, [
+                icon, name,
+                el('span', { className: 'muted small', textContent: `${count} אפליקציות` }),
+                button('שמירה', () => act('admin_group_save', { id: g.id, name: name.value, icon: icon.value }, 'נשמר')),
+                button('▲', () => act('admin_group_move', { id: g.id, dir: -1 }), i === 0 ? 'hidden' : ''),
+                button('▼', () => act('admin_group_move', { id: g.id, dir: 1 }), i === state.groups.length - 1 ? 'hidden' : ''),
+                button('מחיקה', () => confirm(`למחוק את הקבוצה "${g.name}"? האפליקציות שבה יחזרו לראשי של הקטגוריה.`)
+                    && act('admin_group_delete', { id: g.id }, 'נמחקה'), 'danger'),
+            ]);
         });
+        const gIcon = el('input', { placeholder: '🧰', className: 'icon-input', maxLength: 8, ariaLabel: 'אייקון' });
+        const gName = el('input', { placeholder: 'קבוצה חדשה', maxLength: 40, ariaLabel: 'שם' });
+        const addGroup = el('div', { className: 'cat-row' }, [gIcon, gName,
+            button('➕ הוספה', () => act('admin_group_save', { name: gName.value, icon: gIcon.value }, 'נוספה'), 'primary')]);
+
+        const apps = state.apps.filter(a => !a.plugin).map(appCard);
 
         return el('div', {}, [
             el('h3', { textContent: 'קטגוריות' }), ...cats, add,
+            el('h3', { textContent: 'קבוצות' }),
+            el('p', { className: 'muted small', textContent: 'קבוצה מוצגת כשורה אחת שנפתחים ממנה הילדים (כמו חבילת היצירה). אותה קבוצה יכולה להופיע בכמה קטגוריות — בכל אחת רק מה שהונח בה.' }),
+            ...groups, addGroup,
             el('h3', { textContent: 'אפליקציות' }),
-            el('p', { className: 'muted small', textContent: 'אפליקציה מוסתרת לא מוצגת לאף אחד, גם לא למי שקיבל הרשאה — רק כאן. ' +
-                '"📲 התקנה והורדה" — מסומן כברירת מחדל: מי שרואה את האפליקציה יכול גם להתקין אותה (כאפליקציה נפרדת, APK או חנות). מורידים את הסימון כדי להסתיר. ' +
-                '"🔌 מחוברת" — נכנסים לאפליקציה רק עם חשבון בפלטפורמה והרשאה אליה, והכניסה אליה אוטומטית. מורידים את הסימון כדי לנתק אותה: היא תעמוד לבד, ' +
-                'ובוחרים איך עוד אפשר להיכנס אליה (סיסמה משלה, Google). אפשר לחבר מחדש בכל רגע.' }),
+            el('p', { className: 'muted small', textContent: 'לוחצים על אפליקציה ומסמנים איפה היא מוצגת: כל שורה — קטגוריה (חובה), ובתוכה קבוצה או "ראשי". אפשר כמה שורות — אותה אפליקציה בכמה מקומות. ' +
+                'מוסתרת — לא מוצגת לאף אחד. "📲 התקנה והורדה" — מסומן כברירת מחדל; מורידים כדי להסתיר. ' +
+                '"🔌 מחוברת" — נכנסים רק עם חשבון בפלטפורמה והרשאה; מורידים כדי לנתק, ובוחרים איך עוד אפשר להיכנס.' }),
             ...apps,
         ]);
+    }
+
+    // כרטיס אפליקציה בקטלוג: סגור — שם ואיפה היא מוצגת; פתוח — שורות המיקום ושאר ההגדרות.
+    const openCards = new Set();
+    function placeLabel(p) {
+        const c = state.categories.find(x => x.id === p.category);
+        const g = p.group && state.groups.find(x => x.id === p.group);
+        return `${c ? `${c.icon} ${c.name}` : p.category}${g ? ` › ${g.icon} ${g.name}` : ''}`;
+    }
+    function appCard(app) {
+        const open = openCards.has(app.id);
+        const head = el('button', { type: 'button', className: 'app-card-head', ariaExpanded: String(open) }, [
+            appIc(app.id),
+            el('span', { className: 'plugin-tx' }, [
+                el('strong', { textContent: app.name + (app.hidden ? ' · מוסתרת' : '') }),
+                el('span', { className: 'muted small', textContent: app.placements.map(placeLabel).join('  ·  ') }),
+            ]),
+            el('span', { className: 'group-chev', textContent: '⌄', ariaHidden: 'true' }),
+        ]);
+        head.addEventListener('click', () => { open ? openCards.delete(app.id) : openCards.add(app.id); render(); });
+        const card = el('div', { className: `app-card${open ? ' open' : ''}${app.hidden ? ' is-hidden' : ''}` }, [head]);
+        if (!open) return card;
+
+        // שורות המיקום — עורכים מקומית ושומרים יחד
+        const rows = app.placements.map(p => ({ category: p.category, group: p.group }));
+        const box = el('div', { className: 'place-rows' });
+        const draw = () => box.replaceChildren(...rows.map((r, i) => {
+            const cat = el('select', { ariaLabel: 'קטגוריה' }, [
+                el('option', { value: '', textContent: '— קטגוריה —', disabled: true }),
+                ...state.categories.map(c => el('option', { value: c.id, textContent: `${c.icon} ${c.name}` }))]);
+            cat.value = r.category || '';
+            cat.addEventListener('change', () => { r.category = cat.value; });
+            const grp = el('select', { ariaLabel: 'קבוצה' }, [
+                el('option', { value: '', textContent: 'ראשי' }),
+                ...state.groups.map(g => el('option', { value: g.id, textContent: `${g.icon} ${g.name}` }))]);
+            grp.value = r.group || '';
+            grp.addEventListener('change', () => { r.group = grp.value || null; });
+            const del = button('🗑', () => { rows.splice(i, 1); draw(); }, rows.length === 1 ? 'hidden' : '');
+            del.ariaLabel = 'מחיקת השורה';
+            return el('div', { className: 'place-row' }, [cat, grp, del]);
+        }));
+        draw();
+        // שורה חדשה — בלי קטגוריה: בוחרים במפורש (קטגוריה היא חובה)
+        const addRow = button('➕ שורה חדשה', () => { rows.push({ category: '', group: null }); draw(); });
+        const save = button('💾 שמירת המיקומים', () => {
+            if (rows.some(r => !r.category)) return P().toast('⚠️ בכל שורה צריך לבחור קטגוריה');
+            act('admin_placements_set', { id: app.id, placements: rows }, `${app.name}: נשמר`);
+        }, 'primary');
+
+        const hidden = el('input', { type: 'checkbox', checked: app.hidden });
+        hidden.addEventListener('change', () => act('admin_app_update', { id: app.id, hidden: hidden.checked },
+            hidden.checked ? `${app.name} מוסתרת מכולם` : `${app.name} גלויה שוב`));
+        const opts = [el('label', { className: 'small' }, [hidden, ' מוסתרת'])];
+        // התקנה נפרדת / APK / חנות — מוצגים לכולם (כמו בחנות); כאן אפשר להסתיר.
+        if (app.can_install) {
+            const inst = el('input', { type: 'checkbox', checked: app.install_ok });
+            inst.addEventListener('change', () => act('admin_app_update', { id: app.id, install_ok: inst.checked },
+                inst.checked ? `${app.name}: התקנה והורדה מוצגות` : `${app.name}: התקנה והורדה הוסתרו`));
+            opts.push(el('label', { className: 'small' }, [inst, ' 📲 התקנה והורדה']));
+        }
+        opts.push(connectionControl(app), loginControl(app));
+        card.append(el('div', { className: 'app-card-body' }, [
+            el('div', { className: 'small muted', textContent: 'איפה מוצגת' }), box,
+            el('div', { className: 'place-actions' }, [addRow, save]),
+            el('div', { className: 'app-row' }, opts),
+        ]));
+        return card;
     }
 
     // ---------- תוספים ----------

@@ -315,6 +315,20 @@ button:disabled { opacity: .55; cursor: default; }
 .icon-input { width: 3.2em; text-align: center; }
 .app-row > span:first-child { flex: 1; min-width: 140px; font-weight: 600; }
 .app-row.is-hidden { opacity: .55; }
+/* קטלוג: כרטיס לכל אפליקציה — סגור: איפה מוצגת; פתוח: שורות המיקום (קטגוריה + קבוצה) ושאר ההגדרות */
+.app-card { border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); margin: var(--s2) 0; }
+.app-card.is-hidden { opacity: .6; }
+.app-card-head { display: flex; align-items: center; gap: var(--s3); width: 100%; padding: 8px var(--s3); min-height: 56px;
+    background: none; border: 0; color: inherit; text-align: start; cursor: pointer; font: inherit; }
+.app-card-head .plugin-tx span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.app-card.open .group-chev { transform: rotate(180deg); }
+.app-card-body { padding: 0 var(--s3) var(--s3); display: grid; gap: var(--s2); border-top: 1px solid var(--line); padding-top: var(--s3); }
+.place-rows { display: grid; gap: var(--s2); }
+.place-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: var(--s2); align-items: center; }
+.place-row select { min-width: 0; }
+.place-actions { display: flex; gap: var(--s2); flex-wrap: wrap; }
+.grant-group { display: flex; gap: var(--s2); align-items: baseline; padding: 6px 0; border-bottom: 1px dashed var(--line); font-size: .9rem; }
+.grant-group:last-child { border-bottom: 0; }
 /* --- יומן אבחון (⚙️ ← 📜) --- */
 .diag-tools { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: var(--s2); margin: var(--s3) 0; }
 .diag-list { display: grid; gap: 6px; }

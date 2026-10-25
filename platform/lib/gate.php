@@ -125,15 +125,38 @@ function can_use(array $user, string $app, array $cfg): bool
     }
     $override = $o->fetch(\PDO::FETCH_ASSOC) ?: [];
     if (!empty($override['hidden'])) return false;
-    $category = $override['category'] ?? null ?: $cfg['category'];
 
-    $g = pdo()->prepare('SELECT kind, target, allowed FROM grants WHERE user_id = ? AND
-        ((kind = \'app\' AND target = ?) OR (kind = \'category\' AND target = ?))');
-    $g->execute([$user['id'], $app, $category]);
-    $byKind = [];
-    foreach ($g->fetchAll(\PDO::FETCH_ASSOC) as $row) $byKind[$row['kind']] = (bool)$row['allowed'];
-    if (array_key_exists('app', $byKind)) return $byKind['app'];
-    return empty($cfg['restricted']) && ($byKind['category'] ?? false);
+    // המיקומים (lib/access.php): מה שהמנהל קבע; אחרת — הקטגוריה של app.json או זו שהועברה אליה
+    $cats = [$override['category'] ?? null ?: $cfg['category']];
+    $groups = [];
+    try {
+        $placed = pdo()->prepare('SELECT 1 FROM app_placed WHERE app_id = ?');
+        $placed->execute([$app]);
+        if ($placed->fetchColumn()) {
+            $p = pdo()->prepare('SELECT category, grp FROM placements WHERE app_id = ?');
+            $p->execute([$app]);
+            $cats = $groups = [];
+            foreach ($p->fetchAll(\PDO::FETCH_ASSOC) as $row) {
+                $cats[] = $row['category'];
+                if ($row['grp'] !== '') $groups[] = $row['grp'];
+            }
+        }
+    } catch (\PDOException) {
+        // טבלאות המיקומים עוד לא נוצרו — לפי הקטגוריה
+    }
+
+    $g = pdo()->prepare('SELECT kind, target, allowed FROM grants WHERE user_id = ?');
+    $g->execute([$user['id']]);
+    $direct = null;
+    $byCat = $byGroup = false;
+    foreach ($g->fetchAll(\PDO::FETCH_ASSOC) as $row) {
+        if ($row['kind'] === 'app' && $row['target'] === $app) $direct = (bool)$row['allowed'];
+        elseif ($row['kind'] === 'group' && $row['allowed'] && in_array($row['target'], $groups, true)) $byGroup = true;
+        elseif ($row['kind'] === 'category' && $row['allowed'] && in_array($row['target'], $cats, true)) $byCat = true;
+    }
+    if ($direct !== null) return $direct;
+    if ($byGroup) return true;   // קבוצה שלמה — גם restricted
+    return empty($cfg['restricted']) && $byCat;
 }
 
 /**

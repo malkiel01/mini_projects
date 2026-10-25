@@ -79,9 +79,8 @@ function registry_load(): array
  *             (platform/tools/store-mirror.sh) עם meta.json — גרסה וחבילה. בלי העותק — מ-GitHub.
  */
 /**
- * תת-קטגוריות: קבוצת אפליקציות בתוך קטגוריה (למשל "חבילת היצירה" בתוך "מסמכים וקבצים").
- * מוגדרות ב-platform/subcategories.json — {id, parent, name, icon, apps: [ids, לפי הסדר]}. אפליקציה בקבוצה
- * עוברת לקטגוריית האב (אלא אם המנהל העביר אותה במפורש). קבוצה פגומה נשמטת.
+ * זריעה ראשונית של קבוצות (lib/access.php, groups_seed): platform/subcategories.json — {id, parent, name, icon,
+ * apps}. כל קבוצה נזרעת למסד פעם אחת, עם מיקום לכל אפליקציה שבה; מאז — הקבוצות והמיקומים בניהול. קבוצה פגומה נשמטת.
  * @return list<array{id:string, parent:string, name:string, icon:string, apps:string[]}>
  */
 function registry_subcategories(): array

@@ -500,10 +500,10 @@ function groupOpen(li, open) {
     li.querySelector('.group-head').ariaExpanded = String(open);
     li.querySelector('.group-kids').hidden = !open;
 }
-function groupRow(s, list) {
+function groupRow(s, list, cat) {
     const head = el('button', { type: 'button', className: 'app group-head', ariaExpanded: 'false' }, [
-        // האייקון של האפליקציה הראשונה בקבוצה (בחבילת היצירה — החבילה עצמה)
-        appIcon({ ...list[0], icon: s.icon }),
+        // אפליקציה באותו מזהה כמו הקבוצה (חבילת היצירה) — האייקון המצויר שלה; אחרת — האימוג'י של הקבוצה
+        appIcon({ id: s.id, icon: s.icon, icon_svg: list.find(a => a.id === s.id)?.icon_svg ?? null }),
         el('span', { className: 'app-tx' }, [
             el('b', { textContent: s.name }),
             el('small', { textContent: `${list.length} אפליקציות · ${list.filter(a => a.name !== s.name).map(a => a.name).join(' · ')}` }),
@@ -512,13 +512,14 @@ function groupRow(s, list) {
     ]);
     const kids = el('ul', { className: 'group-kids', hidden: true }, list.map(appRow));
     const li = el('li', { className: 'group' }, [head, kids]);
-    li.dataset.group = s.id;
+    // אותה קבוצה בכמה קטגוריות — פתוח / סגור נזכר לכל מקום בנפרד
+    li.dataset.group = `${cat}:${s.id}`;
     head.addEventListener('click', () => {
         const open = !li.classList.contains('open');
         groupOpen(li, open);
-        try { localStorage.setItem(`platform:group:${s.id}`, open ? 'open' : 'closed'); } catch { /* בלי אחסון */ }
+        try { localStorage.setItem(`platform:group:${li.dataset.group}`, open ? 'open' : 'closed'); } catch { /* בלי אחסון */ }
     });
-    groupOpen(li, groupRemembered(s.id));
+    groupOpen(li, groupRemembered(li.dataset.group));
     return li;
 }
 
@@ -1154,7 +1155,9 @@ async function clearFamilyCache() {
 }
 
 async function showApps() {
-    const [{ categories, subcategories = [], apps }] = await Promise.all([api('apps'), loadInstalls()]);
+    const [{ categories, groups = [], apps }] = await Promise.all([api('apps'), loadInstalls()]);
+    // אפליקציה יכולה להופיע בכמה מקומות (placements): בכל קטגוריה — בראשי או בתוך קבוצה
+    const at = (a, cat, grp) => (a.placements || []).find(p => p.category === cat && (p.group ?? null) === grp);
     currentApps = apps;
     relatedRotate(apps);
     if (takeHandoffRequest()) return;
@@ -1169,21 +1172,21 @@ async function showApps() {
     ])]);
 
     const sections = categories
-        .map(cat => ({ cat, apps: apps.filter(a => a.category === cat.id) }))
+        .map(cat => ({ cat, apps: apps.filter(a => (a.placements || []).some(p => p.category === cat.id)) }))
         .filter(s => s.apps.length)
-        .map(({ cat, apps }) => el('section', { className: 'category' }, [
+        .map(({ cat, apps: inCat }) => el('section', { className: 'category' }, [
             el('h2', { className: 'category-title' }, [
                 el('span', { textContent: cat.icon, ariaHidden: 'true' }),
                 el('span', { textContent: cat.name }),
-                el('span', { className: 'n', textContent: `· ${apps.length}` }),
+                el('span', { className: 'n', textContent: `· ${inCat.length}` }),
             ]),
             el('ul', { className: 'apps' }, [
-                ...apps.filter(a => !a.subcategory).map(a => ({ name: a.name, node: () => appRow(a) })),
-                // תת-קטגוריה (platform/subcategories.json) — שורה אחת ברשימה, שנפתחים ממנה הילדים
-                ...subcategories.filter(s => s.parent === cat.id)
-                    .map(s => ({ s, list: apps.filter(a => a.subcategory === s.id) }))
+                ...inCat.filter(a => at(a, cat.id, null)).map(a => ({ name: a.name, node: () => appRow(a) })),
+                // קבוצה — שורה אחת ברשימה, שנפתחים ממנה הילדים; בכל קטגוריה רק מה שהונח בה
+                ...groups.map(g => ({ g, list: inCat.filter(a => at(a, cat.id, g.id))
+                        .sort((a, b) => at(a, cat.id, g.id).sort - at(b, cat.id, g.id).sort || a.name.localeCompare(b.name, 'he')) }))
                     .filter(({ list }) => list.length)
-                    .map(({ s, list }) => ({ name: s.name, node: () => groupRow(s, list) })),
+                    .map(({ g, list }) => ({ name: g.name, node: () => groupRow(g, list, cat.id) })),
             ].sort((a, b) => a.name.localeCompare(b.name, 'he')).map(x => x.node())),
         ]));
 
