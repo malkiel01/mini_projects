@@ -232,9 +232,22 @@ function trash_purge(string $space): void
     foreach ($st->fetchAll() as $row) doc_delete($row);
 }
 
+/**
+ * הקובץ המקורי של מסמך שיובא מ-‎.mbe (lib/mbe_import.php), ו-‎.json ליד — meta: איזה שטף נערך כאן, איזו תמונה
+ * הוספנו בייבוא. תחת data/media — מוחרג בפריסה.
+ */
+function mbe_source_path(string $doc): string
+{
+    $dir = wp_media_dir() . '/mbe';
+    if (!is_dir($dir)) mkdir($dir, 0775, true);
+    return "$dir/$doc.mbe";
+}
+
 /** מחיקה לצמיתות: התמונות, הגרסאות (cascade) והמסמך. */
 function doc_delete(array $row): void
 {
+    @unlink(mbe_source_path($row['id']));
+    @unlink(mbe_source_path($row['id']) . '.json');
     $st = db()->prepare('SELECT id, type FROM media WHERE doc = ?');
     $st->execute([$row['id']]);
     foreach ($st->fetchAll() as $m) @unlink(media_path($m['id'], $m['type']));
