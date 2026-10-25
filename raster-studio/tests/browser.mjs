@@ -561,6 +561,67 @@ async function main() {
     await page.screenshot({ path: join(SHOTS, 'select-desktop.png') });
   }
 
+  // ---- מטה קסם ----
+  await openEd(page);
+  await page.waitForFunction(() => window.__rs?.doc);
+  await page.evaluate(() => __rs.setView({ zoom: 1, x: 20, y: 20 }));
+  await page.click('[data-act="add"]');
+  await color('#ff0000');
+  await page.keyboard.press('m');
+  await drag([100, 100], [200, 200]);
+  await drag([400, 100], [500, 200], ['Shift']);
+  await page.keyboard.press('Alt+Backspace');
+  await page.keyboard.press('Control+d');
+  await page.keyboard.press('w');
+  check('W — מטה קסם, עם סבולת, רציף וכל השכבות', await page.evaluate(() => __rs.tools.state.tool) === 'wand'
+    && await page.isVisible('#opt-tolerance') && await page.isVisible('#opt-contiguous') && await page.isVisible('#opt-sample-all'));
+  await setOpt('tolerance', 10);
+  await page.mouse.click(...at(150, 150));
+  await page.evaluate(() => __rs.tools.settle());
+  const wand1 = await page.evaluate(() => { const s = __rs.doc.selection?.shapes[0]; return s && [s.type, s.x, s.y, s.w, s.h].join(); });
+  check('לחיצה — מסכת פיקסלים של הריבוע הרציף בלבד', wand1 === 'mask,100,100,100,100', wand1);
+  check('מטה קסם — רשומה בהיסטוריה', await page.evaluate(() => __rs.history.undoStack.at(-1).label) === 'מטה קסם');
+  await color('#00ff00');
+  await page.keyboard.press('Alt+Backspace');
+  check('מילוי בבחירת המטה: הריבוע הנבחר ירוק, השני נשאר אדום, והלבן בחוץ',
+    near(await px(150, 150), [0, 255, 0, 255]) && near(await px(450, 150), [255, 0, 0, 255]) && near(await px(250, 150), [255, 255, 255, 255]),
+    [await px(150, 150), await px(450, 150), await px(250, 150)].join(' | '));
+  await page.keyboard.press('Control+z');
+  await page.click('#opt-contiguous');
+  await page.mouse.click(...at(150, 150));
+  await page.evaluate(() => __rs.tools.settle());
+  const wand2 = await page.evaluate(() => { const s = __rs.doc.selection.shapes; return s.length + ':' + [s[0].type, s[0].x, s[0].w].join(); });
+  check('בלי "רציף" — טווח צבעים: שני הריבועים, בצורה אחת', wand2 === '1:mask,100,400', wand2);
+  await page.click('#opt-contiguous');
+  await page.keyboard.down('Alt');
+  await page.mouse.click(...at(450, 150));
+  await page.keyboard.up('Alt');
+  await page.evaluate(() => __rs.tools.settle());
+  await page.keyboard.press('Delete');
+  check('Alt+לחיצה — חיסור: מחיקה רק בריבוע שנשאר בבחירה', !near(await px(150, 150), [255, 0, 0, 255]) && near(await px(450, 150), [255, 0, 0, 255]),
+    [await px(150, 150), await px(450, 150)].join(' | '));
+  await page.keyboard.press('Control+z');
+  // השכבה הפעילה שקופה מחוץ לריבועים; "כל השכבות" רואה את הרקע הלבן — אותה תוצאה כאן, ורציף מהלבן לא נכנס לאדום
+  await page.click('#opt-sample-all');
+  await page.mouse.click(...at(300, 300));
+  await page.evaluate(() => __rs.tools.settle());
+  const wand3 = await page.evaluate(() => { const s = __rs.doc.selection.shapes[0]; return [s.x, s.y, s.w, s.h, s.data[150 * s.w + 150], s.data[0]].join(); });
+  check('כל השכבות: הלבן סביב — כל הקנבס, בלי הריבועים', wand3 === '0,0,600,400,0,255', wand3);
+  // בחירת מסכה זזה יחד עם התוכן
+  await page.keyboard.press('Control+d');
+  await page.click('#opt-sample-all');
+  await page.mouse.click(...at(150, 150));
+  await page.evaluate(() => __rs.tools.settle());
+  await page.keyboard.press('v');
+  await drag([150, 150], [170, 160]);
+  await page.keyboard.press('Enter');
+  const wand4 = await page.evaluate(() => { const s = __rs.doc.selection.shapes[0]; return [s.type, s.x, s.y].join(); });
+  check('הזזה — מסכת הבחירה זזה עם התוכן', wand4 === 'mask,120,110' && near(await px(210, 150), [255, 0, 0, 255]) && near(await px(110, 150), [255, 255, 255, 255]), wand4);
+  if (SHOTS) {
+    await page.keyboard.press('w');
+    await page.screenshot({ path: join(SHOTS, 'wand-desktop.png') });
+  }
+
   // ---- הזזה ושינוי צורה ----
   await openEd(page);
   await page.waitForFunction(() => window.__rs?.doc);
