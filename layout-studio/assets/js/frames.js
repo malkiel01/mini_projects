@@ -67,7 +67,7 @@ function newFlowId(model) {
   return 'f' + n;
 }
 
-const emptyDoc = () => ({ type: 'doc', content: [{ type: 'paragraph' }] });
+const emptyDoc = () => ({ type: 'doc', content: [{ type: 'paragraph', attrs: { id: paraId() } }] });
 
 /**
  * מסגרת חדשה על עמוד. box — ברירת מחדל: אזור התוכן (בתוך השוליים).
@@ -178,7 +178,38 @@ export function docBlocks(doc) {
 
 export function textToDoc(text) {
   const paras = String(text).replace(/\r\n?/g, '\n').split('\n');
-  return { type: 'doc', content: paras.map(p => p ? { type: 'paragraph', content: [{ type: 'text', text: p }] } : { type: 'paragraph' }) };
+  return withParaIds({ type: 'doc', content: paras.map(p => p ? { type: 'paragraph', content: [{ type: 'text', text: p }] } : { type: 'paragraph' }) });
+}
+
+// ---- מזהה פסקה (mbe-format.md סעיף 3, מ-1.1): attrs.id על כל paragraph / heading, ייחודי בשטף — בסיס למיזוג לפי פסקה ----
+export const PARA_ID = /^[A-Za-z0-9_-]{1,32}$/;
+const TEXT_BLOCKS = new Set(['paragraph', 'heading']);
+/** מזהה חדש: 'p' + 10 תווים אקראיים (בלי תלות ב-DOM — crypto קיים גם ב-node). */
+export const paraId = () => 'p' + Array.from(crypto.getRandomValues(new Uint8Array(5)), b => b.toString(16).padStart(2, '0')).join('');
+
+/**
+ * השלמת מזהים: פסקה בלי מזהה (או עם מזהה לא תקין) — מקבלת חדש; מזהה כפול — הראשונה שומרת, השנייה מקבלת חדש
+ * (פיצול, הדבקה, שכפול). שאר המסמך — כמו שהוא. מחזיר את אותו אובייקט אם לא היה מה להשלים.
+ */
+export function withParaIds(doc) {
+  const seen = new Set();
+  let changed = false;
+  const fix = n => {
+    if (TEXT_BLOCKS.has(n.type)) {
+      const id = n.attrs?.id;
+      if (typeof id === 'string' && PARA_ID.test(id) && !seen.has(id)) { seen.add(id); return n; }
+      let fresh;
+      do fresh = paraId(); while (seen.has(fresh));
+      seen.add(fresh);
+      changed = true;
+      return { ...n, attrs: { ...(n.attrs || {}), id: fresh } };
+    }
+    if (!Array.isArray(n.content)) return n;   // פסקאות בתוך רשימה / טבלה — לפי הסדר
+    const content = n.content.map(fix);
+    return content.some((c, i) => c !== n.content[i]) ? { ...n, content } : n;
+  };
+  const out = fix(doc || { type: 'doc', content: [] });
+  return changed ? out : doc;
 }
 
 /** המסגרת שבנקודה בעמוד (קואורדינטות העמוד), העליונה מביניהן. */

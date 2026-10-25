@@ -1,20 +1,24 @@
 // עורך הטקסט של שטף (כמו Story Editor של InDesign) — ProseMirror, בשמות הצמתים של עורך התמלילים (TipTap):
 // paragraph, heading {level 1–3}, text, hardBreak; סימונים: bold, italic, underline.
+// לכל paragraph / heading יש attrs.id — מזהה פסקה (mbe-format.md סעיף 3): נשמר בעריכה ובשינוי סגנון; בפיצול החלק השני
+// מקבל חדש; כפול מהדבקה — העותק מקבל חדש (התוסף ids למטה).
 // כך מסמך של עורך התמלילים נכנס בלי תרגום, וטקסט שנכתב כאן נשמר כ-JSON שהוא מבין.
 //
 // ProseMirror (MIT) — assets/vendor/prosemirror, נטען רק כשפותחים את העורך.
+
+import { paraId, PARA_ID, withParaIds } from './frames.js';
 
 let PM = null;
 const pm = async () => (PM ||= await import('../vendor/prosemirror/prosemirror.mjs'));
 
 let schema = null;
-function makeSchema(P) {
+export function makeSchema(P) {
   return schema ||= new P.Schema({
     nodes: {
       doc: { content: 'block+' },
-      paragraph: { group: 'block', content: 'inline*', parseDOM: [{ tag: 'p' }], toDOM: () => ['p', 0] },
+      paragraph: { group: 'block', content: 'inline*', attrs: { id: { default: null } }, parseDOM: [{ tag: 'p' }], toDOM: () => ['p', 0] },
       heading: {
-        group: 'block', content: 'inline*', attrs: { level: { default: 1 } }, defining: true,
+        group: 'block', content: 'inline*', attrs: { level: { default: 1 }, id: { default: null } }, defining: true,
         parseDOM: [1, 2, 3].map(l => ({ tag: 'h' + l, attrs: { level: l } })),
         toDOM: n => ['h' + n.attrs.level, 0],
       },
@@ -47,14 +51,55 @@ export function sanitize(doc) {
     const marks = (n.marks || []).filter(m => MARKS.has(m.type) || (lost.add('mark:' + m.type), false)).map(m => ({ type: m.type }));
     return [{ type: 'text', text: n.text, ...(marks.length ? { marks } : {}) }];
   });
+  const id = n => (typeof n.attrs?.id === 'string' && PARA_ID.test(n.attrs.id) ? { id: n.attrs.id } : {});
   const blocks = (doc?.content || []).map(n => {
-    if (n.type === 'heading') return { type: 'heading', attrs: { level: Math.min(3, Math.max(1, n.attrs?.level || 1)) }, content: inline(n.content) };
-    if (n.type === 'paragraph') return { type: 'paragraph', content: inline(n.content) };
+    if (n.type === 'heading') return { type: 'heading', attrs: { level: Math.min(3, Math.max(1, n.attrs?.level || 1)), ...id(n) }, content: inline(n.content) };
+    if (n.type === 'paragraph') return { type: 'paragraph', attrs: id(n), content: inline(n.content) };
     lost.add(n.type);
     const t = textOf(n);
     return { type: 'paragraph', content: t ? [{ type: 'text', text: t }] : [] };
   }).map(b => (b.content.length ? b : { type: b.type, ...(b.attrs ? { attrs: b.attrs } : {}) }));
   return { doc: { type: 'doc', content: blocks.length ? blocks : [{ type: 'paragraph' }] }, lost: [...lost] };
+}
+
+// מזהי פסקה: אחרי כל שינוי — פסקה בלי מזהה מקבלת חדש; מזהה כפול — נשאר אצל הפסקה שהייתה במקום שלו לפני השינוי
+// (בפיצול — החלק הראשון; בהדבקה — המקור), והאחרת מקבלת חדש
+export function idsPlugin(P) {
+  return new P.Plugin({
+    appendTransaction(trs, oldState, state) {
+      if (!trs.some(t => t.docChanged)) return null;
+      const before = new Map();
+      oldState.doc.descendants((n, pos) => { if (n.attrs?.id) before.set(n.attrs.id, pos); return n.isBlock && !n.isTextblock; });
+      const blocks = [];
+      state.doc.descendants((n, pos) => { if (n.isTextblock && 'id' in n.attrs) blocks.push({ n, pos }); return n.isBlock && !n.isTextblock; });
+      const homeOf = id => { const was = before.get(id); return was === undefined ? null : trs.reduce((p, t) => t.mapping.map(p, -1), was); };
+      const owner = new Map();   // מזהה → המיקום שזכאי לו
+      for (const { n, pos } of blocks) {
+        const id = n.attrs.id;
+        if (!id) continue;
+        if (!owner.has(id) || pos === homeOf(id)) owner.set(id, pos);
+      }
+      // שינוי סגנון (setBlockType) מחליף את הצומת בלי המזהה — הפסקה שבמקום של מזהה שנעלם מקבלת אותו בחזרה
+      const orphanAt = new Map();
+      for (const id of before.keys()) if (!owner.has(id)) { const h = homeOf(id); if (h !== null && !orphanAt.has(h)) orphanAt.set(h, id); }
+      let tr = null;
+      const used = new Set(owner.keys());
+      for (const { n, pos } of blocks) {
+        if (n.attrs.id && owner.get(n.attrs.id) === pos) continue;
+        const back = !n.attrs.id && orphanAt.get(pos);
+        if (back && !used.has(back)) {
+          used.add(back);
+          (tr ||= state.tr).setNodeMarkup(pos, null, { ...n.attrs, id: back });
+          continue;
+        }
+        let fresh;
+        do fresh = paraId(); while (used.has(fresh));
+        used.add(fresh);
+        (tr ||= state.tr).setNodeMarkup(pos, null, { ...n.attrs, id: fresh });
+      }
+      return tr && tr.setMeta('addToHistory', false);
+    },
+  });
 }
 
 /**
@@ -64,7 +109,7 @@ export function sanitize(doc) {
 export async function openStory(host, doc, { onState } = {}) {
   const P = await pm();
   const S = makeSchema(P);
-  const node = S.nodeFromJSON(sanitize(doc).doc);
+  const node = S.nodeFromJSON(withParaIds(sanitize(doc).doc));
   const blockStyle = state => {
     const n = state.selection.$from.parent;
     return n.type.name === 'heading' ? 'h' + n.attrs.level : 'body';
@@ -76,9 +121,12 @@ export async function openStory(host, doc, { onState } = {}) {
   const report = state => onState && onState({ style: blockStyle(state), bold: isBold(state) });
   const setStyle = key => key === 'body' ? P.setBlockType(S.nodes.paragraph) : P.setBlockType(S.nodes.heading, { level: Number(key.slice(1)) });
 
+  const ids = idsPlugin(P);
+
   const state = P.EditorState.create({
     doc: node,
     plugins: [
+      ids,
       P.history(),
       P.keymap({
         'Mod-z': P.undo, 'Mod-y': P.redo, 'Mod-Shift-z': P.redo,
