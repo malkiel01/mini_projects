@@ -2033,7 +2033,7 @@ $mbJson = ['type' => 'doc', 'content' => [
 $mbPage = page_normalize(['header' => [['type' => 'paragraph', 'content' => [['type' => 'image', 'attrs' => ['media' => $mbHdrImg, 'width' => 20, 'height' => 20]], ['type' => 'text', 'text' => ' לוגו']]]],
     'margins' => ['top' => 20, 'bottom' => 25, 'right' => 30, 'left' => 15], 'numbering' => ['format' => 'hebrew', 'start' => 3]]);
 $mbRow = doc_find($mbDocId, 'a:99');
-$mbRow = doc_save(doc_set_page($mbRow, $mbPage), $mbJson, 'מסמך לחבילה', 'u1', 'דנה');
+$mbRow = doc_save(doc_set_page($mbRow, $mbPage, 'u1', 'דנה'), $mbJson, 'מסמך לחבילה', 'u1', 'דנה');
 $mbBytes = export_mbe($mbRow);
 $mbV = Mbe::validate($mbBytes);
 $mbErr = array_values(array_filter($mbV, fn($i) => $i['level'] === 'error'));
@@ -2122,6 +2122,20 @@ $enD = doc_new('a:99', 'מסמך חדש', null, null, 'u1', 'דנה');
 $enIm = imagecreatetruecolor(2, 2);
 ob_start(); imagepng($enIm); media_store($enD, (string)ob_get_clean());
 check('…אבל לא: אחרי שמירה, אחרי שינוי שם, או עם תמונה', !doc_untouched(doc_find($enB, 'a:99')) && !doc_untouched(doc_find($enC, 'a:99')) && !doc_untouched(doc_find($enD, 'a:99')));
+
+section('F07 — הגדרות עמוד (my_page / embed_page) בהיסטוריית הגרסאות');
+$f7Id = doc_new('a:99', 'עמוד', null, null, 'u1', 'דנה');
+$f7 = doc_save(doc_find($f7Id, 'a:99'), ['type' => 'doc', 'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'תוכן']]]]], null, 'u1', 'דנה');
+$f7v = (int)$f7['version'];
+db()->prepare("UPDATE versions SET started_at = started_at - 3600 WHERE doc = ?")->execute([$f7Id]);   // מחוץ לחלון האיחוד
+$f7 = doc_set_page($f7, ['size' => 'Letter', 'orientation' => 'landscape'], 'u2', 'רון');
+$f7List = versions_list($f7);
+check('F07: שינוי הגדרות עמוד — גרסה חדשה (מספר עולה), ובהיסטוריה — על שם מי ששינה', (int)$f7['version'] === $f7v + 1 && doc_page($f7)['size'] === 'Letter'
+    && count($f7List) === 2 && $f7List[0]['by'] === 'רון' && $f7List[0]['version'] === $f7v + 1, json_encode($f7List, JSON_UNESCAPED_UNICODE));
+check('F07: התוכן לא משתנה, ובסיס ישן — התנגשות (כמו בשמירה)', json_encode(doc_json($f7)) === json_encode(doc_json(doc_find($f7Id, 'a:99')))
+    && str_contains(json_encode(doc_json($f7), JSON_UNESCAPED_UNICODE), 'תוכן') && throws(fn() => doc_set_page($f7, ['size' => 'A4'], 'u2', 'רון', $f7v), 'conflict'));
+$f7 = doc_restore_version($f7, $f7List[1]['id'], 'u1', 'דנה', $f7['version']);
+check('F07: שחזור הגרסה שלפני — מחזיר גם את הגדרות העמוד', doc_page($f7)['size'] === 'A4' && doc_page($f7)['orientation'] === 'portrait', json_encode(doc_page($f7)));
 
 section('EMF / WMF — נייר מכתבים מ-Word (lib/metafile.php)');
 // DIB של 2×2, 24 ביט (שורה — 8 בתים עם ריפוד), מלמטה למעלה: שורה תחתונה כחולה, עליונה אדומה

@@ -15,9 +15,11 @@ const r = (v) => String(Math.round(v * 1000) / 1000);
  * מכין את הלוח לייצוא: טקסטים → נתיבים (עם אותו מילוי ומתאר), ורשימת פערים.
  * שכבות של אפליקציות אחרות: רסטר / מסגרת עם תמונה — getImage(src) → { href, w, h, rgb, alpha } (rgb ו-alpha
  * דחוסים ב-zlib, alpha = null כשהתמונה אטומה), או null; מסגרת טקסט — הטקסט שלה כקווי מתאר.
+ * background — עמוד המקור של הלוח (מסמך של אפליקציה אחרת), כתמונה כמו של getImage: נכנס ראשון, ובמקום השכבות של
+ * האפליקציה האחרת (הוא כבר מראה אותן כמו שהיא ציירה).
  * מחזיר { surface, layers: [{ layer, opacity, items } | { layer, opacity, image, box }], gaps }.
  */
-export async function prepare(doc, surfaceId, getFont, getImage = null) {
+export async function prepare(doc, surfaceId, getFont, getImage = null, background = null) {
   const surface = doc.surfaces.find(s => s.id === surfaceId) || doc.surfaces[0];
   const gaps = new Set();
   const conv = async (item) => {
@@ -35,9 +37,14 @@ export async function prepare(doc, surfaceId, getFont, getImage = null) {
     return item;
   };
   const layers = [];
+  if (background) {
+    layers.push({ layer: { id: 'source-page', name: 'עמוד המקור' }, opacity: 1, image: background, box: [0, 0, surface.size[0], surface.size[1]] });
+    gaps.add('עמוד המקור → תמונה');
+  }
   const walk = async (list, alpha) => {
     for (const l of list || []) {
       if (l.visible === false) continue;
+      if (background && l.type !== 'vector' && l.type !== 'group') continue;
       const opacity = alpha * (l.opacity ?? 1);
       if (l.blend && l.blend !== 'normal') gaps.add(`blend-mode:${l.blend} → normal`);
       if (l.type === 'group') { await walk(l.children, opacity); continue; }
@@ -55,6 +62,15 @@ export async function prepare(doc, surfaceId, getFont, getImage = null) {
   };
   await walk(surface.layers, 1);
   return { surface, layers, gaps: [...gaps] };
+}
+
+/** עמוד עודף של המקור (הטקסט גלש לעמוד נוסף) — עמוד שכולו התמונה, ל-PDF. */
+export function pageOnly(image, w, h, n) {
+  return {
+    surface: { id: 'page' + n, name: 'עמוד ' + n, size: [w, h] },
+    layers: [{ layer: { id: 'source-page-' + n, name: 'עמוד המקור' }, opacity: 1, image, box: [0, 0, w, h] }],
+    gaps: ['עמוד המקור → תמונה'],
+  };
 }
 
 // ---------- SVG ----------
