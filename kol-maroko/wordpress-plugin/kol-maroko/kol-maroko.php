@@ -2,7 +2,7 @@
 /**
  * Plugin Name: קול מרוקו — קבלת גרסאות
  * Description: מקבל מסטודיו "קול מרוקו" גרסאות חתומות של עמוד אחד (Ed25519), בודק חתימה, זמן, nonce וגרסה, ומציג אותן בתבנית של העמוד הזה בלבד. בלי סיסמאות ובלי גישה מבחוץ לשום דבר אחר. כולל ייצוא של העמוד הקיים לסטודיו.
- * Version: 1.4.0
+ * Version: 1.5.0
  * Requires PHP: 7.4
  * Author: הכלים הדיגיטליים
  * Text Domain: kol-maroko
@@ -21,7 +21,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('KOL_MAROKO_VERSION', '1.4.0');
+define('KOL_MAROKO_VERSION', '1.5.0');
 if (!defined('KOL_MAROKO_AUDIO_PART')) define('KOL_MAROKO_AUDIO_PART', 300 * 1024 * 1024);   // גודל של כל קובץ בייצוא ההקלטות
 define('KOL_MAROKO_PAGE', 'lexicon');
 define('KOL_MAROKO_SKEW', 300);
@@ -176,7 +176,7 @@ function kol_maroko_publish(array $b)
             return kol_maroko_fail('asset_missing', 'חסר קובץ: ' . $a, 409);
         }
     }
-    $v = ['n' => $n, 'html' => (string)($b['html'] ?? ''), 'css' => (string)($b['css'] ?? ''), 'at' => time(),
+    $v = ['n' => $n, 'html' => kol_maroko_clean_html((string)($b['html'] ?? '')), 'css' => (string)($b['css'] ?? ''), 'at' => time(),
         'by' => sanitize_text_field((string)($b['published_by'] ?? ''))];
     kol_maroko_set('v_' . $n, $v);
     $list = (array)kol_maroko_opt('versions', []);
@@ -199,6 +199,42 @@ function kol_maroko_switch(array $b)
     kol_maroko_set('enabled', $on);
     kol_maroko_purge();
     return new WP_REST_Response(['ok' => true, 'enabled' => $on, 'live' => (int)kol_maroko_opt('live', 0)]);
+}
+
+/**
+ * קו הגנה שני: גם גרסה חתומה לא מריצה קוד בדף. נמחקים script, object, embed, base, meta, link; מאפייני on*;
+ * כתובות javascript: / data: (חוץ מתמונה). iframe נשאר רק מבודד (sandbox בלי allow-same-origin) או נגן של
+ * יוטיוב / וימאו. הסטודיו כבר שולח כך — כאן זה למקרה שמישהו השתלט עליו.
+ */
+function kol_maroko_clean_html($html)
+{
+    if ($html === '') return '';
+    $doc = new DOMDocument();
+    libxml_use_internal_errors(true);
+    $doc->loadHTML('<?xml encoding="UTF-8"><body><div id="kol-maroko-root">' . $html . '</div></body>', LIBXML_NONET);
+    libxml_clear_errors();
+    $root = $doc->getElementById('kol-maroko-root');
+    if (!$root) return '';
+    foreach (iterator_to_array($root->getElementsByTagName('*')) as $el) {
+        if (!$el->parentNode) continue;
+        $tag = strtolower($el->tagName);
+        if (in_array($tag, ['script', 'object', 'embed', 'applet', 'base', 'meta', 'link', 'frame', 'frameset', 'portal'], true)) { $el->parentNode->removeChild($el); continue; }
+        if ($tag === 'iframe') {
+            $sb = $el->hasAttribute('sandbox') ? strtolower($el->getAttribute('sandbox')) : null;
+            $player = preg_match('~^https://(www\.youtube-nocookie\.com/embed/|player\.vimeo\.com/video/)~', $el->getAttribute('src'));
+            if (!$player && ($sb === null || strpos($sb, 'allow-same-origin') !== false || strpos($sb, 'allow-top-navigation') !== false)) { $el->parentNode->removeChild($el); continue; }
+        }
+        foreach (iterator_to_array($el->attributes) as $a) {
+            $n = strtolower($a->name);
+            $u = strtolower(preg_replace('/[\x00-\x20]+/', '', html_entity_decode($a->value, ENT_QUOTES | ENT_HTML5, 'UTF-8')));
+            $badUrl = in_array($n, ['href', 'src', 'action', 'formaction', 'poster', 'background', 'xlink:href', 'data'], true)
+                && preg_match('/^(javascript|vbscript|data|blob):/', $u) && !preg_match('/^data:image\/(png|jpe?g|gif|webp);/', $u);
+            if (strpos($n, 'on') === 0 || $badUrl || ($n === 'srcdoc' && $tag !== 'iframe') || in_array($n, ['formaction', 'http-equiv'], true)) $el->removeAttribute($a->name);
+        }
+    }
+    $out = '';
+    foreach ($root->childNodes as $c) $out .= $doc->saveHTML($c);
+    return $out;
 }
 
 /** ניקוי מטמון של העמוד — וורדפרס ותוספי מטמון נפוצים, אם קיימים. */
@@ -240,28 +276,51 @@ add_action('wp_enqueue_scripts', function () {
 }, 20);
 
 /**
- * גרסה עם קוד משלה למילון (data-kol-own, מלשונית "קוד" בסטודיו): ה-CSS וה-JS של ערכת הנושא לא נטענים בעמוד הזה —
- * אחרת שני סקריפטים היו מטפלים באותם כפתורים. הנתונים שערכת הנושא מעבירה לסקריפט שלה (kadishaLex: כתובת ה-AJAX,
- * nonce למשוב) — נשמרים ומודפסים לפני הקוד מהגרסה.
+ * קוד מהסטודיו לא רץ בדף של האתר (הכרעה 2026-10-25). שני סימונים בגרסה, למילון בלבד:
+ *  - data-kol-css   — ה-CSS של המילון בגרסה (מנוקה וממוקד בסטודיו): ה-CSS של ערכת הנושא לא נטען בעמוד הזה.
+ *    ה-JS של ערכת הנושא — כן (הוא שלה, לא מהסטודיו).
+ *  - data-kol-frame — ה-JS נערך בסטודיו: המילון כולו במסגרת מבודדת (sandbox בלי allow-same-origin — בלי עוגיות,
+ *    בלי גישה לדף, ל-wp-admin או ל-AJAX). ה-CSS וה-JS של ערכת הנושא לא נטענים. הקוד היחיד בדף — של התוסף הזה
+ *    (קבוע): גובה המסגרת, מיקום החלונות הקופצים, ושליחת משוב על מילה — הפעולה האחת, בשדות קבועים.
  */
-const KOL_MAROKO_OWN = ['kadisha-lexicon'];
+const KOL_MAROKO_HANDLES = ['kadisha-lexicon'];
 
-function kol_maroko_own_handles()
+function kol_maroko_marks()
 {
     $v = kol_maroko_active_version();
-    if (!$v || !preg_match_all('/data-kol-own="([a-z0-9_-]+)"/', $v['html'], $m)) return [];
-    return array_values(array_intersect(KOL_MAROKO_OWN, $m[1]));
+    $out = ['css' => [], 'frame' => []];
+    if (!$v) return $out;
+    foreach (['css', 'frame'] as $k) {
+        if (preg_match_all('/data-kol-' . $k . '="([a-z0-9_-]+)"/', $v['html'], $m)) $out[$k] = array_values(array_intersect(KOL_MAROKO_HANDLES, $m[1]));
+    }
+    return $out;
 }
 
 add_action('wp_enqueue_scripts', function () {
     $id = (int)kol_maroko_opt('page_id', 0);
     if (!$id || !is_page($id) || isset($_GET['kol-maroko-original'])) return;
-    foreach (kol_maroko_own_handles() as $h) {
-        $GLOBALS['kol_maroko_data'][$h] = wp_scripts()->get_data($h, 'data');
-        wp_dequeue_script($h);
-        wp_dequeue_style($h);
-    }
+    $m = kol_maroko_marks();
+    foreach (array_unique(array_merge($m['css'], $m['frame'])) as $h) wp_dequeue_style($h);
+    foreach ($m['frame'] as $h) wp_dequeue_script($h);
 }, 100);
+
+/** הקוד הקבוע של התוסף למסגרת המבודדת. מקבל הודעות רק מהמסגרת עצמה. */
+function kol_maroko_frame_bridge()
+{
+    $fb = function_exists('kadisha_lexicon_get') && !empty(kadisha_lexicon_get()['feedback_email']);
+    $cfg = wp_json_encode(['ajax' => admin_url('admin-ajax.php'), 'nonce' => $fb ? wp_create_nonce('kadisha_lex_feedback') : '', 'feedback' => $fb]);
+    return '<script>(function(C){var F=function(){return document.querySelector("iframe[data-kol-frame]")};'
+        . 'var view=function(){var f=F();if(!f||!f.contentWindow)return;var r=f.getBoundingClientRect();f.contentWindow.postMessage({kolView:{top:-r.top,h:innerHeight}},"*")};'
+        . 'addEventListener("scroll",view,{passive:true});addEventListener("resize",view);'
+        . 'addEventListener("message",function(e){var f=F();if(!f||e.source!==f.contentWindow)return;var d=e.data||{};'
+        . 'if(d.kolFrame){f.style.height=Math.min(400000,Math.max(200,+d.h||0))+"px";view();return;}'
+        . 'if(!d.kolFeedback||!C.feedback)return;var x=d.kolFeedback,fd=new FormData();'
+        . 'fd.append("action","kadisha_lex_send_feedback");fd.append("_nonce",C.nonce);'
+        . '["word_id","name","email","message","website"].forEach(function(k){fd.append(k,String(x[k]==null?"":x[k]).slice(0,3000))});'
+        . 'var rid=String(d.rid||"").slice(0,20),back=function(s,b){e.source.postMessage({kolFeedbackReply:rid,status:s,body:String(b).slice(0,2000)},"*")};'
+        . 'fetch(C.ajax,{method:"POST",body:fd,credentials:"same-origin"}).then(function(r){return r.text().then(function(t){back(r.status,t)})}).catch(function(){back(0,"")});'
+        . '});})(' . $cfg . ');</script>';
+}
 
 /** ה-HTML של הגרסה, עם הכתובת של הקבצים כאן. */
 function kol_maroko_render()
@@ -270,9 +329,14 @@ function kol_maroko_render()
     if (!$v) return '';
     $base = esc_url(kol_maroko_dir()['url']);
     $css = str_ireplace('</style', '', str_replace('{{KOL_ASSETS}}', $base, $v['css']));
-    $data = '';
-    foreach ((array)($GLOBALS['kol_maroko_data'] ?? []) as $d) if ($d) $data .= '<script>' . $d . '</script>';
-    return '<style id="kol-maroko-css">' . $css . '</style>' . $data . str_replace('{{KOL_ASSETS}}', $base, $v['html']);
+    $bridge = kol_maroko_marks()['frame'] ? kol_maroko_frame_bridge() : '';
+    // קטעי קוד (מסגרות מבודדות) עם גובה אוטומטי — המסגרת מדווחת, והקוד הקבוע של התוסף מעדכן
+    if (strpos($v['html'], 'data-kol-auto') !== false) {
+        $bridge .= '<script>addEventListener("message",function(e){var d=e.data;if(!d||!d.kolCode)return;'
+            . 'var f=document.querySelector(\'iframe[data-kol-code="\'+String(d.kolCode).replace(/[^a-z0-9]/g,"")+\'"]\');'
+            . 'if(f&&e.source===f.contentWindow)f.style.height=Math.min(4000,Math.max(40,+d.h||0))+"px";});</script>';
+    }
+    return '<style id="kol-maroko-css">' . $css . '</style>' . str_replace('{{KOL_ASSETS}}', $base, $v['html']) . $bridge;
 }
 
 // ── מסך ההגדרות ───────────────────────────────────────────

@@ -366,3 +366,162 @@ const LEX_TPL_HELP = [
     'topics (הנושאים)' => 'slug, name, count',
     'words (המילים)' => 'id, wp_id, data_id, word, search, search_full, slugs, topics (name), has_topics, single, meaning (HTML), audio (כתובת), ext_id, feedback_id',
 ];
+
+// ── אבטחה: מה שנכתב בכלי לא רץ באתר (הכרעה 2026-10-25, סגירת החור שמצא צ'אט האפיון) ─────────
+//
+// HTML ו-CSS מהקבצים נשארים בעמוד (גוגל סורק את המילים), אבל מנוקים: בלי סקריפט, בלי on*, בלי javascript:, בלי
+// מסגרות, ו-CSS שחל רק בתוך המילון. JS שנערך בכלי — לעולם לא באתר עצמו: המילון כולו עובר למסגרת מבודדת
+// (sandbox בלי allow-same-origin), ושם אין גישה לעוגיות, ל-parent, ל-wp-admin או ל-admin-ajax. הגשר היחיד
+// החוצה — שליחת משוב על מילה, בשדות קבועים (התוסף, wordpress-plugin).
+
+const TPL_DROP = ['script', 'iframe', 'frame', 'frameset', 'object', 'embed', 'applet', 'base', 'meta', 'link', 'style', 'noscript', 'template', 'portal'];
+const TPL_URL_ATTRS = ['href', 'src', 'action', 'formaction', 'poster', 'background', 'xlink:href', 'data', 'cite', 'srcset', 'ping'];
+
+/** ה-HTML שהתבנית הפיקה — בלי שום דרך להריץ קוד בדף של האתר. */
+function tpl_clean_html(string $html): string
+{
+    $doc = new DOMDocument();
+    $prev = libxml_use_internal_errors(true);
+    $doc->loadHTML('<?xml encoding="UTF-8"><body><div id="kol-tpl-root">' . $html . '</div></body>', LIBXML_NONET | LIBXML_HTML_NODEFDTD);
+    libxml_clear_errors();
+    libxml_use_internal_errors($prev);
+    $root = $doc->getElementById('kol-tpl-root');
+    if (!$root) return '';
+    $xp = new DOMXPath($doc);
+    foreach (iterator_to_array($xp->query('.//comment()', $root)) as $c) $c->parentNode->removeChild($c);
+    foreach (iterator_to_array($root->getElementsByTagName('*')) as $el) {
+        /** @var DOMElement $el */
+        if (!$el->parentNode) continue;
+        $tag = strtolower($el->localName ?? $el->tagName);
+        if (in_array($tag, TPL_DROP, true)) { $el->parentNode->removeChild($el); continue; }
+        foreach (iterator_to_array($el->attributes) as $a) {
+            $n = strtolower($a->name);
+            $v = $a->value;
+            $bad = str_starts_with($n, 'on') || in_array($n, ['srcdoc', 'formaction', 'http-equiv', 'is'], true)
+                || ($tag === 'form' && in_array($n, ['action', 'method', 'target'], true))
+                || (in_array($n, TPL_URL_ATTRS, true) && tpl_bad_url($v))
+                || ($n === 'style' && preg_match('/expression\s*\(|javascript:|vbscript:|behavior\s*:|-moz-binding|@import|url\s*\(\s*["\']?+\s*(?!https:|#|data:image\/|\{\{KOL_ASSETS\}\}|api\.php\?action=media&)/i', $v));
+            if ($bad) { $el->removeAttribute($a->name); continue; }
+            // ה-JS של ערכת הנושא מכניס ערכי data-* ב-innerHTML (קרא עוד / הסתר) — רק טקסט
+            if (str_starts_with($n, 'data-') && preg_match('/[<>]/', $v)) $el->setAttribute($a->name, str_replace(['<', '>'], '', $v));
+        }
+        if ($tag === 'a' && $el->getAttribute('target') === '_blank') $el->setAttribute('rel', 'noopener noreferrer');
+    }
+    $out = '';
+    foreach ($root->childNodes as $n) $out .= $doc->saveHTML($n);
+    return $out;
+}
+
+function tpl_bad_url(string $v): bool
+{
+    $u = strtolower(preg_replace('/[\x00-\x20\x7f]+/', '', html_entity_decode($v, ENT_QUOTES | ENT_HTML5, 'UTF-8')));
+    if (preg_match('/^data:image\/(png|jpe?g|gif|webp);/', $u)) return false;
+    return (bool)preg_match('/^(javascript|vbscript|data|blob|filesystem):/', $u);
+}
+
+/**
+ * CSS שחל רק בתוך המילון: כל בורר מקבל את המכל בתחילתו; html / body / :root הופכים למכל עצמו. @import נופל,
+ * ובלי expression / javascript: / url() שאינו https.
+ */
+function css_scope(string $css, string $scope = '.kadisha-lexicon-page'): string
+{
+    $css = preg_replace('~/\*.*?\*/~s', '', $css);
+    $css = preg_replace('/@import[^;]*;?/i', '', $css);
+    $css = preg_replace('/expression\s*\(|javascript:|vbscript:|behavior\s*:|-moz-binding/i', '', $css);
+    $css = preg_replace_callback('/url\(\s*(["\']?)([^)"\']*)\1\s*\)/i', fn($m) => preg_match('~^(https://|data:(image|font)/|#|\{\{KOL_ASSETS\}\}|api\.php\?action=media&)~i', trim($m[2])) ? $m[0] : 'none', $css);
+    return css_scope_block($css, $scope);
+}
+
+function css_scope_block(string $css, string $scope): string
+{
+    $out = '';
+    $i = 0;
+    $len = strlen($css);
+    while ($i < $len) {
+        $open = strpos($css, '{', $i);
+        if ($open === false) break;
+        $sel = trim(substr($css, $i, $open - $i));
+        // סוף הבלוק — לפי איזון סוגריים
+        $depth = 0;
+        for ($j = $open; $j < $len; $j++) {
+            if ($css[$j] === '{') $depth++;
+            elseif ($css[$j] === '}' && --$depth === 0) break;
+        }
+        $body = substr($css, $open + 1, $j - $open - 1);
+        $i = $j + 1;
+        if ($sel === '') continue;
+        if (preg_match('/^@(media|supports|container|layer)\b/i', $sel)) {
+            $out .= $sel . '{' . css_scope_block($body, $scope) . '}';
+        } elseif (preg_match('/^@(font-face|keyframes|-webkit-keyframes|property|counter-style)\b/i', $sel)) {
+            $out .= $sel . '{' . $body . '}';
+        } elseif ($sel[0] === '@') {
+            continue;                                                   // @page, @namespace… — לא נחוצים כאן
+        } else {
+            $sels = array_map(function ($s) use ($scope) {
+                $s = trim($s);
+                if ($s === '') return '';
+                if (str_starts_with($s, $scope)) return $s;
+                // body.x → המכל.x; body .x → המכל .x
+                if (preg_match('/^(?:html|body|:root)(?![\w-])(\s*)(.*)$/is', $s, $m)) return $m[2] === '' ? $scope : $scope . ($m[1] !== '' ? ' ' : '') . $m[2];
+                return $scope . ' ' . $s;
+            }, explode(',', $sel));
+            $out .= implode(',', array_filter($sels)) . '{' . $body . '}';
+        }
+    }
+    return $out;
+}
+
+/** ה-CSS של ערכת הנושא (style.css) — רק למסגרת המבודדת, שאין בה את מה שהאתר טוען. */
+function theme_style_css(): string
+{
+    if (($c = setting('theme_style_css')) !== null) return $c;
+    $all = (string)setting('preview_css', '');
+    $from = mb_strpos($all, 'חברה קדישא המערבית - CSS');
+    if ($from === false) return '';
+    $from = (int)mb_strrpos(mb_substr($all, 0, $from), '/*');
+    $to = mb_strpos($all, '/**' . "\n" . ' * קול מרוקו - עיצוב עמוד המילון');
+    return $to === false || $to < $from ? mb_substr($all, $from) : mb_substr($all, $from, $to - $from);
+}
+
+/**
+ * המילון במסגרת מבודדת — כשה-JS נערך בכלי. sandbox בלי allow-same-origin: מקור אטום, בלי עוגיות, בלי parent/top,
+ * בלי localStorage. בפנים: העיצוב של ערכת הנושא, הקבצים, וגשר קבוע (לא נערך): localStorage בזיכרון, kadishaLex שמפנה
+ * את שליחת המשוב להודעה לדף (התוסף שולח אותה בשדות קבועים), גובה, ומיקום החלונות הקופצים מול המסך.
+ */
+function lexicon_frame(string $id, string $html, string $css, string $js, array $p): string
+{
+    $cfg = json_encode(['id' => $id, 'feedback' => $p['feedback'] ? 1 : 0, 'more' => $p['more_label'], 'less' => $p['less_label']], JSON_UNESCAPED_UNICODE);
+    $esc = fn(string $s) => str_ireplace(['</script', '</style'], ['<\\/script', '<\\/style'], $s);
+    $doc = '<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+        . '<base target="_blank"><link rel="stylesheet" href="' . LEX_FONTS . '">'
+        . '<style>html,body{margin:0;background:transparent}' . $esc(theme_style_css()) . "\n" . $esc($css)
+        . '.kadisha-lex-feedback-modal,.kadisha-lex-modal{position:absolute!important;top:var(--kol-vt,0)!important;height:var(--kol-vh,100vh)!important;bottom:auto!important}</style>'
+        . '<script>' . str_replace('__CFG__', $cfg, LEX_FRAME_SHIM) . '</script></head><body class="page-kadisha">' . $html
+        . ($js !== '' ? '<script>' . $esc($js) . '</script>' : '') . '</body></html>';
+    return '<iframe class="kol-lex-frame" data-kol-frame="kadisha-lexicon" data-kol-id="' . e($id) . '" title="קול מרוקו"'
+        . ' sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-forms" referrerpolicy="no-referrer"'
+        . ' style="display:block;width:100%;border:0;height:2400px" srcdoc="' . e($doc) . '"></iframe>';
+}
+
+const LEX_FRAME_SHIM = <<<'JS'
+(function(C){
+  var mem={};
+  try{Object.defineProperty(window,'localStorage',{configurable:true,value:{getItem:function(k){return Object.prototype.hasOwnProperty.call(mem,k)?mem[k]:null},setItem:function(k,v){mem[k]=String(v)},removeItem:function(k){delete mem[k]},clear:function(){mem={}}}});}catch(e){}
+  window.kadishaLex={ajaxurl:'kol-bridge:feedback',canEdit:0,nonce:'',canEditIntro:0,introNonce:'',introSections:[],introMoreAfter:-1,
+    introMoreLabel:C.more,introLessLabel:C.less,feedbackEnabled:C.feedback,feedbackNonce:'-'};
+  var n=0,wait={},of=window.fetch;
+  window.fetch=function(u,o){
+    if(String(u).indexOf('kol-bridge:')!==0)return of.apply(this,arguments);
+    var x={};if(o&&o.body&&o.body.forEach)o.body.forEach(function(v,k){x[k]=String(v)});
+    var rid='r'+(++n);parent.postMessage({kolFeedback:{word_id:x.word_id,name:x.name,email:x.email,message:x.message,website:x.website},rid:rid,frame:C.id},'*');
+    return new Promise(function(ok){wait[rid]=function(d){ok(new Response(d.body||'{}',{status:d.status||502,headers:{'Content-Type':'application/json'}}))}});
+  };
+  addEventListener('message',function(e){var d=e.data||{};
+    if(d.kolFeedbackReply&&wait[d.kolFeedbackReply]){wait[d.kolFeedbackReply](d);delete wait[d.kolFeedbackReply];}
+    if(d.kolView){var r=document.documentElement.style;r.setProperty('--kol-vt',Math.max(0,+d.kolView.top||0)+'px');r.setProperty('--kol-vh',Math.max(200,+d.kolView.h||0)+'px');}
+  });
+  var last=0,send=function(){var h=Math.ceil(document.body?document.body.getBoundingClientRect().height:0);if(h&&h!==last){last=h;parent.postMessage({kolFrame:C.id,h:h},'*');}};
+  addEventListener('load',send);addEventListener('DOMContentLoaded',function(){send();if(window.ResizeObserver)new ResizeObserver(send).observe(document.body);});
+  setInterval(send,1500);
+})(__CFG__);
+JS;

@@ -357,27 +357,20 @@ function page_render(array $page, bool $editor = false, ?callable $url = null): 
     }
     $css[] = "$P .kol-long .wp-doc{color:inherit;max-width:100%}$P .kol-long img{max-width:100%}";
     $css[] = "$P iframe.kol-code{display:block;width:100%;border:0;background:transparent}";
-    // גובה אוטומטי לקטעי קוד: המסגרת מדווחת את הגובה שלה. בסטודיו — התצוגה כבר מקשיבה (studio.js)
-    if (!$editor && str_contains($html, 'data-kol-auto')) {
-        $html .= '<script>addEventListener("message",function(e){var d=e.data;if(!d||!d.kolCode)return;'
-            . 'var f=document.querySelector(\'iframe[data-kol-code="\'+String(d.kolCode).replace(/[^a-z0-9]/g,"")+\'"]\');'
-            . 'if(f&&e.source===f.contentWindow)f.style.height=Math.min(4000,Math.max(40,+d.h||0))+"px";});</script>';
-    }
+    // גובה אוטומטי לקטעי קוד: המסגרת מדווחת את הגובה שלה. בסטודיו — התצוגה מקשיבה (studio.js); באתר — התוסף (קוד
+    // קבוע שלו; הגרסה עצמה בלי שום <script>)
     // העיצוב שיובא מהאתר (ה-CSS של העמוד באלמנטור); בסטודיו — גם ה-CSS הבסיסי של אלמנטור, שבאתר כבר נטען
     if ($ic = imported_css()) $css[] = $ic;
     if ($editor && ($pc = setting('preview_css'))) $css[] = $pc;
     $out = ['html' => $html, 'css' => implode("\n", $css)];
-    // בסטודיו — ה-JS של התבנית (חיפוש, נושאים, שמע, מבוא), שבאתר נטען ממילא; רץ בתוך התצוגה המבודדת
-    // ה-JS של המילון: מקבצי הקוד (אם יש) או של ערכת הנושא. בסטודיו — רץ בתוך התצוגה המבודדת; באתר — רק של הקבצים
-    // (את של ערכת הנושא האתר טוען ממילא), בסוף העמוד, והתוסף מוריד את של ערכת הנושא (data-kol-own)
+    // ה-JS של המילון בסטודיו: מקבצי הקוד (אם יש) או של ערכת הנושא — רץ בתוך התצוגה המבודדת
     if (str_contains($html, 'kadisha-lexicon-page')) {
         $js = $GLOBALS['kol_page_js'] ?? null;
         if ($editor) {
             if ($js ??= setting('preview_js')) $out['js'] = $js;
             $out['fonts'] = LEX_FONTS;
-        } elseif ($js) {
-            $out['html'] .= '<script id="kol-maroko-js">' . str_ireplace('</script', '<\\/script', $js) . '</script>';
         }
+        // באתר — אף פעם לא JS מהקבצים בדף עצמו (רק במסגרת המבודדת, lexicon_frame)
     }
     unset($GLOBALS['kol_page_js']);
     // kol-file:<מזהה> (בתוכן שיובא ובסגנונות) → הכתובת של הקובץ: בסטודיו חתומה, בפרסום — {{KOL_ASSETS}}
