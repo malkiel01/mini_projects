@@ -114,16 +114,33 @@ export function field(label, input, hint) {
 }
 
 /** סרגל טווח + שדה מספר, מסונכרנים. */
-export function rangeField(label, { min, max, step = 1, value, onInput, onCommit, unit = '' }) {
+/**
+ * מחוון עם שדה מספר. ‏log — המחוון לוגריתמי ויש −/+ (צעד של ~5%): בטווח רחב (גודל טקסט 6–1169 בדף A4) מחוון
+ * לינארי זז בקפיצות של פיקסלים רבים לכל פיקסל אצבע, וגודל קטן כמעט בלתי אפשרי לכוון (D7 ב-spec/11-qa.md).
+ */
+export function rangeField(label, { min, max, step = 1, value, onInput, onCommit, unit = '', log = false }) {
     const id = 'f' + (++fieldSeq);
-    const range = h('input', { type: 'range', id, min, max, step, value });
+    const STEPS = 1000;
+    const toPos = v => (log ? Math.round((Math.log(v / min) / Math.log(max / min)) * STEPS) : v);
+    const fromPos = p => (log ? Math.round(min * Math.pow(max / min, p / STEPS) * 10) / 10 : +p);
+    const range = h('input', { type: 'range', id, min: log ? 0 : min, max: log ? STEPS : max, step: log ? 1 : step, value: toPos(value) });
     const numIn = h('input', { type: 'number', min, max, step, value: Math.round(value * 100) / 100, class: 'num', 'aria-label': label });
-    const set = v => { range.value = v; numIn.value = Math.round(v * 100) / 100; onInput(+v); };
-    range.addEventListener('input', () => set(range.value));
+    const set = (v, fromRange) => {
+        v = Math.min(max, Math.max(min, +v));
+        if (!fromRange) range.value = toPos(v);
+        numIn.value = Math.round(v * 100) / 100;
+        onInput(v);
+    };
+    range.addEventListener('input', () => set(fromPos(range.value), true));
     numIn.addEventListener('input', () => { if (numIn.value !== '') set(numIn.value); });
     range.addEventListener('change', () => onCommit?.());
     numIn.addEventListener('change', () => onCommit?.());
-    return h('div', { class: 'field' }, h('label', { for: id }, label, unit ? h('span', { class: 'muted' }, ' ' + unit) : null), h('div', { class: 'range-row' }, range, numIn));
+    const nudge = dir => { const v = +numIn.value; set(dir > 0 ? Math.max(v + 1, Math.round(v * 1.05)) : Math.min(v - 1, Math.round(v / 1.05))); onCommit?.(); };
+    const steppers = log ? [
+        h('button', { type: 'button', class: 'icon-btn step', 'aria-label': `הקטנת ${label}`, onclick: () => nudge(-1) }, '−'),
+        h('button', { type: 'button', class: 'icon-btn step', 'aria-label': `הגדלת ${label}`, onclick: () => nudge(1) }, '+'),
+    ] : [];
+    return h('div', { class: 'field' }, h('label', { for: id }, label, unit ? h('span', { class: 'muted' }, ' ' + unit) : null), h('div', { class: 'range-row' }, range, ...steppers, numIn));
 }
 
 /** בורר מקטעים בשורה אחת (radio נגיש). */
