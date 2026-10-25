@@ -219,7 +219,7 @@ function publish_checks(array $page): array
             $ids = array_values(array_unique(array_filter(array_map(fn($x) => file_id($x['audio']), $words))));
             $have = files_meta($ids);
             foreach ($words as $x) if (file_id($x['audio']) && !isset($have[$x['audio']])) $errors[] = ['id' => $w['id'], 'msg' => "ההקלטה של \"{$x['word']}\" חסרה — הקליטו או בחרו אותה מחדש ב-📚 מילים"];
-            $files += $have;
+            $files += array_filter($have, fn($f) => empty($f['origin']));   // עותקים של הקלטות מהאתר — לא נשלחים
             if (!$words) $warnings[] = ['id' => $w['id'], 'msg' => 'אין מילים במילון'];
         }
     }

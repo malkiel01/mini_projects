@@ -192,6 +192,7 @@ const Publish = (() => {
         h('a', { class: 'btn ghost', href: DOCS + 'cloudflare.md', target: '_blank', rel: 'noopener' }, '☁️ Cloudflare')),
       ping,
       importBlock(host, imp.imported),
+      audioBlock(),
       aiBlock(host));
   }
 
@@ -239,6 +240,41 @@ const Publish = (() => {
       h('p', { class: 'hint' }, 'כל התוכן, ההקלטות והעיצוב של העמוד היום — לטיוטה, לעריכה. בוורדפרס: הגדרות ← קול מרוקו ← "⬇️ ייצוא העמוד", ואת הקובץ שירד מעלים כאן.'),
       last ? h('p', { class: 'hint' }, `ייבוא אחרון: ${when(last.at)} · ${last.meta?.url || ''}`) : null,
       input, h('button', { type: 'button', class: 'btn primary', onclick: () => input.click() }, '📥 העלאת קובץ הייצוא'), ups, result);
+  }
+
+  // ההקלטות מהאתר → עותק בכלי. הקבצים מהתוסף (1.3): "ייצוא ההקלטות", כמה חלקים — אפשר לבחור את כולם יחד
+  function audioBlock() {
+    const ups = h('div', { class: 'ups' });
+    const out = h('div');
+    const input = h('input', { type: 'file', accept: '.zip,application/zip', multiple: true, hidden: true, onchange: async () => {
+      const files = [...input.files];
+      input.value = '';
+      const tot = { files: 0, linked: 0, failed: [] };
+      let remaining = null;
+      for (const f of files) {
+        const row = Media.progressRow();
+        ups.append(row.el);
+        try {
+          const id = await Media.upload(f, (got, total, left, note) => row.set(f.name, got, total, left, note), 'import');
+          row.set(f.name, 1, 1, null, 'מכניס את ההקלטות ומקשר למילים…');
+          const st = (await api('audio_import', { id })).stats;
+          row.set(f.name, 1, 1, null, `✓ חלק ${st.part} מתוך ${st.parts}: ${st.files} הקלטות${st.already ? ` · ${st.already} כבר היו` : ''}`);
+          tot.files += st.files; tot.linked += st.linked; tot.failed.push(...st.failed);
+          remaining = st.remaining;
+        } catch (e) {
+          row.el.classList.add('error');
+          row.el.querySelector('.line .muted').textContent = e.message;
+        }
+      }
+      out.replaceChildren(h('div', { class: 'summary' },
+        h('p', {}, h('b', { style: 'color:var(--ok)' }, `✓ ${tot.files} הקלטות נכנסו לכלי`), ` · ${tot.linked} מילים קושרו`),
+        remaining ? h('p', { class: 'hint' }, `${remaining} מילים עדיין עם הקלטה רק באתר — כנראה חסר חלק. העלו גם אותו.`) : h('p', { class: 'hint' }, 'כל ההקלטות בכלי. רואים אותן ב-🗂️ קבצים וב-📚 מילים.'),
+        tot.failed.length ? h('div', { class: 'warnbox' }, h('b', {}, `${tot.failed.length} לא נכנסו:`), h('ul', {}, tot.failed.slice(0, 30).map(x => h('li', {}, x)))) : null));
+    } });
+    return h('section', {},
+      h('h2', { class: 'sec-title' }, '🎙️ ייבוא ההקלטות'),
+      h('p', { class: 'hint' }, 'עותק של כל ההקלטות של המילים בכלי — לשמיעה, להחלפה ולהורדה. בוורדפרס: הגדרות ← קול מרוקו ← "ייצוא ההקלטות" (כמה קבצים). מעלים כאן את כולם. באתר הן נשארות ולא נשלחות שוב.'),
+      input, h('button', { type: 'button', class: 'btn primary', onclick: () => input.click() }, '🎙️ העלאת קובצי ההקלטות'), ups, out);
   }
 
   function aiBlock(host) {

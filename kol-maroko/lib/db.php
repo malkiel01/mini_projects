@@ -201,6 +201,11 @@ function migrate(PDO $pdo): void
             );
             ALTER TABLE versions ADD COLUMN words TEXT;
             SQL,
+        // עותק בכלי של הקלטה מהאתר: origin — הכתובת שלה שם. בפרסום מפנים אליה, ולא שולחים את הקובץ שוב
+        9 => <<<'SQL'
+            ALTER TABLE files ADD COLUMN origin TEXT;
+            CREATE INDEX idx_files_origin ON files(origin);
+            SQL,
     ];
     foreach ($steps as $n => $sql) {
         if ($v >= $n) continue;
