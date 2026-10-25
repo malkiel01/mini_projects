@@ -93,6 +93,7 @@ IDML, CMYK והפרדות צבע, חלונות צף מתקדמים, תוכן ע�
 - [x] לבקש כבר עכשיו הצטרפות לליבה (`mbe-core/apps.json`) — כדי שהשמירה לא תיחסם כמו אצל וקטורי — הוגש: `requests/layout-studio-core.md`
 - [x] להגיש את בקשת סדר המסגרות בשטף (`flowIndex`) מוקדם — היא משנה את המודל — הוגש: `requests/layout-studio-frames.md` (רשימה `frames` בשטף, לא `flowIndex`)
 - [ ] `shapeLine` (HarfBuzz + bidi) — מועמד למודול המשותף "גופנים עבריים ו-bidi" בדפדפן; גם עורך התמלילים והוקטורי מציירים עברית
+- [ ] להציג שכבות `vector` עם `use` (סמלים) ו-`clip` (מסכה) של וקטורי גרסה 2 — עד אז `renditions/drawing.svg` (`mbe-format.md` סעיף 3)
 
 ## יומן
 
