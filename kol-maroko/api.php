@@ -8,7 +8,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/lib/members.php';
-require_once __DIR__ . '/lib/draft.php';
+require_once __DIR__ . '/lib/longtext.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -28,7 +28,7 @@ $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 // media — קובץ בכתובת חתומה לזמן מוגבל (התצוגה המבודדת בסטודיו לא שולחת עוגייה). בלי חתימה — 403.
 const PUBLIC_ACTIONS = ['embed_key', 'media'];
 const POST_ACTIONS = ['member_add', 'member_set', 'member_remove', 'request_dismiss', 'lock', 'draft_save', 'render', 'revision_restore',
-                      'upload_init', 'upload_chunk', 'upload_done', 'file_delete', 'disk_cap'];
+                      'upload_init', 'upload_chunk', 'upload_done', 'file_delete', 'disk_cap', 'editor_session', 'longtext_sync'];
 
 try {
     if (in_array($action, POST_ACTIONS, true) && $method !== 'POST') throw new ApiError('נדרש POST', 405);
@@ -40,7 +40,7 @@ try {
     if ($user && $method === 'POST') check_csrf($user);
 
     $result = match ($action) {
-        'embed_key' => ['client' => 'kol-maroko', 'keys' => []],
+        'embed_key' => wp()->publicKeys(),
         'me' => $user
             ? ['user' => $user, 'csrf' => csrf_token($user['sub']), 'roles' => ROLES]
             : throw new ApiError('נדרשת כניסה דרך הכלים הדיגיטליים', 401),
@@ -63,6 +63,8 @@ try {
         'disk_cap' => disk_cap_set(require_role($user, 'owner'), $body),
         'file' => file_send(file_row((string)(require_role($user, 'editor') ? ($_GET['id'] ?? '') : '')), isset($_GET['download'])),
         'media' => file_send(media_check($_GET)),
+        'editor_session' => editor_session(require_role($user, 'editor'), $body),
+        'longtext_sync' => longtext_sync(require_role($user, 'editor'), $body),
         'audit' => audit_list(require_role($user, 'owner'), $_GET),
         default => throw new ApiError('פעולה לא מוכרת', 404),
     };

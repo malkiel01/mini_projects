@@ -8,6 +8,7 @@ const Studio = (() => {
   const TYPES = {
     heading: { icon: '🔠', label: 'כותרת', props: () => ({ text: 'כותרת חדשה', level: 2 }) },
     text: { icon: '📝', label: 'טקסט', props: () => ({ html: '<p>טקסט חדש</p>' }) },
+    longtext: { icon: '✍️', label: 'טקסט ארוך', props: () => ({ doc: '' }) },
     button: { icon: '🔘', label: 'כפתור', props: () => ({ label: 'לחצו כאן', href: '', variant: 'solid' }) },
     divider: { icon: '➖', label: 'קו מפריד', props: () => ({}) },
     spacer: { icon: '↕️', label: 'רווח', props: () => ({ height: 32 }) },
@@ -337,6 +338,9 @@ parent.postMessage({kol:'ready'},'*');
         field('קישור', h('input', { value: p.href, dir: 'ltr', inputmode: 'url', placeholder: 'https://', disabled: S.readonly,
           oninput: e => set(p, 'href')(e.target.value.trim()) })),
         h('div', { class: 'f' }, h('span', {}, 'סגנון'), seg('variant', { solid: 'מלא', outline: 'מסגרת' }, p.variant, v => set(p, 'variant', false)(v))));
+    } else if (w.type === 'longtext') {
+      parts.push(h('p', { class: 'hint' }, 'טקסט ארוך נכתב בעורך התמלילים — כותרות, רשימות, טבלאות ותמונות, כמו ב-Word. כל שמירה שם מתעדכנת כאן.'),
+        h('button', { type: 'button', class: 'btn primary', onclick: () => openLongText(w) }, S.readonly ? '👁️ צפייה בעורך' : '✍️ פתיחה בעורך התמלילים'));
     } else if (w.type === 'spacer') {
       parts.push(field('גובה (פיקסלים)', h('input', { type: 'number', min: 4, max: 400, value: p.height, dir: 'ltr', disabled: S.readonly,
         oninput: e => set(p, 'height')(Math.max(4, Math.min(400, +e.target.value || 4))) })));
@@ -345,6 +349,63 @@ parent.postMessage({kol:'ready'},'*');
     if (w.type !== 'spacer') parts.push(styleGroup(w));
     parts.push(h('button', { type: 'button', class: 'btn sm ghost st-up', onclick: () => select(f.sec.id, false) }, '🧱 הפס שמכיל אותו'));
     box.replaceChildren(...parts);
+  }
+
+  // ── טקסט ארוך: עורך התמלילים במסך מלא ──────────────────
+  // host.js של העורך מטפל ב-iframe, בבדיקת המקור של כל הודעה ובכתובת שפגה. אחרי כל שמירה שם — השרת שלנו מושך את
+  // ה-HTML (longtext_sync) והתצוגה מתרעננת.
+  const scripts = {};
+  const loadScript = src => scripts[src] ??= new Promise((ok, fail) => {
+    const el = document.createElement('script');
+    el.src = src; el.onload = ok; el.onerror = () => { delete scripts[src]; fail(new Error('עורך התמלילים לא נטען')); };
+    document.head.append(el);
+  });
+
+  async function openLongText(w) {
+    const s0 = S;
+    let first;
+    try {
+      await saveNow();
+      first = await api('editor_session', { doc: w.props.doc });
+      await loadScript(first.host_js);
+    } catch (e) { toast(e.message, true); return; }
+    if (S !== s0) return;
+    const box = h('div', { class: 'wp-box' });
+    const badge = h('span', { class: 'chip' }, first.can === 'edit' ? 'עריכה' : 'צפייה בלבד');
+    const dlg = h('dialog', { class: 'wp-dlg', 'aria-label': 'עורך התמלילים' },
+      h('div', { class: 'wp-head' },
+        h('button', { type: 'button', class: 'btn primary', onclick: () => close() }, '✓ סיום'),
+        h('b', { class: 'one' }, '✍️ טקסט ארוך'), badge),
+      box);
+    document.body.append(dlg);
+    dlg.addEventListener('cancel', e => { e.preventDefault(); close(); });
+    dlg.showModal();
+    let doc = first.doc, syncing = Promise.resolve();
+    const sync = () => (syncing = syncing.then(() => api('longtext_sync', { doc })).then(() => { if (S === s0) renderNow(); }).catch(e => toast(e.message, true)));
+    const ed = WordProcessor.mount(box, {
+      session: async () => {
+        if (first) { const f = first; first = null; return f; }
+        return api('editor_session', { doc });
+      },
+      onDoc: d => {
+        doc = d;
+        if (S === s0 && w.props.doc !== d) mutate(() => { w.props.doc = d; }, { rebuild: false });
+      },
+      onChange: dirty => { badge.textContent = dirty ? 'שומר…' : 'נשמר ✓'; },
+      onSaved: () => { badge.textContent = 'נשמר ✓'; sync(); },
+      onClose: () => close(),
+      onLock: l => toast('פתוח לעריכה אצל ' + l.by),
+      onError: e => toast(e.message || 'שגיאה בעורך', true),
+    });
+    let closing = false;
+    async function close() {
+      if (closing) return;
+      closing = true;
+      if (!(await ed.save()) && !confirm('השינויים האחרונים בעורך לא נשמרו. לסגור בכל זאת?')) { closing = false; return; }
+      ed.destroy();
+      dlg.close(); dlg.remove();
+      await sync();
+    }
   }
 
   // ── שדות של רכיבי קבצים ─────────────────────────────────
@@ -499,6 +560,7 @@ parent.postMessage({kol:'ready'},'*');
     if (w.type === 'button') return w.props.label || 'כפתור';
     if (w.type === 'spacer') return `${w.props.height}px`;
     if (w.type === 'gallery') return `${w.props.files.length} תמונות`;
+    if (w.type === 'longtext') return w.props.doc ? 'מעורך התמלילים' : 'עוד לא נכתב';
     if (w.type === 'audio') return w.props.title || fileCache[w.props.file]?.name || 'שמע';
     if (w.type === 'image') return w.props.alt || fileCache[w.props.file]?.name || 'תמונה';
     if (w.type === 'file') return w.props.label || fileCache[w.props.file]?.name || 'קובץ';

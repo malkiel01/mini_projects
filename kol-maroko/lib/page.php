@@ -14,7 +14,7 @@ const PAGE_MAX_BYTES = 1_000_000;
 const PAGE_MAX_SECTIONS = 120;
 const PAGE_MAX_WIDGETS = 120;          // בעמודה
 const TEXT_MAX = 60_000;
-const WIDGET_TYPES = ['heading', 'text', 'button', 'divider', 'spacer', 'image', 'gallery', 'audio', 'video', 'file'];
+const WIDGET_TYPES = ['heading', 'text', 'longtext', 'button', 'divider', 'spacer', 'image', 'gallery', 'audio', 'video', 'file'];
 const COL_LAYOUTS = ['100', '50-50', '33-67', '67-33', '33-33-33', '25-25-25-25'];
 const SIZES = ['sm' => '.875em', 'md' => '1em', 'lg' => '1.25em', 'xl' => '1.6em', 'xxl' => '2.2em'];
 const PADS = ['0' => '0', 's' => '8px', 'm' => '16px', 'l' => '32px', 'xl' => '64px'];
@@ -158,6 +158,7 @@ function widget_norm(mixed $w, array &$seen): ?array
         'audio' => ['file' => file_id($p['file'] ?? ''), 'title' => str($p['title'] ?? '', 200)],
         'video' => ['file' => file_id($p['file'] ?? ''), 'embed' => video_embed($p['embed'] ?? '')],
         'file' => ['file' => file_id($p['file'] ?? ''), 'label' => str($p['label'] ?? '', 200)],
+        'longtext' => ['doc' => is_string($p['doc'] ?? null) && preg_match('/^[A-Za-z0-9:_-]{1,40}$/', $p['doc']) ? $p['doc'] : ''],
     };
     return ['id' => id_norm($w['id'] ?? null, $seen), 'type' => $w['type'], 'props' => $props, 'style' => style_norm($w['style'] ?? [])];
 }
@@ -243,6 +244,11 @@ function page_render(array $page, bool $editor = false, ?callable $url = null): 
     preg_match_all('/"([0-9a-f]{32})"/', json_encode($page), $m);
     $GLOBALS['kol_files'] = files_meta(array_unique($m[1]));
     $GLOBALS['kol_url'] = $url ?? fn(array $f) => media_url($f['id']);
+    $docs = [];
+    foreach ($page['sections'] as $s) foreach ($s['columns'] as $c) foreach ($c['widgets'] as $w) {
+        if ($w['type'] === 'longtext' && $w['props']['doc'] !== '') $docs[] = $w['props']['doc'];
+    }
+    $GLOBALS['kol_long'] = function_exists('longtexts_get') ? longtexts_get(array_unique($docs)) : [];
     $st = $page['settings'];
     $css = [];
     $P = '.kol-page';
@@ -293,6 +299,12 @@ function page_render(array $page, bool $editor = false, ?callable $url = null): 
         $html .= '</div></div></section>';
     }
     $html .= '</div>';
+    // ה-CSS של כל מסמך מהעורך — ממוקד ב-.kol-lt-<מזהה> (שני מסמכים עם הגדרות שונות לא מתנגשים)
+    foreach ($GLOBALS['kol_long'] as $doc => $lt) {
+        $scope = "$P .kol-lt-" . substr(md5($doc), 0, 10) . ' ';
+        $css[] = preg_replace('/(^|[},])\s*\.wp-doc/', '$1' . $scope . '.wp-doc', $lt['css']);
+    }
+    $css[] = "$P .kol-long .wp-doc{color:inherit;max-width:100%}$P .kol-long img{max-width:100%}";
     return ['html' => $html, 'css' => implode("\n", $css)];
 }
 
@@ -336,6 +348,9 @@ function widget_render(array $w, bool $editor): array
               . '<audio controls preload="metadata" src="' . $src($a) . '"></audio></div>'
             : $missing('🎙️ בחרו הקלטה'),
         'video' => video_render($p, $cls, $k, $f, $src, $editor) ?: $missing('🎬 בחרו וידאו או הדביקו קישור'),
+        'longtext' => ($lt = $GLOBALS['kol_long'][$p['doc']] ?? null) && $lt['html'] !== ''
+            ? "<div class=\"$cls kol-long kol-lt-" . substr(md5($p['doc']), 0, 10) . "\"$k>" . $lt['html'] . '</div>'
+            : $missing($p['doc'] ? '✍️ הטקסט עוד לא נשמר בעורך' : '✍️ פתחו את עורך התמלילים כדי לכתוב'),
         'file' => ($d = $f($p['file']))
             ? "<div class=\"$cls\"$k><a class=\"kol-filelink\" href=\"" . $src($d) . '" download>📄 <span>' . e($p['label'] ?: $d['name']) . '</span> <small>'
               . strtoupper($d['ext']) . ' · ' . size_label((int)$d['size']) . '</small></a></div>'

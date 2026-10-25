@@ -120,6 +120,16 @@ function migrate(PDO $pdo): void
                 started INTEGER NOT NULL
             );
             SQL,
+        // שלב 4: העותק האחרון של טקסטים ארוכים מעורך התמלילים (lib/longtext.php)
+        4 => <<<'SQL'
+            CREATE TABLE longtexts (
+                doc        TEXT PRIMARY KEY,
+                html       TEXT NOT NULL,
+                css        TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                updated_by TEXT NOT NULL
+            );
+            SQL,
     ];
     foreach ($steps as $n => $sql) {
         if ($v >= $n) continue;
