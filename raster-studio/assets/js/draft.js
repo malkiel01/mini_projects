@@ -30,7 +30,7 @@ export async function saveDraft(renderer, doc) {
   };
   const layers = await walk(doc.layers);
   await idbSet(draftKey(doc), {
-    v: 1, title: doc.title, width: doc.width, height: doc.height, serverId: doc.serverId ?? null,
+    v: 1, title: doc.title, width: doc.width, height: doc.height, serverId: doc.serverId ?? null, serverVersion: doc.serverVersion ?? 0,
     activeId: doc.activeId, layers, savedAt: new Date().toISOString(),
     // הקובץ שנפתח — הבסיס לשמירה הבאה (כל מה שלא הבנו עובר ממנו)
     mbe: doc.mbe ? { bytes: doc.mbe.bytes, surfaceId: doc.mbe.surfaceId } : null,
@@ -44,6 +44,7 @@ export const clearDraft = key => idbDel(key).catch(() => {});
 export async function restoreDraft(renderer, d) {
   const doc = new RasterDocument(d.width, d.height, d.title);
   doc.serverId = d.serverId ?? undefined;
+  doc.serverVersion = d.serverVersion ?? 0;
   if (d.mbe) doc.mbe = { bytes: d.mbe.bytes, surfaceId: d.mbe.surfaceId };
   const walk = async (list, parent) => {
     for (const l of list) {

@@ -2,7 +2,7 @@
 // המסד של עיצוב רסטר — SQLite משלו, בלי שום קשר למסד הפלטפורמה.
 // הנתיב ב-deploy.yml מוחרג (data/*.sqlite*), כך שהפריסה לא דורסת אותו.
 
-const RS_DB_VERSION = 1;
+const RS_DB_VERSION = 2;
 
 function rs_db_path(): string
 {
@@ -51,6 +51,19 @@ function rs_db_migrate(PDO $pdo): void
             deleted_at TEXT
         )");
         $pdo->exec('CREATE INDEX docs_owner ON docs(owner_id, deleted_at)');
+    }
+    if ($v < 2) {
+        // גרסאות: כל שמירה — קובץ ‎.mbe משלו ב-data/files/<owner>/<doc>/<n>.mbe. docs.version — האחרונה (0 = עוד לא נשמר)
+        $pdo->exec('ALTER TABLE docs ADD COLUMN version INTEGER NOT NULL DEFAULT 0');
+        $pdo->exec("CREATE TABLE doc_versions (
+            id INTEGER PRIMARY KEY,
+            doc_id INTEGER NOT NULL REFERENCES docs(id),
+            n INTEGER NOT NULL,
+            bytes INTEGER NOT NULL,
+            sha256 TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE (doc_id, n)
+        )");
     }
     $pdo->exec('PRAGMA user_version = ' . RS_DB_VERSION);
     $pdo->commit();

@@ -1,5 +1,5 @@
 <?php
-// ספריית המסמכים בשרת — רשימה, יצירה ומחיקה. התוכן (שכבות, ‎.mbe) — בשלב השמירה.
+// ספריית המסמכים בשרת — רשימה, יצירה ומחיקה. התוכן (‎.mbe עם גרסאות) — ב-store.php.
 
 require_once __DIR__ . '/db.php';
 
@@ -25,6 +25,7 @@ function rs_doc_row(array $r): array
         'id' => (int)$r['id'],
         'title' => $r['title'],
         'size' => [(int)$r['width'], (int)$r['height']],
+        'version' => (int)($r['version'] ?? 0),
         'created_at' => $r['created_at'],
         'updated_at' => $r['updated_at'],
     ];
