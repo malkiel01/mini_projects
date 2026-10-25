@@ -290,6 +290,29 @@ function checkDocument(f, issue) {
                 issue('error', 'flow-missing', `המסגרת מפנה לשטף "${l.flow}" שאינו קיים`, `document.json#${at}/flow`);
             }
             walkLayers(l.children, `${at}/children`);
+            walkPaths(l.paths, `${at}/paths`);
+        });
+    };
+    // תוכן שכבת vector (סעיף 3): נתיב — d חובה ותקין; קבוצה — בלי d ו-transform משלה; type לא מוכר — נשמר, לא נבדק.
+    const walkPaths = (items, where) => {
+        if (!Array.isArray(items)) return;
+        items.forEach((p, i) => {
+            if (!p || typeof p !== 'object' || Array.isArray(p)) return;
+            const at = `${where}/${i}`;
+            seeId(p.id, at);
+            const type = p.type ?? 'path';
+            if (type === 'path') {
+                if (typeof p.d !== 'string') issue('error', 'path-d-missing', 'לנתיב חסר d', `document.json#${at}`);
+                else {
+                    const bad = pathProblem(p.d);
+                    if (bad) issue('error', 'path-d-invalid', `d לא תקין: ${bad}`, `document.json#${at}/d`);
+                }
+            } else if (type === 'group') {
+                if (Object.hasOwn(p, 'd') || Object.hasOwn(p, 'transform')) {
+                    issue('error', 'group-geometry', 'לקבוצה אין d ו-transform משלה', `document.json#${at}`);
+                }
+                walkPaths(p.children, `${at}/children`);
+            }
         });
     };
     (Array.isArray(f.document.surfaces) ? f.document.surfaces : []).forEach((s, i) => {
@@ -309,6 +332,40 @@ function checkDocument(f, issue) {
         }
     };
     walk(f.document, '', 0);
+}
+
+const PATH_ARGS = { M: 2, L: 2, C: 6, Q: 4, Z: 0 };
+
+/**
+ * null אם d תקין; אחרת — מה לא. רק פקודות מוחלטות M L C Q Z, מתחיל ב-M, ולכל פקודה כפולות של מספר הארגומנטים שלה.
+ * סורק ולא ביטוי רגולרי אחד — כדי שנתיב של מגה-בתים לא יפיל את PCRE ב-PHP (src/php/mbe.php pathProblem).
+ */
+export function pathProblem(d) {
+    const num = /[-+]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][-+]?[0-9]+)?/y;
+    let i = 0, cmd = null, count = 0;
+    const close = () => {
+        if (cmd === null) return null;
+        const k = PATH_ARGS[cmd];
+        return (k === 0 ? count === 0 : count > 0 && count % k === 0) ? null : `${cmd} צריכה ${k ? `כפולות של ${k} מספרים` : 'בלי מספרים'}`;
+    };
+    for (;;) {
+        while (i < d.length && ' \t\n\r\f,'.includes(d[i])) i++;
+        if (i >= d.length) break;
+        const c = d[i];
+        if (Object.hasOwn(PATH_ARGS, c)) {
+            if (cmd === null && c !== 'M') return 'נתיב מתחיל ב-M';
+            const bad = close();
+            if (bad) return bad;
+            cmd = c; count = 0; i++;
+            continue;
+        }
+        num.lastIndex = i;
+        if (cmd === null || !num.exec(d)) return `תו לא צפוי "${c}" במקום ${i}`;
+        i = num.lastIndex;
+        count++;
+    }
+    if (cmd === null) return 'נתיב ריק';
+    return close();
 }
 
 /** null אם ה-SVG בטוח; אחרת — מה נמצא. ניקוי בפועל — באחריות האפליקציה שמייצרת את ה-SVG. */
