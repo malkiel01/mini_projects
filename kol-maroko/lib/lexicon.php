@@ -54,6 +54,8 @@ function lexicon_props(array $p): array
 {
     $o = [];
     foreach (LEX_TEXTS as $k => $max) $o[$k] = str($p[$k] ?? '', $max) ?: (LEX_DEFAULTS[$k] ?? '');
+    // "קרא עוד" / "הסתר" — ה-JS של ערכת הנושא מכניס אותם ב-innerHTML (מתוך data-more-text). רק טקסט
+    foreach (['more_label', 'less_label', 'gate_before', 'gate_after'] as $k) $o[$k] = trim(str_replace(['<', '>', '&', '"', "'", '`'], '', $o[$k])) ?: LEX_DEFAULTS[$k];
     foreach (LEX_NUMS as $k => [$min, $max, $def]) $o[$k] = isset($p[$k]) && is_numeric($p[$k]) ? max($min, min($max, (int)$p[$k])) : $def;
     $o['hero_file'] = file_id($p['hero_file'] ?? '');
     $o['hero_url'] = lex_url($p['hero_url'] ?? '');
@@ -295,11 +297,23 @@ function lexicon_render(array $w, bool $editor, string $cls, string $k): array
     $ctx = lexicon_context($p, $words, $topics, $map, $audioUrl, $hero, $editor);
     // קבצי הקוד (לשונית </> קוד) — או התבנית המובנית. עם קבצים: ה-CSS כולו שלנו, וה-JS רץ במקום של ערכת הנושא
     $code = code_files();
-    $html = tpl_render($code['lexicon.html'] ?? LEX_TPL, $ctx);
-    $css = tpl_render($code['lexicon.css'] ?? LEX_TPL_SIZES, $ctx) . ".kol-page .kol-w-{$w['id']}{margin:0}";
-    if ($code !== null) $GLOBALS['kol_page_js'] = (string)($code['lexicon.js'] ?? '');
-    $own = $code !== null && !$editor ? ' data-kol-own="kadisha-lexicon"' : '';
-    return ["<div class=\"$cls\"$k$own>$html</div>", $css];
+    $tail = ".kol-page .kol-w-{$w['id']}{margin:0}";
+    if ($code === null) {
+        // התבנית המובנית: הנתונים מנוקים/מוגנים, וה-CSS וה-JS — של ערכת הנושא באתר
+        return ["<div class=\"$cls\"$k>" . tpl_render(LEX_TPL, $ctx) . '</div>', tpl_render(LEX_TPL_SIZES, $ctx) . $tail];
+    }
+    // קבצי קוד: HTML מנוקה, CSS ממוקד במילון. JS שנערך — המילון כולו במסגרת מבודדת (באתר בלבד; הסטודיו כבר מבודד)
+    $html = tpl_clean_html(tpl_render($code['lexicon.html'] ?? LEX_TPL, $ctx));
+    $rawCss = tpl_render($code['lexicon.css'] ?? LEX_TPL_SIZES, $ctx);
+    $js = (string)($code['lexicon.js'] ?? '');
+    $jsEdited = trim($js) !== '' && trim($js) !== trim((string)setting('preview_js', ''));
+    if ($editor) {
+        $GLOBALS['kol_page_js'] = $js;
+        return ["<div class=\"$cls\"$k>$html</div>", css_scope($rawCss) . $tail];
+    }
+    if ($jsEdited) return ["<div class=\"$cls\">" . lexicon_frame($w['id'], $html, $rawCss, $js, $p) . '</div>', $tail];
+    // JS כמו של ערכת הנושא — היא מריצה את שלה; ה-CSS שלה מוחלף בשלנו (data-kol-css — התוסף לא טוען את שלה)
+    return ["<div class=\"$cls\" data-kol-css=\"kadisha-lexicon\">$html</div>", css_scope($rawCss) . $tail];
 }
 
 // ── ההקלטות מהאתר → עותק בכלי ─────────────────────────────

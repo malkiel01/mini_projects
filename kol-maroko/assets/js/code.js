@@ -64,7 +64,7 @@ const Code = (() => {
         h('button', { type: 'button', class: 'icon-btn', title: 'חזרה לתבנית המובנית', 'aria-label': 'חזרה לתבנית המובנית', onclick: () => reset() }, '↩️')),
       h('div', { class: 'code-main' }, edBox, h('div', { class: 'code-pv' }, frame)));
     host.replaceChildren(h('p', { class: 'hint' }, 'הקוד של העמוד. ',
-      h('b', {}, 'שמירה'), ' — לטיוטה (Ctrl+S); לאתר — בפרסום. אחרי פרסום האתר טוען את הקבצים האלה במקום של ערכת הנושא. JS רץ בעמוד באתר — לבדוק בתצוגה לפני פרסום.'), C.root);
+      h('b', {}, 'שמירה'), ' — לטיוטה (Ctrl+S); לאתר — בפרסום. באתר: HTML ו-CSS מנוקים (בלי סקריפטים, CSS רק בתוך המילון). JS ששונה — המילון מוצג באתר במסגרת מבודדת, בלי גישה לאתר (גוגל סורק פחות טוב תוכן במסגרת).'), C.root);
     C.root.style.height = `calc(100dvh - ${Math.round(C.root.getBoundingClientRect().top + scrollY) + 8}px)`;
     try {
       await loadMonaco();
