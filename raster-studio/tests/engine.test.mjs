@@ -703,3 +703,11 @@ test('‎.mbe: הפניות למשאבים בכל עומק, והקנבס הרא�
 test('פערים: שכבה זרה לא נכנסת לייצוגים', () => {
   assert.deepEqual(gapsFor('ora', [{ blend: 'normal', opacity: 1, visible: true, foreign: { type: 'vector' } }]), ['layer:vector → omitted']);
 });
+
+test('התאמה למסך: המסמך בשטח הפנוי — לא מתחת לפס הכלים ולוח האפשרויות', () => {
+  const v = V.fit(600, 400, 390, 600, 16, { r: 50, t: 100 });
+  assert.ok(v.x + 600 * v.zoom <= 390 - 50 - 16 + 1e-9, 'לא נכנס מתחת לפס הכלים מימין');
+  assert.ok(v.y >= 100 + 16 - 1e-9, 'מתחת ללוח האפשרויות');
+  assert.ok(Math.abs(v.x - 16) < 1e-9 || v.x > 16);
+});
+

@@ -195,7 +195,13 @@ async function main() {
   await page.click('.tool[data-tool="hand"]');   // גרירה = הזזה (ברירת המחדל — מכחול)
   const box = await page.$eval('#stage', el => { const r = el.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; });
   const v0 = await page.evaluate(() => __rs.view);
-  check('בהתחלה: התאמה למסך, לא מעל 100%', v0.zoom === 1 && Math.abs(v0.x - (box.w - 600) / 2) < 0.5, JSON.stringify(v0));
+  // באמצע השטח הפנוי — בין פס הכלים לצד השני, ומתחת ללוח האפשרויות
+  const free = await page.evaluate(() => {
+    const st = document.querySelector('#stage').getBoundingClientRect(), t = document.querySelector('#tools').getBoundingClientRect();
+    const o = document.querySelector('#tool-opts').getBoundingClientRect();
+    return { r: t.left - st.left, top: o.bottom - st.top };
+  });
+  check('בהתחלה: התאמה למסך, לא מעל 100%, באמצע השטח הפנוי', v0.zoom === 1 && Math.abs(v0.x - (free.r - 600) / 2) < 0.5 && v0.y >= free.top, JSON.stringify([v0, free]));
   check('תווית הזום', await page.textContent('#zoom-lbl') === '100%');
 
   // Ctrl+גלגלת: הנקודה שמתחת לסמן נשארת
@@ -1263,6 +1269,13 @@ async function main() {
     const r = await ph.evaluate(() => ({
       over: document.documentElement.scrollWidth > innerWidth,
       zoom: __rs.view.zoom,
+      // המסמך המותאם לא נכנס מתחת לפס הכלים ולוח האפשרויות
+      clear: (() => {
+        const st = document.querySelector('#stage').getBoundingClientRect(), t = document.querySelector('#tools').getBoundingClientRect();
+        const o = document.querySelector('#tool-opts'), ob = o.hidden ? null : o.getBoundingClientRect();
+        const { zoom, x, y } = __rs.view, R = st.left + x + __rs.doc.width * zoom, T = st.top + y;
+        return R <= t.left + 0.5 && (!ob || T >= ob.bottom - 0.5);
+      })(),
       bar: document.querySelector('.bar').getBoundingClientRect().bottom <= innerHeight + 0.5,
       hint: document.querySelector('#hint').textContent,
       hintShown: !!document.querySelector('#hint').offsetWidth,
@@ -1284,7 +1297,8 @@ async function main() {
     const tag = `${w}px${dark ? ' כהה' : ''}`;
     check(`טלפון ${tag}: "שכבות" פותח גיליון בתוך המסך, ✕ סוגר`, sheet.open && sheet.inside && sheet.rows === 1 && closed, JSON.stringify(sheet));
     check(`טלפון ${tag}: בלי גלילה אופקית, הסרגל בתוך המסך`, !r.over && r.bar);
-    check(`טלפון ${tag}: המסמך מותאם לרוחב`, r.zoom < 1 && r.zoom > 0.4, String(r.zoom));
+    check(`טלפון ${tag}: המסמך מותאם לרוחב`, r.zoom < 1 && r.zoom > 0.3, String(r.zoom));
+    check(`טלפון ${tag}: המסמך לא מוסתר מתחת לפס הכלים ולוח האפשרויות`, r.clear);
     check(`טלפון ${tag}: רמז מגע — מוסתר כשאין לו מקום`, /צביטה/.test(r.hint) && !r.hintShown, r.hint);
     check(`טלפון ${tag}: בלי שגיאות`, errs.length === 0, errs.join(' | '));
     if (SHOTS) await ph.screenshot({ path: join(SHOTS, `editor-${w}${dark ? '-dark' : ''}.png`) });

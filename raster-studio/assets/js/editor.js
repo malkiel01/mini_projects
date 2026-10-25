@@ -88,7 +88,18 @@ function setView(v) {
 }
 
 const center = () => [stage.clientWidth / 2, stage.clientHeight / 2];
-const fitView = () => doc && V.fit(doc.width, doc.height, stage.clientWidth, stage.clientHeight);
+/** מה שמכסה את הבמה: פס הכלים (בצד) ולוח האפשרויות (למעלה) — "התאמה" שמה את המסמך בשטח הפנוי */
+function stageInsets() {
+  const s = stage.getBoundingClientRect(), out = { l: 0, r: 0, t: 0, b: 0 };
+  const tb = $('#tools')?.getBoundingClientRect();
+  if (tb?.width) {
+    if (tb.left - s.left < s.right - tb.right) out.l = tb.right - s.left; else out.r = s.right - tb.left;
+  }
+  const ob = $('#tool-opts');
+  if (ob && !ob.hidden) { const r = ob.getBoundingClientRect(); if (r.height) out.t = r.bottom - s.top; }
+  return out;
+}
+const fitView = () => doc && V.fit(doc.width, doc.height, stage.clientWidth, stage.clientHeight, 16, stageInsets());
 const fit = () => doc && setView(fitView());
 
 // הקנבס בגודל הבמה, בפיקסלים של המסך
