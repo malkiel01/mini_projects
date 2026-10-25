@@ -8,6 +8,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/lib/members.php';
+require_once __DIR__ . '/lib/draft.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -25,7 +26,7 @@ $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 // embed_key — המפתח הציבורי לעורך התמלילים (שלב 4). אין בו סוד.
 const PUBLIC_ACTIONS = ['embed_key'];
-const POST_ACTIONS = ['member_add', 'member_set', 'member_remove', 'request_dismiss'];
+const POST_ACTIONS = ['member_add', 'member_set', 'member_remove', 'request_dismiss', 'lock', 'draft_save', 'render', 'revision_restore'];
 
 try {
     if (in_array($action, POST_ACTIONS, true) && $method !== 'POST') throw new ApiError('נדרש POST', 405);
@@ -45,6 +46,12 @@ try {
         'member_set' => member_set(require_role($user, 'owner'), $body),
         'member_remove' => member_remove(require_role($user, 'owner'), $body),
         'request_dismiss' => request_dismiss(require_role($user, 'owner'), $body),
+        'draft' => draft_get(require_role($user, 'editor')),
+        'draft_save' => draft_save(require_role($user, 'editor'), $body),
+        'lock' => lock_op(require_role($user, 'editor'), $body),
+        'render' => (require_role($user, 'editor') ? render_preview($body) : []),
+        'revisions' => (require_role($user, 'editor') ? revisions_list() : []),
+        'revision_restore' => revision_restore(require_role($user, 'editor'), $body),
         'audit' => audit_list(require_role($user, 'owner'), $_GET),
         default => throw new ApiError('פעולה לא מוכרת', 404),
     };
