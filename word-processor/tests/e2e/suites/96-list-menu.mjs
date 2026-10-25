@@ -21,7 +21,8 @@ export default async function (t) {
     const sub = await p.locator('.menu-pop button').allTextContents();
     t.ok('"הורדה…" — Word, PDF, ODT, ‎.mbe, טקסט', ['Word', 'PDF', 'ODT', '.mbe', 'טקסט'].every(x => sub.some(i => i.includes(x))), JSON.stringify(sub));
     const [dl] = await Promise.all([p.waitForEvent('download'), p.click('.menu-pop button:has-text("הורדה כ-Word")')]);
-    t.ok('הורדה כ-Word מהרשימה — בשם המסמך', dl.suggestedFilename().endsWith('.docx'), dl.suggestedFilename());
+    const cd = (await p.request.get(dl.url())).headers()['content-disposition'] || '';
+    t.ok('הורדה כ-Word מהרשימה — קובץ ‎.docx בשם המסמך', dl.url().includes('format=docx') && cd.includes(encodeURIComponent('שם מהרשימה') + '.docx'), cd);
     await open();
     await p.click('.menu-pop button:has-text("שכפול")');
     await p.waitForSelector('.toast:not([hidden]) .toast-act');
