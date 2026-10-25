@@ -339,7 +339,27 @@ final class Mbe
             if (isset($ids[$id])) $issue('error', 'duplicate-id', "המזהה \"$id\" מופיע פעמיים", 'document.json#' . $where);
             $ids[$id] = true;
         };
-        $walkLayers = function (mixed $layers, string $where) use (&$walkLayers, $seeId, $flows, $issue) {
+        // תוכן שכבת vector (סעיף 3): נתיב — d חובה ותקין; קבוצה — בלי d ו-transform משלה; type לא מוכר — נשמר, לא נבדק.
+        $walkPaths = function (mixed $items, string $where) use (&$walkPaths, $seeId, $issue) {
+            if (MbeSchema::typeOf($items) !== 'array') return;
+            foreach ($items as $i => $p) {
+                if (MbeSchema::typeOf($p) !== 'object') continue;
+                $p = (array)$p;
+                $at = "$where/$i";
+                $seeId($p['id'] ?? null, $at);
+                $type = $p['type'] ?? 'path';
+                if ($type === 'path') {
+                    if (!is_string($p['d'] ?? null)) $issue('error', 'path-d-missing', 'לנתיב חסר d', "document.json#$at");
+                    elseif (($bad = self::pathProblem($p['d'])) !== null) $issue('error', 'path-d-invalid', "d לא תקין: $bad", "document.json#$at/d");
+                } elseif ($type === 'group') {
+                    if (array_key_exists('d', $p) || array_key_exists('transform', $p)) {
+                        $issue('error', 'group-geometry', 'לקבוצה אין d ו-transform משלה', "document.json#$at");
+                    }
+                    $walkPaths($p['children'] ?? null, "$at/children");
+                }
+            }
+        };
+        $walkLayers = function (mixed $layers, string $where) use (&$walkLayers, $walkPaths, $seeId, $flows, $issue) {
             if (MbeSchema::typeOf($layers) !== 'array') return;
             foreach ($layers as $i => $l) {
                 if (MbeSchema::typeOf($l) !== 'object') continue;
@@ -350,6 +370,7 @@ final class Mbe
                     $issue('error', 'flow-missing', "המסגרת מפנה לשטף \"{$l['flow']}\" שאינו קיים", "document.json#$at/flow");
                 }
                 $walkLayers($l['children'] ?? null, "$at/children");
+                $walkPaths($l['paths'] ?? null, "$at/paths");
             }
         };
         $surfaces = MbeSchema::typeOf($doc['surfaces'] ?? null) === 'array' ? $doc['surfaces'] : [];
@@ -377,6 +398,46 @@ final class Mbe
             }
         };
         $walk($f->document, '', 0);
+    }
+
+    private const PATH_ARGS = ['M' => 2, 'L' => 2, 'C' => 6, 'Q' => 4, 'Z' => 0];
+
+    /**
+     * null אם d תקין; אחרת — מה לא. זהה ל-pathProblem ב-JS. סורק ולא ביטוי רגולרי אחד: נתיב של מגה-בתים
+     * מפיל את PCRE (JIT stack) בביטוי עם חזרות מקוננות.
+     */
+    public static function pathProblem(string $d): ?string
+    {
+        $i = 0;
+        $n = strlen($d);
+        $cmd = null;
+        $count = 0;
+        $close = function () use (&$cmd, &$count): ?string {
+            if ($cmd === null) return null;
+            $k = self::PATH_ARGS[$cmd];
+            if ($k === 0 ? $count === 0 : ($count > 0 && $count % $k === 0)) return null;
+            return "$cmd צריכה " . ($k ? "כפולות של $k מספרים" : 'בלי מספרים');
+        };
+        while (true) {
+            while ($i < $n && strpos(" \t\n\r\f,", $d[$i]) !== false) $i++;
+            if ($i >= $n) break;
+            $c = $d[$i];
+            if (isset(self::PATH_ARGS[$c])) {
+                if ($cmd === null && $c !== 'M') return 'נתיב מתחיל ב-M';
+                if (($bad = $close()) !== null) return $bad;
+                $cmd = $c;
+                $count = 0;
+                $i++;
+                continue;
+            }
+            if ($cmd === null || !preg_match('/\G[-+]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][-+]?[0-9]+)?/', $d, $m, 0, $i)) {
+                return 'תו לא צפוי "' . mb_substr(mb_scrub(substr($d, $i, 4), 'UTF-8'), 0, 1, 'UTF-8') . "\" במקום $i";
+            }
+            $i += strlen($m[0]);
+            $count++;
+        }
+        if ($cmd === null) return 'נתיב ריק';
+        return $close();
     }
 
     /** null אם ה-SVG בטוח; אחרת — מה נמצא. ניקוי בפועל — באחריות האפליקציה שמייצרת את ה-SVG. */
