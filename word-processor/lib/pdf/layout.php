@@ -10,7 +10,8 @@
  * יחידות: נקודות. y נמדד מראש אזור הטקסט כלפי מטה; ההמרה לקואורדינטות PDF — ב-PdfCanvas.
  */
 
-require_once __DIR__ . '/writer.php';
+require_once __DIR__ . '/../pdf-core/writer.php';   // pdf-core — עותק של creative-suite/pdf-core/src/php
+require_once __DIR__ . '/fontset.php';
 require_once __DIR__ . '/bidi.php';
 require_once __DIR__ . '/../export.php';
 

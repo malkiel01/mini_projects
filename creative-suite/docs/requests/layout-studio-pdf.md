@@ -76,3 +76,8 @@
   (TrueType; מזהי הגליפים נשמרים, כך שמה ש-HarfBuzz עיצב מתאים).
 - **חסר כדי שהעימוד ישתמש בו:** מיקום משותף וסנכרון (כמו `mbe-core`), ונקודת קצה בשרת של העימוד. המיקום — להכרעת הצ'אט
   המתכלל ובעל המערכת; עד אז המקור בתוך עורך התמלילים.
+
+**עדכון (2026-10-25) — המיקום הוכרע:** בעל המערכת בחר ב-**`creative-suite/pdf-core/`**. המקור — `src/php`; הסנכרון —
+`php creative-suite/pdf-core/tools/sync.php` (ושער בפריסה, כמו `mbe-core`). ההוראות והפורמט — `creative-suite/pdf-core/README.md`.
+**להצטרפות:** הצ'אט של העימוד מוסיף את עצמו ל-`creative-suite/pdf-core/apps.json` (למשל `"layout-studio": {"php": "lib/pdf-core"}`)
+ומריץ sync.

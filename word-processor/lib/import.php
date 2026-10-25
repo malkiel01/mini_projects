@@ -6,7 +6,7 @@
  */
 
 require_once __DIR__ . '/export.php';
-require_once __DIR__ . '/pdf/font.php';   // FontSet::FAMILIES — אילו גופנים זמינים (לדוח הייבוא)
+require_once __DIR__ . '/pdf/fontset.php';   // FontSet::FAMILIES — אילו גופנים זמינים (לדוח הייבוא)
 
 function text_node(string $t, array $marks = []): array
 {

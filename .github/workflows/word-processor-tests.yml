@@ -1,4 +1,4 @@
-# בדיקות עורך התמלילים — בכל PR שנוגע ב-word-processor/, ובכל push ל-main.
+# בדיקות עורך התמלילים — בכל PR שנוגע ב-word-processor/ או במנוע ה-PDF המשותף (creative-suite/pdf-core), ובכל push ל-main.
 #
 # לא פורס דבר (הפריסה היחידה — deploy.yml). שני חלקים:
 #   php word-processor/tests/run.php        — השרת: חתימה, סשן, נעילה, גרסאות, ייצוא וייבוא, PDF, אוסף המסמכים ל-Word וחזרה
@@ -8,10 +8,10 @@ name: Word processor tests
 
 on:
   pull_request:
-    paths: ['word-processor/**', '.github/workflows/word-processor-tests.yml']
+    paths: ['word-processor/**', 'creative-suite/pdf-core/**', '.github/workflows/word-processor-tests.yml']
   push:
     branches: [main]
-    paths: ['word-processor/**', '.github/workflows/word-processor-tests.yml']
+    paths: ['word-processor/**', 'creative-suite/pdf-core/**', '.github/workflows/word-processor-tests.yml']
 
 permissions:
   contents: read

@@ -2113,8 +2113,8 @@ $mfHdr = $mfImp['page']['header'][0]['content'][0] ?? [];
 check('docx עם נייר מכתבים (EMF צף בכותרת): התמונה בכותרת העליונה, והדוח ריק', ($mfHdr['type'] ?? '') === 'image' && media_of_doc($mfHdr['attrs']['media'] ?? '', $mfDoc)
     && ($mfHdr['attrs']['width'] ?? 0) === 590 && $mfImp['report'] === [], json_encode([$mfImp['page']['header'] ?? null, $mfImp['report']], JSON_UNESCAPED_UNICODE));
 
-section('רשימת ציור → PDF (lib/pdf/draw.php — לעימוד)');
-require_once __DIR__ . '/../lib/pdf/draw.php';
+section('רשימת ציור → PDF (pdf-core: lib/pdf-core/draw.php — לעימוד)');
+require_once __DIR__ . '/../lib/pdf-core/draw.php';
 $dwFont = file_get_contents(__DIR__ . '/../vendor/fonts/pdf/frank-ruhl-libre-hebrew-400-normal.woff');
 $dwF = TtfFont::fromBytes($dwFont, 'frank');
 $dwIm = imagecreatetruecolor(40, 40);
