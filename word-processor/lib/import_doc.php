@@ -174,17 +174,109 @@ final class DocImport
         $this->readFootnotes();
         $n = $this->fib['ccpText'];
         $blocks = $this->blocks(0, $n);
-        if ($this->fib['ccpHdd'] > 0 && $this->storyHasText($this->fib['ccpText'] + $this->fib['ccpFtn'], $this->fib['ccpHdd'])) $this->note('doc_hf');
+        $sect = $this->section();
+        $page = $sect['page'] + ($this->fib['ccpHdd'] > 0 ? ($this->headerFooter($sect['titlePg']) ?? []) : []);
         if ($this->fib['ccpAtn'] > 0) $this->note('doc_comments');
-        return ['json' => ['type' => 'doc', 'content' => $blocks ?: [para()]], 'page' => null, 'report' => $this->report()];
+        return ['json' => ['type' => 'doc', 'content' => $blocks ?: [para()]], 'page' => $page ?: null, 'report' => $this->report()];
     }
 
-    /** יש בטווח טקסט של ממש — בלי סופי פסקה ובלי שדות (מספר עמוד לבד בכותרת — לא תוכן שחסר) */
-    private function storyHasText(int $from, int $len): bool
+    /** המקטע הראשון (PlcfSed → SEPX): גודל העמוד, השוליים, ו"עמוד ראשון שונה" (titlePg) */
+    private function section(): array
     {
-        $t = implode('', array_column($this->chars($from, $from + $len), 0));
-        $t = preg_replace('/\x13[^\x13\x15]*\x15/u', '', $t);
-        return trim(preg_replace('/[\x00-\x1F]/u', '', $t)) !== '';
+        $out = ['page' => [], 'titlePg' => false];
+        [$fc, $lcb] = $this->fl(6);
+        if ($lcb < 16) return $out;
+        $fcSepx = unpack('V', substr($this->tbl, $fc + 8 + 2, 4))[1];   // אחרי 2 CP — ה-SED הראשון: fn, fcSepx
+        if ($fcSepx === 0xFFFFFFFF || $fcSepx + 2 > strlen($this->wd)) return $out;
+        $cb = unpack('v', substr($this->wd, $fcSepx, 2))[1];
+        $tw = [];
+        foreach (self::sprms(substr($this->wd, $fcSepx + 2, $cb)) as [$sp, $o]) {
+            $u16 = unpack('v', str_pad($o, 2, "\0"))[1];
+            match ($sp) {
+                0x300A => $out['titlePg'] = ord($o) !== 0,
+                0xB01F => $tw['w'] = $u16, 0xB020 => $tw['h'] = $u16,
+                0xB021 => $tw['left'] = $u16, 0xB022 => $tw['right'] = $u16,
+                0x9023 => $tw['top'] = abs(unpack('s', str_pad($o, 2, "\0"))[1]), 0x9024 => $tw['bottom'] = abs(unpack('s', str_pad($o, 2, "\0"))[1]),
+                default => null,
+            };
+        }
+        $mm = fn($t) => round($t / TWIP_PER_MM_IMPORT, 1);
+        if (!empty($tw['w']) && !empty($tw['h'])) {
+            $out['page']['size'] = abs($mm(min($tw['w'], $tw['h'])) - 215.9) < 3 ? 'Letter' : 'A4';
+            $out['page']['orientation'] = $tw['w'] > $tw['h'] ? 'landscape' : 'portrait';
+        }
+        foreach (['top', 'bottom', 'right', 'left'] as $k) if (isset($tw[$k])) $out['page']['margins'][$k] = $mm($tw[$k]);
+        return $out;
+    }
+
+    /**
+     * כותרת עליונה ותחתונה של המקטע הראשון (PlcfHdd): 6 סיפורים של מפרידי הערות, ואחריהם לכל מקטע — עליונה זוגית,
+     * עליונה, תחתונה זוגית, תחתונה, עליונה ותחתונה לעמוד ראשון. הפסקה עם השדה PAGE → numbering (כמו ב-docx);
+     * השאר — hf_from_blocks (טקסט, או כותרת עשירה). עמוד ראשון — כש-titlePg במקטע
+     * (first_diff, header_first / footer_first; אותו טקסט בלי מספר = first_page:false). זוגית שונה — בדוח.
+     */
+    private function headerFooter(bool $titlePg): ?array
+    {
+        [$fc, $lcb] = $this->fl(11);
+        if ($lcb < 4 * 13) return null;
+        $cps = array_values(unpack('V' . intdiv($lcb, 4), substr($this->tbl, $fc, $lcb)));
+        $base = $this->fib['ccpText'] + $this->fib['ccpFtn'];
+        $story = fn(int $i) => isset($cps[$i + 1]) && $cps[$i + 1] > $cps[$i] ? [$base + $cps[$i], $base + $cps[$i + 1]] : null;
+        // סיפור → [הערך (טקסט / עשירה / null), המספור (או null)]
+        $parse = function (int $i, string $kind) use ($story): array {
+            $r = $story($i);
+            if (!$r) return [null, null];
+            $blocks = [];
+            $num = null;
+            foreach ($this->units(...$r) as $u) {
+                $instr = '';
+                $in = false;
+                $line = '';
+                foreach ($u['chars'] as [$ch]) {
+                    if ($ch === "\x13") { $in = true; continue; }
+                    if ($ch === "\x14" || $ch === "\x15") { $in = false; continue; }
+                    if ($in) $instr .= $ch; else $line .= $ch;
+                }
+                if (!$num && preg_match('/\bPAGE\b/', $instr)) {
+                    $jc = $u['p']['jc'] ?? $u['p']['jc80'] ?? 0;
+                    $bidi = $u['p']['bidi'] ?? false;
+                    $num = ['show' => true, 'position' => $kind === 'header' ? 'top' : 'bottom',
+                        'align' => match ($jc) { 1 => 'center', 2 => $bidi ? 'left' : 'right', default => $bidi ? 'right' : 'left' },
+                        'format' => preg_match('/\bNUMPAGES\b/', $instr) ? 'n_of_m' : (str_contains($line, "עמ'") ? 'page_n' : (str_contains($line, '-') ? 'dash_n' : 'n'))];
+                    continue;
+                }
+                if (!empty($u['p']['inTable']) || ($u['p']['itap'] ?? 0) > 0) $this->note('hf_complex', 1, $kind);
+                $b = $this->paragraph($u);
+                if (!empty($b['content'])) $blocks[] = $b['type'] === 'paragraph' ? $b : ['type' => 'paragraph'] + array_diff_key($b, ['type' => 1, 'attrs' => 1]);
+            }
+            return [hf_from_blocks($blocks), $num];
+        };
+        $out = [];
+        $num = null;
+        foreach ([7 => 'header', 9 => 'footer'] as $i => $kind) {
+            [$v, $n] = $parse($i, $kind);
+            if ($v !== null) $out[$kind] = $v;
+            $num ??= $n;
+        }
+        $out['first_diff'] = false;
+        if ($titlePg) {
+            [$fh, $fhn] = $parse(10, 'header');
+            [$ff, $ffn] = $parse(11, 'footer');
+            if ($num) $num['first_page'] = (bool)($fhn || $ffn);
+            if ($fh != ($out['header'] ?? null) || $ff != ($out['footer'] ?? null)) {
+                $out['first_diff'] = true;
+                $out['header_first'] = $fh ?? '';
+                $out['footer_first'] = $ff ?? '';
+            }
+        }
+        // זוגית — בדוח רק כשיש בה טקסט אחר מהרגילה (LibreOffice כותב לשם עותק שלה)
+        $text = fn(?array $r) => $r ? trim(preg_replace('/\x13[^\x13\x15]*\x15|[\x00-\x1F]/u', '', implode('', array_column($this->chars(...$r), 0)))) : '';
+        foreach ([6 => 7, 8 => 9] as $i => $reg) {
+            $t = $text($story($i));
+            if ($t !== '' && $t !== $text($story($reg))) $this->note('hf_extra', 1, "doc$i");
+        }
+        $out['numbering'] = $num ?: ['show' => false];
+        return $out;
     }
 
     // ---------- הטקסט: טבלת הקטעים ----------
@@ -432,28 +524,7 @@ final class DocImport
     /** פסקאות → בלוקים (פסקה, כותרת, רשימה, טבלה) */
     private function blocks(int $from, int $to): array
     {
-        $chars = $this->chars($from, $to);
-        // פסקאות: עד \r (סוף פסקה), \x07 (סוף תא / שורה), \x0C (מעבר עמוד / מקטע)
-        $units = [];
-        $cur = [];
-        $cp = $from;
-        $pageBreak = false;
-        foreach ($chars as [$ch, $fc]) {
-            if ($ch === "\r" || $ch === "\x07" || $ch === "\x0C") {
-                $pp = self::find($this->papx, $fc);
-                $props = $pp ? $this->paraProps($pp[2], $pp[3]) : ['istd' => 0];
-                if ($pageBreak) $props['breakBefore'] = true;
-                $pageBreak = $ch === "\x0C";
-                if ($ch === "\x0C" && !$cur) { $cp++; continue; }   // מעבר בפסקה ריקה — רק לפסקה הבאה
-                $units[] = ['chars' => $cur, 'end' => $ch, 'p' => $props];
-                $cur = [];
-            } else {
-                $cur[] = [$ch, $fc, $cp];
-            }
-            $cp++;
-        }
-        if ($cur) $units[] = ['chars' => $cur, 'end' => "\r", 'p' => ['istd' => 0]];
-
+        $units = $this->units($from, $to);
         $blocks = [];
         $listRun = [];
         $flushList = function () use (&$listRun, &$blocks) {
@@ -501,6 +572,33 @@ final class DocImport
             $blocks[] = $this->table($rows);
         }
         return $blocks;
+    }
+
+    /** יחידות: פסקה לכל סוף פסקה (\r), סוף תא / שורה (\x07) ומעבר עמוד (\x0C) — התווים, הסוף ותכונות הפסקה */
+    private function units(int $from, int $to): array
+    {
+        $chars = $this->chars($from, $to);
+        // פסקאות: עד \r (סוף פסקה), \x07 (סוף תא / שורה), \x0C (מעבר עמוד / מקטע)
+        $units = [];
+        $cur = [];
+        $cp = $from;
+        $pageBreak = false;
+        foreach ($chars as [$ch, $fc]) {
+            if ($ch === "\r" || $ch === "\x07" || $ch === "\x0C") {
+                $pp = self::find($this->papx, $fc);
+                $props = $pp ? $this->paraProps($pp[2], $pp[3]) : ['istd' => 0];
+                if ($pageBreak) $props['breakBefore'] = true;
+                $pageBreak = $ch === "\x0C";
+                if ($ch === "\x0C" && !$cur) { $cp++; continue; }   // מעבר בפסקה ריקה — רק לפסקה הבאה
+                $units[] = ['chars' => $cur, 'end' => $ch, 'p' => $props];
+                $cur = [];
+            } else {
+                $cur[] = [$ch, $fc, $cp];
+            }
+            $cp++;
+        }
+        if ($cur) $units[] = ['chars' => $cur, 'end' => "\r", 'p' => ['istd' => 0]];
+        return $units;
     }
 
     private function table(array $rows): array

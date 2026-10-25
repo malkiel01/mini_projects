@@ -984,6 +984,32 @@ async function main() {
     return { ok: out.ok, vec: s?.layers[1]?.type, app: new TextDecoder().decode(out.apps('vector-studio').get('state.json') ?? new Uint8Array()) };
   });
   check('‎.mbe זר — אחרי טעינה מהטיוטה: עדיין נשמר הכול', fromDraft.ok && fromDraft.vec === 'vector' && fromDraft.app === '{"z":3}', JSON.stringify(fromDraft));
+  // עמוד של סטודיו העיצוב (kind design, ‏pt, רסטר עם px ותמונה ממוקמת ב-box) — נפתח בפיקסלים ונשמר כעמוד
+  const gc = await page.evaluate(async () => {
+    const { create, save, open, PREVIEW } = await import('./assets/js/mbe/mbe.js');
+    const { encodePNG } = await import('./assets/js/engine/png.js');
+    const solid = (w, h, c) => { const a = new Uint8ClampedArray(w * h * 4); for (let i = 0; i < a.length; i += 4) a.set(c, i); return encodePNG(a, w, h); };
+    const f = create('design', { units: 'pt', color: { space: 'sRGB' }, surfaces: [] });
+    const bg = await f.addMedia(await solid(300, 200, [255, 0, 0, 255]), 'image/png');
+    const sq = await f.addMedia(await solid(100, 100, [0, 0, 255, 255]), 'image/png');
+    const vec = { id: 'T1', type: 'vector', paths: [{ id: 't1', type: 'path', d: 'M0 0 L10 10 Z' }] };
+    f.document.surfaces = [{ id: 'gc-page-1', type: 'page', size: [225, 150], layers: [
+      { id: 'R1', name: 'רקע', type: 'raster', src: bg, px: [300, 200], opacity: 1, blend: 'normal', visible: true, locked: false },
+      { id: 'R2', name: 'ריבוע', type: 'raster', src: sq, box: [75, 37.5, 75, 75], px: [100, 100], opacity: 1, blend: 'normal', visible: true, locked: false },
+      vec,
+    ] }];
+    f.setRendition(PREVIEW, await solid(30, 20, [255, 0, 0, 255]));
+    await __rs.openAsDocument(new File([await save(f, { app: 'greeting-cards' })], 'כרטיס.mbe'));
+    const r = __rs.renderer, d = __rs.doc;
+    const at = async (x, y) => Array.from(await r.readPixels(d, x, y, 1, 1)).join();
+    const opened = { size: [d.width, d.height].join(), bg: await at(10, 10), sq: await at(150, 100), out: await at(95, 100) };
+    const back = await open(await __rs.buildMbe());
+    const s = back.document.surfaces[0];
+    return { ...opened, ok: back.ok, kind: back.kind, type: s.type, ssize: s.size.join(), units: back.document.units,
+      px: s.layers.filter(l => l.type === 'raster').map(l => (l.px || []).join('x') + (l.box ? '+box' : '')).join(), vec: s.layers.some(l => l.id === 'T1' && l.type === 'vector') };
+  });
+  check('עמוד של סטודיו העיצוב — נפתח בגודל הפיקסלים של הרסטר, והתמונה הממוקמת (box) במקומה', gc.size === '300,200' && gc.bg === '255,0,0,255' && gc.sq === '0,0,255,255' && gc.out === '255,0,0,255', JSON.stringify(gc));
+  check('עמוד של סטודיו העיצוב — נשמר כעמוד ב-pt (kind design), הרסטר בגודל העמוד עם px, הווקטורי נשמר', gc.ok && gc.kind === 'design' && gc.type === 'page' && gc.ssize === '225,150' && gc.units === 'pt' && gc.px === '300x200,300x200' && gc.vec, JSON.stringify(gc));
   // קובץ פגום ומסמך שאינו רסטר — הודעה ברורה
   const bad = await page.evaluate(async () => {
     const { create, save, PREVIEW } = await import('./assets/js/mbe/mbe.js');

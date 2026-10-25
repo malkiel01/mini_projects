@@ -1237,6 +1237,23 @@ const EMU_PER_PX_IMPORT = 9525;
 const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
 
 /** דוח הייבוא: מפתח => [מה, מה קרה לו]. הסדר — הסדר בדוח. */
+/**
+ * כותרת עליונה / תחתונה מפסקאות שיובאו: טקסט פשוט (שורה לפסקה) — או כותרת עשירה כשיש בה מה שטקסט פשוט ממורכז לא
+ * מחזיק: עיצוב, יישור אחר, תמונה (גודל 9 נק' לבד — כך כותרת פשוטה נכתבת, ב-Word ואצלנו — לא נחשב). null — ריקה.
+ */
+function hf_from_blocks(array $blocks): string|array|null
+{
+    $blocks = array_values(array_filter($blocks, fn($b) => ($b['type'] ?? '') === 'paragraph' && !empty($b['content'])));
+    if (!$blocks) return null;
+    $plain9 = fn($m) => ($m['type'] ?? '') === 'textStyle' && ($m['attrs'] ?? []) == ['fontSize' => '9pt'];
+    foreach ($blocks as $b) {
+        $rich = isset($b['attrs']['textAlign']) && $b['attrs']['textAlign'] !== 'center';
+        foreach ($b['content'] as $x) $rich = $rich || ($x['type'] ?? '') !== 'text' || array_filter($x['marks'] ?? [], fn($m) => !$plain9($m));
+        if ($rich) return hf_rich_val($blocks);
+    }
+    return implode("\n", array_map(fn($b) => trim(implode('', array_column($b['content'], 'text'))), $blocks));
+}
+
 const IMPORT_REPORT = [
     'shapes' => ['צורות, תיבות טקסט ותרשימים', 'לא יובאו'],
     'images' => ['תמונות שלא נטענו', 'הקובץ פגום או בפורמט שאינו נתמך'],
@@ -1248,7 +1265,6 @@ const IMPORT_REPORT = [
     'styles' => ['סגנונות תו מותאמים', 'העיצוב שבא מסגנון התו לא יובא; סגנונות פסקה ועיצוב ישיר — כן'],
     'pborder' => ['גבולות והצללה של פסקה', 'לא יובאו'],
     'fonts' => ['גופנים שאינם זמינים', 'מוצגים ב-Heebo, זהה במסך, בהדפסה וב-PDF'],
-    'doc_hf' => ['כותרות עליונות / תחתונות (Word ישן — ‎.doc)', 'לא יובאו; אפשר להוסיף אותן כאן, או לשמור ב-Word כ-docx ולייבא'],
     'doc_comments' => ['הערות (Word ישן — ‎.doc)', 'לא יובאו'],
 ];
 const TWIP_PER_MM_IMPORT = 56.6929;

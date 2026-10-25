@@ -1761,9 +1761,9 @@ $tb = $oc[6]['content'];
 check('ODT: טבלה — שתי שורות, התא הממוזג (colspan 2)', count($tb) === 2 && count($tb[0]['content']) === 2 && ($tb[1]['content'][0]['attrs']['colspan'] ?? 0) === 2);
 $oimg = array_values(array_filter($oc[8]['content'] ?? [], fn($n) => ($n['type'] ?? '') === 'image'))[0]['attrs'] ?? null;
 check('ODT: התמונה נשמרה כתמונה של המסמך, בגודל שלה (80×40)', $oimg && media_of_doc($oimg['media'], $odDoc) !== null && $oimg['width'] === 80 && $oimg['height'] === 40, json_encode($oimg));
-check('ODT: הגדרות הדף — לרוחב, שוליים (גם עם הכותרת), כותרת עליונה ומספור למטה; דוח ריק',
+check('ODT: הגדרות הדף — לרוחב, שוליים (גם עם הכותרת), כותרת עליונה ומספור למטה במרכז; דוח ריק',
     ($od['page']['orientation'] ?? '') === 'landscape' && ($od['page']['margins'] ?? null) == ['top' => 20, 'bottom' => 20, 'right' => 30, 'left' => 15]
-    && ($od['page']['header'] ?? '') === 'כותרת עליונה' && ($od['page']['numbering'] ?? null) === ['show' => true, 'position' => 'bottom'] && $od['report'] === [],
+    && ($od['page']['header'] ?? '') === 'כותרת עליונה' && ($od['page']['numbering'] ?? null) === ['show' => true, 'position' => 'bottom', 'align' => 'center'] && $od['report'] === [],
     json_encode([$od['page'], $od['report']], JSON_UNESCAPED_UNICODE));
 check('ODT: נכנס כמו שהוא לשמירה (doc_save) — בלי שגיאה', (bool)doc_save(doc_find($odDoc, "c:$A"), $od['json'], null, 'u1', 'דנה'));
 // לפי התוכן: docx, HTML (גם מסמך שלם), טקסט (UTF-8 / Windows-1255), doc ישן — שגיאה מובנת
@@ -1804,6 +1804,22 @@ check('‎.doc: רשימה מקוננת (רמה 2 בתוך רמה 1)', ($dc2B[1]
     json_encode($dc2B[1], JSON_UNESCAPED_UNICODE));
 check('‎.doc: מעבר עמוד → breakBefore, ותמונת JPEG בתוך תא', ($dc2B[2]['attrs']['breakBefore'] ?? false) === true
     && ($dc2B[3]['content'][0]['content'][0]['content'][0]['content'][0]['type'] ?? '') === 'image' && $dc2['report'] === []);
+// libreoffice-hf.doc: Letter, שוליים 20/22/30/15, כותרת עליונה עשירה (מודגש, לימין), תחתונה פשוטה + מספר עמוד במרכז, ועמוד ראשון שונה
+$dc3 = import_file(file_get_contents(__DIR__ . '/fixtures/libreoffice-hf.doc'), 'מכתב.doc', $odDoc);
+$dc3P = page_normalize($dc3['page'] ?? []);
+check('‎.doc: גודל העמוד והשוליים מהמקטע (SEPX)', $dc3P['size'] === 'Letter' && $dc3P['margins'] == ['top' => 20, 'bottom' => 22, 'right' => 30, 'left' => 15], json_encode($dc3P['margins']));
+check('‎.doc: כותרת עליונה עשירה (מודגש ביחד עם טקסט רגיל), ותחתונה כטקסט', ($dc3P['header'][0]['content'][0]['marks'][0]['type'] ?? '') === 'bold'
+    && ($dc3P['header'][0]['content'][0]['text'] ?? '') === 'חברה בע"מ' && $dc3P['footer'] === 'רחוב הרצל 1, תל אביב', json_encode($dc3P['header'], JSON_UNESCAPED_UNICODE));
+check('‎.doc: מספר העמוד (שדה PAGE) → מספור למטה במרכז, ולא כטקסט בכותרת', $dc3P['numbering']['show'] && $dc3P['numbering']['position'] === 'bottom'
+    && $dc3P['numbering']['align'] === 'center' && !str_contains(json_encode($dc3P['footer'], JSON_UNESCAPED_UNICODE), 'PAGE'), json_encode($dc3P['numbering']));
+check('‎.doc: עמוד ראשון שונה (titlePg) — header_first, והדוח ריק', $dc3P['first_diff'] && $dc3P['header_first'] === 'עמוד השער' && $dc3['report'] === [],
+    json_encode([$dc3P['header_first'], $dc3['report']], JSON_UNESCAPED_UNICODE));
+check('‎.doc בלי כותרות — אין עמוד ראשון שונה ואין מספור', !(page_normalize($dc['page'] ?? [])['first_diff']) && empty(($dc['page'] ?? [])['header'] ?? null));
+$od3 = import_file(file_get_contents(__DIR__ . '/fixtures/libreoffice-hf.odt'), 'מכתב.odt', $odDoc);
+$od3P = page_normalize($od3['page'] ?? []);
+check('ODT: אותו מכתב — כותרת עליונה עשירה (מודגש), תחתונה כטקסט, מספור במרכז, ועמוד ראשון שונה (header-first)',
+    ($od3P['header'][0]['content'][0]['marks'][0]['type'] ?? '') === 'bold' && $od3P['footer'] === 'רחוב הרצל 1, תל אביב' && $od3P['numbering']['align'] === 'center'
+    && $od3P['first_diff'] && $od3P['header_first'] === 'עמוד השער' && $od3['report'] === [], json_encode([$od3P['header'], $od3P['header_first'], $od3['report']], JSON_UNESCAPED_UNICODE));
 check('‎.doc → Word: נשמר כ-docx (אין כתיבה של ‎.doc) ונפתח בחזרה עם אותו טקסט', str_contains(export_text(import_docx(export_docx($dc['json'], page_normalize([]), 'x'), $odDoc)['json']), 'תא ב2'));
 check('קובץ Office שאינו Word (OLE בלי WordDocument) — הודעה ברורה', throws(fn() => import_doc(substr(file_get_contents(__DIR__ . '/fixtures/libreoffice.doc'), 0, 1536), $odDoc), 'bad_file'));
 

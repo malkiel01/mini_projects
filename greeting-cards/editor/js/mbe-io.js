@@ -174,6 +174,7 @@ export async function buildMbe(doc, images, { baseBytes = null } = {}) {
         paths: [{ id: 'gc-page-p', d: toMbePath(rectD(W, H), [PT, 0, 0, PT, 0, 0]), fill: pageFill, stroke: null }] });
 
     // תצוגה אחת של כל המסמך, כדי לקבל את הגובה המדוד של כל טקסט
+    const baked = {};   // מזהה שכבה → ה-src שאפינו; אם בפתיחה הוא אחר — מישהו ערך את הפיקסלים (raster-studio/docs/layer-ai.md)
     const measure = new Map(doc.layers.filter(l => l.type === 'text').map(l => [l.id, l.h]));
 
     for (const l of doc.layers) {
@@ -184,7 +185,8 @@ export async function buildMbe(doc, images, { baseBytes = null } = {}) {
             delete solo.page.gradient;
             const c = await render(solo, images, 1);
             const src = await f.addMedia(await pngBytes(c), 'image/png');
-            layers.push({ ...common, type: 'raster', src, px: [c.width, c.height] });
+            layers.push({ ...common, type: 'raster', src, px: [c.width, c.height], box: [0, 0, r2(W * PT), r2(H * PT)] });
+            baked[l.id] = src;
             if (l.crop || l.mask || l.filters && Object.values(l.filters).some(Boolean) || l.flipX || l.flipY || l.rotation) gaps.add('image-edits → baked');
         } else if (l.type === 'text') {
             layers.push({ ...common, type: 'vector', paths: textItems(l, measure.get(l.id)) });
@@ -205,6 +207,7 @@ export async function buildMbe(doc, images, { baseBytes = null } = {}) {
 
     // המסמך המקורי שלנו — לפתיחה מדויקת בסטודיו. התמונות המקוריות (לא האפויות) ב-media/.
     const saved = clone(doc);
+    saved.baked = baked;
     for (const [id, a] of Object.entries(saved.assets)) {
         const blob = await assets.get(a.src);
         if (!blob) continue;
@@ -271,6 +274,29 @@ export async function importMbe(file) {
             // נערך באפליקציה אחרת: מחזירים מהמקורי את מה שאין לו מקום בפורמט — תפקידים ונמענים
             const byId = new Map((saved.layers || []).map(l => [l.id, l]));
             for (const l of doc.layers) { const o = byId.get(l.id); if (o?.role) l.role = o.role; }
+            // שכבת תמונה שהפיקסלים שלה לא השתנו מאז שאפינו — חוזרת עם המקור והפרמטרים (חיתוך, מסכה, פילטרים…)
+            const srcOf = new Map();
+            const walk = list => (list || []).forEach(x => { if (x?.type === 'group') walk(x.children); else if (x?.type === 'raster') srcOf.set(x.id, x.src); });
+            for (const sf of f.document.surfaces || []) walk(sf.layers);
+            let restored = 0;
+            for (let i = 0; i < doc.layers.length; i++) {
+                const l = doc.layers[i], o = byId.get(l.id);
+                if (l.type !== 'image' || o?.type !== 'image' || !saved.baked?.[l.id] || saved.baked[l.id] !== srcOf.get(l.id)) continue;
+                const a = saved.assets?.[o.asset];
+                const data = a?.media && f.getMedia(a.media);
+                if (!data) continue;
+                const blob = new Blob([data], { type: a.media.endsWith('.jpg') ? 'image/jpeg' : 'image/png' });
+                delete doc.assets[l.asset];
+                loaded.delete(l.asset);
+                const aid = uid('a');
+                doc.assets[aid] = { type: 'image', src: await assets.put(blob) };
+                loaded.set(aid, await blobToImage(blob));
+                doc.layers[i] = { ...clone(o), asset: aid, hidden: l.hidden, locked: l.locked, opacity: l.opacity };
+                if (!doc.layers[i].hidden) delete doc.layers[i].hidden;
+                if (!doc.layers[i].locked) delete doc.layers[i].locked;
+                restored++;
+            }
+            if (restored) fixes.push(`${restored} שכבות תמונה שלא נערכו — חזרו עם החיתוך, המסכה והפילטרים שלהן`);
             if (saved.merge) doc.merge = saved.merge;
             fixes.push(`נערך ב-${f.manifest?.modified?.app || 'אפליקציה אחרת'} — נפתח מהשכבות שבקובץ`);
         }

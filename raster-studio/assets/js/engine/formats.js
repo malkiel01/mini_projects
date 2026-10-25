@@ -69,20 +69,25 @@ export function mbeDocument(doc, layers, base = null, srcOf = l => l.src) {
   const old = base?.document ?? {};
   const surfaces = Array.isArray(old.surfaces) ? old.surfaces : [];
   const i = surfaces.findIndex(s => s && s.id === base?.surfaceId);
+  // עמוד (page) של אפליקציה אחרת נשאר עמוד, ביחידות שלו: scale — פיקסלים ליחידה (קנבס — 1)
+  const scale = base?.scale ?? 1;
+  const unit = v => (scale === 1 ? v : Math.round(v / scale * 100) / 100);
   const surface = {
-    ...(i >= 0 ? surfaces[i] : {}), id: i >= 0 ? surfaces[i].id : (base?.surfaceId ?? 's1'), type: 'canvas',
-    size: [doc.width, doc.height], layers: mbeLayers(layers, srcOf),
+    ...(i >= 0 ? surfaces[i] : {}), id: i >= 0 ? surfaces[i].id : (base?.surfaceId ?? 's1'), type: i >= 0 ? surfaces[i].type : 'canvas',
+    size: [unit(doc.width), unit(doc.height)], layers: mbeLayers(layers, srcOf, scale === 1 ? null : [doc.width, doc.height]),
   };
   const out = { ...old, units: old.units ?? 'pt', color: old.color ?? { space: 'sRGB' } };
   out.surfaces = i >= 0 ? surfaces.map((s, j) => (j === i ? surface : s)) : [surface, ...surfaces];
   return out;
 }
 
-const mbeLayers = (list, srcOf) => list.map(l => {
+const mbeLayers = (list, srcOf, px) => list.map(l => {
   // שכבה של אפליקציה אחרת (vector, frame…) — כמו שהגיעה; רק ההסתרה (מאפיין של המעטפת) אצלנו
   if (l.foreign) return l.visible === (l.foreign.visible ?? true) ? l.foreign : { ...l.foreign, visible: !!l.visible };
   const common = { ...(l.mbe ?? {}), id: l.id, name: l.name, type: l.type === 'group' ? 'group' : 'raster' };
-  const body = l.type === 'group' ? { children: mbeLayers(l.children, srcOf) } : { src: srcOf(l) };
+  // ה-PNG שלנו בגודל המשטח כולו: box (מיקום של תמונה קטנה) כבר אפוי לתוכו. בעמוד — px: גודל ה-PNG בפיקסלים
+  if (l.type !== 'group') { delete common.box; delete common.px; if (px) common.px = px; }
+  const body = l.type === 'group' ? { children: mbeLayers(l.children, srcOf, px) } : { src: srcOf(l) };
   return { ...common, ...body, opacity: round(l.opacity), blend: l.blend, visible: !!l.visible, locked: !!l.locked };
 });
 
@@ -102,6 +107,40 @@ export function mediaRefs(obj, out = new Set()) {
 export function canvasSurface(document) {
   const s = (document?.surfaces ?? []).find(x => x && x.type === 'canvas' && Array.isArray(x.size));
   return s ?? null;
+}
+
+/** pt לפיקסל בעמוד (הכרעת המתכלל עם סטודיו העיצוב: 1px = 0.75pt, כלומר 96dpi) */
+export const PT_PER_PX = 0.75;
+
+/**
+ * המשטח שהעורך פותח, וכמה פיקסלים ליחידה שלו: קנבס — 1 (בקנבס רסטר 1pt = 1px). אין קנבס — המשטח הראשון שיש בו
+ * שכבת רסטר (למשל עמוד של סטודיו העיצוב, ב-pt), ברזולוציה של שכבת הרסטר הכי חדה בו (px / box), ובלי px — 96dpi.
+ * משטח בלי שום שכבת רסטר (מסמך טקסט) — null: אין כאן מה לערוך.
+ */
+export function editSurface(document) {
+  const c = canvasSurface(document);
+  if (c) return { surface: c, scale: 1 };
+  for (const s of document?.surfaces ?? []) {
+    if (!s || !Array.isArray(s.size) || s.size.length !== 2 || !s.size.every(v => v > 0)) continue;
+    let scale = 0, rasters = 0;
+    const walk = list => {
+      for (const l of Array.isArray(list) ? list : []) {
+        if (!l || typeof l !== 'object') continue;
+        if (Array.isArray(l.children)) walk(l.children);
+        if (l.type !== 'raster') continue;
+        rasters++;
+        if (Array.isArray(l.px) && l.px[0] > 0) {
+          const w = Array.isArray(l.box) ? l.box[2] : s.size[0];
+          if (w > 0) scale = Math.max(scale, l.px[0] / w);
+        }
+      }
+    };
+    walk(s.layers);
+    if (!rasters) continue;
+    if (!scale) scale = document.units === 'pt' || document.units === undefined ? 1 / PT_PER_PX : 1;
+    return { surface: s, scale };
+  }
+  return null;
 }
 
 /** מה לא עובר לכל ייצוג — כנות בייצוא (mbe-format.md עיקרון 3) */

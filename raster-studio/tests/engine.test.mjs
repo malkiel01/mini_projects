@@ -452,7 +452,7 @@ test('שינוי צורה: הבחירה זזה עם התוכן', () => {
 // ---- קבצים: PNG, ZIP, ORA, ‎.mbe ----
 import { encodePNG, crc32, sha256Hex } from '../assets/js/engine/png.js';
 import { zipStore } from '../assets/js/engine/zip.js';
-import { oraStack, parseOraStack, mbeDocument, gapsFor, mediaRefs, canvasSurface } from '../assets/js/engine/formats.js';
+import { oraStack, parseOraStack, mbeDocument, gapsFor, mediaRefs, canvasSurface, editSurface } from '../assets/js/engine/formats.js';
 import { inflateSync } from 'node:zlib';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
@@ -709,5 +709,24 @@ test('התאמה למסך: המסמך בשטח הפנוי — לא מתחת לפ
   assert.ok(v.x + 600 * v.zoom <= 390 - 50 - 16 + 1e-9, 'לא נכנס מתחת לפס הכלים מימין');
   assert.ok(v.y >= 100 + 16 - 1e-9, 'מתחת ללוח האפשרויות');
   assert.ok(Math.abs(v.x - 16) < 1e-9 || v.x > 16);
+});
+
+test('עמוד של אפליקציה אחרת (pt): נפתח ברזולוציה של הרסטר החד, ונשמר כעמוד ביחידות שלו', () => {
+  const doc = { units: 'pt', surfaces: [{ id: 'gc', type: 'page', size: [225, 150], layers: [
+    { id: 'R1', type: 'raster', src: 'media/a.png', px: [300, 200] },
+    { id: 'R2', type: 'raster', src: 'media/b.png', box: [10, 10, 50, 50], px: [200, 200] },
+  ] }] };
+  const es = editSurface(doc);
+  assert.equal(es.surface.id, 'gc');
+  assert.equal(es.scale, 4, 'הכי חד: 200px על 50pt');
+  assert.equal(editSurface({ units: 'pt', surfaces: [{ id: 'p', type: 'page', size: [595, 842], layers: [] }] }), null, 'מסמך טקסט — אין מה לערוך');
+  assert.ok(Math.abs(editSurface({ units: 'pt', surfaces: [{ id: 'p', type: 'page', size: [75, 75], layers: [{ id: 'x', type: 'raster', src: 'media/c.png' }] }] }).scale - 4 / 3) < 1e-9, 'בלי px — 96dpi');
+  const layers = [{ id: 'R2', name: 'ב', type: 'raster', opacity: 1, blend: 'normal', visible: true, locked: false, mbe: doc.surfaces[0].layers[1] }];
+  const out = mbeDocument({ width: 900, height: 600 }, layers, { document: doc, surfaceId: 'gc', scale: 4 }, () => 'media/n.png');
+  const s = out.surfaces[0];
+  assert.equal(s.type, 'page', 'העמוד נשאר עמוד');
+  assert.deepEqual(s.size, [225, 150], 'ביחידות שלו');
+  assert.equal(s.layers[0].box, undefined, 'המיקום אפוי ל-PNG בגודל העמוד');
+  assert.deepEqual(s.layers[0].px, [900, 600]);
 });
 
