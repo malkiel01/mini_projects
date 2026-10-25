@@ -65,8 +65,11 @@ function import_mbe(string $bytes, string $docId): array
     };
     $json = $media($json);
     $page = null;
-    if (is_array($json['attrs']['page'] ?? null)) $page = page_normalize($json['attrs']['page']);
-    elseif ($pages) $page = mbe_page_of($pages[0], is_array($d['layout'] ?? null) ? $d['layout'] : [], is_array($d['styles'] ?? null) ? $d['styles'] : []);
+    // מקור האמת: layout בשורש וגודל המשטח (mbe-format.md סעיף 3); attrs.page נגזר — משלים את מה שאין בהם, ובסתירה layout גובר
+    $layout = is_array($d['layout'] ?? null) ? $d['layout'] : [];
+    $own = is_array($json['attrs']['page'] ?? null) ? page_normalize($json['attrs']['page']) : null;
+    if ($pages) $page = mbe_page_of($pages[0], $layout, is_array($d['styles'] ?? null) ? $d['styles'] : [], $own);
+    elseif ($own) $page = $own;
     unset($json['attrs']['page']);
     if (empty($json['attrs'])) unset($json['attrs']);
     $json['type'] = 'doc';
@@ -95,10 +98,31 @@ function import_mbe(string $bytes, string $docId): array
     return ['json' => $json, 'page' => $page, 'report' => $report];
 }
 
-/** הגדרות עמוד ממשטח של אפליקציה אחרת: הגודל (A4 / Letter, לאורך / לרוחב — הקרוב), השוליים מ-layout או מהמסגרת. */
-function mbe_page_of(array $surface, array $layout, array $styles = []): array
+/**
+ * הגדרות עמוד מהמעטפת: הגודל (A4 / Letter, לאורך / לרוחב — הקרוב), השוליים מ-layout או מהמסגרת, המספור, הסגנונות המשותפים.
+ * $own — attrs.page של השטף (קובץ שלנו): הבסיס, ומעליו layout וגודל המשטח — בסתירה הם גוברים (mbe-format.md סעיף 3).
+ */
+function mbe_page_of(array $surface, array $layout, array $styles = [], ?array $own = null): array
 {
     $mm = fn($pt) => round((float)$pt / PT_PER_MM, 1);
+    if ($own) {
+        // ההגדרות שלנו מהשטף, ומעליהן מה שבמעטפת: גודל המשטח, שולי layout והמספור
+        $p = $own;
+        if (is_array($surface['size'] ?? null) && count($surface['size']) === 2) {
+            [$w, $h] = array_map($mm, $surface['size']);
+            [$ow, $oh] = page_mm($own);
+            if (abs($ow - $w) + abs($oh - $h) > 1) { $q = mbe_page_of($surface, []); $p['size'] = $q['size']; $p['orientation'] = $q['orientation']; }
+        }
+        $m = is_array($layout['margins'] ?? null) ? $layout['margins'] : [];
+        foreach (['top' => 'top', 'bottom' => 'bottom', 'right' => 'inside', 'left' => 'outside'] as $ours => $k) {
+            if (is_numeric($m[$k] ?? null)) $p['margins'][$ours] = $mm($m[$k]);
+        }
+        $num = is_array($layout['numbering'] ?? null) ? $layout['numbering'] : [];
+        if (is_numeric($num['start'] ?? null)) $p['numbering']['start'] = (int)$num['start'];
+        if (($num['style'] ?? '') === 'hebrew') $p['numbering']['format'] = 'hebrew';
+        elseif (($num['style'] ?? '') === 'arabic' && ($p['numbering']['format'] ?? '') === 'hebrew') $p['numbering']['format'] = 'n';
+        return page_normalize($p, $own);
+    }
     [$w, $h] = array_map($mm, is_array($surface['size'] ?? null) ? $surface['size'] : [595.3, 841.9]);
     $best = ['A4', 'portrait'];
     $err = INF;
@@ -122,7 +146,8 @@ function mbe_page_of(array $surface, array $layout, array $styles = []): array
             break;
         }
     }
-    if (($layout['numbering']['style'] ?? '') === 'hebrew') $p['numbering'] = ['format' => 'hebrew'];
+    if (($layout['numbering']['style'] ?? '') === 'hebrew') $p['numbering']['format'] = 'hebrew';
+    if (is_numeric($layout['numbering']['start'] ?? null)) $p['numbering']['start'] = (int)$layout['numbering']['start'];
     // סגנונות הפסקה המשותפים (mbe-format.md סעיף 3): body → normal וגופן העמוד, h1–h3 → הכותרות. ערך לא תקין — נשאר ברירת המחדל
     foreach (['body' => 'normal', 'h1' => 'h1', 'h2' => 'h2', 'h3' => 'h3'] as $k => $ours) {
         $s = is_array($styles[$k] ?? null) ? $styles[$k] : null;

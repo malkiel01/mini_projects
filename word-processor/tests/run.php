@@ -2120,6 +2120,15 @@ check('‎.mbe מאפליקציה אחרת (בלי attrs.page): הסגנונות
     && $mbSP['styles']['normal']['line'] == 1.36 && $mbSP['styles']['normal']['align'] === 'justify' && $mbSP['styles']['normal']['after'] == 4
     && $mbSP['styles']['h1']['size'] == 20 && $mbSP['styles']['h1']['before'] == 18 && $mbSP['styles']['h1']['color'] === '#1f3864'
     && $mbSP['styles']['h2'] == page_defaults()['styles']['h2'], json_encode([$mbSP['font'], $mbSP['styles']['normal'], $mbSP['styles']['h1'], $mbSP['styles']['h2']], JSON_UNESCAPED_UNICODE));
+// layout בשורש גובר על attrs.page (העימוד שינה שוליים ומספור — מגיע לעורך); מה שאין במעטפת — מ-attrs.page
+$mbLy = Mbe::open($mbBytes);
+$mbLy->document['layout']['margins']['top'] = round(40 * PT_PER_MM, 2);
+$mbLy->document['layout']['numbering'] = ['start' => 7, 'style' => 'arabic'];
+$mbLyId = doc_new('a:99', 'layout גובר', null, null, 'u1', 'דנה');
+$mbLyP = import_mbe(Mbe::save($mbLy, ['app' => 'layout-studio', 'appVersion' => '1']), $mbLyId)['page'];
+check('‎.mbe: layout בשורש גובר על attrs.page — שוליים ומספור מהמעטפת, הכותרת העליונה מ-attrs.page', $mbLyP['margins'] == ['top' => 40.0, 'bottom' => 25.0, 'right' => 30.0, 'left' => 15.0]
+    && $mbLyP['numbering']['start'] === 7 && $mbLyP['numbering']['format'] === 'n' && str_contains(json_encode($mbLyP['header'], JSON_UNESCAPED_UNICODE), 'לוגו'),
+    json_encode([$mbLyP['margins'], $mbLyP['numbering']], JSON_UNESCAPED_UNICODE));
 check('‎.mbe: קובץ פגום — הודעה ברורה', throws(fn() => import_mbe(substr($mbBytes, 0, 200), $mbLId), 'bad_file'));
 
 section('מסמך חדש שלא נכתב בו — לא נשאר (my_discard)');
