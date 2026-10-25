@@ -300,6 +300,7 @@ final class DocxCtx
     private array $numSeen = [];   // numId => מספר הפריט הבא — רשימה נוספת עם אותו numId ממשיכה (Word)
     public bool $headingNumbers = false;   // סגנון כותרת מקושר למספור
     private array $rels = [];      // rId => target
+    private array $paraIds = [];   // מזהי פסקה שכבר נקלטו — מזהה כפול (פסקה שהועתקה ב-Word עם הסימנייה) רק לראשונה
     public array $comments = [];   // השרשורים (attrs.comments של המסמך): "c<id ב-Word>" => {author, date, text, done, replies}
     private array $cmTop = [];     // id ב-Word של הערה => המזהה של השרשור שלה (תשובה — של ההורה)
     private array $cmOpen = [];    // הטווחים הפתוחים עכשיו (commentRangeStart עד End) — נמשכים בין פסקאות
@@ -619,6 +620,7 @@ final class DocxCtx
         if ($xp->query('w:pPr/w:framePr', $p)->length) $this->note('shapes');
         $inline = [];
         $breakAfter = false;
+        $paraId = null;       // מזהה הפסקה מהסימנייה _mbe_p<id>
         // שדה פשוט (fldSimple) — התוצאה האחרונה שלו נכנסת כטקסט. קישור: w:hyperlink, או שדה HYPERLINK (מורכב / פשוט)
         $fieldLink = null;   // הכתובת של שדה HYPERLINK מורכב שבתוכו אנחנו (מ-separate עד end)
         $pending = null;
@@ -635,6 +637,12 @@ final class DocxCtx
             }
             if ($r->localName === 'bookmarkStart') {
                 $name = $r->getAttributeNS(W, 'name');
+                // מזהה פסקה של חבילת היצירה (נסתרת גם ב-Word) — attrs.id של הפסקה, לא סימנייה
+                if (str_starts_with($name, MBE_PARA_BOOKMARK)) {
+                    $pid = substr($name, strlen(MBE_PARA_BOOKMARK));
+                    if (preg_match(PARA_ID_RE, $pid)) $paraId ??= $pid;
+                    continue;
+                }
                 if (str_starts_with($name, '_Ref')) { $refMark = substr($name, 4); continue; }   // נסתרת גם ב-Word
                 if ($name !== '_GoBack' && ($b = bookmark_name($name))) $inline[] = ['type' => 'bookmark', 'attrs' => ['name' => $b]];
                 continue;
@@ -700,6 +708,7 @@ final class DocxCtx
                 }
             }
         }
+        if ($paraId !== null && !isset($this->paraIds[$paraId])) { $this->paraIds[$paraId] = true; $attrs['id'] = $paraId; }
         return [para($this->mergeText($inline), $attrs, $type), $num, $breakAfter];
     }
 
