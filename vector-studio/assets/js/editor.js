@@ -11,10 +11,11 @@ import {
   leaves, cloneItem, ids, worldBox, pathMatrix,
 } from './model.js';
 import { group, ungroup, reorder, align, distribute, addLayer, removeLayer, moveLayer, moveToLayer } from './arrange.js';
-import { render, hitTest, inRect, handlePoints, readColors, HANDLE, viewMatrix } from './render.js';
+import { render, hitTest, inRect, handlePoints, readColors, HANDLE, viewMatrix, extraPages } from './render.js';
 import { renderProps, renderLayers } from './props.js';
 import { createPenTools } from './pen.js';
 import { pencilD, brushD, widths } from './freehand.js';
+import { needsPages, sourcePdf, renderPages, assign as assignPages } from './pages.js';
 import { snapper } from './snap.js';
 import { parse, bbox, serialize, transform as transformSegs } from './geometry/path.js';
 const pathOps = { parse, serialize, transform: transformSegs };
@@ -26,7 +27,7 @@ const $ = (id) => document.getElementById(id);
 const canvas = $('canvas'), stage = $('stage');
 
 const S = {
-  id: null, rev: 0, name: 'ציור', doc: null, media: new Map(),
+  id: null, rev: 0, name: 'ציור', doc: null, media: new Map(), pageImgs: null, // pageImgs — עמודי המקור (pages.js)
   view: { x: 0, y: 0, z: 1 }, dpr: 1,
   sel: new Set(), hover: null, marquee: null, tool: 'select', active: null, board: null, // board — הלוח הנוכחי (בלי בחירה) guides: null,
   snap: pref('snap', true), grid: pref('grid', false), editingText: null, // active — השכבה לאובייקטים חדשים
@@ -112,7 +113,8 @@ async function loadMedia() {
   const srcs = new Set();
   const walk = (layers) => { for (const l of layers || []) { if (l.src) srcs.add(l.src); if (l.children) walk(l.children); } };
   for (const s of S.doc.surfaces) walk(s.layers);
-  if (!srcs.size) return;
+  const paged = needsPages(S.doc);
+  if (!srcs.size && !paged) return;
   try {
     const { open } = await import('./mbe/mbe.js');
     const f = await open(await library.container(S.id));
@@ -122,6 +124,16 @@ async function loadMedia() {
       try { S.media.set(src, await createImageBitmap(new Blob([bytes]))); } catch { /* לא תמונה — מסגרת אפורה */ }
     }
     draw();
+    // מסמך של אפליקציה אחרת (מעבד תמלילים, עימוד): העמודים כמו שהיא ציירה אותם — מה-PDF שבתוך הקובץ
+    const pdf = paged && sourcePdf(f);
+    if (pdf) {
+      status('טוען את עמודי המקור…');
+      S.sourcePdf = pdf;
+      S.pageImgs = await renderPages(pdf);
+      status('נשמר');
+      fit();
+      toast(`מסמך של אפליקציה אחרת — ${S.pageImgs.length} עמודים כמו שהיא ציירה אותם. אפשר לצייר מעליהם; את הטקסט עורכים שם.`);
+    }
   } catch (e) { toast('התמונות של הקובץ לא נטענו: ' + e.message, true); }
 }
 
@@ -142,7 +154,7 @@ function thumbnail() {
   const k = Math.min(240 / s.size[0], 240 / s.size[1], 1);
   const c = document.createElement('canvas');
   c.width = Math.max(1, Math.round(s.size[0] * k)); c.height = Math.max(1, Math.round(s.size[1] * k));
-  render(c, { doc: { ...S.doc, surfaces: [s] }, view: { x: 0, y: 0, z: k }, dpr: 1, sel: new Set(), exportMode: true, bg: true, media: S.media });
+  render(c, { doc: { ...S.doc, surfaces: [s] }, view: { x: 0, y: 0, z: k }, dpr: 1, sel: new Set(), exportMode: true, bg: true, media: S.media, pages: pagesNow() });
   return c.toDataURL('image/png');
 }
 
@@ -252,7 +264,7 @@ function draw() {
     if (!S.doc) return; // עוד נטען מהשרת
     const pathMode = S.tool === 'pen' || S.tool === 'node';
     render(canvas, {
-      ...S, selBox: S.sel.size && !pathMode && !S.editingText ? selectionBox(S.doc, S.sel) : null, handles: !op || op.type !== 'move',
+      ...S, pages: pagesNow(), selBox: S.sel.size && !pathMode && !S.editingText ? selectionBox(S.doc, S.sel) : null, handles: !op || op.type !== 'move',
       overlay: pathMode ? tools.overlay : null,
     });
     $('zoom-pct').textContent = Math.round(S.view.z * 100) + '%';
@@ -275,11 +287,15 @@ function resize() {
 }
 
 /** התאמה: כל הלוחות במסך, עם שוליים. */
+/** עמודי המקור מול הלוחות הנוכחיים (לפי הסדר — לוח שנוסף כאן בסוף נשאר בלי רקע). */
+const pagesNow = () => (S.pageImgs ? assignPages(S.doc, S.pageImgs) : null);
+
 function fit() {
   const r = stage.getBoundingClientRect();
   const lay = layout(S.doc);
   let x1 = 0, y1 = 0;
   for (const s of S.doc.surfaces) { const [ox, oy] = lay.get(s.id); x1 = Math.max(x1, ox + s.size[0]); y1 = Math.max(y1, oy + s.size[1]); }
+  for (const e of extraPages(S.doc, pagesNow())) { x1 = Math.max(x1, e.x + e.page.w); y1 = Math.max(y1, e.page.h); }
   const pad = 32;
   const z = Math.max(0.02, Math.min((r.width - pad * 2) / x1, (r.height - pad * 2) / y1, 8));
   S.view = { z, x: (r.width - x1 * z) / 2, y: (r.height - y1 * z) / 2 };
@@ -1380,7 +1396,7 @@ async function pngOf(surface, k, bg) {
   const c = document.createElement('canvas');
   c.width = Math.max(1, Math.round(surface.size[0] * k));
   c.height = Math.max(1, Math.round(surface.size[1] * k));
-  render(c, { doc: { ...S.doc, surfaces: [surface] }, view: { x: 0, y: 0, z: k }, dpr: 1, sel: new Set(), exportMode: true, bg, media: S.media });
+  render(c, { doc: { ...S.doc, surfaces: [surface] }, view: { x: 0, y: 0, z: k }, dpr: 1, sel: new Set(), exportMode: true, bg, media: S.media, pages: pagesNow() });
   const blob = await new Promise(res => c.toBlob(res, 'image/png'));
   if (!blob) throw new Error('יצירת התמונה נכשלה');
   return new Uint8Array(await blob.arrayBuffer());
@@ -1396,7 +1412,32 @@ async function deflate(bytes) {
 async function exportImage(src) {
   await S.mediaReady;
   const bmp = S.media.get(src);
-  if (!bmp) return null;
+  return bmp ? bitmapExport(bmp) : null;
+}
+
+/** עמוד המקור של לוח (אם יש) — כתמונה לייצוא. */
+async function exportPage(surfaceId) {
+  await S.mediaReady;
+  const page = pagesNow()?.bySurface.get(surfaceId);
+  return page ? bitmapExport(page.bmp) : null;
+}
+
+/** העמודים העודפים של המקור — עמודי PDF שכולם תמונה. */
+async function extraPdfPages() {
+  await S.mediaReady;
+  const { pageOnly } = await import('./export.js');
+  const out = [];
+  for (const e of extraPages(S.doc, pagesNow())) out.push(pageOnly(await bitmapExport(e.page.bmp), e.page.w, e.page.h, e.n));
+  return out;
+}
+
+const exported = new WeakMap(); // אותה תמונה לא נדחסת פעמיים (עמוד מקור — גם ב-PDF וגם בייצוגים)
+async function bitmapExport(bmp) {
+  if (!exported.has(bmp)) exported.set(bmp, encodeBitmap(bmp));
+  return exported.get(bmp);
+}
+
+async function encodeBitmap(bmp) {
   const k = Math.min(1, 4096 / Math.max(bmp.width, bmp.height));
   const w = Math.max(1, Math.round(bmp.width * k)), h = Math.max(1, Math.round(bmp.height * k));
   const c = document.createElement('canvas');
@@ -1432,17 +1473,18 @@ async function doExport(kind) {
         doc: S.doc, base, getFont,
         fontBytes: async (file) => new Uint8Array(await (await fetch('assets/fonts/' + file)).arrayBuffer()),
         preview: (surface, max) => pngOf(surface, Math.min(max / surface.size[0], max / surface.size[1], 4), true),
-        getImage: exportImage,
+        getImage: exportImage, getBackground: exportPage, extraPages: await extraPdfPages(), sourcePdf: S.sourcePdf || null,
       });
       gaps = r.gaps;
       download(new Blob([r.bytes], { type: 'application/vnd.mbe+zip' }), fileName('mbe'));
     } else if (kind === 'svg') {
-      const prep = await prepare(S.doc, surface.id, getFont, exportImage);
+      const prep = await prepare(S.doc, surface.id, getFont, exportImage, await exportPage(surface.id));
       gaps = prep.gaps;
       download(new Blob([toSVG(prep)], { type: 'image/svg+xml' }), fileName('svg', surface));
     } else if (kind === 'pdf') {
       const pages = [];
-      for (const s of S.doc.surfaces) { const p = await prepare(S.doc, s.id, getFont, exportImage); pages.push(p); gaps.push(...p.gaps); }
+      for (const s of S.doc.surfaces) { const p = await prepare(S.doc, s.id, getFont, exportImage, await exportPage(s.id)); pages.push(p); gaps.push(...p.gaps); }
+      pages.push(...await extraPdfPages());
       download(new Blob([toPDF(pages)], { type: 'application/pdf' }), fileName('pdf'));
     } else {
       await fontsReady;
