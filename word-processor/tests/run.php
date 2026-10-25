@@ -2034,6 +2034,50 @@ for ($y = 0; $y < imagesy($mbPrev) / 3; $y++) for ($x = 0; $x < imagesx($mbPrev)
 }
 check('‎.mbe: preview.png — העמוד עצמו: טקסט בשליש העליון, והתמונה מהכותרת העליונה', $mbDark > 30 && $mbGreen > 4, "dark $mbDark, green $mbGreen");
 check('‎.mbe: apps/word-processor/meta.json — שם המסמך', (json_decode($mbF->apps('word-processor')['meta.json'] ?? '', true)['title'] ?? '') === 'מסמך לחבילה');
+section('‎.mbe — פתיחה ושמירה בית-לבית');
+// הלוך וחזור: הקובץ שלנו נפתח כמסמך זהה — אותו תוכן, אותן הגדרות עמוד, והתמונות (גם בכותרת) באחסון שלנו
+$mbInId = doc_new('a:99', 'מ-mbe', null, null, 'u1', 'דנה');
+$mbIn = import_file($mbBytes, 'x.bin', $mbInId);
+$mbNorm = function ($v) use (&$mbNorm) { if (!is_array($v)) return $v; unset($v['media'], $v['src']); return array_map($mbNorm, $v); };
+$mbPics = [];
+array_walk_recursive($mbIn, function ($v, $k) use (&$mbPics, $mbInId) { if ($k === 'media') $mbPics[] = media_of_doc($v, $mbInId) ? 'ok' : 'bad'; });
+check('‎.mbe → מסמך: מזוהה לפי החתימה (גם בלי סיומת), אותו תוכן ואותן הגדרות עמוד, בלי דוח', $mbNorm($mbIn['json']) == $mbNorm(doc_migrate($mbJson))
+    && $mbIn['page']['margins'] == $mbPage['margins'] && $mbIn['page']['numbering']['format'] === 'hebrew' && $mbIn['report'] === [],
+    json_encode([$mbIn['json'], $mbIn['report']], JSON_UNESCAPED_UNICODE));
+check('‎.mbe → מסמך: התמונות — בשטף ובכותרת העליונה — באחסון של המסמך החדש', $mbPics === ['ok', 'ok'], json_encode($mbPics));
+// קובץ של מישהו אחר (הדוגמה של הליבה — text.mbe): שדות, חלקים ו-apps/ שלא שלנו נשמרים בית-לבית; רק השטף מתחלף
+$mbFix = __DIR__ . '/../../creative-suite/mbe-core/tests/fixtures/valid/';
+$mbOrig = Mbe::open(file_get_contents($mbFix . 'text.mbe'));
+$mbTId = doc_new('a:99', 'זר', null, null, 'u1', 'דנה');
+$mbT = import_file(file_get_contents($mbFix . 'text.mbe'), 'text.mbe', $mbTId);
+$mbTJson = $mbT['json'];
+$mbTJson['content'][] = ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'נוסף בעורך']]];
+$mbTRow = doc_save(doc_find($mbTId, 'a:99'), $mbTJson, null, 'u1', 'דנה');
+$mbBack = Mbe::open(export_mbe($mbTRow));
+$mbOD = $mbOrig->document; $mbBD = $mbBack->document;
+unset($mbOD['flows']['f1']['doc'], $mbBD['flows']['f1']['doc']);
+check('‎.mbe זר (text.mbe): בלי דוח — משטח אחד, מסגרת אחת, שטף אחד', $mbT['report'] === [] && str_contains(json_encode($mbT['json'], JSON_UNESCAPED_UNICODE), 'שלום עולם'));
+check('‎.mbe זר, הורדה אחרי עריכה: כל המסמך מלבד השטף — זהה בבתים (גם x-future, {} ו-1e+21)', MbeCanonical::encode($mbOD) === MbeCanonical::encode($mbBD),
+    MbeCanonical::encode($mbBD));
+check('‎.mbe זר: החלקים שלא שלנו — apps/word-processor/view.json הישן נשאר לצד meta.json, extensions/future.bin — בית-לבית', ($mbBack->files['extensions/future.bin'] ?? null) === $mbOrig->files['extensions/future.bin']
+    && ($mbBack->apps('word-processor')['view.json'] ?? null) === $mbOrig->apps('word-processor')['view.json'] && isset($mbBack->apps('word-processor')['meta.json']));
+check('‎.mbe זר: בשטף — מה שנוסף בעורך; הייצוגים עדכניים', str_contains(json_encode($mbBack->document['flows']['f1']['doc'], JSON_UNESCAPED_UNICODE), 'נוסף בעורך')
+    && !array_filter($mbBack->renditions(), fn($r) => $r['stale']) && !array_filter(Mbe::validate(export_mbe($mbTRow)), fn($i) => $i['level'] === 'error'));
+// עימוד (layout.mbe): שני עמודים, רקע רסטר, קבוצה וקטורית — מוצג כתמונה בראש המסמך, ונשמר כמו שהוא
+$mbLId = doc_new('a:99', 'עימוד', null, null, 'u1', 'דנה');
+$mbL = import_file(file_get_contents($mbFix . 'layout.mbe'), 'layout.mbe', $mbLId);
+$mbLFirst = $mbL['json']['content'][0]['content'][0] ?? [];
+check('‎.mbe מהעימוד: הטקסט של השטף, ובראש — התמונה הממוזערת של הקובץ, עם דוח "תוכן מאפליקציה אחרת"', ($mbLFirst['type'] ?? '') === 'image'
+    && media_of_doc($mbLFirst['attrs']['media'] ?? '', $mbLId) && str_contains(json_encode($mbL['json'], JSON_UNESCAPED_UNICODE), 'שטף אחד שעובר')
+    && ($mbL['report'][0]['key'] ?? '') === 'mbe_foreign', json_encode($mbL['report'], JSON_UNESCAPED_UNICODE));
+$mbLRow = doc_save(doc_find($mbLId, 'a:99'), $mbL['json'], null, 'u1', 'דנה');
+$mbLB = Mbe::open(export_mbe($mbLRow));
+$mbLO = Mbe::open(file_get_contents($mbFix . 'layout.mbe'));
+$mbLFlow = json_encode($mbLB->document['flows']['story']['doc'] ?? null, JSON_UNESCAPED_UNICODE);
+check('‎.mbe מהעימוד, הורדה: המשטחים, השכבות והרקע — זהים בבתים; השטף story בלי התמונה שהוספנו', MbeCanonical::encode($mbLB->document['surfaces']) === MbeCanonical::encode($mbLO->document['surfaces'])
+    && ($mbLB->files[$mbLO->document['surfaces'][0]['layers'][0]['src']] ?? null) === $mbLO->files[$mbLO->document['surfaces'][0]['layers'][0]['src']]
+    && str_contains($mbLFlow, 'שטף אחד שעובר') && !str_contains($mbLFlow, '"image"') && isset($mbLB->apps('layout-studio')['view.json']), $mbLFlow);
+check('‎.mbe: קובץ פגום — הודעה ברורה', throws(fn() => import_mbe(substr($mbBytes, 0, 200), $mbLId), 'bad_file'));
 array_map('unlink', glob("$tmp/media/mbe/*") ?: []);
 @rmdir("$tmp/media/mbe");
 

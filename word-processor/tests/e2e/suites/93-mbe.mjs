@@ -1,6 +1,6 @@
 /**
  * ‎.mbe (חבילת היצירה): ⋯ ← "הורדה כ-‎.mbe" — קובץ ZIP שה-mimetype שלו ראשון ולא דחוס, בשם המסמך; בתוכו המסמך כשטף,
- * התמונה הממוזערת וה-PDF וה-Word. ביומן הפעילות: "הורדה · .mbe".
+ * התמונה הממוזערת וה-PDF וה-Word. ביומן הפעילות: "הורדה · .mbe". והקובץ נפתח בחזרה מכפתור הייבוא.
  */
 const T = text => ({ type: 'text', text });
 const P = (...c) => ({ type: 'paragraph', content: c });
@@ -29,6 +29,15 @@ export default async function (t) {
         'renditions/document.pdf', 'renditions/document.docx', 'apps/word-processor/meta.json'].every(x => names.includes(x)), JSON.stringify(names));
     const act = await t.api(p, 'my_activity', { doc });
     t.ok('ביומן: "הורדה · .mbe"', JSON.stringify(act).includes('.mbe'), JSON.stringify(act).slice(0, 200));
+    // בחזרה דרך הייבוא: אותו כפתור, הקובץ נפתח כמסמך עם אותו תוכן
+    await p.click('button[aria-label="חזרה לרשימה"]');
+    await p.waitForSelector('h1:text-is("עורך התמלילים")');
+    const accept = await p.getAttribute('input[type=file][accept*=docx]', 'accept');
+    await p.setInputFiles('input[type=file][accept*=docx]', { name: 'חזרה.mbe', mimeType: 'application/vnd.mbe+zip', buffer: buf });
+    await p.waitForSelector('.wp-doc');
+    await t.settle(p);
+    const back = await p.evaluate(() => ({ h1: document.querySelector('.wp-doc h1')?.textContent, p: document.querySelector('.wp-doc p')?.textContent }));
+    t.ok('ייבוא ‎.mbe: בבורר הקבצים, והמסמך נפתח עם אותו תוכן', accept.includes('.mbe') && back.h1 === 'כותרת לחבילה' && back.p === 'פסקה בעברית', JSON.stringify([accept, back]));
     t.ok('בלי שגיאות JS', !p.errors.length, p.errors.join(' | '));
     await p.context().close();
 }

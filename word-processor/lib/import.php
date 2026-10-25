@@ -1247,6 +1247,7 @@ const TWIP_PER_MM_IMPORT = 56.6929;
 
 require_once __DIR__ . '/import_odt.php';
 require_once __DIR__ . '/import_rtf.php';
+require_once __DIR__ . '/mbe_import.php';
 
 /**
  * ייבוא קובץ שהמשתמש העלה (my_new): Word (docx), OpenDocument (ODT), RTF, HTML, או טקסט (UTF-8 / Windows-1255) — כל
@@ -1256,6 +1257,7 @@ function import_file(string $bytes, string $name, string $docId): array
 {
     $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
     if (str_starts_with($bytes, 'PK')) {
+        if (is_mbe($bytes)) return import_mbe($bytes, $docId);
         if (is_odt($bytes)) return import_odt($bytes, $docId);
         return import_docx($bytes, $docId);
     }

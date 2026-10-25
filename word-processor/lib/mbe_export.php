@@ -16,14 +16,6 @@ const MBE_APP = 'word-processor';
 const MBE_APP_VERSION = '1';
 const MBE_PREVIEW_PX = 600;
 
-/** הקובץ המקורי של מסמך שיובא מ-‎.mbe, ו-meta שלו (איזה שטף נערך כאן, איזו תמונה הוספנו בייבוא). */
-function mbe_source_path(string $doc): string
-{
-    $dir = wp_media_dir() . '/mbe';
-    if (!is_dir($dir)) mkdir($dir, 0775, true);
-    return "$dir/$doc.mbe";
-}
-
 function mbe_source_meta(string $doc): array
 {
     $f = mbe_source_path($doc) . '.json';
