@@ -106,19 +106,20 @@ void main() {
   o = vec4(a * u_alpha);
 }`,
 
-  // מסכת משיכה (בערוץ r) על אריח של שכבה: צבע (מכחול, דלי) או מחיקה (מחק)
+  // מסכת משיכה (בערוץ r) על אריח של שכבה: צבע (מכחול, דלי), מחיקה (מחק), או המקור המוזז (חותמת השכפול)
   stroke: `#version 300 es
 precision highp float;
-uniform sampler2D u_layer, u_mask, u_sel;
+uniform sampler2D u_layer, u_mask, u_sel, u_src;
 uniform vec4 u_color;     // לינארי מוכפל, אלפא 1
 uniform float u_opacity;
-uniform int u_erase, u_useSel;
+uniform int u_erase, u_useSel, u_clone;
 in vec2 v_uv; out vec4 o;
 void main() {
   vec4 l = texture(u_layer, v_uv);
   float m = clamp(texture(u_mask, v_uv).r, 0.0, 1.0) * u_opacity;
   if (u_useSel == 1) m *= texture(u_sel, v_uv).r;   // בחירה פעילה — רק בתוכה
-  o = u_erase == 1 ? l * (1.0 - m) : u_color * m + l * (1.0 - m);
+  vec4 c = u_clone == 1 ? texture(u_src, v_uv) : u_color;
+  o = u_erase == 1 ? l * (1.0 - m) : c * m + l * (1.0 - m);
 }`,
 
   // תיקוני צבע — ב-sRGB (כמו שהעין רואה), וחזרה ללינארי. u_kind: 1 בהירות/ניגודיות, 2 גוון/רוויה/בהירות
@@ -613,13 +614,46 @@ export class WebGL2Renderer {
   // משיכה נצברת במסכה נפרדת (לכל אריח), וכל נקודה שומרת את המקסימום — כך משיכה באטימות 50% לא
   // מתעבה כשהיא חוצה את עצמה. השכבה עצמה משתנה רק ב-endStroke. עד אז ההרכבה מציגה שכבה + מסכה.
 
-  /** opts: { mode: 'paint' | 'erase', color: [r, g, b] (sRGB), opacity: 0–1 } */
-  beginStroke(doc, layer, { mode = 'paint', color = [0, 0, 0], opacity = 1 } = {}) {
+  /**
+   * opts: { mode: 'paint' | 'erase' | 'clone', color: [r, g, b] (sRGB), opacity: 0–1, offset: [dx, dy] }
+   * clone — חותמת שכפול: כל פיקסל מקבל את הפיקסל של השכבה ב-offset ממנו (המקור פחות היעד, בפיקסלים שלמים),
+   * כפי שהשכבה הייתה בתחילת המשיכה — המשיכה לא משכפלת את עצמה.
+   */
+  beginStroke(doc, layer, { mode = 'paint', color = [0, 0, 0], opacity = 1, offset = [0, 0] } = {}) {
     if (doc._stroke) this.cancelStroke(doc);
     doc._stroke = {
       doc, layer, mode, opacity, mask: new Map(),
       color: [srgbToLinear(color[0]), srgbToLinear(color[1]), srgbToLinear(color[2]), 1],
+      ...(mode === 'clone' ? { from: new Map(layer.tiles), offset: offset.map(Math.round), src: new Map() } : {}),
     };
+  }
+
+  /** אריח המקור של חותמת השכפול ליעד k: עד ארבעה אריחים של השכבה (מתחילת המשיכה), מוזזים. נבנה פעם אחת. */
+  #cloneSrc(st, k) {
+    let t = st.src.get(k);
+    if (t) return t;
+    const gl = this.gl;
+    const [tx, ty] = k.split(',').map(Number);
+    const [dx, dy] = st.offset;
+    t = this.#tileTexture(1);
+    this.#target(t);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    const p = this.prog.copy;
+    gl.useProgram(p.p);
+    gl.bindVertexArray(this.vao);
+    gl.disable(gl.BLEND);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.uniform1i(p.u.u_tex, 0);
+    for (const [sx, sy] of tilesInRect(tx * TILE + dx, ty * TILE + dy, TILE, TILE)) {
+      const src = st.from.get(key(sx, sy));
+      if (!src) continue;
+      const ox = sx * TILE - dx - tx * TILE, oy = sy * TILE - dy - ty * TILE;
+      gl.bindTexture(gl.TEXTURE_2D, src);
+      this.#quad(p, [ox, oy, ox + TILE, oy + TILE], [0, 0, 1, 1], [TILE, TILE], -1);
+    }
+    st.src.set(k, t);
+    return t;
   }
 
   #maskTile(st, k) {
@@ -699,6 +733,7 @@ export class WebGL2Renderer {
     const p = this.prog.stroke;
     // מסכת הבחירה קודם — יצירתה קושרת מרקם, ואסור שזה יקרה אחרי שקשרנו את הקלט
     const sel = k && st.doc.selection ? this.#selTex(st.doc, k) : null;
+    const src = k && st.src ? this.#cloneSrc(st, k) : null;
     this.#target(outTex);
     gl.useProgram(p.p);
     gl.bindVertexArray(this.vao);
@@ -706,14 +741,18 @@ export class WebGL2Renderer {
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, layerTex);
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, maskTex);
     gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, sel || this.fullMask);
+    gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, src || this.emptyTex);
     gl.uniform1i(p.u.u_layer, 0);
     gl.uniform1i(p.u.u_mask, 1);
     gl.uniform1i(p.u.u_sel, 2);
+    gl.uniform1i(p.u.u_src, 3);
+    gl.uniform1i(p.u.u_clone, src ? 1 : 0);
     gl.uniform1i(p.u.u_useSel, sel ? 1 : 0);
     gl.uniform4fv(p.u.u_color, st.color);
     gl.uniform1f(p.u.u_opacity, st.opacity);
     gl.uniform1i(p.u.u_erase, st.mode === 'erase' ? 1 : 0);
     this.#quad(p, [0, 0, TILE, TILE], [0, 0, 1, 1], [TILE, TILE], -1);
+    gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, null);
     gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, null);
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, null);
     gl.activeTexture(gl.TEXTURE0);
@@ -754,6 +793,7 @@ export class WebGL2Renderer {
 
   #freeMasks(st) {
     this.freeTextures([...st.mask.values()].filter(t => t !== this.fullMask && t !== this.zeroMask));
+    if (st.src) this.freeTextures([...st.src.values()]);
   }
 
   // ---------- בחירה ----------

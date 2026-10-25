@@ -622,6 +622,54 @@ async function main() {
     await page.screenshot({ path: join(SHOTS, 'wand-desktop.png') });
   }
 
+  // ---- חותמת שכפול ----
+  await openEd(page);
+  await page.waitForFunction(() => window.__rs?.doc);
+  await page.evaluate(() => __rs.setView({ zoom: 1, x: 20, y: 20 }));
+  await page.click('[data-act="add"]');
+  await color('#ff0000');
+  await page.keyboard.press('m');
+  await drag([100, 100], [150, 150]);
+  await page.keyboard.press('Alt+Backspace');
+  await page.keyboard.press('Control+d');
+  await page.keyboard.press('s');
+  check('S — חותמת שכפול, עם גודל, קשיות, אטימות ו-🎯', await page.evaluate(() => __rs.tools.state.tool) === 'clone'
+    && await page.isVisible('#opt-size') && await page.isVisible('[data-clone="source"]'));
+  await setOpt('size', 55); await setOpt('hardness', 100); await setOpt('opacity', 100);
+  const undo0 = await page.evaluate(() => __rs.history.undoStack.length);
+  await stroke([[325, 125], [330, 125]]);
+  check('בלי נקודת מקור — הודעה, ושום שינוי', await page.evaluate(() => __rs.history.undoStack.length) === undo0
+    && /נקודת המקור/.test(await page.textContent('.toast')));
+  await page.keyboard.down('Alt');
+  await page.mouse.click(...at(125, 125));
+  await page.keyboard.up('Alt');
+  await stroke([[325, 125], [330, 125]]);
+  check('Alt+לחיצה ואז משיכה — מועתק מהמקור, באותו מרחק', near(await px(325, 125), [255, 0, 0, 255]) && near(await px(325, 160), [255, 255, 255, 255])
+    && near(await px(125, 125), [255, 0, 0, 255]), [await px(325, 125), await px(325, 160)].join(' | '));
+  check('חותמת שכפול — רשומה בהיסטוריה', await page.evaluate(() => __rs.history.undoStack.at(-1).label) === 'חותמת שכפול');
+  // משיכה שנייה — אותו מרחק (המקור שמאלה ב-200): מעתיקה את מה שהמשיכה הקודמת ציירה
+  await stroke([[520, 125], [522, 125]]);
+  check('המרחק נשמר בין משיכות', near(await px(521, 125), [255, 0, 0, 255]) && near(await px(521, 160), [255, 255, 255, 255]), await px(521, 125));
+  await page.keyboard.press('Control+z');
+  // 🎯 (למסך מגע): הקשה קובעת מקור חדש, והמשיכה הבאה מחשבת מרחק חדש
+  await page.click('[data-clone="source"]');
+  check('🎯 — מחכה להקשה', await page.getAttribute('[data-clone="source"]', 'aria-pressed') === 'true');
+  await page.mouse.click(...at(140, 140));
+  check('הקשה — המקור נקבע, 🎯 כבה', await page.getAttribute('[data-clone="source"]', 'aria-pressed') === 'false');
+  await stroke([[500, 250], [505, 250]]);
+  check('מקור חדש — מרחק חדש', near(await px(502, 250), [255, 0, 0, 255]), await px(502, 250));
+  // בחירה חותכת גם את החותמת
+  await page.keyboard.press('m');
+  await drag([400, 300], [200, 0]);   // מתחילים בשטח פנוי — לא על פס הכלים
+  await page.keyboard.press('s');
+  await page.keyboard.down('Alt');
+  await page.mouse.click(...at(140, 125));
+  await page.keyboard.up('Alt');
+  await stroke([[425, 50], [380, 50]]);
+  check('חותמת בתוך בחירה — רק בתוכה', near(await px(390, 50), [255, 0, 0, 255]) && near(await px(420, 50), [255, 255, 255, 255]),
+    [await px(390, 50), await px(420, 50)].join(' | '));
+  if (SHOTS) await page.screenshot({ path: join(SHOTS, 'clone-desktop.png') });
+
   // ---- הזזה ושינוי צורה ----
   await openEd(page);
   await page.waitForFunction(() => window.__rs?.doc);

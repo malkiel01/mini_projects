@@ -31,6 +31,7 @@ struct U {
 @group(0) @binding(2) var t0: texture_2d<f32>;
 @group(0) @binding(3) var t1: texture_2d<f32>;
 @group(0) @binding(4) var t2: texture_2d<f32>;
+@group(0) @binding(5) var t3: texture_2d<f32>;
 
 struct VO { @builtin(position) pos: vec4f, @location(0) uv: vec2f }
 
@@ -105,14 +106,16 @@ fn hardLight(b: vec3f, s: vec3f) -> vec3f { return mix(b * 2.0 * s, screenB(b, 2
   return vec4f(a * u.a.z);
 }
 
-// t0 שכבה, t1 מסכת המשיכה, t2 בחירה; a = צבע (לינארי מוכפל), b.x = אטימות, m = (מחיקה, בחירה)
+// t0 שכבה, t1 מסכת המשיכה, t2 בחירה, t3 מקור השכפול; a = צבע (לינארי מוכפל), b.x = אטימות,
+// m = (מחיקה, בחירה, שכפול)
 @fragment fn stroke(i: VO) -> @location(0) vec4f {
   let l = textureSample(t0, smp, i.uv);
   var m = clamp(textureSample(t1, smp, i.uv).r, 0.0, 1.0) * u.b.x;
   let s = textureSample(t2, smp, i.uv).r;
+  let src = textureSample(t3, smp, i.uv);
   if (u.m.y == 1) { m = m * s; }
   if (u.m.x == 1) { return l * (1.0 - m); }
-  return u.a * m + l * (1.0 - m);
+  return select(u.a, src, u.m.z == 1) * m + l * (1.0 - m);
 }
 
 fn rgb2hsl(c: vec3f) -> vec3f {
@@ -289,6 +292,7 @@ export class WebGPURenderer {
         { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: tex },
         { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: tex },
         { binding: 4, visibility: GPUShaderStage.FRAGMENT, texture: tex },
+        { binding: 5, visibility: GPUShaderStage.FRAGMENT, texture: tex },
       ],
     });
     this.layout = device.createPipelineLayout({ bindGroupLayouts: [this.bgl] });
@@ -419,7 +423,7 @@ export class WebGPURenderer {
     };
     open(!!o.clear);
     return {
-      /** u: { rect, uv, size, a, b, c, m }; tex: [t0, t1, t2] (מרקמים או views); smp — שם הדוגם */
+      /** u: { rect, uv, size, a, b, c, m }; tex: [t0, t1, t2, t3] (מרקמים או views); smp — שם הדוגם */
       draw: (name, u, tex = [], smp = 'nearest') => {
         if (this.used + SLOT > RING) { pass.end(); this.#flush(); open(false); }
         const off = this.used;
@@ -441,6 +445,7 @@ export class WebGPURenderer {
             { binding: 2, resource: v(tex[0]) },
             { binding: 3, resource: v(tex[1]) },
             { binding: 4, resource: v(tex[2]) },
+            { binding: 5, resource: v(tex[3]) },
           ],
         });
         pass.setPipeline(this.#pipe(name));
@@ -598,11 +603,12 @@ export class WebGPURenderer {
 
   // ---------- משיכות ----------
 
-  beginStroke(doc, layer, { mode = 'paint', color = [0, 0, 0], opacity = 1 } = {}) {
+  beginStroke(doc, layer, { mode = 'paint', color = [0, 0, 0], opacity = 1, offset = [0, 0] } = {}) {
     if (doc._stroke) this.cancelStroke(doc);
     doc._stroke = {
       doc, layer, mode, opacity, mask: new Map(),
       color: [srgbToLinear(color[0]), srgbToLinear(color[1]), srgbToLinear(color[2]), 1],
+      ...(mode === 'clone' ? { from: new Map(layer.tiles), offset: offset.map(Math.round), src: new Map() } : {}),
     };
   }
 
@@ -656,9 +662,29 @@ export class WebGPURenderer {
 
   #applyStroke(st, layerTex, maskTex, outTex, k = null) {
     const sel = k && st.doc.selection ? this.#selTex(st.doc, k) : null;
+    const src = k && st.src ? this.#cloneSrc(st, k) : null;
     this.#drawTo(outTex, 'stroke', {
-      a: st.color, b: [st.opacity, 0, 0, 0], m: [st.mode === 'erase' ? 1 : 0, sel ? 1 : 0, 0, 0],
-    }, [layerTex, maskTex, sel || this.fullMask]);
+      a: st.color, b: [st.opacity, 0, 0, 0], m: [st.mode === 'erase' ? 1 : 0, sel ? 1 : 0, src ? 1 : 0, 0],
+    }, [layerTex, maskTex, sel || this.fullMask, src]);
+  }
+
+  /** אריח המקור של חותמת השכפול ליעד k (ראו WebGL2Renderer.beginStroke) */
+  #cloneSrc(st, k) {
+    let t = st.src.get(k);
+    if (t) return t;
+    const [tx, ty] = k.split(',').map(Number);
+    const [dx, dy] = st.offset;
+    t = this.#tileTexture(1);
+    const p = this.#pass(this.#view(t), { clear: true });
+    for (const [sx, sy] of tilesInRect(tx * TILE + dx, ty * TILE + dy, TILE, TILE)) {
+      const src = st.from.get(key(sx, sy));
+      if (!src) continue;
+      const ox = sx * TILE - dx - tx * TILE, oy = sy * TILE - dy - ty * TILE;
+      p.draw('copy', { rect: [ox, oy, ox + TILE, oy + TILE] }, [src]);
+    }
+    p.end();
+    st.src.set(k, t);
+    return t;
   }
 
   endStroke(doc) {
@@ -690,6 +716,7 @@ export class WebGPURenderer {
 
   #freeMasks(st) {
     this.freeTextures([...st.mask.values()].filter(t => t !== this.fullMask && t !== this.zeroMask));
+    if (st.src) this.freeTextures([...st.src.values()]);
   }
 
   // ---------- בחירה ----------
