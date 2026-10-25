@@ -67,6 +67,11 @@ async function listView(folder = null) {
     const crumbs = h('nav.crumbs', { 'aria-label': 'תיקיות' });
     const fileIn = h('input', { type: 'file', accept: '.docx,.odt,.rtf,.mbe,.html,.htm,.txt,.md,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.oasis.opendocument.text,application/rtf,application/vnd.mbe+zip,text/rtf,text/html,text/plain', hidden: true, onchange: importFile });
     let docs = [], shared = [], folders = [], favs = new Set();
+    // בחירה מרובה (מסמכים שלי): "☑ בחירה" או לחיצה ארוכה על מסמך; פס בתחתית — העברה לתיקייה / לסל, לכמה יחד
+    let selecting = false;
+    const picked = new Set();
+    const selBar = h('div.select-bar', { hidden: true, role: 'toolbar', 'aria-label': 'פעולות על המסמכים שנבחרו' });
+    const setSelecting = on => { selecting = on; if (!on) picked.clear(); paint(); };
     const byId = () => new Map(folders.map(f => [f.id, f]));
     const pathOf = id => { const m = byId(), out = []; for (let f = m.get(id); f && out.length < 12; f = m.get(f.parent)) out.unshift(f); return out; };
     const head = () => {
@@ -87,11 +92,13 @@ async function listView(folder = null) {
     head();
     main.textContent = '';
     main.append(crumbs,
-        h('div.toolbar', search, h('button.btn', { onclick: () => newFolder() }, h('span', { 'aria-hidden': 'true' }, '📁'), ' תיקייה'),
+        h('div.toolbar', search, h('button.btn.select-toggle', { type: 'button', 'aria-pressed': 'false', onclick: () => setSelecting(!selecting) },
+                h('span', { 'aria-hidden': 'true' }, '☑'), ' בחירה'),
+            h('button.btn', { onclick: () => newFolder() }, h('span', { 'aria-hidden': 'true' }, '📁'), ' תיקייה'),
             h('button.btn.primary', { onclick: newDoc }, h('span', { 'aria-hidden': 'true' }, '+'), ' מסמך')),
         h('div.tiles', { style: { marginBottom: '12px' } },
             h('button.tile', { type: 'button', onclick: () => fileIn.click() }, h('span.tile-ic', { 'aria-hidden': 'true' }, '📥'), 'ייבוא מסמך — Word, ‏ODT, ‏HTML או טקסט')),
-        fileIn, list);
+        fileIn, list, selBar);
 
     const star = d => h('button.star', { type: 'button', 'aria-pressed': String(favs.has(d.doc)), 'aria-label': favs.has(d.doc) ? 'הסרה מהמועדפים' : 'הוספה למועדפים',
         title: favs.has(d.doc) ? 'הסרה מהמועדפים' : 'הוספה למועדפים', onclick: async e => {
@@ -100,12 +107,59 @@ async function listView(folder = null) {
         } }, favs.has(d.doc) ? '★' : '☆');
     const more = (label, items) => h('button.icon-btn.more', { type: 'button', 'aria-label': label, title: label,
         onclick: e => { e.stopPropagation(); popMenu(e.currentTarget, items()); } }, '⋯');
-    const card = (d, l2) => h('li.card', { tabindex: 0, role: 'button', onclick: () => { location.hash = '#/d/' + d.doc; },
-        onkeydown: e => { if (e.key === 'Enter' && e.target === e.currentTarget) location.hash = '#/d/' + d.doc; } },
+    const pick = d => { picked.has(d.doc) ? picked.delete(d.doc) : picked.add(d.doc); paint(); };
+    const card = (d, l2) => {
+        const mine = !d.role;
+        let press = 0;
+        const go = () => { if (selecting) { if (mine) pick(d); } else location.hash = '#/d/' + d.doc; };
+        return h('li.card' + (picked.has(d.doc) ? '.picked' : ''), { tabindex: 0, role: 'button', 'data-doc': d.doc,
+        onclick: () => { if (press === -1) { press = 0; return; } go(); },
+        onkeydown: e => { if (e.key === 'Enter' && e.target === e.currentTarget) go(); },
+        // לחיצה ארוכה (טלפון) — נכנסים לבחירה עם המסמך הזה
+        onpointerdown: () => { if (mine && !selecting) press = setTimeout(() => { press = -1; selecting = true; picked.add(d.doc); paint(); }, 550); },
+        onpointerup: () => { if (press > 0) clearTimeout(press); },
+        onpointerleave: () => { if (press > 0) clearTimeout(press); } },
+        selecting && mine ? h('input.pick', { type: 'checkbox', checked: picked.has(d.doc), 'aria-label': 'בחירה — ' + (d.title || 'ללא שם'),
+            onclick: e => { e.stopPropagation(); pick(d); } }) : null,
         h('span.doc-ic', { 'aria-hidden': 'true' }, d.role ? '👥' : '📄'),
         h('div.body', h('div.l1', h('span', d.title || 'ללא שם'), h('span.t', when(d.updated_at))), h('div.l2', l2)),
         star(d),
-        d.role ? null : more('עוד — ' + (d.title || 'ללא שם'), () => [['📁', 'העברה לתיקייה…', () => moveDialog({ doc: d })]]));
+        selecting ? null : more('עוד — ' + (d.title || 'ללא שם'), () => docItems(d)));
+    };
+    /**
+     * ⋯ על מסמך ברשימה — מה שעושים במסמך כקובץ, בלי לפתוח אותו: שם, שכפול, תיקייה, הורדה, שיתוף, פעילות, סל.
+     * בתוך המסמך (docMenu) — אותן פעולות קובץ, ועוד מה שקשור לעריכה (הדפסה, גיבוי). מסמך ששותף איתי — לפי התפקיד.
+     */
+    const docItems = d => {
+        const own = !d.role;
+        const name = d.title || 'ללא שם';
+        const fmt = (f, label, ic) => [ic, label, () => { location.href = `api.php?action=my_export&format=${f}&doc=${d.doc}`; }];
+        return [
+            ['📂', 'פתיחה', () => { location.hash = '#/d/' + d.doc; }],
+            own ? ['✏️', 'שינוי שם…', async () => {
+                const t = prompt('שם המסמך', d.title || '');
+                if (t === null || t.trim() === (d.title || '')) return;
+                await api('my_rename', { doc: d.doc, title: t.trim() });
+                await reload();
+            }] : null,
+            ['📑', 'שכפול', async () => { const r = await api('my_copy', { doc: d.doc }); await reload(); toast(`נוצר עותק של "${name}"`, false, { label: 'פתיחה', run: () => { location.hash = '#/d/' + r.doc; } }); }],
+            own ? ['📁', 'העברה לתיקייה…', () => moveDialog({ doc: d })] : null,
+            ['⬇️', 'הורדה…', () => popMenu(listAnchor(d), [
+                fmt('docx', 'הורדה כ-Word', '⬇️'), fmt('pdf', 'הורדה כ-PDF', '📕'), fmt('odt', 'הורדה כ-ODT (LibreOffice)', '📄'),
+                fmt('mbe', 'הורדה כ-‎.mbe (חבילת היצירה)', '📦'), fmt('text', 'הורדה כטקסט', '📝')])],
+            own ? ['👥', 'שיתוף…', () => shareDialog(d.doc)] : null,
+            own || d.role === 'edit' ? ['🕘', 'פעילות במסמך', () => activityDialog(d.doc)] : null,
+            own ? ['🗑', 'העברה לסל המחזור', async () => {
+                const r = await api('my_delete', { doc: d.doc });
+                await reload();
+                toast(`"${name}" הועבר לסל המחזור (${r.days} יום)`, false, { label: 'ביטול', run: async () => {
+                    try { await api('my_restore', { doc: d.doc }); await reload(); } catch (e) { toast(e.message, true); }
+                } });
+            }] : null,
+        ].filter(Boolean);
+    };
+    // תפריט ההורדה נפתח במקום התפריט הראשון — מעוגן לכפתור ⋯ של אותו מסמך
+    const listAnchor = d => [...list.querySelectorAll('.card')].find(c => c.dataset.doc === d.doc)?.querySelector('.more') || list;
     const folderCard = f => {
         const n = docs.filter(d => d.folder === f.id).length + folders.filter(x => x.parent === f.id).length;
         return h('li.card.folder', { tabindex: 0, role: 'button', onclick: () => { location.hash = '#/f/' + f.id; },
@@ -120,7 +174,31 @@ async function listView(folder = null) {
     };
     const where = d => { const p = pathOf(d.folder); return p.length ? '📁 ' + p.map(f => f.name).join(' › ') : ''; };
     const by = d => (d.updated_by ? `נערך על ידי ${d.updated_by}` : '');
+    function paintSelBar() {
+        main.querySelector('.select-toggle')?.setAttribute('aria-pressed', String(selecting));
+        selBar.hidden = !selecting;
+        list.style.marginBottom = selecting ? '96px' : '';   // הפס הקבוע לא מסתיר את סוף הרשימה
+        selBar.textContent = '';
+        if (!selecting) return;
+        const ids = [...picked];
+        const chosen = docs.filter(d => picked.has(d.doc));
+        selBar.append(h('span.n', ids.length ? (ids.length === 1 ? 'מסמך אחד נבחר' : `${ids.length} מסמכים נבחרו`) : 'בחרו מסמכים'),
+            h('button.btn', { type: 'button', disabled: !ids.length, onclick: () => moveDialog({ docs: chosen }) }, h('span', { 'aria-hidden': 'true' }, '📁'), ' העברה לתיקייה'),
+            h('button.btn.danger', { type: 'button', disabled: !ids.length, onclick: async () => {
+                if (!confirm(ids.length === 1 ? 'להעביר את המסמך לסל המחזור?' : `להעביר ${ids.length} מסמכים לסל המחזור?`)) return;
+                try {
+                    for (const id of ids) await api('my_delete', { doc: id });
+                    picked.clear(); selecting = false;
+                    await reload();
+                    toast(ids.length === 1 ? 'הועבר לסל המחזור' : `${ids.length} מסמכים הועברו לסל המחזור`, false, { label: 'ביטול', run: async () => {
+                        try { for (const id of ids) await api('my_restore', { doc: id }); await reload(); } catch (e) { toast(e.message, true); }
+                    } });
+                } catch (e) { toast(e.message, true); await reload(); }
+            } }, h('span', { 'aria-hidden': 'true' }, '🗑'), ' העברה לסל'),
+            h('button.btn', { type: 'button', onclick: () => setSelecting(false) }, 'סיום'));
+    }
     function paint() {
+        paintSelBar();
         head();
         const q = search.value.trim();
         list.textContent = '';
@@ -170,7 +248,7 @@ async function listView(folder = null) {
         toast(`התיקייה "${f.name}" נמחקה`);
     }
     /** לאן להעביר: עץ התיקיות (בלי התיקייה עצמה ומה שבתוכה, כשמעבירים תיקייה). */
-    function moveDialog({ doc, folder: fold }) {
+    function moveDialog({ doc, docs: many, folder: fold }) {
         const banned = new Set();
         if (fold) { const walk = id => { banned.add(id); folders.filter(x => x.parent === id).forEach(x => walk(x.id)); }; walk(fold.id); }
         const opts = [h('option', { value: '' }, 'ראש הרשימה (בלי תיקייה)')];
@@ -179,12 +257,14 @@ async function listView(folder = null) {
             tree(f.id, depth + 1);
         });
         tree(null, 0);
-        const cur = doc ? doc.folder || '' : fold.parent || '';
+        const cur = doc ? doc.folder || '' : many ? (new Set(many.map(d => d.folder || '')).size === 1 ? many[0].folder || '' : '') : fold.parent || '';
         const sel = h('select', { 'aria-label': 'תיקייה' }, opts);
         sel.value = byId().has(cur) ? cur : '';
-        sheet(doc ? `העברת "${doc.title || 'ללא שם'}"` : `העברת התיקייה "${fold.name}"`, body => body.append(h('label.field', h('span', 'לתיקייה'), sel)), async () => {
+        sheet(doc ? `העברת "${doc.title || 'ללא שם'}"` : many ? `העברת ${many.length === 1 ? 'מסמך אחד' : many.length + ' מסמכים'}` : `העברת התיקייה "${fold.name}"`,
+            body => body.append(h('label.field', h('span', 'לתיקייה'), sel)), async () => {
             try {
                 if (doc) await api('my_move', { doc: doc.doc, folder: sel.value || null });
+                else if (many) { for (const d of many) await api('my_move', { doc: d.doc, folder: sel.value || null }); picked.clear(); selecting = false; }
                 else folders = (await api('my_folder', { op: 'move', id: fold.id, parent: sel.value || null })).folders;
                 await reload();
                 toast('הועבר');
@@ -257,24 +337,40 @@ async function importFile(e) {
         const r = await fetch('api.php?action=my_new&title=', { method: 'POST', body: withTitle(fd, f.name.replace(/\.(docx|odt|rtf|html?|txt|md)$/i, '')), headers: { 'X-WP': '1', 'X-Tab': tab } });
         const d = await r.json();
         if (!r.ok) throw new Error(d.error || 'הייבוא נכשל');
-        importReport = d.report || [];
+        importReport = { doc: d.doc, rep: d.report || [] };
         location.hash = '#/d/' + d.doc;
     } catch (ex) { toast(ex.message, true); }
 }
 function withTitle(fd, t) { fd.append('title', t); return fd; }
 
-/** דוח הייבוא — אחרי שהמסמך המיובא נפתח: מה לא עבר בדיוק. בלי הערות — רק הודעה קצרה. */
+/**
+ * דוח הייבוא — אחרי שהמסמך המיובא נפתח: מה לא עבר בדיוק, והשאלה אם לייבא בכל זאת. "ייבוא" — המסמך נשאר; סגירה בלי
+ * "ייבוא" (✕, Esc או "ביטול הייבוא") — המסמך נמחק לגמרי וחוזרים לרשימה (my_import_cancel). בלי הערות — רק הודעה קצרה.
+ */
 let importReport = null;
 function showImportReport() {
-    const rep = importReport;
+    const imp = importReport;
     importReport = null;
-    if (!rep) return;
+    if (!imp) return;
+    const rep = imp.rep;
     if (!rep.length) { toast('המסמך יובא במלואו'); return; }
-    sheet('דוח ייבוא', body => {
+    let keep = false;
+    sheet('דוח ייבוא', (body, dlg) => {
         body.classList.add('import-report');
-        body.append(h('p', 'המסמך יובא. אלה הדברים שלא עברו בדיוק כמו ב-Word:'),
-            h('ul', rep.map(r => h('li', h('b', r.label), r.key === 'fonts' ? '' : ` (${r.count})`, h('span', ' — ' + r.detail)))));
-    }, () => true, 'הבנתי');
+        body.append(h('p', 'אלה הדברים שלא יעברו בדיוק כמו ב-Word. לייבא בכל זאת?'),
+            h('ul', rep.map(r => h('li', h('b', r.label), r.key === 'fonts' ? '' : ` (${r.count})`, h('span', ' — ' + r.detail)))),
+            h('p', h('button.btn', { type: 'button', onclick: () => dlg.close() }, 'ביטול הייבוא')));
+        dlg.addEventListener('close', async () => {
+            if (keep) return;
+            try {
+                await api('my_import_cancel', { doc: imp.doc });
+                if (current?.id === imp.doc) current.deleted = true;
+                drafts.del(`app:${me.id}:${imp.doc}`);
+                location.hash = '#/';
+                toast('הייבוא בוטל');
+            } catch (e) { toast(e.message, true); }
+        });
+    }, () => { keep = true; toast('המסמך יובא'); return true; }, 'ייבוא');
 }
 
 // ---------- מסמך ----------

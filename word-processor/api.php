@@ -485,6 +485,21 @@ function app_action(string $action, array $in): never
             doc_trash($row);
             activity($row['id'], $uid, $uname, 'trash');
             out(['ok' => true, 'trash' => true, 'days' => TRASH_DAYS]);
+        case 'my_import_cancel':
+            // דוח הייבוא נסגר בלי "ייבוא": המסמך שזה עתה נוצר מהקובץ נמחק לגמרי (לא לסל). רק מסמך טרי — נוצר בעשר הדקות
+            // האחרונות, בלי עריכה של ממש אחרי הייבוא (גרסה 3 לכל היותר) ובלי שיתוף
+            [$row] = doc_access($in['doc'] ?? '', $acc, 'owner');
+            $st = db()->prepare('SELECT created_at FROM docs WHERE id = ?');
+            $st->execute([$row['id']]);
+            $created = (int)$st->fetchColumn();
+            $st->closeCursor();
+            $sh = db()->prepare('SELECT 1 FROM shares WHERE doc = ? LIMIT 1');
+            $sh->execute([$row['id']]);
+            $shared = (bool)$sh->fetchColumn();
+            $sh->closeCursor();
+            if ($created < time() - 600 || (int)$row['version'] > 3 || $shared) throw new ApiError('המסמך כבר נערך — אפשר למחוק אותו מהתפריט (העברה לסל)', 'too_late', 409);
+            doc_delete($row);
+            out(['ok' => true]);
         case 'my_trash':
             trash_purge($space);
             $st = db()->prepare('SELECT id, title, updated_at, deleted_at FROM docs WHERE space = ? AND deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT 500');

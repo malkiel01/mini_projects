@@ -48,7 +48,7 @@ export default async function (t) {
         && (await p.getAttribute('.wp-ribbon select.w-font', 'title')).includes('David Libre')
         && await p.locator('.wp-ribbon select.w-font option.sub').count() === 0);
     await p.waitForSelector('dialog', { state: 'detached', timeout: 2000 }).catch(() => null);
-    t.ok('"הבנתי" סוגר', await p.locator('dialog').count() === 0);
+    t.ok('"ייבוא" סוגר, והמסמך נשאר', await p.locator('dialog').count() === 0 && await p.locator('.wp-doc').count() === 1);
     await t.settle(p);
     const label = await p.locator('.wp-ftr .wp-num.al-center').first().textContent().catch(() => '');
     t.ok('מספר העמוד מהכותרת התחתונה של Word', label.trim() === '1', label);
@@ -60,9 +60,27 @@ export default async function (t) {
     t.ok('מסמך שעבר כולו — בלי דוח, רק הודעה', await p.locator('dialog').count() === 0
         && (await p.locator('.toast:not([hidden])').textContent()).includes('יובא במלואו'));
 
-    // ODT מ-LibreOffice (tests/fixtures): כותרת, טבלה, תמונה; השם — בלי הסיומת
+    // דוח עם הערות, ו"ביטול הייבוא" — המסמך נמחק לגמרי וחוזרים לרשימה (גם סגירה ב-✕ או Esc)
     await p.click('button[aria-label="חזרה לרשימה"]');
     await p.waitForSelector('h1:text-is("עורך התמלילים")');
+    await upload(docx(true), 'לא לייבא.docx');
+    await p.waitForSelector('dialog[aria-label="דוח ייבוא"]');
+    const cancelled = await p.evaluate(() => location.hash.split('/').pop());
+    t.ok('הדוח שואל: "לייבא בכל זאת?", עם "ייבוא" ו"ביטול הייבוא"', (await p.locator('dialog .import-report').textContent()).includes('לייבא בכל זאת?')
+        && await p.locator('dialog button[type=submit]').textContent() === 'ייבוא' && await p.locator('dialog button:has-text("ביטול הייבוא")').count() === 1);
+    await p.click('dialog button:has-text("ביטול הייבוא")');
+    await p.waitForSelector('h1:text-is("עורך התמלילים")');
+    await p.waitForSelector('.list li:not(:text-is("טוען…"))');
+    t.ok('"ביטול הייבוא" — חזרה לרשימה, המסמך לא נוצר (גם לא בסל)', !(await p.locator('.list .card .l1 > span:first-child').allTextContents()).includes('לא לייבא')
+        && (await t.api(p, 'my_open', { doc: cancelled }))?.code === 'not_found' && !JSON.stringify(await t.api(p, 'my_trash', {})).includes(cancelled));
+    await upload(docx(true), 'סגירה.docx');
+    await p.waitForSelector('dialog[aria-label="דוח ייבוא"]');
+    const closed = await p.evaluate(() => location.hash.split('/').pop());
+    await p.keyboard.press('Escape');
+    await p.waitForSelector('h1:text-is("עורך התמלילים")');
+    t.ok('סגירת הדוח בלי "ייבוא" (Esc) — גם היא מבטלת', (await t.api(p, 'my_open', { doc: closed }))?.code === 'not_found');
+
+    // ODT מ-LibreOffice (tests/fixtures): כותרת, טבלה, תמונה; השם — בלי הסיומת (כבר ברשימה)
     await upload(readFileSync(new URL('../../fixtures/libreoffice.odt', import.meta.url)), 'מליברה.odt', 'application/vnd.oasis.opendocument.text');
     await t.settle(p);
     const odt = await p.evaluate(() => ({ h1: document.querySelector('.wp-doc h1')?.textContent, td: document.querySelectorAll('.wp-doc td').length,
