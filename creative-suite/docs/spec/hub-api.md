@@ -3,8 +3,9 @@
 **בעלים:** הצ'אט המאפיין. **מממש:** ליבת הפורמט (`mbe-core`), ב-JS וב-PHP, עם אותם שמות ואותם קודי בעיות — כמו כל
 הליבה. הבסיס המחייב: `mbe-format.md` סעיפים 3 ("יומן שלבים") ו-7, ו-[`README.md`](README.md) כאן.
 
-> סטטוס (2026-10-25): **הצעה לליבה** — ממתין לתשובת הצ'אט שלה (מה אפשרי, מה לשנות). שמות הפעולות פתוחים לשינוי; ההתנהגות
-> היא מה שבעל המערכת הכריע.
+> סטטוס (2026-10-25): **מוסכם עם הליבה** — אפשרי כמו שכתוב, עם התיקונים שבסעיף 6. ב-JS כל פעולה שמחשבת גיבוב — async;
+> ב-PHP — סינכרונית. הליבה מממשת לפי הסדר: יומן ו-`restore` → `ensureIds` → `stampFace` (docx, png) ו-`identify` →
+> `reconcile` / `applyMerge` → נ3.
 
 ---
 
@@ -120,7 +121,19 @@ applyMerge(f, plan, { 'f1/p17': 'theirs', 'f1/p40': 'ours', 'f1/p52': 'both' });
 `face-unknown-doc` (‏docId לא תואם) · `face-base-missing` · `face-stamp-failed` · `merge-unanswered` · `para-id-invalid` ·
 `para-id-duplicate` · `history-hash-mismatch` · `history-base-missing`.
 
-## 6. בדיקות שהליבה צריכה (כולן בלי Word אמיתי)
+## 6. תיקונים שהוסכמו עם הליבה (2026-10-25)
+
+| # | מה | ההכרעה |
+| --- | --- | --- |
+| א | `stampFace` ל-PDF | **לא בליבה** — הוספת XMP ל-PDF קיים (עדכון מצטבר מעל xref / object streams) שבירה. הליבה נותנת `xmpPacket(f)`, והכותב (`pdf-core`, או הכותב של וקטורי) מטמיע אותו **בזמן היצירה**. ‏`identify` קורא XMP מכל PDF. docx ו-png — בליבה (`custom.xml`, `customXml/item1.xml` + `itemProps`, ‏`[Content_Types].xml` ו-rels; ‏`iTXt` אחרי IHDR) |
+| ב | מזהה פסקה | שם סימנייה ב-Word: עד 40 תווים, `[A-Za-z0-9_]` **בלי מקף**. לכן המזהה מצטמצם ל-**`[A-Za-z0-9_]{1,32}`** (‏`_mbe_p` + 32 = 38). מזהה חדש מהליבה: `p` + 10 תווים אלפאנומריים. **שינוי באפיון — בקשה:** [`requests/spec-para-id.md`](../requests/spec-para-id.md) |
+| ג | `reconcile` | **לא משנה את `f`** — מחזיר תוכנית. ‏`applyMerge` משנה את `f.document`, ושלבי `return` ו-`merge` נכתבים בשמירה הבאה |
+| ד | יומן | שמירות רצופות מעדכנות את `result` של השלב האחרון, **והעותק הקודם נמחק מ-`history/`** אם אף שלב לא מפנה אליו. ‏`who` — `save(f, { who })`. ‏`f.stage()` — נכתב בשמירה הבאה |
+| ה | קודים | כל השמות בסעיף 5, ועוד `face-not-saved` (‏`stampFace` על מסמך שהשתנה מאז השמירה). `history-*` ו-`para-id-*` — **אזהרות**: היסטוריה פגומה לא חוסמת פתיחה |
+| — | `stampFace` ו-`save` | **אחרי `save`** — `f` כבר נושא את `manifest.document.sha256` החדש, ו-`stampFace` קורא אותו |
+| — | נפילה לפי תוכן | לא LCS נאיבי (5000×5000 = 25 מיליון תאים): עוגנים לפי טקסט זהה וייחודי (patience diff), LCS רק ביניהם, "פסקה שנערכה" — Dice על מילים מעל 0.6. מעל 5000 פסקאות בקטע בלי עוגן — רק עוגנים, ו-`gaps` אומר |
+
+## 7. בדיקות שהליבה צריכה (כולן בלי Word אמיתי)
 
 - הלוך-חזור: `stampFace` → `identify` מחזיר אותו `docId` ו-`base`, ב-JS וב-PHP זהה.
 - שלושת המקרים של `reconcile` (`fast-forward`, `diverged` עם התנגשות, `other-doc`), כולל פסקה חדשה בלי `id` ופסקה שנמחקה.
