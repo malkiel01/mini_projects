@@ -2111,8 +2111,8 @@ check('‎.mbe מהעימוד, הורדה: המשטחים, השכבות והרק
     && str_contains($mbLFlow, 'שטף אחד שעובר') && !str_contains($mbLFlow, '"image"') && isset($mbLB->apps('layout-studio')['view.json']), $mbLFlow);
 check('‎.mbe: קובץ פגום — הודעה ברורה', throws(fn() => import_mbe(substr($mbBytes, 0, 200), $mbLId), 'bad_file'));
 
-section('רשימת ציור → PDF (lib/pdf/draw.php — לעימוד)');
-require_once __DIR__ . '/../lib/pdf/draw.php';
+section('רשימת ציור → PDF (pdf-core: lib/pdf-core/draw.php — לעימוד)');
+require_once __DIR__ . '/../lib/pdf-core/draw.php';
 $dwFont = file_get_contents(__DIR__ . '/../vendor/fonts/pdf/frank-ruhl-libre-hebrew-400-normal.woff');
 $dwF = TtfFont::fromBytes($dwFont, 'frank');
 $dwIm = imagecreatetruecolor(40, 40);

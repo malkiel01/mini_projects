@@ -4,6 +4,7 @@
  * מזהי הגליפים לא משתנים, כך שרשימת גליפים שעוצבה מול הגופן המלא (HarfBuzz) מתאימה גם לקובץ המוקטן.
  * טבלאות שה-PDF לא צריך (GSUB, GPOS, GDEF, kern, DSIG…) יוצאות; post — גרסה 3 (בלי שמות גליפים).
  * גופן CFF (OTF עם 'CFF ') — חוזר כמו שהוא.
+ * (pdf-core — עורכים ב-creative-suite/pdf-core/src ומריצים tools/sync.php)
  */
 
 final class TtfSubset

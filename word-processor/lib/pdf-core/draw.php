@@ -2,6 +2,7 @@
 /**
  * רשימת ציור → PDF: הציור בלבד, בלי שבירת שורות — למי שמעמד בעצמו (העימוד, creative-suite/docs/requests/
  * layout-studio-pdf.md). אותו כותב של עורך התמלילים (writer.php, font.php), והגופנים — subset.
+ * (pdf-core — עורכים ב-creative-suite/pdf-core/src ומריצים tools/sync.php)
  *
  * יחידות: נקודות (pt). y — מלמעלה למטה, מהפינה העליונה של העמוד (TrimBox). צבע: "#rrggbb".
  *
