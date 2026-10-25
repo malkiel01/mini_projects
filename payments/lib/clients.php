@@ -407,12 +407,13 @@ function provider_account_save(array $tenant, array $in): array
         if ($required && empty($cred[$k])) throw new ApiError("חסר: $label", 'missing_credentials');
     }
     if ($provider === 'cardcom' && !ctype_digit((string)$cred['terminal'])) throw new ApiError('מספר המסוף — ספרות בלבד', 'bad_terminal');
+    if ($provider === 'payplus' && !preg_match('/^[0-9a-f-]{36}$/i', (string)$cred['payment_page_uid'])) throw new ApiError('מזהה דף התשלום — מזהה ארוך מממשק פייפלוס', 'bad_page_uid');
     $methods = array_values(array_intersect((array)($in['methods'] ?? ['card', 'bit']), ['card', 'bit', 'apple', 'google']));
     if (!in_array('card', $methods, true)) array_unshift($methods, 'card');
     $settings = ['methods' => $methods];
     if ($provider === 'morning') $settings['plugin_id'] = trim((string)($in['plugin_id'] ?? ''));
-    // קארדקום: המסמך החשבונאי — מהמסוף (מודול מסמכים), או דרך מורנינג
-    if ($provider === 'cardcom') $settings['documents'] = ($in['documents'] ?? 'cardcom') === 'morning' ? 'morning' : 'cardcom';
+    // קארדקום / פייפלוס: המסמך החשבונאי — מהסולק (מודול מסמכים / ‏Invoice+), או דרך מורנינג
+    if ($provider !== 'morning') $settings['documents'] = ($in['documents'] ?? $provider) === 'morning' ? 'morning' : $provider;
     if ($existing) {
         db_run('UPDATE provider_account SET credentials_enc = ?, settings = ?, status = ? WHERE id = ?', [seal(json_encode($cred)), json_encode($settings), (string)($in['status'] ?? $existing['status']) === 'disabled' ? 'disabled' : 'active', $existing['id']]);
         $id = $existing['id'];
