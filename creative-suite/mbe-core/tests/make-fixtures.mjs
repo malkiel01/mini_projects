@@ -75,7 +75,7 @@ async function valid() {
         f.document.surfaces.push(
             { id: 'p1', type: 'page', size: [595.3, 841.9], master: null, layers: [
                 { id: 'bg', name: 'רקע', type: 'raster', src: img, opacity: 1, blend: 'normal', visible: true, locked: false },
-                { id: 'g1', type: 'group', name: 'כותרת', children: [{ id: 'logo', type: 'vector', paths: [{ d: 'M0 0 L10 10' }] }] },
+                { id: 'g1', type: 'group', name: 'כותרת', children: [{ id: 'logo', type: 'vector', paths: [{ id: 'logo-p', d: 'M0 0 L10 10', stroke: { color: '#000000', opacity: 1, width: 1 } }] }] },
                 { id: 'fa', type: 'frame', box: [56, 56, 483, 300], flow: 'story' }] },
             { id: 'p2', type: 'page', size: [595.3, 841.9], master: null, layers: [{ id: 'fb', type: 'frame', box: [56, 56, 483, 730], flow: 'story' }] });
         f.document.flows = { story: { engine: 'prosemirror', doc: pm('שטף אחד שעובר בין שתי מסגרות.') } };
@@ -93,7 +93,19 @@ async function valid() {
     });
     await make('vector', async f => {
         f.document.surfaces.push({ id: 'a1', type: 'artboard', size: [100, 100], layers: [
-            { id: 'v1', type: 'vector', name: 'מלבן', paths: [{ d: 'M0 0 H10 V10 H0 Z', fill: '#36c' }] }] });
+            { id: 'v1', type: 'vector', name: 'ציור', paths: [
+                // לפי mbe-format.md סעיף 3, "תוכן שכבה vector": נתיב, קבוצה, טקסט קצר, ופריט מסוג לא מוכר (נשמר)
+                { id: 'rect', name: 'מלבן', d: 'M10 10 L90 10 L90 40 L10 40 Z', transform: [1, 0, 0, 1, 0, 0],
+                    fill: { color: '#3366cc', opacity: 1 }, stroke: null, fillRule: 'nonzero', shape: { type: 'rect', box: [10, 10, 80, 30], radius: 0 } },
+                { id: 'grp', type: 'group', name: 'קבוצה', children: [
+                    { id: 'curve', type: 'path', d: 'M0 0 C10 0 20 10 20 20 Q30 30 40 20 Z', fill: { gradient: { type: 'linear', from: [0, 0], to: [40, 0],
+                        stops: [{ at: 0, color: '#ffffff', opacity: 1 }, { at: 1, color: '#000000', opacity: 1 }] } },
+                      stroke: { color: '#000000', opacity: 1, width: 1.5, cap: 'round', join: 'round', miter: 4, dash: [2, 1] } },
+                    { id: 'subgrp', type: 'group', children: [{ id: 'dot', d: 'M50 50 L51 50 L51 51 Z' }] }] },
+                { id: 'title', type: 'text', text: 'שלום\nעולם', box: [10, 60, 80, 30], font: { family: 'David Libre', size: 12, weight: 700 },
+                    align: 'center', lineHeight: 1.2, auto: false, fill: { color: '#000000', opacity: 1 }, stroke: null },
+                { id: 'future-item', type: 'spiral', turns: 3, from: { x: 0 } }] }] });
+        f.document.fonts = [{ family: 'David Libre' }];
         f.setRendition('renditions/drawing.svg', SVG, { type: 'image/svg+xml' });
     });
 }
@@ -207,6 +219,14 @@ async function hostile() {
         flows: { f: { engine: 'prosemirror', doc: { type: 'doc', content: [{ type: 'image', attrs: { src: 'data:image/png;base64,AAAA' } }] } } } })), ['external-ref']);
     add('ref-missing', zip(await base({ surfaces: [{ id: 'p', type: 'page', layers: [{ id: 'r', type: 'raster', src: `media/${'a'.repeat(64)}.png` }] }] })), ['ref-missing']);
     add('duplicate-id', zip(await base({ surfaces: [{ id: 'p', type: 'page', layers: [{ id: 'p', type: 'group', children: [{ id: 'q', type: 'vector' }, { id: 'q', type: 'vector' }] }] }] })), ['duplicate-id']);
+    const vec = paths => ({ surfaces: [{ id: 'a', type: 'artboard', layers: [{ id: 'v', type: 'vector', paths }] }] });
+    add('path-d-missing', zip(await base(vec([{ id: 'p1', fill: null }]))), ['path-d-missing']);
+    add('path-d-relative', zip(await base(vec([{ id: 'p1', d: 'm0 0 l10 10 z' }]))), ['path-d-invalid', 'document-schema']);
+    add('path-d-args', zip(await base(vec([{ id: 'p1', d: 'M0 0 C1 2 3 4' }]))), ['path-d-invalid']);
+    add('path-id-missing', zip(await base(vec([{ d: 'M0 0 L1 1' }]))), ['document-schema']);
+    add('path-id-duplicate', zip(await base(vec([{ id: 'v', d: 'M0 0 L1 1' }, { id: 'g', type: 'group', children: [{ id: 'q', d: 'M0 0 L1 1' }, { id: 'q', d: 'M0 0 L2 2' }] }]))), ['duplicate-id']);
+    add('path-transform', zip(await base(vec([{ id: 'p1', d: 'M0 0 L1 1', transform: [1, 0, 0, 1, 0] }]))), ['document-schema']);
+    add('group-geometry', zip(await base(vec([{ id: 'g', type: 'group', d: 'M0 0 L1 1', children: [] }]))), ['group-geometry']);
     add('flow-missing', zip(await base({ surfaces: [{ id: 'p', type: 'page', layers: [{ id: 'f', type: 'frame', flow: 'nope' }] }], flows: {} })), ['flow-missing']);
     {
         const data = png(2, 2, [9, 9, 9]);

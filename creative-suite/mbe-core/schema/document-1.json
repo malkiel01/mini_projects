@@ -90,8 +90,27 @@
         "locked": { "type": "boolean" },
         "box": { "type": "array", "minItems": 4, "maxItems": 4, "items": { "type": "number" } },
         "flow": { "type": "string" },
-        "paths": { "type": "array" },
+        "paths": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/pathItem" } },
         "children": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/layer" } }
+      }
+    },
+    "pathItem": {
+      "description": "פריט ב-paths של שכבת vector (mbe-format.md סעיף 3): נתיב (בלי type או path) — d חובה; group — children; text. type לא מוכר — נשמר כמו שהוא.",
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "type": { "$ref": "#/$defs/token" },
+        "name": { "type": "string", "maxLength": 500 },
+        "d": { "type": "string", "pattern": "^[\\s,]*M[MLCQZ0-9eE.,+\\s-]*$" },
+        "transform": { "type": "array", "minItems": 6, "maxItems": 6, "items": { "type": "number" } },
+        "box": { "type": "array", "minItems": 4, "maxItems": 4, "items": { "type": "number" } },
+        "fill": { "type": ["object", "null"] },
+        "stroke": { "type": ["object", "null"] },
+        "fillRule": { "$ref": "#/$defs/token" },
+        "shape": { "type": "object" },
+        "text": { "type": "string" },
+        "children": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/pathItem" } }
       }
     },
     "flow": {
