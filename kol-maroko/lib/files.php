@@ -17,6 +17,8 @@ declare(strict_types=1);
 require_once __DIR__ . '/auth.php';
 
 const FILE_MAX = 50 * 1024 * 1024;
+const IMPORT_MAX = 3 * 1024 * 1024 * 1024;
+const IMPORT_FILE_MAX = 600 * 1024 * 1024;   // קובץ בודד מתוך ייבוא (הקלטות ארוכות שכבר באתר)
 const DISK_CAP_DEFAULT = 5 * 1024 * 1024 * 1024;
 const IMAGE_MAX_SIDE = 2400;
 const MEDIA_TTL = 12 * 3600;
@@ -93,8 +95,11 @@ function upload_init(array $user, array $b): array
 {
     $size = (int)($b['size'] ?? 0);
     $name = str_replace(['/', '\\', "\0"], '_', mb_substr(trim((string)($b['name'] ?? '')), 0, 150)) ?: 'קובץ';
+    // ייבוא מהאתר (ZIP עם כל הקבצים של העמוד) — לבעלים בלבד, עד 3GB
+    $purpose = ($b['purpose'] ?? '') === 'import' ? 'import' : 'file';
+    if ($purpose === 'import') require_role($user, 'owner');
     if ($size <= 0) throw new ApiError('הקובץ ריק');
-    if ($size > FILE_MAX) throw new ApiError('הקובץ גדול מ-50MB');
+    if ($size > ($purpose === 'import' ? IMPORT_MAX : FILE_MAX)) throw new ApiError($purpose === 'import' ? 'קובץ הייבוא גדול מ-3GB' : 'הקובץ גדול מ-50MB');
     if (disk_used() + $size > disk_cap()) throw new ApiError('התקרה של הכלי מלאה. מחקו קבצים שלא בשימוש', 507);
 
     // העלאות שנתקעו יותר מיממה — נמחקות
@@ -105,7 +110,7 @@ function upload_init(array $user, array $b): array
     $id = bin2hex(random_bytes(16));
     if (!is_dir(files_dir() . '/tmp') && !@mkdir(files_dir() . '/tmp', 0775, true)) throw new ApiError('אין גישה לתיקיית הקבצים', 500);
     touch(tmp_path($id));
-    db()->prepare('INSERT INTO uploads (id, name, size, sub, started) VALUES (?, ?, ?, ?, ?)')->execute([$id, $name, $size, $user['sub'], time()]);
+    db()->prepare('INSERT INTO uploads (id, name, size, sub, started, purpose) VALUES (?, ?, ?, ?, ?, ?)')->execute([$id, $name, $size, $user['sub'], time(), $purpose]);
     return ['id' => $id, 'chunk' => chunk_size(), 'received' => 0];
 }
 
@@ -143,29 +148,38 @@ function upload_done(array $user, array $b): array
     clearstatcache(true, $tmp);
     if ((int)@filesize($tmp) !== (int)$u['size']) throw new ApiError('ההעלאה לא הושלמה', 409, ['received' => (int)@filesize($tmp)]);
     db()->prepare('DELETE FROM uploads WHERE id = ?')->execute([$u['id']]);
+    if (($u['purpose'] ?? 'file') !== 'file') throw new ApiError('ההעלאה הזו היא לייבוא');
+    $id = file_store($tmp, $u['name'], $user, (string)($b['type'] ?? ''), $u['id']);
+    audit_as($user, 'file_add', $u['name']);
+    return ['file' => file_public(file_row($id))];
+}
 
+/**
+ * קובץ זמני → קובץ בספרייה: זיהוי סוג לפי התוכן, רשימה מותרת, ותמונה — עיבוד (EXIF נופל, WebP). מחזיר את המזהה.
+ * משמש גם את ההעלאה וגם את הייבוא מהאתר.
+ */
+function file_store(string $tmp, string $name, array $user, string $declared = '', ?string $id = null): string
+{
     $mime = (new finfo(FILEINFO_MIME_TYPE))->file($tmp) ?: '';
     // finfo מזהה m4a / mp4 של שמע בלבד כ-video/mp4 או audio/mp4 לפי הגרסה; הקלטה מהדפדפן מוצהרת כשמע
-    if ($mime === 'video/mp4' && preg_match('/\.(m4a|aac)$/i', $u['name'])) $mime = 'audio/mp4';
-    if ($mime === 'video/webm' && preg_match('/\.(weba|webm)$/i', $u['name']) && str_starts_with((string)($b['type'] ?? ''), 'audio/')) $mime = 'audio/webm';
+    if ($mime === 'video/mp4' && preg_match('/\.(m4a|aac)$/i', $name)) $mime = 'audio/mp4';
+    if ($mime === 'video/webm' && (preg_match('/\.weba$/i', $name) || str_starts_with($declared, 'audio/'))) $mime = 'audio/webm';
+    if ($mime === 'application/octet-stream' && preg_match('/\.mp3$/i', $name)) $mime = 'audio/mpeg';
     if (!isset(FILE_TYPES[$mime])) {
         @unlink($tmp);
-        throw new ApiError($mime === 'image/svg+xml' ? 'קובצי SVG אסורים (יכול להיות בהם קוד)' : 'סוג הקובץ לא נתמך');
+        throw new ApiError($mime === 'image/svg+xml' ? 'קובצי SVG אסורים (יכול להיות בהם קוד)' : "סוג הקובץ לא נתמך ($name)");
     }
     [$kind, $ext] = FILE_TYPES[$mime];
     $w = $h = null;
     if ($kind === 'image') [$mime, $ext, $w, $h] = image_process($tmp, $mime, $ext);
 
-    $id = $u['id'];
-    $f = ['id' => $id, 'ext' => $ext];
-    $dest = file_path($f);
+    $id ??= bin2hex(random_bytes(16));
+    $dest = file_path(['id' => $id, 'ext' => $ext]);
     if (!is_dir(dirname($dest))) @mkdir(dirname($dest), 0775, true);
     if (!@rename($tmp, $dest)) { @unlink($tmp); throw new ApiError('לא הצלחתי לשמור את הקובץ', 500); }
-    $size = filesize($dest);
     db()->prepare('INSERT INTO files (id, name, type, kind, ext, size, sha256, w, h, by_sub, by_name, at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
-        ->execute([$id, $u['name'], $mime, $kind, $ext, $size, hash_file('sha256', $dest), $w, $h, $user['sub'], $user['name'], now_iso()]);
-    audit_as($user, 'file_add', $u['name']);
-    return ['file' => file_public(file_row($id))];
+        ->execute([$id, $name, $mime, $kind, $ext, filesize($dest), hash_file('sha256', $dest), $w, $h, $user['sub'], $user['name'], now_iso()]);
+    return $id;
 }
 
 /**
@@ -232,7 +246,10 @@ function files_list(): array
 function files_in_use(): array
 {
     $json = (string)db()->query('SELECT json FROM draft WHERE id = 1')->fetchColumn();
-    preg_match_all('/"([0-9a-f]{32})"/', $json, $m);
+    // וגם הגרסה החיה והאחרונות — כדי ש"פרסום מחדש" של גרסה קודמת לא ייתקע על קובץ שנמחק
+    $json .= implode('', db()->query("SELECT json FROM versions WHERE n > (SELECT COALESCE(MAX(n), 0) - 10 FROM versions)")->fetchAll(PDO::FETCH_COLUMN));
+    $json .= (string)setting('imported_css', '');
+    preg_match_all('/(?:"|kol-file:)([0-9a-f]{32})/', $json, $m);
     return array_flip($m[1]);
 }
 

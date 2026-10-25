@@ -18,6 +18,7 @@ const Studio = (() => {
     video: { icon: '🎬', label: 'וידאו', props: () => ({ file: '', embed: '' }) },
     file: { icon: '📄', label: 'קובץ להורדה', media: 'doc', props: () => ({ file: '', label: '' }) },
     code: { icon: '</>', label: 'קוד להטמעה', props: () => ({ html: '', title: '', height: 300, auto: true }) },
+    raw: { icon: '🏛️', label: 'קטע מקורי', hidden: true, props: () => ({ html: '' }) },
   };
   const fileCache = {};   // מזהה → {name, url, kind…} — מה שהספרייה כבר החזירה
   const LAYOUTS = { '100': 'אחת', '50-50': '½ ½', '33-67': '⅓ ⅔', '67-33': '⅔ ⅓', '33-33-33': '⅓ ⅓ ⅓', '25-25-25-25': '¼ × 4' };
@@ -331,6 +332,7 @@ parent.postMessage({kol:'ready'},'*');
     }
     const w = f.w, p = w.props;
     const parts = [actions(w.id)];
+    if (w.legacy) parts.push(h('p', { class: 'hint legacy-note' }, '🏛️ מהעמוד המקורי — העיצוב של האתר נשמר. התוכן נערך כרגיל.'));
     if (w.type === 'heading') {
       parts.push(field('הטקסט', h('input', { value: p.text, maxlength: 500, disabled: S.readonly, oninput: e => set(p, 'text')(e.target.value) })),
         h('div', { class: 'f' }, h('span', {}, 'רמה'), seg('level', { 1: 'H1', 2: 'H2', 3: 'H3', 4: 'H4' }, String(p.level), v => set(p, 'level', false)(+v))));
@@ -344,6 +346,10 @@ parent.postMessage({kol:'ready'},'*');
     } else if (w.type === 'longtext') {
       parts.push(h('p', { class: 'hint' }, 'טקסט ארוך נכתב בעורך התמלילים — כותרות, רשימות, טבלאות ותמונות, כמו ב-Word. כל שמירה שם מתעדכנת כאן.'),
         h('button', { type: 'button', class: 'btn primary', onclick: () => openLongText(w) }, S.readonly ? '👁️ צפייה בעורך' : '✍️ פתיחה בעורך התמלילים'));
+    } else if (w.type === 'raw') {
+      parts.push(h('p', { class: 'hint' }, 'קטע מהעמוד המקורי שאין לו רכיב מתאים. הוא מוצג בדיוק כמו באתר. אפשר לערוך את ה-HTML שלו (סקריפטים לא נשמרים).'),
+        field('HTML', h('textarea', { class: 'code-area', dir: 'ltr', spellcheck: 'false', rows: 12, disabled: S.readonly,
+          oninput: e => mutate(() => { p.html = e.target.value; }, { coalesce: true, rebuild: false }) }, p.html)));
     } else if (w.type === 'code') {
       const set2 = k => v => mutate(() => { p[k] = v; }, { coalesce: true, rebuild: false });
       const height = h('input', { type: 'number', min: 40, max: 3000, value: p.height, dir: 'ltr', disabled: S.readonly || p.auto,
@@ -360,7 +366,7 @@ parent.postMessage({kol:'ready'},'*');
         oninput: e => set(p, 'height')(Math.max(4, Math.min(400, +e.target.value || 4))) })));
     }
     else if (TYPES[w.type].media || w.type === 'video') parts.push(...mediaFields(w));
-    if (!['spacer', 'code'].includes(w.type)) parts.push(styleGroup(w));
+    if (!['spacer', 'code', 'raw'].includes(w.type)) parts.push(styleGroup(w));
     parts.push(h('button', { type: 'button', class: 'btn sm ghost st-up', onclick: () => select(f.sec.id, false) }, '🧱 הפס שמכיל אותו'));
     box.replaceChildren(...parts);
   }
@@ -552,7 +558,7 @@ parent.postMessage({kol:'ready'},'*');
       h('span', { class: 'tile-ic', 'aria-hidden': 'true' }, icon), label);
     sheet('הוספת רכיב',
       h('p', { class: 'hint' }, S.sel ? 'נכנס אחרי מה שנבחר.' : 'נכנס בסוף העמוד.'),
-      h('div', { class: 'tiles' }, Object.entries(TYPES).map(([t, d]) => tile(t, d.icon, d.label)), tile('section', '🧱', 'פס חדש')));
+      h('div', { class: 'tiles' }, Object.entries(TYPES).filter(([, d]) => !d.hidden).map(([t, d]) => tile(t, d.icon, d.label)), tile('section', '🧱', 'פס חדש')));
   }
 
   function structureSheet() {
@@ -575,6 +581,7 @@ parent.postMessage({kol:'ready'},'*');
     if (w.type === 'spacer') return `${w.props.height}px`;
     if (w.type === 'gallery') return `${w.props.files.length} תמונות`;
     if (w.type === 'code') return w.props.title || 'קוד להטמעה';
+    if (w.type === 'raw') { const d = document.createElement('div'); d.innerHTML = w.props.html; return d.textContent.trim().slice(0, 60) || 'קטע מקורי'; }
     if (w.type === 'longtext') return w.props.doc ? 'מעורך התמלילים' : 'עוד לא נכתב';
     if (w.type === 'audio') return w.props.title || fileCache[w.props.file]?.name || 'שמע';
     if (w.type === 'image') return w.props.alt || fileCache[w.props.file]?.name || 'תמונה';
@@ -661,6 +668,11 @@ parent.postMessage({kol:'ready'},'*');
     document.body.classList.add('studio-on');
     root.style.height = `calc(100dvh - ${Math.round(root.getBoundingClientRect().top + scrollY)}px)`;   // עד תחתית המסך, מתחת לכותרת וללשוניות
 
+    // טיוטות ישנות נשמרו עם style: [] — מערך שמאבד מאפיינים ב-JSON. מתקנים לאובייקט
+    d.page.sections.forEach(s => s.columns.forEach(c => c.widgets.forEach(w => {
+      if (Array.isArray(w.style)) w.style = {};
+      if (Array.isArray(w.props)) w.props = {};
+    })));
     S = { host, root, frame, side, page: d.page, rev: d.rev, sel: null, undo: [], redo: [], lastSnap: 0, dirty: false, saving: false,
       error: false, readonly: false, frameReady: false, renderSeq: 0, sheetBody: null };
     window.addEventListener('message', onMessage);

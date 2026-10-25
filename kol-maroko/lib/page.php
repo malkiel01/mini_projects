@@ -9,14 +9,15 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/files.php';
+require_once __DIR__ . '/legacy.php';
 
 const PAGE_MAX_BYTES = 1_000_000;
 const PAGE_MAX_SECTIONS = 120;
 const PAGE_MAX_WIDGETS = 120;          // בעמודה
 const TEXT_MAX = 60_000;
-const WIDGET_TYPES = ['heading', 'text', 'longtext', 'button', 'divider', 'spacer', 'image', 'gallery', 'audio', 'video', 'file', 'code'];
+const WIDGET_TYPES = ['heading', 'text', 'longtext', 'button', 'divider', 'spacer', 'image', 'gallery', 'audio', 'video', 'file', 'code', 'raw'];
 const CODE_MAX = 100_000;
-const COL_LAYOUTS = ['100', '50-50', '33-67', '67-33', '33-33-33', '25-25-25-25'];
+const COL_LAYOUTS = ['100', '50-50', '33-67', '67-33', '33-33-33', '25-25-25-25', '20-20-20-20-20', '16-16-16-16-16-16'];
 const SIZES = ['sm' => '.875em', 'md' => '1em', 'lg' => '1.25em', 'xl' => '1.6em', 'xxl' => '2.2em'];
 const PADS = ['0' => '0', 's' => '8px', 'm' => '16px', 'l' => '32px', 'xl' => '64px'];
 const FONTS = ['theme' => 'inherit', 'sans' => 'system-ui, "Segoe UI", Arial, sans-serif', 'serif' => '"Frank Ruhl Libre", "David", Georgia, serif'];
@@ -69,7 +70,8 @@ function video_embed(mixed $v): string
 
 // ── טקסט עשיר: allowlist ───────────────────────────────────
 
-const RICH_TAGS = ['p', 'br', 'strong', 'b', 'em', 'i', 'u', 's', 'a', 'ul', 'ol', 'li', 'h2', 'h3', 'h4', 'blockquote', 'span', 'div'];
+const RICH_TAGS = ['p', 'br', 'strong', 'b', 'em', 'i', 'u', 's', 'a', 'ul', 'ol', 'li', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'span', 'div',
+    'sup', 'sub', 'mark', 'small', 'hr', 'img', 'figure', 'figcaption', 'table', 'thead', 'tbody', 'tr', 'td', 'th', 'pre', 'code'];
 const RICH_DROP = ['script', 'style', 'iframe', 'object', 'embed', 'svg', 'math', 'template', 'noscript', 'form', 'input', 'textarea', 'select', 'button', 'link', 'meta', 'head', 'title'];
 
 /** מסנן HTML לטקסט עשיר: תגיות מהרשימה, href בטוח, dir. כל השאר — נפרש (הטקסט נשאר) או נמחק. */
@@ -105,7 +107,15 @@ function rich_clean(DOMNode $node): void
         }
         $href = $tag === 'a' ? safe_href($child->getAttribute('href')) : '';
         $dir = pick($child->getAttribute('dir'), ['rtl', 'ltr', 'auto'], '');
+        // עיצוב שבא מהאתר (ייבוא) או מהעורך: style מסונן ומחלקות — נשמרים
+        $keep = array_filter(['style' => sanitize_style($child->getAttribute('style')), 'class' => legacy_cls($child->getAttribute('class'))]);
+        $img = $tag === 'img' && preg_match('/^kol-file:[0-9a-f]{32}$/', $child->getAttribute('src'))
+            ? array_filter(['src' => $child->getAttribute('src'), 'alt' => $child->getAttribute('alt'),
+                'width' => (string)(int)$child->getAttribute('width') ?: '', 'height' => (string)(int)$child->getAttribute('height') ?: '']) : null;
+        $span = in_array($tag, ['td', 'th'], true) ? array_filter(['colspan' => (string)(int)$child->getAttribute('colspan') ?: '', 'rowspan' => (string)(int)$child->getAttribute('rowspan') ?: '']) : [];
         foreach (iterator_to_array($child->attributes) as $a) $child->removeAttribute($a->name);
+        if ($tag === 'img' && !$img) { $node->removeChild($child); continue; }
+        foreach (($img ?? []) + $span + $keep as $k => $v) if ($v !== '0') $child->setAttribute($k, $v);
         if ($dir) $child->setAttribute('dir', $dir);
         if ($tag === 'a') {
             if ($href === '') {
@@ -147,7 +157,7 @@ function widget_norm(mixed $w, array &$seen): ?array
     if (!is_array($w) || !in_array($w['type'] ?? null, WIDGET_TYPES, true)) return null;
     $p = is_array($w['props'] ?? null) ? $w['props'] : [];
     $props = match ($w['type']) {
-        'heading' => ['text' => str($p['text'] ?? '', 500), 'level' => (int)pick((string)($p['level'] ?? '2'), ['1', '2', '3', '4'], '2')],
+        'heading' => ['text' => str($p['text'] ?? '', 500), 'level' => (int)pick((string)($p['level'] ?? '2'), ['1', '2', '3', '4', '5', '6'], '2')],
         'text' => ['html' => sanitize_rich((string)($p['html'] ?? ''))],
         'button' => ['label' => str($p['label'] ?? '', 120), 'href' => safe_href($p['href'] ?? ''), 'variant' => pick($p['variant'] ?? '', ['solid', 'outline'], 'solid')],
         'divider' => [],
@@ -161,9 +171,12 @@ function widget_norm(mixed $w, array &$seen): ?array
         'file' => ['file' => file_id($p['file'] ?? ''), 'label' => str($p['label'] ?? '', 200)],
         'code' => ['html' => is_string($p['html'] ?? null) ? mb_substr($p['html'], 0, CODE_MAX) : '', 'title' => str($p['title'] ?? '', 100),
                    'height' => max(40, min(3000, (int)($p['height'] ?? 300))), 'auto' => ($p['auto'] ?? false) === true],
+        'raw' => ['html' => sanitize_raw((string)($p['html'] ?? ''))],
         'longtext' => ['doc' => is_string($p['doc'] ?? null) && preg_match('/^[A-Za-z0-9:_-]{1,40}$/', $p['doc']) ? $p['doc'] : ''],
     };
-    return ['id' => id_norm($w['id'] ?? null, $seen), 'type' => $w['type'], 'props' => $props, 'style' => style_norm($w['style'] ?? [])];
+    $out = ['id' => id_norm($w['id'] ?? null, $seen), 'type' => $w['type'], 'props' => $props, 'style' => style_norm($w['style'] ?? [])];
+    if ($lg = legacy_widget($w['legacy'] ?? null)) $out['legacy'] = $lg;
+    return $out;
 }
 
 function page_normalize(mixed $page): array
@@ -181,6 +194,7 @@ function page_normalize(mixed $page): array
         'bg' => color($st['bg'] ?? ''),
         'accent' => color($st['accent'] ?? '') ?: '#a3322a',
     ];
+    if ($lg = legacy_tags($st['legacy'] ?? null)) $settings['legacy'] = $lg;
     $sections = [];
     foreach (array_slice(is_array($page['sections'] ?? null) ? $page['sections'] : [], 0, PAGE_MAX_SECTIONS) as $s) {
         if (!is_array($s)) continue;
@@ -194,7 +208,9 @@ function page_normalize(mixed $page): array
             foreach (array_slice(is_array($c['widgets'] ?? null) ? $c['widgets'] : [], 0, PAGE_MAX_WIDGETS) as $w) {
                 if ($nw = widget_norm($w, $seen)) $ws[] = $nw;
             }
-            $cols[] = ['id' => id_norm($c['id'] ?? null, $seen), 'widgets' => $ws];
+            $col = ['id' => id_norm($c['id'] ?? null, $seen), 'widgets' => $ws];
+            if (isset($c['legacy']) && is_array($c['legacy'])) $col['legacy'] = legacy_tags($c['legacy']);   // [] — עמודה מדומה (display:contents)
+            $cols[] = $col;
         }
         // עמודות שנעלמו בהקטנת הפריסה — הרכיבים שלהן עוברים לעמודה האחרונה, לא נמחקים
         for ($i = $n; $i < count($in); $i++) {
@@ -202,16 +218,33 @@ function page_normalize(mixed $page): array
                 if ($nw = widget_norm($w, $seen)) $cols[$n - 1]['widgets'][] = $nw;
             }
         }
-        $sections[] = [
+        $sec = [
             'id' => id_norm($s['id'] ?? null, $seen),
             'layout' => $layout,
             'bg' => color($s['bg'] ?? ''),
-            'pad' => pick($s['pad'] ?? '', array_map('strval', array_keys(PADS)), 'l'),
+            // '' — בלי ריפוד משלנו (פס שיובא: הריפוד מה-CSS של האתר)
+            'pad' => pick($s['pad'] ?? 'l', ['', ...array_map('strval', array_keys(PADS))], 'l'),
             'full' => ($s['full'] ?? false) === true,
             'columns' => $cols,
         ];
+        if ($lg = legacy_tags($s['legacy'] ?? null)) $sec['legacy'] = $lg;
+        $sections[] = $sec;
     }
     return ['settings' => $settings, 'sections' => $sections];
+}
+
+/**
+ * JSON של עמוד: style ו-props ריקים — אובייקט ({}), לא מערך ([]). בלי זה הדפדפן מקבל מערך, ומאפיינים שנכתבים
+ * עליו (style.color…) נעלמים ב-JSON.stringify — שינוי עיצוב לא היה נשמר.
+ */
+function page_json(array $page): string
+{
+    foreach ($page['sections'] as &$s) foreach ($s['columns'] as &$c) foreach ($c['widgets'] as &$w) {
+        if (!$w['style']) $w['style'] = new stdClass();
+        if (!$w['props']) $w['props'] = new stdClass();
+    }
+    unset($s, $c, $w);
+    return json_encode($page, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 }
 
 function page_template(): array
@@ -244,7 +277,7 @@ function e(string $s): string
  */
 function page_render(array $page, bool $editor = false, ?callable $url = null): array
 {
-    preg_match_all('/"([0-9a-f]{32})"/', json_encode($page), $m);
+    preg_match_all('/(?:"|kol-file:)([0-9a-f]{32})/', json_encode($page) . imported_css(), $m);
     $GLOBALS['kol_files'] = files_meta(array_unique($m[1]));
     $GLOBALS['kol_url'] = $url ?? fn(array $f) => media_url($f['id']);
     $docs = [];
@@ -283,25 +316,35 @@ function page_render(array $page, bool $editor = false, ?callable $url = null): 
     $css[] = "@media (max-width:767px){{$P} .kol-row{flex-direction:column;gap:16px}{$P} .kol-col{flex-basis:auto!important}{$P} .kol-hm{display:none!important}}";
     $css[] = "@media (min-width:768px){{$P} .kol-hd{display:none!important}}";
 
+    $css[] = "$P .kol-legacy{margin:0}$P .kol-contents{display:contents}$P .kol-raw>:first-child{margin-top:0}";
+
     $kid = fn(string $id) => $editor ? ' data-kid="' . $id . '"' : '';
-    $html = '<div class="kol-page">';
+    $html = '<div class="kol-page">' . legacy_open($st['legacy'] ?? []);
     foreach ($page['sections'] as $s) {
         $cls = "kol-s-{$s['id']}";
-        $css[] = "$P .$cls{padding:" . PADS[$s['pad']] . ' 0;' . ($s['bg'] ? "background:{$s['bg']};" : '') . '}';
-        $html .= "<section class=\"kol-sec $cls\"{$kid($s['id'])}><div class=\"" . ($s['full'] ? 'kol-full' : 'kol-inner') . '"><div class="kol-row">';
+        $rule = ($s['pad'] !== '' ? 'padding:' . PADS[$s['pad']] . ' 0;' : '') . ($s['bg'] ? "background:{$s['bg']};" : '');
+        if ($rule) $css[] = "$P .$cls{" . $rule . '}';
+        $legacy = isset($s['legacy']);
+        // פס שיובא: העטיפות המקוריות (המחלקות של אלמנטור / וורדפרס), כדי שה-CSS של האתר ימשיך לחול
+        $html .= $legacy ? legacy_open($s['legacy'], "kol-sec $cls", $kid($s['id']))
+            : "<section class=\"kol-sec $cls\"{$kid($s['id'])}><div class=\"" . ($s['full'] ? 'kol-full' : 'kol-inner') . '"><div class="kol-row">';
         $widths = explode('-', $s['layout']);
         foreach ($s['columns'] as $i => $c) {
-            $html .= "<div class=\"kol-col\" style=\"flex:0 0 calc({$widths[$i]}% - " . (24 * (count($widths) - 1) / count($widths)) . "px)\"{$kid($c['id'])}>";
+            if (isset($c['legacy'])) {
+                $html .= $c['legacy'] ? legacy_open($c['legacy'], 'kol-col', $kid($c['id'])) : "<div class=\"kol-col kol-contents\"{$kid($c['id'])}>";
+            } else {
+                $html .= "<div class=\"kol-col\" style=\"flex:0 0 calc({$widths[$i]}% - " . (24 * (count($widths) - 1) / count($widths)) . "px)\"{$kid($c['id'])}>";
+            }
             foreach ($c['widgets'] as $w) {
                 [$wh, $wc] = widget_render($w, $editor);
                 $html .= $wh;
                 if ($wc) $css[] = $wc;
             }
-            $html .= '</div>';
+            $html .= !empty($c['legacy']) ? legacy_close($c['legacy']) : '</div>';
         }
-        $html .= '</div></div></section>';
+        $html .= $legacy ? legacy_close($s['legacy']) : '</div></div></section>';
     }
-    $html .= '</div>';
+    $html .= legacy_close($st['legacy'] ?? []) . '</div>';
     // ה-CSS של כל מסמך מהעורך — ממוקד ב-.kol-lt-<מזהה> (שני מסמכים עם הגדרות שונות לא מתנגשים)
     foreach ($GLOBALS['kol_long'] as $doc => $lt) {
         $scope = "$P .kol-lt-" . substr(md5($doc), 0, 10) . ' ';
@@ -315,7 +358,23 @@ function page_render(array $page, bool $editor = false, ?callable $url = null): 
             . 'var f=document.querySelector(\'iframe[data-kol-code="\'+String(d.kolCode).replace(/[^a-z0-9]/g,"")+\'"]\');'
             . 'if(f&&e.source===f.contentWindow)f.style.height=Math.min(4000,Math.max(40,+d.h||0))+"px";});</script>';
     }
-    return ['html' => $html, 'css' => implode("\n", $css)];
+    // העיצוב שיובא מהאתר (ה-CSS של העמוד באלמנטור); בסטודיו — גם ה-CSS הבסיסי של אלמנטור, שבאתר כבר נטען
+    if ($ic = imported_css()) $css[] = $ic;
+    if ($editor && ($pc = setting('preview_css'))) $css[] = $pc;
+    $out = ['html' => $html, 'css' => implode("\n", $css)];
+    // kol-file:<מזהה> (בתוכן שיובא ובסגנונות) → הכתובת של הקובץ: בסטודיו חתומה, בפרסום — {{KOL_ASSETS}}
+    foreach ($out as $k => $v) {
+        $out[$k] = preg_replace_callback('/kol-file:([0-9a-f]{32})/', function ($m) {
+            $f = $GLOBALS['kol_files'][$m[1]] ?? null;
+            return $f ? ($GLOBALS['kol_url'])($f) : '#';
+        }, $v);
+    }
+    return $out;
+}
+
+function imported_css(): string
+{
+    return function_exists('setting') ? (string)setting('imported_css', '') : '';
 }
 
 function widget_render(array $w, bool $editor): array
@@ -338,6 +397,8 @@ function widget_render(array $w, bool $editor): array
     $src = fn(array $file) => e(($GLOBALS['kol_url'])($file));
     $missing = fn(string $what) => $editor ? "<div class=\"$cls\"$k><div class=\"kol-missing\">$what</div></div>" : '';
     if ($w['type'] === 'gallery' && $p['cols'] !== 3) $css .= ".kol-page .kol-w-{$w['id']}{--cols:{$p['cols']}}";
+    if (isset($w['legacy']) && ($lh = legacy_widget_render($w, $cls, $k, $f, $src, $editor)) !== null) return [$lh, $css];
+    if ($w['type'] === 'raw') return [raw_render($p['html'], "$cls kol-raw", $k), $css];
     $html = match ($w['type']) {
         'heading' => "<h{$p['level']} class=\"$cls\"$k>" . (e($p['text']) ?: ($editor ? '<span style="opacity:.4">כותרת</span>' : '')) . "</h{$p['level']}>",
         'text' => "<div class=\"$cls kol-text\"$k>" . ($p['html'] ?: ($editor ? '<p style="opacity:.4">טקסט</p>' : '')) . '</div>',
@@ -405,4 +466,65 @@ function code_frame(string $id, array $p): string
     return '<iframe class="kol-code" data-kol-code="' . $id . '"' . ($p['auto'] ? ' data-kol-auto' : '')
         . ' sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-forms" referrerpolicy="no-referrer" loading="lazy"'
         . ' title="' . e($p['title'] ?: 'תוכן מוטמע') . '" style="height:' . $p['height'] . 'px" srcdoc="' . e($doc) . '"></iframe>';
+}
+
+/**
+ * רכיב שיובא עם העטיפות המקוריות: העטיפות (עם kol-w ו-data-kid על החיצונית), ובפנים — התוכן הנוכחי של הרכיב
+ * באותו אלמנט ובאותן מחלקות כמו באתר. null — אין לסוג הזה צורה מקורית; מרונדר כרגיל.
+ */
+function legacy_widget_render(array $w, string $cls, string $k, callable $f, callable $src, bool $editor): ?string
+{
+    $lg = $w['legacy'];
+    $p = $w['props'];
+    $c = fn(string $x) => $x !== '' ? ' class="' . e($x) . '"' : '';
+    $inner = match ($w['type']) {
+        'heading' => ($t = $lg['tag'] ?? "h{$p['level']}") ? "<$t" . $c($lg['cls'] ?? '') . '>' . e($p['text']) . "</$t>" : '',
+        'text' => $p['html'],
+        'image' => ($img = $f($p['file']))
+            ? ($p['href'] ? '<a href="' . e($p['href']) . '">' : '') . '<img' . $c($lg['cls'] ?? '') . ' src="' . $src($img) . '" alt="' . e($p['alt'])
+              . '" width="' . (int)$img['w'] . '" height="' . (int)$img['h'] . '" loading="lazy" decoding="async">' . ($p['href'] ? '</a>' : '')
+              . ($p['caption'] !== '' ? '<figcaption' . $c($lg['cap'] ?? '') . '>' . e($p['caption']) . '</figcaption>' : '')
+            : null,
+        'button' => ($lg['kind'] ?? '') === 'elementor-button'
+            ? '<a' . $c($lg['cls'] ?? 'elementor-button') . ($p['href'] ? ' href="' . e($p['href']) . '"' : '') . '><span class="elementor-button-content-wrapper"><span class="elementor-button-text">'
+              . e($p['label']) . '</span></span></a>'
+            : '<a' . $c($lg['cls'] ?? '') . ($p['href'] ? ' href="' . e($p['href']) . '"' : '') . '>' . e($p['label']) . '</a>',
+        'divider', 'spacer' => $lg['inner'] ?? '',
+        'raw' => $p['html'],
+        default => null,
+    };
+    if ($inner === null) return null;
+    $wrap = $lg['wrap'] ?? [];
+    if (!$wrap) return raw_render($inner, "$cls kol-legacy", $k);
+    return legacy_open($wrap, "$cls kol-legacy", $k) . $inner . legacy_close($wrap);
+}
+
+/** HTML חופשי: אם יש לו שורש אחד — המחלקות שלנו עליו (בלי עטיפה שמשנה פריסה); אחרת — עטיפה. */
+function raw_render(string $html, string $cls, string $k): string
+{
+    $t = ltrim($html);
+    if (preg_match('/^<([a-z][a-z0-9]*)\b([^>]*)>/i', $t, $m) && raw_single_root($t, $m[1])) {
+        $attrs = $m[2];
+        $attrs = preg_match('/\sclass="([^"]*)"/i', $attrs)
+            ? preg_replace('/\sclass="([^"]*)"/i', ' class="$1 ' . $cls . '"', $attrs, 1)
+            : ' class="' . $cls . '"' . $attrs;
+        return '<' . $m[1] . $attrs . $k . '>' . substr($t, strlen($m[0]));
+    }
+    return "<div class=\"$cls\"$k>$html</div>";
+}
+
+function raw_single_root(string $html, string $tag): bool
+{
+    $d = new DOMDocument();
+    $prev = libxml_use_internal_errors(true);
+    $d->loadHTML('<?xml encoding="UTF-8"><body>' . $html . '</body>', LIBXML_NONET);
+    libxml_clear_errors();
+    libxml_use_internal_errors($prev);
+    $body = $d->getElementsByTagName('body')->item(0);
+    $n = 0;
+    foreach ($body?->childNodes ?? [] as $c) {
+        if ($c instanceof DOMElement) $n++;
+        elseif ($c instanceof DOMText && trim($c->data) !== '') return false;
+    }
+    return $n === 1;
 }

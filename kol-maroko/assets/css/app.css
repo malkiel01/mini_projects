@@ -285,3 +285,17 @@ body.studio-on main { max-width: none; padding: 0; }
 .wp-box { flex: 1; min-height: 0; }
 .code-area { font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; min-height: 180px; white-space: pre; overflow-x: auto; }
 .code-area { font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; min-height: 180px; white-space: pre; overflow-x: auto; }
+
+/* ===== פרסום והגדרות ===== */
+.keybox { display: block; padding: var(--s2); background: var(--bg); border: 1px solid var(--line); border-radius: var(--r); font-size: .78rem;
+    word-break: break-all; white-space: normal; text-align: left; }
+.warnbox { background: color-mix(in srgb, var(--star) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--star) 40%, transparent);
+    border-radius: var(--r); padding: var(--s2) var(--s3); display: grid; gap: var(--s1); }
+.warnbox ul, .error ul, .diff { margin: 0; padding-inline-start: 1.2em; }
+.diff { list-style: none; padding: 0; display: grid; gap: 4px; }
+.pub { display: grid; gap: var(--s3); }
+.ver-frame { inline-size: 100%; block-size: 60dvh; border: 1px solid var(--line); border-radius: var(--r); background: #fff; }
+.legacy-note { background: var(--brand-soft); padding: var(--s1) var(--s2); border-radius: 8px; color: var(--ink); }
+.summary .btn { justify-self: start; }
+.endpoint { overflow-wrap: anywhere; text-align: left; }
+.row-btns.wrap .btn { flex: 1 1 auto; }
