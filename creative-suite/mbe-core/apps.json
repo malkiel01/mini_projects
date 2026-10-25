@@ -13,5 +13,8 @@
   },
   "word-processor": {
     "php": "lib/mbe"
+  },
+  "greeting-cards": {
+    "js": "editor/js/mbe"
   }
 }
