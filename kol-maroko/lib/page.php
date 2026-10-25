@@ -8,13 +8,13 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/files.php';
 
 const PAGE_MAX_BYTES = 1_000_000;
 const PAGE_MAX_SECTIONS = 120;
 const PAGE_MAX_WIDGETS = 120;          // בעמודה
 const TEXT_MAX = 60_000;
-const WIDGET_TYPES = ['heading', 'text', 'button', 'divider', 'spacer'];
+const WIDGET_TYPES = ['heading', 'text', 'button', 'divider', 'spacer', 'image', 'gallery', 'audio', 'video', 'file'];
 const COL_LAYOUTS = ['100', '50-50', '33-67', '67-33', '33-33-33', '25-25-25-25'];
 const SIZES = ['sm' => '.875em', 'md' => '1em', 'lg' => '1.25em', 'xl' => '1.6em', 'xxl' => '2.2em'];
 const PADS = ['0' => '0', 's' => '8px', 'm' => '16px', 'l' => '32px', 'xl' => '64px'];
@@ -48,6 +48,21 @@ function safe_href(mixed $v): string
     $v = str($v, 2000);
     if ($v === '') return '';
     if (preg_match('~^(https://[^\s<>"]+|mailto:[^\s<>"]+|tel:[+0-9\-\s]+|#[A-Za-z0-9_-]+)$~i', $v)) return $v;
+    return '';
+}
+
+function file_id(mixed $v): string
+{
+    return is_string($v) && preg_match('/^[0-9a-f]{32}$/', $v) ? $v : '';
+}
+
+/** קישור יוטיוב / וימאו → "youtube:<id>" / "vimeo:<id>". אחרת — ריק. */
+function video_embed(mixed $v): string
+{
+    $v = str($v, 500);
+    if (preg_match('/^(youtube:[A-Za-z0-9_-]{11}|vimeo:\d{5,12})$/', $v)) return $v;
+    if (preg_match('~^https://(?:www\.|m\.)?(?:youtube\.com/(?:watch\?(?:.*&)?v=|shorts/|embed/|live/)|youtu\.be/)([A-Za-z0-9_-]{11})~', $v, $m)) return 'youtube:' . $m[1];
+    if (preg_match('~^https://(?:www\.|player\.)?vimeo\.com/(?:video/)?(\d{5,12})~', $v, $m)) return 'vimeo:' . $m[1];
     return '';
 }
 
@@ -136,6 +151,13 @@ function widget_norm(mixed $w, array &$seen): ?array
         'button' => ['label' => str($p['label'] ?? '', 120), 'href' => safe_href($p['href'] ?? ''), 'variant' => pick($p['variant'] ?? '', ['solid', 'outline'], 'solid')],
         'divider' => [],
         'spacer' => ['height' => max(4, min(400, (int)($p['height'] ?? 32)))],
+        'image' => ['file' => file_id($p['file'] ?? ''), 'alt' => str($p['alt'] ?? '', 300), 'caption' => str($p['caption'] ?? '', 500),
+                    'href' => safe_href($p['href'] ?? ''), 'width' => pick($p['width'] ?? '', ['auto', 'full'], 'auto')],
+        'gallery' => ['files' => array_values(array_filter(array_map('file_id', array_slice(is_array($p['files'] ?? null) ? $p['files'] : [], 0, 60)))),
+                      'cols' => (int)pick((string)($p['cols'] ?? '3'), ['2', '3', '4'], '3')],
+        'audio' => ['file' => file_id($p['file'] ?? ''), 'title' => str($p['title'] ?? '', 200)],
+        'video' => ['file' => file_id($p['file'] ?? ''), 'embed' => video_embed($p['embed'] ?? '')],
+        'file' => ['file' => file_id($p['file'] ?? ''), 'label' => str($p['label'] ?? '', 200)],
     };
     return ['id' => id_norm($w['id'] ?? null, $seen), 'type' => $w['type'], 'props' => $props, 'style' => style_norm($w['style'] ?? [])];
 }
@@ -216,8 +238,11 @@ function e(string $s): string
  * HTML + CSS של העמוד. $editor — עם data-kid (הבחירה בסטודיו). כל בורר ב-CSS מתחיל ב-.kol-page, כדי
  * לא לדרוס את ערכת הנושא של האתר ולהפך.
  */
-function page_render(array $page, bool $editor = false): array
+function page_render(array $page, bool $editor = false, ?callable $url = null): array
 {
+    preg_match_all('/"([0-9a-f]{32})"/', json_encode($page), $m);
+    $GLOBALS['kol_files'] = files_meta(array_unique($m[1]));
+    $GLOBALS['kol_url'] = $url ?? fn(array $f) => media_url($f['id']);
     $st = $page['settings'];
     $css = [];
     $P = '.kol-page';
@@ -235,6 +260,17 @@ function page_render(array $page, bool $editor = false): array
     $css[] = "$P .kol-btn-solid{background:{$st['accent']};color:#fff}";
     $css[] = "$P .kol-btn-outline{background:transparent;color:{$st['accent']}}";
     $css[] = "$P hr.kol-w{border:0;border-top:1px solid currentColor;opacity:.25}";
+    $css[] = "$P .kol-img{margin-inline:0}$P .kol-img img{display:inline-block;max-width:100%;height:auto;vertical-align:top;border-radius:4px}";
+    $css[] = "$P .kol-img.kol-full img{width:100%}$P figcaption{font-size:.875em;opacity:.75;margin-top:6px}";
+    $css[] = "$P .kol-gal{display:grid;grid-template-columns:repeat(var(--cols,3),minmax(0,1fr));gap:8px}";
+    $css[] = "$P .kol-gal img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:4px;display:block}";
+    $css[] = "$P .kol-audio audio,$P .kol-video video{width:100%;display:block}$P .kol-audio-t{font-weight:600;margin-bottom:6px}";
+    $css[] = "$P .kol-video video{border-radius:4px;background:#000;max-height:80vh}";
+    $css[] = "$P .kol-embed{position:relative;aspect-ratio:16/9;border-radius:4px;overflow:hidden;background:#000}$P .kol-embed iframe,$P .kol-embed img{position:absolute;inset:0;width:100%;height:100%;border:0;object-fit:cover}";
+    $css[] = "$P .kol-play{position:absolute;inset:0;display:grid;place-items:center;font-size:48px;color:#fff;text-shadow:0 2px 8px #000}";
+    $css[] = "$P .kol-filelink{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border:1px solid currentColor;border-radius:8px;text-decoration:none;color:inherit}";
+    $css[] = "$P .kol-filelink small{opacity:.7}$P .kol-missing{padding:24px;border:1px dashed #aaa;border-radius:6px;text-align:center;opacity:.6}";
+    $css[] = "@media (max-width:767px){{$P} .kol-gal{grid-template-columns:repeat(2,minmax(0,1fr))}}";
     $css[] = "@media (max-width:767px){{$P} .kol-row{flex-direction:column;gap:16px}{$P} .kol-col{flex-basis:auto!important}{$P} .kol-hm{display:none!important}}";
     $css[] = "@media (min-width:768px){{$P} .kol-hd{display:none!important}}";
 
@@ -276,12 +312,55 @@ function widget_render(array $w, bool $editor): array
     $css = $rules ? ".kol-page .kol-w-{$w['id']}{" . $rules . '}' : '';
     $k = $editor ? ' data-kid="' . $w['id'] . '"' : '';
     $p = $w['props'];
+    $f = fn(string $id) => $GLOBALS['kol_files'][$id] ?? null;
+    $src = fn(array $file) => e(($GLOBALS['kol_url'])($file));
+    $missing = fn(string $what) => $editor ? "<div class=\"$cls\"$k><div class=\"kol-missing\">$what</div></div>" : '';
+    if ($w['type'] === 'gallery' && $p['cols'] !== 3) $css .= ".kol-page .kol-w-{$w['id']}{--cols:{$p['cols']}}";
     $html = match ($w['type']) {
         'heading' => "<h{$p['level']} class=\"$cls\"$k>" . (e($p['text']) ?: ($editor ? '<span style="opacity:.4">כותרת</span>' : '')) . "</h{$p['level']}>",
         'text' => "<div class=\"$cls kol-text\"$k>" . ($p['html'] ?: ($editor ? '<p style="opacity:.4">טקסט</p>' : '')) . '</div>',
         'button' => "<div class=\"$cls\"$k><a class=\"kol-btn kol-btn-{$p['variant']}\"" . ($p['href'] ? ' href="' . e($p['href']) . '"' : '') . '>' . e($p['label'] ?: 'כפתור') . '</a></div>',
         'divider' => "<hr class=\"$cls\"$k>",
         'spacer' => "<div class=\"$cls\"$k aria-hidden=\"true\"></div>",
+        'image' => ($img = $f($p['file']))
+            ? "<figure class=\"$cls kol-img" . ($p['width'] === 'full' ? ' kol-full' : '') . "\"$k>"
+              . ($p['href'] ? '<a href="' . e($p['href']) . '">' : '')
+              . '<img src="' . $src($img) . '" alt="' . e($p['alt']) . '" width="' . (int)$img['w'] . '" height="' . (int)$img['h'] . '" loading="lazy" decoding="async">'
+              . ($p['href'] ? '</a>' : '') . ($p['caption'] !== '' ? '<figcaption>' . e($p['caption']) . '</figcaption>' : '') . '</figure>'
+            : $missing('🖼️ בחרו תמונה'),
+        'gallery' => ($imgs = array_filter(array_map($f, $p['files'])))
+            ? "<div class=\"$cls kol-gal\"$k>" . implode('', array_map(fn($i) => '<img src="' . $src($i) . '" alt="" loading="lazy" decoding="async">', $imgs)) . '</div>'
+            : $missing('🖼️ בחרו תמונות לגלריה'),
+        'audio' => ($a = $f($p['file']))
+            ? "<div class=\"$cls kol-audio\"$k>" . ($p['title'] !== '' ? '<div class="kol-audio-t">' . e($p['title']) . '</div>' : '')
+              . '<audio controls preload="metadata" src="' . $src($a) . '"></audio></div>'
+            : $missing('🎙️ בחרו הקלטה'),
+        'video' => video_render($p, $cls, $k, $f, $src, $editor) ?: $missing('🎬 בחרו וידאו או הדביקו קישור'),
+        'file' => ($d = $f($p['file']))
+            ? "<div class=\"$cls\"$k><a class=\"kol-filelink\" href=\"" . $src($d) . '" download>📄 <span>' . e($p['label'] ?: $d['name']) . '</span> <small>'
+              . strtoupper($d['ext']) . ' · ' . size_label((int)$d['size']) . '</small></a></div>'
+            : $missing('📄 בחרו קובץ'),
     };
     return [$html, $css];
+}
+
+function video_render(array $p, string $cls, string $k, callable $f, callable $src, bool $editor): string
+{
+    if ($v = $f($p['file'])) {
+        return "<div class=\"$cls kol-video\"$k><video controls playsinline preload=\"metadata\" src=\"" . $src($v) . '"></video></div>';
+    }
+    if ($p['embed'] === '') return '';
+    [$prov, $id] = explode(':', $p['embed'], 2);
+    // בסטודיו — תמונה במקום נגן: הנגנים לא רצים בתוך התצוגה המבודדת
+    if ($editor) {
+        $thumb = $prov === 'youtube' ? '<img src="https://i.ytimg.com/vi/' . $id . '/hqdefault.jpg" alt="">' : '';
+        return "<div class=\"$cls\"$k><div class=\"kol-embed\">$thumb<span class=\"kol-play\">▶</span></div></div>";
+    }
+    $url = $prov === 'youtube' ? "https://www.youtube-nocookie.com/embed/$id" : "https://player.vimeo.com/video/$id";
+    return "<div class=\"$cls\"><div class=\"kol-embed\"><iframe src=\"$url\" title=\"וידאו\" loading=\"lazy\" allow=\"fullscreen; picture-in-picture\" allowfullscreen referrerpolicy=\"strict-origin-when-cross-origin\"></iframe></div></div>";
+}
+
+function size_label(int $b): string
+{
+    return $b >= 1 << 20 ? round($b / (1 << 20), 1) . 'MB' : max(1, round($b / 1024)) . 'KB';
 }

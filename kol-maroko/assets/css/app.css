@@ -239,3 +239,38 @@ body.studio-on main { max-width: none; padding: 0; }
     .st-device { display: flex; margin-inline-start: var(--s2); }
 }
 @media (max-width: 380px) { .st-bar [data-a=redo] { display: none; } }
+
+/* ===== קבצים ===== */
+.thumb { flex: none; inline-size: 40px; block-size: 40px; border-radius: 8px; object-fit: cover; background: var(--bg); display: grid; place-items: center; }
+.thumb.lg { inline-size: 56px; block-size: 56px; }
+.file-slot { display: flex; align-items: center; gap: var(--s2); padding: var(--s2); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); min-height: 56px; }
+.file-slot .use-tx { flex: 1; }
+.gal-edit { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 6px; }
+.gal-item { position: relative; }
+.gal-item .thumb { inline-size: 100%; block-size: auto; aspect-ratio: 1; }
+.gal-item .icon-btn { position: absolute; inset-block-start: 2px; inset-inline-end: 2px; min-width: 28px; min-height: 28px; font-size: .8rem;
+    background: rgba(0, 0, 0, .55); color: #fff; border-radius: 50%; }
+.pick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; }
+.pick-img { position: relative; padding: 0; border: 2px solid transparent; border-radius: var(--r); background: none; cursor: pointer; overflow: hidden; }
+.pick-img .thumb { inline-size: 100%; block-size: auto; aspect-ratio: 1; border-radius: 8px; }
+.pick-img.on { border-color: var(--brand); }
+.pick-check { position: absolute; inset-block-start: 6px; inset-inline-start: 6px; inline-size: 24px; block-size: 24px; border-radius: 50%;
+    display: grid; place-items: center; background: rgba(255, 255, 255, .9); border: 1px solid var(--line); color: var(--brand); font-weight: 700; }
+.pick-img.on .pick-check { background: var(--brand); color: var(--brand-ink); }
+.ups { display: grid; gap: var(--s2); }
+.ups:empty { display: none; }
+.up-row { margin: 0; }
+.up-row.error .muted { color: var(--danger); }
+.picker { z-index: 2; }
+.picker .sheet-body { gap: var(--s3); }
+.file-preview { inline-size: 100%; max-block-size: 50dvh; object-fit: contain; border-radius: var(--r); background: var(--bg); }
+.rec { display: grid; gap: var(--s3); justify-items: center; padding: var(--s3) 0; }
+.rec-head { display: flex; align-items: center; gap: var(--s2); font-variant-numeric: tabular-nums; }
+.rec-time { font-size: 1.6rem; font-weight: 600; }
+.rec-dot { inline-size: 14px; block-size: 14px; border-radius: 50%; background: var(--line); }
+.rec-dot.on { background: #e5302a; animation: rec 1s infinite; }
+@keyframes rec { 50% { opacity: .3; } }
+.rec-main { min-inline-size: 220px; min-block-size: 52px; font-size: 1.05rem; }
+.rec audio { inline-size: 100%; }
+.rec .row-btns { inline-size: 100%; }
+.use-tx { grid-template-columns: minmax(0, 1fr); }   /* שם ארוך נחתך ב-… ולא דוחף את התגית מהשורה */

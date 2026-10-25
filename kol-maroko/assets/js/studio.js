@@ -11,7 +11,13 @@ const Studio = (() => {
     button: { icon: '🔘', label: 'כפתור', props: () => ({ label: 'לחצו כאן', href: '', variant: 'solid' }) },
     divider: { icon: '➖', label: 'קו מפריד', props: () => ({}) },
     spacer: { icon: '↕️', label: 'רווח', props: () => ({ height: 32 }) },
+    image: { icon: '🖼️', label: 'תמונה', media: 'image', props: () => ({ file: '', alt: '', caption: '', href: '', width: 'auto' }) },
+    gallery: { icon: '🧩', label: 'גלריה', media: 'image', multiple: true, props: () => ({ files: [], cols: 3 }) },
+    audio: { icon: '🎙️', label: 'הקלטה / שמע', media: 'audio', props: () => ({ file: '', title: '' }) },
+    video: { icon: '🎬', label: 'וידאו', props: () => ({ file: '', embed: '' }) },
+    file: { icon: '📄', label: 'קובץ להורדה', media: 'doc', props: () => ({ file: '', label: '' }) },
   };
+  const fileCache = {};   // מזהה → {name, url, kind…} — מה שהספרייה כבר החזירה
   const LAYOUTS = { '100': 'אחת', '50-50': '½ ½', '33-67': '⅓ ⅔', '67-33': '⅔ ⅓', '33-33-33': '⅓ ⅓ ⅓', '25-25-25-25': '¼ × 4' };
   const PADS = { '0': 'בלי', s: 'S', m: 'M', l: 'L', xl: 'XL' };
   const SIZES = { '': 'רגיל', sm: 'קטן', lg: 'גדול', xl: 'גדול מאוד', xxl: 'ענק' };
@@ -76,7 +82,7 @@ function mark(id){document.querySelectorAll('.kol-sel').forEach(e=>e.classList.r
 addEventListener('message',e=>{if(e.source!==parent)return;const d=e.data||{};
  if(d.kol==='render'){page.textContent=d.css;root.innerHTML=d.html||'<p class="kol-empty">העמוד ריק. "+ רכיב" כדי להתחיל.</p>';mark(d.sel);}
  if(d.kol==='sel')mark(d.sel);});
-addEventListener('click',e=>{e.preventDefault();const el=e.target.closest('[data-kid]');parent.postMessage({kol:'pick',id:el?el.dataset.kid:null},'*');},true);
+addEventListener('click',e=>{if(!e.target.closest('audio,video'))e.preventDefault();const el=e.target.closest('[data-kid]');parent.postMessage({kol:'pick',id:el?el.dataset.kid:null},'*');},true);
 parent.postMessage({kol:'ready'},'*');
 <\/script></body></html>`;
 
@@ -166,7 +172,7 @@ parent.postMessage({kol:'ready'},'*');
     return { id: uid(), layout, bg: '', pad: 'l', full: false, columns: layout.split('-').map(() => ({ id: uid(), widgets: [] })) };
   }
 
-  function add(type) {
+  async function add(type) {
     if (type === 'section') {
       const sec = newSection();
       mutate(() => {
@@ -177,6 +183,14 @@ parent.postMessage({kol:'ready'},'*');
       return;
     }
     const w = { id: uid(), type, props: TYPES[type].props(), style: {} };
+    if (TYPES[type].media) {
+      const files = await Media.pick({ kind: TYPES[type].media, multiple: !!TYPES[type].multiple });
+      if (!S) return;
+      files.forEach(f => { fileCache[f.id] = f; });
+      if (type === 'gallery') w.props.files = files.map(f => f.id);
+      else if (files[0]) w.props.file = files[0].id;
+      if (type === 'image' && files[0]) w.props.alt = files[0].name.replace(/\.[a-z0-9]+$/i, '');
+    }
     mutate(() => {
       const f = S.sel && find(S.sel);
       if (f?.kind === 'widget') f.col.widgets.splice(f.wi + 1, 0, w);
@@ -242,6 +256,7 @@ parent.postMessage({kol:'ready'},'*');
   // openSheet — בטלפון פותח את המאפיינים בגיליון (לחיצה בתצוגה, רכיב חדש, בחירה מהמבנה)
   function select(id, openSheet) {
     S.sel = id;
+    S.vsrc = null;
     syncSel();
     renderPanel();
     if (!WIDE.matches && id && openSheet) openPanelSheet();
@@ -326,9 +341,98 @@ parent.postMessage({kol:'ready'},'*');
       parts.push(field('גובה (פיקסלים)', h('input', { type: 'number', min: 4, max: 400, value: p.height, dir: 'ltr', disabled: S.readonly,
         oninput: e => set(p, 'height')(Math.max(4, Math.min(400, +e.target.value || 4))) })));
     }
+    else if (TYPES[w.type].media || w.type === 'video') parts.push(...mediaFields(w));
     if (w.type !== 'spacer') parts.push(styleGroup(w));
     parts.push(h('button', { type: 'button', class: 'btn sm ghost st-up', onclick: () => select(f.sec.id, false) }, '🧱 הפס שמכיל אותו'));
     box.replaceChildren(...parts);
+  }
+
+  // ── שדות של רכיבי קבצים ─────────────────────────────────
+  async function fileInfo(id) {
+    if (!id) return null;
+    if (!fileCache[id]) {
+      try { (await api('files')).files.forEach(f => { fileCache[f.id] = f; }); } catch { /* מוצג כחסר */ }
+    }
+    return fileCache[id] || null;
+  }
+
+  function fileSlot(kind, id, onPick, label) {
+    const box = h('div', { class: 'file-slot' }, h('span', { class: 'muted' }, '…'));
+    const choose = async () => {
+      const [f] = await Media.pick({ kind });
+      if (f) { fileCache[f.id] = f; onPick(f); }
+    };
+    fileInfo(id).then(f => {
+      box.replaceChildren(
+        f ? (f.kind === 'image' ? h('img', { class: 'thumb lg', src: f.url, alt: '' }) : h('span', { class: 'use-ic', 'aria-hidden': 'true' }, TYPES[{ audio: 'audio', video: 'video', doc: 'file' }[f.kind]].icon)) : null,
+        h('span', { class: 'use-tx' }, h('b', { class: 'one' }, f ? f.name : id ? 'הקובץ חסר' : 'לא נבחר'), f ? h('small', {}, Media.mb(f.size)) : null),
+        h('button', { type: 'button', class: 'btn sm ghost', disabled: S.readonly, onclick: choose }, f ? '🔁 החלפה' : label));
+    });
+    return box;
+  }
+
+  function mediaFields(w) {
+    const p = w.props;
+    const set = (k, coalesce = true) => v => mutate(() => { p[k] = v; }, { coalesce, rebuild: false });
+    const setNow = (k, v) => mutate(() => { p[k] = v; });                       // עם בנייה מחדש של הפאנל
+    const input = (label, k, attrs = {}) => field(label, h('input', { value: p[k], disabled: S.readonly, ...attrs, oninput: e => set(k)(e.target.value) }));
+    switch (w.type) {
+      case 'image': return [
+        fileSlot('image', p.file, f => setNow('file', f.id), '🖼️ בחירה'),
+        input('טקסט חלופי (לעיוורים ולמנועי חיפוש) *', 'alt', { maxlength: 300 }),
+        input('כיתוב מתחת לתמונה', 'caption', { maxlength: 500 }),
+        input('קישור בלחיצה', 'href', { dir: 'ltr', inputmode: 'url', placeholder: 'https://' }),
+        h('div', { class: 'f' }, h('span', {}, 'רוחב'), seg('iwidth', { auto: 'מקורי', full: 'לכל הרוחב' }, p.width, v => set('width', false)(v))),
+      ];
+      case 'gallery': {
+        const list = h('div', { class: 'gal-edit' });
+        Promise.all(p.files.map(fileInfo)).then(fs => list.replaceChildren(...fs.map((f, i) => h('div', { class: 'gal-item' },
+          f ? h('img', { class: 'thumb', src: f.url, alt: '' }) : h('span', { class: 'thumb' }, '?'),
+          h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'הסרה מהגלריה', disabled: S.readonly,
+            onclick: () => setNow('files', p.files.filter((_, j) => j !== i)) }, '✕')))));
+        return [
+          h('div', { class: 'f' }, h('span', {}, `תמונות · ${p.files.length}`), list),
+          h('button', { type: 'button', class: 'btn ghost', disabled: S.readonly, onclick: async () => {
+            const fs = await Media.pick({ kind: 'image', multiple: true });
+            fs.forEach(f => { fileCache[f.id] = f; });
+            if (fs.length) setNow('files', [...p.files, ...fs.map(f => f.id).filter(id => !p.files.includes(id))]);
+          } }, '+ תמונות'),
+          h('div', { class: 'f' }, h('span', {}, 'עמודות'), seg('gcols', [['2', '2'], ['3', '3'], ['4', '4']], String(p.cols), v => set('cols', false)(+v))),
+        ];
+      }
+      case 'audio': return [
+        fileSlot('audio', p.file, f => { setNow('file', f.id); if (!p.title) setNow('title', f.name.replace(/\.[a-z0-9]+$/i, '')); }, '🎙️ בחירה / הקלטה'),
+        input('כותרת מעל הנגן', 'title', { maxlength: 200 }),
+      ];
+      case 'video': {
+        const src = p.embed ? 'link' : 'file';
+        return [
+          h('div', { class: 'f' }, h('span', {}, 'מקור'), seg('vsrc', { file: '⬆️ קובץ', link: '🔗 יוטיוב / וימאו' }, src,
+            v => mutate(() => { if (v === 'file') p.embed = ''; else p.file = ''; S.vsrc = v; }))),
+          (S.vsrc || src) === 'link'
+            ? field('קישור לסרטון', h('input', { value: p.embed ? (p.embed.startsWith('youtube:') ? 'https://youtu.be/' + p.embed.slice(8) : 'https://vimeo.com/' + p.embed.slice(6)) : '',
+              dir: 'ltr', inputmode: 'url', placeholder: 'https://youtu.be/…', disabled: S.readonly, onchange: e => {
+                const v = embedOf(e.target.value.trim());
+                if (e.target.value.trim() && !v) toast('לא זיהיתי קישור של יוטיוב או וימאו', true);
+                mutate(() => { p.embed = v; p.file = ''; });
+              } }))
+            : fileSlot('video', p.file, f => mutate(() => { p.file = f.id; p.embed = ''; }), '🎬 בחירה'),
+          h('p', { class: 'hint' }, 'וידאו עד 50MB. סרטון ארוך — עדיף ביוטיוב, ולהדביק קישור.'),
+        ];
+      }
+      case 'file': return [
+        fileSlot('doc', p.file, f => { setNow('file', f.id); }, '📄 בחירה'),
+        input('הכיתוב בקישור (ריק — שם הקובץ)', 'label', { maxlength: 200 }),
+      ];
+    }
+    return [];
+  }
+
+  function embedOf(url) {
+    let m = url.match(/^https:\/\/(?:www\.|m\.)?(?:youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+    if (m) return 'youtube:' + m[1];
+    m = url.match(/^https:\/\/(?:www\.|player\.)?vimeo\.com\/(?:video\/)?(\d{5,12})/);
+    return m ? 'vimeo:' + m[1] : '';
   }
 
   function styleGroup(w) {
@@ -394,6 +498,10 @@ parent.postMessage({kol:'ready'},'*');
     if (w.type === 'text') { const d = document.createElement('div'); d.innerHTML = w.props.html; return d.textContent.trim().slice(0, 80) || 'טקסט'; }
     if (w.type === 'button') return w.props.label || 'כפתור';
     if (w.type === 'spacer') return `${w.props.height}px`;
+    if (w.type === 'gallery') return `${w.props.files.length} תמונות`;
+    if (w.type === 'audio') return w.props.title || fileCache[w.props.file]?.name || 'שמע';
+    if (w.type === 'image') return w.props.alt || fileCache[w.props.file]?.name || 'תמונה';
+    if (w.type === 'file') return w.props.label || fileCache[w.props.file]?.name || 'קובץ';
     return TYPES[w.type].label;
   }
 

@@ -96,6 +96,30 @@ function migrate(PDO $pdo): void
                 beat  INTEGER NOT NULL
             );
             SQL,
+        // שלב 3: קבצים והעלאות בחלקים (lib/files.php)
+        3 => <<<'SQL'
+            CREATE TABLE files (
+                id      TEXT PRIMARY KEY,
+                name    TEXT NOT NULL,
+                type    TEXT NOT NULL,
+                kind    TEXT NOT NULL,
+                ext     TEXT NOT NULL,
+                size    INTEGER NOT NULL,
+                sha256  TEXT NOT NULL,
+                w       INTEGER,
+                h       INTEGER,
+                by_sub  TEXT NOT NULL,
+                by_name TEXT NOT NULL,
+                at      TEXT NOT NULL
+            );
+            CREATE TABLE uploads (
+                id      TEXT PRIMARY KEY,
+                name    TEXT NOT NULL,
+                size    INTEGER NOT NULL,
+                sub     TEXT NOT NULL,
+                started INTEGER NOT NULL
+            );
+            SQL,
     ];
     foreach ($steps as $n => $sql) {
         if ($v >= $n) continue;
