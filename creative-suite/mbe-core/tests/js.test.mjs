@@ -207,7 +207,7 @@ test('יומן (1.1): create → שמירות רצופות = שלב אחד → �
     assert.deepEqual([j.at(-1).kind, j.at(-1).note], ['restore', 'שוחזר מ-s1']);
     assert.equal(j.at(-1).result, j[0].result);
     assert.equal(f.version(v1), null, 'גרסת ביניים שנמחקה — null');
-    assert.deepEqual(f.version(j[1].result), doc('ד'));
+    assert.equal(f.version(j[1].result).flows.f1.doc.content[0].content[0].text, 'ד');
 
     // אותו קובץ ב-PHP: נפתח בלי אזהרות, ושמירה עם שינוי מוסיפה שלב בהמשך המספור
     const file = join(tmp, 'journal.mbe'), out = join(tmp, 'journal-php.mbe');
@@ -234,4 +234,31 @@ test('יומן פגום — נשמר כמו שהוא, ולא נכתב עליו',
     await M.save(f, { app: 'x' });
     assert.deepEqual(Buffer.from(f.files.get(M.JOURNAL)), Buffer.from(before));
     assert.deepEqual(f.journal(), []);
+});
+
+test('מזהה פסקה (1.1): save משלים חסר, מחליף פגום וכפול, ולא נוגע בתקין; ב-PHP — אותו דבר', async () => {
+    for (let i = 0; i < 200; i++) assert.match(M.paraId(), /^p[A-Za-z0-9]{10}$/);
+    assert.equal(M.paragraphBookmark('p1'), '_mbe_pp1');
+    assert.equal(M.bookmarkParaId('_mbe_pp1'), 'p1');
+    assert.equal(M.bookmarkParaId('_GoBack'), null);
+    const para = (id, text) => ({ type: 'paragraph', ...(id === undefined ? {} : { attrs: { id } }), content: [{ type: 'text', text }] });
+    const f = M.create('text', { surfaces: [], flows: {
+        f1: { engine: 'prosemirror', doc: { type: 'doc', content: [para('keep_1', 'א'), para(undefined, 'ב'), para('bad-id', 'ג'),
+            { type: 'bulletList', content: [{ type: 'listItem', content: [para('keep_1', 'ד')] }] }, { type: 'heading', attrs: { level: 1 }, content: [] }] } },
+        f2: { engine: 'other', doc: { type: 'doc', content: [para(undefined, 'ה')] } } } });
+    f.setRendition(M.PREVIEW, (await M.open(fx('valid/text.mbe'))).files.get(M.PREVIEW));
+    await M.save(f, { app: 'x' });
+    const c = f.document.flows.f1.doc.content;
+    const ids = [c[0].attrs.id, c[1].attrs.id, c[2].attrs.id, c[3].content[0].content[0].attrs.id, c[4].attrs.id];
+    assert.equal(ids[0], 'keep_1', 'מזהה תקין לא משתנה');
+    assert.ok(ids.slice(1).every(id => /^p[A-Za-z0-9]{10}$/.test(id)), ids.join());
+    assert.equal(new Set(ids).size, 5, 'כל המזהים שונים');
+    assert.equal(c[4].attrs.level, 1, 'שאר ה-attrs נשמרים');
+    assert.equal(f.document.flows.f2.doc.content[0].attrs, undefined, 'שטף שאינו prosemirror — לא נוגעים');
+    assert.deepEqual(codes(f), []);
+
+    const file = join(tmp, 'para.mbe'), out = join(tmp, 'para-php.mbe');
+    writeFileSync(file, await M.save(f, { app: 'x' }));
+    php('resave', file, out, 'php-b');
+    assert.deepEqual(Buffer.from(docBytesOf(readFileSync(out))), Buffer.from(docBytesOf(readFileSync(file))), 'PHP לא משנה מזהים קיימים');
 });

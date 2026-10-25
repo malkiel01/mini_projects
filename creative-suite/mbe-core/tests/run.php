@@ -133,7 +133,7 @@ check($f->document['flows']['f1']['doc']['content'][0]['content'][0]['text'] ===
 Mbe::save($f, ['app' => 'layout-studio']);
 $j = $f->journal(); $last = $j[count($j) - 1];
 check($last['kind'] === 'restore' && $last['note'] === 'שוחזר מ-s1' && $last['result'] === $j[0]['result'], 'יומן: שלב restore');
-check($f->version($v1) === null && $f->version($j[1]['result']) == $doc('ד'), 'יומן: version');
+check($f->version($v1) === null && $f->version($j[1]['result'])['flows']['f1']['doc']['content'][0]['content'][0]['text'] === 'ד', 'יומן: version');
 check($f->prune(1) >= 1, 'יומן: prune מוחק');
 Mbe::save($f, ['app' => 'layout-studio']);
 $hist = array_values(array_filter(array_column($f->issues, 'code'), fn($c) => str_starts_with($c, 'history')));
@@ -144,6 +144,21 @@ $before = $f->files[Mbe::JOURNAL];
 $f->document['x'] = 1;
 Mbe::save($f, ['app' => 'x']);
 check($f->files[Mbe::JOURNAL] === $before && $f->journal() === [], 'יומן פגום — נשמר כמו שהוא');
+
+// מזהה פסקה (1.1)
+check((bool)preg_match('/^p[A-Za-z0-9]{10}$/', Mbe::paraId()) && Mbe::paragraphBookmark('p1') === '_mbe_pp1' && Mbe::bookmarkParaId('_mbe_pp1') === 'p1' && Mbe::bookmarkParaId('_GoBack') === null, 'מזהה פסקה: paraId / סימנייה');
+$para = fn($id, $t) => ['type' => 'paragraph'] + ($id === null ? [] : ['attrs' => ['id' => $id]]) + ['content' => [['type' => 'text', 'text' => $t]]];
+$f = Mbe::create('text', ['surfaces' => [], 'flows' => ['f1' => ['engine' => 'prosemirror', 'doc' => ['type' => 'doc', 'content' => [
+    $para('keep_1', 'א'), $para(null, 'ב'), $para('bad-id', 'ג'),
+    ['type' => 'bulletList', 'content' => [['type' => 'listItem', 'content' => [$para('keep_1', 'ד')]]]],
+    ['type' => 'heading', 'attrs' => new stdClass(), 'content' => []]]]]]]);
+$f->setRendition(Mbe::PREVIEW, Mbe::open($fx('valid/text.mbe'))->files[Mbe::PREVIEW]);
+Mbe::save($f, ['app' => 'x']);
+$c = $f->document['flows']['f1']['doc']['content'];
+$ids = [$c[0]['attrs']['id'], $c[1]['attrs']['id'], $c[2]['attrs']['id'], $c[3]['content'][0]['content'][0]['attrs']['id'], $c[4]['attrs']['id']];
+$fresh = array_filter(array_slice($ids, 1), fn($id) => (bool)preg_match('/^p[A-Za-z0-9]{10}$/', $id));
+check($ids[0] === 'keep_1' && count($fresh) === 4 && count(array_unique($ids)) === 5, 'מזהה פסקה: save משלים, מחליף פגום וכפול, שומר תקין');
+check(!array_filter(array_column($f->issues, 'code'), fn($x) => str_starts_with($x, 'para-id')), 'מזהה פסקה: אחרי save — בלי אזהרות');
 
 echo $fail ? "\n$fail מתוך $n בדיקות נכשלו\n" : "mbe-core PHP: $n בדיקות עברו\n";
 exit($fail ? 1 : 0);

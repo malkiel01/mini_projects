@@ -516,7 +516,10 @@ final class Mbe
                     if (!is_string($p['d'] ?? null)) $issue('error', 'path-d-missing', 'לנתיב חסר d', "document.json#$at");
                     elseif (($bad = self::pathProblem($p['d'])) !== null) $issue('error', 'path-d-invalid', "d לא תקין: $bad", "document.json#$at/d");
                 } elseif ($type === 'group') {
-                    if (array_key_exists('d', $p) || array_key_exists('transform', $p)) {
+                    // קבוצה בוליאנית חיה (union / subtract / intersect / exclude) נושאת d מחושב משלה — requests/spec-vector-g3.md
+                    if (array_key_exists('boolean', $p)) {
+                        if (is_string($p['d'] ?? null) && ($bad = self::pathProblem($p['d'])) !== null) $issue('error', 'path-d-invalid', "d לא תקין: $bad", "document.json#$at/d");
+                    } elseif (array_key_exists('d', $p) || array_key_exists('transform', $p)) {
                         $issue('error', 'group-geometry', 'לקבוצה אין d ו-transform משלה', "document.json#$at");
                     }
                     $walkPaths($p['children'] ?? null, "$at/children");
@@ -535,6 +538,11 @@ final class Mbe
                 if (($l['type'] ?? null) === 'frame' && is_string($l['flow'] ?? null) && !array_key_exists($l['flow'], $flows)) {
                     $issue('error', 'flow-missing', "המסגרת מפנה לשטף \"{$l['flow']}\" שאינו קיים", "document.json#$at/flow");
                 }
+                // מסכה וקטורית של שכבת raster (requests/raster-studio-r2.md) — אותה בדיקה כמו נתיבי vector
+                $vm = $l['vectorMask'] ?? null;
+                if (is_array($vm) && is_string($vm['d'] ?? null) && ($bad = self::pathProblem($vm['d'])) !== null) {
+                    $issue('error', 'path-d-invalid', "d לא תקין: $bad", "document.json#$at/vectorMask/d");
+                }
                 $walkLayers($l['children'] ?? null, "$at/children");
                 $walkPaths($l['paths'] ?? null, "$at/paths");
             }
@@ -545,6 +553,20 @@ final class Mbe
             $s = (array)$s;
             $seeId($s['id'] ?? null, "/surfaces/$i");
             $walkLayers($s['layers'] ?? null, "/surfaces/$i/layers");
+        }
+        // מזהה פסקה (מ-1.1): ייחודי בשטף, [A-Za-z0-9_]{1,32}. חסר — תקין (1.0), ו-save משלים. פגום או כפול — אזהרה, ו-save מחליף.
+        foreach (MbeCanonical::sortedKeys($flows) as $fid) {
+            $fl = MbeSchema::typeOf($flows[$fid]) === 'object' ? (array)$flows[$fid] : null;
+            if (!$fl || ($fl['engine'] ?? null) !== 'prosemirror' || MbeSchema::typeOf($fl['doc'] ?? null) !== 'object') continue;
+            $seen = [];
+            self::walkBlocks($fl['doc'], "/flows/$fid/doc", function (array $node, string $at) use (&$seen, $issue, $fid) {
+                $attrs = $node['attrs'] ?? null;
+                $id = is_array($attrs) ? ($attrs['id'] ?? null) : null;
+                if ($id === null) return;
+                if (!is_string($id) || !preg_match(self::PARA_ID_RE, $id)) $issue('warning', 'para-id-invalid', 'מזהה פסקה לא תקין — יוחלף בשמירה', "document.json#$at/attrs/id");
+                elseif (isset($seen[$id])) $issue('warning', 'para-id-duplicate', "המזהה \"$id\" מופיע פעמיים בשטף \"$fid\" — השני יוחלף בשמירה", "document.json#$at/attrs/id");
+                if (is_string($id)) $seen[$id] = true;
+            });
         }
         // סדר השרשור (סעיף 3, "מסגרות, שטפים"): כל מזהה ב-frames — שכבת frame קיימת שה-flow שלה הוא השטף הזה, פעם אחת.
         foreach (MbeCanonical::sortedKeys($flows) as $fid) {
@@ -623,6 +645,86 @@ final class Mbe
         return $close();
     }
 
+    // ---- מזהה פסקה (מ-1.1, mbe-format.md סעיף 3; requests/spec-para-id.md) ----
+
+    public const PARA_ID_RE = '/^[A-Za-z0-9_]{1,32}$/';
+    private const PARA_TYPES = ['paragraph', 'heading'];
+
+    /** מזהה פסקה חדש: p + 10 תווים אלפאנומריים (בלי מקף — שם סימנייה ב-Word). */
+    public static function paraId(): string
+    {
+        $abc = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+        $out = 'p';
+        while (strlen($out) < 11) {
+            foreach (str_split(random_bytes(16)) as $c) {
+                $b = ord($c);
+                if ($b < 248 && strlen($out) < 11) $out .= $abc[$b % 62]; // 248 = 4×62 — בלי הטיה
+            }
+        }
+        return $out;
+    }
+
+    /** שם הסימנייה הנסתרת של פסקה ב-docx, וחזרה ממנו. */
+    public static function paragraphBookmark(string $id): string { return "_mbe_p$id"; }
+
+    public static function bookmarkParaId(string $name): ?string
+    {
+        return preg_match('/^_mbe_p([A-Za-z0-9_]{1,32})$/', $name, $m) ? $m[1] : null;
+    }
+
+    /** עובר (לקריאה) על כל צומת בלוק של טקסט (paragraph, heading) — גם בתוך רשימות וטבלאות, בסדר המסמך. */
+    private static function walkBlocks(mixed $node, string $where, callable $fn, int $depth = 0): void
+    {
+        if (!is_array($node) || array_is_list($node) || $depth > 200) return;
+        if (in_array($node['type'] ?? null, self::PARA_TYPES, true)) $fn($node, $where);
+        if (is_array($node['content'] ?? null) && array_is_list($node['content'])) {
+            foreach ($node['content'] as $i => $c) self::walkBlocks($c, "$where/content/$i", $fn, $depth + 1);
+        }
+    }
+
+    /** משלים מזהים בשטף אחד (ProseMirror): חסר, פגום או כפול — מקבל חדש. מזהה תקין לא משתנה. מחזיר כמה הושלמו. */
+    public static function ensureIds(mixed &$doc): int
+    {
+        $seen = [];
+        $n = 0;
+        $walk = function (mixed &$node, int $depth) use (&$walk, &$seen, &$n): void {
+            if (!is_array($node) || array_is_list($node) || $depth > 200) return;
+            if (in_array($node['type'] ?? null, self::PARA_TYPES, true)) {
+                $attrs = $node['attrs'] ?? null;
+                $id = is_array($attrs) ? ($attrs['id'] ?? null) : null;
+                if (is_string($id) && preg_match(self::PARA_ID_RE, $id) && !isset($seen[$id])) {
+                    $seen[$id] = true;
+                } else {
+                    do { $id = self::paraId(); } while (isset($seen[$id]));
+                    $seen[$id] = true;
+                    if (!is_array($attrs) || array_is_list($attrs)) $attrs = []; // {} נשמר כ-stdClass — מחליפים במערך עם id
+                    $attrs['id'] = $id;
+                    $node['attrs'] = $attrs;
+                    $n++;
+                }
+            }
+            if (is_array($node['content'] ?? null) && array_is_list($node['content'])) {
+                foreach ($node['content'] as &$c) $walk($c, $depth + 1);
+                unset($c);
+            }
+        };
+        $walk($doc, 0);
+        return $n;
+    }
+
+    /** כל שטפי ה-prosemirror במסמך. רץ לבד ב-save. */
+    public static function ensureParaIds(mixed &$document): int
+    {
+        if (!is_array($document) || !is_array($document['flows'] ?? null) || array_is_list($document['flows'])) return 0;
+        $n = 0;
+        foreach (MbeCanonical::sortedKeys($document['flows']) as $fid) {
+            $fl = &$document['flows'][$fid];
+            if (is_array($fl) && ($fl['engine'] ?? null) === 'prosemirror' && is_array($fl['doc'] ?? null)) $n += self::ensureIds($fl['doc']);
+            unset($fl);
+        }
+        return $n;
+    }
+
     /** null אם ה-SVG בטוח; אחרת — מה נמצא. ניקוי בפועל — באחריות האפליקציה שמייצרת את ה-SVG. */
     public static function svgProblem(string $text): ?string
     {
@@ -667,6 +769,7 @@ final class Mbe
             throw new MbeError('חסר renditions/preview.png — חובה בכל שמירה',
                 [['level' => 'error', 'code' => 'preview-missing', 'message' => 'חסר preview.png', 'path' => self::PREVIEW]]);
         }
+        self::ensureParaIds($f->document);
         try { $docBytes = MbeCanonical::encode($f->document); } catch (MbeCanonicalError $e) {
             throw new MbeError('document אינו JSON תקין: ' . $e->getMessage(), [['level' => 'error', 'code' => 'document-invalid', 'message' => $e->getMessage()]]);
         }

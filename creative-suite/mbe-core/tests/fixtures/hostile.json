@@ -298,6 +298,47 @@
     "ok": true
   },
   {
+    "file": "hostile/para-id-invalid.mbe",
+    "codes": [
+      "para-id-invalid"
+    ],
+    "ok": true
+  },
+  {
+    "file": "hostile/para-id-duplicate.mbe",
+    "codes": [
+      "para-id-duplicate"
+    ],
+    "ok": true
+  },
+  {
+    "file": "hostile/para-id-missing-ok.mbe",
+    "codes": [],
+    "ok": true
+  },
+  {
+    "file": "hostile/group-boolean.mbe",
+    "codes": [],
+    "ok": true
+  },
+  {
+    "file": "hostile/vector-mask-ok.mbe",
+    "codes": [],
+    "ok": true
+  },
+  {
+    "file": "hostile/vector-mask-bad-d.mbe",
+    "codes": [
+      "path-d-invalid"
+    ]
+  },
+  {
+    "file": "hostile/group-boolean-bad-d.mbe",
+    "codes": [
+      "path-d-invalid"
+    ]
+  },
+  {
     "file": "hostile/flow-missing.mbe",
     "codes": [
       "flow-missing"
