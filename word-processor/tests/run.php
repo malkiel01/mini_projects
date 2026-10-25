@@ -1753,7 +1753,39 @@ check('import_file: מסמך HTML שלם — רק הגוף, כותרת ופסק�
 $it = import_file("# פרק\nשורה ראשונה\n- תבליט", 'a.txt', $odDoc)['json']['content'];
 $i1255 = import_file(iconv('UTF-8', 'WINDOWS-1255', "שלום עולם"), 'old.txt', $odDoc)['json']['content'][0]['content'][0]['text'] ?? '';
 check('import_file: טקסט — שורות, # כותרת, - תבליט; וגם Windows-1255', array_column($it, 'type') === ['heading', 'paragraph', 'bulletList'] && $i1255 === 'שלום עולם', $i1255);
-check('import_file: doc ישן — שגיאה עם הסבר', throws(fn() => import_file("\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1" . str_repeat("\0", 50), 'a.doc', $odDoc), 'bad_file'));
+check('import_file: קובץ OLE פגום (‎.doc חתוך) — שגיאה עם הסבר, לא שגיאת שרת', throws(fn() => import_file("\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1" . str_repeat("\0", 50), 'a.doc', $odDoc), 'bad_file'));
+
+// ‎.doc (Word 97–2003, lib/import_doc.php) — tests/fixtures/libreoffice*.doc: נוצרו ב-LibreOffice מ-docx שלנו
+$dc = import_file(file_get_contents(__DIR__ . '/fixtures/libreoffice.doc'), 'ישן.doc', $odDoc);
+$dcB = $dc['json']['content'];
+$dcT = fn($b) => implode('', array_map(fn($n) => $n['text'] ?? '', $b['content'] ?? []));
+$dcM = fn($b, $t) => array_values(array_filter($b['content'] ?? [], fn($n) => ($n['text'] ?? '') === $t))[0]['marks'] ?? [];
+check('‎.doc: כותרות 1 ו-2 (לפי הסגנון), והדוח ריק', ($dcB[0]['type'] ?? '') === 'heading' && $dcB[0]['attrs']['level'] === 1 && $dcT($dcB[0]) === 'כותרת ראשית'
+    && ($dcB[3]['attrs']['level'] ?? 0) === 2 && $dc['report'] === [], json_encode($dc['report'], JSON_UNESCAPED_UNICODE));
+check('‎.doc: מודגש, נטוי, קו תחתון, וצבע וגודל', $dcM($dcB[1], 'מודגש') == [['type' => 'bold']] && $dcM($dcB[1], 'נטוי') == [['type' => 'italic']]
+    && $dcM($dcB[1], 'קו תחתון') == [['type' => 'underline']] && $dcM($dcB[1], 'אדום גדול') == [['type' => 'textStyle', 'attrs' => ['fontSize' => '16pt', 'color' => '#ff0000']]],
+    json_encode($dcB[1], JSON_UNESCAPED_UNICODE));
+check('‎.doc: יישור למרכז, ופסקה באנגלית — משמאל לימין', ($dcB[2]['attrs']['textAlign'] ?? '') === 'center'
+    && (array_values(array_filter($dcB, fn($b) => str_starts_with($dcT($b), 'English')))[0]['attrs']['dir'] ?? '') === 'ltr');
+check('‎.doc: רשימת תבליטים ורשימה ממוספרת — נפרדות', ($dcB[4]['type'] ?? '') === 'bulletList' && count($dcB[4]['content']) === 2 && ($dcB[5]['type'] ?? '') === 'orderedList'
+    && str_contains(json_encode($dcB[5], JSON_UNESCAPED_UNICODE), 'צעד שניים'));
+$dcTbl = array_values(array_filter($dcB, fn($b) => $b['type'] === 'table'))[0] ?? [];
+check('‎.doc: טבלה 2×2, כל תא במקומו', count($dcTbl['content'] ?? []) === 2 && count($dcTbl['content'][0]['content']) === 2
+    && $dcT($dcTbl['content'][1]['content'][1]['content'][0]) === 'תא ב2', json_encode($dcTbl, JSON_UNESCAPED_UNICODE));
+$dcLink = array_values(array_filter($dcB, fn($b) => str_contains($dcT($b), 'קישור')))[0] ?? [];
+check('‎.doc: קישור (שדה HYPERLINK) ושבירת שורה', ($dcM($dcLink, 'קישור')[0]['attrs']['href'] ?? '') === 'https://example.com/'
+    && in_array('hardBreak', array_column($dcLink['content'] ?? [], 'type'), true));
+$dcImg = array_values(array_filter($dcB, fn($b) => ($b['content'][0]['type'] ?? '') === 'image'))[0]['content'][0] ?? [];
+check('‎.doc: תמונה (PNG מזרם Data) — באחסון שלנו ובגודל המקורי', media_of_doc($dcImg['attrs']['media'] ?? '', $odDoc) && ($dcImg['attrs']['width'] ?? 0) === 60 && ($dcImg['attrs']['height'] ?? 0) === 30);
+$dc2 = import_file(file_get_contents(__DIR__ . '/fixtures/libreoffice-notes.doc'), 'x.bin', $odDoc);
+$dc2B = $dc2['json']['content'];
+check('‎.doc: הערת שוליים במקומה, עם הטקסט שלה', ($dc2B[0]['content'][1]['type'] ?? '') === 'footnote' && ($dc2B[0]['content'][1]['attrs']['text'] ?? '') === 'זו ההערה');
+check('‎.doc: רשימה מקוננת (רמה 2 בתוך רמה 1)', ($dc2B[1]['content'][0]['content'][1]['type'] ?? '') === 'bulletList' && count($dc2B[1]['content']) === 2,
+    json_encode($dc2B[1], JSON_UNESCAPED_UNICODE));
+check('‎.doc: מעבר עמוד → breakBefore, ותמונת JPEG בתוך תא', ($dc2B[2]['attrs']['breakBefore'] ?? false) === true
+    && ($dc2B[3]['content'][0]['content'][0]['content'][0]['content'][0]['type'] ?? '') === 'image' && $dc2['report'] === []);
+check('‎.doc → Word: נשמר כ-docx (אין כתיבה של ‎.doc) ונפתח בחזרה עם אותו טקסט', str_contains(export_text(import_docx(export_docx($dc['json'], page_normalize([]), 'x'), $odDoc)['json']), 'תא ב2'));
+check('קובץ Office שאינו Word (OLE בלי WordDocument) — הודעה ברורה', throws(fn() => import_doc(substr(file_get_contents(__DIR__ . '/fixtures/libreoffice.doc'), 0, 1536), $odDoc), 'bad_file'));
 
 section('ייבוא RTF (lib/import_rtf.php)');
 // כמו ש-Word בעברית שומר: ansicpg1255, גופן עברי ב-\af, עברית ב-\'hh וב-\uN, סגנון "כותרת 1" (שם ב-\'hh), כותרת עם
