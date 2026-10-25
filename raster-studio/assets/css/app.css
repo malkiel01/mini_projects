@@ -330,7 +330,10 @@ body.editor { display: flex; flex-direction: column; block-size: 100dvh; min-hei
 .tool-opts .opt-seg span { min-block-size: 32px; font-size: .82rem; }
 .tool-opts .opt-btns { flex: 1 0 auto; display: flex; justify-content: flex-end; align-items: center; gap: 2px; }
 .tools { max-block-size: calc(100% - var(--s2) * 2); overflow-y: auto; scrollbar-width: none; }
-.stage[data-tool="rect"], .stage[data-tool="ellipse"], .stage[data-tool="lasso"] { cursor: crosshair; }
+.stage[data-tool="rect"], .stage[data-tool="ellipse"], .stage[data-tool="lasso"], .stage[data-tool="wand"] { cursor: crosshair; }
+.tool-opts .opt-check { flex: 0 0 auto; display: flex; align-items: center; gap: var(--s1); min-block-size: 32px;
+    font-size: .82rem; cursor: pointer; }
+.tool-opts .opt-check input { inline-size: 18px; block-size: 18px; margin: 0; accent-color: var(--brand); }
 
 /* ===== תיקונים ===== */
 .adjust { position: absolute; z-index: 4; inset-block-end: var(--s2); inset-inline: calc(var(--tap) + 4px + var(--s2) * 2) var(--s2);

@@ -44,6 +44,30 @@ export function floodFill(px, w, h, sx, sy, tolerance = 32) {
   return { mask, count, box: count ? [x0, y0, x1, y1] : null };
 }
 
+/**
+ * טווח צבעים: כל פיקסל בתמונה (לא רק הרציפים) שצבעו קרוב לצבע ב-(sx, sy) — אותו כלל כמו floodFill.
+ * מחזיר את אותו מבנה.
+ */
+export function colorRange(px, w, h, sx, sy, tolerance = 32) {
+  const mask = new Uint8Array(w * h);
+  if (sx < 0 || sy < 0 || sx >= w || sy >= h) return { mask, count: 0, box: null };
+  const i0 = (sy * w + sx) * 4;
+  const r0 = px[i0], g0 = px[i0 + 1], b0 = px[i0 + 2], a0 = px[i0 + 3];
+  let count = 0, x0 = w, y0 = h, x1 = -1, y1 = -1;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4, a = px[i + 3];
+      const ok = (a0 === 0 && a === 0) || (Math.abs(px[i] - r0) <= tolerance && Math.abs(px[i + 1] - g0) <= tolerance &&
+        Math.abs(px[i + 2] - b0) <= tolerance && Math.abs(a - a0) <= tolerance);
+      if (!ok) continue;
+      mask[y * w + x] = 255;
+      count++;
+      if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+    }
+  }
+  return { mask, count, box: count ? [x0, y0, x1, y1] : null };
+}
+
 /** "#rrggbb" ↔ [r, g, b] */
 export const hexToRgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
 export const rgbToHex = ([r, g, b]) => '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
