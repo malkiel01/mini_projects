@@ -50,9 +50,10 @@ function admin_state(array $admin): never
         'settings'   => ['require_approval' => approval_required()],
         'sso'        => sso_clients_state(),
         'categories' => categories_list(),
+        'groups'     => groups_list(),
         'apps'       => array_map(fn($a) => [
             'id' => $a['id'], 'name' => $a['name'], 'icon' => $a['icon'], 'icon_svg' => $a['icon_svg'] ?? null,
-            'category' => $a['category'], 'default_category' => $a['default_category'],
+            'category' => $a['category'], 'default_category' => $a['default_category'], 'placements' => $a['placements'],
             'hidden' => $a['hidden'], 'install_ok' => $a['install_ok'], 'restricted' => $a['restricted'], 'plugin' => $a['plugin'],
             'gate' => (bool)$a['gate'], 'external' => $a['external'], 'detached' => $a['detached'], 'connected' => $a['connected'],
             'login' => $a['login'],
@@ -73,6 +74,10 @@ function admin_dispatch(string $action, array $body, array $admin): never
         'admin_category_move'   => admin_category_move($body),
         'admin_category_delete' => admin_category_delete($body),
         'admin_app_update'      => admin_app_update($body),
+        'admin_placements_set'  => admin_placements_set($body),
+        'admin_group_save'      => admin_group_save($body),
+        'admin_group_move'      => admin_group_move($body),
+        'admin_group_delete'    => admin_group_delete($body),
         'admin_push_subscribe'  => admin_push_subscribe($body, $admin),
         'admin_push_unsubscribe'=> admin_push_unsubscribe($body, $admin),
         'admin_push_test'       => admin_push_test($admin, $body),
@@ -170,10 +175,13 @@ function admin_grants_set(array $body): never
 {
     $u = target_user($body);
     $catIds = array_column(categories_list(), 'id');
+    $groupIds = array_column(groups_list(), 'id');
     $appIds = array_column(apps_effective(), 'id');
 
     $cats = array_values(array_unique(array_filter((array)($body['categories'] ?? []),
         fn($c) => is_string($c) && in_array($c, $catIds, true))));
+    $groups = array_values(array_unique(array_filter((array)($body['groups'] ?? []),
+        fn($g) => is_string($g) && in_array($g, $groupIds, true))));
     $apps = [];
     foreach ((array)($body['apps'] ?? []) as $id => $allowed) {
         if (in_array($id, $appIds, true) && is_bool($allowed)) $apps[$id] = $allowed;
@@ -184,6 +192,7 @@ function admin_grants_set(array $body): never
     $pdo->prepare('DELETE FROM grants WHERE user_id = ?')->execute([$u['id']]);
     $ins = $pdo->prepare('INSERT INTO grants (user_id, kind, target, allowed) VALUES (?,?,?,?)');
     foreach ($cats as $c) $ins->execute([$u['id'], 'category', $c, 1]);
+    foreach ($groups as $g) $ins->execute([$u['id'], 'group', $g, 1]);
     foreach ($apps as $id => $allowed) $ins->execute([$u['id'], 'app', $id, $allowed ? 1 : 0]);
     $pdo->commit();
     json_out(['ok' => true]);
@@ -231,12 +240,102 @@ function admin_category_move(array $body): never
 function admin_category_delete(array $body): never
 {
     $id = $body['id'] ?? null;
-    $inUse = array_filter(apps_effective(), fn($a) => $a['category'] === $id);
+    $inUse = array_filter(apps_effective(), fn($a) => in_array($id, array_column($a['placements'], 'category'), true));
     if ($inUse) throw new ApiError('יש בקטגוריה אפליקציות — העבירו אותן קודם', 409);
     $st = db()->prepare('DELETE FROM categories WHERE id = ?');
     $st->execute([$id]);
     if (!$st->rowCount()) throw new ApiError('הקטגוריה לא נמצאה', 404);
     db()->prepare("DELETE FROM grants WHERE kind = 'category' AND target = ?")->execute([$id]);
+    json_out(['ok' => true]);
+}
+
+// ---------- קבוצות ----------
+// קבוצה — שורה אחת ברשימה שנפתחים ממנה הילדים (כמו חבילת היצירה). אותה קבוצה יכולה להופיע בכמה קטגוריות.
+
+/** {id?, name, icon} — בלי id: קבוצה חדשה בסוף. */
+function admin_group_save(array $body): never
+{
+    $name = is_string($body['name'] ?? null) ? trim($body['name']) : '';
+    $icon = is_string($body['icon'] ?? null) ? trim($body['icon']) : '';
+    if ($name === '' || mb_strlen($name) > 40) throw new ApiError('שם קבוצה: 1–40 תווים', 422);
+    if ($icon === '') $icon = '🧰';
+    if (mb_strlen($icon) > 8) throw new ApiError('אייקון: אימוג׳י אחד', 422);
+
+    access_migrate();
+    $id = $body['id'] ?? null;
+    if ($id === null) {
+        $id = 'g-' . bin2hex(random_bytes(4));
+        $sort = 1 + (int)db()->query('SELECT COALESCE(MAX(sort), 0) FROM groups')->fetchColumn();
+        db()->prepare('INSERT INTO groups (id, name, icon, sort) VALUES (?,?,?,?)')->execute([$id, $name, $icon, $sort]);
+    } else {
+        $st = db()->prepare('UPDATE groups SET name = ?, icon = ? WHERE id = ?');
+        $st->execute([$name, $icon, $id]);
+        if (!$st->rowCount()) throw new ApiError('הקבוצה לא נמצאה', 404);
+    }
+    json_out(['ok' => true, 'id' => $id]);
+}
+
+/** {id, dir: -1|1} */
+function admin_group_move(array $body): never
+{
+    $ids = array_column(groups_list(), 'id');
+    $i = array_search($body['id'] ?? null, $ids, true);
+    $j = $i === false ? false : $i + (($body['dir'] ?? 0) < 0 ? -1 : 1);
+    if ($i === false || $j < 0 || $j >= count($ids)) throw new ApiError('אי אפשר להזיז', 422);
+    [$ids[$i], $ids[$j]] = [$ids[$j], $ids[$i]];
+    $st = db()->prepare('UPDATE groups SET sort = ? WHERE id = ?');
+    foreach ($ids as $n => $id) $st->execute([$n + 1, $id]);
+    json_out(['ok' => true]);
+}
+
+/** {id} — האפליקציות שבה חוזרות לראשי של אותה קטגוריה (לא נעלמות). מוחק גם את ההרשאות אליה. */
+function admin_group_delete(array $body): never
+{
+    $id = $body['id'] ?? null;
+    access_migrate();
+    $pdo = db();
+    $pdo->beginTransaction();
+    $st = $pdo->prepare('DELETE FROM groups WHERE id = ?');
+    $st->execute([$id]);
+    if (!$st->rowCount()) { $pdo->rollBack(); throw new ApiError('הקבוצה לא נמצאה', 404); }
+    $pdo->prepare("INSERT OR IGNORE INTO placements (app_id, category, grp, sort) SELECT app_id, category, '', sort FROM placements WHERE grp = ?")->execute([$id]);
+    $pdo->prepare('DELETE FROM placements WHERE grp = ?')->execute([$id]);
+    $pdo->prepare("DELETE FROM grants WHERE kind = 'group' AND target = ?")->execute([$id]);
+    $pdo->commit();
+    json_out(['ok' => true]);
+}
+
+/**
+ * {id, placements: [{category, group|null}]} — איפה האפליקציה מוצגת. לפחות מיקום אחד, ובכל אחד קטגוריה;
+ * group ריק — בראשי של הקטגוריה. הסדר ברשימה — הסדר בתוך הקבוצה.
+ */
+function admin_placements_set(array $body): never
+{
+    $apps = array_column(apps_effective(), null, 'id');
+    $app = $apps[$body['id'] ?? ''] ?? null;
+    if (!$app) throw new ApiError('האפליקציה לא נמצאה', 404);
+    if ($app['plugin']) throw new ApiError('תוסף לא מוצג ברשימה — אין לו מיקום', 422);
+    $cats = array_column(categories_list(), 'id');
+    $groups = array_column(groups_list(), 'id');
+    $list = [];
+    foreach ((array)($body['placements'] ?? []) as $p) {
+        $c = is_array($p) ? ($p['category'] ?? null) : null;
+        $g = is_array($p) ? ($p['group'] ?? null) : null;
+        if (!is_string($c) || !in_array($c, $cats, true)) throw new ApiError('בכל שורה צריך לבחור קטגוריה', 422);
+        if ($g !== null && $g !== '' && !in_array($g, $groups, true)) throw new ApiError('קבוצה לא מוכרת', 422);
+        $list["$c|" . ($g ?? '')] = [$c, (string)($g ?? '')];
+    }
+    if (!$list) throw new ApiError('אפליקציה צריכה לפחות מקום אחד — קטגוריה', 422);
+    if (count($list) > 20) throw new ApiError('עד 20 מקומות לאפליקציה', 422);
+
+    $pdo = db();
+    $pdo->beginTransaction();
+    $pdo->prepare('DELETE FROM placements WHERE app_id = ?')->execute([$app['id']]);
+    $ins = $pdo->prepare('INSERT INTO placements (app_id, category, grp, sort) VALUES (?,?,?,?)');
+    $n = 0;
+    foreach ($list as [$c, $g]) $ins->execute([$app['id'], $c, $g, $n++]);
+    $pdo->prepare('INSERT OR IGNORE INTO app_placed (app_id) VALUES (?)')->execute([$app['id']]);
+    $pdo->commit();
     json_out(['ok' => true]);
 }
 

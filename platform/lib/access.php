@@ -13,6 +13,11 @@
  *      ב-app.json: היא נפתחת רק בהרשאה ישירה (סעיף 2).
  *   4. אחרת — לא.
  * תוסף ("plugin" ב-app.json) — רק למנהל, תמיד; גם הרשאה ישירה לא פותחת אותו.
+ *
+ * מיקומים (placements): אפליקציה מונחת בקטגוריה אחת או יותר, ובכל אחת — בראשי או בתוך קבוצה. קבוצה היא
+ * ישות משלה (groups) ויכולה להופיע בכמה קטגוריות; בכל קטגוריה — רק מה שהונח בה. הרשאה לקטגוריה פותחת
+ * כל מה שמונח בה; הרשאה לקבוצה פותחת את כל מה שבקבוצה, גם restricted (זו בחירה מפורשת של המנהל במשתמש);
+ * חסימה ישירה גוברת תמיד. אפליקציה שהמנהל עוד לא הניח — בקטגוריה של app.json (או זו שהועברה אליה), בראשי.
  * הרשאה לקטגוריה כוללת גם אפליקציות שיתווספו אליה בעתיד.
  */
 
@@ -54,7 +59,7 @@ function access_migrate(): void
         );
         CREATE TABLE IF NOT EXISTS grants (
             user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            kind    TEXT NOT NULL CHECK (kind IN ('app','category')),
+            kind    TEXT NOT NULL CHECK (kind IN ('app','category','group')),
             target  TEXT NOT NULL,
             allowed INTEGER NOT NULL,
             PRIMARY KEY (user_id, kind, target)
@@ -62,7 +67,44 @@ function access_migrate(): void
         -- קטגוריות מ-categories.json שכבר נזרעו פעם אחת. כך קטגוריה שהמנהל
         -- מחק לא חוזרת בבקשה הבאה, וקטגוריה חדשה בקובץ כן נכנסת.
         CREATE TABLE IF NOT EXISTS seeded_categories (id TEXT PRIMARY KEY);
+        CREATE TABLE IF NOT EXISTS groups (
+            id   TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            icon TEXT NOT NULL,
+            sort INTEGER NOT NULL
+        );
+        -- grp = '' — בראשי של הקטגוריה (לא בקבוצה)
+        CREATE TABLE IF NOT EXISTS placements (
+            app_id   TEXT NOT NULL,
+            category TEXT NOT NULL,
+            grp      TEXT NOT NULL DEFAULT '',
+            sort     INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (app_id, category, grp)
+        );
+        -- אפליקציות שהמנהל קבע להן מיקומים. אפליקציה שלא כאן — לפי app.json.
+        CREATE TABLE IF NOT EXISTS app_placed (app_id TEXT PRIMARY KEY);
+        CREATE TABLE IF NOT EXISTS seeded_groups (id TEXT PRIMARY KEY);
         SQL);
+
+    // grants לפני 'group' — ה-CHECK הישן לא מכיר אותו; SQLite לא משנה CHECK, ולכן בונים את הטבלה מחדש.
+    $sql = (string)db()->query("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'grants'")->fetchColumn();
+    if (!str_contains($sql, "'group'")) {
+        db()->exec(<<<SQL
+            BEGIN;
+            CREATE TABLE grants_v2 (
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                kind    TEXT NOT NULL CHECK (kind IN ('app','category','group')),
+                target  TEXT NOT NULL,
+                allowed INTEGER NOT NULL,
+                PRIMARY KEY (user_id, kind, target)
+            );
+            INSERT INTO grants_v2 SELECT user_id, kind, target, allowed FROM grants;
+            DROP TABLE grants;
+            ALTER TABLE grants_v2 RENAME TO grants;
+            COMMIT;
+            SQL);
+    }
+    groups_seed();
 
     $seeded = db()->query('SELECT id FROM seeded_categories')->fetchAll(PDO::FETCH_COLUMN);
     $new = array_filter(registry_categories(), fn($c) => !in_array($c['id'], $seeded, true));
@@ -74,6 +116,36 @@ function access_migrate(): void
         $ins->execute([$c['id'], $c['name'], $c['icon'], ++$max]);
         $mark->execute([$c['id']]);
     }
+}
+
+/**
+ * קבוצות מ-subcategories.json נזרעות פעם אחת למסד: הקבוצה, ומיקום לכל אפליקציה שבה (בקטגוריית האב). מאז —
+ * הכול בניהול ("🗂️ אפליקציות"). קבוצה שהמנהל מחק לא חוזרת.
+ */
+function groups_seed(): void
+{
+    $seeded = db()->query('SELECT id FROM seeded_groups')->fetchAll(PDO::FETCH_COLUMN);
+    $new = array_filter(registry_subcategories(), fn($s) => !in_array($s['id'], $seeded, true));
+    if (!$new) return;
+    $pdo = db();
+    $pdo->beginTransaction();
+    $sort = (int)$pdo->query('SELECT COALESCE(MAX(sort), 0) FROM groups')->fetchColumn();
+    foreach ($new as $s) {
+        $pdo->prepare('INSERT OR IGNORE INTO groups (id, name, icon, sort) VALUES (?,?,?,?)')->execute([$s['id'], $s['name'], $s['icon'], ++$sort]);
+        foreach ($s['apps'] as $i => $app) {
+            // אפליקציה שכבר הונחה — נוסיף לה את הקבוצה; אחרת — הקבוצה מחליפה את ברירת המחדל
+            $pdo->prepare('INSERT OR IGNORE INTO placements (app_id, category, grp, sort) VALUES (?,?,?,?)')->execute([$app, $s['parent'], $s['id'], $i]);
+            $pdo->prepare('INSERT OR IGNORE INTO app_placed (app_id) VALUES (?)')->execute([$app]);
+        }
+        $pdo->prepare('INSERT INTO seeded_groups (id) VALUES (?)')->execute([$s['id']]);
+    }
+    $pdo->commit();
+}
+
+function groups_list(): array
+{
+    access_migrate();
+    return db()->query('SELECT id, name, icon FROM groups ORDER BY sort, id')->fetchAll();
 }
 
 function categories_list(): array
@@ -94,24 +166,34 @@ function apps_effective(): array
     $login = [];
     foreach (db()->query('SELECT * FROM app_login') as $l) $login[$l['app_id']] = $l;
 
-    $groupOf = [];
-    foreach (registry_subcategories() as $s) {
-        foreach ($s['apps'] as $i => $id) $groupOf[$id] ??= ['sub' => $s, 'order' => $i];
+    $groups = array_column(groups_list(), 'id');
+    $placed = array_flip(db()->query('SELECT app_id FROM app_placed')->fetchAll(PDO::FETCH_COLUMN));
+    $rows = [];
+    foreach (db()->query('SELECT app_id, category, grp, sort FROM placements ORDER BY sort, category, grp') as $r) {
+        $rows[$r['app_id']][] = $r;
     }
 
     $apps = [];
     foreach (registry_load()['apps'] as $app) {
         $o = $overrides[$app['id']] ?? null;
-        // בתת-קטגוריה — קטגוריית ברירת המחדל היא האב; העברה מפורשת של המנהל עדיין גוברת
-        $g = $groupOf[$app['id']] ?? null;
-        if ($g && !$app['plugin']) $app['category'] = $g['sub']['parent'];
         $app['default_category'] = $app['category'];
         if ($o && $o['category'] && in_array($o['category'], $known, true)) $app['category'] = $o['category'];
-        // קטגוריה שנמחקה — האפליקציה לא נעלמת, היא עוברת ל"אחר". לתוסף — קטגוריה פנימית משלו.
-        if ($app['plugin']) $app['category'] = PLUGIN_CATEGORY;
-        elseif (!in_array($app['category'], $known, true)) $app['category'] = 'other';
-        $app['subcategory'] = $g && $app['category'] === $g['sub']['parent'] ? $g['sub']['id'] : null;
-        $app['sub_order'] = $g['order'] ?? 0;
+        // המיקומים: מה שהמנהל קבע, או — אם לא קבע — הקטגוריה הנוכחית, בראשי. קטגוריה שנמחקה נשמטת;
+        // קבוצה שנמחקה — המיקום חוזר לראשי. לא נשאר כלום — "אחר" (האפליקציה לא נעלמת).
+        $list = [];
+        if (isset($placed[$app['id']])) {
+            foreach ($rows[$app['id']] ?? [] as $r) {
+                if (!in_array($r['category'], $known, true)) continue;
+                $g = in_array($r['grp'], $groups, true) ? $r['grp'] : null;
+                $list[$r['category'] . '|' . $g] ??= ['category' => $r['category'], 'group' => $g, 'sort' => (int)$r['sort']];
+            }
+        } elseif (in_array($app['category'], $known, true)) {
+            $list[] = ['category' => $app['category'], 'group' => null, 'sort' => 0];
+        }
+        $app['placements'] = array_values($list) ?: [['category' => 'other', 'group' => null, 'sort' => 0]];
+        // קטגוריה ראשית — הראשונה; לתוסף — קטגוריה פנימית משלו, בלי מיקומים
+        $app['category'] = $app['placements'][0]['category'];
+        if ($app['plugin']) { $app['category'] = PLUGIN_CATEGORY; $app['placements'] = []; }
         $app['hidden'] = (bool)($o['hidden'] ?? false);
         $app['install_ok'] = !isset($installHidden[$app['id']]);
         // מחוברת = השער פעיל: נכנסים רק עם חשבון בפלטפורמה והרשאה לאפליקציה.
@@ -135,11 +217,11 @@ function apps_effective(): array
 function grants_of(int $userId): array
 {
     access_migrate();
-    $out = ['apps' => [], 'categories' => []];
+    $out = ['apps' => [], 'categories' => [], 'groups' => []];
     $st = db()->prepare('SELECT kind, target, allowed FROM grants WHERE user_id = ?');
     $st->execute([$userId]);
     foreach ($st as $g) {
-        $out[$g['kind'] === 'app' ? 'apps' : 'categories'][$g['target']] = (bool)$g['allowed'];
+        $out[['app' => 'apps', 'category' => 'categories', 'group' => 'groups'][$g['kind']]][$g['target']] = (bool)$g['allowed'];
     }
     return $out;
 }
@@ -148,9 +230,12 @@ function can_see(array $app, array $grants): bool
 {
     if ($app['hidden'] || $app['plugin']) return false;
     if (array_key_exists($app['id'], $grants['apps'])) return $grants['apps'][$app['id']];
-    // restricted: הרשאה לקטגוריה לא פותחת אותה — רק אישור ישיר לאפליקציה.
+    // קבוצה שלמה — בחירה מפורשת של המנהל במשתמש, ולכן פותחת גם restricted
+    foreach ($app['placements'] as $p) if ($p['group'] !== null && !empty($grants['groups'][$p['group']])) return true;
+    // restricted: הרשאה לקטגוריה לא פותחת אותה — רק אישור ישיר לאפליקציה (או לקבוצה).
     if ($app['restricted']) return false;
-    return $grants['categories'][$app['category']] ?? false;
+    foreach ($app['placements'] as $p) if (!empty($grants['categories'][$p['category']])) return true;
+    return false;
 }
 
 /** האפליקציות שהמשתמש רואה, והקטגוריות שיש בהן משהו בשבילו. */
@@ -166,20 +251,18 @@ function visible_for(array $user): array
         $apps = array_values(array_filter($apps, fn($a) => can_see($a, $grants)));
     }
     $categories = categories_list();
-    if (array_filter($apps, fn($a) => $a['category'] === 'other')) {
+    if (array_filter($apps, fn($a) => in_array('other', array_column($a['placements'], 'category'), true))) {
         $categories[] = ['id' => 'other', 'name' => 'אחר', 'icon' => '📦'];
     }
     $admin = $user['role'] === 'admin';
     // תוספים לא ברשימת הכלים — הם באזור "🧩 תוספים" של המנהל
     $plugins = array_values(array_filter($apps, fn($a) => $a['plugin']));
     $apps = array_values(array_filter($apps, fn($a) => !$a['plugin']));
-    // תת-קטגוריות שיש בהן משהו בשביל המשתמש; האפליקציות שבהן — בסדר שבקובץ
-    $used = array_flip(array_filter(array_column($apps, 'subcategory')));
-    $subs = array_values(array_map(fn($s) => array_diff_key($s, ['apps' => 1]),
-        array_filter(registry_subcategories(), fn($s) => isset($used[$s['id']]))));
-    usort($apps, fn($a, $b) => [$a['subcategory'] ?? '', $a['sub_order']] <=> [$b['subcategory'] ?? '', $b['sub_order']]
-        ?: strcmp($a['name'], $b['name']));
-    $out = ['categories' => $categories, 'subcategories' => $subs, 'apps' => array_map(fn($a) => app_public($a, $admin), $apps)];
+    // הקבוצות שיש בהן משהו בשביל המשתמש
+    $used = [];
+    foreach ($apps as $a) foreach ($a['placements'] as $p) if ($p['group'] !== null) $used[$p['group']] = true;
+    $groups = array_values(array_filter(groups_list(), fn($g) => isset($used[$g['id']])));
+    $out = ['categories' => $categories, 'groups' => $groups, 'apps' => array_map(fn($a) => app_public($a, $admin), $apps)];
     if ($admin) $out['plugins'] = array_map(fn($a) => app_public($a, true), $plugins);
     return $out;
 }
@@ -188,7 +271,9 @@ function app_public(array $a, bool $admin = false): array
 {
     return [
         'id' => $a['id'], 'name' => $a['name'], 'icon' => $a['icon'], 'icon_svg' => $a['icon_svg'] ?? null,
-        'description' => $a['description'], 'category' => $a['category'], 'subcategory' => $a['subcategory'] ?? null,
+        'description' => $a['description'], 'category' => $a['category'],
+        // איפה היא מוצגת: [{category, group|null, sort}] — אותה אפליקציה יכולה להופיע בכמה מקומות
+        'placements' => $a['placements'] ?? [],
         'href' => $a['href'], 'links' => $a['links'], 'external' => $a['external'],
         // מה שהמנהל לא אישר — לא נשלח לדפדפן בכלל. "הורדת המשפחה" אינה התקנה
         // של אפליקציה נפרדת, ולכן offline לא תלוי באישור.

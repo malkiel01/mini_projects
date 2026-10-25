@@ -58,7 +58,8 @@ foreach ($list as $r) {
 
     foreach (["DELETE FROM grants WHERE kind = 'app' AND target = ?", 'DELETE FROM app_overrides WHERE app_id = ?',
               'DELETE FROM app_detached WHERE app_id = ?', 'DELETE FROM install_hidden WHERE app_id = ?',
-              'DELETE FROM app_login WHERE app_id = ?', 'DELETE FROM device_apps WHERE app_id = ?'] as $sql) {
+              'DELETE FROM app_login WHERE app_id = ?', 'DELETE FROM device_apps WHERE app_id = ?',
+              'DELETE FROM placements WHERE app_id = ?', 'DELETE FROM app_placed WHERE app_id = ?'] as $sql) {
         try { db()->prepare($sql)->execute([$id]); } catch (PDOException) { /* הטבלה עוד לא קיימת */ }
     }
     if (is_dir($dir)) { rm_tree($dir); echo "$id: התיקייה נמחקה\n"; }
