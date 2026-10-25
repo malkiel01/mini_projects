@@ -107,5 +107,43 @@ $old = Mbe::open($fx('hostile/preview-too-big.mbe'));
 check($old->id() === null && (bool)preg_match(Mbe::ID_RE, (string)Mbe::open(Mbe::save($old, ['app' => 'x']))->id()), 'id: קובץ 1.0 מקבל id בשמירה');
 check(Mbe::open($fx('valid/text.mbe'))->id() === '11111111-1111-4111-8111-111111111111', 'id: נקרא מקובץ הדוגמה');
 
+// יומן שלבים וגרסאות (1.1)
+$doc = fn(string $t) => ['surfaces' => [], 'flows' => ['f1' => ['engine' => 'prosemirror', 'doc' => ['type' => 'doc', 'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => $t]]]]]]]];
+$f = Mbe::create('text', $doc('א'));
+$f->setRendition(Mbe::PREVIEW, Mbe::open($fx('valid/text.mbe'))->files[Mbe::PREVIEW]);
+Mbe::save($f, ['app' => 'word-processor']);
+$j = $f->journal();
+check(count($j) === 1 && $j[0]['kind'] === 'create' && $j[0]['base'] === null, 'יומן: שמירה ראשונה — create');
+$v1 = $j[0]['result'];
+$f->document = $doc('ב'); Mbe::save($f, ['app' => 'word-processor']);
+$f->document = $doc('ג'); Mbe::save($f, ['app' => 'word-processor']);
+$j = $f->journal();
+$snaps = array_values(array_filter(array_keys($f->files), fn($p) => (bool)preg_match(Mbe::SNAP_RE, (string)$p)));
+check(count($j) === 1 && $j[0]['result'] === $f->documentSha256() && $snaps === ['history/' . $f->documentSha256() . '.json'], 'יומן: שמירות רצופות — שלב אחד, עותקי הביניים נמחקו');
+Mbe::save($f, ['app' => 'word-processor']);
+check(count($f->journal()) === 1, 'יומן: שמירה בלי שינוי — לא נוגעת');
+$f->document = $doc('ד'); Mbe::save($f, ['app' => 'layout-studio', 'who' => 'המעמד']);
+$j = $f->journal();
+check(count($j) === 2 && $j[1]['kind'] === 'edit' && $j[1]['who'] === 'המעמד' && $j[1]['id'] === 's2' && $j[1]['base'] === $j[0]['result'], 'יומן: אפליקציה אחרת — שלב חדש');
+$f->stage('export', 'המגיה', 'נשלח להגהה'); Mbe::save($f, ['app' => 'layout-studio']);
+$last = $f->journal()[count($f->journal()) - 1];
+check($last['kind'] === 'export' && $last['who'] === 'המגיה' && $last['note'] === 'נשלח להגהה', 'יומן: שלב מפורש');
+$f->restore('s1');
+check($f->document['flows']['f1']['doc']['content'][0]['content'][0]['text'] === 'ג', 'יומן: restore מחזיר את המסמך');
+Mbe::save($f, ['app' => 'layout-studio']);
+$j = $f->journal(); $last = $j[count($j) - 1];
+check($last['kind'] === 'restore' && $last['note'] === 'שוחזר מ-s1' && $last['result'] === $j[0]['result'], 'יומן: שלב restore');
+check($f->version($v1) === null && $f->version($j[1]['result']) == $doc('ד'), 'יומן: version');
+check($f->prune(1) >= 1, 'יומן: prune מוחק');
+Mbe::save($f, ['app' => 'layout-studio']);
+$hist = array_values(array_filter(array_column($f->issues, 'code'), fn($c) => str_starts_with($c, 'history')));
+check(in_array(true, array_map(fn($s) => !empty($s['pruned']), $f->journal()), true) && $hist === [], 'יומן: pruned, בלי אזהרות היסטוריה');
+try { $f->restore('s2'); check(false, 'restore לגרסה שנגזמה'); } catch (MbeError) { check(true, 'יומן: restore לגרסה שנגזמה — שגיאה'); }
+$f = Mbe::open($fx('hostile/history-invalid.mbe'));
+$before = $f->files[Mbe::JOURNAL];
+$f->document['x'] = 1;
+Mbe::save($f, ['app' => 'x']);
+check($f->files[Mbe::JOURNAL] === $before && $f->journal() === [], 'יומן פגום — נשמר כמו שהוא');
+
 echo $fail ? "\n$fail מתוך $n בדיקות נכשלו\n" : "mbe-core PHP: $n בדיקות עברו\n";
 exit($fail ? 1 : 0);

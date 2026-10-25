@@ -32,6 +32,10 @@ export const PREVIEW_MAX_PX = 1024;
 
 const MEDIA_RE = /^media\/([0-9a-f]{64})(\.[a-z0-9]{1,8})?$/;
 const RESERVED = new Set(['mimetype', 'manifest.json', 'document.json']);
+export const JOURNAL = 'history/journal.json';
+const SNAP_RE = /^history\/([0-9a-f]{64})\.json$/;
+const snap = sha => `history/${sha}.json`;
+const EMAIL_RE = /[^\s@"]+@[^\s@"]+\.[a-z]{2,}/i;
 const TYPES = {
     png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml',
     woff2: 'font/woff2', woff: 'font/woff', ttf: 'font/ttf', otf: 'font/otf', pdf: 'application/pdf',
@@ -85,6 +89,8 @@ export class MbeFile {
         this.files = new Map(); // כל שאר החלקים: media/, renditions/, apps/ ומה שלא מוכר — בית-לבית
         this.issues = [];
         this.fresh = new Map(); // ייצוגים שהאפליקציה סיפקה מאז הפתיחה → { type, gaps, by }
+        this.pending = [];      // שלבים מפורשים (stage / restore) — נרשמים ביומן בשמירה הבאה
+        this.openedDoc = null;  // הבתים של document.json כפי שנפתח — עותק הבסיס ב-history/
     }
 
     get ok() { return !this.issues.some(i => i.level === 'error'); }
@@ -128,6 +134,53 @@ export class MbeFile {
     removeRendition(path) {
         this.files.delete(path);
         this.fresh.delete(path);
+    }
+
+    // ---- יומן שלבים וגרסאות (history/, מ-1.1 — mbe-format.md סעיף 3, docs/spec/hub-api.md 2.5) ----
+
+    /** השלבים, מהישן לחדש. יומן פגום או חסר — רשימה ריקה (והאזהרה ב-issues). */
+    journal() {
+        return readJournal(this.files)?.stages.map(s => ({ ...s })) ?? [];
+    }
+
+    /** המסמך של גרסה (לפי sha256), או null אם נגזמה / חסרה. */
+    version(sha) {
+        const d = this.files.get(snap(sha));
+        if (!d) return null;
+        try { return parseJson(d); } catch { return null; }
+    }
+
+    /** שלב מפורש ("נשלח להגהה") — נרשם בשמירה הבאה, עם base / result של אותה שמירה. */
+    stage({ kind = 'edit', who = null, note = null } = {}) {
+        if (!/^[a-z][a-z0-9-]{0,31}$/.test(kind)) throw new MbeError(`סוג שלב לא חוקי: ${kind}`);
+        this.pending.push({ kind, who, note });
+    }
+
+    /** חזרה לשלב (לפי id) או לגרסה (לפי sha256): המסמך הופך לגרסה ההיא, ובשמירה נרשם שלב restore. לא מוחק כלום. */
+    restore(ref, { who = null } = {}) {
+        const st = this.journal().find(s => s.id === ref || s.result === ref);
+        const sha = st ? st.result : ref;
+        const doc = typeof sha === 'string' ? this.version(sha) : null;
+        if (!doc) throw new MbeError(`הגרסה ${ref} לא נמצאה בקובץ (נגזמה או חסרה)`);
+        this.document = doc;
+        this.pending.push({ kind: 'restore', who, note: `שוחזר מ-${st ? st.id : sha.slice(0, 12)}` });
+    }
+
+    /** גיזום: משאיר את keep הגרסאות האחרונות (ואת הנוכחית); שלב שהגרסה שלו נמחקה — pruned: true. היומן עצמו לא נגזם. */
+    prune({ keep = 30 } = {}) {
+        const j = readJournal(this.files);
+        if (!j) return 0;
+        const order = [...new Set(j.stages.map(s => s.result).filter(r => typeof r === 'string').reverse())];
+        const keepSet = new Set(order.slice(0, keep));
+        if (this.documentSha256) keepSet.add(this.documentSha256);
+        let n = 0;
+        for (const p of [...this.files.keys()]) {
+            const m = SNAP_RE.exec(p);
+            if (m && !keepSet.has(m[1])) { this.files.delete(p); n++; }
+        }
+        for (const s of j.stages) if (typeof s.result === 'string' && !keepSet.has(s.result)) s.pruned = true;
+        this.files.set(JOURNAL, utf8(canonicalJson(j)));
+        return n;
     }
 
     /** המידע הפרטי של אפליקציה: Map של שם יחסי → bytes. של אחרים — לא נוגעים. */
@@ -221,7 +274,7 @@ export async function open(bytes, { limits = LIMITS } = {}) {
     try { manifestText = canonicalJson(f.manifest); } catch (e) {
         issue('error', 'manifest-invalid', 'manifest.json: ' + e.message, 'manifest.json');
     }
-    if (/[^\s@"]+@[^\s@"]+\.[a-z]{2,}/i.test(manifestText)) {
+    if (EMAIL_RE.test(manifestText)) {
         issue('warning', 'privacy', 'ב-manifest.json יש כתובת מייל — הוא לא אמור להכיל פרטים אישיים', 'manifest.json');
     }
 
@@ -230,6 +283,7 @@ export async function open(bytes, { limits = LIMITS } = {}) {
         issue('error', 'document-missing', 'חסר document.json');
     } else {
         const docBytes = raw.get('document.json');
+        f.openedDoc = docBytes;
         try {
             f.document = parseJson(docBytes);
             canonicalJson(f.document);
@@ -252,6 +306,7 @@ export async function open(bytes, { limits = LIMITS } = {}) {
 
     for (const [p, d] of raw) if (!RESERVED.has(p)) f.files.set(p, d);
     await checkParts(f, issue);
+    await checkHistory(f, issue);
     if (f.document && typeof f.document === 'object' && !Array.isArray(f.document)) checkDocument(f, issue);
     return f;
 }
@@ -290,6 +345,75 @@ async function checkParts(f, issue) {
         if (!dims) issue('warning', 'preview-invalid', 'preview.png אינו PNG', PREVIEW);
         else if (Math.max(dims[0], dims[1]) > PREVIEW_MAX_PX) issue('warning', 'preview-invalid', `preview.png גדול מ-${PREVIEW_MAX_PX}px`, PREVIEW);
     }
+}
+
+function readJournal(files) {
+    const raw = files.get(JOURNAL);
+    if (!raw) return null;
+    try {
+        const j = parseJson(raw);
+        return j && typeof j === 'object' && !Array.isArray(j) && Array.isArray(j.stages) ? j : null;
+    } catch { return null; }
+}
+
+// היסטוריה פגומה — אזהרות בלבד: היא לא מונעת פתיחה של המסמך עצמו.
+async function checkHistory(f, issue) {
+    for (const [p, d] of f.files) {
+        if (!p.startsWith('history/') || p === JOURNAL) continue;
+        const m = SNAP_RE.exec(p);
+        if (m && m[1] !== await sha256(d)) issue('warning', 'history-hash-mismatch', 'שם הגרסה אינו הגיבוב של התוכן', p);
+    }
+    if (!f.files.has(JOURNAL)) return;
+    const j = readJournal(f.files);
+    if (!j) return issue('warning', 'history-invalid', 'history/journal.json אינו יומן תקין ({ stages: [] }) — נשמר כמו שהוא', JOURNAL);
+    j.stages.forEach((s, i) => {
+        const at = `${JOURNAL}#/stages/${i}`;
+        if (!s || typeof s !== 'object' || Array.isArray(s) || typeof s.kind !== 'string' || typeof s.result !== 'string') {
+            return issue('warning', 'history-invalid', 'שלב בלי kind או result', at);
+        }
+        if (!s.pruned && !f.files.has(snap(s.result))) issue('warning', 'history-missing', `העותק של הגרסה ${s.result.slice(0, 12)} חסר`, at);
+        if (typeof s.base === 'string' && !f.files.has(snap(s.base)) && !j.stages.some(t => t && t.result === s.base && t.pruned)) {
+            issue('warning', 'history-base-missing', `הבסיס ${s.base.slice(0, 12)} לא נמצא בהיסטוריה`, at);
+        }
+        if (typeof s.who === 'string' && EMAIL_RE.test(s.who)) issue('warning', 'privacy', 'ביומן יש כתובת מייל — who הוא כינוי, לא זהות', at);
+    });
+}
+
+/**
+ * רושם את השמירה ביומן. שמירה בלי שינוי במסמך ובלי שלב מפורש — לא נוגעת ביומן. שמירות רצופות של אותה אפליקציה ואותו
+ * who — מעדכנות את ה-result של השלב האחרון (אחרת כל הקשה = שלב), והעותק הקודם נמחק אם אף שלב לא מפנה אליו.
+ */
+function applyJournal(f, files, { docSha, docBytes, app, who, at }) {
+    const opened = f.documentSha256;
+    const base = opened && opened !== '0'.repeat(64) ? opened : null;
+    if (!f.pending.length && base === docSha) return;
+    if (files.has(JOURNAL) && !readJournal(files)) return; // יומן פגום — נשמר כמו שהוא, לא כותבים עליו
+    const j = readJournal(files) ?? { stages: [] };
+    const stages = j.stages;
+    if (base && f.openedDoc && !files.has(snap(base))) files.set(snap(base), f.openedDoc);
+    files.set(snap(docSha), docBytes);
+    const nextId = () => 's' + (Math.max(0, ...stages.map(s => +(/^s(\d+)$/.exec(s?.id ?? '')?.[1] ?? 0))) + 1);
+    const entry = (kind, w, note) => {
+        const e = { id: nextId(), at, app, kind, base, result: docSha };
+        if (w) e.who = w;
+        if (note) e.note = note;
+        return e;
+    };
+    if (f.pending.length) {
+        for (const p of f.pending) stages.push(entry(p.kind, p.who || who, p.note));
+    } else {
+        const last = stages[stages.length - 1];
+        if (last && last.app === app && (last.who ?? null) === (who ?? null) && (last.kind === 'edit' || last.kind === 'create')
+            && last.result === base && base !== null) {
+            const prev = last.result;
+            last.result = docSha;
+            last.at = at;
+            if (!stages.some(s => s.base === prev || s.result === prev)) files.delete(snap(prev));
+        } else {
+            stages.push(entry(base ? 'edit' : 'create', who, null));
+        }
+    }
+    files.set(JOURNAL, utf8(canonicalJson(j)));
 }
 
 function checkDocument(f, issue) {
@@ -436,8 +560,9 @@ export async function validate(bytes, opts) {
  * כותב קובץ. זורק MbeError כשהתוצאה לא הייתה עוברת אימות — ‎save לעולם לא מייצר קובץ פגום.
  * lite: true — "קובץ קל": preview בלבד (שאר הייצוגים נבנים בייצוא).
  * asCopy: true — "שמירה כעותק": מסמך חדש — manifest.id חדש ו-created חדש.
+ * who — כינוי לשלב ביומן ("המגיה"); שינוי ב-app או ב-who פותח שלב חדש.
  */
-export async function save(f, { app, appVersion = '', now = new Date(), lite = false, asCopy = false } = {}) {
+export async function save(f, { app, appVersion = '', who = null, now = new Date(), lite = false, asCopy = false } = {}) {
     if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(app || '')) throw new MbeError('save צריך app — מזהה האפליקציה ששומרת');
     if (!f.files.has(PREVIEW)) {
         throw new MbeError('חסר renditions/preview.png — חובה בכל שמירה',
@@ -456,6 +581,7 @@ export async function save(f, { app, appVersion = '', now = new Date(), lite = f
     const version = oldVer && oldVer.major === ours.major && oldVer.minor > ours.minor ? old.version : VERSION;
 
     const files = new Map(f.files);
+    applyJournal(f, files, { docSha, docBytes, app, who: who || null, at });
     if (lite) for (const p of [...files.keys()]) if (p.startsWith('renditions/') && p !== PREVIEW) files.delete(p);
     const names = [...files.keys()].sort();
     const oldMedia = new Map((Array.isArray(old.media) ? old.media : []).map(m => [m?.path, m]));
@@ -496,6 +622,8 @@ export async function save(f, { app, appVersion = '', now = new Date(), lite = f
     f.manifest = check.manifest;
     f.files = check.files;
     f.fresh = new Map();
+    f.pending = [];
+    f.openedDoc = docBytes;
     f.issues = check.issues;
     return out;
 }

@@ -32,6 +32,10 @@ final class MbeFile
     public array $issues = [];
     /** @var array<string,array{type:string,gaps:list<string>,by:?string}> ייצוגים שסופקו מאז הפתיחה */
     public array $fresh = [];
+    /** @var list<array{kind:string,who:?string,note:?string}> שלבים מפורשים (stage / restore) — נרשמים ביומן בשמירה הבאה */
+    public array $pending = [];
+    /** הבתים של document.json כפי שנפתח — עותק הבסיס ב-history/ */
+    public ?string $openedDoc = null;
 
     public function ok(): bool
     {
@@ -99,6 +103,64 @@ final class MbeFile
         unset($this->files[$path], $this->fresh[$path]);
     }
 
+    // ---- יומן שלבים וגרסאות (history/, מ-1.1 — mbe-format.md סעיף 3, docs/spec/hub-api.md 2.5) ----
+
+    /** השלבים, מהישן לחדש. יומן פגום או חסר — רשימה ריקה (והאזהרה ב-issues). */
+    public function journal(): array
+    {
+        return Mbe::readJournal($this->files)['stages'] ?? [];
+    }
+
+    /** המסמך של גרסה (לפי sha256), או null אם נגזמה / חסרה. */
+    public function version(string $sha): mixed
+    {
+        $d = $this->files["history/$sha.json"] ?? null;
+        if ($d === null) return null;
+        try { return MbeCanonical::decode($d); } catch (MbeCanonicalError) { return null; }
+    }
+
+    /** שלב מפורש ("נשלח להגהה") — נרשם בשמירה הבאה, עם base / result של אותה שמירה. */
+    public function stage(string $kind = 'edit', ?string $who = null, ?string $note = null): void
+    {
+        if (!preg_match('/^[a-z][a-z0-9-]{0,31}$/', $kind)) throw new MbeError("סוג שלב לא חוקי: $kind");
+        $this->pending[] = ['kind' => $kind, 'who' => $who, 'note' => $note];
+    }
+
+    /** חזרה לשלב (לפי id) או לגרסה (לפי sha256): המסמך הופך לגרסה ההיא, ובשמירה נרשם שלב restore. לא מוחק כלום. */
+    public function restore(string $ref, ?string $who = null): void
+    {
+        $st = null;
+        foreach ($this->journal() as $s) if (is_array($s) && (($s['id'] ?? null) === $ref || ($s['result'] ?? null) === $ref)) { $st = $s; break; }
+        $sha = $st ? (string)$st['result'] : $ref;
+        $doc = $this->version($sha);
+        if ($doc === null) throw new MbeError("הגרסה $ref לא נמצאה בקובץ (נגזמה או חסרה)");
+        $this->document = $doc;
+        $this->pending[] = ['kind' => 'restore', 'who' => $who, 'note' => 'שוחזר מ-' . ($st ? $st['id'] : substr($sha, 0, 12))];
+    }
+
+    /** גיזום: משאיר את $keep הגרסאות האחרונות (ואת הנוכחית); שלב שהגרסה שלו נמחקה — pruned: true. היומן עצמו לא נגזם. */
+    public function prune(int $keep = 30): int
+    {
+        $j = Mbe::readJournal($this->files);
+        if ($j === null) return 0;
+        $order = [];
+        foreach (array_reverse($j['stages']) as $s) {
+            $r = is_array($s) ? ($s['result'] ?? null) : null;
+            if (is_string($r) && !in_array($r, $order, true)) $order[] = $r;
+        }
+        $keepSet = array_flip(array_slice($order, 0, $keep));
+        if ($this->documentSha256() !== null) $keepSet[$this->documentSha256()] = true;
+        $n = 0;
+        foreach (array_keys($this->files) as $p) {
+            if (preg_match(Mbe::SNAP_RE, (string)$p, $m) && !isset($keepSet[$m[1]])) { unset($this->files[$p]); $n++; }
+        }
+        foreach ($j['stages'] as $i => $s) {
+            if (is_array($s) && is_string($s['result'] ?? null) && !isset($keepSet[$s['result']])) $j['stages'][$i]['pruned'] = true;
+        }
+        $this->files[Mbe::JOURNAL] = MbeCanonical::encode($j);
+        return $n;
+    }
+
     /** המידע הפרטי של אפליקציה: שם יחסי → bytes. של אחרים — לא נוגעים. */
     public function apps(string $id): array
     {
@@ -139,6 +201,9 @@ final class Mbe
         'json' => 'application/json', 'txt' => 'text/plain', 'jpeg' => 'image/jpeg',
     ];
     private const RESERVED = ['mimetype', 'manifest.json', 'document.json'];
+    public const JOURNAL = 'history/journal.json';
+    public const SNAP_RE = '~^history/([0-9a-f]{64})\.json$~';
+    private const EMAIL_RE = '/[^\s@"]+@[^\s@"]+\.[a-z]{2,}/i';
 
     private static ?array $schemas = null;
 
@@ -268,7 +333,7 @@ final class Mbe
             $issue('warning', 'manifest-id-missing', "לקובץ בגרסה {$manifest['version']} חסר manifest.id — יתווסף בשמירה הבאה", 'manifest.json#/id');
         }
         $text = MbeCanonical::encode($manifest);
-        if (preg_match('/[^\s@"]+@[^\s@"]+\.[a-z]{2,}/i', $text)) {
+        if (preg_match(self::EMAIL_RE, $text)) {
             $issue('warning', 'privacy', 'ב-manifest.json יש כתובת מייל — הוא לא אמור להכיל פרטים אישיים', 'manifest.json');
         }
 
@@ -276,6 +341,7 @@ final class Mbe
             $issue('error', 'document-missing', 'חסר document.json');
         } else {
             $docBytes = $raw['document.json'];
+            $f->openedDoc = $docBytes;
             $parsed = false;
             try {
                 $f->document = MbeCanonical::decode($docBytes);
@@ -299,6 +365,7 @@ final class Mbe
 
         foreach ($raw as $p => $d) if (!in_array((string)$p, self::RESERVED, true)) $f->files[(string)$p] = $d;
         self::checkParts($f, $issue);
+        self::checkHistory($f, $issue);
         if (MbeSchema::typeOf($f->document) === 'object') self::checkDocument($f, $issue);
         return $f;
     }
@@ -343,6 +410,87 @@ final class Mbe
             if ($dims === null) $issue('warning', 'preview-invalid', 'preview.png אינו PNG', self::PREVIEW);
             elseif (max($dims) > self::PREVIEW_MAX_PX) $issue('warning', 'preview-invalid', 'preview.png גדול מ-' . self::PREVIEW_MAX_PX . 'px', self::PREVIEW);
         }
+    }
+
+    /** היומן, או null אם אין או שהוא פגום. */
+    public static function readJournal(array $files): ?array
+    {
+        $raw = $files[self::JOURNAL] ?? null;
+        if ($raw === null) return null;
+        try { $j = MbeCanonical::decode($raw); } catch (MbeCanonicalError) { return null; }
+        if (!is_array($j) || array_is_list($j) || MbeSchema::typeOf($j['stages'] ?? null) !== 'array') return null;
+        return $j;
+    }
+
+    // היסטוריה פגומה — אזהרות בלבד: היא לא מונעת פתיחה של המסמך עצמו.
+    private static function checkHistory(MbeFile $f, callable $issue): void
+    {
+        foreach ($f->files as $p => $d) {
+            $p = (string)$p;
+            if (!str_starts_with($p, 'history/') || $p === self::JOURNAL) continue;
+            if (preg_match(self::SNAP_RE, $p, $m) && $m[1] !== hash('sha256', $d)) $issue('warning', 'history-hash-mismatch', 'שם הגרסה אינו הגיבוב של התוכן', $p);
+        }
+        if (!isset($f->files[self::JOURNAL])) return;
+        $j = self::readJournal($f->files);
+        if ($j === null) { $issue('warning', 'history-invalid', 'history/journal.json אינו יומן תקין ({ stages: [] }) — נשמר כמו שהוא', self::JOURNAL); return; }
+        foreach ($j['stages'] as $i => $s) {
+            $at = self::JOURNAL . "#/stages/$i";
+            if (!is_array($s) || array_is_list($s) || !is_string($s['kind'] ?? null) || !is_string($s['result'] ?? null)) {
+                $issue('warning', 'history-invalid', 'שלב בלי kind או result', $at);
+                continue;
+            }
+            if (empty($s['pruned']) && !isset($f->files["history/{$s['result']}.json"])) $issue('warning', 'history-missing', 'העותק של הגרסה ' . substr($s['result'], 0, 12) . ' חסר', $at);
+            if (is_string($s['base'] ?? null) && !isset($f->files["history/{$s['base']}.json"])) {
+                $prunedBase = false;
+                foreach ($j['stages'] as $t) if (is_array($t) && ($t['result'] ?? null) === $s['base'] && !empty($t['pruned'])) $prunedBase = true;
+                if (!$prunedBase) $issue('warning', 'history-base-missing', 'הבסיס ' . substr($s['base'], 0, 12) . ' לא נמצא בהיסטוריה', $at);
+            }
+            if (is_string($s['who'] ?? null) && preg_match(self::EMAIL_RE, $s['who'])) $issue('warning', 'privacy', 'ביומן יש כתובת מייל — who הוא כינוי, לא זהות', $at);
+        }
+    }
+
+    /**
+     * רושם את השמירה ביומן. שמירה בלי שינוי במסמך ובלי שלב מפורש — לא נוגעת ביומן. שמירות רצופות של אותה אפליקציה
+     * ואותו who — מעדכנות את ה-result של השלב האחרון, והעותק הקודם נמחק אם אף שלב לא מפנה אליו. זהה ל-applyJournal ב-JS.
+     */
+    private static function applyJournal(MbeFile $f, array &$files, string $docSha, string $docBytes, string $app, ?string $who, string $at): void
+    {
+        $opened = $f->documentSha256();
+        $base = ($opened !== null && $opened !== str_repeat('0', 64)) ? $opened : null;
+        if (!$f->pending && $base === $docSha) return;
+        if (isset($files[self::JOURNAL]) && self::readJournal($files) === null) return; // יומן פגום — נשמר כמו שהוא
+        $j = self::readJournal($files) ?? ['stages' => []];
+        if ($base !== null && $f->openedDoc !== null && !isset($files["history/$base.json"])) $files["history/$base.json"] = $f->openedDoc;
+        $files["history/$docSha.json"] = $docBytes;
+        $nextId = function () use (&$j): string {
+            $max = 0;
+            foreach ($j['stages'] as $s) if (is_array($s) && preg_match('/^s(\d+)$/', (string)($s['id'] ?? ''), $m)) $max = max($max, (int)$m[1]);
+            return 's' . ($max + 1);
+        };
+        $entry = function (string $kind, ?string $w, ?string $note) use ($nextId, $at, $app, $base, $docSha): array {
+            $e = ['id' => $nextId(), 'at' => $at, 'app' => $app, 'kind' => $kind, 'base' => $base, 'result' => $docSha];
+            if ($w !== null && $w !== '') $e['who'] = $w;
+            if ($note !== null && $note !== '') $e['note'] = $note;
+            return $e;
+        };
+        if ($f->pending) {
+            foreach ($f->pending as $p) $j['stages'][] = $entry($p['kind'], ($p['who'] ?? '') !== '' ? $p['who'] : $who, $p['note'] ?? null);
+        } else {
+            $n = count($j['stages']);
+            $last = $n ? $j['stages'][$n - 1] : null;
+            if (is_array($last) && ($last['app'] ?? null) === $app && ($last['who'] ?? null) === $who
+                && in_array($last['kind'] ?? null, ['edit', 'create'], true) && ($last['result'] ?? null) === $base && $base !== null) {
+                $prev = $last['result'];
+                $j['stages'][$n - 1]['result'] = $docSha;
+                $j['stages'][$n - 1]['at'] = $at;
+                $used = false;
+                foreach ($j['stages'] as $s) if (is_array($s) && (($s['base'] ?? null) === $prev || ($s['result'] ?? null) === $prev)) $used = true;
+                if (!$used) unset($files["history/$prev.json"]);
+            } else {
+                $j['stages'][] = $entry($base !== null ? 'edit' : 'create', $who, null);
+            }
+        }
+        $files[self::JOURNAL] = MbeCanonical::encode($j);
     }
 
     private static function checkDocument(MbeFile $f, callable $issue): void
@@ -509,7 +657,7 @@ final class Mbe
     /**
      * כותב קובץ. זורק MbeError כשהתוצאה לא הייתה עוברת אימות — save לעולם לא מייצר קובץ פגום.
      * opts: app (חובה), appVersion, now (DateTimeInterface), lite (preview בלבד),
-     * asCopy ("שמירה כעותק" — id חדש ו-created חדש).
+     * asCopy ("שמירה כעותק" — id חדש ו-created חדש), who (כינוי לשלב ביומן; שינוי ב-app או ב-who פותח שלב חדש).
      */
     public static function save(MbeFile $f, array $opts): string
     {
@@ -531,6 +679,8 @@ final class Mbe
         $version = ($oldVer && $oldVer['major'] === $ours['major'] && $oldVer['minor'] > $ours['minor']) ? $old['version'] : self::VERSION;
 
         $files = $f->files;
+        $who = isset($opts['who']) && $opts['who'] !== '' ? (string)$opts['who'] : null;
+        self::applyJournal($f, $files, $docSha, $docBytes, $app, $who, $stamp['at']);
         if (!empty($opts['lite'])) {
             foreach (array_keys($files) as $p) if (str_starts_with((string)$p, 'renditions/') && $p !== self::PREVIEW) unset($files[$p]);
         }
@@ -583,6 +733,8 @@ final class Mbe
         $f->manifest = $check->manifest;
         $f->files = $check->files;
         $f->fresh = [];
+        $f->pending = [];
+        $f->openedDoc = $docBytes;
         $f->issues = $check->issues;
         return $out;
     }
