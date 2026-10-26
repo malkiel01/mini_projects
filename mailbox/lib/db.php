@@ -79,6 +79,9 @@ function mb_migrate(PDO $pdo): void
             v TEXT NOT NULL
         );
         SQL);
+    // created = 1 — כתובת שהאפליקציה פתחה בשרת (lib/cpanel.php): נספרת במכסה, ונמחקת גם מהשרת
+    $cols = array_column($pdo->query('PRAGMA table_info(mailboxes)')->fetchAll(), 'name');
+    if (!in_array('created', $cols, true)) $pdo->exec('ALTER TABLE mailboxes ADD COLUMN created INTEGER NOT NULL DEFAULT 0');
 }
 
 // ── הצפנה ────────────────────────────────────────────
