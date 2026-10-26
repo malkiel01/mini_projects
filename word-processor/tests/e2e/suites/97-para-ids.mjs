@@ -1,4 +1,4 @@
-/** מזהה פסקה (attrs.id — חבילת היצירה): נשמר בהקלדה, בפיצול — לחצי הראשון בלבד, עותק כפול — בלי מזהה; נשמר בשרת. */
+/** מזהה פסקה (attrs.id — חבילת היצירה): נשמר בהקלדה, בפיצול — לחצי הראשון (השני — חדש), עותק כפול — מזהה חדש; נשמר בשרת. */
 export default async function (t) {
     const p = await t.page();
     const { doc } = await t.api(p, 'my_new', { title: 'מזהי פסקה' });
@@ -16,12 +16,14 @@ export default async function (t) {
     // פיצול באמצע הפסקה (אחרי "אחת") — המזהה נשאר בחצי הראשון, השני בלי
     await ed(() => { const e = document.querySelector('.wp-doc').editor; let at = 0; e.state.doc.descendants((n, pos) => { if (n.isText && n.text.startsWith('אחת')) at = pos + 3; }); e.chain().setTextSelection(at).splitBlock().run(); });
     const a = await ids();
-    t.ok('הקלדה שומרת את המזהה; פיצול — המזהה לחצי הראשון בלבד', JSON.stringify(a) === JSON.stringify([['pHead000001', 'כותרת!'], ['pBody000001', 'אחת'], [null, ' שתיים']]), JSON.stringify(a));
+    const fresh = id => /^p[A-Za-z0-9]{10}$/.test(id || '') && !['pHead000001', 'pBody000001'].includes(id);
+    t.ok('הקלדה שומרת את המזהה; פיצול — המזהה לחצי הראשון, והשני מקבל חדש', JSON.stringify(a.slice(0, 2)) === JSON.stringify([['pHead000001', 'כותרת!'], ['pBody000001', 'אחת']])
+        && a[2][1] === ' שתיים' && fresh(a[2][0]), JSON.stringify(a));
 
     // הדבקה של עותק עם אותו מזהה (כמו העתקה של פסקה מאותו מסמך) — לעותק אין מזהה
     await ed(() => { const e = document.querySelector('.wp-doc').editor; e.commands.insertContentAt(e.state.doc.content.size, { type: 'paragraph', attrs: { id: 'pBody000001' }, content: [{ type: 'text', text: 'עותק' }] }); });
     const b = await ids();
-    t.ok('עותק עם מזהה קיים — בלי מזהה, והמקור שומר', b[1][0] === 'pBody000001' && JSON.stringify(b.at(-1)) === JSON.stringify([null, 'עותק']), JSON.stringify(b));
+    t.ok('עותק עם מזהה קיים — מזהה חדש, והמקור שומר', b[1][0] === 'pBody000001' && b.at(-1)[1] === 'עותק' && fresh(b.at(-1)[0]) && b.at(-1)[0] !== a[2][0], JSON.stringify(b));
 
     // מעבר לכותרת 2 ובחזרה (שינוי סגנון) — המזהה נשאר
     await ed(() => { const e = document.querySelector('.wp-doc').editor; e.commands.setTextSelection(2); e.commands.setHeading({ level: 2 }); e.commands.setParagraph(); });
@@ -30,7 +32,7 @@ export default async function (t) {
     await t.settle(p);
     const r = await t.api(p, 'my_open', { doc });
     const saved = (r.json?.content || []).map(x => x.attrs?.id ?? null);
-    t.ok('נשמר בשרת (גרסת מבנה 11)', saved[0] === 'pHead000001' && saved[1] === 'pBody000001' && (r.json?.attrs?.schema ?? 0) >= 11, JSON.stringify([saved, r.json?.attrs?.schema]));
+    t.ok('נשמר בשרת (גרסת מבנה 11)', saved[0] === 'pHead000001' && saved[1] === 'pBody000001' && saved.every(Boolean) && (r.json?.attrs?.schema ?? 0) >= 11, JSON.stringify([saved, r.json?.attrs?.schema]));
     t.ok('ב-DOM — data-pid, לא id (לא מתנגש במזהים של הדף)', await p.locator('.wp-doc [data-pid="pBody000001"]').count() === 1 && await p.locator('.wp-doc #pBody000001').count() === 0);
     t.ok('בלי שגיאות JS', !p.errors.length, p.errors.join(' | '));
     await p.context().close();

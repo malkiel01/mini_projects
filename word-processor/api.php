@@ -79,7 +79,9 @@ function do_export(array $row, string $format, $version, bool $absolute, array $
         case 'ooxml': return export_ooxml($json, $page);
         case 'json': return ['json' => $json, 'page' => $page];
         case 'docx':
-            send_file(export_docx($json, $page, $title), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', ($title ?: 'מסמך') . '.docx');
+            // הגרסה הנוכחית — Word כ"פנים" של חבילת היצירה (מזהה המסמך וגרסת הבסיס בפנים); גרסה ישנה — Word רגיל
+            $bytes = $version !== null && $version !== '' ? export_docx($json, $page, $title) : export_docx_face($row);
+            send_file($bytes, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', ($title ?: 'מסמך') . '.docx');
         case 'pdf':
             send_file(export_pdf($json, $page, $title, $track), 'application/pdf', ($title ?: 'מסמך') . '.pdf');
         case 'odt':
@@ -104,7 +106,7 @@ function doc_public(array $row, bool $withJson = true): array
 {
     $o = ['doc' => $row['id'], 'title' => $row['title'], 'version' => (int)$row['version'], 'updated_at' => (int)$row['updated_at'],
         'updated_by' => $row['updated_by'], 'page' => doc_page($row)];
-    if ($withJson) $o['json'] = editor_json(doc_json($row), $o['page']);   // לעורך: הגדרות העמוד בתוך המסמך
+    if ($withJson) $o['json'] = editor_json(doc_json($row), $o['page'], $row['id'] . '|' . $row['version']);   // לעורך: הגדרות העמוד בתוך המסמך
     return $o;
 }
 
@@ -225,7 +227,7 @@ try {
             $row = doc_find($s['doc'], 'c:' . $s['client']);
             embed_write($s, $row, $in);
             $row = doc_restore_version($row, $in['id'] ?? 0, $s['user_id'], $s['user_name'], $in['base_version'] ?? null);
-            out(['doc' => $row['id'], 'version' => (int)$row['version'], 'json' => editor_json(doc_json($row), doc_page($row)), 'page' => doc_page($row)]);
+            out(['doc' => $row['id'], 'version' => (int)$row['version'], 'json' => editor_json(doc_json($row), doc_page($row), $row['id'] . '|' . $row['version']), 'page' => doc_page($row)]);
 
         case 'embed_page':
             need_post();
@@ -468,7 +470,7 @@ function app_action(string $action, array $in): never
             if (empty($in['collab'])) require_edit('edit', $row['id'], $uid, $uname, $holder);
             elseif ($l = collab_blocked($row['id'], $uid)) throw new ApiError('המסמך פתוח לעריכה אצל ' . $l['by'], 'locked', 423);
             $row = doc_restore_version($row, $in['id'] ?? 0, $uid, $uname, $in['base_version'] ?? null);
-            out(['doc' => $row['id'], 'version' => (int)$row['version'], 'json' => editor_json(doc_json($row), doc_page($row)), 'page' => doc_page($row)]);
+            out(['doc' => $row['id'], 'version' => (int)$row['version'], 'json' => editor_json(doc_json($row), doc_page($row), $row['id'] . '|' . $row['version']), 'page' => doc_page($row)]);
         case 'my_page':
             [$row] = doc_access($in['doc'] ?? '', $acc, 'edit');
             require_edit('edit', $row['id'], $uid, $uname, $holder);

@@ -9,7 +9,7 @@
  * את המשאבים שלו ואת הייצוגים — כל השאר (שכבות, אפליקציות אחרות, שדות וחלקים לא מוכרים) נשמר בית-לבית.
  */
 
-require_once __DIR__ . '/mbe/mbe.php';
+require_once __DIR__ . '/mbe/face.php';   // מושך גם את mbe.php
 require_once __DIR__ . '/pdf.php';
 
 const MBE_APP = 'word-processor';
@@ -22,10 +22,14 @@ function mbe_source_meta(string $doc): array
     return is_file($f) ? (json_decode((string)file_get_contents($f), true) ?: []) : [];
 }
 
-/** ההורדה: bytes של ‎.mbe תקין (Mbe::save בודק את מה שכתב, וזורק אם יש שגיאה). */
-function export_mbe(array $row): string
+/**
+ * ההורדה: bytes של ‎.mbe תקין (Mbe::save בודק את מה שכתב, וזורק אם יש שגיאה).
+ * $light — לזיכרון שמאחורי הפנים (export_docx_face): בלי לעמד מחדש, כשיש כבר preview בקובץ — הייצוגים הקיימים
+ * נשארים ומסומנים כמיושנים (מותר בפורמט). בלי preview — מעמדים פעם אחת, כרגיל.
+ */
+function export_mbe(array $row, bool $light = false): string
 {
-    $json = doc_json($row);
+    $json = doc_para_ids(doc_json($row), $row['id'] . '|' . $row['version']);
     $page = doc_page($row);
     $title = (string)$row['title'];
     $src = mbe_source_path($row['id']);
@@ -64,6 +68,7 @@ function export_mbe(array $row): string
     $f->document['flows'][$flow] = array_merge(is_array($f->document['flows'][$flow] ?? null) ? $f->document['flows'][$flow] : [], ['engine' => 'prosemirror', 'doc' => $doc]);
     $f->setApp(MBE_APP, 'meta.json', json_encode(['title' => $title, 'flow' => $flow], JSON_UNESCAPED_UNICODE));
 
+    if ($light && isset($f->files[Mbe::PREVIEW])) return Mbe::save($f, ['app' => MBE_APP, 'appVersion' => MBE_APP_VERSION]);
     [$pdf, $png] = mbe_pdf_and_preview($json, $page, $title);
     $f->setRendition(Mbe::PREVIEW, $png, ['type' => 'image/png', 'by' => MBE_APP]);
     $f->setRendition('renditions/document.pdf', $pdf, ['type' => 'application/pdf', 'by' => MBE_APP, 'gaps' => $gaps]);
@@ -206,4 +211,25 @@ function mbe_preview_png(array $rec, float $W, float $H, string $bg = ''): strin
     imagepng($im, null, 6);
     imagedestroy($im);
     return (string)ob_get_clean();
+}
+
+/**
+ * Word כ"פנים" של חבילת היצירה (mbe-format.md סעיף 7): ה-‎.mbe של המסמך נשמר ליד המסמך כזיכרון (mbe_source_path —
+ * אותו קובץ ששומר ‎.mbe שיובא, ולכן manifest.id יציב בין הורדות), וה-docx מוחתם (MbeFace::stamp): mbe-doc-id ו-mbe-base
+ * ב-docProps/custom.xml, והמודל ב-customXml. סימניות הפסקה (_mbe_p<id>) — מ-export_docx. כשל בזיכרון או בהחתמה —
+ * ה-docx הרגיל: ההורדה לא נכשלת בגלל הפנים.
+ */
+function export_docx_face(array $row): string
+{
+    $docx = export_docx(doc_para_ids(doc_json($row), $row['id'] . '|' . $row['version']), doc_page($row), (string)$row['title']);
+    try {
+        $mbe = export_mbe($row, true);
+        $src = mbe_source_path($row['id']);
+        file_put_contents($src, $mbe);
+        if (!is_file("$src.json")) file_put_contents("$src.json", json_encode(['flow' => 'f1', 'foreign' => []], JSON_UNESCAPED_UNICODE));
+        return MbeFace::stamp(Mbe::open($mbe), 'docx', $docx);
+    } catch (Throwable $e) {
+        error_log('word-processor: docx face — ' . $e->getMessage());
+        return $docx;
+    }
 }

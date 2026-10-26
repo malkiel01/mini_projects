@@ -2170,6 +2170,33 @@ $mbLyP = import_mbe(Mbe::save($mbLy, ['app' => 'layout-studio', 'appVersion' => 
 check('‎.mbe: layout בשורש גובר על attrs.page — שוליים ומספור מהמעטפת, הכותרת העליונה מ-attrs.page', $mbLyP['margins'] == ['top' => 40.0, 'bottom' => 25.0, 'right' => 30.0, 'left' => 15.0]
     && $mbLyP['numbering']['start'] === 7 && $mbLyP['numbering']['format'] === 'n' && str_contains(json_encode($mbLyP['header'], JSON_UNESCAPED_UNICODE), 'לוגו'),
     json_encode([$mbLyP['margins'], $mbLyP['numbering']], JSON_UNESCAPED_UNICODE));
+// Word כ"פנים" (mbe-format.md סעיף 7, MbeFace): הזיכרון (.mbe) ליד המסמך, וב-docx — mbe-doc-id, mbe-base, המודל והסימניות
+$fcId = doc_new('a:99', 'פנים', null, null, 'u1', 'דנה');
+$fcRow = doc_save(doc_find($fcId, 'a:99'), ['type' => 'doc', 'content' => [
+    ['type' => 'heading', 'attrs' => ['level' => 1], 'content' => [['type' => 'text', 'text' => 'כותרת']]],
+    ['type' => 'paragraph', 'attrs' => ['id' => 'pKeepMe0001'], 'content' => [['type' => 'text', 'text' => 'עם מזהה מהעורך']]],
+    ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'בלי מזהה']]],
+]], null, 'u1', 'דנה');
+$fc1 = export_docx_face($fcRow);
+$fcI = MbeFace::identify($fc1);
+$fcMem = Mbe::open(file_get_contents(mbe_source_path($fcId)));
+$fcFlowIds = $mbIds($fcMem->document['flows']['f1']['doc'] ?? []);
+file_put_contents("$tmp/face.docx", $fc1);
+$fcZ = new ZipArchive();
+$fcZ->open("$tmp/face.docx");
+preg_match_all('/w:name="_mbe_p([^"]+)"/', (string)$fcZ->getFromName('word/document.xml'), $fcBm);
+check('Word כפנים: mbe-doc-id = מזהה הזיכרון שנשמר ליד המסמך, mbe-base = הגיבוב שלו, והמודל ב-customXml', $fcI['type'] === 'face' && $fcI['format'] === 'docx'
+    && $fcI['docId'] === $fcMem->id() && $fcI['base'] === $fcMem->documentSha256() && $fcI['model'] === true, json_encode(array_diff_key($fcI, ['document' => 1]), JSON_UNESCAPED_UNICODE));
+check('Word כפנים: סימניית פסקה לכל פסקה — אותם מזהים כמו בזיכרון (מזהה מהעורך נשמר)', count($fcFlowIds) === 3 && $fcBm[1] === $fcFlowIds && $fcFlowIds[1] === 'pKeepMe0001',
+    json_encode([$fcBm[1], $fcFlowIds]));
+check('Word כפנים: העורך נטען עם אותם מזהים שיצאו ב-Word (editor_json — אותו seed), כך שעריכה אחרי ההורדה שומרת אותם',
+    $mbIds(editor_json(doc_json($fcRow), doc_page($fcRow), $fcRow['id'] . '|' . $fcRow['version'])) === $fcBm[1]);
+$fc2 = MbeFace::identify(export_docx_face($fcRow));
+check('Word כפנים: הורדה נוספת בלי שינוי — אותו מסמך, אותו בסיס', $fc2['docId'] === $fcI['docId'] && $fc2['base'] === $fcI['base']);
+$fcRow2 = doc_save($fcRow, ['type' => 'doc', 'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'שונה']]]]], null, 'u1', 'דנה');
+$fc3 = MbeFace::identify(export_docx_face($fcRow2));
+check('Word כפנים: אחרי שינוי — אותו mbe-doc-id, mbe-base חדש', $fc3['docId'] === $fcI['docId'] && $fc3['base'] !== $fcI['base'] && $fc3['base'] === Mbe::open(file_get_contents(mbe_source_path($fcId)))->documentSha256());
+check('Word כפנים: עדיין docx שנפתח אצלנו (אותו טקסט)', str_contains(export_text(import_docx(export_docx_face($fcRow2), 'x')['json']), 'שונה'));
 check('‎.mbe: קובץ פגום — הודעה ברורה', throws(fn() => import_mbe(substr($mbBytes, 0, 200), $mbLId), 'bad_file'));
 
 section('מסמך חדש שלא נכתב בו — לא נשאר (my_discard)');

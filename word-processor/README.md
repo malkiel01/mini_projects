@@ -99,7 +99,12 @@
   מתחלף בו רק השטף — כל השאר (שדות וחלקים לא מוכרים, `apps/` של אחרים) בית-לבית; התמונה שהוספנו לא נכנסת לשטף.
   **מזהה פסקה** (`attrs.id` בפסקה / בכותרת, `[A-Za-z0-9_]{1,32}` — גרסת מבנה 11): נשמר בעורך בהקלדה ובשינוי סגנון; בפיצול —
   לחצי הראשון בלבד; עותק כפול — בלי מזהה (התוסף `wpParaIds`). ב-Word — סימנייה נסתרת `_mbe_p<id>` סביב הפסקה, ובייבוא
-  חוזרת ל-`attrs.id` — כך פסקה שחזרה מ-Word מזוהה (mbe-format.md סעיף 7). החתימה במסמך (`mbe-doc-id`, `stampFace`) — כשהליבה תממש.
+  חוזרת ל-`attrs.id` — כך פסקה שחזרה מ-Word מזוהה (mbe-format.md סעיף 7). מזהה חסר: השרת נותן מזהה קבוע לגרסה (`doc_para_ids` —
+  גם לעורך בטעינה וגם להורדה, ולכן אותם מזהים), ופסקה חדשה בעורך מקבלת מזהה חדש (`newParaId`, כמו `Mbe::paraId`).
+- **Word כ"פנים" של חבילת היצירה** (`export_docx_face`, דרך `MbeFace::stamp` של הליבה): בהורדה כ-Word של הגרסה הנוכחית ה-‎.mbe של
+  המסמך נשמר ליד המסמך כזיכרון (`mbe_source_path` — `manifest.id` יציב בין הורדות), וה-docx נושא `mbe-doc-id` ו-`mbe-base`
+  (`docProps/custom.xml`), את המודל (`customXml`) ואת סימניות הפסקה. הזיכרון נשמר בלי לעמד מחדש כשיש בו כבר `preview.png`
+  (`export_mbe(..., light)`). כשל — ה-docx הרגיל. הקריאה בחזרה (`reconcile`) — כשהליבה תממש.
 - **מנוע ה-PDF המשותף — `pdf-core`** (`lib/pdf-core` — עותק של `creative-suite/pdf-core/src/php`, לא עורכים כאן;
   `php creative-suite/pdf-core/tools/sync.php`): הכותב (`writer.php`), קריאת גופנים (`font.php`), subset (`subset.php`) ורשימת
   ציור → PDF (`draw.php`, `pdf_draw($list, $resolve)`) לעימוד. אצלנו נשארים העימוד ושבירת השורות (`lib/pdf/layout.php`,
