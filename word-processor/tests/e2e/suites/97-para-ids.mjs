@@ -11,11 +11,10 @@ export default async function (t) {
     ] }, true));
 
     // הקלדה בסוף הכותרת — המזהה נשאר
-    await ed(() => document.querySelector('.wp-doc').editor.chain().focus().setTextSelection(6).run());
-    await p.keyboard.type('!');
+    // דרך הפקודות של העורך (כמו הקלדה ו-Enter) — לא תלוי במיקוד של הדפדפן
+    await ed(() => document.querySelector('.wp-doc').editor.chain().setTextSelection(6).insertContent('!').run());
     // פיצול באמצע הפסקה (אחרי "אחת") — המזהה נשאר בחצי הראשון, השני בלי
-    await ed(() => { const e = document.querySelector('.wp-doc').editor; let at = 0; e.state.doc.descendants((n, pos) => { if (n.isText && n.text.startsWith('אחת')) at = pos + 3; }); e.chain().focus().setTextSelection(at).run(); });
-    await p.keyboard.press('Enter');
+    await ed(() => { const e = document.querySelector('.wp-doc').editor; let at = 0; e.state.doc.descendants((n, pos) => { if (n.isText && n.text.startsWith('אחת')) at = pos + 3; }); e.chain().setTextSelection(at).splitBlock().run(); });
     const a = await ids();
     t.ok('הקלדה שומרת את המזהה; פיצול — המזהה לחצי הראשון בלבד', JSON.stringify(a) === JSON.stringify([['pHead000001', 'כותרת!'], ['pBody000001', 'אחת'], [null, ' שתיים']]), JSON.stringify(a));
 

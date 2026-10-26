@@ -314,7 +314,7 @@
 app.json  index.html  embed.php  api.php  .htaccess
 lib/        db.php (סכמה) · page.php (הגדרות עמוד) · docs.php (מסמכים, גרסאות, נעילה, תמונות) · pdf.php + pdf/ (מנוע ה-PDF)
             embed.php (רישום, חתימה, טוקן, סשן) · export.php · import.php · footnote.php · caption.php · track.php · users.php · selftest.php
-assets/js/  editor.js (העורך) · ui.js (כלי ממשק: h, toast, sheet, שדות) · dialogs-media.js / dialogs-text.js / dialogs-page.js / dialogs-styles.js (החלונות) · commands.js (רישום הפקודות) · extensions.js · find.js · view.js · pagination.js · paste.js · saver.js (שמירה וטיוטה) · schema.js · toc.js · caption.js · comments.js · track.js
+assets/js/  editor.js (העורך) · ui.js (כלי ממשק: h, toast, sheet, שדות) · dialogs-media.js / dialogs-text.js / dialogs-page.js / dialogs-styles.js (החלונות) · dialogs-table.js (סגנון ומאפייני טבלה, גודל תמונה) · commands.js (רישום הפקודות) · extensions.js · find.js · view.js · pagination.js · paste.js · saver.js (שמירה וטיוטה) · schema.js · toc.js · caption.js · comments.js · track.js
             app.js · embed.js · host.js (למארחת)
 client/     WordProcessorClient.php — הלקוח שמארחות מעתיקות
 docs/       integration.md — מדריך ההתממשקות
