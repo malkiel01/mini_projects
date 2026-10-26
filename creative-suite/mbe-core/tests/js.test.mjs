@@ -262,3 +262,117 @@ test('מזהה פסקה (1.1): save משלים חסר, מחליף פגום וכ�
     php('resave', file, out, 'php-b');
     assert.deepEqual(Buffer.from(docBytesOf(readFileSync(out))), Buffer.from(docBytesOf(readFileSync(file))), 'PHP לא משנה מזהים קיימים');
 });
+
+// ---- פנים: stampFace / identify (docs/spec/hub-api.md 2.1–2.2) ----
+
+import { stampFace, identify, xmpPacket } from '../src/js/face.js';
+
+const NOW = new Date('2026-10-25T10:00:00Z');
+const savedText = async () => {
+    const f = await M.open(fx('valid/text.mbe'));
+    const bytes = await M.save(f, { app: 'js-face', now: NOW });
+    return { f, bytes };
+};
+const zipParts = b => Object.fromEntries(readZip(b).entries.map(e => [e.name, Buffer.from(e.read())]));
+
+test('stampFace docx — מזהים, מודל ב-customXml, ושאר החלקים בית-לבית', async () => {
+    const { f, bytes } = await savedText();
+    const docx = readFileSync(join(here, 'faces/plain.docx'));
+    const out = await stampFace(f, 'docx', docx);
+    const before = zipParts(docx), after = zipParts(out);
+    const touched = ['[Content_Types].xml', '_rels/.rels', 'word/_rels/document.xml.rels'];
+    for (const [n, d] of Object.entries(before)) if (!touched.includes(n)) assert.deepEqual(after[n], d, n);
+    for (const n of ['docProps/custom.xml', 'customXml/item1.xml', 'customXml/itemProps1.xml', 'customXml/_rels/item1.xml.rels']) assert.ok(after[n], n);
+    const id = await identify(out);
+    assert.equal(id.type, 'face');
+    assert.equal(id.format, 'docx');
+    assert.equal(id.docId, f.id);
+    assert.equal(id.base, f.documentSha256);
+    assert.equal(id.model, true);
+    assert.equal(canonicalJson(id.document), canonicalJson(f.document));
+    assert.deepEqual(id.issues, []);
+    // החתמה שנייה מחליפה — לא מכפילה
+    const again = zipParts(await stampFace(f, 'docx', out));
+    assert.deepEqual(Object.keys(again).sort(), Object.keys(after).sort());
+    assert.equal((again['docProps/custom.xml'].toString().match(/mbe-doc-id/g) || []).length, 1);
+    // ה-PHP מזהה אותו דבר
+    const file = join(tmp, 'face.docx');
+    writeFileSync(file, out);
+    const p = JSON.parse(php('identify', file));
+    assert.deepEqual([p.type, p.format, p.docId, p.base, p.model], ['face', 'docx', f.id, f.documentSha256, true]);
+    assert.equal(canonicalJson(p.document), canonicalJson(f.document));
+    void bytes;
+    // שלב export — בשמירה הבאה, פעם אחת
+    await M.save(f, { app: 'js-face', now: NOW });
+    const ex = f.journal().filter(s => s.kind === 'export');
+    assert.deepEqual(ex.map(s => s.note), ['docx']);
+});
+
+test('stampFace ב-PHP — JS מזהה, וזה docx שעובר unzip', async () => {
+    const { f, bytes } = await savedText();
+    const mbe = join(tmp, 'face-src.mbe'), out = join(tmp, 'face-php.docx');
+    writeFileSync(mbe, bytes);
+    assert.deepEqual(JSON.parse(php('stamp', mbe, 'docx', join(here, 'faces/plain.docx'), out)), { ok: true });
+    const id = await identify(readFileSync(out));
+    assert.deepEqual([id.type, id.docId, id.base, id.model], ['face', f.id, f.documentSha256, true]);
+    execFileSync('unzip', ['-tq', out]);
+});
+
+test('stampFace png — iTXt אחרי IHDR, הפיקסלים לא נגעו', async () => {
+    const { f } = await savedText();
+    const png = f.files.get(M.PREVIEW);
+    const out = await stampFace(f, 'png', png);
+    assert.equal(Buffer.from(out.subarray(12, 16)).toString(), 'IHDR');
+    assert.equal(Buffer.from(out.subarray(37, 41)).toString(), 'iTXt');
+    const id = await identify(out);
+    assert.deepEqual([id.type, id.format, id.docId, id.base, id.model], ['face', 'png', f.id, f.documentSha256, false]);
+    assert.deepEqual(await stampFace(f, 'png', out), out, 'החתמה חוזרת זהה');
+    const file = join(tmp, 'face.png');
+    writeFileSync(file, out);
+    const p = JSON.parse(php('identify', file));
+    assert.deepEqual([p.type, p.docId, p.base], ['face', f.id, f.documentSha256]);
+    // PHP מחתים בדיוק אותם בתים
+    const mbe = join(tmp, 'face-src2.mbe'), src = join(tmp, 'plain.png'), outp = join(tmp, 'face-php.png');
+    writeFileSync(mbe, await M.save(f, { app: 'js-face', now: NOW }));
+    writeFileSync(src, png);
+    php('stamp', mbe, 'png', src, outp);
+    assert.deepEqual(Buffer.from(readFileSync(outp)), Buffer.from(out));
+});
+
+test('xmpPacket → identify מ-PDF; mbe; קובץ זר', async () => {
+    const { f, bytes } = await savedText();
+    const pdf = utf8(`%PDF-1.7\n1 0 obj\n<< /Type /Metadata /Subtype /XML >>\nstream\n${await xmpPacket(f)}\nendstream\nendobj\n%%EOF\n`);
+    const id = await identify(pdf);
+    assert.deepEqual([id.type, id.format, id.docId, id.base], ['face', 'pdf', f.id, f.documentSha256]);
+    const file = join(tmp, 'face.pdf');
+    writeFileSync(file, pdf);
+    const p = JSON.parse(php('identify', file));
+    assert.deepEqual([p.type, p.format, p.docId, p.base], ['face', 'pdf', f.id, f.documentSha256]);
+
+    const m = await identify(bytes);
+    assert.deepEqual([m.type, m.format, m.docId, m.base, m.model], ['mbe', 'mbe', f.id, f.documentSha256, true]);
+    for (const b of [readFileSync(join(here, 'faces/plain.docx')), utf8('%PDF-1.4\n%%EOF'), f.files.get(M.PREVIEW), utf8('שלום'), new Uint8Array()]) {
+        const r = await identify(b);
+        assert.equal(r.type, 'foreign');
+        assert.equal(r.docId, null);
+    }
+    const bad = await identify(utf8('PK\x03\x04garbage'));
+    assert.equal(bad.type, 'foreign');
+});
+
+test('face-not-saved — מסמך שהשתנה אחרי save, או שלא נשמר', async () => {
+    const { f } = await savedText();
+    f.document.surfaces.push({ id: 'zz', type: 'page' });
+    for (const fmt of ['docx', 'png']) {
+        await assert.rejects(stampFace(f, fmt, readFileSync(join(here, 'faces/plain.docx'))), e => e.issues[0].code === 'face-not-saved');
+    }
+    await assert.rejects(xmpPacket(f), e => e.issues[0].code === 'face-not-saved');
+    await assert.rejects(stampFace(M.create('text'), 'docx', readFileSync(join(here, 'faces/plain.docx'))), e => e.issues[0].code === 'face-not-saved');
+    const { f: g } = await savedText();
+    await assert.rejects(stampFace(g, 'pdf', new Uint8Array()), e => e.issues[0].code === 'face-stamp-failed');
+    await assert.rejects(stampFace(g, 'docx', utf8('not a zip')), e => e.issues[0].code === 'face-stamp-failed');
+    await assert.rejects(stampFace(g, 'png', utf8('not a png')), e => e.issues[0].code === 'face-stamp-failed');
+    const file = join(tmp, 'changed.mbe');
+    writeFileSync(file, await M.save(g, { app: 'js-face', now: NOW }));
+    assert.deepEqual(JSON.parse(php('stamp', file, 'pdf', file, join(tmp, 'x'))), { error: 'face-stamp-failed' });
+});

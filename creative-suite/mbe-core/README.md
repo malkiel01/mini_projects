@@ -8,8 +8,8 @@
 ## מבנה
 
 ```
-src/js/        mbe.js (ה-API) · zip.js · canonical.js · schema.js · schemas.js (נבנה) · vendor/fflate.js
-src/php/       mbe.php (ה-API) · zip.php · canonical.php · schema.php · schemas.php (נבנה)
+src/js/        mbe.js (ה-API) · face.js (פנים: stampFace, identify) · zip.js · canonical.js · schema.js · schemas.js (נבנה) · vendor/fflate.js
+src/php/       mbe.php (ה-API) · face.php (MbeFace) · zip.php · canonical.php · schema.php · schemas.php (נבנה)
 schema/        manifest-1.json · document-1.json — JSON Schema, המקור לשתי השפות
 tools/sync.php בונה את schemas.* ומעתיק את src לאפליקציות שב-apps.json; ‎--check — שער בפריסה
 apps.json      ריק. אפליקציה נכנסת רק בהסכמת הצ'אט שלה
@@ -51,6 +51,24 @@ $out = Mbe::save($f, ['app' => 'word-processor', 'appVersion' => '2.3']);
 | ייצוגים | `f.renditions()` (עם `stale`) · `f.setRendition()` · `f.removeRendition()` | אותו דבר |
 | מידע פרטי | `f.apps(id)` · `f.setApp(id, name, bytes)` | אותו דבר |
 | גרסאות | `migrate(doc, manifest, toMajor)` · `MIGRATIONS` | `Mbe::migrate()` |
+| החתמת פנים (אחרי `save`) | `await stampFace(f, 'docx'\|'png', bytes)` · `await xmpPacket(f)` (ל-PDF) — מ-`face.js` | `MbeFace::stamp()` · `MbeFace::xmpPacket()` — `face.php` |
+| "מה הקובץ הזה?" | `await identify(bytes)` → `{ type, format, docId, base, model, document?, issues }` | `MbeFace::identify($bytes)` |
+
+### פנים — docx, png, PDF (`docs/spec/hub-api.md` 2.1–2.2)
+
+- **מחתימים אחרי `save`**: ‏`mbe-doc-id` = `manifest.id`, ‏`mbe-base` = הגיבוב של `document.json` כפי שנשמר. מסמך
+  ששונה מאז השמירה, או שעוד אין לו id — `face-not-saved`. כל החתמה מוסיפה שלב `export` ליומן (בשמירה הבאה, פעם
+  אחת לכל פורמט).
+- **docx**: ‏`docProps/custom.xml` (שני מאפיינים), ‏`customXml/itemN.xml` עם `document.json` (בלי media) תחת
+  `urn:mbe:document:1`, ‏`itemPropsN.xml`, ה-rels ו-`[Content_Types].xml`. שאר החלקים — בית-לבית. החתמה חוזרת
+  מחליפה ולא מכפילה. ‏`identify` מחזיר את המודל ב-`document` — הבסיס למיזוג כשאין זיכרון.
+- **png**: שני `iTXt` (‏`mbe-doc-id`, ‏`mbe-base`) מיד אחרי IHDR. הפיקסלים לא נגעים.
+- **PDF**: הליבה **לא** מחתימה PDF קיים — `xmpPacket(f)` נותן חבילת XMP (‏`urn:mbe:face:1`), והכותב מטמיע אותה
+  כ-Metadata **לא דחוס** בזמן היצירה. ‏`identify` קורא אותה.
+- **סימניות הפסקה** כותבת האפליקציה (`paragraphBookmark(id)` → `_mbe_p<id>`).
+- LibreOffice (שורת פקודה, פתיחה ושמירה מחדש של docx) שומר את `custom.xml`, את `customXml` ואת הסימניות — ניסוי נ3.
+- קודים: `face-not-saved`, ‏`face-stamp-failed` (לא docx / png, או PDF); ב-`identify` (אזהרות) — `face-unknown-doc`
+  (מזהה פגום / קובץ לא קריא), ‏`face-base-missing` (המודל ב-customXml פגום).
 
 ### כללים שהליבה אוכפת
 

@@ -78,7 +78,8 @@ creative-suite/mbe-core/
 - [x] `manifest.id` (UUID v4) — נוצר בשמירה הראשונה, נשמר בכל שמירה; משלים לקובץ 1.0; `VERSION` = `1.1`
 - [x] `history/` — `journal.json` + `<sha256>.json`; פעולות `journal` / `restore`; בדיקות תקינות (גיבוב, `base`/`result`)
 - [x] מזהה פסקה `attrs.id` — בדיקת ייחודיות בשטף + השלמה למזהים חסרים
-- [ ] `identify(face)` ו-`reconcile(face)` — זיהוי פנים (docx/pdf/png) ומיזוג תלת-כיווני לפי פסקה, עם רשימת התנגשויות
+- [x] `stampFace` (docx, png), ‏`xmpPacket` (PDF) ו-`identify` — החתמה וזיהוי פנים, JS ו-PHP זהים
+- [ ] `reconcile(face)` ו-`applyMerge` — מיזוג תלת-כיווני לפי פסקה, עם רשימת התנגשויות
 - [ ] ניסוי נ3 — Google Docs ו-LibreOffice (שורת פקודה): מה שורד מהמזהים ב-docx
 
 
@@ -161,3 +162,8 @@ creative-suite/mbe-core/
   ממנו להתאים לפני המיזוג.
 - 2026-10-25 — `layer.vectorMask.d` (רסטר ר2, `requests/raster-studio-r2.md`) — אותה בדיקת `pathProblem` כמו בנתיבי
   vector (`path-d-invalid`); `baked` — בסכמה בלבד. נכנס ל-#822.
+- 2026-10-26 — פורמט 1.1, שלב 4: `stampFace` (docx, png), ‏`xmpPacket` ו-`identify` ב-`face.js` / `face.php`. ‏docx —
+  `custom.xml` + `customXml` עם המודל (בלי media), שאר החלקים בית-לבית, החתמה חוזרת מחליפה; png — `iTXt` אחרי IHDR;
+  PDF — חבילת XMP שהכותב מטמיע. כל החתמה = שלב `export` ביומן. רק הקודים שהוסכמו (`hub-api.md` סעיף 5 ו-6). חצי
+  מניסוי נ3: LibreOffice בשורת פקודה (פתיחה ושמירה כ-docx) שומר את המאפיינים, את `customXml` ואת סימניות `_mbe_p`.
+  Google Docs — דורש קובץ מבעל המערכת. הבדיקות של חמש האפליקציות המסונכרנות עוברות.

@@ -4,10 +4,13 @@
  *   php tests/cli.php validate <file> [limits-json]   → {"ok":bool,"codes":[…]}
  *   php tests/cli.php resave <in> <out> <app>          → פותח ושומר ב-PHP
  *   php tests/cli.php canon <json-file>                → JSON קנוני
+ *   php tests/cli.php stamp <mbe> <format> <in> <out>  → פנים מוחתמות (או {"error":code})
+ *   php tests/cli.php identify <file>                  → התוצאה של identify
  */
 
 declare(strict_types=1);
 require __DIR__ . '/../src/php/mbe.php';
+require __DIR__ . '/../src/php/face.php';
 
 [$_, $cmd] = $argv + [null, null];
 switch ($cmd) {
@@ -26,7 +29,19 @@ switch ($cmd) {
     case 'canon':
         echo MbeCanonical::encode(MbeCanonical::decode((string)file_get_contents($argv[2])));
         break;
+    case 'stamp':
+        $f = Mbe::open((string)file_get_contents($argv[2]));
+        try {
+            file_put_contents($argv[5], MbeFace::stamp($f, $argv[3], (string)file_get_contents($argv[4])));
+            echo json_encode(['ok' => true]);
+        } catch (MbeError $e) {
+            echo json_encode(['error' => $e->issues[0]['code'] ?? null]);
+        }
+        break;
+    case 'identify':
+        echo MbeCanonical::encode(MbeFace::identify((string)file_get_contents($argv[2])));
+        break;
     default:
-        fwrite(STDERR, "usage: validate|resave|canon\n");
+        fwrite(STDERR, "usage: validate|resave|canon|stamp|identify\n");
         exit(2);
 }
