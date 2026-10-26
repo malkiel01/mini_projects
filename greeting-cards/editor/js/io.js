@@ -3,6 +3,7 @@
 
 import { normalizeDoc, extractJson, newDoc, backgroundLayer, imageLayer, clone } from './doc.js';
 import { assets } from './db.js';
+import { svgToLayers } from './svg-import.js';
 import { FONTS } from './fonts.js';
 import { SIZES } from './doc.js';
 
@@ -64,6 +65,7 @@ export async function ingestImage(file) {
  */
 export async function importFromChat(files, pastedText) {
     const images = new Map();       // שם קובץ (באותיות קטנות) → File/Blob
+    const svgs = new Map();         // שם קובץ → טקסט ה-SVG (קישוטים וקטוריים מהצ'אט)
     let json = null;
     const fixes = [];
 
@@ -82,12 +84,16 @@ export async function importFromChat(files, pastedText) {
                 const base = entry.name.split('/').pop().toLowerCase();
                 if (!base || base.startsWith('.')) continue;
                 if (base === 'design.json') { json = extractJson(await entry.async('string')); continue; }
+                if (base.endsWith('.svg')) { svgs.set(base, await entry.async('string')); continue; }
                 if (!/\.(png|jpe?g|webp|gif)$/.test(base)) continue;
                 const blob = await entry.async('blob');
                 total += blob.size;
                 if (total > 60 * 1024 * 1024) throw new Error('הקובץ גדול מדי אחרי פריסה');
                 images.set(base, new File([blob], base, { type: base.endsWith('png') ? 'image/png' : base.endsWith('webp') ? 'image/webp' : 'image/jpeg' }));
             }
+        } else if (name.endsWith('.svg') || f.type === 'image/svg+xml') {
+            if (f.size > 2 * 1024 * 1024) throw new Error(`"${f.name}" גדול מדי ל-SVG`);
+            svgs.set(name, await f.text());
         } else if (name.endsWith('.json') || f.type === 'application/json') {
             json = extractJson(await f.text());
         } else if (f.type.startsWith('image/')) {
@@ -97,6 +103,11 @@ export async function importFromChat(files, pastedText) {
     if (!json && pastedText && pastedText.trim()) {
         // טקסט בלי JSON (למשל כיתוב ששותף יחד עם התמונה) — לא חוסם, כל עוד יש תמונה.
         try { json = extractJson(pastedText); } catch (e) { if (!images.size) throw e; }
+    }
+
+    // SVG בלי JSON — כל קובץ נכנס כקישוט, במרכז הדף
+    if (!json && svgs.size && !images.size) {
+        json = { version: 1, title: 'קישוט מהצ\'אט', page: { width: 1080, height: 1080, background: '#ffffff' }, layers: [] };
     }
 
     if (!json) {
@@ -127,10 +138,13 @@ export async function importFromChat(files, pastedText) {
             loaded.set(id, im.img);
         });
         if (n) fixes.push(`בלי קובץ עיצוב — התמונה הגדולה נכנסה כרקע, ועוד ${n} כשכבות שאפשר להזיז`);
+        addLooseSvgs(doc, svgs, new Set(), fixes);
         return { doc, loaded, fixes };
     }
 
+    const usedSvg = expandSvgLayers(json, svgs, fixes);
     const { doc, fixes: f2 } = normalizeDoc(json);
+    addLooseSvgs(doc, svgs, usedSvg, fixes);
     fixes.push(...f2);
     const loaded = new Map();
     const used = new Set();
@@ -164,6 +178,42 @@ export async function importFromChat(files, pastedText) {
     }
     // שכבות שהתמונה שלהן חסרה — נשארות כמקום שמור (מלבן מקווקו), כדי שאפשר יהיה להחליף.
     return { doc, loaded, fixes };
+}
+
+/**
+ * שכבות "svg" ב-design.json (קישוט שהצ'אט כתב כקוד) → שכבות וקטור עריכות, במקום. לפני normalizeDoc — הוא לא מכיר
+ * את הסוג. ‏svgs — קבצים שהגיעו לצד ה-JSON (לשכבה עם file). מחזיר את שמות הקבצים ששובצו.
+ */
+export function expandSvgLayers(json, svgs = new Map(), fixes = []) {
+    const used = new Set();
+    if (!Array.isArray(json?.layers)) return used;
+    json.layers = json.layers.flatMap(l => {
+        if (l?.type !== 'svg') return [l];
+        const file = String(l.file || '').toLowerCase();
+        const text = typeof l.svg === 'string' ? l.svg : svgs.get(file);
+        if (file) used.add(file);
+        if (!text) { fixes.push(`חסר ה-SVG "${l.file || l.id || ''}"`); return []; }
+        try {
+            const { layers, skipped } = svgToLayers(text, [Number(l.x) || 0, Number(l.y) || 0, Number(l.w) || 200, Number(l.h) || 200], l.name || 'קישוט');
+            if (skipped) fixes.push(`ב-SVG "${l.name || l.id || ''}" ${skipped} חלקים שלא נתמכים (טקסט, תמונה, מדרג) — דולגו`);
+            return layers;
+        } catch (e) { fixes.push(e.message); return []; }
+    });
+    return used;
+}
+
+/** קבצי SVG שלא שובצו ב-JSON — כל אחד במרכז הדף, בחצי מרוחבו. */
+function addLooseSvgs(doc, svgs, used, fixes) {
+    const { width: W, height: H } = doc.page;
+    for (const [name, text] of svgs) {
+        if (used.has(name)) continue;
+        const s = Math.min(W, H) * 0.5;
+        try {
+            const { layers, skipped } = svgToLayers(text, [(W - s) / 2, (H - s) / 2, s, s], name.replace(/\.svg$/, ''));
+            doc.layers.push(...layers);
+            fixes.push(`"${name}" נכנס כ-${layers.length} שכבות וקטור${skipped ? ` (${skipped} חלקים דולגו)` : ''}`);
+        } catch (e) { fixes.push(`"${name}": ${e.message}`); }
+    }
 }
 
 // ─── ייצוא ─────────────────────────────────────────────────────────────────

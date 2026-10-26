@@ -12,7 +12,7 @@ import { FONTS, ensureFont, ensureDocFonts, nearestWeight } from './fonts.js';
 import { History } from './history.js';
 import { designs, assets } from './db.js';
 import { Canvas } from './canvas.js';
-import { ingestImage, importFromChat, blobToImage, canvasToBlob, exportPdf, exportGcard, safeName, personalSkill, skillAsPrompt, skillZip } from './io.js';
+import { ingestImage, importFromChat, expandSvgLayers, blobToImage, canvasToBlob, exportPdf, exportGcard, safeName, personalSkill, skillAsPrompt, skillZip } from './io.js';
 import * as sync from './sync.js';
 import { loadScript } from './io.js';
 import { docVariables, readSheetFile, readPasted, readPhoneContacts, guessColumns, normalizePhone, fileNames, fillText } from './merge.js';
@@ -1518,7 +1518,10 @@ async function openChatImport(code) {
             return { type: 'image', src, remote: item.remote };
         };
         if (design) {
+            const svgFixes = [];
+            expandSvgLayers(design, new Map(), svgFixes);   // קישוטי svg מה-GPT → שכבות וקטור
             ({ doc, fixes } = normalizeDoc(design));
+            fixes.unshift(...svgFixes);
             const left = [...byName.values()];
             for (const [key, a] of Object.entries(doc.assets)) {
                 // לפי שם הקובץ; ‏ChatGPT לפעמים משנה שמות — אז תמונה יחידה לנכס יחיד.
