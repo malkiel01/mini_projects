@@ -59,6 +59,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 require_once 'includes/group_calculations.php';
 require_once 'includes/group_modals.php';
 require_once 'includes/contacts.php';
+require_once 'includes/layout.php';
 
 // אנשי הקשר של המשתמש, לבורר שבמסך צירוף משתתף
 $myContacts = $is_owner ? listContacts($pdo, $user_id) : [];
@@ -232,148 +233,107 @@ if ($usesShareRate) {
 
 $canEdit = !$is_closed;
 ?>
+<?php
+// השורה של המשתמש בחישוב - כמה מגיע לו או כמה הוא חייב, לכרטיס הסיכום
+$myOpen = null;
+foreach ($balance['calculations'] ?? [] as $calc) {
+    if ((int)($calc['member']['id'] ?? 0) === (int)$member_id) {
+        $myOpen = round($calc['openBalance'], 2);
+    }
+}
+
+$daysLeft = !empty($group['event_date'])
+    ? (int)floor((strtotime($group['event_date']) - strtotime('today')) / 86400) : null;
+$subParts = [];
+if (!empty($group['event_date'])) {
+    $when = date('d/m/Y', strtotime($group['event_date']));
+    if (!$is_closed && $daysLeft === 0)     $when .= ' · היום!';
+    elseif (!$is_closed && $daysLeft > 0)   $when .= " · עוד $daysLeft ימים";
+    $subParts[] = $when;
+}
+if (!empty($group['event_location'])) {
+    $subParts[] = $group['event_location'];
+}
+
+$topActions = [['onclick' => 'shareSummary()', 'icon' => 'fab fa-whatsapp', 'label' => 'שיתוף הסיכום בוואטסאפ']];
+if ($is_owner && $featuresReady) {
+    $topActions[] = ['onclick' => 'showEventModal()', 'icon' => 'fas fa-pen', 'label' => 'פרטי האירוע'];
+    $topActions[] = $is_closed
+        ? ['onclick' => 'reopenEvent()', 'icon' => 'fas fa-lock-open', 'label' => 'פתיחה מחדש']
+        : ['onclick' => 'closeEvent()', 'icon' => 'fas fa-flag-checkered', 'label' => 'סגירת האירוע'];
+}
+?>
 <!DOCTYPE html>
 <html dir="rtl" lang="he">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo htmlspecialchars($group['name']); ?> - <?php echo SITE_NAME; ?></title>
-    <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
-    <!-- Font Awesome נטען בלי לחסום רינדור: בלי זה הדף נשאר לבן
-         עד שהבקשה החוצה ל-CDN חוזרת, וזה מה שנראה כהבזק ברענון. -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" media="print" onload="this.media='all'">
-    <noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"></noscript>
+    <?php layoutHead($group['name']); ?>
     <link rel="stylesheet" href="<?php echo asset('/css/group.css'); ?>">
-    <link rel="manifest" href="<?php echo APP_BASE_PATH; ?>/manifest.json">
-    <meta name="theme-color" content="#667eea">
 </head>
 <body>
-    <nav class="navbar">
-        <div class="navbar-container">
-            <div class="navbar-left">
-                <a href="dashboard.php" class="btn-back">
-                    <i class="fas fa-arrow-right"></i>
-                    חזרה
-                </a>
-                <span class="navbar-title"><?php echo htmlspecialchars($group['name']); ?></span>
-            </div>
-            <div class="navbar-user">
-                <div class="user-info">
-                    <div class="user-avatar">
-                        <?php if (!empty($_SESSION['profile_picture'])): ?>
-                            <img src="<?php echo htmlspecialchars($_SESSION['profile_picture']); ?>" alt="">
-                        <?php else: ?>
-                            <?php echo htmlspecialchars(mb_substr($_SESSION['name'], 0, 1)); ?>
-                        <?php endif; ?>
-                    </div>
-                    <span class="user-name"><?php echo htmlspecialchars($_SESSION['name']); ?></span>
-                </div>
-                <a href="auth/logout.php" class="btn-logout" title="התנתק">
-                    <i class="fas fa-sign-out-alt"></i>
-                </a>
-            </div>
-        </div>
-    </nav>
+    <?php renderTopBar([
+        'title'   => $group['name'],
+        'sub'     => implode(' · ', $subParts),
+        'back'    => 'dashboard.php',
+        'actions' => $topActions,
+    ]); ?>
 
-    <div class="container">
+    <main id="main" class="container" tabindex="-1">
         <?php if (!$featuresReady): ?>
             <?php renderMigrationNotice(); ?>
         <?php endif; ?>
 
-        <!-- כותרת האירוע -->
-        <div class="event-header <?php echo $is_closed ? 'closed' : ''; ?>">
-            <div class="event-main">
-                <h1><?php echo htmlspecialchars($group['name']); ?></h1>
+        <!-- סיכום: מה המצב עכשיו -->
+        <section class="summary event-summary<?php echo $is_closed ? ' closed' : ''; ?>" aria-label="סיכום האירוע">
+            <?php if (!empty($group['description']) || $is_closed || $myOpen !== null): ?>
+            <div class="line">
                 <?php if (!empty($group['description'])): ?>
-                <p class="event-description"><?php echo htmlspecialchars($group['description']); ?></p>
+                <span class="muted desc"><?php echo htmlspecialchars($group['description']); ?></span>
                 <?php endif; ?>
-                <div class="event-meta">
-                    <?php if (!empty($group['event_date'])): ?>
-                    <span><i class="fas fa-calendar-day"></i>
-                        <?php echo date('d/m/Y', strtotime($group['event_date'])); ?>
-                        <?php
-                        $daysLeft = (int)floor((strtotime($group['event_date']) - strtotime('today')) / 86400);
-                        if (!$is_closed && $daysLeft > 0) {
-                            echo '<strong>(עוד ' . $daysLeft . ' ימים)</strong>';
-                        } elseif (!$is_closed && $daysLeft === 0) {
-                            echo '<strong>(היום!)</strong>';
-                        }
-                        ?>
-                    </span>
-                    <?php endif; ?>
-                    <?php if (!empty($group['event_location'])): ?>
-                    <span><i class="fas fa-map-marker-alt"></i> <?php echo htmlspecialchars($group['event_location']); ?></span>
-                    <?php endif; ?>
-                    <?php if ($is_closed): ?>
-                    <span class="status-badge closed"><i class="fas fa-lock"></i> האירוע סגור</span>
-                    <?php endif; ?>
-                </div>
-            </div>
-            <div class="event-actions">
-                <button class="btn-secondary" onclick="shareSummary()">
-                    <i class="fab fa-whatsapp"></i> שתף סיכום
-                </button>
-                <?php if ($is_owner && $featuresReady): ?>
-                    <button class="btn-secondary" onclick="showEventModal()">
-                        <i class="fas fa-edit"></i> פרטי האירוע
-                    </button>
-                    <?php if ($is_closed): ?>
-                    <button class="btn-secondary" onclick="reopenEvent()">
-                        <i class="fas fa-lock-open"></i> פתח מחדש
-                    </button>
-                    <?php else: ?>
-                    <button class="btn-secondary" onclick="closeEvent()">
-                        <i class="fas fa-flag-checkered"></i> סגור אירוע
-                    </button>
-                    <?php endif; ?>
+                <?php if ($is_closed): ?>
+                <span class="chip"><i class="fas fa-lock" aria-hidden="true"></i> האירוע סגור</span>
                 <?php endif; ?>
-            </div>
-        </div>
-
-        <!-- סרגל מצב -->
-        <div class="event-stats">
-            <div class="event-stat">
-                <span class="stat-value"><?php echo count($members); ?></span>
-                <span class="stat-label">משתתפים</span>
-            </div>
-            <?php if ($featuresReady): ?>
-            <div class="event-stat">
-                <span class="stat-value"><?php echo $openItemCount; ?></span>
-                <span class="stat-label">פריטים פתוחים</span>
             </div>
             <?php endif; ?>
-            <div class="event-stat">
-                <span class="stat-value">₪<?php echo number_format($balance['totalAmount'], 0); ?></span>
-                <span class="stat-label">סך הוצאות</span>
+            <?php if ($myOpen !== null && abs($myOpen) >= 0.01): ?>
+            <div class="my-balance <?php echo $myOpen > 0 ? 'ok' : 'bad'; ?>">
+                <i class="fas <?php echo $myOpen > 0 ? 'fa-arrow-down' : 'fa-arrow-up'; ?>" aria-hidden="true"></i>
+                <span><?php echo $myOpen > 0 ? 'מגיע לך' : 'עליך להעביר'; ?></span>
+                <b>₪<?php echo number_format(abs($myOpen), 2); ?></b>
+                <button type="button" class="btn-link" onclick="showTab('calculations', document.getElementById('tab-calculations'))">למי?</button>
             </div>
-            <div class="event-stat <?php echo $balance['isBalanced'] ? 'ok' : 'pending'; ?>">
-                <span class="stat-value"><?php echo count($balance['transfers']); ?></span>
-                <span class="stat-label">העברות פתוחות</span>
-            </div>
-        </div>
-
-        <!-- כרטיסיות -->
-        <div class="tabs">
-            <?php if ($featuresReady): ?>
-            <button class="tab active" onclick="showTab('items', this)">
-                <i class="fas fa-list-check"></i>
-                מה צריך
-                <?php if ($openItemCount > 0): ?>
-                <span class="tab-badge"><?php echo $openItemCount; ?></span>
+            <?php elseif ($myOpen !== null && $balance['totalAmount'] > 0): ?>
+            <div class="my-balance ok"><i class="fas fa-check" aria-hidden="true"></i><span>אצלך הכול מאוזן</span></div>
+            <?php endif; ?>
+            <dl class="cells">
+                <div><dt>סך הוצאות</dt><dd>₪<?php echo number_format($balance['totalAmount'], 0); ?></dd></div>
+                <div><dt>משתתפים</dt><dd><?php echo count($members); ?></dd></div>
+                <?php if ($featuresReady): ?>
+                <div><dt>פריטים פתוחים</dt><dd class="<?php echo $openItemCount > 0 ? 'warn' : ''; ?>"><?php echo $openItemCount; ?></dd></div>
                 <?php endif; ?>
+                <div><dt>העברות פתוחות</dt>
+                    <dd class="<?php echo $balance['isBalanced'] ? 'ok' : 'bad'; ?>"><?php echo count($balance['transfers']); ?></dd></div>
+            </dl>
+        </section>
+
+        <!-- לשוניות -->
+        <div class="seg-tabs tabs" role="tablist">
+            <?php if ($featuresReady): ?>
+            <button class="tab active" role="tab" onclick="showTab('items', this)">
+                <i class="fas fa-list-check" aria-hidden="true"></i>
+                <span>מה צריך <small><?php echo $openItemCount > 0 ? $openItemCount : ''; ?></small></span>
             </button>
             <?php endif; ?>
-            <button class="tab <?php echo $featuresReady ? '' : 'active'; ?>" onclick="showTab('members', this)">
-                <i class="fas fa-users"></i>
-                משתתפים
+            <button class="tab <?php echo $featuresReady ? '' : 'active'; ?>" role="tab" onclick="showTab('members', this)">
+                <i class="fas fa-users" aria-hidden="true"></i>
+                <span>משתתפים <small><?php echo count($members); ?></small></span>
             </button>
-            <button class="tab" onclick="showTab('purchases', this)">
-                <i class="fas fa-shopping-cart"></i>
-                קניות
+            <button class="tab" role="tab" onclick="showTab('purchases', this)">
+                <i class="fas fa-receipt" aria-hidden="true"></i>
+                <span>קניות <small><?php echo count($purchases) ?: ''; ?></small></span>
             </button>
-            <button class="tab" onclick="showTab('calculations', this)">
-                <i class="fas fa-calculator"></i>
-                חישובים
+            <button class="tab" id="tab-calculations" role="tab" onclick="showTab('calculations', this)">
+                <i class="fas fa-scale-balanced" aria-hidden="true"></i>
+                <span>מי חייב למי</span>
             </button>
         </div>
 
@@ -399,6 +359,9 @@ $canEdit = !$is_closed;
             <div class="items-list">
                 <?php foreach ($shoppingItems as $item): ?>
                 <div class="item-row status-<?php echo htmlspecialchars($item['status']); ?>">
+                    <span class="ic <?php echo ['needed' => 'muted', 'claimed' => 'warn', 'bought' => 'ok'][$item['status']] ?? 'muted'; ?>" aria-hidden="true">
+                        <i class="fas <?php echo ['needed' => 'fa-circle', 'claimed' => 'fa-hand', 'bought' => 'fa-check'][$item['status']] ?? 'fa-circle'; ?>"></i>
+                    </span>
                     <div class="item-main">
                         <div class="item-title">
                             <?php echo htmlspecialchars($item['title']); ?>
@@ -487,11 +450,11 @@ $canEdit = !$is_closed;
             <div class="members-grid">
                 <?php foreach ($members as $member): ?>
                 <div class="member-card">
-                    <div class="member-avatar">
+                    <div class="member-avatar avatar" style="--h:<?php echo avatarHue($member['nickname']); ?>" aria-hidden="true">
                         <?php if (!empty($member['profile_picture'])): ?>
                             <img src="<?php echo htmlspecialchars($member['profile_picture']); ?>" alt="">
                         <?php else: ?>
-                            <i class="fas fa-user"></i>
+                            <?php echo htmlspecialchars(avatarInitials($member['nickname'])); ?>
                         <?php endif; ?>
                     </div>
                     <div class="member-info">
@@ -584,7 +547,9 @@ $canEdit = !$is_closed;
                             <i class="fas fa-clock"></i> ממתין לאישור
                         </p>
                         <p class="member-participation">
-                            <?php if ($invitation['participation_type'] === 'percentage'): ?>
+                            <?php if ($invitation['participation_type'] === 'shares'): ?>
+                                <span class="shares-badge"><i class="fas fa-users"></i> <?php echo (int)$invitation['participation_value']; ?> נפשות</span>
+                            <?php elseif ($invitation['participation_type'] === 'percentage'): ?>
                                 <i class="fas fa-percentage"></i> <?php echo $invitation['participation_value']; ?>%
                             <?php else: ?>
                                 <i class="fas fa-shekel-sign"></i> ₪<?php echo number_format($invitation['participation_value'], 2); ?>
@@ -627,49 +592,41 @@ $canEdit = !$is_closed;
                 <?php foreach ($purchases as $purchase): ?>
                 <?php $canEditThis = $canEdit && ($is_owner || $purchase['user_id'] == $user_id); ?>
                 <div class="purchase-card">
-                    <div class="purchase-header">
-                        <div class="purchase-info">
-                            <h3><?php echo htmlspecialchars($purchase['nickname']); ?></h3>
-                            <span class="purchase-date">
-                                <i class="fas fa-calendar"></i>
-                                <?php echo date('d/m/Y', strtotime($purchase['created_at'])); ?>
-                            </span>
-                        </div>
-                        <div class="purchase-amount">
-                            ₪<?php echo number_format($purchase['amount'], 2); ?>
-                        </div>
-                    </div>
-
-                    <?php if ($purchase['description']): ?>
-                    <div class="purchase-description">
-                        <?php echo nl2br(htmlspecialchars($purchase['description'])); ?>
-                    </div>
-                    <?php endif; ?>
-
-                    <?php if (count($purchase['excluded']) > 0): ?>
-                    <div class="purchase-exclusions">
-                        <i class="fas fa-user-slash"></i>
-                        לא משתתפים:
-                        <?php
-                        $names = array_map(function ($row) {
-                            return htmlspecialchars($row['nickname']);
-                        }, $purchase['excluded']);
-                        echo implode(', ', $names);
-                        ?>
-                    </div>
-                    <?php endif; ?>
-
                     <?php if ($purchase['image_path']): ?>
-                    <div class="purchase-image">
-                        <img src="<?php echo htmlspecialchars($purchase['image_path']); ?>" alt="קבלה"
-                             onclick="showImageModal(this.src)">
-                    </div>
+                    <button type="button" class="purchase-thumb" aria-label="הצגת הקבלה"
+                            onclick="showImageModal(<?php echo htmlspecialchars(json_encode($purchase['image_path']), ENT_QUOTES); ?>)">
+                        <img src="<?php echo htmlspecialchars($purchase['image_path']); ?>" alt="" loading="lazy">
+                    </button>
+                    <?php else: ?>
+                    <span class="ic muted" aria-hidden="true"><i class="fas fa-receipt"></i></span>
                     <?php endif; ?>
-
+                    <div class="purchase-body">
+                        <div class="purchase-title">
+                            <?php echo $purchase['description'] !== '' && $purchase['description'] !== null
+                                ? htmlspecialchars(strtok($purchase['description'], "\n"))
+                                : 'קנייה'; ?>
+                        </div>
+                        <div class="purchase-meta">
+                            <?php echo htmlspecialchars($purchase['nickname']); ?><i class="sep" aria-hidden="true">·</i><?php echo date('d/m/Y', strtotime($purchase['created_at'])); ?>
+                        </div>
+                        <?php if (count($purchase['excluded']) > 0): ?>
+                        <div class="purchase-exclusions">
+                            <i class="fas fa-user-slash" aria-hidden="true"></i>
+                            בלי:
+                            <?php
+                            $names = array_map(function ($row) {
+                                return htmlspecialchars($row['nickname']);
+                            }, $purchase['excluded']);
+                            echo implode(', ', $names);
+                            ?>
+                        </div>
+                        <?php endif; ?>
+                    </div>
+                    <div class="purchase-amount">₪<?php echo number_format($purchase['amount'], 2); ?></div>
                     <?php if ($canEditThis): ?>
                     <div class="purchase-actions">
                         <?php if ($featuresReady): ?>
-                        <button class="btn-small"
+                        <button class="btn-icon" title="עריכה" aria-label="עריכת הקנייה"
                                 onclick='editPurchase(<?php echo json_encode([
                                     "id"          => (int)$purchase["id"],
                                     "amount"      => (float)$purchase["amount"],
@@ -677,11 +634,12 @@ $canEdit = !$is_closed;
                                     "member_id"   => (int)$purchase["member_id"],
                                     "excluded"    => $purchase["excluded_ids"],
                                 ], JSON_UNESCAPED_UNICODE | JSON_HEX_APOS | JSON_HEX_QUOT); ?>)'>
-                            <i class="fas fa-edit"></i> ערוך
+                            <i class="fas fa-pen" aria-hidden="true"></i>
                         </button>
                         <?php endif; ?>
-                        <button class="btn-delete" onclick="deletePurchase(<?php echo (int)$purchase['id']; ?>)">
-                            <i class="fas fa-trash"></i> מחק
+                        <button class="btn-icon-danger" title="מחיקה" aria-label="מחיקת הקנייה"
+                                onclick="deletePurchase(<?php echo (int)$purchase['id']; ?>)">
+                            <i class="fas fa-trash" aria-hidden="true"></i>
                         </button>
                     </div>
                     <?php endif; ?>
@@ -699,11 +657,13 @@ $canEdit = !$is_closed;
                     <i class="fab fa-whatsapp"></i> שתף
                 </button>
             </div>
+            <div class="calc-view">
             <?php echo renderCalculationsView($members, $balance, $featuresReady, $settlements, [
                 'viewer_member_id' => $member_id,
                 'is_owner'         => $is_owner,
                 'group_name'       => $group['name'],
             ]); ?>
+            </div>
         </div>
     </div>
 

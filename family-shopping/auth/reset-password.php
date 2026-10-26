@@ -50,14 +50,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $reset) {
 <html dir="rtl" lang="he">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>בחירת סיסמה חדשה - <?php echo SITE_NAME; ?></title>
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" media="print" onload="this.media='all'">
     <noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"></noscript>
+    <link rel="stylesheet" href="<?php echo asset('/css/app.css'); ?>">
     <link rel="stylesheet" href="<?php echo asset('/css/styles.css'); ?>">
     <link rel="stylesheet" href="<?php echo asset('/css/join.css'); ?>">
-    <meta name="theme-color" content="#667eea">
+    <meta name="theme-color" content="#2d4a8a">
 </head>
 <body>
     <div class="join-container">

@@ -10,6 +10,7 @@
 
 require_once 'config.php';
 require_once 'includes/auth_check.php';
+require_once 'includes/layout.php';
 require_once 'includes/contacts.php';
 
 $pdo     = getDBConnection();
@@ -96,31 +97,16 @@ $contacts = $ready ? listContacts($pdo, $user_id) : [];
 <!DOCTYPE html>
 <html dir="rtl" lang="he">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>אנשי קשר - <?php echo SITE_NAME; ?></title>
-    <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" media="print" onload="this.media='all'">
-    <noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"></noscript>
-    <link rel="stylesheet" href="<?php echo asset('/css/dashboard.css'); ?>">
+    <?php layoutHead('אנשי קשר'); ?>
     <link rel="stylesheet" href="<?php echo asset('/css/contacts.css'); ?>">
-    <link rel="manifest" href="<?php echo APP_BASE_PATH; ?>/manifest.json">
-    <meta name="theme-color" content="#667eea">
 </head>
 <body>
-    <nav class="navbar">
-        <div class="navbar-container">
-            <a href="dashboard.php" class="btn-back">
-                <i class="fas fa-arrow-right"></i> חזרה
-            </a>
-            <span class="navbar-title">אנשי קשר</span>
-            <a href="auth/logout.php" class="btn-logout" title="התנתק">
-                <i class="fas fa-sign-out-alt"></i>
-            </a>
-        </div>
-    </nav>
+    <?php renderTopBar([
+        'title' => 'אנשי קשר',
+        'back'  => 'dashboard.php',
+    ]); ?>
 
-    <div class="container">
+    <div class="container" id="main" tabindex="-1">
         <?php if (!$ready): ?>
         <div class="migration-notice">
             <i class="fas fa-database"></i>
