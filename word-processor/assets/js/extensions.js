@@ -15,6 +15,13 @@ import { InsMark, DelMark, FmtMark, authorColor as changeColor } from './track.j
 const BLOCKS = ['paragraph', 'heading'];
 /** מזהה פסקה (mbe-format.md סעיף 3): אותיות לטיניות, ספרות וקו תחתון, עד 32 — כך הוא גם שם סימנייה ב-Word */
 export const PARA_ID = /^[A-Za-z0-9_]{1,32}$/;
+/** מזהה פסקה חדש — כמו Mbe::paraId() בליבה: p ואחריו 10 אותיות לטיניות וספרות */
+export function newParaId() {
+    const abc = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let out = 'p';
+    while (out.length < 11) for (const b of crypto.getRandomValues(new Uint8Array(16))) if (b < 248 && out.length < 11) out += abc[b % 62];
+    return out;
+}
 /** מפתח של סגנון שהמשתמש יצר (u1, u2…) — כמו USER_STYLE_RE ב-lib/page.php. */
 export const USER_STYLE = /^u[1-9]\d{0,2}$/;
 /** מפתח הסגנון של בלוק: h1..h9, title, caption (כיתוב), u<N>, או normal. */
@@ -147,8 +154,8 @@ export const ParagraphFormat = Extension.create({
                     renderHTML: a => a.pchg ? { class: 'wp-pchg', 'data-pchg': JSON.stringify(a.pchg), 'data-pchg-author': a.pchg.author || '', style: `--wpc:${changeColor(a.pchg.author)}`,
                         title: `עיצוב פסקה — ${a.pchg.author || ''}` } : {},
                 },
-                // מזהה פסקה של חבילת היצירה (mbe-format.md סעיף 3): נשמר בהקלדה ובשינוי סגנון; בפיצול — לחצי הראשון בלבד;
-                // עותק (הדבקה, שכפול) — בלי מזהה (wpParaIds). ב-Word — סימנייה נסתרת _mbe_p<id>
+                // מזהה פסקה של חבילת היצירה (mbe-format.md סעיף 3): נשמר בהקלדה ובשינוי סגנון; בפיצול — לחצי הראשון, והשני
+                // מקבל חדש; עותק (הדבקה, שכפול) — מזהה חדש (wpParaIds). ב-Word — סימנייה נסתרת _mbe_p<id>
                 id: {
                     default: null,
                     keepOnSplit: false,
@@ -217,22 +224,28 @@ export const ParagraphFormat = Extension.create({
         };
     },
     addProseMirrorPlugins() {
-        // מזהה פסקה פעמיים במסמך (הדבקה של פסקאות מאותו מסמך, שכפול) — המופע הראשון שומר, השאר בלי
+        // כל פסקה וכותרת עם מזהה, פעם אחת במסמך: חדשה (פיצול, Enter, הדבקה) או עותק של מזהה קיים — מקבלת מזהה חדש;
+        // המופע הראשון שומר את שלו. המזהים הקיימים מגיעים מהשרת (doc_para_ids) — אותם שיצאו ב-Word
         const dedupe = state => {
             const seen = new Set();
             let tr = null;
             state.doc.descendants((n, pos) => {
                 if (!n.isTextblock) return true;
-                const id = n.attrs.id;
-                if (id && seen.has(id)) (tr ||= state.tr.setMeta('addToHistory', false)).setNodeAttribute(pos, 'id', null);
-                else if (id) seen.add(id);
+                if (!('id' in n.attrs)) return false;
+                let id = n.attrs.id;
+                if (!id || seen.has(id)) {
+                    do id = newParaId(); while (seen.has(id));
+                    (tr ||= state.tr.setMeta('addToHistory', false)).setNodeAttribute(pos, 'id', id);
+                }
+                seen.add(id);
                 return false;
             });
             return tr;
         };
+        // מעיר / צופה (העורך לא ניתן לעריכה) — לא נוגעים: מעיר שולח רק צעדי הערות (collab_comment_step)
         return [new Plugin({
             key: new PluginKey('wpParaIds'),
-            appendTransaction: (trs, _, state) => (trs.some(t => t.docChanged && !t.getMeta('collab$')) ? dedupe(state) : null),
+            appendTransaction: (trs, _, state) => (this.editor.isEditable && trs.some(t => t.docChanged && !t.getMeta('collab$')) ? dedupe(state) : null),
         })];
     },
 });

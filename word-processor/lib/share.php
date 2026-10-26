@@ -101,6 +101,8 @@ function share_norm($v, ?string $key = null)
     $out = [];
     foreach ($v as $k => $x) {
         if (!$list && in_array($k, ['comments', 'schema'], true) && $key === 'attrs') continue;   // השרשורים, וגרסת המבנה (העורך מעדכן)
+        // מזהה פסקה (חבילת היצירה) — השרת והעורך משלימים אותו; לא שינוי של המעיר
+        if (!$list && $k === 'attrs' && is_array($x) && in_array($v['type'] ?? null, ['paragraph', 'heading'], true)) unset($x['id']);
         if ($key === 'marks' && is_array($x) && ($x['type'] ?? '') === 'comment') continue;
         $x = share_norm($x, is_string($k) ? $k : $key);
         if (!$list && ($x === null || $x === false || $x === 0 || $x === '' || $x === [])) continue;

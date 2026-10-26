@@ -8,6 +8,7 @@ require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/page.php';
 require_once __DIR__ . '/activity.php';
 require_once __DIR__ . '/metafile.php';
+require_once __DIR__ . '/mbe/mbe.php';   // מזהה פסקה (Mbe::PARA_ID_RE)
 
 const DOC_MAX_BYTES = 8 * 1024 * 1024;
 const VERSION_MERGE_SECONDS = 600;
@@ -110,9 +111,11 @@ function take_page(array &$json): ?array
 }
 
 /** ה-JSON כפי שהעורך טוען אותו: מומר, עם הגדרות העמוד בפנים. */
-function editor_json(array $json, array $page): array
+function editor_json(array $json, array $page, ?string $seed = null): array
 {
     $json = doc_migrate($json);
+    // מזהי הפסקה שהשרת נותן בהורדה (doc_para_ids, אותו $seed) — כך העורך שומר בדיוק את המזהים שיצאו ב-Word
+    if ($seed !== null) $json = doc_para_ids($json, $seed);
     $json['attrs']['page'] = $page;
     return with_media_src($json);
 }
@@ -252,6 +255,38 @@ function trash_purge(string $space): void
  * הקובץ המקורי של מסמך שיובא מ-‎.mbe (lib/mbe_import.php), ו-‎.json ליד — meta: איזה שטף נערך כאן, איזו תמונה
  * הוספנו בייבוא. תחת data/media — מוחרג בפריסה.
  */
+/**
+ * מזהה לכל פסקה וכותרת שאין לה (או שהמזהה שלה פגום / כפול) — כמו Mbe::ensureIds, אבל דטרמיניסטי: נגזר מ-$seed
+ * (המסמך והגרסה) ומהמקום. כך ה-‎.mbe שמאחורי הפנים וה-docx שיוצא איתו נושאים אותם מזהים, וכל עוד המסמך לא השתנה —
+ * אותם מזהים בכל הורדה. מסמך שנפתח בעורך מקבל מזהים קבועים מהעורך עצמו (wpParaIds), ונשמר איתם.
+ */
+function doc_para_ids(array $json, string $seed): array
+{
+    $seen = [];
+    $i = 0;
+    $walk = function (array &$n) use (&$walk, &$seen, &$i, $seed): void {
+        if (in_array($n['type'] ?? null, ['paragraph', 'heading'], true)) {
+            $id = $n['attrs']['id'] ?? null;
+            if (!is_string($id) || !preg_match(Mbe::PARA_ID_RE, $id) || isset($seen[$id])) {
+                for ($k = 0; ; $k++) {
+                    $h = hash('sha256', "$seed|$i|$k", true);
+                    $id = 'p';
+                    for ($j = 0; strlen($id) < 11; $j++) $id .= 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'[ord($h[$j]) % 62];
+                    if (!isset($seen[$id])) break;
+                }
+                $n['attrs'] = (is_array($n['attrs'] ?? null) ? $n['attrs'] : []) + ['id' => $id];
+                $n['attrs']['id'] = $id;
+            }
+            $seen[$id] = true;
+            $i++;
+        }
+        if (is_array($n['content'] ?? null)) foreach ($n['content'] as &$c) if (is_array($c)) $walk($c);
+        unset($c);
+    };
+    $walk($json);
+    return $json;
+}
+
 function mbe_source_path(string $doc): string
 {
     $dir = wp_media_dir() . '/mbe';
