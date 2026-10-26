@@ -332,3 +332,13 @@ dialog.viewer { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100d
 .top .titles .h1 { display: flex; align-items: center; gap: 2px; font-size: 1.05rem; font-weight: 600; min-width: 0; }
 .top .titles .h1 .i { inline-size: 18px; block-size: 18px; opacity: .8; }
 .code-chip .btn { display: inline-flex; gap: 6px; }
+
+/* מדריך הספק בטופס "הוספת תיבה" */
+.guide { display: grid; gap: var(--s2); padding: var(--s3); border: 1px solid var(--line); border-radius: var(--r); background: var(--bg); }
+.guide h3 { font-size: .95rem; }
+.guide ol { display: grid; gap: 6px; padding-inline-start: 1.3em; font-size: .9rem; line-height: 1.45; }
+.guide li::marker { color: var(--brand); font-weight: 700; }
+.guide a { color: var(--brand); font-weight: 600; }
+.guide .cells dd { font-size: .85rem; overflow-wrap: anywhere; }
+.guide .hint { margin: 0; }
+.guide.blocked { border-color: color-mix(in srgb, var(--star) 45%, transparent); background: color-mix(in srgb, var(--star) 9%, var(--surface)); }

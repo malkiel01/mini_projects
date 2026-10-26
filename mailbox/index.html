@@ -8,7 +8,7 @@
   <meta name="referrer" content="no-referrer">
   <title>דואר</title>
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="assets/css/app.css?v=2">
+  <link rel="stylesheet" href="assets/css/app.css?v=3">
 </head>
 <body>
   <!-- אייקונים: קו אחד, 24px, בצבע הטקסט (currentColor) — אותה משפחה בכל המסכים -->
@@ -115,13 +115,16 @@
         <button type="submit" class="btn primary" id="add-save">בדיקה ושמירה</button>
       </header>
       <div class="sheet-body">
-        <fieldset class="seg grid" style="--cols:4" aria-label="ספק הדואר" id="provider">
+        <fieldset class="seg grid" style="--cols:3" aria-label="ספק הדואר" id="provider">
           <label><input type="radio" name="provider" value="cpanel" checked><span>השרת שלנו</span></label>
           <label><input type="radio" name="provider" value="gmail"><span>Gmail</span></label>
+          <label><input type="radio" name="provider" value="outlook"><span>Outlook</span></label>
           <label><input type="radio" name="provider" value="yahoo"><span>Yahoo</span></label>
+          <label><input type="radio" name="provider" value="icloud"><span>iCloud</span></label>
           <label><input type="radio" name="provider" value="other"><span>אחר</span></label>
         </fieldset>
-        <p class="hint" id="provider-hint"></p>
+        <!-- המדריך לספק שנבחר: הצעדים אצל הספק, וההגדרות שממלאים כאן (app.js — PROVIDERS) -->
+        <section class="guide" id="guide" aria-live="polite"></section>
         <div class="fields">
           <label class="f wide"><span>כתובת המייל *</span>
             <input name="email" type="email" dir="ltr" inputmode="email" autocomplete="off" required></label>
@@ -143,6 +146,7 @@
               <input name="username" dir="ltr" autocomplete="off"></label>
           </div>
         </section>
+        <p class="hint">"בדיקה ושמירה" מתחבר לשרת לפני השמירה. הסיסמה נשמרת מוצפנת בשרת, ולא חוזרת לדפדפן.</p>
         <p class="error" role="alert" hidden></p>
       </div>
     </form>
@@ -201,6 +205,6 @@
   </dialog>
 
   <div class="toast" role="status" hidden></div>
-  <script src="assets/js/app.js?v=2"></script>
+  <script src="assets/js/app.js?v=3"></script>
 </body>
 </html>
