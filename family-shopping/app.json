@@ -1,0 +1,16 @@
+{
+  "id": "family-shopping",
+  "name": "קניות משותפות",
+  "icon": "🛒",
+  "description": "מנהל אירוע משפחתי: מה צריך להביא ומי מביא, קניות עם קבלות, חלוקת עלויות ומי חייב למי.",
+  "category": "daily",
+  "entry": "index.php",
+  "gate": true,
+  "restricted": true,
+  "public": [
+    "manifest.json",
+    "service-worker.js",
+    "offline.html",
+    "images/icons/**"
+  ]
+}

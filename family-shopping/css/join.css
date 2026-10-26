@@ -1,0 +1,192 @@
+/* css/join.css - דף ההצטרפות לאירוע */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+/* צבע הרקע יושב על html כדי שהדפדפן יצבע אותו מיד.
+   בלעדיו נצבע לבן עד שה-CSS של body נטען, וזה נראה כהבזק. */
+html {
+    background-color: #667eea;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+.join-container {
+    width: 100%;
+    max-width: 480px;
+}
+
+.join-card {
+    background: white;
+    border-radius: 20px;
+    padding: 35px 30px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+    text-align: center;
+}
+
+.join-icon {
+    font-size: 48px;
+    color: #667eea;
+    margin-bottom: 15px;
+}
+
+.join-icon.error { color: #dc3545; }
+
+.join-card h1 {
+    color: #333;
+    font-size: 24px;
+    margin-bottom: 20px;
+}
+
+.join-message {
+    color: #666;
+    font-size: 15px;
+    line-height: 1.6;
+    margin-bottom: 20px;
+}
+
+.join-event {
+    background: #f8f8fc;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
+}
+
+.join-event h2 {
+    color: #333;
+    font-size: 20px;
+    margin-bottom: 8px;
+}
+
+.join-event .event-description {
+    color: #666;
+    font-size: 14px;
+    margin-bottom: 12px;
+}
+
+.join-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    color: #666;
+    font-size: 14px;
+}
+
+.join-meta span {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.join-meta i { color: #667eea; }
+
+.join-terms {
+    border: 2px dashed #e0e0ea;
+    border-radius: 12px;
+    padding: 15px;
+    margin-bottom: 25px;
+}
+
+.term {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+}
+
+.term + .term { border-top: 1px solid #f0f0f0; }
+
+.term-label { color: #777; font-size: 14px; }
+.term-value { color: #333; font-weight: 600; font-size: 15px; }
+
+.join-actions {
+    display: flex;
+    gap: 12px;
+}
+
+.join-actions button { flex: 1; }
+
+.btn-primary, .btn-secondary {
+    padding: 14px 20px;
+    border: none;
+    border-radius: 10px;
+    font-size: 15px;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: all 0.2s;
+    font-family: inherit;
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.btn-primary:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(102,126,234,0.4); }
+
+.btn-secondary { background: #f0f0f5; color: #555; }
+.btn-secondary:hover { background: #e2e2ea; }
+
+/* אימייל שמתחיל בספרות מתהפך בהקשר RTL. הבידוד שומר על הסדר. */
+.email-ltr {
+    unicode-bidi: isolate;
+    direction: ltr;
+}
+
+/* טפסי איפוס סיסמה */
+.reset-form {
+    text-align: right;
+    margin: 18px 0 8px;
+}
+
+.reset-form .form-group {
+    margin-bottom: 14px;
+}
+
+.reset-form label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 600;
+    color: #333;
+    font-size: 14px;
+}
+
+.reset-form input {
+    width: 100%;
+    padding: 12px 14px;
+    border: 2px solid #e9ecef;
+    border-radius: 10px;
+    font-size: 15px;
+    font-family: inherit;
+}
+
+.reset-form input:focus {
+    outline: none;
+    border-color: #667eea;
+}
+
+.reset-form .btn-primary {
+    width: 100%;
+    justify-content: center;
+}
+
+.error-text {
+    color: #c53030;
+    font-weight: 600;
+}

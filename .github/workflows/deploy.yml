@@ -254,6 +254,8 @@ jobs:
             --exclude='layout-studio/data/*.sqlite*' --exclude='layout-studio/data/files/' \
             --exclude='raster-studio/data/*.sqlite*' --exclude='raster-studio/data/files/' \
             --exclude='mailbox/data/*.sqlite*' --exclude='mailbox/data/secret.key' --exclude='mailbox/data/cache/' --exclude='/mailbox/tests/' \
+            --exclude='family-shopping/.env' --exclude='/family-shopping/tests/' \
+            --include='family-shopping/uploads/.htaccess' --exclude='family-shopping/uploads/*' \
             --exclude='*.log' --exclude='error_log' \
             --exclude='.DS_Store' --exclude='._*' \
             -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ConnectTimeout=30" \
