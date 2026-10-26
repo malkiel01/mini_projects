@@ -4,7 +4,7 @@
 
 import { idbGet, idbSet, idbDel } from './idb.js';
 import { layerPNG } from './export.js';
-import { RasterDocument } from './engine/doc.js';
+import { RasterDocument, newMask } from './engine/doc.js';
 import { decodeImage } from './engine/webgl2.js';
 
 const cache = new Map();   // layer.id → { rev, w, h, blob }
@@ -19,12 +19,17 @@ export async function saveDraft(renderer, doc) {
       const props = { id: l.id, name: l.name, opacity: l.opacity, blend: l.blend, visible: l.visible, locked: l.locked, mbe: l.mbe ?? null };
       if (l.type === 'group') { out.push({ ...props, type: 'group', collapsed: !!l.collapsed, children: await walk(l.children) }); continue; }
       if (l.foreign) { out.push({ ...props, foreign: l.foreign }); continue; }
-      let c = cache.get(l.id);
-      if (!c || c.rev !== (l.rev ?? 0) || c.w !== doc.width || c.h !== doc.height) {
-        c = { rev: l.rev ?? 0, w: doc.width, h: doc.height, blob: new Blob([await layerPNG(renderer, doc, l)], { type: 'image/png' }) };
-        cache.set(l.id, c);
-      }
-      out.push({ ...props, png: c.blob });
+      const png = async (obj, id) => {
+        let c = cache.get(id);
+        if (!c || c.rev !== (obj.rev ?? 0) || c.w !== doc.width || c.h !== doc.height) {
+          c = { rev: obj.rev ?? 0, w: doc.width, h: doc.height, blob: new Blob([await layerPNG(renderer, doc, obj)], { type: 'image/png' }) };
+          cache.set(id, c);
+        }
+        return c.blob;
+      };
+      // מסכת שכבה — PNG משלה (גווני אפור); maskLoaded — המתכון בקובץ שנפתח הוא שלנו (נכתב מחדש בשמירה)
+      const mask = l.mask ? { png: await png(l.mask, l.id + ':mask'), enabled: !!l.mask.enabled } : null;
+      out.push({ ...props, png: await png(l, l.id), mask, maskLoaded: !!l.maskLoaded });
     }
     return out;
   };
@@ -65,6 +70,14 @@ export async function restoreDraft(renderer, d) {
       await renderer.drawImage(doc, layer, bmp, 0, 0);
       bmp.close();
       cache.set(layer.id, { rev: layer.rev ?? 0, w: d.width, h: d.height, blob: l.png });
+      if (l.maskLoaded) layer.maskLoaded = true;
+      if (l.mask) {
+        layer.mask = newMask(layer, l.mask.enabled);
+        const mb = await decodeImage(l.mask.png);
+        await renderer.drawImage(doc, layer.mask, mb, 0, 0);
+        mb.close();
+        cache.set(layer.id + ':mask', { rev: layer.mask.rev ?? 0, w: d.width, h: d.height, blob: l.mask.png });
+      }
     }
   };
   await walk(d.layers, undefined);

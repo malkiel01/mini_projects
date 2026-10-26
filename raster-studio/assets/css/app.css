@@ -260,8 +260,16 @@ body.editor { display: flex; flex-direction: column; block-size: 100dvh; min-hei
 .layer-name-input { flex: 1; min-inline-size: 0; font-size: 16px; }
 .layer-row .icon-btn { flex: none; font-size: 1rem; }
 .layer-row .lock.off { opacity: .45; }
-.layer-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1); padding: var(--s1) var(--s2); border-top: 1px solid var(--line); }
-.layer-actions .btn { margin-inline-end: auto; }
+/* מסכת שכבה: תמונה ממוזערת שנייה; מה שנערך (הפיקסלים או המסכה) — במסגרת */
+.layer-row .mask-thumb { flex: none; padding: 0; border: 0; background: none; cursor: pointer; border-radius: 6px; }
+.layer-row .mask-thumb .thumb { display: block; }
+.layer-row .mask-thumb.editing, .layer-row.editing-pixels > canvas.thumb { box-shadow: 0 0 0 2px var(--brand); border-radius: 4px; }
+.layer-row .mask-thumb.off .thumb { opacity: .35; background: repeating-linear-gradient(45deg, transparent 0 4px, rgba(200, 30, 30, .35) 4px 6px); }
+.mask-opts { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.mask-opts .mask-label { font-size: .82rem; color: var(--muted); margin-inline-end: auto; }
+.mask-opts [aria-pressed="true"], .layer-actions [aria-pressed="true"] { background: var(--brand-soft); box-shadow: inset 0 0 0 1px var(--brand); }
+.layer-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: var(--s1) var(--s2); border-top: 1px solid var(--line); }
+.layer-actions .btn { margin-inline-end: auto; padding: 0 var(--s2); }
 .layer-actions :disabled, .layer-props :disabled { opacity: .4; cursor: default; }
 .layers-btn::after { content: attr(data-layer-count); min-inline-size: 1.4em; padding: 0 4px; border-radius: 99px; background: var(--brand-soft); color: var(--brand); font-size: .75rem; }
 
@@ -380,7 +388,7 @@ body.editor { display: flex; flex-direction: column; block-size: 100dvh; min-hei
 .layer-row .folder { display: grid; place-items: center; font-size: 1.3rem; background: none; }
 .group-row .layer-name { font-weight: 600; }
 .layer-row.drop-into { box-shadow: inset 0 0 0 2px var(--brand); background: var(--brand-soft); }
-.layer-actions .icon-btn { min-inline-size: 36px; }
+.layer-actions .icon-btn { min-inline-size: 32px; inline-size: 32px; }
 
 /* גרסאות בשרת */
 .versions { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s1); }

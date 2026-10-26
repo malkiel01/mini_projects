@@ -132,11 +132,19 @@
         <label class="f blend-f"><span>מיזוג</span><select id="layer-blend"></select></label>
         <label class="f opacity-f"><span>אטימות <output id="layer-opacity-out" for="layer-opacity">100%</output></span>
           <input id="layer-opacity" type="range" min="0" max="100" step="1" value="100"></label>
+        <div class="mask-opts" hidden>
+          <span class="mask-label">🎭 מסכה</span>
+          <button class="btn sm ghost" type="button" data-mask="edit" aria-pressed="false" title="מה נערך: המסכה (לבן — נראה, שחור — מוסתר) או הפיקסלים">✎ עריכה</button>
+          <button class="btn sm ghost" type="button" data-mask="toggle" aria-pressed="false">⊘ השבתה</button>
+          <button class="btn sm ghost" type="button" data-mask="apply" title="הפיקסלים כפול המסכה, והמסכה יוצאת">✓ החלה</button>
+          <button class="btn sm ghost" type="button" data-mask="remove">✕ מחיקה</button>
+        </div>
       </div>
       <ul class="layer-list" role="listbox" aria-label="השכבות, העליונה ראשונה"></ul>
       <div class="layer-actions">
         <button class="btn ghost" type="button" data-act="add"><span aria-hidden="true">+</span> שכבה</button>
         <button class="icon-btn" type="button" data-act="duplicate" aria-label="שכפול השכבה">⧉</button>
+        <button class="icon-btn" type="button" data-act="mask" aria-label="מסכת שכבה" title="מסכת שכבה" aria-pressed="false">🎭</button>
         <button class="icon-btn" type="button" data-act="group" aria-label="קיבוץ לקבוצה (Ctrl+G)" title="קיבוץ (Ctrl+G)">📁</button>
         <button class="icon-btn" type="button" data-act="ungroup" aria-label="פירוק הקבוצה (Ctrl+Shift+G)" title="פירוק (Ctrl+Shift+G)" hidden>📂</button>
         <button class="icon-btn" type="button" data-act="up" aria-label="העלאה בשכבה">▲</button>

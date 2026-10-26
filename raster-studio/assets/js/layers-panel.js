@@ -1,7 +1,7 @@
-// לוח השכבות: רשימה (העליונה למעלה, כמו בכל עורך), מאפייני השכבה הפעילה, ופעולות.
+// לוח השכבות: רשימה (העליונה למעלה, כמו בכל עורך), מאפייני השכבה הפעילה, ופעולות — כולל מסכת שכבה (🎭).
 // במחשב — לוח בצד; בטלפון — גיליון מלמטה (editor.html, CSS). כל שינוי נרשם בהיסטוריה (ביטול / ביצוע).
 
-import { BLEND_MODES } from './engine/doc.js';
+import { BLEND_MODES, newMask } from './engine/doc.js';
 
 export const BLEND_LABELS = { normal: 'רגיל', multiply: 'הכפלה', screen: 'מסך', overlay: 'שכבת-על' };
 
@@ -115,6 +115,24 @@ export function createLayersPanel({ root, doc, renderer, history, onChange, toas
     },
     up() { move(doc().active, doc().indexOf(doc().active) + 1); },
     down() { move(doc().active, doc().indexOf(doc().active) - 1); },
+    /**
+     * 🎭 מסכת שכבה: בלי מסכה — חדשה (עם בחירה — לבן בתוכה ושחור מחוצה לה; בלי — לבן בכל השכבה), ועוברים לעריכתה.
+     * יש מסכה — מעבר בין עריכת המסכה לעריכת הפיקסלים.
+     */
+    mask() {
+      const d = doc(), l = d.active;
+      if (l.type === 'group') { toast('מסכה — לשכבה, לא לקבוצה', true); return; }
+      if (l.foreign) { toast('שכבה של אפליקציה אחרת — לא נערכת כאן', true); return; }
+      if (l.mask) { l.editMask = !l.editMask; changed('mask-edit'); return; }
+      if (l.locked) { toast('השכבה נעולה — 🔓 בלוח השכבות', true); return; }
+      const m = newMask(l);
+      renderer.fill(d, m, d.selection ? [0, 0, 0] : [255, 255, 255]);
+      if (d.selection) renderer.freeTextures(renderer.fillSelection(d, m, 'paint', [255, 255, 255], 1).values());
+      l.mask = m;
+      l.editMask = true;
+      history.mask(d, l, null, m, d.selection ? 'מסכה מהבחירה' : 'מסכת שכבה');
+      changed('mask');
+    },
     remove() {
       const d = doc(), l = d.active;
       if (l.locked) { toast('השכבה נעולה'); return; }
@@ -137,16 +155,47 @@ export function createLayersPanel({ root, doc, renderer, history, onChange, toas
   root.addEventListener('click', e => {
     const b = e.target.closest('[data-act]');
     if (b && !b.disabled) { beforeChange(); act[b.dataset.act](); }
+    const mb = e.target.closest('[data-mask]');
+    if (mb && !mb.disabled) { beforeChange(); maskAct[mb.dataset.mask](); }
   });
+
+  // ---- המסכה של השכבה הפעילה ----
+  const maskAct = {
+    edit() { const l = doc().active; l.editMask = !l.editMask; changed('mask-edit'); },
+    toggle() {
+      const l = doc().active, m = l.mask;
+      history.props(doc(), m, { enabled: m.enabled }, { enabled: !m.enabled }, m.enabled ? 'השבתת המסכה' : 'הפעלת המסכה');
+      m.enabled = !m.enabled;
+      changed('mask');
+    },
+    /** החלה: הפיקסלים כפול המסכה, והמסכה יוצאת — צעד ביטול אחד */
+    apply() {
+      const d = doc(), l = d.active, m = l.mask;
+      if (l.locked) { toast('השכבה נעולה — 🔓 בלוח השכבות', true); return; }
+      const pixels = m.enabled ? renderer.applyMask(d, l) : new Map();
+      l.mask = null;
+      l.editMask = false;
+      history.mask(d, l, m, null, 'החלת המסכה', pixels);
+      changed('mask');
+    },
+    remove() {
+      const d = doc(), l = d.active, m = l.mask;
+      l.mask = null;
+      l.editMask = false;
+      history.mask(d, l, m, null, 'מחיקת המסכה');
+      changed('mask');
+      toast('המסכה נמחקה — אפשר לבטל');
+    },
+  };
 
   // ---- הרשימה ----
   // הקריאה מהכרטיס אסינכרונית: הקנבס מצויר כשהתמונה מוכנה (ואם השכבה השתנתה בינתיים — תמונה חדשה תבוא)
-  function thumb(layer, canvas) {
+  function thumb(layer, canvas, id = layer.id) {
     const rev = layer.rev ?? 0;
-    let t = thumbs.get(layer.id);
+    let t = thumbs.get(id);
     if (!t || t.rev !== rev) {
       t = { rev, data: renderer.thumbnail(doc(), layer, 64) };
-      thumbs.set(layer.id, t);
+      thumbs.set(id, t);
     }
     t.data.then(img => {
       canvas.width = img.width; canvas.height = img.height;
@@ -167,6 +216,7 @@ export function createLayersPanel({ root, doc, renderer, history, onChange, toas
       <span class="drag" aria-hidden="true">⋮⋮</span>
       ${layer.type === 'group' ? '<button class="icon-btn fold" type="button"></button><span class="thumb folder" aria-hidden="true">📁</span>'
     : layer.foreign ? '<span class="thumb folder" aria-hidden="true">🧩</span>' : '<canvas class="thumb" aria-hidden="true"></canvas>'}
+      ${layer.mask ? '<button class="mask-thumb" type="button"><canvas class="thumb"></canvas></button>' : ''}
       <button class="layer-name one" type="button"></button>
       <button class="icon-btn eye" type="button"></button>
       <button class="icon-btn lock" type="button"></button>`;
@@ -178,6 +228,24 @@ export function createLayersPanel({ root, doc, renderer, history, onChange, toas
       fold.addEventListener('click', () => { layer.collapsed = !layer.collapsed; render(); });
     } else if (!layer.foreign) {
       thumb(layer, $('canvas', li));
+      li.classList.toggle('editing-pixels', !!layer.mask && !layer.editMask);
+    }
+    if (layer.mask) {
+      // לחיצה על המסכה — עריכתה; Shift — השבתה / הפעלה (כמו בפוטושופ)
+      const mt = $('.mask-thumb', li);
+      thumb(layer.mask, $('canvas', mt), layer.id + ':mask');
+      mt.classList.toggle('editing', !!layer.editMask);
+      mt.classList.toggle('off', !layer.mask.enabled);
+      mt.setAttribute('aria-label', `המסכה של ${layer.name}${layer.editMask ? ' (בעריכה)' : ''}`);
+      mt.setAttribute('aria-pressed', String(!!layer.editMask));
+      mt.title = 'המסכה — לחיצה: עריכה · Shift: השבתה';
+      mt.addEventListener('click', e => {
+        doc().activeId = layer.id;
+        if (e.shiftKey) { maskAct.toggle(); return; }
+        layer.editMask = true;
+        changed('mask-edit');
+      });
+      $('canvas.thumb', li).addEventListener('click', () => { if (layer.editMask) { layer.editMask = false; doc().activeId = layer.id; changed('mask-edit'); } });
     }
     const name = $('.layer-name', li);
     name.textContent = layer.name;
@@ -313,6 +381,20 @@ export function createLayersPanel({ root, doc, renderer, history, onChange, toas
     $('[data-act="remove"]', root).disabled = [...d.walk()].length <= 1 || l.locked;
     $('[data-act="ungroup"]', root).hidden = l.type !== 'group';
     $('[data-act="group"]', root).hidden = l.type === 'group';
+    const mb = $('[data-act="mask"]', root);
+    mb.disabled = l.type === 'group' || !!l.foreign;
+    mb.setAttribute('aria-pressed', String(!!l.editMask));
+    const mbl = l.mask ? (l.editMask ? 'חזרה לעריכת הפיקסלים' : 'עריכת המסכה') : d.selection ? 'מסכה מהבחירה' : 'מסכת שכבה';
+    mb.title = mbl;
+    mb.setAttribute('aria-label', mbl);
+    const mo = $('.mask-opts', root);
+    mo.hidden = !l.mask;
+    if (l.mask) {
+      $('[data-mask="edit"]', mo).setAttribute('aria-pressed', String(!!l.editMask));
+      $('[data-mask="toggle"]', mo).setAttribute('aria-pressed', String(!l.mask.enabled));
+      $('[data-mask="toggle"]', mo).textContent = l.mask.enabled ? '⊘ השבתה' : '◉ הפעלה';
+      for (const b of mo.querySelectorAll('[data-mask="apply"], [data-mask="remove"]')) b.disabled = l.locked;
+    }
     for (const b of document.querySelectorAll('[data-layer-count]')) b.dataset.layerCount = d.rasters().length;
   }
 

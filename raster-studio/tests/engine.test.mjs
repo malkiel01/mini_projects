@@ -772,3 +772,18 @@ test('transformShape: מסכה — הזזה שלמה; היפוך אופקי — 
   assert.deepEqual([flip.type, flip.x, flip.y, flip.w, flip.h, flip.op], ['mask', 27, 5, 3, 1, 'add']);
   assert.deepEqual([...flip.data], [0, 0, 255]);
 });
+
+test('mbeDocument: מסכת שכבה — src ולצדו המתכון; מסכה שנמחקה — המתכון שלנו יוצא, של אחרים נשאר', async () => {
+  const { mbeDocument } = await import('../assets/js/engine/formats.js');
+  const doc = { width: 10, height: 10 };
+  const base = { id: 'L1', name: 'א', type: 'raster', opacity: 1, blend: 'normal', visible: true, locked: false };
+  const rec = { source: 'media/s.png', mask: { src: 'media/m.png', density: 1, feather: 0, enabled: true }, baked: 'a'.repeat(64) };
+  const withMask = mbeDocument(doc, [{ ...base, mask: {} }], null, () => 'media/a.png', () => rec).surfaces[0].layers[0];
+  assert.deepEqual([withMask.src, withMask.source, withMask.mask.src, withMask.baked], ['media/a.png', 'media/s.png', 'media/m.png', 'a'.repeat(64)]);
+  const old = { ...rec, filters: [{ type: 'blur' }] };
+  const removed = mbeDocument(doc, [{ ...base, mbe: old, maskLoaded: true }], null, () => 'media/b.png').surfaces[0].layers[0];
+  assert.deepEqual(['source', 'mask', 'baked'].filter(k => k in removed), [], 'המתכון שלנו נמחק');
+  assert.deepEqual(removed.filters, [{ type: 'blur' }], 'שדות של אחרים נשארים');
+  const foreignRecipe = mbeDocument(doc, [{ ...base, mbe: old }], null, () => 'media/b.png').surfaces[0].layers[0];
+  assert.equal(foreignRecipe.baked, 'a'.repeat(64), 'מתכון שלא טענו — נשאר כמו שהוא');
+});

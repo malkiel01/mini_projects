@@ -8,7 +8,7 @@
 
 import { open, create, save, PREVIEW } from './mbe/mbe.js';
 import { encodePNG } from './engine/png.js';
-import { RasterDocument } from './engine/doc.js';
+import { RasterDocument, newMask } from './engine/doc.js';
 import { decodeImage } from './engine/webgl2.js';
 import { mbeDocument, mediaRefs, editSurface, gapsFor } from './engine/formats.js';
 import { flatRGBA, layerPNG, scaledPNG, buildORA } from './export.js';
@@ -17,14 +17,41 @@ export const APP_ID = 'raster-studio';
 export const APP_VERSION = '1';
 const VIEW = 'view.json';
 
-const png = new Map();   // layer.id → { rev, w, h, bytes } — שכבה שלא השתנתה לא מקודדת מחדש
+// שכבה (או מסכה) שלא השתנתה לא מקודדת מחדש: obj → Map(גרסה — עם / בלי מסכה → { sig, bytes })
+const png = new WeakMap();
 
-async function layerBytes(renderer, doc, l) {
-  const c = png.get(l.id);
-  if (c && c.rev === (l.rev ?? 0) && c.w === doc.width && c.h === doc.height) return c.bytes;
-  const bytes = await layerPNG(renderer, doc, l);
-  png.set(l.id, { rev: l.rev ?? 0, w: doc.width, h: doc.height, bytes });
+async function layerBytes(renderer, doc, l, masked = false) {
+  const m = masked && l.mask?.enabled ? l.mask : null;
+  const sig = `${l.rev ?? 0}:${m ? m.rev : '-'}:${doc.width}x${doc.height}`;
+  let byVariant = png.get(l);
+  if (!byVariant) png.set(l, byVariant = new Map());
+  const c = byVariant.get(!!m);
+  if (c && c.sig === sig) return c.bytes;
+  const bytes = await layerPNG(renderer, doc, l, !!m);
+  byVariant.set(!!m, { sig, bytes });
   return bytes;
+}
+
+const hex = buf => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+const sha256 = async bytes => hex(await crypto.subtle.digest('SHA-256', bytes));
+
+// שדות מתכון שאנחנו עוד לא מחשבים מחדש — שכבה שיש בה אחד מהם נפתחת כרסטר רגיל (ה-src האפוי)
+const OTHER_RECIPE = ['crop', 'transform', 'vectorMask', 'clipToBelow', 'filters', 'effects', 'adjust', 'fill', 'smart'];
+const hasValue = v => v !== undefined && v !== null && v !== false && !(Array.isArray(v) && !v.length);
+
+/**
+ * מסכת שכבה מהקובץ — אם המתכון תקף: source ו-mask.src קיימים, baked תואם ל-src (אף אחד לא ערך את הפיקסלים בלי
+ * להבין את המתכון), ריכוך וצפיפות שאנחנו יודעים לצייר, ובלי מתכון אחר. אחרת — null (מציגים את src כמו שהוא).
+ */
+async function maskRecipe(f, raw) {
+  const m = raw.mask;
+  if (!m || typeof m !== 'object' || typeof m.src !== 'string' || typeof raw.source !== 'string' || typeof raw.baked !== 'string') return null;
+  if ((m.density ?? 1) !== 1 || (m.feather ?? 0) !== 0) return null;
+  if (OTHER_RECIPE.some(k => hasValue(raw[k]))) return null;
+  const src = f.getMedia(raw.src), source = f.getMedia(raw.source), mask = f.getMedia(m.src);
+  if (!src || !source || !mask) return null;
+  if (await sha256(src) !== raw.baked.toLowerCase()) return null;
+  return { source, mask, enabled: m.enabled !== false };
 }
 
 /**
@@ -37,16 +64,26 @@ export async function buildMbe(renderer, doc, { view = null, lite = false, now }
   if (base && !f.ok) throw new Error('mbe-base');
   const before = mediaRefs(f.document);
 
-  const src = new Map();
+  const src = new Map(), recipe = new Map();
   const walk = async list => {
     for (const l of list) {
       if (l.type === 'group') { await walk(l.children); continue; }
       if (l.foreign) continue;
-      src.set(l, await f.addMedia(await layerBytes(renderer, doc, l), 'image/png'));
+      // src — מה שרואים (כפול המסכה); עם מסכה — גם המתכון: הפיקסלים בלי המסכה, המסכה, ו-baked = ה-sha256 של src
+      const s = await f.addMedia(await layerBytes(renderer, doc, l, true), 'image/png');
+      src.set(l, s);
+      if (l.mask) {
+        recipe.set(l, {
+          source: await f.addMedia(await layerBytes(renderer, doc, l), 'image/png'),
+          mask: { src: await f.addMedia(await layerBytes(renderer, doc, l.mask), 'image/png'), density: 1, feather: 0, enabled: !!l.mask.enabled },
+          baked: s.slice('media/'.length, 'media/'.length + 64),
+        });
+      }
     }
   };
   await walk(doc.layers);
-  f.document = mbeDocument(doc, doc.layers, base && { document: f.document, surfaceId: base.surfaceId, scale: base.scale ?? 1 }, l => src.get(l));
+  f.document = mbeDocument(doc, doc.layers, base && { document: f.document, surfaceId: base.surfaceId, scale: base.scale ?? 1 },
+    l => src.get(l), l => recipe.get(l));
 
   // משאב שהשכבות הישנות הפנו אליו ואף אחד כבר לא — יוצא מהקובץ. משאב שאף אחד לא הפנה אליו גם קודם — לא שלנו לגעת
   const after = mediaRefs(f.document);
@@ -113,17 +150,27 @@ export async function openMbe(renderer, bytes, title = '') {
       if (typeof raw.id === 'string') layer.id = raw.id;
       if (raw.type === 'raster' && typeof raw.src === 'string') {
         layer.mbe = raw;
-        const data = f.getMedia(raw.src);
-        if (data) {
-          // box — מיקום וגודל ביחידות המשטח; בלי box — כל המשטח. תמונה בגודל אחר — מותאמת למקום שלה
-          const box = Array.isArray(raw.box) && raw.box.length === 4 ? raw.box.map(v => v * scale) : [0, 0, w, h];
-          const [bx, by] = [Math.round(box[0]), Math.round(box[1])];
-          const bw = Math.max(1, Math.round(box[2])), bh = Math.max(1, Math.round(box[3]));
-          const type = /\.jpe?g$/i.test(raw.src) ? 'image/jpeg' : /\.webp$/i.test(raw.src) ? 'image/webp' : 'image/png';
+        // box — מיקום וגודל ביחידות המשטח; בלי box — כל המשטח. תמונה בגודל אחר — מותאמת למקום שלה
+        const box = Array.isArray(raw.box) && raw.box.length === 4 ? raw.box.map(v => v * scale) : [0, 0, w, h];
+        const [bx, by] = [Math.round(box[0]), Math.round(box[1])];
+        const bw = Math.max(1, Math.round(box[2])), bh = Math.max(1, Math.round(box[3]));
+        const draw = async (target, data, path) => {
+          const type = /\.jpe?g$/i.test(path) ? 'image/jpeg' : /\.webp$/i.test(path) ? 'image/webp' : 'image/png';
           let bmp = await decodeImage(new Blob([data], { type }));
           if (bmp.width !== bw || bmp.height !== bh) { bmp.close(); bmp = await decodeImage(new Blob([data], { type }), [bw, bh]); }
-          await renderer.drawImage(d, layer, bmp, bx, by);
+          await renderer.drawImage(d, target, bmp, bx, by);
           bmp.close();
+        };
+        // מסכת שכבה (מתכון תקף): הפיקסלים בלי המסכה, והמסכה נמתחת על אותו box. אחרת — src האפוי
+        const rec = await maskRecipe(f, raw);
+        if (rec) {
+          await draw(layer, rec.source, raw.source);
+          layer.mask = newMask(layer, rec.enabled);
+          await draw(layer.mask, rec.mask, raw.mask.src);
+          layer.maskLoaded = true;
+        } else {
+          const data = f.getMedia(raw.src);
+          if (data) await draw(layer, data, raw.src);
         }
       } else {
         // של אפליקציה אחרת — נשמרת בית-לבית, לא נערכת כאן
