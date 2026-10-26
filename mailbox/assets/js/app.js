@@ -507,18 +507,99 @@ $('#boxes-btn').addEventListener('click', openBoxes);
 $('#switch').addEventListener('click', openBoxes);   // לחיצה על שם התיבה — מעבר לתיבה אחרת
 $('#add-box-btn').addEventListener('click', () => openAdd());
 
-// ספקים: שרת וסיסמה. Gmail / Yahoo — "סיסמת אפליקציה", לא הסיסמה הרגילה (README: "חיבור Gmail").
+// ספקים: המדריך שמוצג בטופס, והשרת שממולא לבד. steps — הצעדים אצל הספק; [טקסט, כתובת] — קישור.
 const PROVIDERS = {
-    cpanel: { host: 'box2054.bluehost.com', hint: 'תיבה שנוצרה ב-cPanel של האתר. הסיסמה — של התיבה עצמה.' },
-    gmail: { host: 'imap.gmail.com', hint: 'ב-Gmail צריך "סיסמת אפליקציה" (16 תווים), לא את הסיסמה הרגילה: myaccount.google.com/apppasswords — דורש אימות דו-שלבי בחשבון.' },
-    yahoo: { host: 'imap.mail.yahoo.com', hint: 'ב-Yahoo צריך "סיסמת אפליקציה": Account Security ← Generate app password.' },
-    other: { host: '', hint: 'שרת IMAP של הספק (בדרך כלל imap.<הדומיין>). Outlook / Hotmail לא נתמכים: מיקרוסופט חסמה כניסה בסיסמה ל-IMAP.' },
+    cpanel: {
+        title: 'תיבה בשרת שלנו (cPanel)',
+        host: 'box2054.bluehost.com', user: 'כתובת המייל המלאה', pass: 'הסיסמה של התיבה',
+        steps: [
+            'ב-cPanel ← Email Accounts — יוצרים תיבה חדשה, או משתמשים בקיימת.',
+            'זוכרים את הסיסמה שנקבעה לתיבה (אפשר לאפס אותה שם, ב-Manage).',
+            'כאן: כתובת המייל המלאה והסיסמה. השרת כבר ממולא.',
+        ],
+        note: 'השרת הוא box2054.bluehost.com ולא mail.mbe-plus.com — לשם השני התעודה לא מתאימה והחיבור נכשל.',
+    },
+    gmail: {
+        title: 'Gmail',
+        host: 'imap.gmail.com', user: 'כתובת ה-Gmail המלאה', pass: 'סיסמת אפליקציה — 16 אותיות',
+        steps: [
+            ['מפעילים אימות דו-שלבי בחשבון Google', 'https://myaccount.google.com/signinoptions/twosv'],
+            ['נכנסים ל"סיסמאות אפליקציה"', 'https://myaccount.google.com/apppasswords'],
+            'כותבים שם (למשל "תיבת-מייל") ← "יצירה". מעתיקים את 16 האותיות — הן מוצגות פעם אחת בלבד.',
+            'כאן: כתובת ה-Gmail, ובשדה הסיסמה — סיסמת האפליקציה (רווחים לא משנים).',
+        ],
+        note: 'הסיסמה הרגילה של Gmail לא תעבוד. חשבון של ארגון (Google Workspace) — מנהל הארגון צריך לאפשר IMAP וסיסמאות אפליקציה. קיבלתם התראת אבטחה מגוגל? "כן, זה הייתי אני".',
+    },
+    outlook: {
+        title: 'Outlook / Hotmail / Live',
+        blocked: true,
+        steps: [
+            'מיקרוסופט חסמה כניסה בסיסמה ל-IMAP (רק כניסת OAuth), ולכן אי אפשר לחבר את התיבה ישירות.',
+            'הפתרון: מעבירים את הדואר לתיבה בשרת שלנו. יוצרים תיבה ב-cPanel ומוסיפים אותה כאן ("השרת שלנו").',
+            ['ב-Outlook: הגדרות ← דואר ← העברה ← "הפעל העברה" ← כתובת התיבה שלנו ← שמירה', 'https://outlook.live.com/mail/0/options/mail/forwarding'],
+            'מעכשיו כל מייל שמגיע ל-Outlook מופיע גם כאן, תוך שניות.',
+        ],
+        note: 'חיבור ישיר ל-Outlook (בכניסה עם מיקרוסופט) — שלב ב׳.',
+    },
+    yahoo: {
+        title: 'Yahoo',
+        host: 'imap.mail.yahoo.com', user: 'כתובת ה-Yahoo המלאה', pass: 'סיסמת אפליקציה',
+        steps: [
+            ['נכנסים ל"אבטחת החשבון"', 'https://login.yahoo.com/account/security'],
+            '"Generate app password" (יצירת סיסמת אפליקציה) ← שם, למשל "תיבת-מייל" ← יצירה.',
+            'מעתיקים את הסיסמה, וכאן: כתובת ה-Yahoo וסיסמת האפליקציה.',
+        ],
+        note: 'הסיסמה הרגילה של Yahoo לא תעבוד.',
+    },
+    icloud: {
+        title: 'iCloud (Apple)',
+        host: 'imap.mail.me.com', user: 'כתובת ה-iCloud המלאה (‎@icloud.com)', pass: 'סיסמה ייעודית לאפליקציה',
+        steps: [
+            ['נכנסים לחשבון Apple ← "כניסה ואבטחה"', 'https://account.apple.com/account/manage'],
+            '"סיסמאות ייעודיות לאפליקציות" ← + ← שם, למשל "תיבת-מייל" ← יצירה. (דורש אימות דו-שלבי.)',
+            'כאן: כתובת ה-iCloud והסיסמה שנוצרה.',
+        ],
+        note: 'הסיסמה הרגילה של Apple לא תעבוד.',
+    },
+    other: {
+        title: 'ספק אחר',
+        host: '', user: 'בדרך כלל כתובת המייל המלאה', pass: 'סיסמת התיבה, או סיסמת אפליקציה אם יש אימות דו-שלבי',
+        steps: [
+            'מחפשים בעזרה של הספק "הגדרות IMAP" — צריך את שם השרת. בדרך כלל imap.<הדומיין> (למשל imap.zoho.com).',
+            'פורט 993 (SSL). רק אם הספק כותב 143 — בוחרים 143 · STARTTLS.',
+            'אם בחשבון יש אימות דו-שלבי — יוצרים אצל הספק "סיסמת אפליקציה" ומשתמשים בה.',
+            'אם צריך להפעיל IMAP בהגדרות התיבה אצל הספק — מפעילים.',
+        ],
+        note: 'החיבור תמיד מוצפן, והתעודה של השרת נבדקת. שרת עם תעודה לא תקינה לא יתחבר.',
+    },
 };
+
+function renderGuide(key) {
+    const p = PROVIDERS[key];
+    const step = s => el('li', {}, Array.isArray(s)
+        ? el('a', { href: s[1], target: '_blank', rel: 'noopener noreferrer' }, s[0], ' ↗')
+        : s);
+    $('#guide').replaceChildren(...[
+        el('h3', { text: p.blocked ? p.title + ' — לא ניתן לחבר ישירות' : 'איך מחברים ' + p.title }),
+        el('ol', {}, p.steps.map(step)),
+        p.blocked ? null : el('dl', { class: 'cells' },
+            el('div', {}, el('dt', { text: 'שרת IMAP' }), el('dd', { dir: 'ltr', text: p.host || 'מהספק' })),
+            el('div', {}, el('dt', { text: 'פורט' }), el('dd', { dir: 'ltr', text: '993 · SSL' })),
+            el('div', {}, el('dt', { text: 'שם משתמש' }), el('dd', { text: p.user })),
+            el('div', {}, el('dt', { text: 'סיסמה' }), el('dd', { text: p.pass }))),
+        p.note ? el('p', { class: 'hint', text: p.note }) : null,
+    ].filter(Boolean));   // replaceChildren(null) היה כותב "null"
+    $('#guide').classList.toggle('blocked', !!p.blocked);
+}
+
 function setProvider(key) {
     const p = PROVIDERS[key] || PROVIDERS.other, f = $('#add-form');
-    f.host.value = p.host;
+    if (!p.blocked) f.host.value = p.host;
     f.querySelector('input[name=port][value="993"]').checked = true;
-    $('#provider-hint').textContent = p.hint;
+    renderGuide(key in PROVIDERS ? key : 'other');
+    // Outlook — רק ההסבר: בלי שדות ובלי שמירה
+    f.querySelectorAll('.fields, .group').forEach(x => { x.hidden = !!p.blocked; });
+    $('#add-save').hidden = !!p.blocked;
 }
 $('#provider').addEventListener('change', e => setProvider(e.target.value));
 
