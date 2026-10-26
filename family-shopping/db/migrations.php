@@ -596,6 +596,46 @@ function migrationCatalog(PDO $pdo, $dbName) {
         ],
     ];
 
+    // --------------------------------------------------------
+    // כניסה דרך הכלים הדיגיטליים (includes/platform.php). כל חשבון
+    // מתקשר לחשבון הפלטפורמה שלו (sub), פעם אחת, ומשם הקישור מיידי.
+    //
+    // לפני השינוי הראשון בטבלת המשתמשים - עותק שלה כמו שהיא. הוא
+    // לא נדרש לשום דבר בקוד, ונמחק ידנית כשבטוח שהמעבר הצליח.
+    $catalog[] = [
+        'id'    => '015',
+        'title' => 'קישור לכלים הדיגיטליים',
+        'steps' => [
+            [
+                'key'     => 'backup.users_015',
+                'label'   => 'גיבוי users לפני הקישור (users_backup_015)',
+                'pending' => function () use ($pdo, $dbName) {
+                    return tableExists($pdo, $dbName, 'users')
+                        && !tableExists($pdo, $dbName, 'users_backup_015')
+                        && !columnExists($pdo, $dbName, 'users', 'platform_sub');
+                },
+                'run' => function () use ($pdo) {
+                    $pdo->exec("CREATE TABLE `users_backup_015` AS SELECT * FROM `users`");
+                    return null;
+                },
+            ],
+            stepAddColumn($pdo, $dbName, 'users', 'platform_sub',
+                "`platform_sub` VARCHAR(64) NULL DEFAULT NULL COMMENT 'החשבון בכלים הדיגיטליים'"),
+            [
+                'key'     => 'index.users.uniq_platform_sub',
+                'label'   => 'אינדקס ייחודי users.platform_sub',
+                'pending' => function () use ($pdo, $dbName) {
+                    return columnExists($pdo, $dbName, 'users', 'platform_sub')
+                        && !indexExists($pdo, $dbName, 'users', 'uniq_platform_sub');
+                },
+                'run' => function () use ($pdo) {
+                    $pdo->exec("ALTER TABLE `users` ADD UNIQUE INDEX `uniq_platform_sub` (`platform_sub`)");
+                    return null;
+                },
+            ],
+        ],
+    ];
+
     return $catalog;
 }
 

@@ -7,6 +7,14 @@ require_once '../includes/session.php';
 header('Content-Type: application/json');
 header('Cache-Control: no-cache, must-revalidate');
 
+// מחוברת לכלים הדיגיטליים: כניסה עם Google של האפליקציה חסומה
+// (platform/docs/auth.md, סעיף 2)
+if (platformIdentity()) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'message' => 'הכניסה היא דרך הכלים הדיגיטליים']);
+    exit;
+}
+
 // בדיקה שזו בקשת POST
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);

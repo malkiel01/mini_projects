@@ -11,6 +11,10 @@
     "manifest.json",
     "service-worker.js",
     "offline.html",
-    "images/icons/**"
-  ]
+    "images/icons/**",
+    "api/platform-key.php"
+  ],
+  "provision": {
+    "key_url": "https://mbe-plus.com/mini_projects/family-shopping/api/platform-key.php"
+  }
 }

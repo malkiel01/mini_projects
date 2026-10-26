@@ -112,12 +112,15 @@ function isAuthPath($path) {
 
     return in_array(basename($path), [
         'login.php', 'logout.php', 'google-auth.php',
-        'forgot-password.php', 'reset-password.php',
+        'forgot-password.php', 'reset-password.php', 'link.php',
     ], true);
 }
 
 /**
  * מפנה להתחברות ושומר את היעד המבוקש לחזרה אחריה.
+ *
+ * מחוברת לכלים הדיגיטליים (יש זהות מהשער) - אין מסך כניסה. מי שמגיע
+ * לכאן הוא מי שעוד אין לו חשבון מקושר, והוא הולך למסך החיבור.
  */
 function redirectToLogin($query = '') {
     $target = $_SERVER['REQUEST_URI'] ?? '';
@@ -131,7 +134,8 @@ function redirectToLogin($query = '') {
     }
 
     $base = defined('APP_BASE_PATH') ? APP_BASE_PATH : '/mini_projects/family-shopping';
-    header('Location: ' . $base . '/auth/login.php' . $query);
+    $page = platformIdentity() ? '/auth/link.php' : '/auth/login.php';
+    header('Location: ' . $base . $page . $query);
     exit;
 }
 
@@ -169,4 +173,7 @@ function csrf_field() {
         . htmlspecialchars($_SESSION['csrf_token'], ENT_QUOTES) . '">';
 }
 
+require_once __DIR__ . '/platform.php';
+
 bootstrapSession();
+platformSyncSession();

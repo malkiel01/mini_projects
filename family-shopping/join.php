@@ -41,10 +41,13 @@ if ($token === '') {
     }
 }
 
-// לא מחובר - נשלח להתחברות ונחזור לכאן
+// לא מחובר - נשלח להתחברות (או לחיבור החשבון) ונחזור לכאן
 if (!$error && !isset($_SESSION['user_id'])) {
     $_SESSION['redirect_after_login'] = APP_BASE_PATH . '/join.php?token=' . urlencode($token);
-    header('Location: ' . APP_BASE_PATH . '/auth/login.php?invited=1');
+    // מחוברת לכלים הדיגיטליים: מי שהגיע עד כאן עבר את השער, ורק עוד
+    // אין לו חשבון באפליקציה - הוא הולך למסך החיבור ולא לכניסה
+    header('Location: ' . APP_BASE_PATH
+        . (platformIdentity() ? '/auth/link.php' : '/auth/login.php?invited=1'));
     exit;
 }
 
