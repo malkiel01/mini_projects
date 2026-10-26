@@ -278,6 +278,19 @@ check('blocked - לא קושר', subOf($pdo, $e) === null);
 check('מושבת ומקושר - לא נגעו', subOf($pdo, $d) === null && subOf($pdo, $c) === '500');
 check('הפלט בלי מיילים', !str_contains(json_encode($counts), '@'));
 
+$f = addUser($pdo, ['username' => 'owner', 'email' => 'Owner@Example.com']);
+$g = addUser($pdo, ['username' => 'g', 'email' => 'g@example.com']);
+$calls = 0;
+$sent = [];
+$counts = platformInviteExisting($pdo, false, function ($b) use (&$calls, &$sent) {
+    $calls++;
+    $sent[] = json_decode($b, true)['email'];
+    return ['status' => 200, 'body' => '{"status":"granted","sub":"600"}'];
+}, 0, ' owner@example.com');
+check('רק בעל המערכת - בקשה אחת, למייל שלו', $calls === 1 && $sent === ['owner@example.com'], json_encode($sent));
+check('...וקושר', subOf($pdo, $f) === '600' && subOf($pdo, $g) === null);
+
+$pdo->exec("UPDATE users SET platform_sub = 'x' || id WHERE id != " . (int)$e);
 $calls = 0;
 $counts = platformInviteExisting($pdo, false, function () { return ['status' => 503, 'body' => '']; });
 check('תקלה בפלטפורמה - נספרת כשגיאה', ($counts['error'] ?? 0) === 1, json_encode($counts));
