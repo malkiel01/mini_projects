@@ -6,9 +6,6 @@
 
 const PAGE_SIZES = ['A4' => [210, 297], 'Letter' => [215.9, 279.4]];
 const PAGE_NUM_FORMATS = ['n', 'page_n', 'n_of_m', 'dash_n', 'hebrew'];
-/** מזהה פסקה (attrs.id — mbe-format.md סעיף 3): אותיות לטיניות, ספרות וקו תחתון, עד 32; ב-Word — סימנייה _mbe_p<id> */
-const PARA_ID_RE = '/^[A-Za-z0-9_]{1,32}$/';
-const MBE_PARA_BOOKMARK = '_mbe_p';
 const STYLE_KEYS = ['title', 'caption', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'h7', 'h8', 'h9', 'normal'];
 /** סגנון שהמשתמש יצר: u1, u2… (עם name). עד USER_STYLES_MAX. */
 const USER_STYLE_RE = '/^u[1-9]\d{0,2}$/';
