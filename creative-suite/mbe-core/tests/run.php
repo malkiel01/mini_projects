@@ -6,6 +6,7 @@
 
 declare(strict_types=1);
 require __DIR__ . '/../src/php/mbe.php';
+require __DIR__ . '/../src/php/face.php';
 
 $fail = 0;
 $n = 0;
@@ -159,6 +160,34 @@ $ids = [$c[0]['attrs']['id'], $c[1]['attrs']['id'], $c[2]['attrs']['id'], $c[3][
 $fresh = array_filter(array_slice($ids, 1), fn($id) => (bool)preg_match('/^p[A-Za-z0-9]{10}$/', $id));
 check($ids[0] === 'keep_1' && count($fresh) === 4 && count(array_unique($ids)) === 5, 'מזהה פסקה: save משלים, מחליף פגום וכפול, שומר תקין');
 check(!array_filter(array_column($f->issues, 'code'), fn($x) => str_starts_with($x, 'para-id')), 'מזהה פסקה: אחרי save — בלי אזהרות');
+
+// פנים: stamp / identify (hub-api.md 2.1–2.2)
+$f = Mbe::open($fx('valid/text.mbe'));
+$saved = Mbe::save($f, ['app' => 'php-face']);
+$docx = (string)file_get_contents(__DIR__ . '/faces/plain.docx');
+$out = MbeFace::stamp($f, 'docx', $docx);
+$id = MbeFace::identify($out);
+check($id['type'] === 'face' && $id['format'] === 'docx' && $id['docId'] === $f->id() && $id['base'] === $f->documentSha256() && $id['model'] === true && $id['issues'] === [], 'פנים docx: identify');
+check(MbeCanonical::encode($id['document']) === MbeCanonical::encode($f->document), 'פנים docx: המודל ב-customXml זהה');
+$partsOf = function (string $b): array { $z = MbeZip::readZip($b); $i = []; $o = []; foreach ($z['entries'] as $e) $o[$e['name']] = MbeZip::read($b, $e, $i); return $o; };
+$a = $partsOf($docx); $b = $partsOf($out);
+$same = true;
+foreach ($a as $k => $v) if (!in_array($k, ['[Content_Types].xml', '_rels/.rels', 'word/_rels/document.xml.rels'], true) && $b[$k] !== $v) $same = false;
+check($same, 'פנים docx: שאר החלקים בית-לבית');
+$c = $partsOf(MbeFace::stamp($f, 'docx', $out));
+check(array_keys($c) === array_keys($b) && substr_count($c['docProps/custom.xml'], 'mbe-doc-id') === 1, 'פנים docx: החתמה חוזרת מחליפה');
+$png = MbeFace::stamp($f, 'png', $f->files[Mbe::PREVIEW]);
+$id = MbeFace::identify($png);
+check($id['type'] === 'face' && $id['format'] === 'png' && $id['docId'] === $f->id() && $id['base'] === $f->documentSha256() && MbeFace::stamp($f, 'png', $png) === $png, 'פנים png');
+$id = MbeFace::identify("%PDF-1.7\n" . MbeFace::xmpPacket($f) . "\n%%EOF");
+check($id['type'] === 'face' && $id['format'] === 'pdf' && $id['docId'] === $f->id(), 'פנים pdf: xmpPacket → identify');
+$id = MbeFace::identify($saved);
+check($id['type'] === 'mbe' && $id['docId'] === $f->id() && $id['base'] === $f->documentSha256(), 'identify: ‎.mbe');
+foreach ([$docx, 'שלום', '', "PK\x03\x04junk", $f->files[Mbe::PREVIEW]] as $i => $x) check(MbeFace::identify($x)['type'] === 'foreign', "identify: זר #$i");
+Mbe::save($f, ['app' => 'php-face']);
+check(array_column(array_filter($f->journal(), fn($s) => $s['kind'] === 'export'), 'note') === ['docx', 'png', 'pdf'], 'פנים: שלבי export ביומן');
+$f->document['x'] = 1;
+try { MbeFace::stamp($f, 'docx', $docx); check(false, 'face-not-saved'); } catch (MbeError $e) { check($e->issues[0]['code'] === 'face-not-saved', 'פנים: face-not-saved'); }
 
 echo $fail ? "\n$fail מתוך $n בדיקות נכשלו\n" : "mbe-core PHP: $n בדיקות עברו\n";
 exit($fail ? 1 : 0);
