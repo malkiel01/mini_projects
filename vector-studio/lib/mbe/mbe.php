@@ -474,7 +474,15 @@ final class Mbe
             return $e;
         };
         if ($f->pending) {
-            foreach ($f->pending as $p) $j['stages'][] = $entry($p['kind'], ($p['who'] ?? '') !== '' ? $p['who'] : $who, $p['note'] ?? null);
+            foreach ($f->pending as $p) {
+                $e = $entry($p['kind'], ($p['who'] ?? '') !== '' ? $p['who'] : $who, $p['note'] ?? null);
+                // שלב שהגרסה שלו אינה המסמך הנשמר (return במיזוג — מה שחזר מבחוץ): app / base / result משלו, והעותקים איתו
+                foreach ($p['snapshots'] ?? [] as $sha => $b) $files["history/$sha.json"] ??= $b;
+                if (!empty($p['app'])) $e['app'] = $p['app'];
+                if (array_key_exists('base', $p)) $e['base'] = $p['base'];
+                if (!empty($p['result'])) $e['result'] = $p['result'];
+                $j['stages'][] = $e;
+            }
         } else {
             $n = count($j['stages']);
             $last = $n ? $j['stages'][$n - 1] : null;

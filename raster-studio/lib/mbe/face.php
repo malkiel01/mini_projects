@@ -51,23 +51,26 @@ final class MbeFace
             'png' => self::stampPng($bytes, $ids),
             default => null,
         };
-        if ($out !== null) { self::exported($f, $format); return $out; }
+        if ($out !== null) { self::exported($f, $format, $ids); return $out; }
         if ($format === 'pdf') throw self::fail('face-stamp-failed', 'PDF מחתימים בזמן הכתיבה: xmpPacket($f) → מטא-נתונים של המסמך');
         throw self::fail('face-stamp-failed', "פנים מסוג $format אינן נתמכות");
     }
 
     /** הפנים נרשמות ביומן כשלב export (hub-api.md 2.2) — בשמירה הבאה, פעם אחת לכל פורמט. */
-    private static function exported(MbeFile $f, string $format): void
+    private static function exported(MbeFile $f, string $format, array $ids): void
     {
-        foreach ($f->pending as $p) if ($p['kind'] === 'export' && $p['note'] === $format) return;
-        $f->pending[] = ['kind' => 'export', 'who' => null, 'note' => $format];
+        foreach ($f->pending as $p) if ($p['kind'] === 'export' && $p['note'] === $format && ($p['result'] ?? null) === $ids['base']) return;
+        // הגרסה שיצאה — היא ה-result של השלב (לא מה שיישמר בפעם הבאה), והעותק שלה נשמר: זה הבסיס כשהפנים יחזרו
+        $f->pending[] = ['kind' => 'export', 'who' => null, 'note' => $format, 'base' => $ids['base'], 'result' => $ids['base'],
+            'snapshots' => [$ids['base'] => $ids['docBytes']]];
     }
 
     /** חבילת XMP עם המזהים — להטמעה כ-Metadata של ה-PDF (לא דחוס, כדי ש-identify ימצא). */
     public static function xmpPacket(MbeFile $f): string
     {
-        ['docId' => $docId, 'base' => $base] = self::ids($f);
-        self::exported($f, 'pdf');
+        $ids = self::ids($f);
+        ['docId' => $docId, 'base' => $base] = $ids;
+        self::exported($f, 'pdf', $ids);
         return "<?xpacket begin=\"\u{FEFF}\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>\n<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
             . '<rdf:Description rdf:about="" xmlns:mbe="' . self::XMP_NS . "\"><mbe:docId>$docId</mbe:docId><mbe:base>$base</mbe:base></rdf:Description>"
             . "</rdf:RDF></x:xmpmeta>\n<?xpacket end=\"w\"?>";
