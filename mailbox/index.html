@@ -8,7 +8,7 @@
   <meta name="referrer" content="no-referrer">
   <title>דואר</title>
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="assets/css/app.css?v=3">
+  <link rel="stylesheet" href="assets/css/app.css?v=4">
 </head>
 <body>
   <!-- אייקונים: קו אחד, 24px, בצבע הטקסט (currentColor) — אותה משפחה בכל המסכים -->
@@ -106,47 +106,81 @@
     </form>
   </dialog>
 
-  <!-- הוספת תיבה -->
+  <!-- הוספת תיבה: כתובת חדשה אצלנו, או חיבור תיבה קיימת (Gmail, Yahoo…) -->
   <dialog id="add-dlg" aria-labelledby="add-title">
     <form id="add-form" novalidate>
       <header class="sheet-head">
         <button type="button" class="icon-btn" data-close aria-label="סגירה"><svg class="i" aria-hidden="true"><use href="#i-close"/></svg></button>
         <h2 id="add-title">הוספת תיבה</h2>
-        <button type="submit" class="btn primary" id="add-save">בדיקה ושמירה</button>
+        <button type="submit" class="btn primary" id="add-save">יצירה</button>
       </header>
       <div class="sheet-body">
-        <fieldset class="seg grid" style="--cols:3" aria-label="ספק הדואר" id="provider">
-          <label><input type="radio" name="provider" value="cpanel" checked><span>השרת שלנו</span></label>
-          <label><input type="radio" name="provider" value="gmail"><span>Gmail</span></label>
-          <label><input type="radio" name="provider" value="outlook"><span>Outlook</span></label>
-          <label><input type="radio" name="provider" value="yahoo"><span>Yahoo</span></label>
-          <label><input type="radio" name="provider" value="icloud"><span>iCloud</span></label>
-          <label><input type="radio" name="provider" value="other"><span>אחר</span></label>
+        <fieldset class="seg" aria-label="סוג" id="add-mode">
+          <label><input type="radio" name="mode" value="new" checked><span>כתובת חדשה אצלנו</span></label>
+          <label><input type="radio" name="mode" value="connect"><span>חיבור תיבה קיימת</span></label>
         </fieldset>
-        <!-- המדריך לספק שנבחר: הצעדים אצל הספק, וההגדרות שממלאים כאן (app.js — PROVIDERS) -->
-        <section class="guide" id="guide" aria-live="polite"></section>
-        <div class="fields">
-          <label class="f wide"><span>כתובת המייל *</span>
-            <input name="email" type="email" dir="ltr" inputmode="email" autocomplete="off" required></label>
-          <label class="f wide"><span>סיסמת התיבה *</span>
-            <input name="password" type="password" dir="ltr" autocomplete="new-password" required></label>
-          <label class="f wide"><span>שם לתצוגה (למשל: חברה קדישא)</span>
-            <input name="label" maxlength="60"></label>
-        </div>
-        <section class="group" aria-labelledby="srv-t">
-          <h3 id="srv-t">השרת <small>IMAP, תמיד מוצפן</small></h3>
+
+        <!-- כתובת חדשה: האפליקציה פותחת אותה בשרת (lib/cpanel.php) -->
+        <section id="mode-new" class="mode">
+          <p class="hint">הדואר יושב אצלנו, כמו ב-Gmail. בוחרים שם — והתיבה מוכנה מיד, בלי סיסמה לזכור.</p>
           <div class="fields">
-            <label class="f wide"><span>שרת IMAP *</span>
-              <input name="host" dir="ltr" value="box2054.bluehost.com" autocomplete="off" required></label>
-            <fieldset class="seg wide" aria-label="פורט">
-              <label><input type="radio" name="port" value="993" checked><span>993 · SSL</span></label>
-              <label><input type="radio" name="port" value="143"><span>143 · STARTTLS</span></label>
-            </fieldset>
-            <label class="f wide"><span>שם משתמש (אם שונה מהמייל)</span>
-              <input name="username" dir="ltr" autocomplete="off"></label>
+            <label class="f wide"><span>הכתובת *</span>
+              <span class="addr" dir="ltr"><input name="local" dir="ltr" autocomplete="off" autocapitalize="none" spellcheck="false"
+                maxlength="30" placeholder="name" aria-describedby="addr-domain"><b id="addr-domain">@mbe-plus.com</b></span></label>
+            <label class="f wide"><span>שם לתצוגה (למשל: חברה קדישא)</span><input name="new_label" maxlength="60"></label>
+          </div>
+          <p class="hint" id="addr-quota"></p>
+          <div class="guide blocked" id="addr-off" hidden>
+            <p id="addr-off-text"></p>
+            <!-- למנהל בלבד: הפעלה חד-פעמית באסימון API של cPanel -->
+            <div id="token-box" hidden>
+              <ol>
+                <li>ב-cPanel: <bdi dir="ltr">Security → Manage API Tokens → Create</bdi></li>
+                <li>שם: <bdi dir="ltr">mailbox</bdi>, בלי תאריך תפוגה ← <bdi dir="ltr">Create</bdi> ← מעתיקים את האסימון.</li>
+                <li>מדביקים כאן ← "הפעלה". האסימון נבדק מול השרת ונשמר מוצפן.</li>
+              </ol>
+              <div class="toolbar">
+                <input id="token-input" dir="ltr" autocomplete="off" spellcheck="false" placeholder="API token" aria-label="אסימון API של cPanel">
+                <button type="button" class="btn primary" id="token-save">הפעלה</button>
+              </div>
+            </div>
           </div>
         </section>
-        <p class="hint">"בדיקה ושמירה" מתחבר לשרת לפני השמירה. הסיסמה נשמרת מוצפנת בשרת, ולא חוזרת לדפדפן.</p>
+
+        <!-- חיבור תיבה קיימת: IMAP, עם מדריך לכל ספק (app.js — PROVIDERS) -->
+        <section id="mode-connect" class="mode" hidden>
+          <fieldset class="seg grid" style="--cols:3" aria-label="ספק הדואר" id="provider">
+            <label><input type="radio" name="provider" value="gmail" checked><span>Gmail</span></label>
+            <label><input type="radio" name="provider" value="outlook"><span>Outlook</span></label>
+            <label><input type="radio" name="provider" value="yahoo"><span>Yahoo</span></label>
+            <label><input type="radio" name="provider" value="icloud"><span>iCloud</span></label>
+            <label><input type="radio" name="provider" value="ours"><span>mbe-plus.com</span></label>
+            <label><input type="radio" name="provider" value="other"><span>אחר</span></label>
+          </fieldset>
+          <section class="guide" id="guide" aria-live="polite"></section>
+          <div class="fields" id="connect-fields">
+            <label class="f wide"><span>כתובת המייל *</span>
+              <input name="email" type="email" dir="ltr" inputmode="email" autocomplete="off"></label>
+            <label class="f wide"><span>סיסמה *</span>
+              <input name="password" type="password" dir="ltr" autocomplete="new-password"></label>
+            <label class="f wide"><span>שם לתצוגה (למשל: חברה קדישא)</span>
+              <input name="label" maxlength="60"></label>
+          </div>
+          <section class="group" aria-labelledby="srv-t" id="connect-server">
+            <h3 id="srv-t">השרת <small>IMAP, תמיד מוצפן</small></h3>
+            <div class="fields">
+              <label class="f wide"><span>שרת IMAP *</span>
+                <input name="host" dir="ltr" autocomplete="off"></label>
+              <fieldset class="seg wide" aria-label="פורט">
+                <label><input type="radio" name="port" value="993" checked><span>993 · SSL</span></label>
+                <label><input type="radio" name="port" value="143"><span>143 · STARTTLS</span></label>
+              </fieldset>
+              <label class="f wide"><span>שם משתמש (אם שונה מהמייל)</span>
+                <input name="username" dir="ltr" autocomplete="off"></label>
+            </div>
+          </section>
+          <p class="hint" id="connect-hint">"בדיקה ושמירה" מתחבר לשרת לפני השמירה. הסיסמה נשמרת מוצפנת בשרת, ולא חוזרת לדפדפן.</p>
+        </section>
         <p class="error" role="alert" hidden></p>
       </div>
     </form>
@@ -176,7 +210,7 @@
         </section>
         <section class="group">
           <button type="button" class="btn danger ghost" id="box-delete"><svg class="i" aria-hidden="true"><use href="#i-trash"/></svg> הסרת התיבה מהאפליקציה</button>
-          <p class="hint">התיבה עצמה וההודעות שבה לא נמחקות — רק החיבור כאן.</p>
+          <p class="hint" id="box-delete-hint"></p>
         </section>
         <p class="error" role="alert" hidden></p>
       </div>
@@ -205,6 +239,6 @@
   </dialog>
 
   <div class="toast" role="status" hidden></div>
-  <script src="assets/js/app.js?v=3"></script>
+  <script src="assets/js/app.js?v=4"></script>
 </body>
 </html>

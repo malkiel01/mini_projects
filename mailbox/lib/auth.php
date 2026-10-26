@@ -45,7 +45,7 @@ function mb_touch_user(array $me): void
 function mb_boxes_for(array $me): array
 {
     $st = mb_db()->prepare(<<<'SQL'
-        SELECT m.id, m.email, m.label, m.imap_host, m.imap_port, m.owner_sub,
+        SELECT m.id, m.email, m.label, m.imap_host, m.imap_port, m.owner_sub, m.created,
                CASE WHEN m.owner_sub = :sub THEN 'owner' ELSE 'read' END AS role,
                u.name AS owner_name
         FROM mailboxes m
@@ -65,6 +65,7 @@ function mb_boxes_for(array $me): array
             'port' => (int)$b['imap_port'],
             'role' => $b['role'],
             'owner' => $b['role'] === 'owner' ? null : ($b['owner_name'] ?: ''),
+            'created' => (bool)$b['created'],
         ];
     }
     return $out;
@@ -100,6 +101,11 @@ function mb_import_files(array $me): int
     if (!$dir || !is_dir($dir)) return 0;
     $n = 0;
     foreach (glob($dir . '/*.json') ?: [] as $file) {
+        if (basename($file) === 'cpanel.json') {          // אסימון ה-API — לא תיבה (lib/cpanel.php)
+            require_once __DIR__ . '/cpanel.php';
+            mb_cpanel_import($file);
+            continue;
+        }
         $c = json_decode((string)@file_get_contents($file), true);
         $email = is_array($c) ? strtolower(trim((string)($c['email'] ?? ''))) : '';
         $host = is_array($c) ? trim((string)($c['imap_host'] ?? '')) : '';

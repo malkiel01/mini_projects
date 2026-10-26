@@ -9,6 +9,9 @@
  * GET  ?action=attachment&box=&uid=&part=[&inline=1]
  * POST action=box_add | box_update | box_delete | share_add | share_remove   (JSON, כותרת X-Mailbox)
  * GET  ?action=shares&box=ID           מי משותף (רק הבעלים)
+ * GET  ?action=address_info            כתובות חדשות אצלנו: זמין? כמה נוצרו מתוך כמה
+ * POST action=address_create           פותח local@mbe-plus.com בשרת (lib/cpanel.php)
+ * POST action=cpanel_token             מנהל בלבד: אסימון API של cPanel, נבדק ונשמר מוצפן
  *
  * הכניסה רק דרך הפלטפורמה (lib/auth.php). בקשה משנה חייבת את הכותרת X-Mailbox: אתר זר לא יכול
  * לשלוח כותרת כזו בלי preflight, וכך אין CSRF בלי אסימון.
@@ -19,6 +22,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/lib/auth.php';
 require_once __DIR__ . '/lib/imap.php';
 require_once __DIR__ . '/lib/sanitize.php';
+require_once __DIR__ . '/lib/cpanel.php';
 
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: no-referrer');
@@ -53,6 +57,15 @@ function box_or_fail(array $me, bool $own = false): array
     $box = $id > 0 ? mb_box($me, $id, $own) : null;
     if (!$box) fail($own ? 'רק הבעלים של התיבה יכולים לעשות את זה' : 'התיבה לא נמצאה', 404);
     return $box;
+}
+
+/** כתובות חדשות: זמין? כמה פתח המשתמש, ומה המכסה (null — בלי הגבלה, למנהל). */
+function address_info(array $me): array
+{
+    $st = mb_db()->prepare('SELECT COUNT(*) FROM mailboxes WHERE owner_sub = ? AND created = 1');
+    $st->execute([$me['sub']]);
+    return ['enabled' => mb_cpanel_mode() !== null, 'domain' => MB_DOMAIN, 'used' => (int)$st->fetchColumn(),
+        'limit' => $me['admin'] ? null : MB_ADDRESS_LIMIT];
 }
 
 $me = mb_identity();
@@ -154,8 +167,46 @@ try {
 
         case 'post:box_delete':
             $box = box_or_fail($me, true);
+            // כתובת שהאפליקציה פתחה — נמחקת גם מהשרת, עם הדואר שבה (המשתמש אישר במפורש)
+            if ($box['created']) mb_cpanel_delete($box['email']);
             mb_db()->prepare('DELETE FROM mailboxes WHERE id = ?')->execute([$box['id']]);
             out(['ok' => true, 'boxes' => mb_boxes_for($me)]);
+
+        case 'post:cpanel_token':
+            // רק מנהל הפלטפורמה (המפתח): אסימון API של cPanel, נבדק בשרת ונשמר מוצפן
+            if (!$me['admin']) fail('רק מנהל המערכת', 403);
+            $token = trim((string)(input()['token'] ?? ''));
+            if (!preg_match('/^[A-Z0-9]{20,64}$/i', $token)) fail('האסימון לא תקין — 32 אותיות וספרות מ-cPanel');
+            $db = mb_db();
+            $db->prepare("INSERT OR REPLACE INTO settings (k, v) VALUES ('cpanel', ?)")->execute([mb_encrypt(json_encode(['token' => $token]))]);
+            try {
+                mb_uapi('Email', 'list_pops', []);
+            } catch (MbCpanelError $e) {
+                $db->exec("DELETE FROM settings WHERE k = 'cpanel'");
+                fail('האסימון נבדק ונכשל: ' . $e->getMessage());
+            }
+            out(['ok' => true] + address_info($me));
+
+        case 'address_info':
+            out(['ok' => true] + address_info($me));
+
+        case 'post:address_create':
+            $info = address_info($me);
+            if (!$info['enabled']) fail($me['admin'] ? 'יצירת כתובות עוד לא הופעלה: צריך אסימון API ב-~/.mailbox/cpanel.json (README)' : 'יצירת כתובות לא זמינה כרגע');
+            if ($info['limit'] !== null && $info['used'] >= $info['limit']) fail('אפשר לפתוח עד ' . $info['limit'] . ' כתובות');
+            $local = strtolower(trim((string)(input()['local'] ?? '')));
+            if ($err = mb_local_part_error($local)) fail($err);
+            $email = $local . '@' . MB_DOMAIN;
+            $taken = mb_db()->prepare('SELECT 1 FROM mailboxes WHERE email = ? LIMIT 1');
+            $taken->execute([$email]);
+            if ($taken->fetchColumn()) fail('הכתובת ' . $email . ' כבר תפוסה');
+            $label = mb_substr_safe(trim((string)(input()['label'] ?? '')), 60);
+            $pass = mb_cpanel_create($local);
+            $db = mb_db();
+            $db->prepare('INSERT INTO mailboxes (owner_sub, email, label, imap_host, imap_port, username, secret, created_at, created)
+                          VALUES (?, ?, ?, ?, 993, ?, ?, ?, 1)')
+                ->execute([$me['sub'], $email, $label, defined('MB_DEV_IMAP_HOST') ? MB_DEV_IMAP_HOST : MB_IMAP_HOST, $email, mb_encrypt($pass), time()]);
+            out(['ok' => true, 'id' => (int)$db->lastInsertId(), 'email' => $email, 'boxes' => mb_boxes_for($me)]);
 
         case 'post:share_add':
             $box = box_or_fail($me, true);
@@ -177,6 +228,8 @@ try {
         default:
             fail('פעולה לא מוכרת', 404);
     }
+} catch (MbCpanelError $e) {
+    fail($e->getMessage(), 502);
 } catch (MbImapError $e) {
     fail($e->getMessage(), 502);
 } catch (Throwable $e) {

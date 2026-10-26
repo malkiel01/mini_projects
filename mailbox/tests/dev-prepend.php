@@ -1,6 +1,8 @@
 <?php
 // פיתוח מקומי בלבד (php -S): מדמה את השער — PLATFORM_USER לפי ?as= או העוגייה dev_as. לא נפרס.
 define('MB_ALLOW_LOCALHOST', true);
+define('MB_CPANEL_ENDPOINT', 'http://127.0.0.1:8090/mailbox/tests/cpanel-mock.php');   // tests/cpanel-mock.php
+define('MB_DEV_IMAP_HOST', 'localhost');
 define('MB_IMPORT_DIR', getenv('MB_IMPORT_DIR') ?: sys_get_temp_dir() . '/mb-import');
 $users = [
     'admin' => ['sub' => '1', 'name' => 'בעל המערכת', 'email' => 'owner@test.local', 'email_verified' => true, 'platform_admin' => true],

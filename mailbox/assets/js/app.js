@@ -507,18 +507,9 @@ $('#boxes-btn').addEventListener('click', openBoxes);
 $('#switch').addEventListener('click', openBoxes);   // לחיצה על שם התיבה — מעבר לתיבה אחרת
 $('#add-box-btn').addEventListener('click', () => openAdd());
 
-// ספקים: המדריך שמוצג בטופס, והשרת שממולא לבד. steps — הצעדים אצל הספק; [טקסט, כתובת] — קישור.
+// ספקים לחיבור תיבה קיימת: המדריך שמוצג בטופס, והשרת שממולא לבד. steps — הצעדים אצל הספק;
+// [טקסט, כתובת] — קישור; 'MINE' — הכתובות של המשתמש אצלנו (להעברה מ-Outlook).
 const PROVIDERS = {
-    cpanel: {
-        title: 'תיבה בשרת שלנו (cPanel)',
-        host: 'box2054.bluehost.com', user: 'כתובת המייל המלאה', pass: 'הסיסמה של התיבה',
-        steps: [
-            'ב-cPanel ← Email Accounts — יוצרים תיבה חדשה, או משתמשים בקיימת.',
-            'זוכרים את הסיסמה שנקבעה לתיבה (אפשר לאפס אותה שם, ב-Manage).',
-            'כאן: כתובת המייל המלאה והסיסמה. השרת כבר ממולא.',
-        ],
-        note: 'השרת הוא box2054.bluehost.com ולא mail.mbe-plus.com — לשם השני התעודה לא מתאימה והחיבור נכשל.',
-    },
     gmail: {
         title: 'Gmail',
         host: 'imap.gmail.com', user: 'כתובת ה-Gmail המלאה', pass: 'סיסמת אפליקציה — 16 אותיות',
@@ -534,12 +525,13 @@ const PROVIDERS = {
         title: 'Outlook / Hotmail / Live',
         blocked: true,
         steps: [
-            'מיקרוסופט חסמה כניסה בסיסמה ל-IMAP (רק כניסת OAuth), ולכן אי אפשר לחבר את התיבה ישירות.',
-            'הפתרון: מעבירים את הדואר לתיבה בשרת שלנו. יוצרים תיבה ב-cPanel ומוסיפים אותה כאן ("השרת שלנו").',
-            ['ב-Outlook: הגדרות ← דואר ← העברה ← "הפעל העברה" ← כתובת התיבה שלנו ← שמירה', 'https://outlook.live.com/mail/0/options/mail/forwarding'],
+            'מיקרוסופט לא מאפשרת חיבור בסיסמה, ולכן מעבירים את הדואר מ-Outlook לכתובת שלכם אצלנו — והוא מופיע כאן.',
+            'MINE',
+            ['ב-Outlook: ⚙️ הגדרות ← דואר ← העברה', 'https://outlook.live.com/mail/0/options/mail/forwarding'],
+            'מסמנים "הפעל העברה", מדביקים את הכתובת שלכם אצלנו, ומסמנים "שמור עותק של ההודעות המועברות" ← שמירה.',
             'מעכשיו כל מייל שמגיע ל-Outlook מופיע גם כאן, תוך שניות.',
         ],
-        note: 'חיבור ישיר ל-Outlook (בכניסה עם מיקרוסופט) — שלב ב׳.',
+        note: 'מופיעה ב-Outlook הודעה שההעברה חסומה? בחשבונות חדשים מיקרוסופט מאפשרת העברה רק אחרי אימות החשבון (טלפון). חיבור ישיר בכניסה עם מיקרוסופט — בהמשך.',
     },
     yahoo: {
         title: 'Yahoo',
@@ -561,6 +553,15 @@ const PROVIDERS = {
         ],
         note: 'הסיסמה הרגילה של Apple לא תעבוד.',
     },
+    ours: {
+        title: 'כתובת קיימת ב-mbe-plus.com',
+        host: 'box2054.bluehost.com', user: 'כתובת המייל המלאה', pass: 'הסיסמה של התיבה',
+        steps: [
+            'לכתובת ‎@mbe-plus.com שכבר קיימת ויש לכם את הסיסמה שלה.',
+            'כאן: הכתובת והסיסמה. השרת כבר ממולא.',
+        ],
+        note: 'כתובת חדשה? "כתובת חדשה אצלנו" למעלה — בלי סיסמה ובלי הגדרות.',
+    },
     other: {
         title: 'ספק אחר',
         host: '', user: 'בדרך כלל כתובת המייל המלאה', pass: 'סיסמת התיבה, או סיסמת אפליקציה אם יש אימות דו-שלבי',
@@ -574,13 +575,27 @@ const PROVIDERS = {
     },
 };
 
+/** הכתובות של המשתמש אצלנו — להעתקה (יעד ההעברה מ-Outlook), או כפתור לפתוח אחת. */
+function mineStep() {
+    const mine = state.boxes.filter(b => b.created && b.role === 'owner');
+    if (!mine.length) {
+        return el('li', {}, 'קודם פותחים כתובת אצלנו: ',
+            el('button', { class: 'btn sm primary', type: 'button', onclick: () => setMode('new') }, icon('plus'), 'כתובת חדשה אצלנו'));
+    }
+    return el('li', {}, 'הכתובת שלכם אצלנו — יעד ההעברה:', el('ul', { class: 'mine' }, mine.map(b => el('li', {},
+        el('b', { dir: 'ltr', text: b.email }),
+        el('button', { class: 'btn sm ghost', type: 'button', onclick: async () => {
+            try { await navigator.clipboard.writeText(b.email); toast('הכתובת הועתקה'); } catch { toast('סמנו והעתיקו ידנית', true); }
+        } }, icon('copy'), 'העתקה')))));
+}
+
 function renderGuide(key) {
     const p = PROVIDERS[key];
-    const step = s => el('li', {}, Array.isArray(s)
+    const step = s => s === 'MINE' ? mineStep() : el('li', {}, Array.isArray(s)
         ? el('a', { href: s[1], target: '_blank', rel: 'noopener noreferrer' }, s[0], ' ↗')
         : s);
     $('#guide').replaceChildren(...[
-        el('h3', { text: p.blocked ? p.title + ' — לא ניתן לחבר ישירות' : 'איך מחברים ' + p.title }),
+        el('h3', { text: p.blocked ? p.title + ' — דרך העברה' : 'איך מחברים ' + p.title }),
         el('ol', {}, p.steps.map(step)),
         p.blocked ? null : el('dl', { class: 'cells' },
             el('div', {}, el('dt', { text: 'שרת IMAP' }), el('dd', { dir: 'ltr', text: p.host || 'מהספק' })),
@@ -597,39 +612,100 @@ function setProvider(key) {
     if (!p.blocked) f.host.value = p.host;
     f.querySelector('input[name=port][value="993"]').checked = true;
     renderGuide(key in PROVIDERS ? key : 'other');
-    // Outlook — רק ההסבר: בלי שדות ובלי שמירה
-    f.querySelectorAll('.fields, .group').forEach(x => { x.hidden = !!p.blocked; });
+    // Outlook — רק המדריך להעברה: בלי שדות ובלי שמירה
+    ['#connect-fields', '#connect-server', '#connect-hint'].forEach(s => { $(s).hidden = !!p.blocked; });
     $('#add-save').hidden = !!p.blocked;
 }
 $('#provider').addEventListener('change', e => setProvider(e.target.value));
 
-function openAdd() {
+let addrInfo = null;
+function setMode(mode) {
+    const f = $('#add-form');
+    f.querySelector(`input[name=mode][value="${mode}"]`).checked = true;
+    $('#mode-new').hidden = mode !== 'new';
+    $('#mode-connect').hidden = mode !== 'connect';
+    $('.error', f).hidden = true;
+    const btn = $('#add-save');
+    if (mode === 'new') {
+        const full = addrInfo && addrInfo.limit != null && addrInfo.used >= addrInfo.limit;
+        btn.hidden = !addrInfo || !addrInfo.enabled || full;
+        btn.textContent = 'יצירה';
+    } else {
+        btn.textContent = 'בדיקה ושמירה';
+        setProvider(f.querySelector('input[name=provider]:checked').value);
+    }
+}
+$('#add-mode').addEventListener('change', e => setMode(e.target.value));
+
+async function loadAddrInfo() {
+    const q = $('#addr-quota'), off = $('#addr-off');
+    q.textContent = ''; off.hidden = true;
+    try {
+        addrInfo = await api('address_info');
+        if (!addrInfo.enabled) {
+            const admin = !!(state.me && state.me.admin);
+            $('#addr-off-text').textContent = admin
+                ? 'יצירת כתובות עוד לא הופעלה. הפעלה חד-פעמית — רק לך, כמנהל:'
+                : 'יצירת כתובות חדשות לא זמינה כרגע. אפשר לחבר תיבה קיימת.';
+            $('#token-box').hidden = !admin;
+            off.hidden = false;
+        } else if (addrInfo.limit != null) {
+            q.textContent = addrInfo.used >= addrInfo.limit
+                ? `פתחתם כבר ${addrInfo.used} כתובות — זה המקסימום. אפשר למחוק כתובת ולפתוח אחרת.`
+                : `נפתחו ${addrInfo.used} מתוך ${addrInfo.limit} כתובות.`;
+        }
+    } catch (x) { $('#addr-off-text').textContent = x.message; $('#token-box').hidden = true; off.hidden = false; }
+    if ($('#add-form').mode.value === 'new') setMode('new');
+}
+
+$('#token-save').addEventListener('click', async () => {
+    const btn = $('#token-save');
+    btn.disabled = true; btn.textContent = 'בודק…';
+    try {
+        await api('cpanel_token', {}, { token: $('#token-input').value.trim() });
+        $('#token-input').value = '';
+        toast('יצירת כתובות הופעלה ✓');
+        loadAddrInfo();
+    } catch (x) { toast(x.message, true); }
+    finally { btn.disabled = false; btn.textContent = 'הפעלה'; }
+});
+
+function openAdd(mode = 'new') {
     const f = $('#add-form');
     f.reset();
-    setProvider('cpanel');
-    $('.error', f).hidden = true;
     if ($('#boxes-dlg').open) $('#boxes-dlg').close();
     $('#add-dlg').showModal();
+    setMode(mode);
+    loadAddrInfo();
 }
 
 $('#add-form').addEventListener('submit', async e => {
     e.preventDefault();
     const f = e.target, err = $('.error', f), btn = $('#add-save');
     const d = Object.fromEntries(new FormData(f));
+    const label = btn.textContent;
     err.hidden = true;
-    if (!d.email || !d.password || !d.host) { err.textContent = 'חסרים מייל, סיסמה או שרת'; err.hidden = false; return; }
-    btn.disabled = true; btn.textContent = 'בודק חיבור…';
+    let req;
+    if (d.mode === 'new') {
+        d.local = (d.local || '').trim().toLowerCase();
+        if (!d.local) { err.textContent = 'בחרו שם לכתובת'; err.hidden = false; return; }
+        req = ['address_create', { local: d.local, label: d.new_label }, 'יוצר…'];
+    } else {
+        if (!d.email || !d.password || !d.host) { err.textContent = 'חסרים מייל, סיסמה או שרת'; err.hidden = false; return; }
+        req = ['box_add', { email: d.email, password: d.password, label: d.label, host: d.host, port: +d.port, username: d.username }, 'בודק חיבור…'];
+    }
+    btn.disabled = true; btn.textContent = req[2];
     try {
-        const r = await api('box_add', {}, { ...d, port: +d.port });
+        const r = await api(req[0], {}, req[1]);
         f.reset();
         state.boxes = r.boxes;
         $('#add-dlg').close();
-        toast('התיבה נוספה ✓');
+        toast(d.mode === 'new' ? 'הכתובת ' + r.email + ' מוכנה ✓' : 'התיבה נוספה ✓');
         selectBox(r.id);
     } catch (x) {
         err.textContent = x.message; err.hidden = false;
     } finally {
-        btn.disabled = false; btn.textContent = 'בדיקה ושמירה';
+        btn.disabled = false; btn.textContent = label;
     }
 });
 
@@ -638,6 +714,10 @@ async function openBox(b) {
     editing = b;
     const f = $('#box-form');
     $('#box-title').textContent = b.email;
+    $('#box-delete').lastChild.textContent = b.created ? ' מחיקת הכתובת לצמיתות' : ' הסרת התיבה מהאפליקציה';
+    $('#box-delete-hint').textContent = b.created
+        ? 'הכתובת וכל הדואר שבה נמחקים מהשרת. אי אפשר לשחזר.'
+        : 'התיבה עצמה וההודעות שבה לא נמחקות — רק החיבור כאן.';
     f.label.value = b.label !== b.email ? b.label : '';
     $('.error', f).hidden = true;
     $('#share-email').value = '';
@@ -691,13 +771,16 @@ $('#box-form').addEventListener('submit', async e => {
 });
 
 $('#box-delete').addEventListener('click', async () => {
-    if (!confirm(`להסיר את ${editing.email} מהאפליקציה? ההודעות בתיבה עצמה לא נמחקות.`)) return;
+    const ask = editing.created
+        ? `למחוק את הכתובת ${editing.email} לצמיתות, עם כל הדואר שבה? אי אפשר לשחזר.`
+        : `להסיר את ${editing.email} מהאפליקציה? ההודעות בתיבה עצמה לא נמחקות.`;
+    if (!confirm(ask)) return;
     try {
         const r = await api('box_delete', {}, { box: editing.id });
         state.boxes = r.boxes;
         $('#box-dlg').close();
         if (state.box && state.box.id === editing.id) { state.box = null; selectBox(state.boxes[0]?.id); }
-        toast('התיבה הוסרה');
+        toast(editing.created ? 'הכתובת נמחקה' : 'התיבה הוסרה');
     } catch (x) { toast(x.message, true); }
 });
 
