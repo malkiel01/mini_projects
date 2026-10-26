@@ -4,6 +4,7 @@
  *
  * me — מי נכנס. הספרייה: list, get, create, save, delete, thumb (GET, PNG), container (GET, ‎.mbe המקורי), versions, restore.
  * תמונות בציור: media_put (POST, base64 → { src }), media (GET ?src=media/<sha>.<ext>).
+ * צבעים וסגנונות שמורים של המשתמש: prefs (GET), prefs_put (POST { swatches, styles }).
  * כתיבה רק ב-POST עם Content-Type: application/json — טופס מאתר אחר לא יכול לשלוח כזה בלי preflight.
  */
 
@@ -27,7 +28,7 @@ $raw = file_get_contents('php://input');
 $in = is_string($raw) && $raw !== '' ? (json_decode($raw, true) ?: []) : [];
 $action = $_GET['action'] ?? (is_string($in['action'] ?? null) ? $in['action'] : '');
 
-const WRITES = ['create', 'save', 'delete', 'restore', 'media_put'];
+const WRITES = ['create', 'save', 'delete', 'restore', 'media_put', 'prefs_put'];
 
 try {
     if (in_array($action, WRITES, true)) {
@@ -61,6 +62,10 @@ try {
             echo $b;
             exit;
         }
+        case 'prefs':
+            reply(['success' => true] + getPrefs(requireUser()));
+        case 'prefs_put':
+            reply(['success' => true] + putPrefs(requireUser(), $in));
         case 'media_put':
             reply(['success' => true] + putMedia(requireUser(), $in['data'] ?? null));
         case 'media': {

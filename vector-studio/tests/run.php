@@ -114,6 +114,13 @@ try {
     check('src עם נתיב זר — null', getMedia($a, '../data/x.png') === null);
     check('לא תמונה — נדחה', throws(fn () => putMedia($a, base64_encode('<svg/>')), 400));
     check('JPEG ו-WebP — מזוהים', imageExt("\xFF\xD8\xFF\xE0xx") === 'jpg' && imageExt('RIFF0000WEBPVP8 ') === 'webp');
+    // צבעים וסגנונות שמורים
+    check('ברירת מחדל — ריק', getPrefs($a) === ['swatches' => [], 'styles' => []]);
+    $pp = putPrefs($a, ['swatches' => ['#FF0000', '#ff0000', 'red', '#00ff00'], 'styles' => [['name' => ' כפתור ', 'fill' => ['color' => '#2d4a8a'], 'stroke' => null], ['name' => '']]]);
+    check('צבעים — מנורמלים, בלי כפולים ובלי לא-תקינים', $pp['swatches'] === ['#ff0000', '#00ff00']);
+    check('סגנון — שם מנוקה, בלי שם — נזרק', count($pp['styles']) === 1 && $pp['styles'][0]['name'] === 'כפתור');
+    check('נשמר וחוזר', getPrefs($a) === $pp && getPrefs(getUser((int) $d['id']))['swatches'] === []);
+    check('יותר מדי צבעים — נדחה', throws(fn () => putPrefs($a, ['swatches' => array_fill(0, 65, '#000000')]), 400));
     deleteDrawing($a, $cc['id']);
     deleteDrawing($a, $c['id']);
     check('מחיקה — הגרסאות נמחקות איתו', listDrawings($a) === [] && (int) db()->query('SELECT COUNT(*) FROM drawing_versions')->fetchColumn() === 0);

@@ -94,6 +94,7 @@ async function boot() {
   }
   history.replaceState(null, '', '#d' + S.id);
   S.mediaReady = loadMedia();
+  library.prefs().then(p => { S.prefs = p; updatePanel(); }).catch(() => { /* בלי חיבור — הפלטה הראשונה */ });
   // גיבוי שנשאר במכשיר משמירה שנכשלה — חדש יותר ממה שבשרת? מציעים לשחזר
   const backup = drafts.loadBackup(S.id);
   if (backup?.doc && backup.rev === S.rev && JSON.stringify(backup.doc) !== JSON.stringify(S.doc)
@@ -457,6 +458,12 @@ function updatePanel() {
   renderProps($('props-body'), {
     doc: S.doc, surface, items: picked.map(o => o.path), paths: picked.flatMap(o => [...leaves(o.path)]),
     layerId: picked[0]?.layer.id,
+    prefs: S.prefs,
+    savePrefs: (next) => {
+      S.prefs = next; updatePanel();
+      library.putPrefs(next).then(p => { S.prefs = p; updatePanel(); }).catch(e => toast('הצבעים לא נשמרו: ' + e.message, true));
+    },
+    refresh: () => updatePanel(),
     box: wb ? [wb[0] - off[0], wb[1] - off[1], wb[2], wb[3]] : null,
     edit: (fn, commit) => {
       const before = editBase ?? JSON.stringify(S.doc);

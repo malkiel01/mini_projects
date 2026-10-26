@@ -312,6 +312,40 @@ try {
   assert.equal((await st()).paths[0].fill.gradient.type, 'linear');
   step('מעבר צבע: ישר ועגול, צבעים וזווית מהלוח, וזז עם הצורה');
 
+  // צבעים וסגנונות שמורים: פלטה ראשונה, הקשה — למילוי / למתאר, הוספה נשמרת בשרת, סגנון בשם מוחל על צורה אחרת
+  await page.evaluate(async () => {
+    const { shapeToD } = await import('./assets/js/geometry/shapes.js');
+    const L = window.__vs.S.doc.surfaces[0].layers[0];
+    for (const [id, x] of [['sw1', 700], ['sw2', 850]]) { const shape = { type: 'rect', box: [x, 900, 100, 60], radius: 0 }; L.paths.push({ id, d: shapeToD(shape), shape, fill: { color: '#cccccc' }, stroke: null }); }
+    window.__vs.select(['sw1']);
+  });
+  await page.waitForSelector('.swatches .swatch[data-sw="2"]');
+  const swOf = (id) => page.evaluate((id) => window.__vs.S.doc.surfaces[0].layers[0].paths.find(p => p.id === id), id);
+  await page.click('.swatch[data-sw="2"]');
+  assert.equal((await swOf('sw1')).fill.color, '#2d4a8a');
+  await page.click('fieldset[data-k="svtarget"] label:nth-child(2)');
+  await page.click('.swatch[data-sw="5"]');
+  assert.equal((await swOf('sw1')).stroke.color, '#c0392b');
+  await page.click('fieldset[data-k="svtarget"] label:nth-child(1)');
+  await page.evaluate(() => { const p = window.__vs.S.doc.surfaces[0].layers[0].paths.find(x => x.id === 'sw1'); p.fill.color = '#123456'; window.__vs.select(['sw1']); });
+  await page.click('[data-sv="add-color"]');
+  await page.waitForFunction(() => fetch('api.php?action=prefs').then(r => r.json()).then(d => d.swatches.includes('#123456')));
+  page.once('dialog', d => d.accept('כפתור כחול'));
+  await page.click('[data-sv="add-style"]');
+  await page.waitForSelector('.style-chip');
+  await page.evaluate(() => window.__vs.select(['sw2']));
+  await page.click('.style-chip');
+  const sw2 = await swOf('sw2');
+  assert.deepEqual([sw2.fill.color, sw2.stroke.color], ['#123456', '#c0392b'], 'הסגנון הוחל');
+  // עריכה: הסרת צבע
+  const nSw = await page.locator('.swatches [data-sw]').count();
+  await page.click('[data-sv="manage"]');
+  await page.click('.swatch[data-sw="0"]');
+  await page.waitForFunction((n) => document.querySelectorAll('.swatches [data-sw]').length === n - 1, nSw);
+  await page.click('[data-sv="manage"]');
+  await page.evaluate(() => { const L = window.__vs.S.doc.surfaces[0].layers[0]; L.paths = L.paths.filter(p => !['sw1', 'sw2'].includes(p.id)); window.__vs.select([]); });
+  step('צבעים וסגנונות שמורים: פלטה, למילוי ולמתאר, נשמרים בשרת, סגנון בשם, הסרה');
+
   // סיבוב: ידית הסיבוב (Shift — 15°), כפתור 90°, היפוך; הצורה נשארת חיה
   await page.evaluate(() => { const p = window.__vs.S.doc.surfaces[0].layers[0].paths; window.__vs.select([p[1].id]); }); // האליפסה
   s = await st();
