@@ -81,20 +81,12 @@ $displayName = $id['name'] !== '' ? $id['name'] : $id['email'];
 <html lang="he" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>חיבור החשבון - <?php echo SITE_NAME; ?></title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="<?php echo asset('/css/app.css'); ?>">
     <link href="<?php echo asset('/css/styles.css'); ?>" rel="stylesheet">
     <link rel="icon" type="image/png" sizes="32x32" href="<?php echo APP_BASE_PATH; ?>/images/icons/ios/32.png">
-    <style>
-        .link-intro { margin-bottom: 20px; line-height: 1.6; }
-        .link-choice { margin-top: 24px; padding-top: 20px; border-top: 1px solid #e5e7eb; }
-        .link-choice p { margin: 0 0 12px; }
-        .btn-secondary-link {
-            width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #667eea;
-            background: #fff; color: #667eea; font-size: 16px; cursor: pointer;
-        }
-    </style>
 </head>
 <body>
     <div class="login-container">

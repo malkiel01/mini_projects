@@ -9,18 +9,18 @@
 }
 
 .admin-stat {
-    background: white;
-    border-radius: 12px;
+    background: var(--surface);
+    border-radius: var(--r);
     padding: 12px 8px;
     text-align: center;
-    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.08);
+    box-shadow: var(--shadow);
 }
 
 .admin-stat-value {
     display: block;
     font-size: 20px;
     font-weight: 700;
-    color: #667eea;
+    color: var(--brand);
     direction: ltr;
     unicode-bidi: isolate;
 }
@@ -28,12 +28,12 @@
 .admin-stat-label {
     display: block;
     font-size: 11px;
-    color: #6d7387;
+    color: var(--muted);
     margin-top: 2px;
 }
 
 .admin-stat.warn .admin-stat-value {
-    color: #dc3545;
+    color: var(--danger);
 }
 
 /* השורה השנייה במלבן: אותו מדד בלי סינון, כלומר כולל אירועים
@@ -43,21 +43,21 @@
     display: block;
     margin-top: 6px;
     padding-top: 5px;
-    border-top: 1px solid #eef0f6;
+    border-top: 1px solid var(--bg);
     font-size: 11px;
-    color: #8a90a6;
+    color: var(--muted);
 }
 
 .admin-stats-note {
     margin: -6px 0 14px;
     padding: 10px 12px;
-    background: white;
+    background: var(--surface);
     border-radius: 10px;
-    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.06);
+    box-shadow: var(--shadow);
 }
 
 .admin-stats-note strong {
-    color: #5a6076;
+    color: var(--muted);
 }
 
 /* --- רשימת המשתמשים --- */
@@ -68,10 +68,10 @@
 }
 
 .admin-user {
-    background: white;
-    border-radius: 12px;
+    background: var(--surface);
+    border-radius: var(--r);
     overflow: hidden;
-    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.07);
+    box-shadow: var(--shadow);
 }
 
 .admin-user-head {
@@ -98,13 +98,13 @@
     gap: 6px;
     flex-wrap: wrap;
     font-size: 15px;
-    color: #333;
+    color: var(--ink);
     margin-bottom: 2px;
 }
 
 .admin-chevron {
     flex-shrink: 0;
-    color: #9aa0b8;
+    color: var(--muted);
     font-size: 13px;
     transition: transform 0.2s;
 }
@@ -114,8 +114,8 @@
 }
 
 .contact-badge.pending {
-    background: #fff4e0;
-    color: #a86412;
+    background: color-mix(in srgb, var(--star) 14%, var(--surface));
+    color: var(--star);
 }
 
 /* --- גוף המשתמש --- */
@@ -129,13 +129,13 @@
 }
 
 .admin-loading {
-    color: #8a90a6;
+    color: var(--muted);
     font-size: 13px;
     padding: 8px 0;
 }
 
 .admin-group {
-    background: #f8f9fc;
+    background: var(--bg);
     border-radius: 10px;
     padding: 10px 12px;
     margin-top: 8px;
@@ -147,7 +147,7 @@
     gap: 6px;
     flex-wrap: wrap;
     font-size: 14px;
-    color: #333;
+    color: var(--ink);
     margin-bottom: 8px;
 }
 
@@ -164,27 +164,27 @@
     gap: 8px;
     flex-wrap: wrap;
     font-size: 13px;
-    color: #555b73;
+    color: var(--muted);
     padding: 4px 0;
 }
 
 .admin-member-name {
     font-weight: 600;
-    color: #3a3f52;
+    color: var(--ink);
 }
 
 .admin-member-share {
-    color: #667eea;
+    color: var(--brand);
     font-size: 12px;
 }
 
 .admin-pending-title {
     margin-top: 10px;
     padding-top: 8px;
-    border-top: 1px solid #e6e8f2;
+    border-top: 1px solid var(--line);
     font-size: 12px;
     font-weight: 700;
-    color: #a86412;
+    color: var(--star);
 }
 
 .admin-pending .contact-email {
@@ -198,8 +198,8 @@
     gap: 5px;
     margin-right: auto;
     padding: 5px 10px;
-    background: #28a745;
-    color: white;
+    background: var(--ok);
+    color: var(--brand-ink);
     border: none;
     border-radius: 8px;
     font-size: 12px;
@@ -209,7 +209,7 @@
 }
 
 .btn-force:hover {
-    background: #218838;
+    background: var(--ok);
 }
 
 @media (max-width: 600px) {
@@ -224,11 +224,11 @@
 .admin-nav {
     display: flex;
     gap: 6px;
-    background: white;
-    border-radius: 12px;
+    background: var(--surface);
+    border-radius: var(--r);
     padding: 5px;
     margin-bottom: 12px;
-    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.08);
+    box-shadow: var(--shadow);
     overflow-x: auto;
     scrollbar-width: none;
 
@@ -257,15 +257,15 @@
     font-family: inherit;
     font-size: 14px;
     font-weight: 600;
-    color: #616780;
+    color: var(--muted);
     white-space: nowrap;
     cursor: pointer;
     transition: background 0.15s, color 0.15s;
 }
 
 .admin-tab.active {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
+    background: var(--brand);
+    color: var(--brand-ink);
 }
 
 /* נקודה שמסמנת אזור שדורש תשומת לב */
@@ -273,26 +273,26 @@
     width: 7px;
     height: 7px;
     border-radius: 50%;
-    background: #e8a33d;
+    background: var(--star);
 }
 
 .admin-tab.active .admin-nav-dot {
-    background: white;
+    background: var(--surface);
 }
 
 .admin-owner-line {
     font-size: 12px;
-    color: #7b8194;
+    color: var(--muted);
     margin-bottom: 4px;
 }
 
 .admin-modal-context {
     margin: 0 0 14px;
     padding: 8px 12px;
-    background: #f1f2f7;
+    background: var(--bg);
     border-radius: 9px;
     font-weight: 600;
-    color: #4a4f63;
+    color: var(--ink);
     font-size: 14px;
 }
 
@@ -308,7 +308,7 @@
     flex-wrap: wrap;
     margin-top: 12px;
     padding-top: 10px;
-    border-top: 1px solid #e6e8f2;
+    border-top: 1px solid var(--line);
 }
 
 .btn-restore-admin,
@@ -326,34 +326,34 @@
 }
 
 .btn-restore-admin {
-    background: #e6f0fe;
-    color: #2b6cb0;
+    background: var(--brand-soft);
+    color: var(--brand);
 }
 
 .btn-purge-admin {
-    background: #fdecec;
-    color: #c53030;
+    background: var(--danger-soft);
+    color: var(--danger);
 }
 
 .btn-purge-admin.soft {
-    background: #f4f5f9;
-    color: #6b7089;
+    background: var(--bg);
+    color: var(--muted);
 }
 
-.btn-restore-admin:hover { background: #d6e6fd; }
-.btn-purge-admin:hover   { background: #f9d6d6; }
-.btn-purge-admin.soft:hover { background: #e9ebf2; }
+.btn-restore-admin:hover { background: var(--brand-soft); }
+.btn-purge-admin:hover   { background: var(--danger-soft); }
+.btn-purge-admin.soft:hover { background: var(--line); }
 
 /* ============================================================
    כרטיסי האזורים - מערכת, יומן ותחזוקה
    ============================================================ */
 
 .admin-card {
-    background: white;
-    border-radius: 12px;
+    background: var(--surface);
+    border-radius: var(--r);
     padding: 14px;
     margin-bottom: 12px;
-    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.07);
+    box-shadow: var(--shadow);
 }
 
 .admin-card-title {
@@ -362,12 +362,12 @@
     gap: 8px;
     flex-wrap: wrap;
     font-size: 15px;
-    color: #3a3f52;
+    color: var(--ink);
     margin-bottom: 10px;
 }
 
 .admin-card-title i {
-    color: #667eea;
+    color: var(--brand);
 }
 
 .admin-pill {
@@ -378,18 +378,18 @@
     font-weight: 700;
 }
 
-.admin-pill.ok   { background: #e8f6ec; color: #1f7a3d; }
-.admin-pill.warn { background: #fff4e0; color: #a86412; }
+.admin-pill.ok   { background: color-mix(in srgb, var(--ok) 12%, var(--surface)); color: var(--ok); }
+.admin-pill.warn { background: color-mix(in srgb, var(--star) 14%, var(--surface)); color: var(--star); }
 
 .admin-note {
     font-size: 12px;
     line-height: 1.6;
-    color: #7b8194;
+    color: var(--muted);
     margin-bottom: 10px;
 }
 
 .admin-note code {
-    background: #f1f2f7;
+    background: var(--bg);
     border-radius: 5px;
     padding: 1px 5px;
     direction: ltr;
@@ -409,7 +409,7 @@
     align-items: flex-start;
     gap: 10px;
     padding: 8px 0;
-    border-bottom: 1px solid #f1f2f7;
+    border-bottom: 1px solid var(--bg);
 }
 
 .admin-check:last-child {
@@ -421,19 +421,19 @@
     font-size: 14px;
 }
 
-.admin-check.ok   i { color: #28a745; }
-.admin-check.warn i { color: #e8a33d; }
-.admin-check.fail i { color: #dc3545; }
+.admin-check.ok   i { color: var(--ok); }
+.admin-check.warn i { color: var(--star); }
+.admin-check.fail i { color: var(--danger); }
 
 .admin-check strong {
     display: block;
     font-size: 13px;
-    color: #3a3f52;
+    color: var(--ink);
 }
 
 .admin-check span {
     font-size: 12px;
-    color: #7b8194;
+    color: var(--muted);
 }
 
 /* --- מספרים קטנים בשורה --- */
@@ -444,25 +444,25 @@
 }
 
 .admin-mini-stats > div {
-    background: #f8f9fc;
+    background: var(--bg);
     border-radius: 10px;
     padding: 10px 8px;
     text-align: center;
     font-size: 11px;
-    color: #6d7387;
+    color: var(--muted);
 }
 
 .admin-mini-stats > div span {
     display: block;
     font-size: 18px;
     font-weight: 700;
-    color: #667eea;
+    color: var(--brand);
     direction: ltr;
     unicode-bidi: isolate;
 }
 
 .admin-mini-stats > div.bad span {
-    color: #dc3545;
+    color: var(--danger);
 }
 
 /* --- טבלת פרטי ההתקנה --- */
@@ -474,11 +474,11 @@
 }
 
 .admin-info dt {
-    color: #7b8194;
+    color: var(--muted);
 }
 
 .admin-info dd {
-    color: #3a3f52;
+    color: var(--ink);
     font-weight: 600;
     direction: ltr;
     unicode-bidi: plaintext;
@@ -498,7 +498,7 @@
     grid-template-columns: 1fr auto;
     gap: 2px 10px;
     padding: 9px 0;
-    border-bottom: 1px solid #f1f2f7;
+    border-bottom: 1px solid var(--bg);
 }
 
 .admin-rows li:last-child {
@@ -512,13 +512,13 @@
     flex-wrap: wrap;
     font-size: 13px;
     font-weight: 600;
-    color: #3a3f52;
+    color: var(--ink);
 }
 
 .admin-row-sub {
     grid-column: 1;
     font-size: 12px;
-    color: #7b8194;
+    color: var(--muted);
     word-break: break-word;
 }
 
@@ -527,14 +527,14 @@
     grid-column: 2;
     align-self: center;
     font-size: 11px;
-    color: #9aa0b8;
+    color: var(--muted);
     white-space: nowrap;
     direction: ltr;
     unicode-bidi: isolate;
 }
 
 .admin-rows li.bad .admin-row-main {
-    color: #c53030;
+    color: var(--danger);
 }
 
 /* --- פעולות על משתמש --- */
@@ -543,7 +543,7 @@
     gap: 8px;
     flex-wrap: wrap;
     padding: 10px 0 2px;
-    border-bottom: 1px solid #f1f2f7;
+    border-bottom: 1px solid var(--bg);
     margin-bottom: 4px;
 }
 
@@ -552,11 +552,11 @@
 }
 
 .btn-force.neutral {
-    background: #6b7089;
+    background: var(--muted);
 }
 
 .btn-force.neutral:hover {
-    background: #5a5f75;
+    background: var(--muted);
 }
 
 .admin-self-note {
@@ -564,7 +564,7 @@
     align-items: center;
     gap: 6px;
     font-size: 12px;
-    color: #7b8194;
+    color: var(--muted);
 }
 
 /* ============================================================
@@ -582,7 +582,7 @@
 .admin-run-status {
     font-size: 12px;
     font-weight: 600;
-    color: #667eea;
+    color: var(--brand);
 }
 
 .admin-migrations {
@@ -593,13 +593,13 @@
 }
 
 .admin-migrations > li {
-    background: #f8f9fc;
+    background: var(--bg);
     border-radius: 10px;
     padding: 10px 12px;
 }
 
 .admin-migrations > li.has-pending {
-    background: #fffaf0;
+    background: color-mix(in srgb, var(--star) 14%, var(--surface));
 }
 
 .admin-migration-head {
@@ -608,13 +608,13 @@
     gap: 8px;
     flex-wrap: wrap;
     font-size: 13px;
-    color: #3a3f52;
+    color: var(--ink);
 }
 
 .admin-migration-head strong {
     direction: ltr;
     unicode-bidi: isolate;
-    color: #667eea;
+    color: var(--brand);
 }
 
 .admin-migration-steps {
@@ -635,31 +635,31 @@
 }
 
 .admin-migration-steps li.done {
-    color: #8f95a8;
+    color: var(--muted);
 }
 
 .admin-migration-steps li.done i {
-    color: #28a745;
+    color: var(--ok);
 }
 
 .admin-migration-steps li.pending {
-    color: #a86412;
+    color: var(--star);
     font-weight: 600;
 }
 
 .admin-migration-steps li.pending i {
-    color: #e8a33d;
+    color: var(--star);
 }
 
 .admin-step-error {
-    color: #c53030;
+    color: var(--danger);
     font-size: 11px;
 }
 
 /* --- פלט ההרצה --- */
 .admin-run-log {
     list-style: none;
-    background: #2d3142;
+    background: var(--ink);
     border-radius: 10px;
     padding: 10px 12px;
     margin-bottom: 10px;
@@ -673,7 +673,7 @@
     gap: 7px;
     flex-wrap: wrap;
     font-size: 12px;
-    color: #c9cddb;
+    color: var(--line);
     padding: 2px 0;
 }
 
@@ -690,13 +690,13 @@
 }
 
 .admin-run-log li.applied i { color: #4ade80; }
-.admin-run-log li.skipped   { color: #7d8398; }
-.admin-run-log li.skipped i { color: #616780; }
+.admin-run-log li.skipped   { color: var(--muted); }
+.admin-run-log li.skipped i { color: var(--muted); }
 .admin-run-log li.failed    { color: #ff9b9b; }
 .admin-run-log li.failed i  { color: #ff6b6b; }
 
 .admin-log-note {
-    color: #9aa0b8;
+    color: var(--muted);
     font-size: 11px;
 }
 
@@ -714,13 +714,13 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    background: #f8f9fc;
+    background: var(--bg);
     border-radius: 10px;
     padding: 10px 12px;
 }
 
 .admin-task.danger {
-    background: #fdf1f1;
+    background: var(--danger-soft);
 }
 
 .admin-task-text {
@@ -731,12 +731,12 @@
 .admin-task-text strong {
     display: block;
     font-size: 13px;
-    color: #3a3f52;
+    color: var(--ink);
 }
 
 .admin-task-text span {
     font-size: 12px;
-    color: #7b8194;
+    color: var(--muted);
 }
 
 .admin-task .btn-secondary {
@@ -747,8 +747,8 @@
 }
 
 .admin-task.danger .btn-secondary {
-    background: #fdecec;
-    color: #c53030;
+    background: var(--danger-soft);
+    color: var(--danger);
 }
 
 /* --- פקודות טרמינל --- */
@@ -765,12 +765,12 @@
     gap: 10px;
     flex-wrap: wrap;
     font-size: 12px;
-    color: #7b8194;
+    color: var(--muted);
 }
 
 .admin-commands code {
-    background: #2d3142;
-    color: #c9cddb;
+    background: var(--ink);
+    color: var(--line);
     border-radius: 6px;
     padding: 4px 9px;
     font-size: 12px;
@@ -810,34 +810,34 @@
 
 .admin-chip {
     padding: 6px 13px;
-    background: white;
+    background: var(--surface);
     border: none;
     border-radius: 999px;
     font-family: inherit;
     font-size: 12px;
     font-weight: 600;
-    color: #616780;
+    color: var(--muted);
     cursor: pointer;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+    box-shadow: var(--shadow);
 }
 
 .admin-chip.active {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
+    background: var(--brand);
+    color: var(--brand-ink);
 }
 
 /* --- כרטיס הזמנה --- */
 .admin-invite {
-    background: white;
-    border-radius: 12px;
+    background: var(--surface);
+    border-radius: var(--r);
     padding: 12px 14px;
-    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.07);
+    box-shadow: var(--shadow);
 }
 
 /* הזמנה תקועה מסומנת בפס בצד ולא בצבע רקע:
    הרקע היה מתחרה בתגיות המצב שבתוך הכרטיס */
 .admin-invite.stale {
-    border-inline-start: 3px solid #e8a33d;
+    border-inline-start: 3px solid var(--star);
 }
 
 .admin-invite-head {
@@ -846,7 +846,7 @@
     gap: 6px;
     flex-wrap: wrap;
     font-size: 15px;
-    color: #333;
+    color: var(--ink);
     margin-bottom: 2px;
 }
 
@@ -856,7 +856,7 @@
     gap: 6px;
     flex-wrap: wrap;
     font-size: 12px;
-    color: #7b8194;
+    color: var(--muted);
     margin-top: 4px;
 }
 
@@ -865,10 +865,10 @@
     margin: 0;
 }
 
-.contact-badge.status-pending  { background: #fff4e0; color: #a86412; }
-.contact-badge.status-accepted { background: #e8f6ec; color: #1f7a3d; }
-.contact-badge.status-rejected { background: #fdecec; color: #c53030; }
-.contact-badge.status-expired  { background: #f1f2f7; color: #6b7089; }
+.contact-badge.status-pending  { background: color-mix(in srgb, var(--star) 14%, var(--surface)); color: var(--star); }
+.contact-badge.status-accepted { background: color-mix(in srgb, var(--ok) 12%, var(--surface)); color: var(--ok); }
+.contact-badge.status-rejected { background: var(--danger-soft); color: var(--danger); }
+.contact-badge.status-expired  { background: var(--bg); color: var(--muted); }
 
 .admin-invite-actions {
     display: flex;
@@ -876,7 +876,7 @@
     flex-wrap: wrap;
     margin-top: 10px;
     padding-top: 10px;
-    border-top: 1px solid #f1f2f7;
+    border-top: 1px solid var(--bg);
 }
 
 .admin-invite-actions .btn-force {
@@ -930,8 +930,8 @@
     margin-top: 12px;
     padding: 10px 12px;
     border-radius: 10px;
-    background: #fff6e5;
-    color: #8a5b00;
+    background: color-mix(in srgb, var(--star) 14%, var(--surface));
+    color: var(--star);
     font-size: 12.5px;
     line-height: 1.5;
 }
@@ -947,8 +947,8 @@
     max-height: 420px;
     overflow: auto;
     border-radius: 10px;
-    background: #1f2333;
-    color: #dfe3f0;
+    background: var(--ink);
+    color: var(--line);
     font-family: 'Courier New', monospace;
     font-size: 11.5px;
     line-height: 1.65;

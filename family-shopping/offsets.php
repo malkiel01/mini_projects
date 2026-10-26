@@ -9,6 +9,7 @@
 
 require_once 'config.php';
 require_once 'includes/auth_check.php';
+require_once 'includes/layout.php';
 require_once 'includes/offsets.php';
 
 $pdo     = getDBConnection();
@@ -55,29 +56,18 @@ function offsetMoney($value) {
 <!DOCTYPE html>
 <html dir="rtl" lang="he">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>קיזוזים - <?php echo SITE_NAME; ?></title>
-    <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" media="print" onload="this.media='all'">
-    <noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"></noscript>
-    <link rel="stylesheet" href="<?php echo asset('/css/dashboard.css'); ?>">
+    <?php layoutHead('קיזוזים בין אירועים'); ?>
     <link rel="stylesheet" href="<?php echo asset('/css/contacts.css'); ?>">
     <link rel="stylesheet" href="<?php echo asset('/css/offsets.css'); ?>">
-    <meta name="theme-color" content="#667eea">
 </head>
 <body>
-    <nav class="navbar">
-        <div class="navbar-container">
-            <a href="dashboard.php" class="btn-back">
-                <i class="fas fa-arrow-right"></i> חזרה
-            </a>
-            <span class="navbar-title">קיזוזים</span>
-            <span style="width: 40px;"></span>
-        </div>
-    </nav>
+    <?php renderTopBar([
+        'title' => 'קיזוזים בין אירועים',
+        'sub'   => 'חובות הפוכים בין אירועים — וסוגרים אותם יחד',
+        'back'  => 'dashboard.php',
+    ]); ?>
 
-    <div class="container">
+    <div class="container" id="main" tabindex="-1">
 
         <?php if (!$featuresReady): ?>
             <?php renderMigrationNotice(); ?>

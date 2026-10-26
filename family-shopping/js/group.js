@@ -94,12 +94,32 @@ async function callAndReload(action, fields = {}, options = {}) {
 // ============================================================
 
 function showTab(tabName, element) {
-    document.querySelectorAll('.content').forEach(el => el.style.display = 'none');
-    document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+    const panel = document.getElementById(tabName);
+    if (!panel || !element) return;
 
-    document.getElementById(tabName).style.display = 'block';
+    document.querySelectorAll('.content').forEach(el => el.style.display = 'none');
+    document.querySelectorAll('.tab').forEach(el => {
+        el.classList.remove('active');
+        el.setAttribute('aria-selected', 'false');
+    });
+
+    panel.style.display = 'block';
     element.classList.add('active');
+    element.setAttribute('aria-selected', 'true');
+
+    // הלשונית האחרונה נזכרת לאירוע הזה - חזרה מחלון או רענון לא מאפסים אותה
+    try { sessionStorage.setItem('fs-tab-' + APP_CONFIG.groupId, tabName); } catch (e) {}
 }
+
+// חזרה ללשונית שהייתה פתוחה
+document.addEventListener('DOMContentLoaded', () => {
+    let saved = null;
+    try { saved = sessionStorage.getItem('fs-tab-' + APP_CONFIG.groupId); } catch (e) {}
+    const button = saved && document.querySelector('.tab[onclick*="\'' + saved + '\'"]');
+    if (button) showTab(saved, button);
+    else document.querySelectorAll('.tab').forEach(el =>
+        el.setAttribute('aria-selected', el.classList.contains('active') ? 'true' : 'false'));
+});
 
 function openModal(id) {
     const modal = document.getElementById(id);
