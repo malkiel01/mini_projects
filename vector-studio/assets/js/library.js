@@ -30,6 +30,10 @@ export async function container(id) {
   return new Uint8Array(await res.arrayBuffer());
 }
 
+/** הצבעים והסגנונות השמורים של המשתמש — { swatches, styles }. */
+export const prefs = () => call('prefs').then(d => ({ swatches: d.swatches, styles: d.styles }));
+export const putPrefs = (p) => call('prefs_put', { body: p }).then(d => ({ swatches: d.swatches, styles: d.styles }));
+
 /** תמונה בתוך ציור: מעלים פעם אחת (לפי sha256) → src, ‏media/<sha>.<ext>. */
 export const putMedia = (bytes) => call('media_put', { body: { data: toBase64(bytes) } }).then(d => d.src);
 

@@ -194,7 +194,8 @@ export function renderProps(el, ctx) {
         ${seg('cap', stroke?.cap || 'butt', { label: 'קצוות', items: [['butt', 'ישר'], ['round', 'עגול'], ['square', 'מרובע']] })}
         ${seg('join', stroke?.join || 'miter', { label: 'חיבורים', items: [['miter', 'חד'], ['round', 'עגול'], ['bevel', 'קטום']] })}
       </div>
-    </section>`}`;
+    </section>`}
+    ${image ? '' : savedSection(ctx.prefs)}`;
 
   const each = (fn) => (path) => fn(path);
 
@@ -207,6 +208,7 @@ export function renderProps(el, ctx) {
   el.querySelector('[data-act="copy"]').addEventListener('click', () => ctx.action('copy'));
   el.querySelector('[data-act="edit-text"]')?.addEventListener('click', () => ctx.action('edit-text'));
   el.querySelector('[data-act="image-ratio"]')?.addEventListener('click', () => ctx.action('image-ratio'));
+  wireSaved(el, ctx, p);
   const io = el.querySelector('[data-io]');
   if (io) io.addEventListener('change', () => {
     const v = Math.max(0, Math.min(100, Number(io.value) || 0)) / 100;
@@ -369,4 +371,73 @@ export function renderLayers(el, ctx) {
       ctx.remove(id);
     }
   }));
+}
+
+// ---------- צבעים וסגנונות שמורים (של המשתמש, לכל הציורים) ----------
+
+// פלטה ראשונה למי שעוד לא שמר כלום — נשמרת רק כשמשנים אותה
+const STARTER = ['#16192b', '#ffffff', '#2d4a8a', '#1e7b3a', '#e19a00', '#c0392b', '#8e44ad', '#5d6475'];
+let target = 'fill';   // הקשה על צבע — למילוי או למתאר
+let managing = false;  // מצב עריכה: ✕ על כל צבע וסגנון
+
+function savedSection(prefs) {
+  const sw = prefs?.swatches?.length ? prefs.swatches : STARTER;
+  const styles = prefs?.styles || [];
+  const prev = (st) => `<i class="sw-prev" style="background:${esc(st.fill?.color || 'transparent')};border-color:${esc(st.stroke?.color || 'var(--line)')}"></i>`;
+  return `<section class="group" aria-labelledby="g-saved">
+      <div class="g-row"><h3 id="g-saved">צבעים וסגנונות</h3>
+        <button class="btn sm ghost" type="button" data-sv="manage" aria-pressed="${managing}">${managing ? 'סיום' : 'עריכה'}</button></div>
+      ${seg('svtarget', target, { label: 'הקשה על צבע', items: [['fill', 'למילוי'], ['stroke', 'למתאר']] })}
+      <div class="swatches" role="group" aria-label="צבעים שמורים">
+        ${sw.map((c, i) => `<button type="button" class="swatch${managing ? ' del' : ''}" data-sw="${i}" style="background:${esc(c)}" aria-label="${managing ? 'הסרת ' : ''}${esc(c)}" title="${esc(c)}"></button>`).join('')}
+        <button type="button" class="swatch add" data-sv="add-color" aria-label="שמירת הצבע הנוכחי" title="שמירת הצבע הנוכחי">+</button>
+      </div>
+      <div class="styles-list" role="group" aria-label="סגנונות שמורים">
+        ${styles.map((st, i) => `<button type="button" class="btn sm ghost style-chip${managing ? ' del' : ''}" data-st="${i}">${prev(st)}${esc(st.name)}${managing ? ' ✕' : ''}</button>`).join('')}
+        <button type="button" class="btn sm ghost" data-sv="add-style">+ שמירת הסגנון</button>
+      </div>
+    </section>`;
+}
+
+function wireSaved(el, ctx, p) {
+  const prefs = ctx.prefs || { swatches: [], styles: [] };
+  const swatches = () => (prefs.swatches.length ? prefs.swatches.slice() : STARTER.slice());
+  const save = (next) => ctx.savePrefs({ swatches: prefs.swatches, styles: prefs.styles, ...next });
+  el.querySelector('fieldset[data-k="svtarget"]')?.addEventListener('change', (e) => { target = e.target.value; e.stopPropagation(); }, true);
+  el.querySelector('[data-sv="manage"]')?.addEventListener('click', () => { managing = !managing; ctx.refresh(); });
+  el.querySelectorAll('[data-sw]').forEach(b => b.addEventListener('click', () => {
+    const i = Number(b.dataset.sw), list = swatches();
+    if (managing) { list.splice(i, 1); return save({ swatches: list }); }
+    const color = list[i];
+    ctx.edit((path) => {
+      if (path.type === 'image') return;
+      if (target === 'stroke') path.stroke = { ...(path.stroke || { width: 1, cap: 'butt', join: 'miter', dash: [] }), color };
+      else path.fill = { ...(path.fill?.opacity != null ? { opacity: path.fill.opacity } : {}), color };
+    }, true);
+  }));
+  el.querySelector('[data-sv="add-color"]')?.addEventListener('click', () => {
+    const c = (target === 'stroke' ? p.stroke?.color : p.fill?.color || p.fill?.gradient?.stops?.[0]?.color) || '#16192b';
+    const list = swatches();
+    if (!list.includes(c.toLowerCase())) list.push(c.toLowerCase());
+    save({ swatches: list.slice(-64) });
+  });
+  el.querySelectorAll('[data-st]').forEach(b => b.addEventListener('click', () => {
+    const i = Number(b.dataset.st), st = prefs.styles[i];
+    if (!st) return;
+    if (managing) { const list = prefs.styles.slice(); list.splice(i, 1); return save({ styles: list }); }
+    ctx.edit((path) => {
+      if (path.type === 'image') return;
+      path.fill = st.fill ? JSON.parse(JSON.stringify(st.fill)) : null;
+      // מעבר צבע — באותה זווית / צורה, אבל לפי התיבה של הפריט הזה (הנקודות השמורות הן של המקור)
+      const g = path.fill?.gradient;
+      if (g && drawable(g)) Object.assign(g, isRadial(g) ? radialFor(ctx.pathBox(path)) : endpoints(ctx.pathBox(path), angleOf(g)));
+      path.stroke = st.stroke ? JSON.parse(JSON.stringify(st.stroke)) : null;
+    }, true);
+  }));
+  el.querySelector('[data-sv="add-style"]')?.addEventListener('click', () => {
+    const name = prompt('שם לסגנון', '');
+    if (!name || !name.trim()) return;
+    const fill = p.fill ? JSON.parse(JSON.stringify(p.fill)) : null;
+    save({ styles: [...prefs.styles, { name: name.trim().slice(0, 40), fill, stroke: p.stroke ? JSON.parse(JSON.stringify(p.stroke)) : null }].slice(-32) });
+  });
 }
