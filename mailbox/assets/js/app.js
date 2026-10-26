@@ -46,6 +46,16 @@ function el(tag, attrs = {}, ...kids) {
     return n;
 }
 
+/** אייקון מה-sprite שב-index.html. */
+function icon(name) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'i'); svg.setAttribute('aria-hidden', 'true');
+    const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    use.setAttribute('href', '#i-' + name);
+    svg.append(use);
+    return svg;
+}
+
 function toast(msg, err = false) {
     const t = $('.toast');
     t.textContent = msg; t.classList.toggle('err', err); t.hidden = false;
@@ -92,6 +102,7 @@ function setTitle() {
     $('#title').textContent = b ? 'דואר — ' + b.label : 'דואר';
     $('#subtitle').textContent = b ? (b.label !== b.email ? b.email : '') + (b.owner != null ? ' · שותפה איתך' : '') : '';
     document.title = b ? 'דואר — ' + b.label : 'דואר';
+    $('#switch-ic').hidden = state.boxes.length < 2;
 }
 
 function route() {
@@ -163,8 +174,8 @@ function renderList(fresh = new Set()) {
         avatar(av, m.from_name, m.from_email);
         const marks = el('div', { class: 'marks' },
             fresh.has(m.uid) ? el('span', { class: 'chip new', text: 'חדש' }) : null,
-            m.code ? el('span', { class: 'chip code', dir: 'ltr', text: '🔑 ' + m.code }) : null,
-            m.attach ? el('span', { class: 'chip', text: '📎 ' + m.attach }) : null);
+            m.code ? el('span', { class: 'chip code', dir: 'ltr' }, icon('key'), m.code) : null,
+            m.attach ? el('span', { class: 'chip', 'aria-label': m.attach + ' צרופות' }, icon('clip'), String(m.attach)) : null);
         const li = el('li', {
             class: 'card' + (m.seen ? '' : ' unseen') + (fresh.has(m.uid) ? ' fresh' : ''),
             tabindex: '0', role: 'button', 'data-uid': m.uid,
@@ -242,7 +253,8 @@ function renderMessage(m) {
     const chip = $('#m-code');
     chip.hidden = !m.code;
     chip.classList.remove('copied');
-    $('#m-copy').lastChild.textContent = ' העתק';
+    $('#m-copy .ct').textContent = 'העתק';
+    $('#m-copy .ci').replaceChildren(icon('copy'));
     if (m.code) $('#m-code-num').textContent = m.code;
 
     renderAttachments(m);
@@ -318,7 +330,8 @@ $('#m-copy').addEventListener('click', async () => {
     }
     if (!ok) { toast('לא הצלחתי להעתיק — סמנו את הקוד והעתיקו ידנית', true); return; }
     $('#m-code').classList.add('copied');
-    $('#m-copy').lastChild.textContent = ' הועתק ✓';
+    $('#m-copy .ct').textContent = 'הועתק';
+    $('#m-copy .ci').replaceChildren(icon('check'));
     toast('הקוד ' + code + ' הועתק');
 });
 
@@ -334,22 +347,25 @@ function renderAttachments(m) {
     ul.hidden = !m.attachments.length;
     ul.replaceChildren(...m.attachments.map(a => {
         const pdf = isPdf(a);
-        const ic = el('span', { class: 'ic' + (pdf ? ' pdf' : ''), 'aria-hidden': 'true', text: pdf ? 'PDF' : iconFor(a.type) });
+        const ic = el('span', { class: 'ic' + (pdf ? ' pdf' : ''), 'aria-hidden': 'true', text: badge(a) });
         const tx = el('span', { class: 'tx' }, el('b', { text: a.name, dir: 'auto' }), el('small', { text: size(a.size) + (pdf ? ' · לחיצה לצפייה' : '') }));
         const open = pdf
             ? el('button', { class: 'open', type: 'button', onclick: () => Pdf.open(a) }, ic, tx)
             : el('a', { class: 'open', href: attUrl(a), download: a.name }, ic, tx);
         return el('li', { class: 'att' }, open,
-            el('a', { class: 'icon-btn', href: attUrl(a), download: a.name, 'aria-label': 'הורדת ' + a.name, text: '⬇️' }));
+            el('a', { class: 'icon-btn', href: attUrl(a), download: a.name, 'aria-label': 'הורדת ' + a.name }, icon('download')));
     }));
 }
-function iconFor(type) {
-    if (type.startsWith('image/')) return '🖼️';
-    if (/zip|compressed|rar|7z/.test(type)) return '🗜️';
-    if (/word|document/.test(type)) return '📝';
-    if (/sheet|excel|csv/.test(type)) return '📊';
-    if (type === 'message/rfc822') return '✉';
-    return '📄';
+/** תווית קצרה לסוג הקובץ — PDF / DOC / XLS / IMG / ZIP, או הסיומת. */
+function badge(a) {
+    if (isPdf(a)) return 'PDF';
+    if (a.type.startsWith('image/')) return 'IMG';
+    if (/zip|compressed|rar|7z/.test(a.type)) return 'ZIP';
+    if (/word|document/.test(a.type)) return 'DOC';
+    if (/sheet|excel|csv/.test(a.type)) return 'XLS';
+    if (a.type === 'message/rfc822') return 'EML';
+    const ext = (a.name.match(/\.([a-z0-9]{1,4})$/i) || [])[1];
+    return ext ? ext.toUpperCase() : 'FILE';
 }
 
 // ── צופה PDF (pdf.js מקומי, נטען רק כשצריך) — גם באנדרואיד, שלא מציג PDF ב-iframe ──
@@ -404,7 +420,7 @@ const Pdf = (() => {
             doc = await pdf.getDocument({ url: attUrl(a, true), withCredentials: true }).promise;
             await render();
         } catch (e) {
-            $('#pdf-page').textContent = 'לא ניתן להציג — אפשר להוריד ⬇️';
+            $('#pdf-page').textContent = 'לא ניתן להציג — אפשר להוריד';
         }
     }
 
@@ -465,22 +481,51 @@ function renderBoxes() {
         ul.replaceChildren(el('li', { class: 'empty', text: 'אין תיבות עדיין. "+ תיבה" כדי להוסיף.' }));
         return;
     }
-    ul.replaceChildren(...state.boxes.map(b => el('li', { class: 'box-row' },
+    ul.replaceChildren(...state.boxes.map(b => el('li', { class: 'box-row', 'data-box': b.id },
         el('button', { class: 'use-row', type: 'button', onclick: () => { selectBox(b.id); $('#boxes-dlg').close(); } },
-            el('span', { class: 'use-ic', 'aria-hidden': 'true', text: state.box && state.box.id === b.id ? '✓' : '✉' }),
+            el('span', { class: 'use-ic', 'aria-hidden': 'true' }, icon(state.box && state.box.id === b.id ? 'check' : 'mail')),
             el('span', { class: 'use-tx' }, el('b', { class: 'one', text: b.label }),
-                el('small', { dir: 'auto', text: b.email + (b.owner != null ? ' · שותפה איתך' + (b.owner ? ' ע״י ' + b.owner : '') : '') }))),
+                el('small', { dir: 'auto', text: b.email + (b.owner != null ? ' · שותפה איתך' + (b.owner ? ' ע״י ' + b.owner : '') : '') })),
+            el('span', { class: 'count', hidden: true, 'aria-label': 'לא נקראו' })),
         b.role === 'owner'
-            ? el('button', { class: 'icon-btn', type: 'button', 'aria-label': 'עריכת ' + b.label, text: '✏️', onclick: () => openBox(b) })
+            ? el('button', { class: 'icon-btn', type: 'button', 'aria-label': 'עריכה ושיתוף של ' + b.label, onclick: () => openBox(b) }, icon('edit'))
             : null)));
 }
 
-$('#boxes-btn').addEventListener('click', () => { renderBoxes(); $('#boxes-dlg').showModal(); });
+function openBoxes() {
+    renderBoxes();
+    $('#boxes-dlg').showModal();
+    // כמה לא נקראו בכל תיבה — כל אחת בנפרד, כדי שתיבה איטית לא תעכב את השאר
+    for (const b of state.boxes) {
+        api('unseen', { box: b.id }).then(r => {
+            const n = document.querySelector(`#boxes-list [data-box="${b.id}"] .count`);
+            if (n) { n.textContent = r.unseen; n.hidden = !r.unseen; }
+        }).catch(() => {});
+    }
+}
+$('#boxes-btn').addEventListener('click', openBoxes);
+$('#switch').addEventListener('click', openBoxes);   // לחיצה על שם התיבה — מעבר לתיבה אחרת
 $('#add-box-btn').addEventListener('click', () => openAdd());
+
+// ספקים: שרת וסיסמה. Gmail / Yahoo — "סיסמת אפליקציה", לא הסיסמה הרגילה (README: "חיבור Gmail").
+const PROVIDERS = {
+    cpanel: { host: 'box2054.bluehost.com', hint: 'תיבה שנוצרה ב-cPanel של האתר. הסיסמה — של התיבה עצמה.' },
+    gmail: { host: 'imap.gmail.com', hint: 'ב-Gmail צריך "סיסמת אפליקציה" (16 תווים), לא את הסיסמה הרגילה: myaccount.google.com/apppasswords — דורש אימות דו-שלבי בחשבון.' },
+    yahoo: { host: 'imap.mail.yahoo.com', hint: 'ב-Yahoo צריך "סיסמת אפליקציה": Account Security ← Generate app password.' },
+    other: { host: '', hint: 'שרת IMAP של הספק (בדרך כלל imap.<הדומיין>). Outlook / Hotmail לא נתמכים: מיקרוסופט חסמה כניסה בסיסמה ל-IMAP.' },
+};
+function setProvider(key) {
+    const p = PROVIDERS[key] || PROVIDERS.other, f = $('#add-form');
+    f.host.value = p.host;
+    f.querySelector('input[name=port][value="993"]').checked = true;
+    $('#provider-hint').textContent = p.hint;
+}
+$('#provider').addEventListener('change', e => setProvider(e.target.value));
 
 function openAdd() {
     const f = $('#add-form');
     f.reset();
+    setProvider('cpanel');
     $('.error', f).hidden = true;
     if ($('#boxes-dlg').open) $('#boxes-dlg').close();
     $('#add-dlg').showModal();
@@ -532,11 +577,11 @@ async function loadShares() {
             el('div', { class: 'body' },
                 el('div', { class: 'l1' }, el('span', { text: s.name || s.email })),
                 el('div', { class: 'l2', dir: 'auto', text: s.email + (s.joined ? '' : ' · עוד לא נכנס/ה') })),
-            el('button', { class: 'icon-btn', type: 'button', 'aria-label': 'ביטול השיתוף עם ' + s.email, text: '✕',
+            el('button', { class: 'icon-btn', type: 'button', 'aria-label': 'ביטול השיתוף עם ' + s.email,
                 onclick: async () => {
                     try { await api('share_remove', {}, { box: editing.id, email: s.email }); loadShares(); }
                     catch (x) { toast(x.message, true); }
-                } }))));
+                } }, icon('close')))));
     } catch (x) { toast(x.message, true); }
 }
 

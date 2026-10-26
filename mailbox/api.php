@@ -4,6 +4,7 @@
  *
  * GET  ?action=me                      המשתמש, התיבות שלו, ייבוא חד-פעמי למנהל
  * GET  ?action=list&box=ID             50 ההודעות האחרונות
+ * GET  ?action=unseen&box=ID           כמה לא נקראו (לרשימת התיבות)
  * GET  ?action=message&box=ID&uid=N    הודעה (HTML מסונן) — ומסמן אותה כנקראה
  * GET  ?action=attachment&box=&uid=&part=[&inline=1]
  * POST action=box_add | box_update | box_delete | share_add | share_remove   (JSON, כותרת X-Mailbox)
@@ -78,6 +79,9 @@ try {
             $t = microtime(true);
             $res = mb_list($box);
             out(['ok' => true, 'ms' => (int)round((microtime(true) - $t) * 1000)] + $res);
+
+        case 'unseen':
+            out(['ok' => true, 'unseen' => mb_unseen(box_or_fail($me))]);
 
         case 'message':
             $box = box_or_fail($me);
