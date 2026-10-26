@@ -147,7 +147,7 @@ check('בלי זהות (מנותקת) - ה-session לא נגע', ($_SESSION['use
 echo "\nחשבון חדש\n";
 
 identity('40', 'new.person@example.com', true, 'נועה');
-$created = platformCreateUser($pdo, platformIdentity());
+[$created, ] = platformCreateUser($pdo, platformIdentity());
 check('נפתח חשבון פעיל', $created && (int)$created['is_active'] === 1);
 check('מקושר ל-sub', $created['platform_sub'] === '40');
 check('שם המשתמש מהמייל', $created['username'] === 'new.person', $created['username']);
@@ -155,12 +155,17 @@ check('השם מהפלטפורמה', $created['name'] === 'נועה');
 check('בלי סיסמה', empty($created['password']));
 
 identity('41', 'new.person@gmail.com', true);
-$second = platformCreateUser($pdo, platformIdentity());
+[$second, ] = platformCreateUser($pdo, platformIdentity());
 check('שם משתמש תפוס - סיומת', $second['username'] === 'new.person2', $second['username']);
 
 identity('42', '', false, '');
-$noMail = platformCreateUser($pdo, platformIdentity());
-check('בלי מייל - שם משתמש מה-sub', $noMail['username'] === 'user42', $noMail['username']);
+[$noMail, $error] = platformCreateUser($pdo, platformIdentity());
+check('בלי מייל - לא נפתח (email הוא NOT NULL)', $noMail === null && $error !== '');
+
+identity('43', 'NEW.person@example.com', false);
+[$dup, $error] = platformCreateUser($pdo, platformIdentity());
+check('מייל שכבר יש לו חשבון (לא מאומת) - לא נפתח שני', $dup === null && $error !== '');
+check('...והחשבון הקיים לא קושר', subOf($pdo, (int)$created['id']) === '40');
 
 echo "\nחיבור חשבון ישן בסיסמה\n";
 
@@ -244,6 +249,38 @@ check('חסום - הסטטוס מוחזר', $result[0] === 'blocked');
 
 $result = platformInviteToEvent($pdo, 'x@example.com', '', 'tok', $fake(502, ''));
 check('הפלטפורמה לא ענתה - שגיאה, בלי לזרוק', $result[0] === '' && $result[1] !== '');
+
+echo "\nהזמנת המשתמשים הקיימים\n";
+
+$pdo->exec("DELETE FROM users");
+$a = addUser($pdo, ['username' => 'a', 'email' => 'a@example.com']);
+$b = addUser($pdo, ['username' => 'b', 'email' => 'b@example.com']);
+$c = addUser($pdo, ['username' => 'c', 'email' => 'c@example.com', 'platform_sub' => '500']);
+$d = addUser($pdo, ['username' => 'd', 'email' => 'd@example.com', 'is_active' => 0]);
+$e = addUser($pdo, ['username' => 'e', 'email' => 'e@example.com']);
+
+$calls = 0;
+$replies = ['{"status":"invited","sub":"501"}', '{"status":"granted","sub":"502"}', '{"status":"blocked","sub":"503"}'];
+$sender = function ($b, $h) use (&$calls, $replies) {
+    return ['status' => 200, 'body' => $replies[$calls++]];
+};
+
+$counts = platformInviteExisting($pdo, true, $sender);
+check('בדיקה בלבד - אין בקשות', $calls === 0);
+check('מועמדים: פעילים ולא מקושרים בלבד', $counts['candidates'] === 3, json_encode($counts));
+
+$counts = platformInviteExisting($pdo, false, $sender);
+check('נשלח לכל המועמדים', $calls === 3);
+check('ספירה לפי סטטוס', ($counts['invited'] ?? 0) === 1 && ($counts['granted'] ?? 0) === 1
+    && ($counts['blocked'] ?? 0) === 1, json_encode($counts));
+check('invited ו-granted - ה-sub נשמר', subOf($pdo, $a) === '501' && subOf($pdo, $b) === '502');
+check('blocked - לא קושר', subOf($pdo, $e) === null);
+check('מושבת ומקושר - לא נגעו', subOf($pdo, $d) === null && subOf($pdo, $c) === '500');
+check('הפלט בלי מיילים', !str_contains(json_encode($counts), '@'));
+
+$calls = 0;
+$counts = platformInviteExisting($pdo, false, function () { return ['status' => 503, 'body' => '']; });
+check('תקלה בפלטפורמה - נספרת כשגיאה', ($counts['error'] ?? 0) === 1, json_encode($counts));
 
 echo "\n=======================================================\n";
 echo "עבר: $pass | נכשל: $fail\n";

@@ -39,7 +39,7 @@ RewriteRule ^offline\.html$ - [L]
 </FilesMatch>
 
 # תיקיות פנימיות שאין שום סיבה לגשת אליהן מהדפדפן
-RewriteRule ^(tests|cron)/ - [F,L]
+RewriteRule ^(tests|cron|tools)/ - [F,L]
 
 # הגנה על קבצי ENV
 <Files .env>

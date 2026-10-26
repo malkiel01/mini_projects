@@ -137,16 +137,34 @@ function platformUsername(PDO $pdo, array $id) {
 /**
  * "אין לי חשבון": חשבון חדש, פעיל - ההרשאה בפלטפורמה היא האישור
  * (auth.md, סעיף 3). בלי סיסמה: הכניסה היא דרך הפלטפורמה.
+ *
+ * users.email הוא NOT NULL ו-UNIQUE, ולכן שני מקרים לא נפתחים:
+ * בלי מייל, ומייל שכבר יש לו חשבון כאן (שלא התקשר לבד, כי המייל
+ * בפלטפורמה לא אומת). השני הוא כמעט תמיד אותו אדם - הוא מתחבר
+ * בסיסמה הישנה, או בהזמנה מהאפליקציה (platformInviteToEvent).
+ *
+ * @return array [user|null, error]
  */
 function platformCreateUser(PDO $pdo, array $id) {
-    $name = $id['name'] !== '' ? $id['name'] : ($id['email'] !== '' ? $id['email'] : 'משתמש');
+    if ($id['email'] === '') {
+        return [null, 'בחשבון שלך בכלים הדיגיטליים אין מייל, ובלעדיו אי אפשר לפתוח כאן חשבון. פנו למנהל המערכת'];
+    }
+
+    $stmt = $pdo->prepare("SELECT id FROM users WHERE LOWER(TRIM(email)) = ?");
+    $stmt->execute([$id['email']]);
+    if ($stmt->fetch()) {
+        return [null, 'כבר יש כאן חשבון במייל הזה. התחברו אליו עם הסיסמה שלו למעלה, '
+            . 'ואם הוא נכנס עם Google - פנו למנהל המערכת'];
+    }
+
+    $name = $id['name'] !== '' ? $id['name'] : $id['email'];
 
     $pdo->prepare("
         INSERT INTO users (username, email, name, is_active, platform_sub, created_at, last_login)
         VALUES (?, ?, ?, 1, ?, NOW(), NOW())
     ")->execute([
         platformUsername($pdo, $id),
-        $id['email'] !== '' ? $id['email'] : null,
+        $id['email'],
         mb_substr($name, 0, 100),
         $id['sub'],
     ]);
@@ -157,7 +175,7 @@ function platformCreateUser(PDO $pdo, array $id) {
     $stmt = $pdo->prepare("SELECT * FROM users WHERE id = ?");
     $stmt->execute([$userId]);
 
-    return $stmt->fetch(PDO::FETCH_ASSOC);
+    return [$stmt->fetch(PDO::FETCH_ASSOC), ''];
 }
 
 /**
@@ -399,4 +417,53 @@ function platformInviteToEvent(PDO $pdo, $email, $name, $token, $send = null) {
     }
 
     return [$status, ''];
+}
+
+/**
+ * הזמנת המשתמשים הקיימים לפלטפורמה - פעם אחת, במעבר (שלב 5).
+ *
+ * כל חשבון פעיל שעוד לא מקושר: provision עם grant. מי שאין לו חשבון
+ * בפלטפורמה מקבל ממנה מייל לבחירת סיסמה (invited); למי שיש - נוספת
+ * הרשאה (granted). ה-sub שחוזר נשמר מיד בחשבון, ולכן הקישור לא תלוי
+ * באימות המייל - גם לחשבונות Google, שאין להם סיסמה לקשר בה.
+ *
+ * בלי $send אמיתי ובלי $dryRun=false - לא נשלח כלום.
+ *
+ * @return array ספירות בלבד, בלי מיילים: candidates, ולכל סטטוס - כמה
+ */
+function platformInviteExisting(PDO $pdo, $dryRun = true, $send = null, $pause = 0) {
+    $users = $pdo->query("
+        SELECT id, email, name FROM users
+        WHERE platform_sub IS NULL AND is_active = 1
+        ORDER BY id
+    ")->fetchAll(PDO::FETCH_ASSOC);
+
+    $counts = ['candidates' => count($users)];
+    if ($dryRun) {
+        return $counts;
+    }
+
+    $next = APP_BASE_PATH . '/dashboard.php';
+
+    foreach ($users as $i => $user) {
+        if ($i > 0 && $pause > 0) {
+            usleep($pause * 1000);
+        }
+
+        [$status, $sub, $error] = platformProvision($pdo, $user['email'], $user['name'], true, $next, $send);
+        $key = $error !== '' ? 'error' : $status;
+        $counts[$key] = ($counts[$key] ?? 0) + 1;
+
+        if ($error === '' && $sub !== '' && $status !== 'blocked') {
+            $stmt = $pdo->prepare("SELECT id FROM users WHERE platform_sub = ?");
+            $stmt->execute([$sub]);
+            if ($stmt->fetch()) {
+                $counts['sub_taken'] = ($counts['sub_taken'] ?? 0) + 1;
+            } else {
+                platformLink($pdo, (int)$user['id'], $sub, 'invite ' . $status);
+            }
+        }
+    }
+
+    return $counts;
 }

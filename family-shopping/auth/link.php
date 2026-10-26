@@ -68,8 +68,10 @@ if (!$blocked && $_SERVER['REQUEST_METHOD'] === 'POST') {
             finishLink();
         }
     } elseif ($choice === 'new' && !$linked) {
-        platformCreateUser($pdo, $id);
-        finishLink();
+        [$created, $error] = platformCreateUser($pdo, $id);
+        if ($created) {
+            finishLink();
+        }
     }
 }
 
