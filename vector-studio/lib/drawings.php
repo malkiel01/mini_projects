@@ -50,6 +50,11 @@ function migrateDrawings(PDO $pdo): void {
     // תמונות בתוך ציורים: לפי המשתמש וה-sha256 של הבתים — אותה תמונה פעמיים נשמרת פעם אחת, וה-src
     // (media/<sha>.<ext>) הוא בדיוק הנתיב שלה ב-‎.mbe
     $pdo->exec("
+        CREATE TABLE IF NOT EXISTS prefs (
+            user_id     INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            data        TEXT    NOT NULL,
+            updated_at  TEXT    NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS media (
             user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             sha         TEXT    NOT NULL,
@@ -250,4 +255,35 @@ function getMedia(array $user, string $src): ?array {
     $st->execute([(int) $user['id'], $m[1]]);
     $r = $st->fetch();
     return $r ? [(string) $r['data'], MEDIA_TYPES[$r['ext']]] : null;
+}
+
+/**
+ * הצבעים והסגנונות השמורים של המשתמש — לכל הציורים שלו.
+ * { swatches: ["#rrggbb", …] (עד 64), styles: [{ name, fill, stroke }] (עד 32) }.
+ */
+function getPrefs(array $user): array {
+    $st = db()->prepare('SELECT data FROM prefs WHERE user_id = ?');
+    $st->execute([(int) $user['id']]);
+    $d = json_decode((string) ($st->fetchColumn() ?: '{}'), true);
+    return ['swatches' => $d['swatches'] ?? [], 'styles' => $d['styles'] ?? []];
+}
+
+function putPrefs(array $user, array $in): array {
+    $sw = $in['swatches'] ?? [];
+    $styles = $in['styles'] ?? [];
+    if (!is_array($sw) || count($sw) > 64) throw new AppError('יותר מדי צבעים (עד 64)');
+    if (!is_array($styles) || count($styles) > 32) throw new AppError('יותר מדי סגנונות (עד 32)');
+    $sw = array_values(array_unique(array_map('strtolower', array_filter($sw, fn ($c) => is_string($c) && preg_match('/^#[0-9a-fA-F]{6}$/', $c)))));
+    $clean = [];
+    foreach ($styles as $x) {
+        if (!is_array($x)) continue;
+        $name = is_string($x['name'] ?? null) ? mb_substr(trim(preg_replace('/[\x00-\x1F\x7F]/u', '', $x['name']) ?? ''), 0, 40) : '';
+        if ($name === '') continue;
+        $clean[] = ['name' => $name, 'fill' => is_array($x['fill'] ?? null) ? $x['fill'] : null, 'stroke' => is_array($x['stroke'] ?? null) ? $x['stroke'] : null];
+    }
+    $data = json_encode(['swatches' => $sw, 'styles' => $clean], JSON_UNESCAPED_UNICODE);
+    if (strlen($data) > 64 * 1024) throw new AppError('הסגנונות גדולים מדי', 413);
+    db()->prepare('INSERT INTO prefs (user_id, data, updated_at) VALUES (?,?,?) ON CONFLICT(user_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at')
+        ->execute([(int) $user['id'], $data, nowIso()]);
+    return ['swatches' => $sw, 'styles' => $clean];
 }
