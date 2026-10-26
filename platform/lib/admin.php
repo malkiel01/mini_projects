@@ -15,6 +15,7 @@ require_once __DIR__ . '/push.php';
 require_once __DIR__ . '/sso.php';
 require_once __DIR__ . '/installs.php';
 require_once __DIR__ . '/email.php';
+require_once __DIR__ . '/invites.php';
 
 function require_admin(bool $mutating = false): array
 {
@@ -47,6 +48,7 @@ function admin_state(array $admin): never
 
     json_out([
         'users'      => $users,
+        'invites'    => invites_list(),
         'settings'   => ['require_approval' => approval_required()],
         'sso'        => sso_clients_state(),
         'categories' => categories_list(),
@@ -70,6 +72,9 @@ function admin_dispatch(string $action, array $body, array $admin): never
         'admin_user_delete'     => admin_user_delete($body, $admin),
         'admin_user_password'   => admin_user_password($body, $admin),
         'admin_grants_set'      => admin_grants_set($body),
+        'admin_invite_create'   => admin_invite_create($body, $admin),
+        'admin_invite_renew'    => admin_invite_renew($body),
+        'admin_invite_revoke'   => admin_invite_revoke($body),
         'admin_category_save'   => admin_category_save($body),
         'admin_category_move'   => admin_category_move($body),
         'admin_category_delete' => admin_category_delete($body),
@@ -174,26 +179,9 @@ function admin_user_delete(array $body, array $admin): never
 function admin_grants_set(array $body): never
 {
     $u = target_user($body);
-    $catIds = array_column(categories_list(), 'id');
-    $groupIds = array_column(groups_list(), 'id');
-    $appIds = array_column(apps_effective(), 'id');
-
-    $cats = array_values(array_unique(array_filter((array)($body['categories'] ?? []),
-        fn($c) => is_string($c) && in_array($c, $catIds, true))));
-    $groups = array_values(array_unique(array_filter((array)($body['groups'] ?? []),
-        fn($g) => is_string($g) && in_array($g, $groupIds, true))));
-    $apps = [];
-    foreach ((array)($body['apps'] ?? []) as $id => $allowed) {
-        if (in_array($id, $appIds, true) && is_bool($allowed)) $apps[$id] = $allowed;
-    }
-
     $pdo = db();
     $pdo->beginTransaction();
-    $pdo->prepare('DELETE FROM grants WHERE user_id = ?')->execute([$u['id']]);
-    $ins = $pdo->prepare('INSERT INTO grants (user_id, kind, target, allowed) VALUES (?,?,?,?)');
-    foreach ($cats as $c) $ins->execute([$u['id'], 'category', $c, 1]);
-    foreach ($groups as $g) $ins->execute([$u['id'], 'group', $g, 1]);
-    foreach ($apps as $id => $allowed) $ins->execute([$u['id'], 'app', $id, $allowed ? 1 : 0]);
+    grants_write((int)$u['id'], grants_clean($body), true);
     $pdo->commit();
     json_out(['ok' => true]);
 }

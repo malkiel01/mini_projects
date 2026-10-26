@@ -131,7 +131,106 @@ window.PlatformAdmin = (() => {
         }
         drawList();
 
-        return el('div', {}, [notifyCard(), approvalCard(), seg, el('div', { className: 'toolbar' }, [search, sortSel]), list]);
+        return el('div', {}, [notifyCard(), approvalCard(), invitesCard(), seg, el('div', { className: 'toolbar' }, [search, sortSel]), list]);
+    }
+
+    // ---------- הזמנת לקוח בקישור (platform/lib/invites.php) ----------
+    // רושמים וואטסאפ, מסמנים מה נפתח, ואם רוצים — מייל (אז רק הוא נרשם בקישור). הלקוח נכנס מיד, בלי אישור.
+
+    const INVITE_STATE = { open: ['ממתינה', 'warn'], used: ['הצטרף/ה', 'ok'], expired: ['פג תוקף', ''], revoked: ['בוטלה', ''] };
+    let showAllInvites = false;
+
+    function invitesCard() {
+        const list = state.invites || [];
+        const recent = showAllInvites ? list : list.filter(i => i.state === 'open').concat(list.filter(i => i.state !== 'open').slice(0, 3));
+        const rows = recent.map(inv => {
+            const [text, cls] = INVITE_STATE[inv.state];
+            const who = inv.state === 'used' ? `${inv.used_name || ''} · ${inv.used_email || ''}` : (inv.email ? `🔒 ${inv.email}` : 'כל מייל');
+            const tail = [];
+            if (inv.state !== 'used') tail.push(button('💬 קישור חדש', () => renewInvite(inv), 'sm'));
+            if (inv.state === 'open') tail.push(button('ביטול', () => confirm('לבטל את הקישור? הוא יפסיק לעבוד.')
+                && act('admin_invite_revoke', { id: inv.id }, 'הקישור בוטל'), 'sm'));
+            return el('li', { className: 'inv-row' }, [
+                el('div', { className: 'u-tx' }, [
+                    el('span', { className: 'u-l1' }, [el('b', { textContent: inv.name || 'ללא שם' }), el('span', { className: `chip ${cls}`, textContent: text })]),
+                    el('small', {}, [el('bdi', { textContent: '+' + inv.phone }), ` · ${who} · ${relTime(inv.created_at)}`]),
+                ]),
+                el('div', { className: 'notify-btns' }, tail),
+            ]);
+        });
+        const more = list.length > recent.length || showAllInvites
+            ? [button(showAllInvites ? 'פחות' : `כל ההזמנות (${list.length})`, () => { showAllInvites = !showAllInvites; render(); }, 'sm link-btn')] : [];
+        return el('div', { className: 'notify invites' }, [
+            el('span', { className: 'notify-ic', textContent: '📨', ariaHidden: 'true' }),
+            el('div', { className: 'notify-tx' }, [el('b', { textContent: 'הזמנת לקוח בקישור' }),
+                el('small', { textContent: 'שולחים לו בווצאפ — הוא נרשם ונכנס מיד, עם מה שסימנתם' })]),
+            el('div', { className: 'notify-btns' }, [button('➕ הזמנה', inviteDialog, 'sm primary')]),
+            ...(rows.length ? [el('ul', { className: 'inv-list' }, rows), ...more] : []),
+        ]);
+    }
+
+    function dialog(title, sub) {
+        const d = el('dialog', { className: 'user-sheet' });
+        d.addEventListener('click', (e) => { if (e.target === d) d.close(); });
+        d.addEventListener('close', () => d.remove());
+        const close = el('button', { type: 'button', className: 'icon-btn', textContent: '✕', ariaLabel: 'סגירה' });
+        close.addEventListener('click', () => d.close());
+        const body = el('div', { className: 'sheet-body' });
+        d.append(el('div', { className: 'sheet' }, [
+            el('div', { className: 'sheet-head' }, [el('div', { className: 'tx' }, [el('h2', { textContent: title }), el('small', { textContent: sub })]), close]),
+            body,
+        ]));
+        document.body.append(d);
+        d.showModal();
+        return { d, body };
+    }
+
+    function inviteDialog() {
+        const { d, body } = dialog('הזמנת לקוח', 'הוא ימלא שם, מייל וסיסמה — ויכנס מיד');
+        const input = (label, attrs) => {
+            const i = el('input', attrs);
+            return [i, el('label', { className: 'f' }, [el('span', { textContent: label }), i])];
+        };
+        const [phone, phoneF] = input('וואטסאפ', { type: 'tel', dir: 'ltr', placeholder: '050-1234567', autocomplete: 'off', required: true });
+        const [name, nameF] = input('שם (לא חובה — ימולא לו מראש)', { type: 'text', maxLength: 60, autocomplete: 'off' });
+        const [email, emailF] = input('מייל (לא חובה) — אם רושמים, רק הוא יוכל להירשם בקישור', { type: 'email', dir: 'ltr', autocomplete: 'off' });
+        const editor = grantsEditor({ display_name: 'הלקוח', grants: { categories: {}, groups: {}, apps: {} } }, {
+            label: '📨 יצירת הקישור',
+            save: async (g) => {
+                try {
+                    const r = await P().api('admin_invite_create', { phone: phone.value, name: name.value, email: email.value, ...g });
+                    d.close();
+                    sendDialog(name.value, phone.value, r.url);
+                    await reload();
+                } catch (err) { P().toast('⚠️ ' + err.message); }
+            },
+        });
+        body.append(phoneF, nameF, emailF, el('div', { className: 'sheet-sec', textContent: 'מה נפתח לו' }), editor);
+        phone.focus();
+    }
+
+    async function renewInvite(inv) {
+        try {
+            const r = await P().api('admin_invite_renew', { id: inv.id });
+            sendDialog(inv.name, inv.phone, r.url, true);
+            await reload();
+        } catch (err) { P().toast('⚠️ ' + err.message); }
+    }
+
+    // הקישור מוצג פעם אחת — במסד נשמר רק ה-hash שלו. שליחה מחדש = קישור חדש.
+    function sendDialog(name, phone, url, renewed = false) {
+        const { body } = dialog('הקישור מוכן', renewed ? 'קישור חדש — הקודם הפסיק לעבוד' : 'בתוקף 14 יום, לשימוש אחד');
+        const text = `שלום${name ? ' ' + name : ''}, הוזמנת לכלים הדיגיטליים.\nלהרשמה ולכניסה: ${url}`;
+        const digits = String(phone).replace(/\D/g, '').replace(/^0(\d{8,9})$/, '972$1');
+        const wa = el('a', { className: 'btn primary big', href: `https://wa.me/${digits}?text=${encodeURIComponent(text)}`,
+            target: '_blank', rel: 'noopener', textContent: '💬 שליחה בווצאפ' });
+        const link = el('input', { type: 'text', value: url, dir: 'ltr', readOnly: true, ariaLabel: 'הקישור' });
+        const copy = button('📋 העתקה', async () => {
+            try { await navigator.clipboard.writeText(url); P().toast('הקישור הועתק'); }
+            catch { link.select(); }
+        }, 'sm');
+        body.append(wa, el('div', { className: 'toolbar' }, [link, copy]),
+            el('p', { className: 'muted small', textContent: 'אחרי שהלקוח נרשם — הוא מופיע ברשימת המשתמשים כפעיל, וההזמנה מסומנת "הצטרף/ה".' }));
     }
 
     // הרשמה חדשה: תמיד מאמתת מייל. המתג — האם אחרי האימות היא ממתינה גם לאישור המנהל.
@@ -433,7 +532,8 @@ window.PlatformAdmin = (() => {
     }
 
     // עורך ההרשאות: לכל קטגוריה "הכול", ולכל אפליקציה — לפי הקטגוריה / מותר / חסום.
-    function grantsEditor(u) {
+    // opts.save — במקום שמירה למשתמש (הזמנה: ההרשאות נשמרות עם הקישור).
+    function grantsEditor(u, opts = {}) {
         const cats = new Set(Object.keys(u.grants.categories).filter(c => u.grants.categories[c]));
         const groups = new Set(Object.keys(u.grants.groups || {}).filter(g => u.grants.groups[g]));
         const apps = { ...u.grants.apps };
@@ -487,8 +587,9 @@ window.PlatformAdmin = (() => {
         });
         refresh();
 
-        const save = button('💾 שמירת ההרשאות', () => act('admin_grants_set',
-            { id: u.id, categories: [...cats], groups: [...groups], apps }, `✓ ההרשאות של ${u.display_name} נשמרו`), 'primary save-grants');
+        const save = button(opts.label || '💾 שמירת ההרשאות', () => opts.save
+            ? opts.save({ categories: [...cats], groups: [...groups], apps })
+            : act('admin_grants_set', { id: u.id, categories: [...cats], groups: [...groups], apps }, `✓ ההרשאות של ${u.display_name} נשמרו`), 'primary save-grants');
         return el('div', { className: 'grants' }, [
             el('p', { className: 'muted small', textContent:
                 'קטגוריה מסומנת כוללת גם אפליקציות שיתווספו אליה בעתיד. קבוצה מסומנת פותחת את כל הסט — גם 🔒. ' +

@@ -310,7 +310,7 @@ button:disabled { opacity: .55; cursor: default; }
     min-height: 36px; padding: 0 var(--s2); font-size: 16px;
     border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); min-width: 0;
 }
-.admin input[type="checkbox"] { accent-color: var(--brand); width: 18px; height: 18px; vertical-align: middle; }
+.admin input[type="checkbox"], .user-sheet input[type="checkbox"] { accent-color: var(--brand); width: 18px; height: 18px; vertical-align: middle; }
 .cat-row, .app-row {
     display: flex; gap: var(--s2); align-items: center; flex-wrap: wrap;
     background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 10px var(--s3); margin-bottom: 6px;
@@ -409,6 +409,11 @@ button.tile { cursor: pointer; text-align: start; font: inherit; font-size: .88r
 .notify.on .notify-tx small { color: var(--ok); }
 .notify-btns { display: flex; gap: 6px; flex: none; }
 .btn.sm { min-height: 34px; padding: 0 10px; font-size: .84rem; }
+/* הזמנות לקוח: הרשימה נשברת לשורה מלאה מתחת לכותרת הכרטיס */
+.notify.invites { flex-wrap: wrap; }
+.inv-list { flex-basis: 100%; list-style: none; margin: 0; padding: 0; display: grid; }
+.inv-row { display: flex; align-items: center; gap: var(--s2); padding: 8px 0; border-top: 1px solid var(--line); }
+.notify.invites > .link-btn { flex-basis: 100%; min-height: 32px; }
 
 /* --- שימוש --- */
 .hint-line { margin: 0 0 var(--s2); }
@@ -469,7 +474,7 @@ dialog.install .logo { width: 40px; height: 40px; }
 .urow > .btn.sm { flex: none; }
 .admin .f, .user-sheet .f { display: grid; gap: 4px; font-size: .85rem; }
 .user-sheet .f > span { color: var(--muted); }
-.user-sheet input, .user-sheet textarea { width: 100%; min-height: var(--tap); padding: 6px var(--s2); font-size: 16px;
+.user-sheet input:not([type="checkbox"]), .user-sheet textarea { width: 100%; min-height: var(--tap); padding: 6px var(--s2); font-size: 16px;
     border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); color: var(--ink); }
 .user-sheet input:disabled { background: var(--bg); color: var(--muted); }
 .secret-row { display: flex; align-items: center; gap: var(--s2); margin: 6px 0; }
