@@ -81,7 +81,7 @@
       "required": ["id", "type", "x", "y", "w", "h"],
       "properties": {
         "id": { "$ref": "#/$defs/id" },
-        "type": { "enum": ["text", "image", "shape", "icon", "group"] },
+        "type": { "enum": ["text", "image", "shape", "icon", "group", "svg"], "description": "svg — קישוט כקוד SVG (שדה svg או file); העורך מפרק אותו לשכבות shape:path עריכות" },
         "name": { "type": "string", "maxLength": 80 },
         "role": { "enum": ["background", "title", "subtitle", "body", "cta", "logo", "photo", "decoration", "other"] },
         "x": { "type": "number" }, "y": { "type": "number" },
