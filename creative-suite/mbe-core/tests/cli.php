@@ -6,11 +6,14 @@
  *   php tests/cli.php canon <json-file>                → JSON קנוני
  *   php tests/cli.php stamp <mbe> <format> <in> <out>  → פנים מוחתמות (או {"error":code})
  *   php tests/cli.php identify <file>                  → התוצאה של identify
+ *   php tests/cli.php reconcile <mbe> <opts.json>      → התוכנית בקיצור (status, changes, conflicts, gaps, codes)
+ *   php tests/cli.php merge <mbe> <opts> <answers> <out> → reconcile + applyMerge + save
  */
 
 declare(strict_types=1);
 require __DIR__ . '/../src/php/mbe.php';
 require __DIR__ . '/../src/php/face.php';
+require __DIR__ . '/../src/php/merge.php';
 
 [$_, $cmd] = $argv + [null, null];
 switch ($cmd) {
@@ -41,7 +44,28 @@ switch ($cmd) {
     case 'identify':
         echo MbeCanonical::encode(MbeFace::identify((string)file_get_contents($argv[2])));
         break;
+    case 'reconcile':
+        $plan = MbeMerge::reconcile(Mbe::open((string)file_get_contents($argv[2])), MbeCanonical::decode((string)file_get_contents($argv[3])));
+        echo MbeCanonical::encode([
+            'status' => $plan['status'],
+            'changes' => array_map(fn($c) => [$c['flow'], (string)$c['para'], $c['op']], $plan['changes']),
+            'conflicts' => array_map(fn($c) => [$c['flow'], (string)$c['para'], $c['kind']], $plan['conflicts']),
+            'gaps' => $plan['gaps'],
+            'codes' => array_column($plan['issues'], 'code'),
+        ]);
+        break;
+    case 'merge':
+        $f = Mbe::open((string)file_get_contents($argv[2]));
+        $plan = MbeMerge::reconcile($f, MbeCanonical::decode((string)file_get_contents($argv[3])));
+        try {
+            MbeMerge::applyMerge($f, $plan, json_decode((string)file_get_contents($argv[4]), true) ?: []);
+            file_put_contents($argv[5], Mbe::save($f, ['app' => 'php-merge', 'now' => new DateTimeImmutable('2026-10-26T10:00:00Z')]));
+            echo json_encode(['ok' => true]);
+        } catch (MbeError $e) {
+            echo json_encode(['error' => array_values(array_unique(array_column($e->issues, 'code')))]);
+        }
+        break;
     default:
-        fwrite(STDERR, "usage: validate|resave|canon|stamp|identify\n");
+        fwrite(STDERR, "usage: validate|resave|canon|stamp|identify|reconcile|merge\n");
         exit(2);
 }

@@ -8,8 +8,8 @@
 ## מבנה
 
 ```
-src/js/        mbe.js (ה-API) · face.js (פנים: stampFace, identify) · zip.js · canonical.js · schema.js · schemas.js (נבנה) · vendor/fflate.js
-src/php/       mbe.php (ה-API) · face.php (MbeFace) · zip.php · canonical.php · schema.php · schemas.php (נבנה)
+src/js/        mbe.js (ה-API) · face.js (פנים: stampFace, identify) · merge.js (reconcile, applyMerge) · zip.js · canonical.js · schema.js · schemas.js (נבנה) · vendor/fflate.js
+src/php/       mbe.php (ה-API) · face.php (MbeFace) · merge.php (MbeMerge) · zip.php · canonical.php · schema.php · schemas.php (נבנה)
 schema/        manifest-1.json · document-1.json — JSON Schema, המקור לשתי השפות
 tools/sync.php בונה את schemas.* ומעתיק את src לאפליקציות שב-apps.json; ‎--check — שער בפריסה
 apps.json      ריק. אפליקציה נכנסת רק בהסכמת הצ'אט שלה
@@ -53,6 +53,8 @@ $out = Mbe::save($f, ['app' => 'word-processor', 'appVersion' => '2.3']);
 | גרסאות | `migrate(doc, manifest, toMajor)` · `MIGRATIONS` | `Mbe::migrate()` |
 | החתמת פנים (אחרי `save`) | `await stampFace(f, 'docx'\|'png', bytes)` · `await xmpPacket(f)` (ל-PDF) — מ-`face.js` | `MbeFace::stamp()` · `MbeFace::xmpPacket()` — `face.php` |
 | "מה הקובץ הזה?" | `await identify(bytes)` → `{ type, format, docId, base, model, document?, issues }` | `MbeFace::identify($bytes)` |
+| "פנים חזרו" | `await reconcile(f, { docId, base, baseDocument, flows, styles, app, who })` → תוכנית — מ-`merge.js` | `MbeMerge::reconcile($f, [...])` |
+| "החל" | `await applyMerge(f, plan, { 'f1/p17': 'ours'\|'theirs'\|'both' })` | `MbeMerge::applyMerge($f, $plan, [...])` |
 
 ### פנים — docx, png, PDF (`docs/spec/hub-api.md` 2.1–2.2)
 
@@ -67,8 +69,29 @@ $out = Mbe::save($f, ['app' => 'word-processor', 'appVersion' => '2.3']);
   כ-Metadata **לא דחוס** בזמן היצירה. ‏`identify` קורא אותה.
 - **סימניות הפסקה** כותבת האפליקציה (`paragraphBookmark(id)` → `_mbe_p<id>`).
 - LibreOffice (שורת פקודה, פתיחה ושמירה מחדש של docx) שומר את `custom.xml`, את `customXml` ואת הסימניות — ניסוי נ3.
+- **שלב `export`** — ה-result שלו הוא הגרסה שיצאה (לא מה שיישמר בפעם הבאה), והעותק שלה נשמר ב-`history/`: זה
+  הבסיס כשהפנים יחזרו, גם אם בינתיים נשמר המסמך שוב.
 - קודים: `face-not-saved`, ‏`face-stamp-failed` (לא docx / png, או PDF); ב-`identify` (אזהרות) — `face-unknown-doc`
   (מזהה פגום / קובץ לא קריא), ‏`face-base-missing` (המודל ב-customXml פגום).
+
+### מיזוג — `reconcile` ו-`applyMerge` (`docs/spec/hub-api.md` 2.3–2.4, סעיף 3)
+
+- האפליקציה ממירה את מה שחזר לשטף ProseMirror (עם `attrs.id` מהסימניות) ומעבירה ל-`reconcile` יחד עם `docId` ו-`base`
+  מ-`identify`. ‏`reconcile` **לא משנה את `f`**: מחזיר `{ status, changes, conflicts, gaps, issues }` (ועוד מה ש-`applyMerge`
+  צריך).
+- `status`: ‏`same` · ‏`fast-forward` (אצלנו לא השתנה מאז הבסיס) · ‏`diverged` (תלת-כיווני) · ‏`other-doc`
+  (`face-unknown-doc`). הבסיס: `history/<base>.json`, אחרת `baseDocument` (מ-customXml, רק אם הגיבוב שלו הוא `base`),
+  אחרת `face-base-missing` — ממשיכים כייבוא רגיל.
+- יחידה = בלוק ברמה העליונה; המפתח — `attrs.id` שלו או של הפסקה הראשונה שבתוכו. בלוק בלי פסקה (קו מפריד) — מפתח לפי
+  התוכן. שונה בצד אחד — נלקח; בשניהם — `both-edited`; נמחק בצד אחד ונערך בשני — `edited-deleted`. סדר — לפי הצד
+  שהזיז; בשניהם — שלנו, ו-`gaps: ['order:…']`.
+- בלוק שחזר בלי מזהה — מותאם לפי תוכן מול בלוקי הבסיס שלא חזרו: עוגנים של טקסט זהה וייחודי (patience), LCS מדויק
+  ביניהם, Dice על מילים ≥ 0.6 (חלון של 50) לפסקה שנערכה, ומעבר שני לטקסט זהה שהוזז. קטע בלי עוגן מעל 5000 —
+  רק עוגנים, ו-`gaps` אומר. מה שלא הותאם — פסקה חדשה עם מזהה חדש. המקרה הגרוע (5000×5000): ‏JS ‏0.1 שנייה, PHP ‏1.2.
+- `gaps` גם: `style:<שם>` שאינו במסמך, `media:<שכבה>` שאינה בזיכרון.
+- `applyMerge` — תשובה לכל התנגשות (`ours` / `theirs` / `both`), אחרת `merge-unanswered`. משנה רק את השטפים שחזרו;
+  מסגרות, עמודי אב ושכבות — לא נוגע. בשמירה הבאה נרשמים `return` (מה שחזר, כגרסה משלו, ‏`app` של התוכנה שבחוץ)
+  ו-`merge`. אחרי `save` — מחדשים ומחתימים את הפנים.
 
 ### כללים שהליבה אוכפת
 

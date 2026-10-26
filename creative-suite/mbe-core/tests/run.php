@@ -7,6 +7,7 @@
 declare(strict_types=1);
 require __DIR__ . '/../src/php/mbe.php';
 require __DIR__ . '/../src/php/face.php';
+require __DIR__ . '/../src/php/merge.php';
 
 $fail = 0;
 $n = 0;
@@ -188,6 +189,27 @@ Mbe::save($f, ['app' => 'php-face']);
 check(array_column(array_filter($f->journal(), fn($s) => $s['kind'] === 'export'), 'note') === ['docx', 'png', 'pdf'], 'פנים: שלבי export ביומן');
 $f->document['x'] = 1;
 try { MbeFace::stamp($f, 'docx', $docx); check(false, 'face-not-saved'); } catch (MbeError $e) { check($e->issues[0]['code'] === 'face-not-saved', 'פנים: face-not-saved'); }
+
+// מיזוג: reconcile / applyMerge
+$P = fn(?string $id, string $t) => ['type' => 'paragraph'] + ($id === null ? [] : ['attrs' => ['id' => $id]]) + ['content' => [['type' => 'text', 'text' => $t]]];
+$f = Mbe::open($fx('valid/text.mbe'));
+$f->document['flows']['f1']['doc']['content'] = [$P('pa', 'אחת'), $P('123', 'שתיים'), $P('pc', 'שלוש')];
+Mbe::save($f, ['app' => 'php-merge']);
+$base = $f->documentSha256();
+MbeFace::stamp($f, 'png', $f->files[Mbe::PREVIEW]);
+$f->document['flows']['f1']['doc']['content'][0] = $P('pa', 'אחת אצלנו');
+Mbe::save($f, ['app' => 'php-merge']);
+$theirs = ['type' => 'doc', 'content' => [$P('pa', 'אחת מבחוץ'), $P('123', 'שתיים ערוכה'), $P(null, 'חדשה')]];
+$plan = MbeMerge::reconcile($f, ['docId' => $f->id(), 'base' => $base, 'flows' => ['f1' => $theirs], 'app' => 'external:word']);
+$ops = array_map(fn($c) => $c['para'] . '/' . $c['op'], $plan['changes']);
+check($plan['status'] === 'diverged' && count($plan['conflicts']) === 1 && $plan['conflicts'][0]['para'] === 'pa' && in_array('123/edit', $ops, true) && in_array('pc/delete', $ops, true), 'מיזוג: diverged, התנגשות ושינויים (מזהה מספרי)');
+try { MbeMerge::applyMerge($f, $plan, []); check(false, 'merge-unanswered'); } catch (MbeError $e) { check($e->issues[0]['code'] === 'merge-unanswered', 'מיזוג: merge-unanswered'); }
+MbeMerge::applyMerge($f, $plan, ['f1/pa' => 'theirs']);
+Mbe::save($f, ['app' => 'php-merge']);
+$texts = array_map(fn($b) => $b['content'][0]['text'], $f->document['flows']['f1']['doc']['content']);
+$kinds = array_column(array_slice($f->journal(), -2), 'kind');
+check($texts === ['אחת מבחוץ', 'שתיים ערוכה', 'חדשה'] && $kinds === ['return', 'merge'], 'מיזוג: התוצאה והיומן');
+check(MbeMerge::reconcile($f, ['docId' => Mbe::newId(), 'flows' => []])['status'] === 'other-doc', 'מיזוג: other-doc');
 
 echo $fail ? "\n$fail מתוך $n בדיקות נכשלו\n" : "mbe-core PHP: $n בדיקות עברו\n";
 exit($fail ? 1 : 0);

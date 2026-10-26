@@ -400,7 +400,15 @@ function applyJournal(f, files, { docSha, docBytes, app, who, at }) {
         return e;
     };
     if (f.pending.length) {
-        for (const p of f.pending) stages.push(entry(p.kind, p.who || who, p.note));
+        for (const p of f.pending) {
+            const e = entry(p.kind, p.who || who, p.note);
+            // שלב שהגרסה שלו אינה המסמך הנשמר (return במיזוג — מה שחזר מבחוץ): app / base / result משלו, והעותקים איתו
+            for (const [sha, b] of Object.entries(p.snapshots || {})) if (!files.has(snap(sha))) files.set(snap(sha), b);
+            if (p.app) e.app = p.app;
+            if (p.base !== undefined) e.base = p.base;
+            if (p.result) e.result = p.result;
+            stages.push(e);
+        }
     } else {
         const last = stages[stages.length - 1];
         if (last && last.app === app && (last.who ?? null) === (who ?? null) && (last.kind === 'edit' || last.kind === 'create')

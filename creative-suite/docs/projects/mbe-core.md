@@ -79,7 +79,7 @@ creative-suite/mbe-core/
 - [x] `history/` — `journal.json` + `<sha256>.json`; פעולות `journal` / `restore`; בדיקות תקינות (גיבוב, `base`/`result`)
 - [x] מזהה פסקה `attrs.id` — בדיקת ייחודיות בשטף + השלמה למזהים חסרים
 - [x] `stampFace` (docx, png), ‏`xmpPacket` (PDF) ו-`identify` — החתמה וזיהוי פנים, JS ו-PHP זהים
-- [ ] `reconcile(face)` ו-`applyMerge` — מיזוג תלת-כיווני לפי פסקה, עם רשימת התנגשויות
+- [x] `reconcile(face)` ו-`applyMerge` — מיזוג תלת-כיווני לפי פסקה, עם רשימת התנגשויות
 - [ ] ניסוי נ3 — Google Docs ו-LibreOffice (שורת פקודה): מה שורד מהמזהים ב-docx
 
 
@@ -167,3 +167,7 @@ creative-suite/mbe-core/
   PDF — חבילת XMP שהכותב מטמיע. כל החתמה = שלב `export` ביומן. רק הקודים שהוסכמו (`hub-api.md` סעיף 5 ו-6). חצי
   מניסוי נ3: LibreOffice בשורת פקודה (פתיחה ושמירה כ-docx) שומר את המאפיינים, את `customXml` ואת סימניות `_mbe_p`.
   Google Docs — דורש קובץ מבעל המערכת. הבדיקות של חמש האפליקציות המסונכרנות עוברות.
+- 2026-10-26 — `reconcile` ו-`applyMerge` (`merge.js` / `merge.php`): same / fast-forward / diverged / other-doc, התנגשויות
+  `both-edited` ו-`edited-deleted`, סדר לפי הצד שהזיז, נפילה לפי תוכן (patience → LCS → Dice ≥ 0.6, ומעבר שני להזזות),
+  בסיס מ-customXml כשאינו בזיכרון. שלבי `return` + `merge` ביומן; שלב `export` נושא עכשיו את הגרסה שיצאה (ועותק
+  שלה), כדי שהבסיס לא יימחק בשמירות רצופות. בדיקות בין השפות: אותה תוכנית ב-JS וב-PHP, ומיזוג מקצה לקצה ב-PHP.

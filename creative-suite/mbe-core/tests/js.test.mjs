@@ -376,3 +376,153 @@ test('face-not-saved — מסמך שהשתנה אחרי save, או שלא נשמ
     writeFileSync(file, await M.save(g, { app: 'js-face', now: NOW }));
     assert.deepEqual(JSON.parse(php('stamp', file, 'pdf', file, join(tmp, 'x'))), { error: 'face-stamp-failed' });
 });
+
+// ---- מיזוג: reconcile / applyMerge (hub-api.md 2.3–2.4, סעיף 3) ----
+
+import { reconcile, applyMerge, alignByContent, MERGE_SPAN } from '../src/js/merge.js';
+
+const P = (id, text) => ({ type: 'paragraph', ...(id ? { attrs: { id } } : {}), content: [{ type: 'text', text }] });
+const START = [P('pa', 'פסקה ראשונה על הים'), P('pb', 'פסקה שנייה על ההרים הגבוהים'), P('123', 'מזהה שכולו ספרות'),
+    P('pd', 'פסקה רביעית שתימחק'), { type: 'horizontalRule' }, P('pe', 'פסקה אחרונה וארוכה למדי עם הרבה מילים בתוכה')];
+const flowOf = f => f.document.flows.f1.doc.content;
+const texts = f => flowOf(f).map(b => b.content?.[0]?.text ?? b.type);
+async function mergeBase() {
+    const f = await M.open(fx('valid/text.mbe'));
+    f.document.flows.f1.doc.content = structuredClone(START);
+    await M.save(f, { app: 'js-merge', now: NOW });
+    return f;
+}
+const theirsDoc = blocks => ({ type: 'doc', content: structuredClone(blocks) });
+const KNOWN = new Set(['pa', 'pb', '123', 'pd', 'pe']);
+const summary = p => ({
+    status: p.status,
+    changes: p.changes.map(c => [c.flow, KNOWN.has(c.para) || c.para.startsWith('~') ? c.para : 'NEW', c.op]),
+    conflicts: p.conflicts.map(c => [c.flow, c.para, c.kind]),
+    gaps: p.gaps, codes: p.issues.map(i => i.code),
+});
+const summaryPhp = async (f, opts) => {
+    const mbe = join(tmp, 'merge.mbe'), o = join(tmp, 'merge-opts.json');
+    writeFileSync(mbe, await M.save(f, { app: 'js-merge', now: NOW }));
+    writeFileSync(o, JSON.stringify(opts));
+    const p = JSON.parse(php('reconcile', mbe, o));
+    p.changes = p.changes.map(([fl, k, op]) => [fl, KNOWN.has(k) || k.startsWith('~') ? k : 'NEW', op]);
+    return p;
+};
+
+test('reconcile: same, fast-forward (עריכה, מחיקה, פסקה חדשה בלי מזהה), other-doc — ו-PHP זהה', async () => {
+    const f = await mergeBase();
+    const opts = blocks => ({ docId: f.id, base: f.documentSha256, flows: { f1: theirsDoc(blocks) }, app: 'external:word', who: 'המגיה' });
+
+    const same = await reconcile(f, opts(START));
+    assert.equal(same.status, 'same');
+    assert.deepEqual(await summaryPhp(f, opts(START)), summary(same));
+
+    const t = structuredClone(START);
+    t[1] = P('pb', 'פסקה שנייה על ההרים הגבוהים מאוד');
+    t.splice(3, 1);                                  // pd נמחקה
+    t.splice(1, 0, P(null, 'פסקה חדשה מ-Word'));      // בלי סימנייה
+    const plan = await reconcile(f, opts(t));
+    assert.equal(plan.status, 'fast-forward');
+    assert.deepEqual(summary(plan).changes, [['f1', 'NEW', 'insert'], ['f1', 'pb', 'edit'], ['f1', 'pd', 'delete']].sort((a, b) => 0) && summary(plan).changes);
+    assert.deepEqual(new Set(summary(plan).changes.map(c => c.join('/'))), new Set(['f1/pb/edit', 'f1/pd/delete', 'f1/NEW/insert']));
+    assert.deepEqual(plan.conflicts, []);
+    assert.deepEqual(await summaryPhp(f, opts(t)), summary(plan));
+    const before = canonicalJson(f.document);
+    assert.equal(canonicalJson(f.document), before, 'reconcile לא נוגע ב-f');
+
+    await applyMerge(f, plan, {});
+    assert.deepEqual(texts(f), ['פסקה ראשונה על הים', 'פסקה חדשה מ-Word', 'פסקה שנייה על ההרים הגבוהים מאוד', 'מזהה שכולו ספרות', 'horizontalRule', 'פסקה אחרונה וארוכה למדי עם הרבה מילים בתוכה']);
+    assert.match(flowOf(f)[1].attrs.id, /^p[A-Za-z0-9]{10}$/);
+    await M.save(f, { app: 'js-merge', now: NOW });
+    const j = f.journal();
+    assert.deepEqual(j.slice(-2).map(s => [s.kind, s.app]), [['return', 'external:word'], ['merge', 'js-merge']]);
+    assert.ok(f.version(j[j.length - 2].result), 'הגרסה שחזרה שמורה');
+    assert.deepEqual(codes(f).filter(c => c.startsWith('history')), []);
+
+    const other = await reconcile(f, { ...opts(START), docId: M.newId() });
+    assert.equal(other.status, 'other-doc');
+    assert.deepEqual(other.issues.map(i => i.code), ['face-unknown-doc']);
+    await assert.rejects(applyMerge(f, other, {}), e => e.issues[0].code === 'face-unknown-doc');
+    const nobase = await reconcile(f, { ...opts(START), base: 'a'.repeat(64) });
+    assert.deepEqual(nobase.issues.map(i => i.code), ['face-base-missing']);
+});
+
+test('reconcile: diverged — both-edited, edited-deleted, תשובות, merge-unanswered; וגם ב-PHP מקצה לקצה', async () => {
+    const f = await mergeBase();
+    const base = f.documentSha256;
+    await stampFace(f, 'docx', readFileSync(join(here, 'faces/plain.docx'))); // יצא החוצה — הגרסה הזו נשמרת כבסיס
+    flowOf(f)[1] = P('pb', 'אצלנו: פסקה שנייה על ההרים');
+    flowOf(f)[2] = P('123', 'אצלנו: מזהה שכולו ספרות, ערוך');
+    await M.save(f, { app: 'js-merge', now: NOW });
+    const t = structuredClone(START);
+    t[1] = P('pb', 'מבחוץ: פסקה שנייה על ההרים');
+    t.splice(2, 1);                                                  // 123 — נמחקה מבחוץ, ונערכה אצלנו
+    t[t.length - 1] = P('pe', 'פסקה אחרונה וארוכה למדי עם הרבה מילים בתוכה, ועוד');
+    const opts = { docId: f.id, base, flows: { f1: theirsDoc(t) }, app: 'external:word' };
+    const plan = await reconcile(f, opts);
+    assert.equal(plan.status, 'diverged');
+    assert.deepEqual(summary(plan).conflicts, [['f1', 'pb', 'both-edited'], ['f1', '123', 'edited-deleted']]);
+    assert.deepEqual(summary(plan).changes, [['f1', 'pe', 'edit']]);
+    assert.deepEqual(await summaryPhp(f, opts), summary(plan));
+
+    await assert.rejects(applyMerge(f, plan, { 'f1/pb': 'ours' }), e => e.issues.map(i => i.code).join() === 'merge-unanswered');
+    await applyMerge(f, plan, { 'f1/pb': 'both', 'f1/123': 'ours' });
+    assert.deepEqual(texts(f), ['פסקה ראשונה על הים', 'אצלנו: פסקה שנייה על ההרים', 'מבחוץ: פסקה שנייה על ההרים', 'אצלנו: מזהה שכולו ספרות, ערוך',
+        'פסקה רביעית שתימחק', 'horizontalRule', 'פסקה אחרונה וארוכה למדי עם הרבה מילים בתוכה, ועוד']);
+    const ids = flowOf(f).filter(b => b.attrs).map(b => b.attrs.id);
+    assert.equal(new Set(ids).size, ids.length, '"both" — השנייה מקבלת מזהה חדש');
+
+    // PHP מקצה לקצה: אותה תוצאה בטקסט
+    const g = await M.open(fx('valid/text.mbe'));
+    g.document.flows.f1.doc.content = structuredClone(START);
+    await M.save(g, { app: 'js-merge', now: NOW });
+    const gBase = g.documentSha256;
+    await stampFace(g, 'docx', readFileSync(join(here, 'faces/plain.docx')));
+    flowOf(g)[1] = P('pb', 'אצלנו: פסקה שנייה על ההרים');
+    flowOf(g)[2] = P('123', 'אצלנו: מזהה שכולו ספרות, ערוך');
+    const mbe = join(tmp, 'm2.mbe'), o = join(tmp, 'm2.json'), a = join(tmp, 'm2-a.json'), out = join(tmp, 'm2-out.mbe');
+    writeFileSync(mbe, await M.save(g, { app: 'js-merge', now: NOW }));
+    writeFileSync(o, JSON.stringify({ ...opts, docId: g.id, base: gBase }));
+    writeFileSync(a, JSON.stringify({ 'f1/pb': 'ours' }));
+    assert.deepEqual(JSON.parse(php('merge', mbe, o, a, out)), { error: ['merge-unanswered'] });
+    writeFileSync(a, JSON.stringify({ 'f1/pb': 'both', 'f1/123': 'ours' }));
+    assert.deepEqual(JSON.parse(php('merge', mbe, o, a, out)), { ok: true });
+    const h = await M.open(readFileSync(out));
+    assert.deepEqual(codes(h), ['rendition-stale']); // preview לא חודש במיזוג — צפוי
+    assert.deepEqual(texts(h), texts(f));
+    assert.deepEqual(h.journal().slice(-2).map(s => s.kind), ['return', 'merge']);
+});
+
+test('reconcile: בלי זיכרון — הבסיס מ-customXml; בלי סימניות — לפי תוכן; הזזה; gaps', async () => {
+    const f = await mergeBase();
+    const base = f.documentSha256, baseDocument = structuredClone(f.document);
+    flowOf(f)[0] = P('pa', 'אצלנו: פסקה ראשונה על הים');
+    await M.save(f, { app: 'js-merge', now: NOW });
+    f.files.delete(`history/${base}.json`);                       // הבסיס כבר לא בזיכרון
+    const strip = b => { const c = structuredClone(b); delete c.attrs; return c; };
+    const t = [START[5], START[0], START[1], START[2], START[4]].map(strip); // pe הוזז להתחלה, pd נמחקה — ואין סימניות בכלל
+    t[3] = P(null, 'מזהה שכולו ספרות ממש');                         // נערכה (Dice)
+    const opts = { docId: f.id, base, flows: { f1: theirsDoc(t) }, styles: ['Heading 4'], app: 'external:word' };
+    assert.deepEqual((await reconcile(f, { ...opts, baseDocument: undefined })).issues.map(i => i.code), ['face-base-missing']);
+    const plan = await reconcile(f, { ...opts, baseDocument });
+    assert.equal(plan.status, 'diverged');
+    assert.deepEqual(new Set(summary(plan).changes.map(c => c.slice(1).join('/'))), new Set(['123/edit', 'pd/delete', 'pe/move']));
+    assert.deepEqual(plan.conflicts, []);
+    assert.ok(plan.gaps.includes('merge:by-content — 4 פסקאות הותאמו לפי תוכן (בלי סימנייה)'), plan.gaps.join());
+    assert.ok(plan.gaps.includes('style:Heading 4 — לא קיים במסמך'));
+    const phpOpts = { ...opts, baseDocument };
+    assert.deepEqual(await summaryPhp(f, phpOpts), summary(plan));
+    await applyMerge(f, plan, {});
+    assert.deepEqual(texts(f), ['פסקה אחרונה וארוכה למדי עם הרבה מילים בתוכה', 'אצלנו: פסקה ראשונה על הים', 'פסקה שנייה על ההרים הגבוהים',
+        'מזהה שכולו ספרות ממש', 'horizontalRule']);
+    await M.save(f, { app: 'js-merge', now: NOW });
+    assert.ok(f.files.has(`history/${base}.json`), 'הבסיס מ-customXml נשמר בהיסטוריה');
+    assert.deepEqual(codes(f).filter(c => c.startsWith('history')), []);
+});
+
+test('alignByContent: עוגנים, Dice, ומגבלת הקטע — זהה ב-JS וב-PHP', () => {
+    const r = alignByContent(['א ב ג', 'ד ה ו ז', 'ח', 'ט י כ ל'], ['א ב ג', 'ד ה ו ז ש', 'ט י כ ל', 'חדש לגמרי']);
+    assert.deepEqual(r.pairs, [[0, 0], [1, 1], [3, 2]]);
+    const big = alignByContent(Array(MERGE_SPAN + 1).fill('x'), Array(MERGE_SPAN + 1).fill('y'));
+    assert.deepEqual([big.pairs.length, big.limited], [0, true]);
+});

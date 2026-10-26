@@ -43,20 +43,23 @@ export async function stampFace(f, format, bytes) {
     else if (format === 'png') out = stampPng(bytes, ids);
     else if (format === 'pdf') throw fail('face-stamp-failed', 'PDF מחתימים בזמן הכתיבה: xmpPacket(f) → מטא-נתונים של המסמך');
     else throw fail('face-stamp-failed', `פנים מסוג ${format} אינן נתמכות`);
-    exported(f, format);
+    exported(f, format, ids);
     return out;
 }
 
 /** הפנים נרשמות ביומן כשלב export (hub-api.md 2.2) — בשמירה הבאה, פעם אחת לכל פורמט. */
-function exported(f, format) {
-    if (!f.pending.some(p => p.kind === 'export' && p.note === format)) f.pending.push({ kind: 'export', who: null, note: format });
+function exported(f, format, { base, docBytes }) {
+    if (f.pending.some(p => p.kind === 'export' && p.note === format && p.result === base)) return;
+    // הגרסה שיצאה — היא ה-result של השלב (לא מה שיישמר בפעם הבאה), והעותק שלה נשמר: זה הבסיס כשהפנים יחזרו
+    f.pending.push({ kind: 'export', who: null, note: format, base, result: base, snapshots: { [base]: docBytes } });
 }
 
 /** חבילת XMP עם המזהים — להטמעה כ-Metadata של ה-PDF (לא דחוס, כדי ש-identify ימצא). */
 export async function xmpPacket(f) {
-    const { docId, base } = await faceIds(f);
-    exported(f, 'pdf');
-    return `<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>\n<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">`
+    const ids = await faceIds(f);
+    const { docId, base } = ids;
+    exported(f, 'pdf', ids);
+    return `<?xpacket begin="\uFEFF" id="W5M0MpCehiHzreSzNTczkc9d"?>\n<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">`
         + `<rdf:Description rdf:about="" xmlns:mbe="${XMP_NS}"><mbe:docId>${docId}</mbe:docId><mbe:base>${base}</mbe:base></rdf:Description>`
         + `</rdf:RDF></x:xmpmeta>\n<?xpacket end="w"?>`;
 }
