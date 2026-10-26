@@ -2,6 +2,7 @@
 
 import { log, logDump } from './log.js';
 import { buildMbe, importMbe, isMbe } from './mbe-io.js';
+import { TARGETS, openIn } from './handoff.js';
 import { h, $, toast, sheet, closeSheet, isSheetOpen, confirmDialog, field, rangeField, seg, colorField, toggle, pickFiles, download, timeAgo } from './ui.js';
 import { SIZES, newDoc, textLayer, shapeLayer, imageLayer, backgroundLayer, iconLayer, elementLayer, layerLabel, uid, clone, normalizeDoc } from './doc.js';
 import { ICONS, ICON_GROUPS } from './icons.js';
@@ -18,7 +19,7 @@ import { loadScript } from './io.js';
 import { docVariables, readSheetFile, readPasted, readPhoneContacts, guessColumns, normalizePhone, fileNames, fillText } from './merge.js';
 
 // הגרסה — מופיעה ביומן, כדי לדעת איזה קוד רץ בטלפון.
-const BUILD = '2026-10-25.size-1';
+const BUILD = '2026-10-26.open-in-1';
 
 const app = $('#app');
 let ed = null;   // העיצוב הפתוח: { id, doc, history, canvas, dirty }
@@ -1070,17 +1071,7 @@ function exportSheet() {
             toast('מכין…');
             let blob, file;
             if (fmt === 'gcard') { await saveNow(); blob = await exportGcard(ed.doc); file = name + '.gcard'; }
-            else if (fmt === 'mbe') {
-                await saveNow();
-                const base = ed.doc.mbeBase ? await assets.get(ed.doc.mbeBase) : null;
-                const r = await buildMbe(ed.doc, ed.canvas.images, { baseBytes: base ? new Uint8Array(await base.arrayBuffer()) : null });
-                blob = new Blob([r.bytes], { type: 'application/vnd.mbe+zip' });
-                file = name + '.mbe';
-                // הקובץ שנכתב הוא הבסיס של השמירה הבאה (המזהה, היומן ומה ששייך לאפליקציות אחרות נשמרים)
-                ed.doc.mbeBase = await assets.put(blob);
-                scheduleSave();
-                log('export-mbe', { bytes: r.bytes.length, gaps: r.gaps.join(',') || '-' });
-            }
+            else if (fmt === 'mbe') { blob = await makeMbe(); file = name + '.mbe'; }
             else {
                 const c = ed.canvas.pageCanvas(fmt === 'pdf' ? 1 : scale);
                 if (fmt === 'pdf') { blob = await exportPdf(c, ed.doc); file = name + '.pdf'; }
@@ -1102,7 +1093,71 @@ function exportSheet() {
         info,
         h('div', { class: 'row-actions' },
             h('button', { class: 'btn primary', onclick: () => go(false) }, '⬇️ הורדה'),
-            canShare ? h('button', { class: 'btn ghost', onclick: () => go(true) }, '↗ שיתוף') : null)));
+            canShare ? h('button', { class: 'btn ghost', onclick: () => go(true) }, '↗ שיתוף') : null),
+        h('h3', { class: 'section' }, 'להמשיך לערוך באפליקציה אחרת'),
+        h('p', { class: 'hint' }, 'הקובץ נפתח שם עם כל השכבות, ו"חזרה" מחזירה אותו לכאן.'),
+        h('div', { class: 'row-actions' }, Object.entries(TARGETS).map(([k, t]) =>
+            h('button', { class: 'btn ghost', onclick: () => openElsewhere(k) }, `${t.icon} פתיחה ${t.in}`)))));
+}
+
+/** ‎.mbe של העיצוב הפתוח. הקובץ שנכתב הוא הבסיס של השמירה הבאה (המזהה, היומן ומה ששייך לאפליקציות אחרות נשמרים). */
+async function makeMbe() {
+    await saveNow();
+    const base = ed.doc.mbeBase ? await assets.get(ed.doc.mbeBase) : null;
+    const r = await buildMbe(ed.doc, ed.canvas.images, { baseBytes: base ? new Uint8Array(await base.arrayBuffer()) : null });
+    const blob = new Blob([r.bytes], { type: 'application/vnd.mbe+zip' });
+    ed.doc.mbeBase = await assets.put(blob);
+    scheduleSave();
+    log('export-mbe', { bytes: r.bytes.length, gaps: r.gaps.join(',') || '-' });
+    return blob;
+}
+
+/** "פתיחה ברסטר / בווקטורי": החלון נפתח מיד (בתוך הלחיצה), הקובץ נבנה בינתיים ונשלח כשהיעד מוכן. */
+function openElsewhere(target) {
+    const t = TARGETS[target];
+    const srcId = ed.id, name = safeName(ed.doc.title);
+    const fallback = async why => {
+        // אפליקציה שעוד לא מקבלת קובץ ישירות, חלון שנחסם, או האפליקציה לאנדרואיד — הקובץ יורד ופותחים אותו שם
+        log('handoff-fallback', { to: target, why });
+        try {
+            await download(await built.then(r => new Blob([r.bytes], { type: 'application/vnd.mbe+zip' })), name + '.mbe');
+            sheet(`פתיחה ${t.in}`, h('div', {},
+                h('p', {}, why === 'blocked' ? 'הדפדפן חסם את החלון החדש.' : `${t.name} עוד לא מקבלת קובץ ישירות מכאן.`),
+                h('p', { class: 'hint' }, `הקובץ ‎.mbe ירד — פותחים אותו ${t.in} מ-📂, ואחרי השמירה שם מייבאים אותו כאן בחזרה (📥).`),
+                h('button', { class: 'btn primary block', onclick: closeSheet }, 'הבנתי')));
+        } catch (e) { toast(e.message || 'הייצוא נכשל', 'error'); }
+    };
+    const built = makeMbe().then(async blob => ({ bytes: new Uint8Array(await blob.arrayBuffer()), name }));
+    built.catch(() => {});
+    if (window.GreetingCardsAndroid) { fallback('android'); return; }
+    closeSheet();
+    openIn(target, built, { onFallback: fallback, onReturn: bytes => receiveBack(srcId, t, bytes) });
+}
+
+/** הקובץ חזר מהאפליקציה האחרת: נכנס לעיצוב הפתוח כצעד שאפשר לבטל, או כעיצוב חדש אם בינתיים נפתח אחר. */
+async function receiveBack(srcId, t, bytes) {
+    try {
+        const blob = new Blob([bytes], { type: 'application/vnd.mbe+zip' });
+        const r = await importMbe(new File([blob], 'return.mbe', { type: blob.type }));
+        r.doc.mbeBase = await assets.put(blob);
+        if (ed?.id === srcId) {
+            r.doc.title = ed.doc.title;
+            for (const [aid, img] of r.loaded) ed.canvas.setImage(aid, img);
+            await ensureDocFonts(r.doc);
+            ed.doc = r.doc;
+            ed.canvas.setDoc(ed.doc);
+            ed.canvas.select([]);
+            commit();
+        } else {
+            const id = uid('d');
+            await designs.put({ id, title: r.doc.title, doc: r.doc, updatedAt: Date.now(), owner: sync.currentUser()?.id, synced: false });
+            if (!ed) await openDesign(id, r.loaded);
+        }
+        focus();
+        toast(`חזר מ${t.name} ✓`);
+    } catch (e) {
+        toast('החזרה נכשלה: ' + (e.message || e), 'error');
+    }
 }
 
 // ─── עוד ──────────────────────────────────────────────────────────────────
