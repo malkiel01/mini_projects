@@ -1,0 +1,15 @@
+{
+  "id": "mailbox",
+  "name": "תיבת-מייל",
+  "icon": "✉️",
+  "icon_svg": "assets/icon.svg",
+  "description": "ממשק קריאה לתיבות דואר אמיתיות (IMAP): דואר נכנס שמתעדכן לבד, קוד אימות בולט להעתקה, וצרופות PDF בתוך הדף. כל משתמש מנהל תיבות ומשתף אותן.",
+  "category": "web",
+  "entry": "index.html",
+  "version": "1.0",
+  "gate": true,
+  "restricted": true,
+  "install": {
+    "banner": false
+  }
+}
