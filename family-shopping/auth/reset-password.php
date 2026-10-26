@@ -10,6 +10,12 @@ require_once '../includes/password_reset.php';
 
 bootstrapSession();
 
+// מחוברת לכלים הדיגיטליים: אין סיסמה של האפליקציה לאפס
+if (platformIdentity()) {
+    header('Location: ' . APP_BASE_PATH . '/dashboard.php');
+    exit;
+}
+
 $pdo   = getDBConnection();
 $token = $_GET['token'] ?? ($_POST['token'] ?? '');
 

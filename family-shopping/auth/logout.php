@@ -21,6 +21,10 @@
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../includes/session.php';
 
+// מחוברת לכלים הדיגיטליים: היציאה היא מהכלים עצמם (auth.md, סעיף 5),
+// ולכן חוזרים לדף שלהם - שם התפריט האישי, ו"יציאה".
+$connected = platformIdentity() !== null;
+
 // ניקוי כל משתני ה-session
 $_SESSION = [];
 
@@ -40,5 +44,5 @@ if (ini_get('session.use_cookies')) {
 
 session_destroy();
 
-header('Location: ' . APP_BASE_PATH . '/auth/login.php?loggedout=1');
+header('Location: ' . ($connected ? PLATFORM_HOME : APP_BASE_PATH . '/auth/login.php?loggedout=1'));
 exit;

@@ -18,6 +18,13 @@ if (isset($_SESSION['user_id'])) {
     finishLogin();
 }
 
+// מחוברת לכלים הדיגיטליים: הכניסה בסיסמה ו-Google של האפליקציה חסומות
+// (platform/docs/auth.md, סעיף 2). מי שאין לו חשבון מקושר - למסך החיבור.
+if (platformIdentity()) {
+    header('Location: ' . APP_BASE_PATH . '/auth/link.php');
+    exit;
+}
+
 $error = '';
 $success = '';
 

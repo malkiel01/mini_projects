@@ -10,6 +10,7 @@ require_once __DIR__ . '/participation.php';
 require_once __DIR__ . '/contacts.php';
 require_once __DIR__ . '/debug_log.php';
 require_once __DIR__ . '/phone.php';
+require_once __DIR__ . '/platform.php';
 
 /**
  * הקשר הבקשה - נשמר פעם אחת כדי שכל פונקציה תדע
@@ -222,13 +223,33 @@ function actionAddMember(GroupContext $context) {
         queueInvitationNotification($context, $invitationId, $user['id']);
     }
 
+    // מחוברת לכלים הדיגיטליים: הכניסה לאפליקציה היא רק דרכם, ולכן
+    // המוזמן מקבל שם חשבון (או הרשאה לחשבון שיש לו). מי שאין לו חשבון
+    // מקבל מהפלטפורמה מייל לבחירת סיסמה, וממנו מגיע ישר לקישור ההצטרפות.
+    [$platformStatus, $platformError] = platformInviteToEvent(
+        $context->pdo, $email, $nickname, $token
+    );
+
+    if ($platformStatus === 'invited') {
+        $message = 'נשלח מייל מהכלים הדיגיטליים לבחירת סיסמה — משם יגיעו ישר לאירוע';
+    } elseif ($platformStatus === 'blocked') {
+        $message = 'ההזמנה נוצרה, אבל החשבון של המוזמן בכלים הדיגיטליים חסום. פנו למנהל המערכת';
+    } elseif ($user) {
+        $message = 'ההזמנה נשלחה. אפשר גם להעתיק את הקישור ולשלוח בוואטסאפ';
+    } else {
+        $message = 'המשתמש עדיין לא רשום — יש לשלוח לו את קישור ההצטרפות';
+    }
+
+    if ($platformError !== '') {
+        $message .= ' (' . $platformError . ')';
+    }
+
     jsonOk([
         'invitation_id'   => (int)$invitationId,
         'invitation_link' => invitationLink($token),
         'is_registered'   => (bool)$user,
-        'message'         => $user
-            ? 'ההזמנה נשלחה. אפשר גם להעתיק את הקישור ולשלוח בוואטסאפ'
-            : 'המשתמש עדיין לא רשום — יש לשלוח לו את קישור ההצטרפות',
+        'platform_status' => $platformStatus,
+        'message'         => $message,
     ]);
 }
 

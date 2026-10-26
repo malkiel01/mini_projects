@@ -6,6 +6,9 @@
 > **עברה לכלים הדיגיטליים** (2026-10-26): `mbe-plus.com/mini_projects/family-shopping/`, מאחורי השער.
 > הקוד הועתק מהריפו `malkiel01/family-shopping`. מה השתנה, הסיכונים ומה עוד נשאר — `docs/migration.md`.
 > הפריסה היא ה-rsync של הכלים (`.env` ו-`uploads/` מוחרגים); `APP_BASE_PATH` קבוע ב-`config.php`.
+>
+> **הכניסה היא דרך הכלים הדיגיטליים** (`includes/platform.php`): השער מוסר את הזהות, והחשבון כאן מקושר אליה
+> (`users.platform_sub`). הכניסה בסיסמה וב-Google שבהמשך — רק כשהאפליקציה מנותקת מהשער. פירוט: `docs/migration.md`, סעיף 7.
 
 ## הרעיון
 

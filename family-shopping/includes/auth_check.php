@@ -21,24 +21,28 @@ if (!isset($_SESSION['user_id'])) {
     redirectToLogin();
 }
 
-// בדיקת timeout של סשן (30 דקות)
-$timeout = 1800;
-if (isset($_SESSION['last_activity']) && (time() - $_SESSION['last_activity'] > $timeout)) {
-    session_unset();
-    session_destroy();
-    bootstrapSession();
-    redirectToLogin('?timeout=1');
-}
-$_SESSION['last_activity'] = time();
+// מחוברת לכלים הדיגיטליים: הזהות נבדקת מחדש בכל בקשה (session.php),
+// ולכן אין פג תוקף ואין בדיקת דפדפן - אלה הגנות של כניסה בסיסמה.
+if (!platformIdentity()) {
+    // בדיקת timeout של סשן (30 דקות)
+    $timeout = 1800;
+    if (isset($_SESSION['last_activity']) && (time() - $_SESSION['last_activity'] > $timeout)) {
+        session_unset();
+        session_destroy();
+        bootstrapSession();
+        redirectToLogin('?timeout=1');
+    }
+    $_SESSION['last_activity'] = time();
 
-// הגנה מפני Session Hijacking
-if (!isset($_SESSION['user_agent'])) {
-    $_SESSION['user_agent'] = $_SERVER['HTTP_USER_AGENT'] ?? '';
-} elseif ($_SESSION['user_agent'] !== ($_SERVER['HTTP_USER_AGENT'] ?? '')) {
-    session_unset();
-    session_destroy();
-    bootstrapSession();
-    redirectToLogin('?error=security');
+    // הגנה מפני Session Hijacking
+    if (!isset($_SESSION['user_agent'])) {
+        $_SESSION['user_agent'] = $_SERVER['HTTP_USER_AGENT'] ?? '';
+    } elseif ($_SESSION['user_agent'] !== ($_SERVER['HTTP_USER_AGENT'] ?? '')) {
+        session_unset();
+        session_destroy();
+        bootstrapSession();
+        redirectToLogin('?error=security');
+    }
 }
 
 // הגנה מפני CSRF בכל פעולת POST

@@ -398,6 +398,12 @@ function eventDateLabel($date) {
                 <a href="contacts.php" class="btn-gear" title="אנשי קשר" aria-label="אנשי קשר">
                     <i class="fas fa-address-book"></i>
                 </a>
+                <?php if (platformIdentity()): ?>
+                    <!-- מי שנזכר אחר כך בחשבון ישן (platform/docs/auth.md, סעיף 4) -->
+                    <a href="auth/link.php?old=1" class="btn-gear" title="יש לי חשבון ישן" aria-label="חיבור חשבון ישן">
+                        <i class="fas fa-link"></i>
+                    </a>
+                <?php endif; ?>
                 <div class="user-info">
                     <div class="user-avatar">
                         <?php if (!empty($_SESSION['profile_picture'])): ?>
