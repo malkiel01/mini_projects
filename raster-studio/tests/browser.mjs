@@ -1263,6 +1263,62 @@ async function main() {
   check('‎.mbe של עורך התמלילים — "פותחים אותו בעורך התמלילים"', /^mbe-not-raster:.*עורך התמלילים/.test(bad[0]), bad[0]);
   check('‎.mbe שבור — נדחה', /^mbe-invalid/.test(bad[1]), bad[1]);
 
+  // ---- פתיחה מאפליקציה אחרת וחזרה (mbe-handoff, greeting-cards/spec/13-open-in.md) ----
+  // "המקור" — חלון באותו דומיין שפותח אותנו ב-?mbe-handoff=, כמו סטודיו העיצוב
+  {
+    const src = await ctx.newPage();
+    await src.goto(BASE + '/index.html');
+    await src.evaluate(async () => {
+      const { create, save, PREVIEW } = await import('./assets/js/mbe/mbe.js');
+      const { encodePNG } = await import('./assets/js/engine/png.js');
+      const f = create('raster', { units: 'pt', color: { space: 'sRGB' }, surfaces: [] });
+      const px = new Uint8ClampedArray(60 * 40 * 4);
+      for (let i = 0; i < px.length; i += 4) px.set([0, 0, 255, 255], i);
+      const png = await encodePNG(px, 60, 40);
+      const s = await f.addMedia(png, 'image/png');
+      f.setRendition(PREVIEW, png);
+      f.document.surfaces = [{ id: 'c1', type: 'canvas', size: [60, 40], layers: [{ id: 'B', name: 'כחול', type: 'raster', src: s, opacity: 1, blend: 'normal', visible: true, locked: false }] }];
+      const bytes = await save(f, { app: 'greeting-cards' });
+      window.__log = [];
+      const id = 'h' + Math.random().toString(36).slice(2);
+      window.__w = window.open('index.html?mbe-handoff=' + id);
+      window.addEventListener('message', e => {
+        if (e.source !== window.__w || e.data?.proto !== 'mbe-handoff') return;
+        window.__log.push(e.data.type);
+        const reply = m => window.__w.postMessage({ proto: 'mbe-handoff', v: 1, id, ...m }, location.origin);
+        if (e.data.type === 'ready') {
+          // קודם הודעה עם id אחר — חייבת להידחות; ואז הנכונה
+          window.__w.postMessage({ proto: 'mbe-handoff', v: 1, id: 'זר', type: 'open', name: 'זר.mbe', file: new ArrayBuffer(4), from: { app: 'x', name: 'זר' } }, location.origin);
+          reply({ type: 'open', name: 'כרטיס.mbe', file: bytes.slice().buffer, from: { app: 'greeting-cards', name: 'סטודיו העיצוב' } });
+        }
+        if (e.data.type === 'return') { window.__back = new Uint8Array(e.data.file); reply({ type: 'returned' }); }
+      });
+    });
+    const pop = await ctx.waitForEvent('page', { predicate: p => /mbe-handoff=/.test(p.url()) });
+    await pop.waitForFunction(() => window.__rs?.doc && !document.querySelector('#handoff-bar').hidden, null, { timeout: 10000 }).catch(() => {});
+    check('handoff: ready נשלח, הקובץ נפתח בעורך, ופס "↩ חזרה ל…"', (await src.evaluate(() => window.__log.join())).startsWith('ready')
+      && await pop.evaluate(() => [__rs.doc.width, __rs.doc.height, __rs.doc.layers[0].name].join()) === '60,40,כחול'
+      && (await pop.textContent('#handoff-btn')) === '↩ חזרה לסטודיו העיצוב', [await src.evaluate(() => window.__log.join()), pop.url(), await pop.evaluate(() => [!!window.__rs?.doc, document.querySelector('#handoff-bar')?.hidden, !!window.opener, sessionStorage.getItem('mbe-handoff'), document.querySelector('.msg, #msg')?.textContent].join(' ; ')).catch(e => e.message)].join(' | '));
+    check('handoff: הודעה עם id אחר — נדחתה', await pop.evaluate(() => __rs.doc.title) !== 'זר');
+    await pop.evaluate(() => { __rs.renderer.fill(__rs.doc, __rs.doc.layers[0], [255, 0, 0, 255]); __rs.renderer.invalidate(__rs.doc); });
+    const closed = pop.waitForEvent('close', { timeout: 5000 }).then(() => true, () => false);
+    await pop.click('#handoff-btn');
+    await src.waitForFunction(() => window.__back, null, { timeout: 8000 }).catch(() => {});
+    const back = await src.evaluate(async () => {
+      if (!window.__back) return null;
+      const { open } = await import('./assets/js/mbe/mbe.js');
+      const f = await open(window.__back);
+      const L = f.document.surfaces[0].layers[0];
+      const bmp = await createImageBitmap(new Blob([f.getMedia(L.src)], { type: 'image/png' }));
+      const c = new OffscreenCanvas(1, 1).getContext('2d');
+      c.drawImage(bmp, 0, 0);
+      return { ok: f.ok, name: L.name, px: Array.from(c.getImageData(0, 0, 1, 1).data).join(), log: window.__log.join() };
+    });
+    check('handoff: "↩ חזרה" — ה-‎.mbe חוזר למקור, תקין ועם העריכה', back?.ok && back.name === 'כחול' && back.px === '255,0,0,255' && back.log === 'ready,return', JSON.stringify(back));
+    check('handoff: אחרי האישור (returned) — החלון נסגר', await closed);
+    await src.close();
+  }
+
   // ---- שמירה בשרת: גרסאות, התנגשות ממכשיר אחר, פתיחה מהשרת ----
   await page.goto(BASE + '/index.html');
   await page.waitForSelector('#new-btn:not([disabled])');

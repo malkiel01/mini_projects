@@ -54,6 +54,11 @@ main { max-width: 860px; margin: 0 auto; padding: var(--s2) var(--s3) calc(var(-
 .top h1 { font-size: 1.05rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .top .sub { font-size: .78rem; opacity: .85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .top .icon-btn { color: inherit; }
+/* נפתח מאפליקציה אחרת: פס דק מתחת לכותרת, עם "↩ חזרה" */
+.handoff-bar { display: flex; align-items: center; gap: var(--s2); padding: 4px var(--s3); background: var(--brand-soft);
+    border-bottom: 1px solid var(--line); font-size: .85rem; }
+.handoff-bar[hidden] { display: none; }
+.handoff-bar > span { flex: 1; min-width: 0; color: var(--muted); }
 .tabs { display: flex; overflow-x: auto; scrollbar-width: none; background: var(--surface); border-bottom: 1px solid var(--line);
     position: sticky; top: calc(var(--head) + env(safe-area-inset-top)); z-index: 4; }
 .tabs::-webkit-scrollbar { display: none; }
