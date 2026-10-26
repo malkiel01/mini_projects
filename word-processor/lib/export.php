@@ -13,6 +13,7 @@ require_once __DIR__ . '/docs.php';
 require_once __DIR__ . '/footnote.php';
 require_once __DIR__ . '/caption.php';
 require_once __DIR__ . '/track.php';
+require_once __DIR__ . '/mbe/mbe.php';   // מזהה פסקה: התבנית ושם הסימנייה — מהליבה
 
 const EMU_PER_PX = 9525;
 const TWIP_PER_MM = 56.6929;
@@ -796,10 +797,10 @@ final class Ooxml
         // מזהה פסקה של חבילת היצירה: סימנייה נסתרת _mbe_p<id> סביב הפסקה (mbe-format.md סעיף 7) — כך פסקה שחזרה מ-Word
         // מזוהה. לא בגוף לשילוב (prefix) — שם זו פסקה של המארחת
         $pid = $a['id'] ?? null;
-        if ($this->prefix === '' && is_string($pid) && preg_match(PARA_ID_RE, $pid) && !isset($this->paraIds[$pid])) {
+        if ($this->prefix === '' && is_string($pid) && preg_match(Mbe::PARA_ID_RE, $pid) && !isset($this->paraIds[$pid])) {
             $this->paraIds[$pid] = true;
             $bid = ++$this->bookmarkId;
-            $runs = '<w:bookmarkStart w:id="' . $bid . '" w:name="' . MBE_PARA_BOOKMARK . $pid . '"/>' . $runs . '<w:bookmarkEnd w:id="' . $bid . '"/>';
+            $runs = '<w:bookmarkStart w:id="' . $bid . '" w:name="' . Mbe::paragraphBookmark($pid) . '"/>' . $runs . '<w:bookmarkEnd w:id="' . $bid . '"/>';
         }
         return '<w:p>' . ($ppr !== '' ? "<w:pPr>$ppr</w:pPr>" : '') . $anchors . $runs . '</w:p>' . $captions;
     }

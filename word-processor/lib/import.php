@@ -638,9 +638,8 @@ final class DocxCtx
             if ($r->localName === 'bookmarkStart') {
                 $name = $r->getAttributeNS(W, 'name');
                 // מזהה פסקה של חבילת היצירה (נסתרת גם ב-Word) — attrs.id של הפסקה, לא סימנייה
-                if (str_starts_with($name, MBE_PARA_BOOKMARK)) {
-                    $pid = substr($name, strlen(MBE_PARA_BOOKMARK));
-                    if (preg_match(PARA_ID_RE, $pid)) $paraId ??= $pid;
+                if (str_starts_with($name, Mbe::paragraphBookmark(''))) {
+                    if (($pid = Mbe::bookmarkParaId($name)) !== null) $paraId ??= $pid;
                     continue;
                 }
                 if (str_starts_with($name, '_Ref')) { $refMark = substr($name, 4); continue; }   // נסתרת גם ב-Word
