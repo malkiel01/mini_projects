@@ -313,3 +313,22 @@ dialog.viewer { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100d
     background: var(--surface); color: var(--ink); border-top: 1px solid var(--line); }
 .viewer-bar .gap { flex: 1; }
 .viewer-bar #pdf-page { min-inline-size: 7em; text-align: center; font-size: .85rem; }
+
+/* ===== אייקונים — SVG בקו אחד, בצבע הטקסט ===== */
+.i { inline-size: 22px; block-size: 22px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.btn .i { inline-size: 18px; block-size: 18px; }
+.top .logo .i { inline-size: 20px; block-size: 20px; }
+.chip .i { inline-size: 13px; block-size: 13px; stroke-width: 2.2; margin-inline-end: 3px; }
+.att .icon-btn { color: var(--muted); }
+.att .icon-btn:hover { color: var(--brand); }
+
+/* הכותרת: כחול כהה גם במצב כהה (לא הכחול הבהיר של הקישורים) */
+:root { --top-bg: var(--brand); --top-ink: #fff; }
+@media (prefers-color-scheme: dark) { :root { --top-bg: #1a2236; --top-ink: #e8eaf0; } }
+.top { background: var(--top-bg); color: var(--top-ink); border-bottom: 1px solid color-mix(in srgb, var(--top-ink) 10%, transparent); }
+.top .icon-btn { border-radius: 50%; }
+.top .icon-btn:hover { background: rgba(255, 255, 255, .12); }
+.top .titles { display: grid; text-align: start; background: none; border: 0; color: inherit; padding: 0; cursor: pointer; min-block-size: var(--tap); align-content: center; }
+.top .titles .h1 { display: flex; align-items: center; gap: 2px; font-size: 1.05rem; font-weight: 600; min-width: 0; }
+.top .titles .h1 .i { inline-size: 18px; block-size: 18px; opacity: .8; }
+.code-chip .btn { display: inline-flex; gap: 6px; }

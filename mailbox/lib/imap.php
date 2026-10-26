@@ -343,6 +343,18 @@ function mb_list(array $box, int $limit = MB_LIST_LIMIT): array
     }
 }
 
+/** כמה הודעות שלא נקראו — לרשימת התיבות. חיבור חלקי (OP_HALFOPEN), בלי לפתוח את התיבה. */
+function mb_unseen(array $box): int
+{
+    $mb = mb_imap_open($box, OP_HALFOPEN);
+    try {
+        $st = imap_status($mb, mb_imap_spec($box['imap_host'], (int)$box['imap_port']) . 'INBOX', SA_UNSEEN);
+        return (int)($st->unseen ?? 0);
+    } finally {
+        mb_imap_close($mb);
+    }
+}
+
 // ── הודעה אחת ──────────────────────────────────────────
 
 function mb_message(array $box, int $uid): array
