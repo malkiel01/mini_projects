@@ -2,8 +2,19 @@
 
 import { api, errText, toast, dims } from './api.js';
 import { idbSet } from './idb.js';
+import { acceptHandoff } from './handoff.js';
 
 const $ = (s, el = document) => el.querySelector(s);
+
+// נפתחנו מאפליקציה אחרת בחבילה (?mbe-handoff=): ready יוצא מיד, והקובץ שמגיע נפתח בעורך כמו קובץ מהמכשיר
+acceptHandoff(async ({ id, file }) => {
+  try {
+    await idbSet('pending-open', file);
+    location.href = 'editor.html?open=pending&mbe-handoff=' + encodeURIComponent(id);
+  } catch {
+    toast('לא הצלחתי להעביר את הקובץ לעורך', true);
+  }
+});
 
 // --vvh: הגובה הנראה בלי המקלדת — הגיליון מתקצר והכול נגלל
 (() => {

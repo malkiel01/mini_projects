@@ -18,6 +18,7 @@ import { saveDraft, loadDraft, restoreDraft, clearDraft, draftKey } from './draf
 import { gapsFor, parseOraStack } from './engine/formats.js';
 import { unzip } from './engine/unzip.js';
 import { buildMbe, openMbe, sniffZip, MbeOpenError } from './mbe-io.js';
+import { activeHandoff, returnHandoff, endHandoff } from './handoff.js';
 
 const $ = s => document.querySelector(s);
 const stage = $('#stage');
@@ -158,7 +159,11 @@ async function decodeWithBudget(blob) {
   return bmp;
 }
 
-const history_replace = q => window.history.replaceState(null, '', location.pathname + q);
+// ‎?mbe-handoff= נשאר בכתובת: גם אחרי טעינה מחדש העורך יודע שנפתח מאפליקציה אחרת (ו"↩ חזרה" נשאר)
+const history_replace = q => {
+  const h = new URLSearchParams(location.search).get('mbe-handoff');
+  window.history.replaceState(null, '', location.pathname + q + (h ? (q ? '&' : '?') + 'mbe-handoff=' + encodeURIComponent(h) : ''));
+};
 const baseName = name => (name || '').replace(/\.[a-z0-9]+$/i, '') || 'תמונה';
 
 const isOra = blob => /\.ora$/i.test(blob.name || '') || blob.type === 'image/openraster';
@@ -707,6 +712,9 @@ $('#hint').textContent = coarse ? 'צביטה — זום' : 'גרירה — הז
     } else {
       throw new Error('no_file');
     }
+    // נפתח מאפליקציה אחרת בחבילה — "↩ חזרה" (גם אחרי טעינה מחדש, כל עוד החלון שפתח אותנו קיים)
+    const h = activeHandoff();
+    if (h) showHandoff(h);
     // אחרי שהמסמך על המסך — מדידה קצרה בזמן שקט (פעם אחת למכשיר)
     (window.requestIdleCallback || setTimeout)(() => { measurePerf().then(draw, err => console.warn('perf', err)); }, { timeout: 2000 });
   } catch (e) {
@@ -714,6 +722,32 @@ $('#hint').textContent = coarse ? 'צביטה — זום' : 'גרירה — הז
     showMsg(code === 'no_file' ? 'לא נבחרה תמונה. חזרו לרשימה ופתחו תמונה או צרו חדשה.' : errText(code) + (e.detail ? ' — ' + e.detail : ''), true);
   }
 })();
+
+// ---- נפתח מאפליקציה אחרת (mbe-handoff): "↩ חזרה" מחזיר את ה-‎.mbe אליה ----
+function showHandoff(h) {
+  const bar = $('#handoff-bar'), btn = $('#handoff-btn');
+  $('#handoff-from').textContent = `נפתח מ${h.from.name}`;
+  btn.textContent = `↩ חזרה ל${h.from.name}`;
+  bar.hidden = false;
+  fit();
+  btn.onclick = async () => {
+    if (!doc) return;
+    tools.commitFloat(); tools.commitText(); adjust.close();
+    btn.disabled = true;
+    try {
+      await returnHandoff(h, await buildMbe(renderer, doc, { view: viewState() }));
+      endHandoff();
+      $('#handoff-from').textContent = `הוחזר ל${h.from.name} ✓`;
+      btn.hidden = true;
+      toast(`הוחזר ל${h.from.name}`);
+      setTimeout(() => window.close(), 600);
+    } catch (e) {
+      toast(e.message === 'closed' ? `החלון של ${h.from.name} נסגר — אפשר להוריד ‎.mbe (⬇️) ולייבא שם` : `${h.from.name} לא אישר את הקבלה — נסו שוב, או הורידו ‎.mbe (⬇️)`, true);
+    } finally {
+      btn.disabled = false;
+    }
+  };
+}
 
 // לבדיקות האוטומטיות (tests/browser.mjs) — גישה למנוע ולתצוגה
 window.__rs = {
