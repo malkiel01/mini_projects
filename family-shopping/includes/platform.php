@@ -429,14 +429,22 @@ function platformInviteToEvent(PDO $pdo, $email, $name, $token, $send = null) {
  *
  * בלי $send אמיתי ובלי $dryRun=false - לא נשלח כלום.
  *
+ * @param string|null $onlyEmail רק החשבון במייל הזה - לבדיקה של בעל
+ *                               המערכת לפני שמזמינים את כולם
  * @return array ספירות בלבד, בלי מיילים: candidates, ולכל סטטוס - כמה
  */
-function platformInviteExisting(PDO $pdo, $dryRun = true, $send = null, $pause = 0) {
-    $users = $pdo->query("
-        SELECT id, email, name FROM users
-        WHERE platform_sub IS NULL AND is_active = 1
-        ORDER BY id
-    ")->fetchAll(PDO::FETCH_ASSOC);
+function platformInviteExisting(PDO $pdo, $dryRun = true, $send = null, $pause = 0, $onlyEmail = null) {
+    $sql = "SELECT id, email, name FROM users WHERE platform_sub IS NULL AND is_active = 1";
+    $params = [];
+
+    if ($onlyEmail !== null) {
+        $sql .= " AND LOWER(TRIM(email)) = ?";
+        $params[] = mb_strtolower(trim($onlyEmail));
+    }
+
+    $stmt = $pdo->prepare($sql . " ORDER BY id");
+    $stmt->execute($params);
+    $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     $counts = ['candidates' => count($users)];
     if ($dryRun) {
