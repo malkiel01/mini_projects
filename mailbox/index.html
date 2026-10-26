@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="theme-color" content="#2d4a8a">
+  <meta name="referrer" content="no-referrer">
+  <title>דואר</title>
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/css/app.css?v=1">
+</head>
+<body>
+  <a class="skip" href="#main">דילוג לתוכן</a>
+
+  <header class="top">
+    <button class="icon-btn" id="back" type="button" aria-label="חזרה לדואר הנכנס" hidden>→</button>
+    <span class="logo" aria-hidden="true">✉</span>
+    <div class="titles">
+      <h1 id="title">דואר</h1>
+      <div class="sub" id="subtitle"></div>
+    </div>
+    <button class="icon-btn" id="refresh" type="button" aria-label="רענון">⟳</button>
+    <button class="icon-btn" id="boxes-btn" type="button" aria-label="תיבות ושיתוף">☰</button>
+  </header>
+
+  <main id="main" tabindex="-1">
+    <section id="list-pane" class="pane list-pane" aria-label="דואר נכנס">
+      <div class="inbox-head">
+        <h2>דואר נכנס <small id="unseen" class="count" hidden></small></h2>
+        <span class="muted live" id="status" aria-live="polite"></span>
+      </div>
+      <ul class="list msgs" id="msgs" aria-live="polite"></ul>
+    </section>
+
+    <section id="read-pane" class="pane read-pane" aria-label="הודעה">
+      <div class="placeholder" id="placeholder">
+        <span aria-hidden="true">✉</span>
+        <p>בחרו הודעה כדי לקרוא אותה</p>
+      </div>
+      <article id="msg" hidden>
+        <h2 class="subject" id="m-subject"></h2>
+        <div class="from">
+          <span class="avatar" id="m-avatar" aria-hidden="true"></span>
+          <div class="body">
+            <div class="l1"><span id="m-from"></span><span class="t" id="m-date"></span></div>
+            <div class="l2" id="m-to"></div>
+          </div>
+        </div>
+
+        <div class="code-chip" id="m-code" hidden>
+          <div class="code-tx">
+            <span class="code-label">קוד אימות</span>
+            <span class="code-num" id="m-code-num" dir="ltr"></span>
+          </div>
+          <button class="btn primary" id="m-copy" type="button"><span aria-hidden="true">⧉</span> העתק</button>
+        </div>
+
+        <ul class="atts" id="m-atts" hidden></ul>
+
+        <div class="mail-body">
+          <iframe id="m-frame" title="תוכן ההודעה" sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+                  referrerpolicy="no-referrer" hidden></iframe>
+          <div class="plain" id="m-plain" dir="auto" hidden></div>
+        </div>
+      </article>
+      <p class="error" id="m-error" role="alert" hidden></p>
+    </section>
+  </main>
+
+  <!-- תיבות ושיתוף -->
+  <dialog id="boxes-dlg" aria-labelledby="boxes-title">
+    <form method="dialog">
+      <header class="sheet-head">
+        <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+        <h2 id="boxes-title">התיבות שלי</h2>
+        <button type="button" class="btn primary" id="add-box-btn"><span aria-hidden="true">+</span> תיבה</button>
+      </header>
+      <div class="sheet-body">
+        <p class="hint">בוחרים תיבה כדי לעבור אליה. ✏️ — שם, שיתוף והסרה (רק בתיבה שלכם).</p>
+        <ul class="list" id="boxes-list"></ul>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- הוספת תיבה -->
+  <dialog id="add-dlg" aria-labelledby="add-title">
+    <form id="add-form" novalidate>
+      <header class="sheet-head">
+        <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+        <h2 id="add-title">הוספת תיבה</h2>
+        <button type="submit" class="btn primary" id="add-save">בדיקה ושמירה</button>
+      </header>
+      <div class="sheet-body">
+        <p class="hint">החיבור נבדק מול השרת לפני השמירה. הסיסמה נשמרת מוצפנת בשרת, ולא חוזרת לדפדפן.</p>
+        <div class="fields">
+          <label class="f wide"><span>כתובת המייל *</span>
+            <input name="email" type="email" dir="ltr" inputmode="email" autocomplete="off" required></label>
+          <label class="f wide"><span>סיסמת התיבה *</span>
+            <input name="password" type="password" dir="ltr" autocomplete="new-password" required></label>
+          <label class="f wide"><span>שם לתצוגה (למשל: חברה קדישא)</span>
+            <input name="label" maxlength="60"></label>
+        </div>
+        <section class="group" aria-labelledby="srv-t">
+          <h3 id="srv-t">השרת <small>IMAP, תמיד מוצפן</small></h3>
+          <div class="fields">
+            <label class="f wide"><span>שרת IMAP *</span>
+              <input name="host" dir="ltr" value="box2054.bluehost.com" autocomplete="off" required></label>
+            <fieldset class="seg wide" aria-label="פורט">
+              <label><input type="radio" name="port" value="993" checked><span>993 · SSL</span></label>
+              <label><input type="radio" name="port" value="143"><span>143 · STARTTLS</span></label>
+            </fieldset>
+            <label class="f wide"><span>שם משתמש (אם שונה מהמייל)</span>
+              <input name="username" dir="ltr" autocomplete="off"></label>
+          </div>
+        </section>
+        <p class="error" role="alert" hidden></p>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- תיבה אחת: שם, שיתוף, הסרה -->
+  <dialog id="box-dlg" aria-labelledby="box-title">
+    <form id="box-form" novalidate>
+      <header class="sheet-head">
+        <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+        <h2 id="box-title" class="one"></h2>
+        <button type="submit" class="btn primary">שמירה</button>
+      </header>
+      <div class="sheet-body">
+        <div class="fields">
+          <label class="f wide"><span>שם לתצוגה</span><input name="label" maxlength="60"></label>
+        </div>
+        <section class="group" aria-labelledby="share-t">
+          <h3 id="share-t">שיתוף <small>קריאה בלבד</small></h3>
+          <p class="hint">משתמש בכלים הדיגיטליים עם המייל הזה יראה את התיבה. צריך גם הרשאה לאפליקציה.</p>
+          <div class="toolbar">
+            <input id="share-email" type="email" dir="ltr" inputmode="email" list="known-users" placeholder="mail@example.com" aria-label="מייל לשיתוף">
+            <button type="button" class="btn ghost" id="share-add">שיתוף</button>
+          </div>
+          <datalist id="known-users"></datalist>
+          <ul class="list" id="shares"></ul>
+        </section>
+        <section class="group">
+          <button type="button" class="btn danger ghost" id="box-delete"><span aria-hidden="true">🗑️</span> הסרת התיבה מהאפליקציה</button>
+          <p class="hint">התיבה עצמה וההודעות שבה לא נמחקות — רק החיבור כאן.</p>
+        </section>
+        <p class="error" role="alert" hidden></p>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- צופה PDF -->
+  <dialog id="pdf-dlg" class="viewer" aria-labelledby="pdf-title">
+    <div class="viewer-in">
+      <header class="sheet-head">
+        <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+        <h2 id="pdf-title" class="one"></h2>
+        <a class="icon-btn" id="pdf-dl" aria-label="הורדה" download>⬇️</a>
+      </header>
+      <div class="stage" id="pdf-stage"><canvas id="pdf-canvas"></canvas></div>
+      <footer class="viewer-bar">
+        <button type="button" class="icon-btn" id="pdf-prev" aria-label="העמוד הקודם">›</button>
+        <span id="pdf-page" class="muted">…</span>
+        <button type="button" class="icon-btn" id="pdf-next" aria-label="העמוד הבא">‹</button>
+        <span class="gap"></span>
+        <button type="button" class="icon-btn" id="pdf-out" aria-label="הקטנה">−</button>
+        <button type="button" class="btn sm ghost" id="pdf-fit" aria-label="התאמה לרוחב">100%</button>
+        <button type="button" class="icon-btn" id="pdf-in" aria-label="הגדלה">+</button>
+      </footer>
+    </div>
+  </dialog>
+
+  <div class="toast" role="status" hidden></div>
+  <script src="assets/js/app.js?v=1"></script>
+</body>
+</html>

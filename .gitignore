@@ -15,3 +15,6 @@ greeting-cards/data/studio/
 kol-maroko/data/*.sqlite*
 kol-maroko/data/files/
 kol-maroko/data/secrets.json
+mailbox/data/*.sqlite*
+mailbox/data/secret.key
+mailbox/data/cache/
