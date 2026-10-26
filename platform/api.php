@@ -14,6 +14,8 @@
  *   GET  ?action=sso_mine  האפליקציות שהמשתמש אישר להן כניסה מאוחדת
  *   POST ?action=sso_revoke {client_id} — ביטול חיבור
  *   POST ?action=invite_accept {token, password} — הזמנה מאפליקציה (lib/provision.php): סיסמה וכניסה → {next}
+ *   POST ?action=join_info {token} — הזמנת לקוח מהמנהל (lib/invites.php): מה נפתח לו, ומייל נעול אם יש
+ *   POST ?action=join {token, display_name?, email?, password?} — הרשמה בקישור, או צירוף לחשבון המחובר
  *
  * פעולות מנהל (lib/admin.php): GET admin_state, ו-POST admin_* — כולן דורשות
  * מנהל מחובר ו-X-CSRF.
@@ -31,6 +33,7 @@ require_once __DIR__ . '/lib/installs.php';
 require_once __DIR__ . '/lib/email.php';
 require_once __DIR__ . '/lib/gate.php';
 require_once __DIR__ . '/lib/diag.php';
+require_once __DIR__ . '/lib/invites.php';
 
 try {
     $action = $_GET['action'] ?? '';
@@ -64,6 +67,8 @@ try {
             'diag'     => action_diag($body),
             'handoff'  => action_handoff($body),
             'invite_accept' => action_invite_accept($body),
+            'join_info' => action_join_info($body),
+            'join'     => action_join($body),
             default    => str_starts_with($action, 'admin_')
                 ? admin_dispatch($action, $body, require_admin(true))
                 : throw new ApiError('פעולה לא מוכרת', 404),
@@ -320,6 +325,50 @@ function action_invite_accept(array $body): never
     }
     start_session($r['user_id']);
     json_out(['ok' => true, 'next' => $r['next']]);
+}
+
+/** קישור ההזמנה מהמנהל (#join=…): מה נפתח, השם שהמנהל רשם, והמייל אם נעול. */
+function action_join_info(array $body): never
+{
+    $keys = ['join:' . client_ip()];
+    if (lock_remaining($keys) > 0) throw new ApiError('יותר מדי ניסיונות. נסו מאוחר יותר', 429);
+    try {
+        $inv = invite_open(is_string($body['token'] ?? null) ? $body['token'] : '');
+    } catch (ApiError $e) {
+        record_failure($keys);
+        throw $e;
+    }
+    json_out(['name' => $inv['name'], 'email' => $inv['email'], 'apps' => invite_apps($inv['grants'])]);
+}
+
+/**
+ * הרשמה בקישור ההזמנה — החשבון פעיל מיד, עם מה שהמנהל סימן. מחובר: ההרשאות מצטרפות לחשבון (עם CSRF).
+ * המייל עוד לא אומת — נשלח מייל אימות, אבל הכניסה לא מחכה לו.
+ */
+function action_join(array $body): never
+{
+    $keys = ['join:' . client_ip()];
+    if (lock_remaining($keys) > 0) throw new ApiError('יותר מדי ניסיונות. נסו מאוחר יותר', 429);
+    $user = current_user();
+    if ($user && !hash_equals($user['csrf'], $_SERVER['HTTP_X_CSRF'] ?? '')) throw new ApiError('בקשה לא תקינה — רעננו את הדף', 403);
+    try {
+        $r = invite_join(is_string($body['token'] ?? null) ? $body['token'] : '', $user, $body);
+    } catch (ApiError $e) {
+        if ($e->status === 400 || $e->status === 410) record_failure($keys);
+        throw $e;
+    }
+    if (!$r['created']) json_out(['ok' => true]);
+    start_session($r['user_id']);
+    respond_then_continue(['ok' => true]);
+    try {
+        if (!verify_send($r['user_id'], $r['email'], $r['name'], 'החשבון כבר פעיל — האימות רק מאשר שהכתובת שלכם.')) {
+            error_log("platform mail: verify to {$r['email']} failed");
+        }
+        push_send(['title' => '👤 לקוח הצטרף', 'body' => "{$r['name']} ({$r['email']}) נרשם/ה בקישור ההזמנה", 'tag' => 'signup', 'url' => '#admin']);
+    } catch (Throwable $e) {
+        error_log('platform join: ' . $e->getMessage());
+    }
+    exit;
 }
 
 /** הקישור מהמייל (#verify=…): המייל אומת. ממתין לאישור → התראה למנהל; בלי צורך באישור → פעיל. */

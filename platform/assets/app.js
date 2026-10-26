@@ -306,6 +306,46 @@ function showInvite(token) {
     }));
 }
 
+// קישור הזמנה מהמנהל: #join=<אסימון> (platform/lib/invites.php). ממלאים שם, מייל וסיסמה — ונכנסים מיד,
+// עם מה שהמנהל סימן. מחובר — ההרשאות מצטרפות לחשבון. מייל נעול — השדה ממולא ואינו ניתן לשינוי.
+async function showJoin(token) {
+    let info;
+    try {
+        [info, me] = await Promise.all([api('join_info', { token }), api('me')]);
+        csrf = me.csrf;
+    } catch (err) {
+        return showMessage('הקישור לא תקף', err.message, '⚠️');
+    }
+    const done = () => { history.replaceState(null, '', location.pathname + location.search); start(); };
+    const opens = info.apps.length ? 'ייפתחו לכם: ' + info.apps.map(a => `${a.icon} ${a.name}`).join(' · ') + '.' : '';
+    if (me.user) {
+        view.replaceChildren(form({
+            title: 'הוזמנתם לכלים הדיגיטליים',
+            lead: `${opens} הם יתווספו לחשבון שלכם — ${me.user.display_name} (${me.user.email || me.user.username}).`,
+            fields: [],
+            submit: 'הוספה לחשבון שלי',
+            onSubmit: async () => { await api('join', { token }); toast('✓ נוסף לחשבון שלכם'); done(); },
+            footer: [switchLink('לא החשבון שלכם?', 'יציאה', async () => { await api('logout', {}); csrf = null; showJoin(token); })],
+        }));
+        return;
+    }
+    const fields = [
+        field('השם שלכם', 'display_name', { autocomplete: 'name' }),
+        field('מייל', 'email', { type: 'email', ltr: true, hint: info.email ? 'הקישור מיועד לכתובת הזו' : 'בו נכנסים מעכשיו', autocomplete: 'email' }),
+        field('סיסמה', 'password', { type: 'password', ltr: true, hint: 'לפחות 8 תווים', autocomplete: 'new-password' }),
+    ];
+    fields[0][1].value = info.name || '';
+    if (info.email) Object.assign(fields[1][1], { value: info.email, readOnly: true });
+    view.replaceChildren(form({
+        title: 'הוזמנתם לכלים הדיגיטליים',
+        lead: `${opens} ממלאים פרטים, בוחרים סיסמה — ונכנסים.`,
+        fields,
+        submit: 'הרשמה וכניסה',
+        onSubmit: async (data) => { await api('join', { token, ...data }); done(); },
+        footer: [switchLink('כבר יש לכם חשבון?', 'כניסה', showLogin)],
+    }));
+}
+
 function showMessage(title, text, icon = '') {
     view.replaceChildren(el('div', { className: 'auth' }, [el('div', { className: 'panel msg' }, [
         icon ? el('div', { className: 'big', textContent: icon, ariaHidden: 'true' }) : logo(),
@@ -1271,6 +1311,8 @@ async function start() {
     try {
         const invite = location.hash.match(/^#invite=([a-f0-9]{48})$/);
         if (invite) return showInvite(invite[1]);
+        const join = location.hash.match(/^#join=([a-f0-9]{48})$/);
+        if (join) return showJoin(join[1]);
         await consumeVerifyLink();
         me = await api('me');
         csrf = me.csrf;

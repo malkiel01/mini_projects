@@ -73,13 +73,13 @@ function site_url(): string
 // ---------- אימות ----------
 
 /** אסימון חדש (הקודמים של המשתמש נמחקים) ומייל עם הקישור. */
-function verify_send(int $userId, string $email, string $name): bool
+function verify_send(int $userId, string $email, string $name, string $after = ''): bool
 {
     $token = bin2hex(random_bytes(24));
     db()->prepare('DELETE FROM email_tokens WHERE user_id = ?')->execute([$userId]);
     db()->prepare('INSERT INTO email_tokens (token_hash, user_id, expires_at) VALUES (?,?,?)')
         ->execute([hash('sha256', $token), $userId, gmdate('Y-m-d\TH:i:s\Z', time() + VERIFY_HOURS * 3600)]);
-    $next = approval_required() ? 'אחרי האימות, המנהל יאשר את החשבון.' : 'אחרי האימות החשבון פעיל.';
+    $next = $after !== '' ? $after : (approval_required() ? 'אחרי האימות, המנהל יאשר את החשבון.' : 'אחרי האימות החשבון פעיל.');
     return send_mail($email, 'אימות כתובת המייל — כלים דיגיטליים',
         "שלום $name,\n\nכדי להשלים את ההרשמה לכלים הדיגיטליים, לחצו על הקישור:\n" . site_url() . "#verify=$token\n\n" .
         "הקישור בתוקף " . VERIFY_HOURS . " שעות. $next\n\nאם לא נרשמתם — אפשר להתעלם מהמייל הזה.");
