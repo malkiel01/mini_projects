@@ -9,7 +9,7 @@
 //
 // מוסכמה: שורה 0 של כל אריח ושל כל FBO = הקצה העליון (y של המסמך גדל למטה). רק המסך עצמו הפוך.
 
-import { TILE, BLEND_MODES, tilesInRect } from './doc.js';
+import { TILE, BLEND_MODES, tilesInRect, newMask } from './doc.js';
 import { rasterTile, selectionBox } from './selection.js';
 import { matrix as xfMatrix, bounds as xfBounds } from './transform.js';
 
@@ -68,13 +68,15 @@ uniform vec4 u_color;
 out vec4 o;
 void main() { o = u_color; }`,
 
-  // W3C Compositing and Blending Level 1: מיזוג נפרד לכל ערוץ + source-over
+  // W3C Compositing and Blending Level 1: מיזוג נפרד לכל ערוץ + source-over.
+  // מסכת שכבה (u_useMask): הערוץ r של אריח המסכה, בגווני אפור של sRGB (50% אפור = חצי שקוף, כמו בפוטושופ)
   blend: `#version 300 es
 precision highp float;
-uniform sampler2D u_dst, u_src;
+uniform sampler2D u_dst, u_src, u_msk;
 uniform float u_opacity;
-uniform int u_mode;
+uniform int u_mode, u_useMask;
 in vec2 v_uv; out vec4 o;
+${ENCODE}
 vec3 screenB(vec3 b, vec3 s) { return b + s - b * s; }
 // s ≤ 0.5 → multiply(b, 2s); אחרת screen(b, 2s − 1). ב-0.5 שני הענפים שווים.
 vec3 hardLight(vec3 b, vec3 s) {
@@ -83,6 +85,7 @@ vec3 hardLight(vec3 b, vec3 s) {
 void main() {
   vec4 b = texture(u_dst, v_uv);
   vec4 s = texture(u_src, v_uv) * u_opacity;
+  if (u_useMask == 1) s *= enc(vec3(texture(u_msk, v_uv).r)).r;
   float ab = b.a, as_ = s.a;
   vec3 Cb = ab > 0.0 ? clamp(b.rgb / ab, 0.0, 1.0) : vec3(0.0);
   vec3 Cs = as_ > 0.0 ? clamp(s.rgb / as_, 0.0, 1.0) : vec3(0.0);
@@ -351,6 +354,7 @@ export class WebGL2Renderer {
     this.floatTmp = this.#tileTexture(1);    // השכבה + התוכן הצף, לתצוגה בזמן שינוי צורה
     this.adjTmp = this.#tileTexture(1);      // השכבה אחרי תיקון, לתצוגה חיה
     this.shiftTmp = this.#tileTexture(1);    // שכבה בהזזת קבוצה, לתצוגה בזמן הגרירה
+    this.maskTmp = this.#tileTexture(1);     // שכבה כפול המסכה שלה, לקריאה החוצה
     // טשטוש: אריח מרופד בשכניו (256 + 2·64), ותוצאת המעבר האופקי
     this.padTex = this.#floatTex(TILE + 128, TILE + 128);
     this.blurTmp = this.#floatTex(TILE, TILE + 128);
@@ -480,6 +484,7 @@ export class WebGL2Renderer {
   freeLayer(layer) {
     for (const t of layer.tiles.values()) { this.gl.deleteTexture(t); this.textures--; }
     layer.tiles.clear();
+    if (layer.mask) this.freeLayer(layer.mask);
   }
 
   /** עותק של אריח (מרקם חדש). */
@@ -501,6 +506,10 @@ export class WebGL2Renderer {
     this.freeLayer(dst);
     for (const [k, t] of src.tiles) dst.tiles.set(k, this.#copyTile(t));
     dst.rev = (dst.rev ?? 0) + 1;
+    if (src.mask) {
+      dst.mask = newMask(dst, src.mask.enabled);
+      this.copyLayer(src.mask, dst.mask);
+    }
   }
 
   /**
@@ -1304,22 +1313,61 @@ export class WebGL2Renderer {
         ? (layer.children.length ? this.#compositeList(doc, layer.children, tx, ty, depth + 1) : null)
         : this.#layerTileFor(doc, layer, tx, ty);
       if (!t) continue;
-      this.#target(b);
-      gl.useProgram(p.p);
-      gl.bindVertexArray(this.vao);
-      gl.disable(gl.BLEND);
-      gl.uniform1i(p.u.u_dst, 0);
-      gl.uniform1i(p.u.u_src, 1);
-      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, a);
-      gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, t);
-      gl.uniform1f(p.u.u_opacity, layer.opacity);
-      gl.uniform1i(p.u.u_mode, Math.max(0, BLEND_MODES.indexOf(layer.blend)));
-      this.#quad(p, [0, 0, TILE, TILE], [0, 0, 1, 1], [TILE, TILE], -1);
+      // מסכה: גם היא עוברת דרך #layerTileFor — משיכה פתוחה על המסכה מוצגת חיה. אריח חסר = מוסתר
+      const mk = layer.mask?.enabled ? (this.#layerTileFor(doc, layer.mask, tx, ty) || this.emptyTex) : null;
+      this.#blendInto(b, a, t, layer.opacity, Math.max(0, BLEND_MODES.indexOf(layer.blend)), mk);
       [a, b] = [b, a];
     }
+    gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, null);
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, null);
     gl.activeTexture(gl.TEXTURE0);
     return a;
+  }
+
+  /** out = dst ⊕ src (אטימות, מצב מיזוג, ומסכה אם יש) */
+  #blendInto(out, dst, src, opacity, mode, mask = null) {
+    const gl = this.gl;
+    const p = this.prog.blend;
+    this.#target(out);
+    gl.useProgram(p.p);
+    gl.bindVertexArray(this.vao);
+    gl.disable(gl.BLEND);
+    gl.uniform1i(p.u.u_dst, 0);
+    gl.uniform1i(p.u.u_src, 1);
+    gl.uniform1i(p.u.u_msk, 2);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, dst);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, src);
+    gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, mask || this.emptyTex);
+    gl.uniform1f(p.u.u_opacity, opacity);
+    gl.uniform1i(p.u.u_mode, mode);
+    gl.uniform1i(p.u.u_useMask, mask ? 1 : 0);
+    this.#quad(p, [0, 0, TILE, TILE], [0, 0, 1, 1], [TILE, TILE], -1);
+  }
+
+  /** אריח השכבה כפול המסכה שלה (בלי אטימות ומיזוג) — לייצוא, ולהחלת המסכה */
+  #maskedTile(layer, tx, ty, out) {
+    const t = layer.tiles.get(key(tx, ty)) ?? this.emptyTex;
+    this.#blendInto(out, this.emptyTex, t, 1, 0, layer.mask.tiles.get(key(tx, ty)) ?? this.emptyTex);
+    return out;
+  }
+
+  /**
+   * מחיל את המסכה על הפיקסלים (השכבה כפול המסכה) — אריחים חדשים, והישנים ל-before (להיסטוריה).
+   * את המסכה עצמה מסיר מי שקרא (history.mask), כך ששניהם צעד ביטול אחד.
+   */
+  applyMask(doc, layer) {
+    const before = new Map();
+    for (const k of [...layer.tiles.keys()]) {
+      const [tx, ty] = k.split(',').map(Number);
+      const out = this.#tileTexture(1);
+      this.#maskedTile(layer, tx, ty, out);
+      before.set(k, layer.tiles.get(k));
+      layer.tiles.set(k, out);
+    }
+    gl_unbind(this.gl);
+    layer.rev = (layer.rev ?? 0) + 1;
+    this.invalidate(doc);
+    return before;
   }
 
   /** אריח של שכבה כשהיא מוזזת ב-(dx, dy) שלמים — לתצוגה בזמן הזזת קבוצה (עד ארבעה אריחי מקור) */
@@ -1348,7 +1396,8 @@ export class WebGL2Renderer {
   /** הזזת קבוצה בזמן גרירה: layers — כל שכבות הרסטר שבה (או null לסיום) */
   setShift(doc, layers, dx = 0, dy = 0) {
     const old = doc._shift;
-    doc._shift = layers ? { layers: new Set(layers), dx, dy } : null;
+    // המסכות זזות עם השכבות שלהן
+    doc._shift = layers ? { layers: new Set(layers.flatMap(l => (l.mask ? [l, l.mask] : [l]))), dx, dy } : null;
     if (old || layers) this.invalidate(doc);
   }
 
@@ -1411,8 +1460,12 @@ export class WebGL2Renderer {
     return this.#readCompositeSync(doc, x, y, w, h);
   }
 
-  /** הפיקסלים של שכבה אחת (בלי אטימות ומיזוג) — לדלי. אריח חסר = שקוף. */
-  async readLayerPixels(layer, x, y, w, h) {
+  /**
+   * הפיקסלים של שכבה אחת (בלי אטימות ומיזוג) — לדלי. אריח חסר = שקוף.
+   * masked — כפול המסכה של השכבה, אם יש ופעילה (לייצוא: ORA, ה-src של ‎.mbe).
+   */
+  async readLayerPixels(layer, x, y, w, h, masked = false) {
+    if (masked && layer.mask?.enabled) return this.#read((tx, ty) => this.#maskedTile(layer, tx, ty, this.maskTmp), x, y, w, h);
     return this.#readLayerSync(layer, x, y, w, h);
   }
 

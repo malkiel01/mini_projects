@@ -65,7 +65,7 @@ export function parseOraStack(xml) {
  * base — המסמך שנפתח: { document, surfaceId }. כל מה שלא הבנו נשמר — שדות לא מוכרים במסמך, במשטח ובכל שכבה
  * (layer.mbe — ה-JSON המקורי), משטחים אחרים במקומם, ושכבות של אפליקציות אחרות (layer.foreign) כמו שהן.
  */
-export function mbeDocument(doc, layers, base = null, srcOf = l => l.src) {
+export function mbeDocument(doc, layers, base = null, srcOf = l => l.src, recipeOf = () => null) {
   const old = base?.document ?? {};
   const surfaces = Array.isArray(old.surfaces) ? old.surfaces : [];
   const i = surfaces.findIndex(s => s && s.id === base?.surfaceId);
@@ -74,20 +74,25 @@ export function mbeDocument(doc, layers, base = null, srcOf = l => l.src) {
   const unit = v => (scale === 1 ? v : Math.round(v / scale * 100) / 100);
   const surface = {
     ...(i >= 0 ? surfaces[i] : {}), id: i >= 0 ? surfaces[i].id : (base?.surfaceId ?? 's1'), type: i >= 0 ? surfaces[i].type : 'canvas',
-    size: [unit(doc.width), unit(doc.height)], layers: mbeLayers(layers, srcOf, scale === 1 ? null : [doc.width, doc.height]),
+    size: [unit(doc.width), unit(doc.height)], layers: mbeLayers(layers, srcOf, scale === 1 ? null : [doc.width, doc.height], recipeOf),
   };
   const out = { ...old, units: old.units ?? 'pt', color: old.color ?? { space: 'sRGB' } };
   out.surfaces = i >= 0 ? surfaces.map((s, j) => (j === i ? surface : s)) : [surface, ...surfaces];
   return out;
 }
 
-const mbeLayers = (list, srcOf, px) => list.map(l => {
+/** שדות המתכון שמסכת השכבה שלנו כותבת (mbe-format.md סעיף 3, "עריכה לא הורסת") */
+export const MASK_RECIPE = ['source', 'mask', 'baked'];
+
+const mbeLayers = (list, srcOf, px, recipeOf) => list.map(l => {
   // שכבה של אפליקציה אחרת (vector, frame…) — כמו שהגיעה; רק ההסתרה (מאפיין של המעטפת) אצלנו
   if (l.foreign) return l.visible === (l.foreign.visible ?? true) ? l.foreign : { ...l.foreign, visible: !!l.visible };
   const common = { ...(l.mbe ?? {}), id: l.id, name: l.name, type: l.type === 'group' ? 'group' : 'raster' };
   // ה-PNG שלנו בגודל המשטח כולו: box (מיקום של תמונה קטנה) כבר אפוי לתוכו. בעמוד — px: גודל ה-PNG בפיקסלים
   if (l.type !== 'group') { delete common.box; delete common.px; if (px) common.px = px; }
-  const body = l.type === 'group' ? { children: mbeLayers(l.children, srcOf, px) } : { src: srcOf(l) };
+  // מסכה שלנו (או שנפתחה ונמחקה / הוחלה מאז) — המתכון נכתב מחדש; מתכון של אחרים שלא טענו — נשאר כמו שהוא
+  if (l.mask || l.maskLoaded) for (const k of MASK_RECIPE) delete common[k];
+  const body = l.type === 'group' ? { children: mbeLayers(l.children, srcOf, px, recipeOf) } : { src: srcOf(l), ...(recipeOf(l) ?? {}) };
   return { ...common, ...body, opacity: round(l.opacity), blend: l.blend, visible: !!l.visible, locked: !!l.locked };
 });
 
@@ -153,6 +158,7 @@ export function gapsFor(rendition, tree) {
   const groups = all.length > layers.length + foreign.length;
   // שכבה של אפליקציה אחרת לא מצוירת אצלנו — לא נכנסת לשום ייצוג (ב-‎.mbe עצמו היא נשמרת כמו שהיא)
   for (const t of new Set(foreign.map(l => l.foreign.type))) g.push(`layer:${t} → omitted`);
+  if (rendition === 'ora' && layers.some(l => l.mask?.enabled)) g.push('layer-mask → baked');
   if (rendition === 'ora') {
     // ORA (GIMP / Krita) ממזג ב-sRGB; אנחנו — בלינארי. מראה שכבות חצי-שקופות ומצבי מיזוג יכול להשתנות מעט
     if (all.some(l => l.blend !== 'normal' || l.opacity < 1)) g.push('blend-space:linear → srgb');

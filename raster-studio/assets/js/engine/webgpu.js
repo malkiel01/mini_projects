@@ -11,7 +11,7 @@
 //
 // מוסכמה: שורה 0 של כל מרקם = הקצה העליון — כמו ב-WebGL2. ב-WebGPU גם היעד וגם המסך כך, בלי היפוך.
 
-import { TILE, BLEND_MODES, tilesInRect } from './doc.js';
+import { TILE, BLEND_MODES, tilesInRect, newMask } from './doc.js';
 import { rasterTile, selectionBox } from './selection.js';
 import { matrix as xfMatrix, bounds as xfBounds } from './transform.js';
 import { WebGL2Renderer, srgbToLinear } from './webgl2.js';
@@ -79,10 +79,13 @@ fn screenB(b: vec3f, s: vec3f) -> vec3f { return b + s - b * s; }
 // s ≤ 0.5 → multiply(b, 2s); אחרת screen(b, 2s − 1)
 fn hardLight(b: vec3f, s: vec3f) -> vec3f { return mix(b * 2.0 * s, screenB(b, 2.0 * s - 1.0), step(vec3f(0.5), s)); }
 
-// W3C Compositing: t0 = הרקע, t1 = השכבה; a.x = אטימות, m.x = מצב
+// W3C Compositing: t0 = הרקע, t1 = השכבה, t2 = מסכת השכבה; a.x = אטימות, m.x = מצב, m.y = יש מסכה
+// (הערוץ r, בגווני אפור של sRGB — 50% אפור = חצי שקוף)
 @fragment fn blend(i: VO) -> @location(0) vec4f {
   let b = textureSample(t0, smp, i.uv);
-  let s = textureSample(t1, smp, i.uv) * u.a.x;
+  let mk = enc(vec3f(textureSample(t2, smp, i.uv).r)).r;
+  var s = textureSample(t1, smp, i.uv) * u.a.x;
+  if (u.m.y == 1) { s = s * mk; }
   let ab = b.a;
   let sa = s.a;
   var Cb = vec3f(0.0);
@@ -354,6 +357,7 @@ export class WebGPURenderer {
     this.floatTmp = this.#tileTexture(1);
     this.adjTmp = this.#tileTexture(1);
     this.shiftTmp = this.#tileTexture(1);
+    this.maskTmp = this.#tileTexture(1);
     this.padTex = this.#tex(TILE + 128, TILE + 128, TILE_FMT);
     this.blurTmp = this.#tex(TILE, TILE + 128, TILE_FMT);
     this.emptyTex = this.#tileTexture(1);
@@ -534,6 +538,28 @@ export class WebGPURenderer {
   freeLayer(layer) {
     for (const t of layer.tiles.values()) { this.#destroy(t); this.textures--; }
     layer.tiles.clear();
+    if (layer.mask) this.freeLayer(layer.mask);
+  }
+
+  /** אריח השכבה כפול המסכה שלה (ראו WebGL2Renderer) */
+  #maskedTile(layer, tx, ty, out) {
+    const t = layer.tiles.get(key(tx, ty)) ?? this.emptyTex;
+    this.#drawTo(out, 'blend', { a: [1, 0, 0, 0], m: [0, 1, 0, 0] }, [this.emptyTex, t, layer.mask.tiles.get(key(tx, ty)) ?? this.emptyTex]);
+    return out;
+  }
+
+  applyMask(doc, layer) {
+    const before = new Map();
+    for (const k of [...layer.tiles.keys()]) {
+      const [tx, ty] = k.split(',').map(Number);
+      const out = this.#tileTexture(1);
+      this.#maskedTile(layer, tx, ty, out);
+      before.set(k, layer.tiles.get(k));
+      layer.tiles.set(k, out);
+    }
+    layer.rev = (layer.rev ?? 0) + 1;
+    this.invalidate(doc);
+    return before;
   }
 
   #copyTile(t) {
@@ -546,6 +572,10 @@ export class WebGPURenderer {
     this.freeLayer(dst);
     for (const [k, t] of src.tiles) dst.tiles.set(k, this.#copyTile(t));
     dst.rev = (dst.rev ?? 0) + 1;
+    if (src.mask) {
+      dst.mask = newMask(dst, src.mask.enabled);
+      this.copyLayer(src.mask, dst.mask);
+    }
   }
 
   snapshot(layer, keys) {
@@ -1047,7 +1077,9 @@ export class WebGPURenderer {
         ? (layer.children.length ? this.#compositeList(doc, layer.children, tx, ty, depth + 1) : null)
         : this.#layerTileFor(doc, layer, tx, ty);
       if (!t) continue;
-      this.#drawTo(b, 'blend', { a: [layer.opacity, 0, 0, 0], m: [Math.max(0, BLEND_MODES.indexOf(layer.blend)), 0, 0, 0] }, [a, t]);
+      // מסכה: גם היא דרך #layerTileFor (משיכה פתוחה עליה מוצגת חיה). אריח חסר = מוסתר
+      const mk = layer.mask?.enabled ? (this.#layerTileFor(doc, layer.mask, tx, ty) || this.emptyTex) : null;
+      this.#drawTo(b, 'blend', { a: [layer.opacity, 0, 0, 0], m: [Math.max(0, BLEND_MODES.indexOf(layer.blend)), mk ? 1 : 0, 0, 0] }, [a, t, mk]);
       [a, b] = [b, a];
     }
     return a;
@@ -1068,7 +1100,7 @@ export class WebGPURenderer {
 
   setShift(doc, layers, dx = 0, dy = 0) {
     const old = doc._shift;
-    doc._shift = layers ? { layers: new Set(layers), dx, dy } : null;
+    doc._shift = layers ? { layers: new Set(layers.flatMap(l => (l.mask ? [l, l.mask] : [l]))), dx, dy } : null;
     if (old || layers) this.invalidate(doc);
   }
 
@@ -1116,7 +1148,9 @@ export class WebGPURenderer {
     return this.#read((tx, ty) => this.#compositeTile(doc, tx, ty), x, y, w, h);
   }
 
-  async readLayerPixels(layer, x, y, w, h) {
+  async readLayerPixels(layer, x, y, w, h, masked = false) {
+    // הפקודות נרשמות לפי הסדר — אריח זמני אחד מספיק גם כשקוראים כמה אריחים במנה
+    if (masked && layer.mask?.enabled) return this.#read((tx, ty) => this.#maskedTile(layer, tx, ty, this.maskTmp), x, y, w, h);
     return this.#read((tx, ty) => layer.tiles.get(key(tx, ty)) ?? this.emptyTex, x, y, w, h);
   }
 

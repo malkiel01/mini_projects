@@ -195,8 +195,11 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
       const layer = d.active;
       if (!d.selection) { toast('קודם בוחרים אזור'); return; }
       if (!canEdit(layer)) return;
-      const before = renderer.fillSelection(d, layer, a === 'delete' ? 'erase' : 'paint', hexToRgb(state.color), 1);
-      if (before.size) history.pixels(d, layer, before, a === 'delete' ? 'מחיקת הבחירה' : 'מילוי הבחירה');
+      // על מסכה: מחיקה — שחור (מסתיר), מילוי — האפור של הצבע
+      const t = target(layer);
+      const p = onMask(layer) && a === 'delete' ? { mode: 'paint', color: [0, 0, 0] } : paintOn(layer, a === 'delete' ? 'erase' : 'paint');
+      const before = renderer.fillSelection(d, t, p.mode, p.color, 1);
+      if (before.size) history.pixels(d, t, before, (a === 'delete' ? 'מחיקת הבחירה' : 'מילוי הבחירה') + (t !== layer ? ' (מסכה)' : ''));
       onChange(a);
     }
   }
@@ -382,8 +385,9 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     const w = r.x1 - r.x0, h = r.y1 - r.y0;
     if (w < 1 || h < 1) { toast('האזור ריק'); return; }
     if (r.x0 === 0 && r.y0 === 0 && w === d.width && h === d.height) { cancelCrop(); return; }
-    const before = { w: d.width, h: d.height, maps: new Map(d.rasters().map(l => [l, l.tiles])), sel: d.selection ?? null };
-    const maps = new Map(d.rasters().map(l => [l, renderer.shiftTiles(l.tiles, -r.x0, -r.y0)]));
+    const all = withMasks(d.rasters());
+    const before = { w: d.width, h: d.height, maps: new Map(all.map(l => [l, l.tiles])), sel: d.selection ?? null };
+    const maps = new Map(all.map(l => [l, renderer.shiftTiles(l.tiles, -r.x0, -r.y0)]));
     const m = [1, 0, 0, 1, -r.x0, -r.y0];
     const sel = d.selection ? { ...d.selection, shapes: d.selection.shapes.map(s => XF.transformShape(s, m)) } : null;
     const after = { w, h, maps, sel };
@@ -488,6 +492,19 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     return true;
   }
 
+  // ---- מסכת שכבה ----
+  // layer.editMask — הציור, הדלי, המילוי והמחיקה הולכים למסכה: בגווני אפור של הצבע (לבן — נראה, שחור — מוסתר)
+  const target = layer => (layer.mask && layer.editMask ? layer.mask : layer);
+  const onMask = layer => target(layer) !== layer;
+  const gray = rgb => { const y = Math.round(0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]); return [y, y, y]; };
+  /** הצבע לציור על היעד: על מסכה — אפור; mode 'erase' על מסכה — לבן (מחזיר את מה שהוסתר) */
+  const paintOn = (layer, mode) => {
+    if (!onMask(layer)) return { mode, color: hexToRgb(state.color) };
+    return mode === 'erase' ? { mode: 'paint', color: [255, 255, 255] } : { mode, color: gray(hexToRgb(state.color)) };
+  };
+  /** השכבות והמסכות שלהן — לחיתוך ולהזזת קבוצה (המסכה זזה עם השכבה) */
+  const withMasks = layers => layers.flatMap(l => (l.mask ? [l, l.mask] : [l]));
+
   async function pick([x, y]) {
     const d = doc();
     const xi = Math.floor(x), yi = Math.floor(y);
@@ -507,15 +524,16 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     if (xi < 0 || yi < 0 || xi >= d.width || yi >= d.height) return;
     filling = true;
     let px;
-    try { px = await renderer.readLayerPixels(layer, 0, 0, d.width, d.height); } finally { filling = false; }
+    const t = target(layer);
+    try { px = await renderer.readLayerPixels(t, 0, 0, d.width, d.height); } finally { filling = false; }
     // בזמן הקריאה: מסמך אחר, שכבה אחרת, משיכה או תוכן צף — הפיקסלים כבר לא מה שנקרא
-    if (doc() !== d || d.active !== layer || stroke || fl() || !canEdit(layer)) return;
+    if (doc() !== d || d.active !== layer || target(layer) !== t || stroke || fl() || !canEdit(layer)) return;
     const r = floodFill(px, d.width, d.height, xi, yi, state.tolerance);
     if (!r.count) return;
-    renderer.beginStroke(d, layer, { mode: 'paint', color: hexToRgb(state.color), opacity: state.opacity });
+    renderer.beginStroke(d, t, { ...paintOn(layer, 'paint'), opacity: state.opacity });
     renderer.maskFromAlpha(d, r.mask, 0, 0, d.width, d.height, r.box);
     const before = renderer.endStroke(d);
-    if (before.size) history.pixels(d, layer, before, 'דלי');
+    if (before.size) history.pixels(d, t, before, t !== layer ? 'דלי (מסכה)' : 'דלי');
     onChange('bucket');
   }
 
@@ -581,13 +599,14 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
       cloneSrc.offset ??= [cloneSrc.anchor[0] - Math.round(pt[0]), cloneSrc.anchor[1] - Math.round(pt[1])];
     }
     const pen = e.pointerType === 'pen';
-    renderer.beginStroke(d, layer, {
-      mode: state.tool === 'eraser' ? 'erase' : state.tool === 'clone' ? 'clone' : 'paint',
-      color: hexToRgb(state.color), opacity: state.opacity, offset: cloneSrc.offset ?? [0, 0],
+    const t = target(layer);
+    renderer.beginStroke(d, t, {
+      ...paintOn(layer, state.tool === 'eraser' ? 'erase' : state.tool === 'clone' ? 'clone' : 'paint'),
+      opacity: state.opacity, offset: cloneSrc.offset ?? [0, 0],
     });
     if (state.tool === 'clone') showCloneMark(pt);
     const p = { x: pt[0], y: pt[1], p: pen ? e.pressure || 0.5 : 1 };
-    stroke = { layer, last: p, carry: 0, pen };
+    stroke = { layer: t, last: p, carry: 0, pen };
     dabAt(p);
     draw();
     return true;
@@ -653,8 +672,9 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     const d = doc();
     renderer.setShift(d, null);
     if (!dx && !dy) return;
-    const before = { w: d.width, h: d.height, maps: new Map(layers.map(l => [l, l.tiles])), sel: d.selection ?? null };
-    const maps = new Map(layers.map(l => [l, renderer.shiftTiles(l.tiles, dx, dy)]));
+    const all = withMasks(layers);
+    const before = { w: d.width, h: d.height, maps: new Map(all.map(l => [l, l.tiles])), sel: d.selection ?? null };
+    const maps = new Map(all.map(l => [l, renderer.shiftTiles(l.tiles, dx, dy)]));
     for (const [l, t] of maps) { l.tiles = t; l.rev = (l.rev ?? 0) + 1; }
     renderer.resetComposite(d);
     history.crop(d, before, { ...before, maps }, 'הזזת קבוצה');
@@ -680,7 +700,7 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     const d = doc(), s = stroke;
     stroke = null;
     const before = renderer.endStroke(d);
-    if (before.size) history.pixels(d, s.layer, before, { eraser: 'מחק', clone: 'חותמת שכפול' }[state.tool] ?? 'מכחול');
+    if (before.size) history.pixels(d, s.layer, before, ({ eraser: 'מחק', clone: 'חותמת שכפול' }[state.tool] ?? 'מכחול') + (s.layer.owner ? ' (מסכה)' : ''));
     showCloneMark(null);
     onChange('stroke');
   }

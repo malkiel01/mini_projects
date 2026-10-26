@@ -104,6 +104,7 @@ export class History {
         stored.set(k, cur);
       }
       layer.rev = (layer.rev ?? 0) + 1;
+      if (layer.owner) layer.owner.rev = (layer.owner.rev ?? 0) + 1;   // מסכה: גם השכבה שלה "השתנתה" (ייצוא, טיוטה)
       r.invalidateTiles(doc, stored.keys());
     };
     const count = [...stored.values()].filter(Boolean).length;
@@ -185,6 +186,38 @@ export class History {
       undo: () => set(before), redo: () => set(after),
       // נזרקת: המצב שאינו פעיל משתחרר
       discard: applied => { for (const m of (applied ? before : after).maps.values()) r.freeTextures(m.values()); },
+    });
+  }
+
+  /**
+   * מסכת שכבה נוספה / הוסרה / הוחלה: layer.mask עובר מ-before ל-after (אובייקט מסכה או null).
+   * pixels — before מ-renderer.applyMask (החלה: הפיקסלים השתנו באותו צעד), מוחלף כמו ב-pixels.
+   */
+  mask(doc, layer, before, after, label, pixels = null) {
+    const r = this.renderer;
+    const set = (m, swap) => {
+      layer.mask = m;
+      if (!m) layer.editMask = false;
+      if (swap) {
+        for (const [k, t] of pixels) {
+          const cur = layer.tiles.get(k) ?? null;
+          if (t) layer.tiles.set(k, t); else layer.tiles.delete(k);
+          pixels.set(k, cur);
+        }
+      }
+      layer.rev = (layer.rev ?? 0) + 1;
+      r.invalidate(doc);
+    };
+    const tiles = m => (m ? [...m.tiles.values()] : []);
+    this.push({
+      label, bytes: Math.max(1, tiles(before).length + tiles(after).length + (pixels?.size ?? 0)) * TILE_BYTES,
+      undo: () => set(before, !!pixels), redo: () => set(after, !!pixels),
+      // נזרקת: המסכה שאינה בשכבה משתחררת, ואריחי הפיקסלים שברשומה (אף פעם לא בשכבה)
+      discard: applied => {
+        const out = applied ? before : after;
+        if (out && out !== (applied ? after : before)) r.freeTextures(out.tiles.values());
+        if (pixels) r.freeTextures(pixels.values());
+      },
     });
   }
 

@@ -7,9 +7,12 @@ import { oraStack } from './engine/formats.js';
 /** התמונה המשוטחת (רק שכבות גלויות): Promise ל-RGBA ישר של 8 ביט בגודל הקנבס */
 export const flatRGBA = (renderer, doc) => renderer.readPixels(doc, 0, 0, doc.width, doc.height);
 
-/** שכבה אחת בגודל הקנבס, כ-PNG (התוכן שמחוץ לקנבס לא נכנס) */
-export const layerPNG = async (renderer, doc, layer) =>
-  encodePNG(await renderer.readLayerPixels(layer, 0, 0, doc.width, doc.height), doc.width, doc.height);
+/**
+ * שכבה אחת בגודל הקנבס, כ-PNG (התוכן שמחוץ לקנבס לא נכנס). masked — כפול מסכת השכבה (מה שרואים).
+ * גם מסכה עצמה (layer.mask) — PNG בגווני אפור.
+ */
+export const layerPNG = async (renderer, doc, layer, masked = false) =>
+  encodePNG(await renderer.readLayerPixels(layer, 0, 0, doc.width, doc.height, masked), doc.width, doc.height);
 
 /** תמונה מוקטנת (הצלע הארוכה ≤ max) כ-PNG — לתמונה ממוזערת / preview */
 export async function scaledPNG(rgba, w, h, max) {
@@ -53,7 +56,7 @@ export async function buildORA(renderer, doc) {
       if (l.type === 'group') { out.push({ ...l, children: await walk(l.children) }); continue; }
       if (l.foreign) continue;   // של אפליקציה אחרת — לא מצוירת אצלנו (פער בדוח)
       const src = `data/layer${n++}.png`;
-      files.push({ name: src, data: await layerPNG(renderer, doc, l) });
+      files.push({ name: src, data: await layerPNG(renderer, doc, l, true) });   // ב-ORA אין מסכות — אפויה
       out.push({ ...l, src });
     }
     return out;

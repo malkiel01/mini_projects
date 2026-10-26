@@ -141,6 +141,14 @@ export class RasterDocument {
 }
 
 /** האריחים שמלבן (במסמך) נוגע בהם — [tx, ty] לכל אחד. */
+/**
+ * מסכת שכבה: אריחים כמו של שכבה (הערוץ r — גווני אפור, לבן = נראה; אריח חסר = מוסתר), ו-rev משלה.
+ * owner — השכבה. שכבה עם מסכה: layer.mask; עריכה של המסכה במקום הפיקסלים: layer.editMask.
+ */
+export function newMask(owner, enabled = true) {
+  return { tiles: new Map(), rev: 0, enabled, owner };
+}
+
 export function tilesInRect(x, y, w, h) {
   const out = [];
   if (w <= 0 || h <= 0) return out;

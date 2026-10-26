@@ -670,6 +670,104 @@ async function main() {
     [await px(390, 50), await px(420, 50)].join(' | '));
   if (SHOTS) await page.screenshot({ path: join(SHOTS, 'clone-desktop.png') });
 
+  // ---- מסכת שכבה ----
+  await openEd(page);
+  await page.waitForFunction(() => window.__rs?.doc);
+  await page.evaluate(() => __rs.setView({ zoom: 1, x: 20, y: 20 }));
+  await page.click('[data-act="add"]');
+  await page.evaluate(() => { __rs.renderer.fill(__rs.doc, __rs.doc.active, [255, 0, 0, 255]); __rs.renderer.invalidate(__rs.doc); });
+  await page.evaluate(() => __rs.tools.setTool('rect'));
+  await drag([300, 150], [100, 100]);   // 100..300 × 100..150 — מתחילים בשטח פנוי
+  await page.click('[data-act="mask"]');
+  const mk1 = await page.evaluate(() => { const l = __rs.doc.active; return [!!l.mask, !!l.editMask, __rs.history.undoStack.at(-1).label].join(); });
+  check('🎭 עם בחירה — מסכה מהבחירה, ועוברים לעריכתה', mk1 === 'true,true,מסכה מהבחירה', mk1);
+  check('מסכה: בתוך הבחירה — השכבה נראית, מחוצה לה — מוסתרת', near(await px(200, 120), [255, 0, 0, 255]) && near(await px(200, 300), [255, 255, 255, 255]),
+    [await px(200, 120), await px(200, 300)].join(' | '));
+  check('🎭 — תמונה ממוזערת של המסכה בשורה, ושורת אפשרויות', await page.isVisible('.layer-row[aria-selected="true"] .mask-thumb.editing') && await page.isVisible('.mask-opts'));
+  await page.keyboard.press('Control+d');
+  // מכחול על המסכה: שחור מסתיר, אפור — חצי
+  await page.keyboard.press('b');
+  await color('#000000');
+  await setOpt('size', 48); await setOpt('hardness', 100); await setOpt('opacity', 100);
+  await stroke([[150, 125], [160, 125]]);
+  check('מכחול שחור על המסכה — מסתיר; השכבה עצמה לא נגעה', near(await px(155, 125), [255, 255, 255, 255]) && near(await px(250, 125), [255, 0, 0, 255])
+    && await page.evaluate(async () => Array.from(await __rs.renderer.readLayerPixels(__rs.doc.active, 155, 125, 1, 1)).join()) === '255,0,0,255');
+  check('רשומה: "מכחול (מסכה)"', await page.evaluate(() => __rs.history.undoStack.at(-1).label) === 'מכחול (מסכה)');
+  await page.keyboard.press('Control+z');
+  check('ביטול — נראה שוב', near(await px(155, 125), [255, 0, 0, 255]));
+  await color('#808080');
+  await stroke([[250, 125], [255, 125]]);
+  const half = (await px(252, 125)).split(',').map(Number);
+  check('אפור 50% על המסכה — חצי שקוף (מעל לבן)', half[0] > 250 && half[1] > 150 && half[1] < 215, half.join());
+  // מחק על המסכה — מגלה
+  await page.keyboard.press('e');
+  await stroke([[200, 300], [205, 300]]);
+  check('מחק על המסכה — מחזיר את מה שהוסתר', near(await px(202, 300), [255, 0, 0, 255]) && near(await px(202, 330), [255, 255, 255, 255]));
+  // השבתה
+  await page.click('[data-mask="toggle"]');
+  check('השבתה — כל השכבה נראית', near(await px(400, 350), [255, 0, 0, 255]));
+  await page.keyboard.press('Control+z');
+  check('ביטול ההשבתה — המסכה חוזרת', near(await px(400, 350), [255, 255, 255, 255]));
+  // מעבר לעריכת הפיקסלים: המכחול צובע את השכבה
+  await page.click('[data-act="mask"]');
+  check('🎭 שוב — חזרה לפיקסלים', await page.evaluate(() => __rs.doc.active.editMask) === false && await page.isVisible('.layer-row[aria-selected="true"].editing-pixels'));
+  // ‎.mbe: src — מה שרואים, ולצדו המתכון (source, mask, baked); פתיחה חזרה מחזירה את המסכה
+  const mb = await page.evaluate(async () => {
+    const { open } = await import('./assets/js/mbe/mbe.js');
+    const bytes = window.__maskMbe = await __rs.buildMbe();
+    const f = await open(bytes);
+    const L = f.document.surfaces[0].layers[1];
+    const hex = async b => [...new Uint8Array(await crypto.subtle.digest('SHA-256', b))].map(x => x.toString(16).padStart(2, '0')).join('');
+    const out = { ok: f.ok, issues: f.issues.filter(i => i.level === 'error').map(i => i.message).join(), keys: ['source', 'mask', 'baked'].every(k => k in L),
+      baked: L.baked === await hex(f.getMedia(L.src)), differ: L.src !== L.source, enabled: L.mask.enabled };
+    await __rs.openAsDocument(new File([bytes], 'מסכה.mbe'));
+    const l = __rs.doc.layers[1];
+    out.back = !!l.mask && l.mask.enabled;
+    return out;
+  });
+  check('‎.mbe עם מסכה: תקין, src אפוי, ולצדו source / mask / baked תואם', mb.ok && mb.keys && mb.baked && mb.differ && mb.enabled === true, JSON.stringify(mb));
+  check('‎.mbe — פתיחה חזרה: המסכה במקומה, ואותה תמונה', mb.back && near(await px(200, 300), [255, 0, 0, 255]) && near(await px(200, 350), [255, 255, 255, 255])
+    && near(await px(200, 120), [255, 0, 0, 255]), [mb.back, await px(200, 350)].join(' | '));
+  // מתכון שמישהו ערך בלי להבין (baked לא תואם) — נפתח כרסטר רגיל: src כמו שהוא
+  const stale = await page.evaluate(async () => {
+    const { open, save } = await import('./assets/js/mbe/mbe.js');
+    const f = await open(await __rs.buildMbe());
+    f.document.surfaces[0].layers[1].baked = '0'.repeat(64);
+    await __rs.openAsDocument(new File([await save(f, { app: 'test' })], 'ערוך.mbe'));
+    return !!__rs.doc.layers[1].mask;
+  });
+  check('baked לא תואם — בלי מסכה, מציגים את src', !stale && near(await px(200, 350), [255, 255, 255, 255]) && near(await px(200, 120), [255, 0, 0, 255]));
+  // טיוטה: המסכה נשמרת ומשוחזרת
+  await page.evaluate(async () => { await __rs.openAsDocument(new File([window.__maskMbe], 'מסכה.mbe')); await __rs.flushDraft(); });
+  await page.reload();
+  await page.waitForFunction(() => window.__rs?.doc?.layers[1]?.mask, null, { timeout: 8000 }).catch(() => {});
+  check('טיוטה — המסכה משוחזרת', await page.evaluate(() => !!__rs.doc.layers[1]?.mask) && near(await px(200, 350), [255, 255, 255, 255]) && near(await px(200, 300), [255, 0, 0, 255]));
+  // ORA: המסכה אפויה בשכבה
+  check('ORA — המסכה אפויה (פער מדווח)', await page.evaluate(async () => {
+    const { gapsFor } = await import('./assets/js/engine/formats.js');
+    return gapsFor('ora', __rs.doc.layers).includes('layer-mask → baked');
+  }));
+  // חיתוך — המסכה זזה יחד עם השכבה
+  // אחרי הטעינה מחדש התצוגה משוחזרת מהטיוטה — חוזרים ל-100%, כדי שהגרירה תהיה בקואורדינטות הצפויות
+  await page.evaluate(() => { __rs.setView({ zoom: 1, x: 20, y: 20 }); __rs.doc.activeId = __rs.doc.layers[1].id; __rs.panel.render(); });
+  await page.keyboard.press('c');
+  await drag([500, 380], [100, 50]);
+  await page.keyboard.press('Enter');
+  check('חיתוך — המסכה זזה עם השכבה', near(await px(100, 250), [255, 0, 0, 255]) && near(await px(100, 300), [255, 255, 255, 255]), [await px(100, 250), await px(100, 300)].join(' | '));
+  await page.keyboard.press('Control+z');
+  // החלה: הפיקסלים כפול המסכה, צעד אחד; מחיקה
+  await page.click('[data-mask="apply"]');
+  check('החלת המסכה — בלי מסכה, והמראה נשאר', await page.evaluate(() => __rs.doc.layers[1].mask) === null && near(await px(200, 350), [255, 255, 255, 255])
+    && near(await px(200, 120), [255, 0, 0, 255]));
+  await page.keyboard.press('Control+z');
+  check('ביטול ההחלה — המסכה והפיקסלים חוזרים', await page.evaluate(() => !!__rs.doc.layers[1].mask) && await page.evaluate(async () => Array.from(await __rs.renderer.readLayerPixels(__rs.doc.layers[1], 200, 350, 1, 1)).join()) === '255,0,0,255');
+  await page.click('[data-mask="remove"]');
+  check('מחיקת המסכה — כל השכבה נראית', near(await px(200, 350), [255, 0, 0, 255]) && !(await page.isVisible('.mask-opts')));
+  if (SHOTS) {
+    await page.keyboard.press('Control+z');
+    await page.screenshot({ path: join(SHOTS, 'mask-desktop.png') });
+  }
+
   // ---- הזזה ושינוי צורה ----
   await openEd(page);
   await page.waitForFunction(() => window.__rs?.doc);
