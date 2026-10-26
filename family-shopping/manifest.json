@@ -1,0 +1,119 @@
+{
+  "name": "מערכת ניהול קניות מרוכזות",
+  "short_name": "קניות מרוכזות",
+  "description": "מערכת חכמה לניהול וחלוקת קניות משותפות לקבוצות עם התראות בזמן אמת",
+  "start_url": "./dashboard.php",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#667eea",
+  "background_color": "#ffffff",
+  "categories": [
+    "productivity",
+    "finance",
+    "shopping"
+  ],
+  "lang": "he",
+  "dir": "rtl",
+  "prefer_related_applications": false,
+  "permissions": [
+    "notifications"
+  ],
+  "gcm_sender_id": "103953800507",
+  "icons": [
+    {
+      "src": "./images/icons/android/android-launchericon-48-48.png",
+      "sizes": "48x48",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./images/icons/android/android-launchericon-72-72.png",
+      "sizes": "72x72",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./images/icons/android/android-launchericon-96-96.png",
+      "sizes": "96x96",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./images/icons/android/android-launchericon-144-144.png",
+      "sizes": "144x144",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./images/icons/android/android-launchericon-192-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./images/icons/android/android-launchericon-512-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./images/icons/ios/120.png",
+      "sizes": "120x120",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./images/icons/ios/152.png",
+      "sizes": "152x152",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./images/icons/ios/167.png",
+      "sizes": "167x167",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./images/icons/ios/180.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./images/icons/ios/1024.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "צור קבוצה חדשה",
+      "short_name": "קבוצה חדשה",
+      "description": "צור קבוצת רכישה חדשה",
+      "url": "./dashboard.php?action=new_group",
+      "icons": [
+        {
+          "src": "./images/icons/android/android-launchericon-96-96.png",
+          "sizes": "96x96",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "הוסף קנייה",
+      "short_name": "קנייה",
+      "description": "הוסף קנייה חדשה",
+      "url": "./dashboard.php?action=new_purchase",
+      "icons": [
+        {
+          "src": "./images/icons/android/android-launchericon-96-96.png",
+          "sizes": "96x96",
+          "type": "image/png"
+        }
+      ]
+    }
+  ]
+}

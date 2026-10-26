@@ -1,0 +1,1063 @@
+.input-with-suffix {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.input-with-suffix input {
+    flex: 1;
+}
+
+.input-with-suffix span {
+    font-weight: 600;
+    color: #667eea;
+    font-size: 16px;
+    min-width: 30px;
+}
+
+.radio-group {
+    display: flex;
+    gap: 20px;
+    margin-top: 10px;
+}
+
+.radio-group label {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-weight: normal;
+    cursor: pointer;
+}/* css/dashboard.css */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+/* צבע הרקע יושב על html כדי שהדפדפן יצבע אותו מיד.
+   בלעדיו נצבע לבן עד שה-CSS של body נטען, וזה נראה כהבזק. */
+html {
+    background-color: #667eea;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+    padding-top: 70px;
+}
+
+/* Navigation Bar */
+.navbar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    background: white;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    z-index: 1000;
+    padding: 15px 0;
+}
+
+.navbar-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 20px;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.navbar-brand {
+    font-size: 20px;
+    font-weight: bold;
+    color: #667eea;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.navbar-user {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+
+.user-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.user-avatar {
+    width: 35px;
+    height: 35px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: bold;
+}
+
+.user-avatar img {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.user-name {
+    font-weight: 600;
+    color: #333;
+}
+
+.btn-logout {
+    background: #dc3545;
+    color: white;
+    padding: 8px 20px;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.3s;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.btn-logout:hover {
+    background: #c82333;
+    transform: translateY(-2px);
+}
+
+/* Container */
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+    min-height: calc(100vh - 70px); /* מחסיר רק את גובה הנאבבר */
+    display: flex;
+    flex-direction: column;
+}
+
+/* Invitations Section */
+.invitations-section {
+    background: white;
+    border-radius: 15px;
+    padding: 25px;
+    margin-bottom: 30px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+}
+
+.invitations-section h2 {
+    color: #333;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.invitations-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 20px;
+}
+
+.invitation-card {
+    background: #f8f9fa;
+    border-radius: 10px;
+    padding: 20px;
+    border: 2px solid #e9ecef;
+    transition: all 0.3s;
+}
+
+.invitation-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+}
+
+.invitation-card h3 {
+    color: #667eea;
+    margin-bottom: 10px;
+}
+
+.invitation-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 15px;
+}
+
+.btn-accept, .btn-reject {
+    flex: 1;
+    padding: 8px 15px;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.3s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+}
+
+.btn-accept {
+    background: #28a745;
+    color: white;
+}
+
+.btn-accept:hover {
+    background: #218838;
+}
+
+.btn-reject {
+    background: #dc3545;
+    color: white;
+}
+
+.btn-reject:hover {
+    background: #c82333;
+}
+
+/* Create Group Section */
+.create-group-section {
+    text-align: center;
+    margin-bottom: 30px;
+}
+
+.btn-create-group {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 15px 30px;
+    border: none;
+    border-radius: 50px;
+    font-size: 18px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+    box-shadow: 0 10px 25px rgba(102, 126, 234, 0.3);
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.btn-create-group:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 15px 35px rgba(102, 126, 234, 0.4);
+}
+
+/* Groups Section */
+.groups-section {
+    background: white;
+    border-radius: 15px;
+    padding: 25px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+}
+
+.groups-section h2 {
+    color: #333;
+    margin-bottom: 25px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.groups-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+    gap: 25px;
+}
+
+/* Group Card */
+.group-card {
+    background: #f8f9fa;
+    border-radius: 15px;
+    padding: 20px;
+    position: relative;
+    transition: all 0.3s;
+    border: 2px solid transparent;
+}
+
+.group-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+}
+
+.group-card.owner {
+    border-color: #ffc107;
+    background: linear-gradient(to bottom, #fffef5, #f8f9fa);
+}
+
+.owner-badge {
+    position: absolute;
+    top: 15px;
+    left: 15px;
+    background: #ffc107;
+    color: #fff;
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.group-header h3 {
+    color: #333;
+    margin-bottom: 10px;
+    font-size: 20px;
+}
+
+.group-description {
+    color: #666;
+    font-size: 14px;
+    margin-bottom: 15px;
+}
+
+.group-stats {
+    display: flex;
+    justify-content: space-around;
+    padding: 15px 0;
+    border-top: 1px solid #dee2e6;
+    border-bottom: 1px solid #dee2e6;
+    margin: 15px 0;
+}
+
+.stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+}
+
+.stat i {
+    color: #667eea;
+    font-size: 20px;
+}
+
+.stat span {
+    font-size: 14px;
+    color: #666;
+    font-weight: 600;
+}
+
+.group-info {
+    margin-bottom: 15px;
+}
+
+.group-info p {
+    color: #666;
+    font-size: 14px;
+    margin: 8px 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.group-info i {
+    color: #667eea;
+    width: 20px;
+}
+
+.group-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.btn-enter {
+    flex: 1;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 8px;
+    text-decoration: none;
+    font-weight: 600;
+    text-align: center;
+    transition: all 0.3s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+}
+
+.btn-enter:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+}
+
+.btn-leave {
+    background: #6c757d;
+    color: white;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+}
+
+.btn-leave:hover {
+    background: #5a6268;
+}
+
+/* No Groups Message */
+.no-groups {
+    text-align: center;
+    padding: 60px 20px;
+    color: #999;
+}
+
+.no-groups i {
+    font-size: 60px;
+    margin-bottom: 20px;
+    color: #dee2e6;
+}
+
+.no-groups p {
+    font-size: 18px;
+    margin: 10px 0;
+}
+
+/* Modal */
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 2000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0,0,0,0.5);
+    animation: fadeIn 0.3s;
+    overflow-y: auto; /* מאפשר גלילה של המודל עצמו */
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.modal-content {
+    background-color: white;
+    margin: 50px auto; /* מרחק קבוע מלמעלה */
+    padding: 0;
+    border-radius: 15px;
+    width: 90%;
+    max-width: 500px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    animation: slideIn 0.3s;
+    position: relative;
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateY(-50px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.modal-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 20px;
+    border-radius: 15px 15px 0 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modal-header h2 {
+    margin: 0;
+    font-size: 22px;
+}
+
+.close {
+    color: white;
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.close:hover {
+    transform: scale(1.2);
+}
+
+.modal-content form {
+    padding: 25px;
+}
+
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 600;
+    color: #333;
+}
+
+.form-group input,
+.form-group textarea {
+    width: 100%;
+    padding: 12px;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    font-size: 14px;
+    transition: border-color 0.3s;
+}
+
+.form-group input:focus,
+.form-group textarea:focus {
+    outline: none;
+    border-color: #667eea;
+}
+
+.modal-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 25px;
+}
+
+.btn-primary, .btn-secondary {
+    flex: 1;
+    padding: 12px 20px;
+    border: none;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+}
+
+.btn-secondary {
+    background: #6c757d;
+    color: white;
+}
+
+.btn-secondary:hover {
+    background: #5a6268;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    body {
+        padding-top: 70px; /* שומר על אותו padding */
+    }
+    
+    .navbar {
+        padding: 10px 0;
+    }
+    
+    .navbar-container {
+        flex-direction: row; /* שומר על שורה אחת */
+        justify-content: space-between;
+        padding: 0 15px;
+        gap: 10px;
+    }
+    
+    .navbar-brand {
+        font-size: 16px;
+        flex: 1;
+    }
+    
+    .navbar-user {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    
+    .user-info {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+    }
+    
+    .user-name {
+        display: none; /* מסתיר רק את השם */
+    }
+    
+    .btn-logout {
+        padding: 6px 12px;
+        font-size: 12px;
+    }
+    
+    .container {
+        padding: 15px;
+        min-height: calc(100vh - 70px);
+    }
+    
+    .groups-grid {
+        grid-template-columns: 1fr;
+        gap: 20px;
+    }
+    
+    .invitations-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .modal-content {
+        width: 95%;
+        margin: 30px auto; /* מרחק קטן יותר מלמעלה */
+    }
+    
+    .btn-create-group {
+        font-size: 16px;
+        padding: 12px 25px;
+        width: 100%;
+    }
+    
+    .group-card {
+        padding: 15px;
+    }
+    
+    .group-actions {
+        flex-direction: column;
+        gap: 10px;
+    }
+    
+    .group-actions a,
+    .group-actions button {
+        width: 100%;
+        text-align: center;
+    }
+}
+
+@media (max-width: 480px) {
+    body {
+        padding-top: 70px; /* אותו padding */
+    }
+    
+    .navbar-brand {
+        font-size: 14px;
+    }
+    
+    .navbar-brand i {
+        display: none; /* מסתיר אייקון במסכים קטנים */
+    }
+    
+    .user-avatar {
+        width: 30px;
+        height: 30px;
+        font-size: 12px;
+    }
+    
+    .modal-content {
+        margin: 20px auto; /* עוד יותר קרוב לראש המסך */
+    }
+    
+    .modal-header {
+        padding: 15px;
+    }
+    
+    .modal-header h2 {
+        font-size: 18px;
+    }
+    
+    .modal-actions {
+        flex-direction: column;
+        gap: 10px;
+    }
+    
+    .modal-actions button {
+        width: 100%;
+    }
+    
+    .radio-group {
+        flex-direction: column;
+        gap: 10px;
+    }
+    
+    .invitation-actions {
+        flex-direction: column;
+        gap: 8px;
+    }
+    
+    .invitation-actions button {
+        width: 100%;
+    }
+}
+/* ============================================================
+   מנהל האירוע - תוספות לדשבורד
+   ============================================================ */
+
+.migration-notice {
+    background: #fff3cd;
+    border-right: 4px solid #ffc107;
+    color: #856404;
+    padding: 15px 20px;
+    border-radius: 10px;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: flex-start;
+    gap: 15px;
+}
+
+.migration-notice i { font-size: 24px; margin-top: 3px; }
+.migration-notice p { margin-top: 5px; font-size: 14px; }
+
+.migration-notice code {
+    background: rgba(0,0,0,0.08);
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.group-event-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 10px;
+    font-size: 13px;
+    color: #666;
+}
+
+.group-event-meta span {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.group-event-meta i { color: #667eea; }
+
+.group-card.closed { opacity: 0.75; }
+.group-card.closed:hover { opacity: 1; }
+
+.closed-note {
+    color: #6c757d !important;
+    font-weight: 600;
+}
+
+.closed-section h2 { opacity: 0.9; }
+
+.stat.highlight { color: #dc3545; font-weight: 600; }
+.stat.highlight i { color: #dc3545; }
+
+.form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+}
+
+.form-hint {
+    display: block;
+    color: #888;
+    font-size: 13px;
+    margin-top: 5px;
+}
+
+@media (max-width: 600px) {
+    .form-row { grid-template-columns: 1fr; }
+}
+
+/* ============================================================
+   בקשת הפעלת התראות
+   ============================================================ */
+
+.push-optin {
+    position: fixed;
+    bottom: 12px;
+    left: 12px;
+    right: 12px;
+    z-index: 900;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    max-width: 460px;
+    margin: 0 auto;
+    padding: 10px 12px;
+    background: rgba(255, 255, 255, 0.97);
+    border-radius: 12px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+    animation: pushOptinIn 0.35s ease;
+}
+
+@keyframes pushOptinIn {
+    from { transform: translateY(120%); opacity: 0; }
+    to   { transform: translateY(0);    opacity: 1; }
+}
+
+.push-optin-text {
+    flex: 1;
+    font-size: 13px;
+    line-height: 1.35;
+    color: #333;
+}
+
+.push-optin-enable {
+    flex-shrink: 0;
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #fff;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+.push-optin-enable:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
+.push-optin-dismiss {
+    flex-shrink: 0;
+    padding: 0 4px;
+    font-size: 20px;
+    line-height: 1;
+    color: #999;
+    background: none;
+    border: none;
+    cursor: pointer;
+}
+
+/* המודל נפתח דרך מחלקה ולא דרך סגנון מוטבע, כדי ש-CSS
+   של מובייל יוכל להחליף אותו לגיליון תחתון */
+.modal.is-open {
+    display: block;
+}
+
+/* ============================================================
+   בורר סוג ההשתתפות
+   ------------------------------------------------------------
+   החליף רדיו־באטנים רגילים שנשברו ב-RTL: התוויות נדחפו לקצה
+   אחד והעיגולים נשארו באמצע, ו"סכום קבוע" נשבר לשתי שורות.
+   ============================================================ */
+
+.type-picker {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-top: 8px;
+}
+
+/* הרדיו עצמו מוסתר אבל נשאר נגיש למקלדת ולקורא מסך */
+.type-picker input[type="radio"] {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.type-picker label {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 12px 6px;
+    min-height: 72px;
+    background: #f8f9fa;
+    border: 2px solid #e9ecef;
+    border-radius: 12px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    color: #555;
+    text-align: center;
+    line-height: 1.2;
+    transition: all 0.18s;
+}
+
+.type-picker label i {
+    font-size: 18px;
+    color: #667eea;
+    transition: color 0.18s;
+}
+
+.type-picker label:hover {
+    border-color: #c7cdfb;
+}
+
+.type-picker input[type="radio"]:checked + label {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-color: transparent;
+    color: #fff;
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.35);
+}
+
+.type-picker input[type="radio"]:checked + label i {
+    color: #fff;
+}
+
+/* מסגרת ברורה בניווט מקלדת */
+.type-picker input[type="radio"]:focus-visible + label {
+    outline: 2px solid #667eea;
+    outline-offset: 2px;
+}
+
+
+/* גלגל השיניים פותח את הגדרות החלוקה לכל הקבוצה */
+.btn-gear {
+    flex: 0 0 auto;
+    width: 42px;
+    height: 42px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #f1f2f7;
+    color: #555b73;
+    border: none;
+    border-radius: 10px;
+    font-size: 16px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+
+.btn-gear:hover {
+    background: #e6e8f2;
+    color: #667eea;
+}
+
+
+.btn-gear { text-decoration: none; }
+
+/* קיצור לפלטפורמת הניהול, מוצג רק למנהל */
+.btn-gear.admin {
+    background: #efe9fb;
+    color: #6b3fc9;
+}
+
+.btn-gear.admin:hover {
+    background: #e3d9f8;
+    color: #5a2fb8;
+}
+
+/* ============================================================
+   אירועים שנמחקו
+   ============================================================ */
+
+.deleted-section {
+    margin-top: 20px;
+    opacity: 0.95;
+}
+
+.deleted-note {
+    color: #6d7387;
+    font-size: 13px;
+    line-height: 1.5;
+    margin-bottom: 14px;
+}
+
+.deleted-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.deleted-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    background: #f8f9fc;
+    border: 2px dashed #d9dced;
+    border-radius: 12px;
+    padding: 12px 14px;
+}
+
+.deleted-info {
+    min-width: 0;
+    flex: 1;
+}
+
+.deleted-info h3 {
+    font-size: 15px;
+    color: #4a4f63;
+    margin-bottom: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.deleted-info p {
+    font-size: 12px;
+    color: #8a90a6;
+}
+
+.deleted-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.btn-restore,
+.btn-purge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 8px 12px;
+    border: none;
+    border-radius: 9px;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.btn-restore {
+    background: #e6f0fe;
+    color: #2b6cb0;
+}
+
+.btn-restore:hover {
+    background: #d6e6fd;
+}
+
+/* מחיקה בלתי הפיכה - מסומנת בבירור ולא נראית כמו פעולה רגילה */
+.btn-purge {
+    background: #fdecec;
+    color: #c53030;
+}
+
+.btn-purge:hover {
+    background: #f9d6d6;
+}
+
+@media (max-width: 600px) {
+    .deleted-actions {
+        width: 100%;
+    }
+
+    .btn-restore,
+    .btn-purge {
+        flex: 1;
+        justify-content: center;
+    }
+}

@@ -1,0 +1,153 @@
+# הפעלת mod_rewrite
+RewriteEngine On
+
+# === אפשר גישה לקבצי PWA וAPI חשובים - תמיד קודם! ===
+# אפשר גישה לכל ה-API
+RewriteRule ^api/.*\.php$ - [L]
+
+# === אפשר גישה לקבצי PWA חשובים ===
+# אפשר גישה ל-manifest.json
+RewriteRule ^manifest\.json$ - [L]
+
+# אפשר גישה ל-service-worker.js
+RewriteRule ^service-worker\.js$ - [L]
+
+# אפשר גישה לתיקיית images
+RewriteRule ^images/.*\.(png|jpg|jpeg|gif|svg|ico)$ - [L]
+
+# אפשר גישה לדפי בדיקה והתקנה
+RewriteRule ^check-pwa\.php$ - [L]
+RewriteRule ^test-notifications\.php$ - [L]
+RewriteRule ^test-notifications-standalone\.php$ - [L]
+RewriteRule ^process_notifications\.php$ - [L]
+RewriteRule ^setup_notifications\.php$ - [L]
+RewriteRule ^test-email-debug\.php$ - [L]
+RewriteRule ^setup-phpmailer.*\.php$ - [L]
+
+RewriteRule ^test-notification.*\.php$ - [L]
+
+# אפשר גישה ל-offline.html
+RewriteRule ^offline\.html$ - [L]
+
+# === הגנות בסיסיות ===
+
+# כל קובץ שמתחיל בנקודה. הכלל הזה חוסם את .env, את .vapid-keys.json
+# שמכיל את המפתח הפרטי של ההתראות, ואת גיבויי .htaccess.
+# הכלל חל על שמות קבצים בלבד, ולכן .well-known ממשיך לעבוד.
+<FilesMatch "^\.">
+    Require all denied
+</FilesMatch>
+
+# תיקיות פנימיות שאין שום סיבה לגשת אליהן מהדפדפן
+RewriteRule ^(tests|cron)/ - [F,L]
+
+# הגנה על קבצי ENV
+<Files .env>
+    Order allow,deny
+    Deny from all
+</Files>
+
+# הגנה על קובץ config - אבל לא בקבצי PHP שצריכים אותו
+<Files config.php>
+    <RequireAll>
+        Require all denied
+        # אפשר גישה רק מקבצי PHP פנימיים
+        Require local
+    </RequireAll>
+</Files>
+
+# חסימת גישה ישירה לקבצי PHP בתיקיות includes
+# אבל אפשר לקבצי PHP אחרים לכלול אותם
+RewriteCond %{THE_REQUEST} \s/+includes/.*\.php[\s?] [NC]
+RewriteRule ^ - [F]
+
+RewriteRule ^setup-push-notifications\.php$ - [L]
+
+# אפשר גישה לדף הדיבאג
+RewriteRule ^notification-debug\.html$ - [L]
+
+# חסימת גישה ישירה לקבצי דיבאג מסוכנים בלבד
+# אבל מאפשר את קבצי הבדיקה החשובים
+RewriteCond %{REQUEST_URI} !check-pwa\.php$
+RewriteCond %{REQUEST_URI} !test-notifications.*\.php$
+RewriteCond %{REQUEST_URI} !process_notifications\.php$
+RewriteCond %{REQUEST_URI} !setup_notifications\.php$
+RewriteCond %{REQUEST_URI} !test-email-debug\.php$
+RewriteCond %{REQUEST_URI} !setup-phpmailer.*\.php$
+RewriteRule ^(debug|find.*)\.php$ - [F,L]
+
+# הגדרת AJAX token check - מאפשר רק בקשות AJAX לקבצים מסוימים
+# אבל לא לבקשות GET רגילות
+RewriteCond %{REQUEST_METHOD} POST
+RewriteCond %{HTTP:X-Requested-With} !XMLHttpRequest
+RewriteCond %{REQUEST_URI} !test-notifications\.php$
+RewriteCond %{REQUEST_URI} !process_notifications\.php$
+RewriteCond %{REQUEST_URI} !setup_notifications\.php$
+RewriteCond %{REQUEST_URI} !test-email-debug\.php$
+RewriteCond %{REQUEST_URI} !setup-phpmailer.*\.php$
+RewriteRule ^(dashboard|group)\.php$ - [F,L]
+
+# הגנה על תיקיות רגישות
+RewriteRule ^(vendor|logs|cache|sessions)/.*$ - [F,L]
+
+# הפניה של כל בקשה לא מורשית ל-index
+# אבל אל תפנה קבצי CSS, JS, ותמונות
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_URI} !\.(css|js|png|jpg|jpeg|gif|svg|ico|json|html)$
+RewriteRule ^.*$ index.php [L]
+
+# הגדרות אבטחה נוספות
+Options -Indexes
+Options -MultiViews
+
+# הגנה על קבצי גיבוי
+<FilesMatch "\.(bak|backup|sql|log|ini)$">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+# הגדרת headers לאבטחה עם תמיכה ב-PWA
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    # X-Frame-Options מוגדר רק לדפים שאינם PWA
+    <FilesMatch "\.php$">
+        Header set X-Frame-Options "SAMEORIGIN"
+    </FilesMatch>
+    Header set X-XSS-Protection "1; mode=block"
+    
+    # Headers נוספים ל-PWA
+    <FilesMatch "manifest\.json$">
+        Header set Cache-Control "public, max-age=604800"
+        Header set Content-Type "application/manifest+json"
+    </FilesMatch>
+    
+    <FilesMatch "service-worker\.js$">
+        Header set Cache-Control "no-cache, no-store, must-revalidate"
+        Header set Service-Worker-Allowed "/"
+    </FilesMatch>
+</IfModule>
+
+# הגדרת MIME types נכונים
+AddType application/manifest+json .json
+AddType text/javascript .js
+AddType text/css .css
+AddType image/png .png
+AddType image/jpeg .jpg .jpeg
+AddType image/svg+xml .svg
+
+# הגבלת גודל העלאות
+php_value upload_max_filesize 5M
+php_value post_max_size 10M
+
+# הגדרת charset
+AddDefaultCharset UTF-8
+
+# מניעת גישה ל-git
+RedirectMatch 404 /\.git
+
+# Custom error pages - אבל לא לקבצי PWA
+ErrorDocument 403 /mini_projects/family-shopping/index.php
+ErrorDocument 404 /mini_projects/family-shopping/index.php
+# הסר את השורה הבאה כי היא גורמת לבעיה עם error 500
+# ErrorDocument 500 /index.php

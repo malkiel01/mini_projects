@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="he">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>אופליין - פנאן בפקאן</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .offline-container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            text-align: center;
+            max-width: 500px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            animation: slideUp 0.5s ease;
+        }
+        
+        @keyframes slideUp {
+            from {
+                transform: translateY(50px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+        
+        .offline-icon {
+            font-size: 80px;
+            margin-bottom: 30px;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% {
+                transform: scale(1);
+                opacity: 0.8;
+            }
+            50% {
+                transform: scale(1.1);
+                opacity: 1;
+            }
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 28px;
+        }
+        
+        p {
+            color: #666;
+            font-size: 16px;
+            line-height: 1.6;
+            margin-bottom: 30px;
+        }
+        
+        .offline-actions {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.3);
+        }
+        
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .connection-status {
+            margin-top: 30px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            display: none;
+        }
+        
+        .connection-status.online {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .connection-status.checking {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeeba;
+        }
+        
+        .cached-data {
+            margin-top: 30px;
+            text-align: right;
+        }
+        
+        .cached-data h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 18px;
+        }
+        
+        .cached-list {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 15px;
+        }
+        
+        .cached-item {
+            padding: 10px;
+            border-bottom: 1px solid #dee2e6;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .cached-item:last-child {
+            border-bottom: none;
+        }
+        
+        .cached-item-name {
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .cached-item-date {
+            font-size: 14px;
+            color: #999;
+        }
+        
+        /* Icons */
+        .icon-offline::before { content: "📡"; }
+        .icon-refresh::before { content: "🔄"; }
+        .icon-home::before { content: "🏠"; }
+        .icon-check::before { content: "✅"; }
+        .icon-loading::before { content: "⏳"; }
+    </style>
+</head>
+<body>
+    <div class="offline-container">
+        <div class="offline-icon icon-offline"></div>
+        
+        <h1>אין חיבור לאינטרנט</h1>
+        
+        <p>
+            נראה שאין לך כרגע חיבור לרשת.<br>
+            האפליקציה תמשיך לעבוד עם הנתונים השמורים,<br>
+            וכל השינויים יסונכרנו ברגע שהחיבור יחזור.
+        </p>
+        
+        <div class="offline-actions">
+            <button onclick="checkConnection()" id="checkBtn">
+                <span class="icon-refresh"></span>
+                בדוק חיבור
+            </button>
+            <button onclick="goHome()">
+                <span class="icon-home"></span>
+                חזור לדף הבית
+            </button>
+        </div>
+        
+        <div class="connection-status" id="connectionStatus">
+            <span id="statusIcon"></span>
+            <span id="statusText"></span>
+        </div>
+        
+        <div class="cached-data" id="cachedData">
+            <h3>נתונים זמינים אופליין:</h3>
+            <div class="cached-list" id="cachedList">
+                <!-- יתמלא דינמית -->
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // בדיקת חיבור לרשת
+        function checkConnection() {
+            const btn = document.getElementById('checkBtn');
+            const status = document.getElementById('connectionStatus');
+            const statusIcon = document.getElementById('statusIcon');
+            const statusText = document.getElementById('statusText');
+            
+            // הצג סטטוס בדיקה
+            status.style.display = 'block';
+            status.className = 'connection-status checking';
+            statusIcon.className = 'icon-loading';
+            statusText.textContent = 'בודק חיבור...';
+            btn.disabled = true;
+            
+            // נסה לבצע בקשה לשרת
+            fetch('/api/ping.php', { method: 'HEAD', cache: 'no-cache' })
+                .then(response => {
+                    if (response.ok) {
+                        // יש חיבור!
+                        status.className = 'connection-status online';
+                        statusIcon.className = 'icon-check';
+                        statusText.textContent = 'החיבור חזר! מעביר אותך...';
+                        
+                        // חזור לדף הקודם או לדף הבית
+                        setTimeout(() => {
+                            if (document.referrer) {
+                                window.location.href = document.referrer;
+                            } else {
+                                window.location.href = '/dashboard.php';
+                            }
+                        }, 1500);
+                    } else {
+                        throw new Error('No connection');
+                    }
+                })
+                .catch(error => {
+                    // עדיין אין חיבור
+                    status.className = 'connection-status';
+                    statusIcon.className = 'icon-offline';
+                    statusText.textContent = 'עדיין אין חיבור לרשת';
+                    btn.disabled = false;
+                });
+        }
+        
+        // חזרה לדף הבית (מהקאש)
+        function goHome() {
+            window.location.href = '/dashboard.php';
+        }
+        
+        // טעינת נתונים מקומיים
+        async function loadCachedData() {
+            if ('caches' in window) {
+                try {
+                    const cacheNames = await caches.keys();
+                    const cache = await caches.open(cacheNames[0] || 'panan-bakan-v1');
+                    const requests = await cache.keys();
+                    
+                    const cachedList = document.getElementById('cachedList');
+                    const cachedDataSection = document.getElementById('cachedData');
+                    
+                    if (requests.length > 0) {
+                        cachedDataSection.style.display = 'block';
+                        cachedList.innerHTML = '';
+                        
+                        // הצג רק דפים עיקריים
+                        const mainPages = requests.filter(req => 
+                            req.url.includes('dashboard.php') || 
+                            req.url.includes('group.php') ||
+                            req.url.endsWith('/')
+                        ).slice(0, 5);
+                        
+                        mainPages.forEach(request => {
+                            const url = new URL(request.url);
+                            const name = url.pathname === '/' ? 'דף הבית' : 
+                                        url.pathname.includes('dashboard') ? 'לוח בקרה' :
+                                        url.pathname.includes('group') ? 'קבוצה' : 
+                                        url.pathname.split('/').pop();
+                            
+                            const item = document.createElement('div');
+                            item.className = 'cached-item';
+                            item.innerHTML = `
+                                <span class="cached-item-name">${name}</span>
+                                <span class="cached-item-date">זמין אופליין</span>
+                            `;
+                            cachedList.appendChild(item);
+                        });
+                    } else {
+                        cachedDataSection.style.display = 'none';
+                    }
+                } catch (error) {
+                    console.error('Error loading cached data:', error);
+                }
+            }
+        }
+        
+        // בדיקה אוטומטית כל 5 שניות
+        let autoCheckInterval;
+        function startAutoCheck() {
+            autoCheckInterval = setInterval(() => {
+                if (navigator.onLine) {
+                    checkConnection();
+                }
+            }, 5000);
+        }
+        
+        // הפסק בדיקה אוטומטית כשהדף לא פעיל
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                clearInterval(autoCheckInterval);
+            } else {
+                startAutoCheck();
+            }
+        });
+        
+        // אתחול
+        window.addEventListener('load', () => {
+            loadCachedData();
+            startAutoCheck();
+            
+            // בדוק חיבור מיד אם יש אינדיקציה שהרשת חזרה
+            window.addEventListener('online', () => {
+                checkConnection();
+            });
+        });
+    </script>
+</body>
+</html>

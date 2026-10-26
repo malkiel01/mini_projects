@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="he">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>הזמנה לקבוצת רכישה</title>
+    <!--[if mso]>
+    <noscript>
+        <xml>
+            <o:OfficeDocumentSettings>
+                <o:PixelsPerInch>96</o:PixelsPerInch>
+            </o:OfficeDocumentSettings>
+        </xml>
+    </noscript>
+    <![endif]-->
+    <style>
+        /* Reset styles */
+        body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+        table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+        img { -ms-interpolation-mode: bicubic; border: 0; outline: none; text-decoration: none; }
+        
+        /* Remove default styling */
+        body { margin: 0; padding: 0; width: 100% !important; min-width: 100%; background-color: #f4f7fa; font-family: 'Segoe UI', Tahoma, Arial, sans-serif; }
+        
+        /* Mobile styles */
+        @media screen and (max-width: 600px) {
+            .mobile-hide { display: none !important; }
+            .mobile-center { text-align: center !important; }
+            .container { width: 100% !important; max-width: 100% !important; }
+            .content { padding: 20px !important; }
+            .button { width: 100% !important; max-width: 300px !important; }
+        }
+    </style>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f4f7fa;">
+    <!-- Preview Text -->
+    <div style="display: none; font-size: 1px; color: #fefefe; line-height: 1px; max-height: 0px; max-width: 0px; opacity: 0; overflow: hidden;">
+        הוזמנת להצטרף לקבוצת רכישה חדשה! 🎉
+    </div>
+    
+    <!-- Email Container -->
+    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f4f7fa;">
+        <tr>
+            <td align="center" style="padding: 40px 10px;">
+                
+                <!-- Main Content Container -->
+                <table class="container" border="0" cellpadding="0" cellspacing="0" width="600" style="background-color: #ffffff; border-radius: 15px; box-shadow: 0 5px 30px rgba(0,0,0,0.1); overflow: hidden;">
+                    
+                    <!-- Header with Gradient -->
+                    <tr>
+                        <td align="center" style="padding: 0;">
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                <tr>
+                                    <td style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px 30px; text-align: center;">
+                                        <!-- Icon Circle -->
+                                        <div style="display: inline-block; width: 80px; height: 80px; background: white; border-radius: 50%; margin-bottom: 20px; line-height: 80px; font-size: 40px;">
+                                            🎉
+                                        </div>
+                                        
+                                        <!-- Title -->
+                                        <h1 style="color: #ffffff; font-size: 28px; margin: 0 0 10px 0; font-weight: bold; text-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                                            הוזמנת לקבוצת רכישה!
+                                        </h1>
+                                        
+                                        <!-- Subtitle -->
+                                        <p style="color: rgba(255,255,255,0.95); font-size: 16px; margin: 0;">
+                                            מישהו רוצה לחלוק איתך קניות
+                                        </p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                    
+                    <!-- Body Content -->
+                    <tr>
+                        <td class="content" style="padding: 40px 30px;">
+                            
+                            <!-- Greeting -->
+                            <h2 style="color: #333333; font-size: 22px; margin: 0 0 20px 0;">
+                                שלום {{user_name}} 👋
+                            </h2>
+                            
+                            <!-- Main Message -->
+                            <p style="color: #555555; font-size: 16px; line-height: 1.6; margin: 0 0 30px 0;">
+                                <strong style="color: #667eea;">{{inviter_name}}</strong> הזמין אותך להצטרף לקבוצת הרכישה:
+                            </p>
+                            
+                            <!-- Group Info Card -->
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background: linear-gradient(135deg, #f6f9fc 0%, #e9ecef 100%); border-radius: 10px; margin-bottom: 30px;">
+                                <tr>
+                                    <td style="padding: 25px;">
+                                        <!-- Group Name -->
+                                        <h3 style="color: #667eea; font-size: 20px; margin: 0 0 15px 0; display: flex; align-items: center;">
+                                            <span style="font-size: 24px; margin-left: 10px;">👥</span>
+                                            {{group_name}}
+                                        </h3>
+                                        
+                                        <!-- Group Details -->
+                                        <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                            <tr>
+                                                <td style="padding: 8px 0;">
+                                                    <span style="color: #888; font-size: 14px;">📅 תאריך יצירה:</span>
+                                                    <strong style="color: #333; font-size: 14px;">{{date}}</strong>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td style="padding: 8px 0;">
+                                                    <span style="color: #888; font-size: 14px;">👤 מנהל הקבוצה:</span>
+                                                    <strong style="color: #333; font-size: 14px;">{{inviter_name}}</strong>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td style="padding: 8px 0;">
+                                                    <span style="color: #888; font-size: 14px;">💰 החלק שלך:</span>
+                                                    <strong style="color: #28a745; font-size: 16px;">{{participation_value}}{{participation_unit}}</strong>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+                            
+                            <!-- CTA Buttons -->
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-bottom: 30px;">
+                                <tr>
+                                    <td align="center">
+                                        <!-- Accept Button -->
+                                        <table border="0" cellpadding="0" cellspacing="0" style="margin: 0 auto;">
+                                            <tr>
+                                                <td align="center" style="border-radius: 50px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);">
+                                                    <a href="{{accept_url}}" target="_blank" style="display: inline-block; padding: 16px 40px; font-size: 18px; font-weight: bold; color: #ffffff; text-decoration: none; border-radius: 50px;">
+                                                        ✅ קבל הזמנה
+                                                    </a>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                        
+                                        <!-- Or Divider -->
+                                        <p style="color: #999; font-size: 14px; margin: 20px 0;">או</p>
+                                        
+                                        <!-- Reject Link -->
+                                        <a href="{{reject_url}}" style="color: #dc3545; font-size: 14px; text-decoration: underline;">
+                                            לא מעוניין להצטרף
+                                        </a>
+                                    </td>
+                                </tr>
+                            </table>
+                            
+                            <!-- Info Section -->
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background: #fff3cd; border-radius: 10px; border-right: 4px solid #ffc107; margin-bottom: 30px;">
+                                <tr>
+                                    <td style="padding: 20px;">
+                                        <h4 style="color: #856404; font-size: 16px; margin: 0 0 10px 0; display: flex; align-items: center;">
+                                            <span style="font-size: 20px; margin-left: 8px;">💡</span>
+                                            מה זה אומר?
+                                        </h4>
+                                        <ul style="color: #856404; font-size: 14px; margin: 0; padding-right: 20px; line-height: 1.8;">
+                                            <li>תוכל להוסיף את הקניות שלך לקבוצה</li>
+                                            <li>המערכת תחשב אוטומטית כמה כל אחד צריך לשלם</li>
+                                            <li>תקבל התראות על קניות חדשות ועדכונים</li>
+                                            <li>הכל שקוף וברור - בלי ויכוחים על החשבון!</li>
+                                        </ul>
+                                    </td>
+                                </tr>
+                            </table>
+                            
+                            <!-- How It Works -->
+                            <h3 style="color: #333; font-size: 18px; margin: 0 0 20px 0;">
+                                איך זה עובד? 🚀
+                            </h3>
+                            
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-bottom: 30px;">
+                                <!-- Step 1 -->
+                                <tr>
+                                    <td style="padding: 15px; background: #f8f9fa; border-radius: 10px; margin-bottom: 10px;">
+                                        <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                            <tr>
+                                                <td width="50" valign="top">
+                                                    <div style="width: 40px; height: 40px; background: #667eea; color: white; border-radius: 50%; text-align: center; line-height: 40px; font-weight: bold;">
+                                                        1
+                                                    </div>
+                                                </td>
+                                                <td style="padding-right: 15px;">
+                                                    <h4 style="color: #333; font-size: 16px; margin: 0 0 5px 0;">הצטרף לקבוצה</h4>
+                                                    <p style="color: #666; font-size: 14px; margin: 0;">לחץ על "קבל הזמנה" והצטרף לקבוצה</p>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                                
+                                <!-- Step 2 -->
+                                <tr>
+                                    <td style="padding: 15px; background: #f8f9fa; border-radius: 10px; margin-bottom: 10px;">
+                                        <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                            <tr>
+                                                <td width="50" valign="top">
+                                                    <div style="width: 40px; height: 40px; background: #667eea; color: white; border-radius: 50%; text-align: center; line-height: 40px; font-weight: bold;">
+                                                        2
+                                                    </div>
+                                                </td>
+                                                <td style="padding-right: 15px;">
+                                                    <h4 style="color: #333; font-size: 16px; margin: 0 0 5px 0;">הוסף קניות</h4>
+                                                    <p style="color: #666; font-size: 14px; margin: 0;">צלם קבלות והעלה למערכת</p>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                                
+                                <!-- Step 3 -->
+                                <tr>
+                                    <td style="padding: 15px; background: #f8f9fa; border-radius: 10px;">
+                                        <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                            <tr>
+                                                <td width="50" valign="top">
+                                                    <div style="width: 40px; height: 40px; background: #667eea; color: white; border-radius: 50%; text-align: center; line-height: 40px; font-weight: bold;">
+                                                        3
+                                                    </div>
+                                                </td>
+                                                <td style="padding-right: 15px;">
+                                                    <h4 style="color: #333; font-size: 16px; margin: 0 0 5px 0;">קבל חישוב מדויק</h4>
+                                                    <p style="color: #666; font-size: 14px; margin: 0;">המערכת תחשב בדיוק כמה כל אחד צריך</p>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+                            
+                        </td>
+                    </tr>
+                    
+                    <!-- Footer -->
+                    <tr>
+                        <td style="background: #f8f9fa; padding: 30px; text-align: center; border-top: 1px solid #e9ecef;">
+                            <!-- Logo/Brand -->
+                            <h3 style="color: #667eea; font-size: 20px; margin: 0 0 15px 0;">
+                                🛒 מערכת ניהול קניות מרוכזות
+                            </h3>
+                            
+                            <!-- Social Links -->
+                            <table border="0" cellpadding="0" cellspacing="0" style="margin: 0 auto 20px;">
+                                <tr>
+                                    <td style="padding: 0 10px;">
+                                        <a href="#" style="color: #667eea; text-decoration: none; font-size: 24px;">📧</a>
+                                    </td>
+                                    <td style="padding: 0 10px;">
+                                        <a href="#" style="color: #667eea; text-decoration: none; font-size: 24px;">💬</a>
+                                    </td>
+                                    <td style="padding: 0 10px;">
+                                        <a href="#" style="color: #667eea; text-decoration: none; font-size: 24px;">🌐</a>
+                                    </td>
+                                </tr>
+                            </table>
+                            
+                            <!-- Footer Text -->
+                            <p style="color: #999; font-size: 13px; margin: 0 0 10px 0; line-height: 1.6;">
+                                הודעה זו נשלחה אל {{email}}<br>
+                                אם אינך מכיר את השולח או לא ביקשת הזמנה זו, אנא התעלם מהודעה זו.
+                            </p>
+                            
+                            <!-- Unsubscribe Link -->
+                            <p style="color: #999; font-size: 12px; margin: 0;">
+                                <a href="{{unsubscribe_url}}" style="color: #999; text-decoration: underline;">
+                                    ביטול קבלת התראות
+                                </a>
+                                &nbsp;|&nbsp;
+                                <a href="{{settings_url}}" style="color: #999; text-decoration: underline;">
+                                    הגדרות התראות
+                                </a>
+                                &nbsp;|&nbsp;
+                                <a href="{{help_url}}" style="color: #999; text-decoration: underline;">
+                                    עזרה
+                                </a>
+                            </p>
+                            
+                            <!-- Copyright -->
+                            <p style="color: #bbb; font-size: 11px; margin: 20px 0 0 0;">
+                                © 2024 מערכת ניהול קניות מרוכזות. כל הזכויות שמורות.
+                            </p>
+                        </td>
+                    </tr>
+                    
+                </table>
+                <!-- End Main Content Container -->
+                
+                <!-- Additional Info -->
+                <table border="0" cellpadding="0" cellspacing="0" width="600" style="margin-top: 20px;">
+                    <tr>
+                        <td align="center" style="padding: 0 10px;">
+                            <p style="color: #999; font-size: 12px; line-height: 1.6;">
+                                🔒 המידע שלך מאובטח ומוגן<br>
+                                📱 זמין בכל מכשיר - מחשב, טאבלט וטלפון<br>
+                                ⚡ התראות בזמן אמת על כל שינוי
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+                
+            </td>
+        </tr>
+    </table>
+    
+</body>
+</html>
