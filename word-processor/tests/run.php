@@ -1520,6 +1520,8 @@ $withC = ['type' => 'doc', 'attrs' => ['schema' => 10, 'comments' => ['c1' => ['
 $changed = $withC; $changed['content'][0]['content'][2]['text'] = ' מכוער';
 $bolded = $withC; $bolded['content'][0]['content'][0]['marks'] = [['type' => 'bold']];
 check('only_comments_changed: הערה (גם מפצלת טקסט, עם ברירות מחדל) — כן; שינוי טקסט או עיצוב — לא', only_comments_changed($base, $withC) && !only_comments_changed($base, $changed) && !only_comments_changed($base, $bolded));
+$withIds = doc_para_ids($withC, 'x|1');
+check('only_comments_changed: מזהי פסקה שהשרת השלים (editor_json) — לא נחשבים שינוי של המעיר', only_comments_changed($base, $withIds) && !only_comments_changed($base, doc_para_ids($changed, 'x|1')));
 share_set($shRow, $owner, 'guest@example.com', '');
 check('ביטול שיתוף — האורח כבר לא רואה', share_role($shRow, $guest) === null && !shared_with($guest));
 share_set($shRow, $owner, 'guest@example.com', 'view');

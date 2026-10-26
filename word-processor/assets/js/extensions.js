@@ -242,9 +242,10 @@ export const ParagraphFormat = Extension.create({
             });
             return tr;
         };
+        // מעיר / צופה (העורך לא ניתן לעריכה) — לא נוגעים: מעיר שולח רק צעדי הערות (collab_comment_step)
         return [new Plugin({
             key: new PluginKey('wpParaIds'),
-            appendTransaction: (trs, _, state) => (trs.some(t => t.docChanged && !t.getMeta('collab$')) ? dedupe(state) : null),
+            appendTransaction: (trs, _, state) => (this.editor.isEditable && trs.some(t => t.docChanged && !t.getMeta('collab$')) ? dedupe(state) : null),
         })];
     },
 });
