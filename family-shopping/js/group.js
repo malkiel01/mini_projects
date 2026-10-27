@@ -158,6 +158,8 @@ function showAddMemberModal() {
 function closeAddMemberModal() {
     closeModal('addMemberModal');
     document.getElementById('addMemberForm').reset();
+    const pickResult = document.getElementById('memberPickResult');
+    if (pickResult) pickResult.hidden = true;
 }
 
 /**
@@ -631,6 +633,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const data = await callAction('addMember', {
                 email: document.getElementById('memberEmail').value,
                 nickname: document.getElementById('memberNickname').value,
+                phone: (document.getElementById('memberPhone') || {}).value || '',
                 participation_type: type,
                 participation_value: value
             });
@@ -904,6 +907,10 @@ function fillFromContact() {
 
     document.getElementById('memberEmail').value    = picker.value;
     document.getElementById('memberNickname').value = option.dataset.name || '';
+    const phoneInput = document.getElementById('memberPhone');
+    if (phoneInput && option.dataset.phone) {
+        phoneInput.value = option.dataset.phone;
+    }
 
     // ברירת המחדל של ההשתתפות, אם נשמרה לאיש הקשר
     const type = option.dataset.type;

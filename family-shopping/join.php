@@ -105,6 +105,18 @@ if (!$error && !$emailMismatch && $_SERVER['REQUEST_METHOD'] === 'POST') {
             ");
             $stmt->execute([$invitation['id']]);
 
+            // הטלפון שמנהל האירוע רשם בהזמנה - למשתתף, אם אין לו כבר מספר באירוע
+            if (!empty($invitation['phone'])) {
+                try {
+                    $pdo->prepare("
+                        UPDATE group_members SET phone = ?
+                        WHERE group_id = ? AND user_id = ? AND (phone IS NULL OR phone = '')
+                    ")->execute([$invitation['phone'], $invitation['group_id'], $userId]);
+                } catch (Exception $e) {
+                    error_log('join phone: ' . $e->getMessage());
+                }
+            }
+
             $pdo->commit();
         } catch (Exception $e) {
             $pdo->rollBack();

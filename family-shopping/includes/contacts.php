@@ -200,3 +200,24 @@ function importContactsFromHistory(PDO $pdo, $ownerId) {
         return 0;
     }
 }
+
+/**
+ * המספר של איש הקשר (מיגרציה 016). מספר ריק לא מוחק מספר קיים.
+ * לפני המיגרציה - פשוט לא נשמר, בלי לעצור את הפעולה.
+ *
+ * @return bool האם נשמר
+ */
+function setContactPhone(PDO $pdo, $ownerId, $email, $phone) {
+    require_once __DIR__ . '/phone.php';
+    $phone = normalizePhone($phone);
+    if ($phone === '') {
+        return false;
+    }
+
+    try {
+        $stmt = $pdo->prepare("UPDATE contacts SET phone = ? WHERE owner_id = ? AND email = ?");
+        return $stmt->execute([$phone, (int)$ownerId, trim(mb_strtolower((string)$email))]);
+    } catch (Exception $e) {
+        return false;
+    }
+}

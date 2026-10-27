@@ -48,6 +48,11 @@ function renderAddMemberModal($available_percentage, array $contacts = []) {
                 <span class="close" onclick="closeAddMemberModal()">&times;</span>
             </div>
             <form id="addMemberForm">
+                <button type="button" class="btn ghost pick-contact" hidden
+                        onclick="ContactPicker.pick({name: 'memberNickname', email: 'memberEmail', phone: 'memberPhone'}, 'memberPickResult')">
+                    <i class="fas fa-address-book" aria-hidden="true"></i> מאנשי הקשר בטלפון
+                </button>
+                <p class="pick-result" id="memberPickResult" role="status" hidden></p>
                 <?php if (count($contacts) > 0): ?>
                 <?php // בחירה מאנשי הקשר ממלאת את השדות מאליה,
                       // כדי לא להקליד שוב אימייל וכינוי בכל אירוע ?>
@@ -59,7 +64,8 @@ function renderAddMemberModal($available_percentage, array $contacts = []) {
                         <option value="<?php echo htmlspecialchars($contact['email']); ?>"
                                 data-name="<?php echo htmlspecialchars($contact['name']); ?>"
                                 data-type="<?php echo htmlspecialchars((string)$contact['default_participation_type']); ?>"
-                                data-value="<?php echo (float)$contact['default_participation_value']; ?>">
+                                data-value="<?php echo (float)$contact['default_participation_value']; ?>"
+                                data-phone="<?php echo htmlspecialchars((string)($contact['phone'] ?? '')); ?>">
                             <?php echo htmlspecialchars($contact['name']); ?>
                             — <?php echo htmlspecialchars($contact['email']); ?>
                         </option>
@@ -77,6 +83,11 @@ function renderAddMemberModal($available_percentage, array $contacts = []) {
                 <div class="form-group">
                     <label for="memberNickname">כינוי:</label>
                     <input type="text" id="memberNickname" required>
+                </div>
+                <div class="form-group">
+                    <label for="memberPhone">טלפון (לא חובה):</label>
+                    <input type="tel" id="memberPhone" dir="ltr" inputmode="tel" autocomplete="tel" placeholder="05X-XXXXXXX">
+                    <small class="form-hint">לבקשות תשלום בביט ובוואטסאפ. עובר למשתתף כשהוא מצטרף</small>
                 </div>
                 <div class="form-group">
                     <label>איך מתחלקים?</label>

@@ -52,6 +52,8 @@ function openContactModal() {
     document.getElementById('contactName').value = '';
     document.getElementById('contactEmail').value = '';
     document.getElementById('contactEmail').disabled = false;
+    document.getElementById('contactPhone').value = '';
+    document.getElementById('contactPickResult').hidden = true;
     document.getElementById('contactValue').value = '';
 
     document.querySelectorAll('input[name="contactType"]').forEach(input => {
@@ -75,6 +77,8 @@ function editContact(id, name, email, type, value) {
 
     // האימייל הוא המפתח של איש הקשר, ולכן אינו ניתן לשינוי
     document.getElementById('contactEmail').disabled = true;
+    document.getElementById('contactPhone').value = document.getElementById('contact-' + id)?.dataset.phone || '';
+    document.getElementById('contactPickResult').hidden = true;
 
     document.querySelectorAll('input[name="contactType"]').forEach(input => {
         input.checked = (input.value === type);
@@ -152,7 +156,8 @@ document.addEventListener('DOMContentLoaded', function () {
         const fields  = {
             name:                document.getElementById('contactName').value,
             participation_type:  checked ? checked.value : '',
-            participation_value: document.getElementById('contactValue').value || 0
+            participation_value: document.getElementById('contactValue').value || 0,
+            phone:               document.getElementById('contactPhone').value
         };
 
         let data;
@@ -175,3 +180,25 @@ window.onclick = function (event) {
     const modal = document.getElementById('contactModal');
     if (event.target === modal) closeContactModal();
 };
+
+
+// איש קשר ששותף מאפליקציית אנשי הקשר (share-contact.php מפנה לכאן עם
+// #shared=<JSON>): החלון "איש קשר חדש" נפתח ממולא, והתוצאה כתובה בו
+document.addEventListener('DOMContentLoaded', () => {
+    const match = location.hash.match(/^#shared=(.*)$/);
+    if (!match) return;
+    history.replaceState(null, '', location.pathname);
+
+    let shared;
+    try { shared = JSON.parse(decodeURIComponent(match[1])); } catch (e) { return; }
+    if (!document.getElementById('contactModal')) return;
+
+    openContactModal();
+    ContactPicker.fill({ name: 'contactName', email: 'contactEmail', phone: 'contactPhone' }, shared);
+    const result = document.getElementById('contactPickResult');
+    result.textContent = shared.error
+        ? shared.error
+        : 'התקבל מהשיתוף — ' + ContactPicker.describe(shared);
+    result.classList.toggle('bad', !!shared.error || !shared.email);
+    result.hidden = false;
+});
