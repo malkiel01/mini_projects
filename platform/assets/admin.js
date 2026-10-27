@@ -210,7 +210,7 @@ window.PlatformAdmin = (() => {
         // אישור ופותח את הבורר שלו; מגיע רק מי שנבחר. במכשיר שלא תומך (אייפון, מחשב) — הכפתור לא מוצג.
         // התוצאה כתובה בשורה מתחת לכפתור. ביומן (📜): רק מספרים ושם השגיאה — בלי פרטי איש הקשר.
         const pickNote = el('small', { className: 'muted pick-note', role: 'status' });
-        const pick = 'contacts' in navigator && 'select' in navigator.contacts ? [button('📇 בחירה מאנשי הקשר', async () => {
+        const pick = 'contacts' in navigator && 'select' in navigator.contacts ? [button('📇 בחירה מאנשי הקשר (בורר כרום)', async () => {
             const log = (info) => { try { window.PlatformDiag?.log('contacts-pick', info); } catch { /* */ } };
             pickNote.textContent = '';
             let list;
@@ -243,7 +243,30 @@ window.PlatformAdmin = (() => {
         name.value = (prefill.name || '').slice(0, 60);
         email.value = prefill.email || '';
         if (prefill.name || prefill.tel) pickNote.textContent = `📇 מאנשי הקשר: ${prefill.name || prefill.tel}` + (prefill.tel ? '' : ' — בלי מספר טלפון');
-        body.append(...pick, ...(pick.length ? [] : [pickNote]), phoneF, nameF, emailF, el('div', { className: 'sheet-sec', textContent: 'מה נפתח לו' }), editor);
+        // הדבקה: בטלפון של בעל המערכת כרום לא מעביר אנשי קשר — לא בבורר ולא בשיתוף (דף הבדיקה: n=0).
+        // באנשי הקשר מעתיקים את המספר (או את כל הכרטיס), וכאן מדביקים — מספר, שם ומייל מתפזרים לשדות.
+        const fill = (text) => {
+            const t = String(text || '');
+            const tels = t.match(/\+?\d[\d\s().-]{7,}\d/g) || [];
+            const tel = tels.find(x => /^\+?972|^05/.test(x.replace(/[\s().-]/g, ''))) || tels[0] || '';
+            const mail = (t.match(/[^\s<>"]+@[^\s<>"]+\.[a-z]{2,}/i) || [''])[0];
+            const fn = (t.match(/^FN[^:]*:(.+)$/m) || [])[1];
+            const line = t.split(/\r?\n/).map(x => x.trim()).find(x => x && !/\d{5}|@|:/.test(x));
+            if (tel) phone.value = tel.trim();
+            if (mail && !email.value) email.value = mail;
+            if ((fn || line) && !name.value) name.value = (fn || line).trim().slice(0, 60);
+            pickNote.textContent = tel ? `✓ הודבק: ${tel.trim()}` : '⚠️ בטקסט שהודבק אין מספר טלפון';
+            return Boolean(tel);
+        };
+        phone.addEventListener('paste', (e) => {
+            const t = e.clipboardData?.getData('text') || '';
+            if (/\n|@|[א-תA-Za-z]{2}/.test(t)) { e.preventDefault(); fill(t); }   // יותר ממספר — מפזרים
+        });
+        const paste = navigator.clipboard?.readText ? [button('📋 הדבקה מאנשי הקשר', async () => {
+            try { fill(await navigator.clipboard.readText()); }
+            catch { pickNote.textContent = 'אין גישה ללוח — לוחצים ארוכות בשדה הוואטסאפ ← "הדבקה"'; }
+        }, 'contacts-pick')] : [];
+        body.append(...paste, ...pick, ...(pick.length ? [] : [pickNote]), phoneF, nameF, emailF, el('div', { className: 'sheet-sec', textContent: 'מה נפתח לו' }), editor);
         phone.focus();
     }
 
