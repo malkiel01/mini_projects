@@ -10,32 +10,70 @@ require_once __DIR__ . '/exchange.php';
  * מסומן = משתתף בהוצאה. הטופס שולח דווקא את *הלא* מסומנים,
  * כי זה מה שנשמר בטבלת ההחרגות.
  */
-function renderParticipantPicker($members, $idPrefix) {
+function renderParticipantPicker($members, $idPrefix, $sharesReady = false) {
     ?>
     <div class="form-group participants-picker">
         <label>מי משתתף בהוצאה הזו?</label>
-        <div class="picker-actions">
-            <button type="button" class="btn-link" onclick="toggleAllParticipants('<?php echo $idPrefix; ?>', true)">
-                סמן הכל
+        <div id="<?php echo $idPrefix; ?>DefaultSplit">
+            <div class="picker-actions">
+                <button type="button" class="btn-link" onclick="toggleAllParticipants('<?php echo $idPrefix; ?>', true)">
+                    סמן הכל
+                </button>
+                <button type="button" class="btn-link" onclick="toggleAllParticipants('<?php echo $idPrefix; ?>', false)">
+                    נקה הכל
+                </button>
+            </div>
+            <div class="participants-list" id="<?php echo $idPrefix; ?>Participants">
+                <?php foreach ($members as $member): ?>
+                <label class="participant-option">
+                    <input type="checkbox"
+                           class="<?php echo $idPrefix; ?>-participant"
+                           value="<?php echo (int)$member['id']; ?>"
+                           checked>
+                    <span><?php echo htmlspecialchars($member['nickname']); ?></span>
+                </label>
+                <?php endforeach; ?>
+            </div>
+            <small class="form-hint">
+                מי שלא מסומן לא ישלם על הקנייה הזו, וחלקו יתחלק בין השאר.
+                השאר מתחלקים לפי ההגדרה שלהם בשותפות.
+            </small>
+            <?php if ($sharesReady): ?>
+            <button type="button" class="btn-link split-open" onclick="openCustomSplit('<?php echo $idPrefix; ?>')">
+                <i class="fas fa-sliders" aria-hidden="true"></i> יחסיות אחרת לקנייה הזו
             </button>
-            <button type="button" class="btn-link" onclick="toggleAllParticipants('<?php echo $idPrefix; ?>', false)">
-                נקה הכל
+            <?php endif; ?>
+        </div>
+
+        <?php if ($sharesReady): ?>
+        <?php // יחסיות לקנייה הזו בלבד: חלק לכל שותף, והסכום מתחלק לפי היחס
+              // בין המספרים. js/group.js - split*, includes/purchase_shares.php ?>
+        <div class="custom-split" id="<?php echo $idPrefix; ?>Split" hidden>
+            <div class="split-head">
+                <strong>יחסיות לקנייה הזו</strong>
+                <span class="split-presets">
+                    <button type="button" class="btn-link" onclick="splitPreset('<?php echo $idPrefix; ?>', 'default')">לפי השותפות</button>
+                    <button type="button" class="btn-link" onclick="splitPreset('<?php echo $idPrefix; ?>', 'equal')">שווה בשווה</button>
+                </span>
+            </div>
+            <div class="split-rows">
+                <?php foreach ($members as $member): ?>
+                <label class="split-row">
+                    <span class="split-name"><?php echo htmlspecialchars($member['nickname']); ?></span>
+                    <input type="number" min="0" step="any" inputmode="decimal"
+                           class="<?php echo $idPrefix; ?>-weight"
+                           data-member="<?php echo (int)$member['id']; ?>"
+                           aria-label="החלק של <?php echo htmlspecialchars($member['nickname']); ?>">
+                    <span class="split-out" data-out="<?php echo (int)$member['id']; ?>"></span>
+                </label>
+                <?php endforeach; ?>
+            </div>
+            <p class="split-sum" id="<?php echo $idPrefix; ?>SplitSum" aria-live="polite"></p>
+            <button type="button" class="btn-link split-close" onclick="closeCustomSplit('<?php echo $idPrefix; ?>')">
+                <i class="fas fa-rotate-left" aria-hidden="true"></i> חזרה לחלוקה לפי השותפות
             </button>
         </div>
-        <div class="participants-list" id="<?php echo $idPrefix; ?>Participants">
-            <?php foreach ($members as $member): ?>
-            <label class="participant-option">
-                <input type="checkbox"
-                       class="<?php echo $idPrefix; ?>-participant"
-                       value="<?php echo (int)$member['id']; ?>"
-                       checked>
-                <span><?php echo htmlspecialchars($member['nickname']); ?></span>
-            </label>
-            <?php endforeach; ?>
-        </div>
-        <small class="form-hint">
-            מי שלא מסומן לא ישלם על הקנייה הזו, וחלקו יתחלק בין השאר
-        </small>
+        <?php endif; ?>
     </div>
     <?php
 }
@@ -293,7 +331,7 @@ function renderAmountFields($p, $currencyReady) {
     <?php
 }
 
-function renderAddPurchaseModal($members, $is_owner, $member_id, $featuresReady = true, $currencyReady = false) {
+function renderAddPurchaseModal($members, $is_owner, $member_id, $featuresReady = true, $currencyReady = false, $sharesReady = false) {
     ?>
     <div id="addPurchaseModal" class="modal">
         <div class="modal-content">
@@ -334,7 +372,7 @@ function renderAddPurchaseModal($members, $is_owner, $member_id, $featuresReady 
                     <textarea id="purchaseDescription" rows="3"></textarea>
                 </div>
 
-                <?php if ($featuresReady) renderParticipantPicker($members, 'add'); ?>
+                <?php if ($featuresReady) renderParticipantPicker($members, 'add', $sharesReady); ?>
 
                 <div class="form-group">
                     <label for="purchaseImage">תמונת קבלה:</label>
@@ -355,7 +393,7 @@ function renderAddPurchaseModal($members, $is_owner, $member_id, $featuresReady 
     <?php
 }
 
-function renderEditPurchaseModal($members, $isOwner = false, $currencyReady = false) {
+function renderEditPurchaseModal($members, $isOwner = false, $currencyReady = false, $sharesReady = false) {
     ?>
     <div id="editPurchaseModal" class="modal">
         <div class="modal-content">
@@ -385,7 +423,7 @@ function renderEditPurchaseModal($members, $isOwner = false, $currencyReady = fa
                     <textarea id="editPurchaseDescription" rows="3"></textarea>
                 </div>
 
-                <?php renderParticipantPicker($members, 'edit'); ?>
+                <?php renderParticipantPicker($members, 'edit', $sharesReady); ?>
 
                 <div class="modal-actions">
                     <button type="submit" class="btn-primary">

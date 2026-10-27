@@ -4,6 +4,7 @@
 
 require_once __DIR__ . '/currency.php';
 require_once __DIR__ . '/exchange.php';
+require_once __DIR__ . '/purchase_shares.php';
 require_once __DIR__ . '/schema.php';
 require_once __DIR__ . '/upload.php';
 require_once __DIR__ . '/notifications.php';
@@ -807,6 +808,42 @@ function readExclusions(GroupContext $context) {
     return ['ok' => true, 'ids' => $excluded];
 }
 
+/**
+ * היחסיות של הקנייה מהטופס (shares).
+ *
+ * לא נשלחה כלל - לא נוגעים (null). נשלחה ריקה - ברירת המחדל של
+ * השותפות. נשלחה עם משקלים - מי שמשקלו אפס נרשם גם כמוחרג, כדי
+ * שהחרגות והיחסיות לא יספרו שני סיפורים שונים.
+ *
+ * @return array ['ok' => true, 'set' => bool, 'weights' => array|null]
+ *               או ['ok' => false, 'message']
+ */
+function readPurchaseShares(GroupContext $context) {
+    if (!array_key_exists('shares', $_POST)) {
+        return ['ok' => true, 'set' => false, 'weights' => null];
+    }
+
+    $stmt = $context->pdo->prepare("SELECT id FROM group_members WHERE group_id = ? AND is_active = 1");
+    $stmt->execute([$context->groupId]);
+    $activeIds = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+
+    $parsed = parseSharesInput($_POST['shares'], $activeIds);
+    if (!$parsed['ok']) {
+        return $parsed;
+    }
+
+    if ($parsed['weights'] !== null && !purchaseSharesReady($context->pdo)) {
+        return ['ok' => false, 'message' => 'יחסיות לקנייה תהיה זמינה אחרי עדכון מסד הנתונים'];
+    }
+
+    $parsed['set']      = true;
+    $parsed['excluded'] = $parsed['weights'] === null
+        ? null
+        : array_values(array_diff($activeIds, array_keys($parsed['weights'])));
+
+    return $parsed;
+}
+
 function saveExclusions(GroupContext $context, $purchaseId, array $excludedIds) {
     if (!$context->featuresReady) {
         return;
@@ -893,6 +930,15 @@ function actionAddPurchase(GroupContext $context) {
         return;
     }
 
+    $shares = readPurchaseShares($context);
+    if (!$shares['ok']) {
+        jsonFail($shares['message']);
+        return;
+    }
+    if ($shares['set'] && $shares['excluded'] !== null) {
+        $exclusions['ids'] = $shares['excluded'];
+    }
+
     $imagePath = null;
     if (isset($_FILES['image'])) {
         $upload = saveReceiptImage($_FILES['image']);
@@ -920,6 +966,9 @@ function actionAddPurchase(GroupContext $context) {
         $purchaseId = (int)$context->pdo->lastInsertId();
         savePurchaseConversion($context, $purchaseId, $money['fields']);
         saveExclusions($context, $purchaseId, $exclusions['ids']);
+        if ($shares['set']) {
+            savePurchaseShares($context->pdo, $purchaseId, $shares['weights']);
+        }
 
         // הקנייה נוצרה מתוך פריט ברשימה - סמן אותו כנקנה
         if ($itemId > 0 && $context->featuresReady) {
@@ -997,6 +1046,15 @@ function actionUpdatePurchase(GroupContext $context) {
         return;
     }
 
+    $shares = readPurchaseShares($context);
+    if (!$shares['ok']) {
+        jsonFail($shares['message']);
+        return;
+    }
+    if ($shares['set'] && $shares['excluded'] !== null) {
+        $exclusions['ids'] = $shares['excluded'];
+    }
+
     $context->pdo->beginTransaction();
     try {
         $stmt = $context->pdo->prepare("
@@ -1008,6 +1066,9 @@ function actionUpdatePurchase(GroupContext $context) {
 
         savePurchaseConversion($context, $purchaseId, $money['fields']);
         saveExclusions($context, $purchaseId, $exclusions['ids']);
+        if ($shares['set']) {
+            savePurchaseShares($context->pdo, $purchaseId, $shares['weights']);
+        }
 
         $context->pdo->commit();
 
@@ -1060,6 +1121,8 @@ function actionDeletePurchase(GroupContext $context) {
         if ($context->featuresReady) {
             $stmt = $context->pdo->prepare("DELETE FROM purchase_exclusions WHERE purchase_id = ?");
             $stmt->execute([$purchaseId]);
+
+            savePurchaseShares($context->pdo, $purchaseId, null);
 
             $stmt = $context->pdo->prepare("
                 UPDATE shopping_items SET purchase_id = NULL, status = 'needed' WHERE purchase_id = ?

@@ -355,6 +355,153 @@ function setParticipants(prefix, excludedIds) {
 }
 
 // ============================================================
+// יחסיות לקנייה בודדת: חלק לכל שותף, והסכום מתחלק לפי היחס בין
+// המספרים (לא חייבים להסתכם ב-100). includes/purchase_shares.php
+// ============================================================
+
+/** קידומת שדות הסכום והמטבע של כל טופס */
+const SPLIT_AMOUNT_PREFIX = { add: 'purchase', edit: 'editPurchase' };
+
+/** נקודת המוצא של הטופס - בעריכה, החלוקה הנוכחית של הקנייה */
+const splitStart = { add: null, edit: null };
+
+function splitBox(prefix) {
+    return document.getElementById(prefix + 'Split');
+}
+
+function splitIsCustom(prefix) {
+    const box = splitBox(prefix);
+    return !!box && !box.hidden;
+}
+
+function splitInputs(prefix) {
+    return Array.from(document.querySelectorAll('.' + prefix + '-weight'));
+}
+
+/** ממלא את החלקים: { member_id: חלק }. מי שלא מופיע - 0 */
+function splitFill(prefix, weights) {
+    splitInputs(prefix).forEach(input => {
+        const value = weights[input.dataset.member];
+        input.value = value > 0 ? Math.round(value * 100) / 100 : 0;
+    });
+    splitPreview(prefix);
+}
+
+function splitPreset(prefix, kind) {
+    if (kind === 'equal') {
+        const weights = {};
+        splitInputs(prefix).forEach(input => { weights[input.dataset.member] = 1; });
+        splitFill(prefix, weights);
+    } else {
+        splitFill(prefix, CONFIG.defaultShares || {});
+    }
+}
+
+/** פתיחה: נקודת המוצא היא החלוקה הנוכחית של הקנייה */
+function openCustomSplit(prefix, weights) {
+    const box = splitBox(prefix);
+    if (!box) return;
+
+    if (!weights) {
+        // בעריכה - החלוקה שהקנייה קיבלה בפועל; בקנייה חדשה - לפי השותפות.
+        // מי שסומן כלא משתתף מתחיל מאפס.
+        const start = splitStart[prefix] && Object.keys(splitStart[prefix]).length > 0
+            ? splitStart[prefix] : (CONFIG.defaultShares || {});
+        weights = Object.assign({}, start);
+        getExcludedIds(prefix).forEach(id => { weights[id] = 0; });
+    }
+
+    document.getElementById(prefix + 'DefaultSplit').hidden = true;
+    box.hidden = false;
+    splitFill(prefix, weights);
+}
+
+function closeCustomSplit(prefix) {
+    const box = splitBox(prefix);
+    if (!box) return;
+
+    box.hidden = true;
+    document.getElementById(prefix + 'DefaultSplit').hidden = false;
+}
+
+/** הסכום בשקלים - במטבע זר אחרי ההמרה, כמו שיירשם */
+function splitAmountShekels(prefix) {
+    const p = SPLIT_AMOUNT_PREFIX[prefix];
+    const amount = parseFloat(document.getElementById(p + 'Amount').value) || 0;
+    const currency = fxEl(p, 'Currency');
+    if (currency && currency.value !== 'ILS') {
+        return amount * (parseFloat(fxEl(p, 'Rate').value) || 0);
+    }
+    return amount;
+}
+
+/** ליד כל שותף: האחוז שלו מהקנייה, ובכמה זה יוצא */
+function splitPreview(prefix) {
+    if (!splitIsCustom(prefix)) return;
+
+    const inputs = splitInputs(prefix);
+    const total = inputs.reduce((sum, input) => sum + Math.max(0, parseFloat(input.value) || 0), 0);
+    const amount = splitAmountShekels(prefix);
+    const box = splitBox(prefix);
+
+    inputs.forEach(input => {
+        const weight = Math.max(0, parseFloat(input.value) || 0);
+        const out = box.querySelector('[data-out="' + input.dataset.member + '"]');
+        const row = input.closest('.split-row');
+        row.classList.toggle('is-out', weight === 0);
+
+        if (total <= 0 || weight === 0) {
+            out.textContent = weight === 0 ? 'לא משתתף' : '';
+            return;
+        }
+        const percent = Math.round(weight / total * 1000) / 10;
+        out.textContent = percent + '%' + (amount > 0 ? ' · ' + formatAmount(amount * weight / total) : '');
+    });
+
+    const sum = document.getElementById(prefix + 'SplitSum');
+    if (total <= 0) {
+        sum.textContent = 'לפחות שותף אחד צריך חלק גדול מאפס';
+        sum.classList.add('is-error');
+        return;
+    }
+    sum.classList.remove('is-error');
+    const rounded = Math.round(total * 100) / 100;
+    sum.textContent = Math.abs(rounded - 100) < 0.01
+        ? 'סה״כ 100%'
+        : 'סה״כ ' + rounded + ' חלקים — הסכום מתחלק לפי היחס ביניהם';
+}
+
+/** לשליחה: { shares, excluded_ids }. בלי יחסיות משלה - shares ריק */
+function splitFields(prefix) {
+    if (!splitBox(prefix)) {
+        return { excluded_ids: getExcludedIds(prefix) };
+    }
+    if (!splitIsCustom(prefix)) {
+        return { shares: '', excluded_ids: getExcludedIds(prefix) };
+    }
+
+    const weights = {};
+    splitInputs(prefix).forEach(input => {
+        weights[input.dataset.member] = Math.max(0, parseFloat(input.value) || 0);
+    });
+    return { shares: JSON.stringify(weights), excluded_ids: [] };
+}
+
+function splitInit(prefix) {
+    const box = splitBox(prefix);
+    if (!box) return;
+
+    box.addEventListener('input', () => splitPreview(prefix));
+    const p = SPLIT_AMOUNT_PREFIX[prefix];
+    ['Amount', 'Rate'].forEach(name => {
+        const el = document.getElementById(p + name);
+        if (el) el.addEventListener('input', () => splitPreview(prefix));
+    });
+    const currency = fxEl(p, 'Currency');
+    if (currency) currency.addEventListener('change', () => setTimeout(() => splitPreview(prefix), 0));
+}
+
+// ============================================================
 // קניות
 // ============================================================
 
@@ -370,6 +517,7 @@ function closeAddPurchaseModal() {
     document.getElementById('purchaseItemId').value = '';
     document.getElementById('imagePreview').style.display = 'none';
     toggleAllParticipants('add', true);
+    closeCustomSplit('add');
 }
 
 // ============================================================
@@ -475,6 +623,7 @@ async function fxFetch(p) {
 
     fxEl(p, 'Rate').value = fxRates[key].rate;
     fxPreview(p);
+    splitPreview(p === 'purchase' ? 'add' : 'edit');
 }
 
 /** "יירשם ₪307.80 · שער יציג של בנק ישראל מ-26/10/2026" */
@@ -576,6 +725,14 @@ function editPurchase(purchase) {
     }
 
     setParticipants('edit', purchase.excluded);
+    splitStart.edit = purchase.split || null;
+
+    // קנייה עם יחסיות משלה נפתחת עליה; אחרת - החלוקה הרגילה
+    if (purchase.shares && Object.keys(purchase.shares).length > 0) {
+        openCustomSplit('edit', purchase.shares);
+    } else {
+        closeCustomSplit('edit');
+    }
     openModal('editPurchaseModal');
 }
 
@@ -912,6 +1069,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
     fxInit('purchase');
     fxInit('editPurchase');
+    splitInit('add');
+    splitInit('edit');
 
     const addPurchaseForm = document.getElementById('addPurchaseForm');
     if (addPurchaseForm) {
@@ -946,9 +1105,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 member_id: memberId,
                 amount: amount,
                 description: document.getElementById('purchaseDescription').value,
-                item_id: document.getElementById('purchaseItemId').value || 0,
-                excluded_ids: getExcludedIds('add')
-            }, fx), { formData: formData });
+                item_id: document.getElementById('purchaseItemId').value || 0
+            }, splitFields('add'), fx), { formData: formData });
         });
     }
 
@@ -969,9 +1127,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 purchase_id: document.getElementById('editPurchaseId').value,
                 amount: amount,
                 description: document.getElementById('editPurchaseDescription').value,
-                member_id: memberSelect ? memberSelect.value : null,
-                excluded_ids: getExcludedIds('edit')
-            }, fxFields('editPurchase')));
+                member_id: memberSelect ? memberSelect.value : null
+            }, splitFields('edit'), fxFields('editPurchase')));
         });
     }
 

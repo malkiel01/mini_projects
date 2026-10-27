@@ -684,6 +684,28 @@ function migrationCatalog(PDO $pdo, $dbName) {
         ],
     ];
 
+    // --------------------------------------------------------
+    // יחסיות לקנייה בודדת (includes/purchase_shares.php). קנייה בלי
+    // שורות כאן מתחלקת לפי הגדרות השותפות, כמו תמיד.
+    $catalog[] = [
+        'id'    => '018',
+        'title' => 'יחסיות לכל קנייה',
+        'steps' => [
+            stepCreateTable($pdo, $dbName, 'purchase_shares', "
+                CREATE TABLE `purchase_shares` (
+                    `purchase_id` INT           NOT NULL,
+                    `member_id`   INT           NOT NULL,
+                    `weight`      DECIMAL(12,4) NOT NULL COMMENT 'משקל יחסי, לא בהכרח אחוז',
+                    PRIMARY KEY (`purchase_id`, `member_id`),
+                    INDEX `idx_shares_member` (`member_id`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"),
+            stepForeignKey($pdo, $dbName, 'purchase_shares', 'fk_shares_purchase',
+                "ADD CONSTRAINT `fk_shares_purchase` FOREIGN KEY (`purchase_id`) REFERENCES `group_purchases` (`id`) ON DELETE CASCADE"),
+            stepForeignKey($pdo, $dbName, 'purchase_shares', 'fk_shares_member',
+                "ADD CONSTRAINT `fk_shares_member` FOREIGN KEY (`member_id`) REFERENCES `group_members` (`id`) ON DELETE CASCADE"),
+        ],
+    ];
+
     return $catalog;
 }
 

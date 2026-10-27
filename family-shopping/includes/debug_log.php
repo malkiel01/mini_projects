@@ -160,6 +160,7 @@ function debugSnapshot(PDO $pdo, $groupId) {
         $purchase['excluded_ids'] = $exclusions[(int)$purchase['id']] ?? [];
     }
     unset($purchase);
+    $purchases = attachPurchaseShares($purchases, loadPurchaseShares($pdo, $groupId));
 
     $settlements = [];
     if (debugTableExists($pdo, 'settlements')) {
