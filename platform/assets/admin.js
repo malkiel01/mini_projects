@@ -214,21 +214,28 @@ window.PlatformAdmin = (() => {
             pickNote.textContent = '';
             let list;
             try {
-                list = await navigator.contacts.select(['name', 'tel', 'email'], { multiple: false });
+                // multiple: true — בבורר הבודד של כרום הבחירה לא חזרה (היומן: n=0 אחרי "בוצע"). נלקח הראשון.
+                list = await navigator.contacts.select(['name', 'tel', 'email'], { multiple: true });
             } catch (err) {
                 log({ error: err.name, message: err.message });
                 pickNote.textContent = '⚠️ ' + (err.name === 'SecurityError' ? 'אין גישה לאנשי הקשר' : `${err.name}: ${err.message}`);
                 return;
             }
             const c = list?.[0];
-            log({ n: list?.length ?? -1, names: c?.name?.length ?? 0, tels: c?.tel?.length ?? 0, emails: c?.email?.length ?? 0 });
-            if (!c) { pickNote.textContent = 'לא נבחר איש קשר — מקישים על איש הקשר (מופיע ✓) ואז "בוצע"'; return; }
+            const standalone = matchMedia('(display-mode: standalone)').matches;
+            log({ n: list?.length ?? -1, names: c?.name?.length ?? 0, tels: c?.tel?.length ?? 0, emails: c?.email?.length ?? 0, standalone, multiple: true });
+            if (!c) {
+                pickNote.textContent = 'הבורר לא החזיר איש קשר — מקישים על איש הקשר עד שמופיע ✓, ואז "בוצע"'
+                    + (standalone ? '. אם זה חוזר — נסו מלשונית בכרום (לא מהאפליקציה המותקנת).' : '');
+                return;
+            }
             const tels = (c.tel || []).map(String).filter(Boolean);
             const tel = tels.find(t => /^\+?972|^05/.test(t.replace(/[\s-]/g, ''))) || tels[0] || '';
             if (tel) phone.value = tel;
             if (c.name?.[0]) name.value = String(c.name[0]).slice(0, 60);
             if (c.email?.[0] && !email.value) email.value = String(c.email[0]);
-            pickNote.textContent = tel ? `✓ נבחר/ה ${c.name?.[0] || ''}` : '⚠️ לאיש הקשר אין מספר טלפון';
+            pickNote.textContent = (tel ? `✓ נבחר/ה ${c.name?.[0] || ''}` : '⚠️ לאיש הקשר אין מספר טלפון')
+                + (list.length > 1 ? ' — נבחרו כמה, נלקח הראשון' : '');
         }, 'contacts-pick'), pickNote] : [];
         body.append(...pick, phoneF, nameF, emailF, el('div', { className: 'sheet-sec', textContent: 'מה נפתח לו' }), editor);
         phone.focus();
