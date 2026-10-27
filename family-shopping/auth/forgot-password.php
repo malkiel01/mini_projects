@@ -39,9 +39,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>איפוס סיסמה - <?php echo SITE_NAME; ?></title>
-    <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" media="print" onload="this.media='all'">
-    <noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"></noscript>
+    <link rel="stylesheet" href="<?php echo asset('/assets/vendor/fontawesome/css/all.min.css'); ?>">
     <link rel="stylesheet" href="<?php echo asset('/css/app.css'); ?>">
     <link rel="stylesheet" href="<?php echo asset('/css/styles.css'); ?>">
     <link rel="stylesheet" href="<?php echo asset('/css/join.css'); ?>">

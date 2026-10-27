@@ -1,13 +1,13 @@
 {
-  "name": "מערכת ניהול קניות מרוכזות",
-  "short_name": "קניות מרוכזות",
-  "description": "מערכת חכמה לניהול וחלוקת קניות משותפות לקבוצות עם התראות בזמן אמת",
+  "name": "קניות משותפות — מנהל האירועים המשפחתי",
+  "short_name": "קניות משותפות",
+  "description": "מה מביאים לאירוע, מי קנה, ומי חייב למי",
   "start_url": "./dashboard.php",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "theme_color": "#667eea",
-  "background_color": "#ffffff",
+  "theme_color": "#2d4a8a",
+  "background_color": "#f4f5f7",
   "categories": [
     "productivity",
     "finance",
@@ -16,9 +16,6 @@
   "lang": "he",
   "dir": "rtl",
   "prefer_related_applications": false,
-  "permissions": [
-    "notifications"
-  ],
   "gcm_sender_id": "103953800507",
   "icons": [
     {
@@ -90,9 +87,9 @@
   ],
   "shortcuts": [
     {
-      "name": "צור קבוצה חדשה",
-      "short_name": "קבוצה חדשה",
-      "description": "צור קבוצת רכישה חדשה",
+      "name": "אירוע חדש",
+      "short_name": "אירוע חדש",
+      "description": "פתיחת אירוע משפחתי חדש",
       "url": "./dashboard.php?action=new_group",
       "icons": [
         {
@@ -101,19 +98,7 @@
           "type": "image/png"
         }
       ]
-    },
-    {
-      "name": "הוסף קנייה",
-      "short_name": "קנייה",
-      "description": "הוסף קנייה חדשה",
-      "url": "./dashboard.php?action=new_purchase",
-      "icons": [
-        {
-          "src": "./images/icons/android/android-launchericon-96-96.png",
-          "sizes": "96x96",
-          "type": "image/png"
-        }
-      ]
     }
-  ]
+  ],
+  "id": "./"
 }
