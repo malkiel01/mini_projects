@@ -740,7 +740,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     const addPurchaseForm = document.getElementById('addPurchaseForm');
     if (addPurchaseForm) {
-        addPurchaseForm.addEventListener('submit', function (event) {
+        addPurchaseForm.addEventListener('submit', async function (event) {
             event.preventDefault();
 
             const amount = parseFloat(document.getElementById('purchaseAmount').value);
@@ -758,7 +758,10 @@ document.addEventListener('DOMContentLoaded', function () {
             const formData = new FormData();
             const imageInput = document.getElementById('purchaseImage');
             if (imageInput && imageInput.files[0]) {
-                formData.append('image', imageInput.files[0]);
+                // צילום מהטלפון שוקל 3-5MB. מכווצים לפני ההעלאה - מהיר גם
+                // בחנות עם קליטה חלשה, ולא נתקע במגבלת ה-5MB של השרת
+                const image = await shrinkImage(imageInput.files[0]);
+                formData.append('image', image, image.name);
             }
 
             callAndReload('addPurchase', {
@@ -973,4 +976,101 @@ async function copyForBit(details, button) {
     }
 
     setTimeout(() => { button.innerHTML = original; }, 4000);
+}
+
+
+// ============================================================
+// כיווץ תמונת קבלה לפני ההעלאה
+// ============================================================
+
+/**
+ * מקטין תמונה לצלע ארוכה של 1600px ושומר כ-JPEG.
+ * קובץ קטן, שאינו תמונה, או כשהדפדפן לא מצליח - חוזר כמו שהוא.
+ * קבלה קריאה היטב ב-1600px; רוב הקבצים יוצאים 200-400KB.
+ */
+async function shrinkImage(file, maxSide = 1600, quality = 0.82) {
+    if (!file || !/^image\/(jpeg|png|webp|heic|heif)$/i.test(file.type) || file.size < 600 * 1024) {
+        return file;
+    }
+
+    try {
+        const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+        const scale  = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+        const canvas = document.createElement('canvas');
+        canvas.width  = Math.round(bitmap.width * scale);
+        canvas.height = Math.round(bitmap.height * scale);
+        canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+        bitmap.close && bitmap.close();
+
+        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', quality));
+        if (!blob || blob.size >= file.size) {
+            return file;
+        }
+
+        const name = (file.name || 'receipt').replace(/\.[^.]+$/, '') + '.jpg';
+        return new File([blob], name, { type: 'image/jpeg' });
+    } catch (error) {
+        console.warn('shrinkImage failed, uploading the original', error);
+        return file;
+    }
+}
+
+// ============================================================
+// הוספה מהירה לרשימה: "חלב 2, לחם, יין 6 בקבוקים"
+// ============================================================
+
+/** פריט אחד: כמות בסוף (מספר, ואולי מילה אחריו) נפרדת מהשם */
+function parseQuickItem(text) {
+    const clean = text.trim().replace(/\s+/g, ' ');
+    const match = clean.match(/^(.+?)\s+(\d+(?:[.,]\d+)?(?:\s+\S+)?)$/);
+
+    return match ? { title: match[1], quantity: match[2] } : { title: clean, quantity: '' };
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const form = document.getElementById('quickAddForm');
+    if (!form) return;
+
+    form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const input = document.getElementById('quickAddInput');
+        const items = input.value.split(/[,\n]/).map(t => t.trim()).filter(Boolean).map(parseQuickItem);
+        if (items.length === 0) {
+            input.focus();
+            return;
+        }
+
+        const button = form.querySelector('button');
+        button.disabled = true;
+
+        // אחד אחרי השני, כדי שהסדר ברשימה יהיה הסדר שהוקלד
+        for (const item of items) {
+            const result = await callAction('addItem', { title: item.title, quantity: item.quantity, notes: '' });
+            if (!result) {
+                button.disabled = false;
+                return;
+            }
+        }
+
+        try { sessionStorage.setItem('fs-tab-' + APP_CONFIG.groupId, 'items'); } catch (e) {}
+        location.reload();
+    });
+});
+
+// ============================================================
+// שכפול אירוע
+// ============================================================
+
+async function duplicateEvent() {
+    const current = document.querySelector('.top h1')?.textContent.trim() || '';
+    const name = prompt(
+        'שכפול האירוע: אותם משתתפים ואותה רשימת "מה צריך", בלי קניות והתחשבנויות.\n\nשם לאירוע החדש:',
+        current
+    );
+    if (name === null) return;
+
+    const result = await callAction('duplicateEvent', { name: name.trim() });
+    if (result && result.group_id) {
+        location.href = 'group.php?id=' + result.group_id;
+    }
 }

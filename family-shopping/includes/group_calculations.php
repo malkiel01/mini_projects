@@ -680,7 +680,9 @@ function renderCalculationsView(array $members, array $result, $canSettle,
                                 ?>, <?php echo htmlspecialchars(json_encode(
                                     $transfer['from'] . ' → ' . $transfer['to'], JSON_UNESCAPED_UNICODE
                                 ), ENT_QUOTES); ?>)">
-                            <i class="fas fa-check"></i> שולם
+                            <i class="fas fa-check"></i>
+                            <?php // מי שמסמן - במילים שלו: החייב "שילמתי", המקבל "קיבלתי" ?>
+                            <?php echo $viewerIsDebtor ? 'שילמתי' : ($viewerIsCreditor ? 'קיבלתי' : 'שולם'); ?>
                         </button>
                         <button class="btn-transfer-debt" title="להעביר את החוב למשתתף אחר"
                                 onclick="openDebtTransferModal(<?php

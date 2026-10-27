@@ -256,12 +256,15 @@ if (!empty($group['event_location'])) {
 }
 
 $topActions = [['onclick' => 'shareSummary()', 'icon' => 'fab fa-whatsapp', 'label' => 'שיתוף הסיכום בוואטסאפ']];
+$moreActions = [['onclick' => 'window.print()', 'icon' => 'fas fa-print', 'label' => 'הדפסת סיכום']];
 if ($is_owner && $featuresReady) {
-    $topActions[] = ['onclick' => 'showEventModal()', 'icon' => 'fas fa-pen', 'label' => 'פרטי האירוע'];
-    $topActions[] = $is_closed
+    $topActions[]  = ['onclick' => 'showEventModal()', 'icon' => 'fas fa-pen', 'label' => 'פרטי האירוע'];
+    $moreActions[] = ['onclick' => 'duplicateEvent()', 'icon' => 'fas fa-copy', 'label' => 'שכפול האירוע (לשנה הבאה)'];
+    $moreActions[] = $is_closed
         ? ['onclick' => 'reopenEvent()', 'icon' => 'fas fa-lock-open', 'label' => 'פתיחה מחדש']
         : ['onclick' => 'closeEvent()', 'icon' => 'fas fa-flag-checkered', 'label' => 'סגירת האירוע'];
 }
+$topActions[] = ['menu' => $moreActions, 'label' => 'עוד פעולות'];
 ?>
 <!DOCTYPE html>
 <html dir="rtl" lang="he">
@@ -343,11 +346,21 @@ if ($is_owner && $featuresReady) {
             <div class="section-header">
                 <h2>מה צריך להביא</h2>
                 <?php if ($canEdit): ?>
-                <button class="btn-add" onclick="showItemModal()">
-                    <i class="fas fa-plus"></i> הוסף פריט
+                <button class="btn-icon" onclick="showItemModal()" title="פריט עם הערה" aria-label="פריט עם הערה">
+                    <i class="fas fa-pen-to-square" aria-hidden="true"></i>
                 </button>
                 <?php endif; ?>
             </div>
+
+            <?php if ($canEdit): ?>
+            <!-- הוספה מהירה: שורה אחת, כמה פריטים בפסיקים. "יין 6 בקבוקים" = פריט וכמות -->
+            <form class="quick-add" id="quickAddForm" autocomplete="off">
+                <label class="sr-only" for="quickAddInput">מה עוד צריך?</label>
+                <input type="text" id="quickAddInput" enterkeyhint="done"
+                       placeholder="מה עוד צריך? למשל: חלב 2, לחם, ביצים 30">
+                <button type="submit" class="btn primary"><i class="fas fa-plus" aria-hidden="true"></i> הוספה</button>
+            </form>
+            <?php endif; ?>
 
             <?php if (count($shoppingItems) === 0): ?>
             <div class="no-data">
@@ -665,7 +678,67 @@ if ($is_owner && $featuresReady) {
             ]); ?>
             </div>
         </div>
-    </div>
+    </main>
+
+    <!-- סיכום להדפסה: מוסתר במסך, והיחיד שמודפס (css/group.css, @media print) -->
+    <section id="print-root" aria-hidden="true">
+        <h1><?php echo htmlspecialchars($group['name']); ?></h1>
+        <p class="print-sub">
+            <?php echo htmlspecialchars(implode(' · ', $subParts)); ?>
+            <?php echo $subParts ? ' · ' : ''; ?>הודפס <?php echo date('d/m/Y'); ?>
+        </p>
+
+        <h2>לפי משתתף</h2>
+        <table>
+            <thead><tr><th>משתתף</th><th>חלק</th><th>צריך לשלם</th><th>שילם</th><th>יתרה</th></tr></thead>
+            <tbody>
+            <?php foreach ($balance['calculations'] ?? [] as $calc): ?>
+                <?php $open = round($calc['openBalance'], 2); ?>
+                <tr>
+                    <td><?php echo htmlspecialchars($calc['member']['nickname']); ?></td>
+                    <td><?php
+                        if (isset($calc['member']['shares'])) echo (int)$calc['member']['shares'] . ' נפשות';
+                        elseif ($calc['member']['participation_type'] === 'percentage') echo round($calc['member']['participation_value'], 1) . '%';
+                        else echo '₪' . number_format($calc['member']['participation_value'], 2);
+                    ?></td>
+                    <td>₪<?php echo number_format($calc['shouldPay'], 2); ?></td>
+                    <td>₪<?php echo number_format($calc['actuallyPaid'], 2); ?></td>
+                    <td><?php echo $open >= 0 ? 'מגיע ' : 'חייב '; ?>₪<?php echo number_format(abs($open), 2); ?></td>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+            <tfoot><tr><td colspan="3">סה"כ הוצאות</td><td colspan="2">₪<?php echo number_format($balance['totalAmount'], 2); ?></td></tr></tfoot>
+        </table>
+
+        <h2>העברות שנשארו</h2>
+        <?php if (count($balance['transfers']) === 0): ?>
+        <p>אין — הכול מאוזן.</p>
+        <?php else: ?>
+        <table>
+            <thead><tr><th>#</th><th>מי מעביר</th><th>למי</th><th>סכום</th><th>✓</th></tr></thead>
+            <tbody>
+            <?php foreach ($balance['transfers'] as $i => $transfer): ?>
+                <tr><td><?php echo $i + 1; ?></td><td><?php echo htmlspecialchars($transfer['from']); ?></td>
+                    <td><?php echo htmlspecialchars($transfer['to']); ?></td>
+                    <td>₪<?php echo number_format($transfer['amount'], 2); ?></td><td></td></tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+        <?php endif; ?>
+
+        <h2>קניות (<?php echo count($purchases); ?>)</h2>
+        <table>
+            <thead><tr><th>תאריך</th><th>מי קנה</th><th>מה</th><th>סכום</th></tr></thead>
+            <tbody>
+            <?php foreach ($purchases as $purchase): ?>
+                <tr><td><?php echo date('d/m/Y', strtotime($purchase['created_at'])); ?></td>
+                    <td><?php echo htmlspecialchars($purchase['nickname']); ?></td>
+                    <td><?php echo htmlspecialchars((string)$purchase['description']); ?></td>
+                    <td>₪<?php echo number_format($purchase['amount'], 2); ?></td></tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+    </section>
 
     <!-- Modals -->
     <?php

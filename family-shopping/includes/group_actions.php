@@ -61,6 +61,7 @@ function jsonOk(array $extra = []) {
 const OWNER_ONLY_ACTIONS = [
     'addMember', 'removeMember', 'editMember', 'cancelInvitation',
     'splitEqually', 'setSplitMode', 'updateEvent', 'closeEvent', 'reopenEvent',
+    'duplicateEvent',
 ];
 
 /**
@@ -79,7 +80,7 @@ const BLOCKED_WHEN_CLOSED = [
 const REQUIRES_MIGRATION = [
     'addItem', 'updateItem', 'setItemStatus', 'deleteItem',
     'addSettlement', 'deleteSettlement',
-    'updateEvent', 'closeEvent', 'reopenEvent',
+    'updateEvent', 'closeEvent', 'reopenEvent', 'duplicateEvent',
 ];
 
 function handleGroupActions($pdo, $group_id, $user_id, $is_owner, $member_id, $status = 'active', $featuresReady = true) {
@@ -106,6 +107,7 @@ function handleGroupActions($pdo, $group_id, $user_id, $is_owner, $member_id, $s
         'updateEvent'      => 'actionUpdateEvent',
         'closeEvent'       => 'actionCloseEvent',
         'reopenEvent'      => 'actionReopenEvent',
+        'duplicateEvent'   => 'actionDuplicateEvent',
     ];
 
     if (!isset($handlers[$action])) {
@@ -1595,4 +1597,98 @@ function actionReopenEvent(GroupContext $context) {
     );
 
     jsonOk(['message' => 'האירוע נפתח מחדש']);
+}
+
+// ============================================================
+// שכפול אירוע
+// ============================================================
+
+/**
+ * אירוע חדש מאירוע קיים - אותם משתתפים, אותו מפתח השתתפות ואותה רשימת
+ * "מה צריך", בלי הכסף. ליל הסדר חוזר כל שנה, ואיש לא רוצה להקליד שוב
+ * 30 פריטים ו-8 משפחות.
+ *
+ * מה עובר: שם (או שם חדש), תיאור, מיקום, תעריף לנפש; המשתתפים הפעילים
+ * עם החלק שלהם; הפריטים - כולם "צריך", בלי שיבוץ.
+ * מה לא עובר: תאריך, קניות, קבלות, התחשבנויות והזמנות שמחכות.
+ * מותר גם מאירוע סגור - זה בדיוק המקרה הנפוץ.
+ */
+function actionDuplicateEvent(GroupContext $context) {
+    $pdo = $context->pdo;
+
+    $stmt = $pdo->prepare("SELECT * FROM purchase_groups WHERE id = ?");
+    $stmt->execute([$context->groupId]);
+    $source = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$source) {
+        jsonFail('האירוע לא נמצא');
+        return;
+    }
+
+    $name = trim((string)($_POST['name'] ?? ''));
+    if ($name === '') {
+        $name = $source['name'];
+    }
+    $name = mb_substr($name, 0, 255);
+
+    $pdo->beginTransaction();
+    try {
+        $pdo->prepare("
+            INSERT INTO purchase_groups
+                (name, description, owner_id, event_location, status, share_rate, is_active, created_at)
+            VALUES (?, ?, ?, ?, 'planning', ?, 1, NOW())
+        ")->execute([
+            $name, $source['description'], $context->userId,
+            $source['event_location'] ?? null, $source['share_rate'] ?? null,
+        ]);
+        $newId = (int)$pdo->lastInsertId();
+
+        $members = $pdo->prepare("
+            SELECT user_id, nickname, email, participation_type, participation_value
+            FROM group_members WHERE group_id = ? AND is_active = 1
+            ORDER BY id
+        ");
+        $members->execute([$context->groupId]);
+        $insertMember = $pdo->prepare("
+            INSERT INTO group_members
+                (group_id, user_id, nickname, email, participation_type, participation_value)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ");
+        $copiedMembers = 0;
+        foreach ($members->fetchAll(PDO::FETCH_ASSOC) as $member) {
+            $insertMember->execute([
+                $newId, $member['user_id'], $member['nickname'], $member['email'],
+                $member['participation_type'], $member['participation_value'],
+            ]);
+            $copiedMembers++;
+        }
+
+        $items = $pdo->prepare("
+            SELECT title, quantity, notes, sort_order FROM shopping_items
+            WHERE group_id = ? ORDER BY sort_order, id
+        ");
+        $items->execute([$context->groupId]);
+        $insertItem = $pdo->prepare("
+            INSERT INTO shopping_items (group_id, title, quantity, notes, status, created_by, sort_order)
+            VALUES (?, ?, ?, ?, 'needed', ?, ?)
+        ");
+        $copiedItems = 0;
+        foreach ($items->fetchAll(PDO::FETCH_ASSOC) as $item) {
+            $insertItem->execute([
+                $newId, $item['title'], $item['quantity'], $item['notes'],
+                $context->userId, (int)$item['sort_order'],
+            ]);
+            $copiedItems++;
+        }
+
+        $pdo->commit();
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        throw $e;
+    }
+
+    jsonOk([
+        'group_id' => $newId,
+        'message'  => "נפתח אירוע חדש עם $copiedMembers משתתפים ו-$copiedItems פריטים",
+    ]);
 }

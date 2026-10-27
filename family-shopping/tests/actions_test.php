@@ -875,6 +875,38 @@ check('האירוע נמחק אף שהמוחק אינו הבעלים', $gone ===
 $members = (int)$pdoA->query("SELECT COUNT(*) FROM group_members WHERE group_id = 1")->fetchColumn();
 check('וגם המשתתפים ירדו', $members === 0);
 
+echo "\nשכפול אירוע\n";
+
+$pdoD = makeDb();
+$pdoD->exec("UPDATE purchase_groups SET description = 'אצל סבתא', event_location = 'חיפה',
+             event_date = '2026-04-01', status = 'closed', share_rate = 120 WHERE id = 1");
+$pdoD->exec("UPDATE group_members SET is_active = 0 WHERE id = 3");
+$pdoD->exec("INSERT INTO shopping_items (group_id, title, quantity, status, assigned_member_id, sort_order) VALUES
+    (1, 'מצות', '3', 'bought', 2, 1), (1, 'יין', '6', 'claimed', 1, 2)");
+$pdoD->exec("INSERT INTO group_purchases (group_id, member_id, user_id, amount, description) VALUES (1, 1, 1, 100, 'x')");
+
+$r = run($pdoD, 'duplicateEvent', ['name' => 'פסח הבא'], 2, false, 2, 'closed');
+check('שכפול - רק למנהל', !$r['success']);
+
+$r = run($pdoD, 'duplicateEvent', ['name' => 'פסח הבא'], 1, true, 1, 'closed');
+check('שכפול מאירוע סגור מצליח', $r['success'] ?? false, $r['message'] ?? '');
+$newId = (int)($r['group_id'] ?? 0);
+$g = $pdoD->query("SELECT * FROM purchase_groups WHERE id = $newId")->fetch();
+check('השם החדש, מיקום, תיאור ותעריף עוברים', $g && $g['name'] === 'פסח הבא' && $g['event_location'] === 'חיפה'
+    && $g['description'] === 'אצל סבתא' && (float)$g['share_rate'] === 120.0);
+check('בלי תאריך, בתכנון, והמשכפל הוא המנהל', $g['event_date'] === null && $g['status'] === 'planning' && (int)$g['owner_id'] === 1);
+$m = $pdoD->query("SELECT user_id, participation_value FROM group_members WHERE group_id = $newId ORDER BY id")->fetchAll();
+check('רק המשתתפים הפעילים, עם החלק שלהם', count($m) === 2 && (float)$m[1]['participation_value'] === 25.0);
+$i = $pdoD->query("SELECT status, assigned_member_id FROM shopping_items WHERE group_id = $newId")->fetchAll();
+check('הפריטים עוברים - כולם "צריך", בלי שיבוץ', count($i) === 2
+    && $i[0]['status'] === 'needed' && $i[1]['assigned_member_id'] === null);
+$p = (int)$pdoD->query("SELECT COUNT(*) FROM group_purchases WHERE group_id = $newId")->fetchColumn();
+check('הקניות לא עוברות', $p === 0);
+
+$r = run($pdoD, 'duplicateEvent', [], 1, true, 1, 'closed');
+$g2 = $pdoD->query("SELECT name FROM purchase_groups WHERE id = " . (int)($r['group_id'] ?? 0))->fetchColumn();
+check('בלי שם - אותו שם', $g2 === 'פסח');
+
 echo "\n" . str_repeat('=', 55) . "\n";
 echo "עבר: $pass | נכשל: $fail\n";
 exit($fail > 0 ? 1 : 0);

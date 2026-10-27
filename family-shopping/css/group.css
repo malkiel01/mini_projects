@@ -168,3 +168,25 @@
     display: grid; place-items: center; width: var(--tap); height: var(--tap); border-radius: 50%; background: rgba(255, 255, 255, .15);
     color: #fff; font-size: 1.6rem; cursor: pointer; }
 #imageModal img { max-width: 100%; max-height: 100%; object-fit: contain; }
+
+/* ===== הוספה מהירה לרשימה ===== */
+.quick-add { display: flex; gap: var(--s2); margin-bottom: var(--s2); }
+.quick-add input { flex: 1; }
+.quick-add .btn { flex: none; }
+
+/* ===== סיכום להדפסה — רק על הנייר ===== */
+#print-root { display: none; }
+@media print {
+    body { background: #fff; color: #000; font-size: 11pt; }
+    body > *:not(#print-root) { display: none !important; }
+    #print-root { display: block; }
+    #print-root h1 { font-size: 16pt; margin-bottom: 2pt; }
+    #print-root .print-sub { color: #444; margin-bottom: 10pt; }
+    #print-root h2 { font-size: 12pt; margin: 12pt 0 4pt; }
+    #print-root table { inline-size: 100%; border-collapse: collapse; }
+    #print-root th, #print-root td { border: 1px solid #999; padding: 3pt 5pt; text-align: start; }
+    #print-root th { background: #eee; }
+    #print-root tfoot td { font-weight: 700; }
+    #print-root thead { display: table-header-group; }
+    #print-root tr { break-inside: avoid; }
+}

@@ -45,7 +45,7 @@ function avatarInitials($name) {
 /**
  * הכותרת הדביקה.
  *
- * @param array $opts title, sub, back (כתובת), actions: [[href|onclick, icon, label]], me (bool)
+ * @param array $opts title, sub, back (כתובת), actions: [[href|onclick, icon, label] | [menu => [...], label]], me (bool)
  */
 function renderTopBar(array $opts) {
     $name = $_SESSION['name'] ?? '';
@@ -64,7 +64,24 @@ function renderTopBar(array $opts) {
             <?php endif; ?>
         </div>
         <?php foreach ($opts['actions'] ?? [] as $action): ?>
-            <?php if (!empty($action['href'])): ?>
+            <?php if (!empty($action['menu'])): ?>
+            <?php // פעולות פחות שכיחות - בתפריט "עוד", כדי שהכותרת לא תיחתך ?>
+            <div class="menu-wrap">
+                <button type="button" class="icon-btn" aria-haspopup="menu" aria-expanded="false"
+                        aria-label="<?php echo htmlspecialchars($action['label'] ?? 'עוד'); ?>" title="<?php echo htmlspecialchars($action['label'] ?? 'עוד'); ?>"
+                        onclick="toggleTopMenu(this)">
+                    <i class="fas fa-ellipsis-vertical" aria-hidden="true"></i>
+                </button>
+                <div class="top-menu" role="menu" hidden>
+                    <?php foreach ($action['menu'] as $item): ?>
+                    <button type="button" role="menuitem" onclick="<?php echo htmlspecialchars($item['onclick']); ?>">
+                        <i class="<?php echo htmlspecialchars($item['icon']); ?>" aria-hidden="true"></i>
+                        <?php echo htmlspecialchars($item['label']); ?>
+                    </button>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+            <?php elseif (!empty($action['href'])): ?>
             <a class="icon-btn" href="<?php echo htmlspecialchars($action['href']); ?>"
                title="<?php echo htmlspecialchars($action['label']); ?>" aria-label="<?php echo htmlspecialchars($action['label']); ?>">
                 <i class="<?php echo htmlspecialchars($action['icon']); ?>" aria-hidden="true"></i>
