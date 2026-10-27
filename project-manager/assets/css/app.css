@@ -1260,3 +1260,18 @@ select.need { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-so
 .team-row .team-more { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: var(--s1); padding-block: var(--s1) 0; }
 .team-row .team-more[hidden] { display: none; }
 .team-row .team-more .btn { flex: 1 1 auto; }
+
+/* סינון וחלוקה לפי בעל מקצוע / ספק — fin-filter.js (כספים ← ספקים, ותקציב) */
+.ff { margin: var(--s2) 0; }
+.ff summary { cursor: pointer; font-size: .9rem; min-height: 32px; display: flex; align-items: center; gap: var(--s2); }
+.ff-group { border: 0; padding: 0; margin: var(--s2) 0 0; min-width: 0; }
+.ff-group legend { font-size: .8rem; color: var(--muted); padding: 0; margin-bottom: 4px; }
+.ff .btn { margin-top: var(--s2); }
+.ff-by { margin: var(--s2) 0; flex: none; }
+.ff-box .fin-units { margin-top: 0; }
+.fin-units tfoot th, .fin-units tfoot td { font-weight: 700; border-top: 1px solid var(--line); }
+.bd-tag { font-size: .76rem; margin-top: 2px; }
+.bd-tag .sep { margin: 0 2px; }
+.bd-as { display: flex; gap: 6px; margin-top: 4px; }
+.bd-as select { flex: 1 1 0; min-width: 0; font-size: 16px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); }
+.bd-tot .bd-part dt, .bd-tot .bd-part dd { color: var(--brand); font-weight: 600; }
