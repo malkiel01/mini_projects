@@ -3,6 +3,7 @@
 // לוגיקת חישובים וחלוקת עלויות
 
 require_once __DIR__ . '/phone.php';
+require_once __DIR__ . '/purchase_shares.php';
 //
 // ---------------------------------------------------------------
 // מודל החישוב
@@ -19,6 +20,10 @@ require_once __DIR__ . '/phone.php';
 //      את חלקו על השאר במקום ליצור חור.
 //   3. אם סך האחוזים בקבוצה קטן מ-100%, הפער נשמר כ"סכום לא
 //      מוקצה" - בדיוק כמו בהתנהגות המקורית.
+//
+// קנייה עם יחסיות משלה (purchase_shares, includes/purchase_shares.php)
+// עוקפת את כל זה: הסכום כולו מתחלק לפי המשקלים שנקבעו לה, ומי
+// שמשקלו אפס אינו משתתף בה. ההגדרות של השותפות לא נוגעות בה.
 // ---------------------------------------------------------------
 
 /**
@@ -149,6 +154,9 @@ function calculateGroupBalance(array $members, array $purchases, array $settleme
         'hasExclusions'      => false,
         'fixedOverflow'      => false,
         'isBalanced'         => true,
+        'hasCustomShares'    => false,
+        // לכל קנייה: כמה מסכומה נפל על כל משתתף - להצגה ולמילוי הטופס
+        'purchaseSplits'     => [],
     ];
 
     $totalAmount = 0.0;
@@ -204,6 +212,27 @@ function calculateGroupBalance(array $members, array $purchases, array $settleme
             continue;
         }
 
+        $purchaseKey = (int)($purchase['id'] ?? 0);
+        $before      = $shouldPay;
+
+        // יחסיות שנקבעה לקנייה הזו - כל הסכום לפי המשקלים, ונגמר
+        $weights   = [];
+        $weightSum = 0.0;
+        foreach ($purchase['shares'] ?? [] as $memberId => $weight) {
+            if (isset($shouldPay[(int)$memberId]) && (float)$weight > 0) {
+                $weights[(int)$memberId] = (float)$weight;
+                $weightSum += (float)$weight;
+            }
+        }
+        if ($weightSum > 0) {
+            $result['hasCustomShares'] = true;
+            foreach ($weights as $memberId => $weight) {
+                $shouldPay[$memberId] += $amount * $weight / $weightSum;
+            }
+            $result['purchaseSplits'][$purchaseKey] = purchaseSplitDelta($before, $shouldPay);
+            continue;
+        }
+
         $excluded = [];
         foreach ($purchase['excluded_ids'] ?? [] as $excludedId) {
             $excluded[(int)$excludedId] = true;
@@ -244,6 +273,7 @@ function calculateGroupBalance(array $members, array $purchases, array $settleme
         // אין אף חבר אחוזים בקנייה הזו - כל היתרה נשארת לא מוקצית
         if ($includedWeight <= 0) {
             $unallocated += $remainder;
+            $result['purchaseSplits'][$purchaseKey] = purchaseSplitDelta($before, $shouldPay);
             continue;
         }
 
@@ -258,6 +288,8 @@ function calculateGroupBalance(array $members, array $purchases, array $settleme
             $shouldPay[$memberId] += $distributable
                 * ((float)$member['participation_value'] / $includedWeight);
         }
+
+        $result['purchaseSplits'][$purchaseKey] = purchaseSplitDelta($before, $shouldPay);
     }
 
     $result['unallocated'] = $unallocated;
@@ -300,6 +332,69 @@ function calculateGroupBalance(array $members, array $purchases, array $settleme
 
     $result['transfers']  = calculateTransfers($result['calculations']);
     $result['isBalanced'] = count($result['transfers']) === 0;
+
+    return $result;
+}
+
+/** מה קנייה אחת הוסיפה לכל משתתף: ההפרש בין "צריך לשלם" לפניה ואחריה */
+function purchaseSplitDelta(array $before, array $after) {
+    $split = [];
+    foreach ($after as $memberId => $value) {
+        $delta = $value - ($before[$memberId] ?? 0.0);
+        if ($delta > 0.000001) {
+            $split[$memberId] = $delta;
+        }
+    }
+
+    return $split;
+}
+
+/**
+ * החלוקה של קנייה חדשה לפי הגדרות השותפות, באחוזים מהקנייה - כדי
+ * למלא את טופס היחסיות בנקודת המוצא. אותו חשבון כמו בלולאה שלמעלה,
+ * לקנייה שבה משתתפים כולם:
+ *   סכום קבוע V - חלק V/T מכל קנייה (T: סך הקניות);
+ *   אחוזים - מה שנשאר, לפי היחס ביניהם, ועד הכיסוי שהוגדר.
+ *
+ * @return array member_id => אחוז מהקנייה
+ */
+function defaultShareFractions(array $members, $totalAmount, $shareRate = null) {
+    $members = normalizeShareMembers(dedupeMembers($members), $shareRate);
+
+    $fixed    = [];
+    $percent  = [];
+    $fixedSum = 0.0;
+    foreach ($members as $member) {
+        $id    = (int)$member['id'];
+        $value = (float)$member['participation_value'];
+        if ($member['participation_type'] === 'percentage') {
+            $percent[$id] = $value;
+        } else {
+            $fixed[$id] = $value;
+            $fixedSum  += $value;
+        }
+    }
+
+    // בלי קניות עדיין אין T. אז הקבועים נמדדים מול עצמם ומול הפול,
+    // כדי שלא ייצא שחבר בסכום קבוע לא משלם כלום.
+    $base = max((float)$totalAmount, $fixedSum);
+
+    $result    = [];
+    $fixedPart = 0.0;
+    foreach ($fixed as $id => $value) {
+        $result[$id] = $base > 0 ? $value / $base : 0.0;
+        $fixedPart  += $result[$id];
+    }
+
+    $percentSum = array_sum($percent);
+    $remainder  = max(0.0, 1.0 - $fixedPart) * min($percentSum, 100.0) / 100.0;
+    foreach ($percent as $id => $value) {
+        $result[$id] = $percentSum > 0 ? $remainder * $value / $percentSum : 0.0;
+    }
+
+    foreach ($result as $id => $fraction) {
+        $result[$id] = round($fraction * 100, 2);
+    }
 
     return $result;
 }

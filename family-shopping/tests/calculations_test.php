@@ -586,5 +586,60 @@ check('קריאה ישנה אינה שוברת דבר',  mb_strpos($html, 'trans
 check('ואינה מדליפה מספרים',
     (mb_strpos($html, '0501111111') !== false || mb_strpos($html, '0502222222') !== false) ? 0 : 1, 1);
 
+// ---- יחסיות לקנייה בודדת
+echo "\nיחסיות לקנייה: משקלים משלה, עוקפים את השותפות\n";
+$m = [member(1,'א','percentage',50), member(2,'ב','percentage',25), member(3,'ג','percentage',25)];
+$p = [
+  ['id'=>1,'member_id'=>1,'amount'=>300,'excluded_ids'=>[],'shares'=>[2=>1, 3=>2]],  // רק ב ו-ג, 1:2
+  ['id'=>2,'member_id'=>2,'amount'=>100,'excluded_ids'=>[]],                         // לפי השותפות
+];
+$r = calculateGroupBalance($m,$p);
+check('א לא משתתף בקנייה המותאמת', byNick($r,'א')['shouldPay'], 0 + 50);
+check('ב שליש מ-300 + רבע מ-100', byNick($r,'ב')['shouldPay'], 100 + 25);
+check('ג שני שליש מ-300 + רבע מ-100', byNick($r,'ג')['shouldPay'], 200 + 25);
+check('hasCustomShares', $r['hasCustomShares'] ? 1 : 0, 1);
+check('חלוקת הקנייה המותאמת: ג', $r['purchaseSplits'][1][3], 200);
+check('חלוקת הקנייה הרגילה: א', $r['purchaseSplits'][2][1], 50);
+$sumShould = 0; foreach ($r['calculations'] as $c) $sumShould += $c['shouldPay'];
+check('סך "צריך לשלם" = סך ההוצאות', $sumShould, 400);
+
+// המשקלים לא חייבים להסתכם ב-100, ומשקל של מי שכבר לא באירוע לא נספר
+$p = [['id'=>1,'member_id'=>1,'amount'=>90,'excluded_ids'=>[],'shares'=>[1=>60, 2=>30, 99=>500]]];
+$r = calculateGroupBalance($m,$p);
+check('60:30 מ-90 → 60', byNick($r,'א')['shouldPay'], 60);
+check('60:30 מ-90 → 30', byNick($r,'ב')['shouldPay'], 30);
+
+// סכום קבוע: בקנייה מותאמת הוא משלם רק את החלק שנקבע לו בה
+$mf = [member(1,'א','fixed',100), member(2,'ב','percentage',100)];
+$p = [
+  ['id'=>1,'member_id'=>2,'amount'=>200,'excluded_ids'=>[],'shares'=>[1=>1, 2=>1]],
+  ['id'=>2,'member_id'=>2,'amount'=>200,'excluded_ids'=>[]],
+];
+$r = calculateGroupBalance($mf,$p);
+check('קבוע: חצי מהמותאמת + 100×(200/400)', byNick($r,'א')['shouldPay'], 100 + 50);
+check('אחוזים: חצי + השאר', byNick($r,'ב')['shouldPay'], 100 + 150);
+
+// כל המשקלים של אנשים שאינם באירוע - חוזרים לחלוקה הרגילה
+$p = [['id'=>1,'member_id'=>1,'amount'=>100,'excluded_ids'=>[],'shares'=>[99=>1]]];
+$r = calculateGroupBalance($m,$p);
+check('משקלים לא תקפים - לפי השותפות', byNick($r,'א')['shouldPay'], 50);
+check('ואין סימון של יחסיות', $r['hasCustomShares'] ? 1 : 0, 0);
+
+echo "\nנקודת המוצא בטופס: החלוקה לפי השותפות באחוזים\n";
+$d = defaultShareFractions($m, 400);
+check('א 50%', $d[1], 50);
+check('ג 25%', $d[3], 25);
+$d = defaultShareFractions($mf, 400);
+check('קבוע 100 מתוך 400 → 25%', $d[1], 25);
+check('אחוזים - השאר, 75%', $d[2], 75);
+$d = defaultShareFractions($mf, 0);
+check('בלי קניות - הקבוע מול עצמו, לא אפס', $d[1], 100);
+$d = defaultShareFractions([member(1,'א','shares',3), member(2,'ב','shares',1)], 0);
+check('נפשות 3:1 → 75%', $d[1], 75);
+
+echo "\nתיאור החלוקה בשורה\n";
+$label = purchaseSplitLabel([2 => 100, 3 => 200], [2 => 'ב', 3 => 'ג'], 300);
+check('"ג 66.7% · ב 33.3%"', $label === 'ג 66.7% · ב 33.3%' ? 1 : 0, 1);
+
 echo "\n" . str_repeat('=',50) . "\nעבר: $pass | נכשל: $fail\n";
 exit($fail > 0 ? 1 : 0);

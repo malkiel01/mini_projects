@@ -17,6 +17,8 @@
  *                   האירוע כאישור.
  */
 
+require_once __DIR__ . '/purchase_shares.php';
+
 require_once __DIR__ . '/upload.php';
 require_once __DIR__ . '/notifications.php';
 
@@ -154,6 +156,15 @@ function purgeGroup(PDO $pdo, $groupId, $ownerId, $confirmName, $isAdmin = false
             WHERE purchase_id IN (SELECT id FROM group_purchases WHERE group_id = ?)
         ");
         $stmt->execute([$groupId]);
+
+        // יחסיות לקנייה - כמו ההחרגות (מיגרציה 018, ייתכן שעוד לא רצה)
+        if (purchaseSharesReady($pdo)) {
+            $stmt = $pdo->prepare("
+                DELETE FROM purchase_shares
+                WHERE purchase_id IN (SELECT id FROM group_purchases WHERE group_id = ?)
+            ");
+            $stmt->execute([$groupId]);
+        }
 
         // 2. רשימת הקניות - מצביעה על קניות
         $stmt = $pdo->prepare("DELETE FROM shopping_items WHERE group_id = ?");

@@ -113,6 +113,7 @@ function offsetGroupSnapshot(PDO $pdo, $groupId, $shareRate) {
         $purchase['excluded_ids'] = $exclusions[(int)$purchase['id']] ?? [];
     }
     unset($purchase);
+    $purchases = attachPurchaseShares($purchases, loadPurchaseShares($pdo, $groupId));
 
     $settlements = [];
     try {

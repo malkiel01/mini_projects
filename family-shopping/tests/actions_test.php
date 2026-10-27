@@ -106,6 +106,9 @@ function makeDb() {
         created_at TEXT DEFAULT '2026-01-01',
         currency TEXT, original_amount REAL, exchange_rate REAL, rate_date TEXT, rate_source TEXT)");
 
+    $pdo->exec("CREATE TABLE purchase_shares (purchase_id INTEGER, member_id INTEGER, weight REAL,
+        PRIMARY KEY (purchase_id, member_id))");
+
     $pdo->exec("CREATE TABLE exchange_rates (
         currency TEXT, rate_date TEXT, published_date TEXT, rate REAL, fetched_at TEXT,
         PRIMARY KEY (currency, rate_date))");
@@ -965,6 +968,50 @@ $r = run($pdoF, 'updatePurchase', [
 $p = $pdoF->query("SELECT * FROM group_purchases WHERE id = $id")->fetch();
 check('עריכה למטבע זר ממירה שוב', ($r['success'] ?? false) && (float)$p['amount'] === 31.12
     && $p['currency'] === 'USD');
+
+// ------------------------------------------------------------
+echo "\nיחסיות לקנייה בודדת\n";
+// ------------------------------------------------------------
+
+$pdoS = makeDb();
+$r = run($pdoS, 'addPurchase', [
+    'member_id' => 2, 'amount' => 300, 'description' => 'יין',
+    'shares' => json_encode([1 => 2, 2 => 1, 3 => 0]), 'excluded_ids' => [],
+], 2, false, 2);
+$id = (int)($r['purchase_id'] ?? 0);
+$w  = $pdoS->query("SELECT member_id, weight FROM purchase_shares WHERE purchase_id = $id ORDER BY member_id")
+    ->fetchAll(PDO::FETCH_KEY_PAIR);
+check('נשמרים רק מי שמשתתף', ($r['success'] ?? false) && $w == [1 => 2, 2 => 1], json_encode($r, JSON_UNESCAPED_UNICODE));
+$ex = $pdoS->query("SELECT member_id FROM purchase_exclusions WHERE purchase_id = $id")->fetchAll(PDO::FETCH_COLUMN);
+check('משקל אפס נרשם גם כהחרגה', array_map('intval', $ex) === [3]);
+
+$r = run($pdoS, 'addPurchase', ['member_id' => 2, 'amount' => 10,
+    'shares' => json_encode([1 => 0, 2 => 0])], 2, false, 2);
+check('כולם אפס - נדחה', !($r['success'] ?? true));
+$r = run($pdoS, 'addPurchase', ['member_id' => 2, 'amount' => 10,
+    'shares' => json_encode([1 => -1, 2 => 1])], 2, false, 2);
+check('משקל שלילי - נדחה', !($r['success'] ?? true));
+$r = run($pdoS, 'addPurchase', ['member_id' => 2, 'amount' => 10, 'shares' => '{bad'], 2, false, 2);
+check('JSON שבור - נדחה', !($r['success'] ?? true));
+$r = run($pdoS, 'addPurchase', ['member_id' => 2, 'amount' => 10,
+    'shares' => json_encode([99 => 1])], 2, false, 2);
+check('רק מי שלא באירוע - נדחה', !($r['success'] ?? true));
+
+// עריכה בלי השדה (טופס ישן) - לא נוגעת ביחסיות
+$r = run($pdoS, 'updatePurchase', ['purchase_id' => $id, 'amount' => 300], 2, false, 2);
+$n = (int)$pdoS->query("SELECT COUNT(*) FROM purchase_shares WHERE purchase_id = $id")->fetchColumn();
+check('עריכה בלי shares - היחסיות נשארת', ($r['success'] ?? false) && $n === 2);
+
+// עריכה עם shares ריק - חזרה לברירת המחדל
+$r = run($pdoS, 'updatePurchase', ['purchase_id' => $id, 'amount' => 300, 'shares' => ''], 2, false, 2);
+$n = (int)$pdoS->query("SELECT COUNT(*) FROM purchase_shares WHERE purchase_id = $id")->fetchColumn();
+check('shares ריק - חזרה לחלוקה לפי השותפות', ($r['success'] ?? false) && $n === 0);
+
+run($pdoS, 'updatePurchase', ['purchase_id' => $id, 'amount' => 300,
+    'shares' => json_encode([1 => 1, 3 => 1])], 2, false, 2);
+$r = run($pdoS, 'deletePurchase', ['purchase_id' => $id], 2, false, 2);
+$n = (int)$pdoS->query("SELECT COUNT(*) FROM purchase_shares WHERE purchase_id = $id")->fetchColumn();
+check('מחיקת קנייה מוחקת את היחסיות שלה', ($r['success'] ?? false) && $n === 0);
 
 echo "\n" . str_repeat('=', 55) . "\n";
 echo "עבר: $pass | נכשל: $fail\n";

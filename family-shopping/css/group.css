@@ -178,6 +178,23 @@
     border-radius: 99px; font-size: .875rem; white-space: nowrap; background: var(--surface); }
 .participant-option input:checked + span { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
 .participant-option input:focus-visible + span { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+/* יחסיות לקנייה הזו: שם, חלק, ומה יוצא מזה */
+.split-open { display: inline-flex; align-items: center; gap: 6px; margin-top: var(--s2); font-size: .85rem; }
+.custom-split { padding: var(--s2) var(--s3); border-radius: var(--r); background: var(--brand-soft); }
+.custom-split[hidden], [id$="DefaultSplit"][hidden] { display: none; }
+.split-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); flex-wrap: wrap; margin-bottom: var(--s2); }
+.split-presets { display: flex; gap: var(--s3); font-size: .85rem; }
+.split-rows { display: grid; gap: 6px; }
+.split-row { display: grid; grid-template-columns: minmax(0, 1fr) 5.5rem minmax(0, 1.2fr); align-items: center; gap: var(--s2); margin: 0; }
+.split-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.split-row input { min-height: 36px; text-align: center; font-variant-numeric: tabular-nums; }
+.split-out { color: var(--muted); font-size: .8rem; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.split-row.is-out .split-name { color: var(--muted); font-weight: 400; text-decoration: line-through; }
+.split-sum { margin: var(--s2) 0 0; font-size: .85rem; font-weight: 600; }
+.split-sum.is-error { color: var(--danger); }
+.split-close { display: inline-flex; align-items: center; gap: 6px; margin-top: var(--s2); font-size: .85rem; }
+.purchase-split { font-size: .75rem; color: var(--brand); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .image-preview img { display: block; max-height: 180px; border-radius: var(--r); border: 1px solid var(--line); margin-top: var(--s2); }
 
 /* צופה הקבלה — מסך מלא, בתוך האפליקציה */

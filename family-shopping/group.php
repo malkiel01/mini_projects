@@ -182,6 +182,10 @@ foreach ($purchases as &$purchase) {
 }
 unset($purchase);
 
+// --- יחסיות לקנייה (מיגרציה 018) ---
+$sharesReady = $featuresReady && purchaseSharesReady($pdo);
+$purchases   = attachPurchaseShares($purchases, $sharesReady ? loadPurchaseShares($pdo, $group_id) : []);
+
 // --- רשימת הקניות ---
 $shoppingItems = [];
 if ($featuresReady) {
@@ -214,6 +218,11 @@ if ($featuresReady) {
 }
 
 $balance      = calculateGroupBalance($members, $purchases, $settlements, $groupShareRate);
+
+$memberNames = [];
+foreach ($members as $m) {
+    $memberNames[(int)$m['id']] = $m['nickname'];
+}
 $summaryText  = buildSummaryText($group, $balance, $shoppingItems);
 
 $openItemCount   = 0;
@@ -629,7 +638,13 @@ $topActions[] = ['menu' => $moreActions, 'label' => 'עוד פעולות'];
                         <?php if ($fx = purchaseConversionLabel($purchase, false)): ?>
                         <div class="purchase-fx"><i class="fas fa-coins" aria-hidden="true"></i> <?php echo htmlspecialchars($fx); ?></div>
                         <?php endif; ?>
-                        <?php if (count($purchase['excluded']) > 0): ?>
+                        <?php if (!empty($purchase['shares'])):
+                            $splitLabel = purchaseSplitLabel($balance['purchaseSplits'][(int)$purchase['id']] ?? [],
+                                $memberNames, $purchase['amount']); ?>
+                        <div class="purchase-split" title="<?php echo htmlspecialchars($splitLabel); ?>">
+                            <i class="fas fa-sliders" aria-hidden="true"></i> <?php echo htmlspecialchars($splitLabel); ?>
+                        </div>
+                        <?php elseif (count($purchase['excluded']) > 0): ?>
                         <div class="purchase-exclusions">
                             <i class="fas fa-user-slash" aria-hidden="true"></i>
                             בלי:
@@ -658,6 +673,8 @@ $topActions[] = ['menu' => $moreActions, 'label' => 'עוד פעולות'];
                                     "description" => $purchase["description"],
                                     "member_id"   => (int)$purchase["member_id"],
                                     "excluded"    => $purchase["excluded_ids"],
+                                    "shares"      => (object)($purchase["shares"] ?? []),
+                                    "split"       => (object)splitPercents($balance['purchaseSplits'][(int)$purchase['id']] ?? [], $purchase['amount']),
                                     "currency"    => $purchase["currency"] ?? null,
                                     "original"    => isset($purchase["original_amount"]) ? (float)$purchase["original_amount"] : null,
                                     "rate"        => isset($purchase["exchange_rate"]) ? (float)$purchase["exchange_rate"] : null,
@@ -751,7 +768,9 @@ $topActions[] = ['menu' => $moreActions, 'label' => 'עוד פעולות'];
                 <tr><td><?php echo date('d/m/Y', strtotime($purchase['created_at'])); ?></td>
                     <td><?php echo htmlspecialchars($purchase['nickname']); ?></td>
                     <td><?php echo htmlspecialchars((string)$purchase['description']); ?>
-                        <?php if ($fx = purchaseConversionLabel($purchase)): ?><br><small><?php echo htmlspecialchars($fx); ?></small><?php endif; ?></td>
+                        <?php if ($fx = purchaseConversionLabel($purchase)): ?><br><small><?php echo htmlspecialchars($fx); ?></small><?php endif; ?>
+                        <?php if (!empty($purchase['shares'])): ?><br><small>חלוקה: <?php echo htmlspecialchars(purchaseSplitLabel(
+                            $balance['purchaseSplits'][(int)$purchase['id']] ?? [], $memberNames, $purchase['amount'])); ?></small><?php endif; ?></td>
                     <td>₪<?php echo number_format($purchase['amount'], 2); ?></td></tr>
             <?php endforeach; ?>
             </tbody>
@@ -768,11 +787,11 @@ $topActions[] = ['menu' => $moreActions, 'label' => 'עוד פעולות'];
     if ($featuresReady) {
         renderEventModal($group);
         renderItemModal();
-        renderEditPurchaseModal($members, $is_owner, $currencyReady);
+        renderEditPurchaseModal($members, $is_owner, $currencyReady, $sharesReady);
         renderSettleModal();
         renderDebtTransferModal($members);
     }
-    renderAddPurchaseModal($members, $is_owner, $member_id, $featuresReady, $currencyReady);
+    renderAddPurchaseModal($members, $is_owner, $member_id, $featuresReady, $currencyReady, $sharesReady);
     renderImageModal();
     if ($phonesReady) {
         renderMyPhoneModal($myPhone);
@@ -788,7 +807,9 @@ $topActions[] = ['menu' => $moreActions, 'label' => 'עוד פעולות'];
             availablePercentage: <?php echo $available_percentage; ?>,
             csrfToken:           <?php echo json_encode($_SESSION['csrf_token']); ?>,
             basePath:            <?php echo json_encode(APP_BASE_PATH); ?>,
-            summaryText:         <?php echo json_encode($summaryText, JSON_UNESCAPED_UNICODE); ?>
+            summaryText:         <?php echo json_encode($summaryText, JSON_UNESCAPED_UNICODE); ?>,
+            // נקודת המוצא של "יחסיות אחרת": החלוקה לפי השותפות, באחוזים
+            defaultShares:       <?php echo json_encode((object)defaultShareFractions($members, $balance['totalAmount'], $groupShareRate)); ?>
         };
     </script>
     <script src="<?php echo asset('/js/contact-picker.js'); ?>"></script>
