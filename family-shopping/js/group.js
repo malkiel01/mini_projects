@@ -359,6 +359,8 @@ function setParticipants(prefix, excludedIds) {
 // ============================================================
 
 function showAddPurchaseModal() {
+    // בטיול רוב הקניות באותו מטבע - מתחילים מהמטבע של הקנייה הקודמת
+    fxSet('purchase', { currency: fxLastCurrency() });
     openModal('addPurchaseModal');
 }
 
@@ -368,6 +370,171 @@ function closeAddPurchaseModal() {
     document.getElementById('purchaseItemId').value = '';
     document.getElementById('imagePreview').style.display = 'none';
     toggleAllParticipants('add', true);
+}
+
+// ============================================================
+// מטבע זר: הסכום במטבע הקנייה, וההמרה לשקלים לפי השער היציג
+// של בנק ישראל ליום שנבחר - או לפי שער ידני. includes/exchange.php
+// ============================================================
+
+const fxRates = {};
+
+function fxEl(p, name) {
+    return document.getElementById(p + name);
+}
+
+function fxToday() {
+    const d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+function fxDateLabel(iso) {
+    const [y, m, d] = String(iso).split('-');
+    return d + '/' + m + '/' + y;
+}
+
+function fxLastKey() {
+    return 'fs-currency-' + CONFIG.groupId;
+}
+
+function fxLastCurrency() {
+    try {
+        return localStorage.getItem(fxLastKey()) || 'ILS';
+    } catch (e) {
+        return 'ILS';
+    }
+}
+
+function fxRememberCurrency(code) {
+    try {
+        localStorage.setItem(fxLastKey(), code);
+    } catch (e) { /* בלי זיכרון - מתחילים משקל */ }
+}
+
+/** מצב השדות לפי קנייה: { currency, original, rate, rate_date, rate_source } */
+function fxSet(p, purchase) {
+    const select = fxEl(p, 'Currency');
+    if (!select) return;
+
+    const code = purchase.currency && select.querySelector('option[value="' + purchase.currency + '"]')
+        ? purchase.currency : 'ILS';
+    select.value = code;
+    fxEl(p, 'RateDate').value = purchase.rate_date || fxToday();
+    fxEl(p, 'Rate').value = purchase.rate || '';
+    fxSetMode(p, purchase.rate_source === 'manual' ? 'manual' : 'boi');
+    fxRefresh(p);
+}
+
+function fxSetMode(p, mode) {
+    fxEl(p, 'RateMode').value = mode;
+    fxEl(p, 'Rate').readOnly = mode !== 'manual';
+    fxEl(p, 'RateToggle').textContent = mode === 'manual' ? 'שער יציג' : 'שער ידני';
+}
+
+/** מטבע או יום השתנו: מציגים או מסתירים את ההמרה, ומביאים שער */
+function fxRefresh(p) {
+    const select = fxEl(p, 'Currency');
+    if (!select) return;
+
+    const foreign = select.value !== 'ILS';
+    fxEl(p, 'FxBox').hidden = !foreign;
+
+    if (foreign && fxEl(p, 'RateMode').value === 'boi') {
+        fxFetch(p);
+    } else {
+        fxPreview(p);
+    }
+}
+
+async function fxFetch(p) {
+    const code = fxEl(p, 'Currency').value;
+    const date = fxEl(p, 'RateDate').value || fxToday();
+    const key = code + '|' + date;
+    const info = fxEl(p, 'FxInfo');
+
+    if (!fxRates[key]) {
+        info.textContent = 'מביא את השער היציג…';
+        try {
+            const response = await fetch('api/exchange-rate.php?currency=' + encodeURIComponent(code)
+                + '&date=' + encodeURIComponent(date), { credentials: 'same-origin' });
+            const data = await response.json();
+            if (!data.success) throw new Error(data.message || '');
+            fxRates[key] = data;
+        } catch (e) {
+            info.textContent = (e.message || 'לא הצלחנו להביא את השער היציג') + '. אפשר ללחוץ "שער ידני".';
+            fxEl(p, 'Rate').value = '';
+            return;
+        }
+    }
+
+    // ייתכן שבינתיים המשתמש החליף מטבע, יום או מצב
+    if (fxEl(p, 'Currency').value !== code || (fxEl(p, 'RateDate').value || fxToday()) !== date
+        || fxEl(p, 'RateMode').value !== 'boi') {
+        return;
+    }
+
+    fxEl(p, 'Rate').value = fxRates[key].rate;
+    fxPreview(p);
+}
+
+/** "יירשם ₪307.80 · שער יציג של בנק ישראל מ-26/10/2026" */
+function fxPreview(p) {
+    const select = fxEl(p, 'Currency');
+    if (!select || select.value === 'ILS') return;
+
+    const amount = parseFloat(fxEl(p, 'Amount').value);
+    const rate = parseFloat(fxEl(p, 'Rate').value);
+    const info = fxEl(p, 'FxInfo');
+    const manual = fxEl(p, 'RateMode').value === 'manual';
+
+    if (!(rate > 0)) {
+        info.textContent = manual ? 'הזינו כמה שקלים שווה יחידה אחת של המטבע' : '';
+        return;
+    }
+
+    const key = select.value + '|' + (fxEl(p, 'RateDate').value || fxToday());
+    const source = manual
+        ? 'שער ידני'
+        : 'שער יציג של בנק ישראל' + (fxRates[key] ? ' מ-' + fxDateLabel(fxRates[key].date) : '');
+    // פותחים במילה ולא ב"=" - אחרת כיוון השורה מתהפך ו-₪ קופץ לצד הלא נכון
+    const total = amount > 0 ? 'יירשם ' + formatAmount(Math.round(amount * rate * 100) / 100) + ' · ' : '';
+
+    info.textContent = total + source;
+}
+
+/** שדות ההמרה לשליחה. בשקלים - רק המטבע */
+function fxFields(p) {
+    const select = fxEl(p, 'Currency');
+    if (!select || select.value === 'ILS') {
+        return select ? { currency: 'ILS' } : {};
+    }
+
+    return {
+        currency: select.value,
+        rate_date: fxEl(p, 'RateDate').value || fxToday(),
+        rate_mode: fxEl(p, 'RateMode').value,
+        rate: fxEl(p, 'Rate').value
+    };
+}
+
+function fxInit(p) {
+    const select = fxEl(p, 'Currency');
+    if (!select) return;
+
+    select.addEventListener('change', () => fxRefresh(p));
+    fxEl(p, 'RateDate').addEventListener('change', () => fxRefresh(p));
+    fxEl(p, 'Amount').addEventListener('input', () => fxPreview(p));
+    fxEl(p, 'Rate').addEventListener('input', () => fxPreview(p));
+    fxEl(p, 'RateToggle').addEventListener('click', () => {
+        const toManual = fxEl(p, 'RateMode').value !== 'manual';
+        fxSetMode(p, toManual ? 'manual' : 'boi');
+        if (toManual) {
+            fxEl(p, 'Rate').focus();
+            fxPreview(p);
+        } else {
+            fxRefresh(p);
+        }
+    });
 }
 
 function previewImage(event) {
@@ -397,7 +564,9 @@ function buyItem(itemId, title) {
 
 function editPurchase(purchase) {
     document.getElementById('editPurchaseId').value = purchase.id;
-    document.getElementById('editPurchaseAmount').value = purchase.amount;
+    // במטבע זר עורכים את מה שנקנה בפועל, לא את התוצאה בשקלים
+    document.getElementById('editPurchaseAmount').value = purchase.currency ? purchase.original : purchase.amount;
+    fxSet('editPurchase', purchase);
     document.getElementById('editPurchaseDescription').value = purchase.description || '';
 
     // בורר הבעלות קיים רק אצל מנהל הקבוצה
@@ -741,6 +910,9 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
+    fxInit('purchase');
+    fxInit('editPurchase');
+
     const addPurchaseForm = document.getElementById('addPurchaseForm');
     if (addPurchaseForm) {
         addPurchaseForm.addEventListener('submit', async function (event) {
@@ -767,13 +939,16 @@ document.addEventListener('DOMContentLoaded', function () {
                 formData.append('image', image, image.name);
             }
 
-            callAndReload('addPurchase', {
+            const fx = fxFields('purchase');
+            if (fx.currency) fxRememberCurrency(fx.currency);
+
+            callAndReload('addPurchase', Object.assign({
                 member_id: memberId,
                 amount: amount,
                 description: document.getElementById('purchaseDescription').value,
                 item_id: document.getElementById('purchaseItemId').value || 0,
                 excluded_ids: getExcludedIds('add')
-            }, { formData: formData });
+            }, fx), { formData: formData });
         });
     }
 
@@ -790,13 +965,13 @@ document.addEventListener('DOMContentLoaded', function () {
 
             const memberSelect = document.getElementById('editPurchaseMember');
 
-            callAndReload('updatePurchase', {
+            callAndReload('updatePurchase', Object.assign({
                 purchase_id: document.getElementById('editPurchaseId').value,
                 amount: amount,
                 description: document.getElementById('editPurchaseDescription').value,
                 member_id: memberSelect ? memberSelect.value : null,
                 excluded_ids: getExcludedIds('edit')
-            });
+            }, fxFields('editPurchase')));
         });
     }
 

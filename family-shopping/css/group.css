@@ -74,7 +74,27 @@
 .purchase-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .purchase-meta { color: var(--muted); font-size: .8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .purchase-exclusions { font-size: .75rem; color: var(--star); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.purchase-amount { flex: none; font-weight: 700; font-variant-numeric: tabular-nums; }
+.purchase-amount { flex: none; font-weight: 700; font-variant-numeric: tabular-nums; text-align: end; }
+.purchase-orig { display: block; font-size: .75rem; font-weight: 400; color: var(--muted); }
+.purchase-fx { font-size: .75rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.purchase-fx i { color: var(--brand); }
+
+/* ===== סכום ומטבע בטופס הקנייה, והמרה לשקלים ===== */
+.amount-row { display: flex; gap: var(--s2); }
+.amount-row input { flex: 1; min-width: 0; }
+.amount-row .amount-currency { flex: none; width: auto; max-width: 48%; }
+.amount-sign { flex: none; align-self: center; font-weight: 700; color: var(--muted); }
+.fx-box { margin: calc(-1 * var(--s2)) 0 var(--s3); padding: var(--s2) var(--s3); border-radius: var(--r);
+    background: var(--brand-soft); font-size: .85rem; }
+.fx-box[hidden] { display: none; }
+.fx-grid { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: var(--s2) var(--s3); }
+.fx-grid label { color: var(--muted); margin: 0; }
+.fx-rate { display: flex; gap: var(--s2); }
+.fx-rate input { flex: 1; min-width: 0; }
+.fx-rate input[readonly] { background: transparent; border-style: dashed; }
+.fx-mode { flex: none; padding: 0 var(--s2); min-height: var(--tap); border: 1px solid var(--line); border-radius: var(--r);
+    background: var(--surface); color: var(--brand); font: inherit; font-size: .8rem; cursor: pointer; }
+.fx-info { margin: var(--s2) 0 0; font-weight: 600; color: var(--ink); min-height: 1.2em; }
 .purchase-actions { flex: none; display: flex; }
 .purchase-actions .btn-icon, .purchase-actions .btn-icon-danger { min-width: 34px; }
 
