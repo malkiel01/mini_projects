@@ -17,14 +17,10 @@ function layoutHead($title) {
     <title><?php echo htmlspecialchars($title); ?> - <?php echo SITE_NAME; ?></title>
     <meta name="theme-color" content="#2d4a8a">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <link rel="manifest" href="<?php echo APP_BASE_PATH; ?>/manifest.json">
+    <link rel="manifest" href="<?php echo APP_BASE_PATH; ?>/manifest.webmanifest">
     <link rel="icon" type="image/png" sizes="32x32" href="<?php echo APP_BASE_PATH; ?>/images/icons/ios/32.png">
     <link rel="apple-touch-icon" sizes="180x180" href="<?php echo APP_BASE_PATH; ?>/images/icons/ios/180.png">
-    <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
-    <!-- Font Awesome נטען בלי לחסום רינדור: בלי זה הדף נשאר לבן
-         עד שהבקשה החוצה ל-CDN חוזרת, וזה מה שנראה כהבזק ברענון. -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" media="print" onload="this.media='all'">
-    <noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"></noscript>
+    <link rel="stylesheet" href="<?php echo asset('/assets/vendor/fontawesome/css/all.min.css'); ?>">
     <link rel="stylesheet" href="<?php echo asset('/css/app.css'); ?>">
     <script src="<?php echo asset('/js/app.js'); ?>" defer></script>
     <?php

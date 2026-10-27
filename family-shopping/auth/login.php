@@ -121,19 +121,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register'])) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>התחברות - <?php echo SITE_NAME; ?></title>
-    <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
-    <!-- Font Awesome נטען בלי לחסום רינדור: בלי זה הדף נשאר לבן
-         עד שהבקשה החוצה ל-CDN חוזרת, וזה מה שנראה כהבזק ברענון. -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" media="print" onload="this.media='all'">
-    <noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"></noscript>
+    <link rel="stylesheet" href="<?php echo asset('/assets/vendor/fontawesome/css/all.min.css'); ?>">
     <link rel="stylesheet" href="<?php echo asset('/css/app.css'); ?>">
     <link href="<?php echo asset('/css/styles.css'); ?>" rel="stylesheet">
     
     <!-- Google Sign-In API -->
-    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <?php if (GOOGLE_CLIENT_ID !== ''): ?><script src="https://accounts.google.com/gsi/client" async defer></script><?php endif; ?>
 
     <!-- PWA Meta Tags -->
-    <link rel="manifest" href="../manifest.json">
+    <link rel="manifest" href="../manifest.webmanifest">
     <meta name="theme-color" content="#2d4a8a">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -231,13 +227,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register'])) {
                     </button>
                 </form>
                 
+                <?php if (GOOGLE_CLIENT_ID !== ''): ?>
                 <div class="divider">
                     <span>או</span>
                 </div>
-                
-                <!-- כפתור Google Sign-In -->
+
+                <!-- כפתור Google Sign-In. ה-Client ID מ-.env (CLIENT_ID), לא בקוד -->
                 <div id="g_id_onload"
-                     data-client_id="420537994881-gqiev5lqkp6gjj51l1arkjd5q09m5vv0.apps.googleusercontent.com"
+                     data-client_id="<?php echo htmlspecialchars(GOOGLE_CLIENT_ID); ?>"
                      data-callback="handleGoogleResponse"
                      data-auto_prompt="false">
                 </div>
@@ -249,6 +246,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register'])) {
                      data-shape="rectangular"
                      data-logo_alignment="left">
                 </div>
+                <?php endif; ?>
 
                 <div class="forgot-password">
                     <a href="forgot-password.php">שכחת סיסמה?</a>

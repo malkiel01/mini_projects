@@ -255,3 +255,11 @@ async function purgeGroup(groupId, groupName) {
         location.reload();
     }
 }
+
+// קיצור הדרך "אירוע חדש" מהאייקון המותקן (manifest.webmanifest → shortcuts)
+document.addEventListener('DOMContentLoaded', () => {
+    if (new URLSearchParams(location.search).get('action') === 'new_group') {
+        showCreateGroupModal();
+        history.replaceState(null, '', location.pathname);
+    }
+});

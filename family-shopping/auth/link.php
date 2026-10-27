@@ -83,7 +83,7 @@ $displayName = $id['name'] !== '' ? $id['name'] : $id['email'];
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>חיבור החשבון - <?php echo SITE_NAME; ?></title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="<?php echo asset('/assets/vendor/fontawesome/css/all.min.css'); ?>">
     <link rel="stylesheet" href="<?php echo asset('/css/app.css'); ?>">
     <link href="<?php echo asset('/css/styles.css'); ?>" rel="stylesheet">
     <link rel="icon" type="image/png" sizes="32x32" href="<?php echo APP_BASE_PATH; ?>/images/icons/ios/32.png">

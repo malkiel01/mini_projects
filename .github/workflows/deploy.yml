@@ -80,6 +80,11 @@ jobs:
       - name: pdf-core gate (every copy matches creative-suite/pdf-core/src)
         run: php creative-suite/pdf-core/tools/sync.php --check
 
+      # קניות משותפות — חלוקת העלויות, ההתחשבנות והחיבור לשער (SQLite בזיכרון, בלי מסד ובלי .env).
+      # בדיקה שנכשלת עוצרת את הפריסה: טעות בחישוב "מי חייב למי" היא כסף אמיתי של אנשים.
+      - name: family-shopping tests
+        run: for t in family-shopping/tests/*.php; do echo "--- $t"; php "$t" > /tmp/fs-test.log || { cat /tmp/fs-test.log; exit 1; }; tail -1 /tmp/fs-test.log; done
+
       # השער: לכל אפליקציה שב-app.json שלה "gate": true — .user.ini ובלוק בראש
       # ה-.htaccess, בעותק שבמכונה הזו בלבד (לא בגיט). ראו platform/build-gate.php.
       - name: Build the platform gate
