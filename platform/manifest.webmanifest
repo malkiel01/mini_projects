@@ -151,5 +151,25 @@
       "id": "com.mbeplus.wascanner"
     }
   ],
-  "prefer_related_applications": false
+  "prefer_related_applications": false,
+  "share_target": {
+    "action": "home/?share=contact",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "files": [
+        {
+          "name": "contact",
+          "accept": [
+            "text/vcard",
+            "text/x-vcard",
+            "text/directory",
+            ".vcf"
+          ]
+        }
+      ]
+    }
+  }
 }

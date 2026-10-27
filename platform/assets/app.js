@@ -1294,6 +1294,7 @@ async function showApps() {
 // משתמש לא מחובר, והוא נכנס עכשיו. בכל מצב אחר הפרמטר נמחק מהכתובת — אחרת כתובת עם ?next
 // שנשמרה (סימנייה, היסטוריה, האפליקציה המותקנת) הייתה מקפיצה כל פעם לאפליקציה במקום לפלטפורמה.
 let justSignedIn = false;
+let pendingContact = null;   // איש קשר ששותף — נפתח בחלון ההזמנה אחרי שממשק הניהול נטען
 
 function goNext() {
     const next = new URLSearchParams(location.search).get('next');
@@ -1310,6 +1311,15 @@ function goNext() {
 async function start() {
     closeMenu();
     try {
+        // איש קשר ששותף לאפליקציה המותקנת (platform/home/index.php) — חלון "הזמנת לקוח" ממולא, בממשק הניהול.
+        const shared = location.hash.match(/^#invite-contact=([A-Za-z0-9_-]+)$/);
+        if (shared) {
+            try {
+                const bin = atob(shared[1].replace(/-/g, '+').replace(/_/g, '/'));
+                pendingContact = JSON.parse(new TextDecoder().decode(Uint8Array.from(bin, c => c.charCodeAt(0))));
+            } catch { pendingContact = null; }
+            history.replaceState(null, '', location.pathname + location.search + '#admin');
+        }
         const invite = location.hash.match(/^#invite=([a-f0-9]{48})$/);
         if (invite) return showInvite(invite[1]);
         const join = location.hash.match(/^#join=([a-f0-9]{48})$/);
@@ -1332,7 +1342,9 @@ async function start() {
         justSignedIn = false;
         if (new URLSearchParams(location.search).has('next')) history.replaceState(null, '', location.pathname + location.hash);
         if (inAdmin() && me.user.role === 'admin') {
-            return await window.PlatformAdmin.show(view);
+            await window.PlatformAdmin.show(view);
+            if (pendingContact) { window.PlatformAdmin.invite(pendingContact); pendingContact = null; }
+            return;
         }
         await showApps();
     } catch (err) {

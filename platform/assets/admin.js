@@ -164,7 +164,7 @@ window.PlatformAdmin = (() => {
             el('span', { className: 'notify-ic', textContent: '📨', ariaHidden: 'true' }),
             el('div', { className: 'notify-tx' }, [el('b', { textContent: 'הזמנת לקוח בקישור' }),
                 el('small', { textContent: 'שולחים לו בווצאפ — הוא נרשם ונכנס מיד, עם מה שסימנתם' })]),
-            el('div', { className: 'notify-btns' }, [button('➕ הזמנה', inviteDialog, 'sm primary')]),
+            el('div', { className: 'notify-btns' }, [button('➕ הזמנה', () => inviteDialog(), 'sm primary')]),
             ...(rows.length ? [el('ul', { className: 'inv-list' }, rows), ...more] : []),
         ]);
     }
@@ -185,7 +185,8 @@ window.PlatformAdmin = (() => {
         return { d, body };
     }
 
-    function inviteDialog() {
+    // prefill — איש קשר ששותף לאפליקציה (platform/home/index.php, share_target): {name, tel, email}
+    function inviteDialog(prefill = {}) {
         const { d, body } = dialog('הזמנת לקוח', 'הוא ימלא שם, מייל וסיסמה — ויכנס מיד');
         const input = (label, attrs) => {
             const i = el('input', attrs);
@@ -237,7 +238,11 @@ window.PlatformAdmin = (() => {
             pickNote.textContent = (tel ? `✓ נבחר/ה ${c.name?.[0] || ''}` : '⚠️ לאיש הקשר אין מספר טלפון')
                 + (list.length > 1 ? ' — נבחרו כמה, נלקח הראשון' : '');
         }, 'contacts-pick'), pickNote] : [];
-        body.append(...pick, phoneF, nameF, emailF, el('div', { className: 'sheet-sec', textContent: 'מה נפתח לו' }), editor);
+        phone.value = prefill.tel || '';
+        name.value = (prefill.name || '').slice(0, 60);
+        email.value = prefill.email || '';
+        if (prefill.name || prefill.tel) pickNote.textContent = `📇 מאנשי הקשר: ${prefill.name || prefill.tel}` + (prefill.tel ? '' : ' — בלי מספר טלפון');
+        body.append(...pick, ...(pick.length ? [] : [pickNote]), phoneF, nameF, emailF, el('div', { className: 'sheet-sec', textContent: 'מה נפתח לו' }), editor);
         phone.focus();
     }
 
@@ -1246,5 +1251,5 @@ window.PlatformAdmin = (() => {
         ]);
     }
 
-    return { show };
+    return { show, invite: inviteDialog };
 })();
