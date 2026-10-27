@@ -102,9 +102,13 @@ function logAdminAction(PDO $pdo, $adminId, $action, $targetType = null, $target
  * כל המשתמשים, עם מספר הקבוצות שכל אחד מנהל ושהוא חבר בהן.
  */
 function adminListUsers(PDO $pdo) {
+    // הקישור לכלים הדיגיטליים - רק אחרי מיגרציה 015
+    require_once __DIR__ . '/platform.php';
+    $subColumn = platformSubReady($pdo) ? 'u.platform_sub' : 'NULL AS platform_sub';
+
     $stmt = $pdo->query("
         SELECT u.id, u.name, u.email, u.username, u.is_active, u.is_admin,
-               u.created_at, u.last_login,
+               u.created_at, u.last_login, $subColumn,
                (SELECT COUNT(*) FROM purchase_groups pg
                  WHERE pg.owner_id = u.id AND pg.is_active = 1) AS owned_groups,
                (SELECT COUNT(*) FROM group_members gm
@@ -232,6 +236,60 @@ function adminSetUserAdmin(PDO $pdo, $adminId, $targetId, $makeAdmin) {
             ? $target['name'] . ' הוא כעת מנהל מערכת'
             : 'הרשאת הניהול נשללה מ' . $target['name'],
     ];
+}
+
+/**
+ * הזמנת משתמש אחד לכלים הדיגיטליים, מממשק הניהול.
+ *
+ * אין לו חשבון שם - נפתח לו, והוא מקבל מייל לבחירת סיסמה. יש לו (אותו
+ * מייל) - נוספת הרשאה, בלי מייל. בשני המקרים החשבון כאן מתקשר מיד
+ * (includes/platform.php, platformInviteUser), ומסך החיבור לא יוצג לו.
+ *
+ * @return array{ok: bool, message: string}
+ */
+function adminPlatformInvite(PDO $pdo, $adminId, $targetId, $send = null) {
+    require_once __DIR__ . '/platform.php';
+
+    if (!platformSubReady($pdo)) {
+        return ['ok' => false, 'message' => 'מיגרציה 015 עוד לא רצה - אי אפשר לקשר חשבונות'];
+    }
+
+    $stmt = $pdo->prepare("SELECT id, email, name, is_active, platform_sub FROM users WHERE id = ?");
+    $stmt->execute([(int)$targetId]);
+    $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$user) {
+        return ['ok' => false, 'message' => 'המשתמש לא נמצא'];
+    }
+    if (empty($user['is_active'])) {
+        return ['ok' => false, 'message' => 'החשבון מושבת. קודם להפעיל אותו, ואז להזמין'];
+    }
+
+    $result = platformInviteUser($pdo, $user, $send);
+    $name   = $user['name'] ?: $user['email'];
+
+    if ($result['error'] !== '') {
+        return ['ok' => false, 'message' => $result['error']];
+    }
+
+    logAdminAction($pdo, $adminId, 'platform_invite', 'user', (int)$user['id'],
+        $result['status'] . ($result['linked'] ? ', קושר' : ''));
+
+    if ($result['status'] === 'blocked') {
+        return ['ok' => true, 'message' => "החשבון של $name בכלים הדיגיטליים חסום. לא נשלח דבר"];
+    }
+
+    $message = $result['status'] === 'invited'
+        ? "נשלח מייל הזמנה אל {$user['email']}. אחרי בחירת סיסמה $name נכנס ישר לאירועים שלו"
+        : "$name כבר רשום בכלים הדיגיטליים - קיבל הרשאה לאפליקציה, בלי מייל";
+
+    if ($result['sub_taken']) {
+        $message .= '. אבל חשבון הכלים הזה כבר מקושר כאן למשתמש אחר - החשבון לא קושר';
+    } elseif ($result['linked']) {
+        $message .= '. החשבון קושר';
+    }
+
+    return ['ok' => true, 'message' => $message];
 }
 
 /**

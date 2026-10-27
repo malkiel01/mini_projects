@@ -103,6 +103,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 ($_POST['value'] ?? '') === '1'
             ));
 
+        case 'platformInvite':
+            $respond(adminPlatformInvite($pdo, $user_id, intval($_POST['user_id'] ?? 0)));
+
         case 'runMigrations':
             $result = adminRunMigrations($pdo, $user_id);
             echo json_encode([
@@ -396,6 +399,32 @@ function adminMoney($value) {
 
         <!-- ========================================= משתמשים -->
         <div class="admin-pane" id="pane-users" hidden>
+            <?php
+            // הקישור לכלים הדיגיטליים: מי כבר נכנס דרכם, ומי עוד צריך הזמנה
+            $activeUsers = array_filter($users, function ($u) { return !empty($u['is_active']); });
+            $linkedUsers = array_filter($activeUsers, function ($u) { return !empty($u['platform_sub']); });
+            $linkedPct   = count($activeUsers) ? (int)round(100 * count($linkedUsers) / count($activeUsers)) : 0;
+            ?>
+            <section class="summary" aria-label="קישור לכלים הדיגיטליים">
+                <div class="line">
+                    <i class="fas fa-link" aria-hidden="true"></i>
+                    <b><?php echo count($linkedUsers); ?></b>
+                    <span class="muted">מתוך <?php echo count($activeUsers); ?> משתמשים מקושרים לכלים הדיגיטליים</span>
+                    <span class="pct"><?php echo $linkedPct; ?>%</span>
+                </div>
+                <span class="track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<?php echo $linkedPct; ?>">
+                    <span style="inline-size:<?php echo $linkedPct; ?>%"></span>
+                </span>
+                <p class="hint">
+                    "הזמנה לכלים" בכרטיס המשתמש: מי שאין לו חשבון בכלים מקבל מייל לבחירת סיסמה, ומי שיש לו —
+                    רק הרשאה, בלי מייל. בשני המקרים החשבון כאן מתקשר מיד, והמשתמש לא יראה את מסך החיבור.
+                </p>
+                <label class="switch">
+                    <input type="checkbox" id="onlyUnlinked" onchange="filterUsers()">
+                    <span>רק מי שעוד לא מקושר (<?php echo count($activeUsers) - count($linkedUsers); ?>)</span>
+                </label>
+            </section>
+
             <div class="contacts-search">
                 <i class="fas fa-search"></i>
                 <input type="search" id="userSearch" placeholder="חיפוש משתמש לפי שם או אימייל"
@@ -406,7 +435,8 @@ function adminMoney($value) {
                 <?php foreach ($users as $user): ?>
                 <div class="admin-user"
                      data-name="<?php echo htmlspecialchars(mb_strtolower((string)$user['name'])); ?>"
-                     data-email="<?php echo htmlspecialchars(mb_strtolower((string)$user['email'])); ?>">
+                     data-email="<?php echo htmlspecialchars(mb_strtolower((string)$user['email'])); ?>"
+                     data-linked="<?php echo !empty($user['platform_sub']) ? 1 : 0; ?>">
                     <button class="admin-user-head" onclick="toggleUser(<?php echo (int)$user['id']; ?>)">
                         <div class="contact-avatar">
                             <?php echo htmlspecialchars(mb_substr((string)$user['name'], 0, 1)); ?>
@@ -419,6 +449,11 @@ function adminMoney($value) {
                                 <?php endif; ?>
                                 <?php if (!$user['is_active']): ?>
                                     <span class="contact-badge">מושבת</span>
+                                <?php endif; ?>
+                                <?php if (!empty($user['platform_sub'])): ?>
+                                    <span class="chip ok"><i class="fas fa-link" aria-hidden="true"></i> בכלים</span>
+                                <?php elseif ($user['is_active']): ?>
+                                    <span class="chip warn">לא מקושר</span>
                                 <?php endif; ?>
                             </h3>
                             <p class="contact-email"><?php echo htmlspecialchars((string)$user['email']); ?></p>
@@ -443,6 +478,8 @@ function adminMoney($value) {
                     <div class="admin-user-body" id="user-<?php echo (int)$user['id']; ?>"
                          data-admin="<?php echo (int)$user['is_admin']; ?>"
                          data-active="<?php echo (int)$user['is_active']; ?>"
+                         data-linked="<?php echo !empty($user['platform_sub']) ? 1 : 0; ?>"
+                         data-email="<?php echo htmlspecialchars((string)$user['email']); ?>"
                          data-self="<?php echo (int)$user['id'] === (int)$user_id ? 1 : 0; ?>"></div>
                 </div>
                 <?php endforeach; ?>
