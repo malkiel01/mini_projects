@@ -205,7 +205,20 @@ window.PlatformAdmin = (() => {
                 } catch (err) { P().toast('⚠️ ' + err.message); }
             },
         });
-        body.append(phoneF, nameF, emailF, el('div', { className: 'sheet-sec', textContent: 'מה נפתח לו' }), editor);
+        // אנשי הקשר של המכשיר (Contact Picker API) — כרום באנדרואיד, גם באפליקציה המותקנת. הדפדפן מבקש
+        // אישור ופותח את הבורר שלו; מגיע רק מי שנבחר. במכשיר שלא תומך (אייפון, מחשב) — הכפתור לא מוצג.
+        const pick = 'contacts' in navigator && 'select' in navigator.contacts ? [button('📇 בחירה מאנשי הקשר', async () => {
+            try {
+                const [c] = await navigator.contacts.select(['name', 'tel', 'email'], { multiple: false });
+                if (!c) return;
+                const tel = (c.tel || []).find(t => /^\+?972|^05/.test(t.replace(/[\s-]/g, ''))) || c.tel?.[0] || '';
+                if (tel) phone.value = tel;
+                if (c.name?.[0]) name.value = c.name[0].slice(0, 60);
+                if (c.email?.[0] && !email.value) email.value = c.email[0];
+                if (!tel) P().toast('לאיש הקשר אין מספר טלפון');
+            } catch (err) { P().toast('⚠️ ' + (err.name === 'SecurityError' ? 'אין גישה לאנשי הקשר' : err.message)); }
+        }, 'contacts-pick')] : [];
+        body.append(...pick, phoneF, nameF, emailF, el('div', { className: 'sheet-sec', textContent: 'מה נפתח לו' }), editor);
         phone.focus();
     }
 
