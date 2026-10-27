@@ -123,9 +123,20 @@ function renderUserActions(userId, state) {
 
     const isAdmin  = (state.admin === '1');
     const isActive = (state.active === '1');
+    const isLinked = (state.linked === '1');
+
+    // הזמנה לכלים הדיגיטליים - לכל משתמש פעיל. מקושר כבר: שליחה חוזרת
+    // (רלוונטי למי שקיבל הזמנה ועוד לא בחר סיסמה)
+    const invite = isActive ? `
+            <button class="${isLinked ? 'btn-force neutral' : 'btn-primary'}"
+                    onclick="platformInvite(${Number(userId)}, ${isLinked})">
+                <i class="fas ${isLinked ? 'fa-rotate-right' : 'fa-paper-plane'}"></i>
+                ${isLinked ? 'שליחת ההזמנה שוב' : 'הזמנה לכלים הדיגיטליים'}
+            </button>` : '';
 
     return `
         <div class="admin-user-actions">
+            ${invite}
             <button class="btn-force ${isAdmin ? 'neutral' : ''}"
                     onclick="setUserFlag('setAdmin', ${Number(userId)}, ${isAdmin ? 0 : 1})">
                 <i class="fas ${isAdmin ? 'fa-user-minus' : 'fa-user-shield'}"></i>
@@ -146,6 +157,21 @@ const FLAG_CONFIRM = {
     'setActive:0': 'להשבית את החשבון?\n\nהמשתמש לא יוכל להתחבר, אבל שום נתון לא יימחק וההפעלה מחזירה הכל.',
     'setActive:1': 'להפעיל מחדש את החשבון?'
 };
+
+async function platformInvite(userId, isLinked) {
+    // המייל מ-data-email של הכרטיס, ולא בתוך ה-onclick - שם הוא היה צריך escape לשני עולמות
+    const email = document.getElementById('user-' + userId)?.dataset.email || '';
+    const question = isLinked
+        ? `לשלוח שוב את ההזמנה לכלים הדיגיטליים אל ${email}?\n\nאם הוא עוד לא בחר סיסמה - יקבל מייל חדש. אם כבר נכנס - לא יישלח כלום.`
+        : `להזמין את ${email} לכלים הדיגיטליים?\n\nאם אין לו חשבון שם - יישלח אליו מייל לבחירת סיסמה. אם יש - רק תינתן הרשאה, בלי מייל.\nבשני המקרים החשבון כאן יקושר מיד.`;
+    if (!confirm(question)) return;
+
+    const data = await callAction('platformInvite', { user_id: userId });
+    if (!data) return;
+
+    alert(data.message);
+    location.reload();
+}
 
 async function setUserFlag(action, userId, value) {
     if (!confirm(FLAG_CONFIRM[action + ':' + value])) {
@@ -223,7 +249,9 @@ function filterUsers() {
     let visible = 0;
 
     cards.forEach(card => {
-        const match = card.dataset.name.includes(term) || card.dataset.email.includes(term);
+        const onlyUnlinked = document.getElementById('onlyUnlinked')?.checked;
+        const match = (card.dataset.name.includes(term) || card.dataset.email.includes(term))
+            && !(onlyUnlinked && card.dataset.linked === '1');
         card.style.display = match ? '' : 'none';
         if (match) visible++;
     });

@@ -295,6 +295,40 @@ $calls = 0;
 $counts = platformInviteExisting($pdo, false, function () { return ['status' => 503, 'body' => '']; });
 check('תקלה בפלטפורמה - נספרת כשגיאה', ($counts['error'] ?? 0) === 1, json_encode($counts));
 
+echo "\nהזמנה מממשק הניהול\n";
+
+require_once __DIR__ . '/../includes/admin.php';
+
+$pdo->exec("DELETE FROM users");
+$u1 = addUser($pdo, ['username' => 'g1', 'email' => 'google1@example.com', 'name' => 'גוגל']);
+$u2 = addUser($pdo, ['username' => 'g2', 'email' => 'old@example.com', 'name' => 'ותיק']);
+$u3 = addUser($pdo, ['username' => 'g3', 'email' => 'off@example.com', 'is_active' => 0]);
+$u4 = addUser($pdo, ['username' => 'g4', 'email' => 'taken@example.com', 'platform_sub' => '900']);
+$u5 = addUser($pdo, ['username' => 'g5', 'email' => 'dup@example.com']);
+
+$reply = function ($status, $sub) { return function () use ($status, $sub) {
+    return ['status' => 200, 'body' => json_encode(['status' => $status, 'sub' => $sub])]; }; };
+
+$r = adminPlatformInvite($pdo, 1, $u1, $reply('invited', '801'));
+check('חשבון בלי חשבון בכלים - "נשלח מייל", וקושר', $r['ok'] && str_contains($r['message'], 'נשלח מייל') && subOf($pdo, $u1) === '801', $r['message']);
+$r = adminPlatformInvite($pdo, 1, $u2, $reply('granted', '802'));
+check('יש לו חשבון בכלים - הרשאה בלי מייל, וקושר', $r['ok'] && str_contains($r['message'], 'בלי מייל') && subOf($pdo, $u2) === '802', $r['message']);
+$r = adminPlatformInvite($pdo, 1, $u3, $reply('invited', '803'));
+check('חשבון מושבת - לא נשלח', !$r['ok'] && subOf($pdo, $u3) === null);
+$r = adminPlatformInvite($pdo, 1, $u5, $reply('granted', '900'));
+check('sub שכבר של משתמש אחר - לא מועבר בשקט', $r['ok'] && str_contains($r['message'], 'לא קושר')
+    && subOf($pdo, $u5) === null && subOf($pdo, $u4) === '900', $r['message']);
+$r = adminPlatformInvite($pdo, 1, 9999, $reply('invited', '1'));
+check('משתמש שלא קיים', !$r['ok']);
+$log = (int)$pdo->query("SELECT COUNT(*) FROM admin_actions WHERE action = 'platform_invite'")->fetchColumn();
+check('כל הזמנה נרשמה ביומן', $log === 3, (string)$log);
+$pdo->exec("ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0");
+$pdo->exec("CREATE TABLE purchase_groups (id INTEGER PRIMARY KEY, owner_id INTEGER, is_active INTEGER DEFAULT 1)");
+$pdo->exec("CREATE TABLE group_members (id INTEGER PRIMARY KEY, group_id INTEGER, user_id INTEGER, is_active INTEGER DEFAULT 1)");
+$pdo->exec("CREATE TABLE group_invitations (id INTEGER PRIMARY KEY, email TEXT, status TEXT)");
+$rows = adminListUsers($pdo);
+check('רשימת המשתמשים כוללת את הקישור', array_key_exists('platform_sub', $rows[0]));
+
 echo "\n=======================================================\n";
 echo "עבר: $pass | נכשל: $fail\n";
 exit($fail > 0 ? 1 : 0);

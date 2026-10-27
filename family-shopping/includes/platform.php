@@ -451,27 +451,63 @@ function platformInviteExisting(PDO $pdo, $dryRun = true, $send = null, $pause =
         return $counts;
     }
 
-    $next = APP_BASE_PATH . '/dashboard.php';
-
     foreach ($users as $i => $user) {
         if ($i > 0 && $pause > 0) {
             usleep($pause * 1000);
         }
 
-        [$status, $sub, $error] = platformProvision($pdo, $user['email'], $user['name'], true, $next, $send);
-        $key = $error !== '' ? 'error' : $status;
+        $result = platformInviteUser($pdo, $user, $send);
+        $key = $result['error'] !== '' ? 'error' : $result['status'];
         $counts[$key] = ($counts[$key] ?? 0) + 1;
-
-        if ($error === '' && $sub !== '' && $status !== 'blocked') {
-            $stmt = $pdo->prepare("SELECT id FROM users WHERE platform_sub = ?");
-            $stmt->execute([$sub]);
-            if ($stmt->fetch()) {
-                $counts['sub_taken'] = ($counts['sub_taken'] ?? 0) + 1;
-            } else {
-                platformLink($pdo, (int)$user['id'], $sub, 'invite ' . $status);
-            }
+        if ($result['sub_taken']) {
+            $counts['sub_taken'] = ($counts['sub_taken'] ?? 0) + 1;
         }
     }
 
     return $counts;
+}
+
+/**
+ * הזמנה של חשבון אחד לפלטפורמה, והקישור שלו ל-sub שחוזר.
+ *
+ * אין לו חשבון בפלטפורמה - נפתח לו, והוא מקבל מייל לבחירת סיסמה (invited).
+ * יש לו (אותו מייל) - נוספת הרשאה, בלי מייל (granted). בשני המקרים ה-sub
+ * נשמר מיד, ולכן מסך החיבור לא יוצג לו - גם אם המייל בפלטפורמה לא אומת.
+ *
+ * @param array $user id, email, name
+ * @return array status, sub, error, linked (bool), sub_taken (bool)
+ */
+function platformInviteUser(PDO $pdo, array $user, $send = null) {
+    [$status, $sub, $error] = platformProvision(
+        $pdo, $user['email'], $user['name'], true, APP_BASE_PATH . '/dashboard.php', $send
+    );
+    $result = ['status' => $status, 'sub' => $sub, 'error' => $error, 'linked' => false, 'sub_taken' => false];
+
+    if ($error !== '' || $sub === '' || $status === 'blocked') {
+        return $result;
+    }
+
+    // ה-sub כבר שייך לחשבון אחר כאן - לא מעבירים בשקט: אותו אדם לא יכול
+    // להיות שני משתמשים. זה מקרה למנהל, לא להחלטה אוטומטית.
+    $stmt = $pdo->prepare("SELECT id FROM users WHERE platform_sub = ? AND id != ?");
+    $stmt->execute([$sub, (int)$user['id']]);
+    if ($stmt->fetch()) {
+        $result['sub_taken'] = true;
+        return $result;
+    }
+
+    platformLink($pdo, (int)$user['id'], $sub, 'invite ' . $status);
+    $result['linked'] = true;
+
+    return $result;
+}
+
+/** האם עמודת platform_sub קיימת (מיגרציה 015) */
+function platformSubReady(PDO $pdo) {
+    try {
+        $pdo->query("SELECT platform_sub FROM users LIMIT 0");
+        return true;
+    } catch (Exception $e) {
+        return false;
+    }
 }
