@@ -1,21 +1,18 @@
 <?php
-// זמני: קריאה בלבד — האם הקבצים בשרת הם של הגרסה האחרונה, ומה קרה בבחירה מאנשי הקשר מאז.
+// זמני: קריאה בלבד — האם קוד קניות משותפות בשרת עדכני, ומאיפה בעל המערכת נכנס אליה.
 $out = [];
-foreach (['platform/assets/admin.js', 'platform/assets/app.js', 'platform/assets/app.css', 'platform/lib/invites.php', 'index.html'] as $f) {
+foreach (['family-shopping/includes/layout.php', 'family-shopping/css/app.css', 'family-shopping/dashboard.php', 'family-shopping/service-worker.js'] as $f) {
     $out['files'][$f] = is_file($f) ? [md5_file($f), gmdate('Y-m-d H:i:s', filemtime($f))] : 'חסר';
 }
-$a = (string)@file_get_contents('platform/assets/admin.js');
-$out['has'] = ['multiple_true' => str_contains($a, "multiple: true"), 'pick_note' => str_contains($a, 'pick-note'), 'invite' => str_contains($a, 'admin_invite_create')];
-foreach (['https://mbe-plus.com/mini_projects/platform/assets/admin.js', 'https://mbe-plus.com/mini_projects/platform/home/'] as $u) {
-    $ch = curl_init($u);
-    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 10, CURLOPT_HEADER => true]);
-    $r = (string)curl_exec($ch);
-    $hs = substr($r, 0, curl_getinfo($ch, CURLINFO_HEADER_SIZE));
-    $body = substr($r, curl_getinfo($ch, CURLINFO_HEADER_SIZE));
-    $out['live'][$u] = ['code' => curl_getinfo($ch, CURLINFO_HTTP_CODE), 'md5' => md5($body), 'multiple_true' => str_contains($body, 'multiple: true'),
-        'headers' => array_values(array_filter(explode("\r\n", $hs), fn($h) => preg_match('/^(cache-control|cf-cache-status|age|expires|last-modified|server):/i', $h)))];
-}
+$l = (string)@file_get_contents('family-shopping/includes/layout.php');
+$out['layout_has_menu'] = substr_count($l, 'menu');
+preg_match_all('/app\.css[^"\']*/', $l, $m); $out['css_ref'] = $m[0];
 $p = new PDO('sqlite:platform/data/platform.sqlite');
-$r = $p->query("SELECT at, event, info FROM diag_log WHERE at > '2026-10-27T07:00:00Z' AND (event LIKE '%contacts%' OR event = 'client:page') ORDER BY id DESC LIMIT 20");
+$r = $p->query("SELECT at, event, path, referrer, info FROM diag_log WHERE at > '2026-10-27T06:00:00Z' AND (app = 'family-shopping' OR path LIKE '%family%') ORDER BY id DESC LIMIT 25");
 $out['log'] = $r->fetchAll(PDO::FETCH_ASSOC);
+$v = $p->query("SELECT at, app, device FROM visits WHERE at > '2026-10-27T06:00:00Z' AND app = 'family-shopping' ORDER BY id DESC LIMIT 10");
+$out['visits'] = $v->fetchAll(PDO::FETCH_ASSOC);
+// האתר הישן — האם יש בו service worker שעוד רשום אצל משתמשים
+$old = getenv('HOME') . '/public_html/form/family';
+$out['old_site'] = ['sw' => is_file("$old/service-worker.js"), 'htaccess' => (string)@file_get_contents("$old/.htaccess")];
 echo json_encode($out, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
