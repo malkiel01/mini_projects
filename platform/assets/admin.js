@@ -226,8 +226,9 @@ window.PlatformAdmin = (() => {
             const standalone = matchMedia('(display-mode: standalone)').matches;
             log({ n: list?.length ?? -1, names: c?.name?.length ?? 0, tels: c?.tel?.length ?? 0, emails: c?.email?.length ?? 0, standalone, multiple: true });
             if (!c) {
-                pickNote.textContent = 'הבורר לא החזיר איש קשר — מקישים על איש הקשר עד שמופיע ✓, ואז "בוצע"'
-                    + (standalone ? '. אם זה חוזר — נסו מלשונית בכרום (לא מהאפליקציה המותקנת).' : '');
+                // בטלפון של בעל המערכת (אנדרואיד 10, כרום 155) זה חוזר תמיד ריק — תקלה בבורר של כרום, לא בבחירה.
+                // הדרך שעובדת: שיתוף מאנשי הקשר (share_target, platform/home/index.php).
+                pickNote.textContent = 'כרום לא העביר את איש הקשר. במקום זה: פותחים את אנשי הקשר בטלפון ← איש הקשר ← ⋮ ← "שיתוף" ← "כלים דיגיטליים" — והחלון הזה נפתח ממולא.';
                 return;
             }
             const tels = (c.tel || []).map(String).filter(Boolean);
