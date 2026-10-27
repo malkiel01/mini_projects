@@ -45,8 +45,10 @@ if (!platformIdentity()) {
     }
 }
 
-// הגנה מפני CSRF בכל פעולת POST
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && !verifyCsrfToken()) {
+// הגנה מפני CSRF בכל פעולת POST.
+// AUTH_NO_STATE_CHANGE - דף שמקבל POST מבחוץ ואינו משנה דבר (יעד השיתוף
+// של אנדרואיד, share-contact.php): אין לו טוקן לשלוח, ואין מה לזייף בו.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !defined('AUTH_NO_STATE_CHANGE') && !verifyCsrfToken()) {
     rejectRequest();
 }
 

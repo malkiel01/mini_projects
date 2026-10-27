@@ -636,6 +636,21 @@ function migrationCatalog(PDO $pdo, $dbName) {
         ],
     ];
 
+    // --------------------------------------------------------
+    // טלפון בהזמנה ובאיש הקשר: בחירת איש קשר מהטלפון ממלאת גם את
+    // המספר, וצריך מקום לשמור אותו עד שהמוזמן מצטרף (join.php מעתיק
+    // אותו ל-group_members.phone).
+    $catalog[] = [
+        'id'    => '016',
+        'title' => 'טלפון בהזמנות ובאנשי הקשר',
+        'steps' => [
+            stepAddColumn($pdo, $dbName, 'group_invitations', 'phone',
+                "`phone` VARCHAR(24) NULL DEFAULT NULL COMMENT 'עובר למשתתף כשהוא מצטרף'"),
+            stepAddColumn($pdo, $dbName, 'contacts', 'phone',
+                "`phone` VARCHAR(24) NULL DEFAULT NULL"),
+        ],
+    ];
+
     return $catalog;
 }
 

@@ -773,6 +773,7 @@ $topActions[] = ['menu' => $moreActions, 'label' => 'עוד פעולות'];
             summaryText:         <?php echo json_encode($summaryText, JSON_UNESCAPED_UNICODE); ?>
         };
     </script>
+    <script src="<?php echo asset('/js/contact-picker.js'); ?>"></script>
     <script src="<?php echo asset('/js/group.js'); ?>"></script>
     <script src="<?php echo asset('/js/push-subscribe.js'); ?>"></script>
 

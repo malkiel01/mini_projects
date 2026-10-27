@@ -145,6 +145,8 @@ function handleGroupActions($pdo, $group_id, $user_id, $is_owner, $member_id, $s
 function actionAddMember(GroupContext $context) {
     $email              = trim($_POST['email'] ?? '');
     $nickname           = trim($_POST['nickname'] ?? '');
+    $phoneRaw           = trim($_POST['phone'] ?? '');
+    $phone              = normalizePhone($phoneRaw);
     $participationType  = participationTypeFromRequest();
     $participationValue = participationValueFromRequest($participationType);
 
@@ -155,6 +157,11 @@ function actionAddMember(GroupContext $context) {
 
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         jsonFail('כתובת האימייל אינה תקינה');
+        return;
+    }
+
+    if ($phoneRaw !== '' && $phone === '') {
+        jsonFail('מספר הטלפון אינו תקין');
         return;
     }
 
@@ -219,6 +226,18 @@ function actionAddMember(GroupContext $context) {
         $context->pdo, $context->userId, $email, $nickname,
         $participationType, $participationValue
     );
+
+    // הטלפון נשמר בהזמנה (ועובר למשתתף כשהוא מצטרף) ובאיש הקשר.
+    // לפני מיגרציה 016 אין לו עמודה - ההזמנה עצמה לא נפגעת.
+    if ($phone !== '') {
+        try {
+            $context->pdo->prepare("UPDATE group_invitations SET phone = ? WHERE id = ?")
+                ->execute([$phone, $invitationId]);
+        } catch (Exception $e) {
+            error_log('invitation phone: ' . $e->getMessage());
+        }
+        setContactPhone($context->pdo, $context->userId, $email, $phone);
+    }
 
     // המשתמש כבר רשום - נכניס התראה לתור
     if ($user) {

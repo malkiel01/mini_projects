@@ -12,6 +12,7 @@ require_once 'config.php';
 require_once 'includes/auth_check.php';
 require_once 'includes/layout.php';
 require_once 'includes/contacts.php';
+require_once 'includes/phone.php';
 
 $pdo     = getDBConnection();
 $user_id = $_SESSION['user_id'];
@@ -52,6 +53,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 in_array($type, PARTICIPATION_TYPES, true) ? $type : null,
                 $value > 0 ? $value : null
             );
+            if ($ok) {
+                setContactPhone($pdo, $user_id, $email, $_POST['phone'] ?? '');
+            }
 
             echo json_encode(['success' => $ok]);
             exit;
@@ -67,7 +71,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 exit;
             }
 
-            echo json_encode(['success' => updateContact($pdo, $user_id, $id, $name, $type, $value)]);
+            $ok = updateContact($pdo, $user_id, $id, $name, $type, $value);
+            if ($ok && ($_POST['phone'] ?? '') !== '') {
+                $stmt = $pdo->prepare("SELECT email FROM contacts WHERE id = ? AND owner_id = ?");
+                $stmt->execute([$id, $user_id]);
+                setContactPhone($pdo, $user_id, (string)$stmt->fetchColumn(), $_POST['phone']);
+            }
+
+            echo json_encode(['success' => $ok]);
             exit;
 
         case 'deleteContact':
@@ -155,6 +166,8 @@ $contacts = $ready ? listContacts($pdo, $user_id) : [];
         <div class="contacts-list" id="contactsList">
             <?php foreach ($contacts as $contact): ?>
             <div class="contact-card"
+                 id="contact-<?php echo (int)$contact['id']; ?>"
+                 data-phone="<?php echo htmlspecialchars((string)($contact['phone'] ?? '')); ?>"
                  data-name="<?php echo htmlspecialchars(mb_strtolower($contact['name'])); ?>"
                  data-email="<?php echo htmlspecialchars($contact['email']); ?>">
                 <div class="contact-avatar">
@@ -162,7 +175,11 @@ $contacts = $ready ? listContacts($pdo, $user_id) : [];
                 </div>
                 <div class="contact-info">
                     <h3><?php echo htmlspecialchars($contact['name']); ?></h3>
-                    <p class="contact-email"><?php echo htmlspecialchars($contact['email']); ?></p>
+                    <p class="contact-email"><?php echo htmlspecialchars($contact['email']); ?>
+                        <?php if (!empty($contact['phone'])): ?>
+                            <span class="contact-phone"> · <?php echo htmlspecialchars(formatPhone($contact['phone'])); ?></span>
+                        <?php endif; ?>
+                    </p>
                     <p class="contact-meta">
                         <?php if ($contact['is_registered']): ?>
                             <span class="contact-badge registered">
@@ -219,6 +236,11 @@ $contacts = $ready ? listContacts($pdo, $user_id) : [];
             </div>
             <form id="contactForm">
                 <input type="hidden" id="contactId">
+                <button type="button" class="btn ghost pick-contact" hidden
+                        onclick="ContactPicker.pick({name: 'contactName', email: 'contactEmail', phone: 'contactPhone'}, 'contactPickResult')">
+                    <i class="fas fa-address-book" aria-hidden="true"></i> מאנשי הקשר בטלפון
+                </button>
+                <p class="pick-result" id="contactPickResult" role="status" hidden></p>
                 <div class="form-group">
                     <label for="contactName">שם:</label>
                     <input type="text" id="contactName" required>
@@ -226,6 +248,10 @@ $contacts = $ready ? listContacts($pdo, $user_id) : [];
                 <div class="form-group">
                     <label for="contactEmail">אימייל:</label>
                     <input type="email" id="contactEmail" dir="ltr" required>
+                </div>
+                <div class="form-group">
+                    <label for="contactPhone">טלפון (לא חובה):</label>
+                    <input type="tel" id="contactPhone" dir="ltr" inputmode="tel" autocomplete="tel" placeholder="05X-XXXXXXX">
                 </div>
                 <div class="form-group">
                     <label>ברירת מחדל להשתתפות (לא חובה):</label>
@@ -270,6 +296,7 @@ $contacts = $ready ? listContacts($pdo, $user_id) : [];
             basePath:  <?php echo json_encode(APP_BASE_PATH); ?>
         };
     </script>
+    <script src="<?php echo asset('/js/contact-picker.js'); ?>"></script>
     <script src="<?php echo asset('/js/contacts.js'); ?>"></script>
 </body>
 </html>
