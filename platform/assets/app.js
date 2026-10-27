@@ -57,7 +57,8 @@ let toastTimer = null;
 function toast(text) {
     document.querySelector('.toast')?.remove();
     const t = el('div', { className: 'toast', role: 'status', textContent: text });
-    document.body.append(t);
+    // חלון פתוח (showModal) נמצא בשכבה העליונה — הודעה ב-body הייתה נסתרת מאחוריו.
+    (document.querySelector('dialog[open]') || document.body).append(t);
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => t.remove(), 3200);
 }

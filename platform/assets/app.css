@@ -412,6 +412,7 @@ button.tile { cursor: pointer; text-align: start; font: inherit; font-size: .88r
 /* הזמנות לקוח: הרשימה נשברת לשורה מלאה מתחת לכותרת הכרטיס */
 .notify.invites { flex-wrap: wrap; }
 .contacts-pick { width: 100%; min-height: var(--tap); }
+.pick-note:empty { display: none; }
 .inv-list { flex-basis: 100%; list-style: none; margin: 0; padding: 0; display: grid; }
 .inv-row { display: flex; align-items: center; gap: var(--s2); padding: 8px 0; border-top: 1px solid var(--line); }
 .notify.invites > .link-btn { flex-basis: 100%; min-height: 32px; }
