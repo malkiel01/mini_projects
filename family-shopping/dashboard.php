@@ -376,9 +376,6 @@ $isAdmin = isSystemAdmin($pdo, $user_id);
     <?php renderTopBar([
         'title'   => 'האירועים שלי',
         'sub'     => 'מה מביאים, מי קנה, ומי חייב למי',
-        'actions' => platformIdentity()
-            ? [['href' => 'auth/link.php?old=1', 'icon' => 'fas fa-link', 'label' => 'יש לי חשבון ישן']]
-            : [['href' => 'auth/logout.php', 'icon' => 'fas fa-arrow-right-from-bracket', 'label' => 'יציאה']],
     ]); ?>
 
     <main id="main" tabindex="-1">

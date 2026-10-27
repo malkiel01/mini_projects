@@ -94,14 +94,75 @@ function renderTopBar(array $opts) {
             <?php endif; ?>
         <?php endforeach; ?>
         <?php if (($opts['me'] ?? true) && $name !== ''): ?>
-        <span class="me" title="<?php echo htmlspecialchars($name); ?>" aria-label="<?php echo htmlspecialchars($name); ?>">
-            <?php if (!empty($_SESSION['profile_picture'])): ?>
-                <img src="<?php echo htmlspecialchars($_SESSION['profile_picture']); ?>" alt="">
-            <?php else: ?>
-                <?php echo htmlspecialchars(mb_substr($name, 0, 1)); ?>
-            <?php endif; ?>
-        </span>
+        <?php // התפריט האישי - מהאות של המשתמש: לאן אפשר להגיע מכל מסך, ויציאה ?>
+        <div class="menu-wrap">
+            <button type="button" class="me" aria-haspopup="menu" aria-expanded="false"
+                    title="<?php echo htmlspecialchars($name); ?>" aria-label="התפריט של <?php echo htmlspecialchars($name); ?>"
+                    onclick="toggleTopMenu(this)">
+                <?php if (!empty($_SESSION['profile_picture'])): ?>
+                    <img src="<?php echo htmlspecialchars($_SESSION['profile_picture']); ?>" alt="">
+                <?php else: ?>
+                    <?php echo htmlspecialchars(mb_substr($name, 0, 1)); ?>
+                <?php endif; ?>
+            </button>
+            <div class="top-menu user-menu" role="menu" hidden>
+                <div class="menu-head">
+                    <b><?php echo htmlspecialchars($name); ?></b>
+                    <?php if (!empty($_SESSION['email'])): ?>
+                    <span class="ltr"><?php echo htmlspecialchars($_SESSION['email']); ?></span>
+                    <?php endif; ?>
+                </div>
+                <?php foreach (userMenuItems() as $item): ?>
+                    <?php if ($item === '-'): ?>
+                    <hr>
+                    <?php else: ?>
+                    <a role="menuitem" href="<?php echo htmlspecialchars($item[0]); ?>"<?php echo !empty($item[3]) ? ' class="danger"' : ''; ?>>
+                        <i class="<?php echo htmlspecialchars($item[1]); ?>" aria-hidden="true"></i>
+                        <?php echo htmlspecialchars($item[2]); ?>
+                    </a>
+                    <?php endif; ?>
+                <?php endforeach; ?>
+            </div>
+        </div>
         <?php endif; ?>
     </header>
     <?php
+}
+
+/**
+ * הפריטים בתפריט האישי: [כתובת, אייקון, תווית, אדום?] או '-' למפריד.
+ * "ניהול המערכת" - רק למנהל (users.is_admin, מהמסד ולא מה-session).
+ */
+function userMenuItems() {
+    $base  = APP_BASE_PATH;
+    $items = [
+        [$base . '/dashboard.php', 'fas fa-calendar-check', 'האירועים שלי'],
+        [$base . '/contacts.php', 'fas fa-address-book', 'אנשי קשר'],
+        [$base . '/offsets.php', 'fas fa-scale-balanced', 'קיזוזים בין אירועים'],
+    ];
+
+    $isAdmin = false;
+    try {
+        if (!empty($_SESSION['user_id']) && function_exists('getDBConnection')) {
+            $stmt = getDBConnection()->prepare("SELECT is_admin FROM users WHERE id = ?");
+            $stmt->execute([(int)$_SESSION['user_id']]);
+            $isAdmin = (bool)$stmt->fetchColumn();
+        }
+    } catch (Exception $e) {
+        // לפני מיגרציה 007 אין עמודה - פשוט אין פריט ניהול
+    }
+    if ($isAdmin) {
+        $items[] = [$base . '/admin.php', 'fas fa-shield-halved', 'ניהול המערכת'];
+    }
+
+    $items[] = '-';
+    $connected = function_exists('platformIdentity') && platformIdentity();
+    if ($connected) {
+        $items[] = [$base . '/auth/link.php?old=1', 'fas fa-link', 'יש לי חשבון ישן'];
+    }
+    // מחוברת: היציאה עצמה היא מהכלים הדיגיטליים (auth.md, סעיף 5) - logout מחזיר לשם
+    $items[] = [$base . '/auth/logout.php', 'fas fa-arrow-right-from-bracket',
+        $connected ? 'יציאה (לכלים הדיגיטליים)' : 'יציאה', true];
+
+    return $items;
 }

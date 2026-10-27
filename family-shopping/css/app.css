@@ -256,3 +256,13 @@ input[type="number"], input[type="email"], input[type="tel"], input[type="date"]
     border: 0; background: none; border-radius: 8px; text-align: start; cursor: pointer; white-space: nowrap; }
 .top-menu [role="menuitem"]:hover, .top-menu [role="menuitem"]:focus-visible { background: var(--bg); }
 .top-menu [role="menuitem"] i { width: 1.2em; color: var(--muted); text-align: center; }
+
+/* התפריט האישי — מהאות של המשתמש */
+.top button.me { border: 0; color: inherit; cursor: pointer; padding: 0; }
+.top button.me:hover { background: color-mix(in srgb, var(--brand-ink) 32%, transparent); }
+.user-menu { min-width: 240px; }
+.user-menu .menu-head { display: grid; padding: var(--s2) var(--s3); border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+.user-menu .menu-head span { color: var(--muted); font-size: .8rem; }
+.user-menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
+.top-menu a[role="menuitem"] { color: inherit; text-decoration: none; }
+.top-menu [role="menuitem"].danger, .top-menu [role="menuitem"].danger i { color: var(--danger); }
