@@ -651,6 +651,39 @@ function migrationCatalog(PDO $pdo, $dbName) {
         ],
     ];
 
+    // --------------------------------------------------------
+    // קנייה במטבע זר (includes/exchange.php). amount נשאר תמיד בשקלים
+    // - כל החישובים, הקיזוזים והסיכומים נשענים עליו ולא משתנים. לצדו
+    // נשמר מה שנקנה בפועל: הסכום המקורי, המטבע, והשער שלפיו הומר.
+    // קנייה בשקלים משאירה את כל העמודות החדשות ריקות.
+    $catalog[] = [
+        'id'    => '017',
+        'title' => 'קניות במטבע זר',
+        'steps' => [
+            stepAddColumn($pdo, $dbName, 'group_purchases', 'currency',
+                "`currency` CHAR(3) NULL DEFAULT NULL COMMENT 'ריק = שקל'"),
+            stepAddColumn($pdo, $dbName, 'group_purchases', 'original_amount',
+                "`original_amount` DECIMAL(12,2) NULL DEFAULT NULL COMMENT 'במטבע הקנייה'"),
+            stepAddColumn($pdo, $dbName, 'group_purchases', 'exchange_rate',
+                "`exchange_rate` DECIMAL(16,8) NULL DEFAULT NULL COMMENT 'שקלים ליחידת מטבע'"),
+            stepAddColumn($pdo, $dbName, 'group_purchases', 'rate_date',
+                "`rate_date` DATE NULL DEFAULT NULL"),
+            stepAddColumn($pdo, $dbName, 'group_purchases', 'rate_source',
+                "`rate_source` VARCHAR(8) NULL DEFAULT NULL COMMENT 'boi / manual'"),
+
+            // מטמון השער היציג של בנק ישראל - שאלה אחת לבנק לכל מטבע ויום
+            stepCreateTable($pdo, $dbName, 'exchange_rates', "
+                CREATE TABLE `exchange_rates` (
+                    `currency`       CHAR(3)       NOT NULL,
+                    `rate_date`      DATE          NOT NULL COMMENT 'היום שנשאל',
+                    `published_date` DATE          NOT NULL COMMENT 'היום שבו פורסם השער',
+                    `rate`           DECIMAL(16,8) NOT NULL COMMENT 'שקלים ליחידת מטבע',
+                    `fetched_at`     DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (`currency`, `rate_date`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"),
+        ],
+    ];
+
     return $catalog;
 }
 

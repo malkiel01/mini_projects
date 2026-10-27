@@ -3,6 +3,7 @@
 // כל ה-Modals של דף הקבוצה
 
 require_once __DIR__ . '/phone.php';
+require_once __DIR__ . '/exchange.php';
 
 /**
  * בורר המשתתפים בקנייה.
@@ -248,7 +249,51 @@ function renderMyPhoneModal($currentPhone = '') {
     <?php
 }
 
-function renderAddPurchaseModal($members, $is_owner, $member_id, $featuresReady = true) {
+/**
+ * הסכום ומטבע הקנייה. במטבע זר נפתחת שורת ההמרה: יום השער, השער
+ * עצמו (היציג של בנק ישראל, או ידני), והסכום בשקלים שיירשם בפועל.
+ * js/group.js - fx*.
+ *
+ * @param string $p  קידומת המזהים: purchase / editPurchase
+ */
+function renderAmountFields($p, $currencyReady) {
+    ?>
+    <div class="form-group">
+        <label for="<?php echo $p; ?>Amount">סכום הקנייה</label>
+        <div class="amount-row">
+            <input type="number" id="<?php echo $p; ?>Amount" step="0.01" min="0.01"
+                   inputmode="decimal" required>
+            <?php if ($currencyReady): ?>
+            <select id="<?php echo $p; ?>Currency" class="amount-currency" aria-label="מטבע">
+                <?php foreach (supportedCurrencies() as $code => [$name, $sign]): ?>
+                <option value="<?php echo $code; ?>"><?php echo htmlspecialchars(trim($sign) . ' ' . $name); ?></option>
+                <?php endforeach; ?>
+            </select>
+            <?php else: ?>
+            <span class="amount-sign"><?php echo htmlspecialchars(currencySymbol()); ?></span>
+            <?php endif; ?>
+        </div>
+    </div>
+    <?php if ($currencyReady): ?>
+    <div class="fx-box" id="<?php echo $p; ?>FxBox" hidden>
+        <div class="fx-grid">
+            <label for="<?php echo $p; ?>RateDate">שער של יום</label>
+            <input type="date" id="<?php echo $p; ?>RateDate" max="<?php echo date('Y-m-d'); ?>">
+
+            <label for="<?php echo $p; ?>Rate">שקלים ליחידה</label>
+            <div class="fx-rate">
+                <input type="number" id="<?php echo $p; ?>Rate" step="any" min="0" inputmode="decimal" readonly>
+                <button type="button" class="fx-mode" id="<?php echo $p; ?>RateToggle">שער ידני</button>
+            </div>
+        </div>
+        <input type="hidden" id="<?php echo $p; ?>RateMode" value="boi">
+        <p class="fx-info" id="<?php echo $p; ?>FxInfo" aria-live="polite"></p>
+    </div>
+    <?php endif; ?>
+    <?php
+}
+
+function renderAddPurchaseModal($members, $is_owner, $member_id, $featuresReady = true, $currencyReady = false) {
     ?>
     <div id="addPurchaseModal" class="modal">
         <div class="modal-content">
@@ -283,10 +328,7 @@ function renderAddPurchaseModal($members, $is_owner, $member_id, $featuresReady 
                 </div>
                 <?php endif; ?>
 
-                <div class="form-group">
-                    <label for="purchaseAmount">סכום הקנייה (₪):</label>
-                    <input type="number" id="purchaseAmount" step="0.01" min="0.01" required>
-                </div>
+                <?php renderAmountFields('purchase', $currencyReady); ?>
                 <div class="form-group">
                     <label for="purchaseDescription">תיאור המוצרים:</label>
                     <textarea id="purchaseDescription" rows="3"></textarea>
@@ -313,7 +355,7 @@ function renderAddPurchaseModal($members, $is_owner, $member_id, $featuresReady 
     <?php
 }
 
-function renderEditPurchaseModal($members, $isOwner = false) {
+function renderEditPurchaseModal($members, $isOwner = false, $currencyReady = false) {
     ?>
     <div id="editPurchaseModal" class="modal">
         <div class="modal-content">
@@ -337,10 +379,7 @@ function renderEditPurchaseModal($members, $isOwner = false) {
                     </select>
                 </div>
                 <?php endif; ?>
-                <div class="form-group">
-                    <label for="editPurchaseAmount">סכום הקנייה (₪):</label>
-                    <input type="number" id="editPurchaseAmount" step="0.01" min="0.01" required>
-                </div>
+                <?php renderAmountFields('editPurchase', $currencyReady); ?>
                 <div class="form-group">
                     <label for="editPurchaseDescription">תיאור המוצרים:</label>
                     <textarea id="editPurchaseDescription" rows="3"></textarea>

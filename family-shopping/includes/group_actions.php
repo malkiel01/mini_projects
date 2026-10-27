@@ -3,6 +3,7 @@
 // טיפול בכל פעולות ה-AJAX של הקבוצה
 
 require_once __DIR__ . '/currency.php';
+require_once __DIR__ . '/exchange.php';
 require_once __DIR__ . '/schema.php';
 require_once __DIR__ . '/upload.php';
 require_once __DIR__ . '/notifications.php';
@@ -826,14 +827,49 @@ function saveExclusions(GroupContext $context, $purchaseId, array $excludedIds) 
     }
 }
 
-function actionAddPurchase(GroupContext $context) {
-    $amount      = round(floatval($_POST['amount'] ?? 0), 2);
-    $description = trim($_POST['description'] ?? '');
+/** הסכום להתראה: "₪307.80", ובמטבע זר "$100.00 (₪307.80)" */
+function purchaseAmountText($amount, array $fields) {
+    $shekels = formatMoney($amount);
 
-    if ($amount <= 0) {
-        jsonFail('סכום הקנייה חייב להיות חיובי');
+    return $fields['currency'] !== null
+        ? formatMoney($fields['original_amount'], $fields['currency']) . ' (' . $shekels . ')'
+        : $shekels;
+}
+
+/**
+ * פרטי ההמרה של קנייה. בשקלים - כולם ריקים, כך שעריכה של קנייה
+ * במטבע זר חזרה לשקלים מנקה אותם.
+ *
+ * לפני מיגרציה 017 אין עמודות - וגם אין מה לשמור, כי רישום במטבע
+ * זר נדחה עוד קודם (purchaseMoneyFromInput).
+ */
+function savePurchaseConversion(GroupContext $context, $purchaseId, array $fields) {
+    if (!currencyColumnsReady($context->pdo)) {
         return;
     }
+
+    $stmt = $context->pdo->prepare("
+        UPDATE group_purchases
+        SET currency = ?, original_amount = ?, exchange_rate = ?, rate_date = ?, rate_source = ?
+        WHERE id = ? AND group_id = ?
+    ");
+    $stmt->execute([
+        $fields['currency'], $fields['original_amount'], $fields['exchange_rate'],
+        $fields['rate_date'], $fields['rate_source'],
+        $purchaseId, $context->groupId,
+    ]);
+}
+
+function actionAddPurchase(GroupContext $context) {
+    $description = trim($_POST['description'] ?? '');
+
+    // הסכום בשקלים - ובמטבע זר, אחרי ההמרה
+    $money = purchaseMoneyFromInput($context->pdo, $_POST);
+    if (!$money['ok']) {
+        jsonFail($money['message']);
+        return;
+    }
+    $amount = $money['amount'];
 
     // רק מנהל יכול לרשום קנייה על שם משתתף אחר
     if ($context->isOwner) {
@@ -882,6 +918,7 @@ function actionAddPurchase(GroupContext $context) {
         ]);
 
         $purchaseId = (int)$context->pdo->lastInsertId();
+        savePurchaseConversion($context, $purchaseId, $money['fields']);
         saveExclusions($context, $purchaseId, $exclusions['ids']);
 
         // הקנייה נוצרה מתוך פריט ברשימה - סמן אותו כנקנה
@@ -901,20 +938,21 @@ function actionAddPurchase(GroupContext $context) {
         throw $e;
     }
 
-    notifyNewPurchaseSafely($context, $purchaseId, $amount, $description);
+    notifyNewPurchaseSafely($context, $purchaseId, purchaseAmountText($amount, $money['fields']), $description);
 
     jsonOk(['purchase_id' => $purchaseId]);
 }
 
 function actionUpdatePurchase(GroupContext $context) {
     $purchaseId  = intval($_POST['purchase_id'] ?? 0);
-    $amount      = round(floatval($_POST['amount'] ?? 0), 2);
     $description = trim($_POST['description'] ?? '');
 
-    if ($amount <= 0) {
-        jsonFail('סכום הקנייה חייב להיות חיובי');
+    $money = purchaseMoneyFromInput($context->pdo, $_POST);
+    if (!$money['ok']) {
+        jsonFail($money['message']);
         return;
     }
+    $amount = $money['amount'];
 
     $stmt = $context->pdo->prepare("
         SELECT user_id, member_id FROM group_purchases WHERE id = ? AND group_id = ?
@@ -968,12 +1006,12 @@ function actionUpdatePurchase(GroupContext $context) {
         ");
         $stmt->execute([$amount, $description, $memberId, $purchaseId, $context->groupId]);
 
+        savePurchaseConversion($context, $purchaseId, $money['fields']);
         saveExclusions($context, $purchaseId, $exclusions['ids']);
 
         $context->pdo->commit();
 
-        $symbol = currencySymbol();
-        $body   = actorName() . ' עדכן קנייה ל-' . $symbol . number_format((float)$amount, 2)
+        $body   = actorName() . ' עדכן קנייה ל-' . purchaseAmountText($amount, $money['fields'])
             . ($description !== '' ? ' (' . $description . ')' : '');
 
         // שינוי בעלות הוא שינוי מהותי בחשבון, ולכן מצוין במפורש
@@ -1057,7 +1095,7 @@ function actionDeletePurchase(GroupContext $context) {
  * הקריאה הייתה עטופה ב-function_exists, ולכן לא קרסה, אבל גם
  * מעולם לא שלחה דבר.
  */
-function notifyNewPurchaseSafely(GroupContext $context, $purchaseId, $amount, $description) {
+function notifyNewPurchaseSafely(GroupContext $context, $purchaseId, $amountText, $description) {
     try {
         $stmt = $context->pdo->prepare("SELECT name FROM purchase_groups WHERE id = ?");
         $stmt->execute([$context->groupId]);
@@ -1078,10 +1116,9 @@ function notifyNewPurchaseSafely(GroupContext $context, $purchaseId, $amount, $d
         }
 
         $buyer  = $_SESSION['name'] ?? 'משתתף';
-        $symbol = currencySymbol();
         $body   = $description !== ''
-            ? sprintf('%s רשם קנייה: %s, %s%s', $buyer, $description, $symbol, number_format((float)$amount, 2))
-            : sprintf('%s רשם קנייה על %s%s', $buyer, $symbol, number_format((float)$amount, 2));
+            ? sprintf('%s רשם קנייה: %s, %s', $buyer, $description, $amountText)
+            : sprintf('%s רשם קנייה על %s', $buyer, $amountText);
 
         foreach ($recipients as $userId) {
             queueNotification(

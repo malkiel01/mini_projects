@@ -103,7 +103,12 @@ function makeDb() {
     $pdo->exec("CREATE TABLE group_purchases (
         id INTEGER PRIMARY KEY AUTOINCREMENT, group_id INTEGER, member_id INTEGER, user_id INTEGER,
         amount REAL, description TEXT, image_path TEXT, purchase_date TEXT,
-        created_at TEXT DEFAULT '2026-01-01')");
+        created_at TEXT DEFAULT '2026-01-01',
+        currency TEXT, original_amount REAL, exchange_rate REAL, rate_date TEXT, rate_source TEXT)");
+
+    $pdo->exec("CREATE TABLE exchange_rates (
+        currency TEXT, rate_date TEXT, published_date TEXT, rate REAL, fetched_at TEXT,
+        PRIMARY KEY (currency, rate_date))");
 
     $pdo->exec("CREATE TABLE purchase_exclusions (purchase_id INTEGER, member_id INTEGER,
         PRIMARY KEY (purchase_id, member_id))");
@@ -906,6 +911,60 @@ check('הקניות לא עוברות', $p === 0);
 $r = run($pdoD, 'duplicateEvent', [], 1, true, 1, 'closed');
 $g2 = $pdoD->query("SELECT name FROM purchase_groups WHERE id = " . (int)($r['group_id'] ?? 0))->fetchColumn();
 check('בלי שם - אותו שם', $g2 === 'פסח');
+
+// ------------------------------------------------------------
+echo "\nקנייה במטבע זר\n";
+// ------------------------------------------------------------
+
+$pdoF = makeDb();
+// שער שכבר במטמון - יום שעבר, אז אין פנייה לבנק
+$pdoF->exec("INSERT INTO exchange_rates VALUES ('USD', '2026-10-24', '2026-10-23', 3.112, '2026-10-25 10:00:00')");
+
+$r = run($pdoF, 'addPurchase', [
+    'member_id' => 2, 'amount' => 100, 'description' => 'מזכרות',
+    'currency' => 'USD', 'rate_date' => '2026-10-24', 'rate_mode' => 'boi',
+], 2, false, 2);
+$p = $pdoF->query("SELECT * FROM group_purchases ORDER BY id DESC LIMIT 1")->fetch();
+check('דולר בשער יציג - נשמר בשקלים', ($r['success'] ?? false) && (float)$p['amount'] === 311.2,
+    json_encode($r, JSON_UNESCAPED_UNICODE));
+check('הסכום המקורי, המטבע והשער נשמרים', $p['currency'] === 'USD'
+    && (float)$p['original_amount'] === 100.0 && (float)$p['exchange_rate'] === 3.112);
+check('יום השער הוא יום הפרסום (שבת → שישי)', $p['rate_date'] === '2026-10-23' && $p['rate_source'] === 'boi');
+check('ההתראה מציגה את הסכום המקורי', strpos(
+    (string)$pdoF->query("SELECT data FROM notification_queue ORDER BY id DESC LIMIT 1")->fetchColumn(),
+    '$100.00') !== false);
+
+$r = run($pdoF, 'addPurchase', [
+    'member_id' => 2, 'amount' => 50, 'currency' => 'EUR', 'rate_mode' => 'manual', 'rate' => '3.5',
+], 2, false, 2);
+$p = $pdoF->query("SELECT * FROM group_purchases ORDER BY id DESC LIMIT 1")->fetch();
+check('שער ידני', ($r['success'] ?? false) && (float)$p['amount'] === 175.0 && $p['rate_source'] === 'manual');
+
+$r = run($pdoF, 'addPurchase', [
+    'member_id' => 2, 'amount' => 50, 'currency' => 'EUR', 'rate_mode' => 'manual', 'rate' => '0',
+], 2, false, 2);
+check('שער ידני אפס נדחה', !($r['success'] ?? true));
+
+$r = run($pdoF, 'addPurchase', ['member_id' => 2, 'amount' => 50, 'currency' => 'XYZ'], 2, false, 2);
+check('מטבע לא מוכר נדחה', !($r['success'] ?? true));
+
+$r = run($pdoF, 'addPurchase', [
+    'member_id' => 2, 'amount' => 50, 'currency' => 'USD', 'rate_date' => '2999-01-01',
+], 2, false, 2);
+check('יום עתידי נדחה', !($r['success'] ?? true));
+
+$id = (int)$pdoF->query("SELECT id FROM group_purchases WHERE currency = 'USD'")->fetchColumn();
+$r  = run($pdoF, 'updatePurchase', ['purchase_id' => $id, 'amount' => 80, 'currency' => 'ILS'], 2, false, 2);
+$p  = $pdoF->query("SELECT * FROM group_purchases WHERE id = $id")->fetch();
+check('עריכה חזרה לשקלים מנקה את ההמרה', ($r['success'] ?? false) && (float)$p['amount'] === 80.0
+    && $p['currency'] === null && $p['exchange_rate'] === null && $p['original_amount'] === null);
+
+$r = run($pdoF, 'updatePurchase', [
+    'purchase_id' => $id, 'amount' => 10, 'currency' => 'USD', 'rate_date' => '2026-10-24',
+], 2, false, 2);
+$p = $pdoF->query("SELECT * FROM group_purchases WHERE id = $id")->fetch();
+check('עריכה למטבע זר ממירה שוב', ($r['success'] ?? false) && (float)$p['amount'] === 31.12
+    && $p['currency'] === 'USD');
 
 echo "\n" . str_repeat('=', 55) . "\n";
 echo "עבר: $pass | נכשל: $fail\n";
