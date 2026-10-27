@@ -210,7 +210,10 @@ window.PlatformAdmin = (() => {
         // אישור ופותח את הבורר שלו; מגיע רק מי שנבחר. במכשיר שלא תומך (אייפון, מחשב) — הכפתור לא מוצג.
         // התוצאה כתובה בשורה מתחת לכפתור. ביומן (📜): רק מספרים ושם השגיאה — בלי פרטי איש הקשר.
         const pickNote = el('small', { className: 'muted pick-note', role: 'status' });
-        const pick = 'contacts' in navigator && 'select' in navigator.contacts ? [button('📇 בחירה מאנשי הקשר (בורר כרום)', async () => {
+        // בורר שחזר ריק במכשיר הזה — לא מוצג בו יותר (בטלפון של בעל המערכת מסך האישור של כרום לא מגיב).
+        let pickerBroken = false;
+        try { pickerBroken = localStorage.getItem('platform:picker-broken') === '1'; } catch { /* */ }
+        const pick = !pickerBroken && 'contacts' in navigator && 'select' in navigator.contacts ? [button('📇 בחירה מאנשי הקשר (בורר כרום)', async () => {
             const log = (info) => { try { window.PlatformDiag?.log('contacts-pick', info); } catch { /* */ } };
             pickNote.textContent = '';
             let list;
@@ -227,8 +230,9 @@ window.PlatformAdmin = (() => {
             log({ n: list?.length ?? -1, names: c?.name?.length ?? 0, tels: c?.tel?.length ?? 0, emails: c?.email?.length ?? 0, standalone, multiple: true });
             if (!c) {
                 // בטלפון של בעל המערכת (אנדרואיד 10, כרום 155) זה חוזר תמיד ריק — תקלה בבורר של כרום, לא בבחירה.
-                // הדרך שעובדת: שיתוף מאנשי הקשר (share_target, platform/home/index.php).
-                pickNote.textContent = 'כרום לא העביר את איש הקשר. במקום זה: פותחים את אנשי הקשר בטלפון ← איש הקשר ← ⋮ ← "שיתוף" ← "כלים דיגיטליים" — והחלון הזה נפתח ממולא.';
+                // גם השיתוף נכשל שם (ERR_FAILED לפני השרת) — הדרך שעובדת היא הדבקה מהלוח (למטה).
+                try { localStorage.setItem('platform:picker-broken', '1'); } catch { /* */ }
+                pickNote.textContent = 'כרום לא העביר את איש הקשר, והבורר לא יוצג יותר במכשיר הזה. מעתיקים את המספר באנשי הקשר ולוחצים "📋 הדבקה מאנשי הקשר".';
                 return;
             }
             const tels = (c.tel || []).map(String).filter(Boolean);
