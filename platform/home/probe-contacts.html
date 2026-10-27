@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>בדיקת אנשי קשר</title>
+<!-- בדיקה זמנית: האם הבורר של כרום (Contact Picker) מחזיר איש קשר בטלפון הזה — בלי שום קוד אחר של הפלטפורמה.
+     שלוש דרכים: בודד, מרובה, ומתוך חלון (dialog) כמו בהזמנת לקוח. התוצאה על המסך וביומן (📜) — רק מספרים. -->
+<style>
+  body { font: 16px system-ui, sans-serif; margin: 16px; background: #f5f6fa; color: #111; }
+  button { display: block; width: 100%; min-height: 48px; margin: 8px 0; font-size: 16px; border-radius: 10px; border: 1px solid #ccd; background: #fff; }
+  pre { white-space: pre-wrap; background: #fff; border: 1px solid #ddd; border-radius: 10px; padding: 10px; min-height: 60px; direction: ltr; text-align: left; }
+  dialog { border: 0; border-radius: 12px; padding: 16px; width: min(90vw, 400px); }
+</style>
+</head>
+<body>
+<h2>בדיקת אנשי קשר</h2>
+<p id="env"></p>
+<button id="single">1 · בחירה אחת</button>
+<button id="multi">2 · בחירה מרובה</button>
+<button id="indialog">3 · מתוך חלון</button>
+<pre id="out">בוחרים איש קשר, מקישים עליו עד שמופיע ✓, ו"בוצע".</pre>
+<dialog id="dlg"><p>בתוך חלון:</p><button id="dlgbtn">בחירה מתוך החלון</button><button id="dlgclose">סגירה</button></dialog>
+<script>
+const out = document.getElementById('out');
+const standalone = matchMedia('(display-mode: standalone)').matches;
+document.getElementById('env').textContent = `${standalone ? 'אפליקציה מותקנת' : 'לשונית בדפדפן'} · contacts: ${'contacts' in navigator}`;
+function report(way, info) {
+  out.textContent = way + '\n' + JSON.stringify(info, null, 1);
+  fetch('../api.php?action=diag', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Platform': '1' },
+    body: JSON.stringify({ event: 'contacts-probe', path: location.pathname, info: Object.assign({ way, standalone }, info) }) }).catch(() => {});
+}
+async function pick(way, multiple) {
+  out.textContent = '…';
+  try {
+    const props = await navigator.contacts.getProperties().catch(e => 'getProperties: ' + e.name);
+    const list = await navigator.contacts.select(['name', 'tel'], { multiple });
+    report(way, { props: String(props), n: list.length, names: list[0]?.name?.length ?? 0, tels: list[0]?.tel?.length ?? 0,
+      first: list[0] ? (list[0].name?.[0] || '').slice(0, 2) + '…' : '' });
+  } catch (e) {
+    report(way, { error: e.name, message: e.message });
+  }
+}
+document.getElementById('single').onclick = () => pick('single', false);
+document.getElementById('multi').onclick = () => pick('multi', true);
+document.getElementById('indialog').onclick = () => document.getElementById('dlg').showModal();
+document.getElementById('dlgbtn').onclick = () => pick('dialog', false);
+document.getElementById('dlgclose').onclick = () => document.getElementById('dlg').close();
+</script>
+</body>
+</html>
