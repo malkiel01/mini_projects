@@ -10,8 +10,8 @@ const READY_MS = 10000;
 
 /** היעדים. הנתיב יחסי לעורך (greeting-cards/editor/); האפליקציה מנתבת לפי ‎?mbe-handoff=<id>. */
 export const TARGETS = {
-    'raster-studio': { name: 'עיצוב רסטר', in: 'בעיצוב רסטר', icon: '🎨', url: '../../raster-studio/', needsImage: true },
-    'vector-studio': { name: 'וקטורי', in: 'בווקטורי', icon: '✒️', url: '../../vector-studio/' },
+    'raster-studio': { name: 'עיצוב רסטר', in: 'בעיצוב רסטר', from: 'מעיצוב רסטר', icon: '🎨', url: '../../raster-studio/', needsImage: true },
+    'vector-studio': { name: 'וקטורי', in: 'בווקטורי', from: 'מווקטורי', icon: '✒️', url: '../../vector-studio/' },
 };
 
 const pending = new Map();   // id → { win, origin, target, onReturn }

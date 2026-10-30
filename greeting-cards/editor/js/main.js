@@ -1177,7 +1177,7 @@ async function receiveBack(srcId, t, bytes) {
             if (!ed) await openDesign(id, r.loaded);
         }
         focus();
-        toast(`חזר מ${t.name} ✓`);
+        toast(`חזר ${t.from} ✓`);
     } catch (e) {
         toast('החזרה נכשלה: ' + (e.message || e), 'error');
     }
