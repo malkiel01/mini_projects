@@ -104,7 +104,12 @@
 - **Word כ"פנים" של חבילת היצירה** (`export_docx_face`, דרך `MbeFace::stamp` של הליבה): בהורדה כ-Word של הגרסה הנוכחית ה-‎.mbe של
   המסמך נשמר ליד המסמך כזיכרון (`mbe_source_path` — `manifest.id` יציב בין הורדות), וה-docx נושא `mbe-doc-id` ו-`mbe-base`
   (`docProps/custom.xml`), את המודל (`customXml`) ואת סימניות הפסקה. הזיכרון נשמר בלי לעמד מחדש כשיש בו כבר `preview.png`
-  (`export_mbe(..., light)`). כשל — ה-docx הרגיל. הקריאה בחזרה (`reconcile`) — כשהליבה תממש.
+  (`export_mbe(..., light)`). כשל — ה-docx הרגיל. אינדקס `data/media/mbe/ids/<mbe-doc-id>` → המסמך.
+- **Word שחזר** (`lib/face_import.php`, מכפתור הייבוא): docx עם `mbe-doc-id` של מסמך שיש לי הרשאת עריכה בו — **נכנס לאותו מסמך**,
+  במיזוג תלת-כיווני של הליבה (`MbeMerge::reconcile` / `applyMerge`): הבסיס (הגרסה שיצאה — מהיסטוריית הזיכרון או מ-`customXml`), המסמך
+  עכשיו, ומה שחזר — לפי מזהי הפסקה (הסימניות; בלעדיהן — לפי תוכן). שינוי בצד אחד — נכנס לבד; אותה פסקה בשני הצדדים — שאלה לכל
+  אחת: מה שכאן / מ-Word / שתיהן (ברירת המחדל — שתיהן). התוצאה נכנסת כמו פתיחה של ‎.mbe (`import_mbe`), ביומן הפעילות — "עדכון
+  מ-Word". docx בלי מזהה, בלי הרשאה או בלי בסיס — ייבוא רגיל כמסמך חדש.
 - **מנוע ה-PDF המשותף — `pdf-core`** (`lib/pdf-core` — עותק של `creative-suite/pdf-core/src/php`, לא עורכים כאן;
   `php creative-suite/pdf-core/tools/sync.php`): הכותב (`writer.php`), קריאת גופנים (`font.php`), subset (`subset.php`) ורשימת
   ציור → PDF (`draw.php`, `pdf_draw($list, $resolve)`) לעימוד. אצלנו נשארים העימוד ושבירת השורות (`lib/pdf/layout.php`,

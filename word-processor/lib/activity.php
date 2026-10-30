@@ -17,6 +17,7 @@ const ACTIVITY_TEXT = [
     'share' => 'שיתוף', 'unshare' => 'הסרת שיתוף', 'link' => 'בקשת קישור עריכה לזר', 'link_ok' => 'אישור קישור לזר',
     'unlink' => 'ביטול קישור לזר', 'trash' => 'העברה לסל', 'untrash' => 'שחזור מהסל', 'export' => 'הורדה', 'copy' => 'שכפול',
     'comment' => 'הערה', 'reply' => 'תשובה להערה', 'resolve' => 'הערה סומנה כפתורה', 'reopen' => 'הערה נפתחה מחדש', 'uncomment' => 'מחיקת הערה',
+    'merge' => 'עדכון מ-Word',
 ];
 
 function activity(string $doc, string $uid, string $uname, string $what, string $detail = ''): void
