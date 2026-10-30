@@ -16,6 +16,7 @@ import { renderProps, renderLayers } from './props.js';
 import { createPenTools } from './pen.js';
 import { pencilD, brushD, widths } from './freehand.js';
 import { needsPages, sourcePdf, renderPages, assign as assignPages } from './pages.js';
+import { activeHandoff, returnHandoff, endHandoff } from './handoff.js';
 import { snapper } from './snap.js';
 import { parse, bbox, serialize, transform as transformSegs } from './geometry/path.js';
 const pathOps = { parse, serialize, transform: transformSegs };
@@ -1509,6 +1510,53 @@ async function encodeBitmap(bmp) {
   return { href: c.toDataURL('image/png'), w, h, rgb: await deflate(rgb), alpha: opaque ? null : await deflate(alpha) };
 }
 
+/** ה-‎.mbe של הציור כמו שהוא עכשיו (אחרי שמירה) — להורדה ול"↩ חזרה" לאפליקציה שפתחה אותנו. → { bytes, gaps } */
+async function currentMbe() {
+  clearTimeout(saveTimer);
+  if (dirty) await flush();
+  await fontsReady;
+  const { buildMbe } = await import('./mbefile.js');
+  const base = S.container ? await library.container(S.id) : null; // נפתח מ-‎.mbe — שומרים את מה שלא הבנו
+  return buildMbe({
+    doc: S.doc, base, getFont,
+    fontBytes: async (file) => new Uint8Array(await (await fetch('assets/fonts/' + file)).arrayBuffer()),
+    preview: (surface, max) => pngOf(surface, Math.min(max / surface.size[0], max / surface.size[1], 4), true),
+    getImage: exportImage, getBackground: exportPage, extraPages: await extraPdfPages(), sourcePdf: S.sourcePdf || null,
+    mediaBytes: (src) => library.media(src),
+  });
+}
+
+// ---------- נפתחנו מאפליקציה אחרת (mbe-handoff): "↩ חזרה" שולח לה את ה-‎.mbe ----------
+
+const handoff = activeHandoff();
+if (handoff) {
+  const b = $('handoff-back');
+  b.textContent = '↩ חזרה ל' + handoff.from.name;
+  b.title = 'שולח את הציור בחזרה ל' + handoff.from.name;
+  b.hidden = false;
+  b.addEventListener('click', async () => {
+    b.disabled = true;
+    status('מחזיר…');
+    let r = null;
+    try {
+      r = await currentMbe();
+      await returnHandoff(handoff, r.bytes);
+      endHandoff();
+      status('הוחזר');
+      toast('הציור חזר ל' + handoff.from.name);
+      setTimeout(() => window.close(), 400);
+    } catch (e) {
+      // החלון המקורי נסגר או לא ענה — הקובץ יורד, כדי שאפשר יהיה לייבא אותו שם ידנית
+      if (r) download(new Blob([r.bytes], { type: 'application/vnd.mbe+zip' }), fileName('mbe'));
+      toast((e.message === 'closed' ? 'החלון של ' + handoff.from.name + ' נסגר' : 'אין תשובה מ' + handoff.from.name)
+        + (r ? ' — הקובץ ירד; פתחו אותו שם.' : ': ' + e.message), true);
+      status('נשמר');
+    } finally {
+      b.disabled = false;
+    }
+  });
+}
+
 async function doExport(kind) {
   const btn = document.querySelector(`[data-export="${kind}"]`);
   btn.disabled = true;
@@ -1518,18 +1566,7 @@ async function doExport(kind) {
     const { prepare, toSVG, toPDF } = await import('./export.js');
     let gaps = [];
     if (kind === 'mbe') {
-      clearTimeout(saveTimer);
-      if (dirty) await flush();
-      await fontsReady;
-      const { buildMbe } = await import('./mbefile.js');
-      const base = S.container ? await library.container(S.id) : null; // נפתח מ-‎.mbe — שומרים את מה שלא הבנו
-      const r = await buildMbe({
-        doc: S.doc, base, getFont,
-        fontBytes: async (file) => new Uint8Array(await (await fetch('assets/fonts/' + file)).arrayBuffer()),
-        preview: (surface, max) => pngOf(surface, Math.min(max / surface.size[0], max / surface.size[1], 4), true),
-        getImage: exportImage, getBackground: exportPage, extraPages: await extraPdfPages(), sourcePdf: S.sourcePdf || null,
-        mediaBytes: (src) => library.media(src),
-      });
+      const r = await currentMbe();
       gaps = r.gaps;
       download(new Blob([r.bytes], { type: 'application/vnd.mbe+zip' }), fileName('mbe'));
     } else if (kind === 'svg') {

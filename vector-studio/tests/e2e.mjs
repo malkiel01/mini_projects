@@ -744,6 +744,44 @@ try {
   assert.equal(await page.evaluate(() => window.__vs.S.doc.surfaces[0].layers[0].paths.length), 1);
   assert.equal(await page.evaluate(() => localStorage.getItem('vector-studio:draft:old1')), null, 'נמחקה מהמכשיר אחרי שנשמרה בשרת');
   step('טיוטה ישנה מהמכשיר עוברת לספרייה בשרת');
+
+  // נפתחים מאפליקציה אחרת (mbe-handoff): ready מיד, הקובץ נפתח, "↩ חזרה" מחזיר ‎.mbe תקין, והחלון נסגר
+  const hf = mbeCreate('vector', { units: 'pt', color: { space: 'sRGB' }, surfaces: [{ id: 's1', type: 'artboard', name: 'כרטיס', size: [300, 200],
+    layers: [{ id: 'L1', name: 'שכבה', type: 'vector', paths: [{ id: 'h1', d: 'M10 10 L100 10 L100 80 Z', fill: { color: '#e19a00' } }] }] }] });
+  hf.setRendition('renditions/preview.png', red);
+  const hBytes = [...await mbeSave(hf, { app: 'greeting-cards' })];
+  await page.goto(base);
+  const [popup] = await Promise.all([page.waitForEvent('popup'), page.evaluate((bytes) => {
+    window.__ho = { ready: false, returned: null };
+    const id = 'h' + Math.random().toString(36).slice(2);
+    const w = window.open('index.html?mbe-handoff=' + id);
+    addEventListener('message', (e) => {
+      if (e.source !== w || e.origin !== location.origin || e.data?.proto !== 'mbe-handoff' || e.data.id !== id) return;
+      if (e.data.type === 'ready') {
+        window.__ho.ready = true;
+        const file = new Uint8Array(bytes).buffer;
+        w.postMessage({ proto: 'mbe-handoff', v: 1, type: 'open', id, name: 'כרטיס.mbe', file, from: { app: 'greeting-cards', name: 'הסטודיו' } }, location.origin, [file]);
+      }
+      if (e.data.type === 'return') {
+        window.__ho.returned = [...new Uint8Array(e.data.file)];
+        w.postMessage({ proto: 'mbe-handoff', v: 1, type: 'returned', id }, location.origin);
+      }
+    });
+  }, hBytes)]);
+  await popup.waitForSelector('#handoff-back:not([hidden])', { timeout: 15000 });
+  assert.equal(await popup.textContent('#handoff-back'), '↩ חזרה להסטודיו');
+  assert.ok(await page.evaluate(() => window.__ho.ready), 'ready נשלח');
+  await popup.waitForFunction(() => window.__vs?.S.doc?.surfaces[0].layers[0].paths.some(p => p.id === 'h1'));
+  await popup.evaluate(() => { window.__vs.S.doc.surfaces[0].layers[0].paths[0].fill.color = '#1e7b3a'; });
+  const closed = popup.waitForEvent('close', { timeout: 15000 });
+  await popup.click('#handoff-back');
+  await closed;
+  const back = await page.evaluate(() => window.__ho.returned);
+  const { open: mbeOpen3 } = await import('../assets/js/mbe/mbe.js');
+  const bf = await mbeOpen3(new Uint8Array(back));
+  assert.equal(bf.ok, true, JSON.stringify(bf.issues));
+  assert.equal(bf.document.surfaces[0].layers[0].paths.find(p => p.id === 'h1').fill.color, '#1e7b3a', 'השינוי חזר');
+  step('פתיחה מאפליקציה אחרת (mbe-handoff): ready, פתיחה, "↩ חזרה" עם ‎.mbe תקין, והחלון נסגר');
   await page.close();
 
   // התקנה: manifest תקין ו-service worker — Chromium לא מוצא שגיאות התקנה; בלי רשת הדף נפתח מהמטמון
