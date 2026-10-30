@@ -1,4 +1,5 @@
-// הכלים: ✋ יד · בחירות (מלבן, אליפסה, לאסו, 🪄 מטה קסם) · 🖌️ מכחול · 🧽 מחק · 🧬 חותמת שכפול · 🪣 דלי · 💧 טפטפת, הצבע,
+// הכלים: ✋ יד · בחירות (מלבן, אליפסה, לאסו, 🪄 מטה קסם) · 🖌️ מכחול · 🧽 מחק · 🧬 חותמת שכפול · 🩹 מברשת ריפוי ·
+// 🪣 דלי · 💧 טפטפת, הצבע,
 // ולוח האפשרויות של הכלי הפעיל.
 // הציור עצמו: משיכה במנוע (beginStroke → dab → endStroke), ובסופה רשומה אחת בהיסטוריה.
 
@@ -18,6 +19,7 @@ export const TOOLS = {
   brush: { label: 'מכחול', icon: '🖌️', key: 'b', hint: 'Alt+לחיצה — דגימת צבע · [ ] — גודל' },
   eraser: { label: 'מחק', icon: '🧽', key: 'e', hint: '[ ] — גודל' },
   clone: { label: 'חותמת שכפול', icon: '🧬', key: 's', hint: 'Alt+לחיצה (או 🎯) — נקודת המקור · ציור — מעתיק ממנה, באותו מרחק · [ ] — גודל' },
+  heal: { label: 'מברשת ריפוי', icon: '🩹', key: 'j', hint: 'כמו חותמת השכפול, ובסוף המשיכה — מתאים את האור והצבע לסביבה · Alt+לחיצה (או 🎯) — המקור' },
   bucket: { label: 'דלי', icon: '🪣', key: 'g', hint: 'לחיצה — מילוי אזור בשכבה הפעילה' },
   text: { label: 'טקסט', icon: '𝐓', key: 't', hint: 'לחיצה — תיבת טקסט · Ctrl+Enter או לחיצה בחוץ — אישור · Esc — ביטול' },
   picker: { label: 'טפטפת', icon: '💧', key: 'i', hint: 'לחיצה — הצבע מהתמונה' },
@@ -464,7 +466,9 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
   });
 
   // ---- ציור ----
-  const painting = () => state.tool === 'brush' || state.tool === 'eraser' || state.tool === 'clone';
+  // חותמת שכפול ומברשת ריפוי — אותה נקודת מקור ואותו מרחק
+  const cloning = () => state.tool === 'clone' || state.tool === 'heal';
+  const painting = () => state.tool === 'brush' || state.tool === 'eraser' || cloning();
 
   function setClonePicking(on) {
     cloneSrc.picking = on;
@@ -474,7 +478,7 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
   /** נקודת המקור של החותמת: עיגול עם צלב, לפני המשיכה בעוגן ובזמן המשיכה — במקום שממנו מעתיקים */
   function showCloneMark(p) {
     if (!overlay) return;
-    if (state.tool !== 'clone') { overlay.mark(null); return; }
+    if (!cloning()) { overlay.mark(null); return; }
     const o = cloneSrc.offset;
     overlay.mark(p && o ? [p[0] + o[0], p[1] + o[1]] : cloneSrc.anchor, state.size / 2);
   }
@@ -584,7 +588,7 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
       return true;
     }
     if (state.tool === 'wand') { track(wand(pt, e.shiftKey ? 'add' : e.altKey ? 'sub' : state.selMode)); return true; }
-    if (state.tool === 'clone' && (e.altKey || cloneSrc.picking)) {
+    if (cloning() && (e.altKey || cloneSrc.picking)) {
       cloneSrc.anchor = [Math.round(pt[0]), Math.round(pt[1])];
       cloneSrc.offset = null;
       setClonePicking(false);
@@ -595,17 +599,17 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     if (state.tool === 'bucket') { track(bucket(pt)); return true; }
     const d = doc(), layer = d.active;
     if (!canEdit(layer)) return true;
-    if (state.tool === 'clone') {
+    if (cloning()) {
       if (!cloneSrc.anchor) { toast('קודם נקודת המקור: Alt+לחיצה, או 🎯 ואז הקשה'); return true; }
       cloneSrc.offset ??= [cloneSrc.anchor[0] - Math.round(pt[0]), cloneSrc.anchor[1] - Math.round(pt[1])];
     }
     const pen = e.pointerType === 'pen';
     const t = target(layer);
     renderer.beginStroke(d, t, {
-      ...paintOn(layer, state.tool === 'eraser' ? 'erase' : state.tool === 'clone' ? 'clone' : 'paint'),
-      opacity: state.opacity, offset: cloneSrc.offset ?? [0, 0],
+      ...paintOn(layer, state.tool === 'eraser' ? 'erase' : cloning() ? state.tool : 'paint'),
+      opacity: state.opacity, offset: cloneSrc.offset ?? [0, 0], healRadius: state.size / 2,
     });
-    if (state.tool === 'clone') showCloneMark(pt);
+    if (cloning()) showCloneMark(pt);
     const p = { x: pt[0], y: pt[1], p: pen ? e.pressure || 0.5 : 1 };
     stroke = { layer: t, last: p, carry: 0, pen };
     dabAt(p);
@@ -664,7 +668,7 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
       stroke.carry = r.carry;
       stroke.last = p;
     }
-    if (state.tool === 'clone') showCloneMark([stroke.last.x, stroke.last.y]);
+    if (cloning()) showCloneMark([stroke.last.x, stroke.last.y]);
     draw();
   }
 
@@ -701,7 +705,7 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     const d = doc(), s = stroke;
     stroke = null;
     const before = renderer.endStroke(d);
-    if (before.size) history.pixels(d, s.layer, before, ({ eraser: 'מחק', clone: 'חותמת שכפול' }[state.tool] ?? 'מכחול') + (s.layer.owner ? ' (מסכה)' : ''));
+    if (before.size) history.pixels(d, s.layer, before, ({ eraser: 'מחק', clone: 'חותמת שכפול', heal: 'מברשת ריפוי' }[state.tool] ?? 'מכחול') + (s.layer.owner ? ' (מסכה)' : ''));
     showCloneMark(null);
     onChange('stroke');
   }

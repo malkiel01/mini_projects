@@ -670,6 +670,32 @@ async function main() {
     [await px(390, 50), await px(420, 50)].join(' | '));
   if (SHOTS) await page.screenshot({ path: join(SHOTS, 'clone-desktop.png') });
 
+  // ---- מברשת ריפוי: מקור כהה (60) על אזור בהיר (200) — המרקם מהמקור, האור מהסביבה ----
+  await openEd(page);
+  await page.waitForFunction(() => window.__rs?.doc);
+  await page.evaluate(() => __rs.setView({ zoom: 1, x: 20, y: 20 }));
+  await page.click('[data-act="add"]');
+  await page.evaluate(() => { __rs.renderer.fill(__rs.doc, __rs.doc.active, [60, 60, 60, 255]); __rs.renderer.invalidate(__rs.doc); });
+  await page.evaluate(() => __rs.tools.setTool('rect'));
+  await drag([600, 400], [300, 60]);
+  await color('#c8c8c8');
+  await page.keyboard.press('Alt+Backspace');
+  await page.keyboard.press('Control+d');
+  await page.keyboard.press('j');
+  check('J — מברשת ריפוי, עם 🎯', await page.evaluate(() => __rs.tools.state.tool) === 'heal' && await page.isVisible('[data-clone="source"]'));
+  await setOpt('size', 48); await setOpt('hardness', 100); await setOpt('opacity', 100);
+  await page.keyboard.down('Alt');
+  await page.mouse.click(...at(100, 200));
+  await page.keyboard.up('Alt');
+  await stroke([[450, 200], [455, 200]]);
+  const healed = Number((await px(452, 200)).split(',')[0]);
+  check('ריפוי: בסוף המשיכה — האור של הסביבה (≈200), לא של המקור (60)', healed > 185 && healed < 215, String(healed));
+  check('ריפוי — רשומת "מברשת ריפוי"', await page.evaluate(() => __rs.history.undoStack.at(-1).label) === 'מברשת ריפוי');
+  await page.keyboard.press('Control+z');
+  await page.keyboard.press('s');
+  await stroke([[450, 200], [455, 200]]);
+  check('לעומת חותמת השכפול — אותה משיכה מעתיקה את הכהה (60)', Math.abs(Number((await px(452, 200)).split(',')[0]) - 60) <= 2, await px(452, 200));
+
   // ---- מסכת שכבה ----
   await openEd(page);
   await page.waitForFunction(() => window.__rs?.doc);

@@ -195,6 +195,17 @@ void main() {
   o = mix(c, r, m);
 }`,
 
+  // מברשת ריפוי: המקור, ועוד (טשטוש היעד − טשטוש המקור) — בלינארי ומוכפל, בגבולות מוכפל-תקין
+  heal: `#version 300 es
+precision highp float;
+uniform sampler2D u_src, u_bDst, u_bSrc;
+in vec2 v_uv; out vec4 o;
+void main() {
+  vec4 r = texture(u_src, v_uv) + texture(u_bDst, v_uv) - texture(u_bSrc, v_uv);
+  r.a = clamp(r.a, 0.0, 1.0);
+  o = vec4(clamp(r.rgb, vec3(0.0), vec3(r.a)), r.a);
+}`,
+
   // שכבת התאמה: מה שמתחת (u_a) ↔ אחרי ההתאמה (u_b), לפי האטימות כפול המסכה (אפור של sRGB)
   lerp: `#version 300 es
 precision highp float;
@@ -381,6 +392,7 @@ export class WebGL2Renderer {
     this.shiftTmp = this.#tileTexture(1);    // שכבה בהזזת קבוצה, לתצוגה בזמן הגרירה
     this.maskTmp = this.#tileTexture(1);     // שכבה כפול המסכה שלה, לקריאה החוצה
     this.adjLayerTmp = this.#tileTexture(1); // מה שמתחת לשכבת התאמה, אחרי ההתאמה
+    this.healTmp = [this.#tileTexture(1), this.#tileTexture(1)];   // טשטוש המקור והיעד — מברשת ריפוי
     // טשטוש: אריח מרופד בשכניו (256 + 2·64), ותוצאת המעבר האופקי
     this.padTex = this.#floatTex(TILE + 128, TILE + 128);
     this.blurTmp = this.#floatTex(TILE, TILE + 128);
@@ -688,13 +700,17 @@ export class WebGL2Renderer {
    * opts: { mode: 'paint' | 'erase' | 'clone', color: [r, g, b] (sRGB), opacity: 0–1, offset: [dx, dy] }
    * clone — חותמת שכפול: כל פיקסל מקבל את הפיקסל של השכבה ב-offset ממנו (המקור פחות היעד, בפיקסלים שלמים),
    * כפי שהשכבה הייתה בתחילת המשיכה — המשיכה לא משכפלת את עצמה.
+   * heal — מברשת ריפוי: בזמן המשיכה כמו clone; ב-endStroke המקור מותאם לאור ולצבע של היעד (#healTiles,
+   * טשטוש ברדיוס healRadius).
    */
-  beginStroke(doc, layer, { mode = 'paint', color = [0, 0, 0], opacity = 1, offset = [0, 0] } = {}) {
+  beginStroke(doc, layer, { mode = 'paint', color = [0, 0, 0], opacity = 1, offset = [0, 0], healRadius = 16 } = {}) {
     if (doc._stroke) this.cancelStroke(doc);
     doc._stroke = {
       doc, layer, mode, opacity, mask: new Map(),
       color: [srgbToLinear(color[0]), srgbToLinear(color[1]), srgbToLinear(color[2]), 1],
-      ...(mode === 'clone' ? { from: new Map(layer.tiles), offset: offset.map(Math.round), src: new Map() } : {}),
+      ...(mode === 'clone' || mode === 'heal'
+        ? { from: new Map(layer.tiles), offset: offset.map(Math.round), src: new Map(), heal: new Map(), healK: Math.max(4, Math.min(64, Math.round(healRadius))) }
+        : {}),
     };
   }
 
@@ -803,7 +819,7 @@ export class WebGL2Renderer {
     const p = this.prog.stroke;
     // מסכת הבחירה קודם — יצירתה קושרת מרקם, ואסור שזה יקרה אחרי שקשרנו את הקלט
     const sel = k && st.doc.selection ? this.#selTex(st.doc, k) : null;
-    const src = k && st.src ? this.#cloneSrc(st, k) : null;
+    const src = k && st.src ? (st.heal.get(k) ?? this.#cloneSrc(st, k)) : null;
     this.#target(outTex);
     gl.useProgram(p.p);
     gl.bindVertexArray(this.vao);
@@ -836,6 +852,7 @@ export class WebGL2Renderer {
     const st = doc._stroke;
     if (!st) return new Map();
     doc._stroke = null;
+    if (st.mode === 'heal') this.#healTiles(st);   // לפני שאריח כלשהו בשכבה מוחלף
     const before = new Map();
     for (const [k, m] of st.mask) {
       const old = st.layer.tiles.get(k) ?? null;
@@ -863,7 +880,7 @@ export class WebGL2Renderer {
 
   #freeMasks(st) {
     this.freeTextures([...st.mask.values()].filter(t => t !== this.fullMask && t !== this.zeroMask));
-    if (st.src) this.freeTextures([...st.src.values()]);
+    if (st.src) this.freeTextures([...st.src.values(), ...st.heal.values()]);
   }
 
   // ---------- בחירה ----------
@@ -977,26 +994,7 @@ export class WebGL2Renderer {
     base ||= this.emptyTex;
     if (WebGL2Renderer.adjustReach(adj) > 0) {
       const K = WebGL2Renderer.adjustReach(adj);
-      const P = TILE + 2 * K;
-      // ריפוד: האריח ושמונת שכניו, כל אחד במקומו
-      gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo);
-      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.padTex, 0);
-      gl.viewport(0, 0, P, P);
-      gl.clearColor(0, 0, 0, 0);
-      gl.clear(gl.COLOR_BUFFER_BIT);
-      const c = this.prog.copy;
-      gl.useProgram(c.p);
-      gl.bindVertexArray(this.vao);
-      gl.disable(gl.BLEND);
-      gl.activeTexture(gl.TEXTURE0);
-      gl.uniform1i(c.u.u_tex, 0);
-      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-        const nt = dx || dy ? layer.tiles.get(key(tx + dx, ty + dy)) : base;
-        if (!nt) continue;
-        gl.bindTexture(gl.TEXTURE_2D, nt);
-        const ox = K + dx * TILE, oy = K + dy * TILE;
-        this.#quad(c, [ox, oy, ox + TILE, oy + TILE], [0, 0, 1, 1], [P, P], -1);
-      }
+      this.#pad((dx, dy) => (dx || dy ? layer.tiles.get(key(tx + dx, ty + dy)) : base), K);
       if (adj.kind === 'motion') {
         const m = this.prog.motion, a = adj.angle * Math.PI / 180;
         this.#target(out);
@@ -1013,28 +1011,7 @@ export class WebGL2Renderer {
         gl.activeTexture(gl.TEXTURE0);
         return;
       }
-      const sigma = Math.max(0.5, K / 3);
-      const h = this.prog.blurH;
-      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.blurTmp, 0);
-      gl.viewport(0, 0, TILE, P);
-      gl.useProgram(h.p);
-      gl.bindTexture(gl.TEXTURE_2D, this.padTex);
-      gl.uniform1i(h.u.u_tex, 0);
-      gl.uniform1i(h.u.u_k, K);
-      gl.uniform1f(h.u.u_sigma, sigma);
-      this.#quad(h, [0, 0, TILE, P], [0, 0, 1, 1], [TILE, P], -1);
-      const v = this.prog.blurV;
-      this.#target(out);
-      gl.useProgram(v.p);
-      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.blurTmp);
-      gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, this.padTex);
-      gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, sel || this.fullMask);
-      gl.uniform1i(v.u.u_tex, 0); gl.uniform1i(v.u.u_pad, 1); gl.uniform1i(v.u.u_sel, 2);
-      gl.uniform1i(v.u.u_k, K);
-      gl.uniform1i(v.u.u_useSel, sel ? 1 : 0);
-      gl.uniform1f(v.u.u_sigma, sigma);
-      gl.uniform1f(v.u.u_amount, adj.kind === 'sharpen' ? adj.amount / 100 : 0);
-      this.#quad(v, [0, 0, TILE, TILE], [0, 0, 1, 1], [TILE, TILE], -1);
+      this.#blurPad(K, out, sel, adj.kind === 'sharpen' ? adj.amount / 100 : 0);
     } else {
       const a = this.prog.adjust;
       this.#target(out);
@@ -1053,6 +1030,94 @@ export class WebGL2Renderer {
     gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, null);
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, null);
     gl.activeTexture(gl.TEXTURE0);
+  }
+
+  /** ריפוד: האריח ושמונת שכניו (get(dx, dy) → מרקם או כלום), כל אחד במקומו, ב-padTex בגודל TILE + 2K */
+  #pad(get, K) {
+    const gl = this.gl;
+    const P = TILE + 2 * K;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.padTex, 0);
+    gl.viewport(0, 0, P, P);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    const c = this.prog.copy;
+    gl.useProgram(c.p);
+    gl.bindVertexArray(this.vao);
+    gl.disable(gl.BLEND);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.uniform1i(c.u.u_tex, 0);
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const nt = get(dx, dy);
+      if (!nt) continue;
+      gl.bindTexture(gl.TEXTURE_2D, nt);
+      const ox = K + dx * TILE, oy = K + dy * TILE;
+      this.#quad(c, [ox, oy, ox + TILE, oy + TILE], [0, 0, 1, 1], [P, P], -1);
+    }
+  }
+
+  /** טשטוש גאוסי של padTex (שני מעברים) ל-out; amount > 0 — חידוד; sel — רק בבחירה */
+  #blurPad(K, out, sel = null, amount = 0) {
+    const gl = this.gl;
+    const P = TILE + 2 * K;
+    const sigma = Math.max(0.5, K / 3);
+    const h = this.prog.blurH;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.blurTmp, 0);
+    gl.viewport(0, 0, TILE, P);
+    gl.useProgram(h.p);
+    gl.bindVertexArray(this.vao);
+    gl.disable(gl.BLEND);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.padTex);
+    gl.uniform1i(h.u.u_tex, 0);
+    gl.uniform1i(h.u.u_k, K);
+    gl.uniform1f(h.u.u_sigma, sigma);
+    this.#quad(h, [0, 0, TILE, P], [0, 0, 1, 1], [TILE, P], -1);
+    const v = this.prog.blurV;
+    this.#target(out);
+    gl.useProgram(v.p);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.blurTmp);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, this.padTex);
+    gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, sel || this.fullMask);
+    gl.uniform1i(v.u.u_tex, 0); gl.uniform1i(v.u.u_pad, 1); gl.uniform1i(v.u.u_sel, 2);
+    gl.uniform1i(v.u.u_k, K);
+    gl.uniform1i(v.u.u_useSel, sel ? 1 : 0);
+    gl.uniform1f(v.u.u_sigma, sigma);
+    gl.uniform1f(v.u.u_amount, amount);
+    this.#quad(v, [0, 0, TILE, TILE], [0, 0, 1, 1], [TILE, TILE], -1);
+  }
+
+  /**
+   * מברשת ריפוי (בסוף המשיכה): לכל אריח — המקור המוזז, ועוד ההפרש בין הטשטוש של היעד לטשטוש של המקור.
+   * כך נשאר המרקם של המקור, והאור והצבע — של הסביבה במקום החדש. נשמר ב-st.heal, וה-shader של המשיכה משתמש בו.
+   */
+  #healTiles(st) {
+    const gl = this.gl;
+    const K = st.healK;
+    for (const k of st.mask.keys()) {
+      const [tx, ty] = k.split(',').map(Number);
+      const near = (dx, dy) => key(tx + dx, ty + dy);
+      // אריחי המקור של השכנים — קודם כולם (יצירתם מחליפה את יעד הציור, ואסור באמצע הריפוד)
+      const srcs = new Map();
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) srcs.set(near(dx, dy), this.#cloneSrc(st, near(dx, dy)));
+      this.#pad((dx, dy) => srcs.get(near(dx, dy)), K);
+      this.#blurPad(K, this.healTmp[0]);
+      this.#pad((dx, dy) => st.from.get(near(dx, dy)), K);
+      this.#blurPad(K, this.healTmp[1]);
+      const out = this.#tileTexture(1);
+      const p = this.prog.heal;
+      this.#target(out);
+      gl.useProgram(p.p);
+      gl.bindVertexArray(this.vao);
+      gl.disable(gl.BLEND);
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.#cloneSrc(st, k));
+      gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, this.healTmp[1]);
+      gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, this.healTmp[0]);
+      gl.uniform1i(p.u.u_src, 0); gl.uniform1i(p.u.u_bDst, 1); gl.uniform1i(p.u.u_bSrc, 2);
+      this.#quad(p, [0, 0, TILE, TILE], [0, 0, 1, 1], [TILE, TILE], -1);
+      st.heal.set(k, out);
+    }
   }
 
   /** כותב את התיקון לשכבה. מחזיר before להיסטוריה. */
