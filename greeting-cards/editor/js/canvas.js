@@ -117,7 +117,8 @@ export class Canvas {
     /** בונה מחדש את תוכן השכבה. פשוט יותר מעדכון חלקי, ומהיר מספיק לעשרות שכבות. */
     paint(g, l) {
         g.setAttrs({
-            x: l.x, y: l.y, rotation: l.rotation || 0, opacity: l.opacity ?? 1, visible: !l.hidden,
+            // שכבה בעריכת טקסט במקום מוסתרת גם כשמציירים מחדש — אחרת הטקסט נראה פעמיים (בדף ובתיבת העריכה)
+            x: l.x, y: l.y, rotation: l.rotation || 0, opacity: l.opacity ?? 1, visible: !l.hidden && this.editing !== l.id,
             draggable: !l.locked, scaleX: 1, scaleY: 1,
         });
         g.destroyChildren();
@@ -235,6 +236,7 @@ export class Canvas {
             borderDash: anyLocked ? [4, 4] : undefined,
         });
         this.tr.nodes(nodes);
+        this.tr.visible(!this.editing);
         this.ui.batchDraw();
     }
 
@@ -594,6 +596,7 @@ export class Canvas {
 
     hideNode(id, hidden) {
         const g = this.nodes.get(id);
+        this.editing = hidden ? id : null;
         if (g) { g.visible(!hidden); this.tr.visible(!hidden); this.main.batchDraw(); this.ui.batchDraw(); }
     }
 

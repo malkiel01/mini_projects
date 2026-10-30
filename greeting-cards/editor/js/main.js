@@ -19,7 +19,7 @@ import { loadScript } from './io.js';
 import { docVariables, readSheetFile, readPasted, readPhoneContacts, guessColumns, normalizePhone, fileNames, fillText } from './merge.js';
 
 // הגרסה — מופיעה ביומן, כדי לדעת איזה קוד רץ בטלפון.
-const BUILD = '2026-10-30.open-in-2';
+const BUILD = '2026-10-30.inplace-1';
 
 const app = $('#app');
 let ed = null;   // העיצוב הפתוח: { id, doc, history, canvas, dirty }
@@ -304,7 +304,7 @@ async function openDesign(id, preloaded, entry) {
         onSelect: ids => { ed.selection = ids; renderCtx(); },
         onCommit: () => commit(),
         onEditText: l => editTextInPlace(l),
-        onZoom: z => { zoomLabel.textContent = Math.round(z * 100) + '%'; },
+        onZoom: z => { zoomLabel.textContent = Math.round(z * 100) + '%'; ed.onView?.(); },
     });
 
     // תמונות: מה שכבר נטען בייבוא, והשאר מ-IndexedDB.
@@ -701,24 +701,34 @@ async function addImage() {
 // ‏textarea מעל הטקסט, באותו פונט, גודל וכיוון — כך שהמקלדת, ההשלמה וההכתבה של הטלפון עובדות.
 
 function editTextInPlace(l, selectAll = false) {
-    const r = ed.canvas.screenRect(l.id);
-    if (!r) return;
     const s = l.style;
     const ta = h('textarea', {
         class: 'inplace', value: l.text, dir: s.dir === 'ltr' ? 'ltr' : 'rtl', 'aria-label': 'עריכת טקסט',
         style: {
-            left: r.x + 'px', top: r.y + 'px', width: l.w * r.zoom + 'px', minHeight: s.size * (s.lineHeight || 1.2) * r.zoom + 'px',
             fontFamily: `"${s.font}"`, fontWeight: nearestWeight(s.font, s.weight), fontStyle: s.italic ? 'italic' : 'normal',
-            fontSize: s.size * r.zoom + 'px', lineHeight: s.lineHeight || 1.2, color: s.color, textAlign: s.align,
-            transform: `rotate(${r.rotation}deg)`,
+            lineHeight: s.lineHeight || 1.2, color: s.color, textAlign: s.align,
         },
     });
     const grow = () => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; };
+    // התיבה יושבת על הטקסט שבדף — וזזה איתו כשהתצוגה זזה או מתקרבת (מקלדת שנפתחת, זום)
+    const place = () => {
+        const r = ed.canvas.screenRect(l.id);
+        if (!r) return;
+        Object.assign(ta.style, {
+            left: r.x + 'px', top: r.y + 'px', width: l.w * r.zoom + 'px', minHeight: s.size * (s.lineHeight || 1.2) * r.zoom + 'px',
+            fontSize: s.size * r.zoom + 'px', transform: `rotate(${r.rotation}deg)`,
+        });
+        grow();
+    };
+    // נגיעה בקנבס מחוץ לתיבה מסיימת את העריכה — הזזת המסך או בחירת טקסט אחר לא "גוררות" איתן את התיבה
+    const outside = e => { if (e.target !== ta) { log('inplace-end', { why: 'touch-outside' }); finish(true); } };
     let done = false;
     const finish = save => {
         if (done) return;
         done = true;
         if (save) l.text = ta.value;
+        ed.stageEl.removeEventListener('pointerdown', outside, true);
+        if (ed.onView === place) ed.onView = null;
         ta.remove();
         ed.canvas.hideNode(l.id, false);
         if (save && !l.text.trim()) { ed.doc.layers = ed.doc.layers.filter(x => x.id !== l.id); ed.canvas.select([]); }
@@ -734,7 +744,10 @@ function editTextInPlace(l, selectAll = false) {
     });
     ed.stageEl.append(ta);
     ed.canvas.hideNode(l.id, true);
-    grow();
+    place();
+    ed.onView = place;
+    ed.stageEl.addEventListener('pointerdown', outside, true);
+    log('inplace-start', { id: l.id });
     ta.focus({ preventScroll: true });
     if (selectAll) ta.select();
 }
