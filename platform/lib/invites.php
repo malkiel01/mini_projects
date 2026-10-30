@@ -228,3 +228,11 @@ function invite_join(string $token, ?array $user, array $body): array
     }
     return ['user_id' => $id, 'created' => !$user, 'email' => $email ?? null, 'name' => $name ?? null];
 }
+
+/** הסל של מי שנרשם לבד (ההגדרה default_grants): {categories, groups, apps} — מנוקה ממה שכבר לא קיים. */
+function default_grants(): array
+{
+    $v = json_decode(setting('default_grants', ''), true);
+    return grants_clean(is_array($v) ? $v : []);
+}
+

@@ -532,6 +532,16 @@ function appRow(app) {
     return li;
 }
 
+// "מומלצות לך" — אריח גדול בפס הגלילה שבראש הדף (כמו בחנות). אותה פתיחה כמו שורה ברשימה.
+function recTile(app) {
+    const extras = installLinks(app);
+    const body = [appIcon(app), el('span', { className: 'rec-name', textContent: app.name })];
+    if (!app.links.length && !extras.length) return el('a', { className: 'rec', ...openProps(app.href) }, body);
+    const b = el('button', { type: 'button', className: 'rec', ariaHasPopup: 'dialog' }, body);
+    b.addEventListener('click', () => openAppSheet(app, installLinks(app, true)));
+    return b;
+}
+
 // אייקון כותרת קטגוריה: המצויר שנבחר לה (icon_app), ואם לא נטען — האימוג'י
 function catIcon(cat) {
     const ic = el('span', { className: 'cat-ic', textContent: cat.icon, ariaHidden: 'true' });
@@ -1206,7 +1216,7 @@ async function clearFamilyCache() {
 }
 
 async function showApps() {
-    const [{ categories, groups = [], apps }] = await Promise.all([api('apps'), loadInstalls()]);
+    const [{ categories, groups = [], apps, recommended = [] }] = await Promise.all([api('apps'), loadInstalls()]);
     // אפליקציה יכולה להופיע בכמה מקומות (placements): בכל קטגוריה — בראשי או בתוך קבוצה
     const at = (a, cat, grp) => (a.placements || []).find(p => p.category === cat && (p.group ?? null) === grp);
     currentApps = apps;
@@ -1225,7 +1235,7 @@ async function showApps() {
     const sections = categories
         .map(cat => ({ cat, apps: apps.filter(a => (a.placements || []).some(p => p.category === cat.id)) }))
         .filter(s => s.apps.length)
-        .map(({ cat, apps: inCat }) => el('section', { className: 'category' }, [
+        .map(({ cat, apps: inCat }) => Object.assign(el('section', { className: 'category' }, [
             el('h2', { className: 'category-title' }, [
                 catIcon(cat),
                 el('span', { textContent: cat.name }),
@@ -1239,7 +1249,7 @@ async function showApps() {
                     .filter(({ list }) => list.length)
                     .map(({ g, list }) => ({ name: g.name, node: () => groupRow(g, list, cat.id) })),
             ].sort((a, b) => a.name.localeCompare(b.name, 'he')).map(x => x.node())),
-        ]));
+        ]), { _cat: cat.id }));
 
     const empty = el('p', { className: 'no-results', textContent: 'לא נמצאה אפליקציה בשם הזה', hidden: true });
     const parts = [hello];
@@ -1247,6 +1257,27 @@ async function showApps() {
     if (banner) parts.unshift(banner);
     // חיפוש + סינון לפי המכשיר הזה: הכול / מותקנות / אפשר להתקין.
     let q = '', only = 'all';
+    // כמו בחנות: למעלה "מומלצות לך" (lib/access.php, recommended_for), ולמטה לשוניות לפי קטגוריה.
+    const recs = recommended.map(id => apps.find(a => a.id === id)).filter(Boolean);
+    const recRow = recs.length && apps.length > 3 ? el('section', { className: 'recs' }, [
+        el('h2', { className: 'recs-title', textContent: '⭐ מומלצות לך' }),
+        el('div', { className: 'rec-row' }, recs.map(recTile)),
+    ]) : null;
+    let tab = 'all';
+    try { tab = localStorage.getItem('platform:store-tab') || 'all'; } catch { /* */ }
+    if (tab !== 'all' && !sections.some(sec => sec._cat === tab)) tab = 'all';
+    const tabs = sections.length > 1 ? el('div', { className: 'store-tabs', role: 'tablist', ariaLabel: 'קטגוריות' },
+        [{ id: 'all', name: 'הכול', icon: '' }, ...categories.filter(c => sections.some(sec => sec._cat === c.id))].map(c => {
+            const b = el('button', { type: 'button', role: 'tab', className: 'store-tab', textContent: `${c.icon ? c.icon + ' ' : ''}${c.name}` });
+            b.ariaSelected = String(c.id === tab);
+            b.addEventListener('click', () => {
+                tab = c.id;
+                try { localStorage.setItem('platform:store-tab', tab); } catch { /* */ }
+                for (const x of tabs.children) x.ariaSelected = String(x === b);
+                applyFilter();
+            });
+            return b;
+        })) : null;
     function applyFilter() {
         let any = false;
         for (const sec of sections) {
@@ -1262,8 +1293,10 @@ async function showApps() {
                 g.hidden = ![...g.querySelectorAll('li[data-search]')].some(li => !li.hidden);
                 groupOpen(g, (q || only !== 'all') ? !g.hidden : groupRemembered(g.dataset.group));
             }
-            sec.hidden = !shown;
-            any ||= shown > 0;
+            // לשונית קטגוריה: רק היא. בזמן חיפוש — בכל הקטגוריות, כדי שלא יפספסו
+            const inTab = q || tab === 'all' || sec._cat === tab;
+            sec.hidden = !shown || !inTab;
+            any ||= shown > 0 && inTab;
         }
         empty.textContent = only === 'yes' ? 'עוד לא סימנת אפליקציה כמותקנת במכשיר הזה'
             : only === 'can' ? 'כל מה שאפשר להתקין — כבר מותקן כאן ✓' : 'לא נמצאה אפליקציה בשם הזה';
@@ -1283,7 +1316,10 @@ async function showApps() {
             }));
         parts.push(seg);
     }
+    if (recRow) parts.push(recRow);
+    if (tabs) parts.push(tabs);
     view.replaceChildren(...parts, ...sections, empty);
+    applyFilter();
 }
 
 // ---------- ניתוב ----------
