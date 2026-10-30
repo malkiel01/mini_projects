@@ -787,3 +787,11 @@ test('mbeDocument: מסכת שכבה — src ולצדו המתכון; מסכה �
   const foreignRecipe = mbeDocument(doc, [{ ...base, mbe: old }], null, () => 'media/b.png').surfaces[0].layers[0];
   assert.equal(foreignRecipe.baked, 'a'.repeat(64), 'מתכון שלא טענו — נשאר כמו שהוא');
 });
+
+test('cleanAdjust: סוג מוכר — פרמטרים כמספרים, וחסר → ברירת מחדל; שדות אחרים נשמרים; לא מוכר — null', async () => {
+  const { cleanAdjust, adjustOf } = await import('../assets/js/engine/formats.js');
+  assert.deepEqual(cleanAdjust({ type: 'levels', black: 10, white: 'x', future: 1 }), { type: 'levels', black: 10, white: 255, gamma: 1, future: 1 });
+  assert.equal(cleanAdjust({ type: 'curves', points: [] }), null);
+  assert.equal(cleanAdjust(null), null);
+  assert.equal(adjustOf({ adjust: { type: 'hue-saturation', hue: 30 } }).kind, 'hsl');
+});

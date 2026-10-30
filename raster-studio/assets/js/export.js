@@ -11,8 +11,10 @@ export const flatRGBA = (renderer, doc) => renderer.readPixels(doc, 0, 0, doc.wi
  * שכבה אחת בגודל הקנבס, כ-PNG (התוכן שמחוץ לקנבס לא נכנס). masked — כפול מסכת השכבה (מה שרואים).
  * גם מסכה עצמה (layer.mask) — PNG בגווני אפור.
  */
-export const layerPNG = async (renderer, doc, layer, masked = false) =>
-  encodePNG(await renderer.readLayerPixels(layer, 0, 0, doc.width, doc.height, masked), doc.width, doc.height);
+export const layerPNG = async (renderer, doc, layer, masked = false) => encodePNG(layer.adjust
+  // שכבת התאמה: אין לה פיקסלים — מה שנראה במקומה (מה שמתחתיה אחרי ההתאמה, כפול המסכה)
+  ? await renderer.readAdjustLayerPixels(doc, layer, 0, 0, doc.width, doc.height)
+  : await renderer.readLayerPixels(layer, 0, 0, doc.width, doc.height, masked), doc.width, doc.height);
 
 /** תמונה מוקטנת (הצלע הארוכה ≤ max) כ-PNG — לתמונה ממוזערת / preview */
 export async function scaledPNG(rgba, w, h, max) {
