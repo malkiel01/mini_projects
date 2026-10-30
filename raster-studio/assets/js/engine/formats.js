@@ -81,6 +81,30 @@ export function mbeDocument(doc, layers, base = null, srcOf = l => l.src, recipe
   return out;
 }
 
+/**
+ * שכבת התאמה (adjust בפורמט, mbe-format.md סעיף 3): הסוגים שאנחנו מציירים — type בפורמט ↔ סוג התיקון בלוח.
+ * הפרמטרים בשמות של המחוונים: brightness / contrast (‎-100..100), hue (מעלות) / saturation / lightness,
+ * black / white (0–255) / gamma, levels (2–255), level (0–255).
+ */
+export const ADJUST_TYPES = {
+  'brightness-contrast': 'bc', 'hue-saturation': 'hsl', levels: 'levels', invert: 'invert', posterize: 'posterize', threshold: 'threshold',
+};
+export const ADJUST_FIELDS = {
+  'brightness-contrast': ['brightness', 'contrast'], 'hue-saturation': ['hue', 'saturation', 'lightness'],
+  levels: ['black', 'white', 'gamma'], invert: [], posterize: ['levels'], threshold: ['level'],
+};
+/** התיקון של שכבת התאמה, כמו שהמנוע מקבל אותו ({ kind, …פרמטרים }) */
+export const adjustOf = l => ({ ...l.adjust, kind: ADJUST_TYPES[l.adjust.type] });
+
+const ADJUST_DEFAULTS = { brightness: 0, contrast: 0, hue: 0, saturation: 0, lightness: 0, black: 0, white: 255, gamma: 1, levels: 4, level: 128 };
+/** adjust מקובץ: סוג מוכר — הפרמטרים שלו כמספרים (חסר / לא מספר → ברירת מחדל), ושאר השדות כמו שהם. לא מוכר — null */
+export function cleanAdjust(a) {
+  if (!a || typeof a !== 'object' || !ADJUST_FIELDS[a.type]) return null;
+  const out = { ...a };
+  for (const f of ADJUST_FIELDS[a.type]) out[f] = Number.isFinite(a[f]) ? a[f] : ADJUST_DEFAULTS[f];
+  return out;
+}
+
 /** שדות המתכון שמסכת השכבה שלנו כותבת (mbe-format.md סעיף 3, "עריכה לא הורסת") */
 export const MASK_RECIPE = ['source', 'mask', 'baked'];
 
@@ -91,7 +115,7 @@ const mbeLayers = (list, srcOf, px, recipeOf) => list.map(l => {
   // ה-PNG שלנו בגודל המשטח כולו: box (מיקום של תמונה קטנה) כבר אפוי לתוכו. בעמוד — px: גודל ה-PNG בפיקסלים
   if (l.type !== 'group') { delete common.box; delete common.px; if (px) common.px = px; }
   // מסכה שלנו (או שנפתחה ונמחקה / הוחלה מאז) — המתכון נכתב מחדש; מתכון של אחרים שלא טענו — נשאר כמו שהוא
-  if (l.mask || l.maskLoaded) for (const k of MASK_RECIPE) delete common[k];
+  if (l.mask || l.maskLoaded || l.adjust || l.adjustLoaded) for (const k of [...MASK_RECIPE, 'adjust']) delete common[k];
   const body = l.type === 'group' ? { children: mbeLayers(l.children, srcOf, px, recipeOf) } : { src: srcOf(l), ...(recipeOf(l) ?? {}) };
   return { ...common, ...body, opacity: round(l.opacity), blend: l.blend, visible: !!l.visible, locked: !!l.locked };
 });
@@ -159,6 +183,7 @@ export function gapsFor(rendition, tree) {
   // שכבה של אפליקציה אחרת לא מצוירת אצלנו — לא נכנסת לשום ייצוג (ב-‎.mbe עצמו היא נשמרת כמו שהיא)
   for (const t of new Set(foreign.map(l => l.foreign.type))) g.push(`layer:${t} → omitted`);
   if (rendition === 'ora' && layers.some(l => l.mask?.enabled)) g.push('layer-mask → baked');
+  if (rendition === 'ora' && layers.some(l => l.adjust)) g.push('adjust → baked');
   if (rendition === 'ora') {
     // ORA (GIMP / Krita) ממזג ב-sRGB; אנחנו — בלינארי. מראה שכבות חצי-שקופות ומצבי מיזוג יכול להשתנות מעט
     if (all.some(l => l.blend !== 'normal' || l.opacity < 1)) g.push('blend-space:linear → srgb');

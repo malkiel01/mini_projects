@@ -29,7 +29,9 @@ export async function saveDraft(renderer, doc) {
       };
       // מסכת שכבה — PNG משלה (גווני אפור); maskLoaded — המתכון בקובץ שנפתח הוא שלנו (נכתב מחדש בשמירה)
       const mask = l.mask ? { png: await png(l.mask, l.id + ':mask'), enabled: !!l.mask.enabled } : null;
-      out.push({ ...props, png: await png(l, l.id), mask, maskLoaded: !!l.maskLoaded });
+      // שכבת התאמה — בלי פיקסלים: רק הפרמטרים
+      out.push({ ...props, png: l.adjust ? null : await png(l, l.id), mask, maskLoaded: !!l.maskLoaded,
+        adjust: l.adjust ?? null, adjustLoaded: !!l.adjustLoaded });
     }
     return out;
   };
@@ -66,10 +68,14 @@ export async function restoreDraft(renderer, d) {
       layer.id = l.id;
       if (l.mbe) layer.mbe = l.mbe;
       if (l.foreign) { layer.foreign = l.foreign; continue; }
-      const bmp = await decodeImage(l.png);
-      await renderer.drawImage(doc, layer, bmp, 0, 0);
-      bmp.close();
-      cache.set(layer.id, { rev: layer.rev ?? 0, w: d.width, h: d.height, blob: l.png });
+      if (l.adjust) layer.adjust = l.adjust;
+      if (l.adjustLoaded) layer.adjustLoaded = true;
+      if (l.png) {
+        const bmp = await decodeImage(l.png);
+        await renderer.drawImage(doc, layer, bmp, 0, 0);
+        bmp.close();
+        cache.set(layer.id, { rev: layer.rev ?? 0, w: d.width, h: d.height, blob: l.png });
+      }
       if (l.maskLoaded) layer.maskLoaded = true;
       if (l.mask) {
         layer.mask = newMask(layer, l.mask.enabled);

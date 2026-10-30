@@ -356,7 +356,9 @@ body.editor { display: flex; flex-direction: column; block-size: 100dvh; min-hei
 .adjust-head { display: flex; align-items: baseline; gap: var(--s2); margin-bottom: var(--s2); }
 .adjust-head h2 { font-size: .95rem; font-weight: 600; }
 .adjust .seg-tabs { margin-bottom: var(--s2); }
-@media (max-width: 479.98px) { .adjust .seg-tabs { grid-template-columns: repeat(3, 1fr); } }
+/* עשר לשוניות: שורה אחת שנגללת לרוחב (גם בטלפון) */
+.adjust .seg-tabs { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(64px, 1fr); overflow-x: auto; scrollbar-width: thin; }
+.adjust .seg-tabs [hidden] { display: none; }
 .adjust-fields { display: flex; flex-wrap: wrap; gap: 0 var(--s3); }
 .adjust .opt { flex: 1 1 140px; display: grid; font-size: .8rem; color: var(--muted); }
 .adjust .opt > span { display: flex; justify-content: space-between; }

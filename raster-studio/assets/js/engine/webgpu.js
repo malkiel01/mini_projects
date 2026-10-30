@@ -15,6 +15,7 @@ import { TILE, BLEND_MODES, tilesInRect, newMask } from './doc.js';
 import { rasterTile, selectionBox } from './selection.js';
 import { matrix as xfMatrix, bounds as xfBounds } from './transform.js';
 import { WebGL2Renderer, srgbToLinear } from './webgl2.js';
+import { adjustOf } from './formats.js';
 
 const WGSL = /* wgsl */`
 struct U {
@@ -159,7 +160,8 @@ fn noise(p: vec2f) -> f32 {
   return f32(h) / 4294967295.0;
 }
 
-// m.x: 1 בהירות/ניגודיות, 2 גוון/רוויה/בהירות, 3 רעש (a = עוצמה, פינת האריח במסמך)
+// m.x: 1 בהירות/ניגודיות, 2 גוון/רוויה/בהירות, 3 רעש (a = עוצמה, פינת האריח במסמך),
+// 4 רמות, 5 היפוך, 6 פוסטריזציה, 7 סף — כמו ב-WebGL2
 @fragment fn adjust(i: VO) -> @location(0) vec4f {
   let c = textureSample(t0, smp, i.uv);
   let sel = textureSample(t1, smp, i.uv).r;
@@ -171,6 +173,14 @@ fn noise(p: vec2f) -> f32 {
       s = (s - 0.5) * u.a.y + 0.5;
     } else if (u.m.x == 3) {
       s = clamp(s + (noise(u.a.yz + i.uv * 256.0) - 0.5) * u.a.x, vec3f(0.0), vec3f(1.0));
+    } else if (u.m.x == 4) {
+      s = pow(clamp((s - u.a.x) / max(u.a.y - u.a.x, 1e-4), vec3f(0.0), vec3f(1.0)), vec3f(1.0 / u.a.z));
+    } else if (u.m.x == 5) {
+      s = 1.0 - clamp(s, vec3f(0.0), vec3f(1.0));
+    } else if (u.m.x == 6) {
+      s = floor(clamp(s, vec3f(0.0), vec3f(1.0)) * (u.a.x - 1.0) + 0.5) / (u.a.x - 1.0);
+    } else if (u.m.x == 7) {
+      s = vec3f(step(u.a.x, dot(clamp(s, vec3f(0.0), vec3f(1.0)), vec3f(0.299, 0.587, 0.114))));
     } else {
       var h = rgb2hsl(clamp(s, vec3f(0.0), vec3f(1.0)));
       h.x = fract(h.x + u.a.x);
@@ -183,6 +193,13 @@ fn noise(p: vec2f) -> f32 {
   var m = 1.0;
   if (u.m.y == 1) { m = sel; }
   return mix(c, r, m);
+}
+
+// שכבת התאמה: t0 מה שמתחת, t1 אחרי ההתאמה, t2 מסכה; a.x אטימות, m.y יש מסכה
+@fragment fn lerp(i: VO) -> @location(0) vec4f {
+  var k = u.a.x;
+  if (u.m.y == 1) { k = k * enc(vec3f(textureSample(t2, smp, i.uv).r)).r; }
+  return mix(textureSample(t0, smp, i.uv), textureSample(t1, smp, i.uv), k);
 }
 
 // טשטוש גאוסי בשני מעברים על אריח מרופד בשכניו; m.x = חצי רוחב הגרעין (עד 64), a.x = סיגמה
@@ -358,6 +375,7 @@ export class WebGPURenderer {
     this.adjTmp = this.#tileTexture(1);
     this.shiftTmp = this.#tileTexture(1);
     this.maskTmp = this.#tileTexture(1);
+    this.adjLayerTmp = this.#tileTexture(1);
     this.padTex = this.#tex(TILE + 128, TILE + 128, TILE_FMT);
     this.blurTmp = this.#tex(TILE, TILE + 128, TILE_FMT);
     this.emptyTex = this.#tileTexture(1);
@@ -373,7 +391,7 @@ export class WebGPURenderer {
     const errs = info.messages.filter(m => m.type === 'error');
     if (errs.length) throw new Error('wgsl: ' + errs.map(m => `${m.lineNum}:${m.linePos} ${m.message}`).join('; '));
     this.device.pushErrorScope('validation');
-    for (const name of ['upload', 'fill', 'blend', 'dab', 'stroke', 'adjust', 'blurH', 'blurV', 'copy', 'extract', 'read', 'thumb', 'display', 'float']) this.#pipe(name);
+    for (const name of ['upload', 'fill', 'blend', 'dab', 'stroke', 'adjust', 'blurH', 'blurV', 'lerp', 'copy', 'extract', 'read', 'thumb', 'display', 'float']) this.#pipe(name);
     const err = await this.device.popErrorScope();
     if (err) throw new Error('pipeline: ' + err.message);
   }
@@ -539,6 +557,24 @@ export class WebGPURenderer {
     for (const t of layer.tiles.values()) { this.#destroy(t); this.textures--; }
     layer.tiles.clear();
     if (layer.mask) this.freeLayer(layer.mask);
+  }
+
+  #colorAdjust(adj, base, out) {
+    this.#drawTo(out, 'adjust', { a: WebGL2Renderer.adjustParams(adj), m: [WebGL2Renderer.adjustKind(adj), 0, 0, 0] }, [base, this.fullMask]);
+  }
+
+  /** המראה של שכבת התאמה במקומה (ראו WebGL2Renderer) */
+  #adjustLayerTile(doc, layer, tx, ty, out) {
+    const list = doc.listOf(layer);
+    const below = this.#compositeList(doc, list.slice(0, list.indexOf(layer)), tx, ty, 8);
+    this.#colorAdjust(adjustOf(layer), below, this.adjLayerTmp);
+    const mk = layer.mask?.enabled ? (layer.mask.tiles.get(key(tx, ty)) ?? this.emptyTex) : null;
+    this.#drawTo(out, 'blend', { a: [1, 0, 0, 0], m: [0, mk ? 1 : 0, 0, 0] }, [this.emptyTex, this.adjLayerTmp, mk]);
+    return out;
+  }
+
+  async readAdjustLayerPixels(doc, layer, x, y, w, h) {
+    return this.#read((tx, ty) => this.#adjustLayerTile(doc, layer, tx, ty, this.maskTmp), x, y, w, h);
   }
 
   /** אריח השכבה כפול המסכה שלה (ראו WebGL2Renderer) */
@@ -870,7 +906,7 @@ export class WebGPURenderer {
     } else {
       const pp = WebGL2Renderer.adjustParams(adj);
       this.#drawTo(out, 'adjust', {
-        a: adj.kind === 'noise' ? [pp[0], tx * TILE, ty * TILE, 0] : pp, m: [adj.kind === 'bc' ? 1 : adj.kind === 'noise' ? 3 : 2, sel ? 1 : 0, 0, 0],
+        a: adj.kind === 'noise' ? [pp[0], tx * TILE, ty * TILE, 0] : pp, m: [WebGL2Renderer.adjustKind(adj), sel ? 1 : 0, 0, 0],
       }, [base, sel || this.fullMask]);
     }
   }
@@ -1073,6 +1109,14 @@ export class WebGPURenderer {
     this.#pass(this.#view(a), { clear: true }).end();
     for (const layer of list) {
       if (!layer.visible || layer.opacity <= 0) continue;
+      // שכבת התאמה: משנה את מה שכבר הורכב מתחתיה (ראו WebGL2Renderer)
+      if (layer.adjust) {
+        const mk = layer.mask?.enabled ? (this.#layerTileFor(doc, layer.mask, tx, ty) || this.emptyTex) : null;
+        this.#colorAdjust(adjustOf(layer), a, this.adjLayerTmp);
+        this.#drawTo(b, 'lerp', { a: [layer.opacity, 0, 0, 0], m: [0, mk ? 1 : 0, 0, 0] }, [a, this.adjLayerTmp, mk]);
+        [a, b] = [b, a];
+        continue;
+      }
       const t = layer.type === 'group'
         ? (layer.children.length ? this.#compositeList(doc, layer.children, tx, ty, depth + 1) : null)
         : this.#layerTileFor(doc, layer, tx, ty);

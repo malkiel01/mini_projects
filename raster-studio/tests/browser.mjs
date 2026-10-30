@@ -987,6 +987,73 @@ async function main() {
   await adj('sharpen', { amount: 0 });
   check('חידוד בכמות 0 — בלי שינוי (לא טשטוש)', Math.abs(await r0(300, 150) - 160) <= 1 && Math.abs(await r0(299, 150) - 100) <= 1);
   await page.click('[data-adj-act="cancel"]');
+
+  // ---- שכבות התאמה ----
+  // השכבה: אפור 100 כולה. רמות (שחור 100, לבן 200) הופכות את 100 לשחור
+  await fillLayer([100, 100, 100, 255]);
+  await adj('levels', { black: 100, white: 200 });
+  check('רמות (הורס) — תצוגה חיה: 100 → שחור', (await r0(450, 300)) < 3, await px(450, 300));
+  await page.click('[data-adj-act="layer"]');
+  const al = await page.evaluate(async () => {
+    const d = __rs.doc, l = d.active;
+    const under = d.layers[d.layers.indexOf(l) - 1];
+    return { adjust: JSON.stringify(l.adjust), mask: !!l.mask, edit: !!l.editMask, label: __rs.history.undoStack.at(-1).label,
+      under: Array.from(await __rs.renderer.readLayerPixels(under, 450, 300, 1, 1)).join() };
+  });
+  check('➕ כשכבה — שכבת התאמה עם מסכה, והפיקסלים מתחת לא נגעו', al.adjust === '{"type":"levels","black":100,"white":200,"gamma":1}' && al.mask && al.edit
+    && al.label === 'שכבת התאמה' && al.under === '100,100,100,255' && (await r0(450, 300)) < 3, JSON.stringify(al));
+  check('שכבת התאמה — 🎚️ בשורה, בלי תמונה ממוזערת של פיקסלים', await page.isVisible('.layer-row[aria-selected="true"] .thumb.folder'));
+  // מכחול שחור על המסכה — מסתיר את ההתאמה שם
+  await page.keyboard.press('b');
+  await color('#000000');
+  await setOpt('size', 48); await setOpt('opacity', 100); await setOpt('hardness', 100);
+  await stroke([[450, 300], [455, 300]]);
+  check('מסכת שכבת ההתאמה: בשחור — בלי התאמה (100), מחוץ — עם', Math.abs((await r0(452, 300)) - 100) <= 1 && (await r0(450, 200)) < 3, [await px(452, 300), await px(450, 200)].join(' | '));
+  await page.keyboard.press('Control+z');
+  // בלי מסכה בעריכה — אין פיקסלים לצייר עליהם
+  await page.evaluate(() => { __rs.doc.active.editMask = false; __rs.panel.render(); });
+  await stroke([[450, 250], [455, 250]]);
+  check('שכבת התאמה בלי עריכת מסכה — המכחול לא מצייר, והסבר', /שכבת התאמה/.test(await page.textContent('.toast')) && (await r0(452, 250)) < 3);
+  // עריכה: 🎚️ על שכבת ההתאמה — הפרמטרים שלה, חי; ✓ — צעד אחד
+  await page.click('#adjust-btn');
+  check('🎚️ על שכבת התאמה — עריכה (רק תיקוני צבע, בלי "➕ כשכבה")', (await page.textContent('#adjust-title')) === 'שכבת התאמה' && !(await page.isVisible('[data-adj-tab="blur"]'))
+    && !(await page.isVisible('[data-adj-act="layer"]')) && (await page.inputValue('#adj-black')) === '100');
+  await page.$eval('#adj-black', el => { el.value = '0'; el.dispatchEvent(new Event('input', { bubbles: true })); });
+  await page.$eval('#adj-white', el => { el.value = '255'; el.dispatchEvent(new Event('input', { bubbles: true })); });
+  check('עריכה חיה — רמות מלאות: 100 חוזר', Math.abs((await r0(450, 300)) - 100) <= 1);
+  await page.click('[data-adj-act="cancel"]');
+  check('✕ — הפרמטרים הקודמים חוזרים', (await r0(450, 300)) < 3);
+  await page.click('#adjust-btn');
+  await page.$eval('#adj-white', el => { el.value = '150'; el.dispatchEvent(new Event('input', { bubbles: true })); });
+  await page.click('[data-adj-act="apply"]');
+  check('✓ עדכון — רשומת "רמות", והשכבה עם הלבן החדש', await page.evaluate(() => [__rs.history.undoStack.at(-1).label, __rs.doc.active.adjust.white].join()) === 'רמות,150');
+  await page.keyboard.press('Control+z');
+  check('ביטול — הלבן הקודם', await page.evaluate(() => __rs.doc.active.adjust.white) === 200);
+  // שכבת היפוך מעל: שחור → לבן
+  await page.click('#adjust-btn').catch(() => {});
+  await page.click('[data-adj-act="cancel"]');
+  await page.evaluate(() => { __rs.doc.activeId = __rs.doc.layers[0].id; __rs.panel.render(); });
+  await adj('invert', {});
+  await page.click('[data-adj-act="layer"]');
+  const inv = await page.evaluate(() => __rs.doc.layers.map(l => l.adjust?.type ?? '-').join());
+  check('היפוך כשכבה — נוסף מעל הפעילה (סדר: רקע, היפוך, …)', inv.startsWith('-,invert'), inv);
+  await page.evaluate(() => { __rs.doc.activeId = __rs.doc.layers.at(-1).id; __rs.panel.render(); });
+  // ‎.mbe: src — המראה במקומה; adjust ו-baked (בלי source); פתיחה חזרה — שכבת התאמה, אותה תמונה
+  const adjWant = await px(450, 300);
+  const ab = await page.evaluate(async () => {
+    const { open } = await import('./assets/js/mbe/mbe.js');
+    const bytes = await __rs.buildMbe();
+    const f = await open(bytes);
+    const L = f.document.surfaces[0].layers.find(l => l.adjust?.type === 'levels');
+    const hex = async b => [...new Uint8Array(await crypto.subtle.digest('SHA-256', b))].map(x => x.toString(16).padStart(2, '0')).join('');
+    const out = { ok: f.ok, err: f.issues.filter(i => i.level === 'error').map(i => i.message).join(), baked: L && L.baked === await hex(f.getMedia(L.src)), source: L && 'source' in L, mask: !!L?.mask };
+    await __rs.openAsDocument(new File([bytes], 'התאמות.mbe'));
+    out.back = __rs.doc.layers.map(l => l.adjust?.type ?? '-').join();
+    return out;
+  });
+  check('‎.mbe עם שכבות התאמה: תקין, adjust + baked + מסכה, בלי source', ab.ok && ab.baked && !ab.source && ab.mask, JSON.stringify(ab));
+  check('‎.mbe — פתיחה חזרה: שכבות ההתאמה במקומן, ואותה תמונה', ab.back === '-,invert,-,levels' && (await px(450, 300)) === adjWant, [ab.back, await px(450, 300), adjWant].join(' | '));
+  check('ORA — שכבות התאמה אפויות (פער מדווח)', await page.evaluate(async () => (await import('./assets/js/engine/formats.js')).gapsFor('ora', __rs.doc.layers).includes('adjust → baked')));
   if (SHOTS) {
     await adj('hsl', { hue: 90 });
     await page.screenshot({ path: join(SHOTS, 'adjust-desktop.png') });

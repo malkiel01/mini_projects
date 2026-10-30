@@ -43,6 +43,10 @@
         <div class="seg-tabs" role="tablist" aria-label="סוג התיקון">
           <button type="button" role="tab" data-adj-tab="bc">בהירות</button>
           <button type="button" role="tab" data-adj-tab="hsl">גוון</button>
+          <button type="button" role="tab" data-adj-tab="levels">רמות</button>
+          <button type="button" role="tab" data-adj-tab="invert">היפוך</button>
+          <button type="button" role="tab" data-adj-tab="posterize">פוסטר</button>
+          <button type="button" role="tab" data-adj-tab="threshold">סף</button>
           <button type="button" role="tab" data-adj-tab="blur">טשטוש</button>
           <button type="button" role="tab" data-adj-tab="sharpen">חידוד</button>
           <button type="button" role="tab" data-adj-tab="motion">תנועה</button>
@@ -56,6 +60,20 @@
           <label class="opt"><span>גוון <output for="adj-hue">0</output></span><input id="adj-hue" type="range" min="-180" max="180" value="0"></label>
           <label class="opt"><span>רוויה <output for="adj-saturation">0</output></span><input id="adj-saturation" type="range" min="-100" max="100" value="0"></label>
           <label class="opt"><span>בהירות <output for="adj-lightness">0</output></span><input id="adj-lightness" type="range" min="-100" max="100" value="0"></label>
+        </div>
+        <div class="adjust-fields" data-adj="levels" hidden>
+          <label class="opt"><span>שחור <output for="adj-black">0</output></span><input id="adj-black" type="range" min="0" max="254" value="0"></label>
+          <label class="opt"><span>לבן <output for="adj-white">255</output></span><input id="adj-white" type="range" min="1" max="255" value="255"></label>
+          <label class="opt"><span>גמא <output for="adj-gamma">1.00</output></span><input id="adj-gamma" type="range" min="10" max="300" value="100"></label>
+        </div>
+        <div class="adjust-fields" data-adj="invert" hidden>
+          <p class="hint">שחור ↔ לבן, וכל צבע — להשלמה שלו.</p>
+        </div>
+        <div class="adjust-fields" data-adj="posterize" hidden>
+          <label class="opt"><span>רמות לכל ערוץ <output for="adj-levels">4</output></span><input id="adj-levels" type="range" min="2" max="32" value="4"></label>
+        </div>
+        <div class="adjust-fields" data-adj="threshold" hidden>
+          <label class="opt"><span>סף <output for="adj-level">128</output></span><input id="adj-level" type="range" min="1" max="255" value="128"></label>
         </div>
         <div class="adjust-fields" data-adj="blur" hidden>
           <label class="opt"><span>רדיוס <output for="adj-radius">0</output></span><input id="adj-radius" type="range" min="0" max="64" value="0"></label>
@@ -73,6 +91,7 @@
         </div>
         <div class="adjust-actions">
           <button class="btn ghost" type="button" data-adj-act="cancel">✕ ביטול</button>
+          <button class="btn ghost" type="button" data-adj-act="layer" title="שכבת התאמה: לא נוגעת בפיקסלים, ואפשר לשנות אותה אחר כך">➕ כשכבה</button>
           <button class="btn primary" type="button" data-adj-act="apply">✓ החלה</button>
         </div>
       </section>

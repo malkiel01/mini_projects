@@ -84,6 +84,7 @@ export function createLayersPanel({ root, doc, renderer, history, onChange, toas
         }
         const l = d.addLayer({ ...props, opacity: item.opacity, blend: item.blend, visible: item.visible });
         renderer.copyLayer(item, l);
+        if (item.adjust) l.adjust = { ...item.adjust };
         return l;
       };
       const copy = copyInto(src, { name: src.name + ' עותק', index: d.indexOf(src) + 1 });
@@ -215,7 +216,8 @@ export function createLayersPanel({ root, doc, renderer, history, onChange, toas
     li.innerHTML = `
       <span class="drag" aria-hidden="true">⋮⋮</span>
       ${layer.type === 'group' ? '<button class="icon-btn fold" type="button"></button><span class="thumb folder" aria-hidden="true">📁</span>'
-    : layer.foreign ? '<span class="thumb folder" aria-hidden="true">🧩</span>' : '<canvas class="thumb" aria-hidden="true"></canvas>'}
+    : layer.foreign ? '<span class="thumb folder" aria-hidden="true">🧩</span>'
+    : layer.adjust ? '<span class="thumb folder" aria-hidden="true" title="שכבת התאמה">🎚️</span>' : '<canvas class="thumb" aria-hidden="true"></canvas>'}
       ${layer.mask ? '<button class="mask-thumb" type="button"><canvas class="thumb"></canvas></button>' : ''}
       <button class="layer-name one" type="button"></button>
       <button class="icon-btn eye" type="button"></button>
@@ -226,8 +228,8 @@ export function createLayersPanel({ root, doc, renderer, history, onChange, toas
       fold.setAttribute('aria-label', (layer.collapsed ? 'פתיחת ' : 'קיפול ') + layer.name);
       fold.setAttribute('aria-expanded', String(!layer.collapsed));
       fold.addEventListener('click', () => { layer.collapsed = !layer.collapsed; render(); });
-    } else if (!layer.foreign) {
-      thumb(layer, $('canvas', li));
+    } else if (!layer.foreign && !layer.adjust) {
+      thumb(layer, li.querySelector(':scope > canvas.thumb'));
       li.classList.toggle('editing-pixels', !!layer.mask && !layer.editMask);
     }
     if (layer.mask) {
@@ -245,7 +247,7 @@ export function createLayersPanel({ root, doc, renderer, history, onChange, toas
         layer.editMask = true;
         changed('mask-edit');
       });
-      $('canvas.thumb', li).addEventListener('click', () => { if (layer.editMask) { layer.editMask = false; doc().activeId = layer.id; changed('mask-edit'); } });
+      li.querySelector(':scope > .thumb')?.addEventListener('click', () => { if (layer.editMask) { layer.editMask = false; doc().activeId = layer.id; changed('mask-edit'); } });
     }
     const name = $('.layer-name', li);
     name.textContent = layer.name;

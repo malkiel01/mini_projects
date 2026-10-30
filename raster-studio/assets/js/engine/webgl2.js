@@ -10,6 +10,7 @@
 // מוסכמה: שורה 0 של כל אריח ושל כל FBO = הקצה העליון (y של המסמך גדל למטה). רק המסך עצמו הפוך.
 
 import { TILE, BLEND_MODES, tilesInRect, newMask } from './doc.js';
+import { adjustOf } from './formats.js';
 import { rasterTile, selectionBox } from './selection.js';
 import { matrix as xfMatrix, bounds as xfBounds } from './transform.js';
 
@@ -126,7 +127,8 @@ void main() {
 }`,
 
   // תיקוני צבע — ב-sRGB (כמו שהעין רואה), וחזרה ללינארי. u_kind: 1 בהירות/ניגודיות, 2 גוון/רוויה/בהירות,
-  // 3 רעש (u_p = עוצמה, פינת האריח במסמך) — לפי מיקום הפיקסל במסמך, כך שאין תפרים בין אריחים
+  // 3 רעש (u_p = עוצמה, פינת האריח במסמך) — לפי מיקום הפיקסל במסמך, כך שאין תפרים בין אריחים,
+  // 4 רמות (שחור, לבן, גמא), 5 היפוך, 6 פוסטריזציה (מספר רמות), 7 סף (בהירות)
   adjust: `#version 300 es
 precision highp float;
 uniform sampler2D u_tex, u_sel;
@@ -171,6 +173,15 @@ void main() {
       s = (s - 0.5) * u_p.y + 0.5;
     } else if (u_kind == 3) {
       s = clamp(s + (noise(u_p.yz + v_uv * 256.0) - 0.5) * u_p.x, 0.0, 1.0);
+    } else if (u_kind == 4) {
+      // רמות: שחור / לבן (0–1) וגמא
+      s = pow(clamp((s - u_p.x) / max(u_p.y - u_p.x, 1e-4), 0.0, 1.0), vec3(1.0 / u_p.z));
+    } else if (u_kind == 5) {
+      s = 1.0 - clamp(s, 0.0, 1.0);
+    } else if (u_kind == 6) {
+      s = floor(clamp(s, 0.0, 1.0) * (u_p.x - 1.0) + 0.5) / (u_p.x - 1.0);
+    } else if (u_kind == 7) {
+      s = vec3(step(u_p.x, dot(clamp(s, 0.0, 1.0), vec3(0.299, 0.587, 0.114))));
     } else {
       vec3 h = rgb2hsl(clamp(s, 0.0, 1.0));
       h.x = fract(h.x + u_p.x);
@@ -182,6 +193,20 @@ void main() {
   }
   float m = u_useSel == 1 ? texture(u_sel, v_uv).r : 1.0;
   o = mix(c, r, m);
+}`,
+
+  // שכבת התאמה: מה שמתחת (u_a) ↔ אחרי ההתאמה (u_b), לפי האטימות כפול המסכה (אפור של sRGB)
+  lerp: `#version 300 es
+precision highp float;
+uniform sampler2D u_a, u_b, u_msk;
+uniform float u_k;
+uniform int u_useMask;
+in vec2 v_uv; out vec4 o;
+${ENCODE}
+void main() {
+  float k = u_k;
+  if (u_useMask == 1) k *= enc(vec3(texture(u_msk, v_uv).r)).r;
+  o = mix(texture(u_a, v_uv), texture(u_b, v_uv), k);
 }`,
 
   // טשטוש גאוסי בשני מעברים, על אריח מרופד בשכניו (u_k — חצי רוחב הגרעין, עד 64)
@@ -355,6 +380,7 @@ export class WebGL2Renderer {
     this.adjTmp = this.#tileTexture(1);      // השכבה אחרי תיקון, לתצוגה חיה
     this.shiftTmp = this.#tileTexture(1);    // שכבה בהזזת קבוצה, לתצוגה בזמן הגרירה
     this.maskTmp = this.#tileTexture(1);     // שכבה כפול המסכה שלה, לקריאה החוצה
+    this.adjLayerTmp = this.#tileTexture(1); // מה שמתחת לשכבת התאמה, אחרי ההתאמה
     // טשטוש: אריח מרופד בשכניו (256 + 2·64), ותוצאת המעבר האופקי
     this.padTex = this.#floatTex(TILE + 128, TILE + 128);
     this.blurTmp = this.#floatTex(TILE, TILE + 128);
@@ -922,8 +948,20 @@ export class WebGL2Renderer {
     return false;
   }
 
+  /** סוג התיקון → המספר שלו ב-shader של הצבע */
+  static adjustKind(adj) {
+    return { bc: 1, hsl: 2, noise: 3, levels: 4, invert: 5, posterize: 6, threshold: 7 }[adj.kind] ?? 2;
+  }
+
   /** הערכים של המחוונים → פרמטרים ל-shader */
   static adjustParams(adj) {
+    if (adj.kind === 'levels') {
+      const b = (adj.black ?? 0) / 255, w = Math.max((adj.white ?? 255) / 255, b + 1 / 255);
+      return [b, w, Math.max(0.1, Math.min(10, adj.gamma ?? 1)), 0];
+    }
+    if (adj.kind === 'invert') return [0, 0, 0, 0];
+    if (adj.kind === 'posterize') return [Math.max(2, Math.min(255, Math.round(adj.levels ?? 4))), 0, 0, 0];
+    if (adj.kind === 'threshold') return [(adj.level ?? 128) / 255, 0, 0, 0];
     if (adj.kind === 'bc') {
       const c = adj.contrast / 100;   // -1..1
       return [adj.brightness / 100, c >= 0 ? 1 / (1 - c * 0.99) : 1 + c, 0, 0];
@@ -1006,7 +1044,7 @@ export class WebGL2Renderer {
       gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, base);
       gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, sel || this.fullMask);
       gl.uniform1i(a.u.u_tex, 0); gl.uniform1i(a.u.u_sel, 1);
-      gl.uniform1i(a.u.u_kind, adj.kind === 'bc' ? 1 : adj.kind === 'noise' ? 3 : 2);
+      gl.uniform1i(a.u.u_kind, WebGL2Renderer.adjustKind(adj));
       gl.uniform1i(a.u.u_useSel, sel ? 1 : 0);
       const pp = WebGL2Renderer.adjustParams(adj);
       gl.uniform4fv(a.u.u_p, adj.kind === 'noise' ? [pp[0], tx * TILE, ty * TILE, 0] : pp);
@@ -1309,6 +1347,14 @@ export class WebGL2Renderer {
     const p = this.prog.blend;
     for (const layer of list) {
       if (!layer.visible || layer.opacity <= 0) continue;
+      // שכבת התאמה: משנה את מה שכבר הורכב מתחתיה (ברשימה הזו), לפי האטימות והמסכה — בלי פיקסלים משלה
+      if (layer.adjust) {
+        const mk = layer.mask?.enabled ? (this.#layerTileFor(doc, layer.mask, tx, ty) || this.emptyTex) : null;
+        this.#colorAdjust(adjustOf(layer), a, this.adjLayerTmp);
+        this.#lerpInto(b, a, this.adjLayerTmp, layer.opacity, mk);
+        [a, b] = [b, a];
+        continue;
+      }
       const t = layer.type === 'group'
         ? (layer.children.length ? this.#compositeList(doc, layer.children, tx, ty, depth + 1) : null)
         : this.#layerTileFor(doc, layer, tx, ty);
@@ -1322,6 +1368,58 @@ export class WebGL2Renderer {
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, null);
     gl.activeTexture(gl.TEXTURE0);
     return a;
+  }
+
+  /** תיקון צבע לאריח שלם, בלי בחירה (שכבת התאמה) */
+  #colorAdjust(adj, base, out) {
+    const gl = this.gl;
+    const a = this.prog.adjust;
+    this.#target(out);
+    gl.useProgram(a.p);
+    gl.bindVertexArray(this.vao);
+    gl.disable(gl.BLEND);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, base);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, this.fullMask);
+    gl.uniform1i(a.u.u_tex, 0); gl.uniform1i(a.u.u_sel, 1);
+    gl.uniform1i(a.u.u_kind, WebGL2Renderer.adjustKind(adj));
+    gl.uniform1i(a.u.u_useSel, 0);
+    gl.uniform4fv(a.u.u_p, WebGL2Renderer.adjustParams(adj));
+    this.#quad(a, [0, 0, TILE, TILE], [0, 0, 1, 1], [TILE, TILE], -1);
+  }
+
+  /** out = mix(a, b, k × מסכה) */
+  #lerpInto(out, a, b, k, mask = null) {
+    const gl = this.gl;
+    const p = this.prog.lerp;
+    this.#target(out);
+    gl.useProgram(p.p);
+    gl.bindVertexArray(this.vao);
+    gl.disable(gl.BLEND);
+    gl.uniform1i(p.u.u_a, 0); gl.uniform1i(p.u.u_b, 1); gl.uniform1i(p.u.u_msk, 2);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, a);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, b);
+    gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, mask || this.emptyTex);
+    gl.uniform1f(p.u.u_k, k);
+    gl.uniform1i(p.u.u_useMask, mask ? 1 : 0);
+    this.#quad(p, [0, 0, TILE, TILE], [0, 0, 1, 1], [TILE, TILE], -1);
+  }
+
+  /**
+   * המראה של שכבת התאמה במקומה (ה-src שלה ב-‎.mbe): מה שמתחתיה ברשימה שלה, אחרי ההתאמה, כפול המסכה; שקוף מחוצה לה.
+   * קורא שלא מכיר את adjust מצייר את זה מעל, באטימות של השכבה — ורואה (כמעט) את אותה תמונה.
+   */
+  #adjustLayerTile(doc, layer, tx, ty, out) {
+    const list = doc.listOf(layer);
+    const below = this.#compositeList(doc, list.slice(0, list.indexOf(layer)), tx, ty, 8);
+    this.#colorAdjust(adjustOf(layer), below, this.adjLayerTmp);
+    const mk = layer.mask?.enabled ? (layer.mask.tiles.get(key(tx, ty)) ?? this.emptyTex) : null;
+    this.#blendInto(out, this.emptyTex, this.adjLayerTmp, 1, 0, mk);
+    return out;
+  }
+
+  /** ה-src של שכבת התאמה (ראו #adjustLayerTile) — Promise ל-RGBA ישר של 8 ביט */
+  async readAdjustLayerPixels(doc, layer, x, y, w, h) {
+    return this.#read((tx, ty) => this.#adjustLayerTile(doc, layer, tx, ty, this.maskTmp), x, y, w, h);
   }
 
   /** out = dst ⊕ src (אטימות, מצב מיזוג, ומסכה אם יש) */
