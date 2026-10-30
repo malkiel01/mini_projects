@@ -19,7 +19,7 @@ import { loadScript } from './io.js';
 import { docVariables, readSheetFile, readPasted, readPhoneContacts, guessColumns, normalizePhone, fileNames, fillText } from './merge.js';
 
 // הגרסה — מופיעה ביומן, כדי לדעת איזה קוד רץ בטלפון.
-const BUILD = '2026-10-26.open-in-1';
+const BUILD = '2026-10-30.open-in-2';
 
 const app = $('#app');
 let ed = null;   // העיצוב הפתוח: { id, doc, history, canvas, dirty }
@@ -1115,6 +1115,14 @@ async function makeMbe() {
 /** "פתיחה ברסטר / בווקטורי": החלון נפתח מיד (בתוך הלחיצה), הקובץ נבנה בינתיים ונשלח כשהיעד מוכן. */
 function openElsewhere(target) {
     const t = TARGETS[target];
+    // הרסטר עורך פיקסלים: עיצוב בלי שכבת תמונה נפתח שם כ"אין קנבס רסטר" — אומרים כאן, לפני שפותחים חלון
+    if (t.needsImage && !ed.doc.layers.some(l => l.type === 'image')) {
+        sheet(`פתיחה ${t.in}`, h('div', {},
+            h('p', {}, `אין בעיצוב שכבת תמונה — ${t.name} עורך תמונות, ואין לו מה לפתוח כאן.`),
+            h('p', { class: 'hint' }, 'הוסיפו תמונה (➕ ← תמונה), או פתחו את העיצוב בווקטורי — שם הצורות והטקסט עריכים.'),
+            h('button', { class: 'btn primary block', onclick: closeSheet }, 'הבנתי')));
+        return;
+    }
     const srcId = ed.id, name = safeName(ed.doc.title);
     const fallback = async why => {
         // אפליקציה שעוד לא מקבלת קובץ ישירות, חלון שנחסם, או האפליקציה לאנדרואיד — הקובץ יורד ופותחים אותו שם
@@ -1122,7 +1130,9 @@ function openElsewhere(target) {
         try {
             await download(await built.then(r => new Blob([r.bytes], { type: 'application/vnd.mbe+zip' })), name + '.mbe');
             sheet(`פתיחה ${t.in}`, h('div', {},
-                h('p', {}, why === 'blocked' ? 'הדפדפן חסם את החלון החדש.' : `${t.name} עוד לא מקבלת קובץ ישירות מכאן.`),
+                h('p', {}, why === 'blocked' ? 'הדפדפן חסם את החלון החדש.'
+                    : why === 'android' ? `מהאפליקציה לאנדרואיד אי אפשר לפתוח את ${t.name} ישירות.`
+                        : `${t.name} לא ענתה (אולי צריך להתחבר שם, או שאין לכם הרשאה אליה).`),
                 h('p', { class: 'hint' }, `הקובץ ‎.mbe ירד — פותחים אותו ${t.in} מ-📂, ואחרי השמירה שם מייבאים אותו כאן בחזרה (📥).`),
                 h('button', { class: 'btn primary block', onclick: closeSheet }, 'הבנתי')));
         } catch (e) { toast(e.message || 'הייצוא נכשל', 'error'); }
