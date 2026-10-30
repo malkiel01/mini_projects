@@ -131,7 +131,34 @@ window.PlatformAdmin = (() => {
         }
         drawList();
 
-        return el('div', {}, [notifyCard(), approvalCard(), invitesCard(), seg, el('div', { className: 'toolbar' }, [search, sortSel]), list]);
+        return el('div', {}, [notifyCard(), approvalCard(), defaultGrantsCard(), invitesCard(), seg, el('div', { className: 'toolbar' }, [search, sortSel]), list]);
+    }
+
+    // 🎁 הסל של מי שנרשם לבד: נפתח לו מיד כשהחשבון פעיל (אחרי אימות המייל, או אחרי האישור כשהוא נדרש).
+    function defaultGrantsCard() {
+        const g = state.settings?.default_grants || { categories: [], groups: [], apps: {} };
+        const names = [
+            ...g.categories.map(id => state.categories.find(c => c.id === id)?.name),
+            ...g.groups.map(id => state.groups.find(x => x.id === id)?.name),
+            ...Object.keys(g.apps).filter(id => g.apps[id]).map(id => state.apps.find(a => a.id === id)?.name),
+        ].filter(Boolean);
+        return el('div', { className: 'notify' }, [
+            el('span', { className: 'notify-ic', textContent: '🎁', ariaHidden: 'true' }),
+            el('div', { className: 'notify-tx' }, [el('b', { textContent: 'מה מקבל מי שנרשם לבד' }),
+                el('small', { textContent: names.length ? names.join(' · ') : 'כלום — יראה דף ריק עד שתקצה לו' })]),
+            el('div', { className: 'notify-btns' }, [button('עריכה', () => {
+                const { d, body } = dialog('מה מקבל מי שנרשם לבד', 'נפתח לו מיד כשהחשבון פעיל');
+                const asGrants = { categories: Object.fromEntries(g.categories.map(c => [c, true])),
+                    groups: Object.fromEntries(g.groups.map(x => [x, true])), apps: g.apps };
+                body.append(grantsEditor({ display_name: 'נרשם חדש', grants: asGrants }, {
+                    label: '💾 שמירת הסל',
+                    save: async (sel) => {
+                        try { await P().api('admin_settings', { default_grants: sel }); d.close(); P().toast('✓ הסל נשמר'); await reload(); }
+                        catch (err) { P().toast('⚠️ ' + err.message); }
+                    },
+                }));
+            }, 'sm')]),
+        ]);
     }
 
     // ---------- הזמנת לקוח בקישור (platform/lib/invites.php) ----------
@@ -993,6 +1020,26 @@ window.PlatformAdmin = (() => {
 
     // ---------- קטגוריות ואפליקציות ----------
 
+    // ⭐ מומלצות: מה שמוצג בפס "מומלצות לך" בראש דף הבית — אחרי מה שכל משתמש פותח הכי הרבה
+    // (lib/access.php, recommended_for). רק מה שהמשתמש רשאי לראות. הסדר — לפי סדר הסימון.
+    function featuredEditor() {
+        let chosen = [...(state.settings?.featured || [])];
+        const list = state.apps.filter(a => !a.hidden && !a.plugin).sort((a, b) => a.name.localeCompare(b.name, 'he'));
+        const boxes = list.map(a => {
+            const box = el('input', { type: 'checkbox', checked: chosen.includes(a.id) });
+            box.addEventListener('change', () => {
+                chosen = box.checked ? [...chosen, a.id] : chosen.filter(x => x !== a.id);
+            });
+            return el('label', { className: 'grant-group' }, [box, el('span', { textContent: ` ${a.icon} ${a.name}` })]);
+        });
+        return el('fieldset', { className: 'grant-cat' }, [
+            el('legend', { textContent: '⭐ מומלצות בדף הבית' }),
+            el('p', { className: 'muted small', textContent: 'בראש דף הבית מופיע "מומלצות לך": קודם מה שהמשתמש פותח הכי הרבה, ואחריהן מה שמסומן כאן — רק מה שהוא רשאי לראות.' }),
+            ...boxes,
+            button('💾 שמירת המומלצות', () => act('admin_settings', { featured: chosen }, '✓ המומלצות נשמרו'), 'primary'),
+        ]);
+    }
+
     function renderCatalog() {
         const cats = state.categories.map((cat, i) => {
             const icon = el('input', { value: cat.icon, className: 'icon-input', maxLength: 8, ariaLabel: 'אייקון' });
@@ -1039,6 +1086,7 @@ window.PlatformAdmin = (() => {
         const apps = state.apps.filter(a => !a.plugin).map(appCard);
 
         return el('div', {}, [
+            featuredEditor(),
             el('h3', { textContent: 'קטגוריות' }), ...cats, add,
             el('h3', { textContent: 'קבוצות' }),
             el('p', { className: 'muted small', textContent: 'קבוצה מוצגת כשורה אחת שנפתחים ממנה הילדים (כמו חבילת היצירה). אותה קבוצה יכולה להופיע בכמה קטגוריות — בכל אחת רק מה שהונח בה.' }),

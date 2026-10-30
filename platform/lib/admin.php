@@ -49,7 +49,7 @@ function admin_state(array $admin): never
     json_out([
         'users'      => $users,
         'invites'    => invites_list(),
-        'settings'   => ['require_approval' => approval_required()],
+        'settings'   => admin_settings_state(),
         'sso'        => sso_clients_state(),
         'categories' => categories_list(),
         'groups'     => groups_list(),
@@ -101,7 +101,22 @@ function admin_settings(array $body): never
     if (array_key_exists('require_approval', $body)) {
         setting_set('require_approval', $body['require_approval'] ? '1' : '0');
     }
-    json_out(['ok' => true, 'settings' => ['require_approval' => approval_required()]]);
+    // מומלצות: רשימת אפליקציות לפי הסדר (רק כאלה שקיימות)
+    if (array_key_exists('featured', $body)) {
+        $ids = array_column(apps_effective(), 'id');
+        $f = array_values(array_unique(array_filter((array)$body['featured'], fn($x) => is_string($x) && in_array($x, $ids, true))));
+        setting_set('featured', json_encode($f));
+    }
+    // הסל של מי שנרשם לבד — אותו מבנה כמו הרשאות משתמש
+    if (array_key_exists('default_grants', $body)) {
+        setting_set('default_grants', json_encode(grants_clean((array)$body['default_grants']), JSON_UNESCAPED_UNICODE));
+    }
+    json_out(['ok' => true, 'settings' => admin_settings_state()]);
+}
+
+function admin_settings_state(): array
+{
+    return ['require_approval' => approval_required(), 'featured' => featured_apps(), 'default_grants' => default_grants()];
 }
 
 // ---------- משתמשים ----------

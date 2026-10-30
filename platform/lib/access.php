@@ -288,7 +288,8 @@ function visible_for(array $user): array
     $used = [];
     foreach ($apps as $a) foreach ($a['placements'] as $p) if ($p['group'] !== null) $used[$p['group']] = true;
     $groups = array_values(array_filter(groups_list(), fn($g) => isset($used[$g['id']])));
-    $out = ['categories' => $categories, 'groups' => $groups, 'apps' => array_map(fn($a) => app_public($a, $admin), $apps)];
+    $out = ['categories' => $categories, 'groups' => $groups, 'apps' => array_map(fn($a) => app_public($a, $admin), $apps),
+        'recommended' => recommended_for((int)$user['id'], array_column($apps, 'id'))];
     if ($admin) $out['plugins'] = array_map(fn($a) => app_public($a, true), $plugins);
     return $out;
 }
@@ -317,3 +318,29 @@ function app_public(array $a, bool $admin = false): array
         ],
     ];
 }
+
+/**
+ * "מומלצות לך" בראש דף הבית (כמו חנות): קודם מה שהמשתמש פותח הכי הרבה ב-60 הימים האחרונים (visits,
+ * עד 4), ואחריהן מה שהמנהל סימן כמומלצות (ההגדרה featured). רק מה שהמשתמש רואה, עד 8, בלי כפילויות.
+ */
+function recommended_for(int $userId, array $visible): array
+{
+    $out = [];
+    try {
+        $st = db()->prepare('SELECT app, COUNT(*) n FROM visits WHERE user_id = ? AND at > ? GROUP BY app ORDER BY n DESC LIMIT 12');
+        $st->execute([$userId, gmdate('Y-m-d\TH:i:s\Z', time() - 60 * 86400)]);
+        foreach ($st as $r) if (in_array($r['app'], $visible, true) && count($out) < 4) $out[] = $r['app'];
+    } catch (Throwable) { /* אין עוד טבלת כניסות */ }
+    foreach (featured_apps() as $id) if (in_array($id, $visible, true) && !in_array($id, $out, true)) $out[] = $id;
+    return array_slice($out, 0, 8);
+}
+
+/** האפליקציות שהמנהל סימן כמומלצות — בסדר שבחר. */
+function featured_apps(): array
+{
+    $st = db()->prepare("SELECT value FROM settings WHERE key = 'featured'");
+    $st->execute();
+    $v = json_decode((string)$st->fetchColumn(), true);
+    return is_array($v) ? array_values(array_filter($v, 'is_string')) : [];
+}
+

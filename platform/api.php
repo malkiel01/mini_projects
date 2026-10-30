@@ -298,6 +298,8 @@ function action_register(array $body): never
         throw $e;
     }
     $id = (int)db()->lastInsertId();
+    // הסל שהמנהל קבע לנרשמים חדשים — נראה מיד כשהחשבון נפתח (אחרי אימות, או אישור כשנדרש)
+    grants_write($id, default_grants(), true);
     start_session($id);
 
     // קודם התשובה, ורק אז המייל — שההרשמה לא תחכה לשרת הדואר. למנהל מודיעים רק אחרי האימות.
