@@ -203,7 +203,16 @@ export function normalizeDoc(input) {
             if (s.italic) l.style.italic = true;
             if (s.stroke && isColor(s.stroke.color)) l.style.stroke = { width: clamp(num(s.stroke.width, 2), 0, 100), color: s.stroke.color };
             if (s.shadow && isColor(s.shadow.color)) l.style.shadow = { x: num(s.shadow.x, 0), y: num(s.shadow.y, 4), blur: Math.max(0, num(s.shadow.blur, 8)), color: s.shadow.color };
-            if (s.background && isColor(s.background.color)) l.style.background = { color: s.background.color, radius: Math.max(0, num(s.background.radius, 0)), padding: Math.max(0, num(s.background.padding, 16)) };
+            // מילוי האות במעבר צבעים, והילה (זוהר סביב האותיות) — `color` נשאר צבע הגיבוי והצבע הראשון
+            const tg = gradient(s.gradient);
+            if (tg) l.style.gradient = tg;
+            if (s.glow && isColor(s.glow.color)) l.style.glow = { color: s.glow.color, blur: clamp(num(s.glow.blur, 20), 1, 500), strength: clamp(Math.round(num(s.glow.strength, 1)), 1, 4) };
+            if (s.background && isColor(s.background.color)) {
+                const b = s.background;
+                l.style.background = { color: b.color, radius: Math.max(0, num(b.radius, 0)), padding: Math.max(0, num(b.padding, 16)) };
+                if (num(b.opacity, 1) < 1) l.style.background.opacity = clamp(num(b.opacity, 1), 0, 1);
+                if (b.border && isColor(b.border.color) && num(b.border.width, 0) > 0) l.style.background.border = { color: b.border.color, width: clamp(num(b.border.width, 2), 0, 200) };
+            }
         } else if (raw.type === 'image') {
             if (!doc.assets[raw.asset]) { fixes.push(`שכבה "${id}" מפנה לתמונה שלא קיימת — דולגה`); continue; }
             l.asset = raw.asset;

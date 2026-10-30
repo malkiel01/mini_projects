@@ -140,8 +140,19 @@ export class Canvas {
             if (!this.vars) l.h = t.height();
             else g.setAttr('filledH', t.height());
             if (s.background) {
-                const p = s.background.padding || 0;
-                g.add(new Konva.Rect({ x: -p, y: -p, width: l.w + 2 * p, height: t.height() + 2 * p, fill: s.background.color, cornerRadius: s.background.radius || 0 }));
+                const b = s.background, p = b.padding || 0;
+                g.add(new Konva.Rect({ x: -p, y: -p, width: l.w + 2 * p, height: t.height() + 2 * p, fill: b.color, cornerRadius: b.radius || 0,
+                    opacity: b.opacity ?? 1, ...(b.border ? { stroke: b.border.color, strokeWidth: b.border.width } : {}) }));
+            }
+            // מעבר צבעים בתוך האותיות — לפי התיבה של הטקסט
+            if (s.gradient) t.setAttrs(gradientAttrs(s.gradient, l.w, t.height()));
+            // הילה: עותקים של הטקסט בצבע ההילה, עם טשטוש וגם בלי היסט, מתחת לטקסט. כל עותק מחזק אותה.
+            if (s.glow) {
+                for (let i = 0; i < (s.glow.strength || 1); i++) {
+                    g.add(t.clone({ name: 'glow', listening: false, fillPriority: 'color', fill: s.glow.color, stroke: s.glow.color,
+                        strokeWidth: Math.max(s.stroke?.width || 0, s.size * 0.02), shadowColor: s.glow.color, shadowBlur: s.glow.blur,
+                        shadowOffsetX: 0, shadowOffsetY: 0, shadowOpacity: 1 }));
+                }
             }
             g.add(t);
         } else if (l.type === 'image') {

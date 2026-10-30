@@ -121,10 +121,13 @@ function textItems(l, measured) {
         id: l.id + '-t', type: 'text', text: l.text, box, auto: false,
         font: { family: s.font, size: r2(s.size * PT), weight: s.weight, ...(s.italic ? { style: 'italic' } : {}) },
         align: s.align === 'justify' ? 'justify' : s.align, lineHeight: s.lineHeight || 1.2,
-        fill: paint(s.color), stroke: s.stroke?.width && paint(s.stroke.color) ? { ...paint(s.stroke.color), width: r2(s.stroke.width * PT) } : null,
+        fill: s.gradient ? { gradient: gradient(s.gradient, box[0], box[1], box[2], box[3]), opacity: 1 } : paint(s.color),
+        stroke: s.stroke?.width && paint(s.stroke.color) ? { ...paint(s.stroke.color), width: r2(s.stroke.width * PT) } : null,
     };
-    const e = fx(s.shadow);
-    if (e) item.effects = e;
+    // צל והילה — במבנה המשותף של החבילה (mbe-format.md, "effects")
+    const e = [...(fx(s.shadow) || [])];
+    if (s.glow && paint(s.glow.color)) e.push({ type: 'glow', blur: r2(s.glow.blur * PT), color: s.glow.color.slice(0, 7), opacity: r2(Math.min(1, paint(s.glow.color).opacity * (s.glow.strength || 1))) });
+    if (e.length) item.effects = e;
     if (l.rotation) {
         // סיבוב סביב פינת התיבה (כמו בקנבס): הזזה לראשית, סיבוב, וחזרה
         const a = (l.rotation * Math.PI) / 180, c = Math.cos(a), sn = Math.sin(a), x = box[0], y = box[1];
@@ -132,8 +135,10 @@ function textItems(l, measured) {
     }
     if (!s.background || !paint(s.background.color)) return [item];
     const p = s.background.padding || 0;
-    const bg = { id: l.id + '-bg', d: toMbePath(rectD(l.w + 2 * p, (measured || l.h) + 2 * p, s.background.radius || 0), mul(layerToPage(l), [1, 0, 0, 1, -p, -p])),
-        fill: paint(s.background.color), stroke: null };
+    const b = s.background, bf = paint(b.color);
+    const bg = { id: l.id + '-bg', d: toMbePath(rectD(l.w + 2 * p, (measured || l.h) + 2 * p, b.radius || 0), mul(layerToPage(l), [1, 0, 0, 1, -p, -p])),
+        fill: { ...bf, opacity: r2(bf.opacity * (b.opacity ?? 1)) },
+        stroke: b.border && paint(b.border.color) ? { ...paint(b.border.color), width: r2(b.border.width * PT) } : null };
     return [{ id: l.id + '-g', type: 'group', name: 'טקסט עם רקע', children: [bg, item] }];
 }
 

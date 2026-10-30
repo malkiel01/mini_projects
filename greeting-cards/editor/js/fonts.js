@@ -3,11 +3,11 @@
 // מצייר בפונט חלופי ולא מתעדכן לבד.
 
 export const FONTS = [
-    { family: 'Heebo', weights: [400, 700, 800] },
-    { family: 'Assistant', weights: [400, 700] },
-    { family: 'Rubik', weights: [400, 700] },
+    { family: 'Heebo', weights: [100, 200, 300, 400, 500, 600, 700, 800, 900] },
+    { family: 'Assistant', weights: [200, 300, 400, 500, 600, 700, 800] },
+    { family: 'Rubik', weights: [300, 400, 500, 600, 700, 800, 900] },
     { family: 'Secular One', weights: [400] },
-    { family: 'Frank Ruhl Libre', weights: [400, 700] },
+    { family: 'Frank Ruhl Libre', weights: [300, 400, 500, 600, 700, 800, 900] },
     { family: 'Suez One', weights: [400] },
     { family: 'Varela Round', weights: [400] },
     { family: 'Alef', weights: [400, 700] },

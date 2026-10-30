@@ -19,7 +19,7 @@ import { loadScript } from './io.js';
 import { docVariables, readSheetFile, readPasted, readPhoneContacts, guessColumns, normalizePhone, fileNames, fillText } from './merge.js';
 
 // הגרסה — מופיעה ביומן, כדי לדעת איזה קוד רץ בטלפון.
-const BUILD = '2026-10-30.inplace-1';
+const BUILD = '2026-10-30.text-fx-1';
 
 const app = $('#app');
 let ed = null;   // העיצוב הפתוח: { id, doc, history, canvas, dirty }
@@ -833,6 +833,32 @@ function cropSheet(l) {
         slider('מלמעלה', 'top'), slider('מלמטה', 'bottom'), slider('מימין', 'right'), slider('משמאל', 'left')), { onClose: commit });
 }
 
+const WEIGHT_NAMES = { 100: 'דק מאוד', 200: 'דק', 300: 'קל', 400: 'רגיל', 500: 'בינוני', 600: 'חצי מודגש', 700: 'מודגש', 800: 'עבה', 900: 'שחור' };
+
+/**
+ * אפקט שאפשר להדליק ולכבות: המתג, ומתחתיו הכוונונים — רק כשהוא דולק. הכוונונים נבנים מחדש בכל הדלקה,
+ * כדי שיופיעו מיד (בלי לסגור ולפתוח את הגיליון).
+ */
+function effectBox(label, isOn, on, off, controls) {
+    const body = h('div', { class: 'fx-body' });
+    const draw = () => body.replaceChildren(...(isOn() ? [].concat(controls()).filter(Boolean) : []));
+    draw();
+    return h('div', { class: 'fx' }, toggle(label, isOn(), v => { if (v) on(); else off(); commit(); draw(); }), body);
+}
+
+/** צבע עם שקיפות (#rrggbbaa) → שני כוונונים: צבע ושקיפות. */
+function colorAlphaFields(label, get, set) {
+    const hex = () => (get() || '#000000').slice(0, 7);
+    const alpha = () => { const v = get() || ''; return v.length === 9 ? Math.round(parseInt(v.slice(7), 16) / 2.55) : 100; };
+    const join = (c, a) => c + (a >= 100 ? '' : Math.round(a * 2.55).toString(16).padStart(2, '0'));
+    return h('div', { class: 'two' },
+        colorField(label, hex(), live(v => set(join(v, alpha()))), commit),
+        rangeField('שקיפות', { min: 0, max: 100, value: alpha(), unit: '%', onInput: live(v => set(join(hex(), v))), onCommit: commit }));
+}
+
+/** צבע בהיר? — לברירות מחדל שמנוגדות לטקסט (רקע כהה לטקסט בהיר, ולהפך). */
+const isLight = c => { const n = parseInt((c || '#000000').slice(1, 7), 16); return ((n >> 16) * 299 + ((n >> 8) & 255) * 587 + (n & 255) * 114) / 1000 > 150; };
+
 function textProps(l) {
     const s = l.style;
     const fontList = h('div', { class: 'font-list', role: 'radiogroup', 'aria-label': 'פונט' }, FONTS.map(f => {
@@ -841,31 +867,90 @@ function textProps(l) {
                 s.font = f.family;
                 await ensureFont(s.font, s.weight);
                 fontList.querySelectorAll('.font-opt').forEach(x => { x.classList.toggle('on', x === btn); x.setAttribute('aria-checked', String(x === btn)); });
+                weightBox.replaceChildren(weightField());
                 commit();
             } }, f.family);
         ensureFont(f.family, 400);
         return btn;
     }));
+    // עובי האות: רק העוביים שיש לפונט (בלי "מודגש מזויף"); הסרגל קופץ ביניהם
+    const weightField = () => {
+        const ws = FONTS.find(f => f.family === s.font)?.weights || [400];
+        if (ws.length === 1) return h('p', { class: 'hint' }, `לפונט ${s.font} יש עובי אחד בלבד`);
+        const idx = Math.max(0, ws.indexOf(nearestWeight(s.font, s.weight)));
+        const name = h('span', { class: 'muted' }, ' ' + WEIGHT_NAMES[ws[idx]]);
+        const id = 'w' + l.id;
+        const range = h('input', { type: 'range', id, min: 0, max: ws.length - 1, step: 1, value: idx, 'aria-valuetext': WEIGHT_NAMES[ws[idx]] });
+        range.addEventListener('input', async () => {
+            const w = ws[+range.value];
+            s.weight = w;
+            name.textContent = ' ' + WEIGHT_NAMES[w];
+            range.setAttribute('aria-valuetext', WEIGHT_NAMES[w]);
+            await ensureFont(s.font, w);
+            ed.canvas.render();
+        });
+        range.addEventListener('change', commit);
+        return h('div', { class: 'field' }, h('label', { for: id }, 'עובי האות', name), range);
+    };
+    const weightBox = h('div', {}, weightField());
+    // מילוי: צבע אחד, או מעבר צבעים בתוך האותיות
+    const fillBox = h('div', {});
+    const drawFill = () => fillBox.replaceChildren(
+        seg('מילוי האות', [{ value: 'solid', label: 'צבע אחד' }, { value: 'grad', label: 'מעבר צבעים' }], s.gradient ? 'grad' : 'solid', v => {
+            if (v === 'grad') s.gradient = { type: 'linear', angle: 180, colors: [s.color, isLight(s.color) ? '#d98e04' : '#ffd166'] };
+            else { s.color = s.gradient?.colors[0] || s.color; delete s.gradient; }
+            commit(); drawFill();
+        }),
+        s.gradient ? gradientEditor(s.gradient) : colorField('צבע', s.color, live(v => { s.color = v; }), commit));
+    drawFill();
     const cols = ed.doc.merge?.columns || [];
+    const big = s.size;
     return h('div', {},
         cols.length ? h('div', { class: 'vars' }, h('span', { class: 'muted small' }, 'הוספת משתנה:'),
             cols.slice(0, 12).map(c => h('button', { class: 'chip-btn', onclick: () => { l.text = (l.text ? l.text + ' ' : '') + `{{${c}}}`; commit(); toast(`נוסף {{${c}}}`); } }, c)))
             : h('p', { class: 'hint' }, 'כרטיס לכל נמען: 👥 נמענים ← טעינת רשימה, ואז כאן "הוספת משתנה".'),
         fontList,
         rangeField('גודל', { log: true, min: 4, max: Math.round(Math.max(ed.doc.page.width, ed.doc.page.height) / 3), value: s.size, onInput: live(v => { s.size = v; }), onCommit: commit }),
-        h('div', { class: 'two' },
-            colorField('צבע', s.color, live(v => { s.color = v; }), commit),
-            seg('משקל', [{ value: 400, label: 'רגיל' }, { value: 700, label: 'מודגש' }, { value: 800, label: 'שחור' }], nearestWeight(s.font, s.weight) >= 800 ? 800 : nearestWeight(s.font, s.weight) >= 700 ? 700 : 400,
-                async v => { s.weight = v; await ensureFont(s.font, v); commit(); })),
+        weightBox,
+        fillBox,
         seg('יישור', [{ value: 'right', icon: '⇥', label: 'ימין' }, { value: 'center', icon: '↔', label: 'מרכז' }, { value: 'left', icon: '⇤', label: 'שמאל' }, { value: 'justify', icon: '☰', label: 'מיושר' }], s.align, v => { s.align = v; commit(); }),
         rangeField('ריווח שורות', { min: 0.7, max: 3, step: 0.05, value: s.lineHeight || 1.2, onInput: live(v => { s.lineHeight = v; }), onCommit: commit }),
         rangeField('שקיפות', { min: 0, max: 100, value: Math.round((l.opacity ?? 1) * 100), unit: '%', onInput: live(v => { l.opacity = v / 100; }), onCommit: commit }),
         h('h3', { class: 'section' }, 'אפקטים'),
-        toggle('צל', !!s.shadow, v => { if (v) s.shadow = { x: 0, y: s.size * 0.06, blur: s.size * 0.2, color: '#00000088' }; else delete s.shadow; commit(); }),
-        toggle('קו מתאר', !!s.stroke, v => { if (v) s.stroke = { width: Math.max(1, s.size * 0.04), color: '#ffffff' }; else delete s.stroke; commit(); }),
-        s.stroke ? colorField('צבע קו המתאר', s.stroke.color, live(v => { s.stroke.color = v; }), commit) : null,
-        toggle('רקע לטקסט', !!s.background, v => { if (v) s.background = { color: '#ffd166', radius: s.size * 0.4, padding: s.size * 0.25 }; else delete s.background; commit(); }),
-        s.background ? colorField('צבע הרקע', s.background.color, live(v => { s.background.color = v; }), commit) : null);
+        effectBox('קו מתאר (מסגרת לאותיות)', () => !!s.stroke,
+            () => { s.stroke = { width: Math.max(1, Math.round(big * 0.04)), color: isLight(s.color) ? '#16192b' : '#ffffff' }; }, () => { delete s.stroke; },
+            () => [colorField('צבע הקו', s.stroke.color, live(v => { s.stroke.color = v; }), commit),
+                rangeField('עובי הקו', { min: 0.5, max: Math.max(4, Math.round(big * 0.3)), step: 0.5, value: s.stroke.width, onInput: live(v => { s.stroke.width = v; }), onCommit: commit })]),
+        effectBox('צל', () => !!s.shadow,
+            () => { s.shadow = { x: 0, y: Math.round(big * 0.06), blur: Math.round(big * 0.2), color: '#00000088' }; }, () => { delete s.shadow; },
+            () => {
+                const sh = s.shadow;
+                const pol = () => ({ d: Math.round(Math.hypot(sh.x, sh.y)), a: Math.round(((Math.atan2(sh.y, sh.x) * 180) / Math.PI + 360) % 360) });
+                const setPol = (d, a) => { const r = (a * Math.PI) / 180; sh.x = Math.round(d * Math.cos(r) * 10) / 10; sh.y = Math.round(d * Math.sin(r) * 10) / 10; };
+                return [colorAlphaFields('צבע הצל', () => sh.color, v => { sh.color = v; }),
+                    rangeField('מרחק', { min: 0, max: Math.max(20, Math.round(big * 0.5)), value: pol().d, onInput: live(v => setPol(v, pol().a)), onCommit: commit }),
+                    rangeField('כיוון', { min: 0, max: 355, step: 5, value: pol().a, unit: '°', onInput: live(v => setPol(pol().d || 1, v)), onCommit: commit }),
+                    rangeField('טשטוש', { min: 0, max: Math.max(20, Math.round(big)), value: sh.blur, onInput: live(v => { sh.blur = v; }), onCommit: commit })];
+            }),
+        effectBox('הילה (זוהר סביב האותיות)', () => !!s.glow,
+            () => { s.glow = { color: isLight(s.color) ? '#ffe9a8' : '#ffffff', blur: Math.round(big * 0.35), strength: 2 }; }, () => { delete s.glow; },
+            () => [colorAlphaFields('צבע ההילה', () => s.glow.color, v => { s.glow.color = v; }),
+                rangeField('גודל', { min: 1, max: Math.max(20, Math.round(big * 1.5)), value: s.glow.blur, onInput: live(v => { s.glow.blur = v; }), onCommit: commit }),
+                rangeField('עוצמה', { min: 1, max: 4, value: s.glow.strength || 1, onInput: live(v => { s.glow.strength = v; }), onCommit: commit })]),
+        effectBox('רקע לטקסט', () => !!s.background,
+            () => { s.background = { color: isLight(s.color) ? '#1b2a4a' : '#ffffff', radius: Math.round(big * 0.4), padding: Math.round(big * 0.25) }; }, () => { delete s.background; },
+            () => {
+                const b = s.background;
+                return [h('div', { class: 'two' },
+                    colorField('צבע הרקע', b.color, live(v => { b.color = v; }), commit),
+                    rangeField('שקיפות', { min: 0, max: 100, value: Math.round((b.opacity ?? 1) * 100), unit: '%', onInput: live(v => { if (v >= 100) delete b.opacity; else b.opacity = v / 100; }), onCommit: commit })),
+                    rangeField('עיגול פינות', { min: 0, max: Math.max(20, Math.round(big * 1.5)), value: b.radius || 0, onInput: live(v => { b.radius = v; }), onCommit: commit }),
+                    rangeField('ריווח מהטקסט', { min: 0, max: Math.max(20, Math.round(big * 1.5)), value: b.padding || 0, onInput: live(v => { b.padding = v; }), onCommit: commit }),
+                    effectBox('מסגרת לרקע', () => !!b.border,
+                        () => { b.border = { color: isLight(b.color) ? '#2d4a8a' : '#ffd166', width: Math.max(1, Math.round(big * 0.05)) }; }, () => { delete b.border; },
+                        () => [colorField('צבע המסגרת', b.border.color, live(v => { b.border.color = v; }), commit),
+                            rangeField('עובי המסגרת', { min: 0.5, max: Math.max(4, Math.round(big * 0.3)), step: 0.5, value: b.border.width, onInput: live(v => { b.border.width = v; }), onCommit: commit })])];
+            }));
 }
 
 function imageProps(l) {
