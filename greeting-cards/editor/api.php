@@ -73,7 +73,8 @@ try {
             $u = requireUser();
             $f = $_FILES['file'] ?? null;
             if (!$f || ($f['error'] ?? 1) !== UPLOAD_ERR_OK) throw new ApiError('לא התקבל קובץ', 422);
-            out(['file' => storeImage((int)$u['id'], (string)file_get_contents($f['tmp_name']))]);
+            $bin = (string)file_get_contents($f['tmp_name']);
+            out(['file' => fontMime($bin) ? storeFont((int)$u['id'], $bin) : storeImage((int)$u['id'], $bin)]);
 
         case 'file':
             $u = requireUser();

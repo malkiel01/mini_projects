@@ -11,7 +11,7 @@
 import { open, create, save, PREVIEW } from './mbe/mbe.js';
 import { normalizeDoc, newDoc, uid, clone } from './doc.js';
 import { assets } from './db.js';
-import { ensureDocFonts, FONTS, DEFAULT_FONT } from './fonts.js';
+import { ensureDocFonts, FONTS, DEFAULT_FONT, FONT_MIME } from './fonts.js';
 import { Canvas, gradientAttrs } from './canvas.js';
 import { ICONS } from './icons.js';
 import { ELEMENTS, scalePath } from './elements.js';
@@ -237,12 +237,21 @@ export async function buildMbe(doc, images, { baseBytes = null } = {}) {
             layers.push({ ...common, type: 'vector', paths: [vectorItem(l)] });
         }
     }
+    const embeddedFonts = [];
+    for (const a of Object.values(doc.fonts || {})) {
+        const blob = await assets.get(a.src);
+        if (blob) embeddedFonts.push({ family: a.family, weight: a.weight, style: a.style, embedded: await f.addMedia(new Uint8Array(await blob.arrayBuffer()), blob.type || 'font/ttf') });
+    }
     const surfaceId = (f.document.surfaces || []).find(s => s?.type === 'page')?.id || 'gc-page-1';
     const surface = { id: surfaceId, type: 'page', size: [r2(W * PT), r2(H * PT)], layers };
     const others = (f.document.surfaces || []).filter(s => s?.id !== surfaceId);
     f.document = {
         ...f.document, units: 'pt', color: f.document.color || { space: 'sRGB' },
-        fonts: [...new Set(doc.layers.filter(l => l.type === 'text').map(l => l.style.font))].map(family => ({ family })),
+        fonts: [...new Set(doc.layers.filter(l => l.type === 'text').map(l => l.style.font))].flatMap(family => {
+            // גופן שהועלו — מוטמע (mbe-format.md: ‏fonts[].embedded); מובנה — בשם בלבד
+            const emb = embeddedFonts.filter(e => e.family === family);
+            return emb.length ? emb : [{ family }];
+        }),
         surfaces: [surface, ...others],
     };
 
@@ -254,6 +263,10 @@ export async function buildMbe(doc, images, { baseBytes = null } = {}) {
         if (!blob) continue;
         a.media = await f.addMedia(new Uint8Array(await blob.arrayBuffer()), blob.type || 'image/png');
         delete a.src;
+    }
+    for (const a of Object.values(saved.fonts || {})) {
+        a.media = embeddedFonts.find(e => e.family === a.family && e.weight === a.weight && e.style === a.style)?.embedded;
+        delete a.src; delete a.remote;
     }
     f.setApp(APP_ID, SAVED, enc(JSON.stringify(saved)));
 
@@ -309,8 +322,11 @@ export async function importMbe(file) {
             loaded.set(id, await blobToImage(blob));
         }
         doc.layers = doc.layers.filter(l => l.type !== 'image' || doc.assets[l.asset]);
+        delete doc.fonts;
+        await fontsFromMbe(f, doc, Object.values(saved.fonts || {}).map(a => ({ ...a, embedded: a.media })));
     } else {
         ({ doc, loaded } = await readForeign(f, fixes));
+        await fontsFromMbe(f, doc, f.document.fonts || []);
         if (saved) {
             // נערך באפליקציה אחרת: מחזירים מהמקורי את מה שאין לו מקום בפורמט — תפקידים ונמענים
             const byId = new Map((saved.layers || []).map(l => [l.id, l]));
@@ -350,9 +366,20 @@ export async function importMbe(file) {
     return { doc, loaded, fixes, bytes };
 }
 
-const FONT_NAMES = FONTS.map(x => x.family);
 
 /** קריאה מהשכבות — קובץ שנוצר או נערך באפליקציה אחרת בחבילה. */
+/** גופנים מוטמעים בקובץ (‏fonts[].embedded) → doc.fonts, כדי שהטקסט יוצג בהם (גם גופן שהועלה באפליקציה אחרת). */
+async function fontsFromMbe(f, doc, list) {
+    for (const e of Array.isArray(list) ? list : []) {
+        const data = e?.embedded && f.getMedia(e.embedded);
+        if (!data || typeof e.family !== 'string') continue;
+        const ext = /\.([a-z0-9]+)$/.exec(e.embedded)?.[1];
+        const blob = new Blob([data], { type: FONT_MIME[ext] || 'font/ttf' });
+        (doc.fonts ||= {})[uid('f')] = { family: e.family.slice(0, 60), weight: Math.min(900, Math.max(100, Math.round((+e.weight || 400) / 100) * 100)),
+            style: e.style === 'italic' ? 'italic' : 'normal', src: await assets.put(blob) };
+    }
+}
+
 async function readForeign(f, fixes) {
     const s = (f.document.surfaces || []).find(x => Array.isArray(x?.size));
     if (!s) throw new Error('בקובץ אין עמוד או קנבס');
@@ -379,7 +406,7 @@ async function readForeign(f, fixes) {
         if (p.type === 'group') { if (p.clip) skipped.add('clip'); for (const c of p.children || []) await item(c, layer); return; }
         if (p.type === 'image') return addImage(p.src, p.box, base);
         if (p.type === 'text') {
-            const fam = FONT_NAMES.includes(p.font?.family) ? p.font.family : DEFAULT_FONT;
+            const fam = FONTS.some(x => x.family === p.font?.family) || (f.document.fonts || []).some(e => e?.embedded && e.family === p.font?.family) ? p.font.family : DEFAULT_FONT;
             if (p.font?.family && fam !== p.font.family) fixes.push(`הפונט "${p.font.family}" הוחלף ב-${fam}`);
             const [x, y, w, h] = (p.box || [0, 0, 100, 20]).map(v => v * toPx);
             doc.layers.push({ id: p.id || uid(), type: 'text', role: 'body', text: String(p.text ?? ''), x, y, w: Math.max(20, w), h, rotation: 0, opacity: base.opacity,

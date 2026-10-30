@@ -61,8 +61,11 @@ export const designs = {
         // התמונות של העיצוב נמחקות איתו, אלא אם עיצוב אחר משתמש בהן (שכפול).
         if (rec) {
             const others = await tx('designs', 'readonly', s => req2p(s.getAll()));
-            const used = new Set(others.flatMap(d => Object.values(d.doc.assets).map(a => a.src)));
-            for (const a of Object.values(rec.doc.assets)) {
+            // גם הגופנים: של עיצובים אחרים, ושל הרשימה "שלי" (fonts.js, gc-my-fonts)
+            let mine = [];
+            try { mine = JSON.parse(localStorage.getItem('gc-my-fonts')) || []; } catch { /* אין */ }
+            const used = new Set([...others.flatMap(d => [...Object.values(d.doc.assets), ...Object.values(d.doc.fonts || {})].map(a => a.src)), ...mine.map(m => m.src)]);
+            for (const a of [...Object.values(rec.doc.assets), ...Object.values(rec.doc.fonts || {})]) {
                 if (a.src && !used.has(a.src)) await assets.remove(a.src.slice(4));
             }
         }

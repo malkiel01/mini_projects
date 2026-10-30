@@ -4,7 +4,7 @@
 import { normalizeDoc, extractJson, newDoc, backgroundLayer, imageLayer, clone } from './doc.js';
 import { assets } from './db.js';
 import { svgToLayers } from './svg-import.js';
-import { FONTS } from './fonts.js';
+import { FONTS, FONT_MIME } from './fonts.js';
 import { SIZES } from './doc.js';
 
 const MAX_IMAGE_SIDE = 4096;      // תמונה גדולה מזה מוקטנת בכניסה — אין טעם לשמור 8000px בטלפון
@@ -65,6 +65,7 @@ export async function ingestImage(file) {
  */
 export async function importFromChat(files, pastedText) {
     const images = new Map();       // שם קובץ (באותיות קטנות) → File/Blob
+    const fontFiles = new Map();    // fonts/ שבתוך ‎.gcard — גופנים שהועלו
     const svgs = new Map();         // שם קובץ → טקסט ה-SVG (קישוטים וקטוריים מהצ'אט)
     let json = null;
     const fixes = [];
@@ -85,6 +86,14 @@ export async function importFromChat(files, pastedText) {
                 if (!base || base.startsWith('.')) continue;
                 if (base === 'design.json') { json = extractJson(await entry.async('string')); continue; }
                 if (base.endsWith('.svg')) { svgs.set(base, await entry.async('string')); continue; }
+                const fext = /\.(woff2|woff|ttf|otf)$/.exec(base)?.[1];
+                if (fext) {
+                    const blob = await entry.async('blob');
+                    total += blob.size;
+                    if (total > 60 * 1024 * 1024) throw new Error('הקובץ גדול מדי אחרי פריסה');
+                    fontFiles.set(base, new Blob([blob], { type: FONT_MIME[fext] }));
+                    continue;
+                }
                 if (!/\.(png|jpe?g|webp|gif)$/.test(base)) continue;
                 const blob = await entry.async('blob');
                 total += blob.size;
@@ -176,6 +185,12 @@ export async function importFromChat(files, pastedText) {
         delete a.file;
         loaded.set(id, im.img);
     }
+    for (const [id, a] of Object.entries(doc.fonts || {})) {
+        const blob = fontFiles.get((a.file || '').toLowerCase());
+        delete a.file;
+        if (blob) a.src = await assets.put(blob);
+        else if (!a.src && !a.remote) { fixes.push(`חסר קובץ הגופן "${a.family}" — יוצג בגופן אחר`); delete doc.fonts[id]; }
+    }
     // שכבות שהתמונה שלהן חסרה — נשארות כמקום שמור (מלבן מקווקו), כדי שאפשר יהיה להחליף.
     return { doc, loaded, fixes };
 }
@@ -253,6 +268,14 @@ export async function exportGcard(doc) {
         a.file = `${id}.${ext}`;
         delete a.src;
         zip.file('assets/' + a.file, blob);
+    }
+    // גופנים שהועלו ומשמשים בעיצוב — בתוך הקובץ, כדי שייפתח נכון גם במכשיר אחר
+    for (const [id, a] of Object.entries(out.fonts || {})) {
+        const blob = await assets.get(a.src);
+        delete a.src; delete a.remote;
+        if (!blob) continue;
+        a.file = `${id}.${Object.entries(FONT_MIME).find(([, m]) => m === blob.type)?.[0] || 'ttf'}`;
+        zip.file('fonts/' + a.file, blob);
     }
     zip.file('design.json', JSON.stringify(out, null, 2));
     return zip.generateAsync({ type: 'blob', mimeType: 'application/zip' });

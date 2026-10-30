@@ -154,6 +154,16 @@ export function normalizeDoc(input) {
         doc.assets[id] = { type: 'image', file: String(a.file || '').slice(0, 100), src: a.src && String(a.src).startsWith('idb:') ? a.src : undefined };
     }
 
+    // גופנים שהמשתמש העלה ומוטמעים בעיצוב: הקובץ ב-src (במכשיר), file (ב-‎.gcard) או remote (בשרת)
+    for (const [id, a] of Object.entries(input.fonts || {})) {
+        if (!/^[A-Za-z0-9_-]{1,64}$/.test(id) || !a || typeof a.family !== 'string' || !a.family.trim()) continue;
+        const ff = { family: a.family.trim().slice(0, 60), weight: clamp(Math.round(num(a.weight, 400) / 100) * 100, 100, 900), style: a.style === 'italic' ? 'italic' : 'normal' };
+        if (typeof a.src === 'string' && a.src.startsWith('idb:')) ff.src = a.src;
+        if (typeof a.remote === 'string' && /^f[0-9a-f]{20}$/.test(a.remote)) ff.remote = a.remote;
+        if (typeof a.file === 'string') ff.file = a.file.slice(0, 100);
+        (doc.fonts ||= {})[id] = ff;
+    }
+
     // רשימת נמענים (מקובץ עיצוב שיוצא מכאן) — נשמרת כמו שהיא, רק טקסט.
     const m = input.merge;
     if (m && Array.isArray(m.columns) && Array.isArray(m.rows)) {
@@ -165,7 +175,7 @@ export function normalizeDoc(input) {
         for (const k of ['nameColumn', 'phoneColumn', 'fileColumn']) doc.merge[k] = columns.includes(m[k]) ? m[k] : null;
     }
 
-    const fontNames = FONTS.map(f => f.family);
+    const fontNames = [...FONTS.map(f => f.family), ...Object.values(doc.fonts || {}).map(f => f.family)];
     const seen = new Set();
     for (const raw of (Array.isArray(input.layers) ? input.layers : []).slice(0, MAX_LAYERS)) {
         if (!raw || typeof raw !== 'object') continue;

@@ -122,8 +122,9 @@ export async function listDesigns() {
 export async function pull(id) {
     const { design: d } = await call('design', { query: '&id=' + encodeURIComponent(id) });
     const prev = await designs.get(id);
-    const known = new Map(Object.values(prev?.doc.assets || {}).filter(a => a.remote && a.src).map(a => [a.remote, a.src]));
-    for (const a of Object.values(d.doc.assets || {})) {
+    const files = doc => [...Object.values(doc?.assets || {}), ...Object.values(doc?.fonts || {})];   // תמונות וגופנים שהועלו
+    const known = new Map(files(prev?.doc).filter(a => a.remote && a.src).map(a => [a.remote, a.src]));
+    for (const a of files(d.doc)) {
         if (!a.remote) continue;
         if (known.has(a.remote)) { a.src = known.get(a.remote); continue; }
         const res = await fetch(fileUrl(a.remote), { credentials: 'same-origin' });
@@ -164,12 +165,18 @@ async function pushOnce(id, withThumb) {
     if (rec.owner == null) rec.owner = user.id;   // עיצוב שנוצר לפני שהיה שרת — עובר לחשבון
     emit('pushing', id);
 
-    const remotes = {};
+    const remotes = {}, fontRemotes = {};
     for (const [key, a] of Object.entries(rec.doc.assets)) {
         if (a.remote || !a.src) continue;
         const blob = await assets.get(a.src);
         if (!blob) continue;
         a.remote = remotes[key] = await upload(blob);
+    }
+    for (const [key, a] of Object.entries(rec.doc.fonts || {})) {
+        if (a.remote || !a.src) continue;
+        const blob = await assets.get(a.src);
+        if (!blob) continue;
+        a.remote = fontRemotes[key] = await upload(blob);
     }
     const thumb = withThumb && rec.thumb ? await upload(rec.thumb).catch(() => null) : null;
 
@@ -190,6 +197,7 @@ async function pushOnce(id, withThumb) {
     const latest = await designs.get(id);
     if (!latest) return;
     for (const [key, remote] of Object.entries(remotes)) if (latest.doc.assets[key]) latest.doc.assets[key].remote = remote;
+    for (const [key, remote] of Object.entries(fontRemotes)) if (latest.doc.fonts?.[key]) latest.doc.fonts[key].remote = remote;
     latest.serverVersion = r.version;
     latest.owner = user.id;
     latest.synced = latest.updatedAt === rec.updatedAt;
