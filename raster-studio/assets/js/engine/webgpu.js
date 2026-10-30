@@ -195,6 +195,13 @@ fn noise(p: vec2f) -> f32 {
   return mix(c, r, m);
 }
 
+// מברשת ריפוי: t0 המקור, t1 טשטוש היעד, t2 טשטוש המקור
+@fragment fn heal(i: VO) -> @location(0) vec4f {
+  var r = textureSample(t0, smp, i.uv) + textureSample(t1, smp, i.uv) - textureSample(t2, smp, i.uv);
+  r.a = clamp(r.a, 0.0, 1.0);
+  return vec4f(clamp(r.rgb, vec3f(0.0), vec3f(r.a)), r.a);
+}
+
 // שכבת התאמה: t0 מה שמתחת, t1 אחרי ההתאמה, t2 מסכה; a.x אטימות, m.y יש מסכה
 @fragment fn lerp(i: VO) -> @location(0) vec4f {
   var k = u.a.x;
@@ -376,6 +383,7 @@ export class WebGPURenderer {
     this.shiftTmp = this.#tileTexture(1);
     this.maskTmp = this.#tileTexture(1);
     this.adjLayerTmp = this.#tileTexture(1);
+    this.healTmp = [this.#tileTexture(1), this.#tileTexture(1)];
     this.padTex = this.#tex(TILE + 128, TILE + 128, TILE_FMT);
     this.blurTmp = this.#tex(TILE, TILE + 128, TILE_FMT);
     this.emptyTex = this.#tileTexture(1);
@@ -391,7 +399,7 @@ export class WebGPURenderer {
     const errs = info.messages.filter(m => m.type === 'error');
     if (errs.length) throw new Error('wgsl: ' + errs.map(m => `${m.lineNum}:${m.linePos} ${m.message}`).join('; '));
     this.device.pushErrorScope('validation');
-    for (const name of ['upload', 'fill', 'blend', 'dab', 'stroke', 'adjust', 'blurH', 'blurV', 'lerp', 'copy', 'extract', 'read', 'thumb', 'display', 'float']) this.#pipe(name);
+    for (const name of ['upload', 'fill', 'blend', 'dab', 'stroke', 'adjust', 'blurH', 'blurV', 'lerp', 'heal', 'copy', 'extract', 'read', 'thumb', 'display', 'float']) this.#pipe(name);
     const err = await this.device.popErrorScope();
     if (err) throw new Error('pipeline: ' + err.message);
   }
@@ -703,12 +711,14 @@ export class WebGPURenderer {
 
   // ---------- משיכות ----------
 
-  beginStroke(doc, layer, { mode = 'paint', color = [0, 0, 0], opacity = 1, offset = [0, 0] } = {}) {
+  beginStroke(doc, layer, { mode = 'paint', color = [0, 0, 0], opacity = 1, offset = [0, 0], healRadius = 16 } = {}) {
     if (doc._stroke) this.cancelStroke(doc);
     doc._stroke = {
       doc, layer, mode, opacity, mask: new Map(),
       color: [srgbToLinear(color[0]), srgbToLinear(color[1]), srgbToLinear(color[2]), 1],
-      ...(mode === 'clone' ? { from: new Map(layer.tiles), offset: offset.map(Math.round), src: new Map() } : {}),
+      ...(mode === 'clone' || mode === 'heal'
+        ? { from: new Map(layer.tiles), offset: offset.map(Math.round), src: new Map(), heal: new Map(), healK: Math.max(4, Math.min(64, Math.round(healRadius))) }
+        : {}),
     };
   }
 
@@ -762,7 +772,7 @@ export class WebGPURenderer {
 
   #applyStroke(st, layerTex, maskTex, outTex, k = null) {
     const sel = k && st.doc.selection ? this.#selTex(st.doc, k) : null;
-    const src = k && st.src ? this.#cloneSrc(st, k) : null;
+    const src = k && st.src ? (st.heal.get(k) ?? this.#cloneSrc(st, k)) : null;
     this.#drawTo(outTex, 'stroke', {
       a: st.color, b: [st.opacity, 0, 0, 0], m: [st.mode === 'erase' ? 1 : 0, sel ? 1 : 0, src ? 1 : 0, 0],
     }, [layerTex, maskTex, sel || this.fullMask, src]);
@@ -791,6 +801,7 @@ export class WebGPURenderer {
     const st = doc._stroke;
     if (!st) return new Map();
     doc._stroke = null;
+    if (st.mode === 'heal') this.#healTiles(st);
     const before = new Map();
     for (const [k, m] of st.mask) {
       const old = st.layer.tiles.get(k) ?? null;
@@ -816,7 +827,7 @@ export class WebGPURenderer {
 
   #freeMasks(st) {
     this.freeTextures([...st.mask.values()].filter(t => t !== this.fullMask && t !== this.zeroMask));
-    if (st.src) this.freeTextures([...st.src.values()]);
+    if (st.src) this.freeTextures([...st.src.values(), ...st.heal.values()]);
   }
 
   // ---------- בחירה ----------
@@ -878,31 +889,58 @@ export class WebGPURenderer {
 
   static adjustParams(adj) { return WebGL2Renderer.adjustParams(adj); }
 
+  /** ריפוד: האריח ושמונת שכניו ב-padTex (ראו WebGL2Renderer) */
+  #pad(get, K) {
+    const P = TILE + 2 * K;
+    const pad = this.#pass(this.#view(this.padTex), { clear: true, viewport: [P, P] });
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const nt = get(dx, dy);
+      if (!nt) continue;
+      const ox = K + dx * TILE, oy = K + dy * TILE;
+      pad.draw('copy', { rect: [ox, oy, ox + TILE, oy + TILE], size: [P, P, 0, 0] }, [nt]);
+    }
+    pad.end();
+  }
+
+  #blurPad(K, out, sel = null, amount = 0) {
+    const P = TILE + 2 * K;
+    const sigma = Math.max(0.5, K / 3);
+    this.#drawTo(this.blurTmp, 'blurH', { rect: [0, 0, TILE, P], size: [TILE, P, 0, 0], a: [sigma, 0, 0, 0], m: [K, 0, 0, 0] },
+      [this.padTex], { viewport: [TILE, P] });
+    this.#drawTo(out, 'blurV', { a: [sigma, amount, 0, 0], m: [K, sel ? 1 : 0, 0, 0] }, [this.blurTmp, this.padTex, sel || this.fullMask]);
+  }
+
+  /** מברשת ריפוי בסוף המשיכה (ראו WebGL2Renderer) */
+  #healTiles(st) {
+    const K = st.healK;
+    for (const k of st.mask.keys()) {
+      const [tx, ty] = k.split(',').map(Number);
+      const near = (dx, dy) => key(tx + dx, ty + dy);
+      const srcs = new Map();
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) srcs.set(near(dx, dy), this.#cloneSrc(st, near(dx, dy)));
+      this.#pad((dx, dy) => srcs.get(near(dx, dy)), K);
+      this.#blurPad(K, this.healTmp[0]);
+      this.#pad((dx, dy) => st.from.get(near(dx, dy)), K);
+      this.#blurPad(K, this.healTmp[1]);
+      const out = this.#tileTexture(1);
+      this.#drawTo(out, 'heal', {}, [this.#cloneSrc(st, k), this.healTmp[1], this.healTmp[0]]);
+      st.heal.set(k, out);
+    }
+  }
+
   #adjustTile(doc, adj, layer, tx, ty, base, out) {
     const k = key(tx, ty);
     const sel = doc.selection ? this.#selTex(doc, k) : null;
     base ||= this.emptyTex;
     const K = WebGL2Renderer.adjustReach(adj);
     if (K > 0) {
-      const P = TILE + 2 * K;
-      const pad = this.#pass(this.#view(this.padTex), { clear: true, viewport: [P, P] });
-      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-        const nt = dx || dy ? layer.tiles.get(key(tx + dx, ty + dy)) : base;
-        if (!nt) continue;
-        const ox = K + dx * TILE, oy = K + dy * TILE;
-        pad.draw('copy', { rect: [ox, oy, ox + TILE, oy + TILE], size: [P, P, 0, 0] }, [nt]);
-      }
-      pad.end();
+      this.#pad((dx, dy) => (dx || dy ? layer.tiles.get(key(tx + dx, ty + dy)) : base), K);
       if (adj.kind === 'motion') {
         const a = adj.angle * Math.PI / 180;
         this.#drawTo(out, 'motion', { a: [Math.cos(a), -Math.sin(a), 0, 0], m: [K, sel ? 1 : 0, 0, 0] }, [this.padTex, sel || this.fullMask]);
         return;
       }
-      const sigma = Math.max(0.5, K / 3);
-      this.#drawTo(this.blurTmp, 'blurH', { rect: [0, 0, TILE, P], size: [TILE, P, 0, 0], a: [sigma, 0, 0, 0], m: [K, 0, 0, 0] },
-        [this.padTex], { viewport: [TILE, P] });
-      this.#drawTo(out, 'blurV', { a: [sigma, adj.kind === 'sharpen' ? adj.amount / 100 : 0, 0, 0], m: [K, sel ? 1 : 0, 0, 0] },
-        [this.blurTmp, this.padTex, sel || this.fullMask]);
+      this.#blurPad(K, out, sel, adj.kind === 'sharpen' ? adj.amount / 100 : 0);
     } else {
       const pp = WebGL2Renderer.adjustParams(adj);
       this.#drawTo(out, 'adjust', {

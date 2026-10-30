@@ -326,7 +326,7 @@ body.editor { display: flex; flex-direction: column; block-size: 100dvh; min-hei
 .tool-opts .opt > span { display: flex; justify-content: space-between; gap: var(--s1); padding-top: 2px; }
 .tool-opts output { font-variant-numeric: tabular-nums; color: var(--ink); }
 .tool-opts input[type=range] { inline-size: 100%; min-block-size: 28px; padding: 0; border: 0; background: none; accent-color: var(--brand); }
-.stage[data-tool="brush"], .stage[data-tool="eraser"], .stage[data-tool="clone"] { cursor: none; }
+.stage[data-tool="brush"], .stage[data-tool="eraser"], .stage[data-tool="clone"], .stage[data-tool="heal"] { cursor: none; }
 .tool-opts [data-clone][aria-pressed="true"] { background: var(--brand-soft); box-shadow: inset 0 0 0 1px var(--brand); }
 .stage[data-tool="bucket"], .stage[data-tool="picker"] { cursor: crosshair; }
 .stage.panning { cursor: grabbing !important; }
