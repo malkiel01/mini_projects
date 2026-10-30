@@ -19,7 +19,7 @@ import { loadScript } from './io.js';
 import { docVariables, readSheetFile, readPasted, readPhoneContacts, guessColumns, normalizePhone, fileNames, fillText } from './merge.js';
 
 // הגרסה — מופיעה ביומן, כדי לדעת איזה קוד רץ בטלפון.
-const BUILD = '2026-10-30.my-fonts-1';
+const BUILD = '2026-10-30.my-fonts-2';
 
 const app = $('#app');
 let ed = null;   // העיצוב הפתוח: { id, doc, history, canvas, dirty }
@@ -866,7 +866,9 @@ function colorAlphaFields(label, get, set) {
  * במכשיר, ומוטמע בכל עיצוב שמשתמש בו. מחזיר את מה שנוסף.
  */
 async function uploadFonts() {
-    const files = await pickFiles('.ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2', true);
+    // בלי סינון: באנדרואיד הסיומות של גופן לא ממופות לסוג שהבורר מכיר, והוא מציג "אין קבצים" (כמו ‎.gcard).
+    // מה שאינו גופן נדחה לפי התוכן (addMyFont טוען אותו לפני שהוא נכנס לרשימה).
+    const files = await pickFiles('', true);
     const added = [];
     for (const f of files) {
         if (f.size > 15 * 1024 * 1024) { toast(`"${f.name}" גדול מ-15MB`, 'error'); continue; }
