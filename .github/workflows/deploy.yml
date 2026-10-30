@@ -234,6 +234,9 @@ jobs:
             --exclude='catering-menu/data/fonts/' \
             --exclude='carpentry-3d/data/*.sqlite*' \
             --exclude='carpentry-3d/data/media/' \
+            --exclude='market-analyst/data/*.sqlite*' \
+            --exclude='market-analyst/data/config.json' \
+            --exclude='market-analyst/data/cache/' \
             --exclude='greeting-cards/data/studio/' \
             --exclude='platform/data/*.sqlite*' \
             --exclude='document-templates/data/*.sqlite*' \
