@@ -2199,6 +2199,48 @@ $fcRow2 = doc_save($fcRow, ['type' => 'doc', 'content' => [['type' => 'paragraph
 $fc3 = MbeFace::identify(export_docx_face($fcRow2));
 check('Word כפנים: אחרי שינוי — אותו mbe-doc-id, mbe-base חדש', $fc3['docId'] === $fcI['docId'] && $fc3['base'] !== $fcI['base'] && $fc3['base'] === Mbe::open(file_get_contents(mbe_source_path($fcId)))->documentSha256());
 check('Word כפנים: עדיין docx שנפתח אצלנו (אותו טקסט)', str_contains(export_text(import_docx(export_docx_face($fcRow2), 'x')['json']), 'שונה'));
+// docx שחזר מ-Word (lib/face_import.php): מיזוג תלת-כיווני דרך הליבה, לפי מזהי הפסקה — במקום מסמך חדש
+require_once __DIR__ . '/../lib/face_import.php';
+$fiAcc = ['id' => '99', 'email' => 'dana@example.com'];
+$fiDocx = function (string $docx, array $repl) use ($tmp): string {
+    file_put_contents("$tmp/fi.docx", $docx);
+    $z = new ZipArchive();
+    $z->open("$tmp/fi.docx");
+    $x = (string)$z->getFromName('word/document.xml');
+    $z->addFromString('word/document.xml', strtr($x, $repl));
+    $z->close();
+    return (string)file_get_contents("$tmp/fi.docx");
+};
+$fiTxt = fn($row) => array_map(fn($b) => face_block_text($b), doc_json(doc_find($row['id'], 'a:99'))['content']);
+$fiId = doc_new('a:99', 'מיזוג', null, null, 'u1', 'דנה');
+$fiRow = doc_save(doc_find($fiId, 'a:99'), ['type' => 'doc', 'content' => [
+    ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'אחת']]],
+    ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'שתיים']]],
+    ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'שלוש']]],
+]], null, 'u1', 'דנה');
+$fiOut = export_docx_face($fiRow);
+check('docx שחזר בלי שינוי — "אין שינויים", המסמך לא השתנה', (face_import($fiOut, $fiAcc, 'u1', 'דנה')['status'] ?? '') === 'same'
+    && (int)doc_find($fiId, 'a:99')['version'] === (int)$fiRow['version']);
+$fiR = face_import($fiDocx($fiOut, ['>שתיים<' => '>שתיים — מוורד<']), $fiAcc, 'u1', 'דנה');
+check('docx שחזר עם שינוי ב-Word — נכנס לאותו מסמך (לא חדש), בלי שאלה', ($fiR['status'] ?? '') === 'merged' && $fiR['doc'] === $fiId && $fiR['changes'] === 1
+    && $fiTxt($fiRow) === ['אחת', 'שתיים — מוורד', 'שלוש'], json_encode([$fiR, $fiTxt($fiRow)], JSON_UNESCAPED_UNICODE));
+// התפצלות: אחרי ההורדה שינינו כאן פסקה 1 ו-3, וב-Word שינו את 3 ואת 2 — 1 ו-2 נכנסים, 3 — שאלה
+$fiRow = doc_find($fiId, 'a:99');
+$fiOut2 = export_docx_face($fiRow);
+$fiJ = doc_json($fiRow);
+$fiJ['content'][0]['content'][0]['text'] = 'אחת — כאן';
+$fiJ['content'][2]['content'][0]['text'] = 'שלוש — כאן';
+$fiRow = doc_save($fiRow, $fiJ, null, 'u1', 'דנה');
+$fiBack = $fiDocx($fiOut2, ['>שלוש<' => '>שלוש — בוורד<', '>שתיים — מוורד<' => '>שתיים — שוב מוורד<']);
+$fiQ = face_import($fiBack, $fiAcc, 'u1', 'דנה');
+check('התפצלות: אותה פסקה בשני הצדדים — שאלה (שלנו / מ-Word, עם הבסיס), והמסמך עוד לא השתנה', ($fiQ['status'] ?? '') === 'conflicts' && count($fiQ['conflicts']) === 1
+    && $fiQ['conflicts'][0]['kind'] === 'both-edited' && $fiQ['conflicts'][0]['ours'] === 'שלוש — כאן' && $fiQ['conflicts'][0]['theirs'] === 'שלוש — בוורד'
+    && $fiQ['conflicts'][0]['base'] === 'שלוש' && $fiTxt($fiRow)[1] === 'שתיים — מוורד', json_encode($fiQ, JSON_UNESCAPED_UNICODE));
+$fiA = face_import($fiBack, $fiAcc, 'u1', 'דנה', [$fiQ['conflicts'][0]['key'] => 'both']);
+check('התפצלות, אחרי התשובה ("שתיהן"): השינוי שלנו ושל Word בפסקאות אחרות — שניהם; בפסקה המשותפת — שתי הגרסאות', ($fiA['status'] ?? '') === 'merged'
+    && $fiTxt($fiRow) === ['אחת — כאן', 'שתיים — שוב מוורד', 'שלוש — כאן', 'שלוש — בוורד'], json_encode([$fiA, $fiTxt($fiRow)], JSON_UNESCAPED_UNICODE));
+check('docx בלי מזהה / של מסמך שאין לי הרשאה אליו — null (ייבוא רגיל)', face_import(export_docx(doc_json($fiRow), doc_page($fiRow), 'x'), $fiAcc, 'u1', 'דנה') === null
+    && face_import($fiOut, ['space' => 'b:1', 'id' => 'u9'], 'u9', 'זר') === null);
 check('‎.mbe: קובץ פגום — הודעה ברורה', throws(fn() => import_mbe(substr($mbBytes, 0, 200), $mbLId), 'bad_file'));
 
 section('מסמך חדש שלא נכתב בו — לא נשאר (my_discard)');
@@ -2315,6 +2357,8 @@ check('ציור: רשימה פגומה — הודעה ברורה עם מקום �
     && str_contains($dwErr(['pages' => [['size' => [10, 10], 'ops' => [['op' => 'glyphs', 'font' => 'media/x.ttf', 'size' => 9, 'x' => 0, 'y' => 0, 'glyphs' => []]]]]]), 'גופן חסר')
     && str_contains($dwErr(['pages' => [['size' => [10, 10], 'ops' => [['op' => 'glyphs', 'font' => 'media/frank.woff', 'size' => 9, 'x' => 0, 'y' => 0, 'glyphs' => [[999999, 0, 0, 1]]]]]]]), 'גליף')
     && $dwErr(['pages' => []]) === 'אין עמודים');
+array_map('unlink', glob("$tmp/media/mbe/ids/*") ?: []);
+@rmdir("$tmp/media/mbe/ids");
 array_map('unlink', glob("$tmp/media/mbe/*") ?: []);
 @rmdir("$tmp/media/mbe");
 

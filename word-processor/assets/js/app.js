@@ -2,7 +2,7 @@
  * עורך התמלילים — האפליקציה: רשימת המסמכים של המשתמש, פתיחה ועריכה, שמירה אוטומטית, נעילה, גרסאות,
  * ייצוא, ומסך המנהל (אישור לקוחות הטמעה). המשתמש — מהשער (PLATFORM_USER) או מכניסה עם הכלים הדיגיטליים.
  */
-import { createWordEditor, h, toast, sheet, when } from './editor.js';
+import { createWordEditor, h, toast, sheet, seg, when } from './editor.js';
 import { createSaver, findDraft, drafts, downloadLocalCopy, STATE_TEXT } from './saver.js';
 import { createCollabSaver, setPeers } from './collab.js';
 
@@ -336,15 +336,58 @@ async function importFile(e) {
     fd.append('file', f);
     if (currentFolder) fd.append('folder', currentFolder);
     toast('מייבא…');
+    withTitle(fd, f.name.replace(/\.(docx|odt|rtf|html?|txt|md)$/i, ''));
     try {
-        const r = await fetch('api.php?action=my_new&title=', { method: 'POST', body: withTitle(fd, f.name.replace(/\.(docx|odt|rtf|html?|txt|md)$/i, '')), headers: { 'X-WP': '1', 'X-Tab': tab } });
-        const d = await r.json();
-        if (!r.ok) throw new Error(d.error || 'הייבוא נכשל');
-        importReport = { doc: d.doc, rep: d.report || [] };
-        location.hash = '#/d/' + d.doc;
+        for (;;) {
+            const r = await fetch('api.php?action=my_new&title=', { method: 'POST', body: fd, headers: { 'X-WP': '1', 'X-Tab': tab } });
+            const d = await r.json();
+            if (!r.ok) throw new Error(d.error || 'הייבוא נכשל');
+            if (!d.face) {
+                importReport = { doc: d.doc, rep: d.report || [] };
+                location.hash = '#/d/' + d.doc;
+                return;
+            }
+            // Word שחזר — "פנים" של מסמך שלנו: נכנס לאותו מסמך (lib/face_import.php). התנגשות — שאלה, ושליחה שוב עם התשובות
+            const fc = d.face;
+            if (fc.status === 'conflicts') {
+                const answers = await mergeQuestions(fc);
+                if (!answers) { toast('העדכון מ-Word בוטל — המסמך לא השתנה'); return; }
+                fd.set('answers', JSON.stringify(answers));
+                continue;
+            }
+            toast(fc.status === 'same' ? 'הקובץ מ-Word זהה למסמך — אין מה לעדכן'
+                : `המסמך עודכן מ-Word: ${fc.changes} שינויים` + (fc.answered ? `, ${fc.answered} לפי הבחירה שלך` : ''));
+            location.hash = '#/d/' + fc.doc;
+            return;
+        }
     } catch (ex) { toast(ex.message, true); }
 }
 function withTitle(fd, t) { fd.append('title', t); return fd; }
+
+/**
+ * מיזוג מ-Word: פסקה שהשתנתה גם כאן וגם ב-Word (או נמחקה באחד מהם) — לכל אחת: שלי / מ-Word / שתיהן. ברירת המחדל —
+ * שתיהן (שום טקסט לא הולך לאיבוד). מחזיר { 'f1/p…': 'ours'|'theirs'|'both' }, או null — ביטול (המסמך לא משתנה).
+ */
+function mergeQuestions(fc) {
+    return new Promise(done => {
+        let answers = null;
+        const quote = (label, t) => h('div.mq-side', h('b', label), h('p', t === null ? h('i', 'נמחקה') : (t || h('i', 'ריקה'))));
+        const dlg = sheet('עדכון מ-Word — מה לשמור?', body => {
+            body.classList.add('merge-questions');
+            body.append(h('p', `"${fc.title || 'המסמך'}" השתנה גם כאן מאז שהורד ל-Word. ${fc.changes ? `${fc.changes} שינויים נכנסים לבד; ` : ''}`
+                + `ב-${fc.conflicts.length === 1 ? 'פסקה אחת' : fc.conflicts.length + ' פסקאות'} צריך לבחור:`));
+            fc.conflicts.forEach((c, i) => body.append(h('section.group.mq',
+                c.base !== null ? h('p.mq-base', h('small', 'במקור: '), c.base) : null,
+                h('div.mq-sides', quote('כאן', c.ours), quote('ב-Word', c.theirs)),
+                seg('q' + i, { ours: 'מה שכאן', theirs: 'מ-Word', both: 'שתיהן' }, 'both', 'מה לשמור'))));
+        }, form => {
+            const f = new FormData(form);
+            answers = Object.fromEntries(fc.conflicts.map((c, i) => [c.key, f.get('q' + i) || 'both']));
+            return true;
+        }, 'עדכון המסמך');
+        dlg.addEventListener('close', () => done(answers));
+    });
+}
 
 /**
  * דוח הייבוא — אחרי שהמסמך המיובא נפתח: מה לא עבר בדיוק, והשאלה אם לייבא בכל זאת. "ייבוא" — המסמך נשאר; סגירה בלי
@@ -773,7 +816,7 @@ async function shareDialog(id) {
 async function activityDialog(id) {
     const { activity } = await api('my_activity', { doc: id });
     const ICON = { create: '✨', open: '👁', edit: '✏️', rename: '🏷', restore: '⏪', share: '👥', unshare: '👥', link: '🔗', link_ok: '🔗',
-        unlink: '🔗', trash: '🗑', untrash: '♻️', export: '⬇️', copy: '📑',
+        unlink: '🔗', trash: '🗑', untrash: '♻️', export: '⬇️', copy: '📑', merge: '🔀',
         comment: '💬', reply: '💬', resolve: '✅', reopen: '↩️', uncomment: '🗑' };
     sheet('פעילות במסמך', body => {
         if (!activity.length) { body.append(h('p.empty', 'עוד אין פעילות רשומה.')); return; }

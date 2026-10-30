@@ -178,6 +178,13 @@ dialog > form { display: flex; flex-direction: column; max-height: inherit; heig
 /* דוח ייבוא: מה לא עבר בדיוק */
 .import-report ul { display: grid; gap: var(--s2); padding-inline-start: 1.2em; }
 .import-report li span { color: var(--muted); }
+/* מיזוג מ-Word: לכל פסקה — המקור, מה שכאן ומה שב-Word, ובחירה */
+.merge-questions .mq { display: grid; gap: var(--s2); }
+.merge-questions .mq-base { color: var(--muted); margin: 0; }
+.merge-questions .mq-sides { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); }
+.merge-questions .mq-side { border: 1px solid var(--line); border-radius: 8px; padding: var(--s2); min-width: 0; }
+.merge-questions .mq-side p { margin: 4px 0 0; overflow-wrap: anywhere; }
+@media (max-width: 520px) { .merge-questions .mq-sides { grid-template-columns: 1fr; } }
 .group { display: grid; gap: var(--s2); padding-top: var(--s3); border-top: 1px solid var(--line); }
 .group h3 { font-size: .9rem; font-weight: 600; }
 .group h3 small { font-weight: 400; color: var(--muted); margin-inline-start: var(--s1); }

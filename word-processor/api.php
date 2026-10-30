@@ -21,6 +21,7 @@ require_once __DIR__ . '/lib/links.php';
 require_once __DIR__ . '/lib/collab.php';
 require_once __DIR__ . '/lib/folders.php';
 require_once __DIR__ . '/lib/mbe_export.php';
+require_once __DIR__ . '/lib/face_import.php';
 
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: no-referrer');
@@ -418,6 +419,13 @@ function app_action(string $action, array $in): never
                 'updated_at' => (int)$r['updated_at'], 'updated_by' => $r['updated_by'], 'folder' => $r['folder']], $st->fetchAll()),
                 'shared' => shared_with($acc), 'folders' => folders_of($space), 'favs' => favs_of($acc)]);
         case 'my_new':
+            // Word שחזר — "פנים" של מסמך שלנו (lib/face_import.php): מיזוג לתוך אותו מסמך, ולא מסמך חדש. answers — התשובות
+            // להתנגשויות מהפעם הקודמת (JSON). null — לא פנים שלנו: ממשיכים לייבוא רגיל
+            if (!empty($_FILES['file']['tmp_name'])) {
+                $answers = json_decode((string)($in['answers'] ?? ''), true);
+                $face = face_import(uploaded_bytes($in), $acc, $uid, $uname, is_array($answers) ? array_filter($answers, 'is_string') : []);
+                if ($face !== null) out(['face' => $face]);
+            }
             $folder = folder_get($space, $in['folder'] ?? null);   // בתיקייה שבה הרשימה פתוחה
             $id = doc_new($space, (string)($in['title'] ?? ''), null, $in['page'] ?? null, $uid, $uname);
             if ($folder) doc_move(doc_find($id, $space), $folder['id']);

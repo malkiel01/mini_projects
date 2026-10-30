@@ -223,13 +223,37 @@ function export_docx_face(array $row): string
 {
     $docx = export_docx(doc_para_ids(doc_json($row), $row['id'] . '|' . $row['version']), doc_page($row), (string)$row['title']);
     try {
-        $mbe = export_mbe($row, true);
         $src = mbe_source_path($row['id']);
-        file_put_contents($src, $mbe);
+        $f = Mbe::open(export_mbe($row, true));
+        $out = MbeFace::stamp($f, 'docx', $docx);
+        // שמירה אחרי ההחתמה: שלב export ביומן, עם עותק של הגרסה שיצאה — הבסיס כשה-docx יחזור (גם אחרי שינויים כאן)
+        file_put_contents($src, Mbe::save($f, ['app' => MBE_APP, 'appVersion' => MBE_APP_VERSION]));
         if (!is_file("$src.json")) file_put_contents("$src.json", json_encode(['flow' => 'f1', 'foreign' => []], JSON_UNESCAPED_UNICODE));
-        return MbeFace::stamp(Mbe::open($mbe), 'docx', $docx);
+        face_index_put((string)$f->id(), $row['id']);
+        return $out;
     } catch (Throwable $e) {
         error_log('word-processor: docx face — ' . $e->getMessage());
         return $docx;
     }
+}
+
+/** האינדקס של הפנים: mbe-doc-id → המסמך אצלנו (כשה-docx חוזר — face_import). קובץ קטן לכל מזהה, ליד הזיכרונות. */
+function face_index_path(string $mbeId): ?string
+{
+    if (!preg_match('/^[0-9a-f-]{36}$/', $mbeId)) return null;
+    $dir = dirname(mbe_source_path('x')) . '/ids';
+    if (!is_dir($dir)) mkdir($dir, 0775, true);
+    return "$dir/$mbeId";
+}
+
+function face_index_put(string $mbeId, string $doc): void
+{
+    if (($p = face_index_path($mbeId)) !== null && @file_get_contents($p) !== $doc) file_put_contents($p, $doc);
+}
+
+function face_index_get(string $mbeId): ?string
+{
+    $p = face_index_path($mbeId);
+    $d = $p !== null && is_file($p) ? trim((string)file_get_contents($p)) : '';
+    return preg_match('/^[a-z0-9]{20}$/', $d) ? $d : null;
 }
