@@ -2,6 +2,7 @@
 
 import { log, logDump } from './log.js';
 import { buildMbe, importMbe, isMbe } from './mbe-io.js';
+import { setColorContext } from './colorpicker.js';
 import { TARGETS, openIn } from './handoff.js';
 import { h, $, toast, sheet, closeSheet, isSheetOpen, confirmDialog, field, rangeField, seg, colorField, toggle, pickFiles, download, timeAgo } from './ui.js';
 import { SIZES, newDoc, textLayer, shapeLayer, imageLayer, backgroundLayer, iconLayer, elementLayer, layerLabel, uid, clone, normalizeDoc } from './doc.js';
@@ -19,7 +20,7 @@ import { loadScript } from './io.js';
 import { docVariables, readSheetFile, readPasted, readPhoneContacts, guessColumns, normalizePhone, fileNames, fillText } from './merge.js';
 
 // הגרסה — מופיעה ביומן, כדי לדעת איזה קוד רץ בטלפון.
-const BUILD = '2026-10-30.my-fonts-2';
+const BUILD = '2026-10-30.color-1';
 
 const app = $('#app');
 let ed = null;   // העיצוב הפתוח: { id, doc, history, canvas, dirty }
@@ -1850,6 +1851,47 @@ function takeShared() {
     showHome().then(() => runImport(files, data.text || ''));
     return true;
 }
+
+/** דגימת צבע מהעיצוב: הגיליון מוסתר עד שנוגעים בנקודה בקנבס. ביטול — נגיעה מחוץ לדף, או 15 שניות. */
+function sampleColor() {
+    if (!ed) return Promise.resolve(null);
+    const root = document.querySelector('.sheet-root');
+    root?.classList.add('sampling');
+    toast('💧 הקישו על נקודה בעיצוב');
+    return new Promise(resolve => {
+        let timer;
+        const done = v => { clearTimeout(timer); ed?.stageEl.removeEventListener('pointerdown', onDown, true); root?.classList.remove('sampling'); resolve(v); };
+        // הגיליון חוזר רק אחרי שהנגיעה נגמרה, וה-click שלה נבלע — אחרת הוא נוחת על הרקע המעומעם וסוגר את הגיליון
+        const swallow = ev => { ev.preventDefault(); ev.stopPropagation(); };
+        const onDown = e => {
+            e.preventDefault(); e.stopPropagation();
+            const v = ed.canvas.colorAt(e.clientX, e.clientY);
+            log('color-sample', { ok: v ? 1 : 0 });
+            if (!v) toast('מחוץ לדף — לא נדגם צבע');
+            ed.stageEl.removeEventListener('pointerdown', onDown, true);
+            clearTimeout(timer);
+            window.addEventListener('click', swallow, true);
+            const finish = () => { window.removeEventListener('pointerup', finish, true); setTimeout(() => { window.removeEventListener('click', swallow, true); done(v); }, 350); };
+            window.addEventListener('pointerup', finish, true);
+        };
+        timer = setTimeout(() => done(null), 15000);
+        ed.stageEl.addEventListener('pointerdown', onDown, true);
+    });
+}
+
+/** כל הצבעים שבעיצוב — לשורה "בעיצוב" בבורר. */
+function docColors() {
+    if (!ed) return [];
+    const out = [ed.doc.page.background, ...(ed.doc.page.gradient?.colors || [])];
+    for (const l of ed.doc.layers) {
+        const st = l.style || {};
+        out.push(st.color, ...(st.gradient?.colors || []), st.stroke?.color, st.shadow?.color, st.glow?.color, st.background?.color, st.background?.border?.color,
+            l.fill, l.color, l.stroke?.color, ...(l.gradient?.colors || []), l.shadow?.color);
+    }
+    return out.filter(Boolean);
+}
+
+setColorContext({ docColors, presets: SOLIDS, sample: sampleColor });
 
 async function start() {
     try {
