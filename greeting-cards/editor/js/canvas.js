@@ -141,8 +141,10 @@ export class Canvas {
             else g.setAttr('filledH', t.height());
             if (s.background) {
                 const b = s.background, p = b.padding || 0;
-                g.add(new Konva.Rect({ x: -p, y: -p, width: l.w + 2 * p, height: t.height() + 2 * p, fill: b.color, cornerRadius: b.radius || 0,
-                    opacity: b.opacity ?? 1, ...(b.border ? { stroke: b.border.color, strokeWidth: b.border.width } : {}) }));
+                // השקיפות — של המילוי בלבד: רקע שקוף עם מסגרת ("חותמת") משאיר את המסגרת
+                const fill = b.opacity == null ? b.color : b.color.slice(0, 7) + Math.round(Math.max(0, Math.min(1, b.opacity)) * 255).toString(16).padStart(2, '0');
+                g.add(new Konva.Rect({ x: -p, y: -p, width: l.w + 2 * p, height: t.height() + 2 * p, fill, cornerRadius: b.radius || 0,
+                    ...(b.border ? { stroke: b.border.color, strokeWidth: b.border.width } : {}) }));
             }
             // מעבר צבעים בתוך האותיות — לפי התיבה של הטקסט
             if (s.gradient) t.setAttrs(gradientAttrs(s.gradient, l.w, t.height()));

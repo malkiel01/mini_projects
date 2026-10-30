@@ -117,6 +117,7 @@ const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
 /** מדרג: ‏{type: linear|radial, angle, colors: [2–5 צבעים]}. כל דבר אחר — אין מדרג. */
 function gradient(g) {
+    if (Array.isArray(g)) g = { colors: g };   // מערך צבעים בלבד — מעבר קווי מלמעלה למטה
     if (!g || !Array.isArray(g.colors)) return null;
     const colors = g.colors.filter(isColor).slice(0, 5);
     if (colors.length < 2) return null;

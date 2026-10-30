@@ -300,6 +300,8 @@ input.search { width: 100%; min-height: var(--tap); margin-bottom: var(--s2); }
 .style-pick.dark { background: #262a36; }
 .style-pick:hover { border-color: var(--brand); }
 .style-pick > span { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.style-strip { display: flex; gap: var(--s2); overflow-x: auto; padding-bottom: var(--s2); scroll-snap-type: x proximity; }
+.style-strip .style-pick { flex: 0 0 132px; min-height: 64px; scroll-snap-align: start; }
 .swatches { display: grid; grid-template-columns: repeat(8, 1fr); gap: var(--s1); margin-bottom: var(--s2); }
 .swatches.grad { grid-template-columns: repeat(4, 1fr); }
 @media (min-width: 600px) { .swatches.grad { grid-template-columns: repeat(8, 1fr); } }

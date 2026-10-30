@@ -7,7 +7,7 @@ import { h, $, toast, sheet, closeSheet, isSheetOpen, confirmDialog, field, rang
 import { SIZES, newDoc, textLayer, shapeLayer, imageLayer, backgroundLayer, iconLayer, elementLayer, layerLabel, uid, clone, normalizeDoc } from './doc.js';
 import { ICONS, ICON_GROUPS } from './icons.js';
 import { ELEMENTS, ELEMENT_GROUPS } from './elements.js';
-import { TEXT_STYLES, SOLIDS, GRADIENTS, gradientCss } from './presets.js';
+import { TEXT_STYLES, SOLIDS, GRADIENTS, gradientCss, applyTextStyle } from './presets.js';
 import { TEMPLATES, TEMPLATE_CATS } from './templates.js';
 import { FONTS, ensureFont, ensureDocFonts, nearestWeight } from './fonts.js';
 import { History } from './history.js';
@@ -19,7 +19,7 @@ import { loadScript } from './io.js';
 import { docVariables, readSheetFile, readPasted, readPhoneContacts, guessColumns, normalizePhone, fileNames, fillText } from './merge.js';
 
 // הגרסה — מופיעה ביומן, כדי לדעת איזה קוד רץ בטלפון.
-const BUILD = '2026-10-30.text-fx-1';
+const BUILD = '2026-10-30.text-fx-2';
 
 const app = $('#app');
 let ed = null;   // העיצוב הפתוח: { id, doc, history, canvas, dirty }
@@ -546,7 +546,7 @@ function addSheet() {
             t('➡️', 'חץ', () => addLayer({ ...shapeLayer(ed.doc, 'arrow'), h: Math.min(ed.doc.page.width, ed.doc.page.height) * 0.08 }))));
     const styles = () => h('div', { class: 'style-grid' }, TEXT_STYLES.map(p => {
         ensureFont(p.font, p.weight);
-        const light = parseInt(p.color.slice(1, 3), 16) * 0.3 + parseInt(p.color.slice(3, 5), 16) * 0.59 + parseInt(p.color.slice(5, 7), 16) * 0.11 > 170 && !p.background && !p.stroke;
+        const light = p.dark || (parseInt(p.color.slice(1, 3), 16) * 0.3 + parseInt(p.color.slice(3, 5), 16) * 0.59 + parseInt(p.color.slice(5, 7), 16) * 0.11 > 170 && !p.background && !p.stroke);
         return h('button', { class: 'style-pick' + (light ? ' dark' : ''), onclick: () => { closeSheet(); addStyledText(p); } },
             h('span', { style: styleCss(p) }, p.sample));
     }));
@@ -632,11 +632,18 @@ function elementSvg(el) {
 /** סגנון טקסט מוכן בכפתור — אותו פונט וצבע, בגודל של כפתור. */
 function styleCss(p) {
     const px = 21;
+    const shadows = [];
+    if (p.shadow) shadows.push(`${p.shadow.x * px}px ${p.shadow.y * px}px ${p.shadow.blur * px}px ${p.shadow.color}`);
+    if (p.glow) for (let i = 0; i < (p.glow.strength || 1); i++) shadows.push(`0 0 ${p.glow.blur * px}px ${p.glow.color}`);
+    const b = p.background;
     return {
         fontFamily: `"${p.font}"`, fontWeight: String(nearestWeight(p.font, p.weight)), fontStyle: p.italic ? 'italic' : 'normal',
         fontSize: px + 'px', color: p.color, lineHeight: '1.2',
-        background: p.background?.color || 'transparent', padding: p.background ? '2px 10px' : '0', borderRadius: p.background ? '999px' : '0',
-        textShadow: p.shadow ? `${p.shadow.x * px}px ${p.shadow.y * px}px ${p.shadow.blur * px}px ${p.shadow.color}` : 'none',
+        // מעבר צבעים בתוך האות — רקע שנחתך לפי האותיות
+        ...(p.gradient ? { backgroundImage: gradientCss(p.gradient), WebkitBackgroundClip: 'text', backgroundClip: 'text', WebkitTextFillColor: 'transparent' } : {}),
+        ...(b ? { backgroundColor: b.opacity === 0 ? 'transparent' : b.color, padding: '2px 10px', borderRadius: '999px',
+            border: b.border ? `${Math.max(1, b.border.width * px)}px solid ${b.border.color}` : 'none' } : {}),
+        textShadow: shadows.join(', ') || 'none',
         WebkitTextStroke: p.stroke ? `${Math.max(1, p.stroke.width * px)}px ${p.stroke.color}` : '0', paintOrder: 'stroke fill',
     };
 }
@@ -649,11 +656,8 @@ function addStyledText(p) {
     l.text = p.sample;
     l.h = size * 1.3;
     l.y = H / 2 - size;
-    Object.assign(l.style, { font: p.font, weight: p.weight, size, color: p.color });
-    if (p.italic) l.style.italic = true;
-    if (p.stroke) l.style.stroke = { width: Math.max(1, size * p.stroke.width), color: p.stroke.color };
-    if (p.shadow) l.style.shadow = { x: size * p.shadow.x, y: size * p.shadow.y, blur: size * p.shadow.blur, color: p.shadow.color };
-    if (p.background) l.style.background = { color: p.background.color, radius: size * p.background.radius, padding: size * p.background.padding };
+    l.style.size = size;
+    applyTextStyle(l.style, p, size);
     addLayer(l);
     editTextInPlace(l, true);
     ensureFont(p.font, p.weight).then(() => ed?.canvas.render());
@@ -916,6 +920,18 @@ function textProps(l) {
         seg('יישור', [{ value: 'right', icon: '⇥', label: 'ימין' }, { value: 'center', icon: '↔', label: 'מרכז' }, { value: 'left', icon: '⇤', label: 'שמאל' }, { value: 'justify', icon: '☰', label: 'מיושר' }], s.align, v => { s.align = v; commit(); }),
         rangeField('ריווח שורות', { min: 0.7, max: 3, step: 0.05, value: s.lineHeight || 1.2, onInput: live(v => { s.lineHeight = v; }), onCommit: commit }),
         rangeField('שקיפות', { min: 0, max: 100, value: Math.round((l.opacity ?? 1) * 100), unit: '%', onInput: live(v => { l.opacity = v / 100; }), onCommit: commit }),
+        h('h3', { class: 'section' }, 'סגנון מוכן'),
+        h('p', { class: 'hint' }, 'הטקסט והגודל נשארים; משם אפשר לכוונן כל אפקט למטה.'),
+        h('div', { class: 'style-strip' }, TEXT_STYLES.filter(p => p.name).map(p => {
+            ensureFont(p.font, p.weight);
+            return h('button', { class: 'style-pick' + (p.dark ? ' dark' : ''), 'aria-label': p.name, title: p.name, onclick: async () => {
+                applyTextStyle(s, p);
+                await ensureFont(s.font, s.weight);
+                commit();
+                closeSheet();
+                propsSheet(l);
+            } }, h('span', { style: styleCss(p) }, p.name));
+        })),
         h('h3', { class: 'section' }, 'אפקטים'),
         effectBox('קו מתאר (מסגרת לאותיות)', () => !!s.stroke,
             () => { s.stroke = { width: Math.max(1, Math.round(big * 0.04)), color: isLight(s.color) ? '#16192b' : '#ffffff' }; }, () => { delete s.stroke; },

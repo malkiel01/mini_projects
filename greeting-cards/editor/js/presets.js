@@ -17,7 +17,47 @@ export const TEXT_STYLES = [
     { id: 'shadow-pop', sample: 'קופץ מהדף', font: 'Rubik', weight: 800, size: 0.11, color: '#ff6b35', shadow: { x: 0.05, y: 0.05, blur: 0, color: '#1b1e26' } },
     { id: 'kids', sample: 'שמח וילדי', font: 'Varela Round', weight: 400, size: 0.1, color: '#7b2cbf', shadow: { x: 0.04, y: 0.04, blur: 0, color: '#ffd60a' } },
     { id: 'quote', sample: '"ציטוט מרגש"', font: 'Frank Ruhl Libre', weight: 400, size: 0.06, color: '#1b1e26', italic: true },
+    // עם מעבר צבעים בתוך האות, הילה ומסגרת (המידות — יחסית לגודל הטקסט)
+    { id: 'gold-shine', name: 'זהב חגיגי', sample: 'זהב חגיגי', font: 'Heebo', weight: 900, size: 0.11, color: '#f2c14e', dark: true,
+        gradient: { type: 'linear', angle: 180, colors: ['#fff3b0', '#f2c14e', '#b8860b'] }, stroke: { width: 0.02, color: '#6b4a00' },
+        glow: { color: '#ffd166aa', blur: 0.3, strength: 1 } },
+    { id: 'chrome', name: 'כרום', sample: 'כרום מבריק', font: 'Rubik', weight: 900, size: 0.11, color: '#d9dde3', dark: true,
+        gradient: { type: 'linear', angle: 180, colors: ['#ffffff', '#9aa3ad', '#f4f6f8', '#6b7480'] }, stroke: { width: 0.02, color: '#2a2f36' },
+        shadow: { x: 0, y: 0.04, blur: 0.08, color: '#000000aa' } },
+    { id: 'neon-glow', name: 'ניאון זוהר', sample: 'ניאון זוהר', font: 'Varela Round', weight: 400, size: 0.1, color: '#ffffff', dark: true,
+        stroke: { width: 0.015, color: '#ff4fd8' }, glow: { color: '#ff4fd8', blur: 0.4, strength: 3 } },
+    { id: 'spark', name: 'ברק', sample: 'ברק ואור', font: 'Suez One', weight: 400, size: 0.11, color: '#fffbe6', dark: true,
+        gradient: { type: 'radial', angle: 180, colors: ['#ffffff', '#ffe082'] }, glow: { color: '#fff3b0', blur: 0.5, strength: 3 } },
+    { id: 'rainbow', name: 'קשת', sample: 'קשת צבעונית', font: 'Rubik', weight: 900, size: 0.1, color: '#ef476f',
+        gradient: { type: 'linear', angle: 90, colors: ['#ef476f', '#ffd166', '#06d6a0', '#118ab2', '#7b2cbf'] }, stroke: { width: 0.03, color: '#ffffff' },
+        shadow: { x: 0.03, y: 0.03, blur: 0, color: '#1b1e26' } },
+    { id: 'sunset', name: 'שקיעה', sample: 'שקיעה חמה', font: 'Secular One', weight: 400, size: 0.11, color: '#ff7e5f',
+        gradient: { type: 'linear', angle: 180, colors: ['#feb47b', '#ff7e5f', '#c0392b'] } },
+    { id: 'stamp', name: 'חותמת', sample: 'חותמת', font: 'Heebo', weight: 800, size: 0.07, color: '#b3261e',
+        background: { color: '#ffffff', opacity: 0, radius: 0.15, padding: 0.25, border: { color: '#b3261e', width: 0.06 } } },
+    { id: 'sticker', name: 'מדבקה', sample: 'מדבקה', font: 'Rubik', weight: 900, size: 0.11, color: '#ff6b35',
+        stroke: { width: 0.12, color: '#ffffff' }, shadow: { x: 0, y: 0.05, blur: 0.12, color: '#00000066' } },
+    { id: 'framed', name: 'כותרת במסגרת', sample: 'כותרת במסגרת', font: 'Frank Ruhl Libre', weight: 900, size: 0.07, color: '#1b2a4a',
+        background: { color: '#ffffff', opacity: 0.85, radius: 0.5, padding: 0.3, border: { color: '#d4a017', width: 0.05 } } },
 ];
+
+/** החלת סגנון מוכן על שכבת טקסט (בלי הטקסט ובלי הגודל): המידות היחסיות → פיקסלים לפי הגודל. */
+export function applyTextStyle(st, p, size = st.size) {
+    Object.assign(st, { font: p.font, weight: p.weight, color: p.color });
+    for (const k of ['italic', 'gradient', 'stroke', 'shadow', 'glow', 'background']) delete st[k];
+    if (p.italic) st.italic = true;
+    if (p.gradient) st.gradient = structuredClone(p.gradient);
+    if (p.stroke) st.stroke = { width: Math.max(1, Math.round(size * p.stroke.width * 10) / 10), color: p.stroke.color };
+    if (p.shadow) st.shadow = { x: size * p.shadow.x, y: size * p.shadow.y, blur: size * p.shadow.blur, color: p.shadow.color };
+    if (p.glow) st.glow = { color: p.glow.color, blur: Math.max(1, Math.round(size * p.glow.blur)), strength: p.glow.strength || 1 };
+    if (p.background) {
+        const b = p.background;
+        st.background = { color: b.color, radius: size * b.radius, padding: size * b.padding };
+        if (b.opacity != null && b.opacity < 1) st.background.opacity = b.opacity;
+        if (b.border) st.background.border = { color: b.border.color, width: Math.max(1, Math.round(size * b.border.width * 10) / 10) };
+    }
+    return st;
+}
 
 /** צבעים אחידים לרקע הדף — פלטה מאוזנת: בהירים, פסטל, עזים וכהים. */
 export const SOLIDS = [

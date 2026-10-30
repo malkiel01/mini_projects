@@ -109,14 +109,17 @@
                 "weight": { "type": "integer", "minimum": 100, "maximum": 900 },
                 "italic": { "type": "boolean" },
                 "color": { "$ref": "#/$defs/color" },
-                "gradient": { "type": "array", "items": { "$ref": "#/$defs/color" }, "minItems": 2, "maxItems": 5 },
+                "gradient": { "$ref": "#/$defs/gradient", "description": "מעבר צבעים בתוך האותיות; color — צבע הגיבוי. מערך צבעים בלבד מתקבל כמעבר קווי מלמעלה למטה" },
+                "glow": { "type": "object", "description": "הילה — זוהר סביב האותיות", "required": ["color"], "properties": { "color": { "$ref": "#/$defs/color" }, "blur": { "type": "number", "minimum": 1, "maximum": 500 }, "strength": { "type": "integer", "minimum": 1, "maximum": 4 } } },
                 "align": { "enum": ["right", "center", "left", "justify"] },
                 "dir": { "enum": ["rtl", "ltr", "auto"] },
                 "lineHeight": { "type": "number" },
                 "letterSpacing": { "type": "number" },
                 "stroke": { "type": "object", "properties": { "width": { "type": "number" }, "color": { "$ref": "#/$defs/color" } } },
                 "shadow": { "$ref": "#/$defs/shadow" },
-                "background": { "type": "object", "properties": { "color": { "$ref": "#/$defs/color" }, "radius": { "type": "number" }, "padding": { "type": "number" } } },
+                "background": { "type": "object", "properties": { "color": { "$ref": "#/$defs/color" }, "radius": { "type": "number" }, "padding": { "type": "number" },
+                    "opacity": { "type": "number", "minimum": 0, "maximum": 1, "description": "שקיפות המילוי בלבד — המסגרת נשארת" },
+                    "border": { "type": "object", "required": ["color", "width"], "properties": { "color": { "$ref": "#/$defs/color" }, "width": { "type": "number", "minimum": 0 } } } } },
                 "autoFit": { "type": "boolean", "description": "הקטנת הגודל עד שהטקסט נכנס לתיבה" }
               }
             }
