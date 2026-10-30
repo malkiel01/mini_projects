@@ -304,3 +304,6 @@ input[type="color"] { flex: none; width: 48px; padding: 3px; cursor: pointer; }
 .styles-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: var(--s2); }
 .style-chip { gap: 6px; }
 .sw-prev { width: 16px; height: 16px; border-radius: 4px; border: 2px solid var(--line); flex: none; }
+
+/* "↩ חזרה" לאפליקציה שפתחה אותנו (mbe-handoff) */
+.btn.handoff { flex: none; max-width: 40vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: var(--brand-ink); color: var(--brand); }

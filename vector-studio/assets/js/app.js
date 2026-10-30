@@ -3,6 +3,7 @@
 import { SIZES } from './model.js';
 import * as drafts from './drafts.js';
 import * as library from './library.js';
+import { acceptHandoff } from './handoff.js';
 
 const $ = id => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -88,12 +89,13 @@ function setupNew() {
 }
 
 /** קובץ ‎.mbe שנפתח "באמצעות" האפליקציה המותקנת (file_handlers), או מכפתור הפתיחה. */
-async function openFile(f) {
+async function openFile(f, handoff = null) {
   $('open-err').hidden = true;
   try {
     const { id, notes } = await library.importMbe(f);
-    if (notes.length) alert('נפתח. שימו לב:\n' + notes.join('\n'));
-    location.href = 'editor.html#d' + id;
+    if (notes.length && !handoff) alert('נפתח. שימו לב:\n' + notes.join('\n'));
+    // מאפליקציה אחרת — העורך יציע "↩ חזרה" (הפרמטר נשאר בכתובת, ו-opener נשאר בניווט באותו חלון)
+    location.href = 'editor.html' + (handoff ? '?mbe-handoff=' + encodeURIComponent(handoff.id) : '') + '#d' + id;
   } catch (e) {
     $('open-err').textContent = 'הפתיחה נכשלה: ' + e.message;
     $('open-err').hidden = false;
@@ -130,4 +132,6 @@ async function start() {
   }
 }
 
+// נפתחנו מאפליקציה אחרת (?mbe-handoff=<id>) — ready מיד, לפני כל דבר כבד; הקובץ נפתח כמו מ-📂
+acceptHandoff((h) => openFile(h.file, h));
 start();
