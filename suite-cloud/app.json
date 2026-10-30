@@ -1,0 +1,11 @@
+{
+  "id": "suite-cloud",
+  "name": "ענן החבילה",
+  "icon": "☁️",
+  "icon_svg": "assets/icon.svg",
+  "description": "הענן של חבילת היצירה — חשבון אחד, כוננים זה לצד זה וספריות משותפות לכל האפליקציות. בשלב הבנייה: הכונן הפנימי.",
+  "category": "documents",
+  "entry": "index.html",
+  "gate": true,
+  "restricted": true
+}

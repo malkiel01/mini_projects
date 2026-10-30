@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="theme-color" content="#2d4a8a">
+<title>ענן החבילה</title>
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body>
+<a class="skip" href="#main">דילוג לתוכן</a>
+<header class="top">
+  <button class="icon-btn" id="back" type="button" aria-label="חזרה" hidden>→</button>
+  <div class="titles"><h1 id="title">ענן החבילה</h1><div class="sub" id="sub"></div></div>
+</header>
+<nav class="tabs" aria-label="לשוניות">
+  <a href="#/files" data-tab="files">☁️ קבצים</a>
+  <a href="#/trash" data-tab="trash">🗑️ סל</a>
+  <a href="#/admin" data-tab="admin" hidden>⚙️ ניהול</a>
+</nav>
+
+<main id="main" tabindex="-1">
+  <p class="error" id="fatal" role="alert" hidden></p>
+
+  <!-- קבצים -->
+  <section id="v-files" hidden>
+    <div class="summary" id="quota-card">
+      <div class="line"><span aria-hidden="true">☁️</span> <b>הענן שלי</b> <span class="muted" id="q-text"></span><span class="pct" id="q-pct"></span></div>
+      <span class="track" id="q-track" role="progressbar" aria-label="ניצול המכסה" aria-valuemin="0" aria-valuemax="100"><span></span></span>
+    </div>
+    <p class="hint" id="q-none" hidden>עוד לא הוקצה לך מקום בענן. מנהל הענן קובע את הנפח ב"⚙️ ניהול".</p>
+    <nav class="crumbs" id="crumbs" aria-label="מיקום"></nav>
+    <div class="toolbar">
+      <button class="btn ghost" id="new-folder" type="button"><span aria-hidden="true">📁</span> תיקייה</button>
+      <span style="flex:1"></span>
+      <button class="btn primary" id="upload-btn" type="button"><span aria-hidden="true">⬆️</span> העלאה</button>
+      <input type="file" id="file-input" multiple hidden>
+    </div>
+    <div class="uploads" id="uploads" aria-live="polite"></div>
+    <ul class="list" id="items"></ul>
+  </section>
+
+  <!-- סל -->
+  <section id="v-trash" hidden>
+    <p class="hint">מה שבסל נמחק לצמיתות אחרי 30 יום, ועד אז נספר במכסה.</p>
+    <div class="toolbar"><span style="flex:1"></span><button class="btn ghost danger" id="empty-trash" type="button">ריקון הסל</button></div>
+    <ul class="list" id="trash-items"></ul>
+  </section>
+
+  <!-- ניהול -->
+  <section id="v-admin" hidden>
+    <dl class="cells" id="admin-cells"></dl>
+    <h2 class="sec-title">הגדרות</h2>
+    <form id="settings-form" class="fields two" novalidate>
+      <label class="f"><span>נפח לחשבון חדש (MB)</span><input name="default_quota" inputmode="numeric" dir="ltr"></label>
+      <label class="f"><span>תקרה לקובץ (MB)</span><input name="max_file" inputmode="numeric" dir="ltr"></label>
+      <div class="wide row-btns"><button class="btn primary" type="submit">שמירה</button></div>
+    </form>
+    <h2 class="sec-title">חשבונות</h2>
+    <p class="hint">לחיצה על חשבון — קביעת נפח. "ברירת מחדל" — הנפח לחשבון חדש שלמעלה.</p>
+    <ul class="list" id="accounts"></ul>
+  </section>
+</main>
+
+<!-- פריט: תצוגה ופעולות -->
+<dialog id="item-dlg" aria-labelledby="item-title">
+  <form method="dialog" novalidate>
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+      <h2 id="item-title"></h2>
+    </header>
+    <div class="sheet-body">
+      <div class="preview" id="item-preview"></div>
+      <div class="acts">
+        <button class="tile" type="button" data-act="download"><span class="tile-ic" aria-hidden="true">⬇️</span>הורדה</button>
+        <button class="tile" type="button" data-act="rename"><span class="tile-ic" aria-hidden="true">✏️</span>שם</button>
+        <button class="tile" type="button" data-act="move"><span class="tile-ic" aria-hidden="true">📂</span>העברה</button>
+        <button class="tile" type="button" data-act="trash"><span class="tile-ic" aria-hidden="true">🗑️</span>לסל</button>
+      </div>
+      <dl class="cells" id="item-cells"></dl>
+    </div>
+  </form>
+</dialog>
+
+<!-- שם: תיקייה חדשה / שינוי שם -->
+<dialog id="name-dlg" aria-labelledby="name-title">
+  <form method="dialog" novalidate>
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+      <h2 id="name-title">שם</h2>
+      <button type="submit" class="btn primary">שמירה</button>
+    </header>
+    <div class="sheet-body">
+      <label class="f"><span>שם</span><input name="name" required maxlength="200" autocomplete="off"></label>
+      <p class="error" role="alert" hidden></p>
+    </div>
+  </form>
+</dialog>
+
+<!-- העברה: בחירת תיקייה -->
+<dialog id="move-dlg" aria-labelledby="move-title">
+  <form method="dialog" novalidate>
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+      <h2 id="move-title">העברה אל…</h2>
+      <button type="submit" class="btn primary">לכאן</button>
+    </header>
+    <div class="sheet-body">
+      <nav class="crumbs" id="move-crumbs" aria-label="מיקום"></nav>
+      <ul class="list pick-list" id="move-items"></ul>
+    </div>
+  </form>
+</dialog>
+
+<!-- מכסה לחשבון -->
+<dialog id="quota-dlg" aria-labelledby="quota-title">
+  <form method="dialog" novalidate>
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+      <h2 id="quota-title">נפח</h2>
+      <button type="submit" class="btn primary">שמירה</button>
+    </header>
+    <div class="sheet-body">
+      <p class="hint" id="quota-who"></p>
+      <fieldset class="seg grid" style="--cols:3" aria-label="נפח">
+        <label><input type="radio" name="preset" value="default"><span>ברירת מחדל</span></label>
+        <label><input type="radio" name="preset" value="1024"><span>1 ג"ב</span></label>
+        <label><input type="radio" name="preset" value="5120"><span>5 ג"ב</span></label>
+        <label><input type="radio" name="preset" value="20480"><span>20 ג"ב</span></label>
+        <label><input type="radio" name="preset" value="0"><span>ללא</span></label>
+        <label><input type="radio" name="preset" value="custom"><span>אחר</span></label>
+      </fieldset>
+      <label class="f" id="quota-custom" hidden><span>נפח (MB)</span><input name="mb" inputmode="numeric" dir="ltr"></label>
+      <label class="switch"><input type="checkbox" name="admin"><span>מנהל הענן</span></label>
+      <label class="switch"><input type="checkbox" name="blocked"><span>חסום</span></label>
+      <p class="error" role="alert" hidden></p>
+    </div>
+  </form>
+</dialog>
+
+<div class="toast" role="status" hidden></div>
+<script src="assets/js/app.js" type="module"></script>
+</body>
+</html>

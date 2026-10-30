@@ -256,6 +256,8 @@ jobs:
             --exclude='payments/data/config.json' --exclude='payments/data/backups/' \
             --exclude='payments/data/docs/' --exclude='payments/data/logs/' \
             --exclude='vector-studio/data/*.sqlite*' --exclude='vector-studio/data/files/' \
+            --include='suite-cloud/data/.htaccess' --exclude='suite-cloud/data/*' \
+            --exclude='/suite-cloud/tests/' \
             --exclude='layout-studio/data/*.sqlite*' --exclude='layout-studio/data/files/' \
             --exclude='raster-studio/data/*.sqlite*' --exclude='raster-studio/data/files/' \
             --exclude='mailbox/data/*.sqlite*' --exclude='mailbox/data/secret.key' --exclude='mailbox/data/cache/' --exclude='/mailbox/tests/' \
