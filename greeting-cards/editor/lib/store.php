@@ -13,6 +13,7 @@ require_once __DIR__ . '/db.php';
 const ID_PATTERN = '/^[A-Za-z0-9_-]{6,40}$/';
 const MAX_UPLOAD = 25 * 1024 * 1024;
 const MAX_SIDE = 4096;
+const MAX_FONT = 15 * 1024 * 1024;
 const MAX_DOC = 2 * 1024 * 1024;          // JSON של עיצוב — בלי תמונות בתוכו, אז זה הרבה
 const USER_QUOTA = 1024 * 1024 * 1024;    // 1GB לכל משתמש
 
@@ -28,7 +29,41 @@ function filesDir(int $userId): string {
 }
 
 function filePath(int $userId, string $id, string $mime): string {
-    return filesDir($userId) . '/' . $id . ($mime === 'image/png' ? '.png' : ($mime === 'image/webp' ? '.webp' : '.jpg'));
+    $ext = ['image/png' => '.png', 'image/webp' => '.webp', 'font/woff2' => '.woff2', 'font/woff' => '.woff', 'font/ttf' => '.ttf', 'font/otf' => '.otf'][$mime] ?? '.jpg';
+    return filesDir($userId) . '/' . $id . $ext;
+}
+
+/** סוג הגופן לפי ארבעת הבתים הראשונים (sfnt / WOFF / WOFF2), או null — לא גופן. */
+function fontMime(string $binary): ?string {
+    $head = substr($binary, 0, 4);
+    return match (true) {
+        $head === 'wOF2' => 'font/woff2',
+        $head === 'wOFF' => 'font/woff',
+        $head === 'OTTO' => 'font/otf',
+        $head === "\x00\x01\x00\x00", $head === 'true' => 'font/ttf',
+        default => null,
+    };
+}
+
+/**
+ * גופן שהמשתמש העלה (לעיצוב שלו — הכרעה 7 בחבילה: האחריות לרישיון עליו). נשמר כמו שהוא: הדפדפן הוא שמפענח אותו,
+ * ולא מוגש אף פעם כדף (sendFile: ‏nosniff ו-sandbox). אותו קובץ פעמיים — אותו מזהה.
+ */
+function storeFont(int $userId, string $binary): array {
+    if (strlen($binary) > MAX_FONT) throw new ApiError('קובץ הגופן גדול מ-15MB', 413);
+    $mime = fontMime($binary);
+    if (!$mime) throw new ApiError('הקובץ אינו גופן נתמך (TTF, OTF, WOFF, WOFF2)', 415);
+    $sha = hash('sha256', $binary);
+    $st = db()->prepare('SELECT id, mime FROM files WHERE user_id = ? AND sha256 = ?');
+    $st->execute([$userId, $sha]);
+    if ($row = $st->fetch()) return ['id' => $row['id'], 'mime' => $row['mime']];
+    $used = (int)db()->query('SELECT COALESCE(SUM(bytes), 0) FROM files WHERE user_id = ' . $userId)->fetchColumn();
+    if ($used + strlen($binary) > USER_QUOTA) throw new ApiError('נגמר מקום האחסון שלך (1GB)', 507);
+    $id = 'f' . bin2hex(random_bytes(10));
+    if (file_put_contents(filePath($userId, $id, $mime), $binary) === false) throw new ApiError('השמירה נכשלה', 500);
+    db()->prepare('INSERT INTO files (id, user_id, mime, bytes, width, height, sha256, created_at) VALUES (?, ?, ?, ?, NULL, NULL, ?, ?)')
+        ->execute([$id, $userId, $mime, strlen($binary), $sha, nowIso()]);
+    return ['id' => $id, 'mime' => $mime];
 }
 
 // ─── קבצים ─────────────────────────────────────────────────────────────────
@@ -127,6 +162,12 @@ function putDesign(int $userId, array $in): array {
     foreach (($doc['assets'] ?? []) as $k => $a) {
         if (!is_array($a)) { unset($doc['assets'][$k]); continue; }
         unset($doc['assets'][$k]['src']);
+        if (isset($a['remote'])) checkOwnedFile($userId, $a['remote']);
+    }
+    // גופנים שהמשתמש העלה ומשמשים בעיצוב — כמו תמונות: רק מזהה בשרת
+    foreach (($doc['fonts'] ?? []) as $k => $a) {
+        if (!is_array($a)) { unset($doc['fonts'][$k]); continue; }
+        unset($doc['fonts'][$k]['src']);
         if (isset($a['remote'])) checkOwnedFile($userId, $a['remote']);
     }
     $json = json_encode($doc, JSON_UNESCAPED_UNICODE);

@@ -9,7 +9,7 @@ import { ICONS, ICON_GROUPS } from './icons.js';
 import { ELEMENTS, ELEMENT_GROUPS } from './elements.js';
 import { TEXT_STYLES, SOLIDS, GRADIENTS, gradientCss, applyTextStyle } from './presets.js';
 import { TEMPLATES, TEMPLATE_CATS } from './templates.js';
-import { FONTS, ensureFont, ensureDocFonts, nearestWeight } from './fonts.js';
+import { FONTS, ensureFont, ensureDocFonts, nearestWeight, loadMyFonts, myFonts, readFontInfo, addMyFont, removeMyFont, embedDocFonts } from './fonts.js';
 import { History } from './history.js';
 import { designs, assets } from './db.js';
 import { Canvas } from './canvas.js';
@@ -19,7 +19,7 @@ import { loadScript } from './io.js';
 import { docVariables, readSheetFile, readPasted, readPhoneContacts, guessColumns, normalizePhone, fileNames, fillText } from './merge.js';
 
 // הגרסה — מופיעה ביומן, כדי לדעת איזה קוד רץ בטלפון.
-const BUILD = '2026-10-30.text-fx-2';
+const BUILD = '2026-10-30.my-fonts-1';
 
 const app = $('#app');
 let ed = null;   // העיצוב הפתוח: { id, doc, history, canvas, dirty }
@@ -368,6 +368,7 @@ async function saveNow() {
         const big = Math.max(cur.doc.page.width, cur.doc.page.height);
         const thumb = await canvasToBlob(cur.canvas.pageCanvas(360 / big), 'image/jpeg', 0.8).catch(() => undefined);
         const prev = await designs.get(cur.id);
+        embedDocFonts(cur.doc);   // גופן שהועלה ומשמש טקסט — עובר עם העיצוב (קובץ, מכשיר אחר)
         await designs.put({ ...prev, id: cur.id, title: cur.doc.title, doc: clone(cur.doc), updatedAt: Date.now(), thumb, owner: prev?.owner ?? sync.currentUser()?.id, synced: false });
         if (ed === cur) cur.saveState.textContent = 'נשמר ✓';
         pushSoon(cur.id);
@@ -860,13 +861,61 @@ function colorAlphaFields(label, get, set) {
         rangeField('שקיפות', { min: 0, max: 100, value: alpha(), unit: '%', onInput: live(v => set(join(hex(), v))), onCommit: commit }));
 }
 
+/**
+ * העלאת גופנים (TTF, OTF, WOFF, WOFF2): השם והעובי נקראים מהקובץ. גשר עד ספריית הגופנים של ענן החבילה — הגופן נשמר
+ * במכשיר, ומוטמע בכל עיצוב שמשתמש בו. מחזיר את מה שנוסף.
+ */
+async function uploadFonts() {
+    const files = await pickFiles('.ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2', true);
+    const added = [];
+    for (const f of files) {
+        if (f.size > 15 * 1024 * 1024) { toast(`"${f.name}" גדול מ-15MB`, 'error'); continue; }
+        try {
+            const e = await addMyFont(f, await readFontInfo(f));
+            added.push(e);
+            log('font-upload', { family: e.family, weight: e.weight, bytes: f.size });
+        } catch { toast(`"${f.name}" אינו קובץ גופן תקין`, 'error'); }
+    }
+    if (added.length) toast(added.length === 1 ? `הגופן "${added[0].family}" נוסף ✓` : `${added.length} גופנים נוספו ✓`);
+    return added;
+}
+
+const WEIGHT_LABEL = w => WEIGHT_NAMES[w] || String(w);
+
+function myFontsSheet() {
+    const draw = () => {
+        const list = myFonts();
+        return h('div', {},
+            h('p', { class: 'hint' }, 'גופנים שהעלית מופיעים ברשימת הפונטים של כל טקסט, ומוטמעים בכל עיצוב שמשתמש בהם — כך הוא נפתח נכון גם במכשיר אחר ובקובץ. ודאו שהרישיון של הגופן מתיר את השימוש.'),
+            list.length ? h('ul', { class: 'my-fonts' }, list.map(m => h('li', {},
+                h('span', { style: { fontFamily: `"${m.family}"`, fontWeight: String(m.weight), fontStyle: m.style } }, m.family),
+                h('span', { class: 'muted small' }, WEIGHT_LABEL(m.weight) + (m.style === 'italic' ? ' · נטוי' : '')),
+                h('button', { class: 'icon-btn', 'aria-label': `הסרת ${m.family} ${WEIGHT_LABEL(m.weight)}`, onclick: () => { removeMyFont(m); body.replaceChildren(draw()); } }, '🗑️'))))
+                : h('p', { class: 'empty' }, 'עוד לא הועלו גופנים.'),
+            h('button', { class: 'btn primary block', onclick: async () => { if ((await uploadFonts()).length) body.replaceChildren(draw()); } }, '＋ העלאת גופן'),
+            h('p', { class: 'hint' }, 'בקרוב: ספריית גופנים אחת לכל אפליקציות החבילה (ענן החבילה) — הגופנים מכאן יעברו אליה.'));
+    };
+    const body = h('div', {}, draw());
+    sheet('הגופנים שלי', body);
+}
+
 /** צבע בהיר? — לברירות מחדל שמנוגדות לטקסט (רקע כהה לטקסט בהיר, ולהפך). */
 const isLight = c => { const n = parseInt((c || '#000000').slice(1, 7), 16); return ((n >> 16) * 299 + ((n >> 8) & 255) * 587 + (n & 255) * 114) / 1000 > 150; };
 
 function textProps(l) {
     const s = l.style;
-    const fontList = h('div', { class: 'font-list', role: 'radiogroup', 'aria-label': 'פונט' }, FONTS.map(f => {
-        const btn = h('button', { class: 'font-opt' + (f.family === s.font ? ' on' : ''), role: 'radio', 'aria-checked': String(f.family === s.font), style: { fontFamily: `"${f.family}"` },
+    // ההעלאה והגופנים שלי — ראשונים, כדי שלא יתחבאו בתחתית הרשימה הנגללת
+    const fontList = h('div', { class: 'font-list', role: 'radiogroup', 'aria-label': 'פונט' }, h('button', { class: 'font-opt add', onclick: async () => {
+        const added = await uploadFonts();
+        if (!added.length) return;
+        s.font = added[0].family;
+        s.weight = added[0].weight;
+        commit();
+        closeSheet();
+        propsSheet(l);
+    } }, '＋ העלאת גופן'), [...FONTS.filter(f => f.custom), ...FONTS.filter(f => !f.custom)].map(f => {
+        const btn = h('button', { class: 'font-opt' + (f.family === s.font ? ' on' : '') + (f.custom ? ' mine' : ''), role: 'radio', 'aria-checked': String(f.family === s.font), style: { fontFamily: `"${f.family}"` },
+            title: f.custom ? 'גופן שהעלית' : undefined,
             onclick: async () => {
                 s.font = f.family;
                 await ensureFont(s.font, s.weight);
@@ -1184,7 +1233,7 @@ function exportSheet() {
         try {
             toast('מכין…');
             let blob, file;
-            if (fmt === 'gcard') { await saveNow(); blob = await exportGcard(ed.doc); file = name + '.gcard'; }
+            if (fmt === 'gcard') { await saveNow(); embedDocFonts(ed.doc); blob = await exportGcard(ed.doc); file = name + '.gcard'; }
             else if (fmt === 'mbe') { blob = await makeMbe(); file = name + '.mbe'; }
             else {
                 const c = ed.canvas.pageCanvas(fmt === 'pdf' ? 1 : scale);
@@ -1217,6 +1266,7 @@ function exportSheet() {
 /** ‎.mbe של העיצוב הפתוח. הקובץ שנכתב הוא הבסיס של השמירה הבאה (המזהה, היומן ומה ששייך לאפליקציות אחרות נשמרים). */
 async function makeMbe() {
     await saveNow();
+    embedDocFonts(ed.doc);
     const base = ed.doc.mbeBase ? await assets.get(ed.doc.mbeBase) : null;
     const r = await buildMbe(ed.doc, ed.canvas.images, { baseBytes: base ? new Uint8Array(await base.arrayBuffer()) : null });
     const blob = new Blob([r.bytes], { type: 'application/vnd.mbe+zip' });
@@ -1289,6 +1339,7 @@ async function receiveBack(srcId, t, bytes) {
 function moreSheet() {
     sheet('עוד', h('div', { class: 'menu' },
         h('button', { class: 'menu-item', onclick: pageSizeSheet }, '📐 גודל הדף'),
+        h('button', { class: 'menu-item', onclick: myFontsSheet }, '🔤 הגופנים שלי'),
         h('button', { class: 'menu-item', onclick: skillSheet }, '🤖 סקיל לצ\'אט'),
         h('button', { class: 'menu-item', onclick: () => { closeSheet(); importSheet(); } }, '📥 ייבוא מהצ\'אט (עיצוב חדש)'),
         sync.currentUser()?.role === 'owner' ? h('button', { class: 'menu-item', onclick: devSheet }, '🛠️ אזור פיתוח') : null));
@@ -1800,6 +1851,7 @@ function takeShared() {
 
 async function start() {
     try {
+        await loadMyFonts().catch(() => {});   // הגופנים שהועלו במכשיר — לפני שעיצוב נפתח ומצויר
         const { user } = await sync.whoami();
         const importCode = /^#import=([A-Za-z0-9-]{9})$/.exec(location.hash)?.[1];
         if (user && importCode) return openChatImport(importCode);
