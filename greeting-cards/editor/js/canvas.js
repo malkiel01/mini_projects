@@ -607,6 +607,16 @@ export class Canvas {
         return { x: p.x, y: p.y, zoom: this.view.zoom, rotation: g.getAbsoluteRotation() };
     }
 
+    /** הצבע בנקודה על המסך (דגימה לבורר הצבע) — מהדף כמו שהוא מיוצא, בלי ידיות. מחוץ לדף — null. */
+    colorAt(clientX, clientY) {
+        const r = this.el.getBoundingClientRect();
+        const p = this.page.getAbsolutePosition();
+        const x = Math.floor((clientX - r.left - p.x) / this.view.zoom), y = Math.floor((clientY - r.top - p.y) / this.view.zoom);
+        if (!this.doc || x < 0 || y < 0 || x >= this.doc.page.width || y >= this.doc.page.height) return null;
+        const d = this.pageCanvas(1).getContext('2d').getImageData(x, y, 1, 1).data;
+        return '#' + [d[0], d[1], d[2]].map(n => n.toString(16).padStart(2, '0')).join('');
+    }
+
     hideNode(id, hidden) {
         const g = this.nodes.get(id);
         this.editing = hidden ? id : null;

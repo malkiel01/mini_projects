@@ -2,6 +2,7 @@
 // נגיש, הודעות, ואישור.
 
 import { log } from './log.js';
+import { colorPicker } from './colorpicker.js';
 
 /**
  * h('button', {class:'btn', onclick}, 'טקסט', child...) — יוצר אלמנט. מחרוזות נכנסות כ-textContent.
@@ -155,11 +156,9 @@ export function seg(label, options, value, onChange) {
                 o.icon ? h('span', { class: 'sr' }, o.label) : null))));
 }
 
-export function colorField(label, value, onInput, onCommit) {
-    const input = h('input', { type: 'color', value: (value || '#000000').slice(0, 7) });
-    input.addEventListener('input', () => onInput(input.value));
-    input.addEventListener('change', () => onCommit?.());
-    return field(label, input);
+/** שדה צבע — הבורר שלנו (colorpicker.js), לא של המערכת: מדויק, עם קוד, אחרונים ומועדפים. */
+export function colorField(label, value, onInput, onCommit, opts) {
+    return colorPicker(label, value, onInput, onCommit, opts);
 }
 
 export function toggle(label, checked, onChange) {
