@@ -29,3 +29,5 @@
 .acc-row .body { flex: 1; min-width: 0; }
 .acc-row .l1 { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .acc-row .l2 { color: var(--muted); font-size: .8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+main.connect { max-width: 480px; padding-top: var(--s4); display: grid; gap: var(--s3); }
+main.connect .row-btns { margin-top: var(--s2); }
