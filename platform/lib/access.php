@@ -48,6 +48,9 @@ function access_migrate(): void
         -- מסוגלת להתקין מוצג לכולם, והמנהל רק יכול להסתיר (install_hidden). הטבלה נשארת, לא בשימוש.
         CREATE TABLE IF NOT EXISTS install_approvals (app_id TEXT PRIMARY KEY);
         CREATE TABLE IF NOT EXISTS install_hidden (app_id TEXT PRIMARY KEY);
+        -- בחנות: אפליקציה שכל משתמש רואה בדף הבית גם בלי הרשאה — אפורה עם חץ הורדה, ולחיצה מוסיפה לו
+        -- אותה (get_app ב-api.php). מי שהמנהל חסם לו אותה במפורש — לא רואה.
+        CREATE TABLE IF NOT EXISTS app_catalog (app_id TEXT PRIMARY KEY);
         -- אפליקציה שהמנהל ניתק מהפלטפורמה: השער לא חוסם אותה (lib/gate.php, is_detached).
         CREATE TABLE IF NOT EXISTS app_detached (app_id TEXT PRIMARY KEY, detached_at TEXT NOT NULL);
         -- שיטות הכניסה של אפליקציה כשהיא מנותקת (docs/auth.md, סעיף 6). מחוברת — רק דרך הפלטפורמה.
@@ -188,6 +191,7 @@ function apps_effective(): array
     foreach (db()->query('SELECT * FROM app_overrides') as $o) $overrides[$o['app_id']] = $o;
     $known = array_column(categories_list(), 'id');
     $installHidden = array_flip(db()->query('SELECT app_id FROM install_hidden')->fetchAll(PDO::FETCH_COLUMN));
+    $catalog = array_flip(db()->query('SELECT app_id FROM app_catalog')->fetchAll(PDO::FETCH_COLUMN));
     $detached = array_flip(db()->query('SELECT app_id FROM app_detached')->fetchAll(PDO::FETCH_COLUMN));
     $login = [];
     foreach (db()->query('SELECT * FROM app_login') as $l) $login[$l['app_id']] = $l;
@@ -222,6 +226,7 @@ function apps_effective(): array
         if ($app['plugin']) { $app['category'] = PLUGIN_CATEGORY; $app['placements'] = []; }
         $app['hidden'] = (bool)($o['hidden'] ?? false);
         $app['install_ok'] = !isset($installHidden[$app['id']]);
+        $app['catalog'] = isset($catalog[$app['id']]);
         // מחוברת = השער פעיל: נכנסים רק עם חשבון בפלטפורמה והרשאה לאפליקציה.
         // מנותקת = עומדת לבד — אפליקציה חיצונית, בלי שער ב-app.json, או שהמנהל ניתק.
         $app['detached'] = isset($detached[$app['id']]);
@@ -274,7 +279,14 @@ function visible_for(array $user): array
         $apps = [];
     } else {
         $grants = grants_of((int)$user['id']);
-        $apps = array_values(array_filter($apps, fn($a) => can_see($a, $grants)));
+        $owned = array_values(array_filter($apps, fn($a) => can_see($a, $grants)));
+        $ids = array_column($owned, 'id');
+        // בחנות: מה שעוד אין לו — מוצג אפור (owned=false). חסימה מפורשת של המנהל גוברת.
+        $more = array_values(array_filter($apps, fn($a) => in_catalog($a) && !in_array($a['id'], $ids, true)
+            && ($grants['apps'][$a['id']] ?? null) !== false));
+        foreach ($more as &$m) $m['owned'] = false;
+        unset($m);
+        $apps = array_merge($owned, $more);
     }
     $categories = categories_list();
     if (array_filter($apps, fn($a) => in_array('other', array_column($a['placements'], 'category'), true))) {
@@ -289,7 +301,7 @@ function visible_for(array $user): array
     foreach ($apps as $a) foreach ($a['placements'] as $p) if ($p['group'] !== null) $used[$p['group']] = true;
     $groups = array_values(array_filter(groups_list(), fn($g) => isset($used[$g['id']])));
     $out = ['categories' => $categories, 'groups' => $groups, 'apps' => array_map(fn($a) => app_public($a, $admin), $apps),
-        'recommended' => recommended_for((int)$user['id'], array_column($apps, 'id'))];
+        'recommended' => recommended_for((int)$user['id'], array_column(array_filter($apps, fn($a) => $a['owned'] ?? true), 'id'))];
     if ($admin) $out['plugins'] = array_map(fn($a) => app_public($a, true), $plugins);
     return $out;
 }
@@ -302,6 +314,8 @@ function app_public(array $a, bool $admin = false): array
         // איפה היא מוצגת: [{category, group|null, sort}] — אותה אפליקציה יכולה להופיע בכמה מקומות
         'placements' => $a['placements'] ?? [],
         'href' => $a['href'], 'links' => $a['links'], 'external' => $a['external'],
+        // false — בחנות ועוד לא אצלו: מוצגת אפורה עם חץ הורדה
+        'owned' => $a['owned'] ?? true,
         // מה שהמנהל לא אישר — לא נשלח לדפדפן בכלל. "הורדת המשפחה" אינה התקנה
         // של אפליקציה נפרדת, ולכן offline לא תלוי באישור.
         'install' => [
@@ -342,5 +356,11 @@ function featured_apps(): array
     $st->execute();
     $v = json_decode((string)$st->fetchColumn(), true);
     return is_array($v) ? array_values(array_filter($v, 'is_string')) : [];
+}
+
+/** אפליקציה שמוצגת בחנות לכולם — לא מוסתרת ולא תוסף. */
+function in_catalog(array $app): bool
+{
+    return $app['catalog'] && !$app['hidden'] && !$app['plugin'];
 }
 

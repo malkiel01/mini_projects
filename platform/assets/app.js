@@ -505,7 +505,29 @@ function svgIcon(ic, app) {
 }
 
 // אפליקציה עם כניסה אחת — קישור. עם כמה כניסות, או עם התקנה/הורדה — גיליון בחירה.
+// בחנות ועוד לא אצלו (owned=false): אפורה עם חץ הורדה. לחיצה — נוספת לאפליקציות שלו (get_app).
+function storeRow(app) {
+    const b = el('button', { type: 'button', className: 'app', ariaLabel: `הורדת ${app.name}` }, [
+        appIcon(app),
+        el('span', { className: 'app-tx' }, [el('b', { textContent: app.name }), el('small', { textContent: app.description })]),
+        el('span', { className: 'get-ic', textContent: '⬇', ariaHidden: 'true' }),
+    ]);
+    b.addEventListener('click', async () => {
+        b.disabled = true;
+        try {
+            await api('get_app', { app: app.id });
+            toast(`✓ ${app.name} נוספה לאפליקציות שלך`);
+            await showApps();
+        } catch (err) { toast('⚠️ ' + err.message); b.disabled = false; }
+    });
+    const li = el('li', { className: 'not-owned' }, [b]);
+    li.dataset.search = `${app.name} ${app.description}`.toLowerCase();
+    li.dataset.app = app.id;
+    return li;
+}
+
 function appRow(app) {
+    if (app.owned === false) return storeRow(app);
     const body = [
         appIcon(app),
         el('span', { className: 'app-tx' }, [
@@ -1226,10 +1248,11 @@ async function showApps() {
         showMessage('עוד אין כאן אפליקציות', 'המנהל עדיין לא הקצה לכם אפליקציות. כשיקצה — הן יופיעו כאן.', '📭');
         return;
     }
+    const mine = apps.filter(a => a.owned !== false);
     const first = me.user.display_name.trim().split(/\s+/)[0];
     const hello = el('div', { className: 'hello' }, [el('div', {}, [
         el('h1', { textContent: `שלום, ${first}` }),
-        el('p', { textContent: apps.length === 1 ? 'אפליקציה אחת זמינה לך' : `${apps.length} אפליקציות זמינות לך` }),
+        el('p', { textContent: mine.length === 1 ? 'אפליקציה אחת זמינה לך' : `${mine.length} אפליקציות זמינות לך` }),
     ])]);
 
     const sections = categories

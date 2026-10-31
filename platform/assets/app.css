@@ -145,6 +145,10 @@ main {
 .search input { padding-inline-start: 40px; padding-inline-end: var(--s3); }
 
 .category { margin-bottom: var(--s5); }
+/* בחנות ועוד לא אצלו: אפורה, עם חץ הורדה (app.js, storeRow) */
+li.not-owned .app-ic, li.not-owned .app-tx { filter: grayscale(1); opacity: .55; }
+.get-ic { flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%;
+    background: var(--brand-soft); color: var(--brand); font-weight: 700; }
 /* ===== חנות: מומלצות + לשוניות קטגוריה (app.js, showApps) ===== */
 .recs { margin-bottom: var(--s3); }
 .recs-title { font-size: .82rem; font-weight: 700; color: var(--muted); margin: 0 var(--s1) var(--s2); }
