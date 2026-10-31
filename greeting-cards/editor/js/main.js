@@ -21,7 +21,7 @@ import { loadScript } from './io.js';
 import { docVariables, readSheetFile, readPasted, readPhoneContacts, guessColumns, normalizePhone, fileNames, fillText } from './merge.js';
 
 // הגרסה — מופיעה ביומן, כדי לדעת איזה קוד רץ בטלפון.
-const BUILD = '2026-10-31.handles-1';
+const BUILD = '2026-10-31.handles-2';
 
 const app = $('#app');
 let ed = null;   // העיצוב הפתוח: { id, doc, history, canvas, dirty }
@@ -971,6 +971,11 @@ function textProps(l) {
         weightBox,
         fillBox,
         seg('יישור', [{ value: 'right', icon: '⇥', label: 'ימין' }, { value: 'center', icon: '↔', label: 'מרכז' }, { value: 'left', icon: '⇤', label: 'שמאל' }, { value: 'justify', icon: '☰', label: 'מיושר' }], s.align, v => { s.align = v; commit(); }),
+        seg('גרירת פינה', [{ value: 'scale', label: 'מגדילה את האותיות' }, { value: 'box', label: 'רק את התיבה' }], s.boxResize ? 'box' : 'scale', v => {
+            if (v === 'box') s.boxResize = true; else delete s.boxResize;
+            commit();
+            ed.canvas.select(ed.selection);   // הידיות מתעדכנות (בפינה חופשית — בלי יחס קבוע)
+        }),
         rangeField('ריווח שורות', { min: 0.7, max: 3, step: 0.05, value: s.lineHeight || 1.2, onInput: live(v => { s.lineHeight = v; }), onCommit: commit }),
         rangeField('שקיפות', { min: 0, max: 100, value: Math.round((l.opacity ?? 1) * 100), unit: '%', onInput: live(v => { l.opacity = v / 100; }), onCommit: commit }),
         h('h3', { class: 'section' }, 'סגנון מוכן'),

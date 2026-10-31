@@ -250,7 +250,8 @@ export class Canvas {
             enabledAnchors: onlyText
                 ? ['top-left', 'top-right', 'bottom-left', 'bottom-right', 'middle-left', 'middle-right']
                 : ['top-left', 'top-center', 'top-right', 'middle-left', 'middle-right', 'bottom-left', 'bottom-center', 'bottom-right'],
-            keepRatio: true,
+            // טקסט במצב "רק התיבה" — הפינה חופשית (רק רוחב); כל השאר — ביחס קבוע
+            keepRatio: !(onlyText && layers[0].style.boxResize),
             borderStrokeWidth: anyLocked ? 1 : 1.5,
             borderDash: anyLocked ? [4, 4] : undefined,
         });
@@ -360,14 +361,19 @@ export class Canvas {
             log('transform-start', { ids: this.trSnap.map(t => t.g.id()).join(','), anchor: this.tr.getActiveAnchor(), w: l?.w, h: l?.h, font: l?.style?.size, zoom: this.view.zoom });
         });
         // טקסט: ידית צד משנה את רוחב התיבה (לא מותחת אותיות); ידית פינה מגדילה את הפונט.
+        // במצב "גרירת פינה — רק התיבה" (style.boxResize) גם הפינה משנה רק את הרוחב, והגובה נגזר מהטקסט.
         this.tr.on('transform', () => {
-            const anchor = this.tr.getActiveAnchor();
-            if (!['middle-left', 'middle-right'].includes(anchor)) return;
+            const anchor = this.tr.getActiveAnchor() || '';
+            const side = ['middle-left', 'middle-right'].includes(anchor);
+            const corner = /^(top|bottom)-(left|right)$/.test(anchor);
+            if (!side && !corner) return;
             for (const g of this.tr.nodes()) {
                 const l = this.doc.layers.find(x => x.id === g.id());
-                if (l?.type !== 'text') continue;
-                l.w = Math.max(20, l.w * g.scaleX());
-                l.x = g.x(); l.y = g.y();
+                if (l?.type !== 'text' || (corner && !l.style.boxResize)) continue;
+                l.w = Math.max(20, l.w * Math.abs(g.scaleX()));
+                l.x = g.x();
+                // בפינה העליונה Konva מזיז גם את y לפי הגובה המתוח — הגובה של טקסט לא נמתח, ולכן y נשאר
+                l.y = corner ? (this.trSnap?.find(t => t.g === g)?.attrs.y ?? g.y()) : g.y();
                 this.paint(g, l);
             }
         });
@@ -379,7 +385,7 @@ export class Canvas {
             const l = t.l, o = t.copy;
             let msg;
             if (anchor === 'rotater') msg = `סיבוב ${Math.round(((g.rotation() % 360) + 360) % 360)}°`;
-            else if (l.type === 'text' && /middle-(left|right)/.test(anchor)) msg = `רוחב התיבה ${Math.round(o.w)} ← ${Math.round(l.w)} · גודל האות נשאר ${Math.round(o.style.size)}`;
+            else if (l.type === 'text' && (/middle-(left|right)/.test(anchor) || l.style.boxResize)) msg = `רוחב התיבה ${Math.round(o.w)} ← ${Math.round(l.w)} · גודל האות נשאר ${Math.round(o.style.size)}`;
             else if (l.type === 'text') msg = `גודל האות ${Math.round(o.style.size)} ← ${Math.round(o.style.size * Math.abs(g.scaleY()))}`;
             else msg = `${Math.round(o.w * Math.abs(g.scaleX()))} × ${Math.round(o.h * Math.abs(g.scaleY()))}`;
             this.badge(msg);
