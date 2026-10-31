@@ -71,6 +71,12 @@
     <h2 class="sec-title">אפליקציות</h2>
     <p class="hint">אפליקציות שנרשמו לענן. מאותו שרת — פעילות מיד; מדומיין אחר — ממתינות לאישור שלך.</p>
     <ul class="list" id="clients"></ul>
+    <h2 class="sec-title">🤖 בינה מלאכותית</h2>
+    <div class="summary" id="ai-usage"></div>
+    <p class="hint">מפתח לכל ספק — רק כאן, מוצפן בשרת, ולא נקרא בחזרה. למי מותר ובאיזו מכסה — בלחיצה על חשבון למעלה.</p>
+    <ul class="list" id="ai-providers"></ul>
+    <h3 class="sec-title">ספק לכל משימה</h3>
+    <div class="fields two" id="ai-defaults"></div>
   </section>
 </main>
 
@@ -145,6 +151,10 @@
       <label class="f" id="quota-custom" hidden><span>נפח (MB)</span><input name="mb" inputmode="numeric" dir="ltr"></label>
       <label class="switch"><input type="checkbox" name="admin"><span>מנהל הענן</span></label>
       <label class="switch"><input type="checkbox" name="blocked"><span>חסום</span></label>
+      <section class="group" aria-labelledby="ai-h"><h3 id="ai-h">🤖 בינה מלאכותית <small id="ai-spent"></small></h3>
+        <div class="chips" id="ai-allowed"></div>
+        <label class="f"><span>מכסה חודשית ($)</span><input name="ai_monthly" inputmode="decimal" dir="ltr"></label>
+      </section>
       <p class="error" role="alert" hidden></p>
     </div>
   </form>

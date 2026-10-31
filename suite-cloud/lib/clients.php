@@ -424,9 +424,9 @@ function corsHeaders(): void {
         if (in_array($origin, json_decode($o, true) ?: [], true)) {
             header("Access-Control-Allow-Origin: $origin");
             header('Vary: Origin');
-            header('Access-Control-Allow-Headers: Authorization, Content-Type, Range');
+            header('Access-Control-Allow-Headers: Authorization, Content-Type, Range, X-Cloud-Request');
             header('Access-Control-Allow-Methods: GET, POST, PUT, OPTIONS');
-            header('Access-Control-Expose-Headers: ETag, Content-Range, Content-Length');
+            header('Access-Control-Expose-Headers: ETag, Content-Range, Content-Length, X-AI-Size, X-AI-Transparent, X-AI-Provider');
             header('Access-Control-Max-Age: 600');
             return;
         }
