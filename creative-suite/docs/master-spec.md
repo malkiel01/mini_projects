@@ -44,14 +44,15 @@
 
 | # | פרויקט | תיקייה (מוצעת) | בסגנון | `kind` עיקרי | תלוי ב | סטטוס |
 | --- | --- | --- | --- | --- | --- | --- |
-| 0 | **ליבת הפורמט** | `creative-suite/mbe-core/` | — | — | — | **גרסה 1 מוכנה** (2026-10-23) — [הנחיות](projects/mbe-core.md), [בודק ‎.mbe](../mbe-core/inspector/) |
-| 1 | עורך התמלילים | `word-processor/` (קיים) | Word | `text` | 0 | [בקשה לצ'אט שלו](projects/word-processor-request.md) |
-| 2 | עיצוב רסטר | `raster-studio/` | Photoshop | `raster` | 0 | בבנייה — [הנחיות](projects/raster-studio.md) |
-| 3 | וקטורי | `vector-studio/` | Illustrator | `vector` | 0 | גרסה 1 מוכנה — [הנחיות](projects/vector-studio.md) |
-| 4 | עימוד | `layout-studio/` | InDesign | `layout` | 0, 1 (שטפים), 3 (צורות) | בבנייה — [הנחיות](projects/layout-studio.md) |
-| 5 | סטודיו העיצוב | `greeting-cards/` (קיים) | Canva | `design` | 0, 2, 3 | הצטרף 2026-10-25 — [הנחיות](projects/design-studio.md) |
-| 6 | ענן החבילה | `suite-cloud/` | Creative Cloud | — | — (האחרות תלויות בו כרשות) | נפתח 2026-10-25 — [הנחיות](projects/suite-cloud.md) |
-| 7 | ועוד | — | חדר פיתוח (צילום, `photo-darkroom`), Acrobat, מצגות | — | לפי הצורך | רעיונות; חדר פיתוח — באפיון |
+| 0 | **ליבת הפורמט** | `creative-suite/mbe-core/` | — | — | — | **גרסה 1.1 מוכנה** — הממיר (מזהים, יומן, פנים, מיזוג); נשאר ניסוי Google Docs — [הנחיות](projects/mbe-core.md), [בודק ‎.mbe](../mbe-core/inspector/) |
+| 1 | עורך התמלילים | `word-processor/` (קיים) | Word | `text` | 0 | מחובר — ‎`.mbe`, docx כ"פנים" ומיזוג; ממתין לניסוי ב-Word — [הנחיות](projects/word-processor-request.md) |
+| 2 | עיצוב רסטר | `raster-studio/` | Photoshop | `raster` | 0 | בבנייה — ר2, עריכה מקצועית — [הנחיות](projects/raster-studio.md), [היעד המלא](projects/raster-studio-full.md) |
+| 3 | וקטורי | `vector-studio/` | Illustrator | `vector` | 0 | גרסה 1 מוכנה; גרסה 2 בבנייה — [הנחיות](projects/vector-studio.md), [היעד המלא](projects/vector-studio-full.md) |
+| 4 | עימוד | `layout-studio/` | InDesign | `layout` | 0, 1 (שטפים), 3 (צורות) | בבנייה — גרסה 1 נפרסה, פורמט 1.1 בחיבור — [הנחיות](projects/layout-studio.md) |
+| 5 | סטודיו העיצוב | `greeting-cards/` (קיים) | Canva | `design` | 0, 2, 3 | בבנייה — מ1–מ3 נפרסו; מ4 ממתין לבינה המלאכותית של הענן — [הנחיות](projects/design-studio.md) |
+| 6 | ענן החבילה | `suite-cloud/` | Creative Cloud | — | — (האחרות תלויות בו כרשות) | בבנייה — השלד נפרס; הבא: חיבור אפליקציה ושכבת ספקי ה-AI — [הנחיות](projects/suite-cloud.md) |
+| 7 | קוד משותף | `creative-suite/ui-core/` | — | — | כל האפליקציות מושכות ממנו | בבנייה — שלבים 1–3 נפרסו; אף אפליקציה עוד לא הצטרפה — [הנחיות](projects/shared-code.md) |
+| 8 | ועוד | — | חדר פיתוח (צילום, `photo-darkroom`), Acrobat, מצגות | — | לפי הצורך | רעיונות; חדר פיתוח — באפיון |
 
 **עדכון 2026-10-24:** 2, 3 ו-4 נפתחים במקביל (סעיף 4, "עבודה במקביל"). **הסדר וההיגיון המקורי:** 0 → 1 מוכיחים את הפורמט על מוצר שכבר עובד. אחריהם **2 או 3** (קטנים יחסית, ומוסיפים את
 השכבות והצורות שהעימוד צריך). **4 אחרון** — הוא צרכן של כל האחרים. שמות התיקיות ייקבעו כשהפרויקט נפתח.
