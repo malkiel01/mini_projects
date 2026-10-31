@@ -92,7 +92,7 @@ export function sheet({ title, body, submit = null, onSubmit = null, onClose = n
     return { el: dlg, form, body: bodyEl, close: v => dlg.close(v), error: m => { err.textContent = m; err.hidden = !m; } };
 }
 
-/** בחירה בין אפשרויות. options: [[key, label, kind?]] — kind: 'primary' (ברירת מחדל לראשון) / 'danger' / 'ghost'. */
+/** בחירה בין אפשרויות. options: [[key, label, kind?]] (null / false — מדלגים, לאפשרות מותנית) — kind: 'primary' (ברירת מחדל לראשון) / 'danger' / 'ghost'. */
 export function choose(title, text, options) {
     return new Promise(resolve => {
         let result = null;
@@ -100,7 +100,7 @@ export function choose(title, text, options) {
             title,
             body: [
                 text ? h('p', text) : null,
-                h('div.row-btns.wrap', options.map(([key, label, kind], i) =>
+                h('div.row-btns.wrap', options.filter(Boolean).map(([key, label, kind], i) =>
                     h('button.btn', {
                         type: 'button',
                         class: kind === 'danger' ? 'danger ghost' : (kind || (i === 0 ? 'primary' : 'ghost')),

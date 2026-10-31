@@ -138,7 +138,7 @@
     $('#ask-confirm').onclick = async () => toast(await confirm('למחוק את השכבה?', { ok: 'מחיקה', danger: true }) ? 'נמחקה' : 'בוטל');
     $('#ask-prompt').onclick = async () => { const v = await prompt('שם הקובץ', { value: 'כרטיס ברכה.png', select: 'name' }); toast(v ?? 'בוטל'); };
     $('#ask-choose').onclick = async () => toast(String(await choose('שינויים שלא נשמרו', 'מה לעשות לפני הסגירה?',
-        [['save', 'לשמור'], ['drop', 'לוותר על השינויים', 'danger'], ['stay', 'להישאר', 'ghost']])));
+        [['save', 'לשמור'], null, ['drop', 'לוותר על השינויים', 'danger'], ['stay', 'להישאר', 'ghost']])));
     const items = [
         { icon: '📄', label: 'שכפול', run: () => toast('שוכפל'), keys: 'Ctrl+D' },
         { icon: '✏️', label: 'שינוי שם', run: () => prompt('שם חדש', { value: 'שכבה 1' }) },
