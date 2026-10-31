@@ -60,6 +60,14 @@ try {
             $u = requireUser();
             out(['design' => getDesign((int)$u['id'], (string)($_GET['id'] ?? ''))]);
 
+        case 'design_versions':
+            $u = requireUser();
+            out(['versions' => listVersions((int)$u['id'], (string)($_GET['id'] ?? ''))]);
+
+        case 'design_version':
+            $u = requireUser();
+            out(getVersion((int)$u['id'], (string)($_GET['id'] ?? ''), (int)($_GET['v'] ?? 0)));
+
         case 'design_put':
             $u = requireUser();
             out(putDesign((int)$u['id'], body()));

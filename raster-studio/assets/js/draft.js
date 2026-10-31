@@ -30,8 +30,8 @@ export async function saveDraft(renderer, doc) {
       // מסכת שכבה — PNG משלה (גווני אפור); maskLoaded — המתכון בקובץ שנפתח הוא שלנו (נכתב מחדש בשמירה)
       const mask = l.mask ? { png: await png(l.mask, l.id + ':mask'), enabled: !!l.mask.enabled } : null;
       // שכבת התאמה — בלי פיקסלים: רק הפרמטרים
-      out.push({ ...props, png: l.adjust ? null : await png(l, l.id), mask, maskLoaded: !!l.maskLoaded,
-        adjust: l.adjust ?? null, adjustLoaded: !!l.adjustLoaded });
+      out.push({ ...props, png: l.adjust || l.fill ? null : await png(l, l.id), mask, maskLoaded: !!l.maskLoaded,
+        adjust: l.adjust ?? null, adjustLoaded: !!l.adjustLoaded, fill: l.fill ?? null, fillLoaded: !!l.fillLoaded });
     }
     return out;
   };
@@ -70,6 +70,8 @@ export async function restoreDraft(renderer, d) {
       if (l.foreign) { layer.foreign = l.foreign; continue; }
       if (l.adjust) layer.adjust = l.adjust;
       if (l.adjustLoaded) layer.adjustLoaded = true;
+      if (l.fill) layer.fill = l.fill;
+      if (l.fillLoaded) layer.fillLoaded = true;
       if (l.png) {
         const bmp = await decodeImage(l.png);
         await renderer.drawImage(doc, layer, bmp, 0, 0);

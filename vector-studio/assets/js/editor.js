@@ -1,23 +1,27 @@
 // העורך: מצב, קלט (עכבר, מגע, עט, מקלדת), היסטוריה ושמירת טיוטה.
 //
-// התצוגה: view = { x, y, z } — נקודה במרחב העבודה (pt) מגיעה למסך ב-(p·z + x, p·z + y) פיקסלי CSS.
+// התצוגה: view = { zoom, x, y } (ui-core/viewport.js) — נקודה במרחב העבודה (pt) מגיעה למסך ב-(p·zoom + x, p·zoom + y) פיקסלי CSS.
 // מגע: אצבע על רקע — הזזת התצוגה; שתיים — זום וגלילה. עכבר: גרירה על רקע — בחירה במלבן; גלגלת — גלילה,
 // ועם Ctrl — זום. רווח + גרירה — הזזת התצוגה.
 
-import { apply, invert, scaleAt, translate, rotateAt } from './geometry/matrix.js';
+import { scaleAt, translate, rotateAt } from './geometry/matrix.js';
 import { shapeFromDrag, DEFAULTS } from './geometry/shapes.js';
 import {
   SIZES, DEFAULT_STYLE, newDocument, nextId, layout, objects, findPath, selectionBox, applyMatrix, setShape, clone,
   leaves, cloneItem, ids, worldBox, pathMatrix,
 } from './model.js';
 import { group, ungroup, reorder, align, distribute, addLayer, removeLayer, moveLayer, moveToLayer } from './arrange.js';
-import { render, hitTest, inRect, handlePoints, readColors, HANDLE, viewMatrix, extraPages } from './render.js';
+import { render, hitTest, inRect, handlePoints, readColors, HANDLE, extraPages } from './render.js';
 import { renderProps, renderLayers } from './props.js';
 import { createPenTools } from './pen.js';
 import { pencilD, brushD, widths } from './freehand.js';
 import { needsPages, sourcePdf, renderPages, assign as assignPages } from './pages.js';
 import { activeHandoff, returnHandoff, endHandoff } from './handoff.js';
 import { keyOf } from './ui-core/keys.js';
+import { fit as fitView, zoomTo, nextStep, screenToDoc, pinch, wheel as wheelView } from './ui-core/viewport.js';
+import { toast } from './ui-core/toast.js';
+import { download } from './ui-core/files.js';
+import { initDialogs, confirm, prompt } from './ui-core/dialog.js';
 import { snapper } from './snap.js';
 import { parse, bbox, serialize, transform as transformSegs } from './geometry/path.js';
 const pathOps = { parse, serialize, transform: transformSegs };
@@ -30,7 +34,7 @@ const canvas = $('canvas'), stage = $('stage');
 
 const S = {
   id: null, rev: 0, name: 'ציור', doc: null, media: new Map(), pageImgs: null, // pageImgs — עמודי המקור (pages.js)
-  view: { x: 0, y: 0, z: 1 }, dpr: 1,
+  view: { x: 0, y: 0, zoom: 1 }, dpr: 1,
   sel: new Set(), hover: null, marquee: null, tool: 'select', active: null, board: null, // board — הלוח הנוכחי (בלי בחירה) guides: null,
   snap: pref('snap', true), grid: pref('grid', false), editingText: null, // active — השכבה לאובייקטים חדשים
   undo: [], redo: [],
@@ -52,10 +56,10 @@ S.free = freePrefs();
 function makeSnap(exclude, surface, touch) {
   if (!S.snap && !S.grid) return null;
   const sf = surface || S.doc.surfaces[0];
-  const sn = snapper({ doc: S.doc, exclude, tol: (touch ? 10 : 6) / S.view.z, grid: S.grid, origin: layout(S.doc).get(sf.id) });
+  const sn = snapper({ doc: S.doc, exclude, tol: (touch ? 10 : 6) / S.view.zoom, grid: S.grid, origin: layout(S.doc).get(sf.id) });
   if (S.snap) return sn;
   // רשת בלבד — בלי קווים חכמים: מסננים את היעדים
-  return snapper({ doc: { surfaces: [] }, exclude, tol: (touch ? 10 : 6) / S.view.z, grid: true, origin: layout(S.doc).get(sf.id) });
+  return snapper({ doc: { surfaces: [] }, exclude, tol: (touch ? 10 : 6) / S.view.zoom, grid: true, origin: layout(S.doc).get(sf.id) });
 }
 
 // ---------- טעינה ----------
@@ -99,15 +103,20 @@ async function boot() {
   library.prefs().then(p => { S.prefs = p; updatePanel(); }).catch(() => { /* בלי חיבור — הפלטה הראשונה */ });
   // גיבוי שנשאר במכשיר משמירה שנכשלה — חדש יותר ממה שבשרת? מציעים לשחזר
   const backup = drafts.loadBackup(S.id);
-  if (backup?.doc && backup.rev === S.rev && JSON.stringify(backup.doc) !== JSON.stringify(S.doc)
-      && confirm('יש במכשיר שינויים שלא הגיעו לשרת. לשחזר אותם?')) {
-    S.doc = backup.doc; dirty = true; persist();
-  }
-  drafts.removeBackup(S.id);
   showName();
   resize();
   fit();
   updatePanel();
+  // הציור כבר על המסך — שואלים מעליו
+  if (backup?.doc && backup.rev === S.rev && JSON.stringify(backup.doc) !== JSON.stringify(S.doc)
+      && await confirm('יש במכשיר שינויים שלא הגיעו לשרת. לשחזר אותם?', { ok: 'שחזור', cancel: 'לא, מהשרת' })) {
+    S.doc = backup.doc; dirty = true; persist(); fit(); updatePanel();
+  }
+  drafts.removeBackup(S.id);
+  // הערות מפתיחת ‎.mbe (בדף הספרייה או בחלון הקובץ) — כאן, אחרי הניווט
+  let notes = null;
+  try { notes = sessionStorage.getItem('vs-notes'); sessionStorage.removeItem('vs-notes'); } catch { /* חסום */ }
+  if (notes) toast('נפתח. שימו לב: ' + notes, { ms: 9000 });
   fontsReady.then(() => { if (!S.rev || S.rev === 1) persist(); }); // תמונה ממוזערת לציור חדש
 }
 
@@ -200,7 +209,7 @@ function thumbnail() {
   const k = Math.min(240 / s.size[0], 240 / s.size[1], 1);
   const c = document.createElement('canvas');
   c.width = Math.max(1, Math.round(s.size[0] * k)); c.height = Math.max(1, Math.round(s.size[1] * k));
-  render(c, { doc: { ...S.doc, surfaces: [s] }, view: { x: 0, y: 0, z: k }, dpr: 1, sel: new Set(), exportMode: true, bg: true, media: S.media, pages: pagesNow() });
+  render(c, { doc: { ...S.doc, surfaces: [s] }, view: { x: 0, y: 0, zoom: k }, dpr: 1, sel: new Set(), exportMode: true, bg: true, media: S.media, pages: pagesNow() });
   return c.toDataURL('image/png');
 }
 
@@ -313,7 +322,7 @@ function draw() {
       ...S, pages: pagesNow(), selBox: S.sel.size && !pathMode && !S.editingText ? selectionBox(S.doc, S.sel) : null, handles: !op || op.type !== 'move',
       overlay: pathMode ? tools.overlay : null,
     });
-    $('zoom-pct').textContent = Math.round(S.view.z * 100) + '%';
+    $('zoom-pct').textContent = Math.round(S.view.zoom * 100) + '%';
     positionTextEditor();
   });
 }
@@ -342,27 +351,30 @@ function fit() {
   let x1 = 0, y1 = 0;
   for (const s of S.doc.surfaces) { const [ox, oy] = lay.get(s.id); x1 = Math.max(x1, ox + s.size[0]); y1 = Math.max(y1, oy + s.size[1]); }
   for (const e of extraPages(S.doc, pagesNow())) { x1 = Math.max(x1, e.x + e.page.w); y1 = Math.max(y1, e.page.h); }
-  const pad = 32;
-  const z = Math.max(0.02, Math.min((r.width - pad * 2) / x1, (r.height - pad * 2) / y1, 8));
-  S.view = { z, x: (r.width - x1 * z) / 2, y: (r.height - y1 * z) / 2 };
+  S.view = fitBox(0, 0, x1, y1);
   draw();
 }
 
-const toWorld = (sx, sy) => apply(invert(viewMatrix(S.view)), sx, sy);
+const FIT_PAD = 32, FIT_MAX = 8;
+/** המלבן (ב-pt) באמצע המסך. fit של ui-core עוצר ב-100%; כאן — עד ×8, כדי שאייקון קטן ימלא את המסך. */
+function fitBox(x0, y0, w, h) {
+  const r = stage.getBoundingClientRect();
+  const v = fitView(w, h, r.width, r.height, FIT_PAD);
+  const up = Math.min(FIT_MAX, (r.width - FIT_PAD * 2) / w, (r.height - FIT_PAD * 2) / h);
+  const z = up > v.zoom ? zoomTo(v, up, r.width / 2, r.height / 2) : v;
+  return { ...z, x: z.x - x0 * z.zoom, y: z.y - y0 * z.zoom };
+}
+
+const toWorld = (sx, sy) => screenToDoc(S.view, sx, sy);
 
 function zoomAt(z, sx, sy) {
-  z = Math.max(0.02, Math.min(64, z));
-  const [wx, wy] = toWorld(sx, sy);
-  S.view = { z, x: sx - wx * z, y: sy - wy * z };
+  S.view = zoomTo(S.view, z, sx, sy);
   draw();
 }
 
 function zoomStep(dir) {
   const r = stage.getBoundingClientRect();
-  const steps = [0.05, 0.1, 0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4, 6, 8, 12, 16, 32, 64];
-  const z = S.view.z;
-  const next = dir > 0 ? steps.find(s => s > z * 1.01) : [...steps].reverse().find(s => s < z / 1.01);
-  zoomAt(next || z, r.width / 2, r.height / 2);
+  zoomAt(nextStep(S.view.zoom, dir), r.width / 2, r.height / 2);
 }
 
 // ---------- בחירה וממשק ----------
@@ -529,7 +541,7 @@ function targetLayerId(surface) {
 }
 
 /** לוחות: הוספה (באותו גודל, מימין בפריסה), בחירה (והתצוגה עוברת אליו), מחיקה. */
-function boardAction(a, id) {
+async function boardAction(a, id) {
   if (a === 'select') { S.board = id; showBoard(id); updatePanel(); return; }
   if (a === 'add') {
     const cur = S.doc.surfaces.find(s => s.id === S.board) || S.doc.surfaces[S.doc.surfaces.length - 1];
@@ -549,7 +561,7 @@ function boardAction(a, id) {
   if (a === 'remove') {
     const s = S.doc.surfaces.find(x => x.id === id);
     const n = (s.layers || []).reduce((k, l) => k + (l.paths?.length || 0), 0);
-    if (S.doc.surfaces.length < 2 || (n && !confirm(`בלוח ${n} אובייקטים. למחוק אותו יחד איתם?`))) return;
+    if (S.doc.surfaces.length < 2 || (n && !await confirm(`בלוח ${n} אובייקטים. למחוק אותו יחד איתם?`, { ok: 'מחיקה', danger: true }))) return;
     change(() => { S.doc.surfaces = S.doc.surfaces.filter(x => x.id !== id); });
     if (S.board === id) S.board = null;
     fit();
@@ -560,11 +572,8 @@ function boardAction(a, id) {
 function showBoard(id) {
   const s = S.doc.surfaces.find(x => x.id === id);
   if (!s) return;
-  const r = stage.getBoundingClientRect();
   const [ox, oy] = layout(S.doc).get(id);
-  const pad = 32;
-  const z = Math.max(0.02, Math.min((r.width - pad * 2) / s.size[0], (r.height - pad * 2) / s.size[1], 8));
-  S.view = { z, x: (r.width - s.size[0] * z) / 2 - ox * z, y: (r.height - s.size[1] * z) / 2 - oy * z };
+  S.view = fitBox(ox, oy, s.size[0], s.size[1]);
   draw();
 }
 
@@ -818,13 +827,13 @@ function addSamples(e) {
 
 /** הנתיב של ציור חופשי. בזמן הציור — עיפרון כקו גולמי (מהיר); בסיום — מוחלק. tol: ~1.5 פיקסלי מסך. */
 function freeD(o, final) {
-  const tol = 1.5 / S.view.z;
+  const tol = 1.5 / S.view.zoom;
   if (o.kind === 'brush') {
     const st = S.free.brush;
-    return brushD(o.samples, widths(o.samples, st.width, { pressure: o.pressure, scale: 1 / S.view.z }), tol);
+    return brushD(o.samples, widths(o.samples, st.width, { pressure: o.pressure, scale: 1 / S.view.zoom }), tol);
   }
   if (!final) return o.samples.length > 1 ? 'M' + o.samples.map(p => `${p.x} ${p.y}`).join(' L') : '';
-  return pencilD(o.samples, tol, 10 / S.view.z);
+  return pencilD(o.samples, tol, 10 / S.view.zoom);
 }
 
 function handleAt(sx, sy) {
@@ -852,7 +861,7 @@ canvas.addEventListener('pointerdown', (e) => {
     if (op && op.before) { S.doc = JSON.parse(op.before); afterChangeSilent(); }
     if (op?.type === 'tool') tools.abortDown();
     const [a, b] = [...pointers.values()];
-    op = { type: 'pinch', d0: Math.hypot(a[0] - b[0], a[1] - b[1]) || 1, m0: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], view0: { ...S.view } };
+    op = { type: 'pinch', a, b, view0: { ...S.view } };
     S.marquee = null;
     return;
   }
@@ -979,11 +988,7 @@ canvas.addEventListener('pointermove', (e) => {
     case 'pinch': {
       if (pointers.size < 2) break; // אצבע אחת הורמה — מחכים לשנייה או לסיום
       const [a, b] = [...pointers.values()];
-      const d = Math.hypot(a[0] - b[0], a[1] - b[1]);
-      const m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
-      const z = Math.max(0.02, Math.min(64, op.view0.z * d / op.d0));
-      const wx = (op.m0[0] - op.view0.x) / op.view0.z, wy = (op.m0[1] - op.view0.y) / op.view0.z;
-      S.view = { z, x: m[0] - wx * z, y: m[1] - wy * z };
+      S.view = pinch(op.view0, op.a, op.b, a, b);
       draw();
       break;
     }
@@ -996,7 +1001,7 @@ canvas.addEventListener('pointermove', (e) => {
       const x = Math.min(op.s0[0], sx), y = Math.min(op.s0[1], sy);
       S.marquee = [x, y, Math.abs(sx - op.s0[0]), Math.abs(sy - op.s0[1])];
       const [wx, wy] = toWorld(x, y);
-      const ids = inRect(S.doc, [wx, wy, S.marquee[2] / S.view.z, S.marquee[3] / S.view.z]);
+      const ids = inRect(S.doc, [wx, wy, S.marquee[2] / S.view.zoom, S.marquee[3] / S.view.zoom]);
       S.sel = new Set([...op.add, ...ids]);
       draw();
       break;
@@ -1158,8 +1163,8 @@ canvas.addEventListener('pointerleave', () => { if (S.hover && !op) { S.hover = 
 canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
   const [sx, sy] = local(e);
-  if (e.ctrlKey || e.metaKey) zoomAt(S.view.z * Math.exp(-e.deltaY * 0.01), sx, sy);
-  else { S.view = { ...S.view, x: S.view.x - e.deltaX, y: S.view.y - e.deltaY }; draw(); }
+  S.view = wheelView(S.view, e, sx, sy, { pageHeight: stage.clientHeight });
+  draw();
 }, { passive: false });
 
 // ספארי: מחוות צביטה של משטח מגע — לא להגדיל את הדף
@@ -1275,7 +1280,7 @@ function positionTextEditor() {
   const o = findPath(S.doc, textEdit.id);
   if (!o) return;
   const t = o.path, [ox, oy] = layout(S.doc).get(o.surface.id);
-  const [x, y, w, h] = t.box, z = S.view.z;
+  const [x, y, w, h] = t.box, z = S.view.zoom;
   const sx = (x + ox) * z + S.view.x, sy = (y + oy) * z + S.view.y;
   const font = t.font || TEXT_DEFAULT;
   const pad = 40; // מקום לתו הבא לפני שהתיבה מתעדכנת
@@ -1371,23 +1376,6 @@ async function getFont(file) {
   return fontCache.get(file);
 }
 
-function toast(msg, err = false) {
-  const el = document.querySelector('.toast');
-  el.textContent = msg; el.classList.toggle('err', err); el.hidden = false;
-  clearTimeout(toast.t); toast.t = setTimeout(() => { el.hidden = true; }, 3500);
-}
-
-function download(blob, name) {
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = name;
-  a.hidden = true;
-  // בתוך החלון הפתוח (שכבה עליונה) — אחרת יש דפדפנים שמתעלמים מהשם
-  ($('file-dlg').open ? $('file-dlg') : document.body).appendChild(a);
-  a.click();
-  setTimeout(() => { a.remove(); URL.revokeObjectURL(a.href); }, 30000);
-}
-
 const fileName = (ext, surface) => {
   const base = (S.name || 'ציור').replace(/[\\/:*?"<>|]+/g, '-').trim() || 'ציור';
   return (surface && S.doc.surfaces.length > 1 ? `${base} - ${surface.name || surface.id}` : base) + '.' + ext;
@@ -1420,7 +1408,7 @@ async function showVersions() {
 
 $('versions').addEventListener('click', async (e) => {
   const b = e.target.closest('[data-ver]');
-  if (!b || !confirm('לשחזר את הגרסה הזו? הנוכחית תישמר בגרסאות, ואפשר לחזור אליה.')) return;
+  if (!b || !await confirm('לשחזר את הגרסה הזו? הנוכחית תישמר בגרסאות, ואפשר לחזור אליה.', { ok: 'שחזור' })) return;
   b.disabled = true;
   try {
     clearTimeout(saveTimer);
@@ -1452,7 +1440,7 @@ async function pngOf(surface, k, bg) {
   const c = document.createElement('canvas');
   c.width = Math.max(1, Math.round(surface.size[0] * k));
   c.height = Math.max(1, Math.round(surface.size[1] * k));
-  render(c, { doc: { ...S.doc, surfaces: [surface] }, view: { x: 0, y: 0, z: k }, dpr: 1, sel: new Set(), exportMode: true, bg, media: S.media, pages: pagesNow() });
+  render(c, { doc: { ...S.doc, surfaces: [surface] }, view: { x: 0, y: 0, zoom: k }, dpr: 1, sel: new Set(), exportMode: true, bg, media: S.media, pages: pagesNow() });
   const blob = await new Promise(res => c.toBlob(res, 'image/png'));
   if (!blob) throw new Error('יצירת התמונה נכשלה');
   return new Uint8Array(await blob.arrayBuffer());
@@ -1629,8 +1617,8 @@ async function importFile(file) {
 $('file-btn').addEventListener('click', openFileDialog);
 // שינוי שם: הקשה על הכותרת
 $('doc-name').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('doc-name').click(); });
-$('doc-name').addEventListener('click', () => {
-  const name = prompt('שם הציור', S.name);
+$('doc-name').addEventListener('click', async () => {
+  const name = await prompt('שם הציור', { value: S.name });
   if (!name || !name.trim() || name.trim() === S.name) return;
   S.name = name.trim().slice(0, 120);
   showName();
@@ -1651,7 +1639,7 @@ $('mbe-file').addEventListener('change', async () => {
   if (!f) return;
   try {
     const { id, notes } = await library.importMbe(f);
-    if (notes.length) alert('נפתח. שימו לב:\n' + notes.join('\n'));
+    if (notes.length) try { sessionStorage.setItem('vs-notes', notes.join(' · ')); } catch { /* חסום */ }
     location.href = 'editor.html#d' + id;
     location.reload();
   } catch (e) {
@@ -1660,7 +1648,7 @@ $('mbe-file').addEventListener('change', async () => {
   }
 });
 $('imp-file').addEventListener('change', () => { const f = $('imp-file').files[0]; $('imp-file').value = ''; if (f) importFile(f); });
-document.addEventListener('click', e => { const b = e.target.closest('[data-close]'); if (b) b.closest('dialog').close(); });
+initDialogs();
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('service-worker.js').catch(() => { /* בלי מטמון */ });
 

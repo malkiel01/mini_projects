@@ -227,7 +227,7 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     const d = doc(), layer = d.active;
     const xi = Math.floor(x), yi = Math.floor(y);
     if (wanding || xi < 0 || yi < 0 || xi >= d.width || yi >= d.height) return;
-    const merged = state.sampleAll || !layer || layer.type === 'group' || !!layer.adjust;
+    const merged = state.sampleAll || !layer || layer.type === 'group' || !!layer.adjust || !!layer.fill;
     wanding = true;
     let px;
     try {
@@ -490,6 +490,7 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     if (layer.foreign) { toast(`שכבה של אפליקציה אחרת (${layer.foreign.type}) — נשמרת כמו שהיא, ולא נערכת כאן`, true); return false; }
     if (layer.type === 'group') { toast('בחרו שכבה בתוך הקבוצה — על קבוצה לא מציירים', true); return false; }
     if (layer.adjust && !layer.editMask) { toast('שכבת התאמה — אין בה פיקסלים. 🎭 — ציור על המסכה שלה; 🎚️ — שינוי ההתאמה', true); return false; }
+    if (layer.fill && !layer.editMask) { toast('שכבת מילוי — אין בה פיקסלים. 🎭 — ציור על המסכה שלה; 🎚️ — שינוי המילוי', true); return false; }
     const up = doc().ancestors(layer);
     if (up.some(g => g.locked)) { toast('הקבוצה נעולה — 🔓 בלוח השכבות', true); return false; }
     if (up.some(g => !g.visible)) { toast('הקבוצה מוסתרת — 👁️ בלוח השכבות', true); return false; }

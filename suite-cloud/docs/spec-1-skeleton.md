@@ -32,7 +32,8 @@ suite-cloud/
   data/               ← בשרת בלבד, לא בגיט (חוץ מ-.htaccess)
     .htaccess         Require all denied
     cloud.sqlite      חשבונות, עץ הקבצים, לקוחות, חיבורים, הגדרות
-    secret.key        מפתח החתימה של הענן (Ed25519) — נוצר בשרת בהפעלה הראשונה
+    sign.key          מפתח החתימה של הענן (Ed25519, לאסימונים) — נוצר בשרת בהפעלה הראשונה, 0600
+    secret.key        מפתח ההצפנה של מפתחות הספקים (spec-3-ai.md) — כמו sign.key
     files/ab/cd/<sha256>   תוכן הקבצים
     uploads/<id>/     העלאות בחלקים שטרם הושלמו
 ```
@@ -59,15 +60,16 @@ suite-cloud/
   "entry": "index.html",
   "gate": true,
   "restricted": true,
-  "public": ["connect.php", "assets/**",
-             "api.php?action=client_register|connect_exchange|access_token|cloud_key|disconnect|list|stat|read|mkdir|upload_start|upload_chunk|upload_finish|write|rename|move|trash|restore|trash_list|quota"]
+  "public": ["api.php?action=cloud_key|client_register|connect_exchange|access_token|disconnect|quota|list|stat|read|mkdir|write|upload_start|upload_chunk|upload_finish|rename|move|trash|restore|trash_list|purge|trash_empty"]
 }
 ```
 
 - **`public` לפעולות ה-API** — כי אפליקציה מתקשרת שרת-לשרת, בלי עוגיית הפלטפורמה. הכתובת ציבורית אבל לא פרוצה:
   כל פעולה דורשת חתימה של לקוח רשום או אסימון של הענן (סעיף 7). בלי אחד מהם — 401.
-- **`connect.php` ציבורי** — אבל בלי `PLATFORM_USER` הוא מפנה לכניסה (`?next=`) וחוזר. כך הוא עובד גם לאפליקציה
-  מנותקת מהפלטפורמה.
+- **`connect.php` אינו ציבורי** (שונה במימוש, 2026-10-31): השער עצמו מפנה מי שלא מחובר לכניסה (`?next=`) ומחזיר
+  לכאן, ובודק שיש לו הרשאה לענן. כך אין צורך בבדיקה כפולה. אסימון הטופס — ב-session בעוגייה משלנו (`SUITECLOUD`).
+- **בטוח ש-`public` לא פותח את הדף לכולם:** השער כותב `PLATFORM_USER` רק למי שיש לו הרשאה לענן (`gate-prepend.php`).
+  בכתובת ציבורית בלי הרשאה — אין זהות, ולכן נדרשת חתימה או אסימון.
 - **`restricted`** — עד שהשלד נבדק (הכרעה 3).
 
 ## 4. החשבון

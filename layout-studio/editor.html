@@ -6,6 +6,7 @@
   <meta name="theme-color" content="#2d4a8a">
   <title>עימוד</title>
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/css/ui-core/ui.css">
   <link rel="stylesheet" href="assets/css/app.css">
 </head>
 <body class="editor">
@@ -129,7 +130,7 @@
     </form>
   </dialog>
 
-  <dialog id="story-dlg" class="story" aria-labelledby="story-title">
+  <dialog id="story-dlg" class="story full" data-static aria-labelledby="story-title">
     <form method="dialog" novalidate>
       <header class="sheet-head">
         <button type="button" class="icon-btn" data-close aria-label="סגירה בלי שמירה">✕</button>
@@ -153,7 +154,7 @@
     </form>
   </dialog>
 
-  <dialog id="set-dlg" aria-labelledby="set-title">
+  <dialog id="set-dlg" class="full" data-static aria-labelledby="set-title">
     <form method="dialog" novalidate>
       <header class="sheet-head">
         <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>

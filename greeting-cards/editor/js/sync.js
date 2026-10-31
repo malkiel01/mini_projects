@@ -138,6 +138,28 @@ export async function pull(id) {
     await designs.put({ id, title: d.title, doc: d.doc, updatedAt: d.updatedAt, thumb, owner: user.id, serverVersion: d.version, synced: true });
 }
 
+// ─── גרסאות קודמות ────────────────────────────────────────────────────────
+
+/** הגרסאות שבשרת (עד 30, אחת לכל היותר ל-10 דקות): [{id, at, bytes}]. */
+export async function listVersions(id) {
+    return (await call('design_versions', { query: '&id=' + encodeURIComponent(id) })).versions;
+}
+
+/** גרסה קודמת — עם התמונות והגופנים שלה במכשיר (מה שכבר יש — לא יורד שוב). */
+export async function fetchVersion(id, vid) {
+    const { doc } = await call('design_version', { query: '&id=' + encodeURIComponent(id) + '&v=' + Number(vid) });
+    const cur = await designs.get(id);
+    const files = d => [...Object.values(d?.assets || {}), ...Object.values(d?.fonts || {})];
+    const known = new Map(files(cur?.doc).filter(a => a.remote && a.src).map(a => [a.remote, a.src]));
+    for (const a of files(doc)) {
+        if (!a.remote) continue;
+        if (known.has(a.remote)) { a.src = known.get(a.remote); continue; }
+        const res = await fetch(fileUrl(a.remote), { credentials: 'same-origin' });
+        if (res.ok) a.src = await assets.put(await res.blob());
+    }
+    return doc;
+}
+
 // ─── דחיפה ────────────────────────────────────────────────────────────────
 
 const inFlight = new Map();

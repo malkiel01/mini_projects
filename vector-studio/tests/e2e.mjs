@@ -49,7 +49,7 @@ try {
     return { sel: [...S.sel], paths: S.doc.surfaces[0].layers[0].paths, view: S.view, undo: S.undo.length };
   });
   const box = await page.locator('#canvas').boundingBox();
-  const W = async (x, y) => { const { view } = await st(); return [box.x + view.x + x * view.z, box.y + view.y + y * view.z]; };
+  const W = async (x, y) => { const { view } = await st(); return [box.x + view.x + x * view.zoom, box.y + view.y + y * view.zoom]; };
 
   // מלבן בגרירה
   await pickShape(page, 'rect');
@@ -135,12 +135,12 @@ try {
   step('שכפול ומחיקה');
 
   // זום בגלגלת עם Ctrl, וחזרה להתאמה
-  const z0 = (await st()).view.z;
+  const z0 = (await st()).view.zoom;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.keyboard.down('Control'); await page.mouse.wheel(0, -200); await page.keyboard.up('Control');
-  assert.ok((await st()).view.z > z0 * 1.5);
+  assert.ok((await st()).view.zoom > z0 * 1.5);
   await page.click('#zoom-pct');
-  assert.ok(Math.abs((await st()).view.z - z0) < 1e-6);
+  assert.ok(Math.abs((await st()).view.zoom - z0) < 1e-6);
   step('זום בגלגלת והתאמה למסך');
 
   // עט: שתי נקודות חדות, אחת בגרירה (עקומה), סגירה בהקשה על הראשונה
@@ -346,8 +346,9 @@ try {
   await page.evaluate(() => { const p = window.__vs.S.doc.surfaces[0].layers[0].paths.find(x => x.id === 'sw1'); p.fill.color = '#123456'; window.__vs.select(['sw1']); });
   await page.click('[data-sv="add-color"]');
   await page.waitForFunction(() => fetch('api.php?action=prefs').then(r => r.json()).then(d => d.swatches.includes('#123456')));
-  page.once('dialog', d => d.accept('כפתור כחול'));
   await page.click('[data-sv="add-style"]');
+  await page.fill('dialog[open] input[name="v"]', 'כפתור כחול');
+  await page.click('dialog[open] button[type="submit"]');
   await page.waitForSelector('.style-chip');
   await page.evaluate(() => window.__vs.select(['sw2']));
   await page.click('.style-chip');
@@ -637,8 +638,11 @@ try {
   assert.equal(await page.evaluate(() => JSON.stringify(window.__vs.S.doc)), docBefore, 'המסמך חזר מהשרת זהה');
   assert.equal(await page.evaluate(() => location.hash), '#d' + savedId);
   // שינוי שם מהכותרת
-  page.once('dialog', d => d.accept('לוגו לבדיקה'));
   await page.click('#doc-name');
+  // חלון השאלה של ui-core, עם השם הנוכחי בתוכו
+  assert.equal(await page.inputValue('dialog[open] input[name="v"]'), await page.evaluate(() => window.__vs.S.name));
+  await page.fill('dialog[open] input[name="v"]', 'לוגו לבדיקה');
+  await page.click('dialog[open] button[type="submit"]');
   await page.waitForFunction(() => document.getElementById('doc-status').textContent === 'נשמר', null, { timeout: 10000 });
   await page.click('a[href="./"]');
   await page.waitForSelector(`#drafts .card[data-id="${savedId}"] img.thumb`);
@@ -685,14 +689,13 @@ try {
   fs.writeFileSync(foreignFile, await mbeSave(of, { app: 'raster-studio' }));
   await page.goto(base);
   await page.waitForSelector('#home:not([hidden])');
-  page.once('dialog', d => d.accept());
   const [fch] = await Promise.all([page.waitForEvent('filechooser'), page.click('#open-btn')]);
   await fch.setFiles(foreignFile);
   await page.waitForFunction(() => /^#d\d+$/.test(location.hash) && window.__vs?.S.doc && window.__vs.S.media.size === 1, null, { timeout: 15000 });
   await page.waitForTimeout(200);
   const px = await page.evaluate(() => {
     const { S } = window.__vs, c = document.getElementById('canvas');
-    const x = (50 * S.view.z + S.view.x) * S.dpr, y = (50 * S.view.z + S.view.y) * S.dpr;
+    const x = (50 * S.view.zoom + S.view.x) * S.dpr, y = (50 * S.view.zoom + S.view.y) * S.dpr;
     return [...c.getContext('2d').getImageData(Math.round(x), Math.round(y), 1, 1).data];
   });
   assert.ok(px[0] > 200 && px[1] < 60 && px[2] < 60, 'שכבת הרסטר מצוירת: ' + px);
@@ -722,14 +725,13 @@ try {
   fs.writeFileSync(wpFile, await mbeSave(wp, { app: 'word-processor' }));
   await page.goto(base);
   await page.waitForSelector('#home:not([hidden])');
-  page.once('dialog', d => d.accept());
   const [wch] = await Promise.all([page.waitForEvent('filechooser'), page.click('#open-btn')]);
   await wch.setFiles(wpFile);
   await page.waitForFunction(() => window.__vs?.S.pageImgs?.length === 2, null, { timeout: 30000 });
   await page.waitForTimeout(300);
   const pix = (x, y) => page.evaluate(([x, y]) => {
     const { S } = window.__vs, c = document.getElementById('canvas');
-    return [...c.getContext('2d').getImageData(Math.round((x * S.view.z + S.view.x) * S.dpr), Math.round((y * S.view.z + S.view.y) * S.dpr), 1, 1).data];
+    return [...c.getContext('2d').getImageData(Math.round((x * S.view.zoom + S.view.x) * S.dpr), Math.round((y * S.view.zoom + S.view.y) * S.dpr), 1, 1).data];
   }, [x, y]);
   const pg1 = await pix(100, 100), pg2 = await pix(200 + 48 + 100, 100);
   assert.ok(pg1[0] > 200 && pg1[2] < 60, 'עמוד 1 מה-PDF: ' + pg1);

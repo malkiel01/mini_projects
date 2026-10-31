@@ -47,6 +47,7 @@
           <button type="button" role="tab" data-adj-tab="invert">היפוך</button>
           <button type="button" role="tab" data-adj-tab="posterize">פוסטר</button>
           <button type="button" role="tab" data-adj-tab="threshold">סף</button>
+          <button type="button" role="tab" data-adj-tab="fill">מילוי</button>
           <button type="button" role="tab" data-adj-tab="blur">טשטוש</button>
           <button type="button" role="tab" data-adj-tab="sharpen">חידוד</button>
           <button type="button" role="tab" data-adj-tab="motion">תנועה</button>
@@ -74,6 +75,12 @@
         </div>
         <div class="adjust-fields" data-adj="threshold" hidden>
           <label class="opt"><span>סף <output for="adj-level">128</output></span><input id="adj-level" type="range" min="1" max="255" value="128"></label>
+        </div>
+        <div class="adjust-fields" data-adj="fill" hidden>
+          <label class="opt"><span>סגנון</span><select id="adj-fstyle"><option value="solid">צבע אחיד</option><option value="linear">מעבר לינארי</option><option value="radial">מעבר מהמרכז</option></select></label>
+          <label class="opt opt-colors"><span>צבעים</span><span class="color-pair"><input id="adj-color1" type="color" aria-label="הצבע הראשון"><input id="adj-color2" type="color" value="#ffffff" aria-label="הצבע השני"></span></label>
+          <label class="opt"><span>זווית <output for="adj-fangle">90°</output></span><input id="adj-fangle" type="range" min="-180" max="180" value="90"></label>
+          <label class="opt"><span>אטימות <output for="adj-fopacity">100%</output></span><input id="adj-fopacity" type="range" min="0" max="100" value="100"></label>
         </div>
         <div class="adjust-fields" data-adj="blur" hidden>
           <label class="opt"><span>רדיוס <output for="adj-radius">0</output></span><input id="adj-radius" type="range" min="0" max="64" value="0"></label>

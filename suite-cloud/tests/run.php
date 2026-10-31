@@ -10,7 +10,10 @@ if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 
 $tmpDir = sys_get_temp_dir() . '/suite-cloud-test-' . getmypid();
 define('DATA_DIR', $tmpDir);
+define('CLOUD_ORIGIN', 'https://mbe-plus.com');
+define('CLOUD_ISSUER', 'https://mbe-plus.com/mini_projects/suite-cloud/');
 require_once __DIR__ . '/../lib/drive.php';
+require_once __DIR__ . '/../lib/clients.php';
 
 $fails = 0; $n = 0;
 function check(string $name, bool $ok): void {
@@ -176,6 +179,85 @@ try {
 
     check('cloud_id — קבוע ואקראי', str_starts_with(setting('cloud_id'), 'cl_') && setting('cloud_id') === setting('cloud_id'));
     check('ניהול — רשימת חשבונות עם שימוש', count(adminState()['accounts']) === 3);
+
+    // ── חיבור אפליקציה ──
+    $pair = sodium_crypto_sign_keypair();
+    $sk = sodium_crypto_sign_secretkey($pair);
+    $keyJson = fn($id, $pk) => json_encode(['client' => $id, 'keys' => [['kid' => 'k1', 'alg' => 'Ed25519', 'key' => base64_encode($pk)]]]);
+    $GLOBALS['CLOUD_FETCH'] = fn($url) => str_contains($url, 'vector') ? $keyJson('vector-studio', sodium_crypto_sign_publickey($pair))
+                                                                       : $keyJson('far-app', sodium_crypto_sign_publickey($pair));
+    $reg = ['client' => 'vector-studio', 'name' => 'וקטורי', 'key_url' => 'https://mbe-plus.com/mini_projects/vector-studio/api.php?action=cloud_key',
+            'origins' => ['https://mbe-plus.com'], 'return' => ['https://mbe-plus.com/mini_projects/vector-studio/api.php?action=cloud_callback']];
+    check('רישום מאותו origin — active', registerClient($reg)['status'] === 'active');
+    check('רישום חוזר זהה — בלי שינוי', registerClient($reg)['status'] === 'active');
+    $far = ['client' => 'far-app', 'name' => 'רחוקה', 'key_url' => 'https://far.example/key', 'origins' => ['https://far.example'],
+            'return' => ['https://far.example/cb']];
+    check('רישום מדומיין אחר — pending', registerClient($far)['status'] === 'pending');
+    check('key_url מחוץ ל-origins — נדחה', code(fn() => registerClient(['key_url' => 'https://evil.example/k'] + $reg)) === 'bad_request');
+    check('כתובת חזרה מחוץ ל-origins — נדחה', code(fn() => registerClient(['return' => ['https://evil.example/cb']] + $reg)) === 'bad_request');
+    check('מפתח של לקוח אחר ב-key_url — נדחה', code(fn() => registerClient(['client' => 'other-app'] + $reg)) === 'bad_key_url');
+    check('לקוח pending — לא מתחבר', code(fn() => connectRequest(['client' => 'far-app', 'state' => 'abcdefgh', 'return' => 'https://far.example/cb'])) === 'pending');
+
+    $q = ['client' => 'vector-studio', 'scope' => 'files', 'state' => 'st4te-1234', 'return' => $reg['return'][0]];
+    check('כתובת חזרה לא רשומה — נדחה', code(fn() => connectRequest(['return' => 'https://mbe-plus.com/other'] + $q)) === 'bad_request');
+    check('הרשאה לא מוכרת — נדחה', code(fn() => connectRequest(['scope' => 'root'] + $q)) === 'bad_request');
+    $req = connectRequest($q);
+    check('בפעם הראשונה — צריך אישור', alreadyGranted($owner, $req) === null);
+    $back = approveConnect($owner, $req);
+    parse_str((string) parse_url($back, PHP_URL_QUERY), $bq);
+    check('אישור — חזרה עם code ו-state', ($bq['state'] ?? '') === 'st4te-1234' && strlen($bq['code'] ?? '') > 20 && ($bq['action'] ?? '') === 'cloud_callback');
+    check('אחרי אישור — בפעם הבאה בלי מסך', alreadyGranted($owner, $req) !== null);
+    check('הרשאה נוספת — שוב מסך', alreadyGranted($owner, connectRequest(['scope' => 'files,ai'] + $q)) === null);
+
+    $sign = function (string $action, string $body, ?string $nonce = null, ?int $t = null) use ($sk) {
+        $t ??= time(); $nonce ??= bin2hex(random_bytes(16));
+        return ['client' => 'vector-studio', 'time' => (string) $t, 'nonce' => $nonce,
+                'signature' => 'k1.' . base64_encode(sodium_crypto_sign_detached("$action\n$t\n$nonce\n" . hash('sha256', $body), $sk))];
+    };
+    $body = json_encode(['code' => $bq['code']]);
+    $client = verifySigned('connect_exchange', $sign('connect_exchange', $body), $body);
+    check('חתימה תקינה — הלקוח', $client['id'] === 'vector-studio');
+    $ex = exchangeCode($client, ['code' => $bq['code']]);
+    check('connect_exchange — חיבור, שם וענן', str_starts_with($ex['connection'], 'c_') && $ex['account']['name'] === 'בעל המערכת' && $ex['scope'] === ['files'] && $ex['cloud_id'] === setting('cloud_id'));
+    check('קוד חד-פעמי', code(fn() => exchangeCode($client, ['code' => $bq['code']])) === 'bad_code');
+    $h = $sign('x', '{}', 'aaaaaaaaaaaaaaaa');
+    verifySigned('x', $h, '{}');
+    check('אותו nonce פעמיים — replay', code(fn() => verifySigned('x', $h, '{}')) === 'replay');
+    check('בקשה ישנה — stale', code(fn() => verifySigned('x', $sign('x', '{}', null, time() - 1000), '{}')) === 'stale');
+    check('גוף ששונה — bad_signature', code(fn() => verifySigned('x', $sign('x', '{}'), '{"a":1}')) === 'bad_signature');
+    check('פעולה אחרת מזו שנחתמה — bad_signature', code(fn() => verifySigned('y', $sign('x', '{}'), '{}')) === 'bad_signature');
+
+    $conn = connectionRow($ex['connection'], 'vector-studio');
+    $tok = issueToken($client, $conn);
+    [$c2] = verifyToken($tok['token']);
+    check('אסימון — 15 דקות, תקין', $tok['expires_in'] === 900 && $c2['id'] === $conn['id']);
+    [$p, $sg] = explode('.', $tok['token']);
+    $forged = b64u(str_replace('"files"', '"ai"', (string) unb64u($p))) . '.' . $sg;
+    check('אסימון ששונה — נדחה', code(fn() => verifyToken($forged)) === 'bad_token');
+    check('בלי ההרשאה — forbidden', code(fn() => actorFrom($conn, $client, 'ai')) === 'forbidden');
+
+    $_SERVER['HTTP_AUTHORIZATION'] = 'Bearer ' . $tok['token'];
+    $x = actor('write', 'files', '');
+    check('Bearer — הפעולה בשם החשבון והאפליקציה', $x['account']['id'] === $owner['id'] && $x['app'] === 'vector-studio');
+    $w = writeFile($x['account'], ['name' => 'מוקטורי.txt', 'content_b64' => b64('v')], $x['app']);
+    check('קובץ שאפליקציה כתבה — רשום עם שמה', $w['updated_by']['app'] === 'vector-studio');
+    unset($_SERVER['HTTP_AUTHORIZATION']);
+
+    $_SERVER += ['HTTP_X_CLOUD_CONNECTION' => $conn['id']];
+    foreach ($sign('list', '') as $k => $v) $_SERVER['HTTP_X_CLOUD_' . strtoupper($k)] = $v;
+    check('חתימה + X-Cloud-Connection — הפעולה בשם החשבון', actor('list', 'files', '')['app'] === 'vector-studio');
+    foreach (['CLIENT', 'TIME', 'NONCE', 'SIGNATURE', 'CONNECTION'] as $k) unset($_SERVER['HTTP_X_CLOUD_' . $k]);
+
+    check('החיבור מופיע ב"חיבורים"', count(accountConnections($owner)) === 1);
+    check('ניתוק של חיבור של חשבון אחר — 404', code(fn() => revokeOwnConnection($dana, $conn['id'])) === 'not_found');
+    revokeOwnConnection($owner, $conn['id']);
+    check('ניתוק — אסימון שעוד בתוקף נדחה מיד', code(fn() => verifyToken($tok['token'])) === 'disconnected');
+    check('אחרי ניתוק — שוב מסך אישור', alreadyGranted($owner, $req) === null);
+    adminClient(['client' => 'far-app', 'status' => 'active']);
+    check('מנהל מאשר לקוח ממתין', activeClient('far-app')['status'] === 'active');
+    $far2 = ['key_url' => 'https://far.example/key2'] + $far;
+    check('פרטים שהשתנו — חזרה ל-pending', registerClient($far2)['status'] === 'pending');
+    check('מפתח הענן — 0600 ומפורסם', (fileperms(DATA_DIR . '/sign.key') & 0777) === 0600 && cloudKeyPublic()['alg'] === 'Ed25519');
 } catch (Throwable $e) {
     $fails++;
     echo "✗ חריגה: " . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n";

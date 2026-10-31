@@ -7,6 +7,15 @@ export const BLEND_LABELS = { normal: 'רגיל', multiply: 'הכפלה', screen
 
 const $ = (s, el = document) => el.querySelector(s);
 
+/** תמונה ממוזערת של שכבת מילוי — CSS (צבע, או מעבר בכיוון שלו) */
+function fillCss(f) {
+  if (!f.gradient) return f.color;
+  const stops = f.gradient.stops.map(st => `${st.color} ${Math.round(st.at * 100)}%`).join(', ');
+  if (f.gradient.type === 'radial') return `radial-gradient(circle, ${stops})`;
+  const [x0, y0] = f.gradient.from ?? [0, 0], [x1, y1] = f.gradient.to ?? [1, 0];
+  return `linear-gradient(${Math.round(Math.atan2(x1 - x0, -(y1 - y0)) * 180 / Math.PI)}deg, ${stops})`;
+}
+
 /**
  * @param {object} o
  * @param {HTMLElement} o.root   ה-aside של הלוח
@@ -85,6 +94,7 @@ export function createLayersPanel({ root, doc, renderer, history, onChange, toas
         const l = d.addLayer({ ...props, opacity: item.opacity, blend: item.blend, visible: item.visible });
         renderer.copyLayer(item, l);
         if (item.adjust) l.adjust = { ...item.adjust };
+        if (item.fill) l.fill = structuredClone(item.fill);
         return l;
       };
       const copy = copyInto(src, { name: src.name + ' עותק', index: d.indexOf(src) + 1 });
@@ -217,7 +227,9 @@ export function createLayersPanel({ root, doc, renderer, history, onChange, toas
       <span class="drag" aria-hidden="true">⋮⋮</span>
       ${layer.type === 'group' ? '<button class="icon-btn fold" type="button"></button><span class="thumb folder" aria-hidden="true">📁</span>'
     : layer.foreign ? '<span class="thumb folder" aria-hidden="true">🧩</span>'
-    : layer.adjust ? '<span class="thumb folder" aria-hidden="true" title="שכבת התאמה">🎚️</span>' : '<canvas class="thumb" aria-hidden="true"></canvas>'}
+    : layer.adjust ? '<span class="thumb folder" aria-hidden="true" title="שכבת התאמה">🎚️</span>'
+    : layer.fill ? `<span class="thumb folder fill-thumb" aria-hidden="true" title="שכבת מילוי" style="background:${fillCss(layer.fill)}"></span>`
+    : '<canvas class="thumb" aria-hidden="true"></canvas>'}
       ${layer.mask ? '<button class="mask-thumb" type="button"><canvas class="thumb"></canvas></button>' : ''}
       <button class="layer-name one" type="button"></button>
       <button class="icon-btn eye" type="button"></button>
@@ -228,7 +240,7 @@ export function createLayersPanel({ root, doc, renderer, history, onChange, toas
       fold.setAttribute('aria-label', (layer.collapsed ? 'פתיחת ' : 'קיפול ') + layer.name);
       fold.setAttribute('aria-expanded', String(!layer.collapsed));
       fold.addEventListener('click', () => { layer.collapsed = !layer.collapsed; render(); });
-    } else if (!layer.foreign && !layer.adjust) {
+    } else if (!layer.foreign && !layer.adjust && !layer.fill) {
       thumb(layer, li.querySelector(':scope > canvas.thumb'));
       li.classList.toggle('editing-pixels', !!layer.mask && !layer.editMask);
     }

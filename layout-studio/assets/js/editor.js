@@ -12,6 +12,9 @@ import { layoutFlows } from './flow.js';
 import { imagePlacement } from './frames.js';
 import { loadFont, fontVariant } from './shaper.js';
 import { drawList } from './pdf.js';
+import { toast } from './ui-core/toast.js';
+import { initDialogs, confirm } from './ui-core/dialog.js';
+import { download as saveFile } from './ui-core/files.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 
@@ -36,18 +39,7 @@ async function api(action, data = {}) {
   return out;
 }
 
-function toast(msg, err = false) {
-  const el = $('.toast');
-  el.textContent = msg; el.classList.toggle('err', err); el.hidden = false;
-  clearTimeout(toast.t); toast.t = setTimeout(() => { el.hidden = true; }, 2600);
-}
-
-(() => {   // --vvh: הגובה הנראה בלי המקלדת
-  const vv = window.visualViewport; if (!vv) return;
-  const set = () => document.documentElement.style.setProperty('--vvh', Math.round(vv.height) + 'px');
-  vv.addEventListener('resize', set); set();
-})();
-document.addEventListener('click', e => { const b = e.target.closest('[data-close]'); if (b) b.closest('dialog').close(); });
+initDialogs();   // [data-close], סגירה ברקע, --vvh / --kb (המקלדת בטלפון)
 
 const newId = (prefix = 'p') => prefix + Array.from(crypto.getRandomValues(new Uint8Array(6)), b => b.toString(16).padStart(2, '0')).join('');
 
@@ -146,7 +138,8 @@ async function save() {
     if (e.message === 'conflict') {
       blocked = true;
       setState('לא נשמר — המסמך השתנה במקום אחר');
-      if (confirm('המסמך נשמר בינתיים מלשונית או ממכשיר אחר. לטעון אותו מחדש? (השינויים האחרונים כאן לא יישמרו)')) location.reload();
+      confirm('המסמך נשמר בינתיים מלשונית או ממכשיר אחר. לטעון אותו מחדש? (השינויים האחרונים כאן לא יישמרו)', { ok: 'טעינה מחדש' })
+        .then(yes => { if (yes) location.reload(); });
     } else if (e.message === 'network' || e.message === 'server') {
       setState('לא נשמר — מנסה שוב');
       saveTimer = setTimeout(save, 4000);
@@ -352,9 +345,9 @@ $('#fr-fitframe').addEventListener('click', () => {
 const docxInput = $('#docx-file');
 let docxTarget = null;   // { page } — זרימה אוטומטית מהעמוד; { flowId } — החלפת הטקסט של שטף
 $('#pm-docx').addEventListener('click', () => { docxTarget = { page: view.selected }; pdlg.close(); docxInput.click(); });
-$('#fr-docx').addEventListener('click', () => {
+$('#fr-docx').addEventListener('click', async () => {
   const x = selFrame();
-  if (flowText(model, x.frame.flow).trim() && !confirm('הטקסט במסגרת (ובכל השרשור שלה) יוחלף בטקסט מהקובץ. להמשיך?')) return;
+  if (flowText(model, x.frame.flow).trim() && !await confirm('הטקסט במסגרת (ובכל השרשור שלה) יוחלף בטקסט מהקובץ. להמשיך?', { ok: 'החלפה' })) return;
   docxTarget = { flowId: x.frame.flow };
   fdlg.close();
   docxInput.click();
@@ -472,13 +465,13 @@ $('#fr-grow').addEventListener('click', () => {
   toast(added ? `נוספו ${added} עמודים` : 'הטקסט נכנס');
 });
 
-$('#fr-del').addEventListener('click', () => {
+$('#fr-del').addEventListener('click', async () => {
   const x = selFrame();
-  if (!confirm(isImage(x.frame) ? 'למחוק את התמונה מהעמוד?' : 'למחוק את המסגרת? הטקסט נשאר וזורם למסגרות האחרות בשרשור (אם יש).')) return;
+  if (!await confirm(isImage(x.frame) ? 'למחוק את התמונה מהעמוד?' : 'למחוק את המסגרת? הטקסט נשאר וזורם למסגרות האחרות בשרשור (אם יש).', { ok: 'מחיקה', danger: true })) return;
   fdlg.close();
   const fid = x.frame.flow;
   const wasLast = thread(model, fid).length === 1;
-  if (wasLast && flowText(model, fid).trim() && !confirm('זו המסגרת האחרונה של הטקסט — הטקסט יימחק איתה. להמשיך?')) return;
+  if (wasLast && flowText(model, fid).trim() && !await confirm('זו המסגרת האחרונה של הטקסט — הטקסט יימחק איתה. להמשיך?', { ok: 'מחיקה', danger: true })) return;
   view.select(x.pageIndex, null);
   changed(removeFrame(model, x.frame.id));
 });
@@ -490,7 +483,7 @@ async function openStory(flowId) {
   const { openStory: open, sanitize } = await import('./story.js');
   const doc = model.flows[flowId]?.doc;
   const { lost } = sanitize(doc);
-  if (lost.length && !confirm(`בטקסט יש רכיבים שהעימוד עוד לא תומך בהם (${lost.join(', ')}). עריכה כאן תהפוך אותם לפסקאות רגילות. להמשיך?`)) return;
+  if (lost.length && !await confirm(`בטקסט יש רכיבים שהעימוד עוד לא תומך בהם (${lost.join(', ')}). עריכה כאן תהפוך אותם לפסקאות רגילות. להמשיך?`, { ok: 'עריכה' })) return;
   storyFlow = flowId;
   sdlg.showModal();
   story = await open($('.story-host', sdlg), doc, {
@@ -597,7 +590,7 @@ form.addEventListener('change', e => {
 
 $('#settings-btn').addEventListener('click', () => { fillSettings(); dlg.showModal(); });
 
-form.addEventListener('submit', e => {
+form.addEventListener('submit', async e => {
   e.preventDefault();
   const fail = msg => { dlgErr.textContent = msg; dlgErr.hidden = false; };
   const w = num(form.w.value), h = num(form.h.value);
@@ -619,7 +612,7 @@ form.addEventListener('submit', e => {
   if (form.header.checked && !hodd && !(form.facing.checked && heven)) return fail('כותרת רצה — צריך טקסט');
 
   const cur = pagesOf(model).length;
-  if (count < cur && !confirm(`להוריד ${cur - count} עמודים מסוף המסמך?`)) return;
+  if (count < cur && !await confirm(`להוריד ${cur - count} עמודים מסוף המסמך?`, { ok: 'הורדה', danger: true })) return;
 
   let next = setPageSize(model, [mmToPt(w), mmToPt(h)]);
   next = { ...next, layout: { ...next.layout, facing: form.facing.checked, binding: form.binding.value, margins,
@@ -660,12 +653,7 @@ async function makePdf() {
   }
   return new Uint8Array(await res.arrayBuffer());
 }
-function download(bytes, type, name) {
-  const url = URL.createObjectURL(new Blob([bytes], { type }));
-  const a = Object.assign(document.createElement('a'), { href: url, download: name });
-  document.body.append(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 60000);
-}
+const download = (bytes, type, name) => saveFile(new Blob([bytes], { type }), name);
 const pdfBtn = $('#pdf-btn');
 pdfBtn.addEventListener('click', async () => {
   pdfBtn.disabled = true;

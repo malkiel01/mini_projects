@@ -15,13 +15,13 @@ import { FONTS, ensureFont, ensureDocFonts, nearestWeight, loadMyFonts, myFonts,
 import { History } from './history.js';
 import { designs, assets } from './db.js';
 import { Canvas } from './canvas.js';
-import { ingestImage, importFromChat, expandSvgLayers, blobToImage, canvasToBlob, exportPdf, exportGcard, safeName, personalSkill, skillAsPrompt, skillZip } from './io.js';
+import { ingestImage, importFromChat, expandSvgLayers, blobToImage, canvasToBlob, exportPdf, safeName, personalSkill, skillAsPrompt, skillZip } from './io.js';
 import * as sync from './sync.js';
 import { loadScript } from './io.js';
 import { docVariables, readSheetFile, readPasted, readPhoneContacts, guessColumns, normalizePhone, fileNames, fillText } from './merge.js';
 
 // הגרסה — מופיעה ביומן, כדי לדעת איזה קוד רץ בטלפון.
-const BUILD = '2026-10-31.handles-2';
+const BUILD = '2026-10-31.versions-1';
 
 const app = $('#app');
 let ed = null;   // העיצוב הפתוח: { id, doc, history, canvas, dirty }
@@ -171,10 +171,11 @@ function designMenu(d) {
             closeSheet(); showHome(); toast('שוכפל');
         } }, '⧉ שכפול'),
         h('button', { class: 'menu-item', onclick: async () => {
-            if (d.remoteOnly) await sync.pull(d.id);
-            const rec = await designs.get(d.id);
-            await download(await exportGcard(rec.doc), safeName(rec.title) + '.gcard').catch(e => toast(e.message, 'error'));
-        } }, '⬇️ הורדה כקובץ עיצוב'),
+            // ‎.mbe נבנה מהקנבס (שכבות אפויות, תצוגה מקדימה) — פותחים את העיצוב ומורידים ממנו
+            await openDesign(d.id, null, d);
+            if (!ed) return;
+            try { await download(await makeMbe(), safeName(ed.doc.title) + '.mbe'); } catch (e) { toast(e.message || 'הייצוא נכשל', 'error'); }
+        } }, '⬇️ הורדה כ-‎.mbe'),
         h('button', { class: 'menu-item danger', onclick: async () => {
             if (!(await confirmDialog(`למחוק את "${d.title}"? אי אפשר לבטל.`, 'מחיקה', true))) return;
             await designs.remove(d.id);
@@ -191,7 +192,7 @@ function importSheet() {
     const text = h('textarea', { rows: 5, dir: 'ltr', placeholder: '{ "version": 1, "page": … }', class: 'mono' });
     const drop = h('button', { class: 'drop', onclick: async () => add(await pickFiles('', true)) },
         h('span', { class: 'tile-icon', 'aria-hidden': 'true' }, '📎'), h('span', {}, 'בחירת תמונות או קובץ מהצ\'אט'),
-        h('span', { class: 'muted small' }, 'design.gcard · תמונות · design.json'));
+        h('span', { class: 'muted small' }, 'design.zip · ‎.mbe · תמונות · design.json'));
     const add = fs => { for (const f of fs) { files.push(f); list.append(h('li', {}, `${f.type.startsWith('image/') ? '🖼️' : '📄'} ${f.name}`)); } };
     drop.addEventListener('dragover', e => e.preventDefault());
     drop.addEventListener('drop', e => { e.preventDefault(); add([...e.dataTransfer.files]); });
@@ -419,6 +420,8 @@ function renderCtx() {
         b('⧉', 'שכפול', duplicate),
         b('⇅', 'סדר', orderSheet),
         ls.length > 1 ? b('⊞', 'יישור', orderSheet) : null,
+        ls.length > 1 && !(l.group && ls.every(x => x.group === l.group)) ? b('🔗', 'קיבוץ', groupSelected) : null,
+        l.group && ls.every(x => x.group === l.group) ? b('⛓️', 'פירוק', ungroupSelected) : null,
         b(ls.every(x => x.locked) ? '🔒' : '🔓', ls.every(x => x.locked) ? 'נעול' : 'נעילה', toggleLock, { 'aria-pressed': String(ls.every(x => x.locked)) }),
         b('🗑️', 'מחיקה', removeSelected)].filter(Boolean));
 }
@@ -429,11 +432,30 @@ function addLayer(l, { select = true } = {}) {
     if (select) ed.canvas.select([l.id]);
 }
 
+/** קיבוץ: השכבות הנבחרות נבחרות ונעות יחד מעכשיו (הקשה על אחת בוחרת את כולן). */
+function groupSelected() {
+    const ls = sel();
+    if (ls.length < 2) return;
+    const g = uid('g');
+    for (const l of ls) l.group = g;
+    log('group', { n: ls.length });
+    commit();
+    toast(`${ls.length} שכבות קובצו — הקשה על אחת בוחרת את כולן`);
+}
+
+function ungroupSelected() {
+    for (const l of sel()) delete l.group;
+    log('ungroup', {});
+    commit();
+}
+
 function duplicate() {
     const ids = [];
+    const regroup = new Map();   // לעותק של קבוצה — קבוצה חדשה, כדי שלא יתחבר למקור
     for (const l of sel()) {
         const c = clone(l);
         c.id = uid();
+        if (c.group) { if (!regroup.has(c.group)) regroup.set(c.group, uid('g')); c.group = regroup.get(c.group); }
         c.x += 30; c.y += 30;
         delete c.locked;
         if (c.role === 'background') c.role = 'photo';
@@ -863,6 +885,51 @@ function colorAlphaFields(label, get, set) {
         rangeField('שקיפות', { min: 0, max: 100, value: alpha(), unit: '%', onInput: live(v => set(join(hex(), v))), onCommit: commit }));
 }
 
+/** גרסאות קודמות מהשרת (אחת לכל היותר ל-10 דקות, עד 30): רשימה ושחזור. השחזור — צעד אחד ב"ביטול". */
+async function versionsSheet() {
+    if (!sync.currentUser()) { toast('גרסאות קודמות נשמרות בשרת — צריך להיות מחובר', 'error'); return; }
+    const body = h('div', {}, h('p', { class: 'hint' }, 'טוען…'));
+    sheet('🕘 גרסאות קודמות', body);
+    try {
+        await saveNow();
+        await sync.push(ed.id).catch(() => {});
+        const list = await sync.listVersions(ed.id);
+        const when = at => new Date(at).toLocaleString('he-IL', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' });
+        body.replaceChildren(
+            h('p', { class: 'hint' }, 'נשמרת גרסה לכל היותר פעם ב-10 דקות של עבודה, עד 30 אחרונות. שחזור מחליף את העיצוב — ו-↶ מחזיר את מה שהיה.'),
+            list.length ? h('ul', { class: 'my-fonts' }, list.map(v => h('li', {},
+                h('span', {}, when(v.at)), h('span', { class: 'muted small' }, timeAgo(v.at)),
+                h('button', { class: 'btn ghost sm', onclick: () => restoreVersion(v) }, 'שחזור'))))
+                : h('p', { class: 'empty' }, 'עוד אין גרסאות קודמות — הן נוצרות תוך כדי עבודה, פעם ב-10 דקות.'));
+    } catch (e) {
+        body.replaceChildren(h('p', { class: 'empty' }, 'הגרסאות לא נטענו: ' + (e.message || e)));
+    }
+}
+
+async function restoreVersion(v) {
+    const id = ed.id;
+    try {
+        toast('משחזר…');
+        const doc = await sync.fetchVersion(id, v.id);
+        if (ed?.id !== id) return;
+        doc.title = ed.doc.title;
+        for (const [aid, a] of Object.entries(doc.assets || {})) {
+            const blob = await assets.get(a.src);
+            if (blob) ed.canvas.setImage(aid, await blobToImage(blob).catch(() => null));
+        }
+        await ensureDocFonts(doc);
+        ed.doc = doc;
+        ed.canvas.setDoc(doc);
+        ed.canvas.select([]);
+        commit();
+        closeSheet();
+        log('version-restore', { v: v.id });
+        toast('שוחזר ✓ — ↶ מחזיר את מה שהיה');
+    } catch (e) {
+        toast('השחזור נכשל: ' + (e.message || e), 'error');
+    }
+}
+
 /**
  * העלאת גופנים (TTF, OTF, WOFF, WOFF2): השם והעובי נקראים מהקובץ. גשר עד ספריית הגופנים של ענן החבילה — הגופן נשמר
  * במכשיר, ומוטמע בכל עיצוב שמשתמש בו. מחזיר את מה שנוסף.
@@ -1130,7 +1197,8 @@ function layersSheet() {
                     else ed.canvas.select([l.id]);
                     draw();
                 } },
-                    h('span', { 'aria-hidden': 'true' }, icon), h('span', { class: 'layer-name' }, layerLabel(l))),
+                    h('span', { 'aria-hidden': 'true' }, icon), h('span', { class: 'layer-name' }, layerLabel(l)),
+                    l.group ? h('span', { class: 'muted small', title: 'בקבוצה' }, '🔗') : null),
                 h('button', { class: 'icon-btn', 'aria-label': l.hidden ? `הצגת ${layerLabel(l)}` : `הסתרת ${layerLabel(l)}`, 'aria-pressed': String(!!l.hidden), onclick: () => { l.hidden = !l.hidden; if (!l.hidden) delete l.hidden; commit(); draw(); } }, l.hidden ? '🚫' : '👁️'),
                 h('button', { class: 'icon-btn', 'aria-label': l.locked ? `שחרור ${layerLabel(l)}` : `נעילת ${layerLabel(l)}`, 'aria-pressed': String(!!l.locked), onclick: () => { if (l.locked) delete l.locked; else l.locked = true; commit(); draw(); } }, l.locked ? '🔒' : '🔓'),
                 h('button', { class: 'icon-btn', 'aria-label': `העלאת ${layerLabel(l)}`, onclick: () => { ed.canvas.select([l.id]); move(1); draw(); } }, '▲'),
@@ -1232,7 +1300,6 @@ function exportSheet() {
     const info = h('p', { class: 'hint' });
     const upd = () => {
         info.textContent = fmt === 'mbe' ? 'קובץ חבילת היצירה — כל שכבה נשמרת, ונפתח גם בעיצוב הרסטר ובווקטורי'
-            : fmt === 'gcard' ? 'קובץ עיצוב — לפתיחה מחדש בעורך או להעברה למכשיר אחר'
             : fmt === 'pdf' ? `PDF בגודל הדף, ${W >= 1700 ? 300 : 150}dpi`
                 : `\u2066${Math.round(W * scale)}×${Math.round(H * scale)}\u2069 פיקסלים`;
     };
@@ -1242,8 +1309,7 @@ function exportSheet() {
         try {
             toast('מכין…');
             let blob, file;
-            if (fmt === 'gcard') { await saveNow(); embedDocFonts(ed.doc); blob = await exportGcard(ed.doc); file = name + '.gcard'; }
-            else if (fmt === 'mbe') { blob = await makeMbe(); file = name + '.mbe'; }
+            if (fmt === 'mbe') { blob = await makeMbe(); file = name + '.mbe'; }
             else {
                 const c = ed.canvas.pageCanvas(fmt === 'pdf' ? 1 : scale);
                 if (fmt === 'pdf') { blob = await exportPdf(c, ed.doc); file = name + '.pdf'; }
@@ -1260,7 +1326,7 @@ function exportSheet() {
     };
     const canShare = !!navigator.canShare?.({ files: [new File([''], 'x.png', { type: 'image/png' })] });
     sheet('ייצוא', h('div', {},
-        seg('פורמט', [{ value: 'png', label: 'PNG' }, { value: 'jpg', label: 'JPG' }, { value: 'pdf', label: 'PDF' }, { value: 'mbe', label: '‎.mbe' }, { value: 'gcard', label: 'עיצוב' }], fmt, v => { fmt = v; upd(); }),
+        seg('פורמט', [{ value: 'png', label: 'PNG' }, { value: 'jpg', label: 'JPG' }, { value: 'pdf', label: 'PDF' }, { value: 'mbe', label: '‎.mbe' }], fmt, v => { fmt = v; upd(); }),
         seg('גודל', [{ value: 1, label: '×1' }, { value: 2, label: '×2' }, { value: 0.5, label: '×½' }], scale, v => { scale = +v; upd(); }),
         info,
         h('div', { class: 'row-actions' },
@@ -1348,6 +1414,7 @@ async function receiveBack(srcId, t, bytes) {
 function moreSheet() {
     sheet('עוד', h('div', { class: 'menu' },
         h('button', { class: 'menu-item', onclick: pageSizeSheet }, '📐 גודל הדף'),
+        h('button', { class: 'menu-item', onclick: versionsSheet }, '🕘 גרסאות קודמות'),
         h('button', { class: 'menu-item', onclick: myFontsSheet }, '🔤 הגופנים שלי'),
         h('button', { class: 'menu-item', onclick: skillSheet }, '🤖 סקיל לצ\'אט'),
         h('button', { class: 'menu-item', onclick: () => { closeSheet(); importSheet(); } }, '📥 ייבוא מהצ\'אט (עיצוב חדש)'),
