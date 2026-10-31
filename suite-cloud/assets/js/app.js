@@ -2,7 +2,7 @@
 
 import { $, h as el } from './ui-core/dom.js';
 import { toast } from './ui-core/toast.js';
-import { initDialogs, confirm } from './ui-core/dialog.js';
+import { initDialogs, confirm, prompt } from './ui-core/dialog.js';
 import { dropZone } from './ui-core/files.js';
 
 initDialogs();   // [data-close], סגירה ברקע, --vvh
@@ -335,6 +335,51 @@ function renderAdmin(s) {
       el('small', {}, `${bytes(a.used)} מתוך ${a.effective_quota ? bytes(a.effective_quota) : '0'}${a.quota === null ? ' (ברירת מחדל)' : ''} · ${a.email}`)),
     a.blocked ? el('span', { class: 'chip bad' }, 'חסום') : el('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹')))));
   renderClients(s.clients || []);
+  loadAi().catch(fail);
+}
+
+// ── בינה מלאכותית ──
+
+const TASK_NAMES = { 'remove-background': 'הסרת רקע', segment: 'פירוק לעצמים', 'generate-image': 'יצירת תמונה', inpaint: 'מילוי אזור', complete: 'טקסט / תוכנית' };
+
+async function loadAi() { renderAi(await api('ai_admin')); }
+
+function renderAi(s) {
+  state.ai = s;
+  const u = s.usage;
+  $('#ai-usage').replaceChildren(el('div', { class: 'line' }, el('span', { class: 'muted' }, 'החודש'), el('b', {}, `$${u.cost.toFixed(2)}`),
+    el('span', { class: 'muted' }, `· ${u.calls} קריאות`)));
+  $('#ai-providers').replaceChildren(...s.providers.map(p => el('li', {}, el('div', { class: 'acc-row' },
+    el('span', { class: 'use-ic', 'aria-hidden': 'true' }, '🤖'),
+    el('div', { class: 'body' }, el('div', { class: 'l1' }, p.name), el('div', { class: 'l2' }, p.tasks.map(t => TASK_NAMES[t]).join(' · '))),
+    p.has_key ? el('span', { class: `chip ${p.enabled ? 'ok' : 'bad'}`, dir: p.enabled ? 'ltr' : null }, p.enabled ? `••${p.key_tail}` : 'כבוי') : el('span', { class: 'chip' }, 'אין מפתח'),
+    el('button', { class: 'icon-btn', type: 'button', 'aria-label': `מפתח ל-${p.name}`, onclick: () => setKey(p) }, '🔑'),
+    p.has_key ? el('button', { class: 'btn ghost sm', type: 'button', onclick: () => testKey(p) }, 'בדיקה') : null,
+    p.has_key ? el('button', { class: 'btn ghost sm', type: 'button', onclick: () => toggleProvider(p) }, p.enabled ? 'כיבוי' : 'הדלקה') : null))));
+  $('#ai-defaults').replaceChildren(...s.tasks.map(t => {
+    const opts = s.providers.filter(p => p.tasks.includes(t));
+    const cur = s.defaults[t] || opts[0]?.id;
+    return el('label', { class: 'f' }, el('span', {}, TASK_NAMES[t]),
+      el('select', { onchange: e => setDefault(t, e.target.value) }, ...opts.map(p => el('option', { value: p.id, selected: p.id === cur }, p.name))));
+  }));
+}
+
+async function setKey(p) {
+  const key = await prompt(`מפתח API של ${p.name} (ריק — מחיקה)`, { title: `🔑 ${p.name}`, required: false, dir: 'ltr', ok: 'שמירה' });
+  if (key === null) return;
+  try { renderAi(await api('ai_provider', { provider: p.id, key })); toast(key ? 'נשמר — מוצפן בשרת' : 'המפתח נמחק'); } catch (e) { fail(e); }
+}
+
+async function testKey(p) {
+  try { await api('ai_test', { provider: p.id }); toast(`${p.name}: המפתח תקין ✓`); } catch (e) { fail(e); }
+}
+
+async function toggleProvider(p) {
+  try { renderAi(await api('ai_provider', { provider: p.id, enabled: !p.enabled })); } catch (e) { fail(e); }
+}
+
+async function setDefault(task, provider) {
+  try { renderAi(await api('ai_default', { task, provider })); toast('נשמר'); } catch (e) { fail(e); }
 }
 
 function renderClients(list) {
@@ -374,6 +419,11 @@ function openQuota(a) {
   f.admin.checked = a.role === 'admin'; f.blocked.checked = a.blocked;
   const self = a.id === state.me.id;
   f.admin.disabled = self; f.blocked.disabled = self;
+  const ai = a.ai || { providers: [], monthly: 0, spent: 0 };
+  $('#ai-spent').textContent = `החודש $${(ai.spent || 0).toFixed(2)}`;
+  $('#ai-allowed').replaceChildren(...(state.ai?.providers || []).map(p => el('label', {},
+    el('input', { type: 'checkbox', value: p.id, checked: ai.providers.includes(p.id) }), el('span', {}, p.name))));
+  f.ai_monthly.value = ai.monthly || '';
   err.hidden = true;
   f.onchange = () => { $('#quota-custom').hidden = f.preset.value !== 'custom'; };
   f.onsubmit = async e => {
@@ -383,7 +433,13 @@ function openQuota(a) {
     if (quota !== null && (!Number.isFinite(quota) || quota < 0)) { err.textContent = 'נפח לא תקין'; err.hidden = false; return; }
     const body = { account: a.id, quota };
     if (!self) Object.assign(body, { role: f.admin.checked ? 'admin' : 'user', blocked: f.blocked.checked });
-    try { renderAdmin(await api('admin_account', body)); dlg.close(); toast('נשמר'); if (self) refreshQuota(); }
+    const monthly = Number(String(f.ai_monthly.value || '0').trim());
+    if (!Number.isFinite(monthly) || monthly < 0) { err.textContent = 'מכסה לא תקינה'; err.hidden = false; return; }
+    const providers = [...$('#ai-allowed').querySelectorAll('input:checked')].map(i => i.value);
+    try {
+      await api('ai_user', { account: a.id, providers, monthly });
+      renderAdmin(await api('admin_account', body)); dlg.close(); toast('נשמר'); if (self) refreshQuota();
+    }
     catch (x) { err.textContent = x.message; err.hidden = false; }
   };
   dlg.showModal();

@@ -13,6 +13,10 @@
  *       },
  *       hand: () => tool === 'hand',             // רשות — אצבע / עכבר אחד מזיז את התצוגה
  *       ignore: '.tools, .tool-opts',            // רשות — לחיצה שם היא לחיצה על כפתור, לא על הקנבס
+ *       panOnEmpty: e => e.pointerType === 'touch',  // רשות — כש-pointer.down החזיר false: אצבע אחת מזיזה
+ *                                                // (true / פונקציה). בווקטורי: מגע על רקע ריק מזיז, עכבר — מלבן בחירה
+ *       onTap: (e, [dx, dy]) => …,               // רשות — הקשה בלי תזוזה (פחות מ-8px, פחות מחצי שנייה) שלא נלקחה
+ *                                                // ע"י הכלי — למשל ביטול בחירה בהקשה על רקע ריק
  *       onDoubleClick: (e, [sx, sy]) => …,       // רשות
  *   });
  *   g.panning   // true בזמן הזזה / צביטה
@@ -25,12 +29,14 @@
  */
 import { pinch, wheel as wheelView, screenToDoc } from './viewport.js';
 
-export function bindViewport(el, { get, set, pointer = null, hand = null, ignore = null, onDoubleClick = null, wheel = true } = {}) {
+export function bindViewport(el, { get, set, pointer = null, hand = null, ignore = null, onDoubleClick = null, wheel = true,
+                                       panOnEmpty = false, onTap = null } = {}) {
     const pointers = new Map();
     let gesture = null;     // { kind: 'pinch' | 'pan', view, a, b } / { kind: 'pan', view, p }
     let owner = null;       // pointerId שהכלי לקח
     let lastOwner = null;   // המיקום האחרון שלו — אם תגיע אצבע שנייה, הצביטה מתחילה ממנו
     let space = false;
+    let tap = null;         // { id, x, y, t } — מצביע יחיד שלא נלקח ע"י הכלי: אם יורם בלי לזוז, זו הקשה
 
     const local = e => { const r = el.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
     const toDoc = p => screenToDoc(get(), p[0], p[1]);
@@ -49,6 +55,7 @@ export function bindViewport(el, { get, set, pointer = null, hand = null, ignore
         capture(e.pointerId);
         const p = local(e);
         // אצבע שנייה בזמן פעולה של הכלי — צביטה: הפעולה מתבטלת
+        tap = null;
         if (owner !== null && e.pointerType === 'touch') {
             pointer?.cancel?.();
             pointers.set(owner, lastOwner);
@@ -62,8 +69,10 @@ export function bindViewport(el, { get, set, pointer = null, hand = null, ignore
             pointers.delete(e.pointerId);
             return;
         }
-        // אין כלי ואין יד: האצבע נשמרת (אם תגיע שנייה — צביטה), אבל לבד היא לא מזיזה כלום
-        if (!panOnly && pointers.size === 1) { gesture = null; return; }
+        if (pointers.size === 1 && !panOnly) tap = { id: e.pointerId, x: p[0], y: p[1], t: e.timeStamp || performance.now() };
+        // הכלי לא לקח: עם panOnEmpty — אצבע אחת מזיזה; בלעדיו — האצבע נשמרת (אם תגיע שנייה — צביטה), אבל לבד לא זזה
+        const empty = typeof panOnEmpty === 'function' ? panOnEmpty(e, toDoc(p)) : panOnEmpty;
+        if (!panOnly && pointers.size === 1 && !empty) { gesture = null; return; }
         regroup();
     };
 
@@ -75,8 +84,11 @@ export function bindViewport(el, { get, set, pointer = null, hand = null, ignore
             pointer.move?.(e, list);
             return;
         }
-        if (!pointers.has(e.pointerId) || !gesture) return;
-        pointers.set(e.pointerId, local(e));
+        if (!pointers.has(e.pointerId)) return;
+        const q = local(e);
+        if (tap?.id === e.pointerId && Math.hypot(q[0] - tap.x, q[1] - tap.y) > 8) tap = null;
+        if (!gesture) return;
+        pointers.set(e.pointerId, q);
         const pts = [...pointers.values()];
         if (gesture.kind === 'pinch' && pts.length >= 2) set(pinch(gesture.view, gesture.a, gesture.b, pts[0], pts[1]));
         else if (gesture.kind === 'pan') {
@@ -96,6 +108,12 @@ export function bindViewport(el, { get, set, pointer = null, hand = null, ignore
             return;
         }
         if (!pointers.delete(e.pointerId)) return;
+        const t = tap;
+        tap = null;
+        if (t?.id === e.pointerId && e.type !== 'pointercancel' && (e.timeStamp || performance.now()) - t.t < 500) {
+            const q = local(e);
+            if (Math.hypot(q[0] - t.x, q[1] - t.y) <= 8) onTap?.(e, toDoc(q));
+        }
         regroup();   // מצביטה לאצבע אחת — ממשיכים מהמקום הנוכחי
     };
 
