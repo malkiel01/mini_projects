@@ -99,6 +99,8 @@ function migrate(PDO $pdo): void {
     ");
     require_once __DIR__ . '/clients.php';
     migrateClients($pdo);
+    require_once __DIR__ . '/ai.php';
+    migrateAi($pdo);
 }
 
 const DEFAULTS = [

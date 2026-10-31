@@ -9,6 +9,6 @@
   "gate": true,
   "restricted": true,
   "public": [
-    "api.php?action=cloud_key|client_register|connect_exchange|access_token|disconnect|quota|list|stat|read|mkdir|write|upload_start|upload_chunk|upload_finish|rename|move|trash|restore|trash_list|purge|trash_empty"
+    "api.php?action=cloud_key|client_register|connect_exchange|access_token|disconnect|quota|list|stat|read|mkdir|write|upload_start|upload_chunk|upload_finish|rename|move|trash|restore|trash_list|purge|trash_empty|ai_capabilities|ai_run"
   ]
 }

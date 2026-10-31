@@ -14,6 +14,7 @@ define('CLOUD_ORIGIN', 'https://mbe-plus.com');
 define('CLOUD_ISSUER', 'https://mbe-plus.com/mini_projects/suite-cloud/');
 require_once __DIR__ . '/../lib/drive.php';
 require_once __DIR__ . '/../lib/clients.php';
+require_once __DIR__ . '/../lib/ai.php';
 
 $fails = 0; $n = 0;
 function check(string $name, bool $ok): void {
@@ -258,6 +259,112 @@ try {
     $far2 = ['key_url' => 'https://far.example/key2'] + $far;
     check('פרטים שהשתנו — חזרה ל-pending', registerClient($far2)['status'] === 'pending');
     check('מפתח הענן — 0600 ומפורסם', (fileperms(DATA_DIR . '/sign.key') & 0777) === 0600 && cloudKeyPublic()['alg'] === 'Ed25519');
+
+    // ── בינה מלאכותית (הספקים מדומים — אף קריאה לא יוצאת) ──
+    $png = function (int $w, int $h, bool $alpha = false, int $gray = 255) {
+        $im = imagecreatetruecolor($w, $h);
+        imagealphablending($im, false); imagesavealpha($im, true);
+        imagefill($im, 0, 0, imagecolorallocatealpha($im, $gray, $gray, $gray, $alpha ? 127 : 0));
+        if ($alpha) imagefilledrectangle($im, 0, 0, (int) ($w / 2), (int) ($h / 2), imagecolorallocatealpha($im, 200, 0, 0, 0));
+        ob_start(); imagepng($im); return ob_get_clean();
+    };
+    $calls = [];
+    $replies = [];
+    $GLOBALS['AI_HTTP'] = function ($method, $url, $headers, $body) use (&$calls, &$replies) {
+        $calls[] = compact('method', 'url', 'headers', 'body');
+        foreach ($replies as $pat => $r) if (str_contains($url, $pat)) return is_callable($r) ? $r($body) : $r;
+        return [404, '{"error":{"message":"no mock"}}'];
+    };
+    $acc = getAccount($owner['id']);
+
+    $cap = aiCapabilities($acc, '');
+    check('בלי מפתחות — הכול false', !in_array(true, $cap['tasks'], true));
+    aiSetKey('openai', 'sk-test-SECRET-1234');
+    check('המפתח מוצפן במסד', !str_contains((string) db()->query("SELECT key_enc FROM ai_providers WHERE id='openai'")->fetchColumn(), 'SECRET')
+        && aiKey('openai') === 'sk-test-SECRET-1234' && aiAdminState()['providers'][0]['key_tail'] === '1234');
+    check('מפתח הצפנה — 0600', (fileperms(DATA_DIR . '/secret.key') & 0777) === 0600);
+    check('יש מפתח, אבל המשתמש לא הורשה — false', aiCapabilities($acc, '')['tasks']['generate-image'] === false);
+    check('ai_run בלי הרשאה — not-allowed', code(fn() => aiRun($acc, '', ['task' => 'generate-image', 'prompt' => 'x'])) === 'not-allowed');
+    check('משימה בלי שום ספק — no-provider', code(fn() => aiRun($acc, '', ['task' => 'segment', 'image' => $png(10, 10)])) === 'no-provider');
+
+    aiAdminUser(['account' => $acc['id'], 'providers' => ['openai'], 'monthly' => 0.2]);
+    $cap = aiCapabilities($acc, '');
+    check('הורשה ל-OpenAI — יצירה, מילוי וטקסט', $cap['tasks']['generate-image'] && $cap['tasks']['inpaint'] && $cap['tasks']['complete']
+        && !$cap['tasks']['remove-background'] && $cap['default']->{'generate-image'} === 'openai' && $cap['quota']['limit'] == 0.2);
+
+    $replies = ['images/generations' => [200, json_encode(['data' => [['b64_json' => base64_encode($png(1024, 1536, true))]]])]];
+    $r = aiRun($acc, '', ['task' => 'generate-image', 'prompt' => 'לוגו', 'size' => '1080x1350', 'transparent' => true]);
+    $sent = json_decode($calls[0]['body'], true);
+    check('יחס חופשי 1080x1350 → 1024x1536, רקע שקוף', $sent['size'] === '1024x1536' && $sent['background'] === 'transparent' && $sent['model'] === 'gpt-image-1');
+    check('יצירה — PNG, הגודל שיצא, שקוף', aiSize($r['png']) === [1024, 1536] && $r['size'] === [1024, 1536] && $r['transparent'] === true);
+    check('המפתח נשלח רק בכותרת לספק', in_array('Authorization: Bearer sk-test-SECRET-1234', $calls[0]['headers'], true));
+
+    $calls = [];
+    $replies = ['images/edits' => [200, json_encode(['data' => [['b64_json' => base64_encode($png(1536, 1024))]]])]];
+    $r = aiRun($acc, '', ['task' => 'inpaint', 'image' => $png(300, 200), 'mask' => $png(300, 200, false, 255), 'prompt' => 'שמיים']);
+    $mask = imagecreatefromstring($calls[0]['body']['mask']->data);
+    check('מילוי — התוצאה בגודל הקלט', aiSize($r['png']) === [300, 200]);
+    check('מסכה ל-OpenAI: לבן → שקוף', (imagecolorat($mask, 5, 5) >> 24 & 0x7F) === 127 && imagesx($mask) === 1536);
+    check('מכסה — נגמרה אחרי שתי קריאות של $0.07', code(fn() => aiRun($acc, '', ['task' => 'generate-image', 'prompt' => 'x'])) === 'quota');
+    check('השימוש נרשם', aiSpent($acc['id']) == 0.14);
+
+    aiAdminUser(['account' => $acc['id'], 'providers' => ['openai', 'google', 'replicate'], 'monthly' => 5]);
+    $calls = [];
+    $replies = ['chat/completions' => [200, json_encode(['choices' => [['message' => ['content' => "```json\n{\"title\":\"מודעה\"}\n```"]]]])]];
+    $r = aiRun($acc, '', ['task' => 'complete', 'prompt' => 'תוכנית', 'system' => 'מעצב', 'schema' => ['type' => 'object']]);
+    $sent = json_decode($calls[0]['body'], true);
+    check('complete עם schema — JSON', $r['json'] === ['title' => 'מודעה'] && $sent['response_format']['type'] === 'json_schema' && $sent['messages'][0]['role'] === 'system');
+    $calls = [];
+    $replies = ['chat/completions' => [200, json_encode(['choices' => [['message' => ['content' => 'לא JSON']]]])]];
+    check('JSON לא תקין — נסיון נוסף אחד ואז provider', code(fn() => aiRun($acc, '', ['task' => 'complete', 'prompt' => 'x', 'schema' => ['type' => 'object']])) === 'provider' && count($calls) === 2);
+    $replies = ['chat/completions' => [401, '{"error":{"message":"bad key"}}']];
+    check('מפתח שנדחה — provider, בלי חיוב', code(fn() => aiRun($acc, '', ['task' => 'complete', 'prompt' => 'x'])) === 'provider'
+        && (float) db()->query('SELECT cost FROM ai_usage ORDER BY id DESC LIMIT 1')->fetchColumn() === 0.0);
+
+    aiSetKey('google', 'g-key');
+    aiAdminDefault(['task' => 'generate-image', 'provider' => 'google']);
+    $calls = [];
+    $replies = [':generateContent' => [200, json_encode(['candidates' => [['content' => ['parts' => [['inlineData' => ['mimeType' => 'image/png', 'data' => base64_encode($png(896, 1152))]]]]]]])]];
+    $r = aiRun($acc, '', ['task' => 'generate-image', 'prompt' => 'x', 'size' => '1080x1350']);
+    $sent = json_decode($calls[0]['body'], true);
+    check('ברירת מחדל Google — יחס 4:5, המפתח בכותרת', $r['provider'] === 'google' && $sent['generationConfig']['imageConfig']['aspectRatio'] === '4:5'
+        && in_array('x-goog-api-key: g-key', $calls[0]['headers'], true) && str_contains($calls[0]['url'], 'gemini-2.5-flash-image'));
+    check('provider בבקשה גובר על ברירת המחדל', (function () use ($acc, &$replies, $png) {
+        $replies['images/generations'] = [200, json_encode(['data' => [['b64_json' => base64_encode($png(1024, 1024))]]])];
+        return aiRun($acc, '', ['task' => 'generate-image', 'prompt' => 'x', 'provider' => 'openai'])['provider'] === 'openai';
+    })());
+
+    aiSetKey('replicate', 'r8-key');
+    $calls = [];
+    $replies = [
+        'models/851-labs/background-remover/predictions' => [201, json_encode(['status' => 'starting', 'urls' => ['get' => 'https://api.replicate.com/v1/predictions/p1']])],
+        'predictions/p1' => [200, json_encode(['status' => 'succeeded', 'output' => 'https://replicate.delivery/out.png'])],
+        'replicate.delivery/out.png' => [200, $png(640, 480, true)],
+    ];
+    $r = aiRun($acc, '', ['task' => 'remove-background', 'image' => $png(320, 240)]);
+    check('Replicate — המתנה לתוצאה, הורדה, בגודל הקלט', aiSize($r['png']) === [320, 240] && $r['transparent'] && count($calls) === 3);
+    $replies = [
+        'models/meta/sam-2/predictions' => [201, json_encode(['status' => 'succeeded', 'output' => ['combined_mask' => 'https://replicate.delivery/c.png',
+            'individual_masks' => ['https://replicate.delivery/m1.png', 'https://replicate.delivery/m2.png']]])],
+        'm1.png' => [200, (function () { $im = imagecreatetruecolor(100, 100); imagefilledrectangle($im, 10, 20, 39, 59, imagecolorallocate($im, 255, 255, 255)); ob_start(); imagepng($im); return ob_get_clean(); })()],
+        'm2.png' => [200, $png(100, 100, false, 0)],
+    ];
+    $r = aiRun($acc, '', ['task' => 'segment', 'image' => $png(200, 200)]);
+    $b = $r['masks'][0]['box'] ?? [];
+    check('segment — מסכה לכל עצם, תיבה בקואורדינטות הקלט, ריקה נזרקת', count($r['masks']) === 1 && abs($b[0] - 20) <= 2 && abs($b[1] - 40) <= 2 && abs($b[2] - 60) <= 4);
+
+    aiAdminApp(['client' => 'vector-studio', 'tasks' => ['complete']]);
+    $capApp = aiCapabilities($acc, 'vector-studio');
+    check('משימות לאפליקציה — רק מה שהמנהל התיר', $capApp['tasks']['complete'] && !$capApp['tasks']['generate-image']);
+    check('משימה שלא הותרה לאפליקציה — not-allowed', code(fn() => aiRun($acc, 'vector-studio', ['task' => 'generate-image', 'prompt' => 'x'])) === 'not-allowed');
+    aiAdminProvider(['provider' => 'openai', 'models' => ['complete' => 'gpt-5-mini']]);
+    check('המנהל מחליף מודל', aiModel('openai', 'complete') === 'gpt-5-mini' && aiModel('openai', 'generate-image') === 'gpt-image-1');
+    aiAdminProvider(['provider' => 'openai', 'enabled' => false]);
+    check('ספק כבוי — לא מוצע', !in_array('openai', aiProvidersFor($acc, 'complete'), true));
+    $replies = ['v1/account' => [401, '{"detail":"Invalid token"}']];
+    check('בדיקת מפתח שנדחה — הודעה ברורה', code(fn() => aiAdminTest('replicate')) === 'provider');
+    check('תמונה גדולה מ-4096 — too-big', code(fn() => aiRun($acc, '', ['task' => 'remove-background', 'image' => $png(4100, 10)])) === 'too-big');
+    check('שימוש החודש בניהול', aiAdminState()['usage']['calls'] >= 8);
 } catch (Throwable $e) {
     $fails++;
     echo "✗ חריגה: " . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n";
