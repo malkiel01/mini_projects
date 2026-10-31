@@ -12,7 +12,33 @@
 | קובץ | מה | שלב |
 | --- | --- | --- |
 | `src/css/ui.css` | המשתנים, הבסיס והרכיבים של `phone-first-design` + החלון של סטודיו העיצוב + `.menu`, `.sr` | 1 ✅ |
-| `src/js/` | ערכת הממשק — `dom`, `toast`, `dialog`, `menu`, `tabs`, `files`, `store` | 2 — בבנייה |
+| `src/js/dom.js` | `h()` (בלי innerHTML), `append`, `$`, `$$`, `ltr()` (LRI…PDI), `debounce` | 2 ✅ |
+| `src/js/toast.js` | `toast(msg, { kind, action, ms })` — 3ש', שגיאה 6ש', עם כפתור 8ש'; `hide()` | 2 ✅ |
+| `src/js/dialog.js` | `initDialogs()`, `sheet({…})`, `confirm()`, `prompt()`, `choose()` | 2 ✅ |
+| `src/js/menu.js` | `menu(anchor \| {x,y}, items)`, `closeMenu()`, `contextMenu(el, e => items)` | 2 ✅ |
+| `src/js/tabs.js` | `tabs(root, { onChange, remember })` | 2 ✅ |
+| `src/js/files.js` | `download`, `fileName`, `pickFiles`, `dropZone`, `setSaveBridge` | 2 ✅ |
+| `src/js/store.js` | `pref(ns)` (localStorage בטוח), `kv(db)` (IndexedDB) | 2 ✅ |
+
+התיעוד המלא של כל פונקציה — בראש הקובץ שלה.
+
+## בדיקות
+
+`node creative-suite/ui-core/tests/browser.cjs` — 61 בדיקות ב-Chromium, בטלפון (390px) ובמחשב (1280px), על דף התצוגה.
+**מריצים לפני כל שינוי ב-src.**
+
+## מה מחליפים בכל אפליקציה (שלב 2)
+
+| היום | ב-ui-core |
+| --- | --- |
+| `confirm()` / `prompt()` / `alert()` של הדפדפן | `await confirm(…)`, `await prompt(…)`, `toast(…)` |
+| `toast` משלה | `import { toast } from './ui-core/toast.js'` |
+| מאזין `[data-close]` + IIFE של `--vvh` | `initDialogs()` פעם אחת |
+| `sheet` / `choose` / `confirmDialog` משלה | `sheet`, `choose`, `confirm` |
+| `popMenu` / פופאובר `role=menu` | `menu(button, items)` |
+| `h` / `el` / `$` משלה | `dom.js` |
+| `download`, `fileName`, `pickFiles` משלה | `files.js` |
+| `localStorage` עם try/catch, `idb.js` | `pref`, `kv` |
 
 ## איך אפליקציה מצטרפת
 
@@ -38,3 +64,4 @@
 ## היסטוריה
 
 - **2026-10-31 — שלב 1:** תשתית (`apps.json`, `tools/sync.php`, שער בפריסה), `ui.css`, דף תצוגה.
+- **2026-10-31 — שלב 2:** ערכת הממשק — `dom`, `toast`, `dialog`, `menu`, `tabs`, `files`, `store`; בדיקות דפדפן.
