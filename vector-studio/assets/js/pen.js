@@ -9,6 +9,7 @@ import { parse, serialize } from './geometry/path.js';
 import { apply, invert, multiply, translate, isIdentity, IDENTITY } from './geometry/matrix.js';
 import { toNodes, fromNodes, splitAt, toggleSmooth, removeNode, moveHandle, moveNode, nearest } from './geometry/nodes.js';
 import { layout, findPath, nextId } from './model.js';
+import { keyOf } from './ui-core/keys.js';
 
 const R_ANCHOR = 4, R_HANDLE = 3.5;
 
@@ -339,7 +340,7 @@ export function createPenTools(api) {
       if (pen) {
         if (k === 'Enter') { finish(); return true; }
         if (k === 'Escape') { finish(); return true; }
-        if ((e.ctrlKey || e.metaKey) && k.toLowerCase() === 'z') { this.undoPoint(); return true; }
+        if ((e.ctrlKey || e.metaKey) && keyOf(e) === 'z') { this.undoPoint(); return true; }
       }
       if (edit && (k === 'Delete' || k === 'Backspace') && edit.node) { deleteNode(); return true; }
       return false;
