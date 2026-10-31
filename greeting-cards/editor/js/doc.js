@@ -212,6 +212,7 @@ export function normalizeDoc(input) {
                 lineHeight: clamp(num(s.lineHeight, 1.2), 0.6, 4),
             };
             if (s.italic) l.style.italic = true;
+            if (s.boxResize) l.style.boxResize = true;   // גרירת פינה משנה רק את התיבה, לא את גודל האות
             if (s.stroke && isColor(s.stroke.color)) l.style.stroke = { width: clamp(num(s.stroke.width, 2), 0, 100), color: s.stroke.color };
             if (s.shadow && isColor(s.shadow.color)) l.style.shadow = { x: num(s.shadow.x, 0), y: num(s.shadow.y, 4), blur: Math.max(0, num(s.shadow.blur, 8)), color: s.shadow.color };
             // מילוי האות במעבר צבעים, והילה (זוהר סביב האותיות) — `color` נשאר צבע הגיבוי והצבע הראשון
