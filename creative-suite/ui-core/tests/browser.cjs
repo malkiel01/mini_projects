@@ -98,7 +98,7 @@ const server = http.createServer((req, res) => {
         await p.click('#ask-choose');
         await p.click('dialog[open] .btn.ghost:not(.danger)');
         await p.waitForTimeout(50);
-        ok(await toastText() === 'stay', 'choose → המפתח');
+        ok(await toastText() === 'stay', 'choose → המפתח (אפשרות null מדולגת)');
 
         // menu: מקלדת, Esc מחזיר פוקוס, שגיאה בטוסט, נשאר במסך
         await p.click('#menu-btn');
