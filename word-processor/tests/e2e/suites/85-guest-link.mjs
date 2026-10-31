@@ -21,7 +21,7 @@ export default async function (t) {
     await t.openDoc(yossi, doc);
     const openShare = async () => {
         await yossi.click('button[aria-label="עוד"]');
-        await yossi.click('.menu-pop button:has-text("שיתוף")');
+        await yossi.click('.menu button:has-text("שיתוף")');
         return yossi.locator('dialog[open]');
     };
     let d = await openShare();

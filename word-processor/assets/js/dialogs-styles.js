@@ -5,6 +5,7 @@
 import { USER_STYLE, styleKeyOf } from './extensions.js';
 import { migrate } from './schema.js';
 import { h, toast, sheet, field, sw, numInput, fontSelect, when } from './ui.js';
+import { confirm } from './ui-core/dialog.js';
 
 export function createStyleDialogs({ editor, opts, getPage, mergePage, STYLE_NAMES, styleName, userKeys, styleSel }) {
     /**
@@ -194,7 +195,7 @@ export function createStyleDialogs({ editor, opts, getPage, mergePage, STYLE_NAM
         async function restore(v, current) {
             if (current) return toast('זו הגרסה הנוכחית');
             if (!editor.isEditable) return toast('צפייה בלבד — אי אפשר לשחזר', true);
-            if (!confirm(`לשחזר את הגרסה מ-${when(v.saved_at)}? המצב הנוכחי יישמר כגרסה.`)) return;
+            if (!await confirm(`לשחזר את הגרסה מ-${when(v.saved_at)}? המצב הנוכחי יישמר כגרסה.`, { ok: 'שחזור' })) return;
             // שחזור בשרת (ביקורת 04, R07): המצב הנוכחי והמשוחזר — שתי גרסאות נפרדות, גם בתוך חלון 10 הדקות
             if (opts.versions.restore) {
                 try {

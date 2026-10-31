@@ -10,7 +10,7 @@ export default async function (t) {
     const doc = await t.newDoc(p, 'לחבילה', { type: 'doc', content: [{ type: 'heading', attrs: { level: 1 }, content: [T('כותרת לחבילה')] }, P(T('פסקה בעברית'))] });
     await t.openDoc(p, doc);
     await p.click('button[aria-label="עוד"]');
-    const [dl] = await Promise.all([p.waitForEvent('download'), p.click('.menu-pop button:has-text("הורדה כ-‎.mbe")')]);
+    const [dl] = await Promise.all([p.waitForEvent('download'), p.click('.menu button:has-text("הורדה כ-‎.mbe")')]);
     const buf = Buffer.concat(await (await dl.createReadStream()).toArray());
     const head = await p.request.get(t.editor + `api.php?action=my_export&format=mbe&doc=${doc}`);
     const cd = head.headers()['content-disposition'] || '';
