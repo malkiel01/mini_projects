@@ -57,7 +57,7 @@ export default async function (t) {
     await p.waitForSelector('.list .card');
     const card = p.locator('.list .card', { hasText: 'מסמך בראש' });
     await card.locator('button.more').click();
-    await p.click('.menu-pop button:has-text("העברה לתיקייה")');
+    await p.click('.menu button:has-text("העברה לתיקייה")');
     const opts = await p.locator('dialog[open] select option').allTextContents();
     t.ok('חלון ההעברה: עץ התיקיות, עם הזחה', opts[0].includes('ראש הרשימה') && opts.some(o => o.includes('📁 חוזים')) && opts.some(o => /^\s+📁 2026/.test(o)), JSON.stringify(opts));
     const id2026 = (await t.api(p, 'my_docs')).folders.find(f => f.name === '2026').id;
@@ -84,9 +84,9 @@ export default async function (t) {
     await p.fill('.toolbar input[type=search]', '');
 
     // מחיקת "חוזים" — 2026 והמסמך שבתוכה עולים לראש; שום מסמך לא נמחק
-    p.once('dialog', d => d.accept());
     await p.locator('.list .card.folder', { hasText: 'חוזים' }).locator('button.more').click();
-    await p.click('.menu-pop button:has-text("מחיקת התיקייה")');
+    await p.click('.menu button:has-text("מחיקת התיקייה")');
+    await p.click('dialog[aria-label="אישור"] button:has-text("מחיקת התיקייה")');
     await p.locator('.list .card.folder', { hasText: 'חוזים' }).waitFor({ state: 'detached' });
     const after = await t.api(p, 'my_docs');
     t.ok('מחיקת תיקייה: מה שבתוכה עולה לראש, המסמכים נשארים', after.folders.map(f => [f.name, f.parent]).join() === '2026,'

@@ -6,11 +6,12 @@
 // קובץ שנפתח נשמר כבסיס (doc.mbe.bytes): כל מה שלא הבנו — שדות לא מוכרים, משטחים אחרים, שכבות של אפליקציות
 // אחרות, apps/ של אחרים וחלקים לא מוכרים — עובר בית-לבית. משאב שרק השכבות שלנו הפנו אליו ושכבר לא בשימוש — נמחק.
 
-import { open, create, save, PREVIEW } from './mbe/mbe.js';
+import { open, create, save, PREVIEW, pathProblem } from './mbe/mbe.js';
 import { encodePNG } from './engine/png.js';
 import { RasterDocument, newMask } from './engine/doc.js';
 import { decodeImage } from './engine/webgl2.js';
-import { mbeDocument, mediaRefs, editSurface, gapsFor, cleanAdjust, cleanFill, scaleFill } from './engine/formats.js';
+import { mbeDocument, mediaRefs, editSurface, gapsFor, cleanAdjust, cleanFill, scaleFill, scaleEffects } from './engine/formats.js';
+import { cleanVectorMask, scalePath } from './engine/vmask.js';
 import { flatRGBA, layerPNG, scaledPNG, buildORA } from './export.js';
 
 export const APP_ID = 'raster-studio';
@@ -25,13 +26,15 @@ async function layerBytes(renderer, doc, l, masked = false) {
   // שכבת התאמה תלויה במה שמתחתיה, ומילוי משתנה בלי rev — לא שומרים במטמון
   if (l.adjust || l.fill) return layerPNG(renderer, doc, l, masked);
   const m = masked && l.mask?.enabled ? l.mask : null;
-  const sig = `${l.rev ?? 0}:${m ? m.rev : '-'}:${doc.width}x${doc.height}`;
+  // המראה (masked) כולל את סגנונות השכבה — שינוי בהם הוא שינוי בתמונה
+  const sig = `${l.rev ?? 0}:${m ? m.rev : '-'}:${doc.width}x${doc.height}:${masked ? JSON.stringify([l.effects ?? null, l.vectorMask ?? null]) : ''}`;
   let byVariant = png.get(l);
   if (!byVariant) png.set(l, byVariant = new Map());
-  const c = byVariant.get(!!m);
+  // שתי גרסאות: המראה (masked — כפול המסכה ועם סגנונות השכבה) והפיקסלים עצמם
+  const c = byVariant.get(masked);
   if (c && c.sig === sig) return c.bytes;
-  const bytes = await layerPNG(renderer, doc, l, !!m);
-  byVariant.set(!!m, { sig, bytes });
+  const bytes = await layerPNG(renderer, doc, l, masked);
+  byVariant.set(masked, { sig, bytes });
   return bytes;
 }
 
@@ -41,6 +44,11 @@ const sha256 = async bytes => hex(await crypto.subtle.digest('SHA-256', bytes));
 // שדות מתכון שאנחנו עוד לא מחשבים מחדש — שכבה שיש בה אחד מהם נפתחת כרסטר רגיל (ה-src האפוי)
 const OTHER_RECIPE = ['crop', 'transform', 'vectorMask', 'clipToBelow', 'filters', 'effects', 'adjust', 'fill', 'smart'];
 const hasValue = v => v !== undefined && v !== null && v !== false && !(Array.isArray(v) && !v.length);
+/** מסכה וקטורית מהקובץ שאנחנו יודעים לצייר (d תקין גם לפי הליבה) — או null */
+const fileVectorMask = raw => {
+  const v = cleanVectorMask(raw.vectorMask);
+  return v && !pathProblem(v.d) ? v : null;
+};
 
 /**
  * מסכת שכבה מהקובץ — אם המתכון תקף: source ו-mask.src קיימים, baked תואם ל-src (אף אחד לא ערך את הפיקסלים בלי
@@ -51,10 +59,11 @@ const hasValue = v => v !== undefined && v !== null && v !== false && !(Array.is
  * תואם ל-src, מסכה (אם יש) בלי ריכוך וצפיפות, ובלי מתכון אחר. מחזיר { value, mask: bytes | null, enabled } או null
  * (מציגים את src כמו שהוא).
  */
-async function contentRecipe(f, raw, field, clean) {
+async function contentRecipe(f, raw, field, clean, allow = []) {
   const value = clean(raw[field]);
   if (!value || typeof raw.baked !== 'string') return null;
-  if (OTHER_RECIPE.some(k => k !== field && hasValue(raw[k]))) return null;
+  if (OTHER_RECIPE.some(k => k !== field && !allow.includes(k) && hasValue(raw[k]))) return null;
+  if (hasValue(raw.vectorMask) && !fileVectorMask(raw)) return null;
   const src = f.getMedia(raw.src);
   if (!src || await sha256(src) !== raw.baked.toLowerCase()) return null;
   const m = raw.mask;
@@ -64,15 +73,22 @@ async function contentRecipe(f, raw, field, clean) {
   return mask ? { value, mask, enabled: m.enabled !== false } : null;
 }
 
-async function maskRecipe(f, raw) {
-  const m = raw.mask;
-  if (!m || typeof m !== 'object' || typeof m.src !== 'string' || typeof raw.source !== 'string' || typeof raw.baked !== 'string') return null;
-  if ((m.density ?? 1) !== 1 || (m.feather ?? 0) !== 0) return null;
-  if (OTHER_RECIPE.some(k => hasValue(raw[k]))) return null;
-  const src = f.getMedia(raw.src), source = f.getMedia(raw.source), mask = f.getMedia(m.src);
-  if (!src || !source || !mask) return null;
+/**
+ * שכבת פיקסלים עם מתכון — מסכה ו/או סגנונות שכבה: source (הפיקסלים בלי שניהם) קיים, baked תואם ל-src (אף אחד לא
+ * ערך את הפיקסלים בלי להבין את המתכון), מסכה בלי ריכוך וצפיפות, ובלי מתכון אחר. אחרת — null (מציגים את src כמו שהוא).
+ * effects — כמו שהם, גם סוגים שאנחנו לא מציירים (נשמרים).
+ */
+async function pixelRecipe(f, raw) {
+  const m = raw.mask ?? null, effects = Array.isArray(raw.effects) && raw.effects.length ? raw.effects : null;
+  const vm = hasValue(raw.vectorMask);
+  if ((!m && !effects && !vm) || typeof raw.source !== 'string' || typeof raw.baked !== 'string') return null;
+  if (m && (typeof m !== 'object' || typeof m.src !== 'string' || (m.density ?? 1) !== 1 || (m.feather ?? 0) !== 0)) return null;
+  if (vm && !fileVectorMask(raw)) return null;
+  if (OTHER_RECIPE.some(k => k !== 'effects' && k !== 'vectorMask' && hasValue(raw[k]))) return null;
+  const src = f.getMedia(raw.src), source = f.getMedia(raw.source), mask = m ? f.getMedia(m.src) : null;
+  if (!src || !source || (m && !mask)) return null;
   if (await sha256(src) !== raw.baked.toLowerCase()) return null;
-  return { source, mask, enabled: m.enabled !== false };
+  return { source, mask, enabled: m ? m.enabled !== false : true, effects };
 }
 
 /**
@@ -93,17 +109,23 @@ export async function buildMbe(renderer, doc, { view = null, lite = false, now }
       // src — מה שרואים (כפול המסכה); עם מסכה — גם המתכון: הפיקסלים בלי המסכה, המסכה, ו-baked = ה-sha256 של src
       const s = await f.addMedia(await layerBytes(renderer, doc, l, true), 'image/png');
       src.set(l, s);
+      const k = 1 / (base?.scale ?? 1);
+      const mask = async () => (l.mask ? { mask: { src: await f.addMedia(await layerBytes(renderer, doc, l.mask), 'image/png'), density: 1, feather: 0, enabled: !!l.mask.enabled } } : {});
+      // סגנונות שכבה — כולם, גם סוג שאנחנו לא מציירים (הגיע מאפליקציה אחרת); ביחידות המשטח. לא בשכבת התאמה
+      const effects = !l.adjust && l.effects?.length ? { effects: scaleEffects(l.effects, k) } : {};
+      // מסכה וקטורית — ביחידות המשטח
+      const vmask = l.vectorMask ? { vectorMask: { ...l.vectorMask, d: scalePath(l.vectorMask.d, k), feather: (l.vectorMask.feather ?? 0) * k } } : {};
       if (l.adjust || l.fill) {
         // שכבת התאמה / מילוי: src — המראה; המתכון — adjust / fill, המסכה (אם יש) ו-baked. אין source: אין פיקסלים משלה
         recipe.set(l, {
-          ...(l.adjust ? { adjust: { ...l.adjust } } : { fill: scaleFill(l.fill, 1 / (base?.scale ?? 1)) }),
-          ...(l.mask ? { mask: { src: await f.addMedia(await layerBytes(renderer, doc, l.mask), 'image/png'), density: 1, feather: 0, enabled: !!l.mask.enabled } } : {}),
+          ...(l.adjust ? { adjust: { ...l.adjust } } : { fill: scaleFill(l.fill, k) }),
+          ...(await mask()), ...effects, ...vmask,
           baked: s.slice('media/'.length, 'media/'.length + 64),
         });
-      } else if (l.mask) {
+      } else if (l.mask || effects.effects || l.vectorMask) {
         recipe.set(l, {
           source: await f.addMedia(await layerBytes(renderer, doc, l), 'image/png'),
-          mask: { src: await f.addMedia(await layerBytes(renderer, doc, l.mask), 'image/png'), density: 1, feather: 0, enabled: !!l.mask.enabled },
+          ...(await mask()), ...effects, ...vmask,
           baked: s.slice('media/'.length, 'media/'.length + 64),
         });
       }
@@ -190,21 +212,37 @@ export async function openMbe(renderer, bytes, title = '') {
           bmp.close();
         };
         // שכבת התאמה / מילוי (מתכון תקף): בלי פיקסלים; המסכה שלה — על אותו box
-        const adj = (await contentRecipe(f, raw, 'adjust', cleanAdjust)) ?? (await contentRecipe(f, raw, 'fill', cleanFill));
-        // מסכת שכבה (מתכון תקף): הפיקסלים בלי המסכה, והמסכה נמתחת על אותו box. אחרת — src האפוי
-        const rec = adj ? null : await maskRecipe(f, raw);
+        const adj = (await contentRecipe(f, raw, 'adjust', cleanAdjust, ['vectorMask'])) ?? (await contentRecipe(f, raw, 'fill', cleanFill, ['effects', 'vectorMask']));
+        // מסכה / סגנונות שכבה (מתכון תקף): הפיקסלים בלי שניהם, והמסכה נמתחת על אותו box. אחרת — src האפוי
+        const rec = adj ? null : await pixelRecipe(f, raw);
+        const loadEffects = () => {
+          if (!Array.isArray(raw.effects) || !raw.effects.length) return;
+          layer.effects = scaleEffects(raw.effects, scale);
+          layer.effectsLoaded = true;
+        };
+        const loadVectorMask = () => {
+          const v = fileVectorMask(raw);
+          if (!v) return;
+          layer.vectorMask = { ...v, d: scalePath(v.d, scale), feather: v.feather * scale };
+          layer.vectorMaskLoaded = true;
+        };
         if (adj) {
           if (raw.adjust !== undefined && cleanAdjust(raw.adjust)) { layer.adjust = adj.value; layer.adjustLoaded = true; }
-          else { layer.fill = scaleFill(adj.value, scale); layer.fillLoaded = true; }
+          else { layer.fill = scaleFill(adj.value, scale); layer.fillLoaded = true; loadEffects(); }
+          loadVectorMask();
           if (adj.mask) {
             layer.mask = newMask(layer, adj.enabled);
             await draw(layer.mask, adj.mask, raw.mask.src);
           }
         } else if (rec) {
           await draw(layer, rec.source, raw.source);
-          layer.mask = newMask(layer, rec.enabled);
-          await draw(layer.mask, rec.mask, raw.mask.src);
-          layer.maskLoaded = true;
+          if (rec.mask) {
+            layer.mask = newMask(layer, rec.enabled);
+            await draw(layer.mask, rec.mask, raw.mask.src);
+            layer.maskLoaded = true;
+          }
+          loadEffects();
+          loadVectorMask();
         } else {
           const data = f.getMedia(raw.src);
           if (data) await draw(layer, data, raw.src);

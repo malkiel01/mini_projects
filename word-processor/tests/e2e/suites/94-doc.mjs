@@ -20,7 +20,7 @@ export default async function (t) {
     t.ok('‎.doc בבורר הקבצים, ונפתח: כותרת, מודגש, תבליטים, טבלה ותמונה', accept.includes('.doc,') && accept.includes('application/msword') && got.h1 === 'כותרת ראשית'
         && got.bold === 'מודגש' && got.li === 2 && got.cells.join('|') === 'תא א1|תא ב1|תא א2|תא ב2' && got.img, JSON.stringify(got));
     await p.click('button[aria-label="עוד"]');
-    const menu = await p.locator('.menu-pop button').allTextContents();
+    const menu = await p.locator('.menu button').allTextContents();
     t.ok('הורדה — כ-Word (‎.docx), בלי ‎.doc', menu.some(x => x.includes('הורדה כ-Word')) && !menu.some(x => x.includes('.doc ') || x.endsWith('.doc')), JSON.stringify(menu));
     await p.keyboard.press('Escape');
     t.ok('בלי שגיאות JS', !p.errors.length, p.errors.join(' | '));

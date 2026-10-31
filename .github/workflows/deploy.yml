@@ -80,10 +80,20 @@ jobs:
       - name: pdf-core gate (every copy matches creative-suite/pdf-core/src)
         run: php creative-suite/pdf-core/tools/sync.php --check
 
+      # מודול הכוננים של ענן החבילה (suite-cloud/drives/src) — מועתק לאפליקציות שב-suite-cloud/drives/apps.json.
+      # עותק ששונה בתוך אפליקציה — נעצר כאן. עורכים במקור ומריצים sync.php.
+      - name: drives gate (every copy matches suite-cloud/drives/src)
+        run: php suite-cloud/drives/tools/sync.php --check
+
       # ערכת הממשק המשותפת (creative-suite/ui-core/src) — מועתקת לאפליקציות שב-creative-suite/ui-core/apps.json.
       # עותק ששונה בתוך אפליקציה — נעצר כאן. עורכים במקור ומריצים sync.php.
       - name: ui-core gate (every copy matches creative-suite/ui-core/src)
         run: php creative-suite/ui-core/tools/sync.php --check
+
+      # צד השרת של תפריט המשתמש (ui-core/php/account) — שמירת הגדרות, ייצוא ומחיקת חשבון, ב-SQLite בזיכרון.
+      # בדיקה שנכשלת עוצרת את הפריסה: מחיקה שגויה היא נתונים של משתמשים.
+      - name: ui-core account tests
+        run: php creative-suite/ui-core/tests/account.php
 
       # קניות משותפות — חלוקת העלויות, ההתחשבנות והחיבור לשער (SQLite בזיכרון, בלי מסד ובלי .env).
       # בדיקה שנכשלת עוצרת את הפריסה: טעות בחישוב "מי חייב למי" היא כסף אמיתי של אנשים.
@@ -262,7 +272,7 @@ jobs:
             --exclude='payments/data/docs/' --exclude='payments/data/logs/' \
             --exclude='vector-studio/data/*.sqlite*' --exclude='vector-studio/data/files/' \
             --include='suite-cloud/data/.htaccess' --exclude='suite-cloud/data/*' \
-            --exclude='/suite-cloud/tests/' \
+            --exclude='/suite-cloud/tests/' --exclude='/suite-cloud/drives/tools/' --exclude='/suite-cloud/drives/tests/' \
             --exclude='layout-studio/data/*.sqlite*' --exclude='layout-studio/data/files/' \
             --exclude='raster-studio/data/*.sqlite*' --exclude='raster-studio/data/files/' \
             --exclude='mailbox/data/*.sqlite*' --exclude='mailbox/data/secret.key' --exclude='mailbox/data/cache/' --exclude='/mailbox/tests/' \

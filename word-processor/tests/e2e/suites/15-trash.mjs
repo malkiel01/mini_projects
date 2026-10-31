@@ -7,7 +7,7 @@ export default async function (t) {
         await p.click('.wp-doc');
         await p.keyboard.type('תוכן שנשמר לפני המחיקה');
         await p.click('button[aria-label="עוד"]');
-        await p.click('.menu-pop button:has-text("העברה לסל המחזור")');
+        await p.click('.menu button:has-text("העברה לסל המחזור")');
         await p.waitForSelector('.list li:not(:text-is("טוען…"))');
     };
     const titles = () => p.locator('.list .card .l1 > span:first-child').allTextContents();
@@ -22,7 +22,7 @@ export default async function (t) {
 
     // שוב לסל — ושחזור מתוך הסל
     await p.click('button[aria-label="עוד"]');
-    await p.click('.menu-pop button:has-text("העברה לסל המחזור")');
+    await p.click('.menu button:has-text("העברה לסל המחזור")');
     await p.waitForSelector('.list li:not(:text-is("טוען…"))');
     let r = await t.api(p, 'my_open', { doc });
     t.ok('מסמך בסל — לא נפתח', r?.code === 'not_found', JSON.stringify(r).slice(0, 80));
@@ -43,8 +43,8 @@ export default async function (t) {
     await p.click('button[aria-label="סל המחזור"]');
     await p.waitForSelector('h1:text-is("סל המחזור")');
     await p.waitForSelector('.list .card');
-    p.once('dialog', d => d.accept());
     await p.click('.list .card:has-text("מסמך לסל") button:has-text("מחיקה לצמיתות")');
+    await p.click('dialog[aria-label="אישור"] button:has-text("מחיקה לצמיתות")');
     await p.waitForSelector('.list .empty');
     r = await t.api(p, 'my_restore', { doc });
     t.ok('מחיקה לצמיתות — אין מה לשחזר', r?.code === 'not_found', JSON.stringify(r).slice(0, 80));

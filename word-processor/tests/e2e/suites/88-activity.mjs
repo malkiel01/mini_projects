@@ -37,7 +37,7 @@ export default async function (t) {
 
     // היומן אצל דנה
     await dana.click('button[aria-label="עוד"]');
-    await dana.click('.menu-pop button:has-text("פעילות במסמך")');
+    await dana.click('.menu button:has-text("פעילות במסמך")');
     const d = dana.locator('dialog[open]');
     await d.locator('.activity li:not(.day)').first().waitFor();
     const rows = await d.locator('.activity li:not(.day) .what').allTextContents();
@@ -54,7 +54,7 @@ export default async function (t) {
     await yossi.waitForSelector('.list');
     await t.openDoc(yossi, doc);
     await yossi.click('button[aria-label="עוד"]');
-    const menu = await yossi.locator('.menu-pop').textContent();
+    const menu = await yossi.locator('.menu').textContent();
     const r = await t.api(yossi, 'my_activity', { doc });
     t.ok('צופה: בלי "פעילות" בתפריט, והשרת דוחה (403)', !menu.includes('פעילות') && r.code === 'forbidden', JSON.stringify(r));
     t.ok('בלי שגיאות JS', !dana.errors.length, dana.errors.join(' | '));

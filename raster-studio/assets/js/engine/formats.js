@@ -162,6 +162,57 @@ export function scaleFill(f, k) {
   return { ...f, gradient: g };
 }
 
+// ---------- סגנונות שכבה (effects) ----------
+// המבנה המשותף לכל החבילה (mbe-format.md סעיף 3): צל ב-dx / dy, ‏spread — רשות. השדות של כל סוג — ב-docs/effects.md.
+// סדר הציור קבוע, כמו בפוטושופ: צל, זוהר, השכבה, צבע, זוהר פנימי, צל פנימי, קו מתאר. סוג שלא מוכר — נשמר ולא מצויר.
+export const EFFECT_TYPES = ['shadow', 'glow', 'overlay', 'inner-glow', 'inner-shadow', 'stroke'];
+export const EFFECT_LIMIT = { offset: 64, blur: 64, width: 32 };
+const num = (v, lo, hi, def) => (Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : def);
+
+/** אפקט אחד, מנוקה ובגבולות שהמנוע יודע לצייר — או null (לא מוכר / פגום) */
+export function cleanEffect(e) {
+  if (!e || typeof e !== 'object' || !EFFECT_TYPES.includes(e.type)) return null;
+  const out = { ...e, color: HEX.test(e.color ?? '') ? e.color : '#000000', opacity: num(e.opacity, 0, 1, 1) };
+  const { offset, blur, width } = EFFECT_LIMIT;
+  if (e.type === 'shadow' || e.type === 'inner-shadow') { out.dx = num(e.dx, -offset, offset, 0); out.dy = num(e.dy, -offset, offset, 0); }
+  if (e.type !== 'overlay' && e.type !== 'stroke') {
+    out.blur = num(e.blur, 0, blur, 0);
+    if ('spread' in e) out.spread = num(e.spread, 0, 0.95, 0);
+  }
+  if (e.type === 'stroke') {
+    out.width = num(e.width, 1, width, 1);
+    out.position = ['outside', 'inside', 'center'].includes(e.position) ? e.position : 'outside';
+  }
+  return out;
+}
+
+/** האפקטים שהמנוע מצייר, לפי סדר הציור (סוג לא מוכר — לא כאן, אבל נשאר ב-layer.effects) */
+export function effectsOf(layer) {
+  if (!Array.isArray(layer?.effects) || !layer.effects.length) return [];
+  return layer.effects.map(cleanEffect).filter(Boolean).filter(e => e.opacity > 0)
+    .sort((a, b) => EFFECT_TYPES.indexOf(a.type) - EFFECT_TYPES.indexOf(b.type));
+}
+
+/** כמה פיקסלים מחוץ לתוכן אפקט משפיע — כך יודעים כמה לרפד אריח, וכמה אריחים שכנים לשרטט מחדש */
+export function effectsReach(list) {
+  let r = 0;
+  for (const e of list) {
+    const off = Math.max(Math.abs(e.dx ?? 0), Math.abs(e.dy ?? 0));
+    r = Math.max(r, e.type === 'stroke' ? e.width + 1 : e.type === 'overlay' ? 0 : off + (e.blur ?? 0) + 1);
+  }
+  return r;
+}
+
+/** קנה מידה לאפקטים (שינוי גודל התמונה): מרחקים, טשטוש ועובי — בפיקסלים של הקנבס */
+export function scaleEffects(list, k) {
+  if (!Array.isArray(list) || k === 1) return list;
+  return list.map(e => {
+    const o = { ...e };
+    for (const f of ['dx', 'dy', 'blur', 'width']) if (Number.isFinite(o[f])) o[f] = Math.round(o[f] * k * 100) / 100;
+    return o;
+  });
+}
+
 /** שדות המתכון שמסכת השכבה שלנו כותבת (mbe-format.md סעיף 3, "עריכה לא הורסת") */
 export const MASK_RECIPE = ['source', 'mask', 'baked'];
 
@@ -172,7 +223,10 @@ const mbeLayers = (list, srcOf, px, recipeOf) => list.map(l => {
   // ה-PNG שלנו בגודל המשטח כולו: box (מיקום של תמונה קטנה) כבר אפוי לתוכו. בעמוד — px: גודל ה-PNG בפיקסלים
   if (l.type !== 'group') { delete common.box; delete common.px; if (px) common.px = px; }
   // מסכה שלנו (או שנפתחה ונמחקה / הוחלה מאז) — המתכון נכתב מחדש; מתכון של אחרים שלא טענו — נשאר כמו שהוא
-  if (l.mask || l.maskLoaded || l.adjust || l.adjustLoaded || l.fill || l.fillLoaded) for (const k of [...MASK_RECIPE, 'adjust', 'fill']) delete common[k];
+  const fx = l.effects?.length || l.effectsLoaded, vm = l.vectorMask || l.vectorMaskLoaded;
+  if (l.mask || l.maskLoaded || l.adjust || l.adjustLoaded || l.fill || l.fillLoaded || fx || vm) {
+    for (const k of [...MASK_RECIPE, 'adjust', 'fill', 'effects', 'vectorMask']) delete common[k];
+  }
   const body = l.type === 'group' ? { children: mbeLayers(l.children, srcOf, px, recipeOf) } : { src: srcOf(l), ...(recipeOf(l) ?? {}) };
   return { ...common, ...body, opacity: round(l.opacity), blend: l.blend, visible: !!l.visible, locked: !!l.locked };
 });
@@ -242,6 +296,8 @@ export function gapsFor(rendition, tree) {
   if (rendition === 'ora' && layers.some(l => l.mask?.enabled)) g.push('layer-mask → baked');
   if (rendition === 'ora' && layers.some(l => l.adjust)) g.push('adjust → baked');
   if (rendition === 'ora' && layers.some(l => l.fill)) g.push('fill → baked');
+  if (rendition === 'ora' && layers.some(l => effectsOf(l).length)) g.push('effects → baked');
+  if (rendition === 'ora' && layers.some(l => l.vectorMask && l.vectorMask.enabled !== false)) g.push('vector-mask → baked');
   if (rendition === 'ora') {
     // ORA (GIMP / Krita) ממזג ב-sRGB; אנחנו — בלינארי. מראה שכבות חצי-שקופות ומצבי מיזוג יכול להשתנות מעט
     if (all.some(l => l.blend !== 'normal' || l.opacity < 1)) g.push('blend-space:linear → srgb');

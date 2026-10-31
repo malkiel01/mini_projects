@@ -15,7 +15,7 @@ export default async function (t) {
     ] });
     await t.openDoc(p, doc);
     await p.click('button[aria-label="עוד"]');
-    const [dl] = await Promise.all([p.waitForEvent('download'), p.click('.menu-pop button:has-text("הורדה כ-ODT")')]);
+    const [dl] = await Promise.all([p.waitForEvent('download'), p.click('.menu button:has-text("הורדה כ-ODT")')]);
     const buf = Buffer.from(await (await dl.createReadStream()).toArray().then(c => Buffer.concat(c)));
     // שם הקובץ — ב-filename* (UTF-8); Playwright לא מדווח אותו בהורדה מניווט, אז בודקים את הכותרת עצמה
     const head = await p.request.get(t.editor + `api.php?action=my_export&format=odt&doc=${doc}`);

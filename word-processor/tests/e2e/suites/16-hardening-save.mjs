@@ -93,11 +93,11 @@ export default async function (t) {
         for (const v of vs) out.push((await t.api(p, 'my_version', { doc, id: v.id })).json.content.map(b => (b.content || []).map(x => x.text).join('')).join('/'));
         return out;
     };
-    p.on('dialog', d => d.accept());
     const before = await texts();
     await t.tool(p, 'גרסאות');
     await p.waitForSelector('dialog .use-row');
     await p.locator('dialog .use-row').last().click();
+    await p.click('dialog[aria-label="אישור"] button:has-text("שחזור")');
     await p.waitForSelector('dialog', { state: 'detached' });
     await p.waitForTimeout(400);
     const after = await texts();

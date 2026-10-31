@@ -16,11 +16,11 @@
 | API | `api.php?action=…`: `list`, `stat`, `read`, `mkdir`, `write`, `upload_start/chunk/finish`, `rename`, `move`, `trash`, `restore`, `trash_list`, `purge`, `trash_empty`, ופעולות ניהול. הפירוט באפיון, סעיף 6 |
 | חיבור אפליקציה | `connect.php` (אישור פעם אחת) → קוד → `connect_exchange` (חתום) → חיבור. לדפדפן — `access_token` של 15 דקות, ו-CORS רק ל-origins של הלקוח. ניתוק — מהענן ("🔗 חיבורים") או מהאפליקציה (`disconnect`), ונבדק בכל קריאה. הקוד: `lib/clients.php` |
 | בינה מלאכותית | `ai_capabilities`, `ai_run` — חמש משימות (הסרת רקע, פירוק לעצמים, יצירת תמונה, מילוי, טקסט/JSON) דרך OpenAI, Google ו-Replicate. המפתחות מוצפנים (`data/secret.key`), ההרשאה והמכסה החודשית לכל משתמש, ויומן שימוש. כל קוד הספקים — `lib/ai/providers.php` בלבד. האפיון: `docs/spec-3-ai.md` |
+| מודול הכוננים | `drives/` — JS + PHP, עותק מסונכרן בכל אפליקציה שמצטרפת: חיבור לענן, הקבצים בענן, ו-`ai`. ההצטרפות: `drives/README.md` |
 | הדף | `index.html`, בעיצוב `phone-first-design` (דרך `ui-core`), עם הלשוניות קבצים, סל, חיבורים וניהול |
 
 ## מה עוד לא
 
-- **לקוח הענן:** מודול JS + PHP מסונכרן לכל אפליקציה
 - ספריות (גופנים, צבעים, סגנונות, נכסים), כוננים חיצוניים, צוותים, גרסאות, חיפוש
 
 ## בשרת
@@ -32,4 +32,6 @@
 
 ```
 php suite-cloud/tests/run.php
+php suite-cloud/drives/tests/run.php
+node suite-cloud/drives/tests/js.mjs
 ```

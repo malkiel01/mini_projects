@@ -19,18 +19,27 @@
     --r: 10px; --tap: 40px; --head: 48px;
     --shadow: 0 1px 2px rgba(16, 24, 40, .06);
 }
+/* מצב כהה: לפי המערכת, אלא אם המשתמש בחר בהגדרות (ui-core/account.js קובע <html data-theme="light|dark">) */
 @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not([data-theme="light"]) {
         --bg: #111318; --surface: #1b1e26; --ink: #e8eaf0; --muted: #9aa1b2; --line: #2c303b;
         --brand: #7f9fe0; --brand-ink: #0d1324; --brand-soft: #232c42; --danger: #f2a49d; --danger-soft: #3a1f1d;
         --star: #f5b83d; --ok: #6fcf97; --shadow: none;
+        color-scheme: dark;
     }
 }
+:root[data-theme="dark"] {
+    --bg: #111318; --surface: #1b1e26; --ink: #e8eaf0; --muted: #9aa1b2; --line: #2c303b;
+    --brand: #7f9fe0; --brand-ink: #0d1324; --brand-soft: #232c42; --danger: #f2a49d; --danger-soft: #3a1f1d;
+    --star: #f5b83d; --ok: #6fcf97; --shadow: none;
+    color-scheme: dark;
+}
+:root[data-theme="light"] { color-scheme: light; }
 
 /* ===== בסיס ===== */
 * { margin: 0; padding: 0; box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; }
-body { font: 15px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; background: var(--bg); color: var(--ink); min-height: 100dvh; }
+html { -webkit-text-size-adjust: 100%; font-size: calc(100% * var(--ui-scale, 1)); }   /* --ui-scale — "גודל טקסט" בהגדרות */
+body { font: calc(15px * var(--ui-scale, 1))/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; background: var(--bg); color: var(--ink); min-height: 100dvh; }
 button, input, select, textarea { font: inherit; color: inherit; }
 [hidden] { display: none !important; }
 :focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
@@ -137,7 +146,8 @@ button:disabled { opacity: .55; cursor: default; }
 .card .l2 { color: var(--muted); font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .avatar { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%;
     background: hsl(var(--h, 220) 45% 88%); color: hsl(var(--h, 220) 45% 28%); font-weight: 600; font-size: .9rem; }
-@media (prefers-color-scheme: dark) { .avatar { background: hsl(var(--h, 220) 30% 26%); color: hsl(var(--h, 220) 60% 85%); } }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .avatar { background: hsl(var(--h, 220) 30% 26%); color: hsl(var(--h, 220) 60% 85%); } }
+:root[data-theme="dark"] .avatar { background: hsl(var(--h, 220) 30% 26%); color: hsl(var(--h, 220) 60% 85%); }
 
 /* שורת רשומה לחיצה: אייקון בריבוע, כותרת, משנה, חץ */
 .use-row { display: flex; align-items: center; gap: var(--s2); inline-size: 100%; padding: 10px var(--s3); background: none; border: 0;
@@ -230,3 +240,19 @@ dialog > form { display: flex; flex-direction: column; max-height: inherit; heig
     #print-root thead { display: table-header-group; }
     #print-root tr { break-inside: avoid; }
 }
+
+/* ===== חשבון: העיגול בסרגל והתפריט (ui-core/account.js) ===== */
+.account-btn { flex: none; inline-size: 36px; block-size: 36px; padding: 0; border: 0; border-radius: 50%; cursor: pointer; overflow: hidden;
+    display: grid; place-items: center; background: rgba(255, 255, 255, .2); color: inherit; font-weight: 600; font-size: .85rem; }
+.account-btn img { inline-size: 100%; block-size: 100%; object-fit: cover; }
+.account-btn:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.account-head { display: flex; align-items: center; gap: var(--s3); padding: var(--s2) var(--s3) var(--s3); border-bottom: 1px solid var(--line); margin-bottom: var(--s1); }
+.account-head .avatar { inline-size: 48px; block-size: 48px; font-size: 1.1rem; overflow: hidden; }
+.account-head .avatar img { inline-size: 100%; block-size: 100%; object-fit: cover; }
+.account-head .who { min-inline-size: 0; display: grid; }
+.account-head .who b, .account-head .who small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.account-head .who small { color: var(--muted); }
+.account-head .chips { margin-top: 4px; }
+.account-list { list-style: none; display: grid; }
+.account-list .use-row { border-radius: var(--r); }
+.account-list .danger .use-tx { color: var(--danger); }

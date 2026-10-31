@@ -18,7 +18,8 @@ import { pencilD, brushD, widths } from './freehand.js';
 import { needsPages, sourcePdf, renderPages, assign as assignPages } from './pages.js';
 import { activeHandoff, returnHandoff, endHandoff } from './handoff.js';
 import { keyOf } from './ui-core/keys.js';
-import { fit as fitView, zoomTo, nextStep, screenToDoc, pinch, wheel as wheelView } from './ui-core/viewport.js';
+import { fit as fitView, zoomTo, nextStep, screenToDoc } from './ui-core/viewport.js';
+import { bindViewport } from './ui-core/gestures.js';
 import { toast } from './ui-core/toast.js';
 import { download } from './ui-core/files.js';
 import { initDialogs, confirm, prompt } from './ui-core/dialog.js';
@@ -803,7 +804,6 @@ function nudge(dx, dy) {
 
 // ---------- קלט מצביע ----------
 
-const pointers = new Map();
 let lastTap = null;
 let op = null;   // הפעולה הנוכחית
 let spaceDown = false;
@@ -853,30 +853,21 @@ canvas.addEventListener('pointerdown', (e) => {
   e.preventDefault();
   // ...ולכן מוציאים את הפוקוס בעצמנו: שדה בלוח המאפיינים נשמר ב-change, ועריכת טקסט נסגרת ב-blur
   if (document.activeElement?.matches('input, select, textarea')) document.activeElement.blur();
-  canvas.setPointerCapture(e.pointerId);
+});
+
+/**
+ * לחיצה של הכלי (bindViewport קורא לזה רק לאצבע / עכבר / עט יחיד, לא ברווח ולא בגלגלת לחוצה).
+ * true — הכלי לקח את המצביע (גם כשהפעולה כבר נעשתה, כמו פתיחת טקסט); false — רקע ריק: מגע מזיז, הקשה מבטלת בחירה.
+ */
+function toolDown(e) {
   const [sx, sy] = local(e);
-  pointers.set(e.pointerId, [sx, sy]);
-
-  if (pointers.size === 2) {           // שתי אצבעות: זום וגלילה, ומבטלים את מה שהתחיל
-    if (op && op.before) { S.doc = JSON.parse(op.before); afterChangeSilent(); }
-    if (op?.type === 'tool') tools.abortDown();
-    const [a, b] = [...pointers.values()];
-    op = { type: 'pinch', a, b, view0: { ...S.view } };
-    S.marquee = null;
-    return;
-  }
-  if (pointers.size > 2) return;
-
   const touch = e.pointerType === 'touch';
-  if (e.button === 1 || spaceDown) { op = { type: 'pan', s0: [sx, sy], view0: { ...S.view } }; return; }
-  if (e.button !== 0 && !touch) return;
 
   let [wx, wy] = toWorld(sx, sy);
   if (S.tool === 'pen' || S.tool === 'node') {
     const r = tools.down(e, sx, sy, wx, wy);
-    if (r === 'background' && touch) { op = { type: 'pan', s0: [sx, sy], view0: { ...S.view } }; return; }
     op = r === 'background' ? null : { type: 'tool' };
-    return;
+    return !!op;
   }
   if (FREE.includes(S.tool)) {
     const surface = surfaceAt(wx, wy);
@@ -889,16 +880,16 @@ canvas.addEventListener('pointerdown', (e) => {
     targetLayer(surface).paths.push(path);
     op = { type: 'free', before, id: path.id, off, kind: S.tool, pressure: e.pointerType === 'pen', samples: [] };
     addSamples(e);
-    return;
+    return true;
   }
   if (S.tool === 'text') {
     const hitT = hitTest(S, sx, sy, touch ? 12 : 5);
     const o = hitT && findPath(S.doc, hitT);
-    if (o && o.path.type === 'text') { openTextEditor(hitT); return; }
+    if (o && o.path.type === 'text') { openTextEditor(hitT); return true; }
     const surface = surfaceAt(wx, wy);
     const [ox, oy] = layout(S.doc).get(surface.id);
     op = { type: 'text', before: JSON.stringify(S.doc), surface, p0: [wx - ox, wy - oy], off: [ox, oy], s0: [sx, sy] };
-    return;
+    return true;
   }
   if (S.tool !== 'select') {
     const surface = surfaceAt(wx, wy);
@@ -914,7 +905,7 @@ canvas.addEventListener('pointerdown', (e) => {
     setShape(path, shapeFromDrag(S.tool, wx - ox, wy - oy, wx - ox, wy - oy));
     S.sel = new Set([path.id]);
     draw();
-    return;
+    return true;
   }
 
   const handle = handleAt(sx, sy);
@@ -922,11 +913,11 @@ canvas.addEventListener('pointerdown', (e) => {
     const box = selectionBox(S.doc, S.sel);
     const c = [box[0] + box[2] / 2, box[1] + box[3] / 2];
     op = { type: 'rotate', c, a0: Math.atan2(wy - c[1], wx - c[0]), before: JSON.stringify(S.doc), box0: box };
-    return;
+    return true;
   }
   if (handle) {
     op = { type: 'scale', handle, box0: selectionBox(S.doc, S.sel), before: JSON.stringify(S.doc), s0: [sx, sy], snap: makeSnap(S.sel, findPath(S.doc, [...S.sel][0])?.surface, touch) };
-    return;
+    return true;
   }
   const hit = hitTest(S, sx, sy, touch ? 12 : 5);
   // הקשה כפולה על טקסט — עריכה
@@ -934,7 +925,7 @@ canvas.addEventListener('pointerdown', (e) => {
   if (hit && lastTap && lastTap.id === hit && now - lastTap.t < 350 && findPath(S.doc, hit)?.path.type === 'text') {
     lastTap = null;
     openTextEditor(hit);
-    return;
+    return true;
   }
   lastTap = hit ? { id: hit, t: now } : null;
   if (hit) {
@@ -942,24 +933,25 @@ canvas.addEventListener('pointerdown', (e) => {
       const next = new Set(S.sel);
       next.has(hit) ? next.delete(hit) : next.add(hit);
       select(next);
-      if (!next.has(hit)) return;
+      if (!next.has(hit)) return true;
     } else if (!S.sel.has(hit)) select([hit]);
     op = { type: 'move', before: JSON.stringify(S.doc), w0: [wx, wy], s0: [sx, sy], moved: false, box0: selectionBox(S.doc, S.sel), snap: makeSnap(S.sel, findPath(S.doc, hit).surface, touch) };
-    return;
+    return true;
   }
   const under = S.doc.surfaces.find(s => { const [ox, oy] = layout(S.doc).get(s.id); return wx >= ox && wx <= ox + s.size[0] && wy >= oy && wy <= oy + s.size[1]; });
   if (under && under.id !== S.board) { S.board = under.id; if (!S.sel.size) updatePanel(); }
-  if (touch) { op = { type: 'pan', s0: [sx, sy], view0: { ...S.view }, tap: true }; return; }
+  if (touch) return false;   // רקע ריק במגע — הזזה (panOnEmpty), והקשה מבטלת את הבחירה (onTap)
   op = { type: 'marquee', s0: [sx, sy], add: e.shiftKey ? new Set(S.sel) : new Set() };
-});
+  return true;
+}
 
 function afterChangeSilent() { updatePanel(); draw(); }
 
+// ריחוף (עכבר / עט בלי לחיצה): ידיות, הדגשה, תצוגה מקדימה של העט. בזמן פעולה או הזזה — לא.
 canvas.addEventListener('pointermove', (e) => {
+  if (op || gestures.panning || e.buttons) return;
   const [sx, sy] = local(e);
-  if (pointers.has(e.pointerId)) pointers.set(e.pointerId, [sx, sy]);
-
-  if (!op) {
+  {
     if (S.tool === 'pen') tools.hover(sx, sy);
     if (e.pointerType === 'mouse' && S.tool === 'select') {
       const h = handleAt(sx, sy);
@@ -967,9 +959,12 @@ canvas.addEventListener('pointermove', (e) => {
       const hov = h ? null : hitTest(S, sx, sy, 5);
       if (hov !== S.hover) { S.hover = hov; draw(); }
     }
-    return;
   }
+});
 
+function toolMove(e) {
+  if (!op) return;
+  const [sx, sy] = local(e);
   switch (op.type) {
     case 'tool': {
       const [wx, wy] = toWorld(sx, sy);
@@ -985,18 +980,6 @@ canvas.addEventListener('pointermove', (e) => {
       draw();
       break;
     }
-    case 'pinch': {
-      if (pointers.size < 2) break; // אצבע אחת הורמה — מחכים לשנייה או לסיום
-      const [a, b] = [...pointers.values()];
-      S.view = pinch(op.view0, op.a, op.b, a, b);
-      draw();
-      break;
-    }
-    case 'pan':
-      if (Math.hypot(sx - op.s0[0], sy - op.s0[1]) > 4) op.tap = false;
-      S.view = { ...op.view0, x: op.view0.x + sx - op.s0[0], y: op.view0.y + sy - op.s0[1] };
-      draw();
-      break;
     case 'marquee': {
       const x = Math.min(op.s0[0], sx), y = Math.min(op.s0[1], sy);
       S.marquee = [x, y, Math.abs(sx - op.s0[0]), Math.abs(sy - op.s0[1])];
@@ -1085,16 +1068,11 @@ canvas.addEventListener('pointermove', (e) => {
       break;
     }
   }
-});
+}
 
 function endPointer(e) {
-  pointers.delete(e.pointerId);
   S.guides = null;
   if (!op) return;
-  if (op.type === 'pinch') {
-    if (pointers.size === 0) op = null;
-    return; // אצבע אחת שנשארה — לא מתחילה פעולה חדשה
-  }
   const [sx, sy] = local(e);
   switch (op.type) {
     case 'tool':
@@ -1110,9 +1088,6 @@ function endPointer(e) {
       setTool('select');
       return;
     }
-    case 'pan':
-      if (op.tap) select([]);
-      break;
     case 'marquee':
       if (!S.marquee) select(op.add.size ? [...op.add] : []);
       S.marquee = null;
@@ -1150,25 +1125,31 @@ function endPointer(e) {
   op = null;
   draw();
 }
-canvas.addEventListener('pointerup', endPointer);
+/** אצבע שנייה (צביטה) או pointercancel: הפעולה מתבטלת בלי עקבות. */
+function toolCancel() {
+  if (op?.before) { S.doc = JSON.parse(op.before); afterChangeSilent(); }
+  if (op?.type === 'tool') tools.abortDown();
+  op = null;
+  S.marquee = null; S.guides = null;
+  draw();
+}
+
+// זום, הזזה וצביטה — ui-core: גלגלת (Ctrl — זום), רווח / גלגלת לחוצה, שתי אצבעות; מגע על רקע ריק מזיז
+const gestures = bindViewport(canvas, {
+  get: () => S.view,
+  set: (v) => { S.view = v; draw(); },
+  pointer: { down: toolDown, move: toolMove, up: endPointer, cancel: toolCancel },
+  panOnEmpty: (e) => e.pointerType === 'touch',
+  onTap: () => { if (S.tool === 'select') select([]); },
+});
 canvas.addEventListener('dblclick', (e) => {
   if (S.tool !== 'select') return;
   const [sx, sy] = local(e);
   const hit = hitTest(S, sx, sy, 5);
   if (hit && findPath(S.doc, hit)?.path.type === 'text') openTextEditor(hit);
 });
-canvas.addEventListener('pointercancel', endPointer);
 canvas.addEventListener('pointerleave', () => { if (S.hover && !op) { S.hover = null; draw(); } });
 
-canvas.addEventListener('wheel', (e) => {
-  e.preventDefault();
-  const [sx, sy] = local(e);
-  S.view = wheelView(S.view, e, sx, sy, { pageHeight: stage.clientHeight });
-  draw();
-}, { passive: false });
-
-// ספארי: מחוות צביטה של משטח מגע — לא להגדיל את הדף
-['gesturestart', 'gesturechange'].forEach(t => document.addEventListener(t, e => e.preventDefault()));
 
 // ---------- מקלדת ----------
 
