@@ -13,6 +13,7 @@ import { withParaIds } from './frames.js';
 export const APP = 'layout-studio';
 export const APP_VERSION = '1';
 const PDF = 'renditions/document.pdf';
+export const KEEP_VERSIONS = 30;
 
 /** כל ההפניות למשאבים במסמך (src / embedded, בכל עומק — גם בתוך שטף). */
 export function mediaRefs(doc) {
@@ -38,7 +39,7 @@ const TYPE = { png: 'image/png', jpg: 'image/jpeg', webp: 'image/webp' };
  *   preview — PNG (חובה); pdf — PDF או null (ייצוג מומלץ; בלי — הישן נמחק, כדי שלא יישאר "מיושן").
  * מחזיר { bytes, file } — file הוא MbeFile אחרי השמירה (id, issues).
  */
-export async function buildMbe({ model, source = null, fetchMedia, preview, pdf = null, now = new Date() }) {
+export async function buildMbe({ model, source = null, fetchMedia, preview, pdf = null, stages = [], now = new Date() }) {
   let f = null;
   if (source) {
     f = await open(source);
@@ -60,6 +61,10 @@ export async function buildMbe({ model, source = null, fetchMedia, preview, pdf 
   f.setRendition(PREVIEW, preview, { type: 'image/png' });
   if (pdf) f.setRendition(PDF, pdf, { type: 'application/pdf', gaps: [] });
   else f.removeRendition(PDF);
+  // יומן השלבים (history/): הליבה רושמת create / edit לבד; שלבים מפורשים (למשל שחזור גרסה) — מכאן.
+  // נשמרות 30 הגרסאות האחרונות; היומן עצמו לא נגזם.
+  for (const st of stages) f.stage(st);
+  f.prune({ keep: KEEP_VERSIONS });
   const bytes = await save(f, { app: APP, appVersion: APP_VERSION, now });
   return { bytes, file: f };
 }
@@ -107,4 +112,28 @@ export function textReportLines(r) {
     lines.push(`${NAMES[x] || x} — הטקסט שבהם הפך לפסקאות רגילות`);
   }
   return lines;
+}
+
+// ---- יומן השלבים: מה קרה למסמך, ושחזור גרסה ----
+const KINDS = { create: 'נוצר', edit: 'עריכה', export: 'יצא', return: 'חזר', merge: 'מוזג', restore: 'שוחזר' };
+const APPS = { 'layout-studio': 'עימוד', 'word-processor': 'עורך התמלילים', 'raster-studio': 'רסטר', 'vector-studio': 'וקטורי',
+  'greeting-cards': 'סטודיו העיצוב' };
+
+/**
+ * היומן של קובץ ‎.mbe: [{ id, at, kind, kindLabel, app, appLabel, who, note, sha, available }] מהחדש לישן.
+ * available — הגרסה עצמה עדיין בקובץ (לא נגזמה), ואפשר לשחזר אותה.
+ */
+export async function readHistory(bytes) {
+  const f = await open(bytes);
+  return f.journal().reverse().map(s => {
+    const app = String(s.app || '');
+    return { id: s.id, at: s.at, kind: s.kind, kindLabel: KINDS[s.kind] || s.kind, app,
+      appLabel: APPS[app] || (app.startsWith('external:') ? app.slice(9) : app), who: s.who || '', note: s.note || '',
+      sha: s.result, available: !s.pruned && !!f.version(s.result) };
+  });
+}
+
+/** המסמך של גרסה מהיומן (לשחזור), או null. */
+export async function historyVersion(bytes, sha) {
+  return (await open(bytes)).version(sha);
 }

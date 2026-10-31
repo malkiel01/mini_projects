@@ -164,6 +164,7 @@
         <button type="submit" class="btn primary">שמירה</button>
       </header>
       <div class="sheet-body">
+        <button class="btn ghost" type="button" id="hist-btn">🕘 היסטוריית גרסאות</button>
         <section aria-labelledby="g-size" class="group first"><h3 id="g-size">גודל עמוד</h3>
           <fieldset class="seg grid" style="--cols:5" aria-labelledby="g-size">
             <label><input type="radio" name="size" value="a4"><span>A4</span></label>
@@ -284,6 +285,19 @@
       <div class="sheet-body">
         <p id="report-sum"></p>
         <ul class="list report-list" id="report-list"></ul>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="hist-dlg" aria-labelledby="hist-title">
+    <form method="dialog">
+      <header class="sheet-head">
+        <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+        <h2 id="hist-title">היסטוריית גרסאות</h2>
+      </header>
+      <div class="sheet-body">
+        <p class="hint" id="hist-sum"></p>
+        <ul class="list hist-list" id="hist-list"></ul>
       </div>
     </form>
   </dialog>

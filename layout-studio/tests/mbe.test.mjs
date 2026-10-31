@@ -92,3 +92,24 @@ test('טקסט מ-‎.mbe: רשימה ותמונה בטקסט — בדוח; קו
   assert.ok(lines.some(l => l.includes('תמונות בתוך הטקסט')));
   await assert.rejects(readTextMbe(new TextEncoder().encode('not a zip at all')), /not_mbe|mbe_invalid/);
 });
+
+import { readHistory, historyVersion } from '../assets/js/mbe-io.js';
+
+test('יומן השלבים: create בהורדה הראשונה (הורדות רצופות שלנו — אותו שלב, כמו בליבה), שחזור נרשם כ-restore', async () => {
+  const { bytes: b1 } = await buildMbe({ model: model(), fetchMedia: async () => png, preview: png, now: new Date('2026-10-31T10:00:00Z') });
+  const m2 = model(); m2.flows.f1.doc.content[0].content[0].text = 'שני';
+  const { bytes: b2 } = await buildMbe({ model: m2, source: b1, fetchMedia: async () => png, preview: png, now: new Date('2026-10-31T11:00:00Z') });
+  let h = await readHistory(b2);
+  assert.deepEqual(h.map(s => s.kind), ['create']);   // אותה אפליקציה ברצף — השלב מתעדכן, לא נוסף
+  assert.equal(h[0].appLabel, 'עימוד');
+  assert.ok(h[0].available);
+  assert.equal((await historyVersion(b2, h[0].sha)).flows.f1.doc.content[0].content[0].text, 'שני');
+  // שחזור: מודל + שלב restore עם הערה — נוסף שלב, והגרסה הקודמת נשארת לשחזור
+  const { bytes: b3 } = await buildMbe({ model: model(), source: b2, fetchMedia: async () => png, preview: png,
+    stages: [{ kind: 'restore', note: 'שוחזר מ-' + h[0].id }], now: new Date('2026-10-31T12:00:00Z') });
+  h = await readHistory(b3);
+  assert.deepEqual(h.map(s => s.kind), ['restore', 'create']);
+  assert.equal(h[0].kindLabel, 'שוחזר');
+  assert.match(h[0].note, /שוחזר מ-s1/);
+  assert.ok(h[1].available);
+});
