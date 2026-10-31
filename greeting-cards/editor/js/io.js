@@ -1,4 +1,4 @@
-// קלט ופלט: תמונות, ייבוא מהצ'אט (design.json, ‏design.gcard), ייצוא PNG/JPG/PDF, והסקיל.
+// קלט ופלט: תמונות, ייבוא מהצ'אט (design.json, ‏design.zip — וגם ‎.gcard ישן), ייצוא PNG/JPG/PDF, והסקיל.
 // הספריות הכבדות (JSZip, pdf-lib) נטענות רק כשצריך אותן.
 
 import { normalizeDoc, extractJson, newDoc, backgroundLayer, imageLayer, clone } from './doc.js';
@@ -65,7 +65,7 @@ export async function ingestImage(file) {
  */
 export async function importFromChat(files, pastedText) {
     const images = new Map();       // שם קובץ (באותיות קטנות) → File/Blob
-    const fontFiles = new Map();    // fonts/ שבתוך ‎.gcard — גופנים שהועלו
+    const fontFiles = new Map();    // fonts/ שבתוך ‎.gcard ישן — גופנים שהועלו
     const svgs = new Map();         // שם קובץ → טקסט ה-SVG (קישוטים וקטוריים מהצ'אט)
     let json = null;
     const fixes = [];
@@ -254,31 +254,6 @@ export async function exportPdf(canvas, doc) {
     const page = pdf.addPage([w, h]);
     page.drawImage(image, { x: 0, y: 0, width: w, height: h });
     return new Blob([await pdf.save()], { type: 'application/pdf' });
-}
-
-/** design.gcard — עיצוב שלם להעברה: design.json + assets/. אותו פורמט שהצ'אט מייצר. */
-export async function exportGcard(doc) {
-    await loadScript('vendor/jszip.min.js');
-    const zip = new window.JSZip();
-    const out = clone(doc);
-    for (const [id, a] of Object.entries(out.assets)) {
-        const blob = await assets.get(a.src);
-        if (!blob) continue;
-        const ext = blob.type === 'image/png' ? 'png' : blob.type === 'image/webp' ? 'webp' : 'jpg';
-        a.file = `${id}.${ext}`;
-        delete a.src;
-        zip.file('assets/' + a.file, blob);
-    }
-    // גופנים שהועלו ומשמשים בעיצוב — בתוך הקובץ, כדי שייפתח נכון גם במכשיר אחר
-    for (const [id, a] of Object.entries(out.fonts || {})) {
-        const blob = await assets.get(a.src);
-        delete a.src; delete a.remote;
-        if (!blob) continue;
-        a.file = `${id}.${Object.entries(FONT_MIME).find(([, m]) => m === blob.type)?.[0] || 'ttf'}`;
-        zip.file('fonts/' + a.file, blob);
-    }
-    zip.file('design.json', JSON.stringify(out, null, 2));
-    return zip.generateAsync({ type: 'blob', mimeType: 'application/zip' });
 }
 
 export function safeName(s) {
