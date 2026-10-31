@@ -372,6 +372,15 @@ body.editor { display: flex; flex-direction: column; block-size: 100dvh; min-hei
 @media (max-width: 479.98px) {
     .adjust { inset-inline: var(--s2); inset-block-end: var(--s2); }
 }
+/* סגנונות שכבה: לשונית שהאפקט שלה פעיל — נקודה; "פעיל" ובורר הצבע — שורה צרה */
+.fx .seg-tabs button.on::after { content: ' ●'; color: var(--brand); font-size: .7em; }
+.fx .seg-tabs button.on[aria-selected="true"]::after { color: inherit; }
+.fx .opt-check, .fx .opt-colors { flex: 0 0 auto; display: flex; align-items: center; gap: var(--s1); min-block-size: 32px; cursor: pointer; }
+.fx .opt-check input { inline-size: 18px; block-size: 18px; margin: 0; accent-color: var(--brand); }
+.fx .opt-colors input { inline-size: 44px; block-size: 32px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: none; }
+.fx [data-fx-for][hidden] { display: none; }
+.layer-row .fx-badge { flex: none; padding: 0 4px; border: 1px solid var(--line); border-radius: 4px; background: var(--brand-soft);
+    color: var(--brand); font-size: .7rem; font-style: italic; font-weight: 700; line-height: 1.5; cursor: pointer; }
 
 /* ===== טקסט ===== */
 .text-edit { position: absolute; z-index: 2; min-inline-size: 0; min-block-size: 0; padding: 0; margin: 0; border: 0; border-radius: 0;
@@ -399,7 +408,8 @@ body.editor { display: flex; flex-direction: column; block-size: 100dvh; min-hei
 .layer-row .folder { display: grid; place-items: center; font-size: 1.3rem; background: none; }
 .group-row .layer-name { font-weight: 600; }
 .layer-row.drop-into { box-shadow: inset 0 0 0 2px var(--brand); background: var(--brand-soft); }
-.layer-actions .icon-btn { min-inline-size: 32px; inline-size: 32px; }
+/* שמונה פעולות בשורה אחת של לוח ברוחב 300 */
+.layer-actions .icon-btn { min-inline-size: 28px; inline-size: 28px; font-size: 1rem; }
 
 /* גרסאות בשרת */
 .versions { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s1); }

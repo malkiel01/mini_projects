@@ -1152,6 +1152,146 @@ async function main() {
     await page.click('[data-adj-act="cancel"]');
   }
 
+  // ---- סגנונות שכבה (מנוע): ריבוע אדום 200..299 — חוצה את גבול האריחים ב-256 ----
+  await openEd(page);
+  await page.waitForFunction(() => window.__rs?.doc);
+  await page.evaluate(() => __rs.setView({ zoom: 1, x: 20, y: 20 }));
+  await page.evaluate(() => {
+    const d = __rs.doc, r = __rs.renderer;
+    const l = d.addLayer({ name: 'ריבוע' });
+    d.activeId = l.id;
+    d.selection = { shapes: [{ type: 'rect', x: 200, y: 200, w: 100, h: 100, op: 'add' }], inverted: false };
+    r.selectionChanged(d);
+    r.freeTextures(r.fillSelection(d, l, 'paint', [255, 0, 0], 1).values());
+    d.selection = null;
+    r.selectionChanged(d);
+    r.invalidate(d);
+  });
+  const fx = async (effects) => page.evaluate(e => { __rs.doc.active.effects = e; __rs.renderer.invalidate(__rs.doc); }, effects);
+  await fx([{ type: 'shadow', dx: 10, dy: 10, blur: 0, color: '#000000', opacity: 1 }]);
+  const shd = [await px(250, 250), await px(305, 255), await px(305, 305), await px(255, 305), await px(195, 195), await px(312, 312)];
+  check('צל (dx/dy 10, בלי טשטוש): מתחת ובצד, גם באריחים השכנים; הריבוע מעליו', near(shd[0], [255, 0, 0, 255]) && near(shd[1], [0, 0, 0, 255])
+    && near(shd[2], [0, 0, 0, 255]) && near(shd[3], [0, 0, 0, 255]) && near(shd[4], [255, 255, 255, 255]) && near(shd[5], [255, 255, 255, 255]), shd.join(' | '));
+  await fx([{ type: 'shadow', dx: 0, dy: 0, blur: 12, color: '#000000', opacity: 1 }]);
+  const sb2 = [await px(301, 250), await px(307, 250), await px(330, 250)].map(v => +v.split(',')[0]);
+  check('צל מטושטש: כהה ליד הקצה, בהיר יותר ברחוק, ולבן מחוץ לטווח', sb2[0] < 215 && sb2[0] < sb2[1] && sb2[1] < 255 && sb2[2] === 255, sb2.join());
+  await fx([{ type: 'glow', blur: 8, color: '#00ff00', opacity: 1 }]);
+  const gl1 = (await px(199, 250)).split(',').map(Number);
+  check('זוהר: ירוק סביב הריבוע', gl1[1] > 200 && gl1[0] < 210 && near(await px(250, 250), [255, 0, 0, 255]), gl1.join());
+  await fx([{ type: 'stroke', width: 4, position: 'outside', color: '#0000ff', opacity: 1 }]);
+  const st1 = [await px(301, 250), await px(250, 250), await px(307, 250), await px(250, 198)];
+  check('קו מתאר בחוץ (4): כחול מחוץ לקצה, הריבוע שלם, ולבן אחריו', near(st1[0], [0, 0, 255, 255]) && near(st1[1], [255, 0, 0, 255])
+    && near(st1[2], [255, 255, 255, 255]) && near(st1[3], [0, 0, 255, 255]), st1.join(' | '));
+  await fx([{ type: 'stroke', width: 4, position: 'inside', color: '#0000ff', opacity: 1 }]);
+  check('קו מתאר בפנים: כחול בתוך הקצה, ולבן מחוצה לו', near(await px(298, 250), [0, 0, 255, 255]) && near(await px(302, 250), [255, 255, 255, 255]) && near(await px(250, 250), [255, 0, 0, 255]));
+  await fx([{ type: 'overlay', color: '#00ff00', opacity: 1 }]);
+  check('צבע (overlay): הריבוע ירוק, ומחוצה לו לבן', near(await px(250, 250), [0, 255, 0, 255]) && near(await px(195, 250), [255, 255, 255, 255]));
+  await fx([{ type: 'inner-shadow', dx: 6, dy: 6, blur: 0, color: '#000000', opacity: 1 }]);
+  check('צל פנימי: שחור בפינה העליונה של הריבוע, אדום באמצע, ולבן בחוץ', near(await px(202, 202), [0, 0, 0, 255]) && near(await px(250, 250), [255, 0, 0, 255])
+    && near(await px(297, 297), [255, 0, 0, 255]) && near(await px(195, 195), [255, 255, 255, 255]));
+  await fx([{ type: 'inner-glow', blur: 6, color: '#ffff00', opacity: 1 }]);
+  const ig = (await px(201, 250)).split(',').map(Number);
+  check('זוהר פנימי: צהבהב בקצה, אדום באמצע', ig[1] > 60 && near(await px(250, 250), [255, 0, 0, 255]), ig.join());
+  check('סוג לא מוכר — לא מצויר (ונשמר)', await (async () => { await fx([{ type: 'bevel', depth: 3 }]); return near(await px(250, 250), [255, 0, 0, 255]) && near(await px(305, 305), [255, 255, 255, 255]); })());
+  await fx([{ type: 'shadow', dx: 10, dy: 10, blur: 0, color: '#000000', opacity: 1 }]);
+  const dirty = await page.evaluate(() => { const d = __rs.doc; d._dirty = new Set(); __rs.renderer.invalidateTiles(d, ['0,0']); return [...d._dirty].sort().join(' '); });
+  check('אריח שהשתנה — גם השכנים שלו לשרטוט מחדש (האפקט חורג מהאריח)', dirty.includes('1,1') && dirty.includes('0,0'), dirty);
+  const opq = await page.evaluate(() => { const l = __rs.doc.active; l.opacity = 0.5; __rs.renderer.invalidate(__rs.doc); return true; }) && await px(305, 305);
+  check('אטימות השכבה חלה גם על האפקט', near(opq, [128, 128, 128, 255]) || near(opq, [127, 127, 127, 255]) || near(opq, [188, 188, 188, 255]), opq);
+  await page.evaluate(() => { __rs.doc.active.opacity = 1; __rs.renderer.invalidate(__rs.doc); });
+  // מסכה: מסתירה את החצי השמאלי — גם הצל מגיע רק מהחצי הימני
+  const msk = await page.evaluate(async () => {
+    const { newMask } = await import('./assets/js/engine/doc.js');
+    const d = __rs.doc, r = __rs.renderer, l = d.active;
+    l.mask = newMask(l);
+    r.fill(d, l.mask, [255, 255, 255]);
+    d.selection = { shapes: [{ type: 'rect', x: 0, y: 0, w: 250, h: 400, op: 'add' }], inverted: false };
+    r.selectionChanged(d);
+    r.freeTextures(r.fillSelection(d, l.mask, 'paint', [0, 0, 0], 1).values());
+    d.selection = null; r.selectionChanged(d); r.invalidate(d);
+    return true;
+  });
+  check('מסכה: הצל רק מהחלק הגלוי', msk && near(await px(225, 305), [255, 255, 255, 255]) && near(await px(280, 305), [0, 0, 0, 255]) && near(await px(225, 250), [255, 255, 255, 255]));
+
+  // ---- סגנונות שכבה (לוח): ✨ ← צל + קו מתאר ← ✓ ← ביטול / ביצוע ← ‎.mbe ----
+  await openEd(page);
+  await page.waitForFunction(() => window.__rs?.doc);
+  await page.evaluate(() => __rs.setView({ zoom: 1, x: 20, y: 20 }));
+  await page.evaluate(() => {
+    const d = __rs.doc, r = __rs.renderer;
+    const l = d.addLayer({ name: 'ריבוע' });
+    d.activeId = l.id;
+    d.selection = { shapes: [{ type: 'rect', x: 200, y: 200, w: 100, h: 100, op: 'add' }], inverted: false };
+    r.selectionChanged(d);
+    r.freeTextures(r.fillSelection(d, l, 'paint', [255, 0, 0], 1).values());
+    d.selection = null;
+    r.selectionChanged(d);
+    __rs.layers?.render?.();
+  });
+  const setFx = (id, v) => page.$eval(id, (el, v) => { if (el.type === 'checkbox') el.checked = v; else el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); }, v);
+  const actRows = await page.$$eval('.layer-actions > button', bs => [...new Set(bs.filter(b => b.offsetParent).map(b => b.offsetTop))].length);
+  check('✨ נכנס לשורת הפעולות של לוח השכבות (שורה אחת)', actRows === 1, String(actRows));
+  await page.click('[data-act="fx"]');
+  check('✨ — לוח סגנונות השכבה נפתח על השכבה, בלשונית "צל", כבוי', await page.isVisible('#fx') && (await page.textContent('#fx-layer')) === 'ריבוע'
+    && await page.getAttribute('[data-fx-tab="shadow"]', 'aria-selected') === 'true' && !(await page.isChecked('#fx-on')));
+  await setFx('#fx-distance', 20);
+  const fxl = await page.evaluate(() => __rs.doc.active.effects?.map(e => [e.type, e.dx, e.dy].join(':')).join());
+  check('שינוי מרחק — הצל פעיל, dx/dy לפי כיוון 45°, ותצוגה חיה', fxl === 'shadow:14.14:14.14' && await page.isChecked('#fx-on')
+    && +(await px(310, 310)).split(',')[0] < 200, fxl + ' ' + await px(310, 310));
+  await page.click('[data-fx-tab="stroke"]');
+  check('לשונית קו מתאר: השדות שלה (עובי, מיקום), בלי מרחק; הצל מסומן ●', await page.isVisible('#fx-width') && !(await page.isVisible('#fx-distance'))
+    && await page.$eval('[data-fx-tab="shadow"]', b => b.classList.contains('on')));
+  await setFx('#fx-color', '#0000ff');
+  await setFx('#fx-width', 4);
+  check('קו מתאר כחול בחוץ, מעל הצל', near(await px(301, 250), [0, 0, 255, 255]) && near(await px(250, 250), [255, 0, 0, 255]));
+  await page.click('[data-fx-act="apply"]');
+  const fa = await page.evaluate(() => ({ label: __rs.history.undoStack.at(-1).label, types: __rs.doc.active.effects.map(e => e.type).join() }));
+  check('✓ — רשומת "סגנונות שכבה", צל וקו מתאר, ו-fx בשורה', fa.label === 'סגנונות שכבה' && fa.types === 'shadow,stroke' && !(await page.isVisible('#fx'))
+    && await page.isVisible('.layer-row[aria-selected="true"] .fx-badge'), JSON.stringify(fa));
+  const fxWant = await px(305, 305);
+  await page.keyboard.press('Control+z');
+  check('ביטול — בלי סגנונות (ובלי fx בשורה)', await page.evaluate(() => !__rs.doc.active.effects) && near(await px(301, 250), [255, 255, 255, 255])
+    && !(await page.isVisible('.fx-badge')));
+  await page.evaluate(() => __rs.redo());
+  check('ביצוע חוזר — הסגנונות חוזרים', (await px(305, 305)) === fxWant && near(await px(301, 250), [0, 0, 255, 255]));
+  await page.click('.layer-row[aria-selected="true"] .fx-badge');
+  check('fx בשורה — הלוח נפתח עם הערכים השמורים', await page.isVisible('#fx') && await page.isChecked('#fx-on') && (await page.inputValue('#fx-distance')) === '20');
+  await setFx('#fx-on', false);
+  check('"פעיל" כבוי — הצל נעלם בתצוגה', near(await px(310, 310), [255, 255, 255, 255]));
+  await page.click('[data-fx-act="cancel"]');
+  check('✕ — חוזרים למה שהיה, בלי רשומה', (await px(305, 305)) === fxWant && await page.evaluate(() => __rs.history.undoStack.at(-1).label) === 'סגנונות שכבה'
+    && await page.evaluate(() => __rs.doc.active.effects.length) === 2);
+  // ‎.mbe: effects + source + baked; פתיחה חזרה — אותם סגנונות ואותה תמונה
+  const fxb = await page.evaluate(async () => {
+    const { open } = await import('./assets/js/mbe/mbe.js');
+    __rs.doc.active.effects.push({ type: 'bevel', depth: 3 });   // סוג שלא מוכר לנו — נשמר כמו שהוא
+    const bytes = await __rs.buildMbe();
+    const f = await open(bytes);
+    const L = f.document.surfaces[0].layers.find(l => l.effects);
+    const hex = async b => [...new Uint8Array(await crypto.subtle.digest('SHA-256', b))].map(x => x.toString(16).padStart(2, '0')).join('');
+    const out = { ok: f.ok, err: f.issues.filter(i => i.level === 'error').map(i => i.message).join(), types: L?.effects.map(e => e.type).join(),
+      source: !!L?.source && L.source !== L.src, baked: L && L.baked === await hex(f.getMedia(L.src)) };
+    await __rs.openAsDocument(new File([bytes], 'סגנונות.mbe'));
+    out.back = __rs.doc.layers.map(l => l.effects?.map(e => e.type).join('+') ?? '-').join();
+    out.loaded = !!__rs.doc.layers.at(-1).effectsLoaded;
+    return out;
+  });
+  check('‎.mbe עם סגנונות שכבה: תקין, effects (גם סוג לא מוכר) + source + baked', fxb.ok && fxb.types === 'shadow,stroke,bevel' && fxb.source && fxb.baked, JSON.stringify(fxb));
+  await page.evaluate(() => __rs.setView({ zoom: 1, x: 20, y: 20 }));
+  check('‎.mbe — פתיחה חזרה: הסגנונות על השכבה, ואותה תמונה', fxb.back === '-,shadow+stroke+bevel' && fxb.loaded && (await px(305, 305)) === fxWant,
+    [fxb.back, await px(305, 305), fxWant].join(' | '));
+  check('ORA — סגנונות שכבה אפויים (פער מדווח)', await page.evaluate(async () => (await import('./assets/js/engine/formats.js')).gapsFor('ora', __rs.doc.layers).includes('effects → baked')));
+  // ‎.mbe שבו מישהו ערך את src בלי להבין את המתכון (baked לא תואם) — נפתח כתמונה רגילה, והאפקטים לא מצוירים פעמיים
+  const fxStale = await page.evaluate(async () => {
+    const { open, save } = await import('./assets/js/mbe/mbe.js');
+    const f = await open(await __rs.buildMbe());
+    const L = f.document.surfaces[0].layers.find(l => l.effects);
+    L.baked = '0'.repeat(64);
+    await __rs.openAsDocument(new File([await save(f, { app: 'test' })], 'ערוך.mbe'));
+    return [!!__rs.doc.layers.at(-1).effects, !!__rs.doc.layers.at(-1).mbe?.effects].join();
+  });
+  check('baked לא תואם — שכבה רגילה (src האפוי), והמתכון נשמר כמו שהוא', fxStale === 'false,true', fxStale);
+
   // ---- טקסט ----
   await openEd(page);
   await page.waitForFunction(() => window.__rs?.doc);
