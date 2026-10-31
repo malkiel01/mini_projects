@@ -5,7 +5,8 @@
 // הבמה ב-direction: ltr — חשבון הגלילה פשוט; העמודים עצמם ממוקמים לפי צד הכריכה (pages.js).
 
 import { layoutDoc, contentBox, runningItems, headsByPage, pagesOf, masterOf, pageAt } from './pages.js';
-import { framesOnPage, frameAt, isImage, imagePlacement } from './frames.js';
+import { framesOnPage, drawingsOnPage, frameAt, isImage, imagePlacement } from './frames.js';
+import { drawItems } from './vector.js';
 import { drawGlyphs, shapeLine, advance } from './shaper.js';
 
 const MIN_Z = 0.1, MAX_Z = 8;
@@ -287,6 +288,19 @@ export class PageView {
       ctx.direction = 'ltr';
       // מסגרות טקסט: קו דק (לא מודפס), הטקסט, וסימן גלישה ➕ אדום כשהטקסט לא נכנס
       for (const p of s.pages) {
+        // ציורים מהווקטורי (שכבות vector) — מתחת לטקסט; הנתיבים כבר בקואורדינטות העמוד
+        for (const dr of drawingsOnPage(model, p.index)) {
+          ctx.save();
+          ctx.translate(p.x, p.y);
+          drawItems(ctx, dr.paths, { symbols: model.symbols, image: src => { const im = this.image(src); return im.complete && im.naturalWidth ? im : null; } });
+          ctx.restore();
+          const sel = dr.id === this.frameSel;
+          ctx.lineWidth = (sel ? 2 : 1) * px;
+          ctx.strokeStyle = sel ? col('--select') : col('--frame');
+          ctx.setLineDash(sel ? [] : [4 * px, 3 * px]);
+          ctx.strokeRect(p.x + dr.box[0], p.y + dr.box[1], dr.box[2], dr.box[3]);
+          ctx.setLineDash([]);
+        }
         for (const fr of framesOnPage(model, p.index)) {
           const [fx, fy, fw, fh] = fr.box;
           const sel = fr.id === this.frameSel;
