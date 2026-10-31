@@ -4,7 +4,7 @@
 // הקנבס יושב מעל התיבה בגודל החלון בלבד, ומצייר רק את הפריסות שנראות — כך גם ספר של 600 עמודים מהיר.
 // הבמה ב-direction: ltr — חשבון הגלילה פשוט; העמודים עצמם ממוקמים לפי צד הכריכה (pages.js).
 
-import { layoutDoc, contentBox, runningItems, pagesOf, masterOf, pageAt } from './pages.js';
+import { layoutDoc, contentBox, runningItems, headsByPage, pagesOf, masterOf, pageAt } from './pages.js';
 import { framesOnPage, frameAt, isImage, imagePlacement } from './frames.js';
 import { drawGlyphs, shapeLine, advance } from './shaper.js';
 
@@ -207,6 +207,15 @@ export class PageView {
     return img;
   }
 
+  /** הכותרות של כל עמוד (לכותרת רצה) — מחושבות פעם אחת לכל פריסה ולכל מודל. */
+  headsOf(model) {
+    if (this.headsFor !== this.text || this.headsModel !== model) {
+      this.heads = headsByPage(model, this.text, i => framesOnPage(model, i));
+      this.headsFor = this.text; this.headsModel = model;
+    }
+    return this.heads;
+  }
+
   /** פריסת הטקסט החדשה (אחרי כל שינוי במודל) — וציור. */
   setText(text, fonts) {
     this.text = text;
@@ -261,7 +270,7 @@ export class PageView {
       ctx.fillStyle = col('--running');
       ctx.textBaseline = 'middle';
       for (const p of s.pages) {
-        for (const it of runningItems(model, p.num)) {
+        for (const it of runningItems(model, p.num, this.headsOf(model)[p.index])) {
           if (this.fonts) {
             const g = shapeLine(this.fonts, it.text);
             const width = advance(g) * it.size / this.fonts[0].upem;

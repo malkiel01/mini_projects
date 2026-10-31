@@ -5,6 +5,7 @@
 //   3. שבירת שורות חמדנית לפי רוחב הטור; מילה ארוכה מהטור — לבד בשורה.
 //   4. השורה הסופית מעוצבת שלמה (bidi נכון בין מילים), ויישור לשני הצדדים מרחיב את הרווחים בלבד.
 //   5. טורים מימין לשמאל; מסגרת אחרי מסגרת לפי סדר השרשור. מה שלא נכנס — "גלישה" (overset).
+//   5א. כללי ספר: בלי שורה יתומה (ראשונה לבד בתחתית טור) ובלי אלמנה (אחרונה לבד בראש טור); כותרת עוברת עם הפסקה שאחריה.
 //   6. גלישה סביב תמונה (wrap): כל שורה ברווח הפנוי הרחב ביותר לצד התמונה; אין מקום — השורה מדלגת מטה.
 //
 // הפלט — במידות העמוד (pt), מוכן לציור (view.js) ובהמשך ל-PDF: אותן שורות, אותם גליפים.
@@ -27,7 +28,8 @@ export function columnsOf(frame) {
 /**
  * פריסת כל השטפים.
  *   fontsFor(family, weight) → [גופן ראשי, חלופי…] טעונים (shaper.loadFont / fontVariant, עם name — מפתח המטמון).
- * מחזיר { frames: Map(frameId → { lines: [{ x, y, glyphs, size, font, text }], overset }), flows: Map(flowId → { overset, rest }) }
+ * מחזיר { frames: Map(frameId → { lines: [{ x, y, glyphs, size, font, text }], overset, heads: [{ level, y, text }] }),
+ *          flows: Map(flowId → { overset, rest }) }
  *   y — קו הבסיס; x — תחילת השורה משמאל; text — הטקסט הלוגי של השורה (ל-PDF: חיפוש והעתקה); rest — מאיזו פסקה (ומילה) לא נכנס, ומתוך כמה.
  */
 export function layoutFlows(model, fontsFor) {
@@ -72,7 +74,7 @@ const spansIn = (bold, a, b, fontsB) => bold.filter(s => s.end > a && s.start < 
  *   blocks — docBlocks(doc); styleFor(key) — סגנון פסקה; fontsFor(family, weight).
  */
 export function layoutFlow(blocks, frameList, styleFor, fontsFor, avoid = () => []) {
-  const out = new Map(frameList.map(fr => [fr.id, { lines: [], overset: false }]));
+  const out = new Map(frameList.map(fr => [fr.id, { lines: [], overset: false, heads: [] }]));
   const slots = [];   // טורים בסדר הזרימה, כל אחד עם מה שהוא עוקף
   for (const fr of frameList) {
     const rects = avoid(fr.id);
@@ -98,13 +100,25 @@ export function layoutFlow(blocks, frameList, styleFor, fontsFor, avoid = () => 
     return null;
   };
 
-  for (let bi = 0; bi < blocks.length; bi++) {
+  // תמונת מצב לחזרה אחורה (שורות יתומות / אלמנות, כותרת שנשארה לבד) — כמה שורות בכל מסגרת, ואיפה עומדים
+  const snapshot = () => ({ si, y, lens: new Map([...out].map(([id, v]) => [id, [v.lines.length, v.heads.length]])) });
+  const restore = sn => { si = sn.si; y = sn.y; for (const [id, [n, h]] of sn.lens) { out.get(id).lines.length = n; out.get(id).heads.length = h; } };
+  // מעבר לטור הבא — רק אם בטור הנוכחי כבר יש משהו ויש טור אחריו (אחרת אין מה להרוויח, ולא נכנסים ללולאה)
+  const canBreak = () => y !== null && si + 1 < slots.length;
+  const forceBreak = () => { si++; y = null; };
+
+  /**
+   * פריסת פסקה אחת. מחזיר את הטור של כל שורה (מערך אינדקסים), או null כשנגמר המקום.
+   * breakAt — לפני השורה הזו עוברים לטור הבא (לתיקון שורה אלמנה).
+   */
+  const layBlock = (bi, breakAt = -1) => {
     const st = styleFor(blocks[bi].style);
     const fontsR = fontsFor(st.font, st.weight);
     const fontsB = fontsFor(st.font, Math.min(900, Math.max(700, st.weight + 300)));
     const f = fontsR[0], k = st.size / f.upem;
     const { text, bold } = blockText(blocks[bi]);
     const key = fontsR.map(x => x.name).join('+') + '|' + fontsB[0].name;
+    const slotsOf = [];
 
     // מילים: [start, end) בטקסט; '\n' — אסימון של שבירת שורה (hardBreak)
     const words = [];
@@ -120,14 +134,17 @@ export function layoutFlow(blocks, frameList, styleFor, fontsFor, avoid = () => 
     const spaceW = (wordCache.get(key + '| ') ?? (wordCache.set(key + '| ', advance(shapeLine(fontsR, ' '))), wordCache.get(key + '| '))) * k;
 
     if (!words.length) {   // פסקה ריקה — שורה ריקה
-      if (!place(st, st.spaceBefore)) return finish(out, frameList, { paragraph: bi, word: 0, of: blocks.length });
+      if (!place(st, st.spaceBefore)) return null;
+      slotsOf.push(si);
       y += st.spaceAfter;
-      continue;
+      return slotsOf;
     }
     let wi = 0;
     while (wi < words.length) {
+      if (slotsOf.length === breakAt && canBreak()) forceBreak();
       const p = place(st, wi === 0 ? st.spaceBefore : 0);
-      if (!p) return finish(out, frameList, { paragraph: bi, word: wi, of: blocks.length });
+      if (!p) return null;
+      slotsOf.push(si);
       if (isBreak(wi)) { wi++; continue; }   // שבירה בתחילת שורה — שורה ריקה
       const s = { frameId: p.s.frameId, x: p.x, w: p.w };   // הקטע הפנוי בשורה הזו
       const indent = wi === 0 ? Math.min(st.indent || 0, s.w / 2) : 0;   // הזחת שורה ראשונה — מימין
@@ -155,9 +172,53 @@ export function layoutFlow(blocks, frameList, styleFor, fontsFor, avoid = () => 
       else if (st.align === 'center') x = s.x + (avail - natural) / 2;
       else x = right - natural;   // ימין — ובסוף פסקה מיושרת
       out.get(s.frameId).lines.push({ x, y, glyphs, size: st.size, font: f, text: lineText });
+      // כותרת — נרשמת בשורה הראשונה שלה, לכותרת הרצה ("{כותרת 1}" בעמוד האב)
+      if (wi === 0 && /^h[1-3]$/.test(blocks[bi].style)) {
+        out.get(s.frameId).heads.push({ level: Number(blocks[bi].style[1]), y, text: text.replace(/\s+/g, ' ').trim() });
+      }
       wi = isBreak(j) ? j + 1 : j;   // השבירה שסגרה את השורה — נבלעת
     }
     y += st.spaceAfter;
+    return slotsOf;
+  };
+
+  // כללי ספר: שורה ראשונה לא נשארת לבד בתחתית טור (יתומה), שורה אחרונה לא עוברת לבד לטור הבא (אלמנה),
+  // וכותרת לא נשארת לבד בתחתית טור — עוברת עם הפסקה שאחריה.
+  const isHead = bi => /^h[1-3]$/.test(blocks[bi]?.style || '');
+  const snaps = [];          // תמונת מצב לפני כל פסקה
+  const lastSlot = [];       // הטור של השורה האחרונה בכל פסקה
+  const pushed = new Set();  // פסקאות שכבר הועברו לטור הבא (פעם אחת — כדי לא להיכנס ללולאה)
+  for (let bi = 0; bi < blocks.length; bi++) {
+    const sn = snapshot();
+    snaps[bi] = sn;
+    let r = layBlock(bi);
+    if (!r) return finish(out, frameList, { paragraph: bi, word: 0, of: blocks.length });
+    const n = r.length;
+    const atTop = sn.y === null && sn.si === r[0];   // הפסקה התחילה בראש טור — אין לאן להקדים
+    if (n >= 2 && r[0] !== r[1] && !atTop && !pushed.has(bi)) {
+      // יתומה: השורה הראשונה לבד בתחתית — כל הפסקה עוברת לטור הבא
+      pushed.add(bi);
+      restore(sn); if (canBreak()) forceBreak();
+      r = layBlock(bi);
+      if (!r) return finish(out, frameList, { paragraph: bi, word: 0, of: blocks.length });
+    } else if (n >= 3 && r[n - 1] !== r[n - 2] && r[n - 2] === r[n - 3]) {
+      // אלמנה: השורה האחרונה לבד בראש הטור הבא — מעבירים איתה גם את השורה שלפניה
+      restore(sn);
+      r = layBlock(bi, n - 2);
+      if (!r) return finish(out, frameList, { paragraph: bi, word: 0, of: blocks.length });
+    }
+    lastSlot[bi] = r[r.length - 1];
+    // כותרת שנשארה בתחתית טור, והפסקה שאחריה התחילה בטור הבא — הכותרת עוברת איתה
+    if (bi > 0 && isHead(bi - 1) && !isHead(bi) && r[0] !== lastSlot[bi - 1] && !pushed.has(bi - 1)) {
+      const hs = snaps[bi - 1];
+      const headTop = hs.y === null && hs.si === lastSlot[bi - 1];
+      if (!headTop) {
+        pushed.add(bi - 1);
+        restore(hs); if (canBreak()) forceBreak();
+        bi -= 2;   // הכותרת ואחריה הפסקה — מחדש, מראש הטור
+        continue;
+      }
+    }
   }
   return finish(out, frameList, null);
 }

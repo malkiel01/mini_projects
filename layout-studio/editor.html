@@ -13,6 +13,8 @@
   <header class="top">
     <a class="icon-btn" href="index.html" aria-label="חזרה למסמכים">→</a>
     <div class="titles"><h1 id="doc-title">&nbsp;</h1><div class="sub" id="save-state" role="status">&nbsp;</div></div>
+    <button class="icon-btn" id="undo-btn" type="button" aria-label="ביטול" disabled>↶</button>
+    <button class="icon-btn" id="redo-btn" type="button" aria-label="ביצוע מחדש" disabled>↷</button>
     <button class="icon-btn" id="mbe-btn" type="button" aria-label="הורדה כקובץ ‎.mbe" title="הורדה כקובץ ‎.mbe" disabled>⬇️</button>
     <button class="icon-btn" id="pdf-btn" type="button" aria-label="PDF להדפסה" title="PDF להדפסה" disabled>🖨️</button>
     <button class="icon-btn" id="settings-btn" type="button" aria-label="הגדרות מסמך" disabled>⚙️</button>
@@ -251,8 +253,11 @@
           </div>
           <label class="switch"><input type="checkbox" name="header"><span>כותרת רצה</span></label>
           <div class="fields two header-opts">
-            <label class="f"><span class="h-odd-lbl">בעמוד אי-זוגי</span><input name="hodd" maxlength="200" placeholder="למשל: שם הפרק"></label>
+            <label class="f"><span class="h-odd-lbl">בעמוד אי-זוגי</span><input name="hodd" maxlength="200" placeholder="למשל: {כותרת 1}"></label>
             <label class="f h-even"><span>בעמוד זוגי</span><input name="heven" maxlength="200" placeholder="למשל: שם הספר"></label>
+            <p class="hint" style="grid-column: 1 / -1; margin: 0"><bdi>{כותרת 1}</bdi> — שם הפרק, משתנה לבד בכל עמוד (הכותרת הראשונה
+              בעמוד, ואם אין — האחרונה שלפניו). <bdi>{כותרת 2}</bdi> — הסעיף.
+              <button class="btn sm ghost" type="button" id="h-token">+ שם הפרק</button></p>
             <fieldset class="seg" aria-label="מיקום הכותרת">
               <label><input type="radio" name="hpos" value="top"><span>למעלה</span></label>
               <label><input type="radio" name="hpos" value="bottom"><span>למטה</span></label>

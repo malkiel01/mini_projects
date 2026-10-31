@@ -15,6 +15,7 @@ import { drawList } from './pdf.js';
 import { toast } from './ui-core/toast.js';
 import { initDialogs, confirm } from './ui-core/dialog.js';
 import { download as saveFile } from './ui-core/files.js';
+import { shortcuts } from './ui-core/keys.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 
@@ -116,15 +117,30 @@ function grow(m) {
   return m;
 }
 
-function changed(next) {
-  model = grow(next);
+// ביטול / ביצוע מחדש: המודל לא משתנה במקום (כל שינוי יוצר מודל חדש), לכן מחסנית של מודלים מספיקה
+const UNDO_MAX = 100;
+const past = [], future = [];
+function show(next) {
+  model = next;
   view.setModel(model);
   relayout();
   dirty = true;
   setState('לא נשמר');
   clearTimeout(saveTimer);
   saveTimer = setTimeout(save, 800);
+  $('#undo-btn').disabled = !past.length;
+  $('#redo-btn').disabled = !future.length;
 }
+function changed(next) {
+  const grown = grow(next);
+  if (grown === model) return;
+  past.push(model);
+  if (past.length > UNDO_MAX) past.shift();
+  future.length = 0;
+  show(grown);
+}
+function undo() { if (past.length) { future.push(model); show(past.pop()); toast('בוטל'); } }
+function redo() { if (future.length) { past.push(model); show(future.pop()); toast('בוצע שוב'); } }
 
 async function save() {
   if (saving || !dirty || blocked) return;
@@ -175,14 +191,20 @@ $('#zoom-in').addEventListener('click', () => view.setZoom(view.zoom * 1.25));
 $('#zoom-out').addEventListener('click', () => view.setZoom(view.zoom / 1.25));
 $('#zoom-pct').addEventListener('click', () => view.fit());
 
-document.addEventListener('keydown', e => {
-  if (e.target.closest('input, textarea, dialog')) return;
-  if (e.key === 'PageDown') { e.preventDefault(); view.goSpread(view.currentSpread() + 1); }
-  else if (e.key === 'PageUp') { e.preventDefault(); view.goSpread(view.currentSpread() - 1); }
-  else if ((e.ctrlKey || e.metaKey) && (e.key === '=' || e.key === '+')) { e.preventDefault(); view.setZoom(view.zoom * 1.25); }
-  else if ((e.ctrlKey || e.metaKey) && e.key === '-') { e.preventDefault(); view.setZoom(view.zoom / 1.25); }
-  else if ((e.ctrlKey || e.metaKey) && e.key === '0') { e.preventDefault(); view.fit(); }
-});
+// קיצורים — לפי המקש הפיזי (ui-core/keys.js), כך שהם עובדים גם כשהמקלדת בעברית; לא בתוך שדה ולא בתוך חלון
+const keys = shortcuts();
+keys.add('PageDown', () => view.goSpread(view.currentSpread() + 1));
+keys.add('PageUp', () => view.goSpread(view.currentSpread() - 1));
+keys.add('Mod+Shift?+=', () => view.setZoom(view.zoom * 1.25));
+keys.add('Mod+-', () => view.setZoom(view.zoom / 1.25));
+keys.add('Mod+0', () => view.fit());
+keys.add('Mod+Z', undo, { label: 'ביטול' });
+keys.add('Mod+Shift+Z', redo, { label: 'ביצוע מחדש' });
+keys.add('Mod+Y', redo, { label: 'ביצוע מחדש' });
+$('#undo-btn').addEventListener('click', undo);
+$('#redo-btn').addEventListener('click', redo);
+keys.title($('#undo-btn'), 'Mod+Z');
+keys.title($('#redo-btn'), 'Mod+Y');
 
 // הוספת עמודים: שניים בעמודים כפולים (פריסה שלמה), אחד בלי
 $('#add-page').addEventListener('click', () => {
@@ -589,6 +611,14 @@ form.addEventListener('change', e => {
 });
 
 $('#settings-btn').addEventListener('click', () => { fillSettings(); dlg.showModal(); });
+// "+ שם הפרק" — מוסיף {כותרת 1} לשדה הכותרת הרצה האחרון שהיה בו המיקוד (ברירת מחדל: העמוד האי-זוגי)
+let headField = 'hodd';
+for (const n of ['hodd', 'heven']) form[n].addEventListener('focus', () => { headField = n; });
+$('#h-token').addEventListener('click', () => {
+  const el = form[headField];
+  el.value = (el.value.trim() ? el.value.trim() + ' · ' : '') + '{כותרת 1}';
+  el.focus();
+});
 
 form.addEventListener('submit', async e => {
   e.preventDefault();

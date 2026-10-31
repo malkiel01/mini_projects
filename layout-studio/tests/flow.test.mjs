@@ -225,3 +225,37 @@ test('שבירת שורה בתוך פסקה: שורה חדשה, לא מיושר�
   assert.ok(Math.abs(lines[2].y - lines[1].y - 36) < 1e-9);   // שורה ריקה ביניהן
   assert.ok(lines.every(l => !l.glyphs.some(g => g.gid === 0)));   // ה-\n לא מצויר
 });
+
+// ---- כללי ספר: יתומה, אלמנה, כותרת עם הפסקה שאחריה ----
+// מסגרת A מכילה בדיוק 5 שורות (גודל 12, מרווח 18): 10.8 + 18×4 + 3.6 = 86.4. B — גדולה.
+const BOOK = { ...DEFAULT_STYLE, spaceBefore: 0, spaceAfter: 0, indent: 0 };
+const two = [{ id: 'A', box: [0, 0, 300, 86.4] }, { id: 'B', box: [0, 200, 300, 400] }];
+const P = (n, style = 'body') => ({ style, runs: [{ text: Array.from({ length: n }, (_, i) => 'שורה' + (i + 1)).join('\n'), bold: false }] });
+const counts = r => ['A', 'B'].map(id => r.frames.get(id).lines.length);
+
+test('שורה אלמנה: פסקה של 6 שורות במסגרת של 5 — שתיים עוברות (4 + 2), לא אחת', () => {
+  assert.deepEqual(counts(layoutFlow([P(6)], two, () => BOOK, fontsFor)), [4, 2]);
+});
+
+test('שורה יתומה: פסקה שהשורה הראשונה שלה נשארת לבד בתחתית — כולה עוברת', () => {
+  assert.deepEqual(counts(layoutFlow([P(4), P(3)], two, () => BOOK, fontsFor)), [4, 3]);
+});
+
+test('כותרת בתחתית טור עוברת עם הפסקה שאחריה', () => {
+  const r = layoutFlow([P(4), P(1, 'h1'), P(3)], two, () => BOOK, fontsFor);
+  assert.deepEqual(counts(r), [4, 4]);
+  assert.equal(r.frames.get('B').lines[0].text, 'שורה1');   // הכותרת — ראשונה ב-B
+});
+
+test('כללי ספר לא מזיזים כשאין צורך, ולא נכנסים ללולאה כשהטור קצר מדי', () => {
+  assert.deepEqual(counts(layoutFlow([P(5), P(3)], two, () => BOOK, fontsFor)), [5, 3]);
+  const tiny = [{ id: 'A', box: [0, 0, 300, 14.4] }, { id: 'B', box: [0, 200, 300, 14.4] }];   // שורה אחת בכל מסגרת
+  const r = layoutFlow([P(1, 'h1'), P(3)], tiny, () => BOOK, fontsFor);
+  assert.deepEqual(['A', 'B'].map(id => r.frames.get(id).lines.length), [1, 1]);
+  assert.equal(r.overset, true);
+});
+
+test('כותרות נרשמות בפריסה (heads) — לכותרת הרצה', () => {
+  const r = layoutFlow([P(1, 'h1'), P(2), { style: 'h2', runs: [{ text: 'סעיף  ראשון', bold: false }] }, P(1)], two, () => BOOK, fontsFor);
+  assert.deepEqual(r.frames.get('A').heads.map(h => [h.level, h.text]), [[1, 'שורה1'], [2, 'סעיף ראשון']]);
+});
