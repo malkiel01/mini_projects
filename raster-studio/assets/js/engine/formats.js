@@ -105,6 +105,63 @@ export function cleanAdjust(a) {
   return out;
 }
 
+/**
+ * שכבת מילוי (fill בפורמט, כמו ב-vector): { color, opacity } או { gradient: { type: 'linear', from, to, stops } |
+ * { type: 'radial', center, radius, stops }, opacity }. stops: [{ at 0–1, color '#rrggbb', opacity 0–1 }].
+ * קואורדינטות — בפיקסלים של המסמך (ביחידות המשטח בקובץ). סוג מעבר לא מוכר — צבע העצירה הראשונה (כמו בפורמט).
+ */
+const HEX = /^#[0-9a-f]{6}$/i;
+const hexRgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+
+/** fill מקובץ: תקין — מנוקה; לא (בלי צבע ובלי מעבר) — null */
+export function cleanFill(f) {
+  if (!f || typeof f !== 'object') return null;
+  const op = Number.isFinite(f.opacity) ? Math.max(0, Math.min(1, f.opacity)) : 1;
+  if (typeof f.color === 'string' && HEX.test(f.color)) return { ...f, opacity: op };
+  const g = f.gradient;
+  if (!g || typeof g !== 'object' || !Array.isArray(g.stops)) return null;
+  const stops = g.stops.filter(st => st && HEX.test(st.color ?? '')).map(st => ({
+    ...st, at: Math.max(0, Math.min(1, Number(st.at) || 0)), opacity: Number.isFinite(st.opacity) ? st.opacity : 1,
+  })).sort((a, b) => a.at - b.at);
+  return stops.length ? { ...f, opacity: op, gradient: { ...g, stops } } : null;
+}
+
+/** הצבעים של המילוי לאורך 0..1: ‏256 פיקסלים RGBA ב-sRGB, אלפא ישר — המנוע דוגם מזה (ramp) */
+export function fillRamp(f) {
+  const out = new Uint8Array(256 * 4);
+  const stops = f.gradient ? f.gradient.stops : [{ at: 0, color: f.color, opacity: 1 }];
+  const known = !f.gradient || f.gradient.type === 'linear' || f.gradient.type === 'radial';
+  for (let i = 0; i < 256; i++) {
+    const t = i / 255;
+    // העצירה האחרונה שלפני t, והבאה אחריה; לפני הראשונה / אחרי האחרונה — הצבע שלה. סוג לא מוכר — הראשונה
+    let i0 = 0;
+    if (known) while (i0 + 1 < stops.length && stops[i0 + 1].at <= t) i0++;
+    const a = stops[i0], b = known && t > a.at ? stops[Math.min(i0 + 1, stops.length - 1)] : a;
+    const k = b.at > a.at ? (t - a.at) / (b.at - a.at) : 0;
+    const ca = hexRgb(a.color), cb = hexRgb(b.color);
+    for (let c = 0; c < 3; c++) out[i * 4 + c] = Math.round(ca[c] + (cb[c] - ca[c]) * k);
+    out[i * 4 + 3] = Math.round(255 * (f.opacity ?? 1) * (a.opacity + (b.opacity - a.opacity) * k));
+  }
+  return out;
+}
+
+/** הגאומטריה למנוע: mode 0 אחיד, 1 לינארי (geo = from, to), 2 רדיאלי (geo = center, radius) */
+export function fillGeometry(f) {
+  const g = f.gradient;
+  if (g?.type === 'linear' && Array.isArray(g.from) && Array.isArray(g.to)) return { mode: 1, geo: [...g.from, ...g.to] };
+  if (g?.type === 'radial' && Array.isArray(g.center)) return { mode: 2, geo: [...g.center, Math.max(1e-3, g.radius || 1), 0] };
+  return { mode: 0, geo: [0, 0, 0, 0] };
+}
+
+/** fill ביחידות של הקובץ ↔ בפיקסלים: מכפילים את הקואורדינטות ב-k (בעמוד — ‎1/scale בשמירה, scale בפתיחה) */
+export function scaleFill(f, k) {
+  if (!f.gradient || k === 1) return f;
+  const g = { ...f.gradient }, m = v => (Array.isArray(v) ? v.map(x => x * k) : v);
+  for (const key of ['from', 'to', 'center']) if (key in g) g[key] = m(g[key]);
+  if ('radius' in g) g.radius = g.radius * k;
+  return { ...f, gradient: g };
+}
+
 /** שדות המתכון שמסכת השכבה שלנו כותבת (mbe-format.md סעיף 3, "עריכה לא הורסת") */
 export const MASK_RECIPE = ['source', 'mask', 'baked'];
 
@@ -115,7 +172,7 @@ const mbeLayers = (list, srcOf, px, recipeOf) => list.map(l => {
   // ה-PNG שלנו בגודל המשטח כולו: box (מיקום של תמונה קטנה) כבר אפוי לתוכו. בעמוד — px: גודל ה-PNG בפיקסלים
   if (l.type !== 'group') { delete common.box; delete common.px; if (px) common.px = px; }
   // מסכה שלנו (או שנפתחה ונמחקה / הוחלה מאז) — המתכון נכתב מחדש; מתכון של אחרים שלא טענו — נשאר כמו שהוא
-  if (l.mask || l.maskLoaded || l.adjust || l.adjustLoaded) for (const k of [...MASK_RECIPE, 'adjust']) delete common[k];
+  if (l.mask || l.maskLoaded || l.adjust || l.adjustLoaded || l.fill || l.fillLoaded) for (const k of [...MASK_RECIPE, 'adjust', 'fill']) delete common[k];
   const body = l.type === 'group' ? { children: mbeLayers(l.children, srcOf, px, recipeOf) } : { src: srcOf(l), ...(recipeOf(l) ?? {}) };
   return { ...common, ...body, opacity: round(l.opacity), blend: l.blend, visible: !!l.visible, locked: !!l.locked };
 });
@@ -184,6 +241,7 @@ export function gapsFor(rendition, tree) {
   for (const t of new Set(foreign.map(l => l.foreign.type))) g.push(`layer:${t} → omitted`);
   if (rendition === 'ora' && layers.some(l => l.mask?.enabled)) g.push('layer-mask → baked');
   if (rendition === 'ora' && layers.some(l => l.adjust)) g.push('adjust → baked');
+  if (rendition === 'ora' && layers.some(l => l.fill)) g.push('fill → baked');
   if (rendition === 'ora') {
     // ORA (GIMP / Krita) ממזג ב-sRGB; אנחנו — בלינארי. מראה שכבות חצי-שקופות ומצבי מיזוג יכול להשתנות מעט
     if (all.some(l => l.blend !== 'normal' || l.opacity < 1)) g.push('blend-space:linear → srgb');

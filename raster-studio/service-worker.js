@@ -6,7 +6,7 @@
  * אחרי שינוי ברשימת השלד — להעלות את CACHE_VERSION.
  */
 
-const CACHE_VERSION = 'raster-studio-v11';
+const CACHE_VERSION = 'raster-studio-v12';
 
 const SHELL = [
   './index.html',

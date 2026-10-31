@@ -10,7 +10,7 @@
 // מוסכמה: שורה 0 של כל אריח ושל כל FBO = הקצה העליון (y של המסמך גדל למטה). רק המסך עצמו הפוך.
 
 import { TILE, BLEND_MODES, tilesInRect, newMask } from './doc.js';
-import { adjustOf } from './formats.js';
+import { adjustOf, fillRamp, fillGeometry } from './formats.js';
 import { rasterTile, selectionBox } from './selection.js';
 import { matrix as xfMatrix, bounds as xfBounds } from './transform.js';
 
@@ -193,6 +193,25 @@ void main() {
   }
   float m = u_useSel == 1 ? texture(u_sel, v_uv).r : 1.0;
   o = mix(c, r, m);
+}`,
+
+  // שכבת מילוי / מעבר צבעים: הצבע מ-u_ramp (256×1, sRGB ישר) לפי t — אחיד (0), לינארי (1, from→to) או רדיאלי
+  // (2, מרכז ורדיוס). u_origin — פינת האריח במסמך; v_uv.y = 0 בראש האריח
+  fillgen: `#version 300 es
+precision highp float;
+uniform sampler2D u_ramp;
+uniform int u_mode;
+uniform vec4 u_geo;
+uniform vec2 u_origin;
+in vec2 v_uv; out vec4 o;
+${DECODE}
+void main() {
+  vec2 p = u_origin + v_uv * 256.0;
+  float t = 0.0;
+  if (u_mode == 1) { vec2 d = u_geo.zw - u_geo.xy; t = clamp(dot(p - u_geo.xy, d) / max(dot(d, d), 1e-6), 0.0, 1.0); }
+  else if (u_mode == 2) { t = clamp(length(p - u_geo.xy) / max(u_geo.z, 1e-6), 0.0, 1.0); }
+  vec4 c = texture(u_ramp, vec2(t * (255.0 / 256.0) + 0.5 / 256.0, 0.5));
+  o = vec4(dec(c.rgb) * c.a, c.a);
 }`,
 
   // מברשת ריפוי: המקור, ועוד (טשטוש היעד − טשטוש המקור) — בלינארי ומוכפל, בגבולות מוכפל-תקין
@@ -393,6 +412,7 @@ export class WebGL2Renderer {
     this.maskTmp = this.#tileTexture(1);     // שכבה כפול המסכה שלה, לקריאה החוצה
     this.adjLayerTmp = this.#tileTexture(1); // מה שמתחת לשכבת התאמה, אחרי ההתאמה
     this.healTmp = [this.#tileTexture(1), this.#tileTexture(1)];   // טשטוש המקור והיעד — מברשת ריפוי
+    this.fillTmp = this.#tileTexture(1);     // אריח של שכבת מילוי
     // טשטוש: אריח מרופד בשכניו (256 + 2·64), ותוצאת המעבר האופקי
     this.padTex = this.#floatTex(TILE + 128, TILE + 128);
     this.blurTmp = this.#floatTex(TILE, TILE + 128);
@@ -947,7 +967,9 @@ export class WebGL2Renderer {
   }
 
   /** האריחים שהתיקון יכול לשנות: הקיימים, ולמה שקורא שכנים — גם השכנים (הטשטוש "נשפך") */
-  #adjustKeys(adj, layer) {
+  #adjustKeys(adj, layer, doc) {
+    // מילוי — כל הקנבס (גם אריחים שעוד אין בשכבה)
+    if (adj.kind === 'fill') return new Set(tilesInRect(0, 0, doc.width, doc.height).map(([tx, ty]) => key(tx, ty)));
     const keys = new Set(layer.tiles.keys());
     if (WebGL2Renderer.adjustReach(adj) > 0) {
       for (const k of layer.tiles.keys()) {
@@ -959,7 +981,7 @@ export class WebGL2Renderer {
   }
 
   #adjustTouches(adj, layer, tx, ty) {
-    if (layer.tiles.has(key(tx, ty))) return true;
+    if (adj.kind === 'fill' || layer.tiles.has(key(tx, ty))) return true;
     if (!WebGL2Renderer.adjustReach(adj)) return false;
     for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (layer.tiles.has(key(tx + dx, ty + dy))) return true;
     return false;
@@ -992,6 +1014,13 @@ export class WebGL2Renderer {
     const k = key(tx, ty);
     const sel = doc.selection ? this.#selTex(doc, k) : null;
     base ||= this.emptyTex;
+    if (adj.kind === 'fill') {
+      // מילוי הורס (כלי המעבר): המילוי מעל השכבה, ובבחירה — רק בתוכה
+      this.#fillTile(adj.fill, tx, ty, this.fillTmp);
+      this.#blendInto(out, base, this.fillTmp, 1, 0, sel);
+      gl.activeTexture(gl.TEXTURE0);
+      return;
+    }
     if (WebGL2Renderer.adjustReach(adj) > 0) {
       const K = WebGL2Renderer.adjustReach(adj);
       this.#pad((dx, dy) => (dx || dy ? layer.tiles.get(key(tx + dx, ty + dy)) : base), K);
@@ -1127,7 +1156,7 @@ export class WebGL2Renderer {
     const { layer } = adj;
     // כל האריחים מחושבים מהמקור — לכן קודם כולם, ורק אז מחליפים (טשטוש קורא שכנים)
     const results = new Map();
-    for (const k of this.#adjustKeys(adj, layer)) {
+    for (const k of this.#adjustKeys(adj, layer, doc)) {
       const [tx, ty] = k.split(',').map(Number);
       const out = this.#tileTexture(1);
       this.#adjustTile(doc, adj, layer, tx, ty, layer.tiles.get(k), out);
@@ -1420,9 +1449,10 @@ export class WebGL2Renderer {
         [a, b] = [b, a];
         continue;
       }
+      // שכבת מילוי: התוכן — המילוי עצמו (אין פיקסלים שמורים)
       const t = layer.type === 'group'
         ? (layer.children.length ? this.#compositeList(doc, layer.children, tx, ty, depth + 1) : null)
-        : this.#layerTileFor(doc, layer, tx, ty);
+        : layer.fill ? this.#fillTile(layer.fill, tx, ty, this.fillTmp) : this.#layerTileFor(doc, layer, tx, ty);
       if (!t) continue;
       // מסכה: גם היא עוברת דרך #layerTileFor — משיכה פתוחה על המסכה מוצגת חיה. אריח חסר = מוסתר
       const mk = layer.mask?.enabled ? (this.#layerTileFor(doc, layer.mask, tx, ty) || this.emptyTex) : null;
@@ -1450,6 +1480,46 @@ export class WebGL2Renderer {
     gl.uniform1i(a.u.u_useSel, 0);
     gl.uniform4fv(a.u.u_p, WebGL2Renderer.adjustParams(adj));
     this.#quad(a, [0, 0, TILE, TILE], [0, 0, 1, 1], [TILE, TILE], -1);
+  }
+
+  /** טקסטורת ה-ramp של מילוי (במטמון לפי התוכן — מילוי שלא השתנה לא מועלה שוב) */
+  #rampTex(fill) {
+    const id = JSON.stringify(fill);
+    this.ramps ??= new Map();
+    let t = this.ramps.get(id);
+    if (t) return t;
+    const gl = this.gl;
+    if (this.ramps.size > 32) { for (const old of this.ramps.values()) gl.deleteTexture(old); this.ramps.clear(); }
+    t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, 256, 1);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 256, 1, gl.RGBA, gl.UNSIGNED_BYTE, fillRamp(fill));
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    this.ramps.set(id, t);
+    return t;
+  }
+
+  /** אריח של מילוי (צבע / מעבר) במקום (tx, ty) */
+  #fillTile(fill, tx, ty, out) {
+    const gl = this.gl;
+    const ramp = this.#rampTex(fill);
+    const { mode, geo } = fillGeometry(fill);
+    const p = this.prog.fillgen;
+    this.#target(out);
+    gl.useProgram(p.p);
+    gl.bindVertexArray(this.vao);
+    gl.disable(gl.BLEND);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, ramp);
+    gl.uniform1i(p.u.u_ramp, 0);
+    gl.uniform1i(p.u.u_mode, mode);
+    gl.uniform4fv(p.u.u_geo, geo);
+    gl.uniform2f(p.u.u_origin, tx * TILE, ty * TILE);
+    this.#quad(p, [0, 0, TILE, TILE], [0, 0, 1, 1], [TILE, TILE], -1);
+    return out;
   }
 
   /** out = mix(a, b, k × מסכה) */
@@ -1628,6 +1698,15 @@ export class WebGL2Renderer {
    * masked — כפול המסכה של השכבה, אם יש ופעילה (לייצוא: ORA, ה-src של ‎.mbe).
    */
   async readLayerPixels(layer, x, y, w, h, masked = false) {
+    if (layer.fill) {
+      // שכבת מילוי: המילוי, ועם masked — כפול המסכה
+      return this.#read((tx, ty) => {
+        const f = this.#fillTile(layer.fill, tx, ty, this.fillTmp);
+        if (!masked || !layer.mask?.enabled) return f;
+        this.#blendInto(this.maskTmp, this.emptyTex, f, 1, 0, layer.mask.tiles.get(key(tx, ty)) ?? this.emptyTex);
+        return this.maskTmp;
+      }, x, y, w, h);
+    }
     if (masked && layer.mask?.enabled) return this.#read((tx, ty) => this.#maskedTile(layer, tx, ty, this.maskTmp), x, y, w, h);
     return this.#readLayerSync(layer, x, y, w, h);
   }

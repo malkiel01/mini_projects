@@ -795,3 +795,17 @@ test('cleanAdjust: סוג מוכר — פרמטרים כמספרים, וחסר �
   assert.equal(cleanAdjust(null), null);
   assert.equal(adjustOf({ adjust: { type: 'hue-saturation', hue: 30 } }).kind, 'hsl');
 });
+
+test('מילוי: cleanFill, ramp (sRGB, אלפא ישר) וגאומטריה', async () => {
+  const { cleanFill, fillRamp, fillGeometry, scaleFill } = await import('../assets/js/engine/formats.js');
+  assert.equal(cleanFill({ color: 'red' }), null);
+  const solid = cleanFill({ color: '#ff0000', opacity: 0.5 });
+  assert.deepEqual([...fillRamp(solid).slice(0, 4)], [255, 0, 0, 128]);
+  const g = cleanFill({ gradient: { type: 'linear', from: [0, 0], to: [0, 10], stops: [{ at: 1, color: '#0000ff' }, { at: 0, color: '#ff0000' }] } });
+  const r = fillRamp(g);
+  assert.deepEqual([...r.slice(0, 4)], [255, 0, 0, 255], 'העצירות ממוינות');
+  assert.deepEqual([...r.slice(255 * 4, 256 * 4)], [0, 0, 255, 255]);
+  assert.deepEqual(fillGeometry(g), { mode: 1, geo: [0, 0, 0, 10] });
+  assert.deepEqual(scaleFill(g, 2).gradient.to, [0, 20]);
+  assert.equal(fillGeometry(cleanFill({ gradient: { type: 'conic', stops: [{ at: 0, color: '#00ff00' }] } })).mode, 0, 'סוג לא מוכר — צבע הראשונה');
+});

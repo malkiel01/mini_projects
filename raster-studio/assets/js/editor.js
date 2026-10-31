@@ -656,6 +656,7 @@ $('#hint').textContent = coarse ? 'צביטה — זום' : 'גרירה — הז
     });
     adjust = createAdjustPanel({
       root: $('#adjust'), doc: () => doc, renderer, history, toast, draw,
+      color: () => tools.state.color,
       beforeOpen: () => tools.commitFloat(),
       onChange: () => { changed = true; draw(); panel.render(); },
     });
