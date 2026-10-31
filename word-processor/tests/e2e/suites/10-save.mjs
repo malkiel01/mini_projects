@@ -54,19 +54,19 @@ export default async function (t) {
     t.ok('הטיוטה במכשיר', JSON.stringify(draft).includes('בלי רשת'));
 
     await p.click('button[aria-label="עוד"]');
-    await p.click('.menu-pop button:has-text("הורדה כ-Word")');
-    await p.waitForSelector('dialog .choices');
+    await p.click('.menu button:has-text("הורדה כ-Word")');
+    await p.waitForSelector('dialog .row-btns');
     t.ok('ייצוא בלי שמירה: נעצר ושואל', true);
-    await p.click('dialog .choices button:has-text("ביטול")');
+    await p.click('dialog .row-btns button:has-text("ביטול")');
 
     await p.click('button[aria-label="חזרה לרשימה"]');
-    await p.waitForSelector('dialog .choices');
-    await p.click('dialog .choices button:has-text("להישאר במסמך")');
+    await p.waitForSelector('dialog .row-btns');
+    await p.click('dialog .row-btns button:has-text("להישאר במסמך")');
     await p.waitForTimeout(300);
     t.ok('יציאה בלי שמירה → "להישאר" משאיר במסמך', p.url().includes('#/d/' + doc) && await p.locator('.wp-doc').isVisible());
     await p.click('button[aria-label="חזרה לרשימה"]');
-    await p.waitForSelector('dialog .choices');
-    await p.click('dialog .choices button:has-text("לצאת בכל זאת")');
+    await p.waitForSelector('dialog .row-btns');
+    await p.click('dialog .row-btns button:has-text("לצאת בכל זאת")');
     await p.waitForTimeout(500);
     t.ok('"לצאת בכל זאת" → הרשימה', !p.url().includes('#/d/'));
 

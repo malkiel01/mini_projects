@@ -8,28 +8,29 @@ export default async function (t) {
     await p.goto(t.editor);
     const card = () => p.locator(`.list .card[data-doc="${doc}"]`);
     await card().waitFor();
-    const open = async () => { await card().locator('.more').click(); return p.locator('.menu-pop button').allTextContents(); };
+    const open = async () => { await card().locator('.more').click(); return p.locator('.menu button').allTextContents(); };
     const items = await open();
     t.ok('⋯ ברשימה: פתיחה, שינוי שם, שכפול, תיקייה, הורדה, שיתוף, פעילות, סל', ['פתיחה', 'שינוי שם…', 'שכפול', 'העברה לתיקייה…', 'הורדה…', 'שיתוף…', 'פעילות במסמך', 'העברה לסל המחזור']
         .every(x => items.some(i => i.endsWith(x))), JSON.stringify(items));
-    p.once('dialog', d => d.accept('שם מהרשימה'));
-    await p.click('.menu-pop button:has-text("שינוי שם…")');
+    await p.click('.menu button:has-text("שינוי שם…")');
+    await p.fill('dialog[open] input[name=v]', 'שם מהרשימה');
+    await p.click('dialog[open] button[type=submit]');
     await p.waitForSelector(`.list .card[data-doc="${doc}"] .l1 span:text-is("שם מהרשימה")`);
     t.ok('שינוי שם מהרשימה', true);
     await open();
-    await p.click('.menu-pop button:has-text("הורדה…")');
-    const sub = await p.locator('.menu-pop button').allTextContents();
+    await p.click('.menu button:has-text("הורדה…")');
+    const sub = await p.locator('.menu button').allTextContents();
     t.ok('"הורדה…" — Word, PDF, ODT, ‎.mbe, טקסט', ['Word', 'PDF', 'ODT', '.mbe', 'טקסט'].every(x => sub.some(i => i.includes(x))), JSON.stringify(sub));
-    const [dl] = await Promise.all([p.waitForEvent('download'), p.click('.menu-pop button:has-text("הורדה כ-Word")')]);
+    const [dl] = await Promise.all([p.waitForEvent('download'), p.click('.menu button:has-text("הורדה כ-Word")')]);
     const cd = (await p.request.get(dl.url())).headers()['content-disposition'] || '';
     t.ok('הורדה כ-Word מהרשימה — קובץ ‎.docx בשם המסמך', dl.url().includes('format=docx') && cd.includes(encodeURIComponent('שם מהרשימה') + '.docx'), cd);
     await open();
-    await p.click('.menu-pop button:has-text("שכפול")');
+    await p.click('.menu button:has-text("שכפול")');
     await p.waitForSelector('.toast:not([hidden]) .toast-act');
     const titles = await p.locator('.list .card .l1 > span:first-child').allTextContents();
     t.ok('שכפול מהרשימה — העותק ברשימה, והודעה עם "פתיחה"', titles.includes('שם מהרשימה (העתק)') && await p.locator('.toast .toast-act').textContent() === 'פתיחה', JSON.stringify(titles));
     await open();
-    await p.click('.menu-pop button:has-text("העברה לסל המחזור")');
+    await p.click('.menu button:has-text("העברה לסל המחזור")');
     await p.waitForSelector(`.list .card[data-doc="${doc}"]`, { state: 'detached' });
     t.ok('העברה לסל מהרשימה — יוצא מהרשימה, עם "ביטול"', await p.locator('.toast .toast-act').textContent() === 'ביטול');
     await p.click('.toast .toast-act');
@@ -57,8 +58,8 @@ export default async function (t) {
     await p.click('button.select-toggle');
     await p.click(`.list .card[data-doc="${a}"]`);
     await p.click(`.list .card[data-doc="${b}"]`);
-    p.once('dialog', d => d.accept());
     await p.click('.select-bar button:has-text("העברה לסל")');
+    await p.click('dialog[aria-label="אישור"] button:has-text("העברה לסל")');
     await p.waitForSelector(`.list .card[data-doc="${a}"]`, { state: 'detached' });
     t.ok('לסל יחד — שניהם יוצאים, עם "2 מסמכים הועברו לסל המחזור" ו"ביטול"', (await p.locator('.toast').textContent()).includes('2 מסמכים הועברו')
         && await p.locator(`.list .card[data-doc="${b}"]`).count() === 0);

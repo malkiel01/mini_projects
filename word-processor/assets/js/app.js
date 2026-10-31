@@ -5,6 +5,8 @@
 import { createWordEditor, h, toast, sheet, seg, when } from './editor.js';
 import { createSaver, findDraft, drafts, downloadLocalCopy, STATE_TEXT } from './saver.js';
 import { createCollabSaver, setPeers } from './collab.js';
+import { choose, confirm, prompt, initDialogs } from './ui-core/dialog.js';
+import { menu } from './ui-core/menu.js';
 
 const tab = Math.random().toString(36).slice(2);
 const GUIDE = 'https://github.com/malkiel01/mini_projects/blob/main/word-processor/docs/integration.md';
@@ -137,7 +139,7 @@ async function listView(folder = null) {
         return [
             ['📂', 'פתיחה', () => { location.hash = '#/d/' + d.doc; }],
             own ? ['✏️', 'שינוי שם…', async () => {
-                const t = prompt('שם המסמך', d.title || '');
+                const t = await prompt('שם המסמך', { value: d.title || '', ok: 'שמירה' });
                 if (t === null || t.trim() === (d.title || '')) return;
                 await api('my_rename', { doc: d.doc, title: t.trim() });
                 await reload();
@@ -185,7 +187,7 @@ async function listView(folder = null) {
         selBar.append(h('span.n', ids.length ? (ids.length === 1 ? 'מסמך אחד נבחר' : `${ids.length} מסמכים נבחרו`) : 'בחרו מסמכים'),
             h('button.btn', { type: 'button', disabled: !ids.length, onclick: () => moveDialog({ docs: chosen }) }, h('span', { 'aria-hidden': 'true' }, '📁'), ' העברה לתיקייה'),
             h('button.btn.danger', { type: 'button', disabled: !ids.length, onclick: async () => {
-                if (!confirm(ids.length === 1 ? 'להעביר את המסמך לסל המחזור?' : `להעביר ${ids.length} מסמכים לסל המחזור?`)) return;
+                if (!await confirm(ids.length === 1 ? 'להעביר את המסמך לסל המחזור?' : `להעביר ${ids.length} מסמכים לסל המחזור?`, { ok: 'העברה לסל', danger: true })) return;
                 try {
                     for (const id of ids) await api('my_delete', { doc: id });
                     picked.clear(); selecting = false;
@@ -242,7 +244,7 @@ async function listView(folder = null) {
     const newFolder = () => nameSheet('תיקייה חדשה', '', 'יצירה', name => api('my_folder', { op: 'create', name, parent: folder }));
     const renameFolder = f => nameSheet('שינוי שם התיקייה', f.name, 'שמירה', name => api('my_folder', { op: 'rename', id: f.id, name }));
     async function deleteFolder(f) {
-        if (!confirm(`למחוק את התיקייה "${f.name}"? המסמכים והתיקיות שבתוכה יעברו ${f.parent ? 'לתיקייה שמעליה' : 'לראש הרשימה'} — שום מסמך לא נמחק.`)) return;
+        if (!await confirm(`למחוק את התיקייה "${f.name}"? המסמכים והתיקיות שבתוכה יעברו ${f.parent ? 'לתיקייה שמעליה' : 'לראש הרשימה'} — שום מסמך לא נמחק.`, { ok: 'מחיקת התיקייה', danger: true })) return;
         folders = (await api('my_folder', { op: 'delete', id: f.id })).folders;
         await reload();
         toast(`התיקייה "${f.name}" נמחקה`);
@@ -302,7 +304,7 @@ async function trashView() {
                 try { await api('my_restore', { doc: d.doc }); toast(`"${d.title || 'ללא שם'}" שוחזר`); load(); } catch (e) { toast(e.message, true); }
             } }, 'שחזור');
             const purge = h('button.btn.sm.danger', { type: 'button', onclick: async () => {
-                if (!confirm(`למחוק את "${d.title || 'ללא שם'}" לצמיתות? אי אפשר לבטל.`)) return;
+                if (!await confirm(`למחוק את "${d.title || 'ללא שם'}" לצמיתות? אי אפשר לבטל.`, { ok: 'מחיקה לצמיתות', danger: true })) return;
                 try { await api('my_purge', { doc: d.doc }); toast('נמחק לצמיתות'); load(); } catch (e) { toast(e.message, true); }
             } }, 'מחיקה לצמיתות');
             list.append(h('li.card.static',
@@ -595,7 +597,7 @@ async function openDoc(id) {
         if (!c?.json || current !== cur) return;
         showBanner(`הגרסה שלך מלפני הטעינה מחדש (${when(Math.round(c.at / 1000))}) שמורה בנפרד במכשיר.`,
             ['הורדה', () => downloadLocalCopy(c.json, cur.title + ' (הגרסה שלי)')],
-            ['מחיקה', () => { if (confirm('למחוק את הגרסה המקומית? אי אפשר לבטל.')) { drafts.del(draftKey + ':conflict'); hideBanner(); } }], 'conflict-copy');
+            ['מחיקה', async () => { if (await confirm('למחוק את הגרסה המקומית? אי אפשר לבטל.', { ok: 'מחיקה', danger: true })) { drafts.del(draftKey + ':conflict'); hideBanner(); } }], 'conflict-copy');
     }
     if (!writable() && d.lock) lockedBy(`פתוח לעריכה אצל ${d.lock.by}`);
     conflictCopy();
@@ -612,7 +614,7 @@ async function openDoc(id) {
         showBanner(`נמצאו במכשיר שינויים שלא נשמרו (${at}).` + (changedSince ? ' שימו לב: המסמך השתנה מאז בשרת — שחזור ידרוס את השינויים ההם.' : ''),
             ['שחזור', () => { ed.setContent(dr.json); saver.markDirty(d.version); hideBanner(); toast('השינויים שוחזרו'); }],
             ['הורדה', () => downloadLocalCopy(dr.json, cur.title)],
-            ['מחיקה', () => { if (confirm('למחוק את השינויים שלא נשמרו? אי אפשר לבטל.')) { drafts.del(draftKey); hideBanner(); } }]);
+            ['מחיקה', async () => { if (await confirm('למחוק את השינויים שלא נשמרו? אי אפשר לבטל.', { ok: 'מחיקה', danger: true })) { drafts.del(draftKey); hideBanner(); } }]);
     });
 
     // דופק: מחזיק את הנעילה; כשהיא תפוסה — בודק אם התפנתה
@@ -687,18 +689,6 @@ async function ensureSaved(cur, what, leaving = false) {
     }
 }
 
-/** חלון בחירה פשוט. מחזיר את המפתח שנבחר, או null כשנסגר. */
-function choose(title, text, options) {
-    return new Promise(resolve => {
-        let picked = null;
-        const dlg = sheet(title, body => {
-            body.append(h('p', text), h('div.choices', options.filter(Boolean).map(([key, label, kind]) =>
-                h('button.btn' + (kind ? '.' + kind : '.ghost'), { type: 'button', onclick: () => { picked = key; dlg.close(); } }, label))));
-        });
-        dlg.addEventListener('close', () => resolve(picked));
-    });
-}
-
 async function closeDoc() {
     const cur = current;
     if (!cur) return;
@@ -734,15 +724,9 @@ window.addEventListener('pagehide', () => {
 });
 document.addEventListener('visibilitychange', () => { if (document.hidden && current?.saver?.dirty) current.saver.flush(); });
 
+/** תפריט ⋯ (ui-core/menu.js — Esc, חצים, מיקום שלא נחתך): items — [[סמל, שם, פעולה]] */
 function popMenu(anchor, items) {
-    document.querySelector('.menu-pop')?.remove();
-    const r = anchor.getBoundingClientRect();
-    const m = h('div.menu-pop', { role: 'menu', style: { top: r.bottom + 4 + 'px', left: Math.max(8, r.left - 160) + 'px' } },
-        items.map(([ic, label, fn]) => h('button', { type: 'button', role: 'menuitem', onclick: async () => { m.remove(); try { await fn(); } catch (e) { toast(e.message, true); } } },
-            h('span', { 'aria-hidden': 'true' }, ic), label)));
-    document.body.append(m);
-    m.querySelector('button')?.focus();
-    setTimeout(() => document.addEventListener('click', function off(e) { if (!m.contains(e.target)) { m.remove(); document.removeEventListener('click', off); } }), 0);
+    menu(anchor, items.filter(Boolean).map(([icon, label, run]) => ({ icon, label, run })));
 }
 
 // ---------- שיתוף (שלב 5) ----------
@@ -772,7 +756,7 @@ async function shareDialog(id) {
     // קישור עריכה לזר (lib/links.php): מסמך אחד, בלי חשבון — באישור מנהל העורך
     const linkBox = h('div.link-box');
     const linkOp = async op => {
-        if (op === 'revoke' && !confirm('לבטל את הקישור? מי שקיבל אותו לא יוכל להמשיך לערוך.')) return;
+        if (op === 'revoke' && !await confirm('לבטל את הקישור? מי שקיבל אותו לא יוכל להמשיך לערוך.', { ok: 'ביטול הקישור', danger: true })) return;
         try { link = (await api('my_link', { doc: id, op })).link; paintLink(); } catch (e) { toast(e.message, true); }
     };
     const paintLink = () => {
@@ -858,7 +842,7 @@ async function adminView() {
                 h('div.body', h('div.l1', h('span', l.title || 'ללא שם'), h('span.chip.' + chip[0], chip[1])),
                     h('div.l2', `של ${l.owner || '—'} · ` + (l.status === 'active' ? `עד ${new Date(l.expires_at * 1000).toLocaleDateString('he-IL')}` : `ביקש ${when(l.created_at)}`))),
                 l.status === 'pending' ? h('button.btn.sm.primary', { onclick: () => decide(true) }, 'אישור') : null,
-                h('button.btn.sm.ghost', { onclick: () => (l.status !== 'active' || confirm(`לבטל את הקישור ל"${l.title || 'ללא שם'}"? מי שקיבל אותו לא יוכל להמשיך לערוך.`)) && decide(false) },
+                h('button.btn.sm.ghost', { onclick: async () => (l.status !== 'active' || await confirm(`לבטל את הקישור ל"${l.title || 'ללא שם'}"? מי שקיבל אותו לא יוכל להמשיך לערוך.`, { ok: 'ביטול הקישור', danger: true })) && decide(false) },
                     l.status === 'pending' ? 'דחייה' : 'ביטול')));
         }
     };
@@ -876,7 +860,7 @@ async function adminView() {
                     h('div.body', h('div.l1', h('span', c.name || c.id), h('span.chip.' + chip[0], chip[1])),
                         h('div.l2', `${c.id} · ${c.origins.join(', ')} · ${c.docs} מסמכים`)),
                     c.status !== 'active' ? h('button.btn.sm.primary', { onclick: () => set('active') }, 'אישור')
-                        : h('button.btn.sm.ghost', { onclick: () => confirm(`לכבות את ${c.name || c.id}? ההטמעה תפסיק לעבוד אצלה.`) && set('disabled') }, 'כיבוי')));
+                        : h('button.btn.sm.ghost', { onclick: async () => await confirm(`לכבות את ${c.name || c.id}? ההטמעה תפסיק לעבוד אצלה.`, { ok: 'כיבוי', danger: true }) && set('disabled') }, 'כיבוי')));
             }
         } catch (e) {
             list.textContent = '';
@@ -888,9 +872,7 @@ async function adminView() {
 
 // ---------- התחלה ----------
 (async () => {
-    (() => { const vv = window.visualViewport; if (!vv) return;
-        const set = () => document.documentElement.style.setProperty('--vvh', Math.round(vv.height) + 'px');
-        vv.addEventListener('resize', set); set(); })();
+    initDialogs();   // ui-core: [data-close], סגירה ברקע, --vvh / --kb
     try {
         me = (await api('me')).user;
     } catch (e) {

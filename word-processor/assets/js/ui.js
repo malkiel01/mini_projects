@@ -1,68 +1,23 @@
 /**
  * כלי ממשק קטנים — בלי מצב של עורך: בניית אלמנטים (h), הודעה (toast), גיליון / חלון (sheet), שדות, ותאריך.
  * הוצאו מ-editor.js (F20 — הפרדת מודולים); editor.js מייצא את h / toast / sheet / field / seg / when גם הלאה.
+ * h / toast / sheet — מתאם דק ל-ui-core (assets/js/ui-core, עותק של creative-suite/ui-core/src/js — לא עורכים שם).
  */
 import { FONTS, cssFont } from './extensions.js';
+import { h } from './ui-core/dom.js';
+import { sheet as uiSheet, initDialogs } from './ui-core/dialog.js';
+import { toast as uiToast } from './ui-core/toast.js';
 
-/** h('button.btn.primary', {onclick}, 'טקסט', child…) */
-export function h(sel, attrs, ...kids) {
-    const [tag, ...cls] = sel.split('.');
-    const el = document.createElement(tag || 'div');
-    if (cls.length) el.className = cls.join(' ');
-    if (attrs && (typeof attrs !== 'object' || attrs instanceof Node || Array.isArray(attrs))) { kids.unshift(attrs); attrs = null; }
-    for (const [k, v] of Object.entries(attrs || {})) {
-        if (v === null || v === undefined || v === false) continue;
-        if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
-        else if (k === 'style' && typeof v === 'object') Object.assign(el.style, v);
-        else if (k in el && !k.startsWith('aria') && !k.startsWith('data')) el[k] = v;
-        else el.setAttribute(k, v === true ? '' : v);
-    }
-    for (const k of kids.flat()) if (k !== null && k !== undefined && k !== false) el.append(k instanceof Node ? k : String(k));
-    return el;
-}
+// h, הגיליון וההודעה — מ-ui-core (creative-suite/ui-core; הם נולדו כאן). כאן רק מתאם לחתימות הישנות, כך שכל הקוראים
+// לא משתנים. initDialogs: [data-close], סגירה בלחיצה ברקע, --vvh / --kb
+export { h, initDialogs };
 
 /** הודעה קצרה בתחתית המסך. action: {label, run} — כפתור בהודעה (למשל "ביטול"); ההודעה נשארת יותר זמן. */
-export function toast(msg, err = false, action = null) {
-    const el = document.querySelector('.toast');
-    if (!el) return;
-    el.textContent = msg;
-    if (action) el.append(h('button.toast-act', { type: 'button', onclick: () => { el.hidden = true; action.run(); } }, action.label));
-    el.classList.toggle('err', err);
-    el.classList.toggle('has-act', !!action);
-    el.hidden = false;
-    clearTimeout(toast.t);
-    toast.t = setTimeout(() => { el.hidden = true; }, action ? 8000 : 2800);
-}
+export const toast = (msg, err = false, action = null) => uiToast(msg, { kind: err ? 'error' : '', action });
 
-/** גיליון עריכה (dialog) — חלון במחשב, מסך מלא בטלפון. fields(body) ממלא; onSave(form) → true לסגירה. */
-export function sheet(title, fill, onSave, saveLabel = 'אישור') {
-    const body = h('div.sheet-body');
-    const err = h('p.error', { role: 'alert', hidden: true });
-    const dlg = h('dialog', { 'aria-label': title },
-        h('form', { method: 'dialog', novalidate: true },
-            h('header.sheet-head',
-                h('button.icon-btn', { type: 'button', 'aria-label': 'סגירה', onclick: () => dlg.close() }, '✕'),
-                h('h2', title),
-                onSave ? h('button.btn.primary', { type: 'submit' }, saveLabel) : null),
-            body));
-    fill(body, dlg);
-    body.append(err);
-    dlg.querySelector('form').addEventListener('submit', async e => {
-        e.preventDefault();
-        if (!onSave) return dlg.close();
-        err.hidden = true;
-        try {
-            if ((await onSave(dlg.querySelector('form'), dlg)) !== false) dlg.close();
-        } catch (ex) {
-            err.textContent = ex.message || String(ex);
-            err.hidden = false;
-        }
-    });
-    dlg.addEventListener('close', () => dlg.remove());
-    document.body.append(dlg);
-    dlg.showModal();
-    return dlg;
-}
+/** גיליון עריכה (dialog). fill(body, dlg) ממלא; onSave(form, dlg) → false נשאר פתוח, זריקה — הודעה בחלון. מחזיר את ה-<dialog>. */
+export const sheet = (title, fill, onSave, saveLabel = 'אישור') =>
+    uiSheet({ title, body: fill, onSubmit: onSave || null, submit: onSave ? saveLabel : null }).el;
 
 export function field(label, input, cls = '') {
     return h('label.f' + (cls ? '.' + cls : ''), h('span', label), input);

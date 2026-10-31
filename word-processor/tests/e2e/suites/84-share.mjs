@@ -12,7 +12,7 @@ export default async function (t) {
     // חלון השיתוף: יוסי עוד לא נכנס לעורך — השיתוף מחכה לו
     await t.openDoc(dana, doc);
     await dana.click('button[aria-label="עוד"]');
-    await dana.click('.menu-pop button:has-text("שיתוף")');
+    await dana.click('.menu button:has-text("שיתוף")');
     const d = dana.locator('dialog[open]');
     await d.locator('input[name=email]').fill('Yossi@Example.com');
     await d.locator('select[aria-label="תפקיד"]').last().selectOption('view');
@@ -49,7 +49,7 @@ export default async function (t) {
         title: document.querySelector('.title-in').readOnly }));
     t.ok('צפייה: לא ניתן לעריכה, "צפייה בלבד", שם המסמך נעול', !st.editable && st.state === 'צפייה בלבד' && st.title, JSON.stringify(st));
     await yossi.click('button[aria-label="עוד"]');
-    const menu = await yossi.locator('.menu-pop').textContent();
+    const menu = await yossi.locator('.menu').textContent();
     t.ok('צפייה: בתפריט אין שיתוף ואין העברה לסל; יש הורדה ושכפול', !menu.includes('שיתוף') && !menu.includes('לסל') && menu.includes('הורדה כ-Word') && menu.includes('שכפול'), menu);
     await yossi.keyboard.press('Escape');
     await yossi.mouse.click(5, 5);
