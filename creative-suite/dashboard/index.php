@@ -13,7 +13,9 @@ const DOCS = __DIR__ . '/../docs';
 const ROOT = __DIR__ . '/../..';
 /** מצב שלב במסמך מעקב של אפליקציה → משקל. 👤 (ממתין לאימות) לא משנה את המשקל. */
 const STAGE_WEIGHT = ['✅' => 1.0, '🟡' => 0.5, '⏳' => 0.5, '⬜' => 0.0];
-const KIND_ICON = ['text' => '📝', 'raster' => '🖌️', 'vector' => '✒️', 'layout' => '📰'];
+const KIND_ICON = ['text' => '📝', 'raster' => '🖌️', 'vector' => '✒️', 'layout' => '📰', 'design' => '🎨'];
+/** פרויקט בלי kind — לפי התיקייה. */
+const FOLDER_ICON = ['suite-cloud' => '☁️', 'creative-suite/ui-core' => '🧩'];
 
 function h(string $s): string { return htmlspecialchars($s, ENT_QUOTES, 'UTF-8'); }
 
@@ -186,11 +188,49 @@ function project_doc(string $rel): ?array
             'updated' => filemtime($file)];
 }
 
+/**
+ * מטריצת "קוד אחד לכל החבילה" — docs/integration.md: שורה לכל יכולת משותפת, עמודה לכל אפליקציה (שם התיקייה בכותרת).
+ * המקום היחיד שבו מסומן מי כבר משתמשת במה; מכאן הפס "החבילה" של כל אפליקציה.
+ */
+function integration(): array
+{
+    $md = (string)@file_get_contents(DOCS . '/integration.md');
+    $apps = []; $rows = [];
+    foreach (section($md, 'המטריצה') as $line) {
+        if (!str_starts_with(trim($line), '|') || preg_match('/^\|\s*-/u', $line)) continue;
+        $c = array_map('trim', explode('|', trim(trim($line), '|')));
+        if (!$apps && ($c[0] ?? '') === '#') {
+            $apps = array_map(fn($x) => trim(plain($x), '` /'), array_slice($c, 3));
+            continue;
+        }
+        if (!$apps || !preg_match('/^\d+$/', $c[0] ?? '')) continue;
+        $cells = [];
+        foreach ($apps as $i => $app) {
+            preg_match('/✅|🟡|⬜|—/u', $c[3 + $i] ?? '', $m);
+            $cells[$app] = $m[0] ?? '—';
+        }
+        $rows[] = ['num' => $c[0], 'name' => $c[1], 'src' => $c[2] ?? '', 'cells' => $cells];
+    }
+    return ['apps' => $apps, 'rows' => $rows];
+}
+
+/** השורות של אפליקציה אחת במטריצה (בלי "—") ואחוז: ✅ = 1, 🟡 = ½. */
+function suite_of(array $mx, string $folder): ?array
+{
+    if (!in_array($folder, $mx['apps'], true)) return null;
+    $rows = [];
+    foreach ($mx['rows'] as $r) if (($r['cells'][$folder] ?? '—') !== '—') $rows[] = $r + ['mark' => $r['cells'][$folder]];
+    if (!$rows) return null;
+    $w = array_sum(array_map(fn($r) => ['✅' => 1, '🟡' => 0.5][$r['mark']] ?? 0, $rows));
+    return ['rows' => $rows, 'pct' => (int)round(100 * $w / count($rows)),
+            'done' => count(array_filter($rows, fn($r) => $r['mark'] === '✅'))];
+}
+
 /** הפרויקטים מטבלת תוכנית האב. */
 function projects(): array
 {
     $md = (string)@file_get_contents(DOCS . '/master-spec.md');
-    $list = [];
+    $list = []; $mx = integration();
     foreach (section($md, '3.') as $line) {
         if (!preg_match('/^\|\s*(\d+)\s*\|/u', $line)) continue;
         $c = array_map('trim', explode('|', trim($line, " |")));
@@ -200,6 +240,11 @@ function projects(): array
         $goals = $doc['goals'] ?? [];
         $done = count(array_filter($goals, fn($g) => $g['done']));
         $kindKey = trim(plain($kind), '` ');
+        $suite = suite_of($mx, preg_split('#[/\s]#u', trim(plain($folder), '` '))[0]);
+        $app = $doc['app'] ?? null;
+        // "האפליקציה": מסמך המעקב שלה אם יש, אחרת היעדים במסמך הפרויקט. "החבילה": המטריצה.
+        $gpct = $goals ? (int)round(100 * $done / count($goals)) : 0;
+        $apct = $app ? $app['pct'] : $gpct;
         $list[] = [
             'id'      => $doc ? basename($doc['file'], '.md') : 'p' . $num,
             'num'     => $num,
@@ -209,16 +254,18 @@ function projects(): array
             'kind'    => $kindKey,
             'deps'    => plain($deps),
             'status'  => $status,
-            'icon'    => KIND_ICON[$kindKey] ?? ($num === '0' ? '⚙️' : '📦'),
+            'icon'    => KIND_ICON[$kindKey] ?? FOLDER_ICON[trim(preg_split('#\s#u', trim(plain($folder), '` '))[0], '/')] ?? ($num === '0' ? '⚙️' : '📦'),
             'doc'     => $doc,
             'goals'   => $goals,
             'owner'   => $doc['owner'] ?? [],
             'ideas'   => $doc['ideas'] ?? [],
             'done'    => $done,
-            'gpct'    => $gpct = $goals ? (int)round(100 * $done / count($goals)) : 0,
-            'app'     => $app = $doc['app'] ?? null,
-            // יש מסמך מעקב: ממוצע של האפליקציה עצמה ושל החיבור לחבילה; אחרת — היעדים בלבד
-            'pct'     => $app ? (int)round(($app['pct'] + $gpct) / 2) : $gpct,
+            'gpct'    => $gpct,
+            'app'     => $app,
+            'apct'    => $apct,
+            'suite'   => $suite,
+            // אפליקציה בחבילה: ממוצע של האפליקציה עצמה ושל החיבור לקוד המשותף; מודול משותף — היעדים שלו
+            'pct'     => $suite ? (int)round(($apct + $suite['pct']) / 2) : $apct,
         ];
     }
     return $list;
@@ -271,8 +318,8 @@ $started  = count(array_filter($all, fn($p) => $p['pct'] > 0 && $p['pct'] < 100)
 <main id="main" tabindex="-1">
 <?php if ($sel): $p = $sel; ?>
   <div class="summary">
-    <?php if ($p['app']): ?>
-    <div class="line"><span class="muted">האפליקציה</span> <b><?= $p['app']['pct'] ?>%</b> <span class="muted">· החבילה</span> <b><?= $p['gpct'] ?>%</b><span class="pct"><?= $p['pct'] ?>%</span></div>
+    <?php if ($p['suite']): ?>
+    <div class="line"><span class="muted">האפליקציה</span> <b><?= $p['apct'] ?>%</b> <span class="muted">· החבילה</span> <b><?= $p['suite']['pct'] ?>%</b><span class="pct"><?= $p['pct'] ?>%</span></div>
     <?php else: ?>
     <div class="line"><span class="muted">הושלמו</span> <b><?= $p['done'] ?></b> <span class="muted">מתוך <?= count($p['goals']) ?> יעדים</span><span class="pct"><?= $p['pct'] ?>%</span></div>
     <?php endif; ?>
@@ -301,7 +348,7 @@ $started  = count(array_filter($all, fn($p) => $p['pct'] > 0 && $p['pct'] < 100)
     </ul>
     <p class="hint">מתוך <code><?= h($a['file']) ?></code> (של הצ'אט של האפליקציה — לקריאה בלבד). ✅ = שלב מלא, 🟡 / ⏳ = חצי, ⬜ = אפס.</p>
   <?php endif; ?>
-  <h2 class="sec-title">חיבור לחבילה (‎.mbe, קוד משותף) — <?= $p['gpct'] ?>%</h2>
+  <h2 class="sec-title">יעדים בחבילה</h2>
   <?php else: ?>
   <h2 class="sec-title">יעדים</h2>
   <?php endif; ?>
@@ -331,6 +378,16 @@ $started  = count(array_filter($all, fn($p) => $p['pct'] > 0 && $p['pct'] < 100)
     <p class="empty">אין הצעות כרגע.</p>
   <?php endif; ?>
   </details>
+  <?php if ($p['suite']): $su = $p['suite']; ?>
+  <?= group_open('suite-' . $p['id'], '🔗 קוד אחד לכל החבילה — ' . $su['pct'] . '%', count($su['rows']) - $su['done'], true) ?>
+    <ul class="list goals">
+      <?php foreach ($su['rows'] as $r): ?>
+        <li class="<?= $r['mark'] === '✅' ? 'done' : '' ?>"><span class="mk" aria-hidden="true"><?= $r['mark'] ?></span><span><?= inline($r['name']) ?><br><small class="muted"><?= inline($r['src']) ?></small></span></li>
+      <?php endforeach; ?>
+    </ul>
+    <p class="hint">מ-<code>creative-suite/docs/integration.md</code> — המקום היחיד שבו מסומן מי משתמשת בקוד המשותף. ✅ משתמשת · 🟡 חלקית · ⬜ עוד לא.</p>
+  </details>
+  <?php endif; ?>
   <p class="hint">מהמסמך <code><?= h($p['doc']['file'] ?? '') ?></code> — הקטעים "התקדמות" (הצ'אט), "ממתין לבעל המערכת" (אתה) ו"שיפורים מומלצים".</p>
 <?php else: ?>
   <p class="hint">כל אפליקציה בחבילה, האפיון שלה ומה הושלם מתוך היעדים שבמסמך שלה. מתעדכן לבד בכל פריסה של המסמכים.</p>
@@ -372,6 +429,17 @@ $started  = count(array_filter($all, fn($p) => $p['pct'] > 0 && $p['pct'] < 100)
     <?php if ($ideas): ?><ul class="list goals"><?php foreach ($ideas as [$p, $g]) echo task_html($p, $g, 'idea', true); ?></ul>
     <?php else: ?><p class="empty">אין הצעות כרגע.</p><?php endif; ?>
   </details>
+  <?php $mx = integration(); if ($mx['rows']):
+    $byFolder = []; foreach ($all as $p) $byFolder[preg_split('#[/\s]#u', $p['folder'])[0]] = $p; ?>
+  <?= group_open('matrix', '🔗 קוד אחד לכל החבילה', count($mx['rows']), false) ?>
+    <p class="hint">כל יכולת שחוזרת בין האפליקציות — נכתבת פעם אחת, וכל אפליקציה מושכת עותק. ✅ משתמשת · 🟡 חלקית · ⬜ עוד לא · — לא רלוונטי.</p>
+    <div class="matrix-wrap"><table class="matrix">
+      <thead><tr><th scope="col">יכולת</th><?php foreach ($mx['apps'] as $a): $pp = $byFolder[$a] ?? null; ?><th scope="col" title="<?= h($pp['name'] ?? $a) ?>"><span aria-hidden="true"><?= $pp['icon'] ?? '📦' ?></span><span class="sr-only"><?= h($pp['name'] ?? $a) ?></span></th><?php endforeach; ?></tr></thead>
+      <tbody><?php foreach ($mx['rows'] as $r): ?><tr><th scope="row"><?= inline($r['name']) ?><small><?= inline($r['src']) ?></small></th><?php foreach ($mx['apps'] as $a): ?><td><?= $r['cells'][$a] ?></td><?php endforeach; ?></tr><?php endforeach; ?></tbody>
+    </table></div>
+    <p class="hint">מ-<code>creative-suite/docs/integration.md</code>. הצ'אט שעשה מעבר מסמן את התא שלו שם — ולא במסמך הפרויקט.</p>
+  </details>
+  <?php endif; ?>
   <?= group_open('projects', 'הפרויקטים', count($all), true) ?>
   <ul class="list">
     <?php foreach ($all as $p): ?>
@@ -379,9 +447,9 @@ $started  = count(array_filter($all, fn($p) => $p['pct'] > 0 && $p['pct'] < 100)
         <span class="use-ic" aria-hidden="true"><?= $p['icon'] ?></span>
         <span class="use-tx"><b class="one"><?= h($p['name']) ?></b>
           <small class="one"><?= !empty($p['doc']['missing']) ? '⚠ המסמך לא נמצא בשרת · ' : '' ?><?= h($p['style'] !== '—' ? 'בסגנון ' . $p['style'] : 'משותף') ?> · <?= h(status_label($p['status'])) ?></small>
-          <?php if ($p['app']): ?>
-          <span class="bar"><i>האפליקציה</i><span class="track" role="progressbar" aria-label="האפליקציה עצמה" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<?= $p['app']['pct'] ?>"><span style="inline-size:<?= $p['app']['pct'] ?>%"></span></span><b><?= $p['app']['pct'] ?>%</b></span>
-          <span class="bar"><i>החבילה</i><span class="track" role="progressbar" aria-label="חיבור לחבילה" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<?= $p['gpct'] ?>"><span style="inline-size:<?= $p['gpct'] ?>%"></span></span><b><?= $p['gpct'] ?>%</b></span>
+          <?php if ($p['suite']): ?>
+          <span class="bar"><i>האפליקציה</i><span class="track" role="progressbar" aria-label="האפליקציה עצמה" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<?= $p['apct'] ?>"><span style="inline-size:<?= $p['apct'] ?>%"></span></span><b><?= $p['apct'] ?>%</b></span>
+          <span class="bar"><i>החבילה</i><span class="track" role="progressbar" aria-label="קוד אחד לכל החבילה" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<?= $p['suite']['pct'] ?>"><span style="inline-size:<?= $p['suite']['pct'] ?>%"></span></span><b><?= $p['suite']['pct'] ?>%</b></span>
           <?php else: ?>
           <span class="bar"><span class="track" role="progressbar" aria-label="התקדמות" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<?= $p['pct'] ?>"><span style="inline-size:<?= $p['pct'] ?>%"></span></span><b><?= $p['pct'] ?>%</b></span>
           <?php endif; ?>
@@ -392,7 +460,7 @@ $started  = count(array_filter($all, fn($p) => $p['pct'] > 0 && $p['pct'] < 100)
     <?php endforeach; ?>
   </ul>
   </details>
-  <p class="hint">🤖 משימות פתוחות לצ'אט · 👤 ממתין לך · 💡 שיפורים מומלצים. האחוז הכולל — ממוצע הפרויקטים (כל פרויקט באותו משקל). אפליקציה עם מסמך מעקב משלה — ממוצע של האפליקציה עצמה ושל החיבור לחבילה (‎.mbe). פרויקט בלי יעדים — 0%.</p>
+  <p class="hint">🤖 משימות פתוחות לצ'אט · 👤 ממתין לך · 💡 שיפורים מומלצים. האחוז הכולל — ממוצע הפרויקטים (כל פרויקט באותו משקל). אפליקציה — ממוצע של שני פסים: "האפליקציה" (היעדים שלה, או מסמך המעקב שלה) ו"החבילה" (כמה מהקוד המשותף היא כבר משתמשת — מטבלת "קוד אחד לכל החבילה"). פרויקט בלי יעדים — 0%.</p>
 <?php endif; ?>
 </main>
 <p class="sr-only" role="status" aria-live="polite" id="live"></p>

@@ -245,3 +245,13 @@ details.group.sub { margin-block-start: var(--s2); }
   max-block-size: 40vh; overflow: auto; unicode-bidi: plaintext; }
 .btn.copy { min-block-size: 36px; padding: 0 var(--s3); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); cursor: pointer; }
 .btn.copy.ok { border-color: var(--ok); color: var(--ok); }
+
+/* "קוד אחד לכל החבילה" — המטריצה: יכולת × אפליקציה. גלילה אופקית רק בתוך הטבלה, לא בדף. */
+.matrix-wrap { overflow-x: auto; margin-block: var(--s2); border: 1px solid var(--line); border-radius: 12px; }
+.matrix { border-collapse: collapse; inline-size: 100%; font-size: .85rem; }
+.matrix th, .matrix td { padding: 6px 4px; border-block-end: 1px solid var(--line); }
+.matrix thead th { position: sticky; inset-block-start: 0; background: var(--surface); font-size: 1.1rem; }
+.matrix tbody th { text-align: start; font-weight: 500; min-inline-size: 12em; }
+.matrix tbody th small { display: block; color: var(--muted); font-size: .72rem; font-weight: 400; }
+.matrix td { text-align: center; inline-size: 2.2em; }
+.matrix tr:last-child > * { border-block-end: 0; }
