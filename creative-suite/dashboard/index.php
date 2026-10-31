@@ -272,7 +272,7 @@ $started  = count(array_filter($all, fn($p) => $p['pct'] > 0 && $p['pct'] < 100)
 <?php if ($sel): $p = $sel; ?>
   <div class="summary">
     <?php if ($p['app']): ?>
-    <div class="line"><span class="muted">האפליקציה</span> <b><?= $p['app']['pct'] ?>%</b> <span class="muted">· <bdi dir="ltr">.mbe</bdi></span> <b><?= $p['gpct'] ?>%</b><span class="pct"><?= $p['pct'] ?>%</span></div>
+    <div class="line"><span class="muted">האפליקציה</span> <b><?= $p['app']['pct'] ?>%</b> <span class="muted">· החבילה</span> <b><?= $p['gpct'] ?>%</b><span class="pct"><?= $p['pct'] ?>%</span></div>
     <?php else: ?>
     <div class="line"><span class="muted">הושלמו</span> <b><?= $p['done'] ?></b> <span class="muted">מתוך <?= count($p['goals']) ?> יעדים</span><span class="pct"><?= $p['pct'] ?>%</span></div>
     <?php endif; ?>
@@ -301,7 +301,7 @@ $started  = count(array_filter($all, fn($p) => $p['pct'] > 0 && $p['pct'] < 100)
     </ul>
     <p class="hint">מתוך <code><?= h($a['file']) ?></code> (של הצ'אט של האפליקציה — לקריאה בלבד). ✅ = שלב מלא, 🟡 / ⏳ = חצי, ⬜ = אפס.</p>
   <?php endif; ?>
-  <h2 class="sec-title">חיבור לחבילה (<bdi dir="ltr">.mbe</bdi>) — <?= $p['gpct'] ?>%</h2>
+  <h2 class="sec-title">חיבור לחבילה (‎.mbe, קוד משותף) — <?= $p['gpct'] ?>%</h2>
   <?php else: ?>
   <h2 class="sec-title">יעדים</h2>
   <?php endif; ?>
@@ -381,7 +381,7 @@ $started  = count(array_filter($all, fn($p) => $p['pct'] > 0 && $p['pct'] < 100)
           <small class="one"><?= !empty($p['doc']['missing']) ? '⚠ המסמך לא נמצא בשרת · ' : '' ?><?= h($p['style'] !== '—' ? 'בסגנון ' . $p['style'] : 'משותף') ?> · <?= h(status_label($p['status'])) ?></small>
           <?php if ($p['app']): ?>
           <span class="bar"><i>האפליקציה</i><span class="track" role="progressbar" aria-label="האפליקציה עצמה" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<?= $p['app']['pct'] ?>"><span style="inline-size:<?= $p['app']['pct'] ?>%"></span></span><b><?= $p['app']['pct'] ?>%</b></span>
-          <span class="bar"><i><bdi dir="ltr">.mbe</bdi></i><span class="track" role="progressbar" aria-label="חיבור לחבילה" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<?= $p['gpct'] ?>"><span style="inline-size:<?= $p['gpct'] ?>%"></span></span><b><?= $p['gpct'] ?>%</b></span>
+          <span class="bar"><i>החבילה</i><span class="track" role="progressbar" aria-label="חיבור לחבילה" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<?= $p['gpct'] ?>"><span style="inline-size:<?= $p['gpct'] ?>%"></span></span><b><?= $p['gpct'] ?>%</b></span>
           <?php else: ?>
           <span class="bar"><span class="track" role="progressbar" aria-label="התקדמות" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<?= $p['pct'] ?>"><span style="inline-size:<?= $p['pct'] ?>%"></span></span><b><?= $p['pct'] ?>%</b></span>
           <?php endif; ?>
