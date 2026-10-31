@@ -17,10 +17,48 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/lib/drive.php';
 require_once __DIR__ . '/lib/clients.php';
+require_once __DIR__ . '/lib/ai.php';
 
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: same-origin');
 header('Cache-Control: no-store');
+
+/**
+ * הקלט של ai_run: multipart מהדפדפן (image / mask / images[] כקבצים), או JSON (image_b64 / mask_b64 / images_b64) —
+ * JSON הוא הדרך היחידה בקריאה חתומה, כי ב-multipart ה-PHP לא נותן את הגוף הגולמי לבדיקת החתימה.
+ */
+function aiInput(array $json): array {
+    $f = $_POST ?: $json;
+    $in = [];
+    foreach (['task', 'provider', 'prompt', 'system', 'size'] as $k) if (isset($f[$k]) && is_scalar($f[$k])) $in[$k] = (string) $f[$k];
+    if (isset($f['transparent'])) $in['transparent'] = filter_var($f['transparent'], FILTER_VALIDATE_BOOLEAN);
+    if (isset($f['schema'])) {
+        $s = is_string($f['schema']) ? json_decode($f['schema'], true) : $f['schema'];
+        if (!is_array($s)) throw new AppError('schema אינו JSON', 400, 'bad_request');
+        $in['schema'] = $s;
+    }
+    $file = function (string $name) use ($f): ?string {
+        if (isset($_FILES[$name]) && is_uploaded_file($_FILES[$name]['tmp_name'] ?? '')) return (string) file_get_contents($_FILES[$name]['tmp_name']);
+        if (isset($f[$name . '_b64']) && is_string($f[$name . '_b64'])) {
+            $b = base64_decode($f[$name . '_b64'], true);
+            if ($b === false) throw new AppError("$name אינו base64", 400, 'bad_request');
+            return $b;
+        }
+        return null;
+    };
+    foreach (['image', 'mask'] as $k) if (($b = $file($k)) !== null) $in[$k] = $b;
+    $imgs = [];
+    foreach ((array) ($_FILES['images']['tmp_name'] ?? []) as $t) if (is_uploaded_file($t)) $imgs[] = (string) file_get_contents($t);
+    foreach ((array) ($f['images_b64'] ?? []) as $b) if (is_string($b) && ($d = base64_decode($b, true)) !== false) $imgs[] = $d;
+    if ($imgs) $in['images'] = $imgs;
+    return $in;
+}
+
+/** מצב הניהול המלא: חשבונות (עם הרשאות ה-AI), אפליקציות רשומות. כל פעולת ניהול מחזירה אותו — כך שום רשימה לא מתרוקנת. */
+function adminFull(array $s): array {
+    foreach ($s['accounts'] as &$a) $a['ai'] = aiUser($a['id']) + ['spent' => aiSpent($a['id'])];
+    return $s + ['clients' => adminClients()];
+}
 
 function reply(array $payload, int $code = 200): never {
     http_response_code($code);
@@ -68,7 +106,7 @@ function sendFile(string $path, array $n): never {
 
 const WRITES = ['mkdir', 'write', 'upload_start', 'upload_finish', 'rename', 'move', 'trash', 'restore', 'purge', 'trash_empty',
                 'admin_settings', 'admin_account', 'admin_client', 'client_register', 'connect_exchange', 'access_token',
-                'disconnect', 'connection_revoke'];
+                'disconnect', 'connection_revoke', 'ai_provider', 'ai_test', 'ai_default', 'ai_app', 'ai_user'];
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $action = (string) ($_GET['action'] ?? '');
@@ -131,12 +169,39 @@ try {
             if ($id = $st->fetchColumn()) revokeConnection((string) $id);
             reply(['ok' => true]);   // גם אם כבר נותק — התוצאה זהה
         }
+        // ── בינה מלאכותית (docs/spec-3-ai.md) ──
+        case 'ai_capabilities': { $x = actor($action, 'ai', $raw); reply(aiCapabilities($x['account'], $x['app'])); }
+        case 'ai_run': {
+            if ($method !== 'POST') throw new AppError('בקשה לא תקינה', 400, 'bad_request');
+            $bearer = !empty($_SERVER['HTTP_AUTHORIZATION']) || !empty($_SERVER['REDIRECT_HTTP_AUTHORIZATION']) || !empty($_SERVER['HTTP_X_CLOUD_SIGNATURE']);
+            // מהדף של הענן (עוגייה): כותרת שאתר זר לא יכול לשלוח בלי preflight — כדי שלא יוציאו כסף בשמך
+            if (!$bearer && ($_SERVER['HTTP_X_CLOUD_REQUEST'] ?? '') !== '1') throw new AppError('בקשה לא תקינה', 400, 'bad_request');
+            $x = actor($action, 'ai', $raw);
+            $res = aiRun($x['account'], $x['app'], aiInput($in));
+            if (isset($res['png'])) {
+                header('Content-Type: image/png');
+                header('X-AI-Size: ' . implode('x', $res['size']));
+                header('X-AI-Transparent: ' . ($res['transparent'] ? '1' : '0'));
+                header('X-AI-Provider: ' . $res['provider']);
+                echo $res['png'];
+                exit;
+            }
+            if (isset($res['masks'])) $res['masks'] = array_map(fn($m) => ['png' => base64_encode($m['png'])] + $m, $res['masks']);
+            reply($res);
+        }
+        case 'ai_admin':       requireAdmin(); reply(aiAdminState());
+        case 'ai_provider':    requireAdmin(); reply(aiAdminProvider($in));
+        case 'ai_test':        requireAdmin(); reply(aiAdminTest($in['provider'] ?? null));
+        case 'ai_default':     requireAdmin(); reply(aiAdminDefault($in));
+        case 'ai_app':         requireAdmin(); reply(aiAdminApp($in));
+        case 'ai_user':        requireAdmin(); reply(aiAdminUser($in));
+
         case 'connections':    reply(['items' => accountConnections(requireAccount()), 'scopes' => SCOPE_NAMES]);
         case 'connection_revoke': revokeOwnConnection(requireAccount(), $in['id'] ?? null); reply(['ok' => true]);
 
-        case 'admin':          requireAdmin(); reply(adminState() + ['clients' => adminClients()]);
-        case 'admin_settings': requireAdmin(); reply(adminSettings($in));
-        case 'admin_account':  reply(adminAccount(requireAdmin(), $in));
+        case 'admin':          requireAdmin(); reply(adminFull(adminState()));
+        case 'admin_settings': requireAdmin(); reply(adminFull(adminSettings($in)));
+        case 'admin_account':  reply(adminFull(adminAccount(requireAdmin(), $in)));
         case 'admin_client':   requireAdmin(); reply(['clients' => adminClient($in)]);
         default:
             throw new AppError('פעולה לא מוכרת', 404, 'unknown_action');
