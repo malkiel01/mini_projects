@@ -1167,6 +1167,11 @@ window.PlatformAdmin = (() => {
         hidden.addEventListener('change', () => act('admin_app_update', { id: app.id, hidden: hidden.checked },
             hidden.checked ? `${app.name} מוסתרת מכולם` : `${app.name} גלויה שוב`));
         const opts = [el('label', { className: 'small' }, [hidden, ' מוסתרת'])];
+        // בחנות: כל משתמש רואה אותה בדף הבית — מי שאין לו, אפורה עם חץ הורדה; לחיצה מוסיפה לו אותה.
+        const cat = el('input', { type: 'checkbox', checked: app.catalog });
+        cat.addEventListener('change', () => act('admin_app_update', { id: app.id, catalog: cat.checked },
+            cat.checked ? `${app.name} מוצגת בחנות לכולם` : `${app.name} הוסרה מהחנות`));
+        opts.push(el('label', { className: 'small', title: 'כל משתמש רואה אותה; מי שאין לו — אפורה עם חץ הורדה' }, [cat, ' 🛍️ בחנות לכולם']));
         // התקנה נפרדת / APK / חנות — מוצגים לכולם (כמו בחנות); כאן אפשר להסתיר.
         if (app.can_install) {
             const inst = el('input', { type: 'checkbox', checked: app.install_ok });

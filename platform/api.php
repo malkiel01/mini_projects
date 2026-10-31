@@ -15,6 +15,7 @@
  *   POST ?action=sso_revoke {client_id} — ביטול חיבור
  *   POST ?action=invite_accept {token, password} — הזמנה מאפליקציה (lib/provision.php): סיסמה וכניסה → {next}
  *   POST ?action=join_info {token} — הזמנת לקוח מהמנהל (lib/invites.php): מה נפתח לו, ומייל נעול אם יש
+ *   POST ?action=get_app {app} — "הורדה" מהחנות: אפליקציה שמוצגת לכולם נוספת להרשאות של המשתמש
  *   POST ?action=join {token, display_name?, email?, password?} — הרשמה בקישור, או צירוף לחשבון המחובר
  *
  * פעולות מנהל (lib/admin.php): GET admin_state, ו-POST admin_* — כולן דורשות
@@ -69,6 +70,7 @@ try {
             'invite_accept' => action_invite_accept($body),
             'join_info' => action_join_info($body),
             'join'     => action_join($body),
+            'get_app'  => action_get_app($body),
             default    => str_starts_with($action, 'admin_')
                 ? admin_dispatch($action, $body, require_admin(true))
                 : throw new ApiError('פעולה לא מוכרת', 404),
@@ -327,6 +329,20 @@ function action_invite_accept(array $body): never
     }
     start_session($r['user_id']);
     json_out(['ok' => true, 'next' => $r['next']]);
+}
+
+/** "הורדה" מהחנות: אפליקציה שמוצגת לכולם (app_catalog) נוספת למשתמש. חסימה מפורשת של המנהל — לא. */
+function action_get_app(array $body): never
+{
+    $user = current_user();
+    if (!$user) throw new ApiError('נדרשת כניסה', 401);
+    if (!hash_equals($user['csrf'], $_SERVER['HTTP_X_CSRF'] ?? '')) throw new ApiError('בקשה לא תקינה — רעננו את הדף', 403);
+    if ($user['status'] !== 'active') throw new ApiError('החשבון עוד לא פעיל', 403);
+    $app = array_column(apps_effective(), null, 'id')[(string)($body['app'] ?? '')] ?? null;
+    if (!$app || !in_catalog($app)) throw new ApiError('האפליקציה לא זמינה להורדה', 404);
+    if ((grants_of((int)$user['id'])['apps'][$app['id']] ?? null) === false) throw new ApiError('האפליקציה הזו חסומה לך — פנו למנהל', 403);
+    grants_write((int)$user['id'], ['categories' => [], 'groups' => [], 'apps' => [$app['id'] => true]], false);
+    json_out(['ok' => true, 'href' => $app['href']]);
 }
 
 /** קישור ההזמנה מהמנהל (#join=…): מה נפתח, השם שהמנהל רשם, והמייל אם נעול. */

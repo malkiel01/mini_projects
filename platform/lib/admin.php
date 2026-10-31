@@ -56,7 +56,7 @@ function admin_state(array $admin): never
         'apps'       => array_map(fn($a) => [
             'id' => $a['id'], 'name' => $a['name'], 'icon' => $a['icon'], 'icon_svg' => $a['icon_svg'] ?? null,
             'category' => $a['category'], 'default_category' => $a['default_category'], 'placements' => $a['placements'],
-            'hidden' => $a['hidden'], 'install_ok' => $a['install_ok'], 'restricted' => $a['restricted'], 'plugin' => $a['plugin'],
+            'hidden' => $a['hidden'], 'install_ok' => $a['install_ok'], 'catalog' => $a['catalog'], 'restricted' => $a['restricted'], 'plugin' => $a['plugin'],
             'gate' => (bool)$a['gate'], 'external' => $a['external'], 'detached' => $a['detached'], 'connected' => $a['connected'],
             'login' => $a['login'],
             'can_install' => $a['install']['pwa'] || $a['install']['apk'] || $a['install']['store'],
@@ -376,6 +376,10 @@ function admin_app_update(array $body): never
         db()->prepare('INSERT INTO app_login (app_id, password, google) VALUES (?,?,?)
                        ON CONFLICT(app_id) DO UPDATE SET password = excluded.password, google = excluded.google')
             ->execute([$app['id'], (int)(bool)($body['login_password'] ?? $cur['password']), (int)(bool)($body['login_google'] ?? $cur['google'])]);
+    }
+    if (isset($body['catalog'])) {
+        db()->prepare($body['catalog'] ? 'INSERT OR IGNORE INTO app_catalog (app_id) VALUES (?)'
+                                       : 'DELETE FROM app_catalog WHERE app_id = ?')->execute([$app['id']]);
     }
     if (isset($body['install_ok'])) {
         db()->prepare($body['install_ok'] ? 'DELETE FROM install_hidden WHERE app_id = ?'
