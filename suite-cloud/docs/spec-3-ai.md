@@ -26,18 +26,26 @@
 
 ## 2. המשימות
 
-ארבע המשימות של הרסטר. השמות כאן הם השמות ב-API.
+ארבע משימות התמונה של הרסטר, ומשימת טקסט אחת של סטודיו העיצוב (2026-10-31). השמות כאן הם השמות ב-API.
 
 | משימה | קלט | פלט |
 | --- | --- | --- |
 | `remove-background` | `image` | `png` שקוף, בגודל הקלט |
 | `segment` | `image` | `masks: [{png, label, box:[x,y,w,h]}]` — מסכת גוונים לכל עצם (לבן = העצם) |
-| `generate-image` | `prompt`, `size`, `transparent?` | `png` |
+| `generate-image` | `prompt`, `size` (יחס חופשי, למשל `1080x1350`), `transparent?` | `png`, `size` שיצא בפועל, `transparent` |
 | `inpaint` | `image`, `mask` (לבן = למלא), `prompt?` | `png` בגודל הקלט |
+| `complete` | `prompt`, `system?`, `schema?` (JSON Schema), `images?` | `{json}` כש-`schema` נשלח, אחרת `{text}` |
 
 - **כל הפלט:** PNG ב-sRGB, אלפא ישר, בקואורדינטות של תמונת הקלט. אם הספק החזיר גודל אחר, הענן מחזיר לגודל הקלט.
 - **`transparent`:** ספק שלא תומך בשקיפות לא נפסל. הענן מחזיר `{png, transparent:false}`, והרסטר מסיר רקע בעצמו
   (כמו שהציע).
+- **`size` ביחס חופשי:** הספקים תומכים רק בגדלים קבועים. הענן בוחר את הגודל הנתמך שהיחס שלו הכי קרוב לבקשה, ומחזיר
+  את ה-`size` שיצא בפועל. החיתוך או ההרחבה לגודל המדויק — אצל האפליקציה (להרחבה: `inpaint`). דוגמה: `1080x1350`
+  (4:5) ב-OpenAI → `1024x1536`.
+- **`complete`** (בקשת סטודיו העיצוב, מ4): משימת טקסט, למשל מהשאלון לתוכנית עיצוב (`design.json`: טקסטים, גופנים,
+  מיקומים, צבעים, קישוטים ב-SVG והנחיות לתמונות). אצל OpenAI ו-Google זו קריאת צ'אט במצב JSON. עם `schema` הענן מוודא
+  שהתשובה היא JSON תקין, ואם לא — מנסה פעם אחת נוספת, ואחר כך מחזיר `provider`. `images?` (עד 4) — לתיאור תמונה או
+  לתוכנית שנשענת על תמונה. ב-Replicate — לא בשלב הראשון.
 - **רשימה פתוחה:** משימה חדשה (למשל `upscale`, `describe`) נוספת כאן ובמתאמים. אפליקציה שלא מכירה אותה — לא מבקשת.
 
 ## 3. הספקים — מתאם לכל אחד
@@ -52,8 +60,8 @@ interface AiAdapter {
 ```
 
 - המתאמים יושבים ב-`suite-cloud/lib/ai/<id>.php`, והקריאה לספק נעשית ב-cURL מה-PHP (עיקרון 4).
-- **הראשונים — שלושתם יחד** (הכרעת בעל המערכת, 2026-10-31, סעיף 9): OpenAI (`generate-image`, `inpaint`), Google
-  (`generate-image`, `inpaint`), ו-Replicate (`remove-background` ו-`segment` במודלים פתוחים, כמו SAM ו-rembg). לשתי
+- **הראשונים — שלושתם יחד** (הכרעת בעל המערכת, 2026-10-31, סעיף 9): OpenAI (`generate-image`, `inpaint`, `complete`), Google
+  (`generate-image`, `inpaint`, `complete`), ו-Replicate (`remove-background` ו-`segment` במודלים פתוחים, כמו SAM ו-rembg). לשתי
   המשימות האלה אין ל-OpenAI ול-Google API ייעודי.
 - **בדיקת מפתח:** "בדיקה" בממשק המנהל שולחת קריאה זולה לספק ומחזירה תקין / לא תקין, בלי לחשוף את המפתח.
 
@@ -63,8 +71,8 @@ interface AiAdapter {
 
 | פעולה | גוף | תשובה |
 | --- | --- | --- |
-| `ai_capabilities` | — | `{tasks:{'remove-background':bool, segment:bool, 'generate-image':bool, inpaint:bool}, providers:[{id, name, tasks}], default:{<task>: <provider>}, quota:{used, limit, unit}}` |
-| `ai_run` | `multipart/form-data`: ‏`task`, ‏`image?`, ‏`mask?`, ‏`prompt?`, ‏`size?` (`"1024x1024"`), ‏`transparent?`, ‏`provider?` | `image/png` לפלט יחיד; ל-`segment` — JSON: `{masks:[{png:<base64>, label, box}]}` |
+| `ai_capabilities` | — | `{tasks:{'remove-background':bool, segment:bool, 'generate-image':bool, inpaint:bool, complete:bool}, providers:[{id, name, tasks}], default:{<task>: <provider>}, quota:{used, limit, unit}}` |
+| `ai_run` | `multipart/form-data`: ‏`task`, ‏`image?`, ‏`mask?`, ‏`prompt?`, ‏`system?`, ‏`schema?`, ‏`size?` (`"1080x1350"`), ‏`transparent?`, ‏`provider?` | `image/png` לפלט יחיד (בכותרות: `X-AI-Size`, `X-AI-Transparent`); ל-`segment` — JSON: `{masks:[{png:<base64>, label, box}]}`; ל-`complete` — JSON: `{json}` / `{text}` |
 
 **השגיאות** (`{"error":"…","code":"…"}`), אותם קודים כמו אצל הרסטר:
 
