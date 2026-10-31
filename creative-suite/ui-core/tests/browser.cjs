@@ -272,6 +272,64 @@ const server = http.createServer((req, res) => {
         ok(pe.mouseView.x === 40, 'panOnEmpty כפונקציה: עכבר לא מזיז (נשאר למלבן בחירה)');
         ok(pe.tapsAfterPinch === 2 - 1, 'onTap: צביטה אינה הקשה');
 
+        // account — העיגול, התפריט, ההגדרות
+        await p.evaluate(() => { try { localStorage.removeItem('ui-core-account:general'); } catch {} });
+        const av = await p.$eval('.top .account-btn', b => ({ text: b.textContent, label: b.getAttribute('aria-label'), hidden: b.hidden }));
+        ok(av.text === 'יי' && av.label.includes('ישראל') && !av.hidden, 'account: העיגול עם ראשי תיבות בסרגל');
+        await p.click('.top .account-btn');
+        await p.waitForTimeout(100);
+        const menuTexts = touch
+            ? await p.$$eval('dialog[open] .use-row', bs => bs.map(b => b.textContent))
+            : await p.$$eval('.menu [role="menuitem"]', bs => bs.map(b => b.textContent));
+        ok(menuTexts.some(t => t.includes('המסמכים שלי')) && menuTexts.some(t => t.includes('הגדרות אישיות')) && menuTexts.some(t => t.includes('יציאה')),
+            'account: התפריט — מסמכים, הגדרות, יציאה' + (touch ? ' (גיליון בטלפון)' : ' (תפריט קופץ במחשב)'));
+        ok(!menuTexts.some(t => t.includes('ניהול')), 'account: "ניהול" מוסתר ממי שאינו מנהל');
+        ok(await p.$(touch ? 'dialog[open] .account-head' : '.menu .account-head') !== null, 'account: ראש התפריט — שם ותג ענן');
+        if (touch) await p.click('dialog[open] .use-row:has-text("הגדרות אישיות")');
+        else await p.click('.menu [role="menuitem"]:has-text("הגדרות אישיות")');
+        await p.waitForTimeout(150);
+        await p.click('dialog[open] input[name="theme"][value="dark"]');
+        await p.click('dialog[open] input[name="scale"][value="1.15"]');
+        await p.click('dialog[open] input[name="units"][value="mm"]');
+        const st = await p.evaluate(() => ({ theme: document.documentElement.dataset.theme, scale: document.documentElement.style.getPropertyValue('--ui-scale'),
+            bg: getComputedStyle(document.body).backgroundColor, saved: JSON.parse(localStorage.getItem('ui-core-account:general')), last: window.__lastPrefs }));
+        ok(st.theme === 'dark' && st.bg === 'rgb(17, 19, 24)', 'account: ערכה כהה — data-theme והצבעים מתחלפים');
+        ok(st.scale === '1.15', 'account: גודל טקסט → --ui-scale');
+        ok(st.saved.units === 'mm' && st.last.units === 'mm', 'account: ההגדרות נשמרות ו-onPrefs נקרא');
+        ok(await p.$('dialog[open] kbd') !== null, 'account: רשימת קיצורי המקלדת בהגדרות');
+        ok(await p.$('dialog[open] select option[value="Rubik"]') !== null, 'account: גופן ברירת מחדל');
+        await p.keyboard.press('Escape');
+        await p.reload();
+        await p.waitForFunction(() => document.querySelector('.account-btn'));
+        ok(await p.evaluate(() => document.documentElement.dataset.theme) === 'dark', 'account: הערכה נשמרת אחרי טעינה');
+        await p.evaluate(() => { window.__acc.setPrefs({ theme: 'system', scale: 1 }); });
+
+        // accountServer — מתאם לצד השרת המשותף (call מדומה)
+        const sv = await p.evaluate(async () => {
+            const { accountServer } = await import('../src/js/account.js');
+            const calls = [], db = { general: { theme: 'dark' } };
+            const call = async (action, body) => {
+                calls.push(action);
+                if (action === 'account_prefs') return { prefs: { ...db } };
+                if (action === 'account_prefs_set') { db[body.ns] = body.value; return { ok: true }; }
+                if (action === 'account_export') return { prefs: db, data: { docs: 2 } };
+                if (action === 'account_delete') return body.confirm === 'DELETE' ? { ok: true } : Promise.reject(new Error('x'));
+            };
+            const orig = URL.createObjectURL; let blobs = 0; URL.createObjectURL = b => { blobs++; return orig.call(URL, b); };
+            const server = await accountServer(call);
+            const first = server.prefs.get('general');
+            await server.prefs.set('raster-studio', { engine: 'webgpu' });
+            await server.exportData();
+            const del = await server.deleteAccount();
+            URL.createObjectURL = orig;
+            const empty = await accountServer(async () => ({ prefs: [] }));   // PHP מחזיר [] כשאין הגדרות
+            return { first, stored: db['raster-studio'], calls, blobs, del, emptyGet: empty.prefs.get('general') };
+        });
+        ok(sv.first?.theme === 'dark' && sv.stored?.engine === 'webgpu', 'accountServer: טוען פעם אחת ושומר בשרת');
+        ok(sv.blobs === 1 && sv.calls.includes('account_export'), 'accountServer: ייצוא — קובץ JSON יורד');
+        ok(sv.del?.ok === true && sv.calls.filter(c => c === 'account_prefs').length === 1, 'accountServer: מחיקה עם אישור; ההגדרות נטענו רק פעם אחת');
+        ok(sv.emptyGet === null, 'accountServer: [] מהשרת (אין הגדרות) — לא נשבר');
+
         ok(errors.length === 0, 'בלי שגיאות JS' + (errors.length ? ': ' + errors.join(' | ') : ''));
         await ctx.close();
     }
