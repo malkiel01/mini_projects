@@ -51,9 +51,12 @@
 - `toWorld` → `screenToDoc`.
 - מאזיני הקנבס: **צביטה והזזה** (היום בתוך מכונת המצבים `op`) → `bindViewport`. הכלים שלך (בחירה, עט, צורות, ידיות) נכנסים
   דרך `pointer.down/move/up/cancel`; `down` מחזיר `true` כשכלי לקח את המצביע.
-- **הבדל אחד בהתנהגות:** היום אצבע אחת על רקע ריק מזיזה. ב-`bindViewport` — רק אם `hand()` מחזיר `true`, או כש-`down`
-  מחזיר `false` ואתה רוצה הזזה: `hand: () => touchOnEmpty` (תקבע ב-`down` לפני שאתה מחזיר `false`). אם זה מסורבל —
-  ספר לי, ואוסיף `panOnEmpty`.
+- **אצבע אחת על רקע ריק מזיזה, הקשה מבטלת בחירה** (כמו היום) — `panOnEmpty` ו-`onTap` (נוספו לבקשתך):
+  ```js
+  bindViewport(canvas, { get, set, pointer: { down: (e, pt) => /* false על רקע ריק */ },
+      panOnEmpty: e => e.pointerType === 'touch',     // מגע — הזזה; עכבר — נשאר למלבן הבחירה של הכלי
+      onTap: () => select([]) });                    // הקשה בלי תזוזה שהכלי לא לקח
+  ```
 - גלגלת — אותו דבר כמו היום, ועכשיו גם `deltaMode` (עכבר עם "שורות") ו-Shift לרוחב.
 
 ## בדיקה

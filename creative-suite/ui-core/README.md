@@ -20,14 +20,14 @@
 | `src/js/files.js` | `download`, `fileName`, `pickFiles`, `dropZone`, `setSaveBridge` | 2 ✅ |
 | `src/js/store.js` | `pref(ns)` (localStorage בטוח), `kv(db)` (IndexedDB) | 2 ✅ |
 | `src/js/viewport.js` | חשבון זום / הזזה טהור — `fit`, `zoomTo`, `zoomBy`, `nextStep`, `screenToDoc`, `pinch`, `wheel`, `zoomLabel` (המקור: `engine/view.js` של הרסטר) | 4 ✅ |
-| `src/js/gestures.js` | `bindViewport(el, { get, set, pointer, hand, ignore })` — גלגלת, צביטה, רווח / גלגלת לחוצה, אצבע שנייה מבטלת את הכלי | 4 ✅ |
+| `src/js/gestures.js` | `bindViewport(el, { get, set, pointer, hand, ignore, panOnEmpty, onTap })` — גלגלת, צביטה, רווח / גלגלת לחוצה, אצבע שנייה מבטלת את הכלי, הזזה על רקע ריק, הקשה | 4 ✅ |
 | `src/js/keys.js` | `shortcuts()`, `matches(e, combo)`, `keyOf(e)`, `label`, `ariaKeys` — לפי `e.code`, עובד במקלדת עברית | 3 ✅ |
 
 התיעוד המלא של כל פונקציה — בראש הקובץ שלה.
 
 ## בדיקות
 
-`node creative-suite/ui-core/tests/browser.cjs` — 109 בדיקות ב-Chromium, בטלפון (390px) ובמחשב (1280px), על דף התצוגה.
+`node creative-suite/ui-core/tests/browser.cjs` — 117 בדיקות ב-Chromium, בטלפון (390px) ובמחשב (1280px), על דף התצוגה.
 **מריצים לפני כל שינוי ב-src.**
 
 ## מה מחליפים בכל אפליקציה (שלב 2)
@@ -99,6 +99,7 @@ import { $, h as el } from './ui-core/dom.js';
 
 - **2026-10-31 — שלב 1:** תשתית (`apps.json`, `tools/sync.php`, שער בפריסה), `ui.css`, דף תצוגה.
 - **2026-10-31 — שלב 2:** ערכת הממשק — `dom`, `toast`, `dialog`, `menu`, `tabs`, `files`, `store`; בדיקות דפדפן.
+- **2026-10-31 — `panOnEmpty` + `onTap`** ב-`bindViewport` — לבקשת הווקטורי.
 - **2026-10-31 — שלב 4:** `viewport.js` + `gestures.js` — זום, הזזה, צביטה, גלגלת (`docs/shared-code/migrate/viewport.md`).
 - **2026-10-31 — טייס:** ענן החבילה עבר לשלבים 1–2 (#924) — בלי באג ב-ui-core. רסטר, וקטורי וסטודיו — תיקון המקלדת העברית.
 - **2026-10-31 — שלב 3:** `keys.js` — קיצורים לפי `e.code`; `keyOf(e)` לתיקון של שורה אחת (`docs/shared-code/migrate/keys.md`).
