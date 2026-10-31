@@ -59,14 +59,15 @@ export function glyphOps(f, glyphs, x, y, size, text = '') {
 /**
  * רשימת הציור של המסמך כולו.
  *   text — layoutFlows(model, fontsFor); running — הגופנים של מספר העמוד והכותרת הרצה (גופן הגוף).
- * מה לא מודפס: קווי עזר, מסגרות, סימן הגלישה — רק מה שעל הנייר.
+ * מה לא מודפס: קווי עזר, מסגרות, סימן הגלישה — רק מה שעל הנייר. under — ראו למטה.
  */
-export function drawList(model, text, running, { title = '' } = {}) {
+export function drawList(model, text, running, { title = '', under = new Map() } = {}) {
   const [w, h] = pageSize(model);
   const bleed = model.layout?.bleed || 0;
   const heads = headsByPage(model, text, i => framesOnPage(model, i));
   const pages = pagesOf(model).map((page, index) => {
-    const ops = [];
+    // under — תמונות שמתחת לכל השאר (ציורים שהפכו לתמונה): Map(עמוד → [{ src, box }])
+    const ops = (under.get(index) || []).map(u => ({ op: 'image', src: u.src, box: u.box.map(r2) }));
     for (const fr of framesOnPage(model, index)) {
       if (isImage(fr)) {
         const r = imagePlacement(fr);

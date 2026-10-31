@@ -2,7 +2,8 @@
 // מצויר כמו על הנייר — אותן שורות ואותם גליפים, תמונות חתוכות למסגרת, מספר עמוד; בלי קווי עזר.
 
 import { pageSize, runningItems, headsByPage } from './pages.js';
-import { framesOnPage, isImage, imagePlacement } from './frames.js';
+import { framesOnPage, drawingsOnPage, isImage, imagePlacement } from './frames.js';
+import { drawItems, imageRefs } from './vector.js';
 import { drawGlyphs, shapeLine, advance } from './shaper.js';
 
 const MAX = 1024;
@@ -16,6 +17,12 @@ export async function renderPreview(model, text, running, loadImage, index = 0) 
   const ctx = c.getContext('2d');
   ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
   ctx.scale(k, k);
+  // ציורים — מתחת לטקסט; התמונות שבתוכם נטענות קודם
+  for (const d of drawingsOnPage(model, index)) {
+    const imgs = new Map();
+    for (const src of imageRefs(d.paths)) imgs.set(src, await loadImage(src));
+    drawItems(ctx, d.paths, { symbols: model.symbols, image: src => imgs.get(src) || null });
+  }
   ctx.fillStyle = '#000';
   for (const fr of framesOnPage(model, index)) {
     if (isImage(fr)) {

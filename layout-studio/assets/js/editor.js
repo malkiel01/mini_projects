@@ -7,7 +7,8 @@ import { PageView } from './view.js';
 import { pagesOf, pageSize, setPageCount, setPageSize, marginsFit, mmToPt, ptToMm,
   mastersOf, masterOf, setMaster, updateMaster, ensureMasters, spreadOfPage, contentBox } from './pages.js';
 import { addFrame, autoflow, growFlow, removeFrame, pruneFlows, updateFrame, setFlow, flowText, thread,
-  allFrames, bodyStyle, styleOf, setStyle, STYLE_KEYS, FONTS, addImageFrame, isImage } from './frames.js';
+  allFrames, allItems, drawingsOnPage, bodyStyle, styleOf, setStyle, STYLE_KEYS, FONTS, addImageFrame, isImage } from './frames.js';
+import { placeDrawing, moveDrawing, isDrawing, drawItems, imageRefs } from './vector.js';
 import { layoutFlows } from './flow.js';
 import { imagePlacement } from './frames.js';
 import { loadFont, fontVariant } from './shaper.js';
@@ -223,9 +224,9 @@ function updatePageBtn() {
   $('#add-page').hidden = i >= 0;
   if (i < 0) return;
   if (view.frameSel) {
-    const fr = allFrames(model).find(x => x.frame.id === view.frameSel)?.frame;
+    const fr = allItems(model).find(x => x.frame.id === view.frameSel)?.frame;
     const over = text?.frames.get(view.frameSel)?.overset;
-    pageBtn.textContent = fr && isImage(fr) ? '🖼 תמונה' : over ? '▭ מסגרת · ⚠ גולש' : '▭ מסגרת';
+    pageBtn.textContent = fr && isDrawing(fr) ? '🎨 ציור' : fr && isImage(fr) ? '🖼 תמונה' : over ? '▭ מסגרת · ⚠ גולש' : '▭ מסגרת';
   } else pageBtn.textContent = `📄 עמוד ${i + 1}`;
 }
 
@@ -287,14 +288,14 @@ $('#pm-flow').addEventListener('click', async () => {
 
 // ---- מסגרת נבחרת ----
 const fdlg = $('#frame-dlg'), fform = $('form', fdlg), fErr = $('.error[role=alert]', fdlg);
-const selFrame = () => allFrames(model).find(x => x.frame.id === view.frameSel);
+const selFrame = () => allItems(model).find(x => x.frame.id === view.frameSel);
 
 function openFrame() {
   const x = selFrame();
   if (!x) return;
   const { frame, pageIndex } = x;
-  const kind = isImage(frame) ? 'image' : 'text';
-  $('#frame-title').textContent = `${kind === 'image' ? 'תמונה' : 'מסגרת טקסט'} · עמוד ${pageIndex + 1}`;
+  const kind = isDrawing(frame) ? 'vector' : isImage(frame) ? 'image' : 'text';
+  $('#frame-title').textContent = `${{ vector: 'ציור', image: 'תמונה', text: 'מסגרת טקסט' }[kind]} · עמוד ${pageIndex + 1}`;
   for (const el of fdlg.querySelectorAll('[data-kind]')) el.hidden = el.dataset.kind !== kind;
   if (kind === 'image') {
     fform.fit.value = frame.fit || 'contain';
@@ -342,6 +343,11 @@ fform.addEventListener('submit', e => {
   if (fw < 10 || fh < 10) return fail('המסגרת קטנה מדי');
   if (fx + fw > w + 0.5 || fy + fh > h + 0.5) return fail('המסגרת יוצאת מהעמוד');
   const patch = { box: [w - fx - fw, fy, fw, fh].map(n => Math.round(n * 100) / 100) };
+  if (isDrawing(x.frame)) {   // ציור: כל הנתיבים זזים ונמתחים יחד עם המסגרת
+    fdlg.close();
+    changed(updateFrame(model, x.frame.id, moveDrawing(x.frame, patch.box)));
+    return;
+  }
   if (isImage(x.frame)) {
     const gap = num(fform.wrapgap.value);
     if (!(gap >= 0 && gap <= 100)) return fail('מרווח מהטקסט — 0 עד 100 מ"מ');
@@ -413,6 +419,40 @@ docxInput.addEventListener('change', async () => {
   }
 });
 
+// ---- ציור מהווקטורי: ‎.mbe עם שכבות vector → שכבה מוצבת בעמוד (vector.js) ----
+const vecInput = $('#vec-file');
+let vecPage = -1;
+$('#pm-vector').addEventListener('click', () => { vecPage = view.selected; pdlg.close(); vecInput.click(); });
+vecInput.addEventListener('change', async () => {
+  const file = vecInput.files[0];
+  vecInput.value = '';
+  if (!file || vecPage < 0) return;
+  toast('קורא את הציור…');
+  try {
+    const { open } = await import('./mbe/mbe.js');
+    const f = await open(new Uint8Array(await file.arrayBuffer()));
+    if (!f.ok) throw new Error('הקובץ פגום (' + f.issues.filter(i => i.level === 'error').map(i => i.code).slice(0, 3).join(', ') + ')');
+    const r = placeDrawing(f.document, contentBox(model, vecPage + 1), () => newId('v'), file.name.replace(/\.mbe$/i, ''));
+    // התמונות שבתוך הציור — לאחסון של המשתמש, באותו שם (הגיבוב)
+    for (const src of r.images) {
+      const data = f.getMedia(src);
+      if (!data) continue;
+      const type = /\.png$/.test(src) ? 'image/png' : /\.webp$/.test(src) ? 'image/webp' : 'image/jpeg';
+      const got = await uploadImage(new File([data], src.slice(6), { type }), { raw: true });
+      if (got.src !== src) throw new Error('תמונה בציור לא נשמרה');
+    }
+    const symbols = { ...(model.symbols || {}), ...r.symbols };
+    let m = Object.keys(r.symbols).length ? { ...model, symbols } : model;
+    m = { ...m, surfaces: m.surfaces.map((sf, i) => sf === pagesOf(m)[vecPage] ? { ...sf, layers: [...(sf.layers || []), r.layer] } : sf) };
+    changed(m);
+    view.select(vecPage, r.layer.id);
+    const miss = [r.gaps.text && `${r.gaps.text} טקסטים`, r.gaps.effects && `${r.gaps.effects} אפקטים`, r.gaps.unknown && `${r.gaps.unknown} פריטים מסוג לא מוכר`].filter(Boolean);
+    toast(miss.length ? 'הציור הוצב. עוד לא מוצגים: ' + miss.join(', ') : 'הציור הוצב');
+  } catch (e) {
+    toast(e.message === 'no_vector' ? 'אין בקובץ שכבות וקטור' : e.message === 'no_surface' ? 'אין בקובץ משטח לציור' : 'ההצבה נכשלה: ' + e.message, true);
+  }
+});
+
 // ---- תמונות: בחירה, הקטנה (אם צריך) והעלאה ----
 const MAX_SIDE = 3000, MAX_BYTES = 6 * 1024 * 1024;
 async function prepareImage(file) {
@@ -429,8 +469,8 @@ async function prepareImage(file) {
   bmp.close?.();
   return c.convertToBlob({ type: 'image/jpeg', quality: 0.9 });
 }
-async function uploadImage(file) {
-  const body = await prepareImage(file);
+async function uploadImage(file, { raw = false } = {}) {
+  const body = raw ? file : await prepareImage(file);   // raw — כמו שהוא (תמונה מתוך ‎.mbe: השם הוא הגיבוב שלה)
   let res;
   try {
     res = await fetch('api.php?action=media_upload', { method: 'POST', credentials: 'same-origin',
@@ -489,7 +529,7 @@ $('#fr-grow').addEventListener('click', () => {
 
 $('#fr-del').addEventListener('click', async () => {
   const x = selFrame();
-  if (!await confirm(isImage(x.frame) ? 'למחוק את התמונה מהעמוד?' : 'למחוק את המסגרת? הטקסט נשאר וזורם למסגרות האחרות בשרשור (אם יש).', { ok: 'מחיקה', danger: true })) return;
+  if (!await confirm(isDrawing(x.frame) ? 'למחוק את הציור מהעמוד?' : isImage(x.frame) ? 'למחוק את התמונה מהעמוד?' : 'למחוק את המסגרת? הטקסט נשאר וזורם למסגרות האחרות בשרשור (אם יש).', { ok: 'מחיקה', danger: true })) return;
   fdlg.close();
   const fid = x.frame.flow;
   const wasLast = thread(model, fid).length === 1;
@@ -667,11 +707,36 @@ async function gzip(str) {
   return new Response(new Blob([str]).stream().pipeThrough(cs)).blob();
 }
 // רשימת הציור → PDF (bytes). זורק Error עם הודעה למשתמש.
+// ציורים (שכבות vector) ב-PDF: pdf-core עוד לא מצייר נתיבים, לכן כל עמוד עם ציורים — תמונה שקופה ב-300 לאינץ' של האזור
+// שלהם, שעולה לאחסון ונכנסת לרשימה מתחת לטקסט. (בקשה לעורך התמלילים: פעולת path ב-pdf-core.)
+const DRAW_DPI = 300;
+async function drawingImages() {
+  const out = new Map();
+  for (let i = 0; i < pagesOf(model).length; i++) {
+    const ds = drawingsOnPage(model, i);
+    if (!ds.length) continue;
+    const x0 = Math.min(...ds.map(d => d.box[0])), y0 = Math.min(...ds.map(d => d.box[1]));
+    const x1 = Math.max(...ds.map(d => d.box[0] + d.box[2])), y1 = Math.max(...ds.map(d => d.box[1] + d.box[3]));
+    const k = DRAW_DPI / 72;
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.ceil((x1 - x0) * k)); c.height = Math.max(1, Math.ceil((y1 - y0) * k));
+    const ctx = c.getContext('2d');
+    ctx.scale(k, k); ctx.translate(-x0, -y0);
+    const imgs = new Map();
+    for (const d of ds) for (const src of imageRefs(d.paths)) imgs.set(src, await loadImg(src));
+    for (const d of ds) drawItems(ctx, d.paths, { symbols: model.symbols, image: src => imgs.get(src) || null });
+    const blob = await new Promise(ok => c.toBlob(ok, 'image/png'));
+    const got = await uploadImage(new File([blob], 'drawing.png', { type: 'image/png' }), { raw: true });
+    out.set(i, [{ src: got.src, box: [x0, y0, x1 - x0, y1 - y0] }]);
+  }
+  return out;
+}
 async function makePdf() {
   await ensureFonts();
   relayout();
   const b = bodyStyle(model);
-  const list = drawList(model, text, fontsFor(b.font, b.weight), { title: doc.title });
+  const under = await drawingImages();
+  const list = drawList(model, text, fontsFor(b.font, b.weight), { title: doc.title, under });
   let res;
   try {
     res = await fetch('api.php?action=pdf', { method: 'POST', credentials: 'same-origin',

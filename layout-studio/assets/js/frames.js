@@ -212,9 +212,24 @@ export function withParaIds(doc) {
   return changed ? out : doc;
 }
 
-/** המסגרת שבנקודה בעמוד (קואורדינטות העמוד), העליונה מביניהן. */
+/** ציורים מוצבים בעמוד (שכבות vector עם box — vector.js). */
+export const drawingsOnPage = (model, pageIndex) =>
+  (pagesOf(model)[pageIndex]?.layers || []).filter(l => l.type === 'vector' && Array.isArray(l.box) && l.box.length === 4);
+
+/** כל מה שאפשר לבחור (מסגרות וציורים), עם העמוד: [{ frame, pageIndex }]. */
+export function allItems(model) {
+  const out = [];
+  pagesOf(model).forEach((p, pageIndex) => {
+    for (const l of p.layers || []) {
+      if (l.type === 'frame' || (l.type === 'vector' && Array.isArray(l.box) && l.box.length === 4)) out.push({ frame: l, pageIndex });
+    }
+  });
+  return out;
+}
+
+/** המסגרת (או הציור) שבנקודה בעמוד (קואורדינטות העמוד), העליונה מביניהן. */
 export function frameAt(model, pageIndex, x, y) {
-  const fr = framesOnPage(model, pageIndex);
+  const fr = allItems(model).filter(o => o.pageIndex === pageIndex).map(o => o.frame);
   for (let i = fr.length - 1; i >= 0; i--) {
     const [bx, by, bw, bh] = fr[i].box;
     if (x >= bx && x <= bx + bw && y >= by && y <= by + bh) return fr[i];
