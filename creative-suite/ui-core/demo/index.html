@@ -7,7 +7,6 @@
 <link rel="stylesheet" href="../src/css/ui.css">
 <style>
     section { margin-bottom: var(--s4); }
-    .demo-menu { position: static; margin-top: var(--s2); width: fit-content; }
 </style>
 </head>
 <body>
@@ -15,19 +14,34 @@
 <header class="top">
     <a class="icon-btn" href="../../" aria-label="חזרה">›</a>
     <div class="titles"><h1>ui-core — כל הרכיבים</h1><div class="sub">ערכת הממשק המשותפת של חבילת היצירה</div></div>
-    <button class="icon-btn" type="button" aria-label="עוד" id="menu-btn">⋯</button>
+    <button class="icon-btn" type="button" aria-label="עוד" id="menu-btn" aria-haspopup="menu">⋯</button>
 </header>
-<nav class="tabs"><a href="#" aria-current="page">רכיבים</a><a href="#">חלונות</a><a href="#">רשימות</a></nav>
 
 <main id="main" tabindex="-1">
     <section>
-        <h2 class="sec-title">כפתורים</h2>
+        <h2 class="sec-title">לשוניות</h2>
+        <div class="seg-tabs tabs-demo" role="tablist" aria-label="לשוניות">
+            <button role="tab" type="button" data-tab="a" aria-controls="tab-a">מאפיינים</button>
+            <button role="tab" type="button" data-tab="b" aria-controls="tab-b">שכבות <small>3</small></button>
+            <button role="tab" type="button" data-tab="c" aria-controls="tab-c">ייצוא</button>
+        </div>
+        <p id="tab-a" role="tabpanel" class="hint">לוח המאפיינים</p>
+        <p id="tab-b" role="tabpanel" class="hint">לוח השכבות</p>
+        <p id="tab-c" role="tabpanel" class="hint">לוח הייצוא</p>
+    </section>
+
+    <section>
+        <h2 class="sec-title">כפתורים וחלונות</h2>
         <div class="row-btns wrap">
             <button class="btn primary" type="button" id="open-sheet">פתיחת חלון</button>
             <button class="btn primary" type="button" id="open-full">חלון ארוך</button>
             <button class="btn ghost" type="button" id="show-toast">טוסט</button>
             <button class="btn ghost" type="button" id="show-err">טוסט שגיאה</button>
-            <button class="btn danger" type="button">מחיקה</button>
+            <button class="btn ghost" type="button" id="show-undo">טוסט עם ביטול</button>
+            <button class="btn ghost" type="button" id="js-sheet">גיליון מ-JS</button>
+            <button class="btn ghost" type="button" id="ask-confirm">אישור</button>
+            <button class="btn ghost" type="button" id="ask-prompt">שאלה</button>
+            <button class="btn ghost" type="button" id="ask-choose">בחירה</button>
         </div>
     </section>
 
@@ -50,12 +64,9 @@
 
     <section>
         <h2 class="sec-title">תפריט</h2>
-        <div class="menu demo-menu" role="menu">
-            <button role="menuitem" type="button">📄 שכפול</button>
-            <button role="menuitem" type="button">✏️ שינוי שם</button>
-            <div role="separator"></div>
-            <button role="menuitem" type="button" class="danger">🗑 מחיקה</button>
-        </div>
+        <div class="row-btns"><button class="btn ghost" type="button" id="menu-btn2" aria-haspopup="menu">פתיחת תפריט ▾</button></div>
+        <p></p>
+        <div id="ctx" class="empty" style="border:1px dashed var(--line);border-radius:var(--r)">לחיצה ימנית / לחיצה ארוכה כאן — תפריט הקשר. גרירת תמונה לכאן — קבלת קבצים.</div>
     </section>
 
     <section>
@@ -92,23 +103,46 @@
 <div class="toast" role="status" hidden></div>
 
 <script type="module">
-    // תצוגה בלבד. ההתנהגות (פוקוס חוזר, --vvh / --kb, סגירה ברקע) תבוא מ-ui-core/dialog.js בשלב 2.
-    const $ = s => document.querySelector(s);
-    const vv = window.visualViewport;
-    const fitKb = () => {
-        const s = document.documentElement.style;
-        s.setProperty('--vvh', (vv ? vv.height : innerHeight) + 'px');
-        s.setProperty('--kb', vv ? Math.max(0, innerHeight - vv.height - vv.offsetTop) + 'px' : '0px');
-    };
-    vv?.addEventListener('resize', fitKb); fitKb();
-    for (const d of document.querySelectorAll('dialog')) d.addEventListener('click', e => { if (e.target === d) d.close(); });
-    $('#open-sheet').onclick = () => $('#sheet').showModal();
+    import { $, h, ltr } from '../src/js/dom.js';
+    import { toast } from '../src/js/toast.js';
+    import { initDialogs, sheet, confirm, prompt, choose } from '../src/js/dialog.js';
+    import { menu, contextMenu } from '../src/js/menu.js';
+    import { tabs } from '../src/js/tabs.js';
+    import { dropZone } from '../src/js/files.js';
+
+    initDialogs();
+    tabs($('.tabs-demo'), { remember: 'ui-core-demo:tab' });
+    $('#open-sheet').onclick = () => $('#sheet').showModal();          // <dialog> שכתוב ב-HTML — כמו באפליקציות היום
     $('#open-full').onclick = () => $('#full').showModal();
-    const toast = (msg, err) => { const t = $('.toast'); t.textContent = msg; t.classList.toggle('err', !!err); t.hidden = false;
-        clearTimeout(t.t); t.t = setTimeout(() => t.hidden = true, err ? 6000 : 3000); };
     $('#show-toast').onclick = () => toast('נשמר');
-    $('#show-err').onclick = () => toast('השמירה נכשלה — אין חיבור', true);
-    $('#menu-btn').onclick = () => toast('התפריט הקופץ — בשלב 2 (menu.js)');
+    $('#show-err').onclick = () => toast('השמירה נכשלה — אין חיבור', { kind: 'error' });
+    $('#show-undo').onclick = () => toast('השכבה נמחקה', { action: { label: 'ביטול', run: () => toast('שוחזרה') } });
+    $('#js-sheet').onclick = () => sheet({
+        title: 'שינוי גודל', submit: 'החלה',
+        body: h('div.fields.two',
+            h('label.f', h('span', 'רוחב'), h('input', { name: 'w', inputmode: 'decimal', dir: 'ltr', value: '1080' })),
+            h('label.f', h('span', 'גובה'), h('input', { name: 'h', inputmode: 'decimal', dir: 'ltr', value: '1920' }))),
+        onSubmit: form => {
+            const w = +form.w.value, hh = +form.h.value;
+            if (!(w > 0 && hh > 0)) throw new Error('מידות חייבות להיות מספר חיובי');
+            toast('הגודל: ' + ltr(`${w}×${hh}`));
+        },
+    });
+    $('#ask-confirm').onclick = async () => toast(await confirm('למחוק את השכבה?', { ok: 'מחיקה', danger: true }) ? 'נמחקה' : 'בוטל');
+    $('#ask-prompt').onclick = async () => { const v = await prompt('שם הקובץ', { value: 'כרטיס ברכה.png', select: 'name' }); toast(v ?? 'בוטל'); };
+    $('#ask-choose').onclick = async () => toast(String(await choose('שינויים שלא נשמרו', 'מה לעשות לפני הסגירה?',
+        [['save', 'לשמור'], ['drop', 'לוותר על השינויים', 'danger'], ['stay', 'להישאר', 'ghost']])));
+    const items = [
+        { icon: '📄', label: 'שכפול', run: () => toast('שוכפל'), keys: 'Ctrl+D' },
+        { icon: '✏️', label: 'שינוי שם', run: () => prompt('שם חדש', { value: 'שכבה 1' }) },
+        '-',
+        { icon: '🔒', label: 'נעול', disabled: true },
+        { icon: '🗑', label: 'מחיקה', danger: true, run: () => { throw new Error('אי אפשר למחוק שכבה אחרונה'); } },
+    ];
+    $('#menu-btn').onclick = e => menu(e.currentTarget, items);
+    $('#menu-btn2').onclick = e => menu(e.currentTarget, items);
+    contextMenu($('#ctx'), () => items);
+    dropZone($('#ctx'), { accept: ['image/', '.mbe'], onFiles: f => toast(`${f.length} קבצים`), onReject: f => toast(`לא נתמך: ${f[0].name}`, true) });
 </script>
 </body>
 </html>
