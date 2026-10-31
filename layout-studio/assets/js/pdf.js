@@ -5,7 +5,7 @@
 // הגופנים משתנים (ציר wght), ו-pdf-core מטמיע את הקווים של ברירת המחדל (400). למודגש — מופעים סטטיים של אותו
 // קובץ (assets/fonts/static/<שם>-700.ttf / -900.ttf; מזהי הגליפים זהים — נוצרו ב-fontTools instancer).
 
-import { pagesOf, pageSize, runningItems } from './pages.js';
+import { pagesOf, pageSize, runningItems, headsByPage } from './pages.js';
 import { framesOnPage, isImage, imagePlacement, FONTS } from './frames.js';
 import { shapeLine, advance } from './shaper.js';
 
@@ -64,6 +64,7 @@ export function glyphOps(f, glyphs, x, y, size, text = '') {
 export function drawList(model, text, running, { title = '' } = {}) {
   const [w, h] = pageSize(model);
   const bleed = model.layout?.bleed || 0;
+  const heads = headsByPage(model, text, i => framesOnPage(model, i));
   const pages = pagesOf(model).map((page, index) => {
     const ops = [];
     for (const fr of framesOnPage(model, index)) {
@@ -74,7 +75,7 @@ export function drawList(model, text, running, { title = '' } = {}) {
       }
       for (const l of text?.frames.get(fr.id)?.lines || []) ops.push(...glyphOps(l.font, l.glyphs, l.x, l.y, l.size, l.text || ''));
     }
-    for (const it of runningItems(model, index + 1)) {
+    for (const it of runningItems(model, index + 1, heads[index])) {
       const g = shapeLine(running, it.text);
       const width = advance(g) * it.size / running[0].upem;
       const x0 = it.align === 'left' ? it.x : it.align === 'right' ? it.x - width : it.x - width / 2;

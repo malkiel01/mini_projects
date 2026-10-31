@@ -155,3 +155,24 @@ test('איזה עמוד בנקודה', () => {
   assert.equal(pageAt(lay, PAD + 410, s2.y + 10), 1);        // ימין → עמוד 2
   assert.equal(pageAt(lay, PAD + 410, lay.spreads[0].y + 10), -1);   // ליד עמוד 1 אין עמוד
 });
+
+// ---- כותרת רצה עם שם הפרק ----
+import { headsByPage, fillHeads } from '../assets/js/pages.js';
+
+test('כותרות לפי עמוד: הראשונה בעמוד, ואם אין — האחרונה שלפניו; פרק חדש מאפס את הסעיף', () => {
+  const m = { layout: { facing: true }, surfaces: [0, 1, 2, 3].map(i => ({ id: 'p' + i, type: 'page', size: [400, 600], layers: [{ id: 'f' + i, type: 'frame' }] })) };
+  const H = { f0: [{ level: 1, y: 50, text: 'פרק א' }, { level: 2, y: 200, text: 'סעיף 1' }], f1: [],
+    f2: [{ level: 2, y: 300, text: 'סעיף 2' }, { level: 1, y: 100, text: 'פרק ב' }, { level: 1, y: 400, text: 'פרק ג' }], f3: [] };
+  const text = { frames: new Map(Object.entries(H).map(([id, heads]) => [id, { lines: [], heads }])) };
+  const r = headsByPage(m, text, i => m.surfaces[i].layers);
+  assert.deepEqual(r[0], { 1: 'פרק א', 2: 'סעיף 1' });
+  assert.deepEqual(r[1], { 1: 'פרק א', 2: 'סעיף 1' });
+  assert.deepEqual(r[2], { 1: 'פרק ב', 2: 'סעיף 2' });   // הראשונה בעמוד — לפי y, לא לפי הסדר ברשימה
+  assert.deepEqual(r[3], { 1: 'פרק ג' });                 // פרק ג בלי סעיף — הסעיף התאפס
+});
+
+test('מילוי הכותרת הרצה', () => {
+  assert.equal(fillHeads('{כותרת 1}', { 1: 'בראשית' }), 'בראשית');
+  assert.equal(fillHeads('ספר · {כותרת 1} · {כותרת 2}', { 1: 'פרק א' }), 'ספר · פרק א ·');
+  assert.equal(fillHeads('שם קבוע', {}), 'שם קבוע');
+});

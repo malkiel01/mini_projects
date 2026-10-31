@@ -171,10 +171,40 @@ export function folioText(model, num) {
 }
 
 /**
+ * הכותרות שכל עמוד "נמצא בתוכן" — לכותרת רצה: מערך לפי עמוד (0-based) של { 1: טקסט, 2: …, 3: … }.
+ * לכל רמה: הכותרת הראשונה בעמוד; אין בעמוד — האחרונה שלפניו (כמו "running header" ב-InDesign).
+ * text — layoutFlows (כל מסגרת עם heads); framesOnPage(i) — מסגרות העמוד.
+ */
+export function headsByPage(model, text, framesOnPage) {
+  const out = [], cur = {};
+  pagesOf(model).forEach((_, i) => {
+    const here = framesOnPage(i).flatMap(fr => text?.frames.get(fr.id)?.heads || []).sort((a, b) => a.y - b.y);
+    const start = { ...cur };
+    for (const h of here) {   // לפי הסדר בעמוד: כל כותרת קובעת את הרמה שלה ומאפסת את מה שמתחתיה
+      cur[h.level] = h.text;
+      for (let d = h.level + 1; d <= 3; d++) delete cur[d];
+    }
+    const page = {};
+    for (const lv of [1, 2, 3]) {
+      const first = here.find(h => h.level === lv);
+      // בעמוד — הראשונה; אין, אבל יש בעמוד כותרת גבוהה ממנה — מה שנשאר בסוף העמוד; אחרת — מה שהיה בתחילתו
+      const v = first ? first.text : here.some(h => h.level < lv) ? cur[lv] : start[lv];
+      if (v) page[lv] = v;
+    }
+    out.push(page);
+  });
+  return out;
+}
+
+/** "{כותרת 1}" / "{כותרת 2}" / "{כותרת 3}" בטקסט הכותרת הרצה → הכותרת של העמוד (אין — ריק). */
+export const fillHeads = (str, heads = {}) => str.replace(/\{כותרת ([1-3])\}/g, (_, lv) => heads[lv] || '').replace(/\s+/g, ' ').trim();
+
+/**
  * מה שעמוד האב מצייר על העמוד: [{ kind, text, x, y, align: 'left'|'center'|'right', size }] בקואורדינטות העמוד.
  * y — אמצע השורה, באמצע השוליים (למטה או למעלה). חיצוני/פנימי — לפי צד השדרה של העמוד.
+ * heads — הכותרות של העמוד (headsByPage), לכותרת רצה עם "{כותרת 1}".
  */
-export function runningItems(model, num) {
+export function runningItems(model, num, heads = {}) {
   const page = pagesOf(model)[num - 1];
   const master = page && masterOf(model, page);
   if (!master || !master.running) return [];
@@ -193,7 +223,7 @@ export function runningItems(model, num) {
   if (folio) out.push({ kind: 'folio', text: folioText(model, num), size: folio.size, ...place(folio) });
   if (header) {
     const even = model.layout.facing && num % 2 === 0;
-    const text = even ? header.even : header.odd;
+    const text = fillHeads((even ? header.even : header.odd) || '', heads);
     if (text) out.push({ kind: 'header', text, size: header.size, ...place(header) });
   }
   return out;

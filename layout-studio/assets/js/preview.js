@@ -1,7 +1,7 @@
 // התמונה הממוזערת של המסמך (renditions/preview.png ב-.mbe): העמוד הראשון, עד 1024 פיקסלים בצלע הארוכה.
 // מצויר כמו על הנייר — אותן שורות ואותם גליפים, תמונות חתוכות למסגרת, מספר עמוד; בלי קווי עזר.
 
-import { pageSize, runningItems } from './pages.js';
+import { pageSize, runningItems, headsByPage } from './pages.js';
 import { framesOnPage, isImage, imagePlacement } from './frames.js';
 import { drawGlyphs, shapeLine, advance } from './shaper.js';
 
@@ -30,7 +30,7 @@ export async function renderPreview(model, text, running, loadImage, index = 0) 
     }
     for (const l of text?.frames.get(fr.id)?.lines || []) drawGlyphs(ctx, l.font, l.glyphs, l.x, l.y, l.size);
   }
-  for (const it of runningItems(model, index + 1)) {
+  for (const it of runningItems(model, index + 1, headsByPage(model, text, i => framesOnPage(model, i))[index])) {
     const g = shapeLine(running, it.text);
     const width = advance(g) * it.size / running[0].upem;
     const x0 = it.align === 'left' ? it.x : it.align === 'right' ? it.x - width : it.x - width / 2;
