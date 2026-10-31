@@ -6,12 +6,13 @@
  * אחרי שינוי ברשימת השלד — להעלות את CACHE_VERSION.
  */
 
-const CACHE_VERSION = 'vector-studio-v1';
+const CACHE_VERSION = 'vector-studio-v2';
 
 const SHELL = [
   './index.html',
   './editor.html',
   './manifest.webmanifest',
+  './assets/css/ui-core/ui.css',
   './assets/css/app.css',
   './assets/icon.svg',
   './assets/js/app.js',
