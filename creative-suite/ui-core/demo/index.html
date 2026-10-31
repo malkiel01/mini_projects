@@ -131,6 +131,7 @@
     import * as V from '../src/js/viewport.js';
     import { bindViewport } from '../src/js/gestures.js';
     import { accountMenu } from '../src/js/account.js';
+    import { openDocuments, pickFile, saveFile } from '../src/js/files-window.js';
 
     initDialogs();
     tabs($('.tabs-demo'), { remember: 'ui-core-demo:tab' });
@@ -174,10 +175,39 @@
     keys.title($('#redo-btn'), 'Mod+Shift+Z');
     window.__keys = keys;
 
+    // 📁 ספרייה מדומה ("באפליקציה") וענן שלא מחובר — במקום הספרייה האמיתית של האפליקציה
+    let seq = 10;
+    const lib = [
+        { id: 'f1', name: 'כרטיסים', kind: 'folder', parent: null, updated: Date.now() - 864e5 },
+        { id: 'd1', name: 'הזמנה לחתונה.mbe', kind: 'file', parent: null, size: 182000, updated: Date.now() - 36e5 },
+        { id: 'd2', name: 'לוגו.png', kind: 'file', parent: null, size: 24000, updated: Date.now() - 5 * 864e5 },
+        { id: 'd3', name: 'שנה טובה.mbe', kind: 'file', parent: 'f1', size: 96000, updated: Date.now() - 2 * 864e5 },
+    ];
+    const appSource = {
+        id: 'app', title: 'באפליקציה', icon: '📱',
+        list: async folder => ({ items: lib.filter(x => x.parent === (folder || null)),
+            path: folder ? [{ id: folder, name: lib.find(x => x.id === folder).name }] : [] }),
+        write: async (name, blob, { parent, replace }) => {
+            const old = lib.find(x => x.name === name && x.parent === (parent || null));
+            if (old && replace) { old.size = blob.size; old.updated = Date.now(); return old; }
+            const it = { id: 'd' + (++seq), name: old ? name.replace(/(\.[^.]+)?$/, ' (2)$1') : name, kind: 'file', parent: parent || null, size: blob.size, updated: Date.now() };
+            lib.push(it); return it;
+        },
+        mkdir: async (name, parent) => { const it = { id: 'f' + (++seq), name, kind: 'folder', parent: parent || null, updated: Date.now() }; lib.push(it); return it; },
+        rename: async (id, name) => { lib.find(x => x.id === id).name = name; },
+        move: async (id, parent) => { lib.find(x => x.id === id).parent = parent; },
+        remove: async id => { lib.splice(lib.findIndex(x => x.id === id), 1); },
+        versions: async () => [{ id: 'v2', label: 'אתמול', date: Date.now() - 864e5 }, { id: 'v1', label: 'ראשונה', date: Date.now() - 3 * 864e5 }],
+        restore: async () => {},
+    };
+    const cloudSource = { id: 'suite', title: 'ענן החבילה', icon: '☁️', connected: async () => false, connect: () => toast('☁️ מעבר למסך האישור בענן'), list: async () => ({ items: [] }) };
+    const sources = [appSource, cloudSource];
+    window.__fw = { lib, sources, pickFile, saveFile, openDocuments };
+
     // 👤 תפריט המשתמש — בסרגל העליון
     window.__acc = accountMenu($('.top'), {
         user: () => ({ name: 'ישראל ישראלי', email: 'israel@example.com', admin: false }),
-        docs: () => toast('📁 המסמכים שלי — files-window.js, בהמשך'),
+        docs: () => openDocuments(sources, { onOpen: it => toast('נפתח: ' + it.name) }),
         drives: { list: () => [{ id: 'suite', name: 'ענן החבילה', icon: '☁️', connected: true }, { id: 'drive', name: 'Google Drive', connected: false }],
                   manage: () => toast('☁️ עננים — מהמודול של הכוננים') },
         sections: [{ id: 'app', title: 'של האפליקציה', render: b => b.append(h('label.switch', h('input', { type: 'checkbox' }), 'הצגת סרגלים')) }],
