@@ -7,6 +7,7 @@ import { colorRange, dabsAlong, floodFill, hexToRgb, rgbToHex } from './engine/f
 import { combine, isEmptyShape, maskShape, selectionBox } from './engine/selection.js';
 import * as XF from './engine/transform.js';
 import { FONTS, LINE_HEIGHT, cssFont, renderText, textDirection } from './engine/text.js';
+import { keyOf } from './ui-core/keys.js';
 
 export const TOOLS = {
   hand: { label: 'יד', icon: '✋', key: 'h', hint: 'גרירה — הזזה' },
@@ -724,7 +725,7 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
 
   /** קיצורי מקלדת של הכלים. מחזיר true אם טופל. */
   function key(e) {
-    const k = e.key.toLowerCase();
+    const k = keyOf(e);   // המקש הפיזי — גם במקלדת עברית
     const mod = e.ctrlKey || e.metaKey;
     if (mod && !e.altKey) {
       if (k === 'a' && !e.shiftKey) { selAction('all'); return true; }
