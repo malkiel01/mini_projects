@@ -49,7 +49,7 @@ try {
     return { sel: [...S.sel], paths: S.doc.surfaces[0].layers[0].paths, view: S.view, undo: S.undo.length };
   });
   const box = await page.locator('#canvas').boundingBox();
-  const W = async (x, y) => { const { view } = await st(); return [box.x + view.x + x * view.z, box.y + view.y + y * view.z]; };
+  const W = async (x, y) => { const { view } = await st(); return [box.x + view.x + x * view.zoom, box.y + view.y + y * view.zoom]; };
 
   // מלבן בגרירה
   await pickShape(page, 'rect');
@@ -135,12 +135,12 @@ try {
   step('שכפול ומחיקה');
 
   // זום בגלגלת עם Ctrl, וחזרה להתאמה
-  const z0 = (await st()).view.z;
+  const z0 = (await st()).view.zoom;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.keyboard.down('Control'); await page.mouse.wheel(0, -200); await page.keyboard.up('Control');
-  assert.ok((await st()).view.z > z0 * 1.5);
+  assert.ok((await st()).view.zoom > z0 * 1.5);
   await page.click('#zoom-pct');
-  assert.ok(Math.abs((await st()).view.z - z0) < 1e-6);
+  assert.ok(Math.abs((await st()).view.zoom - z0) < 1e-6);
   step('זום בגלגלת והתאמה למסך');
 
   // עט: שתי נקודות חדות, אחת בגרירה (עקומה), סגירה בהקשה על הראשונה
@@ -695,7 +695,7 @@ try {
   await page.waitForTimeout(200);
   const px = await page.evaluate(() => {
     const { S } = window.__vs, c = document.getElementById('canvas');
-    const x = (50 * S.view.z + S.view.x) * S.dpr, y = (50 * S.view.z + S.view.y) * S.dpr;
+    const x = (50 * S.view.zoom + S.view.x) * S.dpr, y = (50 * S.view.zoom + S.view.y) * S.dpr;
     return [...c.getContext('2d').getImageData(Math.round(x), Math.round(y), 1, 1).data];
   });
   assert.ok(px[0] > 200 && px[1] < 60 && px[2] < 60, 'שכבת הרסטר מצוירת: ' + px);
@@ -731,7 +731,7 @@ try {
   await page.waitForTimeout(300);
   const pix = (x, y) => page.evaluate(([x, y]) => {
     const { S } = window.__vs, c = document.getElementById('canvas');
-    return [...c.getContext('2d').getImageData(Math.round((x * S.view.z + S.view.x) * S.dpr), Math.round((y * S.view.z + S.view.y) * S.dpr), 1, 1).data];
+    return [...c.getContext('2d').getImageData(Math.round((x * S.view.zoom + S.view.x) * S.dpr), Math.round((y * S.view.zoom + S.view.y) * S.dpr), 1, 1).data];
   }, [x, y]);
   const pg1 = await pix(100, 100), pg2 = await pix(200 + 48 + 100, 100);
   assert.ok(pg1[0] > 200 && pg1[2] < 60, 'עמוד 1 מה-PDF: ' + pg1);

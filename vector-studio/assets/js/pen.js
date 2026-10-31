@@ -28,7 +28,7 @@ export function createPenTools(api) {
   const toLocal = (path, off, wx, wy) => apply(invert(pathMat(path, off)), wx, wy);
   const toScreen = (path, off, p) => {
     const [wx, wy] = apply(pathMat(path, off), p[0], p[1]);
-    return [wx * S.view.z + S.view.x, wy * S.view.z + S.view.y];
+    return [wx * S.view.zoom + S.view.x, wy * S.view.zoom + S.view.y];
   };
   const tol = (e) => (e.pointerType === 'touch' ? 22 : 8);
 
@@ -146,7 +146,7 @@ export function createPenTools(api) {
     }
     const [lx, ly] = toLocal(o.path, off, ...api.toWorld(sx, sy));
     const near = nearest(edit.subs, [lx, ly]);
-    if (near && near.dist * S.view.z <= t) return { kind: 'segment', ...near };
+    if (near && near.dist * S.view.zoom <= t) return { kind: 'segment', ...near };
     return null;
   }
 
