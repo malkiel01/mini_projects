@@ -356,3 +356,8 @@ input.search { width: 100%; min-height: var(--tap); margin-bottom: var(--s2); }
 .cp-sw.on { outline: 3px solid var(--brand); outline-offset: 2px; }
 .cp-empty { margin: var(--s2) 0 0; }
 .sheet-root.sampling { visibility: hidden; pointer-events: none; }
+
+/* שורת המצב בזמן שינוי גודל / סיבוב (canvas.js, badge) */
+.tr-badge { position: absolute; top: 64px; left: 50%; transform: translateX(-50%); z-index: 2; padding: 6px 12px; border-radius: 999px;
+    background: #16192bE6; color: #fff; font-size: .875rem; font-weight: 600; white-space: nowrap; pointer-events: none; }
+.tr-badge[hidden] { display: none; }
