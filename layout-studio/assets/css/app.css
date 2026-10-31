@@ -62,3 +62,9 @@ dialog.story .sheet-body { grid-template-rows: auto 1fr; height: 100%; }
 .report-list li { padding: var(--s2) var(--s3); border-top: 1px solid var(--line); }
 .report-list li:first-child { border-top: 0; }
 .report-list:empty { display: none; }
+/* היסטוריית גרסאות */
+.hist-list li { display: flex; align-items: center; gap: var(--s2); padding: var(--s2) var(--s3); border-top: 1px solid var(--line); }
+.hist-list li:first-child { border-top: 0; }
+.hist-list .hist-txt { flex: 1; min-width: 0; }
+.hist-list .hist-note { font-size: .82rem; color: var(--muted); }
+.hist-list:empty { display: none; }

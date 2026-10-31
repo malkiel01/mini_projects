@@ -718,13 +718,14 @@ mbeBtn.addEventListener('click', async () => {
     const srcRes = await fetch('api.php?mbe_source=' + id, { credentials: 'same-origin' }).catch(() => null);
     const source = srcRes && srcRes.ok ? new Uint8Array(await srcRes.arrayBuffer()) : null;
     const { bytes } = await io.buildMbe({
-      model, source, preview, pdf,
+      model, source, preview, pdf, stages: pendingStages,
       fetchMedia: async path => {
         const r = await fetch('api.php?media=' + encodeURIComponent(path.slice(6)), { credentials: 'same-origin' });
         if (!r.ok) throw new Error('תמונה חסרה בשרת');
         return r.arrayBuffer();
       },
     });
+    pendingStages = [];   // נרשמו ביומן של הקובץ שירד
     download(bytes, 'application/vnd.mbe+zip', (doc.title || 'עימוד') + '.mbe');
     // הקובץ שירד הוא המקור של ההורדה הבאה — כך manifest.id ומה שאחרים כתבו נשארים
     fetch('api.php?action=mbe_source&id=' + id, { method: 'POST', credentials: 'same-origin',
@@ -734,6 +735,56 @@ mbeBtn.addEventListener('click', async () => {
     toast('ההורדה נכשלה: ' + e.message, true);
   } finally {
     mbeBtn.disabled = false;
+  }
+});
+
+// ---- היסטוריית גרסאות: היומן (history/) של קובץ המקור — נרשם בכל הורדה כ-‎.mbe, וגם באפליקציות אחרות ----
+let pendingStages = [];   // שלבים שיירשמו בהורדה הבאה (שחזור גרסה)
+const hdlg = $('#hist-dlg');
+const fmtAt = at => { try { return new Date(at).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' }); } catch { return at; } };
+$('#hist-btn').addEventListener('click', async () => {
+  dlg.close();
+  $('#hist-list').replaceChildren();
+  $('#hist-sum').textContent = 'טוען…';
+  hdlg.showModal();
+  try {
+    const res = await fetch('api.php?mbe_source=' + id, { credentials: 'same-origin' });
+    if (res.status === 404) {
+      $('#hist-sum').textContent = 'עוד אין היסטוריה. היא נרשמת בכל הורדה של המסמך כקובץ ‎.mbe (⬇️), וגם כשאפליקציה אחרת עורכת אותו.';
+      return;
+    }
+    if (!res.ok) throw new Error('server');
+    const src = new Uint8Array(await res.arrayBuffer());
+    const io = await import('./mbe-io.js');
+    const list = await io.readHistory(src);
+    $('#hist-sum').textContent = list.length
+      ? 'מהחדש לישן. שחזור טוען את הגרסה לעורך (אפשר לבטל ב-↶), ונרשם ביומן בהורדה הבאה.'
+      : 'אין עדיין שלבים ביומן.';
+    $('#hist-list').replaceChildren(...list.map(st => {
+      const li = document.createElement('li');
+      const t = Object.assign(document.createElement('div'), { className: 'hist-txt' });
+      t.append(`${st.kindLabel} · ${st.appLabel} · `, Object.assign(document.createElement('bdi'), { textContent: fmtAt(st.at) }));
+      const note = [st.who, st.note].filter(Boolean).join(' — ');
+      if (note) t.append(Object.assign(document.createElement('div'), { className: 'hist-note', textContent: note }));
+      li.append(t);
+      if (st.available) {
+        const b = Object.assign(document.createElement('button'), { type: 'button', className: 'btn sm ghost', textContent: 'שחזור' });
+        b.addEventListener('click', async () => {
+          if (!await confirm(`לטעון את הגרסה מ-${fmtAt(st.at)}? המסמך הנוכחי יוחלף בה (אפשר לבטל ב-↶).`, { ok: 'שחזור' })) return;
+          const v = await io.historyVersion(src, st.sha);
+          if (!v) { toast('הגרסה לא נמצאה בקובץ', true); return; }
+          hdlg.close();
+          changed(ensureMasters(v));
+          view.fit(); view.goSpread(0);
+          pendingStages.push({ kind: 'restore', note: 'שוחזר מ-' + st.id });
+          toast('הגרסה נטענה');
+        });
+        li.append(b);
+      }
+      return li;
+    }));
+  } catch (e) {
+    $('#hist-sum').textContent = 'ההיסטוריה לא נטענה: ' + e.message;
   }
 });
 
