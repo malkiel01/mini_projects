@@ -4,6 +4,8 @@ import { SIZES } from './model.js';
 import * as drafts from './drafts.js';
 import * as library from './library.js';
 import { acceptHandoff } from './handoff.js';
+import { initDialogs, confirm } from './ui-core/dialog.js';
+import { toast } from './ui-core/toast.js';
 
 const $ = id => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -72,17 +74,17 @@ function setupNew() {
     if (!(w > 0 && w <= 20000 && h > 0 && h <= 20000)) { $('cw').focus(); return; }
     newDrawing(`new:custom:${w}:${h}`);
   });
-  document.addEventListener('click', e => { const b = e.target.closest('[data-close]'); if (b) b.closest('dialog').close(); });
+  initDialogs();
   $('drafts').addEventListener('click', async e => {
     const b = e.target.closest('[data-del]');
     if (!b) return;
     const li = b.closest('.card');
     if (li.dataset.local) {
-      if (!confirm('למחוק את הטיוטה מהמכשיר?')) return;
+      if (!await confirm('למחוק את הטיוטה מהמכשיר?', { ok: 'מחיקה', danger: true })) return;
       drafts.remove(li.dataset.local);
     } else {
-      if (!confirm('למחוק את הציור? הוא והגרסאות שלו יימחקו מהשרת.')) return;
-      try { await library.remove(Number(li.dataset.id)); } catch (err) { alert('המחיקה נכשלה: ' + err.message); return; }
+      if (!await confirm('למחוק את הציור? הוא והגרסאות שלו יימחקו מהשרת.', { ok: 'מחיקה', danger: true })) return;
+      try { await library.remove(Number(li.dataset.id)); } catch (err) { toast('המחיקה נכשלה: ' + err.message, true); return; }
     }
     showLibrary();
   });
@@ -93,7 +95,7 @@ async function openFile(f, handoff = null) {
   $('open-err').hidden = true;
   try {
     const { id, notes } = await library.importMbe(f);
-    if (notes.length && !handoff) alert('נפתח. שימו לב:\n' + notes.join('\n'));
+    if (notes.length && !handoff) try { sessionStorage.setItem('vs-notes', notes.join(' · ')); } catch { /* חסום */ }
     // מאפליקציה אחרת — העורך יציע "↩ חזרה" (הפרמטר נשאר בכתובת, ו-opener נשאר בניווט באותו חלון)
     location.href = 'editor.html' + (handoff ? '?mbe-handoff=' + encodeURIComponent(handoff.id) : '') + '#d' + id;
   } catch (e) {
