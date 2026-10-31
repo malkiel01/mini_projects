@@ -86,7 +86,23 @@ try {
   await page.keyboard.press('Control+Shift+z');
   s = await st();
   assert.ok(Math.abs(s.paths[0].shape.box[2] - 400) < 2);
-  step('ביטול וביצוע מחדש');
+  // מקלדת בעברית: e.key הוא האות העברית, e.code — המקש הפיזי
+  const heb = (key, code, ctrl = false, shift = false) => page.evaluate(([key, code, ctrl, shift]) =>
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key, code, ctrlKey: ctrl, shiftKey: shift, bubbles: true })), [key, code, ctrl, shift]);
+  const nHeb = (await st()).paths.length;
+  await page.evaluate(() => window.__vs.select([window.__vs.S.doc.surfaces[0].layers[0].paths[0].id]));
+  await heb('ג', 'KeyD', true);
+  assert.equal((await st()).paths.length, nHeb + 1, 'Ctrl+D בעברית — שכפול');
+  await heb('ז', 'KeyZ', true);
+  assert.equal((await st()).paths.length, nHeb, 'Ctrl+Z בעברית — ביטול');
+  await heb('ז', 'KeyZ', true, true);
+  assert.equal((await st()).paths.length, nHeb + 1, 'Ctrl+Shift+Z בעברית — ביצוע מחדש');
+  await heb('ז', 'KeyZ', true);
+  await heb('פ', 'KeyP');
+  assert.equal(await page.evaluate(() => window.__vs.S.tool), 'pen', 'P בעברית — עט');
+  await heb('ה', 'KeyV');
+  assert.equal(await page.evaluate(() => window.__vs.S.tool), 'select', 'V בעברית — בחירה');
+  step('ביטול וביצוע מחדש (גם במקלדת עברית: Ctrl+Z / Ctrl+Shift+Z / Ctrl+D ואותיות הכלים)');
 
   // אליפסה בהקשה (גודל ברירת מחדל), ואז בחירה במלבן של שתיהן
   await pickShape(page, 'ellipse');

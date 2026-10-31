@@ -17,6 +17,7 @@ import { createPenTools } from './pen.js';
 import { pencilD, brushD, widths } from './freehand.js';
 import { needsPages, sourcePdf, renderPages, assign as assignPages } from './pages.js';
 import { activeHandoff, returnHandoff, endHandoff } from './handoff.js';
+import { keyOf } from './ui-core/keys.js';
 import { snapper } from './snap.js';
 import { parse, bbox, serialize, transform as transformSegs } from './geometry/path.js';
 const pathOps = { parse, serialize, transform: transformSegs };
@@ -1172,7 +1173,7 @@ document.addEventListener('keydown', (e) => {
   if (e.target.closest('input, textarea, select')) return;
   if (tools.key(e)) { e.preventDefault(); return; }
   const mod = e.ctrlKey || e.metaKey;
-  const k = e.key.toLowerCase();
+  const k = keyOf(e); // המקש הפיזי — גם כשהמקלדת בעברית (Ctrl+Z שולח 'ז')
   if (mod && k === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
   if (mod && k === 'y') { e.preventDefault(); redo(); return; }
   if (mod && k === 'a') { e.preventDefault(); select([...objects(S.doc)].filter(o => !o.layer.locked && o.layer.visible !== false).map(o => o.path.id)); return; }
@@ -1194,7 +1195,7 @@ document.addEventListener('keydown', (e) => {
   const step = e.shiftKey ? 10 : 1;
   const arrows = { arrowleft: [-step, 0], arrowright: [step, 0], arrowup: [0, -step], arrowdown: [0, step] };
   if (arrows[k]) { e.preventDefault(); nudge(...arrows[k]); return; }
-  if (TOOL_KEYS[e.key]) setTool(TOOL_KEYS[e.key]);
+  if (TOOL_KEYS[k]) setTool(TOOL_KEYS[k]);
 });
 document.addEventListener('keyup', (e) => { if (e.key === ' ') { spaceDown = false; canvas.style.cursor = 'default'; } });
 
