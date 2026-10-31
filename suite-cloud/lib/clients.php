@@ -393,8 +393,10 @@ function verifyToken(string $token): array {
  */
 function actor(string $action, string $scope, string $body): array {
     $auth = (string) ($_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '');
-    if (preg_match('/^Bearer\s+(\S+)$/i', $auth, $m)) {
-        [$conn, $client] = verifyToken($m[1]);
+    // X-Cloud-Token — אותו אסימון, למקרה ששרת בדרך מוריד את Authorization לפני PHP
+    $token = preg_match('/^Bearer\s+(\S+)$/i', $auth, $m) ? $m[1] : (string) ($_SERVER['HTTP_X_CLOUD_TOKEN'] ?? '');
+    if ($token !== '') {
+        [$conn, $client] = verifyToken($token);
         return actorFrom($conn, $client, $scope);
     }
     if (!empty($_SERVER['HTTP_X_CLOUD_SIGNATURE'])) {
@@ -424,7 +426,7 @@ function corsHeaders(): void {
         if (in_array($origin, json_decode($o, true) ?: [], true)) {
             header("Access-Control-Allow-Origin: $origin");
             header('Vary: Origin');
-            header('Access-Control-Allow-Headers: Authorization, Content-Type, Range, X-Cloud-Request');
+            header('Access-Control-Allow-Headers: Authorization, Content-Type, Range, X-Cloud-Request, X-Cloud-Token');
             header('Access-Control-Allow-Methods: GET, POST, PUT, OPTIONS');
             header('Access-Control-Expose-Headers: ETag, Content-Range, Content-Length, X-AI-Size, X-AI-Transparent, X-AI-Provider');
             header('Access-Control-Max-Age: 600');

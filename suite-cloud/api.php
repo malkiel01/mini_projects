@@ -173,7 +173,8 @@ try {
         case 'ai_capabilities': { $x = actor($action, 'ai', $raw); reply(aiCapabilities($x['account'], $x['app'])); }
         case 'ai_run': {
             if ($method !== 'POST') throw new AppError('בקשה לא תקינה', 400, 'bad_request');
-            $bearer = !empty($_SERVER['HTTP_AUTHORIZATION']) || !empty($_SERVER['REDIRECT_HTTP_AUTHORIZATION']) || !empty($_SERVER['HTTP_X_CLOUD_SIGNATURE']);
+            $bearer = !empty($_SERVER['HTTP_AUTHORIZATION']) || !empty($_SERVER['REDIRECT_HTTP_AUTHORIZATION']) || !empty($_SERVER['HTTP_X_CLOUD_TOKEN'])
+                || !empty($_SERVER['HTTP_X_CLOUD_SIGNATURE']);
             // מהדף של הענן (עוגייה): כותרת שאתר זר לא יכול לשלוח בלי preflight — כדי שלא יוציאו כסף בשמך
             if (!$bearer && ($_SERVER['HTTP_X_CLOUD_REQUEST'] ?? '') !== '1') throw new AppError('בקשה לא תקינה', 400, 'bad_request');
             $x = actor($action, 'ai', $raw);

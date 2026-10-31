@@ -14,8 +14,8 @@
 import { TILE, BLEND_MODES, tilesInRect, newMask } from './doc.js';
 import { rasterTile, selectionBox } from './selection.js';
 import { matrix as xfMatrix, bounds as xfBounds } from './transform.js';
-import { WebGL2Renderer, srgbToLinear } from './webgl2.js';
-import { adjustOf, fillRamp, fillGeometry } from './formats.js';
+import { WebGL2Renderer, srgbToLinear, FX_MAX, anyEffects } from './webgl2.js';
+import { adjustOf, fillRamp, fillGeometry, effectsOf, effectsReach } from './formats.js';
 
 const WGSL = /* wgsl */`
 struct U {
@@ -272,6 +272,71 @@ fn noise(p: vec2f) -> f32 {
   return mix(orig, acc / n, m);
 }
 
+// סגנונות שכבה (ראו WebGL2Renderer, fxsrc / fxblur / fx).
+// (1) התוכן המרופד (t0) כפול המסכה המרופדת (t1, אפור של sRGB); m.x = יש מסכה
+@fragment fn fxsrc(i: VO) -> @location(0) vec4f {
+  let p = vec2i(i.pos.xy);
+  let c = textureLoad(t0, p, 0);
+  if (u.m.x == 1) { return c * enc(vec3f(textureLoad(t1, p, 0).r)).r; }
+  return c;
+}
+// (2) טשטוש האלפא בכיוון אחד: m.x רדיוס, m.y היפוך (1 − אלפא), m.zw כיוון; a.x סיגמה, a.y גודל השטח המרופד
+@fragment fn fxblur(i: VO) -> @location(0) vec4f {
+  let p = vec2i(i.pos.xy);
+  let k = u.m.x;
+  let n = i32(u.a.y);
+  var acc = 0.0;
+  var wsum = 0.0;
+  for (var j = -k; j <= k; j++) {
+    let w = exp(-f32(j * j) / (2.0 * u.a.x * u.a.x));
+    var a = textureLoad(t0, clamp(p + u.m.zw * j, vec2i(0), vec2i(n - 1)), 0).a;
+    if (u.m.y == 1) { a = 1.0 - a; }
+    acc += a * w;
+    wsum += w;
+  }
+  return vec4f(acc / wsum);
+}
+// (3) צעד: t0 התוכן המרופד, t1 האלפא המטושטש, t2 הבסיס, t3 "מעל"; a = צבע לינארי ואטימות; b = dx dy spread עובי;
+// c.x = גודל מרקמי הריפוד; m = מצב, ריפוד, מיקום הקו
+fn fxSpread(s: f32) -> f32 { return clamp(s / (1.0 - u.b.z), 0.0, 1.0); }
+@fragment fn fx(i: VO) -> @location(0) vec4f {
+  let p = vec2i(i.pos.xy);
+  let b = textureLoad(t2, p, 0);
+  let k = u.m.y;
+  let q = vec2f(p) + vec2f(f32(k)) + 0.5;
+  let n = u.c.x;
+  let mode = u.m.x;
+  if (mode == 0) { return textureLoad(t0, p + vec2i(k), 0); }
+  if (mode == 1) { let t = textureLoad(t3, p, 0); return t + b * (1.0 - t.a); }
+  if (mode == 2) {
+    let c = u.a.w * fxSpread(textureSampleLevel(t1, smp, (q - u.b.xy) / n, 0.0).r);
+    return vec4f(u.a.rgb * c, c) + b * (1.0 - c);
+  }
+  if (mode == 3 || mode == 4) {
+    var e = u.a.w;
+    if (mode == 3) { e = e * fxSpread(textureSampleLevel(t1, smp, (q - u.b.xy) / n, 0.0).r); }
+    return vec4f(u.a.rgb * e * b.a + b.rgb * (1.0 - e), b.a);
+  }
+  let a0 = textureSampleLevel(t0, smp, q / n, 0.0).a;
+  var dil = a0;
+  var ero = a0;
+  var R = u.b.w;
+  if (u.m.z == 2) { R = R * 0.5; }
+  for (var ri = 1; ri <= 8; ri++) {
+    let r = R * f32(ri) / 8.0;
+    for (var ai = 0; ai < 32; ai++) {
+      let ang = (f32(ai) + 0.5 * f32(ri & 1)) * 0.19634954;
+      let v = textureSampleLevel(t0, smp, (q + r * vec2f(cos(ang), sin(ang))) / n, 0.0).a;
+      dil = max(dil, v);
+      ero = min(ero, v);
+    }
+  }
+  var cov = dil - ero;
+  if (u.m.z == 0) { cov = max(dil - a0, 0.0); } else if (u.m.z == 1) { cov = a0 - ero; }
+  let c = u.a.w * cov;
+  return vec4f(u.a.rgb * c, c) + b * (1.0 - c);
+}
+
 @fragment fn copy(i: VO) -> @location(0) vec4f { return textureSample(t0, smp, i.uv); }
 
 // חילוץ לתוכן צף: t0 השכבה כפול t1 מסכת הבחירה (m.x = יש בחירה)
@@ -318,6 +383,9 @@ const RING = SLOT * 8192;
 const READ_BATCH = 64;            // אריחים לכל מאגר קריאה (16MB)
 const key = (tx, ty) => tx + ',' + ty;
 const align256 = n => Math.ceil(n / 256) * 256;
+const FX_N = TILE + 2 * FX_MAX;
+const hexLinear = h => [1, 3, 5].map(i => srgbToLinear(parseInt(h.slice(i, i + 2), 16)));
+const FX_POS = ['outside', 'inside', 'center'];
 
 const TEX_USAGE = typeof GPUTextureUsage === 'undefined' ? {} : GPUTextureUsage;
 
@@ -410,7 +478,7 @@ export class WebGPURenderer {
     const errs = info.messages.filter(m => m.type === 'error');
     if (errs.length) throw new Error('wgsl: ' + errs.map(m => `${m.lineNum}:${m.linePos} ${m.message}`).join('; '));
     this.device.pushErrorScope('validation');
-    for (const name of ['upload', 'fill', 'blend', 'dab', 'stroke', 'adjust', 'blurH', 'blurV', 'lerp', 'heal', 'fillgen', 'copy', 'extract', 'read', 'thumb', 'display', 'float']) this.#pipe(name);
+    for (const name of ['upload', 'fill', 'blend', 'dab', 'stroke', 'adjust', 'blurH', 'blurV', 'lerp', 'heal', 'fillgen', 'fxsrc', 'fxblur', 'fx', 'copy', 'extract', 'read', 'thumb', 'display', 'float']) this.#pipe(name);
     const err = await this.device.popErrorScope();
     if (err) throw new Error('pipeline: ' + err.message);
   }
@@ -560,6 +628,7 @@ export class WebGPURenderer {
 
   #dirty(doc, x, y, w, h) {
     doc._dirty ??= new Set();
+    if (anyEffects(doc.layers)) { x -= FX_MAX; y -= FX_MAX; w += 2 * FX_MAX; h += 2 * FX_MAX; }
     for (const [tx, ty] of tilesInRect(x, y, w, h)) doc._dirty.add(key(tx, ty));
   }
 
@@ -567,7 +636,13 @@ export class WebGPURenderer {
 
   invalidateTiles(doc, keys) {
     doc._dirty ??= new Set();
-    for (const k of keys) doc._dirty.add(k);
+    const fx = anyEffects(doc.layers);
+    for (const k of keys) {
+      doc._dirty.add(k);
+      if (!fx) continue;
+      const [tx, ty] = k.split(',').map(Number);
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) doc._dirty.add(key(tx + dx, ty + dy));
+    }
   }
 
   // ---------- שכבות ----------
@@ -921,9 +996,9 @@ export class WebGPURenderer {
   static adjustParams(adj) { return WebGL2Renderer.adjustParams(adj); }
 
   /** ריפוד: האריח ושמונת שכניו ב-padTex (ראו WebGL2Renderer) */
-  #pad(get, K) {
+  #pad(get, K, target = this.padTex) {
     const P = TILE + 2 * K;
-    const pad = this.#pass(this.#view(this.padTex), { clear: true, viewport: [P, P] });
+    const pad = this.#pass(this.#view(target), { clear: true, viewport: [P, P] });
     for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
       const nt = get(dx, dy);
       if (!nt) continue;
@@ -1194,6 +1269,16 @@ export class WebGPURenderer {
       const t = layer.type === 'group'
         ? (layer.children.length ? this.#compositeList(doc, layer.children, tx, ty, depth + 1) : null)
         : layer.fill ? this.#fillTile(layer.fill, tx, ty, this.fillTmp) : this.#layerTileFor(doc, layer, tx, ty);
+      // סגנונות שכבה: השכבה נבנית לבד עם האפקטים (והמסכה), ואז נממזגת (ראו WebGL2Renderer)
+      const fxs = layer.type === 'group' ? [] : effectsOf(layer);
+      if (fxs.length) {
+        const l = this.#effectsTile(doc, layer, fxs, tx, ty, t);
+        if (l) {
+          this.#drawTo(b, 'blend', { a: [layer.opacity, 0, 0, 0], m: [Math.max(0, BLEND_MODES.indexOf(layer.blend)), 0, 0, 0] }, [a, l]);
+          [a, b] = [b, a];
+        }
+        continue;
+      }
       if (!t) continue;
       // מסכה: גם היא דרך #layerTileFor (משיכה פתוחה עליה מוצגת חיה). אריח חסר = מוסתר
       const mk = layer.mask?.enabled ? (this.#layerTileFor(doc, layer.mask, tx, ty) || this.emptyTex) : null;
@@ -1201,6 +1286,84 @@ export class WebGPURenderer {
       [a, b] = [b, a];
     }
     return a;
+  }
+
+  // ---------- סגנונות שכבה (ראו WebGL2Renderer) ----------
+
+  #fx() {
+    if (this.fxTex) return this.fxTex;
+    const big = () => this.#tex(FX_N, FX_N, TILE_FMT);
+    this.fxTex = {
+      c: big(), m: big(), s: big(), h: big(), b: big(),
+      near: Array.from({ length: 9 }, () => this.#tex(TILE, TILE, TILE_FMT)),
+      out: Array.from({ length: 4 }, () => this.#tex(TILE, TILE, TILE_FMT)),
+    };
+    return this.fxTex;
+  }
+
+  #fxNear(doc, layer, tx, ty, center, fill) {
+    const fx = this.#fx(), sh = doc._shift, out = [];
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const i = (dy + 1) * 3 + dx + 1;
+      if (!dx && !dy) out[i] = center;
+      else if (fill) out[i] = this.#fillTile(fill, tx + dx, ty + dy, fx.near[i]);
+      else if (sh && sh.layers.has(layer)) out[i] = this.#shiftedTile(layer, tx + dx, ty + dy, sh.dx, sh.dy, fx.near[i]);
+      else out[i] = layer.tiles.get(key(tx + dx, ty + dy));
+    }
+    return out;
+  }
+
+  #effectsTile(doc, layer, fxs, tx, ty, t) {
+    const fx = this.#fx();
+    const K = Math.min(FX_MAX, Math.max(8, Math.ceil(effectsReach(fxs) / 8) * 8)), P = TILE + 2 * K;
+    const near = this.#fxNear(doc, layer, tx, ty, t, layer.fill);
+    if (!near.some(Boolean)) return null;
+    this.#pad((dx, dy) => near[(dy + 1) * 3 + dx + 1], K, fx.c);
+    const useMask = !!layer.mask?.enabled;
+    if (useMask) {
+      const mn = this.#fxNear(doc, layer.mask, tx, ty, this.#layerTileFor(doc, layer.mask, tx, ty), null);
+      this.#pad((dx, dy) => mn[(dy + 1) * 3 + dx + 1], K, fx.m);
+    }
+    const big = { rect: [0, 0, P, P], size: [P, P, 0, 0] }, vp = { viewport: [P, P] };
+    this.#drawTo(fx.s, 'fxsrc', { ...big, m: [useMask ? 1 : 0, 0, 0, 0] }, [fx.c, fx.m], vp);
+    const blurA = (e, inv) => {
+      const r = Math.round(e.blur ?? 0), sigma = Math.max(0.5, r / 2);
+      this.#drawTo(fx.h, 'fxblur', { ...big, a: [sigma, P, 0, 0], m: [r, inv ? 1 : 0, 1, 0] }, [fx.s], vp);
+      this.#drawTo(fx.b, 'fxblur', { ...big, a: [sigma, P, 0, 0], m: [r, 0, 0, 1] }, [fx.h], vp);
+    };
+    const step = (mode, base, out, e = null, top = null) => this.#drawTo(out, 'fx', {
+      a: e ? [...hexLinear(e.color), e.opacity] : [0, 0, 0, 0],
+      b: [e?.dx ?? 0, e?.dy ?? 0, e?.spread ?? 0, e?.width ?? 0],
+      c: [FX_N, 0, 0, 0],
+      m: [mode, K, Math.max(0, FX_POS.indexOf(e?.position)), 0],
+    }, [fx.s, fx.b, base, top], {}, 'linear');
+    const [o0, o1, o2, o3] = fx.out;
+    const other = (pool, cur) => pool.find(x => x !== cur);
+    let below = this.emptyTex;
+    for (const e of fxs.filter(e => e.type === 'shadow' || e.type === 'glow')) {
+      blurA(e, false);
+      const o = other([o0, o1], below); step(2, below, o, e); below = o;
+    }
+    let c = o2;
+    step(0, this.emptyTex, c);
+    for (const e of fxs.filter(e => e.type === 'overlay' || e.type === 'inner-glow' || e.type === 'inner-shadow')) {
+      if (e.type !== 'overlay') blurA(e, true);
+      const o = other([o2, o3], c); step(e.type === 'overlay' ? 4 : 3, c, o, e); c = o;
+    }
+    let l = other([o0, o1], below);
+    step(1, below, l, null, c);
+    for (const e of fxs.filter(e => e.type === 'stroke')) {
+      const o = other([o0, o1, o2, o3], l); step(5, l, o, e); l = o;
+    }
+    return l;
+  }
+
+  async readEffectsLayerPixels(doc, layer, x, y, w, h) {
+    const fxs = effectsOf(layer);
+    return this.#read((tx, ty) => {
+      const t = layer.fill ? this.#fillTile(layer.fill, tx, ty, this.fillTmp) : layer.tiles.get(key(tx, ty));
+      return this.#effectsTile(doc, layer, fxs, tx, ty, t) ?? this.emptyTex;
+    }, x, y, w, h);
   }
 
   #shiftedTile(layer, tx, ty, dx, dy, out) {

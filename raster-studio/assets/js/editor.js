@@ -13,6 +13,7 @@ import { History } from './engine/history.js';
 import { createTools } from './tools.js';
 import { createOverlay } from './overlay.js';
 import { createAdjustPanel } from './adjust-panel.js';
+import { createFxPanel } from './fx-panel.js';
 import { exportPNG, exportJPG, exportORA, download, fileName } from './export.js';
 import { saveDraft, loadDraft, restoreDraft, clearDraft, draftKey } from './draft.js';
 import { gapsFor, parseOraStack } from './engine/formats.js';
@@ -56,6 +57,7 @@ let panel = null;
 let history = null;
 let tools = null;
 let adjust = null;
+let fx = null;
 let view = { zoom: 1, x: 0, y: 0 };
 let fitted = false;
 let changed = false;   // יש שינוי שעוד לא נכתב לטיוטה במכשיר
@@ -327,7 +329,7 @@ async function saveToServer() {
   const btn = $('#save-btn');
   btn.setAttribute('aria-busy', 'true');
   try {
-    tools.commitFloat(); tools.commitText(); adjust.close();
+    tools.commitFloat(); tools.commitText(); adjust.close(); fx.close();
     if (!doc.serverId) {
       // מסמך מהמכשיר — נכנס לספרייה בשרת
       const { doc: meta } = await api('doc_create', { title: doc.title || 'תמונה', size: 'custom', px: [doc.width, doc.height] });
@@ -428,7 +430,7 @@ versionsDlg.addEventListener('click', async e => {
 // ---------- הורדה ----------
 const exportDlg = $('#export-dlg');
 $('#export-btn').addEventListener('click', () => {
-  tools.commitFloat(); tools.commitText(); adjust.close();
+  tools.commitFloat(); tools.commitText(); adjust.close(); fx.close();
   const g = ['png', 'ora'].flatMap(k => gapsFor(k, doc.layers).map(x => k.toUpperCase() + ': ' + gapText(x)));
   $('#export-gaps').textContent = g.length ? 'שימו לב — ' + g.join(' · ') : '';
   exportDlg.showModal();
@@ -521,6 +523,7 @@ stage.addEventListener('pointerdown', e => {
   const panOnly = e.button === 1 || spaceDown || pointers.size > 1;
   // ציור בזמן שתיקון פתוח — התיקון נסגר בלי להחיל (אחרת התצוגה מטעה)
   if (!panOnly && adjust?.open && tools.state.tool !== 'hand') adjust.close();
+  if (!panOnly && fx?.open && tools.state.tool !== 'hand') fx.close();
   if (!panOnly && pointers.size === 1 && tools.down(e, toDoc(p))) {
     if (tools.stroking) painter = e.pointerId;
     else pointers.delete(e.pointerId);   // דלי / טפטפת — לחיצה אחת
@@ -604,6 +607,7 @@ function syncHistory(h) {
 function undo() {
   if (tools?.floating) { tools.cancelFloat(); return; }   // באמצע שינוי צורה — הביטול מבטל אותו
   if (adjust?.open) { adjust.close(); return; }
+  if (fx?.open) { fx.close(); return; }
   if (history?.undo()) { changed = true; draw(); panel.render(); }
 }
 function redo() {
@@ -657,14 +661,21 @@ $('#hint').textContent = coarse ? 'צביטה — זום' : 'גרירה — הז
     adjust = createAdjustPanel({
       root: $('#adjust'), doc: () => doc, renderer, history, toast, draw,
       color: () => tools.state.color,
-      beforeOpen: () => tools.commitFloat(),
+      beforeOpen: () => { tools.commitFloat(); fx.close(); },
+      onChange: () => { changed = true; draw(); panel.render(); },
+    });
+    fx = createFxPanel({
+      root: $('#fx'), doc: () => doc, renderer, history, toast, draw,
+      beforeOpen: () => { tools.commitFloat(); tools.commitText(); adjust.close(); },
       onChange: () => { changed = true; draw(); panel.render(); },
     });
     $('#adjust-btn').addEventListener('click', () => (adjust.open ? adjust.close() : adjust.show()));
     panel = createLayersPanel({
       root: layersEl, doc: () => doc, renderer, history, toast,
-      beforeChange: () => { tools.commitFloat(); adjust.close(); },
+      beforeChange: () => { tools.commitFloat(); adjust.close(); fx.close(); },
       onChange: () => { changed = true; draw(); },
+      // ✨ / fx בשורה: פותח (או סוגר) את לוח הסגנונות על השכבה הפעילה
+      onEffects: () => (fx.open ? fx.close() : fx.show()),
     });
     renderer.onLost = () => showMsg('הגרפיקה של הדפדפן אופסה, והתמונה שבזיכרון אבדה. טענו את הדף מחדש.', true);
 
@@ -734,7 +745,7 @@ function showHandoff(h) {
   fit();
   btn.onclick = async () => {
     if (!doc) return;
-    tools.commitFloat(); tools.commitText(); adjust.close();
+    tools.commitFloat(); tools.commitText(); adjust.close(); fx.close();
     btn.disabled = true;
     try {
       await returnHandoff(h, await buildMbe(renderer, doc, { view: viewState() }));
@@ -760,6 +771,7 @@ window.__rs = {
   get history() { return history; },
   get tools() { return tools; },
   get adjust() { return adjust; },
+  get fx() { return fx; },
   undo, redo,
   toggleLayers,
   setView,

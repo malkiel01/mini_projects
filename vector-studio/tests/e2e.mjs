@@ -892,6 +892,17 @@ try {
     n = await p.evaluate(() => window.__vs.S.doc.surfaces[0].layers[0].paths.filter(x => x.type === 'text').length);
     assert.equal(n, 1);
     await p.tap('[data-tool="select"]');
+    // אצבע אחת על רקע ריק מזיזה את התצוגה (ui-core bindViewport, panOnEmpty) ולא מבטלת בחירה; הקשה שם — מבטלת
+    await p.evaluate(() => window.__vs.select([window.__vs.S.doc.surfaces[0].layers[0].paths[0].id]));
+    const v0 = await p.evaluate(() => ({ ...window.__vs.S.view }));
+    await touch('touchStart', [[cb.x + 12, cb.y + 12]]);
+    for (let i = 1; i <= 5; i++) await touch('touchMove', [[cb.x + 12 + i * 8, cb.y + 12 + i * 6]]);
+    await touch('touchEnd', []);
+    const v1 = await p.evaluate(() => ({ ...window.__vs.S.view }));
+    assert.ok(Math.abs(v1.x - v0.x - 40) < 2 && Math.abs(v1.y - v0.y - 30) < 2 && v1.zoom === v0.zoom, 'הזזה באצבע: ' + JSON.stringify([v0, v1]));
+    assert.equal(await p.evaluate(() => window.__vs.S.sel.size), 1, 'הזזה לא מבטלת בחירה');
+    await p.touchscreen.tap(cb.x + 12, cb.y + 12);
+    assert.equal(await p.evaluate(() => window.__vs.S.sel.size), 0, 'הקשה על רקע ריק מבטלת בחירה');
     await p.evaluate(() => window.__vs.select([window.__vs.S.doc.surfaces[0].layers[0].paths[0].id]));
     await p.tap('#props-btn');
     await p.waitForSelector('.props-open #props-body .props-head');
@@ -904,7 +915,7 @@ try {
     assert.deepEqual(over, [], 'גולש ברוחב');
     assert.ok(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'גלילה אופקית');
     if (shots) { await p.locator('fieldset[data-k="fillmode"]').scrollIntoViewIfNeeded(); await p.screenshot({ path: `${shots}/fill-${width}.png` }); }
-    step(`טלפון ${width}px: כוכב בהקשה, עט ב-3 הקשות ו"סיום", צביטה ו-↶ באמצע עט, טקסט, לוח מאפיינים, בלי גלילה אופקית`);
+    step(`טלפון ${width}px: כוכב בהקשה, עט ב-3 הקשות ו"סיום", צביטה ו-↶ באמצע עט, הזזה באצבע והקשה שמבטלת בחירה, טקסט, לוח מאפיינים, בלי גלילה אופקית`);
     await ctx.close();
   }
 } finally {

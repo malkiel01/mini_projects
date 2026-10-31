@@ -809,3 +809,38 @@ test('מילוי: cleanFill, ramp (sRGB, אלפא ישר) וגאומטריה', a
   assert.deepEqual(scaleFill(g, 2).gradient.to, [0, 20]);
   assert.equal(fillGeometry(cleanFill({ gradient: { type: 'conic', stops: [{ at: 0, color: '#00ff00' }] } })).mode, 0, 'סוג לא מוכר — צבע הראשונה');
 });
+
+test('סגנונות שכבה: cleanEffect, סדר הציור, טווח וקנה מידה', async () => {
+  const { cleanEffect, effectsOf, effectsReach, scaleEffects, EFFECT_LIMIT } = await import('../assets/js/engine/formats.js');
+  assert.equal(cleanEffect({ type: 'bevel' }), null, 'סוג לא מוכר — לא מצויר');
+  assert.equal(cleanEffect(null), null);
+  const sh = cleanEffect({ type: 'shadow', dx: 500, dy: -3, blur: -2, color: 'black', opacity: 2, spread: 3, extra: 1 });
+  assert.deepEqual(sh, { type: 'shadow', dx: EFFECT_LIMIT.offset, dy: -3, blur: 0, color: '#000000', opacity: 1, spread: 0.95, extra: 1 });
+  assert.deepEqual(cleanEffect({ type: 'stroke', width: 0, position: 'up' }), { type: 'stroke', width: 1, position: 'outside', color: '#000000', opacity: 1 });
+  // הסדר — לא לפי הרשימה, אלא כמו בפוטושופ; שקוף לגמרי ולא מוכר — בחוץ
+  const layer = { effects: [{ type: 'stroke', width: 2 }, { type: 'bevel' }, { type: 'glow', blur: 4, opacity: 0 }, { type: 'shadow', dx: 3, dy: 4, blur: 5 }, { type: 'overlay', color: '#ff0000' }] };
+  assert.deepEqual(effectsOf(layer).map(e => e.type), ['shadow', 'overlay', 'stroke']);
+  assert.deepEqual(effectsOf({}), []);
+  assert.equal(effectsReach(effectsOf(layer)), 4 + 5 + 1, 'צל: ההיסט הגדול + הטשטוש');
+  assert.equal(effectsReach([{ type: 'stroke', width: 7 }]), 8);
+  assert.equal(effectsReach([{ type: 'overlay' }]), 0);
+  assert.deepEqual(scaleEffects([{ type: 'shadow', dx: 3, dy: -1, blur: 2, opacity: 0.5 }], 2), [{ type: 'shadow', dx: 6, dy: -2, blur: 4, opacity: 0.5 }]);
+});
+
+test('‎.mbe: שכבה עם סגנונות — המתכון שלנו נכתב מחדש; של אחרים שלא נטען — נשאר', async () => {
+  const { mbeDocument } = await import('../assets/js/engine/formats.js');
+  const doc = { width: 10, height: 10, layers: [] };
+  const mk = (extra) => ({ id: 'a', name: 'א', type: 'raster', opacity: 1, blend: 'normal', visible: true, locked: false, ...extra });
+  const recipe = { source: 'media/s.png', effects: [{ type: 'glow', blur: 3 }], baked: 'b'.repeat(64) };
+  const ours = mk({ effects: [{ type: 'glow', blur: 3 }], mbe: { effects: [{ type: 'old' }], source: 'media/old.png', baked: 'x' } });
+  const L = mbeDocument(doc, [ours], null, () => 'media/n.png', () => recipe).surfaces[0].layers[0];
+  assert.deepEqual([L.source, L.effects, L.baked], [recipe.source, recipe.effects, recipe.baked]);
+  // נטענו ואז הוסרו כולם — לא נשאר מתכון ישן
+  const cleared = mk({ effectsLoaded: true, mbe: { effects: [{ type: 'glow' }], source: 'media/old.png', baked: 'x' } });
+  const C = mbeDocument(doc, [cleared], null, () => 'media/n.png', () => undefined).surfaces[0].layers[0];
+  assert.equal('effects' in C || 'source' in C || 'baked' in C, false);
+  // מתכון של אחרים שלא טענו (baked לא תאם) — נשאר כמו שהוא
+  const foreign = mk({ mbe: { effects: [{ type: 'glow' }], baked: 'x' } });
+  const F = mbeDocument(doc, [foreign], null, () => 'media/n.png', () => undefined).surfaces[0].layers[0];
+  assert.deepEqual(F.effects, [{ type: 'glow' }]);
+});

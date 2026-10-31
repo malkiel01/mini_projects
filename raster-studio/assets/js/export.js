@@ -2,7 +2,7 @@
 
 import { encodePNG } from './engine/png.js';
 import { zipStore } from './engine/zip.js';
-import { oraStack } from './engine/formats.js';
+import { oraStack, effectsOf } from './engine/formats.js';
 
 /** התמונה המשוטחת (רק שכבות גלויות): Promise ל-RGBA ישר של 8 ביט בגודל הקנבס */
 export const flatRGBA = (renderer, doc) => renderer.readPixels(doc, 0, 0, doc.width, doc.height);
@@ -14,6 +14,8 @@ export const flatRGBA = (renderer, doc) => renderer.readPixels(doc, 0, 0, doc.wi
 export const layerPNG = async (renderer, doc, layer, masked = false) => encodePNG(layer.adjust
   // שכבת התאמה: אין לה פיקסלים — מה שנראה במקומה (מה שמתחתיה אחרי ההתאמה, כפול המסכה)
   ? await renderer.readAdjustLayerPixels(doc, layer, 0, 0, doc.width, doc.height)
+  // המראה של שכבה עם סגנונות שכבה: כפול המסכה, עם האפקטים
+  : masked && effectsOf(layer).length ? await renderer.readEffectsLayerPixels(doc, layer, 0, 0, doc.width, doc.height)
   : await renderer.readLayerPixels(layer, 0, 0, doc.width, doc.height, masked), doc.width, doc.height);
 
 /** תמונה מוקטנת (הצלע הארוכה ≤ max) כ-PNG — לתמונה ממוזערת / preview */

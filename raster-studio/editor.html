@@ -102,6 +102,32 @@
           <button class="btn primary" type="button" data-adj-act="apply">✓ החלה</button>
         </div>
       </section>
+      <section class="adjust fx" id="fx" aria-labelledby="fx-title" hidden>
+        <header class="adjust-head"><h2 id="fx-title">סגנונות שכבה</h2><span class="hint one" id="fx-layer"></span></header>
+        <div class="seg-tabs" role="tablist" aria-label="סוג הסגנון">
+          <button type="button" role="tab" data-fx-tab="shadow">צל</button>
+          <button type="button" role="tab" data-fx-tab="glow">זוהר</button>
+          <button type="button" role="tab" data-fx-tab="stroke">קו מתאר</button>
+          <button type="button" role="tab" data-fx-tab="overlay">צבע</button>
+          <button type="button" role="tab" data-fx-tab="inner-glow">זוהר פנימי</button>
+          <button type="button" role="tab" data-fx-tab="inner-shadow">צל פנימי</button>
+        </div>
+        <div class="adjust-fields">
+          <label class="opt opt-check"><input id="fx-on" type="checkbox"><span>פעיל</span></label>
+          <label class="opt opt-colors"><span>צבע</span><input id="fx-color" type="color" aria-label="צבע הסגנון"></label>
+          <label class="opt"><span>אטימות <output for="fx-opacity"></output></span><input id="fx-opacity" type="range" min="0" max="100"></label>
+          <label class="opt" data-fx-for="shadow inner-shadow"><span>כיוון <output for="fx-angle"></output></span><input id="fx-angle" type="range" min="-180" max="180"></label>
+          <label class="opt" data-fx-for="shadow inner-shadow"><span>מרחק <output for="fx-distance"></output></span><input id="fx-distance" type="range" min="0" max="64"></label>
+          <label class="opt" data-fx-for="shadow inner-shadow glow inner-glow"><span>טשטוש <output for="fx-blur"></output></span><input id="fx-blur" type="range" min="0" max="64"></label>
+          <label class="opt" data-fx-for="shadow inner-shadow glow inner-glow"><span>התפשטות <output for="fx-spread"></output></span><input id="fx-spread" type="range" min="0" max="95"></label>
+          <label class="opt" data-fx-for="stroke"><span>עובי <output for="fx-width"></output></span><input id="fx-width" type="range" min="1" max="32"></label>
+          <label class="opt" data-fx-for="stroke"><span>מיקום</span><select id="fx-position"><option value="outside">בחוץ</option><option value="center">במרכז</option><option value="inside">בפנים</option></select></label>
+        </div>
+        <div class="adjust-actions">
+          <button class="btn ghost" type="button" data-fx-act="cancel">✕ ביטול</button>
+          <button class="btn primary" type="button" data-fx-act="apply">✓ החלה</button>
+        </div>
+      </section>
       <div class="tool-opts" id="tool-opts" role="group" aria-label="אפשרויות הכלי">
         <label class="opt" data-for="brush eraser clone heal"><span>גודל <output for="opt-size"></output></span>
           <input id="opt-size" type="range" min="0" max="100" step="1"></label>
@@ -175,6 +201,7 @@
         <button class="btn ghost" type="button" data-act="add"><span aria-hidden="true">+</span> שכבה</button>
         <button class="icon-btn" type="button" data-act="duplicate" aria-label="שכפול השכבה">⧉</button>
         <button class="icon-btn" type="button" data-act="mask" aria-label="מסכת שכבה" title="מסכת שכבה" aria-pressed="false">🎭</button>
+        <button class="icon-btn" type="button" data-act="fx" aria-label="סגנונות שכבה" title="סגנונות שכבה (צל, זוהר, קו מתאר)" aria-pressed="false">✨</button>
         <button class="icon-btn" type="button" data-act="group" aria-label="קיבוץ לקבוצה (Ctrl+G)" title="קיבוץ (Ctrl+G)">📁</button>
         <button class="icon-btn" type="button" data-act="ungroup" aria-label="פירוק הקבוצה (Ctrl+Shift+G)" title="פירוק (Ctrl+Shift+G)" hidden>📂</button>
         <button class="icon-btn" type="button" data-act="up" aria-label="העלאה בשכבה">▲</button>
