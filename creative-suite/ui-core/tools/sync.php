@@ -6,14 +6,14 @@
  *   php creative-suite/ui-core/tools/sync.php --check    רק בודק (שער בפריסה): עותק ששונה — נכשל
  *
  * apps.json: { "<תיקיית האפליקציה>": { "css": "assets/css/ui-core", "js": "assets/js/ui-core" } } — כל סוג רשות.
- * הסוגים: css, js (ובהמשך fonts) — כל אחד הוא תיקייה ב-src/. תיקיית היעד כולה של ui-core: הסנכרון מעתיק אליה את
+ * הסוגים: css, js, php (צד השרת — תפריט המשתמש; למשל "php": "lib/ui-core") ובהמשך fonts — כל אחד הוא תיקייה ב-src/. תיקיית היעד כולה של ui-core: הסנכרון מעתיק אליה את
  * src/<kind>, ומוחק שם קבצים שאינם במקור. אפליקציה נכנסת רק בהסכמת הצ'אט שלה.
  * תיקון ב-ui-core? עורכים ב-src, מריצים sync, ומעלים את המקור ואת העותקים באותו commit.
  */
 
 declare(strict_types=1);
 
-const UI_CORE_KINDS = ['css', 'js', 'fonts'];
+const UI_CORE_KINDS = ['css', 'js', 'php', 'fonts'];
 
 $core = dirname(__DIR__);
 $root = dirname($core, 2);

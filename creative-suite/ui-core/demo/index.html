@@ -130,6 +130,7 @@
     import { shortcuts } from '../src/js/keys.js';
     import * as V from '../src/js/viewport.js';
     import { bindViewport } from '../src/js/gestures.js';
+    import { accountMenu } from '../src/js/account.js';
 
     initDialogs();
     tabs($('.tabs-demo'), { remember: 'ui-core-demo:tab' });
@@ -172,6 +173,21 @@
     keys.title($('#undo-btn'), 'Mod+Z');
     keys.title($('#redo-btn'), 'Mod+Shift+Z');
     window.__keys = keys;
+
+    // 👤 תפריט המשתמש — בסרגל העליון
+    window.__acc = accountMenu($('.top'), {
+        user: () => ({ name: 'ישראל ישראלי', email: 'israel@example.com', admin: false }),
+        docs: () => toast('📁 המסמכים שלי — files-window.js, בהמשך'),
+        drives: { list: () => [{ id: 'suite', name: 'ענן החבילה', icon: '☁️', connected: true }, { id: 'drive', name: 'Google Drive', connected: false }],
+                  manage: () => toast('☁️ עננים — מהמודול של הכוננים') },
+        sections: [{ id: 'app', title: 'של האפליקציה', render: b => b.append(h('label.switch', h('input', { type: 'checkbox' }), 'הצגת סרגלים')) }],
+        shortcuts: keys,
+        fonts: ['Heebo', 'Rubik', 'Assistant', 'Frank Ruhl Libre'],
+        account: () => toast('🔑 החשבון'),
+        help: () => toast('❓ עזרה'),
+        logout: () => toast('🚪 יציאה'),
+        onPrefs: p => { window.__lastPrefs = p; },
+    });
 
     // קנבס: מסמך 800×600, עיפרון ככלי של האפליקציה
     const cv = $('#cv'), DOC = [800, 600], strokes = [];
