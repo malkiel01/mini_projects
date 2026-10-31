@@ -18,6 +18,7 @@
 <nav class="tabs" aria-label="לשוניות">
   <a href="#/files" data-tab="files">☁️ קבצים</a>
   <a href="#/trash" data-tab="trash">🗑️ סל</a>
+  <a href="#/links" data-tab="links">🔗 חיבורים</a>
   <a href="#/admin" data-tab="admin" hidden>⚙️ ניהול</a>
 </nav>
 
@@ -49,6 +50,12 @@
     <ul class="list" id="trash-items"></ul>
   </section>
 
+  <!-- חיבורים -->
+  <section id="v-links" hidden>
+    <p class="hint">האפליקציות שאישרת להשתמש בענן שלך. ניתוק עוצר אותן מיד; הקבצים נשארים.</p>
+    <ul class="list" id="links"></ul>
+  </section>
+
   <!-- ניהול -->
   <section id="v-admin" hidden>
     <dl class="cells" id="admin-cells"></dl>
@@ -61,6 +68,9 @@
     <h2 class="sec-title">חשבונות</h2>
     <p class="hint">לחיצה על חשבון — קביעת נפח. "ברירת מחדל" — הנפח לחשבון חדש שלמעלה.</p>
     <ul class="list" id="accounts"></ul>
+    <h2 class="sec-title">אפליקציות</h2>
+    <p class="hint">אפליקציות שנרשמו לענן. מאותו שרת — פעילות מיד; מדומיין אחר — ממתינות לאישור שלך.</p>
+    <ul class="list" id="clients"></ul>
   </section>
 </main>
 

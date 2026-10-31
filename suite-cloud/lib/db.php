@@ -97,6 +97,8 @@ function migrate(PDO $pdo): void {
             created_at  TEXT    NOT NULL
         );
     ");
+    require_once __DIR__ . '/clients.php';
+    migrateClients($pdo);
 }
 
 const DEFAULTS = [

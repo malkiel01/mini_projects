@@ -58,12 +58,13 @@ function fail(e) { console.warn(e); toast(e.message || 'תקלה', true); }
 
 function route() {
   const [, tab = 'files', arg = ''] = location.hash.split('/');
-  const t = ['files', 'trash', 'admin'].includes(tab) && (tab !== 'admin' || state.me?.role === 'admin') ? tab : 'files';
+  const t = ['files', 'trash', 'links', 'admin'].includes(tab) && (tab !== 'admin' || state.me?.role === 'admin') ? tab : 'files';
   document.querySelectorAll('.tabs a').forEach(a => { if (a.dataset.tab === t) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
-  for (const v of ['files', 'trash', 'admin']) $(`#v-${v}`).hidden = v !== t;
+  for (const v of ['files', 'trash', 'links', 'admin']) $(`#v-${v}`).hidden = v !== t;
   $('#back').hidden = !(t === 'files' && arg);
   if (t === 'files') loadFolder(arg || null).catch(fail);
   if (t === 'trash') loadTrash().catch(fail);
+  if (t === 'links') loadLinks().catch(fail);
   if (t === 'admin') loadAdmin().catch(fail);
 }
 
@@ -289,6 +290,27 @@ $('#empty-trash').addEventListener('click', async () => {
   try { const r = await api('trash_empty', {}); toast(`נמחקו ${r.removed}`); loadTrash(); refreshQuota(); } catch (e) { fail(e); }
 });
 
+// ─── חיבורים ────────────────────────────────────────────────────────────
+
+const SCOPE_IC = { files: '📁', libs: '🔤', ai: '🤖' };
+
+async function loadLinks() {
+  $('#title').textContent = 'חיבורים';
+  const data = await api('connections');
+  $('#links').replaceChildren(...(data.items.length ? data.items.map(c => el('li', {}, el('div', { class: 'acc-row' },
+    el('span', { class: 'use-ic', 'aria-hidden': 'true' }, '🧩'),
+    el('div', { class: 'body' }, el('div', { class: 'l1' }, c.name),
+      el('div', { class: 'l2' }, [c.scope.map(s => SCOPE_IC[s] || s).join(' '), `מאז ${when(c.created_at)}`,
+        c.used_at ? `שימוש אחרון ${when(c.used_at)}` : 'עוד לא בשימוש'].join(' · '))),
+    el('button', { class: 'btn ghost sm danger', type: 'button', onclick: () => unlink(c) }, 'ניתוק'))))
+    : [el('li', {}, el('p', { class: 'empty' }, 'אין אפליקציות מחוברות. באפליקציה של החבילה: "☁️ חיבור לענן החבילה".'))]));
+}
+
+async function unlink(c) {
+  if (!await confirm(`לנתק את ${c.name}? היא תפסיק לגשת לענן מיד. הקבצים נשארים.`, { ok: 'ניתוק', danger: true })) return;
+  try { await api('connection_revoke', { id: c.id }); toast('נותק'); loadLinks(); } catch (e) { fail(e); }
+}
+
 // ─── ניהול ──────────────────────────────────────────────────────────────
 
 const MB = 2 ** 20;
@@ -312,6 +334,24 @@ function renderAdmin(s) {
     el('span', { class: 'use-tx' }, el('b', { class: 'one' }, a.name),
       el('small', {}, `${bytes(a.used)} מתוך ${a.effective_quota ? bytes(a.effective_quota) : '0'}${a.quota === null ? ' (ברירת מחדל)' : ''} · ${a.email}`)),
     a.blocked ? el('span', { class: 'chip bad' }, 'חסום') : el('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹')))));
+  renderClients(s.clients || []);
+}
+
+function renderClients(list) {
+  const label = { active: ['פעילה', 'ok'], pending: ['ממתינה', 'warn'], disabled: ['כבויה', 'bad'] };
+  $('#clients').replaceChildren(...(list.length ? list.map(c => el('li', {}, el('div', { class: 'acc-row' },
+    el('span', { class: 'use-ic', 'aria-hidden': 'true' }, '🧩'),
+    el('div', { class: 'body' }, el('div', { class: 'l1' }, c.name),
+      el('div', { class: 'l2' }, `${c.origins.join(' ')} · ${c.users} מחוברים`)),
+    el('span', { class: `chip ${label[c.status][1]}` }, label[c.status][0]),
+    el('button', { class: 'btn ghost sm', type: 'button', onclick: () => setClient(c, c.status === 'active' ? 'disabled' : 'active') },
+      c.status === 'active' ? 'כיבוי' : 'אישור'))))
+    : [el('li', {}, el('p', { class: 'empty' }, 'עוד אין אפליקציות רשומות.'))]));
+}
+
+async function setClient(c, status) {
+  if (status === 'disabled' && !await confirm(`לכבות את ${c.name}? כל ${c.users} החיבורים שלה ייעצרו.`, { ok: 'כיבוי', danger: true })) return;
+  try { renderClients((await api('admin_client', { client: c.id, status })).clients); toast('נשמר'); } catch (e) { fail(e); }
 }
 
 $('#settings-form').addEventListener('submit', async e => {
