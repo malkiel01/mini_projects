@@ -10,7 +10,7 @@
 // מוסכמה: שורה 0 של כל אריח ושל כל FBO = הקצה העליון (y של המסמך גדל למטה). רק המסך עצמו הפוך.
 
 import { TILE, BLEND_MODES, tilesInRect, newMask } from './doc.js';
-import { adjustOf, fillRamp, fillGeometry } from './formats.js';
+import { adjustOf, fillRamp, fillGeometry, effectsOf, effectsReach } from './formats.js';
 import { rasterTile, selectionBox } from './selection.js';
 import { matrix as xfMatrix, bounds as xfBounds } from './transform.js';
 
@@ -301,6 +301,82 @@ void main() {
   o = mix(orig, acc / n, m);
 }`,
 
+  // סגנונות שכבה (1): התוכן המרופד כפול המסכה המרופדת (אפור של sRGB) — הבסיס של כל האפקטים
+  fxsrc: `#version 300 es
+precision highp float;
+uniform sampler2D u_c, u_m;
+uniform int u_useMask;
+out vec4 o;
+${ENCODE}
+void main() {
+  ivec2 p = ivec2(gl_FragCoord.xy);
+  vec4 c = texelFetch(u_c, p, 0);
+  o = u_useMask == 1 ? c * enc(vec3(texelFetch(u_m, p, 0).r)).r : c;
+}`,
+
+  // (2) טשטוש גאוסי של האלפא בכיוון אחד (u_dir), על כל השטח המרופד (u_n × u_n); u_inv — של 1 − אלפא (אפקט פנימי)
+  fxblur: `#version 300 es
+precision highp float;
+uniform sampler2D u_tex;
+uniform int u_r, u_inv, u_n;
+uniform ivec2 u_dir;
+uniform float u_sigma;
+out vec4 o;
+void main() {
+  ivec2 p = ivec2(gl_FragCoord.xy);
+  float acc = 0.0, wsum = 0.0;
+  for (int i = -64; i <= 64; i++) {
+    if (i < -u_r || i > u_r) continue;
+    float w = exp(-float(i * i) / (2.0 * u_sigma * u_sigma));
+    float a = texelFetch(u_tex, clamp(p + u_dir * i, ivec2(0), ivec2(u_n - 1)), 0).a;
+    acc += (u_inv == 1 ? 1.0 - a : a) * w; wsum += w;
+  }
+  o = vec4(acc / wsum);
+}`,
+
+  // (3) צעד אחד בבניית השכבה עם האפקטים. u_src — התוכן המרופד (fxsrc), u_blur — האלפא המטושטש, u_base — מה שנבנה
+  // עד כה, u_top — לשלב "מעל". u_k — הריפוד; u_n — גודל המרקמים המרופדים. u_col — צבע לינארי ואטימות;
+  // u_geo — dx, dy, spread, עובי. מצבים: 0 התוכן · 1 top מעל base · 2 צל / זוהר (מתחת) · 3 פנימי · 4 צבע · 5 קו מתאר
+  fx: `#version 300 es
+precision highp float;
+uniform sampler2D u_src, u_blur, u_base, u_top;
+uniform int u_mode, u_k, u_pos;
+uniform vec4 u_col, u_geo;
+uniform float u_n;
+out vec4 o;
+float spread(float s) { return clamp(s / (1.0 - u_geo.z), 0.0, 1.0); }
+void main() {
+  ivec2 p = ivec2(gl_FragCoord.xy);
+  vec4 b = texelFetch(u_base, p, 0);
+  vec2 q = vec2(p) + vec2(float(u_k)) + 0.5;
+  if (u_mode == 0) { o = texelFetch(u_src, p + ivec2(u_k), 0); return; }
+  if (u_mode == 1) { vec4 t = texelFetch(u_top, p, 0); o = t + b * (1.0 - t.a); return; }
+  if (u_mode == 2) {
+    float c = u_col.a * spread(texture(u_blur, (q - u_geo.xy) / u_n).r);
+    o = vec4(u_col.rgb * c, c) + b * (1.0 - c);
+    return;
+  }
+  // פנימי וצבע: רק בגבולות האלפא של התוכן (source-atop) — האלפא לא משתנה
+  if (u_mode == 3 || u_mode == 4) {
+    float e = u_mode == 4 ? u_col.a : u_col.a * spread(texture(u_blur, (q - u_geo.xy) / u_n).r);
+    o = vec4(u_col.rgb * e * b.a + b.rgb * (1.0 - e), b.a);
+    return;
+  }
+  // קו מתאר: התרחבות / התכווצות של האלפא בדיסק (8 טבעות × 32 כיוונים); u_pos — 0 בחוץ, 1 בפנים, 2 במרכז
+  float a0 = texture(u_src, q / u_n).a, dil = a0, ero = a0;
+  float R = u_pos == 2 ? u_geo.w * 0.5 : u_geo.w;
+  for (int ri = 1; ri <= 8; ri++) {
+    float r = R * float(ri) / 8.0;
+    for (int ai = 0; ai < 32; ai++) {
+      float ang = (float(ai) + 0.5 * float(ri & 1)) * 0.19634954;
+      float v = texture(u_src, (q + r * vec2(cos(ang), sin(ang))) / u_n).a;
+      dil = max(dil, v); ero = min(ero, v);
+    }
+  }
+  float c = u_col.a * (u_pos == 0 ? max(dil - a0, 0.0) : u_pos == 1 ? a0 - ero : dil - ero);
+  o = vec4(u_col.rgb * c, c) + b * (1.0 - c);
+}`,
+
   copy: `#version 300 es
 precision highp float;
 uniform sampler2D u_tex;
@@ -361,6 +437,13 @@ void main() {
 const MIP_LEVELS = Math.log2(TILE) + 1;
 const gl_unbind = gl => gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 const key = (tx, ty) => tx + ',' + ty;
+// סגנונות שכבה: ריפוד מרבי (טווח האפקט, ראו effectsReach) וגודל מרקמי הריפוד
+export const FX_MAX = 128;
+const FX_N = TILE + 2 * FX_MAX;
+/** יש במסמך שכבה עם סגנונות — שינוי באריח משנה גם את השכנים */
+export const anyEffects = list => list.some(l => l.effects?.length || (l.children && anyEffects(l.children)));
+const hexLinear = h => [1, 3, 5].map(i => srgbToLinear(parseInt(h.slice(i, i + 2), 16)));
+const FX_POS = ['outside', 'inside', 'center'];
 
 /** sRGB של 8 ביט → לינארי (0–1) */
 export const srgbToLinear = v => {
@@ -522,6 +605,7 @@ export class WebGL2Renderer {
 
   #dirty(doc, x, y, w, h) {
     doc._dirty ??= new Set();
+    if (anyEffects(doc.layers)) { x -= FX_MAX; y -= FX_MAX; w += 2 * FX_MAX; h += 2 * FX_MAX; }
     for (const [tx, ty] of tilesInRect(x, y, w, h)) doc._dirty.add(key(tx, ty));
   }
 
@@ -533,7 +617,13 @@ export class WebGL2Renderer {
   /** רק האריחים האלה ישורטטו מחדש (keys — "tx,ty"). */
   invalidateTiles(doc, keys) {
     doc._dirty ??= new Set();
-    for (const k of keys) doc._dirty.add(k);
+    const fx = anyEffects(doc.layers);
+    for (const k of keys) {
+      doc._dirty.add(k);
+      if (!fx) continue;
+      const [tx, ty] = k.split(',').map(Number);
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) doc._dirty.add(key(tx + dx, ty + dy));
+    }
   }
 
   // ---------- שכבות ----------
@@ -1062,11 +1152,11 @@ export class WebGL2Renderer {
   }
 
   /** ריפוד: האריח ושמונת שכניו (get(dx, dy) → מרקם או כלום), כל אחד במקומו, ב-padTex בגודל TILE + 2K */
-  #pad(get, K) {
+  #pad(get, K, target = this.padTex) {
     const gl = this.gl;
     const P = TILE + 2 * K;
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.padTex, 0);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, target, 0);
     gl.viewport(0, 0, P, P);
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
@@ -1453,6 +1543,13 @@ export class WebGL2Renderer {
       const t = layer.type === 'group'
         ? (layer.children.length ? this.#compositeList(doc, layer.children, tx, ty, depth + 1) : null)
         : layer.fill ? this.#fillTile(layer.fill, tx, ty, this.fillTmp) : this.#layerTileFor(doc, layer, tx, ty);
+      // סגנונות שכבה: השכבה נבנית לבד עם האפקטים (והמסכה), ואז נממזגת — גם אריח ריק, אם יש תוכן בטווח
+      const fxs = layer.type === 'group' ? [] : effectsOf(layer);
+      if (fxs.length) {
+        const l = this.#effectsTile(doc, layer, fxs, tx, ty, t);
+        if (l) { this.#blendInto(b, a, l, layer.opacity, Math.max(0, BLEND_MODES.indexOf(layer.blend))); [a, b] = [b, a]; }
+        continue;
+      }
       if (!t) continue;
       // מסכה: גם היא עוברת דרך #layerTileFor — משיכה פתוחה על המסכה מוצגת חיה. אריח חסר = מוסתר
       const mk = layer.mask?.enabled ? (this.#layerTileFor(doc, layer.mask, tx, ty) || this.emptyTex) : null;
@@ -1463,6 +1560,128 @@ export class WebGL2Renderer {
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, null);
     gl.activeTexture(gl.TEXTURE0);
     return a;
+  }
+
+  // ---------- סגנונות שכבה ----------
+
+  /** מרקמי העבודה של האפקטים (בשימוש הראשון): ריפוד התוכן והמסכה, הבסיס, הטשטוש, שכנים ותוצאות ביניים */
+  #fx() {
+    if (this.fxTex) return this.fxTex;
+    const gl = this.gl;
+    const lin = t => {
+      gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      return t;
+    };
+    const big = () => this.#floatTex(FX_N, FX_N);
+    this.fxTex = {
+      c: big(), m: big(), s: lin(big()), h: big(), b: lin(big()),
+      near: Array.from({ length: 9 }, () => this.#floatTex(TILE, TILE)),
+      out: Array.from({ length: 4 }, () => this.#floatTex(TILE, TILE)),
+    };
+    return this.fxTex;
+  }
+
+  /** ציור אחד בגודל w×h אל target; tex — { שם uniform: מרקם }; set(u) — שאר ה-uniforms */
+  #run(name, target, w, h, tex, set) {
+    const gl = this.gl, p = this.prog[name];
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, target, 0);
+    gl.viewport(0, 0, w, h);
+    gl.useProgram(p.p);
+    gl.bindVertexArray(this.vao);
+    gl.disable(gl.BLEND);
+    Object.entries(tex).forEach(([u, t], i) => {
+      gl.activeTexture(gl.TEXTURE0 + i);
+      gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.uniform1i(p.u[u], i);
+    });
+    set(p.u);
+    this.#quad(p, [0, 0, w, h], [0, 0, 1, 1], [w, h], -1);
+  }
+
+  /**
+   * תשעת האריחים סביב (tx, ty), לפי (dy + 1) · 3 + dx + 1: המרכז — center (התצוגה החיה); שכן — מהשכבה, מוזז בהזזת
+   * קבוצה, ובשכבת מילוי — נוצר. משיכה / תוכן צף פתוחים על אריח שכן — מגיעים לאפקט בסיומם.
+   */
+  #fxNear(doc, layer, tx, ty, center, fill) {
+    const fx = this.#fx(), sh = doc._shift, out = [];
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const i = (dy + 1) * 3 + dx + 1;
+      if (!dx && !dy) out[i] = center;
+      else if (fill) out[i] = this.#fillTile(fill, tx + dx, ty + dy, fx.near[i]);
+      else if (sh && sh.layers.has(layer)) out[i] = this.#shiftedTile(layer, tx + dx, ty + dy, sh.dx, sh.dy, fx.near[i]);
+      else out[i] = layer.tiles.get(key(tx + dx, ty + dy));
+    }
+    return out;
+  }
+
+  /**
+   * השכבה עם סגנונות השכבה שלה, לאריח אחד: מבודדת (בלי אטימות ומצב מיזוג), וכבר כפול המסכה. null — אין תוכן בטווח.
+   * הסדר: צל וזוהר (מתחת) ← התוכן, ועליו צבע, זוהר פנימי וצל פנימי (בגבולות האלפא שלו) ← קו מתאר מעל הכול.
+   */
+  #effectsTile(doc, layer, fxs, tx, ty, t) {
+    const gl = this.gl, fx = this.#fx();
+    const K = Math.min(FX_MAX, Math.max(8, Math.ceil(effectsReach(fxs) / 8) * 8)), P = TILE + 2 * K;
+    const near = this.#fxNear(doc, layer, tx, ty, t, layer.fill);
+    if (!near.some(Boolean)) return null;
+    this.#pad((dx, dy) => near[(dy + 1) * 3 + dx + 1], K, fx.c);
+    // המסכה: גם שלה התצוגה החיה במרכז. אריח חסר במסכה = מוסתר (הריפוד מתחיל שקוף)
+    const useMask = !!layer.mask?.enabled;
+    if (useMask) {
+      const mn = this.#fxNear(doc, layer.mask, tx, ty, this.#layerTileFor(doc, layer.mask, tx, ty), null);
+      this.#pad((dx, dy) => mn[(dy + 1) * 3 + dx + 1], K, fx.m);
+    }
+    this.#run('fxsrc', fx.s, P, P, { u_c: fx.c, u_m: fx.m }, u => gl.uniform1i(u.u_useMask, useMask ? 1 : 0));
+
+    const blurA = (e, inv) => {
+      const r = Math.round(e.blur ?? 0), sigma = Math.max(0.5, r / 2);   // נראה כמעט עד הרדיוס, כמו "גודל" בפוטושופ
+      const pass = (src, out, dir, flip) => this.#run('fxblur', out, P, P, { u_tex: src }, u => {
+        gl.uniform1i(u.u_r, r); gl.uniform1i(u.u_inv, flip); gl.uniform1i(u.u_n, P);
+        gl.uniform2i(u.u_dir, dir[0], dir[1]); gl.uniform1f(u.u_sigma, sigma);
+      });
+      pass(fx.s, fx.h, [1, 0], inv ? 1 : 0);   // ההיפוך (פנימי) — במעבר הראשון בלבד
+      pass(fx.h, fx.b, [0, 1], 0);
+    };
+    const step = (mode, base, out, e = null, top = this.emptyTex) => this.#run('fx', out, TILE, TILE,
+      { u_src: fx.s, u_blur: fx.b, u_base: base, u_top: top }, u => {
+        gl.uniform1i(u.u_mode, mode); gl.uniform1i(u.u_k, K);
+        gl.uniform1i(u.u_pos, Math.max(0, FX_POS.indexOf(e?.position)));
+        gl.uniform4fv(u.u_col, e ? [...hexLinear(e.color), e.opacity] : [0, 0, 0, 0]);
+        gl.uniform4fv(u.u_geo, [e?.dx ?? 0, e?.dy ?? 0, e?.spread ?? 0, e?.width ?? 0]);
+        gl.uniform1f(u.u_n, FX_N);
+      });
+    const [o0, o1, o2, o3] = fx.out;
+    const other = (pool, cur) => pool.find(x => x !== cur);
+    let below = this.emptyTex;
+    for (const e of fxs.filter(e => e.type === 'shadow' || e.type === 'glow')) {
+      blurA(e, false);
+      const o = other([o0, o1], below); step(2, below, o, e); below = o;
+    }
+    let c = o2;
+    step(0, this.emptyTex, c);
+    for (const e of fxs.filter(e => e.type === 'overlay' || e.type === 'inner-glow' || e.type === 'inner-shadow')) {
+      if (e.type !== 'overlay') blurA(e, true);
+      const o = other([o2, o3], c); step(e.type === 'overlay' ? 4 : 3, c, o, e); c = o;
+    }
+    let l = other([o0, o1], below);
+    step(1, below, l, null, c);
+    for (const e of fxs.filter(e => e.type === 'stroke')) {
+      const o = other([o0, o1, o2, o3], l); step(5, l, o, e); l = o;
+    }
+    for (let i = 0; i < 4; i++) { gl.activeTexture(gl.TEXTURE0 + i); gl.bindTexture(gl.TEXTURE_2D, null); }
+    gl.activeTexture(gl.TEXTURE0);
+    return l;
+  }
+
+  /** השכבה עם הסגנונות שלה (כפול המסכה, בלי אטימות) — ה-src האפוי ב-‎.mbe. Promise ל-RGBA ישר של 8 ביט */
+  async readEffectsLayerPixels(doc, layer, x, y, w, h) {
+    const fxs = effectsOf(layer);
+    return this.#read((tx, ty) => {
+      const t = layer.fill ? this.#fillTile(layer.fill, tx, ty, this.fillTmp) : layer.tiles.get(key(tx, ty));
+      return this.#effectsTile(doc, layer, fxs, tx, ty, t) ?? this.emptyTex;
+    }, x, y, w, h);
   }
 
   /** תיקון צבע לאריח שלם, בלי בחירה (שכבת התאמה) */

@@ -31,7 +31,8 @@ export async function saveDraft(renderer, doc) {
       const mask = l.mask ? { png: await png(l.mask, l.id + ':mask'), enabled: !!l.mask.enabled } : null;
       // שכבת התאמה — בלי פיקסלים: רק הפרמטרים
       out.push({ ...props, png: l.adjust || l.fill ? null : await png(l, l.id), mask, maskLoaded: !!l.maskLoaded,
-        adjust: l.adjust ?? null, adjustLoaded: !!l.adjustLoaded, fill: l.fill ?? null, fillLoaded: !!l.fillLoaded });
+        adjust: l.adjust ?? null, adjustLoaded: !!l.adjustLoaded, fill: l.fill ?? null, fillLoaded: !!l.fillLoaded,
+        effects: l.effects?.length ? l.effects : null, effectsLoaded: !!l.effectsLoaded });
     }
     return out;
   };
@@ -72,6 +73,8 @@ export async function restoreDraft(renderer, d) {
       if (l.adjustLoaded) layer.adjustLoaded = true;
       if (l.fill) layer.fill = l.fill;
       if (l.fillLoaded) layer.fillLoaded = true;
+      if (l.effects) layer.effects = l.effects;
+      if (l.effectsLoaded) layer.effectsLoaded = true;
       if (l.png) {
         const bmp = await decodeImage(l.png);
         await renderer.drawImage(doc, layer, bmp, 0, 0);

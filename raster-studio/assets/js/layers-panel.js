@@ -25,7 +25,7 @@ function fillCss(f) {
  * @param {(what: string) => void} o.onChange  אחרי כל שינוי (לצייר מחדש)
  * @param {(msg: string, err?: boolean) => void} o.toast
  */
-export function createLayersPanel({ root, doc, renderer, history, onChange, toast, beforeChange = () => {} }) {
+export function createLayersPanel({ root, doc, renderer, history, onChange, toast, beforeChange = () => {}, onEffects = () => {} }) {
   const list = $('.layer-list', root);
   const opacity = $('#layer-opacity', root);
   const opacityOut = $('#layer-opacity-out', root);
@@ -75,6 +75,8 @@ export function createLayersPanel({ root, doc, renderer, history, onChange, toas
 
   // ---- פעולות ----
   const act = {
+    /** ✨ סגנונות שכבה — הלוח נפתח על השכבה הפעילה */
+    fx() { onEffects(); },
     add() {
       const d = doc();
       const l = d.addLayer({ index: d.indexOf(d.active) + 1 });
@@ -95,6 +97,7 @@ export function createLayersPanel({ root, doc, renderer, history, onChange, toas
         renderer.copyLayer(item, l);
         if (item.adjust) l.adjust = { ...item.adjust };
         if (item.fill) l.fill = structuredClone(item.fill);
+        if (item.effects?.length) l.effects = structuredClone(item.effects);
         return l;
       };
       const copy = copyInto(src, { name: src.name + ' עותק', index: d.indexOf(src) + 1 });
@@ -165,7 +168,8 @@ export function createLayersPanel({ root, doc, renderer, history, onChange, toas
   }
   root.addEventListener('click', e => {
     const b = e.target.closest('[data-act]');
-    if (b && !b.disabled) { beforeChange(); act[b.dataset.act](); }
+    // ✨ פותח / סוגר את לוח הסגנונות בעצמו — בלי לסגור אותו קודם
+    if (b && !b.disabled) { if (b.dataset.act !== 'fx') beforeChange(); act[b.dataset.act](); }
     const mb = e.target.closest('[data-mask]');
     if (mb && !mb.disabled) { beforeChange(); maskAct[mb.dataset.mask](); }
   });
@@ -232,6 +236,7 @@ export function createLayersPanel({ root, doc, renderer, history, onChange, toas
     : '<canvas class="thumb" aria-hidden="true"></canvas>'}
       ${layer.mask ? '<button class="mask-thumb" type="button"><canvas class="thumb"></canvas></button>' : ''}
       <button class="layer-name one" type="button"></button>
+      ${layer.effects?.length ? '<button class="fx-badge" type="button" title="סגנונות שכבה">fx</button>' : ''}
       <button class="icon-btn eye" type="button"></button>
       <button class="icon-btn lock" type="button"></button>`;
     if (layer.type === 'group') {
@@ -244,6 +249,13 @@ export function createLayersPanel({ root, doc, renderer, history, onChange, toas
       thumb(layer, li.querySelector(':scope > canvas.thumb'));
       li.classList.toggle('editing-pixels', !!layer.mask && !layer.editMask);
     }
+    $('.fx-badge', li)?.addEventListener('click', e => {
+      e.stopPropagation();
+      beforeChange();
+      d.activeId = layer.id;
+      render();
+      onEffects();
+    });
     if (layer.mask) {
       // לחיצה על המסכה — עריכתה; Shift — השבתה / הפעלה (כמו בפוטושופ)
       const mt = $('.mask-thumb', li);
@@ -395,6 +407,9 @@ export function createLayersPanel({ root, doc, renderer, history, onChange, toas
     $('[data-act="remove"]', root).disabled = [...d.walk()].length <= 1 || l.locked;
     $('[data-act="ungroup"]', root).hidden = l.type !== 'group';
     $('[data-act="group"]', root).hidden = l.type === 'group';
+    const fb = $('[data-act="fx"]', root);
+    fb.disabled = l.type === 'group' || !!l.foreign || !!l.adjust;
+    fb.setAttribute('aria-pressed', String(!!l.effects?.length));
     const mb = $('[data-act="mask"]', root);
     mb.disabled = l.type === 'group' || !!l.foreign;
     mb.setAttribute('aria-pressed', String(!!l.editMask));
