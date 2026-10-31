@@ -85,6 +85,11 @@ jobs:
       - name: ui-core gate (every copy matches creative-suite/ui-core/src)
         run: php creative-suite/ui-core/tools/sync.php --check
 
+      # צד השרת של תפריט המשתמש (ui-core/php/account) — שמירת הגדרות, ייצוא ומחיקת חשבון, ב-SQLite בזיכרון.
+      # בדיקה שנכשלת עוצרת את הפריסה: מחיקה שגויה היא נתונים של משתמשים.
+      - name: ui-core account tests
+        run: php creative-suite/ui-core/tests/account.php
+
       # קניות משותפות — חלוקת העלויות, ההתחשבנות והחיבור לשער (SQLite בזיכרון, בלי מסד ובלי .env).
       # בדיקה שנכשלת עוצרת את הפריסה: טעות בחישוב "מי חייב למי" היא כסף אמיתי של אנשים.
       - name: family-shopping tests

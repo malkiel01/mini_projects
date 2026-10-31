@@ -21,6 +21,8 @@
 - [x] תיקון המקלדת העברית — רסטר (#923), סטודיו העיצוב (#927), וקטורי (#928)
 - [ ] מעבר שלבים 1–2 — עימוד, וקטורי, רסטר, עורך התמלילים, סטודיו העיצוב (אחרון)
 - [x] שלב 4 — `viewport` + `gestures` (מעבר: `migrate/viewport.md` — רסטר, וקטורי)
+- [x] 👤 `account.js` + `php/account` — תפריט המשתמש, הגדרות אישיות, ייצוא ומחיקת חשבון (`requests/account-menu.md`; `migrate/account.md`)
+- [ ] 📁 `files-window.js` — "המסמכים שלי" (שורה 20 ב-`integration.md`)
 - [ ] שלב 5 — `transform` + `snap`
 - [ ] שלב 6 — `history`
 - [ ] שלב 7 — `color` + בורר צבעים
