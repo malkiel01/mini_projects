@@ -80,6 +80,11 @@ jobs:
       - name: pdf-core gate (every copy matches creative-suite/pdf-core/src)
         run: php creative-suite/pdf-core/tools/sync.php --check
 
+      # ערכת הממשק המשותפת (creative-suite/ui-core/src) — מועתקת לאפליקציות שב-creative-suite/ui-core/apps.json.
+      # עותק ששונה בתוך אפליקציה — נעצר כאן. עורכים במקור ומריצים sync.php.
+      - name: ui-core gate (every copy matches creative-suite/ui-core/src)
+        run: php creative-suite/ui-core/tools/sync.php --check
+
       # קניות משותפות — חלוקת העלויות, ההתחשבנות והחיבור לשער (SQLite בזיכרון, בלי מסד ובלי .env).
       # בדיקה שנכשלת עוצרת את הפריסה: טעות בחישוב "מי חייב למי" היא כסף אמיתי של אנשים.
       - name: family-shopping tests
