@@ -1,4 +1,5 @@
 {
   "raster-studio": { "js": "assets/js/ui-core" },
+  "greeting-cards": { "js": "editor/js/ui-core" },
   "suite-cloud": { "css": "assets/css/ui-core", "js": "assets/js/ui-core" }
 }

@@ -3,6 +3,7 @@
 import { log, logDump } from './log.js';
 import { buildMbe, importMbe, isMbe } from './mbe-io.js';
 import { setColorContext } from './colorpicker.js';
+import { keyOf } from './ui-core/keys.js';   // המקש הפיזי — Ctrl+Z עובד גם במקלדת עברית (ui-core)
 import { TARGETS, openIn } from './handoff.js';
 import { h, $, toast, sheet, closeSheet, isSheetOpen, confirmDialog, field, rangeField, seg, colorField, toggle, pickFiles, download, timeAgo } from './ui.js';
 import { SIZES, newDoc, textLayer, shapeLayer, imageLayer, backgroundLayer, iconLayer, elementLayer, layerLabel, uid, clone, normalizeDoc } from './doc.js';
@@ -20,7 +21,7 @@ import { loadScript } from './io.js';
 import { docVariables, readSheetFile, readPasted, readPhoneContacts, guessColumns, normalizePhone, fileNames, fillText } from './merge.js';
 
 // הגרסה — מופיעה ביומן, כדי לדעת איזה קוד רץ בטלפון.
-const BUILD = '2026-10-30.color-1';
+const BUILD = '2026-10-31.keys-1';
 
 const app = $('#app');
 let ed = null;   // העיצוב הפתוח: { id, doc, history, canvas, dirty }
@@ -1660,13 +1661,13 @@ function onStageKey(e) {
         else if (i === -1 && L.length) { e.preventDefault(); ed.canvas.select([L[e.shiftKey ? L.length - 1 : 0].id]); announce(L[e.shiftKey ? L.length - 1 : 0]); }
         return;
     }
-    if (mod && k.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
-    if (mod && k.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
+    if (mod && keyOf(e) === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+    if (mod && keyOf(e) === 'y') { e.preventDefault(); redo(); return; }
     if (mod && (k === '=' || k === '+')) { e.preventDefault(); ed.canvas.zoomBy(1.25); return; }
     if (mod && k === '-') { e.preventDefault(); ed.canvas.zoomBy(0.8); return; }
     if (mod && k === '0') { e.preventDefault(); ed.canvas.fit(); return; }
     if (!ls.length) return;
-    if (mod && k.toLowerCase() === 'd') { e.preventDefault(); duplicate(); return; }
+    if (mod && keyOf(e) === 'd') { e.preventDefault(); duplicate(); return; }
     if (k === 'Delete' || k === 'Backspace') { e.preventDefault(); removeSelected(); return; }
     if (k === 'Escape') { ed.canvas.select([]); return; }
     if (k === 'Enter' && ls.length === 1 && ls[0].type === 'text') { e.preventDefault(); editTextInPlace(ls[0]); return; }
