@@ -18,6 +18,9 @@ import { pencilD, brushD, widths } from './freehand.js';
 import { needsPages, sourcePdf, renderPages, assign as assignPages } from './pages.js';
 import { activeHandoff, returnHandoff, endHandoff } from './handoff.js';
 import { keyOf } from './ui-core/keys.js';
+import { toast } from './ui-core/toast.js';
+import { download } from './ui-core/files.js';
+import { initDialogs, confirm, prompt } from './ui-core/dialog.js';
 import { snapper } from './snap.js';
 import { parse, bbox, serialize, transform as transformSegs } from './geometry/path.js';
 const pathOps = { parse, serialize, transform: transformSegs };
@@ -99,15 +102,20 @@ async function boot() {
   library.prefs().then(p => { S.prefs = p; updatePanel(); }).catch(() => { /* בלי חיבור — הפלטה הראשונה */ });
   // גיבוי שנשאר במכשיר משמירה שנכשלה — חדש יותר ממה שבשרת? מציעים לשחזר
   const backup = drafts.loadBackup(S.id);
-  if (backup?.doc && backup.rev === S.rev && JSON.stringify(backup.doc) !== JSON.stringify(S.doc)
-      && confirm('יש במכשיר שינויים שלא הגיעו לשרת. לשחזר אותם?')) {
-    S.doc = backup.doc; dirty = true; persist();
-  }
-  drafts.removeBackup(S.id);
   showName();
   resize();
   fit();
   updatePanel();
+  // הציור כבר על המסך — שואלים מעליו
+  if (backup?.doc && backup.rev === S.rev && JSON.stringify(backup.doc) !== JSON.stringify(S.doc)
+      && await confirm('יש במכשיר שינויים שלא הגיעו לשרת. לשחזר אותם?', { ok: 'שחזור', cancel: 'לא, מהשרת' })) {
+    S.doc = backup.doc; dirty = true; persist(); fit(); updatePanel();
+  }
+  drafts.removeBackup(S.id);
+  // הערות מפתיחת ‎.mbe (בדף הספרייה או בחלון הקובץ) — כאן, אחרי הניווט
+  let notes = null;
+  try { notes = sessionStorage.getItem('vs-notes'); sessionStorage.removeItem('vs-notes'); } catch { /* חסום */ }
+  if (notes) toast('נפתח. שימו לב: ' + notes, { ms: 9000 });
   fontsReady.then(() => { if (!S.rev || S.rev === 1) persist(); }); // תמונה ממוזערת לציור חדש
 }
 
@@ -529,7 +537,7 @@ function targetLayerId(surface) {
 }
 
 /** לוחות: הוספה (באותו גודל, מימין בפריסה), בחירה (והתצוגה עוברת אליו), מחיקה. */
-function boardAction(a, id) {
+async function boardAction(a, id) {
   if (a === 'select') { S.board = id; showBoard(id); updatePanel(); return; }
   if (a === 'add') {
     const cur = S.doc.surfaces.find(s => s.id === S.board) || S.doc.surfaces[S.doc.surfaces.length - 1];
@@ -549,7 +557,7 @@ function boardAction(a, id) {
   if (a === 'remove') {
     const s = S.doc.surfaces.find(x => x.id === id);
     const n = (s.layers || []).reduce((k, l) => k + (l.paths?.length || 0), 0);
-    if (S.doc.surfaces.length < 2 || (n && !confirm(`בלוח ${n} אובייקטים. למחוק אותו יחד איתם?`))) return;
+    if (S.doc.surfaces.length < 2 || (n && !await confirm(`בלוח ${n} אובייקטים. למחוק אותו יחד איתם?`, { ok: 'מחיקה', danger: true }))) return;
     change(() => { S.doc.surfaces = S.doc.surfaces.filter(x => x.id !== id); });
     if (S.board === id) S.board = null;
     fit();
@@ -1371,23 +1379,6 @@ async function getFont(file) {
   return fontCache.get(file);
 }
 
-function toast(msg, err = false) {
-  const el = document.querySelector('.toast');
-  el.textContent = msg; el.classList.toggle('err', err); el.hidden = false;
-  clearTimeout(toast.t); toast.t = setTimeout(() => { el.hidden = true; }, 3500);
-}
-
-function download(blob, name) {
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = name;
-  a.hidden = true;
-  // בתוך החלון הפתוח (שכבה עליונה) — אחרת יש דפדפנים שמתעלמים מהשם
-  ($('file-dlg').open ? $('file-dlg') : document.body).appendChild(a);
-  a.click();
-  setTimeout(() => { a.remove(); URL.revokeObjectURL(a.href); }, 30000);
-}
-
 const fileName = (ext, surface) => {
   const base = (S.name || 'ציור').replace(/[\\/:*?"<>|]+/g, '-').trim() || 'ציור';
   return (surface && S.doc.surfaces.length > 1 ? `${base} - ${surface.name || surface.id}` : base) + '.' + ext;
@@ -1420,7 +1411,7 @@ async function showVersions() {
 
 $('versions').addEventListener('click', async (e) => {
   const b = e.target.closest('[data-ver]');
-  if (!b || !confirm('לשחזר את הגרסה הזו? הנוכחית תישמר בגרסאות, ואפשר לחזור אליה.')) return;
+  if (!b || !await confirm('לשחזר את הגרסה הזו? הנוכחית תישמר בגרסאות, ואפשר לחזור אליה.', { ok: 'שחזור' })) return;
   b.disabled = true;
   try {
     clearTimeout(saveTimer);
@@ -1629,8 +1620,8 @@ async function importFile(file) {
 $('file-btn').addEventListener('click', openFileDialog);
 // שינוי שם: הקשה על הכותרת
 $('doc-name').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('doc-name').click(); });
-$('doc-name').addEventListener('click', () => {
-  const name = prompt('שם הציור', S.name);
+$('doc-name').addEventListener('click', async () => {
+  const name = await prompt('שם הציור', { value: S.name });
   if (!name || !name.trim() || name.trim() === S.name) return;
   S.name = name.trim().slice(0, 120);
   showName();
@@ -1651,7 +1642,7 @@ $('mbe-file').addEventListener('change', async () => {
   if (!f) return;
   try {
     const { id, notes } = await library.importMbe(f);
-    if (notes.length) alert('נפתח. שימו לב:\n' + notes.join('\n'));
+    if (notes.length) try { sessionStorage.setItem('vs-notes', notes.join(' · ')); } catch { /* חסום */ }
     location.href = 'editor.html#d' + id;
     location.reload();
   } catch (e) {
@@ -1660,7 +1651,7 @@ $('mbe-file').addEventListener('change', async () => {
   }
 });
 $('imp-file').addEventListener('change', () => { const f = $('imp-file').files[0]; $('imp-file').value = ''; if (f) importFile(f); });
-document.addEventListener('click', e => { const b = e.target.closest('[data-close]'); if (b) b.closest('dialog').close(); });
+initDialogs();
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('service-worker.js').catch(() => { /* בלי מטמון */ });
 

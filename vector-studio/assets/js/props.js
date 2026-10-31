@@ -2,6 +2,7 @@
 // כל שינוי עובר ב-`edit(fn, commit)`: fn משנה את הנתיבים שנבחרו; commit=false — תצוגה חיה (גרירת צבע),
 // commit=true — נכנס להיסטוריה.
 
+import { confirm, prompt } from './ui-core/dialog.js';
 import { makeGradient, endpoints, angleOf, hasPaint, isRadial, radialFor, drawable } from './gradient.js';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -353,7 +354,7 @@ export function renderLayers(el, ctx) {
     ${foreign.length ? `<p class="hint" style="margin-top:12px">שכבות של אפליקציות אחרות — מוצגות ונשמרות כמו שהן, בלי עריכה כאן:</p>
     <ul class="list">${foreign.map(l => `<li class="layer-row"><span class="use-ic" aria-hidden="true">${l.type === 'raster' ? '🖼️' : l.type === 'frame' ? '📰' : '📁'}</span>
       <span class="layer-name"><b class="one">${esc(l.name || l.id)}</b><small>${esc(TYPE_NAMES[l.type] || l.type)}${l.visible === false ? ' · מוסתרת' : ''}</small></span></li>`).join('')}</ul>` : ''}`;
-  el.querySelectorAll('[data-l]').forEach(b => b.addEventListener('click', () => {
+  el.querySelectorAll('[data-l]').forEach(b => b.addEventListener('click', async () => {
     const a = b.dataset.l, id = b.closest('[data-id]')?.dataset.id;
     if (a === 'add') return ctx.add();
     if (a === 'active') return ctx.setActive(id);
@@ -361,13 +362,13 @@ export function renderLayers(el, ctx) {
     if (a === 'up' || a === 'down') return ctx.move(id, a === 'up' ? 1 : -1);
     if (a === 'rename') {
       const l = ctx.surface.layers.find(x => x.id === id);
-      const name = prompt('שם השכבה', l.name || '');
+      const name = await prompt('שם השכבה', { value: l.name || '' });
       if (name && name.trim()) ctx.rename(id, name.trim().slice(0, 60));
       return;
     }
     if (a === 'remove') {
       const n = ctx.counts.get(id) || 0;
-      if (n && !confirm(`בשכבה ${n} אובייקטים. למחוק אותה יחד איתם?`)) return;
+      if (n && !await confirm(`בשכבה ${n} אובייקטים. למחוק אותה יחד איתם?`, { ok: 'מחיקה', danger: true })) return;
       ctx.remove(id);
     }
   }));
@@ -434,8 +435,8 @@ function wireSaved(el, ctx, p) {
       path.stroke = st.stroke ? JSON.parse(JSON.stringify(st.stroke)) : null;
     }, true);
   }));
-  el.querySelector('[data-sv="add-style"]')?.addEventListener('click', () => {
-    const name = prompt('שם לסגנון', '');
+  el.querySelector('[data-sv="add-style"]')?.addEventListener('click', async () => {
+    const name = await prompt('שם לסגנון');
     if (!name || !name.trim()) return;
     const fill = p.fill ? JSON.parse(JSON.stringify(p.fill)) : null;
     save({ styles: [...prefs.styles, { name: name.trim().slice(0, 40), fill, stroke: p.stroke ? JSON.parse(JSON.stringify(p.stroke)) : null }].slice(-32) });
