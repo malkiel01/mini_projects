@@ -19,12 +19,13 @@
 | `src/js/tabs.js` | `tabs(root, { onChange, remember })` | 2 ✅ |
 | `src/js/files.js` | `download`, `fileName`, `pickFiles`, `dropZone`, `setSaveBridge` | 2 ✅ |
 | `src/js/store.js` | `pref(ns)` (localStorage בטוח), `kv(db)` (IndexedDB) | 2 ✅ |
+| `src/js/keys.js` | `shortcuts()`, `matches(e, combo)`, `keyOf(e)`, `label`, `ariaKeys` — לפי `e.code`, עובד במקלדת עברית | 3 ✅ |
 
 התיעוד המלא של כל פונקציה — בראש הקובץ שלה.
 
 ## בדיקות
 
-`node creative-suite/ui-core/tests/browser.cjs` — 61 בדיקות ב-Chromium, בטלפון (390px) ובמחשב (1280px), על דף התצוגה.
+`node creative-suite/ui-core/tests/browser.cjs` — 83 בדיקות ב-Chromium, בטלפון (390px) ובמחשב (1280px), על דף התצוגה.
 **מריצים לפני כל שינוי ב-src.**
 
 ## מה מחליפים בכל אפליקציה (שלב 2)
@@ -65,3 +66,4 @@
 
 - **2026-10-31 — שלב 1:** תשתית (`apps.json`, `tools/sync.php`, שער בפריסה), `ui.css`, דף תצוגה.
 - **2026-10-31 — שלב 2:** ערכת הממשק — `dom`, `toast`, `dialog`, `menu`, `tabs`, `files`, `store`; בדיקות דפדפן.
+- **2026-10-31 — שלב 3:** `keys.js` — קיצורים לפי `e.code`; `keyOf(e)` לתיקון של שורה אחת (`docs/shared-code/migrate/keys.md`).
