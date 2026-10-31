@@ -1,6 +1,10 @@
 // העימוד — דף הפתיחה: מי אני, והספרייה בשרת (רשימה, מסמך חדש, מחיקה). מסמך נפתח ב-editor.html.
 
-const $ = (s, el = document) => el.querySelector(s);
+import { $ } from './ui-core/dom.js';
+import { toast } from './ui-core/toast.js';
+import { initDialogs, confirm } from './ui-core/dialog.js';
+
+initDialogs();   // [data-close], סגירה ברקע, --vvh / --kb (המקלדת בטלפון)
 
 const ERRORS = {
   title_required: 'צריך שם למסמך',
@@ -34,29 +38,6 @@ async function api(action, data = {}) {
   if (!out.ok) throw new Error(out.error || 'server');
   return out;
 }
-
-function toast(msg, err = false) {
-  const el = $('.toast');
-  el.textContent = msg;
-  el.classList.toggle('err', err);
-  el.hidden = false;
-  clearTimeout(toast.t);
-  toast.t = setTimeout(() => { el.hidden = true; }, 2600);
-}
-
-// --vvh: הגובה הנראה בלי המקלדת — הגיליון מתקצר והכול נגלל
-(() => {
-  const vv = window.visualViewport;
-  if (!vv) return;
-  const set = () => document.documentElement.style.setProperty('--vvh', Math.round(vv.height) + 'px');
-  vv.addEventListener('resize', set);
-  set();
-})();
-
-document.addEventListener('click', e => {
-  const b = e.target.closest('[data-close]');
-  if (b) b.closest('dialog').close();
-});
 
 // ---- גודל עמוד: pt → תווית ----
 const PT_PER_MM = 72 / 25.4;
@@ -124,7 +105,7 @@ async function load() {
 }
 
 async function remove(doc, li) {
-  if (!confirm(`למחוק את "${doc.title}"?`)) return;
+  if (!await confirm(`למחוק את "${doc.title}"?`, { ok: 'מחיקה', danger: true })) return;
   try {
     await api('doc_delete', { id: doc.id });
     li.remove();
