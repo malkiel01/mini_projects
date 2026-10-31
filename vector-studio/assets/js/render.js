@@ -62,11 +62,11 @@ export function handlePoints(box, view) {
 }
 
 export function toScreenBox([x, y, w, h], v) {
-  return [x * v.z + v.x, y * v.z + v.y, w * v.z, h * v.z];
+  return [x * v.zoom + v.x, y * v.zoom + v.y, w * v.zoom, h * v.zoom];
 }
 
 /** המטריצה ממרחב העבודה לפיקסלי CSS של הקנבס. */
-export const viewMatrix = (v) => [v.z, 0, 0, v.z, v.x, v.y];
+export const viewMatrix = (v) => [v.zoom, 0, 0, v.zoom, v.x, v.y];
 
 let colors = null;
 export function readColors() {
@@ -136,7 +136,7 @@ function drawPath(ctx, path, media) {
 }
 
 /**
- * state: { doc, view: {x, y, z}, sel: Set, hover, marquee: [x,y,w,h] במסך, dpr }.
+ * state: { doc, view: {zoom, x, y}, sel: Set, hover, marquee: [x,y,w,h] במסך, dpr }.
  */
 export function render(canvas, state) {
   if (!colors) readColors();
@@ -166,7 +166,7 @@ export function render(canvas, state) {
     ctx.fillStyle = '#fff';
     ctx.fillRect(x, y, w, h);
     if (page) ctx.drawImage(page.bmp, x, y, w, h);
-    if (state.grid) drawGrid(ctx, x, y, w, h, view.z);
+    if (state.grid) drawGrid(ctx, x, y, w, h, view.zoom);
     ctx.strokeStyle = colors.line;
     ctx.lineWidth = 1;
     ctx.setLineDash([]);
@@ -278,8 +278,8 @@ export function render(canvas, state) {
     ctx.lineWidth = 1;
     for (const g of state.guides) {
       ctx.beginPath();
-      if (g.axis === 'x') { const x = Math.round(g.v * view.z + view.x) + .5; ctx.moveTo(x, 0); ctx.lineTo(x, H); }
-      else { const y = Math.round(g.v * view.z + view.y) + .5; ctx.moveTo(0, y); ctx.lineTo(W, y); }
+      if (g.axis === 'x') { const x = Math.round(g.v * view.zoom + view.x) + .5; ctx.moveTo(x, 0); ctx.lineTo(x, H); }
+      else { const y = Math.round(g.v * view.zoom + view.y) + .5; ctx.moveTo(0, y); ctx.lineTo(W, y); }
       ctx.stroke();
     }
     ctx.strokeStyle = colors.brand;
