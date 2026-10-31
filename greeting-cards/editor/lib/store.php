@@ -14,6 +14,7 @@ const ID_PATTERN = '/^[A-Za-z0-9_-]{6,40}$/';
 const MAX_UPLOAD = 25 * 1024 * 1024;
 const MAX_SIDE = 4096;
 const MAX_FONT = 15 * 1024 * 1024;
+const VERSION_EVERY_MS = 10 * 60 * 1000;   // גרסה בהיסטוריה — לכל היותר אחת ל-10 דקות
 const MAX_DOC = 2 * 1024 * 1024;          // JSON של עיצוב — בלי תמונות בתוכו, אז זה הרבה
 const USER_QUOTA = 1024 * 1024 * 1024;    // 1GB לכל משתמש
 
@@ -191,8 +192,13 @@ function putDesign(int $userId, array $in): array {
             throw new ApiError('העיצוב השתנה במכשיר אחר', 409, ['serverVersion' => (int)$cur['version']]);
         }
         if ($cur) {
-            // הגרסה הקודמת נשמרת להיסטוריה (עד 30 אחרונות).
-            $pdo->prepare('INSERT INTO design_versions (design_id, doc, created_at) VALUES (?, ?, ?)')->execute([$id, $cur['doc'], nowMs()]);
+            // הגרסה הקודמת נשמרת להיסטוריה (עד 30 אחרונות) — לכל היותר אחת ל-10 דקות, אחרת שמירה אוטומטית
+            // תכופה ממלאת את 30 המקומות בדקות האחרונות בלבד.
+            $last = $pdo->prepare('SELECT MAX(created_at) FROM design_versions WHERE design_id = ?');
+            $last->execute([$id]);
+            if (nowMs() - (int)$last->fetchColumn() >= VERSION_EVERY_MS) {
+                $pdo->prepare('INSERT INTO design_versions (design_id, doc, created_at) VALUES (?, ?, ?)')->execute([$id, $cur['doc'], nowMs()]);
+            }
             $pdo->prepare('DELETE FROM design_versions WHERE design_id = ? AND id NOT IN (SELECT id FROM design_versions WHERE design_id = ? ORDER BY id DESC LIMIT 30)')->execute([$id, $id]);
             $version = (int)$cur['version'] + 1;
             $pdo->prepare('UPDATE designs SET title = ?, doc = ?, width = ?, height = ?, thumb_id = COALESCE(?, thumb_id), version = ?, updated_at = ?, deleted_at = NULL WHERE id = ?')
@@ -211,6 +217,23 @@ function putDesign(int $userId, array $in): array {
     // תמונה ממוזערת מתחלפת בכל יציאה מהעורך — הקודמת נמחקת, כדי שלא תתפוס מקום.
     if (!empty($oldThumb)) deleteFile($userId, $oldThumb);
     return ['id' => $id, 'version' => $version, 'updatedAt' => $updated];
+}
+
+/** הגרסאות הקודמות של עיצוב (החדשה ראשונה) — רק של הבעלים. */
+function listVersions(int $userId, string $id): array {
+    $st = db()->prepare('SELECT v.id, v.created_at, LENGTH(v.doc) AS bytes FROM design_versions v JOIN designs d ON d.id = v.design_id
+        WHERE v.design_id = ? AND d.user_id = ? ORDER BY v.id DESC LIMIT 30');
+    $st->execute([checkId($id), $userId]);
+    return array_map(fn($r) => ['id' => (int)$r['id'], 'at' => (int)$r['created_at'], 'bytes' => (int)$r['bytes']], $st->fetchAll());
+}
+
+function getVersion(int $userId, string $id, int $vid): array {
+    $st = db()->prepare('SELECT v.doc, v.created_at FROM design_versions v JOIN designs d ON d.id = v.design_id
+        WHERE v.id = ? AND v.design_id = ? AND d.user_id = ?');
+    $st->execute([$vid, checkId($id), $userId]);
+    $r = $st->fetch();
+    if (!$r) throw new ApiError('הגרסה לא נמצאה', 404);
+    return ['doc' => json_decode($r['doc'], true), 'at' => (int)$r['created_at']];
 }
 
 function deleteDesign(int $userId, string $id): void {

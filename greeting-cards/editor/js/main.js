@@ -21,7 +21,7 @@ import { loadScript } from './io.js';
 import { docVariables, readSheetFile, readPasted, readPhoneContacts, guessColumns, normalizePhone, fileNames, fillText } from './merge.js';
 
 // הגרסה — מופיעה ביומן, כדי לדעת איזה קוד רץ בטלפון.
-const BUILD = '2026-10-31.groups-1';
+const BUILD = '2026-10-31.versions-1';
 
 const app = $('#app');
 let ed = null;   // העיצוב הפתוח: { id, doc, history, canvas, dirty }
@@ -885,6 +885,51 @@ function colorAlphaFields(label, get, set) {
         rangeField('שקיפות', { min: 0, max: 100, value: alpha(), unit: '%', onInput: live(v => set(join(hex(), v))), onCommit: commit }));
 }
 
+/** גרסאות קודמות מהשרת (אחת לכל היותר ל-10 דקות, עד 30): רשימה ושחזור. השחזור — צעד אחד ב"ביטול". */
+async function versionsSheet() {
+    if (!sync.currentUser()) { toast('גרסאות קודמות נשמרות בשרת — צריך להיות מחובר', 'error'); return; }
+    const body = h('div', {}, h('p', { class: 'hint' }, 'טוען…'));
+    sheet('🕘 גרסאות קודמות', body);
+    try {
+        await saveNow();
+        await sync.push(ed.id).catch(() => {});
+        const list = await sync.listVersions(ed.id);
+        const when = at => new Date(at).toLocaleString('he-IL', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' });
+        body.replaceChildren(
+            h('p', { class: 'hint' }, 'נשמרת גרסה לכל היותר פעם ב-10 דקות של עבודה, עד 30 אחרונות. שחזור מחליף את העיצוב — ו-↶ מחזיר את מה שהיה.'),
+            list.length ? h('ul', { class: 'my-fonts' }, list.map(v => h('li', {},
+                h('span', {}, when(v.at)), h('span', { class: 'muted small' }, timeAgo(v.at)),
+                h('button', { class: 'btn ghost sm', onclick: () => restoreVersion(v) }, 'שחזור'))))
+                : h('p', { class: 'empty' }, 'עוד אין גרסאות קודמות — הן נוצרות תוך כדי עבודה, פעם ב-10 דקות.'));
+    } catch (e) {
+        body.replaceChildren(h('p', { class: 'empty' }, 'הגרסאות לא נטענו: ' + (e.message || e)));
+    }
+}
+
+async function restoreVersion(v) {
+    const id = ed.id;
+    try {
+        toast('משחזר…');
+        const doc = await sync.fetchVersion(id, v.id);
+        if (ed?.id !== id) return;
+        doc.title = ed.doc.title;
+        for (const [aid, a] of Object.entries(doc.assets || {})) {
+            const blob = await assets.get(a.src);
+            if (blob) ed.canvas.setImage(aid, await blobToImage(blob).catch(() => null));
+        }
+        await ensureDocFonts(doc);
+        ed.doc = doc;
+        ed.canvas.setDoc(doc);
+        ed.canvas.select([]);
+        commit();
+        closeSheet();
+        log('version-restore', { v: v.id });
+        toast('שוחזר ✓ — ↶ מחזיר את מה שהיה');
+    } catch (e) {
+        toast('השחזור נכשל: ' + (e.message || e), 'error');
+    }
+}
+
 /**
  * העלאת גופנים (TTF, OTF, WOFF, WOFF2): השם והעובי נקראים מהקובץ. גשר עד ספריית הגופנים של ענן החבילה — הגופן נשמר
  * במכשיר, ומוטמע בכל עיצוב שמשתמש בו. מחזיר את מה שנוסף.
@@ -1369,6 +1414,7 @@ async function receiveBack(srcId, t, bytes) {
 function moreSheet() {
     sheet('עוד', h('div', { class: 'menu' },
         h('button', { class: 'menu-item', onclick: pageSizeSheet }, '📐 גודל הדף'),
+        h('button', { class: 'menu-item', onclick: versionsSheet }, '🕘 גרסאות קודמות'),
         h('button', { class: 'menu-item', onclick: myFontsSheet }, '🔤 הגופנים שלי'),
         h('button', { class: 'menu-item', onclick: skillSheet }, '🤖 סקיל לצ\'אט'),
         h('button', { class: 'menu-item', onclick: () => { closeSheet(); importSheet(); } }, '📥 ייבוא מהצ\'אט (עיצוב חדש)'),
