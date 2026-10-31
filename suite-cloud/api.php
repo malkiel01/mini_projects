@@ -18,6 +18,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/lib/drive.php';
 require_once __DIR__ . '/lib/clients.php';
 require_once __DIR__ . '/lib/ai.php';
+require_once __DIR__ . '/lib/fonts.php';
 
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: same-origin');
@@ -106,7 +107,7 @@ function sendFile(string $path, array $n): never {
 
 const WRITES = ['mkdir', 'write', 'upload_start', 'upload_finish', 'rename', 'move', 'trash', 'restore', 'purge', 'trash_empty',
                 'admin_settings', 'admin_account', 'admin_client', 'client_register', 'connect_exchange', 'access_token',
-                'disconnect', 'connection_revoke', 'ai_provider', 'ai_test', 'ai_default', 'ai_app', 'ai_user'];
+                'disconnect', 'connection_revoke', 'ai_provider', 'ai_test', 'ai_default', 'ai_app', 'ai_user', 'font_update', 'font_delete'];
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $action = (string) ($_GET['action'] ?? '');
@@ -190,6 +191,38 @@ try {
             if (isset($res['masks'])) $res['masks'] = array_map(fn($m) => ['png' => base64_encode($m['png'])] + $m, $res['masks']);
             reply($res);
         }
+        // ── ספריית הגופנים (docs/spec-2-fonts.md) ──
+        case 'fonts_list':     reply(fontsList(actor($action, 'libs', $raw)['account']));
+        case 'font_add': {
+            if ($method !== 'POST') throw new AppError('בקשה לא תקינה', 400, 'bad_request');
+            $bearer = !empty($_SERVER['HTTP_AUTHORIZATION']) || !empty($_SERVER['REDIRECT_HTTP_AUTHORIZATION']) || !empty($_SERVER['HTTP_X_CLOUD_TOKEN'])
+                || !empty($_SERVER['HTTP_X_CLOUD_SIGNATURE']);
+            if (!$bearer && ($_SERVER['HTTP_X_CLOUD_REQUEST'] ?? '') !== '1') throw new AppError('בקשה לא תקינה', 400, 'bad_request');
+            $x = actor($action, 'libs', $raw);
+            $f = $_POST ?: $in;
+            if (isset($_FILES['file']) && is_uploaded_file($_FILES['file']['tmp_name'] ?? '')) {
+                $bytes = (string) file_get_contents($_FILES['file']['tmp_name']);
+                $f['filename'] ??= $_FILES['file']['name'];
+            } else {
+                $bytes = base64_decode((string) ($f['content_b64'] ?? ''), true);
+                if ($bytes === false || $bytes === '') throw new AppError('חסר קובץ', 400, 'bad_request');
+            }
+            $f['license_ack'] = filter_var($f['license_ack'] ?? false, FILTER_VALIDATE_BOOLEAN);
+            reply(fontAdd($x['account'], $bytes, $f, $x['app']));
+        }
+        case 'font_file': {
+            [$path, $r] = fontFile(actor($action, 'libs', $raw)['account'], $_GET['id'] ?? null);
+            header('Content-Type: ' . FONT_FORMATS[$r['format']]);
+            header('Content-Length: ' . filesize($path));
+            // לפי rev בכתובת — התוכן לא משתנה לעולם; גופן שהוחלף מקבל rev חדש
+            header('Cache-Control: ' . (($_GET['rev'] ?? '') === $r['sha256'] ? 'private, max-age=31536000, immutable' : 'private, no-cache'));
+            header('ETag: "' . $r['sha256'] . '"');
+            readfile($path);
+            exit;
+        }
+        case 'font_update':    reply(fontUpdate(actor($action, 'libs', $raw)['account'], $in));
+        case 'font_delete':    fontDelete(actor($action, 'libs', $raw)['account'], $in['id'] ?? null); reply(['ok' => true]);
+
         case 'ai_admin':       requireAdmin(); reply(aiAdminState());
         case 'ai_provider':    requireAdmin(); reply(aiAdminProvider($in));
         case 'ai_test':        requireAdmin(); reply(aiAdminTest($in['provider'] ?? null));

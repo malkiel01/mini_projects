@@ -32,6 +32,8 @@ globalThis.fetch = async (url, init = {}) => {
     return new Response(new Blob([new Uint8Array([137, 80, 78, 71])]), { status: 200, headers: { 'content-type': 'image/png', 'x-ai-size': '1024x1536', 'x-ai-transparent': '1', 'x-ai-provider': 'openai' } });
   }
   if (a === 'read') return new Response(new Blob(['abc']), { status: 200 });
+  if (a === 'fonts_list') return json({ fonts: [{ id: 'fnt_1', family: 'Alef' }], families: [{ family: 'Alef', items: ['fnt_1'] }] });
+  if (a === 'font_add') { const fd = init.body; return json({ id: 'fnt_2', family: fd.get('family'), ack: fd.get('license_ack') }); }
   return json({ error: 'not found', code: 'not_found' }, 404);
 };
 
@@ -48,6 +50,9 @@ check('upload — בחלקים לפי chunk של השרת', node.id === 'n_2' &&
 const w = await d.suite.write('a.txt', new Blob(['שלום']), { ifRev: 3 });
 check('write — base64 ו-if_rev', w.body.if_rev === 3 && Buffer.from(w.body.content_b64, 'base64').toString() === 'שלום');
 check('read — Blob', (await (await d.suite.read('n_1')).text()) === 'abc');
+check('fonts.list', (await d.fonts.list()).families[0].family === 'Alef');
+const fa = await d.fonts.add(new Blob(['x']), { family: 'Rubik' });
+check('fonts.add — multipart עם אישור רישיון', fa.family === 'Rubik' && fa.ack === '1');
 const r = await d.ai.run('generate-image', { prompt: 'לוגו', size: '1080x1350', transparent: true });
 check('ai.run — PNG, הגודל שיצא, שקיפות וספק', r.png instanceof Blob && r.size.join() === '1024,1536' && r.transparent && r.provider === 'openai');
 const sg = await d.ai.run('segment', { image: new Blob(['x']) });

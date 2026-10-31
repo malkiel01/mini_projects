@@ -17,6 +17,7 @@
 </header>
 <nav class="tabs" aria-label="לשוניות">
   <a href="#/files" data-tab="files">☁️ קבצים</a>
+  <a href="#/fonts" data-tab="fonts">🔤 גופנים</a>
   <a href="#/trash" data-tab="trash">🗑️ סל</a>
   <a href="#/links" data-tab="links">🔗 חיבורים</a>
   <a href="#/admin" data-tab="admin" hidden>⚙️ ניהול</a>
@@ -41,6 +42,16 @@
     </div>
     <div class="uploads" id="uploads" aria-live="polite"></div>
     <ul class="list" id="items"></ul>
+  </section>
+
+  <!-- גופנים -->
+  <section id="v-fonts" hidden>
+    <p class="hint">הגופנים שלך — מופיעים בבורר הגופנים של כל אפליקציה מחוברת, תחת "שלי". ttf, otf, woff ו-woff2.</p>
+    <div class="toolbar">
+      <span class="muted" id="fonts-count"></span><span style="flex:1"></span>
+      <button class="btn primary" id="font-upload" type="button"><span aria-hidden="true">⬆️</span> גופן</button>
+    </div>
+    <ul class="list" id="fonts"></ul>
   </section>
 
   <!-- סל -->

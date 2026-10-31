@@ -83,7 +83,7 @@ try {
 
     $url = $app->connectUrl('u1');
     check('connect — נרשמה בענן, פעילה (אותו origin)', activeClient('vector-studio')['status'] === 'active');
-    check('connect — לכתובת האישור של הענן, עם files,ai', str_starts_with($url, 'https://mbe-plus.com/mini_projects/suite-cloud/connect.php?') && str_contains($url, 'scope=files%2Cai'));
+    check('connect — לכתובת האישור של הענן, עם files,libs,ai', str_starts_with($url, 'https://mbe-plus.com/mini_projects/suite-cloud/connect.php?') && str_contains($url, 'scope=files%2Clibs%2Cai'));
     $back = approve($url);
     parse_str((string) parse_url($back, PHP_URL_QUERY), $bq);
     check('המשתמש של אפליקציה אחרת לא יכול להשתמש ב-state', code(fn() => $app->callback('u2', $bq)) === 'bad_state');
@@ -102,6 +102,7 @@ try {
     $x = actor('list', 'files', '');
     check('האסימון פותח את הקבצים בענן בשם בעל החשבון והאפליקציה', $x['app'] === 'vector-studio' && $x['account']['name'] === 'בעל המערכת');
     check('והרשאת ai', actor('ai_capabilities', 'ai', '')['app'] === 'vector-studio');
+    check('והרשאת libs (גופנים)', actor('fonts_list', 'libs', '')['app'] === 'vector-studio');
     unset($_SERVER['HTTP_X_CLOUD_TOKEN']);
 
     $url = $app->connectUrl('u1');
