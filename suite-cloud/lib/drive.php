@@ -127,8 +127,10 @@ function pathOf(array $a, ?string $folder): array {
 // ─── מכסה ─────────────────────────────────────────────────────────────────
 
 function usedBytes(string $account): int {
-    $st = db()->prepare("SELECT COALESCE(SUM(size), 0) FROM nodes WHERE account = ? AND kind = 'file'");
-    $st->execute([$account]);
+    // קבצים בכונן (גם בסל) + פריטי הספריות (גופנים) — הכול נספר באותה מכסה
+    $st = db()->prepare("SELECT (SELECT COALESCE(SUM(size), 0) FROM nodes WHERE account = ? AND kind = 'file')
+                              + (SELECT COALESCE(SUM(size), 0) FROM lib_items WHERE account = ?)");
+    $st->execute([$account, $account]);
     return (int) $st->fetchColumn();
 }
 
@@ -172,8 +174,8 @@ function storeBlob(string $tmp, string $sha): void {
 /** קובץ בדיסק שאף node כבר לא מפנה אליו — נמחק. */
 function dropBlobIfUnused(?string $sha): void {
     if ($sha === null) return;
-    $st = db()->prepare('SELECT 1 FROM nodes WHERE sha256 = ? LIMIT 1');
-    $st->execute([$sha]);
+    $st = db()->prepare('SELECT 1 FROM nodes WHERE sha256 = ? UNION ALL SELECT 1 FROM lib_items WHERE sha256 = ? LIMIT 1');
+    $st->execute([$sha, $sha]);
     if (!$st->fetchColumn()) @unlink(blobPath($sha));
 }
 

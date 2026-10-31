@@ -3,12 +3,12 @@
   "name": "ענן החבילה",
   "icon": "☁️",
   "icon_svg": "assets/icon.svg",
-  "description": "הענן של חבילת היצירה — חשבון אחד, כוננים זה לצד זה וספריות משותפות לכל האפליקציות. בשלב הבנייה: הכונן הפנימי.",
+  "description": "הענן של חבילת היצירה — חשבון אחד, כוננים זה לצד זה וספריות משותפות לכל האפליקציות: כונן פנימי, ספריית גופנים, בינה מלאכותית, וחיבור לכל אפליקציה.",
   "category": "documents",
   "entry": "index.html",
   "gate": true,
   "restricted": true,
   "public": [
-    "api.php?action=cloud_key|client_register|connect_exchange|access_token|disconnect|quota|list|stat|read|mkdir|write|upload_start|upload_chunk|upload_finish|rename|move|trash|restore|trash_list|purge|trash_empty|ai_capabilities|ai_run"
+    "api.php?action=cloud_key|client_register|connect_exchange|access_token|disconnect|quota|list|stat|read|mkdir|write|upload_start|upload_chunk|upload_finish|rename|move|trash|restore|trash_list|purge|trash_empty|ai_capabilities|ai_run|fonts_list|font_add|font_file|font_update|font_delete"
   ]
 }
