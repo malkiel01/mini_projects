@@ -15,13 +15,13 @@ import { FONTS, ensureFont, ensureDocFonts, nearestWeight, loadMyFonts, myFonts,
 import { History } from './history.js';
 import { designs, assets } from './db.js';
 import { Canvas } from './canvas.js';
-import { ingestImage, importFromChat, expandSvgLayers, blobToImage, canvasToBlob, exportPdf, exportGcard, safeName, personalSkill, skillAsPrompt, skillZip } from './io.js';
+import { ingestImage, importFromChat, expandSvgLayers, blobToImage, canvasToBlob, exportPdf, safeName, personalSkill, skillAsPrompt, skillZip } from './io.js';
 import * as sync from './sync.js';
 import { loadScript } from './io.js';
 import { docVariables, readSheetFile, readPasted, readPhoneContacts, guessColumns, normalizePhone, fileNames, fillText } from './merge.js';
 
 // הגרסה — מופיעה ביומן, כדי לדעת איזה קוד רץ בטלפון.
-const BUILD = '2026-10-31.handles-2';
+const BUILD = '2026-10-31.mbe-only-1';
 
 const app = $('#app');
 let ed = null;   // העיצוב הפתוח: { id, doc, history, canvas, dirty }
@@ -171,10 +171,11 @@ function designMenu(d) {
             closeSheet(); showHome(); toast('שוכפל');
         } }, '⧉ שכפול'),
         h('button', { class: 'menu-item', onclick: async () => {
-            if (d.remoteOnly) await sync.pull(d.id);
-            const rec = await designs.get(d.id);
-            await download(await exportGcard(rec.doc), safeName(rec.title) + '.gcard').catch(e => toast(e.message, 'error'));
-        } }, '⬇️ הורדה כקובץ עיצוב'),
+            // ‎.mbe נבנה מהקנבס (שכבות אפויות, תצוגה מקדימה) — פותחים את העיצוב ומורידים ממנו
+            await openDesign(d.id, null, d);
+            if (!ed) return;
+            try { await download(await makeMbe(), safeName(ed.doc.title) + '.mbe'); } catch (e) { toast(e.message || 'הייצוא נכשל', 'error'); }
+        } }, '⬇️ הורדה כ-‎.mbe'),
         h('button', { class: 'menu-item danger', onclick: async () => {
             if (!(await confirmDialog(`למחוק את "${d.title}"? אי אפשר לבטל.`, 'מחיקה', true))) return;
             await designs.remove(d.id);
@@ -191,7 +192,7 @@ function importSheet() {
     const text = h('textarea', { rows: 5, dir: 'ltr', placeholder: '{ "version": 1, "page": … }', class: 'mono' });
     const drop = h('button', { class: 'drop', onclick: async () => add(await pickFiles('', true)) },
         h('span', { class: 'tile-icon', 'aria-hidden': 'true' }, '📎'), h('span', {}, 'בחירת תמונות או קובץ מהצ\'אט'),
-        h('span', { class: 'muted small' }, 'design.gcard · תמונות · design.json'));
+        h('span', { class: 'muted small' }, 'design.zip · ‎.mbe · תמונות · design.json'));
     const add = fs => { for (const f of fs) { files.push(f); list.append(h('li', {}, `${f.type.startsWith('image/') ? '🖼️' : '📄'} ${f.name}`)); } };
     drop.addEventListener('dragover', e => e.preventDefault());
     drop.addEventListener('drop', e => { e.preventDefault(); add([...e.dataTransfer.files]); });
@@ -1232,7 +1233,6 @@ function exportSheet() {
     const info = h('p', { class: 'hint' });
     const upd = () => {
         info.textContent = fmt === 'mbe' ? 'קובץ חבילת היצירה — כל שכבה נשמרת, ונפתח גם בעיצוב הרסטר ובווקטורי'
-            : fmt === 'gcard' ? 'קובץ עיצוב — לפתיחה מחדש בעורך או להעברה למכשיר אחר'
             : fmt === 'pdf' ? `PDF בגודל הדף, ${W >= 1700 ? 300 : 150}dpi`
                 : `\u2066${Math.round(W * scale)}×${Math.round(H * scale)}\u2069 פיקסלים`;
     };
@@ -1242,8 +1242,7 @@ function exportSheet() {
         try {
             toast('מכין…');
             let blob, file;
-            if (fmt === 'gcard') { await saveNow(); embedDocFonts(ed.doc); blob = await exportGcard(ed.doc); file = name + '.gcard'; }
-            else if (fmt === 'mbe') { blob = await makeMbe(); file = name + '.mbe'; }
+            if (fmt === 'mbe') { blob = await makeMbe(); file = name + '.mbe'; }
             else {
                 const c = ed.canvas.pageCanvas(fmt === 'pdf' ? 1 : scale);
                 if (fmt === 'pdf') { blob = await exportPdf(c, ed.doc); file = name + '.pdf'; }
@@ -1260,7 +1259,7 @@ function exportSheet() {
     };
     const canShare = !!navigator.canShare?.({ files: [new File([''], 'x.png', { type: 'image/png' })] });
     sheet('ייצוא', h('div', {},
-        seg('פורמט', [{ value: 'png', label: 'PNG' }, { value: 'jpg', label: 'JPG' }, { value: 'pdf', label: 'PDF' }, { value: 'mbe', label: '‎.mbe' }, { value: 'gcard', label: 'עיצוב' }], fmt, v => { fmt = v; upd(); }),
+        seg('פורמט', [{ value: 'png', label: 'PNG' }, { value: 'jpg', label: 'JPG' }, { value: 'pdf', label: 'PDF' }, { value: 'mbe', label: '‎.mbe' }], fmt, v => { fmt = v; upd(); }),
         seg('גודל', [{ value: 1, label: '×1' }, { value: 2, label: '×2' }, { value: 0.5, label: '×½' }], scale, v => { scale = +v; upd(); }),
         info,
         h('div', { class: 'row-actions' },
