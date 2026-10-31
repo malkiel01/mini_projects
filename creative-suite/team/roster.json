@@ -29,6 +29,9 @@
       "does": "עורך בסגנון Canva — תבניות, טקסט, צורות ושכבות, בטלפון; ‎.mbe מסוג design" },
     { "role": "suite-cloud", "name": "ענן החבילה", "session": "session_01Eca6GK5y7usjF6cfmuLBpq",
       "owns": ["suite-cloud/"],
-      "does": "חשבון חבילה, כוננים (פנימי, Drive, Dropbox, FTP, מחשב) וספריות משותפות; בעלים של לקוח ענן החבילה" }
+      "does": "חשבון חבילה, כוננים (פנימי, Drive, Dropbox, FTP, מחשב) וספריות משותפות; בעלים של לקוח ענן החבילה" },
+    { "role": "shared-code", "name": "הקוד המשותף (ארכיטקט)", "session": "session_018g4NYGvmE6cvaDDu2KAMoP",
+      "owns": ["creative-suite/docs/shared-code/", "creative-suite/ui-core/"],
+      "does": "ממפה קוד כפול בכל האפליקציות, ובונה מודולים משותפים אחידים (ממשק, חלונות, בוררים, גרירה) — מקור אחד, עותק מסונכרן" }
   ]
 }
