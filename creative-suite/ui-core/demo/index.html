@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ui-core — תצוגה</title>
+<link rel="stylesheet" href="../src/css/ui.css">
+<style>
+    section { margin-bottom: var(--s4); }
+    .demo-menu { position: static; margin-top: var(--s2); width: fit-content; }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">דילוג לתוכן</a>
+<header class="top">
+    <a class="icon-btn" href="../../" aria-label="חזרה">›</a>
+    <div class="titles"><h1>ui-core — כל הרכיבים</h1><div class="sub">ערכת הממשק המשותפת של חבילת היצירה</div></div>
+    <button class="icon-btn" type="button" aria-label="עוד" id="menu-btn">⋯</button>
+</header>
+<nav class="tabs"><a href="#" aria-current="page">רכיבים</a><a href="#">חלונות</a><a href="#">רשימות</a></nav>
+
+<main id="main" tabindex="-1">
+    <section>
+        <h2 class="sec-title">כפתורים</h2>
+        <div class="row-btns wrap">
+            <button class="btn primary" type="button" id="open-sheet">פתיחת חלון</button>
+            <button class="btn primary" type="button" id="open-full">חלון ארוך</button>
+            <button class="btn ghost" type="button" id="show-toast">טוסט</button>
+            <button class="btn ghost" type="button" id="show-err">טוסט שגיאה</button>
+            <button class="btn danger" type="button">מחיקה</button>
+        </div>
+    </section>
+
+    <section>
+        <h2 class="sec-title">שדות</h2>
+        <div class="fields">
+            <label class="f"><span>שם</span><input value="כרטיס ברכה"></label>
+            <label class="f"><span>רוחב (מ"מ)</span><input inputmode="decimal" dir="ltr" value="210"></label>
+            <label class="f wide"><span>הערה</span><textarea rows="2"></textarea></label>
+        </div>
+    </section>
+
+    <section>
+        <h2 class="sec-title">בורר מקטעים, כדוריות, מתג</h2>
+        <div class="seg"><label><input type="radio" name="o" checked><span>לאורך</span></label><label><input type="radio" name="o"><span>לרוחב</span></label></div>
+        <p></p>
+        <div class="chips"><label><input type="checkbox" checked><span>PNG</span></label><label><input type="checkbox"><span>PDF</span></label><label><input type="checkbox"><span>‎.mbe</span></label></div>
+        <label class="switch"><input type="checkbox" checked> הצמדה לרשת</label>
+    </section>
+
+    <section>
+        <h2 class="sec-title">תפריט</h2>
+        <div class="menu demo-menu" role="menu">
+            <button role="menuitem" type="button">📄 שכפול</button>
+            <button role="menuitem" type="button">✏️ שינוי שם</button>
+            <div role="separator"></div>
+            <button role="menuitem" type="button" class="danger">🗑 מחיקה</button>
+        </div>
+    </section>
+
+    <section>
+        <h2 class="sec-title">רשימה ואריחים</h2>
+        <ul class="list">
+            <li class="card"><span class="avatar" style="--h:200">ע</span><div class="body"><div class="l1"><span>הזמנה לחתונה</span><span class="t">היום</span></div><div class="l2">עימוד · 4 עמודים</div></div></li>
+            <li class="card"><span class="avatar" style="--h:20">ר</span><div class="body"><div class="l1"><span>תמונת נוף</span><span class="t">אתמול</span></div><div class="l2">רסטר · <bdi dir="ltr">4000×3000</bdi></div></div></li>
+        </ul>
+        <p></p>
+        <div class="tiles"><button class="tile" type="button"><span class="tile-ic">🖼</span>PNG</button><button class="tile" type="button"><span class="tile-ic">📄</span>PDF</button></div>
+    </section>
+</main>
+
+<dialog id="sheet">
+    <form method="dialog" novalidate>
+        <header class="sheet-head"><h2>ייצוא</h2><button class="btn primary" value="ok">שמירה</button><button class="icon-btn" value="" data-close aria-label="סגירה">✕</button></header>
+        <div class="sheet-body">
+            <div class="seg"><label><input type="radio" name="f" checked><span>PNG</span></label><label><input type="radio" name="f"><span>JPG</span></label><label><input type="radio" name="f"><span>PDF</span></label></div>
+            <label class="f"><span>שם הקובץ</span><input value="כרטיס"></label>
+            <p class="hint">בטלפון — עולה מלמטה; במחשב — במרכז. לחיצה מחוץ לחלון סוגרת.</p>
+        </div>
+    </form>
+</dialog>
+<dialog id="full" class="full">
+    <form method="dialog" novalidate>
+        <header class="sheet-head"><h2>הגדרות עמוד</h2><button class="icon-btn" value="" aria-label="סגירה">✕</button></header>
+        <div class="sheet-body">
+            <section class="group"><h3>שוליים <small>במ"מ</small></h3><div class="fields two"><label class="f"><span>עליון</span><input inputmode="decimal" dir="ltr" value="20"></label><label class="f"><span>תחתון</span><input inputmode="decimal" dir="ltr" value="20"></label></div></section>
+            <section class="group"><h3>כיוון</h3><div class="seg"><label><input type="radio" name="d" checked><span>לאורך</span></label><label><input type="radio" name="d"><span>לרוחב</span></label></div></section>
+            <section class="group"><h3>הערות</h3><textarea rows="12"></textarea></section>
+        </div>
+    </form>
+</dialog>
+<div class="toast" role="status" hidden></div>
+
+<script type="module">
+    // תצוגה בלבד. ההתנהגות (פוקוס חוזר, --vvh / --kb, סגירה ברקע) תבוא מ-ui-core/dialog.js בשלב 2.
+    const $ = s => document.querySelector(s);
+    const vv = window.visualViewport;
+    const fitKb = () => {
+        const s = document.documentElement.style;
+        s.setProperty('--vvh', (vv ? vv.height : innerHeight) + 'px');
+        s.setProperty('--kb', vv ? Math.max(0, innerHeight - vv.height - vv.offsetTop) + 'px' : '0px');
+    };
+    vv?.addEventListener('resize', fitKb); fitKb();
+    for (const d of document.querySelectorAll('dialog')) d.addEventListener('click', e => { if (e.target === d) d.close(); });
+    $('#open-sheet').onclick = () => $('#sheet').showModal();
+    $('#open-full').onclick = () => $('#full').showModal();
+    const toast = (msg, err) => { const t = $('.toast'); t.textContent = msg; t.classList.toggle('err', !!err); t.hidden = false;
+        clearTimeout(t.t); t.t = setTimeout(() => t.hidden = true, err ? 6000 : 3000); };
+    $('#show-toast').onclick = () => toast('נשמר');
+    $('#show-err').onclick = () => toast('השמירה נכשלה — אין חיבור', true);
+    $('#menu-btn').onclick = () => toast('התפריט הקופץ — בשלב 2 (menu.js)');
+</script>
+</body>
+</html>
