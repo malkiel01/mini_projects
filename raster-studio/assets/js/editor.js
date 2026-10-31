@@ -19,6 +19,7 @@ import { gapsFor, parseOraStack } from './engine/formats.js';
 import { unzip } from './engine/unzip.js';
 import { buildMbe, openMbe, sniffZip, MbeOpenError } from './mbe-io.js';
 import { activeHandoff, returnHandoff, endHandoff } from './handoff.js';
+import { keyOf } from './ui-core/keys.js';
 
 const $ = s => document.querySelector(s);
 const stage = $('#stage');
@@ -616,7 +617,7 @@ addEventListener('keydown', e => {
   const typingAny = e.target.closest?.('input:not([type=range]):not([type=color]), textarea, select');
   if (!typingAny && tools?.key(e)) { e.preventDefault(); return; }
   if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
-  const k = e.key.toLowerCase();
+  const k = keyOf(e);   // המקש הפיזי: Ctrl+Z עובד גם כשהמקלדת בעברית
   // בתוך שדה טקסט (שם שכבה) — הביטול של השדה עצמו
   const typing = e.target.closest?.('input:not([type=range]), textarea, select');
   if (k === 's') { e.preventDefault(); saveToServer(); return; }

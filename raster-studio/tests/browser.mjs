@@ -696,6 +696,22 @@ async function main() {
   await stroke([[450, 200], [455, 200]]);
   check('לעומת חותמת השכפול — אותה משיכה מעתיקה את הכהה (60)', Math.abs(Number((await px(452, 200)).split(',')[0]) - 60) <= 2, await px(452, 200));
 
+  // ---- מקלדת בעברית: הקיצורים לפי המקש הפיזי (e.code), לא לפי האות ----
+  await openEd(page);
+  await page.waitForFunction(() => window.__rs?.doc);
+  await page.click('[data-act="add"]');
+  const heb = (key, code, mods = {}) => page.evaluate(([key, code, mods]) => {
+    document.dispatchEvent(new KeyboardEvent('keydown', { key, code, bubbles: true, cancelable: true, ...mods }));
+  }, [key, code, mods]);
+  await heb('ז', 'KeyZ', { ctrlKey: true });
+  check('עברית: Ctrl+ז (המקש של Z) — ביטול', await page.evaluate(() => __rs.doc.layers.length) === 1);
+  await heb('ז', 'KeyZ', { ctrlKey: true, shiftKey: true });
+  check('עברית: Ctrl+Shift+ז — ביצוע מחדש', await page.evaluate(() => __rs.doc.layers.length) === 2);
+  await heb('ה', 'KeyV');
+  check('עברית: ה (המקש של V) — כלי ההזזה', await page.evaluate(() => __rs.tools.state.tool) === 'move');
+  await heb('נ', 'KeyB');
+  check('עברית: נ (המקש של B) — מכחול', await page.evaluate(() => __rs.tools.state.tool) === 'brush');
+
   // ---- מסכת שכבה ----
   await openEd(page);
   await page.waitForFunction(() => window.__rs?.doc);

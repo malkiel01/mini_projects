@@ -6,7 +6,7 @@
  * אחרי שינוי ברשימת השלד — להעלות את CACHE_VERSION.
  */
 
-const CACHE_VERSION = 'raster-studio-v10';
+const CACHE_VERSION = 'raster-studio-v11';
 
 const SHELL = [
   './index.html',
@@ -41,6 +41,14 @@ const SHELL = [
   './assets/js/engine/formats.js',
   './assets/js/mbe-io.js',
   './assets/js/handoff.js',
+  './assets/js/ui-core/dialog.js',
+  './assets/js/ui-core/dom.js',
+  './assets/js/ui-core/files.js',
+  './assets/js/ui-core/keys.js',
+  './assets/js/ui-core/menu.js',
+  './assets/js/ui-core/store.js',
+  './assets/js/ui-core/tabs.js',
+  './assets/js/ui-core/toast.js',
   './assets/js/mbe/mbe.js',
   './assets/js/mbe/canonical.js',
   './assets/js/mbe/schema.js',
