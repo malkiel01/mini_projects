@@ -245,6 +245,33 @@ const server = http.createServer((req, res) => {
         ok(h1.n === h0.n && Math.abs(h1.view.x - h0.view.x - 20) < 1e-6, 'gestures: כלי יד — אצבע אחת מזיזה');
         await p.uncheck('#hand');
 
+        // panOnEmpty + onTap — אלמנט נפרד, הכלי מסרב (רקע ריק)
+        const pe = await p.evaluate(async () => {
+            const { bindViewport } = await import('../src/js/gestures.js');
+            const el = document.createElement('div');
+            el.style.cssText = 'position:fixed;left:0;top:0;width:300px;height:300px;touch-action:none';
+            document.body.append(el);
+            let view = { zoom: 1, x: 0, y: 0 }, taps = [];
+            const g = bindViewport(el, { get: () => view, set: v => { view = v; }, pointer: { down: () => false },
+                panOnEmpty: e => e.pointerType === 'touch', onTap: (e, pt) => taps.push(pt), wheel: false });
+            const fire = (type, id, x, y, kind = 'touch') => el.dispatchEvent(new PointerEvent(type, { pointerId: id, pointerType: kind,
+                clientX: x, clientY: y, bubbles: true, button: 0 }));
+            fire('pointerdown', 11, 100, 100); fire('pointermove', 11, 140, 120); fire('pointerup', 11, 140, 120);
+            const panned = { ...view }, tapsAfterPan = taps.length;
+            fire('pointerdown', 12, 50, 50); fire('pointerup', 12, 52, 51);
+            const tapped = taps.slice();
+            fire('pointerdown', 13, 50, 50, 'mouse'); fire('pointermove', 13, 90, 90, 'mouse'); fire('pointerup', 13, 90, 90, 'mouse');
+            const mouseView = { ...view };
+            fire('pointerdown', 14, 100, 100); fire('pointerdown', 15, 200, 100); fire('pointerup', 15, 200, 100); fire('pointerup', 14, 100, 100);
+            const tapsAfterPinch = taps.length;
+            g.destroy(); el.remove();
+            return { panned, tapsAfterPan, tapped, mouseView, tapsAfterPinch };
+        });
+        ok(pe.panned.x === 40 && pe.panned.y === 20 && pe.tapsAfterPan === 0, 'panOnEmpty: אצבע אחת על רקע ריק מזיזה, ולא נחשבת הקשה');
+        ok(pe.tapped.length === 1 && Math.abs(pe.tapped[0][0] - (52 - 40)) < 1e-9, 'onTap: הקשה בלי תזוזה — בקואורדינטות מסמך');
+        ok(pe.mouseView.x === 40, 'panOnEmpty כפונקציה: עכבר לא מזיז (נשאר למלבן בחירה)');
+        ok(pe.tapsAfterPinch === 2 - 1, 'onTap: צביטה אינה הקשה');
+
         ok(errors.length === 0, 'בלי שגיאות JS' + (errors.length ? ': ' + errors.join(' | ') : ''));
         await ctx.close();
     }
