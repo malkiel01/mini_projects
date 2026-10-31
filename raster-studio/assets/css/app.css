@@ -359,6 +359,10 @@ body.editor { display: flex; flex-direction: column; block-size: 100dvh; min-hei
 /* עשר לשוניות: שורה אחת שנגללת לרוחב (גם בטלפון) */
 .adjust .seg-tabs { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(64px, 1fr); overflow-x: auto; scrollbar-width: thin; }
 .adjust .seg-tabs [hidden] { display: none; }
+.adjust .color-pair { display: flex; gap: var(--s1); }
+.adjust .color-pair input { inline-size: 44px; block-size: 32px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: none; }
+.adjust select { min-block-size: 32px; }
+.layer-row .fill-thumb { border: 1px solid var(--line); border-radius: 4px; }
 .adjust-fields { display: flex; flex-wrap: wrap; gap: 0 var(--s3); }
 .adjust .opt { flex: 1 1 140px; display: grid; font-size: .8rem; color: var(--muted); }
 .adjust .opt > span { display: flex; justify-content: space-between; }

@@ -15,7 +15,7 @@ import { TILE, BLEND_MODES, tilesInRect, newMask } from './doc.js';
 import { rasterTile, selectionBox } from './selection.js';
 import { matrix as xfMatrix, bounds as xfBounds } from './transform.js';
 import { WebGL2Renderer, srgbToLinear } from './webgl2.js';
-import { adjustOf } from './formats.js';
+import { adjustOf, fillRamp, fillGeometry } from './formats.js';
 
 const WGSL = /* wgsl */`
 struct U {
@@ -193,6 +193,16 @@ fn noise(p: vec2f) -> f32 {
   var m = 1.0;
   if (u.m.y == 1) { m = sel; }
   return mix(c, r, m);
+}
+
+// שכבת מילוי: t0 ה-ramp (256×1, sRGB ישר); a = גאומטריה, b.xy = פינת האריח, m.x = סוג (0 אחיד, 1 לינארי, 2 רדיאלי)
+@fragment fn fillgen(i: VO) -> @location(0) vec4f {
+  let p = u.b.xy + i.uv * 256.0;
+  var t = 0.0;
+  if (u.m.x == 1) { let d = u.a.zw - u.a.xy; t = clamp(dot(p - u.a.xy, d) / max(dot(d, d), 1e-6), 0.0, 1.0); }
+  else if (u.m.x == 2) { t = clamp(length(p - u.a.xy) / max(u.a.z, 1e-6), 0.0, 1.0); }
+  let c = textureSample(t0, smp, vec2f(t * (255.0 / 256.0) + 0.5 / 256.0, 0.5));
+  return vec4f(dec(c.rgb) * c.a, c.a);
 }
 
 // מברשת ריפוי: t0 המקור, t1 טשטוש היעד, t2 טשטוש המקור
@@ -384,6 +394,7 @@ export class WebGPURenderer {
     this.maskTmp = this.#tileTexture(1);
     this.adjLayerTmp = this.#tileTexture(1);
     this.healTmp = [this.#tileTexture(1), this.#tileTexture(1)];
+    this.fillTmp = this.#tileTexture(1);
     this.padTex = this.#tex(TILE + 128, TILE + 128, TILE_FMT);
     this.blurTmp = this.#tex(TILE, TILE + 128, TILE_FMT);
     this.emptyTex = this.#tileTexture(1);
@@ -399,7 +410,7 @@ export class WebGPURenderer {
     const errs = info.messages.filter(m => m.type === 'error');
     if (errs.length) throw new Error('wgsl: ' + errs.map(m => `${m.lineNum}:${m.linePos} ${m.message}`).join('; '));
     this.device.pushErrorScope('validation');
-    for (const name of ['upload', 'fill', 'blend', 'dab', 'stroke', 'adjust', 'blurH', 'blurV', 'lerp', 'heal', 'copy', 'extract', 'read', 'thumb', 'display', 'float']) this.#pipe(name);
+    for (const name of ['upload', 'fill', 'blend', 'dab', 'stroke', 'adjust', 'blurH', 'blurV', 'lerp', 'heal', 'fillgen', 'copy', 'extract', 'read', 'thumb', 'display', 'float']) this.#pipe(name);
     const err = await this.device.popErrorScope();
     if (err) throw new Error('pipeline: ' + err.message);
   }
@@ -869,7 +880,27 @@ export class WebGPURenderer {
     this.invalidate(doc);
   }
 
-  #adjustKeys(adj, layer) {
+  #rampTex(fill) {
+    const id = JSON.stringify(fill);
+    this.ramps ??= new Map();
+    let t = this.ramps.get(id);
+    if (t) return t;
+    if (this.ramps.size > 32) { for (const old of this.ramps.values()) this.#destroy(old); this.ramps.clear(); }
+    t = this.device.createTexture({ size: [256, 1], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
+    this.device.queue.writeTexture({ texture: t }, fillRamp(fill), { bytesPerRow: 256 * 4 }, [256, 1]);
+    this.ramps.set(id, t);
+    return t;
+  }
+
+  /** אריח של מילוי (ראו WebGL2Renderer) */
+  #fillTile(fill, tx, ty, out) {
+    const { mode, geo } = fillGeometry(fill);
+    this.#drawTo(out, 'fillgen', { a: geo, b: [tx * TILE, ty * TILE, 0, 0], m: [mode, 0, 0, 0] }, [this.#rampTex(fill)], {}, 'linear');
+    return out;
+  }
+
+  #adjustKeys(adj, layer, doc) {
+    if (adj.kind === 'fill') return new Set(tilesInRect(0, 0, doc.width, doc.height).map(([tx, ty]) => key(tx, ty)));
     const keys = new Set(layer.tiles.keys());
     if (WebGL2Renderer.adjustReach(adj) > 0) {
       for (const k of layer.tiles.keys()) {
@@ -881,7 +912,7 @@ export class WebGPURenderer {
   }
 
   #adjustTouches(adj, layer, tx, ty) {
-    if (layer.tiles.has(key(tx, ty))) return true;
+    if (adj.kind === 'fill' || layer.tiles.has(key(tx, ty))) return true;
     if (!WebGL2Renderer.adjustReach(adj)) return false;
     for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (layer.tiles.has(key(tx + dx, ty + dy))) return true;
     return false;
@@ -932,6 +963,11 @@ export class WebGPURenderer {
     const k = key(tx, ty);
     const sel = doc.selection ? this.#selTex(doc, k) : null;
     base ||= this.emptyTex;
+    if (adj.kind === 'fill') {
+      this.#fillTile(adj.fill, tx, ty, this.fillTmp);
+      this.#drawTo(out, 'blend', { a: [1, 0, 0, 0], m: [0, sel ? 1 : 0, 0, 0] }, [base, this.fillTmp, sel]);
+      return;
+    }
     const K = WebGL2Renderer.adjustReach(adj);
     if (K > 0) {
       this.#pad((dx, dy) => (dx || dy ? layer.tiles.get(key(tx + dx, ty + dy)) : base), K);
@@ -954,7 +990,7 @@ export class WebGPURenderer {
     if (!adj) return new Map();
     const { layer } = adj;
     const results = new Map();
-    for (const k of this.#adjustKeys(adj, layer)) {
+    for (const k of this.#adjustKeys(adj, layer, doc)) {
       const [tx, ty] = k.split(',').map(Number);
       const out = this.#tileTexture(1);
       this.#adjustTile(doc, adj, layer, tx, ty, layer.tiles.get(k), out);
@@ -1157,7 +1193,7 @@ export class WebGPURenderer {
       }
       const t = layer.type === 'group'
         ? (layer.children.length ? this.#compositeList(doc, layer.children, tx, ty, depth + 1) : null)
-        : this.#layerTileFor(doc, layer, tx, ty);
+        : layer.fill ? this.#fillTile(layer.fill, tx, ty, this.fillTmp) : this.#layerTileFor(doc, layer, tx, ty);
       if (!t) continue;
       // מסכה: גם היא דרך #layerTileFor (משיכה פתוחה עליה מוצגת חיה). אריח חסר = מוסתר
       const mk = layer.mask?.enabled ? (this.#layerTileFor(doc, layer.mask, tx, ty) || this.emptyTex) : null;
@@ -1231,6 +1267,14 @@ export class WebGPURenderer {
   }
 
   async readLayerPixels(layer, x, y, w, h, masked = false) {
+    if (layer.fill) {
+      return this.#read((tx, ty) => {
+        const f = this.#fillTile(layer.fill, tx, ty, this.fillTmp);
+        if (!masked || !layer.mask?.enabled) return f;
+        this.#drawTo(this.maskTmp, 'blend', { a: [1, 0, 0, 0], m: [0, 1, 0, 0] }, [this.emptyTex, f, layer.mask.tiles.get(key(tx, ty)) ?? this.emptyTex]);
+        return this.maskTmp;
+      }, x, y, w, h);
+    }
     // הפקודות נרשמות לפי הסדר — אריח זמני אחד מספיק גם כשקוראים כמה אריחים במנה
     if (masked && layer.mask?.enabled) return this.#read((tx, ty) => this.#maskedTile(layer, tx, ty, this.maskTmp), x, y, w, h);
     return this.#read((tx, ty) => layer.tiles.get(key(tx, ty)) ?? this.emptyTex, x, y, w, h);

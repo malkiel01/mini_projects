@@ -10,7 +10,7 @@ import { open, create, save, PREVIEW } from './mbe/mbe.js';
 import { encodePNG } from './engine/png.js';
 import { RasterDocument, newMask } from './engine/doc.js';
 import { decodeImage } from './engine/webgl2.js';
-import { mbeDocument, mediaRefs, editSurface, gapsFor, cleanAdjust } from './engine/formats.js';
+import { mbeDocument, mediaRefs, editSurface, gapsFor, cleanAdjust, cleanFill, scaleFill } from './engine/formats.js';
 import { flatRGBA, layerPNG, scaledPNG, buildORA } from './export.js';
 
 export const APP_ID = 'raster-studio';
@@ -22,7 +22,8 @@ const png = new WeakMap();
 
 async function layerBytes(renderer, doc, l, masked = false) {
   // שכבת התאמה תלויה במה שמתחתיה — אין מה לשמור במטמון
-  if (l.adjust) return layerPNG(renderer, doc, l);
+  // שכבת התאמה תלויה במה שמתחתיה, ומילוי משתנה בלי rev — לא שומרים במטמון
+  if (l.adjust || l.fill) return layerPNG(renderer, doc, l, masked);
   const m = masked && l.mask?.enabled ? l.mask : null;
   const sig = `${l.rev ?? 0}:${m ? m.rev : '-'}:${doc.width}x${doc.height}`;
   let byVariant = png.get(l);
@@ -46,20 +47,21 @@ const hasValue = v => v !== undefined && v !== null && v !== false && !(Array.is
  * להבין את המתכון), ריכוך וצפיפות שאנחנו יודעים לצייר, ובלי מתכון אחר. אחרת — null (מציגים את src כמו שהוא).
  */
 /**
- * שכבת התאמה מהקובץ: סוג שאנחנו מציירים, baked תואם ל-src, מסכה (אם יש) בלי ריכוך וצפיפות, ובלי מתכון אחר.
- * מחזיר { adjust, mask: bytes | null, enabled } או null (מציגים את src כמו שהוא).
+ * שכבה בלי פיקסלים משלה מהקובץ — שכבת התאמה (field 'adjust') או מילוי ('fill'): ערך שאנחנו מציירים (clean), baked
+ * תואם ל-src, מסכה (אם יש) בלי ריכוך וצפיפות, ובלי מתכון אחר. מחזיר { value, mask: bytes | null, enabled } או null
+ * (מציגים את src כמו שהוא).
  */
-async function adjustRecipe(f, raw) {
-  const adjust = cleanAdjust(raw.adjust);
-  if (!adjust || typeof raw.baked !== 'string') return null;
-  if (OTHER_RECIPE.some(k => k !== 'adjust' && hasValue(raw[k]))) return null;
+async function contentRecipe(f, raw, field, clean) {
+  const value = clean(raw[field]);
+  if (!value || typeof raw.baked !== 'string') return null;
+  if (OTHER_RECIPE.some(k => k !== field && hasValue(raw[k]))) return null;
   const src = f.getMedia(raw.src);
   if (!src || await sha256(src) !== raw.baked.toLowerCase()) return null;
   const m = raw.mask;
-  if (m === undefined || m === null) return { adjust, mask: null, enabled: true };
+  if (m === undefined || m === null) return { value, mask: null, enabled: true };
   if (typeof m !== 'object' || typeof m.src !== 'string' || (m.density ?? 1) !== 1 || (m.feather ?? 0) !== 0) return null;
   const mask = f.getMedia(m.src);
-  return mask ? { adjust, mask, enabled: m.enabled !== false } : null;
+  return mask ? { value, mask, enabled: m.enabled !== false } : null;
 }
 
 async function maskRecipe(f, raw) {
@@ -91,10 +93,10 @@ export async function buildMbe(renderer, doc, { view = null, lite = false, now }
       // src — מה שרואים (כפול המסכה); עם מסכה — גם המתכון: הפיקסלים בלי המסכה, המסכה, ו-baked = ה-sha256 של src
       const s = await f.addMedia(await layerBytes(renderer, doc, l, true), 'image/png');
       src.set(l, s);
-      if (l.adjust) {
-        // שכבת התאמה: src — המראה במקומה; המתכון — adjust, המסכה (אם יש) ו-baked. אין source: אין לה פיקסלים משלה
+      if (l.adjust || l.fill) {
+        // שכבת התאמה / מילוי: src — המראה; המתכון — adjust / fill, המסכה (אם יש) ו-baked. אין source: אין פיקסלים משלה
         recipe.set(l, {
-          adjust: { ...l.adjust },
+          ...(l.adjust ? { adjust: { ...l.adjust } } : { fill: scaleFill(l.fill, 1 / (base?.scale ?? 1)) }),
           ...(l.mask ? { mask: { src: await f.addMedia(await layerBytes(renderer, doc, l.mask), 'image/png'), density: 1, feather: 0, enabled: !!l.mask.enabled } } : {}),
           baked: s.slice('media/'.length, 'media/'.length + 64),
         });
@@ -187,13 +189,13 @@ export async function openMbe(renderer, bytes, title = '') {
           await renderer.drawImage(d, target, bmp, bx, by);
           bmp.close();
         };
-        // שכבת התאמה (מתכון תקף): בלי פיקסלים; המסכה שלה — על אותו box
-        const adj = await adjustRecipe(f, raw);
+        // שכבת התאמה / מילוי (מתכון תקף): בלי פיקסלים; המסכה שלה — על אותו box
+        const adj = (await contentRecipe(f, raw, 'adjust', cleanAdjust)) ?? (await contentRecipe(f, raw, 'fill', cleanFill));
         // מסכת שכבה (מתכון תקף): הפיקסלים בלי המסכה, והמסכה נמתחת על אותו box. אחרת — src האפוי
         const rec = adj ? null : await maskRecipe(f, raw);
         if (adj) {
-          layer.adjust = adj.adjust;
-          layer.adjustLoaded = true;
+          if (raw.adjust !== undefined && cleanAdjust(raw.adjust)) { layer.adjust = adj.value; layer.adjustLoaded = true; }
+          else { layer.fill = scaleFill(adj.value, scale); layer.fillLoaded = true; }
           if (adj.mask) {
             layer.mask = newMask(layer, adj.enabled);
             await draw(layer.mask, adj.mask, raw.mask.src);

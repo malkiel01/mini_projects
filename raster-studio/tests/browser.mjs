@@ -1096,6 +1096,56 @@ async function main() {
   check('‎.mbe עם שכבות התאמה: תקין, adjust + baked + מסכה, בלי source', ab.ok && ab.baked && !ab.source && ab.mask, JSON.stringify(ab));
   check('‎.mbe — פתיחה חזרה: שכבות ההתאמה במקומן, ואותה תמונה', ab.back === '-,invert,-,levels' && (await px(450, 300)) === adjWant, [ab.back, await px(450, 300), adjWant].join(' | '));
   check('ORA — שכבות התאמה אפויות (פער מדווח)', await page.evaluate(async () => (await import('./assets/js/engine/formats.js')).gapsFor('ora', __rs.doc.layers).includes('adjust → baked')));
+
+  // ---- מילוי: מעבר צבעים (הורס) ושכבת מילוי ----
+  await openEd(page);
+  await page.waitForFunction(() => window.__rs?.doc);
+  await page.evaluate(() => __rs.setView({ zoom: 1, x: 20, y: 20 }));
+  // קרוב לקצה המעבר כבר מתחיל (‎253 בשתי שורות מהקצה) — סבולת 4
+  const near4 = (got, exp) => got.split(',').every((v, i) => Math.abs(v - exp[i]) <= 4);
+  const setColorIn = (id, v) => page.$eval(id, (el, v) => { el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); }, v);
+  await adj('fill', { fangle: -90 });
+  await setColorIn('#adj-color1', '#ff0000');
+  await setColorIn('#adj-color2', '#0000ff');
+  const g1 = [await px(300, 2), await px(300, 397), await px(300, 200)];
+  check('מילוי לינארי -90° (תצוגה חיה): למעלה אדום, למטה כחול, באמצע ביניהם', near4(g1[0], [255, 0, 0, 255]) && near4(g1[1], [0, 0, 255, 255])
+    && g1[2].split(',')[0] > 100 && g1[2].split(',')[2] > 100, g1.join(' | '));
+  await page.click('[data-adj-act="apply"]');
+  check('✓ — המעבר נצבע על השכבה, רשומת "מילוי"', await page.evaluate(() => __rs.history.undoStack.at(-1).label) === 'מילוי' && near4(await px(300, 2), [255, 0, 0, 255]));
+  await page.keyboard.press('Control+z');
+  check('ביטול — הרקע חוזר', near(await px(300, 2), [255, 255, 255, 255]));
+  // שכבת מילוי
+  await adj('fill', { fangle: -90 });
+  await setColorIn('#adj-color1', '#ff0000');
+  await setColorIn('#adj-color2', '#0000ff');
+  await page.click('[data-adj-act="layer"]');
+  const fl = await page.evaluate(() => { const l = __rs.doc.active; return { type: l.fill?.gradient?.type, mask: !!l.mask, tiles: l.tiles.size, label: __rs.history.undoStack.at(-1).label }; });
+  check('➕ כשכבה — שכבת מילוי (מעבר, מסכה, בלי פיקסלים)', fl.type === 'linear' && fl.mask && fl.tiles === 0 && fl.label === 'שכבת מילוי' && near4(await px(300, 397), [0, 0, 255, 255]), JSON.stringify(fl));
+  check('שכבת מילוי — תמונה ממוזערת של המעבר בשורה', await page.isVisible('.layer-row[aria-selected="true"] .fill-thumb'));
+  // עריכה: צבע אחיד
+  await page.click('#adjust-btn');
+  check('🎚️ על שכבת מילוי — עריכה (רק "מילוי")', (await page.textContent('#adjust-title')) === 'שכבת מילוי' && !(await page.isVisible('[data-adj-tab="bc"]'))
+    && (await page.inputValue('#adj-color1')) === '#ff0000');
+  await page.selectOption('#adj-fstyle', 'solid');
+  check('עריכה חיה — צבע אחיד: גם למטה אדום', near(await px(300, 397), [255, 0, 0, 255]));
+  await page.click('[data-adj-act="apply"]');
+  check('✓ עדכון — רשומת "מילוי", ושכבה בצבע אחיד', await page.evaluate(() => [__rs.history.undoStack.at(-1).label, __rs.doc.active.fill.color].join()) === 'מילוי,#ff0000');
+  await page.keyboard.press('Control+z');
+  // ‎.mbe: fill + baked; פתיחה חזרה — שכבת מילוי
+  const fWant = await px(300, 397);
+  const fb = await page.evaluate(async () => {
+    const { open } = await import('./assets/js/mbe/mbe.js');
+    const bytes = await __rs.buildMbe();
+    const f = await open(bytes);
+    const L = f.document.surfaces[0].layers.find(l => l.fill);
+    const hex = async b => [...new Uint8Array(await crypto.subtle.digest('SHA-256', b))].map(x => x.toString(16).padStart(2, '0')).join('');
+    const out = { ok: f.ok, err: f.issues.filter(i => i.level === 'error').map(i => i.message).join(), type: L?.fill?.gradient?.type, baked: L && L.baked === await hex(f.getMedia(L.src)) };
+    await __rs.openAsDocument(new File([bytes], 'מילוי.mbe'));
+    out.back = __rs.doc.layers.map(l => (l.fill ? 'fill' : '-')).join();
+    return out;
+  });
+  check('‎.mbe עם שכבת מילוי: תקין, fill + baked; פתיחה חזרה — אותה שכבה ואותה תמונה', fb.ok && fb.type === 'linear' && fb.baked && fb.back === '-,fill'
+    && (await px(300, 397)) === fWant, JSON.stringify(fb));
   if (SHOTS) {
     await adj('hsl', { hue: 90 });
     await page.screenshot({ path: join(SHOTS, 'adjust-desktop.png') });
