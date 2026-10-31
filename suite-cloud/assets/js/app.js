@@ -1,6 +1,11 @@
 // ענן החבילה — הדף: קבצים, סל וניהול. כל מה שבשרת — דרך api.php (האפיון: docs/spec-1-skeleton.md).
 
-const $ = (s, el = document) => el.querySelector(s);
+import { $, h as el } from './ui-core/dom.js';
+import { toast } from './ui-core/toast.js';
+import { initDialogs, confirm } from './ui-core/dialog.js';
+import { dropZone } from './ui-core/files.js';
+
+initDialogs();   // [data-close], סגירה ברקע, --vvh
 const API = 'api.php';
 const CHUNK_HASH_MAX = 64 * 1024 * 1024;   // עד כאן — גיבוב בדפדפן (בלי העלאה חוזרת של תוכן קיים); מעל — השרת מחשב
 
@@ -46,28 +51,7 @@ function icon(n) {
   return '📦';
 }
 
-function el(tag, attrs = {}, ...kids) {
-  const e = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (k === 'class') e.className = v; else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
-    else if (v !== false && v != null) e.setAttribute(k, v === true ? '' : v);
-  }
-  for (const k of kids.flat()) if (k != null) e.append(k);
-  return e;
-}
-
-function toast(msg, err = false) {
-  const t = $('.toast'); t.textContent = msg; t.classList.toggle('err', err); t.hidden = false;
-  clearTimeout(toast.t); toast.t = setTimeout(() => { t.hidden = true; }, 2600);
-}
-
 function fail(e) { console.warn(e); toast(e.message || 'תקלה', true); }
-
-(() => { const vv = window.visualViewport; if (!vv) return;
-  const set = () => document.documentElement.style.setProperty('--vvh', Math.round(vv.height) + 'px');
-  vv.addEventListener('resize', set); set(); })();
-
-document.addEventListener('click', e => { const b = e.target.closest('[data-close]'); if (b) b.closest('dialog').close(); });
 
 // ─── ניווט ──────────────────────────────────────────────────────────────
 // #/files/<folder?> · #/trash · #/admin. חזרה — למסך הקודם באפליקציה; בראשי אין חץ.
@@ -224,10 +208,7 @@ async function loadMoveFolder(id) {
 $('#upload-btn').addEventListener('click', () => $('#file-input').click());
 $('#file-input').addEventListener('change', e => { uploadAll([...e.target.files]); e.target.value = ''; });
 
-const filesView = $('#v-files');
-filesView.addEventListener('dragover', e => { if (e.dataTransfer?.types.includes('Files') && state.quota?.quota > 0) { e.preventDefault(); filesView.classList.add('drop'); } });
-filesView.addEventListener('dragleave', e => { if (!filesView.contains(e.relatedTarget)) filesView.classList.remove('drop'); });
-filesView.addEventListener('drop', e => { e.preventDefault(); filesView.classList.remove('drop'); uploadAll([...e.dataTransfer.files]); });
+dropZone($('#v-files'), { onFiles: f => state.quota?.quota > 0 ? uploadAll(f) : toast('עוד לא הוקצה לך מקום בענן', true) });
 
 async function uploadAll(files) {
   const folder = state.folder;
@@ -304,7 +285,7 @@ async function restore(n) {
 }
 
 $('#empty-trash').addEventListener('click', async () => {
-  if (!confirm('למחוק לצמיתות את כל מה שבסל? אי אפשר לבטל.')) return;
+  if (!await confirm('למחוק לצמיתות את כל מה שבסל? אי אפשר לבטל.', { ok: 'מחיקה', danger: true })) return;
   try { const r = await api('trash_empty', {}); toast(`נמחקו ${r.removed}`); loadTrash(); refreshQuota(); } catch (e) { fail(e); }
 });
 
