@@ -57,6 +57,12 @@ export class Canvas {
             rotateAnchorOffset: 28, anchorSize: 14, anchorCornerRadius: 7, borderStroke: '#2d4a8a', anchorStroke: '#2d4a8a',
             anchorFill: '#fff', padding: 2, rotationSnaps: [0, 45, 90, 135, 180, 225, 270, 315], rotationSnapTolerance: 6,
             ignoreStroke: true, flipEnabled: false,
+            // ידיות הצד — פס מוארך, לא עיגול: רואים מראש שהן משנות רק רוחב / גובה, והפינות — את הכול
+            anchorStyleFunc: a => {
+                const n = a.name();
+                if (/middle-(left|right)/.test(n)) a.setAttrs({ width: 9, height: 28, offsetX: 4.5, offsetY: 14, cornerRadius: 4.5 });
+                else if (/(top|bottom)-center/.test(n)) a.setAttrs({ width: 28, height: 9, offsetX: 14, offsetY: 4.5, cornerRadius: 4.5 });
+            },
             // המינימום בפיקסלי הדף: בדף A4 בזום נמוך, 8px על המסך הם עשרות פיקסלים בדף, והטקסט לא קטן יותר.
             boundBoxFunc: (oldB, newB) => {
                 const z = this.view.zoom;
@@ -365,6 +371,20 @@ export class Canvas {
                 this.paint(g, l);
             }
         });
+        // שורת מצב בזמן הגרירה: מה בדיוק משתנה — גודל האות, רוחב התיבה, מידות או סיבוב
+        this.tr.on('transform', () => {
+            const g = this.tr.nodes()[0], t = this.trSnap?.[0];
+            if (!g || !t?.copy) return;
+            const anchor = this.tr.getActiveAnchor() || '';
+            const l = t.l, o = t.copy;
+            let msg;
+            if (anchor === 'rotater') msg = `סיבוב ${Math.round(((g.rotation() % 360) + 360) % 360)}°`;
+            else if (l.type === 'text' && /middle-(left|right)/.test(anchor)) msg = `רוחב התיבה ${Math.round(o.w)} ← ${Math.round(l.w)} · גודל האות נשאר ${Math.round(o.style.size)}`;
+            else if (l.type === 'text') msg = `גודל האות ${Math.round(o.style.size)} ← ${Math.round(o.style.size * Math.abs(g.scaleY()))}`;
+            else msg = `${Math.round(o.w * Math.abs(g.scaleX()))} × ${Math.round(o.h * Math.abs(g.scaleY()))}`;
+            this.badge(msg);
+        });
+        this.tr.on('transformend', () => this.badge(null));
         this.tr.on('transformend', () => {
             if (this.trCancel) { this.restoreTransform(); return; }
             for (const g of this.tr.nodes()) {
@@ -391,12 +411,25 @@ export class Canvas {
         });
     }
 
+    /** תווית קטנה בראש הקנבס (null — מסתירה). */
+    badge(text) {
+        if (!this.badgeEl) {
+            this.badgeEl = document.createElement('div');
+            this.badgeEl.className = 'tr-badge';
+            this.badgeEl.setAttribute('role', 'status');
+            this.el.append(this.badgeEl);
+        }
+        this.badgeEl.hidden = !text;
+        if (text) this.badgeEl.textContent = text;
+    }
+
     /** ביטול שינוי גודל באמצע (התחילה צביטה): השכבות חוזרות בדיוק למצב שלפני הנגיעה, בלי היסטוריה. */
     cancelTransform() {
         if (!this.tr.isTransforming()) return;
         this.trCancel = true;
         this.tr.stopTransform();
         this.restoreTransform();
+        this.badge(null);
     }
 
     restoreTransform() {
