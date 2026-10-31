@@ -8,7 +8,7 @@
 ## מבנה
 
 ```
-src/js/        mbe.js (ה-API) · face.js (פנים: stampFace, identify) · merge.js (reconcile, applyMerge) · zip.js · canonical.js · schema.js · schemas.js (נבנה) · vendor/fflate.js
+src/js/        mbe.js (ה-API) · face.js (פנים: stampFace, identify) · merge.js (reconcile, applyMerge) · handoff.js (mbe-handoff) · zip.js · canonical.js · schema.js · schemas.js (נבנה) · vendor/fflate.js
 src/php/       mbe.php (ה-API) · face.php (MbeFace) · merge.php (MbeMerge) · zip.php · canonical.php · schema.php · schemas.php (נבנה)
 schema/        manifest-1.json · document-1.json — JSON Schema, המקור לשתי השפות
 tools/sync.php בונה את schemas.* ומעתיק את src לאפליקציות שב-apps.json; ‎--check — שער בפריסה
@@ -92,6 +92,23 @@ $out = Mbe::save($f, ['app' => 'word-processor', 'appVersion' => '2.3']);
 - `applyMerge` — תשובה לכל התנגשות (`ours` / `theirs` / `both`), אחרת `merge-unanswered`. משנה רק את השטפים שחזרו;
   מסגרות, עמודי אב ושכבות — לא נוגע. בשמירה הבאה נרשמים `return` (מה שחזר, כגרסה משלו, ‏`app` של התוכנה שבחוץ)
   ו-`merge`. אחרי `save` — מחדשים ומחתימים את הפנים.
+
+### פתיחה באפליקציה אחרת — `handoff.js` (רק JS)
+
+פרוטוקול `mbe-handoff` גרסה 1 (`greeting-cards/spec/13-open-in.md`), שני הצדדים:
+
+```js
+import { openIn, acceptHandoff, activeHandoff, returnHandoff, endHandoff } from './mbe/handoff.js';
+// המקור — בתוך הלחיצה (חוסם חלונות קופצים):
+openIn('../../vector-studio/', buildMbe(), { from: { app: 'greeting-cards', name: 'סטודיו העיצוב' },
+    onReturn: bytes => open(bytes), onFallback: why => download(), onEvent: (t, d) => log('handoff-' + t, d) });
+// היעד — בדף הפתיחה, לפני כל דבר כבד:
+acceptHandoff(({ file, from }) => openFile(file), { defaultName: 'ציור.mbe' });
+// בעורך: const h = activeHandoff(); "חזרה ל-" + h.from.name → await returnHandoff(h, bytes); endHandoff();
+```
+
+אבטחה: היעד מקבל רק מ-`window.opener` ומאותו מקור; המקור — רק מהחלון שפתח ומהמקור של הכתובת שלו; תמיד עם
+`targetOrigin` מפורש, לעולם לא `"*"`. רשימת היעדים (שם, אייקון, כתובת) — של האפליקציה, לא של הליבה.
 
 ### כללים שהליבה אוכפת
 
