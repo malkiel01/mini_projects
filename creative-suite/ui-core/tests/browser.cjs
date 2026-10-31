@@ -155,6 +155,38 @@ const server = http.createServer((req, res) => {
         ok(fx.pref === 1 && fx.def === 7, 'pref: JSON וברירת מחדל');
         ok(fx.blob === 'שלום' && fx.keys.includes('k') && fx.after === undefined, 'kv: Blob נשמר, נקרא ונמחק');
 
+        // keys: לפי e.code — גם כשהמקלדת בעברית
+        const press = (key, code, mods = {}, target = 'body') => p.evaluate(([key, code, mods, target]) => {
+            const t = document.querySelector(target); t.focus?.();
+            t.dispatchEvent(new KeyboardEvent('keydown', { key, code, bubbles: true, cancelable: true, ...mods }));
+        }, [key, code, mods, target]);
+        await press('z', 'KeyZ', { ctrlKey: true });
+        ok(await toastText() === 'ביטול', 'קיצור: Ctrl+Z (אנגלית)');
+        await press('ז', 'KeyZ', { ctrlKey: true, shiftKey: true });
+        ok(await toastText() === 'ביצוע', 'קיצור: Ctrl+Shift+Z במקלדת עברית (e.key = ז)');
+        await press('ט', 'KeyY', { ctrlKey: true });
+        ok(await toastText() === 'ביצוע', 'קיצור: Ctrl+Y במקלדת עברית');
+        await press('+', 'Equal', { ctrlKey: true, shiftKey: true });
+        ok(await toastText() === 'זום +', 'קיצור: Shift? — Ctrl+Shift+=');
+        await press('ה', 'KeyV');
+        ok(await toastText() === 'כלי: בחירה', 'קיצור: אות בלי מגביל במקלדת עברית');
+        await press('ה', 'KeyV', {}, 'main input');
+        ok(await toastText() === 'כלי: בחירה' , 'קיצור: לא נורה בתוך שדה (הטוסט לא השתנה)');
+        await press('z', 'KeyZ', { ctrlKey: true }, 'main input');
+        ok(await toastText() === 'כלי: בחירה', 'קיצור: Ctrl+Z בשדה — של השדה');
+        await press('ד', 'KeyS', { ctrlKey: true }, 'main input');
+        ok(await toastText() === 'שמירה', 'קיצור: inFields — Ctrl+S גם בשדה');
+        await press('z', 'KeyZ', { ctrlKey: true, altKey: true });
+        ok(await toastText() === 'שמירה', 'קיצור: מגבילים מדויקים (Ctrl+Alt+Z לא נורה)');
+        const t2 = await p.$eval('#undo-btn', b => [b.title, b.getAttribute('aria-keyshortcuts')]);
+        const ko = await p.evaluate(async () => {
+            const { keyOf } = await import('../src/js/keys.js');
+            const k = (key, code) => keyOf(new KeyboardEvent('keydown', { key, code }));
+            return [k('ז', 'KeyZ'), k('1', 'Numpad1'), k('+', 'Equal'), k('+', 'NumpadAdd'), k('-', 'Minus'), k('ץ', 'Period'), k('Escape', 'Escape'), k(' ', 'Space'), k('ArrowLeft', 'ArrowLeft'), k('ש', '')];
+        });
+        ok(JSON.stringify(ko) === JSON.stringify(['z', '1', '=', '=', '-', '.', 'escape', ' ', 'arrowleft', 'ש']), 'keyOf: המקש הפיזי בכל שפה [' + ko + ']');
+        ok(t2[0] === 'ביטול (Ctrl+Z)' && t2[1] === 'Control+Z', 'קיצור: title ו-aria-keyshortcuts');
+
         ok(errors.length === 0, 'בלי שגיאות JS' + (errors.length ? ': ' + errors.join(' | ') : ''));
         await ctx.close();
     }

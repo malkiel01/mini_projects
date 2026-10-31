@@ -46,6 +46,12 @@
     </section>
 
     <section>
+        <h2 class="sec-title">קיצורי מקלדת — גם במקלדת עברית</h2>
+        <p class="hint">Ctrl+Z, Ctrl+Shift+Z, Ctrl+S, Ctrl+=, ו-V — נסו עם המקלדת בעברית. בתוך שדה טקסט רק Ctrl+S פועל.</p>
+        <div class="row-btns"><button class="btn ghost" type="button" id="undo-btn">↶ ביטול</button><button class="btn ghost" type="button" id="redo-btn">↷ ביצוע</button></div>
+    </section>
+
+    <section>
         <h2 class="sec-title">שדות</h2>
         <div class="fields">
             <label class="f"><span>שם</span><input value="כרטיס ברכה"></label>
@@ -109,6 +115,7 @@
     import { menu, contextMenu } from '../src/js/menu.js';
     import { tabs } from '../src/js/tabs.js';
     import { dropZone } from '../src/js/files.js';
+    import { shortcuts } from '../src/js/keys.js';
 
     initDialogs();
     tabs($('.tabs-demo'), { remember: 'ui-core-demo:tab' });
@@ -142,6 +149,15 @@
     $('#menu-btn').onclick = e => menu(e.currentTarget, items);
     $('#menu-btn2').onclick = e => menu(e.currentTarget, items);
     contextMenu($('#ctx'), () => items);
+    const keys = shortcuts()
+        .add('Mod+Z', () => toast('ביטול'), { label: 'ביטול' })
+        .add(['Mod+Shift+Z', 'Mod+Y'], () => toast('ביצוע'), { label: 'ביצוע' })
+        .add('Mod+S', () => toast('שמירה'), { label: 'שמירה', inFields: true })
+        .add('Mod+Shift?+=', () => toast('זום +'))
+        .add('V', () => toast('כלי: בחירה'));
+    keys.title($('#undo-btn'), 'Mod+Z');
+    keys.title($('#redo-btn'), 'Mod+Shift+Z');
+    window.__keys = keys;
     dropZone($('#ctx'), { accept: ['image/', '.mbe'], onFiles: f => toast(`${f.length} קבצים`), onReject: f => toast(`לא נתמך: ${f[0].name}`, true) });
 </script>
 </body>
