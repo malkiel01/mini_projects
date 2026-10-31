@@ -170,11 +170,11 @@ const server = http.createServer((req, res) => {
         ok(await toastText() === 'זום +', 'קיצור: Shift? — Ctrl+Shift+=');
         await press('ה', 'KeyV');
         ok(await toastText() === 'כלי: בחירה', 'קיצור: אות בלי מגביל במקלדת עברית');
-        await press('ה', 'KeyV', {}, 'main input');
+        await press('ה', 'KeyV', {}, 'main input:not([type])');
         ok(await toastText() === 'כלי: בחירה' , 'קיצור: לא נורה בתוך שדה (הטוסט לא השתנה)');
-        await press('z', 'KeyZ', { ctrlKey: true }, 'main input');
+        await press('z', 'KeyZ', { ctrlKey: true }, 'main input:not([type])');
         ok(await toastText() === 'כלי: בחירה', 'קיצור: Ctrl+Z בשדה — של השדה');
-        await press('ד', 'KeyS', { ctrlKey: true }, 'main input');
+        await press('ד', 'KeyS', { ctrlKey: true }, 'main input:not([type])');
         ok(await toastText() === 'שמירה', 'קיצור: inFields — Ctrl+S גם בשדה');
         await press('z', 'KeyZ', { ctrlKey: true, altKey: true });
         ok(await toastText() === 'שמירה', 'קיצור: מגבילים מדויקים (Ctrl+Alt+Z לא נורה)');
@@ -186,6 +186,64 @@ const server = http.createServer((req, res) => {
         });
         ok(JSON.stringify(ko) === JSON.stringify(['z', '1', '=', '=', '-', '.', 'escape', ' ', 'arrowleft', 'ש']), 'keyOf: המקש הפיזי בכל שפה [' + ko + ']');
         ok(t2[0] === 'ביטול (Ctrl+Z)' && t2[1] === 'Control+Z', 'קיצור: title ו-aria-keyshortcuts');
+
+        // viewport — חשבון טהור
+        const vm = await p.evaluate(async () => {
+            const V = await import('../src/js/viewport.js');
+            const v = { zoom: 1, x: 0, y: 0 };
+            const z = V.zoomTo(v, 2, 100, 100);
+            const back = V.screenToDoc(z, 100, 100);
+            const f = V.fit(800, 600, 400, 300, 0);
+            const w1 = V.wheel(v, { deltaX: 0, deltaY: 3, deltaMode: 1 }, 0, 0);
+            const w2 = V.wheel(v, { deltaX: 0, deltaY: -100, deltaMode: 0, ctrlKey: true }, 50, 50);
+            const w3 = V.wheel(v, { deltaX: 0, deltaY: 10, deltaMode: 0, shiftKey: true }, 0, 0);
+            return { back, f, w1, w2z: w2.zoom, w2keep: V.screenToDoc(w2, 50, 50), w3, steps: [V.nextStep(1, 1), V.nextStep(1, -1)], lbl: V.zoomLabel(12.345) };
+        });
+        ok(Math.abs(vm.back[0] - 100) < 1e-9 && Math.abs(vm.back[1] - 100) < 1e-9, 'viewport: zoomTo שומר את הנקודה מתחת לסמן');
+        ok(vm.f.zoom === 0.5 && vm.f.x === 0 && vm.f.y === 0, 'viewport: fit');
+        ok(vm.w1.y === -48 && vm.w1.zoom === 1, 'viewport: גלגלת בשורות (deltaMode 1) → הזזה ×16');
+        ok(vm.w2z > 2.7 && vm.w2z < 2.72 && Math.abs(vm.w2keep[0] - 50) < 1e-9, 'viewport: Ctrl+גלגלת → זום סביב הסמן');
+        ok(vm.w3.x === -10 && vm.w3.y === 0, 'viewport: Shift+גלגלת → הזזה לרוחב');
+        ok(vm.steps[0] === 1.5 && vm.steps[1] === 0.67 && vm.lbl === '1,235%', 'viewport: מדרגות ותווית');
+
+        // gestures — מצביעים מדומים על הקנבס
+        const cvBox = await p.$eval('#cv', e => e.getBoundingClientRect().toJSON());
+        const ptr = (type, id, x, y, extra = {}) => p.evaluate(([type, id, x, y, extra]) => {
+            document.querySelector('#cv').dispatchEvent(new PointerEvent(type, { pointerId: id, pointerType: 'touch', isPrimary: id === 1,
+                clientX: x, clientY: y, bubbles: true, cancelable: true, button: 0, ...extra }));
+        }, [type, id, x, y, extra]);
+        const vp = () => p.evaluate(() => ({ view: { ...window.__vp.view }, n: window.__vp.strokes.length, len: window.__vp.strokes.map(s => s.length) }));
+        const L = cvBox.left, T = cvBox.top;
+        const before = await vp();
+        await ptr('pointerdown', 1, L + 50, T + 50);
+        await ptr('pointermove', 1, L + 80, T + 60);
+        await ptr('pointerup', 1, L + 90, T + 70);
+        const afterDraw = await vp();
+        ok(afterDraw.n === before.n + 1 && afterDraw.len[afterDraw.n - 1] >= 3 && afterDraw.view.x === before.view.x, 'gestures: אצבע אחת — לכלי (קו נוסף, התצוגה לא זזה)');
+        await ptr('pointerdown', 1, L + 100, T + 100);
+        await ptr('pointermove', 1, L + 110, T + 100);
+        await ptr('pointerdown', 2, L + 200, T + 100);
+        const mid = await vp();
+        ok(mid.n === afterDraw.n, 'gestures: אצבע שנייה מבטלת את הקו שהתחיל');
+        await ptr('pointermove', 2, L + 300, T + 100);
+        const pinched = await vp();
+        ok(pinched.view.zoom > mid.view.zoom * 1.5, 'gestures: צביטה מגדילה');
+        await ptr('pointerup', 2, L + 300, T + 100);
+        await ptr('pointermove', 1, L + 130, T + 120);
+        const panned = await vp();
+        ok(Math.abs(panned.view.zoom - pinched.view.zoom) < 1e-9 && Math.abs(panned.view.x - pinched.view.x - 20) < 1e-6, 'gestures: מצביטה לאצבע אחת — הזזה בלי קפיצה');
+        await ptr('pointerup', 1, L + 130, T + 120);
+        ok((await vp()).n === afterDraw.n, 'gestures: אחרי הצביטה האצבע לא מציירת');
+        await p.evaluate(() => document.querySelector('#cv').dispatchEvent(new WheelEvent('wheel', { deltaY: -100, ctrlKey: true, clientX: 0, clientY: 0, bubbles: true, cancelable: true })));
+        ok((await vp()).view.zoom > panned.view.zoom * 2.5, 'gestures: Ctrl+גלגלת על הקנבס');
+        await p.check('#hand');
+        const h0 = await vp();
+        await ptr('pointerdown', 3, L + 50, T + 50);
+        await ptr('pointermove', 3, L + 70, T + 50);
+        await ptr('pointerup', 3, L + 70, T + 50);
+        const h1 = await vp();
+        ok(h1.n === h0.n && Math.abs(h1.view.x - h0.view.x - 20) < 1e-6, 'gestures: כלי יד — אצבע אחת מזיזה');
+        await p.uncheck('#hand');
 
         ok(errors.length === 0, 'בלי שגיאות JS' + (errors.length ? ': ' + errors.join(' | ') : ''));
         await ctx.close();
