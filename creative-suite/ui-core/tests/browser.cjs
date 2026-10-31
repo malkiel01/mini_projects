@@ -330,6 +330,54 @@ const server = http.createServer((req, res) => {
         ok(sv.del?.ok === true && sv.calls.filter(c => c === 'account_prefs').length === 1, 'accountServer: מחיקה עם אישור; ההגדרות נטענו רק פעם אחת');
         ok(sv.emptyGet === null, 'accountServer: [] מהשרת (אין הגדרות) — לא נשבר');
 
+        // 📁 files-window — ניהול, פתיחה, שמירה
+        await p.evaluate(() => { window.__fwDone = null; window.__fw.openDocuments(window.__fw.sources).then(r => { window.__fwDone = r; }); });
+        await p.waitForSelector('dialog[open] .fw-list .card');
+        const fw1 = await p.evaluate(() => ({ tabs: [...document.querySelectorAll('dialog[open] [role="tab"]')].map(t => t.textContent),
+            rows: [...document.querySelectorAll('dialog[open] .fw-list .card .l1')].map(r => r.textContent) }));
+        ok(fw1.tabs.length === 2 && fw1.tabs[0].includes('באפליקציה') && fw1.tabs[1].includes('ענן'), 'files: לשונית לכל מקור');
+        ok(fw1.rows[0] === 'כרטיסים' && fw1.rows.length === 3, 'files: תיקיות קודם, ואז קבצים');
+        await p.click('dialog[open] .fw-list .card:has-text("כרטיסים")');
+        await p.waitForSelector('dialog[open] .fw-list .card:has-text("שנה טובה")');
+        ok((await p.$$eval('dialog[open] .fw-crumbs .btn', b => b.map(x => x.textContent))).join('/') === 'באפליקציה/כרטיסים', 'files: כניסה לתיקייה ופירורי לחם');
+        await p.click('dialog[open] .fw-crumbs .btn:first-child');
+        await p.waitForSelector('dialog[open] .fw-list .card:has-text("לוגו")');
+        await p.fill('dialog[open] input[type="search"]', 'לוגו');
+        ok((await p.$$eval('dialog[open] .fw-list .card', c => c.length)) === 1, 'files: חיפוש');
+        await p.fill('dialog[open] input[type="search"]', '');
+        await p.click('dialog[open] .fw-list .card:has-text("לוגו") .icon-btn');
+        await p.click('.menu [role="menuitem"]:has-text("שינוי שם")');
+        await p.waitForTimeout(80);
+        await p.keyboard.type('סמל');
+        await p.keyboard.press('Enter');
+        await p.waitForSelector('dialog[open] .fw-list .card:has-text("סמל.png")');
+        ok(await p.evaluate(() => window.__fw.lib.some(x => x.name === 'סמל.png')), 'files: שינוי שם (השם בלי הסיומת נבחר)');
+        await p.click('dialog[open] .fw-list .card:has-text("סמל") .icon-btn');
+        await p.click('.menu [role="menuitem"]:has-text("מחיקה")');
+        await p.click('dialog[open] .btn.danger');
+        await p.waitForTimeout(150);
+        ok(!(await p.evaluate(() => window.__fw.lib.some(x => x.name === 'סמל.png'))), 'files: מחיקה אחרי אישור');
+        await p.click('dialog[open] [role="tab"]:has-text("ענן")');
+        await p.waitForSelector('dialog[open] .fw-list .empty .btn');
+        ok((await p.textContent('dialog[open] .fw-list .empty')).includes('לא מחובר'), 'files: ענן לא מחובר — כפתור "חיבור"');
+        await p.click('dialog[open] .sheet-head [data-close]');
+        await p.waitForTimeout(80);
+
+        await p.evaluate(() => { window.__fwDone = 'x'; window.__fw.pickFile(window.__fw.sources, { accept: ['.mbe'] }).then(r => { window.__fwDone = r && r.item.name; }); });
+        await p.waitForSelector('dialog[open] .fw-list .card');
+        const onlyMbe = await p.$$eval('dialog[open] .fw-list .card .l1', r => r.map(x => x.textContent));
+        await p.click('dialog[open] .fw-list .card:has-text("הזמנה")');
+        await p.waitForTimeout(80);
+        ok(!onlyMbe.some(n => n.endsWith('.png')) && await p.evaluate(() => window.__fwDone) === 'הזמנה לחתונה.mbe', 'files: פתיחה — רק הסוג המבוקש, והבחירה חוזרת');
+
+        await p.evaluate(() => { window.__fwDone = 'x'; window.__fw.saveFile(window.__fw.sources, { name: 'הזמנה לחתונה', ext: 'mbe', blob: new Blob(['abc']) }).then(r => { window.__fwDone = r && r.item.name; }); });
+        await p.waitForSelector('dialog[open] .fw-save');
+        await p.click('dialog[open] .fw-save .btn.primary');
+        await p.waitForSelector('dialog[open] .row-btns .btn');
+        await p.click('dialog[open] .row-btns .btn:has-text("שניהם")');
+        await p.waitForTimeout(150);
+        ok(await p.evaluate(() => window.__fwDone) === 'הזמנה לחתונה (2).mbe', 'files: שמירה — שם קיים → "לשמור את שניהם"');
+
         ok(errors.length === 0, 'בלי שגיאות JS' + (errors.length ? ': ' + errors.join(' | ') : ''));
         await ctx.close();
     }

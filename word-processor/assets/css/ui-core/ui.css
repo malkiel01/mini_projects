@@ -256,3 +256,15 @@ dialog > form { display: flex; flex-direction: column; max-height: inherit; heig
 .account-list { list-style: none; display: grid; }
 .account-list .use-row { border-radius: var(--r); }
 .account-list .danger .use-tx { color: var(--danger); }
+
+/* ===== 📁 המסמכים שלי (ui-core/files-window.js) ===== */
+.fw-crumbs { display: flex; align-items: center; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; font-size: .9rem; }
+.fw-crumbs .btn { flex: none; padding: 0 var(--s2); }
+.fw-list .card { min-height: 52px; }
+.fw-list .card:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
+.fw-list .use-ic { inline-size: 36px; block-size: 36px; }
+.fw-list .empty .btn { margin-top: var(--s2); }
+.fw-save { position: sticky; bottom: calc(-1 * var(--s4)); display: flex; align-items: flex-end; gap: var(--s2); padding: var(--s2) 0;
+    background: var(--surface); border-top: 1px solid var(--line); }
+.fw-save .f { flex: 1; }
+.fw-name { display: flex; align-items: center; gap: var(--s1); }
