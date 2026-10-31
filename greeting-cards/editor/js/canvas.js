@@ -232,6 +232,13 @@ export class Canvas {
 
     // ─── בחירה ──────────────────────────────────────────────────────────────
 
+    /** קבוצות: שכבה עם group נבחרת יחד עם כל השכבות שבאותה קבוצה. */
+    withGroups(ids) {
+        const groups = new Set(ids.map(id => this.doc?.layers.find(l => l.id === id)?.group).filter(Boolean));
+        if (!groups.size) return ids;
+        return [...new Set([...ids, ...this.doc.layers.filter(l => groups.has(l.group) && !l.locked && !l.hidden).map(l => l.id)])];
+    }
+
     select(ids, { silent = false, why = 'code' } = {}) {
         const before = this.selected.join(',');
         this.selected = ids.filter(id => this.nodes.has(id));
@@ -280,8 +287,8 @@ export class Canvas {
             if (!l || l.locked) { if (!multi) this.select([], { why: 'tap-empty' }); return; }
             if (multi) {
                 this.select(this.selected.includes(l.id) ? this.selected.filter(i => i !== l.id) : [...this.selected, l.id], { why: 'tap-multi' });
-            } else if (!(this.selected.length === 1 && this.selected[0] === l.id)) {
-                this.select([l.id], { why: 'tap' });
+            } else if (!this.selected.includes(l.id) || (!l.group && this.selected.length > 1)) {
+                this.select(this.withGroups([l.id]), { why: 'tap' });
             }
         });
         this.stage.on('dblclick dbltap', e => {
@@ -326,12 +333,22 @@ export class Canvas {
             const id = g.id();
             // בזמן צביטה אין גרירה של שכבות — גם אם האצבע השנייה נחתה על שכבה.
             if (this.quietUntil === Infinity) { g.stopDrag(); log('drag-blocked', { id }); return; }
-            if (!this.selected.includes(id)) this.select([id], { why: 'drag' });
+            if (!this.selected.includes(id)) this.select(this.withGroups([id]), { why: 'drag' });
             // המקום לפני הגרירה — אם תתחיל צביטה באמצע, השכבה חוזרת אליו.
             this.dragStart = (this.tr.nodes().length ? this.tr.nodes() : [g]).map(n => ({ n, x: n.x(), y: n.y() }));
             log('drag-start', { id, x: g.x(), y: g.y() });
         });
-        g.on('dragmove', () => this.snap(g));
+        g.on('dragmove', () => {
+            this.snap(g);
+            // בגרירה של כמה שכבות (קבוצה / בחירה מרובה) — האחרות זזות בדיוק כמו זו שבאצבע, גם אחרי ההצמדה
+            // אחרי הטיפול של Konva עצמו (הוא מזיז את האחרות לפי ההפרש שלו) — לכן במיקרו-משימה, ולא מיד
+            queueMicrotask(() => {
+                const me = this.dragStart?.find(d => d.n === g);
+                if (!me || !g.isDragging()) return;
+                const dx = g.x() - me.x, dy = g.y() - me.y;
+                for (const d of this.dragStart) if (d.n !== g) d.n.position({ x: d.x + dx, y: d.y + dy });
+            });
+        });
         g.on('dragend', () => {
             this.guides.destroyChildren();
             this.ui.batchDraw();
