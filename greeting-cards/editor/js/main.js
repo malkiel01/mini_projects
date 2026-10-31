@@ -21,7 +21,7 @@ import { loadScript } from './io.js';
 import { docVariables, readSheetFile, readPasted, readPhoneContacts, guessColumns, normalizePhone, fileNames, fillText } from './merge.js';
 
 // הגרסה — מופיעה ביומן, כדי לדעת איזה קוד רץ בטלפון.
-const BUILD = '2026-10-31.mbe-only-1';
+const BUILD = '2026-10-31.groups-1';
 
 const app = $('#app');
 let ed = null;   // העיצוב הפתוח: { id, doc, history, canvas, dirty }
@@ -420,6 +420,8 @@ function renderCtx() {
         b('⧉', 'שכפול', duplicate),
         b('⇅', 'סדר', orderSheet),
         ls.length > 1 ? b('⊞', 'יישור', orderSheet) : null,
+        ls.length > 1 && !(l.group && ls.every(x => x.group === l.group)) ? b('🔗', 'קיבוץ', groupSelected) : null,
+        l.group && ls.every(x => x.group === l.group) ? b('⛓️', 'פירוק', ungroupSelected) : null,
         b(ls.every(x => x.locked) ? '🔒' : '🔓', ls.every(x => x.locked) ? 'נעול' : 'נעילה', toggleLock, { 'aria-pressed': String(ls.every(x => x.locked)) }),
         b('🗑️', 'מחיקה', removeSelected)].filter(Boolean));
 }
@@ -430,11 +432,30 @@ function addLayer(l, { select = true } = {}) {
     if (select) ed.canvas.select([l.id]);
 }
 
+/** קיבוץ: השכבות הנבחרות נבחרות ונעות יחד מעכשיו (הקשה על אחת בוחרת את כולן). */
+function groupSelected() {
+    const ls = sel();
+    if (ls.length < 2) return;
+    const g = uid('g');
+    for (const l of ls) l.group = g;
+    log('group', { n: ls.length });
+    commit();
+    toast(`${ls.length} שכבות קובצו — הקשה על אחת בוחרת את כולן`);
+}
+
+function ungroupSelected() {
+    for (const l of sel()) delete l.group;
+    log('ungroup', {});
+    commit();
+}
+
 function duplicate() {
     const ids = [];
+    const regroup = new Map();   // לעותק של קבוצה — קבוצה חדשה, כדי שלא יתחבר למקור
     for (const l of sel()) {
         const c = clone(l);
         c.id = uid();
+        if (c.group) { if (!regroup.has(c.group)) regroup.set(c.group, uid('g')); c.group = regroup.get(c.group); }
         c.x += 30; c.y += 30;
         delete c.locked;
         if (c.role === 'background') c.role = 'photo';
@@ -1131,7 +1152,8 @@ function layersSheet() {
                     else ed.canvas.select([l.id]);
                     draw();
                 } },
-                    h('span', { 'aria-hidden': 'true' }, icon), h('span', { class: 'layer-name' }, layerLabel(l))),
+                    h('span', { 'aria-hidden': 'true' }, icon), h('span', { class: 'layer-name' }, layerLabel(l)),
+                    l.group ? h('span', { class: 'muted small', title: 'בקבוצה' }, '🔗') : null),
                 h('button', { class: 'icon-btn', 'aria-label': l.hidden ? `הצגת ${layerLabel(l)}` : `הסתרת ${layerLabel(l)}`, 'aria-pressed': String(!!l.hidden), onclick: () => { l.hidden = !l.hidden; if (!l.hidden) delete l.hidden; commit(); draw(); } }, l.hidden ? '🚫' : '👁️'),
                 h('button', { class: 'icon-btn', 'aria-label': l.locked ? `שחרור ${layerLabel(l)}` : `נעילת ${layerLabel(l)}`, 'aria-pressed': String(!!l.locked), onclick: () => { if (l.locked) delete l.locked; else l.locked = true; commit(); draw(); } }, l.locked ? '🔒' : '🔓'),
                 h('button', { class: 'icon-btn', 'aria-label': `העלאת ${layerLabel(l)}`, onclick: () => { ed.canvas.select([l.id]); move(1); draw(); } }, '▲'),

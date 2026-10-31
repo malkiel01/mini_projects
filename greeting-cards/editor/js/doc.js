@@ -190,6 +190,7 @@ export function normalizeDoc(input) {
         };
         if (raw.name) l.name = String(raw.name).slice(0, 80);
         if (raw.locked) l.locked = true;
+        if (typeof raw.group === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(raw.group)) l.group = raw.group;   // קבוצה — נבחרות וזזות יחד
         if (raw.hidden) l.hidden = true;
         if (raw.flipX) l.flipX = true;
         if (raw.flipY) l.flipY = true;
