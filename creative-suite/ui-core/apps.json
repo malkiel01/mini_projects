@@ -1,1 +1,6 @@
-{}
+{
+  "suite-cloud": {
+    "css": "assets/css/ui-core",
+    "js": "assets/js/ui-core"
+  }
+}
