@@ -54,31 +54,24 @@
 
 ```js
 import { createLayerAI } from './layer-ai/layer-ai.js';
-const ai = createLayerAI({ endpoint: 'api.php', headers: { 'X-Raster-Studio': '1' } });   // כל אפליקציה — ה-API שלה
+const ai = createLayerAI({ cloud });   // לקוח ענן החבילה (cloud.ai); בלי ענן — הכול "לא זמין"
 
-await ai.capabilities();          // { removeBackground: true, decompose: false, generate: true, fill: true, provider }
+await ai.capabilities();          // { removeBackground: true, decompose: false, generate: true, fill: true } — מ-cloud.ai.capabilities
 await ai.removeBackground(blob, { signal });              // → { png: Blob, mask: Blob }  (mask — גוונים, לבן = נשאר)
 await ai.decompose(blob, { maxLayers: 6, signal });       // → { background: Blob, layers: [{ png, box: [x,y,w,h], label }] }
 await ai.generate(prompt, { width, height, transparent: true, style, signal });   // → { png: Blob }
 await ai.fill(blob, maskBlob, { prompt, signal });        // → { png: Blob }  (inpainting: המסכה הלבנה מתמלאת)
 ```
 
-- **שגיאות:** `Error` עם `code`: ‏`no-provider` (אין מפתח — להציג "לא זמין"), ‏`quota`, ‏`too-big`, ‏`provider`,
-  ‏`aborted`.
+- **שגיאות:** `Error` עם `code`, כמו ב-`cloud.ai`: ‏`no-provider` / ‏`not-allowed` (להציג "לא זמין — דרך הצ'אט (סקיל)"),
+  ‏`quota`, ‏`too-big`, ‏`provider`, ‏`aborted`.
 - **ביטול:** כל פעולה מקבלת `signal` (AbortController).
 
-### השרת — הפעולות באותו `api.php` של כל אפליקציה
+### מאיפה הקריאה לספק — ענן החבילה
 
-- `ai_capabilities`
-- `ai_remove_background`
-- `ai_decompose`
-- `ai_generate`
-- `ai_fill`
-
-**הקלט:** הקובץ בגוף, כמו `doc_upload` בעיצוב רסטר, והפרמטרים בכתובת. **הפלט:** PNG, או ZIP קטן לפירוק (מבנה
-store, כמו `zipStore` אצלנו).
-
-הספרייה המשותפת (`lib/layer-ai/`) מטפלת בספק, בגודל ובתקרות, והאפליקציה מוסיפה רק הרשאה ומכסה.
+**אין שרת AI באפליקציה** (ענן החבילה, `suite-cloud/docs/spec-3-ai.md`, ‏#921). `layer-ai.js` רץ בדפדפן וקורא ללקוח הענן
+(`cloud.ai`, מסונכרן לכל אפליקציה). הלקוח קורא ישר לשרת של הענן, עם האסימון הקצר של החיבור. המפתחות, ההרשאות לכל משתמש
+והמכסה — שם. ב-`api.php` של האפליקציה אין `ai_*`, ואין PHP של ספקים.
 
 ### ספקים והרשאות — אצל ענן החבילה
 
@@ -90,20 +83,20 @@ store, כמו `zipStore` אצלנו).
 **דרישת בעל המערכת לשכבת הספקים** (2026-10-30, בצ'אט הזה): **כל הספקים נתמכים, והמנהל מחליט לכל משתמש אילו מהם
 מותרים לו** (ומכסה). הועבר לענן החבילה דרך הצ'אט המתכלל.
 
-**מה המודול צריך משכבת הספקים** — בקשה אחת לכל משימה, בלי שום פרט של ספק:
+**מה המודול צריך משכבת הספקים** — הוסכם עם ענן החבילה (`spec-3-ai.md` סעיפים 2 ו-4):
 
 ```js
-providers.capabilities(user)
-//  → { tasks: { 'remove-background': true, segment: true, 'generate-image': true, inpaint: true }, providers: [...] }
-providers.run(user, task, { image?: Blob, mask?: Blob, prompt?: string, size?: [w, h], transparent?: bool, provider?: id }, { signal })
-//  → { png: Blob } | { masks: [{ png: Blob, label, box }] }
+await cloud.ai.capabilities();
+//  → { tasks: { 'remove-background', segment, 'generate-image', inpaint: bool }, providers: [{ id, name, tasks }], default, quota }
+await cloud.ai.run(task, { image, mask, prompt, size, transparent, provider }, { signal });
+//  → { png: Blob } (אולי עם transparent: false) | segment: { masks: [{ png: Blob, label, box: [x, y, w, h] }] }
 //  שגיאות: Error.code — no-provider / not-allowed / quota / too-big / provider / aborted
 ```
 
-- **`remove-background`:** תמונה → PNG שקוף.
-- **`segment`:** תמונה → מסכות לכל עצם. מזה המודול בונה "פירוק לשכבות": חיתוך לפי המסכה, השלמת הרקע ב-`inpaint`.
-- **`generate-image`:** טקסט → תמונה, ושקיפות אם הספק יודע. אם לא — המודול מסיר רקע בעצמו (`remove-background`).
-- **`inpaint`:** תמונה + מסכה (+ טקסט) → תמונה, השטח הלבן במסכה ממולא.
+- **הפלט:** PNG ב-sRGB, אלפא ישר, בגודל ובקואורדינטות של הקלט. קלט עד 20MB ועד 4096 פיקסלים בצלע.
+- **`segment`:** מסכת גוונים לכל עצם (לבן = העצם). מזה המודול בונה "פירוק לשכבות": חיתוך לפי המסכה, והשלמת הרקע ב-`inpaint`.
+- **`generate-image`** עם `transparent: false` בתשובה — המודול מסיר רקע בעצמו (`remove-background`).
+- **הספקים הראשונים** (הכרעת בעל המערכת): OpenAI, ‏Google ו-Replicate.
 
 **המודול עושה את השאר בעצמו:** הקטנה לגודל שהספק מקבל, החזרה לגודל ולמיקום, קצוות רכים למסכה, הרכבה לשכבות
 (`box`, `label`), וניקוי — בלי לדעת מי הספק. עד ששכבת הספקים מוכנה — `capabilities()` מחזיר הכול false, והכפתורים
