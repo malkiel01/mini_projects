@@ -6,6 +6,7 @@
 import { colorRange, dabsAlong, floodFill, hexToRgb, rgbToHex } from './engine/fill.js';
 import { combine, isEmptyShape, maskShape, selectionBox } from './engine/selection.js';
 import * as XF from './engine/transform.js';
+import { pathFromSelection, translatePath } from './engine/vmask.js';
 import { FONTS, LINE_HEIGHT, cssFont, renderText, textDirection } from './engine/text.js';
 import { keyOf } from './ui-core/keys.js';
 
@@ -194,6 +195,19 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     else if (a === 'invert') {
       if (!d.selection) { toast('אין בחירה להפוך'); return; }
       setSelection({ ...d.selection, inverted: !d.selection.inverted }, 'היפוך הבחירה');
+    } else if (a === 'vmask') {
+      // 🔷 מסכה וקטורית מהבחירה: הנתיב של הבחירה, על השכבה הפעילה (מחליפה מסכה וקטורית קיימת); צעד ביטול אחד
+      const layer = d.active;
+      if (!d.selection) { toast('קודם בוחרים אזור — מלבן, אליפסה או לאסו'); return; }
+      if (layer.type === 'group' || layer.foreign) { toast('מסכה וקטורית — לשכבה, לא לקבוצה', true); return; }
+      if (layer.locked) { toast('השכבה נעולה — 🔓 בלוח השכבות', true); return; }
+      const path = pathFromSelection(d.selection);
+      if (!path) { toast('מסכה וקטורית — רק ממלבן, אליפסה או לאסו (בלי חיסור, היפוך ומטה קסם)', true); return; }
+      const after = { d: path, feather: 0, enabled: true };
+      history.props(d, layer, { vectorMask: layer.vectorMask }, { vectorMask: after }, 'מסכה וקטורית');
+      layer.vectorMask = after;
+      renderer.invalidate(d);
+      onChange('vmask');
     } else if (a === 'delete' || a === 'fill') {
       const layer = d.active;
       if (!d.selection) { toast('קודם בוחרים אזור'); return; }
@@ -389,13 +403,15 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     if (w < 1 || h < 1) { toast('האזור ריק'); return; }
     if (r.x0 === 0 && r.y0 === 0 && w === d.width && h === d.height) { cancelCrop(); return; }
     const all = withMasks(d.rasters());
-    const before = { w: d.width, h: d.height, maps: new Map(all.map(l => [l, l.tiles])), sel: d.selection ?? null };
+    const every = [...d.walk()].map(w => w.layer);
+    const before = { w: d.width, h: d.height, maps: new Map(all.map(l => [l, l.tiles])), sel: d.selection ?? null, vec: vecOf(every) };
     const maps = new Map(all.map(l => [l, renderer.shiftTiles(l.tiles, -r.x0, -r.y0)]));
     const m = [1, 0, 0, 1, -r.x0, -r.y0];
     const sel = d.selection ? { ...d.selection, shapes: d.selection.shapes.map(s => XF.transformShape(s, m)) } : null;
-    const after = { w, h, maps, sel };
+    const after = { w, h, maps, sel, vec: vecMoved(every, -r.x0, -r.y0) };
     d.width = w; d.height = h;
     for (const [l, t] of maps) { l.tiles = t; l.rev = (l.rev ?? 0) + 1; }
+    for (const [l, vm] of after.vec) l.vectorMask = vm;
     d.selection = sel;
     renderer.resetComposite(d);
     history.crop(d, before, after, 'חיתוך');
@@ -511,6 +527,9 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
   };
   /** השכבות והמסכות שלהן — לחיתוך ולהזזת קבוצה (המסכה זזה עם השכבה) */
   const withMasks = layers => layers.flatMap(l => (l.mask ? [l, l.mask] : [l]));
+  /** המסכות הווקטוריות של השכבות — כמו שהן, ומוזזות ב-(dx, dy) (חיתוך / הזזת קבוצה) */
+  const vecOf = layers => new Map(layers.filter(l => l.vectorMask).map(l => [l, l.vectorMask]));
+  const vecMoved = (layers, dx, dy) => new Map(layers.filter(l => l.vectorMask).map(l => [l, { ...l.vectorMask, d: translatePath(l.vectorMask.d, dx, dy) }]));
 
   async function pick([x, y]) {
     const d = doc();
@@ -680,11 +699,13 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     renderer.setShift(d, null);
     if (!dx && !dy) return;
     const all = withMasks(layers);
-    const before = { w: d.width, h: d.height, maps: new Map(all.map(l => [l, l.tiles])), sel: d.selection ?? null };
+    const before = { w: d.width, h: d.height, maps: new Map(all.map(l => [l, l.tiles])), sel: d.selection ?? null, vec: vecOf(layers) };
     const maps = new Map(all.map(l => [l, renderer.shiftTiles(l.tiles, dx, dy)]));
+    const vec = vecMoved(layers, dx, dy);
     for (const [l, t] of maps) { l.tiles = t; l.rev = (l.rev ?? 0) + 1; }
+    for (const [l, vm] of vec) l.vectorMask = vm;
     renderer.resetComposite(d);
-    history.crop(d, before, { ...before, maps }, 'הזזת קבוצה');
+    history.crop(d, before, { ...before, maps, vec }, 'הזזת קבוצה');
     onChange('group-move');
   }
 

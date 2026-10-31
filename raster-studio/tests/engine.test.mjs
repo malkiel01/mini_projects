@@ -844,3 +844,20 @@ test('‎.mbe: שכבה עם סגנונות — המתכון שלנו נכתב �
   const F = mbeDocument(doc, [foreign], null, () => 'media/n.png', () => undefined).surfaces[0].layers[0];
   assert.deepEqual(F.effects, [{ type: 'glow' }]);
 });
+
+test('מסכה וקטורית: נתיב מבחירה, הזזה, קנה מידה וניקוי', async () => {
+  const { pathFromSelection, translatePath, scalePath, cleanVectorMask, validPath } = await import('../assets/js/engine/vmask.js');
+  const sel = shapes => ({ shapes, inverted: false });
+  assert.equal(pathFromSelection(sel([{ op: 'add', type: 'rect', x: 10, y: 20, w: 30, h: 40 }])), 'M 10 20 L 40 20 L 40 60 L 10 60 Z');
+  const el = pathFromSelection(sel([{ op: 'add', type: 'ellipse', x: 0, y: 0, w: 100, h: 50 }]));
+  assert.ok(el.startsWith('M 100 25 C ') && el.endsWith(' Z') && el.split('C').length === 5, el);
+  assert.equal(pathFromSelection(sel([{ op: 'add', type: 'poly', pts: [[0, 0], [10, 0], [5, 8]] }])), 'M 0 0 L 10 0 L 5 8 Z');
+  assert.equal(pathFromSelection(sel([{ op: 'sub', type: 'rect', x: 0, y: 0, w: 1, h: 1 }])), null, 'חיסור — אין נתיב פשוט');
+  assert.equal(pathFromSelection({ ...sel([{ op: 'add', type: 'rect', x: 0, y: 0, w: 1, h: 1 }]), inverted: true }), null);
+  assert.equal(pathFromSelection(sel([{ op: 'add', type: 'mask', x: 0, y: 0, w: 1, h: 1, data: new Uint8Array(1) }])), null);
+  assert.equal(translatePath('M 10 20 L 40 20 C 1 2 3 4 5 6 Z', -10, 5), 'M 0 25 L 30 25 C -9 7 -7 9 -5 11 Z');
+  assert.equal(scalePath('M 10 20 Q 1.5 2 3 4 Z', 2), 'M 20 40 Q 3 4 6 8 Z');
+  assert.ok(validPath('M 0 0 L 1 1 Z') && !validPath('m 0 0 l 1 1') && !validPath('M 0 0 A 1 1 0 0 1 2 2'));
+  assert.equal(cleanVectorMask({ d: 'A 1' }), null);
+  assert.deepEqual(cleanVectorMask({ d: 'M 0 0 L 1 0 L 1 1 Z', feather: 500 }), { d: 'M 0 0 L 1 0 L 1 1 Z', feather: 64, enabled: true });
+});

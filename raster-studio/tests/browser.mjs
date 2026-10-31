@@ -1292,6 +1292,77 @@ async function main() {
   });
   check('baked לא תואם — שכבה רגילה (src האפוי), והמתכון נשמר כמו שהוא', fxStale === 'false,true', fxStale);
 
+  // ---- מסכה וקטורית: אליפסה על שכבה אדומה מלאה ----
+  await openEd(page);
+  await page.waitForFunction(() => window.__rs?.doc);
+  await page.evaluate(() => __rs.setView({ zoom: 1, x: 20, y: 20 }));
+  await page.evaluate(() => {
+    const d = __rs.doc, r = __rs.renderer;
+    const l = d.addLayer({ name: 'אדום' });
+    d.activeId = l.id;
+    r.fill(d, l, [255, 0, 0]);
+    d.selection = { shapes: [{ type: 'ellipse', x: 100, y: 100, w: 300, h: 200, op: 'add' }], inverted: false };
+    r.selectionChanged(d);
+    r.invalidate(d);
+  });
+  await page.evaluate(() => document.querySelector('[data-sel="vmask"]').click());
+  const vm1 = await page.evaluate(() => ({ d: __rs.doc.active.vectorMask?.d ?? '', label: __rs.history.undoStack.at(-1).label }));
+  check('🔷 מהבחירה — מסכה וקטורית (נתיב עם עקומות), רשומת "מסכה וקטורית"', vm1.d.startsWith('M ') && vm1.d.includes(' C ') && vm1.label === 'מסכה וקטורית', JSON.stringify(vm1));
+  check('בתוך האליפסה אדום, בפינה (מחוצה לה) לבן — גם באריח אחר', near(await px(250, 200), [255, 0, 0, 255]) && near(await px(110, 110), [255, 255, 255, 255])
+    && near(await px(390, 290), [255, 255, 255, 255]) && near(await px(395, 200), [255, 0, 0, 255]));
+  check('🔷 בשורה, ושורת האפשרויות של המסכה הווקטורית', await page.isVisible('.layer-row[aria-selected="true"] .vmask-thumb') && await page.isVisible('.vmask-opts'));
+  await page.keyboard.press('Control+z');
+  check('ביטול — בלי מסכה וקטורית (הפינה אדומה)', near(await px(110, 110), [255, 0, 0, 255]) && !(await page.isVisible('.vmask-opts')));
+  await page.evaluate(() => __rs.redo());
+  check('ביצוע חוזר — המסכה חוזרת', near(await px(110, 110), [255, 255, 255, 255]));
+  // ריכוך: הקצה רך, רשומה אחת
+  const edgeHard = (await px(250, 102)).split(',').map(Number);
+  await page.$eval('#vm-feather', el => { el.value = 24; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); });
+  const edgeSoft = (await px(250, 102)).split(',').map(Number), inner = (await px(250, 130)).split(',').map(Number);
+  check('ריכוך 24 — ליד הקצה חצי שקוף (ורוד), ועמוק בפנים כמעט אדום; רשומת "ריכוך מסכה וקטורית"', edgeHard[1] < 30 && edgeSoft[1] > 60 && edgeSoft[1] < 230 && inner[1] < edgeSoft[1]
+    && await page.evaluate(() => __rs.history.undoStack.at(-1).label) === 'ריכוך מסכה וקטורית', [edgeHard, edgeSoft, inner].join(' | '));
+  await page.click('[data-vmask="toggle"]');
+  check('⊘ השבתה — כל השכבה נראית', near(await px(110, 110), [255, 0, 0, 255]) && await page.isVisible('.vmask-thumb.off'));
+  await page.click('[data-vmask="toggle"]');
+  check('◉ הפעלה — המסכה חוזרת', near(await px(110, 110), [255, 255, 255, 255]));
+  // עם סגנון שכבה: קו מתאר נוצר מהשכבה אחרי המסכה (סביב האליפסה, לא סביב הקנבס)
+  await page.evaluate(() => { const l = __rs.doc.active; l.vectorMask = { ...l.vectorMask, feather: 0 }; l.effects = [{ type: 'stroke', width: 6, position: 'outside', color: '#0000ff', opacity: 1 }]; __rs.renderer.invalidate(__rs.doc); });
+  check('קו מתאר סביב המסכה הווקטורית', near(await px(250, 97), [0, 0, 255, 255]) && near(await px(110, 110), [255, 255, 255, 255]) && near(await px(250, 200), [255, 0, 0, 255]));
+  await page.evaluate(() => { __rs.doc.active.effects = undefined; __rs.renderer.invalidate(__rs.doc); });
+  // ‎.mbe: vectorMask + source + baked; פתיחה חזרה — אותה מסכה ואותה תמונה
+  const vmWant = [await px(250, 200), await px(110, 110), await px(250, 103)].join(' | ');
+  const vmb = await page.evaluate(async () => {
+    const { open } = await import('./assets/js/mbe/mbe.js');
+    const bytes = await __rs.buildMbe();
+    const f = await open(bytes);
+    const L = f.document.surfaces[0].layers.find(l => l.vectorMask);
+    const out = { ok: f.ok, err: f.issues.filter(i => i.level === 'error').map(i => i.message).join(), d: L?.vectorMask.d.slice(0, 8), source: !!L?.source && L.source !== L.src, baked: !!L?.baked };
+    await __rs.openAsDocument(new File([bytes], 'וקטורית.mbe'));
+    out.back = __rs.doc.layers.map(l => (l.vectorMask ? 'vm' : '-')).join();
+    return out;
+  });
+  await page.evaluate(() => __rs.setView({ zoom: 1, x: 20, y: 20 }));
+  const vmGot = [await px(250, 200), await px(110, 110), await px(250, 103)].join(' | ');
+  check('‎.mbe עם מסכה וקטורית: תקין, vectorMask + source + baked; פתיחה חזרה — אותה תמונה', vmb.ok && vmb.d === 'M 400 20' && vmb.source && vmb.baked && vmb.back === '-,vm' && vmGot === vmWant,
+    JSON.stringify(vmb) + ' ' + vmGot + ' / ' + vmWant);
+  check('ORA — מסכה וקטורית אפויה (פער מדווח)', await page.evaluate(async () => (await import('./assets/js/engine/formats.js')).gapsFor('ora', __rs.doc.layers).includes('vector-mask → baked')));
+  // חיתוך מזיז גם את המסכה הווקטורית, וביטול מחזיר
+  await page.keyboard.press('c');
+  await drag([50, 50], [450, 350]);
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => __rs.doc.width === 400, null, { timeout: 3000 }).catch(() => {});
+  const vmCrop = await page.evaluate(() => __rs.doc.active.vectorMask.d.slice(0, 9));
+  check('חיתוך — המסכה הווקטורית זזה עם התוכן', vmCrop === 'M 350 150' && near(await px(60, 60), [255, 255, 255, 255]) && near(await px(200, 150), [255, 0, 0, 255]), vmCrop);
+  await page.keyboard.press('Control+z');
+  check('ביטול החיתוך — המסכה במקומה', await page.evaluate(() => __rs.doc.active.vectorMask.d.slice(0, 9)) === 'M 400 200');
+  check('מסכה וקטורית: בחירה מורכבת (חיסור) — הודעה ולא מסכה', await page.evaluate(() => {
+    const d = __rs.doc;
+    d.selection = { shapes: [{ type: 'rect', x: 0, y: 0, w: 50, h: 50, op: 'add' }, { type: 'rect', x: 10, y: 10, w: 5, h: 5, op: 'sub' }], inverted: false };
+    const before = d.active.vectorMask;
+    document.querySelector('[data-sel="vmask"]').click();
+    return d.active.vectorMask === before;
+  }));
+
   // ---- טקסט ----
   await openEd(page);
   await page.waitForFunction(() => window.__rs?.doc);

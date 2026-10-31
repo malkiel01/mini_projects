@@ -14,6 +14,7 @@
 import { TILE, BLEND_MODES, tilesInRect, newMask } from './doc.js';
 import { rasterTile, selectionBox } from './selection.js';
 import { matrix as xfMatrix, bounds as xfBounds } from './transform.js';
+import { vmaskTile } from './vmask.js';
 import { WebGL2Renderer, srgbToLinear, FX_MAX, anyEffects } from './webgl2.js';
 import { adjustOf, fillRamp, fillGeometry, effectsOf, effectsReach } from './formats.js';
 
@@ -87,6 +88,9 @@ fn hardLight(b: vec3f, s: vec3f) -> vec3f { return mix(b * 2.0 * s, screenB(b, 2
   let mk = enc(vec3f(textureSample(t2, smp, i.uv).r)).r;
   var s = textureSample(t1, smp, i.uv) * u.a.x;
   if (u.m.y == 1) { s = s * mk; }
+  // מסכה וקטורית: t3, כיסוי 0–1 (m.z = יש)
+  let vm = textureSample(t3, smp, i.uv).r;
+  if (u.m.z == 1) { s = s * vm; }
   let ab = b.a;
   let sa = s.a;
   var Cb = vec3f(0.0);
@@ -216,6 +220,8 @@ fn noise(p: vec2f) -> f32 {
 @fragment fn lerp(i: VO) -> @location(0) vec4f {
   var k = u.a.x;
   if (u.m.y == 1) { k = k * enc(vec3f(textureSample(t2, smp, i.uv).r)).r; }
+  let vm = textureSample(t3, smp, i.uv).r;
+  if (u.m.z == 1) { k = k * vm; }
   return mix(textureSample(t0, smp, i.uv), textureSample(t1, smp, i.uv), k);
 }
 
@@ -276,8 +282,10 @@ fn noise(p: vec2f) -> f32 {
 // (1) התוכן המרופד (t0) כפול המסכה המרופדת (t1, אפור של sRGB); m.x = יש מסכה
 @fragment fn fxsrc(i: VO) -> @location(0) vec4f {
   let p = vec2i(i.pos.xy);
-  let c = textureLoad(t0, p, 0);
-  if (u.m.x == 1) { return c * enc(vec3f(textureLoad(t1, p, 0).r)).r; }
+  var c = textureLoad(t0, p, 0);
+  if (u.m.x == 1) { c = c * enc(vec3f(textureLoad(t1, p, 0).r)).r; }
+  // מסכה וקטורית מרופדת (t2, m.y = יש)
+  if (u.m.y == 1) { c = c * textureLoad(t2, p, 0).r; }
   return c;
 }
 // (2) טשטוש האלפא בכיוון אחד: m.x רדיוס, m.y היפוך (1 − אלפא), m.zw כיוון; a.x סיגמה, a.y גודל השטח המרופד
@@ -651,6 +659,33 @@ export class WebGPURenderer {
     for (const t of layer.tiles.values()) { this.#destroy(t); this.textures--; }
     layer.tiles.clear();
     if (layer.mask) this.freeLayer(layer.mask);
+    this.#freeVm(layer);
+  }
+
+  // ---------- מסכה וקטורית (ראו WebGL2Renderer) ----------
+
+  #freeVm(layer) {
+    const c = layer._vm;
+    if (!c) return;
+    for (const t of c.tiles.values()) if (t !== this.fullMask && t !== this.zeroMask) { this.#destroy(t); this.textures--; }
+    layer._vm = null;
+  }
+
+  #vmTex(doc, layer, tx, ty) {
+    const vm = layer.vectorMask;
+    if (!vm || vm.enabled === false) return null;
+    const sh = doc?._shift?.layers.has(layer) ? doc._shift : null;
+    const sig = `${vm.d}|${vm.feather ?? 0}|${sh ? sh.dx + ',' + sh.dy : ''}`;
+    if (layer._vm?.sig !== sig) { this.#freeVm(layer); layer._vm = { sig, tiles: new Map() }; }
+    const k = key(tx, ty);
+    let t = layer._vm.tiles.get(k);
+    if (!t) {
+      const r = vmaskTile(vm, tx, ty, sh?.dx ?? 0, sh?.dy ?? 0);
+      t = r === 'empty' ? this.zeroMask : r === 'full' ? this.fullMask : this.#r8(r);
+      if (typeof r !== 'string') this.textures++;
+      layer._vm.tiles.set(k, t);
+    }
+    return t;
   }
 
   #colorAdjust(adj, base, out) {
@@ -663,7 +698,8 @@ export class WebGPURenderer {
     const below = this.#compositeList(doc, list.slice(0, list.indexOf(layer)), tx, ty, 8);
     this.#colorAdjust(adjustOf(layer), below, this.adjLayerTmp);
     const mk = layer.mask?.enabled ? (layer.mask.tiles.get(key(tx, ty)) ?? this.emptyTex) : null;
-    this.#drawTo(out, 'blend', { a: [1, 0, 0, 0], m: [0, mk ? 1 : 0, 0, 0] }, [this.emptyTex, this.adjLayerTmp, mk]);
+    const vm = this.#vmTex(doc, layer, tx, ty);
+    this.#drawTo(out, 'blend', { a: [1, 0, 0, 0], m: [0, mk ? 1 : 0, vm ? 1 : 0, 0] }, [this.emptyTex, this.adjLayerTmp, mk, vm]);
     return out;
   }
 
@@ -672,9 +708,11 @@ export class WebGPURenderer {
   }
 
   /** אריח השכבה כפול המסכה שלה (ראו WebGL2Renderer) */
-  #maskedTile(layer, tx, ty, out) {
+  #maskedTile(layer, tx, ty, out, look = false) {
     const t = layer.tiles.get(key(tx, ty)) ?? this.emptyTex;
-    this.#drawTo(out, 'blend', { a: [1, 0, 0, 0], m: [0, 1, 0, 0] }, [this.emptyTex, t, layer.mask.tiles.get(key(tx, ty)) ?? this.emptyTex]);
+    const mk = layer.mask && (!look || layer.mask.enabled) ? (layer.mask.tiles.get(key(tx, ty)) ?? this.emptyTex) : null;
+    const vm = look ? this.#vmTex(null, layer, tx, ty) : null;
+    this.#drawTo(out, 'blend', { a: [1, 0, 0, 0], m: [0, mk ? 1 : 0, vm ? 1 : 0, 0] }, [this.emptyTex, t, mk, vm]);
     return out;
   }
 
@@ -1262,7 +1300,8 @@ export class WebGPURenderer {
       if (layer.adjust) {
         const mk = layer.mask?.enabled ? (this.#layerTileFor(doc, layer.mask, tx, ty) || this.emptyTex) : null;
         this.#colorAdjust(adjustOf(layer), a, this.adjLayerTmp);
-        this.#drawTo(b, 'lerp', { a: [layer.opacity, 0, 0, 0], m: [0, mk ? 1 : 0, 0, 0] }, [a, this.adjLayerTmp, mk]);
+        const vm = this.#vmTex(doc, layer, tx, ty);
+        this.#drawTo(b, 'lerp', { a: [layer.opacity, 0, 0, 0], m: [0, mk ? 1 : 0, vm ? 1 : 0, 0] }, [a, this.adjLayerTmp, mk, vm]);
         [a, b] = [b, a];
         continue;
       }
@@ -1282,7 +1321,8 @@ export class WebGPURenderer {
       if (!t) continue;
       // מסכה: גם היא דרך #layerTileFor (משיכה פתוחה עליה מוצגת חיה). אריח חסר = מוסתר
       const mk = layer.mask?.enabled ? (this.#layerTileFor(doc, layer.mask, tx, ty) || this.emptyTex) : null;
-      this.#drawTo(b, 'blend', { a: [layer.opacity, 0, 0, 0], m: [Math.max(0, BLEND_MODES.indexOf(layer.blend)), mk ? 1 : 0, 0, 0] }, [a, t, mk]);
+      const vm = this.#vmTex(doc, layer, tx, ty);
+      this.#drawTo(b, 'blend', { a: [layer.opacity, 0, 0, 0], m: [Math.max(0, BLEND_MODES.indexOf(layer.blend)), mk ? 1 : 0, vm ? 1 : 0, 0] }, [a, t, mk, vm]);
       [a, b] = [b, a];
     }
     return a;
@@ -1294,7 +1334,7 @@ export class WebGPURenderer {
     if (this.fxTex) return this.fxTex;
     const big = () => this.#tex(FX_N, FX_N, TILE_FMT);
     this.fxTex = {
-      c: big(), m: big(), s: big(), h: big(), b: big(),
+      c: big(), m: big(), v: big(), s: big(), h: big(), b: big(),
       near: Array.from({ length: 9 }, () => this.#tex(TILE, TILE, TILE_FMT)),
       out: Array.from({ length: 4 }, () => this.#tex(TILE, TILE, TILE_FMT)),
     };
@@ -1325,7 +1365,13 @@ export class WebGPURenderer {
       this.#pad((dx, dy) => mn[(dy + 1) * 3 + dx + 1], K, fx.m);
     }
     const big = { rect: [0, 0, P, P], size: [P, P, 0, 0] }, vp = { viewport: [P, P] };
-    this.#drawTo(fx.s, 'fxsrc', { ...big, m: [useMask ? 1 : 0, 0, 0, 0] }, [fx.c, fx.m], vp);
+    const useVm = !!layer.vectorMask && layer.vectorMask.enabled !== false;
+    if (useVm) {
+      const vt = [];
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) vt.push(this.#vmTex(doc, layer, tx + dx, ty + dy));
+      this.#pad((dx, dy) => vt[(dy + 1) * 3 + dx + 1], K, fx.v);
+    }
+    this.#drawTo(fx.s, 'fxsrc', { ...big, m: [useMask ? 1 : 0, useVm ? 1 : 0, 0, 0] }, [fx.c, fx.m, fx.v], vp);
     const blurA = (e, inv) => {
       const r = Math.round(e.blur ?? 0), sigma = Math.max(0.5, r / 2);
       this.#drawTo(fx.h, 'fxblur', { ...big, a: [sigma, P, 0, 0], m: [r, inv ? 1 : 0, 1, 0] }, [fx.s], vp);
@@ -1433,13 +1479,17 @@ export class WebGPURenderer {
     if (layer.fill) {
       return this.#read((tx, ty) => {
         const f = this.#fillTile(layer.fill, tx, ty, this.fillTmp);
-        if (!masked || !layer.mask?.enabled) return f;
-        this.#drawTo(this.maskTmp, 'blend', { a: [1, 0, 0, 0], m: [0, 1, 0, 0] }, [this.emptyTex, f, layer.mask.tiles.get(key(tx, ty)) ?? this.emptyTex]);
+        const vm = masked ? this.#vmTex(null, layer, tx, ty) : null;
+        if (!masked || (!layer.mask?.enabled && !vm)) return f;
+        const mk = layer.mask?.enabled ? (layer.mask.tiles.get(key(tx, ty)) ?? this.emptyTex) : null;
+        this.#drawTo(this.maskTmp, 'blend', { a: [1, 0, 0, 0], m: [0, mk ? 1 : 0, vm ? 1 : 0, 0] }, [this.emptyTex, f, mk, vm]);
         return this.maskTmp;
       }, x, y, w, h);
     }
     // הפקודות נרשמות לפי הסדר — אריח זמני אחד מספיק גם כשקוראים כמה אריחים במנה
-    if (masked && layer.mask?.enabled) return this.#read((tx, ty) => this.#maskedTile(layer, tx, ty, this.maskTmp), x, y, w, h);
+    if (masked && (layer.mask?.enabled || (layer.vectorMask && layer.vectorMask.enabled !== false))) {
+      return this.#read((tx, ty) => this.#maskedTile(layer, tx, ty, this.maskTmp, true), x, y, w, h);
+    }
     return this.#read((tx, ty) => layer.tiles.get(key(tx, ty)) ?? this.emptyTex, x, y, w, h);
   }
 
