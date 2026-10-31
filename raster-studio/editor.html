@@ -175,6 +175,7 @@
           <button class="icon-btn" type="button" data-sel="invert" aria-label="היפוך הבחירה (Ctrl+Shift+I)" title="היפוך הבחירה (Ctrl+Shift+I)">◐</button>
           <button class="icon-btn" type="button" data-sel="fill" aria-label="מילוי הבחירה בצבע (Alt+Backspace)" title="מילוי הבחירה בצבע (Alt+Backspace)">🎨</button>
           <button class="icon-btn" type="button" data-sel="delete" aria-label="מחיקת הבחירה (Delete)" title="מחיקת הבחירה (Delete)">🗑️</button>
+          <button class="icon-btn" type="button" data-sel="vmask" aria-label="מסכה וקטורית מהבחירה" title="מסכה וקטורית מהבחירה — קצה חד שאפשר לרכך, על השכבה הפעילה">🔷</button>
         </div>
       </div>
     </main>
@@ -194,6 +195,12 @@
           <button class="btn sm ghost" type="button" data-mask="toggle" aria-pressed="false">⊘ השבתה</button>
           <button class="btn sm ghost" type="button" data-mask="apply" title="הפיקסלים כפול המסכה, והמסכה יוצאת">✓ החלה</button>
           <button class="btn sm ghost" type="button" data-mask="remove">✕ מחיקה</button>
+        </div>
+        <div class="mask-opts vmask-opts" hidden>
+          <span class="mask-label">🔷 וקטורית</span>
+          <label class="vm-feather" title="ריכוך הקצה"><span>ריכוך <output for="vm-feather">0</output></span><input id="vm-feather" type="range" min="0" max="64" value="0"></label>
+          <button class="btn sm ghost" type="button" data-vmask="toggle" aria-pressed="false">⊘ השבתה</button>
+          <button class="btn sm ghost" type="button" data-vmask="remove">✕ מחיקה</button>
         </div>
       </div>
       <ul class="layer-list" role="listbox" aria-label="השכבות, העליונה ראשונה"></ul>

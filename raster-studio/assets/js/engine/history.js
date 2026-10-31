@@ -169,7 +169,7 @@ export class History {
   }
 
   /**
-   * חיתוך / שינוי גודל הקנבס. state = { w, h, maps: Map(layer → tiles), sel } — לפני ואחרי.
+   * חיתוך / שינוי גודל הקנבס. state = { w, h, maps: Map(layer → tiles), sel, vec? } — לפני ואחרי.
    * ביטול וביצוע מחליפים את מפות האריחים של כל השכבות ואת הגודל.
    */
   crop(doc, before, after, label) {
@@ -177,6 +177,8 @@ export class History {
     const set = st => {
       doc.width = st.w; doc.height = st.h;
       for (const [layer, tiles] of st.maps) { layer.tiles = tiles; layer.rev = (layer.rev ?? 0) + 1; }
+      // מסכות וקטוריות זזות יחד (vec: Map(layer → vectorMask), רשות)
+      if (st.vec) for (const [layer, vm] of st.vec) layer.vectorMask = vm;
       doc.selection = st.sel;
       r.resetComposite(doc);
     };

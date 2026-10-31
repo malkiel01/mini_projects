@@ -98,6 +98,7 @@ export function createLayersPanel({ root, doc, renderer, history, onChange, toas
         if (item.adjust) l.adjust = { ...item.adjust };
         if (item.fill) l.fill = structuredClone(item.fill);
         if (item.effects?.length) l.effects = structuredClone(item.effects);
+        if (item.vectorMask) l.vectorMask = { ...item.vectorMask };
         return l;
       };
       const copy = copyInto(src, { name: src.name + ' עותק', index: d.indexOf(src) + 1 });
@@ -172,6 +173,48 @@ export function createLayersPanel({ root, doc, renderer, history, onChange, toas
     if (b && !b.disabled) { if (b.dataset.act !== 'fx') beforeChange(); act[b.dataset.act](); }
     const mb = e.target.closest('[data-mask]');
     if (mb && !mb.disabled) { beforeChange(); maskAct[mb.dataset.mask](); }
+    const vb = e.target.closest('[data-vmask]');
+    if (vb && !vb.disabled) { beforeChange(); vmaskAct[vb.dataset.vmask](); }
+  });
+
+  // ---- המסכה הווקטורית של השכבה הפעילה ----
+  const vmaskAct = {
+    toggle() {
+      const d = doc(), l = d.active, vm = l.vectorMask;
+      const after = { ...vm, enabled: vm.enabled === false };
+      history.props(d, l, { vectorMask: vm }, { vectorMask: after }, after.enabled ? 'הפעלת מסכה וקטורית' : 'השבתת מסכה וקטורית');
+      l.vectorMask = after;
+      renderer.invalidate(d);
+      changed('vmask');
+    },
+    remove() {
+      const d = doc(), l = d.active;
+      if (l.locked) { toast('השכבה נעולה'); return; }
+      history.props(d, l, { vectorMask: l.vectorMask }, { vectorMask: undefined }, 'מחיקת מסכה וקטורית');
+      l.vectorMask = undefined;
+      renderer.invalidate(d);
+      changed('vmask');
+    },
+  };
+  // ריכוך: חי בגרירה, ורשומה אחת בסוף
+  const feather = $('#vm-feather', root);
+  let featherBefore = null;
+  feather.addEventListener('input', () => {
+    const d = doc(), l = d.active;
+    if (!l.vectorMask) return;
+    featherBefore ??= l.vectorMask;
+    l.vectorMask = { ...l.vectorMask, feather: Number(feather.value) };
+    $('output[for="vm-feather"]', root).textContent = feather.value;
+    renderer.invalidate(d);
+    onChange('vmask-feather');
+  });
+  feather.addEventListener('change', () => {
+    const d = doc(), l = d.active;
+    if (featherBefore && l.vectorMask && featherBefore.feather !== l.vectorMask.feather) {
+      history.props(d, l, { vectorMask: featherBefore }, { vectorMask: l.vectorMask }, 'ריכוך מסכה וקטורית');
+    }
+    featherBefore = null;
+    render();
   });
 
   // ---- המסכה של השכבה הפעילה ----
@@ -235,6 +278,7 @@ export function createLayersPanel({ root, doc, renderer, history, onChange, toas
     : layer.fill ? `<span class="thumb folder fill-thumb" aria-hidden="true" title="שכבת מילוי" style="background:${fillCss(layer.fill)}"></span>`
     : '<canvas class="thumb" aria-hidden="true"></canvas>'}
       ${layer.mask ? '<button class="mask-thumb" type="button"><canvas class="thumb"></canvas></button>' : ''}
+      ${layer.vectorMask ? `<span class="vmask-thumb${layer.vectorMask.enabled === false ? ' off' : ''}" title="מסכה וקטורית">🔷</span>` : ''}
       <button class="layer-name one" type="button"></button>
       ${layer.effects?.length ? '<button class="fx-badge" type="button" title="סגנונות שכבה">fx</button>' : ''}
       <button class="icon-btn eye" type="button"></button>
@@ -423,6 +467,18 @@ export function createLayersPanel({ root, doc, renderer, history, onChange, toas
       $('[data-mask="toggle"]', mo).setAttribute('aria-pressed', String(!l.mask.enabled));
       $('[data-mask="toggle"]', mo).textContent = l.mask.enabled ? '⊘ השבתה' : '◉ הפעלה';
       for (const b of mo.querySelectorAll('[data-mask="apply"], [data-mask="remove"]')) b.disabled = l.locked;
+    }
+    const vo = $('.vmask-opts', root);
+    vo.hidden = !l.vectorMask;
+    if (l.vectorMask) {
+      const off = l.vectorMask.enabled === false;
+      $('[data-vmask="toggle"]', vo).setAttribute('aria-pressed', String(off));
+      $('[data-vmask="toggle"]', vo).textContent = off ? '◉ הפעלה' : '⊘ השבתה';
+      if (featherBefore === null) {
+        feather.value = l.vectorMask.feather ?? 0;
+        $('output[for="vm-feather"]', vo).textContent = feather.value;
+      }
+      feather.disabled = $('[data-vmask="remove"]', vo).disabled = l.locked;
     }
     for (const b of document.querySelectorAll('[data-layer-count]')) b.dataset.layerCount = d.rasters().length;
   }

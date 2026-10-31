@@ -223,8 +223,10 @@ const mbeLayers = (list, srcOf, px, recipeOf) => list.map(l => {
   // ה-PNG שלנו בגודל המשטח כולו: box (מיקום של תמונה קטנה) כבר אפוי לתוכו. בעמוד — px: גודל ה-PNG בפיקסלים
   if (l.type !== 'group') { delete common.box; delete common.px; if (px) common.px = px; }
   // מסכה שלנו (או שנפתחה ונמחקה / הוחלה מאז) — המתכון נכתב מחדש; מתכון של אחרים שלא טענו — נשאר כמו שהוא
-  const fx = l.effects?.length || l.effectsLoaded;
-  if (l.mask || l.maskLoaded || l.adjust || l.adjustLoaded || l.fill || l.fillLoaded || fx) for (const k of [...MASK_RECIPE, 'adjust', 'fill', 'effects']) delete common[k];
+  const fx = l.effects?.length || l.effectsLoaded, vm = l.vectorMask || l.vectorMaskLoaded;
+  if (l.mask || l.maskLoaded || l.adjust || l.adjustLoaded || l.fill || l.fillLoaded || fx || vm) {
+    for (const k of [...MASK_RECIPE, 'adjust', 'fill', 'effects', 'vectorMask']) delete common[k];
+  }
   const body = l.type === 'group' ? { children: mbeLayers(l.children, srcOf, px, recipeOf) } : { src: srcOf(l), ...(recipeOf(l) ?? {}) };
   return { ...common, ...body, opacity: round(l.opacity), blend: l.blend, visible: !!l.visible, locked: !!l.locked };
 });
@@ -295,6 +297,7 @@ export function gapsFor(rendition, tree) {
   if (rendition === 'ora' && layers.some(l => l.adjust)) g.push('adjust → baked');
   if (rendition === 'ora' && layers.some(l => l.fill)) g.push('fill → baked');
   if (rendition === 'ora' && layers.some(l => effectsOf(l).length)) g.push('effects → baked');
+  if (rendition === 'ora' && layers.some(l => l.vectorMask && l.vectorMask.enabled !== false)) g.push('vector-mask → baked');
   if (rendition === 'ora') {
     // ORA (GIMP / Krita) ממזג ב-sRGB; אנחנו — בלינארי. מראה שכבות חצי-שקופות ומצבי מיזוג יכול להשתנות מעט
     if (all.some(l => l.blend !== 'normal' || l.opacity < 1)) g.push('blend-space:linear → srgb');

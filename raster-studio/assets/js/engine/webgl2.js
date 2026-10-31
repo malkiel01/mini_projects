@@ -13,6 +13,7 @@ import { TILE, BLEND_MODES, tilesInRect, newMask } from './doc.js';
 import { adjustOf, fillRamp, fillGeometry, effectsOf, effectsReach } from './formats.js';
 import { rasterTile, selectionBox } from './selection.js';
 import { matrix as xfMatrix, bounds as xfBounds } from './transform.js';
+import { vmaskTile } from './vmask.js';
 
 const VERT = `#version 300 es
 in vec2 a;
@@ -73,9 +74,9 @@ void main() { o = u_color; }`,
   // מסכת שכבה (u_useMask): הערוץ r של אריח המסכה, בגווני אפור של sRGB (50% אפור = חצי שקוף, כמו בפוטושופ)
   blend: `#version 300 es
 precision highp float;
-uniform sampler2D u_dst, u_src, u_msk;
+uniform sampler2D u_dst, u_src, u_msk, u_vm;
 uniform float u_opacity;
-uniform int u_mode, u_useMask;
+uniform int u_mode, u_useMask, u_useVm;
 in vec2 v_uv; out vec4 o;
 ${ENCODE}
 vec3 screenB(vec3 b, vec3 s) { return b + s - b * s; }
@@ -87,6 +88,7 @@ void main() {
   vec4 b = texture(u_dst, v_uv);
   vec4 s = texture(u_src, v_uv) * u_opacity;
   if (u_useMask == 1) s *= enc(vec3(texture(u_msk, v_uv).r)).r;
+  if (u_useVm == 1) s *= texture(u_vm, v_uv).r;   // מסכה וקטורית: כיסוי 0–1 (R8)
   float ab = b.a, as_ = s.a;
   vec3 Cb = ab > 0.0 ? clamp(b.rgb / ab, 0.0, 1.0) : vec3(0.0);
   vec3 Cs = as_ > 0.0 ? clamp(s.rgb / as_, 0.0, 1.0) : vec3(0.0);
@@ -228,14 +230,15 @@ void main() {
   // שכבת התאמה: מה שמתחת (u_a) ↔ אחרי ההתאמה (u_b), לפי האטימות כפול המסכה (אפור של sRGB)
   lerp: `#version 300 es
 precision highp float;
-uniform sampler2D u_a, u_b, u_msk;
+uniform sampler2D u_a, u_b, u_msk, u_vm;
 uniform float u_k;
-uniform int u_useMask;
+uniform int u_useMask, u_useVm;
 in vec2 v_uv; out vec4 o;
 ${ENCODE}
 void main() {
   float k = u_k;
   if (u_useMask == 1) k *= enc(vec3(texture(u_msk, v_uv).r)).r;
+  if (u_useVm == 1) k *= texture(u_vm, v_uv).r;
   o = mix(texture(u_a, v_uv), texture(u_b, v_uv), k);
 }`,
 
@@ -304,14 +307,16 @@ void main() {
   // סגנונות שכבה (1): התוכן המרופד כפול המסכה המרופדת (אפור של sRGB) — הבסיס של כל האפקטים
   fxsrc: `#version 300 es
 precision highp float;
-uniform sampler2D u_c, u_m;
-uniform int u_useMask;
+uniform sampler2D u_c, u_m, u_v;
+uniform int u_useMask, u_useVm;
 out vec4 o;
 ${ENCODE}
 void main() {
   ivec2 p = ivec2(gl_FragCoord.xy);
   vec4 c = texelFetch(u_c, p, 0);
-  o = u_useMask == 1 ? c * enc(vec3(texelFetch(u_m, p, 0).r)).r : c;
+  if (u_useMask == 1) c *= enc(vec3(texelFetch(u_m, p, 0).r)).r;
+  if (u_useVm == 1) c *= texelFetch(u_v, p, 0).r;   // מסכה וקטורית (מרופדת)
+  o = c;
 }`,
 
   // (2) טשטוש גאוסי של האלפא בכיוון אחד (u_dir), על כל השטח המרופד (u_n × u_n); u_inv — של 1 − אלפא (אפקט פנימי)
@@ -633,6 +638,38 @@ export class WebGL2Renderer {
     for (const t of layer.tiles.values()) { this.gl.deleteTexture(t); this.textures--; }
     layer.tiles.clear();
     if (layer.mask) this.freeLayer(layer.mask);
+    this.#freeVm(layer);
+  }
+
+  // ---------- מסכה וקטורית ----------
+
+  /** משחרר את האריחים המרוסטרים של המסכה הווקטורית (המסכות הקבועות — משותפות, לא משתחררות) */
+  #freeVm(layer) {
+    const c = layer._vm;
+    if (!c) return;
+    for (const t of c.tiles.values()) if (t !== this.fullMask && t !== this.zeroMask) { this.gl.deleteTexture(t); this.textures--; }
+    layer._vm = null;
+  }
+
+  /**
+   * הכיסוי של המסכה הווקטורית באריח (R8), או null — אין מסכה / מושבתת. מרוסטר בשימוש הראשון ונשמר עד שהמסכה
+   * (d / ריכוך) או הזזת הקבוצה משתנים.
+   */
+  #vmTex(doc, layer, tx, ty) {
+    const vm = layer.vectorMask;
+    if (!vm || vm.enabled === false) return null;
+    const sh = doc?._shift?.layers.has(layer) ? doc._shift : null;
+    const sig = `${vm.d}|${vm.feather ?? 0}|${sh ? sh.dx + ',' + sh.dy : ''}`;
+    if (layer._vm?.sig !== sig) { this.#freeVm(layer); layer._vm = { sig, tiles: new Map() }; }
+    const k = key(tx, ty);
+    let t = layer._vm.tiles.get(k);
+    if (!t) {
+      const r = vmaskTile(vm, tx, ty, sh?.dx ?? 0, sh?.dy ?? 0);
+      t = r === 'empty' ? this.zeroMask : r === 'full' ? this.fullMask : this.#r8(r);
+      if (typeof r !== 'string') this.textures++;
+      layer._vm.tiles.set(k, t);
+    }
+    return t;
   }
 
   /** עותק של אריח (מרקם חדש). */
@@ -1535,7 +1572,7 @@ export class WebGL2Renderer {
       if (layer.adjust) {
         const mk = layer.mask?.enabled ? (this.#layerTileFor(doc, layer.mask, tx, ty) || this.emptyTex) : null;
         this.#colorAdjust(adjustOf(layer), a, this.adjLayerTmp);
-        this.#lerpInto(b, a, this.adjLayerTmp, layer.opacity, mk);
+        this.#lerpInto(b, a, this.adjLayerTmp, layer.opacity, mk, this.#vmTex(doc, layer, tx, ty));
         [a, b] = [b, a];
         continue;
       }
@@ -1553,7 +1590,7 @@ export class WebGL2Renderer {
       if (!t) continue;
       // מסכה: גם היא עוברת דרך #layerTileFor — משיכה פתוחה על המסכה מוצגת חיה. אריח חסר = מוסתר
       const mk = layer.mask?.enabled ? (this.#layerTileFor(doc, layer.mask, tx, ty) || this.emptyTex) : null;
-      this.#blendInto(b, a, t, layer.opacity, Math.max(0, BLEND_MODES.indexOf(layer.blend)), mk);
+      this.#blendInto(b, a, t, layer.opacity, Math.max(0, BLEND_MODES.indexOf(layer.blend)), mk, this.#vmTex(doc, layer, tx, ty));
       [a, b] = [b, a];
     }
     gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, null);
@@ -1576,7 +1613,7 @@ export class WebGL2Renderer {
     };
     const big = () => this.#floatTex(FX_N, FX_N);
     this.fxTex = {
-      c: big(), m: big(), s: lin(big()), h: big(), b: lin(big()),
+      c: big(), m: big(), v: big(), s: lin(big()), h: big(), b: lin(big()),
       near: Array.from({ length: 9 }, () => this.#floatTex(TILE, TILE)),
       out: Array.from({ length: 4 }, () => this.#floatTex(TILE, TILE)),
     };
@@ -1633,7 +1670,17 @@ export class WebGL2Renderer {
       const mn = this.#fxNear(doc, layer.mask, tx, ty, this.#layerTileFor(doc, layer.mask, tx, ty), null);
       this.#pad((dx, dy) => mn[(dy + 1) * 3 + dx + 1], K, fx.m);
     }
-    this.#run('fxsrc', fx.s, P, P, { u_c: fx.c, u_m: fx.m }, u => gl.uniform1i(u.u_useMask, useMask ? 1 : 0));
+    // המסכה הווקטורית — גם היא מרופדת (מהמטמון; אריח מחוץ לנתיב — מסכת האפס)
+    const useVm = !!layer.vectorMask && layer.vectorMask.enabled !== false;
+    if (useVm) {
+      const vt = [];
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) vt.push(this.#vmTex(doc, layer, tx + dx, ty + dy));
+      this.#pad((dx, dy) => vt[(dy + 1) * 3 + dx + 1], K, fx.v);
+    }
+    this.#run('fxsrc', fx.s, P, P, { u_c: fx.c, u_m: fx.m, u_v: fx.v }, u => {
+      gl.uniform1i(u.u_useMask, useMask ? 1 : 0);
+      gl.uniform1i(u.u_useVm, useVm ? 1 : 0);
+    });
 
     const blurA = (e, inv) => {
       const r = Math.round(e.blur ?? 0), sigma = Math.max(0.5, r / 2);   // נראה כמעט עד הרדיוס, כמו "גודל" בפוטושופ
@@ -1742,19 +1789,21 @@ export class WebGL2Renderer {
   }
 
   /** out = mix(a, b, k × מסכה) */
-  #lerpInto(out, a, b, k, mask = null) {
+  #lerpInto(out, a, b, k, mask = null, vm = null) {
     const gl = this.gl;
     const p = this.prog.lerp;
     this.#target(out);
     gl.useProgram(p.p);
     gl.bindVertexArray(this.vao);
     gl.disable(gl.BLEND);
-    gl.uniform1i(p.u.u_a, 0); gl.uniform1i(p.u.u_b, 1); gl.uniform1i(p.u.u_msk, 2);
+    gl.uniform1i(p.u.u_a, 0); gl.uniform1i(p.u.u_b, 1); gl.uniform1i(p.u.u_msk, 2); gl.uniform1i(p.u.u_vm, 3);
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, a);
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, b);
     gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, mask || this.emptyTex);
+    gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, vm || this.fullMask);
     gl.uniform1f(p.u.u_k, k);
     gl.uniform1i(p.u.u_useMask, mask ? 1 : 0);
+    gl.uniform1i(p.u.u_useVm, vm ? 1 : 0);
     this.#quad(p, [0, 0, TILE, TILE], [0, 0, 1, 1], [TILE, TILE], -1);
   }
 
@@ -1767,7 +1816,7 @@ export class WebGL2Renderer {
     const below = this.#compositeList(doc, list.slice(0, list.indexOf(layer)), tx, ty, 8);
     this.#colorAdjust(adjustOf(layer), below, this.adjLayerTmp);
     const mk = layer.mask?.enabled ? (layer.mask.tiles.get(key(tx, ty)) ?? this.emptyTex) : null;
-    this.#blendInto(out, this.emptyTex, this.adjLayerTmp, 1, 0, mk);
+    this.#blendInto(out, this.emptyTex, this.adjLayerTmp, 1, 0, mk, this.#vmTex(doc, layer, tx, ty));
     return out;
   }
 
@@ -1777,7 +1826,7 @@ export class WebGL2Renderer {
   }
 
   /** out = dst ⊕ src (אטימות, מצב מיזוג, ומסכה אם יש) */
-  #blendInto(out, dst, src, opacity, mode, mask = null) {
+  #blendInto(out, dst, src, opacity, mode, mask = null, vm = null) {
     const gl = this.gl;
     const p = this.prog.blend;
     this.#target(out);
@@ -1787,19 +1836,24 @@ export class WebGL2Renderer {
     gl.uniform1i(p.u.u_dst, 0);
     gl.uniform1i(p.u.u_src, 1);
     gl.uniform1i(p.u.u_msk, 2);
+    gl.uniform1i(p.u.u_vm, 3);
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, dst);
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, src);
     gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, mask || this.emptyTex);
+    gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, vm || this.fullMask);
     gl.uniform1f(p.u.u_opacity, opacity);
     gl.uniform1i(p.u.u_mode, mode);
     gl.uniform1i(p.u.u_useMask, mask ? 1 : 0);
+    gl.uniform1i(p.u.u_useVm, vm ? 1 : 0);
     this.#quad(p, [0, 0, TILE, TILE], [0, 0, 1, 1], [TILE, TILE], -1);
   }
 
   /** אריח השכבה כפול המסכה שלה (בלי אטימות ומיזוג) — לייצוא, ולהחלת המסכה */
-  #maskedTile(layer, tx, ty, out) {
+  /** look — המראה (מסכה רק אם פעילה, ועם המסכה הווקטורית); בלי — להחלת המסכה */
+  #maskedTile(layer, tx, ty, out, look = false) {
     const t = layer.tiles.get(key(tx, ty)) ?? this.emptyTex;
-    this.#blendInto(out, this.emptyTex, t, 1, 0, layer.mask.tiles.get(key(tx, ty)) ?? this.emptyTex);
+    const mk = layer.mask && (!look || layer.mask.enabled) ? (layer.mask.tiles.get(key(tx, ty)) ?? this.emptyTex) : null;
+    this.#blendInto(out, this.emptyTex, t, 1, 0, mk, look ? this.#vmTex(null, layer, tx, ty) : null);
     return out;
   }
 
@@ -1921,12 +1975,17 @@ export class WebGL2Renderer {
       // שכבת מילוי: המילוי, ועם masked — כפול המסכה
       return this.#read((tx, ty) => {
         const f = this.#fillTile(layer.fill, tx, ty, this.fillTmp);
-        if (!masked || !layer.mask?.enabled) return f;
-        this.#blendInto(this.maskTmp, this.emptyTex, f, 1, 0, layer.mask.tiles.get(key(tx, ty)) ?? this.emptyTex);
+        const vm = masked ? this.#vmTex(null, layer, tx, ty) : null;
+        if (!masked || (!layer.mask?.enabled && !vm)) return f;
+        const mk = layer.mask?.enabled ? (layer.mask.tiles.get(key(tx, ty)) ?? this.emptyTex) : null;
+        this.#blendInto(this.maskTmp, this.emptyTex, f, 1, 0, mk, vm);
         return this.maskTmp;
       }, x, y, w, h);
     }
-    if (masked && layer.mask?.enabled) return this.#read((tx, ty) => this.#maskedTile(layer, tx, ty, this.maskTmp), x, y, w, h);
+    // המראה: כפול המסכה וכפול המסכה הווקטורית
+    if (masked && (layer.mask?.enabled || (layer.vectorMask && layer.vectorMask.enabled !== false))) {
+      return this.#read((tx, ty) => this.#maskedTile(layer, tx, ty, this.maskTmp, true), x, y, w, h);
+    }
     return this.#readLayerSync(layer, x, y, w, h);
   }
 
