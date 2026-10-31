@@ -19,13 +19,15 @@
 | `src/js/tabs.js` | `tabs(root, { onChange, remember })` | 2 ✅ |
 | `src/js/files.js` | `download`, `fileName`, `pickFiles`, `dropZone`, `setSaveBridge` | 2 ✅ |
 | `src/js/store.js` | `pref(ns)` (localStorage בטוח), `kv(db)` (IndexedDB) | 2 ✅ |
+| `src/js/viewport.js` | חשבון זום / הזזה טהור — `fit`, `zoomTo`, `zoomBy`, `nextStep`, `screenToDoc`, `pinch`, `wheel`, `zoomLabel` (המקור: `engine/view.js` של הרסטר) | 4 ✅ |
+| `src/js/gestures.js` | `bindViewport(el, { get, set, pointer, hand, ignore })` — גלגלת, צביטה, רווח / גלגלת לחוצה, אצבע שנייה מבטלת את הכלי | 4 ✅ |
 | `src/js/keys.js` | `shortcuts()`, `matches(e, combo)`, `keyOf(e)`, `label`, `ariaKeys` — לפי `e.code`, עובד במקלדת עברית | 3 ✅ |
 
 התיעוד המלא של כל פונקציה — בראש הקובץ שלה.
 
 ## בדיקות
 
-`node creative-suite/ui-core/tests/browser.cjs` — 83 בדיקות ב-Chromium, בטלפון (390px) ובמחשב (1280px), על דף התצוגה.
+`node creative-suite/ui-core/tests/browser.cjs` — 109 בדיקות ב-Chromium, בטלפון (390px) ובמחשב (1280px), על דף התצוגה.
 **מריצים לפני כל שינוי ב-src.**
 
 ## מה מחליפים בכל אפליקציה (שלב 2)
@@ -86,10 +88,14 @@ import { $, h as el } from './ui-core/dom.js';
 - תיקון או שינוי ב-ui-core — בבקשה ישירה לבעלים (הסקיל `creative-suite-team`), לא בעותק.
 - שינוי שבור (שם מחלקה, חתימת פונקציה) — רק עם הודעה לכל אפליקציה שב-`apps.json` לפני המיזוג.
 - ui-core לא יודע מה זה מסמך, שכבה או `.mbe`. מקבל callbacks ומחזיר אובייקט.
+- **קובץ ב-`src` לא נמחק ולא משנה שם** בלי הודעה לכל אפליקציה שב-`apps.json`: אפליקציה עם service worker (הרסטר) מונה
+  את הקבצים ברשימת המטמון, וקובץ חסר מפיל את ההתקנה. קובץ **חדש** לא שובר — אפליקציה שרוצה אותו גם בלי רשת מוסיפה
+  אותו לרשימה ומעלה את גרסת המטמון. (המטמון של הרסטר "רשת קודם" — שינוי בקובץ קיים מגיע מיד.)
 
 ## היסטוריה
 
 - **2026-10-31 — שלב 1:** תשתית (`apps.json`, `tools/sync.php`, שער בפריסה), `ui.css`, דף תצוגה.
 - **2026-10-31 — שלב 2:** ערכת הממשק — `dom`, `toast`, `dialog`, `menu`, `tabs`, `files`, `store`; בדיקות דפדפן.
+- **2026-10-31 — שלב 4:** `viewport.js` + `gestures.js` — זום, הזזה, צביטה, גלגלת (`docs/shared-code/migrate/viewport.md`).
 - **2026-10-31 — טייס:** ענן החבילה עבר לשלבים 1–2 (#924) — בלי באג ב-ui-core. רסטר, וקטורי וסטודיו — תיקון המקלדת העברית.
 - **2026-10-31 — שלב 3:** `keys.js` — קיצורים לפי `e.code`; `keyOf(e)` לתיקון של שורה אחת (`docs/shared-code/migrate/keys.md`).

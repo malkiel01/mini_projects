@@ -52,6 +52,18 @@
     </section>
 
     <section>
+        <h2 class="sec-title">קנבס — זום, הזזה, צביטה</h2>
+        <p class="hint">אצבע אחת / עכבר — עיפרון (הכלי של האפליקציה). שתי אצבעות — צביטה. רווח, גלגלת לחוצה או "יד" — הזזה. Ctrl+גלגלת — זום.</p>
+        <div class="row-btns" style="align-items:center">
+            <button class="icon-btn ghost" type="button" id="z-out" aria-label="הקטנה">−</button>
+            <button class="btn ghost" type="button" id="z-lbl" dir="ltr">100%</button>
+            <button class="icon-btn ghost" type="button" id="z-in" aria-label="הגדלה">+</button>
+            <label class="switch"><input type="checkbox" id="hand"> יד</label>
+        </div>
+        <canvas id="cv" style="display:block;width:100%;height:260px;margin-top:var(--s2);touch-action:none;border:1px solid var(--line);border-radius:var(--r);background:var(--bg)"></canvas>
+    </section>
+
+    <section>
         <h2 class="sec-title">שדות</h2>
         <div class="fields">
             <label class="f"><span>שם</span><input value="כרטיס ברכה"></label>
@@ -116,6 +128,8 @@
     import { tabs } from '../src/js/tabs.js';
     import { dropZone } from '../src/js/files.js';
     import { shortcuts } from '../src/js/keys.js';
+    import * as V from '../src/js/viewport.js';
+    import { bindViewport } from '../src/js/gestures.js';
 
     initDialogs();
     tabs($('.tabs-demo'), { remember: 'ui-core-demo:tab' });
@@ -158,6 +172,40 @@
     keys.title($('#undo-btn'), 'Mod+Z');
     keys.title($('#redo-btn'), 'Mod+Shift+Z');
     window.__keys = keys;
+
+    // קנבס: מסמך 800×600, עיפרון ככלי של האפליקציה
+    const cv = $('#cv'), DOC = [800, 600], strokes = [];
+    let view = { zoom: 1, x: 0, y: 0 }, cur = null;
+    const size = () => { const r = cv.getBoundingClientRect(), d = devicePixelRatio || 1; cv.width = r.width * d; cv.height = r.height * d; return r; };
+    function draw() {
+        const c = cv.getContext('2d'), d = devicePixelRatio || 1;
+        c.setTransform(d, 0, 0, d, 0, 0); c.clearRect(0, 0, cv.width, cv.height);
+        c.setTransform(d * view.zoom, 0, 0, d * view.zoom, d * view.x, d * view.y);
+        c.fillStyle = '#fff'; c.fillRect(0, 0, ...DOC);
+        c.strokeStyle = '#2d4a8a'; c.lineWidth = 4; c.lineCap = c.lineJoin = 'round';
+        for (const s of strokes) { c.beginPath(); s.forEach(([x, y], i) => i ? c.lineTo(x, y) : c.moveTo(x, y)); c.stroke(); }
+        $('#z-lbl').textContent = V.zoomLabel(view.zoom);
+    }
+    const setView = v => { view = v; draw(); };
+    const fitView = () => { const r = size(); setView(V.fit(...DOC, r.width, r.height)); };
+    const center = () => { const r = cv.getBoundingClientRect(); return [r.width / 2, r.height / 2]; };
+    $('#z-in').onclick = () => setView(V.zoomTo(view, V.nextStep(view.zoom, 1), ...center()));
+    $('#z-out').onclick = () => setView(V.zoomTo(view, V.nextStep(view.zoom, -1), ...center()));
+    $('#z-lbl').onclick = fitView;
+    bindViewport(cv, {
+        get: () => view, set: setView,
+        hand: () => $('#hand').checked,
+        pointer: {
+            down: (e, p) => { cur = [p]; strokes.push(cur); draw(); return true; },
+            move: (e, pts) => { cur?.push(...pts.map(q => [q.x, q.y])); draw(); },
+            up: () => { cur = null; },
+            cancel: () => { strokes.splice(strokes.indexOf(cur), 1); cur = null; draw(); },
+        },
+        onDoubleClick: (e, p) => setView(Math.abs(view.zoom - 1) < 1e-6 ? V.fit(...DOC, cv.clientWidth, cv.clientHeight) : V.zoomTo(view, 1, ...p)),
+    });
+    addEventListener('resize', fitView);
+    fitView();
+    window.__vp = { get view() { return view; }, strokes };
     dropZone($('#ctx'), { accept: ['image/', '.mbe'], onFiles: f => toast(`${f.length} קבצים`), onReject: f => toast(`לא נתמך: ${f[0].name}`, true) });
 </script>
 </body>
