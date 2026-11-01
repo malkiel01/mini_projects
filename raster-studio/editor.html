@@ -162,6 +162,11 @@
           <button class="btn primary" type="button" data-crop="apply" disabled>✓ חיתוך</button>
         </div>
         <div class="opt-btns xf-opts" data-for="move">
+          <span class="xf-modes" role="group" aria-label="סוג שינוי הצורה">
+            <button class="btn sm ghost" type="button" data-xfmode="free" aria-pressed="true" disabled title="ידיות: גודל וסיבוב">⬚ חופשי</button>
+            <button class="btn sm ghost" type="button" data-xfmode="distort" aria-pressed="false" disabled title="כל פינה זזה לבד — פרספקטיבה">◇ פינות</button>
+            <button class="btn sm ghost" type="button" data-xfmode="warp" aria-pressed="false" disabled title="רשת של 16 נקודות — כיפוף">▦ Warp</button>
+          </span>
           <span class="hint one" id="xf-info" dir="ltr"></span>
           <button class="btn ghost" type="button" data-xf="cancel" disabled>✕ ביטול</button>
           <button class="btn primary" type="button" data-xf="apply" disabled>✓ החלה</button>

@@ -78,7 +78,7 @@ test('בחירה ו-PDF: ציור נבחר בהקשה; נתיבים — path ש�
   assert.deepEqual(list.pages[0].ops[1], { op: 'image', src, box: [0, 0, 200, 100] });
 });
 
-test('ציור ל-PDF: סמל מקונן, שקיפות, קו, מעבר צבע ומסכת חיתוך — נתיבים; פקודה יחסית ועצירות בשקיפות שונה — כתמונה, בסדר', () => {
+test('ציור ל-PDF: סמל מקונן, שקיפות, קו, מעבר צבע (גם עם שקיפות בעצירות) ומסכת חיתוך — נתיבים; פקודה יחסית — כתמונה, בסדר', () => {
   const syms = { s: { paths: [{ id: 'q', d: 'M0 0 L10 0 L10 10 Z', transform: [2, 0, 0, 2, 0, 0], fill: { color: '#00FF00', opacity: 0.5 } }] } };
   const layer = { id: 'D', type: 'vector', box: [0, 0, 100, 100], paths: [
     { id: 'a', type: 'use', symbol: 's', transform: [1, 0, 0, 1, 5, 7] },
@@ -92,13 +92,15 @@ test('ציור ל-PDF: סמל מקונן, שקיפות, קו, מעבר צבע ו
   const segs = drawingSegments(layer, syms);
   assert.deepEqual(segs.map(x => x.ops ? 'ops' : 'raster'), ['ops', 'raster', 'ops']);
   assert.deepEqual(segs[0].ops.map(o => o.op), ['path', 'path', 'path', 'clip', 'path', 'restore']);
+  assert.deepEqual(segs[2].ops[0].fill.gradient, { type: 'radial', cx: 1, cy: 2, r: 3, fx: 1, fy: 2,
+    stops: [{ offset: 0, color: '#000000', opacity: 0.2 }, { offset: 1, color: '#ffffff' }] });
   assert.deepEqual(segs[0].ops[2].fill, { gradient: { type: 'linear', x1: 0, y1: 0, x2: 1, y2: 1, stops: [{ offset: 0, color: '#000000' }] } });
   assert.deepEqual(segs[0].ops[3], { op: 'clip', d: 'M0 0 L1 1 Z', transform: [1, 0, 0, 1, 0, 0] });
   assert.equal(segs[0].ops[4].fill, '#111111');
   assert.deepEqual(segs[0].ops[0], { op: 'path', d: 'M0 0 L10 0 L10 10 Z', transform: [2, 0, 0, 2, 5, 7], fill: '#00ff00', fillOpacity: 0.5 });
   assert.deepEqual(segs[0].ops[1], { op: 'path', d: 'M0 0 L5 5', transform: [1, 0, 0, 1, 0, 0], stroke: '#000000', width: 2, strokeOpacity: 0.5, cap: 'round', dash: [3, 1] });
-  assert.deepEqual(segs[1].raster.map(x => x.id), ['r', 'v']);
-  assert.equal(segs[2].ops.length, 1);   // e; z — בלי מילוי ובלי קו — לא נכנס
+  assert.deepEqual(segs[1].raster.map(x => x.id), ['r']);
+  assert.equal(segs[2].ops.length, 2);   // v, e; z — בלי מילוי ובלי קו — לא נכנס
 });
 
 test('עזרים: סמלים מקוננים, תמונות בקבוצה, אפקטים', () => {

@@ -29,7 +29,7 @@
  *       { "gradient": { "type": "linear", "x1": 0, "y1": 0, "x2": 100, "y2": 0,
  *                       "stops": [ { "offset": 0, "color": "#…" }, { "offset": 1, "color": "#…" } ] } }
  *       { "gradient": { "type": "radial", "cx": 50, "cy": 50, "r": 50, "fx": 50, "fy": 50, "stops": [ … ] } }
- * שקיפות בתוך העצירות — עוד לא (שגיאה); שקיפות לכל המעבר — fillOpacity / strokeOpacity.
+ * עצירה יכולה לשאת "opacity" (0–1) — מסכה רכה לפי בהירות (מעבר אפור באותן קואורדינטות); fillOpacity / strokeOpacity — לכל המעבר.
  *
  * glyphs: נקודת ההתחלה (x, y) היא קו הבסיס. כל גליף — מזהה בגופן, היסט (dx ימינה, dy למעלה — כמו HarfBuzz) והתקדמות,
  * כולם בנקודות בגודל הנתון; הגליפים בסדר חזותי (משמאל לימין). text — הטקסט הלוגי (ActualText: חיפוש והעתקה).
@@ -81,7 +81,8 @@ function pdf_draw(array $list, callable $resolve): string
         return [$d / $det, -$b / $det, -$c / $det, $a / $det, ($c * $f - $d * $e) / $det, ($b * $e - $a * $f) / $det];
     };
     // מעבר צבע → מילון Shading (2 — לינארי, 3 — רדיאלי); כמה עצירות — פונקציה מחוברת (type 3) של מקטעים לינאריים
-    $shading = function ($g, string $where) use ($num, $color, $n): string {
+    // $alpha — אותו מעבר באפור, מהאטימות של העצירות (למסכה הרכה)
+    $shading = function ($g, string $where, bool $alpha = false) use ($num, $color, $n, $unit): string {
         if (!is_array($g)) throw new InvalidArgumentException("gradient: $where");
         $type = $g['type'] ?? '';
         $stops = $g['stops'] ?? null;
@@ -89,8 +90,9 @@ function pdf_draw(array $list, callable $resolve): string
         $st = [];
         foreach (array_values($stops) as $k) {
             if (!is_array($k)) throw new InvalidArgumentException("gradient: עצירה { offset, color }: $where");
-            if (isset($k['opacity']) && $num($k['opacity'], $where) < 1) throw new InvalidArgumentException("gradient: שקיפות בעצירות — עוד לא נתמכת (fillOpacity / strokeOpacity לכל המעבר): $where");
-            $st[] = [max(0, min(1, $num($k['offset'] ?? null, $where))), $color($k['color'] ?? null, $where)];
+            $c = $color($k['color'] ?? null, $where);
+            $a = isset($k['opacity']) ? $unit($k['opacity'], $where) : 1.0;
+            $st[] = [max(0, min(1, $num($k['offset'] ?? null, $where))), $alpha ? $n($a) : $c];
         }
         usort($st, fn($x, $y) => $x[0] <=> $y[0]);
         if ($st[0][0] > 0) array_unshift($st, [0.0, $st[0][1]]);
@@ -112,7 +114,13 @@ function pdf_draw(array $list, callable $resolve): string
             $coords = [$g['fx'] ?? $cx, $g['fy'] ?? $cy, 0, $cx, $cy, $r];
             $stype = 3;
         } else throw new InvalidArgumentException("gradient: type — linear / radial: $where");
-        return "<< /ShadingType $stype /ColorSpace /DeviceRGB /Coords [" . implode(' ', array_map(fn($v) => $n($num($v, $where)), $coords)) . "] /Function $fn /Extend [true true] >>";
+        return "<< /ShadingType $stype /ColorSpace " . ($alpha ? '/DeviceGray' : '/DeviceRGB') . " /Coords [" . implode(' ', array_map(fn($v) => $n($num($v, $where)), $coords)) . "] /Function $fn /Extend [true true] >>";
+    };
+    // מעבר צבע עם שקיפות באחת העצירות — צריך מסכה רכה
+    $masked = function ($v) use ($num): bool {
+        if (!is_array($v) || !is_array($v['gradient']['stops'] ?? null)) return false;
+        foreach ($v['gradient']['stops'] as $k) if (is_array($k) && isset($k['opacity']) && is_numeric($k['opacity']) && $k['opacity'] < 1) return true;
+        return false;
     };
     // צבע או מעבר צבע → האופרטורים שקובעים אותו (rg / RG, או תבנית: /Pattern cs … scn)
     $paint = function ($v, bool $stroke, string $where, array $m) use ($color, $shading, $w): string {
@@ -227,26 +235,33 @@ function pdf_draw(array $list, callable $resolve): string
                     $hasStroke = isset($op['stroke']);
                     if (!$hasFill && !$hasStroke) throw new InvalidArgumentException("path בלי fill ובלי stroke: $where");
                     $m = $matrix($op['transform'] ?? null, $where, $b, $H);
-                    $c .= "q\n" . implode(' ', array_map($n, $m)) . " cm\n";
-                    $fo = isset($op['fillOpacity']) ? $unit($op['fillOpacity'], $where) : 1.0;
-                    $so = isset($op['strokeOpacity']) ? $unit($op['strokeOpacity'], $where) : 1.0;
-                    if (($hasFill && $fo < 1) || ($hasStroke && $so < 1)) $c .= $w->alpha($hasFill ? $fo : 1, $hasStroke ? $so : 1) . " gs\n";
-                    if ($hasFill) $c .= $paint($op['fill'], false, $where, $m) . "\n";
-                    if ($hasStroke) {
-                        $caps = ['butt' => 0, 'round' => 1, 'square' => 2];
-                        $joins = ['miter' => 0, 'round' => 1, 'bevel' => 2];
-                        $cap = $op['cap'] ?? 'butt';
-                        $join = $op['join'] ?? 'miter';
-                        if (!isset($caps[$cap]) || !isset($joins[$join])) throw new InvalidArgumentException("cap / join: $where");
-                        $c .= $paint($op['stroke'], true, $where, $m) . ' ' . $n($num($op['width'] ?? 1, $where)) . " w {$caps[$cap]} J {$joins[$join]} j " . $n(max(1, $num($op['miter'] ?? 4, $where))) . " M\n";
-                        $dash = $op['dash'] ?? [];
-                        if (!is_array($dash)) throw new InvalidArgumentException("dash [on, off, …]: $where");
-                        if ($dash) $c .= '[' . implode(' ', array_map(fn($v) => $n(max(0, $num($v, $where))), array_values($dash))) . "] 0 d\n";
-                    }
                     $rule = $op['fillRule'] ?? 'nonzero';
                     if ($rule !== 'nonzero' && $rule !== 'evenodd') throw new InvalidArgumentException("fillRule: nonzero / evenodd: $where");
                     $eo = $rule === 'evenodd' ? '*' : '';
-                    $c .= $pathOps($op['d'] ?? null, $where) . ($hasFill && $hasStroke ? "B$eo" : ($hasFill ? "f$eo" : 'S')) . "\nQ\n";
+                    $d = $pathOps($op['d'] ?? null, $where);
+                    $fo = isset($op['fillOpacity']) ? $unit($op['fillOpacity'], $where) : 1.0;
+                    $so = isset($op['strokeOpacity']) ? $unit($op['strokeOpacity'], $where) : 1.0;
+                    // מסכה רכה חלה על כל מה שנצבע אחריה — מילוי וקו עם מסכה נצבעים בנפרד (קודם המילוי, כמו ב-B)
+                    $parts = $hasFill && $hasStroke && ($masked($op['fill']) || $masked($op['stroke'])) ? [[true, false], [false, true]] : [[$hasFill, $hasStroke]];
+                    foreach ($parts as [$pf, $ps]) {
+                        $c .= "q\n" . implode(' ', array_map($n, $m)) . " cm\n";
+                        if (($pf && $fo < 1) || ($ps && $so < 1)) $c .= $w->alpha($pf ? $fo : 1, $ps ? $so : 1) . " gs\n";
+                        $mk = $pf ? $op['fill'] : $op['stroke'];
+                        if ($masked($mk)) $c .= $w->softMask($shading($mk['gradient'], $where, true)) . " gs\n";
+                        if ($pf) $c .= $paint($op['fill'], false, $where, $m) . "\n";
+                        if ($ps) {
+                            $caps = ['butt' => 0, 'round' => 1, 'square' => 2];
+                            $joins = ['miter' => 0, 'round' => 1, 'bevel' => 2];
+                            $cap = $op['cap'] ?? 'butt';
+                            $join = $op['join'] ?? 'miter';
+                            if (!isset($caps[$cap]) || !isset($joins[$join])) throw new InvalidArgumentException("cap / join: $where");
+                            $c .= $paint($op['stroke'], true, $where, $m) . ' ' . $n($num($op['width'] ?? 1, $where)) . " w {$caps[$cap]} J {$joins[$join]} j " . $n(max(1, $num($op['miter'] ?? 4, $where))) . " M\n";
+                            $dash = $op['dash'] ?? [];
+                            if (!is_array($dash)) throw new InvalidArgumentException("dash [on, off, …]: $where");
+                            if ($dash) $c .= '[' . implode(' ', array_map(fn($v) => $n(max(0, $num($v, $where))), array_values($dash))) . "] 0 d\n";
+                        }
+                        $c .= $d . ($pf && $ps ? "B$eo" : ($pf ? "f$eo" : 'S')) . "\nQ\n";
+                    }
                     break;
                 case 'clip':
                     // q — נשאר פתוח עד restore. ה-cm של הנתיב מבוטל אחרי החיתוך (בהופכית), כך שהפעולות שאחריו בקואורדינטות הרגילות

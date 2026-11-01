@@ -952,6 +952,47 @@ async function main() {
   }
   await page.keyboard.press('Escape');
 
+  // עיוות: ◇ פינות (פרספקטיבה) ו-▦ Warp — ריבוע אדום 200..299
+  await openEd(page);
+  await page.waitForFunction(() => window.__rs?.doc);
+  await page.evaluate(() => __rs.setView({ zoom: 1, x: 20, y: 20 }));
+  await page.keyboard.press('m');
+  await drag([200, 200], [300, 300]);
+  await color('#ff0000');
+  await page.keyboard.press('Alt+Backspace');
+  await page.keyboard.press('v');
+  await drag([250, 250], [250, 250]);   // מתחיל צף בלי לזוז
+  await page.waitForSelector('[data-xfmode="distort"]:not([disabled])', { timeout: 3000 }).catch(() => {});
+  await page.click('[data-xfmode="distort"]');
+  check('◇ פינות — מצב עיוות, ארבע נקודות, הידיות מוסתרות', await page.getAttribute('[data-xfmode="distort"]', 'aria-pressed') === 'true'
+    && await page.evaluate(() => document.querySelector('.uic-handles').style.display) === 'none');
+  check('לפני העיוות: (330,330) לבן', near(await px(330, 330), [255, 255, 255, 255]));
+  await drag([300, 300], [380, 380]);   // הפינה הימנית-התחתונה
+  check('גרירת פינה — המרובע נמתח (פרספקטיבה): (330,330) אדום, (205,205) עדיין אדום', near(await px(330, 330), [255, 0, 0, 255]) && near(await px(205, 205), [255, 0, 0, 255]),
+    [await px(330, 330), await px(250, 250), await px(205, 205), await page.evaluate(() => JSON.stringify(__rs.doc._float?.mesh?.pts.slice(0, 2)) + ' ' + JSON.stringify(__rs.doc._float && [__rs.doc._float.x, __rs.doc._float.y, __rs.doc._float.w, __rs.doc._float.h]))].join(' | '));
+  await page.click('[data-xf="apply"]');
+  check('✓ החלה — רשומת "עיוות", והתוכן נשאר', await page.evaluate(() => __rs.history.undoStack.at(-1).label) === 'עיוות' && near(await px(330, 330), [255, 0, 0, 255]));
+  await page.keyboard.press('Control+z');
+  check('ביטול — הריבוע חוזר', near(await px(330, 330), [255, 255, 255, 255]) && near(await px(250, 250), [255, 0, 0, 255]));
+  // Warp: גרירה רחוק מהנקודות — כל הרשת זזה
+  await drag([250, 250], [250, 250]);
+  await page.waitForSelector('[data-xfmode="warp"]:not([disabled])', { timeout: 3000 }).catch(() => {});
+  await page.click('[data-xfmode="warp"]');
+  const wn = await page.evaluate(() => document.querySelector('[data-xfmode="warp"]').getAttribute('aria-pressed'));
+  await drag([250, 250], [300, 250]);
+  check('▦ Warp — 16 נקודות; גרירה בין הנקודות מזיזה את הכול', wn === 'true' && near(await px(330, 250), [255, 0, 0, 255]) && near(await px(220, 250), [0, 0, 0, 0]),
+    [wn, await px(330, 250), await px(220, 250), await px(250, 250), await page.evaluate(() => JSON.stringify(__rs.doc._float && [__rs.doc._float.x, __rs.doc._float.w, !!__rs.doc._float.mesh, __rs.doc._float.mesh?.pts[0]])), await page.evaluate(() => __rs.history.undoStack.map(e => e.label).slice(-3).join('/'))].join(' | '));
+  // גרירת הנקודה הפנימית (1/3, 1/3) — הכיפוף נשאר בתוך המסגרת, הפינות במקומן
+  await drag([283, 233], [300, 200]);
+  check('גרירת נקודה פנימית — הפינות התחתונות לא זזות', near(await px(254, 296), [255, 0, 0, 255]) && near(await px(346, 296), [255, 0, 0, 255]), [await px(254, 296), await px(346, 296)].join(' | '));
+  // הטיוטה נשמרת אחרי 1.5 שניות בלי פעולה — אסור שתחתום את העיוות הפתוח
+  await page.waitForTimeout(2200);
+  check('שמירת הטיוטה האוטומטית — לא חותמת עיוות פתוח', await page.evaluate(() => !!__rs.doc._float && __rs.history.undoStack.at(-1).label !== 'עיוות'));
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => !__rs.doc._float, null, { timeout: 3000 }).catch(() => {});
+  check('Esc — העיוות מבוטל, הריבוע במקומו', near(await px(250, 250), [255, 0, 0, 255]) && near(await px(330, 250), [255, 255, 255, 255]),
+    [await px(250, 250), await px(330, 250), await page.evaluate(() => !!__rs.doc._float), await page.evaluate(() => __rs.history.undoStack.map(e => e.label).slice(-3).join('/'))].join(' | '));
+
   // ---- חיתוך ----
   await openEd(page);
   await page.waitForFunction(() => window.__rs?.doc);

@@ -2451,9 +2451,37 @@ if (trim((string)shell_exec('command -v pdftoppm'))) {
 check('clip / מעבר צבע: רשימה פגומה — הודעה ברורה', str_contains($dwErr(['pages' => [['size' => [10, 10], 'ops' => [['op' => 'restore']]]]]), 'restore בלי clip')
     && str_contains($dwErr(['pages' => [['size' => [10, 10], 'ops' => [['op' => 'path', 'd' => 'M0 0 L5 5 Z', 'fill' => ['gradient' => ['type' => 'conic', 'stops' => [['offset' => 0, 'color' => '#000000']]]]]]]]]), 'linear / radial')
     && str_contains($dwErr(['pages' => [['size' => [10, 10], 'ops' => [['op' => 'path', 'd' => 'M0 0 L5 5 Z', 'fill' => ['gradient' => ['type' => 'linear', 'x1' => 0, 'y1' => 0, 'x2' => 5, 'y2' => 0,
-        'stops' => [['offset' => 0, 'color' => '#000000', 'opacity' => 0.5]]]]]]]]]), 'שקיפות בעצירות')
+        'stops' => [['offset' => 0, 'color' => '#000000', 'opacity' => 1.5]]]]]]]]]), 'בין 0 ל-1')
     && str_contains($dwErr(['pages' => [['size' => [10, 10], 'ops' => [['op' => 'clip', 'd' => 'M0 0 L5 5 Z', 'transform' => [0, 0, 0, 0, 0, 0]]]]]]), 'לא הפיך')
     && $dwErr(['pages' => [['size' => [10, 10], 'ops' => [['op' => 'clip', 'd' => 'M0 0 L5 5 Z']]]]]) === '');
+
+// pdf-core: שקיפות בעצירות (בקשת העימוד) — מסכה רכה לפי בהירות; מילוי וקו עם מסכה — בנפרד
+$saList = ['pages' => [['size' => [100, 100], 'ops' => [
+    ['op' => 'rect', 'box' => [0, 0, 100, 100], 'fill' => '#000000'],
+    ['op' => 'path', 'd' => $sq(0, 0, 100, 40), 'fill' => ['gradient' => ['type' => 'linear', 'x1' => 0, 'y1' => 0, 'x2' => 100, 'y2' => 0,
+        'stops' => [['offset' => 0, 'color' => '#ff0000'], ['offset' => 1, 'color' => '#ff0000', 'opacity' => 0]]]]],
+    ['op' => 'path', 'd' => $sq(10, 55, 80, 30), 'width' => 4, 'stroke' => '#00ff00',
+        'fill' => ['gradient' => ['type' => 'radial', 'cx' => 50, 'cy' => 70, 'r' => 40, 'stops' => [['offset' => 0, 'color' => '#ffffff', 'opacity' => 1], ['offset' => 1, 'color' => '#ffffff', 'opacity' => 0]]]]],
+]]]];
+$saPdf = pdf_draw($saList, $dwRes);
+$saRaw = preg_replace_callback('/stream\n(.*?)\nendstream/s', fn($m) => 'stream ' . (@gzuncompress($m[1]) ?: $m[1]) . ' endstream', $saPdf);
+check('שקיפות בעצירות: ExtGState עם SMask לפי בהירות, טופס עם מעבר אפור (DeviceGray, C0 1 → C1 0), ומילוי + קו — בשני מעברים',
+    preg_match('/\/SM1 << \/Type \/ExtGState \/SMask << \/Type \/Mask \/S \/Luminosity \/G \d+ 0 R >> >>/', $saPdf) && str_contains($saPdf, '/Subtype /Form')
+    && str_contains($saPdf, '/ColorSpace /DeviceGray') && str_contains($saPdf, '/C0 [1] /C1 [0]') && str_contains($saRaw, "/SM2 gs\n/Pattern cs /P2 scn")
+    && substr_count($saRaw, "1 0 0 -1 0 100 cm") === 3 && !str_contains($saRaw, "\nB\n"), substr($saRaw, strpos($saRaw, '/SM1 gs') ?: 0, 200));
+if (trim((string)shell_exec('command -v pdftoppm'))) {
+    file_put_contents("$tmp/sa.pdf", $saPdf);
+    shell_exec('pdftoppm -r 72 -png ' . escapeshellarg("$tmp/sa.pdf") . ' ' . escapeshellarg("$tmp/sa") . ' 2>&1');
+    $saIm = @imagecreatefrompng(glob("$tmp/sa*.png")[0] ?? '');
+    $px = fn($x, $y) => $saIm ? [(imagecolorat($saIm, $x, $y) >> 16) & 255, (imagecolorat($saIm, $x, $y) >> 8) & 255, imagecolorat($saIm, $x, $y) & 255] : [-1, -1, -1];
+    [$a, $mid, $z] = [$px(3, 20), $px(50, 20), $px(97, 20)];
+    [$rc, $re, $line] = [$px(50, 70), $px(14, 60), $px(50, 55)];
+    check('שקיפות בעצירות, כפי שמוצג: אדום שנעלם אל השחור, לבן במרכז הרדיאלי שנעלם בקצה — והקו הירוק לא מושפע מהמסכה',
+        $a[0] > 230 && $mid[0] > 90 && $mid[0] < 170 && $z[0] < 30 && min($rc) > 200 && max($re) < 90 && $line[1] > 200 && $line[0] < 60,
+        json_encode([$a, $mid, $z, $rc, $re, $line]));
+    array_map('unlink', glob("$tmp/sa*") ?: []);
+}
+check('בלי שקיפות בעצירות — אין SMask (הפלט של מעברי צבע קיימים לא משתנה)', !str_contains($c2Pdf, 'SMask') && !str_contains($c2Pdf, '/Form'));
 
 array_map('unlink', glob("$tmp/media/mbe/ids/*") ?: []);
 @rmdir("$tmp/media/mbe/ids");

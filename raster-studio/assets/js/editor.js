@@ -290,9 +290,14 @@ function scheduleDraft(ms = 1500) {
   clearTimeout(draftTimer);
   draftTimer = setTimeout(flushDraft, ms);
 }
-async function flushDraft() {
+/**
+ * שמירת הטיוטה. force — עזיבת הדף (מוסתר / נסגר): גם שינוי צורה פתוח נכתב. בלי — (הטיימר) שינוי צורה / עיוות פתוחים
+ * לא נחתמים מאחורי הגב של המשתמש: מחכים, ומנסים שוב אחרי עוד המתנה.
+ */
+async function flushDraft(force = false) {
   clearTimeout(draftTimer);
   if (!doc || !renderer || renderer.lost || draftBusy || !changed) return;
+  if (!force && tools?.floating) { draftTimer = setTimeout(flushDraft, 1500); return; }
   draftBusy = true;
   try {
     tools?.commitFloat();
@@ -304,7 +309,7 @@ async function flushDraft() {
     draftBusy = false;
   }
 }
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushDraft(); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushDraft(true); });
 
 /**
  * המנוע: WebGPU היכן שיש (הכי מתקדם), אחרת WebGL2. ‎?renderer=webgl2 מכריח את הגיבוי.
@@ -328,7 +333,7 @@ async function createRenderer() {
   return new WebGL2Renderer(canvas);
 }
 
-addEventListener('beforeunload', e => { if (changed) { flushDraft(); e.preventDefault(); } });
+addEventListener('beforeunload', e => { if (changed) { flushDraft(true); e.preventDefault(); } });
 
 // ---------- שמירה בשרת (גרסאות) ----------
 // ה-‎.mbe נבנה כאן (אותו קובץ כמו בהורדה), והשרת בודק אותו שוב בעותק הליבה ושומר כגרסה חדשה.
@@ -712,7 +717,7 @@ window.__rs = {
   setView,
   fit,
   openAsDocument,
-  flushDraft,
+  flushDraft: () => flushDraft(true),
   get changed() { return changed; },
   get unsaved() { return unsaved; },
   addImageLayer,

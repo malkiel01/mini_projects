@@ -13,6 +13,7 @@ export default async function (t) {
     const items = await p.locator('[role="menuitem"]').allTextContents();
     t.ok('בתפריט: המסמכים שלי, הגדרות אישיות, החשבון, יציאה', ['המסמכים שלי', 'הגדרות אישיות', 'החשבון', 'יציאה'].every(x => items.some(i => i.includes(x))), JSON.stringify(items));
     await p.click('[role="menuitem"]:has-text("הגדרות אישיות")');
+    t.ok('בהגדרות — בלי "יחידות" ו"שמירה אוטומטית" (אין להן משמעות בעורך)', !(await p.locator('dialog[open]').textContent()).match(/יחידות|שמירה אוטומטית/));
     await p.click('dialog[open] label:has-text("כהה")');
     await p.waitForTimeout(600);
     t.ok('ערכה כהה — מוחלת מיד', await p.evaluate(() => document.documentElement.dataset.theme) === 'dark');

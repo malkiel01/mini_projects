@@ -59,7 +59,6 @@ export function glyphOps(f, glyphs, x, y, size, text = '') {
 
 // ===== ציורים (שכבות vector): נתיבים אמיתיים ב-PDF, ומה ש-pdf-core עוד לא יודע — כתמונה =====
 // pdf-core: path (d מוחלט M L C Q Z, transform, fill / stroke, שקיפות) — שלב 1; clip … restore ומעבר צבע — שלב 2.
-// עוד לא: שקיפות שונה בין עצירות של מעבר צבע (נמצאת בדרך ב-pdf-core) — עד אז מעבר כזה יוצא כתמונה.
 
 const ID = [1, 0, 0, 1, 0, 0];
 const ABS_D = /^[\sMLCQZ0-9eE.,+-]*[MLCQZ][\sMLCQZ0-9eE.,+-]*$/;
@@ -68,24 +67,25 @@ const clamp01 = v => Math.min(1, Math.max(0, v));
 
 /**
  * מילוי / קו של הפורמט → { paint, alpha } ל-pdf-core, או null (לא נתמך עדיין). paint — '#rrggbb' או { gradient }.
- * מעבר צבע: from/to → x1..y2, center/radius → cx cy r (המוקד במרכז), at → offset. שקיפות זהה בכל העצירות — עוברת
- * לשקיפות של הנתיב כולו; שונה בין עצירות — עוד לא.
+ * מעבר צבע: from/to → x1..y2, center/radius → cx cy r (המוקד במרכז), at → offset; opacity של עצירה — כמו שהיא
+ * (מסכה רכה ב-pdf-core). שקיפות זהה בכל העצירות — עוברת לשקיפות של הנתיב כולו (בלי מסכה).
  */
 function paintOf(spec) {
   const g = spec.gradient;
   if (!g) return HEX.test(spec.color || '') ? { paint: spec.color.toLowerCase(), alpha: spec.opacity ?? 1 } : null;
   const stops = Array.isArray(g.stops) ? g.stops : [];
   if (!stops.length || stops.some(st => !HEX.test(st.color || ''))) return null;
-  const ops = new Set(stops.map(st => st.opacity ?? 1));
-  if (ops.size > 1) return null;
-  const pts = stops.map(st => ({ offset: r2(clamp01(st.at ?? 0)), color: st.color.toLowerCase() }));
+  const ops = new Set(stops.map(st => clamp01(st.opacity ?? 1)));
+  const same = ops.size === 1;
+  const pts = stops.map(st => ({ offset: r2(clamp01(st.at ?? 0)), color: st.color.toLowerCase(),
+    ...(!same && (st.opacity ?? 1) !== 1 ? { opacity: r2(clamp01(st.opacity)) } : {}) }));
   let grad;
   if (g.type === 'linear' && Array.isArray(g.from) && Array.isArray(g.to)) {
     grad = { type: 'linear', x1: r2(g.from[0]), y1: r2(g.from[1]), x2: r2(g.to[0]), y2: r2(g.to[1]), stops: pts };
   } else if (g.type === 'radial' && Array.isArray(g.center) && g.radius > 0) {
     grad = { type: 'radial', cx: r2(g.center[0]), cy: r2(g.center[1]), r: r2(g.radius), fx: r2(g.center[0]), fy: r2(g.center[1]), stops: pts };
   } else return null;
-  return { paint: { gradient: grad }, alpha: (spec.opacity ?? 1) * [...ops][0] };
+  return { paint: { gradient: grad }, alpha: (spec.opacity ?? 1) * (same ? [...ops][0] : 1) };
 }
 
 /** פריט → פעולות path (שטוחות, במערכת העמוד), או null — יש בו משהו שעדיין רק כתמונה. */
@@ -149,7 +149,7 @@ function itemOps(it, T, symbols, depth = 0) {
 
 /**
  * ציור מוצב → קטעים לפי הסדר: { ops } — נתיבים ל-pdf-core, או { raster: [פריטים] } — מה שיוצא כתמונה (תמונה וטקסט
- * בתוך הציור, אפקטים, שקיפות שונה בין עצירות). פריטים רצופים מאותו סוג — קטע אחד, כך שהסדר (מה מעל מה) נשמר.
+ * בתוך הציור, אפקטים). פריטים רצופים מאותו סוג — קטע אחד, כך שהסדר (מה מעל מה) נשמר.
  */
 export function drawingSegments(drawing, symbols = {}) {
   const segs = [];

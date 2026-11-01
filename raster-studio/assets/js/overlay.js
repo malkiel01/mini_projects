@@ -11,6 +11,7 @@ export function createOverlay(canvas, { doc, view }) {
   const hooks = [];
   let crop = null;  // { x0, y0, x1, y1 } — מה שמחוץ לו מוחשך
   let mark = null;  // { p: [x, y], r } — נקודת המקור של החותמת, במסמך
+  let grid = null;  // { pts, cols } — נקודות השליטה של עיוות (2×2 פינות / 4×4 Warp), במסמך
   let phase = 0;
   let timer = 0;
 
@@ -56,6 +57,26 @@ export function createOverlay(canvas, { doc, view }) {
       ctx.fillStyle = 'rgba(10, 15, 30, .5)';
       ctx.fill('evenodd');
     }
+    if (grid) {
+      // קווי הרשת בין נקודות השליטה, ועיגול לכל נקודה (בגודל קבוע במסך)
+      const v = view();
+      const S = ([x, y]) => [(v.x + x * v.zoom) * dpr, (v.y + y * v.zoom) * dpr];
+      const { pts, cols } = grid, rows = pts.length / cols, at = (i, j) => S(pts[j * cols + i]);
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      if (cols === 2) { [at(0, 0), at(1, 0), at(1, 1), at(0, 1)].forEach((p, i) => (i ? ctx.lineTo(...p) : ctx.moveTo(...p))); ctx.closePath(); }
+      else {
+        for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
+          if (i < cols - 1) { ctx.moveTo(...at(i, j)); ctx.lineTo(...at(i + 1, j)); }
+          if (j < rows - 1) { ctx.moveTo(...at(i, j)); ctx.lineTo(...at(i, j + 1)); }
+        }
+      }
+      ctx.lineWidth = Math.max(1, dpr); ctx.strokeStyle = 'rgba(45, 74, 138, .9)'; ctx.stroke();
+      for (const p of pts.map(S)) {
+        ctx.beginPath(); ctx.arc(p[0], p[1], 6 * dpr, 0, Math.PI * 2);
+        ctx.fillStyle = '#fff'; ctx.fill(); ctx.strokeStyle = '#2d4a8a'; ctx.stroke();
+      }
+    }
     if (mark) {
       const v = view();
       const [x, y] = [(v.x + mark.p[0] * v.zoom) * dpr, (v.y + mark.p[1] * v.zoom) * dpr];
@@ -87,6 +108,8 @@ export function createOverlay(canvas, { doc, view }) {
     box(on) { box = !!on; draw(); },
     /** אזור חיתוך — מחוץ לו מוחשך (או null) */
     crop(r) { crop = r; draw(); },
+    /** נקודות השליטה של עיוות (או null): pts במסמך, cols — 2 (פינות, פרספקטיבה) או 4 (Warp) */
+    grid(pts, cols = 2) { grid = pts ? { pts, cols } : null; draw(); },
     /** נקודת המקור של חותמת השכפול (או null); r — רדיוס המכחול בפיקסלים של המסמך */
     mark(p, r = 0) { mark = p ? { p, r } : null; draw(); },
   };

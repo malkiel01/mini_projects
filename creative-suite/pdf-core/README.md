@@ -61,8 +61,9 @@ $pdf = pdf_draw($list, fn(string $key) => file_get_contents(...)); // $key — �
 - **מעבר צבע** (שלב 2)**:** `fill` / `stroke` של `path` יכולים להיות
   `{ "gradient": { "type": "linear", "x1", "y1", "x2", "y2", "stops": [{ "offset", "color" }] } }` או
   `{ "type": "radial", "cx", "cy", "r", "fx", "fy", "stops" }` — בקואורדינטות של הנתיב (אחרי `transform`, כמו
-  `userSpaceOnUse`), עם המשך מעבר לקצוות. כמה עצירות שרוצים. **שקיפות בעצירות — עוד לא** (שגיאה); שקיפות לכל המעבר —
-  `fillOpacity` / `strokeOpacity`. Pattern נכנס למשאבים רק כשיש מעבר צבע.
+  `userSpaceOnUse`), עם המשך מעבר לקצוות. כמה עצירות שרוצים. **עצירה יכולה לשאת `opacity`** (0–1) — מסכה רכה לפי
+  בהירות (מעבר אפור באותן קואורדינטות, בטופס); נתיב עם מילוי וקו כשאחד מהם עם מסכה — נצבע בשני מעברים, כדי שהמסכה
+  לא תחול על השני. שקיפות לכל המעבר — `fillOpacity` / `strokeOpacity`. Pattern ומסכה נכנסים למשאבים רק כשבשימוש.
 - **פעולה לא מוכרת — שגיאה**, כמו קודם. ההרחבות — תוספת בלבד.
 - **שגיאה:** `InvalidArgumentException` עם המקום ("עמוד 1, פעולה 3: …").
 
@@ -81,7 +82,6 @@ const bytes = await pdfDraw(list, key => bytesOf(key));   // Uint8Array; resolve
 
 ## עוד לא
 
-- **שקיפות בעצירות של מעבר צבע** (SMask לפי בהירות) — כשמישהו יצטרך.
 - **`glyphs` ב-JS** — גופנים ו-subset, כשמישהו יצטרך.
 
 - **CMYK והפרדות** — לפי `mbe-format.md` סעיף 9.

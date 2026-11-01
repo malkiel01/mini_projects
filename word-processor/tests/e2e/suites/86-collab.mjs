@@ -96,7 +96,9 @@ export default async function (t) {
     t.ok('שחזור גרסה: יוסי נטען מחדש לבד (עורך חדש), עם המסמך שבשרת, ועדיין לעריכה', rr.version && fresh && yt[0] === 'פסקה ראשונה +דנה עוד חי' && await E(yossi), JSON.stringify([fresh, yt, rr]));
     t.ok('גרסאות: שמירות של שניהם — גרסה אחת עם שני השמות', vs.some(v => v.by.includes('דנה לוי') && v.by.includes('יוסי כהן')), JSON.stringify(vs.map(v => v.by)));
 
-    // כותב בשיטה הישנה (נעילה) — לא נכנס כשיש עורכים במסמך
+    // כותב בשיטה הישנה (נעילה) — לא נכנס כשיש עורכים במסמך. אחרי השחזור שניהם נטענו מחדש (העורך הישן יצא מהנוכחות):
+    // מחכים שהנוכחות תחזור — אחרת, ברגע שבין היציאה למשיכה הראשונה, אין עורכים במסמך והנעילה פנויה (נכשל ב-CI של #1010)
+    for (let i = 0; i < 40 && !((await dana.locator('.peers .peer').getAttribute('title').catch(() => '')) || '').includes('יוסי כהן'); i++) await dana.waitForTimeout(250);
     const old = await t.api(yossi, 'my_open', { doc });
     t.ok('לשונית ישנה (נעילה): "פתוח אצל…" — לא דורסת את העורכים המשותפים', old.can === 'view' && old.lock?.by, JSON.stringify(old.lock));
     t.ok('בלי שגיאות JS', !dana.errors.length && !yossi.errors.length, [...dana.errors, ...yossi.errors].join(' | '));

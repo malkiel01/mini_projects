@@ -14,6 +14,9 @@
 import { TILE, BLEND_MODES, tilesInRect, newMask } from './doc.js';
 import { rasterTile, selectionBox } from './selection.js';
 import { matrix as xfMatrix, bounds as xfBounds } from './transform.js';
+import { meshBounds, meshCells } from './warp.js';
+/** המלבן של התוכן הצף — לפי הרשת (עיוות) או לפי שינוי הצורה */
+const flBounds = fl => (fl.mesh ? meshBounds(fl.mesh) : xfBounds(fl.t, fl.w, fl.h));
 import { vmaskTile } from './vmask.js';
 import { WebGL2Renderer, srgbToLinear, FX_MAX, anyEffects } from './webgl2.js';
 import { adjustOf, fillRamp, fillGeometry, effectsOf, effectsReach } from './formats.js';
@@ -42,6 +45,16 @@ fn corner(vi: u32) -> vec2f { return vec2f(f32(vi & 1u), f32(vi >> 1u)); }
 @vertex fn vs(@builtin(vertex_index) vi: u32) -> VO {
   let a = corner(vi);
   let p = mix(u.rect.xy, u.rect.zw, a);
+  var o: VO;
+  o.uv = mix(u.uv.xy, u.uv.zw, a);
+  o.pos = vec4f(p.x / u.size.x * 2.0 - 1.0, 1.0 - p.y / u.size.y * 2.0, 0.0, 1.0);
+  return o;
+}
+
+// תא של רשת עיוות (ראו WebGL2Renderer, VERT_Q): a = p00, p10; b = p01, p11; c.xy = פינת האריח; uv — התא במרקם
+@vertex fn vsQ(@builtin(vertex_index) vi: u32) -> VO {
+  let a = corner(vi);
+  let p = mix(mix(u.a.xy, u.a.zw, a.x), mix(u.b.xy, u.b.zw, a.x), a.y) - u.c.xy;
   var o: VO;
   o.uv = mix(u.uv.xy, u.uv.zw, a);
   o.pos = vec4f(p.x / u.size.x * 2.0 - 1.0, 1.0 - p.y / u.size.y * 2.0, 0.0, 1.0);
@@ -486,7 +499,7 @@ export class WebGPURenderer {
     const errs = info.messages.filter(m => m.type === 'error');
     if (errs.length) throw new Error('wgsl: ' + errs.map(m => `${m.lineNum}:${m.linePos} ${m.message}`).join('; '));
     this.device.pushErrorScope('validation');
-    for (const name of ['upload', 'fill', 'blend', 'dab', 'stroke', 'adjust', 'blurH', 'blurV', 'lerp', 'heal', 'fillgen', 'fxsrc', 'fxblur', 'fx', 'copy', 'extract', 'read', 'thumb', 'display', 'float']) this.#pipe(name);
+    for (const name of ['upload', 'fill', 'blend', 'dab', 'stroke', 'adjust', 'blurH', 'blurV', 'lerp', 'heal', 'fillgen', 'fxsrc', 'fxblur', 'fx', 'copy', 'mesh', 'extract', 'read', 'thumb', 'display', 'float']) this.#pipe(name);
     const err = await this.device.popErrorScope();
     if (err) throw new Error('pipeline: ' + err.message);
   }
@@ -523,13 +536,14 @@ export class WebGPURenderer {
     let p = this.pipes.get(name);
     if (p) return p;
     const format = name === 'display' ? this.format : name === 'read' || name === 'thumb' ? 'rgba8unorm' : TILE_FMT;
+    const over = name === 'float' || name === 'mesh';
     const blend = name === 'dab' ? { color: { operation: 'max', srcFactor: 'one', dstFactor: 'one' }, alpha: { operation: 'max', srcFactor: 'one', dstFactor: 'one' } }
-      : name === 'float' ? { color: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' }, alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' } }
+      : over ? { color: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' }, alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' } }
       : undefined;
     p = this.device.createRenderPipeline({
       layout: this.layout,
-      vertex: { module: this.module, entryPoint: name === 'float' ? 'vsM' : 'vs' },
-      fragment: { module: this.module, entryPoint: name === 'float' ? 'copy' : name === 'read' ? 'readOut' : name, targets: [{ format, blend }] },
+      vertex: { module: this.module, entryPoint: name === 'float' ? 'vsM' : name === 'mesh' ? 'vsQ' : 'vs' },
+      fragment: { module: this.module, entryPoint: over ? 'copy' : name === 'read' ? 'readOut' : name, targets: [{ format, blend }] },
       primitive: { topology: 'triangle-strip' },
     });
     this.pipes.set(name, p);
@@ -1202,7 +1216,7 @@ export class WebGPURenderer {
   }
 
   #floatTouches(fl, tx, ty) {
-    const [x0, y0, x1, y1] = xfBounds(fl.t, fl.w, fl.h);
+    const [x0, y0, x1, y1] = flBounds(fl);
     return tx * TILE < x1 + 1 && (tx + 1) * TILE > x0 - 1 && ty * TILE < y1 + 1 && (ty + 1) * TILE > y0 - 1;
   }
 
@@ -1210,6 +1224,16 @@ export class WebGPURenderer {
     const m = xfMatrix(fl.t, fl.w, fl.h);
     const p = this.#pass(this.#view(out));
     p.draw('copy', {}, [base]);
+    if (fl.mesh) {
+      const X0 = tx * TILE - 1, Y0 = ty * TILE - 1, X1 = X0 + TILE + 2, Y1 = Y0 + TILE + 2;
+      for (const c of meshCells(fl.mesh)) {
+        const xs = c.p.map(v => v[0]), ys = c.p.map(v => v[1]);
+        if (Math.max(...xs) < X0 || Math.min(...xs) > X1 || Math.max(...ys) < Y0 || Math.min(...ys) > Y1) continue;
+        p.draw('mesh', { uv: c.uv, a: [...c.p[0], ...c.p[1]], b: [...c.p[2], ...c.p[3]], c: [tx * TILE, ty * TILE, 0, 0] }, [fl.tex], 'float');
+      }
+      p.end();
+      return;
+    }
     p.draw('float', { a: [fl.w, fl.h, 0, 0], b: [m[0], m[1], m[2], m[3]], c: [m[4], m[5], tx * TILE, ty * TILE] }, [fl.tex], 'float');
     p.end();
   }
@@ -1217,8 +1241,19 @@ export class WebGPURenderer {
   setFloatTransform(doc, t) {
     const fl = doc._float;
     if (!fl) return;
-    const a = xfBounds(fl.t, fl.w, fl.h), b = xfBounds(t, fl.w, fl.h);
+    const a = flBounds(fl);
     fl.t = t;
+    const b = flBounds(fl);
+    for (const r of [a, b]) this.#dirty(doc, r[0] - 1, r[1] - 1, r[2] - r[0] + 2, r[3] - r[1] + 2);
+  }
+
+  /** עיוות של התוכן הצף: רשת (engine/warp.js) — או null (חזרה לשינוי הצורה האפיני) */
+  setFloatMesh(doc, mesh) {
+    const fl = doc._float;
+    if (!fl) return;
+    const a = flBounds(fl);
+    fl.mesh = mesh;
+    const b = flBounds(fl);
     for (const r of [a, b]) this.#dirty(doc, r[0] - 1, r[1] - 1, r[2] - r[0] + 2, r[3] - r[1] + 2);
   }
 
@@ -1227,7 +1262,7 @@ export class WebGPURenderer {
     if (!fl) return new Map();
     doc._float = null;
     const { layer, before } = fl;
-    const [x0, y0, x1, y1] = xfBounds(fl.t, fl.w, fl.h);
+    const [x0, y0, x1, y1] = flBounds(fl);
     for (const [tx, ty] of tilesInRect(x0 - 1, y0 - 1, x1 - x0 + 2, y1 - y0 + 2)) {
       const k = key(tx, ty);
       const cur = layer.tiles.get(k) ?? null;
@@ -1255,7 +1290,7 @@ export class WebGPURenderer {
     this.freeTextures([fl.tex]);
     fl.layer.rev = (fl.layer.rev ?? 0) + 1;
     this.invalidateTiles(doc, [...fl.before.keys()]);
-    const [x0, y0, x1, y1] = xfBounds(fl.t, fl.w, fl.h);
+    const [x0, y0, x1, y1] = flBounds(fl);
     this.#dirty(doc, x0 - 1, y0 - 1, x1 - x0 + 2, y1 - y0 + 2);
   }
 
