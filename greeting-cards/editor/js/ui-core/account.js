@@ -16,6 +16,7 @@
  *       admin: () => … | url, help: () => … | url,
  *       logout: () => …,
  *       onPrefs: prefs => …,                                     // כשההגדרות הכלליות משתנות (יחידות, שמירה אוטומטית…)
+ *       hide: ['units', 'autosave'],                             // רשות — הגדרות כלליות שאין להן משמעות באפליקציה (לא מוצגות)
  *   });
  *   acc.prefs            // ההגדרות הכלליות הנוכחיות
  *   acc.refresh()        // אחרי שהמשתמש / החיבורים השתנו
@@ -26,7 +27,8 @@
  *
  * הגדרות כלליות (זהות בכל האפליקציות, ns = 'general'): theme ('system' | 'light' | 'dark'), scale (0.9 | 1 | 1.15 | 1.3),
  * units ('pt' | 'mm' | 'px'), autosave (bool), font (שם), cloudSync (bool). theme ו-scale מוחלים כאן (data-theme, --ui-scale);
- * השאר — של האפליקציה, דרך onPrefs.
+ * השאר — של האפליקציה, דרך onPrefs. כל החלה (גם בטעינה) שולחת document 'ui-prefs' עם ההגדרות ב-detail —
+ * אפליקציה שמציירת בקנבס צבעים מ-CSS: document.addEventListener('ui-prefs', () => { readColors(); draw(); }).
  */
 import { h } from './dom.js';
 import { menu, closeMenu } from './menu.js';
@@ -49,6 +51,7 @@ export function applyPrefs(p) {
     if (p.theme === 'light' || p.theme === 'dark') root.dataset.theme = p.theme;
     else delete root.dataset.theme;
     root.style.setProperty('--ui-scale', String(p.scale || 1));
+    document.dispatchEvent(new CustomEvent('ui-prefs', { detail: { ...p } }));   // קנבס שקורא צבעים מ-CSS — מאזין ומצייר מחדש
 }
 
 const act = v => typeof v === 'string' ? () => { location.href = v; } : v;
@@ -154,17 +157,18 @@ export function accountMenu(bar, opts = {}) {
 
     function settings() {
         closeMenu();
+        const shown = k => !(opts.hide || []).includes(k);
         const general = h('section.group',
             h('h3', 'כללי ', h('small', 'אותן הגדרות בכל האפליקציות')),
-            h('div.f', h('span', 'ערכת צבעים'), radios('theme', prefs.theme, [['system', 'כמו המכשיר'], ['light', 'בהירה'], ['dark', 'כהה']], v => save({ theme: v }))),
-            h('div.f', h('span', 'גודל טקסט'), radios('scale', prefs.scale, [[0.9, 'קטן'], [1, 'רגיל'], [1.15, 'גדול'], [1.3, 'גדול מאוד']], v => save({ scale: +v }))),
-            h('div.f', h('span', 'יחידות'), radios('units', prefs.units, [['pt', "נק'"], ['mm', 'מ"מ'], ['px', 'פיקסלים']], v => save({ units: v }))),
-            h('label.switch', h('input', { type: 'checkbox', checked: prefs.autosave, onchange: e => save({ autosave: e.target.checked }) }), 'שמירה אוטומטית'),
-            opts.fonts?.length ? h('label.f', h('span', 'גופן ברירת מחדל'),
+            shown('theme') && h('div.f', h('span', 'ערכת צבעים'), radios('theme', prefs.theme, [['system', 'כמו המכשיר'], ['light', 'בהירה'], ['dark', 'כהה']], v => save({ theme: v }))),
+            shown('scale') && h('div.f', h('span', 'גודל טקסט'), radios('scale', prefs.scale, [[0.9, 'קטן'], [1, 'רגיל'], [1.15, 'גדול'], [1.3, 'גדול מאוד']], v => save({ scale: +v }))),
+            shown('units') && h('div.f', h('span', 'יחידות'), radios('units', prefs.units, [['pt', "נק'"], ['mm', 'מ"מ'], ['px', 'פיקסלים']], v => save({ units: v }))),
+            shown('autosave') && h('label.switch', h('input', { type: 'checkbox', checked: prefs.autosave, onchange: e => save({ autosave: e.target.checked }) }), 'שמירה אוטומטית'),
+            opts.fonts?.length && shown('font') ? h('label.f', h('span', 'גופן ברירת מחדל'),
                 h('select', { onchange: e => save({ font: e.target.value }) },
                     h('option', { value: '' }, 'של האפליקציה'),
                     opts.fonts.map(f => h('option', { value: f, selected: f === prefs.font, style: { fontFamily: `"${f}"` } }, f)))) : null,
-            opts.drives ? h('label.switch', h('input', { type: 'checkbox', checked: prefs.cloudSync, onchange: e => save({ cloudSync: e.target.checked }) }),
+            opts.drives && shown('cloudSync') ? h('label.switch', h('input', { type: 'checkbox', checked: prefs.cloudSync, onchange: e => save({ cloudSync: e.target.checked }) }),
                 'לשמור את ההגדרות בענן (אותן הגדרות בכל המכשירים)') : null);
 
         const list = opts.shortcuts?.list?.().filter(k => k.label) || [];

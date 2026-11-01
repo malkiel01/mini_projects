@@ -51,6 +51,7 @@ const acc = accountMenu(document.querySelector('header.top'), {
     admin: 'admin/', help: () => …,
     logout: () => api('logout').then(() => location.reload()),
     onPrefs: p => { units = p.units; autosave = p.autosave; },
+    hide: ['units', 'autosave'],     // רשות — הגדרה כללית שאין לה משמעות אצלך לא מוצגת (theme, scale, units, autosave, font, cloudSync)
 });
 acc.refresh();   // אחרי התחברות / יציאה
 ```
@@ -99,3 +100,14 @@ const at  = await saveFile(sources, { name: title, ext: 'mbe', getBlob: buildMbe
 - בטלפון: העיגול בסרגל, גיליון, "הגדרות אישיות" — ערכה כהה ידנית משנה את **כל** המסך (גם החלקים שלך).
 - במחשב: תפריט קופץ ליד העיגול, Esc סוגר.
 - סימון ✅ בשורה 19 ב-`creative-suite/docs/integration.md`, באותו PR.
+
+## קנבס שקורא צבעים מ-CSS (לקח מהווקטורי)
+
+כל החלה של הגדרות (בטעינה ובשינוי) שולחת אירוע על `document`:
+```js
+document.addEventListener('ui-prefs', e => { readColors(); draw(); });   // e.detail — ההגדרות הכלליות
+```
+
+**בבדיקות:** ב-`.seg` (הבחירה בין "בהירה / כהה") הקלט מכסה את התווית בכוונה — `page.click` על הקלט עצמו או `check()`,
+לא על הטקסט.
+
