@@ -21,6 +21,12 @@
  *
  * וב-app.json של האפליקציה: "api.php?action=drives_key" ב-public (הענן מוריד משם את המפתח הציבורי).
  * הפעולות: drives_key (ציבורי), drives_status, drives_connect, drives_callback, drives_token, drives_disconnect.
+ *
+ * כוננים חיצוניים (requests/account-menu.md סעיף 2 — חיבור ישיר מהאפליקציה):
+ *   drives_link?provider=dropbox → { url } (OAuth עם PKCE) · drives_oauth_callback (החזרה) · drives_ptoken?provider=dropbox
+ *   → { token, expires_in } לדפדפן, שמדבר עם Dropbox ישירות · drives_unlink?provider=dropbox.
+ *   ה-App key של Dropbox מגיע מענן החבילה (drives_config, שבעל המערכת ממלא בניהול), או מ-cfg['dropbox'] ⇒ ['app_key', 'redirect']
+ *   לאפליקציה בדומיין משלה. בלי App key — Dropbox פשוט לא מופיע. אסימון הרענון נשמר רק ב-drives.sqlite של האפליקציה.
  */
 
 declare(strict_types=1);
@@ -65,11 +71,11 @@ final class Drives {
             $this->json($r);
         } catch (DrivesError $e) {
             // החזרה מהענן היא ניווט של הדפדפן — דף ברור עם דרך חזרה, לא JSON
-            if ($action === 'drives_callback') $this->page($e->getMessage(), $e->codeName, $e->status);
+            if (in_array($action, ['drives_callback', 'drives_oauth_callback'], true)) $this->page($e->getMessage(), $e->codeName, $e->status);
             $this->json(['error' => $e->getMessage(), 'code' => $e->codeName], $e->status);
         } catch (\Throwable $e) {
             error_log('drives: ' . $e);
-            if ($action === 'drives_callback') $this->page('תקלה בחיבור לענן', 'server', 500);
+            if (in_array($action, ['drives_callback', 'drives_oauth_callback'], true)) $this->page('תקלה בחיבור לענן', 'server', 500);
             $this->json(['error' => 'תקלה בחיבור לענן', 'code' => 'server'], 500);
         }
     }
@@ -84,6 +90,10 @@ final class Drives {
             'drives_callback'   => ['redirect' => $this->callback($user, $in)],
             'drives_token'      => $this->token($user),
             'drives_disconnect' => $this->disconnect($user),
+            'drives_link'       => ['url' => $this->linkUrl($user, (string) ($in['provider'] ?? ''))],
+            'drives_oauth_callback' => ['redirect' => $this->oauthCallback($user, $in)],
+            'drives_ptoken'     => $this->providerToken($user, (string) ($in['provider'] ?? '')),
+            'drives_unlink'     => $this->unlink($user, (string) ($in['provider'] ?? '')),
             default             => throw new DrivesError('פעולה לא מוכרת', 404, 'unknown_action'),
         };
     }
@@ -96,9 +106,170 @@ final class Drives {
 
     public function status(string $user): array {
         $c = $this->conn($user);
-        return ['suite' => $c ? ['connected' => true, 'name' => $c['name'], 'cloud_id' => $c['cloud_id'], 'scope' => json_decode($c['scope'], true),
-                                'cloud' => $this->cfg['cloud']] : ['connected' => false, 'cloud' => $this->cfg['cloud']]];
+        $out = ['suite' => $c ? ['connected' => true, 'name' => $c['name'], 'cloud_id' => $c['cloud_id'], 'scope' => json_decode($c['scope'], true),
+                                 'cloud' => $this->cfg['cloud']] : ['connected' => false, 'cloud' => $this->cfg['cloud']]];
+        foreach (array_keys(self::PROVIDERS) as $p) {
+            if (!$this->providerConfig($p)) continue;   // בלי App key — הכונן לא מופיע
+            $l = $this->link($user, $p);
+            $out[$p] = $l ? ['connected' => true, 'name' => $l['name']] : ['connected' => false];
+        }
+        return $out;
     }
+
+    // ─── כוננים חיצוניים ─────────────────────────────────────────────────
+
+    private const PROVIDERS = [
+        'dropbox' => [
+            'authorize' => 'https://www.dropbox.com/oauth2/authorize',
+            'token' => 'https://api.dropboxapi.com/oauth2/token',
+            'revoke' => 'https://api.dropboxapi.com/2/auth/token/revoke',
+            'account' => 'https://api.dropboxapi.com/2/users/get_current_account',
+        ],
+    ];
+
+    /** {app_key, redirect} — מהגדרות האפליקציה, או מענן החבילה (במטמון שעה). null — הספק לא מוגדר. */
+    private function providerConfig(string $p): ?array {
+        if (!isset(self::PROVIDERS[$p])) return null;
+        if (isset($this->cfg[$p]['app_key'])) return $this->cfg[$p] + ['redirect' => $this->endpointOnly() . '?action=drives_oauth_callback&provider=' . $p];
+        $cached = json_decode((string) $this->meta('drives_config'), true);
+        if (!is_array($cached) || ($cached['at'] ?? 0) < time() - 3600) {
+            try {
+                $this->register();
+                $conf = $this->call('drives_config', []);
+                $cached = ['at' => $conf ? time() : time() - 3300, 'config' => $conf];   // עוד לא הוגדר כלום — בודקים שוב בעוד 5 דקות
+            } catch (\Throwable $e) {
+                error_log('drives config: ' . $e->getMessage());
+                $cached = ['at' => time() - 3300, 'config' => $cached['config'] ?? []];   // ננסה שוב בעוד 5 דקות
+            }
+            $this->setMeta('drives_config', json_encode($cached));
+        }
+        $c = $cached['config'][$p] ?? null;
+        return is_array($c) && !empty($c['app_key']) && !empty($c['redirect']) ? $c : null;
+    }
+
+    private function needProvider(string $p): array {
+        $c = $this->providerConfig($p);
+        if (!$c) throw new DrivesError('הכונן הזה לא מוגדר', 404, 'no-provider');
+        return $c;
+    }
+
+    /** כתובת ההרשאה אצל הספק. PKCE: ה-verifier נשמר כאן בלבד, וה-state מתחיל במזהה האפליקציה (לדף ההעברה בענן). */
+    public function linkUrl(string $user, string $p): string {
+        $c = $this->needProvider($p);
+        $verifier = rtrim(strtr(base64_encode(random_bytes(48)), '+/', '-_'), '=');
+        $state = $this->cfg['client'] . '.' . rtrim(strtr(base64_encode(random_bytes(24)), '+/', '-_'), '=');
+        $db = $this->db();
+        $db->prepare('DELETE FROM pstates WHERE expires < ?')->execute([time()]);
+        $db->prepare('INSERT INTO pstates (state, user, provider, verifier, expires) VALUES (?,?,?,?,?)')
+            ->execute([$state, $user, $p, $verifier, time() + self::STATE_TTL]);
+        $challenge = rtrim(strtr(base64_encode(hash('sha256', $verifier, true)), '+/', '-_'), '=');
+        return self::PROVIDERS[$p]['authorize'] . '?' . http_build_query([
+            'client_id' => $c['app_key'], 'response_type' => 'code', 'redirect_uri' => $c['redirect'], 'state' => $state,
+            'code_challenge' => $challenge, 'code_challenge_method' => 'S256', 'token_access_type' => 'offline',
+        ]);
+    }
+
+    /** החזרה מהספק: state של המשתמש הזה → החלפת הקוד (עם ה-verifier) באסימון רענון → שמירה. */
+    public function oauthCallback(string $user, array $in): string {
+        $state = (string) ($in['state'] ?? '');
+        $db = $this->db();
+        $st = $db->prepare('SELECT * FROM pstates WHERE state = ?');
+        $st->execute([$state]);
+        $row = $st->fetch();
+        $db->prepare('DELETE FROM pstates WHERE state = ?')->execute([$state]);
+        $back = $this->cfg['back'] . (str_contains($this->cfg['back'], '?') ? '&' : '?');
+        if (!$row || $row['user'] !== $user || (int) $row['expires'] < time()) {
+            $why = !$row ? 'missing' : ($row['user'] !== $user ? 'user' : 'expired');
+            if (!$row && $this->link($user, (string) ($in['provider'] ?? ''))) return $back . 'drive=connected';   // חזרה כפולה
+            error_log("drives oauth ({$this->cfg['client']}): state $why");
+            throw new DrivesError('החיבור לכונן פג או נפתח בחשבון אחר — נסו שוב מהאפליקציה', 400, "bad_state:$why");
+        }
+        $p = $row['provider'];
+        if (isset($in['error'])) return $back . 'drive=denied';
+        $c = $this->needProvider($p);
+        $t = $this->form(self::PROVIDERS[$p]['token'], ['grant_type' => 'authorization_code', 'code' => (string) ($in['code'] ?? ''),
+            'client_id' => $c['app_key'], 'code_verifier' => $row['verifier'], 'redirect_uri' => $c['redirect']]);
+        if (empty($t['refresh_token']) || empty($t['access_token'])) throw new DrivesError('הספק לא החזיר הרשאה', 502, 'provider');
+        $name = '';
+        try {
+            $acc = $this->rpc(self::PROVIDERS[$p]['account'], $t['access_token']);
+            $name = (string) ($acc['name']['display_name'] ?? $acc['email'] ?? '');
+        } catch (DrivesError) { /* השם רק לתצוגה */ }
+        $db->prepare('INSERT INTO links (user, provider, refresh, name, access, access_until, created_at) VALUES (?,?,?,?,?,?,?)
+                      ON CONFLICT(user, provider) DO UPDATE SET refresh = excluded.refresh, name = excluded.name, access = excluded.access,
+                      access_until = excluded.access_until, created_at = excluded.created_at')
+            ->execute([$user, $p, $t['refresh_token'], $name, $t['access_token'], time() + (int) ($t['expires_in'] ?? 14400) - 120, gmdate('c')]);
+        return $back . 'drive=connected';
+    }
+
+    /** אסימון גישה קצר לדפדפן (מתחדש מאסימון הרענון). הרשאה שבוטלה אצל הספק → מוחקים ומחזירים connected:false. */
+    public function providerToken(string $user, string $p): array {
+        $l = $this->link($user, $p);
+        if (!$l) return ['connected' => false];
+        if ((int) $l['access_until'] > time() + 60) return ['connected' => true, 'token' => $l['access'], 'expires_in' => (int) $l['access_until'] - time()];
+        $c = $this->needProvider($p);
+        try {
+            $t = $this->form(self::PROVIDERS[$p]['token'], ['grant_type' => 'refresh_token', 'refresh_token' => $l['refresh'], 'client_id' => $c['app_key']]);
+        } catch (DrivesError $e) {
+            if ($e->status === 400 || $e->status === 401) { $this->forgetLink($user, $p); return ['connected' => false]; }
+            throw $e;
+        }
+        $until = time() + (int) ($t['expires_in'] ?? 14400) - 120;
+        $this->db()->prepare('UPDATE links SET access = ?, access_until = ? WHERE user = ? AND provider = ?')->execute([$t['access_token'], $until, $user, $p]);
+        return ['connected' => true, 'token' => $t['access_token'], 'expires_in' => $until - time()];
+    }
+
+    public function unlink(string $user, string $p): array {
+        $l = $this->link($user, $p);
+        if ($l && isset(self::PROVIDERS[$p])) {
+            try {
+                $tok = $this->providerToken($user, $p);
+                if (!empty($tok['token'])) $this->rpc(self::PROVIDERS[$p]['revoke'], $tok['token']);
+            } catch (\Throwable) { /* מוחקים כאן בכל מקרה */ }
+            $this->forgetLink($user, $p);
+        }
+        return ['ok' => true];
+    }
+
+    private function link(string $user, string $p): ?array {
+        $st = $this->db()->prepare('SELECT * FROM links WHERE user = ? AND provider = ?');
+        $st->execute([$user, $p]);
+        return $st->fetch() ?: null;
+    }
+
+    private function forgetLink(string $user, string $p): void {
+        $this->db()->prepare('DELETE FROM links WHERE user = ? AND provider = ?')->execute([$user, $p]);
+    }
+
+    /** POST טופס לספק (OAuth). */
+    private function form(string $url, array $fields): array {
+        return $this->send($url, ['Content-Type: application/x-www-form-urlencoded'], http_build_query($fields));
+    }
+
+    /** קריאת RPC של Dropbox (גוף JSON ריק). */
+    private function rpc(string $url, string $token): array {
+        return $this->send($url, ["Authorization: Bearer $token", 'Content-Type: application/json'], 'null');
+    }
+
+    private function send(string $url, array $headers, string $body): array {
+        if (is_callable($this->cfg['http'])) {
+            [$status, $out] = ($this->cfg['http'])($url, $headers, $body);
+        } else {
+            $ch = curl_init($url);
+            curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_POSTFIELDS => $body, CURLOPT_HTTPHEADER => $headers,
+                CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 20, CURLOPT_CONNECTTIMEOUT => 8, CURLOPT_PROTOCOLS => CURLPROTO_HTTPS]);
+            $out = curl_exec($ch);
+            $status = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+            curl_close($ch);
+            if ($out === false) throw new DrivesError('הספק לא ענה', 502, 'provider');
+        }
+        $j = json_decode((string) $out, true);
+        if ($status >= 200 && $status < 300) return is_array($j) ? $j : [];
+        error_log("drives provider $status: " . mb_substr((string) $out, 0, 300));
+        throw new DrivesError('הספק דחה את הבקשה', $status >= 400 && $status < 500 ? $status : 502, 'provider');
+    }
+
+    private function endpointOnly(): string { return strtok($this->cfg['endpoint'], '?'); }
 
     /** הכתובת של מסך האישור בענן. state — חד-פעמי, של המשתמש הזה, 10 דקות. */
     public function connectUrl(string $user, mixed $scope = null): string {
@@ -236,6 +407,10 @@ final class Drives {
             CREATE TABLE IF NOT EXISTS conns (user TEXT PRIMARY KEY, connection TEXT NOT NULL, name TEXT NOT NULL,
                                               cloud_id TEXT NOT NULL, scope TEXT NOT NULL, created_at TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS states (state TEXT PRIMARY KEY, user TEXT NOT NULL, expires INTEGER NOT NULL, used INTEGER NOT NULL DEFAULT 0);
+            CREATE TABLE IF NOT EXISTS pstates (state TEXT PRIMARY KEY, user TEXT NOT NULL, provider TEXT NOT NULL, verifier TEXT NOT NULL, expires INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS links (user TEXT NOT NULL, provider TEXT NOT NULL, refresh TEXT NOT NULL, name TEXT NOT NULL,
+                                              access TEXT, access_until INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL,
+                                              PRIMARY KEY (user, provider));
         ");
         // מסד מגרסה קודמת — בלי העמודה used
         $cols = array_column($this->pdo->query('PRAGMA table_info(states)')->fetchAll(), 'name');

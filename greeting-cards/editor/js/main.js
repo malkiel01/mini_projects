@@ -1,9 +1,9 @@
 // העורך החדש: מסך הבית (העיצובים שלי) ומסך העריכה. ‏spec/03-editor.md.
 
 import { log, logDump } from './log.js';
-import { buildMbe, importMbe, isMbe } from './mbe-io.js';
+import { buildMbe, importMbe, isMbe, mbeJournal, restoreFromJournal } from './mbe-io.js';
 import { setColorContext } from './colorpicker.js';
-import { keyOf } from './ui-core/keys.js';
+import { shortcuts } from './ui-core/keys.js';   // לפי המקש הפיזי — Ctrl+Z עובד גם במקלדת עברית (ui-core)
 import { accountMenu, accountServer } from './ui-core/account.js';   // 👤 תפריט המשתמש — משותף לחבילה
 import { openDocuments, suiteSource } from './ui-core/files-window.js';   // המקש הפיזי — Ctrl+Z עובד גם במקלדת עברית (ui-core)
 import { TARGETS, openIn } from './handoff.js';
@@ -24,7 +24,7 @@ import { loadScript } from './io.js';
 import { docVariables, readSheetFile, readPasted, readPhoneContacts, guessColumns, normalizePhone, fileNames, fillText } from './merge.js';
 
 // הגרסה — מופיעה ביומן, כדי לדעת איזה קוד רץ בטלפון.
-const BUILD = '2026-11-01.cloud-fonts-1';
+const BUILD = '2026-11-01.dialogs-1';
 
 const app = $('#app');
 let ed = null;   // העיצוב הפתוח: { id, doc, history, canvas, dirty }
@@ -183,6 +183,7 @@ function designMenu(d) {
         } }, '⬇️ הורדה כ-‎.mbe'),
         h('button', { class: 'menu-item danger', onclick: async () => {
             if (!(await confirmDialog(`למחוק את "${d.title}"? אי אפשר לבטל.`, 'מחיקה', true))) return;
+            closeSheet();
             await designs.remove(d.id);
             try { await sync.removeRemote(d.id); } catch { toast('נמחק מהמכשיר; מהשרת — כשיהיה חיבור', 'error'); }
             showHome(); toast('נמחק');
@@ -1123,6 +1124,52 @@ async function versionsSheet() {
     } catch (e) {
         body.replaceChildren(h('p', { class: 'empty' }, 'הגרסאות לא נטענו: ' + (e.message || e)));
     }
+    body.append(await journalSection());
+}
+
+const APP_NAMES = { 'greeting-cards': 'סטודיו העיצוב', 'raster-studio': 'עיצוב רסטר', 'vector-studio': 'וקטורי', 'layout-studio': 'עימוד', 'word-processor': 'עורך התמלילים' };
+const STAGE_LABEL = { create: 'נוצר', edit: 'עריכה', export: 'ייצוא', return: 'חזר', merge: 'מיזוג', restore: 'שחזור', handoff: 'הועבר', review: 'הגהה' };
+
+/** 📜 שלבי הקובץ: היומן שהליבה כותבת בכל שמירה של ‎.mbe — מעברים בין אפליקציות ואנשים, עם עותק לכל גרסה. */
+async function journalSection() {
+    const base = ed?.doc.mbeBase ? await assets.get(ed.doc.mbeBase).catch(() => null) : null;
+    if (!base) return h('div');
+    let stages = [];
+    try { stages = await mbeJournal(base); } catch { return h('div'); }
+    if (!stages.length) return h('div');
+    const when = at => at ? new Date(at).toLocaleString('he-IL', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+    return h('div', {},
+        h('h3', { class: 'section' }, '📜 שלבי הקובץ (‎.mbe)'),
+        h('p', { class: 'hint' }, 'כל פעם שהעיצוב נשמר כ-‎.mbe — בהורדה, בפתיחה ברסטר / בווקטורי ובחזרה — נרשם שלב, עם עותק של אותה גרסה.'),
+        h('ul', { class: 'my-fonts' }, stages.slice().reverse().map((st, i) => h('li', {},
+            h('span', {}, `${STAGE_LABEL[st.kind] || st.kind}${st.app ? ' · ' + (APP_NAMES[st.app] || st.app) : ''}${st.note ? ' — ' + st.note : ''}`),
+            h('span', { class: 'muted small' }, when(st.at)),
+            // השלב האחרון הוא הגרסה הנוכחית (שמירות רצופות באותה אפליקציה מעדכנות אותו)
+            i === 0 ? h('span', { class: 'muted small' }, 'הנוכחית')
+            : st.pruned || !st.result ? h('span', { class: 'muted small' }, 'נגזם')
+                : h('button', { class: 'btn ghost sm', onclick: () => restoreStage(st, base) }, 'שחזור')))));
+}
+
+async function restoreStage(st, base) {
+    const id = ed.id;
+    try {
+        toast('משחזר…');
+        const r = await restoreFromJournal(base, st.id || st.result);
+        if (ed?.id !== id) return;
+        r.doc.title = ed.doc.title;
+        r.doc.mbeBase = await assets.put(new Blob([r.bytes], { type: 'application/vnd.mbe+zip' }));
+        for (const [aid, img] of r.loaded) ed.canvas.setImage(aid, img);
+        await ensureDocFonts(r.doc);
+        ed.doc = r.doc;
+        ed.canvas.setDoc(r.doc);
+        ed.canvas.select([]);
+        commit();
+        closeSheet();
+        log('journal-restore', { stage: st.id || '', kind: st.kind });
+        toast('שוחזר ✓ — ↶ מחזיר את מה שהיה');
+    } catch (e) {
+        toast('השחזור נכשל: ' + (e.message || e), 'error');
+    }
 }
 
 async function restoreVersion(v) {
@@ -1816,6 +1863,7 @@ function recipientsSheet() {
             delete ed.doc.merge;
             setPreview(null);
             commit();
+            closeSheet();
             toast('הרשימה נמחקה');
         } }, '🗑️ מחיקת הרשימה')), { wide: true });
 }
@@ -1974,39 +2022,46 @@ function whatsappSheet() {
 
 // ─── מקלדת ────────────────────────────────────────────────────────────────
 
+/** Tab בתוך הקנבס — מעבר בין שכבות (רק כשהקנבס בפוקוס; בסוף הרשימה יוצאים ממנו כרגיל). */
 function onStageKey(e) {
-    if (isSheetOpen()) return;
-    const ls = sel();
-    const k = e.key;
-    const mod = e.ctrlKey || e.metaKey;
-    if (k === 'Tab' && !mod) {
-        // מעבר בין שכבות במקלדת. בסוף הרשימה — יוצאים מהקנבס כרגיל.
-        const L = ed.doc.layers.filter(l => !l.hidden);
-        const i = L.findIndex(l => l.id === ed.selection[0]);
-        const j = i + (e.shiftKey ? -1 : 1);
-        if (j >= 0 && j < L.length) { e.preventDefault(); ed.canvas.select([L[j].id]); announce(L[j]); }
-        else if (i === -1 && L.length) { e.preventDefault(); ed.canvas.select([L[e.shiftKey ? L.length - 1 : 0].id]); announce(L[e.shiftKey ? L.length - 1 : 0]); }
-        return;
-    }
-    if (mod && keyOf(e) === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
-    if (mod && keyOf(e) === 'y') { e.preventDefault(); redo(); return; }
-    if (mod && (k === '=' || k === '+')) { e.preventDefault(); ed.canvas.zoomBy(1.25); return; }
-    if (mod && k === '-') { e.preventDefault(); ed.canvas.zoomBy(0.8); return; }
-    if (mod && k === '0') { e.preventDefault(); ed.canvas.fit(); return; }
-    if (!ls.length) return;
-    if (mod && keyOf(e) === 'd') { e.preventDefault(); duplicate(); return; }
-    if (k === 'Delete' || k === 'Backspace') { e.preventDefault(); removeSelected(); return; }
-    if (k === 'Escape') { ed.canvas.select([]); return; }
-    if (k === 'Enter' && ls.length === 1 && ls[0].type === 'text') { e.preventDefault(); editTextInPlace(ls[0]); return; }
-    const step = e.shiftKey ? 10 : 1;
-    const d = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[k];
-    if (d && !ls.some(l => l.locked)) {
-        e.preventDefault();
-        ls.forEach(l => { l.x += d[0]; l.y += d[1]; });
-        commit();
-        announce(ls[0], true);
-    }
+    if (isSheetOpen() || e.key !== 'Tab' || e.ctrlKey || e.metaKey) return;
+    const L = ed.doc.layers.filter(l => !l.hidden);
+    const i = L.findIndex(l => l.id === ed.selection[0]);
+    const j = i + (e.shiftKey ? -1 : 1);
+    if (j >= 0 && j < L.length) { e.preventDefault(); ed.canvas.select([L[j].id]); announce(L[j]); }
+    else if (i === -1 && L.length) { e.preventDefault(); ed.canvas.select([L[e.shiftKey ? L.length - 1 : 0].id]); announce(L[e.shiftKey ? L.length - 1 : 0]); }
 }
+
+// ─── קיצורי מקלדת — shortcuts() של ui-core: לפי המקש הפיזי, לא בתוך שדה, ורשימה בהגדרות האישיות ───
+const inEditor = () => !!ed && !isSheetOpen();
+// מקשים שפועלים על הבחירה (חצים, מחיקה, Enter, Esc) — רק כשהפוקוס על הקנבס או על הדף, לא על כפתור או מחוון
+const onCanvas = () => { const a = document.activeElement; return !a || a === document.body || !!a.closest?.('.stage'); };
+const withSel = () => inEditor() && onCanvas() && sel().length > 0;
+const nudge = (dx, dy) => () => {
+    const ls = sel();
+    if (ls.some(l => l.locked)) return;
+    ls.forEach(l => { l.x += dx; l.y += dy; });
+    commit();
+    announce(ls[0], true);
+};
+const keys = shortcuts()
+    .add('Mod+Z', () => undo(), { label: 'ביטול', when: inEditor })
+    .add(['Mod+Shift+Z', 'Mod+Y'], () => redo(), { label: 'חזרה', when: inEditor })
+    .add('Mod+Shift?+=', () => ed.canvas.zoomBy(1.25), { label: 'הגדלה', when: inEditor })
+    .add('Mod+-', () => ed.canvas.zoomBy(0.8), { label: 'הקטנה', when: inEditor })
+    .add('Mod+0', () => ed.canvas.fit(), { label: 'התאמה למסך', when: inEditor })
+    .add('Mod+D', () => duplicate(), { label: 'שכפול', when: () => inEditor() && sel().length > 0 })
+    .add(['Delete', 'Backspace'], () => removeSelected(), { label: 'מחיקה', when: withSel })
+    .add('Escape', () => ed.canvas.select([]), { label: 'ביטול הבחירה', when: withSel })
+    .add('Enter', () => editTextInPlace(sel()[0]), { label: 'עריכת הטקסט', when: () => withSel() && sel().length === 1 && sel()[0].type === 'text' })
+    .add('ArrowLeft', nudge(-1, 0), { label: 'הזזה (Shift — 10)', when: withSel })
+    .add('ArrowRight', nudge(1, 0), { when: withSel })
+    .add('ArrowUp', nudge(0, -1), { when: withSel })
+    .add('ArrowDown', nudge(0, 1), { when: withSel })
+    .add('Shift+ArrowLeft', nudge(-10, 0), { when: withSel })
+    .add('Shift+ArrowRight', nudge(10, 0), { when: withSel })
+    .add('Shift+ArrowUp', nudge(0, -10), { when: withSel })
+    .add('Shift+ArrowDown', nudge(0, 10), { when: withSel });
 
 function announce(l, pos) {
     ed.saveState.textContent = pos ? `${layerLabel(l)}: X ${Math.round(l.x)}, Y ${Math.round(l.y)}` : `נבחר: ${layerLabel(l)}`;
@@ -2037,6 +2092,7 @@ async function attachAccount(bar) {
             me.role === 'owner' ? h('button', { type: 'button', class: 'btn ghost block', onclick: gptSetupSheet }, '🤖 הגדרת ה-GPT ב-ChatGPT') : '',
             me.role === 'owner' ? h('button', { type: 'button', class: 'btn ghost block', onclick: devSheet }, '🛠️ אזור פיתוח') : '') }],
         admin: me.role === 'owner' ? '../admin.html' : undefined,
+        shortcuts: keys,
         help: () => skillSheet(),
         // בתוך הכלים הדיגיטליים ההתחברות מגיעה מהשער — אין "יציאה" משלנו
         logout: me.platform ? undefined : async () => { await sync.logout(); showLogin(); },

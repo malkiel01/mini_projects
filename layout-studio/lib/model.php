@@ -118,6 +118,7 @@ function ls_model_check($m, ?callable $mediaExists = null): array
     }
     ls_flows_check($m['flows'] ?? null, $frames, $bad);
     ls_style_check($m['styles'] ?? null, $bad);
+    ls_fonts_check($m['fonts'] ?? null, $bad, $mediaExists);
     if ($size === null) throw $bad('pages');
     foreach ($refs as $r) {
         if (!is_string($r) || !isset($masters[$r])) throw $bad('master_ref');   // עמוד שמפנה לעמוד אב שלא קיים
@@ -126,6 +127,25 @@ function ls_model_check($m, ?callable $mediaExists = null): array
     $minBody = ls_mm_to_pt(10);
     if ($mg['inside'] + $mg['outside'] > $size[0] - $minBody || $mg['top'] + $mg['bottom'] > $size[1] - $minBody) throw $bad('margins');
     return $size;
+}
+
+/**
+ * גופנים מוטמעים (mbe-format.md, document.fonts): [{ family, embedded?, … }] — עד 32. embedded של TrueType שלנו
+ * (media/<sha256>.ttf) — חייב להיות באחסון של המשתמש; סוג אחר (מאפליקציה אחרת) — נשמר כמו שהוא, ולא נטען כאן.
+ */
+function ls_fonts_check($F, callable $bad, ?callable $mediaExists = null): void
+{
+    if ($F === null) return;
+    if (!is_array($F) || !array_is_list($F) || count($F) > 32) throw $bad('fonts');
+    foreach ($F as $f) {
+        if (!is_array($f)) throw $bad('fonts');
+        $fam = $f['family'] ?? null;
+        if (!is_string($fam) || $fam === '' || mb_strlen($fam) > 100) throw $bad('fonts');
+        $e = $f['embedded'] ?? null;
+        if ($e === null) continue;
+        if (!is_string($e) || strlen($e) > 200) throw $bad('fonts');
+        if (preg_match('#^media/[0-9a-f]{64}\.ttf$#', $e) && $mediaExists && !$mediaExists($e)) throw $bad('font_missing');
+    }
 }
 
 function ls_master_check(array $s, callable $bad): void

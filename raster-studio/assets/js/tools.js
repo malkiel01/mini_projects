@@ -10,7 +10,7 @@ import { combine, isEmptyShape, maskShape, selectionBox, selectionAlpha, rasterT
 import * as XF from './engine/transform.js';
 import { pathFromSelection, translatePath } from './engine/vmask.js';
 import { docToScreen } from './engine/view.js';
-import { MESH_N, meshOf, homography, bezierPatch, warpFrom, nearest, LIQUIFY_N, cloneMesh, sampleMesh, liquifyPush, liquifyRestore } from './engine/warp.js';
+import { MESH_N, meshOf, homography, bezierPatch, warpFrom, nearest, LIQUIFY_N, cloneMesh, sampleMesh, liquifyPush, liquifyRestore, lensMap, puppetMesh } from './engine/warp.js';
 import { handles } from './ui-core/handles.js';
 import { FONTS, LINE_HEIGHT, cssFont, renderText, textDirection } from './engine/text.js';
 import { keyOf } from './ui-core/keys.js';
@@ -54,7 +54,7 @@ export const sizeToSlider = s => Math.round(Math.log(Math.max(1, s)) / Math.log(
 export function createTools({ doc, renderer, history, view, onChange, draw, toast, overlay }) {
   const state = {
     tool: 'brush', color: '#1b1e26', size: 12, hardness: 0.8, opacity: 1, tolerance: 32, selMode: 'new',
-    contiguous: true, sampleAll: false, liqStrength: 0.5,
+    contiguous: true, sampleAll: false, liqStrength: 0.5, lens: 0,
     font: FONTS[0].family, fontSize: 48, bold: false, align: 'start',
   };
   let stroke = null;   // { layer, last, carry, pen }
@@ -113,6 +113,7 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     bindRange('opacity', v => { state.opacity = v / 100; }, s => Math.round(s.opacity * 100), s => Math.round(s.opacity * 100) + '%'),
     bindRange('tolerance', v => { state.tolerance = v; }, s => s.tolerance, s => String(s.tolerance)),
     bindRange('liq-size', v => { state.size = sliderToSize(v); }, s => sizeToSlider(s.size), s => s.size + 'px'),
+    bindRange('lens', v => { state.lens = v; if (warp?.mode === 'lens') { warp.k = v / 200; applyWarp(); draw(); } }, s => s.lens, s => (s.lens > 0 ? '+' : '') + s.lens),
     bindRange('liq-strength', v => { state.liqStrength = v / 100; }, s => Math.round(s.liqStrength * 100), s => Math.round(s.liqStrength * 100) + '%'),
   ];
   colorIn.addEventListener('input', () => { state.color = colorIn.value; syncColor(); styleText(); });
@@ -457,6 +458,8 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     const info = $('#xf-info');
     if (info) {
       info.textContent = !f ? '' : warp ? (warp.mode === 'liquify' ? 'Liquify — מורחים (Alt — שחזור)'
+        : warp.mode === 'puppet' ? `Puppet — הקשה מוסיפה סיכה, גוררים סיכה · Alt+הקשה — מסירה (${warp.pts.length})`
+        : warp.mode === 'lens' ? 'תיקון עדשה — חבית ↔ כרית במחוון'
         : warp.mode === 'warp' ? 'Warp — גוררים נקודות' : 'עיוות פינות — גוררים פינה')
         : `${Math.round(Math.abs(f.t.sx) * 100)}% × ${Math.round(Math.abs(f.t.sy) * 100)}% · ${Math.round(f.t.angle * 180 / Math.PI)}°`;
     }
@@ -466,6 +469,8 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
   /** המיפוי הנוכחי של התוכן הצף: (u, v) ב-0..1 → נקודה במסמך */
   function mappingOf(f) {
     if (warp?.mode === 'liquify') return sampleMesh(warp.mesh);
+    if (warp?.mode === 'puppet') return sampleMesh(puppetMesh(warp.base, warp.from, warp.pts));
+    if (warp?.mode === 'lens') return lensMap(warp.base, warp.k);
     if (warp?.mode === 'warp') return bezierPatch(warp.pts);
     if (warp?.mode === 'distort') { const [a, b, c, d] = warp.pts; return homography([a, b, d, c]); }
     const m = XF.matrix(f.t, f.w, f.h);
@@ -482,6 +487,11 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
       if (mode === 'liquify') {
         // הרשת הצפופה מתחילה מהמצב הנוכחי (חופשי / פינות / Warp); Liquify שוב — בלי שינוי
         if (warp?.mode !== 'liquify') { const mesh = meshOf(map, LIQUIFY_N); warp = { mode, mesh, orig: cloneMesh(mesh) }; }
+      } else if (mode === 'puppet') {
+        // סיכות על רשת צפופה שמתחילה מהמצב הנוכחי: from — איפה הסיכה ננעצה, pts — איפה היא עכשיו
+        if (warp?.mode !== 'puppet') warp = { mode, base: meshOf(map, LIQUIFY_N), from: [], pts: [] };
+      } else if (mode === 'lens') {
+        if (warp?.mode !== 'lens') { warp = { mode, base: map, k: 0 }; state.lens = 0; sync(); }
       } else {
         const pts = mode === 'distort' ? [map(0, 0), map(1, 0), map(0, 1), map(1, 1)] : warpFrom(map);
         warp = { mode, pts };
@@ -495,7 +505,9 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
   function applyWarp() {
     const f = fl();
     if (!f || !warp) return;
-    renderer.setFloatMesh(doc(), warp.mode === 'liquify' ? cloneMesh(warp.mesh) : meshOf(mappingOf(f), MESH_N));
+    renderer.setFloatMesh(doc(), warp.mode === 'liquify' ? cloneMesh(warp.mesh)
+      : warp.mode === 'puppet' ? puppetMesh(warp.base, warp.from, warp.pts)
+      : meshOf(mappingOf(f), warp.mode === 'lens' ? 32 : MESH_N));
   }
 
   /** צעד של מכחול Liquify אל p: דחיפה מהנקודה הקודמת, או (Alt) שחזור סביב p */
@@ -513,9 +525,11 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     const f = fl();
     if (!f) { warp = null; warpDrag = null; }
     overlay.box(!!f);
-    overlay.grid(f && warp?.pts ? warp.pts : null, warp?.mode === 'warp' ? 4 : 2);
+    overlay.grid(f && warp?.pts ? warp.pts : null, warp?.mode === 'warp' ? 4 : warp?.mode === 'puppet' ? 0 : 2);
     const liq = $('#liq-opts');
     if (liq) liq.hidden = !(f && warp?.mode === 'liquify');
+    const lens = $('#lens-opts');
+    if (lens) lens.hidden = !(f && warp?.mode === 'lens');
     updateCursor();
     for (const b of opts.querySelectorAll('[data-xfmode]')) {
       b.disabled = !f;
@@ -583,7 +597,7 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
       sel = { before: floatSel, after: moved };
     }
     const pure = f.t.sx === 1 && f.t.sy === 1 && f.t.angle === 0;
-    history.pixels(d, f.layer, before, warped ? (warp?.mode === 'liquify' ? 'Liquify' : 'עיוות') : pure ? 'הזזה' : 'שינוי צורה', sel);
+    history.pixels(d, f.layer, before, warped ? ({ liquify: 'Liquify', puppet: 'Puppet', lens: 'תיקון עדשה' }[warp?.mode] ?? 'עיוות') : pure ? 'הזזה' : 'שינוי צורה', sel);
     finishFloat();
     onChange('transform');
   }
@@ -860,6 +874,24 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
           if (warpDrag.restore) liquifyStep(pt);
           return;
         }
+        if (warp?.mode === 'puppet') {
+          // סיכה קרובה — גוררים אותה (Alt — מסירים); אחרת — סיכה חדשה במקום, וגוררים אותה
+          let i = nearest(warp.pts, pt, tol);
+          if (i >= 0 && e.altKey) {
+            // הצורה הנוכחית נשארת: היא הבסיס החדש, והסיכות שנשארו ננעצות בה מחדש
+            const cur = puppetMesh(warp.base, warp.from, warp.pts);
+            warp.pts.splice(i, 1);
+            warp.base = cur;
+            warp.from = warp.pts.map(q => [...q]);
+            applyWarp(); showBox(); draw();
+            return;
+          }
+          if (i < 0) { warp.from.push([...pt]); warp.pts.push([...pt]); i = warp.pts.length - 1; showBox(); }
+          warpDrag = { idx: i };
+          xf = { kind: 'warp' };
+          return;
+        }
+        if (warp?.mode === 'lens') return;
         if (warp) {
           // עיוות: נקודה קרובה — היא זזה; אחרת — כל הרשת זזה
           const i = nearest(warp.pts, pt, tol);
@@ -977,7 +1009,7 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
           warp.pts = warpDrag.pts0.map(([x, y]) => [x + dx, y + dy]);
         } else warp.pts[warpDrag.idx] = p;
         applyWarp();
-        overlay.grid(warp.pts, warp.mode === 'warp' ? 4 : 2);
+        overlay.grid(warp.pts, warp.mode === 'warp' ? 4 : warp.mode === 'puppet' ? 0 : 2);
         draw();
         return;
       }

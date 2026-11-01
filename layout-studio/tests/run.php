@@ -274,6 +274,24 @@ check('מודל שהעימוד לא מקבל — bad_model, ובלי מסמך ח
     && count(ls_docs_list($uidA)) === $before);
 
 
+// ===== גופנים של המשתמש (מהענן או מהמכשיר): TrueType באחסון שלו, model.fonts, ו-PDF =====
+$ttf = file_get_contents(__DIR__ . '/../assets/fonts/FrankRuhlLibre.ttf');
+$fp = ls_font_put($uidA, $ttf);
+check('גופן TrueType — נשמר לפי הגיבוב, .ttf', $fp['src'] === 'media/' . hash('sha256', $ttf) . '.ttf' && ls_media_path($uidA, substr($fp['src'], 6)) !== null);
+check('גופן — לא של משתמש אחר', ls_media_path($uidB, substr($fp['src'], 6)) === null);
+check('OTF (CFF) — נדחה', throws(fn() => ls_font_put($uidA, 'OTTO' . substr($ttf, 4)), 'bad_font'));
+check('לא גופן — נדחה', throws(fn() => ls_font_put($uidA, '<?php echo 1; ?>' . str_repeat('x', 100)), 'bad_font'));
+check('sfnt בלי glyf — נדחה', throws(fn() => ls_font_put($uidA, "\x00\x01\x00\x00\x00\x04" . str_repeat("\0", 6) . str_repeat('abcd' . str_repeat("\0", 12), 4)), 'bad_font'));
+check('PDF — מפתח הגופן של המשתמש נפתר מהאחסון שלו', ls_pdf_resolve($uidA, $fp['src']) === $ttf && ls_pdf_resolve($uidB, $fp['src']) === null);
+$fm = json_decode(json_encode(ls_model_new(400, 600)), true);   // כמו שמגיע מהדפדפן
+$exists = fn($u) => fn(string $src) => ls_media_path($u, substr($src, 6)) !== null;
+$fm['fonts'] = [['family' => 'הגופן שלי', 'embedded' => $fp['src'], 'source' => 'user'], ['family' => 'של אחר', 'embedded' => 'media/x.woff2']];
+$okFonts = true; try { ls_model_check($fm, $exists($uidA)); } catch (InvalidArgumentException $e) { $okFonts = false; }
+check('model.fonts — גופן שקיים אצל המשתמש, וסוג אחר נשמר כמו שהוא', $okFonts);
+check('model.fonts — גופן שאין אצל המשתמש נדחה', throws(fn() => ls_model_check($fm, $exists($uidB)), 'bad_model:font_missing'));
+$fm['fonts'] = [['embedded' => $fp['src']]];
+check('model.fonts — בלי family נדחה', throws(fn() => ls_model_check($fm, $exists($uidA)), 'bad_model:fonts'));
+
 // ===== 👤 תפריט המשתמש: שם, הגדרות, ייצוא ומחיקה =====
 $rn = ls_doc_rename($uidA, $imp['id'], '  ספר חדש.mbe ');
 check('שינוי שם — בלי רווחים וסיומת', $rn['title'] === 'ספר חדש');

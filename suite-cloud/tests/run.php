@@ -322,6 +322,44 @@ try {
     check('מפתח שנדחה — provider, בלי חיוב', code(fn() => aiRun($acc, '', ['task' => 'complete', 'prompt' => 'x'])) === 'provider'
         && (float) db()->query('SELECT cost FROM ai_usage ORDER BY id DESC LIMIT 1')->fetchColumn() === 0.0);
 
+    // ─── Anthropic (Claude) — complete בלבד ───
+    aiSetKey('anthropic', 'sk-ant-test');
+    aiAdminUser(['account' => $acc['id'], 'providers' => ['openai', 'google', 'replicate', 'anthropic'], 'monthly' => 5]);
+    check('Claude — רק complete', AI_PROVIDERS['anthropic']['tasks'] === ['complete'] && !in_array('anthropic', aiProvidersFor($acc, 'generate-image'), true));
+    $calls = [];
+    $replies = ['api.anthropic.com/v1/messages' => [200, json_encode(['stop_reason' => 'end_turn', 'content' => [
+        ['type' => 'thinking', 'thinking' => ''], ['type' => 'text', 'text' => '{"title":"שלום"}']]])]];
+    $r = aiRun($acc, '', ['task' => 'complete', 'provider' => 'anthropic', 'prompt' => 'תאר', 'system' => 'מעצב', 'schema' => ['type' => 'object'],
+                          'images' => [$png(8, 8)]]);
+    $sent = json_decode($calls[0]['body'], true);
+    check('Claude — JSON מהבלוק הטקסטואלי, המודל העדכני, system למעלה', $r['json'] === ['title' => 'שלום'] && $sent['model'] === 'claude-opus-5-5'
+        && $sent['system'] === 'מעצב' && $sent['output_config']['format']['type'] === 'json_schema' && $sent['output_config']['effort'] === 'medium');
+    check('Claude — תמונה כ-base64 לפני הטקסט', $sent['messages'][0]['content'][0]['type'] === 'image'
+        && $sent['messages'][0]['content'][0]['source']['media_type'] === 'image/png' && $sent['messages'][0]['content'][1]['text'] === 'תאר');
+    check('Claude — מפתח ב-x-api-key, גרסה, fallbacks', in_array('x-api-key: sk-ant-test', $calls[0]['headers'], true)
+        && in_array('anthropic-version: 2026-10-21', $calls[0]['headers'], true) && $sent['fallbacks'] === 'default'
+        && in_array('anthropic-beta: server-side-fallback-2026-07-01', $calls[0]['headers'], true));
+    $calls = [];
+    $tries = 0;
+    $replies = ['api.anthropic.com/v1/messages' => function ($body) use (&$tries) {
+        return ++$tries === 1 ? [400, '{"type":"error","error":{"type":"invalid_request_error","message":"output_config.format.schema: additionalProperties must be false"}}']
+                          : [200, json_encode(['stop_reason' => 'end_turn', 'content' => [['type' => 'text', 'text' => "```json
+[1,2]
+```"]]])];
+    }];
+    $r = aiRun($acc, '', ['task' => 'complete', 'provider' => 'anthropic', 'prompt' => 'x', 'schema' => ['type' => 'array']]);
+    $second = json_decode($calls[1]['body'], true);
+    check('Claude — סכמה שנדחתה: נסיון בלי format, הסכמה בהנחיה', $r['json'] === [1, 2] && !isset($second['output_config']['format'])
+        && str_contains($second['system'], '"type":"array"'));
+    $replies = ['api.anthropic.com/v1/messages' => [200, json_encode(['stop_reason' => 'end_turn', 'content' => [['type' => 'text', 'text' => 'שלום']]])]];
+    check('Claude — טקסט', aiRun($acc, '', ['task' => 'complete', 'provider' => 'anthropic', 'prompt' => 'x'])['text'] === 'שלום');
+    $replies = ['api.anthropic.com/v1/messages' => [200, json_encode(['stop_reason' => 'refusal', 'stop_details' => ['category' => 'cyber'], 'content' => []])]];
+    check('Claude — סירוב → provider', code(fn() => aiRun($acc, '', ['task' => 'complete', 'provider' => 'anthropic', 'prompt' => 'x'])) === 'provider');
+    $calls = [];
+    $replies = ['api.anthropic.com/v1/models' => [200, '{"data":[]}']];
+    aiAdminTest('anthropic');
+    check('Claude — בדיקת מפתח בלי עלות (models)', str_contains($calls[0]['url'], '/v1/models') && $calls[0]['method'] === 'GET');
+
     aiSetKey('google', 'g-key');
     aiAdminDefault(['task' => 'generate-image', 'provider' => 'google']);
     $calls = [];

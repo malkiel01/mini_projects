@@ -406,6 +406,41 @@ const server = http.createServer((req, res) => {
         await p.waitForTimeout(150);
         ok(await p.evaluate(() => window.__fwDone) === 'הזמנה לחתונה (2).mbe', 'files: שמירה — שם קיים → "לשמור את שניהם"');
 
+        // history — ביטול / ביצוע
+        const hi = await p.evaluate(async () => {
+            const { History, snapshots, undoButtons } = await import('../src/js/history.js');
+            const out = {}, log = [];
+            let v = 0;
+            const set = n => ({ label: 'v' + n, bytes: 10, undo: () => { v = n - 1; }, redo: () => { v = n; }, discard: a => log.push(a) });
+            const h = new History({ maxSteps: 3 });
+            for (let i = 1; i <= 4; i++) { v = i; h.push(set(i)); }
+            out.dropped = log.join();                                   // הישנה נזרקה (applied = true)
+            h.undo(); h.undo(); out.afterUndo = v; out.redoLabel = h.redoLabel;
+            v = 9; h.push(set(9)); out.branch = log.join();              // ענף הביצוע נזרק (false, false)
+            h.group('קבוצה', () => { v = 10; h.push(set(10)); v = 11; h.push(set(11)); });
+            out.groupLabel = h.undoLabel; h.undo(); out.groupUndo = v;
+            // צילומי מצב
+            let doc = { x: 1 };
+            const u = snapshots({ get: () => doc, set: d => { doc = d; } });
+            u.reset();
+            out.same = u.commit('כלום');
+            doc.x = 2; u.commit('הזזה');
+            doc.x = 3; u.commit('צבע', { merge: 'fill' }); doc.x = 4; u.commit('צבע', { merge: 'fill' });
+            out.steps = u.history.undoStack.length;
+            u.undo(); out.u1 = doc.x; u.undo(); out.u2 = doc.x; u.redo(); out.r1 = doc.x;
+            out.copy = (() => { const before = doc; u.undo(); u.redo(); return doc !== before; })();
+            const ub = document.createElement('button'), rb = document.createElement('button');
+            undoButtons(u, ub, rb); out.btn = [ub.disabled, ub.title, rb.disabled];
+            return out;
+        });
+        ok(hi.dropped === 'true', 'history: maxSteps — הישנה נזרקת עם discard(true)');
+        ok(hi.afterUndo === 2 && hi.redoLabel === 'v3', 'history: ביטול פעמיים ותווית הביצוע');
+        ok(hi.branch === 'true,false,false', 'history: פעולה חדשה מוחקת את ענף הביצוע (discard(false))');
+        ok(hi.groupLabel === 'קבוצה' && hi.groupUndo === 9, 'history: group — צעד ביטול אחד');
+        ok(hi.same === false && hi.steps === 2, 'snapshots: אותו מצב לא נרשם; merge — שינויים רצופים בצעד אחד');
+        ok(hi.u1 === 2 && hi.u2 === 1 && hi.r1 === 2 && hi.copy, 'snapshots: ביטול / ביצוע, ו-set מקבל עותק חדש');
+        ok(hi.btn[0] === false && hi.btn[1] === 'ביטול: הזזה' && hi.btn[2] === false, 'undoButtons: disabled ו-title לפי הצעד');
+
         // transform / snap — חשבון טהור
         const tm = await p.evaluate(async () => {
             const T = await import('../src/js/transform.js'), S = await import('../src/js/snap.js');

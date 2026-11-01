@@ -17,7 +17,7 @@ import { createFxPanel } from './fx-panel.js';
 import { createAIPanel } from './ai-panel.js';
 import { createDrives } from './drives/drives.js';
 import { mountAccount, enginePref } from './account-ui.js';
-import { exportPNG, exportJPG, exportORA, exportWEBP, exportTIFF, exportPSD, download, fileName } from './export.js';
+import { exportPNG, exportJPG, exportORA, exportWEBP, exportAVIF, exportTIFF, exportPSD, canEncode, download, fileName } from './export.js';
 import { decodePSD, isPSD } from './engine/psd.js';
 import { saveDraft, loadDraft, restoreDraft, clearDraft, draftKey } from './draft.js';
 import { gapsFor, parseOraStack } from './engine/formats.js';
@@ -488,6 +488,9 @@ $('#export-btn').addEventListener('click', () => {
   const g = ['png', 'ora'].flatMap(k => gapsFor(k, doc.layers).map(x => k.toUpperCase() + ': ' + gapText(x)));
   $('#export-gaps').textContent = g.length ? 'שימו לב — ' + g.join(' · ') : '';
   exportDlg.showModal();
+  // AVIF — רק בדפדפן שיודע לכתוב אותו (אחרת הכפתור כבוי, עם הסבר)
+  const av = $('[data-export="avif"]');
+  canEncode('image/avif').then(ok => { av.disabled = !ok; av.title = ok ? '' : 'הדפדפן הזה לא יודע לשמור AVIF'; });
 });
 const GAP_TEXT = {
   'layers → flattened': 'השכבות מתמזגות לתמונה אחת',
@@ -506,7 +509,7 @@ exportDlg.addEventListener('click', async e => {
   b.setAttribute('aria-busy', 'true');
   try {
     const blob = kind === 'png' ? await exportPNG(renderer, doc) : kind === 'jpg' ? await exportJPG(renderer, doc)
-      : kind === 'webp' ? await exportWEBP(renderer, doc) : kind === 'tif' ? await exportTIFF(renderer, doc)
+      : kind === 'webp' ? await exportWEBP(renderer, doc) : kind === 'avif' ? await exportAVIF(renderer, doc) : kind === 'tif' ? await exportTIFF(renderer, doc)
       : kind === 'psd' ? await exportPSD(renderer, doc)
       : kind === 'mbe' ? new Blob([await buildMbe(renderer, doc, { view: viewState() })], { type: 'application/vnd.mbe+zip' })
       : await exportORA(renderer, doc);

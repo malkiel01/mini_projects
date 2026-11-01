@@ -39,6 +39,7 @@ $started  = count(array_filter($all, fn($p) => $p['pct'] > 0 && $p['pct'] < 100)
 <?php else: ?>
   <a class="icon-btn" href="../" aria-label="תוכנית האב">🧰</a>
   <div class="titles"><h1 class="one">דשבורד חבילת היצירה</h1><div class="sub one">מהאפיונים · <?= date('d.m.Y H:i') ?></div></div>
+  <a class="icon-btn" href="cadence-edit.php" aria-label="קצב ההערות של הצ'אטים">⏱</a>
   <a class="icon-btn" href="center.php" aria-label="מרכז הניהול — שאלות, פרויקטים ומדיניות מהלוח">🎛️</a>
 <?php endif; ?>
 </header>

@@ -143,3 +143,54 @@ export function nearest(list, p, tol) {
   list.forEach((q, i) => { const d = Math.hypot(q[0] - p[0], q[1] - p[1]); if (d <= bd) { bd = d; best = i; } });
   return best;
 }
+
+// ---- תיקון עדשה: עיוות רדיאלי (חבית / כרית) ----
+
+/**
+ * מיפוי עם עיוות רדיאלי סביב מרכז התוכן: k > 0 — כרית (הקצוות נמתחים החוצה), k < 0 — חבית. הפינות נשארות במקומן.
+ * f — המיפוי שמתחת (חופשי / פינות / Warp). k — בערך ‎-0.5..0.5.
+ */
+export function lensMap(f, k) {
+  if (!k) return f;
+  return (u, v) => {
+    const du = u - 0.5, dv = v - 0.5, r2 = (du * du + dv * dv) * 2;   // בפינה r2 = 1
+    const s = (1 + k * r2) / (1 + k);
+    return f(0.5 + du * s, 0.5 + dv * s);
+  };
+}
+
+// ---- Puppet: סיכות על הרשת, ו-MLS קשיח (Schaefer et al., 2006) ----
+
+/**
+ * הרשת אחרי הזזת הסיכות: base — הרשת לפני, from — מקומות הסיכות המקוריים, to — המקומות החדשים.
+ * כל קודקוד זז "הכי קשיח שאפשר" (סיבוב + הזזה מקומיים) כך שהסיכות מגיעות למקומן. סיכה אחת — הזזה של הכול.
+ */
+export function puppetMesh(base, from, to) {
+  if (!from.length) return cloneMesh(base);
+  const n = from.length;
+  return {
+    n: base.n,
+    pts: base.pts.map(([vx, vy]) => {
+      if (n === 1) return [vx + to[0][0] - from[0][0], vy + to[0][1] - from[0][1]];
+      const w = new Array(n);
+      let sw = 0, px = 0, py = 0, qx = 0, qy = 0;
+      for (let i = 0; i < n; i++) {
+        const d2 = (from[i][0] - vx) ** 2 + (from[i][1] - vy) ** 2;
+        if (d2 < 1e-9) return [to[i][0], to[i][1]];
+        w[i] = 1 / d2;
+        sw += w[i]; px += w[i] * from[i][0]; py += w[i] * from[i][1]; qx += w[i] * to[i][0]; qy += w[i] * to[i][1];
+      }
+      px /= sw; py /= sw; qx /= sw; qy /= sw;
+      const dx = vx - px, dy = vy - py;
+      let fx = 0, fy = 0;
+      for (let i = 0; i < n; i++) {
+        const a = from[i][0] - px, b = from[i][1] - py, c = to[i][0] - qx, e = to[i][1] - qy;
+        const m00 = a * dx + b * dy, m01 = a * dy - b * dx, m10 = b * dx - a * dy, m11 = b * dy + a * dx;
+        fx += w[i] * (c * m00 + e * m10);
+        fy += w[i] * (c * m01 + e * m11);
+      }
+      const len = Math.hypot(fx, fy), dl = Math.hypot(dx, dy);
+      return len < 1e-12 ? [qx, qy] : [qx + fx / len * dl, qy + fy / len * dl];
+    }),
+  };
+}

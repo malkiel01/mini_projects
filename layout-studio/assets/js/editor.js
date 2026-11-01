@@ -16,7 +16,7 @@ import { imagePlacement } from './frames.js';
 import { loadFont, fontVariant } from './shaper.js';
 import { drawList, drawingSegments, rasterKey } from './pdf.js';
 import { toast } from './ui-core/toast.js';
-import { initDialogs, confirm } from './ui-core/dialog.js';
+import { initDialogs, confirm, choose, prompt } from './ui-core/dialog.js';
 import { download as saveFile } from './ui-core/files.js';
 import { shortcuts } from './ui-core/keys.js';
 import { mountAccount } from './account-ui.js';
@@ -73,6 +73,20 @@ function ensureFonts() {
     loaded[name] = await loadFont('assets/fonts/' + file, name);
   })));
 }
+// גופנים של המסמך (model.fonts — מהענן או מהמכשיר, TrueType באחסון של המשתמש): נטענים פעם אחת, ואז פריסה מחדש.
+// עד שנטענו — Noto במקומם. key — הקובץ ב-PDF (pdf.js: fontKey).
+const docFont = new Map();   // embedded → Promise
+function ensureDocFonts() {
+  for (const f of model?.fonts || []) {
+    if (typeof f.embedded !== 'string' || !/^media\/[0-9a-f]{64}\.ttf$/.test(f.embedded) || FONTS[f.family] || docFont.has(f.embedded)) continue;
+    docFont.set(f.embedded, loadFont('api.php?media=' + f.embedded.slice(6), f.family).then(font => {
+      font.key = f.embedded;
+      loaded[f.family] = font;
+      variants.clear();
+      relayout();
+    }).catch(() => toast(`הגופן "${f.family}" לא נטען — הטקסט מוצג ב-Noto`, true)));
+  }
+}
 // גופן במשקל (wght — הגופנים משתנים, אז מודגש בא מאותו קובץ), במטמון
 const variants = new Map();
 const weighted = (f, weight) => {
@@ -91,6 +105,7 @@ let text = null;
 
 function relayout() {
   if (!loaded['Noto Serif Hebrew']) return;
+  ensureDocFonts();
   text = layoutFlows(model, fontsFor);
   view.setText(text, fontsFor(bodyStyle(model).font, bodyStyle(model).weight));
   updatePageBtn();
@@ -658,9 +673,22 @@ const num = v => { const n = parseFloat(String(v).replace(',', '.')); return Num
 
 // עריכת סגנונות: לשונית לכל סגנון; הערכים של כל אחד נשמרים בטיוטה עד "שמירה"
 let drafts = {}, curStyle = 'body';
+/** כפתורי הגופן: הקבועים, ואחריהם הגופנים של המסמך. */
+function renderFonts() {
+  const fams = [...Object.keys(FONTS), ...(model.fonts || []).map(f => f.family).filter(f => !FONTS[f])];
+  $('#st-fonts').replaceChildren(...[...new Set(fams)].map(f => {
+    const l = document.createElement('label');
+    const i = Object.assign(document.createElement('input'), { type: 'radio', name: 'font', value: f });
+    const sp = document.createElement('span');
+    sp.textContent = f;
+    l.append(i, sp);
+    return l;
+  }));
+}
 function showStyle(key) {
   curStyle = key;
   const st = drafts[key];
+  if (![...form.querySelectorAll('[name=font]')].some(i => i.value === st.font)) renderFonts();
   form.font.value = st.font;
   form.tsize.value = st.size; form.tlead.value = st.leading;
   form.tbefore.value = st.spaceBefore; form.tafter.value = st.spaceAfter; form.tindent.value = st.indent;
@@ -688,7 +716,64 @@ $('#st-tabs').addEventListener('click', e => {
   showStyle(b.dataset.key);
 });
 
+// ---- ➕ גופן אחר: מהספרייה בענן החבילה (drives.fonts) או קובץ TTF מהמכשיר → אחסון המשתמש → model.fonts ----
+async function addDocFont(bytes, family, extra = {}) {
+  let res;
+  try {
+    res = await fetch('api.php?action=font_upload', { method: 'POST', credentials: 'same-origin',
+      headers: { 'X-Layout-Studio': '1', 'Content-Type': 'font/ttf' }, body: bytes });
+  } catch { throw new Error('אין חיבור לשרת'); }
+  const out = await res.json().catch(() => ({}));
+  if (!out.ok) throw new Error(out.error === 'bad_font' ? 'רק גופני TrueType (‎.ttf) — OTF / WOFF2 עוד לא' : out.error === 'too_big' ? 'הקובץ גדול מ-20MB' : 'ההעלאה נכשלה');
+  const fonts = (model.fonts || []).filter(f => f.family !== family);
+  changed({ ...model, fonts: [...fonts, { family, embedded: out.src, source: 'user', ...extra }] });
+  renderFonts();
+  form.font.value = family;
+  toast(`הגופן "${family}" נוסף למסמך`);
+}
+const fontFile = $('#font-file');
+$('#font-add').addEventListener('click', async () => {
+  const where = await choose('גופן אחר', 'הגופן נשמר במסמך, מוטמע ב-PDF ובקובץ ‎.mbe.', [
+    ['cloud', '☁️ מהספרייה בענן החבילה'], ['device', '📁 קובץ ‎.ttf מהמכשיר'], ['cancel', 'ביטול', 'ghost']]);
+  if (where === 'device') {
+    if (!await confirm('גופן מוטמע עובר עם הקובץ וה-PDF לכל מי שמקבל אותם. להמשיך רק אם הרישיון של הגופן מתיר הטמעה.', { ok: 'יש לי רישיון' })) return;
+    fontFile.click();
+    return;
+  }
+  if (where !== 'cloud') return;
+  try {
+    const { createDrives } = await import('./drives/drives.js');
+    const drives = createDrives({ endpoint: 'api.php' });
+    const { suite } = await drives.status();
+    if (!suite?.connected) {
+      if (await confirm('ענן החבילה עוד לא מחובר. לחבר עכשיו? (אחרי האישור חוזרים לכאן)', { ok: 'חיבור' })) await drives.connect();
+      return;
+    }
+    const { fonts } = await drives.fonts.list();
+    const ttf = (fonts || []).filter(f => !f.format || /ttf|truetype/i.test(f.format));
+    if (!ttf.length) { toast('אין בספרייה בענן גופני TrueType. מעלים לשם מאחת האפליקציות, או מכאן מהמכשיר', true); return; }
+    const pick = await choose('גופן מהענן', null, [...ttf.slice(0, 12).map(f => [f.id, `${f.family}${f.weight && f.weight !== 400 ? ' · ' + f.weight : ''}`]), ['cancel', 'ביטול', 'ghost']]);
+    const item = ttf.find(f => f.id === pick);
+    if (!item) return;
+    toast('טוען את הגופן…');
+    const { bytes } = await drives.fonts.load(item);
+    await addDocFont(bytes, item.family, { lib: { cloud: 'suite', item: item.id, rev: item.rev } });
+  } catch (e) {
+    toast('הגופן לא נוסף: ' + (e?.message || ''), true);
+  }
+});
+fontFile.addEventListener('change', async () => {
+  const file = fontFile.files[0];
+  fontFile.value = '';
+  if (!file) return;
+  const family = (await prompt('שם הגופן (כפי שיופיע ברשימה)', { value: file.name.replace(/\.ttf$/i, '').replace(/[-_]+/g, ' ').trim() }))?.trim();
+  if (!family) return;
+  try { await addDocFont(new Uint8Array(await file.arrayBuffer()), family.slice(0, 100)); }
+  catch (e) { toast('הגופן לא נוסף: ' + e.message, true); }
+});
+
 function fillSettings() {
+  renderFonts();
   const [w, h] = pageSize(model).map(ptToMm);
   const preset = Object.entries(SIZES).find(([, [a, b]]) => Math.abs(a - w) < 0.6 && Math.abs(b - h) < 0.6);
   form.size.value = preset ? preset[0] : 'custom';

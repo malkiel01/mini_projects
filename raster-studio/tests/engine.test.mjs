@@ -997,3 +997,21 @@ test('TIFF: כותרת, תגיות, והפיקסלים במקומם', async () =
   const ids = Array.from({ length: n }, (_, i) => v.getUint16(ifd + 2 + i * 12, true));
   assert.deepEqual(ids, [...ids].sort((a, b) => a - b));
 });
+
+test('תיקון עדשה ו-Puppet: הפינות במקומן, וסיכות שלא זזו — בלי שינוי', async () => {
+  const { homography, lensMap, puppetMesh, meshOf } = await import('../assets/js/engine/warp.js');
+  const R = homography([[0, 0], [100, 0], [100, 100], [0, 100]]);
+  const close = (a, b, e = 1e-6) => Math.abs(a[0] - b[0]) < e && Math.abs(a[1] - b[1]) < e;
+  const L = lensMap(R, 0.3);
+  assert.ok(close(L(0, 0), [0, 0]) && close(L(1, 1), [100, 100]), 'הפינות');
+  assert.ok(close(L(0.5, 0.5), [50, 50]), 'המרכז');
+  assert.ok(L(1, 0.5)[0] < 100, 'כרית: אמצע הצלע נמשך פנימה ביחס לפינות');
+  assert.ok(lensMap(R, -0.3)(1, 0.5)[0] > 100, 'חבית: אמצע הצלע בולט החוצה');
+  const base = meshOf(R, 4);
+  const same = puppetMesh(base, [[10, 10], [90, 90]], [[10, 10], [90, 90]]);
+  assert.ok(same.pts.every((p, i) => close(p, base.pts[i], 1e-6)), 'סיכות במקומן — הרשת לא זזה');
+  const one = puppetMesh(base, [[50, 50]], [[60, 55]]);
+  assert.ok(close(one.pts[0], [10, 5]), 'סיכה אחת — הזזה');
+  const rot = puppetMesh(base, [[0, 50], [100, 50]], [[50, 0], [50, 100]]);   // סיבוב 90° סביב (50, 50)
+  assert.ok(close(rot.pts[12], [50, 50], 1e-6) && close(rot.pts[2], [100, 50], 1e-3), 'שתי סיכות — סיבוב קשיח: ' + rot.pts[2]);
+});
