@@ -219,7 +219,8 @@ export async function openProject(id) {
 
   $('#pvTitle').textContent = project.name;
   $('#pvMeta').replaceChildren(
-    el('span', { class: 'badge', text: project.repo_name ? `📦 ${project.repo_owner}/${project.repo_name}` : 'ללא ריפו' }),
+    el('span', { class: 'badge', title: project.repo_inherited ? 'הריפו של פרויקט האב' : '',
+      text: project.repo_name ? `📦 ${project.repo_owner}/${project.repo_name}${project.path ? ` › ${project.path}` : ''}` : 'ללא ריפו' }),
     el('span', { class: 'badge', text: `🌿 ${project.default_branch}` }),
     el('span', { class: 'badge', text: `הרשאתך: ${{ read: 'צפייה', write: 'כתיבה', admin: 'ניהול' }[project.my_level]}` }),
   );
@@ -234,7 +235,8 @@ export async function openProject(id) {
   }
 
   $('#pvFile').hidden = true;
-  await browse('');
+  // תת-פרויקט — העיון מתחיל בתיקייה שלו, לא בשורש הריפו
+  await browse(project.path || '');
   $('#projectView').showModal();
 }
 
@@ -275,7 +277,6 @@ on('#peDelete', 'click', async () => {
 
 /*
  * בעל הלוח: "רק בעל הלוח" (owner_only), והעברה לתוך פרויקט אחר.
- * ⚠ ההעברה זמנית — לסידור הפרויקטים שנוצרו לפני העץ; תוסר אחרי הסידור.
  */
 function renderOwnerTools(project) {
   const owner = state.user?.role === 'admin';

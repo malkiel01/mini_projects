@@ -807,7 +807,7 @@ try {
         deleteProject(requireUser($user), (int) ($in['id'] ?? 0));
         ok();
 
-    /** ⚠ זמני — ראה moveProject. ‏{ id, parent_id|null } */
+    /** העברת פרויקט לתוך פרויקט אחר (moveProject). ‏{ id, parent_id|null } */
     case 'move-project':
         moveProject(requireUser($user), (int) ($in['id'] ?? 0), int_or_null($in, 'parent_id'));
         ok();

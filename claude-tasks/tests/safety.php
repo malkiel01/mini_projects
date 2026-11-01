@@ -235,5 +235,16 @@ throws('תיקייה לא תקינה — נדחית', fn () => setProjectPath($o
 $rootRow = db()->query("SELECT * FROM projects WHERE id = $root")->fetch();
 throws('לפרויקט אב אין תיקייה', fn () => setProjectPath($rootRow, 'x'));
 
+echo "\n— ירושת ריפו —\n";
+db()->exec("INSERT INTO projects (name, created_at) VALUES ('בלי ריפו', 0)");
+$bare = (int) db()->lastInsertId();
+check('פרויקט עליון בלי ריפו — נשאר בלי', requireProject($bare, $boss, 'read')['repo_name'], '');
+moveProject($boss, $bare, $suite);
+$r = requireProject($bare, $boss, 'read');
+check('אחרי העברה — יורש את הריפו של האב', [$r['repo_owner'], $r['repo_name'], $r['repo_inherited']], ['malkiel01', 'mini_projects', true]);
+$byId = array_column(listProjects($boss), null, 'id');
+check('גם ברשימה', $byId[$bare]['repo_name'], 'mini_projects');
+check('ריפו משלו — לא מסומן כירושה', requireProject($root, $boss, 'read')['repo_inherited'], false);
+
 echo "\n════ עברו: $pass · נכשלו: $fail ════\n";
 exit($fail ? 1 : 0);
