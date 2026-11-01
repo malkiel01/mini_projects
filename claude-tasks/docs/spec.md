@@ -127,6 +127,12 @@ Stages 1–6 and 9 **need no Platform key**.
 **Done when:** `tests/` cover — a `member` cannot return an `owner_only` task to the queue; a foreign Origin → 403; a parent's
 token sees a sub-project; the general token skips `owner_only`. On the phone: old tasks assigned to `mini_projects`.
 
+**Added after the spec, at the owner's request (#1088):** `move-project` (`owner` only, blocks cycles, tasks move with the
+project) and a "Structure" section in project settings: an "owner only" checkbox (`owner_only` had no UI) and a "move into
+project (temporary)" picker — so the 8 creative-suite projects created before the tree can go under
+`mini_projects › חבילת היצירה`. **Recommendation:** keep `move-project` permanently — reorganizing the tree is a normal need
+("add more projects easily", #1069); only the "(temporary)" label goes. Pending the owner's word.
+
 ---
 
 ## 5. Stages 2–4 — the live bridge
@@ -255,7 +261,11 @@ handle a message (`channel-ack` after handling, not before), restart, disconnect
 **in under a minute**, and the reply shows on the board; writing in the chat → the question and the reply show on the board;
 a short report on the limits (listener, container replacement). A phone screenshot before "ready".
 
-### 5.8 What must be verified for real (at the start of stage 3, before building everything)
+### 5.8 What must be verified for real (first thing in stage 2, before building the server side)
+
+Moved forward from stage 3 (2026-11-01): it costs one small script and decides whether the server side is worth building as
+specified. Use a throwaway listener against an existing endpoint (e.g. `health.php` in a `curl` loop that exits when a test
+file appears) — no new server code needed. Write the results into this section before starting the channel tables.
 
 1. A background command that exits **wakes an idle chat** (not only a chat mid-turn). How long after?
 2. Does the container stay alive while a background command runs, or is it reclaimed after inactivity anyway? After how long?
