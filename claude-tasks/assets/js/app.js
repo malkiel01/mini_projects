@@ -416,8 +416,10 @@ on('#projAddBtn', 'click', () => {
   $('#pnPathWrap').hidden = !cur;
   $('#pnRepoWrap').hidden = !!cur;
   ['#pnName', '#pnPath', '#pnRepo', '#pnIcon'].forEach((s) => { $(s).value = ''; });
+  // הצעה: התיקייה של האב ואחריה "/" — תת-פרויקט יושב בדרך כלל בתוכה. אפשר למחוק.
+  if (cur?.path) $('#pnPath').value = `${cur.path}/`;
   $('#projNew').showModal();
-  $('#pnName').focus();
+  if (cur?.path) { $('#pnPath').focus(); $('#pnPath').setSelectionRange(9999, 9999); } else $('#pnName').focus();
 });
 
 on('#pnPath', 'input', () => {

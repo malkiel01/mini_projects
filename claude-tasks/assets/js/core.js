@@ -68,7 +68,14 @@ export function el(tag, props = {}, children = []) {
 }
 
 export function toast(msg, kind = '') {
-  const host = $('#toasts');
+  // חלון פתוח (showModal) יושב בשכבה העליונה, ומה שמחוץ לו מוסתר מאחוריו —
+  // כך הודעת שגיאה על "יצירה" נעלמה. בזמן שחלון פתוח, ההודעה נכנסת לתוכו.
+  const top = [...document.querySelectorAll('dialog[open]')].pop();
+  let host = $('#toasts');
+  if (top) {
+    host = top.querySelector(':scope > .toasts');
+    if (!host) { host = el('div', { class: 'toasts', 'aria-live': 'polite' }); top.append(host); }
+  }
   while (host.children.length >= 3) host.firstElementChild.remove();
   const n = el('div', { class: `toast${kind ? ` toast--${kind}` : ''}`, text: msg });
   host.append(n);
