@@ -288,9 +288,11 @@ const server = http.createServer((req, res) => {
         if (touch) await p.click('dialog[open] .use-row:has-text("הגדרות אישיות")');
         else await p.click('.menu [role="menuitem"]:has-text("הגדרות אישיות")');
         await p.waitForTimeout(150);
-        await p.click('dialog[open] input[name="theme"][value="dark"]');
+        await p.evaluate(() => { window.__uiPrefs = 0; document.addEventListener('ui-prefs', e => { window.__uiPrefs = e.detail.theme; }); });
+        await p.click('dialog[open] input[name="theme"][value="dark"]');   // .seg: הקלט מכסה את התווית (בכוונה) — לוחצים עליו
         await p.click('dialog[open] input[name="scale"][value="1.15"]');
         await p.click('dialog[open] input[name="units"][value="mm"]');
+        ok(await p.evaluate(() => window.__uiPrefs) === 'dark', "account: אירוע 'ui-prefs' על document אחרי שינוי");
         const st = await p.evaluate(() => ({ theme: document.documentElement.dataset.theme, scale: document.documentElement.style.getPropertyValue('--ui-scale'),
             bg: getComputedStyle(document.body).backgroundColor, saved: JSON.parse(localStorage.getItem('ui-core-account:general')), last: window.__lastPrefs }));
         ok(st.theme === 'dark' && st.bg === 'rgb(17, 19, 24)', 'account: ערכה כהה — data-theme והצבעים מתחלפים');
@@ -303,6 +305,18 @@ const server = http.createServer((req, res) => {
         await p.waitForFunction(() => document.querySelector('.account-btn'));
         ok(await p.evaluate(() => document.documentElement.dataset.theme) === 'dark', 'account: הערכה נשמרת אחרי טעינה');
         await p.evaluate(() => { window.__acc.setPrefs({ theme: 'system', scale: 1 }); });
+
+        // hide — הגדרה כללית שאין לה משמעות באפליקציה לא מוצגת
+        const hid = await p.evaluate(async () => {
+            const { accountMenu } = await import('../src/js/account.js');
+            const bar = document.createElement('div'); document.body.append(bar);
+            const a = accountMenu(bar, { user: () => ({ name: 'א ב' }), prefs: { get: () => null, set: () => {} }, hide: ['units', 'autosave'] });
+            a.settings(); await new Promise(r => setTimeout(r, 200));
+            const d = document.querySelector('dialog[open]');
+            const r = { units: !!d.querySelector('input[name="units"]'), theme: !!d.querySelector('input[name="theme"]'), auto: d.textContent.includes('שמירה אוטומטית') };
+            d.close(); bar.remove(); return r;
+        });
+        ok(!hid.units && !hid.auto && hid.theme, 'account: hide — יחידות ושמירה אוטומטית לא מוצגות, השאר כן');
 
         // accountServer — מתאם לצד השרת המשותף (call מדומה)
         const sv = await p.evaluate(async () => {
@@ -448,6 +462,16 @@ const server = http.createServer((req, res) => {
             document.querySelector('#hs-rect').checked = false; H.mount();
             return out;
         });
+        const quiet = await p.evaluate(async () => {
+            const { handles } = await import('../src/js/handles.js');
+            const calls = [], ov = document.createElement('div'); document.body.append(ov);
+            const hd = handles(ov, { view: () => ({ zoom: 1, x: 0, y: 0 }), status: t => calls.push('s:' + t), onGuides: g => calls.push('g:' + g.length) });
+            const atBuild = calls.length;
+            hd.show({ cx: 50, cy: 50, sx: 1, sy: 1, angle: 0 }, 20, 20); hd.hide(); hd.hide();
+            hd.destroy(); ov.remove();
+            return { atBuild, after: calls.length };
+        });
+        ok(quiet.atBuild === 0 && quiet.after === 0, 'handles: בלי callbacks מהבנאי ומ-hide() כשאין גרירה');
         ok(hr.miss === false && hr.took === true, 'handles: down מחזיר true רק על ידית');
         ok(Array.isArray(hr.hitTouch) && hr.hitMouse === null, 'handles: אזור מגע 22px באצבע, 10px בעכבר');
         ok(near(hr.ratio, 1) && hr.status.includes('←') && hr.status.includes('100×60'), 'handles: פינה — יחס נשמר, שורת מצב "רוחב ← רוחב" (RTL)');
