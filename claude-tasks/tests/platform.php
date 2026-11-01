@@ -407,6 +407,23 @@ deleteSkill($mal, $s1);
 check('מחיקה עובדת', skillByName($pid2, 'פריסה'), null);
 throws('מחיקת סקיל שאינו קיים', fn() => deleteSkill($mal, 99999), 'לא נמצא');
 
+echo "\n— רשימת מודלים מהספק —\n";
+$fake = fn (int $status, array $body) => fn ($prov, $url, $key) => ['status' => $status, 'body' => json_encode($body)];
+check('בלי מפתח — גיבוי', providerModels('anthropic', '')['source'], 'fallback');
+check('בלי מפתח ל-OpenAI — אין המצאות', providerModels('openai', '')['models'], []);
+$r = providerModels('anthropic', 'sk-ant-xxxxxxxxxxxxxxxxxxxx',
+    $fake(200, ['data' => [['id' => 'claude-opus-5-5', 'display_name' => 'Claude Opus 5.5']]]));
+check('אנתרופיק — רשימה חיה', [$r['source'], $r['models'][0]['id'], $r['models'][0]['label']], ['live', 'claude-opus-5-5', 'Claude Opus 5.5']);
+$r = providerModels('openai', 'sk-xxxxxxxxxxxxxxxxxxxx', $fake(200, ['data' => [
+    ['id' => 'gpt-5'], ['id' => 'text-embedding-3-large'], ['id' => 'gpt-4o-audio-preview'], ['id' => 'o4-mini'], ['id' => 'dall-e-3']]]));
+check('OpenAI — רק מודלי שיחה', array_column($r['models'], 'id'), ['o4-mini', 'gpt-5']);
+$r = providerModels('google', 'AIzaxxxxxxxxxxxxxxxxxxxx', $fake(200, ['models' => [
+    ['name' => 'models/gemini-2.5-pro', 'displayName' => 'Gemini 2.5 Pro', 'supportedGenerationMethods' => ['generateContent']],
+    ['name' => 'models/text-embedding-004', 'supportedGenerationMethods' => ['embedContent']]]]));
+check('Gemini — רק מה שמייצר טקסט', array_column($r['models'], 'id'), ['gemini-2.5-pro']);
+$r = providerModels('anthropic', 'sk-ant-xxxxxxxxxxxxxxxxxxxx', $fake(401, ['error' => ['message' => 'bad']]));
+check('מפתח נדחה — גיבוי והסבר', [$r['source'], $r['error']], ['fallback', 'המפתח נדחה']);
+
 echo "\n════ עברו: $pass · נכשלו: $fail ════\n";
 array_map('unlink', glob("$tmp/*") ?: []);
 @rmdir($tmp);

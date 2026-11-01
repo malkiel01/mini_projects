@@ -1,5 +1,5 @@
 import { $, $$, el, toast, api, state, timeAgo, on, set } from './core.js';
-import { loadConnections, loadProviders, runTask, openProject } from './platform.js';
+import { loadConnections, loadProviders, runTask, openProject, modelPicker } from './platform.js';
 
 /**
  * מטלות לקלוד — ממשק.
@@ -928,8 +928,24 @@ on('#settingsBtn', 'click', () => {
   $('#adminOnly').hidden = state.user?.role === 'admin';
   $('#meName').value = state.user?.display_name || '';
   $('#meUser').textContent = state.user?.username ? `שם המשתמש לכניסה: ${state.user.username}` : '';
+  const admin = state.user?.role === 'admin';
+  $('#setSysTab').hidden = !admin;
+  let tab = 'conn';
+  try { tab = sessionStorage.getItem('ct:set') || 'conn'; } catch { /* פרטי */ }
+  showSetTab(tab === 'sys' && !admin ? 'conn' : tab);
   renderAi();
   $('#settings').showModal();
+});
+
+/* לשוניות ההגדרות: חיבורים · חשבון · מערכת (מנהל). הבחירה נזכרת. */
+function showSetTab(tab) {
+  $$('#setTabs [data-set]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.set === tab)));
+  $$('#settings .set-panel').forEach((p) => { p.hidden = p.dataset.panel !== tab; });
+  try { sessionStorage.setItem('ct:set', tab); } catch { /* פרטי */ }
+}
+on('#setTabs', 'click', (e) => {
+  const b = e.target.closest('[data-set]');
+  if (b) showSetTab(b.dataset.set);
 });
 
 on('#meForm', 'submit', async (e) => {
@@ -941,6 +957,10 @@ on('#meForm', 'submit', async (e) => {
   } catch (ex) { toast(ex.message, 'error'); }
 });
 
+let aiPicker = null;
+on('#aiProvider', 'change', () => aiPicker?.setProvider($('#aiProvider').value));
+on('#aiKey', 'change', () => { if ($('#aiKey').value.trim()) aiPicker?.load(); });
+
 function renderAi() {
   const ai = state.ai;
   const sel = $('#aiProvider');
@@ -948,7 +968,10 @@ function renderAi() {
     sel.replaceChildren(...state.providers.map((p) => el('option', { value: p.provider, text: p.label })));
   }
   sel.value = ai.provider || 'anthropic';
-  $('#aiModel').value = ai.model || '';
+  aiPicker = modelPicker({ provider: sel.value, current: ai.model || '', scope: 'system',
+    getKey: () => $('#aiKey').value.trim() });
+  $('#aiModelSlot').replaceChildren(aiPicker.el);
+  aiPicker.load();
   $('#aiAuto').checked = ai.auto_catalog !== false;
   $('#aiKey').value = '';
   $('#aiKey').placeholder = ai.has_key ? `מוגדר · …${ai.key_tail} (ריק = ללא שינוי)` : 'sk-ant-…';
@@ -961,7 +984,7 @@ function renderAi() {
 
   // רק מנהל משנה את ההגדרה — לשאר אין טעם להציג טופס שיידחה.
   const admin = state.user?.role === 'admin';
-  $$('#aiForm input, #aiForm button').forEach((n) => { n.disabled = !admin; });
+  $$('#aiForm input, #aiForm button, #aiForm select').forEach((n) => { n.disabled = !admin; });
   $('#aiClear').hidden = !ai.has_key || ai.key_from_env || !admin;
 }
 
@@ -969,7 +992,7 @@ on('#aiForm', 'submit', async (e) => {
   e.preventDefault();
   const payload = {
     provider: $('#aiProvider').value,
-    ai_model: $('#aiModel').value.trim(),
+    ai_model: aiPicker ? aiPicker.value : '',
     auto_catalog: $('#aiAuto').checked,
   };
   // שדה ריק פירושו "אל תיגע במפתח". ניתוק נעשה במחיקה מפורשת.
