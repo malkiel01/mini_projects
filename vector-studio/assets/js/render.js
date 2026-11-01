@@ -49,18 +49,6 @@ export function path2d(d) {
   return p;
 }
 
-export const HANDLE = 9; // גודל ידית בפיקסלים
-export const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
-
-/** מיקום הידיות במסך: { name: [x, y] }. */
-export const ROT_OFFSET = 26; // ידית הסיבוב — מעל האמצע העליון
-
-export function handlePoints(box, view) {
-  const [x, y, w, h] = toScreenBox(box, view);
-  const mx = x + w / 2, my = y + h / 2;
-  return { nw: [x, y], n: [mx, y], ne: [x + w, y], e: [x + w, my], se: [x + w, y + h], s: [mx, y + h], sw: [x, y + h], w: [x, my], rot: [mx, y - ROT_OFFSET] };
-}
-
 export function toScreenBox([x, y, w, h], v) {
   return [x * v.zoom + v.x, y * v.zoom + v.y, w * v.zoom, h * v.zoom];
 }
@@ -257,22 +245,7 @@ export function render(canvas, state) {
   if (state.hover && !state.sel.has(state.hover)) outline(state.hover);
   for (const id of state.sel) outline(id);
 
-  if (state.selBox) {
-    const [x, y, w, h] = toScreenBox(state.selBox, view);
-    ctx.strokeRect(x, y, w, h);
-    if (state.handles !== false) {
-      const hp = handlePoints(state.selBox, view);
-      ctx.beginPath(); ctx.moveTo(hp.n[0], hp.n[1]); ctx.lineTo(hp.rot[0], hp.rot[1] + HANDLE / 2); ctx.stroke();
-      ctx.beginPath(); ctx.arc(hp.rot[0], hp.rot[1], HANDLE / 2 + 1, 0, Math.PI * 2);
-      ctx.fillStyle = '#fff'; ctx.fill(); ctx.stroke();
-      for (const [name, [hx, hy]] of Object.entries(hp)) {
-        if (name === 'rot') continue;
-        ctx.fillStyle = '#fff';
-        ctx.fillRect(hx - HANDLE / 2, hy - HANDLE / 2, HANDLE, HANDLE);
-        ctx.strokeRect(hx - HANDLE / 2 + .5, hy - HANDLE / 2 + .5, HANDLE - 1, HANDLE - 1);
-      }
-    }
-  }
+  // מסגרת הבחירה והידיות — ui-core/handles (שכבת SVG מעל הקנבס), לא כאן
   if (state.guides?.length) {
     ctx.strokeStyle = colors.star;
     ctx.lineWidth = 1;
