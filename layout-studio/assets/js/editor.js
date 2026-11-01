@@ -51,7 +51,13 @@ const newId = (prefix = 'p') => prefix + Array.from(crypto.getRandomValues(new U
 // ---- מצב ----
 const id = Number(new URLSearchParams(location.search).get('id'));
 let doc = null, model = null, rev = 0;
-const view = new PageView($('#stage'), { onChange: updateBar, onPick: updatePageBtn });
+const view = new PageView($('#stage'), { onChange: updateBar, onPick: updatePageBtn,
+  // גרירה או שינוי גודל של מסגרת על הדף (ידיות ui-core): ציור — כל הנתיבים זזים יחד; אחרת — רק ה-box
+  onFrameBox: (frameId, box) => {
+    const x = allItems(model).find(o => o.frame.id === frameId);
+    if (!x) return;
+    changed(updateFrame(model, frameId, isDrawing(x.frame) ? moveDrawing(x.frame, box) : { box }));
+  } });
 
 // ---- שמירה ----
 const saveState = $('#save-state');
