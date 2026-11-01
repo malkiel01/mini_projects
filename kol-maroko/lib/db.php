@@ -236,6 +236,42 @@ function migrate(PDO $pdo): void
                 creator_role TEXT NOT NULL DEFAULT 'editor'
             );
             SQL,
+        // שחזור (lib/restore.php): נקודות שחזור (רכיבים לפי תוכן, דחוסים), סל מחזור לקבצים, למילים ולנושאים
+        11 => <<<'SQL'
+            CREATE TABLE blobs (
+                sha  TEXT PRIMARY KEY,
+                data BLOB NOT NULL,
+                size INTEGER NOT NULL
+            );
+            CREATE TABLE snapshots (
+                id     INTEGER PRIMARY KEY AUTOINCREMENT,
+                at     TEXT NOT NULL,
+                sub    TEXT NOT NULL,
+                name   TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                kind   TEXT NOT NULL,
+                parts  TEXT NOT NULL,
+                meta   TEXT NOT NULL DEFAULT '{}'
+            );
+            CREATE TABLE words_trash (
+                id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                word_id INTEGER NOT NULL,
+                row     TEXT NOT NULL,
+                at      TEXT NOT NULL,
+                by_name TEXT NOT NULL DEFAULT ''
+            );
+            CREATE TABLE topic_trash (
+                id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                at      TEXT NOT NULL,
+                by_name TEXT NOT NULL DEFAULT '',
+                op      TEXT NOT NULL,
+                name    TEXT NOT NULL,
+                to_name TEXT,
+                before  TEXT NOT NULL
+            );
+            ALTER TABLE files ADD COLUMN deleted_at TEXT;
+            ALTER TABLE files ADD COLUMN deleted_by TEXT;
+            SQL,
     ];
     foreach ($steps as $n => $sql) {
         if ($v >= $n) continue;

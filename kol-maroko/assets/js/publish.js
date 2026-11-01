@@ -9,13 +9,14 @@ const Publish = (() => {
   const when = iso => new Date(iso).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Asia/Jerusalem' });
 
   // ── פרסום ────────────────────────────────────────────────
-  async function view(host, role) {
-    host.replaceChildren(h('p', { class: 'empty' }, 'טוען…'));
+  async function view(host, role, more = []) {
+    if (!more.length) host.replaceChildren(h('p', { class: 'empty' }, 'טוען…'));
     let d;
-    try { d = await api('versions'); } catch (e) { host.replaceChildren(h('p', { class: 'error' }, e.message)); return; }
+    try { d = await api('versions', undefined, `&offset=${more.length}`); } catch (e) { host.replaceChildren(h('p', { class: 'error' }, e.message)); return; }
+    d.versions = [...more, ...d.versions];
     const canPublish = role === 'publisher' || role === 'owner';
     const live = d.live;
-    host.replaceChildren(
+    host.replaceChildren(...[                                   // replaceChildren(null) כותב "null"
       h('div', { class: 'summary' },
         h('div', { class: 'line' }, live
           ? [h('span', { class: 'muted' }, 'באתר עכשיו:'), h('b', {}, `גרסה ${live.n}`), h('span', { class: 'muted' }, `· ${live.name} · ${when(live.at)}`)]
@@ -33,7 +34,9 @@ const Publish = (() => {
             h('span', { class: 'use-tx' }, h('b', { class: 'one' }, v.note || `גרסה ${v.n}`), h('small', {}, `${v.name} · ${when(v.at)} · ${v.files} קבצים`)),
             h('span', { class: `chip ${cls}` }, label), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹')));
         }))
-        : h('p', { class: 'empty' }, 'כל פרסום יוצר כאן גרסה קפואה. אפשר לחזור לכל אחת.'));
+        : h('p', { class: 'empty' }, 'כל פרסום יוצר כאן גרסה קפואה. אפשר לחזור לכל אחת.'),
+      d.versions.length < d.total ? h('button', { type: 'button', class: 'btn ghost w-more', onclick: () => view(host, role, d.versions) }, `עוד גרסאות (${d.total - d.versions.length})`) : null,
+    ].filter(Boolean));
   }
 
   // מה האתר מציג: הגרסה מהסטודיו, או העמוד המקורי (התבנית והמילים שבוורדפרס — לא נמחקו ולא שונו).
@@ -121,10 +124,14 @@ const Publish = (() => {
     if (canPublish && (v.status === 'failed' || v.status === 'pending') && v.n === newest) {
       btns.push(h('button', { type: 'button', class: 'btn primary', onclick: () => run('version_send', { n: v.n }, 'נשלחה שוב') }, '↻ שליחה שוב'));
     }
-    if (canPublish && v.status === 'superseded') {
+    // חזרה לכל גרסה שאינה זו שבאתר: אותו תוכן בדיוק, כפרסום חדש (מה שאחריה לא נמחק)
+    const tool = h('input', { type: 'checkbox' });
+    if (canPublish && !(v.status === 'live')) {
       btns.push(h('button', { type: 'button', class: 'btn primary', onclick: () => {
-        if (confirm(`לפרסם שוב את התוכן של גרסה ${v.n}? היא תישלח כגרסה חדשה.`)) run('republish', { n: v.n }, 'פורסמה מחדש');
-      } }, '⤴️ פרסום מחדש'));
+        if (confirm(`לחזור לגרסה ${v.n}? האתר יציג בדיוק את מה שהיה בה — כפרסום חדש.${tool.checked ? ' גם הטיוטה, המילים והקוד בכלי יחזרו אליה (המצב הנוכחי נשמר כנקודת שחזור).' : ''}`)) {
+          run('republish', { n: v.n, tool: tool.checked }, `האתר חזר לגרסה ${v.n}`);
+        }
+      } }, '⤴️ חזרה לגרסה הזו'));
     }
     const status = h('p', { class: 'hint', role: 'status' });
     const dlg = sheet(`גרסה ${v.n}`,
@@ -132,7 +139,9 @@ const Publish = (() => {
         h('div', {}, h('dt', {}, 'מצב'), h('dd', {}, (STATUS[v.status] || [v.status])[0])),
         h('div', {}, h('dt', {}, 'מי ומתי'), h('dd', {}, `${v.name} · ${when(v.at)}`))),
       v.error ? h('p', { class: 'error' }, v.error) : null,
-      btns.length ? h('div', { class: 'row-btns' }, btns) : null, status, frame);
+      btns.length ? h('div', { class: 'row-btns' }, btns) : null,
+      btns.length && v.status !== 'live' ? h('label', { class: 'switch' }, tool, h('span', {}, 'גם הכלי יחזור לגרסה הזו (טיוטה, מילים, קוד)')) : null,
+      status, frame);
     async function run(action, body, ok) {
       status.textContent = 'שולח…';
       try { await api(action, body); dlg.close(); toast(ok); view(host, role); }

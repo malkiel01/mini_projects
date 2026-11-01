@@ -222,8 +222,8 @@ const Words = (() => {
       h('label', { class: 'f' }, h('span', {}, 'מספר מהאקסל (לא חובה)'), ext),
       h('div', { class: 'row-btns' }, save,
         w ? h('button', { type: 'button', class: 'btn ghost danger', onclick: async () => {
-          if (!confirm(`למחוק את "${w.word}"? (באתר היא תיעלם בפרסום הבא)`)) return;
-          try { D = await api('word_delete', { id: w.id }); dlg.close(); toast('נמחקה'); draw(host); } catch (e) { toast(e.message, true); }
+          if (!confirm(`להעביר את "${w.word}" לסל המחזור? (באתר היא תיעלם בפרסום הבא; שחזור — ב-↩️ שחזור)`)) return;
+          try { D = await api('word_delete', { id: w.id }); dlg.close(); toast('הועברה לסל'); draw(host); } catch (e) { toast(e.message, true); }
         } }, '🗑️ מחיקה') : null));
     save.onclick = async () => {
       pushTopic();

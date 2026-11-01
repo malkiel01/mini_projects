@@ -37,6 +37,8 @@ try {
     };
     // מחיקה ונושאים מחזירים בכלי את כל הרשימה — לצ'אט מספיק "בוצע" (ו-words כשצריך)
     $done = fn(array $r) => ['done' => true];
+    // לפני הפעולה הראשונה של הצ'אט (ואחרי חצי שעה בלי פעולה) — נקודת שחזור: "בטל את מה שהצ'אט עשה" בלחיצה
+    if (in_array($action, AGENT_POST, true) && $action !== 'render') snapshot_before_chat($user);
     $result = match ($action) {
         'help' => agent_help($user),
         'draft' => draft_get($user),

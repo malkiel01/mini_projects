@@ -279,8 +279,8 @@ const Media = (() => {
       h('div', { class: 'row-btns' },
         h('a', { class: 'btn ghost', href: `api.php?action=file&id=${f.id}&download=1`, download: f.name }, '⬇️ הורדה'),
         h('button', { type: 'button', class: 'btn ghost danger', disabled: f.in_use, title: f.in_use ? 'בשימוש בעמוד' : null, onclick: async () => {
-          if (!confirm(`למחוק את "${f.name}"?`)) return;
-          try { await api('file_delete', { id: f.id }); dlg.close(); toast('נמחק'); view(host, isOwner); } catch (e) { toast(e.message, true); }
+          if (!confirm(`להעביר את "${f.name}" לסל המחזור? (שחזור — ב-↩️ שחזור)`)) return;
+          try { await api('file_delete', { id: f.id }); dlg.close(); toast('הועבר לסל'); view(host, isOwner); } catch (e) { toast(e.message, true); }
         } }, '🗑️ מחיקה')),
       h('dl', { class: 'cells' },
         h('div', {}, h('dt', {}, 'גודל'), h('dd', {}, mb(f.size))),

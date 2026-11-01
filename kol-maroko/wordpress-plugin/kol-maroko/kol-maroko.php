@@ -2,7 +2,7 @@
 /**
  * Plugin Name: קול מרוקו — קבלת גרסאות
  * Description: מקבל מסטודיו "קול מרוקו" גרסאות חתומות של עמוד אחד (Ed25519), בודק חתימה, זמן, nonce וגרסה, ומציג אותן בתבנית של העמוד הזה בלבד. בלי סיסמאות ובלי גישה מבחוץ לשום דבר אחר. כולל ייצוא של העמוד הקיים לסטודיו.
- * Version: 1.5.0
+ * Version: 1.6.0
  * Requires PHP: 7.4
  * Author: הכלים הדיגיטליים
  * Text Domain: kol-maroko
@@ -21,7 +21,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('KOL_MAROKO_VERSION', '1.5.0');
+define('KOL_MAROKO_VERSION', '1.6.0');
 if (!defined('KOL_MAROKO_AUDIO_PART')) define('KOL_MAROKO_AUDIO_PART', 300 * 1024 * 1024);   // גודל של כל קובץ בייצוא ההקלטות
 define('KOL_MAROKO_PAGE', 'lexicon');
 define('KOL_MAROKO_SKEW', 300);
@@ -209,6 +209,9 @@ function kol_maroko_switch(array $b)
 function kol_maroko_clean_html($html)
 {
     if ($html === '') return '';
+    // {{KOL_ASSETS}} (כתובת הקבצים כאן) — saveHTML מקודד { } במאפייני src/href, והכתובת לא הייתה מוחלפת. כתובת זמנית
+    $tok = 'https://kol-maroko-assets.invalid';
+    $html = str_replace('{{KOL_ASSETS}}', $tok, $html);
     $doc = new DOMDocument();
     libxml_use_internal_errors(true);
     $doc->loadHTML('<?xml encoding="UTF-8"><body><div id="kol-maroko-root">' . $html . '</div></body>', LIBXML_NONET);
@@ -234,7 +237,7 @@ function kol_maroko_clean_html($html)
     }
     $out = '';
     foreach ($root->childNodes as $c) $out .= $doc->saveHTML($c);
-    return $out;
+    return str_replace($tok, '{{KOL_ASSETS}}', $out);
 }
 
 /** ניקוי מטמון של העמוד — וורדפרס ותוספי מטמון נפוצים, אם קיימים. */

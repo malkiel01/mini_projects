@@ -79,7 +79,7 @@ function agent_auth(): array
     if (!$t['last_used'] || strtotime($t['last_used']) < time() - 60) {
         db()->prepare('UPDATE agent_tokens SET last_used = ? WHERE id = ?')->execute([now_iso(), $t['id']]);
     }
-    return ['sub' => $t['sub'], 'name' => $t['name'] . ' 🤖', 'email' => null, 'role' => 'editor', 'agent' => $t['id']];
+    return ['sub' => $t['sub'], 'name' => $t['name'] . ' 🤖', 'email' => null, 'role' => 'editor', 'agent' => $t['id'], 'agent_label' => $t['label']];
 }
 
 function agent_base_url(): string
@@ -143,6 +143,7 @@ curl -s "{$url}?action=help" -H "X-Kol-User: {$id}" -H "X-Kol-Password: {$secret
 2. שינוי קטן ומדויק בכל פעם. אחרי שמירה — `render` או `publish_preview` כדי לוודא.
 3. העמוד בעברית ומימין לשמאל. ההודעות למשתמש — בעברית.
 4. בסוף — לומר למשתמש מה השתנה, ושצריך לפרסם בסטודיו (🚀 פרסום) כדי שזה יגיע לאתר.
+6. לפני הפעולה הראשונה שלך נשמרת נקודת שחזור — בעל האתר יכול לבטל בלחיצה את כל מה שעשית. זו לא סיבה לעבוד ברישול.
 5. באתר: התבנית וה-CSS מנוקים (בלי `<script>`, בלי `on*`, CSS רק בתוך המילון). JS ששונה — המילון מוצג במסגרת מבודדת
    בלי גישה לאתר. אל תנסה לעקוף את זה — זה מכוון.
 MD;

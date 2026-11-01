@@ -128,6 +128,7 @@ function revision_restore(array $user, array $b): array
     $st = db()->prepare('SELECT * FROM revisions WHERE id = ?');
     $st->execute([(int)($b['id'] ?? 0)]);
     $r = $st->fetch() ?: throw new ApiError('הנקודה לא נמצאה', 404);
+    snapshot_create($user, 'לפני שחזור טיוטה מ-' . $r['at']);
     $res = draft_write($user, page_normalize(json_decode($r['json'], true)), (int)($b['rev'] ?? 0), 'שחזור מ-' . $r['at']);
     audit_as($user, 'restore', $r['name'] . ' · ' . $r['at']);
     return $res;

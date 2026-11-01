@@ -188,6 +188,7 @@ function code_history_get(array $q): array
 /** חזרה לתבנית המובנית: הקבצים נמחקים (ההיסטוריה שלהם נשארת), והאתר חוזר לקבצים של ערכת הנושא בפרסום הבא. */
 function code_reset(array $user): array
 {
+    snapshot_create($user, 'לפני חזרה לתבנית המובנית');
     $pdo = db();
     $pdo->beginTransaction();
     foreach ($pdo->query('SELECT path, content, updated_at, updated_by FROM code_files')->fetchAll() as $r) {
@@ -380,6 +381,9 @@ const TPL_URL_ATTRS = ['href', 'src', 'action', 'formaction', 'poster', 'backgro
 /** ה-HTML שהתבנית הפיקה — בלי שום דרך להריץ קוד בדף של האתר. */
 function tpl_clean_html(string $html): string
 {
+    // {{KOL_ASSETS}} — saveHTML מקודד { } ב-src/href; כתובת זמנית, ובחזרה בסוף
+    $tok = 'https://kol-maroko-assets.invalid';
+    $html = str_replace('{{KOL_ASSETS}}', $tok, $html);
     $doc = new DOMDocument();
     $prev = libxml_use_internal_errors(true);
     $doc->loadHTML('<?xml encoding="UTF-8"><body><div id="kol-tpl-root">' . $html . '</div></body>', LIBXML_NONET | LIBXML_HTML_NODEFDTD);
@@ -409,7 +413,7 @@ function tpl_clean_html(string $html): string
     }
     $out = '';
     foreach ($root->childNodes as $n) $out .= $doc->saveHTML($n);
-    return $out;
+    return str_replace($tok, '{{KOL_ASSETS}}', $out);
 }
 
 function tpl_bad_url(string $v): bool

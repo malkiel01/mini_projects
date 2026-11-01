@@ -558,6 +558,7 @@ function import_run(array $owner, array $b): array
     $l = lock_state();
     if ($l && $l['sub'] !== $owner['sub']) throw new ApiError("הטיוטה בעריכה אצל {$l['name']}. אחרי שיסיים — שוב", 423);
     lock_op($owner, ['op' => 'take']);
+    snapshot_create($owner, 'לפני ייבוא מהאתר');
     $d = draft_row();
     revision_add($owner, $d['json'], (int)$d['rev'], 'לפני ייבוא');
     if ($lex) {
