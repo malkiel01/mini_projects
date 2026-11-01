@@ -8,7 +8,9 @@
 
 ```
 src/php/       writer.php (PdfWriter) · font.php (TtfFont) · subset.php (TtfSubset) · draw.php (pdf_draw)
-tools/sync.php מעתיק את src/php לאפליקציות שב-apps.json; ‎--check — שער בפריסה
+src/js/        draw.js (pdfDraw) — אותה רשימת ציור בדפדפן, בלי שרת (שלב 3)
+tests/         draw.test.mjs — JS מול PHP: אותה רשימה, אותו PDF במבנה (רץ ב-CI של עורך התמלילים)
+tools/sync.php מעתיק את src/php ו-src/js לאפליקציות שב-apps.json; ‎--check — שער בפריסה
 apps.json      האפליקציות שמשתמשות. אפליקציה נכנסת רק בהסכמת הצ'אט שלה
 ```
 
@@ -17,9 +19,11 @@ apps.json      האפליקציות שמשתמשות. אפליקציה נכנס�
 
 ## הצטרפות
 
-1. מוסיפים ל-`apps.json`: `"layout-studio": { "php": "lib/pdf-core" }` — תיקייה שכולה של המנוע (הסנכרון מוחק בה קבצים זרים).
+1. מוסיפים ל-`apps.json`: `"layout-studio": { "php": "lib/pdf-core" }`, ו/או `"js": "assets/js/pdf-core"` — כל אחת
+   תיקייה שכולה של המנוע (הסנכרון מוחק בה קבצים זרים).
 2. `php creative-suite/pdf-core/tools/sync.php`.
-3. בקוד: `require_once __DIR__ . '/lib/pdf-core/draw.php';` — בלי `require` מחוץ לתיקיית האפליקציה.
+3. בקוד: `require_once __DIR__ . '/lib/pdf-core/draw.php';` — או `import { pdfDraw } from './pdf-core/draw.js';`. בלי
+   `require` / `import` מחוץ לתיקיית האפליקציה.
 
 ## רשימת ציור → PDF
 
@@ -62,10 +66,23 @@ $pdf = pdf_draw($list, fn(string $key) => file_get_contents(...)); // $key — �
 - **פעולה לא מוכרת — שגיאה**, כמו קודם. ההרחבות — תוספת בלבד.
 - **שגיאה:** `InvalidArgumentException` עם המקום ("עמוד 1, פעולה 3: …").
 
+## ב-JS (`src/js/draw.js`)
+
+```js
+import { pdfDraw } from './pdf-core/draw.js';
+const bytes = await pdfDraw(list, key => bytesOf(key));   // Uint8Array; resolve מחזיר Uint8Array / ArrayBuffer / Promise / null
+```
+
+- **אותה רשימה ואותן הודעות שגיאה** (`TypeError`), וזרם התוכן של כל עמוד **זהה** לזה של PHP — נבדק ב-`tests/draw.test.mjs`
+  על כל הפעולות, ועל 20 רשימות פגומות. ציור ב-`pdftoppm` של שני הקבצים — אותו דבר.
+- **`glyphs` — עוד לא ב-JS** (גופנים ו-subset — רק כשמישהו יצטרך): שגיאה ברורה. טקסט — כקווי מתאר (`path`), או ציור בשרת.
+- **תמונות:** PNG (8 / 16 סיביות, פלטה, אפור; בלי interlace) ו-JPEG. שונה מ-PHP: PNG לא מוקטן (ב-PHP — עד 1600 בצלע),
+  והשקיפות שלו מדויקת (ב-GD — 7 סיביות). דורש `CompressionStream` ו-`crypto.subtle` (דפדפן מודרני, https; Node 18+).
+
 ## עוד לא
 
 - **שקיפות בעצירות של מעבר צבע** (SMask לפי בהירות) — כשמישהו יצטרך.
-- **שלב 3:** pdf-core גם ב-JS — אותה רשימת ציור ואותן בדיקות, על בסיס ה-`toPDF` של וקטורי. גופנים ב-JS — רק כשיידרש.
+- **`glyphs` ב-JS** — גופנים ו-subset, כשמישהו יצטרך.
 
 - **CMYK והפרדות** — לפי `mbe-format.md` סעיף 9.
 - **subset לגופני CFF** (OTF עם קווי מתאר PostScript) — מוטמעים בשלמותם.

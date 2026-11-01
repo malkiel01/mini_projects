@@ -40,6 +40,9 @@ jobs:
         with:
           node-version: '22'
 
+      - name: pdf-core — JS מול PHP (אותה רשימת ציור, אותו PDF)
+        run: node creative-suite/pdf-core/tests/draw.test.mjs
+
       - name: Playwright + Chromium
         working-directory: word-processor/tests/e2e
         run: npm install --no-audit --no-fund && npx playwright install --with-deps chromium
