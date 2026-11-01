@@ -281,6 +281,25 @@
     ]
   },
   {
+    "file": "hostile/symbol-id-duplicate.mbe",
+    "codes": [
+      "duplicate-id"
+    ]
+  },
+  {
+    "file": "hostile/symbol-d-invalid.mbe",
+    "codes": [
+      "path-d-invalid"
+    ]
+  },
+  {
+    "file": "hostile/symbol-missing.mbe",
+    "codes": [
+      "symbol-missing"
+    ],
+    "ok": true
+  },
+  {
     "file": "hostile/group-geometry.mbe",
     "codes": [
       "group-geometry"
