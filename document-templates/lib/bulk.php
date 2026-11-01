@@ -89,6 +89,7 @@ function bulk_sheet(array $files): array
 function bulk_preview(array $user, array $post, array $files): array
 {
     $t = tpl_owned((int)($post['template_id'] ?? 0), $user, 'fill');
+    if (!tpl_perm($t, $user, 'issue')) throw new ApiError('אין לך הרשאה להנפיק מסמכים מהתבנית הזו', 403);   // 15.4א
     $schema = json_decode((string)unseal($t['schema_enc']), true) ?: [];
     [$headers, $rows] = bulk_sheet($files);
     $rows = array_values(array_filter($rows, fn($r) => array_filter($r, fn($v) => $v !== '')));
@@ -150,6 +151,7 @@ function bulk_contact(array $user, array $c, array &$cache): int
 function bulk_issue(array $user, array $post, array $files): array
 {
     $t = tpl_owned((int)($post['template_id'] ?? 0), $user, 'fill');
+    if (!tpl_perm($t, $user, 'issue')) throw new ApiError('אין לך הרשאה להנפיק מסמכים מהתבנית הזו', 403);   // 15.4א
     $schema = json_decode((string)unseal($t['schema_enc']), true) ?: [];
     $byKey = array_column($schema['fields'] ?? [], null, 'key');
     $targets = bulk_targets($schema);

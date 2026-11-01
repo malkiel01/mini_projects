@@ -336,8 +336,8 @@
   // מה כל הרשאה מתירה — משפט אחד, מתחלף לפי הבחירה
   const LEVEL_IC = { view: '👁', fill: '✍️', edit: '✏️', co_owner: '🔑' };
   const LEVEL_HINT = {
-    template: { view: 'רואה את התבנית, בלי לשנות ובלי להנפיק.', fill: 'מנפיק ממנה מסמכים משלו (הם שלו), ושולח אותם למילוי.',
-      edit: 'עורך את התבנית עצמה — שדות, עיצוב והגדרות.', co_owner: 'כמו עורך, ובנוסף משתף אחרים ומעביר לארכיון.' },
+    // 15.4א: בתבנית — מנהל או עורך עם מתגים
+    template: { edit: 'רק מה שמסמנים כאן. בלי אף מתג — רואה את התבנית בלבד.', co_owner: 'הכול, כמו הבעלים: עורך, מנפיק, משתף, מאשר, ומסיר מנהלים אחרים. את היוצר — לא.' },
     document: { view: 'רואה את המסמך ואת היומן שלו.', fill: 'מעדכן שדות במסמך, בלי לסיים ובלי לשלוח.',
       edit: 'ממלא, מסיים ושולח למשתתפים.', co_owner: 'כמו עורך, ובנוסף משתף אחרים ומעביר לארכיון.' },
   };
@@ -349,8 +349,17 @@
   async function shareDialog(type, id, title, after, opts = {}) {
     const what = type === 'template' ? 'התבנית' : 'המסמך';
     // "ממלא" שמור ללקוח בקישור; בצוות — מנפיק (תבנית) / מעדכן (מסמך)
-    const LV = (k) => k === 'fill' ? (type === 'template' ? 'מנפיק' : 'מעדכן') : LEVEL[k];
-    const IC = (k) => k === 'fill' && type === 'template' ? '📄' : LEVEL_IC[k];
+    const tplMode = type === 'template';   // 15.4א: מנהל / עורך עם מתגים
+    const LV = (k) => tplMode ? (k === 'co_owner' ? 'מנהל' : 'עורך') : k === 'fill' ? 'מעדכן' : LEVEL[k];
+    const IC = (k) => tplMode && k === 'co_owner' ? '👑' : LEVEL_IC[k];
+    let permNames = {}, myPerms = null;   // myPerms: null — בעלים / מנהל (הכול)
+    const permsBox = el('div', { class: 'perm-box', hidden: true });
+    /** מתגים לבחירה: רק מה שיש לי. sel — מה מסומן. */
+    const permChecks = (sel, onchange) => el('div', { class: 'perm-list' }, Object.entries(permNames)
+      .filter(([k]) => myPerms === null || myPerms.includes(k))
+      .map(([k, t]) => el('label', { class: 'switch small' }, el('input', { type: 'checkbox', value: k, checked: sel.includes(k), onchange }), el('span', {}, t))));
+    const pickedPerms = (box) => [...box.querySelectorAll('input[type=checkbox]:checked')].map(c => c.value);
+    const permsText = (p) => !p ? '' : p.length ? p.map(k => permNames[k] || k).join(' · ') : 'רואה בלבד';
     const list = el('ul', { class: 'share-list' }, el('li', { class: 'empty' }, 'טוען…'));
     const out = el('div');
     const email = el('input', { type: 'email', inputmode: 'email', autocomplete: 'email', placeholder: 'name@example.com', dir: 'ltr', required: true, 'aria-label': 'מייל' });
@@ -364,19 +373,36 @@
     const levelHint = el('p', { class: 'hint share-hint' });
     const seg = el('div', { class: 'seg share-seg', role: 'radiogroup', 'aria-label': 'הרשאה' });
     const avatar = (name) => el('span', { class: 'avatar', style: `--h:${hueOf(name)}`, 'aria-hidden': 'true' }, initialsOf(name));
+    const levels = () => tplMode ? (myPerms === null ? ['edit', 'co_owner'] : ['edit']) : Object.keys(LEVEL_IC).filter(k => rank(k) <= myRank);
     const levelSel = (cur, max, name) => {
-      return el('select', { 'aria-label': 'הרשאה של ' + name }, Object.entries(LEVEL).filter(([k]) => k !== 'owner' && rank(k) <= max)
-        .map(([k]) => el('option', { value: k, selected: k === cur }, IC(k) + ' ' + LV(k))));
+      return el('select', { 'aria-label': 'הרשאה של ' + name }, (tplMode ? levels() : Object.keys(LEVEL).filter(k => k !== 'owner' && rank(k) <= max))
+        .map(k => el('option', { value: k, selected: k === cur }, IC(k) + ' ' + LV(k))));
     };
-    const pickLevel = () => (seg.querySelector('input:checked') || {}).value || 'view';
-    const showHint = () => { levelHint.textContent = LEVEL_HINT[type][pickLevel()] || ''; };
+    const pickLevel = () => (seg.querySelector('input:checked') || {}).value || (tplMode ? 'edit' : 'view');
+    const showHint = () => {
+      levelHint.textContent = LEVEL_HINT[type][pickLevel()] || '';
+      permsBox.hidden = !(tplMode && pickLevel() === 'edit');
+    };
+    /** עורך קיים: חלון קטן עם המתגים שלו. */
+    function permsSheet(sh) {
+      const box = permChecks(sh.perms || [], () => {});
+      const d = sheet('✏️ ' + (sh.name || sh.email) + ' — מה מותר לו', el('div', { class: 'field-sheet' }, box,
+        el('div', { class: 'row-btns' }, el('button', { type: 'button', class: 'primary', onclick: async () => {
+          if (await run('share_set', { type, id, user_id: sh.user_id, level: 'edit', perms: pickedPerms(box) }, '✓ ההרשאות עודכנו')) d.close();
+        } }, 'שמירה'))));
+    }
     let myRank = 4;
     async function load() {
       try {
         const r = await api('share_list', undefined, { type, id });
         const prev = pickLevel();
         myRank = rank(r.my_level);
-        seg.replaceChildren(...Object.keys(LEVEL_IC).filter(k => rank(k) <= myRank).map(k => el('label', {},
+        if (tplMode) {
+          permNames = r.perm_names || {}; myPerms = r.my_perms ?? null;
+          const keep = permsBox.firstChild ? pickedPerms(permsBox) : ['issue', 'fill'];
+          permsBox.replaceChildren(el('small', { class: 'muted' }, 'מה מותר לעורך:'), permChecks(keep.filter(k => myPerms === null || myPerms.includes(k)), () => {}));
+        }
+        seg.replaceChildren(...levels().map(k => el('label', {},
           el('input', { type: 'radio', name: 'share-level', value: k, checked: k === prev, onchange: showHint }),
           el('span', {}, IC(k) + ' ' + LV(k)))));
         if (!seg.querySelector('input:checked')) seg.querySelector('input').checked = true;
@@ -391,18 +417,22 @@
           ...r.shares.map(s => {
             const name = s.name || s.email;
             // המאשר של מסמך "רק באישור שלי" — מוגן; מנהל-שותף — רק הבעלים משנה אותו
-            const locked = s.user_id === r.approver ? '✓ המאשר' : s.level === 'co_owner' && myRank < 5 ? IC('co_owner') + ' ' + LV('co_owner') : null;
+            // תבנית (15.4א): מנהל משנה גם מנהל; עורך שמשתף — לא נוגע במנהל
+            const locked = s.user_id === r.approver ? '✓ המאשר' : s.level === 'co_owner' && (tplMode ? myPerms !== null : myRank < 5) ? IC('co_owner') + ' ' + LV('co_owner') : null;
             if (locked) return el('li', { class: 'share-row' }, avatar(name),
               el('div', { class: 'share-who' }, el('strong', {}, name),
                 el('small', {}, el('span', { dir: 'ltr' }, s.email), s.since ? ' · מאז ' + new Date(s.since).toLocaleDateString('he-IL') : '')),
               el('span', { class: 'badge' }, locked));
             const sel = levelSel(s.level, myRank, name);
-            sel.addEventListener('change', () => run('share_set', { type, id, user_id: s.user_id, level: sel.value }, `✓ ההרשאה של ${name} עודכנה`));
+            sel.addEventListener('change', () => run('share_set', { type, id, user_id: s.user_id, level: sel.value,
+              ...(tplMode && sel.value === 'edit' ? { perms: s.perms || ['issue', 'fill'] } : {}) }, `✓ ההרשאה של ${name} עודכנה`));
             return el('li', { class: 'share-row' }, avatar(name),
               el('div', { class: 'share-who' }, el('strong', {}, name),
                 el('small', {}, el('span', { dir: 'ltr' }, s.email), s.since ? ' · מאז ' + new Date(s.since).toLocaleDateString('he-IL') : '',
-                  s.pending ? ' · ⏳ החשבון ממתין לאישור' : s.blocked ? ' · 🚫 החשבון חסום' : '')),
+                  s.pending ? ' · ⏳ החשבון ממתין לאישור' : s.blocked ? ' · 🚫 החשבון חסום' : ''),
+                tplMode && s.level === 'edit' ? el('small', { class: 'perm-sum' }, permsText(s.perms)) : null),
               el('div', { class: 'share-ctl' }, sel,
+                tplMode && s.level === 'edit' ? el('button', { type: 'button', class: 'small', 'aria-label': 'המתגים של ' + name, onclick: () => permsSheet(s) }, '⚙️') : null,
                 el('button', { type: 'button', class: 'small share-cut', 'aria-label': 'ניתוק ' + name, onclick: () => {
                   if (confirm(`לנתק את ${name}?\nהגישה שלו ${type === 'template' ? 'לתבנית' : 'למסמך'} תיחסם מיד.`)) run('share_remove', { type, id, user_id: s.user_id }, `✓ ${name} נותק`);
                 } }, '🚫 ניתוק')));
@@ -412,7 +442,7 @@
             const name = i.name || i.phone;
             return el('li', { class: 'share-row invite' }, el('span', { class: 'avatar', 'aria-hidden': 'true' }, '💬'),
               el('div', { class: 'share-who' }, el('strong', {}, name),
-                el('small', {}, '⏳ ממתין שייכנס · ' + IC(i.level) + ' ' + LV(i.level) + (i.name ? ' · ' : ''), i.name ? el('span', { dir: 'ltr' }, i.phone) : '')),
+                el('small', {}, '⏳ ממתין שייכנס · ' + IC(i.level) + ' ' + LV(i.level) + (tplMode && i.perms ? ' (' + permsText(i.perms) + ')' : '') + (i.name ? ' · ' : ''), i.name ? el('span', { dir: 'ltr' }, i.phone) : '')),
               el('div', { class: 'share-ctl' },
                 el('button', { type: 'button', class: 'small', 'aria-label': 'שליחה חוזרת ל' + name, onclick: () => invite('share_invite_resend', { type, id, invite_id: i.id }) }, '💬 שוב'),
                 el('button', { type: 'button', class: 'small share-cut', 'aria-label': 'ביטול ההזמנה של ' + name, onclick: () => {
@@ -470,14 +500,15 @@
     }
     const add = el('form', { class: 'card share-add' },
       el('h3', {}, 'הוספה לצוות'),
-      viaSeg, email, phoneRow, seg, levelHint, submit, viaHint);
+      viaSeg, email, phoneRow, seg, levelHint, permsBox, submit, viaHint);
     setVia('email');
     add.addEventListener('submit', async (e) => {
       e.preventDefault();
       submit.disabled = true;
+      const extra = tplMode && pickLevel() === 'edit' ? { perms: pickedPerms(permsBox) } : {};
       if (byPhone()) {
-        if (await invite('share_invite', { type, id, phone: phone.value, name: pname.value, level: pickLevel() })) { phone.value = ''; pname.value = ''; }
-      } else if (await run('share_set', { type, id, email: email.value, level: pickLevel() }, '✓ שותף')) email.value = '';
+        if (await invite('share_invite', { type, id, phone: phone.value, name: pname.value, level: pickLevel(), ...extra })) { phone.value = ''; pname.value = ''; }
+      } else if (await run('share_set', { type, id, email: email.value, level: pickLevel(), ...extra }, '✓ שותף')) email.value = '';
       submit.disabled = false;
     });
     const count = el('span', { class: 'count' });
@@ -521,8 +552,9 @@
       }
       list.replaceChildren(el('ul', { class: 'list' }, items.map(t => {
         const sub = [SOURCE[t.source] || t.source, t.fields + ' שדות', 'גרסה ' + t.version,
-          t.owner_name ? `של ${t.owner_name} · ${t.access === 'fill' ? 'מנפיק' : LEVEL[t.access]}` : null].filter(Boolean).join(' · ');
-        const canIssue = !t.archived && t.fields && rank(t.access) >= 2;
+          t.owner_name ? `של ${t.owner_name} · ${t.perms ? 'עורך' : t.access === 'co_owner' ? 'מנהל' : LEVEL[t.access]}` : null].filter(Boolean).join(' · ');
+        const can = (k) => !t.perms || t.perms.includes(k);   // 15.4א: עורך — לפי המתגים
+        const canIssue = !t.archived && t.fields && rank(t.access) >= 2 && can('issue');
         // 15.3: לחיצה על תבנית = טופס מילוי חדש; אין מה למלא (בלי שדות / ארכיון / צפייה) — העורך
         const open = canIssue
           ? el('button', { type: 'button', class: 'use-row tpl-open', title: 'מילוי מסמך חדש', onclick: () => issue(t, true) }, rowBody(t, sub))
@@ -539,12 +571,13 @@
     /** פעולות על תבנית (15.3) — העיקריות, ומתחת "עוד". רק מה שמותר. */
     function actions(t) {
       const r = rank(t.access);
+      const can = (k) => !t.perms || t.perms.includes(k);   // 15.4א: עורך — לפי המתגים
       let dlg;
       const go = (fn) => () => { dlg.close(); fn(); };
       const more = [
           t.used ? tile('🗂️', 'מסמכים', go(() => { location.hash = 'docs?template=' + t.id; })) : null,
           // שלב 12: הנפקה מאקסל וייצוא התשובות
-          !t.archived && t.fields && r >= 2 ? tile('📥', 'הנפקה מאקסל', go(() => window.DTBulk.open(t)), { sub: 'מסמך לכל שורה' }) : null,
+          !t.archived && t.fields && r >= 2 && can('issue') ? tile('📥', 'הנפקה מאקסל', go(() => window.DTBulk.open(t)), { sub: 'מסמך לכל שורה' }) : null,
           t.used ? tile('📤', 'ייצוא תשובות', go(async () => {
             try { await window.DTBulk.exportFile({ template_id: t.id }); }
             catch (e) { msg.replaceChildren(notice(e.message, 'bad')); }
@@ -554,8 +587,8 @@
         el('p', { class: 'hint' }, `${SOURCE[t.source] || t.source} · ${t.pages} דפים · ${t.fields} שדות · גרסה ${t.version}`),
         el('div', { class: 'tiles' },
           tile(r >= 3 ? '✏️' : '👁️', r >= 3 ? 'עריכת התבנית' : 'צפייה בתבנית', go(() => { location.hash = 'tpl=' + t.id; })),
-          r >= 4 ? tile('👥', 'שיתוף התבנית', go(() => shareDialog('template', t.id, t.name, load)), { sub: 'עם בעלי חשבון' }) : null,
-          !t.archived && t.fields && r >= 2 ? tile('🔗', 'טופס ללקוח', go(async () => {
+          r >= 4 || (t.perms || []).includes('share') ? tile('👥', 'שיתוף התבנית', go(() => shareDialog('template', t.id, t.name, load)), { sub: 'עם בעלי חשבון' }) : null,
+          !t.archived && t.fields && r >= 2 && can('issue') && can('send') ? tile('🔗', 'טופס ללקוח', go(async () => {
             try { await window.DTDocs.issue(t.id, true); } catch (e) { msg.replaceChildren(notice(e.message, 'bad')); }
           }), { sub: 'קישור חד-פעמי' }) : null,
           t.used || t.access !== 'owner' ? null : tile('🗑️', 'מחיקה', go(() => remove(t)), { danger: true }),

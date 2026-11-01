@@ -346,6 +346,26 @@ function db_migrate(PDO $pdo): void
     if (function_exists('fmt_migrate')) fmt_migrate($pdo);
     if (function_exists('lists_migrate')) lists_migrate($pdo);         // רשימות ערכים             // מבנים שמורים
 
+    // 15.4א: שיתוף תבנית — מנהל (co_owner) או עורך (edit) עם מתגים (perms_json, lib/sharing.php SHARE_PERMS)
+    foreach (['shares', 'share_invites'] as $tb) {
+        $cols = array_column($pdo->query("PRAGMA table_info($tb)")->fetchAll(), 'name');
+        if (!in_array('perms_json', $cols, true)) $pdo->exec("ALTER TABLE $tb ADD COLUMN perms_json TEXT");
+    }
+    $pdo->exec('CREATE TABLE IF NOT EXISTS dt_migrations (name TEXT PRIMARY KEY, at TEXT NOT NULL)');
+    if (!$pdo->query("SELECT 1 FROM dt_migrations WHERE name = 'share_v2'")->fetchColumn()) {
+        // המיפוי שאושר (README 15.4): מנהל-שותף ← מנהל; עורך ← עורך, כל המתגים; ממלא ← עורך שמנפיק וממלא; צופה ← מתבטל
+        $all = json_encode(['structure', 'fill', 'issue', 'share', 'send', 'approve', 'all_docs']);
+        $pdo->beginTransaction();
+        foreach (['shares', 'share_invites'] as $tb) {
+            $pdo->prepare("UPDATE $tb SET perms_json = ? WHERE object_type = 'template' AND level = 'edit'")->execute([$all]);
+            $pdo->prepare("UPDATE $tb SET level = 'edit', perms_json = ? WHERE object_type = 'template' AND level = 'fill'")->execute([json_encode(['issue', 'fill'])]);
+        }
+        $pdo->exec("DELETE FROM shares WHERE object_type = 'template' AND level = 'view'");
+        $pdo->prepare("UPDATE share_invites SET revoked_at = ? WHERE object_type = 'template' AND level = 'view' AND used_at IS NULL AND revoked_at IS NULL")->execute([now_iso()]);
+        $pdo->prepare("INSERT INTO dt_migrations (name, at) VALUES ('share_v2', ?)")->execute([now_iso()]);
+        $pdo->commit();
+    }
+
     // היומן: אי אפשר לשנות או למחוק רשומה — גם לא בטעות בקוד עתידי.
     $pdo->exec(<<<'SQL'
         CREATE TRIGGER IF NOT EXISTS events_no_update BEFORE UPDATE ON events

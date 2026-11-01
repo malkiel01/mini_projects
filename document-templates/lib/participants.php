@@ -260,6 +260,7 @@ function part_owned(array $user, array $b): array
 function part_link(array $user, array $b): array
 {
     [$d, $p] = part_owned($user, $b);
+    if (!doc_tpl_perm($d, $user, 'send')) throw new ApiError('אין לך הרשאה לשלוח טופס ללקוח מהתבנית הזו', 403);   // 15.4א
     if (!in_array($d['status'], ['draft', 'sent', 'in_progress'], true)) throw new ApiError('המסמך נעול', 409);
     if ($p['completed_at']) throw new ApiError('המשתתף כבר סיים', 409);
     $schema = doc_schema($d);
