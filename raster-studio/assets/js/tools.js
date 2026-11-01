@@ -4,9 +4,9 @@
 // ולוח האפשרויות של הכלי הפעיל.
 // הציור עצמו: משיכה במנוע (beginStroke → dab → endStroke), ובסופה רשומה אחת בהיסטוריה.
 
-import { colorRange, dabsAlong, floodFill, hexToRgb, rgbToHex } from './engine/fill.js';
+import { colorRange, dabsAlong, floodFill, hexToRgb, rgbToHex, quickState, quickGrow } from './engine/fill.js';
 import { TILE } from './engine/doc.js';
-import { combine, isEmptyShape, maskShape, selectionBox, selectionAlpha, rasterTile } from './engine/selection.js';
+import { combine, isEmptyShape, maskShape, selectionBox, selectionAlpha, rasterTile, refineMask } from './engine/selection.js';
 import * as XF from './engine/transform.js';
 import { pathFromSelection, translatePath } from './engine/vmask.js';
 import { docToScreen } from './engine/view.js';
@@ -14,7 +14,8 @@ import { MESH_N, meshOf, homography, bezierPatch, warpFrom, nearest, LIQUIFY_N, 
 import { handles } from './ui-core/handles.js';
 import { FONTS, LINE_HEIGHT, cssFont, renderText, textDirection } from './engine/text.js';
 import { keyOf } from './ui-core/keys.js';
-import { $ } from './ui-core/dom.js';
+import { $, h } from './ui-core/dom.js';
+import { sheet } from './ui-core/dialog.js';
 
 export const TOOLS = {
   hand: { label: 'יד', icon: '✋', key: 'h', hint: 'גרירה — הזזה' },
@@ -23,6 +24,7 @@ export const TOOLS = {
   rect: { label: 'בחירה מלבנית', icon: '⬚', key: 'm', hint: 'Shift — הוספה · Alt — חיסור · Ctrl+D — ביטול הבחירה' },
   ellipse: { label: 'בחירה אליפטית', icon: '◯', key: null, hint: 'Shift — הוספה · Alt — חיסור · M — מעבר בין מלבן לאליפסה' },
   lasso: { label: 'לאסו', icon: '➰', key: 'l', hint: 'גרירה סביב האזור · Shift — הוספה · Alt — חיסור' },
+  quick: { label: 'בחירה מהירה', icon: '🧲', key: null, hint: 'מורחים על האזור — הבחירה גדלה עד הקצוות · Alt — חיסור · [ ] — גודל · 🪶 — שיפור קצוות' },
   wand: { label: 'מטה קסם', icon: '🪄', key: 'w', hint: 'לחיצה — האזור בצבע דומה · בלי "רציף" — כל הצבע בתמונה · Shift — הוספה · Alt — חיסור' },
   brush: { label: 'מכחול', icon: '🖌️', key: 'b', hint: 'Alt+לחיצה — דגימת צבע · [ ] — גודל' },
   eraser: { label: 'מחק', icon: '🧽', key: 'e', hint: '[ ] — גודל' },
@@ -59,6 +61,8 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
   let lasso = null;    // גרירת בחירה: { type, mode, start, pts, shape }
   let xf = null;
   let patch = null;
+  // בחירה מהירה במשיכה: { st (null — הפיקסלים עוד נקראים), pending: נקודות שמחכות, last, mode, up }
+  let quick = null;
   // עיוות התוכן הצף: { mode: 'distort' | 'warp', pts } — פינות (סדר הרשת: ש"ע, י"ע, ש"ת, י"ת) או 16 נקודות Warp;
   // או { mode: 'liquify', mesh, orig } — רשת צפופה שהמכחול דוחף (orig — לשחזור ב-Alt).
   // warpDrag — { idx } נקודה שנגררת, { all, start, pts0 } — הזזה של כל הרשת, או { liq, last, restore } — מכחול Liquify
@@ -179,7 +183,7 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
   function updateCursor(e) {
     if (!e) styleText();   // זום / הזזה — התיבה עוקבת
     if (e) lastHover = e;
-    const show = lastHover && (painting() || liquifying()) && lastHover.pointerType !== 'touch';
+    const show = lastHover && (painting() || liquifying() || state.tool === 'quick') && lastHover.pointerType !== 'touch';
     cursor.hidden = !show;
     if (!show) return;
     const d = Math.max(4, state.size * view().zoom);
@@ -210,6 +214,8 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     else if (a === 'invert') {
       if (!d.selection) { toast('אין בחירה להפוך'); return; }
       setSelection({ ...d.selection, inverted: !d.selection.inverted }, 'היפוך הבחירה');
+    } else if (a === 'refine') {
+      refineEdge();
     } else if (a === 'content') {
       track(contentAwareFill());
     } else if (a === 'vmask') {
@@ -332,21 +338,96 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
    * בצבע הזה (טווח צבעים). התוצאה — צורת מסכה בבחירה, עם אותם מצבים (חדשה / הוספה / חיסור).
    */
   let wanding = false;
+  /** הפיקסלים שהבחירה לפי צבע מסתכלת עליהם: השכבה הפעילה, או הכול ("כל השכבות", קבוצה, התאמה, מילוי) */
+  function samplePixels(d) {
+    const layer = d.active;
+    const merged = state.sampleAll || !layer || layer.type === 'group' || !!layer.adjust || !!layer.fill;
+    return merged ? renderer.readPixels(d, 0, 0, d.width, d.height) : renderer.readLayerPixels(layer, 0, 0, d.width, d.height);
+  }
+
   async function wand([x, y], mode) {
-    const d = doc(), layer = d.active;
+    const d = doc();
     const xi = Math.floor(x), yi = Math.floor(y);
     if (wanding || xi < 0 || yi < 0 || xi >= d.width || yi >= d.height) return;
-    const merged = state.sampleAll || !layer || layer.type === 'group' || !!layer.adjust || !!layer.fill;
     wanding = true;
     let px;
     try {
-      px = merged ? await renderer.readPixels(d, 0, 0, d.width, d.height) : await renderer.readLayerPixels(layer, 0, 0, d.width, d.height);
+      px = await samplePixels(d);
     } finally { wanding = false; }
     if (doc() !== d || fl()) return;
     const r = (state.contiguous ? floodFill : colorRange)(px, d.width, d.height, xi, yi, state.tolerance);
     const shape = maskShape(r.mask, d.width, r.box);
     if (!shape) { if (mode === 'new') setSelection(null, 'ביטול הבחירה'); return; }
     setSelection(combine(d.selection, shape, mode), mode === 'sub' ? 'חיסור מהבחירה' : mode === 'add' ? 'הוספה לבחירה' : 'מטה קסם');
+  }
+
+  // ---- בחירה מהירה ----
+  /** מעבד את הנקודות שהצטברו: בין נקודה לנקודה — כל חצי רדיוס, כדי שמשיכה מהירה לא תדלג */
+  function flushQuick(q) {
+    const r = Math.max(1, state.size / 2);
+    for (const p of q.pending) {
+      const a = q.last ?? p, n = Math.max(1, Math.ceil(Math.hypot(p[0] - a[0], p[1] - a[1]) / (r / 2)));
+      for (let i = q.last ? 1 : 0; i <= n; i++) quickGrow(q.st, a[0] + (p[0] - a[0]) * i / n, a[1] + (p[1] - a[1]) * i / n, r, state.tolerance);
+      q.last = p;
+    }
+    q.pending = [];
+    overlay.preview(q.st.box ? maskShape(q.st.mask, q.st.w, q.st.box) : null);
+  }
+
+  function finishQuick(q) {
+    if (quick === q) quick = null;
+    overlay.preview(null);
+    const d = doc();
+    const shape = q.st && maskShape(q.st.mask, q.st.w, q.st.box);
+    if (!shape) return;
+    setSelection(combine(d.selection, shape, q.mode), q.mode === 'sub' ? 'חיסור מהבחירה' : 'בחירה מהירה');
+  }
+
+  // ---- שיפור קצוות (Refine Edge) ----
+  // חלון עם מחוונים ותצוגה חיה (הבחירה עצמה מתעדכנת); ✓ — צעד ביטול אחד, ✕ / סגירה — חוזרת הבחירה המקורית
+  const REFINE = [
+    ['smooth', 'החלקה', 0, 20, 'px'],
+    ['shift', 'הזזת הקצה', -32, 32, 'px'],
+    ['feather', 'ריכוך', 0, 64, 'px'],
+    ['contrast', 'ניגודיות', 0, 100, '%'],
+  ];
+  function refineEdge() {
+    const d = doc();
+    if (!d.selection) { toast('קודם בוחרים אזור'); return; }
+    const orig = d.selection;
+    const base = selectionAlpha(orig, d.width, d.height);
+    if (!base) { toast('הבחירה ריקה'); return; }
+    const vals = { smooth: 0, shift: 0, feather: 0, contrast: 0 };
+    let result = orig, applied = false, raf = 0;
+    const show = sel => { d.selection = sel; renderer.selectionChanged(d); overlay.draw(); draw(); };
+    const compute = () => {
+      raf = 0;
+      const r = refineMask(base, d.width, d.height, vals);
+      const shape = r && maskShape(r.mask, d.width, r.box);
+      result = shape ? { shapes: [{ ...shape, op: 'add' }], inverted: false } : null;
+      show(result);
+    };
+    sheet({
+      title: '🪶 שיפור קצוות',
+      submit: '✓ החלה',
+      label: 'שיפור קצוות',
+      body: body => body.append(...REFINE.map(([k, label, min, max, unit]) => {
+        const out = h('output', '0' + unit);
+        const input = h('input', { type: 'range', min, max, value: 0, 'data-refine': k, 'aria-label': label });
+        input.addEventListener('input', () => {
+          vals[k] = Number(input.value);
+          out.textContent = input.value + unit;
+          raf ||= requestAnimationFrame(compute);
+        });
+        return h('label.opt', h('span', label + ' ', out), input);
+      }), h('p.hint', 'החלקה — מתאר עגול יותר · הזזה — הרחבה או כיווץ · ריכוך — קצה רך · ניגודיות — מחדדת את הריכוך')),
+      onSubmit: () => { if (raf) { cancelAnimationFrame(raf); compute(); } applied = true; },
+      onClose: () => {
+        if (raf) cancelAnimationFrame(raf);
+        show(orig);
+        if (applied && result !== orig) setSelection(result, 'שיפור קצוות');
+      },
+    });
   }
 
   // ---- הזזה ושינוי צורה ----
@@ -810,6 +891,19 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
       overlay.preview(lassoShape());
       return true;
     }
+    if (state.tool === 'quick') {
+      const d = doc();
+      // כמו בפוטושופ: אחרי המשיכה הראשונה — מוסיפים (Alt — מחסירים); "חדשה" רק כשאין בחירה
+      const mode = e.altKey ? 'sub' : e.shiftKey ? 'add' : state.selMode === 'new' && d.selection ? 'add' : state.selMode;
+      const q = quick = { st: null, pending: [pt], last: null, mode, up: false };
+      track(samplePixels(d).then(px => {
+        if (quick !== q || doc() !== d) return;
+        q.st = quickState(px, d.width, d.height);
+        flushQuick(q);
+        if (q.up) finishQuick(q);
+      }));
+      return true;
+    }
     if (selecting()) {
       const mode = e.shiftKey ? 'add' : e.altKey ? 'sub' : state.selMode;
       lasso = { type: state.tool, mode, start: pt, pts: [pt] };
@@ -901,6 +995,11 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
       draw();
       return;
     }
+    if (quick) {
+      for (const q of points) quick.pending.push([q.x, q.y]);
+      if (quick.st) flushQuick(quick);
+      return;
+    }
     if (lasso) {
       for (const q of points) {
         const p = [q.x, q.y];
@@ -953,6 +1052,7 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
       return;
     }
     if (xf) { if (xf.kind === 'hd') hdXf.up(); xf = null; warpDrag = null; return; }
+    if (quick) { quick.up = true; if (quick.st) finishQuick(quick); return; }
     if (lasso) {
       const shape = lassoShape(), mode = lasso.mode;
       lasso = null;
@@ -981,6 +1081,7 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     if (cropDrag?.kind === 'hd') { hdCrop.cancel(); cropDrag = null; return; }
     if (groupMove) { groupMove = null; renderer.setShift(doc(), null); draw(); return; }
     if (lasso) { lasso = null; overlay.preview(null); return; }
+    if (quick) { quick = null; overlay.preview(null); return; }
     if (!stroke) return;
     stroke = null;
     renderer.cancelStroke(doc());
@@ -1041,7 +1142,7 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
   return {
     state, setTool, setColor(hex) { if (/^#[0-9a-f]{6}$/i.test(hex)) { state.color = hex; syncColor(); } }, down, move, up, cancel, key, updateCursor, hideCursor, selAction, commitFloat, cancelFloat, commitText,
     get editingText() { return !!textEdit; },
-    get stroking() { return !!stroke || !!lasso || !!xf || !!cropDrag || !!groupMove || !!grabPending || !!patch; },
+    get stroking() { return !!stroke || !!lasso || !!xf || !!cropDrag || !!groupMove || !!grabPending || !!patch || !!quick; },
     get floating() { return !!fl(); },
     /** מחכה שכל הפעולות שממתינות לקריאה מהכרטיס יסתיימו (גם אלה שנוספו בזמן ההמתנה) */
     async settle() { while (ops.size) await Promise.allSettled([...ops]); },

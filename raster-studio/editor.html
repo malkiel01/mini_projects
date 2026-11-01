@@ -150,19 +150,19 @@
         </div>
       </section>
       <div class="tool-opts" id="tool-opts" role="group" aria-label="אפשרויות הכלי">
-        <label class="opt" data-for="brush eraser clone heal"><span>גודל <output for="opt-size"></output></span>
+        <label class="opt" data-for="brush eraser clone heal quick"><span>גודל <output for="opt-size"></output></span>
           <input id="opt-size" type="range" min="0" max="100" step="1"></label>
         <label class="opt" data-for="brush eraser clone heal"><span>קשיות <output for="opt-hardness"></output></span>
           <input id="opt-hardness" type="range" min="0" max="100" step="1"></label>
         <label class="opt" data-for="brush eraser clone heal bucket"><span>אטימות <output for="opt-opacity"></output></span>
           <input id="opt-opacity" type="range" min="1" max="100" step="1"></label>
-        <label class="opt" data-for="bucket wand"><span>סבולת <output for="opt-tolerance"></output></span>
+        <label class="opt" data-for="bucket wand quick"><span>סבולת <output for="opt-tolerance"></output></span>
           <input id="opt-tolerance" type="range" min="0" max="255" step="1"></label>
         <div class="opt-btns" data-for="clone heal">
           <button class="btn ghost" type="button" data-clone="source" aria-pressed="false" title="הקשה הבאה — נקודת המקור (במחשב: Alt+לחיצה)">🎯 מקור</button>
         </div>
         <label class="opt-check" data-for="wand"><input id="opt-contiguous" type="checkbox" checked><span>רציף</span></label>
-        <label class="opt-check" data-for="wand"><input id="opt-sample-all" type="checkbox"><span>כל השכבות</span></label>
+        <label class="opt-check" data-for="wand quick"><input id="opt-sample-all" type="checkbox"><span>כל השכבות</span></label>
         <label class="opt opt-font" data-for="text"><span>גופן</span><select id="opt-font"></select></label>
         <label class="opt opt-num" data-for="text"><span>גודל</span><input id="opt-font-size" type="number" min="4" max="1000" value="48" inputmode="numeric" dir="ltr"></label>
         <div class="opt-btns" data-for="text">
@@ -197,17 +197,18 @@
           <button class="btn ghost" type="button" data-xf="cancel" disabled>✕ ביטול</button>
           <button class="btn primary" type="button" data-xf="apply" disabled>✓ החלה</button>
         </div>
-        <fieldset class="seg opt-seg" data-for="rect ellipse lasso wand" aria-label="מצב הבחירה">
+        <fieldset class="seg opt-seg" data-for="rect ellipse lasso wand quick" aria-label="מצב הבחירה">
           <label><input type="radio" name="selmode" value="new" checked><span>חדשה</span></label>
           <label><input type="radio" name="selmode" value="add"><span>הוספה</span></label>
           <label><input type="radio" name="selmode" value="sub"><span>חיסור</span></label>
         </fieldset>
-        <div class="opt-btns" data-for="rect ellipse lasso wand patch">
+        <div class="opt-btns" data-for="rect ellipse lasso wand quick patch">
           <button class="icon-btn" type="button" data-sel="all" aria-label="בחירת הכול (Ctrl+A)" title="בחירת הכול (Ctrl+A)">▣</button>
           <button class="icon-btn" type="button" data-sel="none" aria-label="ביטול הבחירה (Ctrl+D)" title="ביטול הבחירה (Ctrl+D)">⊘</button>
           <button class="icon-btn" type="button" data-sel="invert" aria-label="היפוך הבחירה (Ctrl+Shift+I)" title="היפוך הבחירה (Ctrl+Shift+I)">◐</button>
           <button class="icon-btn" type="button" data-sel="fill" aria-label="מילוי הבחירה בצבע (Alt+Backspace)" title="מילוי הבחירה בצבע (Alt+Backspace)">🎨</button>
           <button class="icon-btn" type="button" data-sel="delete" aria-label="מחיקת הבחירה (Delete)" title="מחיקת הבחירה (Delete)">🗑️</button>
+          <button class="icon-btn" type="button" data-sel="refine" aria-label="שיפור קצוות" title="שיפור קצוות — החלקה, הרחבה / כיווץ, ריכוך">🪶</button>
           <button class="icon-btn" type="button" data-sel="content" aria-label="מילוי לפי התוכן" title="מילוי לפי התוכן — הבחירה מתמלאת ממה שסביבה">🫧</button>
           <button class="icon-btn" type="button" data-sel="vmask" aria-label="מסכה וקטורית מהבחירה" title="מסכה וקטורית מהבחירה — קצה חד שאפשר לרכך, על השכבה הפעילה">🔷</button>
         </div>
