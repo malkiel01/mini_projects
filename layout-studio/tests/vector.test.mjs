@@ -78,7 +78,7 @@ test('בחירה ו-PDF: ציור נבחר בהקשה; נתיבים — path ש�
   assert.deepEqual(list.pages[0].ops[1], { op: 'image', src, box: [0, 0, 200, 100] });
 });
 
-test('ציור ל-PDF: סמל מקונן עם מטריצה מורכבת, שקיפות, קו; מעבר צבע, מסכה וקשת — כתמונה, בסדר המקורי', () => {
+test('ציור ל-PDF: סמל מקונן, שקיפות, קו, מעבר צבע ומסכת חיתוך — נתיבים; פקודה יחסית ועצירות בשקיפות שונה — כתמונה, בסדר', () => {
   const syms = { s: { paths: [{ id: 'q', d: 'M0 0 L10 0 L10 10 Z', transform: [2, 0, 0, 2, 0, 0], fill: { color: '#00FF00', opacity: 0.5 } }] } };
   const layer = { id: 'D', type: 'vector', box: [0, 0, 100, 100], paths: [
     { id: 'a', type: 'use', symbol: 's', transform: [1, 0, 0, 1, 5, 7] },
@@ -86,13 +86,18 @@ test('ציור ל-PDF: סמל מקונן עם מטריצה מורכבת, שקי�
     { id: 'c', d: 'M0 0 L5 5 Z', fill: { gradient: { type: 'linear', from: [0, 0], to: [1, 1], stops: [{ at: 0, color: '#000000' }] } } },
     { id: 'g', type: 'group', clip: true, children: [{ id: 'm', d: 'M0 0 L1 1 Z' }, { id: 'n', d: 'M0 0 L1 1 Z', fill: { color: '#111111' } }] },
     { id: 'r', d: 'm0 0 l5 5', fill: { color: '#111111' } },
+    { id: 'v', d: 'M0 0 L5 5 Z', fill: { gradient: { type: 'radial', center: [1, 2], radius: 3, stops: [{ at: 0, color: '#000000', opacity: 0.2 }, { at: 1, color: '#ffffff' }] } } },
     { id: 'e', d: 'M0 0 L1 1', fill: { color: '#222222' } },
     { id: 'z', d: 'M0 0 L1 1' }] };
   const segs = drawingSegments(layer, syms);
   assert.deepEqual(segs.map(x => x.ops ? 'ops' : 'raster'), ['ops', 'raster', 'ops']);
+  assert.deepEqual(segs[0].ops.map(o => o.op), ['path', 'path', 'path', 'clip', 'path', 'restore']);
+  assert.deepEqual(segs[0].ops[2].fill, { gradient: { type: 'linear', x1: 0, y1: 0, x2: 1, y2: 1, stops: [{ offset: 0, color: '#000000' }] } });
+  assert.deepEqual(segs[0].ops[3], { op: 'clip', d: 'M0 0 L1 1 Z', transform: [1, 0, 0, 1, 0, 0] });
+  assert.equal(segs[0].ops[4].fill, '#111111');
   assert.deepEqual(segs[0].ops[0], { op: 'path', d: 'M0 0 L10 0 L10 10 Z', transform: [2, 0, 0, 2, 5, 7], fill: '#00ff00', fillOpacity: 0.5 });
   assert.deepEqual(segs[0].ops[1], { op: 'path', d: 'M0 0 L5 5', transform: [1, 0, 0, 1, 0, 0], stroke: '#000000', width: 2, strokeOpacity: 0.5, cap: 'round', dash: [3, 1] });
-  assert.deepEqual(segs[1].raster.map(x => x.id), ['c', 'g', 'r']);
+  assert.deepEqual(segs[1].raster.map(x => x.id), ['r', 'v']);
   assert.equal(segs[2].ops.length, 1);   // e; z — בלי מילוי ובלי קו — לא נכנס
 });
 
