@@ -224,6 +224,7 @@ export async function openProject(id) {
     el('span', { class: 'badge', text: `הרשאתך: ${{ read: 'צפייה', write: 'כתיבה', admin: 'ניהול' }[project.my_level]}` }),
   );
 
+  renderOwnerTools(project);
   renderMembers(members);
   $('#pvAddMember').hidden = project.my_level !== 'admin';
   if (project.my_level === 'admin') {
@@ -235,6 +236,59 @@ export async function openProject(id) {
   await browse('');
   $('#projectView').showModal();
 }
+
+/*
+ * בעל הלוח: "רק בעל הלוח" (owner_only), והעברה לתוך פרויקט אחר.
+ * ⚠ ההעברה זמנית — לסידור הפרויקטים שנוצרו לפני העץ; תוסר אחרי הסידור.
+ */
+function renderOwnerTools(project) {
+  const owner = state.user?.role === 'admin';
+  $('#pvOwner').hidden = !owner;
+  if (!owner) return;
+  const all = state.projects || [];
+  const me = all.find((p) => p.id === project.id);
+  $('#pvOwnerOnly').checked = Number(project.owner_only) === 1;
+  // סומן באב — כאן אי אפשר לבטל
+  const inherited = !!me?.owner_only_effective && Number(project.owner_only) !== 1;
+  $('#pvOwnerOnly').disabled = inherited;
+  $('#pvOwnerOnlyHint').hidden = !inherited;
+  $('#pvOwnerOnlyHint').textContent = 'מסומן בפרויקט אב — חל גם כאן.';
+
+  // יעדים: כל פרויקט שאינו הוא עצמו ואינו בתוך הענף שלו
+  const below = new Set([project.id]);
+  for (let grew = true; grew;) {
+    grew = false;
+    all.forEach((p) => { if (p.parent_id && below.has(p.parent_id) && !below.has(p.id)) { below.add(p.id); grew = true; } });
+  }
+  const path = (p) => {
+    const names = [];
+    for (let c = p, i = 0; c && i < 8; c = all.find((x) => x.id === c.parent_id), i++) names.unshift(c.name);
+    return names.join(' › ');
+  };
+  const targets = all.filter((p) => !below.has(p.id)).map((p) => ({ id: p.id, label: path(p) }))
+    .sort((a, b) => a.label.localeCompare(b.label, 'he'));
+  $('#pvMoveTo').replaceChildren(
+    el('option', { value: '', text: '— רמה עליונה —', selected: !project.parent_id }),
+    ...targets.map((t) => el('option', { value: String(t.id), text: t.label, selected: t.id === project.parent_id })),
+  );
+}
+
+on('#pvOwnerOnly', 'change', async (e) => {
+  try {
+    await api('update-project', { id: state.openProject.id, owner_only: e.target.checked });
+    toast(e.target.checked ? 'סומן: רק בעל הלוח — בכל הענף' : 'הסימון הוסר', 'ok');
+  } catch (ex) { e.target.checked = !e.target.checked; toast(ex.message, 'error'); }
+});
+
+on('#pvMove', 'submit', async (e) => {
+  e.preventDefault();
+  const v = $('#pvMoveTo').value;
+  try {
+    await api('move-project', { id: state.openProject.id, parent_id: v ? Number(v) : null });
+    $('#projectView').close();   // הסגירה מרעננת את העץ
+    toast('הפרויקט הועבר', 'ok');
+  } catch (ex) { toast(ex.message, 'error'); }
+});
 
 function renderMembers(members) {
   const canEdit = state.openProject?.my_level === 'admin';

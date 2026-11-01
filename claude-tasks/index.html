@@ -335,6 +335,17 @@
     <div class="sheet__body">
       <div class="dmeta" id="pvMeta"></div>
 
+      <!-- בעל הלוח בלבד. "העברה" — זמנית, לסידור הפרויקטים שנוצרו לפני העץ; תוסר אחרי הסידור -->
+      <div id="pvOwner" hidden>
+        <h3>מבנה</h3>
+        <label class="check"><input type="checkbox" id="pvOwnerOnly"><span>רק בעל הלוח עונה ומחליט — גם בכל תתי-הפרויקטים</span></label>
+        <p class="hint" id="pvOwnerOnlyHint" hidden></p>
+        <form class="row" id="pvMove" style="align-items: end">
+          <label class="field" style="flex: 1 1 200px"><span>העברה לתוך פרויקט (זמני)</span><select id="pvMoveTo"></select></label>
+          <button type="submit" class="btn btn--ghost">העברה</button>
+        </form>
+      </div>
+
       <h3>חברים</h3>
       <div class="members" id="pvMembers"></div>
       <form class="row" id="pvAddMember" hidden>
