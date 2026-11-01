@@ -310,36 +310,7 @@ input.search { width: 100%; min-height: var(--tap); margin-bottom: var(--s2); }
 .dev-log .muted { flex: 1; }
 .range-row .step { flex: none; width: 40px; min-height: 40px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); font-size: 1.25rem; }
 
-/* ─── בורר הצבע (js/colorpicker.js) ─── */
-.cp-trigger { display: flex; align-items: center; gap: var(--s2); width: 100%; min-height: var(--tap); padding: 0 var(--s2); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); color: var(--ink); }
-.cp-trigger.open { border-color: var(--brand); }
-.cp-chip { width: 28px; height: 28px; border-radius: 8px; border: 1px solid #0003; flex: none;
-    background-image: linear-gradient(45deg, #ccc 25%, transparent 25%, transparent 75%, #ccc 75%), linear-gradient(45deg, #ccc 25%, transparent 25%, transparent 75%, #ccc 75%); background-size: 10px 10px; background-position: 0 0, 5px 5px; }
-.cp-code { font: 600 .9rem ui-monospace, monospace; letter-spacing: .03em; }
-.cp-panel { margin-top: var(--s2); padding: var(--s3); border: 1px solid var(--line); border-radius: var(--r); background: var(--bg); direction: ltr; }
-.cp-sv { position: relative; height: 180px; border-radius: 10px; touch-action: none; cursor: crosshair;
-    background: linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, var(--hue, red)); }
-.cp-hue, .cp-alpha { position: relative; height: 28px; margin-top: var(--s3); border-radius: 14px; touch-action: none; cursor: pointer; }
-.cp-hue { background: linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00); }
-.cp-alpha { background-image: linear-gradient(45deg, #ccc 25%, transparent 25%, transparent 75%, #ccc 75%), linear-gradient(45deg, #ccc 25%, transparent 25%, transparent 75%, #ccc 75%); background-size: 12px 12px; background-position: 0 0, 6px 6px; }
-.cp-fill { position: absolute; inset: 0; border-radius: inherit; }
-.cp-thumb { position: absolute; width: 26px; height: 26px; border: 3px solid #fff; border-radius: 50%; box-shadow: 0 0 0 1px #0006, 0 2px 6px #0005; transform: translate(-50%, -50%); pointer-events: none; }
-.cp-hue .cp-thumb, .cp-alpha .cp-thumb { top: 50%; background: transparent; }
-.cp-loupe { position: absolute; width: 56px; height: 56px; border: 4px solid #fff; border-radius: 50%; box-shadow: 0 2px 10px #0007; transform: translate(-50%, -135%); pointer-events: none; }
-.cp-sv:focus-visible, .cp-hue:focus-visible, .cp-alpha:focus-visible { outline: 3px solid var(--brand); outline-offset: 2px; }
-.cp-codes { display: flex; align-items: center; gap: var(--s1); margin-top: var(--s3); }
-.cp-hex { flex: 1 1 96px; min-width: 0; min-height: var(--tap); padding: 0 var(--s2); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); color: var(--ink); font: 600 1rem ui-monospace, monospace; }
-.cp-rgb { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s2); margin-top: var(--s2); }
-.cp-rgb label { display: flex; align-items: center; gap: 4px; font: 700 .8rem ui-monospace, monospace; color: var(--muted); }
-.cp-num { flex: 1; min-width: 0; width: 100%; min-height: var(--tap); padding: 0 4px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); color: var(--ink); text-align: center; }
-.cp-fav { font-size: 1.3rem; color: #e1a100; }
-.cp-panel > .btn { margin-top: var(--s2); }
-.cp-rows { direction: rtl; }
-.cp-row-title { margin: var(--s3) 0 var(--s1); font-size: .8rem; font-weight: 700; color: var(--muted); }
-.cp-swatches { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; }
-.cp-sw { aspect-ratio: 1; min-height: 32px; border: 1px solid #0003; border-radius: 8px; }
-.cp-sw.on { outline: 3px solid var(--brand); outline-offset: 2px; }
-.cp-empty { margin: var(--s2) 0 0; }
+/* בורר הצבע — ב-ui.css של ui-core (.cp-*). כאן רק: הגיליון מוסתר בזמן הדגימה מהקנבס (sampleColor ב-main.js) */
 .sheet-root.sampling { visibility: hidden; pointer-events: none; }
 
 /* שורת המצב בזמן שינוי גודל / סיבוב (canvas.js, badge) */

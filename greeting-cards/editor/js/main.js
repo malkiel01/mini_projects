@@ -24,7 +24,7 @@ import { loadScript } from './io.js';
 import { docVariables, readSheetFile, readPasted, readPhoneContacts, guessColumns, normalizePhone, fileNames, fillText } from './merge.js';
 
 // הגרסה — מופיעה ביומן, כדי לדעת איזה קוד רץ בטלפון.
-const BUILD = '2026-11-01.faces-1';
+const BUILD = '2026-11-01.color-core-1';
 
 const app = $('#app');
 let ed = null;   // העיצוב הפתוח: { id, doc, history, canvas, dirty }
@@ -2372,7 +2372,7 @@ function docColors() {
     return out.filter(Boolean);
 }
 
-setColorContext({ docColors, presets: SOLIDS, sample: sampleColor });
+setColorContext({ prefix: 'gc-colors', docColors, presets: SOLIDS, sample: sampleColor, onOpen: label => log('color-open', { label }) });
 
 async function start() {
     try {
