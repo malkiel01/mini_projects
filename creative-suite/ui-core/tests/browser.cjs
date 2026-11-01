@@ -288,9 +288,11 @@ const server = http.createServer((req, res) => {
         if (touch) await p.click('dialog[open] .use-row:has-text("הגדרות אישיות")');
         else await p.click('.menu [role="menuitem"]:has-text("הגדרות אישיות")');
         await p.waitForTimeout(150);
-        await p.click('dialog[open] input[name="theme"][value="dark"]');
+        await p.evaluate(() => { window.__uiPrefs = 0; document.addEventListener('ui-prefs', e => { window.__uiPrefs = e.detail.theme; }); });
+        await p.click('dialog[open] input[name="theme"][value="dark"]');   // .seg: הקלט מכסה את התווית (בכוונה) — לוחצים עליו
         await p.click('dialog[open] input[name="scale"][value="1.15"]');
         await p.click('dialog[open] input[name="units"][value="mm"]');
+        ok(await p.evaluate(() => window.__uiPrefs) === 'dark', "account: אירוע 'ui-prefs' על document אחרי שינוי");
         const st = await p.evaluate(() => ({ theme: document.documentElement.dataset.theme, scale: document.documentElement.style.getPropertyValue('--ui-scale'),
             bg: getComputedStyle(document.body).backgroundColor, saved: JSON.parse(localStorage.getItem('ui-core-account:general')), last: window.__lastPrefs }));
         ok(st.theme === 'dark' && st.bg === 'rgb(17, 19, 24)', 'account: ערכה כהה — data-theme והצבעים מתחלפים');
@@ -303,6 +305,18 @@ const server = http.createServer((req, res) => {
         await p.waitForFunction(() => document.querySelector('.account-btn'));
         ok(await p.evaluate(() => document.documentElement.dataset.theme) === 'dark', 'account: הערכה נשמרת אחרי טעינה');
         await p.evaluate(() => { window.__acc.setPrefs({ theme: 'system', scale: 1 }); });
+
+        // hide — הגדרה כללית שאין לה משמעות באפליקציה לא מוצגת
+        const hid = await p.evaluate(async () => {
+            const { accountMenu } = await import('../src/js/account.js');
+            const bar = document.createElement('div'); document.body.append(bar);
+            const a = accountMenu(bar, { user: () => ({ name: 'א ב' }), prefs: { get: () => null, set: () => {} }, hide: ['units', 'autosave'] });
+            a.settings(); await new Promise(r => setTimeout(r, 200));
+            const d = document.querySelector('dialog[open]');
+            const r = { units: !!d.querySelector('input[name="units"]'), theme: !!d.querySelector('input[name="theme"]'), auto: d.textContent.includes('שמירה אוטומטית') };
+            d.close(); bar.remove(); return r;
+        });
+        ok(!hid.units && !hid.auto && hid.theme, 'account: hide — יחידות ושמירה אוטומטית לא מוצגות, השאר כן');
 
         // accountServer — מתאם לצד השרת המשותף (call מדומה)
         const sv = await p.evaluate(async () => {
