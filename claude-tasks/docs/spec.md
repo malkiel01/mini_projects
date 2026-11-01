@@ -1,142 +1,149 @@
-# מטלות לקלוד — אפיון: הגשר החי, מרכז הניהול והממשק
+# Claude Tasks — spec: the live bridge, the command center, and the UI
 
-**מאת:** הצ'אט "מטלות לקלוד - אפיון", 2026-11-01. **מבצע:** "מטלות לקלוד – כותב הקוד".
-**מקורות:** `creative-suite/docs/requests/claude-tasks-command-center.md` (14 סעיפים + תוכנית 7 PR-ים),
-`creative-suite/docs/requests/claude-tasks-live-bridge.md`, ומה שבעל המערכת אמר על הלוח (#1053, #1069).
-**סטטוס:** טיוטה לאישור בעל המערכת. מה שכבר הוכרע מסומן ✅.
+**By:** the "מטלות לקלוד - אפיון" chat, 2026-11-01. **Implemented by:** "מטלות לקלוד – כותב הקוד".
+**Sources:** `creative-suite/docs/requests/claude-tasks-command-center.md` (14 items + the 7-PR plan),
+`creative-suite/docs/requests/claude-tasks-live-bridge.md`, and the owner's feedback on the board (#1053, #1069).
+**Status:** draft, awaiting the owner's approval. Decisions already made are marked ✅.
 
-האפיון הזה **מחליף את סדר 7 ה-PR-ים** שבתשובה לבקשת מרכז הניהול. התוכן שם נשאר, חוץ ממה שכתוב כאן ב"שינויים".
+> **Language rule (owner, 2026-11-01):** this spec and every skill built from it are written in **English**.
+> UI strings stay Hebrew (the board is `lang="he" dir="rtl"`). Questions to the owner are asked in Hebrew.
+
+This spec **replaces the order of the 7 PRs** in the board's answer to the command-center request. The content there still
+holds, except where section 12 ("Changes") says otherwise.
 
 ---
 
-## 0. הכרעות בעל המערכת (2026-11-01)
+## 0. Owner decisions (2026-11-01)
 
-| # | שאלה | הכרעה |
+| # | Question | Decision |
 | --- | --- | --- |
-| 1 | סדר | ✅ **הגשר החי קודם**, אחרי שלב בטיחות קצר. חבילת היצירה מחכה לו |
-| 2 | חיבור צ'אט בענן | ✅ **אסימון רישום בהגדרות הסביבה** של Claude. הצ'אט נרשם ומתחבר מחדש לבד |
-| 3 | עלות Platform | ✅ **מכסה חודשית לכל משתמש**, שהמנהל קובע. היא חלה על כל הפרויקטים של אותו משתמש, ולמשתמש תמיד יש **גרף: שימוש מול יתרה** |
-| 4 | נושאים בתוך פרויקט | ✅ **הופכים ל"שלבים"** — שורת סינון בלשונית "מטלות". המגירה ☰ נשארת רק לנושאים כלליים |
+| 1 | Order | ✅ **The live bridge first**, after a short safety stage. The creative suite is paused until it works |
+| 2 | How a cloud chat connects | ✅ **A registration token in the Claude environment settings.** The chat registers and reconnects by itself |
+| 3 | Platform cost | ✅ **A monthly quota per user**, set by the admin. It covers all of that user's projects, and the user always sees a **graph: usage vs. remaining** |
+| 4 | Topics inside a project | ✅ **They become "stages"** (UI: "שלבים") — a filter row in the Tasks tab. The ☰ drawer stays only for general topics |
 
 ---
 
-## 1. מה מצאתי בלוח (נקודת הפתיחה)
+## 1. What the board has today (starting point)
 
-- **מודל:** `projects` הוא עץ (`parent_id`, `path`, `icon`); `topics.project_id` קיים; `tasks.project_id` קיים.
-  מטלות ישנות **בלי פרויקט**. נושא בלי פרויקט = כללי.
-- **עובדים:** `X-Worker-Token` (כללי מ-`config.json`, או `projects.agent_token` לפרויקט) + `X-Worker-Name`.
-  אסימון פרויקט מוגבל ל-`project_id` **מדויק**, לא לענף — אחרי #1069 זה כבר לא מספיק (תת-פרויקט לא נגיש לאסימון של האב).
-- **הערות:** `notes(author TEXT, kind)` — שם בלבד. **כל** משתמש מחובר שכותב על מטלה `blocked` מחזיר אותה לתור.
-- **אין** בדיקת `Origin`, אין cron, אין רישום עלות, ואין ערוץ שיחה — רק חוט הערות על מטלה.
-- **ממשק:** המסך הראשי וחלון המטלה בנויים בשפת phone-first-design. ההגדרות, הפרויקטים (`#projects`, `#projectView`),
-  הניהול, עריכת נושא ומסכי הכניסה — עדיין במבנה הישן (`.sheet__inner`), רק עם המשתנים. הנושאים במגירה ☰.
-- **רשת:** מצ'אט בענן הלוח נגיש (`api.php` ב-`public`; נבדק מהסשן הזה — 401 בלי אסימון, כמצופה).
-- **"מטלות שיצר: 0"** אצל `malkiel` (id 1): כנראה נוצרו בחשבון אחר (מסך "אין לי חשבון") — לבדוק בשלב 1 (U1).
+- **Model:** `projects` is a tree (`parent_id`, `path`, `icon`); `topics.project_id` and `tasks.project_id` exist.
+  Old tasks have **no project**. A topic without a project is general.
+- **Workers:** `X-Worker-Token` (the general one from `config.json`, or `projects.agent_token`) + `X-Worker-Name`.
+  A project token is scoped to the **exact** `project_id`, not its subtree — after #1069 that is no longer enough
+  (a sub-project is invisible to its parent's token).
+- **Notes:** `notes(author TEXT, kind)` — a name only. **Any** signed-in user who comments on a `blocked` task sends it back to the queue.
+- **None of:** an `Origin` check, cron, cost tracking, or a conversation channel — only a per-task note thread.
+- **UI:** the main screen and the task sheet follow phone-first-design. Settings, projects (`#projects`, `#projectView`),
+  admin, topic editing and the login screens still use the old structure (`.sheet__inner`) with only the new tokens.
+  Topics live in the ☰ drawer.
+- **Network:** the board is reachable from a cloud chat (`api.php` is in `public`; checked from this session — 401 without a token, as expected).
+- **"Tasks created: 0"** for `malkiel` (id 1): probably created under another account (the "I don't have an account" screen) — checked in stage 1 (U1).
 
 ---
 
-## 2. מודל הנתונים — מה מאחדים
+## 2. Data model — what gets unified
 
-### 2.1 פרויקט, שלב, נושא
+### 2.1 Project, stage, topic
 
-| מושג | מה זה | בטבלה |
+| Concept | What it is | Table |
 | --- | --- | --- |
-| **פרויקט** | ריפו (שורש) או תיקייה בתוכו (תת-פרויקט), לעומק כלשהו | `projects` |
-| **שלב** | נושא ששייך לפרויקט — "תשתית", "עיצוב", "שלב 3" | `topics` עם `project_id` |
-| **נושא כללי** | נושא בלי פרויקט (הלוח האישי) | `topics` עם `project_id IS NULL` |
-| **ערוץ** (חדש) | השיחה החיה עם צ'אט אחד, בתוך פרויקט | `channels` |
+| **Project** | A repo (root) or a folder inside it (sub-project), any depth | `projects` |
+| **Stage** | A topic that belongs to a project — "Infrastructure", "Design", "Stage 3" | `topics` with `project_id` |
+| **General topic** | A topic with no project (the personal board) | `topics` with `project_id IS NULL` |
+| **Channel** (new) | The live conversation with one chat, inside a project | `channels` |
 
-בממשק: בתוך פרויקט כותבים "שלב"; מחוץ לפרויקט — "נושא". בקוד ובטבלה זה אותו `topics`.
+In the UI: inside a project it is "שלב" (stage); outside a project, "נושא" (topic). In code and schema it is the same `topics`.
 
-### 2.2 `suite` → היררכיה + `owner_only` (שינוי מהבקשה, סעיף 12)
+### 2.2 `suite` → hierarchy + `owner_only` (change from the request, item 12)
 
-אחרי #1069 "חבילת היצירה" היא **פרויקט אב** עם תתי-פרויקטים — אין צורך בתגית `suite` נפרדת.
+After #1069 "the creative suite" is a **parent project** with sub-projects — a separate `suite` tag is unnecessary.
 
-- `projects.owner_only INTEGER DEFAULT 0` — **נורש** לכל הענף (כמו ריפו וחברים). במקום `suite`.
-  - רק `owner` עונה (הערה שמחזירה לתור) ומחליט (`decide`).
-  - `claim` עם **האסימון הכללי** בלי `topic_id` מדלג עליו (סעיף 13). אחרי שלב 4 — המסלול מחליף את הכלל.
-- `projects?root_id=<id>` — כל הענף (במקום `projects?suite=`).
-- `tasks?project_id=<id>&subtree=1`, ו-`counts.by_project` (סעיף 11).
-- **אסימון פרויקט מכסה את כל הענף שלו**, לא רק את ה-`id` המדויק.
+- `projects.owner_only INTEGER DEFAULT 0` — **inherited** by the whole subtree (like repo and members). Replaces `suite`.
+  - Only `owner` answers (a note that returns the task to the queue) and decides (`decide`).
+  - `claim` with the **general token** and no `topic_id` skips it (item 13). From stage 6 on, the route replaces this rule.
+- `projects?root_id=<id>` — the whole subtree (instead of `projects?suite=`).
+- `tasks?project_id=<id>&subtree=1`, and `counts.by_project` (item 11).
+- **A project token covers its whole subtree**, not just the exact `id`.
 
-לדשבורד של החבילה: במקום לזהות לפי שם — `root_id` של "חבילת היצירה". כתוב גם בתשובה בקובץ הבקשה.
+For the suite's dashboard: use the `root_id` of "חבילת היצירה" instead of matching by name. Also stated in the reply in the request file.
 
-### 2.3 "בעל המערכת" = `owner`
+### 2.3 "The owner" = `owner`
 
-`author_role` נקבע **בשרת** בלבד: `owner` (משתמש `role = admin`), `member`, `worker` (אסימון עובד/ערוץ), `platform`
-(תשובה של הלוח עצמו), `legacy` (הערות ישנות). אין שדה שאפשר לשלוח מבחוץ.
+`author_role` is set **by the server** only: `owner` (a user with `role = admin`), `member`, `worker` (worker/channel token),
+`platform` (the board's own answer), `legacy` (old notes). No client-settable field.
 
 ---
 
-## 3. השלבים — סדר הבנייה
+## 3. Stages — build order
 
-כל שלב = PR אחד (או שניים קטנים), נפרס ונבדק (`conclusion: success` + בדיקה ידנית בטלפון) לפני הבא.
+Each stage = one PR (or two small ones), deployed and verified (`conclusion: success` + a manual check on the phone) before the next.
 
-| # | שלב | מה | למה כאן |
+| # | Stage | What | Why here |
 | --- | --- | --- | --- |
-| **1** | **בטיחות ומבנה** | `author_role`, `owner_only`, אסימון לענף, Origin, `root_id`/`subtree`/`by_project`, שיוך מטלות ישנות | בסיס לכל השאר; ~60 מטלות של החבילה בדרך |
-| **2** | **הגשר החי — שרת** | `channels`, `messages`, ‏7 פעולות, תיבת דואר מאוחדת | ✅ עדיפות ראשונה |
-| **3** | **הגשר החי — צ'אט** | הסקיל `claude-tasks-live`, המאזין, ה-hooks, קובץ קישור | בלעדיו השרת לא מעיר אף אחד |
-| **4** | **הגשר החי — ממשק** | מסך פרויקט חדש: לשוניות "צ'אטים · מטלות · תתי-פרויקטים", שלבים במקום מגירה | בעל המערכת רואה ועונה |
-| **5** | **אישורים ומדיניות** | `awaiting_approval`, `ask-approval`, `decide`, `policy` (סעיפים 1–2) | עובר בערוץ כ-🔐 |
-| **6** | **מסלול אחד** | `route: chat \| platform` לפרויקט ולערוץ + עדכון `claude-tasks-worker` (סעיפים 4, 8) | מאחד שני מתגים |
-| **7** | **מכסה ושימוש** | רישום עלות, מכסה למשתמש, גרף (סעיף 5, לפי הכרעה 3) | **לפני** כל קריאה בתשלום |
-| **8** | **Platform עונה** | תשובה ☁️ בערוץ, מעקב וסיכומים (סעיף 6, גשר §4) | אחרי שיש מכסה |
-| **9** | **ממשק — שאר המסכים** | הגדרות, ניהול, עריכת שלב, מסכי כניסה — לפי הרכיבים | "מסורבל" — אחרי שהגשר עובד |
-| **10** | **מנוע Claude Code** | `engine: claude-code` ב-Actions (סעיף 7) | הכי יקר, תלוי בכל השאר |
+| **1** | **Safety & structure** | `author_role`, `owner_only`, subtree tokens, Origin, `root_id`/`subtree`/`by_project`, assigning old tasks | Base for everything; ~60 suite tasks are on the way |
+| **2** | **Live bridge — server** | `channels`, `messages`, the channel actions, one unified inbox | ✅ first priority |
+| **3** | **Live bridge — chat side** | the `claude-tasks-live` skill, the listener, the hooks, the link file | Without it the server wakes nobody |
+| **4** | **Live bridge — UI** | New project screen: tabs "Chats · Tasks · Sub-projects", stages instead of the drawer | The owner sees and replies |
+| **5** | **Approvals & policy** | `awaiting_approval`, `ask-approval`, `decide`, `policy` (items 1–2) | Travels through the channel as 🔐 |
+| **6** | **One route** | `route: chat \| platform` per project and channel + update `claude-tasks-worker` (items 4, 8) | Merges two switches |
+| **7** | **Quota & usage** | Cost logging, per-user quota, the graph (item 5, per decision 3) | **Before** any paid call |
+| **8** | **Platform answers** | ☁️ replies in the channel, monitoring and summaries (item 6, bridge §4) | After the quota exists |
+| **9** | **UI — remaining screens** | Settings, admin, stage editing, login — rebuilt with the components | "Clunky" — after the bridge works |
+| **10** | **Claude Code engine** | `engine: claude-code` in Actions (item 7) | Most expensive, depends on everything |
 
-שלבים 1–6 ו-9 **לא דורשים מפתח Platform**.
+Stages 1–6 and 9 **need no Platform key**.
 
 ---
 
-## 4. שלב 1 — בטיחות ומבנה
+## 4. Stage 1 — safety & structure
 
-**שרת**
-- `notes.author_role`, `notes.author_user_id`. הערות קיימות ← `legacy`.
-- `add-note` על מטלה `blocked`: הופכת ל-`answer` ומחזירה לתור **רק** כשהכותב `owner`, או `member` עם `write` בפרויקט שאינו
-  `owner_only`. אחרת — `comment` רגיל. (היום: כל מחובר.)
-- `projects.owner_only` (נורש), `update-project { owner_only }` — רק `admin`.
-- `claim` כללי בלי `topic_id` מדלג על ענף `owner_only`.
-- אסימון פרויקט ← כל הענף (`workerTask` ו-`claimNextTask` לפי `path`/אבות, לא `=`).
-- **Origin:** בקשה עם עוגייה ושיטה שאינה `GET` — `Origin` (או `Referer` כשאין) חייב להיות המארח של הלוח. בקשה עם
-  `X-Worker-Token` לא נבדקת. בלי רשימת נתיבים (הדשבורד באותו דומיין עובר).
+**Server**
+- `notes.author_role`, `notes.author_user_id`. Existing notes → `legacy`.
+- `add-note` on a `blocked` task becomes an `answer` and returns the task to the queue **only** when the author is `owner`,
+  or a `member` with `write` on a project that is not `owner_only`. Otherwise it is a plain `comment`. (Today: anyone signed in.)
+- `projects.owner_only` (inherited); `update-project { owner_only }` — `admin` only.
+- General `claim` without `topic_id` skips `owner_only` subtrees.
+- Project token → whole subtree (`workerTask` and `claimNextTask` by ancestry/`path`, not `=`).
+- **Origin:** a cookie-authenticated, non-`GET` request must have `Origin` (or `Referer` when absent) equal to the board's host.
+  Requests with `X-Worker-Token` are not checked. No path allow-list (the dashboard on the same domain passes).
 - `projects?root_id=`, `tasks?project_id=&subtree=1`, `counts.by_project`.
 
-**שיוך מטלות ישנות (U1)**
-- בתוך פרויקט, לשונית "מטלות" ← כפתור "שיוך מטלות" (רק כשיש מטלות בלי פרויקט): רשימה מקובצת לפי נושא כללי,
-  תיבת סימון לכל נושא ולכל מטלה, ו"העבר לפרויקט הזה". נושא שעובר — הופך לשלב שלו (`topics.project_id`), והמטלות שבו איתו.
-- ניהול ← "משתמשים": עמודת "מטלות" סופרת גם מטלות של חשבון שמוזג. ב-`tools/owner-access.php` — פקודה `tasks`:
-  כמה מטלות לכל `created_by`, כולל מזהים שאין להם משתמש. כך נבדק "מטלות שיצר: 0".
+**Assigning old tasks (U1)**
+- Inside a project, Tasks tab → an "Assign tasks" button (shown only when tasks without a project exist): a list grouped by
+  general topic, a checkbox per topic and per task, and "Move to this project". A moved topic becomes one of its stages
+  (`topics.project_id`), and its tasks move with it.
+- Admin → Users: the "Tasks" column also counts tasks from a merged account. `tools/owner-access.php` gets a `tasks` command:
+  task count per `created_by`, including ids with no user. That is how "Tasks created: 0" gets checked.
 
-**בוצע כש:** `tests/` מכסים — `member` לא מחזיר `owner_only` לתור; Origin זר ← 403; אסימון של אב רואה תת-פרויקט;
-כללי מדלג על `owner_only`. בטלפון: מטלות ישנות שויכו ל-`mini_projects`.
+**Done when:** `tests/` cover — a `member` cannot return an `owner_only` task to the queue; a foreign Origin → 403; a parent's
+token sees a sub-project; the general token skips `owner_only`. On the phone: old tasks assigned to `mini_projects`.
 
 ---
 
-## 5. שלבים 2–4 — הגשר החי
+## 5. Stages 2–4 — the live bridge
 
-### 5.1 העיקרון
+### 5.1 The principle
 
-> **הגיט הוא הרשומה; הלוח הוא השיחה; המאזין הוא הפעמון.**
+> **Git is the record; the board is the conversation; the listener is the bell.**
 
-- **צ'אט ← לוח:** hooks של Claude Code משקפים כל פנייה וכל תשובה. לא סומכים על המודל ש"יזכור".
-- **לוח ← צ'אט:** פקודת רקע בצ'אט (`curl` בלולאה) מחכה להודעה. כשמגיעה — הפקודה מסתיימת, וזה מעיר את הצ'אט.
-  בזמן ההמתנה **לא נשרף אף טוקן**.
-- **גיבוי:** `send_later` כל שעה, שבודק את התיבה ומחדש את המאזין.
+- **Chat → board:** Claude Code hooks mirror every prompt and every reply. We don't rely on the model "remembering".
+- **Board → chat:** a background command in the chat (`curl` in a loop) waits for a message. When one arrives the command
+  exits, and that wakes the chat. **No tokens are spent while waiting.**
+- **Backup:** an hourly `send_later` that checks the inbox and restarts the listener.
 
-### 5.2 נתונים
+### 5.2 Data
 
 ```
 channels(
   id, project_id, name, role, session_id UNIQUE, session_url,
-  token_hash,              -- אסימון הערוץ, נשמר מגובב בלבד
-  route TEXT DEFAULT '',   -- '' = של הפרויקט (שלב 6)
+  token_hash,              -- the channel token, stored hashed only
+  route TEXT DEFAULT '',   -- '' = inherit from the project (stage 6)
   status active|archived,
   last_seen_at, listening_until, created_at)
 
 messages(
   id, channel_id, task_id NULL,
-  direction  in|out,       -- in = מהלוח אל הצ'אט; out = מהצ'אט אל הלוח
+  direction  in|out,       -- in = board → chat; out = chat → board
   author_role owner|chat|platform|system,
   author_user_id NULL,
   kind  text|question|answer|approval|decision|status,
@@ -145,214 +152,220 @@ messages(
   delivered_at NULL, created_at)
 ```
 
-**ערוץ ומטלה — שני דברים.** הודעה יכולה לשאת `task_id`. אז:
-- `block` / `ask-approval` מאסימון ערוץ ← גם הודעת `out` בערוץ (❓/🔐 עם קישור למטלה).
-- תשובה של `owner` בחוט המטלה ← גם הודעת `in` בערוץ של מי ששאל (`tasks.asked_channel_id`).
+**A channel and a task are different things.** A message may carry `task_id`. Then:
+- `block` / `ask-approval` from a channel token → also an `out` message in the channel (❓/🔐 linking to the task).
+- An `owner` answer in the task thread → also an `in` message in the asking chat's channel (`tasks.asked_channel_id`).
 
-### 5.3 תיבת דואר אחת (מאחד את סעיף 3 בבקשת מרכז הניהול)
+### 5.3 One inbox (merges item 3 of the command-center request)
 
-הבקשה הראשונה ביקשה `inbox` לפי `worker_name`, ו"מפיץ" חיצוני שישלח `create_trigger`. הגשר מייתר את זה:
-**כל מה שצריך להגיע לצ'אט — הודעת `in` בערוץ שלו**, כולל תשובות והחלטות על מטלות. לכן:
+The first request asked for an `inbox` per `worker_name` and an external "distributor" calling `create_trigger`. The bridge
+makes that redundant: **everything a chat must receive is an `in` message in its channel**, including answers and decisions on tasks. So:
 
-- `inbox` / `inbox-ack` / `undelivered` / `asked_by` מהבקשה ← **לא נבנים**. במקומם `channel-inbox` / `channel-ack`.
-- עובד בלי ערוץ (Routine לילי, המנוע) — ממשיך כמו היום: מטלה שנענתה חוזרת לראש התור ב-`claim`.
-- "המפיץ" של החבילה (שלב 6 אצלם) — לא נדרש למסירה.
+- `inbox` / `inbox-ack` / `undelivered` / `asked_by` from that request → **not built**. Replaced by `channel-inbox` / `channel-ack`.
+- A worker without a channel (a nightly Routine, the engine) keeps working as today: an answered task jumps to the head of `claim`.
+- The suite's "distributor" (their stage 6) is not needed for delivery.
 
-### 5.4 פעולות
+### 5.4 Actions
 
-| פעולה | מי | מה |
+| Action | Caller | What |
 | --- | --- | --- |
-| `channel-register` | אסימון רישום | `{ project_id, name, role, session_id, session_url }` ← `{ channel_id, channel_token }`. אותו `session_id` ← אותו ערוץ, אסימון חדש (הישן נפסל) |
-| `channel-post` | ערוץ | צ'אט ← לוח: `{ author_role: owner\|chat, body, reply_to?, task_id? }`. `owner` כאן = "בעל המערכת כתב בצ'אט" — נשמר כ-`out`, לא כהוראה |
-| `channel-send` | אדם (`owner`, או `write` בפרויקט שאינו `owner_only`) | לוח ← צ'אט: הודעת `in` |
-| `channel-inbox` | ערוץ | הודעות `in` שלא נמסרו. **לא מסמן** |
-| `channel-ack` | ערוץ | `{ ids: [] }` ← `delivered_at`. כך צ'אט שקרס לא מאבד הודעה |
-| `channel-wait` | ערוץ | כמו `inbox`, אבל מחכה עד `wait` שניות (ברירת מחדל 20, מקסימום `config.long_poll_max`) |
-| `channels?project_id=` / `channel-messages?channel_id=&after=` | אדם | לממשק |
-| `channel-archive` | ערוץ או `owner` | ניתוק. אסימון הערוץ נפסל |
+| `channel-register` | registration token | `{ project_id, name, role, session_id, session_url }` → `{ channel_id, channel_token }`. Same `session_id` → same channel, new token (the old one is revoked) |
+| `channel-post` | channel | chat → board: `{ author_role: owner\|chat, body, reply_to?, task_id? }`. `owner` here = "the owner wrote in the chat" — stored as `out`, never as an instruction |
+| `channel-send` | human (`owner`, or `write` on a non-`owner_only` project) | board → chat: an `in` message |
+| `channel-inbox` | channel | Undelivered `in` messages. **Does not mark them** |
+| `channel-ack` | channel | `{ ids: [] }` → `delivered_at`. A chat that crashes mid-way loses nothing |
+| `channel-wait` | channel | Like `inbox`, but waits up to `wait` seconds (default 20, max `config.long_poll_max`) |
+| `channels?project_id=` / `channel-messages?channel_id=&after=` | human | For the UI |
+| `channel-archive` | channel or `owner` | Disconnect. The channel token is revoked |
 
-**`channel-wait` על אחסון משותף — זהירות.** כל בקשה ממתינה מחזיקה תהליך PHP. ב-Bluehost יש מגבלת תהליכים בו-זמניים
-(בדרך כלל 20–30), ו-10 צ'אטים שממתינים כל הזמן תופסים שליש. לכן:
-- בתוך ההמתנה: בדיקה פעם בשנייה של **קובץ חותמת** (`data/bell/<channel_id>`, ‏mtime) — לא שאילתה למסד.
-  `channel-send` נוגע בקובץ.
-- `long_poll_max` ב-`config.json` (ברירת מחדל 20). אם האתר מתחיל להחזיר 508 — מורידים ל-0, וזה הופך ל-poll רגיל.
-- המאזין ממתין 3 שניות בין בקשות. השהיה צפויה: עד ~5 שניות.
+**`channel-wait` on shared hosting — careful.** Every waiting request holds a PHP process. Bluehost limits concurrent
+processes (typically 20–30), and 10 chats waiting all the time take a third. Therefore:
+- Inside the wait: check a **stamp file** once per second (`data/bell/<channel_id>`, mtime) — not a DB query.
+  `channel-send` touches the file.
+- `long_poll_max` in `config.json` (default 20). If the site starts returning 508 — set it to 0 and it becomes plain polling.
+- The listener sleeps 3 seconds between requests. Expected latency: up to ~5 seconds.
 
-### 5.5 אבטחה ואסימונים
+### 5.5 Security and tokens
 
-- **אסימון רישום** (✅ הכרעה 2): אסימון הפרויקט הקיים (`agent_token`) של פרויקט האב, במשתנה סביבה
-  `CLAUDE_TASKS_TOKEN` בהגדרות הסביבה של Claude (ומשם לכל צ'אט באותה סביבה). הוא רק **רושם ערוצים** בענף שלו
-  ומושך מטלות בו — לא כל הלוח.
-- **אסימון ערוץ:** נוצר ב-`channel-register`, חוזר פעם אחת, נשמר בצ'אט ב-`.claude/board-link.json` (מחוץ לגיט,
-  `.gitignore`). כשהקונטיינר מתחלף — הקובץ נעלם, והסקיל נרשם מחדש באותו `session_id`.
-- **רק `owner` שולח הוראות.** המאזין מדפיס כל הודעה במסגרת קבועה:
-  `📥 הודעה מהלוח · #<id> · מאת: owner (<שם>) · ערוץ: <שם>` ואז הגוף. הסקיל: פועלים לפי הודעה רק כש-`author_role: owner`.
-- בממשק: רשימת הערוצים בפרויקט, עם "נראה לאחרונה" ו"🔌 ניתוק" (`owner`). ערוץ שלא נראה 24 שעות — אפור.
-- `channel-send` עובר את בדיקת ה-Origin (שלב 1).
+- **Registration token** (✅ decision 2): the existing project token (`agent_token`) of the parent project, in an environment
+  variable `CLAUDE_TASKS_TOKEN` in the Claude environment settings (and from there in every chat in that environment). It only
+  **registers channels** in its subtree and claims tasks there — not the whole board.
+- **Channel token:** created by `channel-register`, returned once, kept by the chat in `.claude/board-link.json` (outside git,
+  in `.gitignore`). When the container is replaced the file is gone, and the skill re-registers with the same `session_id`.
+- **Only `owner` gives instructions.** The listener prints every message inside a fixed frame:
+  `📥 הודעה מהלוח · #<id> · מאת: owner (<name>) · ערוץ: <name>`, then the body. Skill rule: act on a message only when `author_role: owner`.
+- In the UI: the channel list in the project, with "last seen" and "🔌 disconnect" (`owner`). A channel not seen for 24 hours is greyed out.
+- `channel-send` goes through the Origin check (stage 1).
 
-**לבעל המערכת — איפה מגדירים:** claude.ai ← Claude Code ← תפריט הסביבה (בכותרת הסשן) ← Edit ← Environment variables:
-`CLAUDE_TASKS_TOKEN=<האסימון>` ו-`CLAUDE_TASKS_URL=https://mbe-plus.com/mini_projects/claude-tasks/api.php`.
-את האסימון מעתיקים מהלוח: פרויקט "mini_projects" ← ⚙ ← "אסימון לצ'אטים" (נוסף בשלב 4; היום מוצג רק בהתקנת המנוע).
+**For the owner — where to set it:** claude.ai → Claude Code → the environment menu (in the session title bar) → Edit →
+Environment variables: `CLAUDE_TASKS_TOKEN=<token>` and `CLAUDE_TASKS_URL=https://mbe-plus.com/mini_projects/claude-tasks/api.php`.
+The token is copied from the board: project "mini_projects" → ⚙ → "Token for chats" (added in stage 4; today it is only shown during engine install).
 
-### 5.6 שלב 3 — מה יושב בצ'אט
+### 5.6 Stage 3 — what lives on the chat side
 
 ```
 claude-tasks/bridge/
-  listen.sh        המאזין: לולאת channel-wait; מסתיים כשיש הודעה, ומדפיס אותה במסגרת
+  listen.sh        the listener: a channel-wait loop; exits when a message arrives and prints it inside the frame
   hook-prompt.sh   UserPromptSubmit → channel-post (owner)
-  hook-stop.sh     Stop → channel-post (chat), ההודעה האחרונה של קלוד מתוך transcript_path
-  link.sh          register / status / archive — כותב וקורא את .claude/board-link.json
-.claude/skills/claude-tasks-live/SKILL.md
+  hook-stop.sh     Stop → channel-post (chat), Claude's last message read from transcript_path
+  link.sh          register / status / archive — writes and reads .claude/board-link.json
+.claude/skills/claude-tasks-live/SKILL.md      (in English)
 ```
 
-**ה-hooks** נרשמים ב-`.claude/settings.json` (קובץ משותף לכל הצ'אטים בריפו — ראה 5.8):
-- **פעילים רק כשיש `.claude/board-link.json`.** בלעדיו — `exit 0` מיד. צ'אט שלא נרשם לא מרגיש כלום.
-- **בלי לולאה:** הודעה מהלוח מגיעה כפלט של פקודת רקע, לא כפנייה. אם בכל זאת עוברת דרך `UserPromptSubmit` — ה-hook
-  מדלג על טקסט שמתחיל ב-`📥 הודעה מהלוח`. התשובה עליה נשלחת עם `reply_to` (המאזין כותב `pending_reply_to` לקובץ הקישור).
-- גם הודעות `📨` בין צ'אטים (create_trigger) — משתקפות כ-`system`, לא כ-`owner`.
-- כשל רשת ← `exit 0` בשקט, `timeout 5`. גוף מעל 20,000 תווים ← נחתך עם "…(נחתך)".
+**The hooks** are registered in `.claude/settings.json` (shared by every chat in the repo — see 5.8):
+- **Active only when `.claude/board-link.json` exists.** Without it — `exit 0` immediately. An unregistered chat notices nothing.
+- **No loops:** a board message arrives as background-command output, not as a prompt. If it does pass through
+  `UserPromptSubmit` anyway, the hook skips text starting with `📥 הודעה מהלוח`. The reply to it is posted with `reply_to`
+  (the listener writes `pending_reply_to` into the link file).
+- Inter-chat `📨` messages (create_trigger) are mirrored as `system`, not `owner`.
+- Network failure → silent `exit 0`, `timeout 5`. Bodies over 20,000 characters are truncated with "…(truncated)".
 
-**המאזין:** `run_in_background`, ‏`timeout` 7,000,000 מ"ש (קצת פחות משעתיים). מסתיים כשיש הודעה **או** כשנגמר הזמן —
-ובשני המקרים הצ'אט מתעורר, מטפל (או לא), ומפעיל מחדש. `listening_until` נשלח לשרת, והממשק מראה "🟢 מאזין".
+**The listener:** `run_in_background`, `timeout` 7,000,000 ms (just under two hours). It exits on a message **or** on timeout —
+either way the chat wakes, handles it (or not), and restarts it. `listening_until` is sent to the server, and the UI shows "🟢 listening".
 
-**הסקיל `claude-tasks-live`:** להירשם (`link.sh register`), להפעיל מאזין, לקבוע גיבוי שעתי (`send_later`), לטפל בהודעה
-(`channel-ack` אחרי הטיפול, לא לפני), לחדש, לנתק בסוף. ב-`claude-tasks-worker` — הפניה אליו.
+**The `claude-tasks-live` skill:** register (`link.sh register`), start the listener, schedule the hourly backup (`send_later`),
+handle a message (`channel-ack` after handling, not before), restart, disconnect at the end. `claude-tasks-worker` links to it.
 
-### 5.7 שלב 4 — הממשק
+### 5.7 Stage 4 — the UI
 
-**מסך פרויקט** (במקום `#projectView` הישן, ברכיבים של phone-first-design):
-- כותרת: חץ חזרה (רמה למעלה), סמל ושם, ⚙ (הגדרות הפרויקט בגיליון).
-- **לשוניות עם מונים**, הלשונית האחרונה נזכרת: **💬 צ'אטים · 📋 מטלות · 📁 תתי-פרויקטים**. לשונית בלי תוכן — לא מוצגת
-  (פרויקט בלי תתי-פרויקטים — שתי לשוניות).
-- **💬 צ'אטים:** שורה לכל ערוץ — אייקון התפקיד בריבוע צבעוני, שם מודגש, שורת משנה (🟢 מאזין · לפני 3 דק' · ❓ 2), חץ ‹.
-  מצב ריק: "אין צ'אטים מחוברים. צ'אט נרשם לבד עם הסקיל claude-tasks-live."
-- **שיחה (ערוץ):** כמו צ'אט — בועות, `out` מימין ו-`in` משמאל (RTL), תווית קטנה מי כתב (👤 אתה בצ'אט / 👤 אתה בלוח /
-  💬 צ'אט / ☁️ Platform), זמן. הודעה עם `task_id` — שורת מטלה לחיצה. שדה כתיבה קבוע למטה, "שליחה" עם מילה.
-  מצב המסירה: ✓ נשלח · ✓✓ הגיע (`delivered_at`). רענון: `channel-messages?after=` כל 4 שניות כשהמסך גלוי.
-- **📋 מטלות:** הרשימה הקיימת, עם **שורת שלבים** למעלה (`.seg` נגלל אופקית: "הכול · תשתית · עיצוב …", ✏️ לעריכת השלבים).
-  ✅ הכרעה 4. "+ מטלה" — כמו היום.
-- המגירה ☰ במסך הראשי — רק לנושאים כלליים, וכותרתה "נושאים כלליים".
+**Project screen** (replaces the old `#projectView`, built with phone-first-design components):
+- Header: back arrow (one level up), icon and name, ⚙ (project settings in a sheet).
+- **Tabs with counters**, last tab remembered: **💬 Chats · 📋 Tasks · 📁 Sub-projects**. A tab with no content is hidden
+  (a project without sub-projects has two tabs).
+- **💬 Chats:** one row per channel — role icon in a colored square, bold name, subline (🟢 listening · 3 min ago · ❓ 2), chevron ‹.
+  Empty state: "No chats connected. A chat registers itself with the claude-tasks-live skill."
+- **Conversation (channel):** chat-like bubbles, `out` on the right and `in` on the left (RTL), a small label for who wrote
+  (👤 you in the chat / 👤 you on the board / 💬 chat / ☁️ Platform), and the time. A message with `task_id` shows a tappable task row.
+  A fixed composer at the bottom, a "Send" button with a word. Delivery state: ✓ sent · ✓✓ delivered (`delivered_at`).
+  Refresh: `channel-messages?after=` every 4 seconds while the screen is visible.
+- **📋 Tasks:** the existing list, with a **stages row** on top (horizontally scrolling `.seg`: "All · Infrastructure · Design …",
+  ✏️ to edit stages). ✅ decision 4. "+ Task" — as today.
+- The ☰ drawer on the main screen — only for general topics, titled "General topics".
 
-**בוצע כש** (מבקשת הגשר, "מה בוצע"): צ'אט בדיקה נרשם; כתיבה בלוח ← הצ'אט מתעורר ועונה **תוך פחות מדקה**, והתשובה בלוח;
-כתיבה בצ'אט ← השאלה והתשובה בלוח; דוח קצר על המגבלות (המאזין, חילוף קונטיינר). צילום מסך בטלפון לפני "מוכן".
+**Done when** (from the bridge request, "Done"): a test chat registers; writing on the board → the chat wakes and replies
+**in under a minute**, and the reply shows on the board; writing in the chat → the question and the reply show on the board;
+a short report on the limits (listener, container replacement). A phone screenshot before "ready".
 
-### 5.8 מה צריך לאמת בפועל (בתחילת שלב 3, לפני שבונים הכול)
+### 5.8 What must be verified for real (at the start of stage 3, before building everything)
 
-1. פקודת רקע שמסתיימת — **מעירה צ'אט שמחכה** (ולא רק צ'אט באמצע תור). כמה זמן אחרי?
-2. האם הקונטיינר נשאר חי כל עוד פקודת רקע רצה, או נמחק אחרי זמן בלי פעילות גם אז? אחרי כמה?
-3. האם פלט של פקודת רקע עובר ב-`UserPromptSubmit`?
-4. ה-`Stop` hook מקבל `transcript_path`, ואפשר לחלץ ממנו את ההודעה האחרונה.
+1. A background command that exits **wakes an idle chat** (not only a chat mid-turn). How long after?
+2. Does the container stay alive while a background command runs, or is it reclaimed after inactivity anyway? After how long?
+3. Does background-command output go through `UserPromptSubmit`?
+4. Does the `Stop` hook receive `transcript_path`, and can the last message be extracted from it?
 
-אם 1 נכשל — הגשר נופל לגיבוי בלבד (השהיה עד שעה) ומדווחים לבעל המערכת לפני שממשיכים. **שינוי ב-`.claude/settings.json`**
-משפיע על כל הצ'אטים בריפו — לכן ה-hooks חייבים להיות no-op בלי קובץ קישור, ונבדקים בצ'אט נקי לפני המיזוג.
-
----
-
-## 6. שלב 5 — אישורים ומדיניות
-
-כמו "PR 2" בתשובה לבקשת מרכז הניהול, עם שני שינויים:
-- `decide` רק `owner` בענף `owner_only` (במקום "פרויקט עם `suite`").
-- `ask-approval` מאסימון ערוץ — גם הודעת 🔐 בערוץ; `decide` — גם הודעת `in` מסוג `decision`.
-
-בממשק: כרטיס 🔐 בחלון המטלה **ובבועה בערוץ** — סיכום, פירוט ב-`<details>`, ו-4 כפתורים בגריד 2×2:
-"פעם אחת" · "תמיד" · "לא" · "אף פעם". "תמיד" לסוג `warn` — חלון אישור שמבקש להקליד את שם הסוג.
+If 1 fails — the bridge falls back to the backup only (up to an hour of latency), and the owner is told before continuing.
+**A change to `.claude/settings.json`** affects every chat in the repo — so the hooks must be a no-op without a link file, and are
+tested in a clean chat before merging.
 
 ---
 
-## 7. שלב 6 — מסלול אחד (מאחד שני מתגים)
+## 6. Stage 5 — approvals & policy
 
-בקשת מרכז הניהול: `route: code | platform` — מי **מבצע מטלות**. בקשת הגשר: `answer_route: chat | platform` — מי **עונה
-בערוץ**. זו אותה החלטה ("על חשבון מי"), ולכן **מתג אחד**:
+As "PR 2" in the answer to the command-center request, with two changes:
+- `decide` is `owner` only in an `owner_only` subtree (instead of "a project with `suite`").
+- `ask-approval` from a channel token → also a 🔐 message in the channel; `decide` → also an `in` message of kind `decision`.
 
-- `projects.route`: `chat | platform | ''` (ריק = יורש מהאב; בשורש ריק = `config.default_route`, ברירת מחדל `chat`).
-- `channels.route` גובר על הפרויקט, לערוץ אחד.
-- `X-Worker-Route: chat` (מקבל גם `code` כשם ישן). בלי כותרת = `chat`.
-- **ההחלפה חלה על חדש בלבד:** מטלה `in_progress` שומרת `tasks.route`; הודעה שכבר בטיפול נגמרת במסלול שבו התחילה.
-- כלל ה-`owner_only` ב-`claim` (שלב 1) — מוחלף כאן במסלול.
-- בממשק: בראש מסך הפרויקט, `.seg` של שתי אפשרויות: "💬 הצ'אטים" · "☁️ Platform". ליד "☁️" — כמה נשאר מהמכסה.
-
-**`claude-tasks-worker`** (סעיף 8): `X-Worker-Route: chat`; `policy` לפני `ask-approval`; פועלים לפי תשובה רק מ-`owner`;
-ו**במקום** בדיקה עצמית כל 15 דק' — הסקיל `claude-tasks-live` (מאזין + גיבוי שעתי).
+UI: a 🔐 card in the task sheet **and as a bubble in the channel** — summary, detail in `<details>`, and 4 buttons in a 2×2 grid:
+"Once" · "Always" · "No" · "Never". "Always" on a `warn` type opens a confirmation that asks to type the type's name.
 
 ---
 
-## 8. שלב 7 — מכסה ושימוש (✅ הכרעה 3 — שינוי מהבקשה)
+## 7. Stage 6 — one route (merges two switches)
 
-הבקשה ביקשה שתי תקרות **בהגדרות השרת בלבד**. בעל המערכת הכריע: **מכסה לכל משתמש, שהמנהל קובע בממשק.**
+The command-center request: `route: code | platform` — who **executes tasks**. The bridge request: `answer_route: chat | platform` —
+who **answers in the channel**. It is the same decision ("on whose account"), so there is **one switch**:
+
+- `projects.route`: `chat | platform | ''` (empty = inherit from parent; at the root, empty = `config.default_route`, default `chat`).
+- `channels.route` overrides the project for one channel.
+- `X-Worker-Route: chat` (also accepts `code` as the old name). No header = `chat`.
+- **A switch applies to new work only:** an `in_progress` task keeps `tasks.route`; a message already being handled finishes on the route it started on.
+- The `owner_only` rule in `claim` (stage 1) is replaced here by the route.
+- UI: at the top of the project screen, a two-option `.seg`: "💬 הצ'אטים" · "☁️ Platform". Next to ☁️ — how much quota is left.
+
+**`claude-tasks-worker`** (item 8): `X-Worker-Route: chat`; `policy` before `ask-approval`; act on an answer only from `owner`;
+and **instead of** a self-check every 15 minutes — the `claude-tasks-live` skill (listener + hourly backup).
+
+---
+
+## 8. Stage 7 — quota & usage (✅ decision 3 — change from the request)
+
+The request asked for two caps **in the server settings only**. The owner decided: **a quota per user, set by the admin in the UI.**
 
 - `usage(at, user_id, project_id, task_id, channel_id, kind develop|answer|monitor, provider, model, tokens_in, tokens_out, cost_usd)`.
-  `lib/ai.php` רושם כל קריאה, מה-`usage` שהספק מחזיר; המחירים — טבלה בקוד, לפי מודל.
-- **על חשבון מי:** המשתמש **שהמפתח שלו שילם** (המפתחות כבר אישיים — `user_providers`). בפרויקט, ברירת המחדל היא
-  המפתח של בעל פרויקט השורש. כך "המכסה מנהלת את כל הפרויקטים של אותו משתמש".
-- `users.quota_usd` (חודשית). ברירת מחדל `0` = ☁️ כבוי למשתמש הזה, עד שהמנהל קובע. מעקב (`monitor`) — עד 20% מהמכסה.
-- **ממשק המנהל:** ניהול ← משתמשים ← שורה ← "מכסה חודשית ($)", ולידה השימוש החודש.
-- **הגרף — תמיד גלוי למשתמש:** הגדרות ← כרטיס "שימוש ב-Platform" בראש המסך: "$7.40 מתוך $25 · נשארו $17.60" + פס
-  התקדמות + **עמודות יומיות** של החודש (מוערם לפי `develop`/`answer`/`monitor`), ושורה לכל פרויקט. גרסה מוקטנת (הפס בלבד)
-  ליד מתג ☁️ במסך הפרויקט. בלי ספרייה — SVG בקוד, לפי הסקיל `dataviz`.
-- **80%:** פס צהוב + שורת אזהרה במסך הראשי, והודעת `system` בערוצים של אותו משתמש.
-- **100%:** ☁️ נחשב `chat` בכל הפרויקטים של המשתמש (מחושב, לא נכתב — חוזר לבד ב-1 לחודש); `run-task` ← 402 עם הסבר;
-  מה שכבר רץ — מסתיים.
-- `usage-summary?user_id=` (המשתמש עצמו או `admin`) — לגרף.
+  `lib/ai.php` logs every call from the `usage` the provider returns; prices are a table in code, per model.
+- **Charged to whom:** the user **whose key paid** (keys are already personal — `user_providers`). In a project, the default is
+  the key of the root project's owner. That is how "the quota covers all of that user's projects".
+- `users.quota_usd` (monthly). Default `0` = ☁️ off for that user until the admin sets it. Monitoring (`monitor`) — up to 20% of the quota.
+- **Admin UI:** Admin → Users → row → "Monthly quota ($)", with this month's usage next to it.
+- **The graph — always visible to the user:** Settings → a "Platform usage" card at the top: "$7.40 of $25 · $17.60 left" + a
+  progress bar + **daily bars** for the month (stacked by `develop`/`answer`/`monitor`), and a row per project. A compact version
+  (bar only) next to the ☁️ switch on the project screen. No library — inline SVG, following the `dataviz` skill.
+- **80%:** the bar turns yellow + a warning line on the main screen, and a `system` message in that user's channels.
+- **100%:** ☁️ is treated as `chat` in all of the user's projects (computed, not written — resets by itself on the 1st of the month);
+  `run-task` → 402 with an explanation; anything already running finishes.
+- `usage-summary?user_id=` (the user themselves or `admin`) — for the graph.
 
 ---
 
-## 9. שלב 8 — Platform עונה
+## 9. Stage 8 — Platform answers
 
-- **בערוץ, במסלול ☁️:** `channel-send` שומר את ההודעה; הממשק קורא מיד ל-`platform-reply { message_id }`, שעונה **בבקשה
-  עצמה** (אין תהליך רקע ב-PHP) ומציג "☁️ חושב…". סגרו את המסך באמצע — ההודעה מסומנת "ממתינה ל-Platform", והפתיחה הבאה
-  משלימה. הקשר: 30 ההודעות האחרונות בערוץ, המטלות הפתוחות בפרויקט, ו-`README.md` של התיקייה (דרך גיטהאב).
-  צריך קוד ← התשובה מציעה "📋 להפוך למטלה" (לחיצה = `create-task` + `run-task`), ולא כותבת קוד בעצמה.
-- **הצ'אט נשאר מעודכן:** הודעות שנענו ב-☁️ נמסרות לו כ-`kind: status` — ב-`channel-inbox`, **בלי להעיר** (`channel-wait`
-  מחזיר רק מה שמצריך טיפול).
-- **מעקב** (סעיף 6 בבקשה): סיכום 3 שורות לפרויקט, מיון ❓/🔐, "נשאל כבר", התאמת סוג. **בלי cron:** רץ "בעצלות" — כשבעל
-  המערכת פותח את הלוח ועברה שעה, ואחרי `block`/`ask-approval` (לא יותר מפעם ב-10 דק' לפרויקט). `monitor-tick` נשאר לקריאה מבחוץ.
-- בלי מפתח / מכסה 0 / 100% — מדלגים בשקט: `monitor: "off"`.
+- **In the channel, on the ☁️ route:** `channel-send` stores the message; the UI immediately calls `platform-reply { message_id }`,
+  which answers **within that request** (PHP has no background process) and shows "☁️ thinking…". If the screen is closed mid-way,
+  the message is marked "waiting for Platform" and the next open completes it. Context: the last 30 messages in the channel, the
+  open tasks in the project, and the folder's `README.md` (via GitHub). If code is needed, the reply offers "📋 Turn into a task"
+  (tap = `create-task` + `run-task`) and does not write code itself.
+- **The chat stays in sync:** messages answered on ☁️ are delivered to it as `kind: status` — in `channel-inbox`, **without waking
+  it** (`channel-wait` returns only what needs handling).
+- **Monitoring** (item 6 of the request): a 3-line summary per project, ❓/🔐 sorted by urgency, "already asked", type matching.
+  **No cron:** runs "lazily" — when the owner opens the board and an hour has passed, and after `block`/`ask-approval` (at most
+  once per 10 minutes per project). `monitor-tick` stays available for external callers.
+- No key / quota 0 / at 100% — skip silently: `monitor: "off"`.
 
 ---
 
-## 10. שלב 9 — שאר המסכים (לפי taste.md)
+## 10. Stage 9 — the remaining screens (per taste.md)
 
-| מסך | מה מסורבל היום | התיקון |
+| Screen | What is clunky today | Fix |
 | --- | --- | --- |
-| **הגדרות** | גלילה אחת ארוכה של אזורים | לשוניות בגריד: **שימוש · חיבורים · חשבון** (+ **משתמשים** למנהל). "שימוש" ראשונה — כרטיס הגרף |
-| **חיבורים** | טפסים מוצגים תמיד | שורה לכל חיבור (גיטהאב, Anthropic, OpenAI, Gemini): אייקון, "מחובר · …4f2a" / "לא מחובר", ‹ ← גיליון קטן |
-| **פרויקט ⚙** | טופס אחד ארוך | שורות: ריפו וענף · חברים · מסלול · מנוע · סקילים · אסימון לצ'אטים — כל אחת פותחת גיליון |
-| **ניהול** | `chip`-ים כתפריט | לשוניות `.seg-tabs` עם מונים; יומן = שורה לאירוע (אייקון, מה ← ממה, מי, מתי), ימים כמפרידים, כשלונות באדום |
-| **עריכת שלב** | `.sheet__inner` ישן | `.sheet-wrap`; מילות מפתח כשדה גלוי (לא מקופל) |
-| **כניסה** | — | רק המשתנים; נגישות: `label` לכל שדה, מיקוד אחרי שגיאה |
+| **Settings** | One long scroll of sections | Tabs in a grid: **Usage · Connections · Account** (+ **Users** for admin). "Usage" first — the graph card |
+| **Connections** | Forms always shown | One row per connection (GitHub, Anthropic, OpenAI, Gemini): icon, "connected · …4f2a" / "not connected", ‹ → a small sheet |
+| **Project ⚙** | One long form | Rows: repo & branch · members · route · engine · skills · token for chats — each opens a sheet |
+| **Admin** | `chip`s used as a menu | `.seg-tabs` with counters; log = one row per event (icon, old → new, who, when), day separators, failures in red |
+| **Stage editing** | Old `.sheet__inner` | `.sheet-wrap`; keywords as a visible field (not collapsed) |
+| **Login** | — | Tokens only; accessibility: a `label` per field, focus after an error |
 
-**נגישות בכל המסכים:** כפתור אייקון = `aria-label`; מגע ≥ 44px; לשוניות `role="tablist"`; הודעה חדשה בערוץ ב-`aria-live="polite"`.
-
----
-
-## 11. שלב 10 — מנוע Claude Code
-
-כמו "PR 7" בתשובה לבקשת מרכז הניהול, בלי שינוי: `projects.engine = loop | claude-code`, ‏`run.mjs` נשאר; רק PR, לעולם לא
-פריסה; העלות מ-`total_cost_usd` נרשמת ב-`usage` כ-`develop` **על המכסה של מי שהפעיל**.
+**Accessibility on every screen:** icon button = `aria-label`; touch targets ≥ 44px; tabs `role="tablist"`; a new channel message in `aria-live="polite"`.
 
 ---
 
-## 12. שינויים מהבקשות — ולמה
+## 11. Stage 10 — the Claude Code engine
 
-| בקשה | שינוי | למה |
+As "PR 7" in the answer to the command-center request, unchanged: `projects.engine = loop | claude-code`, `run.mjs` stays;
+PR only, never deploy; the cost from `total_cost_usd` is logged in `usage` as `develop` **against the quota of whoever started it**.
+
+---
+
+## 12. Changes from the requests — and why
+
+| Request | Change | Why |
 | --- | --- | --- |
-| מרכז 12 `suite` | `owner_only` נורש + `root_id` | ההיררכיה (#1069) כבר מייצגת "חבילה" |
-| מרכז 3 `inbox`, `undelivered`, מפיץ | `channel-inbox` / `channel-ack` | ערוץ אחד לכל מה שמגיע לצ'אט; המאזין מחליף את המפיץ |
-| מרכז 4 `code\|platform` + גשר 4 `chat\|platform` | מתג אחד `route` | אותה החלטה — על חשבון מי |
-| מרכז 5 תקרות בשרת | מכסה למשתמש + גרף | ✅ הכרעת בעל המערכת |
-| מרכז 6 "פעם בשעה" | מעקב עצל + `monitor-tick` | אין cron |
-| מרכז 8 בדיקה עצמית כל 15 דק' | מאזין + גיבוי שעתי | זול יותר ומהיר יותר |
-| גשר 6 "אסימון לכל ערוץ בסביבה" | אסימון רישום בסביבה, אסימון ערוץ נוצר ברישום | הסביבה משותפת לכל הצ'אטים — אי אפשר לשים בה אסימון לכל אחד |
-| גשר 1 long-poll ~25 שנ' | עד 20, ניתן לכיבוי, על קובץ חותמת | מגבלת תהליכים באחסון משותף |
+| Command center 12 `suite` | Inherited `owner_only` + `root_id` | The hierarchy (#1069) already represents a "suite" |
+| Command center 3 `inbox`, `undelivered`, distributor | `channel-inbox` / `channel-ack` | One channel for everything addressed to a chat; the listener replaces the distributor |
+| Command center 4 `code\|platform` + bridge 4 `chat\|platform` | One `route` switch | Same decision — on whose account |
+| Command center 5 server-side caps | Per-user quota + graph | ✅ owner's decision |
+| Command center 6 "once an hour" | Lazy monitoring + `monitor-tick` | No cron |
+| Command center 8 self-check every 15 min | Listener + hourly backup | Cheaper and faster |
+| Bridge 6 "a token per channel in the environment" | Registration token in the environment; channel token minted at registration | The environment is shared by all chats — it cannot hold one token per chat |
+| Bridge 1 long-poll ~25 s | Up to 20 s, can be disabled, on a stamp file | Process limit on shared hosting |
 
-## 13. מחוץ לתחום
+## 13. Out of scope
 
-התור והקטלוג האוטומטי, ה-APK (חוץ ממה שעובר דרך ה-PWA ממילא), וכל קוד של חבילת היצירה.
+The queue and the automatic catalog, the APK (beyond what reaches it through the PWA anyway), and any creative-suite code.
 
-## 14. העברה לכותב הקוד
+## 14. Handoff to the code writer
 
-אחרי אישור: הודעת `בקשה` עם **שלב 1**. כל שלב — ענף, PR, מיזוג, `conclusion: success`, ושורה בטבלה כאן:
+After approval: a `בקשה` message with **stage 1**. Every stage — branch, PR, merge, `conclusion: success`, and a row here:
 
-| שלב | PR | נפרס | הערות |
+| Stage | PR | Deployed | Notes |
 | --- | --- | --- | --- |
 | 1 | | | |

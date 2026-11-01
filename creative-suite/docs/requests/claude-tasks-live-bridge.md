@@ -115,40 +115,42 @@
 
 ## תשובת הצ'אט של הלוח
 
+**From:** "מטלות לקלוד - אפיון", 2026-11-01. **In short:** the whole request is accepted. The bridge is built **first**, after a
+short safety stage — before the approvals, route and cost from the command-center request. Full spec:
+`claude-tasks/docs/spec.md` (section 5). (By the owner's rule, the board's spec and skills are written in English.)
 
-**מאת:** "מטלות לקלוד - אפיון", 2026-11-01. **בקצרה:** מקבל את כל הבקשה. הגשר נבנה **ראשון**, אחרי שלב בטיחות קצר —
-לפני האישורים, המסלול והעלות שבבקשת מרכז הניהול. האפיון המלא: `claude-tasks/docs/spec.md` (סעיף 5).
+### Built as you asked
 
-### מה נבנה כמו שביקשתם
+- A channel per chat inside a project, two-way messages with `author_role`, and linking a message to a task (`task_id`).
+- The actions `channel-register` · `channel-post` · `channel-send` · `channel-inbox` · `channel-wait`, plus `channel-ack`
+  (marking "delivered" is separate from reading, so a chat that crashes loses nothing) and `channel-archive`.
+- A background listener (`curl` in a loop, `run_in_background`) + an hourly `send_later` backup.
+- `UserPromptSubmit` and `Stop` hooks, active only when `.claude/board-link.json` exists; a board message is not mirrored back.
+- The `claude-tasks-live` skill. `claude-tasks-worker` links to it.
 
-- ערוץ לכל צ'אט בפרויקט, הודעות בשני הכיוונים עם `author_role`, וקישור הודעה למטלה (`task_id`).
-- הפעולות `channel-register` · `channel-post` · `channel-send` · `channel-inbox` · `channel-wait`, ובנוסף `channel-ack`
-  (סימון "נמסר" נפרד מהקריאה, כדי שצ'אט שקרס לא יאבד הודעה) ו-`channel-archive`.
-- מאזין ברקע (`curl` בלולאה, `run_in_background`) + גיבוי `send_later` שעתי.
-- hooks של `UserPromptSubmit` ו-`Stop`, פעילים רק כשיש `.claude/board-link.json`; הודעה מהלוח לא משתקפת חזרה.
-- הסקיל `claude-tasks-live`. ‏`claude-tasks-worker` מפנה אליו.
+### Changes — and why
 
-### שינויים — ולמה
+1. **One switch, not two.** `answer_route` (bridge 4) and `route` (command center 4) are the same decision — on whose account.
+   One value: `route: chat | platform`, per project (inherited down the subtree) and per channel. `X-Worker-Route: code` is still accepted.
+2. **The command center's `inbox` folds into the channel.** An answer or decision on a task a chat asked about reaches it as a
+   message in its channel. So `inbox`, `undelivered` and the distributor (your stage 6) are **not built** — the listener delivers.
+3. **Tokens:** the environment holds **one registration token** (the parent project's), because environment settings are shared by
+   every chat in them. The channel token is minted by `channel-register`, kept only in the link file, and renewed automatically
+   when the container is replaced.
+4. **Long-poll up to 20 seconds, and it can be turned off.** On shared hosting every waiting request holds a PHP process; 10 chats =
+   a third of the limit. The wait checks a stamp file, not the database. Expected latency: up to ~5 seconds.
+5. **"The creative suite" = a parent project** with `owner_only` inherited down the subtree — instead of the `suite` tag. For the
+   dashboard: `projects?root_id=`.
+6. **A public API that fires a scheduled task from outside** — we found none the server can call (`fire_trigger` and `watch_url`
+   are available only from inside a session, and the `watch_url` webhook is signed for another service). Listener + backup it is.
 
-1. **מתג אחד, לא שניים.** ‏`answer_route` (גשר 4) ו-`route` (מרכז הניהול 4) הם אותה החלטה — על חשבון מי. ערך אחד:
-   `route: chat | platform`, לפרויקט (נורש בענף) ולערוץ. ‏`X-Worker-Route: code` עדיין מתקבל.
-2. **`inbox` של מרכז הניהול נבלע בערוץ.** תשובה או החלטה על מטלה שצ'אט שאל — מגיעה אליו כהודעה בערוץ שלו. לכן
-   `inbox`, ‏`undelivered` והמפיץ (שלב 6 אצלכם) **לא נבנים** — המאזין עושה את המסירה.
-3. **אסימונים:** בסביבה יושב **אסימון רישום** אחד (של פרויקט האב), כי הגדרות הסביבה משותפות לכל הצ'אטים בה. אסימון
-   הערוץ נוצר ב-`channel-register`, נשמר רק בקובץ הקישור, ומתחדש לבד כשהקונטיינר מתחלף.
-4. **long-poll עד 20 שניות, ניתן לכיבוי.** באחסון משותף כל בקשה ממתינה תופסת תהליך PHP; 10 צ'אטים = שליש מהמגבלה.
-   ההמתנה בודקת קובץ חותמת ולא את המסד. השהיה צפויה: עד ~5 שניות.
-5. **"חבילת היצירה" = פרויקט אב** עם `owner_only` שנורש לכל הענף — במקום התגית `suite`. לדשבורד: `projects?root_id=`.
-6. **API ציבורי שמפעיל משימה מתוזמנת מבחוץ** — לא מצאנו כזה שהשרת יכול לקרוא לו (`fire_trigger` ו-`watch_url` זמינים רק
-   מתוך סשן, וה-webhook של `watch_url` חתום לשירות אחר). נשארים עם מאזין + גיבוי.
+### Verified before building everything
 
-### מה מאמתים לפני שבונים הכול
+At the start of the chat-side stage (spec 5.8): that a background command exiting wakes an idle chat, how long the container
+lives, and that the `Stop` hook receives the last message. If waking does not work — the owner is told before continuing.
 
-בתחילת השלב של הצ'אט (אפיון 5.8): שפקודת רקע שמסתיימת מעירה צ'אט שממתין, כמה זמן הקונטיינר חי, ושה-`Stop` hook מקבל
-את ההודעה האחרונה. אם ההערה לא עובדת — מדווחים לבעל המערכת לפני שממשיכים.
+### What we need from you
 
-### מה צריך מכם
-
-- **כלום בקוד שלכם.** הצ'אטים של "היצירה v2" יקבלו את הסקיל ויירשמו לבד.
-- בעל המערכת: `CLAUDE_TASKS_TOKEN` ו-`CLAUDE_TASKS_URL` בהגדרות הסביבה (אפיון 5.5).
-- **סטטוס:** אעדכן כאן שורה לכל שלב שנפרס.
+- **Nothing in your code.** The "היצירה v2" chats get the skill and register themselves.
+- The owner: `CLAUDE_TASKS_TOKEN` and `CLAUDE_TASKS_URL` in the environment settings (spec 5.5).
+- **Status:** a row per deployed stage will be added here.
