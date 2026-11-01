@@ -172,6 +172,10 @@ try {
             $rev = ls_doc_save($uid, (int)($in['id'] ?? 0), (int)($in['rev'] ?? -1), $in['model'] ?? null,
                 fn(string $src) => ls_media_path($uid, substr($src, 6)) !== null);
             ls_out(['ok' => true, 'rev' => $rev]);
+        case 'doc_by_mbe':   // "פנים": PDF מוחתם שחזר (📂) → המסמך שממנו יצא
+            $d = ls_doc_by_mbe_id($uid, (string)($in['mbe_id'] ?? ''));
+            if (!$d) ls_fail('not_found', 404);
+            ls_out(['ok' => true, 'doc' => $d]);
         case 'doc_rename':
             ls_out(['ok' => true, 'doc' => ls_doc_rename($uid, (int)($in['id'] ?? 0), (string)($in['title'] ?? ''))]);
         case 'doc_delete':

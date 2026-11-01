@@ -83,3 +83,20 @@ function ls_mbe_import(int $owner, string $bytes, string $name): array
     $q->execute([$id]);
     return ls_doc_row($q->fetch());
 }
+
+/**
+ * "פנים" שחזרו (PDF מוחתם — mbe-format.md סעיף 7): המסמך בספרייה שקובץ המקור שלו נושא את ה-manifest.id הזה, או null.
+ * עוברים על קובצי המקור של המשתמש — ספרייה אישית, עשרות מסמכים; כשיגדל — עמודה במסד.
+ */
+function ls_doc_by_mbe_id(int $owner, string $mbeId): ?array
+{
+    if (!preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/', $mbeId)) return null;
+    foreach (ls_docs_list($owner) as $d) {
+        $src = ls_mbe_source_get($owner, (int)$d['id']);
+        if ($src === null) continue;
+        try { $f = Mbe::open($src); } catch (Throwable $e) { continue; }
+        if ($f->id() === $mbeId) return $d;
+    }
+    return null;
+}
+
