@@ -55,7 +55,7 @@ $PUBLIC = ['health', 'register', 'verify', 'login', 'forgot', 'reset', 'me', 'in
            // Claude קורא מטלות ומשיב (DevLoop): הזהות היא האסימון שבכותרת X-Dev-Token.
            'devapi-feed', 'devapi-comment', 'devapi-file', 'devapi-attach'];
 $POSTS  = ['register', 'verify', 'login', 'forgot', 'reset', 'logout', 'platform_link', 'platform_new', 'dev_user',
-           'tpl_create', 'tpl_create_authored', 'tpl_import', 'tpl_save', 'tpl_set_source', 'tpl_archive', 'tpl_delete',
+           'tpl_create', 'tpl_create_authored', 'tpl_import', 'tpl_save', 'tpl_set_source', 'tpl_word_mark', 'tpl_archive', 'tpl_delete',
            'doc_create', 'doc_duplicate', 'doc_return', 'doc_save', 'doc_submit', 'doc_assign', 'list_opts', 'list_save', 'list_repair', 'list_delete', 'list_import', 'doc_complete', 'doc_archive', 'doc_delete', 'doc_downloaded',
            'part_contact', 'part_link', 'part_revoke', 'part_notify', 'fill_otp_send', 'fill_otp_verify', 'fill_save', 'fill_complete', 'fill_downloaded',
            'doc_upload', 'fill_upload', 'dev_quota', 'share_set', 'share_remove', 'share_leave', 'share_invite', 'share_invite_resend', 'share_invite_cancel', 'invite_accept',
@@ -114,6 +114,8 @@ try {
         'tpl_export'  => tpl_export($session, (int)($_GET['id'] ?? 0), (string)($_GET['as'] ?? 'json')),
         'tpl_save'    => tpl_save($session, $body),
         'tpl_set_source' => tpl_set_source($session, $body),
+        'tpl_word_text' => tpl_word_text($session, (int)($_GET['id'] ?? 0)),
+        'tpl_word_mark' => tpl_word_mark($session, $body),
         'tpl_create_authored' => tpl_create_authored($session, $body),
         // שלב 12: הנפקה מאקסל וייצוא
         'bulk_preview' => bulk_preview($session, $_POST, $_FILES),

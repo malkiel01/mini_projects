@@ -430,6 +430,20 @@ tr.archived { opacity: .6; }
 /* ── שלב 9: Word ── */
 .pages.word { display: block; min-width: 0; }
 .word-preview { background: var(--tint); border-radius: 8px; overflow: auto; max-height: 80vh; }
+/* סימון שדות בתוך Word — הטקסט של הקובץ, ובחירה שהופכת לשדה */
+.word-mark-open { margin: var(--s2) 0; }
+.word-mark-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); margin: var(--s2) 0; }
+.word-mark-text { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: var(--s2) var(--s3);
+  max-height: 70vh; overflow: auto; user-select: text; -webkit-user-select: text; line-height: 1.7; }
+.word-mark-p { margin: 0 0 var(--s2); white-space: pre-wrap; }
+.word-mark-part { border-top: 1px dashed var(--line); padding-top: var(--s1); margin: var(--s2) 0 var(--s1); }
+.word-mark-ph { background: color-mix(in srgb, var(--warn) 22%, transparent); border: 1px dashed var(--warn); border-radius: 4px; padding: 0 2px; }
+.word-mark-bar { position: sticky; bottom: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2);
+  padding: var(--s2); margin-top: var(--s2); background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: 0 -2px 8px rgba(0,0,0,.08); }
+.word-mark-bar input { flex: 1 1 160px; min-width: 0; }
+.word-mark-bar > div:last-child { flex-basis: 100%; }
+.word-mark-what { font-weight: 600; max-width: 100%; overflow-wrap: anywhere; }
 .word-preview .docx-wrapper { padding: 16px !important; background: transparent !important; }
 .word-preview .docx-wrapper > section.docx { box-shadow: 0 1px 4px rgba(0,0,0,.2); margin-bottom: 16px !important; }
 .word-dialog { max-width: 900px; }
