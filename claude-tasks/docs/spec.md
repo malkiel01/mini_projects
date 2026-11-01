@@ -115,6 +115,15 @@ Stages 1–6 and 9 **need no Platform key**.
 - Admin → Users: the "Tasks" column also counts tasks from a merged account. `tools/owner-access.php` gets a `tasks` command:
   task count per `created_by`, including ids with no user. That is how "Tasks created: 0" gets checked.
 
+**Decided during the build (2026-11-01, questions from the code writer):**
+- **A task with no project** (all old tasks): any signed-in user may answer, as today — there is no `owner_only` to protect.
+  A `worker` **never** answers: a worker-sent `kind=answer` is stored as `comment` and does not return the task to the queue.
+- **`tasks?project_id=`** already returns the whole subtree, and the UI relies on it — so `subtree=1` is the **default**;
+  `subtree=0` = the exact project only.
+- **Per-task permissions** (found in the code: today any signed-in user reads and edits any task): `task` and `add-note`
+  require `read` on the task's project, `update-task` requires `write`. A task with no project — as today. Done now, not in stage 9.
+- **"Assign tasks" (U1)** — `owner` (admin) only: it cleans up the personal board, not a project member's action.
+
 **Done when:** `tests/` cover — a `member` cannot return an `owner_only` task to the queue; a foreign Origin → 403; a parent's
 token sees a sub-project; the general token skips `owner_only`. On the phone: old tasks assigned to `mini_projects`.
 
