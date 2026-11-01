@@ -3,6 +3,10 @@
     "js": "editor/js/drives",
     "php": "editor/lib/drives"
   },
+  "layout-studio": {
+    "js": "assets/js/drives",
+    "php": "lib/drives"
+  },
   "raster-studio": {
     "js": "assets/js/drives",
     "php": "lib/drives"

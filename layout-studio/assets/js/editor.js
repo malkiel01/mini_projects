@@ -857,36 +857,61 @@ const loadImg = src => new Promise(ok => {
   im.src = 'api.php?media=' + encodeURIComponent(src.slice(6));
 });
 const mbeBtn = $('#mbe-btn');
+/** הקובץ ‎.mbe של המסמך עכשיו — המודל, התמונות, preview ו-PDF, על בסיס קובץ המקור (אם יש). */
+async function currentMbe() {
+  const [io, { renderPreview }] = await Promise.all([import('./mbe-io.js'), import('./preview.js'), ensureFonts()]);
+  relayout();
+  const b = bodyStyle(model);
+  const preview = new Uint8Array(await (await renderPreview(model, text, fontsFor(b.font, b.weight), loadImg)).arrayBuffer());
+  let pdf = null;
+  try { pdf = await makePdf(); } catch { /* ה-PDF מומלץ, לא חובה — הקובץ יוצא בלעדיו */ }
+  const srcRes = await fetch('api.php?mbe_source=' + id, { credentials: 'same-origin' }).catch(() => null);
+  const source = srcRes && srcRes.ok ? new Uint8Array(await srcRes.arrayBuffer()) : null;
+  const { bytes } = await io.buildMbe({
+    model, source, preview, pdf, stages: pendingStages,
+    fetchMedia: async path => {
+      const r = await fetch('api.php?media=' + encodeURIComponent(path.slice(6)), { credentials: 'same-origin' });
+      if (!r.ok) throw new Error('תמונה חסרה בשרת');
+      return r.arrayBuffer();
+    },
+  });
+  return { bytes, pdf: !!pdf };
+}
+/** הקובץ יצא (הורדה או ענן): השלבים נרשמו ביומן שלו, והוא המקור של הפעם הבאה — כך manifest.id ומה שאחרים כתבו נשארים. */
+function mbeSaved(bytes) {
+  pendingStages = [];
+  fetch('api.php?action=mbe_source&id=' + id, { method: 'POST', credentials: 'same-origin',
+    headers: { 'X-Layout-Studio': '1', 'Content-Type': 'application/vnd.mbe+zip' }, body: bytes }).catch(() => {});
+}
 mbeBtn.addEventListener('click', async () => {
   mbeBtn.disabled = true;
   toast('מכין קובץ ‎.mbe…');
   try {
-    const [io, { renderPreview }] = await Promise.all([import('./mbe-io.js'), import('./preview.js'), ensureFonts()]);
-    relayout();
-    const b = bodyStyle(model);
-    const preview = new Uint8Array(await (await renderPreview(model, text, fontsFor(b.font, b.weight), loadImg)).arrayBuffer());
-    let pdf = null;
-    try { pdf = await makePdf(); } catch { /* ה-PDF מומלץ, לא חובה — הקובץ יוצא בלעדיו */ }
-    const srcRes = await fetch('api.php?mbe_source=' + id, { credentials: 'same-origin' }).catch(() => null);
-    const source = srcRes && srcRes.ok ? new Uint8Array(await srcRes.arrayBuffer()) : null;
-    const { bytes } = await io.buildMbe({
-      model, source, preview, pdf, stages: pendingStages,
-      fetchMedia: async path => {
-        const r = await fetch('api.php?media=' + encodeURIComponent(path.slice(6)), { credentials: 'same-origin' });
-        if (!r.ok) throw new Error('תמונה חסרה בשרת');
-        return r.arrayBuffer();
-      },
-    });
-    pendingStages = [];   // נרשמו ביומן של הקובץ שירד
+    const { bytes, pdf } = await currentMbe();
     download(bytes, 'application/vnd.mbe+zip', (doc.title || 'עימוד') + '.mbe');
-    // הקובץ שירד הוא המקור של ההורדה הבאה — כך manifest.id ומה שאחרים כתבו נשארים
-    fetch('api.php?action=mbe_source&id=' + id, { method: 'POST', credentials: 'same-origin',
-      headers: { 'X-Layout-Studio': '1', 'Content-Type': 'application/vnd.mbe+zip' }, body: bytes }).catch(() => {});
+    mbeSaved(bytes);
     toast(pdf ? 'הקובץ ירד' : 'הקובץ ירד (בלי PDF — לא נוצר)');
   } catch (e) {
     toast('ההורדה נכשלה: ' + e.message, true);
   } finally {
     mbeBtn.disabled = false;
+  }
+});
+
+// ---- ☁️ שמירה בענן החבילה (מודול הכוננים): אותו ‎.mbe, לתיקייה שבוחרים בחלון "המסמכים שלי" ----
+$('#cloud-btn').addEventListener('click', async () => {
+  dlg.close();
+  const [{ createDrives }, { saveFile: saveTo, suiteSource }] = await Promise.all([import('./drives/drives.js'), import('./ui-core/files-window.js')]);
+  toast('מכין קובץ ‎.mbe…');
+  try {
+    const { bytes } = await currentMbe();
+    const at = await saveTo([suiteSource(createDrives({ endpoint: 'api.php' }))],
+      { name: doc.title || 'עימוד', ext: 'mbe', blob: new Blob([bytes], { type: 'application/vnd.mbe+zip' }) });
+    if (!at) return;
+    mbeSaved(bytes);
+    toast('נשמר בענן החבילה');
+  } catch (e) {
+    toast('השמירה בענן נכשלה: ' + (e?.message || ''), true);
   }
 });
 

@@ -32,6 +32,22 @@ function ls_fail(string $code, int $status = 400): never
 }
 
 $method = $_SERVER['REQUEST_METHOD'] ?? '';
+
+// ☁️ ענן החבילה — מודול הכוננים (suite-cloud/drives; עותק מסונכרן ב-lib/drives — לא עורכים כאן): חיבור, ואסימון לדפדפן.
+// לפני הבדיקה שלנו (POST + X-Layout-Studio): drives.js קורא ב-GET / JSON, והענן מוריד את drives_key שרת-לשרת.
+// drives.sqlite (המפתח הפרטי והחיבורים) — ליד המסד, ב-data/ (מוחרג בפריסה: data/*.sqlite*).
+$qAction = (string)($_GET['action'] ?? '');
+if (str_starts_with($qAction, 'drives_')) {
+    require_once __DIR__ . '/lib/drives/Drives.php';
+    (new \SuiteCloud\Drives([
+        'client'   => 'layout-studio', 'name' => 'עימוד',
+        'dataDir'  => dirname(ls_db_path()),
+        'endpoint' => 'https://mbe-plus.com/mini_projects/layout-studio/api.php',
+        'user'     => fn() => ($u = ls_account()) ? (string)$u['id'] : null,
+        'back'     => 'https://mbe-plus.com/mini_projects/layout-studio/',
+    ]))->serve($qAction);
+}
+
 $isMedia = $method === 'GET' && (isset($_GET['media']) || isset($_GET['mbe_source']));
 if ($method !== 'POST' && !$isMedia) ls_fail('method', 405);
 // קריאה (GET של תמונה) לא משנה כלום — בלי כותרת, כדי ש-<img> יוכל לטעון. כל השאר — רק עם הכותרת (CSRF).

@@ -3,7 +3,7 @@
 import { $ } from './ui-core/dom.js';
 import { toast } from './ui-core/toast.js';
 import { initDialogs, confirm } from './ui-core/dialog.js';
-import { mountAccount } from './account-ui.js';
+import { mountAccount, importMbe } from './account-ui.js';
 
 initDialogs();   // [data-close], סגירה ברקע, --vvh / --kb (המקלדת בטלפון)
 
@@ -161,14 +161,7 @@ mbeInput.addEventListener('change', async () => {
   if (!file) return;
   toast('פותח את הקובץ…');
   try {
-    let res;
-    try {
-      res = await fetch('api.php?action=doc_import&name=' + encodeURIComponent(file.name), { method: 'POST', credentials: 'same-origin',
-        headers: { 'X-Layout-Studio': '1', 'Content-Type': 'application/vnd.mbe+zip' }, body: file });
-    } catch { throw new Error('network'); }
-    const out = await res.json().catch(() => ({ ok: false, error: res.status === 413 ? 'too_big' : 'server' }));
-    if (!out.ok) throw new Error(out.error || 'server');
-    location.href = 'editor.html?id=' + out.doc.id;
+    location.href = 'editor.html?id=' + await importMbe(file);
   } catch (err) {
     toast(errText(err.message), true);
   }
