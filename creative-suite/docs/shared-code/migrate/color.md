@@ -13,6 +13,9 @@
 | `parseHex`, `toHex`, `rgbToHsv`, `hsvToRgb`, `toCss` | המרות טהורות |
 | `luminance`, `contrast(a, b)`, `readableOn(bg)` | ניגוד WCAG — טקסט קריא על צבע, אזהרת נגישות |
 | `recentColors()`, `favoriteColors()` | לשורת צבעים משלך (סרגל, לוח) |
+| `field.setValue(hex)` | ערך מבחוץ (בחירה אחרת, ביטול) — בלי `onInput` / `onCommit` (לקח מהעימוד) |
+| `setColorContext({ storage: { get, set } })` | מתאם לאחסון האחרונים והמועדפים במקום `localStorage` (לקח מהסטודיו) |
+| קוד צבע | `#abc`, `rrggbb` בלי #, `#rrggbbaa`, `rgb(…)`, `rgba(… / 50%)` |
 
 **`onInput`** — בכל תזוזה (פעם בפריים) → תצוגה חיה על הקנבס. **`onCommit`** — בשחרור / Enter / דוגמית → צעד ביטול
 אחד (עם `history.js`: `u.commit('צבע')`).
@@ -29,7 +32,8 @@
 ## וקטורי, רסטר, עימוד
 
 `<input type="color">` / בורר משלך → `colorPicker(...)`. `alpha: true` כשיש שקיפות (מילוי, מתאר). `docColors` — הצבעים
-שבמסמך (וקטורי: מהסגנונות; רסטר: מהלוחית; עימוד: מצבעי המסמך). `sample` — טפטפת על הקנבס, אם יש.
+שבמסמך (וקטורי: מהסגנונות; רסטר: מהלוחית; עימוד: מצבעי המסמך). `sample` — טפטפת על הקנבס, אם יש: `async () => hex | null`. **האפליקציה** מסתירה את החלון בזמן הדגימה (`dialog.close()` /
+`show()` או class) — הבורר לא נוגע ב-DOM שלה.
 
 ## עורך התמלילים
 

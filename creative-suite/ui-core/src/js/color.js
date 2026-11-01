@@ -1,11 +1,14 @@
 /**
  * ui-core/color.js — צבע ובורר צבעים. אחד לכל האפליקציות. המקור: colorpicker.js של סטודיו העיצוב (#913).
  *
- * המרות (טהורות): parseHex('#abc' | '#rrggbb' | '#rrggbbaa') → { r, g, b, a } | null · toHex(rgb, withAlpha)
+ * המרות (טהורות): parseHex('#abc' | 'rrggbb' | '#rrggbbaa' | 'rgb(…)' | 'rgba(…)') → { r, g, b, a } | null
+ *   field.setValue(hex) — ערך מבחוץ בלי onInput · toHex(rgb, withAlpha)
  *   rgbToHsv / hsvToRgb · toCss(rgb) → 'rgba(…)' · luminance(rgb) · contrast(a, b) → 1–21 (WCAG) · readableOn(bg) → '#000' | '#fff'
  *
  * הבורר:
- *   setColorContext({ prefix: 'gc-colors', docColors: () => [...], presets: [...], sample: async () => '#rrggbb', onOpen })   // פעם אחת
+ *   setColorContext({ prefix: 'gc-colors', docColors: () => [...], presets: [...], sample: async () => '#rrggbb' | null, onOpen, storage })
+ *     sample — הטפטפת של האפליקציה (היא מסתירה את החלון / את ה-dialog ומחזירה צבע); הבורר לא נוגע ב-DOM שלה.
+ *     storage — { get(key) → list, set(key, list) } במקום localStorage.
  *   field.append(colorPicker('מילוי', '#ff0000', hex => preview(hex), () => history.commit('צבע'), { alpha: true }))
  *     onInput — בכל תזוזה (פעם בפריים), onCommit — בשחרור / Enter / בחירת דוגמית (צעד ביטול אחד).
  *     opts גובר על ההקשר לבורר הזה: { alpha, docColors, presets, sample, onOpen }.
@@ -18,13 +21,20 @@ import { h } from './dom.js';
 
 const RECENT_MAX = 12, FAV_MAX = 24;
 
-let ctx = { prefix: 'uic-colors', docColors: () => [], presets: [], sample: null, onOpen: null };
+let ctx = { prefix: 'uic-colors', docColors: () => [], presets: [], sample: null, onOpen: null, storage: null };
 export function setColorContext(c) { ctx = { ...ctx, ...c }; }
 
 // ─── המרות ────────────────────────────────────────────────────────────────
 
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 export function parseHex(v) {
+    // rgb(…) / rgba(…) — גם עם אחוזים לשקיפות (לקח מהסטודיו: מדביקים מכל מקום)
+    const m = /^rgba?\(\s*(\d+(?:\.\d+)?)[\s,]+(\d+(?:\.\d+)?)[\s,]+(\d+(?:\.\d+)?)(?:[\s,/]+(\d*\.?\d+)(%?))?\s*\)$/i.exec(String(v || '').trim());
+    if (m) {
+        const [r, g, b] = [m[1], m[2], m[3]].map(x => clamp(+x, 0, 255));
+        const a = m[4] === undefined ? 1 : clamp(m[5] ? +m[4] / 100 : +m[4], 0, 1);
+        return { r: Math.round(r), g: Math.round(g), b: Math.round(b), a };
+    }
     let s = String(v || '').trim().replace(/^#?/, '#').toLowerCase();
     if (/^#[0-9a-f]{3}$/.test(s)) s = '#' + [...s.slice(1)].map(c => c + c).join('');
     if (!/^#[0-9a-f]{6}([0-9a-f]{2})?$/.test(s)) return null;
@@ -64,8 +74,10 @@ export const readableOn = bg => contrast(bg, '#000000') >= contrast(bg, '#ffffff
 
 // ─── זיכרון במכשיר ────────────────────────────────────────────────────────
 
-const load = k => { try { return JSON.parse(localStorage.getItem(k)) || []; } catch { return []; } };
-const store = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* אין אחסון — לשיחה הזו */ } };
+// האחסון: ברירת מחדל localStorage; setColorContext({ storage: { get: key => list, set: (key, list) => … } }) — מתאם של
+// האפליקציה (store.js, ובהמשך ספריית הצבעים של ענן החבילה). get סינכרוני: מתאם לענן — מטמון בזיכרון שמתעדכן ברקע.
+const load = k => { try { return (ctx.storage ? ctx.storage.get(k) : JSON.parse(localStorage.getItem(k))) || []; } catch { return []; } };
+const store = (k, v) => { try { ctx.storage ? ctx.storage.set(k, v) : localStorage.setItem(k, JSON.stringify(v)); } catch { /* אין אחסון — לשיחה הזו */ } };
 const RECENT_KEY = () => ctx.prefix + '-recent', FAV_KEY = () => ctx.prefix + '-fav';
 function remember(color) {
     const c = color.slice(0, 7);
@@ -122,7 +134,7 @@ export function colorPicker(label, value, onInput, onCommit, opts = {}) {
     const al = alpha ? h('div', { class: 'cp-alpha', role: 'slider', tabindex: 0, 'aria-label': 'שקיפות', 'aria-valuemin': 0, 'aria-valuemax': 100 }, h('span', { class: 'cp-fill' }), h('span', { class: 'cp-thumb' })) : null;
     const loupe = h('span', { class: 'cp-loupe', hidden: true });
     sv.append(loupe);
-    const hexIn = h('input', { type: 'text', class: 'cp-hex', dir: 'ltr', inputMode: 'text', autocomplete: 'off', spellcheck: false, maxLength: 9, 'aria-label': 'קוד צבע' });
+    const hexIn = h('input', { type: 'text', class: 'cp-hex', dir: 'ltr', inputMode: 'text', autocomplete: 'off', spellcheck: false, maxLength: 32, 'aria-label': 'קוד צבע (#hex או rgb)' });
     const rgbIns = ['R', 'G', 'B'].map(k => h('input', { type: 'number', class: 'cp-num', min: 0, max: 255, inputMode: 'numeric', 'aria-label': k }));
     const favBtn = h('button', { type: 'button', class: 'icon-btn cp-fav', onclick: () => {
         const cur = out().slice(0, 7), favs = load(FAV_KEY());
@@ -232,5 +244,8 @@ export function colorPicker(label, value, onInput, onCommit, opts = {}) {
         if (open) { refreshRows(); cx.onOpen?.(label); }
     };
     trigger.addEventListener('click', () => setOpen(panel.hidden));
-    return h('div', { class: 'f cp-field' }, h('label', { for: id }, label), trigger, panel);
+    const field = h('div', { class: 'f cp-field' }, h('label', { for: id }, label), trigger, panel);
+    /** ערך חדש מבחוץ (בחירה אחרת, ביטול) — בלי onInput / onCommit */
+    field.setValue = v => { const p = parseHex(v); if (!p) return; c = alpha ? p : { ...p, a: 1 }; hsv = rgbToHsv(c); cancelAnimationFrame(raf); paintTrigger(); if (!panel.hidden) sync(); cancelAnimationFrame(raf); };
+    return field;
 }

@@ -22,6 +22,7 @@ import { activeHandoff, returnHandoff, endHandoff } from './mbe/handoff.js';
 import { keyOf } from './ui-core/keys.js';
 import { fit as fitView, zoomTo, nextStep, screenToDoc } from './ui-core/viewport.js';
 import { bindViewport } from './ui-core/gestures.js';
+import { snapshots, undoButtons } from './ui-core/history.js';
 import { toast } from './ui-core/toast.js';
 import { download } from './ui-core/files.js';
 import { initDialogs, confirm, prompt } from './ui-core/dialog.js';
@@ -42,7 +43,6 @@ const S = {
   view: { x: 0, y: 0, zoom: 1 }, dpr: 1,
   sel: new Set(), hover: null, marquee: null, tool: 'select', active: null, board: null, // board — הלוח הנוכחי (בלי בחירה) guides: null,
   snap: pref('snap', true), grid: pref('grid', false), editingText: null, // active — השכבה לאובייקטים חדשים
-  undo: [], redo: [],
 };
 
 let op = null;   // הפעולה הנוכחית של המצביע (ראו "קלט מצביע")
@@ -62,7 +62,7 @@ const hd = handles(stage, {
   status: (text) => { if (text) $('doc-status').textContent = text; },
   onGuides: (g) => { S.guides = g.length ? g : null; },
   onPreview: (t) => applyHandles(t),
-  onCommit: () => commitFrom(op.before),
+  onCommit: (t) => commitFrom(op.before, t.angle ? 'סיבוב' : 'שינוי גודל'),
 });
 
 function applyHandles(t) {
@@ -160,6 +160,7 @@ async function boot() {
     S.doc = backup.doc; dirty = true; persist(); fit(); updatePanel();
   }
   drafts.removeBackup(S.id);
+  hist.reset();   // נקודת ההתחלה של הביטול — המסמך כמו שנטען (או משוחזר מהגיבוי)
   // הערות מפתיחת ‎.mbe (בדף הספרייה או בחלון הקובץ) — כאן, אחרי הניווט
   let notes = null;
   try { notes = sessionStorage.getItem('vs-notes'); sessionStorage.removeItem('vs-notes'); } catch { /* חסום */ }
@@ -305,19 +306,22 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 
 // ---------- היסטוריה ----------
 
-/** עוטף שינוי: לפני — צילום, אחרי — אם השתנה, נכנס לביטול. */
-function change(fn) {
+// ביטול / ביצוע — ui-core/history (צילומי מצב של המסמך). הנקודה ההתחלתית — hist.reset() בטעינה ובשחזור גרסה.
+
+/** שינוי: fn משנה את S.doc במקום; אם השתנה — צעד ביטול אחד (label — "ביטול: הזזה"). */
+function change(fn, label = '') {
   const before = JSON.stringify(S.doc);
   fn();
-  commitFrom(before);
+  commitFrom(before, label);
 }
 
-function commitFrom(before) {
-  if (before === JSON.stringify(S.doc)) return;
-  S.undo.push(before);
-  if (S.undo.length > 200) S.undo.shift();
-  S.redo = [];
-  afterChange();
+/**
+ * אחרי פעולה שכבר שינתה את S.doc (גרירה, עט, צורה). before — המסמך לפני הפעולה: אם הוא שונה מהצעד האחרון שנרשם
+ * (שינוי שלא עבר כאן), הוא נרשם קודם כצעד משלו — כדי שביטול הפעולה יחזיר בדיוק ל-before, כמו קודם.
+ */
+function commitFrom(before, label = '') {
+  if (before != null) { const now = S.doc; S.doc = JSON.parse(before); hist.commit(''); S.doc = now; }
+  if (hist.commit(label)) afterChange();
 }
 
 const tools = createPenTools({
@@ -329,11 +333,23 @@ const tools = createPenTools({
   refresh: () => { updatePanel(); draw(); },
 });
 
+const hist = snapshots({
+  get: () => S.doc,
+  set: (d) => { S.doc = d; afterChange(); tools.reload(); },
+  onChange: () => syncUndo(),
+});
+const undoSync = undoButtons(hist, $('undo'), $('redo'));
+/** הכפתורים, ובאמצע נתיב בעט — ↶ מוחק נקודה (גם בלי צעד ביטול). */
+function syncUndo() {
+  undoSync();
+  if (tools.drawing) $('undo').disabled = false;
+}
+S.hist = hist;
+
 function afterChange() {
   // נתיב שנמחק לא נשאר בבחירה
   for (const id of [...S.sel]) if (!findPath(S.doc, id)) S.sel.delete(id);
-  $('undo').disabled = !S.undo.length;
-  $('redo').disabled = !S.redo.length;
+  syncUndo();
   persist();
   updatePanel();
   draw();
@@ -341,19 +357,11 @@ function afterChange() {
 
 function undo() {
   if (tools.drawing) { tools.undoPoint(); return; } // באמצע נתיב — כמו Ctrl+Z בעט
-  if (!S.undo.length) return;
-  S.redo.push(JSON.stringify(S.doc));
-  S.doc = JSON.parse(S.undo.pop());
-  afterChange();
-  tools.reload();
+  hist.undo();   // set → afterChange + tools.reload
 }
 function redo() {
   if (tools.drawing) tools.finish();
-  if (!S.redo.length) return;
-  S.undo.push(JSON.stringify(S.doc));
-  S.doc = JSON.parse(S.redo.pop());
-  afterChange();
-  tools.reload();
+  hist.redo();
 }
 
 // ---------- ציור ----------
@@ -475,7 +483,7 @@ function updateBar() {
   const drawing = tools.drawing, ed = tools.editing;
   const show = (id, on) => { $(id).hidden = !on; };
   show('pen-done', drawing);
-  $('undo').disabled = !S.undo.length && !drawing; // באמצע נתיב ↶ מוחק נקודה
+  syncUndo(); // באמצע נתיב ↶ מוחק נקודה
   show('pen-cancel', drawing);
   show('node-smooth', !!ed?.node);
   show('node-del', !!ed?.node);
@@ -537,7 +545,7 @@ function updatePanel() {
       // הנתיבים שבתוך הקבוצות — לפי מזהה, כי המסמך עשוי להתחלף בין קריאה לקריאה
       const want = new Set(leafIds());
       for (const { path: item } of objects(S.doc)) for (const p of leaves(item)) if (want.has(p.id)) fn(p);
-      if (commit) { editBase = null; commitFrom(before); }
+      if (commit) { editBase = null; commitFrom(before, 'מאפיינים'); }
       else { editBase = before; draw(); }
     },
     setBox: (box) => change(() => {
@@ -1094,7 +1102,7 @@ function endPointer(e) {
       break;
     case 'move':
       if (op.moved && S.doc.surfaces.length > 1) reparentMoved();
-      commitFrom(op.before);
+      commitFrom(op.before, 'הזזה');
       break;
     case 'handles':
       hd.up(e);   // onCommit
@@ -1102,7 +1110,7 @@ function endPointer(e) {
     case 'free': {
       const o = findPath(S.doc, op.id);
       const d = o && freeD(op, true);
-      if (d) { o.path.d = d; commitFrom(op.before); } else { S.doc = JSON.parse(op.before); afterChangeSilent(); }
+      if (d) { o.path.d = d; commitFrom(op.before, op.kind === 'brush' ? 'מברשת' : 'עיפרון'); } else { S.doc = JSON.parse(op.before); afterChangeSilent(); }
       break;
     }
     case 'create': {
@@ -1115,7 +1123,7 @@ function endPointer(e) {
         else setShape(o.path, { type: S.tool, box: [x - size / 2, y - size / 2, size, size], ...DEFAULTS[S.tool] });
       }
       S.sel = new Set([op.id]);
-      commitFrom(op.before);
+      commitFrom(op.before, 'צורה');
       setTool('select');
       break;
     }
@@ -1396,7 +1404,8 @@ $('versions').addEventListener('click', async (e) => {
     clearTimeout(saveTimer);
     if (dirty) { await flush(); }
     const d = await library.restore(S.id, Number(b.dataset.ver), S.rev);
-    S.doc = JSON.parse(d.doc); S.rev = d.rev; S.undo = []; S.redo = []; S.sel = new Set();
+    S.doc = JSON.parse(d.doc); S.rev = d.rev; S.sel = new Set();
+    hist.reset();
     $('file-dlg').close();
     afterChangeQuiet();
     fit();
@@ -1411,7 +1420,7 @@ $('versions').addEventListener('click', async (e) => {
 
 /** אחרי שהמסמך הוחלף מבחוץ (שחזור) — רענון בלי שמירה. */
 function afterChangeQuiet() {
-  $('undo').disabled = true; $('redo').disabled = true;
+  syncUndo();
   status('נשמר');
   tools.reload();
   updatePanel(); draw();

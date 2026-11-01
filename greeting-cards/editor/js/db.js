@@ -54,6 +54,11 @@ export const designs = {
     /** מחיקה מהמכשיר בלבד (העיצוב נמחק במכשיר אחר). */
     removeLocal(id) { return this.remove(id); },
     get(id) { return tx('designs', 'readonly', s => req2p(s.get(id))); },
+    /** העיצוב שה-‎.mbe שלו נושא את המזהה הזה (manifest.id) — לזיהוי "פנים" שחזרו. */
+    async byMbeId(mbeId, owner) {
+        const all = await tx('designs', 'readonly', s => req2p(s.getAll()));
+        return all.find(d => d.doc?.mbeId === mbeId && (d.owner == null || d.owner === owner)) || null;
+    },
     put(rec) { return tx('designs', 'readwrite', s => req2p(s.put(rec))); },
     async remove(id) {
         const rec = await this.get(id);
