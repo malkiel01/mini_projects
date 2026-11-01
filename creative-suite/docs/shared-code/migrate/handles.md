@@ -42,6 +42,9 @@ bindViewport(stage, { get, set, pointer: {
 // בכל ציור / זום: hd.update(). בחירה השתנתה: hd.show(t, w, h). אין בחירה / עריכת טקסט: hd.hide().
 ```
 
+`dir`: כיוון החץ בשורת המצב — ברירת מחדל `direction` של ה-overlay; במה `ltr` (קנבס) עם שורת מצב בעברית → `dir: 'rtl'`.
+`onGuides` / `status` נקראים רק כשמשהו משתנה (לא מהבנאי, ולא ב-`hide()` בלי גרירה).
+
 `down` / `move` מקבלים נקודה **במסך** (פיקסלים יחסית ל-overlay), לא במסמך. `hd.at(point, e)` — לסמן העכבר.
 
 ## וקטורי — שני PR
