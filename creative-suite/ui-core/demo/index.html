@@ -75,6 +75,12 @@
     </section>
 
     <section>
+        <h2 class="sec-title">לוח שכבות</h2>
+        <p class="hint">⋮⋮ — גרירה (לאמצע קבוצה — לתוכה). לחיצה על שם השכבה הפעילה — שינוי שם. לחיצה ארוכה / ימנית — תפריט.</p>
+        <ul id="layers" style="border:1px solid var(--line);border-radius:var(--r);max-height:320px"></ul>
+    </section>
+
+    <section>
         <h2 class="sec-title">בורר גופנים</h2>
         <div id="fonts" class="fields"></div>
         <p id="font-out" style="font-size:1.4rem">שלום עולם — Hello</p>
@@ -157,6 +163,7 @@
     import { handles } from '../src/js/handles.js';
     import { colorPicker, setColorContext } from '../src/js/color.js';
     import { fontPicker, fontStack, userFonts } from '../src/js/fonts.js';
+    import { layersPanel, moveNode } from '../src/js/layers.js';
     import { snapper } from '../src/js/snap.js';
     import { openDocuments, pickFile, saveFile } from '../src/js/files-window.js';
 
@@ -307,6 +314,24 @@
     hs.addEventListener('pointercancel', () => hdl.cancel());
     mount();
     window.__hd = { get h() { return hdl; }, mount };
+
+    // ---- לוח שכבות ----
+    const L = { layers: [
+        { id: 'bg', name: 'רקע', locked: true, icon: '🟦' },
+        { id: 'g', name: 'קבוצה', children: [{ id: 'a', name: 'עיגול', icon: '⚪' }, { id: 'b', name: 'ריבוע', icon: '⬛' }] },
+        { id: 't', name: 'כותרת', icon: 'T' },
+    ], active: 't' };
+    const find = (arr, id) => { for (const n of arr) { if (n.id === id) return n; const r = n.children && find(n.children, id); if (r) return r; } };
+    const lp = layersPanel($('#layers'), {
+        items: () => L.layers, active: () => L.active,
+        select: id => { L.active = id; lp.render(); },
+        toggle: (id, k) => { const n = find(L.layers, id); n[k] = k === 'visible' ? n.visible === false : !n[k]; lp.render(); },
+        rename: (id, name) => { find(L.layers, id).name = name; },
+        move: (id, parent, i) => { moveNode(L.layers, id, parent, i); lp.render(); },
+        remove: id => toast('מחיקה: ' + find(L.layers, id).name),
+        menu: id => [{ label: 'שכפול', run: () => toast('שכפול') }, { label: 'מחיקה', run: () => toast('מחיקה'), danger: true }],
+    });
+    window.__layers = { L, lp };
 
     // ---- בורר גופנים ----
     const fontBlobs = new Map();

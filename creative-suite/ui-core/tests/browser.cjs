@@ -406,6 +406,34 @@ const server = http.createServer((req, res) => {
         await p.waitForTimeout(150);
         ok(await p.evaluate(() => window.__fwDone) === 'הזמנה לחתונה (2).mbe', 'files: שמירה — שם קיים → "לשמור את שניהם"');
 
+        // layers — לוח שכבות
+        await p.$eval('#layers', el => el.scrollIntoView({ block: 'center', behavior: 'instant' }));
+        const lorder = () => p.$$eval('#layers .layer-row', r => r.map(x => x.dataset.id).join());
+        ok(await lorder() === 't,g,b,a,bg', 'layers: העליונה ראשונה, קבוצה פתוחה עם הילדים מתחתיה');
+        ok(await p.$eval('#layers [data-id="a"]', r => r.getAttribute('aria-level') === '2' && parseFloat(getComputedStyle(r).paddingInlineStart) > parseFloat(getComputedStyle(document.querySelector('#layers [data-id="t"]')).paddingInlineStart)), 'layers: הזחה לפי עומק');
+        await p.click('#layers [data-id="b"] .layer-name');
+        ok(await p.evaluate(() => window.__layers.L.active) === 'b', 'layers: לחיצה על שם — בחירה');
+        await p.click('#layers [data-id="b"] .layer-name');
+        await p.fill('#layers .layer-name-input', 'ריבוע כחול');
+        await p.press('#layers .layer-name-input', 'Enter');
+        ok(await p.$eval('#layers [data-id="b"] .layer-name', b => b.textContent) === 'ריבוע כחול', 'layers: לחיצה שנייה — שינוי שם במקום');
+        await p.click('#layers [data-id="a"] .eye');
+        ok(await p.$eval('#layers [data-id="a"]', r => r.classList.contains('hidden-layer')), 'layers: 👁️ — הסתרה');
+        await p.focus('#layers [data-id="b"]'); await p.keyboard.press('ArrowDown');
+        ok(await p.evaluate(() => window.__layers.L.active) === 'a', 'layers: ↓ במקלדת');
+        // גרירה: "כותרת" (t) אל מתחת ל"רקע" (bg) — לתחתית הערימה
+        const dragTo = async (from, to, frac) => {
+            const hb = await p.$eval(`#layers [data-id="${from}"] .drag`, el => { const r = el.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; });
+            const tb = await p.$eval(`#layers [data-id="${to}"]`, el => { const r = el.getBoundingClientRect(); return [r.x + r.width / 2, r.y, r.height]; });
+            await p.mouse.move(...hb); await p.mouse.down(); await p.mouse.move(tb[0], tb[1] + tb[2] * frac, { steps: 4 }); await p.mouse.up();
+        };
+        await dragTo('t', 'bg', 0.9);
+        ok(await lorder() === 'g,b,a,bg,t', 'layers: גרירה אל מתחת לשורה האחרונה — לתחתית הערימה');
+        await dragTo('t', 'g', 0.5);
+        ok(await lorder() === 'g,t,b,a,bg' && await p.evaluate(() => window.__layers.L.layers.find(n => n.id === 'g').children.at(-1).id) === 't', 'layers: גרירה לאמצע קבוצה — לתוכה, למעלה');
+        await dragTo('g', 'b', 0.5);
+        ok(await lorder() === 'g,t,b,a,bg', 'layers: קבוצה לא נגררת לתוך עצמה');
+
         // fonts — קטלוג, בורר, גופן שהועלה
         const fn = await p.evaluate(async () => {
             const F = await import('../src/js/fonts.js');
