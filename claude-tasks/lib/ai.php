@@ -218,3 +218,87 @@ function extractJson(string $text): array {
     if (!is_array($data)) throw new AppError('ה-JSON בתשובת המודל אינו תקין');
     return $data;
 }
+
+/* ── רשימת המודלים של ספק ─────────────────────────────────────────
+ *
+ * הבורר בהגדרות מציג את המודלים שהספק באמת מציע לאותו מפתח — לא רשימה
+ * שמוקלדת ביד ומתיישנת. בלי מפתח, או כשהפנייה נכשלה, יש גיבוי קצר בקוד
+ * (רק לאנתרופיק, שהמזהים שלו ידועים), ותמיד אפשר "אחר…" ידני.
+ */
+
+/** גיבוי כשאין רשימה חיה. מזהים בלבד — בלי להמציא מזהים לספקים אחרים. */
+const MODELS_FALLBACK = [
+    'anthropic' => [
+        ['id' => 'claude-opus-5-5',           'label' => 'Claude Opus 5.5'],
+        ['id' => 'claude-sonnet-5-5',         'label' => 'Claude Sonnet 5.5'],
+        ['id' => 'claude-haiku-5-5',          'label' => 'Claude Haiku 5.5'],
+        ['id' => 'claude-haiku-4-5-20251001', 'label' => 'Claude Haiku 4.5'],
+    ],
+    'openai' => [],
+    'google' => [],
+];
+
+/**
+ * המודלים של ספק, לפי המפתח. מחזיר ['models' => [[id, label]], 'source' => live|fallback, 'error' => ?].
+ * ‏$transport — כמו ב-aiComplete, לבדיקות: fn(provider, url, key) → [status, body].
+ */
+function providerModels(string $provider, string $key, ?callable $transport = null): array {
+    if (!providerExists($provider)) throw new InvalidArgumentException('ספק לא מוכר');
+    $fallback = ['models' => MODELS_FALLBACK[$provider] ?? [], 'source' => 'fallback'];
+    if ($key === '') return $fallback;
+
+    [$url, $headers] = match ($provider) {
+        'anthropic' => ['https://api.anthropic.com/v1/models?limit=100',
+                        ['anthropic-version: 2023-06-01', 'x-api-key: ' . $key]],
+        'openai'    => ['https://api.openai.com/v1/models', ['Authorization: Bearer ' . $key]],
+        'google'    => ['https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', ['x-goog-api-key: ' . $key]],
+    };
+    try {
+        $res = $transport ? $transport($provider, $url, $key) : aiHttpGet($url, $headers);
+    } catch (Throwable $e) {
+        return $fallback + ['error' => $e->getMessage()];
+    }
+    $data = json_decode((string) ($res['body'] ?? ''), true);
+    if (($res['status'] ?? 0) !== 200 || !is_array($data)) {
+        $code = (int) ($res['status'] ?? 0);
+        return $fallback + ['error' => in_array($code, [401, 403], true)
+            ? 'המפתח נדחה' : "הספק החזיר $code"];
+    }
+
+    $out = [];
+    if ($provider === 'anthropic') {
+        foreach ($data['data'] ?? [] as $m) {
+            if (!empty($m['id'])) $out[] = ['id' => $m['id'], 'label' => $m['display_name'] ?? $m['id']];
+        }
+    } elseif ($provider === 'openai') {
+        // הרשימה כוללת גם הטמעה, קול ותמונה — משאירים רק מודלים לשיחה
+        foreach ($data['data'] ?? [] as $m) {
+            $id = (string) ($m['id'] ?? '');
+            if (!preg_match('/^(gpt-|o\d|chatgpt-)/', $id)) continue;
+            if (preg_match('/(audio|realtime|tts|transcribe|search|image|embedding|moderation|instruct)/', $id)) continue;
+            $out[] = ['id' => $id, 'label' => $id];
+        }
+        usort($out, fn ($a, $b) => strcmp($b['id'], $a['id']));
+    } else {
+        foreach ($data['models'] ?? [] as $m) {
+            if (!in_array('generateContent', $m['supportedGenerationMethods'] ?? [], true)) continue;
+            $id = preg_replace('#^models/#', '', (string) ($m['name'] ?? ''));
+            if ($id === '' || !str_starts_with($id, 'gemini')) continue;
+            $out[] = ['id' => $id, 'label' => $m['displayName'] ?? $id];
+        }
+    }
+    return $out ? ['models' => $out, 'source' => 'live'] : $fallback;
+}
+
+function aiHttpGet(string $url, array $headers): array {
+    if (!function_exists('curl_init')) throw new AppError('cURL אינו זמין בשרת');
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 12,
+                            CURLOPT_CONNECTTIMEOUT => 6, CURLOPT_HTTPHEADER => $headers]);
+    $body = curl_exec($ch);
+    $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err  = curl_error($ch);
+    curl_close($ch);
+    if ($body === false) throw new AppError('הפנייה לספק נכשלה: ' . $err);
+    return ['status' => $code, 'body' => (string) $body];
+}

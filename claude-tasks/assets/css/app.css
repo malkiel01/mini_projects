@@ -276,3 +276,29 @@ dialog > form.sheet-wrap { margin: 0; }
 .pick--none { cursor: default; color: var(--muted); }
 
 .danger-text { color: var(--danger); }
+
+/* ===== הגדרות: לשוניות ושורת חיבור שנפתחת ===== */
+#setTabs { margin-bottom: var(--s2); grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
+#setTabs button { flex-direction: row; }
+#setTabs button { white-space: nowrap; }
+.conn .model-id { font-size: .78rem; color: var(--muted); }
+.set-panel { display: grid; gap: var(--s3); }
+.conns { display: grid; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.conns-inner { display: contents; }
+.conn { border-top: 1px solid var(--line); }
+.conns > .conn:first-child { border-top: 0; }
+.conn > summary { list-style: none; display: flex; align-items: center; gap: var(--s2); min-height: 56px;
+  padding: var(--s2) var(--s3); cursor: pointer; }
+.conn > summary::-webkit-details-marker { display: none; }
+.conn > summary:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
+.conn .ic { flex: none; inline-size: 36px; block-size: 36px; display: grid; place-items: center; border-radius: var(--r);
+  background: var(--bg); font-size: 1.1rem; }
+.conn.is-on .ic { background: color-mix(in srgb, var(--ok) 14%, var(--surface)); }
+.conn .body { flex: 1; min-width: 0; display: grid; }
+.conn .body b, .conn .body small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.conn .body small { color: var(--muted); font-size: .8rem; }
+.conn .go { flex: none; color: var(--muted); font-size: 1.2rem; transition: transform .15s; }
+.conn[open] .go { transform: rotate(-90deg); }
+.conn__body { padding: 0 var(--s3) var(--s3); }
+.conn__body .hint, .field .hint { font-size: .8rem; }
+@media (prefers-reduced-motion: reduce) { .conn .go { transition: none; } }

@@ -718,6 +718,28 @@ try {
         }
     }
 
+    /**
+     * המודלים שהספק מציע — לבורר בהגדרות. המפתח: זה שהוקלד עכשיו (לפני שמירה),
+     * אחרת השמור של המשתמש; ‏scope=system — המפתח הכללי (מנהל בלבד).
+     */
+    case 'provider-models': {
+        $me   = requireUser($user);
+        $prov = str_field($in, 'provider', 30);
+        if (!providerExists($prov)) fail('ספק לא מוכר');
+        $key = trim((string) ($in['key'] ?? ''));
+        if ($key === '') {
+            if (($in['scope'] ?? '') === 'system') {
+                if ($me['role'] !== 'admin') fail('למנהל בלבד', 403);
+                $sys = aiConn();
+                $key = $sys['provider'] === $prov ? (string) $sys['key'] : '';
+            } else {
+                try { $c = userConn($me, $prov); $key = $c['provider'] === $prov ? (string) $c['key'] : ''; }
+                catch (Throwable $e) { $key = ''; }
+            }
+        }
+        ok(providerModels($prov, $key));
+    }
+
     /* ── חיבורים אישיים ────────────────────────────────────────
      *
      * כל משתמש מביא את הגיטהאב שלו ואת מפתח קלוד שלו. הסודות מוצפנים

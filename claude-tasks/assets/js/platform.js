@@ -21,8 +21,9 @@ function renderGithub() {
   if (!gh) return;
 
   box.textContent = gh.connected
-    ? `מחובר כ־${gh.login}${gh.scopes.length ? ` · הרשאות: ${gh.scopes.join(', ')}` : ''}`
-    : 'לא מחובר. בלי חיבור אי אפשר לקשר פרויקט לריפו.';
+    ? `מחובר כ־${gh.login}${gh.scopes.length ? ` · ${gh.scopes.join(', ')}` : ''}`
+    : 'לא מחובר — בלי חיבור אין עיון בקוד ואין הרצה';
+  $('#ghConn').classList.toggle('is-on', !!gh.connected);
 
   $('#ghDisconnect').hidden = !gh.connected;
   $('#ghToken').placeholder = gh.connected ? 'טוקן חדש (ריק = ללא שינוי)' : 'ghp_… / github_pat_…';
@@ -53,6 +54,56 @@ on('#ghDisconnect', 'click', async () => {
   } catch (ex) { toast(ex.message, 'error'); }
 });
 
+/* ── בורר מודל ──────────────────────────────────────────────────
+ *
+ * רשימה אמיתית מהספק (provider-models), לפי המפתח שהוקלד או השמור. מודל
+ * שמוגדר היום ואינו ברשימה — נשאר בה, מסומן. "אחר…" פותח הקלדה ידנית.
+ */
+export function modelPicker({ provider, current = '', getKey = () => '', scope = '' }) {
+  const sel = el('select', { 'aria-label': 'מודל' });
+  const custom = el('input', { type: 'text', dir: 'ltr', placeholder: 'מזהה המודל, כפי שהספק קורא לו', hidden: true });
+  const note = el('small', { class: 'hint' });
+  const idLine = el('code', { class: 'model-id', dir: 'ltr' });
+  const wrap = el('label', { class: 'field' }, [el('span', { text: 'מודל' }), sel, custom, idLine, note]);
+  const showId = () => { idLine.textContent = sel.value === '__custom' ? '' : sel.value; };
+  let prov = provider;
+
+  const fill = (models, source, error) => {
+    // בבורר — השם הקריא; המזהה המדויק מוצג מתחת (בכיוון שמאל-ימין)
+    const opts = models.map((m) => el('option', { value: m.id, text: m.label || m.id }));
+    if (current && !models.some((m) => m.id === current)) {
+      opts.unshift(el('option', { value: current, text: `${current} (מוגדר עכשיו)` }));
+    }
+    opts.push(el('option', { value: '__custom', text: 'אחר… (הקלדה)' }));
+    sel.replaceChildren(...opts);
+    sel.value = current || (models[0]?.id ?? '__custom');
+    custom.hidden = sel.value !== '__custom';
+    showId();
+    note.textContent = error ? `לא נטענה רשימה מהספק (${error}) — רשימה בסיסית`
+      : source === 'live' ? `${models.length} מודלים זמינים למפתח הזה` : 'רשימה בסיסית — חברו מפתח כדי לראות את כל המודלים';
+  };
+  sel.addEventListener('change', () => {
+    showId();
+    custom.hidden = sel.value !== '__custom';
+    if (!custom.hidden) custom.focus();
+  });
+
+  const load = async () => {
+    note.textContent = 'טוען מודלים…';
+    try {
+      const r = await api('provider-models', { provider: prov, key: getKey(), scope });
+      fill(r.models, r.source, r.error);
+    } catch (ex) { fill([], 'fallback', ex.message); }
+  };
+
+  return {
+    el: wrap,
+    load,
+    setProvider(p) { prov = p; current = ''; return load(); },
+    get value() { return sel.value === '__custom' ? custom.value.trim() : sel.value; },
+  };
+}
+
 /* ── ספקים ─────────────────────────────────────────────────────── */
 
 export async function loadProviders() {
@@ -64,66 +115,67 @@ export async function loadProviders() {
   return r;
 }
 
+const PROVIDER_ICON = { anthropic: '✳️', openai: '⚪', google: '🔷' };
+
 function renderProviders() {
+  const openNow = new Set($$('#providerList details[open]').map((d) => d.dataset.provider));
   $('#providerList').replaceChildren(...state.providers.map((p) => {
     const isDefault = state.defaultProvider === p.provider;
-
-    const key   = el('input', { type: 'password', dir: 'ltr', autocomplete: 'off',
+    const key = el('input', { type: 'password', dir: 'ltr', autocomplete: 'off',
       placeholder: p.connected ? `מחובר · …${p.tail} (ריק = ללא שינוי)` : `${p.prefix}…` });
-    const model = el('input', { type: 'text', dir: 'ltr', value: p.model || '',
-      placeholder: p.default_model || 'שם המודל כפי שהספק קורא לו' });
+    const picker = modelPicker({ provider: p.provider, current: p.model || '', getKey: () => key.value.trim() });
+    // מפתח חדש שהוקלד — טוענים את המודלים שלו
+    key.addEventListener('change', () => { if (key.value.trim()) picker.load(); });
 
-    const save = async () => {
+    const btn = (text, cls, fn) => el('button', { type: 'button', class: `btn ${cls}`, onclick: fn }, [text]);
+    const actions = [btn('שמירה', 'primary', async () => {
       try {
-        await api('connect-provider', { provider: p.provider, key: key.value.trim(), model: model.value.trim() });
-        key.value = '';
+        await api('connect-provider', { provider: p.provider, key: key.value.trim(), model: picker.value });
         await loadProviders();
         toast(`${p.label} נשמר`, 'ok');
       } catch (ex) { toast(ex.message, 'error'); }
-    };
-
-    const actions = [el('button', { type: 'button', class: 'btn btn--ghost', onclick: save }, ['שמירה'])];
-
+    })];
     if (p.connected) {
-      actions.push(el('button', {
-        type: 'button', class: 'btn btn--ghost',
-        onclick: async () => {
-          try {
-            const r = await api('test-provider', { provider: p.provider });
-            toast(`${p.label}: ${r.message} (${r.model})`, 'ok');
-          } catch (ex) { toast(ex.message, 'error'); }
-        },
-      }, ['בדיקה']));
-
-      if (!isDefault) actions.push(el('button', {
-        type: 'button', class: 'btn btn--ghost',
-        onclick: async () => {
-          await api('set-default-provider', { provider: p.provider }).catch((ex) => toast(ex.message, 'error'));
+      actions.push(btn('בדיקה', 'ghost', async () => {
+        try {
+          const r = await api('test-provider', { provider: p.provider });
+          toast(`${p.label}: ${r.message} (${r.model})`, 'ok');
+        } catch (ex) { toast(ex.message, 'error'); }
+      }));
+      if (!isDefault) actions.push(btn('★ ברירת מחדל', 'ghost', async () => {
+        await api('set-default-provider', { provider: p.provider }).catch((ex) => toast(ex.message, 'error'));
+        await loadProviders();
+      }));
+      actions.push(btn('ניתוק', 'ghost danger-text', async () => {
+        try {
+          await api('disconnect-provider', { provider: p.provider });
           await loadProviders();
-        },
-      }, ['הפוך לברירת מחדל']));
-
-      actions.push(el('button', {
-        type: 'button', class: 'btn btn--ghost',
-        onclick: async () => {
-          try {
-            await api('disconnect-provider', { provider: p.provider });
-            await loadProviders();
-            toast(`${p.label} נותק`, 'ok');
-          } catch (ex) { toast(ex.message, 'error'); }
-        },
-      }, ['ניתוק']));
+          toast(`${p.label} נותק`, 'ok');
+        } catch (ex) { toast(ex.message, 'error'); }
+      }));
     }
 
-    return el('div', { class: `provider${p.connected ? ' is-on' : ''}` }, [
-      el('div', { class: 'provider__head' }, [
-        el('b', { text: `${isDefault ? '★ ' : ''}${p.label}` }),
-        el('span', { class: 'hint', text: p.connected ? 'מחובר' : p.hint }),
+    const d = el('details', { class: `conn${p.connected ? ' is-on' : ''}`, dataset: { provider: p.provider } }, [
+      el('summary', {}, [
+        el('span', { class: 'ic', 'aria-hidden': 'true', text: PROVIDER_ICON[p.provider] || '🤖' }),
+        el('span', { class: 'body' }, [
+          el('b', { text: `${p.label}${isDefault ? ' ★' : ''}` }),
+          el('small', { text: p.connected ? `מחובר · …${p.tail} · ${p.model}` : 'לא מחובר' }),
+        ]),
+        el('span', { class: 'go', 'aria-hidden': 'true', text: '‹' }),
       ]),
-      el('label', { class: 'field' }, [el('span', { text: 'מפתח' }), key]),
-      el('label', { class: 'field' }, [el('span', { text: 'מודל' }), model]),
-      el('div', { class: 'row' }, actions),
+      el('div', { class: 'stack conn__body' }, [
+        el('label', { class: 'field' }, [el('span', { text: 'מפתח API' }), key]),
+        el('small', { class: 'hint', text: p.hint }),
+        picker.el,
+        el('div', { class: 'row-btns' }, actions),
+      ]),
     ]);
+    // המודלים נטענים רק כשפותחים — לא פונים לשלושה ספקים בכל פתיחת הגדרות
+    let loaded = false;
+    d.addEventListener('toggle', () => { if (d.open && !loaded) { loaded = true; picker.load(); } });
+    if (openNow.has(p.provider)) d.open = true;
+    return d;
   }));
 }
 
