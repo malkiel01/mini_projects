@@ -204,6 +204,7 @@
     return { box, bar, stage, set, get zoom() { return z; } };
   }
   const uid = () => 'f' + Math.random().toString(36).slice(2, 9);
+  let markAgain = null;   // אחרי סימון שדה ב-Word — העורך נפתח מחדש ישר במצב סימון
 
   async function open(id) {
     const { api, el, notice, show } = window.DT;
@@ -317,15 +318,27 @@
     } else if (isWord) {
       // תבנית Word: השדות באים מהסימונים {{...}} בקובץ. אין מיקום על דף —
       // מגדירים כאן רק את השדות, ומציגים תצוגה מקדימה של הקובץ.
+      // שדה חדש — מסמנים אותו כאן, על הטקסט של הקובץ (בלי לחזור ל-Word): ראה markWord למטה.
       pagesBox.classList.add('word');
-      pagesBox.replaceChildren(el('p', { class: 'notice' }, '📝 תבנית Word — השדות הם הסימונים {{...}} שבקובץ. ' +
-        'כדי להוסיף שדה: מוסיפים סימון ב-Word ומעלים מחדש. כאן מגדירים לכל שדה סוג, חובה, מי ממלא ומילוי מאיש קשר.'));
-      try {
-        const res = await fetch('api.php?action=tpl_asset&id=' + id, { credentials: 'same-origin' });
-        pagesBox.append(await wordPreview(await res.arrayBuffer()));
-      } catch (e) {
-        pagesBox.append(notice('התצוגה המקדימה לא נטענה: ' + e.message, 'bad'));
+      const previewBox = el('div');
+      const markBtn = el('button', { class: 'primary', onclick: () => markWord(previewBox, markBtn) }, '🖍️ סימון שדות בטקסט');
+      pagesBox.replaceChildren(el('p', { class: 'notice' }, schema.fields.length
+        ? '📝 תבנית Word — השדות הם הסימונים {{...}} שבקובץ. שדה נוסף: "סימון שדות בטקסט" — בוחרים טקסט ' +
+          '(למשל ______ או שם) והופכים אותו לשדה. כאן גם מגדירים לכל שדה סוג, חובה, מי ממלא ומילוי מאיש קשר.'
+        : '📝 בקובץ עוד אין שדות. לוחצים "סימון שדות בטקסט", בוחרים את מה שמשתנה בכל מסמך — שם, תאריך, ______ — ' +
+          'ולוחצים "הפוך לשדה". הקובץ נשאר כמו שהוא, רק במקום הטקסט שבחרתם נכנס השדה.'),
+        readOnly ? '' : el('div', { class: 'word-mark-open' }, markBtn), previewBox);
+      if (markAgain === id && !readOnly) {
+        markWord(previewBox, markBtn);
+      } else {
+        try {
+          const res = await fetch('api.php?action=tpl_asset&id=' + id, { credentials: 'same-origin' });
+          previewBox.append(await wordPreview(await res.arrayBuffer()));
+        } catch (e) {
+          previewBox.append(notice('התצוגה המקדימה לא נטענה: ' + e.message, 'bad'));
+        }
       }
+      markAgain = null;
     } else {
       try {
         var pages = await renderBackground('api.php?action=tpl_asset&id=' + id, tpl.mime);
@@ -1941,6 +1954,75 @@
     function scrollTo(f) {
       if (!pageEls[f.page]) return;   // תבנית Word — אין דפים לגלול אליהם
       pageEls[f.page].layer.parentElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    // ── סימון שדות בתוך Word (lib/wordmark.php) ──
+    // הטקסט של הקובץ, פסקה אחרי פסקה. בוחרים טקסט באחת מהן (גרירה, או לחיצה ארוכה בטלפון),
+    // נותנים שם, והשרת כותב {{שם}} במקומו בקובץ עצמו ומוסיף שדה. אחר כך העורך נפתח מחדש, במצב סימון.
+    async function markWord(box, openBtn) {
+      openBtn.hidden = true;
+      const list = el('div', { class: 'word-mark-text' });
+      const what = el('span', { class: 'word-mark-what' });
+      const nameIn = el('input', { type: 'text', maxlength: 60, placeholder: 'שם השדה — למשל: שם הלקוח', 'aria-label': 'שם השדה' });
+      const out = el('div');
+      let pending = null;
+      const go = el('button', { class: 'primary', type: 'submit' }, 'הפוך לשדה');
+      const bar = el('form', { class: 'word-mark-bar', hidden: true, onsubmit: async (e) => {
+        e.preventDefault();
+        if (!pending) return;
+        const name = nameIn.value.trim();
+        if (!name) { nameIn.focus(); return; }
+        go.disabled = true;
+        try {
+          if (dirty) { await save(); if (dirty) return; }   // הגדרות שלא נשמרו — קודם שומרים, כדי שלא יאבדו בפתיחה מחדש
+          const r = await api('tpl_word_mark', { id, ...pending, name });
+          markAgain = id;
+          await open(id);
+          window.DT.toast(r.added ? `✓ נוסף השדה "${name}"` : `✓ "${name}" — אותו שדה, במקום נוסף`);
+        } catch (err) {
+          out.replaceChildren(notice(err.message, 'bad'));
+        } finally { go.disabled = false; }
+      } }, what, nameIn, go, out);
+      box.replaceChildren(el('div', { class: 'word-mark-head' },
+        el('span', {}, el('strong', {}, '🖍️ סימון שדות'), ' — בוחרים טקסט בפסקה ולוחצים "הפוך לשדה". ',
+          el('span', { class: 'word-mark-ph' }, 'מסומן'), ' = כבר שדה.'),
+        el('button', { type: 'button', class: 'small', onclick: () => open(id) }, 'סיום')), list, bar);
+      let paras;
+      try {
+        paras = (await api('tpl_word_text', undefined, { id })).paragraphs;
+      } catch (e) { list.replaceChildren(notice(e.message, 'bad')); return; }
+      if (!paras.length) { list.replaceChildren(notice('לא נמצא טקסט בקובץ — אולי הוא תמונה סרוקה. אז עדיף להעלות אותו כ-PDF.', 'warn')); return; }
+      paras.forEach((p, i) => {
+        const d = el('p', { class: 'word-mark-p', dir: 'auto', 'data-i': i });
+        for (const chunk of p.text.split(/(\{\{[^{}]{1,60}?\}\})/)) {
+          if (chunk) d.append(/^\{\{/.test(chunk) ? el('span', { class: 'word-mark-ph' }, chunk) : document.createTextNode(chunk));
+        }
+        if (i > 0 && paras[i - 1].part !== p.part) list.append(el('div', { class: 'word-mark-part muted small' }, p.part.includes('header') ? 'כותרת עליונה' : p.part.includes('footer') ? 'כותרת תחתונה' : 'הערות'));
+        list.append(d);
+      });
+      const onSel = () => {
+        if (!list.isConnected) { document.removeEventListener('selectionchange', onSel); return; }
+        if (bar.contains(document.activeElement)) return;   // מקלידים את השם — הבחירה בדף כבר לא חשובה
+        const sel = getSelection();
+        const range = sel.rangeCount && !sel.isCollapsed ? sel.getRangeAt(0) : null;
+        const pa = range && (range.startContainer.parentElement || range.startContainer).closest('.word-mark-p');
+        const pb = range && (range.endContainer.parentElement || range.endContainer).closest('.word-mark-p');
+        if (!range || !pa || pa !== pb || !list.contains(pa)) { bar.hidden = true; pending = null; return; }
+        const raw = range.toString();
+        const text = raw.trim();
+        if (!text) { bar.hidden = true; pending = null; return; }
+        const pre = document.createRange();
+        pre.selectNodeContents(pa);
+        pre.setEnd(range.startContainer, range.startOffset);
+        const p = paras[Number(pa.dataset.i)];
+        pending = { part: p.part, p: p.p, start: pre.toString().length + (raw.length - raw.trimStart().length), len: text.length, text };
+        what.textContent = '«' + (text.length > 40 ? text.slice(0, 40) + '…' : text) + '» ←';
+        // הצעה לשם: הטקסט עצמו, כשהוא נראה כמו תווית ולא כמו קו למילוי
+        nameIn.value = /^[\s_.\-–—…]+$/.test(text) || text.length > 30 ? '' : text;
+        out.replaceChildren();
+        bar.hidden = false;
+      };
+      document.addEventListener('selectionchange', onSel);
     }
 
     // ── שמירה ──

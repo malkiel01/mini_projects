@@ -172,8 +172,8 @@ function tpl_create_bytes(array $user, string $name, string $bytes, string $mode
     if (!isset(TPL_MIME[$mime])) throw new ApiError('סוג קובץ לא נתמך. PDF, Word (docx), PNG, JPG או WEBP', 415);
     $schema = ['pages' => [], 'fields' => []];
     if ($mime === DOCX_MIME) {
+        // Word בלי סימונים {{...}} — גם הוא תבנית: את השדות מסמנים בעורך, על הטקסט (lib/wordmark.php)
         $bytes = docx_normalize($bytes, $names);
-        if (!$names) throw new ApiError('לא נמצאו שדות בקובץ. מסמנים שדה כך: {{שם_הלקוח}}', 422);
         $schema = ['pages' => [['w' => 595, 'h' => 842]], 'fields' => docx_fields($names)];
     }
     // שלב 10: PDF — "לפרק" (המערכת קוראת שדות וטקסט) או "נעול" (תמונה בלבד).
@@ -596,4 +596,5 @@ require_once __DIR__ . '/fonts.php';   // גופנים שהמשתמש העלה
 require_once __DIR__ . '/fmt.php';     // מבנים מותאמים לתצוגת תאריך ומספר
 require_once __DIR__ . '/lists.php';   // רשימות ערכים — שטוחות ומקוננות
 require_once __DIR__ . '/porting.php'; // ייצוא וייבוא של תבנית — קובץ אחד
-require_once __DIR__ . '/pdfclean.php'; // ההגדרות המוכנות — נמחקות מקובץ המקור אחרי שנקראו
+require_once __DIR__ . '/pdfclean.php';
+require_once __DIR__ . '/wordmark.php'; // סימון שדות בתוך Word, בעורך // ההגדרות המוכנות — נמחקות מקובץ המקור אחרי שנקראו
