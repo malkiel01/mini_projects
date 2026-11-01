@@ -374,6 +374,19 @@ try {
   await page.evaluate(() => { const L = window.__vs.S.doc.surfaces[0].layers[0]; L.paths = L.paths.filter(p => !['sw1', 'sw2'].includes(p.id)); window.__vs.select([]); });
   step('צבעים וסגנונות שמורים: פלטה, למילוי ולמתאר, נשמרים בשרת, סגנון בשם, הסרה');
 
+  // מתאר משוכלל: קצה חץ בסוף ומעבר צבע במתאר — מלוח המאפיינים
+  await page.evaluate(() => { const L = window.__vs.S.doc.surfaces[0].layers[0]; L.paths.push({ id: 'ar1', d: 'M600 900 L900 900', fill: null, stroke: { color: '#16192b', width: 4, cap: 'butt', join: 'miter', dash: [] } }); window.__vs.select(['ar1']); });
+  await page.click('fieldset[data-k="end"] label:nth-child(2)');   // ➤ חץ
+  await page.click('fieldset[data-k="strokemode"] label:nth-child(2)');   // מעבר צבע
+  let ar = await page.evaluate(() => window.__vs.S.doc.surfaces[0].layers[0].paths.find(p => p.id === 'ar1').stroke);
+  assert.equal(ar.end, 'arrow');
+  assert.ok(ar.gradient?.stops?.length === 2 && !ar.color, 'מתאר במעבר צבע: ' + JSON.stringify(ar));
+  await page.click('fieldset[data-k="end"] label:nth-child(1)');   // בלי
+  ar = await page.evaluate(() => window.__vs.S.doc.surfaces[0].layers[0].paths.find(p => p.id === 'ar1').stroke);
+  assert.equal(ar.end, undefined, 'בלי קצה — השדה נמחק');
+  await page.evaluate(() => { const L = window.__vs.S.doc.surfaces[0].layers[0]; L.paths = L.paths.filter(p => p.id !== 'ar1'); window.__vs.select([]); });
+  step('מתאר משוכלל: חץ בקצה ומעבר צבע במתאר, מלוח המאפיינים');
+
   // סיבוב: ידית הסיבוב (Shift — 15°), כפתור 90°, היפוך; הצורה נשארת חיה
   await page.evaluate(() => { const p = window.__vs.S.doc.surfaces[0].layers[0].paths; window.__vs.select([p[1].id]); }); // האליפסה
   s = await st();
