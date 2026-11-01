@@ -216,6 +216,7 @@ jobs:
             --exclude='renovation-punchlist/data/store.json' \
             --exclude='renovation-punchlist/data/media/' \
             --exclude='claude-tasks/data/*.sqlite*' \
+            --exclude='creative-suite/dashboard/data/cadence.json' \
             --exclude='recipes-app/data/*.sqlite*' \
             --include='recipes-app/data/media/.htaccess' \
             --exclude='recipes-app/data/media/*' \
