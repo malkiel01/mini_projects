@@ -3,6 +3,7 @@
 import { encodePNG } from './engine/png.js';
 import { zipStore } from './engine/zip.js';
 import { oraStack, effectsOf } from './engine/formats.js';
+import { fileName as uiFileName } from './ui-core/files.js';
 
 /** התמונה המשוטחת (רק שכבות גלויות): Promise ל-RGBA ישר של 8 ביט בגודל הקנבס */
 export const flatRGBA = (renderer, doc) => renderer.readPixels(doc, 0, 0, doc.width, doc.height);
@@ -78,14 +79,6 @@ export async function exportORA(renderer, doc) {
 }
 
 /** שם קובץ בטוח מהכותרת */
-export const fileName = (title, ext) => (String(title || 'תמונה').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ').trim().slice(0, 80) || 'תמונה') + '.' + ext;
-
-export function download(blob, name) {
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = name;
-  document.body.append(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 30_000);
-}
+// הורדה ושם קובץ — מ-ui-core; בלי כותרת — "תמונה"
+export { download } from './ui-core/files.js';
+export const fileName = (title, ext) => uiFileName(String(title ?? '').trim() || 'תמונה', ext);

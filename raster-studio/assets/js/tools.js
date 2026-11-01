@@ -9,6 +9,7 @@ import * as XF from './engine/transform.js';
 import { pathFromSelection, translatePath } from './engine/vmask.js';
 import { FONTS, LINE_HEIGHT, cssFont, renderText, textDirection } from './engine/text.js';
 import { keyOf } from './ui-core/keys.js';
+import { $ } from './ui-core/dom.js';
 
 export const TOOLS = {
   hand: { label: 'יד', icon: '✋', key: 'h', hint: 'גרירה — הזזה' },
@@ -31,8 +32,6 @@ const SIZE_MAX = 500;
 // מחוון הגודל לוגריתמי: 0–100 → 1–500 פיקסלים (דיוק בגדלים הקטנים, ועדיין מגיע לגדולים)
 export const sliderToSize = v => Math.max(1, Math.round(SIZE_MAX ** (v / 100)));
 export const sizeToSlider = s => Math.round(Math.log(Math.max(1, s)) / Math.log(SIZE_MAX) * 100);
-
-const $ = (s, el = document) => el.querySelector(s);
 
 /**
  * @param {object} o
