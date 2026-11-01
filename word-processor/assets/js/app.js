@@ -7,6 +7,7 @@ import { createSaver, findDraft, drafts, downloadLocalCopy, STATE_TEXT } from '.
 import { createCollabSaver, setPeers } from './collab.js';
 import { choose, confirm, prompt, initDialogs } from './ui-core/dialog.js';
 import { menu } from './ui-core/menu.js';
+import { accountMenu, accountServer } from './ui-core/account.js';
 
 const tab = Math.random().toString(36).slice(2);
 const GUIDE = 'https://github.com/malkiel01/mini_projects/blob/main/word-processor/docs/integration.md';
@@ -49,10 +50,12 @@ async function route() {
     return listView();
 }
 
+let account = null;   // 👤 ui-core: העיגול בקצה הסרגל — נבנה פעם אחת, וחוזר לסרגל בכל מסך
 function header({ back = false, title = '', sub = '', actions = [] } = {}) {
     top.textContent = '';
     if (back) top.append(h('button.icon-btn', { 'aria-label': 'חזרה לרשימה', onclick: () => { location.hash = '#/'; } }, '→'));
     top.append(title instanceof Node ? h('div.titles', title, sub ? h('div.sub', sub) : null) : h('div.titles', h('h1', title), sub ? h('div.sub', sub) : null), ...actions);
+    if (account) top.append(account.el);
 }
 
 // ---------- רשימת המסמכים ----------
@@ -875,6 +878,23 @@ async function adminView() {
     initDialogs();   // ui-core: [data-close], סגירה ברקע, --vvh / --kb
     try {
         me = (await api('me')).user;
+        if (me) {
+            // הגדרות אישיות (ערכה, גודל טקסט) במסד שלנו; שרת שלא עונה — ההגדרות במכשיר, והעורך ממשיך
+            const server = await accountServer((action, body) => api(action, body)).catch(() => null);
+            account = accountMenu(top, {
+                user: () => me && { name: me.name, email: me.email, admin: me.admin },
+                server,
+                docs: () => { location.hash = '#/'; },
+                admin: () => { location.hash = '#/admin'; },
+                // יציאה מתוך מסמך — קודם כמו סגירתו (שמירה, ושאלה אם לא נשמר); "להישאר" — לא יוצאים
+                logout: async () => {
+                    try { await closeDoc(); } catch (e) { if (e.stay) return; throw e; }
+                    await api('logout');
+                    location.replace(location.pathname);
+                },
+            });
+            account.refresh();
+        }
     } catch (e) {
         main.textContent = '';
         main.append(h('p.error', e.message));

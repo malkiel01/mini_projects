@@ -173,7 +173,8 @@
 /* בזמן עריכה הדפדפן לא מגדיל את כל הדף בצביטה — הצביטה מגדילה רק את המסמך (editor.js). גלילה רגילה נשארת */
 html.wp-no-page-zoom, html.wp-no-page-zoom body, .wp-editor, .wp-stage { touch-action: pan-x pan-y; }
 .wp-stage { flex: 1; min-height: 0; overflow: auto; padding: var(--s3) var(--s2) calc(var(--s4) * 3); background: #e9ebef; overscroll-behavior: contain; }
-@media (prefers-color-scheme: dark) { .wp-stage { background: #0c0e12; } }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .wp-stage { background: #0c0e12; } }
+:root[data-theme="dark"] .wp-stage { background: #0c0e12; }
 .wp-zoom-box { direction: ltr; margin: 0 auto; }
 .wp-zoom { transform-origin: 0 0; inline-size: max-content; }
 .wp-sheet { position: relative; direction: rtl; }
@@ -480,12 +481,14 @@ html.wp-no-page-zoom, html.wp-no-page-zoom body, .wp-editor, .wp-stage { touch-a
 /* הסרגל (ruler.js): מעל הדף, דביק בראש אזור הגלילה; הרצועה — ברוחב העמוד ובזום שלו */
 .wp-ruler { position: sticky; top: calc(var(--s3) * -1); z-index: 5; block-size: 22px; margin: calc(var(--s3) * -1) calc(var(--s2) * -1) var(--s2); background: #e9ebef;
     border-bottom: 1px solid rgb(0 0 0 / .08); direction: ltr; user-select: none; -webkit-user-select: none; }
-@media (prefers-color-scheme: dark) { .wp-ruler { background: #0c0e12; border-color: rgb(255 255 255 / .08); } }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .wp-ruler { background: #0c0e12; border-color: rgb(255 255 255 / .08); } }
+:root[data-theme="dark"] .wp-ruler { background: #0c0e12; border-color: rgb(255 255 255 / .08); }
 .wp-ruler[hidden] { display: none; }
 /* הסרגל האנכי: עמודה צרה בצד ההתחלה של הדף (מחוץ לגלילה); הרצועה — בגובה העמוד ובמקום שלו */
 .wp-vruler { position: relative; flex: none; inline-size: 22px; overflow: hidden; background: #e9ebef; border-inline-end: 1px solid rgb(0 0 0 / .08);
     direction: ltr; user-select: none; -webkit-user-select: none; }
-@media (prefers-color-scheme: dark) { .wp-vruler { background: #0c0e12; border-color: rgb(255 255 255 / .08); } }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .wp-vruler { background: #0c0e12; border-color: rgb(255 255 255 / .08); } }
+:root[data-theme="dark"] .wp-vruler { background: #0c0e12; border-color: rgb(255 255 255 / .08); }
 .wp-vruler[hidden] { display: none; }
 .wp-vruler-track { position: absolute; left: 3px; right: 3px; background: #fff; border: 1px solid #c8ccd4; box-sizing: border-box; }
 .wp-vruler-margin { position: absolute; left: 0; right: 0; background: #d4d8df; pointer-events: none; }
