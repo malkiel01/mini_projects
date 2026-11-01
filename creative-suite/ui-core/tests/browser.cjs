@@ -509,6 +509,48 @@ const server = http.createServer((req, res) => {
         ok(/^#[0-9a-f]{6}80$/.test(dragged) && dragged !== '#e5398f80', 'colorPicker: לחיצה בריבוע משנה את הצבע, והשקיפות נשמרת בקוד');
         await p.click('#colors .cp-trigger >> nth=1');
 
+        // autosave — טיוטה במכשיר ושמירה לשרת (שעון קצר)
+        const as = await p.evaluate(async () => {
+            const { autosave, findDraft, STATE_TEXT } = await import('../src/js/autosave.js');
+            const wait = ms => new Promise(r => setTimeout(r, ms));
+            const mem = new Map(), store = { get: async k => mem.get(k), set: async (k, v) => { mem.set(k, v); }, del: async k => { mem.delete(k); } };
+            const out = { states: [] };
+            let doc = { t: 'a' }, sent = [], fail = null;
+            const s = autosave({ snapshot: () => doc, version: 1, draftKey: 'd1', store, draftWait: 10, draftMax: 40, delay: 60,
+                send: async (snap, v) => { if (fail) throw fail; await wait(20); sent.push([snap.t, v]); return { version: v + 1 }; },
+                onState: st => out.states.push(st) });
+            doc = { t: 'b' }; s.changed();
+            await wait(30); out.draftAfter30 = mem.get('d1')?.data?.t; out.local = s.local; out.stateDirty = s.state;
+            await wait(120); out.sent = sent.slice(); out.draftGone = !mem.has('d1'); out.saved = s.state; out.version = s.version;
+            doc = { t: 'c' }; s.changed(); doc = { t: 'd' }; s.changed();
+            const r = await s.flush(); out.flush = [r.ok, r.dirty, sent.at(-1)[0]];
+            fail = Object.assign(new Error('x'), { code: 'offline' }); doc = { t: 'e' }; s.changed();
+            const r2 = await s.flush(); out.offline = [r2.ok, s.state]; await wait(30); out.offlineDraft = mem.get('d1')?.data?.t;
+            fail = Object.assign(new Error('השתנה'), { code: 'conflict' });
+            const r3 = await s.flush(); out.conflict = [r3.code, s.state];
+            fail = null; const n = sent.length; doc = { t: 'f' }; s.changed(); await wait(120); out.stoppedNoSend = sent.length === n;
+            out.keep = await s.keepConflictCopy() && mem.get('d1:conflict')?.data?.t;
+            s.reset(9); await wait(5); out.reset = [s.state, s.version, mem.has('d1')];
+            // טיוטה בפתיחה
+            mem.set('d2', { data: { t: 'x' }, base_version: 3, at: 1 });
+            out.find = [(await findDraft(store, 'd2', JSON.stringify({ t: 'y' })))?.data?.t, await findDraft(store, 'd2', JSON.stringify({ t: 'x' })), mem.has('d2')];
+            // בלי send — רק טיוטה
+            let doc2 = { n: 1 };
+            const l = autosave({ snapshot: () => doc2, draftKey: 'd3', store, draftWait: 10 });
+            doc2 = { n: 2 }; l.changed(); await wait(40);
+            out.localOnly = [l.state, mem.get('d3')?.data?.n]; l.markSaved(); await wait(5); out.localSaved = [l.state, mem.has('d3')];
+            out.text = STATE_TEXT.saving;
+            return out;
+        });
+        ok(as.draftAfter30 === 'b' && as.local === 'saved' && as.stateDirty === 'dirty', 'autosave: שינוי → טיוטה במכשיר אחרי שקט קצר, לפני השרת');
+        ok(as.sent.length === 1 && as.sent[0].join() === 'b,1' && as.draftGone && as.saved === 'saved' && as.version === 2, 'autosave: שמירה לשרת עם הגרסה; הטיוטה נמחקת רק אחרי אישור');
+        ok(as.flush[0] && !as.flush[1] && as.flush[2] === 'd', 'autosave: flush — שינויים רצופים נשלחים בשמירה אחת');
+        ok(!as.offline[0] && as.offline[1] === 'offline' && as.offlineDraft === 'e', 'autosave: ניתוק — מצב offline, והטיוטה נשמרת במכשיר');
+        ok(as.conflict.join() === 'conflict,conflict' && as.stoppedNoSend && as.keep === 'f', 'autosave: התנגשות — השמירה נעצרת (לא דורסים), עותק מקומי נשמר בנפרד');
+        ok(as.reset.join() === 'saved,9,false', 'autosave: reset אחרי טעינה מחדש');
+        ok(as.find[0] === 'x' && as.find[1] === null && as.find[2] === false, 'findDraft: מציע טיוטה רק כשהיא שונה מהשרת (אחרת מוחק)');
+        ok(as.localOnly.join() === 'dirty,2' && as.localSaved.join() === 'saved,false' && as.text === 'שומר…', 'autosave: בלי שרת — טיוטה בלבד, markSaved');
+
         // history — ביטול / ביצוע
         const hi = await p.evaluate(async () => {
             const { History, snapshots, undoButtons } = await import('../src/js/history.js');
