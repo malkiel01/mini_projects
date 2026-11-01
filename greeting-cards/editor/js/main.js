@@ -5,6 +5,7 @@ import { buildMbe, importMbe, isMbe } from './mbe-io.js';
 import { setColorContext } from './colorpicker.js';
 import { keyOf } from './ui-core/keys.js';   // המקש הפיזי — Ctrl+Z עובד גם במקלדת עברית (ui-core)
 import { TARGETS, openIn } from './handoff.js';
+import { drives, aiCaps, aiMessage, designFromBrief, imageFromPrompt, removeBackground, decompose } from './ai.js';
 import { h, $, toast, sheet, closeSheet, isSheetOpen, confirmDialog, field, rangeField, seg, colorField, toggle, pickFiles, download, timeAgo } from './ui.js';
 import { SIZES, newDoc, textLayer, shapeLayer, imageLayer, backgroundLayer, iconLayer, elementLayer, layerLabel, uid, clone, normalizeDoc } from './doc.js';
 import { ICONS, ICON_GROUPS } from './icons.js';
@@ -21,7 +22,7 @@ import { loadScript } from './io.js';
 import { docVariables, readSheetFile, readPasted, readPhoneContacts, guessColumns, normalizePhone, fileNames, fillText } from './merge.js';
 
 // הגרסה — מופיעה ביומן, כדי לדעת איזה קוד רץ בטלפון.
-const BUILD = '2026-10-31.versions-1';
+const BUILD = '2026-10-31.ai-1';
 
 const app = $('#app');
 let ed = null;   // העיצוב הפתוח: { id, doc, history, canvas, dirty }
@@ -38,6 +39,7 @@ async function showHome() {
     const me = sync.currentUser();
     const tiles = h('div', { class: 'tiles' },
         tile('➕', 'עיצוב חדש', newDesignSheet),
+        tile('✨', 'עצב לי', aiDesignSheet),
         tile('📥', 'ייבוא מהצ\'אט', importSheet),
         tile('🤖', 'סקיל לצ\'אט', skillSheet),
         tile('📂', 'פתיחת קובץ', async () => { const f = await pickFiles(''); if (f.length) runImport(f, ''); }));
@@ -182,6 +184,219 @@ function designMenu(d) {
             try { await sync.removeRemote(d.id); } catch { toast('נמחק מהמכשיר; מהשרת — כשיהיה חיבור', 'error'); }
             showHome(); toast('נמחק');
         } }, '🗑️ מחיקה')));
+}
+
+// ═══ בינה מלאכותית ישירה (מ4) — דרך ענן החבילה ══════════════════════════════
+// בלי חיבור או בלי ספק — מסבירים, ומציעים את הצ'אט (סקיל). שום כפתור לא מוביל למבוי סתום.
+
+/** מה לעשות כשהבינה לא זמינה: חיבור לענן, או הסבר — ותמיד גם הצ'אט. */
+function aiUnavailable(caps, task) {
+    const fallback = h('button', { class: 'btn ghost block', onclick: () => { closeSheet(); skillSheet(); } }, '🤖 דרך הצ\'אט (סקיל) — בלי עלות');
+    if (!caps.connected) return h('div', {},
+        h('p', { class: 'hint' }, caps.status === 'error' ? 'אין חיבור לשרת כרגע.'
+            : 'הבינה המלאכותית עובדת דרך ענן החבילה. מתחברים פעם אחת, ואחר כך זה זמין בכל מכשיר שנכנסים בו לסטודיו.'),
+        caps.status === 'error' ? null : h('button', { class: 'btn primary block', onclick: connectCloud }, '☁️ חיבור לענן החבילה'),
+        fallback);
+    return h('div', {},
+        h('p', { class: 'hint' }, caps.error ? `הענן לא ענה: ${caps.error}`
+            : `מחובר לענן${caps.name ? ` (${caps.name})` : ''}, אבל ${task ? 'לפעולה הזו' : 'לבינה המלאכותית'} עוד לא הוגדר ספק. בעל המערכת מגדיר ספק ומכסה בניהול ענן החבילה.`),
+        fallback);
+}
+
+async function connectCloud() {
+    try {
+        // באפליקציה לאנדרואיד כתובת מחוץ לסטודיו נפתחת בדפדפן — החיבור נשמר בשרת לפי החשבון, ולכן עובד גם כך
+        if (window.GreetingCardsAndroid) toast('נפתח בדפדפן — אחרי האישור חוזרים לכאן');
+        await drives.connect();
+    } catch (e) { toast(aiMessage(e), 'error'); }
+}
+
+function quotaLine(caps) {
+    const q = caps.quota;
+    return q && q.limit ? h('p', { class: 'hint' }, `מכסה: ⁦${q.used ?? 0}/${q.limit}⁩ ${q.unit || ''}`) : null;
+}
+
+/** "עצב לי": תיאור ← תוכנית עיצוב ← רקע ואלמנטים שקופים ← עיצוב חדש בשכבות, כמו ייבוא מהצ'אט. */
+async function aiDesignSheet() {
+    sheet('✨ עצב לי', h('p', { class: 'hint' }, 'בודק חיבור לענן…'));
+    const caps = await aiCaps(true);
+    if (!caps.tasks?.complete || !caps.tasks?.['generate-image']) { sheet('✨ עצב לי', aiUnavailable(caps)); return; }
+    let size = SIZES[0];
+    const brief = h('textarea', { class: 'input', rows: 5, 'aria-label': 'מה לעצב',
+        placeholder: 'למשל: הזמנה לבר מצווה של יונתן, 12.3 בשעה 19:00 באולם הגן, רמת גן. זהב וכחול כהה, חגיגי ואלגנטי.' });
+    const status = h('p', { class: 'hint', role: 'status' });
+    const go = h('button', { class: 'btn primary block' }, '✨ עצב לי');
+    let ctl = null;
+    go.onclick = async () => {
+        if (ctl) { ctl.abort(); return; }
+        const text = brief.value.trim();
+        if (text.length < 8) { toast('כתבו מה לעצב — מה, למי, איזה טקסט, איזה סגנון', 'error'); brief.focus(); return; }
+        ctl = new AbortController();
+        go.textContent = '✕ ביטול';
+        brief.disabled = true;
+        try {
+            const files = await designFromBrief({ brief: text, w: size.w, h: size.h }, { signal: ctl.signal, onStep: t => { status.textContent = t; } });
+            status.textContent = 'מרכיב את השכבות…';
+            await runImport(files, '');
+        } catch (e) {
+            status.textContent = '';
+            toast(aiMessage(e), 'error');
+        } finally {
+            ctl = null;
+            go.textContent = '✨ עצב לי';
+            brief.disabled = false;
+        }
+    };
+    sheet('✨ עצב לי', h('div', {},
+        h('p', { class: 'hint' }, 'כתבו מה לעצב. הבינה המלאכותית מתכננת, יוצרת רקע ואלמנטים בלי טקסט, ומוסיפה את הטקסטים כשכבות — הכול נשאר עריך.'),
+        brief,
+        seg('גודל', SIZES.slice(0, 6).map(s => ({ value: s.id || s.label, label: s.label })), size.id || size.label,
+            v => { size = SIZES.find(s => (s.id || s.label) === v) || size; }),
+        quotaLine(caps),
+        go, status));
+}
+
+/** תמונת השכבה כמו שהיא בעיצוב — אחרי חיתוך. { blob, W, H } בפיקסלי המקור. */
+async function layerImage(l) {
+    const img = ed.canvas.images.get(l.asset);
+    if (!img) throw new Error('התמונה עוד לא נטענה');
+    const c = l.crop || { x: 0, y: 0, w: 1, h: 1 };
+    const sx = c.x * img.naturalWidth, sy = c.y * img.naturalHeight;
+    const W = Math.max(1, Math.round(c.w * img.naturalWidth)), H = Math.max(1, Math.round(c.h * img.naturalHeight));
+    const cv = document.createElement('canvas');
+    cv.width = W; cv.height = H;
+    cv.getContext('2d').drawImage(img, sx, sy, W, H, 0, 0, W, H);
+    return { blob: await canvasToBlob(cv), W, H };
+}
+
+async function addAsset(blob, name = 'ai.png') {
+    const im = await ingestImage(new File([blob], name, { type: blob.type || 'image/png' }));
+    const aid = uid('a');
+    ed.doc.assets[aid] = { type: 'image', src: im.src };
+    ed.canvas.setImage(aid, im.img);
+    return { aid, ...im };
+}
+
+/** פעולת AI ארוכה על שכבה: חלון התקדמות עם ביטול; השינוי — צעד אחד ב"ביטול". */
+async function aiBusy(title, work) {
+    const ctl = new AbortController();
+    const status = h('p', { class: 'hint', role: 'status' }, 'שולח לענן…');
+    sheet(title, h('div', {}, status, h('button', { class: 'btn ghost block', onclick: () => ctl.abort() }, '✕ ביטול')));
+    try {
+        await work(ctl.signal, t => { status.textContent = t; });
+        closeSheet();
+    } catch (e) {
+        closeSheet();
+        toast(aiMessage(e), 'error');
+    }
+}
+
+function aiRemoveBackground(l) {
+    aiBusy('✂️ הסרת רקע', async (signal, step) => {
+        const { blob } = await layerImage(l);
+        step('מסיר את הרקע…');
+        const png = await removeBackground(blob, { signal });
+        const { aid } = await addAsset(png, 'no-background.png');
+        l.asset = aid;
+        delete l.crop;   // החיתוך כבר בתוך התמונה החדשה
+        commit();
+        toast('הרקע הוסר ✓ — ↶ מחזיר');
+    });
+}
+
+/** פירוק: הרקע (מושלם מאחורי העצמים) נשאר בשכבה עצמה, וכל עצם — שכבה שקופה מעליה, בדיוק במקומו. */
+function aiDecompose(l, caps) {
+    aiBusy('🧩 פירוק לשכבות', async (signal, step) => {
+        const { blob } = await layerImage(l);
+        const r = await decompose(blob, { inpaint: !!caps.tasks.inpaint, signal, onStep: step });
+        step('מוסיף את השכבות…');
+        const kx = l.w / r.W, ky = l.h / r.H;
+        const rad = (l.rotation || 0) * Math.PI / 180, cos = Math.cos(rad), sin = Math.sin(rad);
+        const added = [];
+        for (const [i, p] of r.parts.entries()) {
+            let [bx, by, bw, bh] = p.box;
+            if (l.flipX) bx = r.W - bx - bw;
+            if (l.flipY) by = r.H - by - bh;
+            const dx = bx * kx, dy = by * ky;   // היסט בתוך השכבה, לפני הסיבוב שלה (סביב הפינה)
+            const { aid } = await addAsset(p.png, `part-${i + 1}.png`);
+            added.push({ id: uid(), type: 'image', role: 'decoration', name: p.label || `עצם ${i + 1}`, asset: aid,
+                x: l.x + dx * cos - dy * sin, y: l.y + dx * sin + dy * cos, w: bw * kx, h: bh * ky,
+                rotation: l.rotation || 0, opacity: l.opacity ?? 1,
+                ...(l.flipX ? { flipX: true } : {}), ...(l.flipY ? { flipY: true } : {}), ...(l.filters ? { filters: { ...l.filters } } : {}) });
+        }
+        if (r.background) { l.asset = (await addAsset(r.background, 'background-filled.png')).aid; delete l.crop; }
+        const at = ed.doc.layers.indexOf(l);
+        ed.doc.layers.splice(at + 1, 0, ...added);
+        commit();
+        ed.canvas.select(added.map(a => a.id));
+        toast(`${added.length} שכבות חדשות ✓${r.background ? '' : ' (הרקע לא הושלם — אין ספק למילוי)'} — ↶ מחזיר`);
+    });
+}
+
+/** כפתורי AI בתכונות התמונה — נטענים אחרי הבדיקה בענן, ומופיעים רק אם יש ספק. */
+function imageAiRow(l) {
+    const row = h('div', { class: 'row-actions' });
+    aiCaps().then(caps => {
+        if (!caps.connected) return;
+        row.append(...[
+            caps.tasks['remove-background'] ? h('button', { class: 'btn ghost', onclick: () => aiRemoveBackground(l) }, '✂️ הסרת רקע') : null,
+            caps.tasks.segment ? h('button', { class: 'btn ghost', onclick: () => aiDecompose(l, caps) }, '🧩 פירוק לשכבות') : null,
+        ].filter(Boolean));
+    });
+    return row;
+}
+
+/** לשונית "✨ AI" בהוספה: תמונה או אלמנט מתיאור. */
+function aiAddPanel() {
+    const box = h('div', {}, h('p', { class: 'hint' }, 'בודק חיבור לענן…'));
+    aiCaps().then(caps => {
+        if (!caps.tasks?.['generate-image']) { box.replaceChildren(aiUnavailable(caps, true)); return; }
+        let kind = 'element';
+        const prompt = h('textarea', { class: 'input', rows: 3, 'aria-label': 'מה ליצור', placeholder: 'למשל: רימון אדום מבריק עם עלה' });
+        const status = h('p', { class: 'hint', role: 'status' });
+        const go = h('button', { class: 'btn primary block' }, '✨ יצירה');
+        go.onclick = async () => {
+            const text = prompt.value.trim();
+            if (!text) { prompt.focus(); return; }
+            go.disabled = true;
+            status.textContent = 'יוצר…';
+            try {
+                const { width: W, height: H } = ed.doc.page;
+                const size = kind === 'background' ? `${W}x${H}` : '1024x1024';
+                const png = await imageFromPrompt(text, { transparent: kind === 'element', size });
+                const im = await addAsset(png, 'ai.png');
+                closeSheet();
+                if (kind === 'background') {
+                    const bl = backgroundLayer(ed.doc, im.aid, im.w, im.h);
+                    ed.doc.layers.unshift(bl);   // רקע — בתחתית
+                    commit();
+                    ed.canvas.select([bl.id]);
+                } else addLayer({ ...imageLayer(ed.doc, im.aid, im.w, im.h, 'decoration'), name: text.slice(0, 40) });
+            } catch (e) { status.textContent = ''; toast(aiMessage(e), 'error'); }
+            finally { go.disabled = false; }
+        };
+        box.replaceChildren(
+            seg('מה', [{ value: 'element', label: 'אלמנט שקוף' }, { value: 'background', label: 'רקע לעמוד' }], kind, v => { kind = v; }),
+            prompt, h('p', { class: 'hint' }, 'בלי טקסט בתמונה — את הטקסט מוסיפים כשכבה, וכך הוא נשאר עריך.'),
+            quotaLine(caps), go, status);
+    });
+    return box;
+}
+
+/** בחשבון: החיבור לענן החבילה. */
+function cloudRow() {
+    const row = h('div', {}, h('p', { class: 'hint' }, '☁️ ענן החבילה: בודק…'));
+    aiCaps(true).then(caps => {
+        if (caps.status === 'error') { row.replaceChildren(h('p', { class: 'hint' }, '☁️ ענן החבילה: אין חיבור לשרת')); return; }
+        row.replaceChildren(caps.connected
+            ? h('div', {}, h('p', { class: 'hint' }, `☁️ מחובר לענן החבילה${caps.name ? ` (${caps.name})` : ''}.`),
+                h('button', { class: 'btn ghost block', onclick: async () => {
+                    if (!await confirmDialog('לנתק את הסטודיו מענן החבילה?', 'ניתוק')) return;
+                    try { await drives.disconnect(); await aiCaps(true); toast('נותק'); closeSheet(); } catch (e) { toast(aiMessage(e), 'error'); }
+                } }, '⛓️ ניתוק מהענן'))
+            : h('button', { class: 'btn ghost block', onclick: connectCloud }, '☁️ חיבור לענן החבילה (לבינה המלאכותית)'));
+    });
+    return row;
 }
 
 // ═══ ייבוא מהצ'אט וסקיל ═══════════════════════════════════════════════════
@@ -581,7 +796,7 @@ function addSheet() {
             onclick: () => { closeSheet(); addLayer(elementLayer(ed.doc, name)); } }, elementSvg(ELEMENTS[name])))),
     ]));
     const icons = () => iconPicker(name => { closeSheet(); addLayer(iconLayer(ed.doc, name)); });
-    const panels = { 'בסיסי': basic, 'טקסטים מעוצבים': styles, 'אלמנטים': elements, 'אייקונים': icons };
+    const panels = { 'בסיסי': basic, 'טקסטים מעוצבים': styles, 'אלמנטים': elements, 'אייקונים': icons, '✨ AI': aiAddPanel };
     sheet('הוספה', tabs(Object.keys(panels), name => panels[name](), 'add'), { wide: true });
 }
 
@@ -1103,6 +1318,7 @@ function imageProps(l) {
             h('button', { class: 'btn ghost', 'aria-pressed': String(!!l.flipY), onclick: () => { l.flipY = !l.flipY; commit(); } }, '⇵ היפוך אנכי'),
             h('button', { class: 'btn ghost', onclick: () => replaceImage(l) }, '🔄 החלפה'),
             h('button', { class: 'btn ghost', onclick: () => { closeSheet(); cropSheet(l); } }, '✂️ חיתוך')),
+        imageAiRow(l),
         seg('צורה', [{ value: 'none', label: 'רגיל' }, { value: 'rounded', label: 'מעוגל' }, { value: 'circle', label: 'עיגול' }], l.mask || 'none', v => { if (v === 'none') delete l.mask; else l.mask = v; commit(); }),
         rangeField('בהירות', { min: -0.5, max: 0.5, step: 0.01, value: f.brightness, onInput: live(v => { f.brightness = v; }), onCommit: commit }),
         rangeField('ניגודיות', { min: -60, max: 60, value: f.contrast, onInput: live(v => { f.contrast = v; }), onCommit: commit }),
@@ -1768,6 +1984,7 @@ function accountSheet() {
         me.email ? h('p', { class: 'hint', dir: 'ltr' }, me.email) : null,
         h('p', { class: 'hint' }, me.platform ? 'מחובר דרך הכלים הדיגיטליים.' : 'מחובר עם קוד במייל.',
             me.role === 'owner' ? ' · מנהל המערכת' : ''),
+        cloudRow(),
         me.role === 'owner' ? h('button', { class: 'btn ghost block', onclick: gptSetupSheet }, '🤖 הגדרת ה-GPT ב-ChatGPT') : null,
         me.role === 'owner' ? h('a', { class: 'btn ghost block', href: '../admin.html' }, '⚙️ ממשק הניהול') : null,
         me.role === 'owner' ? h('button', { class: 'btn ghost block', onclick: devSheet }, '🛠️ אזור פיתוח') : null,
@@ -1970,6 +2187,12 @@ async function start() {
     try {
         await loadMyFonts().catch(() => {});   // הגופנים שהועלו במכשיר — לפני שעיצוב נפתח ומצויר
         const { user } = await sync.whoami();
+        // חזרה מאישור החיבור בענן החבילה (?cloud=connected | denied)
+        const cloud = new URLSearchParams(location.search).get('cloud');
+        if (cloud) {
+            history.replaceState(null, '', location.pathname + location.hash);
+            setTimeout(() => toast(cloud === 'connected' ? 'מחובר לענן החבילה ✓ — ✨ עצב לי זמין' : 'החיבור לענן בוטל', cloud === 'connected' ? undefined : 'error'), 300);
+        }
         const importCode = /^#import=([A-Za-z0-9-]{9})$/.exec(location.hash)?.[1];
         if (user && importCode) return openChatImport(importCode);
         if (user && takeShared()) return;
