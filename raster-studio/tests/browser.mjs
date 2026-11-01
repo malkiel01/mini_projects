@@ -1139,6 +1139,22 @@ async function main() {
   const nz = await page.evaluate(async () => { await __rs.tools.settle(); return Array.from(await __rs.renderer.readPixels(__rs.doc, 450, 300, 32, 1)).filter((_, i) => i % 4 === 0); });
   const mean = nz.reduce((a, b) => a + b, 0) / nz.length;
   check('רעש: הפיקסלים שונים זה מזה, והממוצע קרוב למקור', new Set(nz).size > 10 && Math.abs(mean - 100) < 20, `${new Set(nz).size} · ${mean.toFixed(1)}`);
+  // פילטרים אמנותיים — על אותה תמונה: אפור 100, ומלבן 160 מ-(300, 100)
+  await adj('edges', {});
+  const ed = [await r0(450, 300), await r0(300, 150)];
+  check('קצוות: אזור אחיד — לבן, הקצה — כהה', ed[0] > 250 && ed[1] < 200, ed.join());
+  await adj('mosaic', { cell: 8 });
+  const mz = [await r0(297, 150), await r0(450, 300), await r0(291, 150)];
+  check('פסיפס 8: התא 296..303 מקבל את המרכז (160), מיושר למסמך; התא שלפניו — 100', Math.abs(mz[0] - 160) <= 1 && Math.abs(mz[1] - 100) <= 1 && Math.abs(mz[2] - 100) <= 1, mz.join());
+  await adj('emboss', { eangle: 0, edepth: 2, eamount: 100 });
+  const em = [await r0(450, 300), await r0(300, 150)];
+  check('תבליט: אזור אחיד — אפור בינוני (128), הקצה המואר — בהיר', Math.abs(em[0] - 128) <= 2 && em[1] > 200, em.join());
+  await adj('oil', { oradius: 4 });
+  const oi = [await r0(302, 150), await r0(297, 150), await r0(450, 300)];
+  check('ציור שמן: הקצה נשאר חד, והאזור האחיד — בלי שינוי', Math.abs(oi[0] - 160) <= 1 && Math.abs(oi[1] - 100) <= 1 && Math.abs(oi[2] - 100) <= 1, oi.join());
+  await page.click('[data-adj-act="apply"]');
+  check('ציור שמן — רשומת "ציור שמן"', await page.evaluate(() => __rs.history.undoStack.at(-1).label) === 'ציור שמן');
+  await page.keyboard.press('Control+z');
   await adj('sharpen', { amount: 0 });
   check('חידוד בכמות 0 — בלי שינוי (לא טשטוש)', Math.abs(await r0(300, 150) - 160) <= 1 && Math.abs(await r0(299, 150) - 100) <= 1);
   await page.click('[data-adj-act="cancel"]');
