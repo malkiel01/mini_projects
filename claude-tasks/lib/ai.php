@@ -80,15 +80,34 @@ function checkProviderKey(string $provider, string $key) {
 
 /* ── בנייה ופענוח לפי ספק ──────────────────────────────────────── */
 
+/**
+ * מודלים שחושבים לפני שהם עונים (Claude 5, Opus 4.6+, GPT-5 / o, Gemini 2.5):
+ * החשיבה נספרת מתוך תקרת הטוקנים. בתקרה של 16 (בדיקת חיבור) או 400 (קטלוג)
+ * החשיבה בולעת הכול והתשובה חוזרת ריקה. לכן התקרה לעולם לא יורדת מכאן —
+ * ומשלמים רק על מה שנוצר בפועל, לא על התקרה.
+ */
+const MIN_OUTPUT_TOKENS = 2048;
+
+/**
+ * ‏Claude שבו אי אפשר לכבות חשיבה (או שהיא פועלת כברירת מחדל): משאלה קצרה כמו
+ * שלנו מבקשים מאמץ נמוך. במודלים ישנים יותר (Haiku 4.5 ומטה) השדה לא נתמך — לא שולחים.
+ */
+function anthropicTakesEffort(string $model): bool {
+    return (bool) preg_match('/^claude-(opus|sonnet|haiku|fable|mythos)-(5|4-[678])/', $model);
+}
+
 /** מחזיר [url, headers, body] לפנייה. */
 function providerRequest(string $provider, string $model, string $system, string $prompt, int $maxTokens): array {
+    $maxTokens = max($maxTokens, MIN_OUTPUT_TOKENS);
     switch ($provider) {
         case 'anthropic':
+            $body = ['model' => $model, 'max_tokens' => $maxTokens, 'system' => $system,
+                     'messages' => [['role' => 'user', 'content' => $prompt]]];
+            if (anthropicTakesEffort($model)) $body['output_config'] = ['effort' => 'low'];
             return [
                 'https://api.anthropic.com/v1/messages',
                 ['Content-Type: application/json', 'anthropic-version: 2023-06-01'],
-                ['model' => $model, 'max_tokens' => $maxTokens, 'system' => $system,
-                 'messages' => [['role' => 'user', 'content' => $prompt]]],
+                $body,
             ];
 
         case 'openai':
@@ -182,7 +201,15 @@ function aiComplete(array $conn, string $system, string $prompt,
     }
 
     $text = providerText($provider, $data);
-    if (trim($text) === '') throw new AppError(PROVIDERS[$provider]['label'] . ' החזיר תשובה ריקה');
+    if (trim($text) === '') {
+        // הסיבה השכיחה: המודל חשב והגיע לתקרה לפני שכתב. אומרים את זה, ולא "ריקה" סתם.
+        $stop = (string) ($data['stop_reason'] ?? $data['choices'][0]['finish_reason'] ?? $data['candidates'][0]['finishReason'] ?? '');
+        if (in_array($stop, ['max_tokens', 'length', 'MAX_TOKENS'], true)) {
+            throw new AppError(PROVIDERS[$provider]['label'] . ": המודל \"$model\" חשב עד התקרה ולא הספיק לענות");
+        }
+        if ($stop === 'refusal') throw new AppError(PROVIDERS[$provider]['label'] . ': המודל סירב לבקשה');
+        throw new AppError(PROVIDERS[$provider]['label'] . ' החזיר תשובה ריקה' . ($stop !== '' ? " ($stop)" : ''));
+    }
     return $text;
 }
 

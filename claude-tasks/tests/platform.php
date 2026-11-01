@@ -424,6 +424,17 @@ check('Gemini — רק מה שמייצר טקסט', array_column($r['models'], '
 $r = providerModels('anthropic', 'sk-ant-xxxxxxxxxxxxxxxxxxxx', $fake(401, ['error' => ['message' => 'bad']]));
 check('מפתח נדחה — גיבוי והסבר', [$r['source'], $r['error']], ['fallback', 'המפתח נדחה']);
 
+echo "\n— מודלים שחושבים —\n";
+[, , $body] = providerRequest('anthropic', 'claude-opus-5-5', 's', 'p', 16);
+check('תקרה זעירה עולה למינימום — החשיבה לא בולעת את התשובה', $body['max_tokens'], MIN_OUTPUT_TOKENS);
+check('Claude 5 — מאמץ נמוך', $body['output_config'] ?? null, ['effort' => 'low']);
+[, , $body] = providerRequest('anthropic', 'claude-haiku-4-5-20251001', 's', 'p', 16);
+check('Haiku 4.5 — בלי output_config (לא נתמך שם)', array_key_exists('output_config', $body), false);
+[, , $body] = providerRequest('openai', 'gpt-5', 's', 'p', 16);
+check('גם ל-OpenAI', $body['max_completion_tokens'], MIN_OUTPUT_TOKENS);
+$thinkOnly = fn ($p, $u, $j, $k) => ['status' => 200, 'body' => json_encode(['content' => [['type' => 'thinking', 'thinking' => '']], 'stop_reason' => 'max_tokens'])];
+throws('חשב עד התקרה — הודעה מסבירה', fn () => aiComplete(['provider' => 'anthropic', 'key' => 'k', 'model' => 'claude-opus-5-5'], 's', 'p', 16, $thinkOnly), 'חשב עד התקרה');
+
 echo "\n════ עברו: $pass · נכשלו: $fail ════\n";
 array_map('unlink', glob("$tmp/*") ?: []);
 @rmdir($tmp);
