@@ -8,6 +8,8 @@ import { createCollabSaver, setPeers } from './collab.js';
 import { choose, confirm, prompt, initDialogs } from './ui-core/dialog.js';
 import { menu } from './ui-core/menu.js';
 import { accountMenu, accountServer } from './ui-core/account.js';
+import { openDocuments } from './ui-core/files-window.js';
+import { librarySource } from './library-source.js';
 
 const tab = Math.random().toString(36).slice(2);
 const GUIDE = 'https://github.com/malkiel01/mini_projects/blob/main/word-processor/docs/integration.md';
@@ -885,7 +887,12 @@ async function adminView() {
                 user: () => me && { name: me.name, email: me.email, admin: me.admin },
                 server,
                 hide: ['units', 'autosave'],   // בעורך: השמירה תמיד אוטומטית, והיחידות — במקומות שלהן (ס"מ / נק')
-                docs: () => { location.hash = '#/'; },
+                // 📁 "המסמכים שלי" — החלון המשותף (שורה 20) מעל הספרייה של העורך; בסגירה — הרשימה מתעדכנת אם היא פתוחה
+                docs: async () => {
+                    let opened = false;
+                    await openDocuments([librarySource(api)], { onOpen: item => { opened = true; location.hash = '#/d/' + item.id; } });
+                    if (!opened && !current) route();
+                },
                 admin: () => { location.hash = '#/admin'; },
                 // יציאה מתוך מסמך — קודם כמו סגירתו (שמירה, ושאלה אם לא נשמר); "להישאר" — לא יוצאים
                 logout: async () => {
