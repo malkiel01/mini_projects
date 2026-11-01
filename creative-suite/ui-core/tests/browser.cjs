@@ -337,6 +337,10 @@ const server = http.createServer((req, res) => {
             rows: [...document.querySelectorAll('dialog[open] .fw-list .card .l1')].map(r => r.textContent) }));
         ok(fw1.tabs.length === 2 && fw1.tabs[0].includes('באפליקציה') && fw1.tabs[1].includes('ענן'), 'files: לשונית לכל מקור');
         ok(fw1.rows[0] === 'כרטיסים' && fw1.rows.length === 3, 'files: תיקיות קודם, ואז קבצים');
+        const bidi = await p.$eval('dialog[open] .fw-list .card:has-text("לוגו") .l1', l => {
+            const [base, e] = l.querySelectorAll('bdi'); return { ext: e?.textContent, extLeft: e && e.getBoundingClientRect().right <= base.getBoundingClientRect().left + 1 };
+        });
+        ok(bidi.ext === '.png' && bidi.extLeft, 'files: "לוגו.png" — השם מימין, הסיומת משמאלו, בלי היפוך');
         await p.click('dialog[open] .fw-list .card:has-text("כרטיסים")');
         await p.waitForSelector('dialog[open] .fw-list .card:has-text("שנה טובה")');
         ok((await p.$$eval('dialog[open] .fw-crumbs .btn', b => b.map(x => x.textContent))).join('/') === 'באפליקציה/כרטיסים', 'files: כניסה לתיקייה ופירורי לחם');

@@ -28,6 +28,11 @@ import { toast } from './toast.js';
 
 const ICON = { folder: '📁', mbe: '🧩', png: '🖼', jpg: '🖼', jpeg: '🖼', svg: '✒️', pdf: '📄', docx: '📝', txt: '📃' };
 const ext = name => (/\.([a-z0-9]+)$/i.exec(name || '')?.[1] || '').toLowerCase();
+/** שם בשורה: הבסיס מבודד (<bdi>), והסיומת הלטינית מבודדת משמאל לימין — "סידור.mbe" לא מתהפך (לקח מהעימוד). */
+const nameParts = it => {
+    const e = it.kind === 'folder' ? '' : ext(it.name);
+    return e ? [h('bdi', it.name.slice(0, -e.length - 1)), h('bdi.fw-ext', { dir: 'ltr' }, '.' + e)] : [h('bdi', it.name)];
+};
 const iconOf = it => it.icon || (it.kind === 'folder' ? ICON.folder : ICON[ext(it.name)] || '📄');
 
 export function fmtSize(n) {
@@ -123,7 +128,7 @@ export function filesWindow(sources, { mode = 'manage', title, accept = [], name
 
         function render() {
             crumbs.replaceChildren(h('button.btn.sm', { type: 'button', onclick: () => go(null) }, src.title),
-                ...path.flatMap(p => [h('span.muted', { 'aria-hidden': 'true' }, '‹'), h('button.btn.sm', { type: 'button', onclick: () => go(p.id) }, p.name)]));
+                ...path.flatMap(p => [h('span.muted', { 'aria-hidden': 'true' }, '‹'), h('button.btn.sm', { type: 'button', onclick: () => go(p.id) }, h('bdi', p.name))]));
             let shown = items.filter(okType);
             if (query) shown = shown.filter(it => it.name.toLowerCase().includes(query.toLowerCase()));
             shown.sort((a, b) => (a.kind === 'folder' ? 0 : 1) - (b.kind === 'folder' ? 0 : 1) || a.name.localeCompare(b.name, 'he'));
@@ -138,7 +143,7 @@ export function filesWindow(sources, { mode = 'manage', title, accept = [], name
                 onclick: e => { e.stopPropagation(); menu(e.currentTarget, actions(it)); } }, '⋯') : null;
             return h('li.card', { tabindex: '0', onclick: () => pick(it), onkeydown: e => { if (e.key === 'Enter') pick(it); } },
                 h('span.use-ic', { 'aria-hidden': 'true' }, iconOf(it)),
-                h('div.body', h('div.l1', h('span', it.name)), sub ? h('div.l2', sub) : null),
+                h('div.body', h('div.l1', h('span', ...nameParts(it))), sub ? h('div.l2', sub) : null),
                 more);
         }
 

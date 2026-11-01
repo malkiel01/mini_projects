@@ -267,6 +267,7 @@ dialog > form { display: flex; flex-direction: column; max-height: inherit; heig
 .fw-save { position: sticky; bottom: calc(-1 * var(--s4)); display: flex; align-items: flex-end; gap: var(--s2); padding: var(--s2) 0;
     background: var(--surface); border-top: 1px solid var(--line); }
 .fw-save .f { flex: 1; }
+.fw-ext { color: var(--muted); }
 .fw-name { display: flex; align-items: center; gap: var(--s1); }
 
 /* ---- ידיות (handles.js) — גודל קבוע במסך; האירועים עוברים לאפליקציה ---- */
