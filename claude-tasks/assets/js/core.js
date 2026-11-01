@@ -36,6 +36,7 @@ export const state = {
   platform: false,
   topics: [],
   topicId: null,
+  projectId: null,
   status: 'active',
   search: '',
   tasks: [],

@@ -70,6 +70,8 @@
 <div class="app" id="app" hidden>
 
   <header class="top">
+    <!-- חזרה — רמה אחת למעלה בעץ הפרויקטים; במסך הראשי אין חץ -->
+    <button type="button" class="icon-btn" id="backBtn" aria-label="חזרה" title="חזרה" hidden>→</button>
     <button type="button" class="icon-btn" id="menuBtn" aria-label="נושאים" title="נושאים">☰</button>
     <div class="titles">
       <h1>מטלות לקלוד</h1>
@@ -82,6 +84,27 @@
   </header>
 
   <main id="main" tabindex="-1">
+    <nav class="crumbs" id="crumbs" aria-label="מיקום" hidden></nav>
+
+    <!-- מסך ארוך → שתי לשוניות: הפרויקטים ברמה הזאת, והמטלות של כל הענף -->
+    <div class="seg-tabs view-tabs" id="viewTabs" role="tablist" aria-label="תצוגה" hidden>
+      <button type="button" role="tab" data-view="projects" aria-selected="true">📁 <span id="vtProjLabel">פרויקטים</span> <small id="vtProjCount"></small></button>
+      <button type="button" role="tab" data-view="tasks" aria-selected="false">📋 מטלות <small id="vtTaskCount"></small></button>
+    </div>
+
+    <!-- הפרויקטים ברמה הזאת: במסך הראשי — פרויקטי האב; בתוך פרויקט — תתי-הפרויקטים שלו -->
+    <section class="projects-sec" id="projSection" aria-labelledby="projSecTitle">
+      <div class="sec-head">
+        <h2 class="sec-title" id="projSecTitle">פרויקטים</h2>
+        <button type="button" class="btn ghost sm" id="projImportBtn" hidden>⬇ ייבוא מהריפו</button>
+        <button type="button" class="btn ghost sm" id="projAddBtn"><span aria-hidden="true">+</span> <span id="projAddLabel">פרויקט</span></button>
+      </div>
+      <ul class="list" id="projRows"></ul>
+      <p class="empty" id="projEmpty" hidden></p>
+    </section>
+
+    <section id="tasksSection" aria-labelledby="tasksTitle">
+    <h2 class="sec-title" id="tasksTitle">מטלות</h2>
     <!-- המצב והסינון — אותו רכיב: המספר הוא גם הכפתור -->
     <div class="seg-tabs" id="statusChips" role="tablist" aria-label="סינון לפי מצב">
       <button type="button" role="tab" data-status="active" aria-selected="true"><b data-count="active">0</b>פעילות</button>
@@ -98,8 +121,29 @@
 
     <ul class="list" id="list" aria-live="polite"></ul>
     <div class="empty" id="empty" hidden></div>
+    </section>
   </main>
 </div>
+
+<!-- ── פרויקט / תת-פרויקט חדש ────────────────────────────────── -->
+<dialog id="projNew" aria-labelledby="projNewTitle">
+  <form class="sheet-wrap" id="projNewForm">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close="projNew" aria-label="סגירה">✕</button>
+      <h2 id="projNewTitle">פרויקט חדש</h2>
+      <button type="submit" class="btn primary">יצירה</button>
+    </header>
+    <div class="sheet-body">
+      <p class="hint" id="projNewHint"></p>
+      <div class="fields">
+        <label class="field" style="grid-column: 1 / -1"><span>שם</span><input type="text" id="pnName" required maxlength="80"></label>
+        <label class="field" id="pnPathWrap"><span>תיקייה בריפו</span><input type="text" id="pnPath" dir="ltr" placeholder="recipes-app" maxlength="120"></label>
+        <label class="field" id="pnRepoWrap"><span>ריפו (owner/name)</span><input type="text" id="pnRepo" dir="ltr" placeholder="malkiel01/mini_projects" maxlength="200"></label>
+        <label class="field"><span>סמל</span><input type="text" id="pnIcon" maxlength="8" placeholder="📁"></label>
+      </div>
+    </div>
+  </form>
+</dialog>
 
 <!-- ── מטלה חדשה ─────────────────────────────────────────────── -->
 <dialog id="newTask" aria-labelledby="newTaskTitle">

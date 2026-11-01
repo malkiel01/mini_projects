@@ -202,11 +202,22 @@ try {
     /* ── נושאים ────────────────────────────────────────────────── */
 
     case 'topics': {
-        $rows = db()->query(
-            'SELECT t.*, (SELECT COUNT(*) FROM tasks k
-                           WHERE k.topic_id = t.id AND k.status NOT IN ("done","cancelled")) open_count
-               FROM topics t WHERE archived = 0 ORDER BY t.name'
-        )->fetchAll();
+        // בתוך פרויקט — הנושאים (השלבים) של הענף שלו, ואחריהם הכלליים.
+        $where = 'archived = 0';
+        $targs = [];
+        if (($pid = int_or_null($in, 'project_id')) !== null) {
+            requireProject($pid, requireUser($user), 'read');
+            $ids = projectSubtree($pid);
+            $where .= ' AND (t.project_id IS NULL OR t.project_id IN (' . implode(',', array_fill(0, count($ids), '?')) . '))';
+            $targs = $ids;
+        }
+        $st = db()->prepare(
+            "SELECT t.*, (SELECT COUNT(*) FROM tasks k
+                           WHERE k.topic_id = t.id AND k.status NOT IN ('done','cancelled')) open_count
+               FROM topics t WHERE $where ORDER BY t.project_id IS NULL, t.name"
+        );
+        $st->execute($targs);
+        $rows = $st->fetchAll();
         // מטלות שלא שויכו — הן שמזינות את כפתור "קטלג את מה שנשאר".
         $un = (int) db()->query(<<<SQL
             SELECT COUNT(*) c FROM tasks WHERE topic_id IS NULL AND status NOT IN ('done','cancelled')
@@ -218,10 +229,12 @@ try {
         $me   = requireUser($user);
         $name = str_field($in, 'name', 80);
         if ($name === '') fail('חסר שם לנושא');
-        db()->prepare('INSERT INTO topics (name, description, repo, keywords, created_by, created_at)
-                       VALUES (?,?,?,?,?,?)')
+        $tpid = int_or_null($in, 'project_id');
+        if ($tpid !== null) requireProject($tpid, $me, 'write');
+        db()->prepare('INSERT INTO topics (name, description, repo, keywords, created_by, created_at, project_id)
+                       VALUES (?,?,?,?,?,?,?)')
             ->execute([$name, str_field($in, 'description', 2000), str_field($in, 'repo', 120),
-                       str_field($in, 'keywords', 1000), $me['id'], nowTs()]);
+                       str_field($in, 'keywords', 1000), $me['id'], nowTs(), $tpid]);
         ok(['id' => (int) db()->lastInsertId()]);
 
     /**
@@ -250,13 +263,25 @@ try {
     /* ── מטלות ─────────────────────────────────────────────────── */
 
     case 'tasks': {
-        $sql  = 'SELECT k.*, t.name topic_name, u.display_name author_name,
+        $sql  = 'SELECT k.*, t.name topic_name, u.display_name author_name, p.name project_name, p.icon project_icon,
                         (SELECT COUNT(*) FROM notes n WHERE n.task_id = k.id) note_count
                    FROM tasks k
                    LEFT JOIN topics t ON t.id = k.topic_id
                    LEFT JOIN users  u ON u.id = k.created_by
+                   LEFT JOIN projects p ON p.id = k.project_id
                   WHERE 1=1';
         $args = [];
+
+        // פרויקט — הוא וכל תתי-הפרויקטים שלו. המונים לפי אותו ענף.
+        $scope = '';
+        $scopeArgs = [];
+        if (($pid = int_or_null($in, 'project_id')) !== null) {
+            requireProject($pid, requireUser($user), 'read');
+            $ids = projectSubtree($pid);
+            $scope = ' AND k.project_id IN (' . implode(',', array_fill(0, count($ids), '?')) . ')';
+            $scopeArgs = $ids;
+            $sql .= $scope; $args = array_merge($args, $ids);
+        }
 
         // 'none' = דווקא מה שלא שויך. זה המסך שבו מתקנים את מה שהקטלוג
         // לא הצליח לסווג, ולכן הוא צריך סינון משלו.
@@ -287,7 +312,15 @@ try {
 
         $st = db()->prepare($sql);
         $st->execute($args);
-        ok(['tasks' => $st->fetchAll(), 'counts' => statusCounts(db(), $tid, $unassigned)]);
+        if ($scope === '') {
+            ok(['tasks' => $st->fetchAll(), 'counts' => statusCounts(db(), $tid, $unassigned)]);
+        }
+        $c = db()->prepare('SELECT k.status, COUNT(*) c FROM tasks k WHERE 1=1' . $scope
+            . ($unassigned ? ' AND k.topic_id IS NULL' : ($tid !== null ? ' AND k.topic_id = ?' : '')) . ' GROUP BY k.status');
+        $c->execute(array_merge($scopeArgs, (!$unassigned && $tid !== null) ? [$tid] : []));
+        $counts = array_fill_keys(STATUSES, 0);
+        foreach ($c->fetchAll() as $row) $counts[$row['status']] = (int) $row['c'];
+        ok(['tasks' => $st->fetchAll(), 'counts' => $counts]);
     }
 
     case 'task': {
@@ -709,14 +742,26 @@ try {
 
     case 'create-project': {
         $me = requireUser($user);
+        $parent = int_or_null($in, 'parent_id');
+        if ($parent !== null) {
+            ok(['id' => createSubproject($me, $parent, str_field($in, 'name', 80),
+                                         str_field($in, 'path', 120), str_field($in, 'icon', 8))]);
+        }
         $id = createProject($me,
             str_field($in, 'name', 80),
             str_field($in, 'repo_owner', 100),
             str_field($in, 'repo_name', 100),
             str_field($in, 'default_branch', 100, 'main'),
             str_field($in, 'description', 2000));
+        if (($icon = str_field($in, 'icon', 8)) !== '') {
+            db()->prepare('UPDATE projects SET icon = ? WHERE id = ?')->execute([$icon, $id]);
+        }
         ok(['id' => $id]);
     }
+
+    /** תתי-פרויקטים מכל תיקייה עם app.json בריפו של האב. */
+    case 'import-subprojects':
+        ok(importSubprojects(requireUser($user), (int) ($in['parent_id'] ?? 0)));
 
     case 'project': {
         $me      = requireUser($user);
@@ -733,7 +778,7 @@ try {
 
         $sets = []; $args = [];
         foreach (['name' => 80, 'description' => 2000, 'default_branch' => 100,
-                  'check_command' => 300] as $f => $max) {
+                  'check_command' => 300, 'icon' => 8] as $f => $max) {
             if (array_key_exists($f, $in)) { $sets[] = "$f = ?"; $args[] = str_field($in, $f, $max); }
         }
         if (!$sets) fail('אין מה לעדכן');
