@@ -572,3 +572,47 @@ function moveProject(array $user, int $projectId, ?int $parentId): void {
     db()->prepare('UPDATE projects SET parent_id = ? WHERE id = ?')->execute([$parentId, $projectId]);
     logEvent($user, 'project.move', "project:$projectId", true, 'parent:' . ($parentId ?? 'none'));
 }
+
+/* ── עריכה ומחיקה של פרויקט ───────────────────────────────────────── */
+
+/** תיקייה בריפו — אותם כללים כמו ביצירת תת-פרויקט. */
+function cleanProjectPath(string $path): string {
+    $path = trim(str_replace('\\', '/', $path), '/ ');
+    if ($path === '' || !preg_match('#^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$#', $path) || str_contains($path, '..')) {
+        throw new InvalidArgumentException('התיקייה אינה תקינה — למשל recipes-app');
+    }
+    return $path;
+}
+
+/** מחליף את התיקייה של תת-פרויקט. אותה תיקייה פעמיים תחת אותו אב — נדחה. */
+function setProjectPath(array $project, string $path): string {
+    if (empty($project['parent_id'])) throw new InvalidArgumentException('לפרויקט אב אין תיקייה — יש לו ריפו');
+    $path = cleanProjectPath($path);
+    $dup = db()->prepare('SELECT id FROM projects WHERE parent_id = ? AND path = ? AND archived = 0 AND id <> ?');
+    $dup->execute([$project['parent_id'], $path, $project['id']]);
+    if ($dup->fetch()) throw new InvalidArgumentException("כבר יש תת-פרויקט לתיקייה $path");
+    return $path;
+}
+
+/**
+ * מוחק פרויקט — רק ריק: בלי מטלות (גם לא סגורות) ובלי תתי-פרויקטים. פרויקט
+ * עם תוכן לא נמחק לעולם מכאן: קודם מעבירים את מה שבו. המחיקה היא הסתרה
+ * (archived = 1), והאסימון שלו נפסל. שלבים ריקים שלו מוסתרים איתו.
+ */
+function deleteProject(array $user, int $projectId): void {
+    $project = requireProject($projectId, $user, 'admin');
+    $n = db()->prepare('SELECT COUNT(*) c FROM tasks WHERE project_id = ?');
+    $n->execute([$projectId]);
+    $tasks = (int) $n->fetch()['c'];
+    $k = db()->prepare('SELECT COUNT(*) c FROM projects WHERE parent_id = ? AND archived = 0');
+    $k->execute([$projectId]);
+    $kids = (int) $k->fetch()['c'];
+    if ($tasks || $kids) {
+        throw new AppError('אפשר למחוק רק פרויקט ריק. ב"' . $project['name'] . '" יש '
+            . ($tasks ? "$tasks מטלות" : '') . ($tasks && $kids ? ' ו-' : '') . ($kids ? "$kids תתי-פרויקטים" : '')
+            . ' — קודם להעביר אותם', 409);
+    }
+    db()->prepare("UPDATE projects SET archived = 1, agent_token = '' WHERE id = ?")->execute([$projectId]);
+    db()->prepare('UPDATE topics SET archived = 1 WHERE project_id = ?')->execute([$projectId]);
+    logEvent($user, 'project.delete', "project:$projectId", true, (string) $project['name']);
+}

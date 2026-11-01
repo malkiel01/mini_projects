@@ -224,6 +224,7 @@ export async function openProject(id) {
     el('span', { class: 'badge', text: `הרשאתך: ${{ read: 'צפייה', write: 'כתיבה', admin: 'ניהול' }[project.my_level]}` }),
   );
 
+  renderEdit(project);
   renderOwnerTools(project);
   renderMembers(members);
   $('#pvAddMember').hidden = project.my_level !== 'admin';
@@ -236,6 +237,41 @@ export async function openProject(id) {
   await browse('');
   $('#projectView').showModal();
 }
+
+/* פרטי הפרויקט — שם, סמל, תיקייה. למנהל הפרויקט. */
+function renderEdit(project) {
+  const admin = project.my_level === 'admin';
+  $('#pvEdit').hidden = !admin;
+  if (!admin) return;
+  $('#peName').value = project.name || '';
+  $('#peIcon').value = project.icon || '';
+  $('#pePath').value = project.path || '';
+  $('#pePathWrap').hidden = !project.parent_id;
+}
+
+on('#pvEdit', 'submit', async (e) => {
+  e.preventDefault();
+  const p = state.openProject;
+  const patch = { id: p.id, name: $('#peName').value.trim(), icon: $('#peIcon').value.trim() };
+  if (p.parent_id) patch.path = $('#pePath').value.trim();
+  try {
+    await api('update-project', patch);
+    $('#pvTitle').textContent = patch.name;
+    Object.assign(p, patch);
+    toast('נשמר', 'ok');
+  } catch (ex) { toast(ex.message, 'error'); }
+});
+
+on('#peDelete', 'click', async () => {
+  const p = state.openProject;
+  if (!confirm(`למחוק את "${p.name}"? אפשר למחוק רק פרויקט ריק.`)) return;
+  try {
+    await api('delete-project', { id: p.id });
+    toast('הפרויקט נמחק', 'ok');
+    // אם עמדנו בתוכו — חוזרים למסך הראשי
+    setTimeout(() => location.reload(), 600);
+  } catch (ex) { toast(ex.message, 'error'); }
+});
 
 /*
  * בעל הלוח: "רק בעל הלוח" (owner_only), והעברה לתוך פרויקט אחר.

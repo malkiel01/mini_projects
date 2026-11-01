@@ -274,3 +274,5 @@ dialog > form.sheet-wrap { margin: 0; }
 .pick--topic { font-weight: 600; background: var(--bg); }
 .pick--task { padding-inline-start: calc(var(--s3) + 28px); font-size: .9rem; }
 .pick--none { cursor: default; color: var(--muted); }
+
+.danger-text { color: var(--danger); }

@@ -802,6 +802,11 @@ try {
         ok(['id' => $id]);
     }
 
+    /** מחיקת פרויקט — רק ריק (deleteProject). */
+    case 'delete-project':
+        deleteProject(requireUser($user), (int) ($in['id'] ?? 0));
+        ok();
+
     /** ⚠ זמני — ראה moveProject. ‏{ id, parent_id|null } */
     case 'move-project':
         moveProject(requireUser($user), (int) ($in['id'] ?? 0), int_or_null($in, 'parent_id'));
@@ -842,6 +847,9 @@ try {
                   'check_command' => 300, 'icon' => 8] as $f => $max) {
             if (array_key_exists($f, $in)) { $sets[] = "$f = ?"; $args[] = str_field($in, $f, $max); }
         }
+        // תיקייה בריפו — לתת-פרויקט בלבד
+        if (array_key_exists('path', $in)) { $sets[] = 'path = ?'; $args[] = setProjectPath($project, str_field($in, 'path', 120)); }
+        if (array_key_exists('name', $in) && str_field($in, 'name', 80) === '') fail('חסר שם לפרויקט');
         // owner_only — רק בעל הלוח: זה מה שמגביל את מנהלי הפרויקט עצמם.
         if (array_key_exists('owner_only', $in)) {
             if (authorRole($me) !== 'owner') fail('רק בעל הלוח יכול לסמן ענף "רק בעל הלוח"', 403);
