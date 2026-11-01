@@ -188,6 +188,15 @@ function noteKind(?array $user, array $task, string $requested): string {
 }
 
 /**
+ * הפרויקטים ש-tasks?project_id= מחזיר. ברירת המחדל — כל הענף (הממשק נשען על
+ * זה); subtree=0 — רק הפרויקט עצמו.
+ */
+function taskScopeIds(int $projectId, $subtree = null): array {
+    $exact = $subtree === 0 || $subtree === '0' || $subtree === false;
+    return $exact ? [$projectId] : projectSubtree($projectId);
+}
+
+/**
  * מטלה שמשתמש רשאי לגעת בה. מטלה בלי פרויקט — כל מחובר, כמו היום; מטלה
  * בפרויקט — הדרגה שנדרשה בפרויקט שלה.
  */

@@ -91,6 +91,26 @@ check('member בענף owner_only — המטלה נשארת חסומה', [$r['re
 $r = addNote(db(), $locked, 'בעל הלוח', noteKind($boss, row($locked), 'comment'), 'כן, תמשיך', 'owner', 1);
 check('owner — המטלה חוזרת לתור', [$r['reopened'], row($locked)['status']], [true, 'answered']);
 
+echo "\n— הרשאה למטלה אחת (task, add-note: read · update-task: write) —\n";
+$outsider = (function () { createUser('zvi', 'pass-12345', 'צבי');
+    return ['id' => 4, 'role' => 'member', 'username' => 'zvi', 'display_name' => 'צבי']; })();
+$denied = function (array $u, int $task, string $lvl): bool {
+    try { requireTaskAccess($u, row($task), $lvl); return false; } catch (AppError $e) { return $e->status === 403; }
+};
+check('לא חבר — לא קורא מטלה של פרויקט', $denied($outsider, $plain, 'read'), true);
+check('צופה — קורא', $denied($rami, $plain, 'read'), false);
+check('צופה — לא עורך (update-task)', $denied($rami, $plain, 'write'), true);
+check('כותבת — עורכת', $denied($dana, $plain, 'write'), false);
+check('בעל הלוח — עורך הכול', $denied($boss, $locked, 'write'), false);
+check('מטלה בלי פרויקט — כל מחובר, כמו קודם', $denied($outsider, $loose, 'write'), false);
+
+echo "\n— subtree —\n";
+$all = taskScopeIds($root); sort($all);
+check('ברירת מחדל — כל הענף', $all, [$root, $app, $suite, $raster]);
+check('subtree=0 — רק הפרויקט', taskScopeIds($root, 0), [$root]);
+check('subtree="0" (מחרוזת) — רק הפרויקט', taskScopeIds($root, '0'), [$root]);
+check('subtree=1 — כל הענף', count(taskScopeIds($root, 1)), 4);
+
 echo "\n— owner_only בירושה —\n";
 check('הפרויקט שסומן', projectOwnerOnly($suite), true);
 check('תת-פרויקט שלו — בירושה', projectOwnerOnly($raster), true);

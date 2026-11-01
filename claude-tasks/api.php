@@ -306,9 +306,7 @@ try {
         $scopeArgs = [];
         if (($pid = int_or_null($in, 'project_id')) !== null) {
             requireProject($pid, requireUser($user), 'read');
-            // ברירת המחדל — כל הענף (הממשק נשען על זה). subtree=0 — רק הפרויקט עצמו.
-            $sub = $in['subtree'] ?? 1;
-            $ids = ($sub === 0 || $sub === '0' || $sub === false) ? [$pid] : projectSubtree($pid);
+            $ids = taskScopeIds($pid, $in['subtree'] ?? null);
             $scope = ' AND k.project_id IN (' . implode(',', array_fill(0, count($ids), '?')) . ')';
             $scopeArgs = $ids;
             $sql .= $scope; $args = array_merge($args, $ids);
