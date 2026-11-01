@@ -16,6 +16,8 @@ require_once __DIR__ . '/../lib/drive.php';
 require_once __DIR__ . '/../lib/clients.php';
 require_once __DIR__ . '/../lib/ai.php';
 require_once __DIR__ . '/../lib/fonts.php';
+require_once __DIR__ . '/../lib/me.php';
+require_once __DIR__ . '/../lib/ui-core/account/account.php';
 
 $fails = 0; $n = 0;
 function check(string $name, bool $ok): void {
@@ -477,6 +479,30 @@ try {
     })();
     check('אפליקציה בלי הרשאת libs — לא רואה את הגופנים', code(fn() => actor('fonts_list', 'libs', '')) === 'forbidden');
     unset($_SERVER['HTTP_X_CLOUD_TOKEN']);
+
+    // ─── 👤 תפריט המשתמש: הגדרות, ייצוא ומחיקת חשבון (ui-core/php/account) ───
+    as_platform(['sub' => '77', 'name' => 'רותם', 'email' => 'rotem@example.com']);
+    $r = requireAccount();
+    adminAccount($owner, ['account' => $r['id'], 'quota' => 100000]);
+    $r = getAccount($r['id']);
+    $hooks = ['app' => 'suite-cloud', 'pdo' => fn() => db(), 'user' => fn() => currentAccount()['id'] ?? null,
+              'export' => fn($uid) => accountExport(requireAccount()), 'delete' => fn($uid) => accountDelete(requireAccount())];
+    uic_account_api('account_prefs_set', ['ns' => 'general', 'value' => ['theme' => 'dark']], $hooks);
+    check('הגדרות אישיות — נשמרות במסד של הענן', uic_account_api('account_prefs', [], $hooks)['prefs']['general']['theme'] === 'dark');
+    $only = writeFile($r, ['name' => 'רק-שלי.txt', 'content_b64' => b64('ייחודי-לרותם')]);
+    $shared = writeFile($r, ['name' => 'משותף.txt', 'content_b64' => b64('תוכן-משותף')]);
+    writeFile($owner, ['name' => 'גם-אצלי.txt', 'content_b64' => b64('תוכן-משותף')]);   // אותו תוכן בחשבון אחר
+    $dir = makeFolder($r, ['name' => 'תיקייה']);
+    $exp = uic_account_api('account_export', [], $hooks);
+    check('ייצוא — העץ, הגופנים, החיבורים וההגדרות', count($exp['data']['nodes']) === 3 && isset($exp['data']['fonts'], $exp['data']['connections'])
+        && $exp['data']['account']['email'] === 'rotem@example.com' && !isset($exp['data']['nodes'][0]['account']));
+    check('מחיקה בלי אישור — נדחית', (function () use ($hooks) { try { uic_account_api('account_delete', [], $hooks); return false; } catch (UicAccountError) { return true; } })());
+    uic_account_api('account_delete', ['confirm' => 'DELETE'], $hooks);
+    check('מחיקת חשבון — החשבון והעץ נמחקו', !db()->query("SELECT 1 FROM accounts WHERE email = 'rotem@example.com'")->fetchColumn()
+        && !db()->query("SELECT 1 FROM nodes WHERE id = " . db()->quote($dir['id']))->fetchColumn()
+        && !db()->query("SELECT 1 FROM uic_prefs WHERE user_id = " . db()->quote($r['id']))->fetchColumn());
+    check('התוכן שרק שלו — נמחק מהדיסק; תוכן שגם של אחר — נשאר', !is_file(blobPath($only['sha256'])) && is_file(blobPath($shared['sha256'])));
+    check('כניסה הבאה — חשבון חדש, ריק', ($n2 = requireAccount())['id'] !== $r['id'] && listFolder($n2, null)['items'] === []);
 } catch (Throwable $e) {
     $fails++;
     echo "✗ חריגה: " . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n";

@@ -60,3 +60,4 @@
 - **2026-11-01** — Dropbox במודול הכוננים: App key אחד בניהול, PKCE, דף העברה אחד (`oauth/dropbox.php`), `drives.dropbox` ו-`drives.list()`; סונכרן לכרטיסי ברכה, לרסטר ולעימוד. ממתין ל-App key מבעל המערכת.
 - **2026-11-01** — ספק רביעי: Anthropic (Claude) למשימה `complete` (טקסט / JSON, עם תמונות), `claude-opus-5-5`. המפתח — בניהול, 🤖.
 - **2026-11-01** — הגופנים המובנים: 10 קבצי OFL (Rubik, Heebo, Assistant, Frank Ruhl Libre, Noto Serif Hebrew — משתנים; Amatic SC, David Libre, Secular One) ב-`suite-cloud/fonts/builtin/`, `drives.fonts.list({ builtin: true })`, ושער קטלוג בפריסה.
+- **2026-11-01** — 👤 תפריט המשתמש (שורה 19 ✅): `accountMenu` בדף, הגדרות במסד של הענן, ייצוא ומחיקת חשבון מלאה (`lib/me.php`). שורה 20 — `—`: הענן הוא המקור של חלון הקבצים.
