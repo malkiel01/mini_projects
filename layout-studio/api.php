@@ -89,6 +89,17 @@ if (in_array($_GET['action'] ?? '', ['doc_import', 'mbe_source'], true)) {
     }
 }
 
+// גופן של המשתמש (מהענן או מהמכשיר): POST ?action=font_upload, גוף = קובץ ה-TTF
+if (($_GET['action'] ?? '') === 'font_upload') {
+    try {
+        ls_out(['ok' => true] + ls_font_put($uid, file_get_contents('php://input') ?: ''));
+    } catch (InvalidArgumentException $e) {
+        ls_fail($e->getMessage(), $e->getMessage() === 'too_big' ? 413 : 400);
+    } catch (Throwable $e) {
+        error_log('layout-studio: ' . $e->getMessage());
+        ls_fail('server', 500);
+    }
+}
 if (($_GET['action'] ?? '') === 'media_upload') {
     try {
         ls_out(['ok' => true] + ls_media_put($uid, file_get_contents('php://input') ?: ''));

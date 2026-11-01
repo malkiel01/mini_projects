@@ -14,6 +14,7 @@ const STATIC_WEIGHTS = [700, 900];
 
 /** מפתח הגופן ברשימה (מה שהשרת מתרגם לקובץ), לפי השם של הגופן הטעון: "Noto Serif Hebrew" / "…@wght700". */
 export function fontKey(f) {
+  if (f.key) return f.key;   // גופן של המשתמש (model.fonts) — הקובץ עצמו מהאחסון שלו, באותו משקל
   const [family, axes = ''] = f.name.split('@');
   const file = FONTS[family];
   if (!file) throw new Error('font ' + f.name);

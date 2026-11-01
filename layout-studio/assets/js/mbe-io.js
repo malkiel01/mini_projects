@@ -31,7 +31,7 @@ export function mediaRefs(doc) {
   return out;
 }
 
-const TYPE = { png: 'image/png', jpg: 'image/jpeg', webp: 'image/webp' };
+const TYPE = { png: 'image/png', jpg: 'image/jpeg', webp: 'image/webp', ttf: 'font/ttf' };
 
 /**
  * בניית הקובץ.

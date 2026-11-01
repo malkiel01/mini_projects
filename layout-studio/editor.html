@@ -222,10 +222,12 @@
             <button type="button" role="tab" data-key="h2" aria-selected="false">כותרת 2</button>
             <button type="button" role="tab" data-key="h3" aria-selected="false">כותרת 3</button>
           </div>
-          <fieldset class="seg" aria-label="גופן">
+          <fieldset class="seg wrap" aria-label="גופן" id="st-fonts">
             <label><input type="radio" name="font" value="Noto Serif Hebrew"><span>Noto Serif Hebrew</span></label>
             <label><input type="radio" name="font" value="Frank Ruhl Libre"><span>Frank Ruhl Libre</span></label>
           </fieldset>
+          <button class="btn ghost sm" type="button" id="font-add">➕ גופן אחר — מהענן או מהמכשיר</button>
+          <input type="file" id="font-file" accept=".ttf,font/ttf" hidden>
           <div class="fields two">
             <label class="f"><span>גודל (נק')</span><input name="tsize" inputmode="decimal" dir="ltr"></label>
             <label class="f"><span>מרווח שורות (נק')</span><input name="tlead" inputmode="decimal" dir="ltr"></label>
