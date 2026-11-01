@@ -53,7 +53,7 @@ export async function ensureDocFonts(doc) {
 // גשר עד ספריית הגופנים של ענן החבילה (creative-suite/docs/spec/shared.md סעיף 4): הקובץ ב-IndexedDB, הרשימה במכשיר,
 // וכל גופן שמשמש טקסט מוטמע בעיצוב עצמו (doc.fonts) — כך העיצוב נפתח נכון גם במכשיר אחר, ב-‎.gcard וב-‎.mbe.
 
-const MY_KEY = 'gc-my-fonts';      // [{ family, weight, style, src }]
+const MY_KEY = 'gc-my-fonts';      // [{ family, weight, style, src, lib? }] — lib: { cloud, item, rev } כשהגופן בספריית הענן
 const registered = new Set();
 const faceKey = a => `${a.family}|${a.weight || 400}|${a.style || 'normal'}`;
 export const FONT_MIME = { woff2: 'font/woff2', woff: 'font/woff', ttf: 'font/ttf', otf: 'font/otf' };
@@ -162,6 +162,41 @@ export async function addMyFont(file, info) {
     return entry;
 }
 
+// ─── ספריית הגופנים של ענן החבילה (suite-cloud/docs/spec-2-fonts.md) ──────────────────
+// הענן הוא המקור: מה שבספרייה יורד למכשיר ונכנס ל"שלי" (עם lib), ומה שהועלה כאן — נשלח אליה. העותק במכשיר נשאר,
+// כדי שהעורך יעבוד גם בלי חיבור, וכל עיצוב מטמיע עותק משלו.
+
+/** מוריד מהספרייה את מה שחסר במכשיר או שהתעדכן (rev אחר). מחזיר כמה ירדו. */
+export async function syncCloudFonts(drives, cloudId) {
+    const { fonts = [] } = await drives.fonts.list();
+    let n = 0;
+    for (const item of fonts) {
+        const have = myFonts().find(m => m.lib?.item === item.id);
+        if (have && have.lib.rev === item.rev) continue;
+        const { bytes } = await drives.fonts.load(item);
+        const head = String.fromCharCode(...bytes.subarray(0, 4));
+        const blob = new Blob([bytes], { type: head === 'wOF2' ? FONT_MIME.woff2 : head === 'wOFF' ? FONT_MIME.woff : head === 'OTTO' ? FONT_MIME.otf : FONT_MIME[item.format] || FONT_MIME.ttf });
+        const entry = { family: item.family, weight: item.weight || 400, style: item.style || 'normal', lib: { cloud: cloudId || '', item: item.id, rev: item.rev } };
+        await registerFont({ ...entry, blob });
+        entry.src = await assets.put(blob);
+        saveMyFonts([...myFonts().filter(m => faceKey(m) !== faceKey(entry) && m.lib?.item !== item.id), entry]);
+        n++;
+    }
+    return n;
+}
+
+/** גופן מהמכשיר → לספרייה בענן (font_add), ומסמנים lib. האפליקציה הציגה את אזהרת הרישיון לפני כן. */
+export async function saveFontToCloud(drives, cloudId, entry) {
+    const blob = await assets.get(entry.src);
+    if (!blob) throw new Error('הקובץ של הגופן לא נמצא במכשיר');
+    const ext = Object.entries(FONT_MIME).find(([, m]) => m === blob.type)?.[0] || 'ttf';
+    const item = await drives.fonts.add(new File([blob], `${entry.family}-${entry.weight}.${ext}`, { type: blob.type }),
+        { family: entry.family, weight: entry.weight, style: entry.style });
+    const next = { ...entry, lib: { cloud: cloudId || '', item: item.id, rev: item.rev } };
+    saveMyFonts(myFonts().map(m => faceKey(m) === faceKey(entry) ? next : m));
+    return next;
+}
+
 /** מוריד גופן מהרשימה "שלי". עיצובים שמשתמשים בו שומרים עותק משלהם (doc.fonts), ולכן ממשיכים להיראות אותו דבר. */
 export function removeMyFont(entry) {
     saveMyFonts(myFonts().filter(m => faceKey(m) !== faceKey(entry)));
@@ -180,7 +215,7 @@ export function embedDocFonts(doc) {
     for (const k of used) {
         const m = myFonts().find(x => faceKey(x) === k) || myFonts().find(x => faceKey({ ...x, style: 'normal' }) === k);
         if (!m) continue;
-        next['f' + Math.random().toString(36).slice(2, 9)] = { family: m.family, weight: m.weight, style: m.style, src: m.src };
+        next['f' + Math.random().toString(36).slice(2, 9)] = { family: m.family, weight: m.weight, style: m.style, src: m.src, ...(m.lib ? { lib: m.lib } : {}) };
     }
     if (Object.keys(next).length) doc.fonts = next; else delete doc.fonts;
 }
