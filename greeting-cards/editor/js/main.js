@@ -1,7 +1,7 @@
 // העורך החדש: מסך הבית (העיצובים שלי) ומסך העריכה. ‏spec/03-editor.md.
 
 import { log, logDump } from './log.js';
-import { buildMbe, importMbe, isMbe, mbeJournal, restoreFromJournal } from './mbe-io.js';
+import { buildMbe, importMbe, isMbe, mbeJournal, restoreFromJournal, stampPng, identifyFile } from './mbe-io.js';
 import { setColorContext } from './colorpicker.js';
 import { shortcuts } from './ui-core/keys.js';   // לפי המקש הפיזי — Ctrl+Z עובד גם במקלדת עברית (ui-core)
 import { accountMenu, accountServer } from './ui-core/account.js';   // 👤 תפריט המשתמש — משותף לחבילה
@@ -24,7 +24,7 @@ import { loadScript } from './io.js';
 import { docVariables, readSheetFile, readPasted, readPhoneContacts, guessColumns, normalizePhone, fileNames, fillText } from './merge.js';
 
 // הגרסה — מופיעה ביומן, כדי לדעת איזה קוד רץ בטלפון.
-const BUILD = '2026-11-01.history-1';
+const BUILD = '2026-11-01.faces-1';
 
 const app = $('#app');
 let ed = null;   // העיצוב הפתוח: { id, doc, history, canvas, dirty }
@@ -430,6 +430,16 @@ function importSheet() {
 
 async function runImport(files, pasted) {
     try {
+        // "פנים": תמונה אחת שיצאה מעיצוב שלנו — מציעים לפתוח את העיצוב עצמו (עם השכבות), ולא לייבא תמונה שטוחה
+        if (files.length === 1 && /png/i.test(files[0].type || files[0].name)) {
+            const id = await identifyFile(files[0]).catch(() => null);
+            const rec = id?.type === 'face' && id.docId ? await designs.byMbeId(id.docId, sync.currentUser()?.id) : null;
+            log('face-in', { face: id?.type === 'face' ? 1 : 0, found: rec ? 1 : 0 });
+            if (rec && await confirmDialog(`התמונה יצאה מהעיצוב "${rec.title}". לפתוח את העיצוב עצמו, עם כל השכבות?`, 'פתיחת העיצוב')) {
+                closeSheet();
+                return openDesign(rec.id);
+            }
+        }
         // ‎.mbe של חבילת היצירה — נפתח דרך הליבה; הקובץ המקורי נשמר, כדי ששמירה חוזרת לא תאבד את מה שאינו שלנו
         const mbe = [];
         for (const f of files) if (await isMbe(f)) mbe.push(f);
@@ -1623,6 +1633,7 @@ function exportSheet() {
                 const c = ed.canvas.pageCanvas(fmt === 'pdf' ? 1 : scale);
                 if (fmt === 'pdf') { blob = await exportPdf(c, ed.doc); file = name + '.pdf'; }
                 else { blob = await canvasToBlob(c, fmt === 'jpg' ? 'image/jpeg' : 'image/png', 0.92); file = `${name}.${fmt}`; }
+                if (fmt === 'png') blob = await facePng(blob);
             }
             if (share) {
                 const f = new File([blob], file, { type: blob.type });
@@ -1645,6 +1656,25 @@ function exportSheet() {
         h('p', { class: 'hint' }, 'הקובץ נפתח שם עם כל השכבות, ו"חזרה" מחזירה אותו לכאן.'),
         h('div', { class: 'row-actions' }, Object.entries(TARGETS).map(([k, t]) =>
             h('button', { class: 'btn ghost', onclick: () => openElsewhere(k) }, `${t.icon} פתיחה ${t.in}`)))));
+}
+
+/**
+ * PNG עם "פנים": המזהה של העיצוב והגרסה בתוך הקובץ (iTXt), ושלב export ביומן. כשהתמונה תחזור (📂 / שיתוף) —
+ * הסטודיו יזהה מאיזה עיצוב היא ויציע לפתוח אותו. נכשל — התמונה יוצאת בלי החתמה.
+ */
+async function facePng(png) {
+    try {
+        const r = await stampPng(await makeMbe(), png);
+        ed.doc.mbeBase = await assets.put(r.mbe);
+        ed.doc.mbeId = r.docId;
+        ed.dirty = true;
+        scheduleSave();
+        log('face-png', { id: r.docId.slice(0, 8) });
+        return r.png;
+    } catch (e) {
+        log('face-png-fail', { msg: e.message });
+        return png;
+    }
 }
 
 /** ‎.mbe של העיצוב הפתוח. הקובץ שנכתב הוא הבסיס של השמירה הבאה (המזהה, היומן ומה ששייך לאפליקציות אחרות נשמרים). */
