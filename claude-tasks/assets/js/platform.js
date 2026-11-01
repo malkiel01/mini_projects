@@ -7,50 +7,177 @@
 
 import { $, $$, el, api, toast, state, on } from './core.js';
 
-/* ── חיבורים ───────────────────────────────────────────────────── */
+/* ── חיבורים (docs/spec.md §10.1) ─────────────────────────────────
+ *
+ * רשימה אחת: "מחוברים (N)" — קוד (גיטהאב) ובינה מלאכותית (לפי סדר העדיפות).
+ * כל שורה: סמל, סוג + שם, מצב 🟢/🔴, ובסוף 🔌 גלוי. בבינה — מספר ו-↑↓.
+ * לחיצה על שורה פותחת גיליון; "+ חיבור" פותח אריחים.
+ */
+
+const KIND_ICON = { github: '🐙', anthropic: '✳️', openai: '⚪', google: '🔷' };
+const KIND_NAME = { github: 'GitHub', anthropic: 'Anthropic', openai: 'OpenAI', google: 'Gemini' };
 
 export async function loadConnections() {
   const { connections } = await api('my-connections');
-  state.connections = connections;
-  renderGithub();
+  state.connections = connections;          // github (תאימות) + list
+  renderConnections();
+  renderProviderPicker();
 }
 
-function renderGithub() {
-  const gh = state.connections?.github;
-  const box = $('#ghState');
-  if (!gh) return;
+function ago(ts) {
+  const m = Math.round((Date.now() / 1000 - ts) / 60);
+  return m < 1 ? 'עכשיו' : m < 60 ? `לפני ${m} דק'` : m < 1440 ? `לפני ${Math.round(m / 60)} שע'` : `לפני ${Math.round(m / 1440)} ימים`;
+}
 
-  box.textContent = gh.connected
-    ? `מחובר כ־${gh.login}${gh.scopes.length ? ` · ${gh.scopes.join(', ')}` : ''}`
-    : 'לא מחובר — בלי חיבור אין עיון בקוד ואין הרצה';
-  $('#ghConn').classList.toggle('is-on', !!gh.connected);
+function connName(c) { return `${KIND_NAME[c.kind] || c.kind}${c.label ? ` · ${c.label}` : ''}`; }
 
-  $('#ghDisconnect').hidden = !gh.connected;
-  $('#ghToken').placeholder = gh.connected ? 'טוקן חדש (ריק = ללא שינוי)' : 'ghp_… / github_pat_…';
+function connSub(c) {
+  if (c.status === 'failing') return `🔴 נכשל · ${c.last_error || 'שגיאה'}${c.last_ok_at ? ` · ${ago(c.last_ok_at)}` : ''}`;
+  const bits = ['🟢 מחובר'];
+  if (c.kind === 'github') bits.push(c.login || `…${c.tail}`);
+  else bits.push(c.model, `…${c.tail}`);
+  return bits.join(' · ');
+}
 
-  // היקף חסר הוא הסיבה השכיחה ל"למה זה לא עובד", ועדיף לומר מראש.
-  if (gh.connected && gh.scopes.length && !gh.scopes.includes('repo')) {
-    box.textContent += ' — חסר ההיקף repo, ולכן כתיבה לקוד תיכשל';
+function renderConnections() {
+  const list = state.connections?.list || [];
+  const code = list.filter((c) => c.kind === 'github');
+  const ai = list.filter((c) => c.ai).sort((a, b) => a.priority - b.priority);
+  $('#connCount').textContent = list.length ? `מחוברים (${list.length})` : 'חיבורים';
+  const box = $('#connList');
+  if (!list.length) {
+    box.replaceChildren(el('p', { class: 'empty', text: 'אין חיבורים עדיין. ‎+ חיבור כדי להתחבר לגיטהאב או לספק בינה.' }));
+    return;
   }
+  const row = (c, i, n) => {
+    const ctl = [];
+    if (c.ai) {
+      ctl.push(el('button', { type: 'button', class: 'icon-btn', 'aria-label': `העלאה של ${connName(c)}`, disabled: i === 0,
+        onclick: (ev) => { ev.stopPropagation(); move(c, -1); } }, ['↑']));
+      ctl.push(el('button', { type: 'button', class: 'icon-btn', 'aria-label': `הורדה של ${connName(c)}`, disabled: i === n - 1,
+        onclick: (ev) => { ev.stopPropagation(); move(c, 1); } }, ['↓']));
+    }
+    ctl.push(el('button', { type: 'button', class: 'icon-btn', 'aria-label': `ניתוק ${connName(c)}`, title: 'ניתוק',
+      onclick: (ev) => { ev.stopPropagation(); disconnect(c); } }, ['🔌']));
+    return el('li', { class: `card conn-row${c.status === 'failing' ? ' is-bad' : ''}`, tabindex: '0', role: 'button',
+      'aria-label': connName(c), onclick: () => openConn(c),
+      onkeydown: (ev) => { if (ev.key === 'Enter') openConn(c); } }, [
+      el('span', { class: 'ic', 'aria-hidden': 'true', text: c.ai ? String(i + 1) : KIND_ICON[c.kind] }),
+      el('div', { class: 'body' }, [
+        el('div', { class: 'l1' }, [el('span', { text: `${c.ai ? KIND_ICON[c.kind] + ' ' : ''}${connName(c)}` })]),
+        el('div', { class: 'l2', text: connSub(c) }),
+      ]),
+      el('span', { class: 'conn-ctl' }, ctl),
+    ]);
+  };
+  const group = (title, items) => items.length ? [el('h3', { class: 'conn-group', text: title }),
+    el('ul', { class: 'list' }, items.map((c, i) => row(c, i, items.length)))] : [];
+  box.replaceChildren(...group('קוד', code), ...group('בינה מלאכותית · לפי סדר — נכשל הראשון, עוברים לבא', ai));
 }
 
-on('#ghForm', 'submit', async (e) => {
-  e.preventDefault();
-  const token = $('#ghToken').value.trim();
-  if (!token) return toast('אין מה לשמור — התיבה ריקה', 'error');
+async function move(c, dir) {
   try {
-    const r = await api('connect-github', { token });
-    $('#ghToken').value = '';
+    const r = await api('connection-move', { id: c.id, dir });
+    state.connections.list = r.connections;
+    renderConnections(); renderProviderPicker();
+  } catch (ex) { toast(ex.message, 'error'); }
+}
+
+async function disconnect(c) {
+  const extra = c.kind === 'github' ? '\nפרויקטים שבחרו בחשבון הזה יחזרו לבחירה האוטומטית.' : '';
+  if (!confirm(`לנתק את ${connName(c)}?${extra}`)) return;
+  try {
+    const r = await api('connection-remove', { id: c.id });
+    const rel = (r.released_projects || []).map((p) => p.name);
+    $('#connSheet').open && $('#connSheet').close();
     await loadConnections();
-    toast(`מחובר כ־${r.github.login}`, 'ok');
+    toast(rel.length ? `נותק · חזרו לאוטומטי: ${rel.join(', ')}` : 'נותק', 'ok');
+  } catch (ex) { toast(ex.message, 'error'); }
+}
+
+/* גיליון של חיבור: שם, מודל (בינה), מפתח חדש, בדיקה, ניתוק */
+let connPicker = null;
+function openConn(c) {
+  state.openConn = c;
+  $('#csTitle').textContent = connName(c);
+  $('#csState').textContent = connSub(c);
+  $('#csLabel').value = c.label || '';
+  $('#csKeyWrap').hidden = !c.ai;
+  $('#csKey').value = '';
+  $('#csKey').placeholder = `מפתח חדש (ריק = ללא שינוי) · היום …${c.tail}`;
+  if (c.ai) {
+    connPicker = modelPicker({ provider: c.kind, current: c.model, getKey: () => $('#csKey').value.trim() });
+    $('#csModelSlot').replaceChildren(connPicker.el);
+    connPicker.load();
+  } else { connPicker = null; $('#csModelSlot').replaceChildren(); }
+  $('#connSheet').showModal();
+}
+
+on('#csForm', 'submit', async (e) => {
+  e.preventDefault();
+  const c = state.openConn;
+  const patch = { id: c.id, label: $('#csLabel').value };
+  if (c.ai) { patch.model = connPicker?.value || c.model; if ($('#csKey').value.trim()) patch.secret = $('#csKey').value.trim(); }
+  try {
+    await api('connection-update', patch);
+    $('#connSheet').close();
+    await loadConnections();
+    toast('נשמר', 'ok');
   } catch (ex) { toast(ex.message, 'error'); }
 });
-
-on('#ghDisconnect', 'click', async () => {
+on('#csKey', 'change', () => { if ($('#csKey').value.trim()) connPicker?.load(); });
+on('#csTest', 'click', async () => {
   try {
-    await api('disconnect-github');
+    const r = await api('connection-test', { id: state.openConn.id });
+    state.connections.list = r.connections;
+    renderConnections();
+    $('#csState').textContent = connSub(r.connections.find((x) => x.id === state.openConn.id) || state.openConn);
+    toast(r.message, 'ok');
+  } catch (ex) { await loadConnections(); toast(ex.message, 'error'); }
+});
+on('#csRemove', 'click', () => disconnect(state.openConn));
+
+/* "+ חיבור": אריחים 2×2, ואז טופס קצר */
+let addKind = '';
+let addPicker = null;
+on('#connAddBtn', 'click', () => {
+  addKind = '';
+  $('#caTiles').hidden = false;
+  $('#caForm').hidden = true;
+  $('#caTitle').textContent = 'חיבור חדש';
+  $('#connAdd').showModal();
+});
+on('#caTiles', 'click', (e) => {
+  const t = e.target.closest('[data-kind]');
+  if (!t) return;
+  addKind = t.dataset.kind;
+  const meta = (state.providers || []).find((p) => p.provider === addKind);
+  $('#caTitle').textContent = `חיבור ${KIND_NAME[addKind]}`;
+  $('#caTiles').hidden = true;
+  $('#caForm').hidden = false;
+  $('#caSecretLabel').textContent = addKind === 'github' ? 'Personal Access Token' : 'מפתח API';
+  $('#caSecret').value = '';
+  $('#caSecret').placeholder = addKind === 'github' ? 'ghp_… / github_pat_…' : `${meta?.prefix || ''}…`;
+  $('#caHint').textContent = addKind === 'github'
+    ? 'github.com ← Settings ← Developer settings ← Tokens (classic). היקפים: repo, ו-workflow להרצת מטלות.'
+    : (meta?.hint || '');
+  $('#caLabel').value = '';
+  if (addKind !== 'github') {
+    addPicker = modelPicker({ provider: addKind, getKey: () => $('#caSecret').value.trim() });
+    $('#caModelSlot').replaceChildren(addPicker.el);
+    addPicker.load();
+  } else { addPicker = null; $('#caModelSlot').replaceChildren(); }
+  $('#caSecret').focus();
+});
+on('#caSecret', 'change', () => { if ($('#caSecret').value.trim()) addPicker?.load(); });
+on('#caForm', 'submit', async (e) => {
+  e.preventDefault();
+  try {
+    await api('connection-add', { kind: addKind, secret: $('#caSecret').value.trim(), label: $('#caLabel').value,
+      model: addPicker ? addPicker.value : '' });
+    $('#connAdd').close();
     await loadConnections();
-    toast('החיבור לגיטהאב נותק', 'ok');
+    toast(`${KIND_NAME[addKind]} מחובר`, 'ok');
   } catch (ex) { toast(ex.message, 'error'); }
 });
 
@@ -104,91 +231,27 @@ export function modelPicker({ provider, current = '', getKey = () => '', scope =
   };
 }
 
-/* ── ספקים ─────────────────────────────────────────────────────── */
+/* ── ספקים — הקטלוג (שמות, תחיליות, רמזים) לטפסים ולבורר "מי יבצע" ── */
 
 export async function loadProviders() {
   const r = await api('providers');
   state.providers = r.providers;
   state.defaultProvider = r.default;
-  renderProviders();
   renderProviderPicker();
   return r;
 }
 
-const PROVIDER_ICON = { anthropic: '✳️', openai: '⚪', google: '🔷' };
-
-function renderProviders() {
-  const openNow = new Set($$('#providerList details[open]').map((d) => d.dataset.provider));
-  $('#providerList').replaceChildren(...state.providers.map((p) => {
-    const isDefault = state.defaultProvider === p.provider;
-    const key = el('input', { type: 'password', dir: 'ltr', autocomplete: 'off',
-      placeholder: p.connected ? `מחובר · …${p.tail} (ריק = ללא שינוי)` : `${p.prefix}…` });
-    const picker = modelPicker({ provider: p.provider, current: p.model || '', getKey: () => key.value.trim() });
-    // מפתח חדש שהוקלד — טוענים את המודלים שלו
-    key.addEventListener('change', () => { if (key.value.trim()) picker.load(); });
-
-    const btn = (text, cls, fn) => el('button', { type: 'button', class: `btn ${cls}`, onclick: fn }, [text]);
-    const actions = [btn('שמירה', 'primary', async () => {
-      try {
-        await api('connect-provider', { provider: p.provider, key: key.value.trim(), model: picker.value });
-        await loadProviders();
-        toast(`${p.label} נשמר`, 'ok');
-      } catch (ex) { toast(ex.message, 'error'); }
-    })];
-    if (p.connected) {
-      actions.push(btn('בדיקה', 'ghost', async () => {
-        try {
-          const r = await api('test-provider', { provider: p.provider });
-          toast(`${p.label}: ${r.message} (${r.model})`, 'ok');
-        } catch (ex) { toast(ex.message, 'error'); }
-      }));
-      if (!isDefault) actions.push(btn('★ ברירת מחדל', 'ghost', async () => {
-        await api('set-default-provider', { provider: p.provider }).catch((ex) => toast(ex.message, 'error'));
-        await loadProviders();
-      }));
-      actions.push(btn('ניתוק', 'ghost danger-text', async () => {
-        try {
-          await api('disconnect-provider', { provider: p.provider });
-          await loadProviders();
-          toast(`${p.label} נותק`, 'ok');
-        } catch (ex) { toast(ex.message, 'error'); }
-      }));
-    }
-
-    const d = el('details', { class: `conn${p.connected ? ' is-on' : ''}`, dataset: { provider: p.provider } }, [
-      el('summary', {}, [
-        el('span', { class: 'ic', 'aria-hidden': 'true', text: PROVIDER_ICON[p.provider] || '🤖' }),
-        el('span', { class: 'body' }, [
-          el('b', { text: `${p.label}${isDefault ? ' ★' : ''}` }),
-          el('small', { text: p.connected ? `מחובר · …${p.tail} · ${p.model}` : 'לא מחובר' }),
-        ]),
-        el('span', { class: 'go', 'aria-hidden': 'true', text: '‹' }),
-      ]),
-      el('div', { class: 'stack conn__body' }, [
-        el('label', { class: 'field' }, [el('span', { text: 'מפתח API' }), key]),
-        el('small', { class: 'hint', text: p.hint }),
-        picker.el,
-        el('div', { class: 'row-btns' }, actions),
-      ]),
-    ]);
-    // המודלים נטענים רק כשפותחים — לא פונים לשלושה ספקים בכל פתיחת הגדרות
-    let loaded = false;
-    d.addEventListener('toggle', () => { if (d.open && !loaded) { loaded = true; picker.load(); } });
-    if (openNow.has(p.provider)) d.open = true;
-    return d;
-  }));
-}
-
-/** בורר "מי יבצע" בשורת הקליטה. מציג רק ספקים שבאמת מחוברים. */
+/** בורר "מי יבצע" במטלה חדשה: אוטומטי (לפי הסדר), או חיבור בינה מסוים. */
 function renderProviderPicker() {
-  const connected = state.providers.filter((p) => p.connected);
   const sel = $('#capProvider');
+  if (!sel) return;
+  const ai = (state.connections?.list || []).filter((c) => c.ai).sort((a, b) => a.priority - b.priority);
   sel.replaceChildren(
-    el('option', { value: '', text: connected.length ? '⚙ ברירת מחדל' : '⚙ ספק' }),
-    ...connected.map((p) => el('option', { value: p.provider, text: p.label.split(' — ')[1] || p.label })),
+    el('option', { value: '', text: 'אוטומטי (לפי הסדר)' }),
+    ...ai.map((c) => el('option', { value: String(c.id), text: `${KIND_NAME[c.kind]}${c.label ? ' · ' + c.label : ''} · ${c.model}` })),
   );
   // בורר עם אפשרות אחת אינו בורר.
-  sel.hidden = connected.length < 2;
+  sel.closest('label')?.toggleAttribute('hidden', ai.length < 2);
 }
 
 /* ── פרויקטים ──────────────────────────────────────────────────── */

@@ -734,7 +734,8 @@ on('#captureForm', 'submit', async (e) => {
       auto_topic: choice === 'auto',
       kind: $('#capKind')?.value || 'question',
       priority: $('#capPriority')?.value || 'normal',
-      provider: $('#capProvider')?.value || '',
+      // ריק = אוטומטי (לפי סדר העדיפות); אחרת חיבור בינה מסוים
+      connection_id: $('#capProvider')?.value ? Number($('#capProvider').value) : null,
       project_id: state.projectId,
     });
     $('#capTitle').value = '';
