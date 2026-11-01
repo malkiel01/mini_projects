@@ -1855,9 +1855,165 @@
       return v;
     }
 
+    /** שדה שזורם בדף: טקסט ארוך "לפי התוכן" (15.7), או טבלה "לפי מספר השורות". */
+    function flowsHere(f, vis) {
+      return vis.has(f.key) && f.print !== false && !!pages[f.page]
+        && ((f.type === 'textarea' && f.fit === 'content') || (f.type === 'table' && f.fit === 'rows'));
+    }
+
+    /**
+     * 15.7 — דף עם טקסט ארוך "לפי התוכן": כל שדה כזה (וטבלה "לפי מספר השורות" באותו דף) תופס כמה שהתוכן צריך
+     * (לפחות את המסגרת שלו), וכל מה שמתחתיו ברקע ובשדות נדחף מטה — גם כמה שדות זורמים באותו דף, אחד אחרי השני.
+     * השוליים התחתונים (keep_bottom) נשארים בתחתית כל דף. לא נכנס: 'grow' — הדף מתארך; אחרת — נשבר לדפים:
+     * טקסט — בין שורות, טבלה — בין שורות הטבלה (הכותרת חוזרת), קטע רקע — עובר שלם לדף הבא. בדף המשך חוזר
+     * הראש של הדף (עד 25 מ״מ, או עד השדה הזורם הראשון), עם השדות שבו.
+     */
+    async function layoutPageFlow(p, items, vis) {
+      const { pushGraphicsState, popGraphicsState, rectangle, clip, endPath, PDFName } = window.PDFLib;
+      const src = pages[p];
+      const cb = src.getCropBox(), mb = src.getMediaBox();
+      if ((src.getRotation().angle % 360) || cb.x || cb.y || mb.x || mb.y || Math.abs(cb.width - mb.width) > 0.5 || Math.abs(cb.height - mb.height) > 0.5) return null;
+      const W = cb.width, H0 = cb.height, MM = 72 / 25.4;
+      const ink = await inkRows(p, W, H0);
+      const grow = items.some(f => f.overflow === 'grow');
+      // הפריטים לפי הסדר בדף; חפיפה — הבא מתחיל אחרי הקודם
+      const its = items.slice().sort((a, b) => a.y - b.y).map(f => {
+        const font = fonts.get(f.font) || fontDefault;
+        const t = f.y * H0, bw = f.w * W, bh = f.h * H0, bx = f.x * W;
+        if (f.type === 'table') {
+          const M = measureTable(f, font, bw, Infinity);
+          return { f, font, t, bx, bw, bh, b: snapBlank(ink, t + bh, t, H0), table: M, units: M.rows.length && M.cols.length ? M.hs : [], head: M.head, min: 0 };
+        }
+        const size = f.fontSize || 11, pad = 2;
+        const raw = values[f.key] ?? '';
+        const text = raw === '' ? '' : (window.DTFmt.apply(f, raw) ?? raw);
+        const lines = text === '' ? [] : wrapLines(text, font, size, bw - pad * 2);
+        return { f, font, t, bx, bw, bh, b: snapBlank(ink, t + bh, t, H0), lines, size, pad, units: lines.map(() => size * 1.25), head: 0, min: bh };
+      });
+      for (let i = 1; i < its.length; i++) if (its[i].t < its[i - 1].b) its[i].t = its[i - 1].b;
+      const lastB = Math.max(...its.map(it => it.b));
+      const kb = Math.max(...items.map(f => Number(f.keep_bottom ?? 25) || 0));
+      let fe = snapBlank(ink, Math.min(H0, Math.max(lastB, H0 - kb * MM)), lastB, H0);
+      if (fe < lastB) fe = H0;
+      const keepTop = snapBlank(ink, Math.min(its[0].t, 25 * MM), 0, its[0].t);
+      const sum = (a) => a.reduce((x, y) => x + y, 0);
+
+      // ── תכנון: מה נכנס בכל דף, ובאיזה גובה ──
+      const plan = [];   // {ops: [...], y} — y = הגובה שנוצל בגוף הדף
+      let cur = null;
+      const newPage = () => { cur = { ops: [], y: plan.length ? keepTop : 0, first: !plan.length }; plan.push(cur); };
+      newPage();
+      const fits = (h) => grow || cur.y + h <= fe + 0.5;
+      const atStart = () => cur.y <= (cur.first ? 0 : keepTop) + 0.5;
+      const segs = [];   // קטעי רקע: איפה כל אחד נחת — לשדות שבתוכם
+      // הקטע האחרון (עד השוליים התחתונים) — נבדק רק עד הדיו האחרון בו, לא עם כל הריק שמתחתיו
+      const inkEnd = (v0, v1) => {
+        if (!ink) return v1;
+        for (let y = Math.min(ink.length - 1, Math.floor(v1)); y > v0; y--) if (ink[y]) return Math.min(v1, y + 3);
+        return v0;
+      };
+      const staticSeg = (v0, v1, last) => {
+        if (v1 - v0 < 0.5) return;
+        const need = last ? inkEnd(v0, v1) - v0 : v1 - v0;
+        if (need > 0.5 && !fits(need) && !atStart()) newPage();
+        const dv = cur.y - v0;
+        cur.ops.push({ kind: 'region', v0, v1, dv, clipTo: fe });   // לא נכנס בשוליים התחתונים
+        segs.push({ v0, v1, at: cur, dv });
+        cur.y += v1 - v0;
+      };
+      let prevB = 0;
+      for (const it of its) {
+        staticSeg(prevB, it.t);
+        // הרקע של המסגרת עצמה (קווים, תיבה) — בתחילת הפריט, כמו שהיה
+        const n = it.units.length;
+        const need = it.head + sum(it.units);
+        if (!fits(Math.min(need, it.bh)) && !atStart()) newPage();
+        const start = cur.y;
+        const bgDv = cur.y - it.t;
+        if (it.f.type === 'textarea') { cur.ops.push({ kind: 'region', v0: it.t, v1: it.b, dv: bgDv, clipTo: fe }); segs.push({ v0: it.t, v1: it.b, at: cur, dv: bgDv, item: it.f }); }
+        let i = 0, split = false;
+        if (!n) cur.y += it.f.type === 'table' ? 0 : it.min;
+        while (i < n) {
+          let j = i, h = it.head;
+          while (j < n && fits(h + it.units[j])) h += it.units[j++];
+          if (j === i) { if (!atStart()) { newPage(); split = true; continue; } h += it.units[j++]; }   // שורה גבוהה מדף — לפחות אחת
+          cur.ops.push({ kind: it.f.type === 'table' ? 'table' : 'text', it, from: i, to: j, y: cur.y, h });
+          cur.y += h; i = j;
+          if (i < n) { newPage(); split = true; }
+        }
+        if (!split && it.f.type === 'textarea') cur.y = cur.y > start + it.min + 0.5 ? cur.y + it.size * 0.4 : Math.max(cur.y, start + it.min);   // התארך — רווח קטן לפני מה שאחריו
+        prevB = it.b;
+      }
+      staticSeg(prevB, fe, true);
+
+      // ── ציור ──
+      const copy = (await pdf.copyPages(pdf, [pdf.getPages().indexOf(src)]))[0];
+      const emb = await pdf.embedPage(copy);
+      const built = [];
+      for (let k = 0; k < plan.length; k++) {
+        const pl = plan[k];
+        const extra = grow ? Math.max(0, pl.y - fe) : 0;
+        const Ht = H0 + extra;
+        let page = src;
+        if (k > 0) page = pdf.insertPage(pdf.getPages().indexOf(built[k - 1].page) + 1, [W, Ht]);
+        else { src.node.set(PDFName.of('Contents'), pdf.context.obj([])); src.contentStream = undefined; src.contentStreamRef = undefined; }
+        for (const box of ['MediaBox', 'CropBox', 'BleedBox', 'TrimBox', 'ArtBox']) {
+          if (box === 'MediaBox' || page.node.get(PDFName.of(box))) page.node.set(PDFName.of(box), pdf.context.obj([0, 0, W, Ht]));
+        }
+        const region = (v0, v1, s, lim) => {
+          const top = v0 + s, bot = Math.min(v1 + s, lim ?? Infinity);
+          if (bot - top < 0.5) return;
+          page.pushOperators(pushGraphicsState(), rectangle(0, Ht - bot, W, bot - top), clip(), endPath());
+          page.drawPage(emb, { x: 0, y: Ht - s - H0 });
+          page.pushOperators(popGraphicsState());
+        };
+        if (k > 0) region(0, keepTop, 0);
+        const fr = { W, H: Ht, H0, pt: (u, v) => ({ x: u, y: Ht - v }), rot: degrees(0) };
+        for (const op of pl.ops) {
+          if (op.kind === 'region') region(op.v0, op.v1, op.dv, op.clipTo !== undefined && !grow ? op.clipTo : undefined);
+          else if (op.kind === 'table') drawTable(op.it.f, page, fr, inkOf(op.it.f), op.it.font, { bx: op.it.bx, by: op.y, bw: op.it.bw, bh: op.h + 1 }, { M: op.it.table, from: op.from, to: op.to });
+          else {
+            const { f, font, size, pad, bx, bw, lines } = op.it, lh = size * 1.25, col = inkOf(f);
+            let y = op.y + pad + size * 0.95;
+            for (let q = op.from; q < op.to; q++) {
+              const v = pdfText(lines[q]), w = font.widthOfTextAtSize(v, size);
+              const x = f.align === 'left' ? bx + pad : f.align === 'center' ? bx + (bw - w) / 2 : bx + bw - w - pad;
+              const o = fr.pt(x, y);
+              page.drawText(v, { x: o.x, y: o.y, size, font, color: col, rotate: fr.rot });
+              y += lh;
+            }
+          }
+        }
+        region(fe, H0, extra);
+        built.push({ page, fr, extra, pl });
+      }
+      const flowKeys = new Set(items.map(f => f.key));
+      return {
+        flowKeys,
+        place: (g) => {
+          if (flowKeys.has(g.key)) return [];   // נצייר כבר בזרימה
+          const v = g.y * H0;
+          if (v >= fe - 0.5) return built.map(b => ({ page: b.page, fr: b.fr, dv: b.extra }));
+          if (v < keepTop - 0.5) return built.map(b => ({ page: b.page, fr: b.fr, dv: 0 }));
+          const s = segs.find(z => v >= z.v0 - 0.5 && v < z.v1 - 0.5) || segs.find(z => v >= z.v0 - 0.5 && v <= z.v1 + 0.5);
+          if (!s) return [{ page: built[0].page, fr: built[0].fr, dv: 0 }];
+          const b = built.find(x => x.pl === s.at);
+          return [{ page: b.page, fr: b.fr, dv: s.dv }];
+        },
+      };
+    }
+
     async function layoutFlows(vis) {
       const { pushGraphicsState, popGraphicsState, rectangle, clip, endPath, PDFName } = window.PDFLib;
       const out = new Map();
+      // 15.7: דף שיש בו טקסט ארוך "לפי התוכן" — המנוע הכללי (כמה שדות זורמים בדף)
+      const byPage = new Map();
+      for (const f of doc.schema.fields) if (flowsHere(f, vis)) byPage.set(f.page, [...(byPage.get(f.page) || []), f]);
+      for (const [p, items] of byPage) {
+        if (!items.some(f => f.type === 'textarea')) continue;
+        const r = await layoutPageFlow(p, items, vis);
+        if (r) out.set(p, r);
+      }
       for (const f of doc.schema.fields) {
         if (f.type !== 'table' || f.fit !== 'rows' || out.has(f.page) || !pages[f.page] || !vis.has(f.key) || f.print === false) continue;
         const src = pages[f.page];

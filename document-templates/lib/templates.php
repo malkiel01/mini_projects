@@ -414,6 +414,14 @@ function clean_schema($s, array $sources = [], array $fonts = [], array $contact
             $fields[count($fields) - 1]['fit'] = ($f['fit'] ?? '') === 'rows' ? 'rows' : 'fixed';
             $fields[count($fields) - 1]['keep_bottom'] = (int)$num($f['keep_bottom'] ?? 25, 0, 150);
         }
+        if ($type === 'textarea') {
+            // 15.7: content — גובה לפי התוכן, ומה שמתחת נדחף מטה (overflow: pages / grow); keep_bottom — שוליים שלא זזים
+            $fields[count($fields) - 1]['fit'] = ($f['fit'] ?? '') === 'content' ? 'content' : 'fixed';
+            $fields[count($fields) - 1]['keep_bottom'] = (int)$num($f['keep_bottom'] ?? 25, 0, 150);
+            if ($fields[count($fields) - 1]['fit'] === 'content' && !in_array($fields[count($fields) - 1]['overflow'], ['pages', 'grow'], true)) {
+                $fields[count($fields) - 1]['overflow'] = 'pages';
+            }
+        }
         if ($type === 'file') {
             // צירוף קובץ (שלב 6): אילו סוגים, גודל מרבי לקובץ, ואחד או כמה.
             $kinds = array_values(array_intersect(FILE_KINDS, (array)($f['accept'] ?? [])));

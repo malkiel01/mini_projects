@@ -36,7 +36,7 @@
   const PH = /\{\{\s*([^{}]{1,60}?)\s*\}\}/g;
   /** ניחוש סוג לפי שם — כמו docx_fields בשרת. */
   const guess = (n) => /תאריך|date/i.test(n) ? 'date' : /סכום|מחיר|כמות|amount|price|sum/i.test(n) ? 'number'
-    : /סימון|מאשר|☐|check/i.test(n) ? 'checkbox' : /הערות|תיאור|פירוט|notes/i.test(n) ? 'textarea' : 'text';
+    : /סימון|מאשר|☐|check/i.test(n) ? 'checkbox' : /הערות|תיאור|פירוט|מטר[הת]|יעד|סיכום|מהלך|notes/i.test(n) ? 'textarea' : 'text';
   const OVERFLOW = {
     shrink: 'להקטין גופן עד שייכנס',
     annex: 'להמשיך בנספח בסוף המסמך',
@@ -1306,6 +1306,25 @@
           rows ? el('p', { class: 'hint' }, 'למשל הכותרת התחתונה של נייר המכתבים — נשארת בתחתית הדף, וכל מה שבין הטבלה לבינה זז.') : null);
       };
 
+      // 15.7 טקסט ארוך: גובה לפי התוכן — ומה שמתחתיו בדף נדחף מטה. ב-Word ובנכתב-בכלי זה קורה לבד.
+      const textFit = (onPage) => {
+        if (!onPage) return el('p', { class: 'hint' }, '📏 טקסט ארוך דוחף את מה שאחריו לבד — כל ירידת שורה נכנסת למסמך, והמשך המסמך זז מטה.');
+        const fit = el('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'גובה השדה' },
+          ...[['content', '📏 לפי התוכן'], ['fixed', '▭ קבוע']].map(([v, t]) => el('label', {},
+            el('input', { type: 'radio', name: 'txt-fit-' + f.id, value: v, checked: (f.fit || 'fixed') === v,
+              onchange: () => { f.fit = v; if (v === 'content' && !['pages', 'grow'].includes(f.overflow)) f.overflow = 'pages';
+                if (v === 'fixed' && ['pages', 'grow'].includes(f.overflow)) f.overflow = 'shrink'; setDirty(true); draw(); render(); } }), el('span', {}, t))));
+        const dyn = f.fit === 'content';
+        return el('div', { class: 'tbl-fit' },
+          el('div', { class: 'f' }, el('span', {}, 'גובה השדה במסמך'), fit),
+          el('p', { class: 'hint' }, dyn
+            ? 'הטקסט תופס כמה שהוא צריך (לפחות את המסגרת), וכל מה שמתחתיו בדף — טקסט, קווים ושדות — נדחף מטה.'
+            : 'הטקסט נשאר בתוך המסגרת שעל הדף.'),
+          dyn ? choose('כשהטקסט לא נכנס בדף', 'overflow', { pages: 'לשבור לדפים — ממשיך בדף הבא', grow: 'דף אחד ארוך — הדף מתארך' })
+            : choose('כשהטקסט ארוך מהשדה', 'overflow', OVERFLOW),
+          dyn ? input('שוליים תחתונים שלא זזים (מ״מ)', 'keep_bottom', { type: 'number', min: 0, max: 150, placeholder: '25' }) : null);
+      };
+
       function render() {
         const auto = isAuto(f);
         const textual = ['text', 'textarea', 'number', 'date', 'calc', 'system', 'select', 'table'].includes(f.type);   // טבלה: גופן, גודל, צבע, ומה קורה כשהשורות לא נכנסות
@@ -1396,7 +1415,7 @@
               input('גודל גופן', 'fontSize', { type: 'number', min: 6, max: 72 })) : null,
             textual && !styleOf(f) ? positionGrid(f) : null,
             (textual || f.type === 'checkbox') && !styleOf(f) ? colorPicker(f) : null,
-            f.type === 'table' ? tableFit() : textual ? choose('כשהטקסט ארוך מהשדה', 'overflow', OVERFLOW) : null,
+            f.type === 'table' ? tableFit() : f.type === 'textarea' ? textFit(onPage) : textual ? choose('כשהטקסט ארוך מהשדה', 'overflow', OVERFLOW) : null,
             el('p', { class: 'hint' }, `דף ${f.page + 1}. ` + (f.locked ? 'נעול — אי אפשר לגרור.' : 'הזזה וגודל — בגרירה על הדף.'))) : null,
           el('details', { class: 'fs-group adv' }, el('summary', {}, 'מתקדם'),
             input('מפתח פנימי (לייצוא ולאקסל)', 'key', { dir: 'ltr', maxlength: 60, pattern: '[a-z0-9_]+' }),
