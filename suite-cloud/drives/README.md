@@ -9,7 +9,7 @@
 | | מה |
 | --- | --- |
 | ☁️ **ענן החבילה** | חיבור משתמש (אישור פעם אחת), ניתוק, ובמקום הכונן: רשימה, קריאה, כתיבה, העלאה בחלקים, תיקייה, שינוי שם, העברה, סל |
-| 🔤 **גופנים** | `drives.fonts.list()`, `load(item)` (FontFace + הבתים להטמעה), `add(file, …)` — לבורר הגופנים: "שלי". לפני `add` — האפליקציה מציגה את אזהרת הרישיון |
+| 🔤 **גופנים** | `drives.fonts.list()` (ועם `{ builtin: true }` — גם 10 המובנים, OFL; משתנים עם `axes.wght`), `load(item)` (FontFace + הבתים להטמעה), `add(file, …)` — לבורר הגופנים: "שלי". לפני `add` — האפליקציה מציגה את אזהרת הרישיון |
 | 🤖 **בינה מלאכותית** | `drives.ai.capabilities()` ו-`drives.ai.run(task, …)` — כל קוד הספקים בענן. בלי חיבור: הכול `false`, והאפליקציה מציגה "דרך הצ'אט (סקיל)" |
 | 📦 **Dropbox** | `drives.link('dropbox')` / `unlink`, ו-`drives.dropbox` באותה צורה כמו `drives.suite` (list, stat, read, mkdir, rename, move, trash, write, upload, quota). **הדפדפן מדבר עם Dropbox ישירות** — הקבצים לא עוברים בשרת. בתיקיית האפליקציה (App folder) בלבד |
 | 🗂️ **כל הכוננים** | `drives.list()` → `[{ id, name, connected, account? }]` — רק כוננים שמוגדרים. בורר "שמור ב…" / "פתח מ…" נבנה מזה |

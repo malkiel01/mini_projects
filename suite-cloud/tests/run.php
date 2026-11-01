@@ -448,6 +448,23 @@ try {
     [$path] = fontFile($acc, $f2['id']);
     check('font_file — הקובץ עצמו', file_get_contents($path) === $heebo);
     check('גופן של חשבון אחר — 404', code(fn() => fontFile(getAccount($dana['id']), $f2['id'])) === 'not_found');
+    // ─── המובנים ───
+    exec('php ' . escapeshellarg(__DIR__ . '/../tools/fonts-catalog.php') . ' --check 2>&1', $o, $rc);
+    check('הקטלוג של המובנים תואם לקבצים, ולכל אחד רישיון OFL', $rc === 0);
+    check('fonts_list בלי builtin — רק של המשתמש (אפליקציות קיימות לא משתנות)', count(fontsList($acc)['fonts']) === 3);
+    $all = fontsList($acc, true);
+    $rubik = array_values(array_filter($all['fonts'], fn($f) => $f['id'] === 'b_rubik-var'))[0] ?? null;
+    check('עם builtin — המובנים אחרי של המשתמש, בקבוצה משלהם', count($all['fonts']) === 13 && $all['fonts'][0]['source'] === 'user'
+        && in_array(['family' => 'Rubik', 'source' => 'builtin', 'items' => ['b_rubik-var']], $all['families'], true));
+    check('Rubik משתנה — wght 300–900, משקל ברירת מחדל 400, רישיון', $rubik && $rubik['axes']['wght'] === [300, 900] && $rubik['weight'] === 400
+        && $rubik['license'] === 'OFL-rubik.txt' && !isset($rubik['file']) && str_contains($rubik['url'], 'id=b_rubik-var&rev='));
+    [$bp, $br] = fontFile($acc, 'b_rubik-var');
+    check('font_file של מובנה — מהתיקייה, rev = sha256', hash_file('sha256', $bp) === $rubik['rev'] && $br['format'] === 'ttf');
+    check('מובנה — אי אפשר לשנות או למחוק', code(fn() => fontUpdate($acc, ['id' => 'b_rubik-var', 'family' => 'x'])) === 'builtin'
+        && code(fn() => fontDelete($acc, 'b_rubik-var')) === 'builtin');
+    check('מובנה שלא קיים — 404', code(fn() => fontFile($acc, 'b_nope-400')) === 'not_found');
+    check('fvar — הצירים של גופן משתנה', fontMeta((string) file_get_contents(FONT_BUILTIN_DIR . '/NotoSerifHebrew.ttf'))['axes'] === ['wght' => [100, 900], 'wdth' => [62.5, 100]]);
+
     fontDelete($acc, $f2['id']);
     check('font_delete — הקובץ נשאר כל עוד גופן אחר באותו תוכן', is_file(blobPath(hash('sha256', $heebo))));
     fontDelete($acc, $f3['id']);
