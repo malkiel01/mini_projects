@@ -75,12 +75,9 @@ function userSecret(int $userId, string $column): string {
  * מקבל את רשומת המשתמש ולא מזהה, כדי שלא תיווצר פונקציה שמחזירה טוקן
  * של מישהו לפי מספר — קריאה כזו הייתה הופכת בטעות למסלול התחזות.
  */
-function requireGithubToken(array $user): string {
-    $token = userSecret((int) $user['id'], 'github_token');
-    if ($token === '') {
-        throw new AppError('לא חובר חשבון גיטהאב. הגדרות ← חיבור לגיטהאב');
-    }
-    return $token;
+function requireGithubToken(array $user, ?array $project = null): string {
+    // החיבור עצמו נבחר ב-lib/connections.php (githubConnectionFor) — תמיד של המשתמש הזה
+    return githubTokenFor($user, $project);
 }
 
 /* ── פרויקטים ─────────────────────────────────────────────────── */
@@ -363,15 +360,16 @@ function createProject(array $user, string $name, string $owner, string $repo,
 
 function projectMembers(int $projectId): array {
     $st = db()->prepare(<<<SQL
-        SELECT m.user_id, m.level, m.added_at, u.username, u.display_name, u.github_login,
-               (u.github_token <> '') has_github
+        SELECT m.user_id, m.level, m.added_at, u.username, u.display_name,
+               (SELECT c.login FROM connections c WHERE c.user_id = u.id AND c.kind = 'github' ORDER BY c.id LIMIT 1) github_login,
+               EXISTS (SELECT 1 FROM connections c WHERE c.user_id = u.id AND c.kind = 'github') has_github
           FROM project_members m JOIN users u ON u.id = m.user_id
          WHERE m.project_id = ? ORDER BY m.level DESC, u.display_name
         SQL);
     $st->execute([$projectId]);
     return array_map(fn($r) => ['user_id' => (int) $r['user_id'], 'level' => $r['level'],
         'username' => $r['username'], 'display_name' => $r['display_name'],
-        'github_login' => $r['github_login'], 'has_github' => (bool) $r['has_github'],
+        'github_login' => (string) $r['github_login'], 'has_github' => (bool) $r['has_github'],
         'added_at' => (int) $r['added_at']], $st->fetchAll());
 }
 
@@ -414,66 +412,45 @@ function removeMember(array $actor, int $projectId, int $userId): void {
  */
 
 function userProviders(int $userId): array {
-    $st = db()->prepare('SELECT provider, api_key, model, added_at FROM user_providers WHERE user_id = ?');
-    $st->execute([$userId]);
-
+    // תאימות לממשק הישן: לכל ספק — החיבור הראשון שלו בסדר העדיפות (lib/connections.php)
     $rows = [];
-    foreach ($st->fetchAll() as $r) {
-        $key = decryptSecret((string) $r['api_key']);
-        $rows[$r['provider']] = [
-            'provider'  => $r['provider'],
-            'label'     => PROVIDERS[$r['provider']]['label'] ?? $r['provider'],
-            'model'     => (string) $r['model'],
-            'connected' => $key !== '',
-            'tail'      => secretTail($key),
-            'added_at'  => (int) $r['added_at'],
-        ];
+    foreach (userConnections($userId) as $c) {
+        if (!$c['ai'] || isset($rows[$c['kind']])) continue;
+        $rows[$c['kind']] = ['provider' => $c['kind'], 'label' => $c['kind_label'], 'model' => $c['model'],
+                             'connected' => $c['connected'], 'tail' => $c['tail'], 'added_at' => $c['created_at'],
+                             'connection_id' => $c['id']];
     }
     return $rows;
 }
 
 function setUserProvider(array $user, string $provider, string $key, string $model): void {
     if (!providerExists($provider)) throw new InvalidArgumentException('ספק לא מוכר');
-    if ($key !== '') checkProviderKey($provider, $key);
-
-    $model = trim($model) !== '' ? mb_substr(trim($model), 0, 80) : (PROVIDERS[$provider]['default'] ?? '');
-    if ($model === '') {
-        throw new InvalidArgumentException(
-            'צריך לציין שם מודל עבור ' . PROVIDERS[$provider]['label'] . ' — כפי שהוא מופיע אצל הספק'
-        );
-    }
-
-    db()->prepare('INSERT INTO user_providers (user_id, provider, api_key, model, added_at) VALUES (?,?,?,?,?)
-                   ON CONFLICT(user_id, provider) DO UPDATE SET api_key = excluded.api_key,
-                                                                model   = excluded.model')
-        ->execute([$user['id'], $provider, encryptSecret($key), $model, nowTs()]);
-
-    // הספק הראשון שחובר נעשה ברירת המחדל, אחרת אין למה לשייך מטלה.
-    if (trim((string) ($user['default_provider'] ?? '')) === '') {
-        db()->prepare('UPDATE users SET default_provider = ? WHERE id = ?')->execute([$provider, $user['id']]);
+    $first = userProviders((int) $user['id'])[$provider] ?? null;
+    if ($first) {
+        updateConnection($user, (int) $first['connection_id'], ['secret' => $key, 'model' => $model]);
+    } else {
+        if ($key === '') throw new InvalidArgumentException('חסר מפתח');
+        addConnection($user, $provider, $key, '', $model);
     }
     logEvent($user, 'provider.connect', $provider, true, $model);
 }
 
 function removeUserProvider(array $user, string $provider): void {
-    db()->prepare('DELETE FROM user_providers WHERE user_id = ? AND provider = ?')
-        ->execute([$user['id'], $provider]);
-
-    if ((string) ($user['default_provider'] ?? '') === $provider) {
-        $st = db()->prepare('SELECT provider FROM user_providers WHERE user_id = ? LIMIT 1');
-        $st->execute([$user['id']]);
-        $next = $st->fetch();
-        db()->prepare('UPDATE users SET default_provider = ? WHERE id = ?')
-            ->execute([$next ? $next['provider'] : '', $user['id']]);
+    foreach (userConnections((int) $user['id']) as $c) {
+        if ($c['kind'] === $provider) removeConnection($user, $c['id']);
     }
     logEvent($user, 'provider.disconnect', $provider);
 }
 
 function setDefaultProvider(array $user, string $provider): void {
-    if ($provider !== '' && !isset(userProviders((int) $user['id'])[$provider])) {
-        throw new InvalidArgumentException('הספק אינו מחובר לחשבון שלך');
+    // "ברירת מחדל" = ראשון בסדר העדיפות
+    $first = userProviders((int) $user['id'])[$provider] ?? null;
+    if (!$first) throw new InvalidArgumentException('הספק אינו מחובר לחשבון שלך');
+    for ($i = 0; $i < 20; $i++) {
+        $now = array_values(array_filter(userConnections((int) $user['id']), fn ($c) => $c['ai']));
+        if (!$now || $now[0]['id'] === $first['connection_id']) break;
+        moveConnection($user, (int) $first['connection_id'], -1);
     }
-    db()->prepare('UPDATE users SET default_provider = ? WHERE id = ?')->execute([$provider, $user['id']]);
     logEvent($user, 'provider.default', $provider);
 }
 
@@ -484,21 +461,13 @@ function setDefaultProvider(array $user, string $provider): void {
  * החיבור הכללי של המערכת. כך משתמש בלי מפתח משלו עדיין יכול לעבוד, אם
  * המנהל הגדיר מפתח כללי, ומי שיש לו מפתח משלו נחסם על חשבונו בלבד.
  */
-function userConn(array $user, string $provider = '', string $model = ''): array {
-    $mine = userProviders((int) $user['id']);
-    $pick = $provider !== '' ? $provider : (string) ($user['default_provider'] ?? '');
-
-    if ($pick !== '' && isset($mine[$pick])) {
-        $st = db()->prepare('SELECT api_key, model FROM user_providers WHERE user_id = ? AND provider = ?');
-        $st->execute([$user['id'], $pick]);
-        $row = $st->fetch();
-        if ($row) {
-            $key = decryptSecret((string) $row['api_key']);
-            if ($key !== '') {
-                return ['provider' => $pick, 'key' => $key,
-                        'model' => $model !== '' ? $model : (string) $row['model'], 'source' => 'user'];
-            }
-        }
+function userConn(array $user, string $provider = '', string $model = '', ?int $connectionId = null): array {
+    $chain = aiChain($user, $connectionId, $provider, $model);
+    if ($chain) {
+        $first = $chain[0];
+        if ($model !== '' && $connectionId === null && $provider !== '') $first['model'] = $model;
+        // השרשרת כולה נוסעת עם החיבור — aiComplete עובר לבא כשהראשון נכשל
+        return $first + ['chain' => $chain, 'user' => $user];
     }
 
     // ספק שהתבקש במפורש ואינו מחובר — לא נופלים בשקט לספק אחר.

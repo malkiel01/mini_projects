@@ -67,7 +67,7 @@ function projectAgentToken(int $projectId, bool $regenerate = false): string {
  * קובץ שאינו קיים מחזיר 404 — וזה המצב הרגיל בהתקנה ראשונה.
  */
 function installEngine(array $user, array $project, array $conn, ?callable $transport = null): array {
-    $token = requireGithubToken($user);
+    $token = requireGithubToken($user, $project);
     $owner = (string) $project['repo_owner'];
     $repo  = (string) $project['repo_name'];
     if ($repo === '') throw new AppError('לפרויקט לא מקושר ריפו');
@@ -113,7 +113,7 @@ function installEngine(array $user, array $project, array $conn, ?callable $tran
  * שתעבוד ותיעלם בלי שאיש יידע. עדיף לעצור כאן עם הסבר.
  */
 function dispatchTask(array $user, array $project, array $task, array $conn, ?callable $transport = null): array {
-    $token = requireGithubToken($user);
+    $token = requireGithubToken($user, $project);
     $board = boardUrl();
 
     if (!str_starts_with($board, 'https://')) {

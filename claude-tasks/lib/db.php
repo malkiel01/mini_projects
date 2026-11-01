@@ -261,6 +261,9 @@ function migrate(PDO $pdo): void {
     ");
     // הערוץ שבו נשאלה השאלה על המטלה — לשם תגיע התשובה
     addColumn($pdo, 'tasks', 'asked_channel_id', 'INTEGER');
+
+    // חיבורים: כמה גיטהאב וכמה מפתחות לספק (lib/connections.php)
+    migrateConnections($pdo);
 }
 
 /** ALTER TABLE ADD COLUMN אינו מכיר IF NOT EXISTS ב-SQLite — בודקים לבד. */
@@ -422,3 +425,5 @@ function statusCounts(PDO $pdo, ?int $topicId = null, bool $unassignedOnly = fal
     foreach ($st->fetchAll() as $row) $out[$row['status']] = (int) $row['c'];
     return $out;
 }
+
+require_once __DIR__ . '/connections.php';

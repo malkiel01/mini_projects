@@ -412,6 +412,14 @@ try {
             }
         }
 
+        // חיבור בינה מסוים למטלה (שלי בלבד); בלי — אוטומטי, לפי סדר העדיפות
+        $connId = int_or_null($in, 'connection_id');
+        if ($connId !== null) {
+            $c = ownConnection($me, $connId);
+            if ($c['kind'] === 'github') fail('זה חיבור גיטהאב, לא ספק בינה');
+            $provider = (string) $c['kind'];
+        }
+
         $topicId = int_or_null($in, 'topic_id');
         $auto    = $topicId === null && ($in['auto_topic'] ?? true) !== false;
         $verdict = null;
@@ -448,6 +456,7 @@ try {
             $me['id'], nowTs(), nowTs(),
         ]);
         $id = (int) db()->lastInsertId();
+        if ($connId !== null) db()->prepare('UPDATE tasks SET connection_id = ? WHERE id = ?')->execute([$connId, $id]);
 
         // סידור לפי כללים בלבד: זה קורה בכל הוספה, ואסור שיעלה כסף או
         // ישהה את התגובה. סידור עם מודל מופעל ידנית מהמגירה.
@@ -682,7 +691,7 @@ try {
                 'tail'      => $mine[$id]['tail'] ?? '',
             ];
         }
-        ok(['providers' => $catalog, 'default' => (string) ($me['default_provider'] ?? ''),
+        ok(['providers' => $catalog, 'default' => (string) (array_key_first($mine) ?? ''),
             'system' => aiStatus()]);
     }
 
@@ -752,47 +761,104 @@ try {
 
     case 'my-connections': {
         $me = requireUser($user);
-        $gh = userSecret((int) $me['id'], 'github_token');
+        $all = userConnections((int) $me['id']);
+        $gh  = array_values(array_filter($all, fn ($c) => $c['kind'] === 'github'));
         ok(['connections' => [
-            'github' => [
-                'connected' => $gh !== '',
-                'login'     => (string) ($me['github_login'] ?? ''),
-                'scopes'    => array_values(array_filter(explode(',', (string) ($me['github_scopes'] ?? '')))),
-                'tail'      => secretTail($gh),
-            ],
-            // ספקי הבינה חיים בטבלה משלהם — ראה action=providers.
+            // תאימות: החשבון הראשון כ"החיבור לגיטהאב"
+            'github' => $gh ? ['connected' => true, 'login' => $gh[0]['login'], 'scopes' => $gh[0]['scopes'],
+                               'tail' => $gh[0]['tail'], 'count' => count($gh)]
+                            : ['connected' => false, 'login' => '', 'scopes' => [], 'tail' => '', 'count' => 0],
             'providers' => userProviders((int) $me['id']),
-            'default_provider' => (string) ($me['default_provider'] ?? ''),
+            'list' => $all,
         ]]);
     }
 
+    /* ── חיבורים (docs/spec.md §10.1): כמה גיטהאב, כמה מפתחות לספק, וסדר עדיפות ── */
+
+    case 'connections':
+        ok(['connections' => userConnections((int) requireUser($user)['id'])]);
+
+    case 'connection-add': {
+        $me   = requireUser($user);
+        $kind = str_field($in, 'kind', 20);
+        $secret = trim((string) ($in['secret'] ?? ''));
+        $gh = null;
+        if ($kind === 'github') {
+            // מאמתים מול גיטהאב לפני השמירה — טוקן פסול היה מתגלה רק בפעולה הבאה
+            try { $gh = ghWhoAmI($secret); }
+            catch (Throwable $e) { logEvent($me, 'github.connect', '', false, $e->getMessage()); fail($e->getMessage()); }
+        }
+        $id = addConnection($me, $kind, $secret, str_field($in, 'label', 40), str_field($in, 'model', 80), $gh);
+        ok(['id' => $id, 'connections' => userConnections((int) $me['id'])]);
+    }
+
+    case 'connection-update': {
+        $me = requireUser($user);
+        updateConnection($me, (int) ($in['id'] ?? 0), array_intersect_key($in, array_flip(['label', 'model', 'secret'])));
+        ok(['connections' => userConnections((int) $me['id'])]);
+    }
+
+    case 'connection-remove': {
+        $me = requireUser($user);
+        $projects = removeConnection($me, (int) ($in['id'] ?? 0));
+        ok(['released_projects' => $projects, 'connections' => userConnections((int) $me['id'])]);
+    }
+
+    case 'connection-move': {
+        $me = requireUser($user);
+        moveConnection($me, (int) ($in['id'] ?? 0), (int) ($in['dir'] ?? 0));
+        ok(['connections' => userConnections((int) $me['id'])]);
+    }
+
+    /** בדיקה עכשיו: גיטהאב — מי אני; בינה — פנייה זעירה. הצלחה מנקה "נכשל". */
+    case 'connection-test': {
+        $me  = requireUser($user);
+        $row = ownConnection($me, (int) ($in['id'] ?? 0));
+        try {
+            if ($row['kind'] === 'github') {
+                $who = ghWhoAmI(decryptSecret((string) $row['secret']));
+                db()->prepare('UPDATE connections SET login = ?, scopes = ? WHERE id = ?')
+                    ->execute([$who['login'], implode(',', $who['scopes']), $row['id']]);
+                $msg = 'מחובר כ־' . $who['login'];
+            } else {
+                $c = aiChain($me, (int) $row['id'])[0] ?? null;
+                if (!$c) fail('אין מפתח בחיבור הזה');
+                aiComplete($c, 'ענה קצר מאוד.', 'ענה במילה אחת: אישור', 16);
+                $msg = 'החיבור תקין · ' . $c['model'];
+            }
+            markConnection((int) $row['id'], true);
+            logEvent($me, 'connection.test', $row['kind'], true, "#{$row['id']}");
+            ok(['message' => $msg, 'connections' => userConnections((int) $me['id'])]);
+        } catch (Throwable $e) {
+            markConnection((int) $row['id'], false, $e->getMessage());
+            logEvent($me, 'connection.test', $row['kind'], false, $e->getMessage());
+            fail($e->getMessage());
+        }
+    }
+
+    /** חיבור הגיטהאב שלי לפרויקט. ‏connection_id: null = אוטומטי (לפי בעל הריפו). */
+    case 'project-github': {
+        $me = requireUser($user);
+        $project = requireProject((int) ($in['project_id'] ?? 0), $me, 'read');
+        setProjectGithub($me, (int) $project['id'], int_or_null($in, 'connection_id'));
+        ok(['github' => projectGithubChoice($me, $project)]);
+    }
+
     case 'connect-github': {
+        // תאימות לממשק הקודם — כמו connection-add עם kind=github
         $me    = requireUser($user);
         $token = trim((string) ($in['token'] ?? ''));
         if ($token === '') fail('חסר טוקן');
-
-        // מאמתים מול גיטהאב לפני השמירה. טוקן פסול שנשמר היה מתגלה רק
-        // בפעולה הבאה, ושם כבר לא ברור שהבעיה היא בחיבור.
-        try {
-            $who = ghWhoAmI($token);
-        } catch (Throwable $e) {
-            logEvent($me, 'github.connect', '', false, $e->getMessage());
-            fail($e->getMessage());
-        }
-
-        setUserSecret((int) $me['id'], 'github_token', $token);
-        db()->prepare('UPDATE users SET github_login = ?, github_scopes = ? WHERE id = ?')
-            ->execute([$who['login'], implode(',', $who['scopes']), $me['id']]);
-
+        try { $who = ghWhoAmI($token); }
+        catch (Throwable $e) { logEvent($me, 'github.connect', '', false, $e->getMessage()); fail($e->getMessage()); }
+        addConnection($me, 'github', $token, '', '', $who);
         logEvent($me, 'github.connect', $who['login'], true, implode(',', $who['scopes']));
         ok(['github' => $who]);
     }
 
     case 'disconnect-github': {
         $me = requireUser($user);
-        setUserSecret((int) $me['id'], 'github_token', '');
-        db()->prepare("UPDATE users SET github_login = '', github_scopes = '' WHERE id = ?")
-            ->execute([$me['id']]);
+        foreach (userConnections((int) $me['id']) as $c) if ($c['kind'] === 'github') removeConnection($me, $c['id']);
         logEvent($me, 'github.disconnect');
         ok();
     }
@@ -882,7 +948,7 @@ try {
         // האסימון של הפרויקט אינו נשלח לממשק — הוא נכתב ישירות לסוד בריפו.
         unset($project['agent_token']);
         ok(['project' => $project, 'members' => projectMembers((int) $project['id']),
-            'engine' => engineStatus($project)]);
+            'engine' => engineStatus($project), 'github' => projectGithubChoice($me, $project)]);
     }
 
     case 'update-project': {
@@ -1007,7 +1073,9 @@ try {
         if ($task['project_id'] === null) fail('המטלה אינה משויכת לפרויקט, ולכן אין ריפו להריץ עליו');
 
         $project = requireProject((int) $task['project_id'], $me, 'write');
-        $conn    = userConn($me, (string) $task['provider'], (string) $task['model']);
+        $conn    = userConn($me, (string) $task['provider'], (string) $task['model'],
+                            $task['connection_id'] !== null && (int) $task['created_by'] === (int) $me['id']
+                                ? (int) $task['connection_id'] : null);
 
         ok(dispatchTask($me, $project, $task, $conn));
     }
@@ -1041,7 +1109,7 @@ try {
         $project = requireProject((int) ($in['project_id'] ?? 0), $me, 'read');
         if ($project['repo_name'] === '') fail('לפרויקט לא מקושר ריפו');
 
-        ok(['tree' => ghContents(requireGithubToken($me), $project['repo_owner'], $project['repo_name'],
+        ok(['tree' => ghContents(requireGithubToken($me, $project), $project['repo_owner'], $project['repo_name'],
                                  str_field($in, 'path', 400),
                                  str_field($in, 'ref', 100, (string) $project['default_branch']))]);
     }
@@ -1054,7 +1122,7 @@ try {
         $path = str_field($in, 'path', 400);
         if ($path === '') fail('חסר נתיב לקובץ');
 
-        $r = ghPutFile(requireGithubToken($me), $project['repo_owner'], $project['repo_name'],
+        $r = ghPutFile(requireGithubToken($me, $project), $project['repo_owner'], $project['repo_name'],
                        $path, (string) ($in['content'] ?? ''),
                        str_field($in, 'message', 300, 'עדכון דרך לוח המטלות'),
                        str_field($in, 'branch', 100, (string) $project['default_branch']),
@@ -1072,10 +1140,12 @@ try {
         // מרכאות בודדות דרך heredoc: ב-SQLite "" הוא מזהה, והוא נופל
         // למחרוזת רק כברירת מחדל היסטורית שאפשר לכבות.
         ok(['users' => db()->query(<<<SQL
-            SELECT id, username, display_name, role, created_at, github_login, default_provider,
+            SELECT id, username, display_name, role, created_at,
+                   (SELECT c.login FROM connections c WHERE c.user_id = users.id AND c.kind = 'github' ORDER BY c.id LIMIT 1) github_login,
                    (platform_sub <> '') platform_linked,
-                   (github_token <> '') has_github,
-                   (SELECT COUNT(*) FROM user_providers p WHERE p.user_id = users.id) providers,
+                   EXISTS (SELECT 1 FROM connections c WHERE c.user_id = users.id AND c.kind = 'github') has_github,
+                   (SELECT COUNT(*) FROM connections c WHERE c.user_id = users.id AND c.kind <> 'github') ai_connections,
+                   (SELECT COUNT(*) FROM connections c WHERE c.user_id = users.id AND c.kind <> 'github') providers,
                    (SELECT COUNT(*) FROM project_members m WHERE m.user_id = users.id) projects,
                    (SELECT COUNT(*) FROM tasks t WHERE t.created_by = users.id) tasks
               FROM users ORDER BY id
