@@ -6,7 +6,8 @@
 // קובץ (assets/fonts/static/<שם>-700.ttf / -900.ttf; מזהי הגליפים זהים — נוצרו ב-fontTools instancer).
 
 import { pagesOf, pageSize, runningItems, headsByPage } from './pages.js';
-import { framesOnPage, isImage, imagePlacement, FONTS } from './frames.js';
+import { framesOnPage, drawingsOnPage, isImage, imagePlacement, FONTS } from './frames.js';
+import { mul } from './vector.js';
 import { shapeLine, advance } from './shaper.js';
 
 const STATIC_WEIGHTS = [700, 900];
@@ -56,18 +57,100 @@ export function glyphOps(f, glyphs, x, y, size, text = '') {
   return runs.map(r => r.op);
 }
 
+// ===== ציורים (שכבות vector): נתיבים אמיתיים ב-PDF, ומה ש-pdf-core עוד לא יודע — כתמונה =====
+// pdf-core שלב 1: path (d מוחלט M L C Q Z, transform, fill / stroke בצבע אחד, שקיפות). שלב 2 (מסכה, מעבר צבע) — עוד לא.
+
+const ID = [1, 0, 0, 1, 0, 0];
+const ABS_D = /^[\sMLCQZ0-9eE.,+-]*[MLCQZ][\sMLCQZ0-9eE.,+-]*$/;
+const HEX = /^#[0-9a-f]{6}$/i;
+const clamp01 = v => Math.min(1, Math.max(0, v));
+
+/** פריט → פעולות path (שטוחות, במערכת העמוד), או null — יש בו משהו שעדיין רק כתמונה. */
+function itemOps(it, T, symbols, depth = 0) {
+  if (!it || typeof it !== 'object' || depth > 20) return [];
+  if (Array.isArray(it.effects) && it.effects.length) return null;
+  if (it.blend && it.blend !== 'normal') return null;
+  if (it.type === 'group') {
+    if (it.clip) return null;                                        // מסכת חיתוך — שלב 2
+    if ((it.opacity ?? 1) !== 1) return null;                        // שקיפות של קבוצה שלמה — לא נתיב-נתיב
+    const out = [];
+    for (const c of it.children || []) { const o = itemOps(c, T, symbols, depth + 1); if (!o) return null; out.push(...o); }
+    return out;
+  }
+  if (it.type === 'use') {
+    const sy = symbols?.[it.symbol];
+    if (!sy) return [];
+    if ((it.opacity ?? 1) !== 1) return null;
+    const M = mul(T, it.transform || ID), out = [];
+    for (const c of sy.paths || []) { const o = itemOps(c, M, symbols, depth + 1); if (!o) return null; out.push(...o); }
+    return out;
+  }
+  if (it.type && it.type !== 'path') return null;                   // תמונה, טקסט, סוג לא מוכר
+  if (typeof it.d !== 'string' || !ABS_D.test(it.d)) return null;   // פקודה יחסית או קשת — כתמונה
+  const alpha = it.opacity ?? 1;
+  const op = { op: 'path', d: it.d.trim(), transform: mul(T, it.transform || ID).map(r2) };
+  const f = it.fill;
+  if (f) {
+    if (f.gradient || !HEX.test(f.color || '')) return null;
+    op.fill = f.color.toLowerCase();
+    const a = clamp01((f.opacity ?? 1) * alpha);
+    if (a < 1) op.fillOpacity = r2(a);
+    if (it.fillRule === 'evenodd') op.fillRule = 'evenodd';
+  }
+  const st = it.stroke;
+  if (st && (st.width ?? 1) > 0) {
+    if (st.gradient || !HEX.test(st.color || '')) return null;
+    op.stroke = st.color.toLowerCase();
+    op.width = r2(st.width ?? 1);
+    const a = clamp01((st.opacity ?? 1) * alpha);
+    if (a < 1) op.strokeOpacity = r2(a);
+    if (st.cap && st.cap !== 'butt') op.cap = st.cap;
+    if (st.join && st.join !== 'miter') op.join = st.join;
+    if (st.miter != null && st.miter !== 4) op.miter = st.miter;
+    if (Array.isArray(st.dash) && st.dash.length) op.dash = st.dash.map(r2);
+  }
+  if (!op.fill && !op.stroke) return [];                              // לא נראה — לא נכנס
+  return [op];
+}
+
+/**
+ * ציור מוצב → קטעים לפי הסדר: { ops } — נתיבים ל-pdf-core, או { raster: [פריטים] } — מה שיוצא כתמונה (מעבר צבע,
+ * מסכה, תמונה בתוך הציור, טקסט, אפקטים). פריטים רצופים מאותו סוג — קטע אחד, כך שהסדר (מה מעל מה) נשמר.
+ */
+export function drawingSegments(drawing, symbols = {}) {
+  const segs = [];
+  for (const it of drawing.paths || []) {
+    const o = itemOps(it, ID, symbols);
+    const last = segs[segs.length - 1];
+    if (o) { if (!o.length) continue; if (last?.ops) last.ops.push(...o); else segs.push({ ops: o }); }
+    else if (last?.raster) last.raster.push(it); else segs.push({ raster: [it] });
+  }
+  return segs;
+}
+
+/** המפתח של קטע-תמונה (rasters ב-drawList). */
+export const rasterKey = (drawingId, index) => drawingId + '#' + index;
+
 /**
  * רשימת הציור של המסמך כולו.
  *   text — layoutFlows(model, fontsFor); running — הגופנים של מספר העמוד והכותרת הרצה (גופן הגוף).
- * מה לא מודפס: קווי עזר, מסגרות, סימן הגלישה — רק מה שעל הנייר. under — ראו למטה.
+ * מה לא מודפס: קווי עזר, מסגרות, סימן הגלישה — רק מה שעל הנייר.
+ * rasters — Map(rasterKey → { src, box }): התמונות של קטעי הציורים ש-pdf-core עוד לא מצייר (drawingSegments).
  */
-export function drawList(model, text, running, { title = '', under = new Map() } = {}) {
+export function drawList(model, text, running, { title = '', rasters = new Map() } = {}) {
   const [w, h] = pageSize(model);
   const bleed = model.layout?.bleed || 0;
   const heads = headsByPage(model, text, i => framesOnPage(model, i));
   const pages = pagesOf(model).map((page, index) => {
-    // under — תמונות שמתחת לכל השאר (ציורים שהפכו לתמונה): Map(עמוד → [{ src, box }])
-    const ops = (under.get(index) || []).map(u => ({ op: 'image', src: u.src, box: u.box.map(r2) }));
+    // ציורים — מתחת לטקסט ולתמונות (כמו על המסך), כל אחד בסדר הפריטים שלו
+    const ops = [];
+    for (const d of drawingsOnPage(model, index)) {
+      drawingSegments(d, model.symbols || {}).forEach((sg, k) => {
+        if (sg.ops) { ops.push(...sg.ops); return; }
+        const r = rasters.get(rasterKey(d.id, k));
+        if (r) ops.push({ op: 'image', src: r.src, box: r.box.map(r2) });
+      });
+    }
     for (const fr of framesOnPage(model, index)) {
       if (isImage(fr)) {
         const r = imagePlacement(fr);
