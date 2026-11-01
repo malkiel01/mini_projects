@@ -3,6 +3,7 @@
 // הטקסט נפרס מחדש בכל שינוי (flow.js); שטף עם זרימה אוטומטית שלא נכנס — מוסיף עמודים.
 // כל שינוי נשמר לשרת אחרי רגע (doc_save עם rev — שמירה מלשונית ישנה נדחית במקום לדרוס).
 
+import { zoomLabel } from './ui-core/viewport.js';
 import { PageView } from './view.js';
 import { pagesOf, pageSize, setPageCount, setPageSize, marginsFit, mmToPt, ptToMm,
   mastersOf, masterOf, setMaster, updateMaster, ensureMasters, spreadOfPage, contentBox } from './pages.js';
@@ -184,21 +185,21 @@ function updateBar() {
   // "2–3" בתוך טקסט עברי מתהפך ל-"3–2" — מבודדים כ-LTR (LRI … PDI). בטלפון — קצר: "2–3 / 6"
   $('#pos').textContent = '\u2066' + range + ' / ' + total + '\u2069';
   $('#pos').title = `עמודים ${range} מתוך ${total}`;
-  $('#zoom-pct').textContent = Math.round(view.zoom * 100) + '%';
+  $('#zoom-pct').textContent = zoomLabel(view.zoom);
 }
 
 $('#prev').addEventListener('click', () => view.goSpread(view.currentSpread() - 1));
 $('#next').addEventListener('click', () => view.goSpread(view.currentSpread() + 1));
-$('#zoom-in').addEventListener('click', () => view.setZoom(view.zoom * 1.25));
-$('#zoom-out').addEventListener('click', () => view.setZoom(view.zoom / 1.25));
+$('#zoom-in').addEventListener('click', () => view.step(1));
+$('#zoom-out').addEventListener('click', () => view.step(-1));
 $('#zoom-pct').addEventListener('click', () => view.fit());
 
 // קיצורים — לפי המקש הפיזי (ui-core/keys.js), כך שהם עובדים גם כשהמקלדת בעברית; לא בתוך שדה ולא בתוך חלון
 const keys = shortcuts();
 keys.add('PageDown', () => view.goSpread(view.currentSpread() + 1));
 keys.add('PageUp', () => view.goSpread(view.currentSpread() - 1));
-keys.add('Mod+Shift?+=', () => view.setZoom(view.zoom * 1.25));
-keys.add('Mod+-', () => view.setZoom(view.zoom / 1.25));
+keys.add('Mod+Shift?+=', () => view.step(1));
+keys.add('Mod+-', () => view.step(-1));
 keys.add('Mod+0', () => view.fit());
 keys.add('Mod+Z', undo, { label: 'ביטול' });
 keys.add('Mod+Shift+Z', redo, { label: 'ביצוע מחדש' });

@@ -8,6 +8,7 @@ import { layoutDoc, contentBox, runningItems, headsByPage, pagesOf, masterOf, pa
 import { framesOnPage, drawingsOnPage, frameAt, isImage, imagePlacement } from './frames.js';
 import { drawItems } from './vector.js';
 import { drawGlyphs, shapeLine, advance } from './shaper.js';
+import { nextStep, wheelPixels } from './ui-core/viewport.js';
 
 const MIN_Z = 0.1, MAX_Z = 8;
 
@@ -94,6 +95,9 @@ export class PageView {
     this.draw();
   }
 
+  /** המדרגה הבאה של הזום (כמו בשאר החבילה — ui-core/viewport.js), סביב מרכז החלון. */
+  step(dir) { this.setZoom(nextStep(this.zoom, dir)); }
+
   /** זום שמכניס פריסה שלמה לרוחב (ולגובה, אם אפשר). */
   fit() {
     if (!this.lay) return;
@@ -133,7 +137,8 @@ export class PageView {
     if (!e.ctrlKey && !e.metaKey) return;   // גלילה רגילה — של הדפדפן
     e.preventDefault();
     const r = this.scroller.getBoundingClientRect();
-    this.setZoom(this.zoom * Math.exp(-e.deltaY * 0.0025), e.clientX - r.left, e.clientY - r.top);
+    const [, dy] = wheelPixels(e, this.viewH);   // עכבר שגולל ב"שורות" — בפיקסלים
+    this.setZoom(this.zoom * Math.exp(-dy * 0.0025), e.clientX - r.left, e.clientY - r.top);
   }
 
   // צביטה: שתי אצבעות מגדילות רק את המסמך (touch-action על התיבה חוסם את הזום של הדף)
