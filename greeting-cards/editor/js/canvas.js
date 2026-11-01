@@ -10,6 +10,7 @@ import { fillText } from './merge.js';
 import { ICONS } from './icons.js';
 import { ELEMENTS, scalePath } from './elements.js';
 import { log } from './log.js';
+import { snapper } from './ui-core/snap.js';   // הצמדה לקצוות ולמרכזים — משותף לחבילה
 
 const SNAP_PX = 6;           // מרחק הצמדה, בפיקסלי מסך
 const TAP_SLOP = 22;         // הקשה ליד שכבה קטנה עדיין בוחרת אותה — חצי מ-44px, גודל מטרת מגע
@@ -475,30 +476,22 @@ export class Canvas {
         const W = this.doc.page.width, H = this.doc.page.height;
         const thr = SNAP_PX / this.view.zoom;
         const box = g.getClientRect({ relativeTo: this.page });
-        const xs = [0, W / 2, W], ys = [0, H / 2, H];
+        // היעדים: הדף ושאר השכבות הגלויות שאינן בבחירה — ההצמדה עצמה מ-ui-core (snap.js)
+        const boxes = [[0, 0, W, H]];
         for (const [id, n] of this.nodes) {
             if (id === g.id() || this.selected.includes(id) || !n.visible()) continue;
             const r = n.getClientRect({ relativeTo: this.page });
-            xs.push(r.x, r.x + r.width / 2, r.x + r.width);
-            ys.push(r.y, r.y + r.height / 2, r.y + r.height);
+            boxes.push([r.x, r.y, r.width, r.height]);
         }
-        const best = (vals, edges) => {
-            let hit = null;
-            for (const e of edges) for (const v of vals) {
-                const d = v - e.v;
-                if (Math.abs(d) < thr && (!hit || Math.abs(d) < Math.abs(hit.d))) hit = { d, at: v };
-            }
-            return hit;
-        };
-        const hx = best(xs, [{ v: box.x }, { v: box.x + box.width / 2 }, { v: box.x + box.width }]);
-        const hy = best(ys, [{ v: box.y }, { v: box.y + box.height / 2 }, { v: box.y + box.height }]);
-        if (hx) g.x(g.x() + hx.d);
-        if (hy) g.y(g.y() + hy.d);
+        const { dx, dy, guides } = snapper({ boxes, tol: thr }).box([box.x, box.y, box.width, box.height]);
+        if (dx) g.x(g.x() + dx);
+        if (dy) g.y(g.y() + dy);
+        const hx = guides.find(q => q.axis === 'x'), hy = guides.find(q => q.axis === 'y');
 
         this.guides.destroyChildren();
         const sw = 1 / this.view.zoom;
-        if (hx) this.guides.add(new Konva.Line({ points: [hx.at, -H, hx.at, 2 * H], stroke: '#e0457b', strokeWidth: sw }));
-        if (hy) this.guides.add(new Konva.Line({ points: [-W, hy.at, 2 * W, hy.at], stroke: '#e0457b', strokeWidth: sw }));
+        if (hx) this.guides.add(new Konva.Line({ points: [hx.v, -H, hx.v, 2 * H], stroke: '#e0457b', strokeWidth: sw }));
+        if (hy) this.guides.add(new Konva.Line({ points: [-W, hy.v, 2 * W, hy.v], stroke: '#e0457b', strokeWidth: sw }));
         this.ui.batchDraw();
     }
 
