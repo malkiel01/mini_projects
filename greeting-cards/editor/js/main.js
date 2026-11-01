@@ -1,7 +1,7 @@
 // העורך החדש: מסך הבית (העיצובים שלי) ומסך העריכה. ‏spec/03-editor.md.
 
 import { log, logDump } from './log.js';
-import { buildMbe, importMbe, isMbe } from './mbe-io.js';
+import { buildMbe, importMbe, isMbe, mbeJournal, restoreFromJournal } from './mbe-io.js';
 import { setColorContext } from './colorpicker.js';
 import { shortcuts } from './ui-core/keys.js';   // לפי המקש הפיזי — Ctrl+Z עובד גם במקלדת עברית (ui-core)
 import { accountMenu, accountServer } from './ui-core/account.js';   // 👤 תפריט המשתמש — משותף לחבילה
@@ -24,7 +24,7 @@ import { loadScript } from './io.js';
 import { docVariables, readSheetFile, readPasted, readPhoneContacts, guessColumns, normalizePhone, fileNames, fillText } from './merge.js';
 
 // הגרסה — מופיעה ביומן, כדי לדעת איזה קוד רץ בטלפון.
-const BUILD = '2026-11-01.shortcuts-1';
+const BUILD = '2026-11-01.journal-2';
 
 const app = $('#app');
 let ed = null;   // העיצוב הפתוח: { id, doc, history, canvas, dirty }
@@ -1122,6 +1122,52 @@ async function versionsSheet() {
                 : h('p', { class: 'empty' }, 'עוד אין גרסאות קודמות — הן נוצרות תוך כדי עבודה, פעם ב-10 דקות.'));
     } catch (e) {
         body.replaceChildren(h('p', { class: 'empty' }, 'הגרסאות לא נטענו: ' + (e.message || e)));
+    }
+    body.append(await journalSection());
+}
+
+const APP_NAMES = { 'greeting-cards': 'סטודיו העיצוב', 'raster-studio': 'עיצוב רסטר', 'vector-studio': 'וקטורי', 'layout-studio': 'עימוד', 'word-processor': 'עורך התמלילים' };
+const STAGE_LABEL = { create: 'נוצר', edit: 'עריכה', export: 'ייצוא', return: 'חזר', merge: 'מיזוג', restore: 'שחזור', handoff: 'הועבר', review: 'הגהה' };
+
+/** 📜 שלבי הקובץ: היומן שהליבה כותבת בכל שמירה של ‎.mbe — מעברים בין אפליקציות ואנשים, עם עותק לכל גרסה. */
+async function journalSection() {
+    const base = ed?.doc.mbeBase ? await assets.get(ed.doc.mbeBase).catch(() => null) : null;
+    if (!base) return h('div');
+    let stages = [];
+    try { stages = await mbeJournal(base); } catch { return h('div'); }
+    if (!stages.length) return h('div');
+    const when = at => at ? new Date(at).toLocaleString('he-IL', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+    return h('div', {},
+        h('h3', { class: 'section' }, '📜 שלבי הקובץ (‎.mbe)'),
+        h('p', { class: 'hint' }, 'כל פעם שהעיצוב נשמר כ-‎.mbe — בהורדה, בפתיחה ברסטר / בווקטורי ובחזרה — נרשם שלב, עם עותק של אותה גרסה.'),
+        h('ul', { class: 'my-fonts' }, stages.slice().reverse().map((st, i) => h('li', {},
+            h('span', {}, `${STAGE_LABEL[st.kind] || st.kind}${st.app ? ' · ' + (APP_NAMES[st.app] || st.app) : ''}${st.note ? ' — ' + st.note : ''}`),
+            h('span', { class: 'muted small' }, when(st.at)),
+            // השלב האחרון הוא הגרסה הנוכחית (שמירות רצופות באותה אפליקציה מעדכנות אותו)
+            i === 0 ? h('span', { class: 'muted small' }, 'הנוכחית')
+            : st.pruned || !st.result ? h('span', { class: 'muted small' }, 'נגזם')
+                : h('button', { class: 'btn ghost sm', onclick: () => restoreStage(st, base) }, 'שחזור')))));
+}
+
+async function restoreStage(st, base) {
+    const id = ed.id;
+    try {
+        toast('משחזר…');
+        const r = await restoreFromJournal(base, st.id || st.result);
+        if (ed?.id !== id) return;
+        r.doc.title = ed.doc.title;
+        r.doc.mbeBase = await assets.put(new Blob([r.bytes], { type: 'application/vnd.mbe+zip' }));
+        for (const [aid, img] of r.loaded) ed.canvas.setImage(aid, img);
+        await ensureDocFonts(r.doc);
+        ed.doc = r.doc;
+        ed.canvas.setDoc(r.doc);
+        ed.canvas.select([]);
+        commit();
+        closeSheet();
+        log('journal-restore', { stage: st.id || '', kind: st.kind });
+        toast('שוחזר ✓ — ↶ מחזיר את מה שהיה');
+    } catch (e) {
+        toast('השחזור נכשל: ' + (e.message || e), 'error');
     }
 }
 
