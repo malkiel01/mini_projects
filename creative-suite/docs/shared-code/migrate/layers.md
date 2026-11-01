@@ -30,7 +30,7 @@ const panel = layersPanel($('.layer-list'), {
 
 `layers-panel.js`: `row()`, `rename()`, `drag()` ותחילת `render()` → `layersPanel(list, …)`. נשארים אצלך: `.layer-props`
 (אטימות, מיזוג), המסכות (`mask-thumb`, `vmask-thumb` — דרך `badges`), `fillCss`, הפעולות, וההיסטוריה (`history.reparent` /
-`moveLayer` בתוך `move`). מ-CSS — הבלוק `.layer-list` … `.lock.off` (עבר ל-`ui.css`, אותם שמות).
+`moveLayer` בתוך `move`). מ-CSS — הבלוק `.layer-list` … `.lock.off` (עבר ל-`ui.css`, אותם שמות, תחת `.layer-list` — לא נוגע בשורות של מי שעוד לא עבר).
 
 ## וקטורי
 
