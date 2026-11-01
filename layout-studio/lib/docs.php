@@ -3,6 +3,7 @@
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/model.php';
+require_once __DIR__ . '/media.php';
 
 const LS_TITLE_MAX = 120;
 // גבולות גודל עמוד, ב-pt: מ-5 ס"מ ועד 120 ס"מ.
@@ -71,6 +72,41 @@ function ls_doc_create(int $owner, string $title, string $preset, ?array $custom
     $q = $db->prepare('SELECT * FROM docs WHERE id = ?');
     $q->execute([(int)$db->lastInsertId()]);
     return ls_doc_row($q->fetch());
+}
+
+/** שינוי שם. @throws InvalidArgumentException not_found / title_required / title_too_long */
+function ls_doc_rename(int $owner, int $id, string $title): array
+{
+    $title = trim(preg_replace('/\s+/u', ' ', preg_replace('/\.mbe$/i', '', trim($title))));
+    if ($title === '') throw new InvalidArgumentException('title_required');
+    if (mb_strlen($title) > LS_TITLE_MAX) throw new InvalidArgumentException('title_too_long');
+    if (!ls_doc_find($owner, $id)) throw new InvalidArgumentException('not_found');
+    ls_db()->prepare('UPDATE docs SET title = ?, updated_at = ? WHERE id = ? AND owner_id = ?')->execute([$title, ls_now(), $id, $owner]);
+    return ls_doc_row(ls_doc_find($owner, $id));
+}
+
+/** "ייצוא כל הנתונים שלי": החשבון, והמסמכים עם המודל שלהם (התמונות — בהורדה כ-‎.mbe של כל מסמך). */
+function ls_account_export(int $owner): array
+{
+    $acc = ls_db()->prepare('SELECT name, email, role, created_at FROM accounts WHERE id = ?');
+    $acc->execute([$owner]);
+    $q = ls_db()->prepare('SELECT * FROM docs WHERE owner_id = ? AND deleted_at IS NULL ORDER BY id');
+    $q->execute([$owner]);
+    return ['account' => $acc->fetch() ?: null, 'docs' => array_map(fn($r) => ls_doc_row($r) + ['model' => json_decode((string)$r['model'])], $q->fetchAll())];
+}
+
+/** "מחיקת החשבון": המסמכים (גם שבסל), החשבון, והקבצים בשרת (תמונות וקובצי מקור). */
+function ls_account_delete(int $owner): void
+{
+    $db = ls_db();
+    $db->prepare('DELETE FROM docs WHERE owner_id = ?')->execute([$owner]);
+    $db->prepare('DELETE FROM accounts WHERE id = ?')->execute([$owner]);
+    $dir = ls_media_dir($owner);
+    if (is_dir($dir)) {
+        $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST);
+        foreach ($it as $f) $f->isDir() ? rmdir($f->getPathname()) : unlink($f->getPathname());
+        rmdir($dir);
+    }
 }
 
 /** מחיקה רכה (deleted_at). רק הבעלים. מחזיר false אם אין מסמך כזה שלו. */

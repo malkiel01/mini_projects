@@ -23,6 +23,7 @@ require_once __DIR__ . '/../lib/model.php';
 require_once __DIR__ . '/../lib/media.php';
 require_once __DIR__ . '/../lib/pdf.php';
 require_once __DIR__ . '/../lib/mbeio.php';
+require_once __DIR__ . '/../lib/ui-core/account/account.php';
 
 $fails = 0;
 $n = 0;
@@ -271,6 +272,25 @@ $badBytes = Mbe::save($bad, ['app' => 'test']);
 $before = count(ls_docs_list($uidA));
 check('מודל שהעימוד לא מקבל — bad_model, ובלי מסמך חדש', throws(fn() => ls_mbe_import($uidA, $badBytes, 'b.mbe'), 'bad_model:binding')
     && count(ls_docs_list($uidA)) === $before);
+
+
+// ===== 👤 תפריט המשתמש: שם, הגדרות, ייצוא ומחיקה =====
+$rn = ls_doc_rename($uidA, $imp['id'], '  ספר חדש.mbe ');
+check('שינוי שם — בלי רווחים וסיומת', $rn['title'] === 'ספר חדש');
+check('שינוי שם של מסמך של אחר — not_found', throws(fn() => ls_doc_rename($uidB, $imp['id'], 'x'), 'not_found'));
+check('שם ריק — title_required', throws(fn() => ls_doc_rename($uidA, $imp['id'], ' '), 'title_required'));
+$hooks = fn($u) => ['app' => 'layout-studio', 'pdo' => fn() => ls_db(), 'user' => fn() => $u,
+    'export' => fn($x) => ls_account_export((int)$x), 'delete' => fn($x) => ls_account_delete((int)$x)];
+uic_account_api('account_prefs_set', ['ns' => 'general', 'value' => ['theme' => 'dark']], $hooks($uidA));
+check('הגדרות אישיות — נשמרות במסד שלנו, לכל משתמש', (uic_account_api('account_prefs', [], $hooks($uidA))['prefs']['general']['theme'] ?? null) === 'dark'
+    && empty(uic_account_api('account_prefs', [], $hooks($uidB))['prefs']['general']));
+$ex = uic_account_api('account_export', [], $hooks($uidA));
+check('ייצוא כל הנתונים — החשבון והמסמכים עם המודל', ($ex['data']['account']['email'] ?? '') !== '' && count($ex['data']['docs']) === count(ls_docs_list($uidA))
+    && isset($ex['data']['docs'][0]['model']));
+$cntB = count(ls_docs_list($uidB));
+uic_account_api('account_delete', ['confirm' => 'DELETE'], $hooks($uidB));
+check('מחיקת חשבון — המסמכים, החשבון והקבצים שלו; של אחרים לא נוגעים', count(ls_docs_list($uidB)) === 0 && !is_dir(ls_media_dir($uidB))
+    && count(ls_docs_list($uidA)) > 0 && ls_media_path($uidA, substr($m1['src'], 6)) !== null);
 
 echo "\n" . ($n - $fails) . " / $n עברו\n";
 exit($fails ? 1 : 0);

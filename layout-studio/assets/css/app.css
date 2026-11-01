@@ -15,9 +15,11 @@
 /* ===== העורך: כותרת, במה בקנבס, סרגל תחתון ===== */
 .stage { --paste: #dfe2e8; --page: #fff; --page-shadow: rgba(16, 24, 40, .18); --guide: #d63bd0; --spine: rgba(16, 24, 40, .25);
     --running: #16192b; --select: var(--brand); --frame: rgba(45, 120, 220, .45); --ink-print: #111; --overset: #d93025; }
+/* ערכה כהה: לפי המערכת — אלא אם בחרו בהירה בהגדרות האישיות (data-theme, ui-core/account.js); או כהה שנבחרה ידנית */
 @media (prefers-color-scheme: dark) {
-    .stage { --paste: #0c0e12; --page-shadow: rgba(0, 0, 0, .6); --guide: #e06bdc; }   /* הדף והדיו נשארים — זה נייר */
+    :root:not([data-theme="light"]) .stage { --paste: #0c0e12; --page-shadow: rgba(0, 0, 0, .6); --guide: #e06bdc; }   /* הדף והדיו נשארים — זה נייר */
 }
+:root[data-theme="dark"] .stage { --paste: #0c0e12; --page-shadow: rgba(0, 0, 0, .6); --guide: #e06bdc; }
 body.editor { display: flex; flex-direction: column; height: 100dvh; overflow: hidden; }
 body.editor .top a.icon-btn { color: inherit; text-decoration: none; }
 #stage { flex: 1; min-height: 0; position: relative; }
