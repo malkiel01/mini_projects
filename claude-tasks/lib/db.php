@@ -201,6 +201,13 @@ function migrate(PDO $pdo): void {
     addColumn($pdo, 'projects', 'agent_token',   "TEXT NOT NULL DEFAULT ''");
     addColumn($pdo, 'projects', 'check_command', "TEXT NOT NULL DEFAULT ''");
     addColumn($pdo, 'projects', 'engine_at',     'INTEGER NOT NULL DEFAULT 0');
+
+    // היררכיה: פרויקט אב (ריפו) ותתי-פרויקטים לפי תיקייה בתוכו. נושא יכול
+    // לשבת בתוך פרויקט — השלבים של אותו פרויקט.
+    addColumn($pdo, 'projects', 'parent_id', 'INTEGER REFERENCES projects(id)');
+    addColumn($pdo, 'projects', 'path',      "TEXT NOT NULL DEFAULT ''");
+    addColumn($pdo, 'projects', 'icon',      "TEXT NOT NULL DEFAULT ''");
+    addColumn($pdo, 'topics',   'project_id', 'INTEGER REFERENCES projects(id)');
 }
 
 /** ALTER TABLE ADD COLUMN אינו מכיר IF NOT EXISTS ב-SQLite — בודקים לבד. */

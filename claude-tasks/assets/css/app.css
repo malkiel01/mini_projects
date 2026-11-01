@@ -127,6 +127,26 @@ input:focus, select:focus, textarea:focus { border-color: var(--brand); outline:
   color: var(--c); border-color: color-mix(in srgb, var(--c) 40%, transparent); background: color-mix(in srgb, var(--c) 10%, var(--surface)); }
 .badge--hint { cursor: pointer; border: 1px dashed var(--brand); color: var(--brand); background: none; font: inherit; font-size: .78rem; }
 
+/* ===== עץ הפרויקטים ===== */
+.sec-head { display: flex; align-items: center; gap: var(--s2); margin-bottom: var(--s2); }
+.sec-head .sec-title { flex: 1; margin: 0; }
+.sec-title { font-size: .9rem; font-weight: 600; margin: var(--s3) 0 var(--s2); }
+.projects-sec { margin-bottom: var(--s2); }
+.projects-sec .empty { padding: var(--s3); }
+.crumbs { display: flex; align-items: center; gap: 2px; flex-wrap: nowrap; overflow: hidden; margin-bottom: var(--s2); font-size: .88rem; }
+.crumbs .crumb { flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.crumbs .crumb[aria-current] { color: var(--ink); font-weight: 600; cursor: default; }
+.crumbs .chev { flex: none; color: var(--muted); }
+.crumbs .icon-btn { margin-inline-start: auto; color: var(--muted); }
+.card .counts { display: flex; gap: 4px; flex: none; }
+.card .counts .badge { min-height: 22px; padding: 0 6px; }
+
+.view-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.view-tabs button { flex-direction: row; min-height: 42px; font-size: .9rem; color: var(--ink); }
+.view-tabs button small { display: inline-block; min-width: 1.4em; padding: 0 5px; border-radius: 99px; background: var(--brand-soft); color: var(--brand); font-size: .75rem; }
+.view-tabs button small:empty { display: none; }
+.view-tabs button[aria-selected="true"] small { background: rgba(255, 255, 255, .25); color: inherit; }
+
 /* ===== ריק ===== */
 .empty { display: grid; justify-items: center; gap: var(--s3); text-align: center; color: var(--muted);
   padding: var(--s4); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); line-height: 1.6; }

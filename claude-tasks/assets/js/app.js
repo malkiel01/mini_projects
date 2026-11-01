@@ -1,5 +1,5 @@
 import { $, $$, el, toast, api, state, timeAgo, on, set } from './core.js';
-import { loadConnections, loadProviders, runTask } from './platform.js';
+import { loadConnections, loadProviders, runTask, openProject } from './platform.js';
 
 /**
  * מטלות לקלוד — ממשק.
@@ -66,7 +66,10 @@ window.addEventListener('popstate', () => {
   if (popsToSkip > 0) { popsToSkip--; return; }
   const top = $$('dialog[open]').pop();
   if (top) { if (history.state?.layer !== top.id) top.close(); return; }
-  if (!$('#drawer').hidden && history.state?.layer !== 'drawer') $('#drawer').hidden = true;
+  if (!$('#drawer').hidden && history.state?.layer !== 'drawer') { $('#drawer').hidden = true; return; }
+  // ניווט בעץ הפרויקטים: כל רמה היא רשומה, ו"חזרה" עולה רמה
+  const scope = history.state?.scope ?? null;
+  if (scope !== state.projectId) setScope(scope, false);
 });
 
 // --vvh: הגובה הנראה בפועל (בלי המקלדת) — הגיליון מתקצר והכול נגלל, גם באייפון
@@ -184,6 +187,7 @@ async function enterApp() {
   set('#logoutBtn', 'hidden', state.platform);
   set('#oldAccount', 'hidden', !(state.platform && Number(state.user?.link_offer)));
 
+  await loadTree();
   await loadTopics();
   await refresh();
 
@@ -195,7 +199,7 @@ async function enterApp() {
 /* ── נושאים ────────────────────────────────────────────────── */
 
 async function loadTopics() {
-  const { topics, unassigned, ai } = await api('topics');
+  const { topics, unassigned, ai } = await api('topics', state.projectId ? { project_id: state.projectId } : {});
   state.topics = topics;
   state.unassigned = unassigned || 0;
   if (ai) state.ai = ai;
@@ -241,18 +245,226 @@ async function loadTopics() {
 function selectTopic(id) {
   state.topicId = id;
   closeDrawer();
-  $('#scopeLabel').textContent = id === 'none'
-    ? 'ללא נושא'
-    : (id ? (state.topics.find((t) => t.id === id)?.name ?? 'נושא') : 'כל הנושאים');
+  const where = state.projectId ? (byId(state.projectId)?.name ?? '') : 'כל הפרויקטים';
+  const topic = id === 'none' ? 'ללא נושא' : (id ? (state.topics.find((t) => t.id === id)?.name ?? 'נושא') : '');
+  $('#scopeLabel').textContent = topic ? `${where} · ${topic}` : where;
   if (typeof id === 'number') $('#capTopic').value = String(id);
   loadTopics();
   refresh();
 }
 
+/* ── עץ הפרויקטים ────────────────────────────────────────────
+ *
+ * פרויקט אב (ריפו) ובתוכו תתי-פרויקטים (תיקיות), לעומק כלשהו. המסך הראשי
+ * מציג את פרויקטי האב; בתוך פרויקט — את תתי-הפרויקטים שלו, ומתחתם את
+ * המטלות של כל הענף. כל רמה היא רשומה בהיסטוריה, ו"חזרה" עולה רמה.
+ */
+
+async function loadTree() {
+  const { projects } = await api('projects');
+  state.projects = projects;
+  renderTree();
+}
+
+const byId = (id) => state.projects.find((p) => p.id === id);
+const childrenOf = (id) => state.projects.filter((p) => (p.parent_id ?? null) === id
+  // תת-פרויקט שהאב שלו לא גלוי למשתמש — מוצג ברמה העליונה
+  || (id === null && p.parent_id && !byId(p.parent_id)));
+
+/** המונים של פרויקט וכל הענף שמתחתיו. */
+function branchCounts(id) {
+  const sum = { blocked: 0, progress: 0, queue: 0, done: 0 };
+  const walk = (pid, depth) => {
+    const p = byId(pid);
+    if (!p || depth > 8) return;
+    sum.blocked += Number(p.n_blocked) || 0;
+    sum.progress += Number(p.n_progress) || 0;
+    sum.queue += Number(p.n_queue) || 0;
+    sum.done += Number(p.n_done) || 0;
+    state.projects.filter((c) => c.parent_id === pid).forEach((c) => walk(c.id, depth + 1));
+  };
+  walk(id, 0);
+  return sum;
+}
+
+function projectRow(p) {
+  const c = branchCounts(p.id);
+  const kids = state.projects.filter((x) => x.parent_id === p.id).length;
+  const sub = [];
+  if (kids) sub.push(`${kids} תתי-פרויקטים`);
+  if (p.path) sub.push(p.path);
+  else if (p.repo_name) sub.push(`${p.repo_owner}/${p.repo_name}`);
+  const counts = [];
+  if (c.blocked) counts.push(el('span', { class: 'badge badge--blocked', title: 'ממתין לך', text: `❓ ${c.blocked}` }));
+  if (c.progress) counts.push(el('span', { class: 'badge badge--progress', title: 'בעבודה', text: `🔧 ${c.progress}` }));
+  if (c.queue) counts.push(el('span', { class: 'badge', title: 'בתור', text: `⏳ ${c.queue}` }));
+  if (!counts.length) sub.push(c.done ? `✅ ${c.done} הושלמו` : 'אין מטלות');
+  return el('li', {
+    class: 'card', tabindex: '0', role: 'button', 'aria-label': p.name,
+    onclick: () => setScope(p.id),
+    onkeydown: (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); setScope(p.id); } },
+  }, [
+    el('span', { class: 'ic', 'aria-hidden': 'true', text: p.icon || (kids ? '📁' : '🗂️') }),
+    el('div', { class: 'body' }, [
+      el('div', { class: 'l1' }, [el('span', { text: p.name })]),
+      el('div', { class: 'l2', text: sub.join(' · ') }),
+    ]),
+    el('span', { class: 'counts' }, counts),
+    el('span', { class: 'go', 'aria-hidden': 'true', text: '‹' }),
+  ]);
+}
+
+function renderTree() {
+  const cur = state.projectId ? byId(state.projectId) : null;
+  if (state.projectId && !cur) { state.projectId = null; return renderTree(); }
+
+  // שביל: כל הפרויקטים › אב › … › הנוכחי
+  const chain = [];
+  for (let p = cur, i = 0; p && i < 8; p = p.parent_id ? byId(p.parent_id) : null, i++) chain.unshift(p);
+  const crumbs = [el('button', { type: 'button', class: 'crumb', text: 'כל הפרויקטים', onclick: () => setScope(null) })];
+  chain.forEach((p, i) => {
+    crumbs.push(el('span', { class: 'chev', 'aria-hidden': 'true', text: '›' }));
+    const last = i === chain.length - 1;
+    crumbs.push(el('button', {
+      type: 'button', class: 'crumb', text: `${p.icon ? p.icon + ' ' : ''}${p.name}`,
+      'aria-current': last ? 'page' : null, onclick: last ? null : () => setScope(p.id),
+    }));
+  });
+  if (cur) crumbs.push(el('button', {
+    type: 'button', class: 'icon-btn', 'aria-label': 'הגדרות הפרויקט', title: 'חברים, סקילים ומנוע ההרצה',
+    onclick: () => openProject(cur.id).catch((ex) => toast(ex.message, 'error')),
+  }, ['⚙']));
+  $('#crumbs').replaceChildren(...crumbs);
+  $('#crumbs').hidden = !cur;
+  $('#backBtn').hidden = !cur;
+  $('#scopeLabel').textContent = cur ? cur.name : 'כל הפרויקטים';
+
+  const kids = childrenOf(state.projectId);
+  const canAdd = !cur || cur.my_level === 'admin';
+  $('#projSecTitle').textContent = cur ? 'תתי-פרויקטים' : 'פרויקטים';
+  $('#projAddLabel').textContent = cur ? 'תת-פרויקט' : 'פרויקט';
+  $('#projAddBtn').hidden = !canAdd;
+  // ייבוא — בפרויקט שמקושר לריפו (השרת בודק אם הוא הריפו שהלוח פרוס ממנו)
+  $('#projImportBtn').hidden = !(cur && !cur.parent_id && cur.repo_name && cur.my_level === 'admin');
+  $('#projRows').replaceChildren(...kids.map(projectRow));
+  const empty = $('#projEmpty');
+  empty.hidden = kids.length > 0;
+  empty.textContent = cur
+    ? 'אין תתי-פרויקטים. "+ תת-פרויקט" לתיקייה בריפו, או "ייבוא מהריפו" — תת-פרויקט לכל אפליקציה.'
+    : 'אין עדיין פרויקטים. "+ פרויקט" — למשל mini_projects, ובתוכו תת-פרויקט לכל אפליקציה.';
+  $('#tasksTitle').textContent = cur ? (kids.length ? 'המטלות של כל הענף' : 'מטלות') : 'כל המטלות';
+  renderView();
+}
+
+/*
+ * שתי לשוניות כשיש פרויקטים ברמה הזאת: "פרויקטים" ו"מטלות" — אחרת עשרות
+ * שורות דוחפות את המטלות מחוץ למסך. בלי פרויקטים מתחת — רק המטלות. הבחירה
+ * נזכרת (sessionStorage), כדי שחזרה למסך לא תאפס אותה.
+ */
+function currentView() {
+  if (!childrenOf(state.projectId).length) return 'tasks-only';
+  let v = null;
+  try { v = sessionStorage.getItem('ct:view'); } catch { /* מצב פרטי */ }
+  return v === 'tasks' ? 'tasks' : 'projects';
+}
+
+function renderView() {
+  const v = currentView();
+  const kids = childrenOf(state.projectId).length;
+  $('#viewTabs').hidden = v === 'tasks-only';
+  $$('#viewTabs [data-view]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.view === v)));
+  $('#vtProjLabel').textContent = state.projectId ? 'תתי-פרויקטים' : 'פרויקטים';
+  $('#vtProjCount').textContent = kids ? String(kids) : '';
+  $('#tasksSection').hidden = v === 'projects';
+  // בלי פרויקטים ברמה הזאת — רק שורת הכותרת עם "+", מעל המטלות (בלי מסך ריק שמסתיר אותן)
+  // ובתת-פרויקט (עלה) — רק המטלות
+  const leaf = !!byId(state.projectId)?.parent_id;
+  $('#projSection').hidden = v === 'tasks' || (v === 'tasks-only' && ($('#projAddBtn').hidden || leaf));
+  $('#projEmpty').hidden = v === 'tasks-only' || kids > 0;
+}
+
+on('#viewTabs', 'click', (e) => {
+  const tab = e.target.closest('[data-view]');
+  if (!tab) return;
+  try { sessionStorage.setItem('ct:view', tab.dataset.view); } catch { /* פרטי */ }
+  renderView();
+});
+
+async function setScope(id, push = true) {
+  if (id === state.projectId) return;
+  state.projectId = id;
+  state.topicId = null;
+  if (push) history.pushState({ scope: id }, '');
+  renderTree();
+  window.scrollTo(0, 0);
+  await loadTopics();
+  await refresh();
+}
+
+on('#backBtn', 'click', () => {
+  // עלייה רמה אחת — בהיסטוריה אם הגענו לכאן בניווט, אחרת ישירות לאב
+  if (history.state?.scope === state.projectId && history.length > 1) history.back();
+  else setScope(byId(state.projectId)?.parent_id ?? null);
+});
+
+on('#projAddBtn', 'click', () => {
+  const cur = state.projectId ? byId(state.projectId) : null;
+  $('#projNewTitle').textContent = cur ? 'תת-פרויקט חדש' : 'פרויקט חדש';
+  $('#projNewHint').textContent = cur
+    ? `תיקייה בתוך ${cur.repo_name ? cur.repo_owner + '/' + cur.repo_name : cur.name}. הריפו, הענף והחברים עוברים מ״${cur.name}״.`
+    : 'פרויקט אב — בדרך כלל ריפו אחד. בתוכו מוסיפים תת-פרויקט לכל תיקייה.';
+  $('#pnPathWrap').hidden = !cur;
+  $('#pnRepoWrap').hidden = !!cur;
+  ['#pnName', '#pnPath', '#pnRepo', '#pnIcon'].forEach((s) => { $(s).value = ''; });
+  $('#projNew').showModal();
+  $('#pnName').focus();
+});
+
+on('#pnPath', 'input', () => {
+  // שם ברירת מחדל מהתיקייה — חוסך הקלדה כשמוסיפים הרבה
+  if (!$('#pnName').dataset.touched) $('#pnName').value = $('#pnPath').value.split('/').pop();
+});
+on('#pnName', 'input', () => { $('#pnName').dataset.touched = $('#pnName').value ? '1' : ''; });
+
+on('#projNewForm', 'submit', async (e) => {
+  e.preventDefault();
+  const cur = state.projectId;
+  try {
+    const payload = { name: $('#pnName').value, icon: $('#pnIcon').value };
+    if (cur) Object.assign(payload, { parent_id: cur, path: $('#pnPath').value });
+    else {
+      const [owner = '', repo = ''] = $('#pnRepo').value.trim().split('/');
+      Object.assign(payload, { repo_owner: owner, repo_name: repo });
+    }
+    await api('create-project', payload);
+    delete $('#pnName').dataset.touched;
+    $('#projNew').close();
+    await loadTree();
+    toast(cur ? 'תת-הפרויקט נוסף' : 'הפרויקט נוצר', 'ok');
+  } catch (ex) { toast(ex.message, 'error'); }
+});
+
+on('#projImportBtn', 'click', async (e) => {
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  try {
+    const r = await api('import-subprojects', { parent_id: state.projectId });
+    await loadTree();
+    toast(r.created.length
+      ? `נוספו ${r.created.length} תתי-פרויקטים${r.skipped ? ` · ${r.skipped} כבר היו` : ''}`
+      : 'אין תיקיות חדשות לייבוא', 'ok');
+  } catch (ex) { toast(ex.message, 'error'); }
+  btn.disabled = false;
+});
+
+// פרויקט שנוצר או נערך בחלון הפרויקטים / ההגדרות — העץ מתעדכן
+['#projects', '#projectView'].forEach((s) => on(s, 'close', () => loadTree().catch(() => {})));
+
 /* ── רשימה ─────────────────────────────────────────────────── */
 
 async function refresh() {
   const { tasks, counts } = await api('tasks', {
+    project_id: state.projectId,
     topic_id: state.topicId,
     status: state.status,
     search: state.search,
@@ -273,6 +485,7 @@ function renderPulse() {
     done: Number(c.done) || 0,
   };
   $$('[data-count]').forEach((b) => { b.textContent = String(n[b.dataset.count] ?? 0); });
+  set('#vtTaskCount', 'textContent', n.active ? String(n.active) : '');
   // מה שממתין דווקא לי — בולט גם כשהלשונית לא נבחרה
   set('#statusChips [data-status="blocked"]', 'className', n.blocked > 0 ? 'alert' : '');
 }
@@ -283,6 +496,7 @@ function taskCard(t) {
   const st = STATUS[t.status] || { label: t.status };
   // שורת משנה אחת, אפורה: מצב · נושא · סוג · שיחה · מי עובד
   const bits = [st.label];
+  if (t.project_name && t.project_id !== state.projectId) bits.push(`${t.project_icon ? t.project_icon + ' ' : ''}${t.project_name}`);
   if (t.topic_name) bits.push(SOURCE[t.topic_source] ? `🪄 ${t.topic_name}` : t.topic_name);
   bits.push(KIND[t.kind] || t.kind);
   if (Number(t.note_count) > 0) bits.push(`💬 ${t.note_count}`);
@@ -437,6 +651,7 @@ on('#captureForm', 'submit', async (e) => {
       kind: $('#capKind')?.value || 'question',
       priority: $('#capPriority')?.value || 'normal',
       provider: $('#capProvider')?.value || '',
+      project_id: state.projectId,
     });
     $('#capTitle').value = '';
     clearGuess();
@@ -528,7 +743,7 @@ on('#catalogBtn', 'click', async (e) => {
 on('#topicForm', 'submit', async (e) => {
   e.preventDefault();
   try {
-    await api('create-topic', { name: $('#topicName').value, repo: $('#topicRepo').value });
+    await api('create-topic', { name: $('#topicName').value, repo: $('#topicRepo').value, project_id: state.projectId });
     $('#topicName').value = ''; $('#topicRepo').value = '';
     await loadTopics();
     toast('הנושא נוסף', 'ok');

@@ -94,10 +94,85 @@ function requireGithubToken(array $user): string {
 function projectLevel(int $projectId, array $user): ?string {
     if (($user['role'] ?? '') === 'admin') return 'admin';
 
+    // חבר בפרויקט האב — חבר גם בתתי-הפרויקטים שלו, באותה דרגה. דרגה ישירה
+    // בתת-פרויקט גוברת. עד 8 רמות, כדי שנתון שבור לא יתקע את הבקשה.
     $st = db()->prepare('SELECT level FROM project_members WHERE project_id = ? AND user_id = ?');
-    $st->execute([$projectId, $user['id']]);
-    $row = $st->fetch();
-    return $row ? (string) $row['level'] : null;
+    $up = db()->prepare('SELECT parent_id FROM projects WHERE id = ?');
+    for ($id = $projectId, $i = 0; $id && $i < 8; $i++) {
+        $st->execute([$id, $user['id']]);
+        $row = $st->fetch();
+        if ($row) return (string) $row['level'];
+        $up->execute([$id]);
+        $id = (int) ($up->fetch()['parent_id'] ?? 0);
+    }
+    return null;
+}
+
+/** הפרויקט וכל צאצאיו — לסינון מטלות ונושאים לפי ענף בעץ. */
+function projectSubtree(int $projectId): array {
+    $ids = [$projectId];
+    $st = db()->prepare('SELECT id FROM projects WHERE parent_id = ? AND archived = 0');
+    for ($i = 0; $i < count($ids) && $i < 500; $i++) {
+        $st->execute([$ids[$i]]);
+        foreach ($st->fetchAll() as $row) {
+            if (!in_array((int) $row['id'], $ids, true)) $ids[] = (int) $row['id'];
+        }
+    }
+    return $ids;
+}
+
+/**
+ * תת-פרויקט: תיקייה בתוך הריפו של האב. הריפו והענף עוברים מהאב, כך שגם
+ * מנוע ההרצה ועיון בקבצים עובדים בו כמו בכל פרויקט.
+ */
+function createSubproject(array $user, int $parentId, string $name, string $path, string $icon = ''): int {
+    $parent = requireProject($parentId, $user, 'admin');
+    $path = trim(str_replace('\\', '/', $path), '/ ');
+    if ($path === '' || !preg_match('#^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$#', $path) || str_contains($path, '..')) {
+        throw new InvalidArgumentException('התיקייה אינה תקינה — למשל recipes-app');
+    }
+    $dup = db()->prepare('SELECT id FROM projects WHERE parent_id = ? AND path = ? AND archived = 0');
+    $dup->execute([$parentId, $path]);
+    if ($dup->fetch()) throw new InvalidArgumentException("כבר יש תת-פרויקט לתיקייה $path");
+
+    $name = trim($name) !== '' ? mb_substr(trim($name), 0, 80) : $path;
+    db()->prepare('INSERT INTO projects (name, repo_owner, repo_name, default_branch, description, created_by,
+                                         created_at, parent_id, path, icon)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)')
+        ->execute([$name, $parent['repo_owner'], $parent['repo_name'], $parent['default_branch'], '',
+                   $user['id'], nowTs(), $parentId, $path, mb_substr(trim($icon), 0, 8)]);
+    $id = (int) db()->lastInsertId();
+    logEvent($user, 'project.create', "project:$parentId/$path", true, $name);
+    return $id;
+}
+
+/**
+ * תתי-פרויקטים מתוך התיקיות של הריפו: כל תיקייה עם app.json (הרישום של
+ * הפלטפורמה) — שם וסמל מתוכו. עובד בלי גיטהאב כשהלוח עצמו פרוס מאותו
+ * ריפו (התיקיות יושבות לידו בשרת). קיים כבר — מדלגים.
+ */
+function importSubprojects(array $user, int $parentId): array {
+    $parent = requireProject($parentId, $user, 'admin');
+    if (!empty($parent['parent_id'])) throw new AppError('ייבוא — רק לפרויקט אב (ריפו), לא לתת-פרויקט');
+    $root = dirname(__DIR__, 2);
+    if ($parent['repo_name'] === '' || basename($root) !== $parent['repo_name']) {
+        throw new AppError('ייבוא אוטומטי זמין לריפו שהלוח עצמו פרוס ממנו (' . basename($root) . '). '
+            . 'לריפו אחר — "+ תת-פרויקט" ידנית');
+    }
+    $have = db()->prepare('SELECT path FROM projects WHERE parent_id = ? AND archived = 0');
+    $have->execute([$parentId]);
+    $existing = array_column($have->fetchAll(), 'path');
+
+    $created = []; $skipped = 0;
+    foreach (glob($root . '/*/app.json') ?: [] as $file) {
+        $dir = basename(dirname($file));
+        if (in_array($dir, $existing, true)) { $skipped++; continue; }
+        $app = json_decode((string) file_get_contents($file), true);
+        if (!is_array($app)) continue;
+        createSubproject($user, $parentId, (string) ($app['name'] ?? $dir), $dir, (string) ($app['icon'] ?? ''));
+        $created[] = $dir;
+    }
+    return ['created' => $created, 'skipped' => $skipped];
 }
 
 function requireProject(int $projectId, array $user, string $minLevel): array {
@@ -119,23 +194,29 @@ function requireProject(int $projectId, array $user, string $minLevel): array {
 function listProjects(array $user): array {
     $isAdmin = ($user['role'] ?? '') === 'admin';
 
-    $sql = "SELECT p.*, u.display_name owner_name,
+    // המונים — של המטלות של הפרויקט עצמו; הממשק מסכם לאב את כל הענף.
+    $sql = "SELECT p.id, p.name, p.repo_owner, p.repo_name, p.default_branch, p.description, p.parent_id,
+                   p.path, p.icon, p.created_at, u.display_name owner_name,
                    (SELECT COUNT(*) FROM project_members m WHERE m.project_id = p.id) member_count,
                    (SELECT COUNT(*) FROM tasks t
-                     WHERE t.project_id = p.id AND t.status NOT IN ('done','cancelled')) open_tasks";
-    $sql .= $isAdmin ? ", 'admin' my_level" : ", COALESCE(me.level, '') my_level";
-    $sql .= ' FROM projects p LEFT JOIN users u ON u.id = p.created_by';
-    $args = [];
+                     WHERE t.project_id = p.id AND t.status NOT IN ('done','cancelled')) open_tasks,
+                   (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.status = 'blocked') n_blocked,
+                   (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.status = 'in_progress') n_progress,
+                   (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.status IN ('open','answered')) n_queue,
+                   (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.status = 'done') n_done
+              FROM projects p LEFT JOIN users u ON u.id = p.created_by
+             WHERE p.archived = 0 ORDER BY p.name";
+    $rows = db()->query($sql)->fetchAll();
 
-    if (!$isAdmin) {
-        $sql .= ' JOIN project_members me ON me.project_id = p.id AND me.user_id = ?';
-        $args[] = $user['id'];
+    // מי שאינו מנהל־על רואה את מה שהוא חבר בו, וגם את הענף שמתחתיו.
+    $out = [];
+    foreach ($rows as $p) {
+        $level = $isAdmin ? 'admin' : projectLevel((int) $p['id'], $user);
+        if ($level === null) continue;
+        $p['my_level'] = $level;
+        $out[] = $p;
     }
-    $sql .= ' WHERE p.archived = 0 ORDER BY p.name';
-
-    $st = db()->prepare($sql);
-    $st->execute($args);
-    return $st->fetchAll();
+    return $out;
 }
 
 /** יוצר פרויקט. היוצר נעשה מנהל שלו — אחרת אין מי שיצרף אליו אנשים. */
