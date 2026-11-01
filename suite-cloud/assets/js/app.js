@@ -4,6 +4,7 @@ import { $, h as el } from './ui-core/dom.js';
 import { toast } from './ui-core/toast.js';
 import { initDialogs, confirm, prompt } from './ui-core/dialog.js';
 import { dropZone, pickFiles } from './ui-core/files.js';
+import { accountMenu, accountServer } from './ui-core/account.js';
 
 initDialogs();   // [data-close], סגירה ברקע, --vvh
 const API = 'api.php';
@@ -312,7 +313,7 @@ async function loadFonts() {
     return el('li', {}, el('div', { class: 'font-fam' },
       el('div', { class: 'l1 one' }, fam.family), sample,
       ...items.map(f => el('div', { class: 'font-row' },
-        el('span', { class: 'l2' }, `${f.axes?.wght ? `משתנה · ${f.axes.wght[0]}–${f.axes.wght[1]}` : WEIGHT_NAMES[f.weight] || f.weight}${f.style === 'italic' ? ' · נטוי' : ''} · ${f.format} · ${bytes(f.size)}`),
+        el('span', { class: 'l2' }, `${f.axes?.wght ? `משתנה · \u2066${f.axes.wght[0]}–${f.axes.wght[1]}\u2069` : WEIGHT_NAMES[f.weight] || f.weight}${f.style === 'italic' ? ' · נטוי' : ''} · ${f.format} · ${bytes(f.size)}`),
         ...(f.source === 'builtin'
           ? [el('button', { class: 'icon-btn', type: 'button', 'aria-label': `הרישיון של ${f.name}`, onclick: () => showLicense(f) }, '📄')]
           : [el('button', { class: 'icon-btn', type: 'button', 'aria-label': `עריכת ${f.name}`, onclick: () => editFont(f) }, '✏️'),
@@ -547,6 +548,22 @@ function openQuota(a) {
   dlg.showModal();
 }
 
+// ─── 👤 תפריט המשתמש (ui-core, שורה 19) ─────────────────────────────────
+
+async function initAccount() {
+  let server = null;
+  try { server = await accountServer((action, body) => api(action, body)); } catch { /* בלי שרת — ההגדרות במכשיר */ }
+  const go = tab => () => { location.hash = `#/${tab}`; };
+  accountMenu($('header.top'), {
+    user: () => state.me && { name: state.me.name, email: state.me.email, admin: state.me.role === 'admin' },
+    server,
+    docs: go('files'),                     // 📁 "המסמכים שלי" — הכונן עצמו (הענן הוא המקור של suiteSource באפליקציות)
+    admin: state.me?.role === 'admin' ? go('admin') : undefined,
+    help: () => window.open('https://github.com/malkiel01/mini_projects/tree/main/suite-cloud#readme', '_blank', 'noopener'),
+    hide: ['units', 'autosave', 'font', 'cloudSync'],   // אין להן משמעות בדף של הענן
+  });
+}
+
 // ─── התחלה ──────────────────────────────────────────────────────────────
 
 (async () => {
@@ -555,6 +572,7 @@ function openQuota(a) {
     state.me = me.account; state.quota = me.quota;
     $('.tabs a[data-tab="admin"]').hidden = me.account.role !== 'admin';
     renderQuota();
+    initAccount().catch(e => console.warn('account menu', e));
     window.addEventListener('hashchange', route);
     route();
   } catch (e) {

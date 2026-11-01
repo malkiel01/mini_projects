@@ -19,6 +19,7 @@
 | ספריית הגופנים | `fonts_list`, `font_add`, `font_file`, `font_update`, `font_delete` — פריט = קובץ (משפחה, משקל, סגנון), `rev` = sha256. הפרטים מטבלאות name / OS/2 / fvar (ttf, otf, woff), או משם הקובץ (woff2). נספר במכסה. ועוד 10 גופנים מובנים (OFL) ב-`fonts/builtin/` (`?builtin=1`, `font_license`). הקוד: `lib/fonts.php`. האפיון: `docs/spec-2-fonts.md` |
 | מודול הכוננים | `drives/` — JS + PHP, עותק מסונכרן בכל אפליקציה שמצטרפת: חיבור לענן, הקבצים בענן, `fonts`, `ai`, ו-Dropbox ישירות מהאפליקציה. ההצטרפות: `drives/README.md` |
 | Dropbox | App key אחד לכל החבילה (⚙️ ניהול ← 🗂️ כוננים חיצוניים), PKCE בלי secret, ו-redirect אחד: `oauth/dropbox.php`, שמעביר את החזרה לאפליקציה לפי ה-state |
+| 👤 תפריט המשתמש | `accountMenu` של `ui-core` בסרגל; `account_*` ב-`api.php` דרך `lib/ui-core/account` (עותק מסונכרן): הגדרות אישיות במסד, ייצוא, ומחיקת חשבון מלאה (`lib/me.php`) |
 | הדף | `index.html`, בעיצוב `phone-first-design` (דרך `ui-core`), עם הלשוניות קבצים, גופנים, סל, חיבורים וניהול |
 
 ## מה עוד לא

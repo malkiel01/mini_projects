@@ -21,6 +21,7 @@ import { download as saveFile } from './ui-core/files.js';
 import { shortcuts } from './ui-core/keys.js';
 import { snapshots, undoButtons } from './ui-core/history.js';
 import { colorPicker, setColorContext } from './ui-core/color.js';
+import { fontPicker, readFontInfo } from './ui-core/fonts.js';
 setColorContext({ prefix: 'ls-colors', presets: ['#000000', '#1a1a1a', '#7a1f1f', '#1f3a7a', '#2d5a27', '#8a6d1f'] });
 import { mountAccount } from './account-ui.js';
 
@@ -678,23 +679,35 @@ const num = v => { const n = parseFloat(String(v).replace(',', '.')); return Num
 
 // עריכת סגנונות: לשונית לכל סגנון; הערכים של כל אחד נשמרים בטיוטה עד "שמירה"
 let drafts = {}, curStyle = 'body';
-/** כפתורי הגופן: הקבועים, ואחריהם הגופנים של המסמך. */
-function renderFonts() {
-  const fams = [...Object.keys(FONTS), ...(model.fonts || []).map(f => f.family).filter(f => !FONTS[f])];
-  $('#st-fonts').replaceChildren(...[...new Set(fams)].map(f => {
-    const l = document.createElement('label');
-    const i = Object.assign(document.createElement('input'), { type: 'radio', name: 'font', value: f });
-    const sp = document.createElement('span');
-    sp.textContent = f;
-    l.append(i, sp);
-    return l;
-  }));
+/**
+ * הגופנים בבורר (fontPicker של ui-core): הקבועים של העימוד, ואחריהם של המסמך (★). הבורר מציג כל גופן בגופן עצמו —
+ * לכן כל אחד נרשם גם כ-FontFace בדף, מאותו קובץ TTF ש-HarfBuzz וה-PDF משתמשים בו.
+ */
+const faced = new Set();
+function faceFor(family, url) {
+  if (faced.has(family)) return;
+  faced.add(family);
+  new FontFace(family, `url("${url}")`).load().then(f => document.fonts.add(f)).catch(() => {});
+}
+function pickerFonts() {
+  const out = Object.entries(FONTS).map(([family, file]) => { faceFor(family, 'assets/fonts/' + file); return { family, weights: [400, 700] }; });
+  for (const f of model.fonts || []) {
+    if (FONTS[f.family] || !/^media\/[0-9a-f]{64}\.ttf$/.test(f.embedded || '')) continue;
+    faceFor(f.family, 'api.php?media=' + f.embedded.slice(6));
+    out.push({ family: f.family, weights: [400], custom: true });
+  }
+  return out;
+}
+let curFont = 'Noto Serif Hebrew';
+function renderFontPicker(key) {
+  curFont = drafts[key].font;
+  $('#st-font').replaceChildren(fontPicker('גופן', curFont, family => { curFont = family; }, {
+    fonts: pickerFonts, sample: 'בְּרֵאשִׁית בָּרָא', accept: '.ttf,font/ttf', onUpload: uploadFontFile }));
 }
 function showStyle(key) {
   curStyle = key;
   const st = drafts[key];
-  if (![...form.querySelectorAll('[name=font]')].some(i => i.value === st.font)) renderFonts();
-  form.font.value = st.font;
+  renderFontPicker(key);
   // צבע הטקסט — הבורר של ui-core (color.js); נכנס לטיוטה של הסגנון, ונשמר ב"שמירה" כמו שאר השדות
   $('#st-color').replaceChildren(colorPicker('צבע הטקסט', st.color || '#000000', hex => { drafts[key].color = hex; }, () => {},
     { docColors: () => STYLE_KEYS.map(k => drafts[k]?.color || styleOf(model, k).color) }));
@@ -712,7 +725,7 @@ function readStyle() {
   if (!(v.leading >= 4 && v.leading <= 400)) return 'מרווח שורות — 4 עד 400 נקודות';
   if (!(v.spaceBefore >= 0 && v.spaceBefore <= 200 && v.spaceAfter >= 0 && v.spaceAfter <= 200)) return 'רווח לפני ואחרי — 0 עד 200 נקודות';
   if (!(v.indent >= 0 && v.indent <= 500)) return 'הזחה — 0 עד 500 נקודות';
-  drafts[curStyle] = { ...drafts[curStyle], ...v, font: form.font.value, align: form.talign.value, weight: form.tbold.checked ? 700 : 400 };
+  drafts[curStyle] = { ...drafts[curStyle], ...v, font: curFont, align: form.talign.value, weight: form.tbold.checked ? 700 : 400 };
   return null;
 }
 $('#st-tabs').addEventListener('click', e => {
@@ -735,20 +748,24 @@ async function addDocFont(bytes, family, extra = {}) {
   if (!out.ok) throw new Error(out.error === 'bad_font' ? 'רק גופני TrueType (‎.ttf) — OTF / WOFF2 עוד לא' : out.error === 'too_big' ? 'הקובץ גדול מ-20MB' : 'ההעלאה נכשלה');
   const fonts = (model.fonts || []).filter(f => f.family !== family);
   changed({ ...model, fonts: [...fonts, { family, embedded: out.src, source: 'user', ...extra }] }, 'גופן');
-  renderFonts();
-  form.font.value = family;
+  drafts[curStyle].font = family;
+  renderFontPicker(curStyle);
   toast(`הגופן "${family}" נוסף למסמך`);
 }
-const fontFile = $('#font-file');
+// 📁 העלאה מהבורר (ui-core) — קובץ ‎.ttf: אזהרת רישיון, ושם הגופן מהטבלאות שלו (readFontInfo), אחרת משם הקובץ
+async function uploadFontFile(file) {
+  if (!await confirm('גופן מוטמע עובר עם הקובץ וה-PDF לכל מי שמקבל אותם. להמשיך רק אם הרישיון של הגופן מתיר הטמעה.', { ok: 'יש לי רישיון' })) return;
+  try {
+    const info = await readFontInfo(file);
+    let family = String(info.family || file.name.replace(/\.ttf$/i, '')).trim().slice(0, 90);
+    // שם שכבר תפוס (גופן קבוע, או של המסמך מקובץ אחר) — עם המשקל, ואחרת "(שלי)": אחרת הגופן החדש לא היה נבחר לעולם
+    if (FONTS[family]) family = info.weight && info.weight !== 400 ? `${family} ${info.weight}` : `${family} (שלי)`;
+    if (FONTS[family]) family += ' (שלי)';
+    await addDocFont(info.bytes, family);
+  } catch (e) { toast('הגופן לא נוסף: ' + e.message, true); }
+}
+// ☁️ מהספרייה בענן החבילה (drives.fonts)
 $('#font-add').addEventListener('click', async () => {
-  const where = await choose('גופן אחר', 'הגופן נשמר במסמך, מוטמע ב-PDF ובקובץ ‎.mbe.', [
-    ['cloud', '☁️ מהספרייה בענן החבילה'], ['device', '📁 קובץ ‎.ttf מהמכשיר'], ['cancel', 'ביטול', 'ghost']]);
-  if (where === 'device') {
-    if (!await confirm('גופן מוטמע עובר עם הקובץ וה-PDF לכל מי שמקבל אותם. להמשיך רק אם הרישיון של הגופן מתיר הטמעה.', { ok: 'יש לי רישיון' })) return;
-    fontFile.click();
-    return;
-  }
-  if (where !== 'cloud') return;
   try {
     const { createDrives } = await import('./drives/drives.js');
     const drives = createDrives({ endpoint: 'api.php' });
@@ -770,18 +787,7 @@ $('#font-add').addEventListener('click', async () => {
     toast('הגופן לא נוסף: ' + (e?.message || ''), true);
   }
 });
-fontFile.addEventListener('change', async () => {
-  const file = fontFile.files[0];
-  fontFile.value = '';
-  if (!file) return;
-  const family = (await prompt('שם הגופן (כפי שיופיע ברשימה)', { value: file.name.replace(/\.ttf$/i, '').replace(/[-_]+/g, ' ').trim() }))?.trim();
-  if (!family) return;
-  try { await addDocFont(new Uint8Array(await file.arrayBuffer()), family.slice(0, 100)); }
-  catch (e) { toast('הגופן לא נוסף: ' + e.message, true); }
-});
-
 function fillSettings() {
-  renderFonts();
   const [w, h] = pageSize(model).map(ptToMm);
   const preset = Object.entries(SIZES).find(([, [a, b]]) => Math.abs(a - w) < 0.6 && Math.abs(b - h) < 0.6);
   form.size.value = preset ? preset[0] : 'custom';

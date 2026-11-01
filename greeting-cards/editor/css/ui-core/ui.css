@@ -311,3 +311,18 @@ dialog > form { display: flex; flex-direction: column; max-height: inherit; heig
 .cp-sw { aspect-ratio: 1; min-height: 32px; border: 1px solid #0003; border-radius: 8px; }
 .cp-sw.on { outline: 3px solid var(--brand); outline-offset: 2px; }
 .cp-empty { margin: var(--s2) 0 0; }
+
+/* ---- בורר גופנים (fonts.js) — כל גופן כתוב בגופן עצמו ---- */
+.fp-trigger { display: flex; align-items: center; gap: var(--s2); width: 100%; min-height: var(--tap); padding: 0 var(--s3); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); color: var(--ink); text-align: start; }
+.fp-trigger.open { border-color: var(--brand); }
+.fp-name { flex: 1; font-size: 1.05rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fp-caret { color: var(--muted); }
+.fp-panel { margin-top: var(--s2); padding: var(--s2); border: 1px solid var(--line); border-radius: var(--r); background: var(--bg); }
+.fp-search { width: 100%; margin-bottom: var(--s2); }
+.fp-list { list-style: none; margin: 0; padding: 0; max-height: min(50dvh, 360px); overflow-y: auto; overscroll-behavior: contain; }
+.fp-opt { display: flex; align-items: baseline; gap: var(--s3); min-height: 48px; padding: var(--s2) var(--s3); border-radius: var(--r); cursor: pointer; }
+.fp-opt:hover, .fp-opt:focus-visible { background: var(--brand-soft); outline: 0; }
+.fp-opt[aria-selected="true"] { background: var(--brand); color: var(--brand-ink); }
+.fp-fam { flex: none; font-size: 1.05rem; }
+.fp-sample { flex: 1; min-width: 0; font-size: 1.15rem; color: inherit; opacity: .7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: end; }
+.fp-upload { margin-top: var(--s2); width: 100%; }

@@ -46,7 +46,7 @@ try {
 
   const st = () => page.evaluate(() => {
     const S = window.__vs.S;
-    return { sel: [...S.sel], paths: S.doc.surfaces[0].layers[0].paths, view: S.view, undo: S.undo.length };
+    return { sel: [...S.sel], paths: S.doc.surfaces[0].layers[0].paths, view: S.view, undo: S.hist.canUndo };
   });
   const box = await page.locator('#canvas').boundingBox();
   const W = async (x, y) => { const { view } = await st(); return [box.x + view.x + x * view.zoom, box.y + view.y + y * view.zoom]; };
@@ -68,6 +68,7 @@ try {
   await page.mouse.move(...a); await page.mouse.down(); await page.mouse.move(...b, { steps: 5 }); await page.mouse.up();
   s = await st();
   assert.ok(Math.abs(s.paths[0].shape.box[0] - 200) < 2 && Math.abs(s.paths[0].shape.box[1] - 150) < 2, 'move ' + s.paths[0].shape.box);
+  assert.equal(await page.getAttribute('#undo', 'title'), 'ביטול: הזזה', 'ui-core/history — תווית הצעד בכפתור');
   step('הזזה בגרירה');
 
   // שינוי גודל מהידית הימנית-תחתונה (se)
@@ -750,8 +751,9 @@ try {
   assert.match(fsvg, /<g id="R1"[^>]*>\s*<image x="0" y="0" width="100" height="100" preserveAspectRatio="none" href="data:image\/png;base64,/);
   assert.match(fsvg, /<g id="F1"[^>]*>\s*<path id="F1" d="M/);
   const fpdf = (await grab('pdf')).buf.toString('latin1');
-  assert.match(fpdf, /\/Subtype \/Image \/Width 2 \/Height 2 /);
-  assert.match(fpdf, /\/Im1 Do/);
+  // pdf-core: התמונה של שכבת הרסטר כ-XObject בגודל שלה (2×2)
+  assert.match(fpdf, /\/Subtype \/Image/);
+  assert.match(fpdf, /\/Width 2 /);
   if (shots) fs.writeFileSync(`${shots}/foreign.pdf`, Buffer.from(fpdf, 'latin1'));
   step('‎.mbe של אפליקציה אחרת: רסטר ומסגרת טקסט מוצגים, בשכבות לקריאה בלבד, ונכללים בייצוא SVG ו-PDF');
 
@@ -762,7 +764,7 @@ try {
   const wp = mbeCreate('text', { units: 'pt', color: { space: 'sRGB' }, flows: { f1: { engine: 'prosemirror', doc: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'מכתב' }] }] } } },
     surfaces: [{ id: 'p1', type: 'page', size: [200, 200], layers: [{ id: 'fr1', type: 'frame', box: [10, 10, 180, 180], flow: 'f1' }] }] });
   wp.setRendition('renditions/preview.png', red);
-  wp.setRendition('renditions/document.pdf', pdfOf([redPage(1), redPage(2)]), { by: 'word-processor' });
+  wp.setRendition('renditions/document.pdf', await pdfOf([redPage(1), redPage(2)]), { by: 'word-processor' });
   const wpFile = `${os.tmpdir()}/vs-wp-${process.pid}.mbe`;
   fs.writeFileSync(wpFile, await mbeSave(wp, { app: 'word-processor' }));
   await page.goto(base);

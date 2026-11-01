@@ -6,7 +6,7 @@
  *
  * יחידות: נקודות (pt). y — מלמעלה למטה, מהפינה העליונה של העמוד (TrimBox). צבע: "#rrggbb".
  *
- *   { "title": "…", "pages": [ { "size": [w, h], "bleed": 9, "ops": [
+ *   { "title": "…", "xmp": "<?xpacket …?>…", "pages": [ { "size": [w, h], "bleed": 9, "ops": [
  *       { "op": "glyphs", "font": "media/….ttf", "size": 12, "color": "#000000", "x": 0, "y": 0,
  *         "glyphs": [[gid, dx, dy, adv], …], "text": "…" },
  *       { "op": "image", "src": "media/….png", "box": [x, y, w, h], "clip": [x, y, w, h] },
@@ -16,6 +16,9 @@
  *         "fill": "#…" | null, "fillOpacity": 1, "fillRule": "nonzero" | "evenodd",
  *         "stroke": "#…" | null, "strokeOpacity": 1, "width": 1, "cap": "butt" | "round" | "square",
  *         "join": "miter" | "round" | "bevel", "miter": 4, "dash": [on, off, …] } ] } ] }
+ *
+ * xmp: לא חובה — חבילת XMP (למשל xmpPacket של mbe-core/face.js), נכנסת כזרם Metadata של הקטלוג, לא דחוסה,
+ *      כדי ש-identify() ימצא בה את mbe:docId ו-mbe:base. בלעדיה — הפלט לא משתנה.
  *
  * path: d — פקודות מוחלטות בלבד, M L C Q Z (כמו בפורמט; Q הופך ל-C), זוגות נוספים אחרי פקודה — חזרה עליה (אחרי M — L).
  * transform — מטריצה של SVG על הנקודות, ביחידות הרשימה (y למטה); עובי הקו והמקפים עוברים בה כמו ב-SVG. לפחות fill או stroke.
@@ -287,5 +290,6 @@ function pdf_draw(array $list, callable $resolve): string
         }
         $w->pages[$idx]['main'] = $c . str_repeat("Q\n", $depth);
     }
-    return $w->output((string)($list['title'] ?? ''));
+    if (isset($list['xmp']) && !is_string($list['xmp'])) throw new InvalidArgumentException('xmp חייב להיות מחרוזת');
+    return $w->output((string)($list['title'] ?? ''), $list['xmp'] ?? '');
 }

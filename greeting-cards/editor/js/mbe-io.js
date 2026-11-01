@@ -9,6 +9,7 @@
 // שאפליקציה אחרת שמרה אותו — נפתח בדיוק כמו שנשמר. אחרי עריכה ברסטר / בווקטורי — נקרא מהשכבות (readForeign).
 
 import { open, create, save, PREVIEW } from './mbe/mbe.js';
+import { stampFace, identify } from './mbe/face.js';   // "פנים" — ייצוא מוחתם שמזהה את העיצוב שממנו יצא
 import { normalizeDoc, newDoc, uid, clone } from './doc.js';
 import { assets } from './db.js';
 import { ensureDocFonts, FONTS, DEFAULT_FONT, FONT_MIME } from './fonts.js';
@@ -301,6 +302,22 @@ export async function isMbe(file) {
  * מהשכבות (readForeign), עם התפקידים והנמענים מהמקורי אם יש.
  * @returns {{doc, loaded: Map, fixes: string[], bytes: Uint8Array}}
  */
+/**
+ * "פנים" ל-PNG: מחתימים את התמונה במזהה העיצוב ובגרסה (iTXt — הפיקסלים לא נגעים), ונרשם שלב export ביומן.
+ * mbeBlob — ה-‎.mbe העדכני של העיצוב (אחרי save). מחזיר את ה-PNG המוחתם, את ה-‎.mbe עם השלב, ואת המזהה.
+ */
+export async function stampPng(mbeBlob, pngBlob) {
+    const f = await open(new Uint8Array(await mbeBlob.arrayBuffer()));
+    const png = await stampFace(f, 'png', new Uint8Array(await pngBlob.arrayBuffer()));
+    const mbe = await save(f, { app: APP_ID });
+    return { png: new Blob([png], { type: 'image/png' }), mbe: new Blob([mbe], { type: 'application/vnd.mbe+zip' }), docId: f.id };
+}
+
+/** "מה הקובץ הזה?" — לתמונה מוחתמת: { type: 'face', docId, base }. לא זורק. */
+export async function identifyFile(file) {
+    return identify(new Uint8Array(await file.arrayBuffer()));
+}
+
 /** יומן השלבים של ‎.mbe (history/journal.json, פורמט 1.1) — מהישן לחדש. */
 export async function mbeJournal(blob) {
     return (await open(new Uint8Array(await blob.arrayBuffer()))).journal();

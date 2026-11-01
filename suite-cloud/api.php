@@ -19,6 +19,8 @@ require_once __DIR__ . '/lib/drive.php';
 require_once __DIR__ . '/lib/clients.php';
 require_once __DIR__ . '/lib/ai.php';
 require_once __DIR__ . '/lib/fonts.php';
+require_once __DIR__ . '/lib/me.php';
+require_once __DIR__ . '/lib/ui-core/account/account.php';
 
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: same-origin');
@@ -115,7 +117,8 @@ function sendFile(string $path, array $n): never {
 
 const WRITES = ['mkdir', 'write', 'upload_start', 'upload_finish', 'rename', 'move', 'trash', 'restore', 'purge', 'trash_empty',
                 'admin_settings', 'admin_account', 'admin_client', 'client_register', 'connect_exchange', 'access_token',
-                'disconnect', 'connection_revoke', 'ai_provider', 'ai_test', 'ai_default', 'ai_app', 'ai_user', 'font_update', 'font_delete', 'drives_config', 'admin_drives'];
+                'disconnect', 'connection_revoke', 'ai_provider', 'ai_test', 'ai_default', 'ai_app', 'ai_user', 'font_update', 'font_delete', 'drives_config', 'admin_drives',
+                'account_prefs', 'account_prefs_set', 'account_export', 'account_delete'];
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $action = (string) ($_GET['action'] ?? '');
@@ -135,6 +138,20 @@ try {
     }
     // פעולות קבצים: הדף של הענן (השער), אפליקציה עם אסימון, או שרת של אפליקציה בחתימה — actor() מחליט.
     $files = fn() => actor($action, 'files', $raw);
+    // 👤 תפריט המשתמש (ui-core): הגדרות אישיות במסד שלנו, ייצוא ומחיקת חשבון — רק לחשבון שנכנס דרך השער
+    if (str_starts_with($action, 'account_')) {
+        try {
+            reply(uic_account_api($action, $in, [
+                'app' => 'suite-cloud',
+                'pdo' => fn() => db(),
+                'user' => fn() => currentAccount()['id'] ?? null,
+                'export' => fn($uid) => accountExport(requireAccount()),
+                'delete' => fn($uid) => accountDelete(requireAccount()),
+            ]));
+        } catch (UicAccountError $e) {
+            reply(['error' => $e->getMessage(), 'code' => $e->status === 401 ? 'unauthorized' : 'bad_request'], $e->status);
+        }
+    }
     switch ($action) {
         case 'me': {
             $a = requireAccount();

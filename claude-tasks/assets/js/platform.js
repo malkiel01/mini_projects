@@ -211,7 +211,7 @@ on('#repoForm', 'submit', async (e) => {
 
 /* ── פרויקט יחיד ───────────────────────────────────────────────── */
 
-async function openProject(id) {
+export async function openProject(id) {
   const { project, members, engine } = await api('project', { id });
   state.openProject = project;
   renderEngine(project, engine);
