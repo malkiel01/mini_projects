@@ -97,7 +97,45 @@ $t = tpl_get($a, $tid)['template'];
 check('תבנית Word: מקור docx, 7 שדות', $t['source'] === 'docx' && count($t['schema']['fields']) === 7);
 check('הסימון נשמר בכל שדה', $t['schema']['fields'][0]['placeholder'] === 'שם_השוכר');
 file_put_contents("$tmp/e.docx", make_docx('<w:p>' . $r('בלי שדות') . '</w:p>'));
-throws('Word בלי סימונים — נדחה עם הסבר', fn() => tpl_create($a, ['name' => 'x'], ['file' => ['tmp_name' => "$tmp/e.docx", 'error' => 0, 'size' => 10]]), 422);
+$plain = tpl_create($a, ['name' => 'בלי סימונים'], ['file' => ['tmp_name' => "$tmp/e.docx", 'error' => 0, 'size' => 10]])['id'];
+check('Word בלי סימונים — נוצרת תבנית בלי שדות (מסמנים אותם בעורך)', tpl_get($a, $plain)['template']['schema']['fields'] === []);
+
+// ── סימון שדות בעורך, על הטקסט של Word (lib/wordmark.php) ──
+file_put_contents("$tmp/m.docx", make_docx(
+    '<w:p>' . $r('שם השוכר: ', true) . $r('______') . '</w:p>'
+    . '<w:p>' . $r('חתום: ישר') . $r('אל ישראלי, ') . $r('היום') . '</w:p>'
+    . '<w:p>' . $r('קיים: {{תאריך}}') . '</w:p>', '<w:p>' . $r('כותרת עליונה') . '</w:p>'));
+$mid = tpl_create($a, ['name' => 'סימון'], ['file' => ['tmp_name' => "$tmp/m.docx", 'error' => 0, 'size' => 10]])['id'];
+$paras = tpl_word_text($a, $mid)['paragraphs'];
+check('הפסקאות לסימון: גוף קודם, ואחריו הכותרת העליונה', array_column($paras, 'text') === ['שם השוכר: ______', 'חתום: ישראל ישראלי, היום', 'קיים: {{תאריך}}', 'כותרת עליונה']
+    && $paras[0]['part'] === 'word/document.xml' && $paras[3]['part'] === 'word/header1.xml');
+$mark = fn($pi, $sel, $name, $id = null) => tpl_word_mark($a, ['id' => $id ?? $mid, 'part' => $paras[$pi]['part'], 'p' => $paras[$pi]['p'],
+    'start' => mb_strpos($paras[$pi]['text'], $sel), 'len' => mb_strlen($sel), 'text' => $sel, 'name' => $name]);
+$m1 = $mark(0, '______', 'שם השוכר');
+$m2 = $mark(1, 'ישראל ישראלי', 'שם החותם');   // חוצה שתי ריצות
+$m3 = $mark(3, 'כותרת', 'שם השוכר');          // אותו שדה במקום נוסף
+$tm = tpl_get($a, $mid)['template'];
+$fx = array_column($tm['schema']['fields'], null, 'placeholder');
+check('סימון: נוספו שדות, תווית מהשם; אותו שם — שדה אחד', $m1['added'] && $m2['added'] && !$m3['added'] && count($tm['schema']['fields']) === 3
+    && $fx['שם_השוכר']['label'] === 'שם השוכר' && isset($fx['שם_החותם'], $fx['תאריך']));
+check('סימון: מפתחות ייחודיים', count(array_unique(array_column($tm['schema']['fields'], 'key'))) === 3);
+$mb = asset_bytes(tpl_asset_row((int)tpl_owned($mid, $a)['version_id']));
+$doc = part($mb, 'word/document.xml');
+check('בקובץ: {{...}} במקום הטקסט, והעיצוב של תחילת הבחירה נשמר',
+    str_contains($doc, '{{שם_השוכר}}') && !str_contains($doc, '______') && str_contains($doc, 'חתום: {{שם_החותם}}') && str_contains($doc, 'היום')
+    && str_contains(part($mb, 'word/header1.xml'), '{{שם_השוכר}} עליונה') && (new DOMDocument())->loadXML($doc));
+throws('טקסט שלא תואם לקובץ — 409', fn() => tpl_word_mark($a, ['id' => $mid, 'part' => 'word/document.xml', 'p' => $paras[1]['p'],
+    'start' => 0, 'len' => 4, 'text' => 'אחר!', 'name' => 'x']), 409);
+$paras = tpl_word_text($a, $mid)['paragraphs'];
+throws('בחירה שנוגעת בשדה קיים — 422', fn() => $mark(2, 'קיים: {{', 'x'), 422);
+throws('שם עם נקודה — 422', fn() => $mark(1, 'היום', 'א.ב'), 422);
+$dm = doc_create($a, ['template_id' => $mid])['id'];
+doc_save($a, ['id' => $dm, 'values' => [$fx['שם_השוכר']['key'] => 'דנה', $fx['שם_החותם']['key'] => 'משה']]);
+$filled = part(docx_fill($mb, tpl_get($a, $mid)['template']['schema'], doc_values($dm), []), 'word/document.xml');
+check('מילוי: הערכים במקום השדות שסומנו', str_contains($filled, 'דנה') && str_contains($filled, 'חתום: משה') && !str_contains($filled, '{{שם_השוכר}}'));
+$v = $mark(1, 'היום', 'תאריך החתימה')['version'];
+check('תבנית שהונפק ממנה מסמך — הסימון בגרסה חדשה, והמסמך על הקודמת',
+    $v === 2 && str_contains(part(asset_bytes(tpl_asset_row((int)doc_owned($dm, $a, 'view')['template_version_id'])), 'word/document.xml'), 'היום'));
 tpl_save($a, ['id' => $tid, 'schema' => $t['schema']]);
 check('שמירה בעורך לא מאבדת את הסימונים', tpl_get($a, $tid)['template']['schema']['fields'][3]['placeholder'] !== '');
 
