@@ -259,6 +259,31 @@ function importSubprojects(array $user, int $parentId): array {
     return ['created' => $created, 'skipped' => $skipped];
 }
 
+/**
+ * הריפו של פרויקט, כולל ירושה: תת-פרויקט בלי ריפו משלו (למשל פרויקט שנוצר
+ * לבד והועבר לתוך אב) עובד מול הריפו של האב הקרוב שיש לו. משלים את השדות
+ * על השורה עצמה, ומסמן repo_inherited.
+ */
+function withRepo(array $project): array {
+    $project['repo_inherited'] = false;
+    if ((string) $project['repo_name'] !== '' || empty($project['parent_id'])) return $project;
+    $st = db()->prepare('SELECT parent_id, repo_owner, repo_name, default_branch FROM projects WHERE id = ?');
+    for ($id = (int) $project['parent_id'], $i = 0; $id && $i < 8; $i++) {
+        $st->execute([$id]);
+        $up = $st->fetch();
+        if (!$up) break;
+        if ((string) $up['repo_name'] !== '') {
+            $project['repo_owner'] = $up['repo_owner'];
+            $project['repo_name'] = $up['repo_name'];
+            $project['default_branch'] = $up['default_branch'];
+            $project['repo_inherited'] = true;
+            break;
+        }
+        $id = (int) ($up['parent_id'] ?? 0);
+    }
+    return $project;
+}
+
 function requireProject(int $projectId, array $user, string $minLevel): array {
     $st = db()->prepare('SELECT * FROM projects WHERE id = ?');
     $st->execute([$projectId]);
@@ -271,7 +296,7 @@ function requireProject(int $projectId, array $user, string $minLevel): array {
         throw new AppError('אין לך הרשאה מספקת בפרויקט הזה', 403);
     }
     $project['my_level'] = $level;
-    return $project;
+    return withRepo($project);
 }
 
 /** הפרויקטים שהמשתמש רשאי לראות. מנהל־על רואה הכול. */
@@ -302,6 +327,7 @@ function listProjects(array $user, ?int $rootId = null): array {
         $level = $isAdmin ? 'admin' : projectLevel((int) $p['id'], $user);
         if ($level === null) continue;
         $p['my_level'] = $level;
+        $p = withRepo($p);
         $p['owner_only'] = (int) $p['owner_only'];
         // הסימון האפקטיבי — כולל ירושה מאב. זה מה שהשרת אוכף.
         $p['owner_only_effective'] = projectOwnerOnly((int) $p['id']);
@@ -553,9 +579,6 @@ function assignToProject(array $user, int $projectId, array $topicIds, array $ta
 }
 
 /**
- * ⚠ זמני — לסידור הפרויקטים שנוצרו לפני עץ הפרויקטים (בבקשת בעל הלוח, 2026-11-01).
- * יוסר אחרי שהסידור יסתיים.
- *
  * מעביר פרויקט לתוך פרויקט אחר ($parentId), או לרמה העליונה (null). המטלות,
  * הנושאים והחברים נשארים על הפרויקט — הם זזים איתו. בעל הלוח בלבד.
  */
