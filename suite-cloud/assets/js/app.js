@@ -299,14 +299,12 @@ const loadedFaces = new Set();
 
 async function loadFonts() {
   $('#title').textContent = 'גופנים';
-  const data = await api('fonts_list');
-  $('#fonts-count').textContent = data.fonts.length ? `${data.families.length} משפחות · ${data.fonts.length} קבצים` : '';
+  const data = await api('fonts_list', undefined, { query: '&builtin=1' });
   const byId = Object.fromEntries(data.fonts.map(f => [f.id, f]));
-  if (!data.families.length) {
-    $('#fonts').replaceChildren(el('li', {}, el('p', { class: 'empty' }, 'עוד אין גופנים. "⬆️ גופן" כדי להעלות.')));
-    return;
-  }
-  $('#fonts').replaceChildren(...data.families.map(fam => {
+  const mine = data.families.filter(f => f.source !== 'builtin'), builtin = data.families.filter(f => f.source === 'builtin');
+  const mineFiles = data.fonts.filter(f => f.source !== 'builtin').length;
+  $('#fonts-count').textContent = mine.length ? `${mine.length} משפחות · ${mineFiles} קבצים` : '';
+  const famLi = fam => {
     const items = fam.items.map(id => byId[id]);
     const main = items.find(f => f.weight === 400 && f.style === 'normal') || items[0];
     const sample = el('div', { class: 'sample', style: { fontFamily: `"cf-${main.id}", system-ui`, fontWeight: main.weight, fontStyle: main.style } }, SAMPLE);
@@ -314,10 +312,18 @@ async function loadFonts() {
     return el('li', {}, el('div', { class: 'font-fam' },
       el('div', { class: 'l1 one' }, fam.family), sample,
       ...items.map(f => el('div', { class: 'font-row' },
-        el('span', { class: 'l2' }, `${WEIGHT_NAMES[f.weight] || f.weight}${f.style === 'italic' ? ' · נטוי' : ''} · ${f.format} · ${bytes(f.size)}`),
-        el('button', { class: 'icon-btn', type: 'button', 'aria-label': `עריכת ${f.name}`, onclick: () => editFont(f) }, '✏️'),
-        el('button', { class: 'icon-btn', type: 'button', 'aria-label': `מחיקת ${f.name}`, onclick: () => deleteFont(f) }, '🗑️')))));
-  }));
+        el('span', { class: 'l2' }, `${f.axes?.wght ? `משתנה · ${f.axes.wght[0]}–${f.axes.wght[1]}` : WEIGHT_NAMES[f.weight] || f.weight}${f.style === 'italic' ? ' · נטוי' : ''} · ${f.format} · ${bytes(f.size)}`),
+        ...(f.source === 'builtin'
+          ? [el('button', { class: 'icon-btn', type: 'button', 'aria-label': `הרישיון של ${f.name}`, onclick: () => showLicense(f) }, '📄')]
+          : [el('button', { class: 'icon-btn', type: 'button', 'aria-label': `עריכת ${f.name}`, onclick: () => editFont(f) }, '✏️'),
+             el('button', { class: 'icon-btn', type: 'button', 'aria-label': `מחיקת ${f.name}`, onclick: () => deleteFont(f) }, '🗑️')])))));
+  };
+  $('#fonts').replaceChildren(...(mine.length ? mine.map(famLi) : [el('li', {}, el('p', { class: 'empty' }, 'עוד אין גופנים שלך. "⬆️ גופן" כדי להעלות.'))]));
+  $('#fonts-builtin').replaceChildren(...builtin.map(famLi));
+}
+
+function showLicense(f) {
+  window.open(`${API}?action=font_license&id=${encodeURIComponent(f.id)}`, '_blank', 'noopener');
 }
 
 /** טוען את הגופן לדף בשם cf-<id> — לתצוגה המקדימה. */
@@ -326,7 +332,8 @@ async function face(f) {
   loadedFaces.add(f.id);
   try {
     const buf = await (await fetch(f.url, { credentials: 'same-origin' })).arrayBuffer();
-    const ff = new FontFace(`cf-${f.id}`, buf, { weight: String(f.weight), style: f.style });
+    const w = f.axes?.wght;
+    const ff = new FontFace(`cf-${f.id}`, buf, { weight: w ? `${w[0]} ${w[1]}` : String(f.weight), style: f.style });
     document.fonts.add(await ff.load());
   } catch (e) { console.warn('font preview', e); }
 }

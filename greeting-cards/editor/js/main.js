@@ -15,7 +15,7 @@ import { ELEMENTS, ELEMENT_GROUPS } from './elements.js';
 import { TEXT_STYLES, SOLIDS, GRADIENTS, gradientCss, applyTextStyle } from './presets.js';
 import { TEMPLATES, TEMPLATE_CATS } from './templates.js';
 import { FONTS, ensureFont, ensureDocFonts, nearestWeight, loadMyFonts, myFonts, readFontInfo, addMyFont, removeMyFont, embedDocFonts, syncCloudFonts, saveFontToCloud } from './fonts.js';
-import { History } from './history.js';
+import { snapshots, undoButtons } from './ui-core/history.js';   // ביטול / ביצוע — משותף לחבילה (שלב 6)
 import { designs, assets } from './db.js';
 import { Canvas } from './canvas.js';
 import { ingestImage, importFromChat, expandSvgLayers, blobToImage, canvasToBlob, exportPdf, safeName, personalSkill, skillAsPrompt, skillZip } from './io.js';
@@ -24,7 +24,7 @@ import { loadScript } from './io.js';
 import { docVariables, readSheetFile, readPasted, readPhoneContacts, guessColumns, normalizePhone, fileNames, fillText } from './merge.js';
 
 // הגרסה — מופיעה ביומן, כדי לדעת איזה קוד רץ בטלפון.
-const BUILD = '2026-11-01.dialogs-1';
+const BUILD = '2026-11-01.history-1';
 
 const app = $('#app');
 let ed = null;   // העיצוב הפתוח: { id, doc, history, canvas, dirty }
@@ -519,13 +519,20 @@ async function openDesign(id, preloaded, entry) {
             navBtn('👥', 'נמענים', recipientsSheet),
             navBtn('⋯', 'עוד', moreSheet)));
 
-    const history = new History(() => { undoBtn.disabled = !history.canUndo; redoBtn.disabled = !history.canRedo; });
+    // צילומי מצב של המסמך (JSON קטן — התמונות ב-IndexedDB). הכפתורים: מושבתים כשאין, ו-title עם שם הפעולה
+    let syncButtons = () => {};
+    const history = snapshots({
+        get: () => ed.doc,
+        set: d => { ed.doc = d; ed.canvas.setDoc(d); ed.canvas.select(ed.selection); scheduleSave(); },
+        onChange: () => syncButtons(),
+    });
+    syncButtons = undoButtons(history, undoBtn, redoBtn, { undo: 'ביטול', redo: 'חזרה' });
     ed = { id, doc: rec.doc, history, ctx, saveState, titleBtn, zoomLabel, stageEl, previewBar, selection: [], preview: null };
     document.title = rec.title;
 
     ed.canvas = new Canvas(stageEl, {
         onSelect: ids => { ed.selection = ids; renderCtx(); },
-        onCommit: () => commit(),
+        onCommit: () => commit('הזזה / שינוי גודל'),
         onEditText: l => editTextInPlace(l),
         onZoom: z => { zoomLabel.textContent = Math.round(z * 100) + '%'; ed.onView?.(); },
     });
@@ -539,7 +546,7 @@ async function openDesign(id, preloaded, entry) {
     await ensureDocFonts(ed.doc);
     log('open', { w: ed.doc.page.width, h: ed.doc.page.height, layers: ed.doc.layers.length, sw: innerWidth, sh: innerHeight });
     ed.canvas.setDoc(ed.doc, { fit: true });
-    history.reset(ed.doc);
+    history.reset();
     renderCtx();
     stageEl.addEventListener('keydown', onStageKey);
     // הגדלים של טקסט נגזרים בציור הראשון — שומרים אותם כמצב ההתחלה.
@@ -550,25 +557,25 @@ function navBtn(icon, label, onclick) {
     return h('button', { class: 'nav-btn', onclick }, h('span', { 'aria-hidden': 'true', class: 'nav-icon' }, icon), h('span', {}, label));
 }
 
-/** סוף פעולה: רושם בהיסטוריה, מצייר ושומר. */
-function commit() {
+/** סוף פעולה: רושם בהיסטוריה, מצייר ושומר. label — לכפתור ("ביטול: הזזה"); merge — שינויים רצופים כצעד אחד. */
+function commit(label = '', opts) {
     ed.canvas.render();
-    const changed = ed.history.commit(ed.doc);
+    const changed = ed.history.commit(label, opts);
     log('commit', { changed: changed ? 1 : 0, sel: ed.selection.join(',') || '-' });
     if (changed) scheduleSave();
     renderCtx();
 }
 
 function undo() {
-    const d = ed?.history.undo();
-    log('undo', { ok: d ? 1 : 0 });
-    if (d) { ed.doc = d; ed.canvas.setDoc(d); ed.canvas.select(ed.selection); scheduleSave(); }
+    const ok = !!ed?.history.undo();   // set (למעלה) מחליף את המסמך, מצייר ושומר
+    log('undo', { ok: ok ? 1 : 0 });
+    if (ok) renderCtx();
 }
 
 function redo() {
-    const d = ed?.history.redo();
-    log('redo', { ok: d ? 1 : 0 });
-    if (d) { ed.doc = d; ed.canvas.setDoc(d); ed.canvas.select(ed.selection); scheduleSave(); }
+    const ok = !!ed?.history.redo();
+    log('redo', { ok: ok ? 1 : 0 });
+    if (ok) renderCtx();
 }
 
 // ─── שמירה אוטומטית ───────────────────────────────────────────────────────
@@ -648,7 +655,7 @@ function renderCtx() {
 
 function addLayer(l, { select = true } = {}) {
     ed.doc.layers.push(l);
-    commit();
+    commit('הוספה');
     if (select) ed.canvas.select([l.id]);
 }
 
@@ -659,14 +666,14 @@ function groupSelected() {
     const g = uid('g');
     for (const l of ls) l.group = g;
     log('group', { n: ls.length });
-    commit();
+    commit('קיבוץ');
     toast(`${ls.length} שכבות קובצו — הקשה על אחת בוחרת את כולן`);
 }
 
 function ungroupSelected() {
     for (const l of sel()) delete l.group;
     log('ungroup', {});
-    commit();
+    commit('פירוק קבוצה');
 }
 
 function duplicate() {
@@ -682,7 +689,7 @@ function duplicate() {
         ed.doc.layers.push(c);
         ids.push(c.id);
     }
-    commit();
+    commit('שכפול');
     ed.canvas.select(ids);
 }
 
@@ -691,7 +698,7 @@ function removeSelected() {
     if (!ids.size) return;
     ed.doc.layers = ed.doc.layers.filter(l => !ids.has(l.id));
     ed.canvas.select([]);
-    commit();
+    commit('מחיקה');
     toast('נמחק — ↶ מחזיר');
 }
 
@@ -754,7 +761,7 @@ function align(how) {
         if (how === 'bottom') l.y = box.b - l.h;
         if (how === 'cy') l.y = (box.y + box.b) / 2 - l.h / 2;
     }
-    commit();
+    commit('יישור');
 }
 
 /** פיזור שווה: הראשונה והאחרונה במקומן, והרווחים ביניהן שווים. */
