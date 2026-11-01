@@ -86,6 +86,15 @@
   <main id="main" tabindex="-1">
     <nav class="crumbs" id="crumbs" aria-label="מיקום" hidden></nav>
 
+    <!-- מי עונה בענף הזה (§7): הצ'אטים, או Platform. משנה — בעל הלוח בלבד -->
+    <div class="route-bar" id="routeBar" hidden>
+      <div class="seg route-seg" id="routeSeg" role="radiogroup" aria-label="מי עונה בפרויקט">
+        <button type="button" role="radio" data-route="chat" aria-checked="false">💬 הצ'אטים</button>
+        <button type="button" role="radio" data-route="platform" aria-checked="false">☁️ Platform</button>
+      </div>
+      <p class="hint" id="routeHint" hidden></p>
+    </div>
+
     <!-- מסך ארוך → שתי לשוניות: הפרויקטים ברמה הזאת, והמטלות של כל הענף -->
     <div class="seg-tabs view-tabs" id="viewTabs" role="tablist" aria-label="תצוגה" hidden>
       <button type="button" role="tab" data-view="chats" aria-selected="false" hidden>💬 צ'אטים <small id="vtChatCount"></small></button>
@@ -609,6 +618,29 @@
     </div>
   </div>
 </dialog>
+<dialog id="pvsRoute" aria-labelledby="pvsRouteT">
+  <div class="sheet-wrap">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close="pvsRoute" aria-label="סגירה">✕</button>
+      <h2 id="pvsRouteT">מי עונה</h2>
+      <span></span>
+    </header>
+    <div class="sheet-body">
+      <p class="hint">מי לוקח את המטלות של הפרויקט ועונה בצ'אטים שלו — ועל חשבון מי. ההחלפה חלה על עבודה חדשה: מה שכבר בעבודה ממשיך במסלול שבו התחיל.</p>
+      <ul class="list" id="pvRouteList"></ul>
+      <p class="hint" id="pvRouteHint" hidden></p>
+      <section id="pvRouteDefault" hidden>
+        <h3>ברירת המחדל של הלוח</h3>
+        <p class="hint">לפרויקטים ברמה העליונה שלא בחרו בעצמם.</p>
+        <div class="seg route-seg" id="defaultRouteSeg" role="radiogroup" aria-label="ברירת המחדל של הלוח">
+          <button type="button" role="radio" data-route="chat" aria-checked="false">💬 הצ'אטים</button>
+          <button type="button" role="radio" data-route="platform" aria-checked="false">☁️ Platform</button>
+        </div>
+      </section>
+    </div>
+  </div>
+</dialog>
+
 <dialog id="pvsStructure" aria-labelledby="pvsStructureT">
   <div class="sheet-wrap">
     <header class="sheet-head">

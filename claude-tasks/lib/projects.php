@@ -302,7 +302,7 @@ function listProjects(array $user, ?int $rootId = null): array {
 
     // המונים — של המטלות של הפרויקט עצמו; הממשק מסכם לאב את כל הענף.
     $sql = "SELECT p.id, p.name, p.repo_owner, p.repo_name, p.default_branch, p.description, p.parent_id,
-                   p.path, p.icon, p.created_at, p.owner_only, u.display_name owner_name,
+                   p.path, p.icon, p.created_at, p.owner_only, p.route, u.display_name owner_name,
                    (SELECT COUNT(*) FROM project_members m WHERE m.project_id = p.id) member_count,
                    (SELECT COUNT(*) FROM tasks t
                      WHERE t.project_id = p.id AND t.status NOT IN ('done','cancelled')) open_tasks,
@@ -316,6 +316,7 @@ function listProjects(array $user, ?int $rootId = null): array {
 
     // ‏root_id — רק הענף של פרויקט אחד (למשל הדשבורד של חבילת היצירה).
     $only = $rootId !== null ? array_flip(projectSubtree($rootId)) : null;
+    $routes = projectRoutes();
 
     // מי שאינו מנהל־על רואה את מה שהוא חבר בו, וגם את הענף שמתחתיו.
     $out = [];
@@ -328,6 +329,8 @@ function listProjects(array $user, ?int $rootId = null): array {
         $p['owner_only'] = (int) $p['owner_only'];
         // הסימון האפקטיבי — כולל ירושה מאב. זה מה שהשרת אוכף.
         $p['owner_only_effective'] = projectOwnerOnly((int) $p['id']);
+        // מי עונה: הבחירה של הפרויקט ('' = יורש), והמסלול האפקטיבי
+        $p['route_effective'] = $routes[(int) $p['id']] ?? defaultRoute();
         $out[] = $p;
     }
     return $out;

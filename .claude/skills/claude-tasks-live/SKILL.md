@@ -14,7 +14,9 @@ the owner sees the conversation there and can write to the chat from the board. 
 - **Board → chat — the listener.** A background `curl` loop (`claude-tasks/bridge/listen.sh`) waits on the
   board. When a message arrives it exits, and its exit wakes you. **No tokens are spent while it waits.**
 
-Everything goes through `claude-tasks/bridge/link.sh`, which sends the hosting's bot-protection cookie for you.
+Everything goes through `claude-tasks/bridge/link.sh`, which sends the hosting's bot-protection cookie for you, and
+`X-Worker-Route: chat` (stage 6, spec §7): this chat works the `chat` route only. A project or channel switched to
+☁️ Platform is answered by Platform (once a quota exists) — its tasks will not come to you, and that is deliberate.
 
 ## Prerequisites (the owner sets these once, in the Claude environment settings — never in the chat)
 

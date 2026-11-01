@@ -427,3 +427,13 @@ details.what p { margin-top: var(--s2); }
 .danger-text { color: var(--danger); }
 .bubble .approval { background: var(--surface); }
 .note p, .b-body, .approval details p { unicode-bidi: plaintext; text-align: start; }
+
+/* ===== מי עונה (§7) ===== */
+.route-bar { margin-bottom: var(--s3); display: grid; gap: 6px; }
+.route-seg { display: grid; width: 100%; }
+.route-seg button { min-height: 40px; font-size: .88rem; }
+#routeHint, #pvRouteHint { font-size: .8rem; }
+#pvRouteDefault { display: grid; gap: var(--s2); }
+#pvRouteList .pick { flex-wrap: wrap; row-gap: 2px; }
+#pvRouteList .pick .t { white-space: normal; }
+#pvRouteList .pick small { flex-basis: 100%; padding-inline-start: 28px; }

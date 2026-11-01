@@ -286,6 +286,7 @@ function channelsFor(array $user, int $projectId): array {
         foreach (['pending_in', 'open_questions'] as $k) $out[$k] = (int) $c[$k];
         $out['last_message_at'] = $c['last_message_at'] === null ? null : (int) $c['last_message_at'];
         $out['listening'] = $out['status'] === 'active' && $out['listening_until'] > nowTs();
+        $out['route_effective'] = channelRoute($c);   // הערוץ גובר על הפרויקט
         return $out;
     }, $st->fetchAll());
 }

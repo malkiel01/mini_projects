@@ -104,3 +104,6 @@ export function timeAgo(ts) {
   if (hours < 24) return `לפני ${hours} שע׳`;
   return `לפני ${Math.floor(hours / 24)} ימים`;
 }
+
+/** עד שלבים 7–8 אף אחד לא לוקח מטלות במסלול platform — אומרים את זה ליד הבחירה. */
+export const PLATFORM_HINT = "☁️ Platform יענה אחרי שתוגדר מכסה (שלבים 7–8). עד אז אף אחד לא לוקח את המטלות של הענף הזה — הצ'אטים לא יראו אותן.";
