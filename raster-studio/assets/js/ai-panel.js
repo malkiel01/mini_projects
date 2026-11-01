@@ -109,13 +109,13 @@ export function createAIPanel({ doc, renderer, history, cloud, toast, onChange, 
     const d = doc();
     if (!d) return;
     beforeOpen?.();
-    const [caps, st] = await Promise.all([ai.capabilities(), cloud?.status?.().catch(() => null) ?? null]);
+    const caps = await ai.capabilities();   // כולל connected (מודול הכוננים, #991)
     const any = ROWS.some(([k]) => caps[k]);
     const s = sheet({
       title: '✨ בינה מלאכותית',
       body: body => {
         if (!any) {
-          const connected = st?.suite?.connected;
+          const connected = caps.connected;
           body.append(h('p.hint', connected ? 'אין ספק זמין לך עכשיו — בעל המערכת מגדיר ספק והרשאה בניהול הענן.'
             : 'הפעולות האלה רצות דרך ענן החבילה. אפשר להתחבר אליו, או לעשות אותן דרך הצ\'אט (סקיל).'));
           if (!connected && cloud?.connect) body.append(h('button.btn.primary', { type: 'button', onclick: () => cloud.connect() }, '☁️ חיבור לענן החבילה'));

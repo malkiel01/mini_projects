@@ -170,3 +170,28 @@ export function rasterTile(sel, tx, ty) {
   for (let i = 0; i < out.length; i++) { out[i] = data[i * 4 + 3]; any |= out[i]; }
   return any ? out : null;
 }
+
+/**
+ * הבחירה כמסכה בגודל הקנבס: { mask: Uint8Array של W×H (0–255), box: [x0, y0, x1, y1] כולל } — כמו שהמנוע מקבל
+ * (maskFromAlpha). בלי בחירה / בחירה ריקה — null.
+ */
+export function selectionAlpha(sel, W, H) {
+  const b = selectionBox(sel, W, H);
+  if (!b) return null;
+  const mask = new Uint8Array(W * H);
+  let any = false;
+  for (let ty = Math.floor(b[1] / TILE); ty * TILE < b[3]; ty++) {
+    for (let tx = Math.floor(b[0] / TILE); tx * TILE < b[2]; tx++) {
+      const t = rasterTile(sel, tx, ty);
+      if (!t) continue;
+      any = true;
+      for (let y = 0; y < TILE; y++) {
+        const dy = ty * TILE + y;
+        if (dy >= H) break;
+        const x1 = Math.min(TILE, W - tx * TILE);
+        mask.set(t.subarray(y * TILE, y * TILE + x1), dy * W + tx * TILE);
+      }
+    }
+  }
+  return any ? { mask, box: [b[0], b[1], b[2] - 1, b[3] - 1] } : null;
+}

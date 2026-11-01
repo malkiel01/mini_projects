@@ -1495,6 +1495,38 @@ async function main() {
   await page.waitForSelector('header.top .account-btn', { timeout: 5000 }).catch(() => {});
   check('👤 בעורך — העיגול בסרגל', await page.isVisible('header.top .account-btn'));
 
+  // ---- 🪡 תיקון ו-🫧 מילוי לפי התוכן: שמאל אדום, ימין כחול; ריבועים שחורים לתקן ----
+  await openEd(page);
+  await page.waitForFunction(() => window.__rs?.doc);
+  await page.evaluate(() => __rs.setView({ zoom: 1, x: 20, y: 20 }));
+  await page.evaluate(() => {
+    const d = __rs.doc, r = __rs.renderer, l = d.active;
+    const fillRect = (x, y, w, h, c) => { d.selection = { shapes: [{ type: 'rect', x, y, w, h, op: 'add' }], inverted: false }; r.selectionChanged(d); r.freeTextures(r.fillSelection(d, l, 'paint', c, 1).values()); };
+    fillRect(0, 0, 300, 400, [255, 0, 0]); fillRect(300, 0, 300, 400, [0, 0, 255]);
+    fillRect(100, 100, 40, 40, [0, 0, 0]); fillRect(420, 100, 40, 40, [0, 0, 0]);
+    d.selection = { shapes: [{ type: 'rect', x: 95, y: 95, w: 50, h: 50, op: 'add' }], inverted: false };
+    r.selectionChanged(d); r.invalidate(d);
+    __rs.history.clear();
+  });
+  await page.click('[data-tool="patch"]');
+  await page.evaluate(() => document.querySelector('[data-sel="content"]').click());
+  await page.waitForFunction(() => __rs.history.undoStack.at(-1)?.label === 'מילוי לפי התוכן', null, { timeout: 5000 }).catch(() => {});
+  const ca = (await px(120, 120)).split(',').map(Number);
+  check('🫧 מילוי לפי התוכן — הריבוע השחור מתמלא אדום (מהסביבה), רשומה אחת', ca[0] > 200 && ca[1] < 60 && ca[2] < 60
+    && await page.evaluate(() => __rs.history.undoStack.at(-1)?.label) === 'מילוי לפי התוכן',
+    ca.join() + ' | ' + await page.evaluate(() => [document.querySelector('.toast')?.textContent, __rs.history.undoStack.map(e => e.label).join('/'), __rs.tools.state.tool, __rs.doc.active.name, __rs.doc.active.locked].join(' ~ ')));
+  // תיקון: בחירה על הריבוע השני (לאסו בכלי עצמו), וגרירה ממנה אל אזור כחול
+  await page.evaluate(() => { __rs.doc.selection = null; __rs.renderer.selectionChanged(__rs.doc); });
+  await drag([410, 90], [470, 90]);   // בלי בחירה — לאסו (קו בלבד: לא בוחר כלום)
+  await page.evaluate(() => { const d = __rs.doc; d.selection = { shapes: [{ type: 'rect', x: 415, y: 95, w: 50, h: 50, op: 'add' }], inverted: false }; __rs.renderer.selectionChanged(d); });
+  await drag([440, 120], [440, 260]);
+  await page.waitForFunction(() => __rs.history.undoStack.at(-1)?.label === 'תיקון', null, { timeout: 5000 }).catch(() => {});
+  const pt = (await px(440, 120)).split(',').map(Number);
+  check('🪡 תיקון — גרירה מהבחירה אל אזור כחול: הריבוע מתמלא כחול, רשומת "תיקון"', pt[2] > 200 && pt[0] < 60 && pt[1] < 60
+    && await page.evaluate(() => __rs.history.undoStack.at(-1)?.label) === 'תיקון', pt.join());
+  await page.keyboard.press('Control+z');
+  check('ביטול התיקון — הריבוע השחור חוזר', near(await px(440, 120), [0, 0, 0, 255]));
+
   // ---- טקסט ----
   await openEd(page);
   await page.waitForFunction(() => window.__rs?.doc);
