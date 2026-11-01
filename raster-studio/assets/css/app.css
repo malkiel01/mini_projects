@@ -173,8 +173,9 @@ body.editor { display: flex; flex-direction: column; block-size: 100dvh; min-hei
 /* עשר לשוניות: שורה אחת שנגללת לרוחב (גם בטלפון) */
 .adjust .seg-tabs { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(64px, 1fr); overflow-x: auto; scrollbar-width: thin; }
 .adjust .seg-tabs [hidden] { display: none; }
-.adjust .color-pair { display: flex; gap: var(--s1); }
-.adjust .color-pair input { inline-size: 44px; block-size: 32px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: none; }
+.adjust .color-pair { display: flex; flex-wrap: wrap; gap: var(--s1); }
+.color-pair > *, .opt-colors > .cp-field, .opt-colors > div:not(:first-child) { flex: 1 1 140px; min-inline-size: 0; }
+.adjust .color-pair input[type="color"] { inline-size: 44px; block-size: 32px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: none; }
 .adjust select { min-block-size: 32px; }
 .layer-row .fill-thumb { border: 1px solid var(--line); border-radius: 4px; }
 .adjust-fields { display: flex; flex-wrap: wrap; gap: 0 var(--s3); }
@@ -191,7 +192,7 @@ body.editor { display: flex; flex-direction: column; block-size: 100dvh; min-hei
 .fx .seg-tabs button.on[aria-selected="true"]::after { color: inherit; }
 .fx .opt-check, .fx .opt-colors { flex: 0 0 auto; display: flex; align-items: center; gap: var(--s1); min-block-size: 32px; cursor: pointer; }
 .fx .opt-check input { inline-size: 18px; block-size: 18px; margin: 0; accent-color: var(--brand); }
-.fx .opt-colors input { inline-size: 44px; block-size: 32px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: none; }
+.fx .opt-colors input[type="color"] { inline-size: 44px; block-size: 32px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: none; }
 .fx [data-fx-for][hidden] { display: none; }
 .layer-row .fx-badge { flex: none; padding: 0 4px; border: 1px solid var(--line); border-radius: 4px; background: var(--brand-soft);
     color: var(--brand); font-size: .7rem; font-style: italic; font-weight: 700; line-height: 1.5; cursor: pointer; }

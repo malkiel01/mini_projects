@@ -28,6 +28,7 @@ import { keyOf } from './ui-core/keys.js';
 import { $ } from './ui-core/dom.js';
 import { undoButtons } from './ui-core/history.js';
 import { createHistoryPanel } from './history-panel.js';
+import { initColor, bindColorInput, openColorSheet } from './color-ui.js';
 import { initDialogs, confirm } from './ui-core/dialog.js';
 import { bindViewport } from './ui-core/gestures.js';
 
@@ -635,6 +636,12 @@ $('#hint').textContent = coarse ? 'צביטה — זום' : 'גרירה — הז
       onChange: () => { changed = true; draw(); panel.render(); },
       onApply: step => historyPanel?.record(step),
     });
+    // צבע — הבורר של ui-core (שורה 13). הטפטפת: EyeDropper של הדפדפן (כרום / אדג'); בלעדיו — בלי כפתור דגימה
+    initColor({ sample: 'EyeDropper' in window ? async () => { try { return (await new EyeDropper().open()).sRGBHex; } catch { return null; } } : null });
+    bindColorInput($('#adj-color1'), 'הצבע הראשון');
+    bindColorInput($('#adj-color2'), 'הצבע השני');
+    bindColorInput($('#fx-color'), 'צבע הסגנון');
+    $('#color-wrap').addEventListener('click', e => { e.preventDefault(); openColorSheet($('#color'), 'צבע'); });
     historyPanel = createHistoryPanel({
       doc: () => doc, setDoc, renderer, history, toast,
       beforeOpen: () => { tools.commitFloat(); tools.commitText(); adjust.close(); fx.close(); },
