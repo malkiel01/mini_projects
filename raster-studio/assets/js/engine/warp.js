@@ -82,6 +82,61 @@ export function* meshCells(mesh) {
   }
 }
 
+// ---- Liquify: מכחול שדוחף את קודקודי רשת צפופה ----
+
+export const LIQUIFY_N = 48;
+
+/** עותק של רשת (הנקודות — מערכים חדשים) */
+export const cloneMesh = ({ n, pts }) => ({ n, pts: pts.map(p => [p[0], p[1]]) });
+
+/** הרשת כמיפוי (u, v) → [x, y] — אינטרפולציה בילינארית בתוך התא */
+export function sampleMesh({ n, pts }) {
+  const at = (i, j) => pts[j * (n + 1) + i];
+  return (u, v) => {
+    const fx = Math.min(Math.max(u, 0), 1) * n, fy = Math.min(Math.max(v, 0), 1) * n;
+    const i = Math.min(n - 1, Math.floor(fx)), j = Math.min(n - 1, Math.floor(fy));
+    return bilinear([at(i, j), at(i + 1, j), at(i + 1, j + 1), at(i, j + 1)])(fx - i, fy - j);
+  };
+}
+
+/** משקל המכחול: 1 במרכז, 0 בקצה — רך (smooth falloff) */
+const falloff = (d2, r2) => (d2 >= r2 ? 0 : (1 - d2 / r2) ** 2);
+
+/**
+ * דחיפה: כל קודקוד בתוך המכחול (מרכז c, רדיוס r) זז ב-delta כפול המשקל והעוצמה k (0..1). משנה את הרשת במקום.
+ * גרירה ארוכה — בצעדים של עד רבע רדיוס, כדי שהרשת לא "תקפוץ" מעל עצמה. מחזיר אם משהו זז.
+ */
+export function liquifyPush(mesh, c, delta, r, k = 1) {
+  const len = Math.hypot(delta[0], delta[1]);
+  if (!len || r <= 0) return false;
+  const steps = Math.max(1, Math.ceil(len / (r / 4)));
+  const sx = delta[0] / steps, sy = delta[1] / steps, r2 = r * r;
+  let moved = false;
+  for (let s = 0; s < steps; s++) {
+    const cx = c[0] + sx * s, cy = c[1] + sy * s;
+    for (const p of mesh.pts) {
+      const w = falloff((p[0] - cx) ** 2 + (p[1] - cy) ** 2, r2) * k;
+      if (w > 0) { p[0] += sx * w; p[1] += sy * w; moved = true; }
+    }
+  }
+  return moved;
+}
+
+/** שחזור: הקודקודים בתוך המכחול חוזרים אל המקור (orig — אותה רשת לפני הדחיפות) לפי המשקל והעוצמה */
+export function liquifyRestore(mesh, orig, c, r, k = 1) {
+  const r2 = r * r;
+  let moved = false;
+  mesh.pts.forEach((p, i) => {
+    const w = falloff((p[0] - c[0]) ** 2 + (p[1] - c[1]) ** 2, r2) * k;
+    if (w <= 0) return;
+    const o = orig.pts[i];
+    if (p[0] === o[0] && p[1] === o[1]) return;
+    p[0] += (o[0] - p[0]) * w; p[1] += (o[1] - p[1]) * w;
+    moved = true;
+  });
+  return moved;
+}
+
 /** הנקודה הקרובה ביותר ל-p (במרחק עד tol) מתוך רשימה — האינדקס, או -1 */
 export function nearest(list, p, tol) {
   let best = -1, bd = tol;

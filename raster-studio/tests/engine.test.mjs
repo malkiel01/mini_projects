@@ -883,3 +883,24 @@ test('עיוות: הומוגרפיה, רשת, בזייה ומלבן חוסם', a
   assert.equal(nearest([[0, 0], [10, 0]], [9, 1], 3), 1);
   assert.equal(nearest([[0, 0]], [9, 1], 3), -1);
 });
+
+test('Liquify: דחיפה רכה, שחזור ודגימת הרשת', async () => {
+  const { homography, meshOf, sampleMesh, cloneMesh, liquifyPush, liquifyRestore } = await import('../assets/js/engine/warp.js');
+  const R = homography([[0, 0], [100, 0], [100, 100], [0, 100]]);
+  const m = meshOf(R, 10), orig = cloneMesh(m);
+  const S = sampleMesh(m);
+  assert.deepEqual(S(0.55, 0.35).map(v => Math.round(v * 1e6) / 1e6), [55, 35], 'דגימה בתוך תא');
+  assert.ok(liquifyPush(m, [50, 50], [10, 0], 20, 1));
+  const at = (i, j) => m.pts[j * 11 + i];
+  assert.ok(Math.abs(at(5, 5)[0] - 60) < 1e-6 && at(5, 5)[1] === 50, 'המרכז זז במלוא הדחיפה');
+  assert.ok(at(6, 5)[0] > 60 && at(6, 5)[0] < 70, 'קודקוד שכן — זז חלקית');
+  assert.deepEqual(at(0, 0), [0, 0], 'מחוץ למכחול — לא זז');
+  assert.equal(orig.pts[60][0], 50, 'העותק לא השתנה');
+  assert.equal(liquifyPush(m, [50, 50], [0, 0], 20, 1), false, 'בלי תנועה — כלום');
+  for (let i = 0; i < 40; i++) liquifyRestore(m, orig, [55, 50], 30, 0.5);
+  assert.ok(Math.abs(at(5, 5)[0] - 50) < 1e-3, 'שחזור — חוזר למקור');
+  // גרירה ארוכה מתחלקת לצעדים — הקודקוד שבמרכז ההתחלה מגיע לסוף
+  const m2 = meshOf(R, 10);
+  liquifyPush(m2, [20, 50], [60, 0], 20, 1);
+  assert.ok(m2.pts[5 * 11 + 2][0] > 60, 'דחיפה ארוכה — מושך את התוכן לאורך הגרירה');
+});

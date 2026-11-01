@@ -993,6 +993,33 @@ async function main() {
   check('Esc — העיוות מבוטל, הריבוע במקומו', near(await px(250, 250), [255, 0, 0, 255]) && near(await px(330, 250), [255, 255, 255, 255]),
     [await px(250, 250), await px(330, 250), await page.evaluate(() => !!__rs.doc._float), await page.evaluate(() => __rs.history.undoStack.map(e => e.label).slice(-3).join('/'))].join(' | '));
 
+  // Liquify: מכחול שדוחף את הרשת הצפופה — ריבוע אדום 200..299
+  await openEd(page);
+  await page.waitForFunction(() => window.__rs?.doc);
+  await page.evaluate(() => __rs.setView({ zoom: 1, x: 20, y: 20 }));
+  await page.keyboard.press('m');
+  await drag([200, 200], [300, 300]);
+  await color('#ff0000');
+  await page.keyboard.press('Alt+Backspace');
+  await page.keyboard.press('v');
+  await drag([250, 250], [250, 250]);
+  await page.waitForSelector('[data-xfmode="liquify"]:not([disabled])', { timeout: 3000 }).catch(() => {});
+  await page.click('[data-xfmode="liquify"]');
+  check('〰️ Liquify — מצב פעיל, גודל ועוצמה מוצגים, בלי נקודות שליטה', await page.getAttribute('[data-xfmode="liquify"]', 'aria-pressed') === 'true'
+    && await page.isVisible('#opt-liq-size') && await page.evaluate(() => __rs.doc._float?.mesh?.n) === 48);
+  await page.evaluate(() => { __rs.tools.state.size = 100; __rs.tools.state.liqStrength = 1; });
+  check('לפני: (320,250) לבן', near(await px(320, 250), [255, 255, 255, 255]));
+  await drag([250, 250], [340, 250]);
+  check('מריחה ימינה — התוכן נמשך: (320,250) אדום, הפינות במקומן', near(await px(320, 250), [255, 0, 0, 255]) && near(await px(203, 203), [255, 0, 0, 255]),
+    [await px(320, 250), await px(203, 203)].join(' | '));
+  for (let i = 0; i < 4; i++) await drag([310, 250], [312, 250], ['Alt']);
+  check('Alt — שחזור: (320,250) חוזר ללבן', (await px(320, 250)).split(',').map(Number)[1] > 200, await px(320, 250));
+  await drag([250, 250], [340, 250]);
+  await page.click('[data-xf="apply"]');
+  check('✓ החלה — רשומת "Liquify"', await page.evaluate(() => __rs.history.undoStack.at(-1).label) === 'Liquify' && near(await px(320, 250), [255, 0, 0, 255]));
+  await page.keyboard.press('Control+z');
+  check('ביטול — הריבוע חוזר', near(await px(320, 250), [255, 255, 255, 255]) && near(await px(250, 250), [255, 0, 0, 255]));
+
   // ---- חיתוך ----
   await openEd(page);
   await page.waitForFunction(() => window.__rs?.doc);
