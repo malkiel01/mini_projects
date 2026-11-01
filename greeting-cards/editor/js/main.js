@@ -24,7 +24,7 @@ import { loadScript } from './io.js';
 import { docVariables, readSheetFile, readPasted, readPhoneContacts, guessColumns, normalizePhone, fileNames, fillText } from './merge.js';
 
 // הגרסה — מופיעה ביומן, כדי לדעת איזה קוד רץ בטלפון.
-const BUILD = '2026-11-01.journal-2';
+const BUILD = '2026-11-01.dialogs-1';
 
 const app = $('#app');
 let ed = null;   // העיצוב הפתוח: { id, doc, history, canvas, dirty }
@@ -183,6 +183,7 @@ function designMenu(d) {
         } }, '⬇️ הורדה כ-‎.mbe'),
         h('button', { class: 'menu-item danger', onclick: async () => {
             if (!(await confirmDialog(`למחוק את "${d.title}"? אי אפשר לבטל.`, 'מחיקה', true))) return;
+            closeSheet();
             await designs.remove(d.id);
             try { await sync.removeRemote(d.id); } catch { toast('נמחק מהמכשיר; מהשרת — כשיהיה חיבור', 'error'); }
             showHome(); toast('נמחק');
@@ -1862,6 +1863,7 @@ function recipientsSheet() {
             delete ed.doc.merge;
             setPreview(null);
             commit();
+            closeSheet();
             toast('הרשימה נמחקה');
         } }, '🗑️ מחיקת הרשימה')), { wide: true });
 }
