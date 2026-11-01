@@ -16,6 +16,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/code.php';
+require_once __DIR__ . '/restore.php';
 
 const LEX_TEXTS = ['title_he' => 200, 'subtitle_main_he' => 300, 'title_fr' => 200, 'title_en' => 200, 'subtitle_he' => 500, 'credit_he' => 300,
     'gate_before' => 40, 'gate_after' => 40, 'more_label' => 60, 'less_label' => 60];
@@ -184,17 +185,23 @@ function topic_op(array $user, array $b): array
     $to = str(preg_replace('/\s+/u', ' ', (string)($b['to'] ?? '')), 80);
     $op = (string)($b['op'] ?? '');
     if ($name === '' || !in_array($op, ['rename', 'delete'], true) || ($op === 'rename' && $to === '')) throw new ApiError('בקשה לא תקינה');
+    snapshot_create($user, 'לפני ' . ($op === 'rename' ? "שינוי שם הנושא \"$name\"" : "הסרת הנושא \"$name\""));
     $pdo = db();
     $st = $pdo->prepare('UPDATE words SET topics = ?, updated_at = ?, updated_by = ? WHERE id = ?');
     $n = 0;
+    $before = [];
     $pdo->beginTransaction();
     foreach ($pdo->query('SELECT id, topics FROM words')->fetchAll() as $r) {
         $t = json_decode($r['topics'], true) ?: [];
         if (!in_array($name, $t, true)) continue;
+        $before[$r['id']] = $t;
         $t = array_values(array_unique(array_filter(array_map(fn($x) => $x === $name ? ($op === 'rename' ? $to : '') : $x, $t))));
         $st->execute([json_encode($t, JSON_UNESCAPED_UNICODE), now_iso(), $user['name'], $r['id']]);
         $n++;
     }
+    // לסל המחזור: הנושאים של כל מילה לפני הפעולה — "שחזור" מחזיר אותם
+    if ($before) $pdo->prepare('INSERT INTO topic_trash (at, by_name, op, name, to_name, before) VALUES (?, ?, ?, ?, ?, ?)')
+        ->execute([now_iso(), $user['name'], $op, $name, $op === 'rename' ? $to : null, json_encode($before, JSON_UNESCAPED_UNICODE)]);
     if ($op === 'rename') {
         $map = topic_slugs();
         $pdo->prepare('INSERT OR IGNORE INTO topics (slug, name) VALUES (?, ?)')->execute([topic_slug($to, $map), $to]);
@@ -206,12 +213,15 @@ function topic_op(array $user, array $b): array
 
 function word_delete(array $user, array $b): array
 {
-    $st = db()->prepare('SELECT word FROM words WHERE id = ?');
+    $st = db()->prepare('SELECT * FROM words WHERE id = ?');
     $st->execute([(int)($b['id'] ?? 0)]);
-    $word = $st->fetchColumn();
-    if ($word === false) throw new ApiError('המילה לא נמצאה', 404);
+    $row = $st->fetch() ?: throw new ApiError('המילה לא נמצאה', 404);
+    // לסל המחזור (lib/restore.php) — השורה כולה, כדי שתחזור בדיוק
+    db()->prepare('INSERT INTO words_trash (word_id, row, at, by_name) VALUES (?, ?, ?, ?)')
+        ->execute([$row['id'], json_encode($row, JSON_UNESCAPED_UNICODE), now_iso(), $user['name']]);
     db()->prepare('DELETE FROM words WHERE id = ?')->execute([(int)$b['id']]);
-    audit_as($user, 'word_delete', (string)$word);
+    $word = $row['word'];
+    audit_as($user, 'word_delete', (string)$word . ' → לסל');
     return words_list();
 }
 
@@ -337,6 +347,7 @@ function audio_import(array $owner, array $b): array
         $zip->close();
         throw new ApiError('זה לא קובץ הקלטות של קול מרוקו (חסר audio.json). בוורדפרס: הגדרות ← קול מרוקו ← "ייצוא ההקלטות"');
     }
+    snapshot_create($owner, 'לפני ייבוא הקלטות');
     $pdo = db();
     $st = ['part' => (int)($j['part'] ?? 0), 'parts' => (int)($j['parts'] ?? 0), 'linked' => 0, 'files' => 0, 'already' => 0, 'unmatched' => 0, 'failed' => []];
     $words = $pdo->prepare('SELECT word FROM words WHERE audio = ?');
@@ -430,6 +441,7 @@ function words_csv_import(array $user, array $b): array
 {
     $csv = (string)($b['csv'] ?? '');
     if (strlen($csv) > 20 * 1024 * 1024) throw new ApiError('הקובץ גדול מדי');
+    snapshot_create($user, 'לפני ייבוא מאקסל');
     if (!mb_check_encoding($csv, 'UTF-8')) $csv = (string)mb_convert_encoding($csv, 'UTF-8', 'Windows-1255');   // אקסל שומר "CSV" רגיל ב-ANSI
     $csv = preg_replace('/^\xEF\xBB\xBF/', '', $csv);
     $first = strtok($csv, "\n");

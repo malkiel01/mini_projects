@@ -234,7 +234,7 @@ function image_process(string $path, string $mime, string $ext): array
 
 function files_list(): array
 {
-    $rows = db()->query('SELECT * FROM files ORDER BY at DESC')->fetchAll();
+    $rows = db()->query('SELECT * FROM files WHERE deleted_at IS NULL ORDER BY at DESC')->fetchAll();
     $used = files_in_use();
     return [
         'files' => array_map(fn($f) => file_public($f) + ['in_use' => isset($used[$f['id']])], $rows),
@@ -247,11 +247,10 @@ function files_in_use(): array
 {
     $json = (string)db()->query('SELECT json FROM draft WHERE id = 1')->fetchColumn();
     // וגם הגרסה החיה והאחרונות — כדי ש"פרסום מחדש" של גרסה קודמת לא ייתקע על קובץ שנמחק
-    $json .= implode('', db()->query("SELECT json FROM versions WHERE n > (SELECT COALESCE(MAX(n), 0) - 10 FROM versions)")->fetchAll(PDO::FETCH_COLUMN));
     $json .= (string)setting('imported_css', '');
     // הקלטות של מילים: במילים עכשיו, ובעותקים שבגרסאות האחרונות
     $json .= implode('', db()->query("SELECT '\"' || audio || '\"' FROM words WHERE length(audio) = 32")->fetchAll(PDO::FETCH_COLUMN));
-    $json .= implode('', db()->query("SELECT words FROM versions WHERE words IS NOT NULL AND n > (SELECT COALESCE(MAX(n), 0) - 10 FROM versions)")->fetchAll(PDO::FETCH_COLUMN));
+    // גרסאות לא נבדקות כאן: מחיקה היא לסל, והקובץ נשאר. מחיקה סופית — רק כשאף גרסה לא מפנה אליו (file_in_versions)
     preg_match_all('/(?:"|kol-file:)([0-9a-f]{32})/', $json, $m);
     return array_flip($m[1]);
 }
@@ -260,9 +259,9 @@ function file_delete(array $user, array $b): array
 {
     $f = file_row((string)($b['id'] ?? ''));
     if (isset(files_in_use()[$f['id']])) throw new ApiError('הקובץ בשימוש בעמוד. הסירו אותו מהעמוד קודם');
-    db()->prepare('DELETE FROM files WHERE id = ?')->execute([$f['id']]);
-    @unlink(file_path($f));
-    audit_as($user, 'file_delete', $f['name']);
+    // לסל המחזור (lib/restore.php) — הקובץ נשאר בשרת; מחיקה סופית רק משם, רק לבעלים
+    db()->prepare('UPDATE files SET deleted_at = ?, deleted_by = ? WHERE id = ?')->execute([now_iso(), $user['name'], $f['id']]);
+    audit_as($user, 'file_delete', $f['name'] . ' → לסל');
     return files_list();
 }
 

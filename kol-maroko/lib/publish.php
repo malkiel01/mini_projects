@@ -353,19 +353,58 @@ function publish(array $user, array $b): array
     return version_send($user, version_create($user, $page, (string)($b['note'] ?? '')));
 }
 
-/** גרסה קודמת → גרסה חדשה עם אותו תוכן (האתר לעולם לא מקבל מספר ישן). */
+/**
+ * חזרה לגרסה: גרסה חדשה עם **אותו תוכן בדיוק** — ה-HTML, ה-CSS והקבצים שנשמרו בה (לא בנייה מחדש), כך שהאתר נראה
+ * בדיוק כמו אז. האתר לעולם לא מקבל מספר ישן, ומה שהיה אחריה לא נמחק. tool — גם הכלי חוזר אליה (הטיוטה, המילים
+ * וקבצי הקוד), אחרי נקודת שחזור.
+ */
 function republish(array $user, array $b): array
 {
-    $st = db()->prepare('SELECT json, words, code FROM versions WHERE n = ?');
+    $st = db()->prepare('SELECT * FROM versions WHERE n = ?');
     $st->execute([(int)($b['n'] ?? 0)]);
     $v = $st->fetch() ?: throw new ApiError('הגרסה לא נמצאה', 404);
-    $page = page_normalize(json_decode($v['json'], true));
-    $n = with_version($v, function () use ($page, $user, $b) {
-        $checks = publish_checks($page);
-        if ($checks['errors']) throw new ApiError('הגרסה הזו מפנה לקבצים שכבר נמחקו', 422, ['checks' => $checks]);
-        return version_create($user, $page, 'חזרה לגרסה ' . (int)$b['n']);
-    });
+    if (!empty($b['tool'])) version_to_tool($user, $v);
+    $pdo = db();
+    $n = (int)$pdo->query('SELECT COALESCE(MAX(n), 0) + 1 FROM versions')->fetchColumn();
+    $pdo->prepare("INSERT INTO versions (n, at, sub, name, note, json, html, css, assets, status, words, code) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)")
+        ->execute([$n, now_iso(), $user['sub'], $user['name'], 'חזרה לגרסה ' . (int)$v['n'], $v['json'], $v['html'], $v['css'], $v['assets'], $v['words'], $v['code']]);
+    audit_as($user, 'version_create', "גרסה $n — חזרה לגרסה {$v['n']}");
     return version_send($user, $n);
+}
+
+/** הכלי חוזר למצב של גרסה: הטיוטה, המילים וקבצי הקוד שנשמרו בה. קודם — נקודת שחזור של המצב הנוכחי. */
+function version_to_tool(array $user, array $v): void
+{
+    $l = lock_state();
+    if ($l && $l['sub'] !== $user['sub']) throw new ApiError("הטיוטה בעריכה אצל {$l['name']}. אחרי שיסיים — שוב", 423);
+    snapshot_create($user, 'לפני חזרה לגרסה ' . (int)$v['n']);
+    $pdo = db();
+    $pdo->beginTransaction();
+    try {
+        $d = draft_row();
+        if ($v['json'] !== $d['json']) {
+            revision_add($user, $d['json'], (int)$d['rev'], 'לפני חזרה לגרסה ' . (int)$v['n']);
+            $pdo->prepare('UPDATE draft SET json = ?, rev = rev + 1, updated_by = ?, updated_at = ? WHERE id = 1')->execute([$v['json'], $user['sub'], now_iso()]);
+        }
+        if ($v['words'] !== null) {
+            $pdo->exec('DELETE FROM words');
+            $ins = $pdo->prepare('INSERT INTO words (id, wp_id, word, meaning, topics, audio, external_id, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            $map = topic_slugs();
+            $top = $pdo->prepare('INSERT OR IGNORE INTO topics (slug, name) VALUES (?, ?)');
+            foreach (json_decode($v['words'], true) ?: [] as $w) {
+                $ins->execute([$w['id'], $w['wp_id'], $w['word'], $w['meaning'], json_encode($w['topics'], JSON_UNESCAPED_UNICODE), $w['audio'], $w['external_id'], now_iso(), $user['name']]);
+                foreach ($w['topics'] as $t) $top->execute([topic_slug($t, $map), $t]);
+            }
+        }
+        $pdo->exec('DELETE FROM code_files');
+        $ins = $pdo->prepare('INSERT INTO code_files (path, content, updated_at, updated_by) VALUES (?, ?, ?, ?)');
+        foreach (json_decode((string)$v['code'], true) ?: [] as $path => $content) $ins->execute([$path, $content, now_iso(), $user['name']]);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        throw $e;
+    }
+    audit_as($user, 'version_to_tool', 'הכלי חזר לגרסה ' . (int)$v['n']);
 }
 
 function version_create(array $user, array $page, string $note): int
@@ -438,13 +477,15 @@ function asset_send(array $a): void
     db()->prepare('INSERT OR IGNORE INTO site_assets (sha, site, at) VALUES (?, ?, ?)')->execute([$a['sha'], site_host(), now_iso()]);
 }
 
-function versions_list(): array
+/** כל הגרסאות — בלי הגבלה, בדפים של 50. */
+function versions_list(array $q = []): array
 {
-    $rows = db()->query('SELECT n, at, name, note, status, response, sent_at, length(assets) AS al, assets FROM versions ORDER BY n DESC LIMIT 50')->fetchAll();
+    $off = max(0, (int)($q['offset'] ?? 0));
+    $rows = db()->query('SELECT n, at, name, note, status, response, sent_at, length(assets) AS al, assets FROM versions ORDER BY n DESC LIMIT 50 OFFSET ' . $off)->fetchAll();
     return ['versions' => array_map(fn($r) => [
         'n' => (int)$r['n'], 'at' => $r['at'], 'name' => $r['name'], 'note' => $r['note'], 'status' => $r['status'],
         'error' => $r['status'] === 'failed' ? $r['response'] : null, 'sent_at' => $r['sent_at'], 'files' => count(json_decode($r['assets'], true)),
-    ], $rows), 'live' => live_version()];
+    ], $rows), 'live' => live_version(), 'total' => (int)db()->query('SELECT COUNT(*) FROM versions')->fetchColumn(), 'offset' => $off];
 }
 
 function version_preview(array $b): array

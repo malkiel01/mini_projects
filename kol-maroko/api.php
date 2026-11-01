@@ -33,7 +33,8 @@ const POST_ACTIONS = ['member_add', 'member_set', 'member_remove', 'request_dism
                       'upload_init', 'upload_chunk', 'upload_done', 'file_delete', 'disk_cap', 'editor_session', 'longtext_sync',
                       'publish', 'republish', 'version_send', 'key_rotate', 'key_activate', 'site_set', 'site_ping', 'import_run',
                       'ai_suggest', 'secret_set', 'ai_quota_set', 'word_save', 'word_delete', 'site_switch', 'topic_op', 'words_csv_import', 'audio_import',
-                      'code_create', 'code_save', 'code_reset', 'agent_token_create', 'agent_token_revoke'];
+                      'code_create', 'code_save', 'code_reset', 'agent_token_create', 'agent_token_revoke',
+                      'snapshot_create', 'snapshot_restore', 'trash_restore', 'trash_purge'];
 
 try {
     if (in_array($action, POST_ACTIONS, true) && $method !== 'POST') throw new ApiError('נדרש POST', 405);
@@ -43,6 +44,7 @@ try {
 
     $user = in_array($action, PUBLIC_ACTIONS, true) ? null : current_user();
     if ($user && $method === 'POST') check_csrf($user);
+    if ($user && $user['role']) snapshot_daily();                 // נקודת שחזור יומית — בבקשה הראשונה של היום
 
     $result = match ($action) {
         'embed_key' => wp()->publicKeys(),
@@ -74,7 +76,7 @@ try {
         'publish' => publish(require_role($user, 'publisher'), $body),
         'republish' => republish(require_role($user, 'publisher'), $body),
         'version_send' => version_send(require_role($user, 'publisher'), (int)($body['n'] ?? 0)),
-        'versions' => (require_role($user, 'editor') ? versions_list() : []),
+        'versions' => (require_role($user, 'editor') ? versions_list($_GET) : []),
         'version_preview' => (require_role($user, 'editor') ? version_preview($_GET) : []),
         'publish_settings' => (require_role($user, 'owner') ? publish_settings() : []),
         'key_rotate' => key_rotate(require_role($user, 'owner')),
@@ -90,6 +92,14 @@ try {
         'words_csv' => (require_role($user, 'editor') ? words_csv() : []),
         'words_csv_import' => words_csv_import(require_role($user, 'editor'), $body),
         'audio_import' => audio_import(require_role($user, 'owner'), $body),
+        'snapshots' => (require_role($user, 'editor') ? snapshots_list($_GET) : []),
+        'snapshot_create' => snapshot_manual(require_role($user, 'editor'), $body),
+        'snapshot_restore' => snapshot_restore(require_role($user, 'editor'), $body),
+        'snapshot_preview' => (require_role($user, 'editor') ? snapshot_preview($_GET) : []),
+        'trash' => (require_role($user, 'editor') ? trash_list() : []),
+        'trash_restore' => trash_restore(require_role($user, 'editor'), $body),
+        'trash_purge' => trash_purge(require_role($user, 'owner'), $body),
+        'backup' => backup_download(require_role($user, 'owner')),
         'code' => (require_role($user, 'editor') ? code_state() : []),
         'code_create' => code_create(require_role($user, 'editor')),
         'code_save' => code_save(require_role($user, 'editor'), $body),
