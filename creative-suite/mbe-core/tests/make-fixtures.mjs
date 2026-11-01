@@ -242,6 +242,12 @@ async function hostile() {
     add('path-id-missing', zip(await base(vec([{ d: 'M0 0 L1 1' }]))), ['document-schema']);
     add('path-id-duplicate', zip(await base(vec([{ id: 'v', d: 'M0 0 L1 1' }, { id: 'g', type: 'group', children: [{ id: 'q', d: 'M0 0 L1 1' }, { id: 'q', d: 'M0 0 L2 2' }] }]))), ['duplicate-id']);
     add('path-transform', zip(await base(vec([{ id: 'p1', d: 'M0 0 L1 1', transform: [1, 0, 0, 1, 0] }]))), ['document-schema']);
+    // סמלים (וקטורי גרסה 2): מזהה בתוך הגדרה — ייחודי בכל המסמך; d בהגדרה נבדק; use לסמל שלא קיים — אזהרה
+    const sym = (paths, symbols) => ({ ...vec(paths), symbols });
+    add('symbol-id-duplicate', zip(await base(sym([{ id: 'p1', d: 'M0 0 L1 1' }], { s1: { name: 'כוכב', paths: [{ id: 'p1', d: 'M0 0 L2 2' }] } }))), ['duplicate-id']);
+    add('symbol-d-invalid', zip(await base(sym([{ id: 'u1', type: 'use', symbol: 's1' }], { s1: { paths: [{ id: 'sp', d: 'L0 0' }] } }))), ['path-d-invalid']);
+    add('symbol-missing', zip(await base(sym([{ id: 'u1', type: 'use', symbol: 'nope', transform: [1, 0, 0, 1, 0, 0] }, { id: 'u2', type: 'use', symbol: 's1' }],
+        { s1: { name: 'כוכב', paths: [{ id: 'sp', d: 'M0 0 L1 1' }] } }))), ['symbol-missing'], { ok: true });
     add('group-geometry', zip(await base(vec([{ id: 'g', type: 'group', d: 'M0 0 L1 1', children: [] }]))), ['group-geometry']);
     {
         // flows.<id>.frames (סעיף 3, "מסגרות, שטפים"): מזהה שלא קיים, מזהה כפול, שכבה שאינה frame, מסגרת של שטף אחר
