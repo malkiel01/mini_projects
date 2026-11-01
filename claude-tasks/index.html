@@ -461,6 +461,14 @@
       <button type="button" class="icon-btn" data-close="settings" aria-label="סגירה">✕</button>
     </header>
     <div class="sheet__body">
+      <h3>החשבון שלי</h3>
+      <form class="row" id="meForm" style="align-items: end">
+        <label class="field" style="flex: 1 1 200px"><span>שם תצוגה</span><input type="text" id="meName" maxlength="60" required></label>
+        <button type="submit" class="btn btn--ghost">שמירה</button>
+      </form>
+      <p class="hint" id="meUser"></p>
+      <hr>
+
       <section id="oldAccount" hidden>
         <h3>יש לי כבר חשבון ישן</h3>
         <p class="hint">

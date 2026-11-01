@@ -926,8 +926,19 @@ on('#settingsBtn', 'click', () => {
   $('#tokenValue').textContent = '••••••••';
   $('#tokenShow').hidden = false;
   $('#adminOnly').hidden = state.user?.role === 'admin';
+  $('#meName').value = state.user?.display_name || '';
+  $('#meUser').textContent = state.user?.username ? `שם המשתמש לכניסה: ${state.user.username}` : '';
   renderAi();
   $('#settings').showModal();
+});
+
+on('#meForm', 'submit', async (e) => {
+  e.preventDefault();
+  try {
+    const r = await api('update-me', { display_name: $('#meName').value });
+    state.user.display_name = r.display_name;
+    toast('השם עודכן', 'ok');
+  } catch (ex) { toast(ex.message, 'error'); }
 });
 
 function renderAi() {

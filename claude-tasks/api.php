@@ -228,6 +228,15 @@ try {
             str_field($in, 'display_name', 60)
         )]);
 
+    /** שם התצוגה שלי. */
+    case 'update-me':
+        ok(['display_name' => setDisplayName(requireUser($user), (string) ($in['display_name'] ?? ''))]);
+
+    /** מנהל: מוחק חשבון נוסף; מה שנוצר בו עובר אליו (adminRemoveUser). */
+    case 'remove-user':
+        adminRemoveUser(requireUser($user), (int) ($in['id'] ?? 0));
+        ok();
+
     /* ── נושאים ────────────────────────────────────────────────── */
 
     case 'topics': {
@@ -1026,6 +1035,7 @@ try {
         // למחרוזת רק כברירת מחדל היסטורית שאפשר לכבות.
         ok(['users' => db()->query(<<<SQL
             SELECT id, username, display_name, role, created_at, github_login, default_provider,
+                   (platform_sub <> '') platform_linked,
                    (github_token <> '') has_github,
                    (SELECT COUNT(*) FROM user_providers p WHERE p.user_id = users.id) providers,
                    (SELECT COUNT(*) FROM project_members m WHERE m.user_id = users.id) projects,
