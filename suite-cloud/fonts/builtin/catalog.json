@@ -1,0 +1,176 @@
+{
+    "b_amaticsc-400": {
+        "id": "b_amaticsc-400",
+        "kind": "font",
+        "family": "Amatic SC",
+        "weight": 400,
+        "style": "normal",
+        "name": "Amatic SC",
+        "format": "ttf",
+        "size": 151624,
+        "rev": "513a76f96d39a5366bd27c258674aaea35ee51c42b8f3060387f74649ee8c8aa",
+        "source": "builtin",
+        "file": "AmaticSC-Regular.ttf",
+        "license": "OFL-amaticsc.txt"
+    },
+    "b_amaticsc-700": {
+        "id": "b_amaticsc-700",
+        "kind": "font",
+        "family": "Amatic SC",
+        "weight": 700,
+        "style": "normal",
+        "name": "Amatic SC Bold",
+        "format": "ttf",
+        "size": 156180,
+        "rev": "d367beadee66efbb657d24d3d8f30f3b60633e9d5c8ded7385541cf775cabb4d",
+        "source": "builtin",
+        "file": "AmaticSC-Bold.ttf",
+        "license": "OFL-amaticsc.txt"
+    },
+    "b_assistant-var": {
+        "id": "b_assistant-var",
+        "kind": "font",
+        "family": "Assistant",
+        "weight": 400,
+        "style": "normal",
+        "name": "Assistant",
+        "format": "ttf",
+        "size": 99496,
+        "rev": "1c3b393884f8fb133a1b17f41d26178adae1050a4f86d7a429d1b5658c314fa3",
+        "source": "builtin",
+        "file": "Assistant.ttf",
+        "license": "OFL-assistant.txt",
+        "axes": {
+            "wght": [
+                200,
+                800
+            ]
+        }
+    },
+    "b_davidlibre-400": {
+        "id": "b_davidlibre-400",
+        "kind": "font",
+        "family": "David Libre",
+        "weight": 400,
+        "style": "normal",
+        "name": "David Libre",
+        "format": "ttf",
+        "size": 127740,
+        "rev": "923f06e0f6dc84e1649d8cc5d5e12a8d663adf6aba83ba15baa5d559fb47b86e",
+        "source": "builtin",
+        "file": "DavidLibre-Regular.ttf",
+        "license": "OFL-davidlibre.txt"
+    },
+    "b_davidlibre-700": {
+        "id": "b_davidlibre-700",
+        "kind": "font",
+        "family": "David Libre",
+        "weight": 700,
+        "style": "normal",
+        "name": "David Libre Bold",
+        "format": "ttf",
+        "size": 132840,
+        "rev": "7610819c7888c8e7ecdfc573089113ec5355cf95078614ae0e30b509b05468f8",
+        "source": "builtin",
+        "file": "DavidLibre-Bold.ttf",
+        "license": "OFL-davidlibre.txt"
+    },
+    "b_frankruhllibre-var": {
+        "id": "b_frankruhllibre-var",
+        "kind": "font",
+        "family": "Frank Ruhl Libre",
+        "weight": 400,
+        "style": "normal",
+        "name": "Frank Ruhl Libre",
+        "format": "ttf",
+        "size": 178468,
+        "rev": "f9bf26966681037aae894b031bd0dcf2c1bfdfa128dd0640cf276fe62a338a43",
+        "source": "builtin",
+        "file": "FrankRuhlLibre.ttf",
+        "license": "OFL-frankruhllibre.txt",
+        "axes": {
+            "wght": [
+                300,
+                900
+            ]
+        }
+    },
+    "b_heebo-var": {
+        "id": "b_heebo-var",
+        "kind": "font",
+        "family": "Heebo",
+        "weight": 400,
+        "style": "normal",
+        "name": "Heebo",
+        "format": "ttf",
+        "size": 122012,
+        "rev": "18f930b583fa8fe6b40b2f8263b7ac6afbac07adc91a12467874e7467d3ace30",
+        "source": "builtin",
+        "file": "Heebo.ttf",
+        "license": "OFL-heebo.txt",
+        "axes": {
+            "wght": [
+                100,
+                900
+            ]
+        }
+    },
+    "b_notoserifhebrew-var": {
+        "id": "b_notoserifhebrew-var",
+        "kind": "font",
+        "family": "Noto Serif Hebrew",
+        "weight": 400,
+        "style": "normal",
+        "name": "Noto Serif Hebrew",
+        "format": "ttf",
+        "size": 183600,
+        "rev": "93caef921360788dc3b0e32136bb26f16bc57717ec482d48fc7fd43820617165",
+        "source": "builtin",
+        "file": "NotoSerifHebrew.ttf",
+        "license": "OFL-notoserifhebrew.txt",
+        "axes": {
+            "wght": [
+                100,
+                900
+            ],
+            "wdth": [
+                62.5,
+                100
+            ]
+        }
+    },
+    "b_rubik-var": {
+        "id": "b_rubik-var",
+        "kind": "font",
+        "family": "Rubik",
+        "weight": 400,
+        "style": "normal",
+        "name": "Rubik",
+        "format": "ttf",
+        "size": 359804,
+        "rev": "1b3a7437ba2af80e465e773ed60c5036d1ba6ace492d89046dbcf18fb31e4e88",
+        "source": "builtin",
+        "file": "Rubik.ttf",
+        "license": "OFL-rubik.txt",
+        "axes": {
+            "wght": [
+                300,
+                900
+            ]
+        }
+    },
+    "b_secularone-400": {
+        "id": "b_secularone-400",
+        "kind": "font",
+        "family": "Secular One",
+        "weight": 400,
+        "style": "normal",
+        "name": "Secular One",
+        "format": "ttf",
+        "size": 83916,
+        "rev": "2f45092a521db5042887941edfef73178ed7c5ba7fdfc5b6f581d44aab7b0234",
+        "source": "builtin",
+        "file": "SecularOne-Regular.ttf",
+        "license": "OFL-secularone.txt"
+    }
+}

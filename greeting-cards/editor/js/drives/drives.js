@@ -16,8 +16,11 @@
  *   await s.quota()                → { quota, used, max_file }
  *
  *   drives.fonts — ספריית הגופנים של המשתמש (suite-cloud/docs/spec-2-fonts.md):
- *   await drives.fonts.list()      → { fonts: [{ id, family, weight, style, format, rev, … }], families: [{ family, items }] }
- *   await drives.fonts.load(item)  → { face: FontFace (כבר ב-document.fonts, בשם המשפחה), bytes: Uint8Array — להטמעה בקובץ }
+ *   await drives.fonts.list()      → { fonts: [{ id, family, weight, style, format, rev, source, … }], families: [{ family, source, items }] }
+ *   await drives.fonts.list({ builtin: true }) — גם הגופנים המובנים (OFL, source: 'builtin', id שמתחיל ב-b_). גופן משתנה —
+ *        axes: { wght: [min, max] }, ו-weight הוא ברירת המחדל. license — יש רישיון: drives.fonts.license(item) → טקסט.
+ *   await drives.fonts.load(item)  → { face: FontFace (כבר ב-document.fonts, בשם המשפחה; משתנה — בכל טווח המשקלים),
+ *                                      bytes: Uint8Array — להטמעה בקובץ }
  *   await drives.fonts.add(file, { family, weight, style })   → פריט (replaced: true אם החליף)
  *
  *   drives.ai — שכבת הבינה המלאכותית של הענן (suite-cloud/docs/spec-3-ai.md):
@@ -137,11 +140,13 @@ export function createDrives({ endpoint = 'api.php' } = {}) {
     };
 
     const fonts = {
-        list: () => cloud('fonts_list'),
+        list: ({ builtin = false } = {}) => cloud('fonts_list', { query: builtin ? '&builtin=1' : '' }),
+        license: async item => (await cloud('font_license', { query: q('id', item.id), raw: true })).text(),
         async load(item) {
             const res = await cloud('font_file', { query: q('id', item.id) + q('rev', item.rev), raw: true });
             const bytes = new Uint8Array(await res.arrayBuffer());
-            const face = new FontFace(item.family, bytes, { weight: String(item.weight), style: item.style });
+            const w = item.axes?.wght;
+            const face = new FontFace(item.family, bytes, { weight: w ? `${w[0]} ${w[1]}` : String(item.weight), style: item.style });
             await face.load();
             document.fonts.add(face);
             return { face, bytes };
