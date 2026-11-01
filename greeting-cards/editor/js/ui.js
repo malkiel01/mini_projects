@@ -2,6 +2,7 @@
 // נגיש, הודעות, ואישור.
 
 import { toast as uiToast } from './ui-core/toast.js';
+import { confirm as uiConfirm, initDialogs } from './ui-core/dialog.js';
 import { log } from './log.js';
 import { colorPicker } from './colorpicker.js';
 
@@ -86,19 +87,10 @@ export function isSheetOpen() { return !!openSheet; }
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && openSheet) closeSheet(); });
 
 /** אישור לפעולה מסוכנת. מחזיר הבטחה — כל חלון חדש מבטל את הקודם ומחזיר בו false. */
-let pendingConfirm = null;
+/** אישור — confirm של ui-core (<dialog> מעל הגיליון הפתוח, שנשאר פתוח מתחתיו). אותה חתימה כמו קודם. */
 export function confirmDialog(msg, okLabel = 'אישור', danger = false) {
-    pendingConfirm?.(false);
-    return new Promise(resolve => {
-        pendingConfirm = resolve;
-        const done = v => { if (pendingConfirm === resolve) pendingConfirm = null; resolve(v); closeSheet(); };
-        sheet('אישור', h('div', {},
-            h('p', { class: 'lead' }, msg),
-            h('div', { class: 'row-actions' },
-                h('button', { class: 'btn ' + (danger ? 'danger' : 'primary'), onclick: () => done(true), autofocus: true }, okLabel),
-                h('button', { class: 'btn ghost', onclick: () => done(false) }, 'ביטול'))),
-        { onClose: () => { if (pendingConfirm === resolve) { pendingConfirm = null; resolve(false); } } });
-    });
+    initDialogs();
+    return uiConfirm(msg, { ok: okLabel, danger });
 }
 
 // ─── שדות ──────────────────────────────────────────────────────────────────
