@@ -7,5 +7,8 @@
   "category": "documents",
   "entry": "index.html",
   "gate": true,
-  "restricted": true
+  "restricted": true,
+  "public": [
+    "api.php?action=drives_key"
+  ]
 }
