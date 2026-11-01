@@ -302,3 +302,4 @@ dialog > form.sheet-wrap { margin: 0; }
 .conn__body { padding: 0 var(--s3) var(--s3); }
 .conn__body .hint, .field .hint { font-size: .8rem; }
 @media (prefers-reduced-motion: reduce) { .conn .go { transition: none; } }
+#pvChatTokenValue { white-space: pre-wrap; word-break: break-all; font-size: .78rem; }

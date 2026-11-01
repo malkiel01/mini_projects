@@ -847,6 +847,18 @@ try {
         moveProject(requireUser($user), (int) ($in['id'] ?? 0), int_or_null($in, 'parent_id'));
         ok();
 
+    /**
+     * אסימון ההרשמה לצ'אטים (docs/spec.md §5.5): אסימון הפרויקט. רושם ערוצים ומושך
+     * מטלות רק בענף שלו. בעל הלוח בלבד — הוא נכנס להגדרות הסביבה של Claude.
+     */
+    case 'chat-token': {
+        $me = requireUser($user);
+        if (authorRole($me) !== 'owner') fail('לבעל הלוח בלבד', 403);
+        $project = requireProject((int) ($in['project_id'] ?? 0), $me, 'admin');
+        logEvent($me, 'chat-token.show', 'project:' . $project['id']);
+        ok(['token' => projectAgentToken((int) $project['id']), 'url' => boardUrl(), 'project_id' => (int) $project['id']]);
+    }
+
     /** מטלות בלי פרויקט, לפי נושא — לחלונית "שיוך מטלות". בעל הלוח בלבד. */
     case 'orphan-tasks': {
         $me = requireUser($user);
