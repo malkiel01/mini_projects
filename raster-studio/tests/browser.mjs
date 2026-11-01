@@ -1443,6 +1443,32 @@ async function main() {
   await page.keyboard.press('Control+z');
   check('ביטול — השכבה שנוצרה יוצאת', near(await px(10, 10), [255, 0, 0, 255]));
 
+  // ---- 👤 תפריט המשתמש: בספרייה ובעורך; המסמכים שלי; הגדרות אישיות (ערכה כהה, מנוע הציור) ----
+  await page.goto(BASE + '/index.html');
+  await page.waitForSelector('#new-btn:not([disabled])');
+  await page.waitForSelector('header.top .account-btn', { timeout: 5000 }).catch(() => {});
+  check('👤 בספרייה — העיגול בסרגל', await page.isVisible('header.top .account-btn'));
+  await page.click('header.top .account-btn');
+  await page.click('text=המסמכים שלי');
+  await page.waitForSelector('dialog[open]', { timeout: 5000 }).catch(() => {});
+  const fw = await page.textContent('dialog[open]').catch(() => '');
+  check('📁 המסמכים שלי — חלון עם "באפליקציה" וענן החבילה', /באפליקציה/.test(fw) && /ענן החבילה/.test(fw), fw.slice(0, 120));
+  await page.keyboard.press('Escape');
+  await page.click('header.top .account-btn');
+  await page.click('text=הגדרות אישיות');
+  await page.waitForSelector('dialog[open] select[name="engine"]', { timeout: 5000 }).catch(() => {});
+  check('⚙️ הגדרות אישיות — כולל הקטע של עיצוב רסטר (מנוע הציור)', await page.isVisible('dialog[open] select[name="engine"]'));
+  await page.click('dialog[open] label:has(input[name="theme"][value="dark"])');
+  await page.waitForFunction(() => document.documentElement.dataset.theme === 'dark', null, { timeout: 3000 }).catch(() => {});
+  const saved = await page.evaluate(async () => (await (await fetch('api.php', { method: 'POST', headers: { 'X-Raster-Studio': '1' }, body: JSON.stringify({ action: 'account_prefs' }) })).json()));
+  check('ערכה כהה ידנית — על כל הדף, ונשמרת בשרת שלנו', await page.evaluate(() => document.documentElement.dataset.theme) === 'dark' && saved.prefs?.general?.theme === 'dark', JSON.stringify(saved));
+  await page.click('dialog[open] label:has(input[name="theme"][value="system"])');
+  await page.keyboard.press('Escape');
+  await openEd(page);
+  await page.waitForFunction(() => window.__rs?.doc);
+  await page.waitForSelector('header.top .account-btn', { timeout: 5000 }).catch(() => {});
+  check('👤 בעורך — העיגול בסרגל', await page.isVisible('header.top .account-btn'));
+
   // ---- טקסט ----
   await openEd(page);
   await page.waitForFunction(() => window.__rs?.doc);

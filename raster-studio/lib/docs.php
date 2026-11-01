@@ -88,3 +88,41 @@ function rs_doc_delete(int $owner, int $id): bool
     $q->execute([rs_now(), $id, $owner]);
     return $q->rowCount() === 1;
 }
+
+/** שינוי שם. רק הבעלים; עד 120 תווים, לא ריק. מחזיר false אם אין מסמך כזה שלו. */
+function rs_doc_rename(int $owner, int $id, string $title): bool
+{
+    $title = mb_substr(trim(preg_replace('/\s+/u', ' ', $title) ?? ''), 0, 120);
+    if ($title === '') throw new InvalidArgumentException('bad_title');
+    $q = rs_db()->prepare('UPDATE docs SET title = ?, updated_at = ? WHERE id = ? AND owner_id = ? AND deleted_at IS NULL');
+    $q->execute([$title, rs_now(), $id, $owner]);
+    return $q->rowCount() === 1;
+}
+
+/** 👤 "ייצוא כל הנתונים שלי": החשבון, והמסמכים עם רשימת הגרסאות (הקבצים עצמם — בהורדה מהעורך). */
+function rs_account_export(int $owner): array
+{
+    $db = rs_db();
+    $acc = $db->prepare('SELECT name, email, role, created_at FROM accounts WHERE id = ?');
+    $acc->execute([$owner]);
+    $docs = [];
+    $q = $db->prepare('SELECT * FROM docs WHERE owner_id = ? AND deleted_at IS NULL ORDER BY id');
+    $q->execute([$owner]);
+    foreach ($q->fetchAll() as $r) $docs[] = rs_doc_row($r) + ['versions' => rs_doc_versions($owner, (int)$r['id'])];
+    return ['account' => $acc->fetch() ?: null, 'docs' => $docs];
+}
+
+/** 👤 "מחיקת החשבון": הגרסאות, המסמכים (גם שנמחקו), החשבון, והקבצים בשרת. */
+function rs_account_delete(int $owner): void
+{
+    $db = rs_db();
+    $db->prepare('DELETE FROM doc_versions WHERE doc_id IN (SELECT id FROM docs WHERE owner_id = ?)')->execute([$owner]);
+    $db->prepare('DELETE FROM docs WHERE owner_id = ?')->execute([$owner]);
+    $db->prepare('DELETE FROM accounts WHERE id = ?')->execute([$owner]);
+    $dir = rs_files_dir() . '/' . $owner;
+    if (is_dir($dir)) {
+        $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST);
+        foreach ($it as $f) $f->isDir() ? rmdir($f->getPathname()) : unlink($f->getPathname());
+        rmdir($dir);
+    }
+}
