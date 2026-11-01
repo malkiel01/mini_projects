@@ -10,7 +10,7 @@ import { combine, isEmptyShape, maskShape, selectionBox, selectionAlpha, rasterT
 import * as XF from './engine/transform.js';
 import { pathFromSelection, translatePath } from './engine/vmask.js';
 import { docToScreen } from './engine/view.js';
-import { MESH_N, meshOf, homography, bezierPatch, warpFrom, nearest } from './engine/warp.js';
+import { MESH_N, meshOf, homography, bezierPatch, warpFrom, nearest, LIQUIFY_N, cloneMesh, sampleMesh, liquifyPush, liquifyRestore } from './engine/warp.js';
 import { handles } from './ui-core/handles.js';
 import { FONTS, LINE_HEIGHT, cssFont, renderText, textDirection } from './engine/text.js';
 import { keyOf } from './ui-core/keys.js';
@@ -52,7 +52,7 @@ export const sizeToSlider = s => Math.round(Math.log(Math.max(1, s)) / Math.log(
 export function createTools({ doc, renderer, history, view, onChange, draw, toast, overlay }) {
   const state = {
     tool: 'brush', color: '#1b1e26', size: 12, hardness: 0.8, opacity: 1, tolerance: 32, selMode: 'new',
-    contiguous: true, sampleAll: false,
+    contiguous: true, sampleAll: false, liqStrength: 0.5,
     font: FONTS[0].family, fontSize: 48, bold: false, align: 'start',
   };
   let stroke = null;   // { layer, last, carry, pen }
@@ -60,8 +60,10 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
   let xf = null;
   let patch = null;
   // עיוות התוכן הצף: { mode: 'distort' | 'warp', pts } — פינות (סדר הרשת: ש"ע, י"ע, ש"ת, י"ת) או 16 נקודות Warp;
-  // warpDrag — { idx } נקודה שנגררת, או { all, start, pts0 } — הזזה של כל הרשת
+  // או { mode: 'liquify', mesh, orig } — רשת צפופה שהמכחול דוחף (orig — לשחזור ב-Alt).
+  // warpDrag — { idx } נקודה שנגררת, { all, start, pts0 } — הזזה של כל הרשת, או { liq, last, restore } — מכחול Liquify
   let warp = null, warpDrag = null;    // כלי התיקון: גרירת הבחירה אל המקור — { start, last }       // גרירה בכלי ההזזה: { kind, handle, t0, start }
+  const liquifying = () => state.tool === 'move' && warp?.mode === 'liquify';
   let grabPending = null; // לחיצה בכלי ההזזה שמחכה לתוכן הצף: { last, up, cancelled }
   // פעולות שמחכות לקריאה מהכרטיס (דלי, טפטפת, הזזה) — settle מחכה שכולן יסתיימו
   const ops = new Set();
@@ -106,6 +108,8 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     bindRange('hardness', v => { state.hardness = v / 100; }, s => Math.round(s.hardness * 100), s => Math.round(s.hardness * 100) + '%'),
     bindRange('opacity', v => { state.opacity = v / 100; }, s => Math.round(s.opacity * 100), s => Math.round(s.opacity * 100) + '%'),
     bindRange('tolerance', v => { state.tolerance = v; }, s => s.tolerance, s => String(s.tolerance)),
+    bindRange('liq-size', v => { state.size = sliderToSize(v); }, s => sizeToSlider(s.size), s => s.size + 'px'),
+    bindRange('liq-strength', v => { state.liqStrength = v / 100; }, s => Math.round(s.liqStrength * 100), s => Math.round(s.liqStrength * 100) + '%'),
   ];
   colorIn.addEventListener('input', () => { state.color = colorIn.value; syncColor(); styleText(); });
   // טקסט: גופן, גודל, מודגש, יישור
@@ -175,7 +179,7 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
   function updateCursor(e) {
     if (!e) styleText();   // זום / הזזה — התיבה עוקבת
     if (e) lastHover = e;
-    const show = lastHover && painting() && lastHover.pointerType !== 'touch';
+    const show = lastHover && (painting() || liquifying()) && lastHover.pointerType !== 'touch';
     cursor.hidden = !show;
     if (!show) return;
     const d = Math.max(4, state.size * view().zoom);
@@ -371,7 +375,8 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     const f = fl();
     const info = $('#xf-info');
     if (info) {
-      info.textContent = !f ? '' : warp ? (warp.mode === 'warp' ? 'Warp — גוררים נקודות' : 'עיוות פינות — גוררים פינה')
+      info.textContent = !f ? '' : warp ? (warp.mode === 'liquify' ? 'Liquify — מורחים (Alt — שחזור)'
+        : warp.mode === 'warp' ? 'Warp — גוררים נקודות' : 'עיוות פינות — גוררים פינה')
         : `${Math.round(Math.abs(f.t.sx) * 100)}% × ${Math.round(Math.abs(f.t.sy) * 100)}% · ${Math.round(f.t.angle * 180 / Math.PI)}°`;
     }
     for (const b of opts.querySelectorAll('[data-xf]')) b.disabled = !f;
@@ -379,6 +384,7 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
 
   /** המיפוי הנוכחי של התוכן הצף: (u, v) ב-0..1 → נקודה במסמך */
   function mappingOf(f) {
+    if (warp?.mode === 'liquify') return sampleMesh(warp.mesh);
     if (warp?.mode === 'warp') return bezierPatch(warp.pts);
     if (warp?.mode === 'distort') { const [a, b, c, d] = warp.pts; return homography([a, b, d, c]); }
     const m = XF.matrix(f.t, f.w, f.h);
@@ -392,8 +398,13 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     if (mode === 'free') { warp = null; renderer.setFloatMesh(d, null); }
     else {
       const map = mappingOf(f);
-      const pts = mode === 'distort' ? [map(0, 0), map(1, 0), map(0, 1), map(1, 1)] : warpFrom(map);
-      warp = { mode, pts };
+      if (mode === 'liquify') {
+        // הרשת הצפופה מתחילה מהמצב הנוכחי (חופשי / פינות / Warp); Liquify שוב — בלי שינוי
+        if (warp?.mode !== 'liquify') { const mesh = meshOf(map, LIQUIFY_N); warp = { mode, mesh, orig: cloneMesh(mesh) }; }
+      } else {
+        const pts = mode === 'distort' ? [map(0, 0), map(1, 0), map(0, 1), map(1, 1)] : warpFrom(map);
+        warp = { mode, pts };
+      }
       applyWarp();
     }
     showBox();
@@ -403,14 +414,28 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
   function applyWarp() {
     const f = fl();
     if (!f || !warp) return;
-    renderer.setFloatMesh(doc(), meshOf(mappingOf(f), MESH_N));
+    renderer.setFloatMesh(doc(), warp.mode === 'liquify' ? cloneMesh(warp.mesh) : meshOf(mappingOf(f), MESH_N));
+  }
+
+  /** צעד של מכחול Liquify אל p: דחיפה מהנקודה הקודמת, או (Alt) שחזור סביב p */
+  function liquifyStep(p) {
+    const r = state.size / 2, k = state.liqStrength;
+    const moved = warpDrag.restore ? liquifyRestore(warp.mesh, warp.orig, p, r, k)
+      : liquifyPush(warp.mesh, warpDrag.last, [p[0] - warpDrag.last[0], p[1] - warpDrag.last[1]], r, k);
+    warpDrag.last = p;
+    if (!moved) return;
+    applyWarp();
+    draw();
   }
 
   function showBox() {
     const f = fl();
     if (!f) { warp = null; warpDrag = null; }
     overlay.box(!!f);
-    overlay.grid(f && warp ? warp.pts : null, warp?.mode === 'warp' ? 4 : 2);
+    overlay.grid(f && warp?.pts ? warp.pts : null, warp?.mode === 'warp' ? 4 : 2);
+    const liq = $('#liq-opts');
+    if (liq) liq.hidden = !(f && warp?.mode === 'liquify');
+    updateCursor();
     for (const b of opts.querySelectorAll('[data-xfmode]')) {
       b.disabled = !f;
       b.setAttribute('aria-pressed', String((warp?.mode ?? 'free') === b.dataset.xfmode));
@@ -477,7 +502,7 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
       sel = { before: floatSel, after: moved };
     }
     const pure = f.t.sx === 1 && f.t.sy === 1 && f.t.angle === 0;
-    history.pixels(d, f.layer, before, warped ? 'עיוות' : pure ? 'הזזה' : 'שינוי צורה', sel);
+    history.pixels(d, f.layer, before, warped ? (warp?.mode === 'liquify' ? 'Liquify' : 'עיוות') : pure ? 'הזזה' : 'שינוי צורה', sel);
     finishFloat();
     onChange('transform');
   }
@@ -748,6 +773,12 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
       const tol = (e.pointerType === 'touch' ? 22 : 10) / view().zoom;
       const grab = () => {
         const f = fl();
+        if (warp?.mode === 'liquify') {
+          warpDrag = { liq: true, last: pt, restore: !!e.altKey };
+          xf = { kind: 'warp' };
+          if (warpDrag.restore) liquifyStep(pt);
+          return;
+        }
         if (warp) {
           // עיוות: נקודה קרובה — היא זזה; אחרת — כל הרשת זזה
           const i = nearest(warp.pts, pt, tol);
@@ -843,6 +874,10 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
       const q = points.at(-1), p = [q.x, q.y];
       if (xf.kind === 'hd') { hdXf.move(e ?? {}, scr(p)); return; }
       if (xf.kind === 'warp') {
+        if (warpDrag.liq) {
+          for (const q of points) liquifyStep([q.x, q.y]);
+          return;
+        }
         if (warpDrag.all) {
           const dx = Math.round(p[0] - warpDrag.start[0]), dy = Math.round(p[1] - warpDrag.start[1]);
           warp.pts = warpDrag.pts0.map(([x, y]) => [x + dx, y + dy]);
