@@ -193,11 +193,13 @@
     await load();
   }
 
-  async function issue(templateId, share) {
+  async function issue(templateId, share, fresh) {
     const { api } = window.DT;
     const r = await api('doc_create', { template_id: templateId });
     // שליחה למילוי: המסמך נפתח ישר בבחירה "מי ממלא מה"
     if (share) try { sessionStorage.setItem('dt-share-setup', String(r.id)); } catch (e) { /* אחסון חסום */ }
+    // לחיצה על תבנית (15.3): יוצאים בלי לגעת — הטיוטה נמחקת, כדי שלא יצטברו טיוטות ריקות
+    if (fresh) try { sessionStorage.setItem('dt-fresh', String(r.id)); } catch (e) { /* אחסון חסום */ }
     location.hash = 'doc=' + r.id;
   }
 
@@ -420,8 +422,15 @@
     }
     renderMeta();
 
+    let fresh = false;
+    try { fresh = !fill && sessionStorage.getItem('dt-fresh') === String(id); } catch (e) { /* אחסון חסום */ }
     window.DT.setLeaveGuard(Object.assign(() => {
       if (Object.keys(pending).length) flush();
+      else if (fresh && !inflight && doc.status === 'draft') {
+        // השרת מוחק רק אם לא קרה בו כלום מלבד "נוצר" — אחרת משאיר
+        api('doc_delete', { id, untouched: true }).catch(() => {});
+      }
+      if (fresh) try { sessionStorage.removeItem('dt-fresh'); } catch (e) { /* אחסון חסום */ }
       return true;
     }, { dirty: () => Object.keys(pending).length > 0 || !!inflight }));
 

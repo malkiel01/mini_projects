@@ -132,6 +132,16 @@ $d3 = doc_create($a, ['template_id' => $tid]);
 check('מספור ממשיך אחרי מחיקה (לא ממחזר מספרים)', $d3['number'] === "שכ-$y-0003");
 check('29 בפברואר בשנה מעוברת — תקין', doc_save($a, ['id' => $d3['id'], 'values' => ['day' => '2028-02-29']])['saved'] === 1);
 
+// ── 15.3: לחיצה על תבנית ← טיוטה; יוצאים בלי לגעת — נמחקת; נגעו — נשארת ──
+check('untouched: מסמך שנשמר בו ערך — לא נמחק, בלי שגיאה', doc_delete($a, ['id' => $d3['id'], 'untouched' => true])['deleted'] === false);
+check('...והוא עדיין קיים', doc_get($a, $d3['id'])['document']['id'] === $d3['id']);
+$d4 = doc_create($a, ['template_id' => $tid]);
+check('untouched: טיוטה שלא נגעו בה — נמחקת', doc_delete($a, ['id' => $d4['id'], 'untouched' => true])['deleted'] === true);
+throws('...ולא נמצאת', fn() => doc_get($a, $d4['id']), 404);
+$d5 = doc_create($a, ['template_id' => $tid]);
+doc_tags($a, ['id' => $d5['id'], 'tags' => ['x']]);
+check('untouched: טיוטה שקיבלה תגית — נשארת', doc_delete($a, ['id' => $d5['id'], 'untouched' => true])['deleted'] === false);
+
 // ── גרסה: מסמך נשאר על הגרסה שלו ──
 tpl_save($a, ['id' => $tid, 'schema' => ['pages' => [['w' => 595, 'h' => 842]], 'fields' => [$field('other', 'text')]]]);
 check('אחרי עריכת התבנית — גרסה 2', tpl_get($a, $tid)['template']['version'] === 2);
