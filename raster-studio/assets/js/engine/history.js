@@ -5,6 +5,7 @@
 // זיכרון: לכל רשומה גודל בבתים; כשעוברים את התקרה — הישנות נזרקות (והמרקמים שלהן משתחררים).
 
 import { TILE } from './doc.js';
+import { History as Base } from '../ui-core/history.js';
 
 export const TILE_BYTES = TILE * TILE * 8;   // אריח float16
 
@@ -15,7 +16,11 @@ function freeTree(r, layer) {
 }
 const tileCount = l => (l.type === 'group' ? l.children.reduce((n, c) => n + tileCount(c), 0) : l.tiles.size);
 
-export class History {
+/**
+ * ביטול / ביצוע של הרסטר: הבסיס (מחסניות, תקרה בבתים, קבוצות, מיזוג, undoLabel) — ui-core/history.js;
+ * כאן — סוגי הרשומות של הרסטר (מאפיינים, פיקסלים, שכבות, מסכות, בחירה, חיתוך), מעל המנוע.
+ */
+export class History extends Base {
   /**
    * @param {object} o
    * @param {object} o.renderer   snapshot / freeTextures / freeLayer / invalidate / invalidateTiles
@@ -23,55 +28,9 @@ export class History {
    * @param {number} [o.maxSteps]
    * @param {(h: History) => void} [o.onChange]
    */
-  constructor({ renderer, limitBytes, maxSteps = 100, onChange = () => {} }) {
+  constructor({ renderer, ...rest }) {
+    super(rest);
     this.renderer = renderer;
-    this.limitBytes = limitBytes;
-    this.maxSteps = maxSteps;
-    this.onChange = onChange;
-    this.undoStack = [];
-    this.redoStack = [];
-  }
-
-  get canUndo() { return this.undoStack.length > 0; }
-  get canRedo() { return this.redoStack.length > 0; }
-  get bytes() { return [...this.undoStack, ...this.redoStack].reduce((n, e) => n + (e.bytes || 0), 0); }
-
-  push(entry) {
-    for (const e of this.redoStack) e.discard?.(false);
-    this.redoStack = [];
-    this.undoStack.push(entry);
-    // הישנות ביותר נזרקות — לפי מספר ולפי זיכרון (את האחרונה תמיד שומרים)
-    while (this.undoStack.length > 1 && (this.undoStack.length > this.maxSteps || this.bytes > this.limitBytes)) {
-      this.undoStack.shift().discard?.(true);
-    }
-    this.onChange(this);
-  }
-
-  undo() {
-    const e = this.undoStack.pop();
-    if (!e) return null;
-    e.undo();
-    this.redoStack.push(e);
-    this.onChange(this);
-    return e;
-  }
-
-  redo() {
-    const e = this.redoStack.pop();
-    if (!e) return null;
-    e.redo();
-    this.undoStack.push(e);
-    this.onChange(this);
-    return e;
-  }
-
-  /** מסמך חדש — ההיסטוריה של הקודם נזרקת. */
-  clear() {
-    for (const e of this.undoStack) e.discard?.(true);
-    for (const e of this.redoStack) e.discard?.(false);
-    this.undoStack = [];
-    this.redoStack = [];
-    this.onChange(this);
   }
 
   // ---------- סוגי רשומות ----------

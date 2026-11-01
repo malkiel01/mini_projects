@@ -26,6 +26,7 @@ import { buildMbe, openMbe, sniffZip, MbeOpenError } from './mbe-io.js';
 import { activeHandoff, returnHandoff, endHandoff } from './mbe/handoff.js';
 import { keyOf } from './ui-core/keys.js';
 import { $ } from './ui-core/dom.js';
+import { undoButtons } from './ui-core/history.js';
 import { initDialogs, confirm } from './ui-core/dialog.js';
 import { bindViewport } from './ui-core/gestures.js';
 
@@ -569,10 +570,7 @@ const undoBtn = $('#undo-btn'), redoBtn = $('#redo-btn');
 function syncHistory(h) {
   // מסמך שרק נפתח (היסטוריה ריקה) — אין מה לשמור; אחרת — טיוטה
   if (doc && (h.canUndo || h.canRedo)) scheduleDraft();
-  undoBtn.disabled = !h.canUndo;
-  redoBtn.disabled = !h.canRedo;
-  undoBtn.title = h.canUndo ? 'ביטול: ' + h.undoStack.at(-1).label : 'ביטול';
-  redoBtn.title = h.canRedo ? 'ביצוע מחדש: ' + h.redoStack.at(-1).label : 'ביצוע מחדש';
+  undoButtons(h, undoBtn, redoBtn);   // disabled ו-title ("ביטול: מכחול") — ui-core
 }
 function undo() {
   if (tools?.floating) { tools.cancelFloat(); return; }   // באמצע שינוי צורה — הביטול מבטל אותו
