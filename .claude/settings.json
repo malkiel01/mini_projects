@@ -14,5 +14,29 @@
       "mcp__Claude_Code_Remote__create_trigger",
       "mcp__Claude_Code_Remote__send_later"
     ]
+  },
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "timeout": 10,
+            "command": "f=\"$CLAUDE_PROJECT_DIR/claude-tasks/bridge/hook-prompt.sh\"; [ -x \"$f\" ] && \"$f\"; exit 0"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "timeout": 10,
+            "command": "f=\"$CLAUDE_PROJECT_DIR/claude-tasks/bridge/hook-stop.sh\"; [ -x \"$f\" ] && \"$f\"; exit 0"
+          }
+        ]
+      }
+    ]
   }
 }

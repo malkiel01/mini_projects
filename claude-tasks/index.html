@@ -355,6 +355,11 @@
         <h3>מבנה</h3>
         <label class="check"><input type="checkbox" id="pvOwnerOnly"><span>רק בעל הלוח עונה ומחליט — גם בכל תתי-הפרויקטים</span></label>
         <p class="hint" id="pvOwnerOnlyHint" hidden></p>
+        <div class="stack" id="pvChatToken">
+          <p class="hint">אסימון לצ'אטים — הצ'אטים נרשמים איתו לערוץ בפרויקט הזה ובתתי-הפרויקטים שלו. מגדירים אותו פעם אחת בהגדרות הסביבה של Claude (לא בצ'אט).</p>
+          <div class="token"><code id="pvChatTokenValue" dir="ltr">••••••••</code>
+            <button type="button" class="btn btn--ghost" id="pvChatTokenShow">הצגה</button></div>
+        </div>
         <form class="row" id="pvMove" style="align-items: end">
           <label class="field" style="flex: 1 1 200px"><span>העברה לתוך פרויקט</span><select id="pvMoveTo"></select></label>
           <button type="submit" class="btn btn--ghost">העברה</button>

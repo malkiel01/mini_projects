@@ -334,6 +334,8 @@ function renderOwnerTools(project) {
   const owner = state.user?.role === 'admin';
   $('#pvOwner').hidden = !owner;
   if (!owner) return;
+  $('#pvChatTokenValue').textContent = '••••••••';
+  $('#pvChatTokenShow').hidden = false;
   const all = state.projects || [];
   const me = all.find((p) => p.id === project.id);
   $('#pvOwnerOnly').checked = Number(project.owner_only) === 1;
@@ -361,6 +363,14 @@ function renderOwnerTools(project) {
     ...targets.map((t) => el('option', { value: String(t.id), text: t.label, selected: t.id === project.parent_id })),
   );
 }
+
+on('#pvChatTokenShow', 'click', async () => {
+  try {
+    const r = await api('chat-token', { project_id: state.openProject.id });
+    $('#pvChatTokenValue').textContent = `CLAUDE_TASKS_TOKEN=${r.token}\nCLAUDE_TASKS_URL=${r.url}\nCLAUDE_TASKS_PROJECT=${r.project_id}`;
+    $('#pvChatTokenShow').hidden = true;
+  } catch (ex) { toast(ex.message, 'error'); }
+});
 
 on('#pvOwnerOnly', 'change', async (e) => {
   try {

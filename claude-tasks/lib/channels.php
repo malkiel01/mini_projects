@@ -177,8 +177,7 @@ function channelPost(array $channel, string $role, string $body, ?int $replyTo =
     }
     db()->prepare("INSERT INTO messages (channel_id, task_id, direction, author_role, kind, body, reply_to,
                                          answered_by, created_at) VALUES (?,?, 'out', ?,?,?,?,?,?)")
-        ->execute([$channel['id'], $taskId, $role, $kind, cleanBody($body), $replyTo,
-                   $role === 'chat' ? 'chat' : '', nowTs()]);
+        ->execute([$channel['id'], $taskId, $role, $kind, cleanBody($body), $replyTo, '', nowTs()]);
     $id = (int) db()->lastInsertId();
     // ההודעה שהצ'אט עונה עליה — נענתה בצ'אט
     if ($replyTo !== null && $role === 'chat') {
