@@ -146,12 +146,12 @@ const server = http.createServer((req, res) => {
             const keys = await db.keys();
             await db.del('k');
             return {
-                names: [fileName('כרטיס: "חג" שמח?/', 'png'), fileName('', 'mbe'), fileName('..‏מסמך', '.pdf')],
+                names: [fileName('כרטיס: "חג" שמח?/', 'png'), fileName('', 'mbe'), fileName('..‏מסמך', '.pdf'), fileName(' ', 'png', 'תמונה')],
                 pref: s.get('a').x, def: s.get('none', 7),
                 blob: await blob.text(), keys, after: await db.get('k'),
             };
         });
-        ok(JSON.stringify(fx.names) === JSON.stringify(['כרטיס חג שמח.png', 'ללא שם.mbe', 'מסמך.pdf']), 'fileName: ניקוי תווים וסיומת');
+        ok(JSON.stringify(fx.names) === JSON.stringify(['כרטיס חג שמח.png', 'ללא שם.mbe', 'מסמך.pdf', 'תמונה.png']), 'fileName: ניקוי תווים, סיומת ושם חלופי');
         ok(fx.pref === 1 && fx.def === 7, 'pref: JSON וברירת מחדל');
         ok(fx.blob === 'שלום' && fx.keys.includes('k') && fx.after === undefined, 'kv: Blob נשמר, נקרא ונמחק');
 
