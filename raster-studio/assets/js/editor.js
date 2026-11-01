@@ -22,7 +22,7 @@ import { saveDraft, loadDraft, restoreDraft, clearDraft, draftKey } from './draf
 import { gapsFor, parseOraStack } from './engine/formats.js';
 import { unzip } from './engine/unzip.js';
 import { buildMbe, openMbe, sniffZip, MbeOpenError } from './mbe-io.js';
-import { activeHandoff, returnHandoff, endHandoff } from './handoff.js';
+import { activeHandoff, returnHandoff, endHandoff } from './mbe/handoff.js';
 import { keyOf } from './ui-core/keys.js';
 import { $ } from './ui-core/dom.js';
 import { initDialogs, confirm } from './ui-core/dialog.js';
