@@ -18,7 +18,8 @@
  *      u.commit('צבע', { merge: 'fill' })      // שינויים רצופים באותו מפתח (מחוון, הקלדה) — צעד אחד, עד mergeMs
  *      u.undo()  u.redo()  u.canUndo  u.canRedo  u.undoLabel  u.redoLabel  u.history
  *
- * הכפתורים: undoButtons(h, undoBtn, redoBtn) — disabled ו-title ("ביטול: הזזה"). הקיצורים — keys.js.
+ * הכפתורים: undoButtons(h, undoBtn, redoBtn, { keys: { undo: label('Mod+Z'), redo: label('Mod+Shift+Z') } }) — disabled
+ * ו-title ("ביטול: הזזה (Ctrl+Z)"). הקיצורים עצמם — keys.js.
  *
  * discard(applied) — כשרשומה נזרקת (תקרה / ענף ביצוע שנמחק / clear): applied=true — הפעולה במסמך (נזרקה מתחתית
  * הביטול), false — לא (נזרקה מהביצוע). כך משחררים זיכרון רק של מה שכבר לא במסמך.
@@ -154,10 +155,12 @@ export function snapshots({ get, set, maxSteps = 200, mergeMs = 1000, serialize 
 }
 
 /** מצב הכפתורים: disabled ו-title לפי הצעד הבא ("ביטול: הזזה"). מחזיר פונקציה לקריאה מ-onChange. */
-export function undoButtons(h, undoBtn, redoBtn, { undo = 'ביטול', redo = 'ביצוע מחדש' } = {}) {
+export function undoButtons(h, undoBtn, redoBtn, { undo = 'ביטול', redo = 'ביצוע מחדש', keys = null } = {}) {
+    // keys: { undo: 'Ctrl+Z', redo: 'Ctrl+Shift+Z' } — הקיצור נשאר בכותרת (לקח מהעימוד: undoButtons דרס את רמז הקיצור)
+    const t = (word, label, key) => (label ? `${word}: ${label}` : word) + (key ? ` (${key})` : '');
     const sync = () => {
-        if (undoBtn) { undoBtn.disabled = !h.canUndo; undoBtn.title = h.undoLabel ? `${undo}: ${h.undoLabel}` : undo; }
-        if (redoBtn) { redoBtn.disabled = !h.canRedo; redoBtn.title = h.redoLabel ? `${redo}: ${h.redoLabel}` : redo; }
+        if (undoBtn) { undoBtn.disabled = !h.canUndo; undoBtn.title = t(undo, h.undoLabel, keys?.undo); }
+        if (redoBtn) { redoBtn.disabled = !h.canRedo; redoBtn.title = t(redo, h.redoLabel, keys?.redo); }
     };
     sync();
     return sync;
