@@ -7,6 +7,8 @@
  *       keepRatio: 'corners',                     // 'corners' (ברירת מחדל) | 'always' | 'never' | handle => bool. Shift הופך.
  *       rotate: true,
  *       snap: () => snapper({ boxes, tol: 6 / view.zoom }),   // רשות; Ctrl / ⌘ לחוץ — בלי הצמדה
+ *       dir: 'rtl',                               // כיוון החץ בשורת המצב; ברירת מחדל — direction של ה-overlay.
+ *                                                 // במה ltr (קנבס) עם שורת מצב בעברית → dir: 'rtl' (לקח מהווקטורי)
  *       status: text => …,                        // רשות — שורת מצב משלך; בלי — פס קטן ב-overlay (statusAt: { top, insetInline })
  *       statusText: (t, t0, handle) => …,         // רשות — הטקסט בשינוי גודל (ברירת מחדל "100×60 ← 150×90")
  *       onGuides: guides => …,                    // רשות — האפליקציה מציירת את קווי העזר בעצמה
@@ -64,7 +66,9 @@ export function handles(overlay, opts = {}) {
         if (o.statusAt.insetInline != null) Object.assign(statusEl.style, { insetInlineStart: o.statusAt.insetInline + 'px', translate: 'none' });
         overlay.append(statusEl);
     }
-    const say = text => { if (o.status) o.status(text); else { statusEl.textContent = text; statusEl.hidden = !text; } };
+    // callbacks נקראים רק כשמשהו משתנה — לא מהבנאי, ולא ב-hide() כשאין מה לנקות (לקח מהווקטורי: TDZ, קווי עזר נמחקו)
+    let said = '', guideKey = '[]';
+    const say = text => { if (text === said) return; said = text; if (o.status) o.status(text); else { statusEl.textContent = text; statusEl.hidden = !text; } };
     const rtl = (o.dir || getComputedStyle(overlay).direction || document.dir) === 'rtl';
     const arrow = rtl ? '←' : '→';
 
@@ -218,6 +222,9 @@ export function handles(overlay, opts = {}) {
     }
 
     function guides(list) {
+        const key = JSON.stringify(list);
+        if (key === guideKey) return;
+        guideKey = key;
         guideG.replaceChildren();
         if (o.onGuides) { o.onGuides(list); return; }
         const r = overlay.getBoundingClientRect();

@@ -462,6 +462,16 @@ const server = http.createServer((req, res) => {
             document.querySelector('#hs-rect').checked = false; H.mount();
             return out;
         });
+        const quiet = await p.evaluate(async () => {
+            const { handles } = await import('../src/js/handles.js');
+            const calls = [], ov = document.createElement('div'); document.body.append(ov);
+            const hd = handles(ov, { view: () => ({ zoom: 1, x: 0, y: 0 }), status: t => calls.push('s:' + t), onGuides: g => calls.push('g:' + g.length) });
+            const atBuild = calls.length;
+            hd.show({ cx: 50, cy: 50, sx: 1, sy: 1, angle: 0 }, 20, 20); hd.hide(); hd.hide();
+            hd.destroy(); ov.remove();
+            return { atBuild, after: calls.length };
+        });
+        ok(quiet.atBuild === 0 && quiet.after === 0, 'handles: בלי callbacks מהבנאי ומ-hide() כשאין גרירה');
         ok(hr.miss === false && hr.took === true, 'handles: down מחזיר true רק על ידית');
         ok(Array.isArray(hr.hitTouch) && hr.hitMouse === null, 'handles: אזור מגע 22px באצבע, 10px בעכבר');
         ok(near(hr.ratio, 1) && hr.status.includes('←') && hr.status.includes('100×60'), 'handles: פינה — יחס נשמר, שורת מצב "רוחב ← רוחב" (RTL)');
