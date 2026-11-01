@@ -60,6 +60,7 @@ const shape = buf => {
         res: norm(res),
         patterns: Object.values(objs).filter(o => /\/Type \/Pattern/.test(o.dict)).map(o => o.dict),
         images: Object.values(objs).filter(o => /\/Subtype \/Image/.test(o.dict)).map(o => norm(o.dict)),
+        forms: Object.values(objs).filter(o => /\/Subtype \/Form/.test(o.dict)).map(o => norm(o.dict) + o.data.toString('latin1')),
     };
 };
 
@@ -77,8 +78,8 @@ async function same(label, list, media = {}) {
         return ok(`${label}: שתי השפות מציירות`, false, `PHP: ${a.toString().slice(0, 120)} / JS: ${b.toString().slice(0, 120)}`);
     const [p, j] = [shape(a), shape(b)];
     ok(`${label}: זרמי התוכן זהים`, p.contents.length > 0 && p.contents.every(c => c.length > 20) && JSON.stringify(p.contents) === JSON.stringify(j.contents), firstDiff(p.contents.join('\n'), j.contents.join('\n')));
-    ok(`${label}: עמודים, משאבים, תבניות ותמונות — אותו מבנה`, JSON.stringify([p.boxes, p.res, p.patterns, p.images]) === JSON.stringify([j.boxes, j.res, j.patterns, j.images]),
-        firstDiff(JSON.stringify([p.boxes, p.res, p.patterns, p.images]), JSON.stringify([j.boxes, j.res, j.patterns, j.images])));
+    ok(`${label}: עמודים, משאבים, תבניות, תמונות ומסכות — אותו מבנה`, JSON.stringify([p.boxes, p.res, p.patterns, p.images, p.forms]) === JSON.stringify([j.boxes, j.res, j.patterns, j.images, j.forms]),
+        firstDiff(JSON.stringify([p.boxes, p.res, p.patterns, p.images, p.forms]), JSON.stringify([j.boxes, j.res, j.patterns, j.images, j.forms])));
     if (hasPoppler) {
         const [ra, rb] = [raster(a, label.replace(/\W+/g, '') + 'p'), raster(b, label.replace(/\W+/g, '') + 'j')];
         let diff = 0;
@@ -129,6 +130,13 @@ await same('מעברי צבע: לינארי בשלוש עצירות, רדיאל�
     { op: 'path', d: sq(30, 40, 40, 40), fill: grad('radial', { cx: 50, cy: 60, r: 20, fx: 45, fy: 55 }, [[0, '#ffffff'], [1, '#000000']]), fillOpacity: 0.8 },
     { op: 'path', d: 'M0 95 L100 95', width: 6, stroke: grad('linear', { x1: 0, y1: 0, x2: 100, y2: 0 }, [[0.7, '#ff0000'], [0.2, '#000000']]) },
 ]}] });
+await same('שקיפות בעצירות: מסכה רכה, ומילוי + קו בשני מעברים', { pages: [{ size: [100, 100], ops: [
+    { op: 'rect', box: [0, 0, 100, 100], fill: '#000000' },
+    { op: 'path', d: sq(0, 0, 100, 40), fill: { gradient: { type: 'linear', x1: 0, y1: 0, x2: 100, y2: 0, stops: [{ offset: 0, color: '#ff0000' }, { offset: 0.5, color: '#ffff00', opacity: 0.5 }, { offset: 1, color: '#ff0000', opacity: 0 }] } } },
+    { op: 'path', d: sq(10, 55, 80, 30), width: 4, stroke: '#00ff00', fillOpacity: 0.9,
+        fill: { gradient: { type: 'radial', cx: 50, cy: 70, r: 40, stops: [{ offset: 0, color: '#ffffff', opacity: 1 }, { offset: 1, color: '#ffffff', opacity: 0 }] } } },
+    { op: 'path', d: 'M5 95 L95 95', width: 5, stroke: { gradient: { type: 'linear', x1: 0, y1: 0, x2: 100, y2: 0, stops: [{ offset: 0, color: '#0000ff', opacity: 0.2 }, { offset: 1, color: '#0000ff' }] } } },
+]}] });
 await same('תמונות: PNG עם שקיפות (SMask), PNG אטום, JPEG, חיתוך ו-opacity — ואותה תמונה פעמיים', { pages: [{ size: [100, 100], ops: [
     { op: 'image', src: 'media/a.png', box: [5, 5, 40, 30], clip: [5, 5, 30, 30] },
     { op: 'image', src: 'media/b.png', box: [50, 5, 40, 30], opacity: 0.25 },
@@ -156,7 +164,7 @@ const errs = [
     { pages: [{ size: [10, 10], ops: [{ op: 'clip', d: 'M0 0 L5 5 Z', transform: [0, 0, 0, 0, 0, 0] }] }] },
     { pages: [{ size: [10, 10], ops: [{ op: 'path', d: 'M0 0 L5 5 Z', fill: grad('conic', {}, [[0, '#000000']]) }] }] },
     { pages: [{ size: [10, 10], ops: [{ op: 'path', d: 'M0 0 L5 5 Z', fill: grad('radial', { cx: 1, cy: 1, r: 0 }, [[0, '#000000']]) }] }] },
-    { pages: [{ size: [10, 10], ops: [{ op: 'path', d: 'M0 0 L5 5 Z', fill: { gradient: { type: 'linear', x1: 0, y1: 0, x2: 5, y2: 0, stops: [{ offset: 0, color: '#000000', opacity: 0.5 }] } } }] }] },
+    { pages: [{ size: [10, 10], ops: [{ op: 'path', d: 'M0 0 L5 5 Z', fill: { gradient: { type: 'linear', x1: 0, y1: 0, x2: 5, y2: 0, stops: [{ offset: 0, color: '#000000', opacity: 1.5 }] } } }] }] },
     { pages: [{ size: [10, 10], ops: [{ op: 'image', src: 'media/none.png', box: [0, 0, 1, 1] }] }] },
 ];
 const mism = [];
