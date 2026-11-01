@@ -121,6 +121,90 @@ function projectSubtree(int $projectId): array {
     return $ids;
 }
 
+/* ── ענף של בעל הלוח (owner_only) ──────────────────────────────────
+ *
+ * פרויקט שסומן owner_only — הוא וכל הענף שמתחתיו: רק בעל הלוח עונה בו
+ * ומחליט בו, ועובד עם האסימון הכללי לא מושך ממנו בלי topic_id מפורש
+ * (docs/spec.md, 2.2). הירושה חד-כיוונית: תת-פרויקט לא יכול "לבטל" סימון
+ * של אב — אחרת מי שמנהל תת-פרויקט היה פותח לעצמו את מה שננעל מעליו.
+ */
+
+/** האם הפרויקט, או אחד מאבותיו, מסומן owner_only. עד 8 רמות, כמו projectLevel. */
+function projectOwnerOnly(?int $projectId): bool {
+    if (!$projectId) return false;
+    $st = db()->prepare('SELECT parent_id, owner_only FROM projects WHERE id = ?');
+    for ($id = $projectId, $i = 0; $id && $i < 8; $i++) {
+        $st->execute([$id]);
+        $row = $st->fetch();
+        if (!$row) return false;
+        if ((int) $row['owner_only'] === 1) return true;
+        $id = (int) ($row['parent_id'] ?? 0);
+    }
+    return false;
+}
+
+/** כל הפרויקטים שבתוך ענף owner_only — מה שהאסימון הכללי מדלג עליו ב-claim. */
+function ownerOnlyProjectIds(): array {
+    $ids = [];
+    foreach (db()->query('SELECT id FROM projects WHERE owner_only = 1')->fetchAll() as $row) {
+        foreach (projectSubtree((int) $row['id']) as $id) $ids[$id] = true;
+    }
+    return array_keys($ids);
+}
+
+/** תפקיד הכותב, כפי שהשרת קובע אותו. אין שדה כזה שמגיע מהלקוח. */
+function authorRole(?array $user): string {
+    if (!$user) return 'worker';
+    return ($user['role'] ?? '') === 'admin' ? 'owner' : 'member';
+}
+
+/**
+ * האם הערה של המשתמש על מטלה חסומה היא "תשובה" — כלומר מחזירה אותה לתור.
+ *
+ * בעל הלוח — תמיד. מטלה בלי פרויקט (הלוח האישי) — כל משתמש מחובר, כמו
+ * לפני השלב הזה. בפרויקט — רק write ומעלה, ולא בענף owner_only.
+ */
+function canAnswer(?array $user, array $task): bool {
+    if (!$user) return false;
+    if (authorRole($user) === 'owner') return true;
+    $pid = $task['project_id'] === null ? null : (int) $task['project_id'];
+    if ($pid === null) return true;
+    if (projectOwnerOnly($pid)) return false;
+    $level = projectLevel($pid, $user);
+    return $level !== null && levelRank($level) >= levelRank('write');
+}
+
+/**
+ * סוג ההערה שנשמר בפועל. "תשובה" היא מה שמחזיר מטלה חסומה לתור (addNote),
+ * ולכן היא שמורה למי שרשאי לענות: עובד — לעולם לא; חבר בלי write, או בענף
+ * owner_only — ההערה נשמרת, אבל כ-comment, והמטלה ממשיכה לחכות לבעל הלוח.
+ * הערה רגילה של מי שרשאי, על מטלה חסומה — היא התשובה.
+ */
+function noteKind(?array $user, array $task, string $requested): string {
+    $may = canAnswer($user, $task);
+    if ($requested === 'answer' && !$may) return 'comment';
+    if ($user && $may && $requested === 'comment' && $task['status'] === 'blocked') return 'answer';
+    return $requested;
+}
+
+/**
+ * הפרויקטים ש-tasks?project_id= מחזיר. ברירת המחדל — כל הענף (הממשק נשען על
+ * זה); subtree=0 — רק הפרויקט עצמו.
+ */
+function taskScopeIds(int $projectId, $subtree = null): array {
+    $exact = $subtree === 0 || $subtree === '0' || $subtree === false;
+    return $exact ? [$projectId] : projectSubtree($projectId);
+}
+
+/**
+ * מטלה שמשתמש רשאי לגעת בה. מטלה בלי פרויקט — כל מחובר, כמו היום; מטלה
+ * בפרויקט — הדרגה שנדרשה בפרויקט שלה.
+ */
+function requireTaskAccess(array $user, array $task, string $minLevel): void {
+    if ($task['project_id'] === null) return;
+    requireProject((int) $task['project_id'], $user, $minLevel);
+}
+
 /**
  * תת-פרויקט: תיקייה בתוך הריפו של האב. הריפו והענף עוברים מהאב, כך שגם
  * מנוע ההרצה ועיון בקבצים עובדים בו כמו בכל פרויקט.
@@ -191,12 +275,12 @@ function requireProject(int $projectId, array $user, string $minLevel): array {
 }
 
 /** הפרויקטים שהמשתמש רשאי לראות. מנהל־על רואה הכול. */
-function listProjects(array $user): array {
+function listProjects(array $user, ?int $rootId = null): array {
     $isAdmin = ($user['role'] ?? '') === 'admin';
 
     // המונים — של המטלות של הפרויקט עצמו; הממשק מסכם לאב את כל הענף.
     $sql = "SELECT p.id, p.name, p.repo_owner, p.repo_name, p.default_branch, p.description, p.parent_id,
-                   p.path, p.icon, p.created_at, u.display_name owner_name,
+                   p.path, p.icon, p.created_at, p.owner_only, u.display_name owner_name,
                    (SELECT COUNT(*) FROM project_members m WHERE m.project_id = p.id) member_count,
                    (SELECT COUNT(*) FROM tasks t
                      WHERE t.project_id = p.id AND t.status NOT IN ('done','cancelled')) open_tasks,
@@ -208,12 +292,19 @@ function listProjects(array $user): array {
              WHERE p.archived = 0 ORDER BY p.name";
     $rows = db()->query($sql)->fetchAll();
 
+    // ‏root_id — רק הענף של פרויקט אחד (למשל הדשבורד של חבילת היצירה).
+    $only = $rootId !== null ? array_flip(projectSubtree($rootId)) : null;
+
     // מי שאינו מנהל־על רואה את מה שהוא חבר בו, וגם את הענף שמתחתיו.
     $out = [];
     foreach ($rows as $p) {
+        if ($only !== null && !isset($only[(int) $p['id']])) continue;
         $level = $isAdmin ? 'admin' : projectLevel((int) $p['id'], $user);
         if ($level === null) continue;
         $p['my_level'] = $level;
+        $p['owner_only'] = (int) $p['owner_only'];
+        // הסימון האפקטיבי — כולל ירושה מאב. זה מה שהשרת אוכף.
+        $p['owner_only_effective'] = projectOwnerOnly((int) $p['id']);
         $out[] = $p;
     }
     return $out;
@@ -392,4 +483,71 @@ function userConn(array $user, string $provider = '', string $model = ''): array
     $global = aiConn();
     return $global['key'] !== '' ? $global + ['source' => 'system']
                                  : ['provider' => '', 'key' => '', 'model' => '', 'source' => 'none'];
+}
+
+/* ── שיוך מטלות ישנות לפרויקט (docs/spec.md, 4 — U1) ───────────────
+ *
+ * מטלות שנפתחו לפני עץ הפרויקטים יושבות בלי פרויקט. כאן בעל הלוח בוחר
+ * נושאים ומטלות ומעביר אותם לפרויקט: נושא כללי שעובר נעשה שלב של הפרויקט,
+ * והמטלות שלו עוברות איתו.
+ */
+
+/** המטלות בלי פרויקט, לפי הנושא הכללי שלהן. נושא של פרויקט אחר לא מוצע להעברה. */
+function orphanTasks(): array {
+    $rows = db()->query(<<<SQL
+        SELECT k.id, k.title, k.status, k.topic_id, t.name topic_name, t.project_id topic_project
+          FROM tasks k LEFT JOIN topics t ON t.id = k.topic_id
+         WHERE k.project_id IS NULL
+         ORDER BY t.name IS NULL, t.name, k.id DESC
+        SQL)->fetchAll();
+
+    $groups = [];
+    foreach ($rows as $r) {
+        $movable = $r['topic_id'] !== null && $r['topic_project'] === null;
+        $key = $movable ? (string) $r['topic_id'] : 'none';
+        $groups[$key] ??= ['topic_id' => $movable ? (int) $r['topic_id'] : null,
+                           'topic_name' => $movable ? (string) $r['topic_name'] : '', 'tasks' => []];
+        $groups[$key]['tasks'][] = ['id' => (int) $r['id'], 'title' => $r['title'], 'status' => $r['status']];
+    }
+    // "ללא נושא" בסוף
+    if (isset($groups['none'])) { $none = $groups['none']; unset($groups['none']); $groups['none'] = $none; }
+    return ['groups' => array_values($groups), 'count' => count($rows)];
+}
+
+/**
+ * מעביר נושאים ומטלות לפרויקט. רק מה שעדיין בלי פרויקט זז — מטלה ששייכת
+ * לפרויקט אחר לא נגררת דרך נושא משותף. מחזיר כמה זזו.
+ */
+function assignToProject(array $user, int $projectId, array $topicIds, array $taskIds): array {
+    if (authorRole($user) !== 'owner') throw new AppError('שיוך מטלות — לבעל הלוח בלבד', 403);
+    requireProject($projectId, $user, 'admin');
+
+    $topicIds = array_values(array_unique(array_filter(array_map('intval', $topicIds))));
+    $taskIds  = array_values(array_unique(array_filter(array_map('intval', $taskIds))));
+
+    $pdo = db();
+    $pdo->beginTransaction();
+    try {
+        $topics = 0; $tasks = 0;
+        $t = $pdo->prepare('UPDATE topics SET project_id = ? WHERE id = ? AND project_id IS NULL');
+        $k = $pdo->prepare('UPDATE tasks SET project_id = ?, updated_at = ? WHERE topic_id = ? AND project_id IS NULL');
+        foreach ($topicIds as $tid) {
+            $t->execute([$projectId, $tid]);
+            if ($t->rowCount() === 0) continue;   // נושא של פרויקט אחר, או שלא קיים
+            $topics++;
+            $k->execute([$projectId, nowTs(), $tid]);
+            $tasks += $k->rowCount();
+        }
+        $one = $pdo->prepare('UPDATE tasks SET project_id = ?, updated_at = ? WHERE id = ? AND project_id IS NULL');
+        foreach ($taskIds as $id) {
+            $one->execute([$projectId, nowTs(), $id]);
+            $tasks += $one->rowCount();
+        }
+        $pdo->commit();
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        throw $e;
+    }
+    logEvent($user, 'tasks.assign', "project:$projectId", true, "topics:$topics tasks:$tasks");
+    return ['topics' => $topics, 'tasks' => $tasks];
 }

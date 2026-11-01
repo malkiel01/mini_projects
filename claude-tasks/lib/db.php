@@ -208,6 +208,17 @@ function migrate(PDO $pdo): void {
     addColumn($pdo, 'projects', 'path',      "TEXT NOT NULL DEFAULT ''");
     addColumn($pdo, 'projects', 'icon',      "TEXT NOT NULL DEFAULT ''");
     addColumn($pdo, 'topics',   'project_id', 'INTEGER REFERENCES projects(id)');
+
+    /*
+     * מי כתב הערה — נקבע בשרת בלבד, ואין שדה שהלקוח שולח (docs/spec.md, 2.3).
+     * owner = מנהל הלוח, member = משתמש אחר, worker = אסימון. הערות שנכתבו
+     * לפני העמודה מקבלות legacy: אין דרך לדעת היום מי כתב אותן.
+     */
+    addColumn($pdo, 'notes', 'author_role',    "TEXT NOT NULL DEFAULT 'legacy'");
+    addColumn($pdo, 'notes', 'author_user_id', 'INTEGER');
+
+    // ענף שרק בעל הלוח עונה ומחליט בו. עובר בירושה לכל תתי-הפרויקטים.
+    addColumn($pdo, 'projects', 'owner_only', 'INTEGER NOT NULL DEFAULT 0');
 }
 
 /** ALTER TABLE ADD COLUMN אינו מכיר IF NOT EXISTS ב-SQLite — בודקים לבד. */
@@ -236,6 +247,8 @@ const KINDS     = ['code', 'question', 'research'];
 /** איך הנושא נקבע: אדם בחר, מילות מפתח התאימו, מודל החליט, או שאין. */
 const TOPIC_SOURCES = ['manual', 'keyword', 'llm', 'none'];
 const PRIORITIES = ['high', 'normal', 'low'];
+/** מי כתב הערה. legacy — רק להערות שנכתבו לפני שהשדה נוסף. */
+const NOTE_ROLES = ['owner', 'member', 'worker', 'platform'];
 
 function nowTs(): int { return time(); }
 
@@ -258,7 +271,12 @@ function releaseExpiredClaims(PDO $pdo): int {
  * ‏BEGIN IMMEDIATE נוטל את נעילת הכתיבה כבר בפתיחה. בלעדיו שני עובדים
  * היו קוראים את אותה שורה ושניהם "מנצחים" בעדכון.
  */
-function claimNextTask(PDO $pdo, string $worker, ?int $topicId = null, ?int $projectId = null): ?array {
+/**
+ * ‏$projectIds — תחום האסימון: הפרויקט שלו וכל הענף שמתחתיו (null = כל הלוח).
+ * ‏$skipProjectIds — פרויקטים שהמשיכה מדלגת עליהם (ענף owner_only לאסימון הכללי).
+ */
+function claimNextTask(PDO $pdo, string $worker, ?int $topicId = null, ?array $projectIds = null,
+                       array $skipProjectIds = []): ?array {
     releaseExpiredClaims($pdo);
 
     $pdo->beginTransaction();
@@ -267,7 +285,16 @@ function claimNextTask(PDO $pdo, string $worker, ?int $topicId = null, ?int $pro
         $args = [];
         if ($topicId !== null)   { $sql .= " AND topic_id = ?";   $args[] = $topicId; }
         // עובד עם אסימון של פרויקט אינו רואה מטלות של פרויקטים אחרים.
-        if ($projectId !== null) { $sql .= " AND project_id = ?"; $args[] = $projectId; }
+        if ($projectIds !== null) {
+            if (!$projectIds) { $pdo->commit(); return null; }
+            $sql .= ' AND project_id IN (' . implode(',', array_fill(0, count($projectIds), '?')) . ')';
+            $args = array_merge($args, $projectIds);
+        }
+        if ($skipProjectIds) {
+            $sql .= ' AND (project_id IS NULL OR project_id NOT IN ('
+                  . implode(',', array_fill(0, count($skipProjectIds), '?')) . '))';
+            $args = array_merge($args, $skipProjectIds);
+        }
         // מטלה שנענתה קודמת לחדשה: אדם כבר ממתין לה.
         $sql .= " ORDER BY CASE status WHEN 'answered' THEN 0 ELSE 1 END,
                            CASE priority WHEN 'high' THEN 0 WHEN 'normal' THEN 1 ELSE 2 END,
@@ -318,9 +345,13 @@ function taskNotes(PDO $pdo, int $taskId): array {
  * זו הנקודה שבה "עניתי לו" הופך אוטומטית ל"יש לו מה לעשות" — בלי שאיש
  * צריך לזכור לשנות סטטוס ידנית.
  */
-function addNote(PDO $pdo, int $taskId, string $author, string $kind, string $body): array {
-    $pdo->prepare('INSERT INTO notes (task_id, author, kind, body, created_at) VALUES (?,?,?,?,?)')
-        ->execute([$taskId, $author, $kind, $body, nowTs()]);
+function addNote(PDO $pdo, int $taskId, string $author, string $kind, string $body,
+                 string $role = 'worker', ?int $userId = null): array {
+    if (!in_array($role, NOTE_ROLES, true)) $role = 'worker';
+    $pdo->prepare('INSERT INTO notes (task_id, author, kind, body, created_at, author_role, author_user_id)
+                   VALUES (?,?,?,?,?,?,?)')
+        ->execute([$taskId, $author, $kind, $body, nowTs(), $role, $userId]);
+    $noteId = (int) $pdo->lastInsertId();
 
     $task = getTask($pdo, $taskId);
     $reopened = false;
@@ -331,7 +362,7 @@ function addNote(PDO $pdo, int $taskId, string $author, string $kind, string $bo
         $reopened = true;
     }
 
-    return ['note_id' => (int) $pdo->lastInsertId(), 'reopened' => $reopened];
+    return ['note_id' => $noteId, 'reopened' => $reopened, 'kind' => $kind, 'author_role' => $role];
 }
 
 /** ספירה לפי סטטוס — מזין את המונים בראש הממשק. */

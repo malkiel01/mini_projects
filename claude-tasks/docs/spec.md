@@ -377,4 +377,4 @@ After approval: a `בקשה` message with **stage 1**. Every stage — branch, P
 
 | Stage | PR | Deployed | Notes |
 | --- | --- | --- | --- |
-| 1 | | | |
+| 1 | #1086 | `conclusion: success` checked after the merge — reported in the `עדכון` message | `subtree` defaults to 1 (the UI already relies on the whole branch); a task with no project — any signed-in user answers, as before; added a project check to `task` / `add-note` (`read`) and `update-task` (`write`); U1 — `owner` only |

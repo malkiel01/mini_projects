@@ -263,3 +263,14 @@ dialog > form.sheet-wrap { margin: 0; }
 .boot-error { max-width: 40rem; margin: 15vh auto; padding: var(--s4); text-align: center; display: grid; gap: var(--s3); }
 .boot-error h1 { font-size: 1.3rem; }
 .boot-error p { color: var(--muted); line-height: 1.7; }
+
+/* ===== שיוך מטלות ישנות ===== */
+#assignGroups { display: grid; gap: var(--s3); }
+.pick { display: flex; align-items: center; gap: var(--s2); min-height: 48px; padding: var(--s2) var(--s3);
+  border-top: 1px solid var(--line); cursor: pointer; }
+.pick:first-child { border-top: 0; }
+.pick .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pick small { flex: none; color: var(--muted); font-size: .78rem; }
+.pick--topic { font-weight: 600; background: var(--bg); }
+.pick--task { padding-inline-start: calc(var(--s3) + 28px); font-size: .9rem; }
+.pick--none { cursor: default; color: var(--muted); }

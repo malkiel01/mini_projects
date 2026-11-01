@@ -473,7 +473,8 @@ const ADMIN_TABS = {
       `${u.display_name} (${u.username})`,
       [u.role === 'admin' ? 'מנהל' : 'משתמש',
        u.has_github ? `גיטהאב: ${u.github_login}` : 'ללא גיטהאב',
-       `${u.projects} פרויקטים`].join(' · '),
+       `${u.projects} פרויקטים`,
+       `${u.tasks} מטלות`].join(' · '),
     )));
   },
 

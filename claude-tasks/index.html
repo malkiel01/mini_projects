@@ -104,7 +104,11 @@
     </section>
 
     <section id="tasksSection" aria-labelledby="tasksTitle">
-    <h2 class="sec-title" id="tasksTitle">מטלות</h2>
+    <div class="sec-head">
+      <h2 class="sec-title" id="tasksTitle">מטלות</h2>
+      <!-- מטלות ישנות בלי פרויקט — מוצג רק לבעל הלוח, ורק כשיש כאלה -->
+      <button type="button" class="btn ghost sm" id="assignBtn" hidden>📥 שיוך מטלות <small id="assignCount"></small></button>
+    </div>
     <!-- המצב והסינון — אותו רכיב: המספר הוא גם הכפתור -->
     <div class="seg-tabs" id="statusChips" role="tablist" aria-label="סינון לפי מצב">
       <button type="button" role="tab" data-status="active" aria-selected="true"><b data-count="active">0</b>פעילות</button>
@@ -141,6 +145,21 @@
         <label class="field" id="pnRepoWrap"><span>ריפו (owner/name)</span><input type="text" id="pnRepo" dir="ltr" placeholder="malkiel01/mini_projects" maxlength="200"></label>
         <label class="field"><span>סמל</span><input type="text" id="pnIcon" maxlength="8" placeholder="📁"></label>
       </div>
+    </div>
+  </form>
+</dialog>
+
+<!-- ── שיוך מטלות ישנות לפרויקט ──────────────────────────────── -->
+<dialog id="assign" aria-labelledby="assignTitle">
+  <form class="sheet-wrap" id="assignForm">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close="assign" aria-label="סגירה">✕</button>
+      <h2 id="assignTitle">שיוך מטלות</h2>
+      <button type="submit" class="btn primary" id="assignSubmit" disabled>העברה</button>
+    </header>
+    <div class="sheet-body">
+      <p class="hint" id="assignHint"></p>
+      <div id="assignGroups"></div>
     </div>
   </form>
 </dialog>

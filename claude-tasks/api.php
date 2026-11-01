@@ -99,18 +99,47 @@ if ($identity) {
     $user = null;
 }
 
+/*
+ * בקשה של אדם (עוגייה, או זהות מהשער) שאינה GET — רק מאותו מקור. ראה
+ * sameOriginRequest ב-lib/auth.php. בקשת עובד (X-Worker-Token) אינה נבדקת.
+ */
+if (!$scope && ($user || $identity) && !sameOriginRequest($_SERVER)) {
+    logEvent($user, 'deny.origin', $action, false,
+             (string) ($_SERVER['HTTP_ORIGIN'] ?? $_SERVER['HTTP_REFERER'] ?? 'אין Origin'));
+    fail('הבקשה נחסמה: היא לא נשלחה מהלוח עצמו', 403);
+}
+
+/**
+ * הפרויקטים שבתחום האסימון: הפרויקט שלו וכל הענף שמתחתיו (null = כל הלוח).
+ * תת-פרויקט שנוסף אחרי שהאסימון נשלח לריפו — בתחום מיד, בלי סוד חדש.
+ */
+function scopeProjects(?array $scope): ?array {
+    if (($scope['project_id'] ?? null) === null) return null;
+    return projectSubtree((int) $scope['project_id']);
+}
+
 /**
  * מטלה שעובד רשאי לגעת בה.
  *
- * אסימון של פרויקט מוגבל למטלות שלו. בלי הבדיקה הזו, סוד שנשלח לריפו
- * אחד היה פותח את כל הלוח.
+ * אסימון של פרויקט מוגבל למטלות של הענף שלו. בלי הבדיקה הזו, סוד שנשלח
+ * לריפו אחד היה פותח את כל הלוח.
  */
 function workerTask(?array $scope, int $id): array {
     $task = getTask(db(), $id);
     if (!$task) fail('מטלה לא נמצאה', 404);
-    if (($scope['project_id'] ?? null) !== null && (int) $task['project_id'] !== $scope['project_id']) {
+    $ids = scopeProjects($scope);
+    if ($ids !== null && ($task['project_id'] === null || !in_array((int) $task['project_id'], $ids, true))) {
         fail('המטלה אינה שייכת לפרויקט של האסימון', 403);
     }
+    return $task;
+}
+
+/** מטלה שהקורא — אדם או עובד — רשאי לגעת בה, בדרגה שנדרשה. */
+function accessibleTask(?array $user, ?array $scope, int $id, string $minLevel): array {
+    if (!$user) return workerTask($scope, $id);
+    $task = getTask(db(), $id);
+    if (!$task) fail('מטלה לא נמצאה', 404);
+    requireTaskAccess($user, $task, $minLevel);
     return $task;
 }
 
@@ -277,7 +306,7 @@ try {
         $scopeArgs = [];
         if (($pid = int_or_null($in, 'project_id')) !== null) {
             requireProject($pid, requireUser($user), 'read');
-            $ids = projectSubtree($pid);
+            $ids = taskScopeIds($pid, $in['subtree'] ?? null);
             $scope = ' AND k.project_id IN (' . implode(',', array_fill(0, count($ids), '?')) . ')';
             $scopeArgs = $ids;
             $sql .= $scope; $args = array_merge($args, $ids);
@@ -312,22 +341,40 @@ try {
 
         $st = db()->prepare($sql);
         $st->execute($args);
-        if ($scope === '') {
-            ok(['tasks' => $st->fetchAll(), 'counts' => statusCounts(db(), $tid, $unassigned)]);
-        }
-        $c = db()->prepare('SELECT k.status, COUNT(*) c FROM tasks k WHERE 1=1' . $scope
-            . ($unassigned ? ' AND k.topic_id IS NULL' : ($tid !== null ? ' AND k.topic_id = ?' : '')) . ' GROUP BY k.status');
-        $c->execute(array_merge($scopeArgs, (!$unassigned && $tid !== null) ? [$tid] : []));
+        $rows = $st->fetchAll();
+
+        // המונים — לפי אותו תחום ואותו נושא, בלי סינון הסטטוס והחיפוש.
+        // ‏by_project — אותו דבר, לכל פרויקט בנפרד (מטלה בלי פרויקט לא נספרת שם).
+        $topicSql  = $unassigned ? ' AND k.topic_id IS NULL' : ($tid !== null ? ' AND k.topic_id = ?' : '');
+        $topicArgs = (!$unassigned && $tid !== null) ? [$tid] : [];
+        $c = db()->prepare('SELECT k.project_id, k.status, COUNT(*) c FROM tasks k WHERE 1=1'
+                           . $scope . $topicSql . ' GROUP BY k.project_id, k.status');
+        $c->execute(array_merge($scopeArgs, $topicArgs));
         $counts = array_fill_keys(STATUSES, 0);
-        foreach ($c->fetchAll() as $row) $counts[$row['status']] = (int) $row['c'];
-        ok(['tasks' => $st->fetchAll(), 'counts' => $counts]);
+        $byProject = [];
+        foreach ($c->fetchAll() as $row) {
+            $counts[$row['status']] = ($counts[$row['status']] ?? 0) + (int) $row['c'];
+            if ($row['project_id'] === null) continue;
+            $k = (string) $row['project_id'];
+            $byProject[$k] ??= array_fill_keys(STATUSES, 0);
+            $byProject[$k][$row['status']] = (int) $row['c'];
+        }
+        $counts['by_project'] = (object) $byProject;
+
+        $out = ['tasks' => $rows, 'counts' => $counts];
+        // מטלות בלי פרויקט — מזינות את כפתור "שיוך מטלות" בתוך פרויקט (בעל הלוח בלבד).
+        if ($pid !== null && authorRole($user) === 'owner') {
+            $out['orphans'] = (int) db()->query('SELECT COUNT(*) c FROM tasks WHERE project_id IS NULL')->fetch()['c'];
+        }
+        ok($out);
     }
 
     case 'task': {
         $id = (int) ($in['id'] ?? 0);
-        $task = getTask(db(), $id);
-        if (!$task) fail('מטלה לא נמצאה', 404);
-        ok(['task' => $task, 'notes' => taskNotes(db(), $id)]);
+        $task = accessibleTask($user, $scope, $id, 'read');
+        ok(['task' => $task, 'notes' => taskNotes(db(), $id),
+            // האם הערה שלי תחזיר את המטלה לתור — כדי שהממשק יגיד את זה לפני השליחה
+            'can_answer' => canAnswer($user, $task)]);
     }
 
     case 'create-task': {
@@ -560,9 +607,9 @@ try {
     }
 
     case 'update-task': {
-        requireUser($user);
+        $me = requireUser($user);
         $id = (int) ($in['id'] ?? 0);
-        if (!getTask(db(), $id)) fail('מטלה לא נמצאה', 404);
+        accessibleTask($me, null, $id, 'write');
 
         $sets = []; $args = [];
         foreach (['title' => 200, 'body' => 20000, 'repo' => 120, 'branch' => 120] as $f => $max) {
@@ -586,8 +633,8 @@ try {
     }
 
     case 'add-note': {
-        $id = (int) ($in['id'] ?? 0);
-        if (!getTask(db(), $id)) fail('מטלה לא נמצאה', 404);
+        $id   = (int) ($in['id'] ?? 0);
+        $task = accessibleTask($user, $scope, $id, 'read');
 
         $text = str_field($in, 'body', 20000);
         if ($text === '') fail('הערה ריקה');
@@ -595,12 +642,8 @@ try {
         $author = $user ? $user['display_name'] : ($worker ?? 'unknown');
         $kind   = pick_field($in, 'kind', ['comment', 'question', 'answer', 'result'], 'comment');
 
-        // תשובה של אדם היא מה שמחזיר מטלה חסומה לתור.
-        if ($user && $kind === 'comment') {
-            $task = getTask(db(), $id);
-            if ($task['status'] === 'blocked') $kind = 'answer';
-        }
-        ok(addNote(db(), $id, $author, $kind, $text));
+        $kind = noteKind($user, $task, $kind);
+        ok(addNote(db(), $id, $author, $kind, $text, authorRole($user), $user ? (int) $user['id'] : null));
     }
 
     /* ── ספקי בינה מלאכותית של המשתמש ──────────────────────────
@@ -738,7 +781,7 @@ try {
     /* ── פרויקטים ──────────────────────────────────────────────── */
 
     case 'projects':
-        ok(['projects' => listProjects(requireUser($user))]);
+        ok(['projects' => listProjects(requireUser($user), int_or_null($in, 'root_id'))]);
 
     case 'create-project': {
         $me = requireUser($user);
@@ -758,6 +801,19 @@ try {
         }
         ok(['id' => $id]);
     }
+
+    /** מטלות בלי פרויקט, לפי נושא — לחלונית "שיוך מטלות". בעל הלוח בלבד. */
+    case 'orphan-tasks': {
+        $me = requireUser($user);
+        if (authorRole($me) !== 'owner') fail('לבעל הלוח בלבד', 403);
+        ok(orphanTasks());
+    }
+
+    /** ‏{ project_id, topic_ids: [], task_ids: [] } — מעביר לפרויקט. */
+    case 'assign-tasks':
+        ok(assignToProject(requireUser($user), (int) ($in['project_id'] ?? 0),
+                           is_array($in['topic_ids'] ?? null) ? $in['topic_ids'] : [],
+                           is_array($in['task_ids'] ?? null) ? $in['task_ids'] : []));
 
     /** תתי-פרויקטים מכל תיקייה עם app.json בריפו של האב. */
     case 'import-subprojects':
@@ -781,11 +837,17 @@ try {
                   'check_command' => 300, 'icon' => 8] as $f => $max) {
             if (array_key_exists($f, $in)) { $sets[] = "$f = ?"; $args[] = str_field($in, $f, $max); }
         }
+        // owner_only — רק בעל הלוח: זה מה שמגביל את מנהלי הפרויקט עצמם.
+        if (array_key_exists('owner_only', $in)) {
+            if (authorRole($me) !== 'owner') fail('רק בעל הלוח יכול לסמן ענף "רק בעל הלוח"', 403);
+            $sets[] = 'owner_only = ?'; $args[] = $in['owner_only'] ? 1 : 0;
+        }
         if (!$sets) fail('אין מה לעדכן');
         $args[] = $project['id'];
 
         db()->prepare('UPDATE projects SET ' . implode(', ', $sets) . ' WHERE id = ?')->execute($args);
-        logEvent($me, 'project.update', 'project:' . $project['id']);
+        logEvent($me, 'project.update', 'project:' . $project['id'], true,
+                 array_key_exists('owner_only', $in) ? 'owner_only=' . ($in['owner_only'] ? 1 : 0) : '');
         ok();
     }
 
@@ -953,7 +1015,8 @@ try {
             SELECT id, username, display_name, role, created_at, github_login, default_provider,
                    (github_token <> '') has_github,
                    (SELECT COUNT(*) FROM user_providers p WHERE p.user_id = users.id) providers,
-                   (SELECT COUNT(*) FROM project_members m WHERE m.user_id = users.id) projects
+                   (SELECT COUNT(*) FROM project_members m WHERE m.user_id = users.id) projects,
+                   (SELECT COUNT(*) FROM tasks t WHERE t.created_by = users.id) tasks
               FROM users ORDER BY id
             SQL)->fetchAll()]);
     }
@@ -1022,7 +1085,11 @@ try {
     case 'claim': {
         if (!$worker) fail('פעולה לעובדים בלבד', 403);
         $url  = url_field($in, 'session_url');
-        $task = claimNextTask(db(), $worker, int_or_null($in, 'topic_id'), $scope['project_id'] ?? null);
+        $topicId = int_or_null($in, 'topic_id');
+        // האסימון הכללי בלי נושא מפורש לא מושך מענף owner_only (docs/spec.md, 2.2).
+        // אסימון של פרויקט — כל הענף שלו, כולל owner_only: הוא ניתן לו במפורש.
+        $skip = ($scope['project_id'] === null && $topicId === null) ? ownerOnlyProjectIds() : [];
+        $task = claimNextTask(db(), $worker, $topicId, scopeProjects($scope), $skip);
         if (!$task) ok(['task' => null, 'message' => 'אין מטלות ממתינות']);
 
         // הסשן שמחזיק במטלה עכשיו. נרשם במשיכה ולא בסיום, כדי שגם

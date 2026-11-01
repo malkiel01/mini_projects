@@ -145,3 +145,34 @@ function workerName(): ?string {
     $scope = workerScope();
     return $scope ? $scope['name'] : null;
 }
+
+/**
+ * בדיקת מקור לבקשה של אדם (עוגייה) — הגנה מ-CSRF.
+ *
+ * העוגייה היא SameSite=Lax, כלומר דף זר לא שולח אותה ב-POST מתוך fetch —
+ * אבל טופס רגיל באתר זר שמגיש לכאן כן נוסע עם ניווט עליון בחלק מהמקרים, ותת-
+ * דומיין "אחר" באותו אתר (site) עוקף את Lax לגמרי. לכן: בקשה שאינה GET חייבת
+ * Origin (או Referer כשאין Origin) מאותו host בדיוק. בלי רשימת נתיבים —
+ * Origin לא כולל נתיב, ולכן כל דף באותו דומיין (גם הדשבורד) עובר.
+ * אסימון עובד אינו נבדק כאן: הוא בכותרת, ודפדפן זר לא יכול לשלוח אותו.
+ *
+ * מקבל את $_SERVER כפרמטר, כדי שהבדיקות יוכלו להזין אותו.
+ */
+function sameOriginRequest(array $server): bool {
+    if (strtoupper((string) ($server['REQUEST_METHOD'] ?? 'GET')) === 'GET') return true;
+
+    $host = strtolower(trim((string) ($server['HTTP_HOST'] ?? '')));
+    if ($host === '') return false;
+
+    $src = (string) ($server['HTTP_ORIGIN'] ?? '');
+    if ($src === '' || $src === 'null') $src = (string) ($server['HTTP_REFERER'] ?? '');
+    if ($src === '') return false;
+
+    $p = parse_url($src);
+    if (!is_array($p) || empty($p['host']) || !in_array($p['scheme'] ?? '', ['http', 'https'], true)) return false;
+    $from = strtolower($p['host']) . (isset($p['port']) ? ':' . $p['port'] : '');
+
+    // ‏HTTP_HOST יכול לכלול פורט ברירת מחדל מפורש (":443") — משווים בלעדיו.
+    $strip = fn (string $h) => preg_replace('/:(80|443)$/', '', $h);
+    return hash_equals($strip($host), $strip($from));
+}
