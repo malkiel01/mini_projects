@@ -1,6 +1,7 @@
 // רכיבי ממשק משותפים: יצירת אלמנטים בלי innerHTML (אין הזרקת קוד מנתוני משתמש), גיליון תחתון
 // נגיש, הודעות, ואישור.
 
+import { toast as uiToast } from './ui-core/toast.js';
 import { log } from './log.js';
 import { colorPicker } from './colorpicker.js';
 
@@ -29,13 +30,9 @@ export const $ = (sel, root = document) => root.querySelector(sel);
 
 // ─── הודעות ────────────────────────────────────────────────────────────────
 
-let toastTimer;
+// ההודעה עצמה — מ-ui-core (toast.js). כאן רק החתימה הישנה של הסטודיו: toast(msg, 'error').
 export function toast(msg, kind = '') {
-    const el = $('#toast');
-    el.textContent = msg;
-    el.className = 'toast show ' + kind;
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => { el.className = 'toast'; }, kind === 'error' ? 6000 : 3000);
+    uiToast(msg, kind === 'error' ? { kind: 'error' } : {});
 }
 
 // ─── גיליון תחתון ──────────────────────────────────────────────────────────

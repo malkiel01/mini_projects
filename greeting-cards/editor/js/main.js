@@ -22,7 +22,7 @@ import { loadScript } from './io.js';
 import { docVariables, readSheetFile, readPasted, readPhoneContacts, guessColumns, normalizePhone, fileNames, fillText } from './merge.js';
 
 // הגרסה — מופיעה ביומן, כדי לדעת איזה קוד רץ בטלפון.
-const BUILD = '2026-11-01.cloud-error-1';
+const BUILD = '2026-11-01.ui-css-1';
 
 const app = $('#app');
 let ed = null;   // העיצוב הפתוח: { id, doc, history, canvas, dirty }
@@ -162,7 +162,7 @@ async function createDesign(w, hgt, label) {
 }
 
 function designMenu(d) {
-    sheet(d.title, h('div', { class: 'menu' },
+    sheet(d.title, h('div', { class: 'menu-list' },
         h('button', { class: 'menu-item', onclick: () => openDesign(d.id, null, d) }, '✏️ פתיחה'),
         h('button', { class: 'menu-item', onclick: async () => {
             if (d.remoteOnly) await sync.pull(d.id);
@@ -457,7 +457,7 @@ async function skillSheet() {
         try { await navigator.clipboard.writeText(t); toast(`${what} הועתק ✓`); }
         catch { toast('ההעתקה נחסמה — סמנו את הטקסט והעתיקו ידנית', 'error'); }
     };
-    const pane = (name, steps, buttons) => h('section', { class: 'card' }, h('h3', {}, name), h('ol', { class: 'steps' }, steps.map(s => h('li', {}, s))), h('div', { class: 'row-actions' }, buttons));
+    const pane = (name, steps, buttons) => h('section', { class: 'box' }, h('h3', {}, name), h('ol', { class: 'steps' }, steps.map(s => h('li', {}, s))), h('div', { class: 'row-actions' }, buttons));
     sheet('סקיל לצ\'אט', h('div', {},
         h('p', { class: 'hint' }, 'הסקיל מלמד את הצ\'אט ליצור רקע בלי טקסט, ולתת קובץ פריסה שהעורך הופך לשכבות. בלי טוקנים — על החשבון שלכם בצ\'אט.'),
         pane('ChatGPT', ['להעתיק את ההוראות', 'להדביק בתחילת שיחה חדשה (או ב-Project / GPT משלכם)', 'לבקש: "רקע למודעה של…" ולענות על השאלון', 'לבחור מבין התמונות (אפשר לבקש שינויים), ולכתוב "בחרתי 2"', 'להוריד את התמונה שנבחרה ולהעתיק את ה-JSON → "ייבוא מהצ\'אט"'],
@@ -725,7 +725,7 @@ function orderSheet() {
             h('button', { class: 'btn ghost', onclick: () => distribute('x') }, '⟷ פיזור שווה לרוחב'),
             h('button', { class: 'btn ghost', onclick: () => distribute('y') }, '⟷ פיזור שווה לגובה')) : null,
         h('h3', { class: 'section' }, 'סדר'),
-        h('div', { class: 'menu' },
+        h('div', { class: 'menu-list' },
             h('button', { class: 'menu-item', onclick: () => move(Infinity) }, '⤒ לראש'),
             h('button', { class: 'menu-item', onclick: () => move(1) }, '↑ קדימה'),
             h('button', { class: 'menu-item', onclick: () => move(-1) }, '↓ אחורה'),
@@ -821,7 +821,7 @@ function tabs(names, render, key) {
         if (key) lastTab[key] = i;
     };
     pick(Math.min(lastTab[key] || 0, names.length - 1));
-    return h('div', { class: 'tabs' }, bar, panel);
+    return h('div', { class: 'tabset' }, bar, panel);
 }
 
 /** בחירת אייקון: קבוצות וחיפוש (בעברית או באנגלית). ‏current — מסמן את הנוכחי (בעריכה). */
@@ -1629,7 +1629,7 @@ async function receiveBack(srcId, t, bytes) {
 // ─── עוד ──────────────────────────────────────────────────────────────────
 
 function moreSheet() {
-    sheet('עוד', h('div', { class: 'menu' },
+    sheet('עוד', h('div', { class: 'menu-list' },
         h('button', { class: 'menu-item', onclick: pageSizeSheet }, '📐 גודל הדף'),
         h('button', { class: 'menu-item', onclick: versionsSheet }, '🕘 גרסאות קודמות'),
         h('button', { class: 'menu-item', onclick: myFontsSheet }, '🔤 הגופנים שלי'),
@@ -1755,7 +1755,7 @@ function recipientsSheet() {
     const shown = m.columns.slice(0, 4);
     const bridge = window.GreetingCardsAndroid;
     sheet('נמענים', h('div', {},
-        h('div', { class: 'card summary' }, h('strong', {}, `${m.rows.length} נמענים`),
+        h('div', { class: 'box tally' }, h('strong', {}, `${m.rows.length} נמענים`),
             h('span', { class: 'muted' }, ` · ${m.columns.length} עמודות${m.phoneColumn ? ` · ${withPhone} עם טלפון` : ''}`)),
         vars.length
             ? h('p', { class: 'hint' }, 'משתנים בעיצוב: ', h('bdi', {}, vars.map(v => `{{${v}}}`).join(' ')))
