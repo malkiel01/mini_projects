@@ -183,7 +183,7 @@ class Writer {
         return im;
     }
 
-    async output(title = '') {
+    async output(title = '', xmp = '') {
         const objs = [];   // [מספר] → מחרוזת או [מחרוזת, bytes, מחרוזת]
         let next = 1;
         const alloc = () => next++;
@@ -228,7 +228,13 @@ class Writer {
             kids.push(`${pid} 0 R`);
         }
         objs[pagesId] = `<< /Type /Pages /Kids [${kids.join(' ')}] /Count ${kids.length} >>`;
-        objs[catalog] = `<< /Type /Catalog /Pages ${pagesId} 0 R /ViewerPreferences << /Direction /R2L /DisplayDocTitle true >> /Lang (he-IL) >>`;
+        let meta = '';
+        if (xmp !== '') {
+            const mid = alloc();
+            objs[mid] = stream('/Type /Metadata /Subtype /XML', enc.encode(xmp));
+            meta = ` /Metadata ${mid} 0 R`;
+        }
+        objs[catalog] = `<< /Type /Catalog /Pages ${pagesId} 0 R${meta} /ViewerPreferences << /Direction /R2L /DisplayDocTitle true >> /Lang (he-IL) >>`;
         const d = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
         objs[info] = `<< /Title ${textHex(title)} /Producer (pdf-core) /CreationDate (D:${d}Z) >>`;
 
@@ -458,5 +464,6 @@ export async function pdfDraw(list, resolve) {
         }
         w.pages[idx].main = c + 'Q\n'.repeat(depth);
     }
-    return w.output(String(list.title ?? ''));
+    if (list.xmp != null && typeof list.xmp !== 'string') throw bad('xmp חייב להיות מחרוזת');
+    return w.output(String(list.title ?? ''), list.xmp ?? '');
 }

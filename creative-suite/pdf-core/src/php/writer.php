@@ -123,7 +123,8 @@ final class PdfWriter
     }
 
     /** ה-PDF כולו. */
-    public function output(string $title = ''): string
+    /** @param string $xmp חבילת XMP (‎<?xpacket …?>‎) — זרם Metadata של הקטלוג, לא דחוס; ריק — בלי */
+    public function output(string $title = '', string $xmp = ''): string
     {
         $objs = [];        // מספר → תוכן
         $next = 1;
@@ -216,7 +217,13 @@ final class PdfWriter
             $kids[] = "$pid 0 R";
         }
         $objs[$pagesId] = '<< /Type /Pages /Kids [' . implode(' ', $kids) . '] /Count ' . count($kids) . ' >>';
-        $objs[$catalog] = "<< /Type /Catalog /Pages $pagesId 0 R /ViewerPreferences << /Direction /R2L /DisplayDocTitle true >> /Lang (he-IL) >>";
+        $meta = '';
+        if ($xmp !== '') {
+            $mid = $alloc();
+            $objs[$mid] = self::stream('/Type /Metadata /Subtype /XML', $xmp);
+            $meta = " /Metadata $mid 0 R";
+        }
+        $objs[$catalog] = "<< /Type /Catalog /Pages $pagesId 0 R$meta /ViewerPreferences << /Direction /R2L /DisplayDocTitle true >> /Lang (he-IL) >>";
         $objs[$info] = '<< /Title ' . self::text($title) . ' /Producer (pdf-core) /CreationDate (D:' . gmdate('YmdHis') . "Z) >>";
 
         $out = "%PDF-1.7\n%\xE2\xE3\xCF\xD3\n";

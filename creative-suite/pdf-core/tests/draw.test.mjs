@@ -146,6 +146,35 @@ await same('תמונות: PNG עם שקיפות (SMask), PNG אטום, JPEG, ח�
     { op: 'image', src: 'media/c.jpg', box: [0, 0, 20, 15], transform: [0, 1, -1, 0, 60, 50], clip: [0, 0, 10, 15] },
 ]}, { size: [50, 50], ops: [{ op: 'rect', box: [0, 0, 50, 50], fill: '#eeeeee' }] }] }, media);
 
+// XMP (שורה 5 "פנים"): זרם Metadata לא דחוס בקטלוג, אותו דבר בשתי השפות; בלי xmp — בלי Metadata
+{
+    const xmp = '<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?><x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description xmlns:mbe="https://mbe-plus.com/ns/mbe/1.0/" mbe:docId="d-אבג" mbe:base="7"/></rdf:RDF></x:xmpmeta><?xpacket end="w"?>';
+    const list = { title: 'פנים', xmp, pages: [{ size: [20, 20], ops: [{ op: 'rect', box: [0, 0, 20, 20], fill: '#336699' }] }] };
+    const [a, b] = [php(list), await js(list)];
+    const meta = buf => {
+        const objs = parse(buf);
+        const cat = Object.values(objs).find(o => /\/Type \/Catalog/.test(o.dict));
+        const ref = cat?.dict.match(/\/Metadata (\d+) 0 R/);
+        return ref ? objs[ref[1]] : null;
+    };
+    const [ma, mb] = [meta(a), meta(b)];
+    const want = Buffer.from(xmp, 'utf8');
+    ok('xmp: Metadata בקטלוג, /Subtype /XML, לא דחוס — הבתים כמו שנמסרו (PHP)', ma && /\/Type \/Metadata \/Subtype \/XML/.test(ma.dict) && !/Filter/.test(ma.dict) && ma.data.equals(want), ma?.dict);
+    ok('xmp: אותו זרם ב-JS', mb && norm(mb.dict) === norm(ma?.dict || '') && mb.data.equals(want), mb?.dict);
+    ok('xmp: mbe:docId גלוי בקובץ כמו שהוא (חיפוש בבתים, כמו identify)', a.includes(Buffer.from('mbe:docId="d-אבג"')) && b.includes(Buffer.from('mbe:docId="d-אבג"')));
+    const plain = { pages: list.pages };
+    ok('בלי xmp — בלי Metadata (הפלט לא השתנה)', !meta(php(plain)) && !meta(await js(plain)) && !php(plain).includes('/Metadata'));
+    await same('xmp: הציור עצמו זהה', list);
+    // מקצה לקצה: חבילה בצורה של xmpPacket (mbe-core/face.js) → PDF מ-JS ומ-PHP → identify() מוצא את המזהים
+    const { identify } = await import('../../mbe-core/src/js/face.js');
+    const docId = '3f2b8c1e-4d5a-4b6c-8e7f-9a0b1c2d3e4f', base = 'ab'.repeat(32);
+    const packet = `<?xpacket begin="\uFEFF" id="W5M0MpCehiHzreSzNTczkc9d"?>\n<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">`
+        + `<rdf:Description rdf:about="" xmlns:mbe="urn:mbe:face:1"><mbe:docId>${docId}</mbe:docId><mbe:base>${base}</mbe:base></rdf:Description></rdf:RDF></x:xmpmeta>\n<?xpacket end="w"?>`;
+    const face = { xmp: packet, pages: list.pages };
+    const ids = await Promise.all([php(face), await js(face)].map(x => identify(new Uint8Array(x))));
+    ok('xmp → identify() של mbe-core: type "face", אותו docId ו-base (PHP ו-JS)', ids.every(r => r.type === 'face' && r.docId === docId && r.base === base), JSON.stringify(ids));
+}
+
 // שגיאות — אותה הודעה בשתי השפות
 const errs = [
     { pages: [] },
@@ -168,6 +197,7 @@ const errs = [
     { pages: [{ size: [10, 10], ops: [{ op: 'path', d: 'M0 0 L5 5 Z', fill: grad('radial', { cx: 1, cy: 1, r: 0 }, [[0, '#000000']]) }] }] },
     { pages: [{ size: [10, 10], ops: [{ op: 'path', d: 'M0 0 L5 5 Z', fill: { gradient: { type: 'linear', x1: 0, y1: 0, x2: 5, y2: 0, stops: [{ offset: 0, color: '#000000', opacity: 1.5 }] } } }] }] },
     { pages: [{ size: [10, 10], ops: [{ op: 'image', src: 'media/none.png', box: [0, 0, 1, 1] }] }] },
+    { xmp: 5, pages: [{ size: [10, 10], ops: [] }] },
 ];
 const mism = [];
 for (const list of errs) {
