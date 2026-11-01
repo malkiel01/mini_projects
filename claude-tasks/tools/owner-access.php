@@ -10,6 +10,7 @@
  *   php tools/owner-access.php                       רשימת המשתמשים. לא משנה כלום
  *   php tools/owner-access.php link <id> <email>     גיבוי, ואז מייל לחשבון <id>
  *   php tools/owner-access.php password <id>         גיבוי, ואז סיסמה חדשה (מוקלדת, לא מוצגת)
+ *   php tools/owner-access.php tasks                 כמה מטלות לכל created_by — גם מזהים בלי משתמש. לא משנה כלום
  *
  * לפני כל שינוי — עותק של המסד ב-data/tasks.sqlite.bak-<תאריך>. הפריסה לא
  * דורסת אותו (--exclude של data/*.sqlite*), ו-data/.htaccess חוסם אותו מהרשת.
@@ -64,6 +65,33 @@ if ($cmd === 'list') {
     }
     out();
     out('לקישור: php tools/owner-access.php link <id> <המייל בכלים הדיגיטליים>');
+    exit(0);
+}
+
+/*
+ * מי פתח את המטלות. עונה על "מטלות שיצר: 0" — מטלות שנפתחו בחשבון אחר
+ * (למשל "אין לי חשבון"), או בחשבון שכבר לא קיים. ‏created_by ריק — מטלה בלי
+ * יוצר (נפתחה לפני שנשמר). קריאה בלבד.
+ */
+if ($cmd === 'tasks') {
+    out('created_by | שם משתמש | שם תצוגה | מטלות | פתוחות | בלי פרויקט');
+    $rows = db()->query("SELECT t.created_by, u.username, u.display_name, COUNT(*) n,
+                                SUM(t.status NOT IN ('done','cancelled')) open_n,
+                                SUM(t.project_id IS NULL) orphan_n
+                           FROM tasks t LEFT JOIN users u ON u.id = t.created_by
+                          GROUP BY t.created_by ORDER BY t.created_by")->fetchAll();
+    $total = 0;
+    foreach ($rows as $r) {
+        $total += (int) $r['n'];
+        out(implode(' | ', [
+            $r['created_by'] ?? '—',
+            $r['username'] ?? ($r['created_by'] === null ? '(ריק)' : '(אין משתמש כזה)'),
+            $r['display_name'] ?? '—',
+            $r['n'], (int) $r['open_n'], (int) $r['orphan_n'],
+        ]));
+    }
+    out();
+    out("סך הכול: $total מטלות");
     exit(0);
 }
 

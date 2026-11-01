@@ -109,7 +109,39 @@
 | `answered` | עניתם; חוזרת לתור לפני כל מטלה אחרת |
 | `done` / `cancelled` | סגורה |
 
-המעבר `blocked → answered` קורה מאליו כשאדם מגיב על מטלה חסומה. אין סטטוס לזכור לשנות ביד.
+המעבר `blocked → answered` קורה מאליו כשמי שרשאי לענות מגיב על מטלה חסומה. אין סטטוס לזכור לשנות ביד.
+
+## מי עונה, ומי כתב (`author_role`)
+
+לכל הערה יש `author_role` ו‑`author_user_id`, ש**השרת** קובע — אין שדה כזה שהלקוח שולח: `owner` (מנהל הלוח),
+`member` (משתמש אחר), `worker` (אסימון). הערות מלפני השדה — `legacy`.
+
+**"תשובה" — הערה שמחזירה מטלה חסומה לתור — רק ממי שרשאי** (`noteKind` / `canAnswer` ב‑`lib/projects.php`):
+
+| מי | מטלה בלי פרויקט | פרויקט רגיל | ענף `owner_only` |
+| --- | --- | --- | --- |
+| `owner` | עונה | עונה | עונה |
+| `member` עם `write` | עונה | עונה | הערה בלבד |
+| `member` בצפייה | עונה | הערה בלבד | הערה בלבד |
+| `worker` | הערה בלבד | הערה בלבד | הערה בלבד |
+
+"הערה בלבד" — נשמרת, אבל המטלה נשארת ממתינה. קריאת מטלה (`task`) והערה דורשות `read` בפרויקט שלה, ועריכה
+(`update-task`) — `write`. מטלה בלי פרויקט — כל מחובר, כמו קודם.
+
+**`owner_only`** — סימון על פרויקט (`update-project`, מנהל הלוח בלבד), שעובר **בירושה לכל הענף**. תת-פרויקט לא יכול לבטל
+סימון של אב. מעבר לכלל התשובה: `claim` עם האסימון הכללי ובלי `topic_id` מדלג על הענף הזה. `projects` מחזיר גם
+`owner_only_effective`.
+
+**אסימון של פרויקט מכסה את כל הענף** שלו — תת-פרויקט שנוסף אחרי שהאסימון נשלח לריפו נכלל מיד.
+
+**Origin.** בקשה של אדם (עוגייה) שאינה GET חייבת `Origin` — או `Referer` כשאין — מאותו host בדיוק; אחרת 403
+(`sameOriginRequest` ב‑`lib/auth.php`). בלי רשימת נתיבים: כל דף באותו דומיין עובר, גם הדשבורד של חבילת היצירה.
+בקשה עם `X-Worker-Token` אינה נבדקת.
+
+**שיוך מטלות ישנות.** מטלות מלפני עץ הפרויקטים יושבות בלי פרויקט. בתוך פרויקט, ללשונית המטלות — "📥 שיוך מטלות"
+(מנהל הלוח בלבד, ורק כשיש כאלה): נושא שמסמנים נעשה שלב של הפרויקט והמטלות שלו עוברות איתו, ואפשר לבחור מטלות בודדות.
+מטלה שכבר בפרויקט אחר לא נגררת דרך נושא משותף. "מטלות שיצר: 0"? — `php tools/owner-access.php tasks` מראה כמה מטלות
+לכל `created_by`, כולל מזהים בלי משתמש.
 
 ## כניסה דרך הכלים הדיגיטליים
 
@@ -163,6 +195,9 @@ SQLite בקובץ יחיד, `data/tasks.sqlite`. נבחר על פני MySQL כי
 
 **בני אדם:** `login` · `logout` · `me` · `platform-new` · `platform-link` · `bootstrap-status` · `register-first` · `create-user` · `worker-token` · `topics` · `create-topic` · `update-topic` · `tasks` · `task` · `create-task` · `update-task` · `add-note`
 
+**מבנה:** `projects?root_id=` (רק הענף) · `tasks?project_id=` (כל הענף; `subtree: 0` — רק הפרויקט עצמו). ‏`counts.by_project`
+— המונים לכל פרויקט · `orphan-tasks` · `assign-tasks { project_id, topic_ids, task_ids }`
+
 **פלטפורמה:** `my-connections` · `connect-github` · `disconnect-github` · `providers` · `connect-provider` · `disconnect-provider` · `set-default-provider` · `test-provider` · `repos` · `create-repo` · `projects` · `create-project` · `project` · `people` · `set-member` · `remove-member` · `repo-tree` · `repo-write`
 
 **ניהול:** `admin-users` · `admin-events` · `admin-diagnostics`
@@ -193,9 +228,12 @@ complete   → סוגר עם תוצאה
 ```
 php claude-tasks/tests/catalog.php     # קטלוג, סידור, ספקים
 php claude-tasks/tests/platform.php    # הצפנה, הרשאות, לקוח גיטהאב
+php claude-tasks/tests/projects.php    # עץ הפרויקטים
+php claude-tasks/tests/login.php       # כניסה דרך הכלים הדיגיטליים
+php claude-tasks/tests/safety.php      # author_role, owner_only, אסימון לענף, Origin, שיוך מטלות
 ```
 
-שתיהן רצות על מסד זמני ומחליפות כל פנייה חיצונית בתעבורה מזויפת — בלי מפתחות, בלי עלות, ובלי תלות ברשת.
+כולן רצות על מסד זמני ומחליפות כל פנייה חיצונית בתעבורה מזויפת — בלי מפתחות, בלי עלות, ובלי תלות ברשת.
 
 ## תחזוקה
 

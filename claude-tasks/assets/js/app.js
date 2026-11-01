@@ -463,7 +463,7 @@ on('#projImportBtn', 'click', async (e) => {
 /* ── רשימה ─────────────────────────────────────────────────── */
 
 async function refresh() {
-  const { tasks, counts } = await api('tasks', {
+  const { tasks, counts, orphans } = await api('tasks', {
     project_id: state.projectId,
     topic_id: state.topicId,
     status: state.status,
@@ -471,6 +471,9 @@ async function refresh() {
   });
   state.tasks = tasks;
   state.counts = counts;
+  // מטלות בלי פרויקט — השרת מחזיר את המספר רק לבעל הלוח, ורק בתוך פרויקט
+  set('#assignBtn', 'hidden', !(state.projectId && orphans > 0));
+  set('#assignCount', 'textContent', orphans > 0 ? String(orphans) : '');
   renderPulse();
   renderList();
 }
@@ -557,7 +560,7 @@ function renderList() {
 /* ── פרטי מטלה ─────────────────────────────────────────────── */
 
 async function openTask(id) {
-  const { task, notes } = await api('task', { id });
+  const { task, notes, can_answer: canAnswer } = await api('task', { id });
   state.openTaskId = id;
 
   $('#dTitle').textContent = task.title;
@@ -595,7 +598,9 @@ async function openTask(id) {
   if (!notes.length) $('#dThread').replaceChildren(el('p', { class: 'hint', text: 'עוד אין שיחה על המטלה.' }));
 
   $('#replyBody').value = '';
-  set('#replyLabel', 'textContent', task.status === 'blocked' ? 'התשובה שלך ל-Claude' : 'תשובה או הערה');
+  // בענף "רק בעל הלוח" (או בלי הרשאת כתיבה) — הערה נשמרת, אבל לא מחזירה את המטלה לתור
+  set('#replyLabel', 'textContent', task.status !== 'blocked' ? 'תשובה או הערה'
+    : (canAnswer === false ? 'הערה — רק בעל הלוח מחזיר את המטלה לתור' : 'התשובה שלך ל-Claude'));
   set('#dDone', 'hidden', task.status === 'done');
   $('#detail').showModal();
 }
@@ -630,6 +635,83 @@ on('#dDone', 'click', async () => {
     $('#detail').close();
     await refresh();
     toast('סומן כהושלם', 'ok');
+  } catch (ex) { toast(ex.message, 'error'); }
+});
+
+/* ── שיוך מטלות ישנות לפרויקט (docs/spec.md, 4 — U1) ───────────
+ *
+ * מטלות שנפתחו לפני עץ הפרויקטים. נושא שמסמנים נעשה שלב של הפרויקט,
+ * והמטלות שלו עוברות איתו; אפשר גם לבחור מטלות בודדות.
+ */
+
+const ST_SHORT = { open: 'בתור', in_progress: 'בעבודה', blocked: 'ממתין', answered: 'נענתה', done: 'הושלמה', cancelled: 'בוטלה' };
+
+function assignSelection() {
+  const topics = $$('#assignGroups [data-topic]:checked').map((c) => Number(c.dataset.topic));
+  // מטלה שהנושא שלה מסומן — עוברת ממילא, לא שולחים אותה פעמיים
+  const tasks = $$('#assignGroups [data-task]:checked')
+    .filter((c) => !topics.includes(Number(c.dataset.parent)))
+    .map((c) => Number(c.dataset.task));
+  const n = $$('#assignGroups [data-task]:checked').length;
+  return { topics, tasks, n };
+}
+
+function syncAssign() {
+  const { n } = assignSelection();
+  $('#assignSubmit').disabled = n === 0;
+  $('#assignSubmit').textContent = n ? `העברה (${n})` : 'העברה';
+}
+
+on('#assignBtn', 'click', async () => {
+  const cur = byId(state.projectId);
+  try {
+    const { groups } = await api('orphan-tasks');
+    $('#assignHint').textContent = `מטלות שנפתחו בלי פרויקט. נושא שמסמנים נעשה שלב של ״${cur?.name ?? ''}״, והמטלות שלו עוברות איתו.`;
+    $('#assignGroups').replaceChildren(...groups.map((g) => {
+      const tid = g.topic_id;
+      const head = tid
+        ? el('label', { class: 'pick pick--topic' }, [
+            el('input', { type: 'checkbox', dataset: { topic: String(tid) },
+              onchange: (ev) => {
+                ev.target.closest('ul').querySelectorAll('[data-task]').forEach((c) => { c.checked = ev.target.checked; });
+                syncAssign();
+              } }),
+            el('span', { class: 't', text: g.topic_name }),
+            el('small', { text: `${g.tasks.length} מטלות` }),
+          ])
+        : el('div', { class: 'pick pick--topic pick--none' }, [
+            el('span', { class: 't', text: 'ללא נושא' }), el('small', { text: `${g.tasks.length} מטלות` }),
+          ]);
+      return el('ul', { class: 'list', 'aria-label': tid ? g.topic_name : 'ללא נושא' }, [
+        el('li', {}, [head]),
+        ...g.tasks.map((t) => el('li', {}, [el('label', { class: 'pick pick--task' }, [
+          el('input', { type: 'checkbox', dataset: { task: String(t.id), parent: String(tid ?? '') },
+            onchange: (ev) => {
+              // מטלה שבוטלה בתוך נושא מסומן — הנושא כבר לא עובר כולו
+              const top = ev.target.closest('ul').querySelector('[data-topic]');
+              if (top && !ev.target.checked) top.checked = false;
+              syncAssign();
+            } }),
+          el('span', { class: 't', text: t.title }),
+          el('small', { text: ST_SHORT[t.status] || t.status }),
+        ])])),
+      ]);
+    }));
+    syncAssign();
+    $('#assign').showModal();
+  } catch (ex) { toast(ex.message, 'error'); }
+});
+
+on('#assignForm', 'submit', async (e) => {
+  e.preventDefault();
+  const { topics, tasks } = assignSelection();
+  try {
+    const r = await api('assign-tasks', { project_id: state.projectId, topic_ids: topics, task_ids: tasks });
+    $('#assign').close();
+    await loadTree();
+    await loadTopics();
+    await refresh();
+    toast(`הועברו ${r.tasks} מטלות${r.topics ? ` · ${r.topics} נושאים נעשו שלבים` : ''}`, 'ok');
   } catch (ex) { toast(ex.message, 'error'); }
 });
 
