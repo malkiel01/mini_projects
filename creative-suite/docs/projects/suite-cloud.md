@@ -61,3 +61,4 @@
 - **2026-11-01** — ספק רביעי: Anthropic (Claude) למשימה `complete` (טקסט / JSON, עם תמונות), `claude-opus-5-5`. המפתח — בניהול, 🤖.
 - **2026-11-01** — הגופנים המובנים: 10 קבצי OFL (Rubik, Heebo, Assistant, Frank Ruhl Libre, Noto Serif Hebrew — משתנים; Amatic SC, David Libre, Secular One) ב-`suite-cloud/fonts/builtin/`, `drives.fonts.list({ builtin: true })`, ושער קטלוג בפריסה.
 - **2026-11-01** — 👤 תפריט המשתמש (שורה 19 ✅): `accountMenu` בדף, הגדרות במסד של הענן, ייצוא ומחיקת חשבון מלאה (`lib/me.php`). שורה 20 — `—`: הענן הוא המקור של חלון הקבצים.
+- **2026-11-01** — קו הגמר הושלם: הדוח `creative-suite/docs/reports/suite-cloud.md` (בדיקות 165 + 37 + 25, צילומים ב-390 וב-1280). פתוח רק מה שתלוי בבעל המערכת: App key של Dropbox ומפתחות לספקי ה-AI.
