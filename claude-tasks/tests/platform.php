@@ -116,9 +116,8 @@ $mal = mkUser('mal', 'admin');
 $dev = mkUser('dev');
 
 setUserProvider($mal, 'anthropic', 'sk-ant-aaaaaaaaaaaaaaaaaaaa', '');
-$mal = (function ($id) { $st = db()->prepare('SELECT id,username,display_name,role,default_provider FROM users WHERE id=?');
-                         $st->execute([$id]); return $st->fetch(); })($mal['id']);
-check('הספק הראשון נעשה ברירת מחדל', $mal['default_provider'], 'anthropic');
+// "ברירת מחדל" = הראשון בסדר העדיפות (lib/connections.php)
+check('הספק הראשון נעשה ברירת מחדל', array_key_first(userProviders((int) $mal['id'])), 'anthropic');
 check('המודל מולא מברירת המחדל של הספק',
       userProviders((int) $mal['id'])['anthropic']['model'], PROVIDERS['anthropic']['default']);
 check('רק זנב המפתח נחשף', userProviders((int) $mal['id'])['anthropic']['tail'], 'aaaa');
@@ -139,9 +138,7 @@ check('נופלים לחיבור הכללי', userConn($dev)['source'], 'system'
 configSet(['ai_key' => null]);
 
 removeUserProvider($mal, 'anthropic');
-$mal = (function ($id) { $st = db()->prepare('SELECT id,username,display_name,role,default_provider FROM users WHERE id=?');
-                         $st->execute([$id]); return $st->fetch(); })($mal['id']);
-check('ניתוק מעביר את ברירת המחדל', $mal['default_provider'], 'openai');
+check('ניתוק מעביר את ברירת המחדל', array_key_first(userProviders((int) $mal['id'])), 'openai');
 
 echo "\n— הרשאות פרויקט —\n";
 $pid = createProject($mal, 'האתר', 'malkiel01', 'mini_projects');
@@ -277,7 +274,7 @@ $ghFake = function ($method, $url, $json, $token) use (&$calls) {
     return ['status' => 204, 'data' => [], 'headers' => [], 'raw' => ''];
 };
 
-setUserSecret((int) $mal['id'], 'github_token', 'ghp_token');
+addConnection($mal, 'github', 'ghp_token', '', '', ['login' => 'mal', 'scopes' => ['repo', 'workflow']]);
 $conn2 = ['provider' => 'openai', 'key' => 'sk-openaiopenaiopenai12', 'model' => 'gpt-x'];
 $res = installEngine($mal, $proj2, $conn2, $ghFake);
 check('שני קבצים נכתבו', array_values($res['files']), ['נוצר', 'נוצר']);

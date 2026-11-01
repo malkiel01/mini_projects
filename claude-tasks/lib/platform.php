@@ -238,7 +238,9 @@ function mergeInto(PDO $pdo, int $from, int $to): void {
               ['skills', 'created_by'], ['events', 'user_id']] as [$table, $col]) {
         $pdo->prepare("UPDATE $table SET $col = ? WHERE $col = ?")->execute([$to, $from]);
     }
-    foreach (['project_members', 'user_providers'] as $table) {
+    // חיבורים עוברים כמו שהם; בחירת גיטהאב לפרויקט — רק אם לישן אין בחירה משלו
+    $pdo->prepare('UPDATE connections SET user_id = ? WHERE user_id = ?')->execute([$to, $from]);
+    foreach (['project_members', 'user_providers', 'project_connections'] as $table) {
         $pdo->prepare("UPDATE OR IGNORE $table SET user_id = ? WHERE user_id = ?")->execute([$to, $from]);
         $pdo->prepare("DELETE FROM $table WHERE user_id = ?")->execute([$from]);
     }

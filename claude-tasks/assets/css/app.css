@@ -303,3 +303,20 @@ dialog > form.sheet-wrap { margin: 0; }
 .conn__body .hint, .field .hint { font-size: .8rem; }
 @media (prefers-reduced-motion: reduce) { .conn .go { transition: none; } }
 #pvChatTokenValue { white-space: pre-wrap; word-break: break-all; font-size: .78rem; }
+
+/* ===== חיבורים (§10.1) ===== */
+.conn-group { font-size: .8rem; color: var(--muted); font-weight: 600; margin: var(--s3) 0 var(--s1); }
+.conn-row { cursor: pointer; }
+.conn-row .ic { font-weight: 700; font-size: .95rem; background: color-mix(in srgb, var(--ok) 14%, var(--surface)); }
+.conn-row.is-bad .ic { background: var(--danger-soft); }
+.conn-row.is-bad .l2 { color: var(--danger); }
+.conn-ctl { display: flex; flex: none; gap: 2px; }
+.conn-ctl .icon-btn:disabled { opacity: .3; }
+.tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s2); }
+.tile { display: grid; justify-items: center; gap: 4px; padding: var(--s3); min-height: 96px; border: 1px solid var(--line);
+  border-radius: var(--r); background: var(--surface); color: var(--ink); font: inherit; font-weight: 600; cursor: pointer; }
+.tile span { font-size: 1.6rem; }
+.tile small { color: var(--muted); font-weight: 400; font-size: .78rem; }
+.tile:hover, .tile:focus-visible { border-color: var(--brand); }
+.danger-zone { margin-top: var(--s4); padding: var(--s3); border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent);
+  border-radius: var(--r); display: grid; gap: var(--s2); }

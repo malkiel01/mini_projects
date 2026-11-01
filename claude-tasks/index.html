@@ -164,6 +164,53 @@
   </form>
 </dialog>
 
+<!-- ── חיבור: גיליון ─────────────────────────────────────────── -->
+<dialog id="connSheet" aria-labelledby="csTitle">
+  <form class="sheet-wrap" id="csForm">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close="connSheet" aria-label="סגירה">✕</button>
+      <h2 id="csTitle">חיבור</h2>
+      <button type="submit" class="btn primary">שמירה</button>
+    </header>
+    <div class="sheet-body">
+      <p class="hint" id="csState"></p>
+      <label class="field"><span>שם (למשל אישי, עבודה)</span><input type="text" id="csLabel" maxlength="40"></label>
+      <label class="field" id="csKeyWrap"><span>מפתח חדש</span><input type="password" id="csKey" dir="ltr" autocomplete="off"></label>
+      <div id="csModelSlot"></div>
+      <div class="row-btns"><button type="button" class="btn ghost" id="csTest">בדיקה עכשיו</button></div>
+      <div class="danger-zone">
+        <button type="button" class="btn ghost danger-text" id="csRemove">🔌 ניתוק החיבור</button>
+      </div>
+    </div>
+  </form>
+</dialog>
+
+<!-- ── חיבור חדש: אריחים, ואז טופס ──────────────────────────────── -->
+<dialog id="connAdd" aria-labelledby="caTitle">
+  <div class="sheet-wrap">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close="connAdd" aria-label="סגירה">✕</button>
+      <h2 id="caTitle">חיבור חדש</h2>
+      <span></span>
+    </header>
+    <div class="sheet-body">
+      <div class="tiles" id="caTiles" role="group" aria-label="סוג החיבור">
+        <button type="button" class="tile" data-kind="github"><span aria-hidden="true">🐙</span>GitHub<small>קוד וריפו</small></button>
+        <button type="button" class="tile" data-kind="anthropic"><span aria-hidden="true">✳️</span>Anthropic<small>Claude</small></button>
+        <button type="button" class="tile" data-kind="openai"><span aria-hidden="true">⚪</span>OpenAI<small>GPT</small></button>
+        <button type="button" class="tile" data-kind="google"><span aria-hidden="true">🔷</span>Gemini<small>Google</small></button>
+      </div>
+      <form class="stack" id="caForm" hidden>
+        <label class="field"><span id="caSecretLabel">מפתח</span><input type="password" id="caSecret" dir="ltr" autocomplete="off" required></label>
+        <p class="hint" id="caHint"></p>
+        <div id="caModelSlot"></div>
+        <label class="field"><span>שם (לא חובה — למשל אישי, עבודה)</span><input type="text" id="caLabel" maxlength="40"></label>
+        <div class="row-btns"><button type="submit" class="btn primary">חיבור</button></div>
+      </form>
+    </div>
+  </div>
+</dialog>
+
 <!-- ── מטלה חדשה ─────────────────────────────────────────────── -->
 <dialog id="newTask" aria-labelledby="newTaskTitle">
   <form class="sheet-wrap" id="captureForm">
@@ -475,28 +522,12 @@
 
       <!-- ── חיבורים: שורה לכל חיבור, נפתחת בלחיצה ── -->
       <section class="set-panel" data-panel="conn">
-        <p class="hint">גיטהאב — לקוד ולריפו. ספקי בינה מלאכותית — מי מבצע את המטלות, על החשבון שלך אצלו. ★ = ברירת המחדל.</p>
-        <div class="conns">
-          <details class="conn" id="ghConn">
-            <summary>
-              <span class="ic" aria-hidden="true">🐙</span>
-              <span class="body"><b>גיטהאב</b><small id="ghState">טוען…</small></span>
-              <span class="go" aria-hidden="true">‹</span>
-            </summary>
-            <form class="stack conn__body" id="ghForm">
-              <label class="field">
-                <span>Personal Access Token</span>
-                <input type="password" id="ghToken" dir="ltr" placeholder="ghp_… / github_pat_…" autocomplete="off">
-              </label>
-              <p class="hint">github.com ← Settings ← Developer settings ← Tokens (classic). היקפים: <code dir="ltr">repo</code>, ו-<code dir="ltr">workflow</code> להרצת מטלות. נשמר מוצפן.</p>
-              <div class="row-btns">
-                <button type="submit" class="btn primary">חיבור</button>
-                <button type="button" class="btn ghost danger-text" id="ghDisconnect" hidden>ניתוק</button>
-              </div>
-            </form>
-          </details>
-          <div id="providerList" class="conns-inner"></div>
+        <p class="hint">גיטהאב — לקוד ולריפו. ספקי בינה — מי מבצע את המטלות, על החשבון שלך אצלו.</p>
+        <div class="sec-head">
+          <h2 class="sec-title" id="connCount">חיבורים</h2>
+          <button type="button" class="btn primary sm" id="connAddBtn"><span aria-hidden="true">+</span> חיבור</button>
         </div>
+        <div id="connList"></div>
       </section>
 
       <!-- ── חשבון ── -->

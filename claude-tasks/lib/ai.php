@@ -167,6 +167,11 @@ function providerError(string $provider, array $data): string {
  */
 function aiComplete(array $conn, string $system, string $prompt,
                     int $maxTokens = 400, ?callable $transport = null): string {
+    // שרשרת חיבורים (lib/connections.php): נכשל אחד — הבא בתור
+    if (!empty($conn['chain']) && count($conn['chain']) > 1) {
+        return aiCompleteChain($conn['chain'], $system, $prompt, $maxTokens, $transport,
+                               $conn['user'] ?? null, $conn['task_id'] ?? null)[0];
+    }
     $provider = (string) ($conn['provider'] ?? '');
     $key      = (string) ($conn['key'] ?? '');
     $model    = trim((string) ($conn['model'] ?? '')) ?: (PROVIDERS[$provider]['default'] ?? '');
@@ -192,12 +197,14 @@ function aiComplete(array $conn, string $system, string $prompt,
 
     if (($res['status'] ?? 0) !== 200) {
         $msg = providerError($provider, $data);
-        throw new AppError(match ((int) ($res['status'] ?? 0)) {
+        $err = new AppError(match ((int) ($res['status'] ?? 0)) {
             401, 403 => 'המפתח של ' . PROVIDERS[$provider]['label'] . ' נדחה',
             429      => PROVIDERS[$provider]['label'] . ': המכסה נגמרה או שהשירות עמוס',
             404      => "המודל \"$model\" אינו קיים אצל " . PROVIDERS[$provider]['label'],
             default  => PROVIDERS[$provider]['label'] . " החזיר שגיאה ({$res['status']}) $msg",
         });
+        $err->aiStatus = (int) ($res['status'] ?? 0);
+        throw $err;
     }
 
     $text = providerText($provider, $data);

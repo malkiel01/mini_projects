@@ -13,6 +13,9 @@
 declare(strict_types=1);
 
 class AppError extends RuntimeException {
+    /** קוד ה-HTTP שהחזיר ספק הבינה, כשהשגיאה ממנו — כדי להחליט אם לעבור לחיבור הבא. */
+    public ?int $aiStatus = null;
+
     public function __construct(string $message, public int $status = 400) {
         parent::__construct($message);
     }
