@@ -19,7 +19,7 @@ export function aiCaps(force = false) {
             const st = await drives.status().catch(() => null);
             if (!st?.suite?.connected) return { ...NONE, status: st ? 'off' : 'error' };
             const c = await drives.ai.capabilities().catch(e => ({ ...NONE, error: e.message }));
-            return { ...c, connected: true, name: st.suite.name };
+            return { ...c, connected: true, name: st.suite.name, cloud: st.suite.cloud_id || '' };
         })();
         capsP.then(c => log('ai-caps', { connected: c.connected ? 1 : 0, tasks: Object.keys(c.tasks || {}).filter(k => c.tasks[k]).join(',') }));
     }

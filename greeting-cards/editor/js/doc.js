@@ -161,6 +161,9 @@ export function normalizeDoc(input) {
         if (typeof a.src === 'string' && a.src.startsWith('idb:')) ff.src = a.src;
         if (typeof a.remote === 'string' && /^f[0-9a-f]{20}$/.test(a.remote)) ff.remote = a.remote;
         if (typeof a.file === 'string') ff.file = a.file.slice(0, 100);
+        // מאיפה הגופן הגיע — ספריית הגופנים של ענן החבילה (spec-2-fonts.md סעיף 5). התוכן תמיד בעיצוב עצמו.
+        if (a.lib && typeof a.lib.cloud === 'string' && typeof a.lib.item === 'string')
+            ff.lib = { cloud: a.lib.cloud.slice(0, 128), item: a.lib.item.slice(0, 128), ...(/^[0-9a-f]{64}$/.test(a.lib.rev || '') ? { rev: a.lib.rev } : {}) };
         (doc.fonts ||= {})[id] = ff;
     }
 

@@ -240,7 +240,8 @@ export async function buildMbe(doc, images, { baseBytes = null } = {}) {
     const embeddedFonts = [];
     for (const a of Object.values(doc.fonts || {})) {
         const blob = await assets.get(a.src);
-        if (blob) embeddedFonts.push({ family: a.family, weight: a.weight, style: a.style, embedded: await f.addMedia(new Uint8Array(await blob.arrayBuffer()), blob.type || 'font/ttf') });
+        if (blob) embeddedFonts.push({ family: a.family, weight: a.weight, style: a.style, embedded: await f.addMedia(new Uint8Array(await blob.arrayBuffer()), blob.type || 'font/ttf'),
+            ...(a.lib ? { source: 'user', lib: a.lib } : {}) });
     }
     const surfaceId = (f.document.surfaces || []).find(s => s?.type === 'page')?.id || 'gc-page-1';
     const surface = { id: surfaceId, type: 'page', size: [r2(W * PT), r2(H * PT)], layers };
@@ -376,7 +377,8 @@ async function fontsFromMbe(f, doc, list) {
         const ext = /\.([a-z0-9]+)$/.exec(e.embedded)?.[1];
         const blob = new Blob([data], { type: FONT_MIME[ext] || 'font/ttf' });
         (doc.fonts ||= {})[uid('f')] = { family: e.family.slice(0, 60), weight: Math.min(900, Math.max(100, Math.round((+e.weight || 400) / 100) * 100)),
-            style: e.style === 'italic' ? 'italic' : 'normal', src: await assets.put(blob) };
+            style: e.style === 'italic' ? 'italic' : 'normal', src: await assets.put(blob),
+            ...(e.lib && typeof e.lib.cloud === 'string' && typeof e.lib.item === 'string' ? { lib: { cloud: e.lib.cloud, item: e.lib.item, ...(e.lib.rev ? { rev: e.lib.rev } : {}) } } : {}) };
     }
 }
 

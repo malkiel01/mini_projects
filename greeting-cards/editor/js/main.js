@@ -14,7 +14,7 @@ import { ICONS, ICON_GROUPS } from './icons.js';
 import { ELEMENTS, ELEMENT_GROUPS } from './elements.js';
 import { TEXT_STYLES, SOLIDS, GRADIENTS, gradientCss, applyTextStyle } from './presets.js';
 import { TEMPLATES, TEMPLATE_CATS } from './templates.js';
-import { FONTS, ensureFont, ensureDocFonts, nearestWeight, loadMyFonts, myFonts, readFontInfo, addMyFont, removeMyFont, embedDocFonts } from './fonts.js';
+import { FONTS, ensureFont, ensureDocFonts, nearestWeight, loadMyFonts, myFonts, readFontInfo, addMyFont, removeMyFont, embedDocFonts, syncCloudFonts, saveFontToCloud } from './fonts.js';
 import { History } from './history.js';
 import { designs, assets } from './db.js';
 import { Canvas } from './canvas.js';
@@ -24,7 +24,7 @@ import { loadScript } from './io.js';
 import { docVariables, readSheetFile, readPasted, readPhoneContacts, guessColumns, normalizePhone, fileNames, fillText } from './merge.js';
 
 // הגרסה — מופיעה ביומן, כדי לדעת איזה קוד רץ בטלפון.
-const BUILD = '2026-11-01.account-1';
+const BUILD = '2026-11-01.cloud-fonts-1';
 
 const app = $('#app');
 let ed = null;   // העיצוב הפתוח: { id, doc, history, canvas, dirty }
@@ -1153,7 +1153,31 @@ async function restoreVersion(v) {
  * העלאת גופנים (TTF, OTF, WOFF, WOFF2): השם והעובי נקראים מהקובץ. גשר עד ספריית הגופנים של ענן החבילה — הגופן נשמר
  * במכשיר, ומוטמע בכל עיצוב שמשתמש בו. מחזיר את מה שנוסף.
  */
+/** ספריית הגופנים של ענן החבילה → "שלי" במכשיר. ברקע, פעם בטעינה; בלי חיבור (או בלי הרשאת libs) — שקט. */
+let cloudFontsP = null;
+function cloudFonts(force = false) {
+    if (force || !cloudFontsP) cloudFontsP = (async () => {
+        const caps = await aiCaps();
+        if (!caps.connected) return false;
+        try {
+            const n = await syncCloudFonts(drives, caps.cloud);
+            log('cloud-fonts', { down: n, total: myFonts().filter(m => m.lib).length });
+            return caps;
+        } catch (e) { log('cloud-fonts-fail', { code: e.code || '', msg: e.message }); return false; }
+    })();
+    return cloudFontsP;
+}
+
 async function uploadFonts() {
+    const cloud = await cloudFonts();
+    // אזהרת הרישיון — לפני ההעלאה (הכרעה 7 בחבילה): גופן שהועלה מוטמע בכל עיצוב, ונשמר בספרייה בענן
+    let ack = false;
+    try { ack = sessionStorage.getItem('gc-font-ack') === '1'; } catch { /* אין אחסון */ }
+    if (!ack) {
+        if (!await confirmDialog('ודאו שהרישיון של הגופן מתיר הטמעה בקבצים ושימוש בעיצובים שלכם.'
+            + (cloud ? ' הגופן יישמר גם בספריית הגופנים של ענן החבילה — לכל האפליקציות.' : ''), 'הבנתי, להעלות')) return [];
+        try { sessionStorage.setItem('gc-font-ack', '1'); } catch { /* אין אחסון */ }
+    }
     // בלי סינון: באנדרואיד הסיומות של גופן לא ממופות לסוג שהבורר מכיר, והוא מציג "אין קבצים" (כמו ‎.gcard).
     // מה שאינו גופן נדחה לפי התוכן (addMyFont טוען אותו לפני שהוא נכנס לרשימה).
     const files = await pickFiles('', true);
@@ -1161,9 +1185,10 @@ async function uploadFonts() {
     for (const f of files) {
         if (f.size > 15 * 1024 * 1024) { toast(`"${f.name}" גדול מ-15MB`, 'error'); continue; }
         try {
-            const e = await addMyFont(f, await readFontInfo(f));
+            let e = await addMyFont(f, await readFontInfo(f));
+            if (cloud) e = await saveFontToCloud(drives, cloud.cloud, e).catch(err => { toast(`"${e.family}" נשמר במכשיר; לספרייה בענן — לא: ${aiMessage(err)}`, 'error'); return e; });
             added.push(e);
-            log('font-upload', { family: e.family, weight: e.weight, bytes: f.size });
+            log('font-upload', { family: e.family, weight: e.weight, bytes: f.size, cloud: e.lib ? 1 : 0 });
         } catch { toast(`"${f.name}" אינו קובץ גופן תקין`, 'error'); }
     }
     if (added.length) toast(added.length === 1 ? `הגופן "${added[0].family}" נוסף ✓` : `${added.length} גופנים נוספו ✓`);
@@ -1175,18 +1200,28 @@ const WEIGHT_LABEL = w => WEIGHT_NAMES[w] || String(w);
 function myFontsSheet() {
     const draw = () => {
         const list = myFonts();
+        const toCloud = async m => {
+            try { await saveFontToCloud(drives, cloud.cloud, m); toast(`"${m.family}" נשמר בספרייה ✓`); }
+            catch (e) { toast(aiMessage(e), 'error'); }
+            body.replaceChildren(draw());
+        };
         return h('div', {},
             h('p', { class: 'hint' }, 'גופנים שהעלית מופיעים ברשימת הפונטים של כל טקסט, ומוטמעים בכל עיצוב שמשתמש בהם — כך הוא נפתח נכון גם במכשיר אחר ובקובץ. ודאו שהרישיון של הגופן מתיר את השימוש.'),
             list.length ? h('ul', { class: 'my-fonts' }, list.map(m => h('li', {},
                 h('span', { style: { fontFamily: `"${m.family}"`, fontWeight: String(m.weight), fontStyle: m.style } }, m.family),
-                h('span', { class: 'muted small' }, WEIGHT_LABEL(m.weight) + (m.style === 'italic' ? ' · נטוי' : '')),
+                h('span', { class: 'muted small' }, WEIGHT_LABEL(m.weight) + (m.style === 'italic' ? ' · נטוי' : '') + (m.lib ? ' · ☁️' : '')),
+                cloud && !m.lib ? h('button', { class: 'icon-btn', title: 'שמירה בספרייה בענן', 'aria-label': `שמירת ${m.family} ${WEIGHT_LABEL(m.weight)} בספרייה בענן`, onclick: () => toCloud(m) }, '☁️') : null,
                 h('button', { class: 'icon-btn', 'aria-label': `הסרת ${m.family} ${WEIGHT_LABEL(m.weight)}`, onclick: () => { removeMyFont(m); body.replaceChildren(draw()); } }, '🗑️'))))
                 : h('p', { class: 'empty' }, 'עוד לא הועלו גופנים.'),
             h('button', { class: 'btn primary block', onclick: async () => { if ((await uploadFonts()).length) body.replaceChildren(draw()); } }, '＋ העלאת גופן'),
-            h('p', { class: 'hint' }, 'בקרוב: ספריית גופנים אחת לכל אפליקציות החבילה (ענן החבילה) — הגופנים מכאן יעברו אליה.'));
+            h('p', { class: 'hint' }, cloud ? 'מחובר לספריית הגופנים של ענן החבילה: מה שמסומן ☁️ זמין בכל אפליקציות החבילה. ☁️ ליד גופן — שמירה בספרייה.'
+                : 'ספריית גופנים אחת לכל אפליקציות החבילה — אחרי חיבור לענן החבילה (👤 ← ☁️). עד אז הגופנים במכשיר הזה.'));
     };
+    let cloud = null;
     const body = h('div', {}, draw());
     sheet('הגופנים שלי', body);
+    // הספרייה בענן — ברקע: מה שחסר יורד, והרשימה מתעדכנת
+    cloudFonts(true).then(c => { cloud = c; body.replaceChildren(draw()); });
 }
 
 /** צבע בהיר? — לברירות מחדל שמנוגדות לטקסט (רקע כהה לטקסט בהיר, ולהפך). */
@@ -2249,6 +2284,7 @@ setColorContext({ docColors, presets: SOLIDS, sample: sampleColor });
 async function start() {
     try {
         await loadMyFonts().catch(() => {});   // הגופנים שהועלו במכשיר — לפני שעיצוב נפתח ומצויר
+        cloudFonts();                            // ספריית הגופנים בענן — ברקע
         const { user } = await sync.whoami();
         // חזרה מאישור החיבור בענן החבילה (?cloud=connected | denied)
         const cloud = new URLSearchParams(location.search).get('cloud');
