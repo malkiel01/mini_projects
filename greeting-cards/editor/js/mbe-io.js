@@ -301,7 +301,23 @@ export async function isMbe(file) {
  * מהשכבות (readForeign), עם התפקידים והנמענים מהמקורי אם יש.
  * @returns {{doc, loaded: Map, fixes: string[], bytes: Uint8Array}}
  */
-export async function importMbe(file) {
+/** יומן השלבים של ‎.mbe (history/journal.json, פורמט 1.1) — מהישן לחדש. */
+export async function mbeJournal(blob) {
+    return (await open(new Uint8Array(await blob.arrayBuffer()))).journal();
+}
+
+/**
+ * חזרה לשלב ביומן (f.restore של הליבה): המסמך הופך לגרסה ההיא, ונרשם שלב restore. התוצאה — עיצוב מהמסמך הקנוני
+ * (לא מהעותק השמור שלנו, שהוא של הגרסה האחרונה), והבתים — הבסיס החדש של השמירה הבאה.
+ */
+export async function restoreFromJournal(blob, ref) {
+    const f = await open(new Uint8Array(await blob.arrayBuffer()));
+    f.restore(ref);
+    const out = await save(f, { app: APP_ID });
+    return importMbe(new File([out], 'restored.mbe', { type: 'application/vnd.mbe+zip' }), { ignoreSaved: true });
+}
+
+export async function importMbe(file, { ignoreSaved = false } = {}) {
     const bytes = new Uint8Array(await file.arrayBuffer());
     const f = await open(bytes);
     const errors = f.issues.filter(i => i.level === 'error');
@@ -309,7 +325,7 @@ export async function importMbe(file) {
     const fixes = errors.map(e => 'בעיה בקובץ: ' + e.message);
     const savedBytes = f.apps(APP_ID).get(SAVED);
     const saved = savedBytes ? JSON.parse(dec(savedBytes)) : null;
-    const ours = saved && f.manifest?.modified?.app === APP_ID;
+    const ours = !ignoreSaved && saved && f.manifest?.modified?.app === APP_ID;
 
     let doc, loaded = new Map();
     if (ours) {
