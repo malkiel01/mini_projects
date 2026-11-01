@@ -322,12 +322,16 @@
       pagesBox.classList.add('word');
       const previewBox = el('div');
       const markBtn = el('button', { class: 'primary', onclick: () => markWord(previewBox, markBtn) }, '🖍️ סימון שדות בטקסט');
+      // 15.8: עורך התמלילים. הגדרות שלא נשמרו — קודם נשמרות, כי הסגירה פותחת את העורך מחדש
+      const wpEdit = async (ro) => { if (dirty && !ro) { await save(); if (dirty) return; } wpEditor(id, tpl, ro, () => open(id)); };
       pagesBox.replaceChildren(el('p', { class: 'notice' }, schema.fields.length
         ? '📝 תבנית Word — השדות הם הסימונים {{...}} שבקובץ. שדה נוסף: "סימון שדות בטקסט" — בוחרים טקסט ' +
           '(למשל ______ או שם) והופכים אותו לשדה. כאן גם מגדירים לכל שדה סוג, חובה, מי ממלא ומילוי מאיש קשר.'
         : '📝 בקובץ עוד אין שדות. לוחצים "סימון שדות בטקסט", בוחרים את מה שמשתנה בכל מסמך — שם, תאריך, ______ — ' +
           'ולוחצים "הפוך לשדה". הקובץ נשאר כמו שהוא, רק במקום הטקסט שבחרתם נכנס השדה.'),
-        readOnly ? '' : el('div', { class: 'word-mark-open' }, markBtn), previewBox);
+        el('div', { class: 'word-mark-open' }, readOnly ? null : markBtn,
+          el('button', { type: 'button', onclick: () => wpEdit(readOnly) }, readOnly ? '📝 צפייה בעורך התמלילים' : '📝 עריכה בעורך התמלילים')),
+        previewBox);
       if (markAgain === id && !readOnly) {
         markWord(previewBox, markBtn);
       } else {
@@ -2073,6 +2077,52 @@
     renderBlocks();
     if (imported) msg.replaceChildren(notice(`✓ הקובץ הגיע עם הגדרות מוכנות: ${imported} שדות, כולל טבלאות ונוסחאות — נטענו ונשמרו.`, 'ok'));
     if (autoSave) save();
+  }
+
+  // ── 15.8: עורך התמלילים — עריכת תבנית Word כמו ב-Word (word-processor/docs/integration.md) ──
+  const WP_HOST = 'https://mbe-plus.com/mini_projects/word-processor/assets/js/host.js';
+  function wpEditor(id, tpl, readOnly, reopen) {
+    const { api, el, notice } = window.DT;
+    const start = async () => {
+      if (!window.WordProcessor) await new Promise((ok, bad) => {
+        const sc = document.createElement('script'); sc.src = WP_HOST; sc.onload = ok; sc.onerror = () => bad(new Error('עורך התמלילים לא נטען'));
+        document.head.append(sc);
+      });
+      const box = el('div', { class: 'wp-host' });
+      const shade = el('div', { class: 'wp-shade', role: 'dialog', 'aria-label': 'עורך התמלילים' }, box);
+      document.body.append(shade);
+      document.body.classList.add('wp-open');
+      let ed = null, syncing = null;
+      const sync = () => readOnly ? Promise.resolve(null) : (syncing ??= api('tpl_wp_sync', { id }).finally(() => { syncing = null; }));
+      const close = async () => {
+        if (ed && !readOnly && !(await ed.save()) && !confirm('השינויים האחרונים לא נשמרו. לסגור בכל זאת?')) return;
+        try { ed && ed.destroy(); } catch (e) { /* כבר נסגר */ }
+        shade.remove(); document.body.classList.remove('wp-open');
+        try {
+          const r = await sync();
+          if (r && r.changed) window.DT.toast('✓ התבנית עודכנה מהעורך' + (r.added ? ` · ${r.added} שדות חדשים` : '') + (r.removed ? ` · ${r.removed} שדות יצאו` : ''));
+        } catch (e) { window.DT.toast('⚠ ' + e.message); }
+        reopen();
+      };
+      try {
+        ed = window.WordProcessor.mount(box, {
+          session: () => api('tpl_wp_session', { id }),
+          onClose: close,
+          onError: (e) => console.warn('word-processor', e && e.code, e && e.message),
+        });
+      } catch (e) { box.replaceChildren(notice(e.message, 'bad'), el('button', { type: 'button', onclick: close }, 'סגירה')); }
+    };
+    // פעם ראשונה: מה קורה לקובץ, ואיפה נשמר התוכן — המשתמש מאשר
+    if (tpl.wp || readOnly) return start().catch(e => window.DT.toast('⚠ ' + e.message));
+    const dlg = window.DT.sheet('📝 עריכה בעורך התמלילים', el('div', { class: 'field-sheet' },
+      el('p', {}, 'הקובץ נפתח בעורך התמלילים, וכותבים בו כמו ב-Word. שדה מוסיפים בכל מקום — מקלידים {{שם השדה}}. ' +
+        'כשסוגרים את העורך, הקובץ מהעורך הופך לקובץ של התבנית, והשדות מתעדכנים לפי הסימונים.'),
+      el('p', { class: 'notice warn' }, '⚠ העורך קורא את Word בצורה בסיסית: עיצוב מורכב (תיבות טקסט, מיקום מדויק, גופנים מיוחדים) עלול להשתנות. ' +
+        'הקובץ המקורי לא משתנה עד הסגירה הראשונה, ותבנית שכבר הונפקו ממנה מסמכים — מתעדכנת בגרסה חדשה.'),
+      el('p', { class: 'hint' }, '🔒 התוכן של התבנית יישמר גם בעורך התמלילים (שירות נפרד בפלטפורמה), ולא רק כאן.'),
+      el('div', { class: 'row-btns' },
+        el('button', { type: 'button', class: 'primary', onclick: () => { dlg.close(); start().catch(e => window.DT.toast('⚠ ' + e.message)); } }, 'לפתוח בעורך'),
+        el('button', { type: 'button', onclick: () => dlg.close() }, 'ביטול'))));
   }
 
   window.DTEditor = { open, renderBackground, TYPES, wordPreview, DOCX, zoomable };

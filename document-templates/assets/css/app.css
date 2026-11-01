@@ -1036,3 +1036,10 @@ dialog.sheet:has(.list-sheet) { width: min(900px, 100vw); }
 .assign-list .assign-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .assign-list select { flex: 0 0 auto; width: auto; min-width: 128px; }
 .shares-list .badge { flex: none; }
+
+/* 15.8: עורך התמלילים — מסך מלא מעל האפליקציה (בטלפון 100dvh, במחשב חלון רחב) */
+.wp-shade { position: fixed; inset: 0; z-index: 1000; background: rgba(15, 18, 30, .55); display: flex; align-items: stretch; justify-content: center; }
+.wp-host { inline-size: 100%; block-size: 100dvh; background: var(--surface); }
+@media (min-width: 960px) { .wp-host { inline-size: min(1200px, 96vw); block-size: 96dvh; margin-block: 2dvh; border-radius: 10px; overflow: hidden; } }
+body.wp-open { overflow: hidden; }
+.word-mark-open { display: flex; flex-wrap: wrap; gap: var(--s2); }
