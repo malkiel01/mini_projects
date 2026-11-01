@@ -84,7 +84,7 @@
         </div>
         <div class="adjust-fields" data-adj="fill" hidden>
           <label class="opt"><span>סגנון</span><select id="adj-fstyle"><option value="solid">צבע אחיד</option><option value="linear">מעבר לינארי</option><option value="radial">מעבר מהמרכז</option></select></label>
-          <label class="opt opt-colors"><span>צבעים</span><span class="color-pair"><input id="adj-color1" type="color" aria-label="הצבע הראשון"><input id="adj-color2" type="color" value="#ffffff" aria-label="הצבע השני"></span></label>
+          <div class="opt opt-colors"><span>צבעים</span><span class="color-pair"><input id="adj-color1" type="color" aria-label="הצבע הראשון"><input id="adj-color2" type="color" value="#ffffff" aria-label="הצבע השני"></span></div>
           <label class="opt"><span>זווית <output for="adj-fangle">90°</output></span><input id="adj-fangle" type="range" min="-180" max="180" value="90"></label>
           <label class="opt"><span>אטימות <output for="adj-fopacity">100%</output></span><input id="adj-fopacity" type="range" min="0" max="100" value="100"></label>
         </div>
@@ -135,7 +135,7 @@
         </div>
         <div class="adjust-fields">
           <label class="opt opt-check"><input id="fx-on" type="checkbox"><span>פעיל</span></label>
-          <label class="opt opt-colors"><span>צבע</span><input id="fx-color" type="color" aria-label="צבע הסגנון"></label>
+          <div class="opt opt-colors"><span>צבע</span><input id="fx-color" type="color" aria-label="צבע הסגנון"></div>
           <label class="opt"><span>אטימות <output for="fx-opacity"></output></span><input id="fx-opacity" type="range" min="0" max="100"></label>
           <label class="opt" data-fx-for="shadow inner-shadow"><span>כיוון <output for="fx-angle"></output></span><input id="fx-angle" type="range" min="-180" max="180"></label>
           <label class="opt" data-fx-for="shadow inner-shadow"><span>מרחק <output for="fx-distance"></output></span><input id="fx-distance" type="range" min="0" max="64"></label>

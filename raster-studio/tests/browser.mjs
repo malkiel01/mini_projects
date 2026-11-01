@@ -1822,6 +1822,29 @@ async function main() {
   check('ORA נפתח עם כל השכבות והמאפיינים', back === 'רקע:normal:1:true:false | כפל:multiply:0.5:true:false | נסתר:normal:1:false:true', back);
   check('ORA — אותה תמונה מורכבת', (await px(10, 10)) === want, (await px(10, 10)) + ' / ' + want);
   check('ORA — השם מהקובץ', await page.evaluate(() => __rs.doc.title) === 'שכבות');
+  // ---- 🎨 צבע: הבורר של ui-core (שורה 13) ----
+  await openEd(page);
+  await page.waitForFunction(() => window.__rs?.doc);
+  await page.click('#color-wrap');
+  await page.waitForSelector('dialog[open] .cp-panel:not([hidden])', { timeout: 3000 }).catch(() => {});
+  check('🎨 העיגול בסרגל — חלון עם הבורר פתוח (ריבוע, גוון, קוד)', await page.isVisible('dialog[open] .cp-sv') && await page.isVisible('dialog[open] .cp-hue') && await page.isVisible('dialog[open] .cp-hex'));
+  await page.fill('dialog[open] .cp-hex', '#12ab34');
+  await page.press('dialog[open] .cp-hex', 'Enter');
+  await page.waitForFunction(() => __rs.tools.state.color === '#12ab34', null, { timeout: 3000 }).catch(() => {});
+  check('קוד צבע — הצבע של הכלים מתעדכן', await page.evaluate(() => __rs.tools.state.color) === '#12ab34', await page.evaluate(() => __rs.tools.state.color));
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => !document.querySelector('dialog[open]'), null, { timeout: 3000 }).catch(() => {});
+  await color('#ff0000');
+  check('אחרי הסגירה — הקלט עובד כרגיל', await page.evaluate(() => __rs.tools.state.color) === '#ff0000');
+  // מילוי בלוח התיקונים: שדות צבע של ui-core, וכתיבה ל-value מעדכנת אותם
+  await page.click('#adjust-btn');
+  await page.click('[data-adj-tab="fill"]');
+  check('לוח התיקונים — שני שדות צבע של ui-core במקום הקלט של הדפדפן', await page.locator('#adjust .cp-trigger').count() === 2 && !(await page.isVisible('#adj-color1')));
+  await page.evaluate(() => { document.querySelector('#adj-color2').value = '#0000ff'; });
+  const codes = await page.$$eval('#adjust .cp-code', e => e.map(x => x.textContent));
+  check('כתיבה ל-value מבחוץ — הבורר מציג אותה', codes[1] === '#0000FF', codes.join(','));
+  await page.click('[data-adj-act="cancel"]');
+
   // ---- 🕘 היסטוריה: צעדים, תמונות מצב, פעולות מוקלטות ואצווה ----
   await openEd(page);
   await page.waitForFunction(() => window.__rs?.doc);
