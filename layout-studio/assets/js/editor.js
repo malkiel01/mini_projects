@@ -917,12 +917,13 @@ async function drawingRasters() {
   }
   return out;
 }
-async function makePdf() {
+async function makePdf({ xmp = null } = {}) {
   await ensureFonts();
   relayout();
   const b = bodyStyle(model);
   const rasters = await drawingRasters();
   const list = drawList(model, text, fontsFor(b.font, b.weight), { title: doc.title, rasters });
+  if (xmp) list.xmp = xmp;   // "פנים": המזהים של ה-‎.mbe — PDF שחוזר (📂) מזוהה ונפתח במסמך שממנו יצא
   let res;
   try {
     res = await fetch('api.php?action=pdf', { method: 'POST', credentials: 'same-origin',
@@ -940,7 +941,7 @@ pdfBtn.addEventListener('click', async () => {
   pdfBtn.disabled = true;
   toast('מכין PDF…');
   try {
-    download(await makePdf(), 'application/pdf', (doc.title || 'עימוד') + '.pdf');
+    download(await stampedPdf(), 'application/pdf', (doc.title || 'עימוד') + '.pdf');
     toast('ה-PDF ירד');
   } catch (e) {
     toast(e.message, true);
@@ -957,16 +958,36 @@ const loadImg = src => new Promise(ok => {
 });
 const mbeBtn = $('#mbe-btn');
 /** הקובץ ‎.mbe של המסמך עכשיו — המודל, התמונות, preview ו-PDF, על בסיס קובץ המקור (אם יש). */
-async function currentMbe() {
+/**
+ * PDF מוחתם ("פנים", mbe-format.md סעיף 7): קודם ‎.mbe של המסמך (manifest.id ו-base), אחר כך ה-PDF עם xmpPacket שלו,
+ * והקובץ נשמר כמקור עם ה-PDF ועם שלב export ביומן — כך PDF שחוזר מזוהה. לא הצליח — PDF רגיל, בלי מזהים.
+ */
+async function stampedPdf() {
+  let file = null, xmp = null;
+  try {
+    ({ file } = await currentMbe({ withPdf: false }));
+    xmp = await (await import('./mbe/face.js')).xmpPacket(file);
+  } catch { file = null; xmp = null; }
+  const pdf = await makePdf({ xmp });
+  if (file && xmp) {
+    try {
+      const [{ save }, io] = await Promise.all([import('./mbe/mbe.js'), import('./mbe-io.js')]);
+      file.setRendition('renditions/document.pdf', pdf, { type: 'application/pdf', gaps: [] });
+      mbeSaved(await save(file, { app: io.APP, appVersion: io.APP_VERSION }));
+    } catch { /* היומן לא נרשם — ה-PDF עצמו תקין */ }
+  }
+  return pdf;
+}
+async function currentMbe({ withPdf = true } = {}) {
   const [io, { renderPreview }] = await Promise.all([import('./mbe-io.js'), import('./preview.js'), ensureFonts()]);
   relayout();
   const b = bodyStyle(model);
   const preview = new Uint8Array(await (await renderPreview(model, text, fontsFor(b.font, b.weight), loadImg)).arrayBuffer());
   let pdf = null;
-  try { pdf = await makePdf(); } catch { /* ה-PDF מומלץ, לא חובה — הקובץ יוצא בלעדיו */ }
+  if (withPdf) try { pdf = await makePdf(); } catch { /* ה-PDF מומלץ, לא חובה — הקובץ יוצא בלעדיו */ }
   const srcRes = await fetch('api.php?mbe_source=' + id, { credentials: 'same-origin' }).catch(() => null);
   const source = srcRes && srcRes.ok ? new Uint8Array(await srcRes.arrayBuffer()) : null;
-  const { bytes } = await io.buildMbe({
+  const { bytes, file } = await io.buildMbe({
     model, source, preview, pdf, stages: pendingStages,
     fetchMedia: async path => {
       const r = await fetch('api.php?media=' + encodeURIComponent(path.slice(6)), { credentials: 'same-origin' });
@@ -974,7 +995,7 @@ async function currentMbe() {
       return r.arrayBuffer();
     },
   });
-  return { bytes, pdf: !!pdf };
+  return { bytes, pdf: !!pdf, file };
 }
 /** הקובץ יצא (הורדה או ענן): השלבים נרשמו ביומן שלו, והוא המקור של הפעם הבאה — כך manifest.id ומה שאחרים כתבו נשארים. */
 function mbeSaved(bytes) {

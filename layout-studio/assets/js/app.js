@@ -161,6 +161,17 @@ mbeInput.addEventListener('change', async () => {
   if (!file) return;
   toast('פותח את הקובץ…');
   try {
+    // PDF שיצא מהעימוד ("פנים" — המזהים ב-XMP): פותחים את המסמך שממנו יצא, לא מייבאים אותו
+    if (/\.pdf$/i.test(file.name) || file.type === 'application/pdf') {
+      const { identify } = await import('./mbe/face.js');
+      const face = await identify(new Uint8Array(await file.arrayBuffer()));
+      if (!face.docId) { toast('ה-PDF הזה לא יצא מהעימוד (אין בו מזהה מסמך). פותחים כאן ‎.mbe', true); return; }
+      try {
+        const { doc } = await api('doc_by_mbe', { mbe_id: face.docId });
+        location.href = 'editor.html?id=' + doc.id;
+      } catch { toast('ה-PDF יצא מהעימוד, אבל המסמך שלו לא בספרייה שלך', true); }
+      return;
+    }
     location.href = 'editor.html?id=' + await importMbe(file);
   } catch (err) {
     toast(errText(err.message), true);

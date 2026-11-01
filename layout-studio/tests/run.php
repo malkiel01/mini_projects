@@ -274,6 +274,12 @@ check('מודל שהעימוד לא מקבל — bad_model, ובלי מסמך ח
     && count(ls_docs_list($uidA)) === $before);
 
 
+// ===== "פנים": PDF מוחתם שחוזר — המסמך לפי manifest.id של קובץ המקור =====
+$fxId = Mbe::open($fx)->id();
+check('פנים — המסמך שקובץ המקור שלו נושא את המזהה', ($found = ls_doc_by_mbe_id($uidA, $fxId)) !== null && $found['id'] === $imp['id']);
+check('פנים — של משתמש אחר לא נמצא', ls_doc_by_mbe_id($uidB, $fxId) === null);
+check('פנים — מזהה לא תקין / לא קיים', ls_doc_by_mbe_id($uidA, 'x') === null && ls_doc_by_mbe_id($uidA, '00000000-0000-4000-8000-000000000000') === null);
+
 // ===== גופנים של המשתמש (מהענן או מהמכשיר): TrueType באחסון שלו, model.fonts, ו-PDF =====
 $ttf = file_get_contents(__DIR__ . '/../assets/fonts/FrankRuhlLibre.ttf');
 $fp = ls_font_put($uidA, $ttf);
