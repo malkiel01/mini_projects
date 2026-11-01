@@ -105,6 +105,46 @@ function drawImageItem(ctx, item, media) {
   ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + w, y + h); ctx.moveTo(x + w, y); ctx.lineTo(x, y + h); ctx.stroke();
 }
 
+// ---------- אפקטים (גרסה 2: effects — shadow / glow / blur, mbe-format סעיף 3) ----------
+// מרחקים ב-pt; blur — "רדיוס" כמו shadowBlur של הקנבס (σ = blur / 2). k — כמה פיקסלי קנבס ל-pt (מהטרנספורמציה).
+
+const FAR = 100000;   // צל בלי הצורה: הצורה מצוירת רחוק מחוץ לקנבס, והצל מוזז בחזרה בדיוק למקום
+
+export const fxList = (effects) => (Array.isArray(effects) ? effects : []).filter(e => e && ['shadow', 'glow', 'blur'].includes(e.type));
+
+function rgba(hex, a) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
+  const n = m ? parseInt(m[1], 16) : 0;
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${Math.max(0, Math.min(1, a ?? 1))})`;
+}
+
+/** הפריט עם האפקטים שלו: קודם הצללים / הזוהר, ואז הפריט (מטושטש, אם יש blur). only: 'effects' — בלי הפריט. */
+export function drawWithEffects(ctx, path, media, effects, only = null) {
+  const fx = fxList(effects);
+  if (!fx.length) { if (only !== 'effects') drawPath(ctx, path, media); return; }
+  const t = ctx.getTransform();
+  const k = Math.sqrt(Math.abs(t.a * t.d - t.b * t.c)) || 1;
+  for (const e of fx) {
+    if (e.type === 'blur') continue;
+    ctx.save();
+    ctx.setTransform(t.a, t.b, t.c, t.d, t.e - FAR, t.f);
+    ctx.shadowColor = rgba(e.color || (e.type === 'glow' ? '#ffd34d' : '#000000'), e.opacity ?? (e.type === 'glow' ? 0.8 : 0.35));
+    ctx.shadowBlur = Math.max(0, e.blur ?? 0) * k;
+    ctx.shadowOffsetX = FAR + (e.type === 'shadow' ? (e.dx ?? 0) * k : 0);
+    ctx.shadowOffsetY = e.type === 'shadow' ? (e.dy ?? 0) * k : 0;
+    drawPath(ctx, path, media);
+    ctx.restore();
+  }
+  if (only === 'effects') return;
+  const blur = fx.find(e => e.type === 'blur');
+  if (blur && (blur.radius ?? 0) > 0) {
+    ctx.save();
+    ctx.filter = `blur(${(blur.radius / 2) * k}px)`;
+    drawPath(ctx, path, media);
+    ctx.restore();
+  } else drawPath(ctx, path, media);
+}
+
 function drawPath(ctx, path, media) {
   if (isText(path)) return drawText(ctx, path);
   if (isImage(path)) return drawImageItem(ctx, path, media);
@@ -194,7 +234,9 @@ export function render(canvas, state) {
             setT(pathMatrix(path, off));
             ctx.save();
             if (a < 1) ctx.globalAlpha = a;
-            try { drawPath(ctx, path, state.media); } catch { /* d פגום — לא מציירים, לא קורסים */ }
+            // אפקטים: של הפריט העליון (גם קבוצה) ושל הנתיב עצמו
+            const fx = path === item ? item.effects : [...fxList(item.effects), ...fxList(path.effects)];
+            try { drawWithEffects(ctx, path, state.media, fx); } catch { /* d פגום — לא מציירים, לא קורסים */ }
             ctx.restore();
           }
         }

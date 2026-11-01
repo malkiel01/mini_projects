@@ -207,6 +207,7 @@ export function renderProps(el, ctx) {
         ${seg('end', stroke?.end || 'none', { label: 'קצה בסוף', items: ENDS })}
       </div>
     </section>`}
+    ${effectsSection(p)}
     ${image ? '' : savedSection(ctx.prefs)}`;
 
   const each = (fn) => (path) => fn(path);
@@ -257,6 +258,7 @@ export function renderProps(el, ctx) {
     ctx.setShape({ [k]: v });
   }));
 
+  wireEffects(el, ctx, each);
   el.querySelectorAll('[data-on]').forEach(cb => cb.addEventListener('change', () => {
     const k = cb.dataset.on;
     const color = el.querySelector(`[data-c="${k}"]`)?.value || '#2d4a8a';
@@ -363,6 +365,52 @@ export function renderProps(el, ctx) {
       else path.stroke[k] = v;
     }), true);
   }));
+}
+
+// ---------- אפקטים: צל, זוהר וטשטוש (effects, גרסה 2) ----------
+
+const FX = {
+  shadow: { name: 'צל', make: () => ({ type: 'shadow', dx: 4, dy: 4, blur: 6, color: '#000000', opacity: 0.35 }) },
+  glow: { name: 'זוהר', make: () => ({ type: 'glow', blur: 8, color: '#ffd34d', opacity: 0.8 }) },
+  blur: { name: 'טשטוש', make: () => ({ type: 'blur', radius: 3 }) },
+};
+const FX_FIELDS = { dx: 'הזזה X', dy: 'הזזה Y', blur: 'ריכוך', radius: 'רדיוס' };
+
+function effectsSection(p) {
+  const list = Array.isArray(p.effects) ? p.effects : [];
+  const row = (type) => {
+    const e = list.find(x => x.type === type);
+    const fields = e ? Object.keys(FX_FIELDS).filter(k => k in e).map(k =>
+      `<label class="f"><span>${FX_FIELDS[k]} (pt)</span><input data-fx="${type}" data-fk="${k}" inputmode="decimal" dir="ltr" value="${n(e[k])}"></label>`).join('') : '';
+    const color = e && 'color' in e ? `<input type="color" data-fx="${type}" data-fk="color" value="${esc(e.color)}" aria-label="צבע ה${FX[type].name}">
+      <label class="f"><span>אטימות (%)</span><input data-fx="${type}" data-fk="opacity" type="number" min="0" max="100" dir="ltr" value="${Math.round((e.opacity ?? 1) * 100)}"></label>` : '';
+    return `<div class="g-row"><span class="grow">${FX[type].name}</span>
+        <label class="switch"><input type="checkbox" data-fxon="${type}"${e ? ' checked' : ''}><span class="sr">${FX[type].name}</span></label></div>
+      ${e ? `<div class="g-row wrap">${color}${fields}</div>` : ''}`;
+  };
+  return `<section class="group" aria-labelledby="g-fx"><h3 id="g-fx">אפקטים</h3><div class="g-stack">${Object.keys(FX).map(row).join('')}</div></section>`;
+}
+
+function wireEffects(el, ctx, each) {
+  el.querySelectorAll('[data-fxon]').forEach(cb => cb.addEventListener('change', () => {
+    const type = cb.dataset.fxon;
+    ctx.edit(each(item => {
+      const list = (Array.isArray(item.effects) ? item.effects : []).filter(e => e.type !== type);
+      if (cb.checked) list.push(FX[type].make());
+      if (list.length) item.effects = list; else delete item.effects;
+    }), true);
+  }));
+  el.querySelectorAll('[data-fk]').forEach(inp => {
+    const type = inp.dataset.fx, k = inp.dataset.fk;
+    const set = (commit) => {
+      let v = inp.value;
+      if (k === 'opacity') v = Math.max(0, Math.min(100, Number(v) || 0)) / 100;
+      else if (k !== 'color') { v = Number(v); if (!Number.isFinite(v) || Math.abs(v) > 500) return; if (k !== 'dx' && k !== 'dy') v = Math.max(0, v); }
+      ctx.edit(each(item => { const e = (item.effects || []).find(x => x.type === type); if (e) e[k] = v; }), commit);
+    };
+    if (k === 'color') inp.addEventListener('input', () => set(false));
+    inp.addEventListener('change', () => set(true));
+  });
 }
 
 /**

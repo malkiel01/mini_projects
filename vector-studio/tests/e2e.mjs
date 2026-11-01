@@ -387,6 +387,24 @@ try {
   await page.evaluate(() => { const L = window.__vs.S.doc.surfaces[0].layers[0]; L.paths = L.paths.filter(p => p.id !== 'ar1'); window.__vs.select([]); });
   step('מתאר משוכלל: חץ בקצה ומעבר צבע במתאר, מלוח המאפיינים');
 
+  // אפקטים: צל מלוח המאפיינים — בקנבס (פיקסל כהה ליד הצורה), ב-SVG (filter) וב-PDF (תמונה מתחת)
+  await page.evaluate(() => { const L = window.__vs.S.doc.surfaces[0].layers[0]; L.paths.push({ id: 'fx1', d: 'M600 900 L760 900 L760 1000 L600 1000 Z', fill: { color: '#ffffff' }, stroke: null }); window.__vs.select(['fx1']); });
+  await page.check('[data-fxon="shadow"]');
+  await page.fill('[data-fx="shadow"][data-fk="dx"]', '20'); await page.press('[data-fx="shadow"][data-fk="dx"]', 'Enter');
+  await page.fill('[data-fx="shadow"][data-fk="opacity"]', '100'); await page.press('[data-fx="shadow"][data-fk="opacity"]', 'Enter');
+  const fx = await page.evaluate(() => window.__vs.S.doc.surfaces[0].layers[0].paths.find(p => p.id === 'fx1').effects);
+  assert.deepEqual(fx.map(e => [e.type, e.dx, e.opacity]), [['shadow', 20, 1]]);
+  await page.waitForTimeout(150);
+  const shade = await page.evaluate(() => {
+    const S = window.__vs.S, c = document.getElementById('canvas');
+    const at = (x, y) => [...c.getContext('2d').getImageData(Math.round((x * S.view.zoom + S.view.x) * S.dpr), Math.round((y * S.view.zoom + S.view.y) * S.dpr), 1, 1).data];
+    return { shadow: at(770, 960), clear: at(800, 960) };
+  });
+  assert.ok(shade.shadow[0] < 120, 'צל ליד הצורה: ' + shade.shadow);
+  assert.ok(shade.clear[0] > 200, 'רחוק מהצל — בהיר: ' + shade.clear);
+  await page.evaluate(() => { const L = window.__vs.S.doc.surfaces[0].layers[0]; L.paths = L.paths.filter(p => p.id !== 'fx1'); window.__vs.select([]); });
+  step('אפקטים: צל מלוח המאפיינים, מצויר בקנבס');
+
   // סיבוב: ידית הסיבוב (Shift — 15°), כפתור 90°, היפוך; הצורה נשארת חיה
   await page.evaluate(() => { const p = window.__vs.S.doc.surfaces[0].layers[0].paths; window.__vs.select([p[1].id]); }); // האליפסה
   s = await st();

@@ -267,3 +267,26 @@ test('מתאר משוכלל: מעבר צבע במתאר וחץ בסוף — ב-S
   assert.equal((pdf.match(/\/PatternType 2/g) || []).length, 3, 'מתאר + שני קצוות');
   pdfCheck(toPDF([prep]));
 });
+
+test('אפקטים: SVG ‏filter (צל, זוהר, טשטוש); PDF — תמונה מתחת, ובלי getEffects — בדוח', async () => {
+  const doc = newDocument('a4');
+  const L = doc.surfaces[0].layers[0];
+  L.paths.push({ id: 'e1', d: 'M10 10 L60 10 L60 60 Z', fill: { color: '#2d4a8a' }, stroke: null,
+    effects: [{ type: 'shadow', dx: 4, dy: 4, blur: 6, color: '#000000', opacity: 0.35 }, { type: 'glow', blur: 8, color: '#ffd34d', opacity: 0.8 }] });
+  L.paths.push({ id: 'e2', d: 'M100 10 L150 10 L150 60 Z', fill: { color: '#e11d48' }, stroke: null, effects: [{ type: 'blur', radius: 3 }] });
+  let prep = await prepare(doc, doc.surfaces[0].id, getFont);
+  const svg = toSVG(prep);
+  assert.match(svg, /<filter id="fx\d+"[^>]*><feGaussianBlur in="SourceAlpha" stdDeviation="3" result="b0"\/><feOffset in="b0" dx="4" dy="4"/);
+  assert.match(svg, /<feMergeNode in="s0"\/><feMergeNode in="s1"\/><feMergeNode in="SourceGraphic"\/>/);
+  assert.match(svg, /<feGaussianBlur in="SourceGraphic" stdDeviation="1.5" result="src"\/><feMerge><feMergeNode in="src"\/>/);
+  assert.match(svg, /<g id="e1-fx" filter="url\(#fx\d+\)">\s*<path id="e1"/);
+  assert.ok(prep.gaps.includes('effects — לא נכללו ב-PDF'));
+  // עם getEffects: תמונה מתחת לפריט; blur — במקומו
+  const img = { href: 'data:image/png;base64,', w: 1, h: 1, rgb: new Uint8Array([120, 156, 99, 0, 0, 0, 0, 1]), alpha: null };
+  prep = await prepare(doc, doc.surfaces[0].id, getFont, null, null, async (item) => ({ image: img, box: [0, 0, 10, 10], replace: item.id === 'e2' }));
+  assert.ok(prep.gaps.includes('effects → תמונה (PDF)'));
+  const pdf = Buffer.from(toPDF([prep])).toString('latin1');
+  assert.equal((pdf.match(/\/Subtype \/Image/g) || []).length, 2, 'תמונה לכל פריט עם אפקט');
+  assert.equal((pdf.match(/0\.176 0\.29 0\.541 rg/g) || []).length, 1, 'e1 — עדיין וקטורי');
+  assert.equal((pdf.match(/0\.882 0\.114 0\.282 rg/g) || []).length, 0, 'e2 (blur) — רק בתמונה');
+});
