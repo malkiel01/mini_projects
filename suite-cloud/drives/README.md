@@ -11,7 +11,21 @@
 | ☁️ **ענן החבילה** | חיבור משתמש (אישור פעם אחת), ניתוק, ובמקום הכונן: רשימה, קריאה, כתיבה, העלאה בחלקים, תיקייה, שינוי שם, העברה, סל |
 | 🔤 **גופנים** | `drives.fonts.list()`, `load(item)` (FontFace + הבתים להטמעה), `add(file, …)` — לבורר הגופנים: "שלי". לפני `add` — האפליקציה מציגה את אזהרת הרישיון |
 | 🤖 **בינה מלאכותית** | `drives.ai.capabilities()` ו-`drives.ai.run(task, …)` — כל קוד הספקים בענן. בלי חיבור: הכול `false`, והאפליקציה מציגה "דרך הצ'אט (סקיל)" |
-| בהמשך | Dropbox, Google Drive, OneDrive, SFTP / WebDAV, תיקייה במחשב — **ישירות מהאפליקציה**, באותו ממשק (`drives.<כונן>`) |
+| 📦 **Dropbox** | `drives.link('dropbox')` / `unlink`, ו-`drives.dropbox` באותה צורה כמו `drives.suite` (list, stat, read, mkdir, rename, move, trash, write, upload, quota). **הדפדפן מדבר עם Dropbox ישירות** — הקבצים לא עוברים בשרת. בתיקיית האפליקציה (App folder) בלבד |
+| 🗂️ **כל הכוננים** | `drives.list()` → `[{ id, name, connected, account? }]` — רק כוננים שמוגדרים. בורר "שמור ב…" / "פתח מ…" נבנה מזה |
+| בהמשך | Google Drive, OneDrive, SFTP / WebDAV, תיקייה במחשב — באותו ממשק (`drives.<כונן>`) |
+
+### Dropbox — איך זה עובד
+
+- **App key אחד לכל החבילה**, שבעל המערכת שם ב"ניהול" של הענן (🗂️ כוננים חיצוניים). אין App secret: OAuth עם PKCE.
+  המודול מקבל אותו מהענן (`drives_config`, חתום) ושומר במטמון. בלי App key — Dropbox פשוט לא מופיע ב-`status` / `list`.
+- **redirect URI אחד** בקונסולה של Dropbox: `https://mbe-plus.com/mini_projects/suite-cloud/oauth/dropbox.php`. הדף מעביר את
+  החזרה ל-`api.php` של האפליקציה לפי ה-state (`<client>.<אקראי>`), ושם המודול מחליף את הקוד עם ה-verifier שרק הוא מחזיק.
+- **אסימון הרענון נשמר רק אצל האפליקציה** (`drives.sqlite`), והדפדפן מקבל אסימון גישה של כמה שעות (`drives_ptoken`).
+  הרשאה שבוטלה אצל Dropbox → `not-connected`.
+- **אפליקציה בדומיין משלה:** `'dropbox' => ['app_key' => '…']` ב-cfg של `Drives`, וב-Dropbox redirect URI
+  `<endpoint>?action=drives_oauth_callback&provider=dropbox`.
+- **אחרי `link`** חוזרים ל-`back` עם `?drive=connected` או `?drive=denied` (ובשגיאה — דף עם `?cloud=error`).
 
 ## איך אפליקציה מצטרפת — PR אחד, בתיקייה שלה
 
