@@ -46,7 +46,7 @@ try {
 
   const st = () => page.evaluate(() => {
     const S = window.__vs.S;
-    return { sel: [...S.sel], paths: S.doc.surfaces[0].layers[0].paths, view: S.view, undo: S.undo.length };
+    return { sel: [...S.sel], paths: S.doc.surfaces[0].layers[0].paths, view: S.view, undo: S.hist.canUndo };
   });
   const box = await page.locator('#canvas').boundingBox();
   const W = async (x, y) => { const { view } = await st(); return [box.x + view.x + x * view.zoom, box.y + view.y + y * view.zoom]; };
@@ -68,6 +68,7 @@ try {
   await page.mouse.move(...a); await page.mouse.down(); await page.mouse.move(...b, { steps: 5 }); await page.mouse.up();
   s = await st();
   assert.ok(Math.abs(s.paths[0].shape.box[0] - 200) < 2 && Math.abs(s.paths[0].shape.box[1] - 150) < 2, 'move ' + s.paths[0].shape.box);
+  assert.equal(await page.getAttribute('#undo', 'title'), 'ביטול: הזזה', 'ui-core/history — תווית הצעד בכפתור');
   step('הזזה בגרירה');
 
   // שינוי גודל מהידית הימנית-תחתונה (se)
