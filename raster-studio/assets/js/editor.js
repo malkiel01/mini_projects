@@ -27,6 +27,7 @@ import { activeHandoff, returnHandoff, endHandoff } from './mbe/handoff.js';
 import { keyOf } from './ui-core/keys.js';
 import { $ } from './ui-core/dom.js';
 import { undoButtons } from './ui-core/history.js';
+import { createHistoryPanel } from './history-panel.js';
 import { initDialogs, confirm } from './ui-core/dialog.js';
 import { bindViewport } from './ui-core/gestures.js';
 
@@ -69,6 +70,7 @@ let tools = null;
 let adjust = null;
 let fx = null;
 let aiPanel = null;
+let historyPanel = null;
 let view = { zoom: 1, x: 0, y: 0 };
 let fitted = false;
 let changed = false;   // יש שינוי שעוד לא נכתב לטיוטה במכשיר
@@ -140,7 +142,7 @@ function setDoc(d) {
   $('#ai-btn').disabled = false;
   $('#export-btn').disabled = false;
   $('#save-btn').disabled = false;
-  $('#versions-btn').disabled = !d.serverVersion;
+  $('#versions-btn').disabled = false;   // 🕘 — היסטוריה, תמונות מצב, פעולות (וגרסאות, אם נשמר בשרת)
   $('#versions-open').hidden = !d.serverVersion;
   panel.render();
   showMsg('');
@@ -442,7 +444,7 @@ async function openServerVersion(meta, v = null) {
 const versionsDlg = $('#versions-dlg');
 const timeFmt = new Intl.DateTimeFormat('he-IL', { dateStyle: 'short', timeStyle: 'short' });
 $('#versions-open').addEventListener('click', () => { exportDlg.close(); showVersions(); });
-$('#versions-btn').addEventListener('click', () => showVersions());
+$('#versions-btn').addEventListener('click', () => historyPanel?.show());
 async function showVersions() {
   if (!doc?.serverId) return;
   const ul = $('#versions-list');
@@ -631,6 +633,19 @@ $('#hint').textContent = coarse ? 'צביטה — זום' : 'גרירה — הז
       color: () => tools.state.color,
       beforeOpen: () => { tools.commitFloat(); fx.close(); },
       onChange: () => { changed = true; draw(); panel.render(); },
+      onApply: step => historyPanel?.record(step),
+    });
+    historyPanel = createHistoryPanel({
+      doc: () => doc, setDoc, renderer, history, toast,
+      beforeOpen: () => { tools.commitFloat(); tools.commitText(); adjust.close(); fx.close(); },
+      onChange: () => { changed = true; draw(); panel.render(); },
+      buildSnapshot: () => buildMbe(renderer, doc, { view: viewState() }),
+      openSnapshot: async (bytes, old) => {
+        const { doc: d } = await openMbe(renderer, bytes, old.title);
+        d.serverId = old.serverId; d.serverVersion = old.serverVersion;
+        return d;
+      },
+      showVersions,
     });
     fx = createFxPanel({
       root: $('#fx'), doc: () => doc, renderer, history, toast, draw,
@@ -752,6 +767,7 @@ window.__rs = {
   get adjust() { return adjust; },
   get fx() { return fx; },
   get ai() { return aiPanel; },
+  get historyPanel() { return historyPanel; },
   undo, redo,
   toggleLayers,
   setView,

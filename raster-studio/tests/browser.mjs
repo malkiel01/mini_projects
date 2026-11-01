@@ -1822,6 +1822,74 @@ async function main() {
   check('ORA נפתח עם כל השכבות והמאפיינים', back === 'רקע:normal:1:true:false | כפל:multiply:0.5:true:false | נסתר:normal:1:false:true', back);
   check('ORA — אותה תמונה מורכבת', (await px(10, 10)) === want, (await px(10, 10)) + ' / ' + want);
   check('ORA — השם מהקובץ', await page.evaluate(() => __rs.doc.title) === 'שכבות');
+  // ---- 🕘 היסטוריה: צעדים, תמונות מצב, פעולות מוקלטות ואצווה ----
+  await openEd(page);
+  await page.waitForFunction(() => window.__rs?.doc);
+  await page.evaluate(() => __rs.setView({ zoom: 1, x: 20, y: 20 }));
+  await fillLayer([100, 100, 100, 255]);
+  await page.evaluate(() => __rs.history.clear());
+  // הקלטה: בהירות +100 ואז היפוך
+  await page.click('#versions-btn');
+  await page.click('dialog[open] [data-hist-tab="actions"]');
+  await page.fill('dialog[open] input[name="action-name"]', 'בהיר והפוך');
+  await page.click('dialog[open] [data-rec="start"]');
+  await adj('bc', { brightness: 100 });
+  await page.click('[data-adj-act="apply"]');
+  await adj('invert', {});
+  await page.click('[data-adj-act="apply"]');
+  const afterRec = await r0(450, 300);
+  await page.click('#versions-btn');
+  await page.click('dialog[open] [data-hist-tab="actions"]');
+  await page.click('dialog[open] [data-rec="stop"]');
+  const acts = await page.evaluate(() => __rs.historyPanel._actions().map(a => a.name + ':' + a.steps.map(s => s.v.kind).join('/')));
+  check('🎬 הקלטה — שני צעדים (בהירות, היפוך), נשמרה בשם', acts.includes('בהיר והפוך:bc/invert'), acts.join(' | '));
+  // צעדים: חזרה ל"פתיחה" וקדימה
+  await page.click('dialog[open] [data-hist-tab="steps"]');
+  const stepsList = await page.$$eval('dialog[open] .hist-step', b => b.map(x => x.textContent));
+  check('📜 צעדים — פתיחה, בהירות וניגודיות, היפוך צבעים', stepsList.join('|') === 'פתיחה|בהירות וניגודיות|היפוך צבעים', stepsList.join('|'));
+  await page.click('dialog[open] .hist-step[data-step="0"]');
+  check('הקשה על "פתיחה" — חזרה למקור (100)', Math.abs(await r0(450, 300) - 100) <= 1, String(await r0(450, 300)));
+  await page.click('dialog[open] .hist-step[data-step="2"]');
+  check('הקשה על הצעד האחרון — קדימה, אותה תוצאה', Math.abs(await r0(450, 300) - afterRec) <= 1);
+  await page.click('dialog[open] .hist-step[data-step="0"]');
+  // ניגון: צעד ביטול אחד
+  await page.click('dialog[open] [data-hist-tab="actions"]');
+  await page.click('dialog[open] [data-play]');
+  check('▶ ניגון — אותה תוצאה כמו בהקלטה, ברשומה אחת בשם הפעולה', Math.abs(await r0(450, 300) - afterRec) <= 1 && await page.evaluate(() => __rs.history.undoStack.at(-1).label) === 'בהיר והפוך',
+    `${await r0(450, 300)} / ${afterRec} · ${await page.evaluate(() => __rs.history.undoStack.map(e => e.label).join('/'))}`);
+  // תמונות מצב
+  await page.click('#versions-btn');
+  await page.click('dialog[open] [data-hist-tab="snaps"]');
+  await page.click('dialog[open] [data-snap="take"]');
+  await page.waitForSelector('dialog[open] [data-snap-restore="0"]');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Control+z');
+  check('ביטול הניגון — חוזר ל-100', Math.abs(await r0(450, 300) - 100) <= 1);
+  await page.click('#versions-btn');
+  await page.click('dialog[open] [data-hist-tab="snaps"]');
+  await page.click('dialog[open] [data-snap-restore="0"]');
+  await page.waitForFunction(() => !document.querySelector('dialog[open]'), null, { timeout: 8000 }).catch(() => {});
+  check('📸 שחזור תמונת מצב — המצב שאחרי הניגון חוזר, ונשמרה "לפני השחזור"', Math.abs(await r0(450, 300) - afterRec) <= 1
+    && await page.evaluate(() => __rs.historyPanel._snaps().some(s => /לפני השחזור/.test(s.name))), String(await r0(450, 300)));
+  // אצווה: שני קבצים → ZIP עם שני PNG אחרי הפעולה
+  const png = await page.evaluate(async () => {
+    const c = new OffscreenCanvas(8, 6); const x = c.getContext('2d'); x.fillStyle = 'rgb(100,100,100)'; x.fillRect(0, 0, 8, 6);
+    const b = await c.convertToBlob({ type: 'image/png' });
+    return btoa(String.fromCharCode(...new Uint8Array(await b.arrayBuffer())));
+  });
+  await page.click('#versions-btn');
+  await page.click('dialog[open] [data-hist-tab="actions"]');
+  await page.click('dialog[open] [data-batch]');
+  const buf = Buffer.from(png, 'base64');
+  await page.setInputFiles('dialog[open] input[type="file"]', [{ name: 'a.png', mimeType: 'image/png', buffer: buf }, { name: 'b.png', mimeType: 'image/png', buffer: buf }]);
+  const [dlz] = await Promise.all([page.waitForEvent('download'), page.click('dialog[open][aria-label="אצווה"] button[type="submit"]')]);
+  const zipPath = await dlz.path();
+  const zl = execFileSync('unzip', ['-l', zipPath]).toString();
+  const one = execFileSync('identify', ['-format', '%w %h %[pixel:p{1,1}]', 'png:-'], { input: execFileSync('unzip', ['-p', zipPath, 'a.png']) }).toString();
+  const got = Number((/\((\d+)/.exec(one) || [])[1]);
+  check('🗂️ אצווה — ZIP עם שני הקבצים, בגודל המקור, אחרי הפעולה', /a\.png/.test(zl) && /b\.png/.test(zl) && one.startsWith('8 6 ') && Math.abs(got - afterRec) <= 2, one + ' | ' + afterRec);
+  await page.keyboard.press('Escape');
+
   // ---- PSD: הורדה ← פתיחה (שכבות, קבוצה, שמות בעברית, מיזוג, אטימות, הסתרה), וקריאה ב-ImageMagick ----
   await openEd(page);
   await page.waitForFunction(() => window.__rs?.doc);
@@ -2071,7 +2139,8 @@ async function main() {
   await page.evaluate(() => new Promise(r => { const q = indexedDB.deleteDatabase('raster-studio'); q.onsuccess = q.onerror = q.onblocked = () => r(); }));
   await page.goto(BASE + '/editor.html?doc=' + sid);
   await page.waitForFunction(() => window.__rs?.doc);
-  check('מסמך שעוד לא נשמר — 💾 פעיל, 🕘 כבוי', !(await page.$eval('#save-btn', b => b.disabled)) && await page.$eval('#versions-btn', b => b.disabled));
+  check('מסמך שעוד לא נשמר — 💾 פעיל, 🕘 פעיל (היסטוריה) בלי לשונית גרסאות', !(await page.$eval('#save-btn', b => b.disabled)) && !(await page.$eval('#versions-btn', b => b.disabled))
+    && await page.evaluate(async () => { const s = __rs.historyPanel.show(); const has = !!s.el.querySelector('[data-hist-tab="versions"]'); s.close(); return !has; }));
   await page.evaluate(() => { __rs.renderer.fill(__rs.doc, __rs.doc.layers[0], [255, 0, 0, 255]); __rs.history.clear(); });
   await page.click('#save-btn');
   await page.waitForFunction(() => /גרסה 1/.test(document.querySelector('.toast').textContent), null, { timeout: 8000 }).catch(() => {});
@@ -2095,6 +2164,7 @@ async function main() {
     asked + ' | ' + await page.evaluate(() => [document.querySelector('dialog[open]')?.textContent, window.__lastAsk, document.querySelector('.toast')?.textContent, __rs.doc.serverVersion].join(' ~ ')));
   // גרסאות: רשימה, ופתיחת גרסה ישנה
   await page.click('#versions-btn');
+  await page.click('dialog[open] [data-hist-tab="versions"]');
   await page.waitForSelector('#versions-list [data-v]');
   const vRows = await page.$$eval('#versions-list li b', b => b.map(x => x.textContent));
   check('🕘 — שלוש גרסאות, מהחדשה', vRows.length === 3 && vRows[0] === 'גרסה 3 · האחרונה' && vRows[2] === 'גרסה 1', vRows.join(' | '));

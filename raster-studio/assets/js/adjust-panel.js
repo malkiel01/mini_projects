@@ -40,7 +40,7 @@ const fmt = (f, v) => (SCALE[f] ? (v / SCALE[f]).toFixed(2) : v + (UNIT[f] ?? ''
 /** סוג התיקון בלוח → type של שכבת התאמה (רק תיקוני צבע) */
 const LAYER_TYPE = Object.fromEntries(Object.entries(ADJUST_TYPES).map(([t, k]) => [k, t]));
 
-export function createAdjustPanel({ root, doc, renderer, history, onChange, draw, toast, beforeOpen, color = () => '#000000' }) {
+export function createAdjustPanel({ root, doc, renderer, history, onChange, draw, toast, beforeOpen, onApply, color = () => '#000000' }) {
   let kind = 'bc';
   let open = false;
   let editing = null;   // { layer, field: 'adjust' | 'fill', before } — עריכת שכבת התאמה / מילוי קיימת
@@ -191,6 +191,7 @@ export function createAdjustPanel({ root, doc, renderer, history, onChange, draw
     if (before.size) history.pixels(d, layer, before, ADJUSTMENTS[kind].label);
     open = false;
     root.hidden = true;
+    if (before.size) onApply?.({ type: 'adjust', v });   // הקלטת פעולות (🕘 ← פעולות)
     onChange('adjust');
   }
 

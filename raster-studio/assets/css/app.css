@@ -242,3 +242,12 @@ body.editor { display: flex; flex-direction: column; block-size: 100dvh; min-hei
 .xf-mode { min-inline-size: 34px; padding-inline: 4px; font-size: 1rem; }
 .liq-opts { display: inline-flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .liq-opts[hidden] { display: none; }
+
+/* 🕘 היסטוריה */
+.hist-body { display: grid; gap: var(--s2); }
+.hist-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; max-block-size: 50vh; overflow: auto; counter-reset: step; }
+.hist-step { inline-size: 100%; text-align: start; padding: 8px var(--s3); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); color: var(--ink); font: inherit; cursor: pointer; }
+.hist-step[aria-current="step"] { background: var(--brand-soft); box-shadow: inset 0 0 0 1px var(--brand); font-weight: 600; }
+.hist-step.undone { color: var(--muted); font-style: italic; }
+.hist-row { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; }
+.hist-row input { flex: 1 1 140px; min-inline-size: 0; }
