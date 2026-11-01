@@ -121,6 +121,14 @@ export const sheet = (title, fill, onSave, saveLabel = 'אישור') =>
 - במחשב: אותו מראה כמו היום (חוץ מהחלון).
 - `conclusion: success`.
 
+**בדיקות אוטומטיות שאישרו `confirm` של הדפדפן** (לקח מהרסטר): עכשיו זה חלון שלנו, ו-`page.on('dialog')` כבר לא תופס
+אותו. לאשר אוטומטית — `MutationObserver` ב-`addInitScript` **על `document`**, לא על `document.documentElement` (בשלב
+הזה הוא עוד לא קיים, והמאזין נופל):
+```js
+await page.addInitScript(() => new MutationObserver(() => document.querySelector('dialog[open] .btn.primary')?.click())
+    .observe(document, { childList: true, subtree: true, attributes: true, attributeFilter: ['open'] }));
+```
+
 ## כשסיימת
 
 הודעה אליי (`session_018g4NYGvmE6cvaDDu2KAMoP`): מה עבר, מה היה מסורבל, וסמן `[x]` ב"הצטרפות" במסמך הפרויקט שלך.

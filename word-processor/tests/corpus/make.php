@@ -245,6 +245,19 @@ for ($i = 1; $i <= 24; $i++) {
 }
 $corpus['track'] = ['title' => 'מעקב שינויים', 'json' => $doc($c), 'page' => null];
 
+// 19. תאים ממוזגים אנכית (F12): כל קבוצה — תא אחד על 3 שורות; השורות שהוא חוצה לא נשברות לעמודים (גם בעורך וגם ב-PDF)
+$rows = [['type' => 'tableRow', 'content' => array_map(fn($h) => ['type' => 'tableHeader', 'content' => [$p($h)]], ['קבוצה', 'פריט', 'תיאור'])]];
+for ($g = 1; $g <= 22; $g++) {
+    for ($r = 1; $r <= 3; $r++) {
+        $cells = $r === 1 ? [['type' => 'tableCell', 'attrs' => ['colspan' => 1, 'rowspan' => 3], 'content' => [$p("קבוצה $g")]]] : [];
+        $cells[] = ['type' => 'tableCell', 'content' => [$p("$g.$r")]];
+        $cells[] = ['type' => 'tableCell', 'content' => [$p($sentence(3, 16))]];
+        $rows[] = ['type' => 'tableRow', 'content' => $cells];
+    }
+}
+$corpus['rowspan'] = ['title' => 'תאים ממוזגים', 'json' => $doc([$hd('תאים ממוזגים', 1), $p($sentence(30, 60)), ['type' => 'table', 'content' => $rows], $p($sentence(10, 30))]),
+    'page' => null];
+
 foreach ($corpus as $name => $d) {
     file_put_contents(__DIR__ . "/$name.json", json_encode($d, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
     echo "$name.json\n";

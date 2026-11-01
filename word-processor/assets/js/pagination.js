@@ -629,18 +629,23 @@ function tocLines(dom, tpos, brk, box, units) {
 /**
  * טבלה: כל שורה — יחידה (שבירה בין שורות, לא בתוך שורה). שורת כותרת (כל התאים th) בראש הטבלה נשארת עם השורה
  * שאחריה, וחוזרת בראש כל עמוד שהטבלה נמשכת אליו — repeat: {pos, h}.
+ * שורות שתא ממוזג אנכית חוצה — יחד (לא נשברות באמצע התא).
  */
 function rows(view, table, tpos, brk, box, units) {
     let repeat = null;
     let cols = 0;
     table.firstChild?.forEach(cell => { cols += cell.attrs.colspan || 1; });
-    table.forEach((row, off) => {
+    // תא ממוזג אנכית (rowspan): השורות שהוא חוצה עוברות לעמוד יחד — כל שורה לפני האחרונה שלו "שמורה עם הבאה".
+    // קבוצה גבוהה מעמוד — נשברת בכל זאת (כמו "שמור עם הבא" ארוך מעמוד)
+    let spanEnd = -1;
+    table.forEach((row, off, idx) => {
+        row.forEach(cell => { spanEnd = Math.max(spanEnd, idx + (cell.attrs.rowspan || 1) - 1); });
         const rpos = tpos + 1 + off;
         const tr = view.nodeDOM(rpos);
         if (!(tr instanceof HTMLElement)) return;
         const b = box(tr);
         const header = off === 0 && row.childCount > 0 && row.content.content.every(c => c.type.name === 'tableHeader');
-        units.push({ top: b.top, bottom: b.bottom, pos: off === 0 ? brk : rpos, kind: 'block', row: off > 0 ? cols : 0, heading: header, repeat: off > 0 ? repeat : null });
+        units.push({ top: b.top, bottom: b.bottom, pos: off === 0 ? brk : rpos, kind: 'block', row: off > 0 ? cols : 0, heading: header || idx < spanEnd, repeat: off > 0 ? repeat : null });
         if (header) repeat = { pos: rpos, h: b.bottom - b.top };
     });
 }

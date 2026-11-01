@@ -16,6 +16,7 @@ import { createAdjustPanel } from './adjust-panel.js';
 import { createFxPanel } from './fx-panel.js';
 import { createAIPanel } from './ai-panel.js';
 import { createDrives } from './drives/drives.js';
+import { mountAccount, enginePref } from './account-ui.js';
 import { exportPNG, exportJPG, exportORA, download, fileName } from './export.js';
 import { saveDraft, loadDraft, restoreDraft, clearDraft, draftKey } from './draft.js';
 import { gapsFor, parseOraStack } from './engine/formats.js';
@@ -310,7 +311,9 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
  * WebGPU נבנה על עותק של הקנבס — קנבס שקיבל הקשר webgpu לא יכול לקבל webgl2, וכך הגיבוי נשאר אפשרי.
  */
 async function createRenderer() {
-  if (new URLSearchParams(location.search).get('renderer') !== 'webgl2' && navigator.gpu) {
+  // ?renderer=webgl2 (בדיקות), או הבחירה בהגדרות האישיות של המכשיר
+  const forced = new URLSearchParams(location.search).get('renderer') === 'webgl2' || enginePref() === 'webgl2';
+  if (!forced && navigator.gpu) {
     const c = canvas.cloneNode();
     try {
       const r = await WebGPURenderer.create(c);
@@ -591,8 +594,11 @@ $('#hint').textContent = coarse ? 'צביטה — זום' : 'גרירה — הז
     });
     $('#adjust-btn').addEventListener('click', () => (adjust.open ? adjust.close() : adjust.show()));
     // ✨ — דרך ענן החבילה (מודול הכוננים): בלי חיבור / ספק — הסבר וחיבור
+    const drives = createDrives({ endpoint: 'api.php' });
+    // 👤 העיגול בסרגל — כמו בספרייה, ועם שם המנוע שרץ
+    api('me').then(({ me }) => mountAccount($('header.top'), { api, me, drives, engine: renderer.name })).catch(() => {});
     aiPanel = createAIPanel({
-      doc: () => doc, renderer, history, toast, cloud: createDrives({ endpoint: 'api.php' }),
+      doc: () => doc, renderer, history, toast, cloud: drives,
       beforeOpen: () => { tools.commitFloat(); tools.commitText(); adjust.close(); fx.close(); },
       onChange: () => { changed = true; draw(); panel.render(); },
     });

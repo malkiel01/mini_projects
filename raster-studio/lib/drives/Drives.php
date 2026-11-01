@@ -64,9 +64,12 @@ final class Drives {
             }
             $this->json($r);
         } catch (DrivesError $e) {
+            // החזרה מהענן היא ניווט של הדפדפן — דף ברור עם דרך חזרה, לא JSON
+            if ($action === 'drives_callback') $this->page($e->getMessage(), $e->codeName, $e->status);
             $this->json(['error' => $e->getMessage(), 'code' => $e->codeName], $e->status);
         } catch (\Throwable $e) {
             error_log('drives: ' . $e);
+            if ($action === 'drives_callback') $this->page('תקלה בחיבור לענן', 'server', 500);
             $this->json(['error' => 'תקלה בחיבור לענן', 'code' => 'server'], 500);
         }
     }
@@ -113,13 +116,29 @@ final class Drives {
     /** החזרה מהענן: בודק state, מחליף קוד בחיבור, שומר. מחזיר לאן להפנות (back, עם ?cloud=connected|denied). */
     public function callback(string $user, array $in): string {
         $state = (string) ($in['state'] ?? '');
+        $back = $this->cfg['back'];
         $db = $this->db();
         $st = $db->prepare('SELECT * FROM states WHERE state = ?');
         $st->execute([$state]);
         $row = $st->fetch();
-        $db->prepare('DELETE FROM states WHERE state = ?')->execute([$state]);
-        if (!$row || $row['user'] !== $user || (int) $row['expires'] < time()) throw new DrivesError('החיבור פג או לא שלך — נסו שוב', 400, 'bad_state');
-        $back = $this->cfg['back'];
+        $why = match (true) {
+            !$row => 'missing',
+            $row['user'] !== $user => 'user',
+            (int) $row['expires'] < time() => 'expired',
+            default => null,
+        };
+        if ($why !== null) {
+            error_log("drives callback ({$this->cfg['client']}): state $why");
+            throw new DrivesError(['missing' => 'בקשת החיבור לא נמצאה', 'user' => 'בקשת החיבור נפתחה בחשבון אחר באפליקציה',
+                                   'expired' => 'בקשת החיבור פגה (10 דקות)'][$why] . ' — נסו שוב מהאפליקציה', 400, "bad_state:$why");
+        }
+        // חזרה כפולה (רענון, או דפדפן ששולח את הבקשה פעמיים): הראשונה כבר חיברה — לא שגיאה, פשוט חוזרים
+        $mark = $db->prepare('UPDATE states SET used = 1 WHERE state = ? AND used = 0');
+        $mark->execute([$state]);
+        if ($mark->rowCount() === 0) {
+            if ($this->conn($user)) return $back . (str_contains($back, '?') ? '&' : '?') . 'cloud=connected';
+            throw new DrivesError('בקשת החיבור כבר נוצלה — נסו שוב מהאפליקציה', 400, 'bad_state:used');
+        }
         if (isset($in['error'])) return $back . (str_contains($back, '?') ? '&' : '?') . 'cloud=denied';
         $r = $this->call('connect_exchange', ['code' => (string) ($in['code'] ?? '')]);
         $db->prepare('INSERT INTO conns (user, connection, name, cloud_id, scope, created_at) VALUES (?,?,?,?,?,?)
@@ -216,8 +235,11 @@ final class Drives {
             CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS conns (user TEXT PRIMARY KEY, connection TEXT NOT NULL, name TEXT NOT NULL,
                                               cloud_id TEXT NOT NULL, scope TEXT NOT NULL, created_at TEXT NOT NULL);
-            CREATE TABLE IF NOT EXISTS states (state TEXT PRIMARY KEY, user TEXT NOT NULL, expires INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS states (state TEXT PRIMARY KEY, user TEXT NOT NULL, expires INTEGER NOT NULL, used INTEGER NOT NULL DEFAULT 0);
         ");
+        // מסד מגרסה קודמת — בלי העמודה used
+        $cols = array_column($this->pdo->query('PRAGMA table_info(states)')->fetchAll(), 'name');
+        if (!in_array('used', $cols, true)) $this->pdo->exec('ALTER TABLE states ADD COLUMN used INTEGER NOT NULL DEFAULT 0');
         return $this->pdo;
     }
 
@@ -267,6 +289,26 @@ final class Drives {
         if (!str_contains(strtolower($_SERVER['CONTENT_TYPE'] ?? ''), 'json')) return null;
         $j = json_decode((string) file_get_contents('php://input'), true);
         return is_array($j) ? $j : null;
+    }
+
+    /** דף שגיאה קצר בעברית, עם כפתור חזרה לאפליקציה — לחזרה מהענן. */
+    private function page(string $msg, string $code, int $status): never {
+        http_response_code($status);
+        header('Content-Type: text/html; charset=utf-8');
+        header('Cache-Control: no-store');
+        $m = htmlspecialchars($msg);
+        $c = htmlspecialchars($code);
+        $b = htmlspecialchars($this->cfg['back'] . (str_contains($this->cfg['back'], '?') ? '&' : '?') . 'cloud=error');
+        echo <<<HTML
+<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>חיבור לענן החבילה</title>
+<style>body{font:16px/1.5 system-ui,sans-serif;margin:0;padding:24px 16px;background:#f4f5f7;color:#16192b}
+.box{max-width:420px;margin:auto;background:#fff;border:1px solid #e3e6eb;border-radius:10px;padding:16px;display:grid;gap:12px}
+a{display:block;text-align:center;background:#2d4a8a;color:#fff;border-radius:10px;padding:10px;text-decoration:none}
+small{color:#5d6475}@media(prefers-color-scheme:dark){body{background:#111318;color:#e8eaf0}.box{background:#1b1e26;border-color:#2c303b}}</style>
+</head><body><div class="box"><b>☁️ החיבור לענן לא הושלם</b><div>$m</div><a href="$b">חזרה לאפליקציה</a><small>קוד: $c</small></div></body></html>
+HTML;
+        exit;
     }
 
     private function json(array $payload, int $code = 200): never {

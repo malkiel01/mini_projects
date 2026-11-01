@@ -1162,6 +1162,12 @@ final class PdfLayout
                 if ($c['h'] > $span) $rowH[$ri + $c['rs'] - 1] += $c['h'] - $span;
             }
         }
+        // תא ממוזג אנכית — השורות שהוא חוצה לא נשברות לעמודים (כמו בעורך): כל שורה לפני האחרונה שלו — "שמור עם הבא"
+        $spanEnd = array_fill(0, count($rows), 0);
+        foreach ($grid as $ri => $cells) foreach ($cells as $c) {
+            $last = min(count($rows) - 1, $ri + $c['rs'] - 1);
+            for ($r = $ri; $r < $last; $r++) $spanEnd[$r] = 1;
+        }
         $out = [];
         foreach ($laid as $ri => $cells) {
             $h = $rowH[$ri];
@@ -1192,6 +1198,7 @@ final class PdfLayout
             }, 'row');
             $it->table = $tid;
             $it->header = ($rows[$ri]['content'][0]['type'] ?? '') === 'tableHeader' && $ri === 0;
+            if ($spanEnd[$ri]) $it->keepNext = true;
             // הערות שוליים מהתאים — בתחתית העמוד של השורה (כמו בפסקה), לפי סדר התאים; וגם היעדים (סימניות, כותרות)
             foreach ($cells as $c) foreach ($c['items'] as $item) { array_push($it->notes, ...$item->notes); array_push($it->dests, ...$item->dests); }
             $out[] = $it;

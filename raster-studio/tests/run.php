@@ -142,5 +142,23 @@ check('עד ' . RS_KEEP_VERSIONS . ' גרסאות — הישנות נמחקות 
 check('בלי קבצים זמניים שנשארו', glob(rs_doc_dir($uidA, $doc['id']) . '/*.tmp') === []);
 check('ברשימת המסמכים — מספר הגרסה', array_values(array_filter(rs_docs_list($uidA), fn($x) => $x['id'] === $doc['id']))[0]['version'] === 3 + RS_KEEP_VERSIONS);
 
+
+// ---- 👤 תפריט המשתמש: שינוי שם, ייצוא, הגדרות ומחיקת חשבון ----
+require_once __DIR__ . '/../lib/ui-core/account/account.php';
+check('שינוי שם — רווחים מתנקים', rs_doc_rename($uidA, $doc['id'], '  שם   חדש ') && rs_doc_get($uidA, $doc['id'])['title'] === 'שם חדש');
+check('שינוי שם — משתמש אחר לא יכול; שם ריק נדחה', !rs_doc_rename($uidB, $doc['id'], 'x') && throws(fn() => rs_doc_rename($uidA, $doc['id'], '  '), 'bad_title'));
+$ex = rs_account_export($uidA);
+check('ייצוא — החשבון והמסמכים עם הגרסאות, רק של המשתמש', $ex['account'] !== null && count($ex['docs']) === count(rs_docs_list($uidA))
+    && count(array_values(array_filter($ex['docs'], fn($x) => $x['id'] === $doc['id']))[0]['versions']) === RS_KEEP_VERSIONS);
+$hooks = fn($u) => ['app' => 'raster-studio', 'pdo' => fn() => rs_db(), 'user' => fn() => $u,
+    'export' => fn($x) => rs_account_export((int)$x), 'delete' => fn($x) => rs_account_delete((int)$x)];
+uic_account_api('account_prefs_set', ['ns' => 'general', 'value' => ['theme' => 'dark']], $hooks($uidA));
+$pr = uic_account_api('account_prefs', [], $hooks($uidA));
+check('הגדרות אישיות — נשמרות במסד שלנו', ($pr['prefs']['general']['theme'] ?? null) === 'dark');
+$docsB = count(rs_docs_list($uidB));
+rs_account_delete($uidA);
+check('מחיקת חשבון — המסמכים, הגרסאות והקבצים שלו נמחקים; של אחר נשארים', rs_doc_get($uidA, $doc['id']) === null && !is_dir(rs_files_dir() . '/' . $uidA)
+    && (int)rs_db()->query("SELECT COUNT(*) FROM doc_versions WHERE doc_id = {$doc['id']}")->fetchColumn() === 0 && count(rs_docs_list($uidB)) === $docsB);
+
 echo "\n" . ($n - $fails) . " / $n עברו\n";
 exit($fails ? 1 : 0);
