@@ -373,119 +373,202 @@
 </dialog>
 
 <!-- ── פרויקט יחיד ───────────────────────────────────────────── -->
-<dialog class="sheet" id="projectView">
-  <div class="sheet__inner">
-    <header class="sheet__head">
-      <h2 id="pvTitle">פרויקט</h2>
+<!-- ── פרויקט: כרטיס סיכום, שורות, ואזור מחיקה נפרד (docs/spec.md §10.2) ── -->
+<dialog id="projectView" aria-labelledby="pvTitle">
+  <div class="sheet-wrap">
+    <header class="sheet-head">
       <button type="button" class="icon-btn" data-close="projectView" aria-label="סגירה">✕</button>
+      <h2 id="pvTitle">פרויקט</h2>
+      <span></span>
     </header>
-    <div class="sheet__body">
-      <div class="dmeta" id="pvMeta"></div>
-
-      <!-- מנהל הפרויקט: שם, סמל, תיקייה, ומחיקה (רק פרויקט ריק) -->
-      <form class="stack" id="pvEdit" hidden>
-        <h3>פרטים</h3>
-        <div class="fields">
-          <label class="field" style="grid-column: 1 / -1"><span>שם</span><input type="text" id="peName" maxlength="80" required></label>
-          <label class="field"><span>סמל</span><input type="text" id="peIcon" maxlength="8" placeholder="📁"></label>
-          <label class="field" id="pePathWrap"><span>תיקייה בריפו</span><input type="text" id="pePath" dir="ltr" maxlength="120" placeholder="recipes-app"></label>
-        </div>
-        <div class="row-btns">
-          <button type="submit" class="btn btn--primary">שמירה</button>
-          <button type="button" class="btn btn--ghost danger-text" id="peDelete">🗑 מחיקה</button>
-        </div>
-        <p class="hint">מחיקה — רק לפרויקט ריק, בלי מטלות ובלי תתי-פרויקטים.</p>
-      </form>
-
-      <!-- בעל הלוח בלבד: נעילת הענף, והעברה לתוך פרויקט אחר -->
-      <div id="pvOwner" hidden>
-        <h3>מבנה</h3>
-        <label class="check"><input type="checkbox" id="pvOwnerOnly"><span>רק בעל הלוח עונה ומחליט — גם בכל תתי-הפרויקטים</span></label>
-        <p class="hint" id="pvOwnerOnlyHint" hidden></p>
-        <div class="stack" id="pvChatToken">
-          <p class="hint">אסימון לצ'אטים — הצ'אטים נרשמים איתו לערוץ בפרויקט הזה ובתתי-הפרויקטים שלו. מגדירים אותו פעם אחת בהגדרות הסביבה של Claude (לא בצ'אט).</p>
-          <div class="token"><code id="pvChatTokenValue" dir="ltr">••••••••</code>
-            <button type="button" class="btn btn--ghost" id="pvChatTokenShow">הצגה</button></div>
-        </div>
-        <form class="row" id="pvMove" style="align-items: end">
-          <label class="field" style="flex: 1 1 200px"><span>העברה לתוך פרויקט</span><select id="pvMoveTo"></select></label>
-          <button type="submit" class="btn btn--ghost">העברה</button>
-        </form>
+    <div class="sheet-body">
+      <div class="proj-card" id="pvCard"></div>
+      <div class="dmeta" id="pvMeta" hidden></div>
+      <ul class="list" id="pvRows"></ul>
+      <div class="danger-zone" id="pvDanger" hidden>
+        <b>מחיקת פרויקט</b>
+        <p class="hint" id="pvDangerHint">רק פרויקט ריק, בלי מטלות ובלי תתי-פרויקטים.</p>
+        <button type="button" class="btn ghost danger-text" id="peDelete">🗑 מחיקת הפרויקט</button>
       </div>
-
-      <h3>חברים</h3>
-      <div class="members" id="pvMembers"></div>
-      <form class="row" id="pvAddMember" hidden>
-        <select id="pvPerson"></select>
-        <select id="pvLevel">
-          <option value="read">צפייה</option>
-          <option value="write">כתיבה</option>
-          <option value="admin">ניהול</option>
-        </select>
-        <button type="submit" class="btn btn--ghost">הוספה</button>
+    </div>
+  </div>
+</dialog>
+<dialog id="pvsDetails" aria-labelledby="pvsDetailsT">
+  <div class="sheet-wrap">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close="pvsDetails" aria-label="סגירה">✕</button>
+      <h2 id="pvsDetailsT">פרטים</h2>
+      <span></span>
+    </header>
+    <div class="sheet-body">
+      <p class="hint">השם והסמל שמופיעים בעץ הפרויקטים.</p>
+      <form class="stack" id="pvEdit">
+        <div class="fields">
+          <label class="field"><span>שם</span><input type="text" id="peName" maxlength="80" required></label>
+          <label class="field"><span>סמל</span><input type="text" id="peIcon" maxlength="8" placeholder="📁"></label>
+          <label class="field" id="pePathWrap" style="grid-column: 1 / -1"><span>תיקייה בריפו</span><input type="text" id="pePath" dir="ltr" maxlength="120" placeholder="recipes-app"></label>
+        </div>
+        <div class="row-btns"><button type="submit" class="btn primary">שמירת הפרטים</button></div>
       </form>
-
-      <hr>
-      <h3>סקילים</h3>
-      <p class="hint">
-        אופרציה שחוזרת על עצמה — סדר פעולות, מוסכמה בפרויקט, דרך מסוימת
-        לכתוב בדיקה — נשמרת כאן פעם אחת במקום להיכתב מחדש בכל מטלה.
-        לרץ נמסרת רשימת השמות, והוא מושך את ההוראות המלאות כשהן נחוצות.
-      </p>
-      <div class="skills" id="pvSkills"></div>
+    </div>
+  </div>
+</dialog>
+<dialog id="pvsMembers" aria-labelledby="pvsMembersT">
+  <div class="sheet-wrap">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close="pvsMembers" aria-label="סגירה">✕</button>
+      <h2 id="pvsMembersT">חברים</h2>
+      <span></span>
+    </header>
+    <div class="sheet-body">
+      <p class="hint">מי רואה את הפרויקט, ומה כל אחד רשאי לעשות. השינוי נשמר מיד.</p>
+      <ul class="list" id="pvMembers"></ul>
+      <div class="row-btns"><button type="button" class="btn primary" id="pvAddMemberBtn" hidden><span aria-hidden="true">+</span> חבר</button></div>
+      <details class="what"><summary>מה זה?</summary>
+        <p class="hint">צפייה — רואה מטלות וקבצים. כתיבה — גם עונה, פותח מטלות ונותן לקלוד לכתוב קוד. ניהול — גם מצרף אנשים ומשנה הגדרות. חבר בפרויקט אב הוא חבר גם בכל תתי-הפרויקטים, באותה דרגה.</p>
+      </details>
+    </div>
+  </div>
+</dialog>
+<dialog id="pvsAddMember" aria-labelledby="pvsAddMemberT">
+  <div class="sheet-wrap">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close="pvsAddMember" aria-label="סגירה">✕</button>
+      <h2 id="pvsAddMemberT">חבר חדש</h2>
+      <span></span>
+    </header>
+    <div class="sheet-body">
+      <form class="stack" id="pvAddMember">
+        <label class="field"><span>משתמש</span><select id="pvPerson"></select></label>
+        <fieldset class="field"><legend>הרשאה</legend>
+          <div class="seg" id="pvLevelSeg" role="radiogroup" aria-label="הרשאה">
+            <button type="button" role="radio" data-level="read" aria-checked="true">צפייה</button>
+            <button type="button" role="radio" data-level="write" aria-checked="false">כתיבה</button>
+            <button type="button" role="radio" data-level="admin" aria-checked="false">ניהול</button>
+          </div>
+        </fieldset>
+        <input type="hidden" id="pvLevel" value="read">
+        <div class="row-btns"><button type="submit" class="btn primary">הוספה</button></div>
+      </form>
+    </div>
+  </div>
+</dialog>
+<dialog id="pvsGithub" aria-labelledby="pvsGithubT">
+  <div class="sheet-wrap">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close="pvsGithub" aria-label="סגירה">✕</button>
+      <h2 id="pvsGithubT">חיבור הגיטהאב שלי</h2>
+      <span></span>
+    </header>
+    <div class="sheet-body">
+      <p class="hint" id="pvGhState">באיזה מחשבונות הגיטהאב שלך לעבוד בפרויקט הזה.</p>
+      <div class="stack" id="pvGhList" role="radiogroup" aria-label="חיבור גיטהאב"></div>
+      <details class="what"><summary>מה זה?</summary>
+        <p class="hint">כל פעולה מול גיטהאב יוצאת עם חשבון של מי שמבצע אותה — לעולם לא של מישהו אחר. "אוטומטי" בוחר את החשבון שהוא בעל הריפו, ואם אין כזה — את הראשון. תתי-הפרויקטים יורשים את הבחירה.</p>
+      </details>
+    </div>
+  </div>
+</dialog>
+<dialog id="pvsSkills" aria-labelledby="pvsSkillsT">
+  <div class="sheet-wrap">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close="pvsSkills" aria-label="סגירה">✕</button>
+      <h2 id="pvsSkillsT">סקילים</h2>
+      <span></span>
+    </header>
+    <div class="sheet-body">
+      <p class="hint">הוראות שחוזרות על עצמן — נשמרות פעם אחת ונמסרות לרץ.</p>
+      <ul class="list" id="pvSkills"></ul>
       <form class="stack" id="pvSkillForm" hidden>
         <input type="hidden" id="skId">
         <label class="field"><span>שם</span><input type="text" id="skName" required></label>
-        <label class="field">
-          <span>מתי להשתמש</span>
-          <input type="text" id="skDesc" placeholder="המשפט שלפיו הרץ יחליט אם למשוך את הסקיל">
-        </label>
-        <label class="field">
-          <span>ההוראות</span>
-          <textarea id="skBody" rows="8" placeholder="מה לעשות, בסדר, ומה להיזהר ממנו"></textarea>
-        </label>
-        <label class="check">
-          <input type="checkbox" id="skAlways">
-          <span>לצרף לכל מטלה בפרויקט (בלי שיצטרך לבקש)</span>
-        </label>
-        <div class="row">
-          <button type="submit" class="btn btn--primary">שמירה</button>
-          <button type="button" class="btn btn--ghost" id="skCancel">ביטול</button>
+        <label class="field"><span>מתי להשתמש</span><input type="text" id="skDesc" placeholder="המשפט שלפיו הרץ יחליט אם למשוך את הסקיל"></label>
+        <label class="field"><span>ההוראות</span><textarea id="skBody" rows="8" placeholder="מה לעשות, בסדר, ומה להיזהר ממנו"></textarea></label>
+        <label class="check"><input type="checkbox" id="skAlways"><span>לצרף לכל מטלה בפרויקט (בלי שיצטרך לבקש)</span></label>
+        <div class="row-btns">
+          <button type="submit" class="btn primary">שמירת הסקיל</button>
+          <button type="button" class="btn ghost" id="skCancel">ביטול</button>
         </div>
       </form>
-      <button type="button" class="btn btn--ghost" id="skNew">סקיל חדש</button>
-
-      <hr>
-      <h3>מנוע ההרצה</h3>
-      <p class="hint" id="pvEngineState">בודק…</p>
-      <p class="hint">
-        המנוע הוא workflow שהלוח מתקין בריפו. משם הוא רץ עם עותק מלא של
-        הקוד, מריץ את הבדיקות, ופותח PR — דברים שאחסון PHP לא יכול לעשות.
-        ההתקנה כותבת שני קבצים תחת <code dir="ltr">.github/</code> ושותלת
-        שני סודות בריפו.
-      </p>
-      <label class="field">
-        <span>פקודת בדיקה</span>
-        <input type="text" id="pvCheck" dir="ltr" placeholder="npm test · composer test · pytest">
-      </label>
-      <p class="hint">
-        רצה לפני כל דחיפה. אם נכשלת — המנוע מנסה לתקן, ואם לא הצליח הוא
-        חוסם את המטלה עם הפלט במקום לדחוף קוד שבור. קבצי PHP ו‑JS נבדקים
-        תחבירית ממילא.
-      </p>
-      <div class="row">
-        <button type="button" class="btn btn--primary" id="pvInstall">התקנת המנוע</button>
-        <button type="button" class="btn btn--ghost" id="pvSaveCheck">שמירת הפקודה</button>
-      </div>
-
-      <hr>
-      <h3>קבצים</h3>
+      <div class="row-btns"><button type="button" class="btn primary" id="skNew"><span aria-hidden="true">+</span> סקיל</button></div>
+      <details class="what"><summary>מה זה?</summary>
+        <p class="hint">אופרציה שחוזרת על עצמה — סדר פעולות, מוסכמה בפרויקט, דרך מסוימת לכתוב בדיקה — נשמרת כאן פעם אחת במקום להיכתב מחדש בכל מטלה. לרץ נמסרת רשימת השמות, והוא מושך את ההוראות המלאות כשהן נחוצות. סקיל שסומן "לצרף לכל מטלה" מגיע במלואו תמיד.</p>
+      </details>
+    </div>
+  </div>
+</dialog>
+<dialog id="pvsEngine" aria-labelledby="pvsEngineT">
+  <div class="sheet-wrap">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close="pvsEngine" aria-label="סגירה">✕</button>
+      <h2 id="pvsEngineT">מנוע ההרצה</h2>
+      <span></span>
+    </header>
+    <div class="sheet-body">
+      <p class="engine-state" id="pvEngineState">בודק…</p>
+      <label class="field"><span>פקודת בדיקה (רצה לפני כל דחיפה)</span>
+        <input type="text" id="pvCheck" dir="ltr" placeholder="לדוגמה: npm test · composer test · pytest"></label>
+      <div class="row-btns"><button type="button" class="btn primary" id="pvInstall">התקנת המנוע</button></div>
+      <div class="row-btns"><button type="button" class="btn ghost" id="pvSaveCheck" hidden>שמירת הפקודה בלבד</button></div>
+      <details class="what"><summary>מה זה?</summary>
+        <p class="hint">המנוע הוא workflow שהלוח מתקין בריפו. משם הוא רץ עם עותק מלא של הקוד, מריץ את הבדיקות, ופותח PR — דברים שאחסון PHP לא יכול לעשות. ההתקנה כותבת שני קבצים תחת <code dir="ltr">.github/</code> ושותלת שני סודות בריפו. אם הבדיקה נכשלת — המנוע מנסה לתקן, ואם לא הצליח הוא חוסם את המטלה עם הפלט במקום לדחוף קוד שבור.</p>
+      </details>
+    </div>
+  </div>
+</dialog>
+<dialog id="pvsToken" aria-labelledby="pvsTokenT">
+  <div class="sheet-wrap">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close="pvsToken" aria-label="סגירה">✕</button>
+      <h2 id="pvsTokenT">אסימון לצ'אטים</h2>
+      <span></span>
+    </header>
+    <div class="sheet-body">
+      <p class="hint">הצ'אטים נרשמים איתו לערוץ בפרויקט הזה ובתתי-הפרויקטים שלו.</p>
+      <div class="token" id="pvChatToken"><code id="pvChatTokenValue" dir="ltr">••••••••</code>
+        <button type="button" class="btn ghost" id="pvChatTokenShow">הצגה</button></div>
+      <div class="row-btns"><button type="button" class="btn ghost" id="pvChatTokenCopy" hidden>העתקה</button></div>
+      <details class="what"><summary>מה זה?</summary>
+        <p class="hint">מדביקים את שלוש השורות פעם אחת בהגדרות הסביבה של Claude: claude.ai ← Claude Code ← תפריט הסביבה בכותרת ← Edit ← Environment variables. כל צ'אט חדש בסביבה הזו יוכל להתחבר ללוח בעצמו (הסקיל claude-tasks-live). לא מדביקים אותו בצ'אט.</p>
+      </details>
+    </div>
+  </div>
+</dialog>
+<dialog id="pvsFiles" aria-labelledby="pvsFilesT">
+  <div class="sheet-wrap">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close="pvsFiles" aria-label="סגירה">✕</button>
+      <h2 id="pvsFilesT">קבצים</h2>
+      <span></span>
+    </header>
+    <div class="sheet-body">
       <nav class="crumbs" id="pvCrumbs"></nav>
       <div class="tree" id="pvTree"></div>
       <pre class="filebox" id="pvFile" hidden></pre>
     </div>
   </div>
 </dialog>
+<dialog id="pvsStructure" aria-labelledby="pvsStructureT">
+  <div class="sheet-wrap">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close="pvsStructure" aria-label="סגירה">✕</button>
+      <h2 id="pvsStructureT">מבנה</h2>
+      <span></span>
+    </header>
+    <div class="sheet-body">
+      <p class="hint" id="pvStructState">איפה הפרויקט יושב בעץ, ומי מחליט בו.</p>
+      <div id="pvOwner">
+        <label class="check"><input type="checkbox" id="pvOwnerOnly"><span>רק בעל הלוח עונה ומחליט — גם בכל תתי-הפרויקטים</span></label>
+        <p class="hint" id="pvOwnerOnlyHint" hidden></p>
+        <form class="stack" id="pvMove">
+          <label class="field"><span>העברה לתוך פרויקט</span><select id="pvMoveTo"></select></label>
+          <div class="row-btns"><button type="submit" class="btn primary">העברה</button></div>
+        </form>
+      </div>
+    </div>
+  </div>
+</dialog>
+
 
 <!-- ── ניהול ─────────────────────────────────────────────────── -->
 <dialog class="sheet" id="admin">

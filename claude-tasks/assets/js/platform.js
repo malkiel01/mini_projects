@@ -326,34 +326,119 @@ on('#repoForm', 'submit', async (e) => {
 
 /* ── פרויקט יחיד ───────────────────────────────────────────────── */
 
+const LEVEL = { read: 'צפייה', write: 'כתיבה', admin: 'ניהול' };
+
+/*
+ * מסך הפרויקט (docs/spec.md §10.2): כרטיס סיכום, ואחריו שורה לכל הגדרה עם הערך
+ * הנוכחי — לחיצה פותחת גיליון. מחיקה באזור נפרד בתחתית, לעולם לא ליד "שמירה".
+ * שורה שהצופה לא יכול להשתמש בה — מוסתרת, לא מושבתת.
+ */
 export async function openProject(id) {
-  const { project, members, engine } = await api('project', { id });
+  const { project, members, engine, github } = await api('project', { id });
   state.openProject = project;
+  state.pv = { members, engine, github, skills: null };
   renderEngine(project, engine);
-  loadSkills().catch(() => {});
-
-  $('#pvTitle').textContent = project.name;
-  $('#pvMeta').replaceChildren(
-    el('span', { class: 'badge', title: project.repo_inherited ? 'הריפו של פרויקט האב' : '',
-      text: project.repo_name ? `📦 ${project.repo_owner}/${project.repo_name}${project.path ? ` › ${project.path}` : ''}` : 'ללא ריפו' }),
-    el('span', { class: 'badge', text: `🌿 ${project.default_branch}` }),
-    el('span', { class: 'badge', text: `הרשאתך: ${{ read: 'צפייה', write: 'כתיבה', admin: 'ניהול' }[project.my_level]}` }),
-  );
-
   renderEdit(project);
   renderOwnerTools(project);
   renderMembers(members);
-  $('#pvAddMember').hidden = project.my_level !== 'admin';
-  if (project.my_level === 'admin') {
-    const { people } = await api('people');
-    $('#pvPerson').replaceChildren(...people.map((u) => el('option', { value: String(u.id), text: u.display_name })));
-  }
-
+  renderCard();
+  renderRows();
+  loadSkills().then(renderRows).catch(() => {});
   $('#pvFile').hidden = true;
-  // תת-פרויקט — העיון מתחיל בתיקייה שלו, לא בשורש הריפו
-  await browse(project.path || '');
   $('#projectView').showModal();
 }
+
+function renderCard() {
+  const p = state.openProject, e = state.pv.engine;
+  const chips = [el('span', { class: 'badge', text: `הרשאתך: ${LEVEL[p.my_level]}` })];
+  const mine = (state.projects || []).find((x) => x.id === p.id);
+  if (mine?.owner_only_effective) chips.push(el('span', { class: 'badge', text: '🔒 רק בעל הלוח' }));
+  if (p.repo_name) chips.push(el('span', { class: 'badge', text: e.installed ? '⚙️ מנוע מותקן' : 'מנוע לא מותקן' }));
+  $('#pvTitle').textContent = p.name;
+  $('#pvCard').replaceChildren(
+    el('span', { class: 'ic', 'aria-hidden': 'true', text: p.icon || '📁' }),
+    el('div', { class: 'body' }, [
+      el('b', { text: p.name }),
+      el('span', { class: 'l2', dir: 'ltr', text: p.repo_name ? `${p.repo_owner}/${p.repo_name}${p.path ? ' › ' + p.path : ''} · ${p.default_branch}` : 'ללא ריפו' }),
+      el('div', { class: 'chips' }, chips),
+    ]),
+  );
+}
+
+function renderRows() {
+  const p = state.openProject, admin = p.my_level === 'admin', owner = state.user?.role === 'admin';
+  const { members, engine, github, skills } = state.pv;
+  const all = state.projects || [];
+  const parent = all.find((x) => x.id === p.parent_id);
+  const gh = github?.effective;
+  const rows = [
+    admin && ['✏️', 'פרטים', `${p.name}${p.icon ? ' · ' + p.icon : ''}${p.path ? ' · ' + p.path : ''}`, 'pvsDetails'],
+    ['👥', 'חברים', `${members.length} · ${members.slice(0, 2).map((m) => `${m.display_name} (${LEVEL[m.level]})`).join(', ')}${members.length > 2 ? ', …' : ''}`, 'pvsMembers'],
+    p.repo_name && ['🔗', 'חיבור הגיטהאב שלי', gh ? `${github.chosen ? '' : 'אוטומטי · '}${gh.label || gh.login}${gh.login && gh.label !== gh.login ? ' · ' + gh.login : ''}` : 'אין חיבור גיטהאב', 'pvsGithub'],
+    ['🧩', 'סקילים', skills === null ? '…' : (skills.length ? String(skills.length) : 'אין עדיין'), 'pvsSkills'],
+    p.repo_name && ['⚙️', 'מנוע ההרצה', engine.installed ? `מותקן${engine.check_command ? ' · ' + engine.check_command : ''}` : 'לא מותקן', 'pvsEngine'],
+    owner && admin && ['🔑', "אסימון לצ'אטים", 'הצגה', 'pvsToken'],
+    p.repo_name && ['📂', 'קבצים', 'עיון בריפו', 'pvsFiles'],
+    owner && ['🏗️', 'מבנה', parent ? `בתוך: ${parent.name}` : 'רמה עליונה', 'pvsStructure'],
+  ].filter(Boolean);
+  $('#pvRows').replaceChildren(...rows.map(([ic, title, sub, sheet]) => el('li', {
+    class: 'card', tabindex: '0', role: 'button', 'aria-label': title,
+    onclick: () => openSheet(sheet),
+    onkeydown: (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openSheet(sheet); } },
+  }, [
+    el('span', { class: 'ic', 'aria-hidden': 'true', text: ic }),
+    el('div', { class: 'body' }, [el('div', { class: 'l1' }, [el('span', { text: title })]), el('div', { class: 'l2', text: sub })]),
+    el('span', { class: 'go', 'aria-hidden': 'true', text: '‹' }),
+  ])));
+
+  // אזור המחיקה — רק למנהל הפרויקט; מושבת עם הסיבה כשהפרויקט לא ריק
+  const kids = all.filter((x) => x.parent_id === p.id).length;
+  const me = all.find((x) => x.id === p.id);
+  const tasks = me ? (Number(me.open_tasks) || 0) + (Number(me.n_done) || 0) : 0;
+  $('#pvDanger').hidden = !admin;
+  const why = [tasks && `${tasks} מטלות`, kids && `${kids} תתי-פרויקטים`].filter(Boolean).join(' ו-');
+  $('#pvDangerHint').textContent = why ? `אפשר למחוק רק פרויקט ריק. כאן יש ${why} — קודם להעביר אותם.` : 'רק פרויקט ריק, בלי מטלות ובלי תתי-פרויקטים.';
+  $('#peDelete').disabled = !!why;
+}
+
+async function openSheet(id) {
+  if (id === 'pvsFiles') { $('#pvFile').hidden = true; browse(state.openProject.path || '').catch(() => {}); }
+  if (id === 'pvsGithub') renderGithubChoice();
+  if (id === 'pvsToken') { $('#pvChatTokenValue').textContent = '••••••••'; $('#pvChatTokenShow').hidden = false; $('#pvChatTokenCopy').hidden = true; }
+  $('#' + id).showModal();
+}
+
+/* חיבור הגיטהאב שלי לפרויקט: אוטומטי, או אחד מהחשבונות שלי */
+function renderGithubChoice() {
+  const mine = (state.connections?.list || []).filter((c) => c.kind === 'github');
+  const g = state.pv.github || {};
+  $('#pvGhState').textContent = g.effective
+    ? `בשימוש עכשיו: ${g.effective.label || g.effective.login} (${g.effective.login})`
+    : 'אין לך חיבור גיטהאב — הגדרות ← חיבורים ← "+ חיבור".';
+  const opt = (value, title, sub) => el('label', { class: 'pick' }, [
+    el('input', { type: 'radio', name: 'pvGh', value: String(value ?? ''), checked: (g.chosen ?? null) === value,
+      onchange: () => setGithub(value) }),
+    el('span', { class: 't', text: title }), el('small', { text: sub }),
+  ]);
+  $('#pvGhList').replaceChildren(el('ul', { class: 'list' }, [
+    el('li', {}, [opt(null, 'אוטומטי', 'לפי בעל הריפו')]),
+    ...mine.map((c) => el('li', {}, [opt(c.id, c.label || c.login, c.login)])),
+  ]));
+}
+
+async function setGithub(connectionId) {
+  try {
+    const r = await api('project-github', { project_id: state.openProject.id, connection_id: connectionId });
+    state.pv.github = r.github;
+    renderGithubChoice(); renderRows();
+    toast('נשמר', 'ok');
+  } catch (ex) { toast(ex.message, 'error'); }
+}
+
+on('#pvChatTokenCopy', 'click', async () => {
+  try { await navigator.clipboard.writeText($('#pvChatTokenValue').textContent); toast('הועתק', 'ok'); }
+  catch { toast('ההעתקה נחסמה — סמנו והעתיקו ידנית', 'error'); }
+});
 
 /* פרטי הפרויקט — שם, סמל, תיקייה. למנהל הפרויקט. */
 function renderEdit(project) {
@@ -373,15 +458,18 @@ on('#pvEdit', 'submit', async (e) => {
   if (p.parent_id) patch.path = $('#pePath').value.trim();
   try {
     await api('update-project', patch);
-    $('#pvTitle').textContent = patch.name;
     Object.assign(p, patch);
-    toast('נשמר', 'ok');
+    renderCard(); renderRows();
+    $('#pvsDetails').close();
+    toast('הפרטים נשמרו', 'ok');
   } catch (ex) { toast(ex.message, 'error'); }
 });
 
 on('#peDelete', 'click', async () => {
   const p = state.openProject;
-  if (!confirm(`למחוק את "${p.name}"? אפשר למחוק רק פרויקט ריק.`)) return;
+  const typed = prompt(`כדי למחוק, הקלידו את שם הפרויקט: ${p.name}`);
+  if (typed === null) return;
+  if (typed.trim() !== p.name.trim()) return toast('השם לא תואם — לא נמחק', 'error');
   try {
     await api('delete-project', { id: p.id });
     toast('הפרויקט נמחק', 'ok');
@@ -432,6 +520,7 @@ on('#pvChatTokenShow', 'click', async () => {
     const r = await api('chat-token', { project_id: state.openProject.id });
     $('#pvChatTokenValue').textContent = `CLAUDE_TASKS_TOKEN=${r.token}\nCLAUDE_TASKS_URL=${r.url}\nCLAUDE_TASKS_PROJECT=${r.project_id}`;
     $('#pvChatTokenShow').hidden = true;
+    $('#pvChatTokenCopy').hidden = false;
   } catch (ex) { toast(ex.message, 'error'); }
 });
 
@@ -454,33 +543,55 @@ on('#pvMove', 'submit', async (e) => {
 
 function renderMembers(members) {
   const canEdit = state.openProject?.my_level === 'admin';
-  $('#pvMembers').replaceChildren(...members.map((m) => el('div', { class: 'member' }, [
-    el('b', { text: m.display_name }),
-    el('span', { class: 'hint', text: m.has_github ? `גיטהאב: ${m.github_login}` : 'ללא גיטהאב' }),
-    canEdit
-      ? el('select', {
-          onchange: async (ev) => {
-            try {
-              await api('set-member', { project_id: state.openProject.id, user_id: m.user_id, level: ev.target.value });
-              toast('ההרשאה עודכנה', 'ok');
-            } catch (ex) { toast(ex.message, 'error'); }
-          },
-        }, ['read', 'write', 'admin'].map((lv) => el('option', {
-          value: lv, selected: m.level === lv,
-          text: { read: 'צפייה', write: 'כתיבה', admin: 'ניהול' }[lv],
-        })))
-      : el('span', { class: 'badge', text: { read: 'צפייה', write: 'כתיבה', admin: 'ניהול' }[m.level] }),
-    canEdit ? el('button', {
-      type: 'button', class: 'icon-btn', title: 'הסרה',
-      onclick: async () => {
-        try {
-          await api('remove-member', { project_id: state.openProject.id, user_id: m.user_id });
-          openProject(state.openProject.id);
-        } catch (ex) { toast(ex.message, 'error'); }
-      },
-    }, ['✕']) : null,
-  ])));
+  $('#pvAddMemberBtn').hidden = !canEdit;
+  $('#pvMembers').replaceChildren(...members.map((m) => {
+    const seg = el('div', { class: 'seg', role: 'radiogroup', 'aria-label': `הרשאה של ${m.display_name}` },
+      ['read', 'write', 'admin'].map((lv) => el('button', {
+        type: 'button', role: 'radio', 'aria-checked': String(m.level === lv), disabled: !canEdit, text: LEVEL[lv],
+        onclick: async () => {
+          if (m.level === lv) return;
+          try {
+            await api('set-member', { project_id: state.openProject.id, user_id: m.user_id, level: lv });
+            m.level = lv; renderMembers(state.pv.members); renderRows();
+            toast(`${m.display_name}: ${LEVEL[lv]}`, 'ok');
+          } catch (ex) { toast(ex.message, 'error'); }
+        },
+      })));
+    return el('li', { class: 'member-row' }, [
+      el('span', { class: 'avatar', 'aria-hidden': 'true', text: (m.display_name || '?').trim().charAt(0) }),
+      el('div', { class: 'body' }, [
+        el('b', { text: m.display_name }),
+        el('small', { class: m.has_github ? '' : 'warn', text: m.has_github ? `גיטהאב: ${m.github_login}` : 'בלי גיטהאב' }),
+      ]),
+      seg,
+      canEdit ? el('button', { type: 'button', class: 'icon-btn', 'aria-label': `הסרת ${m.display_name}`,
+        onclick: async () => {
+          if (!confirm(`להסיר את ${m.display_name} מהפרויקט?`)) return;
+          try {
+            await api('remove-member', { project_id: state.openProject.id, user_id: m.user_id });
+            state.pv.members = state.pv.members.filter((x) => x.user_id !== m.user_id);
+            renderMembers(state.pv.members); renderRows();
+          } catch (ex) { toast(ex.message, 'error'); }
+        } }, ['🗑️']) : null,
+    ]);
+  }));
 }
+
+on('#pvAddMemberBtn', 'click', async () => {
+  try {
+    const { people } = await api('people');
+    const have = new Set(state.pv.members.map((m) => m.user_id));
+    $('#pvPerson').replaceChildren(...people.filter((u) => !have.has(u.id))
+      .map((u) => el('option', { value: String(u.id), text: u.display_name })));
+    setLevelSeg('read');
+    $('#pvsAddMember').showModal();
+  } catch (ex) { toast(ex.message, 'error'); }
+});
+function setLevelSeg(lv) {
+  $('#pvLevel').value = lv;
+  $$('#pvLevelSeg [data-level]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.level === lv)));
+}
+on('#pvLevelSeg', 'click', (e) => { const b = e.target.closest('[data-level]'); if (b) setLevelSeg(b.dataset.level); });
 
 on('#pvAddMember', 'submit', async (e) => {
   e.preventDefault();
@@ -490,7 +601,9 @@ on('#pvAddMember', 'submit', async (e) => {
       user_id: Number($('#pvPerson').value),
       level: $('#pvLevel').value,
     });
-    openProject(state.openProject.id);
+    $('#pvsAddMember').close();
+    const { members } = await api('project', { id: state.openProject.id });
+    state.pv.members = members; renderMembers(members); renderRows();
     toast('החבר נוסף', 'ok');
   } catch (ex) { toast(ex.message, 'error'); }
 });
@@ -501,17 +614,19 @@ async function loadSkills() {
   const { skills } = await api('skills', { project_id: state.openProject.id });
   const admin = state.openProject.my_level === 'admin';
 
+  if (state.pv) state.pv.skills = skills;
   $('#skNew').hidden = !admin;
-  $('#pvSkills').replaceChildren(...(skills.length ? skills.map((s) => el('div', { class: 'member' }, [
-    el('b', { text: s.name }),
-    el('span', { class: 'hint', text: s.description || '—' }),
-    s.always ? el('span', { class: 'badge', text: 'תמיד' }) : null,
-    s.scope === 'global' ? el('span', { class: 'badge', text: 'גלובלי' }) : null,
-    admin ? el('button', { type: 'button', class: 'icon-btn', title: 'עריכה',
-      onclick: () => editSkill(s.id) }, ['✎']) : null,
-    admin ? el('button', { type: 'button', class: 'icon-btn', title: 'מחיקה',
-      onclick: () => removeSkill(s) }, ['✕']) : null,
-  ])) : [el('p', { class: 'hint', text: 'אין עדיין סקילים בפרויקט.' })]));
+  $('#pvSkills').replaceChildren(...(skills.length ? skills.map((s) => el('li', { class: 'member-row' }, [
+    el('span', { class: 'avatar', 'aria-hidden': 'true', text: '🧩' }),
+    el('div', { class: 'body' }, [
+      el('b', { text: s.name }),
+      el('small', { text: [s.always ? 'תמיד' : '', s.scope === 'global' ? 'גלובלי' : '', s.description || ''].filter(Boolean).join(' · ') || '—' }),
+    ]),
+    admin ? el('button', { type: 'button', class: 'icon-btn', 'aria-label': `עריכת ${s.name}`,
+      onclick: () => editSkill(s.id) }, ['✏️']) : null,
+    admin ? el('button', { type: 'button', class: 'icon-btn', 'aria-label': `מחיקת ${s.name}`,
+      onclick: () => { if (confirm(`למחוק את הסקיל "${s.name}"?`)) removeSkill(s); } }, ['🗑️']) : null,
+  ])) : [el('li', { class: 'empty', text: 'אין עדיין סקילים בפרויקט.' })]));
 }
 
 function skillForm(open, skill = null) {
@@ -566,53 +681,52 @@ on('#pvSkillForm', 'submit', async (e) => {
 function renderEngine(project, engine) {
   const box = $('#pvEngineState');
   $('#pvCheck').value = engine.check_command || '';
-
   const admin = project.my_level === 'admin';
+  // כפתור ראשי אחד: לא מותקן — "התקנה"; מותקן — "שמירה". "התקנה מחדש" — משני, בשורה נפרדת
+  $('#pvInstall').textContent = engine.installed ? 'שמירת הפקודה' : 'התקנה';
   $('#pvInstall').disabled = !admin || !project.repo_name;
-  $('#pvSaveCheck').disabled = !admin;
-  $('#pvInstall').textContent = engine.installed ? 'התקנה מחדש' : 'התקנת המנוע';
+  $('#pvSaveCheck').textContent = 'התקנה מחדש';
+  $('#pvSaveCheck').hidden = !engine.installed || !admin;
+  $('#pvCheck').disabled = !admin;
 
   if (!project.repo_name) { box.textContent = 'אין ריפו מקושר, ולכן אין מה להתקין.'; return; }
-
   const when = engine.installed
-    ? `מותקן (${new Date(engine.installed_at * 1000).toLocaleDateString('he-IL')}).`
-    : 'טרם הותקן.';
-
-  // הריצה בגיטהאב מדווחת חזרה דרך הרשת. כתובת מקומית פירושה שהיא תעבוד
-  // ותיעלם בלי שאיש יידע, ועדיף לומר זאת לפני ההתקנה ולא אחריה.
-  box.textContent = engine.board_public
-    ? when
-    : `${when} שימו לב: כתובת הלוח (${engine.board_url}) אינה https ציבורית, ולכן ההרצה לא תוכל לדווח בחזרה.`;
+    ? `מותקן · מאז ${new Date(engine.installed_at * 1000).toLocaleDateString('he-IL')}`
+    : 'לא מותקן — מטלות פיתוח לא ירוצו לבד';
+  // הריצה בגיטהאב מדווחת חזרה דרך הרשת. כתובת מקומית פירושה שהיא תעבוד ותיעלם.
+  box.textContent = engine.board_public ? when : `${when} · ⚠ כתובת הלוח אינה https ציבורית, ההרצה לא תוכל לדווח בחזרה`;
 }
 
-on('#pvInstall', 'click', async (e) => {
-  const btn = e.currentTarget;
+async function saveCheck() {
+  await api('update-project', { id: state.openProject.id, check_command: $('#pvCheck').value });
+  state.pv.engine.check_command = $('#pvCheck').value;
+}
+
+async function install(btn) {
   btn.disabled = true;
   const was = btn.textContent;
   btn.textContent = 'מתקין…';
   try {
+    await saveCheck();
     const r = await api('install-engine', { project_id: state.openProject.id });
     const summary = Object.entries(r.files).map(([f, what]) => `${f.split('/').pop()}: ${what}`).join(' · ');
     toast(`המנוע הותקן — ${summary}`, 'ok');
-    openProject(state.openProject.id);
-  } catch (ex) {
-    toast(ex.message, 'error');
-    btn.textContent = was;
-    btn.disabled = false;
-  }
-});
-
-on('#pvSaveCheck', 'click', async () => {
-  try {
-    await api('update-project', { id: state.openProject.id, check_command: $('#pvCheck').value });
-    toast('פקודת הבדיקה נשמרה', 'ok');
+    await openProject(state.openProject.id);
   } catch (ex) { toast(ex.message, 'error'); }
+  btn.textContent = was;
+  btn.disabled = false;
+}
+
+on('#pvInstall', 'click', async (e) => {
+  if (!state.pv.engine.installed) return install(e.currentTarget);
+  try { await saveCheck(); renderRows(); toast('פקודת הבדיקה נשמרה', 'ok'); }
+  catch (ex) { toast(ex.message, 'error'); }
 });
+on('#pvSaveCheck', 'click', (e) => install(e.currentTarget));
 
 /** שולח מטלה להרצה. נקרא מחלונית המטלה ב-app.js. */
 export async function runTask(id) {
-  const r = await api('run-task', { id });
-  return r;
+  return api('run-task', { id });
 }
 
 /* ── עיון בקוד ─────────────────────────────────────────────────── */

@@ -61,7 +61,7 @@ button:disabled { opacity: .55; cursor: default; }
 input, select, textarea { width: 100%; min-width: 0; min-height: var(--tap); padding: 0 var(--s2); font-size: 16px;   /* 16px — אחרת iOS מגדיל */
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
 textarea { padding: var(--s2); resize: vertical; line-height: 1.5; }
-input[type=checkbox] { width: 20px; min-height: 20px; flex: none; accent-color: var(--brand); }
+input[type=checkbox], input[type=radio] { width: 20px; min-height: 20px; flex: none; accent-color: var(--brand); }
 input:focus, select:focus, textarea:focus { border-color: var(--brand); outline: 0; box-shadow: 0 0 0 2px var(--brand-soft); }
 
 .toolbar { display: flex; gap: var(--s2); align-items: center; margin-bottom: var(--s3); }
@@ -320,3 +320,43 @@ dialog > form.sheet-wrap { margin: 0; }
 .tile:hover, .tile:focus-visible { border-color: var(--brand); }
 .danger-zone { margin-top: var(--s4); padding: var(--s3); border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent);
   border-radius: var(--r); display: grid; gap: var(--s2); }
+
+/* ===== מסך הפרויקט (§10.2) ===== */
+.proj-card { display: flex; align-items: center; gap: var(--s3); padding: var(--s3); margin-bottom: var(--s3);
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
+.proj-card .ic { flex: none; inline-size: 52px; block-size: 52px; display: grid; place-items: center; font-size: 1.7rem;
+  border-radius: var(--r); background: color-mix(in srgb, var(--brand) 12%, var(--surface)); }
+.proj-card .body { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.proj-card .body b { font-size: 1.05rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.proj-card .l2 { color: var(--muted); font-size: .82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: end; }
+.proj-card .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+#pvRows .card .ic { background: var(--bg); }
+#pvDanger { margin-top: var(--s4); }
+#pvDanger b { color: var(--danger); font-size: .9rem; }
+.seg { display: inline-grid; grid-auto-flow: column; grid-auto-columns: 1fr; border: 1px solid var(--line); border-radius: var(--r);
+  overflow: hidden; flex: none; }
+.seg button { border: 0; border-inline-start: 1px solid var(--line); background: var(--surface); color: var(--ink); font: inherit;
+  font-size: .8rem; padding: 0 var(--s2); min-height: 36px; cursor: pointer; white-space: nowrap; }
+.seg button:first-child { border-inline-start: 0; }
+.seg button[aria-checked="true"] { background: var(--brand); color: var(--brand-ink); }
+.seg button:disabled { cursor: default; }
+.seg button:disabled:not([aria-checked="true"]) { color: var(--muted); }
+#pvLevelSeg { display: grid; width: 100%; }
+#pvLevelSeg button { min-height: 44px; font-size: .9rem; }
+fieldset.field { border: 0; padding: 0; margin: 0; }
+fieldset.field legend { font-size: .85rem; color: var(--muted); margin-bottom: 4px; padding: 0; }
+.member-row { display: flex; align-items: center; gap: var(--s2); padding: var(--s2) var(--s3); border-top: 1px solid var(--line); min-height: 56px; }
+.member-row:first-child { border-top: 0; }
+.member-row .avatar { flex: none; inline-size: 32px; block-size: 32px; border-radius: 50%; display: grid; place-items: center;
+  background: color-mix(in srgb, var(--brand) 14%, var(--surface)); font-weight: 700; font-size: .9rem; }
+.member-row .body { flex: 1; min-width: 0; display: grid; }
+.member-row .body b, .member-row .body small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.member-row .body small { color: var(--muted); font-size: .78rem; }
+.member-row .body small.warn { color: var(--star); }
+@media (max-width: 360px) { .member-row { flex-wrap: wrap; } .member-row .seg { order: 3; margin-inline-start: 40px; } }
+details.what { margin-top: var(--s3); }
+details.what summary { cursor: pointer; color: var(--muted); font-size: .85rem; }
+details.what p { margin-top: var(--s2); }
+.engine-state { font-weight: 600; }
+#pvOwner .check { margin-bottom: var(--s4); align-items: flex-start; }
+#pvOwner .check span { line-height: 1.5; }
