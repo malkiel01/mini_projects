@@ -21,8 +21,13 @@ import { unzip } from './engine/unzip.js';
 import { buildMbe, openMbe, sniffZip, MbeOpenError } from './mbe-io.js';
 import { activeHandoff, returnHandoff, endHandoff } from './handoff.js';
 import { keyOf } from './ui-core/keys.js';
+import { $ } from './ui-core/dom.js';
+import { initDialogs, confirm } from './ui-core/dialog.js';
+import { bindViewport } from './ui-core/gestures.js';
 
-const $ = s => document.querySelector(s);
+// חלונות: --vvh / --kb, ✕ ולחיצה ברקע סוגרים — ui-core
+initDialogs();
+
 const stage = $('#stage');
 let canvas = $('#canvas');
 const msg = $('#msg');
@@ -154,8 +159,8 @@ async function decodeWithBudget(blob) {
   let bmp;
   try { bmp = await decodeImage(blob); } catch { throw new Error('decode'); }
   const s = suggestSize(bmp.width, bmp.height, budget.maxPixels());
-  if (s && confirm(`התמונה גדולה לזיכרון של המכשיר הזה (${megapixels(bmp.width, bmp.height)} מגה-פיקסל).\n` +
-      `להקטין ל-${s[0]}×${s[1]}?\n\n"ביטול" — להמשיך בגודל המלא.`)) {
+  if (s && await confirm(`התמונה גדולה לזיכרון של המכשיר הזה (${megapixels(bmp.width, bmp.height)} מגה-פיקסל). ` +
+      `להקטין ל-${s[0]}×${s[1]}?`, { title: 'תמונה גדולה', ok: 'הקטנה', cancel: 'בגודל המלא' })) {
     bmp.close();
     try { bmp = await decodeImage(blob, s); } catch { throw new Error('decode'); }
   }
@@ -351,7 +356,8 @@ async function saveToServer() {
       r = await uploadMbe(doc.serverId, bytes, doc.serverVersion ?? 0);
     } catch (e) {
       if (e.message !== 'conflict') throw e;
-      if (!confirm('בינתיים נשמרה בשרת גרסה אחרת (אולי ממכשיר אחר).\nלשמור את שלך כגרסה חדשה מעליה? הקודמת נשארת בגרסאות.')) return;
+      if (!(await confirm('בינתיים נשמרה בשרת גרסה אחרת (אולי ממכשיר אחר). לשמור את שלך כגרסה חדשה מעליה? הקודמת נשארת בגרסאות.',
+        { title: 'גרסה אחרת בשרת', ok: 'שמירה כגרסה חדשה' }))) return;
       r = await uploadMbe(doc.serverId, bytes, doc.serverVersion ?? 0, true);
     }
     doc.serverVersion = r.version;
@@ -411,10 +417,9 @@ async function showVersions() {
   }
 }
 versionsDlg.addEventListener('click', async e => {
-  if (e.target.closest('[data-close]')) { versionsDlg.close(); return; }
   const b = e.target.closest('[data-v]');
   if (!b) return;
-  if (unsaved && !confirm('יש שינויים שלא נשמרו בשרת. לפתוח את הגרסה בכל זאת? (השינויים יאבדו)')) return;
+  if (unsaved && !(await confirm('יש שינויים שלא נשמרו בשרת. לפתוח את הגרסה בכל זאת? השינויים יאבדו.', { ok: 'פתיחת הגרסה', danger: true }))) return;
   try {
     const { doc: meta } = await api('doc_get', { id: doc.serverId });
     await openServerVersion(meta, Number(b.dataset.v));
@@ -446,7 +451,6 @@ const gapText = x => {
   return GAP_TEXT[x] ?? (m ? `שכבות ${m[1]} של אפליקציה אחרת לא נכנסות (ב-‎.mbe הן נשמרות)` : x);
 };
 exportDlg.addEventListener('click', async e => {
-  if (e.target.closest('[data-close]')) { exportDlg.close(); return; }
   const b = e.target.closest('[data-export]');
   if (!b || b.disabled) return;
   const kind = b.dataset.export;
@@ -473,125 +477,37 @@ $('#zoom-out').addEventListener('click', () => setView(V.zoomTo(view, V.nextStep
 $('#zoom-lbl').addEventListener('click', () => setView(V.zoomTo(view, 1, ...center())));
 $('#fit-btn').addEventListener('click', fit);
 
-const local = e => {
-  const r = stage.getBoundingClientRect();
-  return [e.clientX - r.left, e.clientY - r.top];
-};
-
-// גלגלת: הזזה; Ctrl / ⌘ + גלגלת (וצביטה במשטח מגע, שמגיעה כ-ctrlKey) — זום סביב הסמן
-stage.addEventListener('wheel', e => {
-  e.preventDefault();
-  const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? stage.clientHeight : 1;
-  if (e.ctrlKey || e.metaKey) {
-    setView(V.zoomBy(view, Math.exp(-e.deltaY * unit * 0.01), ...local(e)));
-  } else {
-    const dx = (e.shiftKey && !e.deltaX ? e.deltaY : e.deltaX) * unit;
-    const dy = (e.shiftKey && !e.deltaX ? 0 : e.deltaY) * unit;
-    setView({ ...view, x: view.x - dx, y: view.y - dy });
-  }
-}, { passive: false });
-
-// מצביעים: כלי הציור — אצבע / עט / עכבר אחד. יד, רווח או גלגלת לחוצה — הזזה. שתי אצבעות — צביטה והזזה
-// (ואם משיכה כבר התחילה באצבע הראשונה — היא מבוטלת, בלי עקבות).
-const pointers = new Map();
-let gesture = null;
-let painter = null;   // pointerId של המשיכה
-let spaceDown = false;
-
-function startGesture() {
-  const pts = [...pointers.values()];
-  gesture = pts.length >= 2 ? { kind: 'pinch', view, a: pts[0], b: pts[1] }
-    : pts.length === 1 ? { kind: 'pan', view, p: pts[0] } : null;
-  stage.classList.toggle('panning', !!gesture);
-}
-
-const toDoc = p => V.screenToDoc(view, p[0], p[1]);
-
-stage.addEventListener('pointerdown', e => {
-  if (!doc) return;
-  // הכלים והאפשרויות יושבים מעל הבמה — לחיצה עליהם היא לחיצה על כפתור, לא ציור (ובלי לתפוס את המצביע)
-  if (e.target.closest('.tools, .tool-opts, .adjust, .text-edit')) return;
-  if (e.pointerType === 'mouse' && e.button !== 0 && e.button !== 1) return;
-  stage.setPointerCapture(e.pointerId);
-  const p = local(e);
-  // אצבע שנייה בזמן משיכה — זו צביטה: המשיכה מבוטלת
-  if (painter !== null && e.pointerType === 'touch') {
-    tools.cancel();
-    painter = null;
-  }
-  pointers.set(e.pointerId, p);
-  const panOnly = e.button === 1 || spaceDown || pointers.size > 1;
-  // ציור בזמן שתיקון פתוח — התיקון נסגר בלי להחיל (אחרת התצוגה מטעה)
-  if (!panOnly && adjust?.open && tools.state.tool !== 'hand') adjust.close();
-  if (!panOnly && fx?.open && tools.state.tool !== 'hand') fx.close();
-  if (!panOnly && pointers.size === 1 && tools.down(e, toDoc(p))) {
-    if (tools.stroking) painter = e.pointerId;
-    else pointers.delete(e.pointerId);   // דלי / טפטפת — לחיצה אחת
-    return;
-  }
-  startGesture();
+// גלגלת, צביטה, הזזה (רווח / גלגלת לחוצה / כלי היד) ולחיצה כפולה — bindViewport של ui-core (נבנה מהקוד שהיה כאן).
+// אצבע / עט / עכבר אחד — של הכלי; אצבע שנייה — צביטה, והמשיכה שהתחילה מתבטלת בלי עקבות.
+bindViewport(stage, {
+  get: () => view,
+  set: setView,
+  ignore: '.tools, .tool-opts, .adjust, .text-edit',
+  hand: () => tools?.state.tool === 'hand',
+  pointer: {
+    down: (e, pt) => {
+      if (!doc) return false;
+      // ציור בזמן שתיקון / סגנונות פתוחים — הם נסגרים בלי להחיל (אחרת התצוגה מטעה)
+      adjust?.close();
+      fx?.close();
+      // דלי / טפטפת — לחיצה אחת: רצים כאן, והמצביע לא נשמר לכלי
+      return tools.down(e, pt) && tools.stroking;
+    },
+    move: (e, list) => tools.move(list, e),
+    up: () => tools.up(),
+    cancel: () => tools.cancel(),
+  },
+  // לחיצה כפולה בכלי היד: מ"התאמה למסך" ל-100% בנקודה, ובחזרה
+  onDoubleClick: (e, p) => {
+    if (tools && tools.state.tool !== 'hand') return;
+    const f = fitView();
+    if (f && Math.abs(view.zoom - f.zoom) < 1e-6) setView(V.zoomTo(view, 1, ...p));
+    else fit();
+  },
 });
-stage.addEventListener('pointermove', e => {
-  tools?.updateCursor(e);
-  if (e.pointerId === painter) {
-    const evs = e.getCoalescedEvents?.() || [];
-    const list = (evs.length ? evs : [e]).map(ev => {
-      const [x, y] = toDoc(local(ev));
-      return { x, y, pressure: ev.pressure };
-    });
-    tools.move(list, e);
-    return;
-  }
-  if (!pointers.has(e.pointerId) || !gesture) return;
-  pointers.set(e.pointerId, local(e));
-  const pts = [...pointers.values()];
-  if (gesture.kind === 'pinch' && pts.length >= 2) {
-    setView(V.pinch(gesture.view, gesture.a, gesture.b, pts[0], pts[1]));
-  } else if (gesture.kind === 'pan') {
-    const [x, y] = pts[0];
-    setView({ ...gesture.view, x: gesture.view.x + x - gesture.p[0], y: gesture.view.y + y - gesture.p[1] });
-  }
-});
-const lift = e => {
-  if (e.pointerId === painter) {
-    painter = null;
-    pointers.delete(e.pointerId);
-    if (e.type === 'pointercancel') { tools.cancel(); return; }
-    // הדפדפן מאחד תנועות לפי פריימים — הקטע האחרון יכול להגיע רק עם ההרמה. בלעדיו סוף הקו נחתך
-    const [x, y] = toDoc(local(e));
-    tools.move([{ x, y, pressure: e.pressure }], e);
-    tools.up();
-    return;
-  }
-  if (!pointers.delete(e.pointerId)) return;
-  startGesture();   // מצביטה לאצבע אחת — ממשיכים להזיז מהמקום הנוכחי, בלי קפיצה
-};
-stage.addEventListener('pointerup', lift);
-stage.addEventListener('pointercancel', lift);
+// עיגול המכחול — לא חלק מהתצוגה
+stage.addEventListener('pointermove', e => tools?.updateCursor(e));
 stage.addEventListener('pointerleave', () => tools?.hideCursor());
-
-// רווח לחוץ — יד זמנית (כמו בכל עורך)
-addEventListener('keydown', e => {
-  if (e.code === 'Space' && !e.target.closest?.('input, textarea, select, button')) {
-    spaceDown = true;
-    stage.dataset.tool = 'hand';
-    e.preventDefault();
-  }
-});
-addEventListener('keyup', e => {
-  if (e.code === 'Space') { spaceDown = false; if (tools) stage.dataset.tool = tools.state.tool; }
-});
-
-// לחיצה כפולה: מ"התאמה למסך" ל-100% בנקודה, ובחזרה
-stage.addEventListener('dblclick', e => {
-  if (tools && tools.state.tool !== 'hand') return;
-  const f = fitView();
-  if (f && Math.abs(view.zoom - f.zoom) < 1e-6) setView(V.zoomTo(view, 1, ...local(e)));
-  else fit();
-});
-
-// Safari: צביטה בדף מגדילה את כל הדף — רק המסמך מתקרב
-for (const t of ['gesturestart', 'gesturechange']) document.addEventListener(t, e => e.preventDefault());
 
 // ---------- ביטול / ביצוע ----------
 
@@ -685,7 +601,8 @@ $('#hint').textContent = coarse ? 'צביטה — זום' : 'גרירה — הז
       let draft = await loadDraft('draft:doc:' + meta.id);
       // בטיוטה יש שינויים שלא נשמרו, ובשרת בינתיים גרסה חדשה יותר (ממכשיר אחר) — המשתמש בוחר
       if (draft && meta.version > (draft.serverVersion ?? 0) &&
-          !confirm(`בשרת יש גרסה חדשה יותר (גרסה ${meta.version}), ובמכשיר הזה — שינויים שלא נשמרו.\n"אישור" — להמשיך עם השינויים מהמכשיר. "ביטול" — לפתוח את הגרסה מהשרת.`)) {
+          !(await confirm(`בשרת יש גרסה חדשה יותר (גרסה ${meta.version}), ובמכשיר הזה — שינויים שלא נשמרו. עם מה להמשיך?`,
+            { title: 'שתי גרסאות', ok: 'השינויים מהמכשיר', cancel: 'הגרסה מהשרת' }))) {
         await clearDraft('draft:doc:' + meta.id);
         draft = null;
       }

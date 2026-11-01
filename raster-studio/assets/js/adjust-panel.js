@@ -10,8 +10,7 @@
 import { newMask } from './engine/doc.js';
 import { ADJUST_TYPES, ADJUST_FIELDS } from './engine/formats.js';
 import { selectionBox } from './engine/selection.js';
-
-const $ = (s, el = document) => el.querySelector(s);
+import { $ } from './ui-core/dom.js';
 
 export const ADJUSTMENTS = {
   bc: { label: 'בהירות וניגודיות', fields: { brightness: [-100, 100], contrast: [-100, 100] }, identity: { brightness: 0, contrast: 0 } },

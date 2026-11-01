@@ -1,6 +1,5 @@
 /* וקטורי — הבסיס (שפת העיצוב "הטלפון קודם") מגיע מ-ui-core/ui.css, שנטען לפני הקובץ הזה; כאן — מה שמיוחד לאפליקציה. */
 /* ===== וקטורי ===== */
-.top .me { flex: none; width: 32px; height: 32px; font-size: .8rem; background: rgba(255, 255, 255, .2); color: inherit; }
 .state { display: grid; place-items: center; gap: var(--s2); min-height: 40dvh; text-align: center; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 

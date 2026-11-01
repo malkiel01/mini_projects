@@ -24,13 +24,16 @@
 | `src/js/account.js` | 👤 `accountMenu(bar, { user, server, prefs, docs, drives, sections, shortcuts, logout, … })` — העיגול, התפריט (גיליון בטלפון), הגדרות אישיות; `accountServer(call)` — החיבור לצד השרת; `ui.css` — ערכה כהה / בהירה ידנית ו-`--ui-scale` | ✅ |
 | `src/js/files-window.js` | 📁 "המסמכים שלי" — `openDocuments` / `pickFile` / `saveFile(sources, …)`: חלון אחד לניהול, פתיחה ושמירה; לשונית לכל מקור (מתאם), `suiteSource(drives)` לענן החבילה | ✅ |
 | `src/php/account/account.php` | צד השרת של תפריט המשתמש — `uic_account_api($action, $input, $hooks)`: הגדרות (טבלה `uic_prefs` במסד של האפליקציה), ייצוא, מחיקת חשבון | ✅ |
+| `src/js/transform.js` | חשבון הטרנספורמציה — `dragHandle` (פינה עם יחס, צד, Alt מהמרכז, קו שטוח), `dragRotate` + `snapAngle` (מגנט 45°), `handlePos`, `bounds` (המקור: הרסטר) | 5 ✅ |
+| `src/js/snap.js` | `snapper({ boxes, points, tol, grid })` → `box()` / `point()` עם קווי עזר (המקור: הווקטורי) | 5 ✅ |
+| `src/js/handles.js` | `handles(overlay, { view, keepRatio, snap, onPreview, onCommit })` — הידיות על המסך, סיבוב, שורת מצב, קווי עזר; מצב `rect` לחיתוך | 5 ✅ |
 | `src/js/keys.js` | `shortcuts()`, `matches(e, combo)`, `keyOf(e)`, `label`, `ariaKeys` — לפי `e.code`, עובד במקלדת עברית | 3 ✅ |
 
 התיעוד המלא של כל פונקציה — בראש הקובץ שלה.
 
 ## בדיקות
 
-`node creative-suite/ui-core/tests/browser.cjs` — 163 בדיקות ב-Chromium, בטלפון (390px) ובמחשב (1280px), על דף התצוגה; `php creative-suite/ui-core/tests/account.php` — צד השרת (רץ גם בשער הפריסה).
+`node creative-suite/ui-core/tests/browser.cjs` — 200 בדיקות ב-Chromium, בטלפון (390px) ובמחשב (1280px), על דף התצוגה; `php creative-suite/ui-core/tests/account.php` — צד השרת (רץ גם בשער הפריסה).
 **מריצים לפני כל שינוי ב-src.**
 
 ## מה מחליפים בכל אפליקציה (שלב 2)
@@ -100,6 +103,7 @@ import { $, h as el } from './ui-core/dom.js';
 
 ## היסטוריה
 
+- **2026-11-01 — שלב 5:** `transform.js` + `snap.js` + `handles.js` — ידיות, סיבוב, הצמדה, מצב חיתוך (`docs/shared-code/migrate/handles.md`).
 - **2026-10-31 — שלב 1:** תשתית (`apps.json`, `tools/sync.php`, שער בפריסה), `ui.css`, דף תצוגה.
 - **2026-10-31 — שלב 2:** ערכת הממשק — `dom`, `toast`, `dialog`, `menu`, `tabs`, `files`, `store`; בדיקות דפדפן.
 - **2026-10-31 — 📁 `files-window.js`:** "המסמכים שלי" — ניהול, פתיחה ושמירה, לשונית לכל מקור, ענן החבילה דרך מודול הכוננים.

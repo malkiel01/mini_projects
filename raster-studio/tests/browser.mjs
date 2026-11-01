@@ -260,14 +260,18 @@ async function main() {
 
   // ---- תקציב: תמונה גדולה מהתקציב → הצעה להקטין ----
   await page.evaluate(() => { __rs.budget.maxPixels = () => 100000; });
-  let dialogText = '';
-  page.once('dialog', d => { dialogText = d.message(); d.accept(); });
-  const small = await page.evaluate(async b64 => {
+  // השאלה — חלון של ui-core (לא confirm של הדפדפן): הקטנה / בגודל המלא
+  const smallP = page.evaluate(async b64 => {
     const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
     await __rs.openAsDocument(new File([bytes], 'גדול.png', { type: 'image/png' }));
     return [__rs.doc.width, __rs.doc.height];
   }, PNG.toString('base64'));
-  check('תמונה מעל התקציב — מוצעת הקטנה', /להקטין/.test(dialogText), dialogText);
+  await page.waitForSelector('dialog[open] .row-btns');
+  const dialogText = await page.textContent('dialog[open] .sheet-body p');
+  const btns = await page.$$eval('dialog[open] .row-btns button', bs => bs.map(b => b.textContent).join('/'));
+  await page.click('dialog[open] .row-btns button.primary');
+  const small = await smallP;
+  check('תמונה מעל התקציב — מוצעת הקטנה, בחלון שלנו (הקטנה / בגודל המלא)', /להקטין/.test(dialogText) && btns === 'הקטנה/בגודל המלא', dialogText + ' ' + btns);
   check('אחרי הסכמה — הוקטנה לתקציב ובאותו יחס', small[0] * small[1] <= 100000 && Math.abs(small[0] / small[1] - IMG_W / IMG_H) < 0.02, small.join('×'));
 
   // ---- פתיחה מהספרייה: קובץ מהמכשיר → העורך ----
@@ -286,7 +290,19 @@ async function main() {
   check('טעינה מחדש של קובץ מהמכשיר — משוחזר מהטיוטה', await page.evaluate(() => __rs.doc && __rs.doc.width) === IMG_W);
 
   // ---- לוח השכבות (מחשב: לוח בצד) ----
-  page.on('dialog', d => d.accept());
+  // מכאן: כל חלון שאלה של ui-core מאושר (הכפתור הראשי), והטקסט נרשם ב-__lastAsk
+  const autoOk = () => {
+    new MutationObserver(() => {
+      const d = document.querySelector('dialog[open]');
+      const b = d?.querySelector('.row-btns button.primary, .row-btns button.danger');
+      if (!b || d.dataset.auto) return;
+      d.dataset.auto = '1';
+      window.__lastAsk = d.querySelector('.sheet-body p')?.textContent ?? '';
+      setTimeout(() => b.click(), 0);
+    }).observe(document, { childList: true, subtree: true, attributes: true, attributeFilter: ['open'] });
+  };
+  await page.addInitScript(autoOk);
+  await page.evaluate(autoOk);
   await openEd(page);
   await page.waitForFunction(() => window.__rs?.doc);
   const rows = () => page.$$eval('.layer-row', rs => rs.map(r => r.querySelector('.layer-name, .layer-name-input').textContent || r.querySelector('input')?.value));
@@ -459,9 +475,12 @@ async function main() {
   // טפטפת
   await page.keyboard.press('i');
   await page.mouse.click(...at(20, 380));
+  // הקריאה מהמנוע אסינכרונית (ב-WebGPU — מיפוי מאגר): מחכים לערך, לא קוראים מיד אחרי הלחיצה
+  await page.waitForFunction(() => document.querySelector('#color').value === '#ffffff', null, { timeout: 3000 }).catch(() => {});
   const picked = await page.$eval('#color', el => el.value);
   check('I — טפטפת: הצבע מהתמונה (לבן מתחת לקו)', picked === '#ffffff', picked);
   await page.mouse.click(...at(30, 120));
+  await page.waitForFunction(() => document.querySelector('#color').value === '#00ff00', null, { timeout: 3000 }).catch(() => {});
   check('טפטפת על הירוק', await page.$eval('#color', el => el.value) === '#00ff00');
   // [ ] — גודל
   await page.keyboard.press('b');
@@ -1715,12 +1734,13 @@ async function main() {
     return (await r.json()).version;
   }, sid);
   await page.evaluate(() => { __rs.renderer.fill(__rs.doc, __rs.doc.layers[0], [0, 0, 255, 255]); __rs.renderer.invalidate(__rs.doc); });
-  let asked = '';
-  // כל חלון שאלה מאושר (page.on מקטע השכבות) — כאן רק רושמים את הטקסט
-  page.once('dialog', d => { asked = d.message(); });
+  // כל חלון שאלה מאושר (autoOk מקטע השכבות) — כאן רק קוראים את הטקסט
+  await page.evaluate(() => { window.__lastAsk = ''; });
   await page.keyboard.press('Control+s');
   await page.waitForFunction(() => /גרסה 3/.test(document.querySelector('.toast').textContent), null, { timeout: 8000 }).catch(() => {});
-  check('גרסה ממכשיר אחר — השמירה שואלת, ואחרי אישור: גרסה חדשה מעליה (Ctrl+S)', other === 2 && /גרסה אחרת/.test(asked) && await page.evaluate(() => __rs.doc.serverVersion) === 3, asked);
+  const asked = await page.evaluate(() => window.__lastAsk);
+  check('גרסה ממכשיר אחר — השמירה שואלת, ואחרי אישור: גרסה חדשה מעליה (Ctrl+S)', other === 2 && /גרסה אחרת/.test(asked) && await page.evaluate(() => __rs.doc.serverVersion) === 3,
+    asked + ' | ' + await page.evaluate(() => [document.querySelector('dialog[open]')?.textContent, window.__lastAsk, document.querySelector('.toast')?.textContent, __rs.doc.serverVersion].join(' ~ ')));
   // גרסאות: רשימה, ופתיחת גרסה ישנה
   await page.click('#versions-btn');
   await page.waitForSelector('#versions-list [data-v]');
