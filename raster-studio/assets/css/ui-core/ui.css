@@ -326,3 +326,25 @@ dialog > form { display: flex; flex-direction: column; max-height: inherit; heig
 .fp-fam { flex: none; font-size: 1.05rem; }
 .fp-sample { flex: 1; min-width: 0; font-size: 1.15rem; color: inherit; opacity: .7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: end; }
 .fp-upload { margin-top: var(--s2); width: 100%; }
+
+/* ---- לוח שכבות (layers.js; המקור: הרסטר) ---- */
+.layer-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; min-block-size: 0; overscroll-behavior: contain; }
+.layer-row { display: flex; align-items: center; gap: var(--s1); padding: var(--s1) var(--s1) var(--s1) var(--s2);
+    border-bottom: 1px solid var(--line); cursor: pointer; }
+.layer-row[aria-selected="true"] { background: var(--brand-soft); }
+.layer-row.hidden-layer .thumb, .layer-row.hidden-layer .layer-name { opacity: .45; }
+.layer-row.dragging { opacity: .5; }
+.layer-row.drop-before { box-shadow: inset 0 2px 0 var(--brand); }
+.layer-row.drop-after { box-shadow: inset 0 -2px 0 var(--brand); }
+.layer-row .drag { flex: none; inline-size: 24px; block-size: var(--tap); display: grid; place-items: center; color: var(--muted);
+    cursor: grab; touch-action: none; letter-spacing: -3px; }
+.layer-row .thumb { flex: none; inline-size: 40px; block-size: 40px; object-fit: contain; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); }
+.layer-name { flex: 1; min-inline-size: 0; text-align: start; background: none; border: 0; padding: 0 var(--s1); min-block-size: var(--tap); cursor: pointer; }
+.layer-name-input { flex: 1; min-inline-size: 0; font-size: 16px; }
+.layer-row .icon-btn { flex: none; font-size: 1rem; }
+.layer-row .lock.off { opacity: .45; }
+.layer-row.drop-into { background: var(--brand-soft); box-shadow: inset 0 0 0 2px var(--brand); }
+.layer-row:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
+.layer-row .thumb.folder { display: grid; place-items: center; font-size: 1.2rem; }
+.layer-row .fold { inline-size: 28px; min-inline-size: 28px; }
+.layer-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: inherit; font: inherit; }
