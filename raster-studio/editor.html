@@ -8,7 +8,7 @@
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
-  <link rel="stylesheet" href="vendor/fonts/fonts.css">
+  <link rel="stylesheet" href="assets/fonts/ui-core/fonts.css">
   <link rel="stylesheet" href="assets/css/ui-core/ui.css">
   <link rel="stylesheet" href="assets/css/app.css">
 </head>
@@ -163,7 +163,7 @@
         </div>
         <label class="opt-check" data-for="wand"><input id="opt-contiguous" type="checkbox" checked><span>רציף</span></label>
         <label class="opt-check" data-for="wand quick"><input id="opt-sample-all" type="checkbox"><span>כל השכבות</span></label>
-        <label class="opt opt-font" data-for="text"><span>גופן</span><select id="opt-font"></select></label>
+        <div class="opt opt-font" data-for="text"><span>גופן</span><select id="opt-font" aria-label="גופן"></select></div>
         <label class="opt opt-num" data-for="text"><span>גודל</span><input id="opt-font-size" type="number" min="4" max="1000" value="48" inputmode="numeric" dir="ltr"></label>
         <div class="opt-btns" data-for="text">
           <button class="icon-btn" type="button" id="opt-bold" aria-pressed="false" aria-label="מודגש"><b>B</b></button>

@@ -15,6 +15,7 @@ import { handles } from './ui-core/handles.js';
 import { FONTS, LINE_HEIGHT, cssFont, renderText, textDirection } from './engine/text.js';
 import { keyOf } from './ui-core/keys.js';
 import { $, h } from './ui-core/dom.js';
+import { fontPicker } from './ui-core/fonts.js';
 import { sheet } from './ui-core/dialog.js';
 
 export const TOOLS = {
@@ -119,7 +120,11 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
   colorIn.addEventListener('input', () => { state.color = colorIn.value; syncColor(); styleText(); });
   // טקסט: גופן, גודל, מודגש, יישור
   const fontSel = $('#opt-font');
-  fontSel.replaceChildren(...FONTS.map(f => { const o = new Option(f.label, f.family); o.style.fontFamily = `"${f.family}"`; return o; }));
+  fontSel.replaceChildren(...FONTS.map(f => new Option(f.family, f.family)));
+  // הבורר של ui-core (שורה 14) — כל גופן כתוב בגופן עצמו, עם חיפוש; ה-select נשאר מוסתר ומחזיק את הערך
+  const fontField = fontPicker('גופן', fontSel.value, family => { fontSel.value = family; fontSel.dispatchEvent(new Event('change', { bubbles: true })); });
+  fontSel.hidden = true;
+  fontSel.after(fontField);
   fontSel.addEventListener('change', () => { state.font = fontSel.value; styleText(); });
   $('#opt-font-size').addEventListener('input', e => {
     const v = Math.round(Number(e.target.value));

@@ -1,11 +1,10 @@
 // טקסט → תמונה: פריסת שורות בקנבס דו-ממדי (הדפדפן כבר יודע עברית, bidi וניקוד), בגודל מלא.
 // בגרסה 1 טקסט נשמר כשכבת רסטר (README, "לא בגרסה 1").
 
-export const FONTS = [
-  { family: 'Heebo', label: 'חיבו' },
-  { family: 'Frank Ruhl Libre', label: 'פרנק רוהל' },
-  { family: 'Rubik', label: 'רוביק' },
-];
+import { ensureFont } from '../ui-core/fonts.js';
+
+// הקטלוג — אחד לכל החבילה (ui-core/fonts.js, שלב 8): עשרה גופנים עבריים חופשיים, הקבצים ב-assets/fonts/ui-core
+export { FONTS } from '../ui-core/fonts.js';
 
 export const LINE_HEIGHT = 1.25;
 
@@ -26,6 +25,7 @@ export async function renderText(text, { family, size, bold, color, align = 'sta
   const lines = text.replace(/\s+$/, '').split('\n');
   if (!lines.join('').trim()) return null;
   const font = cssFont({ family, size, bold });
+  await ensureFont(family, bold ? 700 : 400);   // אחרת הקנבס מצייר בגופן חלופי
   await document.fonts.load(font, text);
   const dir = textDirection(text);
   const probe = new OffscreenCanvas(1, 1).getContext('2d');

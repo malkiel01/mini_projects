@@ -6,7 +6,7 @@
  * אחרי שינוי ברשימת השלד — להעלות את CACHE_VERSION.
  */
 
-const CACHE_VERSION = 'raster-studio-v30';
+const CACHE_VERSION = 'raster-studio-v31';
 
 const SHELL = [
   './index.html',
@@ -14,7 +14,8 @@ const SHELL = [
   './manifest.webmanifest',
   './assets/css/app.css',
   './assets/icon.svg',
-  './vendor/fonts/fonts.css',
+  './assets/fonts/ui-core/fonts.css',   // רק ה-css: 78 הקבצים — במטמון כשהם נטענים
+  './assets/js/ui-core/fonts.js',
   './assets/js/app.js',
   './assets/js/editor.js',
   './assets/js/api.js',

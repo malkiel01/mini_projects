@@ -1694,7 +1694,11 @@ async function main() {
     let n = 0; for (let i = 0; i < p.length; i += 4) if (p[i] < 200) n++; return n;
   }, [x0, y0, x1, y1]);
   await page.keyboard.press('t');
-  check('T — טקסט, עם גופן ויישור', await page.evaluate(() => __rs.tools.state.tool) === 'text' && await page.isVisible('#opt-font') && (await page.$$eval('#opt-font option', o => o.length)) === 3);
+  check('T — טקסט, עם גופן (הבורר של ui-core, עשרה גופנים) ויישור', await page.evaluate(() => __rs.tools.state.tool) === 'text' && await page.isVisible('.opt-font .fp-trigger') && (await page.$$eval('#opt-font option', o => o.length)) === 10);
+  await page.click('.opt-font .fp-trigger');
+  await page.click('.opt-font .fp-list [role="option"]:has-text("Suez One")').catch(() => {});
+  check('בחירת גופן בבורר — הגופן של הטקסט מתעדכן', await page.evaluate(() => __rs.tools.state.font) === 'Suez One', await page.evaluate(() => __rs.tools.state.font));
+  await page.keyboard.press('Escape');
   await page.mouse.click(...at(300, 100));
   check('לחיצה — תיבת טקסט בפוקוס', await page.isVisible('#text-edit') && await page.evaluate(() => document.activeElement.id) === 'text-edit');
   await page.keyboard.type('שלום עולם');
