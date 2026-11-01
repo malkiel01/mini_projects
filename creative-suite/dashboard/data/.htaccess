@@ -1,0 +1,8 @@
+# חסימת גישה ישירה: cadence.json נקרא רק דרך cadence.php ונכתב רק דרך cadence-edit.php.
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+</IfModule>
