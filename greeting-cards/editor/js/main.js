@@ -3,7 +3,9 @@
 import { log, logDump } from './log.js';
 import { buildMbe, importMbe, isMbe } from './mbe-io.js';
 import { setColorContext } from './colorpicker.js';
-import { keyOf } from './ui-core/keys.js';   // המקש הפיזי — Ctrl+Z עובד גם במקלדת עברית (ui-core)
+import { keyOf } from './ui-core/keys.js';
+import { accountMenu, accountServer } from './ui-core/account.js';   // 👤 תפריט המשתמש — משותף לחבילה
+import { openDocuments, suiteSource } from './ui-core/files-window.js';   // המקש הפיזי — Ctrl+Z עובד גם במקלדת עברית (ui-core)
 import { TARGETS, openIn } from './handoff.js';
 import { drives, aiCaps, aiMessage, designFromBrief, imageFromPrompt, removeBackground, decompose } from './ai.js';
 import { h, $, toast, sheet, closeSheet, isSheetOpen, confirmDialog, field, rangeField, seg, colorField, toggle, pickFiles, download, timeAgo } from './ui.js';
@@ -22,7 +24,7 @@ import { loadScript } from './io.js';
 import { docVariables, readSheetFile, readPasted, readPhoneContacts, guessColumns, normalizePhone, fileNames, fillText } from './merge.js';
 
 // הגרסה — מופיעה ביומן, כדי לדעת איזה קוד רץ בטלפון.
-const BUILD = '2026-11-01.ui-css-1';
+const BUILD = '2026-11-01.account-1';
 
 const app = $('#app');
 let ed = null;   // העיצוב הפתוח: { id, doc, history, canvas, dirty }
@@ -58,9 +60,10 @@ async function showHome() {
             h('button', { class: 'icon-btn', 'aria-label': `פעולות על ${d.title}`, onclick: () => designMenu(d) }, '⋯'))))
         : h('p', { class: 'empty' }, 'עוד אין עיצובים. התחילו מעיצוב חדש, או ייבאו רקע מהצ\'אט.');
 
+    const bar = h('header', { class: 'topbar' }, h('h1', { style: { flex: '1' } }, '🎨 סטודיו עיצוב'));
+    if (me) attachAccount(bar);
     app.replaceChildren(
-        h('header', { class: 'topbar' }, h('h1', { style: { flex: '1' } }, '🎨 סטודיו עיצוב'),
-            me ? h('button', { class: 'icon-btn', 'aria-label': `החשבון: ${me.name || me.email || ''}`, onclick: accountSheet }, '👤') : null),
+        bar,
         h('main', { class: 'home' },
             online ? null : h('p', { class: 'hint warn' }, 'אין חיבור לשרת — העבודה נשמרת במכשיר, ותישלח כשהחיבור יחזור.'),
             pending.length ? h('ul', { class: 'list pending', 'aria-label': 'ממתינים מ-ChatGPT' }, pending.map(p => h('li', { class: 'row' },
@@ -1978,18 +1981,77 @@ function announce(l, pos) {
 
 // ─── חשבון ────────────────────────────────────────────────────────────────
 
-function accountSheet() {
+// ═══ 👤 תפריט המשתמש ו-📁 "המסמכים שלי" — מ-ui-core ═══════════════════════════════
+// אותו תפריט בכל החבילה. כאן רק מה שהסטודיו נותן לו: המשתמש, ההגדרות שלנו, הספרייה (מתאם), הענן, יציאה.
+
+let accountServerP = null;   // ההגדרות נטענות מהשרת פעם אחת לכל טעינה
+
+async function attachAccount(bar) {
     const me = sync.currentUser();
-    sheet('החשבון', h('div', {},
-        h('p', { class: 'lead' }, me.name || me.email || 'משתמש'),
-        me.email ? h('p', { class: 'hint', dir: 'ltr' }, me.email) : null,
-        h('p', { class: 'hint' }, me.platform ? 'מחובר דרך הכלים הדיגיטליים.' : 'מחובר עם קוד במייל.',
-            me.role === 'owner' ? ' · מנהל המערכת' : ''),
-        cloudRow(),
-        me.role === 'owner' ? h('button', { class: 'btn ghost block', onclick: gptSetupSheet }, '🤖 הגדרת ה-GPT ב-ChatGPT') : null,
-        me.role === 'owner' ? h('a', { class: 'btn ghost block', href: '../admin.html' }, '⚙️ ממשק הניהול') : null,
-        me.role === 'owner' ? h('button', { class: 'btn ghost block', onclick: devSheet }, '🛠️ אזור פיתוח') : null,
-        me.platform ? null : h('button', { class: 'btn ghost block', onclick: async () => { await sync.logout(); closeSheet(); showLogin(); } }, '🚪 יציאה')));
+    accountServerP ??= accountServer(sync.accountCall).catch(() => null);   // בלי שרת — ההגדרות במכשיר
+    const server = await accountServerP;
+    let cloudOn = false;   // התפריט קורא את הרשימה מיד; המצב מהענן מגיע ברקע
+    aiCaps().then(c => { cloudOn = !!c.connected; acc.refresh(); });
+    const acc = accountMenu(bar, {
+        user: () => me && { name: me.name || me.email || 'משתמש', email: me.email, admin: me.role === 'owner' },
+        server: server || undefined,
+        docs: () => myDocuments(),
+        drives: { list: () => [{ id: 'suite', name: 'ענן החבילה', icon: '☁️', connected: cloudOn }], manage: cloudSheet },
+        sections: [{ id: 'studio', title: 'סטודיו העיצוב', render: body => body.append(
+            h('p', { class: 'hint' }, me.platform ? 'מחובר דרך הכלים הדיגיטליים.' : 'מחובר עם קוד במייל.', me.role === 'owner' ? ' · מנהל המערכת' : ''),
+            me.role === 'owner' ? h('button', { type: 'button', class: 'btn ghost block', onclick: gptSetupSheet }, '🤖 הגדרת ה-GPT ב-ChatGPT') : '',
+            me.role === 'owner' ? h('button', { type: 'button', class: 'btn ghost block', onclick: devSheet }, '🛠️ אזור פיתוח') : '') }],
+        admin: me.role === 'owner' ? '../admin.html' : undefined,
+        help: () => skillSheet(),
+        // בתוך הכלים הדיגיטליים ההתחברות מגיעה מהשער — אין "יציאה" משלנו
+        logout: me.platform ? undefined : async () => { await sync.logout(); showLogin(); },
+    });
+}
+
+/** ☁️ עננים מחוברים: היום — ענן החבילה (מודול הכוננים). */
+function cloudSheet() {
+    sheet('☁️ ענן החבילה', h('div', {},
+        h('p', { class: 'hint' }, 'דרכו עובדת הבינה המלאכותית (✨ עצב לי, הסרת רקע, פירוק לשכבות), וגם הקבצים ב"המסמכים שלי".'),
+        cloudRow()));
+}
+
+/** 📁 המסמכים שלי: העיצובים בסטודיו, וענן החבילה כלשונית שנייה. */
+function myDocuments() {
+    const item = d => ({ id: d.id, name: d.title, kind: 'file', updated: d.updatedAt, icon: '🎨' });
+    const entries = new Map();   // הרשומה המלאה — לעיצוב שעוד לא במכשיר (remoteOnly) openDesign צריך אותה
+    const studio = {
+        id: 'app', title: 'בסטודיו', icon: '🎨',
+        async list() {
+            const { list } = await sync.listDesigns();
+            list.forEach(d => entries.set(d.id, d));
+            return { items: list.map(item) };
+        },
+        async rename(id, name) {
+            const rec = await designs.get(id) || (await sync.pull(id), await designs.get(id));
+            await designs.put({ ...rec, title: name, doc: { ...rec.doc, title: name }, updatedAt: Date.now(), synced: false });
+            sync.push(id).catch(() => {});
+        },
+        async copy(id) {
+            const rec = await designs.get(id) || (await sync.pull(id), await designs.get(id));
+            const nid = uid('d');
+            await designs.put({ ...rec, id: nid, title: rec.title + ' (עותק)', updatedAt: Date.now(), serverVersion: 0, synced: false });
+            sync.push(nid).catch(() => {});
+            return item({ id: nid, title: rec.title + ' (עותק)', updatedAt: Date.now() });
+        },
+        async remove(id) {
+            await designs.remove(id);
+            await sync.removeRemote(id).catch(() => toast('נמחק מהמכשיר; מהשרת — כשיהיה חיבור', 'error'));
+        },
+    };
+    let opened = false;   // נפתח עיצוב — לא לרענן את מסך הבית אחרי שהחלון נסגר (הוא היה דורס את העורך)
+    openDocuments([studio, suiteSource(drives)], {
+        onOpen: async (it, src) => {
+            opened = true;
+            if (src.id === 'app') return openDesign(it.id, null, entries.get(it.id));
+            // מהענן: ‎.mbe או תמונה — נפתח כמו קובץ מהמכשיר, לעיצוב חדש
+            try { runImport([new File([await src.read(it.id)], it.name)], ''); } catch (e) { toast(aiMessage(e), 'error'); }
+        },
+    }).then(() => { if (!opened && !ed) showHome(); });   // שינוי שם / מחיקה / שכפול — הרשימה בבית מתעדכנת
 }
 
 /** כניסה בלי סיסמה: קוד בן 6 ספרות במייל. בתוך הכלים הדיגיטליים המסך הזה לא מופיע — הכניסה אוטומטית. */
