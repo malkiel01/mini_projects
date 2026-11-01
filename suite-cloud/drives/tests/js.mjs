@@ -75,6 +75,8 @@ const w = await d.suite.write('a.txt', new Blob(['שלום']), { ifRev: 3 });
 check('write — base64 ו-if_rev', w.body.if_rev === 3 && Buffer.from(w.body.content_b64, 'base64').toString() === 'שלום');
 check('read — Blob', (await (await d.suite.read('n_1')).text()) === 'abc');
 check('fonts.list', (await d.fonts.list()).families[0].family === 'Alef');
+await d.fonts.list({ builtin: true });
+check('fonts.list({ builtin }) — ‎&builtin=1 בכתובת', log.at(-1).includes('action=fonts_list&builtin=1'));
 const fa = await d.fonts.add(new Blob(['x']), { family: 'Rubik' });
 check('fonts.add — multipart עם אישור רישיון', fa.family === 'Rubik' && fa.ack === '1');
 const r = await d.ai.run('generate-image', { prompt: 'לוגו', size: '1080x1350', transparent: true });

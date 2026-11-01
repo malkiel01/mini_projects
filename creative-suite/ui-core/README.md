@@ -26,6 +26,7 @@
 | `src/php/account/account.php` | צד השרת של תפריט המשתמש — `uic_account_api($action, $input, $hooks)`: הגדרות (טבלה `uic_prefs` במסד של האפליקציה), ייצוא, מחיקת חשבון | ✅ |
 | `src/js/transform.js` | חשבון הטרנספורמציה — `dragHandle` (פינה עם יחס, צד, Alt מהמרכז, קו שטוח), `dragRotate` + `snapAngle` (מגנט 45°), `handlePos`, `bounds` (המקור: הרסטר) | 5 ✅ |
 | `src/js/snap.js` | `snapper({ boxes, points, tol, grid })` → `box()` / `point()` עם קווי עזר (המקור: הווקטורי) | 5 ✅ |
+| `src/js/color.js` | 🎨 `colorPicker(label, value, onInput, onCommit, { alpha })` — הבורר של סטודיו העיצוב; המרות, ניגוד WCAG, אחרונים ומועדפים | 7 ✅ |
 | `src/js/history.js` | ביטול / ביצוע — `History` (רשומות, תקרת זיכרון, `group`, מיזוג; המקור: הרסטר), `snapshots({ get, set })` למסמך JSON, `undoButtons()` | 6 ✅ |
 | `src/js/handles.js` | `handles(overlay, { view, keepRatio, snap, onPreview, onCommit })` — הידיות על המסך, סיבוב, שורת מצב, קווי עזר; מצב `rect` לחיתוך | 5 ✅ |
 | `src/js/keys.js` | `shortcuts()`, `matches(e, combo)`, `keyOf(e)`, `label`, `ariaKeys` — לפי `e.code`, עובד במקלדת עברית | 3 ✅ |
@@ -104,6 +105,7 @@ import { $, h as el } from './ui-core/dom.js';
 
 ## היסטוריה
 
+- **2026-11-01 — שלב 7:** `color.js` — צבע ובורר צבעים (`docs/shared-code/migrate/color.md`).
 - **2026-11-01 — שלב 6:** `history.js` — ביטול / ביצוע (`docs/shared-code/migrate/history.md`).
 - **2026-11-01 — שלב 5:** `transform.js` + `snap.js` + `handles.js` — ידיות, סיבוב, הצמדה, מצב חיתוך (`docs/shared-code/migrate/handles.md`).
 - **2026-10-31 — שלב 1:** תשתית (`apps.json`, `tools/sync.php`, שער בפריסה), `ui.css`, דף תצוגה.

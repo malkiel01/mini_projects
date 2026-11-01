@@ -4,8 +4,7 @@
 מעלה מוטמע, והאחריות לרישיון עליו). **ביקש:** בעל המערכת, דרך סטודיו העיצוב (2026-10-30): "להעלות את הפונטים שלי —
 באזור אחד שמתאים לכל האפליקציות".
 
-> סטטוס (2026-10-31): **נבנה** — גופנים שהמשתמש מעלה: `lib/fonts.php`, הלשונית "🔤 גופנים", ו-`drives.fonts` במודול הכוננים.
-> עוד לא: הגופנים המובנים (`source: builtin`) — איסוף ה-OFL המפוזרים באפליקציות לספרייה אחת.
+> סטטוס (2026-11-01): **נבנה** — גופנים שהמשתמש מעלה (2026-10-31), והגופנים המובנים (2026-11-01, סעיף 2.1).
 
 ---
 
@@ -31,6 +30,19 @@
   שלנו אין brotli, ולכן הענן לא ממיר ל-woff2. מי שרוצה קובץ קטן מעלה woff2.
 - **`source`** — `user` (שהמשתמש העלה) או `builtin` (הגופנים החופשיים, OFL, שהיום מפוזרים בכל אפליקציה; יגיעו בהמשך).
 
+### 2.1 המובנים (`source: builtin`)
+
+- **10 קבצים, 9 משפחות, OFL:** Rubik, Heebo, Assistant, Frank Ruhl Libre, Noto Serif Hebrew (משתנים), Amatic SC, David
+  Libre (רגיל ומודגש), Secular One. קבצי TTF שלמים (לא תת-קבוצה) — מתאימים גם להטמעה ב-PDF ול-HarfBuzz.
+- **איפה:** `suite-cloud/fonts/builtin/` בגיט, עם `OFL-<משפחה>.txt` לכל אחד. הקטלוג `catalog.json` נבנה מהקבצים
+  (`php suite-cloud/tools/fonts-catalog.php`), ושער בפריסה עוצר קטלוג לא מעודכן או גופן בלי רישיון.
+- **הפריט:** כמו של המשתמש, ועוד `license` (שם קובץ הרישיון) ו-`axes` לגופן משתנה (`{"wght": [300, 900]}`; `weight` הוא
+  ברירת המחדל, 400). מזהה יציב: `b_<משפחה>-<משקל>` או `b_<משפחה>-var`.
+- **לא נוגעים באפליקציות:** `fonts_list` בלי `builtin=1` מחזיר רק את של המשתמש, כמו קודם. עם `builtin=1` (ב-JS:
+  `drives.fonts.list({ builtin: true })`) — גם המובנים, בקבוצות משלהם (`families[].source`).
+- **לא משתנים ולא נמחקים** (`builtin`, 403), ולא נספרים במכסה. `font_license?id=` מחזיר את טקסט הרישיון.
+- **עוד לא:** Alef, Karantina, Suez One ו-Varela Round — בריפו יש רק תת-קבוצות woff2 (בכרטיסי ברכה), לא קבצים שלמים.
+
 ## 3. הקריאה של הפרטים מהקובץ
 
 - **ttf / otf** — השרת קורא את טבלאות `name` (משפחה, תת-משפחה) ו-`OS/2` (משקל, נטוי). המשתמש לא ממלא כלום.
@@ -47,7 +59,8 @@
 
 | פעולה | גוף | תשובה |
 | --- | --- | --- |
-| `fonts_list` | — | `{fonts:[פריט], families:[{family, items:[id]}]}` |
+| `fonts_list` | `?builtin=1` — גם המובנים | `{fonts:[פריט], families:[{family, source, items:[id]}]}` |
+| `font_license` | `GET ?id=b_…` | טקסט ה-OFL של גופן מובנה |
 | `font_add` | `{content_b64, filename, family?, weight?, style?, license_ack:true}` — עד 20MB | פריט (`replaced: true` אם הוחלף) |
 | `font_file` | `GET ?id=…&rev=…` | הקובץ עצמו, עם `Cache-Control: immutable` (לפי `rev`) ו-CORS ל-origins של הלקוח |
 | `font_update` | `{id, family?, weight?, style?}` — תיקון פרטים | פריט |

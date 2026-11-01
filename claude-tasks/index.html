@@ -2,10 +2,10 @@
 <html lang="he" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>מטלות לקלוד</title>
 <meta name="description" content="ניהול מטלות ל-Claude: קטלוג לפי נושאים, מעקב אחרי מה פתוח, ומענה לשאלות שנשארו תלויות.">
-<meta name="theme-color" content="#0f172a">
+<meta name="theme-color" content="#2d4a8a">
 <link rel="icon" href="./assets/icon.svg" type="image/svg+xml">
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="apple-touch-icon" href="./assets/icons/icon-192.png">
@@ -69,63 +69,80 @@
 <!-- ── האפליקציה ─────────────────────────────────────────────── -->
 <div class="app" id="app" hidden>
 
-  <header class="bar">
-    <button type="button" class="icon-btn bar__menu" id="menuBtn" title="נושאים">☰</button>
-    <div class="bar__title">
+  <header class="top">
+    <button type="button" class="icon-btn" id="menuBtn" aria-label="נושאים" title="נושאים">☰</button>
+    <div class="titles">
       <h1>מטלות לקלוד</h1>
-      <p id="scopeLabel">כל הנושאים</p>
+      <div class="sub" id="scopeLabel">כל הנושאים</div>
     </div>
-    <button type="button" class="icon-btn" id="projectsBtn" title="פרויקטים">📁</button>
-    <button type="button" class="icon-btn" id="adminBtn" title="ניהול" hidden>🛡</button>
-    <button type="button" class="icon-btn" id="settingsBtn" title="הגדרות">⚙</button>
-    <button type="button" class="icon-btn" id="logoutBtn" title="יציאה">⎋</button>
+    <button type="button" class="icon-btn" id="projectsBtn" aria-label="פרויקטים" title="פרויקטים">📁</button>
+    <button type="button" class="icon-btn" id="adminBtn" aria-label="ניהול" title="ניהול" hidden>🛡</button>
+    <button type="button" class="icon-btn" id="settingsBtn" aria-label="הגדרות" title="הגדרות">⚙</button>
+    <button type="button" class="icon-btn" id="logoutBtn" aria-label="יציאה" title="יציאה">⎋</button>
   </header>
 
-  <!-- שורת המצב: מה פתוח, ומה מחכה דווקא לי -->
-  <section class="pulse" id="pulse"></section>
-
-  <!-- קליטה מהירה: זו הפעולה שקורית הכי הרבה -->
-  <form class="capture" id="captureForm">
-    <input type="text" id="capTitle" placeholder="מה צריך לעשות? (Enter כדי להוסיף)" autocomplete="off">
-    <select id="capTopic" title="נושא"></select>
-    <select id="capKind" title="סוג">
-      <option value="question">שאלה</option>
-      <option value="code">קוד</option>
-      <option value="research">מחקר</option>
-    </select>
-    <select id="capProvider" title="מי יבצע את המטלה"></select>
-    <select id="capPriority" title="עדיפות">
-      <option value="normal">רגיל</option>
-      <option value="high">דחוף</option>
-      <option value="low">נמוך</option>
-    </select>
-    <button type="submit" class="btn btn--primary">הוספה</button>
-  </form>
-
-  <!-- מה הקטלוג האוטומטי חושב, עוד לפני שלחצת "הוספה" -->
-  <p class="guess" id="capHint" hidden></p>
-
-  <div class="toolbar">
-    <input type="search" id="search" placeholder="חיפוש במטלות…" autocomplete="off">
-    <div class="chips" id="statusChips">
-      <button type="button" class="chip is-active" data-status="active">פעילות</button>
-      <button type="button" class="chip" data-status="blocked">ממתין לי</button>
-      <button type="button" class="chip" data-status="in_progress">בעבודה</button>
-      <button type="button" class="chip" data-status="open">בתור</button>
-      <button type="button" class="chip" data-status="done">הושלמו</button>
+  <main id="main" tabindex="-1">
+    <!-- המצב והסינון — אותו רכיב: המספר הוא גם הכפתור -->
+    <div class="seg-tabs" id="statusChips" role="tablist" aria-label="סינון לפי מצב">
+      <button type="button" role="tab" data-status="active" aria-selected="true"><b data-count="active">0</b>פעילות</button>
+      <button type="button" role="tab" data-status="blocked" aria-selected="false"><b data-count="blocked">0</b>ממתין לך</button>
+      <button type="button" role="tab" data-status="in_progress" aria-selected="false"><b data-count="in_progress">0</b>בעבודה</button>
+      <button type="button" role="tab" data-status="open" aria-selected="false"><b data-count="open">0</b>בתור</button>
+      <button type="button" role="tab" data-status="done" aria-selected="false"><b data-count="done">0</b>הושלמו</button>
     </div>
-  </div>
 
-  <main class="list" id="list" aria-live="polite"></main>
-  <p class="empty" id="empty" hidden></p>
+    <div class="toolbar">
+      <input type="search" id="search" placeholder="חיפוש במטלות" aria-label="חיפוש במטלות" autocomplete="off">
+      <button type="button" class="btn primary" id="newTaskBtn"><span aria-hidden="true">+</span> מטלה</button>
+    </div>
+
+    <ul class="list" id="list" aria-live="polite"></ul>
+    <div class="empty" id="empty" hidden></div>
+  </main>
 </div>
+
+<!-- ── מטלה חדשה ─────────────────────────────────────────────── -->
+<dialog id="newTask" aria-labelledby="newTaskTitle">
+  <form class="sheet-wrap" id="captureForm">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close="newTask" aria-label="סגירה">✕</button>
+      <h2 id="newTaskTitle">מטלה חדשה</h2>
+      <button type="submit" class="btn primary">הוספה</button>
+    </header>
+    <div class="sheet-body">
+      <label class="field">
+        <span>מה צריך לעשות?</span>
+        <input type="text" id="capTitle" placeholder="אפשר גם חצי מחשבה — מדייקים אחר כך" autocomplete="off" required>
+      </label>
+      <p class="guess" id="capHint" hidden></p>
+      <div class="fields">
+        <label class="field"><span>נושא</span><select id="capTopic"></select></label>
+        <label class="field"><span>סוג</span>
+          <select id="capKind">
+            <option value="question">שאלה</option>
+            <option value="code">קוד</option>
+            <option value="research">מחקר</option>
+          </select>
+        </label>
+        <label class="field"><span>עדיפות</span>
+          <select id="capPriority">
+            <option value="normal">רגיל</option>
+            <option value="high">דחוף</option>
+            <option value="low">נמוך</option>
+          </select>
+        </label>
+        <label class="field"><span>מי יבצע</span><select id="capProvider"></select></label>
+      </div>
+    </div>
+  </form>
+</dialog>
 
 <!-- ── מגירת נושאים ──────────────────────────────────────────── -->
 <div class="drawer" id="drawer" hidden>
   <div class="drawer__panel">
     <header class="drawer__head">
       <h2>נושאים</h2>
-      <button type="button" class="icon-btn" data-close="drawer">✕</button>
+      <button type="button" class="icon-btn" data-close="drawer" aria-label="סגירה">✕</button>
     </header>
     <nav class="topics" id="topics"></nav>
 
@@ -145,23 +162,26 @@
 </div>
 
 <!-- ── פרטי מטלה ─────────────────────────────────────────────── -->
-<dialog class="sheet" id="detail">
-  <div class="sheet__inner">
-    <header class="sheet__head">
+<dialog id="detail" aria-labelledby="dTitle">
+  <div class="sheet-wrap">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close="detail" aria-label="סגירה">✕</button>
       <h2 id="dTitle">מטלה</h2>
-      <button type="button" class="icon-btn" data-close="detail">✕</button>
+      <button type="button" class="btn ghost sm" id="dDone">✓ הושלמה</button>
     </header>
-    <div class="sheet__body">
+    <div class="sheet-body">
       <div class="dmeta" id="dMeta"></div>
       <p class="dbody" id="dBody"></p>
       <h3>שיחה</h3>
       <div class="thread" id="dThread"></div>
       <form class="reply" id="replyForm">
-        <textarea id="replyBody" rows="3" placeholder="תשובה או הערה…"></textarea>
-        <div class="reply__row">
-          <button type="submit" class="btn btn--primary">שליחה</button>
-          <button type="button" class="btn btn--ghost" id="dRun" hidden>הרצה בגיטהאב</button>
-          <button type="button" class="btn btn--ghost" id="dDone">סימון כהושלמה</button>
+        <label class="field">
+          <span id="replyLabel">תשובה או הערה</span>
+          <textarea id="replyBody" rows="3"></textarea>
+        </label>
+        <div class="row-btns">
+          <button type="submit" class="btn primary">שליחה</button>
+          <button type="button" class="btn ghost" id="dRun" hidden>הרצה בגיטהאב</button>
         </div>
       </form>
     </div>
@@ -173,7 +193,7 @@
   <div class="sheet__inner">
     <header class="sheet__head">
       <h2>עריכת נושא</h2>
-      <button type="button" class="icon-btn" data-close="topicEdit">✕</button>
+      <button type="button" class="icon-btn" data-close="topicEdit" aria-label="סגירה">✕</button>
     </header>
     <div class="sheet__body">
       <form class="stack" id="topicEditForm">
@@ -211,7 +231,7 @@
   <div class="sheet__inner">
     <header class="sheet__head">
       <h2>פרויקטים</h2>
-      <button type="button" class="icon-btn" data-close="projects">✕</button>
+      <button type="button" class="icon-btn" data-close="projects" aria-label="סגירה">✕</button>
     </header>
     <div class="sheet__body">
       <p class="hint" id="projGate" hidden>
@@ -247,7 +267,7 @@
   <div class="sheet__inner">
     <header class="sheet__head">
       <h2 id="pvTitle">פרויקט</h2>
-      <button type="button" class="icon-btn" data-close="projectView">✕</button>
+      <button type="button" class="icon-btn" data-close="projectView" aria-label="סגירה">✕</button>
     </header>
     <div class="sheet__body">
       <div class="dmeta" id="pvMeta"></div>
@@ -331,7 +351,7 @@
   <div class="sheet__inner">
     <header class="sheet__head">
       <h2>ניהול מערכת</h2>
-      <button type="button" class="icon-btn" data-close="admin">✕</button>
+      <button type="button" class="icon-btn" data-close="admin" aria-label="סגירה">✕</button>
     </header>
     <div class="sheet__body">
       <div class="chips" id="adminTabs">
@@ -349,7 +369,7 @@
   <div class="sheet__inner">
     <header class="sheet__head">
       <h2>הגדרות</h2>
-      <button type="button" class="icon-btn" data-close="settings">✕</button>
+      <button type="button" class="icon-btn" data-close="settings" aria-label="סגירה">✕</button>
     </header>
     <div class="sheet__body">
       <section id="oldAccount" hidden>

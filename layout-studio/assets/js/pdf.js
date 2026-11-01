@@ -32,14 +32,14 @@ const r2 = v => Math.round(v * 1000) / 1000;
  * text — הטקסט הלוגי של השורה (cluster של כל גליף הוא אינדקס בו): כל רצף מקבל את החלק שלו, והרצפים יוצאים בסדר
  * הקריאה — כך שחיפוש והעתקה מה-PDF נותנים את הטקסט כמו שנכתב, גם כשבשורה מודגש או גופן חלופי.
  */
-export function glyphOps(f, glyphs, x, y, size, text = '') {
+export function glyphOps(f, glyphs, x, y, size, text = '', color = '#000000') {
   const s = size / f.upem;
   const runs = [];
   let pen = 0, cur = null;
   for (const g of glyphs) {
     const gf = g.f || f;
     if (!cur || cur.f !== gf) {
-      cur = { f: gf, first: g.cluster, last: g.cluster, op: { op: 'glyphs', font: fontKey(gf), size, color: '#000000', x: r2(x + pen * s), y: r2(y), glyphs: [] } };
+      cur = { f: gf, first: g.cluster, last: g.cluster, op: { op: 'glyphs', font: fontKey(gf), size, color: /^#[0-9a-f]{6}$/i.test(color) ? color.toLowerCase() : '#000000', x: r2(x + pen * s), y: r2(y), glyphs: [] } };
       runs.push(cur);
     }
     cur.first = Math.min(cur.first, g.cluster);
@@ -192,7 +192,7 @@ export function drawList(model, text, running, { title = '', rasters = new Map()
         ops.push({ op: 'image', src: fr.src, box: [r.x, r.y, r.w, r.h].map(r2), clip: fr.box.map(r2) });
         continue;
       }
-      for (const l of text?.frames.get(fr.id)?.lines || []) ops.push(...glyphOps(l.font, l.glyphs, l.x, l.y, l.size, l.text || ''));
+      for (const l of text?.frames.get(fr.id)?.lines || []) ops.push(...glyphOps(l.font, l.glyphs, l.x, l.y, l.size, l.text || '', l.color));
     }
     for (const it of runningItems(model, index + 1, heads[index])) {
       const g = shapeLine(running, it.text);

@@ -74,6 +74,12 @@
     </section>
 
     <section>
+        <h2 class="sec-title">בורר צבעים</h2>
+        <div id="colors" class="fields"></div>
+        <p class="hint" id="color-out" dir="ltr"></p>
+    </section>
+
+    <section>
         <h2 class="sec-title">שדות</h2>
         <div class="fields">
             <label class="f"><span>שם</span><input value="כרטיס ברכה"></label>
@@ -142,6 +148,7 @@
     import { bindViewport } from '../src/js/gestures.js';
     import { accountMenu } from '../src/js/account.js';
     import { handles } from '../src/js/handles.js';
+    import { colorPicker, setColorContext } from '../src/js/color.js';
     import { snapper } from '../src/js/snap.js';
     import { openDocuments, pickFile, saveFile } from '../src/js/files-window.js';
 
@@ -292,6 +299,13 @@
     hs.addEventListener('pointercancel', () => hdl.cancel());
     mount();
     window.__hd = { get h() { return hdl; }, mount };
+
+    // ---- בורר צבעים ----
+    setColorContext({ presets: ['#000000', '#ffffff', '#2d4a8a', '#e5398f', '#1e7b3a', '#e19a00'], docColors: () => ['#2d4a8a', '#e3e6eb'] });
+    window.__color = { input: null, commits: 0 };
+    $('#colors').append(
+        colorPicker('מילוי', '#2d4a8a', v => { window.__color.input = v; $('#color-out').textContent = v; }, () => { window.__color.commits++; }),
+        colorPicker('מתאר עם שקיפות', '#e5398f80', v => { $('#color-out').textContent = v; }, null, { alpha: true }));
     dropZone($('#ctx'), { accept: ['image/', '.mbe'], onFiles: f => toast(`${f.length} קבצים`), onReject: f => toast(`לא נתמך: ${f[0].name}`, true) });
 </script>
 </body>

@@ -406,6 +406,37 @@ const server = http.createServer((req, res) => {
         await p.waitForTimeout(150);
         ok(await p.evaluate(() => window.__fwDone) === 'הזמנה לחתונה (2).mbe', 'files: שמירה — שם קיים → "לשמור את שניהם"');
 
+        // color — המרות ובורר
+        const cm = await p.evaluate(async () => {
+            const C = await import('../src/js/color.js');
+            return { p3: C.parseHex('abc'), p8: C.parseHex('#ff000080'), bad: C.parseHex('#xyz'), hex: C.toHex({ r: 255, g: 0, b: 0, a: .5 }, true),
+                round: C.toHex(C.hsvToRgb(C.rgbToHsv({ r: 18, g: 52, b: 86 }))), css: C.toCss({ r: 1, g: 2, b: 3, a: .5 }),
+                bw: C.contrast('#000', '#fff'), on: [C.readableOn('#2d4a8a'), C.readableOn('#f4f5f7')] };
+        });
+        ok(cm.p3.r === 170 && cm.p3.b === 204 && Math.abs(cm.p8.a - 128 / 255) < 1e-9 && cm.bad === null, 'color: parseHex — 3 / 8 ספרות ושגוי');
+        ok(cm.hex === '#ff000080' && cm.round === '#123456' && cm.css === 'rgba(1, 2, 3, 0.5)', 'color: toHex, HSV הלוך-חזור, toCss');
+        ok(Math.round(cm.bw) === 21 && cm.on[0] === '#ffffff' && cm.on[1] === '#000000', 'color: ניגוד WCAG ו-readableOn');
+        await p.$eval('#colors', el => el.scrollIntoView({ block: 'start' }));
+        await p.click('#colors .cp-trigger >> nth=0');
+        await p.fill('#colors .cp-hex >> nth=0', '#ff0000');
+        await p.waitForTimeout(60);
+        await p.press('#colors .cp-hex >> nth=0', 'Enter');
+        await p.waitForTimeout(60);
+        const cs = await p.evaluate(() => ({ input: window.__color.input, commits: window.__color.commits,
+            code: document.querySelector('#colors .cp-code').textContent, recent: [...document.querySelectorAll('#colors .cp-panel:not([hidden]) .cp-row')].map(r => r.textContent),
+            open: document.querySelectorAll('#colors .cp-panel:not([hidden])').length }));
+        ok(cs.input === '#ff0000' && cs.commits === 1 && cs.code === '#FF0000', 'colorPicker: הקלדת קוד → onInput, ו-Enter → onCommit (צעד אחד)');
+        ok(cs.recent.some(t => t.includes('אחרונים')) && cs.recent.some(t => t.includes('בעיצוב')) && cs.recent.some(t => t.includes('מוכנים')), 'colorPicker: שורות — אחרונים, בעיצוב, מוכנים');
+        await p.click('#colors .cp-trigger >> nth=1');
+        ok(await p.evaluate(() => document.querySelectorAll('#colors .cp-panel:not([hidden])').length) === 1, 'colorPicker: בורר אחד פתוח בכל רגע');
+        const svEl = p.locator('#colors .cp-panel:not([hidden]) .cp-sv');
+        const svW = (await svEl.boundingBox()).width;
+        await svEl.click({ position: { x: svW - 12, y: 12 } });   // לא בפינה — הריבוע מעוגל
+        await p.waitForTimeout(100);
+        const dragged = await p.$eval('#color-out', e => e.textContent);
+        ok(/^#[0-9a-f]{6}80$/.test(dragged) && dragged !== '#e5398f80', 'colorPicker: לחיצה בריבוע משנה את הצבע, והשקיפות נשמרת בקוד');
+        await p.click('#colors .cp-trigger >> nth=1');
+
         // history — ביטול / ביצוע
         const hi = await p.evaluate(async () => {
             const { History, snapshots, undoButtons } = await import('../src/js/history.js');
