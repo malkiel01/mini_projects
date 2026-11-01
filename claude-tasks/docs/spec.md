@@ -324,6 +324,45 @@ As "PR 2" in the answer to the command-center request, with two changes:
 UI: a 🔐 card in the task sheet **and as a bubble in the channel** — summary, detail in `<details>`, and 4 buttons in a 2×2 grid:
 "Once" · "Always" · "No" · "Never". "Always" on a `warn` type opens a confirmation that asks to type the type's name.
 
+### 6.1 Approvals per project — managed and editable (owner request 2026-11-01; **stage 7b**, right after stage 7)
+
+Stage 5 built one **global** policy table (`policy(type PK)`). The owner: *"for each project, manage the approvals that
+were granted and denied, so they can be changed."*
+
+**Data:**
+- `policy` gets `project_id` (NULL = board-wide default). Key: `(project_id, type)`. `policy_log` gets `project_id` too.
+- **Resolution** for a task: its project → each ancestor up to the root → the board-wide row → `ask`. The nearest rule wins,
+  so a sub-project can override its parent ("allowed in the suite, but never in raster").
+- **Migration:** existing rows stay as board-wide (`project_id NULL`) — nothing changes in behaviour on deploy.
+- `decide always|never` writes the rule **on the task's project** (not board-wide). A task with no project → board-wide.
+
+**API** (the decider rule from stage 5 — `canAnswer` on that project — for every write):
+- `policy?type=&project_id=` → `{ verdict, source: { project_id, name } | "board" | null }` (a worker passes nothing —
+  the project comes from its token/channel scope or from `task_id`).
+- `policy-list?project_id=` → for **every type in the catalog**: the effective verdict, where it comes from (this project /
+  inherited from X / board / none), and this project's own rule if any; plus this project's log (last 100).
+- `policy-set { project_id|null, type, verdict: ask|allow|deny, confirm_type? }` — `ask` deletes this project's rule (so the
+  inherited one applies again). Same catalog limits as `decide`: `no` types cannot be `allow`; `warn` + `allow` needs
+  `confirm_type`. Every change → `policy_log` with `prev` and the user. Replaces `policy-revoke` (kept as an alias for `ask`).
+
+**UI — project ⚙ → new row "🔐 אישורים"** (subline: "3 מותרים · 1 חסום" / "אין כללים"):
+- `.hint`: "מה קלוד רשאי לעשות בפרויקט הזה בלי לשאול. כלל כאן גובר על מה שבפרויקט האב."
+- **One row per catalog type**: the type's Hebrew label bold, a grey subline with where it comes from ("כאן" / "יורש מ: חבילת
+  היצירה" / "כללי לכל הלוח" / "לא נקבע"), and a three-option `.seg`: **שואל · תמיד מותר · אף פעם**. Inherited values show
+  the segment of the inherited verdict outlined (not filled), so it is clear nothing is set here. "תמיד מותר" is disabled for
+  `no` types (with the reason under the row); for `warn` types it asks to type the type's name.
+- Rows with a rule set **here** come first, then the rest.
+- **History** below — "מה הוחלט" — one row per event, newest first: ✅/⛔/↩︎ icon, the type, old → new, who, when, and the
+  task it came from (tappable) when it came from a `decide`. Day separators. Also the one-off decisions (`once` / `deny`)
+  from this project's tasks, marked "פעם אחת", so the owner sees everything that was approved or refused — not only rules.
+- The board-wide defaults: Settings → "מערכת" → "🔐 אישורים כלליים" — the same sheet with `project_id = null` (owner only).
+
+**Skills** (`claude-tasks-worker`, `claude-tasks-live` — English): `policy` is per project now; nothing else changes for them.
+
+**Done when:** tests — resolution order (child overrides parent, parent overrides board), migration keeps old rows board-wide,
+`decide always` lands on the task's project, `ask` clears only this project's rule, catalog limits on `policy-set`, permissions;
+screenshots of the sheet 390/320 light/dark.
+
 ---
 
 ## 7. Stage 6 — one route (merges two switches)
