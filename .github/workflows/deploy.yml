@@ -75,6 +75,13 @@ jobs:
       - name: mbe-core gate (every copy matches creative-suite/mbe-core/src)
         run: php creative-suite/mbe-core/tools/sync.php --check
 
+      # הבדיקות של הליבה עצמה (קו הגמר, finish-line.md): PHP, JS, ובין השפות (node קורא ל-PHP דרך tests/cli.php).
+      # בדיקה שנכשלת — עוצרת את הפריסה, כמו עותק ששונה. ‎~10 שניות.
+      - name: mbe-core tests (PHP + JS + cross-language)
+        run: |
+          php creative-suite/mbe-core/tests/run.php
+          node --test creative-suite/mbe-core/tests/js.test.mjs creative-suite/mbe-core/tests/handoff.test.mjs
+
       # מנוע ה-PDF המשותף (creative-suite/pdf-core/src/php) — מועתק לאפליקציות שב-creative-suite/pdf-core/apps.json.
       # עותק ששונה בתוך אפליקציה — נעצר כאן. עורכים במקור ומריצים sync.php.
       - name: pdf-core gate (every copy matches creative-suite/pdf-core/src)
