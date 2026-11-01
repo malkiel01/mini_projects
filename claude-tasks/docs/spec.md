@@ -131,7 +131,7 @@ token sees a sub-project; the general token skips `owner_only`. On the phone: ol
 project) and a "Structure" section in project settings: an "owner only" checkbox (`owner_only` had no UI) and a "move into
 project (temporary)" picker — so the 8 creative-suite projects created before the tree can go under
 `mini_projects › חבילת היצירה`. **Recommendation:** keep `move-project` permanently — reorganizing the tree is a normal need
-("add more projects easily", #1069); only the "(temporary)" label goes. Pending the owner's word.
+("add more projects easily", #1069); only the "(temporary)" label goes. ✅ Kept permanently.
 
 ---
 
@@ -390,6 +390,66 @@ The request asked for two caps **in the server settings only**. The owner decide
 | **Stage editing** | Old `.sheet__inner` | `.sheet-wrap`; keywords as a visible field (not collapsed) |
 | **Login** | — | Tokens only; accessibility: a `label` per field, focus after an error |
 
+### 10.1 Connections — rebuilt (owner request 2026-11-01, moved forward: **stage 3a**, right after stage 3)
+
+The owner, after #1095: "who is connected and who isn't" is not visible, disconnecting is hidden, adding is a fixed list, and
+there is only one ★ default. ✅ Decisions (2026-11-01): **two groups**; **automatic fallback** by priority; **several GitHub
+accounts** and **several keys per provider**.
+
+**Data — one table instead of `users.github_*` + `user_providers`:**
+
+```
+connections(
+  id, user_id, kind github|anthropic|openai|google,
+  label TEXT,              -- "personal", "work" — shown next to the kind; default = login or "…4f2a"
+  secret TEXT,             -- encrypted with lib/crypto.php, never returned by the API (last 4 only)
+  login TEXT, scopes TEXT, -- github
+  model TEXT,              -- ai
+  priority INTEGER,        -- ai only; 1 = first. Unique per user among ai rows
+  status ok|failing, last_error TEXT, failing_until INTEGER, last_ok_at INTEGER,
+  created_at)
+
+project_connections(project_id, user_id, connection_id, PRIMARY KEY(project_id, user_id))  -- github choice, per user
+tasks.connection_id NULL   -- a specific ai connection; NULL = auto (priority order)
+```
+
+**Migration (careful — secrets):** copy the existing ciphertexts **as-is** (same key, same `encryptSecret` format — no
+decrypt/re-encrypt round trip) into `connections`; `priority` from today's ★ first, then provider order. Keep the old columns
+**read-only** for one release, then drop them in a later PR. A test decrypts every migrated row and compares it to the old
+column. Back up `data/tasks.sqlite` before the migration runs (the same `.bak-<date>` as `owner-access.php`).
+
+**GitHub — which connection a project uses:** the rule "an action goes out with the token of whoever performs it" stays.
+For the acting user: their row in `project_connections` (inherited up the tree) → their connection whose `login` = `repo_owner`
+→ their first connection that has access to the repo (probed once, cached) → error "no connection of yours reaches this repo".
+Project ⚙ gets a row "my GitHub connection" (a picker over **my** GitHub connections).
+
+**AI — priority and fallback:**
+- Order = `priority`. A task with `connection_id` uses only that one (no fallback — the user chose it).
+- **Falls over to the next** on: 401/403 (bad/expired key), 429 / "insufficient credit" / quota, 5xx or timeout after one retry.
+  **Not** on a 400 (the prompt itself is wrong — another provider will fail the same way).
+- A failing connection is marked `failing` with `last_error`, skipped for 10 minutes (`failing_until`), then tried again.
+- Every fallback writes a note on the task ("עבר ל-OpenAI · עבודה: מפתח Anthropic נדחה (401)") and an `events` row.
+- **Quota (stage 7):** all connections of one user count against that user's single monthly quota, in USD — so fallback
+  never bypasses it. At 100% the chain is not tried at all.
+- The catalog and every other `lib/ai.php` caller go through the same chain. The engine (`run.mjs`) keeps one key
+  (`AGENT_AI_KEY` = the first connection at install time); fallback inside the engine — later, not now.
+
+**UI (Settings → Connections tab):**
+- **"מחוברים (N)"** first. Two sub-groups with small headers: **קוד** (GitHub rows) and **בינה מלאכותית** (AI rows, in priority order).
+  Row: icon in a colored square, **kind + label** bold, subline "🟢 מחובר · …4f2a · claude-sonnet" or **"🔴 נכשל · מפתח נדחה · לפני 5 דק'"**,
+  and at the end a visible **🔌** icon button (`aria-label="ניתוק <name>"`). AI rows also show the number (1, 2, 3) and **↑ ↓**
+  icon buttons to reorder (no drag — reliable on a phone).
+- Tap a row → a sheet: label, model picker (#1095's `provider-models`), "בדיקה" (test now — clears `failing` on success),
+  and "ניתוק" as a red button with a confirmation. Disconnecting a GitHub connection that projects use → the confirmation
+  lists them and says they fall back to the rule above.
+- **"+ חיבור"** (word, primary) → a sheet with **tiles 2×2**: GitHub · Anthropic · OpenAI · Gemini → a short form. A new AI
+  connection goes **last** in the order.
+- Empty state: "אין חיבורים עדיין. ‎+ חיבור כדי להתחבר לגיטהאב או לספק בינה."
+- The task sheet's provider picker becomes "אוטומטי (לפי הסדר)" + one option per AI connection.
+
+**Done when:** tests cover migration (every secret decrypts identically), fallback (401 → next, 400 → no fallback, failing
+skipped then retried), per-user GitHub resolution; screenshots 390/320 light/dark; the owner sees connected vs not at a glance.
+
 **Accessibility on every screen:** icon button = `aria-label`; touch targets ≥ 44px; tabs `role="tablist"`; a new channel message in `aria-live="polite"`.
 
 ---
@@ -425,4 +485,4 @@ After approval: a `בקשה` message with **stage 1**. Every stage — branch, P
 | Stage | PR | Deployed | Notes |
 | --- | --- | --- | --- |
 | 1 | #1086 | `conclusion: success` checked after the merge — reported in the `עדכון` message | `subtree` defaults to 1 (the UI already relies on the whole branch); a task with no project — any signed-in user answers, as before; added a project check to `task` / `add-note` (`read`) and `update-task` (`write`); U1 — `owner` only |
-| 2 | (this PR) | checked after the merge — reported in the `עדכון` message | `author_role` on `in` messages is `authorRole()` (`owner` or `member`) — a `member` with `write` may send on a non-`owner_only` project, so `member` was added to the roles; the skill still acts only on `owner`. An answer by anyone allowed to answer (not only `owner`) is delivered to the asking channel, with its role. A channel token also works as a worker token for its subtree (`claim`, `block` …). The general token may register channels too. `channel-wait` records `listening_until = now + wait + 30`. The engine cookie fix (5.8) |
+| 2 | #1096 | checked after the merge — reported in the `עדכון` message | `author_role` on `in` messages is `authorRole()` (`owner` or `member`) — a `member` with `write` may send on a non-`owner_only` project, so `member` was added to the roles; the skill still acts only on `owner`. An answer by anyone allowed to answer (not only `owner`) is delivered to the asking channel, with its role. A channel token also works as a worker token for its subtree (`claim`, `block` …). The general token may register channels too. `channel-wait` records `listening_until = now + wait + 30`. The engine cookie fix (5.8) |
