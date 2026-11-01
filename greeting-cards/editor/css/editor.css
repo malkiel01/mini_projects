@@ -346,3 +346,6 @@ input.search { width: 100%; min-height: var(--tap); margin-bottom: var(--s2); }
 .tr-badge { position: absolute; top: 64px; left: 50%; transform: translateX(-50%); z-index: 2; padding: 6px 12px; border-radius: 999px;
     background: #16192bE6; color: #fff; font-size: .875rem; font-weight: 600; white-space: nowrap; pointer-events: none; }
 .tr-badge[hidden] { display: none; }
+
+/* 👤 העיגול של ui-core — בסרגל הלבן של הסטודיו (ב-ui-core הסרגל בצבע המותג) */
+.topbar .account-btn { background: var(--brand-soft); color: var(--brand); }

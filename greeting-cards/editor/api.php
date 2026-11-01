@@ -43,8 +43,25 @@ if (str_starts_with($action, 'drives_')) (new \SuiteCloud\Drives([
     'back'     => 'https://mbe-plus.com/mini_projects/greeting-cards/editor/',
 ]))->serve($action);
 
+require_once __DIR__ . '/lib/ui-core/account/account.php';
+
 try {
     if ($method !== 'GET' && ($_SERVER['HTTP_X_STUDIO'] ?? '') !== '1') throw new ApiError('בקשה לא מורשית', 403);
+
+    // 👤 תפריט המשתמש של ui-core (עותק מסונכרן ב-lib/ui-core): הגדרות אישיות במסד שלנו (uic_prefs), וייצוא הנתונים.
+    // מחיקת חשבון — עוד לא (501): הקבצים של המשתמש בשרת ובמכשיר צריכים מחיקה מסודרת משלהם.
+    if (str_starts_with($action, 'account_')) {
+        try {
+            out(uic_account_api($action, body(), [
+                'app'    => 'greeting-cards',
+                'pdo'    => fn() => db(),
+                'user'   => fn() => ($u = currentUser()) ? (string) $u['id'] : null,
+                // ייצוא: העיצובים עצמם (המסמך), בלי מה שנמחק. התמונות נשארות כקישורים — הן בשרת של הסטודיו
+                'export' => fn($uid) => ['designs' => array_values(array_map(fn($d) => getDesign((int) $uid, $d['id']),
+                    array_filter(listDesigns((int) $uid, 0), fn($d) => !$d['deleted'])))],
+            ]));
+        } catch (UicAccountError $e) { out(['error' => $e->getMessage()], $e->status); }
+    }
 
     switch ($action) {
         case 'me':

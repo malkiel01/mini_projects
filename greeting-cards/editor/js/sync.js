@@ -33,6 +33,9 @@ async function call(action, { method = 'GET', json, form, query = '' } = {}) {
     return data;
 }
 
+/** צד השרת של תפריט המשתמש (ui-core account): account_prefs / account_prefs_set / account_export / account_delete. */
+export const accountCall = (action, body) => call(action, { method: 'POST', json: body || {} });
+
 /** יומן אבחון לשרת. מחזיר {id} — הקוד שהמשתמש מעביר הלאה. */
 export function sendLog(dump) {
     return call('log_put', { method: 'POST', json: dump });
