@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>ui-core — תצוגה</title>
 <link rel="stylesheet" href="../src/css/ui.css">
+<link rel="stylesheet" href="../src/fonts/fonts.css">
 <style>
     section { margin-bottom: var(--s4); }
 </style>
@@ -71,6 +72,12 @@
             <div id="hs-ref" style="position:absolute;left:20px;top:20px;width:60px;height:200px;background:var(--line)"></div>
             <div id="hs-box" style="position:absolute;left:0;top:0;background:var(--brand-soft);border:1px solid var(--brand)"></div>
         </div>
+    </section>
+
+    <section>
+        <h2 class="sec-title">בורר גופנים</h2>
+        <div id="fonts" class="fields"></div>
+        <p id="font-out" style="font-size:1.4rem">שלום עולם — Hello</p>
     </section>
 
     <section>
@@ -149,6 +156,7 @@
     import { accountMenu } from '../src/js/account.js';
     import { handles } from '../src/js/handles.js';
     import { colorPicker, setColorContext } from '../src/js/color.js';
+    import { fontPicker, fontStack, userFonts } from '../src/js/fonts.js';
     import { snapper } from '../src/js/snap.js';
     import { openDocuments, pickFile, saveFile } from '../src/js/files-window.js';
 
@@ -299,6 +307,13 @@
     hs.addEventListener('pointercancel', () => hdl.cancel());
     mount();
     window.__hd = { get h() { return hdl; }, mount };
+
+    // ---- בורר גופנים ----
+    const fontBlobs = new Map();
+    const mine = userFonts({ key: 'uic-demo-fonts', assets: { get: async id => fontBlobs.get(id), put: async b => { const id = 'f' + fontBlobs.size; fontBlobs.set(id, b); return id; } } });
+    window.__fonts = { picked: null, mine };
+    $('#fonts').append(fontPicker('גופן', 'Heebo', f => { window.__fonts.picked = f; $('#font-out').style.fontFamily = fontStack(f); },
+        { onUpload: async file => { await mine.add(file); toast('הגופן נוסף'); } }));
 
     // ---- בורר צבעים ----
     setColorContext({ presets: ['#000000', '#ffffff', '#2d4a8a', '#e5398f', '#1e7b3a', '#e19a00'], docColors: () => ['#2d4a8a', '#e3e6eb'] });
