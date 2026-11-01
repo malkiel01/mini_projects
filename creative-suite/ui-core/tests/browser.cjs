@@ -441,10 +441,11 @@ const server = http.createServer((req, res) => {
             const C = await import('../src/js/color.js');
             return { p3: C.parseHex('abc'), p8: C.parseHex('#ff000080'), bad: C.parseHex('#xyz'), hex: C.toHex({ r: 255, g: 0, b: 0, a: .5 }, true),
                 round: C.toHex(C.hsvToRgb(C.rgbToHsv({ r: 18, g: 52, b: 86 }))), css: C.toCss({ r: 1, g: 2, b: 3, a: .5 }),
-                bw: C.contrast('#000', '#fff'), on: [C.readableOn('#2d4a8a'), C.readableOn('#f4f5f7')] };
+                bw: C.contrast('#000', '#fff'), rgb: C.parseHex('rgb(18, 52, 86)'), rgba: C.parseHex('rgba(255 0 0 / 50%)'), nohash: C.toHex(C.parseHex('123456')), on: [C.readableOn('#2d4a8a'), C.readableOn('#f4f5f7')] };
         });
         ok(cm.p3.r === 170 && cm.p3.b === 204 && Math.abs(cm.p8.a - 128 / 255) < 1e-9 && cm.bad === null, 'color: parseHex — 3 / 8 ספרות ושגוי');
         ok(cm.hex === '#ff000080' && cm.round === '#123456' && cm.css === 'rgba(1, 2, 3, 0.5)', 'color: toHex, HSV הלוך-חזור, toCss');
+        ok(cm.rgb.b === 86 && cm.rgba.a === 0.5 && cm.rgba.r === 255 && cm.nohash === '#123456', 'color: parseHex — rgb(…), rgba(… / 50%), בלי #');
         ok(Math.round(cm.bw) === 21 && cm.on[0] === '#ffffff' && cm.on[1] === '#000000', 'color: ניגוד WCAG ו-readableOn');
         await p.$eval('#colors', el => el.scrollIntoView({ block: 'start' }));
         await p.click('#colors .cp-trigger >> nth=0');
@@ -491,7 +492,7 @@ const server = http.createServer((req, res) => {
             u.undo(); out.u1 = doc.x; u.undo(); out.u2 = doc.x; u.redo(); out.r1 = doc.x;
             out.copy = (() => { const before = doc; u.undo(); u.redo(); return doc !== before; })();
             const ub = document.createElement('button'), rb = document.createElement('button');
-            undoButtons(u, ub, rb); out.btn = [ub.disabled, ub.title, rb.disabled];
+            undoButtons(u, ub, rb); out.btn = [ub.disabled, ub.title, rb.disabled]; undoButtons(u, ub, rb, { keys: { undo: 'Ctrl+Z' } }); out.btnKey = ub.title;
             return out;
         });
         ok(hi.dropped === 'true', 'history: maxSteps — הישנה נזרקת עם discard(true)');
@@ -500,6 +501,7 @@ const server = http.createServer((req, res) => {
         ok(hi.groupLabel === 'קבוצה' && hi.groupUndo === 9, 'history: group — צעד ביטול אחד');
         ok(hi.same === false && hi.steps === 2, 'snapshots: אותו מצב לא נרשם; merge — שינויים רצופים בצעד אחד');
         ok(hi.u1 === 2 && hi.u2 === 1 && hi.r1 === 2 && hi.copy, 'snapshots: ביטול / ביצוע, ו-set מקבל עותק חדש');
+        ok(hi.btnKey === 'ביטול: הזזה (Ctrl+Z)', 'undoButtons: keys — הקיצור נשאר בכותרת');
         ok(hi.btn[0] === false && hi.btn[1] === 'ביטול: הזזה' && hi.btn[2] === false, 'undoButtons: disabled ו-title לפי הצעד');
 
         // transform / snap — חשבון טהור
