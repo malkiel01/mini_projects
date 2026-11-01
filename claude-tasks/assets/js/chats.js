@@ -3,6 +3,7 @@
  * עם צ'אט. ‏out — מה שקרה בצ'אט (משוקף בהוקים); ‏in — מה שנכתב כאן בלוח.
  */
 import { $, el, api, toast, state, on, timeAgo } from './core.js';
+import { approvalCard } from './approvals.js';
 
 const POLL_MS = 4000;
 const conv = { id: null, channel: null, messages: [], timer: null, busy: false };
@@ -101,7 +102,9 @@ function bubble(m) {
   return el('li', { class: `bubble bubble--${m.direction}${m.author_role === 'system' ? ' bubble--sys' : ''}`, dataset: { id: String(m.id) } }, [
     el('div', { class: 'b-meta' }, meta),
     kind ? el('span', { class: 'badge', text: kind }) : null,
-    el('div', { class: 'b-body', dir: 'auto', text: m.body }),
+    m.kind === 'approval' && m.approval?.type
+      ? approvalCard(m.approval, m.task_id, { canDecide: m.approval.can_decide, pending: m.approval.pending, onDone: reload })
+      : el('div', { class: 'b-body', dir: 'auto', text: m.body }),
     m.task_id ? el('button', {
       type: 'button', class: 'b-task',
       onclick: () => document.dispatchEvent(new CustomEvent('ct:open-task', { detail: m.task_id })),
@@ -153,6 +156,12 @@ async function poll(stick = false) {
   } catch (ex) {
     if (stick) toast(ex.message, 'error');
   } finally { conv.busy = false; }
+}
+
+/** אחרי החלטה — טוען הכול מחדש, כדי שהבועה הישנה תראה "הוחלט". */
+function reload() {
+  conv.messages = [];
+  poll(true);
 }
 
 function startTimer() {

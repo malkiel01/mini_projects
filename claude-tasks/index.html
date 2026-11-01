@@ -129,6 +129,7 @@
     <div class="seg-tabs" id="statusChips" role="tablist" aria-label="סינון לפי מצב">
       <button type="button" role="tab" data-status="active" aria-selected="true"><b data-count="active">0</b>פעילות</button>
       <button type="button" role="tab" data-status="blocked" aria-selected="false"><b data-count="blocked">0</b>ממתין לך</button>
+      <button type="button" role="tab" data-status="awaiting_approval" aria-selected="false" hidden><b data-count="awaiting_approval">0</b>🔐 אישור</button>
       <button type="button" role="tab" data-status="in_progress" aria-selected="false"><b data-count="in_progress">0</b>בעבודה</button>
       <button type="button" role="tab" data-status="open" aria-selected="false"><b data-count="open">0</b>בתור</button>
       <button type="button" role="tab" data-status="done" aria-selected="false"><b data-count="done">0</b>הושלמו</button>
@@ -342,6 +343,7 @@
       <div class="dmeta" id="dMeta"></div>
       <p class="dbody" id="dBody"></p>
       <h3>שיחה</h3>
+      <div id="dApproval" hidden></div>
       <div class="thread" id="dThread"></div>
       <form class="reply" id="replyForm">
         <label class="field">

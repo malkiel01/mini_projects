@@ -264,6 +264,8 @@ function migrate(PDO $pdo): void {
 
     // חיבורים: כמה גיטהאב וכמה מפתחות לספק (lib/connections.php)
     migrateConnections($pdo);
+    // אישורים ומדיניות (lib/approvals.php)
+    migrateApprovals($pdo);
 }
 
 /** ALTER TABLE ADD COLUMN אינו מכיר IF NOT EXISTS ב-SQLite — בודקים לבד. */
@@ -279,6 +281,7 @@ function addColumn(PDO $pdo, string $table, string $column, string $definition):
  *   open        ממתינה שעובד ייקח אותה
  *   in_progress עובד מחזיק בה כרגע
  *   blocked     Claude שאל שאלה וממתין לתשובת אדם
+ *   awaiting_approval  Claude ביקש אישור לפעולה רגישה (lib/approvals.php)
  *   answered    אדם ענה — מוכנה שייקחו אותה שוב
  *   done        הושלמה
  *   cancelled   בוטלה
@@ -286,7 +289,7 @@ function addColumn(PDO $pdo, string $table, string $column, string $definition):
  * ‏answered הוא הלב של הרעיון: במקום שמטלה חסומה תישכח, מענה של אדם
  * מחזיר אותה לתור אוטומטית (ראה addNote).
  */
-const STATUSES  = ['open', 'in_progress', 'blocked', 'answered', 'done', 'cancelled'];
+const STATUSES  = ['open', 'in_progress', 'blocked', 'awaiting_approval', 'answered', 'done', 'cancelled'];
 const PICKABLE  = ['answered', 'open'];   // הסדר קובע עדיפות: קודם מה שנענה
 const KINDS     = ['code', 'question', 'research'];
 /** איך הנושא נקבע: אדם בחר, מילות מפתח התאימו, מודל החליט, או שאין. */
@@ -427,3 +430,4 @@ function statusCounts(PDO $pdo, ?int $topicId = null, bool $unassignedOnly = fal
 }
 
 require_once __DIR__ . '/connections.php';
+require_once __DIR__ . '/approvals.php';

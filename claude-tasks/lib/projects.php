@@ -306,7 +306,7 @@ function listProjects(array $user, ?int $rootId = null): array {
                    (SELECT COUNT(*) FROM project_members m WHERE m.project_id = p.id) member_count,
                    (SELECT COUNT(*) FROM tasks t
                      WHERE t.project_id = p.id AND t.status NOT IN ('done','cancelled')) open_tasks,
-                   (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.status = 'blocked') n_blocked,
+                   (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.status IN ('blocked','awaiting_approval')) n_blocked,
                    (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.status = 'in_progress') n_progress,
                    (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.status IN ('open','answered')) n_queue,
                    (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.status = 'done') n_done

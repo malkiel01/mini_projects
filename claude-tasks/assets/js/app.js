@@ -1,6 +1,7 @@
 import { $, $$, el, toast, api, state, timeAgo, on, set } from './core.js';
 import { loadConnections, loadProviders, runTask, openProject, modelPicker } from './platform.js';
 import { loadChannels } from './chats.js';
+import { approvalCard, noteText } from './approvals.js';
 
 /**
  * מטלות לקלוד — ממשק.
@@ -14,6 +15,7 @@ const STATUS = {
   open:        { label: 'בתור',      cls: '' },
   in_progress: { label: 'בעבודה',    cls: 'badge--progress' },
   blocked:     { label: 'ממתין לך',  cls: 'badge--blocked' },
+  awaiting_approval: { label: '🔐 אישור ממתין', cls: 'badge--blocked' },
   answered:    { label: 'נענתה',     cls: 'badge--answered' },
   done:        { label: 'הושלמה',    cls: 'badge--done' },
   cancelled:   { label: 'בוטלה',     cls: '' },
@@ -548,8 +550,9 @@ async function refresh() {
 function renderPulse() {
   const c = state.counts;
   const n = {
-    active: ['open', 'in_progress', 'blocked', 'answered'].reduce((sum, k) => sum + (Number(c[k]) || 0), 0),
+    active: ['open', 'in_progress', 'blocked', 'awaiting_approval', 'answered'].reduce((sum, k) => sum + (Number(c[k]) || 0), 0),
     blocked: Number(c.blocked) || 0,
+    awaiting_approval: Number(c.awaiting_approval) || 0,
     in_progress: Number(c.in_progress) || 0,
     open: (Number(c.open) || 0) + (Number(c.answered) || 0),
     done: Number(c.done) || 0,
@@ -558,9 +561,16 @@ function renderPulse() {
   set('#vtTaskCount', 'textContent', n.active ? String(n.active) : '');
   // מה שממתין דווקא לי — בולט גם כשהלשונית לא נבחרה
   set('#statusChips [data-status="blocked"]', 'className', n.blocked > 0 ? 'alert' : '');
+  // לשונית 🔐 — רק כשיש בקשות אישור (או כשהיא הנבחרת), כדי לא להצר את השורה בטלפון
+  const ap = $('#statusChips [data-status="awaiting_approval"]');
+  if (ap) {
+    ap.hidden = !n.awaiting_approval && state.status !== 'awaiting_approval';
+    ap.className = n.awaiting_approval > 0 ? 'alert' : '';
+    $('#statusChips').style.gridTemplateColumns = `repeat(${ap.hidden ? 5 : 6}, minmax(0, 1fr))`;
+  }
 }
 
-const ICON = { blocked: '❓', answered: '↩️', in_progress: '🔧', open: '⏳', done: '✅', cancelled: '✕' };
+const ICON = { awaiting_approval: '🔐', blocked: '❓', answered: '↩️', in_progress: '🔧', open: '⏳', done: '✅', cancelled: '✕' };
 
 function taskCard(t) {
   const st = STATUS[t.status] || { label: t.status };
@@ -605,6 +615,7 @@ function taskCard(t) {
 
 const EMPTY = {
   blocked: 'אין שום דבר שממתין לך. כש-Claude ישאל שאלה — היא תופיע כאן.',
+  awaiting_approval: 'אין בקשות אישור. כש-Claude יבקש רשות לפעולה רגישה — היא תופיע כאן.',
   in_progress: 'אף מטלה לא בעבודה כרגע.',
   open: 'התור ריק.',
   done: 'עוד לא הושלמו מטלות.',
@@ -627,7 +638,7 @@ function renderList() {
 /* ── פרטי מטלה ─────────────────────────────────────────────── */
 
 async function openTask(id) {
-  const { task, notes, can_answer: canAnswer } = await api('task', { id });
+  const { task, notes, can_answer: canAnswer, approval } = await api('task', { id });
   state.openTaskId = id;
 
   $('#dTitle').textContent = task.title;
@@ -657,13 +668,22 @@ async function openTask(id) {
   }, [
     el('div', { class: 'note__head' }, [
       el('b', { text: n.author }),
-      el('span', { text: { question: 'שאלה', answer: 'תשובה', result: 'תוצאה' }[n.kind] || 'הערה' }),
+      el('span', { text: { question: 'שאלה', answer: 'תשובה', result: 'תוצאה', approval: 'בקשת אישור', decision: 'החלטה' }[n.kind] || 'הערה' }),
       el('span', { text: timeAgo(Number(n.created_at)) }),
     ]),
-    el('p', { text: n.body }),
+    el('p', { text: noteText(n) }),
   ])));
   if (!notes.length) $('#dThread').replaceChildren(el('p', { class: 'hint', text: 'עוד אין שיחה על המטלה.' }));
 
+  // בקשת אישור פתוחה — הכרטיס עם ארבעת הכפתורים, מעל השרשור
+  const apBox = $('#dApproval');
+  if (apBox) {
+    apBox.hidden = !approval;
+    apBox.replaceChildren(...(approval ? [approvalCard(approval, id, {
+      canDecide: canAnswer !== false,
+      onDone: async () => { $('#detail').close(); await refresh(); },
+    })] : []));
+  }
   $('#replyBody').value = '';
   // בענף "רק בעל הלוח" (או בלי הרשאת כתיבה) — הערה נשמרת, אבל לא מחזירה את המטלה לתור
   set('#replyLabel', 'textContent', task.status !== 'blocked' ? 'תשובה או הערה'
@@ -711,7 +731,7 @@ on('#dDone', 'click', async () => {
  * והמטלות שלו עוברות איתו; אפשר גם לבחור מטלות בודדות.
  */
 
-const ST_SHORT = { open: 'בתור', in_progress: 'בעבודה', blocked: 'ממתין', answered: 'נענתה', done: 'הושלמה', cancelled: 'בוטלה' };
+const ST_SHORT = { open: 'בתור', in_progress: 'בעבודה', blocked: 'ממתין', awaiting_approval: 'אישור', answered: 'נענתה', done: 'הושלמה', cancelled: 'בוטלה' };
 
 function assignSelection() {
   const topics = $$('#assignGroups [data-topic]:checked').map((c) => Number(c.dataset.topic));
