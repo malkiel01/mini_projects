@@ -268,6 +268,8 @@ function migrate(PDO $pdo): void {
     migrateApprovals($pdo);
     // מסלול אחד: מי עובד ומי עונה (lib/routes.php)
     migrateRoutes($pdo);
+    // מכסה ושימוש (lib/usage.php)
+    migrateUsage($pdo);
 }
 
 /** ALTER TABLE ADD COLUMN אינו מכיר IF NOT EXISTS ב-SQLite — בודקים לבד. */
@@ -444,3 +446,4 @@ function statusCounts(PDO $pdo, ?int $topicId = null, bool $unassignedOnly = fal
 require_once __DIR__ . '/connections.php';
 require_once __DIR__ . '/approvals.php';
 require_once __DIR__ . '/routes.php';
+require_once __DIR__ . '/usage.php';

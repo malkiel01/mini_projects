@@ -723,6 +723,7 @@ try {
         try {
             $conn = userConn($me, $prov);
             if ($conn['key'] === '') fail('הספק אינו מחובר');
+            $conn['usage']['enforce'] = false;   // בדיקה זעירה — נרשמת, לא נחסמת במכסה
             $reply = aiComplete($conn, 'ענה קצר מאוד.', 'ענה במילה אחת: אישור', 16);
             logEvent($me, 'provider.test', $prov, true, $conn['model']);
             ok(['message' => 'החיבור תקין', 'model' => $conn['model'],
@@ -1084,7 +1085,13 @@ try {
                             $task['connection_id'] !== null && (int) $task['created_by'] === (int) $me['id']
                                 ? (int) $task['connection_id'] : null);
 
-        ok(dispatchTask($me, $project, $task, $conn));
+        // מכסה (§8): הריצה על חשבון מי שמריץ — המפתח שלו. נגמרה / לא הוגדרה → 402
+        requireQuota((int) $me['id'], 'develop');
+        $r = dispatchTask($me, $project, $task, $conn);
+        // המנוע מדווח על השימוש (report-usage), והוא נזקף למי שהריץ
+        db()->prepare('UPDATE tasks SET run_user_id = ?, run_connection_id = ? WHERE id = ?')
+            ->execute([$me['id'], $conn['connection_id'] ?? null, $task['id']]);
+        ok($r);
     }
 
     /** רשימת המשתמשים לבחירת חברים. שם ומזהה בלבד — לא כתובות ולא סודות. */
@@ -1146,7 +1153,7 @@ try {
         if ($me['role'] !== 'admin') fail('למנהל בלבד', 403);
         // מרכאות בודדות דרך heredoc: ב-SQLite "" הוא מזהה, והוא נופל
         // למחרוזת רק כברירת מחדל היסטורית שאפשר לכבות.
-        ok(['users' => db()->query(<<<SQL
+        $rows = db()->query(<<<SQL
             SELECT id, username, display_name, role, created_at,
                    (SELECT c.login FROM connections c WHERE c.user_id = users.id AND c.kind = 'github' ORDER BY c.id LIMIT 1) github_login,
                    (platform_sub <> '') platform_linked,
@@ -1154,9 +1161,12 @@ try {
                    (SELECT COUNT(*) FROM connections c WHERE c.user_id = users.id AND c.kind <> 'github') ai_connections,
                    (SELECT COUNT(*) FROM connections c WHERE c.user_id = users.id AND c.kind <> 'github') providers,
                    (SELECT COUNT(*) FROM project_members m WHERE m.user_id = users.id) projects,
-                   (SELECT COUNT(*) FROM tasks t WHERE t.created_by = users.id) tasks
+                   (SELECT COUNT(*) FROM tasks t WHERE t.created_by = users.id) tasks,
+                   quota_usd
               FROM users ORDER BY id
-            SQL)->fetchAll()]);
+            SQL)->fetchAll();
+        // המכסה והשימוש החודש — ליד כל משתמש (§8)
+        ok(['users' => array_map(fn ($u) => $u + ['usage' => quotaState((int) $u['id'])], $rows)]);
     }
 
     case 'admin-events': {
@@ -1290,6 +1300,33 @@ try {
     case 'policy-revoke':
         revokePolicy(requireUser($user), str_field($in, 'type', 60));
         ok(['verdict' => 'ask']);
+
+    /* ── מכסה ושימוש (docs/spec.md §8, lib/usage.php) ─────────── */
+
+    /** המנוע (ובעתיד — Platform) מדווח על קריאה לספק. נזקף למי שהריץ את המטלה. */
+    case 'report-usage': {
+        if (!$worker) fail('פעולה לעובדים בלבד', 403);
+        $task = workerTask($scope, (int) ($in['id'] ?? 0));
+        $uid = (int) ($task['run_user_id'] ?? 0);
+        if ($uid <= 0) ok(['recorded' => false]);
+        $cost = recordUsage(['user_id' => $uid, 'project_id' => $task['project_id'], 'task_id' => (int) $task['id'],
+                             'connection_id' => $task['run_connection_id'], 'kind' => 'develop'],
+                            str_field($in, 'provider', 30), str_field($in, 'model', 120),
+                            max(0, (int) ($in['tokens_in'] ?? 0)), max(0, (int) ($in['tokens_out'] ?? 0)));
+        ok(['recorded' => true, 'cost_usd' => $cost]);
+    }
+
+    /** הגרף: המשתמש עצמו, או מנהל לכל משתמש. */
+    case 'usage-summary': {
+        $me  = requireUser($user);
+        $uid = int_or_null($in, 'user_id') ?? (int) $me['id'];
+        if ($uid !== (int) $me['id'] && $me['role'] !== 'admin') fail('שימוש של משתמש אחר — מנהל בלבד', 403);
+        ok(usageSummary($uid));
+    }
+
+    case 'set-quota':
+        setQuota(requireUser($user), (int) ($in['user_id'] ?? 0), (float) ($in['quota_usd'] ?? -1));
+        ok(['usage' => quotaState((int) ($in['user_id'] ?? 0))]);
 
     case 'set-default-route':
         ok(['default_route' => setDefaultRoute(requireUser($user), str_field($in, 'route', 20))]);

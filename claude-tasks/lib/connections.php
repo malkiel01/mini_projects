@@ -276,7 +276,8 @@ function aiChain(array $user, ?int $connectionId = null, string $kind = '', stri
         if ($key === '') continue;
         $chain[] = ['provider' => $r['kind'], 'key' => $key,
                     'model' => ($model !== '' && $connectionId !== null) ? $model : (string) $r['model'],
-                    'connection_id' => (int) $r['id'], 'label' => connLabel($r), 'source' => 'user'];
+                    'connection_id' => (int) $r['id'], 'label' => connLabel($r), 'source' => 'user',
+                    'user_id' => (int) $r['user_id']];   // מי משלם (§8): בעל החיבור
     }
     return $chain;
 }

@@ -302,7 +302,7 @@ function listProjects(array $user, ?int $rootId = null): array {
 
     // המונים — של המטלות של הפרויקט עצמו; הממשק מסכם לאב את כל הענף.
     $sql = "SELECT p.id, p.name, p.repo_owner, p.repo_name, p.default_branch, p.description, p.parent_id,
-                   p.path, p.icon, p.created_at, p.owner_only, p.route, u.display_name owner_name,
+                   p.path, p.icon, p.created_at, p.owner_only, p.route, p.created_by, u.display_name owner_name,
                    (SELECT COUNT(*) FROM project_members m WHERE m.project_id = p.id) member_count,
                    (SELECT COUNT(*) FROM tasks t
                      WHERE t.project_id = p.id AND t.status NOT IN ('done','cancelled')) open_tasks,
@@ -317,6 +317,7 @@ function listProjects(array $user, ?int $rootId = null): array {
     // ‏root_id — רק הענף של פרויקט אחד (למשל הדשבורד של חבילת היצירה).
     $only = $rootId !== null ? array_flip(projectSubtree($rootId)) : null;
     $routes = projectRoutes();
+    $wanted = projectRoutes(true);
 
     // מי שאינו מנהל־על רואה את מה שהוא חבר בו, וגם את הענף שמתחתיו.
     $out = [];
@@ -331,6 +332,8 @@ function listProjects(array $user, ?int $rootId = null): array {
         $p['owner_only_effective'] = projectOwnerOnly((int) $p['id']);
         // מי עונה: הבחירה של הפרויקט ('' = יורש), והמסלול האפקטיבי
         $p['route_effective'] = $routes[(int) $p['id']] ?? defaultRoute();
+        // נבחר ☁️ אבל אין מכסה / נגמרה — הממשק אומר את זה
+        $p['route_wanted'] = $wanted[(int) $p['id']] ?? defaultRoute();
         $out[] = $p;
     }
     return $out;
@@ -470,7 +473,8 @@ function userConn(array $user, string $provider = '', string $model = '', ?int $
         $first = $chain[0];
         if ($model !== '' && $connectionId === null && $provider !== '') $first['model'] = $model;
         // השרשרת כולה נוסעת עם החיבור — aiComplete עובר לבא כשהראשון נכשל
-        return $first + ['chain' => $chain, 'user' => $user];
+        // שימוש (§8): ברירת המחדל — מעקב (monitor), שנאכף מול המכסה. הקורא מעדכן לפי הצורך
+        return $first + ['chain' => $chain, 'user' => $user, 'usage' => ['kind' => 'monitor', 'enforce' => true]];
     }
 
     // ספק שהתבקש במפורש ואינו מחובר — לא נופלים בשקט לספק אחר.

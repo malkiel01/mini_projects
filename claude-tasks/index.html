@@ -84,6 +84,8 @@
   </header>
 
   <main id="main" tabindex="-1">
+    <!-- 80% / 100% מהמכסה החודשית (§8) -->
+    <p class="quota-warn" id="quotaWarn" role="status" hidden></p>
     <nav class="crumbs" id="crumbs" aria-label="מיקום" hidden></nav>
 
     <!-- מי עונה בענף הזה (§7): הצ'אטים, או Platform. משנה — בעל הלוח בלבד -->
@@ -93,6 +95,7 @@
         <button type="button" role="radio" data-route="platform" aria-checked="false">☁️ Platform</button>
       </div>
       <p class="hint" id="routeHint" hidden></p>
+      <div id="routeUsage" hidden></div>
     </div>
 
     <!-- מסך ארוך → שתי לשוניות: הפרויקטים ברמה הזאת, והמטלות של כל הענף -->
@@ -691,13 +694,19 @@
     </header>
     <div class="sheet-body">
       <div class="seg-tabs" id="setTabs" role="tablist" aria-label="הגדרות">
-        <button type="button" role="tab" data-set="conn" aria-selected="true">🔌 חיבורים</button>
+        <button type="button" role="tab" data-set="usage" aria-selected="true">📊 שימוש</button>
+        <button type="button" role="tab" data-set="conn" aria-selected="false">🔌 חיבורים</button>
         <button type="button" role="tab" data-set="me" aria-selected="false">👤 חשבון</button>
         <button type="button" role="tab" data-set="sys" aria-selected="false" id="setSysTab" hidden>🛠 מערכת</button>
       </div>
 
+      <!-- ── שימוש ב-Platform: מכסה חודשית, עמודות יומיות, ופרויקטים (§8) ── -->
+      <section class="set-panel" data-panel="usage">
+        <div id="usageBox"><p class="hint">טוען…</p></div>
+      </section>
+
       <!-- ── חיבורים: שורה לכל חיבור, נפתחת בלחיצה ── -->
-      <section class="set-panel" data-panel="conn">
+      <section class="set-panel" data-panel="conn" hidden>
         <p class="hint">גיטהאב — לקוד ולריפו. ספקי בינה — מי מבצע את המטלות, על החשבון שלך אצלו.</p>
         <div class="sec-head">
           <h2 class="sec-title" id="connCount">חיבורים</h2>

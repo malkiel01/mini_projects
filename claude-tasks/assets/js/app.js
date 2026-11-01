@@ -2,6 +2,7 @@ import { $, $$, el, toast, api, state, timeAgo, on, set, PLATFORM_HINT } from '.
 import { loadConnections, loadProviders, runTask, openProject, modelPicker } from './platform.js';
 import { loadChannels } from './chats.js';
 import { approvalCard, noteText } from './approvals.js';
+import { loadUsage, usageCard, usageMini } from './usage.js';
 
 /**
  * מטלות לקלוד — ממשק.
@@ -197,6 +198,7 @@ async function enterApp() {
   // כישלון בטעינת ההגדרות לא אמור למנוע עבודה על מטלות.
   loadConnections().catch(() => {});
   loadProviders().catch(() => {});
+  refreshQuotaWarn();
 }
 
 /* ── נושאים ────────────────────────────────────────────────── */
@@ -473,8 +475,27 @@ function renderRouteBar(cur) {
   const notes = [];
   if (!cur.route) notes.push(parent ? `יורש מ״${parent.name}״` : 'ברירת המחדל של הלוח');
   if (eff === 'platform') notes.push(PLATFORM_HINT);
+  // נבחר ☁️, אבל למשלם אין מכסה או שהיא נגמרה — בפועל הצ'אטים עונים (§8)
+  if (cur.route_wanted === 'platform' && eff !== 'platform') notes.push('☁️ נבחר, אבל למשלם אין מכסה פעילה — עד שתהיה, הצ\'אטים עונים.');
+  renderRouteUsage(cur);
   $('#routeHint').hidden = !notes.length;
   $('#routeHint').textContent = notes.join(' · ');
+}
+
+/** הפס המוקטן ליד ☁️: המכסה של מי שמשלם על הענף (בעל השורש). רואים — הוא, או מנהל. */
+async function renderRouteUsage(cur) {
+  const box = $('#routeUsage');
+  let root = cur;
+  for (let i = 0; root?.parent_id && i < 16; i++) root = byId(root.parent_id) || null;
+  const payer = Number(root?.created_by) || 0;
+  const mine = payer && payer === state.user?.id;
+  if (!payer || !(mine || state.user?.role === 'admin')) { box.hidden = true; return; }
+  try {
+    const s = await loadUsage(mine ? null : payer);
+    if (state.projectId !== cur.id) return;
+    box.replaceChildren(usageMini(s, mine ? '' : (root.owner_name || '')));
+    box.hidden = false;
+  } catch { box.hidden = true; }
 }
 
 on('#routeSeg', 'click', async (e) => {
@@ -1052,14 +1073,41 @@ on('#settingsBtn', 'click', () => {
   $('#meUser').textContent = state.user?.username ? `שם המשתמש לכניסה: ${state.user.username}` : '';
   const admin = state.user?.role === 'admin';
   $('#setSysTab').hidden = !admin;
-  let tab = 'conn';
-  try { tab = sessionStorage.getItem('ct:set') || 'conn'; } catch { /* פרטי */ }
-  showSetTab(tab === 'sys' && !admin ? 'conn' : tab);
+  let tab = 'usage';
+  try { tab = sessionStorage.getItem('ct:set') || 'usage'; } catch { /* פרטי */ }
+  showSetTab(tab === 'sys' && !admin ? 'usage' : tab);
+  renderUsageTab();
   renderAi();
   $('#settings').showModal();
 });
 
-/* לשוניות ההגדרות: חיבורים · חשבון · מערכת (מנהל). הבחירה נזכרת. */
+/* ── מכסה ושימוש (§8) ──────────────────────────────────────── */
+
+async function renderUsageTab() {
+  try {
+    const s = await loadUsage();
+    $('#usageBox').replaceChildren(usageCard(s));
+    renderQuotaWarn(s);
+  } catch (ex) { $('#usageBox').replaceChildren(el('p', { class: 'hint', text: ex.message })); }
+}
+
+/** שורת אזהרה במסך הראשי — מ-80%. */
+function renderQuotaWarn(s) {
+  const w = $('#quotaWarn');
+  if (!w) return;
+  const on = s && (s.state === 'warn' || s.state === 'over');
+  w.hidden = !on;
+  if (!on) return;
+  w.className = `quota-warn quota-warn--${s.state}`;
+  w.textContent = s.state === 'over'
+    ? `⛔ המכסה החודשית נגמרה ($${s.used.toFixed(2)} מתוך $${s.quota.toFixed(2)}) — עד 1 לחודש הצ'אטים עונים במקום ☁️ Platform.`
+    : `⚠️ נוצלו ${Math.round(s.pct)}% מהמכסה החודשית ($${s.used.toFixed(2)} מתוך $${s.quota.toFixed(2)}).`;
+}
+async function refreshQuotaWarn() {
+  try { renderQuotaWarn(await loadUsage()); } catch { /* לא חוסם את המסך */ }
+}
+
+/* לשוניות ההגדרות: שימוש · חיבורים · חשבון · מערכת (מנהל). הבחירה נזכרת. */
 function showSetTab(tab) {
   $$('#setTabs [data-set]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.set === tab)));
   $$('#settings .set-panel').forEach((p) => { p.hidden = p.dataset.panel !== tab; });

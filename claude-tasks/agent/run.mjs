@@ -97,6 +97,14 @@ const SHAPE = {
   },
 };
 
+/** הטוקנים בתשובה, לפי הספק. קריאה ומטמון — בקלט; חשיבה — בפלט. */
+function usageOf(d) {
+  const u = d.usage || {}, g = d.usageMetadata || {};
+  if (PROVIDER === 'anthropic') return { tokens_in: (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0), tokens_out: u.output_tokens || 0 };
+  if (PROVIDER === 'openai') return { tokens_in: u.prompt_tokens || 0, tokens_out: u.completion_tokens || 0 };
+  return { tokens_in: g.promptTokenCount || 0, tokens_out: (g.candidatesTokenCount || 0) + (g.thoughtsTokenCount || 0) };
+}
+
 async function ask(system, message) {
   const shape = SHAPE[PROVIDER];
   if (!shape) throw new Error(`ספק לא מוכר: ${PROVIDER}`);
@@ -108,6 +116,8 @@ async function ask(system, message) {
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(`${PROVIDER} החזיר ${res.status}: ${data?.error?.message || ''}`);
+  // שלב 7: השימוש נרשם בלוח, על חשבון מי שהריץ (מכסה חודשית). כשל בדיווח לא עוצר את העבודה.
+  await board('report-usage', { id: TASK_ID, provider: PROVIDER, model: MODEL, ...usageOf(data) }).catch(() => {});
 
   const text = shape.text(data);
   if (!text.trim()) throw new Error(`${PROVIDER} החזיר תשובה ריקה`);
