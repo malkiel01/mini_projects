@@ -158,6 +158,7 @@ function doc_progress(array $schema, array $values): array
 function doc_create(array $user, array $b, ?array $copy = null): array
 {
     $t = tpl_owned((int)($b['template_id'] ?? 0), $user, 'fill');
+    if (!tpl_perm($t, $user, 'issue')) throw new ApiError('אין לך הרשאה להנפיק מסמכים מהתבנית הזו', 403);   // 15.4א
     if ($t['archived_at']) throw new ApiError('התבנית בארכיון. שחזרו אותה כדי להנפיק', 409);
     $schema = json_decode((string)unseal($t['schema_enc']), true) ?: [];
     if (empty($schema['fields'])) throw new ApiError('לתבנית אין שדות עדיין. הוסיפו שדות בעורך', 409);

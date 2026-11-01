@@ -80,7 +80,7 @@ $vs = fill_shares($viewer)['shares'];
 check('צופה ב"שיתופים": בלי פרטי קשר', $vs && $vs[0]['email'] === '' && $vs[0]['phone'] === '');
 
 // הבעלים לא שורף את ההזמנה שלו
-$r = share_invite($owner, ['type' => 'template', 'id' => $tid, 'phone' => '0502222222', 'level' => 'view']);
+$r = share_invite($owner, ['type' => 'template', 'id' => $tid, 'phone' => '0502222222', 'level' => 'edit', 'perms' => []]);
 $tok = substr($r['link'], strpos($r['link'], '#invite=') + 8);
 invite_accept($owner, ['token' => $tok]);
 check('הבעלים פתח את ההזמנה — היא עדיין פתוחה למוזמן', invite_info($tok)['used'] === false);

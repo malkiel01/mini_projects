@@ -83,7 +83,7 @@ $tidB = tpl_create($b, ['name' => 'של בתיה'], ['file' => ['tmp_name' => "$
 tpl_save($b, ['id' => $tidB, 'schema' => ['pages' => [['w' => 595, 'h' => 842]], 'fields' => [$F('steal', 'select', 'גניבה', ['source' => ['id' => $src['id']]])]]]);
 $stolen = tpl_get($b, $tidB)['template']['schema']['fields'][0];
 check('תבנית של משתמש אחר לא יכולה להפנות למקור שלך', $stolen['source'] === null && select_options($stolen) === []);
-share_set($a, ['type' => 'template', 'id' => $tid, 'email' => 'b@x.com', 'level' => 'edit']);
+share_set($a, ['type' => 'template', 'id' => $tid, 'email' => 'b@x.com', 'level' => 'edit', 'perms' => ['structure', 'issue', 'fill']]);   // בלי "רואה הכול"
 tpl_save($b, ['id' => $tid, 'schema' => tpl_get($b, $tid)['template']['schema']]);
 check('שותף שעורך את התבנית — המקור של הבעלים נשאר', tpl_get($a, $tid)['template']['schema']['fields'][1]['source']['id'] === $src['id']);
 

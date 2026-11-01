@@ -121,7 +121,9 @@ function tpl_summary(array $t, ?array $user = null): array
         'fields' => count($schema['fields'] ?? []),
         'archived' => $t['archived_at'] !== null,
         'created_at' => $t['created_at'],
-        'access' => $user ? access_level('template', (int)$t['id'], (int)$t['owner_id'], $user) : 'owner',
+        'access' => $acc = ($user ? access_level('template', (int)$t['id'], (int)$t['owner_id'], $user) : 'owner'),
+        // 15.4א: עורך — המתגים שלו (מה להציג בתפריט); בעלים / מנהל — null (הכול)
+        'perms' => $user ? tpl_my_perms(['id' => $t['id'], 'access' => $acc], $user) : null,
         'tags' => tags_of($t['tags_enc']),
         'owner_name' => $user && (int)$t['owner_id'] !== (int)$user['id'] ? user_name((int)$t['owner_id']) : null,
     ];

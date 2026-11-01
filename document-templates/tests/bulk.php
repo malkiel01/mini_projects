@@ -142,8 +142,8 @@ throws('מייל לא תקין — השורה נכשלת, לא כל הייבוא
     bulk_issue($a, ['template_id' => $tid, 'mapping' => json_encode(['0' => 'f:tenant', '1' => '_c:email'])], upload("שם,מייל\nא,לא-מייל\n"))['failed'][0]['error'], 422), 422);
 $big = "שם השוכר\n" . str_repeat("א\n", BULK_MAX + 1);
 throws('יותר מ-500 שורות — נדחה', fn() => bulk_issue($a, ['template_id' => $tid, 'mapping' => '{"0":"f:tenant"}'], upload($big)), 422);
-share_set($a, ['type' => 'template', 'id' => $tid, 'email' => 'b@x.com', 'level' => 'view']);
-throws('שיתוף לצפייה בלבד — אי אפשר להנפיק', fn() => bulk_issue($b, ['template_id' => $tid, 'mapping' => $map], upload($csv)), 403);
+share_set($a, ['type' => 'template', 'id' => $tid, 'email' => 'b@x.com', 'level' => 'edit', 'perms' => []]);
+throws('עורך בלי "הנפקה" — אי אפשר להנפיק', fn() => bulk_issue($b, ['template_id' => $tid, 'mapping' => $map], upload($csv)), 403);
 
 // ── קובץ דוגמה ──
 $sample = bulk_sample_rows(tpl_owned($tid, $a));

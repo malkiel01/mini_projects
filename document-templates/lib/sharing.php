@@ -26,15 +26,105 @@ const LEVEL_NAMES = ['view' => 'צופה', 'fill' => 'ממלא', 'edit' => 'עו
 /** הרמה שבעל התבנית מקבל בכל מסמך שהונפק ממנה (אם לא שותף איתו ביותר). */
 const TPL_OWNER_DOC_LEVEL = 'edit';
 
+/**
+ * 15.4א — שיתוף תבנית: מנהל (co_owner — הכול, כמו הבעלים) או עורך (edit + מתגים, perms_json).
+ * כל מתג פותח דבר אחד; הרמה "בפועל" של עורך נגזרת מהם, כדי שכל הבדיקות הקיימות (tpl_owned(..., 'edit') וכו') יעבדו.
+ */
+const SHARE_PERMS = [
+    'structure' => 'עריכת מבנה התבנית',
+    'fill'      => 'מילוי',
+    'issue'     => 'הנפקת מסמכים',
+    'share'     => 'שיתוף הלאה (לא מעל ההרשאות שלו)',
+    'send'      => 'טופס חד-פעמי ללקוח',
+    'approve'   => 'מאשר מסמכים',
+    'all_docs'  => 'רואה את כל המסמכים מהתבנית',
+];
+
+/** המתגים של עורך (רשימה נקייה); null — אין שורה או לא עורך. NULL ישן במסד = הכול (לפני ההגירה). */
+function clean_perms($p): array
+{
+    $p = is_string($p) ? (json_decode($p, true) ?: []) : (array)$p;
+    return array_values(array_intersect(array_keys(SHARE_PERMS), array_map('strval', $p)));
+}
+
+function share_row(string $type, int $id, int $uid): ?array
+{
+    $st = db()->prepare('SELECT level, perms_json FROM shares WHERE object_type = ? AND object_id = ? AND user_id = ?');
+    $st->execute([$type, $id, $uid]);
+    return $st->fetch() ?: null;
+}
+
+/** עורך בתבנית: הרמה בפועל לפי המתגים. מבנה — עורך; הנפקה / מילוי — מנפיק; אחרת — רואה בלבד. */
+function editor_level(?string $permsJson): string
+{
+    $p = $permsJson === null ? array_keys(SHARE_PERMS) : clean_perms($permsJson);
+    return in_array('structure', $p, true) ? 'edit' : (array_intersect(['issue', 'fill'], $p) ? 'fill' : 'view');
+}
+
 /** הרמה של המשתמש בדבר, או null. $ownerId — של הדבר עצמו. */
 function access_level(string $type, int $id, int $ownerId, array $user): ?string
 {
     if ($ownerId === (int)$user['id']) return 'owner';
-    $st = db()->prepare('SELECT level FROM shares WHERE object_type = ? AND object_id = ? AND user_id = ?');
-    $st->execute([$type, $id, $user['id']]);
-    $l = $st->fetchColumn() ?: null;
-    if ($type === 'document' && (!$l || LEVELS[$l] < LEVELS[TPL_OWNER_DOC_LEVEL]) && doc_template_owner($id) === (int)$user['id']) return TPL_OWNER_DOC_LEVEL;
+    $row = share_row($type, $id, (int)$user['id']);
+    $l = $row['level'] ?? null;
+    if ($type === 'template' && $l === 'edit') return editor_level($row['perms_json']);
+    if ($type === 'document') {
+        $t = doc_template_access($id, $user);
+        if ($t !== null && (!$l || LEVELS[$l] < LEVELS[$t])) return $t;
+    }
     return $l;
+}
+
+/**
+ * הגישה למסמך דרך התבנית שממנה הונפק: בעל התבנית ומנהל בה — "עורך" (מסיים, מחזיר לתיקון);
+ * עורך עם "רואה את כל המסמכים" — מעדכן (אם יש לו מילוי) או צופה. אחרת null.
+ */
+function doc_template_access(int $docId, array $user): ?string
+{
+    $st = db()->prepare('SELECT t.id, t.owner_id FROM documents d JOIN template_versions v ON v.id = d.template_version_id JOIN templates t ON t.id = v.template_id WHERE d.id = ?');
+    $st->execute([$docId]);
+    $t = $st->fetch();
+    if (!$t) return null;
+    if ((int)$t['owner_id'] === (int)$user['id']) return TPL_OWNER_DOC_LEVEL;
+    $row = share_row('template', (int)$t['id'], (int)$user['id']);
+    if (!$row) return null;
+    if ($row['level'] === 'co_owner') return TPL_OWNER_DOC_LEVEL;
+    if ($row['level'] !== 'edit') return null;
+    $p = $row['perms_json'] === null ? array_keys(SHARE_PERMS) : clean_perms($row['perms_json']);
+    if (!in_array('all_docs', $p, true)) return null;
+    return in_array('fill', $p, true) ? 'fill' : 'view';
+}
+
+/** מתג אחד בתבנית: בעלים ומנהל — הכול; עורך — לפי המתגים. $t — מ-tpl_owned (עם access). */
+function tpl_perm(array $t, array $user, string $perm): bool
+{
+    if (in_array($t['access'] ?? '', ['owner', 'co_owner'], true)) return true;
+    $row = share_row('template', (int)$t['id'], (int)$user['id']);
+    if (!$row || $row['level'] !== 'edit') return false;
+    return in_array($perm, $row['perms_json'] === null ? array_keys(SHARE_PERMS) : clean_perms($row['perms_json']), true);
+}
+
+/**
+ * מתג בתבנית שממנה הונפק המסמך — למשל "טופס חד-פעמי ללקוח" (send). מי שאינו עורך בתבנית (בעלים, מנהל, או
+ * שאין לו שיתוף בה — מסמך ששותף איתו ישירות) — לא מוגבל כאן; ההרשאה במסמך עצמו נבדקת בנפרד.
+ */
+function doc_tpl_perm(array $d, array $user, string $perm): bool
+{
+    $st = db()->prepare('SELECT t.id, t.owner_id FROM template_versions v JOIN templates t ON t.id = v.template_id WHERE v.id = ?');
+    $st->execute([(int)$d['template_version_id']]);
+    $t = $st->fetch();
+    if (!$t || (int)$t['owner_id'] === (int)$user['id']) return true;
+    $row = share_row('template', (int)$t['id'], (int)$user['id']);
+    if (!$row || $row['level'] !== 'edit') return true;
+    return in_array($perm, $row['perms_json'] === null ? array_keys(SHARE_PERMS) : clean_perms($row['perms_json']), true);
+}
+
+/** המתגים של המשתמש בתבנית — ללקוח (מה להציג בתפריט). בעלים / מנהל — null (הכול). */
+function tpl_my_perms(array $t, array $user): ?array
+{
+    if (in_array($t['access'] ?? '', ['owner', 'co_owner'], true)) return null;
+    $row = share_row('template', (int)$t['id'], (int)$user['id']);
+    return $row && $row['level'] === 'edit' ? ($row['perms_json'] === null ? array_keys(SHARE_PERMS) : clean_perms($row['perms_json'])) : [];
 }
 
 /** בעל התבנית שממנה הונפק המסמך. */
@@ -55,10 +145,12 @@ function require_level(?string $have, string $min, string $notFound): string
     return $have;
 }
 
-/** תנאי SQL: הדבר שלי, או משותף איתי. */
+/** תנאי SQL: הדבר שלי, או משותף איתי. מסמכים — גם מתבנית שלי, או שאני מנהל בה / עורך שרואה את כל המסמכים. */
 function mine_or_shared_sql(string $alias, string $type): string
 {
-    $tpl = $type === 'document' ? " OR $alias.template_version_id IN (SELECT tv.id FROM template_versions tv JOIN templates tt ON tt.id = tv.template_id WHERE tt.owner_id = :uid)" : '';
+    $tpl = $type === 'document' ? " OR $alias.template_version_id IN (SELECT tv.id FROM template_versions tv JOIN templates tt ON tt.id = tv.template_id WHERE tt.owner_id = :uid)"
+        . " OR $alias.template_version_id IN (SELECT tv.id FROM template_versions tv JOIN shares ts ON ts.object_type = 'template' AND ts.object_id = tv.template_id"
+        . " WHERE ts.user_id = :uid AND (ts.level = 'co_owner' OR (ts.level = 'edit' AND (ts.perms_json IS NULL OR ts.perms_json LIKE '%\"all_docs\"%'))))" : '';
     return "($alias.owner_id = :uid OR $alias.id IN (SELECT object_id FROM shares WHERE object_type = '$type' AND user_id = :uid)$tpl)";
 }
 
@@ -78,31 +170,66 @@ function user_name(int $id): string
 function share_target(array $user, array $b): array
 {
     $type = ($b['type'] ?? '') === 'document' ? 'document' : 'template';
-    $row = $type === 'template'
-        ? tpl_owned((int)($b['id'] ?? 0), $user, 'co_owner')
-        : doc_owned((int)($b['id'] ?? 0), $user, 'co_owner');
+    if ($type === 'document') return [$type, doc_owned((int)($b['id'] ?? 0), $user, 'co_owner')];
+    // 15.4א: תבנית — בעלים / מנהל, או עורך עם "שיתוף הלאה"
+    $row = tpl_owned((int)($b['id'] ?? 0), $user, 'view');
+    if (!in_array($row['access'], ['owner', 'co_owner'], true) && !tpl_perm($row, $user, 'share')) {
+        throw new ApiError('אין לך הרשאה לשתף את התבנית הזו', 403);
+    }
     return [$type, $row];
+}
+
+/**
+ * רמה ומתגים לשיתוף תבנית: מנהל (co_owner) או עורך (edit + מתגים). עורך שמשתף — רק עורך, ורק מתגים שיש לו.
+ * מחזיר [level, perms_json|null].
+ */
+function share_grant(array $user, array $row, array $b): array
+{
+    $level = (string)($b['level'] ?? '');
+    // הרמות הישנות, כמו במיפוי (README 15.4): "עורך" בלי מתגים — כל המתגים; "ממלא" — עורך שמנפיק וממלא
+    $default = $level === 'fill' ? ['issue', 'fill'] : array_keys(SHARE_PERMS);
+    if ($level === 'manager') $level = 'co_owner';
+    if ($level === 'editor' || $level === 'fill') $level = 'edit';
+    if (!in_array($level, ['co_owner', 'edit'], true)) throw new ApiError('בתבנית: מנהל או עורך', 422);
+    $mine = tpl_my_perms($row, $user);   // null — בעלים / מנהל
+    if ($level === 'co_owner') {
+        if ($mine !== null) throw new ApiError('אי אפשר לתת הרשאה גבוהה משלך', 403);
+        return ['co_owner', null];
+    }
+    $perms = clean_perms($b['perms'] ?? ($mine ?? $default));   // בלי מתגים — ברירת המחדל, ואצל עורך שמשתף — מה שיש לו
+    if ($mine !== null && array_diff($perms, $mine)) throw new ApiError('אי אפשר לתת מתג שאין לך: ' . implode(', ', array_map(fn($k) => SHARE_PERMS[$k], array_diff($perms, $mine))), 403);
+    return ['edit', json_encode($perms)];
+}
+
+/** תיאור קצר של שיתוף תבנית (למייל ולהזמנה). */
+function grant_name(string $type, string $level, ?string $perms): string
+{
+    if ($type !== 'template') return LEVEL_NAMES[$level];
+    return $level === 'co_owner' ? 'מנהל' : 'עורך' . ($perms !== null ? ' (' . implode(', ', array_map(fn($k) => SHARE_PERMS[$k], clean_perms($perms))) . ')' : '');
 }
 
 function share_list(array $user, array $q): array
 {
     [$type, $row] = share_target($user, $q);
     $st = db()->prepare(
-        "SELECT s.user_id, s.level, s.created_at, u.display_name, u.email, u.status
+        "SELECT s.user_id, s.level, s.perms_json, s.created_at, u.display_name, u.email, u.status
          FROM shares s JOIN users u ON u.id = s.user_id
          WHERE s.object_type = ? AND s.object_id = ? AND u.status != 'deleted' ORDER BY s.created_at"
     );
     $st->execute([$type, $row['id']]);
     $shares = array_map(fn($s) => ['user_id' => (int)$s['user_id'], 'name' => $s['display_name'], 'email' => $s['email'],
-        'level' => $s['level'], 'since' => $s['created_at'], 'pending' => $s['status'] === 'pending', 'blocked' => $s['status'] === 'blocked'], $st->fetchAll());
+        'level' => $s['level'], 'perms' => $type === 'template' && $s['level'] === 'edit' ? ($s['perms_json'] === null ? array_keys(SHARE_PERMS) : clean_perms($s['perms_json'])) : null,
+        'since' => $s['created_at'], 'pending' => $s['status'] === 'pending', 'blocked' => $s['status'] === 'blocked'], $st->fetchAll());
     // הזמנות בוואטסאפ שעוד לא נוצלו — מופיעות ברשימה כ"ממתין", עם ביטול ושליחה חוזרת
     $st = db()->prepare('SELECT * FROM share_invites WHERE object_type = ? AND object_id = ? AND used_at IS NULL
         AND revoked_at IS NULL AND expires_at > ? ORDER BY created_at');
     $st->execute([$type, $row['id'], now_iso()]);
     $invites = array_map(fn($i) => ['id' => (int)$i['id'], 'name' => (string)unseal($i['name_enc']),
-        'phone' => (string)unseal($i['phone_enc']), 'level' => $i['level'], 'since' => $i['created_at']], $st->fetchAll());
+        'phone' => (string)unseal($i['phone_enc']), 'level' => $i['level'], 'perms' => $i['perms_json'] === null ? null : clean_perms($i['perms_json']),
+        'since' => $i['created_at']], $st->fetchAll());
     $approver = $type === 'document' && function_exists('doc_approver') ? doc_approver($row) : null;
     return ['ok' => true, 'owner' => user_name((int)$row['owner_id']), 'my_level' => $row['access'],
+        'my_perms' => $type === 'template' ? tpl_my_perms($row, $user) : null, 'perm_names' => $type === 'template' ? SHARE_PERMS : null,
         'shares' => $shares, 'invites' => $invites, 'approver' => $approver];
 }
 
@@ -113,9 +240,14 @@ function share_list(array $user, array $q): array
 function share_set(array $user, array $b): array
 {
     [$type, $row] = share_target($user, $b);
-    $level = (string)($b['level'] ?? '');
-    if (!isset(LEVELS[$level]) || $level === 'owner') throw new ApiError('רמת שיתוף לא תקינה', 422);
-    if (LEVELS[$level] > LEVELS[$row['access']]) throw new ApiError('אי אפשר לתת הרשאה גבוהה משלך', 403);
+    $perms = null;
+    if ($type === 'template') {
+        [$level, $perms] = share_grant($user, $row, $b);
+    } else {
+        $level = (string)($b['level'] ?? '');
+        if (!isset(LEVELS[$level]) || $level === 'owner') throw new ApiError('רמת שיתוף לא תקינה', 422);
+        if (LEVELS[$level] > LEVELS[$row['access']]) throw new ApiError('אי אפשר לתת הרשאה גבוהה משלך', 403);
+    }
 
     if (isset($b['user_id'])) {
         $st = db()->prepare("SELECT * FROM users WHERE id = ? AND status = 'active'");
@@ -132,13 +264,15 @@ function share_set(array $user, array $b): array
     $st = db()->prepare('SELECT level FROM shares WHERE object_type = ? AND object_id = ? AND user_id = ?');
     $st->execute([$type, $row['id'], $target['id']]);
     $existing = $st->fetchColumn();
-    // מנהל-שותף לא משנה הרשאה של מנהל-שותף אחר — רק הבעלים (כמו בניתוק)
-    if ($existing === 'co_owner' && $row['access'] !== 'owner') throw new ApiError('רק הבעלים משנה הרשאה של מנהל-שותף', 403);
+    // מסמך: מנהל-שותף לא משנה הרשאה של מנהל-שותף אחר — רק הבעלים. תבנית (15.4א): מנהל משנה גם מנהל; עורך — לא
+    if ($existing === 'co_owner' && $row['access'] !== 'owner' && ($type === 'document' || $row['access'] !== 'co_owner')) {
+        throw new ApiError($type === 'template' ? 'רק בעלים או מנהל משנים הרשאה של מנהל' : 'רק הבעלים משנה הרשאה של מנהל-שותף', 403);
+    }
     share_guard_approver($type, $row, (int)$target['id']);
     db()->prepare(
-        'INSERT INTO shares (object_type, object_id, user_id, level, granted_by, created_at) VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT(object_type, object_id, user_id) DO UPDATE SET level = excluded.level, granted_by = excluded.granted_by'
-    )->execute([$type, $row['id'], $target['id'], $level, $user['id'], now_iso()]);
+        'INSERT INTO shares (object_type, object_id, user_id, level, perms_json, granted_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(object_type, object_id, user_id) DO UPDATE SET level = excluded.level, perms_json = excluded.perms_json, granted_by = excluded.granted_by'
+    )->execute([$type, $row['id'], $target['id'], $level, $perms, $user['id'], now_iso()]);
 
     $title = (string)unseal($type === 'template' ? $row['name_enc'] : $row['title_enc']);
     if ($type === 'document') {
@@ -147,7 +281,7 @@ function share_set(array $user, array $b): array
     if (!$existing) {
         send_mail($target['email'], ($user['display_name'] ?? '') . ' שיתף/ה איתך ' . ($type === 'template' ? 'תבנית' : 'מסמך'),
             "שלום {$target['display_name']},\n\n" . ($user['display_name'] ?? '') . ' שיתף/ה איתך את ' .
-            ($type === 'template' ? 'התבנית' : 'המסמך') . " \"$title\" — הרשאה: " . LEVEL_NAMES[$level] . ".\n\n" .
+            ($type === 'template' ? 'התבנית' : 'המסמך') . " \"$title\" — הרשאה: " . grant_name($type, $level, $perms) . ".\n\n" .
             app_base_url() . ($type === 'template' ? '#tpl=' : '#doc=') . $row['id']);
     }
     return ['ok' => true];
@@ -171,9 +305,10 @@ function share_remove(array $user, array $b): array
     $st->execute([$type, $row['id'], $uid]);
     $lvl = $st->fetchColumn();
     if (!$lvl) throw new ApiError('השיתוף לא נמצא', 404);
-    // מנהל-שותף לא מסיר מנהל-שותף אחר — רק הבעלים. לעצמו — מותר (עזיבה).
-    if ($lvl === 'co_owner' && $row['access'] !== 'owner' && $uid !== (int)$user['id']) {
-        throw new ApiError('רק הבעלים מסיר מנהל-שותף', 403);
+    // מסמך: מנהל-שותף לא מסיר מנהל-שותף אחר — רק הבעלים. תבנית (15.4א): מנהל מסיר גם מנהל (לא את היוצר — הוא לא שיתוף).
+    // עורך שמשתף הלאה — מסיר רק עורכים. לעצמו — מותר (עזיבה).
+    if ($lvl === 'co_owner' && $row['access'] !== 'owner' && $uid !== (int)$user['id'] && ($type === 'document' || $row['access'] !== 'co_owner')) {
+        throw new ApiError($type === 'template' ? 'רק בעלים או מנהל מסירים מנהל' : 'רק הבעלים מסיר מנהל-שותף', 403);
     }
     share_guard_approver($type, $row, $uid);
     db()->prepare('DELETE FROM shares WHERE object_type = ? AND object_id = ? AND user_id = ?')->execute([$type, $row['id'], $uid]);
@@ -219,7 +354,7 @@ function invite_message(array $user, string $type, array $row, array $inv, strin
     $name = (string)unseal($inv['name_enc']);
     $from = user_name((int)($inv['created_by'] ?? $user['id'])) ?: ($user['display_name'] ?? '');   // מי שהזמין — גם בשליחה חוזרת
     $text = ($name !== '' ? "שלום $name,\n" : '') . $from . ' שיתף/ה איתך את ' .
-        ($type === 'template' ? 'התבנית' : 'המסמך') . " \"$title\" (" . LEVEL_NAMES[$inv['level']] . ").\n" .
+        ($type === 'template' ? 'התבנית' : 'המסמך') . " \"$title\" (" . grant_name($type, $inv['level'], $inv['perms_json'] ?? null) . ").\n" .
         "לפתיחה — נכנסים או נרשמים דרך הקישור:\n$link";
     $phone = (string)unseal($inv['phone_enc']);
     return ['link' => $link, 'text' => $text,
@@ -229,17 +364,22 @@ function invite_message(array $user, string $type, array $row, array $inv, strin
 function share_invite(array $user, array $b): array
 {
     [$type, $row] = share_target($user, $b);
-    $level = (string)($b['level'] ?? '');
-    if (!isset(LEVELS[$level]) || $level === 'owner') throw new ApiError('רמת שיתוף לא תקינה', 422);
-    if (LEVELS[$level] > LEVELS[$row['access']]) throw new ApiError('אי אפשר לתת הרשאה גבוהה משלך', 403);
+    $perms = null;
+    if ($type === 'template') {
+        [$level, $perms] = share_grant($user, $row, $b);
+    } else {
+        $level = (string)($b['level'] ?? '');
+        if (!isset(LEVELS[$level]) || $level === 'owner') throw new ApiError('רמת שיתוף לא תקינה', 422);
+        if (LEVELS[$level] > LEVELS[$row['access']]) throw new ApiError('אי אפשר לתת הרשאה גבוהה משלך', 403);
+    }
     $phone = invite_phone((string)($b['phone'] ?? ''));
     $name = mb_substr(trim((string)($b['name'] ?? '')), 0, 80);
 
     $token = bin2hex(random_bytes(24));
-    $inv = ['level' => $level, 'name_enc' => seal($name), 'phone_enc' => seal($phone)];
-    db()->prepare('INSERT INTO share_invites (object_type, object_id, level, token_hash, name_enc, phone_enc, created_by, created_at, expires_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-        ->execute([$type, $row['id'], $level, token_hash($token), $inv['name_enc'], $inv['phone_enc'], $user['id'], now_iso(), iso_in(INVITE_DAYS * 86400)]);
+    $inv = ['level' => $level, 'perms_json' => $perms, 'name_enc' => seal($name), 'phone_enc' => seal($phone)];
+    db()->prepare('INSERT INTO share_invites (object_type, object_id, level, perms_json, token_hash, name_enc, phone_enc, created_by, created_at, expires_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        ->execute([$type, $row['id'], $level, $perms, token_hash($token), $inv['name_enc'], $inv['phone_enc'], $user['id'], now_iso(), iso_in(INVITE_DAYS * 86400)]);
     if ($type === 'document') {
         log_event((int)$row['id'], 'user:' . $user['id'], 'shared', ['with' => $name !== '' ? $name : $phone, 'level' => LEVEL_NAMES[$level], 'via' => 'וואטסאפ']);
     }
@@ -297,8 +437,16 @@ function invite_target(array $inv): ?array
 function invite_alive(array $inv, ?array $obj): bool
 {
     if (!$obj || !empty($obj['deleted_at']) || $inv['revoked_at']) return false;
-    $lvl = access_level($inv['object_type'], (int)$obj['id'], (int)$obj['owner_id'], ['id' => (int)$inv['created_by']]);
-    return $lvl !== null && LEVELS[$lvl] >= LEVELS['co_owner'] && LEVELS[$lvl] >= LEVELS[$inv['level']];
+    $by = ['id' => (int)$inv['created_by']];
+    $lvl = access_level($inv['object_type'], (int)$obj['id'], (int)$obj['owner_id'], $by);
+    if ($lvl === null) return false;
+    if ($inv['object_type'] === 'template' && !in_array($lvl, ['owner', 'co_owner'], true)) {
+        // עורך שמשתף הלאה: עדיין יש לו "שיתוף", ועדיין יש לו כל מתג שנתן
+        $t = ['id' => (int)$obj['id'], 'access' => $lvl];
+        $mine = tpl_my_perms($t, $by) ?? [];
+        return $inv['level'] === 'edit' && in_array('share', $mine, true) && !array_diff(clean_perms($inv['perms_json'] ?? '[]'), $mine);
+    }
+    return LEVELS[$lvl] >= LEVELS['co_owner'] && LEVELS[$lvl] >= LEVELS[$inv['level']];
 }
 
 /** בלי כניסה: מה ההזמנה (למסך שמזמין להתחבר). מי שמחזיק את הקישור הוא המוזמן. */
@@ -312,7 +460,7 @@ function invite_info(string $token): array
     $type = $inv['object_type'];
     return ['ok' => true, 'type' => $type, 'from' => user_name((int)$inv['created_by']),
         'title' => (string)unseal($type === 'template' ? $obj['name_enc'] : $obj['title_enc']),
-        'level' => $inv['level'], 'level_name' => LEVEL_NAMES[$inv['level']], 'used' => $inv['used_at'] !== null];
+        'level' => $inv['level'], 'level_name' => grant_name($type, $inv['level'], $inv['perms_json'] ?? null), 'used' => $inv['used_at'] !== null];
 }
 
 /**
@@ -343,9 +491,16 @@ function invite_redeem(int $userId, string $token): array
                 $st->execute([$type, $obj['id'], $userId]);
                 $cur = $st->fetchColumn();
                 if (!$cur || LEVELS[$cur] < LEVELS[$inv['level']]) {
-                    $pdo->prepare('INSERT INTO shares (object_type, object_id, user_id, level, granted_by, created_at) VALUES (?, ?, ?, ?, ?, ?)
-                        ON CONFLICT(object_type, object_id, user_id) DO UPDATE SET level = excluded.level, granted_by = excluded.granted_by')
-                        ->execute([$type, $obj['id'], $userId, $inv['level'], $inv['created_by'], now_iso()]);
+                    $pdo->prepare('INSERT INTO shares (object_type, object_id, user_id, level, perms_json, granted_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(object_type, object_id, user_id) DO UPDATE SET level = excluded.level, perms_json = excluded.perms_json, granted_by = excluded.granted_by')
+                        ->execute([$type, $obj['id'], $userId, $inv['level'], $inv['perms_json'] ?? null, $inv['created_by'], now_iso()]);
+                } elseif ($type === 'template' && $cur === 'edit' && $inv['level'] === 'edit') {
+                    // עורך שכבר שותף — מקבל גם את המתגים מההזמנה (איחוד, לא הורדה)
+                    $st = $pdo->prepare('SELECT perms_json FROM shares WHERE object_type = ? AND object_id = ? AND user_id = ?');
+                    $st->execute([$type, $obj['id'], $userId]);
+                    $had = $st->fetchColumn();
+                    $merged = $had === null ? null : json_encode(array_values(array_unique(array_merge(clean_perms($had), clean_perms($inv['perms_json'] ?? '[]')))));
+                    $pdo->prepare('UPDATE shares SET perms_json = ? WHERE object_type = ? AND object_id = ? AND user_id = ?')->execute([$merged, $type, $obj['id'], $userId]);
                 }
             }
             $pdo->prepare('UPDATE share_invites SET used_by = ?, used_at = ? WHERE id = ?')->execute([$userId, now_iso(), $inv['id']]);

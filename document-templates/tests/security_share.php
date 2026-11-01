@@ -53,7 +53,7 @@ $mk = function (array $u, string $name) use ($tmp, $pdf) {
 
 // ── הזמנה של תבנית שנמחקה לא נדבקת לתבנית אחרת עם אותו מספר ──
 $t1 = $mk($owner, 'של הבעלים');
-$r = share_invite($owner, ['type' => 'template', 'id' => $t1, 'phone' => '0501234567', 'level' => 'view']);
+$r = share_invite($owner, ['type' => 'template', 'id' => $t1, 'phone' => '0501234567', 'level' => 'edit', 'perms' => []]);
 tpl_delete($owner, ['id' => $t1]);
 check('מחיקת תבנית מוחקת את ההזמנות שלה', (int)db()->query("SELECT COUNT(*) FROM share_invites WHERE object_type='template' AND object_id=$t1")->fetchColumn() === 0);
 $tb = $mk($bob, 'החוזה הפרטי של בוב');
@@ -76,7 +76,7 @@ check('ואין לו גישה', access_level('template', $t2, (int)$owner['id'],
 
 share_set($owner, ['type' => 'template', 'id' => $t2, 'email' => 'co@x.com', 'level' => 'co_owner']);
 $old = share_invite($co, ['type' => 'template', 'id' => $t2, 'phone' => '0502222222', 'level' => 'co_owner']);
-share_set($owner, ['type' => 'template', 'id' => $t2, 'user_id' => $co['id'], 'level' => 'view']);
+share_set($owner, ['type' => 'template', 'id' => $t2, 'user_id' => $co['id'], 'level' => 'edit', 'perms' => []]);
 throws('מי שהורד לצופה לא מעניק מנהל-שותף דרך הזמנה ישנה', fn() => invite_accept($eve, ['token' => $tok($old)]), 410);
 check('אווה בלי גישה', access_level('template', $t2, (int)$owner['id'], $eve) === null);
 $ok = share_invite($owner, ['type' => 'template', 'id' => $t2, 'phone' => '0503333333', 'level' => 'fill']);
@@ -85,12 +85,14 @@ check('הזמנה של הבעלים — עובדת כרגיל', invite_accept($e
 // ── מנהל-שותף מול מנהל-שותף ──
 share_set($owner, ['type' => 'template', 'id' => $t2, 'user_id' => $co['id'], 'level' => 'co_owner']);
 share_set($owner, ['type' => 'template', 'id' => $t2, 'email' => 'co2@x.com', 'level' => 'co_owner']);
-throws('מנהל-שותף לא מוריד דרגה למנהל-שותף אחר', fn() => share_set($co, ['type' => 'template', 'id' => $t2, 'user_id' => $co2['id'], 'level' => 'view']), 403);
-check('והדרגה נשארה', access_level('template', $t2, (int)$owner['id'], $co2) === 'co_owner');
+// 15.4א: בתבנית מנהל עושה הכול כמו הבעלים — גם משנה מנהל אחר (רק את היוצר לא)
+check('מנהל משנה הרשאה של מנהל אחר', share_set($co, ['type' => 'template', 'id' => $t2, 'user_id' => $co2['id'], 'level' => 'edit', 'perms' => []])['ok']);
+check('...והוא עורך שרואה בלבד', access_level('template', $t2, (int)$owner['id'], $co2) === 'view');
+share_set($owner, ['type' => 'template', 'id' => $t2, 'user_id' => $co2['id'], 'level' => 'co_owner']);
 share_set($co, ['type' => 'template', 'id' => $t2, 'user_id' => $eve['id'], 'level' => 'edit']);
-check('מנהל-שותף עדיין משנה הרשאה לאחרים', access_level('template', $t2, (int)$owner['id'], $eve) === 'edit');
-share_set($owner, ['type' => 'template', 'id' => $t2, 'user_id' => $co2['id'], 'level' => 'view']);
-check('הבעלים כן משנה למנהל-שותף', access_level('template', $t2, (int)$owner['id'], $co2) === 'view');
+check('מנהל משנה הרשאה לאחרים', access_level('template', $t2, (int)$owner['id'], $eve) === 'edit');
+share_set($owner, ['type' => 'template', 'id' => $t2, 'user_id' => $co2['id'], 'level' => 'edit', 'perms' => []]);
+check('הבעלים משנה למנהל', access_level('template', $t2, (int)$owner['id'], $co2) === 'view');
 
 // ── "רק באישור שלי": המאשר מוגן, ועורך לא מכבה את האישור ──
 $t3 = $mk($owner, 'באישור');

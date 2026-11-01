@@ -1043,3 +1043,9 @@ dialog.sheet:has(.list-sheet) { width: min(900px, 100vw); }
 @media (min-width: 960px) { .wp-host { inline-size: min(1200px, 96vw); block-size: 96dvh; margin-block: 2dvh; border-radius: 10px; overflow: hidden; } }
 body.wp-open { overflow: hidden; }
 .word-mark-open { display: flex; flex-wrap: wrap; gap: var(--s2); }
+
+/* 15.4א: מתגים של עורך בשיתוף תבנית */
+.perm-box { display: grid; gap: var(--s1); margin-block: var(--s2); }
+.perm-list { display: grid; gap: 4px; }
+.perm-sum { display: block; color: var(--muted); }
+.perm-list .switch { white-space: normal; min-height: 36px; }

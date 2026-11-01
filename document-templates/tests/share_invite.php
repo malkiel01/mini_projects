@@ -50,19 +50,19 @@ tpl_save($owner, ['id' => $tid, 'schema' => ['pages' => [['w' => 595, 'h' => 842
 $r = share_invite($owner, ['type' => 'template', 'id' => $tid, 'phone' => '050-1234567', 'name' => 'בועז', 'level' => 'fill']);
 check('קישור וואטסאפ למספר בפורמט בינלאומי', str_starts_with($r['whatsapp'], 'https://wa.me/972501234567?text='));
 check('ההודעה: שם, תבנית, הרשאה וקישור', str_contains($r['text'], 'שלום בועז') && str_contains($r['text'], '"אישור קבורה"')
-    && str_contains($r['text'], 'ממלא') && str_contains($r['text'], '#invite='));
+    && str_contains($r['text'], 'עורך (מילוי, הנפקת מסמכים)') && str_contains($r['text'], '#invite='));   // 15.4א: "ממלא" ← עורך שמנפיק וממלא
 $t = $tok($r);
-throws('טלפון לא תקין נדחה', fn() => share_invite($owner, ['type' => 'template', 'id' => $tid, 'phone' => '12', 'level' => 'view']), 422);
-throws('מי שאינו מנהל — לא מזמין', fn() => share_invite($bob, ['type' => 'template', 'id' => $tid, 'phone' => '0501234567', 'level' => 'view']), 404);
+throws('טלפון לא תקין נדחה', fn() => share_invite($owner, ['type' => 'template', 'id' => $tid, 'phone' => '12', 'level' => 'edit', 'perms' => []]), 422);
+throws('מי שאינו מנהל — לא מזמין', fn() => share_invite($bob, ['type' => 'template', 'id' => $tid, 'phone' => '0501234567', 'level' => 'edit', 'perms' => []]), 404);
 
 $l = share_list($owner, ['type' => 'template', 'id' => $tid]);
 check('ברשימה: הזמנה ממתינה עם שם, טלפון והרשאה', count($l['invites']) === 1 && $l['invites'][0]['name'] === 'בועז'
-    && $l['invites'][0]['phone'] === '050-1234567' && $l['invites'][0]['level'] === 'fill');
+    && $l['invites'][0]['phone'] === '050-1234567' && $l['invites'][0]['level'] === 'edit' && $l['invites'][0]['perms'] === ['fill', 'issue']);
 check('לא נשמר האסימון עצמו — רק hash', !db()->query("SELECT COUNT(*) FROM share_invites WHERE token_hash = " . db()->quote($t))->fetchColumn());
 
 // מידע בלי כניסה
 $i = invite_info($t);
-check('מידע להזמנה: ממי, מה והרשאה', $i['from'] === 'מלכיאל' && $i['title'] === 'אישור קבורה' && $i['level'] === 'fill' && !$i['used']);
+check('מידע להזמנה: ממי, מה והרשאה', $i['from'] === 'מלכיאל' && $i['title'] === 'אישור קבורה' && $i['level'] === 'edit' && $i['level_name'] === 'עורך (מילוי, הנפקת מסמכים)' && !$i['used']);
 throws('אסימון שגוי', fn() => invite_info(str_repeat('a', 48)), 410);
 
 // קבלה
@@ -77,12 +77,12 @@ check('אווה לא קיבלה גישה', access_level('template', $tid, (int)$
 
 // שיתוף קיים גבוה יותר לא יורד
 share_set($owner, ['type' => 'template', 'id' => $tid, 'user_id' => $bob['id'], 'level' => 'edit']);
-$r2 = share_invite($owner, ['type' => 'template', 'id' => $tid, 'phone' => '0501234567', 'level' => 'view']);
+$r2 = share_invite($owner, ['type' => 'template', 'id' => $tid, 'phone' => '0501234567', 'level' => 'edit', 'perms' => []]);
 invite_accept($bob, ['token' => $tok($r2)]);
 check('הזמנה ברמה נמוכה לא מורידה שיתוף קיים', access_level('template', $tid, (int)$owner['id'], $bob) === 'edit');
 
 // שליחה חוזרת וביטול
-$r3 = share_invite($owner, ['type' => 'template', 'id' => $tid, 'phone' => '0529999999', 'level' => 'view']);
+$r3 = share_invite($owner, ['type' => 'template', 'id' => $tid, 'phone' => '0529999999', 'level' => 'edit', 'perms' => []]);
 $inv = share_list($owner, ['type' => 'template', 'id' => $tid])['invites'][0];
 $r4 = share_invite_resend($owner, ['type' => 'template', 'id' => $tid, 'invite_id' => $inv['id']]);
 throws('אחרי שליחה חוזרת — הקישור הישן לא עובד', fn() => invite_info($tok($r3)), 410);
@@ -92,7 +92,7 @@ throws('הזמנה שבוטלה — לא נפתחת', fn() => invite_accept($eve
 check('ובוטלה — לא ברשימה', share_list($owner, ['type' => 'template', 'id' => $tid])['invites'] === []);
 
 // פגה
-$r5 = share_invite($owner, ['type' => 'template', 'id' => $tid, 'phone' => '0521111111', 'level' => 'view']);
+$r5 = share_invite($owner, ['type' => 'template', 'id' => $tid, 'phone' => '0521111111', 'level' => 'edit', 'perms' => []]);
 db()->exec("UPDATE share_invites SET expires_at = '2000-01-01T00:00:00Z' WHERE used_at IS NULL AND revoked_at IS NULL");
 throws('הזמנה שפגה', fn() => invite_accept($eve, ['token' => $tok($r5)]), 410);
 
@@ -119,7 +119,7 @@ check('הזמנה ממפתח: החשבון פעיל מיד', $v['status'] === 'a
 check('והשיתוף כבר נוצר', access_level('template', $tid, (int)$owner['id'], $n1) === 'fill');
 
 $tid2 = tpl_create($plain, ['name' => 'של רגיל'], ['file' => ['tmp_name' => "$tmp/u.pdf", 'error' => 0, 'size' => strlen($pdf)]])['id'];
-$r8 = share_invite($plain, ['type' => 'template', 'id' => $tid2, 'phone' => '0525555555', 'level' => 'view']);
+$r8 = share_invite($plain, ['type' => 'template', 'id' => $tid2, 'phone' => '0525555555', 'level' => 'edit', 'perms' => []]);
 $v = register_via('new2@x.com', $tok($r8));
 $n2 = db()->query("SELECT * FROM users WHERE email = 'new2@x.com'")->fetch();
 check('הזמנה ממשתמש רגיל: ממתין לאישור', $v['status'] === 'pending');
