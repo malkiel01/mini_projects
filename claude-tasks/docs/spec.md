@@ -218,28 +218,50 @@ The token is copied from the board: project "mini_projects" → ⚙ → "Token f
 
 ### 5.6 Stage 3 — what lives on the chat side
 
+*Revised 2026-11-01 after the 5.8 checks (code writer, against the live board).*
+
 ```
 claude-tasks/bridge/
-  listen.sh        the listener: a channel-wait loop; exits when a message arrives and prints it inside the frame
+  lib.sh           shared: URL, token, curl with the hosting cookie (below), timeouts
+  listen.sh        the listener: a channel-wait loop; on a message it writes .claude/board-pending.json and exits
   hook-prompt.sh   UserPromptSubmit → channel-post (owner)
-  hook-stop.sh     Stop → channel-post (chat), Claude's last message read from transcript_path
-  link.sh          register / status / archive — writes and reads .claude/board-link.json
+  hook-stop.sh     Stop → channel-post (chat), from the hook input's last_assistant_message
+  link.sh          register / status / pending / archive — reads and writes .claude/board-link.json
 .claude/skills/claude-tasks-live/SKILL.md      (in English)
 ```
 
-**The hooks** are registered in `.claude/settings.json` (shared by every chat in the repo — see 5.8):
-- **Active only when `.claude/board-link.json` exists.** Without it — `exit 0` immediately. An unregistered chat notices nothing.
-- **No loops:** a board message arrives as background-command output, not as a prompt. If it does pass through
-  `UserPromptSubmit` anyway, the hook skips text starting with `📥 הודעה מהלוח`. The reply to it is posted with `reply_to`
-  (the listener writes `pending_reply_to` into the link file).
-- Inter-chat `📨` messages (create_trigger) are mirrored as `system`, not `owner`.
-- Network failure → silent `exit 0`, `timeout 5`. Bodies over 20,000 characters are truncated with "…(truncated)".
+**The hosting's bot protection.** A request without a browser gets `409` + JavaScript that sets the cookie `humans_21909=1`;
+with `-b humans_21909=1` it passes. So **every** chat-side request goes through `lib.sh`, which sends the cookie. The name can
+change: `lib.sh` reads it from `CLAUDE_TASKS_COOKIE` (default `humans_21909=1`), and on a `409` whose body sets a cookie it
+extracts the new name/value, retries once, and stores it in the link file. The engine (`agent/run.mjs`, running in GitHub
+Actions) is probably blocked the same way — **check it in stage 2 and fix it there** (one header), since a silently blocked
+engine leaves tasks stuck.
 
-**The listener:** `run_in_background`, `timeout` 7,000,000 ms (just under two hours). It exits on a message **or** on timeout —
-either way the chat wakes, handles it (or not), and restarts it. `listening_until` is sent to the server, and the UI shows "🟢 listening".
+**A woken chat does not see the listener's output.** The background command's exit arrives as a `<task-notification>` with the
+command and a summary only — the output sits in an output file. Therefore:
+- The listener **writes the message(s) to `.claude/board-pending.json`** (outside git) and prints one short line.
+- The skill: on any wake from the listener, run `link.sh pending` — it prints each pending message inside the fixed frame
+  (`📥 הודעה מהלוח · #<id> · מאת: … · ערוץ: …`, then the body). Handle, `channel-ack`, then restart the listener.
+
+**The hooks** are registered in `.claude/settings.json` (shared by every chat in the repo):
+- **Active only when `.claude/board-link.json` exists.** Without it — `exit 0` immediately. An unregistered chat notices nothing.
+- **No loops:** `hook-prompt.sh` skips a prompt that starts with `<task-notification>` (listener wakes, `send_later`
+  backups and every other background event) and one that starts with `📥 הודעה מהלוח`. The reply to a board message is
+  posted with `reply_to` (`link.sh pending` writes `pending_reply_to` into the link file; `hook-stop.sh` uses and clears it).
+- Inter-chat `📨` messages (create_trigger) are mirrored as `system`, not `owner`.
+- `hook-stop.sh` takes `last_assistant_message` from the hook input — no transcript parsing.
+- Network failure → silent `exit 0`, `timeout 5`. Bodies over 20,000 characters are truncated with "…(truncated)".
+- For testing, hooks in `.claude/settings.local.json` load immediately without restarting the session — use that before
+  touching the shared `settings.json`.
+
+**The listener:** `run_in_background`, `timeout` 7,000,000 ms (just under two hours). Measured: a background command exiting
+wakes an idle chat in **under 2 seconds**. It exits on a message **or** on timeout — either way the chat wakes, handles it
+(or not), and restarts it. `listening_until` is sent to the server, and the UI shows "🟢 listening". 5 s between requests
+held 34/34 without a block; keep ≥ 3 s.
 
 **The `claude-tasks-live` skill:** register (`link.sh register`), start the listener, schedule the hourly backup (`send_later`),
-handle a message (`channel-ack` after handling, not before), restart, disconnect at the end. `claude-tasks-worker` links to it.
+handle a message (`link.sh pending` → act → `channel-ack` after handling, not before), restart, disconnect at the end.
+`claude-tasks-worker` links to it.
 
 ### 5.7 Stage 4 — the UI
 
