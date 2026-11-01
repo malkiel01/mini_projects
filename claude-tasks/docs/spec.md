@@ -294,6 +294,21 @@ file appears) — no new server code needed. Write the results into this section
 3. Does background-command output go through `UserPromptSubmit`?
 4. Does the `Stop` hook receive `transcript_path`, and can the last message be extracted from it?
 
+**Results (2026-11-01, code writer, against the live board):**
+
+| # | Result |
+| --- | --- |
+| 1 | ✅ The chat's turn had ended; a 3-minute `curl` loop on `health.php` exited at 15:39:30, and `UserPromptSubmit` fired at 15:39:30 — **under 2 seconds** |
+| 2 | ✅ A 55-minute loop (one request every 20 s): 161/161 answered `200`, no gap, and its exit woke the chat. ⚠ The owner was talking to the chat during part of that window, so "a completely quiet chat for an hour+" is still unproven — the hourly `send_later` backup stays mandatory |
+| 3 | ✅ Yes, but as a `<task-notification>` with the command and a summary only — **not the output** (→ 5.6: the listener writes `.claude/board-pending.json`) |
+| 4 | ✅ Yes — and also `last_assistant_message`, the full text of the last reply (→ 5.6: no transcript parsing) |
+
+Also found: the hosting's bot protection (`409` + `humans_21909=1`, → 5.6); 34/34 requests at 5 s and 161/161 at 20 s with the
+cookie, no blocking; hooks in `.claude/settings.local.json` load immediately without restarting the session.
+**The engine was blocked:** `agent/run.mjs` got `409` on every board call, including its failure report — fixed in stage 2
+(it sends the cookie, and on a `409` that sets a different one it retries once). Repos with the engine already installed need
+"Install engine" again to get the new file.
+
 If 1 fails — the bridge falls back to the backup only (up to an hour of latency), and the owner is told before continuing.
 **A change to `.claude/settings.json`** affects every chat in the repo — so the hooks must be a no-op without a link file, and are
 tested in a clean chat before merging.
@@ -410,3 +425,4 @@ After approval: a `בקשה` message with **stage 1**. Every stage — branch, P
 | Stage | PR | Deployed | Notes |
 | --- | --- | --- | --- |
 | 1 | #1086 | `conclusion: success` checked after the merge — reported in the `עדכון` message | `subtree` defaults to 1 (the UI already relies on the whole branch); a task with no project — any signed-in user answers, as before; added a project check to `task` / `add-note` (`read`) and `update-task` (`write`); U1 — `owner` only |
+| 2 | (this PR) | checked after the merge — reported in the `עדכון` message | `author_role` on `in` messages is `authorRole()` (`owner` or `member`) — a `member` with `write` may send on a non-`owner_only` project, so `member` was added to the roles; the skill still acts only on `owner`. An answer by anyone allowed to answer (not only `owner`) is delivered to the asking channel, with its role. A channel token also works as a worker token for its subtree (`claim`, `block` …). The general token may register channels too. `channel-wait` records `listening_until = now + wait + 30`. The engine cookie fix (5.8) |

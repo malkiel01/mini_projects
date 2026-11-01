@@ -219,6 +219,48 @@ function migrate(PDO $pdo): void {
 
     // ענף שרק בעל הלוח עונה ומחליט בו. עובר בירושה לכל תתי-הפרויקטים.
     addColumn($pdo, 'projects', 'owner_only', 'INTEGER NOT NULL DEFAULT 0');
+
+    /*
+     * הגשר החי (docs/spec.md, 5): ערוץ לכל צ'אט, והודעות בשני הכיוונים.
+     * ‏in = לוח ← צ'אט (ממתינה למסירה); out = צ'אט ← לוח (שיקוף).
+     * האסימון של הערוץ נשמר רק כגיבוב.
+     */
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS channels (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id      INTEGER NOT NULL REFERENCES projects(id),
+            name            TEXT NOT NULL,
+            role            TEXT NOT NULL DEFAULT '',
+            session_id      TEXT NOT NULL UNIQUE,
+            session_url     TEXT NOT NULL DEFAULT '',
+            token_hash      TEXT NOT NULL DEFAULT '',
+            route           TEXT NOT NULL DEFAULT '',
+            status          TEXT NOT NULL DEFAULT 'active',
+            last_seen_at    INTEGER NOT NULL DEFAULT 0,
+            listening_until INTEGER NOT NULL DEFAULT 0,
+            created_at      INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS messages (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            channel_id     INTEGER NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+            task_id        INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
+            direction      TEXT NOT NULL,
+            author_role    TEXT NOT NULL,
+            author_user_id INTEGER,
+            kind           TEXT NOT NULL DEFAULT 'text',
+            body           TEXT NOT NULL,
+            reply_to       INTEGER,
+            answered_by    TEXT NOT NULL DEFAULT '',
+            delivered_at   INTEGER,
+            created_at     INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_channels_token ON channels(token_hash);
+        CREATE INDEX IF NOT EXISTS idx_channels_project ON channels(project_id);
+        CREATE INDEX IF NOT EXISTS idx_messages_channel ON messages(channel_id, id);
+        CREATE INDEX IF NOT EXISTS idx_messages_inbox ON messages(channel_id, direction, delivered_at);
+    ");
+    // הערוץ שבו נשאלה השאלה על המטלה — לשם תגיע התשובה
+    addColumn($pdo, 'tasks', 'asked_channel_id', 'INTEGER');
 }
 
 /** ALTER TABLE ADD COLUMN אינו מכיר IF NOT EXISTS ב-SQLite — בודקים לבד. */

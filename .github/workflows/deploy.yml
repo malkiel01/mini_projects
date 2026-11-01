@@ -236,6 +236,7 @@ jobs:
             --exclude='platform/downloads/*' \
             --exclude='claude-tasks/data/config.json' \
             --exclude='claude-tasks/data/secret.key' \
+            --exclude='claude-tasks/data/bell/' \
             --exclude='camera-app/data/*.sqlite*' \
             --exclude='camera-app/data/secret.key' \
             --exclude='camera-app/data/media/' \

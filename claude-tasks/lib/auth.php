@@ -131,6 +131,17 @@ function workerScope(): ?array {
         return ['name' => $name, 'project_id' => null];
     }
 
+    // אסימון של ערוץ (הגשר החי, lib/channels.php): מוגבל לענף של הפרויקט שלו,
+    // ונושא את הערוץ. נבדק לפי גיבוב — האסימון עצמו לא נשמר.
+    if (str_starts_with($token, 'ch_')) {
+        $st = db()->prepare("SELECT * FROM channels WHERE token_hash = ? AND status = 'active'");
+        $st->execute([hash('sha256', $token)]);
+        $ch = $st->fetch();
+        if (!$ch) return null;
+        return ['name' => $name === 'worker' ? 'channel-' . $ch['id'] : $name,
+                'project_id' => (int) $ch['project_id'], 'channel_id' => (int) $ch['id'], 'channel' => $ch];
+    }
+
     // אסימון של פרויקט. ההשוואה נעשית על כל השורות בזמן קבוע, כדי שלא
     // ידלוף מידע מהפרש הזמנים.
     $match = null;
