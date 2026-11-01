@@ -38,7 +38,9 @@ $pdf = pdf_draw($list, fn(string $key) => file_get_contents(...)); // $key — �
     { "op": "line", "from": [x, y], "to": [x, y], "color": "#…", "width": 1 },
     { "op": "path", "d": "M10 10 L90 10 C95 10 100 15 100 20 Q 50 50 10 10 Z", "transform": [a, b, c, d, e, f],
       "fill": "#…" | null, "fillOpacity": 1, "fillRule": "nonzero" | "evenodd",
-      "stroke": "#…" | null, "strokeOpacity": 1, "width": 1, "cap": "butt", "join": "miter", "miter": 4, "dash": [] } ] } ] }
+      "stroke": "#…" | null, "strokeOpacity": 1, "width": 1, "cap": "butt", "join": "miter", "miter": 4, "dash": [] },
+    { "op": "clip", "d": "M…", "fillRule": "nonzero", "transform": [a, b, c, d, e, f] },
+    { "op": "restore" } ] } ] }
 ```
 
 - **`size` / `bleed`:** `size` הוא העמוד (TrimBox). `bleed` מרחיב את MediaBox ו-BleedBox לכל צד; מותר לצייר בגלישה (x, y שליליים).
@@ -50,13 +52,19 @@ $pdf = pdf_draw($list, fn(string $key) => file_get_contents(...)); // $key — �
   עוברים בה, כמו ב-SVG. לפחות `fill` או `stroke`. `cap`: `butt` / `round` / `square`; `join`: `miter` / `round` / `bevel`.
 - **שקיפות:** `fillOpacity` / `strokeOpacity` (ב-`path`) ו-`opacity` (ב-`image`), 0–1 — דרך ExtGState. בלי שקיפות אין
   ExtGState במשאבים, כך שהפלט של מי שלא משתמש בה לא משתנה.
+- **`clip` … `restore`** (שלב 2)**:** הפעולות שאחרי `clip` מוגבלות לנתיב שלו עד `restore`; מקונן (חיתוך בתוך חיתוך —
+  המשותף). `transform` של ה-clip חל רק על הנתיב שלו. `restore` בלי `clip` — שגיאה; `clip` שלא נסגר — נסגר בסוף העמוד.
+- **מעבר צבע** (שלב 2)**:** `fill` / `stroke` של `path` יכולים להיות
+  `{ "gradient": { "type": "linear", "x1", "y1", "x2", "y2", "stops": [{ "offset", "color" }] } }` או
+  `{ "type": "radial", "cx", "cy", "r", "fx", "fy", "stops" }` — בקואורדינטות של הנתיב (אחרי `transform`, כמו
+  `userSpaceOnUse`), עם המשך מעבר לקצוות. כמה עצירות שרוצים. **שקיפות בעצירות — עוד לא** (שגיאה); שקיפות לכל המעבר —
+  `fillOpacity` / `strokeOpacity`. Pattern נכנס למשאבים רק כשיש מעבר צבע.
 - **פעולה לא מוכרת — שגיאה**, כמו קודם. ההרחבות — תוספת בלבד.
 - **שגיאה:** `InvalidArgumentException` עם המקום ("עמוד 1, פעולה 3: …").
 
 ## עוד לא
 
-- **שלב 2:** `clip` (רשימת `d` + `fillRule`) עד `{ "op": "restore" }`, מקונן; `fill` / `stroke` עם מעבר צבע לינארי /
-  רדיאלי (Shading 2 / 3).
+- **שקיפות בעצירות של מעבר צבע** (SMask לפי בהירות) — כשמישהו יצטרך.
 - **שלב 3:** pdf-core גם ב-JS — אותה רשימת ציור ואותן בדיקות, על בסיס ה-`toPDF` של וקטורי. גופנים ב-JS — רק כשיידרש.
 
 - **CMYK והפרדות** — לפי `mbe-format.md` סעיף 9.
@@ -66,4 +74,5 @@ $pdf = pdf_draw($list, fn(string $key) => file_get_contents(...)); // $key — �
 
 במעבד התמלילים: `php word-processor/tests/run.php` — הקטע "רשימת ציור → PDF" (תיבות, subset, מיקומי גליפים,
 ציור אמיתי ב-`pdftoppm`, גליף מורכב, שגיאות) ו-"pdf-core, שלב 1" (path: cm, Q → C, evenodd, מקפים,
-שקיפות, ציור ב-`pdftoppm`, שגיאות), וכל בדיקות ה-PDF של העורך עוברות דרך אותו כותב.
+שקיפות, ציור ב-`pdftoppm`, שגיאות) ו-"שלב 2" (clip מקונן ועם transform, מעבר צבע לינארי בשלוש עצירות / רדיאלי / בקו —
+כולם גם בציור ב-`pdftoppm`), וכל בדיקות ה-PDF של העורך עוברות דרך אותו כותב.

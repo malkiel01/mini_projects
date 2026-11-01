@@ -41,6 +41,18 @@ final class PdfWriter
         return $this->gstates[$key] ??= '/GS' . (count($this->gstates) + 1);
     }
 
+    /**
+     * מעבר צבע (Pattern type 2 עם Shading) → '/P1'. $shading — מילון Shading מלא; $matrix — ממרחב התבנית למרחב
+     * הדף (הקואורדינטות של המעבר). כל שימוש — שם משלו (המטריצה שונה בין פעולות). רק כשבשימוש — במשאבים
+     */
+    public array $patterns = [];
+    public function pattern(string $shading, array $matrix): string
+    {
+        $name = '/P' . (count($this->patterns) + 1);
+        $this->patterns[$name] = [$shading, $matrix];
+        return $name;
+    }
+
     public function font(TtfFont $f): string
     {
         $id = spl_object_id($f);
@@ -145,9 +157,15 @@ final class PdfWriter
             $imgRefs .= "{$im['name']} $id 0 R ";
         }
         $res = $alloc();
+        $pat = '';
+        foreach ($this->patterns as $name => [$sh, $mx]) {
+            $id = $alloc();
+            $objs[$id] = "<< /Type /Pattern /PatternType 2 /Shading $sh /Matrix [" . implode(' ', array_map([self::class, 'n'], $mx)) . '] >>';
+            $pat .= "$name $id 0 R ";
+        }
         $gs = '';
         foreach ($this->gstates as $key => $name) { [$ca, $CA] = explode(' ', $key); $gs .= "$name << /Type /ExtGState /ca $ca /CA $CA >> "; }
-        $objs[$res] = "<< /Font << $fontRefs>> /XObject << $imgRefs>>" . ($gs !== '' ? " /ExtGState << $gs>>" : '') . " /ProcSet [/PDF /Text /ImageB /ImageC] >>";
+        $objs[$res] = "<< /Font << $fontRefs>> /XObject << $imgRefs>>" . ($gs !== '' ? " /ExtGState << $gs>>" : '') . ($pat !== '' ? " /Pattern << $pat>>" : '') . " /ProcSet [/PDF /Text /ImageB /ImageC] >>";
         // עמודים — המספרים מוקצים קודם, כי קישור פנימי מפנה לעמוד אחר
         $kids = [];
         $pids = array_map(fn() => $alloc(), $this->pages);
