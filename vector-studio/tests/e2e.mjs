@@ -823,6 +823,25 @@ try {
   step('התקנה: בלי שגיאות התקנה ב-Chromium, file_handlers ל-‎.mbe, והדף נפתח בלי רשת');
 
   // ---- טלפון ----
+  // 👤 תפריט המשתמש (ui-core): העיגול בסרגל, ערכה כהה שנשמרת בשרת ומגיעה גם לעורך, וייצוא כל הנתונים
+  const pa = await browser.newPage();
+  await pa.goto(base);
+  await pa.waitForSelector('.account-btn:not([hidden])');
+  await pa.click('.account-btn');
+  await pa.getByText('הגדרות אישיות').click();
+  await pa.check('input[name=theme][value=dark]');
+  await pa.waitForFunction(() => document.documentElement.dataset.theme === 'dark');
+  await pa.keyboard.press('Escape');
+  await pa.goto(base + 'editor.html#d' + savedId);
+  await pa.waitForFunction(() => window.__vs?.S.doc && document.documentElement.dataset.theme === 'dark', null, { timeout: 10000 });
+  const exp = await pa.evaluate(() => fetch('api.php?action=account_export', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then(r => r.json()));
+  assert.equal(exp.app, 'vector-studio');
+  assert.ok(exp.data.drawings.length >= 1 && exp.data.drawings.every(d => d.doc?.surfaces), 'הציורים בייצוא');
+  assert.equal(exp.prefs.general.theme, 'dark');
+  await pa.evaluate(() => fetch('api.php?action=account_prefs_set', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ns: 'general', value: { theme: 'system' } }) }));
+  await pa.close();
+  step('תפריט המשתמש: הגדרות אישיות בשרת (ערכה כהה גם בעורך), ייצוא כל הנתונים');
+
   for (const width of [390, 320]) {
     const ctx = await browser.newContext({ viewport: { width, height: 780 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
     const p = await ctx.newPage();

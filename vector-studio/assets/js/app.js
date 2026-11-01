@@ -6,19 +6,18 @@ import * as library from './library.js';
 import { acceptHandoff } from './handoff.js';
 import { initDialogs, confirm } from './ui-core/dialog.js';
 import { toast } from './ui-core/toast.js';
+import { accountMenu, accountServer } from './ui-core/account.js';
 
 const $ = id => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-async function api(action) {
-  const res = await fetch('api.php?action=' + encodeURIComponent(action), { credentials: 'same-origin' });
+async function api(action, body) {
+  const opt = { credentials: 'same-origin' };
+  if (body) Object.assign(opt, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const res = await fetch('api.php?action=' + encodeURIComponent(action), opt);
   const data = await res.json().catch(() => ({ success: false, error: 'תשובה לא תקינה מהשרת' }));
   if (!data.success) throw Object.assign(new Error(data.error || 'שגיאה'), { status: res.status });
   return data;
-}
-
-function initials(name) {
-  return name.trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('');
 }
 
 function when(iso) {
@@ -117,11 +116,14 @@ function setupInstall() {
 async function start() {
   try {
     const { user } = await api('me');
-    const me = $('me');
-    me.textContent = initials(user.name);
-    me.title = user.name;
-    me.setAttribute('aria-label', 'מחובר: ' + user.name);
-    me.hidden = false;
+    // 👤 תפריט המשתמש (ui-core): הגדרות אישיות וערכה כהה, ייצוא כל הנתונים ומחיקת החשבון. היציאה — מהכלים
+    // הדיגיטליים (השער), לא מכאן.
+    const server = await accountServer((action, body) => api(action, body || {})).catch(() => null);
+    accountMenu(document.querySelector('header.top'), {
+      user: () => ({ name: user.name, email: user.email, admin: user.role === 'admin' }),
+      server,
+      // 📁 "המסמכים שלי" — עם files-window של ui-core (שורה 20); הספרייה היא הדף הזה עצמו
+    });
     setupNew();
     await showLibrary();
     setupInstall();

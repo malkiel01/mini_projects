@@ -23,6 +23,7 @@ import { bindViewport } from './ui-core/gestures.js';
 import { toast } from './ui-core/toast.js';
 import { download } from './ui-core/files.js';
 import { initDialogs, confirm, prompt } from './ui-core/dialog.js';
+import { accountServer, applyPrefs, DEFAULT_PREFS } from './ui-core/account.js';
 import { snapper } from './snap.js';
 import { parse, bbox, serialize, transform as transformSegs } from './geometry/path.js';
 const pathOps = { parse, serialize, transform: transformSegs };
@@ -70,6 +71,10 @@ function makeSnap(exclude, surface, touch) {
  * שעוברת עכשיו לשרת (ונמחקת מהמכשיר רק אחרי שנשמרה שם).
  */
 async function boot() {
+  // ההגדרות האישיות מתפריט המשתמש (ערכת צבעים, גודל טקסט) — גם כאן, בלי לחכות להן
+  accountServer((action, body) => fetch('api.php?action=' + action, { method: 'POST', credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) }).then(r => r.json()))
+    .then(s => { applyPrefs({ ...DEFAULT_PREFS, ...(s.prefs.get('general') || {}) }); readColors(); draw(); }).catch(() => { /* בלי חיבור — כמו המכשיר */ });
   const hash = decodeURIComponent(location.hash.slice(1));
   try {
     if (hash.startsWith('new:')) {

@@ -5,6 +5,7 @@
  * me — מי נכנס. הספרייה: list, get, create, save, delete, thumb (GET, PNG), container (GET, ‎.mbe המקורי), versions, restore.
  * תמונות בציור: media_put (POST, base64 → { src }), media (GET ?src=media/<sha>.<ext>).
  * צבעים וסגנונות שמורים של המשתמש: prefs (GET), prefs_put (POST { swatches, styles }).
+ * תפריט המשתמש (ui-core, lib/ui-core/account): account_prefs, account_prefs_set, account_export, account_delete — POST.
  * כתיבה רק ב-POST עם Content-Type: application/json — טופס מאתר אחר לא יכול לשלוח כזה בלי preflight.
  */
 
@@ -12,6 +13,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/lib/auth.php';
 require_once __DIR__ . '/lib/drawings.php';
+require_once __DIR__ . '/lib/ui-core/account/account.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -28,7 +30,8 @@ $raw = file_get_contents('php://input');
 $in = is_string($raw) && $raw !== '' ? (json_decode($raw, true) ?: []) : [];
 $action = $_GET['action'] ?? (is_string($in['action'] ?? null) ? $in['action'] : '');
 
-const WRITES = ['create', 'save', 'delete', 'restore', 'media_put', 'prefs_put'];
+const WRITES = ['create', 'save', 'delete', 'restore', 'media_put', 'prefs_put',
+                'account_prefs', 'account_prefs_set', 'account_export', 'account_delete'];
 
 try {
     if (in_array($action, WRITES, true)) {
@@ -37,6 +40,20 @@ try {
         }
     }
     $id = (int) ($_GET['id'] ?? $in['id'] ?? 0);
+    if (str_starts_with($action, 'account_')) {
+        // תפריט המשתמש המשותף: ההגדרות בטבלה uic_prefs במסד שלנו; ייצוא ומחיקה — של הציורים שלנו
+        try {
+            reply(['success' => true] + uic_account_api($action, $in, [
+                'app'    => 'vector-studio',
+                'pdo'    => fn() => db(),
+                'user'   => fn() => currentUser()['id'] ?? null,
+                'export' => fn($uid) => exportUserData((int) $uid),
+                'delete' => fn($uid) => deleteUserData((int) $uid),
+            ]));
+        } catch (UicAccountError $e) {
+            reply(['success' => false, 'error' => $e->getMessage()], $e->status);
+        }
+    }
     switch ($action) {
         case 'me':
             reply(['success' => true, 'user' => publicUser(requireUser())]);
