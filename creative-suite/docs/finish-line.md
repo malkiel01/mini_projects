@@ -43,6 +43,9 @@
 1. **בסוף כל הערה** (כולל הערה שעשתה עבודה), קרא את הקצב:
    `https://mbe-plus.com/mini_projects/creative-suite/dashboard/cadence.php?chat=<role>` → `{ "minutes": 5, "paused": false }`.
    - בלי תשובה (הכתובת עוד לא קיימת, או שגיאה) — **5 דקות**.
+   - **חובה לשלוח עוגייה** — לשרת יש בדיקת "האם אתה אדם", ובלעדיה מגיע `<script>` במקום JSON:
+     `curl -s -b 'humans_21909=1' 'https://mbe-plus.com/mini_projects/creative-suite/dashboard/cadence.php?chat=<role>'`.
+     תשובה שאינה JSON — כמו שגיאה (5 דקות).
    - `paused: true` — לא קובעים הערה. המשימה השעתית תעיר אותך, ותבדוק שוב.
 2. `send_later` עם `delay_minutes` = הקצב, והודעה: "⏰ קו הגמר — המשך (שרשרת)". **הערה אחת בלבד בתור:** אם כבר קבעת
    הערה שעוד לא הגיעה, אל תוסיף עוד אחת.
