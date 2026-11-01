@@ -86,13 +86,14 @@ try {
     check('connect — לכתובת האישור של הענן, עם files,libs,ai', str_starts_with($url, 'https://mbe-plus.com/mini_projects/suite-cloud/connect.php?') && str_contains($url, 'scope=files%2Clibs%2Cai'));
     $back = approve($url);
     parse_str((string) parse_url($back, PHP_URL_QUERY), $bq);
-    check('המשתמש של אפליקציה אחרת לא יכול להשתמש ב-state', code(fn() => $app->callback('u2', $bq)) === 'bad_state');
+    check('משתמש אחר באפליקציה לא יכול להשתמש ב-state — והסיבה ידועה', code(fn() => $app->callback('u2', $bq)) === 'bad_state:user');
+    check('state שלא קיים — missing', code(fn() => $app->callback('u1', ['state' => 'nope', 'code' => 'x'])) === 'bad_state:missing');
 
     $url = $app->connectUrl('u1');
     parse_str((string) parse_url(approve($url), PHP_URL_QUERY), $bq);
     $to = $app->callback('u1', $bq);
     check('callback — חיבור נשמר, חזרה לאפליקציה', $to === 'https://mbe-plus.com/mini_projects/vector-studio/?cloud=connected');
-    check('callback שני עם אותו state — נדחה', code(fn() => $app->callback('u1', $bq)) === 'bad_state');
+    check('חזרה כפולה עם אותו state — לא שגיאה, חוזרים מחוברים', $app->callback('u1', $bq) === 'https://mbe-plus.com/mini_projects/vector-studio/?cloud=connected');
     $st = $app->status('u1')['suite'];
     check('status — מחובר, שם בעל החשבון, cloud_id', $st['connected'] && $st['name'] === 'בעל המערכת' && $st['cloud_id'] === setting('cloud_id'));
 
