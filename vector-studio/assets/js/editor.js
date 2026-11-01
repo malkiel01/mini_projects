@@ -18,7 +18,7 @@ import { renderProps, renderLayers } from './props.js';
 import { createPenTools } from './pen.js';
 import { pencilD, brushD, widths } from './freehand.js';
 import { needsPages, sourcePdf, renderPages, assign as assignPages } from './pages.js';
-import { activeHandoff, returnHandoff, endHandoff } from './handoff.js';
+import { activeHandoff, returnHandoff, endHandoff } from './mbe/handoff.js';
 import { keyOf } from './ui-core/keys.js';
 import { fit as fitView, zoomTo, nextStep, screenToDoc } from './ui-core/viewport.js';
 import { bindViewport } from './ui-core/gestures.js';
