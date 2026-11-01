@@ -100,11 +100,12 @@ export function createLayerAI({ cloud = null } = {}) {
   const none = { removeBackground: false, decompose: false, generate: false, fill: false };
 
   async function caps() {
-    if (!cloud?.ai) return { ...none, providers: [] };
+    if (!cloud?.ai) return { ...none, providers: [], connected: false };
     let c;
-    try { c = await cloud.ai.capabilities(); } catch { return { ...none, providers: [] }; }
+    try { c = await cloud.ai.capabilities(); } catch { return { ...none, providers: [], connected: false }; }
     const t = c?.tasks ?? {};
     return {
+      connected: !!c?.connected,
       removeBackground: !!t['remove-background'],
       decompose: !!t.segment,
       generate: !!t['generate-image'],

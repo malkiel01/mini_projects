@@ -4,19 +4,23 @@
 // הקנבס יושב מעל התיבה בגודל החלון בלבד, ומצייר רק את הפריסות שנראות — כך גם ספר של 600 עמודים מהיר.
 // הבמה ב-direction: ltr — חשבון הגלילה פשוט; העמודים עצמם ממוקמים לפי צד הכריכה (pages.js).
 
-import { layoutDoc, contentBox, runningItems, headsByPage, pagesOf, masterOf, pageAt } from './pages.js';
-import { framesOnPage, drawingsOnPage, frameAt, isImage, imagePlacement } from './frames.js';
+import { layoutDoc, contentBox, runningItems, headsByPage, pagesOf, masterOf, pageAt, ptToMm } from './pages.js';
+import { framesOnPage, drawingsOnPage, frameAt, isImage, imagePlacement, allItems } from './frames.js';
 import { drawItems } from './vector.js';
 import { drawGlyphs, shapeLine, advance } from './shaper.js';
 import { nextStep, wheelPixels } from './ui-core/viewport.js';
+import { handles } from './ui-core/handles.js';
+import { snapper } from './ui-core/snap.js';
 
 const MIN_Z = 0.1, MAX_Z = 8;
+const isDrawingSel = v => v.selInfo()?.frame.type === 'vector';
 
 export class PageView {
-  constructor(host, { onChange, onPick } = {}) {
+  constructor(host, { onChange, onPick, onFrameBox } = {}) {
     this.host = host;
     this.onChange = onChange || (() => {});
     this.onPick = onPick || (() => {});
+    this.onFrameBox = onFrameBox || (() => {});   // (frameId, [x, y, w, h] בעמוד) — אחרי גרירה או שינוי גודל על הדף
     this.selected = -1;   // העמוד הנבחר (0-based), או -1
     this.frameSel = null; // מזהה המסגרת הנבחרת, או null
     this.text = null;     // פריסת הטקסט (flow.js: layoutFlows) — null עד שהגופנים נטענו
@@ -33,6 +37,7 @@ export class PageView {
     this.lay = null;
     this.raf = 0;
     this.bindPick();
+    this.bindHandles();
 
     this.scroller.addEventListener('scroll', () => this.draw(), { passive: true });
     new ResizeObserver(() => { this.resize(); }).observe(host);
@@ -174,7 +179,7 @@ export class PageView {
     let down = null;
     this.scroller.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY, t: Date.now() }; });
     this.scroller.addEventListener('pointerup', e => {
-      if (!down || !this.lay) return;
+      if (!down || !this.lay || this.grab) return;   // ידית או גרירה של המסגרת — לא הקשה
       const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
       const quick = Date.now() - down.t < 500;
       down = null;
@@ -197,6 +202,145 @@ export class PageView {
     this.frameSel = index >= 0 ? frame : null;
     this.onPick(index, this.frameSel);
     this.draw();
+  }
+
+  // ---- ידיות על הדף (ui-core/handles.js, מצב rect): גרירה של המסגרת הנבחרת, שינוי גודל מהפינות ומהצדדים, הצמדה ----
+  // הקואורדינטות של הידיות — של הפריסה כולה (העמוד במקומו בפריסה); בסוף — חזרה לקואורדינטות העמוד (onFrameBox).
+
+  /** התצוגה במונחי viewport.js: נקודה במסמך → מסך = x + d * zoom. */
+  screenView() { return { zoom: this.zoom, x: this.offX - this.scroller.scrollLeft, y: -this.scroller.scrollTop }; }
+
+  pageAtIndex(index) { return this.lay?.spreads.flatMap(s => s.pages).find(q => q.index === index) || null; }
+
+  /** המסגרת הנבחרת: { frame, pageIndex, pg } או null */
+  selInfo() {
+    if (!this.model || !this.frameSel) return null;
+    const it = allItems(this.model).find(x => x.frame.id === this.frameSel);
+    const pg = it && this.pageAtIndex(it.pageIndex);
+    return pg ? { ...it, pg } : null;
+  }
+
+  /** קווי הצמדה: שולי הדף, שטח התוכן ומרכזו, ושאר המסגרות בעמוד. */
+  snapFor() {
+    const si = this.selInfo();
+    if (!si) return null;
+    const { pg, pageIndex } = si;
+    const [cx, cy, cw, ch] = contentBox(this.model, pg.num);
+    const boxes = [[pg.x, pg.y, this.lay.pageW, this.lay.pageH], [pg.x + cx, pg.y + cy, cw, ch],
+      ...allItems(this.model).filter(x => x.pageIndex === pageIndex && x.frame.id !== this.frameSel)
+        .map(x => [pg.x + x.frame.box[0], pg.y + x.frame.box[1], x.frame.box[2], x.frame.box[3]])];
+    return snapper({ boxes, tol: 6 / this.zoom });
+  }
+
+  bindHandles() {
+    this.hl = document.createElement('div');
+    this.hl.className = 'handles-layer';
+    this.status = Object.assign(document.createElement('div'), { className: 'uic-status', hidden: true });
+    this.status.setAttribute('role', 'status');
+    this.hl.append(this.status);
+    this.host.append(this.hl);
+    this.hd = handles(this.hl, {
+      mode: 'rect', view: () => this.screenView(),
+      keepRatio: () => isDrawingSel(this),   // ציור — פינה שומרת יחס (Shift משחרר); מסגרת טקסט ותמונה — חופשי snap: () => this.snapFor(), status: () => {},
+      onPreview: r => this.sayBox(r), onCommit: r => this.commitBox(r), onCancel: () => { this.sayBox(null); this.draw(); },
+    });
+    const local = e => { const r = this.scroller.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+    const inSel = s => {   // הנקודה (במסך) בתוך המסגרת הנבחרת?
+      const si = this.selInfo();
+      if (!si) return false;
+      const v = this.screenView(), [bx, by, bw, bh] = si.frame.box;
+      const x = (s[0] - v.x) / v.zoom - si.pg.x, y = (s[1] - v.y) / v.zoom - si.pg.y;
+      return x >= bx && x <= bx + bw && y >= by && y <= by + bh;
+    };
+    // מגע על ידית או על המסגרת הנבחרת — גרירה, לא גלילה של הדף
+    this.scroller.addEventListener('touchstart', e => {
+      if (e.touches.length !== 1) return;
+      const r = this.scroller.getBoundingClientRect(), s = [e.touches[0].clientX - r.left, e.touches[0].clientY - r.top];
+      if (this.hd.at(s, { pointerType: 'touch' }) || inSel(s)) e.preventDefault();
+    }, { passive: false });
+    let move = null;   // { start: [x, y] במסמך, r0, r, moved }
+    this.scroller.addEventListener('pointerdown', e => {
+      this.grab = false;
+      if (!e.isPrimary || (e.pointerType === 'mouse' && e.button !== 0)) return;
+      const s = local(e);
+      if (this.hd.down(e, s)) { this.grab = true; this.scroller.setPointerCapture?.(e.pointerId); return; }
+      if (!inSel(s)) return;
+      const r = this.hd.value;
+      if (!r) return;
+      const v = this.screenView();
+      move = { start: [(s[0] - v.x) / v.zoom, (s[1] - v.y) / v.zoom], r0: r, r, moved: false, s0: s };
+      try { this.scroller.setPointerCapture(e.pointerId); } catch { /* מצביע מדומה */ }
+    });
+    this.scroller.addEventListener('pointermove', e => {
+      const s = local(e);
+      if (this.hd.dragging) { this.hd.move(e, s); return; }
+      if (move) {
+        if (!move.moved && Math.hypot(s[0] - move.s0[0], s[1] - move.s0[1]) < 4) return;
+        move.moved = true; this.grab = true;   // grab — גם syncHandles לא דורס את המלבן בזמן הגרירה
+        const v = this.screenView(), si = this.selInfo();
+        let x = move.r0.x + (s[0] - v.x) / v.zoom - move.start[0], y = move.r0.y + (s[1] - v.y) / v.zoom - move.start[1];
+        const sn = !(e.ctrlKey || e.metaKey) && this.snapFor();
+        if (sn) { const d = sn.box([x, y, move.r0.w, move.r0.h]); x += d.dx; y += d.dy; }
+        if (si) {   // לא יוצאת מהדף
+          x = Math.min(Math.max(x, si.pg.x), si.pg.x + this.lay.pageW - move.r0.w);
+          y = Math.min(Math.max(y, si.pg.y), si.pg.y + this.lay.pageH - move.r0.h);
+        }
+        move.r = { ...move.r0, x, y };
+        this.hd.show(move.r);
+        this.sayBox(move.r, true);
+        return;
+      }
+      if (e.pointerType === 'mouse') {   // הסמן: ידית — חץ לכיוון; בתוך המסגרת — הזזה
+        const h = this.hd.at(s, e);
+        this.scroller.style.cursor = !h ? (inSel(s) ? 'move' : '')
+          : h[0] && h[1] ? (h[0] === h[1] ? 'nwse-resize' : 'nesw-resize') : h[0] ? 'ew-resize' : 'ns-resize';
+      }
+    });
+    const end = cancel => {
+      if (this.hd.dragging) { cancel ? this.hd.cancel() : this.hd.up(); return; }
+      if (!move) return;
+      const m = move;
+      move = null;
+      if (cancel || !m.moved) { this.sayBox(null); if (m.moved) this.hd.show(m.r0); return; }
+      this.commitBox(m.r);
+    };
+    // ההקשה (bindPick) כבר ראתה את grab — המאזין שלה נרשם קודם; מכאן הידיות חוזרות לעקוב אחרי המודל
+    this.scroller.addEventListener('pointerup', () => { end(false); this.grab = false; });
+    this.scroller.addEventListener('pointercancel', () => { end(true); this.grab = false; });
+  }
+
+  sayBox(r, moving = false) {
+    if (!r) { this.status.hidden = true; return; }
+    const si = this.selInfo();
+    const mm = v => Math.round(ptToMm(v));
+    // בהזזה — המיקום מימין ומלמעלה (כמו בחלון המסגרת); בשינוי גודל — הרוחב והגובה
+    this.status.textContent = moving && si
+      ? `⁧${mm(si.pg.x + this.lay.pageW - r.x - r.w)} מ"מ מימין · ${mm(r.y - si.pg.y)} מ"מ מלמעלה⁩`
+      : `⁦${mm(r.w)}×${mm(r.h)}⁩ מ"מ`;
+    this.status.hidden = false;
+  }
+
+  commitBox(r) {
+    this.sayBox(null);
+    const si = this.selInfo();
+    if (!si) return;
+    const W = this.lay.pageW, H = this.lay.pageH;
+    // לקואורדינטות העמוד, בתוך הדף, ולא קטנה מ-10pt (כמו בחלון המסגרת)
+    let x = r.x - si.pg.x, y = r.y - si.pg.y, w = Math.max(10, r.w), h = Math.max(10, r.h);
+    x = Math.max(0, x); y = Math.max(0, y);
+    w = Math.min(w, W - x); h = Math.min(h, H - y);
+    const box = [x, y, w, h].map(n => Math.round(n * 100) / 100);
+    if (box.every((v, i) => Math.abs(v - si.frame.box[i]) < 0.01)) { this.draw(); return; }
+    this.onFrameBox(si.frame.id, box);
+  }
+
+  /** אחרי כל ציור: הידיות על המסגרת הנבחרת (או מוסתרות), במקום שלה במסך. */
+  syncHandles() {
+    if (!this.hd || this.hd.dragging || this.grab) { this.hd?.update(); return; }
+    const si = this.selInfo();
+    if (!si) { this.hd.hide(); return; }
+    const [bx, by, bw, bh] = si.frame.box;
+    this.hd.show({ x: si.pg.x + bx, y: si.pg.y + by, w: bw, h: bh });
   }
 
   /** התמונה של src (media/<sha>.<ext>) — מהמטמון, או מתחילה להיטען ומציירת שוב כשמגיעה. */
@@ -231,7 +375,7 @@ export class PageView {
 
   draw() {
     if (this.raf) return;
-    this.raf = requestAnimationFrame(() => { this.raf = 0; this.paint(); this.onChange(); });
+    this.raf = requestAnimationFrame(() => { this.raf = 0; this.paint(); this.syncHandles(); this.onChange(); });
   }
 
   paint() {

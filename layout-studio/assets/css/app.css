@@ -26,6 +26,8 @@ body.editor .top a.icon-btn { color: inherit; text-decoration: none; }
 .stage .scroller { position: absolute; inset: 0; overflow: auto; direction: ltr; touch-action: pan-x pan-y; overscroll-behavior: contain; outline: 0; }
 .stage .spacer { min-width: 1px; min-height: 1px; }
 .stage canvas { position: absolute; top: 0; left: 0; pointer-events: none; display: block; }
+/* הידיות של ui-core (handles.js) מעל הקנבס — רק הן; הלחיצות עצמן נקלטות בתיבת הגלילה */
+.stage .handles-layer { position: absolute; inset: 0; pointer-events: none; overflow: hidden; direction: rtl; }
 .bar { flex: none; display: flex; align-items: center; justify-content: space-between; gap: var(--s2);
     padding: var(--s1) var(--s2) calc(var(--s1) + env(safe-area-inset-bottom)); background: var(--surface); border-top: 1px solid var(--line); }
 .bar .grp { display: flex; align-items: center; gap: 2px; min-width: 0; }
