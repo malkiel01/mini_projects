@@ -322,6 +322,44 @@ try {
     check('מפתח שנדחה — provider, בלי חיוב', code(fn() => aiRun($acc, '', ['task' => 'complete', 'prompt' => 'x'])) === 'provider'
         && (float) db()->query('SELECT cost FROM ai_usage ORDER BY id DESC LIMIT 1')->fetchColumn() === 0.0);
 
+    // ─── Anthropic (Claude) — complete בלבד ───
+    aiSetKey('anthropic', 'sk-ant-test');
+    aiAdminUser(['account' => $acc['id'], 'providers' => ['openai', 'google', 'replicate', 'anthropic'], 'monthly' => 5]);
+    check('Claude — רק complete', AI_PROVIDERS['anthropic']['tasks'] === ['complete'] && !in_array('anthropic', aiProvidersFor($acc, 'generate-image'), true));
+    $calls = [];
+    $replies = ['api.anthropic.com/v1/messages' => [200, json_encode(['stop_reason' => 'end_turn', 'content' => [
+        ['type' => 'thinking', 'thinking' => ''], ['type' => 'text', 'text' => '{"title":"שלום"}']]])]];
+    $r = aiRun($acc, '', ['task' => 'complete', 'provider' => 'anthropic', 'prompt' => 'תאר', 'system' => 'מעצב', 'schema' => ['type' => 'object'],
+                          'images' => [$png(8, 8)]]);
+    $sent = json_decode($calls[0]['body'], true);
+    check('Claude — JSON מהבלוק הטקסטואלי, המודל העדכני, system למעלה', $r['json'] === ['title' => 'שלום'] && $sent['model'] === 'claude-opus-5-5'
+        && $sent['system'] === 'מעצב' && $sent['output_config']['format']['type'] === 'json_schema' && $sent['output_config']['effort'] === 'medium');
+    check('Claude — תמונה כ-base64 לפני הטקסט', $sent['messages'][0]['content'][0]['type'] === 'image'
+        && $sent['messages'][0]['content'][0]['source']['media_type'] === 'image/png' && $sent['messages'][0]['content'][1]['text'] === 'תאר');
+    check('Claude — מפתח ב-x-api-key, גרסה, fallbacks', in_array('x-api-key: sk-ant-test', $calls[0]['headers'], true)
+        && in_array('anthropic-version: 2026-10-21', $calls[0]['headers'], true) && $sent['fallbacks'] === 'default'
+        && in_array('anthropic-beta: server-side-fallback-2026-07-01', $calls[0]['headers'], true));
+    $calls = [];
+    $tries = 0;
+    $replies = ['api.anthropic.com/v1/messages' => function ($body) use (&$tries) {
+        return ++$tries === 1 ? [400, '{"type":"error","error":{"type":"invalid_request_error","message":"output_config.format.schema: additionalProperties must be false"}}']
+                          : [200, json_encode(['stop_reason' => 'end_turn', 'content' => [['type' => 'text', 'text' => "```json
+[1,2]
+```"]]])];
+    }];
+    $r = aiRun($acc, '', ['task' => 'complete', 'provider' => 'anthropic', 'prompt' => 'x', 'schema' => ['type' => 'array']]);
+    $second = json_decode($calls[1]['body'], true);
+    check('Claude — סכמה שנדחתה: נסיון בלי format, הסכמה בהנחיה', $r['json'] === [1, 2] && !isset($second['output_config']['format'])
+        && str_contains($second['system'], '"type":"array"'));
+    $replies = ['api.anthropic.com/v1/messages' => [200, json_encode(['stop_reason' => 'end_turn', 'content' => [['type' => 'text', 'text' => 'שלום']]])]];
+    check('Claude — טקסט', aiRun($acc, '', ['task' => 'complete', 'provider' => 'anthropic', 'prompt' => 'x'])['text'] === 'שלום');
+    $replies = ['api.anthropic.com/v1/messages' => [200, json_encode(['stop_reason' => 'refusal', 'stop_details' => ['category' => 'cyber'], 'content' => []])]];
+    check('Claude — סירוב → provider', code(fn() => aiRun($acc, '', ['task' => 'complete', 'provider' => 'anthropic', 'prompt' => 'x'])) === 'provider');
+    $calls = [];
+    $replies = ['api.anthropic.com/v1/models' => [200, '{"data":[]}']];
+    aiAdminTest('anthropic');
+    check('Claude — בדיקת מפתח בלי עלות (models)', str_contains($calls[0]['url'], '/v1/models') && $calls[0]['method'] === 'GET');
+
     aiSetKey('google', 'g-key');
     aiAdminDefault(['task' => 'generate-image', 'provider' => 'google']);
     $calls = [];
@@ -410,6 +448,23 @@ try {
     [$path] = fontFile($acc, $f2['id']);
     check('font_file — הקובץ עצמו', file_get_contents($path) === $heebo);
     check('גופן של חשבון אחר — 404', code(fn() => fontFile(getAccount($dana['id']), $f2['id'])) === 'not_found');
+    // ─── המובנים ───
+    exec('php ' . escapeshellarg(__DIR__ . '/../tools/fonts-catalog.php') . ' --check 2>&1', $o, $rc);
+    check('הקטלוג של המובנים תואם לקבצים, ולכל אחד רישיון OFL', $rc === 0);
+    check('fonts_list בלי builtin — רק של המשתמש (אפליקציות קיימות לא משתנות)', count(fontsList($acc)['fonts']) === 3);
+    $all = fontsList($acc, true);
+    $rubik = array_values(array_filter($all['fonts'], fn($f) => $f['id'] === 'b_rubik-var'))[0] ?? null;
+    check('עם builtin — המובנים אחרי של המשתמש, בקבוצה משלהם', count($all['fonts']) === 13 && $all['fonts'][0]['source'] === 'user'
+        && in_array(['family' => 'Rubik', 'source' => 'builtin', 'items' => ['b_rubik-var']], $all['families'], true));
+    check('Rubik משתנה — wght 300–900, משקל ברירת מחדל 400, רישיון', $rubik && $rubik['axes']['wght'] === [300, 900] && $rubik['weight'] === 400
+        && $rubik['license'] === 'OFL-rubik.txt' && !isset($rubik['file']) && str_contains($rubik['url'], 'id=b_rubik-var&rev='));
+    [$bp, $br] = fontFile($acc, 'b_rubik-var');
+    check('font_file של מובנה — מהתיקייה, rev = sha256', hash_file('sha256', $bp) === $rubik['rev'] && $br['format'] === 'ttf');
+    check('מובנה — אי אפשר לשנות או למחוק', code(fn() => fontUpdate($acc, ['id' => 'b_rubik-var', 'family' => 'x'])) === 'builtin'
+        && code(fn() => fontDelete($acc, 'b_rubik-var')) === 'builtin');
+    check('מובנה שלא קיים — 404', code(fn() => fontFile($acc, 'b_nope-400')) === 'not_found');
+    check('fvar — הצירים של גופן משתנה', fontMeta((string) file_get_contents(FONT_BUILTIN_DIR . '/NotoSerifHebrew.ttf'))['axes'] === ['wght' => [100, 900], 'wdth' => [62.5, 100]]);
+
     fontDelete($acc, $f2['id']);
     check('font_delete — הקובץ נשאר כל עוד גופן אחר באותו תוכן', is_file(blobPath(hash('sha256', $heebo))));
     fontDelete($acc, $f3['id']);

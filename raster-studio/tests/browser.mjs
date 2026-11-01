@@ -925,7 +925,7 @@ async function main() {
   await page.keyboard.press('Control+d');
   await page.click('[data-act="add"]');
   await drag([50, 50], [80, 80]);
-  check('שכבה ריקה — הודעה', /ריקה/.test(await page.textContent('.toast')) && !(await page.evaluate(() => __rs.tools.floating)));
+  check('שכבה ריקה — הודעה', /ריקה/.test(await page.textContent('.toast')) && !(await page.evaluate(() => __rs.tools.floating)), await page.evaluate(() => [...document.querySelectorAll('.toast')].map(t => t.textContent).join(' | ') + ' · floating=' + __rs.tools.floating));
   if (SHOTS) {
     await page.click('.layer-row:nth-child(2)');
     await drag([300, 300], [300, 300]);
@@ -1060,6 +1060,39 @@ async function main() {
   check('✓ החלה — רשומת "Liquify"', await page.evaluate(() => __rs.history.undoStack.at(-1).label) === 'Liquify' && near(await px(320, 250), [255, 0, 0, 255]));
   await page.keyboard.press('Control+z');
   check('ביטול — הריבוע חוזר', near(await px(320, 250), [255, 255, 255, 255]) && near(await px(250, 250), [255, 0, 0, 255]));
+
+  // 📌 Puppet ו-🔍 תיקון עדשה — ריבוע אדום 200..299
+  const redSquareFloat = async () => {
+    await openEd(page);
+    await page.waitForFunction(() => window.__rs?.doc);
+    await page.evaluate(() => __rs.setView({ zoom: 1, x: 20, y: 20 }));
+    await page.keyboard.press('m');
+    await drag([200, 200], [300, 300]);
+    await color('#ff0000');
+    await page.keyboard.press('Alt+Backspace');
+    await page.keyboard.press('v');
+    await drag([250, 250], [250, 250]);
+  };
+  await redSquareFloat();
+  await page.waitForSelector('[data-xfmode="puppet"]:not([disabled])', { timeout: 3000 }).catch(() => {});
+  await page.click('[data-xfmode="puppet"]');
+  await page.mouse.click(...at(210, 250));          // סיכה שנשארת
+  await drag([290, 250], [340, 250]);                // סיכה חדשה, נגררת ימינה
+  const pp = await page.evaluate(() => __rs.tools.state && document.querySelector('#xf-info').textContent);
+  check('📌 Puppet — שתי סיכות; הצד הנגרר נמתח, הסיכה השנייה מחזיקה', near(await px(320, 250), [255, 0, 0, 255]) && near(await px(212, 250), [255, 0, 0, 255]) && /\(2\)/.test(pp),
+    [await px(320, 250), await px(212, 250), pp].join(' | '));
+  await page.click('[data-xf="apply"]');
+  check('✓ — רשומת "Puppet"', await page.evaluate(() => __rs.history.undoStack.at(-1).label) === 'Puppet');
+  await redSquareFloat();
+  await page.waitForSelector('[data-xfmode="lens"]:not([disabled])', { timeout: 3000 }).catch(() => {});
+  await page.click('[data-xfmode="lens"]');
+  check('🔍 עדשה — המחוון מוצג', await page.isVisible('#opt-lens'));
+  check('לפני: (305,250) לבן', near(await px(305, 250), [255, 255, 255, 255]));
+  await page.$eval('#opt-lens', el => { el.value = '-80'; el.dispatchEvent(new Event('input', { bubbles: true })); });
+  check('חבית: אמצע הצלע בולט החוצה — (305,250) אדום, והפינה (297,297) עדיין אדומה', near(await px(305, 250), [255, 0, 0, 255]) && near(await px(297, 297), [255, 0, 0, 255]),
+    [await px(305, 250), await px(297, 297)].join(' | '));
+  await page.click('[data-xf="apply"]');
+  check('✓ — רשומת "תיקון עדשה"', await page.evaluate(() => __rs.history.undoStack.at(-1).label) === 'תיקון עדשה');
 
   // ---- חיתוך ----
   await openEd(page);
@@ -1754,6 +1787,15 @@ async function main() {
   const webp = (await import('node:fs')).readFileSync(await dl4.path());
   check('WebP — חתימה RIFF…WEBP', webp.subarray(0, 4).toString() === 'RIFF' && webp.subarray(8, 12).toString() === 'WEBP' && okName(dl4, 'webp'));
   await page.click('#export-btn');
+  const avif = await page.evaluate(async () => { const { canEncode } = await import('./assets/js/export.js'); return canEncode('image/avif'); });
+  await page.waitForFunction(ok => document.querySelector('[data-export="avif"]').disabled === !ok, avif, { timeout: 3000 }).catch(() => {});
+  check('AVIF — הכפתור לפי מה שהדפדפן יודע לכתוב', await page.$eval('[data-export="avif"]', b => b.disabled) === !avif, String(avif));
+  if (avif) {
+    const [dl6] = await Promise.all([page.waitForEvent('download'), page.click('[data-export="avif"]')]);
+    const av = (await import('node:fs')).readFileSync(await dl6.path());
+    check('AVIF — חתימה ftypavif', av.subarray(4, 12).toString() === 'ftypavif', av.subarray(4, 12).toString());
+    await page.click('#export-btn');
+  }
   const [dl5] = await Promise.all([page.waitForEvent('download'), page.click('[data-export="tif"]')]);
   const tifPath = await dl5.path();
   const tifInfo = execFileSync('identify', ['-format', '%m %w %h %[pixel:p{150,150}]', tifPath]).toString();

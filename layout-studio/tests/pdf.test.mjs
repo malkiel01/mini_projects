@@ -88,3 +88,12 @@ test('רשימת המסמך: טקסט, תמונה עם חיתוך, ומספר ע
   assert.ok(list.pages.every(p => p.ops.every(o => ['glyphs', 'image'].includes(o.op))));
   assert.doesNotThrow(() => JSON.stringify(list));
 });
+
+test('צבע הסגנון — עובר לכל רצף של השורה; קוד פגום — שחור; גופן של המשתמש — הקובץ שלו', () => {
+  const g = shapeLine([frank, noto], 'שלום');
+  assert.ok(glyphOps(frank, g, 0, 0, 12, 'שלום', '#7A1F1F').every(o => o.color === '#7a1f1f'));
+  assert.ok(glyphOps(frank, g, 0, 0, 12, 'שלום', 'red').every(o => o.color === '#000000'));
+  assert.ok(glyphOps(frank, g, 0, 0, 12, 'שלום').every(o => o.color === '#000000'));
+  const mine = { ...frank, key: 'media/' + 'c'.repeat(64) + '.ttf' };
+  assert.equal(fontKey(mine), mine.key);
+});

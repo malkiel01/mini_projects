@@ -9,7 +9,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import * as opentype from '../assets/js/vendor/opentype.min.mjs';
 import { visualOrder, fontFile, textToD, loadFont } from '../assets/js/outline.js';
-import { prepare, toSVG, toPDF } from '../assets/js/export.js';
+import { prepare, toSVG, toPDF, toPdfList } from '../assets/js/export.js';
 import { newDocument, setShape } from '../assets/js/model.js';
 import { relayout, setMeasure } from '../assets/js/text.js';
 import { parse, bbox } from '../assets/js/geometry/path.js';
@@ -80,16 +80,17 @@ test('SVG: נתיבים, סגנון, קבוצות, טקסט כנתיב עם תו
 test('PDF: מבנה תקין, עמוד לכל לוח, שקיפות', async () => {
   const doc = textDoc();
   doc.surfaces.push({ id: 's2', type: 'artboard', name: 'לוח 2', size: [200, 100], layers: [] });
-  const pdf = toPDF([await prepare(doc, 's1', getFont), await prepare(doc, 's2', getFont)]);
+  const pages = [await prepare(doc, 's1', getFont), await prepare(doc, 's2', getFont)];
+  // הרשימה ל-pdf-core: עמוד לכל לוח, בגודל שלו; שקיפות — fillOpacity
+  const { list } = toPdfList(pages);
+  assert.deepEqual(list.pages.map(p => p.size), [[400, 300], [200, 100]]);
+  assert.ok(list.pages[0].ops.some(o => o.op === 'path' && o.fillOpacity === 0.5), 'שקיפות');
+  assert.ok(list.pages[0].ops.every(o => /^[MLCQZ0-9 .\-]+$/.test(o.d || 'M')), 'רק פקודות מוחלטות');
+  const pdf = await toPDF(pages);
   const s = Buffer.from(pdf).toString('latin1');
-  assert.match(s, /^%PDF-1\.4/);
+  assert.match(s, /^%PDF-1\.\d/);
   assert.match(s, /\/Count 2/);
-  assert.match(s, /\/MediaBox \[0 0 400 300\]/);
-  assert.match(s, /\/ca 0\.5/);
-  // כל היסט ב-xref מצביע על תחילת אובייקט
-  const xref = Number(/startxref\n(\d+)/.exec(s)[1]);
-  const entries = s.slice(xref).split('\n').slice(3).filter(l => /^\d{10} 00000 n/.test(l));
-  entries.forEach((e, i) => assert.ok(s.startsWith(`${i + 1} 0 obj`, Number(e.slice(0, 10))), 'אובייקט ' + (i + 1)));
+  await pdfCheck(pdf);
   let info = null;
   try {
     const f = path.join(os.tmpdir(), `vs-${process.pid}.pdf`);
@@ -114,13 +115,14 @@ test('מעבר צבע: נקודות לפי זווית, ייצוא ל-SVG ול-PD
   const svg = toSVG(prep);
   assert.match(svg, /<defs>\s*<linearGradient id="grad1" gradientUnits="userSpaceOnUse" x1="20" y1="50" x2="120" y2="50"><stop offset="0" stop-color="#ffffff"\/><stop offset="0.5"/);
   assert.match(svg, /<path id="p1"[^>]*fill="url\(#grad1\)"/);
-  const pdf = Buffer.from(toPDF([prep])).toString('latin1');
-  assert.match(pdf, /\/PatternType 2 \/Matrix \[1 0 0 -1 0 300\]/);
-  assert.match(pdf, /\/FunctionType 3/);
-  assert.match(pdf, /\/Pattern cs \/P1 scn/);
+  const op = toPdfList([prep]).list.pages[0].ops.find(o => o.fill?.gradient);
+  assert.deepEqual(op.fill.gradient, { type: 'linear', x1: 20, y1: 50, x2: 120, y2: 50,
+    stops: [{ offset: 0, color: '#ffffff' }, { offset: 0.5, color: '#e19a00' }, { offset: 1, color: '#2d4a8a' }] });
+  const pdf = await toPDF([prep]);
+  assert.match(Buffer.from(pdf).toString('latin1'), /\/PatternType 2/);
   try {
     const f = path.join(os.tmpdir(), `vsg-${process.pid}.pdf`);
-    fs.writeFileSync(f, toPDF([prep]));
+    fs.writeFileSync(f, pdf);
     const png = f.replace(/\.pdf$/, '');
     execFileSync('pdftoppm', ['-png', '-r', '72', '-f', '1', '-l', '1', f, png]);
     fs.unlinkSync(f);
@@ -139,14 +141,15 @@ test('מעבר עגול ושקיפות בעצירות: SVG ‏radialGradient, �
   const prep = await prepare(doc, 's1', getFont);
   const svg = toSVG(prep);
   assert.match(svg, /<radialGradient id="grad1" gradientUnits="userSpaceOnUse" cx="70" cy="50" r="[\d.]+"><stop offset="0" stop-color="#ffffff"\/><stop offset="1" stop-color="#2d4a8a" stop-opacity="0"\/>/);
-  const pdf = toPDF([prep]);
+  const g = toPdfList([prep]).list.pages[0].ops.find(o => o.fill?.gradient).fill.gradient;
+  assert.equal(g.type, 'radial');
+  assert.deepEqual([g.cx, g.cy], [70, 50]);
+  assert.equal(g.stops[1].opacity, 0, 'שקיפות בעצירה עוברת ל-pdf-core');
+  const pdf = await toPDF([prep]);
   const s = Buffer.from(pdf).toString('latin1');
-  assert.match(s, /\/ShadingType 3 \/ColorSpace \/DeviceRGB \/Coords \[70 50 0 70 50 /);
-  assert.match(s, /\/ShadingType 3 \/ColorSpace \/DeviceGray [^>]*\/C0 \[1\] \/C1 \[0\]/);
-  assert.match(s, /\/SMask << \/Type \/Mask \/S \/Luminosity \/G \d+ 0 R >>/);
-  // המתאר — מחוץ למסכה
-  assert.match(s, /f\nQ\n[\d. ]+RG/);
-  pdfCheck(pdf);
+  assert.match(s, /\/ShadingType 3/);
+  assert.match(s, /\/S \/Luminosity/, 'מסכה רכה');
+  await pdfCheck(pdf);
 });
 
 test('שכבות של אחרים: תמונה ב-SVG וב-PDF, מסגרת טקסט כקווי מתאר, וחסרה — בדוח', async () => {
@@ -157,28 +160,38 @@ test('שכבות של אחרים: תמונה ב-SVG וב-PDF, מסגרת טקס�
     { id: 'gr', type: 'group', children: [{ id: 'fr', type: 'frame', flow: 'f1', box: [200, 10, 150, 40] }] },
     { id: 'r2', type: 'raster', src: 'media/missing.png' },
   );
-  const px = new Uint8Array([255, 0, 0, 0, 255, 0]);
-  const getImage = async (src) => (src === 'media/a.png'
-    ? { href: 'data:image/png;base64,AAAA', w: 2, h: 1, rgb: zlib.deflateSync(px), alpha: zlib.deflateSync(new Uint8Array([255, 128])) }
-    : null);
+  const A = pngUrl(2, 1, [255, 0, 0, 255, 0, 255, 0, 128]);
+  const getImage = async (src) => (src === 'media/a.png' ? { href: A, w: 2, h: 1 } : null);
   const prep = await prepare(doc, 's1', getFont, getImage);
   assert.ok(prep.gaps.some(g => g.includes('חסרה')));
   const svg = toSVG(prep);
   assert.match(svg, /xmlns:xlink=/);
-  assert.match(svg, /<g id="r1" data-name="" opacity="0.5">\s*<image x="10" y="10" width="40" height="20" preserveAspectRatio="none" href="data:image\/png;base64,AAAA"/);
+  assert.match(svg, /<g id="r1" data-name="" opacity="0.5">\s*<image x="10" y="10" width="40" height="20" preserveAspectRatio="none" href="data:image\/png;base64,/);
   assert.match(svg, /<g id="fr"[^>]*>\s*<path id="fr" d="M/);
-  const pdf = toPDF([prep]);
-  const s = Buffer.from(pdf).toString('latin1');
-  assert.match(s, /\/Subtype \/Image \/Width 2 \/Height 1 \/ColorSpace \/DeviceRGB [^>]*\/SMask \d+ 0 R/);
-  assert.match(s, /40 0 0 -20 10 30 cm\n\/Im1 Do/);
-  pdfCheck(pdf);
+  const { list, files } = toPdfList([prep]);
+  assert.deepEqual(list.pages[0].ops.find(o => o.op === 'image'), { op: 'image', src: 'img/1.png', box: [10, 10, 40, 20], opacity: 0.5 });
+  assert.equal(files.get('img/1.png')[1], 0x50, 'הבתים — PNG');
+  const pdf = await toPDF([prep]);
+  assert.match(Buffer.from(pdf).toString('latin1'), /\/Subtype \/Image/);
+  await pdfCheck(pdf);
 });
 
-function pdfCheck(pdf) {
-  const s = Buffer.from(pdf).toString('latin1');
-  const xref = Number(/startxref\n(\d+)/.exec(s)[1]);
-  const entries = s.slice(xref).split('\n').slice(3).filter(l => /^\d{10} 00000 n/.test(l));
-  entries.forEach((e, i) => assert.ok(s.startsWith(`${i + 1} 0 obj`, Number(e.slice(0, 10))), 'אובייקט ' + (i + 1)));
+/** PNG אמיתי (RGBA, 8 סיביות) כ-data URL — pdf-core מפענח את הבתים. */
+function pngUrl(w, h, rgba) {
+  const crc = (buf) => { let c = ~0; for (const b of buf) { c ^= b; for (let k = 0; k < 8; k++) c = (c >>> 1) ^ (0xedb88320 & -(c & 1)); } return ~c >>> 0; };
+  const chunk = (type, data) => { const t = Buffer.from(type), len = Buffer.alloc(4), c = Buffer.alloc(4);
+    len.writeUInt32BE(data.length); c.writeUInt32BE(crc(Buffer.concat([t, data]))); return Buffer.concat([len, t, data, c]); };
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 6;
+  const raw = [];
+  for (let y = 0; y < h; y++) { raw.push(0); raw.push(...rgba.slice(y * w * 4, (y + 1) * w * 4)); }
+  const png = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(Buffer.from(raw))), chunk('IEND', Buffer.alloc(0))]);
+  return 'data:image/png;base64,' + png.toString('base64');
+}
+
+/** PDF תקין: מתחיל ב-%PDF, ו-pdftoppm מצייר אותו בלי הודעות (אם מותקן). */
+async function pdfCheck(pdf) {
+  pdf = await pdf;
+  assert.match(Buffer.from(pdf.slice(0, 8)).toString('latin1'), /^%PDF-/);
   try {
     const f = path.join(os.tmpdir(), `vsc-${process.pid}-${Math.random().toString(36).slice(2)}.pdf`);
     fs.writeFileSync(f, pdf);
@@ -219,7 +232,7 @@ test('מעבר מסוג לא מוכר (מגרסה עתידית): צבע העצי
   const prep = await prepare(doc, 's1', getFont);
   assert.ok(prep.gaps.includes('gradient:conic → צבע אחיד'));
   assert.match(toSVG(prep), /<path id="p1"[^>]*fill="#123456"/);
-  pdfCheck(toPDF([prep]));
+  await pdfCheck(toPDF([prep]));
   assert.equal(doc.surfaces[0].layers[0].paths[0].fill.gradient.type, 'conic', 'המסמך עצמו לא משתנה');
 });
 
@@ -238,22 +251,21 @@ test('תמונה בתוך הציור: SVG ‏<image> עם סיבוב ואטימ�
   doc.surfaces[0].layers[0].paths.push(
     { id: 'i1', type: 'image', src: 'media/aa.png', box: [10, 20, 40, 30], opacity: 0.5, transform: [0, 1, -1, 0, 100, 0] },
     { id: 'i2', type: 'image', src: 'media/missing.png', box: [0, 0, 10, 10] });
-  const getImage = async (src) => (src === 'media/aa.png'
-    ? { href: 'data:image/png;base64,BBBB', w: 2, h: 1, rgb: zlib.deflateSync(new Uint8Array(6)), alpha: null } : null);
+  const B = pngUrl(2, 1, [0, 0, 0, 255, 0, 0, 0, 255]);
+  const getImage = async (src) => (src === 'media/aa.png' ? { href: B, w: 2, h: 1 } : null);
   const prep = await prepare(doc, 's1', getFont, getImage);
   assert.ok(prep.gaps.some(g => g.startsWith('image')));
   const svg = toSVG(prep);
   assert.match(svg, /xmlns:xlink=/);
-  assert.match(svg, /<image id="i1" x="10" y="20" width="40" height="30" preserveAspectRatio="none" href="data:image\/png;base64,BBBB" xlink:href="[^"]+" opacity="0.5" transform="matrix\(0 1 -1 0 100 0\)"\/>/);
+  assert.match(svg, /<image id="i1" x="10" y="20" width="40" height="30" preserveAspectRatio="none" href="data:image\/png;base64,[^"]+" xlink:href="[^"]+" opacity="0.5" transform="matrix\(0 1 -1 0 100 0\)"\/>/);
   assert.doesNotMatch(svg, /id="i2"/);
-  const pdf = toPDF([prep]);
-  const s = Buffer.from(pdf).toString('latin1');
-  assert.match(s, /q\n0 1 -1 0 100 0 cm\n\/GS\d+ gs\n40 0 0 -30 10 50 cm\n\/Im1 Do\nQ/);
-  pdfCheck(pdf);
+  assert.deepEqual(toPdfList([prep]).list.pages[0].ops.find(o => o.op === 'image'),
+    { op: 'image', src: 'img/1.png', box: [10, 20, 40, 30], transform: [0, 1, -1, 0, 100, 0], opacity: 0.5 }, 'סיבוב — transform של pdf-core');
+  await pdfCheck(toPDF([prep]));
 });
 
 test('מתאר משוכלל: מעבר צבע במתאר וחץ בסוף — ב-SVG וב-PDF', async () => {
-  const doc = newDocument('a4');
+  const doc = newDocument([400, 300]);
   const L = doc.surfaces[0].layers[0];
   L.paths.push({ id: 'ln', d: 'M10 10 L110 10', fill: null,
     stroke: { width: 4, gradient: { type: 'linear', from: [10, 10], to: [110, 10], stops: [{ at: 0, color: '#ff0000' }, { at: 1, color: '#0000ff' }] }, end: 'arrow', start: 'circle' } });
@@ -262,8 +274,32 @@ test('מתאר משוכלל: מעבר צבע במתאר וחץ בסוף — ב-S
   assert.match(svg, /<path id="ln" [^>]*stroke="url\(#grad1\)"/, 'המתאר במעבר צבע');
   assert.match(svg, /<path id="ln-m0" [^>]*fill="url\(#grad\d\)"/, 'העיגול בהתחלה — באותו מעבר');
   assert.match(svg, /<path id="ln-m1" /, 'החץ בסוף');
-  const pdf = Buffer.from(toPDF([prep])).toString('latin1');
-  assert.match(pdf, /\/Pattern CS \/P\d+ SCN/, 'מתאר עם Pattern');
-  assert.equal((pdf.match(/\/PatternType 2/g) || []).length, 3, 'מתאר + שני קצוות');
-  pdfCheck(toPDF([prep]));
+  const ops = toPdfList([prep]).list.pages[0].ops;
+  assert.equal(ops.length, 3, 'הנתיב ושני הקצוות');
+  assert.ok(ops[0].stroke.gradient && ops[0].width === 4, 'מתאר במעבר צבע');
+  assert.ok(ops[1].fill.gradient && ops[2].fill.gradient && !ops[1].stroke, 'הקצוות — מלאים באותו מעבר');
+  await pdfCheck(toPDF([prep]));
+});
+
+test('אפקטים: SVG ‏filter (צל, זוהר, טשטוש); PDF — תמונה מתחת, ובלי getEffects — בדוח', async () => {
+  const doc = newDocument([400, 300]);
+  const L = doc.surfaces[0].layers[0];
+  L.paths.push({ id: 'e1', d: 'M10 10 L60 10 L60 60 Z', fill: { color: '#2d4a8a' }, stroke: null,
+    effects: [{ type: 'shadow', dx: 4, dy: 4, blur: 6, color: '#000000', opacity: 0.35 }, { type: 'glow', blur: 8, color: '#ffd34d', opacity: 0.8 }] });
+  L.paths.push({ id: 'e2', d: 'M100 10 L150 10 L150 60 Z', fill: { color: '#e11d48' }, stroke: null, effects: [{ type: 'blur', radius: 3 }] });
+  let prep = await prepare(doc, doc.surfaces[0].id, getFont);
+  const svg = toSVG(prep);
+  assert.match(svg, /<filter id="fx\d+"[^>]*><feGaussianBlur in="SourceAlpha" stdDeviation="3" result="b0"\/><feOffset in="b0" dx="4" dy="4"/);
+  assert.match(svg, /<feMergeNode in="s0"\/><feMergeNode in="s1"\/><feMergeNode in="SourceGraphic"\/>/);
+  assert.match(svg, /<feGaussianBlur in="SourceGraphic" stdDeviation="1.5" result="src"\/><feMerge><feMergeNode in="src"\/>/);
+  assert.match(svg, /<g id="e1-fx" filter="url\(#fx\d+\)">\s*<path id="e1"/);
+  assert.ok(prep.gaps.includes('effects — לא נכללו ב-PDF'));
+  // עם getEffects: תמונה מתחת לפריט; blur — במקומו
+  const img = { href: pngUrl(1, 1, [0, 0, 0, 128]), w: 1, h: 1 };
+  prep = await prepare(doc, doc.surfaces[0].id, getFont, null, null, async (item) => ({ image: img, box: [0, 0, 10, 10], replace: item.id === 'e2' }));
+  assert.ok(prep.gaps.includes('effects → תמונה (PDF)'));
+  const ops = toPdfList([prep]).list.pages[0].ops;
+  assert.deepEqual(ops.map(o => o.op), ['image', 'path', 'image'], 'e1: תמונה ואז הנתיב; e2 (blur) — רק התמונה');
+  assert.equal(ops[1].fill, '#2d4a8a');
+  await pdfCheck(toPDF([prep]));
 });

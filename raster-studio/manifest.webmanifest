@@ -25,6 +25,8 @@
         "image/png": [".png"],
         "image/jpeg": [".jpg", ".jpeg"],
         "image/webp": [".webp"],
+        "image/avif": [".avif"],
+        "image/heic": [".heic", ".heif"],
         "image/openraster": [".ora"],
         "image/vnd.adobe.photoshop": [".psd"],
         "application/vnd.mbe+zip": [".mbe"]

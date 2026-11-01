@@ -505,6 +505,7 @@ final class Mbe
     {
         $doc = (array)$f->document;
         $flows = MbeSchema::typeOf($doc['flows'] ?? null) === 'object' ? (array)$doc['flows'] : [];
+        $symbols = MbeSchema::typeOf($doc['symbols'] ?? null) === 'object' ? (array)$doc['symbols'] : [];
         $ids = [];
         $seeId = function (mixed $id, string $where) use (&$ids, $issue) {
             if (!is_string($id)) return;
@@ -512,7 +513,7 @@ final class Mbe
             $ids[$id] = true;
         };
         // תוכן שכבת vector (סעיף 3): נתיב — d חובה ותקין; קבוצה — בלי d ו-transform משלה; type לא מוכר — נשמר, לא נבדק.
-        $walkPaths = function (mixed $items, string $where) use (&$walkPaths, $seeId, $issue) {
+        $walkPaths = function (mixed $items, string $where) use (&$walkPaths, $seeId, $issue, $symbols) {
             if (MbeSchema::typeOf($items) !== 'array') return;
             foreach ($items as $i => $p) {
                 if (MbeSchema::typeOf($p) !== 'object') continue;
@@ -531,6 +532,12 @@ final class Mbe
                         $issue('error', 'group-geometry', 'לקבוצה אין d ו-transform משלה', "document.json#$at");
                     }
                     $walkPaths($p['children'] ?? null, "$at/children");
+                } elseif ($type === 'use') {
+                    // מופע של סמל (וקטורי גרסה 2, mbe-format.md סעיף 3): סמל שלא קיים — המופע לא מצויר
+                    $sym = $p['symbol'] ?? null;
+                    if (!is_string($sym) || !array_key_exists($sym, $symbols)) {
+                        $issue('warning', 'symbol-missing', 'המופע מפנה לסמל "' . (is_scalar($sym) ? $sym : '') . '" שאינו קיים ב-document.symbols — לא יצויר', "document.json#$at/symbol");
+                    }
                 }
             }
         };
@@ -561,6 +568,10 @@ final class Mbe
             $s = (array)$s;
             $seeId($s['id'] ?? null, "/surfaces/$i");
             $walkLayers($s['layers'] ?? null, "/surfaces/$i/layers");
+        }
+        // הגדרות הסמלים: הפריטים בתוכן — אותן בדיקות, ומזהים ייחודיים בכל המסמך (mbe-format.md סעיף 3, "סמלים")
+        foreach (MbeCanonical::sortedKeys($symbols) as $sid) {
+            if (MbeSchema::typeOf($symbols[$sid]) === 'object') $walkPaths(((array)$symbols[$sid])['paths'] ?? null, "/symbols/$sid/paths");
         }
         // מזהה פסקה (מ-1.1): ייחודי בשטף, [A-Za-z0-9_]{1,32}. חסר — תקין (1.0), ו-save משלים. פגום או כפול — אזהרה, ו-save מחליף.
         foreach (MbeCanonical::sortedKeys($flows) as $fid) {

@@ -427,6 +427,7 @@ function applyJournal(f, files, { docSha, docBytes, app, who, at }) {
 function checkDocument(f, issue) {
     const ids = new Set();
     const flows = f.document.flows && typeof f.document.flows === 'object' ? f.document.flows : {};
+    const symbols = f.document.symbols && typeof f.document.symbols === 'object' && !Array.isArray(f.document.symbols) ? f.document.symbols : {};
     const seeId = (id, where) => {
         if (typeof id !== 'string') return;
         if (ids.has(id)) issue('error', 'duplicate-id', `המזהה "${id}" מופיע פעמיים`, 'document.json#' + where);
@@ -475,6 +476,11 @@ function checkDocument(f, issue) {
                     issue('error', 'group-geometry', 'לקבוצה אין d ו-transform משלה', `document.json#${at}`);
                 }
                 walkPaths(p.children, `${at}/children`);
+            } else if (type === 'use') {
+                // מופע של סמל (וקטורי גרסה 2, mbe-format.md סעיף 3): סמל שלא קיים — המופע לא מצויר
+                if (typeof p.symbol !== 'string' || !Object.hasOwn(symbols, p.symbol)) {
+                    issue('warning', 'symbol-missing', `המופע מפנה לסמל "${p.symbol}" שאינו קיים ב-document.symbols — לא יצויר`, `document.json#${at}/symbol`);
+                }
             }
         });
     };
@@ -483,6 +489,11 @@ function checkDocument(f, issue) {
         seeId(s.id, `/surfaces/${i}`);
         walkLayers(s.layers, `/surfaces/${i}/layers`);
     });
+    // הגדרות הסמלים: הפריטים בתוכן — אותן בדיקות, ומזהים ייחודיים בכל המסמך (mbe-format.md סעיף 3, "סמלים")
+    for (const sid of Object.keys(symbols).sort()) {
+        const def = symbols[sid];
+        if (def && typeof def === 'object' && !Array.isArray(def)) walkPaths(def.paths, `/symbols/${sid}/paths`);
+    }
     // מזהה פסקה (מ-1.1): ייחודי בשטף, [A-Za-z0-9_]{1,32}. חסר — תקין (1.0), ו-save משלים. פגום או כפול — אזהרה, ו-save מחליף.
     for (const fid of Object.keys(flows).sort()) {
         const fl = flows[fid];

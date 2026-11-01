@@ -34,7 +34,7 @@ function usedFonts(doc) {
  *         mediaBytes(src) — הבתים של תמונה בתוך הציור (פריט image) שעוד אין בקובץ }
  * מחזיר { bytes, gaps }.
  */
-export async function buildMbe({ doc, base = null, getFont, fontBytes, preview, getImage = null, getBackground = null, extraPages = [], sourcePdf = null, mediaBytes = null }) {
+export async function buildMbe({ doc, base = null, getFont, fontBytes, preview, getImage = null, getBackground = null, getEffects = null, extraPages = [], sourcePdf = null, mediaBytes = null }) {
   const f = base ? await open(base) : create('vector', doc);
   if (base && !f.ok) throw new Error('הקובץ המקורי פגום: ' + f.issues.filter(i => i.level === 'error').map(i => i.message).join(' · '));
   const document = JSON.parse(JSON.stringify(doc));
@@ -67,16 +67,16 @@ export async function buildMbe({ doc, base = null, getFont, fontBytes, preview, 
     }
   }
   const bg = async (id) => (getBackground ? getBackground(id) : null);
-  const first = await prepare(document, document.surfaces[0].id, getFont, getImage, await bg(document.surfaces[0].id));
+  const first = await prepare(document, document.surfaces[0].id, getFont, getImage, await bg(document.surfaces[0].id), getEffects);
   first.gaps.forEach(g => gaps.add(g));
   f.setRendition(PREVIEW, await preview(document.surfaces[0], PREVIEW_MAX_PX), { type: 'image/png', gaps: [] });
   f.setRendition('renditions/drawing.svg', new TextEncoder().encode(toSVG(first)),
     { type: 'image/svg+xml', gaps: [...first.gaps, ...(document.surfaces.length > 1 ? ['artboards: רק הלוח הראשון'] : [])] });
   const pages = [first];
-  for (const s of document.surfaces.slice(1)) pages.push(await prepare(document, s.id, getFont, getImage, await bg(s.id)));
+  for (const s of document.surfaces.slice(1)) pages.push(await prepare(document, s.id, getFont, getImage, await bg(s.id), getEffects));
   pages.push(...extraPages);
   const pdfGaps = [...new Set(pages.flatMap(p => p.gaps))];
-  f.setRendition('renditions/document.pdf', toPDF(pages), { type: 'application/pdf', gaps: pdfGaps });
+  f.setRendition('renditions/document.pdf', await toPDF(pages), { type: 'application/pdf', gaps: pdfGaps });
   pdfGaps.forEach(g => gaps.add(g));
 
   const bytes = await save(f, { app: APP, appVersion: APP_VERSION });

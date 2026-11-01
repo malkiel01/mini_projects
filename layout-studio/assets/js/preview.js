@@ -35,7 +35,7 @@ export async function renderPreview(model, text, running, loadImage, index = 0) 
       ctx.restore();
       continue;
     }
-    for (const l of text?.frames.get(fr.id)?.lines || []) drawGlyphs(ctx, l.font, l.glyphs, l.x, l.y, l.size);
+    for (const l of text?.frames.get(fr.id)?.lines || []) { ctx.fillStyle = l.color || '#000000'; drawGlyphs(ctx, l.font, l.glyphs, l.x, l.y, l.size); }
   }
   for (const it of runningItems(model, index + 1, headsByPage(model, text, i => framesOnPage(model, i))[index])) {
     const g = shapeLine(running, it.text);

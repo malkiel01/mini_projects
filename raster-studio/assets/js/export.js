@@ -42,14 +42,27 @@ export async function exportPNG(renderer, doc) {
   return new Blob([await encodePNG(await flatRGBA(renderer, doc), doc.width, doc.height)], { type: 'image/png' });
 }
 
-/** WebP: עם שקיפות, באיכות גבוהה. דפדפן שלא יודע לכתוב WebP (מחזיר PNG) — שגיאה webp-unsupported */
-export async function exportWEBP(renderer, doc, quality = 0.92) {
+/** קידוד בדפדפן (WebP / AVIF): עם שקיפות. דפדפן שלא יודע לכתוב את הסוג (מחזיר PNG) — שגיאה <סוג>-unsupported */
+async function encodeIn(renderer, doc, type, quality) {
   const rgba = await flatRGBA(renderer, doc);
   const cv = new OffscreenCanvas(doc.width, doc.height);
   cv.getContext('2d').putImageData(new ImageData(rgba, doc.width, doc.height), 0, 0);
-  const blob = await cv.convertToBlob({ type: 'image/webp', quality });
-  if (blob.type !== 'image/webp') throw new Error('webp-unsupported');
+  const blob = await cv.convertToBlob({ type, quality });
+  if (blob.type !== type) throw new Error(type.split('/')[1] + '-unsupported');
   return blob;
+}
+export const exportWEBP = (renderer, doc, quality = 0.92) => encodeIn(renderer, doc, 'image/webp', quality);
+export const exportAVIF = (renderer, doc, quality = 0.85) => encodeIn(renderer, doc, 'image/avif', quality);
+
+/** הדפדפן יודע לכתוב את הסוג? (בדיקה על קנבס של פיקסל אחד, פעם אחת) */
+const canCache = new Map();
+export function canEncode(type) {
+  if (!canCache.has(type)) {
+    canCache.set(type, (async () => {
+      try { return (await new OffscreenCanvas(1, 1).convertToBlob({ type })).type === type; } catch { return false; }
+    })());
+  }
+  return canCache.get(type);
 }
 
 /** TIFF: משוטחת, RGBA בלי דחיסה (הכי תואם — פוטושופ, GIMP, דפוס) */

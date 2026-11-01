@@ -19,6 +19,9 @@ import { toast } from './ui-core/toast.js';
 import { initDialogs, confirm, choose, prompt } from './ui-core/dialog.js';
 import { download as saveFile } from './ui-core/files.js';
 import { shortcuts } from './ui-core/keys.js';
+import { snapshots, undoButtons } from './ui-core/history.js';
+import { colorPicker, setColorContext } from './ui-core/color.js';
+setColorContext({ prefix: 'ls-colors', presets: ['#000000', '#1a1a1a', '#7a1f1f', '#1f3a7a', '#2d5a27', '#8a6d1f'] });
 import { mountAccount } from './account-ui.js';
 
 const $ = (s, el = document) => el.querySelector(s);
@@ -56,7 +59,7 @@ const view = new PageView($('#stage'), { onChange: updateBar, onPick: updatePage
   onFrameBox: (frameId, box) => {
     const x = allItems(model).find(o => o.frame.id === frameId);
     if (!x) return;
-    changed(updateFrame(model, frameId, isDrawing(x.frame) ? moveDrawing(x.frame, box) : { box }));
+    changed(updateFrame(model, frameId, isDrawing(x.frame) ? moveDrawing(x.frame, box) : { box }), 'הזזת מסגרת');
   } });
 
 // ---- שמירה ----
@@ -142,9 +145,12 @@ function grow(m) {
   return m;
 }
 
-// ביטול / ביצוע מחדש: המודל לא משתנה במקום (כל שינוי יוצר מודל חדש), לכן מחסנית של מודלים מספיקה
+// ביטול / ביצוע מחדש — snapshots של ui-core (history.js): המודל לא משתנה במקום (כל שינוי יוצר מודל חדש), לכן
+// הצילום הוא המודל עצמו (serialize / parse — זהות, בלי JSON). לכל צעד תווית — בכפתור ("ביטול: הזזת מסגרת") ובהודעה.
 const UNDO_MAX = 100;
-const past = [], future = [];
+let syncUndo = () => {};
+const hist = snapshots({ get: () => model, set: m => show(m), serialize: m => m, parse: m => m, maxSteps: UNDO_MAX,
+  onChange: () => syncUndo() });
 function show(next) {
   model = next;
   view.setModel(model);
@@ -153,19 +159,17 @@ function show(next) {
   setState('לא נשמר');
   clearTimeout(saveTimer);
   saveTimer = setTimeout(save, 800);
-  $('#undo-btn').disabled = !past.length;
-  $('#redo-btn').disabled = !future.length;
 }
-function changed(next) {
+/** שינוי במודל: זרימה אוטומטית, צעד ביטול עם תווית, תצוגה ושמירה. */
+function changed(next, label = 'שינוי') {
   const grown = grow(next);
   if (grown === model) return;
-  past.push(model);
-  if (past.length > UNDO_MAX) past.shift();
-  future.length = 0;
+  model = grown;
+  hist.commit(label);
   show(grown);
 }
-function undo() { if (past.length) { future.push(model); show(past.pop()); toast('בוטל'); } }
-function redo() { if (future.length) { past.push(model); show(future.pop()); toast('בוצע שוב'); } }
+function undo() { const l = hist.undoLabel; if (hist.undo()) toast(l ? 'בוטל: ' + l : 'בוטל'); }
+function redo() { const l = hist.redoLabel; if (hist.redo()) toast(l ? 'בוצע שוב: ' + l : 'בוצע שוב'); }
 
 async function save() {
   if (saving || !dirty || blocked) return;
@@ -226,6 +230,7 @@ keys.add('Mod+0', () => view.fit());
 keys.add('Mod+Z', undo, { label: 'ביטול' });
 keys.add('Mod+Shift+Z', redo, { label: 'ביצוע מחדש' });
 keys.add('Mod+Y', redo, { label: 'ביצוע מחדש' });
+syncUndo = undoButtons(hist, $('#undo-btn'), $('#redo-btn'));
 $('#undo-btn').addEventListener('click', undo);
 $('#redo-btn').addEventListener('click', redo);
 keys.title($('#undo-btn'), 'Mod+Z');
@@ -234,7 +239,7 @@ keys.title($('#redo-btn'), 'Mod+Y');
 // הוספת עמודים: שניים בעמודים כפולים (פריסה שלמה), אחד בלי
 $('#add-page').addEventListener('click', () => {
   const n = pagesOf(model).length + (model.layout.facing ? 2 : 1);
-  changed(pruneFlows(setPageCount(model, n, () => newId('p'))));
+  changed(pruneFlows(setPageCount(model, n, () => newId('p'))), 'עמודים');
   view.goSpread(view.lay.spreads.length - 1);
   toast(`${pagesOf(model).length} עמודים`);
 });
@@ -285,7 +290,7 @@ pform.addEventListener('submit', e => {
   if (pform.both.checked) idx = s.pages.map(p => p.index);
   if (pform.rest.checked) for (let k = Math.min(...idx); k < pagesOf(model).length; k++) idx.push(k);
   pdlg.close();
-  changed(setMaster(model, idx, pform.master.value || null));
+  changed(setMaster(model, idx, pform.master.value || null), 'עמוד אב');
 });
 
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !e.target.closest('dialog')) view.select(-1); });
@@ -296,7 +301,7 @@ $('#pm-frame').addEventListener('click', async () => {
   await ensureFonts();
   const i = view.selected;
   const r = addFrame(model, i, { newId });
-  changed(r.model);
+  changed(r.model, 'מסגרת חדשה');
   view.select(i, r.frameId);
   openStory(r.flowId);
 });
@@ -305,7 +310,7 @@ $('#pm-flow').addEventListener('click', async () => {
   await ensureFonts();
   const i = view.selected;
   const r = autoflow(model, i, { newId });
-  changed(r.model);
+  changed(r.model, 'זרימה אוטומטית');
   view.select(i, thread(model, r.flowId)[0]?.frame.id || null);
   openStory(r.flowId);
 });
@@ -369,7 +374,7 @@ fform.addEventListener('submit', e => {
   const patch = { box: [w - fx - fw, fy, fw, fh].map(n => Math.round(n * 100) / 100) };
   if (isDrawing(x.frame)) {   // ציור: כל הנתיבים זזים ונמתחים יחד עם המסגרת
     fdlg.close();
-    changed(updateFrame(model, x.frame.id, moveDrawing(x.frame, patch.box)));
+    changed(updateFrame(model, x.frame.id, moveDrawing(x.frame, patch.box)), 'הזזת ציור');
     return;
   }
   if (isImage(x.frame)) {
@@ -379,7 +384,7 @@ fform.addEventListener('submit', e => {
       zoom: Number(fform.zoom.value) / 100, wrap: fform.wrap.checked ? 'box' : 'none', wrapGap: mmToPt(gap) });
   } else Object.assign(patch, { columns: Number(fform.columns.value), gutter: gut });
   fdlg.close();
-  changed(updateFrame(model, x.frame.id, patch));
+  changed(updateFrame(model, x.frame.id, patch), 'מסגרת');
 });
 
 fform.zoom.addEventListener('input', () => { $('#zoom-out-v').textContent = fform.zoom.value + '%'; });
@@ -425,10 +430,10 @@ docxInput.addEventListener('change', async () => {
       lines = reportLines(r.report);
       sum = `${r.report.paragraphs} פסקאות יובאו מ-"${file.name}"`;
     }
-    if (docxTarget.flowId) changed(setFlow(model, docxTarget.flowId, { doc }));
+    if (docxTarget.flowId) changed(setFlow(model, docxTarget.flowId, { doc }), 'ייבוא טקסט');
     else {
       const r = autoflow(model, docxTarget.page, { newId });
-      changed(setFlow(r.model, r.flowId, { doc }));
+      changed(setFlow(r.model, r.flowId, { doc }), 'ייבוא טקסט');
       view.select(docxTarget.page, thread(model, r.flowId)[0]?.frame.id || null);
     }
     // דוח: כמה עבר, ומה לא
@@ -459,7 +464,7 @@ vecInput.addEventListener('change', async () => {
     const r = await placeFromMbe(f, contentBox(model, vecPage + 1), file.name.replace(/\.mbe$/i, ''));
     let m = Object.keys(r.symbols).length ? { ...model, symbols: { ...(model.symbols || {}), ...r.symbols } } : model;
     m = { ...m, surfaces: m.surfaces.map((sf, i) => sf === pagesOf(m)[vecPage] ? { ...sf, layers: [...(sf.layers || []), r.layer] } : sf) };
-    changed(m);
+    changed(m, 'ציור');
     view.select(vecPage, r.layer.id);
     toast(gapsNote('הציור הוצב', r.gaps));
   } catch (e) {
@@ -525,7 +530,7 @@ async function drawingReturned(layerId, bytes) {
     const layer = { ...r.layer, id: layerId };
     let m = Object.keys(r.symbols).length ? { ...model, symbols: { ...(model.symbols || {}), ...r.symbols } } : model;
     m = updateFrame(m, layerId, layer);
-    changed(pruneSymbols(m));
+    changed(pruneSymbols(m), 'ציור מהווקטורי');
     view.select(cur.pageIndex, layerId);
     toast(gapsNote('הציור חזר מהווקטורי', r.gaps));
   } catch (e) {
@@ -588,10 +593,10 @@ imgInput.addEventListener('change', async () => {
   try {
     const { src, px } = await uploadImage(file);
     if (imageTarget.frameId) {
-      changed(updateFrame(model, imageTarget.frameId, { src, px }));
+      changed(updateFrame(model, imageTarget.frameId, { src, px }), 'החלפת תמונה');
     } else {
       const r = addImageFrame(model, imageTarget.page, { src, px, newId });
-      changed(r.model);
+      changed(r.model, 'תמונה');
       view.select(imageTarget.page, r.frameId);
     }
     toast('התמונה נוספה');
@@ -609,7 +614,7 @@ $('#fr-next').addEventListener('click', () => {
   let m = model, next = x.pageIndex + 1;
   if (next >= pagesOf(m).length) m = setPageCount(m, next + 1, () => newId('p'));
   const r = addFrame(m, next, { flowId: x.frame.flow, newId });
-  changed(r.model);
+  changed(r.model, 'המשך בעמוד הבא');
   view.select(next, r.frameId);
   view.goSpread(spreadOfPage(view.lay, next));
 });
@@ -618,7 +623,7 @@ $('#fr-grow').addEventListener('click', () => {
   const x = selFrame();
   fdlg.close();
   const before = pagesOf(model).length;
-  changed(setFlow(model, x.frame.flow, { autogrow: true }));
+  changed(setFlow(model, x.frame.flow, { autogrow: true }), 'עמודים עד סוף הטקסט');
   const added = pagesOf(model).length - before;
   toast(added ? `נוספו ${added} עמודים` : 'הטקסט נכנס');
 });
@@ -631,7 +636,7 @@ $('#fr-del').addEventListener('click', async () => {
   const wasLast = thread(model, fid).length === 1;
   if (wasLast && flowText(model, fid).trim() && !await confirm('זו המסגרת האחרונה של הטקסט — הטקסט יימחק איתה. להמשיך?', { ok: 'מחיקה', danger: true })) return;
   view.select(x.pageIndex, null);
-  changed(pruneSymbols(removeFrame(model, x.frame.id)));   // ציור שנמחק — גם הסמלים שרק הוא השתמש בהם
+  changed(pruneSymbols(removeFrame(model, x.frame.id)), 'מחיקה');   // ציור שנמחק — גם הסמלים שרק הוא השתמש בהם
 });
 
 // ---- עריכת הטקסט (Story Editor): ProseMirror, בשמות של עורך התמלילים ----
@@ -662,7 +667,7 @@ sform.addEventListener('submit', e => {
   const doc = story?.getDoc();
   sdlg.close();
   if (!doc) return;
-  changed(setFlow(model, storyFlow, { doc }));
+  changed(setFlow(model, storyFlow, { doc }), 'עריכת טקסט');
   const r = text?.flows.get(storyFlow);
   if (r?.overset) toast('הטקסט לא נכנס — ➕ אדום בסוף המסגרת האחרונה', true);
 });
@@ -690,6 +695,9 @@ function showStyle(key) {
   const st = drafts[key];
   if (![...form.querySelectorAll('[name=font]')].some(i => i.value === st.font)) renderFonts();
   form.font.value = st.font;
+  // צבע הטקסט — הבורר של ui-core (color.js); נכנס לטיוטה של הסגנון, ונשמר ב"שמירה" כמו שאר השדות
+  $('#st-color').replaceChildren(colorPicker('צבע הטקסט', st.color || '#000000', hex => { drafts[key].color = hex; }, () => {},
+    { docColors: () => STYLE_KEYS.map(k => drafts[k]?.color || styleOf(model, k).color) }));
   form.tsize.value = st.size; form.tlead.value = st.leading;
   form.tbefore.value = st.spaceBefore; form.tafter.value = st.spaceAfter; form.tindent.value = st.indent;
   form.tbold.checked = st.weight >= 600;
@@ -726,7 +734,7 @@ async function addDocFont(bytes, family, extra = {}) {
   const out = await res.json().catch(() => ({}));
   if (!out.ok) throw new Error(out.error === 'bad_font' ? 'רק גופני TrueType (‎.ttf) — OTF / WOFF2 עוד לא' : out.error === 'too_big' ? 'הקובץ גדול מ-20MB' : 'ההעלאה נכשלה');
   const fonts = (model.fonts || []).filter(f => f.family !== family);
-  changed({ ...model, fonts: [...fonts, { family, embedded: out.src, source: 'user', ...extra }] });
+  changed({ ...model, fonts: [...fonts, { family, embedded: out.src, source: 'user', ...extra }] }, 'גופן');
   renderFonts();
   form.font.value = family;
   toast(`הגופן "${family}" נוסף למסמך`);
@@ -863,7 +871,7 @@ form.addEventListener('submit', async e => {
   for (const k of STYLE_KEYS) next = setStyle(next, k, drafts[k]);
   if (!marginsFit(next)) return fail('השוליים גדולים מדי לעמוד — צריך להישאר לפחות 1 ס"מ לתוכן');
   dlg.close();
-  changed(next);
+  changed(next, 'הגדרות');
   view.fit();
 });
 
@@ -1036,7 +1044,7 @@ $('#hist-btn').addEventListener('click', async () => {
           const v = await io.historyVersion(src, st.sha);
           if (!v) { toast('הגרסה לא נמצאה בקובץ', true); return; }
           hdlg.close();
-          changed(ensureMasters(v));
+          changed(ensureMasters(v), 'שחזור גרסה');
           view.fit(); view.goSpread(0);
           pendingStages.push({ kind: 'restore', note: 'שוחזר מ-' + st.id });
           toast('הגרסה נטענה');
@@ -1060,6 +1068,7 @@ $('#hist-btn').addEventListener('click', async () => {
     $('#doc-title').textContent = doc.title;
     setState('נשמר');
     view.setModel(model, { keep: false });
+    hist.reset();   // נקודת ההתחלה — בלי צעד ביטול
     view.fit();
     view.goSpread(0);
     // הגופנים ו-HarfBuzz — ברקע; כשמוכנים, הטקסט והכותרות מצוירים בהם

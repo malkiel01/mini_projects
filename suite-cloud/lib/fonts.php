@@ -13,6 +13,8 @@ declare(strict_types=1);
 require_once __DIR__ . '/drive.php';
 
 const FONT_MAX = 20 * 1024 * 1024;
+/** הגופנים המובנים (OFL) — בגיט, ונפרסים עם הקוד. הקטלוג נבנה ב-tools/fonts-catalog.php ונבדק בבדיקות. */
+const FONT_BUILTIN_DIR = __DIR__ . '/../fonts/builtin';
 const FONT_FORMATS = ['ttf' => 'font/ttf', 'otf' => 'font/otf', 'woff' => 'font/woff', 'woff2' => 'font/woff2'];
 
 function migrateFonts(PDO $pdo): void {
@@ -63,7 +65,7 @@ function fontTables(string $b, string $format): array {
         for ($i = 0; $i < min($n, 200); $i++) {
             $e = 44 + $i * 20;
             $tag = substr($b, $e, 4);
-            if (!in_array($tag, ['name', 'OS/2'], true)) continue;
+            if (!in_array($tag, ['name', 'OS/2', 'fvar'], true)) continue;
             [$off, $comp, $orig] = [$u32($e + 4), $u32($e + 8), $u32($e + 12)];
             $raw = substr($b, $off, $comp);
             $out[$tag] = $comp < $orig ? (string) @gzuncompress($raw) : $raw;
@@ -74,7 +76,7 @@ function fontTables(string $b, string $format): array {
     for ($i = 0; $i < min($n, 200); $i++) {
         $e = 12 + $i * 16;
         $tag = substr($b, $e, 4);
-        if (in_array($tag, ['name', 'OS/2'], true)) $out[$tag] = substr($b, $u32($e + 8), $u32($e + 12));
+        if (in_array($tag, ['name', 'OS/2', 'fvar'], true)) $out[$tag] = substr($b, $u32($e + 8), $u32($e + 12));
     }
     return $out;
 }
@@ -82,7 +84,7 @@ function fontTables(string $b, string $format): array {
 /** משפחה, משקל וסגנון מתוך הקובץ; null למה שלא נמצא. */
 function fontMeta(string $b): array {
     $format = fontFormat($b);
-    $meta = ['format' => $format, 'family' => null, 'sub' => null, 'weight' => null, 'style' => null];
+    $meta = ['format' => $format, 'family' => null, 'sub' => null, 'weight' => null, 'style' => null, 'axes' => null];
     if ($format === null || $format === 'woff2') return $meta;
     $t = fontTables($b, $format);
 
@@ -114,6 +116,23 @@ function fontMeta(string $b): array {
         $sel = unpack('n', substr($t['OS/2'], 62, 2))[1];
         if ($w >= 1 && $w <= 1000) $meta['weight'] = (int) (round($w / 100) * 100) ?: 100;
         $meta['style'] = ($sel & 1) ? 'italic' : 'normal';
+    }
+    // גופן משתנה: טבלת fvar — הצירים וטווחיהם ({"wght": [300, 900]})
+    if (isset($t['fvar']) && strlen($t['fvar']) >= 16) {
+        $f = $t['fvar'];
+        $u16 = fn(int $o) => unpack('n', substr($f, $o, 2))[1] ?? 0;
+        $fixed = function (int $o) use ($f): int|float {   // 16.16 עם סימן; מספר שלם — int
+            $v = round(((unpack('N', substr($f, $o, 4))[1] ?? 0) << 32 >> 32) / 65536, 2);
+            return $v == (int) $v ? (int) $v : $v;
+        };
+        [$off, $count, $size] = [$u16(4), $u16(8), $u16(10)];
+        $axes = [];
+        for ($i = 0; $i < min($count, 32) && $size >= 20 && $off + ($i + 1) * $size <= strlen($f); $i++) {
+            $r = $off + $i * $size;
+            $tag = substr($f, $r, 4);
+            if (preg_match('/^[a-zA-Z]{4}$/', $tag)) $axes[$tag] = [$fixed($r + 4), $fixed($r + 12)];
+        }
+        if ($axes) $meta['axes'] = $axes;
     }
     if ($meta['style'] === null && $meta['sub'] !== null) $meta['style'] = preg_match('/italic|oblique/i', $meta['sub']) ? 'italic' : 'normal';
     return $meta;
@@ -156,16 +175,63 @@ function fontItem(array $r): array {
     ];
 }
 
-function fontsList(array $a): array {
+// ─── המובנים ──────────────────────────────────────────────────────────────
+
+/** הקטלוג מהקבצים שבתיקייה: [id => פריט]. מזהה יציב: b_<משפחה>-<משקל>[-i]. */
+function fontBuildCatalog(string $dir = FONT_BUILTIN_DIR): array {
+    $out = [];
+    foreach (glob("$dir/*.{ttf,otf,woff,woff2}", GLOB_BRACE) ?: [] as $path) {
+        $b = (string) file_get_contents($path);
+        $m = fontMeta($b);
+        [$fFamily, $fWeight, $fStyle] = fontFromFilename(basename($path));
+        $family = $m['family'] ?? $fFamily;
+        $axes = $m['axes'] ?? null;
+        $weight = isset($axes['wght']) ? max((int) $axes['wght'][0], min(400, (int) $axes['wght'][1])) : ($m['weight'] ?? $fWeight);
+        $style = $m['style'] ?? $fStyle;
+        $slug = strtolower(preg_replace('/[^a-z0-9]+/i', '', $family));
+        $license = 'OFL-' . $slug . '.txt';
+        $id = "b_$slug-" . (isset($axes['wght']) ? 'var' : $weight) . ($style === 'italic' ? '-i' : '');
+        $out[$id] = ['id' => $id, 'kind' => 'font', 'family' => $family, 'weight' => $weight, 'style' => $style,
+                     'name' => trim($family . (isset($axes['wght']) ? '' : ($m['sub'] && !in_array(strtolower($m['sub']), ['regular', 'normal'], true) ? ' ' . $m['sub'] : ''))),
+                     'format' => $m['format'] ?? 'ttf', 'size' => strlen($b), 'rev' => hash('sha256', $b), 'source' => 'builtin',
+                     'file' => basename($path), 'license' => is_file("$dir/$license") ? $license : null] + ($axes ? ['axes' => $axes] : []);
+    }
+    ksort($out);
+    return $out;
+}
+
+function fontCatalog(): array {
+    static $c = null;
+    return $c ??= (json_decode((string) @file_get_contents(FONT_BUILTIN_DIR . '/catalog.json'), true) ?: []);
+}
+
+function fontBuiltinItem(array $c): array {
+    $item = $c;
+    unset($item['file']);
+    return $item + ['license_ack' => true, 'updated_at' => null,
+                    'url' => 'api.php?action=font_file&id=' . rawurlencode($c['id']) . '&rev=' . $c['rev']];
+}
+
+function isBuiltinFont(mixed $id): bool { return is_string($id) && str_starts_with($id, 'b_'); }
+
+/** fonts_list: של המשתמש; עם $builtin — גם המובנים (אחרי שלו, באותו מבנה). */
+function fontsList(array $a, bool $builtin = false): array {
     $st = db()->prepare("SELECT * FROM lib_items WHERE account = ? AND kind = 'font' ORDER BY family COLLATE NOCASE, weight, style");
     $st->execute([$a['id']]);
     $fonts = array_map('fontItem', $st->fetchAll());
+    if ($builtin) {
+        $b = array_map('fontBuiltinItem', array_values(fontCatalog()));
+        usort($b, fn($x, $y) => strcasecmp($x['family'], $y['family']) ?: $x['weight'] <=> $y['weight']);
+        array_push($fonts, ...$b);
+    }
     $families = [];
-    foreach ($fonts as $f) $families[$f['family']][] = $f['id'];
-    return ['fonts' => $fonts, 'families' => array_map(fn($k, $v) => ['family' => $k, 'items' => $v], array_keys($families), $families)];
+    foreach ($fonts as $f) $families[$f['source'] . "\0" . $f['family']][] = $f;
+    return ['fonts' => $fonts, 'families' => array_map(fn($v) => ['family' => $v[0]['family'], 'source' => $v[0]['source'],
+                                                                  'items' => array_column($v, 'id')], array_values($families))];
 }
 
 function fontRow(array $a, mixed $id): array {
+    if (isBuiltinFont($id)) throw new AppError('גופן מובנה — אי אפשר לשנות או למחוק', 403, 'builtin');
     $st = db()->prepare("SELECT * FROM lib_items WHERE id = ? AND account = ? AND kind = 'font'");
     $st->execute([is_string($id) ? $id : '', $a['id']]);
     $r = $st->fetch();
@@ -248,6 +314,11 @@ function fontDelete(array $a, mixed $id): void {
 
 /** [נתיב, פריט] להגשה. */
 function fontFile(array $a, mixed $id): array {
+    if (isBuiltinFont($id)) {
+        $c = fontCatalog()[$id] ?? null;
+        if (!$c) throw new AppError('הגופן לא נמצא', 404, 'not_found');
+        return [FONT_BUILTIN_DIR . '/' . $c['file'], ['format' => $c['format'], 'sha256' => $c['rev'], 'name' => $c['name']]];
+    }
     $r = fontRow($a, $id);
     $path = blobPath($r['sha256']);
     if (!is_file($path)) throw new AppError('קובץ הגופן חסר בשרת', 500, 'server');

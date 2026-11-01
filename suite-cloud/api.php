@@ -200,7 +200,16 @@ try {
             reply($res);
         }
         // ── ספריית הגופנים (docs/spec-2-fonts.md) ──
-        case 'fonts_list':     reply(fontsList(actor($action, 'libs', $raw)['account']));
+        case 'fonts_list':     reply(fontsList(actor($action, 'libs', $raw)['account'], !empty($_GET['builtin'])));
+        case 'font_license': {   // רישיון ה-OFL של גופן מובנה — להצגה ולצירוף לייצוא
+            actor($action, 'libs', $raw);
+            $c = fontCatalog()[(string) ($_GET['id'] ?? '')] ?? null;
+            if (!$c || !$c['license']) throw new AppError('אין רישיון לגופן הזה', 404, 'not_found');
+            header('Content-Type: text/plain; charset=utf-8');
+            header('Cache-Control: private, max-age=86400');
+            readfile(FONT_BUILTIN_DIR . '/' . $c['license']);
+            exit;
+        }
         case 'font_add': {
             if ($method !== 'POST') throw new AppError('בקשה לא תקינה', 400, 'bad_request');
             $bearer = !empty($_SERVER['HTTP_AUTHORIZATION']) || !empty($_SERVER['REDIRECT_HTTP_AUTHORIZATION']) || !empty($_SERVER['HTTP_X_CLOUD_TOKEN'])
