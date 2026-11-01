@@ -13,6 +13,9 @@ import { TILE, BLEND_MODES, tilesInRect, newMask } from './doc.js';
 import { adjustOf, fillRamp, fillGeometry, effectsOf, effectsReach } from './formats.js';
 import { rasterTile, selectionBox } from './selection.js';
 import { matrix as xfMatrix, bounds as xfBounds } from './transform.js';
+import { meshBounds, meshCells } from './warp.js';
+/** המלבן של התוכן הצף — לפי הרשת (עיוות) או לפי שינוי הצורה */
+const flBounds = fl => (fl.mesh ? meshBounds(fl.mesh) : xfBounds(fl.t, fl.w, fl.h));
 import { vmaskTile } from './vmask.js';
 
 const VERT = `#version 300 es
@@ -42,6 +45,18 @@ void main() {
   vec2 d = vec2(u_m0.x * p.x + u_m0.z * p.y + u_m1.x, u_m0.y * p.x + u_m0.w * p.y + u_m1.y) - u_org;
   v_uv = a;
   gl_Position = vec4(d.x / u_size.x * 2.0 - 1.0, d.y / u_size.y * 2.0 - 1.0, 0.0, 1.0);
+}`;
+
+// תא של רשת עיוות: הפינות במסמך (u_p01 = p00, p10; u_p23 = p01, p11), התא במרקם (u_uv), פינת האריח (u_org)
+const VERT_Q = `#version 300 es
+in vec2 a;
+uniform vec4 u_p01, u_p23, u_uv;
+uniform vec2 u_org, u_size;
+out vec2 v_uv;
+void main() {
+  vec2 p = mix(mix(u_p01.xy, u_p01.zw, a.x), mix(u_p23.xy, u_p23.zw, a.x), a.y) - u_org;
+  v_uv = mix(u_uv.xy, u_uv.zw, a);
+  gl_Position = vec4(p.x / u_size.x * 2.0 - 1.0, p.y / u_size.y * 2.0 - 1.0, 0.0, 1.0);
 }`;
 
 const DECODE = `
@@ -481,6 +496,7 @@ export class WebGL2Renderer {
     this.prog = {};
     for (const [name, src] of Object.entries(FRAG)) this.prog[name] = this.#program(VERT, src);
     this.prog.float = this.#program(VERT_M, FRAG.copy);
+    this.prog.mesh = this.#program(VERT_Q, FRAG.copy);
 
     this.vao = gl.createVertexArray();
     gl.bindVertexArray(this.vao);
@@ -1429,7 +1445,7 @@ export class WebGL2Renderer {
   }
 
   #floatTouches(fl, tx, ty) {
-    const [x0, y0, x1, y1] = xfBounds(fl.t, fl.w, fl.h);
+    const [x0, y0, x1, y1] = flBounds(fl);
     return tx * TILE < x1 + 1 && (tx + 1) * TILE > x0 - 1 && ty * TILE < y1 + 1 && (ty + 1) * TILE > y0 - 1;
   }
 
@@ -1445,6 +1461,28 @@ export class WebGL2Renderer {
     gl.bindTexture(gl.TEXTURE_2D, base);
     gl.uniform1i(c.u.u_tex, 0);
     this.#quad(c, [0, 0, TILE, TILE], [0, 0, 1, 1], [TILE, TILE], -1);
+    if (fl.mesh) {
+      // עיוות: תא אחר תא (רק מה שנוגע באריח), כל תא — מרובע מארבע הפינות שלו
+      const q = this.prog.mesh;
+      gl.useProgram(q.p);
+      gl.bindTexture(gl.TEXTURE_2D, fl.tex);
+      gl.uniform1i(q.u.u_tex, 0);
+      gl.uniform2f(q.u.u_org, tx * TILE, ty * TILE);
+      gl.uniform2f(q.u.u_size, TILE, TILE);
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      const X0 = tx * TILE - 1, Y0 = ty * TILE - 1, X1 = X0 + TILE + 2, Y1 = Y0 + TILE + 2;
+      for (const c of meshCells(fl.mesh)) {
+        const xs = c.p.map(v => v[0]), ys = c.p.map(v => v[1]);
+        if (Math.max(...xs) < X0 || Math.min(...xs) > X1 || Math.max(...ys) < Y0 || Math.min(...ys) > Y1) continue;
+        gl.uniform4f(q.u.u_p01, c.p[0][0], c.p[0][1], c.p[1][0], c.p[1][1]);
+        gl.uniform4f(q.u.u_p23, c.p[2][0], c.p[2][1], c.p[3][0], c.p[3][1]);
+        gl.uniform4f(q.u.u_uv, ...c.uv);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      }
+      gl.disable(gl.BLEND);
+      return;
+    }
     const p = this.prog.float;
     gl.useProgram(p.p);
     gl.bindTexture(gl.TEXTURE_2D, fl.tex);
@@ -1465,8 +1503,19 @@ export class WebGL2Renderer {
   setFloatTransform(doc, t) {
     const fl = doc._float;
     if (!fl) return;
-    const a = xfBounds(fl.t, fl.w, fl.h), b = xfBounds(t, fl.w, fl.h);
+    const a = flBounds(fl);
     fl.t = t;
+    const b = flBounds(fl);
+    for (const r of [a, b]) this.#dirty(doc, r[0] - 1, r[1] - 1, r[2] - r[0] + 2, r[3] - r[1] + 2);
+  }
+
+  /** עיוות של התוכן הצף: רשת (engine/warp.js) — או null (חזרה לשינוי הצורה האפיני) */
+  setFloatMesh(doc, mesh) {
+    const fl = doc._float;
+    if (!fl) return;
+    const a = flBounds(fl);
+    fl.mesh = mesh;
+    const b = flBounds(fl);
     for (const r of [a, b]) this.#dirty(doc, r[0] - 1, r[1] - 1, r[2] - r[0] + 2, r[3] - r[1] + 2);
   }
 
@@ -1476,7 +1525,7 @@ export class WebGL2Renderer {
     if (!fl) return new Map();
     doc._float = null;
     const { layer, before } = fl;
-    const [x0, y0, x1, y1] = xfBounds(fl.t, fl.w, fl.h);
+    const [x0, y0, x1, y1] = flBounds(fl);
     for (const [tx, ty] of tilesInRect(x0 - 1, y0 - 1, x1 - x0 + 2, y1 - y0 + 2)) {
       const k = key(tx, ty);
       const cur = layer.tiles.get(k) ?? null;
@@ -1507,7 +1556,7 @@ export class WebGL2Renderer {
     this.freeTextures([fl.tex]);
     fl.layer.rev = (fl.layer.rev ?? 0) + 1;
     this.invalidateTiles(doc, [...fl.before.keys()]);
-    const [x0, y0, x1, y1] = xfBounds(fl.t, fl.w, fl.h);
+    const [x0, y0, x1, y1] = flBounds(fl);
     this.#dirty(doc, x0 - 1, y0 - 1, x1 - x0 + 2, y1 - y0 + 2);
   }
 

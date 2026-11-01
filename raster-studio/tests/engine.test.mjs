@@ -861,3 +861,25 @@ test('מסכה וקטורית: נתיב מבחירה, הזזה, קנה מידה 
   assert.equal(cleanVectorMask({ d: 'A 1' }), null);
   assert.deepEqual(cleanVectorMask({ d: 'M 0 0 L 1 0 L 1 1 Z', feather: 500 }), { d: 'M 0 0 L 1 0 L 1 1 Z', feather: 64, enabled: true });
 });
+
+test('עיוות: הומוגרפיה, רשת, בזייה ומלבן חוסם', async () => {
+  const { homography, meshOf, bezierPatch, warpFrom, meshBounds, meshCells, nearest } = await import('../assets/js/engine/warp.js');
+  const close = (a, b) => Math.abs(a[0] - b[0]) < 1e-6 && Math.abs(a[1] - b[1]) < 1e-6;
+  const q = [[10, 10], [110, 20], [100, 90], [5, 80]];
+  const H = homography(q);
+  assert.ok(close(H(0, 0), q[0]) && close(H(1, 0), q[1]) && close(H(1, 1), q[2]) && close(H(0, 1), q[3]), 'הפינות במקומן');
+  const R = homography([[0, 0], [200, 0], [200, 100], [0, 100]]);
+  assert.ok(close(R(0.5, 0.5), [100, 50]), 'מלבן — מיפוי ליניארי');
+  // פרספקטיבה: האמצע של הריבוע לא באמצע הקטע בין הפינות (הצד הרחוק קצר יותר)
+  const T = homography([[0, 0], [100, 0], [80, 50], [20, 50]]);
+  assert.ok(T(0.5, 0.5)[1] > 25, 'פרספקטיבה — אמצע קרוב לצד הקצר');
+  const m = meshOf(R, 4);
+  assert.equal(m.pts.length, 25);
+  assert.deepEqual(meshBounds(m), [0, 0, 200, 100]);
+  assert.equal([...meshCells(m)].length, 16);
+  // Warp שמתחיל מהמצב הנוכחי — זהה לו
+  const W = bezierPatch(warpFrom(R));
+  assert.ok(close(W(0.3, 0.7), R(0.3, 0.7)), 'Warp מתחיל זהה');
+  assert.equal(nearest([[0, 0], [10, 0]], [9, 1], 3), 1);
+  assert.equal(nearest([[0, 0]], [9, 1], 3), -1);
+});

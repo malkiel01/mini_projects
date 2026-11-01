@@ -10,6 +10,7 @@ import { combine, isEmptyShape, maskShape, selectionBox, selectionAlpha, rasterT
 import * as XF from './engine/transform.js';
 import { pathFromSelection, translatePath } from './engine/vmask.js';
 import { docToScreen } from './engine/view.js';
+import { MESH_N, meshOf, homography, bezierPatch, warpFrom, nearest } from './engine/warp.js';
 import { handles } from './ui-core/handles.js';
 import { FONTS, LINE_HEIGHT, cssFont, renderText, textDirection } from './engine/text.js';
 import { keyOf } from './ui-core/keys.js';
@@ -57,7 +58,10 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
   let stroke = null;   // { layer, last, carry, pen }
   let lasso = null;    // גרירת בחירה: { type, mode, start, pts, shape }
   let xf = null;
-  let patch = null;    // כלי התיקון: גרירת הבחירה אל המקור — { start, last }       // גרירה בכלי ההזזה: { kind, handle, t0, start }
+  let patch = null;
+  // עיוות התוכן הצף: { mode: 'distort' | 'warp', pts } — פינות (סדר הרשת: ש"ע, י"ע, ש"ת, י"ת) או 16 נקודות Warp;
+  // warpDrag — { idx } נקודה שנגררת, או { all, start, pts0 } — הזזה של כל הרשת
+  let warp = null, warpDrag = null;    // כלי התיקון: גרירת הבחירה אל המקור — { start, last }       // גרירה בכלי ההזזה: { kind, handle, t0, start }
   let grabPending = null; // לחיצה בכלי ההזזה שמחכה לתוכן הצף: { last, up, cancelled }
   // פעולות שמחכות לקריאה מהכרטיס (דלי, טפטפת, הזזה) — settle מחכה שכולן יסתיימו
   const ops = new Set();
@@ -130,6 +134,8 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     if (b) selAction(b.dataset.sel);
     const x = e.target.closest('[data-xf]');
     if (x) { if (x.dataset.xf === 'apply') commitFloat(); else cancelFloat(); }
+    const wm = e.target.closest('[data-xfmode]');
+    if (wm && !wm.disabled) setWarpMode(wm.dataset.xfmode);
     const tb = e.target.closest('[data-text]');
     if (tb) { if (tb.dataset.text === 'apply') commitText(); else cancelText(); }
     if (e.target.closest('[data-clone="source"]')) setClonePicking(!cloneSrc.picking);
@@ -365,14 +371,51 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     const f = fl();
     const info = $('#xf-info');
     if (info) {
-      info.textContent = f ? `${Math.round(Math.abs(f.t.sx) * 100)}% × ${Math.round(Math.abs(f.t.sy) * 100)}% · ${Math.round(f.t.angle * 180 / Math.PI)}°` : '';
+      info.textContent = !f ? '' : warp ? (warp.mode === 'warp' ? 'Warp — גוררים נקודות' : 'עיוות פינות — גוררים פינה')
+        : `${Math.round(Math.abs(f.t.sx) * 100)}% × ${Math.round(Math.abs(f.t.sy) * 100)}% · ${Math.round(f.t.angle * 180 / Math.PI)}°`;
     }
     for (const b of opts.querySelectorAll('[data-xf]')) b.disabled = !f;
   }
 
+  /** המיפוי הנוכחי של התוכן הצף: (u, v) ב-0..1 → נקודה במסמך */
+  function mappingOf(f) {
+    if (warp?.mode === 'warp') return bezierPatch(warp.pts);
+    if (warp?.mode === 'distort') { const [a, b, c, d] = warp.pts; return homography([a, b, d, c]); }
+    const m = XF.matrix(f.t, f.w, f.h);
+    return (u, v) => XF.apply(m, u * f.w, v * f.h);
+  }
+
+  /** מעבר בין חופשי (ידיות), עיוות פינות ו-Warp. חופשי — העיוות מתבטל, ושינוי הצורה האפיני חוזר */
+  function setWarpMode(mode) {
+    const d = doc(), f = fl();
+    if (!f) return;
+    if (mode === 'free') { warp = null; renderer.setFloatMesh(d, null); }
+    else {
+      const map = mappingOf(f);
+      const pts = mode === 'distort' ? [map(0, 0), map(1, 0), map(0, 1), map(1, 1)] : warpFrom(map);
+      warp = { mode, pts };
+      applyWarp();
+    }
+    showBox();
+    draw();
+  }
+
+  function applyWarp() {
+    const f = fl();
+    if (!f || !warp) return;
+    renderer.setFloatMesh(doc(), meshOf(mappingOf(f), MESH_N));
+  }
+
   function showBox() {
     const f = fl();
+    if (!f) { warp = null; warpDrag = null; }
     overlay.box(!!f);
+    overlay.grid(f && warp ? warp.pts : null, warp?.mode === 'warp' ? 4 : 2);
+    for (const b of opts.querySelectorAll('[data-xfmode]')) {
+      b.disabled = !f;
+      b.setAttribute('aria-pressed', String((warp?.mode ?? 'free') === b.dataset.xfmode));
+    }
+    if (f && warp) { hdXf.hide(); showInfo(); return; }
     // בזמן גרירה של ידית — הידיות כבר מעודכנות (show היה מתחיל אותן מחדש)
     if (f) { if (!hdXf.dragging) hdXf.show(f.t, f.w, f.h); } else hdXf.hide();
     showInfo();
@@ -419,18 +462,22 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     const d = doc(), f = d?._float;
     if (!f) return;
     xf = null;
-    if (XF.isIdentityAt(f.t, f.x, f.y, f.w, f.h)) { renderer.cancelFloat(d); finishFloat(); return; }
+    const warped = !!f.mesh;
+    if (!warped && XF.isIdentityAt(f.t, f.x, f.y, f.w, f.h)) { renderer.cancelFloat(d); finishFloat(); return; }
     const m = XF.docMatrix(f.t, f.w, f.h, f.x, f.y);
+    // עיוות: הבחירה — המתאר של הרשת (מצולע לאורך הקצוות)
+    const outline = warped ? meshOutline(f.mesh) : null;
     const before = renderer.commitFloat(d);
     let sel = null;
     if (floatSel) {
-      const moved = { ...floatSel, shapes: floatSel.shapes.map(s => XF.transformShape(s, m)) };
+      const moved = warped ? { shapes: [{ op: 'add', type: 'poly', pts: outline }], inverted: false }
+        : { ...floatSel, shapes: floatSel.shapes.map(s => XF.transformShape(s, m)) };
       d.selection = moved;
       renderer.selectionChanged(d);
       sel = { before: floatSel, after: moved };
     }
     const pure = f.t.sx === 1 && f.t.sy === 1 && f.t.angle === 0;
-    history.pixels(d, f.layer, before, pure ? 'הזזה' : 'שינוי צורה', sel);
+    history.pixels(d, f.layer, before, warped ? 'עיוות' : pure ? 'הזזה' : 'שינוי צורה', sel);
     finishFloat();
     onChange('transform');
   }
@@ -443,8 +490,20 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     finishFloat();
   }
 
+  /** המתאר של רשת: הקצה העליון, הימני, התחתון והשמאלי — לפי הסדר */
+  function meshOutline({ n, pts }) {
+    const at = (i, j) => pts[j * (n + 1) + i], out = [];
+    for (let i = 0; i <= n; i++) out.push(at(i, 0));
+    for (let j = 1; j <= n; j++) out.push(at(n, j));
+    for (let i = n - 1; i >= 0; i--) out.push(at(i, n));
+    for (let j = n - 1; j > 0; j--) out.push(at(0, j));
+    return out;
+  }
+
   function finishFloat() {
     floatSel = null;
+    warp = null;
+    warpDrag = null;
     showBox();
     draw();
   }
@@ -689,6 +748,13 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
       const tol = (e.pointerType === 'touch' ? 22 : 10) / view().zoom;
       const grab = () => {
         const f = fl();
+        if (warp) {
+          // עיוות: נקודה קרובה — היא זזה; אחרת — כל הרשת זזה
+          const i = nearest(warp.pts, pt, tol);
+          warpDrag = i >= 0 ? { idx: i } : { all: true, start: pt, pts0: warp.pts.map(q => [...q]) };
+          xf = { kind: 'warp' };
+          return;
+        }
         if (hdXf.down(e, scr(pt))) { xf = { kind: 'hd' }; return; }
         const h = XF.hit(f.t, f.w, f.h, pt, tol) ?? { kind: 'move' };
         xf = { ...h, t0: f.t, start: pt };
@@ -776,6 +842,16 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     if (xf) {
       const q = points.at(-1), p = [q.x, q.y];
       if (xf.kind === 'hd') { hdXf.move(e ?? {}, scr(p)); return; }
+      if (xf.kind === 'warp') {
+        if (warpDrag.all) {
+          const dx = Math.round(p[0] - warpDrag.start[0]), dy = Math.round(p[1] - warpDrag.start[1]);
+          warp.pts = warpDrag.pts0.map(([x, y]) => [x + dx, y + dy]);
+        } else warp.pts[warpDrag.idx] = p;
+        applyWarp();
+        overlay.grid(warp.pts, warp.mode === 'warp' ? 4 : 2);
+        draw();
+        return;
+      }
       let t;
       if (xf.kind === 'move') {
         // הזזה בפיקסלים שלמים — התוכן נשאר חד
@@ -841,7 +917,7 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
       if (Math.hypot(...off) >= 2) applyPatch(off, 'תיקון');
       return;
     }
-    if (xf) { if (xf.kind === 'hd') hdXf.up(); xf = null; return; }
+    if (xf) { if (xf.kind === 'hd') hdXf.up(); xf = null; warpDrag = null; return; }
     if (lasso) {
       const shape = lassoShape(), mode = lasso.mode;
       lasso = null;
