@@ -377,13 +377,17 @@ export async function pdfDraw(list, resolve) {
                     const im = await w.image(await bytes(String(op.src ?? ''), 'תמונה'));
                     if (!im) throw bad(`תמונה בפורמט שלא נתמך: ${where}`);
                     const [x, y, bw, bh] = box(op.box ?? null, where);
+                    const tr = op.transform !== undefined && op.transform !== null;
                     c += 'q\n';
+                    // transform (כמו ב-path): cm אחד, ו-box / clip בקואורדינטות הרשימה בתוכו — סיבוב והיפוך של התמונה
+                    if (tr) c += matrix(op.transform, where, b, H).map(n).join(' ') + ' cm\n';
                     if (op.opacity !== undefined && op.opacity !== null) { const o = unit(op.opacity, where); if (o < 1) c += w.alpha(o, o) + ' gs\n'; }
                     if (op.clip !== undefined) {
                         const [cx, cy, cw, ch] = box(op.clip, where);
-                        c += `${n(X(cx))} ${n(Y(cy + ch))} ${n(cw)} ${n(ch)} re W n\n`;
+                        c += tr ? `${n(cx)} ${n(cy)} ${n(cw)} ${n(ch)} re W n\n` : `${n(X(cx))} ${n(Y(cy + ch))} ${n(cw)} ${n(ch)} re W n\n`;
                     }
-                    c += `${n(bw)} 0 0 ${n(bh)} ${n(X(x))} ${n(Y(y + bh))} cm ${im.name} Do\nQ\n`;
+                    c += tr ? `${n(bw)} 0 0 ${n(-bh)} ${n(x)} ${n(y + bh)} cm ${im.name} Do\nQ\n`
+                        : `${n(bw)} 0 0 ${n(bh)} ${n(X(x))} ${n(Y(y + bh))} cm ${im.name} Do\nQ\n`;
                     break;
                 }
                 case 'rect': {
