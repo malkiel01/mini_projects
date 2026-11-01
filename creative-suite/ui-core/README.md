@@ -22,6 +22,7 @@
 | `src/js/viewport.js` | חשבון זום / הזזה טהור — `fit`, `zoomTo`, `zoomBy`, `nextStep`, `screenToDoc`, `pinch`, `wheel`, `zoomLabel` (המקור: `engine/view.js` של הרסטר) | 4 ✅ |
 | `src/js/gestures.js` | `bindViewport(el, { get, set, pointer, hand, ignore, panOnEmpty, onTap })` — גלגלת, צביטה, רווח / גלגלת לחוצה, אצבע שנייה מבטלת את הכלי, הזזה על רקע ריק, הקשה | 4 ✅ |
 | `src/js/account.js` | 👤 `accountMenu(bar, { user, server, prefs, docs, drives, sections, shortcuts, logout, … })` — העיגול, התפריט (גיליון בטלפון), הגדרות אישיות; `accountServer(call)` — החיבור לצד השרת; `ui.css` — ערכה כהה / בהירה ידנית ו-`--ui-scale` | ✅ |
+| `src/js/files-window.js` | 📁 "המסמכים שלי" — `openDocuments` / `pickFile` / `saveFile(sources, …)`: חלון אחד לניהול, פתיחה ושמירה; לשונית לכל מקור (מתאם), `suiteSource(drives)` לענן החבילה | ✅ |
 | `src/php/account/account.php` | צד השרת של תפריט המשתמש — `uic_account_api($action, $input, $hooks)`: הגדרות (טבלה `uic_prefs` במסד של האפליקציה), ייצוא, מחיקת חשבון | ✅ |
 | `src/js/keys.js` | `shortcuts()`, `matches(e, combo)`, `keyOf(e)`, `label`, `ariaKeys` — לפי `e.code`, עובד במקלדת עברית | 3 ✅ |
 
@@ -29,7 +30,7 @@
 
 ## בדיקות
 
-`node creative-suite/ui-core/tests/browser.cjs` — 145 בדיקות ב-Chromium, בטלפון (390px) ובמחשב (1280px), על דף התצוגה; `php creative-suite/ui-core/tests/account.php` — צד השרת (רץ גם בשער הפריסה).
+`node creative-suite/ui-core/tests/browser.cjs` — 163 בדיקות ב-Chromium, בטלפון (390px) ובמחשב (1280px), על דף התצוגה; `php creative-suite/ui-core/tests/account.php` — צד השרת (רץ גם בשער הפריסה).
 **מריצים לפני כל שינוי ב-src.**
 
 ## מה מחליפים בכל אפליקציה (שלב 2)
@@ -101,6 +102,7 @@ import { $, h as el } from './ui-core/dom.js';
 
 - **2026-10-31 — שלב 1:** תשתית (`apps.json`, `tools/sync.php`, שער בפריסה), `ui.css`, דף תצוגה.
 - **2026-10-31 — שלב 2:** ערכת הממשק — `dom`, `toast`, `dialog`, `menu`, `tabs`, `files`, `store`; בדיקות דפדפן.
+- **2026-10-31 — 📁 `files-window.js`:** "המסמכים שלי" — ניהול, פתיחה ושמירה, לשונית לכל מקור, ענן החבילה דרך מודול הכוננים.
 - **2026-10-31 — 👤 `account.js` + `php/account`:** תפריט המשתמש, הגדרות אישיות, ייצוא ומחיקת חשבון — ממשק וצד שרת, פעם אחת (`docs/shared-code/migrate/account.md`). `sync.php` — סוג `php`.
 - **2026-10-31 — `panOnEmpty` + `onTap`** ב-`bindViewport` — לבקשת הווקטורי.
 - **2026-10-31 — שלב 4:** `viewport.js` + `gestures.js` — זום, הזזה, צביטה, גלגלת (`docs/shared-code/migrate/viewport.md`).

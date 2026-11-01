@@ -15,6 +15,7 @@ define('CLOUD_ISSUER', 'https://mbe-plus.com/mini_projects/suite-cloud/');
 require_once __DIR__ . '/../lib/drive.php';
 require_once __DIR__ . '/../lib/clients.php';
 require_once __DIR__ . '/../lib/ai.php';
+require_once __DIR__ . '/../lib/fonts.php';
 
 $fails = 0; $n = 0;
 function check(string $name, bool $ok): void {
@@ -365,6 +366,62 @@ try {
     check('בדיקת מפתח שנדחה — הודעה ברורה', code(fn() => aiAdminTest('replicate')) === 'provider');
     check('תמונה גדולה מ-4096 — too-big', code(fn() => aiRun($acc, '', ['task' => 'remove-background', 'image' => $png(4100, 10)])) === 'too-big');
     check('שימוש החודש בניהול', aiAdminState()['usage']['calls'] >= 8);
+
+    // ── ספריית הגופנים ──
+    $alef = file_get_contents(__DIR__ . '/../../document-templates/assets/fonts/Alef-Regular.ttf');
+    $heebo = file_get_contents(__DIR__ . '/../../greeting-cards/editor/fonts/heebo-hebrew-100-normal.woff2');
+    // WOFF מתוך Alef: רק name ו-OS/2, דחוסים — מספיק כדי לבדוק את הקריאה
+    $woff = (function (string $ttf) {
+        $u16 = fn($o) => unpack('n', substr($ttf, $o, 2))[1]; $u32 = fn($o) => unpack('N', substr($ttf, $o, 4))[1];
+        $tables = [];
+        for ($i = 0; $i < $u16(4); $i++) { $e = 12 + $i * 16; $tag = substr($ttf, $e, 4);
+            if (in_array($tag, ['name', 'OS/2'], true)) $tables[$tag] = substr($ttf, $u32($e + 8), $u32($e + 12)); }
+        $dir = ''; $data = ''; $off = 44 + 20 * count($tables);
+        foreach ($tables as $tag => $raw) { $z = gzcompress($raw); $dir .= $tag . pack('NNNN', $off + strlen($data), strlen($z), strlen($raw), 0); $data .= $z; }
+        return 'wOFF' . pack('NNnnNnnNNNNN', 0x10000, 44 + strlen($dir) + strlen($data), count($tables), 0, 0, 1, 0, 0, 0, 0, 0, 0) . $dir . $data;
+    })($alef);
+    check('ttf — משפחה, משקל וסגנון מהטבלאות', fontMeta($alef)['family'] === 'Alef' && fontMeta($alef)['weight'] === 400 && fontMeta($alef)['style'] === 'normal');
+    check('woff (דחוס) — אותם פרטים', fontMeta($woff)['format'] === 'woff' && fontMeta($woff)['family'] === 'Alef');
+    check('woff2 — בלי טבלאות, רק הפורמט', fontMeta($heebo)['format'] === 'woff2' && fontMeta($heebo)['family'] === null);
+    check('שם קובץ — משפחה, משקל וסגנון', fontFromFilename('heebo-hebrew-100-normal.woff2') === ['Heebo', 100, 'normal']
+        && fontFromFilename('Rubik-BoldItalic.ttf') === ['Rubik', 700, 'italic'] && fontFromFilename('OpenSans_SemiBold.ttf') === ['Open Sans', 600, 'normal']);
+
+    $acc = getAccount($owner['id']);
+    check('בלי אישור רישיון — נדחה', code(fn() => fontAdd($acc, $alef, ['filename' => 'Alef-Regular.ttf'])) === 'license');
+    check('לא גופן — נדחה', code(fn() => fontAdd($acc, 'hello world', ['filename' => 'x.ttf', 'license_ack' => true])) === 'bad_format');
+    $usedBefore = quotaInfo($acc)['used'];
+    $f1 = fontAdd($acc, $alef, ['filename' => 'Alef-Regular.ttf', 'license_ack' => true]);
+    check('font_add ttf — פריט עם rev = sha256 ו-url', $f1['family'] === 'Alef' && $f1['rev'] === hash('sha256', $alef) && !$f1['replaced']
+        && str_contains($f1['url'], 'font_file') && str_starts_with($f1['id'], 'fnt_'));
+    check('הגופן נספר במכסה', quotaInfo($acc)['used'] === $usedBefore + strlen($alef));
+    $f2 = fontAdd($acc, $heebo, ['filename' => 'heebo-hebrew-100-normal.woff2', 'license_ack' => true]);
+    check('font_add woff2 — לפי שם הקובץ', $f2['family'] === 'Heebo' && $f2['weight'] === 100 && $f2['format'] === 'woff2');
+    $f3 = fontAdd($acc, $heebo, ['filename' => 'x.woff2', 'family' => 'Heebo', 'weight' => 700, 'license_ack' => true]);
+    check('פרטים מהדפדפן גוברים על שם הקובץ', $f3['family'] === 'Heebo' && $f3['weight'] === 700);
+    $f4 = fontAdd($acc, $woff, ['filename' => 'Alef.woff', 'license_ack' => true]);
+    check('אותה משפחה, משקל וסגנון — החלפה: אותו id, rev חדש', $f4['id'] === $f1['id'] && $f4['replaced'] && $f4['rev'] === hash('sha256', $woff));
+    check('הקובץ הישן נמחק מהדיסק', !is_file(blobPath(hash('sha256', $alef))));
+    $list = fontsList($acc);
+    check('fonts_list — לפי משפחה', count($list['fonts']) === 3 && array_column($list['families'], 'family') === ['Alef', 'Heebo']
+        && count($list['families'][1]['items']) === 2);
+    check('font_update — שם משפחה', fontUpdate($acc, ['id' => $f2['id'], 'family' => 'Heebo Thin'])['family'] === 'Heebo Thin');
+    check('font_update לכפיל — name_taken', code(fn() => fontUpdate($acc, ['id' => $f2['id'], 'family' => 'Heebo', 'weight' => 700])) === 'name_taken');
+    check('משקל לא תקין — נדחה', code(fn() => fontUpdate($acc, ['id' => $f2['id'], 'weight' => 450])) === 'bad_request');
+    [$path] = fontFile($acc, $f2['id']);
+    check('font_file — הקובץ עצמו', file_get_contents($path) === $heebo);
+    check('גופן של חשבון אחר — 404', code(fn() => fontFile(getAccount($dana['id']), $f2['id'])) === 'not_found');
+    fontDelete($acc, $f2['id']);
+    check('font_delete — הקובץ נשאר כל עוד גופן אחר באותו תוכן', is_file(blobPath(hash('sha256', $heebo))));
+    fontDelete($acc, $f3['id']);
+    check('ואחרי האחרון — נמחק מהדיסק', !is_file(blobPath(hash('sha256', $heebo))));
+    $_SERVER['HTTP_X_CLOUD_TOKEN'] = (function () use ($acc) {
+        $req = connectRequest(['client' => 'vector-studio', 'scope' => 'files', 'state' => 'fontstate1', 'return' => 'https://mbe-plus.com/mini_projects/vector-studio/api.php?action=cloud_callback']);
+        parse_str((string) parse_url(approveConnect($acc, $req), PHP_URL_QUERY), $q);
+        $ex = exchangeCode(activeClient('vector-studio'), ['code' => $q['code']]);
+        return issueToken(activeClient('vector-studio'), connectionRow($ex['connection'], 'vector-studio'))['token'];
+    })();
+    check('אפליקציה בלי הרשאת libs — לא רואה את הגופנים', code(fn() => actor('fonts_list', 'libs', '')) === 'forbidden');
+    unset($_SERVER['HTTP_X_CLOUD_TOKEN']);
 } catch (Throwable $e) {
     $fails++;
     echo "✗ חריגה: " . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n";

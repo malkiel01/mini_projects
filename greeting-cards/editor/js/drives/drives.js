@@ -15,6 +15,11 @@
  *   await s.upload(file, { parent, ifRev, onConflict, onProgress, signal })  → node  (בחלקים, כל גודל)
  *   await s.quota()                → { quota, used, max_file }
  *
+ *   drives.fonts — ספריית הגופנים של המשתמש (suite-cloud/docs/spec-2-fonts.md):
+ *   await drives.fonts.list()      → { fonts: [{ id, family, weight, style, format, rev, … }], families: [{ family, items }] }
+ *   await drives.fonts.load(item)  → { face: FontFace (כבר ב-document.fonts, בשם המשפחה), bytes: Uint8Array — להטמעה בקובץ }
+ *   await drives.fonts.add(file, { family, weight, style })   → פריט (replaced: true אם החליף)
+ *
  *   drives.ai — שכבת הבינה המלאכותית של הענן (suite-cloud/docs/spec-3-ai.md):
  *   await drives.ai.capabilities() → { tasks: {…: bool}, providers, default, quota }  (בלי חיבור — הכול false)
  *   await drives.ai.run('inpaint', { image, mask, prompt }, { signal })
@@ -124,6 +129,27 @@ export function createDrives({ endpoint = 'api.php' } = {}) {
         },
     };
 
+    const fonts = {
+        list: () => cloud('fonts_list'),
+        async load(item) {
+            const res = await cloud('font_file', { query: q('id', item.id) + q('rev', item.rev), raw: true });
+            const bytes = new Uint8Array(await res.arrayBuffer());
+            const face = new FontFace(item.family, bytes, { weight: String(item.weight), style: item.style });
+            await face.load();
+            document.fonts.add(face);
+            return { face, bytes };
+        },
+        async add(file, { family, weight, style } = {}) {
+            const fd = new FormData();
+            fd.append('file', file, file.name || 'font');
+            fd.append('license_ack', '1');   // האפליקציה הציגה את אזהרת הרישיון לפני הקריאה (הכרעה 7)
+            if (family) fd.append('family', family);
+            if (weight) fd.append('weight', String(weight));
+            if (style) fd.append('style', style);
+            return cloud('font_add', { init: { method: 'POST', body: fd } });
+        },
+    };
+
     const NONE = { tasks: { 'remove-background': false, segment: false, 'generate-image': false, inpaint: false, complete: false }, providers: [], default: {}, quota: null };
 
     const ai = {
@@ -161,6 +187,7 @@ export function createDrives({ endpoint = 'api.php' } = {}) {
         },
         async disconnect() { tok = null; return app('drives_disconnect', {}); },
         suite,
+        fonts,
         ai,
     };
 }

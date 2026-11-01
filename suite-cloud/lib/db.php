@@ -101,6 +101,8 @@ function migrate(PDO $pdo): void {
     migrateClients($pdo);
     require_once __DIR__ . '/ai.php';
     migrateAi($pdo);
+    require_once __DIR__ . '/fonts.php';
+    migrateFonts($pdo);
 }
 
 const DEFAULTS = [

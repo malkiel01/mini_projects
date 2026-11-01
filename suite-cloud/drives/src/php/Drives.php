@@ -42,13 +42,13 @@ final class Drives {
 
     /**
      * client, name, dataDir, endpoint (כתובת https מלאה של api.php של האפליקציה), user (callable → ?string),
-     * back (לאן חוזרים אחרי חיבור), cloud? (כתובת הענן), scope? (['files','ai'] ברירת מחדל), http? (callable — לבדיקות).
+     * back (לאן חוזרים אחרי חיבור), cloud? (כתובת הענן), scope? (['files','libs','ai'] ברירת מחדל), http? (callable — לבדיקות).
      */
     public function __construct(array $cfg) {
         foreach (['client', 'name', 'dataDir', 'endpoint', 'user', 'back'] as $k) {
             if (empty($cfg[$k])) throw new \InvalidArgumentException("Drives: חסר $k");
         }
-        $this->cfg = $cfg + ['cloud' => self::CLOUD, 'scope' => ['files', 'ai'], 'http' => null];
+        $this->cfg = $cfg + ['cloud' => self::CLOUD, 'scope' => ['files', 'libs', 'ai'], 'http' => null];
         $this->cfg['cloud'] = rtrim($this->cfg['cloud'], '/') . '/';
     }
 

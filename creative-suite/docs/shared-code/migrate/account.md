@@ -1,4 +1,4 @@
-# 👤 תפריט המשתמש והגדרות אישיות — `ui-core/account.js` (שורה 19 ב-`integration.md`)
+# 👤 תפריט המשתמש, הגדרות אישיות ו-📁 "המסמכים שלי" — `ui-core` (שורות 19–20 ב-`integration.md`)
 
 **מאת:** הקוד המשותף · **תאריך:** 2026-10-31 · **ההכרעה:** `creative-suite/docs/requests/account-menu.md`
 **המודול:** `creative-suite/ui-core/src/js/account.js` (התיעוד המלא בראש הקובץ). **תצוגה:** `creative-suite/ui-core/demo/` — העיגול בסרגל.
@@ -62,6 +62,29 @@ acc.refresh();   // אחרי התחברות / יציאה
   `@media (prefers-color-scheme: dark)`** (למשל משתני הבמה בעימוד) — להוסיף את אותם ערכים גם תחת
   `:root[data-theme="dark"]`, ולעטוף את ה-media ב-`:root:not([data-theme="light"])`; אחרת ערכה ידנית לא תגיע אליהם.
 - **`drives`** — כשהמודול של הכוננים (ענן החבילה, שורה 21) יהיה מוכן. עד אז — בלי, והפריט לא מוצג.
+
+## 📁 "המסמכים שלי" — `files-window.js` (שורה 20)
+
+חלון אחד לניהול, לפתיחה ולשמירה. לשונית לכל מקור: "באפליקציה" (הספרייה שלך, דרך מתאם קטן) + ענן החבילה (מודול הכוננים).
+```js
+import { openDocuments, pickFile, saveFile, suiteSource } from './ui-core/files-window.js';
+const sources = [
+    { id: 'app', title: 'באפליקציה', icon: '📱',
+      list: async folder => ({ items: (await api('docs_list', { folder })).docs.map(d => ({ id: d.id, name: d.title + '.mbe', kind: 'file', size: d.size, updated: d.updated_at })) }),
+      read: id => fetch(`api.php?action=doc_read&id=${id}`).then(r => r.blob()),
+      write: (name, blob, { parent, replace }) => uploadDoc(name, blob, parent, replace),
+      rename: (id, name) => api('doc_rename', { id, name }),
+      remove: id => api('doc_trash', { id }),
+      versions: id => api('doc_versions', { id }).then(r => r.versions),   // רשות
+      restore: (id, v) => api('doc_restore', { id, v }) },                   // רשות
+    drives && suiteSource(drives),                                         // אם הצטרפת למודול הכוננים (#960)
+];
+accountMenu(bar, { …, docs: () => openDocuments(sources, { onOpen: item => openDoc(item.id) }) });
+const got = await pickFile(sources, { accept: ['.mbe'] });                 // במקום חלון הפתיחה שלך
+const at  = await saveFile(sources, { name: title, ext: 'mbe', getBlob: buildMbe });   // "שמירה בשם"
+```
+המתאם — **כל פעולה רשות מלבד `list`**; פעולה שאין לה — הכפתור לא מוצג. התיעוד המלא בראש `files-window.js`.
+**חלון הפתיחה והשמירה הקיים שלך — מוחלף בזה** (הכרעה: "אותו חלון משמש גם לפתיחה ולשמירה").
 
 ## מה מחליפים היום
 

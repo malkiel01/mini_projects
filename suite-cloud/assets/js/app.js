@@ -3,7 +3,7 @@
 import { $, h as el } from './ui-core/dom.js';
 import { toast } from './ui-core/toast.js';
 import { initDialogs, confirm, prompt } from './ui-core/dialog.js';
-import { dropZone } from './ui-core/files.js';
+import { dropZone, pickFiles } from './ui-core/files.js';
 
 initDialogs();   // [data-close], סגירה ברקע, --vvh
 const API = 'api.php';
@@ -58,12 +58,13 @@ function fail(e) { console.warn(e); toast(e.message || 'תקלה', true); }
 
 function route() {
   const [, tab = 'files', arg = ''] = location.hash.split('/');
-  const t = ['files', 'trash', 'links', 'admin'].includes(tab) && (tab !== 'admin' || state.me?.role === 'admin') ? tab : 'files';
+  const t = ['files', 'fonts', 'trash', 'links', 'admin'].includes(tab) && (tab !== 'admin' || state.me?.role === 'admin') ? tab : 'files';
   document.querySelectorAll('.tabs a').forEach(a => { if (a.dataset.tab === t) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
-  for (const v of ['files', 'trash', 'links', 'admin']) $(`#v-${v}`).hidden = v !== t;
+  for (const v of ['files', 'fonts', 'trash', 'links', 'admin']) $(`#v-${v}`).hidden = v !== t;
   $('#back').hidden = !(t === 'files' && arg);
   if (t === 'files') loadFolder(arg || null).catch(fail);
   if (t === 'trash') loadTrash().catch(fail);
+  if (t === 'fonts') loadFonts().catch(fail);
   if (t === 'links') loadLinks().catch(fail);
   if (t === 'admin') loadAdmin().catch(fail);
 }
@@ -289,6 +290,79 @@ $('#empty-trash').addEventListener('click', async () => {
   if (!await confirm('למחוק לצמיתות את כל מה שבסל? אי אפשר לבטל.', { ok: 'מחיקה', danger: true })) return;
   try { const r = await api('trash_empty', {}); toast(`נמחקו ${r.removed}`); loadTrash(); refreshQuota(); } catch (e) { fail(e); }
 });
+
+// ─── גופנים ─────────────────────────────────────────────────────────────
+
+const WEIGHT_NAMES = { 100: 'דק מאוד', 200: 'דק', 300: 'קל', 400: 'רגיל', 500: 'בינוני', 600: 'חצי מודגש', 700: 'מודגש', 800: 'מודגש מאוד', 900: 'שחור' };
+const SAMPLE = 'אבג דהו זחט · Aa Bb 123';
+const loadedFaces = new Set();
+
+async function loadFonts() {
+  $('#title').textContent = 'גופנים';
+  const data = await api('fonts_list');
+  $('#fonts-count').textContent = data.fonts.length ? `${data.families.length} משפחות · ${data.fonts.length} קבצים` : '';
+  const byId = Object.fromEntries(data.fonts.map(f => [f.id, f]));
+  if (!data.families.length) {
+    $('#fonts').replaceChildren(el('li', {}, el('p', { class: 'empty' }, 'עוד אין גופנים. "⬆️ גופן" כדי להעלות.')));
+    return;
+  }
+  $('#fonts').replaceChildren(...data.families.map(fam => {
+    const items = fam.items.map(id => byId[id]);
+    const main = items.find(f => f.weight === 400 && f.style === 'normal') || items[0];
+    const sample = el('div', { class: 'sample', style: { fontFamily: `"cf-${main.id}", system-ui`, fontWeight: main.weight, fontStyle: main.style } }, SAMPLE);
+    face(main);
+    return el('li', {}, el('div', { class: 'font-fam' },
+      el('div', { class: 'l1 one' }, fam.family), sample,
+      ...items.map(f => el('div', { class: 'font-row' },
+        el('span', { class: 'l2' }, `${WEIGHT_NAMES[f.weight] || f.weight}${f.style === 'italic' ? ' · נטוי' : ''} · ${f.format} · ${bytes(f.size)}`),
+        el('button', { class: 'icon-btn', type: 'button', 'aria-label': `עריכת ${f.name}`, onclick: () => editFont(f) }, '✏️'),
+        el('button', { class: 'icon-btn', type: 'button', 'aria-label': `מחיקת ${f.name}`, onclick: () => deleteFont(f) }, '🗑️')))));
+  }));
+}
+
+/** טוען את הגופן לדף בשם cf-<id> — לתצוגה המקדימה. */
+async function face(f) {
+  if (loadedFaces.has(f.id)) return;
+  loadedFaces.add(f.id);
+  try {
+    const buf = await (await fetch(f.url, { credentials: 'same-origin' })).arrayBuffer();
+    const ff = new FontFace(`cf-${f.id}`, buf, { weight: String(f.weight), style: f.style });
+    document.fonts.add(await ff.load());
+  } catch (e) { console.warn('font preview', e); }
+}
+
+$('#font-upload').addEventListener('click', async () => {
+  const files = await pickFiles({ accept: '.ttf,.otf,.woff,.woff2', multiple: true });
+  if (!files?.length) return;
+  if (!await confirm('הגופנים ייכנסו לספרייה שלך ויוטמעו בקבצים שתשמור. ודא שהרישיון שלהם מתיר הטמעה — האחריות עליך.',
+    { title: 'רישיון הגופנים', ok: 'מאשר, להעלות' })) return;
+  let ok = 0;
+  for (const file of files) {
+    const fd = new FormData();
+    fd.append('file', file, file.name);
+    fd.append('license_ack', '1');
+    try {
+      const res = await fetch(`${API}?action=font_add`, { method: 'POST', body: fd, credentials: 'same-origin', headers: { 'X-Cloud-Request': '1' } });
+      const j = await res.json();
+      if (!res.ok) throw new ApiError(j, res.status);
+      ok++;
+    } catch (e) { toast(`${file.name}: ${e.message}`, true); }
+  }
+  if (ok) toast(ok === 1 ? 'הגופן נוסף' : `נוספו ${ok} גופנים`);
+  refreshQuota().catch(() => {});
+  loadFonts().catch(fail);
+});
+
+async function editFont(f) {
+  const family = await prompt('שם המשפחה', { title: '✏️ ' + f.name, value: f.family, ok: 'שמירה' });
+  if (family === null || family === f.family) return;
+  try { await api('font_update', { id: f.id, family }); toast('נשמר'); loadFonts(); } catch (e) { fail(e); }
+}
+
+async function deleteFont(f) {
+  if (!await confirm(`למחוק את ${f.name}? קבצים שכבר הטמיעו אותו לא נפגעים.`, { ok: 'מחיקה', danger: true })) return;
+  try { await api('font_delete', { id: f.id }); toast('נמחק'); refreshQuota().catch(() => {}); loadFonts(); } catch (e) { fail(e); }
+}
 
 // ─── חיבורים ────────────────────────────────────────────────────────────
 
