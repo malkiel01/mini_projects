@@ -2357,6 +2357,40 @@ check('ציור: רשימה פגומה — הודעה ברורה עם מקום �
     && str_contains($dwErr(['pages' => [['size' => [10, 10], 'ops' => [['op' => 'glyphs', 'font' => 'media/x.ttf', 'size' => 9, 'x' => 0, 'y' => 0, 'glyphs' => []]]]]]), 'גופן חסר')
     && str_contains($dwErr(['pages' => [['size' => [10, 10], 'ops' => [['op' => 'glyphs', 'font' => 'media/frank.woff', 'size' => 9, 'x' => 0, 'y' => 0, 'glyphs' => [[999999, 0, 0, 1]]]]]]]), 'גליף')
     && $dwErr(['pages' => []]) === 'אין עמודים');
+
+// pdf-core, שלב 1 (#971, בקשת העימוד): path — M L C Q Z, transform, fill / stroke, evenodd, מקפים; שקיפות (ExtGState) גם לתמונה
+$ptList = ['pages' => [['size' => [100, 100], 'ops' => [
+    ['op' => 'path', 'd' => 'M10 10 L50 10 L50 50 L10 50 Z', 'fill' => '#ff0000', 'fillOpacity' => 0.5],
+    ['op' => 'path', 'd' => 'M0 0 L40 0 L40 40 L0 40 Z M10 10 L30 10 L30 30 L10 30 Z', 'fill' => '#000000', 'fillRule' => 'evenodd', 'transform' => [1, 0, 0, 1, 55, 55]],
+    ['op' => 'path', 'd' => 'M60 10 Q 80 40 95 10', 'stroke' => '#0000ff', 'width' => 2, 'cap' => 'round', 'join' => 'bevel', 'dash' => [3, 2]],
+    ['op' => 'image', 'src' => 'media/a.png', 'box' => [5, 60, 30, 30], 'opacity' => 0.25],
+]]]];
+$ptPdf = pdf_draw($ptList, $dwRes);
+$ptRaw = preg_replace_callback('/stream\n(.*?)\nendstream/s', fn($m) => 'stream ' . (@gzuncompress($m[1]) ?: '') . ' endstream', $ptPdf);
+check('path: מילוי — cm שהופך את y, הנתיב בקואורדינטות הרשימה, ושקיפות מילוי ב-ExtGState', str_contains($ptRaw, "1 0 0 -1 0 100 cm\n/GS1 gs\n1 0 0 rg\n10 10 m")
+    && str_contains($ptRaw, "h\nf\nQ") && str_contains($ptPdf, '/ExtGState << /GS1 << /Type /ExtGState /ca 0.5 /CA 1 >>'), substr($ptRaw, strpos($ptRaw, ' cm') ?: 0, 160));
+check('path: transform מוזז, evenodd (f*), Q → C, וקו עם cap / join / מקפים', str_contains($ptRaw, '1 0 0 -1 55 45 cm') && str_contains($ptRaw, "h\nf*\nQ")
+    && str_contains($ptRaw, "60 10 m\n73.33 30 85 30 95 10 c\nS") && str_contains($ptRaw, '0 0 1 RG 2 w 1 J 2 j 4 M') && str_contains($ptRaw, '[3 2] 0 d'), substr($ptRaw, strpos($ptRaw, '60 10 m') ?: 0, 120));
+check('image: opacity — ExtGState משלה (ca ו-CA)', str_contains($ptPdf, '/ca 0.25 /CA 0.25'));
+check('בלי שקיפות — אין ExtGState במשאבים (הפלט של שאר הקוראים לא משתנה)', !str_contains($dwPdf, 'ExtGState'));
+if (trim((string)shell_exec('command -v pdftoppm'))) {
+    file_put_contents("$tmp/path.pdf", $ptPdf);
+    shell_exec('pdftoppm -r 72 -png ' . escapeshellarg("$tmp/path.pdf") . ' ' . escapeshellarg("$tmp/path") . ' 2>&1');
+    $ptIm = @imagecreatefrompng(glob("$tmp/path*.png")[0] ?? '');
+    $rgb = fn($x, $y) => $ptIm ? [(imagecolorat($ptIm, $x, $y) >> 16) & 255, (imagecolorat($ptIm, $x, $y) >> 8) & 255, imagecolorat($ptIm, $x, $y) & 255] : [-1, -1, -1];
+    [$r1, $g1] = $rgb(30, 30);
+    [$r2] = $rgb(75, 75);
+    [$r3] = $rgb(60, 60);
+    check('path, כפי שמוצג (pdftoppm): אדום בחצי שקיפות — ורוד; evenodd — חור באמצע; המסגרת שחורה', $r1 > 240 && $g1 > 100 && $g1 < 160 && $r2 > 240 && $r3 < 40,
+        json_encode([$rgb(30, 30), $rgb(75, 75), $rgb(60, 60)]));
+    array_map('unlink', glob("$tmp/path*") ?: []);
+}
+check('path: רשימה פגומה — הודעה ברורה', str_contains($dwErr(['pages' => [['size' => [10, 10], 'ops' => [['op' => 'path', 'd' => 'm0 0 l5 5', 'fill' => '#000000']]]]]), 'מוחלטות')
+    && str_contains($dwErr(['pages' => [['size' => [10, 10], 'ops' => [['op' => 'path', 'd' => 'M0 0 L5 5']]]]]), 'בלי fill ובלי stroke')
+    && str_contains($dwErr(['pages' => [['size' => [10, 10], 'ops' => [['op' => 'path', 'd' => 'M0 0 L5', 'fill' => '#000000']]]]]), 'חסרים מספרים')
+    && str_contains($dwErr(['pages' => [['size' => [10, 10], 'ops' => [['op' => 'path', 'd' => 'M0 0 L5 5', 'fill' => '#000000', 'fillOpacity' => 2]]]]]), 'בין 0 ל-1')
+    && str_contains($dwErr(['pages' => [['size' => [10, 10], 'ops' => [['op' => 'path', 'd' => 'M0 0 L5 5 x', 'fill' => '#000000']]]]]), 'רק M L C Q Z'));
+
 array_map('unlink', glob("$tmp/media/mbe/ids/*") ?: []);
 @rmdir("$tmp/media/mbe/ids");
 array_map('unlink', glob("$tmp/media/mbe/*") ?: []);

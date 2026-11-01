@@ -33,6 +33,14 @@ final class PdfWriter
         return count($this->pages) - 1;
     }
 
+    /** שקיפות (ExtGState): ca למילוי, CA לקו → '/GS1'. אותו זוג — אותו שם. נכנס למשאבים רק כשנעשה בו שימוש */
+    public array $gstates = [];
+    public function alpha(float $fill = 1, float $stroke = 1): string
+    {
+        $key = self::n(max(0, min(1, $fill))) . ' ' . self::n(max(0, min(1, $stroke)));
+        return $this->gstates[$key] ??= '/GS' . (count($this->gstates) + 1);
+    }
+
     public function font(TtfFont $f): string
     {
         $id = spl_object_id($f);
@@ -137,7 +145,9 @@ final class PdfWriter
             $imgRefs .= "{$im['name']} $id 0 R ";
         }
         $res = $alloc();
-        $objs[$res] = "<< /Font << $fontRefs>> /XObject << $imgRefs>> /ProcSet [/PDF /Text /ImageB /ImageC] >>";
+        $gs = '';
+        foreach ($this->gstates as $key => $name) { [$ca, $CA] = explode(' ', $key); $gs .= "$name << /Type /ExtGState /ca $ca /CA $CA >> "; }
+        $objs[$res] = "<< /Font << $fontRefs>> /XObject << $imgRefs>>" . ($gs !== '' ? " /ExtGState << $gs>>" : '') . " /ProcSet [/PDF /Text /ImageB /ImageC] >>";
         // עמודים — המספרים מוקצים קודם, כי קישור פנימי מפנה לעמוד אחר
         $kids = [];
         $pids = array_map(fn() => $alloc(), $this->pages);
