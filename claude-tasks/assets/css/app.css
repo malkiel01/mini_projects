@@ -411,3 +411,19 @@ details.what p { margin-top: var(--s2); }
 .composer-row .btn { flex: none; min-height: 44px; }
 #projSection.head-only .sec-title { display: none; }
 #projSection.head-only .sec-head { justify-content: flex-end; }
+
+/* ===== כרטיס 🔐 — בקשת אישור (§6) ===== */
+.approval { display: grid; gap: var(--s2); padding: var(--s3); border-radius: var(--r);
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent); background: color-mix(in srgb, var(--danger) 6%, var(--surface)); }
+#dApproval { margin-bottom: var(--s3); }
+.ap-head { display: flex; flex-wrap: wrap; gap: 6px; }
+.ap-summary { font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; }
+.approval details summary { cursor: pointer; color: var(--muted); font-size: .85rem; }
+.approval details p { margin-top: var(--s2); white-space: pre-wrap; overflow-wrap: anywhere; font-size: .9rem; }
+.ap-target { font-family: ui-monospace, monospace; font-size: .82rem; color: var(--muted); }
+.ap-note { width: 100%; }
+.ap-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); }
+.ap-buttons .btn { min-height: 44px; padding: 0 var(--s2); }
+.danger-text { color: var(--danger); }
+.bubble .approval { background: var(--surface); }
+.note p, .b-body, .approval details p { unicode-bidi: plaintext; text-align: start; }

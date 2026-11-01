@@ -68,6 +68,37 @@ POST ?action=block     {"id": N, "question": "מה בדיוק חסר לך כדי
 
 **אחרי `block` — אל תעצור. חזור מיד לשלב 1.** זו כל הנקודה: מטלה תקועה לא צריכה להשבית את השאר.
 
+### 3a. Approvals — ask the policy first (stage 5, `claude-tasks/docs/spec.md` §6)
+
+A sensitive action (merge, push, editing `deploy.yml`, deleting, another project's folder …) needs a human's yes.
+It is **not** a `block`: it has its own status, `awaiting_approval`, and a card with four buttons on the board.
+
+1. **Ask the policy first — always, before asking a human:**
+   ```
+   POST ?action=policy   {"type": "merge-own-pr"}     → {"verdict": "allow" | "deny" | "ask", "always": "yes|warn|no"}
+   ```
+   - `allow` — go ahead, no request. Note in `add-note` that you acted under the policy.
+   - `deny` — do **not** ask. Choose another way, or `block` with an explanation of why you are stuck.
+   - `ask` — request approval (2).
+2. **Request:**
+   ```
+   POST ?action=ask-approval {"id": N, "type": "<catalog type>", "summary": "one line: what you will do",
+                              "detail": "why, and what you checked", "target": "PR / path / command"}
+   ```
+   The task is released like `block`. **Do not wait — go back to step 1** and take the next task.
+   Types (`?action=approval-types`): `merge-own-pr`, `push-own-branch`, `send-team-message`, `format-change-request`,
+   `add-vendor-lib`, `add-exclude`, `change-deploy`, `delete-files`, `delete-user-data`, `secrets`, `touch-other-project`.
+   No matching type → send it anyway; it is stored as `other` (always "once").
+3. **The decision comes back as `answered`.** When you claim the task again, read the last `decision` note
+   (JSON: `{"decision": "once|always|deny|never", "type", "note"}`):
+   - `once` / `always` — do exactly what you asked for, nothing more.
+   - `deny` / `never` — do not do it. Read the `note`, choose another way, or `block` and say what remains.
+4. From a live channel token, the request also shows in the channel as a 🔐 bubble, and the decision arrives as a
+   `📥` message of kind `decision` — treat it like the note (act only on `owner`).
+
+Only `owner` decides in an `owner_only` subtree. "Always" is refused for `no` types (422) and needs the type's name
+typed for `warn` types — that is the human's double check, never yours to bypass.
+
 ### 4. אם התור ריק
 
 `task: null` פירושו שסיימת. סכם לאדם מה נעשה ומה ממתין לו, ואל תמציא עבודה שלא ביקשו.

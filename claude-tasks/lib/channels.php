@@ -294,8 +294,21 @@ function channelMessages(array $user, int $channelId, int $after = 0): array {
     $channel = getChannel($channelId);
     if (!$channel) throw new AppError('הערוץ לא נמצא', 404);
     requireProject((int) $channel['project_id'], $user, 'read');
+    $messages = messageRows('m.channel_id = ? AND m.id > ?', [$channelId, $after]);
+    // בועת 🔐: הבקשה עצמה, האם היא עוד ממתינה, והאם הצופה רשאי להחליט
+    $tasks = [];
+    foreach ($messages as &$m) {
+        if ($m['kind'] !== 'approval' || $m['task_id'] === null) continue;
+        $t = $tasks[$m['task_id']] ??= getTask(db(), $m['task_id']);
+        if (!$t) continue;
+        $m['approval'] = (lastApproval($m['task_id']) ?? []) + [
+            'pending'    => $t['status'] === 'awaiting_approval',
+            'can_decide' => $t['status'] === 'awaiting_approval' && canAnswer($user, $t),
+        ];
+    }
+    unset($m);
     return ['channel' => publicChannel($channel) + ['can_send' => canSendToChannel($user, $channel)],
-            'messages' => messageRows('m.channel_id = ? AND m.id > ?', [$channelId, $after])];
+            'messages' => $messages];
 }
 
 /** ניתוק: הערוץ עצמו, או בעל הלוח. האסימון נפסל. */

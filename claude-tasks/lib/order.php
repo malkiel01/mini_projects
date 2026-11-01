@@ -159,7 +159,7 @@ function orderByModel(array $tasks, array $conn, ?callable $transport = null): a
  */
 function reorderTopic(PDO $pdo, ?int $topicId, array $opts = []): array {
     $sql  = "SELECT id, title, body, kind, priority, created_at FROM tasks
-              WHERE status IN ('open','answered','blocked','in_progress')";
+              WHERE status IN ('open','answered','blocked','awaiting_approval','in_progress')";
     $args = [];
     if ($topicId === null) { $sql .= ' AND topic_id IS NULL'; }
     else                   { $sql .= ' AND topic_id = ?'; $args[] = $topicId; }

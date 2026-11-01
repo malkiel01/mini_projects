@@ -343,7 +343,7 @@ try {
             $args[] = "%$search%"; $args[] = "%$search%";
         }
 
-        $sql .= " ORDER BY CASE k.status WHEN 'blocked' THEN 0 WHEN 'answered' THEN 1
+        $sql .= " ORDER BY CASE k.status WHEN 'awaiting_approval' THEN 0 WHEN 'blocked' THEN 0 WHEN 'answered' THEN 1
                                          WHEN 'in_progress' THEN 2 WHEN 'open' THEN 3 ELSE 4 END,
                            CASE k.priority WHEN 'high' THEN 0 WHEN 'normal' THEN 1 ELSE 2 END,
                            k.seq, k.id DESC
@@ -384,7 +384,9 @@ try {
         $task = accessibleTask($user, $scope, $id, 'read');
         ok(['task' => $task, 'notes' => taskNotes(db(), $id),
             // האם הערה שלי תחזיר את המטלה לתור — כדי שהממשק יגיד את זה לפני השליחה
-            'can_answer' => canAnswer($user, $task)]);
+            'can_answer' => canAnswer($user, $task),
+            // בקשת אישור פתוחה — לכרטיס 🔐 בחלון המטלה
+            'approval' => $task['status'] === 'awaiting_approval' ? lastApproval($id) : null]);
     }
 
     case 'create-task': {
@@ -1249,6 +1251,43 @@ try {
         }
         ok();
     }
+
+    /* ── אישורים ומדיניות (docs/spec.md §6, lib/approvals.php) ─── */
+
+    /** עובד מבקש אישור לפעולה רגישה. המטלה משתחררת, כמו ב-block. */
+    case 'ask-approval': {
+        if (!$worker) fail('פעולה לעובדים בלבד', 403);
+        $task = workerTask($scope, (int) ($in['id'] ?? 0));
+        $r = askApproval($task, $worker, $in, $scope['channel'] ?? null);
+        if ($url = url_field($in, 'session_url')) {
+            db()->prepare('UPDATE tasks SET session_url = ? WHERE id = ?')->execute([$url, $task['id']]);
+        }
+        ok($r);
+    }
+
+    case 'decide': {
+        $me   = requireUser($user);
+        $task = accessibleTask($me, $scope, (int) ($in['id'] ?? 0), 'read');
+        ok(decide($me, $task, str_field($in, 'decision', 10), str_field($in, 'note', 5000),
+                  str_field($in, 'confirm_type', 60)));
+    }
+
+    /** עובד ואדם: מה המדיניות לסוג — allow | deny | ask. לשאול לפני ask-approval. */
+    case 'policy': {
+        $type = approvalType(str_field($in, 'type', 60));
+        ok(['type' => $type, 'verdict' => policyVerdict($type), 'always' => APPROVAL_TYPES[$type]['always']]);
+    }
+
+    case 'policy-list':
+        requireUser($user);
+        ok(policyList());
+
+    case 'policy-revoke':
+        revokePolicy(requireUser($user), str_field($in, 'type', 60));
+        ok(['verdict' => 'ask']);
+
+    case 'approval-types':
+        ok(['types' => approvalTypes()]);
 
     case 'complete': {
         if (!$worker) fail('פעולה לעובדים בלבד', 403);
