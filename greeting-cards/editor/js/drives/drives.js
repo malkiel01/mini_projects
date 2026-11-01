@@ -21,7 +21,7 @@
  *   await drives.fonts.add(file, { family, weight, style })   → פריט (replaced: true אם החליף)
  *
  *   drives.ai — שכבת הבינה המלאכותית של הענן (suite-cloud/docs/spec-3-ai.md):
- *   await drives.ai.capabilities() → { tasks: {…: bool}, providers, default, quota }  (בלי חיבור — הכול false)
+ *   await drives.ai.capabilities() → { connected, tasks: {…: bool}, providers, default, quota }  (בלי חיבור — connected:false והכול false)
  *   await drives.ai.run('inpaint', { image, mask, prompt }, { signal })
  *        → { png: Blob, size: [w, h], transparent, provider } | { masks: [{ png: Blob, label, box }] } | { json } | { text }
  *
@@ -150,11 +150,11 @@ export function createDrives({ endpoint = 'api.php' } = {}) {
         },
     };
 
-    const NONE = { tasks: { 'remove-background': false, segment: false, 'generate-image': false, inpaint: false, complete: false }, providers: [], default: {}, quota: null };
+    const NONE = { connected: false, tasks: { 'remove-background': false, segment: false, 'generate-image': false, inpaint: false, complete: false }, providers: [], default: {}, quota: null };
 
     const ai = {
         async capabilities() {
-            try { return await cloud('ai_capabilities'); }
+            try { return { connected: true, ...(await cloud('ai_capabilities')) }; }
             catch (e) { if (e.code === 'not-connected' || e.code === 'forbidden') return NONE; throw e; }
         },
         async run(task, input = {}, { signal } = {}) {
