@@ -4,5 +4,5 @@
   "raster-studio": { "css": "assets/css/ui-core", "js": "assets/js/ui-core" },
   "suite-cloud": { "css": "assets/css/ui-core", "js": "assets/js/ui-core" },
   "vector-studio": { "css": "assets/css/ui-core", "js": "assets/js/ui-core" },
-  "word-processor": { "css": "assets/css/ui-core", "js": "assets/js/ui-core" }
+  "word-processor": { "css": "assets/css/ui-core", "js": "assets/js/ui-core", "php": "lib/ui-core" }
 }

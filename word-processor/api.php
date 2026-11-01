@@ -409,6 +409,28 @@ function app_action(string $action, array $in): never
     if (!$isPost && !in_array($action, ['my_export'], true)) throw new ApiError('נדרש POST', 'method', 405);
     if ($isPost && ($_SERVER['HTTP_X_WP'] ?? '') !== '1') throw new ApiError('בקשה לא תקינה', 'csrf', 403);   // אתר זר לא יכול לשלוח כותרת כזו
 
+    // 👤 תפריט המשתמש (ui-core, שורה 19): הגדרות אישיות במסד שלנו (uic_prefs) ו"ייצוא כל הנתונים שלי". מחיקת חשבון —
+    // לא כאן (הכניסה מהכלים הדיגיטליים, והמסמכים משותפים עם אחרים) — 501
+    if (str_starts_with($action, 'account_')) {
+        require_once __DIR__ . '/lib/ui-core/account/account.php';
+        try {
+            out(uic_account_api($action, $in, [
+                'app' => 'word-processor',
+                'pdo' => fn() => db(),
+                'user' => fn() => $uid,
+                'export' => function () use ($space) {
+                    $st = db()->prepare('SELECT id, title, version, updated_at, folder, json, page FROM docs WHERE space = ? AND deleted_at IS NULL ORDER BY updated_at DESC');
+                    $st->execute([$space]);
+                    return ['docs' => array_map(fn($r) => ['doc' => $r['id'], 'title' => $r['title'], 'version' => (int)$r['version'], 'updated_at' => (int)$r['updated_at'],
+                        'folder' => $r['folder'], 'json' => json_decode((string)$r['json'], true), 'page' => json_decode((string)$r['page'], true)], $st->fetchAll()),
+                        'folders' => folders_of($space)];
+                },
+            ]));
+        } catch (UicAccountError $e) {
+            throw new ApiError($e->getMessage(), 'account', $e->status);
+        }
+    }
+
     switch ($action) {
         case 'my_docs':
             trash_purge($space);
