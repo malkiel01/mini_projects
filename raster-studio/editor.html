@@ -54,6 +54,10 @@
           <button type="button" role="tab" data-adj-tab="sharpen">חידוד</button>
           <button type="button" role="tab" data-adj-tab="motion">תנועה</button>
           <button type="button" role="tab" data-adj-tab="noise">רעש</button>
+          <button type="button" role="tab" data-adj-tab="oil">שמן</button>
+          <button type="button" role="tab" data-adj-tab="mosaic">פסיפס</button>
+          <button type="button" role="tab" data-adj-tab="emboss">תבליט</button>
+          <button type="button" role="tab" data-adj-tab="edges">קצוות</button>
         </div>
         <div class="adjust-fields" data-adj="bc">
           <label class="opt"><span>בהירות <output for="adj-brightness">0</output></span><input id="adj-brightness" type="range" min="-100" max="100" value="0"></label>
@@ -97,6 +101,21 @@
         </div>
         <div class="adjust-fields" data-adj="noise" hidden>
           <label class="opt"><span>כמות <output for="adj-noise">0%</output></span><input id="adj-noise" type="range" min="0" max="100" value="0"></label>
+        </div>
+        <div class="adjust-fields" data-adj="oil" hidden>
+          <label class="opt"><span>מכחול <output for="adj-oradius">4px</output></span><input id="adj-oradius" type="range" min="1" max="8" value="4"></label>
+          <p class="hint">משטחי צבע אחידים, והקצוות נשארים חדים.</p>
+        </div>
+        <div class="adjust-fields" data-adj="mosaic" hidden>
+          <label class="opt"><span>גודל התא <output for="adj-cell">8px</output></span><input id="adj-cell" type="range" min="2" max="64" value="8"></label>
+        </div>
+        <div class="adjust-fields" data-adj="emboss" hidden>
+          <label class="opt"><span>כיוון האור <output for="adj-eangle">135°</output></span><input id="adj-eangle" type="range" min="-180" max="180" value="135"></label>
+          <label class="opt"><span>עומק <output for="adj-edepth">2px</output></span><input id="adj-edepth" type="range" min="1" max="10" value="2"></label>
+          <label class="opt"><span>עוצמה <output for="adj-eamount">100%</output></span><input id="adj-eamount" type="range" min="0" max="500" value="100"></label>
+        </div>
+        <div class="adjust-fields" data-adj="edges" hidden>
+          <p class="hint">קווי המתאר של התמונה — כהים על רקע לבן.</p>
         </div>
         <div class="adjust-actions">
           <button class="btn ghost" type="button" data-adj-act="cancel">✕ ביטול</button>

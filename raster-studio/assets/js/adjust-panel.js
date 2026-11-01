@@ -1,5 +1,5 @@
 // לוח התיקונים: בהירות וניגודיות · גוון ורוויה · רמות · היפוך · פוסטריזציה · סף · מילוי (צבע / מעבר) · טשטוש · חידוד ·
-// טשטוש תנועה · רעש.
+// טשטוש תנועה · רעש · אמנותיים: ציור שמן, פסיפס, תבליט, קצוות.
 // שלושה מצבים:
 // - על שכבת פיקסלים: תיקון הורס — תצוגה חיה, ✓ כותב לשכבה (ובבחירה, אם יש) ברשומה אחת בהיסטוריה, ✕ מחזיר.
 // - "➕ כשכבה" (לתיקוני צבע): שכבת התאמה חדשה מעל — לא נוגעת בפיקסלים, ואפשר לשנות אותה אחר כך. מסכה לבנה
@@ -24,10 +24,15 @@ export const ADJUSTMENTS = {
   sharpen: { label: 'חידוד', fields: { amount: [0, 300, 100], sradius: [0, 16, 2] }, identity: { amount: 0 } },
   motion: { label: 'טשטוש תנועה', fields: { angle: [-180, 180], distance: [0, 128] }, identity: { distance: 0 } },
   noise: { label: 'רעש', fields: { noise: [0, 100] }, identity: { noise: 0 } },
+  oil: { label: 'ציור שמן', fields: { oradius: [1, 8, 4] } },
+  mosaic: { label: 'פסיפס', fields: { cell: [2, 64, 8] } },
+  emboss: { label: 'תבליט', fields: { eangle: [-180, 180, 135], edepth: [1, 10, 2], eamount: [0, 500, 100] } },
+  edges: { label: 'קצוות', fields: {} },
 };
 
 // יחידה לכל מחוון (לתצוגה ליד הערך)
-const UNIT = { radius: 'px', sradius: 'px', distance: 'px', hue: '°', angle: '°', amount: '%', noise: '%', fangle: '°', fopacity: '%' };
+const UNIT = { radius: 'px', sradius: 'px', distance: 'px', hue: '°', angle: '°', amount: '%', noise: '%', fangle: '°', fopacity: '%',
+  oradius: 'px', cell: 'px', eangle: '°', edepth: 'px', eamount: '%' };
 // גמא במחוון — פי 100 (שלמים); בשכבה ובמנוע — הערך עצמו
 const SCALE = { gamma: 100 };
 const fmt = (f, v) => (SCALE[f] ? (v / SCALE[f]).toFixed(2) : v + (UNIT[f] ?? ''));

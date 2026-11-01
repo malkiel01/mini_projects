@@ -319,6 +319,63 @@ void main() {
   o = mix(orig, acc / n, m);
 }`,
 
+  // פילטרים אמנותיים על אריח מרופד (u_k — הטווח): 1 ציור שמן (Kuwahara), 2 פסיפס, 3 תבליט, 4 קצוות (Sobel).
+  // u_p: שמן — כלום; פסיפס — x גודל התא, yz פינת האריח במסמך; תבליט — x עוצמה, yz ההיסט (בפיקסלים)
+  art: `#version 300 es
+precision highp float;
+uniform sampler2D u_pad, u_sel;
+uniform int u_k, u_useSel, u_mode;
+uniform vec4 u_p;
+out vec4 o;
+${ENCODE}
+vec3 dec(vec3 s) { s = clamp(s, 0.0, 1.0); return mix(s / 12.92, pow((s + 0.055) / 1.055, vec3(2.4)), step(0.04045, s)); }
+vec4 at(ivec2 p) { return texelFetch(u_pad, p + ivec2(u_k), 0); }
+vec3 srgb(vec4 c) { return c.a > 0.0 ? enc(c.rgb / c.a) : vec3(0.0); }
+float lum(vec4 c) { return dot(srgb(c), vec3(0.299, 0.587, 0.114)) * c.a; }
+void main() {
+  ivec2 p = ivec2(gl_FragCoord.xy);
+  vec4 orig = at(p), r = orig;
+  if (u_mode == 1) {
+    float bv = 1e9;
+    for (int q = 0; q < 4; q++) {
+      ivec2 sg = ivec2(q == 0 || q == 2 ? -1 : 1, q < 2 ? -1 : 1);
+      vec4 acc = vec4(0.0); float s1 = 0.0, s2 = 0.0, n = 0.0;
+      for (int j = 0; j <= 8; j++) {
+        if (j > u_k) break;
+        for (int i = 0; i <= 8; i++) {
+          if (i > u_k) break;
+          vec4 c = at(p + sg * ivec2(i, j));
+          float l = lum(c);
+          acc += c; s1 += l; s2 += l * l; n += 1.0;
+        }
+      }
+      float v = s2 / n - (s1 / n) * (s1 / n);
+      if (v < bv) { bv = v; r = acc / n; }
+    }
+  } else if (u_mode == 2) {
+    int c = int(u_p.x);
+    ivec2 org = ivec2(u_p.yz);
+    ivec2 c0 = ivec2(floor(vec2(p + org) / float(c))) * c;
+    r = at(clamp(c0 + c / 2 - org, ivec2(-u_k), ivec2(255 + u_k)));
+  } else if (u_mode == 3) {
+    ivec2 d = ivec2(round(u_p.yz));
+    float g = 0.5 + (lum(at(p + d)) - lum(at(p - d))) * u_p.x;
+    r = vec4(dec(vec3(g)) * orig.a, orig.a);
+  } else {
+    vec3 gx = vec3(0.0), gy = vec3(0.0);
+    for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+      vec4 c = at(p + ivec2(i, j));
+      vec3 s = srgb(c) * c.a;
+      float wx = float(i) * (j == 0 ? 2.0 : 1.0), wy = float(j) * (i == 0 ? 2.0 : 1.0);
+      gx += s * wx; gy += s * wy;
+    }
+    vec3 e = 1.0 - clamp(sqrt(gx * gx + gy * gy), 0.0, 1.0);
+    r = vec4(dec(e) * orig.a, orig.a);
+  }
+  float m = u_useSel == 1 ? texelFetch(u_sel, p, 0).r : 1.0;
+  o = mix(orig, r, m);
+}`,
+
   // סגנונות שכבה (1): התוכן המרופד כפול המסכה המרופדת (אפור של sRGB) — הבסיס של כל האפקטים
   fxsrc: `#version 300 es
 precision highp float;
@@ -1100,12 +1157,15 @@ export class WebGL2Renderer {
     if (adj.kind === 'blur' || adj.kind === 'motion') return !WebGL2Renderer.adjustReach(adj);
     if (adj.kind === 'sharpen') return !WebGL2Renderer.adjustReach(adj) || !adj.amount;
     if (adj.kind === 'noise') return !adj.noise;
+    if (adj.kind === 'mosaic') return !(adj.cell >= 2);
     return false;
   }
 
   /** כמה פיקסלים התיקון קורא מסביב לכל פיקסל (טשטוש, חידוד, תנועה) — 0: רק את הפיקסל עצמו. עד 64. */
   static adjustReach(adj) {
-    const r = adj.kind === 'blur' ? adj.radius : adj.kind === 'sharpen' ? adj.sradius : adj.kind === 'motion' ? adj.distance / 2 : 0;
+    const r = adj.kind === 'blur' ? adj.radius : adj.kind === 'sharpen' ? adj.sradius : adj.kind === 'motion' ? adj.distance / 2
+      : adj.kind === 'oil' ? Math.min(8, Math.max(1, adj.oradius)) : adj.kind === 'mosaic' ? adj.cell
+      : adj.kind === 'emboss' ? Math.ceil(adj.edepth) : adj.kind === 'edges' ? 1 : 0;
     return Math.max(0, Math.min(64, Math.round(r || 0)));
   }
 
@@ -1128,6 +1188,18 @@ export class WebGL2Renderer {
     if (!WebGL2Renderer.adjustReach(adj)) return false;
     for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (layer.tiles.has(key(tx + dx, ty + dy))) return true;
     return false;
+  }
+
+  /** פילטר אמנותי → { mode, p } ל-shader של art (tx, ty — האריח, לפסיפס שמיושר למסמך); אחר — null */
+  static artParams(adj, tx, ty) {
+    const mode = { oil: 1, mosaic: 2, emboss: 3, edges: 4 }[adj.kind];
+    if (!mode) return null;
+    if (mode === 2) return { mode, p: [Math.round(adj.cell), tx * TILE, ty * TILE, 0] };
+    if (mode === 3) {
+      const a = adj.eangle * Math.PI / 180, d = Math.ceil(adj.edepth);
+      return { mode, p: [(adj.eamount ?? 100) / 100 * 2, Math.round(Math.cos(a) * d), Math.round(-Math.sin(a) * d), 0] };
+    }
+    return { mode, p: [0, 0, 0, 0] };
   }
 
   /** סוג התיקון → המספר שלו ב-shader של הצבע */
@@ -1167,6 +1239,22 @@ export class WebGL2Renderer {
     if (WebGL2Renderer.adjustReach(adj) > 0) {
       const K = WebGL2Renderer.adjustReach(adj);
       this.#pad((dx, dy) => (dx || dy ? layer.tiles.get(key(tx + dx, ty + dy)) : base), K);
+      const art = WebGL2Renderer.artParams(adj, tx, ty);
+      if (art) {
+        const m = this.prog.art;
+        this.#target(out);
+        gl.useProgram(m.p);
+        gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.padTex);
+        gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, sel || this.fullMask);
+        gl.uniform1i(m.u.u_pad, 0); gl.uniform1i(m.u.u_sel, 1);
+        gl.uniform1i(m.u.u_k, K); gl.uniform1i(m.u.u_mode, art.mode);
+        gl.uniform1i(m.u.u_useSel, sel ? 1 : 0);
+        gl.uniform4fv(m.u.u_p, art.p);
+        this.#quad(m, [0, 0, TILE, TILE], [0, 0, 1, 1], [TILE, TILE], -1);
+        gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, null);
+        gl.activeTexture(gl.TEXTURE0);
+        return;
+      }
       if (adj.kind === 'motion') {
         const m = this.prog.motion, a = adj.angle * Math.PI / 180;
         this.#target(out);

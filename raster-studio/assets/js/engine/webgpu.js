@@ -291,6 +291,60 @@ fn noise(p: vec2f) -> f32 {
   return mix(orig, acc / n, m);
 }
 
+// פילטרים אמנותיים (ראו WebGL2Renderer, art): t0 אריח מרופד, t1 בחירה; m.x הטווח, m.y בחירה, m.z המצב; a — הפרמטרים
+fn artAt(p: vec2i) -> vec4f { return textureLoad(t0, p + vec2i(u.m.x), 0); }
+fn artSrgb(c: vec4f) -> vec3f { if (c.a > 0.0) { return enc(c.rgb / c.a); } return vec3f(0.0); }
+fn artLum(c: vec4f) -> f32 { return dot(artSrgb(c), vec3f(0.299, 0.587, 0.114)) * c.a; }
+@fragment fn art(i: VO) -> @location(0) vec4f {
+  let p = vec2i(i.pos.xy);
+  let k = u.m.x;
+  let mode = u.m.z;
+  let orig = artAt(p);
+  var r = orig;
+  if (mode == 1) {
+    var bv = 1e9;
+    for (var q = 0; q < 4; q++) {
+      let sg = vec2i(select(1, -1, q == 0 || q == 2), select(1, -1, q < 2));
+      var acc = vec4f(0.0);
+      var s1 = 0.0; var s2 = 0.0; var n = 0.0;
+      for (var j = 0; j <= k; j++) {
+        for (var x = 0; x <= k; x++) {
+          let c = artAt(p + sg * vec2i(x, j));
+          let l = artLum(c);
+          acc += c; s1 += l; s2 += l * l; n += 1.0;
+        }
+      }
+      let v = s2 / n - (s1 / n) * (s1 / n);
+      if (v < bv) { bv = v; r = acc / n; }
+    }
+  } else if (mode == 2) {
+    let c = i32(u.a.x);
+    let org = vec2i(u.a.yz);
+    let c0 = vec2i(floor(vec2f(p + org) / f32(c))) * c;
+    r = artAt(clamp(c0 + vec2i(c / 2) - org, vec2i(-k), vec2i(255 + k)));
+  } else if (mode == 3) {
+    let d = vec2i(round(u.a.yz));
+    let g = 0.5 + (artLum(artAt(p + d)) - artLum(artAt(p - d))) * u.a.x;
+    r = vec4f(dec(vec3f(g)) * orig.a, orig.a);
+  } else {
+    var gx = vec3f(0.0);
+    var gy = vec3f(0.0);
+    for (var j = -1; j <= 1; j++) {
+      for (var x = -1; x <= 1; x++) {
+        let c = artAt(p + vec2i(x, j));
+        let s = artSrgb(c) * c.a;
+        gx += s * f32(x) * select(1.0, 2.0, j == 0);
+        gy += s * f32(j) * select(1.0, 2.0, x == 0);
+      }
+    }
+    let e = vec3f(1.0) - clamp(sqrt(gx * gx + gy * gy), vec3f(0.0), vec3f(1.0));
+    r = vec4f(dec(e) * orig.a, orig.a);
+  }
+  var m = 1.0;
+  if (u.m.y == 1) { m = textureLoad(t1, p, 0).r; }
+  return mix(orig, r, m);
+}
+
 // סגנונות שכבה (ראו WebGL2Renderer, fxsrc / fxblur / fx).
 // (1) התוכן המרופד (t0) כפול המסכה המרופדת (t1, אפור של sRGB); m.x = יש מסכה
 @fragment fn fxsrc(i: VO) -> @location(0) vec4f {
@@ -499,7 +553,7 @@ export class WebGPURenderer {
     const errs = info.messages.filter(m => m.type === 'error');
     if (errs.length) throw new Error('wgsl: ' + errs.map(m => `${m.lineNum}:${m.linePos} ${m.message}`).join('; '));
     this.device.pushErrorScope('validation');
-    for (const name of ['upload', 'fill', 'blend', 'dab', 'stroke', 'adjust', 'blurH', 'blurV', 'lerp', 'heal', 'fillgen', 'fxsrc', 'fxblur', 'fx', 'copy', 'mesh', 'extract', 'read', 'thumb', 'display', 'float']) this.#pipe(name);
+    for (const name of ['upload', 'fill', 'blend', 'dab', 'stroke', 'adjust', 'blurH', 'blurV', 'lerp', 'heal', 'fillgen', 'fxsrc', 'fxblur', 'fx', 'art', 'copy', 'mesh', 'extract', 'read', 'thumb', 'display', 'float']) this.#pipe(name);
     const err = await this.device.popErrorScope();
     if (err) throw new Error('pipeline: ' + err.message);
   }
@@ -1098,6 +1152,11 @@ export class WebGPURenderer {
     const K = WebGL2Renderer.adjustReach(adj);
     if (K > 0) {
       this.#pad((dx, dy) => (dx || dy ? layer.tiles.get(key(tx + dx, ty + dy)) : base), K);
+      const art = WebGL2Renderer.artParams(adj, tx, ty);
+      if (art) {
+        this.#drawTo(out, 'art', { a: art.p, m: [K, sel ? 1 : 0, art.mode, 0] }, [this.padTex, sel || this.fullMask]);
+        return;
+      }
       if (adj.kind === 'motion') {
         const a = adj.angle * Math.PI / 180;
         this.#drawTo(out, 'motion', { a: [Math.cos(a), -Math.sin(a), 0, 0], m: [K, sel ? 1 : 0, 0, 0] }, [this.padTex, sel || this.fullMask]);
