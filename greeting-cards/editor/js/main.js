@@ -22,7 +22,7 @@ import { loadScript } from './io.js';
 import { docVariables, readSheetFile, readPasted, readPhoneContacts, guessColumns, normalizePhone, fileNames, fillText } from './merge.js';
 
 // הגרסה — מופיעה ביומן, כדי לדעת איזה קוד רץ בטלפון.
-const BUILD = '2026-11-01.handoff-core-1';
+const BUILD = '2026-11-01.cloud-error-1';
 
 const app = $('#app');
 let ed = null;   // העיצוב הפתוח: { id, doc, history, canvas, dirty }
@@ -206,6 +206,7 @@ function aiUnavailable(caps, task) {
 async function connectCloud() {
     try {
         // באפליקציה לאנדרואיד כתובת מחוץ לסטודיו נפתחת בדפדפן — החיבור נשמר בשרת לפי החשבון, ולכן עובד גם כך
+        log('cloud-connect', { user: sync.currentUser()?.id, apk: window.GreetingCardsAndroid ? 1 : 0 });
         if (window.GreetingCardsAndroid) toast('נפתח בדפדפן — אחרי האישור חוזרים לכאן');
         await drives.connect();
     } catch (e) { toast(aiMessage(e), 'error'); }
@@ -2191,7 +2192,9 @@ async function start() {
         const cloud = new URLSearchParams(location.search).get('cloud');
         if (cloud) {
             history.replaceState(null, '', location.pathname + location.hash);
-            setTimeout(() => toast(cloud === 'connected' ? 'מחובר לענן החבילה ✓ — ✨ עצב לי זמין' : 'החיבור לענן בוטל', cloud === 'connected' ? undefined : 'error'), 300);
+            const msg = { connected: 'מחובר לענן החבילה ✓ — ✨ עצב לי זמין', denied: 'החיבור לענן בוטל', error: 'החיבור לענן לא הושלם — נסו שוב (👤 ← ☁️ חיבור לענן החבילה)' }[cloud] || 'החיבור לענן לא הושלם — נסו שוב';
+            log('cloud-return', { result: cloud });
+            setTimeout(() => toast(msg, cloud === 'connected' ? undefined : 'error'), 300);
         }
         const importCode = /^#import=([A-Za-z0-9-]{9})$/.exec(location.hash)?.[1];
         if (user && importCode) return openChatImport(importCode);
