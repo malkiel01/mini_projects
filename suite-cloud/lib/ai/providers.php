@@ -13,6 +13,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/image.php';
+require_once __DIR__ . '/anthropic.php';
 
 const AI_PROVIDERS = [
     'openai' => [
@@ -28,6 +29,12 @@ const AI_PROVIDERS = [
         'models' => ['generate-image' => 'gemini-2.5-flash-image', 'inpaint' => 'gemini-2.5-flash-image', 'complete' => 'gemini-2.5-flash'],
         'cost' => ['generate-image' => 0.04, 'inpaint' => 0.04, 'complete' => 0.002],
         'ratios' => ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'],
+    ],
+    'anthropic' => [
+        'name' => 'Anthropic (Claude)',
+        'tasks' => ['complete'],   // טקסט / JSON, גם עם תמונות לתיאור — לא מייצר תמונות (lib/ai/anthropic.php)
+        'models' => ['complete' => 'claude-opus-5-5'],
+        'cost' => ['complete' => 0.03],   // הערכה לקריאה: $4 / $20 למיליון אסימונים
     ],
     'replicate' => [
         'name' => 'Replicate',
@@ -250,6 +257,7 @@ function aiTestKey(string $provider, string $key): void {
         'openai' => ['https://api.openai.com/v1/models', ["Authorization: Bearer $key"]],
         'google' => ['https://generativelanguage.googleapis.com/v1beta/models?pageSize=1', ["x-goog-api-key: $key"]],
         'replicate' => ['https://api.replicate.com/v1/account', ["Authorization: Bearer $key"]],
+        'anthropic' => [ANTHROPIC_API . 'models?limit=1', ["x-api-key: $key", 'anthropic-version: ' . ANTHROPIC_VERSION]],
     };
     aiJson(aiHttp('GET', $url, $h, null, 15), AI_PROVIDERS[$provider]['name']);
 }
@@ -259,5 +267,6 @@ function aiProviderRun(string $provider, string $task, array $in, string $key, s
         'openai' => aiRunOpenai($task, $in, $key, $model),
         'google' => aiRunGoogle($task, $in, $key, $model),
         'replicate' => aiRunReplicate($task, $in, $key, $model),
+        'anthropic' => aiRunAnthropic($task, $in, $key, $model),
     };
 }
