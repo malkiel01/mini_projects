@@ -86,5 +86,16 @@ export default async function (t) {
     await p.waitForSelector('.wp-paste:not([hidden])');
     await p.keyboard.type('y');
     t.ok('הקלדה אחרי הדבקה — הכפתור נעלם', await p.locator('.wp-paste').isHidden());
+
+    // מקלדת עברית (ui-core keys.js — לפי e.code): Ctrl+Shift+G כש-e.key הוא "ע", ו-Alt+Q כש-e.key הוא "/"
+    await p.keyboard.press('Escape');
+    await p.evaluate(() => document.querySelector('dialog[open]')?.close());
+    await p.evaluate(() => document.querySelector('.wp-doc').dispatchEvent(new KeyboardEvent('keydown', { key: 'ע', code: 'KeyG', ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true })));
+    await p.waitForSelector('dialog[open]', { timeout: 3000 }).catch(() => {});
+    t.ok('מקלדת עברית: Ctrl+Shift+G (e.key "ע") — ספירת מילים נפתחת', await p.locator('dialog[open]').count() > 0);
+    await p.evaluate(() => document.querySelector('dialog[open]')?.close());
+    await p.evaluate(() => document.querySelector('.wp-doc').dispatchEvent(new KeyboardEvent('keydown', { key: '/', code: 'KeyQ', altKey: true, bubbles: true, cancelable: true })));
+    t.ok('מקלדת עברית: Alt+Q (e.key "/") — חיפוש הפקודות מקבל את המיקוד', await p.evaluate(() => document.activeElement?.matches('input[type=search], .rb-search input, input[role=combobox]') ?? false),
+        await p.evaluate(() => document.activeElement?.outerHTML.slice(0, 120)));
     t.ok('בלי שגיאות JS', !p.errors.length, p.errors.join(' | '));
 }

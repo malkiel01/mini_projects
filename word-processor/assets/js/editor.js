@@ -30,6 +30,7 @@ import { createTextDialogs } from './dialogs-text.js';
 import { createPageDialogs } from './dialogs-page.js';
 import { createStyleDialogs } from './dialogs-styles.js';
 import { createTableTools } from './dialogs-table.js';
+import { matches } from './ui-core/keys.js';   // קיצורים לפי המקש הפיזי (e.code) — גם במקלדת עברית
 
 // לתאימות: app.js / embed.js / guest.js מייבאים אותם מכאן
 export { h, toast, sheet, field, seg, when };
@@ -213,8 +214,8 @@ export function createWordEditor(root, opts) {
             transformPastedHTML: cleanPastedHtml,
             // Ctrl+Alt+F — הערת שוליים (כמו ב-Word)
             handleKeyDown: (view, e) => {
-                if ((e.ctrlKey || e.metaKey) && e.altKey && e.code === 'KeyF') { footnoteDialog(null); return true; }
-                if ((e.ctrlKey || e.metaKey) && e.altKey && e.code === 'KeyD') { footnoteDialog(null, true); return true; }   // הערת סיום — כמו ב-Word
+                if (matches(e, 'Mod+Alt+Shift?+F')) { footnoteDialog(null); return true; }
+                if (matches(e, 'Mod+Alt+Shift?+D')) { footnoteDialog(null, true); return true; }   // הערת סיום — כמו ב-Word
                 return false;
             },
             handlePaste: (view, e) => {
@@ -647,7 +648,7 @@ export function createWordEditor(root, opts) {
     body.prepend(nav.el);
     // מעיר (שלב 5): המסמך לקריאה בלבד — העורך לא מקבל מקלדת, ולכן Ctrl+Alt+M (הערה חדשה) נתפס כאן, ברמת הדף
     const commentKey = e => {
-        if ((e.ctrlKey || e.metaKey) && e.altKey && e.code === 'KeyM' && !editor.isEditable && opts.commentOnly?.() && root.isConnected) { e.preventDefault(); cmds.run('comment'); }
+        if (matches(e, 'Mod+Alt+Shift?+M') && !editor.isEditable && opts.commentOnly?.() && root.isConnected) { e.preventDefault(); cmds.run('comment'); }
     };
     document.addEventListener('keydown', commentKey);
     const comments = createComments({ editor, h, user: opts.user, onChange: () => refresh(), commentOnly: () => !!opts.commentOnly?.() });
@@ -814,20 +815,20 @@ export function createWordEditor(root, opts) {
     });
     // קיצורים מכל מקום בעורך: Ctrl+F1 — כיווץ הסרט; Alt+Q — חיפוש פקודה; Ctrl+S — שמירה; Escape — יציאה מתצוגה לפני הדפסה
     root.addEventListener('keydown', e => {
-        if (e.key === 'F1' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); setCollapsed(!collapsed); }
-        else if (e.altKey && !e.ctrlKey && e.code === 'KeyQ') { e.preventDefault(); focusSearch(); }
-        else if ((e.ctrlKey || e.metaKey) && !e.altKey && e.code === 'KeyS') { e.preventDefault(); cmds.run('save'); }
-        else if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.code === 'KeyK' && !previewing) { e.preventDefault(); cmds.run('link'); }
+        if (matches(e, 'Mod+Shift?+F1')) { e.preventDefault(); setCollapsed(!collapsed); }
+        else if (matches(e, 'Alt+Shift?+Q')) { e.preventDefault(); focusSearch(); }
+        else if (matches(e, 'Mod+Shift?+S')) { e.preventDefault(); cmds.run('save'); }
+        else if (matches(e, 'Mod+K') && !previewing) { e.preventDefault(); cmds.run('link'); }
         // Ctrl+Shift+G — ספירת מילים; Ctrl+Shift+8 (Ctrl+*) — סימני פסקה (כמו ב-Word)
-        else if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && e.code === 'KeyG') { e.preventDefault(); cmds.run('wordCount'); }
-        else if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && e.code === 'Digit8') { e.preventDefault(); cmds.run('showMarks'); }
+        else if (matches(e, 'Mod+Shift+G')) { e.preventDefault(); cmds.run('wordCount'); }
+        else if (matches(e, 'Mod+Shift+8')) { e.preventDefault(); cmds.run('showMarks'); }
         // Ctrl+Shift+> / < — הגדלה / הקטנה של הגופן (לפי המקש, גם במקלדת עברית)
-        else if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && (e.code === 'Period' || e.code === 'Comma') && !previewing) {
+        else if ((matches(e, 'Mod+Shift+.') || matches(e, 'Mod+Shift+,')) && !previewing) {
             e.preventDefault();
             cmds.run(e.code === 'Period' ? 'growFont' : 'shrinkFont');
         }
         // Ctrl+F / Ctrl+H — החיפוש של העורך, לא של הדפדפן (שלא מוצא טקסט בעמודים שמחוץ למסך)
-        else if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && (e.code === 'KeyF' || e.code === 'KeyH') && !previewing) {
+        else if ((matches(e, 'Mod+F') || matches(e, 'Mod+H')) && !previewing) {
             e.preventDefault();
             cmds.run(e.code === 'KeyF' ? 'find' : 'replace');
         }
