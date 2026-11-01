@@ -551,3 +551,24 @@ function assignToProject(array $user, int $projectId, array $topicIds, array $ta
     logEvent($user, 'tasks.assign', "project:$projectId", true, "topics:$topics tasks:$tasks");
     return ['topics' => $topics, 'tasks' => $tasks];
 }
+
+/**
+ * ⚠ זמני — לסידור הפרויקטים שנוצרו לפני עץ הפרויקטים (בבקשת בעל הלוח, 2026-11-01).
+ * יוסר אחרי שהסידור יסתיים.
+ *
+ * מעביר פרויקט לתוך פרויקט אחר ($parentId), או לרמה העליונה (null). המטלות,
+ * הנושאים והחברים נשארים על הפרויקט — הם זזים איתו. בעל הלוח בלבד.
+ */
+function moveProject(array $user, int $projectId, ?int $parentId): void {
+    if (authorRole($user) !== 'owner') throw new AppError('העברת פרויקט — לבעל הלוח בלבד', 403);
+    requireProject($projectId, $user, 'admin');
+    if ($parentId !== null) {
+        requireProject($parentId, $user, 'admin');
+        // לא לתוך עצמו ולא לתוך צאצא שלו — אחרת נוצר מעגל, והענף נעלם מהעץ
+        if (in_array($parentId, projectSubtree($projectId), true)) {
+            throw new InvalidArgumentException('אי אפשר להעביר פרויקט לתוך עצמו או לתוך תת-פרויקט שלו');
+        }
+    }
+    db()->prepare('UPDATE projects SET parent_id = ? WHERE id = ?')->execute([$parentId, $projectId]);
+    logEvent($user, 'project.move', "project:$projectId", true, 'parent:' . ($parentId ?? 'none'));
+}

@@ -802,6 +802,11 @@ try {
         ok(['id' => $id]);
     }
 
+    /** ⚠ זמני — ראה moveProject. ‏{ id, parent_id|null } */
+    case 'move-project':
+        moveProject(requireUser($user), (int) ($in['id'] ?? 0), int_or_null($in, 'parent_id'));
+        ok();
+
     /** מטלות בלי פרויקט, לפי נושא — לחלונית "שיוך מטלות". בעל הלוח בלבד. */
     case 'orphan-tasks': {
         $me = requireUser($user);

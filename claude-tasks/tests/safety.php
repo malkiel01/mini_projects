@@ -198,5 +198,19 @@ $r = assignToProject($boss, $root, [$topic], []);
 check('נושא של פרויקט אחר — לא זז', $r, ['topics' => 0, 'tasks' => 0]);
 check('נשארה רק המטלה שבשלב של רסטר', orphanTasks()['count'], 1);
 
+echo "\n— העברת פרויקט (זמני) —\n";
+$loose1 = createProject($boss, 'חבילת היצירה · וקטורי', 'malkiel01', 'mini_projects');
+$t1 = task('מטלה של וקטורי', $loose1);
+throws('member לא מעביר', fn () => moveProject($dana, $loose1, $suite));
+moveProject($boss, $loose1, $suite);
+check('הפרויקט עבר לתוך החבילה', (int) db()->query("SELECT parent_id FROM projects WHERE id = $loose1")->fetch()['parent_id'], $suite);
+check('המטלה נשארה עליו', row($t1)['project_id'], $loose1);
+check('ועכשיו בענף של mini_projects', in_array($loose1, projectSubtree($root), true), true);
+check('יורש owner_only מהחבילה', projectOwnerOnly($loose1), true);
+throws('לא לתוך עצמו', fn () => moveProject($boss, $suite, $suite));
+throws('לא לתוך צאצא — מעגל', fn () => moveProject($boss, $suite, $loose1));
+moveProject($boss, $loose1, null);
+check('חזרה לרמה העליונה', db()->query("SELECT parent_id FROM projects WHERE id = $loose1")->fetch()['parent_id'], null);
+
 echo "\n════ עברו: $pass · נכשלו: $fail ════\n";
 exit($fail ? 1 : 0);
