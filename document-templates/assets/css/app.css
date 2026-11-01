@@ -105,6 +105,8 @@ input[type=checkbox], input[type=radio] { accent-color: var(--brand); width: 18p
 /* ── אריחים, סיכום, בורר מקטעים, מתג ── */
 .tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s2); }
 .tiles:has(> .tile:only-child) { grid-template-columns: minmax(0, 1fr); }
+.sheet-sub { margin: var(--s3) 0 var(--s1); font-size: .8rem; font-weight: 600; color: var(--muted); }
+.tiles:empty { display: none; }
 .tile { display: flex; align-items: center; gap: var(--s2); padding: 10px var(--s2); min-height: 52px; border: 1px solid var(--line);
   border-radius: var(--r); background: var(--surface); font-size: .9rem; text-align: start; cursor: pointer; color: inherit; text-decoration: none; }
 .tile:hover, .tile:focus-visible, .tile:focus-within { border-color: var(--brand); background: var(--brand-soft); }

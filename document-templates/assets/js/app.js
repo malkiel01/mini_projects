@@ -523,40 +523,46 @@
         const sub = [SOURCE[t.source] || t.source, t.fields + ' שדות', 'גרסה ' + t.version,
           t.owner_name ? `של ${t.owner_name} · ${t.access === 'fill' ? 'מנפיק' : LEVEL[t.access]}` : null].filter(Boolean).join(' · ');
         const canIssue = !t.archived && t.fields && rank(t.access) >= 2;
-        return el('li', { class: 'tpl-card' + (t.archived ? ' archived' : '') },
-          el('a', { class: 'use-row tpl-open', href: '#tpl=' + t.id, title: rank(t.access) >= 3 ? 'עריכת התבנית' : 'צפייה בתבנית' },
-            el('span', { class: 'use-ic', 'aria-hidden': 'true' }, SOURCE_IC[t.source] || '📄'),
-            el('span', { class: 'use-tx' }, el('strong', {}, t.name), el('small', {}, sub), window.DTCatalog.chips(t.tags))),
-          canIssue ? el('button', { class: 'small primary', 'aria-label': 'הנפקת מסמך', title: 'הנפקת מסמך מהתבנית',
-            onclick: () => issue(t) }, '+ מסמך') : null,
+        // 15.3: לחיצה על תבנית = טופס מילוי חדש; אין מה למלא (בלי שדות / ארכיון / צפייה) — העורך
+        const open = canIssue
+          ? el('button', { type: 'button', class: 'use-row tpl-open', title: 'מילוי מסמך חדש', onclick: () => issue(t, true) }, rowBody(t, sub))
+          : el('a', { class: 'use-row tpl-open', href: '#tpl=' + t.id, title: rank(t.access) >= 3 ? 'עריכת התבנית' : 'צפייה בתבנית' }, rowBody(t, sub));
+        return el('li', { class: 'tpl-card' + (t.archived ? ' archived' : '') }, open,
           el('button', { class: 'icon-btn', 'aria-label': 'פעולות', title: 'פעולות', onclick: () => actions(t) }, '⋯'));
       })));
     }
 
-    /** פעולות על תבנית — אריחים בגיליון. */
+    const rowBody = (t, sub) => [
+      el('span', { class: 'use-ic', 'aria-hidden': 'true' }, SOURCE_IC[t.source] || '📄'),
+      el('span', { class: 'use-tx' }, el('strong', {}, t.name), el('small', {}, sub), window.DTCatalog.chips(t.tags))];
+
+    /** פעולות על תבנית (15.3) — העיקריות, ומתחת "עוד". רק מה שמותר. */
     function actions(t) {
       const r = rank(t.access);
       let dlg;
       const go = (fn) => () => { dlg.close(); fn(); };
-      dlg = sheet(t.name, [
-        el('p', { class: 'hint' }, `${SOURCE[t.source] || t.source} · ${t.pages} דפים · ${t.fields} שדות · גרסה ${t.version}`),
-        el('div', { class: 'tiles' },
-          tile(r >= 3 ? '✏️' : '👁️', r >= 3 ? 'עריכה' : 'צפייה', go(() => { location.hash = 'tpl=' + t.id; })),
+      const more = [
           t.used ? tile('🗂️', 'מסמכים', go(() => { location.hash = 'docs?template=' + t.id; })) : null,
           // שלב 12: הנפקה מאקסל וייצוא התשובות
           !t.archived && t.fields && r >= 2 ? tile('📥', 'הנפקה מאקסל', go(() => window.DTBulk.open(t)), { sub: 'מסמך לכל שורה' }) : null,
-          t.used ? tile('📤', 'ייצוא לאקסל', go(async () => {
+          t.used ? tile('📤', 'ייצוא תשובות', go(async () => {
             try { await window.DTBulk.exportFile({ template_id: t.id }); }
             catch (e) { msg.replaceChildren(notice(e.message, 'bad')); }
-          }), { sub: 'כל התשובות' }) : null,
-          !t.archived && t.fields && r >= 2 ? tile('📨', 'שליחה למילוי', go(async () => {
+          }), { sub: 'לאקסל' }) : null,
+          r >= 3 ? tile('📦', 'ייצוא תבנית', go(() => window.DTPort.exportDialog(t)), { sub: 'PDF, Word או JSON' }) : null].filter(Boolean);
+      dlg = sheet(t.name, [
+        el('p', { class: 'hint' }, `${SOURCE[t.source] || t.source} · ${t.pages} דפים · ${t.fields} שדות · גרסה ${t.version}`),
+        el('div', { class: 'tiles' },
+          tile(r >= 3 ? '✏️' : '👁️', r >= 3 ? 'עריכת התבנית' : 'צפייה בתבנית', go(() => { location.hash = 'tpl=' + t.id; })),
+          r >= 4 ? tile('👥', 'שיתוף התבנית', go(() => shareDialog('template', t.id, t.name, load)), { sub: 'עם בעלי חשבון' }) : null,
+          !t.archived && t.fields && r >= 2 ? tile('🔗', 'טופס ללקוח', go(async () => {
             try { await window.DTDocs.issue(t.id, true); } catch (e) { msg.replaceChildren(notice(e.message, 'bad')); }
-          }), { sub: 'לקוח ממלא בקישור — אתם בוחרים אילו שדות' }) : null,
-          r >= 3 ? tile('📦', 'ייצוא תבנית', go(() => window.DTPort.exportDialog(t)), { sub: 'עם כל ההגדרות — PDF, Word או JSON' }) : null,
-          r >= 4 ? tile('👥', 'שיתוף עם צוות', go(() => shareDialog('template', t.id, t.name, load)), { sub: 'עובדים ושותפים עם חשבון' }) : null,
-          r >= 4 ? tile(t.archived ? '♻️' : '🗄️', t.archived ? 'שחזור' : 'ארכיון', go(() => archive(t))) : null,
+          }), { sub: 'קישור חד-פעמי' }) : null,
           t.used || t.access !== 'owner' ? null : tile('🗑️', 'מחיקה', go(() => remove(t)), { danger: true }),
+          r >= 4 ? tile(t.archived ? '♻️' : '🗄️', t.archived ? 'שחזור' : 'ארכיון', go(() => archive(t))) : null,
           t.access === 'owner' ? null : tile('🚪', 'עזיבה', go(() => leave('template', t.id, t.name, load)), { danger: true })),
+        more.length ? el('h3', { class: 'sheet-sub' }, 'עוד') : null,
+        more.length ? el('div', { class: 'tiles' }, more) : null,
       ]);
     }
 
@@ -589,8 +595,8 @@
       }
     }
 
-    async function issue(t) {
-      try { await window.DTDocs.issue(t.id); }
+    async function issue(t, fresh) {
+      try { await window.DTDocs.issue(t.id, false, fresh); }
       catch (e) { msg.replaceChildren(notice(e.message, 'bad')); }
     }
 

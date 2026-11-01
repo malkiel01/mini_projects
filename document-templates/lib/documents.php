@@ -673,12 +673,18 @@ function doc_downloaded(array $user, array $b): array
 function doc_delete(array $user, array $b): array
 {
     $d = doc_owned((int)($b['id'] ?? 0), $user, 'owner');
+    // untouched: מסמך שנפתח בלחיצה על תבנית ונעזב בלי שנגעו בו (15.3) — נמחק בשקט; נגעו בו — נשאר, בלי שגיאה
+    if (!empty($b['untouched'])) {
+        $st = db()->prepare("SELECT COUNT(*) FROM events WHERE document_id = ? AND type <> 'created'");
+        $st->execute([$d['id']]);
+        if ($d['status'] !== 'draft' || (int)$st->fetchColumn() > 0) return ['ok' => true, 'deleted' => false];
+    }
     if ($d['status'] !== 'draft') throw new ApiError('במסמך כבר מולאו פרטים — אפשר רק להעביר לארכיון', 409);
     db()->prepare('UPDATE documents SET deleted_at = ? WHERE id = ?')->execute([now_iso(), $d['id']]);
     db()->prepare("UPDATE share_invites SET revoked_at = ? WHERE object_type = 'document' AND object_id = ? AND used_at IS NULL AND revoked_at IS NULL")
         ->execute([now_iso(), $d['id']]);
     log_event((int)$d['id'], 'user:' . $user['id'], 'deleted');
-    return ['ok' => true];
+    return ['ok' => true, 'deleted' => true];
 }
 
 require_once __DIR__ . '/participants.php';
