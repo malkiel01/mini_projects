@@ -313,6 +313,9 @@ function db_migrate(PDO $pdo): void
     if (!in_array('assign_enc', $cols, true)) $pdo->exec('ALTER TABLE documents ADD COLUMN assign_enc TEXT');
     // מסמך שהושלם: תוויות ותרגומים כפי שהיו ברגע ההשלמה (lib/documents.php, freeze_capture — DT-F06)
     if (!in_array('frozen_enc', $cols, true)) $pdo->exec('ALTER TABLE documents ADD COLUMN frozen_enc TEXT');
+    // 15.8: תבנית Word שנערכת בעורך התמלילים — המזהה של המסמך שם (lib/wp.php)
+    $cols = array_column($pdo->query('PRAGMA table_info(templates)')->fetchAll(), 'name');
+    if (!in_array('wp_doc', $cols, true)) $pdo->exec('ALTER TABLE templates ADD COLUMN wp_doc TEXT');
 
     // שיתוף בטלפון: הזמנה בקישור חד-פעמי, שנשלח בוואטסאפ (lib/sharing.php, share_invite)
     $pdo->exec(<<<'SQL'

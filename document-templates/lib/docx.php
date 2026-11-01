@@ -367,6 +367,19 @@ function authored_docx(array $schema, array $values): string
 /** מסמך מתבנית Word (או שנכתבה בכלי) → קובץ Word ממולא. למסמך שהושלם — דף אישור בסוף. */
 function doc_docx(array $user, int $id, bool $preview = false): never
 {
+    [$d, $bytes, $name] = doc_docx_bytes($user, $id);
+    if (!$preview) log_event($id, 'user:' . $user['id'], 'downloaded', ['format' => 'docx']);
+    header('Content-Type: ' . DOCX_MIME);
+    header('Content-Length: ' . strlen($bytes));
+    header("Content-Disposition: attachment; filename=\"document.docx\"; filename*=UTF-8''" . rawurlencode($name));
+    header('Cache-Control: private, no-store');
+    echo $bytes;
+    exit;
+}
+
+/** ה-Word הממולא של מסמך: [המסמך, הבתים, שם הקובץ]. משותף ל-doc_docx ול-PDF דרך עורך התמלילים (lib/wp.php). */
+function doc_docx_bytes(array $user, int $id): array
+{
     $d = doc_owned($id, $user, 'view');
     // ננעל רק באישור של בעל התבנית — הורדה רק אחרי שאישר
     $ap = doc_approver($d);
@@ -390,14 +403,7 @@ function doc_docx(array $user, int $id, bool $preview = false): never
     $values = doc_values($id);
     $src = $a['mime'] === AUTHORED_MIME ? authored_docx($schema, $values) : asset_bytes($a);
     $bytes = docx_fill($src, $schema, $values, $names, $appendix);
-    if (!$preview) log_event($id, 'user:' . $user['id'], 'downloaded', ['format' => 'docx']);
-
     $name = trim(($d['number'] ? $d['number'] . ' ' : '') . unseal($d['title_enc'])) ?: 'מסמך';
     $name = preg_replace('/[\\\\\/:*?"<>|]+/u', '_', $name) . '.docx';
-    header('Content-Type: ' . DOCX_MIME);
-    header('Content-Length: ' . strlen($bytes));
-    header("Content-Disposition: attachment; filename=\"document.docx\"; filename*=UTF-8''" . rawurlencode($name));
-    header('Cache-Control: private, no-store');
-    echo $bytes;
-    exit;
+    return [$d, $bytes, $name];
 }

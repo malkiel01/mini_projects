@@ -211,6 +211,7 @@ function tpl_get(array $user, int $id): array
         'schema' => $schemaArr = json_decode((string)unseal($t['schema_enc']), true),
         'fonts' => fonts_info($schemaArr ?: []),
         'numbering' => json_decode((string)$t['numbering_json'], true),
+        'wp' => !empty($t['wp_doc']),   // 15.8: כבר נערכה בעורך התמלילים
     ]];
 }
 

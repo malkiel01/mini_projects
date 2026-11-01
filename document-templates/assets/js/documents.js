@@ -384,6 +384,8 @@
           fill || isWord || isAuthored ? null : outBtn(pdfBtn),
           !fill && doc.status === 'completed' && doc.final_hash ? ib('🧾', 'דף אישור', 'דף אישור', downloadCertificate) : null,
           !fill && (isWord || isAuthored) ? outBtn(ib('⬇️', 'Word', 'הורדת Word', () => wordFile(false))) : null,
+          // 15.8: PDF ממסמך Word — דרך עורך התמלילים, רק אחרי נעילה (15.1)
+          !fill && isWord && doc.status === 'completed' ? outBtn(ib('📄', 'PDF', 'הורדת PDF (דרך עורך התמלילים)', wordPdf)) : null,
           (isWord || isAuthored) && !fill ? outBtn(ib('👁️', 'תצוגה', 'תצוגה מקדימה', () => wordFile(true))) : null,
           isAuthored && !fill ? outBtn(ib('🖨️', 'הדפסה', 'הדפסה / PDF', printDoc)) : null),
         completeBtn),
@@ -1418,6 +1420,19 @@
       } catch (e) {
         msg.replaceChildren(notice('הפקת דף האישור נכשלה: ' + e.message, 'bad'));
       }
+    }
+
+    async function wordPdf() {
+      msg.replaceChildren(notice('מפיק PDF דרך עורך התמלילים…'));
+      try {
+        const res = await fetch('api.php?action=doc_pdf&id=' + id, { credentials: 'same-origin' });
+        if (!res.ok) { let m = 'הפקת ה-PDF נכשלה'; try { m = (await res.json()).error || m; } catch (e) { /* לא JSON */ } throw new Error(m); }
+        const a = el('a', { href: URL.createObjectURL(await res.blob()),
+          download: ((doc.number ? doc.number + ' ' : '') + doc.title).replace(/[\\/:*?"<>|]+/g, '_') + '.pdf' });
+        document.body.append(a); a.click(); a.remove();
+        msg.replaceChildren();
+        reload();
+      } catch (e) { msg.replaceChildren(notice(e.message, 'bad')); }
     }
 
     async function downloadPdf() {

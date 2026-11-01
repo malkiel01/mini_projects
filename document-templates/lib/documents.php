@@ -691,6 +691,7 @@ require_once __DIR__ . '/participants.php';
 require_once __DIR__ . '/bulk.php';
 require_once __DIR__ . '/integrations.php';
 require_once __DIR__ . '/devzone.php';
+require_once __DIR__ . '/wp.php';   // 15.8: עורך התמלילים
 
 /**
  * מי מאשר את המסמך, כשהתבנית מחייבת "אישור רק דרכי": בעל התבנית — אם מישהו אחר הנפיק. אחרת null.
