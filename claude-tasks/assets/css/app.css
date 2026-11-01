@@ -360,3 +360,54 @@ details.what p { margin-top: var(--s2); }
 .engine-state { font-weight: 600; }
 #pvOwner .check { margin-bottom: var(--s4); align-items: flex-start; }
 #pvOwner .check span { line-height: 1.5; }
+
+/* ===== הגשר החי — הממשק (§5.7) ===== */
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.view-tabs button[hidden] { display: none; }
+#chanEmpty p + p { margin-top: var(--s2); }
+.role-ic { background: hsl(var(--hue) 70% 92%) !important; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .role-ic { background: hsl(var(--hue) 35% 24%) !important; } }
+:root[data-theme="dark"] .role-ic { background: hsl(var(--hue) 35% 24%) !important; }
+.card.is-off { opacity: .65; }
+
+/* שורת השלבים — גלילה לרוחב, ✏️ בסוף */
+.stages { display: flex; align-items: center; gap: var(--s2); margin-bottom: var(--s2); }
+.stage-row { flex: 1; min-width: 0; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-block: 2px; }
+.stage-row::-webkit-scrollbar { display: none; }
+.stage-row button { flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 var(--s3);
+  border: 1px solid var(--line); border-radius: 99px; background: var(--surface); color: var(--ink); font: inherit; font-size: .85rem; cursor: pointer; white-space: nowrap; }
+.stage-row button small { color: var(--muted); font-size: .75rem; }
+.stage-row button[aria-selected="true"] { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
+.stage-row button[aria-selected="true"] small { color: inherit; opacity: .8; }
+#stageForm { display: flex; gap: var(--s2); }
+#stageForm input { flex: 1; min-width: 0; }
+
+/* מסך השיחה */
+@media (min-width: 600px) { .chat-dialog { height: min(90dvh, 900px); } }
+.cv-titles { flex: 1; min-width: 0; display: grid; }
+.cv-titles h2 { font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cv-titles small { color: var(--muted); font-size: .78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chat-log { flex: 1 1 auto; min-height: 0; overflow-y: auto; list-style: none; margin: 0; padding: var(--s3);
+  display: flex; flex-direction: column; gap: var(--s2); background: var(--bg); overscroll-behavior: contain; }
+.chat-log .empty { margin: auto; text-align: center; }
+/* RTL: out (מה שקרה בצ'אט) מימין, in (מה שנכתב בלוח) משמאל */
+.bubble { max-width: 85%; display: grid; gap: 4px; padding: var(--s2) var(--s3); border-radius: 14px;
+  background: var(--surface); border: 1px solid var(--line); }
+.bubble--out { align-self: flex-start; border-start-start-radius: 4px; }
+.bubble--in { align-self: flex-end; border-start-end-radius: 4px; background: var(--brand-soft); border-color: transparent; }
+.bubble--sys { align-self: center; max-width: 92%; background: transparent; border-style: dashed; }
+.b-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--muted); font-size: .75rem; }
+.b-meta time { margin-inline-start: auto; }
+.b-body { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
+.bubble > .badge { justify-self: start; }
+.tick { color: var(--muted); letter-spacing: -2px; }
+.tick.is-done { color: var(--brand); }
+.b-task { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); min-height: 40px; padding: 0 var(--s3);
+  border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); font: inherit; font-size: .85rem; cursor: pointer; }
+.composer { flex: none; border-top: 1px solid var(--line); background: var(--surface);
+  padding: var(--s2) var(--s3) calc(var(--s2) + env(safe-area-inset-bottom)); display: grid; gap: var(--s2); }
+.composer-row { display: flex; align-items: flex-end; gap: var(--s2); }
+.composer-row textarea { flex: 1; min-width: 0; min-height: 44px; max-height: 160px; resize: none; }
+.composer-row .btn { flex: none; min-height: 44px; }
+#projSection.head-only .sec-title { display: none; }
+#projSection.head-only .sec-head { justify-content: flex-end; }

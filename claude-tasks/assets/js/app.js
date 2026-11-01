@@ -1,5 +1,6 @@
 import { $, $$, el, toast, api, state, timeAgo, on, set } from './core.js';
 import { loadConnections, loadProviders, runTask, openProject, modelPicker } from './platform.js';
+import { loadChannels } from './chats.js';
 
 /**
  * מטלות לקלוד — ממשק.
@@ -223,9 +224,12 @@ async function loadTopics() {
     ]);
   };
 
+  // המגירה — רק הנושאים הכלליים; בתוך פרויקט הנושאים שלו הם "שלבים" (שורה מעל המטלות)
+  const general = topics.filter((t) => t.project_id == null);
+  state.stages = topics.filter((t) => t.project_id != null);
   $('#topics').replaceChildren(
     row('כל הנושאים', null, ''),
-    ...topics.map((t) => row(t.name, t.id, t.open_count, t)),
+    ...general.map((t) => row(t.name, t.id, t.open_count, t)),
     ...(state.unassigned ? [row('ללא נושא', 'none', state.unassigned)] : []),
   );
 
@@ -240,7 +244,42 @@ async function loadTopics() {
     ...topics.map((t) => el('option', { value: String(t.id), text: t.name })),
   );
   $('#capTopic').value = typeof state.topicId === 'number' ? String(state.topicId) : 'auto';
+  renderStages();
 }
+
+/* שורת השלבים: "הכל" ואחריו השלבים של הפרויקט. גלילה לרוחב; ✏️ — עריכה והוספה. */
+function renderStages() {
+  const inProject = !!state.projectId;
+  const stages = state.stages || [];
+  const canEdit = inProject && ['write', 'admin'].includes(byId(state.projectId)?.my_level);
+  $('#stages').hidden = !inProject || (!stages.length && !canEdit);
+  $('#stageEdit').hidden = !canEdit;
+  const chip = (id, label, count) => el('button', {
+    type: 'button', role: 'tab', 'aria-selected': String(state.topicId === id),
+    onclick: () => selectTopic(id),
+  }, [el('span', { text: label }), count ? el('small', { text: String(count) }) : null]);
+  $('#stageRow').replaceChildren(chip(null, 'הכל', 0), ...stages.map((t) => chip(t.id, t.name, t.open_count)));
+  $('#stageList').replaceChildren(...stages.map((t) => el('li', {
+    class: 'card', tabindex: '0', role: 'button', 'aria-label': t.name,
+    onclick: () => openTopicEdit(t),
+    onkeydown: (ev) => { if (ev.key === 'Enter') openTopicEdit(t); },
+  }, [
+    el('div', { class: 'body' }, [el('div', { class: 'l1' }, [el('span', { text: t.name })]),
+      el('div', { class: 'l2', text: `${t.open_count} פתוחות${t.keywords ? ' · ' + t.keywords : ''}` })]),
+    el('span', { class: 'go', 'aria-hidden': 'true', text: '‹' }),
+  ])));
+}
+
+on('#stageEdit', 'click', () => { $('#stageName').value = ''; $('#stagesSheet').showModal(); });
+on('#stageForm', 'submit', async (e) => {
+  e.preventDefault();
+  try {
+    await api('create-topic', { name: $('#stageName').value, project_id: state.projectId });
+    $('#stageName').value = '';
+    await loadTopics();
+    toast('השלב נוסף', 'ok');
+  } catch (ex) { toast(ex.message, 'error'); }
+});
 
 function selectTopic(id) {
   state.topicId = id;
@@ -337,6 +376,7 @@ function renderTree() {
   $('#crumbs').replaceChildren(...crumbs);
   $('#crumbs').hidden = !cur;
   $('#backBtn').hidden = !cur;
+  $('#menuBtn').hidden = !!cur;   // ☰ — רק לנושאים הכלליים, במסך הראשי
   $('#scopeLabel').textContent = cur ? cur.name : 'כל הפרויקטים';
 
   const kids = childrenOf(state.projectId);
@@ -357,37 +397,60 @@ function renderTree() {
 }
 
 /*
- * שתי לשוניות כשיש פרויקטים ברמה הזאת: "פרויקטים" ו"מטלות" — אחרת עשרות
- * שורות דוחפות את המטלות מחוץ למסך. בלי פרויקטים מתחת — רק המטלות. הבחירה
- * נזכרת (sessionStorage), כדי שחזרה למסך לא תאפס אותה.
+ * לשוניות. במסך הראשי: "פרויקטים" ו"מטלות" (כשיש פרויקטים). בתוך פרויקט
+ * (§5.7): 💬 צ'אטים · 📋 מטלות · 📁 תתי-פרויקטים — לשונית תתי-הפרויקטים רק
+ * כשיש כאלה. הלשונית האחרונה נזכרת, בנפרד למסך הראשי ולפרויקטים.
  */
+const VIEW_KEY = () => (state.projectId ? 'ct:pview' : 'ct:view');
+
+function availableViews() {
+  const kids = childrenOf(state.projectId).length;
+  if (!state.projectId) return kids ? ['projects', 'tasks'] : ['tasks'];
+  return ['chats', 'tasks', ...(kids ? ['projects'] : [])];
+}
+
 function currentView() {
-  if (!childrenOf(state.projectId).length) return 'tasks-only';
+  const views = availableViews();
+  if (views.length === 1) return 'tasks-only';
   let v = null;
-  try { v = sessionStorage.getItem('ct:view'); } catch { /* מצב פרטי */ }
-  return v === 'tasks' ? 'tasks' : 'projects';
+  try { v = localStorage.getItem(VIEW_KEY()); } catch { /* מצב פרטי */ }
+  if (views.includes(v)) return v;
+  if (!state.projectId) return 'projects';
+  return (state.channels || []).length ? 'chats' : 'tasks';
 }
 
 function renderView() {
   const v = currentView();
+  const views = availableViews();
   const kids = childrenOf(state.projectId).length;
   $('#viewTabs').hidden = v === 'tasks-only';
-  $$('#viewTabs [data-view]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.view === v)));
+  // הסדר: בפרויקט — צ'אטים, מטלות, תתי-פרויקטים; במסך הראשי — פרויקטים, מטלות
+  $$('#viewTabs [data-view]').forEach((b) => {
+    b.hidden = !views.includes(b.dataset.view);
+    b.style.order = String(state.projectId ? ['chats', 'tasks', 'projects'].indexOf(b.dataset.view) : ['projects', 'tasks'].indexOf(b.dataset.view));
+    b.setAttribute('aria-selected', String(b.dataset.view === v));
+  });
+  $('#viewTabs').style.gridTemplateColumns = `repeat(${views.length}, 1fr)`;
   $('#vtProjLabel').textContent = state.projectId ? 'תתי-פרויקטים' : 'פרויקטים';
   $('#vtProjCount').textContent = kids ? String(kids) : '';
-  $('#tasksSection').hidden = v === 'projects';
-  // בלי פרויקטים ברמה הזאת — רק שורת הכותרת עם "+", מעל המטלות (בלי מסך ריק שמסתיר אותן)
-  // ובתת-פרויקט (עלה) — רק המטלות
+  const active = (state.channels || []).filter((c) => c.status === 'active').length;
+  $('#vtChatCount').textContent = active ? String(active) : '';
+  $('#chatsSection').hidden = v !== 'chats';
+  $('#tasksSection').hidden = v === 'projects' || v === 'chats';
+  // בפרויקט אב בלי תתי-פרויקטים — רק שורת הכותרת עם "+ תת-פרויקט", מעל המטלות
   const leaf = !!byId(state.projectId)?.parent_id;
-  $('#projSection').hidden = v === 'tasks' || (v === 'tasks-only' && ($('#projAddBtn').hidden || leaf));
-  $('#projEmpty').hidden = v === 'tasks-only' || kids > 0;
+  const headerOnly = (v === 'tasks' || v === 'tasks-only') && !kids && !$('#projAddBtn').hidden && !leaf;
+  $('#projSection').hidden = !(v === 'projects' || headerOnly);
+  $('#projSection').classList.toggle('head-only', headerOnly);
+  $('#projEmpty').hidden = v !== 'projects' || kids > 0;
 }
 
 on('#viewTabs', 'click', (e) => {
   const tab = e.target.closest('[data-view]');
   if (!tab) return;
-  try { sessionStorage.setItem('ct:view', tab.dataset.view); } catch { /* פרטי */ }
+  try { localStorage.setItem(VIEW_KEY(), tab.dataset.view); } catch { /* פרטי */ }
   renderView();
+  if (tab.dataset.view === 'chats') loadChannels().then(renderView).catch(() => {});
 });
 
 async function setScope(id, push = true) {
@@ -395,7 +458,9 @@ async function setScope(id, push = true) {
   state.projectId = id;
   state.topicId = null;
   if (push) history.pushState({ scope: id }, '');
+  state.channels = [];
   renderTree();
+  if (id) loadChannels().then(renderView).catch(() => {});
   window.scrollTo(0, 0);
   await loadTopics();
   await refresh();
@@ -857,6 +922,9 @@ on('#search', 'input', (e) => {
 });
 
 on('#menuBtn', 'click', openDrawer);
+// שורת מטלה בבועה של שיחה — פותחת את המטלה מעל השיחה
+document.addEventListener('ct:open-task', (e) => openTask(e.detail).catch((ex) => toast(ex.message, 'error')));
+
 on('#drawer', 'click', (e) => { if (e.target === $('#drawer')) closeDrawer(); });
 $$('[data-close]').forEach((b) => b.addEventListener('click', () => {
   const t = $(`#${b.dataset.close}`);
@@ -1053,6 +1121,7 @@ setInterval(() => {
   if (document.hidden || $$('dialog[open]').length || !$('#drawer').hidden) return;
   if (!state.user) return;
   refresh().catch(() => {});
+  if (state.projectId && !$('#chatsSection').hidden) loadChannels().then(renderView).catch(() => {});
 }, 20000);
 
 boot().catch((ex) => {
