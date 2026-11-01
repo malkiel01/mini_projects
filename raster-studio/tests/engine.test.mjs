@@ -942,3 +942,58 @@ test('שיפור קצוות: הרחבה, כיווץ, ריכוך וניגודיו
   assert.equal(s.mask[10 * W + 10], 0, 'הפינה נחתכת');
   assert.equal(s.mask[20 * W + 11], 255, 'אמצע הצלע נשאר');
 });
+
+test('PSD: כתיבה וקריאה — שכבות, שם בעברית, מיקום, אטימות, הסתרה, מיזוג וקבוצה', async () => {
+  const { encodePSD, decodePSD, isPSD } = await import('../assets/js/engine/psd.js');
+  const px = (w, h, c) => { const a = new Uint8Array(w * h * 4); for (let i = 0; i < w * h; i++) a.set(c, i * 4); return a; };
+  const layers = [
+    { name: 'רקע', x: 0, y: 0, w: 4, h: 3, rgba: px(4, 3, [255, 255, 255, 255]), opacity: 1, visible: true, blend: 'normal' },
+    { type: 'group', name: 'קבוצה', opacity: 0.5, visible: true, blend: 'normal', children: [
+      { name: 'אדום', x: 1, y: 1, w: 2, h: 1, rgba: px(2, 1, [255, 0, 0, 128]), opacity: 0.8, visible: false, blend: 'multiply' },
+    ] },
+  ];
+  const bytes = encodePSD({ width: 4, height: 3, layers, composite: px(4, 3, [10, 20, 30, 255]) });
+  assert.ok(isPSD(bytes));
+  const d = decodePSD(bytes);
+  assert.equal(d.width, 4); assert.equal(d.height, 3);
+  assert.deepEqual([...d.composite.slice(0, 4)], [10, 20, 30, 255]);
+  assert.equal(d.layers.length, 2);
+  assert.equal(d.layers[0].name, 'רקע');
+  const g = d.layers[1];
+  assert.equal(g.type, 'group'); assert.equal(g.name, 'קבוצה'); assert.ok(Math.abs(g.opacity - 0.5) < 0.01);
+  const l = g.children[0];
+  assert.deepEqual([l.name, l.x, l.y, l.w, l.h, l.visible, l.blend], ['אדום', 1, 1, 2, 1, false, 'multiply']);
+  assert.ok(Math.abs(l.opacity - 0.8) < 0.01);
+  assert.deepEqual([...l.rgba.slice(0, 4)], [255, 0, 0, 128]);
+});
+
+test('PSD: RLE (PackBits), ושגיאה ברורה על 16 ביט', async () => {
+  const { decodePSD, encodePSD } = await import('../assets/js/engine/psd.js');
+  // קובץ בלי שכבות עם תמונה משולבת ב-RLE: 2×1, RGB
+  const parts = [];
+  const u16 = v => [v >> 8, v & 255], u32 = v => [v >>> 24, (v >> 16) & 255, (v >> 8) & 255, v & 255];
+  parts.push(...[...'8BPS'].map(c => c.charCodeAt(0)), ...u16(1), 0, 0, 0, 0, 0, 0, ...u16(3), ...u32(1), ...u32(2), ...u16(8), ...u16(3));
+  parts.push(...u32(0), ...u32(0), ...u32(0));
+  parts.push(...u16(1), ...u16(2), ...u16(2), ...u16(2));   // RLE; לכל שורה (3 ערוצים × שורה) — 2 בתים
+  parts.push(255, 7, 255, 8, 255, 9);   // חזרה: 2 פעמים 7 / 8 / 9
+  const d = decodePSD(Uint8Array.from(parts));
+  assert.deepEqual([...d.composite], [7, 8, 9, 255, 7, 8, 9, 255]);
+  const bad = encodePSD({ width: 1, height: 1, layers: [], composite: new Uint8Array(4) });
+  bad[23] = 16;   // עומק
+  assert.throws(() => decodePSD(bad), e => e.code === 'psd-depth');
+});
+
+test('TIFF: כותרת, תגיות, והפיקסלים במקומם', async () => {
+  const { encodeTIFF } = await import('../assets/js/engine/tiff.js');
+  const rgba = Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 8]);
+  const t = encodeTIFF(rgba, 2, 1);
+  const v = new DataView(t.buffer);
+  assert.deepEqual([...t.slice(0, 4)], [0x49, 0x49, 42, 0]);
+  const ifd = v.getUint32(4, true), n = v.getUint16(ifd, true);
+  const tag = id => { for (let i = 0; i < n; i++) { const o = ifd + 2 + i * 12; if (v.getUint16(o, true) === id) return v.getUint32(o + 8, true); } };
+  assert.equal(tag(256), 2); assert.equal(tag(257), 1);
+  assert.deepEqual([...t.slice(tag(273), tag(273) + 8)], [...rgba]);
+  // התגיות בסדר עולה (חובה ב-TIFF)
+  const ids = Array.from({ length: n }, (_, i) => v.getUint16(ifd + 2 + i * 12, true));
+  assert.deepEqual(ids, [...ids].sort((a, b) => a - b));
+});

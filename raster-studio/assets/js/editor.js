@@ -17,7 +17,8 @@ import { createFxPanel } from './fx-panel.js';
 import { createAIPanel } from './ai-panel.js';
 import { createDrives } from './drives/drives.js';
 import { mountAccount, enginePref } from './account-ui.js';
-import { exportPNG, exportJPG, exportORA, download, fileName } from './export.js';
+import { exportPNG, exportJPG, exportORA, exportWEBP, exportTIFF, exportPSD, download, fileName } from './export.js';
+import { decodePSD, isPSD } from './engine/psd.js';
 import { saveDraft, loadDraft, restoreDraft, clearDraft, draftKey } from './draft.js';
 import { gapsFor, parseOraStack } from './engine/formats.js';
 import { unzip } from './engine/unzip.js';
@@ -208,6 +209,36 @@ async function openOra(blob) {
   setDoc(d);
 }
 
+/**
+ * PSD (פוטושופ): שכבות הרסטר עם השם, המיקום, האטימות, המיזוג, ההסתרה והקבוצות. מסכות, סגנונות, טקסט ושכבות התאמה
+ * של פוטושופ — נכנסים כפי שהם בפיקסלים של השכבה (או לא בכלל); קובץ בלי שכבות — התמונה המשולבת כשכבה אחת.
+ */
+async function openPsd(blob) {
+  let p;
+  try { p = decodePSD(new Uint8Array(await blob.arrayBuffer())); } catch (e) { throw new Error(e.code?.startsWith('psd-') ? e.code : 'decode'); }
+  if (p.width * p.height > budget.maxPixels()) throw new Error('psd-too-big');
+  const d = new RasterDocument(p.width, p.height, baseName(blob.name));
+  const draw1 = async (layer, rgba, w, h, x, y) => {
+    if (!w || !h) return;
+    const bmp = await createImageBitmap(new ImageData(new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, w * h * 4), w, h), { premultiplyAlpha: 'none' });
+    await renderer.drawImage(d, layer, bmp, x, y);
+    bmp.close();
+  };
+  const walk = async (list, parent) => {
+    for (const l of list) {
+      const props = { name: l.name, opacity: l.opacity, blend: l.blend, visible: l.visible, parent };
+      if (l.type === 'group') { await walk(l.children, d.addGroup(props)); continue; }
+      await draw1(d.addLayer(props), l.rgba, l.w, l.h, l.x, l.y);
+    }
+  };
+  await walk(p.layers, undefined);
+  if (!d.rasters().length) await draw1(d.addLayer({ name: baseName(blob.name) }), p.composite, p.width, p.height, 0, 0);
+  setDoc(d);
+}
+
+const looksPsd = async blob => /\.psd$/i.test(blob.name || '') || blob.type === 'image/vnd.adobe.photoshop'
+  || isPSD(new Uint8Array(await blob.slice(0, 4).arrayBuffer()));
+
 /** ‎.mbe: השכבות, הקבוצות ומצב התצוגה; מה שלא שלנו נשמר לשמירה הבאה */
 async function openMbeFile(blob) {
   const { doc: d, view: v, warnings } = await openMbe(renderer, await blob.arrayBuffer(), baseName(blob.name));
@@ -236,6 +267,12 @@ async function openAsDocument(blob) {
   }
   if (zip === 'ora' || isOra(blob)) {
     await openOra(blob);
+    history_replace('?draft=local');
+    scheduleDraft(0);
+    return;
+  }
+  if (!zip && await looksPsd(blob)) {
+    await openPsd(blob);
     history_replace('?draft=local');
     scheduleDraft(0);
     return;
@@ -469,6 +506,8 @@ exportDlg.addEventListener('click', async e => {
   b.setAttribute('aria-busy', 'true');
   try {
     const blob = kind === 'png' ? await exportPNG(renderer, doc) : kind === 'jpg' ? await exportJPG(renderer, doc)
+      : kind === 'webp' ? await exportWEBP(renderer, doc) : kind === 'tif' ? await exportTIFF(renderer, doc)
+      : kind === 'psd' ? await exportPSD(renderer, doc)
       : kind === 'mbe' ? new Blob([await buildMbe(renderer, doc, { view: viewState() })], { type: 'application/vnd.mbe+zip' })
       : await exportORA(renderer, doc);
     download(blob, fileName(doc.title, kind));
