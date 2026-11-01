@@ -54,6 +54,12 @@ $raster = createSubproject($boss, $suite, 'רסטר', 'creative-suite/raster');
 $app   = createSubproject($boss, $root, 'מתכונים', 'recipes-app');
 setMember($boss, $root, 2, 'admin');
 
+echo "\n— מכסה (שלב 7) —\n";
+setDefaultRoute($boss, 'platform');
+check('בלי מכסה — ☁️ כבוי: נחשב chat', [projectRoute($root), projectRoutes(true)[$root]], ['chat', 'platform']);
+setDefaultRoute($boss, 'chat');
+setQuota($boss, 1, 25);   // מכאן — לבעל הלוח יש מכסה, ו-☁️ פועל
+
 echo "\n— ירושה —\n";
 check('בלי כלום — chat (ברירת המחדל)', [projectRoute($root), projectRoute($raster)], ['chat', 'chat']);
 setDefaultRoute($boss, 'platform');

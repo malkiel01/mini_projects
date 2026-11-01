@@ -167,10 +167,20 @@ function providerError(string $provider, array $data): string {
  */
 function aiComplete(array $conn, string $system, string $prompt,
                     int $maxTokens = 400, ?callable $transport = null): string {
+    // שימוש ומכסה (lib/usage.php): ‏usage — kind, project_id, task_id, channel_id, enforce
+    $ctx = $conn['usage'] ?? [];
     // שרשרת חיבורים (lib/connections.php): נכשל אחד — הבא בתור
     if (!empty($conn['chain']) && count($conn['chain']) > 1) {
-        return aiCompleteChain($conn['chain'], $system, $prompt, $maxTokens, $transport,
+        // המכסה נבדקת פעם אחת, לפני הראשון: מכסה שנגמרה לא "נעקפת" במעבר לחיבור הבא
+        if (!empty($ctx['enforce']) && !empty($conn['chain'][0]['user_id'])) {
+            requireQuota((int) $conn['chain'][0]['user_id'], (string) ($ctx['kind'] ?? 'monitor'));
+        }
+        $chain = array_map(fn ($c) => $c + ['usage' => ['enforce' => false] + $ctx], $conn['chain']);
+        return aiCompleteChain($chain, $system, $prompt, $maxTokens, $transport,
                                $conn['user'] ?? null, $conn['task_id'] ?? null)[0];
+    }
+    if (!empty($ctx['enforce']) && !empty($conn['user_id'])) {
+        requireQuota((int) $conn['user_id'], (string) ($ctx['kind'] ?? 'monitor'));
     }
     $provider = (string) ($conn['provider'] ?? '');
     $key      = (string) ($conn['key'] ?? '');
@@ -205,6 +215,13 @@ function aiComplete(array $conn, string $system, string $prompt,
         });
         $err->aiStatus = (int) ($res['status'] ?? 0);
         throw $err;
+    }
+
+    // נרשם גם כשהתשובה ריקה — הטוקנים נצרכו
+    if (!empty($conn['user_id'])) {
+        [$tin, $tout] = usageFromResponse($provider, $data);
+        recordUsage(['user_id' => (int) $conn['user_id'], 'connection_id' => $conn['connection_id'] ?? null] + $ctx,
+                    $provider, $model, $tin, $tout);
     }
 
     $text = providerText($provider, $data);

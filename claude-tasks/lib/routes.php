@@ -33,10 +33,15 @@ function defaultRoute(): string {
     return in_array($r, ROUTES, true) ? $r : 'chat';
 }
 
-/** המסלול של כל הפרויקטים — חישוב אחד לכל העץ (חוסך שאילתה לכל פרויקט). */
-function projectRoutes(): array {
+/**
+ * המסלול של כל הפרויקטים — חישוב אחד לכל העץ (חוסך שאילתה לכל פרויקט).
+ * ‏$wanted = true — מה שנבחר, בלי המכסה. אחרת (§8): ☁️ של מי שאין לו מכסה, או
+ * שהמכסה שלו נגמרה, נחשב chat — מחושב ולא נכתב, ולכן חוזר לבד ב-1 לחודש.
+ * המשלם — בעל הפרויקט שבשורש הענף.
+ */
+function projectRoutes(bool $wanted = false): array {
     $rows = [];
-    foreach (db()->query('SELECT id, parent_id, route FROM projects')->fetchAll() as $r) $rows[(int) $r['id']] = $r;
+    foreach (db()->query('SELECT id, parent_id, route, created_by FROM projects')->fetchAll() as $r) $rows[(int) $r['id']] = $r;
     $memo = [];
     $resolve = function (int $id, int $depth = 0) use (&$resolve, &$memo, $rows): string {
         if (isset($memo[$id])) return $memo[$id];
@@ -48,6 +53,18 @@ function projectRoutes(): array {
     };
     $out = [];
     foreach (array_keys($rows) as $id) $out[$id] = $resolve($id);
+    if ($wanted) return $out;
+    $payerOk = [];
+    foreach ($out as $id => $r) {
+        if ($r !== 'platform') continue;
+        $root = $id;
+        for ($i = 0; $i < 16 && !empty($rows[$root]['parent_id']) && isset($rows[(int) $rows[$root]['parent_id']]); $i++) {
+            $root = (int) $rows[$root]['parent_id'];
+        }
+        $payer = (int) ($rows[$root]['created_by'] ?? 0);
+        $payerOk[$payer] ??= $payer > 0 && platformAvailable($payer);
+        if (!$payerOk[$payer]) $out[$id] = 'chat';
+    }
     return $out;
 }
 

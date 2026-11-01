@@ -437,3 +437,55 @@ details.what p { margin-top: var(--s2); }
 #pvRouteList .pick { flex-wrap: wrap; row-gap: 2px; }
 #pvRouteList .pick .t { white-space: normal; }
 #pvRouteList .pick small { flex-basis: 100%; padding-inline-start: 28px; }
+
+/* ===== מכסה ושימוש (§8) — צבעי הסדרות מהפלטה המאומתת של dataviz, נבדקו בשני המצבים ===== */
+:root { --u-develop: #2a78d6; --u-answer: #eb6834; --u-monitor: #1baf7a; }
+@media (prefers-color-scheme: dark) { :root:where(:not([data-theme="light"])) { --u-develop: #3987e5; --u-answer: #d95926; --u-monitor: #199e70; } }
+:root[data-theme="dark"] { --u-develop: #3987e5; --u-answer: #d95926; --u-monitor: #199e70; }
+
+.ucard { display: grid; gap: var(--s2); }
+.ucard h3 { font-size: .9rem; margin-top: var(--s2); }
+.u-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s2); }
+.u-head b { font-size: 1.05rem; }
+.u-head small { color: var(--muted); }
+.u-state.is-alert { color: var(--ink); font-weight: 600; }
+
+/* הפס: דק, קצוות מעוגלים. הצבע — מצב (לא סדרה): מותג / צהוב 80% / אדום 100% */
+.qbar { position: relative; block-size: 8px; border-radius: 99px; background: var(--line); overflow: hidden; }
+.qbar--compact { block-size: 6px; }
+.qbar-fill { position: absolute; inset-block: 0; inset-inline-start: 0; border-radius: 99px; background: var(--brand); }
+.qbar--warn .qbar-fill { background: var(--star); }
+.qbar--over .qbar-fill { background: var(--danger); }
+
+.ulegend { display: flex; flex-wrap: wrap; gap: var(--s3); list-style: none; padding: 0; margin: 0; font-size: .8rem; color: var(--muted); }
+.ulegend li { display: inline-flex; align-items: center; gap: 6px; }
+.ulegend .sw { inline-size: 10px; block-size: 10px; border-radius: 3px; }
+.u-develop { fill: var(--u-develop); background: var(--u-develop); }
+.u-answer  { fill: var(--u-answer);  background: var(--u-answer); }
+.u-monitor { fill: var(--u-monitor); background: var(--u-monitor); }
+.uchart { inline-size: 100%; block-size: auto; display: block; }
+.uchart .u-grid { stroke: var(--line); stroke-width: 1; }
+.uchart .u-base { stroke: var(--muted); stroke-width: 1; opacity: .5; }
+.uchart .u-tick { fill: var(--muted); font-size: 9px; font-family: inherit; }
+.uchart .u-hit { fill: transparent; cursor: default; }
+.uchart .u-day:hover .u-hit { fill: color-mix(in srgb, var(--ink) 6%, transparent); }
+.uchart .is-today .u-hit { fill: color-mix(in srgb, var(--brand) 7%, transparent); }
+.utable { inline-size: 100%; border-collapse: collapse; font-size: .82rem; margin-top: var(--s2); }
+.utable th, .utable td { padding: 4px 6px; border-bottom: 1px solid var(--line); text-align: start; }
+.urow { display: flex; align-items: center; gap: var(--s2); padding: var(--s2) var(--s3); border-top: 1px solid var(--line); min-height: 48px; }
+.urow:first-child { border-top: 0; }
+.urow .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.urow small { color: var(--muted); font-size: .75rem; }
+
+.umini { display: grid; gap: 4px; }
+.umini small { color: var(--muted); font-size: .78rem; }
+.quota-warn { margin-bottom: var(--s3); padding: var(--s2) var(--s3); border-radius: var(--r); font-size: .88rem; font-weight: 600;
+  border: 1px solid color-mix(in srgb, var(--star) 50%, transparent); background: color-mix(in srgb, var(--star) 14%, var(--surface)); }
+.quota-warn--over { border-color: color-mix(in srgb, var(--danger) 45%, transparent); background: var(--danger-soft); }
+
+.quota-row { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
+.quota-field { display: inline-flex; align-items: center; gap: 6px; font-size: .82rem; color: var(--muted); }
+.quota-input { inline-size: 90px; min-height: 36px; }
+.quota-used { color: var(--muted); }
+.quota-used--warn { color: var(--ink); font-weight: 600; }
+.quota-used--over { color: var(--danger); font-weight: 600; }

@@ -876,6 +876,23 @@ const ADMIN_TABS = {
          `${u.projects} פרויקטים`,
          `${u.tasks} מטלות`].filter(Boolean).join(' · '),
       );
+      // מכסה חודשית ($) והשימוש החודש (§8). 0 = ☁️ כבוי למשתמש
+      const q = u.usage || { used: 0, quota: 0, state: 'off', pct: 0 };
+      const input = el('input', { type: 'number', min: '0', step: '1', inputmode: 'decimal', value: String(Number(u.quota_usd) || 0),
+        'aria-label': `מכסה חודשית בדולרים ל${u.display_name}`, class: 'quota-input' });
+      const save = el('button', { type: 'button', class: 'btn ghost sm', text: 'שמירה', onclick: async () => {
+        try {
+          await api('set-quota', { user_id: u.id, quota_usd: Number(input.value) || 0 });
+          toast('המכסה נשמרה', 'ok');
+          showAdminTab('users');
+        } catch (ex) { toast(ex.message, 'error'); }
+      } });
+      r.append(el('div', { class: 'quota-row' }, [
+        el('label', { class: 'quota-field' }, [el('span', { text: 'מכסה חודשית ($)' }), input]),
+        save,
+        el('small', { class: `quota-used quota-used--${q.state}`,
+          text: q.state === 'off' ? `☁️ כבוי · החודש $${Number(q.used).toFixed(2)}` : `החודש $${Number(q.used).toFixed(2)} (${Math.round(q.pct)}%)` }),
+      ]));
       // חשבון נוסף (לא אני, לא מקושר לכלים הדיגיטליים) — אפשר למחוק; מה שבו עובר אליי
       if (u.id !== meId && !Number(u.platform_linked)) {
         r.append(el('button', {
