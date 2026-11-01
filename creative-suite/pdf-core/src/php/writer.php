@@ -53,6 +53,17 @@ final class PdfWriter
         return $name;
     }
 
+    /**
+     * מסכה רכה לפי בהירות (שקיפות בעצירות של מעבר צבע) → '/SM1' של ExtGState. $shading — מעבר אפור (DeviceGray) של
+     * האטימות, באותן קואורדינטות; נצבע בטופס (Form XObject) שה-SMask מפנה אליו. במשאבים רק כשבשימוש
+     */
+    public array $masks = [];
+    public function softMask(string $shading): string
+    {
+        $this->masks[] = $shading;
+        return '/SM' . count($this->masks);
+    }
+
     public function font(TtfFont $f): string
     {
         $id = spl_object_id($f);
@@ -165,6 +176,12 @@ final class PdfWriter
         }
         $gs = '';
         foreach ($this->gstates as $key => $name) { [$ca, $CA] = explode(' ', $key); $gs .= "$name << /Type /ExtGState /ca $ca /CA $CA >> "; }
+        foreach ($this->masks as $i => $sh) {
+            $id = $alloc();
+            $objs[$id] = self::stream("/Type /XObject /Subtype /Form /BBox [-10000 -10000 10000 10000] /Group << /Type /Group /S /Transparency /CS /DeviceGray >>"
+                . " /Resources << /Shading << /Sh0 $sh >> >>", '/Sh0 sh');
+            $gs .= '/SM' . ($i + 1) . " << /Type /ExtGState /SMask << /Type /Mask /S /Luminosity /G $id 0 R >> >> ";
+        }
         $objs[$res] = "<< /Font << $fontRefs>> /XObject << $imgRefs>>" . ($gs !== '' ? " /ExtGState << $gs>>" : '') . ($pat !== '' ? " /Pattern << $pat>>" : '') . " /ProcSet [/PDF /Text /ImageB /ImageC] >>";
         // עמודים — המספרים מוקצים קודם, כי קישור פנימי מפנה לעמוד אחר
         $kids = [];

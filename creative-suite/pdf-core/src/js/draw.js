@@ -5,7 +5,7 @@
  *   import { pdfDraw } from './pdf-core/draw.js';
  *   const bytes = await pdfDraw(list, key => bytesOf(key));   // Uint8Array; resolve — Uint8Array / ArrayBuffer / Promise / null
  *
- * נתמך: image (PNG, JPEG), rect, line, path, clip … restore, מעבר צבע, שקיפות — כמו ב-PHP, וזרם התוכן של כל עמוד
+ * נתמך: image (PNG, JPEG), rect, line, path, clip … restore, מעבר צבע (גם שקיפות בעצירות), שקיפות — כמו ב-PHP, וזרם התוכן של כל עמוד
  * זהה לזה של draw.php (נבדק ב-tests/draw.test.mjs). **glyphs — עוד לא ב-JS** (גופנים ו-subset — רק כשיידרש); מי
  * שצריך טקסט ממיר אותו לקווי מתאר (path), או מצייר בשרת.
  * שונה מ-PHP: תמונת PNG לא מוקטנת (ב-PHP — עד 1600 בצלע), והשקיפות שלה מדויקת (ב-GD — 7 סיביות).
@@ -138,7 +138,7 @@ async function pngDecode(b) {
 // ---------- הכותב ----------
 
 class Writer {
-    constructor() { this.pages = []; this.images = new Map(); this.gstates = new Map(); this.patterns = []; }
+    constructor() { this.pages = []; this.images = new Map(); this.gstates = new Map(); this.patterns = []; this.masks = []; }
 
     addPage(w, h, bleed = 0) {
         this.pages.push({ w: w + 2 * bleed, h: h + 2 * bleed, bleed, main: '' });
@@ -149,6 +149,11 @@ class Writer {
         const key = n(Math.max(0, Math.min(1, fill))) + ' ' + n(Math.max(0, Math.min(1, stroke)));
         if (!this.gstates.has(key)) this.gstates.set(key, '/GS' + (this.gstates.size + 1));
         return this.gstates.get(key);
+    }
+
+    softMask(shading) {
+        this.masks.push(shading);
+        return '/SM' + this.masks.length;
     }
 
     pattern(shading, matrix) {
@@ -205,6 +210,12 @@ class Writer {
         }
         let gs = '';
         for (const [key, name] of this.gstates) { const [ca, CA] = key.split(' '); gs += `${name} << /Type /ExtGState /ca ${ca} /CA ${CA} >> `; }
+        for (const [i, sh] of this.masks.entries()) {
+            const id = alloc();
+            objs[id] = stream('/Type /XObject /Subtype /Form /BBox [-10000 -10000 10000 10000] /Group << /Type /Group /S /Transparency /CS /DeviceGray >>'
+                + ` /Resources << /Shading << /Sh0 ${sh} >> >>`, enc.encode('/Sh0 sh'));
+            gs += `/SM${i + 1} << /Type /ExtGState /SMask << /Type /Mask /S /Luminosity /G ${id} 0 R >> >> `;
+        }
         objs[res] = `<< /Font << >> /XObject << ${imgRefs}>>` + (gs ? ` /ExtGState << ${gs}>>` : '') + (pat ? ` /Pattern << ${pat}>>` : '') + ' /ProcSet [/PDF /Text /ImageB /ImageC] >>';
         const pids = this.pages.map(() => alloc());
         const kids = [];
@@ -271,14 +282,16 @@ export async function pdfDraw(list, resolve) {
         if (Math.abs(det) < 1e-12) throw bad(`transform לא הפיך: ${where}`);
         return [d / det, -b / det, -c / det, a / det, (c * f - d * e) / det, (b * e - a * f) / det];
     };
-    const shading = (g, where) => {
+    // alpha — אותו מעבר באפור, מהאטימות של העצירות (למסכה הרכה)
+    const shading = (g, where, alpha = false) => {
         if (!g || typeof g !== 'object' || Array.isArray(g)) throw bad(`gradient: ${where}`);
         const stops = g.stops;
         if (!Array.isArray(stops) || !stops.length) throw bad(`gradient: stops חסרים: ${where}`);
         let st = stops.map(k => {
             if (!k || typeof k !== 'object') throw bad(`gradient: עצירה { offset, color }: ${where}`);
-            if (k.opacity !== undefined && k.opacity !== null && num(k.opacity, where) < 1) throw bad(`gradient: שקיפות בעצירות — עוד לא נתמכת (fillOpacity / strokeOpacity לכל המעבר): ${where}`);
-            return [Math.max(0, Math.min(1, num(k.offset ?? null, where))), color(k.color ?? null, where)];
+            const c = color(k.color ?? null, where);
+            const a = k.opacity !== undefined && k.opacity !== null ? unit(k.opacity, where) : 1;
+            return [Math.max(0, Math.min(1, num(k.offset ?? null, where))), alpha ? n(a) : c];
         });
         st = st.map((s, i) => [s, i]).sort((x, y) => x[0][0] - y[0][0] || x[1] - y[1]).map(x => x[0]);   // יציב, כמו usort
         if (st[0][0] > 0) st.unshift([0, st[0][1]]);
@@ -299,8 +312,11 @@ export async function pdfDraw(list, resolve) {
             if (r <= 0) throw bad(`gradient: r חיובי: ${where}`);
             coords = [g.fx ?? cx, g.fy ?? cy, 0, cx, cy, r]; stype = 3;
         } else throw bad(`gradient: type — linear / radial: ${where}`);
-        return `<< /ShadingType ${stype} /ColorSpace /DeviceRGB /Coords [${coords.map(v => n(num(v, where))).join(' ')}] /Function ${fn} /Extend [true true] >>`;
+        return `<< /ShadingType ${stype} /ColorSpace ${alpha ? '/DeviceGray' : '/DeviceRGB'} /Coords [${coords.map(v => n(num(v, where))).join(' ')}] /Function ${fn} /Extend [true true] >>`;
     };
+    // מעבר צבע עם שקיפות באחת העצירות — צריך מסכה רכה
+    const masked = v => !!v && typeof v === 'object' && Array.isArray(v.gradient?.stops)
+        && v.gradient.stops.some(k => k && typeof k === 'object' && typeof k.opacity === 'number' && k.opacity < 1);
     const paint = (v, stroke, where, m) => {
         if (v && typeof v === 'object' && !Array.isArray(v) && 'gradient' in v)
             return `/Pattern ${stroke ? 'CS ' : 'cs '}${w.pattern(shading(v.gradient, where), m)}${stroke ? ' SCN' : ' scn'}`;
@@ -391,24 +407,31 @@ export async function pdfDraw(list, resolve) {
                     const hasStroke = op.stroke !== undefined && op.stroke !== null;
                     if (!hasFill && !hasStroke) throw bad(`path בלי fill ובלי stroke: ${where}`);
                     const m = matrix(op.transform ?? null, where, b, H);
-                    c += 'q\n' + m.map(n).join(' ') + ' cm\n';
-                    const fo = op.fillOpacity !== undefined && op.fillOpacity !== null ? unit(op.fillOpacity, where) : 1;
-                    const so = op.strokeOpacity !== undefined && op.strokeOpacity !== null ? unit(op.strokeOpacity, where) : 1;
-                    if ((hasFill && fo < 1) || (hasStroke && so < 1)) c += w.alpha(hasFill ? fo : 1, hasStroke ? so : 1) + ' gs\n';
-                    if (hasFill) c += paint(op.fill, false, where, m) + '\n';
-                    if (hasStroke) {
-                        const caps = { butt: 0, round: 1, square: 2 }, joins = { miter: 0, round: 1, bevel: 2 };
-                        const cap = op.cap ?? 'butt', join = op.join ?? 'miter';
-                        if (!(cap in caps) || !(join in joins)) throw bad(`cap / join: ${where}`);
-                        c += paint(op.stroke, true, where, m) + ` ${n(num(op.width ?? 1, where))} w ${caps[cap]} J ${joins[join]} j ${n(Math.max(1, num(op.miter ?? 4, where)))} M\n`;
-                        const dash = op.dash ?? [];
-                        if (!Array.isArray(dash)) throw bad(`dash [on, off, …]: ${where}`);
-                        if (dash.length) c += `[${dash.map(v => n(Math.max(0, num(v, where)))).join(' ')}] 0 d\n`;
-                    }
                     const rule = op.fillRule ?? 'nonzero';
                     if (rule !== 'nonzero' && rule !== 'evenodd') throw bad(`fillRule: nonzero / evenodd: ${where}`);
                     const eo = rule === 'evenodd' ? '*' : '';
-                    c += pathOps(op.d ?? null, where) + (hasFill && hasStroke ? `B${eo}` : hasFill ? `f${eo}` : 'S') + '\nQ\n';
+                    const d = pathOps(op.d ?? null, where);
+                    const fo = op.fillOpacity !== undefined && op.fillOpacity !== null ? unit(op.fillOpacity, where) : 1;
+                    const so = op.strokeOpacity !== undefined && op.strokeOpacity !== null ? unit(op.strokeOpacity, where) : 1;
+                    // מסכה רכה חלה על כל מה שנצבע אחריה — מילוי וקו עם מסכה נצבעים בנפרד (קודם המילוי, כמו ב-B)
+                    const parts = hasFill && hasStroke && (masked(op.fill) || masked(op.stroke)) ? [[true, false], [false, true]] : [[hasFill, hasStroke]];
+                    for (const [pf, ps] of parts) {
+                        c += 'q\n' + m.map(n).join(' ') + ' cm\n';
+                        if ((pf && fo < 1) || (ps && so < 1)) c += w.alpha(pf ? fo : 1, ps ? so : 1) + ' gs\n';
+                        const mk = pf ? op.fill : op.stroke;
+                        if (masked(mk)) c += w.softMask(shading(mk.gradient, where, true)) + ' gs\n';
+                        if (pf) c += paint(op.fill, false, where, m) + '\n';
+                        if (ps) {
+                            const caps = { butt: 0, round: 1, square: 2 }, joins = { miter: 0, round: 1, bevel: 2 };
+                            const cap = op.cap ?? 'butt', join = op.join ?? 'miter';
+                            if (!(cap in caps) || !(join in joins)) throw bad(`cap / join: ${where}`);
+                            c += paint(op.stroke, true, where, m) + ` ${n(num(op.width ?? 1, where))} w ${caps[cap]} J ${joins[join]} j ${n(Math.max(1, num(op.miter ?? 4, where)))} M\n`;
+                            const dash = op.dash ?? [];
+                            if (!Array.isArray(dash)) throw bad(`dash [on, off, …]: ${where}`);
+                            if (dash.length) c += `[${dash.map(v => n(Math.max(0, num(v, where)))).join(' ')}] 0 d\n`;
+                        }
+                        c += d + (pf && ps ? `B${eo}` : pf ? `f${eo}` : 'S') + '\nQ\n';
+                    }
                     break;
                 }
                 case 'clip': {
