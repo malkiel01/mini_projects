@@ -171,7 +171,7 @@ export function layoutFlow(blocks, frameList, styleFor, fontsFor, avoid = () => 
       } else if (st.align === 'left') x = s.x;
       else if (st.align === 'center') x = s.x + (avail - natural) / 2;
       else x = right - natural;   // ימין — ובסוף פסקה מיושרת
-      out.get(s.frameId).lines.push({ x, y, glyphs, size: st.size, font: f, text: lineText });
+      out.get(s.frameId).lines.push({ x, y, glyphs, size: st.size, font: f, text: lineText, color: st.color || '#000000' });
       // כותרת — נרשמת בשורה הראשונה שלה, לכותרת הרצה ("{כותרת 1}" בעמוד האב)
       if (wi === 0 && /^h[1-3]$/.test(blocks[bi].style)) {
         out.get(s.frameId).heads.push({ level: Number(blocks[bi].style[1]), y, text: text.replace(/\s+/g, ' ').trim() });

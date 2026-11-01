@@ -479,9 +479,10 @@ export class PageView {
           ctx.strokeRect(p.x + fx, p.y + fy, fw, fh);
           const tl = this.text?.frames.get(fr.id);
           if (!tl) continue;
-          ctx.fillStyle = col('--ink-print');
+          const ink = col('--ink-print');
           for (const l of tl.lines) {
             if (p.y + l.y < top - 40 || p.y + l.y - l.size > bottom + 40) continue;
+            ctx.fillStyle = l.color && l.color !== '#000000' ? l.color : ink;   // צבע הסגנון; שחור — הדיו של הנייר
             drawGlyphs(ctx, l.font, l.glyphs, p.x + l.x, p.y + l.y, l.size);
           }
           if (tl.overset) {   // בפינה השמאלית התחתונה — סוף המסגרת בעברית

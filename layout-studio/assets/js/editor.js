@@ -20,6 +20,8 @@ import { initDialogs, confirm, choose, prompt } from './ui-core/dialog.js';
 import { download as saveFile } from './ui-core/files.js';
 import { shortcuts } from './ui-core/keys.js';
 import { snapshots, undoButtons } from './ui-core/history.js';
+import { colorPicker, setColorContext } from './ui-core/color.js';
+setColorContext({ prefix: 'ls-colors', presets: ['#000000', '#1a1a1a', '#7a1f1f', '#1f3a7a', '#2d5a27', '#8a6d1f'] });
 import { mountAccount } from './account-ui.js';
 
 const $ = (s, el = document) => el.querySelector(s);
@@ -693,6 +695,9 @@ function showStyle(key) {
   const st = drafts[key];
   if (![...form.querySelectorAll('[name=font]')].some(i => i.value === st.font)) renderFonts();
   form.font.value = st.font;
+  // צבע הטקסט — הבורר של ui-core (color.js); נכנס לטיוטה של הסגנון, ונשמר ב"שמירה" כמו שאר השדות
+  $('#st-color').replaceChildren(colorPicker('צבע הטקסט', st.color || '#000000', hex => { drafts[key].color = hex; }, () => {},
+    { docColors: () => STYLE_KEYS.map(k => drafts[k]?.color || styleOf(model, k).color) }));
   form.tsize.value = st.size; form.tlead.value = st.leading;
   form.tbefore.value = st.spaceBefore; form.tafter.value = st.spaceAfter; form.tindent.value = st.indent;
   form.tbold.checked = st.weight >= 600;
