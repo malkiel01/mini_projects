@@ -88,6 +88,7 @@
 
     <!-- מסך ארוך → שתי לשוניות: הפרויקטים ברמה הזאת, והמטלות של כל הענף -->
     <div class="seg-tabs view-tabs" id="viewTabs" role="tablist" aria-label="תצוגה" hidden>
+      <button type="button" role="tab" data-view="chats" aria-selected="false" hidden>💬 צ'אטים <small id="vtChatCount"></small></button>
       <button type="button" role="tab" data-view="projects" aria-selected="true">📁 <span id="vtProjLabel">פרויקטים</span> <small id="vtProjCount"></small></button>
       <button type="button" role="tab" data-view="tasks" aria-selected="false">📋 מטלות <small id="vtTaskCount"></small></button>
     </div>
@@ -103,11 +104,26 @@
       <p class="empty" id="projEmpty" hidden></p>
     </section>
 
+    <!-- הצ'אטים שרשומים לענף הזה (הגשר החי, §5.7) -->
+    <section id="chatsSection" aria-labelledby="chatsTitle" hidden>
+      <h2 class="sr-only" id="chatsTitle">צ'אטים</h2>
+      <ul class="list" id="chanRows"></ul>
+      <div class="empty" id="chanEmpty" hidden>
+        <p>אין צ'אטים מחוברים.</p>
+        <p class="hint">צ'אט נרשם בעצמו עם הסקיל <code dir="ltr">claude-tasks-live</code>, באסימון מ-⚙ ← "אסימון לצ'אטים".</p>
+      </div>
+    </section>
+
     <section id="tasksSection" aria-labelledby="tasksTitle">
     <div class="sec-head">
       <h2 class="sec-title" id="tasksTitle">מטלות</h2>
       <!-- מטלות ישנות בלי פרויקט — מוצג רק לבעל הלוח, ורק כשיש כאלה -->
       <button type="button" class="btn ghost sm" id="assignBtn" hidden>📥 שיוך מטלות <small id="assignCount"></small></button>
+    </div>
+    <!-- השלבים של הפרויקט (נושאים בתוך פרויקט) — סינון; ✏️ לעריכה -->
+    <div class="stages" id="stages" hidden>
+      <div class="stage-row" id="stageRow" role="tablist" aria-label="שלבים"></div>
+      <button type="button" class="icon-btn" id="stageEdit" aria-label="עריכת השלבים" title="עריכת השלבים">✏️</button>
     </div>
     <!-- המצב והסינון — אותו רכיב: המספר הוא גם הכפתור -->
     <div class="seg-tabs" id="statusChips" role="tablist" aria-label="סינון לפי מצב">
@@ -251,7 +267,7 @@
 <div class="drawer" id="drawer" hidden>
   <div class="drawer__panel">
     <header class="drawer__head">
-      <h2>נושאים</h2>
+      <h2>נושאים כלליים</h2>
       <button type="button" class="icon-btn" data-close="drawer" aria-label="סגירה">✕</button>
     </header>
     <nav class="topics" id="topics"></nav>
@@ -270,6 +286,49 @@
     </form>
   </div>
 </div>
+
+<!-- ── שיחה עם צ'אט (§5.7) ─────────────────────────────────────── -->
+<dialog id="chatView" class="chat-dialog" aria-labelledby="cvTitle">
+  <div class="sheet-wrap chat-wrap">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close="chatView" aria-label="סגירה">✕</button>
+      <div class="cv-titles">
+        <h2 id="cvTitle"></h2>
+        <small id="cvSub"></small>
+      </div>
+      <button type="button" class="icon-btn" id="cvArchive" aria-label="ניתוק הצ'אט" title="ניתוק הצ'אט" hidden>🔌</button>
+    </header>
+    <ol class="chat-log" id="chatLog" aria-live="polite" aria-label="ההודעות"></ol>
+    <form class="composer" id="chatForm">
+      <p class="hint" id="cvNote" hidden></p>
+      <div class="composer-row">
+        <label class="sr-only" for="chatInput">הודעה לצ'אט</label>
+        <textarea id="chatInput" rows="1" placeholder="הודעה לצ'אט" maxlength="20000"></textarea>
+        <button type="submit" class="btn primary" id="chatSend">שליחה</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+
+<!-- ── שלבי הפרויקט ──────────────────────────────────────────── -->
+<dialog id="stagesSheet" aria-labelledby="stagesT">
+  <div class="sheet-wrap">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close="stagesSheet" aria-label="סגירה">✕</button>
+      <h2 id="stagesT">שלבים</h2>
+      <span></span>
+    </header>
+    <div class="sheet-body">
+      <p class="hint">השלבים של הפרויקט — לכל מטלה שלב אחד. נגיעה בשלב — לשם ולמילות המפתח.</p>
+      <ul class="list" id="stageList"></ul>
+      <form class="composer-row" id="stageForm">
+        <label class="sr-only" for="stageName">שלב חדש</label>
+        <input type="text" id="stageName" placeholder="שלב חדש, למשל עיצוב" required maxlength="80">
+        <button type="submit" class="btn ghost">הוספה</button>
+      </form>
+    </div>
+  </div>
+</dialog>
 
 <!-- ── פרטי מטלה ─────────────────────────────────────────────── -->
 <dialog id="detail" aria-labelledby="dTitle">
