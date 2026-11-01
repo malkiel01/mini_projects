@@ -21,6 +21,16 @@
  * transform — מטריצה של SVG על הנקודות, ביחידות הרשימה (y למטה); עובי הקו והמקפים עוברים בה כמו ב-SVG. לפחות fill או stroke.
  * image: גם "opacity" (0–1).
  *
+ * שלב 2:
+ *       { "op": "clip", "d": "M…", "fillRule": "nonzero" | "evenodd", "transform": [a, b, c, d, e, f] },
+ *       … הפעולות שאחריו מוגבלות לנתיב, עד …
+ *       { "op": "restore" }        — מקונן; clip שלא נסגר — נסגר בסוף העמוד
+ * fill / stroke של path — גם מעבר צבע, בקואורדינטות של הנתיב (אחרי transform, כמו userSpaceOnUse ב-SVG):
+ *       { "gradient": { "type": "linear", "x1": 0, "y1": 0, "x2": 100, "y2": 0,
+ *                       "stops": [ { "offset": 0, "color": "#…" }, { "offset": 1, "color": "#…" } ] } }
+ *       { "gradient": { "type": "radial", "cx": 50, "cy": 50, "r": 50, "fx": 50, "fy": 50, "stops": [ … ] } }
+ * שקיפות בתוך העצירות — עוד לא (שגיאה); שקיפות לכל המעבר — fillOpacity / strokeOpacity.
+ *
  * glyphs: נקודת ההתחלה (x, y) היא קו הבסיס. כל גליף — מזהה בגופן, היסט (dx ימינה, dy למעלה — כמו HarfBuzz) והתקדמות,
  * כולם בנקודות בגודל הנתון; הגליפים בסדר חזותי (משמאל לימין). text — הטקסט הלוגי (ActualText: חיפוש והעתקה).
  * font / src — מפתח שה-$resolve מתרגם ל-bytes (למשל נתיב ב-media/ של ה-‎.mbe). כל בעיה — InvalidArgumentException.
@@ -56,6 +66,58 @@ function pdf_draw(array $list, callable $resolve): string
         $x = $num($v, $where);
         if ($x < 0 || $x > 1) throw new InvalidArgumentException("ערך בין 0 ל-1: $where");
         return $x;
+    };
+    // מטריצת SVG על הרשימה (y למטה) → cm ב-PDF: p ↦ (x + bleed, H − bleed − y) אחרי transform
+    $matrix = function ($t, string $where, float $b, float $H) use ($num): array {
+        $t ??= [1, 0, 0, 1, 0, 0];
+        if (!is_array($t) || count($t) !== 6) throw new InvalidArgumentException("transform [a, b, c, d, e, f]: $where");
+        [$ta, $tb, $tc, $td, $te, $tf] = array_map(fn($v) => $num($v, $where), array_values($t));
+        return [$ta, -$tb, $tc, -$td, $te + $b, $H - $b - $tf];
+    };
+    $inverse = function (array $m, string $where): array {
+        [$a, $b, $c, $d, $e, $f] = $m;
+        $det = $a * $d - $b * $c;
+        if (abs($det) < 1e-12) throw new InvalidArgumentException("transform לא הפיך: $where");
+        return [$d / $det, -$b / $det, -$c / $det, $a / $det, ($c * $f - $d * $e) / $det, ($b * $e - $a * $f) / $det];
+    };
+    // מעבר צבע → מילון Shading (2 — לינארי, 3 — רדיאלי); כמה עצירות — פונקציה מחוברת (type 3) של מקטעים לינאריים
+    $shading = function ($g, string $where) use ($num, $color, $n): string {
+        if (!is_array($g)) throw new InvalidArgumentException("gradient: $where");
+        $type = $g['type'] ?? '';
+        $stops = $g['stops'] ?? null;
+        if (!is_array($stops) || !$stops) throw new InvalidArgumentException("gradient: stops חסרים: $where");
+        $st = [];
+        foreach (array_values($stops) as $k) {
+            if (!is_array($k)) throw new InvalidArgumentException("gradient: עצירה { offset, color }: $where");
+            if (isset($k['opacity']) && $num($k['opacity'], $where) < 1) throw new InvalidArgumentException("gradient: שקיפות בעצירות — עוד לא נתמכת (fillOpacity / strokeOpacity לכל המעבר): $where");
+            $st[] = [max(0, min(1, $num($k['offset'] ?? null, $where))), $color($k['color'] ?? null, $where)];
+        }
+        usort($st, fn($x, $y) => $x[0] <=> $y[0]);
+        if ($st[0][0] > 0) array_unshift($st, [0.0, $st[0][1]]);
+        if (end($st)[0] < 1) $st[] = [1.0, end($st)[1]];
+        $seg = fn($c0, $c1) => "<< /FunctionType 2 /Domain [0 1] /C0 [$c0] /C1 [$c1] /N 1 >>";
+        if (count($st) === 2) $fn = $seg($st[0][1], $st[1][1]);
+        else {
+            $parts = []; $bounds = []; $enc = [];
+            for ($i = 0; $i < count($st) - 1; $i++) { $parts[] = $seg($st[$i][1], $st[$i + 1][1]); $enc[] = '0 1'; if ($i) $bounds[] = $n($st[$i][0]); }
+            $fn = '<< /FunctionType 3 /Domain [0 1] /Functions [' . implode(' ', $parts) . '] /Bounds [' . implode(' ', $bounds) . '] /Encode [' . implode(' ', $enc) . '] >>';
+        }
+        if ($type === 'linear') {
+            $coords = [$g['x1'] ?? null, $g['y1'] ?? null, $g['x2'] ?? null, $g['y2'] ?? null];
+            $stype = 2;
+        } elseif ($type === 'radial') {
+            $cx = $g['cx'] ?? null; $cy = $g['cy'] ?? null;
+            $r = $num($g['r'] ?? null, $where);
+            if ($r <= 0) throw new InvalidArgumentException("gradient: r חיובי: $where");
+            $coords = [$g['fx'] ?? $cx, $g['fy'] ?? $cy, 0, $cx, $cy, $r];
+            $stype = 3;
+        } else throw new InvalidArgumentException("gradient: type — linear / radial: $where");
+        return "<< /ShadingType $stype /ColorSpace /DeviceRGB /Coords [" . implode(' ', array_map(fn($v) => $n($num($v, $where)), $coords)) . "] /Function $fn /Extend [true true] >>";
+    };
+    // צבע או מעבר צבע → האופרטורים שקובעים אותו (rg / RG, או תבנית: /Pattern cs … scn)
+    $paint = function ($v, bool $stroke, string $where, array $m) use ($color, $shading, $w): string {
+        if (is_array($v) && isset($v['gradient'])) return '/Pattern ' . ($stroke ? 'CS ' : 'cs ') . $w->pattern($shading($v['gradient'], $where), $m) . ($stroke ? ' SCN' : ' scn');
+        return $color($v, $where) . ($stroke ? ' RG' : ' rg');
     };
     // d של נתיב → אופרטורים של PDF (בקואורדינטות הרשימה; ה-cm של הפעולה מתרגם)
     $pathOps = function ($d, string $where) use ($n): string {
@@ -107,6 +169,7 @@ function pdf_draw(array $list, callable $resolve): string
         $X = fn(float $x) => $x + $b;
         $Y = fn(float $y) => $H - ($y + $b);
         $c = '';
+        $depth = 0;   // clip פתוחים
         foreach (array_values($page['ops'] ?? []) as $oi => $op) {
             $where = "$at, פעולה " . ($oi + 1);
             switch ($op['op'] ?? '') {
@@ -160,25 +223,22 @@ function pdf_draw(array $list, callable $resolve): string
                         . $n($X($num($from[0], $where))) . ' ' . $n($Y($num($from[1], $where))) . ' m ' . $n($X($num($to[0], $where))) . ' ' . $n($Y($num($to[1], $where))) . " l S\nQ\n";
                     break;
                 case 'path':
-                    $fill = isset($op['fill']) ? $color($op['fill'], $where) : null;
-                    $stroke = isset($op['stroke']) ? $color($op['stroke'], $where) : null;
-                    if ($fill === null && $stroke === null) throw new InvalidArgumentException("path בלי fill ובלי stroke: $where");
-                    $t = $op['transform'] ?? [1, 0, 0, 1, 0, 0];
-                    if (!is_array($t) || count($t) !== 6) throw new InvalidArgumentException("transform [a, b, c, d, e, f]: $where");
-                    [$ta, $tb, $tc, $td, $te, $tf] = array_map(fn($v) => $num($v, $where), array_values($t));
-                    // מהרשימה (y למטה) ל-PDF: p ↦ (x + bleed, H − bleed − y), אחרי transform של SVG
-                    $c .= "q\n" . implode(' ', array_map($n, [$ta, -$tb, $tc, -$td, $te + $b, $H - $b - $tf])) . " cm\n";
+                    $hasFill = isset($op['fill']);
+                    $hasStroke = isset($op['stroke']);
+                    if (!$hasFill && !$hasStroke) throw new InvalidArgumentException("path בלי fill ובלי stroke: $where");
+                    $m = $matrix($op['transform'] ?? null, $where, $b, $H);
+                    $c .= "q\n" . implode(' ', array_map($n, $m)) . " cm\n";
                     $fo = isset($op['fillOpacity']) ? $unit($op['fillOpacity'], $where) : 1.0;
                     $so = isset($op['strokeOpacity']) ? $unit($op['strokeOpacity'], $where) : 1.0;
-                    if (($fill !== null && $fo < 1) || ($stroke !== null && $so < 1)) $c .= $w->alpha($fill !== null ? $fo : 1, $stroke !== null ? $so : 1) . " gs\n";
-                    if ($fill !== null) $c .= "$fill rg\n";
-                    if ($stroke !== null) {
+                    if (($hasFill && $fo < 1) || ($hasStroke && $so < 1)) $c .= $w->alpha($hasFill ? $fo : 1, $hasStroke ? $so : 1) . " gs\n";
+                    if ($hasFill) $c .= $paint($op['fill'], false, $where, $m) . "\n";
+                    if ($hasStroke) {
                         $caps = ['butt' => 0, 'round' => 1, 'square' => 2];
                         $joins = ['miter' => 0, 'round' => 1, 'bevel' => 2];
                         $cap = $op['cap'] ?? 'butt';
                         $join = $op['join'] ?? 'miter';
                         if (!isset($caps[$cap]) || !isset($joins[$join])) throw new InvalidArgumentException("cap / join: $where");
-                        $c .= "$stroke RG " . $n($num($op['width'] ?? 1, $where)) . " w {$caps[$cap]} J {$joins[$join]} j " . $n(max(1, $num($op['miter'] ?? 4, $where))) . " M\n";
+                        $c .= $paint($op['stroke'], true, $where, $m) . ' ' . $n($num($op['width'] ?? 1, $where)) . " w {$caps[$cap]} J {$joins[$join]} j " . $n(max(1, $num($op['miter'] ?? 4, $where))) . " M\n";
                         $dash = $op['dash'] ?? [];
                         if (!is_array($dash)) throw new InvalidArgumentException("dash [on, off, …]: $where");
                         if ($dash) $c .= '[' . implode(' ', array_map(fn($v) => $n(max(0, $num($v, $where))), array_values($dash))) . "] 0 d\n";
@@ -186,13 +246,27 @@ function pdf_draw(array $list, callable $resolve): string
                     $rule = $op['fillRule'] ?? 'nonzero';
                     if ($rule !== 'nonzero' && $rule !== 'evenodd') throw new InvalidArgumentException("fillRule: nonzero / evenodd: $where");
                     $eo = $rule === 'evenodd' ? '*' : '';
-                    $c .= $pathOps($op['d'] ?? null, $where) . ($fill !== null && $stroke !== null ? "B$eo" : ($fill !== null ? "f$eo" : 'S')) . "\nQ\n";
+                    $c .= $pathOps($op['d'] ?? null, $where) . ($hasFill && $hasStroke ? "B$eo" : ($hasFill ? "f$eo" : 'S')) . "\nQ\n";
+                    break;
+                case 'clip':
+                    // q — נשאר פתוח עד restore. ה-cm של הנתיב מבוטל אחרי החיתוך (בהופכית), כך שהפעולות שאחריו בקואורדינטות הרגילות
+                    $m = $matrix($op['transform'] ?? null, $where, $b, $H);
+                    $rule = $op['fillRule'] ?? 'nonzero';
+                    if ($rule !== 'nonzero' && $rule !== 'evenodd') throw new InvalidArgumentException("fillRule: nonzero / evenodd: $where");
+                    $c .= "q\n" . implode(' ', array_map($n, $m)) . " cm\n" . $pathOps($op['d'] ?? null, $where) . ($rule === 'evenodd' ? 'W*' : 'W') . " n\n"
+                        . implode(' ', array_map(fn($v) => ($t = rtrim(rtrim(sprintf('%.6F', $v), '0'), '.')) === '-0' ? '0' : $t, $inverse($m, $where))) . " cm\n";
+                    $depth++;
+                    break;
+                case 'restore':
+                    if ($depth === 0) throw new InvalidArgumentException("restore בלי clip פתוח: $where");
+                    $c .= "Q\n";
+                    $depth--;
                     break;
                 default:
                     throw new InvalidArgumentException('פעולה לא מוכרת "' . (is_string($op['op'] ?? null) ? $op['op'] : '') . "\": $where");
             }
         }
-        $w->pages[$idx]['main'] = $c;
+        $w->pages[$idx]['main'] = $c . str_repeat("Q\n", $depth);
     }
     return $w->output((string)($list['title'] ?? ''));
 }

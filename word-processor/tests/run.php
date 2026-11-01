@@ -2391,6 +2391,70 @@ check('path: רשימה פגומה — הודעה ברורה', str_contains($dwE
     && str_contains($dwErr(['pages' => [['size' => [10, 10], 'ops' => [['op' => 'path', 'd' => 'M0 0 L5 5', 'fill' => '#000000', 'fillOpacity' => 2]]]]]), 'בין 0 ל-1')
     && str_contains($dwErr(['pages' => [['size' => [10, 10], 'ops' => [['op' => 'path', 'd' => 'M0 0 L5 5 x', 'fill' => '#000000']]]]]), 'רק M L C Q Z'));
 
+// pdf-core, שלב 2 (#971): clip עד restore (מקונן, עם transform), ומעבר צבע לינארי / רדיאלי ב-fill וב-stroke
+$sq = fn($x, $y, $w, $h) => "M$x $y L" . ($x + $w) . " $y L" . ($x + $w) . ' ' . ($y + $h) . " L$x " . ($y + $h) . ' Z';
+$c2List = ['pages' => [
+    ['size' => [100, 100], 'ops' => [   // 1: חיתוך פשוט, ואחרי restore — בלי חיתוך
+        ['op' => 'clip', 'd' => $sq(20, 20, 60, 60)],
+        ['op' => 'path', 'd' => $sq(0, 0, 100, 100), 'fill' => '#000000'],
+        ['op' => 'restore'],
+        ['op' => 'path', 'd' => $sq(0, 0, 10, 10), 'fill' => '#ff0000'],
+    ]],
+    ['size' => [100, 100], 'ops' => [   // 2: מקונן — החיתוך ב-40..60; ו-clip עם transform (×2) — ה-cm שלו לא דולף הלאה
+        ['op' => 'clip', 'd' => $sq(0, 0, 60, 100)],
+        ['op' => 'clip', 'd' => $sq(40, 0, 60, 50)],
+        ['op' => 'path', 'd' => $sq(0, 0, 100, 100), 'fill' => '#000000'],
+        ['op' => 'restore'], ['op' => 'restore'],
+        ['op' => 'clip', 'd' => $sq(0, 0, 10, 10), 'transform' => [2, 0, 0, 2, 0, 60]],
+        ['op' => 'path', 'd' => $sq(5, 65, 10, 10), 'fill' => '#000000'],
+    ]],
+    ['size' => [100, 100], 'ops' => [   // 3: מעברי צבע — לינארי בשלוש עצירות (עם transform), רדיאלי, וקו
+        ['op' => 'path', 'd' => $sq(0, 0, 100, 20), 'transform' => [1, 0, 0, 1, 0, 10],
+            'fill' => ['gradient' => ['type' => 'linear', 'x1' => 0, 'y1' => 0, 'x2' => 100, 'y2' => 0,
+                'stops' => [['offset' => 0, 'color' => '#ff0000'], ['offset' => 0.5, 'color' => '#00ff00'], ['offset' => 1, 'color' => '#0000ff']]]]],
+        ['op' => 'path', 'd' => $sq(30, 40, 40, 40),
+            'fill' => ['gradient' => ['type' => 'radial', 'cx' => 50, 'cy' => 60, 'r' => 20, 'stops' => [['offset' => 0, 'color' => '#ffffff'], ['offset' => 1, 'color' => '#000000']]]]],
+        ['op' => 'path', 'd' => 'M0 95 L100 95', 'width' => 6,
+            'stroke' => ['gradient' => ['type' => 'linear', 'x1' => 0, 'y1' => 0, 'x2' => 100, 'y2' => 0, 'stops' => [['offset' => 0, 'color' => '#000000'], ['offset' => 1, 'color' => '#ff0000']]]]],
+    ]],
+]];
+$c2Pdf = pdf_draw($c2List, $dwRes);
+$c2Raw = preg_replace_callback('/stream\n(.*?)\nendstream/s', fn($m) => 'stream ' . (@gzuncompress($m[1]) ?: '') . ' endstream', $c2Pdf);
+check('clip: q … W n, וה-cm של הנתיב מבוטל בהופכית; restore — Q; מעבר צבע — /Pattern cs / CS עם Shading 2 / 3',
+    str_contains($c2Raw, "W n\n1 0 0 -1 0 100 cm") && str_contains($c2Raw, "W n\n0.5 0 0 -0.5 0 20 cm") && str_contains($c2Raw, '/Pattern cs /P1 scn') && str_contains($c2Raw, '/Pattern CS /P3 SCN')
+    && str_contains($c2Pdf, '/ShadingType 2') && str_contains($c2Pdf, '/ShadingType 3') && str_contains($c2Pdf, '/FunctionType 3') && str_contains($c2Pdf, '/Bounds [0.5]')
+    && preg_match('/\/Pattern << \/P1 \d+ 0 R \/P2 \d+ 0 R \/P3 \d+ 0 R >>/', $c2Pdf), substr($c2Raw, strpos($c2Raw, 'W n') ?: 0, 120));
+check('בלי מעבר צבע — אין Pattern במשאבים', !str_contains($ptPdf, '/Pattern') && !str_contains($dwPdf, '/Pattern'));
+if (trim((string)shell_exec('command -v pdftoppm'))) {
+    file_put_contents("$tmp/clip.pdf", $c2Pdf);
+    shell_exec('pdftoppm -r 72 -png ' . escapeshellarg("$tmp/clip.pdf") . ' ' . escapeshellarg("$tmp/clip") . ' 2>&1');
+    $c2Px = function (int $page, int $x, int $y) use ($tmp): array {
+        $im = @imagecreatefrompng(glob("$tmp/clip-*$page.png")[0] ?? '');
+        if (!$im) return [-1, -1, -1];
+        $v = imagecolorat($im, $x, $y);
+        return [($v >> 16) & 255, ($v >> 8) & 255, $v & 255];
+    };
+    $dark = fn($p) => $p[0] >= 0 && max($p) < 60;
+    $white = fn($p) => min($p) > 200;
+    check('clip, כפי שמוצג: בתוך החיתוך שחור, מחוצה לו לבן, ואחרי restore — מצויר בלי חיתוך', $dark($c2Px(1, 50, 50)) && $white($c2Px(1, 10, 50)) && $white($c2Px(1, 90, 50))
+        && $c2Px(1, 5, 5)[0] > 200 && $c2Px(1, 5, 5)[1] < 60, json_encode([$c2Px(1, 50, 50), $c2Px(1, 10, 50), $c2Px(1, 5, 5)]));
+    check('clip מקונן — רק החיתוך המשותף; clip עם transform — הפעולה שאחריו לא מוגדלת', $dark($c2Px(2, 50, 25)) && $white($c2Px(2, 30, 25)) && $white($c2Px(2, 70, 25)) && $white($c2Px(2, 50, 75 - 20))
+        && $dark($c2Px(2, 12, 72)) && $white($c2Px(2, 17, 77)), json_encode([$c2Px(2, 50, 25), $c2Px(2, 30, 25), $c2Px(2, 12, 72), $c2Px(2, 17, 77)]));
+    [$l0, $l5, $l9] = [$c2Px(3, 3, 20), $c2Px(3, 50, 20), $c2Px(3, 97, 20)];
+    [$rc, $re] = [$c2Px(3, 50, 60), $c2Px(3, 33, 43)];
+    [$s0, $s9] = [$c2Px(3, 3, 95), $c2Px(3, 97, 95)];
+    check('מעבר צבע, כפי שמוצג: לינארי אדום → ירוק → כחול (בתוך transform), רדיאלי בהיר במרכז וכהה בקצה, וקו שמתחיל שחור ונגמר אדום',
+        $l0[0] > 200 && $l0[2] < 60 && $l5[1] > 200 && $l5[0] < 60 && $l9[2] > 200 && $l9[0] < 60 && min($rc) > 200 && max($re) < 60 && max($s0) < 60 && $s9[0] > 200 && $s9[1] < 60,
+        json_encode([$l0, $l5, $l9, $rc, $re, $s0, $s9]));
+    array_map('unlink', glob("$tmp/clip*") ?: []);
+}
+check('clip / מעבר צבע: רשימה פגומה — הודעה ברורה', str_contains($dwErr(['pages' => [['size' => [10, 10], 'ops' => [['op' => 'restore']]]]]), 'restore בלי clip')
+    && str_contains($dwErr(['pages' => [['size' => [10, 10], 'ops' => [['op' => 'path', 'd' => 'M0 0 L5 5 Z', 'fill' => ['gradient' => ['type' => 'conic', 'stops' => [['offset' => 0, 'color' => '#000000']]]]]]]]]), 'linear / radial')
+    && str_contains($dwErr(['pages' => [['size' => [10, 10], 'ops' => [['op' => 'path', 'd' => 'M0 0 L5 5 Z', 'fill' => ['gradient' => ['type' => 'linear', 'x1' => 0, 'y1' => 0, 'x2' => 5, 'y2' => 0,
+        'stops' => [['offset' => 0, 'color' => '#000000', 'opacity' => 0.5]]]]]]]]]), 'שקיפות בעצירות')
+    && str_contains($dwErr(['pages' => [['size' => [10, 10], 'ops' => [['op' => 'clip', 'd' => 'M0 0 L5 5 Z', 'transform' => [0, 0, 0, 0, 0, 0]]]]]]), 'לא הפיך')
+    && $dwErr(['pages' => [['size' => [10, 10], 'ops' => [['op' => 'clip', 'd' => 'M0 0 L5 5 Z']]]]]) === '');
+
 array_map('unlink', glob("$tmp/media/mbe/ids/*") ?: []);
 @rmdir("$tmp/media/mbe/ids");
 array_map('unlink', glob("$tmp/media/mbe/*") ?: []);
