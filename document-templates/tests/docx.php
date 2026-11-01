@@ -162,6 +162,15 @@ check('שדה ריק — הסימון נמחק (לא נשאר {{}})', !str_conta
 check('דף אישור: מעבר עמוד ופסקאות לפני sectPr', (bool)preg_match('#<w:br w:type="page"/><w:t[^>]*>דף אישור</w:t>.*שורה 2.*<w:sectPr/>#us', $x2));
 check('דף אישור: XML תקין', (new DOMDocument())->loadXML($x2) === true);
 
+// ── 15.7: טקסט רב-שורות דוחף מטה — גם בתא של שורה בגובה "בדיוק" ──
+$tb = make_docx('<w:tbl><w:tr><w:trPr><w:trHeight w:val="400" w:hRule="exact"/></w:trPr><w:tc><w:p><w:r><w:t>{{הערות}}</w:t></w:r></w:p></w:tc></w:tr>'
+    . '<w:tr><w:trPr><w:trHeight w:val="400" w:hRule="exact"/></w:trPr><w:tc><w:p><w:r><w:t>{{שם}}</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p><w:r><w:t>אחרי</w:t></w:r></w:p>');
+$ts = ['fields' => [['key' => 'n', 'type' => 'textarea', 'label' => 'הערות', 'placeholder' => 'הערות'], ['key' => 'm', 'type' => 'text', 'label' => 'שם', 'placeholder' => 'שם']]];
+$tx = part(docx_fill($tb, $ts, ['n' => "שורה 1\nשורה 2\nשורה 3", 'm' => 'משה'], []), 'word/document.xml');
+check('15.7 Word: ירידות שורה — <w:br/> בתוך הפסקה', substr_count($tx, '<w:br/>') === 2);
+check('15.7 Word: שורה בגובה "בדיוק" עם טקסט רב-שורות — "לפחות"', substr_count($tx, 'w:hRule="atLeast"') === 1);
+check('15.7 Word: שורה עם ערך של שורה אחת — נשארת כמו שהיא', substr_count($tx, 'w:hRule="exact"') === 1);
+
 foreach (array_merge(glob("$tmp/files/*") ?: [], array_filter(glob("$tmp/{,.}*", GLOB_BRACE) ?: [], 'is_file')) as $p) @unlink($p);
 @rmdir("$tmp/files");
 @rmdir($tmp);

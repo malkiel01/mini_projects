@@ -156,7 +156,7 @@ function docx_fields(array $names): array
             (bool)preg_match('/תאריך|date/iu', $n) => 'date',
             (bool)preg_match('/סכום|מחיר|כמות|amount|price|sum/iu', $n) => 'number',   // "מספר_חוזה" — לרוב עם אותיות, לא מספר
             (bool)preg_match('/סימון|מאשר|☐|check/iu', $n) => 'checkbox',
-            (bool)preg_match('/הערות|תיאור|פירוט|notes/iu', $n) => 'textarea',
+            (bool)preg_match('/הערות|תיאור|פירוט|מטר[הת]|יעד|סיכום|מהלך|notes/iu', $n) => 'textarea',
             default => 'text',
         };
         $fields[] = ['id' => 'f' . count($fields), 'key' => 'f' . (count($fields) + 1), 'placeholder' => $n, 'label' => $label,
@@ -238,6 +238,10 @@ function docx_fill(string $bytes, array $schema, array $values, array $attachmen
             $new = preg_replace_callback(PLACEHOLDER, fn($m) => $map[trim($m[1])] ?? '', $text);
             $changed = true;
             $lines = preg_split('/\r?\n/', $new);
+            // 15.7: טקסט רב-שורות בתא של שורה בגובה "בדיוק" — השורה הופכת ל"לפחות", כדי שתתארך ותדחוף מטה
+            if (count($lines) > 1) {
+                foreach ($xp->query('ancestor::w:tr[1]/w:trPr/w:trHeight[@w:hRule="exact"]', $t) as $hgt) $hgt->setAttributeNS(W_NS, 'w:hRule', 'atLeast');
+            }
             set_text($t, array_shift($lines));
             $after = $t;
             foreach ($lines as $line) {

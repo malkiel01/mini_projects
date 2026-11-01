@@ -88,6 +88,14 @@ check('מפתח כפול קיבל שם אחר', $f[1]['key'] !== 'tenantname');
 check('סוג לא מוכר → טקסט', $f[1]['type'] === 'text');
 check('שדה שחורג — נחסם לגבולות הדף', $f[1]['w'] == 1 && $f[1]['x'] == 0 && $f[1]['y'] == 0 && $f[1]['page'] === 0);
 check('overflow לא מוכר → shrink', $f[1]['overflow'] === 'shrink');
+// 15.7: טקסט ארוך "לפי התוכן" — נשמר, עם שבירה לדפים כברירת מחדל ושוליים תחתונים
+$ta = fn($x) => ['key' => 'notes', 'type' => 'textarea', 'label' => 'הערות', 'page' => 0, 'x' => 0.1, 'y' => 0.3, 'w' => 0.8, 'h' => 0.1] + $x;
+tpl_save($a, ['id' => $id, 'schema' => ['pages' => $schema['pages'], 'fields' => [$ta(['fit' => 'content', 'overflow' => 'shrink', 'keep_bottom' => 30])]]]);
+$f = tpl_get($a, $id)['template']['schema']['fields'][0];
+check('15.7: fit=content נשמר, overflow שלא מתאים → pages, keep_bottom', $f['fit'] === 'content' && $f['overflow'] === 'pages' && $f['keep_bottom'] === 30);
+tpl_save($a, ['id' => $id, 'schema' => ['pages' => $schema['pages'], 'fields' => [$ta(['fit' => 'whatever', 'overflow' => 'annex'])]]]);
+$f = tpl_get($a, $id)['template']['schema']['fields'][0];
+check('15.7: fit לא מוכר → fixed, overflow נשאר', $f['fit'] === 'fixed' && $f['overflow'] === 'annex');
 throws('תבנית בלי דפים נדחית', fn() => tpl_save($a, ['id' => $id, 'schema' => ['pages' => []]]), 422);
 
 // ── גרסאות ──
