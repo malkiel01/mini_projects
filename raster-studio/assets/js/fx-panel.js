@@ -4,8 +4,7 @@
 // אפקט שאנחנו לא מכירים (או עוד אחד מאותו סוג, מאפליקציה אחרת) — נשאר ברשימה כמו שהוא.
 
 import { EFFECT_TYPES } from './engine/formats.js';
-
-const $ = (s, el = document) => el.querySelector(s);
+import { $ } from './ui-core/dom.js';
 
 export const FX_LABEL = { shadow: 'צל', glow: 'זוהר', stroke: 'קו מתאר', overlay: 'צבע', 'inner-glow': 'זוהר פנימי', 'inner-shadow': 'צל פנימי' };
 // ערכי ברירת המחדל — ביחידות הלוח (אחוזים, מעלות, פיקסלים)

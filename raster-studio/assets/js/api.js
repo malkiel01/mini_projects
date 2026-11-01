@@ -73,14 +73,8 @@ export async function fetchMbe(id, v = null) {
   return new Uint8Array(await res.arrayBuffer());
 }
 
-export function toast(msg, err = false) {
-  const el = document.querySelector('.toast');
-  el.textContent = msg;
-  el.classList.toggle('err', err);
-  el.hidden = false;
-  clearTimeout(toast.t);
-  toast.t = setTimeout(() => { el.hidden = true; }, 2600);
-}
+// הודעה בתחתית המסך — מ-ui-core (toast(msg, true) — שגיאה, כמו קודם)
+export { toast } from './ui-core/toast.js';
 
 // "1920×1080" בתוך טקסט עברי מתהפך ל-"1080×1920" — מבודדים אותו באלמנט LTR
 export function dims([w, h]) {

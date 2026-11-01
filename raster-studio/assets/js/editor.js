@@ -21,8 +21,12 @@ import { unzip } from './engine/unzip.js';
 import { buildMbe, openMbe, sniffZip, MbeOpenError } from './mbe-io.js';
 import { activeHandoff, returnHandoff, endHandoff } from './handoff.js';
 import { keyOf } from './ui-core/keys.js';
+import { $ } from './ui-core/dom.js';
+import { initDialogs, confirm } from './ui-core/dialog.js';
 
-const $ = s => document.querySelector(s);
+// חלונות: --vvh / --kb, ✕ ולחיצה ברקע סוגרים — ui-core
+initDialogs();
+
 const stage = $('#stage');
 let canvas = $('#canvas');
 const msg = $('#msg');
@@ -154,8 +158,8 @@ async function decodeWithBudget(blob) {
   let bmp;
   try { bmp = await decodeImage(blob); } catch { throw new Error('decode'); }
   const s = suggestSize(bmp.width, bmp.height, budget.maxPixels());
-  if (s && confirm(`התמונה גדולה לזיכרון של המכשיר הזה (${megapixels(bmp.width, bmp.height)} מגה-פיקסל).\n` +
-      `להקטין ל-${s[0]}×${s[1]}?\n\n"ביטול" — להמשיך בגודל המלא.`)) {
+  if (s && await confirm(`התמונה גדולה לזיכרון של המכשיר הזה (${megapixels(bmp.width, bmp.height)} מגה-פיקסל). ` +
+      `להקטין ל-${s[0]}×${s[1]}?`, { title: 'תמונה גדולה', ok: 'הקטנה', cancel: 'בגודל המלא' })) {
     bmp.close();
     try { bmp = await decodeImage(blob, s); } catch { throw new Error('decode'); }
   }
@@ -351,7 +355,8 @@ async function saveToServer() {
       r = await uploadMbe(doc.serverId, bytes, doc.serverVersion ?? 0);
     } catch (e) {
       if (e.message !== 'conflict') throw e;
-      if (!confirm('בינתיים נשמרה בשרת גרסה אחרת (אולי ממכשיר אחר).\nלשמור את שלך כגרסה חדשה מעליה? הקודמת נשארת בגרסאות.')) return;
+      if (!(await confirm('בינתיים נשמרה בשרת גרסה אחרת (אולי ממכשיר אחר). לשמור את שלך כגרסה חדשה מעליה? הקודמת נשארת בגרסאות.',
+        { title: 'גרסה אחרת בשרת', ok: 'שמירה כגרסה חדשה' }))) return;
       r = await uploadMbe(doc.serverId, bytes, doc.serverVersion ?? 0, true);
     }
     doc.serverVersion = r.version;
@@ -411,10 +416,9 @@ async function showVersions() {
   }
 }
 versionsDlg.addEventListener('click', async e => {
-  if (e.target.closest('[data-close]')) { versionsDlg.close(); return; }
   const b = e.target.closest('[data-v]');
   if (!b) return;
-  if (unsaved && !confirm('יש שינויים שלא נשמרו בשרת. לפתוח את הגרסה בכל זאת? (השינויים יאבדו)')) return;
+  if (unsaved && !(await confirm('יש שינויים שלא נשמרו בשרת. לפתוח את הגרסה בכל זאת? השינויים יאבדו.', { ok: 'פתיחת הגרסה', danger: true }))) return;
   try {
     const { doc: meta } = await api('doc_get', { id: doc.serverId });
     await openServerVersion(meta, Number(b.dataset.v));
@@ -446,7 +450,6 @@ const gapText = x => {
   return GAP_TEXT[x] ?? (m ? `שכבות ${m[1]} של אפליקציה אחרת לא נכנסות (ב-‎.mbe הן נשמרות)` : x);
 };
 exportDlg.addEventListener('click', async e => {
-  if (e.target.closest('[data-close]')) { exportDlg.close(); return; }
   const b = e.target.closest('[data-export]');
   if (!b || b.disabled) return;
   const kind = b.dataset.export;
@@ -685,7 +688,8 @@ $('#hint').textContent = coarse ? 'צביטה — זום' : 'גרירה — הז
       let draft = await loadDraft('draft:doc:' + meta.id);
       // בטיוטה יש שינויים שלא נשמרו, ובשרת בינתיים גרסה חדשה יותר (ממכשיר אחר) — המשתמש בוחר
       if (draft && meta.version > (draft.serverVersion ?? 0) &&
-          !confirm(`בשרת יש גרסה חדשה יותר (גרסה ${meta.version}), ובמכשיר הזה — שינויים שלא נשמרו.\n"אישור" — להמשיך עם השינויים מהמכשיר. "ביטול" — לפתוח את הגרסה מהשרת.`)) {
+          !(await confirm(`בשרת יש גרסה חדשה יותר (גרסה ${meta.version}), ובמכשיר הזה — שינויים שלא נשמרו. עם מה להמשיך?`,
+            { title: 'שתי גרסאות', ok: 'השינויים מהמכשיר', cancel: 'הגרסה מהשרת' }))) {
         await clearDraft('draft:doc:' + meta.id);
         draft = null;
       }
