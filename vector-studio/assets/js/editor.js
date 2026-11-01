@@ -1575,7 +1575,7 @@ async function doExport(kind) {
       const pages = [];
       for (const s of S.doc.surfaces) { const p = await prepare(S.doc, s.id, getFont, exportImage, await exportPage(s.id), exportEffects); pages.push(p); gaps.push(...p.gaps); }
       pages.push(...await extraPdfPages());
-      download(new Blob([toPDF(pages)], { type: 'application/pdf' }), fileName('pdf'));
+      download(new Blob([await toPDF(pages)], { type: 'application/pdf' }), fileName('pdf'));
     } else {
       await fontsReady;
       const scale = Number(document.querySelector('[name="png-scale"]:checked').value);

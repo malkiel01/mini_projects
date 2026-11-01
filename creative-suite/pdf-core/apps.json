@@ -4,5 +4,8 @@
   },
   "layout-studio": {
     "php": "lib/pdf-core"
+  },
+  "vector-studio": {
+    "js": "assets/js/pdf-core"
   }
 }

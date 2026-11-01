@@ -76,7 +76,7 @@ export async function buildMbe({ doc, base = null, getFont, fontBytes, preview, 
   for (const s of document.surfaces.slice(1)) pages.push(await prepare(document, s.id, getFont, getImage, await bg(s.id), getEffects));
   pages.push(...extraPages);
   const pdfGaps = [...new Set(pages.flatMap(p => p.gaps))];
-  f.setRendition('renditions/document.pdf', toPDF(pages), { type: 'application/pdf', gaps: pdfGaps });
+  f.setRendition('renditions/document.pdf', await toPDF(pages), { type: 'application/pdf', gaps: pdfGaps });
   pdfGaps.forEach(g => gaps.add(g));
 
   const bytes = await save(f, { app: APP, appVersion: APP_VERSION });
