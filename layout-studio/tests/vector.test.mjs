@@ -1,7 +1,8 @@
 // בדיקות ציורים מהווקטורי בעימוד: node --test layout-studio/tests/vector.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mul, transformItems, reId, placeDrawing, moveDrawing, isDrawing, symbolRefs, imageRefs, gapsOf } from '../assets/js/vector.js';
+import { mul, transformItems, reId, placeDrawing, moveDrawing, isDrawing, symbolRefs, imageRefs, gapsOf, drawingToDoc, pruneSymbols } from '../assets/js/vector.js';
+import { create, save, open, PREVIEW } from '../assets/js/mbe/mbe.js';
 import { allItems, frameAt, drawingsOnPage } from '../assets/js/frames.js';
 import { drawList } from '../assets/js/pdf.js';
 
@@ -77,4 +78,36 @@ test('עזרים: סמלים מקוננים, תמונות בקבוצה, אפקט
   assert.deepEqual([...imageRefs([{ type: 'group', children: [{ type: 'image', src: 'media/q.png' }] }])], ['media/q.png']);
   assert.equal(gapsOf([{ id: 'e', d: 'M0 0', effects: [{ type: 'shadow' }] }]).effects, 1);
   assert.equal(reId([{ id: 'a', children: [{ id: 'b' }] }], () => 'n').every(x => x.id === 'n' && x.children[0].id === 'n'), true);
+});
+
+test('עריכה בווקטורי: ציור מוצב → מסמך vector תקין בליבה → חזרה לאותה מסגרת בלי שינוי', async () => {
+  const src = drawing();
+  src.surfaces[0].layers[0].paths = src.surfaces[0].layers[0].paths.filter(p => p.type !== 'image');   // תמונה — נבדקת בדפדפן
+  const placed = placeDrawing(src, [30, 40, 300, 400], fresh, 'לוגו');
+  const doc = drawingToDoc(placed.layer, placed.symbols);
+  assert.deepEqual(doc.surfaces[0].size, [300, 150]);
+  assert.deepEqual(doc.surfaces[0].layers[0].paths[0].transform, [1.5, 0, 0, 1.5, 0, 0]);   // בקואורדינטות הלוח
+  assert.deepEqual(Object.keys(doc.symbols), Object.keys(placed.symbols));
+  // הליבה מקבלת אותו כקובץ ציור (הבודק רץ ב-open)
+  const f = create('vector', doc);
+  f.setRendition(PREVIEW, new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]), { type: 'image/png' });
+  const back = await open(await save(f, { app: 'layout-studio', appVersion: '1' }));
+  assert.equal(back.kind, 'vector');
+  // חזרה: הלוח נכנס בדיוק למסגרת, והנתיבים חוזרים למקום
+  const r = placeDrawing(back.document, placed.layer.box, fresh, 'לוגו');
+  assert.deepEqual(r.layer.box, placed.layer.box);
+  assert.deepEqual(r.layer.paths[0].transform, placed.layer.paths[0].transform);
+  assert.equal(r.layer.paths[0].d, placed.layer.paths[0].d);
+});
+
+test('ניקוי סמלים: נשארים רק אלה שציור בעמודים מפנה אליהם', () => {
+  const placed = placeDrawing(drawing(), [0, 0, 200, 100], fresh);
+  const [sym] = Object.keys(placed.symbols);
+  const page = { id: 'p1', type: 'page', layers: [placed.layer] };
+  const model = { surfaces: [page], symbols: { ...placed.symbols, old: { paths: [] } } };
+  assert.deepEqual(Object.keys(pruneSymbols(model).symbols), [sym]);
+  const empty = pruneSymbols({ ...model, surfaces: [{ ...page, layers: [] }] });
+  assert.equal(empty.symbols, undefined);
+  const same = { surfaces: [page], symbols: placed.symbols };
+  assert.equal(pruneSymbols(same), same);
 });
