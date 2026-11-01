@@ -124,6 +124,23 @@ try {
     deleteDrawing($a, $cc['id']);
     deleteDrawing($a, $c['id']);
     check('מחיקה — הגרסאות נמחקות איתו', listDrawings($a) === [] && (int) db()->query('SELECT COUNT(*) FROM drawing_versions')->fetchColumn() === 0);
+    // תפריט המשתמש (ui-core): ייצוא ומחיקת חשבון — רק של המשתמש הזה
+    require_once __DIR__ . '/../lib/ui-core/account/account.php';
+    $dd = getUser((int) $d['id']);
+    $k = createDrawing($dd, ['name' => 'של שני', 'doc' => $doc]);
+    $k2 = createDrawing($a, ['name' => 'של ראשון', 'doc' => $doc]);
+    $hooks = ['app' => 'vector-studio', 'pdo' => fn() => db(), 'user' => fn() => $dd['id'],
+              'export' => fn($u) => exportUserData((int) $u), 'delete' => fn($u) => deleteUserData((int) $u)];
+    uic_account_api('account_prefs_set', ['ns' => 'general', 'value' => ['theme' => 'dark']], $hooks);
+    $ex = uic_account_api('account_export', [], $hooks);
+    check('ייצוא — רק הציורים שלו, עם המסמך', count($ex['data']['drawings']) === 1 && $ex['data']['drawings'][0]['name'] === 'של שני' && is_array($ex['data']['drawings'][0]['doc']));
+    check('ייצוא — ההגדרות', $ex['prefs']['general']['theme'] === 'dark');
+    uic_account_api('account_delete', ['confirm' => 'DELETE'], $hooks);
+    check('מחיקת חשבון — המשתמש, הציורים וההגדרות שלו', throws(fn () => getUser((int) $dd['id']), 404)
+        && (int) db()->query('SELECT COUNT(*) FROM drawings WHERE user_id = ' . (int) $dd['id'])->fetchColumn() === 0
+        && (int) db()->query('SELECT COUNT(*) FROM uic_prefs')->fetchColumn() === 0);
+    check('מחיקת חשבון — של אחר נשאר', count(listDrawings($a)) === 1);
+    deleteDrawing($a, $k2['id']);
 } finally {
     foreach (glob(DB_FILE . '*') ?: [] as $f) @unlink($f);
 }
