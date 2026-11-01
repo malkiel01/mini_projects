@@ -1,205 +1,27 @@
-// פונטים עבריים חופשיים (OFL), מקומיים בתיקיית fonts/. ה-@font-face ב-css/fonts.css, ולכן
-// הדפדפן מוריד קובץ רק כשמשתמשים בפונט. לפני ציור בקנבס חייבים לחכות לטעינה — אחרת הקנבס
-// מצייר בפונט חלופי ולא מתעדכן לבד.
+// הגופנים — מ-ui-core (fonts.js, שלב 8; המקור היה הקטלוג והגשר של הסטודיו): הקטלוג, הטעינה, הקריאה מקובץ,
+// "שלי" (userFonts) והחיבור לספריית הענן. הקבצים עצמם — editor/fonts/ui-core (עותק מסונכרן).
+// כאן נשאר רק מה שתלוי במבנה העיצוב: ensureDocFonts ו-embedDocFonts (doc.fonts).
 
+export * from './ui-core/fonts.js';
+import { FONTS, ensureFont, registerFont, faceKey, nearestWeight, userFonts } from './ui-core/fonts.js';
 import { assets } from './db.js';
 
-export const FONTS = [
-    { family: 'Heebo', weights: [100, 200, 300, 400, 500, 600, 700, 800, 900] },
-    { family: 'Assistant', weights: [200, 300, 400, 500, 600, 700, 800] },
-    { family: 'Rubik', weights: [300, 400, 500, 600, 700, 800, 900] },
-    { family: 'Secular One', weights: [400] },
-    { family: 'Frank Ruhl Libre', weights: [300, 400, 500, 600, 700, 800, 900] },
-    { family: 'Suez One', weights: [400] },
-    { family: 'Varela Round', weights: [400] },
-    { family: 'Alef', weights: [400, 700] },
-    { family: 'Karantina', weights: [400, 700] },
-    { family: 'Amatic SC', weights: [400, 700] },
-];
+// "שלי" — באותו מפתח כמו קודם (gc-my-fonts), כך שמה שהועלה במכשיר נשאר
+const mine = userFonts({ key: 'gc-my-fonts', assets });
+export const myFonts = () => mine.list();
+export const loadMyFonts = () => mine.load();
+export const addMyFont = (file, info) => mine.add(file, info);
+export const removeMyFont = entry => mine.remove(entry);
+export const syncCloudFonts = (drives, cloudId) => mine.syncCloud(drives, cloudId);
+export const saveFontToCloud = (drives, cloudId, entry) => mine.saveToCloud(drives, cloudId, entry);
 
-export const DEFAULT_FONT = 'Heebo';
-
-/** המשקל הקרוב ביותר שיש לפונט — כדי שלא יצויר "מודגש מזויף". */
-export function nearestWeight(family, weight) {
-    const f = FONTS.find(x => x.family === family);
-    if (!f) return 400;
-    return f.weights.reduce((a, b) => (Math.abs(b - weight) < Math.abs(a - weight) ? b : a));
-}
-
-const loaded = new Map();
-
-/** טוען פונט ומשקל (עברית ולטינית). מחזיר הבטחה שנפתרת גם בכישלון — אז מצויר הפונט החלופי. */
-export function ensureFont(family, weight = 400) {
-    const w = nearestWeight(family, weight);
-    const key = family + ':' + w;
-    if (!loaded.has(key)) {
-        const spec = `${w} 32px "${family}"`;
-        loaded.set(key, Promise.all([document.fonts.load(spec, 'אב'), document.fonts.load(spec, 'Ab')]).catch(() => {}));
-    }
-    return loaded.get(key);
-}
-
-/** כל הפונטים שבמסמך — קודם הגופנים שהועלו ומוטמעים בו (מקובץ, ממכשיר אחר), ואז הטעינה. */
+/** הגופנים שהעיצוב נושא (doc.fonts — הועלו, אולי במכשיר אחר) נרשמים, וכל גופן של טקסט נטען לפני הציור. */
 export async function ensureDocFonts(doc) {
     for (const a of Object.values(doc.fonts || {})) {
-        if (registered.has(faceKey(a))) continue;
         const blob = await assets.get(a.src);
         if (blob) await registerFont({ ...a, blob }).catch(() => {});
     }
     return Promise.all(doc.layers.filter(l => l.type === 'text').map(l => ensureFont(l.style.font, l.style.weight)));
-}
-
-// ─── גופנים שהמשתמש העלה ("שלי") ──────────────────────────────────────────
-// גשר עד ספריית הגופנים של ענן החבילה (creative-suite/docs/spec/shared.md סעיף 4): הקובץ ב-IndexedDB, הרשימה במכשיר,
-// וכל גופן שמשמש טקסט מוטמע בעיצוב עצמו (doc.fonts) — כך העיצוב נפתח נכון גם במכשיר אחר, ב-‎.gcard וב-‎.mbe.
-
-const MY_KEY = 'gc-my-fonts';      // [{ family, weight, style, src, lib? }] — lib: { cloud, item, rev } כשהגופן בספריית הענן
-const registered = new Set();
-const faceKey = a => `${a.family}|${a.weight || 400}|${a.style || 'normal'}`;
-export const FONT_MIME = { woff2: 'font/woff2', woff: 'font/woff', ttf: 'font/ttf', otf: 'font/otf' };
-
-export function myFonts() {
-    try { return JSON.parse(localStorage.getItem(MY_KEY)) || []; } catch { return []; }
-}
-function saveMyFonts(list) {
-    try { localStorage.setItem(MY_KEY, JSON.stringify(list)); } catch { /* אין אחסון — נשאר לשיחה הזו */ }
-}
-
-/** גופן (Blob) → FontFace בדף, ושורה ברשימת הפונטים של העורך. */
-export async function registerFont({ family, weight = 400, style = 'normal', blob }) {
-    const k = faceKey({ family, weight, style });
-    if (registered.has(k)) return;
-    const face = new FontFace(family, await blob.arrayBuffer(), { weight: String(weight), style });
-    await face.load();   // קובץ פגום — נזרק כאן, לפני שהוא נכנס לרשימה
-    document.fonts.add(face);
-    registered.add(k);
-    let f = FONTS.find(x => x.family === family);
-    if (!f) FONTS.push(f = { family, weights: [], custom: true });
-    if (!f.weights.includes(weight)) { f.weights.push(weight); f.weights.sort((a, b) => a - b); }
-    loaded.delete(family + ':' + weight);
-}
-
-/** בהפעלת העורך: כל הגופנים שהועלו במכשיר הזה. */
-export async function loadMyFonts() {
-    for (const m of myFonts()) {
-        const blob = await assets.get(m.src);
-        if (blob) await registerFont({ ...m, blob }).catch(() => {});
-    }
-}
-
-const WEIGHT_WORDS = [[/hairline|thin/i, 100], [/extra-?light|ultra-?light/i, 200], [/light/i, 300], [/medium/i, 500],
-    [/semi-?bold|demi-?bold/i, 600], [/extra-?bold|ultra-?bold|heavy/i, 800], [/black/i, 900], [/bold/i, 700]];
-
-/** קובץ גופן → { family, weight, style }: מטבלאות name ו-OS/2 (TTF, OTF, WOFF), ואם אין — משם הקובץ. */
-export async function readFontInfo(file) {
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    const base = file.name.replace(/\.[^.]+$/, '');
-    let info = null;
-    try { info = await sfntInfo(bytes); } catch { /* WOFF2 או קובץ לא רגיל — לפי השם */ }
-    const byName = WEIGHT_WORDS.find(([re]) => re.test(base))?.[1] || 400;
-    const family = (info?.family || base.replace(/[-_ ]*(hairline|thin|extra-?light|ultra-?light|light|regular|book|normal|medium|semi-?bold|demi-?bold|extra-?bold|ultra-?bold|heavy|black|bold|italic|oblique)*$/gi, '').replace(/[-_]+/g, ' ')).trim().slice(0, 60) || 'הגופן שלי';
-    return { family, weight: info?.weight || byName, style: info?.italic || /italic|oblique/i.test(base) ? 'italic' : 'normal', bytes };
-}
-
-async function sfntInfo(b) {
-    const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
-    const tag = String.fromCharCode(...b.subarray(0, 4));
-    const tables = {};
-    if (tag === 'wOFF') {
-        const n = dv.getUint16(12);
-        for (let i = 0; i < n; i++) {
-            const o = 44 + i * 20, t = String.fromCharCode(...b.subarray(o, o + 4));
-            if (t !== 'name' && t !== 'OS/2') continue;
-            const off = dv.getUint32(o + 4), comp = dv.getUint32(o + 8), orig = dv.getUint32(o + 12);
-            let data = b.subarray(off, off + comp);
-            if (comp < orig) data = new Uint8Array(await new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate'))).arrayBuffer());
-            tables[t] = data;
-        }
-    } else if (tag === 'OTTO' || tag === 'true' || dv.getUint32(0) === 0x10000) {
-        const n = dv.getUint16(4);
-        for (let i = 0; i < n; i++) {
-            const o = 12 + i * 16, t = String.fromCharCode(...b.subarray(o, o + 4));
-            if (t === 'name' || t === 'OS/2') tables[t] = b.subarray(dv.getUint32(o + 8), dv.getUint32(o + 8) + dv.getUint32(o + 12));
-        }
-    } else return null;
-    const out = {};
-    if (tables['OS/2']?.length >= 64) {
-        const os = new DataView(tables['OS/2'].buffer, tables['OS/2'].byteOffset, tables['OS/2'].byteLength);
-        const w = os.getUint16(4);
-        if (w >= 100 && w <= 900) out.weight = Math.round(w / 100) * 100;
-        out.italic = !!(os.getUint16(62) & 1);
-    }
-    const nm = tables.name;
-    if (nm) {
-        const ndv = new DataView(nm.buffer, nm.byteOffset, nm.byteLength);
-        const count = ndv.getUint16(2), strOff = ndv.getUint16(4);
-        let best = null, score = -1;
-        for (let i = 0; i < count; i++) {
-            const r = 6 + i * 12;
-            const plat = ndv.getUint16(r), lang = ndv.getUint16(r + 4), id = ndv.getUint16(r + 6), len = ndv.getUint16(r + 8), off = ndv.getUint16(r + 10);
-            if (id !== 1 && id !== 16) continue;
-            const raw = nm.subarray(strOff + off, strOff + off + len);
-            const text = plat === 3 || plat === 0 ? new TextDecoder('utf-16be').decode(raw) : String.fromCharCode(...raw);
-            // שם המשפחה הטיפוגרפי (16) לפני הרגיל (1); עברית, ואז אנגלית, ואז כל שפה
-            const sc = (id === 16 ? 4 : 0) + (lang === 0x040d ? 2 : lang === 0x0409 || lang === 0 ? 1 : 0) + (plat === 3 ? 0.5 : 0);
-            if (text.trim() && sc > score) { score = sc; best = text.trim(); }
-        }
-        if (best) out.family = best;
-    }
-    return out;
-}
-
-/** העלאה: הקובץ נבדק (הדפדפן טוען אותו), נשמר במכשיר ונכנס לרשימה. מחזיר את השורה. */
-export async function addMyFont(file, info) {
-    const ext = (/\.([a-z0-9]+)$/i.exec(file.name)?.[1] || '').toLowerCase();
-    const head = String.fromCharCode(...info.bytes.subarray(0, 4));
-    const mime = head === 'wOF2' ? FONT_MIME.woff2 : head === 'wOFF' ? FONT_MIME.woff : head === 'OTTO' ? FONT_MIME.otf : FONT_MIME[ext] || FONT_MIME.ttf;
-    const blob = new Blob([info.bytes], { type: mime });
-    const entry = { family: info.family, weight: info.weight, style: info.style };
-    await registerFont({ ...entry, blob });
-    entry.src = await assets.put(blob);
-    saveMyFonts([...myFonts().filter(m => faceKey(m) !== faceKey(entry)), entry]);
-    return entry;
-}
-
-// ─── ספריית הגופנים של ענן החבילה (suite-cloud/docs/spec-2-fonts.md) ──────────────────
-// הענן הוא המקור: מה שבספרייה יורד למכשיר ונכנס ל"שלי" (עם lib), ומה שהועלה כאן — נשלח אליה. העותק במכשיר נשאר,
-// כדי שהעורך יעבוד גם בלי חיבור, וכל עיצוב מטמיע עותק משלו.
-
-/** מוריד מהספרייה את מה שחסר במכשיר או שהתעדכן (rev אחר). מחזיר כמה ירדו. */
-export async function syncCloudFonts(drives, cloudId) {
-    const { fonts = [] } = await drives.fonts.list();
-    let n = 0;
-    for (const item of fonts) {
-        const have = myFonts().find(m => m.lib?.item === item.id);
-        if (have && have.lib.rev === item.rev) continue;
-        const { bytes } = await drives.fonts.load(item);
-        const head = String.fromCharCode(...bytes.subarray(0, 4));
-        const blob = new Blob([bytes], { type: head === 'wOF2' ? FONT_MIME.woff2 : head === 'wOFF' ? FONT_MIME.woff : head === 'OTTO' ? FONT_MIME.otf : FONT_MIME[item.format] || FONT_MIME.ttf });
-        const entry = { family: item.family, weight: item.weight || 400, style: item.style || 'normal', lib: { cloud: cloudId || '', item: item.id, rev: item.rev } };
-        await registerFont({ ...entry, blob });
-        entry.src = await assets.put(blob);
-        saveMyFonts([...myFonts().filter(m => faceKey(m) !== faceKey(entry) && m.lib?.item !== item.id), entry]);
-        n++;
-    }
-    return n;
-}
-
-/** גופן מהמכשיר → לספרייה בענן (font_add), ומסמנים lib. האפליקציה הציגה את אזהרת הרישיון לפני כן. */
-export async function saveFontToCloud(drives, cloudId, entry) {
-    const blob = await assets.get(entry.src);
-    if (!blob) throw new Error('הקובץ של הגופן לא נמצא במכשיר');
-    const ext = Object.entries(FONT_MIME).find(([, m]) => m === blob.type)?.[0] || 'ttf';
-    const item = await drives.fonts.add(new File([blob], `${entry.family}-${entry.weight}.${ext}`, { type: blob.type }),
-        { family: entry.family, weight: entry.weight, style: entry.style });
-    const next = { ...entry, lib: { cloud: cloudId || '', item: item.id, rev: item.rev } };
-    saveMyFonts(myFonts().map(m => faceKey(m) === faceKey(entry) ? next : m));
-    return next;
-}
-
-/** מוריד גופן מהרשימה "שלי". עיצובים שמשתמשים בו שומרים עותק משלהם (doc.fonts), ולכן ממשיכים להיראות אותו דבר. */
-export function removeMyFont(entry) {
-    saveMyFonts(myFonts().filter(m => faceKey(m) !== faceKey(entry)));
 }
 
 /**
