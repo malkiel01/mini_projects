@@ -410,6 +410,27 @@ function renderAdmin(s) {
     a.blocked ? el('span', { class: 'chip bad' }, 'חסום') : el('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹')))));
   renderClients(s.clients || []);
   loadAi().catch(fail);
+  api('admin_drives', {}).then(renderDrives).catch(fail);
+}
+
+// ── כוננים חיצוניים ──
+
+const REDIRECT_DROPBOX = new URL('oauth/dropbox.php', location.href).href;
+
+function renderDrives(cfg) {
+  const d = cfg.dropbox;
+  $('#ext-drives').replaceChildren(el('li', {}, el('div', { class: 'acc-row' },
+    el('span', { class: 'use-ic', 'aria-hidden': 'true' }, '📦'),
+    el('div', { class: 'body' }, el('div', { class: 'l1' }, 'Dropbox'),
+      el('div', { class: 'l2', dir: 'ltr' }, `Redirect URI: ${REDIRECT_DROPBOX}`)),
+    d ? el('span', { class: 'chip ok', dir: 'ltr' }, d.app_key) : el('span', { class: 'chip' }, 'לא מוגדר'),
+    el('button', { class: 'icon-btn', type: 'button', 'aria-label': 'App key של Dropbox', onclick: () => setDropboxKey(d?.app_key || '') }, '🔑'))));
+}
+
+async function setDropboxKey(cur) {
+  const key = await prompt('App key של אפליקציית Dropbox (ריק — הסרה). ‏App secret לא צריך.', { title: '📦 Dropbox', required: false, dir: 'ltr', ok: 'שמירה', value: cur });
+  if (key === null) return;
+  try { renderDrives(await api('admin_drives', { dropbox_app_key: key.trim() })); toast(key.trim() ? 'נשמר — Dropbox יופיע באפליקציות תוך כמה דקות' : 'Dropbox הוסר'); } catch (e) { fail(e); }
 }
 
 // ── בינה מלאכותית ──

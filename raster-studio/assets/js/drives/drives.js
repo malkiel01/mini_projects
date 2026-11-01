@@ -25,6 +25,13 @@
  *   await drives.ai.run('inpaint', { image, mask, prompt }, { signal })
  *        → { png: Blob, size: [w, h], transparent, provider } | { masks: [{ png: Blob, label, box }] } | { json } | { text }
  *
+ *   כוננים חיצוניים — אותה צורה כמו drives.suite, והדפדפן מדבר עם הספק ישירות (הקבצים לא עוברים בשרת):
+ *   await drives.list()            → [{ id: 'suite' | 'dropbox', name, connected, account? }]  — רק כוננים שמוגדרים
+ *   await drives.link('dropbox')   — מעבר להרשאה אצל Dropbox; חוזרים ל-back עם ?drive=connected | denied
+ *   await drives.unlink('dropbox')
+ *   const x = drives.dropbox;      — list · stat · read · mkdir · rename · move · trash · write · upload · quota (כמו suite).
+ *        id הוא מזהה של Dropbox ("id:…"), תיקיית השורש היא null, ו-rev הוא מחרוזת. בתיקיית האפליקציה (App folder) בלבד.
+ *
  * שגיאות: DriveError עם code — not-connected, conflict (if_rev), quota_exceeded, too_large, not_found, no-provider,
  * not-allowed, quota, too-big, provider, aborted. האסימון (15 דקות) מתחדש לבד, ונשמר בזיכרון בלבד.
  */
@@ -150,6 +157,126 @@ export function createDrives({ endpoint = 'api.php' } = {}) {
         },
     };
 
+    // ─── Dropbox ───────────────────────────────────────────────────────
+
+    const ptok = {};   // provider → { token, until }
+    async function providerToken(p, force = false) {
+        if (!force && ptok[p]?.until > Date.now()) return ptok[p].token;
+        const r = await app(`drives_ptoken&provider=${p}`);
+        if (!r.connected) { delete ptok[p]; throw new DriveError('לא מחובר ל-Dropbox', 'not-connected'); }
+        ptok[p] = { token: r.token, until: Date.now() + (r.expires_in - 60) * 1000 };
+        return r.token;
+    }
+
+    /** Dropbox-API-Arg חייב להיות ASCII — שמות בעברית נשלחים כ-\uXXXX. */
+    const dbxArg = o => JSON.stringify(o).replace(/[\u007f-\uffff]/g, c => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'));
+
+    async function dbx(route, { arg, body, content = false, raw = false, signal } = {}, retry = true) {
+        const token = await providerToken('dropbox');
+        const headers = { Authorization: `Bearer ${token}` };
+        let req;
+        if (content) {
+            headers['Dropbox-API-Arg'] = dbxArg(arg ?? {});
+            if (body !== undefined) headers['Content-Type'] = 'application/octet-stream';
+            req = { method: 'POST', headers, body, signal };
+        } else {
+            headers['Content-Type'] = 'application/json';
+            req = { method: 'POST', headers, body: JSON.stringify(arg ?? null), signal };
+        }
+        const host = content ? 'https://content.dropboxapi.com/2/' : 'https://api.dropboxapi.com/2/';
+        let res;
+        try { res = await fetch(host + route, req); }
+        catch (e) { throw e.name === 'AbortError' ? new DriveError('בוטל', 'aborted') : new DriveError('אין חיבור ל-Dropbox', 'network'); }
+        if (res.status === 401 && retry) { delete ptok.dropbox; return dbx(route, { arg, body, content, raw, signal }, false); }
+        if (res.ok) return raw ? res : res.json();
+        const j = await res.json().catch(() => ({}));
+        const summary = String(j.error_summary || '');
+        if (res.status === 401) throw new DriveError('החיבור ל-Dropbox בוטל', 'not-connected');
+        if (summary.includes('not_found')) throw new DriveError('לא נמצא', 'not_found');
+        if (summary.includes('insufficient_space')) throw new DriveError('אין מקום ב-Dropbox', 'quota_exceeded');
+        if (summary.includes('conflict')) throw new DriveError('כבר יש פריט כזה, או שהקובץ השתנה', 'conflict');
+        if (res.status === 429) throw new DriveError('יותר מדי בקשות ל-Dropbox — נסו שוב בעוד רגע', 'rate_limited');
+        throw new DriveError(summary || 'תקלה ב-Dropbox', 'provider');
+    }
+
+    const dbxPath = (folder, name) => folder ? (name ? `${folder}/${name}` : folder) : (name ? `/${name}` : '');
+    const parentOf = p => { const i = p.lastIndexOf('/'); return i > 0 ? p.slice(0, i) : null; };
+    const dbxNode = (m, parent) => {
+        const folder = m['.tag'] === 'folder';
+        const out = { id: m.id, kind: folder ? 'folder' : 'file', name: m.name, parent: parent !== undefined ? parent : parentOf(m.path_lower || ''),
+                      path: m.path_display };
+        if (!folder) Object.assign(out, { rev: m.rev, size: m.size, updated_at: m.server_modified, content_hash: m.content_hash });
+        return out;
+    };
+    const mode = (ifRev, onConflict) => ifRev ? { mode: { '.tag': 'update', update: ifRev }, autorename: false }
+        : onConflict === 'replace' ? { mode: 'overwrite', autorename: false }
+        : { mode: 'add', autorename: onConflict !== 'fail' };
+    const UPLOAD_ONE = 8 * 1024 * 1024;
+
+    const dropbox = {
+        async quota() {
+            const u = await dbx('users/get_space_usage');
+            return { quota: u.allocation?.allocated ?? 0, used: u.used, max_file: 350 * 1024 ** 3 };
+        },
+        async list(folder = null) {
+            let r = await dbx('files/list_folder', { arg: { path: dbxPath(folder), limit: 2000 } });
+            const items = [...r.entries];
+            while (r.has_more) { r = await dbx('files/list_folder/continue', { arg: { cursor: r.cursor } }); items.push(...r.entries); }
+            let path = [];
+            if (folder) {
+                const m = await dbx('files/get_metadata', { arg: { path: folder } });
+                const parts = (m.path_display || '').split('/').filter(Boolean);
+                path = parts.map((name, i) => ({ id: i === parts.length - 1 ? m.id : '/' + parts.slice(0, i + 1).join('/'), name }));
+            }
+            const nodes = items.filter(m => m['.tag'] !== 'deleted').map(m => dbxNode(m, folder))
+                .sort((a, b) => (a.kind === 'file') - (b.kind === 'file') || a.name.localeCompare(b.name, 'he'));
+            return { folder, path, items: nodes };
+        },
+        stat: async id => dbxNode(await dbx('files/get_metadata', { arg: { path: id } })),
+        read: async (id, { signal } = {}) => (await dbx('files/download', { arg: { path: id }, content: true, raw: true, signal })).blob(),
+        async mkdir(name, parent = null, onConflict = 'replace') {
+            try { return dbxNode((await dbx('files/create_folder_v2', { arg: { path: dbxPath(parent, name), autorename: onConflict === 'rename' } })).metadata, parent); }
+            catch (e) {
+                if (e.code !== 'conflict' || onConflict !== 'replace') throw e;
+                return dbxNode(await dbx('files/get_metadata', { arg: { path: dbxPath(parent, name) } }), parent);   // "ודא שקיימת"
+            }
+        },
+        async rename(id, name) {
+            const m = await dbx('files/get_metadata', { arg: { path: id } });
+            const parent = parentOf(m.path_display);
+            return dbxNode((await dbx('files/move_v2', { arg: { from_path: id, to_path: dbxPath(parent, name) } })).metadata);
+        },
+        async move(id, parent) {
+            const m = await dbx('files/get_metadata', { arg: { path: id } });
+            return dbxNode((await dbx('files/move_v2', { arg: { from_path: id, to_path: dbxPath(parent, m.name) } })).metadata, parent);
+        },
+        trash: async id => { await dbx('files/delete_v2', { arg: { path: id } }); return { ok: true }; },   // נשמר ב"קבצים שנמחקו" של Dropbox
+        write: (name, blob, opts = {}) => dropbox.upload(blob, { ...opts, name }),
+        async upload(file, { parent = null, ifRev, onConflict, onProgress, signal, name } = {}) {
+            const commit = { path: dbxPath(parent, name || file.name), ...mode(ifRev, onConflict), mute: true };
+            if (file.size <= UPLOAD_ONE) {
+                const m = await dbx('files/upload', { arg: commit, body: file, content: true, signal });
+                onProgress?.(file.size, file.size);
+                return dbxNode(m, parent);
+            }
+            const s = await dbx('files/upload_session/start', { arg: { close: false }, body: new Blob([]), content: true, signal });
+            let off = 0;
+            onProgress?.(0, file.size);
+            while (off + UPLOAD_ONE < file.size) {
+                await dbx('files/upload_session/append_v2', { arg: { cursor: { session_id: s.session_id, offset: off }, close: false },
+                    body: file.slice(off, off + UPLOAD_ONE), content: true, signal });
+                off += UPLOAD_ONE;
+                onProgress?.(off, file.size);
+            }
+            const m = await dbx('files/upload_session/finish', { arg: { cursor: { session_id: s.session_id, offset: off }, commit },
+                body: file.slice(off), content: true, signal });
+            onProgress?.(file.size, file.size);
+            return dbxNode(m, parent);
+        },
+    };
+
+    const NAMES = { suite: 'ענן החבילה', dropbox: 'Dropbox' };
+
     const NONE = { connected: false, tasks: { 'remove-background': false, segment: false, 'generate-image': false, inpaint: false, complete: false }, providers: [], default: {}, quota: null };
 
     const ai = {
@@ -186,6 +313,16 @@ export function createDrives({ endpoint = 'api.php' } = {}) {
             location.assign(r.url);
         },
         async disconnect() { tok = null; return app('drives_disconnect', {}); },
+        async list() {
+            const s = await app('drives_status');
+            return Object.entries(s).map(([id, v]) => ({ id, name: NAMES[id] || id, connected: !!v.connected, ...(v.name ? { account: v.name } : {}) }));
+        },
+        async link(provider) {
+            const r = await app('drives_link', { provider });
+            location.assign(r.url);
+        },
+        async unlink(provider) { delete ptok[provider]; return app('drives_unlink', { provider }); },
+        dropbox,
         suite,
         fonts,
         ai,
