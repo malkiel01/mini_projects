@@ -335,6 +335,21 @@
     <div class="sheet__body">
       <div class="dmeta" id="pvMeta"></div>
 
+      <!-- מנהל הפרויקט: שם, סמל, תיקייה, ומחיקה (רק פרויקט ריק) -->
+      <form class="stack" id="pvEdit" hidden>
+        <h3>פרטים</h3>
+        <div class="fields">
+          <label class="field" style="grid-column: 1 / -1"><span>שם</span><input type="text" id="peName" maxlength="80" required></label>
+          <label class="field"><span>סמל</span><input type="text" id="peIcon" maxlength="8" placeholder="📁"></label>
+          <label class="field" id="pePathWrap"><span>תיקייה בריפו</span><input type="text" id="pePath" dir="ltr" maxlength="120" placeholder="recipes-app"></label>
+        </div>
+        <div class="row-btns">
+          <button type="submit" class="btn btn--primary">שמירה</button>
+          <button type="button" class="btn btn--ghost danger-text" id="peDelete">🗑 מחיקה</button>
+        </div>
+        <p class="hint">מחיקה — רק לפרויקט ריק, בלי מטלות ובלי תתי-פרויקטים.</p>
+      </form>
+
       <!-- בעל הלוח בלבד. "העברה" — זמנית, לסידור הפרויקטים שנוצרו לפני העץ; תוסר אחרי הסידור -->
       <div id="pvOwner" hidden>
         <h3>מבנה</h3>

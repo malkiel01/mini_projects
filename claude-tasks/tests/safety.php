@@ -212,5 +212,28 @@ throws('לא לתוך צאצא — מעגל', fn () => moveProject($boss, $suite
 moveProject($boss, $loose1, null);
 check('חזרה לרמה העליונה', db()->query("SELECT parent_id FROM projects WHERE id = $loose1")->fetch()['parent_id'], null);
 
+echo "\n— עריכה ומחיקה של פרויקט —\n";
+$empty = createSubproject($boss, $suite, 'וקטורי (ריק מהייבוא)', 'vector-studio');
+$full  = createProject($boss, 'חבילת היצירה · וקטורי', 'malkiel01', 'mini_projects');
+task('מטלה אמיתית', $full);
+throws('member לא מוחק', fn () => deleteProject($rami, $empty));
+throws('פרויקט עם מטלות — לא נמחק', fn () => deleteProject($boss, $full));
+throws('פרויקט עם תתי-פרויקטים — לא נמחק', fn () => deleteProject($boss, $root));
+db()->prepare("UPDATE projects SET agent_token = 'x' WHERE id = ?")->execute([$empty]);
+deleteProject($boss, $empty);
+$gone = db()->query("SELECT archived, agent_token FROM projects WHERE id = $empty")->fetch();
+check('פרויקט ריק — נמחק, והאסימון שלו נפסל', [(int) $gone['archived'], $gone['agent_token']], [1, '']);
+check('לא מופיע ברשימה', in_array($empty, array_column(listProjects($boss), 'id'), true), false);
+moveProject($boss, $full, $suite);
+$fullRow = db()->query("SELECT * FROM projects WHERE id = $full")->fetch();
+check('התיקייה של הנמחק התפנתה — אפשר לתת אותה למי שהועבר', setProjectPath($fullRow, '/vector-studio/'), 'vector-studio');
+db()->prepare('UPDATE projects SET path = ? WHERE id = ?')->execute(['vector-studio', $full]);
+$other = createSubproject($boss, $suite, 'אחר', 'other');
+$otherRow = db()->query("SELECT * FROM projects WHERE id = $other")->fetch();
+throws('תיקייה תפוסה אצל אח — נדחית', fn () => setProjectPath($otherRow, 'vector-studio'));
+throws('תיקייה לא תקינה — נדחית', fn () => setProjectPath($otherRow, '../etc'));
+$rootRow = db()->query("SELECT * FROM projects WHERE id = $root")->fetch();
+throws('לפרויקט אב אין תיקייה', fn () => setProjectPath($rootRow, 'x'));
+
 echo "\n════ עברו: $pass · נכשלו: $fail ════\n";
 exit($fail ? 1 : 0);
