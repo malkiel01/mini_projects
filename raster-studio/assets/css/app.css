@@ -156,7 +156,7 @@ body.editor { display: flex; flex-direction: column; block-size: 100dvh; min-hei
 /* בחירה: מצב (חדשה / הוספה / חיסור) ופעולות */
 .tool-opts .opt-seg { flex: 0 0 auto; margin: 4px 0; }
 .tool-opts .opt-seg span { min-block-size: 32px; font-size: .82rem; }
-.tool-opts .opt-btns { flex: 1 0 auto; display: flex; justify-content: flex-end; align-items: center; gap: 2px; }
+.tool-opts .opt-btns { flex: 1 1 auto; min-inline-size: 0; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 2px; }
 .tools { max-block-size: calc(100% - var(--s2) * 2); overflow-y: auto; scrollbar-width: none; }
 .stage[data-tool="rect"], .stage[data-tool="ellipse"], .stage[data-tool="lasso"], .stage[data-tool="wand"] { cursor: crosshair; }
 .tool-opts .opt-check { flex: 0 0 auto; display: flex; align-items: center; gap: var(--s1); min-block-size: 32px;

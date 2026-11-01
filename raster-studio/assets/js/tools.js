@@ -1,10 +1,12 @@
 // הכלים: ✋ יד · בחירות (מלבן, אליפסה, לאסו, 🪄 מטה קסם) · 🖌️ מכחול · 🧽 מחק · 🧬 חותמת שכפול · 🩹 מברשת ריפוי ·
+// 🪡 תיקון (Patch) ומילוי לפי התוכן ·
 // 🪣 דלי · 💧 טפטפת, הצבע,
 // ולוח האפשרויות של הכלי הפעיל.
 // הציור עצמו: משיכה במנוע (beginStroke → dab → endStroke), ובסופה רשומה אחת בהיסטוריה.
 
 import { colorRange, dabsAlong, floodFill, hexToRgb, rgbToHex } from './engine/fill.js';
-import { combine, isEmptyShape, maskShape, selectionBox } from './engine/selection.js';
+import { TILE } from './engine/doc.js';
+import { combine, isEmptyShape, maskShape, selectionBox, selectionAlpha, rasterTile } from './engine/selection.js';
 import * as XF from './engine/transform.js';
 import { pathFromSelection, translatePath } from './engine/vmask.js';
 import { docToScreen } from './engine/view.js';
@@ -25,6 +27,7 @@ export const TOOLS = {
   eraser: { label: 'מחק', icon: '🧽', key: 'e', hint: '[ ] — גודל' },
   clone: { label: 'חותמת שכפול', icon: '🧬', key: 's', hint: 'Alt+לחיצה (או 🎯) — נקודת המקור · ציור — מעתיק ממנה, באותו מרחק · [ ] — גודל' },
   heal: { label: 'מברשת ריפוי', icon: '🩹', key: 'j', hint: 'כמו חותמת השכפול, ובסוף המשיכה — מתאים את האור והצבע לסביבה · Alt+לחיצה (או 🎯) — המקור' },
+  patch: { label: 'תיקון (Patch)', icon: '🪡', key: null, hint: 'בלי בחירה — גרירה סביב האזור · מתוך הבחירה — גרירה אל המקור: האזור מתמלא ממנו, באור ובצבע של הסביבה' },
   bucket: { label: 'דלי', icon: '🪣', key: 'g', hint: 'לחיצה — מילוי אזור בשכבה הפעילה' },
   text: { label: 'טקסט', icon: '𝐓', key: 't', hint: 'לחיצה — תיבת טקסט · Ctrl+Enter או לחיצה בחוץ — אישור · Esc — ביטול' },
   picker: { label: 'טפטפת', icon: '💧', key: 'i', hint: 'לחיצה — הצבע מהתמונה' },
@@ -53,7 +56,8 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
   };
   let stroke = null;   // { layer, last, carry, pen }
   let lasso = null;    // גרירת בחירה: { type, mode, start, pts, shape }
-  let xf = null;       // גרירה בכלי ההזזה: { kind, handle, t0, start }
+  let xf = null;
+  let patch = null;    // כלי התיקון: גרירת הבחירה אל המקור — { start, last }       // גרירה בכלי ההזזה: { kind, handle, t0, start }
   let grabPending = null; // לחיצה בכלי ההזזה שמחכה לתוכן הצף: { last, up, cancelled }
   // פעולות שמחכות לקריאה מהכרטיס (דלי, טפטפת, הזזה) — settle מחכה שכולן יסתיימו
   const ops = new Set();
@@ -196,6 +200,8 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     else if (a === 'invert') {
       if (!d.selection) { toast('אין בחירה להפוך'); return; }
       setSelection({ ...d.selection, inverted: !d.selection.inverted }, 'היפוך הבחירה');
+    } else if (a === 'content') {
+      track(contentAwareFill());
     } else if (a === 'vmask') {
       // 🔷 מסכה וקטורית מהבחירה: הנתיב של הבחירה, על השכבה הפעילה (מחליפה מסכה וקטורית קיימת); צעד ביטול אחד
       const layer = d.active;
@@ -220,6 +226,84 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
       if (before.size) history.pixels(d, t, before, (a === 'delete' ? 'מחיקת הבחירה' : 'מילוי הבחירה') + (t !== layer ? ' (מסכה)' : ''));
       onChange(a);
     }
+  }
+
+  // ---- תיקון ומילוי לפי התוכן ----
+  /** הנקודה (במסמך) בתוך הבחירה? */
+  function insideSelection(d, [x, y]) {
+    const xi = Math.floor(x), yi = Math.floor(y);
+    if (xi < 0 || yi < 0 || xi >= d.width || yi >= d.height) return false;
+    const t = rasterTile(d.selection, Math.floor(xi / TILE), Math.floor(yi / TILE));
+    return !!t && t[(yi % TILE) * TILE + (xi % TILE)] > 127;
+  }
+
+  /**
+   * הבחירה מתמלאת מהמקור שבהיסט off (המקור פחות היעד) — מברשת הריפוי על כל הבחירה: המרקם מהמקור, האור והצבע מהסביבה.
+   * צעד ביטול אחד. על מסכת שכבה — על המסכה.
+   */
+  function applyPatch(off, label) {
+    const d = doc(), layer = d.active;
+    if (!d.selection) { toast('קודם בוחרים אזור'); return false; }
+    if (!canEdit(layer)) return false;
+    const a = selectionAlpha(d.selection, d.width, d.height);
+    if (!a) return false;
+    const [x0, y0, x1, y1] = a.box;
+    const radius = Math.max(4, Math.min(64, Math.round(Math.min(x1 - x0, y1 - y0) / 4)));
+    const t = target(layer);
+    // שני שלבים, כמו כלי התיקון בפוטושופ: (1) המקור מועתק לבחירה; (2) ריפוי מאותו מקור — עכשיו בתוך הבחירה היעד כבר
+    // נראה כמו המקור, ולכן רק ההפרש בשוליים (האור והצבע של הסביבה) נכנס פנימה ונמוג. בלי (1) — הפגם עצמו היה "האור".
+    const pass = mode => {
+      renderer.beginStroke(d, t, { mode, opacity: 1, offset: off, healRadius: radius });
+      renderer.maskFromAlpha(d, a.mask, 0, 0, d.width, d.height, a.box);
+      return renderer.endStroke(d);
+    };
+    const before = pass('clone');
+    const mid = pass('heal');
+    // האריחים שבין השלבים — לא נחוצים (הביטול חוזר ישר למה שהיה לפני)
+    renderer.freeTextures([...mid.values()].filter(x => x && ![...before.values()].includes(x)));
+    if (before.size) history.pixels(d, t, before, label + (t !== layer ? ' (מסכה)' : ''));
+    onChange('patch');
+    return true;
+  }
+
+  /**
+   * מילוי לפי התוכן (בלי בינה מלאכותית): מחפש סביב הבחירה את המקור שהשוליים שלו הכי דומים לשוליים של הבחירה —
+   * שמונה כיוונים, בשלושה מרחקים, רק מקור שכולו בקנבס ולא חופף — ומתקן ממנו. עם ✨ (ענן החבילה) — "מילוי בבחירה".
+   */
+  async function contentAwareFill() {
+    const d = doc(), layer = d.active;
+    if (!d.selection) { toast('קודם בוחרים אזור'); return; }
+    if (!canEdit(layer)) return;
+    const b = selectionBox(d.selection, d.width, d.height);
+    if (!b) return;
+    const px = await renderer.readLayerPixels(target(layer), 0, 0, d.width, d.height);
+    if (doc() !== d || d.active !== layer) return;
+    const W = d.width, H = d.height, bw = b[2] - b[0], bh = b[3] - b[1];
+    // השוליים: מסגרת ברוחב 3 סביב המלבן (כל פיקסל שני)
+    const ring = [];
+    for (let k = 1; k <= 3; k++) {
+      for (let x = b[0] - k; x < b[2] + k; x += 2) ring.push([x, b[1] - k], [x, b[3] - 1 + k]);
+      for (let y = b[1] - k; y < b[3] + k; y += 2) ring.push([b[0] - k, y], [b[2] - 1 + k, y]);
+    }
+    const inC = (x, y) => x >= 0 && y >= 0 && x < W && y < H;
+    const pts = ring.filter(([x, y]) => inC(x, y));
+    let best = null;
+    for (const f of [1.1, 1.6, 2.2]) {
+      for (const [ux, uy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]]) {
+        const ox = Math.round(ux * (bw * f + 6)), oy = Math.round(uy * (bh * f + 6));
+        if (b[0] + ox - 4 < 0 || b[1] + oy - 4 < 0 || b[2] + ox + 4 > W || b[3] + oy + 4 > H) continue;
+        let sum = 0, n = 0;
+        for (const [x, y] of pts) {
+          const i = (y * W + x) * 4, j = ((y + oy) * W + x + ox) * 4;
+          for (let c = 0; c < 4; c++) { const v = px[i + c] - px[j + c]; sum += v * v; }
+          n++;
+        }
+        const score = sum / Math.max(1, n) * (1 + 0.15 * f);   // קצת עדיפות לקרוב
+        if (!best || score < best.score) best = { score, off: [ox, oy] };
+      }
+    }
+    if (!best) { toast('אין מקום מתאים סביב הבחירה — נסו בחירה קטנה יותר, או ✨ "מילוי בבחירה"', true); return; }
+    applyPatch(best.off, 'מילוי לפי התוכן');
   }
 
   function snapRect(a, b) {
@@ -621,6 +705,14 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
       }, err => { if (grabPending === g) grabPending = null; console.warn('float', err); }));
       return true;
     }
+    if (state.tool === 'patch') {
+      const d = doc();
+      // מתוך הבחירה — גרירה אל המקור; אחרת — לאסו שבוחר את האזור לתיקון
+      if (d.selection && insideSelection(d, pt)) { patch = { start: pt, last: pt }; return true; }
+      lasso = { type: 'lasso', mode: 'new', start: pt, pts: [pt] };
+      overlay.preview(lassoShape());
+      return true;
+    }
     if (selecting()) {
       const mode = e.shiftKey ? 'add' : e.altKey ? 'sub' : state.selMode;
       lasso = { type: state.tool, mode, start: pt, pts: [pt] };
@@ -673,6 +765,14 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
       return;
     }
     if (cropDrag) { const q = points.at(-1); cropMove([q.x, q.y], e); return; }
+    if (patch) {
+      const q = points.at(-1);
+      patch.last = [q.x, q.y];
+      const dx = Math.round(q.x - patch.start[0]), dy = Math.round(q.y - patch.start[1]);
+      // מסגרת הבחירה במקום שאליו גוררים — מאיפה יגיע התוכן
+      overlay.preview(XF.transformShape(doc().selection.shapes[0], [1, 0, 0, 1, dx, dy]));
+      return;
+    }
     if (xf) {
       const q = points.at(-1), p = [q.x, q.y];
       if (xf.kind === 'hd') { hdXf.move(e ?? {}, scr(p)); return; }
@@ -733,6 +833,14 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     if (grabPending) { grabPending.up = true; grabPending = null; return; }
     if (groupMove) { const g = groupMove; groupMove = null; commitGroupMove(g.dx, g.dy, g.layers); return; }
     if (cropDrag) { if (cropDrag.kind === 'hd') hdCrop.up(); cropDrag = null; return; }
+    if (patch) {
+      const p = patch;
+      patch = null;
+      overlay.preview(null);
+      const off = [Math.round(p.last[0] - p.start[0]), Math.round(p.last[1] - p.start[1])];
+      if (Math.hypot(...off) >= 2) applyPatch(off, 'תיקון');
+      return;
+    }
     if (xf) { if (xf.kind === 'hd') hdXf.up(); xf = null; return; }
     if (lasso) {
       const shape = lassoShape(), mode = lasso.mode;
@@ -756,6 +864,7 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
   /** משיכה פתוחה בוטלה (אצבע שנייה → צביטה). */
   function cancel() {
     if (grabPending) { grabPending.cancelled = true; grabPending = null; return; }
+    if (patch) { patch = null; overlay.preview(null); return; }
     // אצבע שנייה באמצע גרירת ידית — חוזרים למצב שלפניה, בלי עקבות
     if (xf?.kind === 'hd') { hdXf.cancel(); xf = null; return; }
     if (cropDrag?.kind === 'hd') { hdCrop.cancel(); cropDrag = null; return; }
@@ -821,7 +930,7 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
   return {
     state, setTool, setColor(hex) { if (/^#[0-9a-f]{6}$/i.test(hex)) { state.color = hex; syncColor(); } }, down, move, up, cancel, key, updateCursor, hideCursor, selAction, commitFloat, cancelFloat, commitText,
     get editingText() { return !!textEdit; },
-    get stroking() { return !!stroke || !!lasso || !!xf || !!cropDrag || !!groupMove || !!grabPending; },
+    get stroking() { return !!stroke || !!lasso || !!xf || !!cropDrag || !!groupMove || !!grabPending || !!patch; },
     get floating() { return !!fl(); },
     /** מחכה שכל הפעולות שממתינות לקריאה מהכרטיס יסתיימו (גם אלה שנוספו בזמן ההמתנה) */
     async settle() { while (ops.size) await Promise.allSettled([...ops]); },
