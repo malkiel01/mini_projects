@@ -884,6 +884,7 @@ async function adminView() {
             account = accountMenu(top, {
                 user: () => me && { name: me.name, email: me.email, admin: me.admin },
                 server,
+                hide: ['units', 'autosave'],   // בעורך: השמירה תמיד אוטומטית, והיחידות — במקומות שלהן (ס"מ / נק')
                 docs: () => { location.hash = '#/'; },
                 admin: () => { location.hash = '#/admin'; },
                 // יציאה מתוך מסמך — קודם כמו סגירתו (שמירה, ושאלה אם לא נשמר); "להישאר" — לא יוצאים
