@@ -2,7 +2,7 @@
 
 import { api, errText, toast, dims } from './api.js';
 import { idbSet } from './idb.js';
-import { acceptHandoff } from './handoff.js';
+import { acceptHandoff } from './mbe/handoff.js';
 import { mountAccount } from './account-ui.js';
 import { createDrives } from './drives/drives.js';
 import { $ } from './ui-core/dom.js';
@@ -16,7 +16,7 @@ acceptHandoff(async ({ id, file }) => {
   } catch {
     toast('לא הצלחתי להעביר את הקובץ לעורך', true);
   }
-});
+}, { defaultName: 'עיצוב.mbe' });
 
 // חלונות: --vvh / --kb (המקלדת), ✕ ולחיצה ברקע סוגרים — ui-core
 initDialogs();

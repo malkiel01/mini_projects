@@ -81,4 +81,4 @@ export async function exportORA(renderer, doc) {
 /** שם קובץ בטוח מהכותרת */
 // הורדה ושם קובץ — מ-ui-core; בלי כותרת — "תמונה"
 export { download } from './ui-core/files.js';
-export const fileName = (title, ext) => uiFileName(String(title ?? '').trim() || 'תמונה', ext);
+export const fileName = (title, ext) => uiFileName(title, ext, 'תמונה');
