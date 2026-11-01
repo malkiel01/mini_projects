@@ -195,3 +195,75 @@ export function selectionAlpha(sel, W, H) {
   }
   return any ? { mask, box: [b[0], b[1], b[2] - 1, b[3] - 1] } : null;
 }
+
+/** טשטוש תיבה מופרד (רדיוס r) על מערך Float32 של w×h, במקום — n מעברים ≈ גאוסי */
+function boxBlur(a, w, h, r, n = 3) {
+  if (r < 1) return a;
+  const tmp = new Float32Array(Math.max(w, h));
+  const pass = (len, count, stride, step) => {
+    for (let c = 0; c < count; c++) {
+      const base = c * stride;
+      let s = 0;
+      for (let i = -r; i <= r; i++) s += a[base + Math.min(len - 1, Math.max(0, i)) * step];
+      for (let i = 0; i < len; i++) {
+        tmp[i] = s / (2 * r + 1);
+        s += a[base + Math.min(len - 1, i + r + 1) * step] - a[base + Math.max(0, i - r) * step];
+      }
+      for (let i = 0; i < len; i++) a[base + i * step] = tmp[i];
+    }
+  };
+  for (let k = 0; k < n; k++) { pass(w, h, w, 1); pass(h, w, 1, w); }
+  return a;
+}
+
+/** הרחבה (s > 0) או כיווץ (s < 0) ב-s פיקסלים — מקסימום / מינימום בריבוע (מופרד), על מסכה 0..1 */
+function morph(a, w, h, s) {
+  const r = Math.abs(s), grow = s > 0, tmp = new Float32Array(Math.max(w, h));
+  const pass = (len, count, stride, step) => {
+    for (let c = 0; c < count; c++) {
+      const base = c * stride;
+      for (let i = 0; i < len; i++) {
+        let v = grow ? 0 : 1;
+        for (let j = Math.max(0, i - r); j <= Math.min(len - 1, i + r); j++) {
+          const x = a[base + j * step];
+          v = grow ? Math.max(v, x) : Math.min(v, x);
+        }
+        tmp[i] = v;
+      }
+      for (let i = 0; i < len; i++) a[base + i * step] = tmp[i];
+    }
+  };
+  pass(w, h, w, 1); pass(h, w, 1, w);
+}
+
+/**
+ * שיפור קצוות (Refine Edge) על מסכת בחירה בגודל הקנבס ({ mask, box } של selectionAlpha):
+ * smooth — מחליק את המתאר (טשטוש וחזרה לקצה חד), shift — מרחיב / מכווץ בפיקסלים, feather — מרכך,
+ * contrast (0–100) — מחדד בחזרה את הריכוך. מחזיר { mask, box } חדש (או null — ריק).
+ */
+export function refineMask(sel, W, H, { smooth = 0, shift = 0, feather = 0, contrast = 0 } = {}) {
+  if (!sel) return null;
+  const pad = Math.ceil(smooth + Math.abs(shift) + feather * 2) + 2;
+  const x0 = Math.max(0, sel.box[0] - pad), y0 = Math.max(0, sel.box[1] - pad);
+  const x1 = Math.min(W - 1, sel.box[2] + pad), y1 = Math.min(H - 1, sel.box[3] + pad);
+  const w = x1 - x0 + 1, h = y1 - y0 + 1;
+  const a = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) a[y * w + x] = sel.mask[(y0 + y) * W + x0 + x] / 255;
+  if (smooth > 0) {
+    boxBlur(a, w, h, Math.max(1, Math.round(smooth / 1.7)));
+    for (let i = 0; i < a.length; i++) a[i] = a[i] >= 0.5 ? 1 : 0;
+  }
+  if (shift) morph(a, w, h, Math.round(shift));
+  if (feather > 0) boxBlur(a, w, h, Math.max(1, Math.round(feather / 1.7)));
+  const slope = 1 / (1 - Math.min(100, Math.max(0, contrast)) / 100 * 0.99);
+  const mask = new Uint8Array(W * H);
+  let bx0 = W, by0 = H, bx1 = -1, by1 = -1;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const v = Math.round(Math.min(1, Math.max(0, (a[y * w + x] - 0.5) * slope + 0.5)) * 255);
+    if (!v) continue;
+    const X = x0 + x, Y = y0 + y;
+    mask[Y * W + X] = v;
+    if (X < bx0) bx0 = X; if (X > bx1) bx1 = X; if (Y < by0) by0 = Y; if (Y > by1) by1 = Y;
+  }
+  return bx1 < 0 ? null : { mask, box: [bx0, by0, bx1, by1] };
+}

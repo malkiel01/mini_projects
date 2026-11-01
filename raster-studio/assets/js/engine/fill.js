@@ -89,3 +89,60 @@ export function dabsAlong(a, b, spacing, carry = 0) {
   }
   return { dabs, carry: len - (t - spacing) };
 }
+
+/**
+ * בחירה מהירה — מצב של משיכה אחת: מסכה בגודל התמונה שמצטברת מכל נקודה במשיכה (quickGrow).
+ * seen — חותמת "ביקרתי" לכל קריאה (בלי להקצות מערך חדש בכל תנועה).
+ */
+export function quickState(px, w, h) {
+  return { px, w, h, mask: new Uint8Array(w * h), seen: new Uint32Array(w * h), gen: 0, box: null };
+}
+
+/**
+ * צומחת מהעיגול של המכחול (מרכז cx, cy, רדיוס r): הפיקסלים בעיגול שקרובים לצבע הממוצע שבו הם הזרעים, ומהם —
+ * הפיקסלים הרציפים שצבעם קרוב לממוצע (עד tolerance בכל ערוץ, כמו במטה הקסם), עד reach מהמרכז — כך הבחירה נעצרת
+ * בקצוות ולא "נשפכת" לכל התמונה. מוסיף ל-st.mask ומעדכן את st.box. מחזיר כמה פיקסלים נוספו.
+ */
+export function quickGrow(st, cx, cy, r, tolerance = 32, reach = Math.max(8, r * 4)) {
+  const { px, w, h, mask, seen } = st;
+  const gen = ++st.gen;
+  const R = Math.max(0.5, r), x0 = Math.max(0, Math.floor(cx - R)), x1 = Math.min(w - 1, Math.ceil(cx + R));
+  const y0 = Math.max(0, Math.floor(cy - R)), y1 = Math.min(h - 1, Math.ceil(cy + R));
+  // הצבע הממוצע בעיגול
+  let n = 0, sr = 0, sg = 0, sb = 0, sa = 0;
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+    if ((x + 0.5 - cx) ** 2 + (y + 0.5 - cy) ** 2 > R * R) continue;
+    const i = (y * w + x) * 4;
+    sr += px[i]; sg += px[i + 1]; sb += px[i + 2]; sa += px[i + 3]; n++;
+  }
+  if (!n) return 0;
+  const r0 = sr / n, g0 = sg / n, b0 = sb / n, a0 = sa / n;
+  const like = i => (a0 < 1 && px[i + 3] === 0) || (Math.abs(px[i] - r0) <= tolerance && Math.abs(px[i + 1] - g0) <= tolerance
+    && Math.abs(px[i + 2] - b0) <= tolerance && Math.abs(px[i + 3] - a0) <= tolerance);
+  const reach2 = reach * reach;
+  const queue = [];
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+    const p = y * w + x;
+    if ((x + 0.5 - cx) ** 2 + (y + 0.5 - cy) ** 2 > R * R || !like(p * 4)) continue;
+    seen[p] = gen; queue.push(p);
+  }
+  let added = 0, bx0 = w, by0 = h, bx1 = -1, by1 = -1;
+  for (let q = 0; q < queue.length; q++) {
+    const p = queue[q], x = p % w, y = (p - x) / w;
+    if (!mask[p]) { mask[p] = 255; added++; }
+    if (x < bx0) bx0 = x; if (x > bx1) bx1 = x; if (y < by0) by0 = y; if (y > by1) by1 = y;
+    const nb = [x > 0 ? p - 1 : -1, x < w - 1 ? p + 1 : -1, y > 0 ? p - w : -1, y < h - 1 ? p + w : -1];
+    for (const o of nb) {
+      if (o < 0 || seen[o] === gen) continue;
+      seen[o] = gen;
+      const ox = o % w, oy = (o - ox) / w;
+      if ((ox + 0.5 - cx) ** 2 + (oy + 0.5 - cy) ** 2 > reach2 || !like(o * 4)) continue;
+      queue.push(o);
+    }
+  }
+  if (bx1 >= 0) {
+    const b = st.box;
+    st.box = b ? [Math.min(b[0], bx0), Math.min(b[1], by0), Math.max(b[2], bx1), Math.max(b[3], by1)] : [bx0, by0, bx1, by1];
+  }
+  return added;
+}

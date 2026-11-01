@@ -641,6 +641,47 @@ async function main() {
     await page.screenshot({ path: join(SHOTS, 'wand-desktop.png') });
   }
 
+  // ---- בחירה מהירה ושיפור קצוות ----
+  await openEd(page);
+  await page.waitForFunction(() => window.__rs?.doc);
+  await page.evaluate(() => __rs.setView({ zoom: 1, x: 20, y: 20 }));
+  await color('#ff0000');
+  await page.keyboard.press('m');
+  await drag([100, 100], [200, 200]);
+  await page.keyboard.press('Alt+Backspace');
+  await page.keyboard.press('Control+d');
+  await page.click('.tool[data-tool="quick"]');
+  check('🧲 בחירה מהירה — גודל, סבולת ומצב', await page.isVisible('#opt-size') && await page.isVisible('#opt-tolerance') && await page.isVisible('[data-sel="refine"]'));
+  await setOpt('size', 48);
+  await drag([120, 150], [180, 150]);
+  await page.evaluate(() => __rs.tools.settle());
+  const qs = await page.evaluate(() => { const s = __rs.doc.selection?.shapes[0]; return s && { t: s.type, x: s.x, y: s.y, w: s.w, h: s.h, mid: s.data[(150 - s.y) * s.w + 150 - s.x], label: __rs.history.undoStack.at(-1).label }; });
+  check('משיכה על הריבוע — הבחירה גדלה בתוכו ונעצרת בקצה', qs?.t === 'mask' && qs.x >= 100 && qs.y >= 100 && qs.x + qs.w <= 200 && qs.y + qs.h <= 200 && qs.w > 80 && qs.mid === 255 && qs.label === 'בחירה מהירה', JSON.stringify(qs));
+  await drag([300, 300], [320, 300]);
+  await page.evaluate(() => __rs.tools.settle());
+  const qs2 = await page.evaluate(() => __rs.doc.selection.shapes.length);
+  check('משיכה שנייה — מוסיפה (בלי Shift)', qs2 === 2, String(qs2));
+  await page.keyboard.press('Control+z');
+  // 🪶 שיפור קצוות: הרחבה ב-5
+  await page.click('[data-sel="refine"]');
+  await page.waitForSelector('dialog[open] [data-refine="shift"]');
+  await page.$eval('dialog[open] [data-refine="shift"]', el => { el.value = '5'; el.dispatchEvent(new Event('input', { bubbles: true })); });
+  await page.waitForTimeout(100);
+  const live = await page.evaluate(() => __rs.doc.selection.shapes[0].x);
+  await page.click('dialog[open] button[type="submit"]');
+  await page.waitForFunction(() => !document.querySelector('dialog[open]'), null, { timeout: 3000 }).catch(() => {});
+  const rf = await page.evaluate(() => { const s = __rs.doc.selection.shapes[0]; return [s.x, __rs.history.undoStack.at(-1).label].join(); });
+  check('שיפור קצוות — תצוגה חיה, ✓ — הבחירה מורחבת ב-5, רשומה אחת', live === qs.x - 5 && rf === `${qs.x - 5},שיפור קצוות`, `${live} | ${rf}`);
+  await page.keyboard.press('Control+z');
+  await page.click('[data-sel="refine"]');
+  await page.waitForSelector('dialog[open] [data-refine="feather"]');
+  await page.$eval('dialog[open] [data-refine="feather"]', el => { el.value = '10'; el.dispatchEvent(new Event('input', { bubbles: true })); });
+  await page.waitForTimeout(100);
+  await page.click('dialog[open] [data-close]');
+  await page.waitForFunction(() => !document.querySelector('dialog[open]'), null, { timeout: 3000 }).catch(() => {});
+  const rc = await page.evaluate(() => { const s = __rs.doc.selection.shapes[0]; return [s.x, s.w, __rs.history.undoStack.at(-1).label].join(); });
+  check('✕ — הבחירה המקורית חוזרת, בלי רשומה', rc === `${qs.x},${qs.w},בחירה מהירה`, rc);
+
   // ---- חותמת שכפול ----
   await openEd(page);
   await page.waitForFunction(() => window.__rs?.doc);

@@ -904,3 +904,41 @@ test('Liquify: דחיפה רכה, שחזור ודגימת הרשת', async () =>
   liquifyPush(m2, [20, 50], [60, 0], 20, 1);
   assert.ok(m2.pts[5 * 11 + 2][0] > 60, 'דחיפה ארוכה — מושך את התוכן לאורך הגרירה');
 });
+
+test('בחירה מהירה: צומחת עד הקצה, ולא מעבר לו; משיכה נוספת מוסיפה', async () => {
+  const { quickState, quickGrow } = await import('../assets/js/engine/fill.js');
+  const W = 40, H = 20, px = new Uint8Array(W * H * 4);
+  for (let i = 0; i < W * H; i++) { const x = i % W, v = x < 20 ? 0 : 255; px.set([v, v, v, 255], i * 4); }
+  const st = quickState(px, W, H);
+  assert.ok(quickGrow(st, 5, 10, 3, 32) > 0);
+  let white = 0, black = 0;
+  for (let i = 0; i < W * H; i++) if (st.mask[i]) (i % W < 20 ? black++ : white++);
+  assert.equal(white, 0, 'לא עובר את הקצה');
+  assert.ok(black > 100 && st.box[2] <= 19, 'צומח בתוך האזור: ' + black);
+  quickGrow(st, 30, 10, 3, 32);
+  assert.ok(st.box[2] > 25, 'משיכה בצד השני מוסיפה');
+  // מכחול על הקצה עצמו: הממוצע אפור — לא קרוב לאף צד, ולכן לא נבחר כלום חדש
+  const st2 = quickState(px, W, H);
+  assert.equal(quickGrow(st2, 20, 10, 4, 32), 0);
+});
+
+test('שיפור קצוות: הרחבה, כיווץ, ריכוך וניגודיות', async () => {
+  const { refineMask } = await import('../assets/js/engine/selection.js');
+  const W = 40, H = 40, mask = new Uint8Array(W * H);
+  for (let y = 10; y < 30; y++) for (let x = 10; x < 30; x++) mask[y * W + x] = 255;
+  const sel = { mask, box: [10, 10, 29, 29] };
+  assert.deepEqual(refineMask(sel, W, H, {}).box, [10, 10, 29, 29], 'בלי שינוי');
+  assert.deepEqual(refineMask(sel, W, H, { shift: 3 }).box, [7, 7, 32, 32], 'הרחבה ב-3');
+  assert.deepEqual(refineMask(sel, W, H, { shift: -3 }).box, [13, 13, 26, 26], 'כיווץ ב-3');
+  const f = refineMask(sel, W, H, { feather: 3 });
+  const edge = f.mask[20 * W + 10], inside = f.mask[20 * W + 20];
+  assert.ok(edge > 60 && edge < 200 && inside === 255, `ריכוך: קצה ${edge}, פנים ${inside}`);
+  const c = refineMask(sel, W, H, { feather: 3, contrast: 100 });
+  const ce = c.mask[20 * W + 8];
+  assert.ok(ce === 0 || ce === 255, 'ניגודיות מלאה — קצה חד: ' + ce);
+  assert.equal(refineMask(sel, W, H, { shift: -12 }), null, 'כיווץ מעבר לגודל — ריק');
+  // החלקה מעגלת פינות
+  const s = refineMask(sel, W, H, { smooth: 8 });
+  assert.equal(s.mask[10 * W + 10], 0, 'הפינה נחתכת');
+  assert.equal(s.mask[20 * W + 11], 255, 'אמצע הצלע נשאר');
+});
