@@ -11,7 +11,9 @@ import {
   leaves, cloneItem, ids, worldBox, pathMatrix,
 } from './model.js';
 import { group, ungroup, reorder, align, distribute, addLayer, removeLayer, moveLayer, moveToLayer } from './arrange.js';
-import { render, hitTest, inRect, handlePoints, readColors, HANDLE, extraPages } from './render.js';
+import { render, hitTest, inRect, readColors, extraPages } from './render.js';
+import { handles } from './ui-core/handles.js';
+import { identity, docMatrix } from './ui-core/transform.js';
 import { renderProps, renderLayers } from './props.js';
 import { createPenTools } from './pen.js';
 import { pencilD, brushD, widths } from './freehand.js';
@@ -42,6 +44,45 @@ const S = {
   snap: pref('snap', true), grid: pref('grid', false), editingText: null, // active — השכבה לאובייקטים חדשים
   undo: [], redo: [],
 };
+
+let op = null;   // הפעולה הנוכחית של המצביע (ראו "קלט מצביע")
+
+// ---------- ידיות (ui-core/handles + transform): שינוי גודל וסיבוב של הבחירה ----------
+// הבחירה תמיד מלבן ישר (הסיבוב נאפה לנתיבים): t מתחיל ב-identity של התיבה. בזמן גרירה — מהמסמך שלפני, מחדש.
+const hd = handles(stage, {
+  view: () => S.view,
+  dir: 'rtl',   // שורת המצב בכותרת (עברית), גם כשהבמה עצמה ltr
+  // טקסט נקודה — תמיד ביחס (הגופן גדל כולו); טקסט באזור — המסגרת, בלי יחס; השאר — פינה ביחס, Shift משחרר
+  keepRatio: (h) => {
+    const one = S.sel.size === 1 ? findPath(S.doc, [...S.sel][0])?.path : null;
+    if (one?.type === 'text') return one.auto !== false;
+    return !!(h[0] && h[1]);
+  },
+  snap: () => op?.snap || null,
+  status: (text) => { if (text) $('doc-status').textContent = text; },
+  onGuides: (g) => { if (op?.type === 'handles') S.guides = g.length ? g : null; },   // hide() מאפס — לא קווי ההזזה
+  onPreview: (t) => applyHandles(t),
+  onCommit: () => commitFrom(op.before),
+});
+
+function applyHandles(t) {
+  if (op?.type !== 'handles') return;
+  const [x, y, w, h] = op.box0;
+  S.doc = JSON.parse(op.before);
+  if (t.angle) rotateSelection(t.angle, [t.cx, t.cy]);
+  else {
+    const [a, b, c, d, e, f] = docMatrix(t, w, h, x, y);
+    const lay = layout(S.doc);
+    for (const id of S.sel) {
+      const o = findPath(S.doc, id);
+      if (!o) continue;
+      const [ox, oy] = lay.get(o.surface.id);   // כל אובייקט במרחב הלוח שלו
+      applyMatrix(o.path, [a, b, c, d, e + a * ox + c * oy - ox, f + b * ox + d * oy - oy]);
+    }
+  }
+  draw();
+}
+
 
 // העדפות תצוגה (הצמדה, רשת) — נזכרות במכשיר
 function pref(k, d) { try { const v = localStorage.getItem('vector-studio:' + k); return v === null ? d : v === '1'; } catch { return d; } }
@@ -325,10 +366,16 @@ function draw() {
     if (!S.doc) return; // עוד נטען מהשרת
     const pathMode = S.tool === 'pen' || S.tool === 'node';
     render(canvas, {
-      ...S, pages: pagesNow(), selBox: S.sel.size && !pathMode && !S.editingText ? selectionBox(S.doc, S.sel) : null, handles: !op || op.type !== 'move',
+      ...S, pages: pagesNow(),
       overlay: pathMode ? tools.overlay : null,
     });
     $('zoom-pct').textContent = Math.round(S.view.zoom * 100) + '%';
+    // הידיות: בזמן גרירה — רק מעקב אחרי הזום; אחרת — מהבחירה (לא בעריכת נקודות / טקסט, ולא בזמן הזזה)
+    if (hd.dragging) hd.update();
+    else {
+      const box = S.sel.size && !pathMode && !S.editingText && op?.type !== 'move' ? selectionBox(S.doc, S.sel) : null;
+      if (box) hd.show(identity(...box), box[2], box[3]); else hd.hide();
+    }
     positionTextEditor();
   });
 }
@@ -810,7 +857,6 @@ function nudge(dx, dy) {
 // ---------- קלט מצביע ----------
 
 let lastTap = null;
-let op = null;   // הפעולה הנוכחית
 let spaceDown = false;
 
 function local(e) {
@@ -841,16 +887,12 @@ function freeD(o, final) {
   return pencilD(o.samples, tol, 10 / S.view.zoom);
 }
 
-function handleAt(sx, sy) {
-  if (!S.sel.size) return null;
-  const box = selectionBox(S.doc, S.sel);
-  if (!box) return null;
-  const touch = op?.pointerType === 'touch' || matchMedia('(pointer: coarse)').matches;
-  const r = (touch ? 22 : HANDLE) / 2 + 2;
-  for (const [name, [hx, hy]] of Object.entries(handlePoints(box, S.view))) {
-    if (Math.abs(sx - hx) <= r && Math.abs(sy - hy) <= r) return name;
-  }
-  return null;
+/** סמן העכבר מעל ידית (ui-core/handles: 'rotate' / [hx, hy] / null). */
+function handleCursor(h) {
+  if (h === 'rotate') return 'grab';
+  if (!h) return null;
+  const [x, y] = h;
+  return (!x ? 'ns' : !y ? 'ew' : x === y ? 'nwse' : 'nesw') + '-resize';
 }
 
 canvas.addEventListener('pointerdown', (e) => {
@@ -913,15 +955,10 @@ function toolDown(e) {
     return true;
   }
 
-  const handle = handleAt(sx, sy);
-  if (handle === 'rot') {
-    const box = selectionBox(S.doc, S.sel);
-    const c = [box[0] + box[2] / 2, box[1] + box[3] / 2];
-    op = { type: 'rotate', c, a0: Math.atan2(wy - c[1], wx - c[0]), before: JSON.stringify(S.doc), box0: box };
-    return true;
-  }
-  if (handle) {
-    op = { type: 'scale', handle, box0: selectionBox(S.doc, S.sel), before: JSON.stringify(S.doc), s0: [sx, sy], snap: makeSnap(S.sel, findPath(S.doc, [...S.sel][0])?.surface, touch) };
+  // ידיות (ui-core): שינוי גודל וסיבוב — לפני בדיקת האובייקטים
+  const before = JSON.stringify(S.doc), box0 = selectionBox(S.doc, S.sel);
+  if (box0 && hd.down(e, [sx, sy])) {
+    op = { type: 'handles', before, box0, snap: makeSnap(S.sel, findPath(S.doc, [...S.sel][0])?.surface, touch) };
     return true;
   }
   const hit = hitTest(S, sx, sy, touch ? 12 : 5);
@@ -959,8 +996,8 @@ canvas.addEventListener('pointermove', (e) => {
   {
     if (S.tool === 'pen') tools.hover(sx, sy);
     if (e.pointerType === 'mouse' && S.tool === 'select') {
-      const h = handleAt(sx, sy);
-      canvas.style.cursor = h === 'rot' ? 'grab' : h ? ({ n: 'ns', s: 'ns', e: 'ew', w: 'ew', nw: 'nwse', se: 'nwse', ne: 'nesw', sw: 'nesw' }[h] + '-resize') : (spaceDown ? 'grab' : 'default');
+      const h = hd.at([sx, sy], e);
+      canvas.style.cursor = handleCursor(h) || (spaceDown ? 'grab' : 'default');
       const hov = h ? null : hitTest(S, sx, sy, 5);
       if (hov !== S.hover) { S.hover = hov; draw(); }
     }
@@ -1014,52 +1051,9 @@ function toolMove(e) {
       draw();
       break;
     }
-    case 'rotate': {
-      const [wx, wy] = toWorld(sx, sy);
-      let a = Math.atan2(wy - op.c[1], wx - op.c[0]) - op.a0;
-      if (e.shiftKey) a = Math.round(a / (Math.PI / 12)) * (Math.PI / 12); // Shift — קפיצות של 15°
-      S.doc = JSON.parse(op.before);
-      rotateSelection(a, op.c);
-      $('doc-status').textContent = `סיבוב ${Math.round(((a * 180 / Math.PI) % 360 + 540) % 360 - 180)}°`;
-      draw();
+    case 'handles':
+      hd.move(e, [sx, sy]);
       break;
-    }
-    case 'scale': {
-      let [wx, wy] = toWorld(sx, sy);
-      const [x, y, w, h] = op.box0;
-      const hd = op.handle;
-      S.guides = null;
-      // הצמדה של הקצה שזז (לא ביחס קבוע — שם הקצה נקבע מהציר השני)
-      if (op.snap && !(e.ctrlKey || e.metaKey) && !(e.shiftKey && hd.length === 2)) {
-        const axes = (/[ew]/.test(hd) ? 'x' : '') + (/[ns]/.test(hd) ? 'y' : '');
-        const r = op.snap.point(wx, wy, axes);
-        wx = r.x; wy = r.y; S.guides = r.guides;
-      }
-      const ax = hd.includes('w') ? x + w : hd.includes('e') ? x : x + w / 2;
-      const ay = hd.includes('n') ? y + h : hd.includes('s') ? y : y + h / 2;
-      let sxF = hd.includes('e') || hd.includes('w') ? (wx - ax) / ((hd.includes('w') ? x : x + w) - ax) : 1;
-      let syF = hd.includes('n') || hd.includes('s') ? (wy - ay) / ((hd.includes('n') ? y : y + h) - ay) : 1;
-      if (!Number.isFinite(sxF)) sxF = 1;
-      if (!Number.isFinite(syF)) syF = 1;
-      // טקסט נקודה לבד — תמיד ביחס קבוע (הגופן גדל כולו), כדי שהפינה / הצלע הנגדית יישארו במקום
-      const one = S.sel.size === 1 ? findPath(S.doc, [...S.sel][0])?.path : null;
-      const pointText = one?.type === 'text' && one.auto !== false;
-      if (pointText && hd.length === 1) { const s = hd === 'e' || hd === 'w' ? sxF : syF; sxF = syF = s; }
-      if ((e.shiftKey || pointText) && hd.length === 2) { const s = Math.max(Math.abs(sxF), Math.abs(syF)); sxF = Math.sign(sxF || 1) * s; syF = Math.sign(syF || 1) * s; }
-      // לא מכווצים לאפס: לפחות 0.5pt
-      if (Math.abs(sxF * w) < 0.5) sxF = Math.sign(sxF || 1) * 0.5 / (w || 1);
-      if (Math.abs(syF * h) < 0.5) syF = Math.sign(syF || 1) * 0.5 / (h || 1);
-      S.doc = JSON.parse(op.before);
-      const lay = layout(S.doc);
-      for (const id of S.sel) {
-        const o = findPath(S.doc, id);
-        if (!o) continue;
-        const [ox, oy] = lay.get(o.surface.id);
-        applyMatrix(o.path, scaleAt(sxF, syF, ax - ox, ay - oy));
-      }
-      draw();
-      break;
-    }
     case 'create': {
       let [wx, wy] = toWorld(sx, sy);
       S.guides = null;
@@ -1102,9 +1096,8 @@ function endPointer(e) {
       if (op.moved && S.doc.surfaces.length > 1) reparentMoved();
       commitFrom(op.before);
       break;
-    case 'scale':
-    case 'rotate':
-      commitFrom(op.before);
+    case 'handles':
+      hd.up(e);   // onCommit
       break;
     case 'free': {
       const o = findPath(S.doc, op.id);
@@ -1132,6 +1125,7 @@ function endPointer(e) {
 }
 /** אצבע שנייה (צביטה) או pointercancel: הפעולה מתבטלת בלי עקבות. */
 function toolCancel() {
+  if (op?.type === 'handles') hd.cancel();
   if (op?.before) { S.doc = JSON.parse(op.before); afterChangeSilent(); }
   if (op?.type === 'tool') tools.abortDown();
   op = null;

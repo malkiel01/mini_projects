@@ -71,13 +71,24 @@ try {
   step('הזזה בגרירה');
 
   // שינוי גודל מהידית הימנית-תחתונה (se)
+  // (ידיות ui-core: פינה שומרת יחס, Shift משחרר)
   [a, b] = [await W(500, 350), await W(600, 450)];
+  await page.keyboard.down('Shift');
   await page.mouse.move(...a); await page.mouse.down(); await page.mouse.move(...b, { steps: 5 }); await page.mouse.up();
+  await page.keyboard.up('Shift');
   s = await st();
   const r = s.paths[0].shape.box;
   assert.ok(Math.abs(r[2] - 400) < 2 && Math.abs(r[3] - 300) < 2, 'scale ' + r);
   assert.equal(s.paths[0].stroke.width, 1, 'המתאר לא נמתח');
-  step('שינוי גודל מהידית — הצורה נשארת מלבן, והמתאר לא נמתח');
+  assert.ok(await page.locator('.uic-handles .uic-corner').count() === 4, 'ידיות ui-core על המסך');
+  // בלי Shift — הפינה שומרת יחס (4:3)
+  [a, b] = [await W(600, 450), await W(700, 460)];
+  await page.mouse.move(...a); await page.mouse.down(); await page.mouse.move(...b, { steps: 5 }); await page.mouse.up();
+  const r2 = (await st()).paths[0].shape.box;
+  assert.ok(r2[2] > 410 && Math.abs(r2[2] / r2[3] - 4 / 3) < 0.01, 'יחס נשמר ' + r2);
+  await page.keyboard.press('Control+z');
+  assert.ok(Math.abs((await st()).paths[0].shape.box[2] - 400) < 2, 'ביטול — חזרה ל-400');
+  step('שינוי גודל מהידית — Shift חופשי, בלי Shift ביחס; הצורה נשארת מלבן, והמתאר לא נמתח');
 
   // ביטול וביצוע מחדש
   await page.keyboard.press('Control+z');
@@ -369,7 +380,7 @@ try {
   const eb = s.paths[1].shape.box;
   const rc = [eb[0] + eb[2] / 2, eb[1] + eb[3] / 2];
   const hTop = await W(rc[0], eb[1]);
-  const hRot = [hTop[0], hTop[1] - 26];
+  const hRot = [hTop[0], hTop[1] - 28];
   const cS = await W(...rc);
   await page.keyboard.down('Shift');
   await page.mouse.move(...hRot); await page.mouse.down();
