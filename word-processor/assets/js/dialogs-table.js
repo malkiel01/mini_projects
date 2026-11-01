@@ -4,7 +4,7 @@
  * נשארת בעורך — היא חלק מהסרט.
  */
 import { imageBox, TABLE_BORDERS, VALIGNS } from './extensions.js';
-import { h, sheet, field, seg, numInput } from './ui.js';
+import { h, sheet, field, seg, numInput, colorField } from './ui.js';
 
 export function createTableTools({ editor, chain, TABLE_STYLES, ctxSelect }) {
     /**
@@ -57,7 +57,7 @@ export function createTableTools({ editor, chain, TABLE_STYLES, ctxSelect }) {
         sheet('מאפייני טבלה', body => {
             body.append(
                 h('section.group', h('h3', 'גבולות'), seg('borders', TABLE_BORDERS, a.borders || 'all', 'גבולות'),
-                    field('צבע הגבולות', h('input', { type: 'color', name: 'bc', value: a.borderColor || '#888888' }))),
+                    colorField('צבע הגבולות', 'bc', a.borderColor || '#888888')),
                 h('section.group', h('h3', 'רוחב ויישור'),
                     h('div.fields.two', field('רוחב (% משורה)', numInput('width', a.width || 100, { min: 10, max: 100, step: 5 }))),
                     seg('align', { right: 'ימין', center: 'מרכז', left: 'שמאל' }, a.align || 'right', 'יישור הטבלה')),

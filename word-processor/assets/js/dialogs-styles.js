@@ -4,7 +4,7 @@
  */
 import { USER_STYLE, styleKeyOf } from './extensions.js';
 import { migrate } from './schema.js';
-import { h, toast, sheet, field, sw, numInput, fontSelect, when } from './ui.js';
+import { h, toast, sheet, field, sw, numInput, fontSelect, when, colorField } from './ui.js';
 import { confirm } from './ui-core/dialog.js';
 
 export function createStyleDialogs({ editor, opts, getPage, mergePage, STYLE_NAMES, styleName, userKeys, styleSel }) {
@@ -127,7 +127,7 @@ export function createStyleDialogs({ editor, opts, getPage, mergePage, STYLE_NAM
                         field('גודל (נק\')', numInput('size', s.size ?? '', { min: 6, max: 96 })),
                         field('לפני (נק\')', numInput('before', s.before ?? '', { min: 0, max: 200 })),
                         field('אחרי (נק\')', numInput('after', s.after ?? '', { min: 0, max: 200 })),
-                        field('צבע', h('input', { type: 'color', name: 'color', value: s.color || '#000000' })),
+                        colorField('צבע', 'color', s.color || '#000000'),
                         field('יישור', h('select', { name: 'align' }, h('option', { value: '' }, 'לפי הפסקה'),
                             Object.entries({ right: 'ימין', center: 'מרכז', left: 'שמאל', justify: 'שני הצדדים' }).map(([k, t]) => h('option', { value: k, selected: s.align === k }, t))))),
                     h('div.row-btns.wrap', sw('bold', 'מודגש', s.bold), sw('italic', 'נטוי', s.italic), sw('underline', 'קו תחתון', s.underline)),

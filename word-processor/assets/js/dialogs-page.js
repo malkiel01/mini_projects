@@ -5,7 +5,7 @@
  */
 import { Editor, Node as TNode, StarterKit, TextStyle, FontSize, TextAlign } from '../../vendor/tiptap.js';
 import { WpTable, WpTableRow, Cell, HeaderCell } from './extensions.js';
-import { h, toast, sheet, field, seg, sw, numInput, fontSelect } from './ui.js';
+import { h, toast, sheet, field, seg, sw, numInput, fontSelect, colorField } from './ui.js';
 
 export function createPageDialogs({ editor, opts, getPage, sections, setPage, mergePage, MM, NUM_FORMATS }) {
     /**
@@ -131,7 +131,7 @@ export function createPageDialogs({ editor, opts, getPage, sections, setPage, me
                 // רקע הדף — לכל המסמך (כמו "עיצוב ← רקע הדף" ב-Word)
                 h('section.group', h('h3', 'רקע הדף ', h('small', 'לכל המסמך')),
                     sw('pc_on', 'צבע עמוד', !!getPage().page_color),
-                    field('הצבע', h('input', { type: 'color', name: 'page_color', value: getPage().page_color || '#fdf6e3' })),
+                    colorField('הצבע', 'page_color', getPage().page_color || '#fdf6e3'),
                     field('סימן מים (טקסט באלכסון; ריק — בלי)', wmInput),
                     h('div.wm-presets', ['טיוטה', 'סודי', 'דחוף', 'עותק', 'לא להפצה'].map(v => h('button.btn.sm', { type: 'button', onclick: () => { wmInput.value = v; } }, v)))));
         }, form => {

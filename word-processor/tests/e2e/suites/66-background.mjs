@@ -33,7 +33,10 @@ export default async function (t) {
     await t.tool(p, 'הגדרות עמוד ומספור עמודים');
     await p.waitForSelector('dialog');
     await p.check('dialog [name=pc_on]');
-    await p.fill('dialog input[name=page_color]', '#ffeecc');
+    // הבורר של ui-core (color.js): פתיחה, קוד ו-Enter
+    await p.click('dialog .cp-field:has(> label:text-is("הצבע")) .cp-trigger');
+    await p.fill('dialog .cp-field:has(> label:text-is("הצבע")) .cp-hex', '#ffeecc');
+    await p.press('dialog .cp-field:has(> label:text-is("הצבע")) .cp-hex', 'Enter');
     await p.click('dialog .wm-presets button:has-text("טיוטה")');
     await p.click('dialog button[type=submit]');
     await p.waitForSelector('dialog', { state: 'detached' });

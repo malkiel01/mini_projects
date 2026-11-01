@@ -24,7 +24,7 @@ import { TrackChanges, changes, resolveChanges, goToChange, setTracking, VIEWS a
 import { TabStops } from './tabs.js';
 import { createRuler } from './ruler.js';
 import { Peers } from './collab.js';
-import { h, toast, sheet, field, seg, when } from './ui.js';
+import { h, toast, sheet, field, seg, when, colorSheet, setColorContext } from './ui.js';
 import { createMediaDialogs } from './dialogs-media.js';
 import { createTextDialogs } from './dialogs-text.js';
 import { createPageDialogs } from './dialogs-page.js';
@@ -237,6 +237,18 @@ export function createWordEditor(root, opts) {
     });
     ed0 = editor;
     pageAttr = editor.state.doc.attrs.page;
+    // בורר הצבעים של ui-core: "בעיצוב" — הצבעים שבמסמך (סגנונות, טקסט, הדגשה, מילוי תאים), "מוכנים" — כמו ב-Word
+    setColorContext({ prefix: 'wp-colors',
+        presets: ['#000000', '#ffffff', '#c00000', '#ff0000', '#ffc000', '#ffff00', '#92d050', '#00b050', '#00b0f0', '#0070c0', '#002060', '#7030a0'],
+        docColors: () => {
+            const out = new Set(Object.values(page.styles || {}).map(x => x?.color).filter(Boolean));
+            editor.state.doc.descendants(n => {
+                if (out.size >= 24) return false;
+                if (n.attrs?.background) out.add(n.attrs.background);
+                for (const m of n.marks) for (const k of ['color', 'background']) if (/^#[0-9a-f]{6}$/i.test(m.attrs?.[k] || '')) out.add(m.attrs[k]);
+            });
+            return [...out].filter(c => /^#[0-9a-f]{6}$/i.test(c)).map(c => c.toLowerCase());
+        } });
     /** המסמך השתנה (עריכה, ביטול, שחזור, טעינה) — אם הגדרות העמוד שבו אחרות, מחילים אותן. */
     let secSig = '';
     function syncPage() {
@@ -665,8 +677,18 @@ export function createWordEditor(root, opts) {
     /** תיבת בחירה של פקודה עם ערך (גופן, גודל…). */
     const cmdSel = (id, cls, options) => h('select.tb-sel.' + cls, { 'aria-label': cmds.get(id).label, title: cmds.get(id).label,
         onchange: e => cmds.run(id, e.target.value) }, options);
-    const cmdColor = (id, value, cls = '') => h('label.tb.tb-color' + cls, { title: cmds.get(id).label },
-        h('span', { 'aria-hidden': 'true' }, cmds.get(id).icon), h('input', { type: 'color', value, 'aria-label': cmds.get(id).label, oninput: e => cmds.run(id, e.target.value) }));
+    /** כפתור צבע: הבורר של ui-core (color.js, שורה 13) בחלון; הפס שמתחת לסמל — הצבע האחרון שהוחל. */
+    const cmdColor = (id, value, cls = '') => {
+        let last = value;
+        const mark = h('span', { 'aria-hidden': 'true', style: { borderBottomColor: last } }, cmds.get(id).icon);
+        return h('button.tb.tb-color' + cls, { type: 'button', title: cmds.get(id).label, 'aria-label': cmds.get(id).label, 'aria-haspopup': 'dialog',
+            onclick: () => colorSheet(cmds.get(id).label, last, hex => {
+                last = hex;
+                mark.style.borderBottomColor = hex;
+                cmds.run(id, hex);
+                requestAnimationFrame(() => editor.view.focus());
+            }) }, mark);
+    };
 
     const linkOff = cmdBtn('unlink');
     const ulSel = cmdSel('underlineStyle', 'w-ul', Object.entries(UNDERLINES).map(([v, t]) => h('option', { value: v }, t)));

@@ -15,7 +15,10 @@ export default async function (t) {
     await t.tool(p, 'מאפייני טבלה: גבולות, רוחב, יישור');
     await p.waitForSelector('dialog');
     await p.check('dialog input[name=borders][value=outer]', { force: true });
-    await p.fill('dialog input[name=bc]', '#c00000');
+    // הבורר של ui-core (color.js): פתיחה, קוד ו-Enter
+    await p.click('dialog .cp-field:has(> label:text-is("צבע הגבולות")) .cp-trigger');
+    await p.fill('dialog .cp-field:has(> label:text-is("צבע הגבולות")) .cp-hex', '#c00000');
+    await p.press('dialog .cp-field:has(> label:text-is("צבע הגבולות")) .cp-hex', 'Enter');
     await p.fill('dialog [name=width]', '60');
     await p.check('dialog input[name=align][value=center]', { force: true });
     await p.check('dialog input[name=valign][value=middle]', { force: true });

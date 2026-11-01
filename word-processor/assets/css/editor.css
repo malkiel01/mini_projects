@@ -158,7 +158,6 @@
 .tb-sel.w-font { inline-size: 8.4em; }
 .tb-sel.w-size { inline-size: 4.2em; }
 .tb-sel.w-list { inline-size: 3.6em; }
-.tb-color input { position: absolute; inset: 0; opacity: 0; cursor: pointer; inline-size: 100%; block-size: 100%; min-height: 0; padding: 0; border: 0; }
 .tb-color > span { border-bottom: 3px solid #c00000; padding: 0 2px; font-weight: 700; }
 .tb-color.mark > span { border-bottom-color: #ffd400; font-weight: 400; }
 .tb-zoom { min-inline-size: 3.2em; text-align: center; font-size: .8rem; color: var(--muted); }
