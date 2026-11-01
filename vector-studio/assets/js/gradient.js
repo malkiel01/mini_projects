@@ -52,3 +52,5 @@ function withAlpha(hex, a) {
 }
 
 export const hasPaint = (p) => !!(p && (p.color || p.gradient));
+/** מתאר שמצויר: צבע או מעבר, ועובי חיובי. */
+export const hasStroke = (s) => hasPaint(s) && (s.width ?? 1) > 0;

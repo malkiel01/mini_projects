@@ -251,3 +251,19 @@ test('תמונה בתוך הציור: SVG ‏<image> עם סיבוב ואטימ�
   assert.match(s, /q\n0 1 -1 0 100 0 cm\n\/GS\d+ gs\n40 0 0 -30 10 50 cm\n\/Im1 Do\nQ/);
   pdfCheck(pdf);
 });
+
+test('מתאר משוכלל: מעבר צבע במתאר וחץ בסוף — ב-SVG וב-PDF', async () => {
+  const doc = newDocument('a4');
+  const L = doc.surfaces[0].layers[0];
+  L.paths.push({ id: 'ln', d: 'M10 10 L110 10', fill: null,
+    stroke: { width: 4, gradient: { type: 'linear', from: [10, 10], to: [110, 10], stops: [{ at: 0, color: '#ff0000' }, { at: 1, color: '#0000ff' }] }, end: 'arrow', start: 'circle' } });
+  const prep = await prepare(doc, doc.surfaces[0].id, getFont);
+  const svg = toSVG(prep);
+  assert.match(svg, /<path id="ln" [^>]*stroke="url\(#grad1\)"/, 'המתאר במעבר צבע');
+  assert.match(svg, /<path id="ln-m0" [^>]*fill="url\(#grad\d\)"/, 'העיגול בהתחלה — באותו מעבר');
+  assert.match(svg, /<path id="ln-m1" /, 'החץ בסוף');
+  const pdf = Buffer.from(toPDF([prep])).toString('latin1');
+  assert.match(pdf, /\/Pattern CS \/P\d+ SCN/, 'מתאר עם Pattern');
+  assert.equal((pdf.match(/\/PatternType 2/g) || []).length, 3, 'מתאר + שני קצוות');
+  pdfCheck(toPDF([prep]));
+});

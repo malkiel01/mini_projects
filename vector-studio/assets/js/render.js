@@ -6,7 +6,8 @@ import { objects, layout, pathMatrix, worldBox, findPath, leaves, isText, isImag
 import { lines, lineHeight, fontCss, flowText, frameItem } from './text.js';
 
 export { flowText };
-import { canvasPaint, hasPaint } from './gradient.js';
+import { canvasPaint, hasPaint, hasStroke } from './gradient.js';
+import { markerPaths } from './markers.js';
 
 import { GRID } from './snap.js';
 
@@ -114,11 +115,15 @@ function drawPath(ctx, path, media) {
     ctx.fillStyle = canvasPaint(ctx, fill);
     ctx.fill(p, path.fillRule === 'evenodd' ? 'evenodd' : 'nonzero');
   }
-  if (stroke && stroke.color && (stroke.width ?? 1) > 0) {
+  if (hasStroke(stroke)) {
     ctx.globalAlpha = stroke.opacity ?? 1;
-    ctx.strokeStyle = stroke.color;
+    const paint = canvasPaint(ctx, stroke);
+    ctx.strokeStyle = paint;
     strokeStyle(ctx, stroke);
     ctx.stroke(p);
+    // קצוות (חץ / עיגול / פס) — מלאים, באותו צבע
+    ctx.fillStyle = paint;
+    for (const m of markerPaths(path.d, stroke)) ctx.fill(path2d(m));
   }
   ctx.globalAlpha = 1;
 }
@@ -305,7 +310,7 @@ function hitPath(path, t, sx, sy, tol) {
   try { p = path2d(path.d); } catch { return false; }
   if ((path.fill?.color || path.fill?.gradient) && probe.isPointInPath(p, sx, sy, path.fillRule === 'evenodd' ? 'evenodd' : 'nonzero')) return true;
   const scale = Math.sqrt(Math.abs(t[0] * t[3] - t[1] * t[2])) || 1;
-  probe.lineWidth = Math.max((path.stroke?.color ? path.stroke.width ?? 1 : 0), (tol * 2) / scale);
+  probe.lineWidth = Math.max((hasStroke(path.stroke) ? path.stroke.width ?? 1 : 0), (tol * 2) / scale);
   probe.lineCap = 'round'; probe.lineJoin = 'round';
   return probe.isPointInStroke(p, sx, sy);
 }

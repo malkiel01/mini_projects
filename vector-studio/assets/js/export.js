@@ -6,7 +6,8 @@ import { isIdentity } from './geometry/matrix.js';
 import { isGroup, isText, isImage } from './model.js';
 import { textToD } from './outline.js';
 import { frameItem } from './text.js';
-import { drawable } from './gradient.js';
+import { drawable, hasStroke } from './gradient.js';
+import { markerPaths } from './markers.js';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const r = (v) => String(Math.round(v * 1000) / 1000);
@@ -24,11 +25,19 @@ export async function prepare(doc, surfaceId, getFont, getImage = null, backgrou
   const gaps = new Set();
   const conv = async (item) => {
     if (isGroup(item)) return { ...item, children: await Promise.all((item.children || []).map(conv)) };
-    const g = item.fill?.gradient;
-    if (g && !drawable(g)) {
-      gaps.add(`gradient:${g.type} → צבע אחיד`);
-      const { gradient, ...rest } = item.fill;
-      item = { ...item, fill: { ...rest, color: g.stops?.[0]?.color || '#000000' } };
+    for (const k of ['fill', 'stroke']) {
+      const g = item[k]?.gradient;
+      if (g && !drawable(g)) {
+        gaps.add(`gradient:${g.type} → צבע אחיד`);
+        const { gradient, ...rest } = item[k];
+        item = { ...item, [k]: { ...rest, color: g.stops?.[0]?.color || '#000000' } };
+      }
+    }
+    // קצוות המתאר (חץ / עיגול / פס) — צורות מלאות בצבע המתאר, בקבוצה עם הנתיב (SVG ו-PDF מציירים אותן כרגיל)
+    const marks = item.d && hasStroke(item.stroke) ? markerPaths(item.d, item.stroke) : [];
+    if (marks.length) {
+      const { width, cap, join, miter, dash, start, end, ...paint } = item.stroke;
+      return { type: 'group', id: item.id + '-g', children: [item, ...marks.map((d, i) => ({ id: `${item.id}-m${i}`, d, fill: paint, ...(item.transform ? { transform: item.transform } : {}) }))] };
     }
     if (isImage(item)) {
       const img = getImage ? await getImage(item.src) : null;
@@ -102,8 +111,8 @@ function svgStyle(p, defs) {
     if (p.fillRule === 'evenodd') a.push('fill-rule="evenodd"');
   } else a.push('fill="none"');
   const s = p.stroke;
-  if (s?.color && (s.width ?? 1) > 0) {
-    a.push(`stroke="${esc(s.color)}"`, `stroke-width="${r(s.width ?? 1)}"`);
+  if (hasStroke(s)) {
+    a.push(`stroke="${s.gradient ? `url(#${svgGradient(s.gradient, defs)})` : esc(s.color)}"`, `stroke-width="${r(s.width ?? 1)}"`);
     if ((s.opacity ?? 1) < 1) a.push(`stroke-opacity="${r(s.opacity)}"`);
     if (s.cap && s.cap !== 'butt') a.push(`stroke-linecap="${esc(s.cap)}"`);
     if (s.join && s.join !== 'miter') a.push(`stroke-linejoin="${esc(s.join)}"`);
@@ -231,7 +240,7 @@ export function toPDF(pages) {
       }
       if (!item.d) return;
       const fill = item.fill?.color || item.fill?.gradient ? item.fill : null;
-      const st = item.stroke?.color && (item.stroke.width ?? 1) > 0 ? item.stroke : null;
+      const st = hasStroke(item.stroke) ? item.stroke : null;
       if (!fill && !st) return;
       const g = fill?.gradient;
       const t = item.transform && !isIdentity(item.transform) ? item.transform : null;
@@ -250,7 +259,9 @@ export function toPDF(pages) {
       if (doFill && g) ops.push(`/Pattern cs /${patternFor(g, mul(flip, t || [1, 0, 0, 1, 0, 0]))} scn`);
       else if (doFill) ops.push(`${rgb(fill.color)} rg`);
       if (st) {
-        ops.push(`${rgb(st.color)} RG`, `${r(st.width ?? 1)} w`);
+        if (st.gradient) ops.push(`/Pattern CS /${patternFor(st.gradient, mul(flip, t || [1, 0, 0, 1, 0, 0]))} SCN`);
+        else ops.push(`${rgb(st.color)} RG`);
+        ops.push(`${r(st.width ?? 1)} w`);
         ops.push(`${{ butt: 0, round: 1, square: 2 }[st.cap] ?? 0} J`, `${{ miter: 0, round: 1, bevel: 2 }[st.join] ?? 0} j`);
         ops.push(`${r(st.miter ?? 4)} M`);
         if (st.dash?.length) ops.push(`[${st.dash.map(r).join(' ')}] 0 d`);
