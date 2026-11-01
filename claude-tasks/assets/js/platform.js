@@ -560,13 +560,32 @@ const ADMIN_TABS = {
 
   async users() {
     const { users } = await api('admin-users');
-    return el('div', { class: 'diag' }, users.map((u) => row(
-      `${u.display_name} (${u.username})`,
-      [u.role === 'admin' ? 'מנהל' : 'משתמש',
-       u.has_github ? `גיטהאב: ${u.github_login}` : 'ללא גיטהאב',
-       `${u.projects} פרויקטים`,
-       `${u.tasks} מטלות`].join(' · '),
-    )));
+    const meId = state.user?.id;
+    return el('div', { class: 'diag' }, users.map((u) => {
+      const r = row(
+        `${u.display_name} (${u.username})${u.id === meId ? ' — אתה' : ''}`,
+        [u.role === 'admin' ? 'מנהל' : 'משתמש',
+         u.platform_linked ? '🔗 כלים דיגיטליים' : '',
+         u.has_github ? `גיטהאב: ${u.github_login}` : 'ללא גיטהאב',
+         `${u.projects} פרויקטים`,
+         `${u.tasks} מטלות`].filter(Boolean).join(' · '),
+      );
+      // חשבון נוסף (לא אני, לא מקושר לכלים הדיגיטליים) — אפשר למחוק; מה שבו עובר אליי
+      if (u.id !== meId && !Number(u.platform_linked)) {
+        r.append(el('button', {
+          type: 'button', class: 'btn btn--ghost danger-text', text: '🗑 מחיקה',
+          onclick: async () => {
+            if (!confirm(`למחוק את "${u.display_name}"? מה שנוצר בו (${u.tasks} מטלות, ${u.projects} פרויקטים) יעבור אליך.`)) return;
+            try {
+              await api('remove-user', { id: u.id });
+              toast('החשבון נמחק', 'ok');
+              showAdminTab('users');
+            } catch (ex) { toast(ex.message, 'error'); }
+          },
+        }));
+      }
+      return r;
+    }));
   },
 
   async events() {

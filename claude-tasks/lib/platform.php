@@ -278,3 +278,42 @@ function lockClear(string $key): void {
 function auditPlatform(?int $userId, string $action, string $detail, bool $ok = true): void {
     logEvent($userId === null ? null : ['id' => $userId, 'username' => 'platform'], $action, '', $ok, $detail);
 }
+
+/**
+ * מנהל מוחק חשבון נוסף, ומה שנוצר בו עובר אליו (mergeInto). נועד לחשבון
+ * שנפתח בטעות — למשל "משתמש חדש" שנוצר במקום לשנות שם.
+ *
+ * לא מוחקים: את עצמך; חשבון שמקושר לכלים הדיגיטליים (הכניסה הבאה דרכם הייתה
+ * מאבדת את החשבון); ואת המנהל האחרון.
+ */
+function adminRemoveUser(array $actor, int $userId): void {
+    if (($actor['role'] ?? '') !== 'admin') throw new AppError('למנהל בלבד', 403);
+    if ($userId === (int) $actor['id']) throw new InvalidArgumentException('אי אפשר למחוק את החשבון שלך');
+    $st = db()->prepare('SELECT * FROM users WHERE id = ?');
+    $st->execute([$userId]);
+    $u = $st->fetch();
+    if (!$u) throw new AppError('המשתמש לא נמצא', 404);
+    if ($u['platform_sub'] !== '') {
+        throw new InvalidArgumentException('החשבון מקושר לכלים הדיגיטליים — מחיקה תנתק את מי שנכנס דרכו. '
+            . 'אם זה אתה, השתמש ב"יש לי כבר חשבון ישן" בהגדרות');
+    }
+    $pdo = db();
+    $pdo->beginTransaction();
+    try {
+        mergeInto($pdo, $userId, (int) $actor['id']);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        throw $e;
+    }
+    logEvent($actor, 'user.remove', "user:$userId", true, $u['username'] . ' → ' . $actor['username']);
+}
+
+/** שם התצוגה של המשתמש עצמו. */
+function setDisplayName(array $user, string $name): string {
+    $name = trim($name);
+    if ($name === '') throw new InvalidArgumentException('חסר שם');
+    $name = mb_substr($name, 0, 60);
+    db()->prepare('UPDATE users SET display_name = ? WHERE id = ?')->execute([$name, $user['id']]);
+    return $name;
+}

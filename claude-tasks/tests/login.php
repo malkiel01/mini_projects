@@ -124,6 +124,23 @@ check('פלטפורמה לא זמינה, בלי מטמון → לא זמינה',
 asPlatform('sub-a', 'dana@example.com');
 check('עם זהות — סיסמה חסומה', passwordLoginBlocked(), 'הכניסה היא דרך הכלים הדיגיטליים');
 
+echo "\n— שם תצוגה ומחיקת חשבון נוסף —\n";
+$me = db()->query("SELECT * FROM users WHERE role = 'admin' ORDER BY id LIMIT 1")->fetch();
+check('שם תצוגה מתעדכן', setDisplayName($me, '  מלכיאל  '), 'מלכיאל');
+throws('שם ריק — נדחה', fn () => setDisplayName($me, '   '));
+$extra = createUser('Malkiel2', 'pass-12345', 'Malkiel');
+db()->prepare('INSERT INTO tasks (title, created_by, created_at, updated_at) VALUES (?,?,?,?)')->execute(['של הנוסף', $extra['id'], 1, 1]);
+$tid = (int) db()->lastInsertId();
+$member = ['id' => $extra['id'], 'role' => 'member', 'username' => 'Malkiel2'];
+throws('לא מנהל — לא מוחק', fn () => adminRemoveUser($member, (int) $me['id']));
+throws('לא את עצמך', fn () => adminRemoveUser($me, (int) $me['id']));
+$linked = db()->query("SELECT id FROM users WHERE platform_sub <> '' AND id <> {$me['id']} LIMIT 1")->fetch();
+check('יש חשבון מקושר אחר לבדיקה', (bool) $linked, true);
+if ($linked) throws('חשבון מקושר לכלים הדיגיטליים — לא נמחק', fn () => adminRemoveUser($me, (int) $linked['id']));
+adminRemoveUser($me, (int) $extra['id']);
+check('החשבון נמחק', db()->query("SELECT COUNT(*) c FROM users WHERE id = {$extra['id']}")->fetch()['c'], 0);
+check('המטלה שלו עברה אליי', (int) db()->query("SELECT created_by FROM tasks WHERE id = $tid")->fetch()['created_by'], (int) $me['id']);
+
 echo "\n$pass עברו, $fail נכשלו\n";
 ob_end_flush();
 exit($fail ? 1 : 0);
