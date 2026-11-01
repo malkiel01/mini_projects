@@ -9,7 +9,8 @@ import { pagesOf, pageSize, setPageCount, setPageSize, marginsFit, mmToPt, ptToM
   mastersOf, masterOf, setMaster, updateMaster, ensureMasters, spreadOfPage, contentBox } from './pages.js';
 import { addFrame, autoflow, growFlow, removeFrame, pruneFlows, updateFrame, setFlow, flowText, thread,
   allFrames, allItems, drawingsOnPage, bodyStyle, styleOf, setStyle, STYLE_KEYS, FONTS, addImageFrame, isImage } from './frames.js';
-import { placeDrawing, moveDrawing, isDrawing, drawItems, imageRefs } from './vector.js';
+import { placeDrawing, moveDrawing, isDrawing, drawItems, imageRefs, drawingToDoc, pruneSymbols } from './vector.js';
+import { openIn } from './mbe/handoff.js';
 import { layoutFlows } from './flow.js';
 import { imagePlacement } from './frames.js';
 import { loadFont, fontVariant } from './shaper.js';
@@ -434,25 +435,97 @@ vecInput.addEventListener('change', async () => {
     const { open } = await import('./mbe/mbe.js');
     const f = await open(new Uint8Array(await file.arrayBuffer()));
     if (!f.ok) throw new Error('הקובץ פגום (' + f.issues.filter(i => i.level === 'error').map(i => i.code).slice(0, 3).join(', ') + ')');
-    const r = placeDrawing(f.document, contentBox(model, vecPage + 1), () => newId('v'), file.name.replace(/\.mbe$/i, ''));
-    // התמונות שבתוך הציור — לאחסון של המשתמש, באותו שם (הגיבוב)
-    for (const src of r.images) {
-      const data = f.getMedia(src);
-      if (!data) continue;
-      const type = /\.png$/.test(src) ? 'image/png' : /\.webp$/.test(src) ? 'image/webp' : 'image/jpeg';
-      const got = await uploadImage(new File([data], src.slice(6), { type }), { raw: true });
-      if (got.src !== src) throw new Error('תמונה בציור לא נשמרה');
-    }
-    const symbols = { ...(model.symbols || {}), ...r.symbols };
-    let m = Object.keys(r.symbols).length ? { ...model, symbols } : model;
+    const r = await placeFromMbe(f, contentBox(model, vecPage + 1), file.name.replace(/\.mbe$/i, ''));
+    let m = Object.keys(r.symbols).length ? { ...model, symbols: { ...(model.symbols || {}), ...r.symbols } } : model;
     m = { ...m, surfaces: m.surfaces.map((sf, i) => sf === pagesOf(m)[vecPage] ? { ...sf, layers: [...(sf.layers || []), r.layer] } : sf) };
     changed(m);
     view.select(vecPage, r.layer.id);
-    const miss = [r.gaps.text && `${r.gaps.text} טקסטים`, r.gaps.effects && `${r.gaps.effects} אפקטים`, r.gaps.unknown && `${r.gaps.unknown} פריטים מסוג לא מוכר`].filter(Boolean);
-    toast(miss.length ? 'הציור הוצב. עוד לא מוצגים: ' + miss.join(', ') : 'הציור הוצב');
+    toast(gapsNote('הציור הוצב', r.gaps));
   } catch (e) {
     toast(e.message === 'no_vector' ? 'אין בקובץ שכבות וקטור' : e.message === 'no_surface' ? 'אין בקובץ משטח לציור' : 'ההצבה נכשלה: ' + e.message, true);
   }
+});
+
+/** ‎.mbe פתוח → שכבה מוצבת ב-box; התמונות שבתוך הציור עולות לאחסון של המשתמש, באותו שם (הגיבוב). */
+async function placeFromMbe(f, box, name) {
+  const r = placeDrawing(f.document, box, () => newId('v'), name);
+  for (const src of r.images) {
+    const data = f.getMedia(src);
+    if (!data) continue;
+    const type = /\.png$/.test(src) ? 'image/png' : /\.webp$/.test(src) ? 'image/webp' : 'image/jpeg';
+    const got = await uploadImage(new File([data], src.slice(6), { type }), { raw: true });
+    if (got.src !== src) throw new Error('תמונה בציור לא נשמרה');
+  }
+  return r;
+}
+const gapsNote = (done, g) => {
+  const miss = [g.text && `${g.text} טקסטים`, g.effects && `${g.effects} אפקטים`, g.unknown && `${g.unknown} פריטים מסוג לא מוכר`].filter(Boolean);
+  return miss.length ? done + '. עוד לא מוצגים כאן: ' + miss.join(', ') : done;
+};
+
+// ---- ✒️ עריכה בווקטורי: הציור נפתח בחלון של הווקטורי (mbe-handoff, ‏mbe/handoff.js של הליבה) וחוזר לאותה מסגרת ----
+const VECTOR_URL = '../vector-studio/';
+const FROM = { app: 'layout-studio', name: 'העימוד' };
+async function drawingMbe(layer) {
+  const [{ create, save, PREVIEW, PREVIEW_MAX_PX }, { APP, APP_VERSION }] = await Promise.all([import('./mbe/mbe.js'), import('./mbe-io.js')]);
+  const doc = drawingToDoc(layer, model.symbols || {});
+  const f = create('vector', doc);
+  const srcs = new Set([...imageRefs(layer.paths), ...Object.values(doc.symbols || {}).flatMap(sy => [...imageRefs(sy.paths)])]);
+  for (const src of srcs) {
+    const r = await fetch('api.php?media=' + encodeURIComponent(src.slice(6)), { credentials: 'same-origin' });
+    if (!r.ok) throw new Error('תמונה בציור חסרה בשרת');
+    const type = /\.png$/.test(src) ? 'image/png' : /\.webp$/.test(src) ? 'image/webp' : 'image/jpeg';
+    if (await f.addMedia(new Uint8Array(await r.arrayBuffer()), type) !== src) throw new Error('תמונה בציור לא תואמת');
+  }
+  // תמונה מקדימה (חובה בקובץ): הלוח על רקע לבן
+  const [w, h] = doc.surfaces[0].size;
+  const k = Math.min(PREVIEW_MAX_PX / w, PREVIEW_MAX_PX / h, 4);
+  const c = new OffscreenCanvas(Math.max(1, Math.round(w * k)), Math.max(1, Math.round(h * k)));
+  const g = c.getContext('2d');
+  g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
+  g.scale(k, k);
+  const imgs = new Map();
+  for (const src of srcs) imgs.set(src, await loadImg(src));
+  drawItems(g, doc.surfaces[0].layers[0].paths, { symbols: doc.symbols || {}, image: src => imgs.get(src) || null });
+  f.setRendition(PREVIEW, new Uint8Array(await (await c.convertToBlob({ type: 'image/png' })).arrayBuffer()), { type: 'image/png' });
+  return { bytes: await save(f, { app: APP, appVersion: APP_VERSION }), name: (layer.name || 'ציור') + '.mbe' };
+}
+
+/** הציור חזר מהווקטורי: נכנס לאותה מסגרת (אותו מזהה — הבחירה נשארת), וסמלים שכבר לא בשימוש יוצאים. */
+async function drawingReturned(layerId, bytes) {
+  try {
+    const { open } = await import('./mbe/mbe.js');
+    const f = await open(bytes);
+    if (!f.ok) throw new Error('הקובץ שחזר פגום (' + f.issues.filter(i => i.level === 'error').map(i => i.code).slice(0, 3).join(', ') + ')');
+    const cur = allItems(model).find(x => x.frame.id === layerId);
+    if (!cur) throw new Error('הציור כבר לא בעמוד');
+    const r = await placeFromMbe(f, cur.frame.box, cur.frame.name || 'ציור');
+    // הלוח נכנס למסגרת ביחס שלו (צמוד לימין ולמעלה); אם גודל הלוח לא שונה — בדיוק במקום
+    const layer = { ...r.layer, id: layerId };
+    let m = Object.keys(r.symbols).length ? { ...model, symbols: { ...(model.symbols || {}), ...r.symbols } } : model;
+    m = updateFrame(m, layerId, layer);
+    changed(pruneSymbols(m));
+    view.select(cur.pageIndex, layerId);
+    toast(gapsNote('הציור חזר מהווקטורי', r.gaps));
+  } catch (e) {
+    toast(e.message === 'no_vector' ? 'בציור שחזר אין שכבות וקטור' : e.message === 'no_surface' ? 'בקובץ שחזר אין לוח' : 'החזרה נכשלה: ' + e.message, true);
+  }
+}
+
+$('#fr-vector').addEventListener('click', () => {
+  const x = selFrame();
+  if (!x || !isDrawing(x.frame)) return;
+  fdlg.close();
+  const layer = x.frame;
+  // openIn פותח את החלון כבר בתוך הלחיצה (אחרת חוסם החלונות הקופצים עוצר); הקובץ נבנה בינתיים
+  const built = drawingMbe(layer);
+  const ok = openIn(VECTOR_URL, built, {
+    from: FROM,
+    onReturn: bytes => drawingReturned(layer.id, bytes),
+    onFallback: why => toast(why === 'blocked' ? 'הדפדפן חסם את החלון החדש — אפשרו חלונות קופצים לאתר ונסו שוב'
+      : why === 'no-answer' ? 'הווקטורי לא נפתח (אין תשובה). נסו שוב' : 'הכנת הציור נכשלה', true),
+  });
+  if (ok) toast('הציור נפתח בווקטורי. כשתסיימו — "↩ חזרה לעימוד" שם');
 });
 
 // ---- תמונות: בחירה, הקטנה (אם צריך) והעלאה ----
@@ -537,7 +610,7 @@ $('#fr-del').addEventListener('click', async () => {
   const wasLast = thread(model, fid).length === 1;
   if (wasLast && flowText(model, fid).trim() && !await confirm('זו המסגרת האחרונה של הטקסט — הטקסט יימחק איתה. להמשיך?', { ok: 'מחיקה', danger: true })) return;
   view.select(x.pageIndex, null);
-  changed(removeFrame(model, x.frame.id));
+  changed(pruneSymbols(removeFrame(model, x.frame.id)));   // ציור שנמחק — גם הסמלים שרק הוא השתמש בהם
 });
 
 // ---- עריכת הטקסט (Story Editor): ProseMirror, בשמות של עורך התמלילים ----

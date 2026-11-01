@@ -202,3 +202,36 @@ function clipPath(ctx, c, p) {
   q.addPath(p, m);
   ctx.clip(q, c.fillRule === 'evenodd' ? 'evenodd' : 'nonzero');
 }
+
+// ===== עריכה בווקטורי (mbe-handoff) =====
+
+/**
+ * שכבה מוצבת → document.json של ציור (kind: vector), לעריכה באפליקציה אחרת: לוח אחד בגודל המסגרת, והנתיבים
+ * בקואורדינטות הלוח (בלי קנה מידה — נקודה היא נקודה). הסמלים שבשימוש — באותם שמות. בחזרה: placeDrawing לאותה מסגרת.
+ */
+export function drawingToDoc(layer, symbols = {}) {
+  const [x, y, w, h] = layer.box;
+  const name = layer.name || 'ציור';
+  const doc = {
+    units: 'pt', color: { space: 'sRGB' },
+    surfaces: [{ id: 'hs-' + layer.id, type: 'artboard', name, size: [w, h].map(r4),
+      layers: [{ id: layer.id, name, type: 'vector', opacity: 1, blend: 'normal', visible: true, locked: false,
+        paths: transformItems(layer.paths, [1, 0, 0, 1, -x, -y]) }] }],
+  };
+  const used = symbolRefs(layer.paths, symbols);
+  if (used.size) doc.symbols = Object.fromEntries([...used].map(s => [s, symbols[s]]));
+  return doc;
+}
+
+/** הסמלים של המסמך — רק אלה שציור כלשהו בעמודים עוד מפנה אליהם (אחרי החלפה או מחיקה של ציור). */
+export function pruneSymbols(model) {
+  if (!model.symbols || typeof model.symbols !== 'object') return model;
+  const items = (model.surfaces || []).flatMap(s => (s.layers || []).filter(isDrawing).flatMap(l => l.paths || []));
+  const used = symbolRefs(items, model.symbols);
+  const keys = Object.keys(model.symbols);
+  if (keys.every(k => used.has(k))) return model;
+  const symbols = Object.fromEntries(keys.filter(k => used.has(k)).map(k => [k, model.symbols[k]]));
+  const out = { ...model, symbols };
+  if (!Object.keys(symbols).length) delete out.symbols;
+  return out;
+}
