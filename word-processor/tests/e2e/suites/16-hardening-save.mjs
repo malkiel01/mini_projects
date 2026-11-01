@@ -32,8 +32,10 @@ export default async function (t) {
         out.typing = seen;
         b.destroy();
         // 3. אחסון חסום — כשל נראה (localFailed), local === 'failed'
-        const orig = indexedDB.open.bind(indexedDB);
+        // חסום גם כשהחיבור כבר פתוח (ui-core/store.js שומר אותו): פתיחה וגם עסקה נכשלות
+        const orig = indexedDB.open.bind(indexedDB), origTx = IDBDatabase.prototype.transaction;
         indexedDB.open = () => { throw new DOMException('blocked', 'SecurityError'); };
+        IDBDatabase.prototype.transaction = function () { throw new DOMException('blocked', 'SecurityError'); };
         const events = [];
         doc = { v: 1 };
         const c = mk('t:blocked', { onState: (s, info) => events.push(info.localFailed) });
@@ -42,6 +44,7 @@ export default async function (t) {
         await c.flushDraft();
         out.blocked = { local: c.local, failedEvent: events.includes(true) };
         indexedDB.open = orig;
+        IDBDatabase.prototype.transaction = origTx;
         c.destroy();
         // 4. F08 — הקלדה בזמן השמירה: flush מחזיר dirty: true; flushUntilClean — נקי
         doc = { v: 1 };

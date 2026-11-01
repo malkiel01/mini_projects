@@ -20,42 +20,18 @@
  * - התנגשות (409) או נעילה (423): השמירה האוטומטית נעצרת — לא דורסים. ההחלטה למשתמש.
  */
 
-const DB_NAME = 'word-processor';
-const STORE = 'drafts';
+import { kv } from './ui-core/store.js';
 
-function idb() {
-    if (!('indexedDB' in window)) return Promise.resolve(null);
-    return new Promise(resolve => {
-        try {
-            const req = indexedDB.open(DB_NAME, 1);
-            req.onupgradeneeded = () => req.result.createObjectStore(STORE);
-            req.onsuccess = () => resolve(req.result);
-            req.onerror = () => resolve(null);
-            req.onblocked = () => resolve(null);
-        } catch { resolve(null); }
-    });
-}
-
-/** קריאה: הערך או null. כתיבה / מחיקה: true רק כשהעסקה הושלמה (oncomplete) — אחרת false (אין אחסון, מלא, חסום). */
-async function draftOp(mode, fn) {
-    const write = mode === 'readwrite';
-    const db = await idb();
-    if (!db) return write ? false : null;
-    return new Promise(resolve => {
-        try {
-            const tx = db.transaction(STORE, mode);
-            const r = fn(tx.objectStore(STORE));
-            tx.oncomplete = () => resolve(write ? true : r?.result ?? null);
-            tx.onerror = () => resolve(write ? false : null);
-            tx.onabort = () => resolve(write ? false : null);
-        } catch { resolve(write ? false : null); }
-    });
-}
+// הטיוטות — ב-kv של ui-core (store.js, integration.md שורה 16): אותו מסד ואותו מאגר כמו קודם ('word-processor' / 'drafts'),
+// כך שטיוטות שכבר במכשיר נמצאות. כאן רק החוזה של השמירה האמינה (F01): כתיבה / מחיקה — true רק כשהעסקה הושלמה,
+// אחרת false (אין אחסון, מלא, חסום); קריאה — הערך או null. לא זורק.
+const store = 'indexedDB' in globalThis ? kv('word-processor', 'drafts') : null;
+const ok = p => p.then(() => true, () => false);
 
 export const drafts = {
-    put: (key, value) => draftOp('readwrite', s => s.put(value, key)),
-    get: key => draftOp('readonly', s => s.get(key)),
-    del: key => draftOp('readwrite', s => s.delete(key)),
+    put: (key, value) => store ? ok(store.set(key, value)) : Promise.resolve(false),
+    get: key => store ? store.get(key).then(v => v ?? null, () => null) : Promise.resolve(null),
+    del: key => store ? ok(store.del(key)) : Promise.resolve(false),
 };
 
 /**
