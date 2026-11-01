@@ -1,10 +1,10 @@
 {
   "team": "חבילת היצירה",
-  "updated": "2026-10-25",
+  "updated": "2026-11-01",
   "note": "רשימת הצוות הקבועה. כל אחד שולח הודעות ישירות לאחרים לפי .claude/skills/creative-suite-team/SKILL.md. מוסיף או משנה חבר — רק הצ'אט המתכלל.",
   "members": [
     { "role": "coordinator", "name": "הצ'אט המתכלל", "session": "session_01XFFMNKh9yc4XGoUa7AYMfv",
-      "owns": ["creative-suite/docs/master-spec.md", "creative-suite/docs/mbe-format.md", "creative-suite/docs/projects/", "creative-suite/docs/requests/ (ההכרעות)", "creative-suite/dashboard/", "creative-suite/team/", "creative-suite/mbe-core/apps.json", "creative-suite/mbe-core/schema/"],
+      "owns": ["creative-suite/docs/master-spec.md", "creative-suite/docs/mbe-format.md", "creative-suite/docs/projects/", "creative-suite/docs/requests/ (ההכרעות)", "creative-suite/team/", "creative-suite/docs/integration.md", "creative-suite/mbe-core/apps.json", "creative-suite/mbe-core/schema/"],
       "does": "מכריע בבקשות, מעדכן את האפיון והסכמה, מנתב עבודה, מדבר עם בעל המערכת" },
     { "role": "spec", "name": "הצ'אט המאפיין", "session": "session_01PBB4TeboGyjRGSR4xp6CbH",
       "owns": ["creative-suite/docs/spec/"],
@@ -32,6 +32,9 @@
       "does": "חשבון חבילה, כוננים (פנימי, Drive, Dropbox, FTP, מחשב) וספריות משותפות; בעלים של לקוח ענן החבילה" },
     { "role": "shared-code", "name": "הקוד המשותף (ארכיטקט)", "session": "session_018g4NYGvmE6cvaDDu2KAMoP",
       "owns": ["creative-suite/docs/shared-code/", "creative-suite/ui-core/"],
-      "does": "ממפה קוד כפול בכל האפליקציות, ובונה מודולים משותפים אחידים (ממשק, חלונות, בוררים, גרירה) — מקור אחד, עותק מסונכרן" }
+      "does": "ממפה קוד כפול בכל האפליקציות, ובונה מודולים משותפים אחידים (ממשק, חלונות, בוררים, גרירה) — מקור אחד, עותק מסונכרן" },
+    { "role": "command-center", "name": "מרכז הניהול", "session": "session_018g4NYEr3ec7u9VNHPwsPFJ",
+      "owns": ["creative-suite/dashboard/"],
+      "does": "מרכז הניהול (spec/command-center.md): תצוגת \"מרכז\" בדשבורד, מעבר מטלות החבילה ללוח \"מטלות לקלוד\", המפיץ השעתי, ו-PR ל-settings.json מהחלטות \"תמיד\"" }
   ]
 }
