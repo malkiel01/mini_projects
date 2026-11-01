@@ -16,6 +16,7 @@ function seg(name, value, options) {
 }
 
 const DASHES = { solid: [], dash: [6, 4], dot: [1, 3] };
+const ENDS = [['none', 'בלי'], ['arrow', '➤', 'חץ'], ['circle', '●', 'עיגול'], ['bar', '┃', 'פס']];
 function dashName(d) {
   if (!Array.isArray(d) || !d.length) return 'solid';
   return d[0] <= 1.5 ? 'dot' : 'dash';
@@ -94,6 +95,7 @@ export function renderProps(el, ctx) {
   const single = items.length === 1 && items[0].type !== 'group';
   const grp = items.length === 1 && items[0].type === 'group';
   const fill = p.fill || null, stroke = p.stroke || null;
+  const sgrad = stroke?.gradient && !isRadial(stroke.gradient) ? stroke.gradient : null;
   const shape = single && p.shape ? p.shape : null;
   const isLine = shape?.type === 'line';
   const [bx, by, bw, bh] = ctx.box;
@@ -184,16 +186,25 @@ export function renderProps(el, ctx) {
 
     ${image ? '' : `<section class="group" aria-labelledby="g-stroke">
       <div class="g-row"><h3 id="g-stroke">מתאר</h3>
-        <label class="switch"><input type="checkbox" data-on="stroke"${stroke?.color ? ' checked' : ''}><span class="sr">מתאר</span></label></div>
-      <div${stroke?.color ? '' : ' hidden'} class="g-stack">
+        <label class="switch"><input type="checkbox" data-on="stroke"${hasPaint(stroke) ? ' checked' : ''}><span class="sr">מתאר</span></label></div>
+      <div${hasPaint(stroke) ? '' : ' hidden'} class="g-stack">
+        ${seg('strokemode', sgrad ? 'gradient' : 'color', { label: 'צבע המתאר', items: [['color', 'צבע'], ['gradient', 'מעבר צבע']] })}
         <div class="g-row">
-          <input type="color" data-c="stroke" value="${esc(stroke?.color || '#16192b')}" aria-label="צבע מתאר">
+          ${sgrad
+            ? `<input type="color" data-sg="0" value="${esc(sgrad.stops[0]?.color || '#16192b')}" aria-label="צבע התחלה של המתאר">
+               <input type="color" data-sg="1" value="${esc(sgrad.stops[sgrad.stops.length - 1]?.color || '#ffffff')}" aria-label="צבע סוף של המתאר">
+               <label class="f grow"><span>זווית (°)</span><input data-sga type="number" min="0" max="359" dir="ltr" value="${angleOf(sgrad)}"></label>`
+            : `<input type="color" data-c="stroke" value="${esc(stroke?.color || '#16192b')}" aria-label="צבע מתאר">`}
+        </div>
+        <div class="g-row">
           <label class="f grow"><span>עובי (pt)</span><input data-w inputmode="decimal" dir="ltr" value="${n(stroke?.width ?? 1)}"></label>
           <label class="f grow"><span>אטימות (%)</span><input data-o="stroke" type="number" min="0" max="100" dir="ltr" value="${Math.round((stroke?.opacity ?? 1) * 100)}"></label>
         </div>
         ${seg('dash', dashName(stroke?.dash), { label: 'סוג קו', items: [['solid', '━━', 'רציף'], ['dash', '╍╍', 'מקווקו'], ['dot', '┈┈', 'נקודות']] })}
         ${seg('cap', stroke?.cap || 'butt', { label: 'קצוות', items: [['butt', 'ישר'], ['round', 'עגול'], ['square', 'מרובע']] })}
         ${seg('join', stroke?.join || 'miter', { label: 'חיבורים', items: [['miter', 'חד'], ['round', 'עגול'], ['bevel', 'קטום']] })}
+        ${seg('start', stroke?.start || 'none', { label: 'קצה בהתחלה', items: ENDS })}
+        ${seg('end', stroke?.end || 'none', { label: 'קצה בסוף', items: ENDS })}
       </div>
     </section>`}
     ${image ? '' : savedSection(ctx.prefs)}`;
@@ -251,7 +262,7 @@ export function renderProps(el, ctx) {
     const color = el.querySelector(`[data-c="${k}"]`)?.value || '#2d4a8a';
     ctx.edit(each(path => {
       if (!cb.checked) path[k] = null;
-      else path[k] = k === 'fill' ? { color } : { color, width: 1, cap: 'butt', join: 'miter', dash: [] };
+      else path[k] = k === 'fill' ? { color } : { color: el.querySelector('[data-c="stroke"]')?.value || '#16192b', width: 1, cap: 'butt', join: 'miter', dash: [] };
     }), true);
   }));
 
@@ -265,6 +276,21 @@ export function renderProps(el, ctx) {
     }), commit);
     inp.addEventListener('input', () => set(false));
     inp.addEventListener('change', () => set(true));
+  });
+  // מעבר צבע במתאר: שני צבעים וזווית (ישר בלבד)
+  el.querySelectorAll('[data-sg]').forEach(inp => {
+    const i = Number(inp.dataset.sg);
+    const set = (commit) => ctx.edit(each(item => {
+      const g = item.stroke?.gradient;
+      if (g) (i === 0 ? g.stops[0] : g.stops[g.stops.length - 1]).color = inp.value;
+    }), commit);
+    inp.addEventListener('input', () => set(false));
+    inp.addEventListener('change', () => set(true));
+  });
+  const sga = el.querySelector('[data-sga]');
+  if (sga) sga.addEventListener('change', () => {
+    const a = ((Number(sga.value) % 360) + 360) % 360;
+    ctx.edit(each(item => { const g = item.stroke?.gradient; if (g && !isRadial(g)) Object.assign(g, endpoints(ctx.pathBox(item), a)); }), true);
   });
   const ga = el.querySelector('[data-ga]');
   if (ga) ga.addEventListener('change', () => {
@@ -313,6 +339,16 @@ export function renderProps(el, ctx) {
         f.gradient = type === 'radial' ? { type, ...radialFor(box), stops } : { type, ...endpoints(box, 0), stops };
       }), true);
     }
+    if (k === 'strokemode') {
+      return ctx.edit(each(item => {
+        const st = item.stroke;
+        if (!st) return;
+        if (v === 'color') { if (st.gradient) { st.color = st.gradient.stops[0]?.color || '#16192b'; delete st.gradient; } return; }
+        if (st.gradient) return;
+        st.gradient = makeGradient(ctx.pathBox(item), 0, st.color || '#16192b', '#ffffff', 'linear');
+        delete st.color;
+      }), true);
+    }
     if (k === 'weight' || k === 'align') {
       return ctx.edit(each(item => {
         if (item.type !== 'text') return;
@@ -323,6 +359,7 @@ export function renderProps(el, ctx) {
     ctx.edit(each(path => {
       if (!path.stroke) return;
       if (k === 'dash') path.stroke.dash = DASHES[v].map(d => d * Math.max(1, path.stroke.width ?? 1));
+      else if ((k === 'start' || k === 'end') && v === 'none') delete path.stroke[k];
       else path.stroke[k] = v;
     }), true);
   }));

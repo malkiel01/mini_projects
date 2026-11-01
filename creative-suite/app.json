@@ -20,5 +20,8 @@
     }
   ],
   "gate": true,
-  "restricted": true
+  "restricted": true,
+  "public": [
+    "dashboard/cadence.php"
+  ]
 }

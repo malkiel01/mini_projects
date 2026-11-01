@@ -62,8 +62,8 @@ function ls_mbe_import(int $owner, string $bytes, string $name): array
 {
     $f = ls_mbe_open_layout($bytes);
     foreach ($f->media() as $m) {
-        if (!preg_match('/\.(png|jpg|webp)$/', $m['path'])) continue;   // לא תמונה — נשאר בקובץ המקור
-        $put = ls_media_put($owner, $m['data']);
+        if (!preg_match('/\.(png|jpg|webp|ttf)$/', $m['path'])) continue;   // לא תמונה ולא TrueType — נשאר בקובץ המקור
+        $put = str_ends_with($m['path'], '.ttf') ? ls_font_put($owner, $m['data']) : ls_media_put($owner, $m['data']);
         if ($put['src'] !== $m['path']) throw new InvalidArgumentException('mbe_invalid:media');
     }
     $json = json_encode($f->document, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);

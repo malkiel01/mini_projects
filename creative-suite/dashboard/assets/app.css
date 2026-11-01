@@ -282,3 +282,20 @@ section[role="tabpanel"] { display: grid; gap: var(--s2); }
 #projects > li + li { border-block-start: 1px solid var(--line); }
 a.ext { font-size: .8rem; color: var(--brand); }
 .top-links { display: flex; gap: var(--s2); }
+
+/* ===== ⏱ קצב (cadence-edit.php) ===== */
+.cadence { display: grid; gap: var(--s3); }
+.cadence .summary { margin: 0; }
+.pause-all { align-self: end; }
+.chats > li { align-items: center; }
+.chats .grow { display: grid; }
+.chats small { font-size: .78rem; }
+.chats .mins input { inline-size: 5.5em; text-align: center; }
+.chats .pz { position: relative; display: grid; place-items: center; inline-size: var(--tap); block-size: var(--tap); border: 1px solid var(--line);
+  border-radius: var(--r); cursor: pointer; flex: none; }
+.chats .pz input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.chats .pz:has(input:checked) { background: color-mix(in srgb, var(--star) 18%, var(--surface)); border-color: var(--star); }
+.chats .pz:has(input:focus-visible) { outline: 2px solid var(--brand); outline-offset: 2px; }
+.save-bar { position: sticky; bottom: 0; padding-block: var(--s2) calc(var(--s2) + env(safe-area-inset-bottom)); background: var(--bg); display: flex; }
+.save-bar .btn { flex: 1; }
+.saved { color: var(--ok); font-weight: 600; }

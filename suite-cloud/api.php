@@ -61,6 +61,14 @@ function adminFull(array $s): array {
     return $s + ['clients' => adminClients()];
 }
 
+/** הגדרות הכוננים החיצוניים לאפליקציות: ספק בלי מזהה — לא מופיע (shared.md סעיף 3.1). */
+function drivesConfig(): array {
+    $out = [];
+    $key = setting('dropbox_app_key');
+    if ($key !== '') $out['dropbox'] = ['app_key' => $key, 'redirect' => cloudIssuer() . 'oauth/dropbox.php'];
+    return $out;
+}
+
 function reply(array $payload, int $code = 200): never {
     http_response_code($code);
     header('Content-Type: application/json; charset=utf-8');
@@ -107,7 +115,7 @@ function sendFile(string $path, array $n): never {
 
 const WRITES = ['mkdir', 'write', 'upload_start', 'upload_finish', 'rename', 'move', 'trash', 'restore', 'purge', 'trash_empty',
                 'admin_settings', 'admin_account', 'admin_client', 'client_register', 'connect_exchange', 'access_token',
-                'disconnect', 'connection_revoke', 'ai_provider', 'ai_test', 'ai_default', 'ai_app', 'ai_user', 'font_update', 'font_delete'];
+                'disconnect', 'connection_revoke', 'ai_provider', 'ai_test', 'ai_default', 'ai_app', 'ai_user', 'font_update', 'font_delete', 'drives_config', 'admin_drives'];
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $action = (string) ($_GET['action'] ?? '');
@@ -229,6 +237,21 @@ try {
         case 'ai_default':     requireAdmin(); reply(aiAdminDefault($in));
         case 'ai_app':         requireAdmin(); reply(aiAdminApp($in));
         case 'ai_user':        requireAdmin(); reply(aiAdminUser($in));
+
+        // ── כוננים חיצוניים: ההגדרות שהאפליקציות מקבלות (מודול הכוננים) ──
+        case 'drives_config': {
+            verifySigned($action, signedHeaders(), $raw);   // רק לקוח רשום; App key של Dropbox אינו סוד (PKCE), אבל לא מפרסמים לכל העולם
+            reply(drivesConfig());
+        }
+        case 'admin_drives': {
+            requireAdmin();
+            if (array_key_exists('dropbox_app_key', $in)) {
+                $k = trim((string) $in['dropbox_app_key']);
+                if ($k !== '' && !preg_match('/^[a-z0-9]{8,40}$/i', $k)) throw new AppError('App key של Dropbox לא נראה תקין', 400, 'bad_request');
+                setSetting('dropbox_app_key', $k);
+            }
+            reply(drivesConfig());
+        }
 
         case 'connections':    reply(['items' => accountConnections(requireAccount()), 'scopes' => SCOPE_NAMES]);
         case 'connection_revoke': revokeOwnConnection(requireAccount(), $in['id'] ?? null); reply(['ok' => true]);

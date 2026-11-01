@@ -34,3 +34,6 @@ body.dragging #view { opacity: .4; }
 
 pre.json { direction: ltr; text-align: left; overflow: auto; max-block-size: 70dvh; padding: var(--s3); background: var(--surface);
     border: 1px solid var(--line); border-radius: var(--r); font: .8rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre; }
+.vec-thumb { flex: none; inline-size: 56px; block-size: 56px; border: 1px solid var(--line); border-radius: 6px;
+    background: repeating-conic-gradient(var(--bg) 0 25%, var(--surface) 0 50%) 0 0 / 10px 10px; }
+.node .chips { flex: none; }

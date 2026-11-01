@@ -1,13 +1,16 @@
 // בודק ‎.mbe — גוררים קובץ, רואים manifest, עץ שכבות, ייצוגים ובעיות. הכול בדפדפן, דרך הליבה עצמה.
 // הקובץ עלול להיות עוין: כל טקסט ממנו נכנס כ-textContent, ותמונות — רק דרך <img> (סקריפט ב-SVG לא רץ שם).
 
-import { open, PREVIEW, VERSION } from '../../../src/js/mbe.js';
+import { open, PREVIEW, VERSION, pathProblem } from '../../../src/js/mbe.js';
 
 const $ = s => document.querySelector(s);
 const TAB_KEY = 'mbe-inspector-tab';
 const IMG = /\.(png|jpe?g|gif|webp|svg)$/i;
 const LAYER_IC = { raster: '🖼️', vector: '✒️', frame: '🔤', group: '📁' };
-const SURFACE_IC = { page: '📄', artboard: '🎨', canvas: '🖌️' };
+const SURFACE_IC = { page: '📄', artboard: '🎨', canvas: '🖌️', master: '🗂️' };
+const PATH_IC = { group: '📁', text: '🔤', path: '✏️' };
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const COLOR = /^#[0-9a-f]{3,8}$/i;
 let current = null;
 let urls = [];
 
@@ -116,15 +119,75 @@ function issuesView(f) {
             h('div', { class: 'l2' }, code(i.code), i.path ? [sep(), code(i.path)] : null)))));
 }
 
+// תצוגה מקדימה של שכבת vector: נבנית כאן מ-DOM (לא מ-SVG שבקובץ) — רק d שעבר את pathProblem, וצבעים בתבנית #hex.
+// כך שום דבר מהקובץ לא רץ, וגם קובץ עוין מצויר בלי סיכון.
+function vectorThumb(l) {
+    const svg = document.createElementNS(SVG_NS, 'svg');
+    const box = Array.isArray(l.box) && l.box.length === 4 && l.box.every(Number.isFinite) ? l.box : null;
+    let n = 0;
+    const draw = (items, parent, depth = 0) => {
+        if (!Array.isArray(items) || depth > 50) return;
+        for (const p of items) {
+            if (!p || typeof p !== 'object' || n > 2000) continue;
+            if (Array.isArray(p.children)) {
+                const g = document.createElementNS(SVG_NS, 'g');
+                if (Array.isArray(p.transform) && p.transform.length === 6 && p.transform.every(Number.isFinite)) g.setAttribute('transform', `matrix(${p.transform.join(' ')})`);
+                parent.append(g);
+                draw(p.children, g, depth + 1);
+                if (typeof p.d !== 'string') continue;
+            }
+            if (typeof p.d !== 'string' || pathProblem(p.d)) continue;
+            const el = document.createElementNS(SVG_NS, 'path');
+            el.setAttribute('d', p.d);
+            const fill = typeof p.fill?.color === 'string' && COLOR.test(p.fill.color) ? p.fill.color : p.fill?.gradient ? '#9aa4b2' : 'none';
+            const stroke = typeof p.stroke?.color === 'string' && COLOR.test(p.stroke.color) ? p.stroke.color : null;
+            el.setAttribute('fill', fill);
+            if (stroke) { el.setAttribute('stroke', stroke); el.setAttribute('stroke-width', String(Number.isFinite(p.stroke.width) ? p.stroke.width : 1)); }
+            if (p.fillRule === 'evenodd') el.setAttribute('fill-rule', 'evenodd');
+            if (Array.isArray(p.transform) && p.transform.length === 6 && p.transform.every(Number.isFinite)) el.setAttribute('transform', `matrix(${p.transform.join(' ')})`);
+            parent.append(el);
+            n++;
+        }
+    };
+    draw(l.paths, svg);
+    if (!n) return null;
+    svg.setAttribute('class', 'vec-thumb');
+    svg.setAttribute('role', 'img');
+    svg.setAttribute('aria-label', `תצוגה מקדימה: ${n} נתיבים`);
+    // אחרי שהכול בעץ — התיבה של מה שצויר (או ה-box של השכבה), כדי שהנתיבים ימלאו את התצוגה
+    requestAnimationFrame(() => {
+        let b = box;
+        if (!b) { try { const r = svg.getBBox(); b = [r.x, r.y, r.width, r.height]; } catch { b = [0, 0, 100, 100]; } }
+        const pad = Math.max(b[2], b[3]) * 0.04 || 1;
+        svg.setAttribute('viewBox', `${b[0] - pad} ${b[1] - pad} ${Math.max(b[2], 1) + 2 * pad} ${Math.max(b[3], 1) + 2 * pad}`);
+    });
+    return svg;
+}
+
 function layersView(f) {
     const doc = f.document;
     if (!doc) return h('p', { class: 'empty' }, 'document.json לא נקרא — ראו בלשונית "בעיות".');
     const surfaces = Array.isArray(doc.surfaces) ? doc.surfaces : [];
     if (!surfaces.length) return h('p', { class: 'empty' }, 'אין משטחים במסמך.');
     const flows = doc.flows && typeof doc.flows === 'object' ? doc.flows : {};
-    const node = (ic, title, sub) => h('div', { class: 'node' },
+    const byId = new Map(surfaces.filter(s => typeof s?.id === 'string').map(s => [s.id, s]));
+    const usedAs = new Map();   // id של עמוד אב → כמה עמודים מפנים אליו
+    for (const s of surfaces) if (typeof s?.master === 'string') usedAs.set(s.master, (usedAs.get(s.master) || 0) + 1);
+    const node = (ic, title, sub, extra) => h('div', { class: 'node' },
         h('span', { class: 'use-ic', 'aria-hidden': 'true' }, ic),
-        h('span', { class: 'use-tx' }, h('b', {}, title), sub ? h('small', {}, sub) : null));
+        h('span', { class: 'use-tx' }, h('b', {}, title), sub ? h('small', {}, sub) : null), extra || null);
+    const pathItem = (p, depth = 0) => {
+        if (!p || typeof p !== 'object' || depth > 50) return h('li', {}, node('❓', 'פריט לא תקין'));
+        const kind = p.type || (typeof p.d === 'string' ? 'path' : '?');
+        const bits = [kind, p.id];
+        if (kind === 'group' && p.boolean) bits.push(`בוליאני: ${p.boolean}`);
+        if (kind === 'text' && typeof p.text === 'string') bits.push(`"${p.text.replace(/\s+/g, ' ').slice(0, 40)}"`);
+        if (typeof p.d === 'string') { const bad = pathProblem(p.d); bits.push(bad ? `⛔ d: ${bad}` : `${(p.d.match(/[MLCQZ]/g) || []).length} פקודות`); }
+        if (p.fill?.gradient) bits.push('מעבר צבע');
+        if (p.stroke) bits.push('קו');
+        const kids = Array.isArray(p.children) && p.children.length ? h('ul', { class: 'tree' }, p.children.map(c => pathItem(c, depth + 1))) : null;
+        return h('li', {}, node(PATH_IC[kind] || '❔', p.name || p.id || '—', bits.filter(Boolean).join(' · ')), kids);
+    };
     const layer = l => {
         if (!l || typeof l !== 'object') return h('li', {}, node('❓', 'שכבה לא תקינה'));
         const bits = [l.type, l.id];
@@ -133,12 +196,33 @@ function layersView(f) {
         if (l.visible === false) bits.push('מוסתרת');
         if (l.locked) bits.push('🔒');
         if (l.flow) bits.push(`שטף ${l.flow}${flows[l.flow]?.engine ? ' (' + flows[l.flow].engine + ')' : ''}`);
-        const kids = Array.isArray(l.children) && l.children.length ? h('ul', { class: 'tree' }, l.children.map(layer)) : null;
-        return h('li', {}, node(LAYER_IC[l.type] || '◻️', l.name || l.id || '—', bits.filter(Boolean).join(' · ')), kids);
+        if (l.vectorMask) bits.push('מסכה וקטורית');
+        const isVec = l.type === 'vector' && Array.isArray(l.paths);
+        if (isVec) bits.push(`${l.paths.length} פריטים`);
+        const kids = [
+            ...(isVec ? l.paths.map(p => pathItem(p)) : []),
+            ...(Array.isArray(l.children) ? l.children.map(layer) : []),
+        ];
+        return h('li', {}, node(LAYER_IC[l.type] || '◻️', l.name || l.id || '—', bits.filter(Boolean).join(' · '), isVec ? vectorThumb(l) : null),
+            kids.length ? h('ul', { class: 'tree' }, kids) : null);
     };
-    return h('ul', { class: 'list tree' }, surfaces.map(s => h('li', {},
-        node(SURFACE_IC[s?.type] || '▭', `${s?.type || 'משטח'} ${s?.id || ''}`, Array.isArray(s?.size) ? s.size.join(' × ') + ' ' + (doc.units || '') : ''),
-        Array.isArray(s?.layers) && s.layers.length ? h('ul', { class: 'tree' }, s.layers.map(layer)) : null)));
+    const surface = s => {
+        const bits = [s?.type || 'משטח', s?.id];
+        if (Array.isArray(s?.size)) bits.push(s.size.join(' × ') + ' ' + (doc.units || ''));
+        const badges = [];
+        if (typeof s?.master === 'string') {
+            const m = byId.get(s.master);
+            badges.push(h('span', { class: m ? 'chip' : 'chip bad' }, m ? `עמוד אב: ${m.name || m.id}` : `עמוד אב חסר: ${s.master}`));
+        }
+        if (usedAs.has(s?.id)) badges.push(h('span', { class: 'chip ok' }, `עמוד אב ל-${usedAs.get(s.id)}`));
+        const ic = usedAs.has(s?.id) || s?.type === 'master' ? SURFACE_IC.master : SURFACE_IC[s?.type] || '▭';
+        return h('li', {},
+            node(ic, s?.name || `${s?.type || 'משטח'} ${s?.id || ''}`, bits.filter(Boolean).join(' · '), badges.length ? h('span', { class: 'chips tight' }, badges) : null),
+            Array.isArray(s?.layers) && s.layers.length ? h('ul', { class: 'tree' }, s.layers.map(layer)) : null);
+    };
+    // עמודי אב קודם — כמו בעימוד
+    const order = [...surfaces].sort((a, b) => (usedAs.has(b?.id) ? 1 : 0) - (usedAs.has(a?.id) ? 1 : 0));
+    return h('ul', { class: 'list tree' }, order.map(surface));
 }
 
 function download(path, data) {

@@ -30,3 +30,11 @@
 | מדיניות "תמיד" / "אסור תמיד", והיומן | `policy` (שלב 1) |
 | "↩️ נמסר" | `inbox` (שלב 2) |
 | מתגי 💻 / ☁️, עלות ותקרה | `route` ומונה העלות (שלבים 2 ו-8) |
+
+## ⏱ קצב ההערות (`creative-suite/docs/finish-line.md`, "הקצב")
+
+| קובץ | מה הוא עושה |
+| --- | --- |
+| `cadence.php?chat=<role>` | **ציבורי, לקריאה בלבד** (ב-`public` של `creative-suite/app.json`). מחזיר `{"minutes":N,"paused":bool}` ותו לא. צ'אט לא מוכר — ברירת המחדל |
+| `cadence-edit.php` (⏱ בכותרת הדשבורד) | המסך של בעל המערכת: ברירת מחדל, דקות לכל צ'אט מ-`team/roster.json` (ריק = ברירת המחדל, מינימום 1), השהיה לכל צ'אט ולכולם. רק `platform_admin`; שמירה רק מאותו מקור |
+| `data/cadence.json` | הנתון. **`--exclude` ב-`deploy.yml`**, וחסום ב-`data/.htaccess` |
