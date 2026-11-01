@@ -884,7 +884,7 @@ try {
     /* ── פרויקטים ──────────────────────────────────────────────── */
 
     case 'projects':
-        ok(['projects' => listProjects(requireUser($user), int_or_null($in, 'root_id'))]);
+        ok(['projects' => listProjects(requireUser($user), int_or_null($in, 'root_id')), 'default_route' => defaultRoute()]);
 
     case 'create-project': {
         $me = requireUser($user);
@@ -969,6 +969,11 @@ try {
         if (array_key_exists('owner_only', $in)) {
             if (authorRole($me) !== 'owner') fail('רק בעל הלוח יכול לסמן ענף "רק בעל הלוח"', 403);
             $sets[] = 'owner_only = ?'; $args[] = $in['owner_only'] ? 1 : 0;
+        }
+        // מי עונה — chat | platform | '' (יורש). בעל הלוח בלבד: זה קובע על חשבון מי
+        if (array_key_exists('route', $in)) {
+            setProjectRoute($me, (int) $project['id'], (string) $in['route']);
+            if (!$sets) ok(['route' => projectRoute((int) $project['id'])]);
         }
         if (!$sets) fail('אין מה לעדכן');
         $args[] = $project['id'];
@@ -1219,11 +1224,11 @@ try {
         if (!$worker) fail('פעולה לעובדים בלבד', 403);
         $url  = url_field($in, 'session_url');
         $topicId = int_or_null($in, 'topic_id');
-        // האסימון הכללי בלי נושא מפורש לא מושך מענף owner_only (docs/spec.md, 2.2).
-        // אסימון של פרויקט — כל הענף שלו, כולל owner_only: הוא ניתן לו במפורש.
-        $skip = ($scope['project_id'] === null && $topicId === null) ? ownerOnlyProjectIds() : [];
-        $task = claimNextTask(db(), $worker, $topicId, scopeProjects($scope), $skip);
-        if (!$task) ok(['task' => null, 'message' => 'אין מטלות ממתינות']);
+        // המסלול (docs/spec.md §7) מחליף את הכלל של owner_only: עובד מקבל רק מטלות
+        // שהמסלול האפקטיבי שלהן תואם ל-X-Worker-Route (בלי כותרת — chat; code = chat)
+        $route = workerRoute();
+        $task = claimNextTask(db(), $worker, $topicId, scopeProjects($scope), [], $route);
+        if (!$task) ok(['task' => null, 'route' => $route, 'message' => 'אין מטלות ממתינות']);
 
         // הסשן שמחזיק במטלה עכשיו. נרשם במשיכה ולא בסיום, כדי שגם
         // מטלה שנתקעה באמצע תשאיר שביל חזרה.
@@ -1285,6 +1290,9 @@ try {
     case 'policy-revoke':
         revokePolicy(requireUser($user), str_field($in, 'type', 60));
         ok(['verdict' => 'ask']);
+
+    case 'set-default-route':
+        ok(['default_route' => setDefaultRoute(requireUser($user), str_field($in, 'route', 20))]);
 
     case 'approval-types':
         ok(['types' => approvalTypes()]);

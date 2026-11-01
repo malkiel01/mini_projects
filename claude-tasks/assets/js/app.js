@@ -1,4 +1,4 @@
-import { $, $$, el, toast, api, state, timeAgo, on, set } from './core.js';
+import { $, $$, el, toast, api, state, timeAgo, on, set, PLATFORM_HINT } from './core.js';
 import { loadConnections, loadProviders, runTask, openProject, modelPicker } from './platform.js';
 import { loadChannels } from './chats.js';
 import { approvalCard, noteText } from './approvals.js';
@@ -302,7 +302,8 @@ function selectTopic(id) {
  */
 
 async function loadTree() {
-  const { projects } = await api('projects');
+  const { projects, default_route: dr } = await api('projects');
+  state.defaultRoute = dr || 'chat';
   state.projects = projects;
   renderTree();
 }
@@ -379,6 +380,7 @@ function renderTree() {
   $('#crumbs').hidden = !cur;
   $('#backBtn').hidden = !cur;
   $('#menuBtn').hidden = !!cur;   // ☰ — רק לנושאים הכלליים, במסך הראשי
+  renderRouteBar(cur);
   $('#scopeLabel').textContent = cur ? cur.name : 'כל הפרויקטים';
 
   const kids = childrenOf(state.projectId);
@@ -453,6 +455,37 @@ on('#viewTabs', 'click', (e) => {
   try { localStorage.setItem(VIEW_KEY(), tab.dataset.view); } catch { /* פרטי */ }
   renderView();
   if (tab.dataset.view === 'chats') loadChannels().then(renderView).catch(() => {});
+});
+
+/* ── מי עונה (§7) ─────────────────────────────────────────── */
+
+
+function renderRouteBar(cur) {
+  $('#routeBar').hidden = !cur;
+  if (!cur) return;
+  const eff = cur.route_effective || 'chat';
+  const owner = state.user?.role === 'admin';
+  $$('#routeSeg [data-route]').forEach((b) => {
+    b.setAttribute('aria-checked', String(b.dataset.route === eff));
+    b.disabled = !owner;
+  });
+  const parent = cur.parent_id ? byId(cur.parent_id) : null;
+  const notes = [];
+  if (!cur.route) notes.push(parent ? `יורש מ״${parent.name}״` : 'ברירת המחדל של הלוח');
+  if (eff === 'platform') notes.push(PLATFORM_HINT);
+  $('#routeHint').hidden = !notes.length;
+  $('#routeHint').textContent = notes.join(' · ');
+}
+
+on('#routeSeg', 'click', async (e) => {
+  const b = e.target.closest('[data-route]');
+  const cur = byId(state.projectId);
+  if (!b || b.disabled || !cur || b.dataset.route === cur.route_effective) return;
+  try {
+    await api('update-project', { id: cur.id, route: b.dataset.route });
+    await loadTree();
+    toast(b.dataset.route === 'platform' ? 'עבר ל-☁️ Platform — חל על עבודה חדשה' : 'עבר ל-💬 הצ\'אטים — חל על עבודה חדשה', 'ok');
+  } catch (ex) { toast(ex.message, 'error'); }
 });
 
 async function setScope(id, push = true) {

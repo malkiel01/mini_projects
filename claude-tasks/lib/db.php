@@ -266,6 +266,8 @@ function migrate(PDO $pdo): void {
     migrateConnections($pdo);
     // אישורים ומדיניות (lib/approvals.php)
     migrateApprovals($pdo);
+    // מסלול אחד: מי עובד ומי עונה (lib/routes.php)
+    migrateRoutes($pdo);
 }
 
 /** ALTER TABLE ADD COLUMN אינו מכיר IF NOT EXISTS ב-SQLite — בודקים לבד. */
@@ -321,10 +323,12 @@ function releaseExpiredClaims(PDO $pdo): int {
  */
 /**
  * ‏$projectIds — תחום האסימון: הפרויקט שלו וכל הענף שמתחתיו (null = כל הלוח).
- * ‏$skipProjectIds — פרויקטים שהמשיכה מדלגת עליהם (ענף owner_only לאסימון הכללי).
+ * ‏$skipProjectIds — פרויקטים שהמשיכה מדלגת עליהם.
+ * ‏$route — רק מטלות שהמסלול האפקטיבי שלהן הוא זה (lib/routes.php), והמטלה
+ * שנלקחה זוכרת אותו (tasks.route). null — בלי סינון (בדיקות ישנות).
  */
 function claimNextTask(PDO $pdo, string $worker, ?int $topicId = null, ?array $projectIds = null,
-                       array $skipProjectIds = []): ?array {
+                       array $skipProjectIds = [], ?string $route = null): ?array {
     releaseExpiredClaims($pdo);
 
     $pdo->beginTransaction();
@@ -343,6 +347,13 @@ function claimNextTask(PDO $pdo, string $worker, ?int $topicId = null, ?array $p
                   . implode(',', array_fill(0, count($skipProjectIds), '?')) . '))';
             $args = array_merge($args, $skipProjectIds);
         }
+        // המסלול: מטלה בלי פרויקט — chat; אחרת לפי המסלול האפקטיבי של הפרויקט שלה
+        if ($route !== null) {
+            $on = projectIdsOnRoute($route);
+            $in = $on ? 'project_id IN (' . implode(',', array_fill(0, count($on), '?')) . ')' : '0';
+            $sql .= $route === 'chat' ? " AND (project_id IS NULL OR $in)" : " AND $in";
+            $args = array_merge($args, $on);
+        }
         // מטלה שנענתה קודמת לחדשה: אדם כבר ממתין לה.
         $sql .= " ORDER BY CASE status WHEN 'answered' THEN 0 ELSE 1 END,
                            CASE priority WHEN 'high' THEN 0 WHEN 'normal' THEN 1 ELSE 2 END,
@@ -356,11 +367,11 @@ function claimNextTask(PDO $pdo, string $worker, ?int $topicId = null, ?array $p
         if (!$task) { $pdo->commit(); return null; }
 
         $upd = $pdo->prepare(
-            "UPDATE tasks SET status='in_progress', claimed_by=?, claim_until=?, updated_at=?
+            "UPDATE tasks SET status='in_progress', claimed_by=?, claim_until=?, updated_at=?, route=?
               WHERE id = ? AND status IN ('answered','open')"
         );
         $until = nowTs() + CLAIM_MINUTES * 60;
-        $upd->execute([$worker, $until, nowTs(), $task['id']]);
+        $upd->execute([$worker, $until, nowTs(), $route ?? '', $task['id']]);
 
         if ($upd->rowCount() === 0) { $pdo->rollBack(); return null; }
 
@@ -368,6 +379,7 @@ function claimNextTask(PDO $pdo, string $worker, ?int $topicId = null, ?array $p
         $task['status'] = 'in_progress';
         $task['claimed_by'] = $worker;
         $task['claim_until'] = $until;
+        $task['route'] = $route ?? '';
         return $task;
     } catch (Throwable $e) {
         $pdo->rollBack();
@@ -431,3 +443,4 @@ function statusCounts(PDO $pdo, ?int $topicId = null, bool $unassignedOnly = fal
 
 require_once __DIR__ . '/connections.php';
 require_once __DIR__ . '/approvals.php';
+require_once __DIR__ . '/routes.php';

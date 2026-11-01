@@ -5,7 +5,7 @@
  * ההגדרות שנוגעים בהן פעם בכמה שבועות.
  */
 
-import { $, $$, el, api, toast, state, on } from './core.js';
+import { $, $$, el, api, toast, state, on, PLATFORM_HINT } from './core.js';
 
 /* ── חיבורים (docs/spec.md §10.1) ─────────────────────────────────
  *
@@ -379,6 +379,7 @@ function renderRows() {
     p.repo_name && ['⚙️', 'מנוע ההרצה', engine.installed ? `מותקן${engine.check_command ? ' · ' + engine.check_command : ''}` : 'לא מותקן', 'pvsEngine'],
     owner && admin && ['🔑', "אסימון לצ'אטים", 'הצגה', 'pvsToken'],
     p.repo_name && ['📂', 'קבצים', 'עיון בריפו', 'pvsFiles'],
+    ['🧭', 'מי עונה', routeLabel(p.id), 'pvsRoute'],
     owner && ['🏗️', 'מבנה', parent ? `בתוך: ${parent.name}` : 'רמה עליונה', 'pvsStructure'],
   ].filter(Boolean);
   $('#pvRows').replaceChildren(...rows.map(([ic, title, sub, sheet]) => el('li', {
@@ -404,9 +405,75 @@ function renderRows() {
 async function openSheet(id) {
   if (id === 'pvsFiles') { $('#pvFile').hidden = true; browse(state.openProject.path || '').catch(() => {}); }
   if (id === 'pvsGithub') renderGithubChoice();
+  if (id === 'pvsRoute') renderRouteSheet();
   if (id === 'pvsToken') { $('#pvChatTokenValue').textContent = '••••••••'; $('#pvChatTokenShow').hidden = false; $('#pvChatTokenCopy').hidden = true; }
   $('#' + id).showModal();
 }
+
+/* ── מי עונה (§7) ─────────────────────────────────────────── */
+
+const ROUTE_NAME = { chat: '💬 הצ\'אטים', platform: '☁️ Platform' };
+const projById = (id) => (state.projects || []).find((x) => x.id === id);
+
+function routeLabel(id) {
+  const p = projById(id);
+  if (!p) return '';
+  return `${ROUTE_NAME[p.route_effective] || ROUTE_NAME.chat}${p.route ? '' : ' · יורש'}`;
+}
+
+/** שלוש אפשרויות: יורש (ומה זה אומר עכשיו), הצ'אטים, Platform. משנה — בעל הלוח בלבד. */
+function renderRouteSheet() {
+  const p = projById(state.openProject.id);
+  const owner = state.user?.role === 'admin';
+  const parent = p?.parent_id ? projById(p.parent_id) : null;
+  const inherited = parent ? parent.route_effective : (state.defaultRoute || 'chat');
+  const opt = (value, title, sub) => el('li', {}, [el('label', { class: 'pick' }, [
+    el('input', { type: 'radio', name: 'pvRoute', value, checked: (p?.route || '') === value, disabled: !owner,
+      onchange: () => setRoute(value) }),
+    el('span', { class: 't', text: title }), el('small', { text: sub }),
+  ])]);
+  $('#pvRouteList').replaceChildren(
+    opt('', `יורש — ${ROUTE_NAME[inherited]}`, parent ? `כמו ״${parent.name}״` : 'ברירת המחדל של הלוח'),
+    opt('chat', ROUTE_NAME.chat, 'Claude Code, על החשבון שלך'),
+    opt('platform', ROUTE_NAME.platform, 'מתוך מכסה'),
+  );
+  const eff = p?.route_effective || 'chat';
+  const notes = [];
+  if (!owner) notes.push('רק בעל הלוח משנה את זה.');
+  if (eff === 'platform') notes.push(PLATFORM_HINT);
+  $('#pvRouteHint').hidden = !notes.length;
+  $('#pvRouteHint').textContent = notes.join(' ');
+  $('#pvRouteDefault').hidden = !owner;
+  $$('#defaultRouteSeg [data-route]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.route === (state.defaultRoute || 'chat'))));
+}
+
+async function refreshProjects() {
+  const r = await api('projects');
+  state.projects = r.projects;
+  state.defaultRoute = r.default_route || 'chat';
+}
+
+async function setRoute(route) {
+  try {
+    await api('update-project', { id: state.openProject.id, route });
+    await refreshProjects();
+    renderRouteSheet();
+    renderRows();
+    toast('נשמר — חל על עבודה חדשה', 'ok');
+  } catch (ex) { toast(ex.message, 'error'); renderRouteSheet(); }
+}
+
+on('#defaultRouteSeg', 'click', async (e) => {
+  const b = e.target.closest('[data-route]');
+  if (!b || b.dataset.route === state.defaultRoute) return;
+  try {
+    await api('set-default-route', { route: b.dataset.route });
+    await refreshProjects();
+    renderRouteSheet();
+    renderRows();
+    toast('ברירת המחדל של הלוח עודכנה', 'ok');
+  } catch (ex) { toast(ex.message, 'error'); }
+});
 
 /* חיבור הגיטהאב שלי לפרויקט: אוטומטי, או אחד מהחשבונות שלי */
 function renderGithubChoice() {

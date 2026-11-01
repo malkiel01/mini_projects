@@ -40,7 +40,7 @@ board_call() {
   for try in 1 2; do
     out="$(curl -sS -m "$max" -w $'\n%{http_code}' -X POST \
             -H 'Content-Type: application/json' -H "X-Worker-Token: $token" \
-            -H "X-Worker-Name: ${BOARD_WORKER_NAME:-chat}" -b "$cookie" \
+            -H "X-Worker-Name: ${BOARD_WORKER_NAME:-chat}" -H 'X-Worker-Route: chat' -b "$cookie" \
             --data-binary "$body" "$(board_url)?action=$action" 2>/dev/null)" || { BOARD_HTTP=0; return 2; }
     code="${out##*$'\n'}"; out="${out%$'\n'*}"; BOARD_HTTP="$code"
     if [ "$code" = 409 ] && [ "$try" = 1 ]; then
