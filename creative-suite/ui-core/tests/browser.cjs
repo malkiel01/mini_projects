@@ -9,7 +9,7 @@ const path = require('path');
 const { chromium } = require('playwright');
 
 const ROOT = path.resolve(__dirname, '..');
-const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' };
+const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.woff2': 'font/woff2' };
 let failed = 0;
 const ok = (cond, msg) => { console.log((cond ? '  ✓ ' : '  ✗ ') + msg); if (!cond) failed++; };
 
@@ -405,6 +405,36 @@ const server = http.createServer((req, res) => {
         await p.click('dialog[open] .row-btns .btn:has-text("שניהם")');
         await p.waitForTimeout(150);
         ok(await p.evaluate(() => window.__fwDone) === 'הזמנה לחתונה (2).mbe', 'files: שמירה — שם קיים → "לשמור את שניהם"');
+
+        // fonts — קטלוג, בורר, גופן שהועלה
+        const fn = await p.evaluate(async () => {
+            const F = await import('../src/js/fonts.js');
+            return { n: F.FONTS.length, near: F.nearestWeight('Alef', 600), stack: F.fontStack('Frank Ruhl Libre'), mime: F.fontMime(new Uint8Array([119, 79, 70, 50])) };
+        });
+        ok(fn.n >= 10 && fn.near === 700 && fn.stack.endsWith('serif') && !fn.stack.includes('sans') && fn.mime === 'font/woff2', 'fonts: קטלוג, משקל קרוב, חלופה, סוג לפי חתימה');
+        await p.$eval('#fonts', el => el.scrollIntoView({ block: 'start', behavior: 'instant' }));
+        await p.click('#fonts .fp-trigger');
+        const fopts = await p.$$eval('#fonts .fp-opt', o => o.map(x => [x.dataset.family, x.querySelector('.fp-fam').style.fontFamily]));
+        ok(fopts.length >= 10 && fopts.every(([f, ff]) => ff.includes(f)), 'fontPicker: כל גופן כתוב בגופן עצמו');
+        await p.fill('#fonts .fp-search', 'rub');
+        ok((await p.$$eval('#fonts .fp-opt', o => o.map(x => x.dataset.family))).join() === 'Rubik', 'fontPicker: חיפוש');
+        await p.click('#fonts .fp-opt[data-family="Rubik"]');
+        await p.waitForFunction(() => window.__fonts.picked === 'Rubik', null, { timeout: 5000 }).catch(() => {});
+        const fsel = await p.evaluate(() => ({ picked: window.__fonts.picked, name: document.querySelector('#fonts .fp-name').textContent,
+            closed: document.querySelector('#fonts .fp-panel').hidden, loaded: document.fonts.check('700 20px "Rubik"', 'אב') || document.fonts.check('400 20px "Rubik"', 'אב') }));
+        ok(fsel.picked === 'Rubik' && fsel.name === 'Rubik' && fsel.closed, 'fontPicker: בחירה → onChange, והרשימה נסגרת');
+        ok(fsel.loaded, 'fonts: הקובץ מ-src/fonts נטען (עברית)');
+        const up = await p.evaluate(async () => {
+            const bytes = await (await fetch('../src/fonts/rubik-hebrew-700-normal.woff2')).arrayBuffer();
+            const entry = await window.__fonts.mine.add(new File([bytes], 'My-Font-Bold.woff2'));
+            const F = await import('../src/js/fonts.js');
+            return { entry, list: window.__fonts.mine.list().length, custom: F.FONTS.find(f => f.family === entry.family)?.custom };
+        });
+        ok(up.entry.family === 'My Font' && up.entry.weight === 700 && up.list === 1 && up.custom, 'userFonts: העלאה — שם ומשקל משם הקובץ (WOFF2), רישום ב-FONTS');
+        await p.click('#fonts .fp-trigger');
+        ok(await p.$eval('#fonts .fp-opt', o => o.dataset.family === 'My Font' && o.textContent.includes('★')), 'fontPicker: "שלי" למעלה עם ★');
+        await p.click('#fonts .fp-trigger');
+        await p.evaluate(() => { try { localStorage.removeItem('uic-demo-fonts'); } catch {} });
 
         // color — המרות ובורר
         const cm = await p.evaluate(async () => {
