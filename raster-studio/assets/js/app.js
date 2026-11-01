@@ -3,6 +3,8 @@
 import { api, errText, toast, dims } from './api.js';
 import { idbSet } from './idb.js';
 import { acceptHandoff } from './handoff.js';
+import { mountAccount } from './account-ui.js';
+import { createDrives } from './drives/drives.js';
 import { $ } from './ui-core/dom.js';
 import { initDialogs, confirm } from './ui-core/dialog.js';
 
@@ -150,6 +152,8 @@ $('#file').addEventListener('change', async e => {
     $('#who').textContent = me.name || me.email;
     $('#new-btn').disabled = false;
     load();
+    // 👤 העיגול בסרגל: הגדרות אישיות, "המסמכים שלי" (הספרייה + ענן החבילה), החשבון
+    mountAccount($('header.top'), { api, me, drives: createDrives({ endpoint: 'api.php' }) }).catch(() => {});
   } catch (e) {
     $('#load-err').textContent = errText(e.message);
     $('#load-err').hidden = false;
