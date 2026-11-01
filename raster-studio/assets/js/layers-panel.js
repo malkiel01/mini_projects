@@ -2,10 +2,9 @@
 // במחשב — לוח בצד; בטלפון — גיליון מלמטה (editor.html, CSS). כל שינוי נרשם בהיסטוריה (ביטול / ביצוע).
 
 import { BLEND_MODES, newMask } from './engine/doc.js';
+import { $ } from './ui-core/dom.js';
 
 export const BLEND_LABELS = { normal: 'רגיל', multiply: 'הכפלה', screen: 'מסך', overlay: 'שכבת-על' };
-
-const $ = (s, el = document) => el.querySelector(s);
 
 /** תמונה ממוזערת של שכבת מילוי — CSS (צבע, או מעבר בכיוון שלו) */
 function fillCss(f) {

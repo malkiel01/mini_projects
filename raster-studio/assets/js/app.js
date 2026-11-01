@@ -3,8 +3,8 @@
 import { api, errText, toast, dims } from './api.js';
 import { idbSet } from './idb.js';
 import { acceptHandoff } from './handoff.js';
-
-const $ = (s, el = document) => el.querySelector(s);
+import { $ } from './ui-core/dom.js';
+import { initDialogs, confirm } from './ui-core/dialog.js';
 
 // נפתחנו מאפליקציה אחרת בחבילה (?mbe-handoff=): ready יוצא מיד, והקובץ שמגיע נפתח בעורך כמו קובץ מהמכשיר
 acceptHandoff(async ({ id, file }) => {
@@ -16,19 +16,8 @@ acceptHandoff(async ({ id, file }) => {
   }
 });
 
-// --vvh: הגובה הנראה בלי המקלדת — הגיליון מתקצר והכול נגלל
-(() => {
-  const vv = window.visualViewport;
-  if (!vv) return;
-  const set = () => document.documentElement.style.setProperty('--vvh', Math.round(vv.height) + 'px');
-  vv.addEventListener('resize', set);
-  set();
-})();
-
-document.addEventListener('click', e => {
-  const b = e.target.closest('[data-close]');
-  if (b) b.closest('dialog').close();
-});
+// חלונות: --vvh / --kb (המקלדת), ✕ ולחיצה ברקע סוגרים — ui-core
+initDialogs();
 
 // ---- גודל קנבס ----
 const PRESETS = { screen: [1920, 1080], square: [1080, 1080], story: [1080, 1920], a4: [1240, 1754] };
@@ -88,7 +77,7 @@ async function load() {
 }
 
 async function remove(doc, li) {
-  if (!confirm(`למחוק את "${doc.title}"?`)) return;
+  if (!(await confirm(`למחוק את "${doc.title}"?`, { ok: 'מחיקה', danger: true }))) return;
   try {
     await api('doc_delete', { id: doc.id });
     li.remove();
