@@ -15,6 +15,12 @@
 | `userFonts({ key, assets })` | "הגופנים שלי" במכשיר — `load`, `add(file)`, `list`, `remove`, `syncCloud(drives)`, `saveToCloud(drives, id, entry)` מול ספריית הגופנים של ענן החבילה |
 | `fontPicker(label, value, onChange, { sample, onUpload })` | בורר: כל גופן כתוב בגופן עצמו, חיפוש, מקלדת, "שלי" (★) למעלה, העלאה |
 
+## TTF — ל-HarfBuzz ולהטמעה ב-PDF (בקשת העימוד)
+
+`src/fonts-ttf/` — אותם 10 גופנים כ-TTF מ-Google Fonts (משתנים עם ציר wght: Heebo, Assistant, Rubik, Frank Ruhl Libre; השאר — קובץ
+לכל משקל), ‎~1.6MB. סוג נפרד ב-`apps.json`: `"fonts-ttf": "<תיקייה>"` — רק מי שצריך sfnt. `ttfFile(family, weight)` →
+`{ file, variable, weight }`. `readFontInfo` מחזיר גם `subfamily` ('Bold', 'Black'…, nameID 17 / 2).
+
 ## איך מצטרפים
 
 1. **`apps.json`** — סוג חדש `"fonts"`: `"vector-studio": { …, "fonts": "assets/fonts/ui-core" }`. התיקייה כולה של ui-core.

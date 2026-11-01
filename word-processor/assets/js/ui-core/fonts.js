@@ -6,7 +6,8 @@
  *   FONTS, DEFAULT_FONT, nearestWeight(family, w)
  *   await ensureFont('Rubik', 700)               // לפני ציור בקנבס — אחרת הקנבס מצייר בגופן חלופי ולא מתעדכן
  *   await registerFont({ family, weight, style, blob })   // גופן מקובץ → FontFace בדף ושורה ב-FONTS (custom)
- *   await readFontInfo(file) → { family, weight, style, bytes }   // מטבלאות name / OS/2 (TTF, OTF, WOFF), אחרת משם הקובץ
+ *   await readFontInfo(file) → { family, subfamily, weight, style, bytes }   // מטבלאות name / OS/2 (TTF, OTF, WOFF), אחרת משם הקובץ
+ *   ttfFile(family, weight) → { file, variable, weight }   // קובץ ה-TTF (src/fonts-ttf) — ל-HarfBuzz ול-PDF
  *   fontMime(bytes, ext)
  *
  *   const mine = userFonts({ key: 'gc-my-fonts', assets: { get: id => blob, put: blob => id } });   // "שלי" — האחסון של האפליקציה
@@ -22,18 +23,33 @@
  */
 import { h } from './dom.js';
 
+// ttf — הקבצים ב-src/fonts-ttf (סוג "fonts-ttf"): מחרוזת = גופן משתנה (ציר wght, כל המשקלים), אובייקט = קובץ לכל משקל.
+// ל-HarfBuzz ולהטמעה ב-PDF (pdf-core) — שם צריך sfnt, לא woff2. המקור: github.com/google/fonts (OFL).
 export const FONTS = [
-    { family: 'Heebo', weights: [100, 200, 300, 400, 500, 600, 700, 800, 900] },
-    { family: 'Assistant', weights: [200, 300, 400, 500, 600, 700, 800] },
-    { family: 'Rubik', weights: [300, 400, 500, 600, 700, 800, 900] },
-    { family: 'Secular One', weights: [400] },
-    { family: 'Frank Ruhl Libre', weights: [300, 400, 500, 600, 700, 800, 900], serif: true },
-    { family: 'Suez One', weights: [400], serif: true },
-    { family: 'Varela Round', weights: [400] },
-    { family: 'Alef', weights: [400, 700] },
-    { family: 'Karantina', weights: [400, 700] },
-    { family: 'Amatic SC', weights: [400, 700] },
+    { family: 'Heebo', weights: [100, 200, 300, 400, 500, 600, 700, 800, 900], ttf: 'Heebo-VF.ttf' },
+    { family: 'Assistant', weights: [200, 300, 400, 500, 600, 700, 800], ttf: 'Assistant-VF.ttf' },
+    { family: 'Rubik', weights: [300, 400, 500, 600, 700, 800, 900], ttf: 'Rubik-VF.ttf' },
+    { family: 'Secular One', weights: [400], ttf: { 400: 'SecularOne-Regular.ttf' } },
+    { family: 'Frank Ruhl Libre', weights: [300, 400, 500, 600, 700, 800, 900], serif: true, ttf: 'FrankRuhlLibre-VF.ttf' },
+    { family: 'Suez One', weights: [400], serif: true, ttf: { 400: 'SuezOne-Regular.ttf' } },
+    { family: 'Varela Round', weights: [400], ttf: { 400: 'VarelaRound-Regular.ttf' } },
+    { family: 'Alef', weights: [400, 700], ttf: { 400: 'Alef-Regular.ttf', 700: 'Alef-Bold.ttf' } },
+    { family: 'Karantina', weights: [400, 700], ttf: { 400: 'Karantina-Regular.ttf', 700: 'Karantina-Bold.ttf' } },
+    { family: 'Amatic SC', weights: [400, 700], ttf: { 400: 'AmaticSC-Regular.ttf', 700: 'AmaticSC-Bold.ttf' } },
 ];
+
+/**
+ * קובץ ה-TTF של גופן ומשקל: { file, variable, weight } | null. variable — קובץ אחד עם ציר wght (HarfBuzz: setVariations
+ * ({ wght }); PDF: מופע סטטי במשקל — או הקובץ כמו שהוא, אם ה-PDF מקבל משתנה). ttfFile('Heebo', 650).file → 'Heebo-VF.ttf'
+ */
+export function ttfFile(family, weight = 400) {
+    const f = FONTS.find(x => x.family === family);
+    if (!f?.ttf) return null;
+    const w = nearestWeight(family, weight);
+    if (typeof f.ttf === 'string') return { file: f.ttf, variable: true, weight: w };
+    const k = Object.keys(f.ttf).map(Number).reduce((a, b) => (Math.abs(b - w) < Math.abs(a - w) ? b : a));
+    return { file: f.ttf[k], variable: false, weight: k };
+}
 
 export const DEFAULT_FONT = 'Heebo';
 
@@ -95,7 +111,8 @@ export async function readFontInfo(file) {
     try { info = await sfntInfo(bytes); } catch { /* WOFF2 או קובץ לא רגיל — לפי השם */ }
     const byName = WEIGHT_WORDS.find(([re]) => re.test(base))?.[1] || 400;
     const family = (info?.family || base.replace(/[-_ ]*(hairline|thin|extra-?light|ultra-?light|light|regular|book|normal|medium|semi-?bold|demi-?bold|extra-?bold|ultra-?bold|heavy|black|bold|italic|oblique)*$/gi, '').replace(/[-_]+/g, ' ')).trim().slice(0, 60) || 'הגופן שלי';
-    return { family, weight: info?.weight || byName, style: info?.italic || /italic|oblique/i.test(base) ? 'italic' : 'normal', bytes };
+    // subfamily — 'Black', 'Bold Italic'… (nameID 17 / 2): שני קבצים סטטיים של אותה משפחה נבדלים בו (לקח מהעימוד)
+    return { family, subfamily: info?.subfamily || '', weight: info?.weight || byName, style: info?.italic || /italic|oblique/i.test(base) ? 'italic' : 'normal', bytes };
 }
 
 async function sfntInfo(b) {
@@ -130,18 +147,20 @@ async function sfntInfo(b) {
     if (nm) {
         const ndv = new DataView(nm.buffer, nm.byteOffset, nm.byteLength);
         const count = ndv.getUint16(2), strOff = ndv.getUint16(4);
-        let best = null, score = -1;
+        const best = { family: [null, -1], subfamily: [null, -1] };
         for (let i = 0; i < count; i++) {
             const r = 6 + i * 12;
             const plat = ndv.getUint16(r), lang = ndv.getUint16(r + 4), id = ndv.getUint16(r + 6), len = ndv.getUint16(r + 8), off = ndv.getUint16(r + 10);
-            if (id !== 1 && id !== 16) continue;
+            const kind = id === 1 || id === 16 ? 'family' : id === 2 || id === 17 ? 'subfamily' : null;
+            if (!kind) continue;
             const raw = nm.subarray(strOff + off, strOff + off + len);
             const text = plat === 3 || plat === 0 ? new TextDecoder('utf-16be').decode(raw) : String.fromCharCode(...raw);
-            // שם המשפחה הטיפוגרפי (16) לפני הרגיל (1); עברית, ואז אנגלית, ואז כל שפה
-            const sc = (id === 16 ? 4 : 0) + (lang === 0x040d ? 2 : lang === 0x0409 || lang === 0 ? 1 : 0) + (plat === 3 ? 0.5 : 0);
-            if (text.trim() && sc > score) { score = sc; best = text.trim(); }
+            // הטיפוגרפי (16 / 17) לפני הרגיל (1 / 2); עברית, ואז אנגלית, ואז כל שפה
+            const sc = (id === 16 || id === 17 ? 4 : 0) + (lang === 0x040d ? 2 : lang === 0x0409 || lang === 0 ? 1 : 0) + (plat === 3 ? 0.5 : 0);
+            if (text.trim() && sc > best[kind][1]) best[kind] = [text.trim(), sc];
         }
-        if (best) out.family = best;
+        if (best.family[0]) out.family = best.family[0];
+        if (best.subfamily[0]) out.subfamily = best.subfamily[0];
     }
     return out;
 }

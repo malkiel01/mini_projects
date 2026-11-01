@@ -9,7 +9,7 @@ const path = require('path');
 const { chromium } = require('playwright');
 
 const ROOT = path.resolve(__dirname, '..');
-const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.woff2': 'font/woff2' };
+const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.woff2': 'font/woff2', '.ttf': 'font/ttf' };
 let failed = 0;
 const ok = (cond, msg) => { console.log((cond ? '  ✓ ' : '  ✗ ') + msg); if (!cond) failed++; };
 
@@ -458,6 +458,19 @@ const server = http.createServer((req, res) => {
             const F = await import('../src/js/fonts.js');
             return { entry, list: window.__fonts.mine.list().length, custom: F.FONTS.find(f => f.family === entry.family)?.custom };
         });
+        const tt = await p.evaluate(async () => {
+            const F = await import('../src/js/fonts.js');
+            const missing = [];
+            for (const f of F.FONTS.filter(x => x.ttf)) for (const w of f.weights) {
+                const t = F.ttfFile(f.family, w);
+                if (!t || !(await fetch('../src/fonts-ttf/' + t.file, { method: 'HEAD' })).ok) missing.push(f.family + ':' + w);
+            }
+            const info = await F.readFontInfo(new File([await (await fetch('../src/fonts-ttf/Alef-Bold.ttf')).arrayBuffer()], 'x.ttf'));
+            return { missing, heebo: F.ttfFile('Heebo', 650), alef: F.ttfFile('Alef', 600), info: { family: info.family, subfamily: info.subfamily, weight: info.weight } };
+        });
+        ok(!tt.missing.length, 'fonts-ttf: לכל גופן ומשקל בקטלוג יש קובץ TTF' + (tt.missing.length ? ': ' + tt.missing.join() : ''));
+        ok(tt.heebo.file === 'Heebo-VF.ttf' && tt.heebo.variable && tt.heebo.weight === 600 && tt.alef.file === 'Alef-Bold.ttf' && !tt.alef.variable, 'ttfFile: משתנה / קובץ למשקל');
+        ok(tt.info.family === 'Alef' && tt.info.subfamily === 'Bold' && tt.info.weight === 700, 'readFontInfo: TTF — משפחה, תת-משפחה ומשקל מהטבלאות');
         ok(up.entry.family === 'My Font' && up.entry.weight === 700 && up.list === 1 && up.custom, 'userFonts: העלאה — שם ומשקל משם הקובץ (WOFF2), רישום ב-FONTS');
         await p.click('#fonts .fp-trigger');
         ok(await p.$eval('#fonts .fp-opt', o => o.dataset.family === 'My Font' && o.textContent.includes('★')), 'fontPicker: "שלי" למעלה עם ★');
