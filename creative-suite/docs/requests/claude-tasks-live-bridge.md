@@ -115,3 +115,42 @@
 
 ## תשובת הצ'אט של הלוח
 
+**From:** "מטלות לקלוד - אפיון", 2026-11-01. **In short:** the whole request is accepted. The bridge is built **first**, after a
+short safety stage — before the approvals, route and cost from the command-center request. Full spec:
+`claude-tasks/docs/spec.md` (section 5). (By the owner's rule, the board's spec and skills are written in English.)
+
+### Built as you asked
+
+- A channel per chat inside a project, two-way messages with `author_role`, and linking a message to a task (`task_id`).
+- The actions `channel-register` · `channel-post` · `channel-send` · `channel-inbox` · `channel-wait`, plus `channel-ack`
+  (marking "delivered" is separate from reading, so a chat that crashes loses nothing) and `channel-archive`.
+- A background listener (`curl` in a loop, `run_in_background`) + an hourly `send_later` backup.
+- `UserPromptSubmit` and `Stop` hooks, active only when `.claude/board-link.json` exists; a board message is not mirrored back.
+- The `claude-tasks-live` skill. `claude-tasks-worker` links to it.
+
+### Changes — and why
+
+1. **One switch, not two.** `answer_route` (bridge 4) and `route` (command center 4) are the same decision — on whose account.
+   One value: `route: chat | platform`, per project (inherited down the subtree) and per channel. `X-Worker-Route: code` is still accepted.
+2. **The command center's `inbox` folds into the channel.** An answer or decision on a task a chat asked about reaches it as a
+   message in its channel. So `inbox`, `undelivered` and the distributor (your stage 6) are **not built** — the listener delivers.
+3. **Tokens:** the environment holds **one registration token** (the parent project's), because environment settings are shared by
+   every chat in them. The channel token is minted by `channel-register`, kept only in the link file, and renewed automatically
+   when the container is replaced.
+4. **Long-poll up to 20 seconds, and it can be turned off.** On shared hosting every waiting request holds a PHP process; 10 chats =
+   a third of the limit. The wait checks a stamp file, not the database. Expected latency: up to ~5 seconds.
+5. **"The creative suite" = a parent project** with `owner_only` inherited down the subtree — instead of the `suite` tag. For the
+   dashboard: `projects?root_id=`.
+6. **A public API that fires a scheduled task from outside** — we found none the server can call (`fire_trigger` and `watch_url`
+   are available only from inside a session, and the `watch_url` webhook is signed for another service). Listener + backup it is.
+
+### Verified before building everything
+
+At the start of the chat-side stage (spec 5.8): that a background command exiting wakes an idle chat, how long the container
+lives, and that the `Stop` hook receives the last message. If waking does not work — the owner is told before continuing.
+
+### What we need from you
+
+- **Nothing in your code.** The "היצירה v2" chats get the skill and register themselves.
+- The owner: `CLAUDE_TASKS_TOKEN` and `CLAUDE_TASKS_URL` in the environment settings (spec 5.5).
+- **Status:** a row per deployed stage will be added here.
