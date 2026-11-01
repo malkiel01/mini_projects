@@ -3,7 +3,7 @@
 import { SIZES } from './model.js';
 import * as drafts from './drafts.js';
 import * as library from './library.js';
-import { acceptHandoff } from './handoff.js';
+import { acceptHandoff } from './mbe/handoff.js';
 import { initDialogs, confirm } from './ui-core/dialog.js';
 import { toast } from './ui-core/toast.js';
 import { accountMenu, accountServer } from './ui-core/account.js';
@@ -137,5 +137,5 @@ async function start() {
 }
 
 // נפתחנו מאפליקציה אחרת (?mbe-handoff=<id>) — ready מיד, לפני כל דבר כבד; הקובץ נפתח כמו מ-📂
-acceptHandoff((h) => openFile(h.file, h));
+acceptHandoff((h) => openFile(h.file, h), { defaultName: 'ציור.mbe' });
 start();

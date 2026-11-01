@@ -34,6 +34,17 @@ export default async function (t) {
     await p.waitForFunction(() => [...document.querySelectorAll('.wp-doc tr.wp-repeat')].every(r => r.textContent.includes('סעיףים')), null, { timeout: 5000 }).catch(() => {});
     const reps = await p.evaluate(() => [...document.querySelectorAll('.wp-doc tr.wp-repeat')].map(r => r.textContent));
     t.ok('הקלדה בשורת הכותרת — מתעדכנת גם בעותקים', reps.length >= 3 && reps.every(x => x.includes('סעיףים')), JSON.stringify(reps.slice(0, 2)));
+
+    // F12: תא ממוזג אנכית (3 שורות) — השבירה רק בין קבוצות, לא באמצע התא
+    const m = JSON.parse(readFileSync(join(t.app, 'tests', 'corpus', 'rowspan.json'), 'utf8'));
+    await t.openDoc(p, await t.newDoc(p, m.title, m.json, m.page));
+    const after = await p.evaluate(() => [...document.querySelectorAll('.wp-doc tr.wp-break-row')].map(b => {
+        let r = b.nextElementSibling;
+        while (r && r.classList.contains('wp-repeat')) r = r.nextElementSibling;
+        return r?.textContent || '';
+    }));
+    t.ok('תאים ממוזגים: הטבלה נשברת', after.length >= 1, `${after.length} שבירות`);
+    t.ok('תאים ממוזגים: כל שבירה — לפני קבוצה חדשה, לא באמצע תא ממוזג', after.every(x => x.startsWith('קבוצה')), JSON.stringify(after));
     t.ok('בלי שגיאות JS', !p.errors.length, p.errors.join(' | '));
     await p.context().close();
 }
