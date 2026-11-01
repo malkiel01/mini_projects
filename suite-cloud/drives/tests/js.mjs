@@ -57,7 +57,8 @@ const r = await d.ai.run('generate-image', { prompt: 'לוגו', size: '1080x135
 check('ai.run — PNG, הגודל שיצא, שקיפות וספק', r.png instanceof Blob && r.size.join() === '1024,1536' && r.transparent && r.provider === 'openai');
 const sg = await d.ai.run('segment', { image: new Blob(['x']) });
 check('ai.run segment — מסכות כ-Blob עם תיבה', sg.masks[0].png instanceof Blob && sg.masks[0].box.join() === '1,2,3,4');
-check('ai.capabilities — מחובר', (await d.ai.capabilities()).tasks.inpaint === true);
+const capOn = await d.ai.capabilities();
+check('ai.capabilities — מחובר, עם connected:true', capOn.tasks.inpaint === true && capOn.connected === true);
 
 await d.disconnect();
 const d2 = createDrives({ endpoint: 'https://mbe-plus.com/mini_projects/vector-studio/api.php' });
@@ -65,7 +66,7 @@ let err = null;
 try { await d2.suite.list(); } catch (e) { err = e; }
 check('בלי חיבור — DriveError not-connected', err instanceof DriveError && err.code === 'not-connected');
 const none = await d2.ai.capabilities();
-check('בלי חיבור — capabilities הכול false (המסלול הידני)', Object.values(none.tasks).every(v => v === false));
+check('בלי חיבור — connected:false, והכול false (המסלול הידני)', none.connected === false && Object.values(none.tasks).every(v => v === false));
 
 console.log(`\n${n - fails} / ${n} עברו`);
 process.exit(fails ? 1 : 0);
