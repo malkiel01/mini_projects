@@ -19,6 +19,7 @@ require_once __DIR__ . '/lib/projects.php';
 require_once __DIR__ . '/lib/engine.php';
 require_once __DIR__ . '/lib/skills.php';
 require_once __DIR__ . '/lib/platform.php';
+require_once __DIR__ . '/lib/channels.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -652,7 +653,10 @@ try {
         $kind   = pick_field($in, 'kind', ['comment', 'question', 'answer', 'result'], 'comment');
 
         $kind = noteKind($user, $task, $kind);
-        ok(addNote(db(), $id, $author, $kind, $text, authorRole($user), $user ? (int) $user['id'] : null));
+        $r = addNote(db(), $id, $author, $kind, $text, authorRole($user), $user ? (int) $user['id'] : null);
+        // תשובה של אדם על מטלה שנשאלה מערוץ — מגיעה גם לצ'אט ששאל
+        if ($user && $kind === 'answer') $r['channel_message_id'] = channelAnswered($task, $user, $text);
+        ok($r);
     }
 
     /* ── ספקי בינה מלאכותית של המשתמש ──────────────────────────
@@ -1156,6 +1160,8 @@ try {
         addNote(db(), $id, $worker, 'question', $q);
         db()->prepare("UPDATE tasks SET status='blocked', claimed_by='', claim_until=0, updated_at=? WHERE id=?")
             ->execute([nowTs(), $id]);
+        // שאלה מערוץ: המטלה זוכרת איפה נשאלה, והשאלה מופיעה גם בערוץ (docs/spec.md, 5.2)
+        if (!empty($scope['channel'])) channelAsked($scope['channel'], $id, $q);
         if ($url = url_field($in, 'session_url')) {
             db()->prepare('UPDATE tasks SET session_url = ? WHERE id = ?')->execute([$url, $id]);
         }
@@ -1219,6 +1225,60 @@ try {
         db()->prepare("UPDATE tasks SET claim_until=? WHERE id=? AND claimed_by=?")
             ->execute([nowTs() + CLAIM_MINUTES * 60, $id, $worker]);
         ok(['claim_until' => nowTs() + CLAIM_MINUTES * 60]);
+    }
+
+    /* ── הגשר החי (docs/spec.md, 5.4) ──────────────────────────── */
+
+    /** צ'אט נרשם עם אסימון הרשמה (של פרויקט, או הכללי). מקבל אסימון ערוץ — פעם אחת. */
+    case 'channel-register': {
+        if (!$worker) fail('נדרש אסימון הרשמה', 401);
+        $url = url_field($in, 'session_url') ?? '';
+        ok(registerChannel($scope, (int) ($in['project_id'] ?? 0), str_field($in, 'name', 80),
+                           str_field($in, 'role', 40), str_field($in, 'session_id', 120), $url));
+    }
+
+    case 'channel-post': {
+        $ch = $scope['channel'] ?? null;
+        if (!$ch) fail('נדרש אסימון ערוץ', 403);
+        ok(['id' => channelPost($ch, str_field($in, 'author_role', 10), (string) ($in['body'] ?? ''),
+                                int_or_null($in, 'reply_to'), int_or_null($in, 'task_id'),
+                                str_field($in, 'kind', 20, 'text'))]);
+    }
+
+    case 'channel-send':
+        ok(['id' => channelSend(requireUser($user), (int) ($in['channel_id'] ?? 0), (string) ($in['body'] ?? ''),
+                                int_or_null($in, 'task_id'), int_or_null($in, 'reply_to'))]);
+
+    case 'channel-inbox': {
+        $ch = $scope['channel'] ?? null;
+        if (!$ch) fail('נדרש אסימון ערוץ', 403);
+        ok(['messages' => channelInbox($ch)]);
+    }
+
+    case 'channel-ack': {
+        $ch = $scope['channel'] ?? null;
+        if (!$ch) fail('נדרש אסימון ערוץ', 403);
+        ok(['acked' => channelAck($ch, is_array($in['ids'] ?? null) ? $in['ids'] : [])]);
+    }
+
+    case 'channel-wait': {
+        $ch = $scope['channel'] ?? null;
+        if (!$ch) fail('נדרש אסימון ערוץ', 403);
+        // הסשן נסגר לפני ההמתנה — אחרת הוא נועל את קובץ הסשן לכל משך ההמתנה
+        if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
+        ok(['messages' => channelWait($ch, (int) ($in['wait'] ?? 20))]);
+    }
+
+    case 'channels':
+        ok(['channels' => channelsFor(requireUser($user), (int) ($in['project_id'] ?? 0))]);
+
+    case 'channel-messages':
+        ok(channelMessages(requireUser($user), (int) ($in['channel_id'] ?? 0), (int) ($in['after'] ?? 0)));
+
+    case 'channel-archive': {
+        $self = $scope['channel'] ?? null;
+        archiveChannel((int) ($in['channel_id'] ?? ($self['id'] ?? 0)), $user, $self);
+        ok();
     }
 
     default:

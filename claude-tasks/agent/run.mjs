@@ -42,16 +42,29 @@ const sh = (cmd, args, opts = {}) =>
 
 /* ── הלוח ──────────────────────────────────────────────────────── */
 
-async function board(action, payload = {}) {
+/*
+ * הגנת הבוטים של האחסון: בקשה בלי דפדפן מקבלת 409 ודף שמציב עוגייה
+ * (document.cookie = "humans_NNNN=1"). בלי העוגייה כל פנייה ללוח נדחית — וגם
+ * הדיווח על כישלון, כך שהמטלה נשארת תקועה בשקט. שולחים אותה תמיד; אם האחסון
+ * החליף שם — מחלצים את החדשה מהדף ומנסים פעם נוספת.
+ */
+let COOKIE = env.BOARD_COOKIE || 'humans_21909=1';
+
+async function board(action, payload = {}, retried = false) {
   const res = await fetch(`${BOARD}?action=${encodeURIComponent(action)}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'X-Worker-Token': TOKEN,
       'X-Worker-Name': `actions/${PROVIDER}`,
+      Cookie: COOKIE,
     },
     body: JSON.stringify(payload),
   });
+  if (res.status === 409 && !retried) {
+    const m = (await res.text().catch(() => '')).match(/document\.cookie\s*=\s*["']([^"';]+)/);
+    if (m && m[1] !== COOKIE) { COOKIE = m[1]; return board(action, payload, true); }
+  }
   const data = await res.json().catch(() => ({}));
   if (!data.success) throw new Error(`הלוח דחה את "${action}": ${data.error || res.status}`);
   return data;
