@@ -14,6 +14,8 @@ import { createTools } from './tools.js';
 import { createOverlay } from './overlay.js';
 import { createAdjustPanel } from './adjust-panel.js';
 import { createFxPanel } from './fx-panel.js';
+import { createAIPanel } from './ai-panel.js';
+import { createDrives } from './drives/drives.js';
 import { exportPNG, exportJPG, exportORA, download, fileName } from './export.js';
 import { saveDraft, loadDraft, restoreDraft, clearDraft, draftKey } from './draft.js';
 import { gapsFor, parseOraStack } from './engine/formats.js';
@@ -63,6 +65,7 @@ let history = null;
 let tools = null;
 let adjust = null;
 let fx = null;
+let aiPanel = null;
 let view = { zoom: 1, x: 0, y: 0 };
 let fitted = false;
 let changed = false;   // יש שינוי שעוד לא נכתב לטיוטה במכשיר
@@ -131,6 +134,7 @@ function setDoc(d) {
   $('#open-btn').disabled = false;
   $('#layers-btn').disabled = false;
   $('#adjust-btn').disabled = false;
+  $('#ai-btn').disabled = false;
   $('#export-btn').disabled = false;
   $('#save-btn').disabled = false;
   $('#versions-btn').disabled = !d.serverVersion;
@@ -586,6 +590,13 @@ $('#hint').textContent = coarse ? 'צביטה — זום' : 'גרירה — הז
       onChange: () => { changed = true; draw(); panel.render(); },
     });
     $('#adjust-btn').addEventListener('click', () => (adjust.open ? adjust.close() : adjust.show()));
+    // ✨ — דרך ענן החבילה (מודול הכוננים): בלי חיבור / ספק — הסבר וחיבור
+    aiPanel = createAIPanel({
+      doc: () => doc, renderer, history, toast, cloud: createDrives({ endpoint: 'api.php' }),
+      beforeOpen: () => { tools.commitFloat(); tools.commitText(); adjust.close(); fx.close(); },
+      onChange: () => { changed = true; draw(); panel.render(); },
+    });
+    $('#ai-btn').addEventListener('click', () => aiPanel.show());
     panel = createLayersPanel({
       root: layersEl, doc: () => doc, renderer, history, toast,
       beforeChange: () => { tools.commitFloat(); adjust.close(); fx.close(); },
@@ -689,6 +700,7 @@ window.__rs = {
   get tools() { return tools; },
   get adjust() { return adjust; },
   get fx() { return fx; },
+  get ai() { return aiPanel; },
   undo, redo,
   toggleLayers,
   setView,

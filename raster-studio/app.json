@@ -12,6 +12,7 @@
     "manifest.webmanifest",
     "service-worker.js",
     "assets/icons/**",
-    "assets/icon.svg"
+    "assets/icon.svg",
+    "api.php?action=drives_key"
   ]
 }

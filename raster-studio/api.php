@@ -37,6 +37,20 @@ function rs_send_file(string $path, string $type, string $name = ''): never
 
 $method = $_SERVER['REQUEST_METHOD'] ?? '';
 $qAction = (string)($_GET['action'] ?? '');
+
+// ענן החבילה — מודול הכוננים (suite-cloud/drives): חיבור, אסימון לדפדפן (קבצים ו-AI), ומפתח ציבורי לענן.
+// לפני הבדיקה שלנו (POST + X-Raster-Studio): drives.js קורא ב-GET / JSON, והענן מוריד את drives_key שרת-לשרת.
+// עותק מסונכרן — לא עורכים את lib/drives/. drives.sqlite (המפתח הפרטי והחיבורים) — ליד המסד, ב-data/ (מוחרג בפריסה).
+if (str_starts_with($qAction, 'drives_')) {
+    require_once __DIR__ . '/lib/drives/Drives.php';
+    (new \SuiteCloud\Drives([
+        'client'   => 'raster-studio', 'name' => 'עיצוב רסטר',
+        'dataDir'  => dirname(rs_db_path()),
+        'endpoint' => 'https://mbe-plus.com/mini_projects/raster-studio/api.php',
+        'user'     => fn() => ($u = rs_account()) ? (string)$u['id'] : null,
+        'back'     => 'https://mbe-plus.com/mini_projects/raster-studio/',
+    ]))->serve($qAction);
+}
 if ($method === 'GET' && $qAction === 'doc_preview') {
     $action = 'doc_preview';
     $in = ['id' => (int)($_GET['id'] ?? 0)];

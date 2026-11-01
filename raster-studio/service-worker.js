@@ -6,7 +6,7 @@
  * אחרי שינוי ברשימת השלד — להעלות את CACHE_VERSION.
  */
 
-const CACHE_VERSION = 'raster-studio-v16';
+const CACHE_VERSION = 'raster-studio-v17';
 
 const SHELL = [
   './index.html',
@@ -23,6 +23,9 @@ const SHELL = [
   './assets/js/layers-panel.js',
   './assets/js/adjust-panel.js',
   './assets/js/fx-panel.js',
+  './assets/js/ai-panel.js',
+  './assets/js/layer-ai.js',
+  './assets/js/drives/drives.js',
   './assets/js/overlay.js',
   './assets/js/export.js',
   './assets/js/draft.js',
