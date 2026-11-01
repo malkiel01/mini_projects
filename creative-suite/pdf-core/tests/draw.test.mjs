@@ -137,11 +137,13 @@ await same('שקיפות בעצירות: מסכה רכה, ומילוי + קו ב
         fill: { gradient: { type: 'radial', cx: 50, cy: 70, r: 40, stops: [{ offset: 0, color: '#ffffff', opacity: 1 }, { offset: 1, color: '#ffffff', opacity: 0 }] } } },
     { op: 'path', d: 'M5 95 L95 95', width: 5, stroke: { gradient: { type: 'linear', x1: 0, y1: 0, x2: 100, y2: 0, stops: [{ offset: 0, color: '#0000ff', opacity: 0.2 }, { offset: 1, color: '#0000ff' }] } } },
 ]}] });
-await same('תמונות: PNG עם שקיפות (SMask), PNG אטום, JPEG, חיתוך ו-opacity — ואותה תמונה פעמיים', { pages: [{ size: [100, 100], ops: [
+await same('תמונות: PNG עם שקיפות (SMask), PNG אטום, JPEG, חיתוך ו-opacity, transform — ואותה תמונה פעמיים', { pages: [{ size: [100, 100], ops: [
     { op: 'image', src: 'media/a.png', box: [5, 5, 40, 30], clip: [5, 5, 30, 30] },
     { op: 'image', src: 'media/b.png', box: [50, 5, 40, 30], opacity: 0.25 },
     { op: 'image', src: 'media/c.jpg', box: [5, 50, 40, 30] },
     { op: 'image', src: 'media/a.png', box: [50, 50, 40, 30] },
+    { op: 'image', src: 'media/b.png', box: [10, 10, 20, 15], transform: [-1, 0, 0, 1, 100, 0], opacity: 0.5 },
+    { op: 'image', src: 'media/c.jpg', box: [0, 0, 20, 15], transform: [0, 1, -1, 0, 60, 50], clip: [0, 0, 10, 15] },
 ]}, { size: [50, 50], ops: [{ op: 'rect', box: [0, 0, 50, 50], fill: '#eeeeee' }] }] }, media);
 
 // שגיאות — אותה הודעה בשתי השפות

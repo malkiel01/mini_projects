@@ -2483,6 +2483,29 @@ if (trim((string)shell_exec('command -v pdftoppm'))) {
 }
 check('בלי שקיפות בעצירות — אין SMask (הפלט של מעברי צבע קיימים לא משתנה)', !str_contains($c2Pdf, 'SMask') && !str_contains($c2Pdf, '/Form'));
 
+// pdf-core: transform לתמונה (בקשת וקטורי) — היפוך אופקי וסיבוב 90°; בלי transform — הפלט כמו קודם
+$tiIm = imagecreatetruecolor(40, 20);
+imagefilledrectangle($tiIm, 0, 0, 19, 19, imagecolorallocate($tiIm, 255, 0, 0));
+imagefilledrectangle($tiIm, 20, 0, 39, 19, imagecolorallocate($tiIm, 0, 0, 255));
+ob_start(); imagepng($tiIm); $tiPng = ob_get_clean();
+$tiRes = fn($k) => $k === 'media/ti.png' ? $tiPng : null;
+$tiPdf = pdf_draw(['pages' => [['size' => [100, 100], 'ops' => [
+    ['op' => 'image', 'src' => 'media/ti.png', 'box' => [10, 10, 40, 20], 'transform' => [-1, 0, 0, 1, 100, 0]],   // היפוך סביב x = 50 → 50..90
+    ['op' => 'image', 'src' => 'media/ti.png', 'box' => [0, 0, 40, 20], 'transform' => [0, 1, -1, 0, 60, 50], 'clip' => [0, 0, 40, 20]],   // 90° → x 40..60, y 50..90
+]]]], $tiRes);
+$tiRaw = preg_replace_callback('/stream\n(.*?)\nendstream/s', fn($m) => 'stream ' . (@gzuncompress($m[1]) ?: '') . ' endstream', $tiPdf);
+check('image עם transform: cm של הרשימה, ובתוכו box הפוך (y למטה) ו-clip בקואורדינטות הרשימה', str_contains($tiRaw, "-1 0 0 -1 100 100 cm\n40 0 0 -20 10 30 cm /Im1 Do")
+    && str_contains($tiRaw, "0 -1 -1 0 60 50 cm\n0 0 40 20 re W n\n40 0 0 -20 0 20 cm /Im1 Do"), substr($tiRaw, strpos($tiRaw, ' cm') ?: 0, 160));
+if (trim((string)shell_exec('command -v pdftoppm'))) {
+    file_put_contents("$tmp/ti.pdf", $tiPdf);
+    shell_exec('pdftoppm -r 72 -png ' . escapeshellarg("$tmp/ti.pdf") . ' ' . escapeshellarg("$tmp/ti") . ' 2>&1');
+    $tiR = @imagecreatefrompng(glob("$tmp/ti*.png")[0] ?? '');
+    $col = fn($x, $y) => $tiR ? (fn($v) => ($v >> 16 & 255) > 200 && ($v & 255) < 60 ? 'אדום' : (($v & 255) > 200 && ($v >> 16 & 255) < 60 ? 'כחול' : 'אחר'))(imagecolorat($tiR, $x, $y)) : '?';
+    $got = [$col(60, 20), $col(80, 20), $col(50, 60), $col(50, 80)];
+    check('image עם transform, כפי שמוצג: ההיפוך מחליף צדדים (כחול משמאל), והסיבוב מעמיד את התמונה (אדום למעלה)', $got === ['כחול', 'אדום', 'אדום', 'כחול'], json_encode($got, JSON_UNESCAPED_UNICODE));
+    array_map('unlink', glob("$tmp/ti*") ?: []);
+}
+
 array_map('unlink', glob("$tmp/media/mbe/ids/*") ?: []);
 @rmdir("$tmp/media/mbe/ids");
 array_map('unlink', glob("$tmp/media/mbe/*") ?: []);

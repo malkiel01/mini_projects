@@ -37,7 +37,7 @@ $pdf = pdf_draw($list, fn(string $key) => file_get_contents(...)); // $key — �
 { "title": "…", "pages": [ { "size": [w, h], "bleed": 9, "ops": [
     { "op": "glyphs", "font": "media/….ttf", "size": 12, "color": "#000000", "x": 0, "y": 0,
       "glyphs": [[gid, dx, dy, adv]], "text": "…" },
-    { "op": "image", "src": "media/….png", "box": [x, y, w, h], "clip": [x, y, w, h], "opacity": 1 },
+    { "op": "image", "src": "media/….png", "box": [x, y, w, h], "clip": [x, y, w, h], "opacity": 1, "transform": [a, b, c, d, e, f] },
     { "op": "rect", "box": [x, y, w, h], "fill": "#…", "stroke": "#…", "width": 1 },
     { "op": "line", "from": [x, y], "to": [x, y], "color": "#…", "width": 1 },
     { "op": "path", "d": "M10 10 L90 10 C95 10 100 15 100 20 Q 50 50 10 10 Z", "transform": [a, b, c, d, e, f],
@@ -54,6 +54,8 @@ $pdf = pdf_draw($list, fn(string $key) => file_get_contents(...)); // $key — �
 - **`path`** (שלב 1, #971)**:** `d` — פקודות **מוחלטות** בלבד, `M L C Q Z` (כמו בפורמט). `Q` הופך ל-`C`; זוגות נוספים אחרי
   פקודה — חזרה עליה (אחרי `M` — `L`). `transform` — מטריצה של SVG על הנקודות, ביחידות הרשימה (y למטה); העובי והמקפים
   עוברים בה, כמו ב-SVG. לפחות `fill` או `stroke`. `cap`: `butt` / `round` / `square`; `join`: `miter` / `round` / `bevel`.
+- **`image` עם `transform`** (בקשת וקטורי)**:** מטריצה של SVG ביחידות הרשימה, כמו ב-`path` — חלה על `box` ועל `clip`
+  (סיבוב והיפוך של התמונה). בלי `transform` — הפלט כמו קודם.
 - **שקיפות:** `fillOpacity` / `strokeOpacity` (ב-`path`) ו-`opacity` (ב-`image`), 0–1 — דרך ExtGState. בלי שקיפות אין
   ExtGState במשאבים, כך שהפלט של מי שלא משתמש בה לא משתנה.
 - **`clip` … `restore`** (שלב 2)**:** הפעולות שאחרי `clip` מוגבלות לנתיב שלו עד `restore`; מקונן (חיתוך בתוך חיתוך —

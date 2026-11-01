@@ -19,7 +19,7 @@
  *
  * path: d — פקודות מוחלטות בלבד, M L C Q Z (כמו בפורמט; Q הופך ל-C), זוגות נוספים אחרי פקודה — חזרה עליה (אחרי M — L).
  * transform — מטריצה של SVG על הנקודות, ביחידות הרשימה (y למטה); עובי הקו והמקפים עוברים בה כמו ב-SVG. לפחות fill או stroke.
- * image: גם "opacity" (0–1).
+ * image: גם "opacity" (0–1), ו-"transform" (כמו ב-path) — חל על box ועל clip: סיבוב והיפוך של התמונה.
  *
  * שלב 2:
  *       { "op": "clip", "d": "M…", "fillRule": "nonzero" | "evenodd", "transform": [a, b, c, d, e, f] },
@@ -208,12 +208,16 @@ function pdf_draw(array $list, callable $resolve): string
                     if (!$im) throw new InvalidArgumentException("תמונה בפורמט שלא נתמך: $where");
                     [$x, $y, $bw, $bh] = $box($op['box'] ?? null, $where);
                     $c .= "q\n";
+                    // transform (כמו ב-path): cm אחד, ו-box / clip בקואורדינטות הרשימה בתוכו — סיבוב והיפוך של התמונה
+                    if (isset($op['transform'])) $c .= implode(' ', array_map($n, $matrix($op['transform'], $where, $b, $H))) . " cm\n";
                     if (isset($op['opacity']) && ($o = $unit($op['opacity'], $where)) < 1) $c .= $w->alpha($o, $o) . " gs\n";
                     if (isset($op['clip'])) {
                         [$cx, $cy, $cw, $ch] = $box($op['clip'], $where);
-                        $c .= $n($X($cx)) . ' ' . $n($Y($cy + $ch)) . ' ' . $n($cw) . ' ' . $n($ch) . " re W n\n";
+                        $c .= isset($op['transform']) ? $n($cx) . ' ' . $n($cy) . ' ' . $n($cw) . ' ' . $n($ch) . " re W n\n"
+                            : $n($X($cx)) . ' ' . $n($Y($cy + $ch)) . ' ' . $n($cw) . ' ' . $n($ch) . " re W n\n";
                     }
-                    $c .= $n($bw) . ' 0 0 ' . $n($bh) . ' ' . $n($X($x)) . ' ' . $n($Y($y + $bh)) . " cm {$im['name']} Do\nQ\n";
+                    $c .= isset($op['transform']) ? $n($bw) . ' 0 0 ' . $n(-$bh) . ' ' . $n($x) . ' ' . $n($y + $bh) . " cm {$im['name']} Do\nQ\n"
+                        : $n($bw) . ' 0 0 ' . $n($bh) . ' ' . $n($X($x)) . ' ' . $n($Y($y + $bh)) . " cm {$im['name']} Do\nQ\n";
                     break;
                 case 'rect':
                     [$x, $y, $bw, $bh] = $box($op['box'] ?? null, $where);
