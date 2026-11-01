@@ -11,7 +11,7 @@
 import { pagesOf, contentBox, setPageCount } from './pages.js';
 
 export const DEFAULT_STYLE = { name: 'גוף', font: 'Noto Serif Hebrew', size: 12, leading: 18, align: 'justify', weight: 400,
-  spaceBefore: 0, spaceAfter: 6, indent: 0 };
+  spaceBefore: 0, spaceAfter: 6, indent: 0, color: '#000000' };
 export const DEFAULT_STYLES = {
   body: DEFAULT_STYLE,
   h1: { ...DEFAULT_STYLE, name: 'כותרת 1', size: 20, leading: 26, align: 'center', weight: 700, spaceBefore: 12, spaceAfter: 10 },

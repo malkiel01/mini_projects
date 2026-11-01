@@ -249,5 +249,6 @@ function ls_style_check($styles, callable $bad): void
         if (array_key_exists('weight', $b) && !$num($b['weight'], 100, 900)) throw $bad('style');
         if (array_key_exists('spaceBefore', $b) && !$num($b['spaceBefore'], 0, 200)) throw $bad('style');
         if (array_key_exists('indent', $b) && !$num($b['indent'], 0, 500)) throw $bad('style');
+        if (array_key_exists('color', $b) && (!is_string($b['color']) || !preg_match('/^#[0-9a-fA-F]{6}$/', $b['color']))) throw $bad('style');
     }
 }
