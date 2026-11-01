@@ -926,6 +926,32 @@ async function main() {
   check('קריאה איטית: הטפטפת דוגמת', true);
   await page.evaluate(() => { const r = __rs.renderer; Object.assign(r, r._fast); delete r._fast; });
 
+  // ידיות של ui-core (שלב 5): ידית הסיבוב מעל המסגרת — גרירה ימינה מסובבת; Esc מבטל
+  await openEd(page);
+  await page.waitForFunction(() => window.__rs?.doc);
+  await page.evaluate(() => __rs.setView({ zoom: 1, x: 20, y: 20 }));
+  await page.keyboard.press('m');
+  await drag([200, 150], [300, 250]);
+  await page.keyboard.press('Alt+Backspace');
+  await page.keyboard.press('v');
+  await drag([250, 200], [250, 200]);   // מתחיל צף בלי לזוז
+  await page.waitForFunction(() => document.querySelector('.uic-handles')?.style.display !== 'none', null, { timeout: 3000 }).catch(() => {});
+  const rh = await page.evaluate(() => {
+    const c = document.querySelector('.uic-rotate'), st = document.querySelector('#stage').getBoundingClientRect();
+    return c ? [st.left + +c.getAttribute('cx'), st.top + +c.getAttribute('cy')] : null;
+  });
+  check('ידיות ui-core: המסגרת וידית הסיבוב מעל התוכן הצף', !!rh && await page.isVisible('.uic-handles .uic-corner'), JSON.stringify(rh));
+  if (rh) {
+    await page.mouse.move(rh[0], rh[1]);
+    await page.mouse.down();
+    await page.mouse.move(rh[0] + 60, rh[1] + 40, { steps: 6 });
+    await page.mouse.move(rh[0] + 150, rh[1] + 110, { steps: 6 });
+    await page.mouse.up();
+    const ang = await page.evaluate(() => __rs.doc._float?.t.angle ?? null);
+    check('גרירת ידית הסיבוב — התוכן מסתובב', ang !== null && Math.abs(ang) > 0.3, String(ang));
+  }
+  await page.keyboard.press('Escape');
+
   // ---- חיתוך ----
   await openEd(page);
   await page.waitForFunction(() => window.__rs?.doc);

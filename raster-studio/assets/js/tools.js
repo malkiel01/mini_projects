@@ -7,6 +7,8 @@ import { colorRange, dabsAlong, floodFill, hexToRgb, rgbToHex } from './engine/f
 import { combine, isEmptyShape, maskShape, selectionBox } from './engine/selection.js';
 import * as XF from './engine/transform.js';
 import { pathFromSelection, translatePath } from './engine/vmask.js';
+import { docToScreen } from './engine/view.js';
+import { handles } from './ui-core/handles.js';
 import { FONTS, LINE_HEIGHT, cssFont, renderText, textDirection } from './engine/text.js';
 import { keyOf } from './ui-core/keys.js';
 import { $ } from './ui-core/dom.js';
@@ -256,15 +258,40 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
   // ---- הזזה ושינוי צורה ----
   const selectionBoxOf = d => selectionBox(d.selection, d.width, d.height);
   const fl = () => doc()?._float;
+  /** נקודה במסמך → במסך (יחסית לבמה) — הידיות של ui-core עובדות במסך */
+  const scr = p => docToScreen(view(), p[0], p[1]);
 
-  function showBox() {
+  // הידיות (ui-core, שלב 5): פינה — יחס נשמר (Shift משחרר), צד — ציר אחד, Alt — מהמרכז, ידית סיבוב מעל (Shift — 15°,
+  // בלי — נצמד ל-45°). גרירה בגוף התוכן, וסיבוב מבחוץ ליד פינה (כמו בפוטושופ) — נשארים כאן.
+  const hdXf = overlay && handles(overlay.host, {
+    view, status: () => {},
+    onPreview: t => { renderer.setFloatTransform(doc(), t); showInfo(); draw(); },
+    onCommit: () => showInfo(),
+    onCancel: t0 => { renderer.setFloatTransform(doc(), t0); showInfo(); draw(); },
+  });
+  // חיתוך: מלבן ישר, חופשי (Shift — יחס), לפיקסלים שלמים, מותר מחוץ לקנבס, מתנרמל. הזזה וציור חדש — כאן
+  const hdCrop = overlay && handles(overlay.host, {
+    mode: 'rect', round: true, view, status: () => {},
+    onPreview: r => { cropRect = { x0: r.x, y0: r.y, x1: r.x + r.w, y1: r.y + r.h }; showCrop(); },
+    onCancel: r => { cropRect = { x0: r.x, y0: r.y, x1: r.x + r.w, y1: r.y + r.h }; showCrop(); },
+  });
+  overlay?.onDraw(() => { hdXf.update(); hdCrop.update(); });
+
+  function showInfo() {
     const f = fl();
-    overlay.box(f ? XF.corners(f.t, f.w, f.h) : null, f ? XF.HANDLES.map(h => XF.handlePos(f.t, f.w, f.h, h)) : null);
     const info = $('#xf-info');
     if (info) {
       info.textContent = f ? `${Math.round(Math.abs(f.t.sx) * 100)}% × ${Math.round(Math.abs(f.t.sy) * 100)}% · ${Math.round(f.t.angle * 180 / Math.PI)}°` : '';
     }
     for (const b of opts.querySelectorAll('[data-xf]')) b.disabled = !f;
+  }
+
+  function showBox() {
+    const f = fl();
+    overlay.box(!!f);
+    // בזמן גרירה של ידית — הידיות כבר מעודכנות (show היה מתחיל אותן מחדש)
+    if (f) { if (!hdXf.dragging) hdXf.show(f.t, f.w, f.h); } else hdXf.hide();
+    showInfo();
   }
 
   /**
@@ -347,14 +374,13 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
   }
 
   // ---- חיתוך ----
-  const CROP_HANDLES = [[-1, -1], [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0]];
   const norm = r => ({ x0: Math.min(r.x0, r.x1), y0: Math.min(r.y0, r.y1), x1: Math.max(r.x0, r.x1), y1: Math.max(r.y0, r.y1) });
-  const cropHandlePos = (r, [hx, hy]) => [hx < 0 ? r.x0 : hx > 0 ? r.x1 : (r.x0 + r.x1) / 2, hy < 0 ? r.y0 : hy > 0 ? r.y1 : (r.y0 + r.y1) / 2];
 
   function showCrop() {
     const r = cropRect;
     overlay.crop(r);
-    overlay.box(r ? [[r.x0, r.y0], [r.x1, r.y0], [r.x1, r.y1], [r.x0, r.y1]] : null, r ? CROP_HANDLES.map(h => cropHandlePos(r, h)) : null);
+    overlay.box(!!r);
+    if (r) { if (!hdCrop.dragging) hdCrop.show({ x: r.x0, y: r.y0, w: r.x1 - r.x0, h: r.y1 - r.y0 }); } else hdCrop.hide();
     const info = $('#crop-info');
     if (info) info.textContent = r ? `${r.x1 - r.x0} × ${r.y1 - r.y0}` : '';
     for (const b of opts.querySelectorAll('[data-crop]')) b.disabled = !r;
@@ -364,26 +390,19 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
     const tol = (e.pointerType === 'touch' ? 22 : 10) / view().zoom;
     const r = cropRect;
     if (r) {
-      for (const h of CROP_HANDLES) {
-        const q = cropHandlePos(r, h);
-        if (Math.hypot(q[0] - pt[0], q[1] - pt[1]) <= tol) { cropDrag = { kind: 'handle', handle: h, r0: r, start: pt }; return; }
-      }
+      if (hdCrop.down(e, scr(pt))) { cropDrag = { kind: 'hd' }; return; }
       if (pt[0] > r.x0 && pt[0] < r.x1 && pt[1] > r.y0 && pt[1] < r.y1) { cropDrag = { kind: 'move', r0: r, start: pt }; return; }
     }
     cropDrag = { kind: 'new', start: pt };
   }
 
-  function cropMove(p) {
+  function cropMove(p, e) {
     const g = cropDrag, R = Math.round;
+    if (g.kind === 'hd') { hdCrop.move(e ?? {}, scr(p)); return; }
     if (g.kind === 'new') cropRect = norm({ x0: R(g.start[0]), y0: R(g.start[1]), x1: R(p[0]), y1: R(p[1]) });
     else if (g.kind === 'move') {
       const dx = R(p[0] - g.start[0]), dy = R(p[1] - g.start[1]);
       cropRect = { x0: g.r0.x0 + dx, y0: g.r0.y0 + dy, x1: g.r0.x1 + dx, y1: g.r0.y1 + dy };
-    } else {
-      const [hx, hy] = g.handle, r = { ...g.r0 };
-      if (hx < 0) r.x0 = R(p[0]); if (hx > 0) r.x1 = R(p[0]);
-      if (hy < 0) r.y0 = R(p[1]); if (hy > 0) r.y1 = R(p[1]);
-      cropRect = norm(r);
     }
     showCrop();
   }
@@ -586,6 +605,7 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
       const tol = (e.pointerType === 'touch' ? 22 : 10) / view().zoom;
       const grab = () => {
         const f = fl();
+        if (hdXf.down(e, scr(pt))) { xf = { kind: 'hd' }; return; }
         const h = XF.hit(f.t, f.w, f.h, pt, tol) ?? { kind: 'move' };
         xf = { ...h, t0: f.t, start: pt };
       };
@@ -652,9 +672,10 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
       draw();
       return;
     }
-    if (cropDrag) { const q = points.at(-1); cropMove([q.x, q.y]); return; }
+    if (cropDrag) { const q = points.at(-1); cropMove([q.x, q.y], e); return; }
     if (xf) {
       const q = points.at(-1), p = [q.x, q.y];
+      if (xf.kind === 'hd') { hdXf.move(e ?? {}, scr(p)); return; }
       let t;
       if (xf.kind === 'move') {
         // הזזה בפיקסלים שלמים — התוכן נשאר חד
@@ -711,8 +732,8 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
   function up() {
     if (grabPending) { grabPending.up = true; grabPending = null; return; }
     if (groupMove) { const g = groupMove; groupMove = null; commitGroupMove(g.dx, g.dy, g.layers); return; }
-    if (cropDrag) { cropDrag = null; return; }
-    if (xf) { xf = null; return; }
+    if (cropDrag) { if (cropDrag.kind === 'hd') hdCrop.up(); cropDrag = null; return; }
+    if (xf) { if (xf.kind === 'hd') hdXf.up(); xf = null; return; }
     if (lasso) {
       const shape = lassoShape(), mode = lasso.mode;
       lasso = null;
@@ -735,6 +756,9 @@ export function createTools({ doc, renderer, history, view, onChange, draw, toas
   /** משיכה פתוחה בוטלה (אצבע שנייה → צביטה). */
   function cancel() {
     if (grabPending) { grabPending.cancelled = true; grabPending = null; return; }
+    // אצבע שנייה באמצע גרירת ידית — חוזרים למצב שלפניה, בלי עקבות
+    if (xf?.kind === 'hd') { hdXf.cancel(); xf = null; return; }
+    if (cropDrag?.kind === 'hd') { hdCrop.cancel(); cropDrag = null; return; }
     if (groupMove) { groupMove = null; renderer.setShift(doc(), null); draw(); return; }
     if (lasso) { lasso = null; overlay.preview(null); return; }
     if (!stroke) return;
