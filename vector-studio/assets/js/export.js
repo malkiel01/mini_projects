@@ -9,6 +9,7 @@ import { frameItem } from './text.js';
 import { drawable, hasStroke } from './gradient.js';
 import { markerPaths } from './markers.js';
 
+const fxOf = (item) => (Array.isArray(item?.effects) ? item.effects : []).filter(e => e && ['shadow', 'glow', 'blur'].includes(e.type));
 const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const r = (v) => String(Math.round(v * 1000) / 1000);
 
@@ -20,10 +21,24 @@ const r = (v) => String(Math.round(v * 1000) / 1000);
  * האפליקציה האחרת (הוא כבר מראה אותן כמו שהיא ציירה).
  * מחזיר { surface, layers: [{ layer, opacity, items } | { layer, opacity, image, box }], gaps }.
  */
-export async function prepare(doc, surfaceId, getFont, getImage = null, background = null) {
+/*
+ * אפקטים (effects): ב-SVG — מסנן (filter) וקטורי; ב-PDF — getEffects(item) מצייר אותם לתמונה ({ image, box, replace }),
+ * שנכנסת מתחת לפריט (replace — כשיש blur: התמונה כוללת את הפריט המטושטש, והפריט עצמו לא מצויר). בלי getEffects — בדוח.
+ */
+export async function prepare(doc, surfaceId, getFont, getImage = null, background = null, getEffects = null) {
   const surface = doc.surfaces.find(s => s.id === surfaceId) || doc.surfaces[0];
   const gaps = new Set();
   const conv = async (item) => {
+    const out = await conv1(item);
+    if (out && fxOf(item).length) {
+      if (getEffects) {
+        const fx = await getEffects(item);
+        if (fx) { out.fxImage = fx; gaps.add('effects → תמונה (PDF)'); } else gaps.add('effects — לא נכללו ב-PDF');
+      } else gaps.add('effects — לא נכללו ב-PDF');
+    }
+    return out;
+  };
+  const conv1 = async (item) => {
     if (isGroup(item)) return { ...item, children: await Promise.all((item.children || []).map(conv)) };
     for (const k of ['fill', 'stroke']) {
       const g = item[k]?.gradient;
@@ -37,7 +52,8 @@ export async function prepare(doc, surfaceId, getFont, getImage = null, backgrou
     const marks = item.d && hasStroke(item.stroke) ? markerPaths(item.d, item.stroke) : [];
     if (marks.length) {
       const { width, cap, join, miter, dash, start, end, ...paint } = item.stroke;
-      return { type: 'group', id: item.id + '-g', children: [item, ...marks.map((d, i) => ({ id: `${item.id}-m${i}`, d, fill: paint, ...(item.transform ? { transform: item.transform } : {}) }))] };
+      const { effects, ...plain } = item;   // האפקטים — על הקבוצה (הנתיב והקצוות יחד)
+      return { type: 'group', id: item.id + '-g', ...(effects ? { effects } : {}), children: [plain, ...marks.map((d, i) => ({ id: `${item.id}-m${i}`, d, fill: paint, ...(item.transform ? { transform: item.transform } : {}) }))] };
     }
     if (isImage(item)) {
       const img = getImage ? await getImage(item.src) : null;
@@ -121,10 +137,38 @@ function svgStyle(p, defs) {
   return a.join(' ');
 }
 
+/** effects → <filter>: צללים וזוהר מתחת (מ-SourceAlpha), והפריט מעליהם (מטושטש, אם יש blur). σ = blur / 2. */
+function svgFilter(effects, defs) {
+  const fx = fxOf({ effects });
+  if (!fx.length) return '';
+  const id = 'fx' + (defs.length + 1);
+  const parts = [], merge = [];
+  fx.forEach((e, i) => {
+    if (e.type === 'blur') return;
+    const shadow = e.type === 'shadow';
+    parts.push(`<feGaussianBlur in="SourceAlpha" stdDeviation="${r(Math.max(0, e.blur ?? 0) / 2)}" result="b${i}"/>`,
+      `<feOffset in="b${i}" dx="${r(shadow ? e.dx ?? 0 : 0)}" dy="${r(shadow ? e.dy ?? 0 : 0)}" result="o${i}"/>`,
+      `<feFlood flood-color="${esc(e.color || (shadow ? '#000000' : '#ffd34d'))}" flood-opacity="${r(e.opacity ?? (shadow ? 0.35 : 0.8))}" result="f${i}"/>`,
+      `<feComposite in="f${i}" in2="o${i}" operator="in" result="s${i}"/>`);
+    merge.push(`s${i}`);
+  });
+  const blur = fx.find(e => e.type === 'blur' && (e.radius ?? 0) > 0);
+  if (blur) parts.push(`<feGaussianBlur in="SourceGraphic" stdDeviation="${r(blur.radius / 2)}" result="src"/>`);
+  merge.push(blur ? 'src' : 'SourceGraphic');
+  defs.push(`<filter id="${id}" x="-50%" y="-50%" width="200%" height="200%">${parts.join('')}<feMerge>${merge.map(m => `<feMergeNode in="${m}"/>`).join('')}</feMerge></filter>`);
+  return ` filter="url(#${id})"`;
+}
+
 function svgItem(item, indent, defs) {
   if (item.hidden) return '';
+  const filter = svgFilter(item.effects, defs);
+  if (filter && !isGroup(item)) {
+    // הטרנספורמציה של הפריט — בתוך הקבוצה, כדי שהצל יזוז במרחב של הלוח (כמו בקנבס) ולא יסתובב איתו
+    const { effects, ...plain } = item;
+    return `${indent}<g id="${esc(item.id)}-fx"${filter}>\n${svgItem(plain, indent + '  ', defs)}${indent}</g>\n`;
+  }
   if (isGroup(item)) {
-    return `${indent}<g id="${esc(item.id)}">\n${(item.children || []).map(c => svgItem(c, indent + '  ', defs)).join('')}${indent}</g>\n`;
+    return `${indent}<g id="${esc(item.id)}"${filter}>\n${(item.children || []).map(c => svgItem(c, indent + '  ', defs)).join('')}${indent}</g>\n`;
   }
   const t = item.transform && !isIdentity(item.transform) ? ` transform="matrix(${item.transform.map(r).join(' ')})"` : '';
   if (isImage(item)) {
@@ -233,6 +277,11 @@ export function toPDF(pages) {
     const masks = [];
     const emit = (item, alpha) => {
       if (item.hidden) return;
+      if (item.fxImage) {   // האפקטים כתמונה, מתחת לפריט
+        const fx = item.fxImage;
+        image({ image: fx.image, box: fx.box, opacity: alpha });
+        if (fx.replace) return;   // blur: הפריט המטושטש כבר בתמונה
+      }
       if (isGroup(item)) { for (const c of item.children || []) emit(c, alpha); return; }
       if (isImage(item)) {
         if (item.img) image({ image: item.img, box: item.box, opacity: alpha * (item.opacity ?? 1), transform: item.transform });

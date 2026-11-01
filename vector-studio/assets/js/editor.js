@@ -4,14 +4,14 @@
 // מגע: אצבע על רקע — הזזת התצוגה; שתיים — זום וגלילה. עכבר: גרירה על רקע — בחירה במלבן; גלגלת — גלילה,
 // ועם Ctrl — זום. רווח + גרירה — הזזת התצוגה.
 
-import { scaleAt, translate, rotateAt } from './geometry/matrix.js';
+import { scaleAt, translate, rotateAt, multiply } from './geometry/matrix.js';
 import { shapeFromDrag, DEFAULTS } from './geometry/shapes.js';
 import {
   SIZES, DEFAULT_STYLE, newDocument, nextId, layout, objects, findPath, selectionBox, applyMatrix, setShape, clone,
   leaves, cloneItem, ids, worldBox, pathMatrix,
 } from './model.js';
 import { group, ungroup, reorder, align, distribute, addLayer, removeLayer, moveLayer, moveToLayer } from './arrange.js';
-import { render, hitTest, inRect, readColors, extraPages } from './render.js';
+import { render, hitTest, inRect, readColors, extraPages, drawWithEffects, fxList } from './render.js';
 import { handles } from './ui-core/handles.js';
 import { identity, docMatrix } from './ui-core/transform.js';
 import { renderProps, renderLayers } from './props.js';
@@ -1463,6 +1463,33 @@ async function bitmapExport(bmp) {
   return exported.get(bmp);
 }
 
+/**
+ * האפקטים של פריט (במרחב הלוח) כתמונה ל-PDF: { image, box, replace }. בלי blur — רק הצללים / הזוהר (הפריט נשאר וקטורי);
+ * עם blur — גם הפריט, מטושטש (replace). עד 3 פיקסלים ל-pt, ולא יותר מ-2400 לצלע.
+ */
+async function exportEffects(item) {
+  const fx = fxList(item.effects);
+  const b = fx.length ? worldBox(item, [0, 0]) : null;
+  if (!b) return null;
+  const m = Math.max(2, ...fx.map(e => Math.max(0, e.blur ?? e.radius ?? 0) * 1.5 + Math.max(Math.abs(e.dx ?? 0), Math.abs(e.dy ?? 0))));
+  const box = [b[0] - m, b[1] - m, b[2] + 2 * m, b[3] + 2 * m];
+  const k = Math.min(3, 2400 / Math.max(box[2], box[3], 1));
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.ceil(box[2] * k)); c.height = Math.max(1, Math.ceil(box[3] * k));
+  const ctx = c.getContext('2d');
+  const replace = fx.some(e => e.type === 'blur' && (e.radius ?? 0) > 0);
+  const base = [k, 0, 0, k, -box[0] * k, -box[1] * k];
+  await S.mediaReady;
+  for (const path of leaves(item)) {
+    if (path.hidden) continue;
+    const t = multiply(base, pathMatrix(path, [0, 0]));
+    ctx.setTransform(t[0], t[1], t[2], t[3], t[4], t[5]);
+    const own = path === item ? item.effects : [...fxList(item.effects), ...fxList(path.effects)];
+    drawWithEffects(ctx, path, S.media, own, replace ? null : 'effects');
+  }
+  return { image: await encodeBitmap(await createImageBitmap(c)), box, replace };
+}
+
 async function encodeBitmap(bmp) {
   const k = Math.min(1, 4096 / Math.max(bmp.width, bmp.height));
   const w = Math.max(1, Math.round(bmp.width * k)), h = Math.max(1, Math.round(bmp.height * k));
@@ -1492,7 +1519,7 @@ async function currentMbe() {
     doc: S.doc, base, getFont,
     fontBytes: async (file) => new Uint8Array(await (await fetch('assets/fonts/' + file)).arrayBuffer()),
     preview: (surface, max) => pngOf(surface, Math.min(max / surface.size[0], max / surface.size[1], 4), true),
-    getImage: exportImage, getBackground: exportPage, extraPages: await extraPdfPages(), sourcePdf: S.sourcePdf || null,
+    getImage: exportImage, getBackground: exportPage, getEffects: exportEffects, extraPages: await extraPdfPages(), sourcePdf: S.sourcePdf || null,
     mediaBytes: (src) => library.media(src),
   });
 }
@@ -1541,12 +1568,12 @@ async function doExport(kind) {
       gaps = r.gaps;
       download(new Blob([r.bytes], { type: 'application/vnd.mbe+zip' }), fileName('mbe'));
     } else if (kind === 'svg') {
-      const prep = await prepare(S.doc, surface.id, getFont, exportImage, await exportPage(surface.id));
+      const prep = await prepare(S.doc, surface.id, getFont, exportImage, await exportPage(surface.id), exportEffects);
       gaps = prep.gaps;
       download(new Blob([toSVG(prep)], { type: 'image/svg+xml' }), fileName('svg', surface));
     } else if (kind === 'pdf') {
       const pages = [];
-      for (const s of S.doc.surfaces) { const p = await prepare(S.doc, s.id, getFont, exportImage, await exportPage(s.id)); pages.push(p); gaps.push(...p.gaps); }
+      for (const s of S.doc.surfaces) { const p = await prepare(S.doc, s.id, getFont, exportImage, await exportPage(s.id), exportEffects); pages.push(p); gaps.push(...p.gaps); }
       pages.push(...await extraPdfPages());
       download(new Blob([toPDF(pages)], { type: 'application/pdf' }), fileName('pdf'));
     } else {
