@@ -61,10 +61,11 @@ export function createOverlay(canvas, { doc, view }) {
       // קווי הרשת בין נקודות השליטה, ועיגול לכל נקודה (בגודל קבוע במסך)
       const v = view();
       const S = ([x, y]) => [(v.x + x * v.zoom) * dpr, (v.y + y * v.zoom) * dpr];
-      const { pts, cols } = grid, rows = pts.length / cols, at = (i, j) => S(pts[j * cols + i]);
+      // cols = 0 — נקודות בלי קווים (סיכות של Puppet)
+      const { pts, cols } = grid, rows = cols ? pts.length / cols : 0, at = (i, j) => S(pts[j * cols + i]);
       ctx.setLineDash([]);
       ctx.beginPath();
-      if (cols === 2) { [at(0, 0), at(1, 0), at(1, 1), at(0, 1)].forEach((p, i) => (i ? ctx.lineTo(...p) : ctx.moveTo(...p))); ctx.closePath(); }
+      if (!cols) { /* בלי קווים */ } else if (cols === 2) { [at(0, 0), at(1, 0), at(1, 1), at(0, 1)].forEach((p, i) => (i ? ctx.lineTo(...p) : ctx.moveTo(...p))); ctx.closePath(); }
       else {
         for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
           if (i < cols - 1) { ctx.moveTo(...at(i, j)); ctx.lineTo(...at(i + 1, j)); }
@@ -108,7 +109,7 @@ export function createOverlay(canvas, { doc, view }) {
     box(on) { box = !!on; draw(); },
     /** אזור חיתוך — מחוץ לו מוחשך (או null) */
     crop(r) { crop = r; draw(); },
-    /** נקודות השליטה של עיוות (או null): pts במסמך, cols — 2 (פינות, פרספקטיבה) או 4 (Warp) */
+    /** נקודות השליטה של עיוות (או null): pts במסמך, cols — 2 (פינות, פרספקטיבה), 4 (Warp) או 0 (סיכות, בלי קווים) */
     grid(pts, cols = 2) { grid = pts ? { pts, cols } : null; draw(); },
     /** נקודת המקור של חותמת השכפול (או null); r — רדיוס המכחול בפיקסלים של המסמך */
     mark(p, r = 0) { mark = p ? { p, r } : null; draw(); },

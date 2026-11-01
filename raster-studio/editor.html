@@ -182,10 +182,16 @@
         </div>
         <div class="opt-btns xf-opts" data-for="move">
           <span class="xf-modes" role="group" aria-label="סוג שינוי הצורה">
-            <button class="btn sm ghost" type="button" data-xfmode="free" aria-pressed="true" disabled title="ידיות: גודל וסיבוב">⬚ חופשי</button>
-            <button class="btn sm ghost" type="button" data-xfmode="distort" aria-pressed="false" disabled title="כל פינה זזה לבד — פרספקטיבה">◇ פינות</button>
-            <button class="btn sm ghost" type="button" data-xfmode="warp" aria-pressed="false" disabled title="רשת של 16 נקודות — כיפוף">▦ Warp</button>
-            <button class="btn sm ghost" type="button" data-xfmode="liquify" aria-pressed="false" disabled title="מכחול שמורח את התוכן (Alt — שחזור)">〰️ Liquify</button>
+            <button class="btn sm ghost xf-mode" type="button" data-xfmode="free" aria-pressed="true" disabled title="חופשי — ידיות: גודל וסיבוב" aria-label="חופשי">⬚</button>
+            <button class="btn sm ghost xf-mode" type="button" data-xfmode="distort" aria-pressed="false" disabled title="פינות — כל פינה זזה לבד — פרספקטיבה" aria-label="פינות">◇</button>
+            <button class="btn sm ghost xf-mode" type="button" data-xfmode="warp" aria-pressed="false" disabled title="Warp — רשת של 16 נקודות — כיפוף" aria-label="Warp">▦</button>
+            <button class="btn sm ghost xf-mode" type="button" data-xfmode="liquify" aria-pressed="false" disabled title="Liquify — מכחול שמורח את התוכן (Alt — שחזור)" aria-label="Liquify">〰️</button>
+            <button class="btn sm ghost xf-mode" type="button" data-xfmode="puppet" aria-pressed="false" disabled title="Puppet — סיכות: הקשה מוסיפה, גרירה מזיזה — והשאר מתכופף סביבן" aria-label="Puppet">📌</button>
+            <button class="btn sm ghost xf-mode" type="button" data-xfmode="lens" aria-pressed="false" disabled title="עדשה — תיקון עדשה: חבית ↔ כרית" aria-label="עדשה">🔍</button>
+          </span>
+          <span class="liq-opts" id="lens-opts" hidden>
+            <label class="opt"><span>חבית ↔ כרית <output for="opt-lens"></output></span>
+              <input id="opt-lens" type="range" min="-100" max="100" step="1"></label>
           </span>
           <span class="liq-opts" id="liq-opts" hidden>
             <label class="opt"><span>גודל <output for="opt-liq-size"></output></span>
@@ -255,7 +261,7 @@
 
   <footer class="bar">
     <button class="icon-btn" id="open-btn" type="button" aria-label="הוספת תמונה כשכבה" disabled>🖼️</button>
-    <input type="file" id="file" accept="image/png,image/jpeg,image/webp" hidden>
+    <input type="file" id="file" accept="image/png,image/jpeg,image/webp,image/avif,image/heic,image/heif,.heic,.heif,.avif" hidden>
     <button class="btn ghost layers-btn" id="layers-btn" type="button" aria-controls="layers" aria-expanded="false" data-layer-count="1" aria-label="שכבות" disabled><span class="lbl">שכבות</span></button>
     <span class="grow hint one" id="hint" aria-live="polite"></span>
     <div class="zoom" role="group" aria-label="זום">
@@ -278,6 +284,7 @@
           <button type="button" class="tile" data-export="png"><span class="tile-ic">🖼️</span><b>PNG</b><small>משוטחת, עם שקיפות</small></button>
           <button type="button" class="tile" data-export="jpg"><span class="tile-ic">📷</span><b>JPG</b><small>משוטחת, קטנה, רקע לבן</small></button>
           <button type="button" class="tile" data-export="webp"><span class="tile-ic">🌐</span><b>WebP</b><small>משוטחת, קטנה, עם שקיפות — לאתרים</small></button>
+          <button type="button" class="tile" data-export="avif"><span class="tile-ic">🗜️</span><b>AVIF</b><small>משוטחת, הכי קטנה, עם שקיפות</small></button>
           <button type="button" class="tile" data-export="tif"><span class="tile-ic">🖨️</span><b>TIFF</b><small>משוטחת, בלי דחיסה — לדפוס</small></button>
           <button type="button" class="tile" data-export="psd"><span class="tile-ic">🎨</span><b>PSD</b><small>עם השכבות והקבוצות — פוטושופ</small></button>
           <button type="button" class="tile" data-export="ora"><span class="tile-ic">🗂️</span><b>ORA</b><small>עם השכבות — GIMP, Krita</small></button>
