@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { mul, transformItems, reId, placeDrawing, moveDrawing, isDrawing, symbolRefs, imageRefs, gapsOf, drawingToDoc, pruneSymbols } from '../assets/js/vector.js';
 import { create, save, open, PREVIEW } from '../assets/js/mbe/mbe.js';
 import { allItems, frameAt, drawingsOnPage } from '../assets/js/frames.js';
-import { drawList } from '../assets/js/pdf.js';
+import { drawList, drawingSegments, rasterKey } from '../assets/js/pdf.js';
 
 const apply = (m, [x, y]) => [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
 let n = 0;
@@ -61,15 +61,39 @@ test('הזזה ושינוי גודל של ציור מוצב — הנתיבים �
   assert.ok(isDrawing(moved) && !isDrawing({ type: 'vector', paths: [] }));
 });
 
-test('בחירה ו-PDF: ציור נבחר בהקשה; תמונות "מתחת" נכנסות ראשונות ברשימה', () => {
-  const { layer } = placeDrawing(drawing(), [0, 0, 200, 100], fresh);
-  const model = { layout: { facing: false, margins: { top: 0, bottom: 0, inside: 0, outside: 0 } },
+test('בחירה ו-PDF: ציור נבחר בהקשה; נתיבים — path של pdf-core, ומה שעוד לא (טקסט, תמונה) — קטע-תמונה במקומו', () => {
+  const { layer, symbols } = placeDrawing(drawing(), [0, 0, 200, 100], fresh);
+  const model = { layout: { facing: false, margins: { top: 0, bottom: 0, inside: 0, outside: 0 } }, symbols,
     surfaces: [{ id: 'p', type: 'page', size: [400, 600], master: null, layers: [layer] }], flows: {} };
   assert.equal(allItems(model).length, 1);
   assert.equal(drawingsOnPage(model, 0).length, 1);
   assert.equal(frameAt(model, 0, 10, 10)?.id, layer.id);
-  const list = drawList(model, null, [], { under: new Map([[0, [{ src: 'media/' + 'b'.repeat(64) + '.png', box: [0, 0, 200, 100] }]]]) });
-  assert.deepEqual(list.pages[0].ops[0], { op: 'image', src: 'media/' + 'b'.repeat(64) + '.png', box: [0, 0, 200, 100] });
+  const segs = drawingSegments(layer, symbols);
+  assert.equal(segs.length, 2);
+  assert.deepEqual(segs[0].ops, [{ op: 'path', d: 'M0 0 L200 100', transform: [1, 0, 0, 1, 0, 0], fill: '#ff0000' }]);
+  assert.deepEqual(segs[1].raster.map(x => x.type), ['text', 'image']);
+  const src = 'media/' + 'b'.repeat(64) + '.png';
+  const list = drawList(model, null, [], { rasters: new Map([[rasterKey(layer.id, 1), { src, box: [0, 0, 200, 100] }]]) });
+  assert.deepEqual(list.pages[0].ops.map(o => o.op), ['path', 'image']);
+  assert.deepEqual(list.pages[0].ops[1], { op: 'image', src, box: [0, 0, 200, 100] });
+});
+
+test('ציור ל-PDF: סמל מקונן עם מטריצה מורכבת, שקיפות, קו; מעבר צבע, מסכה וקשת — כתמונה, בסדר המקורי', () => {
+  const syms = { s: { paths: [{ id: 'q', d: 'M0 0 L10 0 L10 10 Z', transform: [2, 0, 0, 2, 0, 0], fill: { color: '#00FF00', opacity: 0.5 } }] } };
+  const layer = { id: 'D', type: 'vector', box: [0, 0, 100, 100], paths: [
+    { id: 'a', type: 'use', symbol: 's', transform: [1, 0, 0, 1, 5, 7] },
+    { id: 'b', d: 'M0 0 L5 5', stroke: { color: '#000000', width: 2, cap: 'round', dash: [3, 1] }, opacity: 0.5 },
+    { id: 'c', d: 'M0 0 L5 5 Z', fill: { gradient: { type: 'linear', from: [0, 0], to: [1, 1], stops: [{ at: 0, color: '#000000' }] } } },
+    { id: 'g', type: 'group', clip: true, children: [{ id: 'm', d: 'M0 0 L1 1 Z' }, { id: 'n', d: 'M0 0 L1 1 Z', fill: { color: '#111111' } }] },
+    { id: 'r', d: 'm0 0 l5 5', fill: { color: '#111111' } },
+    { id: 'e', d: 'M0 0 L1 1', fill: { color: '#222222' } },
+    { id: 'z', d: 'M0 0 L1 1' }] };
+  const segs = drawingSegments(layer, syms);
+  assert.deepEqual(segs.map(x => x.ops ? 'ops' : 'raster'), ['ops', 'raster', 'ops']);
+  assert.deepEqual(segs[0].ops[0], { op: 'path', d: 'M0 0 L10 0 L10 10 Z', transform: [2, 0, 0, 2, 5, 7], fill: '#00ff00', fillOpacity: 0.5 });
+  assert.deepEqual(segs[0].ops[1], { op: 'path', d: 'M0 0 L5 5', transform: [1, 0, 0, 1, 0, 0], stroke: '#000000', width: 2, strokeOpacity: 0.5, cap: 'round', dash: [3, 1] });
+  assert.deepEqual(segs[1].raster.map(x => x.id), ['c', 'g', 'r']);
+  assert.equal(segs[2].ops.length, 1);   // e; z — בלי מילוי ובלי קו — לא נכנס
 });
 
 test('עזרים: סמלים מקוננים, תמונות בקבוצה, אפקטים', () => {

@@ -14,7 +14,7 @@ import { openIn } from './mbe/handoff.js';
 import { layoutFlows } from './flow.js';
 import { imagePlacement } from './frames.js';
 import { loadFont, fontVariant } from './shaper.js';
-import { drawList } from './pdf.js';
+import { drawList, drawingSegments, rasterKey } from './pdf.js';
 import { toast } from './ui-core/toast.js';
 import { initDialogs, confirm } from './ui-core/dialog.js';
 import { download as saveFile } from './ui-core/files.js';
@@ -791,24 +791,30 @@ async function gzip(str) {
 // ציורים (שכבות vector) ב-PDF: pdf-core עוד לא מצייר נתיבים, לכן כל עמוד עם ציורים — תמונה שקופה ב-300 לאינץ' של האזור
 // שלהם, שעולה לאחסון ונכנסת לרשימה מתחת לטקסט. (בקשה לעורך התמלילים: פעולת path ב-pdf-core.)
 const DRAW_DPI = 300;
-async function drawingImages() {
+/** קטעי הציורים ש-pdf-core עוד לא מצייר (מעבר צבע, מסכה, תמונה, טקסט — pdf.js: drawingSegments) — כתמונה ב-300 לאינץ'
+ *  בגודל מסגרת הציור, שקופה; כל השאר יוצא כנתיבים אמיתיים. */
+async function drawingRasters() {
   const out = new Map();
+  const k = DRAW_DPI / 72;
   for (let i = 0; i < pagesOf(model).length; i++) {
-    const ds = drawingsOnPage(model, i);
-    if (!ds.length) continue;
-    const x0 = Math.min(...ds.map(d => d.box[0])), y0 = Math.min(...ds.map(d => d.box[1]));
-    const x1 = Math.max(...ds.map(d => d.box[0] + d.box[2])), y1 = Math.max(...ds.map(d => d.box[1] + d.box[3]));
-    const k = DRAW_DPI / 72;
-    const c = document.createElement('canvas');
-    c.width = Math.max(1, Math.ceil((x1 - x0) * k)); c.height = Math.max(1, Math.ceil((y1 - y0) * k));
-    const ctx = c.getContext('2d');
-    ctx.scale(k, k); ctx.translate(-x0, -y0);
-    const imgs = new Map();
-    for (const d of ds) for (const src of imageRefs(d.paths)) imgs.set(src, await loadImg(src));
-    for (const d of ds) drawItems(ctx, d.paths, { symbols: model.symbols, image: src => imgs.get(src) || null });
-    const blob = await new Promise(ok => c.toBlob(ok, 'image/png'));
-    const got = await uploadImage(new File([blob], 'drawing.png', { type: 'image/png' }), { raw: true });
-    out.set(i, [{ src: got.src, box: [x0, y0, x1 - x0, y1 - y0] }]);
+    for (const d of drawingsOnPage(model, i)) {
+      const segs = drawingSegments(d, model.symbols || {});
+      for (let n = 0; n < segs.length; n++) {
+        if (!segs[n].raster) continue;
+        const [x0, y0, w, h] = d.box;
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, Math.ceil(w * k)); c.height = Math.max(1, Math.ceil(h * k));
+        const ctx = c.getContext('2d');
+        ctx.scale(k, k); ctx.translate(-x0, -y0);
+        const imgs = new Map();
+        for (const src of imageRefs(segs[n].raster)) imgs.set(src, await loadImg(src));
+        for (const sy of Object.values(model.symbols || {})) for (const src of imageRefs(sy.paths)) if (!imgs.has(src)) imgs.set(src, await loadImg(src));
+        drawItems(ctx, segs[n].raster, { symbols: model.symbols, image: src => imgs.get(src) || null });
+        const blob = await new Promise(ok => c.toBlob(ok, 'image/png'));
+        const got = await uploadImage(new File([blob], 'drawing.png', { type: 'image/png' }), { raw: true });
+        out.set(rasterKey(d.id, n), { src: got.src, box: [x0, y0, w, h] });
+      }
+    }
   }
   return out;
 }
@@ -816,8 +822,8 @@ async function makePdf() {
   await ensureFonts();
   relayout();
   const b = bodyStyle(model);
-  const under = await drawingImages();
-  const list = drawList(model, text, fontsFor(b.font, b.weight), { title: doc.title, under });
+  const rasters = await drawingRasters();
+  const list = drawList(model, text, fontsFor(b.font, b.weight), { title: doc.title, rasters });
   let res;
   try {
     res = await fetch('api.php?action=pdf', { method: 'POST', credentials: 'same-origin',
