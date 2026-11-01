@@ -86,14 +86,15 @@ export default async function (t) {
     await p.keyboard.press('End');
     await p.keyboard.type(' עריכה ראשונה');
     await p.keyboard.press('Control+s');
-    await p.waitForTimeout(500);
     const texts = async () => {
         const vs = (await t.api(p, 'my_versions', { doc })).versions;
         const out = [];
         for (const v of vs) out.push((await t.api(p, 'my_version', { doc, id: v.id })).json.content.map(b => (b.content || []).map(x => x.text).join('')).join('/'));
         return out;
     };
-    const before = await texts();
+    // עד שהשמירה נרשמה כגרסה (ב-CI חצי שנייה לא תמיד מספיקה — ואז "לפני" חסר את העריכה, וההשוואה נכשלת)
+    let before = await texts();
+    for (let i = 0; i < 50 && !before.includes('מקור עריכה ראשונה'); i++) { await p.waitForTimeout(100); before = await texts(); }
     await t.tool(p, 'גרסאות');
     await p.waitForSelector('dialog .use-row');
     await p.locator('dialog .use-row').last().click();

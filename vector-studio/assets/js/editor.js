@@ -60,7 +60,7 @@ const hd = handles(stage, {
   },
   snap: () => op?.snap || null,
   status: (text) => { if (text) $('doc-status').textContent = text; },
-  onGuides: (g) => { if (op?.type === 'handles') S.guides = g.length ? g : null; },   // hide() מאפס — לא קווי ההזזה
+  onGuides: (g) => { S.guides = g.length ? g : null; },
   onPreview: (t) => applyHandles(t),
   onCommit: () => commitFrom(op.before),
 });
@@ -115,7 +115,7 @@ async function boot() {
   // ההגדרות האישיות מתפריט המשתמש (ערכת צבעים, גודל טקסט) — גם כאן, בלי לחכות להן
   accountServer((action, body) => fetch('api.php?action=' + action, { method: 'POST', credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) }).then(r => r.json()))
-    .then(s => { applyPrefs({ ...DEFAULT_PREFS, ...(s.prefs.get('general') || {}) }); readColors(); draw(); }).catch(() => { /* בלי חיבור — כמו המכשיר */ });
+    .then(s => applyPrefs({ ...DEFAULT_PREFS, ...(s.prefs.get('general') || {}) })).catch(() => { /* בלי חיבור — כמו המכשיר */ });
   const hash = decodeURIComponent(location.hash.slice(1));
   try {
     if (hash.startsWith('new:')) {
@@ -1236,6 +1236,8 @@ $('props-btn').addEventListener('click', () => {
 
 new ResizeObserver(resize).observe(stage);
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { readColors(); draw(); });
+// ערכה / גודל מתפריט המשתמש (ui-core applyPrefs) — הקנבס קורא את הצבעים מחדש
+document.addEventListener('ui-prefs', () => { readColors(); draw(); });
 
 // ---------- טקסט ----------
 

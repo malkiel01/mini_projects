@@ -61,7 +61,8 @@ export default async function (t) {
     // רינה סוגרת — יוצאת מהנוכחות
     await rina.goto('about:blank');
     await rina.context().close();
-    await until(async () => !(await peersOf(moshe)).includes('רינה'));
+    // ה-leave נשלח ב-keepalive ביציאה; כשההקשר נסגר מיד הוא לפעמים לא יוצא, ואז הנוכחות פגה בשרת (PRESENCE_SECONDS = 15)
+    await until(async () => !(await peersOf(moshe)).includes('רינה'), 25000);
     t.ok('רינה סגרה — משה כבר לא רואה אותה', !(await peersOf(moshe)).includes('רינה'), await peersOf(moshe));
     t.ok('בלי שגיאות JS', !moshe.errors.length && !rina.errors.length, [...moshe.errors, ...rina.errors].join(' | '));
     await moshe.context().close();
