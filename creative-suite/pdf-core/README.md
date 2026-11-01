@@ -34,7 +34,7 @@ $pdf = pdf_draw($list, fn(string $key) => file_get_contents(...)); // $key — �
 יחידות: נקודות (`pt`). y — מלמעלה למטה, מהפינה העליונה של העמוד (TrimBox). צבע: `"#rrggbb"`.
 
 ```json
-{ "title": "…", "pages": [ { "size": [w, h], "bleed": 9, "ops": [
+{ "title": "…", "xmp": "<?xpacket …?>…", "pages": [ { "size": [w, h], "bleed": 9, "ops": [
     { "op": "glyphs", "font": "media/….ttf", "size": 12, "color": "#000000", "x": 0, "y": 0,
       "glyphs": [[gid, dx, dy, adv]], "text": "…" },
     { "op": "image", "src": "media/….png", "box": [x, y, w, h], "clip": [x, y, w, h], "opacity": 1, "transform": [a, b, c, d, e, f] },
@@ -66,6 +66,9 @@ $pdf = pdf_draw($list, fn(string $key) => file_get_contents(...)); // $key — �
   `userSpaceOnUse`), עם המשך מעבר לקצוות. כמה עצירות שרוצים. **עצירה יכולה לשאת `opacity`** (0–1) — מסכה רכה לפי
   בהירות (מעבר אפור באותן קואורדינטות, בטופס); נתיב עם מילוי וקו כשאחד מהם עם מסכה — נצבע בשני מעברים, כדי שהמסכה
   לא תחול על השני. שקיפות לכל המעבר — `fillOpacity` / `strokeOpacity`. Pattern ומסכה נכנסים למשאבים רק כשבשימוש.
+- **`xmp`** (בקשת העימוד, שורה 5 "פנים")**:** לא חובה — חבילת XMP (`xmpPacket(f)` של `mbe-core/face.js`) נכנסת
+  כזרם `/Type /Metadata /Subtype /XML` של הקטלוג, **לא דחוס**, כך ש-`identify()` מוצא בקובץ את `mbe:docId` ו-`mbe:base`.
+  ב-PHP: `$writer->output($title, $xmp)`. לא מחרוזת — שגיאה; בלי `xmp` — הפלט כמו קודם.
 - **פעולה לא מוכרת — שגיאה**, כמו קודם. ההרחבות — תוספת בלבד.
 - **שגיאה:** `InvalidArgumentException` עם המקום ("עמוד 1, פעולה 3: …").
 
