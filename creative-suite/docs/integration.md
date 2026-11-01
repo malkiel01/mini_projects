@@ -41,7 +41,7 @@
 ## הערות לתאים
 
 - **6 — 🟡:** שני חצאים של אותו פרוטוקול; מודול בליבה מ-2026-10-31 (`handoff.js`: צד היעד — `acceptHandoff`, ‏`activeHandoff`, ‏`returnHandoff`, ‏`endHandoff`; צד המקור — `openIn`). רסטר, וקטורי וסטודיו העיצוב עובדים הלוך-חזור (#859, #895, #855) עם `handoff.js` משלהם; ✅ — כשהאפליקציה מייבאת מ-`mbe/handoff.js` ומוחקת את שלה.
-- **7 — וקטורי ⬜:** כותב PDF משלו ב-JS (`vector-studio/assets/js/export.js`, `toPDF`), במקום `pdf-core`.
+- **7 — וקטורי ⬜:** כותב PDF משלו ב-JS (`vector-studio/assets/js/export.js`, `toPDF`), במקום `pdf-core`. **הוכרע (2026-11-01, `requests/layout-studio-pdf-path.md`):** `pdf-core` מקבל `path`, שקיפות, `clip`, מעבר צבע וגרסת JS; וקטורי עובר כשה-JS נפרס.
 - **9 — 🟡:** רסטר, וקטורי והסטודיו משתמשים ב-`keyOf` מ-`ui-core` (#923, #927) ותיקנו את המקלדת העברית; רישום הקיצורים
   עדיין שלהם. ✅ — עם `shortcuts()`.
 - **8 — ענן החבילה ✅:** הטייס (#924).
