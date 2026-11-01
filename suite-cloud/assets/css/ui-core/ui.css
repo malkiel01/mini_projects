@@ -268,3 +268,14 @@ dialog > form { display: flex; flex-direction: column; max-height: inherit; heig
     background: var(--surface); border-top: 1px solid var(--line); }
 .fw-save .f { flex: 1; }
 .fw-name { display: flex; align-items: center; gap: var(--s1); }
+
+/* ---- ידיות (handles.js) — גודל קבוע במסך; האירועים עוברים לאפליקציה ---- */
+.uic-handles { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; overflow: visible; pointer-events: none; }
+.uic-frame { fill: none; stroke: var(--brand); stroke-width: 1.5; }
+.uic-stem { stroke: var(--brand); stroke-width: 1.5; }
+.uic-h { fill: var(--surface); stroke: var(--brand); stroke-width: 1.5; filter: drop-shadow(0 1px 1px rgba(16, 24, 40, .25)); }
+.uic-rotate { fill: var(--brand); }
+.uic-guides line { stroke: #e5398f; stroke-width: 1; stroke-dasharray: 4 3; }
+.uic-status { position: absolute; inset-inline-start: 50%; translate: -50% 0; z-index: 2; padding: 3px 10px; border-radius: 999px;
+    background: var(--ink); color: var(--surface); font-size: 13px; white-space: nowrap; pointer-events: none; }
+[dir="rtl"] .uic-status { translate: 50% 0; }

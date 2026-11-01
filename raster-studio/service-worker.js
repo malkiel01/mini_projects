@@ -6,7 +6,7 @@
  * אחרי שינוי ברשימת השלד — להעלות את CACHE_VERSION.
  */
 
-const CACHE_VERSION = 'raster-studio-v15';
+const CACHE_VERSION = 'raster-studio-v18';
 
 const SHELL = [
   './index.html',
@@ -23,6 +23,12 @@ const SHELL = [
   './assets/js/layers-panel.js',
   './assets/js/adjust-panel.js',
   './assets/js/fx-panel.js',
+  './assets/js/ai-panel.js',
+  './assets/js/account-ui.js',
+  './assets/js/ui-core/account.js',
+  './assets/js/ui-core/files-window.js',
+  './assets/js/layer-ai.js',
+  './assets/js/drives/drives.js',
   './assets/js/overlay.js',
   './assets/js/export.js',
   './assets/js/draft.js',
@@ -47,11 +53,13 @@ const SHELL = [
   './assets/js/ui-core/dialog.js',
   './assets/js/ui-core/dom.js',
   './assets/js/ui-core/files.js',
+  './assets/js/ui-core/gestures.js',
   './assets/js/ui-core/keys.js',
   './assets/js/ui-core/menu.js',
   './assets/js/ui-core/store.js',
   './assets/js/ui-core/tabs.js',
   './assets/js/ui-core/toast.js',
+  './assets/js/ui-core/viewport.js',
   './assets/js/mbe/mbe.js',
   './assets/js/mbe/canonical.js',
   './assets/js/mbe/schema.js',

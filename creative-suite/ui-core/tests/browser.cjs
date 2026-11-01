@@ -146,12 +146,12 @@ const server = http.createServer((req, res) => {
             const keys = await db.keys();
             await db.del('k');
             return {
-                names: [fileName('כרטיס: "חג" שמח?/', 'png'), fileName('', 'mbe'), fileName('..‏מסמך', '.pdf')],
+                names: [fileName('כרטיס: "חג" שמח?/', 'png'), fileName('', 'mbe'), fileName('..‏מסמך', '.pdf'), fileName(' ', 'png', 'תמונה')],
                 pref: s.get('a').x, def: s.get('none', 7),
                 blob: await blob.text(), keys, after: await db.get('k'),
             };
         });
-        ok(JSON.stringify(fx.names) === JSON.stringify(['כרטיס חג שמח.png', 'ללא שם.mbe', 'מסמך.pdf']), 'fileName: ניקוי תווים וסיומת');
+        ok(JSON.stringify(fx.names) === JSON.stringify(['כרטיס חג שמח.png', 'ללא שם.mbe', 'מסמך.pdf', 'תמונה.png']), 'fileName: ניקוי תווים, סיומת ושם חלופי');
         ok(fx.pref === 1 && fx.def === 7, 'pref: JSON וברירת מחדל');
         ok(fx.blob === 'שלום' && fx.keys.includes('k') && fx.after === undefined, 'kv: Blob נשמר, נקרא ונמחק');
 
@@ -377,6 +377,82 @@ const server = http.createServer((req, res) => {
         await p.click('dialog[open] .row-btns .btn:has-text("שניהם")');
         await p.waitForTimeout(150);
         ok(await p.evaluate(() => window.__fwDone) === 'הזמנה לחתונה (2).mbe', 'files: שמירה — שם קיים → "לשמור את שניהם"');
+
+        // transform / snap — חשבון טהור
+        const tm = await p.evaluate(async () => {
+            const T = await import('../src/js/transform.js'), S = await import('../src/js/snap.js');
+            const t0 = { cx: 50, cy: 25, sx: 1, sy: 1, angle: 0 };
+            const corner = T.dragHandle(t0, 100, 50, [1, 1], [150, 100]);             // יחס נשמר
+            const free = T.dragHandle(t0, 100, 50, [1, 1], [150, 100], { free: true });
+            const side = T.dragHandle(t0, 100, 50, [1, 0], [200, 30]);
+            const cen = T.dragHandle(t0, 100, 50, [1, 0], [150, 30], { fromCenter: true });
+            const flat = T.dragHandle({ cx: 50, cy: 0, sx: 1, sy: 1, angle: 0 }, 100, 0, [1, 1], [200, 80]);
+            const mag = T.snapAngle(47 * Math.PI / 180), nomag = T.snapAngle(60 * Math.PI / 180), st = T.snapAngle(22 * Math.PI / 180, { step: 15 });
+            const s = S.snapper({ boxes: [[0, 0, 100, 100]], tol: 5 });
+            const g = S.snapper({ grid: 10, tol: 3 });
+            return { corner, free, side, cen, flat, mag: [mag.angle * 180 / Math.PI, mag.snapped], nomag: nomag.snapped, st: st.angle * 180 / Math.PI,
+                b: s.box([103, 47, 20, 10]), pt: s.point(98, 52, 'x'), gr: g.point(21, 38) };
+        });
+        const near = (a, b) => Math.abs(a - b) < 1e-6;
+        ok(near(tm.corner.sx, tm.corner.sy) && tm.corner.sx > 1.4, 'transform: פינה — יחס נשמר');
+        ok(near(tm.free.sx, 1.5) && near(tm.free.sy, 2) && near(tm.free.cx, 75) && near(tm.free.cy, 50), 'transform: פינה חופשית, הפינה הנגדית במקום');
+        ok(near(tm.side.sx, 2) && near(tm.side.sy, 1) && near(tm.side.cx, 100), 'transform: צד — ציר אחד');
+        ok(near(tm.cen.sx, 2) && near(tm.cen.cx, 50), 'transform: Alt — מהמרכז');
+        ok(near(tm.flat.sx, 2) && tm.flat.sy === 1, 'transform: קו שטוח — הציר באפס לא משתנה, בלי יחס');
+        ok(near(tm.mag[0], 45) && tm.mag[1] && !tm.nomag && near(tm.st, 15), 'transform: מגנט 45° בטווח 6°, Shift — 15°');
+        ok(tm.b.dx === -3 && tm.b.dy === -2 && tm.b.guides.length === 2 && tm.b.guides[0].v === 100, 'snap: תיבה — הקצה למול קצה, המרכז למול מרכז + קווים');
+        ok(tm.pt.x === 100 && tm.pt.y === 52, 'snap: נקודה — רק בצירים שהותרו');
+        ok(tm.gr.x === 20 && tm.gr.y === 40, 'snap: רשת');
+
+        // handles — על דף התצוגה (זום 1, המסך = המסמך)
+        await p.$eval('#hs', el => el.scrollIntoView({ block: 'center' }));
+        const hr = await p.evaluate(() => {
+            const H = window.__hd, e = (o = {}) => ({ pointerType: 'mouse', ...o });
+            const out = {};
+            out.miss = H.h.down(e(), [200, 130]);                             // באמצע — לא ידית: הכלי ממשיך
+            out.hitTouch = H.h.at([258, 168], { pointerType: 'touch' });      // הפינה (250,160) — 11px, בתוך 22 באצבע
+            out.hitMouse = H.h.at([258, 168], e());                           // אבל לא בתוך 10 בעכבר
+            out.took = H.h.down(e(), [250, 160]);                             // פינה ימנית-תחתונה
+            H.h.move(e(), [300, 190]);
+            out.ratio = H.h.value.sx / H.h.value.sy;
+            out.status = document.querySelector('.uic-status').textContent;
+            H.h.move(e({ shiftKey: true }), [300, 170]);
+            out.freeSx = H.h.value.sx; out.freeSy = H.h.value.sy;
+            H.h.cancel();                                                     // אצבע שנייה — חוזרים
+            out.cancelled = H.h.value.sx;
+            H.h.down(e(), [150, 130]); H.h.move(e(), [84, 130]);              // צד שמאל עד ליד הקצה של האפור (80)
+            out.snapRight = H.h.value.cx - 50 * H.h.value.sx;                 // הקצה השמאלי
+            out.guides = document.querySelectorAll('.uic-guides line').length;
+            H.h.move(e({ ctrlKey: true }), [84, 130]);
+            out.noSnap = H.h.value.cx - 50 * H.h.value.sx;
+            H.h.cancel();
+            const rotAt = document.querySelector('.uic-rotate');
+            const rp = [+rotAt.getAttribute('cx'), +rotAt.getAttribute('cy')];
+            out.rotAbove = rp[1] < 100 - 20;
+            H.h.down(e(), rp);
+            H.h.move(e(), [200 + 80, 130 - 75]);                              // ~47° — נצמד ל-45
+            out.angle = H.h.value.angle * 180 / Math.PI;
+            out.rstatus = document.querySelector('.uic-status').textContent;
+            H.h.up(e());
+            out.statusGone = document.querySelector('.uic-status').hidden;
+            // מצב rect
+            document.querySelector('#hs-rect').checked = true; H.mount();
+            out.noRotate = !document.querySelector('.uic-rotate');
+            H.h.down(e(), [280, 160]); H.h.move(e(), [100.4, 30.6]);          // הפינה עוברת את הנגדית — מתנרמל
+            out.rect = H.h.value;
+            H.h.up(e());
+            document.querySelector('#hs-rect').checked = false; H.mount();
+            return out;
+        });
+        ok(hr.miss === false && hr.took === true, 'handles: down מחזיר true רק על ידית');
+        ok(Array.isArray(hr.hitTouch) && hr.hitMouse === null, 'handles: אזור מגע 22px באצבע, 10px בעכבר');
+        ok(near(hr.ratio, 1) && hr.status.includes('←') && hr.status.includes('100×60'), 'handles: פינה — יחס נשמר, שורת מצב "רוחב ← רוחב" (RTL)');
+        ok(!near(hr.freeSx, hr.freeSy), 'handles: Shift — פינה חופשית');
+        ok(hr.cancelled === 1, 'handles: cancel — חזרה ל-t0');
+        ok(near(hr.snapRight, 80) && hr.guides === 1 && !near(hr.noSnap, 80), 'handles: הקצה נצמד + קו עזר; Ctrl — בלי הצמדה');
+        ok(hr.rotAbove && near(hr.angle, 45) && hr.rstatus.includes('✓'), 'handles: סיבוב 28px מעל, מגנט 45° + ✓');
+        ok(hr.statusGone, 'handles: שורת המצב נעלמת בשחרור');
+        ok(hr.noRotate && hr.rect.x === 100 && hr.rect.y === 31 && hr.rect.w === 20 && hr.rect.h === 29, 'handles rect: בלי סיבוב, נרמול, פיקסלים שלמים');
 
         ok(errors.length === 0, 'בלי שגיאות JS' + (errors.length ? ': ' + errors.join(' | ') : ''));
         await ctx.close();

@@ -2,5 +2,9 @@
   "greeting-cards": {
     "js": "editor/js/drives",
     "php": "editor/lib/drives"
+  },
+  "raster-studio": {
+    "js": "assets/js/drives",
+    "php": "lib/drives"
   }
 }

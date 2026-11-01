@@ -1382,6 +1382,93 @@ async function main() {
     return d.active.vectorMask === before;
   }));
 
+  // ---- ✨ בינה מלאכותית: בלי ענן — לא זמין; עם ענן מדומה — ארבע הפעולות ----
+  await openEd(page);
+  await page.waitForFunction(() => window.__rs?.doc);
+  await page.evaluate(() => __rs.setView({ zoom: 1, x: 20, y: 20 }));
+  await page.click('#ai-btn');
+  await page.waitForSelector('dialog[open] .ai-acts');
+  check('✨ בלי חיבור לענן — הפעולות כבויות, "דרך הצ\'אט (סקיל)"', await page.$$eval('dialog[open] .ai-act', bs => bs.length === 4 && bs.every(b => b.disabled))
+    && /סקיל/.test(await page.textContent('dialog[open] .sheet-body')));
+  await page.click('dialog[open] [data-close]');
+  // ענן מדומה: הסרת רקע — החצי השמאלי שקוף; פירוק — עצם אחד (ריבוע); מילוי — ירוק; יצירה — כחול
+  await page.evaluate(() => {
+    const make = async (w, h, draw) => { const c = new OffscreenCanvas(w, h); draw(c.getContext('2d'), w, h); return c.convertToBlob({ type: 'image/png' }); };
+    const size = async b => { const i = await createImageBitmap(b); const s = [i.width, i.height]; i.close(); return s; };
+    window.__aiCalls = [];
+    __rs.ai.setCloud({
+      status: async () => ({ suite: { connected: true } }),
+      ai: {
+        capabilities: async () => ({ tasks: { 'remove-background': true, segment: true, 'generate-image': true, inpaint: true } }),
+        run: async (task, input) => {
+          __aiCalls.push(task + (input.prompt ? ':' + input.prompt : ''));
+          if (task === 'remove-background') { const [w, h] = await size(input.image); return { png: await make(w, h, (x, w, h) => { x.fillStyle = '#f00'; x.fillRect(w / 2, 0, w / 2, h); }) }; }
+          if (task === 'segment') { const [w, h] = await size(input.image); return { masks: [{ label: 'ריבוע', png: await make(w, h, (x) => { x.fillStyle = '#000'; x.fillRect(0, 0, w, h); x.fillStyle = '#fff'; x.fillRect(100, 100, 100, 100); }) }] }; }
+          if (task === 'inpaint') { const [w, h] = await size(input.image); return { png: await make(w, h, (x, w, h) => { x.fillStyle = '#0f0'; x.fillRect(0, 0, w, h); }) }; }
+          if (task === 'generate-image') return { png: await make(input.size[0], input.size[1], (x, w, h) => { x.fillStyle = '#00f'; x.fillRect(0, 0, w, h); }), transparent: true };
+          throw Object.assign(new Error('?'), { code: 'provider' });
+        },
+      },
+    });
+    const d = __rs.doc;
+    __rs.renderer.fill(d, d.active, [255, 0, 0, 255]);
+    __rs.renderer.invalidate(d);
+  });
+  const aiDo = async (k, prompt = '') => {
+    await page.click('#ai-btn');
+    await page.waitForSelector(`dialog[open] [data-ai="${k}"]:not([disabled])`);
+    if (prompt) await page.fill('dialog[open] textarea[name="prompt"]', prompt);
+    await page.click(`dialog[open] [data-ai="${k}"]`);
+    await page.waitForFunction(() => !document.querySelector('dialog[open] .ai-acts'), null, { timeout: 8000 }).catch(() => {});
+  };
+  await aiDo('removeBackground');
+  const rb = await page.evaluate(() => ({ mask: !!__rs.doc.active.mask, label: __rs.history.undoStack.at(-1).label }));
+  check('✂️ הסרת רקע — מסכה על השכבה (שמאל מוסתר, ימין נשאר), רשומת "הסרת רקע"', rb.mask && rb.label === 'הסרת רקע' && near(await px(100, 200), [0, 0, 0, 0])
+    && near(await px(500, 200), [255, 0, 0, 255]), JSON.stringify(rb) + ' ' + await px(100, 200));
+  await page.keyboard.press('Control+z');
+  check('ביטול — בלי מסכה', await page.evaluate(() => !__rs.doc.active.mask) && near(await px(100, 200), [255, 0, 0, 255]));
+  await aiDo('decompose');
+  const dc = await page.evaluate(() => { const g = __rs.doc.active; return { type: g.type, names: g.children?.map(c => c.name).join(), label: __rs.history.undoStack.at(-1).label }; });
+  check('🧩 פירוק — קבוצה עם רקע (מושלם) ועצם לכל מסכה', dc.type === 'group' && dc.names === 'רקע,ריבוע' && dc.label === 'פירוק לשכבות'
+    && near(await px(150, 150), [255, 0, 0, 255]) && near(await px(400, 300), [0, 255, 0, 255]), JSON.stringify(dc) + ' ' + await px(400, 300));
+  await page.keyboard.press('Control+z');
+  await page.evaluate(() => { const d = __rs.doc; d.activeId = d.layers[0].id; d.selection = { shapes: [{ type: 'rect', x: 300, y: 50, w: 100, h: 100, op: 'add' }], inverted: false }; __rs.renderer.selectionChanged(d); });
+  await aiDo('fill', 'דשא');
+  const fl2 = await page.evaluate(() => ({ name: __rs.doc.active.name, mask: !!__rs.doc.active.mask, calls: __aiCalls.join() }));
+  check('🪄 מילוי בבחירה — שכבה עם מסכה מהבחירה: ירוק בפנים, אדום בחוץ; התיאור עובר לספק', fl2.mask && fl2.name === 'מילוי: דשא' && /inpaint:דשא/.test(fl2.calls)
+    && near(await px(350, 100), [0, 255, 0, 255]) && near(await px(250, 100), [255, 0, 0, 255]), JSON.stringify(fl2));
+  await page.evaluate(() => { __rs.doc.selection = null; __rs.renderer.selectionChanged(__rs.doc); });
+  await aiDo('generate', 'ים');
+  check('🖼️ יצירה — שכבה חדשה בשם התיאור, בגודל הקנבס', await page.evaluate(() => __rs.doc.active.name) === 'ים' && near(await px(10, 10), [0, 0, 255, 255]) && near(await px(590, 390), [0, 0, 255, 255]));
+  await page.keyboard.press('Control+z');
+  check('ביטול — השכבה שנוצרה יוצאת', near(await px(10, 10), [255, 0, 0, 255]));
+
+  // ---- 👤 תפריט המשתמש: בספרייה ובעורך; המסמכים שלי; הגדרות אישיות (ערכה כהה, מנוע הציור) ----
+  await page.goto(BASE + '/index.html');
+  await page.waitForSelector('#new-btn:not([disabled])');
+  await page.waitForSelector('header.top .account-btn', { timeout: 5000 }).catch(() => {});
+  check('👤 בספרייה — העיגול בסרגל', await page.isVisible('header.top .account-btn'));
+  await page.click('header.top .account-btn');
+  await page.click('text=המסמכים שלי');
+  await page.waitForSelector('dialog[open]', { timeout: 5000 }).catch(() => {});
+  const fw = await page.textContent('dialog[open]').catch(() => '');
+  check('📁 המסמכים שלי — חלון עם "באפליקציה" וענן החבילה', /באפליקציה/.test(fw) && /ענן החבילה/.test(fw), fw.slice(0, 120));
+  await page.keyboard.press('Escape');
+  await page.click('header.top .account-btn');
+  await page.click('text=הגדרות אישיות');
+  await page.waitForSelector('dialog[open] select[name="engine"]', { timeout: 5000 }).catch(() => {});
+  check('⚙️ הגדרות אישיות — כולל הקטע של עיצוב רסטר (מנוע הציור)', await page.isVisible('dialog[open] select[name="engine"]'));
+  await page.click('dialog[open] label:has(input[name="theme"][value="dark"])');
+  await page.waitForFunction(() => document.documentElement.dataset.theme === 'dark', null, { timeout: 3000 }).catch(() => {});
+  const saved = await page.evaluate(async () => (await (await fetch('api.php', { method: 'POST', headers: { 'X-Raster-Studio': '1' }, body: JSON.stringify({ action: 'account_prefs' }) })).json()));
+  check('ערכה כהה ידנית — על כל הדף, ונשמרת בשרת שלנו', await page.evaluate(() => document.documentElement.dataset.theme) === 'dark' && saved.prefs?.general?.theme === 'dark', JSON.stringify(saved));
+  await page.click('dialog[open] label:has(input[name="theme"][value="system"])');
+  await page.keyboard.press('Escape');
+  await openEd(page);
+  await page.waitForFunction(() => window.__rs?.doc);
+  await page.waitForSelector('header.top .account-btn', { timeout: 5000 }).catch(() => {});
+  check('👤 בעורך — העיגול בסרגל', await page.isVisible('header.top .account-btn'));
+
   // ---- טקסט ----
   await openEd(page);
   await page.waitForFunction(() => window.__rs?.doc);
@@ -2002,6 +2089,8 @@ async function main() {
         && [...bar.children].every(c => { const r = c.getBoundingClientRect(); return !r.width || (r.left >= -0.5 && r.right <= innerWidth + 0.5); });
     });
     check(`טלפון ${w}px${dark ? ' כהה' : ''}: הסרגל התחתון נכנס כולו, גם אחרי לחיצה`, fits);
+    const topFits = await ph.evaluate(() => [...document.querySelector('.top').children].every(c => { const r = c.getBoundingClientRect(); return !r.width || (r.left >= -0.5 && r.right <= innerWidth + 0.5); }));
+    check(`טלפון ${w}px${dark ? ' כהה' : ''}: הכותרת (עם ✨) נכנסת כולה`, topFits);
     const tag = `${w}px${dark ? ' כהה' : ''}`;
     check(`טלפון ${tag}: "שכבות" פותח גיליון בתוך המסך, ✕ סוגר`, sheet.open && sheet.inside && sheet.rows === 1 && closed, JSON.stringify(sheet));
     check(`טלפון ${tag}: בלי גלילה אופקית, הסרגל בתוך המסך`, !r.over && r.bar);

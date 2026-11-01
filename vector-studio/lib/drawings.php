@@ -287,3 +287,41 @@ function putPrefs(array $user, array $in): array {
         ->execute([(int) $user['id'], $data, nowIso()]);
     return ['swatches' => $sw, 'styles' => $clean];
 }
+
+/** "ייצוא כל הנתונים שלי" (תפריט המשתמש): הציורים עם הגרסאות, הצבעים והסגנונות. התמונות — רק רשימה (הן בתוך ה-‎.mbe). */
+function exportUserData(int $uid): array {
+    $pdo = db();
+    $st = $pdo->prepare('SELECT id, name, doc, rev, created_at, updated_at FROM drawings WHERE user_id = ? ORDER BY id');
+    $st->execute([$uid]);
+    $drawings = [];
+    $ver = $pdo->prepare('SELECT rev, name, doc, saved_at FROM drawing_versions WHERE drawing_id = ? ORDER BY id');
+    foreach ($st->fetchAll() as $d) {
+        $ver->execute([$d['id']]);
+        $versions = array_map(fn($v) => ['rev' => (int) $v['rev'], 'name' => $v['name'], 'doc' => json_decode($v['doc'], true), 'saved_at' => $v['saved_at']], $ver->fetchAll());
+        $drawings[] = ['id' => (int) $d['id'], 'name' => $d['name'], 'rev' => (int) $d['rev'], 'created_at' => $d['created_at'],
+                       'updated_at' => $d['updated_at'], 'doc' => json_decode($d['doc'], true), 'versions' => $versions];
+    }
+    $p = $pdo->prepare('SELECT data FROM prefs WHERE user_id = ?');
+    $p->execute([$uid]);
+    $m = $pdo->prepare('SELECT sha, ext, LENGTH(data) AS size, created_at FROM media WHERE user_id = ? ORDER BY created_at');
+    $m->execute([$uid]);
+    $u = getUser($uid);
+    return [
+        'user'     => ['name' => $u['name'], 'email' => $u['email'], 'role' => $u['role'], 'created_at' => $u['created_at']],
+        'drawings' => $drawings,
+        'swatches' => json_decode((string) ($p->fetchColumn() ?: 'null'), true),
+        'media'    => array_map(fn($r) => ['src' => "media/{$r['sha']}.{$r['ext']}", 'size' => (int) $r['size'], 'created_at' => $r['created_at']], $m->fetchAll()),
+    ];
+}
+
+/**
+ * "מחיקת החשבון": הציורים, הגרסאות, התמונות, הצבעים והמשתמש עצמו. בכניסה הבאה דרך השער נפתח חשבון חדש וריק.
+ * בתוך הטרנזקציה של ui-core (ההגדרות שלו נמחקות אחרי זה, באותה טרנזקציה).
+ */
+function deleteUserData(int $uid): void {
+    $pdo = db();
+    $pdo->prepare('DELETE FROM drawing_versions WHERE drawing_id IN (SELECT id FROM drawings WHERE user_id = ?)')->execute([$uid]);
+    foreach (['drawings', 'media', 'prefs', 'users'] as $t) {
+        $pdo->prepare('DELETE FROM ' . $t . ' WHERE ' . ($t === 'users' ? 'id' : 'user_id') . ' = ?')->execute([$uid]);
+    }
+}

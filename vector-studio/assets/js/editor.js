@@ -23,7 +23,9 @@ import { bindViewport } from './ui-core/gestures.js';
 import { toast } from './ui-core/toast.js';
 import { download } from './ui-core/files.js';
 import { initDialogs, confirm, prompt } from './ui-core/dialog.js';
-import { snapper } from './snap.js';
+import { accountServer, applyPrefs, DEFAULT_PREFS } from './ui-core/account.js';
+import { snapper } from './ui-core/snap.js';
+import { snapBoxes, GRID } from './snap.js';
 import { parse, bbox, serialize, transform as transformSegs } from './geometry/path.js';
 const pathOps = { parse, serialize, transform: transformSegs };
 import { FONTS, TEXT_DEFAULT, fontCss, setMeasure, relayout, lineHeight } from './text.js';
@@ -57,10 +59,9 @@ S.free = freePrefs();
 function makeSnap(exclude, surface, touch) {
   if (!S.snap && !S.grid) return null;
   const sf = surface || S.doc.surfaces[0];
-  const sn = snapper({ doc: S.doc, exclude, tol: (touch ? 10 : 6) / S.view.zoom, grid: S.grid, origin: layout(S.doc).get(sf.id) });
-  if (S.snap) return sn;
-  // רשת בלבד — בלי קווים חכמים: מסננים את היעדים
-  return snapper({ doc: { surfaces: [] }, exclude, tol: (touch ? 10 : 6) / S.view.zoom, grid: true, origin: layout(S.doc).get(sf.id) });
+  // רשת בלבד (בלי קווים חכמים) — בלי תיבות יעד
+  return snapper({ boxes: S.snap ? snapBoxes(S.doc, exclude) : [], tol: (touch ? 10 : 6) / S.view.zoom,
+    grid: S.grid ? GRID : 0, origin: layout(S.doc).get(sf.id) });
 }
 
 // ---------- טעינה ----------
@@ -70,6 +71,10 @@ function makeSnap(exclude, surface, touch) {
  * שעוברת עכשיו לשרת (ונמחקת מהמכשיר רק אחרי שנשמרה שם).
  */
 async function boot() {
+  // ההגדרות האישיות מתפריט המשתמש (ערכת צבעים, גודל טקסט) — גם כאן, בלי לחכות להן
+  accountServer((action, body) => fetch('api.php?action=' + action, { method: 'POST', credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) }).then(r => r.json()))
+    .then(s => { applyPrefs({ ...DEFAULT_PREFS, ...(s.prefs.get('general') || {}) }); readColors(); draw(); }).catch(() => { /* בלי חיבור — כמו המכשיר */ });
   const hash = decodeURIComponent(location.hash.slice(1));
   try {
     if (hash.startsWith('new:')) {

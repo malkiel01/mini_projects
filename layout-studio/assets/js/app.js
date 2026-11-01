@@ -3,6 +3,7 @@
 import { $ } from './ui-core/dom.js';
 import { toast } from './ui-core/toast.js';
 import { initDialogs, confirm } from './ui-core/dialog.js';
+import { mountAccount } from './account-ui.js';
 
 initDialogs();   // [data-close], סגירה ברקע, --vvh / --kb (המקלדת בטלפון)
 
@@ -178,6 +179,7 @@ mbeInput.addEventListener('change', async () => {
   try {
     const { me } = await api('me');
     $('#who').textContent = me.name || me.email;
+    mountAccount($('header.top'), { api, me }).catch(() => {});   // 👤 — בלי לעכב את הספרייה
     $('#new-btn').disabled = false;
     $('#open-btn').disabled = false;
     load();

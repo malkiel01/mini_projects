@@ -1,5 +1,5 @@
 <?php
-// ה-API של העימוד. פעולות: me, docs_list, doc_create, doc_get, doc_save, doc_delete.
+// ה-API של העימוד. פעולות: me, docs_list, doc_create, doc_get, doc_save, doc_rename, doc_delete, account_* (ui-core).
 // כל בקשה: POST עם JSON {"action": …} וכותרת X-Layout-Studio: 1.
 // תמונות: העלאה — POST ?action=media_upload, גוף = הקובץ עצמו (עם אותה כותרת); הצגה — GET ?media=<sha256>.<ext>.
 // PDF: POST ?action=pdf, גוף = רשימת הציור (JSON דחוס ב-gzip, assets/js/pdf.js) → application/pdf.
@@ -13,6 +13,7 @@ require_once __DIR__ . '/lib/model.php';
 require_once __DIR__ . '/lib/media.php';
 require_once __DIR__ . '/lib/pdf.php';
 require_once __DIR__ . '/lib/mbeio.php';
+require_once __DIR__ . '/lib/ui-core/account/account.php';   // 👤 תפריט המשתמש — עותק מסונכרן של ui-core
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
@@ -107,6 +108,24 @@ $in = json_decode(file_get_contents('php://input') ?: '', true);
 if (!is_array($in)) ls_fail('bad_json');
 $action = (string)($in['action'] ?? '');
 
+// 👤 תפריט המשתמש (ui-core): הגדרות אישיות במסד שלנו (uic_prefs), "ייצוא כל הנתונים שלי" ו"מחיקת החשבון"
+if (str_starts_with($action, 'account_')) {
+    try {
+        ls_out(['ok' => true] + uic_account_api($action, $in, [
+            'app' => 'layout-studio',
+            'pdo' => fn() => ls_db(),
+            'user' => fn() => $uid,
+            'export' => fn($u) => ls_account_export((int)$u),
+            'delete' => fn($u) => ls_account_delete((int)$u),
+        ]));
+    } catch (UicAccountError $e) {
+        ls_out(['ok' => false, 'error' => $e->getMessage()], $e->status);
+    } catch (Throwable $e) {
+        error_log('layout-studio: ' . $e->getMessage());
+        ls_fail('server', 500);
+    }
+}
+
 try {
     switch ($action) {
         case 'me':
@@ -126,6 +145,8 @@ try {
             $rev = ls_doc_save($uid, (int)($in['id'] ?? 0), (int)($in['rev'] ?? -1), $in['model'] ?? null,
                 fn(string $src) => ls_media_path($uid, substr($src, 6)) !== null);
             ls_out(['ok' => true, 'rev' => $rev]);
+        case 'doc_rename':
+            ls_out(['ok' => true, 'doc' => ls_doc_rename($uid, (int)($in['id'] ?? 0), (string)($in['title'] ?? ''))]);
         case 'doc_delete':
             if (!ls_doc_delete($uid, (int)($in['id'] ?? 0))) ls_fail('not_found', 404);
             ls_out(['ok' => true]);

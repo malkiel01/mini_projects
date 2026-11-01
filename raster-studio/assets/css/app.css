@@ -26,6 +26,8 @@ body.editor { display: flex; flex-direction: column; block-size: 100dvh; min-hei
 .stage { position: relative; flex: 1; inline-size: 100%; max-inline-size: none; margin: 0; padding: 0; min-block-size: 0; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none;
     background: color-mix(in srgb, var(--ink) 14%, var(--bg)); cursor: grab; }
 .stage.panning { cursor: grabbing; }
+/* רווח לחוץ — יד זמנית (ui-core מוסיף .hand), מעל הסמן של הכלי */
+.stage.hand { cursor: grab !important; }
 .stage canvas { pointer-events: none; }
 .stage canvas { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; display: block; }
 .stage .stage-msg { position: absolute; inset: 0; display: grid; place-items: center; padding: var(--s4); text-align: center; color: var(--muted); }
@@ -109,6 +111,9 @@ body.editor { display: flex; flex-direction: column; block-size: 100dvh; min-hei
     #versions-btn { display: none; }
 }
 @media (max-width: 379.98px) {
+    /* כותרת: שבעה כפתורים (עם ✨) — צפוף יותר, והכותרת מתקצרת */
+    .top { gap: 2px; padding-inline: var(--s2); }
+    .top .icon-btn { min-inline-size: 36px; padding-inline: 0; }
     .layers-btn .lbl { display: none; }
     .layers-btn::before { content: '◧'; font-size: 1.1rem; }
     .zoom .zoom-lbl { min-inline-size: 52px; }
@@ -225,3 +230,8 @@ body.editor { display: flex; flex-direction: column; block-size: 100dvh; min-hei
 .versions li { display: flex; align-items: center; gap: var(--s2); padding: var(--s1) 0; border-block-end: 1px solid var(--line); }
 .versions .v-tx { flex: 1; display: grid; min-inline-size: 0; }
 .versions small { color: var(--muted); }
+
+/* ===== ✨ בינה מלאכותית ===== */
+.ai-acts { display: grid; gap: var(--s1); margin-block: var(--s2); }
+.ai-acts .btn { display: grid; justify-items: start; gap: 0; min-block-size: 48px; padding: var(--s1) var(--s3); text-align: start; }
+.ai-acts .btn small { font-size: .75rem; font-weight: 400; color: var(--muted); }

@@ -17,6 +17,7 @@ import { toast } from './ui-core/toast.js';
 import { initDialogs, confirm } from './ui-core/dialog.js';
 import { download as saveFile } from './ui-core/files.js';
 import { shortcuts } from './ui-core/keys.js';
+import { mountAccount } from './account-ui.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 
@@ -867,6 +868,7 @@ $('#hist-btn').addEventListener('click', async () => {
     view.goSpread(0);
     // הגופנים ו-HarfBuzz — ברקע; כשמוכנים, הטקסט והכותרות מצוירים בהם
     ensureFonts().then(relayout).catch(err => toast('הגופנים לא נטענו: ' + err.message, true));
+    api('me').then(({ me }) => mountAccount($('header.top'), { api, me, shortcuts: keys })).catch(() => {});   // 👤
     $('#settings-btn').disabled = false;
     $('#pdf-btn').disabled = false;
     $('#mbe-btn').disabled = false;

@@ -8,6 +8,7 @@
 require_once __DIR__ . '/lib/auth.php';
 require_once __DIR__ . '/lib/docs.php';
 require_once __DIR__ . '/lib/store.php';
+require_once __DIR__ . '/lib/ui-core/account/account.php';   // 👤 תפריט המשתמש — עותק מסונכרן של ui-core
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
@@ -37,6 +38,20 @@ function rs_send_file(string $path, string $type, string $name = ''): never
 
 $method = $_SERVER['REQUEST_METHOD'] ?? '';
 $qAction = (string)($_GET['action'] ?? '');
+
+// ענן החבילה — מודול הכוננים (suite-cloud/drives): חיבור, אסימון לדפדפן (קבצים ו-AI), ומפתח ציבורי לענן.
+// לפני הבדיקה שלנו (POST + X-Raster-Studio): drives.js קורא ב-GET / JSON, והענן מוריד את drives_key שרת-לשרת.
+// עותק מסונכרן — לא עורכים את lib/drives/. drives.sqlite (המפתח הפרטי והחיבורים) — ליד המסד, ב-data/ (מוחרג בפריסה).
+if (str_starts_with($qAction, 'drives_')) {
+    require_once __DIR__ . '/lib/drives/Drives.php';
+    (new \SuiteCloud\Drives([
+        'client'   => 'raster-studio', 'name' => 'עיצוב רסטר',
+        'dataDir'  => dirname(rs_db_path()),
+        'endpoint' => 'https://mbe-plus.com/mini_projects/raster-studio/api.php',
+        'user'     => fn() => ($u = rs_account()) ? (string)$u['id'] : null,
+        'back'     => 'https://mbe-plus.com/mini_projects/raster-studio/',
+    ]))->serve($qAction);
+}
 if ($method === 'GET' && $qAction === 'doc_preview') {
     $action = 'doc_preview';
     $in = ['id' => (int)($_GET['id'] ?? 0)];
@@ -65,6 +80,24 @@ try {
 if (!$me) rs_fail('no_user', 401);
 $uid = (int)$me['id'];
 
+// 👤 תפריט המשתמש (ui-core): הגדרות אישיות במסד שלנו (uic_prefs), "ייצוא כל הנתונים שלי" ו"מחיקת החשבון"
+if (str_starts_with($action, 'account_')) {
+    try {
+        rs_out(['ok' => true] + uic_account_api($action, $in, [
+            'app' => 'raster-studio',
+            'pdo' => fn() => rs_db(),
+            'user' => fn() => $uid,
+            'export' => fn($u) => rs_account_export((int)$u),
+            'delete' => fn($u) => rs_account_delete((int)$u),
+        ]));
+    } catch (UicAccountError $e) {
+        rs_out(['ok' => false, 'error' => $e->getMessage()], $e->status);
+    } catch (Throwable $e) {
+        error_log('raster-studio: ' . $e->getMessage());
+        rs_fail('server', 500);
+    }
+}
+
 try {
     switch ($action) {
         case 'me':
@@ -78,6 +111,9 @@ try {
         case 'doc_create':
             $doc = rs_doc_create($uid, (string)($in['title'] ?? ''), (string)($in['size'] ?? ''), $in['px'] ?? null);
             rs_out(['ok' => true, 'doc' => $doc]);
+        case 'doc_rename':
+            if (!rs_doc_rename($uid, (int)($in['id'] ?? 0), (string)($in['title'] ?? ''))) rs_fail('not_found', 404);
+            rs_out(['ok' => true]);
         case 'doc_delete':
             if (!rs_doc_delete($uid, (int)($in['id'] ?? 0))) rs_fail('not_found', 404);
             rs_out(['ok' => true]);

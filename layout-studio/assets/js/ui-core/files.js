@@ -4,6 +4,7 @@
  * pickFiles של סטודיו העיצוב, והגרירה של ענן החבילה.
  *
  *   await download(blob, fileName('כרטיס ברכה', 'png'))
+ *   fileName('', 'png', 'תמונה')                   // → 'תמונה.png' — בלי כותרת (ברירת מחדל 'ללא שם')
  *   const files = await pickFiles({ accept: 'image/*', multiple: true })
  *   const off = dropZone(stage, { accept: ['image/', '.mbe'], onFiles: files => … })
  *   setSaveBridge(window.GreetingCardsAndroid)      // אפליקציית אנדרואיד (WebView) — פעם אחת
@@ -38,9 +39,9 @@ export async function download(blob, name) {
 }
 
 /** שם קובץ בטוח מכותרת: בלי תווים אסורים ותווי בקרה, עד 80 תווים, עם סיומת. */
-export function fileName(title, ext) {
+export function fileName(title, ext, fallback = 'ללא שם') {
     const base = String(title || '').replace(/[\u0000-\u001f\u007f<>:"/\\|?*‎‏⁦-⁩]+/g, ' ')
-        .replace(/\s+/g, ' ').trim().replace(/^\.+/, '').slice(0, 80).trim() || 'ללא שם';
+        .replace(/\s+/g, ' ').trim().replace(/^\.+/, '').slice(0, 80).trim() || fallback;
     return ext ? `${base}.${String(ext).replace(/^\./, '')}` : base;
 }
 
