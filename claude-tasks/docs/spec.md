@@ -450,6 +450,50 @@ Project ⚙ gets a row "my GitHub connection" (a picker over **my** GitHub conne
 **Done when:** tests cover migration (every secret decrypts identically), fallback (401 → next, 400 → no fallback, failing
 skipped then retried), per-user GitHub resolution; screenshots 390/320 light/dark; the owner sees connected vs not at a glance.
 
+### 10.2 Project settings (⚙) — rebuilt (owner request 2026-11-01: "more readable, more organized"; **stage 3b**, with 3a)
+
+**What is wrong today** (owner's screenshot, project "Mini projects"): one long scroll of forms — details, structure, members,
+skills, engine, files — each with paragraphs of explanation; **"שמירה" and "🗑️ מחיקה" side by side with equal weight**; the
+members block shows a member row and then two unlabeled dropdowns + "הוספה"; the engine block is three paragraphs and two buttons.
+
+**The new screen — a summary, then rows (taste.md: "records → rows", "long screen → summary first"):**
+
+1. **Header card** (not chips in a row): the project icon large, the name bold, a subline `malkiel01/mini_projects · main`,
+   and one line of state chips: "הרשאתך: ניהול" · "🔒 רק בעל הלוח" (if set) · "⚙️ מנוע מותקן" / "מנוע לא מותקן".
+   ✏️ next to the name → the "Details" sheet.
+2. **Rows** — icon in a colored square, bold title, grey subline with the **current value**, chevron ‹; the whole row taps:
+
+| Row | Subline (example) | Opens a sheet with |
+| --- | --- | --- |
+| ✏️ פרטים | "Mini projects · 📁" | name + icon **side by side**, folder path; "שמירה" |
+| 👥 חברים | "3 · מלכיאל (ניהול), …" | member rows; "+ חבר" (see below) |
+| 🔗 חיבור הגיטהאב שלי | "personal · malkiel01" | picker over my GitHub connections (§10.1) |
+| 💬/☁️ מי עונה | "💬 הצ'אטים" | the route `.seg` (stage 6; hidden until then) |
+| 🧩 סקילים | "אין עדיין" / "4" | skill rows + "+ סקיל" |
+| ⚙️ מנוע ההרצה | "לא מותקן" / "מותקן · npm test" | check command, "התקנה" / "התקנה מחדש" |
+| 🔑 אסימון לצ'אטים | "הצגה" | the registration token (§5.5), copy button, regenerate |
+| 📂 קבצים | "עיון בריפו" | the existing file browser |
+| 🏗️ מבנה | "רמה עליונה" / "בתוך: חבילת היצירה" | "רק בעל הלוח" switch + "העברה לתוך פרויקט" picker |
+
+   Rows the viewer cannot use are hidden, not disabled (a `read` member sees Details read-only, Members, Files).
+3. **Danger zone, last and separate:** a thin red-bordered card "מחיקת פרויקט" with one line — "רק פרויקט ריק, בלי מטלות ובלי
+   תתי-פרויקטים" — and a red text button. Disabled with the reason when not empty. Confirmation types the project name.
+   **Never next to "שמירה".**
+
+**Inside the sheets:**
+- **One `.hint` line** at the top of each sheet says what it is. The long explanations (skills, engine) move into a
+  `<details>` "מה זה?" at the **bottom** — taste.md allows `<details>` only for genuinely secondary, long text, and this is that.
+- **Members:** one row per member — initial in a circle, name bold, subline "גיטהאב: login" or "בלי גיטהאב" (yellowish when
+  missing), the level as a small `.seg` of three: **צפייה · כתיבה · ניהול** (changes save immediately, with a toast), and a 🗑️
+  icon button (`aria-label="הסרת <name>"`). "+ חבר" (word, primary) → a small sheet: a user picker **with a label**, the same
+  three-option `.seg`, "הוספה". No unlabeled dropdowns anywhere.
+- **Engine:** the state as a summary line first ("לא מותקן — מטלות פיתוח לא ירוצו לבד"), then the check-command field
+  **with a label and an example**, then one primary button ("התקנה" or "שמירה" — not both side by side).
+- Save buttons say what they save; a sheet with a single field saves on blur with a toast.
+
+**Done when:** screenshots 390/320 light/dark of the main settings screen and each sheet; no horizontal scroll; no paragraph
+longer than two lines outside a `<details>`; every input has a visible label; delete is not adjacent to any save.
+
 **Accessibility on every screen:** icon button = `aria-label`; touch targets ≥ 44px; tabs `role="tablist"`; a new channel message in `aria-live="polite"`.
 
 ---
