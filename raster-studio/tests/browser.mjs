@@ -669,7 +669,7 @@ async function main() {
   await page.waitForTimeout(100);
   const live = await page.evaluate(() => __rs.doc.selection.shapes[0].x);
   await page.click('dialog[open] button[type="submit"]');
-  await page.waitForFunction(() => !document.querySelector('dialog[open]'), null, { timeout: 3000 }).catch(() => {});
+  await page.waitForFunction(() => !document.querySelector('dialog[aria-label="שיפור קצוות"]'), null, { timeout: 3000 }).catch(() => {});
   const rf = await page.evaluate(() => { const s = __rs.doc.selection.shapes[0]; return [s.x, __rs.history.undoStack.at(-1).label].join(); });
   check('שיפור קצוות — תצוגה חיה, ✓ — הבחירה מורחבת ב-5, רשומה אחת', live === qs.x - 5 && rf === `${qs.x - 5},שיפור קצוות`, `${live} | ${rf}`);
   await page.keyboard.press('Control+z');
@@ -678,7 +678,7 @@ async function main() {
   await page.$eval('dialog[open] [data-refine="feather"]', el => { el.value = '10'; el.dispatchEvent(new Event('input', { bubbles: true })); });
   await page.waitForTimeout(100);
   await page.click('dialog[open] [data-close]');
-  await page.waitForFunction(() => !document.querySelector('dialog[open]'), null, { timeout: 3000 }).catch(() => {});
+  await page.waitForFunction(() => !document.querySelector('dialog[aria-label="שיפור קצוות"]'), null, { timeout: 3000 }).catch(() => {});
   const rc = await page.evaluate(() => { const s = __rs.doc.selection.shapes[0]; return [s.x, s.w, __rs.history.undoStack.at(-1).label].join(); });
   check('✕ — הבחירה המקורית חוזרת, בלי רשומה', rc === `${qs.x},${qs.w},בחירה מהירה`, rc);
 
@@ -1749,6 +1749,15 @@ async function main() {
   const [dl3] = await Promise.all([page.waitForEvent('download'), page.click('[data-export="jpg"]')]);
   const jpg = (await import('node:fs')).readFileSync(await dl3.path());
   check('JPG — חתימה', jpg[0] === 0xFF && jpg[1] === 0xD8 && okName(dl3, 'jpg'));
+  await page.click('#export-btn');
+  const [dl4] = await Promise.all([page.waitForEvent('download'), page.click('[data-export="webp"]')]);
+  const webp = (await import('node:fs')).readFileSync(await dl4.path());
+  check('WebP — חתימה RIFF…WEBP', webp.subarray(0, 4).toString() === 'RIFF' && webp.subarray(8, 12).toString() === 'WEBP' && okName(dl4, 'webp'));
+  await page.click('#export-btn');
+  const [dl5] = await Promise.all([page.waitForEvent('download'), page.click('[data-export="tif"]')]);
+  const tifPath = await dl5.path();
+  const tifInfo = execFileSync('identify', ['-format', '%m %w %h %[pixel:p{150,150}]', tifPath]).toString();
+  check('TIFF — נקרא ב-ImageMagick, בגודל הקנבס, והפיקסל הכחול במקומו', /^TIFF 600 400 s?rgba?\(0,0,255/.test(tifInfo) && okName(dl5, 'tif'), tifInfo);
 
   // ---- ORA: הורדה ← פתיחה (שכבות, שמות, מיזוג, אטימות, הסתרה, נעילה) ----
   await openEd(page);
@@ -1771,6 +1780,37 @@ async function main() {
   check('ORA נפתח עם כל השכבות והמאפיינים', back === 'רקע:normal:1:true:false | כפל:multiply:0.5:true:false | נסתר:normal:1:false:true', back);
   check('ORA — אותה תמונה מורכבת', (await px(10, 10)) === want, (await px(10, 10)) + ' / ' + want);
   check('ORA — השם מהקובץ', await page.evaluate(() => __rs.doc.title) === 'שכבות');
+  // ---- PSD: הורדה ← פתיחה (שכבות, קבוצה, שמות בעברית, מיזוג, אטימות, הסתרה), וקריאה ב-ImageMagick ----
+  await openEd(page);
+  await page.waitForFunction(() => window.__rs?.doc);
+  await page.evaluate(() => {
+    const { doc: d, renderer: r } = __rs;
+    const a = d.addLayer({ name: 'כפל', blend: 'multiply', opacity: 0.5 }); r.fill(d, a, [200, 50, 50, 255]);
+    const g = d.addGroup({ name: 'קבוצה' });
+    const c = d.addLayer({ name: 'בתוך', parent: g }); r.fill(d, c, [20, 90, 200, 160]);
+    const h = d.addLayer({ name: 'נסתר', visible: false }); r.fill(d, h, [0, 0, 0, 255]);
+    r.invalidate(d);
+  });
+  const psdWant = await px(10, 10);
+  await page.click('#export-btn');
+  const [dlp] = await Promise.all([page.waitForEvent('download'), page.click('[data-export="psd"]')]);
+  const psdPath = await dlp.path();
+  const psdBytes = (await import('node:fs')).readFileSync(psdPath);
+  const psdIm = execFileSync('identify', ['-format', '%m %w %h|', psdPath]).toString();
+  check('PSD — חתימה, נקרא ב-ImageMagick (התמונה המשולבת ושכבות)', psdBytes.subarray(0, 4).toString() === '8BPS' && okName(dlp, 'psd') && /^PSD 600 400\|(PSD \d+ \d+\|){4,}/.test(psdIm), psdIm);
+  await page.goto(BASE + '/index.html');
+  await page.waitForSelector('#new-btn:not([disabled])');
+  await Promise.all([page.waitForURL(/editor\.html\?open=pending/), page.setInputFiles('#file', { name: 'פוטושופ.psd', mimeType: 'image/vnd.adobe.photoshop', buffer: psdBytes })]);
+  await page.waitForFunction(() => window.__rs?.doc?.layers.length === 4, null, { timeout: 8000 }).catch(() => {});
+  const psdBack = await page.evaluate(() => {
+    const t = l => l.type === 'group' ? `${l.name}[${l.children.map(t).join(',')}]` : `${l.name}:${l.blend}:${l.opacity.toFixed(2)}:${l.visible}`;
+    return __rs.doc.layers.map(t).join(' | ');
+  });
+  check('PSD נפתח עם השכבות, הקבוצה והמאפיינים', psdBack === 'רקע:normal:1.00:true | כפל:multiply:0.50:true | קבוצה[בתוך:normal:1.00:true] | נסתר:normal:1.00:false', psdBack);
+  const psdGot = await px(10, 10);
+  check('PSD — אותה תמונה מורכבת', psdGot.split(',').every((v, i) => Math.abs(v - psdWant.split(',')[i]) <= 2), psdGot + ' / ' + psdWant);
+  check('PSD — השם מהקובץ', await page.evaluate(() => __rs.doc.title) === 'פוטושופ');
+
   // ---- ‎.mbe: הורדה, אימות בשתי השפות, פתיחה, ושמירת מה שלא שלנו ----
   await openEd(page);
   await page.waitForFunction(() => window.__rs?.doc);

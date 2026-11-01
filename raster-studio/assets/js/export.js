@@ -1,7 +1,9 @@
-// ייצוא: PNG / JPG (משוטחת) ו-ORA (שכבות — GIMP, Krita). ‎.mbe — ב-mbe-io.js, דרך הליבה.
+// ייצוא: PNG / JPG / WebP / TIFF (משוטחת), ORA (שכבות — GIMP, Krita) ו-PSD (שכבות — פוטושופ). ‎.mbe — ב-mbe-io.js.
 
 import { encodePNG } from './engine/png.js';
 import { zipStore } from './engine/zip.js';
+import { encodePSD } from './engine/psd.js';
+import { encodeTIFF } from './engine/tiff.js';
 import { oraStack, effectsOf } from './engine/formats.js';
 import { fileName as uiFileName } from './ui-core/files.js';
 
@@ -12,12 +14,15 @@ export const flatRGBA = (renderer, doc) => renderer.readPixels(doc, 0, 0, doc.wi
  * שכבה אחת בגודל הקנבס, כ-PNG (התוכן שמחוץ לקנבס לא נכנס). masked — כפול מסכת השכבה (מה שרואים).
  * גם מסכה עצמה (layer.mask) — PNG בגווני אפור.
  */
-export const layerPNG = async (renderer, doc, layer, masked = false) => encodePNG(layer.adjust
+export const layerPNG = async (renderer, doc, layer, masked = false) => encodePNG(await layerRGBA(renderer, doc, layer, masked), doc.width, doc.height);
+
+/** שכבה אחת בגודל הקנבס כ-RGBA ישר (כמו layerPNG, בלי הקידוד) */
+export const layerRGBA = (renderer, doc, layer, masked = false) => layer.adjust
   // שכבת התאמה: אין לה פיקסלים — מה שנראה במקומה (מה שמתחתיה אחרי ההתאמה, כפול המסכה)
-  ? await renderer.readAdjustLayerPixels(doc, layer, 0, 0, doc.width, doc.height)
+  ? renderer.readAdjustLayerPixels(doc, layer, 0, 0, doc.width, doc.height)
   // המראה של שכבה עם סגנונות שכבה: כפול המסכה, עם האפקטים
-  : masked && effectsOf(layer).length ? await renderer.readEffectsLayerPixels(doc, layer, 0, 0, doc.width, doc.height)
-  : await renderer.readLayerPixels(layer, 0, 0, doc.width, doc.height, masked), doc.width, doc.height);
+  : masked && effectsOf(layer).length ? renderer.readEffectsLayerPixels(doc, layer, 0, 0, doc.width, doc.height)
+  : renderer.readLayerPixels(layer, 0, 0, doc.width, doc.height, masked);
 
 /** תמונה מוקטנת (הצלע הארוכה ≤ max) כ-PNG — לתמונה ממוזערת / preview */
 export async function scaledPNG(rgba, w, h, max) {
@@ -35,6 +40,54 @@ export async function scaledPNG(rgba, w, h, max) {
 
 export async function exportPNG(renderer, doc) {
   return new Blob([await encodePNG(await flatRGBA(renderer, doc), doc.width, doc.height)], { type: 'image/png' });
+}
+
+/** WebP: עם שקיפות, באיכות גבוהה. דפדפן שלא יודע לכתוב WebP (מחזיר PNG) — שגיאה webp-unsupported */
+export async function exportWEBP(renderer, doc, quality = 0.92) {
+  const rgba = await flatRGBA(renderer, doc);
+  const cv = new OffscreenCanvas(doc.width, doc.height);
+  cv.getContext('2d').putImageData(new ImageData(rgba, doc.width, doc.height), 0, 0);
+  const blob = await cv.convertToBlob({ type: 'image/webp', quality });
+  if (blob.type !== 'image/webp') throw new Error('webp-unsupported');
+  return blob;
+}
+
+/** TIFF: משוטחת, RGBA בלי דחיסה (הכי תואם — פוטושופ, GIMP, דפוס) */
+export async function exportTIFF(renderer, doc) {
+  return new Blob([encodeTIFF(await flatRGBA(renderer, doc), doc.width, doc.height)], { type: 'image/tiff' });
+}
+
+/** החיתוך של RGBA בגודל הקנבס למלבן של מה שלא שקוף (שכבה ריקה — 0×0) */
+function cropRGBA(rgba, W, H) {
+  let x0 = W, y0 = H, x1 = -1, y1 = -1;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    if (!rgba[(y * W + x) * 4 + 3]) continue;
+    if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+  }
+  if (x1 < 0) return { x: 0, y: 0, w: 0, h: 0, rgba: new Uint8Array(0) };
+  const w = x1 - x0 + 1, h = y1 - y0 + 1, out = new Uint8Array(w * h * 4);
+  for (let y = 0; y < h; y++) out.set(rgba.subarray(((y0 + y) * W + x0) * 4, ((y0 + y) * W + x0 + w) * 4), y * w * 4);
+  return { x: x0, y: y0, w, h, rgba: out };
+}
+
+/**
+ * PSD בשכבות: כל שכבה — המראה שלה (כפול המסכה, עם סגנונות השכבה; שכבת התאמה / מילוי — אפויה), חתוכה למה שלא שקוף;
+ * קבוצות — קבוצות של פוטושופ. שכבות של אפליקציה אחרת לא נכנסות (כמו ב-ORA).
+ */
+export async function exportPSD(renderer, doc) {
+  const walk = async list => {
+    const out = [];
+    for (const l of list) {
+      const props = { name: l.name, opacity: l.opacity, visible: l.visible !== false, blend: l.blend };
+      if (l.type === 'group') { out.push({ ...props, type: 'group', children: await walk(l.children) }); continue; }
+      if (l.foreign) continue;
+      out.push({ ...props, ...cropRGBA(await layerRGBA(renderer, doc, l, true), doc.width, doc.height) });
+    }
+    return out;
+  };
+  const layers = await walk(doc.layers);
+  const composite = await flatRGBA(renderer, doc);
+  return new Blob([encodePSD({ width: doc.width, height: doc.height, layers, composite })], { type: 'image/vnd.adobe.photoshop' });
 }
 
 /** JPG: בלי שקיפות — מעל לבן */
