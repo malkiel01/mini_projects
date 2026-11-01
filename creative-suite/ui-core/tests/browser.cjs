@@ -345,6 +345,16 @@ const server = http.createServer((req, res) => {
         ok(sv.emptyGet === null, 'accountServer: [] מהשרת (אין הגדרות) — לא נשבר');
 
         // 📁 files-window — ניהול, פתיחה, שמירה
+        await p.evaluate(async () => {
+            const { openDocuments } = await import('../src/js/files-window.js');
+            openDocuments([{ id: 'x', title: 'בדיקה', list: async () => ({ items: [{ id: '1', name: 'מסמך.mbe', kind: 'file' }] }), rename: async () => {}, remove: async () => {} }]);
+        });
+        await p.waitForSelector('dialog[open] .fw-list .card:has-text("מסמך")');
+        await p.click('dialog[open] .fw-list .card:has-text("מסמך") .body');
+        await p.waitForTimeout(150);
+        ok(await p.$$eval('.menu [role="menuitem"]', m => m.map(x => x.textContent).join('|').includes('שינוי שם')), 'files: ניהול בלי onOpen — לחיצה על שורה פותחת את תפריט הפעולות');
+        await p.keyboard.press('Escape'); await p.waitForTimeout(100);
+        await p.evaluate(() => document.querySelector('dialog[open]')?.close()); await p.waitForTimeout(100);
         await p.evaluate(() => { window.__fwDone = null; window.__fw.openDocuments(window.__fw.sources).then(r => { window.__fwDone = r; }); });
         await p.waitForSelector('dialog[open] .fw-list .card');
         const fw1 = await p.evaluate(() => ({ tabs: [...document.querySelectorAll('dialog[open] [role="tab"]')].map(t => t.textContent),

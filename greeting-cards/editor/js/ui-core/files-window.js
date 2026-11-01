@@ -141,7 +141,7 @@ export function filesWindow(sources, { mode = 'manage', title, accept = [], name
             const sub = parts.length ? parts.flatMap((p, i) => [i ? ' · ' : null, h('bdi', p)]) : null;
             const more = actions(it).length ? h('button.icon-btn', { type: 'button', 'aria-label': `פעולות: ${it.name}`, 'aria-haspopup': 'menu',
                 onclick: e => { e.stopPropagation(); menu(e.currentTarget, actions(it)); } }, '⋯') : null;
-            return h('li.card', { tabindex: '0', onclick: () => pick(it), onkeydown: e => { if (e.key === 'Enter') pick(it); } },
+            return h('li.card', { tabindex: '0', _item: it, onclick: () => pick(it), onkeydown: e => { if (e.key === 'Enter') pick(it); } },
                 h('span.use-ic', { 'aria-hidden': 'true' }, iconOf(it)),
                 h('div.body', h('div.l1', h('span', ...nameParts(it))), sub ? h('div.l2', sub) : null),
                 more);
@@ -183,7 +183,10 @@ export function filesWindow(sources, { mode = 'manage', title, accept = [], name
             if (it.kind === 'folder') return go(it.id);
             if (mode === 'save') { nameIn.value = it.name.replace(/\.[^.]+$/, ''); nameIn.focus(); return; }
             if (mode === 'open') { result = { source: src, item: it }; s.close(); return; }
-            if (onOpen) { s.close(); onOpen(it, src); }
+            if (onOpen) { s.close(); onOpen(it, src); return; }
+            // ניהול בלי onOpen — הלחיצה פותחת את תפריט הפעולות של השורה (לקח מעורך התמלילים)
+            const list = actions(it), at = [...listEl.children].find(li => li._item === it);
+            if (list.length) menu(at?.querySelector('.icon-btn') || at || listEl, list);
         }
 
         async function doSave() {
