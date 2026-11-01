@@ -32,6 +32,17 @@ function body(): array {
 $action = (string)($_GET['action'] ?? '');
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
+// ענן החבילה — מודול הכוננים (suite-cloud/drives). עותק מסונכרן: לא עורכים את lib/drives/.
+// drives.sqlite (המפתח הפרטי של האפליקציה והחיבורים) — בתוך data/studio/, שמוחרגת בפריסה.
+require_once __DIR__ . '/lib/drives/Drives.php';
+if (str_starts_with($action, 'drives_')) (new \SuiteCloud\Drives([
+    'client'   => 'greeting-cards', 'name' => 'סטודיו העיצוב',
+    'dataDir'  => STUDIO_DATA,
+    'endpoint' => 'https://mbe-plus.com/mini_projects/greeting-cards/editor/api.php',
+    'user'     => fn() => ($u = currentUser()) ? (string) $u['id'] : null,
+    'back'     => 'https://mbe-plus.com/mini_projects/greeting-cards/editor/',
+]))->serve($action);
+
 try {
     if ($method !== 'GET' && ($_SERVER['HTTP_X_STUDIO'] ?? '') !== '1') throw new ApiError('בקשה לא מורשית', 403);
 

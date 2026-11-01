@@ -17,7 +17,8 @@
     "editor/gpt.php",
     "editor/oauth/token.php",
     "editor/gpt/openapi.json",
-    "editor/log.php"
+    "editor/log.php",
+    "editor/api.php?action=drives_key"
   ],
   "links": [
     {
