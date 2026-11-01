@@ -1,12 +1,14 @@
-// שכבת העל של הבמה: "נמלים צועדות" סביב הבחירה, תצוגה מקדימה של צורה בזמן גרירה, ונקודת המקור של חותמת השכפול.
-// קנבס דו-ממדי נפרד מעל קנבס ה-WebGL — קווים חדים בכל זום, בלי לגעת בפיקסלים של המסמך.
+// שכבת העל של הבמה: "נמלים צועדות" סביב הבחירה, תצוגה מקדימה של צורה בזמן גרירה, האזור המוחשך של החיתוך ונקודת המקור
+// של חותמת השכפול. קנבס דו-ממדי נפרד מעל קנבס ה-WebGL — קווים חדים בכל זום, בלי לגעת בפיקסלים של המסמך.
+// הידיות (שינוי צורה וחיתוך) — handles.js של ui-core, ב-SVG מעל אותה במה (host); onDraw — לעדכן אותן בזום / הזזה.
 
 import { tracePath } from './engine/selection.js';
 
 export function createOverlay(canvas, { doc, view }) {
   const ctx = canvas.getContext('2d');
   let preview = null;
-  let box = null;   // { corners, handles } — שינוי צורה
+  let box = false;  // שינוי צורה פתוח — הבחירה זזה עם התוכן, ולכן בלי נמלים
+  const hooks = [];
   let crop = null;  // { x0, y0, x1, y1 } — מה שמחוץ לו מוחשך
   let mark = null;  // { p: [x, y], r } — נקודת המקור של החותמת, במסמך
   let phase = 0;
@@ -54,23 +56,6 @@ export function createOverlay(canvas, { doc, view }) {
       ctx.fillStyle = 'rgba(10, 15, 30, .5)';
       ctx.fill('evenodd');
     }
-    if (box) {
-      const v = view();
-      const map = ([x, y]) => [(v.x + x * v.zoom) * dpr, (v.y + y * v.zoom) * dpr];
-      ctx.setLineDash([]);
-      ctx.lineWidth = Math.max(1, dpr);
-      ctx.beginPath();
-      box.corners.map(map).forEach((p, i) => (i ? ctx.lineTo(...p) : ctx.moveTo(...p)));
-      ctx.closePath();
-      ctx.strokeStyle = '#2d4a8a';
-      ctx.stroke();
-      const r = 4 * dpr;
-      for (const p of box.handles.map(map)) {
-        ctx.fillStyle = '#fff';
-        ctx.fillRect(p[0] - r, p[1] - r, r * 2, r * 2);
-        ctx.strokeRect(p[0] - r, p[1] - r, r * 2, r * 2);
-      }
-    }
     if (mark) {
       const v = view();
       const [x, y] = [(v.x + mark.p[0] * v.zoom) * dpr, (v.y + mark.p[1] * v.zoom) * dpr];
@@ -89,12 +74,17 @@ export function createOverlay(canvas, { doc, view }) {
     if (!live && timer) { clearInterval(timer); timer = 0; }
   }
 
+  const drawAll = () => { draw(); for (const f of hooks) f(); };
   return {
-    draw,
+    draw: drawAll,
+    /** האלמנט של הבמה — שם יושבות הידיות של ui-core */
+    host: canvas.parentElement,
+    /** נקרא בכל ציור (זום, הזזה) — הידיות מתעדכנות */
+    onDraw(f) { hooks.push(f); },
     /** צורה בזמן גרירה (או null) */
     preview(shape) { preview = shape; draw(); },
-    /** מסגרת שינוי הצורה עם הידיות (או null) */
-    box(corners, handles) { box = corners ? { corners, handles } : null; draw(); },
+    /** שינוי צורה פתוח (המסגרת והידיות — handles.js) */
+    box(on) { box = !!on; draw(); },
     /** אזור חיתוך — מחוץ לו מוחשך (או null) */
     crop(r) { crop = r; draw(); },
     /** נקודת המקור של חותמת השכפול (או null); r — רדיוס המכחול בפיקסלים של המסמך */
