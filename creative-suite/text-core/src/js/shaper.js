@@ -33,7 +33,7 @@ export async function loadFont(src, name = typeof src === 'string' ? src : 'font
   let data = src;
   if (typeof src === 'string') {
     const res = await fetch(src, { credentials: 'same-origin' });
-    if (!res.ok) throw new Error('font ' + res.status);
+    if (!res.ok) throw new Error('text-core: הגופן לא נטען (' + res.status + ') — ' + src);
     data = await res.arrayBuffer();
   }
   const face = new H.Face(new H.Blob(data));
