@@ -55,7 +55,7 @@ $PUBLIC = ['health', 'embed_key', 'register', 'verify', 'login', 'forgot', 'rese
            // Claude קורא מטלות ומשיב (DevLoop): הזהות היא האסימון שבכותרת X-Dev-Token.
            'devapi-feed', 'devapi-comment', 'devapi-file', 'devapi-attach'];
 $POSTS  = ['register', 'verify', 'login', 'forgot', 'reset', 'logout', 'platform_link', 'platform_new', 'dev_user',
-           'tpl_create', 'tpl_create_authored', 'tpl_import', 'tpl_save', 'tpl_set_source', 'tpl_word_mark', 'tpl_wp_session', 'tpl_wp_sync', 'tpl_archive', 'tpl_delete',
+           'tpl_create', 'tpl_create_authored', 'tpl_import', 'tpl_save', 'tpl_set_source', 'tpl_word_mark', 'tpl_word_unmark', 'tpl_word_rename', 'tpl_wp_session', 'tpl_wp_sync', 'tpl_archive', 'tpl_delete',
            'doc_create', 'doc_duplicate', 'doc_return', 'doc_save', 'doc_submit', 'doc_assign', 'list_opts', 'list_save', 'list_repair', 'list_delete', 'list_import', 'doc_complete', 'doc_archive', 'doc_delete', 'doc_downloaded',
            'part_contact', 'part_link', 'part_revoke', 'part_notify', 'fill_otp_send', 'fill_otp_verify', 'fill_save', 'fill_complete', 'fill_downloaded',
            'doc_upload', 'fill_upload', 'dev_quota', 'share_set', 'share_remove', 'share_leave', 'share_invite', 'share_invite_resend', 'share_invite_cancel', 'invite_accept',
@@ -116,6 +116,8 @@ try {
         'tpl_set_source' => tpl_set_source($session, $body),
         'tpl_word_text' => tpl_word_text($session, (int)($_GET['id'] ?? 0)),
         'tpl_word_mark' => tpl_word_mark($session, $body),
+        'tpl_word_unmark' => tpl_word_unmark($session, $body),   // 15.5: ביטול סימון
+        'tpl_word_rename' => tpl_word_rename($session, $body),
         'tpl_wp_session' => tpl_wp_session($session, $body),   // 15.8: עורך התמלילים
         'tpl_wp_sync'    => tpl_wp_sync($session, $body),
         'embed_key'      => wp_embed_key(),

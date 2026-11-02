@@ -129,6 +129,26 @@ throws('טקסט שלא תואם לקובץ — 409', fn() => tpl_word_mark($a, 
 $paras = tpl_word_text($a, $mid)['paragraphs'];
 throws('בחירה שנוגעת בשדה קיים — 422', fn() => $mark(2, 'קיים: {{', 'x'), 422);
 throws('שם עם נקודה — 422', fn() => $mark(1, 'היום', 'א.ב'), 422);
+// ── 15.5: ביטול סימון ושינוי שם (שדה שסומן בטעות) ──
+$u1 = tpl_create($a, ['name' => 'ביטול'], ['file' => ['tmp_name' => "$tmp/m.docx", 'error' => 0, 'size' => 10]])['id'];
+$pu = tpl_word_text($a, $u1)['paragraphs'];
+tpl_word_mark($a, ['id' => $u1, 'part' => $pu[1]['part'], 'p' => $pu[1]['p'], 'start' => mb_strpos($pu[1]['text'], 'ישראל ישראלי'), 'len' => 12, 'text' => 'ישראל ישראלי', 'name' => 'טעות']);
+$r = tpl_word_rename($a, ['id' => $u1, 'name' => 'טעות', 'to' => 'שם החותם']);
+$fu = array_column(tpl_get($a, $u1)['template']['schema']['fields'], null, 'placeholder');
+$xu = part(asset_bytes(tpl_asset_row((int)tpl_owned($u1, $a)['version_id'])), 'word/document.xml');
+check('שינוי שם: {{טעות}} ← {{שם_החותם}} בקובץ, והתווית', $r['changed'] && isset($fu['שם_החותם']) && !isset($fu['טעות'])
+    && $fu['שם_החותם']['label'] === 'שם החותם' && str_contains($xu, '{{שם_החותם}}') && !str_contains($xu, 'טעות'));
+throws('שינוי לשם של שדה קיים — 409', fn() => tpl_word_rename($a, ['id' => $u1, 'name' => 'שם_החותם', 'to' => 'תאריך']), 409);
+$r = tpl_word_unmark($a, ['id' => $u1, 'name' => 'שם_החותם']);
+$fu = array_column(tpl_get($a, $u1)['template']['schema']['fields'], null, 'placeholder');
+$xu = part(asset_bytes(tpl_asset_row((int)tpl_owned($u1, $a)['version_id'])), 'word/document.xml');
+check('ביטול סימון: הטקסט המקורי חוזר לקובץ, והשדה יוצא', $r['restored'] === 'ישראל ישראלי' && !isset($fu['שם_החותם'])
+    && str_contains(text_of($xu), 'חתום: ישראל ישראלי, היום') && !str_contains($xu, '{{שם_החותם}}'));
+$r = tpl_word_unmark($a, ['id' => $u1, 'name' => 'תאריך']);   // סימון שהוקלד ב-Word — אין טקסט מקורי
+check('ביטול סימון שהוקלד ב-Word — קו במקום', $r['restored'] === '______'
+    && str_contains(text_of(part(asset_bytes(tpl_asset_row((int)tpl_owned($u1, $a)['version_id'])), 'word/document.xml')), 'קיים: ______'));
+throws('שדה שלא קיים — 404', fn() => tpl_word_unmark($a, ['id' => $u1, 'name' => 'אין']), 404);
+
 $dm = doc_create($a, ['template_id' => $mid])['id'];
 doc_save($a, ['id' => $dm, 'values' => [$fx['שם_השוכר']['key'] => 'דנה', $fx['שם_החותם']['key'] => 'משה']]);
 $filled = part(docx_fill($mb, tpl_get($a, $mid)['template']['schema'], doc_values($dm), []), 'word/document.xml');

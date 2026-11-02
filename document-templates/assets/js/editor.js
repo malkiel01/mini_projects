@@ -809,14 +809,17 @@
       ].filter(Boolean).join(' · ');
       return el('div', { class: 'fields-tab' },
         schema.fields.length ? null : el('p', { class: 'empty' }, isWord || isAuthored
-          ? 'אין עדיין שדות — מוסיפים סימון {{שם}} בטקסט.' : 'אין עדיין שדות. בלשונית "עיצוב" — "+ שדה", ואז הקשה במקום בדף.'),
+          ? 'אין עדיין שדות. בלשונית "עיצוב": "🖍️ סימון שדות בטקסט", או "📝 עריכה בעורך התמלילים" ושם {{שם השדה}}.' : 'אין עדיין שדות. בלשונית "עיצוב" — "+ שדה", ואז הקשה במקום בדף.'),
         groups.map(([title, hint, list]) => el('section', { class: 'field-group' },
           el('h3', { class: 'sec-title' }, title, el('small', { class: 'muted' }, ' · ' + hint)),
           el('ul', { class: 'list field-list' }, list.map(f => el('li', {},
             el('button', { type: 'button', class: 'use-row', 'data-key': f.key, onclick: () => editField(f) },
               el('span', { class: 'use-ic' + (isAuto(f) ? ' auto' : ' role-' + (roleIndex(f.role) % 6)), 'aria-hidden': 'true' }, iconOf(f)),
               el('span', { class: 'use-tx' }, el('b', {}, f.label), el('small', {}, sub(f))),
-              el('span', { class: 'chev', 'aria-hidden': 'true' }, '‹'))))))),
+              el('span', { class: 'chev', 'aria-hidden': 'true' }, '‹')),
+            // Word: הסימון בקובץ — שינוי שם או ביטול (15.5)
+            isWord && f.placeholder && !readOnly ? el('button', { type: 'button', class: 'icon-btn', 'aria-label': 'הסימון בקובץ — שינוי שם או ביטול: ' + f.label,
+              title: 'הסימון בקובץ: שינוי שם / ביטול', onclick: () => wordPhSheet(f.placeholder) }, '↩') : null))))),
         isWord || isAuthored ? null : el('p', { class: 'hint' }, 'בדף: הקשה על שדה — הגדרות; גרירה — הזזה; הפינה — גודל; חצים — הזזה עדינה; Delete — מחיקה.'));
     }
 
@@ -1982,6 +1985,34 @@
     // ── סימון שדות בתוך Word (lib/wordmark.php) ──
     // הטקסט של הקובץ, פסקה אחרי פסקה. בוחרים טקסט באחת מהן (גרירה, או לחיצה ארוכה בטלפון),
     // נותנים שם, והשרת כותב {{שם}} במקומו בקובץ עצמו ומוסיף שדה. אחר כך העורך נפתח מחדש, במצב סימון.
+    /** שדה מסומן ב-Word: שינוי השם בקובץ, או ביטול הסימון — הטקסט שהיה לפני הסימון חוזר (15.5). */
+    function wordPhSheet(name) {
+      const f = schema.fields.find(x => x.placeholder === name);
+      const to = el('input', { type: 'text', maxlength: 60, value: name.replace(/_/g, ' '), 'aria-label': 'שם חדש' });
+      const out = el('div');
+      const act = async (action, body, ok) => {
+        out.replaceChildren();
+        try {
+          if (dirty) { await save(); if (dirty) return; }   // הגדרות שלא נשמרו — קודם שומרים
+          const r = await api(action, { id, name, ...body });
+          dlg.close(); markAgain = id; await open(id); window.DT.toast(ok(r));
+        } catch (e) { out.replaceChildren(notice(e.message, 'bad')); }
+      };
+      const back = f && f.orig ? '«' + (f.orig.length > 40 ? f.orig.slice(0, 40) + '…' : f.orig) + '»' : 'קו ______';
+      const dlg = window.DT.sheet('{{' + name + '}}', el('div', { class: 'field-sheet' },
+        el('label', { class: 'f' }, el('span', {}, 'שם השדה'), to),
+        el('div', { class: 'row-btns' }, el('button', { type: 'button', class: 'primary', onclick: () => {
+          const v = to.value.trim(); if (!v) { to.focus(); return; }
+          act('tpl_word_rename', { to: v }, () => `✓ השם שונה ל"${v}"`);
+        } }, '✏️ שינוי שם')),
+        el('hr'),
+        el('p', { class: 'hint' }, `ביטול הסימון מוציא את השדה מהתבנית, ובמקומו בקובץ חוזר ${back}.`),
+        el('div', { class: 'row-btns' }, el('button', { type: 'button', class: 'danger', onclick: () => {
+          if (!confirm(`לבטל את הסימון של "${name}"? השדה ייצא מהתבנית.`)) return;
+          act('tpl_word_unmark', {}, (r) => `✓ הסימון בוטל — חזר «${r.restored}»`);
+        } }, '↩ ביטול סימון')), out));
+    }
+
     async function markWord(box, openBtn) {
       openBtn.hidden = true;
       const list = el('div', { class: 'word-mark-text' });
@@ -2008,7 +2039,7 @@
       } }, what, nameIn, go, out);
       box.replaceChildren(el('div', { class: 'word-mark-head' },
         el('span', {}, el('strong', {}, '🖍️ סימון שדות'), ' — בוחרים טקסט בפסקה ולוחצים "הפוך לשדה". ',
-          el('span', { class: 'word-mark-ph' }, 'מסומן'), ' = כבר שדה.'),
+          el('span', { class: 'word-mark-ph' }, 'מסומן'), ' = כבר שדה; לחיצה עליו — שינוי שם או ביטול.'),
         el('button', { type: 'button', class: 'small', onclick: () => open(id) }, 'סיום')), list, bar);
       let paras;
       try {
@@ -2018,7 +2049,9 @@
       paras.forEach((p, i) => {
         const d = el('p', { class: 'word-mark-p', dir: 'auto', 'data-i': i });
         for (const chunk of p.text.split(/(\{\{[^{}]{1,60}?\}\})/)) {
-          if (chunk) d.append(/^\{\{/.test(chunk) ? el('span', { class: 'word-mark-ph' }, chunk) : document.createTextNode(chunk));
+          // שדה מסומן — לחיצה: שינוי שם או ביטול סימון (15.5)
+          if (chunk) d.append(/^\{\{/.test(chunk) ? el('button', { type: 'button', class: 'word-mark-ph', title: 'שינוי שם / ביטול סימון',
+            onclick: () => wordPhSheet(chunk.replace(/^\{\{\s*|\s*\}\}$/g, '')) }, chunk) : document.createTextNode(chunk));
         }
         if (i > 0 && paras[i - 1].part !== p.part) list.append(el('div', { class: 'word-mark-part muted small' }, p.part.includes('header') ? 'כותרת עליונה' : p.part.includes('footer') ? 'כותרת תחתונה' : 'הערות'));
         list.append(d);
