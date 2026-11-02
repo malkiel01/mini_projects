@@ -462,6 +462,62 @@ the turn; a tap on the board wakes the chat with the answer; a number typed in t
 multi-question and multiSelect work; `questions: app` keeps the dialog and mirrors the answer; an unregistered chat is unaffected.
 Tests for `choice-answer`, the race, and the typed-answer path.
 
+### 5.11 The conversation screen — translate, pin, label, and ⚙ chat settings (owner request 2026-11-02; **stage 12a–d**)
+
+**The owner asked for:** (1) a translate button on every message, into a preferred language set in the app's settings —
+so a chat that answered in English reads in Hebrew with one tap, **without asking the chat to switch language and spending its
+tokens**; (2) pin messages and tag them with labels, then search by label; (3) the 🔌 button at the top of the conversation
+becomes **⚙ chat settings** — a menu with everything: labels, search, filter by labels.
+
+The code writer's expanded proposal (message of 2026-11-02 08:18) is **accepted as the design**, with the decisions below.
+Where this section is silent, that proposal holds.
+
+#### 5.11.1 Decisions
+
+| Question | Decision | Why |
+| --- | --- | --- |
+| Pins and labels — shared or personal? | **Shared** by everyone who sees the channel; each records who did it (`by`, `at`) | A channel is a shared work log; the owner is mostly its only reader, and a team needs one truth |
+| Labels — board-wide or per project? | **Both:** `labels.project_id NULL` = board-wide; a project label is visible in its subtree. A channel offers board-wide + its project's ancestors' labels | Same inheritance as everything else; "✅ החלטה" once for the whole board |
+| Translation engine | **AI only** (the user's connection chain, §10.1), **cheapest model** of the provider by default (a `translate_model` setting) — no browser Translator API | The owner works on an Android phone, where the browser API is not available; one path keeps Markdown handling and caching identical |
+| Auto-translate | **Yes, off by default, per channel.** Translates only `out` messages from the chat, **only when the bubble is on screen** (lazy), and stops at 80% of the user's quota (the button keeps working until 100%) | Pays only for what is read; never burns the quota in the background |
+| Stage order | **12a** ⚙ chat settings + info + disconnect inside → **12b** translation → **12c** pins & labels → **12d** search, filter, export. Board-wide label search (proposal §ו) — later, not now | Each step is usable alone; 12a is the frame the others plug into |
+
+#### 5.11.2 Rules that must hold
+
+- **Translation is display only.** Never sent to the chat, never changes the stored message, never translates what the owner
+  writes on the way to the chat.
+- **Cached per (message, language)** in `message_translations` — the second view, and every other user with that language,
+  costs nothing. Logged in `usage` as `kind: translate` against the user who tapped. No key / quota 0 / 100% → the button is
+  disabled with the reason; nothing is sent.
+- **Markdown in, Markdown out:** code blocks, inline code, URLs, paths, file names, ids (`#1234`, `session_…`) and numbers stay
+  as they are. The prompt returns the translation only.
+- **The 🌐 button shows only when the message is probably not in the preferred language** (a cheap script-ratio check in the
+  browser, no server call). The bubble shows "🌐 תורגם מאנגלית · הצג מקור"; the per-message choice is remembered on the device
+  (`localStorage`).
+- **Bubble stays clean:** in the meta line only 🌐 (when relevant), 📌 (when pinned) and small colored label chips. Everything
+  else is in the message menu (long press on a phone, "⋯" on hover/focus on desktop): 📌 · 🏷 · 🌐 · 📋 copy (original Markdown)
+  · ↩ reply · ➕ make a task · 🔗 copy link (`#m<id>`).
+- **Labels:** 8 fixed colors, accessible in light and dark — no free color. Quick "+ תווית חדשה" from the message menu; full
+  management in ⚙. Deleting a label asks for confirmation and says how many messages carry it. No labels are created
+  automatically (the five examples are only placeholders in the empty state).
+- **Permissions:** pin / label / translate = whoever may `channel-send` on the project; label management and disconnect /
+  archive = `owner`.
+- **⚙ chat settings** = a `.sheet-wrap` with rows that open sheets, exactly like project ⚙ (§10.2): 🔎 search · 🏷 filter ·
+  📌 pinned · 🏷 manage labels · 🌐 translation (language for this chat + auto) · ℹ️ about (name, role, project + #id, channel #,
+  session link, registered, last seen, listener, route 💬/☁️) · ✏️ name, role, square color · 🔔 mute · 📏 length and 🔁
+  follow-up chat (§5.9) · ⬇️ export Markdown (all or filtered). **Danger zone at the bottom:** 🔌 disconnect and 🗄 archive,
+  each with a confirmation, owner only.
+- **Active filter** shows as removable chips above the conversation; search highlights matches and steps ▲▼ through them,
+  including cached translations.
+
+**API** — as proposed: `translate`, `message-pin`, `labels`, `label-save`, `label-delete`, `message-label`, `channel-search`,
+`channel-update`, `channel-export`; `channel-messages` adds `pinned`, `labels[]`, and `translation` when cached for the viewer's
+language. Users: `users.translate_lang` (default `he`), set in Settings → Account → "שפה לתרגום" (short list + "other" as BCP-47).
+
+**Done when** (per sub-stage): the proposal's test list (cache hit with no call, code untouched, blocked without quota, never sent
+to the chat; pin/label permissions, deleting a label clears it; label + text + kind filters combined), screenshots 320/390
+light/dark, keyboard access to the message menu, `aria-pressed` on pin. A row in §14 for each of 12a–12d.
+
 ## 6. Stage 5 — approvals & policy
 
 As "PR 2" in the answer to the command-center request, with two changes:
