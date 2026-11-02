@@ -1,6 +1,6 @@
 {
   "team": "חבילת היצירה",
-  "updated": "2026-11-01",
+  "updated": "2026-11-02",
   "note": "רשימת הצוות הקבועה. כל אחד שולח הודעות ישירות לאחרים לפי .claude/skills/creative-suite-team/SKILL.md. מוסיף או משנה חבר — רק הצ'אט המתכלל.",
   "members": [
     { "role": "coordinator", "name": "הצ'אט המתכלל", "session": "session_01XFFMNKh9yc4XGoUa7AYMfv",
@@ -24,7 +24,7 @@
     { "role": "layout", "name": "עימוד", "session": "session_019sbyP5mHxwBKkbhmCj41Go",
       "owns": ["layout-studio/"],
       "does": "עימוד בסגנון InDesign; ‎.mbe מסוג layout; בעלים של שטף טקסט במסגרות ו-shapeLine (עברית)" },
-    { "role": "design-studio", "name": "סטודיו העיצוב", "session": "session_01JD5TDa42YrmsoeAfPtQ5qb",
+    { "role": "design-studio", "name": "היצירה v2 - סטודיו העיצוב", "session": "session_018g4NYFXLoFnDMnnf6g8pL8", "board": "פרויקט 6, ערוץ #1",
       "owns": ["greeting-cards/"],
       "does": "עורך בסגנון Canva — תבניות, טקסט, צורות ושכבות, בטלפון; ‎.mbe מסוג design" },
     { "role": "suite-cloud", "name": "ענן החבילה", "session": "session_01Eca6GK5y7usjF6cfmuLBpq",
