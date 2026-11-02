@@ -786,3 +786,4 @@ mark.hit { background: color-mix(in srgb, var(--star) 45%, transparent); color: 
 .tr-set progress { width: 100%; }
 .tr-state { margin: var(--s2, 8px) 0; font-weight: 600; }
 .tr-credit { font-size: .78rem; }
+.tr-stay { margin: var(--s2, 8px) 0; padding: var(--s2, 8px) var(--s3, 12px); border-radius: var(--r, 10px); font-size: .88rem; font-weight: 600; background: color-mix(in srgb, currentColor 7%, transparent); }
