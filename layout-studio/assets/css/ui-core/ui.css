@@ -348,3 +348,13 @@ dialog > form { display: flex; flex-direction: column; max-height: inherit; heig
 .layer-list .layer-row .thumb.folder { display: grid; place-items: center; font-size: 1.2rem; }
 .layer-list .layer-row .fold { inline-size: 28px; min-inline-size: 28px; }
 .layer-list .layer-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: inherit; font: inherit; }
+
+/* ===== לוח גרסאות ושלבים (versions.js, ממ1) ===== */
+.versions-list:empty { display: none; }
+.versions-row { display: flex; align-items: center; gap: var(--s2); min-height: 52px; padding: var(--s2) var(--s3); border-top: 1px solid var(--line); }
+.versions-row:first-child { border-top: 0; }
+.versions-txt { flex: 1; min-width: 0; }
+.versions-head { font-weight: 600; display: flex; align-items: center; gap: var(--s2); }
+.versions-meta { font-size: .8rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.versions-here { font-size: .7rem; font-weight: 500; padding: 0 var(--s2); border-radius: 99px; background: var(--brand-soft); color: var(--brand); }
+.versions-end { flex: none; font-size: .8rem; color: var(--muted); }

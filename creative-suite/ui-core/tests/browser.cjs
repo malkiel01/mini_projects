@@ -673,6 +673,53 @@ const server = http.createServer((req, res) => {
         ok(hr.statusGone, 'handles: שורת המצב נעלמת בשחרור');
         ok(hr.noRotate && hr.rect.x === 100 && hr.rect.y === 31 && hr.rect.w === 20 && hr.rect.h === 29, 'handles rect: בלי סיבוב, נרמול, פיקסלים שלמים');
 
+        // 🕘 versions — לוח גרסאות ושלבים (ממ1)
+        const vs = await p.evaluate(async () => {
+            const V = await import('../src/js/versions.js');
+            const f = {
+                journal: () => [
+                    { id: 's1', at: '2026-11-01T09:00:00Z', kind: 'create', app: 'layout-studio', result: 'a1' },
+                    { id: 's2', at: '2026-11-01T10:00:00Z', kind: 'export', app: 'layout-studio', result: 'a2', pruned: true },
+                    { id: 's3', at: '2026-11-01T11:00:00Z', kind: 'edit', app: 'external:Word', who: 'רחל', result: 'a3' },
+                    { id: 's4', at: '2026-11-01T12:00:00Z', kind: 'weird', app: 'raster-studio', result: 'a4' },
+                ],
+                version: sha => ({ a1: { v: 1 }, a3: { v: 3 }, a4: { v: 4 } })[sha] || null,
+            };
+            const steps = V.journalSteps(f);
+            let threw = '';
+            try { V.journalSteps(null); } catch (e) { threw = e.message; }
+            const box = document.createElement('div');
+            document.body.append(box);
+            const got = [];
+            const list = V.versionsList(box, { load: async () => f, restore: async (st, file) => got.push([st.id, file.version(st.sha).v]),
+                confirmRestore: false, app: 'layout-studio' });
+            await new Promise(r => setTimeout(r, 30));
+            const rows = [...box.querySelectorAll('.versions-row')].map(r => [r.dataset.id, r.querySelector('button')?.textContent || r.querySelector('.versions-end')?.textContent]);
+            const here = box.querySelectorAll('.versions-here').length;
+            box.querySelector('[data-id="s3"] button').click();
+            await new Promise(r => setTimeout(r, 30));
+            const empty = document.createElement('div');
+            V.versionsList(empty, { load: async () => null });
+            const bad = document.createElement('div');
+            V.versionsList(bad, { load: async () => { throw new Error('אין רשת'); } });
+            await new Promise(r => setTimeout(r, 30));
+            const res = { order: steps.map(s => s.id), cur: steps[0].current, avail: steps.map(s => s.available), labels: [steps[1].kindLabel, steps[1].appLabel, steps[0].kindLabel, steps[0].appLabel],
+                threw, rows, here, got, emptyText: empty.textContent, badText: bad.textContent, count: list.steps().length };
+            box.remove();
+            return res;
+        });
+        ok(vs.order.join() === 's4,s3,s2,s1' && vs.cur && vs.count === 4, 'versions: מהחדש לישן, הראשון — הנוכחי');
+        ok(vs.avail.join() === 'false,true,false,true', 'versions: available — לא הנוכחי, לא נגזם, והגרסה בקובץ');
+        ok(vs.labels.join('|') === 'עריכה|Word|weird|רסטר', 'versions: תוויות בעברית, external:Word → Word, סוג לא מוכר — כמו שהוא');
+        ok(vs.threw.startsWith('versions:'), 'versions: בלי קובץ — שגיאה בעברית עם שם המודול');
+        ok(vs.rows.map(r => r[1]).join() === 'הנוכחית,שחזור,נגזם,שחזור' && vs.here === 2, 'versions: הנוכחית / שחזור / נגזם, ו"כאן" לשלבים של האפליקציה');
+        ok(vs.got.length === 1 && vs.got[0][0] === 's3' && vs.got[0][1] === 3, 'versions: שחזור מקבל את השלב ואת הקובץ');
+        ok(vs.emptyText.includes('עוד אין היסטוריה') && vs.badText.includes('אין רשת'), 'versions: בלי קובץ — הסבר; שגיאה — מוצגת');
+        await p.click('#versions-btn');
+        await p.waitForSelector('dialog[open] .versions-row');
+        ok(await p.$$eval('dialog[open] .versions-row', r => r.length) === 4, 'versions: openVersions — גיליון עם 4 שלבים');
+        await p.click('dialog[open] [data-close]');
+
         ok(errors.length === 0, 'בלי שגיאות JS' + (errors.length ? ': ' + errors.join(' | ') : ''));
         await ctx.close();
     }
