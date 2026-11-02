@@ -463,3 +463,4 @@ require_once __DIR__ . '/choices.php';
 require_once __DIR__ . '/templates.php';
 require_once __DIR__ . '/chatsettings.php';
 require_once __DIR__ . '/labels.php';
+require_once __DIR__ . '/search.php';

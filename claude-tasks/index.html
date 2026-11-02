@@ -312,9 +312,11 @@
         <h2 id="cvTitle"></h2>
         <small id="cvSub"></small>
       </div>
+      <button type="button" class="icon-btn" id="cvSearch" aria-label="חיפוש וסינון" title="חיפוש וסינון">🔎</button>
       <button type="button" class="icon-btn" id="cvSettings" aria-label="הגדרות הצ'אט" title="הגדרות הצ'אט">⚙</button>
     </header>
     <div class="cv-pins" id="cvPins" hidden></div>
+    <div class="cv-filter" id="cvFilter" hidden></div>
     <div class="cv-health" id="cvHealth" hidden></div>
     <ol class="chat-log" id="chatLog" aria-live="polite" aria-label="ההודעות"></ol>
     <form class="composer" id="chatForm">
@@ -388,6 +390,17 @@
     </header>
     <div class="sheet-body"><ul class="list" id="psList"></ul></div>
   </div>
+</dialog>
+<!-- ── 🔎 חיפוש, סינון וייצוא (§5.11, 12d) ─────────────────────────── -->
+<dialog id="searchSheet" aria-labelledby="ssT">
+  <form class="sheet-wrap" id="ssForm">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close="searchSheet" aria-label="סגירה">✕</button>
+      <h2 id="ssT">חיפוש וסינון</h2>
+      <button type="submit" class="btn primary">הצגה</button>
+    </header>
+    <div class="sheet-body" id="ssBody"></div>
+  </form>
 </dialog>
 <dialog id="csAbout" aria-labelledby="csAboutT">
   <div class="sheet-wrap">

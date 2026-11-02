@@ -21,6 +21,7 @@ require_once __DIR__ . '/lib/choices.php';
 require_once __DIR__ . '/lib/templates.php';
 require_once __DIR__ . '/lib/chatsettings.php';
 require_once __DIR__ . '/lib/labels.php';
+require_once __DIR__ . '/lib/search.php';
 require_once __DIR__ . '/lib/skills.php';
 require_once __DIR__ . '/lib/platform.php';
 require_once __DIR__ . '/lib/channels.php';
@@ -1585,6 +1586,14 @@ try {
 
     case 'channel-pins':
         ok(['pins' => channelPins(requireUser($user), (int) ($in['channel_id'] ?? 0))]);
+
+    /* ── 🔎 חיפוש, סינון וייצוא (§5.11, 12d) ── */
+
+    case 'channel-search':
+        ok(['messages' => channelSearch(requireUser($user), (int) ($in['channel_id'] ?? 0), (array) ($in['filter'] ?? []))]);
+
+    case 'channel-export':
+        ok(channelExport(requireUser($user), (int) ($in['channel_id'] ?? 0), (array) ($in['filter'] ?? [])));
 
     case 'channel-hide':
         channelSetHidden(requireUser($user), (int) ($in['channel_id'] ?? 0), !empty($in['hidden']));
