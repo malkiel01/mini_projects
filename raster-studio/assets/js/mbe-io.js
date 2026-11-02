@@ -7,7 +7,7 @@
 // אחרות, apps/ של אחרים וחלקים לא מוכרים — עובר בית-לבית. משאב שרק השכבות שלנו הפנו אליו ושכבר לא בשימוש — נמחק.
 
 import { open, create, save, PREVIEW, pathProblem } from './mbe/mbe.js';
-import { encodePNG } from './engine/png.js';
+import { encodePNG } from './image-io/png.js';
 import { RasterDocument, newMask } from './engine/doc.js';
 import { decodeImage } from './engine/webgl2.js';
 import { mbeDocument, mediaRefs, editSurface, gapsFor, cleanAdjust, cleanFill, scaleFill, scaleEffects } from './engine/formats.js';
