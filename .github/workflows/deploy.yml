@@ -87,6 +87,13 @@ jobs:
       - name: pdf-core gate (every copy matches creative-suite/pdf-core/src)
         run: php creative-suite/pdf-core/tools/sync.php --check
 
+      # מנוע הגאומטריה המשותף (creative-suite/geometry-core/src/js) — מועתק לאפליקציות שב-creative-suite/geometry-core/apps.json.
+      # עותק ששונה בתוך אפליקציה — נעצר כאן. עורכים במקור ומריצים sync.php. והבדיקות של המודול עצמו.
+      - name: geometry-core gate (every copy matches creative-suite/geometry-core/src, tests pass)
+        run: |
+          php creative-suite/geometry-core/tools/sync.php --check
+          node --test creative-suite/geometry-core/tests/*.test.mjs
+
       # מודול הכוננים של ענן החבילה (suite-cloud/drives/src) — מועתק לאפליקציות שב-suite-cloud/drives/apps.json.
       # עותק ששונה בתוך אפליקציה — נעצר כאן. עורכים במקור ומריצים sync.php.
       - name: drives gate (every copy matches suite-cloud/drives/src)

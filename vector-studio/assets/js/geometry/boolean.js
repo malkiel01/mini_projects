@@ -1,8 +1,8 @@
 // פעולות צורה: איחוד, חיסור, חיתוך והפרדה (xor). העקומות משוטחות לקווים קצרים (סטייה עד ~0.1pt), והחיתוך —
-// polygon-clipping (MIT, assets/js/vendor). כל נקודה משוטחת נרשמת עם העקומה שממנה באה (reg), ו-toD בונה
+// polygon-clipping (MIT, vendor/ שבתוך המודול). כל נקודה משוטחת נרשמת עם העקומה שממנה באה (reg), ו-toD בונה
 // מהתוצאה חזרה את קטעי העקומות המקוריות — כך עיגול נשאר עיגול, ולא מצולע.
 
-import clip from '../vendor/polygon-clipping.min.mjs';
+import clip from './vendor/polygon-clipping.min.mjs';
 import { parse, serialize, transform, num } from './path.js';
 
 /** נקודות על עקומה מעוקבת — מספר הנקודות לפי האורך המשוער. */

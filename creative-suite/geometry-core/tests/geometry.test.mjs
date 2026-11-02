@@ -1,10 +1,10 @@
-// בדיקות מודול הגאומטריה: node --test vector-studio/tests/geometry.test.mjs
+// בדיקות geometry-core (הועברו מהווקטורי): node --test creative-suite/geometry-core/tests/*.test.mjs
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parse, serialize, normalize, bbox, transform, unionBox } from '../assets/js/geometry/path.js';
-import { multiply, apply, invert, scaleAt, translate } from '../assets/js/geometry/matrix.js';
-import { shapeToD, shapeFromDrag, transformShape, normBox } from '../assets/js/geometry/shapes.js';
+import { parse, serialize, normalize, bbox, transform, unionBox } from '../src/js/path.js';
+import { multiply, apply, invert, scaleAt, translate } from '../src/js/matrix.js';
+import { shapeToD, shapeFromDrag, transformShape, normBox } from '../src/js/shapes.js';
 
 const close = (a, b, eps = 1e-6) => assert.ok(Math.abs(a - b) < eps, `${a} ≉ ${b}`);
 const closeBox = (a, b, eps = 1e-3) => a.forEach((v, i) => close(v, b[i], eps));
@@ -95,7 +95,7 @@ test('טרנספורמציה של צורה: תיבה זזה וגדלה; סיבו
 });
 
 // ---- נקודות עיגון ----
-import { toNodes, fromNodes, splitAt, toggleSmooth, removeNode, moveHandle, nearest } from '../assets/js/geometry/nodes.js';
+import { toNodes, fromNodes, splitAt, toggleSmooth, removeNode, moveHandle, nearest } from '../src/js/nodes.js';
 
 const roundTrip = (d) => serialize(fromNodes(toNodes(parse(d))));
 
@@ -144,7 +144,7 @@ test('נקודות: הקרובה ביותר על עקומה', () => {
 });
 
 // ---- פעולות צורה ----
-import { region, combine, toD } from '../assets/js/geometry/boolean.js';
+import { region, combine, toD } from '../src/js/boolean.js';
 
 test('פעולות צורה: איחוד, חיסור, חיתוך, xor; חור נשמר', () => {
   const sq = (x, y, s) => `M${x} ${y} L${x + s} ${y} L${x + s} ${y + s} L${x} ${y + s} Z`;

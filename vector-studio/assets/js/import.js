@@ -2,61 +2,12 @@
 // הקובץ לא נכנס ל-DOM (DOMParser לא מריץ סקריפטים), ומה שלא נתמך — נספר בדוח הפערים, לא נבלע בשקט.
 
 import { normalize, parse, bbox } from './geometry/path.js';
-import { multiply, translate, IDENTITY } from './geometry/matrix.js';
+import { multiply } from './geometry/matrix.js';
+import { parseColor, parseTransform, parseLength, viewBoxMatrix, elementToD } from './geometry/svg.js';
 import { applyMatrix, setShape } from './model.js';
 
-const NAMED = {
-  black: '#000000', white: '#ffffff', red: '#ff0000', green: '#008000', blue: '#0000ff', yellow: '#ffff00', orange: '#ffa500',
-  gray: '#808080', grey: '#808080', purple: '#800080', pink: '#ffc0cb', brown: '#a52a2a', navy: '#000080', teal: '#008080',
-  lime: '#00ff00', cyan: '#00ffff', magenta: '#ff00ff', silver: '#c0c0c0', maroon: '#800000', olive: '#808000',
-};
-
-/** צבע SVG → #rrggbb, null ל-none, undefined אם לא מובן (ואז נרשם פער). */
-export function parseColor(v) {
-  if (v == null) return undefined;
-  v = String(v).trim().toLowerCase();
-  if (v === 'none' || v === 'transparent') return null;
-  if (v === 'currentcolor') return '#000000';
-  if (NAMED[v]) return NAMED[v];
-  let m = /^#([0-9a-f]{3})$/.exec(v);
-  if (m) return '#' + [...m[1]].map(c => c + c).join('');
-  m = /^#([0-9a-f]{6})$/.exec(v);
-  if (m) return v;
-  m = /^rgba?\(\s*([\d.]+%?)\s*[, ]\s*([\d.]+%?)\s*[, ]\s*([\d.]+%?)/.exec(v);
-  if (m) {
-    return '#' + m.slice(1, 4).map(x => {
-      const n = x.endsWith('%') ? parseFloat(x) * 2.55 : parseFloat(x);
-      return Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0');
-    }).join('');
-  }
-  return undefined;
-}
-
-/** transform="…" → מטריצה. */
-export function parseTransform(str) {
-  let m = IDENTITY.slice();
-  const re = /(matrix|translate|scale|rotate|skewX|skewY)\s*\(([^)]*)\)/g;
-  let t;
-  while ((t = re.exec(str || ''))) {
-    const a = t[2].split(/[\s,]+/).filter(Boolean).map(Number);
-    let k;
-    switch (t[1]) {
-      case 'matrix': k = a.length === 6 ? a : IDENTITY; break;
-      case 'translate': k = translate(a[0] || 0, a[1] || 0); break;
-      case 'scale': k = [a[0] ?? 1, 0, 0, a[1] ?? a[0] ?? 1, 0, 0]; break;
-      case 'rotate': {
-        const r = (a[0] || 0) * Math.PI / 180, c = Math.cos(r), s = Math.sin(r);
-        k = [c, s, -s, c, 0, 0];
-        if (a.length >= 3) k = multiply(multiply(translate(a[1], a[2]), k), translate(-a[1], -a[2]));
-        break;
-      }
-      case 'skewX': k = [1, 0, Math.tan((a[0] || 0) * Math.PI / 180), 1, 0, 0]; break;
-      case 'skewY': k = [1, Math.tan((a[0] || 0) * Math.PI / 180), 0, 1, 0, 0]; break;
-    }
-    m = multiply(m, k);
-  }
-  return m;
-}
+// צבע, transform, אורך ו-viewBox — מ-geometry-core (svg.js). parseColor / parseTransform מיוצאים גם מכאן, כמו קודם.
+export { parseColor, parseTransform };
 
 const STYLE_KEYS = ['fill', 'stroke', 'stroke-width', 'opacity', 'fill-opacity', 'stroke-opacity', 'stroke-linecap', 'stroke-linejoin', 'stroke-dasharray', 'fill-rule', 'display', 'visibility'];
 
@@ -71,12 +22,6 @@ function ownStyle(el) {
 }
 
 const num = (v, d = 0) => { const n = parseFloat(v); return Number.isFinite(n) ? n : d; };
-/** רוחב / גובה של ה-<svg> ב-pt (יחידת SVG = 1pt); אחוזים או ערך לא תקין — null (אז לפי ה-viewBox). */
-function length(v) {
-  const m = /^\s*([\d.]+(?:e[-+]?\d+)?)\s*(px|pt|mm|cm|in|pc)?\s*$/i.exec(v || '');
-  if (!m || !(parseFloat(m[1]) > 0)) return null;
-  return parseFloat(m[1]) * ({ mm: 72 / 25.4, cm: 72 / 2.54, in: 72, pc: 12 }[(m[2] || '').toLowerCase()] || 1);
-}
 const styleProp = (el, k) => ownStyleAny(el)[k];
 function ownStyleAny(el) {
   const s = {};
@@ -99,22 +44,8 @@ export function importSVG(text, next) {
   const gap = (k) => gaps.set(k, (gaps.get(k) || 0) + 1);
 
   // viewBox → גודל: יחידה אחת של SVG = 1pt (כמו ב-Illustrator)
-  const vb = (root.getAttribute('viewBox') || '').split(/[\s,]+/).map(Number);
-  let base = IDENTITY, size = null;
-  let w = length(root.getAttribute('width')), h = length(root.getAttribute('height'));
-  if (vb.length === 4 && vb.every(Number.isFinite) && vb[2] > 0 && vb[3] > 0) {
-    // גודל חסר (או באחוזים) — לפי ה-viewBox ויחס הצלעות שלו
-    if (w == null && h == null) [w, h] = [vb[2], vb[3]];
-    else if (w == null) w = h * vb[2] / vb[3];
-    else if (h == null) h = w * vb[3] / vb[2];
-    if (root.getAttribute('preserveAspectRatio')?.trim() === 'none') base = multiply([w / vb[2], 0, 0, h / vb[3], 0, 0], translate(-vb[0], -vb[1]));
-    else {
-      // ברירת המחדל של SVG: קנה מידה אחיד, במרכז (xMidYMid meet)
-      const k = Math.min(w / vb[2], h / vb[3]);
-      base = multiply([k, 0, 0, k, (w - vb[2] * k) / 2, (h - vb[3] * k) / 2], translate(-vb[0], -vb[1]));
-    }
-    size = [w, h];
-  } else if (w != null && h != null) size = [w, h];
+  const { matrix: base, size } = viewBoxMatrix(root.getAttribute('viewBox'), root.getAttribute('width'),
+    root.getAttribute('height'), root.getAttribute('preserveAspectRatio') || '');
 
   const walk = (el, m, style) => {
     const tag = el.nodeName.replace(/^svg:/, '').toLowerCase();
@@ -148,11 +79,7 @@ export function importSVG(text, next) {
       case 'circle': { const r = A('r'); shape = { type: 'ellipse', box: [A('cx') - r, A('cy') - r, 2 * r, 2 * r] }; break; }
       case 'ellipse': shape = { type: 'ellipse', box: [A('cx') - A('rx'), A('cy') - A('ry'), 2 * A('rx'), 2 * A('ry')] }; break;
       case 'line': shape = { type: 'line', from: [A('x1'), A('y1')], to: [A('x2'), A('y2')] }; break;
-      case 'polyline': case 'polygon': {
-        const p = (el.getAttribute('points') || '').trim().split(/[\s,]+/).map(Number);
-        if (p.length >= 4) d = 'M' + p.join(' ').replace(/^(\S+ \S+)/, '$1 L') + (tag === 'polygon' ? ' Z' : '');
-        break;
-      }
+      case 'polyline': case 'polygon': d = elementToD(tag, (k) => el.getAttribute(k)); break;
       default:
         gap(`<${tag}> — לא נתמך`);
         return [];
