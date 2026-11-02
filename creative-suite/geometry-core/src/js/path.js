@@ -37,7 +37,7 @@ export function parse(d) {
   while (!sc.done()) {
     const c = sc.cmd();
     if (c) cmd = c;
-    else if (cmd === null) throw new Error('נתיב חייב להתחיל בפקודה');
+    else if (cmd === null) throw new Error('geometry: נתיב חייב להתחיל בפקודה');
     const up = cmd.toUpperCase();
     const rel = cmd !== up;
     if (up === 'Z') {
@@ -49,7 +49,7 @@ export function parse(d) {
     const a = [];
     for (let k = 0; k < ARGS[up]; k++) {
       const v = up === 'A' && (k === 3 || k === 4) ? sc.flag() : sc.number();
-      if (v === null || !Number.isFinite(v)) throw new Error('נתיב לא תקין');
+      if (v === null || !Number.isFinite(v)) throw new Error('geometry: נתיב לא תקין');
       a.push(v);
     }
     const ox = rel ? x : 0, oy = rel ? y : 0;
@@ -94,7 +94,7 @@ export function parse(d) {
       }
     }
   }
-  if (segs.length && segs[0].c !== 'M') throw new Error('נתיב חייב להתחיל ב-M');
+  if (segs.length && segs[0].c !== 'M') throw new Error('geometry: נתיב חייב להתחיל ב-M');
   return segs;
 }
 

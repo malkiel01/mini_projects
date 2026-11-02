@@ -72,7 +72,7 @@ export function shapeToD(shape) {
       return `M${num(x1)} ${num(y1)} L${num(x2)} ${num(y2)}`;
     }
   }
-  throw new Error('צורה לא מוכרת: ' + shape.type);
+  throw new Error('geometry: צורה לא מוכרת: ' + shape.type);
 }
 
 /** צורה חדשה שגררו מנקודה לנקודה. shift — ריבוע / עיגול / קו בזוויות של 45°. */

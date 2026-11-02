@@ -20,7 +20,7 @@ export function apply(m, x, y) {
 export function invert(m) {
   const [a, b, c, d, e, f] = m;
   const det = a * d - b * c;
-  if (!det) throw new Error('מטריצה לא הפיכה');
+  if (!det) throw new Error('geometry: מטריצה לא הפיכה');
   return [d / det, -b / det, -c / det, a / det, (c * f - d * e) / det, (b * e - a * f) / det];
 }
 
