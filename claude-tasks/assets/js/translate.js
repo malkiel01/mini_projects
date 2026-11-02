@@ -119,32 +119,108 @@ function getWorker() {
   return worker;
 }
 
+/* ── ⬇️ הורדה שאפשר להמשיך (12e.5) ─────────────────────────────
+ * כל קובץ גדול יורד בחתיכות של 4MB (Range), וכל חתיכה נשמרת ב-IndexedDB ברגע שהגיעה. רשת שנפלה או
+ * הוחלפה (Wi‑Fi ↔ סלולר) — מנסים שוב לבד, ובלי רשת מחכים לה. יציאה וחזרה — ממשיכים מהחתיכה האחרונה.
+ * כשקובץ שלם — מרכיבים אותו ושמים במטמון של transformers.js באותה כתובת, והחתיכות נמחקות. */
+const CHUNK = 4 * 1024 * 1024;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const waitOnline = () => (navigator.onLine === false
+  ? new Promise((r) => addEventListener('online', r, { once: true })) : Promise.resolve());
+const chunkKey = (url, i) => `${url}#${i}`;
+
+/** כמה בתים כבר במכשיר לשפה ‎l‎ — קבצים שלמים וחתיכות. ‏{ have, total, complete } */
+export async function downloadedBytes(l = LANG) {
+  const m = model(l);
+  const total = Object.values(m.sizes).reduce((a, b) => a + b, 0);
+  let have = 0, complete = true;
+  let c = null; try { c = await caches.open(CACHE); } catch { /* אין */ }
+  for (const f of m.files) {
+    const url = fileUrl(m, f);
+    if (c && await c.match(url)) { have += m.sizes[f]; continue; }
+    complete = false;
+    try {
+      const keys = await idbStore('chunks', 'readonly', (st) => st.getAllKeys(IDBKeyRange.bound(`${url}#`, `${url}#\uffff`)));
+      have += Math.min(m.sizes[f], (keys?.length || 0) * CHUNK);
+    } catch { /* אין IndexedDB */ }
+  }
+  return { have, total, complete };
+}
+
+/** חתיכה אחת, עם ניסיונות חוזרים. ‏onBytes(n) — תוך כדי, לפס חלק. ‏onRetry(attempt, error) */
+async function fetchChunk(url, start, end, onBytes, onRetry) {
+  for (let attempt = 1; ; attempt++) {
+    await waitOnline();
+    let got = 0;
+    try {
+      const ctl = new AbortController();
+      let idle = setTimeout(() => ctl.abort(), 30000);   // 30 ש' בלי בייט — החיבור תקוע
+      const res = await fetch(url, { headers: { Range: `bytes=${start}-${end}` }, signal: ctl.signal, cache: 'no-store' });
+      if (res.status !== 206) throw new Error(`HTTP ${res.status}`);
+      const reader = res.body.getReader();
+      const parts = [];
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        parts.push(value); got += value.length; onBytes(value.length);
+        clearTimeout(idle); idle = setTimeout(() => ctl.abort(), 30000);
+      }
+      clearTimeout(idle);
+      if (got !== end - start + 1) throw new Error('חתיכה חלקית');
+      return new Blob(parts);
+    } catch (e) {
+      onBytes(-got);   // מה שהתחיל לרדת בחתיכה הזו — לא נספר
+      onRetry?.(attempt, e);
+      if (attempt >= 40) throw new Error('הרשת לא יציבה — מה שירד נשמר; "המשך" ימשיך מאותה נקודה');
+      await sleep(Math.min(20000, 1000 * 2 ** Math.min(attempt - 1, 4)));
+    }
+  }
+}
+
 /**
- * ⬇️ הורדת המודל (הסכמה מפורשת, §5.11.1). onProgress({ loaded, total, etaSec }) — סכום הקבצים הגדולים.
- * אחרי ההורדה המודל במטמון הדפדפן, ו-engine() יחזיר 'model'.
+ * ⬇️ הורדת המודל של השפה ‎l‎ (הסכמה מפורשת, §5.11.1).
+ * onProgress({ loaded, total, etaSec, resumedFrom, retrying }) — ‏resumedFrom: כמה כבר היה במכשיר בהתחלה.
  */
-export function downloadModel(onProgress, l = LANG) {
+export async function downloadModel(onProgress, l = LANG) {
   const MODEL = model(l);
-  const seen = {};
+  const { have, total } = await downloadedBytes(l);
+  let loaded = have;
   const t0 = performance.now();
-  const total = Object.values(MODEL.sizes).reduce((a, b) => a + b, 0);
-  let shown = 0;   // הפס לא חוזר אחורה
-  return new Promise((resolve, reject) => {
-    loadWaiters.push({
-      resolve: () => { if (l === LANG) engine(true); resolve(); },
-      reject,
-      onProgress: (p) => {
-        if (!MODEL.files.includes(p.file)) return;
-        // לכל קובץ — כמה ירד ממנו (לא יותר מהגודל הידוע); הסכום מול הגודל הקבוע של שניהם
-        seen[p.file] = Math.max(seen[p.file] || 0, Math.min(p.loaded, MODEL.sizes[p.file]));
-        const loaded = shown = Math.max(shown, Object.values(seen).reduce((a, x) => a + x, 0));
-        const rate = loaded / Math.max(1, (performance.now() - t0) / 1000);
-        // הערכת זמן רק אחרי שירד משהו — אחרת היא קופצת
-        onProgress?.({ loaded, total, etaSec: loaded > 2e6 && rate > 0 ? Math.round((total - loaded) / rate) : null });
-      },
-    });
+  let fresh = 0;   // מה שירד בהפעלה הזו — לקצב
+  const report = (extra = {}) => {
+    const rate = fresh / Math.max(1, (performance.now() - t0) / 1000);
+    onProgress?.({ loaded, total, resumedFrom: have, etaSec: fresh > 2e6 && rate > 0 ? Math.round((total - loaded) / rate) : null, ...extra });
+  };
+  report();
+  const c = await caches.open(CACHE);
+  for (const f of MODEL.files) {
+    const url = fileUrl(MODEL, f);
+    if (await c.match(url)) continue;
+    const size = MODEL.sizes[f];
+    const n = Math.ceil(size / CHUNK);
+    for (let i = 0; i < n; i++) {
+      const key = chunkKey(url, i);
+      if (await idbStore('chunks', 'readonly', (st) => st.count(key))) continue;
+      const start = i * CHUNK, end = Math.min(size, start + CHUNK) - 1;
+      const blob = await fetchChunk(url, start, end,
+        (b) => { loaded += b; fresh += b; report(); },
+        (attempt) => report({ retrying: attempt }));
+      await idbStore('chunks', 'readwrite', (st) => st.put(blob, key));
+    }
+    // הקובץ שלם — מרכיבים, שמים במטמון בכתובת ש-transformers.js מחפש, ומפנים את החתיכות
+    const blobs = [];
+    for (let i = 0; i < n; i++) blobs.push(await idbStore('chunks', 'readonly', (st) => st.get(chunkKey(url, i))));
+    const full = new Blob(blobs, { type: 'application/octet-stream' });
+    if (full.size !== size) throw new Error(`הקובץ ${f} לא שלם (${full.size} מתוך ${size}) — נסו שוב`);
+    await c.put(url, new Response(full, { headers: { 'Content-Type': 'application/octet-stream', 'Content-Length': String(size) } }));
+    await idbStore('chunks', 'readwrite', (st) => st.delete(IDBKeyRange.bound(`${url}#`, `${url}#\uffff`)));
+  }
+  // הקבצים הגדולים במטמון — הטעינה מורידה רק את הקטנים (הגדרות, מילון) ובודקת שהמודל עולה
+  await new Promise((resolve, reject) => {
+    loadWaiters.push({ resolve, reject, onProgress: () => {} });
     getWorker().postMessage({ type: 'load', model: MODEL.id, revision: MODEL.revision });
   });
+  if (l === LANG) engine(true);
 }
 
 /** 🗑 הסרה של מודל השפה ‎l‎ — הקבצים שלו בלבד, והתרגומים השמורים לשפה הזו. */
@@ -154,6 +230,10 @@ export async function removeModel(l = LANG) {
   try {
     const c = await caches.open(CACHE);
     for (const req of await c.keys()) if (req.url.includes(`/${m.id}/`)) await c.delete(req);
+  } catch { /* אין */ }
+  try {
+    const prefix = `https://huggingface.co/${m.id}/`;
+    await idbStore('chunks', 'readwrite', (st) => st.delete(IDBKeyRange.bound(prefix, `${prefix}\uffff`)));
   } catch { /* אין */ }
   try {
     const keys = await idb('readonly', (s) => s.getAllKeys());
@@ -167,18 +247,22 @@ export async function removeModel(l = LANG) {
 let dbp = null;
 function openDb() {
   dbp ??= new Promise((resolve, reject) => {
-    const r = indexedDB.open('ct-translate', 1);
-    r.onupgradeneeded = () => r.result.createObjectStore('msgs');
+    const r = indexedDB.open('ct-translate', 2);
+    // 2: ‏chunks — חתיכות של הורדה שעוד לא הסתיימה (12e.5)
+    r.onupgradeneeded = () => {
+      for (const st of ['msgs', 'chunks']) if (!r.result.objectStoreNames.contains(st)) r.result.createObjectStore(st);
+    };
     r.onsuccess = () => resolve(r.result);
     r.onerror = () => reject(r.error);
   });
   return dbp;
 }
-async function idb(mode, fn) {
+const idb = (mode, fn) => idbStore('msgs', mode, fn);
+async function idbStore(store, mode, fn) {
   const db = await openDb();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction('msgs', mode);
-    const req = fn(tx.objectStore('msgs'));
+    const tx = db.transaction(store, mode);
+    const req = fn(tx.objectStore(store));
     tx.oncomplete = () => resolve(req?.result);
     tx.onerror = () => reject(tx.error);
   });
