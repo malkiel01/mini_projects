@@ -971,6 +971,11 @@ try {
             if (authorRole($me) !== 'owner') fail('רק בעל הלוח יכול לסמן ענף "רק בעל הלוח"', 403);
             $sets[] = 'owner_only = ?'; $args[] = $in['owner_only'] ? 1 : 0;
         }
+        // המנוע — loop | claude-code | '' (יורש). מנהל הפרויקט; החלפה מחייבת התקנה מחדש
+        if (array_key_exists('engine', $in)) {
+            $eng = setProjectEngine($me, $project, (string) $in['engine']);
+            if (!$sets && !array_key_exists('route', $in)) ok(['engine' => $eng]);
+        }
         // מי עונה — chat | platform | '' (יורש). בעל הלוח בלבד: זה קובע על חשבון מי
         if (array_key_exists('route', $in)) {
             setProjectRoute($me, (int) $project['id'], (string) $in['route']);
@@ -1059,7 +1064,8 @@ try {
         $me      = requireUser($user);
         $project = requireProject((int) ($in['project_id'] ?? 0), $me, 'admin');
 
-        $conn = userConn($me, str_field($in, 'provider', 30));
+        // Claude Code — רק Anthropic (המפתח נשתל כ-ANTHROPIC_API_KEY)
+        $conn = userConn($me, projectEngine($project) === 'claude-code' ? 'anthropic' : str_field($in, 'provider', 30));
         if ($conn['key'] === '') fail('חברו ספק בינה מלאכותית לפני התקנת המנוע');
 
         ok(installEngine($me, $project, $conn));
@@ -1339,7 +1345,9 @@ try {
         $uid = (int) ($task['run_user_id'] ?? 0);
         if ($uid <= 0) ok(['recorded' => false]);
         $cost = recordUsage(['user_id' => $uid, 'project_id' => $task['project_id'], 'task_id' => (int) $task['id'],
-                             'connection_id' => $task['run_connection_id'], 'kind' => 'develop'],
+                             'connection_id' => $task['run_connection_id'], 'kind' => 'develop',
+                             // Claude Code מדווח עלות מוכנה (total_cost_usd)
+                             'cost_usd' => isset($in['cost_usd']) && is_numeric($in['cost_usd']) ? (float) $in['cost_usd'] : null],
                             str_field($in, 'provider', 30), str_field($in, 'model', 120),
                             max(0, (int) ($in['tokens_in'] ?? 0)), max(0, (int) ($in['tokens_out'] ?? 0)));
         ok(['recorded' => true, 'cost_usd' => $cost]);
