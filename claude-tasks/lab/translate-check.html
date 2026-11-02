@@ -11,66 +11,55 @@
   /* דף מדידה חד-פעמי לפני 12e (docs/spec.md §5.11.1) — לא חלק מהלוח */
   .tc { max-width: 640px; margin: 0 auto; padding: 16px 16px 48px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
   .tc > *, .tc section > * { min-width: 0; }
-  .tc .seg button { white-space: normal; }
   .tc h1 { font-size: 1.25rem; margin: 0; }
   .tc h2 { font-size: 1.02rem; margin: 0 0 6px; }
   .tc section.card { display: block; padding: 14px; }
-  .tc .kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 12px; font-size: .9rem; }
-  .tc .kv dt { opacity: .7; }
-  .tc .kv dd { margin: 0; overflow-wrap: anywhere; }
-  .tc .out { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .9rem; padding: 8px 10px; border-radius: 10px;
-             background: color-mix(in srgb, currentColor 6%, transparent); min-height: 1.5em; }
   .tc .row-btns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-  .tc .out[data-p]::before { content: attr(data-p); display: block; opacity: .7; font-size: .8rem; }
-  .tc .out:empty:not([data-p]) { display: none; }
-  .tc progress { width: 100%; }
+  .tc progress { width: 100%; margin-top: 10px; }
+  .tc .status { font-size: .9rem; min-height: 1.4em; margin: 8px 0 0; }
+  .tc table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+  .tc th, .tc td { text-align: start; padding: 6px 4px; border-bottom: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+                   vertical-align: top; overflow-wrap: anywhere; }
+  .tc th { font-weight: 500; opacity: .75; width: 42%; }
   .tc .ok { color: light-dark(#17703a, #6fd39a); }
   .tc .bad { color: light-dark(#b3261e, #ff8a80); }
-  .tc pre.report { white-space: pre-wrap; overflow-wrap: anywhere; direction: ltr; text-align: left; font-size: .8rem; margin: 0; }
+  .tc details pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .82rem; margin: 8px 0 0; }
+  .tc pre.report { white-space: pre-wrap; overflow-wrap: anywhere; direction: ltr; text-align: left; font-size: .75rem; margin: 8px 0 0; }
 </style>
 </head>
 <body>
 <main class="tc">
   <h1>🌐 בדיקת תרגום במכשיר</h1>
-  <p class="hint">בדיקה חד-פעמית לפני שלב 12e: האם הטלפון מתרגם תשובה של צ'אט בתוך 5 שניות, בלי שרת ובלי AI.
-    שום טקסט לא נשלח לשום מקום — רק המודל יורד (ואם תבחרו בזה).</p>
-
-  <section class="card" aria-labelledby="hDev">
-    <h2 id="hDev">1 · המכשיר</h2>
-    <dl class="kv" id="dev"></dl>
-  </section>
+  <p class="hint">בדיקה חד-פעמית לפני שלב 12e: האם הטלפון מתרגם תשובה של צ'אט מאנגלית לעברית בתוך 5 שניות,
+    בלי שרת ובלי AI. הטקסט לא יוצא מהטלפון — רק המודל יורד, ורק אם תלחצו.</p>
 
   <section class="card" aria-labelledby="hApi">
-    <h2 id="hApi">2 · התרגום המובנה של Chrome</h2>
-    <p class="hint">בלי הורדה מצדנו. אם יופיע "צריך הורדה" — Chrome מוריד בעצמו (פעם אחת).</p>
-    <dl class="kv" id="api"></dl>
-    <div class="row-btns">
-      <button type="button" class="btn primary" id="apiRun">▶ לתרגם את הדוגמאות</button>
-    </div>
-    <div class="out" id="apiOut" dir="auto"></div>
+    <h2 id="hApi">1 · התרגום המובנה של Chrome</h2>
+    <p class="hint">בלי הורדה מצדנו. בטלפון צפוי "לא" — אז ממשיכים לסעיף 2.</p>
+    <div class="row-btns"><button type="button" class="btn" id="apiRun">▶ לנסות</button></div>
   </section>
 
   <section class="card" aria-labelledby="hMt">
-    <h2 id="hMt">3 · מודל שיורד לטלפון (Opus-MT, אנגלית ← עברית)</h2>
-    <p class="hint">רק אם סעיף 2 לא עובד. ⚠️ הורדה גדולה — עדיף ב-Wi-Fi. נשמר במטמון של הדפדפן, ובפעם השנייה נטען ממנו.</p>
-    <div class="seg" role="radiogroup" aria-label="כיוון" id="mtDir">
-      <button type="button" role="radio" aria-checked="true" data-v="en-he">אנגלית ← עברית · כ-147MB</button>
-    </div>
-    <label class="field" style="margin-top:10px"><span>מנוע</span>
+    <h2 id="hMt">2 · מודל שיורד לטלפון (אנגלית ← עברית)</h2>
+    <p class="hint">⚠️ כ-150MB — ב-Wi-Fi. ההורדה נשמרת בדפדפן; אחריה הדף טוען אותו שוב מהזיכרון ומתרגם 3 תשובות.</p>
+    <label class="field"><span>מנוע</span>
       <select id="mtDevice"><option value="wasm">WASM (תמיד עובד)</option><option value="webgpu">WebGPU (מהיר יותר, אם יש)</option></select>
     </label>
     <div class="row-btns">
       <button type="button" class="btn primary" id="mtRun">⬇️ להוריד ולמדוד</button>
+      <button type="button" class="btn" id="mtClear">🗑 מחיקה מהמטמון</button>
     </div>
     <progress id="mtProg" max="100" value="0" hidden></progress>
-    <div class="out" id="mtOut" dir="auto"></div>
+    <p class="status" id="mtStatus" role="status" aria-live="polite"></p>
   </section>
 
   <section class="card" aria-labelledby="hRep">
-    <h2 id="hRep">4 · התוצאות</h2>
-    <p class="hint">העתיקו והדביקו בצ'אט "מטלות לקלוד – כותב הקוד".</p>
-    <pre class="report" id="report"></pre>
-    <div class="row-btns"><button type="button" class="btn" id="copy">📋 העתקה</button></div>
+    <h2 id="hRep">3 · התוצאות</h2>
+    <table><tbody id="results"></tbody></table>
+    <details><summary>דוגמה: תשובה 1 אחרי התרגום</summary><pre id="sample" dir="auto"></pre></details>
+    <div class="row-btns"><button type="button" class="btn primary" id="copy">📋 העתק תוצאות</button></div>
+    <p class="hint">הדביקו בצ'אט "מטלות לקלוד – כותב הקוד".</p>
+    <details><summary>פרטים טכניים</summary><pre class="report" id="report"></pre></details>
   </section>
 </main>
 <script type="module" src="./translate-check.js"></script>
