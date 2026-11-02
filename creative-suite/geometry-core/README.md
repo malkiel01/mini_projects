@@ -7,8 +7,8 @@
 ## מבנה
 
 ```
-src/js/        path · matrix · shapes · nodes · boolean · hit · svg  (+ vendor/polygon-clipping, MIT — רק ל-boolean)
-tests/         geometry.test.mjs · svg-hit.test.mjs — node --test creative-suite/geometry-core/tests/*.test.mjs
+src/js/        path · matrix · shapes · nodes · boolean · hit · measure · svg  (+ vendor/polygon-clipping, MIT — רק ל-boolean)
+tests/         geometry.test.mjs · svg-hit.test.mjs · measure.test.mjs — node --test creative-suite/geometry-core/tests/*.test.mjs
 tools/sync.php מעתיק את src/js לאפליקציות שב-apps.json; ‎--check — שער בפריסה (וגם הבדיקות רצות שם)
 apps.json      האפליקציות שמשתמשות. אפליקציה נכנסת בתור שלה (שלב ב), בהסכמת הצ'אט שלה
 ```
@@ -88,6 +88,17 @@ apps.json      האפליקציות שמשתמשות. אפליקציה נכנס�
 | `flatten(segs, tol) → [{ pts, closed }]` | שיטוח לקווים |
 
 בדפדפן עם קנבס `isPointInPath` של Path2D מהיר יותר. `hit.js` — כשאין קנבס, או כשצריך מרחק.
+
+### `measure.js` — מדידה לאורך נתיב (לטקסט על נתיב)
+
+| פונקציה | מה |
+| --- | --- |
+| `measure(segs) → { length, at(s) }` | לשאלות חוזרות. `at(s) → { x, y, angle, sub } \| null` — נקודה ומשיק במרחק `s` מההתחלה |
+| `pathLength(segs) → number` | האורך: כל התת-נתיבים, כולל צלעות הסגירה של Z. הקפיצה של M לא נספרת |
+| `pointAtLength(segs, s)` | שאלה אחת |
+
+`angle` ברדיאנים, y למטה: 0 — ימינה, π/2 — למטה. `sub` — מספר התת-נתיב. `s` מחוץ ל-`[0, length]` — `null`, והקורא
+מחליט (לחתוך, או להמשיך בקו ישר לאורך המשיק בקצה). עקומות — גאוס-לז'נדר ו-`s → t` בחיפוש בינארי. מדויק לאלפית נקודה.
 
 ### `svg.js` — קריאת SVG בלי DOM
 
