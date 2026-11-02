@@ -11,7 +11,7 @@
 1. שורה ב-`creative-suite/geometry-core/apps.json`: `"<app>": { "js": "<תיקייה>/geometry" }`.
 2. `php creative-suite/geometry-core/tools/sync.php`.
 3. מחליפים את הכפילויות (למטה), מריצים את הבדיקות של האפליקציה.
-4. ✅ בשורה 22 של `docs/integration.md`, באותו PR.
+4. ✅ בשורה 24 של `docs/integration.md`, באותו PR.
 
 ## מה כל אחת מחליפה
 

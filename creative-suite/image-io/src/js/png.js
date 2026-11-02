@@ -33,8 +33,13 @@ function chunk(type, data) {
   return out;
 }
 
-/** rgba — Uint8Array / Uint8ClampedArray של w×h×4, שורה 0 למעלה. מחזיר Uint8Array של קובץ PNG. */
-export async function encodePNG(rgba, w, h) {
+/**
+ * rgba — Uint8Array / Uint8ClampedArray של w×h×4, שורה 0 למעלה. מחזיר Uint8Array של קובץ PNG.
+ * stamp — רשות: פונקציה (bytes) → bytes שרצה על הקובץ המוכן. ל"פנים" (mbe-format.md סעיף 7) — החותמת של הליבה:
+ *   encodePNG(rgba, w, h, { stamp: b => stampFace(f, 'png', b) })
+ * image-io לא מייבא את הליבה: כל אפליקציה מחזיקה עותק שלה במקום אחר, והחותמת נשארת במקור אחד (mbe-core/face.js).
+ */
+export async function encodePNG(rgba, w, h, { stamp } = {}) {
   const stride = w * 4;
   const raw = new Uint8Array((stride + 1) * h);
   // מסנן "Sub" לכל שורה — דוחס טוב יותר תמונות אמיתיות, ופשוט
@@ -53,7 +58,7 @@ export async function encodePNG(rgba, w, h) {
   const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
   let o = 0;
   for (const p of parts) { out.set(p, o); o += p.length; }
-  return out;
+  return stamp ? stamp(out) : out;
 }
 
 /** SHA-256 בהקס — לשמות ב-media/ של ‎.mbe */

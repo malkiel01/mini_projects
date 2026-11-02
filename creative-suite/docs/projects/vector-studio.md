@@ -149,4 +149,4 @@ VectorStyler, Fresco, Linearity, Sketch, Figma ו-Gravit, ומה שאין לאף
 - 2026-11-01 — גרסה 2, מתאר משוכלל (חלק א'): מעבר צבע במתאר (`stroke.gradient`) וקצוות — חץ / עיגול / פס (`stroke.start` / `end`), בקנבס, ב-SVG וב-PDF; "מתאר → צורה" — בהמשך.
 - 2026-11-01 — גרסה 2, צל ואפקטים: `effects` (צל, זוהר, טשטוש) על כל פריט — בקנבס, ב-SVG כ-filter וב-PDF כתמונה מתחת לפריט (בדוח); לוח "אפקטים" במאפיינים.
 - 2026-11-01 — PDF דרך `pdf-core` (JS): `toPDF` → רשימת ציור + `pdfDraw`, בלי שרת; הכותב הישן נמחק (שורה 7 ✅).
-- 2026-11-02 — מ1 `geometry-core`: הגאומטריה נחלצה ל-`creative-suite/geometry-core/` (מקור, sync, שער בפריסה, README עם ה-API, 25 בדיקות), ונוספו `svg.js` (קריאת SVG בלי DOM) ו-`hit.js` (פגיעה בלי קנבס). וקטורי עבר לעותק המסונכרן. שורה 22 ב-`integration.md`.
+- 2026-11-02 — מ1 `geometry-core`: הגאומטריה נחלצה ל-`creative-suite/geometry-core/` (מקור, sync, שער בפריסה, README עם ה-API, 25 בדיקות), ונוספו `svg.js` (קריאת SVG בלי DOM) ו-`hit.js` (פגיעה בלי קנבס). וקטורי עבר לעותק המסונכרן. שורה 24 ב-`integration.md`.

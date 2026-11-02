@@ -1,6 +1,6 @@
 // ניסוי: ניקוד וטעמים ב-HarfBuzz על קנבס, מול fillText של הדפדפן, בשני גופנים — ומהירות העיצוב במכשיר.
 
-import { loadFont, shapeLine as shapeBidi, shape, advance, drawGlyphs } from '../assets/js/shaper.js';
+import { loadFont, shapeLine as shapeBidi, shape, advance, drawGlyphs } from '../assets/js/text-core/shaper.js';
 
 const FONTS = [
   { name: 'Noto Serif Hebrew', file: 'NotoSerifHebrew.ttf' },
@@ -85,7 +85,7 @@ function canvasFor(box, h) {
     const add = (t) => { const d = document.createElement('div'); d.className = 'line'; d.textContent = t; stats.append(d); };
     add(`טעינת HarfBuzz ושני גופנים: ${Math.round(tLoad)} מ"ש`);
     add(`עיצוב כ-2,800 מילים מנוקדות עם טעמים: ${tShape.toFixed(1)} מ"ש`);
-    add('HarfBuzz ' + (await import('../assets/vendor/harfbuzzjs/index.mjs')).versionString());
+    add('HarfBuzz ' + (await import('../assets/js/text-core/vendor/harfbuzzjs/index.mjs')).versionString());
     window.__lab = { ok: true, tLoad, tShape, lines };
   } catch (e) {
     stats.textContent = 'שגיאה: ' + e.message;

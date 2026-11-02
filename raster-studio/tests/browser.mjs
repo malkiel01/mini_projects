@@ -2001,7 +2001,7 @@ async function main() {
   // קובץ של "אפליקציה אחרת": שכבה וקטורית, שדות לא מוכרים, משטח נוסף ו-apps/ של אחרים — הכול נשמר בית-לבית
   const keep = await page.evaluate(async () => {
     const { create, save, open, PREVIEW, canonicalJson } = await import('./assets/js/mbe/mbe.js');
-    const { encodePNG } = await import('./assets/js/engine/png.js');
+    const { encodePNG } = await import('./assets/js/image-io/png.js');
     const px = new Uint8ClampedArray(40 * 30 * 4).fill(255);
     const png = await encodePNG(px, 40, 30);
     const vec = { id: 'V1', name: 'לוגו', type: 'vector', paths: [{ id: 'p1', type: 'path', d: 'M0 0 L10 10 Z', future: [1, 2] }], visible: true, future: { x: 1 } };
@@ -2055,7 +2055,7 @@ async function main() {
   // עמוד של סטודיו העיצוב (kind design, ‏pt, רסטר עם px ותמונה ממוקמת ב-box) — נפתח בפיקסלים ונשמר כעמוד
   const gc = await page.evaluate(async () => {
     const { create, save, open, PREVIEW } = await import('./assets/js/mbe/mbe.js');
-    const { encodePNG } = await import('./assets/js/engine/png.js');
+    const { encodePNG } = await import('./assets/js/image-io/png.js');
     const solid = (w, h, c) => { const a = new Uint8ClampedArray(w * h * 4); for (let i = 0; i < a.length; i += 4) a.set(c, i); return encodePNG(a, w, h); };
     const f = create('design', { units: 'pt', color: { space: 'sRGB' }, surfaces: [] });
     const bg = await f.addMedia(await solid(300, 200, [255, 0, 0, 255]), 'image/png');
@@ -2081,7 +2081,7 @@ async function main() {
   // קובץ פגום ומסמך שאינו רסטר — הודעה ברורה
   const bad = await page.evaluate(async () => {
     const { create, save, PREVIEW } = await import('./assets/js/mbe/mbe.js');
-    const { encodePNG } = await import('./assets/js/engine/png.js');
+    const { encodePNG } = await import('./assets/js/image-io/png.js');
     const f = create('text', { units: 'pt', surfaces: [{ id: 'p1', type: 'page', size: [595, 842], layers: [] }] });
     f.setRendition(PREVIEW, await encodePNG(new Uint8ClampedArray(4).fill(255), 1, 1));
     const text = await save(f, { app: 'word-processor' });
@@ -2102,7 +2102,7 @@ async function main() {
     await src.goto(BASE + '/index.html');
     await src.evaluate(async () => {
       const { create, save, PREVIEW } = await import('./assets/js/mbe/mbe.js');
-      const { encodePNG } = await import('./assets/js/engine/png.js');
+      const { encodePNG } = await import('./assets/js/image-io/png.js');
       const f = create('raster', { units: 'pt', color: { space: 'sRGB' }, surfaces: [] });
       const px = new Uint8ClampedArray(60 * 40 * 4);
       for (let i = 0; i < px.length; i += 4) px.set([0, 0, 255, 255], i);

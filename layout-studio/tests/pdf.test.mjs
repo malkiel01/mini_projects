@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { loadFont, fontVariant, shapeLine, advance } from '../assets/js/shaper.js';
+import { loadFont, fontVariant, shapeLine, advance } from '../assets/js/text-core/shaper.js';
 import { layoutFlows } from '../assets/js/flow.js';
 import { fontKey, glyphOps, drawList } from '../assets/js/pdf.js';
 import { addFrame, addImageFrame, textToDoc, setFlow, imagePlacement } from '../assets/js/frames.js';

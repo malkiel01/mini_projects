@@ -8,7 +8,7 @@
 import { pagesOf, pageSize, runningItems, headsByPage } from './pages.js';
 import { framesOnPage, drawingsOnPage, isImage, imagePlacement, FONTS } from './frames.js';
 import { mul } from './vector.js';
-import { shapeLine, advance } from './shaper.js';
+import { shapeLine, advance } from './text-core/shaper.js';
 
 const STATIC_WEIGHTS = [700, 900];
 

@@ -94,6 +94,20 @@ jobs:
           php creative-suite/geometry-core/tools/sync.php --check
           node --test creative-suite/geometry-core/tests/*.test.mjs
 
+      # קריאה וכתיבה של קובצי תמונה (creative-suite/image-io/src/js) — PNG (+ "פנים"), TIFF, PSD, ZIP, ORA, זיהוי סוג וקידוד
+      # בדפדפן. מועתק לאפליקציות שב-creative-suite/image-io/apps.json. עותק ששונה בתוך אפליקציה — נעצר כאן.
+      - name: image-io gate + tests (every copy matches creative-suite/image-io/src)
+        run: |
+          php creative-suite/image-io/tools/sync.php --check
+          node --test creative-suite/image-io/tests/*.test.mjs
+
+      # עיצוב הטקסט המשותף (creative-suite/text-core/src/js) — HarfBuzz + bidi, מדידה וקווי מתאר. מועתק לאפליקציות שב-
+      # creative-suite/text-core/apps.json. עותק ששונה בתוך אפליקציה — נעצר כאן. עורכים במקור ומריצים sync.php.
+      - name: text-core gate + tests (every copy matches creative-suite/text-core/src)
+        run: |
+          php creative-suite/text-core/tools/sync.php --check
+          node --test creative-suite/text-core/tests/*.test.mjs
+
       # מודול הכוננים של ענן החבילה (suite-cloud/drives/src) — מועתק לאפליקציות שב-suite-cloud/drives/apps.json.
       # עותק ששונה בתוך אפליקציה — נעצר כאן. עורכים במקור ומריצים sync.php.
       - name: drives gate (every copy matches suite-cloud/drives/src)
@@ -228,6 +242,8 @@ jobs:
             --exclude='/creative-suite/mbe-core/tools/' --exclude='/creative-suite/mbe-core/tests/' \
             --exclude='/creative-suite/pdf-core/tools/' \
             --exclude='/creative-suite/pdf-core/tests/' \
+            --exclude='/creative-suite/text-core/tools/' --exclude='/creative-suite/text-core/tests/' \
+            --exclude='/creative-suite/image-io/tools/' --exclude='/creative-suite/image-io/tests/' \
             --exclude='git-deploy/data/config.json' \
             --exclude='git-deploy/data/logs/' --exclude='git-deploy/data/cache/' \
             --exclude='renovation-punchlist/data/config.json' \

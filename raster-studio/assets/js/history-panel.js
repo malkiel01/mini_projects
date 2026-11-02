@@ -8,7 +8,7 @@
 
 import { RasterDocument } from './engine/doc.js';
 import { decodeImage } from './engine/webgl2.js';
-import { zipStore } from './engine/zip.js';
+import { zipStore } from './image-io/zip.js';
 import { ADJUSTMENTS } from './adjust-panel.js';
 import { exportPNG, exportJPG, exportWEBP, fileName } from './export.js';
 import { sheet } from './ui-core/dialog.js';

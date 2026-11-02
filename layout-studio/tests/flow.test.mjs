@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { loadFont, fontVariant, advance } from '../assets/js/shaper.js';
+import { loadFont, fontVariant, advance } from '../assets/js/text-core/shaper.js';
 import { layoutFlow, layoutFlows, columnsOf, freeSegment } from '../assets/js/flow.js';
 import { addFrame, autoflow, growFlow, removeFrame, pruneFlows, thread, flowText, textToDoc, setFlow, frameAt,
   allFrames, bodyStyle, DEFAULT_STYLE, docBlocks, styleOf, setStyle, addImageFrame, imagePlacement, wrapRects, isImage,
