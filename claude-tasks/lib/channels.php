@@ -291,10 +291,12 @@ function channelAck(array $channel, array $ids): int {
  * ‏$sleep מוזרק בבדיקות.
  */
 function channelWait(array $channel, int $wait, ?callable $sleep = null): array {
-    $max  = (int) (config()['long_poll_max'] ?? 20);
+    // ברירת מחדל 0 — בלי long-poll (§5.6, אחרי ה-429): תהליך PHP תפוס לכל צ'אט מפיל אחסון משותף
+    $max  = (int) (config()['long_poll_max'] ?? 0);
     $wait = max(0, min($wait, $max));
     $id   = (int) $channel['id'];
-    touchChannel($id, nowTs() + $wait + 30);
+    // המאזין שואל כל 30±10 ש' — "מקשיב" נשאר דולק בין שתי בדיקות
+    touchChannel($id, nowTs() + $wait + 90);
     $sleep ??= fn () => sleep(1);
 
     $bell = bellValue($id);                 // לפני הבדיקה — צלצול שבא אחריה לא ייבלע

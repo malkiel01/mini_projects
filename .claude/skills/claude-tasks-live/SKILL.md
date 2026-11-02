@@ -11,8 +11,14 @@ the owner sees the conversation there and can write to the chat from the board. 
 - **Chat → board — automatic.** Hooks in `.claude/settings.json` mirror every owner prompt and every reply of
   yours into the channel (`claude-tasks/bridge/hook-prompt.sh`, `hook-stop.sh`). They do nothing in a chat that
   isn't registered. You never post by hand, except with `link.sh post` for something the hooks can't see.
-- **Board → chat — the listener.** A background `curl` loop (`claude-tasks/bridge/listen.sh`) waits on the
-  board. When a message arrives it exits, and its exit wakes you. **No tokens are spent while it waits.**
+- **Board → chat — the listener.** A background `curl` loop (`claude-tasks/bridge/listen.sh`) asks the board every
+  30 ± 10 s (one short request — no long-poll). When a message arrives it exits, and its exit wakes you. **No tokens
+  are spent while it waits.**
+
+> **⚠ 2026-11-02: listeners in ~13 chats flooded the host and the whole of mbe-plus.com returned 429 — every app on
+> the account.** On shared hosting the listener must stay gentle. It now **exits on any sign of trouble** (429, 503,
+> 508, 5xx, network) and refuses to start again until `backoff_until` (1 h, then 2, 4, up to 6 h). **Never work around
+> that:** do not loop it, do not lower its interval, do not start a second one. One listener per chat, at most.
 
 Everything goes through `claude-tasks/bridge/link.sh`, which sends the hosting's bot-protection cookie for you, and
 `X-Worker-Route: chat` (stage 6, spec §7): this chat works the `chat` route only. A project or channel switched to
@@ -65,11 +71,17 @@ claude-tasks/bridge/listen.sh
 
 Then end your turn normally. Do not poll, do not sleep.
 
+**Start it only while the owner has the listeners on.** After the 2026-11-02 incident they stay off until the owner
+approves (spec §5.6). If the owner said the listeners are off, skip this step and rely on the hourly board check
+(step 3). The board-wide brake (⚙ → מערכת → "⏸ עצירת המאזינים") makes every listener exit by itself; while it is on,
+`link.sh pending` also gets 503 — report "המאזינים מושהים" and carry on with your work.
+
 ## 3. Schedule the backup
 
 One `send_later`, 60 minutes out, with the message: *"Board check: run `claude-tasks/bridge/link.sh pending`,
 handle anything waiting, and make sure the listener is running."* When it fires, do exactly that and schedule
-the next one. Stop scheduling when you disconnect.
+the next one. Stop scheduling when you disconnect. "Make sure it is running" means: start it **once** if it is not
+running and the owner has the listeners on — if it exits 4 (back-off), leave it; the next hourly check tries again.
 
 ## 4. When the listener wakes you
 
@@ -129,8 +141,11 @@ Other exits of the listener:
 | `⏱ המאזין הסתיים` | Its two hours ran out | Restart it (step 2) |
 | `🔌 הערוץ נותק…` (exit 3) | The owner disconnected the channel, or the token was revoked | Tell the owner; register again only if they want |
 | `הצ'אט לא רשום` | No link file (container replaced) | Register (step 1), then restart |
+| `🛑 הלוח לא זמין (…)` (exit 4) | 429 / 503 / 508 / 5xx / network — the listener backed off and recorded until when | **Do not restart it.** Tell the owner in one line (the reason and the time); the hourly check restarts it after that time |
+| `⏸ המאזין בנסיגה עד …` (exit 4) | Started inside a back-off window — it sent nothing | Do not restart; leave it to the hourly check |
+| `🛑 … (המאזינים מושהים בלוח)` | The owner pressed "⏸ עצירת המאזינים" | Do not restart until the owner says they are back on |
 
-Errors (508, network) are retried inside the listener with back-off and logged in `.claude/board-listen.log`.
+Everything is logged in `.claude/board-listen.log`.
 
 ## 6. Follow-up chat (`handoff_request`) — spec §5.9.4
 

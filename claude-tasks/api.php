@@ -25,6 +25,7 @@ require_once __DIR__ . '/lib/search.php';
 require_once __DIR__ . '/lib/skills.php';
 require_once __DIR__ . '/lib/platform.php';
 require_once __DIR__ . '/lib/channels.php';
+require_once __DIR__ . '/lib/throttle.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -85,6 +86,9 @@ $action = $_GET['action'] ?? (is_string($in['action'] ?? null) ? $in['action'] :
 // נקרא ללא תנאי כדי שאסימון העובד ייווצר בפנייה הראשונה. אחרת הוא היה
 // נוצר רק כשעובד מציג אסימון — ואין דרך להציג אסימון שטרם קיים.
 config();
+
+// בלמי הגשר (§5.6, אחרי ה-429): עצירה כללית ותקציב לכל ערוץ — לפני הזדהות, בלי מסד
+bridgeGuard((string) $action);
 
 $user   = currentUser();
 $scope  = workerScope();
@@ -175,7 +179,8 @@ try {
         ok(['has_users' => userCount() > 0, 'user' => $user,
             'platform' => (bool) $identity,
             'pending'  => $pending ? ['name' => $pending['name'], 'email' => $pending['email']] : null,
-            'login_blocked' => ($user || $identity) ? null : passwordLoginBlocked()]);
+            'login_blocked' => ($user || $identity) ? null : passwordLoginBlocked(),
+            'bridge_paused' => $user ? (int) (config()['bridge_paused'] ?? 0) : 0]);
 
     /** המסך החד-פעמי: "אין לי חשבון" — חשבון חדש, פעיל. */
     case 'platform-new':
@@ -1548,6 +1553,10 @@ try {
         if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
         ok(['messages' => channelWait($ch, (int) ($in['wait'] ?? 20))]);
     }
+
+    /* ── ⏸ עצירת המאזינים (§5.6, אחרי ה-429) ── */
+    case 'bridge-pause':
+        ok(bridgeSetPaused(requireUser($user), !empty($in['paused'])));
 
     case 'channels':
         ok(['channels' => channelsFor(requireUser($user), (int) ($in['project_id'] ?? 0), !empty($in['include_hidden'])),

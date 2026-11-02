@@ -32,17 +32,21 @@ board_cookie() { local c; c="$(link_get cookie)"; echo "${c:-${CLAUDE_TASKS_COOK
 
 # board_call <action> <json-body> <token> [max-seconds]
 # מדפיס את גוף התשובה. מחזיר 0 כש-success=true; 1 — הלוח דחה; 2 — רשת/חסימה.
-# ‏BOARD_HTTP מחזיק את קוד ה-HTTP האחרון (למאזין: 508 וכו').
+# ‏BOARD_HTTP מחזיק את קוד ה-HTTP האחרון (למאזין: 429, 508 וכו'), ו-BOARD_RETRY_AFTER — את
+# הכותרת Retry-After בשניות (0 = לא נשלחה).
 BOARD_HTTP=0
+BOARD_RETRY_AFTER=0
 board_call() {
-  local action="$1" body="$2" token="$3" max="${4:-15}" cookie out code try
+  local action="$1" body="$2" token="$3" max="${4:-15}" cookie out code try hdr
   cookie="$(board_cookie)"
+  hdr="$(mktemp)"
   for try in 1 2; do
-    out="$(curl -sS -m "$max" -w $'\n%{http_code}' -X POST \
+    out="$(curl -sS -m "$max" -D "$hdr" -w $'\n%{http_code}' -X POST \
             -H 'Content-Type: application/json' -H "X-Worker-Token: $token" \
             -H "X-Worker-Name: ${BOARD_WORKER_NAME:-chat}" -H 'X-Worker-Route: chat' -b "$cookie" \
-            --data-binary "$body" "$(board_url)?action=$action" 2>/dev/null)" || { BOARD_HTTP=0; return 2; }
+            --data-binary "$body" "$(board_url)?action=$action" 2>/dev/null)" || { BOARD_HTTP=0; BOARD_RETRY_AFTER=0; rm -f "$hdr"; return 2; }
     code="${out##*$'\n'}"; out="${out%$'\n'*}"; BOARD_HTTP="$code"
+    BOARD_RETRY_AFTER="$(tr -d '\r' < "$hdr" | awk 'tolower($1)=="retry-after:" && $2 ~ /^[0-9]+$/ {v=$2} END {print v+0}')"
     if [ "$code" = 409 ] && [ "$try" = 1 ]; then
       local fresh
       fresh="$(printf '%s' "$out" | grep -oE 'document\.cookie *= *"[^";]+' | head -1 | sed -E 's/.*"//')"
@@ -52,6 +56,7 @@ board_call() {
     fi
     break
   done
+  rm -f "$hdr"
   printf '%s' "$out"
   [ "$(printf '%s' "$out" | jq -r '.success // false' 2>/dev/null)" = true ] && return 0
   case "$code" in 2??|4??) return 1 ;; *) return 2 ;; esac

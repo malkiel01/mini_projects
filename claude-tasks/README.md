@@ -363,6 +363,7 @@ php claude-tasks/tests/projects.php    # עץ הפרויקטים
 php claude-tasks/tests/login.php       # כניסה דרך הכלים הדיגיטליים
 php claude-tasks/tests/safety.php      # author_role, owner_only, אסימון לענף, Origin, שיוך מטלות
 php claude-tasks/tests/channels.php    # הגשר: הרשמה, אסימון ערוץ, inbox/ack, המתנה, מטלה ↔ ערוץ
+php claude-tasks/tests/throttle.php     # בלמי הגשר: בלי long-poll, ⏸ עצירה כללית, תקציב לכל ערוץ
 php claude-tasks/tests/search.php       # חיפוש, סינון וייצוא
 php claude-tasks/tests/labels.php       # הצמדה ותוויות: סוגים, נראות, הרשאות, מחיקה
 php claude-tasks/tests/chatsettings.php # ⚙ הגדרות הצ'אט: עריכה, השתקה, ניתוק וארכיון
@@ -372,6 +373,19 @@ node claude-tasks/tests/markdown.mjs   # Markdown בבועות הצ'אט: עיצ
 ```
 
 כולן רצות על מסד זמני ומחליפות כל פנייה חיצונית בתעבורה מזויפת — בלי מפתחות, בלי עלות, ובלי תלות ברשת.
+
+### בלמי הגשר — אחרי ה-429 (2026-11-02)
+
+מאזינים בכ-13 צ'אטים, שכל אחד החזיק תהליך PHP ל-20 שניות וחזר מיד, הפילו את כל mbe-plus.com (429
+לכולם, לכל האפליקציות). מאז:
+
+- **בלי long-poll:** `long_poll_max` ברירת מחדל 0. המאזין שואל כל 30±10 שניות, ו-10 שניות בשתי הדקות שאחרי הודעה.
+- **יציאה בכל סימן לעומס:** 429 / 503 / 508 / 5xx / רשת — המאזין יוצא (קוד 4) ורושם `backoff_until`
+  בקובץ הקישור: שעה, ואז 2, 4, עד 6 שעות, או `Retry-After` אם גדול יותר. הפעלה לפני הזמן יוצאת בלי לשלוח בקשה.
+- **⏸ עצירת המאזינים** (הגדרות ← מערכת, בעל הלוח): כל `channel-wait` / `channel-inbox` מקבל 503 +
+  `Retry-After: 3600` לפני ההזדהות ובלי מסד, וכל מאזין יוצא תוך מחזור אחד. בלוח — פס אדום.
+- **תקציב בשרת:** `channel-wait` אחד לכל 10 שניות לאסימון ערוץ; מעבר — 429. נספר בקבצים ב-`data/throttle`
+  (מוחרג בפריסה), לא במסד.
 
 ### מדידת תרגום לפני 12e — `lab/translate-check.html`
 
