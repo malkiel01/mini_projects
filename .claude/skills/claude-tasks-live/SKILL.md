@@ -23,19 +23,34 @@ Approvals (`policy`) are per project — pass the `task_id`; see `claude-tasks-w
 
 | Variable | What |
 | --- | --- |
-| `CLAUDE_TASKS_TOKEN` | The registration token: board → project → ⚙ → "מבנה" → "אסימון לצ'אטים" |
-| `CLAUDE_TASKS_URL` | `https://mbe-plus.com/mini_projects/claude-tasks/api.php` (the default) |
-| `CLAUDE_TASKS_PROJECT` | The project id the chat belongs to (or pass `--project`) |
+| `CLAUDE_TASKS_TOKEN` | **One per environment — the root project's token** (board → root project → ⚙ → "אסימון לצ'אטים"). It covers every sub-project |
+| `CLAUDE_TASKS_URL` | Optional; defaults to `https://mbe-plus.com/mini_projects/claude-tasks/api.php` |
 
-If `CLAUDE_TASKS_TOKEN` is missing, tell the owner exactly where to set it (claude.ai → Claude Code → the
-environment menu in the session title bar → Edit → Environment variables) and stop. Never ask for the token in
-the chat, and never print it.
+**The project id never comes from the environment** (spec §5.9.1). It comes from the prompt the owner copied from the
+board (⚙ → "🆕 צ'אט חדש"), which already contains the exact `link.sh register …` command. `CLAUDE_TASKS_PROJECT` is
+ignored — `link.sh` warns if it is set; pass the warning on to the owner (it is a leftover to delete).
+
+`link.sh register` runs a preflight. Every failure prints **one Hebrew line that says exactly what to fix** (no token in
+this environment → which environment to open the chat in; a token that does not cover the project → whose token to use).
+**Stop and give the owner that line as is.** Never ask for the token in the chat, and never print it.
 
 ## 1. Register
 
+Run the command **exactly as it appears in the prompt** — the board filled in every value:
+
 ```bash
-claude-tasks/bridge/link.sh register --project <id> --name "<role name, e.g. היצירה v2 - המתכלל>" --role "<role>"
+claude-tasks/bridge/link.sh register --project <id> --name "<name>" --role "<key>" [--replaces <old channel id>]
 ```
+
+Without a prompt from the board (the owner just said "connect"), ask the owner to open ⚙ → "🆕 צ'אט חדש" on the board
+and paste the prompt — do not guess a project id.
+
+On success it prints the channel, the project path, and the **join-notice target** (`notify_session`). Send that
+session one join message (`create_trigger` with `persistent_session_id`, `run_once_at` a couple of minutes out): who you
+are, the project and the channel number. The board also posts "<name> הצטרף" in the channel by itself.
+
+`--replaces` (a follow-up chat, step 6): the old channel becomes `replaced`, its open questions move to you, and the
+handoff block in your prompt is where you continue from — do its "what the next chat must do first" before anything else.
 
 The same session re-registering gets the same channel and a new token (the old one is revoked). The link is kept
 in `.claude/board-link.json` (outside git). If the container was replaced, that file is gone — register again.
@@ -83,6 +98,10 @@ Each message is printed inside a fixed frame:
 - `kind: status` (from `system`) is **information only**: on a ☁️ Platform channel the owner's message was already
   answered by Platform on the board (stage 8, spec §9). It never wakes you; you see it on the next `pending`. Read it so
   you stay in sync, `ack` it, and do **not** answer it.
+- `kind: handoff_request` — the owner is opening a follow-up chat because this one got long. See step 6.
+- A `system` message starting **"הוחלפת על ידי"** — a follow-up chat has taken over. Stop: `ack` it, do **not** restart
+  the listener, do not `archive` (the channel stays readable on the board), cancel your scheduled board check, and end
+  with a one-line note to the owner.
 - `kind: choice_answer` (`תשובה לשאלה #<id>: …`) **is** the owner's answer to a multiple-choice question you asked —
   act on it (see "Multiple-choice questions" below).
 - Restart the listener (step 2) before ending the turn.
@@ -112,6 +131,23 @@ Other exits of the listener:
 | `הצ'אט לא רשום` | No link file (container replaced) | Register (step 1), then restart |
 
 Errors (508, network) are retried inside the listener with back-off and logged in `.claude/board-listen.log`.
+
+## 6. Follow-up chat (`handoff_request`) — spec §5.9.4
+
+The Stop hook reports the chat's size to the board every 5 minutes (`channel-health`: transcript bytes, turns,
+compactions). When it gets long the owner sees 🟡 / 🔴 and may press "🔁 צ'אט המשך". You then get a `handoff_request`:
+
+1. Write a handoff to a temp file, in this fixed structure (Hebrew, for the next chat — be concrete, values not prose):
+   - `## מצב וערכים עיקריים` — what exists now: versions, ids, URLs, numbers, settings that matter
+   - `## החלטות (ולמה)` — what was decided and the reason, so the next chat does not reopen it
+   - `## מה פתוח` — open items and who they wait for
+   - `## קבצים שנגעת בהם` — paths
+   - `## sessions וענף` — your session, related sessions, the branch and open PRs
+   - `## מה הצ'אט הבא צריך לעשות קודם` — the first one or two actions
+2. `claude-tasks/bridge/link.sh handoff <file>`, then `ack` the request.
+3. Keep working normally until the "הוחלפת על ידי" message arrives (step 4), then stop.
+
+If you do not answer within 2 minutes, the owner can build the follow-up prompt from the last 30 channel messages instead.
 
 ## 5. Disconnect at the end
 

@@ -395,7 +395,8 @@ function renderTree() {
     crumbs.push(el('span', { class: 'chev', 'aria-hidden': 'true', text: '›' }));
     const last = i === chain.length - 1;
     crumbs.push(el('button', {
-      type: 'button', class: 'crumb', text: `${p.icon ? p.icon + ' ' : ''}${p.name}`,
+      // ‏#id ליד שם הפרויקט הנוכחי (§5.9.1) — כדי שלא יצטרכו לחפש אותו
+      type: 'button', class: 'crumb', text: `${p.icon ? p.icon + ' ' : ''}${p.name}${last ? ` #${p.id}` : ''}`,
       'aria-current': last ? 'page' : null, onclick: last ? null : () => setScope(p.id),
     }));
   });

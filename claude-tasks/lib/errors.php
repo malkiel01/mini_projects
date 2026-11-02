@@ -16,7 +16,11 @@ class AppError extends RuntimeException {
     /** קוד ה-HTTP שהחזיר ספק הבינה, כשהשגיאה ממנו — כדי להחליט אם לעבור לחיבור הבא. */
     public ?int $aiStatus = null;
 
-    public function __construct(string $message, public int $status = 400) {
+    /** קוד שגיאה יציב למכונה (למשל token_scope ל-link.sh), לצד ההודעה לאדם. */
+    public string $errorCode = '';
+
+    public function __construct(string $message, public int $status = 400, string $code = '') {
         parent::__construct($message);
+        $this->errorCode = $code;
     }
 }

@@ -6,6 +6,7 @@ import { $, $$, el, api, toast, state, on, timeAgo } from './core.js';
 import { approvalCard } from './approvals.js';
 import { renderMarkdown } from './markdown.js';
 import { choiceCard } from './choices.js';
+import { HEALTH, healthDetail, openHandoff } from './newchat.js';
 
 const POLL_MS = 4000;
 const conv = { id: null, channel: null, messages: [], timer: null, busy: false, thinking: new Set() };
@@ -41,7 +42,9 @@ function roleHue(role) {
 
 function channelSub(c) {
   const parts = [];
-  if (c.status !== 'active') parts.push('🔌 מנותק');
+  // צ'אט המשך (§5.9.4): הישן נשאר קריא, מאפיר, עם מי החליף אותו
+  if (c.status === 'replaced') parts.push(`הוחלף ← ${c.replaced_by_name || `#${c.replaced_by}`}`);
+  else if (c.status !== 'active') parts.push('🔌 מנותק');
   else parts.push(c.listening ? '🟢 מאזין' : '⚪ לא מאזין');
   const last = c.last_message_at || c.last_seen_at;
   if (last) parts.push(timeAgo(last));
@@ -63,6 +66,8 @@ export function renderChannels() {
       el('div', { class: 'l1' }, [el('span', { text: c.name })]),
       el('div', { class: 'l2', text: channelSub(c) }),
     ]),
+    // "הצ'אט מתארך" (§5.9.3) — רק כשהצ'אט דיווח; בלי דיווח — בלי ניחוש
+    c.status === 'active' && HEALTH[c.health] ? el('span', { class: `badge health health--${c.health}`, title: healthDetail(c), text: HEALTH[c.health].chip }) : null,
     c.pending_in ? el('span', { class: 'badge', title: 'ממתינות לצ\'אט', text: `✉️ ${c.pending_in}` }) : null,
     el('span', { class: 'go', 'aria-hidden': 'true', text: '‹' }),
   ])));
@@ -130,11 +135,23 @@ function bubble(m) {
 function renderHead() {
   const c = conv.channel;
   $('#cvTitle').textContent = c.name;
-  $('#cvSub').textContent = [c.role, c.status === 'active' ? (c.listening_until > Date.now() / 1000 ? '🟢 מאזין' : '⚪ לא מאזין') : '🔌 מנותק']
-    .filter(Boolean).join(' · ');
+  $('#cvSub').textContent = [c.role, c.status === 'active' ? (c.listening_until > Date.now() / 1000 ? '🟢 מאזין' : '⚪ לא מאזין')
+    : c.status === 'replaced' ? 'הוחלף' : '🔌 מנותק'].filter(Boolean).join(' · ');
+  // פס "הצ'אט מתארך" בראש השיחה, עם 🔁 צ'אט המשך בתוכו
+  const h = c.status === 'active' ? HEALTH[c.health] : null;
+  $('#cvHealth').hidden = !h;
+  if (h) {
+    $('#cvHealth').className = `cv-health cv-health--${c.health}`;
+    $('#cvHealth').replaceChildren(...[
+      el('div', { class: 'body' }, [el('b', { text: h.bar }), el('small', { text: `${healthDetail(c)} · ${h.hint}` })]),
+      isOwner() ? el('button', { type: 'button', class: 'btn ghost sm', text: '🔁 צ\'אט המשך', onclick: () => openHandoff(conv.channel) }) : null,
+    ].filter(Boolean));
+  }
+  $('#cmHandoffBox').hidden = !(isOwner() && c.status === 'active');
   $('#cvArchive').hidden = !(isOwner() && c.status === 'active');
-  $('#cvMore').hidden = !(c.can_send && c.status === 'active');
-  const blocked = c.status !== 'active' ? 'הצ\'אט מנותק — אי אפשר לכתוב אליו.'
+  $('#cvMore').hidden = !((c.can_send || isOwner()) && c.status === 'active');
+  const blocked = c.status === 'replaced' ? 'הצ\'אט הוחלף בצ\'אט המשך — אי אפשר לכתוב אליו. השיחה נשארת לקריאה.'
+    : c.status !== 'active' ? 'הצ\'אט מנותק — אי אפשר לכתוב אליו.'
     : !c.can_send ? 'אין לך הרשאה לכתוב לצ\'אט הזה (צפייה בלבד).' : '';
   $('#cvNote').hidden = !blocked;
   $('#cvNote').textContent = blocked;
@@ -297,3 +314,5 @@ on('#cvQuestionsSeg', 'click', async (e) => {
     toast(b.dataset.mode === 'board' ? 'שאלות בחירה יגיעו ללוח' : 'שאלות בחירה ייפתחו בחלון באפליקציה', 'ok');
   } catch (ex) { toast(ex.message, 'error'); }
 });
+
+on('#cmHandoff', 'click', () => { $('#chatMenu').close(); openHandoff(conv.channel); });
