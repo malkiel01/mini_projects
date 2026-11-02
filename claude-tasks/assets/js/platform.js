@@ -925,19 +925,76 @@ const ADMIN_TABS = {
   },
 
   async events() {
-    const { events } = await api('admin-events', { limit: 80 });
-    if (!events.length) return el('p', { class: 'hint', text: 'היומן ריק.' });
-    return el('div', { class: 'diag' }, events.map((e) => el('div', {
-      class: `drow${e.ok ? '' : ' drow--bad'}`,
-    }, [
-      el('span', { text: new Date(e.created_at * 1000).toLocaleString('he-IL') }),
-      el('b', { text: e.action }),
-      el('span', { text: e.actor }),
-      el('span', { text: e.target }),
-      el('span', { class: 'hint', text: e.detail }),
-    ])));
+    const box = el('div', { class: 'evlog' });
+    const filter = el('div', { class: 'seg ev-filter', role: 'radiogroup', 'aria-label': 'סינון היומן' },
+      [['all', 'הכל'], ['bad', 'כשלים בלבד']].map(([v, t]) => el('button', {
+        type: 'button', role: 'radio', 'aria-checked': String(v === 'all'),
+        onclick: async (e) => {
+          filter.querySelectorAll('button').forEach((b) => b.setAttribute('aria-checked', String(b === e.currentTarget)));
+          box.replaceChildren(...await eventRows(v === 'bad'));
+        },
+      }, [t])));
+    box.replaceChildren(...await eventRows(false));
+    return el('div', { class: 'stack' }, [filter, box]);
   },
 };
+
+/* ── היומן (§10): שורה לכל אירוע — סמל, מה קרה, ישן ← חדש, מי, מתי; מפרידי ימים; כשל באדום ── */
+
+const EVENT = {
+  login: ['🔑', 'כניסה'], logout: ['🚪', 'יציאה'], 'login.fail': ['🔑', 'כניסה נכשלה'],
+  'project.create': ['📁', 'פרויקט נוצר'], 'project.update': ['✏️', 'פרויקט עודכן'], 'project.delete': ['🗑️', 'פרויקט נמחק'],
+  'project.move': ['🏗️', 'פרויקט הועבר'], 'project.route': ['🧭', 'מי עונה'], 'route.default': ['🧭', 'ברירת המחדל של הלוח'],
+  'channel.archive': ['🔌', 'צ\'אט נותק'], 'channel.register': ['💬', 'צ\'אט נרשם'],
+  'approval.decide': ['🔐', 'החלטה על אישור'], 'policy.set': ['🔐', 'כלל אישורים'], 'policy.revoke': ['🔐', 'כלל בוטל'],
+  'quota.set': ['📊', 'מכסה'], 'usage.unknown_model': ['📊', 'מודל לא מוכר — תומחר גבוה'],
+  'ai.fallback': ['↪️', 'מעבר לחיבור הבא'], 'engine.dispatch': ['⚙️', 'הרצה במנוע'], 'engine.install': ['⚙️', 'התקנת מנוע'],
+  'connection.test': ['🔌', 'בדיקת חיבור'], 'provider.test': ['🔌', 'בדיקת ספק'], 'monitor.fail': ['☁️', 'המעקב נכשל'],
+};
+
+function eventLabel(action) {
+  if (EVENT[action]) return EVENT[action];
+  const head = action.split('.')[0];
+  const m = Object.entries(EVENT).find(([k]) => k.startsWith(head + '.'));
+  return [m ? m[1][0] : '•', action];
+}
+
+function dayOf(ts) {
+  const d = new Date(ts * 1000), today = new Date(), y = new Date(); y.setDate(today.getDate() - 1);
+  if (d.toDateString() === today.toDateString()) return 'היום';
+  if (d.toDateString() === y.toDateString()) return 'אתמול';
+  return d.toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long' });
+}
+
+async function eventRows(failedOnly) {
+  const { events } = await api('admin-events', { limit: 150, failed_only: failedOnly });
+  if (!events.length) return [el('p', { class: 'hint', text: failedOnly ? 'אין כשלים.' : 'היומן ריק.' })];
+  const out = [];
+  let day = '';
+  for (const e of events) {
+    const d = dayOf(Number(e.created_at));
+    if (d !== day) { day = d; out.push(el('div', { class: 'pol-day', text: d })); }
+    const [icon, label] = eventLabel(e.action);
+    const ok = Number(e.ok) === 1;
+    const time = new Date(e.created_at * 1000).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+    out.push(el('div', { class: `ev${ok ? '' : ' ev--bad'}` }, [
+      el('span', { class: 'ic', 'aria-hidden': 'true', text: ok ? icon : '⛔' }),
+      el('div', { class: 'body' }, [
+        el('b', { text: label + (ok ? '' : ' — נכשל') }),
+        e.detail ? el('span', { class: 'ev-detail', dir: 'auto', text: e.detail }) : null,
+        el('small', { text: [e.actor, e.target, time].filter(Boolean).join(' · ') }),
+      ]),
+    ]));
+  }
+  return out;
+}
+
+/** לשונית "משתמשים" בהגדרות (מנהל) — אותה רשימה כמו בניהול. */
+export async function renderUsersInto(box) {
+  box.replaceChildren(el('p', { class: 'hint', text: 'טוען…' }));
+  try { box.replaceChildren(await ADMIN_TABS.users()); }
+  catch (ex) { box.replaceChildren(el('p', { class: 'hint', text: ex.message })); }
+}
 
 function row(label, value) {
   return el('div', { class: 'drow' }, [el('b', { text: label }), el('span', { text: String(value) })]);
@@ -954,11 +1011,21 @@ async function showAdminTab(tab) {
 }
 
 on('#adminTabs', 'click', (e) => {
-  const chip = e.target.closest('.chip');
-  if (!chip) return;
-  $$('.chip', $('#adminTabs')).forEach((c) => c.classList.toggle('is-active', c === chip));
-  showAdminTab(chip.dataset.tab);
+  const tab = e.target.closest('[data-tab]');
+  if (!tab) return;
+  $$('#adminTabs [data-tab]').forEach((b) => b.setAttribute('aria-selected', String(b === tab)));
+  showAdminTab(tab.dataset.tab);
 });
+
+/** המונים על הלשוניות: כמה משתמשים, וכמה כשלים ב-24 השעות האחרונות. */
+async function adminCounters() {
+  try {
+    const [{ users }, { events }] = await Promise.all([api('admin-users'), api('admin-events', { limit: 500, failed_only: true })]);
+    $('#adCountUsers').textContent = String(users.length);
+    const fails = events.filter((e) => Number(e.created_at) > Date.now() / 1000 - 86400).length;
+    $('#adCountFail').textContent = fails ? String(fails) : '';
+  } catch { /* המונים — תוספת */ }
+}
 
 /* ── פתיחת החלוניות ────────────────────────────────────────────── */
 
@@ -970,6 +1037,8 @@ on('#projectsBtn', 'click', async () => {
 });
 
 on('#adminBtn', 'click', () => {
+  $$('#adminTabs [data-tab]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === 'diag')));
   $('#admin').showModal();
   showAdminTab('diag');
+  adminCounters();
 });

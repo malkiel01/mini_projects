@@ -1,5 +1,5 @@
 import { $, $$, el, toast, api, state, timeAgo, on, set, PLATFORM_HINT } from './core.js';
-import { loadConnections, loadProviders, runTask, openProject, modelPicker } from './platform.js';
+import { loadConnections, loadProviders, runTask, openProject, modelPicker, renderUsersInto } from './platform.js';
 import { loadChannels } from './chats.js';
 import { approvalCard, noteText } from './approvals.js';
 import { loadUsage, usageCard, usageMini } from './usage.js';
@@ -131,8 +131,26 @@ on('#gateForm', 'submit', async (e) => {
   } catch (ex) {
     err.textContent = ex.message;
     err.hidden = false;
+    gateInvalid(ex);
   }
 });
+
+/**
+ * נגישות (§10): השגיאה מוקראת (role=alert), השדות מסומנים aria-invalid וקשורים
+ * להודעה, והפוקוס חוזר לשדה שצריך לתקן — הסיסמה, מסומנת, כדי להקליד מחדש.
+ */
+function gateInvalid() {
+  for (const id of ['#gUser', '#gPass']) {
+    $(id).setAttribute('aria-invalid', 'true');
+    $(id).setAttribute('aria-describedby', 'gateErr');
+  }
+  const target = $('#gUser').value.trim() === '' ? $('#gUser') : $('#gPass');
+  target.focus();
+  target.select?.();
+}
+for (const id of ['#gUser', '#gPass', '#lUser', '#lPass']) {
+  on(id, 'input', (e) => e.target.removeAttribute('aria-invalid'));
+}
 
 /* ── מסך חיבור חד-פעמי (platform/docs/auth.md, סעיף 4) ───────── */
 
@@ -144,6 +162,11 @@ function showLinkGate(identity) {
 function linkError(ex) {
   $('#linkErr').textContent = ex.message;
   $('#linkErr').hidden = false;
+  if (!$('#linkForm').hidden) {
+    for (const id of ['#lUser', '#lPass']) { $(id).setAttribute('aria-invalid', 'true'); $(id).setAttribute('aria-describedby', 'linkErr'); }
+    $('#lPass').focus();
+    $('#lPass').select();
+  }
 }
 
 on('#linkHave', 'click', () => {
@@ -1072,6 +1095,7 @@ on('#logoutBtn', 'click', async () => {
 
 function openTopicEdit(topic) {
   state.editTopicId = topic.id;
+  $('#teT').textContent  = topic.project_id ? 'עריכת שלב' : 'עריכת נושא';
   $('#teName').value     = topic.name;
   $('#teKeywords').value = topic.keywords || '';
   $('#teDesc').value     = topic.description || '';
@@ -1126,9 +1150,10 @@ on('#settingsBtn', 'click', () => {
   $('#meUser').textContent = state.user?.username ? `שם המשתמש לכניסה: ${state.user.username}` : '';
   const admin = state.user?.role === 'admin';
   $('#setSysTab').hidden = !admin;
+  $('#setUsersTab').hidden = !admin;
   let tab = 'usage';
   try { tab = sessionStorage.getItem('ct:set') || 'usage'; } catch { /* פרטי */ }
-  showSetTab(tab === 'sys' && !admin ? 'usage' : tab);
+  showSetTab((tab === 'sys' || tab === 'users') && !admin ? 'usage' : tab);
   renderUsageTab();
   renderAi();
   $('#settings').showModal();
@@ -1164,6 +1189,7 @@ async function refreshQuotaWarn() {
 function showSetTab(tab) {
   $$('#setTabs [data-set]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.set === tab)));
   $$('#settings .set-panel').forEach((p) => { p.hidden = p.dataset.panel !== tab; });
+  if (tab === 'users') renderUsersInto($('#usersBox'));
   try { sessionStorage.setItem('ct:set', tab); } catch { /* פרטי */ }
 }
 on('#setTabs', 'click', (e) => {

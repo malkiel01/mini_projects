@@ -525,3 +525,23 @@ details.what p { margin-top: var(--s2); }
 .mon-item .body { flex: 1; min-width: 0; display: grid; gap: 2px; }
 .mon-item b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .9rem; }
 .mon-item small { color: var(--muted); font-size: .78rem; overflow-wrap: anywhere; }
+
+/* ===== שלב 9: הגדרות, ניהול, עריכת שלב (§10) ===== */
+/* לשוניות ההגדרות ברשת: עד 5, ובטלפון צר — שתי שורות במקום כיווץ */
+#setTabs { grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); grid-auto-flow: row; grid-auto-columns: auto; }
+#setTabs button[hidden] { display: none; }
+.admin-tabs { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.view-tabs button small.is-bad { background: var(--danger-soft); color: var(--danger); }
+.ev-filter { display: grid; inline-size: 100%; }
+.ev-filter button { min-height: 40px; }
+.evlog { display: grid; }
+.ev { display: flex; gap: var(--s2); padding: var(--s2) 0; border-bottom: 1px solid var(--line); }
+.ev .ic { flex: none; inline-size: 24px; text-align: center; }
+.ev .body { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.ev .body b { font-size: .9rem; }
+.ev-detail { font-size: .85rem; overflow-wrap: anywhere; unicode-bidi: plaintext; text-align: start; }
+.ev small { color: var(--muted); font-size: .75rem; overflow-wrap: anywhere; }
+.ev--bad { background: var(--danger-soft); border-radius: 8px; padding-inline: var(--s2); border-bottom-color: transparent; margin-block: 2px; }
+.ev--bad .body b { color: var(--danger); }
+#teKeywords { resize: vertical; min-height: 60px; }
+[aria-invalid="true"] { border-color: var(--danger) !important; box-shadow: 0 0 0 2px var(--danger-soft); }
