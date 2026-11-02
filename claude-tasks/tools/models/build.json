@@ -1,0 +1,8 @@
+{
+  "build": "1",
+  "converter": "transformers.js 3.7.6 scripts/convert.py (בלי onnxslim) + fold_q8.py",
+  "pairs": {
+    "en-he": { "source": "Helsinki-NLP/opus-mt-en-he", "revision": "b3df900afbb13bc343b0d28a03ac6f7990091f54", "license": "apache-2.0" },
+    "en-es": { "source": "Helsinki-NLP/opus-mt-en-es", "revision": "5bc4493d463cf000c1f0b50f8d56886a392ed4ab", "license": "apache-2.0" }
+  }
+}

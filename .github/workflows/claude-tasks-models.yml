@@ -1,0 +1,125 @@
+# מטלות לקלוד — ההמרה שלנו של מודלי התרגום (claude-tasks/docs/spec.md §5.11.1).
+#
+# ממיר את המודלים הרשמיים של Helsinki-NLP (Apache-2.0) ל-ONNX ‏q8, בודק שהם מתרגמים, ומעלה לשרת אל
+# claude-tasks/models/<pair>/<build>/ — ורק לשם. הקבצים (‎~150MB לשפה) לא בריפו; deploy.yml מחריג את
+# claude-tasks/models/ כדי שהפריסה לא תיגע בהם. אין כאן --delete: build חדש = תיקייה חדשה, והקודם נשאר
+# עד שהלקוח עובר.
+#
+# מופעל ב-push ל-main שמשנה את claude-tasks/tools/models/ (למשל "build" ב-build.json) או את הקובץ הזה.
+# הסודות — אותם סודות של deploy.yml.
+
+name: Claude Tasks translation models
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'claude-tasks/tools/models/**'
+      - '.github/workflows/claude-tasks-models.yml'
+  workflow_dispatch: {}
+
+concurrency:
+  group: claude-tasks-models
+  cancel-in-progress: false
+
+jobs:
+  convert:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: claude-tasks/tools/models/requirements.txt
+
+      - name: Install the converter (pinned)
+        run: pip install -r claude-tasks/tools/models/requirements.txt
+
+      - name: Convert (Optimum → q8, lm_head folded)
+        run: bash claude-tasks/tools/models/convert.sh "$RUNNER_TEMP/m"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # כמו בדפדפן: transformers.js באותה גרסה, q8. משפט לכל מודל — בכתב של שפת היעד, ומהר
+      - name: Smoke test (transformers.js 3.7.6)
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/smoke"
+          cp claude-tasks/tools/models/smoke.mjs claude-tasks/tools/models/build.json "$RUNNER_TEMP/smoke/"
+          cd "$RUNNER_TEMP/smoke"
+          npm init -y > /dev/null
+          npm install --no-audit --no-fund @huggingface/transformers@3.7.6 > /dev/null
+          node smoke.mjs "$RUNNER_TEMP/m/dist"
+
+      - name: Prepare SSH key
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Unlock the deploy key if it has a passphrase
+        env:
+          DEPLOY_PASS: ${{ secrets.DEPLOY_SSH_PASSPHRASE }}
+        run: |
+          [ -n "$DEPLOY_PASS" ] || exit 0
+          eval "$(ssh-agent -s)"
+          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> "$GITHUB_ENV"
+          echo "SSH_AGENT_PID=$SSH_AGENT_PID" >> "$GITHUB_ENV"
+          printf '#!/bin/sh\nprintf "%%s\\n" "$DEPLOY_PASS"\n' > "$RUNNER_TEMP/askpass"
+          chmod +x "$RUNNER_TEMP/askpass"
+          SSH_ASKPASS="$RUNNER_TEMP/askpass" SSH_ASKPASS_REQUIRE=force ssh-add ~/.ssh/deploy_key
+          rm -f "$RUNNER_TEMP/askpass"
+
+      # החסימה בשרת משתחררת בדקות (CLAUDE.md, "כשהפריסה נכשלת") — 30, 90, 180 שניות.
+      # ‏rsync בלי --delete, ומעלה רק את תיקיות המודלים: נסיון חוזר בטוח.
+      - name: Upload to claude-tasks/models/ (no --delete)
+        env:
+          DEST: ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          set -uo pipefail
+          SSH="ssh -i $HOME/.ssh/deploy_key -o StrictHostKeyChecking=no -o ConnectTimeout=30"
+          DIR="${DEPLOY_PATH%/}/claude-tasks/models"
+          for wait in 0 30 90 180; do
+            sleep "$wait"
+            if rsync -rtz --checksum --partial -e "$SSH" "$RUNNER_TEMP/m/dist/" "$DEST:$DIR/"; then
+              echo "הועלו: $(cd "$RUNNER_TEMP/m/dist" && ls -d */*/ | tr '\n' ' ')"; exit 0
+            fi
+            echo "::warning::ההעלאה נכשלה — עוד נסיון אחרי המתנה"
+          done
+          echo "::error::לא הצלחתי להעלות את המודלים לשרת"
+          exit 1
+
+      # מהאינטרנט, כמו הדפדפן: manifest זהה, וקובץ גדול עונה ל-Range ב-206 עם הגודל הנכון.
+      # ‏models/** ציבורי ב-app.json; עד שהפריסה של אותו מיזוג בונה את השער — מחכים (עד 20 דקות).
+      - name: Verify from the web (manifest + Range)
+        env:
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          set -uo pipefail
+          WEB="https://mbe-plus.com${DEPLOY_PATH#*/public_html}/claude-tasks/models"
+          cd "$RUNNER_TEMP/m/dist"
+          fail=0
+          for man in */*/manifest.json; do
+            d="${man%/manifest.json}"
+            ok=0
+            for i in $(seq 1 40); do
+              if curl -sSf "$WEB/$man" -o "$RUNNER_TEMP/got.json" 2>/dev/null && cmp -s "$RUNNER_TEMP/got.json" "$man"; then ok=1; break; fi
+              sleep 30
+            done
+            [ "$ok" = 1 ] || { echo "::error::$d: manifest.json לא נגיש או שונה ($WEB/$man)"; fail=1; continue; }
+            f=onnx/decoder_model_merged_quantized.onnx
+            size=$(stat -c %s "$d/$f")
+            h=$(curl -sS -o /dev/null -D - -r 0-1048575 "$WEB/$d/$f" | tr -d '\r')
+            code=$(printf '%s\n' "$h" | head -1 | awk '{print $2}')
+            total=$(printf '%s\n' "$h" | grep -i '^content-range:' | sed 's#.*/##')
+            if [ "$code" = 206 ] && [ "$total" = "$size" ]; then echo "ok $d: manifest זהה, Range 206, $size בתים"
+            else echo "::error::$d/$f: קוד $code, Content-Range total=${total:-none} (צפוי 206, $size)"; fail=1; fi
+          done
+          exit $fail
