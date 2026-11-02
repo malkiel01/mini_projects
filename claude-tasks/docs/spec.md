@@ -560,6 +560,26 @@ command and its description), `permission_suggestions` (the "always" options the
 - `permission-status { message_id }` (channel token) — what the hook polls. Counted in the §5.4 budget file.
 - On timeout the hook posts `permission-timeout` → status `moved_to_app`.
 
+#### 5.12.2a Revised after the check (§5.12.6 answers, 2026-11-02) — decisions
+
+The hook does **not** hold the request: it runs **in parallel** with the normal path (app dialog, or an automatic approval by the
+session), and the **first answer wins**; a later hook decision is discarded. Some requests are approved automatically with no
+dialog at all. MCP tools send `permission_suggestions: null`; Bash suggests a `localSettings` rule. Decisions:
+
+1. **Keep the race model.** It is what the owner wants — answer from wherever he is — and it can never block a chat: the board
+   card and the app path are both open, whichever answers first decides. "10 minutes then the app" becomes: the hook stops
+   waiting after 10 minutes; the app path was open all along.
+2. **Automatic approvals are not shown as requests.** The hook waits **3 s** before posting the card. A `PostToolUse` hook
+   (every tool, registered chat) writes a local marker `resolved/<tool_use_id or hash of tool_name+input>`; if the marker exists
+   after 3 s, the hook posts nothing and exits without a decision. If the card was already posted and `PostToolUse` arrives later
+   (a long command), the card closes itself to a grey line "✓ אושר באפליקציה / אוטומטית" (`permission-resolved`). A request
+   still open at `Stop` closes as "הוכרע באפליקציה". So the board shows only what is really waiting for the owner.
+3. **"Always in this chat"** is built by the board as its **own session-scoped rule** (`Bash(<exact prefix>:*)` / the exact MCP tool
+   name), never the suggested `localSettings` rule, and only after the deny-list check (§5.12.1). For MCP (no suggestions) it is
+   offered for the exact tool name only.
+4. **Alias tools (`mcp__<uuid>__…`)**: build; when such a tool appears, test `allow` once and record it in §5.12.6. If it is refused,
+   nothing breaks — the race model leaves the app path open — and the card says "אפשר לאשר רק באפליקציה" for that tool.
+
 #### 5.12.3 UI
 
 A permission bubble in the conversation, and the same card at the top of the board's main screen (it is urgent, wherever the
