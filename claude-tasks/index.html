@@ -36,7 +36,7 @@
     </label>
 
     <button type="submit" class="btn btn--primary btn--wide" id="gSubmit">כניסה</button>
-    <p class="gate__err" id="gateErr" hidden></p>
+    <p class="gate__err" id="gateErr" role="alert" hidden></p>
   </form>
 </div>
 
@@ -62,7 +62,7 @@
       <button type="submit" class="btn btn--primary btn--wide">חיבור</button>
       <button type="button" class="btn btn--ghost btn--wide" id="linkBack">חזרה</button>
     </form>
-    <p class="gate__err" id="linkErr" hidden></p>
+    <p class="gate__err" id="linkErr" role="alert" hidden></p>
   </div>
 </div>
 
@@ -375,18 +375,20 @@
 </dialog>
 
 <!-- ── עריכת נושא ────────────────────────────────────────────── -->
-<dialog class="sheet" id="topicEdit">
-  <div class="sheet__inner">
-    <header class="sheet__head">
-      <h2>עריכת נושא</h2>
+<dialog id="topicEdit" aria-labelledby="teT">
+  <div class="sheet-wrap">
+    <header class="sheet-head">
       <button type="button" class="icon-btn" data-close="topicEdit" aria-label="סגירה">✕</button>
+      <h2 id="teT">עריכת שלב</h2>
+      <span></span>
     </header>
-    <div class="sheet__body">
+    <div class="sheet-body">
       <form class="stack" id="topicEditForm">
         <label class="field"><span>שם</span><input type="text" id="teName" required></label>
+        <!-- מילות המפתח — שדה גלוי, לא מקופל: זה הכלי לכוון את הקטלוג -->
         <label class="field">
           <span>מילות מפתח</span>
-          <input type="text" id="teKeywords" placeholder="קבלן, צבע, אינסטלציה">
+          <textarea id="teKeywords" rows="2" placeholder="קבלן, צבע, אינסטלציה"></textarea>
         </label>
         <p class="hint">
           מופרדות בפסיק. מטלה חדשה שמכילה אחת מהן תשויך לכאן מעצמה.
@@ -686,17 +688,18 @@
 
 
 <!-- ── ניהול ─────────────────────────────────────────────────── -->
-<dialog class="sheet" id="admin">
-  <div class="sheet__inner">
-    <header class="sheet__head">
-      <h2>ניהול מערכת</h2>
+<dialog id="admin" aria-labelledby="adminT">
+  <div class="sheet-wrap">
+    <header class="sheet-head">
       <button type="button" class="icon-btn" data-close="admin" aria-label="סגירה">✕</button>
+      <h2 id="adminT">ניהול מערכת</h2>
+      <span></span>
     </header>
-    <div class="sheet__body">
-      <div class="chips" id="adminTabs">
-        <button type="button" class="chip is-active" data-tab="diag">סביבה</button>
-        <button type="button" class="chip" data-tab="users">משתמשים</button>
-        <button type="button" class="chip" data-tab="events">יומן</button>
+    <div class="sheet-body">
+      <div class="seg-tabs view-tabs admin-tabs" id="adminTabs" role="tablist" aria-label="ניהול">
+        <button type="button" role="tab" data-tab="diag" aria-selected="true">🛠 סביבה</button>
+        <button type="button" role="tab" data-tab="users" aria-selected="false">👥 משתמשים <small id="adCountUsers"></small></button>
+        <button type="button" role="tab" data-tab="events" aria-selected="false">📜 יומן <small class="is-bad" id="adCountFail" title="כשלים ב-24 השעות האחרונות"></small></button>
       </div>
       <div id="adminBody"></div>
     </div>
@@ -716,6 +719,7 @@
         <button type="button" role="tab" data-set="usage" aria-selected="true">📊 שימוש</button>
         <button type="button" role="tab" data-set="conn" aria-selected="false">🔌 חיבורים</button>
         <button type="button" role="tab" data-set="me" aria-selected="false">👤 חשבון</button>
+        <button type="button" role="tab" data-set="users" aria-selected="false" id="setUsersTab" hidden>👥 משתמשים</button>
         <button type="button" role="tab" data-set="sys" aria-selected="false" id="setSysTab" hidden>🛠 מערכת</button>
       </div>
 
@@ -754,6 +758,11 @@
       </section>
 
       <!-- ── מערכת (מנהל) ── -->
+      <!-- ── משתמשים (מנהל): מכסה חודשית, שימוש, מחיקת חשבון נוסף ── -->
+      <section class="set-panel" data-panel="users" hidden>
+        <div id="usersBox"><p class="hint">טוען…</p></div>
+      </section>
+
       <section class="set-panel" data-panel="sys" hidden>
         <ul class="list">
           <li class="card" tabindex="0" role="button" id="boardPolicyBtn" aria-label="אישורים כלליים">
