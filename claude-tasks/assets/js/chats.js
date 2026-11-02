@@ -4,6 +4,7 @@
  */
 import { $, el, api, toast, state, on, timeAgo } from './core.js';
 import { approvalCard } from './approvals.js';
+import { renderMarkdown } from './markdown.js';
 
 const POLL_MS = 4000;
 const conv = { id: null, channel: null, messages: [], timer: null, busy: false, thinking: new Set() };
@@ -107,7 +108,8 @@ function bubble(m) {
     kind ? el('span', { class: 'badge', text: kind }) : null,
     m.kind === 'approval' && m.approval?.type
       ? approvalCard(m.approval, m.task_id, { canDecide: m.approval.can_decide, pending: m.approval.pending, onDone: reload })
-      : el('div', { class: 'b-body', dir: 'auto', text: m.body }),
+      // הצ'אט כותב Markdown — מוצג מעוצב כמו בצ'אט (בונה צמתים, אף פעם לא HTML)
+      : el('div', { class: 'b-body md', dir: 'auto' }, [renderMarkdown(m.body)]),
     // Platform לא כותב קוד: כשצריך — מציע מטלה, ונגיעה יוצרת אותה ומריצה (§9)
     m.meta?.task ? el('button', {
       type: 'button', class: 'btn ghost sm b-mktask',
