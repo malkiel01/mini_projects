@@ -45,6 +45,8 @@ apps.json                    מי משתמש
 | `glyphOutline(font, gid)` → `[{ type, values }]` | קווי מתאר כפקודות `M L Q C Z`, יחידות הגופן, y למעלה, במטמון. עובד גם ב-Node |
 | `glyphsToPath(font, glyphs, x, y, size)` → `d` | **טקסט לקווי מתאר:** `d` של SVG, פקודות **מוחלטות** `M L Q C Z`, **y למטה** — כמו `path` בפורמט וב-`pdf-core`. אותו מיקום בדיוק כמו `drawGlyphs` |
 | `textToPath(fonts, text, { size, x, y, base, spans })` → `{ d, width }` | קיצור: `shapeLine` + `glyphsToPath` |
+| `glyphsOnPath(font, glyphs, path, { size, offset, align, shift })` → `{ d, placed, overflow }` | **טקסט על נתיב.** `path` — `{ length, at(s) }`, כלומר `measure(segs)` של `geometry-core`. אמצע כל גליף יושב על הנתיב, מסובב לפי המשיק. `align`: `'start'` / `'center'` / `'end'`. `shift` — קו הבסיס מעל הנתיב. `placed` — `{ gid, x, y, angle }` לכל גליף; `overflow` — כמה לא נכנסו ולא צוירו |
+| `textOnPath(fonts, text, path, { size, base, spans, … })` | קיצור: `shapeLine` + `glyphsOnPath` |
 
 גליף: `{ gid, cluster, ax, dx, dy, f? }` — `cluster` אינדקס בטקסט המקורי; `ax` התקדמות; `dx` / `dy` היסט (**dy למעלה**,
 כמו HarfBuzz וכמו `glyphs` של `pdf-core`); `f` — הגופן החלופי, כשיש (המידות כבר ביחידות של הראשי).
@@ -53,7 +55,21 @@ apps.json                    מי משתמש
 
 רשימת הגליפים עוברת ל-`pdf-core` כמו שהיא: `{ op: 'glyphs', font, size, glyphs: glyphs.map(g => [g.gid, g.dx*s, g.dy*s, g.ax*s]) }`
 עם `s = size / upem` — **אותו קובץ גופן** שעוצב איתו. גליף מגופן חלופי — ב-op נפרד בגופן שלו (ראו `layout-studio/assets/js/pdf.js`).
-טקסט שחייב להיות קווי מתאר (בתוך ציור) — `textToPath` → `{ op: 'path', d }`.
+טקסט שחייב להיות קווי מתאר (בתוך ציור, או על נתיב) — `textToPath` / `textOnPath` → `{ op: 'path', d }`.
+
+### טקסט על נתיב — עם `geometry-core`
+
+text-core **לא מייבא** את geometry-core (כל מודול מסונכרן לתיקייה משלו באפליקציה). האפליקציה מחברת:
+
+```js
+import { parse } from './geometry/path.js';
+import { measure } from './geometry/measure.js';
+import { textOnPath } from './text-core/shaper.js';
+const { d, overflow } = textOnPath([frank, noto], 'שָׁלוֹם', measure(parse(pathD)), { size: 24, align: 'center' });
+```
+
+הגליפים בסדר חזותי, כך שהגליף השמאלי מוצב ראשון בכיוון הנתיב — כמו שורה ישרה. על קו ישר משמאל לימין התוצאה זהה
+ל-`glyphsToPath` (נבדק). מעגל עם כיוון השעון (y למטה) — ראשי האותיות כלפי חוץ; נגד כיוון השעון — פנימה.
 
 ## גופנים מהקטלוג המשותף
 
@@ -66,7 +82,6 @@ WOFF2 לא נטען (HarfBuzz קורא טבלאות TTF). את הקובץ נות
 
 ## מה עוד לא כאן
 
-- **טקסט על נתיב** — תלוי ב-מ1 (`geometry-core`: אורך, נקודה ומשיק על נתיב). בתיאום עם וקטורי.
 - **שבירת שורות ופסקאות** — נשארות אצל כל אפליקציה (העימוד: `flow.js`; עורך התמלילים: שלו).
 
 ## מי משתמש
