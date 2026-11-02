@@ -83,7 +83,25 @@ Each message is printed inside a fixed frame:
 - `kind: status` (from `system`) is **information only**: on a ☁️ Platform channel the owner's message was already
   answered by Platform on the board (stage 8, spec §9). It never wakes you; you see it on the next `pending`. Read it so
   you stay in sync, `ack` it, and do **not** answer it.
+- `kind: choice_answer` (`תשובה לשאלה #<id>: …`) **is** the owner's answer to a multiple-choice question you asked —
+  act on it (see "Multiple-choice questions" below).
 - Restart the listener (step 2) before ending the turn.
+
+### Multiple-choice questions (`AskUserQuestion`) — spec §5.10
+
+In a registered chat a `PreToolUse` hook (`claude-tasks/bridge/hook-choice.sh`) sends your question to the board, where
+the owner sees one button per option. By default (`questions: board`) the hook **denies** the tool, with a reason
+starting "The question was sent to the board (message #<id>)". That denial is expected, not an error:
+
+1. Print the same questions in the chat as numbered options (header, question, then `1. label — description`), so the
+   owner can also answer here.
+2. **End your turn** (restart the listener first). Do not ask again with the tool, and do not guess the answer.
+3. The answer arrives either as a board message `kind: choice_answer` ("תשובה לשאלה #<id>: …"), or as the owner's next
+   prompt typed in the chat (a number, several numbers, or free text) — the hook marks the board bubble answered.
+   Either one **is** the answer: map numbers to the options you printed and continue.
+
+With `questions: app` (the owner chose it in the channel's ⋯ menu) the dialog opens in the app as usual; the board only
+mirrors it, and a `PostToolUse` hook reports the choice. Nothing changes for you. An unregistered chat is unaffected.
 
 Other exits of the listener:
 

@@ -2,9 +2,10 @@
  * הגשר החי — הממשק (docs/spec.md §5.7): רשימת הצ'אטים של הענף, ומסך שיחה
  * עם צ'אט. ‏out — מה שקרה בצ'אט (משוקף בהוקים); ‏in — מה שנכתב כאן בלוח.
  */
-import { $, el, api, toast, state, on, timeAgo } from './core.js';
+import { $, $$, el, api, toast, state, on, timeAgo } from './core.js';
 import { approvalCard } from './approvals.js';
 import { renderMarkdown } from './markdown.js';
+import { choiceCard } from './choices.js';
 
 const POLL_MS = 4000;
 const conv = { id: null, channel: null, messages: [], timer: null, busy: false, thinking: new Set() };
@@ -45,6 +46,7 @@ function channelSub(c) {
   const last = c.last_message_at || c.last_seen_at;
   if (last) parts.push(timeAgo(last));
   if (c.open_questions) parts.push(`❓ ${c.open_questions}`);
+  if (c.open_choices) parts.push(`🔘 ${c.open_choices} ממתינה לך`);
   return parts.join(' · ');
 }
 
@@ -102,14 +104,17 @@ function bubble(m) {
       text: m.delivered_at ? '✓✓' : '✓',
     }));
   }
-  const kind = { question: '❓ שאלה', answer: '💡 תשובה', decision: '🔐 החלטה' }[m.kind];
+  const kind = { question: '❓ שאלה', answer: '💡 תשובה', decision: '🔐 החלטה', choice: '🔘 שאלת בחירה', choice_answer: '🔘 תשובה' }[m.kind];
   return el('li', { class: `bubble bubble--${m.direction}${m.author_role === 'system' ? ' bubble--sys' : ''}${m.author_role === 'platform' ? ' bubble--platform' : ''}`, dataset: { id: String(m.id) } }, [
     el('div', { class: 'b-meta' }, meta),
     kind ? el('span', { class: 'badge', text: kind }) : null,
     m.kind === 'approval' && m.approval?.type
       ? approvalCard(m.approval, m.task_id, { canDecide: m.approval.can_decide, pending: m.approval.pending, onDone: reload })
+      // שאלת בחירה (§5.10): כפתור לכל אפשרות; אחרי מענה — מקופלת
+      : m.kind === 'choice' && m.meta?.questions
+        ? choiceCard(m, { canAnswer: conv.channel?.can_send && conv.channel?.status === 'active', onDone: reload })
       // הצ'אט כותב Markdown — מוצג מעוצב כמו בצ'אט (בונה צמתים, אף פעם לא HTML)
-      : el('div', { class: 'b-body md', dir: 'auto' }, [renderMarkdown(m.body)]),
+        : el('div', { class: 'b-body md', dir: 'auto' }, [renderMarkdown(m.body)]),
     // Platform לא כותב קוד: כשצריך — מציע מטלה, ונגיעה יוצרת אותה ומריצה (§9)
     m.meta?.task ? el('button', {
       type: 'button', class: 'btn ghost sm b-mktask',
@@ -128,6 +133,7 @@ function renderHead() {
   $('#cvSub').textContent = [c.role, c.status === 'active' ? (c.listening_until > Date.now() / 1000 ? '🟢 מאזין' : '⚪ לא מאזין') : '🔌 מנותק']
     .filter(Boolean).join(' · ');
   $('#cvArchive').hidden = !(isOwner() && c.status === 'active');
+  $('#cvMore').hidden = !(c.can_send && c.status === 'active');
   const blocked = c.status !== 'active' ? 'הצ\'אט מנותק — אי אפשר לכתוב אליו.'
     : !c.can_send ? 'אין לך הרשאה לכתוב לצ\'אט הזה (צפייה בלבד).' : '';
   $('#cvNote').hidden = !blocked;
@@ -180,7 +186,8 @@ function renderLog(stick) {
 
 /** ‏after — מהמוקדמת שעוד לא נמסרה, כדי ש-✓ יתעדכן ל-✓✓. */
 function afterId() {
-  const pending = conv.messages.find((m) => m.direction === 'in' && !m.delivered_at);
+  // גם שאלת בחירה פתוחה — כדי שתשובה שהוקלדה בצ'אט תקפל את הבועה
+  const pending = conv.messages.find((m) => (m.direction === 'in' && !m.delivered_at) || (m.kind === 'choice' && m.status === 'open'));
   const last = conv.messages.length ? conv.messages[conv.messages.length - 1].id : 0;
   return pending ? Math.min(pending.id - 1, last) : last;
 }
@@ -192,7 +199,9 @@ async function poll(stick = false) {
     const { channel, messages } = await api('channel-messages', { channel_id: conv.id, after: afterId() });
     conv.channel = channel;
     const byId = new Map(conv.messages.map((m) => [m.id, m]));
-    const fresh = messages.some((m) => !byId.has(m.id) || byId.get(m.id).delivered_at !== m.delivered_at);
+    // ✓ → ✓✓, ושאלת בחירה שנענתה (גם בצ'אט) — מציירים מחדש
+    const fresh = messages.some((m) => !byId.has(m.id) || byId.get(m.id).delivered_at !== m.delivered_at
+      || byId.get(m.id).status !== m.status);
     messages.forEach((m) => byId.set(m.id, m));
     conv.messages = [...byId.values()].sort((a, b) => a.id - b.id);
     renderHead();
@@ -268,5 +277,23 @@ on('#cvArchive', 'click', async () => {
     await api('channel-archive', { channel_id: c.id });
     toast('הצ\'אט נותק', 'ok');
     await poll(true);
+  } catch (ex) { toast(ex.message, 'error'); }
+});
+
+/* ── ⋯ — שאלות בחירה: בלוח / באפליקציה (§5.10) ─────────────────── */
+
+function renderQuestionsSeg() {
+  const mode = conv.channel?.questions || 'board';
+  $$('#cvQuestionsSeg button').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.mode === mode)));
+}
+on('#cvMore', 'click', () => { renderQuestionsSeg(); $('#chatMenu').showModal(); });
+on('#cvQuestionsSeg', 'click', async (e) => {
+  const b = e.target.closest('button[data-mode]');
+  if (!b || !conv.id) return;
+  try {
+    await api('channel-questions', { channel_id: conv.id, mode: b.dataset.mode });
+    conv.channel.questions = b.dataset.mode;
+    renderQuestionsSeg();
+    toast(b.dataset.mode === 'board' ? 'שאלות בחירה יגיעו ללוח' : 'שאלות בחירה ייפתחו בחלון באפליקציה', 'ok');
   } catch (ex) { toast(ex.message, 'error'); }
 });

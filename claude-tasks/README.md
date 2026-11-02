@@ -145,6 +145,20 @@
 ה-hooks והמנוע — שולח אותה. **המנוע (`agent/run.mjs`) נחסם עד עכשיו בשקט**; תוקן, וריפו שהמנוע כבר מותקן בו צריך
 "התקנת המנוע" מחדש כדי לקבל את הקובץ המעודכן.
 
+
+### שאלות בחירה (AskUserQuestion) בלוח
+
+כשצ'אט רשום שואל בכלי השאלות, ה-hook `bridge/hook-choice.sh` (PreToolUse) שולח את השאלות ללוח (`channel-post`
+עם `kind: choice` ו-`questions`), ובלוח מופיעה בועה עם כפתור לכל אפשרות. לפי `channels.questions`:
+
+- **בלוח** (ברירת מחדל): הכלי נדחה, והצ'אט מדפיס את השאלות ממוספרות ומסיים את התור. עונים בנגיעה בלוח
+  (`choice-answer` ← הודעה `choice_answer` שמעירה את הצ'אט), או בהקלדה בצ'אט (`hook-prompt.sh` שולח עם
+  `reply_to`). הראשון קובע; השני מקבל 409.
+- **באפליקציה**: החלון נפתח באפליקציה כרגיל, הלוח רק משקף, ו-`hook-choice-done.sh` (PostToolUse) מדווח את הבחירה.
+
+בוחרים ב-⋯ במסך השיחה (`channel-questions`). שאלות פתוחות נספרות בשורת הצ'אט וב"ממתין לך". צ'אט שאינו רשום —
+בלי שינוי. האפיון: `docs/spec.md` §5.10; הבדיקות: `tests/choices.php`.
+
 ## מכסה ושימוש (שלב 7)
 
 כל קריאה לספק בינה נרשמת בטבלת `usage`, לפי הטוקנים שהספק מחזיר. המחיר נלקח מטבלה בקוד (`lib/usage.php`, `PRICES`), ומודל שאינו בטבלה מתומחר לפי המחיר הגבוה של אותו ספק, עם אירוע ביומן. השימוש נזקף לבעל החיבור שהמפתח שלו שילם. במנוע, הוא נזקף למי שלחץ "הרצה", דרך `report-usage`.
@@ -315,6 +329,7 @@ php claude-tasks/tests/projects.php    # עץ הפרויקטים
 php claude-tasks/tests/login.php       # כניסה דרך הכלים הדיגיטליים
 php claude-tasks/tests/safety.php      # author_role, owner_only, אסימון לענף, Origin, שיוך מטלות
 php claude-tasks/tests/channels.php    # הגשר: הרשמה, אסימון ערוץ, inbox/ack, המתנה, מטלה ↔ ערוץ
+php claude-tasks/tests/choices.php      # שאלות בחירה: מענה מהלוח, מרוץ, הקלדה בצ'אט, מצב אפליקציה
 node claude-tasks/tests/markdown.mjs   # Markdown בבועות הצ'אט: עיצוב, ובטיחות (בלי HTML, קישורים רק http/https)
 ```
 

@@ -275,6 +275,7 @@ function migrate(PDO $pdo): void {
     migrateMonitor($pdo);
     // מנוע Claude Code (lib/engine.php)
     migrateEngine($pdo);
+    migrateChoices($pdo);
 }
 
 /** ALTER TABLE ADD COLUMN אינו מכיר IF NOT EXISTS ב-SQLite — בודקים לבד. */
@@ -455,3 +456,4 @@ require_once __DIR__ . '/usage.php';
 require_once __DIR__ . '/answers.php';
 require_once __DIR__ . '/monitor.php';
 require_once __DIR__ . '/engine.php';
+require_once __DIR__ . '/choices.php';

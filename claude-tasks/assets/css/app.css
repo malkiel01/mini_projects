@@ -586,3 +586,36 @@ details.what p { margin-top: var(--s2); }
 .ev--bad .body b { color: var(--danger); }
 #teKeywords { resize: vertical; min-height: 60px; }
 [aria-invalid="true"] { border-color: var(--danger) !important; box-shadow: 0 0 0 2px var(--danger-soft); }
+
+/* ── שאלת בחירה בבועה (§5.10) ─────────────────────────────────── */
+.choice { display: grid; gap: var(--s2); min-width: 0; }
+.choice-q { display: grid; gap: 6px; margin: 0; padding: 0; border: 0; min-width: 0; }
+.chip-sm { justify-self: start; padding: 1px 8px; border-radius: 99px; font-size: .74rem; color: var(--muted);
+  background: color-mix(in srgb, var(--ink) 6%, transparent); }
+.choice-question { margin: 0; line-height: 1.45; unicode-bidi: plaintext; text-align: start; }
+.choice-question small { color: var(--muted); font-weight: 400; }
+.choice-opts { display: grid; gap: 6px; }
+.choice-opt { display: flex; align-items: center; gap: var(--s2); width: 100%; min-height: 44px; padding: 8px var(--s3);
+  border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); color: var(--ink);
+  font: inherit; text-align: start; cursor: pointer; }
+.choice-opt:hover:not(:disabled) { border-color: var(--brand); }
+.choice-opt:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+.choice-opt[aria-pressed="true"] { border-color: var(--brand); background: var(--brand-soft); box-shadow: inset 0 0 0 1px var(--brand); }
+.choice-opt:disabled { cursor: default; opacity: .7; }
+.choice-opt-text { display: grid; gap: 2px; min-width: 0; unicode-bidi: plaintext; }
+.choice-opt-text small { color: var(--muted); font-size: .8rem; line-height: 1.35; }
+.choice-check { flex: none; inline-size: 18px; block-size: 18px; border: 1.5px solid var(--muted); border-radius: 5px;
+  display: grid; place-items: center; font-size: .8rem; line-height: 1; }
+.choice-opt[aria-pressed="true"] .choice-check { border-color: var(--brand); background: var(--brand); color: var(--brand-ink); }
+.choice-opt[aria-pressed="true"] .choice-check::after { content: "✓"; }
+.choice-opt--other b { font-weight: 500; color: var(--muted); }
+.choice-other-input { width: 100%; min-height: 44px; padding: 8px; border: 1px solid var(--line); border-radius: var(--r);
+  background: var(--surface); color: var(--ink); font: inherit; resize: vertical; }
+.choice-note { margin: 0; font-size: .8rem; }
+.choice-foot { display: flex; justify-content: flex-end; }
+.choice-foot[hidden] { display: none; }
+.choice--done { gap: 4px; }
+.choice-done-head { margin: 0; color: var(--ok, #1f8a4c); font-weight: 600; font-size: .9rem; }
+.choice--done summary { cursor: pointer; color: var(--muted); font-size: .85rem; }
+.choice-done-list { margin: 4px 0 0; padding-inline-start: 1.2em; display: grid; gap: 2px; }
+.bubble:has(.choice) { max-width: min(92%, 520px); }
