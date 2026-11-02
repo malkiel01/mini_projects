@@ -21,7 +21,7 @@ export const TRANSLATE_LANGS = {
   he: { name: 'עברית', heName: 'עברית', flag: '🇮🇱', label: 'אנגלית ← עברית', from: 'אנגלית', id: 'en-he',
         revision: '1', sizes: { [ENC]: 53215822, [DEC]: 94243270 } },
   es: { name: 'Español', heName: 'ספרדית', flag: '🇪🇸', label: 'אנגלית ← ספרדית', from: 'אנגלית', id: 'en-es',
-        revision: '1', sizes: { [ENC]: 52786767, [DEC]: 93381843 } },
+        revision: '1', sizes: { [ENC]: 52786767, [DEC]: 93381807 } },
 };
 export const TR_CREDIT = 'Opus-MT · University of Helsinki · Apache-2.0';
 const CACHE = 'transformers-cache';
