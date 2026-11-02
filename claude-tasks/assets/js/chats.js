@@ -56,6 +56,9 @@ function channelSub(c) {
   if (c.status === 'replaced') parts.push(`הוחלף ← ${c.replaced_by_name || `#${c.replaced_by}`}`);
   else if (c.status !== 'active') parts.push('🔌 מנותק');
   else parts.push(c.listening ? '🟢 מאזין' : '⚪ לא מאזין');
+  // §5.10.1: חלון הרשאה פתוח באפליקציה; גשר ישן שצריך הוראת עדכון
+  if (c.status === 'active' && c.waiting_at) parts.push(`⏸ ממתין לאישור באפליקציה${c.waiting_tool ? `: ${c.waiting_tool}` : ''}`);
+  if (c.bridge_outdated) parts.push('⚠ גרסה ישנה — צריך עדכון');
   const last = c.last_message_at || c.last_seen_at;
   if (last) parts.push(timeAgo(last));
   if (c.open_questions) parts.push(`❓ ${c.open_questions}`);
@@ -365,6 +368,10 @@ function renderSettings() {
     ['🔔', 'השתקה', c.muted ? 'מושתק — לא נספר ב"ממתין לך" · נגיעה מבטלת' : 'כבויה — נגיעה משתיקה', () => toggleMute(), { pressed: c.muted }],
     isOwner() && ['🧭', 'מי עונה', `${c.route_own ? ROUTE_LABEL[c.route_own] : 'כמו הפרויקט'} · בפועל: ${ROUTE_LABEL[c.route_effective]}`, () => openRoute()],
     c.can_edit && active && ['🔘', 'שאלות בחירה', c.questions === 'app' ? 'באפליקציה' : 'בלוח', () => openQuestions()],
+    // גרסת הגשר (§5.10.1): צ'אט ישן — הוראת עדכון חד-פעמית, שהסקיל הישן כבר יודע לבצע
+    active && isOwner() && ['📨', 'גרסת הגשר', c.bridge_outdated
+      ? `⚠ ${c.bridge_version ? 'גרסה ' + c.bridge_version : 'מלפני התיקון'} · נגיעה שולחת הוראת עדכון` : `✓ עדכנית (${c.bridge_version})`,
+      c.bridge_outdated ? () => sendBridgeUpdate() : null, { sub2: c.bridge_outdated ? '📨 שלח הוראת עדכון' : '' }],
     active && ['📏', 'אורך הצ\'אט', c.health_at ? `${health ? health.chip + ' · ' : ''}${healthDetail(c)}` : 'עוד לא דיווח',
       isOwner() ? () => { $('#chatSettings').close(); openHandoff(conv.channel); } : null, { sub2: isOwner() ? '🔁 צ\'אט המשך' : '' }],
   ].filter(Boolean);
@@ -447,6 +454,16 @@ on('#csEditForm', 'submit', async (e) => {
     toast('נשמר', 'ok');
   } catch (ex) { toast(ex.message, 'error'); }
 });
+
+async function sendBridgeUpdate() {
+  if (!confirm("לשלוח לצ'אט הוראת עדכון חד-פעמית לגשר? הוא יריץ אותה בתור הבא שלו, בלי commit בענף.")) return;
+  try {
+    await api('bridge-send-update', { channel_id: conv.id });
+    toast('ההוראה נשלחה — הצ\'אט יבצע אותה כשיקרא את ההודעה', 'ok');
+    $('#chatSettings').close();
+    reload();
+  } catch (ex) { toast(ex.message, 'error'); }
+}
 
 async function toggleMute() {
   try {

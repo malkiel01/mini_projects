@@ -20,6 +20,13 @@ the owner sees the conversation there and can write to the chat from the board. 
 > 508, 5xx, network) and refuses to start again until `backoff_until` (1 h, then 2, 4, up to 6 h). **Never work around
 > that:** do not loop it, do not lower its interval, do not start a second one. One listener per chat, at most.
 
+**The runtime copy (spec §5.10.1).** The hooks in `.claude/settings.json` call one dispatcher, which runs the bridge from
+`~/.claude-tasks-bridge/` — a copy of `claude-tasks/bridge/` taken from `origin/main` by `link.sh update` (run by `register`
+and by the hourly check). It never touches your working tree, so a fix merged to `main` reaches you within the hour even
+on an old branch. `claude-tasks/bridge/link.sh` and `listen.sh` hand over to that copy by themselves. **Never commit
+`.claude/settings.json` or anything under `claude-tasks/bridge/` because of the bridge** — if `settings.json` shows as
+modified after an update message, leave it modified.
+
 Everything goes through `claude-tasks/bridge/link.sh`, which sends the hosting's bot-protection cookie for you, and
 `X-Worker-Route: chat` (stage 6, spec §7): this chat works the `chat` route only. A project or channel switched to
 ☁️ Platform is answered by Platform (once a quota exists) — its tasks will not come to you, and that is deliberate.
@@ -78,8 +85,10 @@ approves (spec §5.6). If the owner said the listeners are off, skip this step a
 
 ## 3. Schedule the backup
 
-One `send_later`, 60 minutes out, with the message: *"Board check: run `claude-tasks/bridge/link.sh pending`,
-handle anything waiting, and make sure the listener is running."* When it fires, do exactly that and schedule
+One `send_later`, 60 minutes out, with the message: *"Board check: run `claude-tasks/bridge/link.sh update`, then
+`claude-tasks/bridge/link.sh status` and `link.sh pending`, handle anything waiting, and make sure the listener is
+running."* `status` re-registers by itself, silently and to the same channel, when the container was replaced (the link
+file is gone but the board knows this session). When it fires, do exactly that and schedule
 the next one. Stop scheduling when you disconnect. "Make sure it is running" means: start it **once** if it is not
 running and the owner has the listeners on — if it exits 4 (back-off), leave it; the next hourly check tries again.
 
@@ -114,6 +123,9 @@ Each message is printed inside a fixed frame:
 - A `system` message starting **"הוחלפת על ידי"** — a follow-up chat has taken over. Stop: `ack` it, do **not** restart
   the listener, do not `archive` (the channel stays readable on the board), cancel your scheduled board check, and end
   with a one-line note to the owner.
+- An owner message **"עדכון הגשר ללוח (חד-פעמי)"** — run the command in it exactly, commit nothing, then
+  `bash ~/.claude-tasks-bridge/link.sh status` and answer in one line. From then on use `~/.claude-tasks-bridge/` for
+  `link.sh` and `listen.sh` (your branch's copy is old).
 - `kind: choice_answer` (`תשובה לשאלה #<id>: …`) **is** the owner's answer to a multiple-choice question you asked —
   act on it (see "Multiple-choice questions" below).
 - Restart the listener (step 2) before ending the turn.
@@ -125,11 +137,16 @@ the owner sees one button per option. By default (`questions: board`) the hook *
 starting "The question was sent to the board (message #<id>)". That denial is expected, not an error:
 
 1. Print the same questions in the chat as numbered options (header, question, then `1. label — description`), so the
-   owner can also answer here.
+   owner can also answer here. A reason starting **"The board is unreachable right now"** means the same thing: print, end
+   the turn. The question was kept locally and reaches the board, with the owner's typed answer, once it is back.
 2. **End your turn** (restart the listener first). Do not ask again with the tool, and do not guess the answer.
 3. The answer arrives either as a board message `kind: choice_answer` ("תשובה לשאלה #<id>: …"), or as the owner's next
    prompt typed in the chat (a number, several numbers, or free text) — the hook marks the board bubble answered.
    Either one **is** the answer: map numbers to the options you printed and continue.
+
+**Permission prompts.** The six bridge tools (`…__create_trigger`, `…__send_later`, `…__get_session`,
+`…__list_sessions`, `…__get_trigger`, `…__list_triggers`) are approved by a hook in a registered chat, under any server
+alias. Any other permission dialog still needs a tap in the app; the board shows "⏸ הצ'אט ממתין לאישור באפליקציה" meanwhile.
 
 With `questions: app` (the owner chose it in the channel's ⋯ menu) the dialog opens in the app as usual; the board only
 mirrors it, and a `PostToolUse` hook reports the choice. Nothing changes for you. An unregistered chat is unaffected.

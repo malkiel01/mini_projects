@@ -242,7 +242,8 @@ function healthLevel(array $c): string {
     return '';
 }
 
-function channelHealth(array $channel, int $bytes, int $turns, int $compactions): string {
+function channelHealth(array $channel, int $bytes, int $turns, int $compactions, string $version = ''): string {
+    channelSetVersion($channel, $version);   // §5.10.1
     db()->prepare('UPDATE channels SET health_bytes = ?, health_turns = ?, health_compactions = ?, health_at = ? WHERE id = ?')
         ->execute([max(0, $bytes), max(0, $turns), max(0, $compactions), nowTs(), $channel['id']]);
     touchChannel((int) $channel['id']);
