@@ -3,7 +3,7 @@
   "updated": "2026-11-02",
   "note": "רשימת הצוות הקבועה. כל אחד שולח הודעות ישירות לאחרים לפי .claude/skills/creative-suite-team/SKILL.md. מוסיף או משנה חבר — רק הצ'אט המתכלל.",
   "members": [
-    { "role": "coordinator", "name": "הצ'אט המתכלל", "session": "session_01XFFMNKh9yc4XGoUa7AYMfv",
+    { "role": "coordinator", "name": "היצירה v2 - המתכלל", "session": "session_018g4NYD8bmCQNmVzynJTi9j", "board": "פרויקט 10, ערוץ #2",
       "owns": ["creative-suite/docs/master-spec.md", "creative-suite/docs/mbe-format.md", "creative-suite/docs/projects/", "creative-suite/docs/requests/ (ההכרעות)", "creative-suite/team/", "creative-suite/docs/integration.md", "creative-suite/mbe-core/apps.json", "creative-suite/mbe-core/schema/"],
       "does": "מכריע בבקשות, מעדכן את האפיון והסכמה, מנתב עבודה, מדבר עם בעל המערכת" },
     { "role": "spec", "name": "הצ'אט המאפיין", "session": "session_01PBB4TeboGyjRGSR4xp6CbH",
