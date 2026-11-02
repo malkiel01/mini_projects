@@ -314,6 +314,7 @@
       </div>
       <button type="button" class="icon-btn" id="cvSettings" aria-label="הגדרות הצ'אט" title="הגדרות הצ'אט">⚙</button>
     </header>
+    <div class="cv-pins" id="cvPins" hidden></div>
     <div class="cv-health" id="cvHealth" hidden></div>
     <ol class="chat-log" id="chatLog" aria-live="polite" aria-label="ההודעות"></ol>
     <form class="composer" id="chatForm">
@@ -365,6 +366,27 @@
       <p class="mm-preview" id="mmPreview" dir="auto"></p>
       <div class="mm-actions" id="mmActions" role="menu" aria-labelledby="mmT"></div>
     </div>
+  </div>
+</dialog>
+<!-- ── 🏷 תוויות ו-📌 מוצמדות (§5.11, 12c) ─────────────────────────── -->
+<dialog id="labelSheet" aria-labelledby="lsT">
+  <div class="sheet-wrap">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close="labelSheet" aria-label="סגירה">✕</button>
+      <h2 id="lsT">תוויות</h2>
+      <span></span>
+    </header>
+    <div class="sheet-body" id="lsBody"></div>
+  </div>
+</dialog>
+<dialog id="pinSheet" aria-labelledby="psT">
+  <div class="sheet-wrap">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close="pinSheet" aria-label="סגירה">✕</button>
+      <h2 id="psT">📌 מוצמדות</h2>
+      <span></span>
+    </header>
+    <div class="sheet-body"><ul class="list" id="psList"></ul></div>
   </div>
 </dialog>
 <dialog id="csAbout" aria-labelledby="csAboutT">

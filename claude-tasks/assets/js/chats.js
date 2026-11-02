@@ -7,6 +7,7 @@ import { approvalCard } from './approvals.js';
 import { renderMarkdown } from './markdown.js';
 import { choiceCard } from './choices.js';
 import { HEALTH, healthDetail, openHandoff } from './newchat.js';
+import { labelChip, openLabelsForMessage, openManageLabels, renderPinStrip, openPinList } from './labels.js';
 
 const POLL_MS = 4000;
 const conv = { id: null, channel: null, messages: [], timer: null, busy: false, thinking: new Set() };
@@ -133,6 +134,9 @@ function bubble(m) {
       text: m.delivered_at ? '✓✓' : '✓',
     }));
   }
+  // 📌 ותוויות (12c) — בשורת המטא, קטנים
+  if (m.pinned?.shared || m.pinned?.mine) meta.push(el('span', { class: 'b-pin', title: m.pinned.shared ? 'מוצמדת לכולם' : 'מוצמדת לך', text: m.pinned.shared ? '📌' : '📌🔒' }));
+  (m.labels || []).forEach((l) => meta.push(labelChip(l)));
   // ⋯ — תפריט הפעולות (§5.11, 12b). בטלפון — נגיעה ארוכה על הבועה; הכפתור מופיע ב-hover/focus
   meta.push(el('button', { type: 'button', class: 'b-more', 'aria-label': 'פעולות על ההודעה', 'aria-haspopup': 'menu',
     title: 'פעולות', text: '⋯', onclick: (e) => { e.stopPropagation(); openMsgMenu(m); } }));
@@ -270,14 +274,16 @@ function startTimer() {
 function stopTimer() { if (conv.timer) clearInterval(conv.timer); conv.timer = null; }
 
 export async function openConversation(id) {
-  Object.assign(conv, { id, channel: null, messages: [] });
+  Object.assign(conv, { id, channel: null, messages: [], pins: [] });
   setReply(null);
+  $('#cvPins').hidden = true;
   $('#chatLog').replaceChildren();
   $('#chatInput').value = '';
   const c = (state.channels || []).find((x) => x.id === id);
   if (c) { conv.channel = { ...c, can_send: true }; renderHead(); }
   $('#chatView').showModal();
   await poll(true);
+  loadPins();
   startTimer();
   completePending();
 }
@@ -348,6 +354,8 @@ function renderSettings() {
   const rows = [
     ['ℹ️', 'על הצ\'אט', `${c.role || 'בלי תפקיד'} · נראה ${c.last_seen_at ? timeAgo(c.last_seen_at) : 'אף פעם'}`, () => openAbout()],
     c.can_edit && ['✏️', 'שם, סמל וצבע', `${channelIcon(c)} ${c.name}${c.color ? ' · ' + COLOR_NAME[c.color] : ''}`, () => openEdit()],
+    ['📌', 'מוצמדות', conv.pins?.length ? `${conv.pins.length} · ${conv.pins.filter((x) => x.visibility === 'private').length ? 'כולל שלך 🔒' : 'לכולם'}` : 'אין', () => openPinList(conv.pins || [], (id) => { $('#chatSettings').close(); scrollToMessage(id); })],
+    ['🏷', 'ניהול תוויות', 'יצירה, עריכה ומחיקה — משותפות ופרטיות', () => openManageLabels(conv.channel, () => reload())],
     ['🔔', 'השתקה', c.muted ? 'מושתק — לא נספר ב"ממתין לך" · נגיעה מבטלת' : 'כבויה — נגיעה משתיקה', () => toggleMute(), { pressed: c.muted }],
     isOwner() && ['🧭', 'מי עונה', `${c.route_own ? ROUTE_LABEL[c.route_own] : 'כמו הפרויקט'} · בפועל: ${ROUTE_LABEL[c.route_effective]}`, () => openRoute()],
     c.can_edit && active && ['🔘', 'שאלות בחירה', c.questions === 'app' ? 'באפליקציה' : 'בלוח', () => openQuestions()],
@@ -549,6 +557,9 @@ function openMsgMenu(m) {
   $('#mmActions').replaceChildren(...[
     act('📋', 'העתקה', () => copy(m.body, 'הטקסט הועתק'), 'הטקסט המקורי, עם העיצוב (Markdown)'),
     canSend ? act('↩', 'תשובה', () => { setReply(m); $('#chatInput').focus(); }, 'ההודעה הבאה שלך תצוטט כתשובה לזו') : null,
+    canSend ? act('📌', m.pinned?.shared ? 'ביטול הצמדה לכולם' : 'הצמד לכולם', () => pin(m, 'shared', !m.pinned?.shared), 'בפס בראש השיחה, אצל כל מי שרואה אותה') : null,
+    act('📌', m.pinned?.mine ? 'ביטול ההצמדה שלי' : 'הצמד לי', () => pin(m, 'private', !m.pinned?.mine), '🔒 רק אתה רואה'),
+    act('🏷', 'תוויות', () => openLabelsForMessage(conv.channel, m, () => renderLog(false)), (m.labels || []).map((l) => l.name).join(' · ') || 'סימון ההודעה בתווית'),
     act('➕', 'הפיכה למטלה', () => makeTaskFrom(m), 'מטלה בפרויקט של הצ\'אט, עם ההודעה בגוף'),
     act('🔗', 'העתקת קישור', () => copy(messageLink(m), 'הקישור הועתק'), 'פותח את השיחה בהודעה הזו'),
   ].filter(Boolean));
@@ -599,3 +610,24 @@ export async function openFromHash() {
   } catch (ex) { toast(ex.message, 'error'); }
 }
 window.addEventListener('hashchange', openFromHash);
+
+/* ── 📌 הצמדה (§5.11, 12c) ──────────────────────────────────────── */
+
+async function loadPins() {
+  if (!conv.id) return;
+  try {
+    const { pins } = await api('channel-pins', { channel_id: conv.id });
+    conv.pins = pins;
+    renderPinStrip(pins, (id) => scrollToMessage(id));
+  } catch { /* הפס הוא תוספת — כשל בו לא עוצר את השיחה */ }
+}
+
+async function pin(m, visibility, pinned) {
+  try {
+    await api('message-pin', { message_id: m.id, visibility, pinned });
+    m.pinned = { ...(m.pinned || {}), [visibility === 'shared' ? 'shared' : 'mine']: pinned };
+    renderLog(false);
+    await loadPins();
+    toast(pinned ? (visibility === 'shared' ? 'הוצמדה לכולם' : 'הוצמדה לך') : 'ההצמדה בוטלה', 'ok');
+  } catch (ex) { toast(ex.message, 'error'); }
+}

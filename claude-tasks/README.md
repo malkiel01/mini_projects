@@ -174,6 +174,9 @@
 **פעולות על הודעה:** נגיעה ארוכה על בועה (או ⋯ / קליק ימני במחשב) — 📋 העתקה, ↩ תשובה (ציטוט קצר מעל ההודעה), ➕ הפיכה למטלה,
 🔗 קישור להודעה (`#c<ערוץ>-m<הודעה>` — פותח את השיחה וקופץ אליה).
 
+**📌 הצמדה ו-🏷 תוויות:** מאותו תפריט — 📌 לכולם / 📌 לי, ותוויות. התווית קובעת: 👥 משותפת או 🔒 פרטית, ו-📁 לפרויקט או 🌐 לכל הלוח (משותפת / של כל הלוח — בעל הלוח).
+המוצמדות בפס בראש השיחה; ניהול התוויות ב-⚙ של הצ'אט. הבדיקות: `tests/labels.php`.
+
 ### שאלות בחירה (AskUserQuestion) בלוח
 
 כשצ'אט רשום שואל בכלי השאלות, ה-hook `bridge/hook-choice.sh` (PreToolUse) שולח את השאלות ללוח (`channel-post`
@@ -357,6 +360,7 @@ php claude-tasks/tests/projects.php    # עץ הפרויקטים
 php claude-tasks/tests/login.php       # כניסה דרך הכלים הדיגיטליים
 php claude-tasks/tests/safety.php      # author_role, owner_only, אסימון לענף, Origin, שיוך מטלות
 php claude-tasks/tests/channels.php    # הגשר: הרשמה, אסימון ערוץ, inbox/ack, המתנה, מטלה ↔ ערוץ
+php claude-tasks/tests/labels.php       # הצמדה ותוויות: סוגים, נראות, הרשאות, מחיקה
 php claude-tasks/tests/chatsettings.php # ⚙ הגדרות הצ'אט: עריכה, השתקה, ניתוק וארכיון
 php claude-tasks/tests/templates.php    # תבנית בירושה, שגיאות הרישום, צ'אט המשך, "הצ'אט מתארך"
 php claude-tasks/tests/choices.php      # שאלות בחירה: מענה מהלוח, מרוץ, הקלדה בצ'אט, מצב אפליקציה

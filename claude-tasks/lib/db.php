@@ -278,6 +278,7 @@ function migrate(PDO $pdo): void {
     migrateChoices($pdo);
     migrateTemplates($pdo);
     migrateChatSettings($pdo);
+    migrateLabels($pdo);
 }
 
 /** ALTER TABLE ADD COLUMN אינו מכיר IF NOT EXISTS ב-SQLite — בודקים לבד. */
@@ -461,3 +462,4 @@ require_once __DIR__ . '/engine.php';
 require_once __DIR__ . '/choices.php';
 require_once __DIR__ . '/templates.php';
 require_once __DIR__ . '/chatsettings.php';
+require_once __DIR__ . '/labels.php';

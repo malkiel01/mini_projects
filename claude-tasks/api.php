@@ -20,6 +20,7 @@ require_once __DIR__ . '/lib/engine.php';
 require_once __DIR__ . '/lib/choices.php';
 require_once __DIR__ . '/lib/templates.php';
 require_once __DIR__ . '/lib/chatsettings.php';
+require_once __DIR__ . '/lib/labels.php';
 require_once __DIR__ . '/lib/skills.php';
 require_once __DIR__ . '/lib/platform.php';
 require_once __DIR__ . '/lib/channels.php';
@@ -1562,6 +1563,28 @@ try {
 
     case 'channel-mute':
         ok(['muted' => channelMute(requireUser($user), (int) ($in['channel_id'] ?? 0), !empty($in['muted']))]);
+
+    /* ── 📌 הצמדה ו-🏷 תוויות (§5.11, 12c) ── */
+
+    case 'labels':
+        ok(['labels' => labelsForChannel(requireUser($user), (int) ($in['channel_id'] ?? 0))]);
+
+    case 'label-save':
+        ok(['label' => labelSave(requireUser($user), $in)]);
+
+    case 'label-delete':
+        ok(['cleared' => labelDelete(requireUser($user), (int) ($in['id'] ?? 0))]);
+
+    case 'message-label':
+        messageLabel(requireUser($user), (int) ($in['message_id'] ?? 0), (int) ($in['label_id'] ?? 0), !empty($in['on']));
+        ok();
+
+    case 'message-pin':
+        messagePin(requireUser($user), (int) ($in['message_id'] ?? 0), str_field($in, 'visibility', 10, 'shared'), !empty($in['pinned']));
+        ok();
+
+    case 'channel-pins':
+        ok(['pins' => channelPins(requireUser($user), (int) ($in['channel_id'] ?? 0))]);
 
     case 'channel-hide':
         channelSetHidden(requireUser($user), (int) ($in['channel_id'] ?? 0), !empty($in['hidden']));
