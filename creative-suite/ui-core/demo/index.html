@@ -102,6 +102,11 @@
     </section>
 
     <section>
+        <h2 class="sec-title">גרסאות ושלבים</h2>
+        <div class="row-btns"><button class="btn ghost" type="button" id="versions-btn">🕘 גרסאות ושלבים</button></div>
+    </section>
+
+    <section>
         <h2 class="sec-title">בורר מקטעים, כדוריות, מתג</h2>
         <div class="seg"><label><input type="radio" name="o" checked><span>לאורך</span></label><label><input type="radio" name="o"><span>לרוחב</span></label></div>
         <p></p>
@@ -166,6 +171,20 @@
     import { layersPanel, moveNode } from '../src/js/layers.js';
     import { snapper } from '../src/js/snap.js';
     import { openDocuments, pickFile, saveFile } from '../src/js/files-window.js';
+    import { openVersions } from '../src/js/versions.js';
+
+    // ---- גרסאות ושלבים: קובץ ‎.mbe מדומה (journal / version) — באפליקציה זה open(bytes) של הליבה ----
+    const fakeMbe = {
+        journal: () => [
+            { id: 's1', at: '2026-11-01T09:12:00Z', kind: 'create', app: 'layout-studio', who: 'מלכיאל', result: 'a1' },
+            { id: 's2', at: '2026-11-01T10:40:00Z', kind: 'export', app: 'layout-studio', note: 'docx', result: 'a2', pruned: true },
+            { id: 's3', at: '2026-11-01T12:05:00Z', kind: 'edit', app: 'external:Word', who: 'רחל', result: 'a3' },
+            { id: 's4', at: '2026-11-02T08:30:00Z', kind: 'merge', app: 'layout-studio', result: 'a4' },
+        ],
+        version: sha => ({ a1: {}, a3: {}, a4: {} })[sha] || null,
+    };
+    $('#versions-btn').onclick = () => openVersions({ load: async () => fakeMbe, app: 'layout-studio',
+        restore: async st => toast('שוחזר: ' + st.id) });
 
     initDialogs();
     tabs($('.tabs-demo'), { remember: 'ui-core-demo:tab' });

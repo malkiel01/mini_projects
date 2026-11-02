@@ -27,6 +27,7 @@
 | `src/js/transform.js` | חשבון הטרנספורמציה — `dragHandle` (פינה עם יחס, צד, Alt מהמרכז, קו שטוח), `dragRotate` + `snapAngle` (מגנט 45°), `handlePos`, `bounds` (המקור: הרסטר) | 5 ✅ |
 | `src/js/snap.js` | `snapper({ boxes, points, tol, grid })` → `box()` / `point()` עם קווי עזר (המקור: הווקטורי) | 5 ✅ |
 | `src/js/autosave.js` | 💾 `autosave({ snapshot, send, draftKey })` — טיוטה במכשיר לפני כל שמירה, ניסיון חוזר בניתוק, עצירה בהתנגשות, `saveOnExit`, `findDraft` (המקור: עורך התמלילים) | 10 ✅ |
+| `src/js/versions.js` | 🕘 `openVersions({ load, restore })` / `versionsList(el, …)` / `journalSteps(f)` — לוח גרסאות ושלבים: היומן של ‎`.mbe` ושחזור, בלי import של הליבה (המקור: העימוד וסטודיו העיצוב) | 25 ⬜ |
 | `src/js/layers.js` | 🗂️ `layersPanel(ul, adapter)` — לוח השכבות של הרסטר: קבוצות, 👁️ 🔒, שינוי שם במקום, גרירה (גם לתוך קבוצה), מקלדת, תפריט | 9 ✅ |
 | `src/js/fonts.js` + `src/fonts/` | 🔤 קטלוג אחד (10 גופנים, OFL) + הקבצים, `ensureFont`, `userFonts` (מכשיר + ענן החבילה), `fontPicker` | 8 ✅ |
 | `src/js/color.js` | 🎨 `colorPicker(label, value, onInput, onCommit, { alpha })` — הבורר של סטודיו העיצוב; המרות, ניגוד WCAG, אחרונים ומועדפים | 7 ✅ |
@@ -108,6 +109,7 @@ import { $, h as el } from './ui-core/dom.js';
 
 ## היסטוריה
 
+- **2026-11-02 — ממ1:** `versions.js` — לוח גרסאות ושלבים (`docs/shared-code/migrate/versions.md`).
 - **2026-11-01 — שלב 10:** `autosave.js` — שמירה אוטומטית וטיוטה במכשיר (`docs/shared-code/migrate/autosave.md`). כל עשרת השלבים בנויים.
 - **2026-11-01 — שלב 9:** `layers.js` — לוח שכבות (`docs/shared-code/migrate/layers.md`).
 - **2026-11-01 — שלב 8:** `fonts.js` + `src/fonts/` — גופנים ובורר גופנים (`docs/shared-code/migrate/fonts.md`).
