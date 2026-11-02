@@ -205,6 +205,7 @@
   }
   const uid = () => 'f' + Math.random().toString(36).slice(2, 9);
   let markAgain = null;   // אחרי סימון שדה ב-Word — העורך נפתח מחדש ישר במצב סימון
+  let plainMark = false;  // סימון שדות ב-Word: על התצוגה בעיצוב (ברירת מחדל) או על טקסט בלבד
 
   async function open(id) {
     const { api, el, notice, show } = window.DT;
@@ -2040,12 +2041,55 @@
       box.replaceChildren(el('div', { class: 'word-mark-head' },
         el('span', {}, el('strong', {}, '🖍️ סימון שדות'), ' — בוחרים טקסט בפסקה ולוחצים "הפוך לשדה". ',
           el('span', { class: 'word-mark-ph' }, 'מסומן'), ' = כבר שדה; לחיצה עליו — שינוי שם או ביטול.'),
-        el('button', { type: 'button', class: 'small', onclick: () => open(id) }, 'סיום')), list, bar);
+        el('div', { class: 'row-btns' },
+          el('button', { type: 'button', class: 'small', onclick: () => { plainMark = !plainMark; markWord(box, openBtn); } }, plainMark ? '📄 בעיצוב' : '☰ טקסט בלבד'),
+          el('button', { type: 'button', class: 'small', onclick: () => open(id) }, 'סיום'))), list, bar);
       let paras;
       try {
         paras = (await api('tpl_word_text', undefined, { id })).paragraphs;
       } catch (e) { list.replaceChildren(notice(e.message, 'bad')); return; }
       if (!paras.length) { list.replaceChildren(notice('לא נמצא טקסט בקובץ — אולי הוא תמונה סרוקה. אז עדיף להעלות אותו כ-PDF.', 'warn')); return; }
+      // 15.5: מסמנים על הקובץ עצמו, בעיצוב שלו (התצוגה המקדימה) — לא על טקסט בלי עיצוב. כל פסקה בתצוגה מותאמת
+      // לפסקה בקובץ לפי הטקסט שלה; פסקה שלא הותאמה — לא לבחירה (ואפשר לעבור ל"טקסט בלבד").
+      let shown = false;
+      if (!plainMark) {
+        try {
+          const res = await fetch('api.php?action=tpl_asset&id=' + id, { credentials: 'same-origin' });
+          const view = await wordPreview(await res.arrayBuffer());
+          const norm = (t) => t.replace(/\s+/g, ' ').trim();
+          const free = new Map();   // טקסט ← מספרי הפסקאות בקובץ (לפי הסדר), שעוד לא הותאמו
+          paras.forEach((q, i) => { const k = norm(q.text); if (!k) return; free.set(k, [...(free.get(k) || []), i]); });
+          let matched = 0;
+          for (const pe of view.querySelectorAll('p')) {
+            if (pe.querySelector('p')) continue;
+            const k = norm(pe.textContent);
+            const hit = k && free.get(k);
+            if (!hit || !hit.length || pe.textContent !== paras[hit[0]].text) continue;   // ההיסטים נספרים על הטקסט המדויק
+            pe.dataset.i = String(hit.shift());
+            pe.classList.add('word-mark-p', 'in-view');
+            matched++;
+            // שדות שכבר מסומנים — לחיצים (שינוי שם / ביטול)
+            const walker = document.createTreeWalker(pe, NodeFilter.SHOW_TEXT);
+            const nodes = []; while (walker.nextNode()) nodes.push(walker.currentNode);
+            for (const tn of nodes) {
+              if (!/\{\{/.test(tn.textContent)) continue;
+              const frag = document.createDocumentFragment();
+              for (const chunk of tn.textContent.split(/(\{\{[^{}]{1,60}?\}\})/)) {
+                if (!chunk) continue;
+                frag.append(/^\{\{/.test(chunk) ? el('span', { class: 'word-mark-ph', role: 'button', tabindex: '0', title: 'שינוי שם / ביטול סימון',
+                  onclick: () => wordPhSheet(chunk.replace(/^\{\{\s*|\s*\}\}$/g, '')) }, chunk) : document.createTextNode(chunk));
+              }
+              tn.replaceWith(frag);
+            }
+          }
+          if (matched) {
+            list.classList.add('in-view');
+            list.replaceChildren(view);
+            shown = true;
+          }
+        } catch (e) { /* התצוגה לא נטענה — טקסט בלבד */ }
+      }
+      if (shown) { document.addEventListener('selectionchange', onSel); return; }
       paras.forEach((p, i) => {
         const d = el('p', { class: 'word-mark-p', dir: 'auto', 'data-i': i });
         for (const chunk of p.text.split(/(\{\{[^{}]{1,60}?\}\})/)) {
@@ -2056,7 +2100,7 @@
         if (i > 0 && paras[i - 1].part !== p.part) list.append(el('div', { class: 'word-mark-part muted small' }, p.part.includes('header') ? 'כותרת עליונה' : p.part.includes('footer') ? 'כותרת תחתונה' : 'הערות'));
         list.append(d);
       });
-      const onSel = () => {
+      function onSel() {
         if (!list.isConnected) { document.removeEventListener('selectionchange', onSel); return; }
         if (bar.contains(document.activeElement)) return;   // מקלידים את השם — הבחירה בדף כבר לא חשובה
         const sel = getSelection();
@@ -2077,7 +2121,7 @@
         nameIn.value = /^[\s_.\-–—…]+$/.test(text) || text.length > 30 ? '' : text;
         out.replaceChildren();
         bar.hidden = false;
-      };
+      }
       document.addEventListener('selectionchange', onSel);
     }
 

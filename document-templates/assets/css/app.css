@@ -1049,3 +1049,13 @@ body.wp-open { overflow: hidden; }
 .perm-list { display: grid; gap: 4px; }
 .perm-sum { display: block; color: var(--muted); }
 .perm-list .switch { white-space: normal; min-height: 36px; }
+
+/* 15.5: סימון על התצוגה בעיצוב; פס "הפוך לשדה" קבוע בתחתית המסך (בלי לגלול אליו) */
+.word-mark-text.in-view { padding: 0; background: none; border: 0; }
+.word-mark-text.in-view .word-mark-p { margin: revert; white-space: revert; cursor: text; }
+.word-mark-text.in-view .word-mark-p:hover { outline: 1px dashed color-mix(in srgb, var(--brand) 35%, transparent); }
+.word-mark-text.in-view .word-mark-ph { cursor: pointer; }
+.word-mark-bar { position: fixed; inset-inline: 0; bottom: 0; margin: 0; border-radius: 12px 12px 0 0;
+  padding: var(--s2) var(--s3) calc(var(--s2) + env(safe-area-inset-bottom)); box-shadow: 0 -4px 18px rgba(0, 0, 0, .18); z-index: 50; }
+@media (min-width: 900px) { .word-mark-bar { inset-inline: auto; right: 50%; transform: translateX(50%); width: min(720px, 92vw); } }
+.word-mark-text:has(~ .word-mark-bar:not([hidden])) { padding-bottom: 140px; }
