@@ -187,7 +187,7 @@ final class MbeFile
 final class Mbe
 {
     public const FORMAT = 'mbe';
-    public const VERSION = '1.1';
+    public const VERSION = '1.2';
     public const ID_RE = '/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/';
     public const CURRENT_MAJOR = 1;
     public const MIMETYPE = 'application/vnd.mbe+zip';
@@ -366,7 +366,10 @@ final class Mbe
         foreach ($raw as $p => $d) if (!in_array((string)$p, self::RESERVED, true)) $f->files[(string)$p] = $d;
         self::checkParts($f, $issue);
         self::checkHistory($f, $issue);
-        if (MbeSchema::typeOf($f->document) === 'object') self::checkDocument($f, $issue);
+        if (MbeSchema::typeOf($f->document) === 'object') {
+            self::checkDocument($f, $issue);
+            self::checkStyle($f, $issue);
+        }
         return $f;
     }
 
@@ -613,7 +616,9 @@ final class Mbe
             foreach (MbeCanonical::sortedKeys($map) as $k) {
                 $x = $map[$k];
                 $at = "$where/$k";
-                if (($k === 'src' || $k === 'embedded') && is_string($x) && $type === 'object') {
+                // pattern (מילוי / overlay) ו-profile (ICC) — אותו כלל, כשהם מפנים ל-media/ (פורמט 1.2, פ2.2 / פ4.3)
+                if (($k === 'src' || $k === 'embedded' || (($k === 'pattern' || $k === 'profile') && is_string($x) && str_starts_with($x, 'media/')))
+                    && is_string($x) && $type === 'object') {
                     if (!preg_match(self::MEDIA_RE, $x)) $issue('error', 'external-ref', 'הפניה למשאב מחוץ לקובץ — כל משאב חייב להיות ב-media/', 'document.json#' . $at);
                     elseif (!isset($f->files[$x])) $issue('error', 'ref-missing', "המשאב $x לא נמצא בקובץ", 'document.json#' . $at);
                 } else {
@@ -622,6 +627,195 @@ final class Mbe
             }
         };
         $walk($f->document, '', 0);
+    }
+
+    /**
+     * פורמט 1.2 — הפרמטרים לפי type. זהה ל-STYLE_SPEC ב-JS (גם בסדר): [min, max] — מספר (null = בלי גבול);
+     * ["a", "b"] — אחד מהערכים; ['len', 'range'] — רשימה באורך קבוע; 'curve' — נקודות עקומה.
+     */
+    public const STYLE_SPEC = [
+        'effect' => [
+            'shadow' => ['dx' => [null, null], 'dy' => [null, null], 'blur' => [0, null], 'spread' => [0, 1]],
+            'inner-shadow' => ['dx' => [null, null], 'dy' => [null, null], 'blur' => [0, null], 'spread' => [0, 1]],
+            'glow' => ['blur' => [0, null], 'spread' => [0, 1]],
+            'inner-glow' => ['blur' => [0, null], 'spread' => [0, 1]],
+            'stroke' => ['width' => [0, null], 'position' => ['outside', 'center', 'inside']],
+            'overlay' => [],
+            'blur' => ['radius' => [0, null]],
+        ],
+        'filter' => [
+            'brightness-contrast' => ['brightness' => [-100, 100], 'contrast' => [-100, 100]],
+            'hue-saturation' => ['hue' => [-180, 180], 'saturation' => [-100, 100], 'lightness' => [-100, 100]],
+            'gaussian-blur' => ['radius' => [0, null]],
+            'motion-blur' => ['angle' => [null, null], 'distance' => [0, null]],
+            'unsharp' => ['amount' => [0, 500], 'radius' => [0, null], 'threshold' => [0, 255]],
+            'high-pass' => ['radius' => [0, null]],
+            'noise' => ['amount' => [0, 100]],
+        ],
+        'adjust' => [
+            'brightness-contrast' => ['brightness' => [-100, 100], 'contrast' => [-100, 100]],
+            'hue-saturation' => ['hue' => [-180, 180], 'saturation' => [-100, 100], 'lightness' => [-100, 100]],
+            'levels' => ['black' => [0, 255], 'white' => [0, 255], 'gamma' => [0.1, 10], 'outBlack' => [0, 255], 'outWhite' => [0, 255], 'channel' => ['rgb', 'r', 'g', 'b']],
+            'curves' => ['rgb' => 'curve', 'r' => 'curve', 'g' => 'curve', 'b' => 'curve'],
+            'color-balance' => ['shadows' => ['len' => 3, 'range' => [-100, 100]], 'midtones' => ['len' => 3, 'range' => [-100, 100]], 'highlights' => ['len' => 3, 'range' => [-100, 100]]],
+            'black-white' => ['reds' => [-200, 300], 'yellows' => [-200, 300], 'greens' => [-200, 300], 'cyans' => [-200, 300], 'blues' => [-200, 300], 'magentas' => [-200, 300]],
+            'channel-mixer' => ['r' => ['len' => 4, 'range' => [-200, 200]], 'g' => ['len' => 4, 'range' => [-200, 200]], 'b' => ['len' => 4, 'range' => [-200, 200]]],
+            'exposure' => ['exposure' => [-20, 20], 'offset' => [-0.5, 0.5], 'gamma' => [0.01, 9.99]],
+            'vibrance' => ['vibrance' => [-100, 100], 'saturation' => [-100, 100]],
+            'photo-filter' => ['density' => [0, 100]],
+            'posterize' => ['levels' => [2, 255]],
+            'threshold' => ['level' => [1, 255]],
+        ],
+    ];
+
+    /** ICC: כותרת 'acsp' בבית 36, ולא יותר מ-4MB (פ4.3). */
+    public const ICC_MAX_BYTES = 4 * 1024 * 1024;
+
+    private static function isObj(mixed $v): bool { return MbeSchema::typeOf($v) === 'object'; }
+    private static function isNum(mixed $v): bool { return is_int($v) || (is_float($v) && is_finite($v)); }
+    private static function inRange(mixed $v, array $r): bool
+    {
+        return self::isNum($v) && ($r[0] === null || $v >= $r[0]) && ($r[1] === null || $v <= $r[1]);
+    }
+
+    private static function ruleOk(mixed $v, mixed $rule): bool
+    {
+        if ($rule === 'curve') {
+            if (!is_array($v) || !array_is_list($v) || count($v) < 2) return false;
+            $prev = -INF;
+            foreach ($v as $p) {
+                if (!is_array($p) || !array_is_list($p) || count($p) !== 2 || !self::inRange($p[0], [0, 255]) || !self::inRange($p[1], [0, 255]) || $p[0] <= $prev) return false;
+                $prev = $p[0];
+            }
+            return true;
+        }
+        if (array_is_list($rule)) return is_string($rule[0]) ? in_array($v, $rule, true) : self::inRange($v, $rule);
+        if (!is_array($v) || !array_is_list($v) || count($v) !== $rule['len']) return false;
+        foreach ($v as $x) if (!self::inRange($x, $rule['range'])) return false;
+        return true;
+    }
+
+    /** תיאור הכלל להודעה — זהה ל-ruleText ב-JS. */
+    private static function ruleText(mixed $rule): string
+    {
+        if ($rule === 'curve') return 'נקודות [in, out] ב-0–255, in עולה, לפחות 2';
+        if (array_is_list($rule) && is_string($rule[0])) return 'אחד מ: ' . implode(' / ', $rule);
+        $r = array_is_list($rule) ? $rule : $rule['range'];
+        $span = $r[0] === null && $r[1] === null ? '' : ($r[0] === null ? " עד {$r[1]}" : ($r[1] === null ? " {$r[0]} ומעלה" : " {$r[0]}–{$r[1]}"));
+        return array_is_list($rule) ? "מספר$span" : "{$rule['len']} מספרים$span";
+    }
+
+    /** בדיקות 1.2 — אחרי checkDocument, באותו סדר כמו ב-JS (checkStyle). כולן אזהרות, חוץ מ-ICC פגום (שגיאה). */
+    private static function checkStyle(MbeFile $f, callable $issue): void
+    {
+        $doc = (array)$f->document;
+        $bakes = [];
+        $params = function (string $kind, string $code, mixed $o, string $at) use ($issue) {
+            if (!self::isObj($o)) return;
+            $o = (array)$o;
+            $type = $o['type'] ?? null;
+            if (!is_string($type) || !array_key_exists($type, self::STYLE_SPEC[$kind])) return;
+            foreach (self::STYLE_SPEC[$kind][$type] as $k => $rule) {
+                if (array_key_exists($k, $o) && !self::ruleOk($o[$k], $rule)) {
+                    $issue('warning', $code, "$type.$k: צריך " . self::ruleText($rule), "document.json#$at/$k");
+                }
+            }
+        };
+        $gradient = function (mixed $g, string $at) use ($issue) {
+            if (!self::isObj($g)) return;
+            $g = (array)$g;
+            $pt = fn($v) => is_array($v) && array_is_list($v) && count($v) === 2 && self::isNum($v[0]) && self::isNum($v[1]);
+            $bad = fn(string $why) => $issue('warning', 'gradient-invalid', "מעבר צבע: $why", "document.json#$at");
+            $type = $g['type'] ?? null;
+            if ($type === 'linear' && !($pt($g['from'] ?? null) && $pt($g['to'] ?? null))) $bad('ל-linear חסרים from / to');
+            if ($type === 'radial' && !($pt($g['center'] ?? null) && self::isNum($g['radius'] ?? null) && $g['radius'] > 0)) $bad('ל-radial חסרים center / radius גדול מ-0');
+            $stops = $g['stops'] ?? null;
+            if (is_array($stops) && array_is_list($stops)) {
+                for ($i = 1; $i < count($stops); $i++) {
+                    $a = is_array($stops[$i - 1]) ? ($stops[$i - 1]['at'] ?? null) : null;
+                    $b = is_array($stops[$i]) ? ($stops[$i]['at'] ?? null) : null;
+                    if (self::isNum($a) && self::isNum($b) && $b < $a) { $bad('העצירות (at) לא בסדר עולה'); break; }
+                }
+            }
+        };
+        $paint = function (mixed $p, string $at) use ($gradient) {
+            if (self::isObj($p)) $gradient(((array)$p)['gradient'] ?? null, "$at/gradient");
+        };
+        $style = function (array $o, string $at, bool $layer) use ($params, $gradient, $paint, &$bakes) {
+            foreach (['fill', 'stroke'] as $k) $paint($o[$k] ?? null, "$at/$k");
+            foreach (['fills', 'strokes'] as $k) {
+                if (is_array($o[$k] ?? null) && array_is_list($o[$k])) foreach ($o[$k] as $i => $p) $paint($p, "$at/$k/$i");
+            }
+            if (is_array($o['effects'] ?? null) && array_is_list($o['effects'])) foreach ($o['effects'] as $i => $e) {
+                $params('effect', 'effect-param', $e, "$at/effects/$i");
+                if (self::isObj($e)) $gradient(((array)$e)['gradient'] ?? null, "$at/effects/$i/gradient");
+            }
+            if ($layer) {
+                if (is_array($o['filters'] ?? null) && array_is_list($o['filters'])) foreach ($o['filters'] as $i => $x) $params('filter', 'filter-range', $x, "$at/filters/$i");
+                if (self::isObj($o['adjust'] ?? null)) {
+                    $params('adjust', 'filter-range', $o['adjust'], "$at/adjust");
+                    $adj = (array)$o['adjust'];
+                    if (($adj['type'] ?? null) === 'gradient-map') $gradient($adj['gradient'] ?? null, "$at/adjust/gradient");
+                }
+            }
+            if (self::isObj($o['bake'] ?? null)) $bakes[] = [$o, $at];
+        };
+        $items = function (mixed $list, string $where) use (&$items, $style) {
+            if (!is_array($list) || !array_is_list($list)) return;
+            foreach ($list as $i => $p) {
+                if (!self::isObj($p)) continue;
+                $p = (array)$p;
+                $style($p, "$where/$i", false);
+                $items($p['children'] ?? null, "$where/$i/children");
+            }
+        };
+        $layers = function (mixed $list, string $where) use (&$layers, $items, $style) {
+            if (!is_array($list) || !array_is_list($list)) return;
+            foreach ($list as $i => $l) {
+                if (!self::isObj($l)) continue;
+                $l = (array)$l;
+                $style($l, "$where/$i", true);
+                $layers($l['children'] ?? null, "$where/$i/children");
+                $items($l['paths'] ?? null, "$where/$i/paths");
+            }
+        };
+        $surfaces = $doc['surfaces'] ?? null;
+        if (is_array($surfaces) && array_is_list($surfaces)) {
+            foreach ($surfaces as $i => $s) if (self::isObj($s)) $layers(((array)$s)['layers'] ?? null, "/surfaces/$i/layers");
+        }
+        $symbols = self::isObj($doc['symbols'] ?? null) ? (array)$doc['symbols'] : [];
+        foreach (MbeCanonical::sortedKeys($symbols) as $sid) {
+            if (self::isObj($symbols[$sid])) $items(((array)$symbols[$sid])['paths'] ?? null, "/symbols/$sid/paths");
+        }
+        // ספוט (פ4.2): דוגמית עם spot — cmyk חובה
+        $swatches = self::isObj($doc['swatches'] ?? null) ? (array)$doc['swatches'] : [];
+        foreach (MbeCanonical::sortedKeys($swatches) as $id) {
+            $s = $swatches[$id];
+            if (!self::isObj($s)) continue;
+            $s = (array)$s;
+            if (($s['spot'] ?? null) === true && !(is_array($s['cmyk'] ?? null) && array_is_list($s['cmyk']))) {
+                $issue('warning', 'spot-cmyk', "לדוגמית הספוט \"$id\" חסר cmyk", "document.json#/swatches/$id");
+            }
+        }
+        // פרופילי ICC (פ4.3): ההפניה נבדקת עם כל ההפניות; כאן — שזה באמת ICC
+        $color = self::isObj($doc['color'] ?? null) ? (array)$doc['color'] : [];
+        $icc = function (mixed $ref, string $at) use ($f, $issue) {
+            if (!is_string($ref) || !isset($f->files[$ref])) return;
+            $b = $f->files[$ref];
+            $ok = strlen($b) >= 128 && strlen($b) <= self::ICC_MAX_BYTES && substr($b, 36, 4) === 'acsp';
+            if (!$ok) $issue('error', 'icc-invalid', "$ref אינו פרופיל ICC (או גדול מ-4MB)", "document.json#$at");
+        };
+        $icc($color['profile'] ?? null, '/color/profile');
+        if (self::isObj($color['output'] ?? null)) $icc(((array)$color['output'])['profile'] ?? null, '/color/output/profile');
+        // ייצוג אפוי (פ1.2): of = sha256 של הפריט הקנוני בלי bake
+        foreach ($bakes as [$o, $at]) {
+            $bake = (array)$o['bake'];
+            unset($o['bake']);
+            try { $sha = hash('sha256', MbeCanonical::encode($o === [] ? new stdClass() : $o)); } catch (MbeCanonicalError) { $sha = null; }
+            if ($sha !== null && ($bake['of'] ?? null) !== $sha) {
+                $issue('warning', 'bake-stale', 'האפייה (bake) לא תואמת לפריט — קורא שלא מכיר את האפקטים יצייר בלעדיהם', "document.json#$at/bake");
+            }
+        }
     }
 
     private const PATH_ARGS = ['M' => 2, 'L' => 2, 'C' => 6, 'Q' => 4, 'Z' => 0];

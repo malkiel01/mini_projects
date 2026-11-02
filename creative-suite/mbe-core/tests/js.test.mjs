@@ -150,7 +150,7 @@ test('manifest.id (1.1): נוצר בשמירה הראשונה, נשמר, "שמי
     f.setRendition(M.PREVIEW, preview);
     const a = await M.open(await M.save(f, { app: 'x' }));
     assert.match(a.id, M.ID_RE);
-    assert.equal(a.manifest.version, '1.1');
+    assert.equal(a.manifest.version, M.VERSION);
     const b = await M.open(await M.save(a, { app: 'y' }));
     assert.equal(b.id, a.id);
     const c = await M.open(await M.save(b, { app: 'z', asCopy: true, now: new Date('2030-01-01T00:00:00Z') }));

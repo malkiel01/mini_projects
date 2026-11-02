@@ -100,7 +100,7 @@ $f = Mbe::create('text', ['surfaces' => []]);
 check($f->id() === null, 'id: מסמך חדש — בלי id עד השמירה');
 $f->setRendition(Mbe::PREVIEW, Mbe::open($fx('valid/text.mbe'))->files[Mbe::PREVIEW]);
 $a = Mbe::open(Mbe::save($f, ['app' => 'x']));
-check((bool)preg_match(Mbe::ID_RE, (string)$a->id()) && $a->manifest['version'] === '1.1', 'id: נוצר בשמירה הראשונה, גרסה 1.1');
+check((bool)preg_match(Mbe::ID_RE, (string)$a->id()) && $a->manifest['version'] === Mbe::VERSION, 'id: נוצר בשמירה הראשונה, בגרסה הנוכחית');
 $b = Mbe::open(Mbe::save($a, ['app' => 'y']));
 check($b->id() === $a->id(), 'id: נשמר בשמירה חוזרת');
 $c = Mbe::open(Mbe::save($b, ['app' => 'z', 'asCopy' => true, 'now' => new DateTimeImmutable('2030-01-01T00:00:00Z')]));

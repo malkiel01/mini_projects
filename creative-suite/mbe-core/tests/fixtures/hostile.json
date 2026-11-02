@@ -306,6 +306,64 @@
     ]
   },
   {
+    "file": "hostile/style-ok.mbe",
+    "codes": [],
+    "ok": true
+  },
+  {
+    "file": "hostile/effect-param.mbe",
+    "codes": [
+      "effect-param"
+    ],
+    "ok": true
+  },
+  {
+    "file": "hostile/filter-range.mbe",
+    "codes": [
+      "filter-range"
+    ],
+    "ok": true
+  },
+  {
+    "file": "hostile/gradient-invalid.mbe",
+    "codes": [
+      "gradient-invalid"
+    ],
+    "ok": true
+  },
+  {
+    "file": "hostile/bake-stale.mbe",
+    "codes": [
+      "bake-stale"
+    ],
+    "ok": true
+  },
+  {
+    "file": "hostile/spot-cmyk.mbe",
+    "codes": [
+      "spot-cmyk"
+    ],
+    "ok": true
+  },
+  {
+    "file": "hostile/icc-invalid.mbe",
+    "codes": [
+      "icc-invalid"
+    ]
+  },
+  {
+    "file": "hostile/pattern-missing.mbe",
+    "codes": [
+      "ref-missing"
+    ]
+  },
+  {
+    "file": "hostile/cmyk-bad.mbe",
+    "codes": [
+      "document-schema"
+    ]
+  },
+  {
     "file": "hostile/flow-frames.mbe",
     "codes": [
       "flow-frames"
