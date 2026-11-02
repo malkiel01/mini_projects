@@ -412,7 +412,11 @@ node claude-tasks/tests/markdown.mjs   # Markdown בבועות הצ'אט: עיצ
 - **מה לא מתורגם** (`assets/js/translate-text.js`): בלוקי קוד, קוד בשורה, כתובות, נתיבים, שמות קבצים, `#1234`,
   `session_…`; קידומות Markdown וקווי טבלה נשארים.
 - **איפה נשמר:** IndexedDB במכשיר (מזהה + שפה), עם הבחירה תרגום / מקור. לא בשרת, ושום טקסט לא יוצא מהמכשיר.
-- **המודל:** שלב 1 — ההמרה הקהילתית `sivelsguy/opus-mt-en-he-onnx`, מוצמדת ל-`fc3befc`. הספרייה מקומית
+- **שפות:** הגדרות ← חשבון ← "שפה לתרגום" (`users.translate_lang`): **עברית** או **ספרדית** — תמיד מאנגלית. לכל שפה
+  מודל משלה, שמורידים ומסירים בנפרד. שפה חדשה = שורה ב-`TRANSLATE_LANGS` (`assets/js/translate.js`) + השפה
+  ב-`translate-lang` (`api.php`); בספרדית "כנראה לא בשפה" נבדק לפי מילים נפוצות (אותו אלפבית כמו באנגלית).
+- **המודלים:** עברית — ההמרה הקהילתית `sivelsguy/opus-mt-en-he-onnx` (`fc3befc`, ≈147MB); ספרדית —
+  `Xenova/opus-mt-en-es` (`4b002a4`, ≈113MB). שניהם מוצמדים ל-commit. הספרייה מקומית
   (`assets/vendor/`); ה-WASM של onnxruntime מ-jsDelivr באותה גרסה. ההמרה שלנו מהמודל הרשמי — בהמשך (§5.11.1).
 
 ### מדידת תרגום לפני 12e — `lab/translate-check.html`

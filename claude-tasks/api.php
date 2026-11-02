@@ -241,6 +241,15 @@ try {
         )]);
 
     /** שם התצוגה שלי. */
+    /** 🌐 שפת התרגום במכשיר (§5.11, 12e) — רק שפות שיש להן מודל (TRANSLATE_LANGS ב-assets/js/translate.js) */
+    case 'translate-lang': {
+        $me = requireUser($user);
+        $lang = pick_field($in, 'lang', ['he', 'es'], '');
+        if ($lang === '') fail('שפה: he או es');
+        db()->prepare('UPDATE users SET translate_lang = ? WHERE id = ?')->execute([$lang, $me['id']]);
+        ok(['lang' => $lang]);
+    }
+
     case 'update-me':
         ok(['display_name' => setDisplayName(requireUser($user), (string) ($in['display_name'] ?? ''))]);
 

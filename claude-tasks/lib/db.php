@@ -176,6 +176,8 @@ function migrate(PDO $pdo): void {
     addColumn($pdo, 'users', 'github_token',  "TEXT NOT NULL DEFAULT ''");
     addColumn($pdo, 'users', 'github_login',  "TEXT NOT NULL DEFAULT ''");
     addColumn($pdo, 'users', 'github_scopes', "TEXT NOT NULL DEFAULT ''");
+    // שפת התרגום במכשיר (§5.11, 12e) — he ברירת מחדל; הרשימה ב-TRANSLATE_LANGS
+    addColumn($pdo, 'users', 'translate_lang', "TEXT NOT NULL DEFAULT 'he'");
     addColumn($pdo, 'users', 'default_provider', "TEXT NOT NULL DEFAULT ''");
     addColumn($pdo, 'tasks', 'project_id',        'INTEGER');
 
