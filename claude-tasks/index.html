@@ -312,6 +312,7 @@
         <h2 id="cvTitle"></h2>
         <small id="cvSub"></small>
       </div>
+      <button type="button" class="icon-btn" id="cvMore" aria-label="אפשרויות הצ'אט" title="אפשרויות הצ'אט" hidden>⋯</button>
       <button type="button" class="icon-btn" id="cvArchive" aria-label="ניתוק הצ'אט" title="ניתוק הצ'אט" hidden>🔌</button>
     </header>
     <ol class="chat-log" id="chatLog" aria-live="polite" aria-label="ההודעות"></ol>
@@ -323,6 +324,26 @@
         <button type="submit" class="btn primary" id="chatSend">שליחה</button>
       </div>
     </form>
+  </div>
+</dialog>
+
+<!-- ── ⋯ אפשרויות הצ'אט (§5.10) ───────────────────────────────── -->
+<dialog id="chatMenu" aria-labelledby="cmT">
+  <div class="sheet-wrap">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close="chatMenu" aria-label="סגירה">✕</button>
+      <h2 id="cmT">אפשרויות הצ'אט</h2>
+      <span></span>
+    </header>
+    <div class="sheet-body">
+      <h3 id="cvQuestionsL">🔘 שאלות בחירה</h3>
+      <div class="seg" id="cvQuestionsSeg" role="radiogroup" aria-labelledby="cvQuestionsL">
+        <button type="button" role="radio" data-mode="board" aria-checked="true">בלוח</button>
+        <button type="button" role="radio" data-mode="app" aria-checked="false">באפליקציה</button>
+      </div>
+      <p class="hint"><b>בלוח</b> — כשהצ'אט שואל שאלת בחירה, היא מגיעה לכאן עם כפתור לכל אפשרות, והצ'אט מדפיס אותה גם אצלו ממוספרת. עונים כאן בנגיעה, או מקלידים בצ'אט. הצ'אט לא נתקע על חלון שאף אחד לא רואה.<br>
+      <b>באפליקציה</b> — החלון נפתח באפליקציית Claude כרגיל, והלוח רק מראה את השאלה ואת התשובה. כשעובדים מול המחשב.</p>
+    </div>
   </div>
 </dialog>
 

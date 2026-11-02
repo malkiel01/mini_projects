@@ -1,6 +1,6 @@
 import { $, $$, el, toast, api, state, timeAgo, on, set, PLATFORM_HINT } from './core.js';
 import { loadConnections, loadProviders, runTask, openProject, modelPicker, renderUsersInto } from './platform.js';
-import { loadChannels } from './chats.js';
+import { loadChannels, openConversation } from './chats.js';
 import { approvalCard, noteText } from './approvals.js';
 import { loadUsage, usageCard, usageMini } from './usage.js';
 import { openPolicySheet } from './policy.js';
@@ -521,27 +521,30 @@ async function renderMonitor(cur) {
   try { m = await api('project-monitor', { project_id: cur.id }); } catch { box.hidden = true; return; }
   if (state.projectId !== cur.id) return;
   const lines = m.summary?.lines || [];
-  const waiting = m.waiting || [];
+  // שאלות בחירה פתוחות בצ'אטים (§5.10) — ראשונות: הצ'אט עצר ומחכה להן
+  const waiting = [...(m.choices || []).map((c) => ({ ...c, status: 'choice' })), ...(m.waiting || [])];
   if (!lines.length && !waiting.length) { box.hidden = true; return; }
   const wrow = (w) => el('li', {}, [el('button', {
-    type: 'button', class: 'mon-item', onclick: () => openTask(w.task_id).catch((ex) => toast(ex.message, 'error')),
+    type: 'button', class: 'mon-item',
+    onclick: () => (w.status === 'choice' ? openConversation(w.channel_id) : openTask(w.task_id)).catch((ex) => toast(ex.message, 'error')),
   }, [
-    el('span', { class: 'ic', 'aria-hidden': 'true', text: w.status === 'awaiting_approval' ? '🔐' : '❓' }),
+    el('span', { class: 'ic', 'aria-hidden': 'true', text: w.status === 'awaiting_approval' ? '🔐' : w.status === 'choice' ? '🔘' : '❓' }),
     el('span', { class: 'body' }, [
       el('b', { text: w.title }),
-      el('small', { text: [timeAgo(w.waiting_since),
+      el('small', { text: [timeAgo(w.waiting_since), w.channel_name ? `💬 ${w.channel_name}` : '',
         w.already_asked ? `נשאל כבר (#${w.already_asked.task_id}): ${w.already_asked.answer}` : '',
         w.suggested_type ? `סוג מוצע: ${TYPE_LABEL[w.suggested_type] || w.suggested_type}` : ''].filter(Boolean).join(' · ') }),
     ]),
     el('span', { class: 'go', 'aria-hidden': 'true', text: '‹' }),
   ])]);
-  box.replaceChildren(
+  // replaceChildren הופך null לטקסט "null" — לכן מסננים (כך הופיע "nullnull" בלי סיכום)
+  box.replaceChildren(...[
     lines.length ? el('div', { class: 'mon-head' }, [el('b', { text: '☁️ סיכום' }),
       el('small', { text: m.summary?.at ? timeAgo(m.summary.at) : '' })]) : null,
     lines.length ? el('ul', { class: 'mon-lines' }, lines.map((l) => el('li', { text: l }))) : null,
     waiting.length ? el('div', { class: 'mon-head' }, [el('b', { text: `ממתין לך · ${waiting.length}` })]) : null,
     waiting.length ? el('ul', { class: 'mon-wait' }, waiting.slice(0, 3).map(wrow)) : null,
-  );
+  ].filter(Boolean));
   box.hidden = false;
 }
 

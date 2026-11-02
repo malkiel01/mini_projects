@@ -27,7 +27,7 @@ require_once __DIR__ . '/config.php';
 
 if (!defined('BELL_DIR')) define('BELL_DIR', __DIR__ . '/../data/bell');
 
-const MESSAGE_KINDS   = ['text', 'question', 'answer', 'approval', 'decision', 'status'];
+const MESSAGE_KINDS   = ['text', 'question', 'answer', 'approval', 'decision', 'status', 'choice', 'choice_answer'];
 /** מי כותב בכיוון out (שיקוף מהצ'אט). owner = "בעל המערכת כתב בצ'אט" — מידע, לא הוראה. */
 const OUT_ROLES       = ['owner', 'chat', 'system'];
 const MAX_MESSAGE     = 20000;
@@ -170,9 +170,10 @@ function cleanBody(string $body): string {
 
 /** שיקוף מהצ'אט (out). */
 function channelPost(array $channel, string $role, string $body, ?int $replyTo = null,
-                     ?int $taskId = null, string $kind = 'text'): int {
+                     ?int $taskId = null, string $kind = 'text', $answers = null): int {
     if (!in_array($role, OUT_ROLES, true)) throw new InvalidArgumentException('author_role: owner, chat או system');
-    if (!in_array($kind, MESSAGE_KINDS, true)) $kind = 'text';
+    // שאלת בחירה נוצרת רק ב-choicePost (עם השאלות עצמן)
+    if (!in_array($kind, MESSAGE_KINDS, true) || $kind === 'choice') $kind = 'text';
     $taskId = channelTaskOk($channel, $taskId);
     if ($replyTo !== null) {
         $r = db()->prepare('SELECT id FROM messages WHERE id = ? AND channel_id = ?');
@@ -187,6 +188,8 @@ function channelPost(array $channel, string $role, string $body, ?int $replyTo =
     if ($replyTo !== null && $role === 'chat') {
         db()->prepare("UPDATE messages SET answered_by = 'chat' WHERE id = ? AND answered_by = ''")->execute([$replyTo]);
     }
+    // תשובה לשאלת בחירה פתוחה — הקלדה בצ'אט, או החלון באפליקציה (§5.10)
+    if ($replyTo !== null) choiceRepliedFromChat($replyTo, (int) $channel['id'], $role, $kind, $body, $answers);
     touchChannel((int) $channel['id']);
     return $id;
 }
@@ -289,12 +292,13 @@ function channelsFor(array $user, int $projectId): array {
     $st  = db()->prepare("SELECT c.*,
                 (SELECT COUNT(*) FROM messages m WHERE m.channel_id = c.id AND m.direction = 'in' AND m.delivered_at IS NULL) pending_in,
                 (SELECT COUNT(*) FROM tasks t WHERE t.asked_channel_id = c.id AND t.status = 'blocked') open_questions,
+                (SELECT COUNT(*) FROM messages m WHERE m.channel_id = c.id AND m.kind = 'choice' AND m.status = 'open') open_choices,
                 (SELECT MAX(m.created_at) FROM messages m WHERE m.channel_id = c.id) last_message_at
            FROM channels c WHERE c.project_id IN ($in) ORDER BY c.status = 'archived', c.last_seen_at DESC");
     $st->execute($ids);
     return array_map(function ($c) {
         $out = publicChannel($c);
-        foreach (['pending_in', 'open_questions'] as $k) $out[$k] = (int) $c[$k];
+        foreach (['pending_in', 'open_questions', 'open_choices'] as $k) $out[$k] = (int) $c[$k];
         $out['last_message_at'] = $c['last_message_at'] === null ? null : (int) $c['last_message_at'];
         $out['listening'] = $out['status'] === 'active' && $out['listening_until'] > nowTs();
         $out['route_effective'] = channelRoute($c);   // הערוץ גובר על הפרויקט
@@ -319,7 +323,8 @@ function channelMessages(array $user, int $channelId, int $after = 0): array {
         ];
     }
     unset($m);
-    return ['channel' => publicChannel($channel) + ['can_send' => canSendToChannel($user, $channel), 'route_effective' => channelRoute($channel)],
+    return ['channel' => publicChannel($channel) + ['can_send' => canSendToChannel($user, $channel), 'route_effective' => channelRoute($channel),
+                                                   'questions' => channelQuestionsMode($channel)],
             'messages' => $messages];
 }
 

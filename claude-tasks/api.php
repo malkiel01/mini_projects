@@ -17,6 +17,7 @@ require_once __DIR__ . '/lib/order.php';
 require_once __DIR__ . '/lib/github.php';
 require_once __DIR__ . '/lib/projects.php';
 require_once __DIR__ . '/lib/engine.php';
+require_once __DIR__ . '/lib/choices.php';
 require_once __DIR__ . '/lib/skills.php';
 require_once __DIR__ . '/lib/platform.php';
 require_once __DIR__ . '/lib/channels.php';
@@ -1477,10 +1478,19 @@ try {
     case 'channel-post': {
         $ch = $scope['channel'] ?? null;
         if (!$ch) fail('נדרש אסימון ערוץ', 403);
+        // שאלת בחירה (hook-choice.sh): נשמרת עם השאלות, והתשובה אומרת ל-hook אם לדחות את הכלי (§5.10)
+        if (str_field($in, 'kind', 20, 'text') === 'choice') ok(choicePost($ch, $in['questions'] ?? null));
         ok(['id' => channelPost($ch, str_field($in, 'author_role', 10), (string) ($in['body'] ?? ''),
                                 int_or_null($in, 'reply_to'), int_or_null($in, 'task_id'),
-                                str_field($in, 'kind', 20, 'text'))]);
+                                str_field($in, 'kind', 20, 'text'), $in['answers'] ?? null)]);
     }
+
+    case 'choice-answer':
+        ok(choiceAnswer(requireUser($user), (int) ($in['message_id'] ?? 0), $in['answers'] ?? null));
+
+    case 'channel-questions':
+        setChannelQuestions(requireUser($user), (int) ($in['channel_id'] ?? 0), str_field($in, 'mode', 10));
+        ok(['mode' => str_field($in, 'mode', 10)]);
 
     case 'channel-send':
         ok(['id' => channelSend(requireUser($user), (int) ($in['channel_id'] ?? 0), (string) ($in['body'] ?? ''),

@@ -69,6 +69,11 @@ case "$cmd" in
     echo "$msgs" | frame
     # התשובה הבאה של הצ'אט תירשם כתשובה להודעה האחרונה
     link_set pending_reply_to "$(echo "$msgs" | jq '.[-1].id')"
+    # שאלת בחירה שנענתה בלוח — כבר לא ממתינה להקלדה בצ'אט (§5.10)
+    pc="$(link_get pending_choice)"
+    if [ -n "$pc" ] && echo "$msgs" | jq -e --argjson c "$pc" 'any(.[]; .kind == "choice_answer" and .reply_to == $c)' >/dev/null; then
+      link_set pending_choice null
+    fi
     echo "— אחרי הטיפול: link.sh ack $(echo "$msgs" | jq -r '[.[].id] | join(" ")')"
     ;;
 

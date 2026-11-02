@@ -176,5 +176,7 @@ function projectMonitor(int $projectId): array {
     $s = json_decode((string) ($st->fetchColumn() ?: ''), true);
     $payer = projectPayer($projectId);
     return ['summary' => is_array($s) ? $s : null, 'waiting' => waitingItems($projectId),
+            // שאלות בחירה פתוחות בצ'אטים של הענף (§5.10) — גם הן ממתינות לך
+            'choices' => openChoices(projectSubtree($projectId)),
             'monitor' => $payer && platformAvailable($payer) ? 'on' : 'off'];
 }
