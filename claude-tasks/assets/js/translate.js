@@ -17,10 +17,10 @@ export { needsTranslation };
 const ENC = 'onnx/encoder_model_quantized.onnx', DEC = 'onnx/decoder_model_merged_quantized.onnx';
 export const TRANSLATE_LANGS = {
   // עברית: ההמרה הקהילתית (§5.11.1) — עד שההמרה שלנו מ-Helsinki-NLP תוגש מהשרת
-  he: { name: 'עברית', heName: 'עברית', label: 'אנגלית ← עברית', from: 'אנגלית', id: 'sivelsguy/opus-mt-en-he-onnx',
+  he: { name: 'עברית', heName: 'עברית', flag: '🇮🇱', label: 'אנגלית ← עברית', from: 'אנגלית', id: 'sivelsguy/opus-mt-en-he-onnx',
         revision: 'fc3befc3af12cd004ae65e9c36ea77858c19157c', sizes: { [ENC]: 53150455, [DEC]: 94015921 } },
   // ספרדית: ההמרה של Xenova למודל הרשמי Helsinki-NLP/opus-mt-en-es
-  es: { name: 'Español', heName: 'ספרדית', label: 'אנגלית ← ספרדית', from: 'אנגלית', id: 'Xenova/opus-mt-en-es',
+  es: { name: 'Español', heName: 'ספרדית', flag: '🇪🇸', label: 'אנגלית ← ספרדית', from: 'אנגלית', id: 'Xenova/opus-mt-en-es',
         revision: '4b002a4c7edd54a7ced58877258b87f7efd3f892', sizes: { [ENC]: 52899742, [DEC]: 60212804 } },
 };
 export const TR_CREDIT = 'Opus-MT · University of Helsinki · Apache-2.0';
@@ -59,6 +59,18 @@ export function engine(refresh = false) {
     return { kind: null, reason: `אין מודל ל${TRANSLATE_LANGS[LANG].heName} במכשיר — הגדרות ← חשבון ← 🌐 תרגום במכשיר` };
   })();
   return enginePromise;
+}
+
+/** איך אפשר לתרגם לשפה ‎l‎ במכשיר הזה: 'api' (Chrome) · 'model' (הורד) · null. */
+export async function availableFor(l) {
+  if ('Translator' in self) {
+    try {
+      const a = await Promise.race([Translator.availability({ sourceLanguage: 'en', targetLanguage: l }),
+        new Promise((r) => setTimeout(() => r('timeout'), 4000))]);
+      if (['available', 'downloadable', 'downloading'].includes(a)) return 'api';
+    } catch { /* ממשיכים */ }
+  }
+  return (await modelCached(l)) ? 'model' : null;
 }
 
 const fileUrl = (m, f) => `https://huggingface.co/${m.id}/resolve/${m.revision}/${f}`;
@@ -111,15 +123,15 @@ function getWorker() {
  * ⬇️ הורדת המודל (הסכמה מפורשת, §5.11.1). onProgress({ loaded, total, etaSec }) — סכום הקבצים הגדולים.
  * אחרי ההורדה המודל במטמון הדפדפן, ו-engine() יחזיר 'model'.
  */
-export function downloadModel(onProgress) {
-  const MODEL = model();
+export function downloadModel(onProgress, l = LANG) {
+  const MODEL = model(l);
   const seen = {};
   const t0 = performance.now();
   const total = Object.values(MODEL.sizes).reduce((a, b) => a + b, 0);
   let shown = 0;   // הפס לא חוזר אחורה
   return new Promise((resolve, reject) => {
     loadWaiters.push({
-      resolve: () => { engine(true); resolve(); },
+      resolve: () => { if (l === LANG) engine(true); resolve(); },
       reject,
       onProgress: (p) => {
         if (!MODEL.files.includes(p.file)) return;
@@ -135,9 +147,9 @@ export function downloadModel(onProgress) {
   });
 }
 
-/** 🗑 הסרה של מודל השפה הנוכחית — הקבצים שלו בלבד, והתרגומים השמורים לשפה הזו. */
-export async function removeModel() {
-  const m = model();
+/** 🗑 הסרה של מודל השפה ‎l‎ — הקבצים שלו בלבד, והתרגומים השמורים לשפה הזו. */
+export async function removeModel(l = LANG) {
+  const m = model(l);
   worker?.terminate(); worker = null; jobs.clear(); loadWaiters = [];
   try {
     const c = await caches.open(CACHE);

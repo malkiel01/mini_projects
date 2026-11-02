@@ -929,14 +929,12 @@
           <hr>
           <h3 id="trSetT">🌐 תרגום במכשיר</h3>
           <p class="hint">הודעות באנגלית מתורגמות בטלפון עצמו — בלי שרת, בלי AI ובלי עלות. הטקסט לא יוצא מהמכשיר.</p>
-          <label class="field"><span>שפה לתרגום</span><select id="trLang"></select></label>
-          <p class="tr-state" id="trState" role="status">בודק…</p>
-          <progress id="trProg" max="100" value="0" hidden></progress>
-          <div class="row-btns">
-            <button type="button" class="btn primary" id="trDownload" hidden>⬇️ הורדה</button>
-            <button type="button" class="btn ghost" id="trRemove" hidden>🗑 הסרה</button>
-          </div>
-          <p class="hint" id="trWifi" hidden>פעם אחת לכל מכשיר — עדיף ב-Wi-Fi. נשמר בדפדפן; "הסרה" מפנה את המקום.</p>
+          <h4 class="tr-sub" id="trTargetT">לתרגם ל־</h4>
+          <div class="seg tr-target" id="trTarget" role="radiogroup" aria-labelledby="trTargetT"></div>
+          <p class="hint" id="trTargetHint" role="status"></p>
+          <h4 class="tr-sub">שפות להורדה</h4>
+          <ul class="list" id="trLangs"></ul>
+          <p class="hint">כל שפה — הורדה אחת למכשיר, עדיף ב-Wi‑Fi. התרגום תמיד מאנגלית. 🗑 מפנה את המקום.</p>
           <p class="tr-stay" id="trStay" role="note" hidden>📱 השאירו את המסך הזה פתוח עד הסוף (1–3 דק' ב-Wi‑Fi). המסך לא ייכבה מעצמו; מעבר לאפליקציה אחרת עוצר את ההורדה.</p>
           <p class="hint tr-credit">מודל התרגום: Opus-MT · University of Helsinki · Apache-2.0</p>
         </section>
