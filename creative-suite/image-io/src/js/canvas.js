@@ -16,7 +16,7 @@ export function canEncode(type) {
 /**
  * rgba (w×h×4, אלפא ישר) → Blob מסוג type ('image/jpeg' | 'image/webp' | 'image/avif').
  * background — צבע CSS מתחת לתמונה; ל-JPEG ברירת המחדל לבן (אין בו שקיפות), לשאר — שקוף.
- * דפדפן שלא יודע לכתוב את הסוג (מחזיר PNG במקום) — Error('<סוג>-unsupported').
+ * דפדפן שלא יודע לכתוב את הסוג (מחזיר PNG במקום) — Error בעברית, ו-code: '<סוג>-unsupported'.
  */
 export async function encodeImage(rgba, w, h, type, { quality, background } = {}) {
   const cv = new OffscreenCanvas(w, h);
@@ -32,6 +32,9 @@ export async function encodeImage(rgba, w, h, type, { quality, background } = {}
     bmp.close();
   } else ctx.putImageData(img, 0, 0);
   const blob = await cv.convertToBlob({ type, quality });
-  if (blob.type !== type) throw new Error(type.split('/')[1] + '-unsupported');
+  if (blob.type !== type) {
+    const name = type.split('/')[1];
+    throw Object.assign(new Error(`image-io: הדפדפן לא יודע לכתוב ${name.toUpperCase()}`), { code: name + '-unsupported' });
+  }
   return blob;
 }

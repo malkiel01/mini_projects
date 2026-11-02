@@ -10,8 +10,20 @@
 const BLEND_KEY = { normal: 'norm', multiply: 'mul ', screen: 'scrn', overlay: 'over' };
 const KEY_BLEND = Object.fromEntries(Object.entries(BLEND_KEY).map(([k, v]) => [v, k]));
 
+const PSD_TEXT = {
+  'psd-signature': 'זה לא קובץ PSD',
+  'psd-depth': 'PSD ב-16 או 32 ביט — עוד לא נתמך (רק 8 ביט)',
+  'psd-mode': 'PSD שאינו RGB (CMYK / Lab / גווני אפור) — עוד לא נתמך',
+  'psd-psb': 'קובץ PSB (גדול במיוחד) — עוד לא נתמך',
+  'psd-compression': 'PSD דחוס ב-ZIP — עוד לא נתמך',
+  'psd-truncated': 'קובץ ה-PSD קטוע או פגום',
+  'psd-layer': 'קובץ ה-PSD פגום (שכבה)',
+  'psd-too-big': 'קובץ ה-PSD גדול מדי',
+};
+
+/** שגיאת PSD: message — בעברית, code — הקוד הקבוע (psd-…), שלפיו האפליקציה בוחרת מה להציג */
 export class PSDError extends Error {
-  constructor(code) { super(code); this.code = code; }
+  constructor(code) { super('image-io: ' + (PSD_TEXT[code] ?? code)); this.code = code; this.name = 'PSDError'; }
 }
 
 // ---------- כתיבה ----------
