@@ -318,6 +318,105 @@ tested in a clean chat before merging.
 
 ---
 
+### 5.9 Opening chats — a ready prompt per project, a "long chat" alert, a follow-up chat in one click (owner request 2026-11-02; **stage 11**)
+
+**Why** (the first v2 chat, "היצירה v2 - סטודיו העיצוב", project 6, channel #1): it worked, but the owner hit four traps —
+copied a **sub-project's** token instead of the root's; opened the chat in a **different environment** than the one holding
+the token; the prompt still had `[ ]` and an empty `___` project number, and the board shows the project id nowhere except
+"token for chats"; and a leftover `CLAUDE_TASKS_PROJECT=10` in the environment pointed the chat at the wrong project.
+Rule from now on: **the owner never fills anything in by hand.**
+
+#### 5.9.1 Decisions (mine, per the owner's delegation)
+
+| Question | Decision | Why |
+| --- | --- | --- |
+| One generic skill or a file per project? | **One generic flow in `claude-tasks-live`** + a prompt the board **generates** per project and role. No per-project files in git | Project data lives in the board; a file per project goes stale and needs a PR for every new chat |
+| Where the template lives | **In the board**, per project, **inherited** field by field from ancestors (set it once on "חבילת היצירה", every sub-project gets it) | Same inheritance as route/policy |
+| Where the project id comes from | **Only from the prompt** (`--project N`). `CLAUDE_TASKS_PROJECT` is **ignored** (removed from the skill and `link.sh`) | An environment is shared by many chats; a project id there is wrong for all but one |
+| Which token | **One token per environment = the root's.** Sub-projects no longer show a token: their "token for chats" row says "uses the token of <root> — open" | The root token already covers the whole tree (stage 1) |
+| Environment confusion | The board stores the **environment name** (text, set once by the owner) and prints it in the "open a chat" sheet: "open the chat in environment **Default Cloud Environment**". The prompt starts with a preflight that stops with a clear Hebrew message if the token is missing | The board cannot see environments; it can only say which one, and fail loudly |
+| Project id visible | `#6` next to the name in the ⚙ header card and in the breadcrumbs | Asked for directly |
+
+#### 5.9.2 The template — data and UI
+
+```
+chat_templates(project_id PK,           -- NULL fields inherit from the nearest ancestor that sets them
+  name_pattern TEXT,    -- "היצירה v2 - {role}"
+  roles TEXT,           -- JSON [{key, label, icon, reports_to, brief}]  e.g. המתכלל / האפיון / רסטר …
+  context_files TEXT,   -- paths to read first, one per line (CLAUDE.md is always implied)
+  hierarchy TEXT,       -- a few lines: who is above whom
+  notify_session TEXT,  -- session to notify on join (default: board-wide config, = the "מטלות לקלוד - אפיון" chat)
+  extra TEXT,           -- free instructions appended to every prompt
+  updated_at)
+config: chat_environment_name (text), chat_notify_session_default
+```
+
+- **Project ⚙ → new row "🆕 צ'אט חדש"** (subline: "4 תפקידים · סביבה: Default Cloud Environment").
+  The sheet: **role tiles** (2×2 grid, icon + label); tapping a role shows the **finished prompt** (read-only, monospace),
+  a big **"📋 העתקה"** and **"פתיחת Claude Code"** (opens `https://claude.ai/code` in a new tab). Above it, one line:
+  "בחרו בסביבה: **<name>**". A ✏️ opens the template editor (labelled fields; each inherited field shows
+  "יורש מ: <project>" and a "שינוי כאן" link).
+- **Pre-filled prompt via URL:** test whether claude.ai/code accepts a prompt in the URL (e.g. `?q=`). If it does, the button
+  opens with the prompt filled; if not, copy + open, and the toast says "הפרומפט הועתק — הדבקה בצ'אט החדש". Record the result here.
+- Template edit = `owner` (it shapes every chat in the subtree).
+
+**The generated prompt** (Hebrew to the chat, fixed skeleton; every value filled by the board, never a placeholder):
+
+```
+אתה "<name from pattern>" — צ'אט <role label> בפרויקט "<project path>" (#<id>) בלוח "מטלות לקלוד".
+1. הפעל את הסקיל claude-tasks-live והירשם:
+   claude-tasks/bridge/link.sh register --project <id> --name "<name>" --role "<key>" [--replaces <channel_id>]
+   אם הרישום נכשל — עצור ודווח לבעל המערכת את ההודעה כפי שהיא (היא אומרת מה לתקן).
+2. קרא: CLAUDE.md, <context files…>
+3. ההיררכיה: <hierarchy>. אתה מדווח ל: <reports_to>.
+4. בסיום הרישום — שלח הודעת הצטרפות (create_trigger) ל-<notify_session>.
+<brief of the role>
+<extra>
+[<handoff block — only for a follow-up chat, 5.9.4>]
+```
+
+**Preflight in `link.sh register`** — each failure prints one Hebrew line that says exactly what to do:
+`CLAUDE_TASKS_TOKEN` missing → "הצ'אט נפתח בסביבה בלי האסימון. פתחו צ'אט חדש בסביבה '<name from board, if reachable>'";
+token does not cover the project → (server, new error code) "האסימון בסביבה הזו שייך ל-<project>, ולא מכסה את #<id>.
+שימו בסביבה את האסימון של <root>"; `CLAUDE_TASKS_PROJECT` set → a warning that it is ignored.
+
+#### 5.9.3 "Long chat" alert
+
+- `hook-stop.sh` measures, at most once per 5 minutes: `transcript_bytes` (size of `transcript_path`), `turns`, and
+  `compactions` (count of compaction-boundary entries in the transcript — the strongest sign that context ran out once).
+  It sends them with a new action **`channel-health { bytes, turns, compactions }`** — stored on `channels`, **not** a message
+  (no noise in the conversation).
+- Levels (in `config.json`, these defaults): **🟡 "הצ'אט מתארך"** at ≥ 1.5 MB or ≥ 1 compaction;
+  **🔴 "הצ'אט ארוך — מומלץ צ'אט המשך"** at ≥ 3 MB or ≥ 2 compactions. Shown as a chip on the channel row and as a
+  bar at the top of the conversation screen, with the "🔁 צ'אט המשך" button inside it.
+- A channel that never reported (old skill) shows nothing — no guessing.
+
+#### 5.9.4 Follow-up chat in one click
+
+1. **"🔁 צ'אט המשך"** (owner) on the channel screen → the board sends an `in` message, `kind: handoff_request`.
+2. The skill (`claude-tasks-live`, English): on `handoff_request`, write a handoff in a fixed structure — **state & key values ·
+   decisions (with why) · open items · files touched · sessions & branch · what the next chat must do first** — and post it
+   with `link.sh handoff <file>` (`channel-post kind: handoff`). It then keeps working only until told it was replaced.
+3. The board builds the follow-up prompt = the template prompt for **the same role** + `--replaces <old channel id>` + the
+   handoff block. The sheet shows it ready to copy/open (as in 5.9.2). If no handoff arrives within 2 minutes (dead
+   container), "בלי תקציר" builds the block from the last 30 channel messages instead.
+4. `channel-register` with `replaces` (same project subtree; owner-issued prompt) → the old channel gets
+   `status: replaced`, `replaced_by`; the old chat receives a `system` message "הוחלפת על ידי <name> — סיים ואל תמשיך";
+   the board shows "הוחלף ← <new>" on the old row (greyed, still readable) and the new chat inherits the open
+   `asked_channel_id` tasks of the old one.
+
+#### 5.9.5 Join notice
+
+The join notice goes to the template's `notify_session` — by default the board-wide one, set to **this chat
+("מטלות לקלוד - אפיון")**, not to the creative suite's coordinator. The coordinator gets it only if its template says so.
+The board also posts a `system` message "<name> הצטרף" in the channel, so the notice is never the only record.
+
+**Done when:** a new chat opened from the sheet, with nothing typed by hand, registers on the right project; a wrong token
+and a missing token each stop with the Hebrew line above; `CLAUDE_TASKS_PROJECT` is ignored; the 🟡/🔴 levels show from
+`channel-health`; a follow-up chat replaces the old one with a handoff, tasks move over, and the old row shows "הוחלף";
+the join notice reaches `notify_session`. Tests for the template inheritance, the register errors, `replaces`, and the health
+levels; screenshots 390/320 light/dark.
+
 ## 6. Stage 5 — approvals & policy
 
 As "PR 2" in the answer to the command-center request, with two changes:
