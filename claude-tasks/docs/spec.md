@@ -203,6 +203,24 @@ processes (typically 20–30), and 10 chats waiting all the time take a third. T
 - `long_poll_max` in `config.json` (default 20). If the site starts returning 508 — set it to 0 and it becomes plain polling.
 - The listener sleeps 3 seconds between requests. Expected latency: up to ~5 seconds.
 
+**⚠ Incident 2026-11-02 10:15 — the listeners flooded the host; the whole of mbe-plus.com returned 429 to everyone.**
+The owner stopped every listener. What this section said above was wrong for shared hosting: N chats × a request every few
+seconds, each holding a PHP process up to 20 s, is a sustained load the host throttles **for the whole domain**, not for the
+board alone. Replacing rules (they override the lines above):
+- **No long-poll by default:** `long_poll_max` default **0** — `channel-wait` answers at once.
+- **Slow, jittered polling:** the listener asks every **30 s ± 10 s** while idle; after a message, every 10 s for 2 minutes,
+  then back to 30 s. Expected latency ≈ 30 s (the "under a minute" target still holds).
+- **Back off on any sign of trouble:** 429 / 503 / 508 / 5xx / timeout → **the listener exits** (it does not retry), writes
+  the reason to the link file, and the chat restarts it only on the next hourly backup — doubling the delay each time
+  (1 h, 2 h, up to 6 h) while errors continue. `Retry-After` is honored when present.
+- **One board-wide brake:** `config.bridge_paused` (owner: Settings → מערכת → "⏸ עצירת המאזינים"). When set, every
+  `channel-wait` / `channel-inbox` returns **503 + `Retry-After: 3600`** without touching the database, so all listeners stop
+  themselves within one cycle — no need to reach each chat. The board shows a red strip "המאזינים מושהים" until it is cleared.
+- **A budget the server enforces:** at most **1 request per 10 s per channel token** for `channel-wait`; above that → 429 with
+  `Retry-After`, counted in a file (not the DB), so a runaway listener cannot hurt the rest of the site.
+- **Before re-enabling:** measure on the real board with **one** chat for 30 minutes (requests per minute, no 429), then three
+  chats, and record the numbers here. Listeners stay off until the owner approves.
+
 ### 5.5 Security and tokens
 
 - **Registration token** (✅ decision 2): the existing project token (`agent_token`) of the parent project, in an environment
