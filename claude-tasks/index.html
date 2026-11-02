@@ -86,6 +86,8 @@
   <main id="main" tabindex="-1">
     <!-- 80% / 100% מהמכסה החודשית (§8) -->
     <p class="quota-warn" id="quotaWarn" role="status" hidden></p>
+    <!-- ⏸ עצירת המאזינים (§5.6, אחרי ה-429) — לכל הלוח -->
+    <p class="quota-warn quota-warn--over" id="bridgePausedStrip" role="status" hidden>⏸ המאזינים מושהים — הצ'אטים לא מקבלים הודעות מהלוח עד שבעל הלוח יחזיר אותם (הגדרות ← מערכת).</p>
     <nav class="crumbs" id="crumbs" aria-label="מיקום" hidden></nav>
 
     <!-- מי עונה בענף הזה (§7): הצ'אטים, או Platform. משנה — בעל הלוח בלבד -->
@@ -942,6 +944,11 @@
 
       <section class="set-panel" data-panel="sys" hidden>
         <ul class="list">
+          <li class="card" tabindex="0" role="button" id="bridgePauseBtn" aria-label="עצירת המאזינים">
+            <span class="ic" aria-hidden="true" id="bridgePauseIc">⏸</span>
+            <div class="body"><div class="l1"><span id="bridgePauseT">עצירת המאזינים</span></div><div class="l2" id="bridgePauseSub">כל הצ'אטים מפסיקים לשאול את הלוח, תוך מחזור אחד</div></div>
+            <span class="go" aria-hidden="true">‹</span>
+          </li>
           <li class="card" tabindex="0" role="button" id="boardPolicyBtn" aria-label="אישורים כלליים">
             <span class="ic" aria-hidden="true">🔐</span>
             <div class="body"><div class="l1"><span>אישורים כלליים</span></div><div class="l2">לכל הלוח — מה שפרויקט לא קבע לעצמו</div></div>

@@ -112,6 +112,8 @@ check('write בפרויקט רגיל — כותבת', is_int(channelSend($dana, 
 channelAck($ch, [$in2]);
 
 echo "\n— המתנה (channel-wait) —\n";
+// ברירת המחדל היא 0 (בלי long-poll, אחרי ה-429) — כאן נבדק המנגנון כשמפעילים אותו במפורש
+configSet(['long_poll_max' => 20]);
 $ticks = 0;
 $in3 = channelSend($boss, $cid, 'יש הודעה');
 $got = channelWait($ch, 20, function () use (&$ticks) { $ticks++; });

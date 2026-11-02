@@ -97,6 +97,7 @@ let gateMode = 'login';
 async function boot() {
   const info = await api('bootstrap-status');
   state.platform = !!info.platform;
+  state.bridgePaused = Number(info.bridge_paused) || 0;
   if (info.user) { state.user = info.user; return enterApp(); }
   if (info.pending) return showLinkGate(info.pending);
 
@@ -223,6 +224,7 @@ async function enterApp() {
   loadConnections().catch(() => {});
   loadProviders().catch(() => {});
   refreshQuotaWarn();
+  renderBridgePaused();
   monitorLazy();
   openFromHash();   // קישור להודעה (12b)
 }
@@ -1074,6 +1076,29 @@ on('#search', 'input', (e) => {
 
 on('#menuBtn', 'click', openDrawer);
 // הגדרות ← מערכת ← אישורים כלליים לכל הלוח (§6.1)
+/* ── ⏸ עצירת המאזינים (§5.6, אחרי ה-429) — בעל הלוח ── */
+function renderBridgePaused() {
+  const p = !!state.bridgePaused;
+  set('#bridgePausedStrip', 'hidden', !p);
+  $('#bridgePauseIc').textContent = p ? '▶' : '⏸';
+  $('#bridgePauseT').textContent = p ? 'החזרת המאזינים' : 'עצירת המאזינים';
+  $('#bridgePauseSub').textContent = p
+    ? `מושהים מאז ${new Date(state.bridgePaused * 1000).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' })} — כל צ'אט יחזור בבדיקה השעתית שלו`
+    : "כל הצ'אטים מפסיקים לשאול את הלוח, תוך מחזור אחד";
+}
+async function toggleBridgePause() {
+  const pause = !state.bridgePaused;
+  if (!confirm(pause
+    ? "לעצור את כל המאזינים? כל צ'אט יפסיק לשאול את הלוח תוך כחצי דקה, ולא יחזור עד שתחזירו."
+    : "להחזיר את המאזינים? כל צ'אט יחזור בבדיקה השעתית שלו — לא כולם בבת אחת.")) return;
+  try {
+    state.bridgePaused = (await api('bridge-pause', { paused: pause })).bridge_paused;
+    renderBridgePaused();
+    toast(pause ? 'המאזינים מושהים' : 'המאזינים יחזרו בהדרגה', 'ok');
+  } catch (ex) { toast(ex.message, 'error'); }
+}
+on('#bridgePauseBtn', 'click', toggleBridgePause);
+on('#bridgePauseBtn', 'keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleBridgePause(); } });
 on('#boardPolicyBtn', 'click', () => openPolicySheet(null));
 on('#boardPolicyBtn', 'keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openPolicySheet(null); } });
 

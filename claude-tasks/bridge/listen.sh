@@ -1,47 +1,94 @@
 #!/usr/bin/env bash
-# הגשר החי — המאזין (docs/spec.md §5.6).
+# הגשר החי — המאזין (docs/spec.md §5.6, והכללים שאחרי ה-429 ב-2026-11-02).
 #
-# רץ ברקע בצ'אט (run_in_background, timeout ‎7000000 ms). לולאת channel-wait:
+# רץ ברקע בצ'אט (run_in_background, timeout ‎7000000 ms). בודק את הלוח בבקשה קצרה —
+# בלי long-poll: כל 30±10 שניות כשאין כלום, וכל 10 שניות בשתי הדקות שאחרי הודעה.
 # כשמגיעה הודעה — כותב אותה ל-.claude/board-pending.json, מדפיס שורה קצרה ויוצא.
-# היציאה היא מה שמעיר את הצ'אט. הצ'אט לא רואה את הפלט (רק סיכום), ולכן הסקיל
-# מריץ link.sh pending. בזמן ההמתנה לא נשרף אף טוקן: זה curl, לא המודל.
+# היציאה היא מה שמעיר את הצ'אט. בזמן ההמתנה לא נשרף אף טוקן: זה curl, לא המודל.
+#
+# כל סימן לעומס (429, 503, 508, 5xx, רשת או timeout) — המאזין **יוצא** ולא מנסה שוב.
+# הוא רושם בקובץ הקישור עד מתי לא לחזור (backoff_until): שעה, ואז 2, 4, עד 6 שעות כל
+# עוד יש שגיאות, או Retry-After אם השרת שלח יותר. הפעלה לפני הזמן יוצאת מיד, בלי בקשה.
+# באחסון משותף, מאזינים שממשיכים לדפוק מפילים את כל הדומיין — לכל האפליקציות.
 #
 #   listen.sh [seconds]    ברירת מחדל 6900 — קצת פחות משעתיים, מתחת לתקרת פקודת רקע
 #
-# קוד יציאה: 0 — הודעה או סוף הזמן; 3 — הערוץ נותק/האסימון נפסל (צריך register).
+# קוד יציאה: 0 — הודעה או סוף הזמן; 3 — הערוץ נותק/האסימון נפסל (צריך register);
+#            4 — נסיגה: עומס או "המאזינים מושהים" (לא להפעיל לפני backoff_until).
 set -u
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 [ -f "$BOARD_LINK" ] || { echo "הצ'אט לא רשום — link.sh register"; exit 3; }
 TOKEN="$(jq -r .channel_token "$BOARD_LINK")"
 END=$(( $(date +%s) + ${1:-6900} ))
-WAIT="${CLAUDE_TASKS_WAIT:-20}"
+IDLE="${CLAUDE_TASKS_POLL:-30}"     # שניות בין בדיקות כשאין כלום (±10)
+BUSY=10                             # אחרי הודעה, למשך BUSY_FOR שניות
+BUSY_FOR=120
+BACKOFF_FIRST=3600
+BACKOFF_MAX=21600
 log() { echo "$(date -u +%FT%TZ) $*" >> "$BOARD_LOG"; }
-log "start pid=$$ until=$(date -u -d "@$END" +%T)"
+hhmm() { date -d "@$1" +%H:%M 2>/dev/null || date -r "$1" +%H:%M; }
 
-fails=0
+# בתוך נסיגה — לא שולחים אף בקשה
+until_ts="$(link_get backoff_until)"; until_ts="${until_ts:-0}"
+if [ "$until_ts" -gt "$(date +%s)" ]; then
+  echo "⏸ המאזין בנסיגה עד $(hhmm "$until_ts") ($(link_get backoff_reason)) — לא להפעיל לפני כן"
+  exit 4
+fi
+
+log "start pid=$$ until=$(date -u -d "@$END" +%T 2>/dev/null)"
+
+back_off() {   # back_off <reason>
+  local level delay now after
+  now=$(date +%s)
+  level=$(( $(link_get backoff_level || true) + 1 ))
+  delay=$(( BACKOFF_FIRST << (level - 1) ))
+  [ "$delay" -gt "$BACKOFF_MAX" ] && delay=$BACKOFF_MAX
+  after="${BOARD_RETRY_AFTER:-0}"
+  [ "$after" -gt "$delay" ] && delay=$after
+  link_set backoff_level "$level"
+  link_set backoff_until "$(( now + delay ))"
+  link_set backoff_reason "$(jq -Rn --arg r "$1" '$r')"
+  log "backoff level=$level delay=${delay}s reason=$1"
+  echo "🛑 הלוח לא זמין ($1) — המאזין יצא, ולא יחזור לפני $(hhmm $(( now + delay ))). לא להפעיל ידנית לפני כן."
+  exit 4
+}
+
+# הפלט לקובץ, לא ‎$( )‎ — בתת-מעטפת BOARD_HTTP ו-BOARD_RETRY_AFTER הולכים לאיבוד, ו-429 נראה כ"רשת"
+OUT="$(mktemp)"; trap 'rm -f "$OUT"' EXIT
 while [ "$(date +%s)" -lt "$END" ]; do
-  out="$(board_call channel-wait "{\"wait\":$WAIT}" "$TOKEN" $(( WAIT + 15 )))"; rc=$?
+  board_call channel-wait '{"wait":0}' "$TOKEN" 20 > "$OUT"; rc=$?; out="$(cat "$OUT")"
   if [ $rc = 0 ]; then
-    fails=0
+    [ -n "$(link_get backoff_level)" ] && link_set backoff_level 0
     n="$(echo "$out" | jq '.messages | length')"
     if [ "$n" -gt 0 ]; then
       echo "$out" | jq '.messages' > "$BOARD_PENDING"
+      link_set last_message_at "$(date +%s)"
       log "messages=$n ids=$(echo "$out" | jq -c '[.messages[].id]')"
       echo "📥 $n הודעות מהלוח — הרץ: claude-tasks/bridge/link.sh pending"
       exit 0
     fi
   else
-    log "http=$BOARD_HTTP rc=$rc $(echo "$out" | head -c 160 | tr '\n' ' ')"
+    log "http=$BOARD_HTTP rc=$rc retry_after=$BOARD_RETRY_AFTER $(echo "$out" | head -c 160 | tr '\n' ' ')"
     if [ $rc = 1 ] && { [ "$BOARD_HTTP" = 401 ] || [ "$BOARD_HTTP" = 403 ]; }; then
       echo "🔌 הערוץ נותק או שהאסימון נפסל (HTTP $BOARD_HTTP) — link.sh register מחדש"
       exit 3
     fi
-    # 508 (מגבלת תהליכים באחסון), 5xx, רשת: נסיגה הדרגתית, עד דקה
-    fails=$(( fails + 1 ))
-    sleep $(( fails * 5 > 60 ? 60 : fails * 5 ))
+    case "$BOARD_HTTP" in
+      503) [ "$(echo "$out" | jq -r '.code // empty' 2>/dev/null)" = bridge_paused ] \
+             && back_off "המאזינים מושהים בלוח" || back_off "HTTP 503" ;;
+      429|508|5??) back_off "HTTP $BOARD_HTTP" ;;
+      0) back_off "רשת או timeout" ;;
+      *) [ $rc = 2 ] && back_off "HTTP $BOARD_HTTP" ;;   # 4xx אחר — הבקשה עצמה; ממשיכים בקצב הרגיל
+    esac
   fi
-  sleep 3
+  # הקצב: 10 ש' בשתי הדקות שאחרי הודעה, אחרת 30±10
+  last="$(link_get last_message_at)"; last="${last:-0}"
+  if [ $(( $(date +%s) - last )) -lt $BUSY_FOR ]; then
+    sleep $BUSY
+  else
+    sleep $(( IDLE - 10 + RANDOM % 21 ))
+  fi
 done
 log "timeout"
 echo "⏱ המאזין הסתיים (זמן) — להפעיל מחדש"
