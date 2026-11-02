@@ -47,12 +47,12 @@
 | --- | --- | --- | --- | --- | --- | --- |
 | 0 | **ליבת הפורמט** | `creative-suite/mbe-core/` | — | — | — | **גרסה 1.1 מוכנה** — הממיר (מזהים, יומן, פנים, מיזוג); נשאר ניסוי Google Docs — [הנחיות](projects/mbe-core.md), [בודק ‎.mbe](../mbe-core/inspector/) |
 | 1 | עורך התמלילים | `word-processor/` (קיים) | Word | `text` | 0 | מחובר — ‎`.mbe`, docx כ"פנים" ומיזוג; ממתין לניסוי ב-Word — [הנחיות](projects/word-processor-request.md) |
-| 2 | עיצוב רסטר | `raster-studio/` | Photoshop | `raster` | 0 | בבנייה — ר2, עריכה מקצועית — [הנחיות](projects/raster-studio.md), [היעד המלא](projects/raster-studio-full.md) |
-| 3 | וקטורי | `vector-studio/` | Illustrator | `vector` | 0 | גרסה 1 מוכנה; גרסה 2 בבנייה — [הנחיות](projects/vector-studio.md), [היעד המלא](projects/vector-studio-full.md) |
-| 4 | עימוד | `layout-studio/` | InDesign | `layout` | 0, 1 (שטפים), 3 (צורות) | בבנייה — גרסה 1 נפרסה, פורמט 1.1 בחיבור — [הנחיות](projects/layout-studio.md) |
-| 5 | סטודיו העיצוב | `greeting-cards/` (קיים) | Canva | `design` | 0, 2, 3 | בבנייה — מ1–מ3 נפרסו; מ4 ממתין לבינה המלאכותית של הענן — [הנחיות](projects/design-studio.md) |
-| 6 | ענן החבילה | `suite-cloud/` | Creative Cloud | — | — (האחרות תלויות בו כרשות) | בבנייה — השלד נפרס; הבא: חיבור אפליקציה ושכבת ספקי ה-AI — [הנחיות](projects/suite-cloud.md) |
-| 7 | קוד משותף | `creative-suite/ui-core/` | — | — | כל האפליקציות מושכות ממנו | בבנייה — שלבים 1–3 נפרסו; אף אפליקציה עוד לא הצטרפה — [הנחיות](projects/shared-code.md) |
+| 2 | עיצוב רסטר | `raster-studio/` | Photoshop | `raster` | 0 | בבנייה — ר2: 4 מתוך 8 (גל 1) — [הנחיות](projects/raster-studio.md), [היעד המלא](projects/raster-studio-full.md) |
+| 3 | וקטורי | `vector-studio/` | Illustrator | `vector` | 0 | גרסה 1 מוכנה; גרסה 2: 5 מתוך 8 (גל 1) — [הנחיות](projects/vector-studio.md), [היעד המלא](projects/vector-studio-full.md) |
+| 4 | עימוד | `layout-studio/` | InDesign | `layout` | 0, 1 (שטפים), 3 (צורות) | מוכן — יעד הגמר הושלם; נשארו שורות פתוחות — [הנחיות](projects/layout-studio.md) |
+| 5 | סטודיו העיצוב | `greeting-cards/` (קיים) | Canva | `design` | 0, 2, 3 | בבנייה — מ1–מ4 נבנו; נשארו שורות 8, 11, 17 — [הנחיות](projects/design-studio.md) |
+| 6 | ענן החבילה | `suite-cloud/` | Creative Cloud | — | — (האחרות תלויות בו כרשות) | מוכן — יעד הגמר הושלם; לבדיקה בסוף: מפתחות — [הנחיות](projects/suite-cloud.md) |
+| 7 | קוד משותף | `creative-suite/ui-core/` | — | — | כל האפליקציות מושכות ממנו | בבנייה — שלבים 1–9 נפרסו, האפליקציות מצטרפות; הבא: שלב 10 — [הנחיות](projects/shared-code.md) |
 | 8 | ועוד | — | חדר פיתוח (צילום, `photo-darkroom`), Acrobat, מצגות | — | לפי הצורך | רעיונות; חדר פיתוח — באפיון |
 
 **עדכון 2026-10-24:** 2, 3 ו-4 נפתחים במקביל (סעיף 4, "עבודה במקביל"). **הסדר וההיגיון המקורי:** 0 → 1 מוכיחים את הפורמט על מוצר שכבר עובד. אחריהם **2 או 3** (קטנים יחסית, ומוסיפים את
