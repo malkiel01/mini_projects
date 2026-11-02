@@ -509,3 +509,19 @@ details.what p { margin-top: var(--s2); }
 .pol-ev small { color: var(--muted); font-size: .78rem; overflow-wrap: anywhere; }
 .pol-ev .b-task { justify-self: start; max-inline-size: 100%; }
 .pol-ev .b-task span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ===== Platform עונה, ומעקב (§9) ===== */
+.bubble--platform { background: color-mix(in srgb, var(--u-monitor, #1baf7a) 10%, var(--surface)); border-color: color-mix(in srgb, var(--u-monitor, #1baf7a) 35%, transparent); }
+.b-wait { color: var(--brand); font-weight: 600; }
+.b-mktask { justify-self: start; white-space: normal; text-align: start; min-height: 40px; }
+.monitor-card { margin-bottom: var(--s3); padding: var(--s3); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); display: grid; gap: var(--s2); }
+.mon-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s2); }
+.mon-head small { color: var(--muted); font-size: .75rem; }
+.mon-lines { margin: 0; padding-inline-start: 1.1em; display: grid; gap: 2px; font-size: .88rem; line-height: 1.5; }
+.mon-wait { list-style: none; margin: 0; padding: 0; display: grid; }
+.mon-item { inline-size: 100%; display: flex; align-items: center; gap: var(--s2); min-height: 48px; padding: var(--s2) 0; border: 0; border-top: 1px solid var(--line);
+  background: none; color: var(--ink); font: inherit; text-align: start; cursor: pointer; }
+.mon-wait li:first-child .mon-item { border-top: 0; }
+.mon-item .body { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.mon-item b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .9rem; }
+.mon-item small { color: var(--muted); font-size: .78rem; overflow-wrap: anywhere; }

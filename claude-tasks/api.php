@@ -1264,6 +1264,9 @@ try {
         if ($url = url_field($in, 'session_url')) {
             db()->prepare('UPDATE tasks SET session_url = ? WHERE id = ?')->execute([$url, $id]);
         }
+        // מעקב (§9): אחרי שאלה — לכל היותר פעם ב-10 דקות לפרויקט
+        $bt = getTask(db(), $id);
+        monitorAfterEvent($bt && $bt['project_id'] !== null ? (int) $bt['project_id'] : null);
         ok();
     }
 
@@ -1277,6 +1280,7 @@ try {
         if ($url = url_field($in, 'session_url')) {
             db()->prepare('UPDATE tasks SET session_url = ? WHERE id = ?')->execute([$url, $task['id']]);
         }
+        monitorAfterEvent($task['project_id'] === null ? null : (int) $task['project_id']);
         ok($r);
     }
 
@@ -1352,6 +1356,40 @@ try {
     case 'set-quota':
         setQuota(requireUser($user), (int) ($in['user_id'] ?? 0), (float) ($in['quota_usd'] ?? -1));
         ok(['usage' => quotaState((int) ($in['user_id'] ?? 0))]);
+
+    /* ── Platform עונה, ומעקב (docs/spec.md §9) ──────────────────── */
+
+    /** הממשק קורא מיד אחרי channel-send בערוץ ☁️ — והתשובה חוזרת באותה בקשה. */
+    case 'platform-reply':
+        if (session_status() === PHP_SESSION_ACTIVE) session_write_close();   // לא לנעול את הסשן בזמן שהמודל חושב
+        ok(platformReply(requireUser($user), (int) ($in['message_id'] ?? 0)));
+
+    /** הסיכום והממתינים של פרויקט — למסך הפרויקט. */
+    case 'project-monitor': {
+        $me  = requireUser($user);
+        $pid = (int) ($in['project_id'] ?? 0);
+        requireProject($pid, $me, 'read');
+        ok(projectMonitor($pid));
+    }
+
+    /** פתיחת הלוח (בעל הלוח): מעקב "בעצלות" לעד שני פרויקטים שעברה שעה. */
+    case 'monitor-lazy': {
+        $me = requireUser($user);
+        if (authorRole($me) !== 'owner') ok(['ran' => (object) []]);
+        if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
+        ok(['ran' => (object) monitorLazy($me)]);
+    }
+
+    /** לקוראים מבחוץ (עובד, או בעל הלוח): project_id — עכשיו; בלי — כמו monitor-lazy. */
+    case 'monitor-tick': {
+        if ($user && authorRole($user) !== 'owner') fail('בעל הלוח או עובד בלבד', 403);
+        $pid = int_or_null($in, 'project_id');
+        if ($pid !== null) {
+            if (!$user) { $ids = scopeProjects($scope); if ($ids !== null && !in_array($pid, $ids, true)) fail('מחוץ לתחום האסימון', 403); }
+            ok(monitorTick($pid, 0));
+        }
+        ok(['ran' => (object) monitorLazy($user ?? ['role' => 'admin', 'id' => 0], 5)]);
+    }
 
     case 'set-default-route':
         ok(['default_route' => setDefaultRoute(requireUser($user), str_field($in, 'route', 20))]);

@@ -80,6 +80,9 @@ Each message is printed inside a fixed frame:
   mid-way loses nothing, because unacknowledged messages stay waiting.
 - `kind: answer` with a `task_id` is the owner's answer to a question you asked on a task (`block`). Continue that
   task (see `claude-tasks-worker`).
+- `kind: status` (from `system`) is **information only**: on a ☁️ Platform channel the owner's message was already
+  answered by Platform on the board (stage 8, spec §9). It never wakes you; you see it on the next `pending`. Read it so
+  you stay in sync, `ack` it, and do **not** answer it.
 - Restart the listener (step 2) before ending the turn.
 
 Other exits of the listener:
