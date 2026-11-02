@@ -525,6 +525,80 @@ it and the chat stops for a tap in the app. Rules:
 dialog); after unpausing, the typed answer marks the board bubble; a hook change merged to `main` reaches a running chat within
 one backup cycle without touching its git status; an old chat shows "⚠ גרסה ישנה" and is fixed by the one update message.
 
+### 5.12 Approving tool permissions from the board (owner request 2026-11-02; **stage 13**)
+
+**The owner:** *"You send me links to the board that send me to the chat, but that doesn't solve it. I want to approve without
+visiting the chat at all."* And: *"how does this work for Routines — who gets the permission request?"*
+
+**What exists (code writer's check, Claude Code 2.1.316, `claude -p`, isolated folder):** a `PermissionRequest` hook runs
+**before** the permission dialog and may return `allow` or `deny` (+ message). Verified: `allow` → runs with no dialog; `deny`
+after a 90 s wait → the chat waited, then received and respected the refusal. Input: `tool_name`, `tool_input` (the exact
+command and its description), `permission_suggestions` (the "always" options the dialog would offer). Documented limits: no
+`allow` for WebFetch / WebSearch in Projects sessions, nor for the cloud browser tools; `setMode` is dropped in cloud Cowork;
+`allow` for a tool matched only through an alias name may be refused (our `mcp__<uuid>__` tools — **must be tested**).
+§5.10.1's "the board cannot approve a tool" was true for `Notification`; it is not true for `PermissionRequest`.
+
+#### 5.12.1 Decisions
+
+| Question | Decision | Why |
+| --- | --- | --- |
+| Approve on the board? | **Yes**, via a `PermissionRequest` hook in a **registered** chat | The owner asked; the hook can decide |
+| Who may answer | **`owner` only** (board admin), never `member`, never a worker/channel token | A board approval runs a command in the chat |
+| Mode per channel | `channels.permissions = board | app` (default **board**), in ⚙ chat settings, like `questions` | The owner can keep a chat on the app when he sits at the computer |
+| **How long the hook waits** | **10 minutes**, polling every **10 s** (inside the §5.4 budget: one request / 10 s per channel token; a separate counter from `channel-wait`). Hook timeout 620 s | Long enough to answer from a phone; short enough that a forgotten request falls back to the app the same session |
+| No answer / board unreachable (429, 503, network, `bridge_paused`) | The hook **returns no decision** → the normal dialog opens in the app, and the board marks the request "⌛ עבר לאפליקציה" | Fail-safe: never stuck, never a silent deny |
+| **Is "always" allowed?** | **Yes, but only "always in this chat"** (session scope from `permission_suggestions`), never project / user settings, and **never** for: a `Bash` rule wider than one command prefix (`Bash(*)`, `Bash(sh:*)` …), or any command matching the deny-list `rm -rf`, `git push`, `git reset --hard`, `gh `, `curl`, `wget`, `ssh`, `rsync`, `scp`, `chmod`, `chown`, `sudo`, writing under `.github/workflows/` or `.claude/settings*.json`. For those only "פעם אחת" | "Always" on the board must not be able to widen what a chat can do beyond that session and that exact command |
+| Answer in both places | If the app dialog is also visible while the hook waits (to verify), the **first answer wins**; the other side is marked "נענה ב…" | No double execution |
+
+#### 5.12.2 Data / API
+
+- `channel-post kind: permission` — `meta: { tool_name, tool_input, description, suggestions }`, status `open`; the full command is stored
+  **as is** (no summary).
+- `permission-answer { message_id, decision: once | always | deny, reason? }` (owner) → status `answered`, `decided_by`, `at`.
+  `always` is accepted only if one of the stored `suggestions` is session-scoped **and** passes the deny-list (checked again in the
+  server, not only in the UI); else 422.
+- `permission-status { message_id }` (channel token) — what the hook polls. Counted in the §5.4 budget file.
+- On timeout the hook posts `permission-timeout` → status `moved_to_app`.
+
+#### 5.12.3 UI
+
+A permission bubble in the conversation, and the same card at the top of the board's main screen (it is urgent, wherever the
+owner is): the chat's icon + name, the **tool**, the **full command in a code block** (scrollable, monospace), the chat's own
+description of why, and three buttons — **"✅ פעם אחת"** · **"✅ תמיד בצ'אט הזה"** (hidden when not allowed, with the reason under the
+buttons) · **"⛔ לא"** (opens an optional reason field that goes back to the chat). A countdown "עוד 7:30 ואז זה עובר לאפליקציה". After
+answering: the bubble collapses to "✓ אושר פעם אחת · 21:40 · מלכיאל". The channel row and the main-screen counter show 🔐 while a request is open.
+
+#### 5.12.4 Security — written down, not hidden
+
+- **New risk:** whoever holds the board owner's login can now run commands in a registered chat. Until now only whoever held the Claude
+  app could. Mitigations: owner only; every decision logged in the channel and in `events` (who, what command, when, from which IP);
+  "always" limited as above; a channel can be set to `app`; `bridge_paused` stops all of it.
+- The command is shown in full before approval — the owner approves what will actually run, not a paraphrase.
+
+#### 5.12.5 Routines — the answer to the owner's question
+
+- A **Routine that wakes an existing session** (like the messages between chats) runs in that session: same permissions, and the same
+  hooks if that chat is registered → its permission requests come to the board.
+- A **Routine that opens a fresh session** loads the repo's `.claude/settings.json` (so the hooks exist) but is **not registered**, so the
+  hooks do nothing: a permission request is shown **in the app inside that session**, the session stops (`blocked`), and nobody sees it
+  unless they open it. The environment docs say a cloud session's permission mode is set by whatever opened it, not from inside the chat.
+- **Decision:** a Routine that works against the board **registers at its start** — the "🆕 צ'אט חדש" template (§5.9) gets a **"Routine"**
+  variant whose prompt begins with `link.sh register --role routine`. Its requests then come to the board like any chat's. A Routine that
+  must run unattended should also be created with the tools it needs pre-allowed — then nothing asks at all.
+
+#### 5.12.6 Order — verify first
+
+1. **Verify in a real cloud chat** (registered test chat, owner approves on the board): (a) is the app dialog shown **while** the hook
+   waits, or only after it returns? (b) does `allow` work for an `mcp__<uuid>__…` alias tool? (c) does `deny` with a message reach the
+   model? Write the three answers here. If (b) fails, alias tools stay on the app path (documented, not hidden).
+2. Then build: hook + API + bubble + main-screen card + ⚙ mode + Routine template variant.
+
+**Done when:** in a registered chat, a `Bash` command that needs approval appears on the board; "פעם אחת" runs it with no visit to the
+chat; "⛔ לא" with a reason reaches the chat; "תמיד בצ'אט הזה" works for an allowed prefix and is refused (UI and server) for a deny-listed
+command; no answer for 10 minutes → the app dialog appears and the board shows "⌛ עבר לאפליקציה"; with the board paused → straight to the
+app; a Routine opened from the template registers and its request reaches the board. Tests for the deny-list, the budget, and
+`permission-answer` permissions.
+
 ### 5.11 The conversation screen — translate, pin, label, and ⚙ chat settings (owner request 2026-11-02; **stage 12a–e**)
 
 **The owner asked for:** (1) a translate button on every message, into a preferred language set in the app's settings —
