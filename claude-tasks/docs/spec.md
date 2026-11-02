@@ -480,6 +480,38 @@ the turn; a tap on the board wakes the chat with the answer; a number typed in t
 multi-question and multiSelect work; `questions: app` keeps the dialog and mirrors the answer; an unregistered chat is unaffected.
 Tests for `choice-answer`, the race, and the typed-answer path.
 
+### 5.10.1 Fix — questions still open as a dialog in the app (owner report 2026-11-02 ~11:45)
+
+**Symptom:** with "שאלות בחירה: בלוח" set, `AskUserQuestion` still opens the dialog in the Claude app and blocks the chat
+(board messages wait until it is answered). **Causes found in the code:**
+1. **Fail-open:** `hook-choice.sh` lets the dialog run whenever the board does not answer (`|| exit 0`) — and since the
+   10:15 incident the board answers 429 / 503 (`bridge_paused`) / budget refusals, so every question falls back to the dialog.
+2. **Old clones:** a chat opened before #1133 has a `.claude/settings.json` without the `PreToolUse` hook, and never pulls.
+3. **Container replaced:** `.claude/board-link.json` is gone until the chat re-registers, so the hook sees "not registered".
+
+**Rules (override §5.10 where they differ):**
+- **Fail-safe, not fail-open:** the mode is cached in the link file (`questions`, default `board`). When it is `board` and the
+  board does not answer, the hook **still denies**, with: *"The board is unreachable right now. Print the question in the chat as
+  numbered options and end your turn; the owner will answer here."* The dialog opens only when the cached mode is `app`.
+  `pending_choice` is set locally; `hook-prompt.sh` posts the answer later, when the board is back.
+- **Hooks that update themselves:** `.claude/settings.json` registers each event **once** to a single dispatcher
+  (`claude-tasks/bridge/hook.sh <event>`), and the dispatcher runs the **runtime copy** in `$HOME/.claude-tasks-bridge/` when it
+  exists (else the repo copy). `link.sh register` and the hourly backup refresh that copy from `origin/main`
+  (`git show origin/main:claude-tasks/bridge/<f>`), **never touching the chat's working tree**. New hook logic then reaches
+  every chat within the hour, with no PR in the chat's branch and no dirty files.
+- **One-time update for chats opened before this fix** (they lack the dispatcher): the board shows on their channel row
+  "⚠ גרסה ישנה — צריך עדכון", from a `bridge_version` the link file reports in `channel-health`; and ⚙ chat settings →
+  "📨 שלח הוראת עדכון" sends an `in` message the old skill already acts on: run
+  `git fetch origin main && git show origin/main:.claude/settings.json > .claude/settings.json && claude-tasks/bridge/link.sh update`
+  (then `git checkout -- .claude/settings.json` is **not** needed: the chat must not commit it — the skill says so).
+  Fallback when the chat cannot be reached: "🔁 צ'אט המשך" (§5.9.4).
+- **Re-register after a container change:** the hourly backup (and the first prompt after a wake) runs `link.sh status`; a missing
+  link file with a known `session_id` re-registers silently (same channel).
+
+**Done when:** with the board paused, a registered chat's `AskUserQuestion` prints the options in the chat and ends the turn (no
+dialog); after unpausing, the typed answer marks the board bubble; a hook change merged to `main` reaches a running chat within
+one backup cycle without touching its git status; an old chat shows "⚠ גרסה ישנה" and is fixed by the one update message.
+
 ### 5.11 The conversation screen — translate, pin, label, and ⚙ chat settings (owner request 2026-11-02; **stage 12a–e**)
 
 **The owner asked for:** (1) a translate button on every message, into a preferred language set in the app's settings —
