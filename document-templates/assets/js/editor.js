@@ -110,6 +110,7 @@
     const box = document.createElement('div');
     box.className = 'word-preview';
     await window.docx.renderAsync(buf, box, null, { inWrapper: true, ignoreLastRenderedPageBreak: true });
+    fixRtlAnchors(box);
     // הדף ברוחב A4 אמיתי — מקטינים אותו לרוחב העמודה, כמו דפי PDF
     const wrap = box.querySelector('.docx-wrapper');
     if (wrap && window.ResizeObserver) {
@@ -122,6 +123,31 @@
       }).observe(box);
     }
     return box;
+  }
+
+  /**
+   * תמונה "צפה" (עוגן — למשל לוגו בכותרת העליונה) בפסקה מימין לשמאל: docx-preview מודד את ההיסט מצד שמאל
+   * של השוליים, אבל מצייר אותו מנקודת ההתחלה של הפסקה — בצד ימין. כך התמונה נדחפת אל מחוץ לדף ונעלמת.
+   * מתקנים: ההיסט נמדד מצד ימין של שטח הכתיבה (רוחב הדף פחות השוליים). רק בסגנון — בלי מדידה על המסך.
+   */
+  function fixRtlAnchors(box) {
+    const pt = (v) => { const m = /(-?[\d.]+)pt/.exec(v || ''); return m ? parseFloat(m[1]) : null; };
+    for (const sec of box.querySelectorAll('section')) {
+      const st = sec.getAttribute('style') || '';
+      const width = pt((/width:\s*([^;]+)/.exec(st) || [])[1]);
+      const pads = ((/padding:\s*([^;]+)/.exec(st) || [])[1] || '').trim().split(/\s+/).map(pt);
+      if (width == null || !pads.length) continue;
+      const right = pads[1] ?? pads[0], left = pads[3] ?? pads[1] ?? pads[0];
+      const content = width - (left || 0) - (right || 0);   // רוחב שטח הכתיבה
+      for (const d of sec.querySelectorAll('div[style*="width: 0px"][style*="height: 0px"]')) {
+        const img = d.querySelector('img, svg');
+        const x = pt(d.style.left);
+        if (!img || x == null || d.closest('[dir="ltr"]')) continue;
+        const w = pt(img.style.width) || 0;
+        // בקובץ: x מהשוליים השמאליים. אצלנו הנקודה היא הקצה הימני — ומשם שמאלה עד x
+        d.style.left = (x + w - content) + 'pt';
+      }
+    }
   }
 
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
