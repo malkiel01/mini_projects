@@ -351,7 +351,7 @@ function channelMessages(array $user, int $channelId, int $after = 0): array {
     $channel = getChannel($channelId);
     if (!$channel) throw new AppError('הערוץ לא נמצא', 404);
     requireProject((int) $channel['project_id'], $user, 'read');
-    $messages = messageRows('m.channel_id = ? AND m.id > ?', [$channelId, $after]);
+    $messages = decorateMessages($user, messageRows('m.channel_id = ? AND m.id > ?', [$channelId, $after]), (int) $channel['project_id']);
     // בועת 🔐: הבקשה עצמה, האם היא עוד ממתינה, והאם הצופה רשאי להחליט
     $tasks = [];
     foreach ($messages as &$m) {
