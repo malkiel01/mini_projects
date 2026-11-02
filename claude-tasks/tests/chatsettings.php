@@ -65,6 +65,11 @@ check('כתיבה בענף — משנה שם, תפקיד וצבע', [$u['name'],
 throws('שם ריק — נדחה', fn () => channelUpdate($dana, $a, ['name' => '  ']));
 throws('צבע שאינו מ-8 הקבועים — נדחה', fn () => channelUpdate($dana, $a, ['color' => '#ff0000']));
 check('צבע ריק — חוזר ללפי התפקיד', channelUpdate($dana, $a, ['color' => ''])['color'], '');
+check('סמל — אימוג\'י (גם עם מתאם)', [channelUpdate($dana, $a, ['icon' => '🧭'])['icon'], channelUpdate($dana, $a, ['icon' => '🖌️'])['icon']], ['🧭', '🖌️']);
+throws('סמל — לא טקסט', fn () => channelUpdate($dana, $a, ['icon' => 'abc']));
+throws('סמל — לא HTML', fn () => channelUpdate($dana, $a, ['icon' => '<b>']));
+check('סמל ריק — חוזר ללפי התפקיד', channelUpdate($dana, $a, ['icon' => ''])['icon'], '');
+throws('צפייה בלבד — לא משנה סמל', fn () => channelUpdate($rami, $a, ['icon' => '🎨']), 403);
 throws('מי עונה — לא לדנה', fn () => channelUpdate($dana, $a, ['route' => 'platform']), 403);
 $r = channelUpdate($boss, $a, ['route' => 'platform']);
 check('בעל הלוח: ☁️ לצ\'אט הזה — גובר על הפרויקט', [$r['route_own'], $r['route_effective']], ['platform', 'platform']);

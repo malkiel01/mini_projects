@@ -19,6 +19,8 @@ const CHANNEL_COLORS = ['blue' => 215, 'teal' => 180, 'green' => 140, 'olive' =>
 function migrateChatSettings(PDO $pdo): void {
     addColumn($pdo, 'channels', 'color', "TEXT NOT NULL DEFAULT ''");
     addColumn($pdo, 'channels', 'hidden', 'INTEGER NOT NULL DEFAULT 0');
+    // הסמל בריבוע — '' = לפי התפקיד; צ'אט חדש מקבל את הסמל של התפקיד בתבנית
+    addColumn($pdo, 'channels', 'icon', "TEXT NOT NULL DEFAULT ''");
     $pdo->exec("
         CREATE TABLE IF NOT EXISTS channel_mutes (
             user_id    INTEGER NOT NULL,
@@ -70,7 +72,8 @@ function channelInfo(array $user, int $channelId): array {
 function channelUpdate(array $user, int $channelId, array $fields): array {
     $c = channelForUser($user, $channelId);
     $set = []; $args = [];
-    if (array_key_exists('name', $fields) || array_key_exists('role', $fields) || array_key_exists('color', $fields)) {
+    if (array_key_exists('name', $fields) || array_key_exists('role', $fields) || array_key_exists('color', $fields)
+        || array_key_exists('icon', $fields)) {
         if (!canSendToChannel($user, $c)) throw new AppError('אין לך הרשאה לשנות את הצ\'אט הזה', 403);
     }
     if (array_key_exists('name', $fields)) {
@@ -83,6 +86,14 @@ function channelUpdate(array $user, int $channelId, array $fields): array {
         $color = (string) $fields['color'];
         if ($color !== '' && !isset(CHANNEL_COLORS[$color])) throw new InvalidArgumentException('צבע: אחד מ-8 הקבועים');
         $set[] = 'color = ?'; $args[] = $color;
+    }
+    if (array_key_exists('icon', $fields)) {
+        // סמל אחד: עד 8 תווים (אימוג'י עם מתאמים), בלי אותיות ומספרים רגילים
+        $icon = trim((string) $fields['icon']);
+        if ($icon !== '' && (mb_strlen($icon) > 8 || preg_match('/[\p{L}\p{N}<>"\'&]/u', $icon))) {
+            throw new InvalidArgumentException('סמל: אימוג\'י אחד');
+        }
+        $set[] = 'icon = ?'; $args[] = $icon;
     }
     if (array_key_exists('route', $fields)) {
         if (authorRole($user) !== 'owner') throw new AppError('מי עונה — בעל הלוח בלבד', 403);

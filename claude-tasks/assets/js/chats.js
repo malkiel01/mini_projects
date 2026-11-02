@@ -38,6 +38,9 @@ function roleIcon(role) {
 const COLORS = { blue: 215, teal: 180, green: 140, olive: 85, amber: 45, orange: 22, red: 355, violet: 270 };
 const COLOR_NAME = { blue: 'כחול', teal: 'טורקיז', green: 'ירוק', olive: 'זית', amber: 'ענבר', orange: 'כתום', red: 'אדום', violet: 'סגול' };
 const channelHue = (c) => COLORS[c.color] ?? roleHue(c.role);
+/** הסמל: מה שנבחר לצ'אט (או מהתבנית), ואחרת — ניחוש לפי התפקיד. */
+const channelIcon = (c) => c.icon || roleIcon(c.role);
+const ICONS = ['🧭', '📝', '🧩', '💻', '🎨', '🖌️', '✒️', '📐', '📄', '🗂️', '🧪', '🛡️', '☁️', '🔤', '📊', '💬'];
 
 /** גוון קבוע לכל תפקיד — הריבוע הצבעוני. */
 function roleHue(role) {
@@ -68,7 +71,7 @@ export function renderChannels() {
     onclick: () => openConversation(c.id),
     onkeydown: (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openConversation(c.id); } },
   }, [
-    el('span', { class: 'ic role-ic', 'aria-hidden': 'true', style: `--hue:${channelHue(c)}`, text: roleIcon(c.role) }),
+    el('span', { class: 'ic role-ic', 'aria-hidden': 'true', style: `--hue:${channelHue(c)}`, text: channelIcon(c) }),
     el('div', { class: 'body' }, [
       el('div', { class: 'l1' }, [el('span', { text: c.name })]),
       el('div', { class: 'l2', text: channelSub(c) }),
@@ -332,7 +335,7 @@ function renderSettings() {
   const status = c.status === 'active' ? (c.listening ? '🟢 מאזין' : '⚪ לא מאזין')
     : c.status === 'replaced' ? `הוחלף ← ${c.replaced_by_name || '#' + c.replaced_by}` : '🔌 מנותק';
   $('#csCard').replaceChildren(
-    el('span', { class: 'ic role-ic', 'aria-hidden': 'true', style: `--hue:${channelHue(c)}`, text: roleIcon(c.role) }),
+    el('span', { class: 'ic role-ic', 'aria-hidden': 'true', style: `--hue:${channelHue(c)}`, text: channelIcon(c) }),
     el('div', { class: 'body' }, [
       el('b', {}, [c.name, ' ', el('span', { class: 'pid', dir: 'ltr', text: `ערוץ #${c.id}` })]),
       el('span', { class: 'l2', text: `${c.project_path} · #${c.project_id}` }),
@@ -344,7 +347,7 @@ function renderSettings() {
   const health = HEALTH[c.health];
   const rows = [
     ['ℹ️', 'על הצ\'אט', `${c.role || 'בלי תפקיד'} · נראה ${c.last_seen_at ? timeAgo(c.last_seen_at) : 'אף פעם'}`, () => openAbout()],
-    c.can_edit && ['✏️', 'שם, תפקיד וצבע', `${c.name}${c.color ? ' · ' + COLOR_NAME[c.color] : ''}`, () => openEdit()],
+    c.can_edit && ['✏️', 'שם, סמל וצבע', `${channelIcon(c)} ${c.name}${c.color ? ' · ' + COLOR_NAME[c.color] : ''}`, () => openEdit()],
     ['🔔', 'השתקה', c.muted ? 'מושתק — לא נספר ב"ממתין לך" · נגיעה מבטלת' : 'כבויה — נגיעה משתיקה', () => toggleMute(), { pressed: c.muted }],
     isOwner() && ['🧭', 'מי עונה', `${c.route_own ? ROUTE_LABEL[c.route_own] : 'כמו הפרויקט'} · בפועל: ${ROUTE_LABEL[c.route_effective]}`, () => openRoute()],
     c.can_edit && active && ['🔘', 'שאלות בחירה', c.questions === 'app' ? 'באפליקציה' : 'בלוח', () => openQuestions()],
@@ -399,17 +402,30 @@ function renderColors(selected) {
     onclick: () => renderColors(k),
   }, [k ? '' : 'אוטו'])));
 }
+function renderIcons(selected) {
+  $('#csIcon').value = ICONS.includes(selected) ? '' : selected;
+  $('#csIcons').replaceChildren(...['', ...ICONS].map((k) => el('button', {
+    type: 'button', role: 'radio', class: 'cs-icon', 'aria-checked': String(k === selected), dataset: { icon: k },
+    'aria-label': k || 'לפי התפקיד', title: k || 'לפי התפקיד', onclick: () => renderIcons(k),
+  }, [k || 'אוטו'])));
+}
+on('#csIcon', 'input', (e) => {
+  const v = e.target.value.trim();
+  $$('#csIcons .cs-icon').forEach((b) => b.setAttribute('aria-checked', String(v === '' ? b.dataset.icon === '' : false)));
+});
 function openEdit() {
   $('#csName').value = cs.info.name;
   $('#csRole').value = cs.info.role || '';
+  renderIcons(cs.info.icon || '');
   renderColors(cs.info.color || '');
   $('#csEdit').showModal();
 }
 on('#csEditForm', 'submit', async (e) => {
   e.preventDefault();
   const color = $('#csColors [aria-checked="true"]')?.dataset.color ?? '';
+  const icon = $('#csIcon').value.trim() || ($('#csIcons [aria-checked="true"]')?.dataset.icon ?? '');
   try {
-    const { channel } = await api('channel-update', { channel_id: conv.id, name: $('#csName').value, role: $('#csRole').value, color });
+    const { channel } = await api('channel-update', { channel_id: conv.id, name: $('#csName').value, role: $('#csRole').value, color, icon });
     cs.info = channel;
     $('#csEdit').close();
     renderSettings();

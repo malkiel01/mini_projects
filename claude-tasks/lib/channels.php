@@ -75,6 +75,7 @@ function publicChannel(array $c): array {
     $c['health'] = healthLevel($c);
     $c['hidden'] = (bool) (int) ($c['hidden'] ?? 0);
     $c['color'] = (string) ($c['color'] ?? '');
+    $c['icon'] = (string) ($c['icon'] ?? '');
     return $c;
 }
 
@@ -153,6 +154,13 @@ function registerChannel(array $scope, int $projectId, string $name, string $rol
     if ($replaces !== null && $replaces !== $id) {
         $replaced = getChannel($replaces);
         replaceChannel($scope, $replaces, $id);
+    }
+    // הסמל של התפקיד בתבנית (§5.9) — לצ'אט שעוד אין לו סמל משלו
+    foreach (templateResolved($projectId)['roles'] as $tr) {
+        if (($tr['key'] ?? '') === $role && ($tr['icon'] ?? '') !== '') {
+            db()->prepare("UPDATE channels SET icon = ? WHERE id = ? AND icon = ''")->execute([$tr['icon'], $id]);
+            break;
+        }
     }
     if (!$old || $replaced) channelJoined($id, $replaced);
     return ['channel_id' => $id, 'channel_token' => $token, 'renewed' => (bool) $old,
@@ -334,6 +342,7 @@ function channelsFor(array $user, int $projectId, bool $includeHidden = false): 
         $out['muted'] = in_array($out['id'], $muted, true);
         $out['hidden'] = (bool) (int) ($c['hidden'] ?? 0);
         $out['color'] = (string) ($c['color'] ?? '');
+        $out['icon'] = (string) ($c['icon'] ?? '');
         return $out;
     }, $st->fetchAll());
 }

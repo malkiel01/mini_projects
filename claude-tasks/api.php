@@ -1558,7 +1558,7 @@ try {
 
     case 'channel-update':
         ok(['channel' => channelUpdate(requireUser($user), (int) ($in['channel_id'] ?? 0),
-            array_intersect_key($in, array_flip(['name', 'role', 'color', 'route'])))]);
+            array_intersect_key($in, array_flip(['name', 'role', 'color', 'icon', 'route'])))]);
 
     case 'channel-mute':
         ok(['muted' => channelMute(requireUser($user), (int) ($in['channel_id'] ?? 0), !empty($in['muted']))]);

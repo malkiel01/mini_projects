@@ -716,3 +716,9 @@ details.what p { margin-top: var(--s2); }
 .mm-act small { color: var(--muted); font-size: .78rem; }
 .mm-act:hover { border-color: var(--brand); }
 .mm-act:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+.cs-icons { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: var(--s2); }
+.cs-icon { block-size: 44px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); font-size: 1.3rem;
+  cursor: pointer; color: var(--ink); }
+.cs-icon[data-icon=""] { font-size: .72rem; color: var(--muted); border-style: dashed; }
+.cs-icon[aria-checked="true"] { border: 2px solid var(--brand); background: var(--brand-soft); }
+.cs-icon:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }

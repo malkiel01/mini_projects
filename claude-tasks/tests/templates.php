@@ -111,6 +111,7 @@ check('אסימון השורש — נרשם לנכד, ומחזיר למי לדו
       [false, NOTIFY_SESSION_DEFAULT, 'Mini projects › חבילת היצירה › סטודיו העיצוב']);
 $joined = messageRows("m.channel_id = ? AND m.author_role = 'system'", [$r1['channel_id']]);
 check('הודעת system "הצטרף" בערוץ', $joined[0]['body'] ?? '', '"היצירה v2 - סטודיו העיצוב" הצטרף');
+check('הסמל של התפקיד בתבנית — עובר לצ\'אט', getChannel($r1['channel_id'])['icon'], '🎨');
 
 echo "\n— הצ'אט מתארך —\n";
 $old = getChannel($r1['channel_id']);
