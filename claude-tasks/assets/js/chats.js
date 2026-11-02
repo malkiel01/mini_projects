@@ -112,6 +112,12 @@ function clock(ts) {
     : `${d.toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' })} ${t}`;
 }
 
+/** טקסט פשוט מתוך Markdown — לתצוגה מקדימה ולכותרת מטלה. */
+function plain(body, max = 140) {
+  const t = String(body || '').replace(/```[\s\S]*?```/g, ' [קוד] ').replace(/[`*_>#~|]/g, '').replace(/\s+/g, ' ').trim();
+  return t.length > max ? `${t.slice(0, max - 1)}…` : t;
+}
+
 function bubble(m) {
   const meta = [el('span', { text: author(m) }), el('time', { text: clock(m.created_at) })];
   if (m.platform_pending) {
@@ -124,9 +130,16 @@ function bubble(m) {
       text: m.delivered_at ? '✓✓' : '✓',
     }));
   }
+  // ⋯ — תפריט הפעולות (§5.11, 12b). בטלפון — נגיעה ארוכה על הבועה; הכפתור מופיע ב-hover/focus
+  meta.push(el('button', { type: 'button', class: 'b-more', 'aria-label': 'פעולות על ההודעה', 'aria-haspopup': 'menu',
+    title: 'פעולות', text: '⋯', onclick: (e) => { e.stopPropagation(); openMsgMenu(m); } }));
+  // תשובה להודעה — ציטוט קצר של המקור, נגיעה קופצת אליו
+  const orig = m.reply_to ? conv.messages.find((x) => x.id === m.reply_to) : null;
   const kind = { question: '❓ שאלה', answer: '💡 תשובה', decision: '🔐 החלטה', choice: '🔘 שאלת בחירה', choice_answer: '🔘 תשובה' }[m.kind];
   return el('li', { class: `bubble bubble--${m.direction}${m.author_role === 'system' ? ' bubble--sys' : ''}${m.author_role === 'platform' ? ' bubble--platform' : ''}`, dataset: { id: String(m.id) } }, [
     el('div', { class: 'b-meta' }, meta),
+    orig && m.kind !== 'choice_answer' ? el('button', { type: 'button', class: 'b-reply', dir: 'auto', title: 'מעבר להודעה',
+      onclick: () => scrollToMessage(orig.id) }, [`↩ ${plain(orig.body, 90)}`]) : null,
     kind ? el('span', { class: 'badge', text: kind }) : null,
     m.kind === 'approval' && m.approval?.type
       ? approvalCard(m.approval, m.task_id, { canDecide: m.approval.can_decide, pending: m.approval.pending, onDone: reload })
@@ -255,6 +268,7 @@ function stopTimer() { if (conv.timer) clearInterval(conv.timer); conv.timer = n
 
 export async function openConversation(id) {
   Object.assign(conv, { id, channel: null, messages: [] });
+  setReply(null);
   $('#chatLog').replaceChildren();
   $('#chatInput').value = '';
   const c = (state.channels || []).find((x) => x.id === id);
@@ -278,7 +292,8 @@ on('#chatForm', 'submit', async (e) => {
   if (!body || !conv.id) return;
   $('#chatSend').disabled = true;
   try {
-    const { id: sent } = await api('channel-send', { channel_id: conv.id, body });
+    const { id: sent } = await api('channel-send', { channel_id: conv.id, body, ...(conv.replyTo ? { reply_to: conv.replyTo.id } : {}) });
+    setReply(null);
     $('#chatInput').value = '';
     autosize();
     await poll(true);
@@ -468,3 +483,103 @@ on('#csHide', 'click', async () => {
     if (hide) $('#chatView').close(); else { await loadInfo(); renderSettings(); }
   } catch (ex) { toast(ex.message, 'error'); }
 });
+
+/* ── פעולות על הודעה (§5.11, שלב 12b) ─────────────────────────────── */
+
+function setReply(m) {
+  conv.replyTo = m;
+  $('#cvReply').hidden = !m;
+  $('#cvReplyText').textContent = m ? plain(m.body, 80) : '';
+}
+on('#cvReplyX', 'click', () => { setReply(null); $('#chatInput').focus(); });
+
+export function scrollToMessage(id) {
+  const n = $(`#chatLog [data-id="${id}"]`);
+  if (!n) { toast('ההודעה לא נטענה במסך הזה', ''); return false; }
+  n.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  n.classList.remove('is-flash'); void n.offsetWidth; n.classList.add('is-flash');
+  return true;
+}
+
+function messageLink(m) {
+  return `${location.origin}${location.pathname}#c${conv.id}-m${m.id}`;
+}
+
+async function copy(text, done) {
+  try { await navigator.clipboard.writeText(text); toast(done, 'ok'); } catch { toast('ההעתקה נחסמה בדפדפן', 'error'); }
+}
+
+async function makeTaskFrom(m) {
+  const first = plain(m.body.split('\n').find((l) => l.trim()) || m.body, 120);
+  if (!confirm(`ליצור מטלה מההודעה?\n\n"${first}"`)) return;
+  try {
+    const { id } = await api('create-task', {
+      title: first, project_id: conv.channel.project_id,
+      body: `${m.body}\n\n— מהצ'אט "${conv.channel.name}", הודעה #${m.id}`,
+    });
+    toast(`נוצרה מטלה #${id}`, 'ok');
+  } catch (ex) { toast(ex.message, 'error'); }
+}
+
+function openMsgMenu(m) {
+  const c = conv.channel || {};
+  const canSend = c.can_send && c.status === 'active';
+  const act = (icon, label, fn, hint = '') => el('button', {
+    type: 'button', class: 'mm-act', role: 'menuitem',
+    onclick: async () => { $('#msgMenu').close(); await fn(); },
+  }, [el('span', { class: 'ic', 'aria-hidden': 'true', text: icon }), el('span', { class: 'body' }, [el('b', { text: label }), hint ? el('small', { text: hint }) : null].filter(Boolean))]);
+  $('#mmT').textContent = `${author(m)} · ${clock(m.created_at)}`;
+  $('#mmPreview').textContent = plain(m.body, 180);
+  $('#mmActions').replaceChildren(...[
+    act('📋', 'העתקה', () => copy(m.body, 'הטקסט הועתק'), 'הטקסט המקורי, עם העיצוב (Markdown)'),
+    canSend ? act('↩', 'תשובה', () => { setReply(m); $('#chatInput').focus(); }, 'ההודעה הבאה שלך תצוטט כתשובה לזו') : null,
+    act('➕', 'הפיכה למטלה', () => makeTaskFrom(m), 'מטלה בפרויקט של הצ\'אט, עם ההודעה בגוף'),
+    act('🔗', 'העתקת קישור', () => copy(messageLink(m), 'הקישור הועתק'), 'פותח את השיחה בהודעה הזו'),
+  ].filter(Boolean));
+  $('#msgMenu').showModal();
+  $('#mmActions .mm-act')?.focus();
+}
+
+// נגיעה ארוכה על בועה (טלפון) — חצי שנייה, בלי תזוזה; לא על כפתורים וקישורים בתוכה
+(() => {
+  let timer = null, sx = 0, sy = 0;
+  const cancel = () => { clearTimeout(timer); timer = null; };
+  const log = $('#chatLog');
+  log.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse') return;
+    const b = e.target.closest('.bubble');
+    if (!b || e.target.closest('button, a, input, textarea, summary, pre, .md-table')) return;
+    sx = e.clientX; sy = e.clientY;
+    cancel();
+    timer = setTimeout(() => {
+      timer = null;
+      const m = conv.messages.find((x) => x.id === Number(b.dataset.id));
+      if (m) { navigator.vibrate?.(10); openMsgMenu(m); }
+    }, 500);
+  });
+  log.addEventListener('pointermove', (e) => { if (timer && Math.hypot(e.clientX - sx, e.clientY - sy) > 10) cancel(); });
+  ['pointerup', 'pointercancel', 'scroll'].forEach((t) => log.addEventListener(t, cancel, { passive: true }));
+  // בחלק מהדפדפנים נגיעה ארוכה = contextmenu; בעכבר — קליק ימני פותח את אותו תפריט
+  log.addEventListener('contextmenu', (e) => {
+    const b = e.target.closest('.bubble');
+    if (!b || e.target.closest('a, pre, .md-table') || getSelection().toString()) return;
+    e.preventDefault(); cancel();
+    const m = conv.messages.find((x) => x.id === Number(b.dataset.id));
+    if (m) openMsgMenu(m);
+  });
+})();
+
+/** קישור להודעה (#c<ערוץ>-m<הודעה>) — פותח את השיחה וקופץ אליה. */
+export async function openFromHash() {
+  const h = location.hash.match(/^#c(\d+)-m(\d+)$/);
+  if (!h) return;
+  history.replaceState(null, '', location.pathname + location.search);
+  try {
+    await openConversation(Number(h[1]));
+    if (!scrollToMessage(Number(h[2]))) {
+      // הודעה ישנה מחוץ לטעינה הראשונה — טוענים הכול
+      conv.messages = []; await poll(true); scrollToMessage(Number(h[2]));
+    }
+  } catch (ex) { toast(ex.message, 'error'); }
+}
+window.addEventListener('hashchange', openFromHash);

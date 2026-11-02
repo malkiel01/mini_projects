@@ -247,6 +247,12 @@ function channelSend(array $user, int $channelId, string $body, ?int $taskId = n
     }
     if ($channel['status'] !== 'active') throw new AppError('הערוץ מנותק', 409);
     $taskId = channelTaskOk($channel, $taskId);
+    // תשובה להודעה (12b) — רק להודעה מאותו ערוץ; אחרת נשמרת בלי הקישור
+    if ($replyTo !== null) {
+        $r = db()->prepare('SELECT id FROM messages WHERE id = ? AND channel_id = ?');
+        $r->execute([$replyTo, $channelId]);
+        if (!$r->fetch()) $replyTo = null;
+    }
     // במסלול ☁️ — Platform עונה (platform-reply), והצ'אט לא מתעורר
     $platform = channelRoute($channel) === 'platform';
     return channelInsertIn($channelId, authorRole($user), (int) $user['id'], $body, 'text', $taskId, $replyTo,

@@ -318,6 +318,10 @@
     <ol class="chat-log" id="chatLog" aria-live="polite" aria-label="ההודעות"></ol>
     <form class="composer" id="chatForm">
       <p class="hint" id="cvNote" hidden></p>
+      <div class="reply-chip" id="cvReply" hidden>
+        <span class="body"><b>↩ משיב ל</b> <span id="cvReplyText" dir="auto"></span></span>
+        <button type="button" class="icon-btn" id="cvReplyX" aria-label="ביטול התשובה">✕</button>
+      </div>
       <div class="composer-row">
         <label class="sr-only" for="chatInput">הודעה לצ'אט</label>
         <textarea id="chatInput" rows="1" placeholder="הודעה לצ'אט" maxlength="20000"></textarea>
@@ -346,6 +350,20 @@
           <button type="button" class="btn ghost danger-text" id="csHide">🗄 ארכיון</button>
         </div>
       </div>
+    </div>
+  </div>
+</dialog>
+<!-- ── פעולות על הודעה (§5.11, 12b) — נגיעה ארוכה / ⋯ ───────────────── -->
+<dialog id="msgMenu" class="msg-menu" aria-labelledby="mmT">
+  <div class="sheet-wrap">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close="msgMenu" aria-label="סגירה">✕</button>
+      <h2 id="mmT">הודעה</h2>
+      <span></span>
+    </header>
+    <div class="sheet-body">
+      <p class="mm-preview" id="mmPreview" dir="auto"></p>
+      <div class="mm-actions" id="mmActions" role="menu" aria-labelledby="mmT"></div>
     </div>
   </div>
 </dialog>

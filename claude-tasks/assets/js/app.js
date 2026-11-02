@@ -1,6 +1,6 @@
 import { $, $$, el, toast, api, state, timeAgo, on, set, PLATFORM_HINT } from './core.js';
 import { loadConnections, loadProviders, runTask, openProject, modelPicker, renderUsersInto } from './platform.js';
-import { loadChannels, openConversation } from './chats.js';
+import { loadChannels, openConversation, openFromHash } from './chats.js';
 import { approvalCard, noteText } from './approvals.js';
 import { loadUsage, usageCard, usageMini } from './usage.js';
 import { openPolicySheet } from './policy.js';
@@ -224,6 +224,7 @@ async function enterApp() {
   loadProviders().catch(() => {});
   refreshQuotaWarn();
   monitorLazy();
+  openFromHash();   // קישור להודעה (12b)
 }
 
 /* ── נושאים ────────────────────────────────────────────────── */

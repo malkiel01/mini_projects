@@ -100,6 +100,16 @@ check('החזרה מהארכיון — שוב ברשימה, ועדיין מנו�
       [true, 'archived']);
 throws('ניתוק — לא לדנה', fn () => archiveChannel($a, $dana), 403);
 
+echo "\n— ↩ תשובה להודעה (12b) —\n";
+$c3 = registerChannel($scope, $sub, 'שלישי', 'x', 'session_cs_c', '')['channel_id'];
+$orig = channelPost(getChannel($c3), 'chat', 'הודעה מקורית');
+$other = channelPost(getChannel($a), 'chat', 'הודעה בערוץ אחר');
+$r1 = channelSend($dana, $c3, 'תשובה', null, $orig);
+check('תשובה להודעה מאותו ערוץ — נשמר reply_to', messageRows('m.id = ?', [$r1])[0]['reply_to'], $orig);
+$r2 = channelSend($dana, $c3, 'תשובה לזר', null, $other);
+check('reply_to להודעה מערוץ אחר — נשמר בלי הקישור', messageRows('m.id = ?', [$r2])[0]['reply_to'], null);
+check('…וההודעה עצמה נמסרת כרגיל', in_array($r2, array_column(channelInbox(getChannel($c3)), 'id'), true), true);
+
 echo "\n════ עברו: $pass · נכשלו: $fail ════\n";
 exec('rm -rf ' . escapeshellarg($tmp));
 exit($fail ? 1 : 0);
