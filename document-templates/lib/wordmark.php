@@ -155,43 +155,83 @@ function tpl_word_mark(array $user, array $b): array
         $ids = array_column($schema['fields'], 'id');
         while (in_array('f' . $n, $keys, true) || in_array('f' . $n, $ids, true)) $n++;
         $f['key'] = $f['id'] = 'f' . $n;
+        $f['orig'] = mb_substr((string)($b['text'] ?? ''), 0, 500);   // ביטול סימון מחזיר אותו
         $schema['fields'][] = $f;
         $added = true;
     }
     $json = json_encode($schema, JSON_UNESCAPED_UNICODE);
     if (strlen($json) > TPL_MAX_SCHEMA) throw new ApiError('התבנית גדולה מדי', 413);
 
-    if (function_exists('assert_room')) assert_room((int)$t['owner_id'], strlen($bytes));
-    $path = store_file($bytes);
-    $old = null;
-    $pdo = db();
-    $pdo->beginTransaction();
-    try {
-        $version = (int)$t['current_version'];
-        if (!$t['used']) {
-            $old = (string)$a['path'];
-            $pdo->prepare('UPDATE template_versions SET schema_enc = ? WHERE id = ?')->execute([seal($json), $t['version_id']]);
-            $pdo->prepare('UPDATE template_assets SET path = ?, size = ?, sha256 = ? WHERE template_version_id = ?')
-                ->execute([$path, strlen($bytes), hash('sha256', $bytes), $t['version_id']]);
-        } else {
-            $version++;
-            $pdo->prepare('INSERT INTO template_versions (template_id, version, schema_enc, created_at) VALUES (?, ?, ?, ?)')
-                ->execute([$t['id'], $version, seal($json), now_iso()]);
-            $pdo->prepare('INSERT INTO template_assets (template_version_id, path, mime, size, sha256) VALUES (?, ?, ?, ?, ?)')
-                ->execute([(int)$pdo->lastInsertId(), $path, DOCX_MIME, strlen($bytes), hash('sha256', $bytes)]);
-            $pdo->prepare('UPDATE templates SET current_version = ? WHERE id = ?')->execute([$version, $t['id']]);
-        }
-        $pdo->commit();
-    } catch (Throwable $e) {
-        $pdo->rollBack();
-        delete_file($path);
-        throw $e;
-    }
-    // הקובץ הקודם — נמחק רק אם אף גרסה אחרת לא מצביעה עליו
-    if ($old !== null && $old !== $path) {
-        $st = db()->prepare('SELECT COUNT(*) FROM template_assets WHERE path = ?');
-        $st->execute([$old]);
-        if (!(int)$st->fetchColumn()) delete_file($old);
-    }
+    $version = tpl_replace_asset($t, $a, $bytes, $json);
+    wp_after_local_change($t, $bytes);
     return ['ok' => true, 'name' => $name, 'added' => $added, 'version' => $version];
+}
+
+/** כל {{name}} בקובץ (בכל החלקים) → $with. מחזיר [הקובץ, כמה הוחלפו]. */
+function docx_replace_ph(string $bytes, string $name, string $with): array
+{
+    $n = 0;
+    $out = docx_transform(docx_normalize($bytes), function (DOMDocument $dom) use ($name, $with, &$n) {
+        $xp = new DOMXPath($dom);
+        $xp->registerNamespace('w', W_NS);
+        $hit = false;
+        foreach ($xp->query('//w:t') as $t) {
+            $text = $t->textContent;
+            if (!str_contains($text, '{{')) continue;
+            $new = preg_replace_callback(PLACEHOLDER, function ($m) use ($name, $with, &$n, &$hit) {
+                if (trim($m[1]) !== $name) return $m[0];
+                $n++; $hit = true;
+                return $with;
+            }, $text);
+            if ($new !== $text) set_text($t, $new);
+        }
+        return $hit;
+    });
+    return [$out, $n];
+}
+
+/** השדה של סימון בתבנית Word: [התבנית, הקובץ, ההגדרות, מספר השדה ברשימה]. */
+function word_field(array $user, array $b): array
+{
+    $t = tpl_owned((int)($b['id'] ?? 0), $user, 'edit');
+    $a = tpl_asset_row((int)$t['version_id']);
+    if ($a['mime'] !== DOCX_MIME) throw new ApiError('רק בתבנית Word', 422);
+    $schema = json_decode((string)unseal($t['schema_enc']), true) ?: [];
+    $schema['pages'] = $schema['pages'] ?: [['w' => 595, 'h' => 842]];
+    $name = trim((string)($b['name'] ?? ''));
+    $i = array_search($name, array_column($schema['fields'] ?? [], 'placeholder'), true);
+    if ($i === false) throw new ApiError('השדה לא נמצא בתבנית — רעננו את הדף', 404);
+    return [$t, $a, $schema, $i, $name];
+}
+
+/**
+ * ביטול סימון (15.5): {{שם}} יוצא מהקובץ — במקומו חוזר הטקסט שהיה לפני הסימון (או קו "______" לסימון
+ * שהוקלד ב-Word), והשדה יוצא מההגדרות. בתבנית שהונפקו ממנה מסמכים — גרסה חדשה.
+ */
+function tpl_word_unmark(array $user, array $b): array
+{
+    [$t, $a, $schema, $i, $name] = word_field($user, $b);
+    $orig = (string)($schema['fields'][$i]['orig'] ?? '');
+    [$bytes, $n] = docx_replace_ph(asset_bytes($a), $name, $orig !== '' ? $orig : '______');
+    array_splice($schema['fields'], $i, 1);
+    $json = json_encode($schema, JSON_UNESCAPED_UNICODE);
+    $version = tpl_replace_asset($t, $a, $bytes, $json);
+    wp_after_local_change($t, $bytes);
+    return ['ok' => true, 'restored' => $orig !== '' ? $orig : '______', 'places' => $n, 'version' => $version];
+}
+
+/** שינוי שם של סימון: {{ישן}} → {{חדש}} בכל מקום בקובץ, והתווית מתעדכנת. ההגדרות האחרות נשארות. */
+function tpl_word_rename(array $user, array $b): array
+{
+    [$t, $a, $schema, $i, $name] = word_field($user, $b);
+    $to = word_mark_name((string)($b['to'] ?? ''));
+    if ($to === $name) return ['ok' => true, 'changed' => false];
+    if (in_array($to, array_column($schema['fields'], 'placeholder'), true)) throw new ApiError('כבר יש שדה בשם הזה', 409);
+    [$bytes, $n] = docx_replace_ph(asset_bytes($a), $name, '{{' . $to . '}}');
+    $schema['fields'][$i]['placeholder'] = $to;
+    $schema['fields'][$i]['label'] = str_replace('_', ' ', $to);
+    $json = json_encode($schema, JSON_UNESCAPED_UNICODE);
+    $version = tpl_replace_asset($t, $a, $bytes, $json);
+    wp_after_local_change($t, $bytes);
+    return ['ok' => true, 'changed' => true, 'places' => $n, 'version' => $version];
 }

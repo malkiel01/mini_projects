@@ -197,3 +197,19 @@ function doc_pdf(array $user, int $id): never
     echo $pdf;
     exit;
 }
+
+/**
+ * שינוי בקובץ שלא דרך העורך (סימון / ביטול / שינוי שם): תבנית שכבר נערכה בעורך — הקובץ החדש מיובא אליו,
+ * אחרת הסגירה הבאה בעורך הייתה מחזירה את הגרסה הישנה. העורך לא זמין — המזהה נמחק, והפתיחה הבאה מייבאת מחדש.
+ */
+function wp_after_local_change(array $t, string $bytes): void
+{
+    $doc = (string)($t['wp_doc'] ?? '');
+    if ($doc === '') return;
+    try {
+        wp()->import($doc, 'docx', $bytes);
+    } catch (Throwable $e) {
+        error_log('document-templates: wp re-import ' . $e->getMessage());
+        db()->prepare('UPDATE templates SET wp_doc = NULL WHERE id = ?')->execute([$t['id']]);
+    }
+}

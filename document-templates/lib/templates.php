@@ -343,6 +343,7 @@ function clean_schema($s, array $sources = [], array $fonts = [], array $contact
             'no_link' => !empty($f['no_link']),
             // שלב 9: בתבנית Word — הסימון בקובץ שהשדה ממלא ({{...}}).
             'placeholder' => $str($f['placeholder'] ?? '', 60),
+            'orig' => $str($f['orig'] ?? '', 500),   // Word: הטקסט שהסימון החליף — חוזר בביטול סימון (lib/wordmark.php)
             // שלב 10: בתבנית PDF מפורק — שם השדה בטופס המקורי.
             'pdfName' => $str($f['pdfName'] ?? '', 120),
             // שלב 8: מתמלא מאיש הקשר שמקושר למסמך.
