@@ -8,10 +8,8 @@
  */
 const $ = (s) => document.querySelector(s);
 const TJS = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.6';
-const MODELS = {
-  'en-he': 'sivelsguy/opus-mt-en-he-onnx',
-  'he-en': 'sivelsguy/opus-mt-tc-big-he-en-onnx',
-};
+// שלב 1 — אנגלית ← עברית בלבד (§5.11.1). המרה קהילתית, מוצמדת ל-commit — לא תשתנה מתחתינו
+const MODELS = { 'en-he': { id: 'sivelsguy/opus-mt-en-he-onnx', revision: 'fc3befc3af12cd004ae65e9c36ea77858c19157c' } };
 // תשובה טיפוסית של צ'אט — כמה שורות, באורך של עדכון רגיל
 const SAMPLES = {
   en: [
@@ -138,8 +136,8 @@ async function mtRun() {
     const sizes = {};
     const t0 = performance.now();
     let downloaded = false;
-    const translator = await pipeline('translation', MODELS[dir], {
-      dtype: 'q8', device: deviceKind,
+    const translator = await pipeline('translation', MODELS[dir].id, {
+      revision: MODELS[dir].revision, dtype: 'q8', device: deviceKind,
       progress_callback: (p) => {
         if (p.status === 'progress' && p.total) {
           sizes[p.file] = p.total;
@@ -162,7 +160,7 @@ async function mtRun() {
     const second = performance.now() - t2;
     log(out, `תשובה ראשונה ${sec(first)} ${verdict(first)} · הבאה ${sec(second)} ${verdict(second)}`);
     log(out, r1.join('\n'));
-    report[key] = { model: MODELS[dir], loadMs: Math.round(load), fromCache: !downloaded,
+    report[key] = { model: `${MODELS[dir].id}@${MODELS[dir].revision.slice(0, 7)}`, loadMs: Math.round(load), fromCache: !downloaded,
                     replyMs: Math.round(first), nextReplyMs: Math.round(second),
                     mb: Math.round(Object.values(sizes).reduce((a, b) => a + b, 0) / 1e6) };
     log(out, downloaded ? '👉 עכשיו רעננו את הדף ולחצו שוב — כך נמדדת טעינה מהמטמון.' : '');
@@ -184,7 +182,7 @@ $('#mtDir').addEventListener('click', (e) => {
 $('#apiRun').addEventListener('click', apiRun);
 $('#mtRun').addEventListener('click', () => {
   const dir = $('#mtDir [aria-checked="true"]').dataset.v;
-  if (!confirm(`להוריד מודל של כ-${dir === 'en-he' ? 147 : 365}MB? (פעם אחת; עדיף ב-Wi-Fi)`)) return;
+  if (!confirm('להוריד מודל של כ-147MB? (פעם אחת; עדיף ב-Wi-Fi)')) return;
   mtRun();
 });
 $('#copy').addEventListener('click', async () => {
