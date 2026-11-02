@@ -485,6 +485,19 @@ Where this section is silent, that proposal holds.
 | Auto-translate | **None** in this stage — a button only |
 | Stage order | **12a** ⚙ chat settings (info, name and color, mute, disconnect and archive in the red zone — replaces 🔌) → **12b** message actions (menu on long press / ⋯: copy, reply, make a task, link) → **12c** pins and labels with their kinds → **12d** search, filter, export → **12e** on-device translation. 12e may move earlier if the check below passes quickly |
 
+**Model finding (code writer, 2026-11-02) and decision:** `Xenova/opus-mt-en-he` / `he-en` do not exist. Official:
+`Helsinki-NLP/opus-mt-en-he` (Apache-2.0, no ONNX); for he→en only `opus-mt-tc-big-he-en` (CC-BY-4.0, large). Community
+quantized ONNX: en→he ≈ 147 MB, he→en ≈ 365 MB. The Translator API is not on Android. Decision:
+- **Phase 1 = en→he only.** The need is reading the chats' English replies in Hebrew; the chats read Hebrew fine, so he→en is
+  dropped for now (no 365 MB download, no CC-BY attribution).
+- **Measure with the community en→he ONNX, pinned to a commit** (measurement page only).
+- **Ship from our own conversion:** convert the official Apache-2.0 `Helsinki-NLP/opus-mt-en-he` once with Optimum (int8),
+  and serve the files as **static files from our server** under `claude-tasks/models/en-he/` — fetched there by a one-off
+  Actions job, **not in the repo**, with `--exclude` in `deploy.yml` (CLAUDE.md: runtime files need their own exclude).
+  Same origin → no CORS issue, no dependency on a third-party repo that may vanish. Attribution line in the settings sheet
+  ("Opus-MT, University of Helsinki, Apache-2.0").
+- If the cached en→he translation is over 5 s on the owner's phone → stop and report; no translate button.
+
 **Before building 12e — measure on the owner's Android phone** (record the numbers here): download size and time for `en→he`;
 time to load the model from cache; time to translate a typical chat reply (≈ 150 words, with a code block left untouched);
 memory. **Acceptable:** a cached reply translates in ≤ 5 s on the phone. If not — stop and report; do not ship a button that
