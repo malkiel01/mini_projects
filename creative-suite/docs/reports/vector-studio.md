@@ -67,3 +67,31 @@
 ## 5. מה בעל המערכת צריך לבדוק
 
 עדיין פתוח מגרסה 1: מעבר בטלפון ובמחשב ואישור (`projects/vector-studio.md`, "ממתין לבעל המערכת").
+
+## עדכון 2026-11-02 — מ1 `geometry-core` (פריט 3 בשלב א)
+
+**מצב:** ✅ נפרס — #1172, הרצה 1271, `conclusion: success`.
+
+| מה | איפה |
+| --- | --- |
+| המודול: `src/js` (path, matrix, shapes, nodes, boolean + polygon-clipping), `apps.json`, `tools/sync.php --check`, README עם ה-API | `creative-suite/geometry-core/` |
+| חדש: `svg.js` — צבע, transform, אורך, viewBox, צורות → `d`, `toMbePath`. בלי DOM, ומכסה את `pathnorm.js` / `svg-import.js` של הסטודיו (אותה תוצאה, עד העיגול) | `src/js/svg.js` |
+| חדש: `hit.js` — פגיעה ומרחק בלי קנבס | `src/js/hit.js` |
+| חדש: `measure.js` — אורך, ונקודה ומשיק במרחק s. בשביל טקסט על נתיב ב-text-core, לבקשת העימוד | `src/js/measure.js` |
+| שער בפריסה: `sync --check` והבדיקות של המודול | `deploy.yml` |
+| וקטורי עבר לעותק המסונכרן (`assets/js/geometry`). ייבוא ה-SVG משתמש ב-`svg.js` | `vector-studio/` |
+| המטריצה: שורה 24 (וקטורי ✅, השאר ⬜). מדריך מעבר לשלב ב | `integration.md`, `shared-code/migrate/geometry.md` |
+| ה-API אושר על ידי הקוד המשותף. שתי הערות הרשות שלו בוצעו: שגיאות עם `geometry:`, ו-`invert` / `parseColor` מול ui-core ב-README | — |
+
+**בדיקות** (על הענף, אחרי המיזוג עם main):
+
+| פקודה | תוצאה |
+| --- | --- |
+| `node --test creative-suite/geometry-core/tests/*.test.mjs` | **29 עברו, 0 נכשלו** (18 הועברו מהווקטורי, 7 של svg / hit, 4 של measure) |
+| `node --test vector-studio/tests/*.test.mjs` | **38 עברו, 0 נכשלו** (56 פחות ה-18 שעברו למודול) |
+| `node vector-studio/tests/e2e.mjs` — שרת PHP מקומי, Chromium, גם 390px ו-320px | **41 צעדים, "הכול עבר"** (כולל ייבוא SVG ופעולות צורה) |
+| `sync.php --check` של כל המודולים · `check-apps.php` · בדיקת התחביר של JS | הכול עבר |
+
+**בלי צילומים חדשים:** הממשק לא השתנה, רק מקור הקוד.
+
+**פתוח:** שאר האפליקציות מצטרפות בתור שלהן (שלב ב). טקסט על נתיב נבנה ב-text-core (העימוד) מעל `measure.js`.
