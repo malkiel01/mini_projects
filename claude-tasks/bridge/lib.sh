@@ -10,7 +10,12 @@
 #   .claude/board-pending.json  הודעות שהמאזין קיבל ועוד לא טופלו
 #   .claude/board-listen.log    יומן המאזין (חסימות, 508, שגיאות רשת)
 
-BRIDGE_ROOT="${CLAUDE_PROJECT_DIR:-$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel 2>/dev/null)}"
+# גרסת הגשר — לעדכן יחד עם BRIDGE_VERSION_CURRENT ב-lib/bridgever.php (§5.10.1)
+BRIDGE_VERSION="2026-11-02.2"
+# עותק הריצה: hook.sh ו-link.sh מריצים ממנו כשקיים. link.sh update מרענן אותו מ-origin/main
+# בלי לגעת בעץ העבודה של הצ'אט (update.sh)
+BRIDGE_RUNTIME="$HOME/.claude-tasks-bridge"
+BRIDGE_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel 2>/dev/null)}"
 BOARD_LINK="$BRIDGE_ROOT/.claude/board-link.json"
 BOARD_PENDING="$BRIDGE_ROOT/.claude/board-pending.json"
 BOARD_LOG="$BRIDGE_ROOT/.claude/board-listen.log"
@@ -74,3 +79,25 @@ session_url() {
 
 # גוף הודעה: עד 20,000 תווים
 clip() { local t="$1"; [ "${#t}" -gt 20000 ] && t="${t:0:20000}…(truncated)"; printf '%s' "$t"; }
+
+# שאלת בחירה שנשמרה מקומית כשהלוח לא ענה (hook-choice.sh, §5.10.1) — נשלחת כשהוא חוזר,
+# ואחריה התשובה שבעל הלוח הקליד בינתיים (pending_choice_answer), כתשובה אליה.
+# מחזיר 0 כשאין מה לשלוח או שנשלח; 1 — הלוח עדיין לא עונה (נשאר לפעם הבאה).
+flush_local_choice() {
+  [ "$(link_get pending_choice)" = local ] || return 0
+  local q body f id ans
+  q="$(jq -c '.pending_choice_questions // empty' "$BOARD_LINK" 2>/dev/null)"
+  [ -n "$q" ] || { link_set pending_choice null; return 0; }
+  body="$(jq -n --argjson q "$q" '{author_role:"chat", kind:"choice", questions:$q}')"
+  f="$(mktemp)"; board_call channel-post "$body" "$(link_get channel_token)" 5 > "$f" 2>/dev/null
+  id="$(jq -r '.id // empty' "$f" 2>/dev/null)"; rm -f "$f"
+  [ -n "$id" ] || return 1
+  link_set pending_choice "$id"; link_set pending_choice_questions null
+  ans="$(link_get pending_choice_answer)"
+  [ -n "$ans" ] || return 0
+  body="$(jq -n --arg b "$(clip "$ans")" --argjson r "$id" '{author_role:"owner", body:$b, reply_to:$r}')"
+  if board_call channel-post "$body" "$(link_get channel_token)" 5 >/dev/null 2>&1; then
+    link_set pending_choice null; link_set pending_choice_answer null
+  fi
+  return 0
+}

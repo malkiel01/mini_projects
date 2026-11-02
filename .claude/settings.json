@@ -22,7 +22,7 @@
           {
             "type": "command",
             "timeout": 10,
-            "command": "f=\"$CLAUDE_PROJECT_DIR/claude-tasks/bridge/hook-prompt.sh\"; [ -x \"$f\" ] && \"$f\"; exit 0"
+            "command": "f=\"$HOME/.claude-tasks-bridge/hook.sh\"; [ -f \"$f\" ] || f=\"$CLAUDE_PROJECT_DIR/claude-tasks/bridge/hook.sh\"; [ -f \"$f\" ] && bash \"$f\" prompt; exit 0"
           }
         ]
       }
@@ -33,7 +33,7 @@
           {
             "type": "command",
             "timeout": 10,
-            "command": "f=\"$CLAUDE_PROJECT_DIR/claude-tasks/bridge/hook-stop.sh\"; [ -x \"$f\" ] && \"$f\"; exit 0"
+            "command": "f=\"$HOME/.claude-tasks-bridge/hook.sh\"; [ -f \"$f\" ] || f=\"$CLAUDE_PROJECT_DIR/claude-tasks/bridge/hook.sh\"; [ -f \"$f\" ] && bash \"$f\" stop; exit 0"
           }
         ]
       }
@@ -45,7 +45,17 @@
           {
             "type": "command",
             "timeout": 10,
-            "command": "f=\"$CLAUDE_PROJECT_DIR/claude-tasks/bridge/hook-choice.sh\"; [ -x \"$f\" ] && \"$f\"; exit 0"
+            "command": "f=\"$HOME/.claude-tasks-bridge/hook.sh\"; [ -f \"$f\" ] || f=\"$CLAUDE_PROJECT_DIR/claude-tasks/bridge/hook.sh\"; [ -f \"$f\" ] && bash \"$f\" choice; exit 0"
+          }
+        ]
+      },
+      {
+        "matcher": ".*__(create_trigger|send_later|get_session|list_sessions|get_trigger|list_triggers)$",
+        "hooks": [
+          {
+            "type": "command",
+            "timeout": 10,
+            "command": "f=\"$HOME/.claude-tasks-bridge/hook.sh\"; [ -f \"$f\" ] || f=\"$CLAUDE_PROJECT_DIR/claude-tasks/bridge/hook.sh\"; [ -f \"$f\" ] && bash \"$f\" allow; exit 0"
           }
         ]
       }
@@ -57,7 +67,18 @@
           {
             "type": "command",
             "timeout": 10,
-            "command": "f=\"$CLAUDE_PROJECT_DIR/claude-tasks/bridge/hook-choice-done.sh\"; [ -x \"$f\" ] && \"$f\"; exit 0"
+            "command": "f=\"$HOME/.claude-tasks-bridge/hook.sh\"; [ -f \"$f\" ] || f=\"$CLAUDE_PROJECT_DIR/claude-tasks/bridge/hook.sh\"; [ -f \"$f\" ] && bash \"$f\" choice-done; exit 0"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "timeout": 10,
+            "command": "f=\"$HOME/.claude-tasks-bridge/hook.sh\"; [ -f \"$f\" ] || f=\"$CLAUDE_PROJECT_DIR/claude-tasks/bridge/hook.sh\"; [ -f \"$f\" ] && bash \"$f\" notify; exit 0"
           }
         ]
       }

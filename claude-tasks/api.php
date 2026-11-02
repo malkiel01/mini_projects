@@ -1481,8 +1481,14 @@ try {
     case 'channel-register': {
         if (!$worker) fail('נדרש אסימון הרשמה', 401);
         $url = url_field($in, 'session_url') ?? '';
-        ok(registerChannel($scope, (int) ($in['project_id'] ?? 0), str_field($in, 'name', 80),
-                           str_field($in, 'role', 40), str_field($in, 'session_id', 120), $url, int_or_null($in, 'replaces')));
+        // אחרי החלפת קונטיינר (§5.10.1): בלי פרויקט — הסשן כבר רשום, והערוץ שלו חוזר כמו שהיה
+        $pid = (int) ($in['project_id'] ?? 0); $name = str_field($in, 'name', 80); $role = str_field($in, 'role', 40);
+        if ($pid === 0 && ($known = sessionChannelDefaults(str_field($in, 'session_id', 120)))) {
+            $pid = $known['project_id']; $name = $name ?: $known['name']; $role = $role ?: $known['role'];
+        }
+        $reg = registerChannel($scope, $pid, $name, $role, str_field($in, 'session_id', 120), $url, int_or_null($in, 'replaces'));
+        channelSetVersion(getChannel($reg['channel_id']), str_field($in, 'bridge_version', 40));
+        ok($reg);
     }
 
     /* ── פתיחת צ'אטים (§5.9) ── */
@@ -1504,8 +1510,20 @@ try {
     case 'channel-health': {
         $ch = $scope['channel'] ?? null;
         if (!$ch) fail('נדרש אסימון ערוץ', 403);
-        ok(['health' => channelHealth($ch, (int) ($in['bytes'] ?? 0), (int) ($in['turns'] ?? 0), (int) ($in['compactions'] ?? 0))]);
+        ok(['health' => channelHealth($ch, (int) ($in['bytes'] ?? 0), (int) ($in['turns'] ?? 0), (int) ($in['compactions'] ?? 0),
+                                      str_field($in, 'bridge_version', 40)),
+            'bridge_current' => BRIDGE_VERSION_CURRENT]);
     }
+
+    /* ── §5.10.1: חלון הרשאה באפליקציה, והוראת עדכון לצ'אט ישן ── */
+    case 'channel-waiting': {
+        $ch = $scope['channel'] ?? null;
+        if (!$ch) fail('נדרש אסימון ערוץ', 403);
+        ok(['posted' => channelWaiting($ch, str_field($in, 'tool', 80))]);
+    }
+
+    case 'bridge-send-update':
+        ok(bridgeSendUpdate(requireUser($user), (int) ($in['channel_id'] ?? 0)));
 
     case 'handoff-request':
         ok(handoffRequest(requireUser($user), (int) ($in['channel_id'] ?? 0)));

@@ -16,6 +16,11 @@
 # קוד יציאה: 0 — הודעה או סוף הזמן; 3 — הערוץ נותק/האסימון נפסל (צריך register);
 #            4 — נסיגה: עומס או "המאזינים מושהים" (לא להפעיל לפני backoff_until).
 set -u
+# עותק הריצה (§5.10.1) גובר על העותק שבריפו — כך צ'אט על ענף ישן מקבל את הגשר העדכני
+_rt="$HOME/.claude-tasks-bridge"
+if [ -z "${CT_RUNTIME:-}" ] && [ -f "$_rt/listen.sh" ] && [ "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)" != "$(cd "$_rt" && pwd -P)" ]; then
+  CT_RUNTIME=1 exec bash "$_rt/listen.sh" "$@"
+fi
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 [ -f "$BOARD_LINK" ] || { echo "הצ'אט לא רשום — link.sh register"; exit 3; }

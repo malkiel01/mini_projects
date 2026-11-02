@@ -364,6 +364,7 @@ php claude-tasks/tests/login.php       # כניסה דרך הכלים הדיגי
 php claude-tasks/tests/safety.php      # author_role, owner_only, אסימון לענף, Origin, שיוך מטלות
 php claude-tasks/tests/channels.php    # הגשר: הרשמה, אסימון ערוץ, inbox/ack, המתנה, מטלה ↔ ערוץ
 php claude-tasks/tests/throttle.php     # בלמי הגשר: בלי long-poll, ⏸ עצירה כללית, תקציב לכל ערוץ
+php claude-tasks/tests/bridgesafety.php # §5.10.1: גרסת הגשר, ⏸ ממתין לאישור, הוראת עדכון, רישום מחדש
 php claude-tasks/tests/search.php       # חיפוש, סינון וייצוא
 php claude-tasks/tests/labels.php       # הצמדה ותוויות: סוגים, נראות, הרשאות, מחיקה
 php claude-tasks/tests/chatsettings.php # ⚙ הגדרות הצ'אט: עריכה, השתקה, ניתוק וארכיון
@@ -373,6 +374,19 @@ node claude-tasks/tests/markdown.mjs   # Markdown בבועות הצ'אט: עיצ
 ```
 
 כולן רצות על מסד זמני ומחליפות כל פנייה חיצונית בתעבורה מזויפת — בלי מפתחות, בלי עלות, ובלי תלות ברשת.
+
+### שאלות וחלונות שחוסמים צ'אט (§5.10.1)
+
+- **שאלת בחירה — fail-safe:** המצב (בלוח / באפליקציה) נשמר בקובץ הקישור. כשהלוח לא עונה והמצב "בלוח", ה-hook
+  דוחה את החלון בכל זאת; השאלה נשמרת מקומית, ונשלחת — עם התשובה שהוקלדה בינתיים — כשהלוח חוזר.
+- **hooks שמתעדכנים לבד:** `.claude/settings.json` רושם כל אירוע פעם אחת ל-`bridge/hook.sh <event>`, שמריץ את עותק
+  הריצה ב-`~/.claude-tasks-bridge/`. `link.sh update` (ברישום ובבדיקה השעתית) מרענן אותו מ-`origin/main` ב-`git show`
+  (`bridge/update.sh`), בלי לגעת בעץ העבודה. `link.sh` ו-`listen.sh` עוברים לעותק הזה מעצמם.
+- **צ'אט ישן:** מדווח `bridge_version` ב-`channel-health`; בלי גרסה נוכחית — "⚠ גרסה ישנה" בשורה, וב-⚙ "📨 שלח הוראת
+  עדכון" (בעל הלוח) — הודעה חד-פעמית שהצ'אט מריץ בלי commit.
+- **אחרי החלפת קונטיינר:** `link.sh status` נרשם מחדש בשקט לאותו ערוץ (השרת לוקח את הפרויקט מהסשן).
+- **חלונות הרשאה:** ששת כלי הגשר מאושרים לפי סיומת (`hook-allow.sh`) גם בשם מחולל; שם שאינו ברשימה — שורת system
+  פעם אחת. חלון אחר — `hook-notify.sh` מדווח "⏸ הצ'אט ממתין לאישור באפליקציה: <כלי>", ו-⏸ בשורה עד שהצ'אט כותב שוב.
 
 ### בלמי הגשר — אחרי ה-429 (2026-11-02)
 

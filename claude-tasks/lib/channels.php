@@ -76,6 +76,11 @@ function publicChannel(array $c): array {
     $c['hidden'] = (bool) (int) ($c['hidden'] ?? 0);
     $c['color'] = (string) ($c['color'] ?? '');
     $c['icon'] = (string) ($c['icon'] ?? '');
+    // גרסת הגשר והמתנה לאישור באפליקציה (§5.10.1)
+    $c['bridge_version'] = (string) ($c['bridge_version'] ?? '');
+    $c['bridge_outdated'] = bridgeOutdated($c);
+    $c['waiting_tool'] = (string) ($c['waiting_tool'] ?? '');
+    $c['waiting_at'] = (int) ($c['waiting_at'] ?? 0);
     return $c;
 }
 
@@ -163,7 +168,7 @@ function registerChannel(array $scope, int $projectId, string $name, string $rol
         }
     }
     if (!$old || $replaced) channelJoined($id, $replaced);
-    return ['channel_id' => $id, 'channel_token' => $token, 'renewed' => (bool) $old,
+    return ['channel_id' => $id, 'channel_token' => $token, 'renewed' => (bool) $old, 'name' => $name, 'project_id' => $projectId,
             'notify_session' => templateResolved($projectId)['notify_session'], 'project_path' => projectPathName($projectId)];
 }
 
@@ -217,6 +222,8 @@ function channelPost(array $channel, string $role, string $body, ?int $replyTo =
     }
     // תשובה לשאלת בחירה פתוחה — הקלדה בצ'אט, או החלון באפליקציה (§5.10)
     if ($replyTo !== null) choiceRepliedFromChat($replyTo, (int) $channel['id'], $role, $kind, $body, $answers);
+    // הצ'אט שלח משהו — כבר לא ממתין לחלון הרשאה באפליקציה (§5.10.1)
+    if ($role !== 'system') channelWaitingClear((int) $channel['id']);
     touchChannel((int) $channel['id']);
     return $id;
 }

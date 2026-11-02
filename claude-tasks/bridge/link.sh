@@ -6,12 +6,19 @@
 #                    של השורש, אחד לכל הסביבה. מספר הפרויקט מגיע רק מהפרומפט (§5.9.1);
 #                    CLAUDE_TASKS_PROJECT לא נקרא יותר. --replaces — צ'אט המשך (§5.9.4)
 #   link.sh handoff <קובץ>  תקציר העברה לצ'אט ההמשך (אחרי handoff_request מהלוח)
-#   link.sh status   הערוץ, ומה ממתין
+#   link.sh status   הערוץ, ומה ממתין. אין קובץ קישור (הקונטיינר הוחלף) והסשן כבר רשום —
+#                    רישום מחדש שקט לאותו ערוץ (§5.10.1)
+#   link.sh update   מרענן את עותק הריצה של הגשר מ-origin/main (‎$HOME/.claude-tasks-bridge‎)
 #   link.sh pending  ההודעות שממתינות לטיפול, כל אחת במסגרת קבועה; זוכר את האחרונה לתשובה (reply_to)
 #   link.sh ack <id>…   סימון "טופל" — רק אחרי שטופלו, לא לפני
 #   link.sh post <owner|chat|system> <טקסט>   שיקוף ידני
 #   link.sh archive  ניתוק: האסימון נפסל וקובץ הקישור נמחק
 set -u
+# עותק הריצה (§5.10.1) גובר על העותק שבריפו — כך צ'אט על ענף ישן מקבל את הגשר העדכני
+_rt="$HOME/.claude-tasks-bridge"
+if [ -z "${CT_RUNTIME:-}" ] && [ -f "$_rt/link.sh" ] && [ "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)" != "$(cd "$_rt" && pwd -P)" ]; then
+  CT_RUNTIME=1 exec bash "$_rt/link.sh" "$@"
+fi
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 die() { echo "✗ $*" >&2; exit 1; }
@@ -24,6 +31,33 @@ frame() {   # מסגרת קבועה להודעה מהלוח — כדי שלא ת
     (if .task_id then " · מטלה #\(.task_id)" else "" end) + (if .kind != "text" then " · \(.kind)" else "" end) +
     (if .reply_to then " · תשובה להודעה #\(.reply_to)" else "" end) +
     "\n\(.body)\n"'
+}
+
+# עותק הריצה מ-origin/main — update.sh מ-main עצמו (גם אם בענף של הצ'אט הוא ישן או חסר)
+run_update() {
+  ( cd "$BRIDGE_ROOT" && git fetch -q origin main 2>/dev/null
+    if git cat-file -e origin/main:claude-tasks/bridge/update.sh 2>/dev/null; then
+      bash <(git show origin/main:claude-tasks/bridge/update.sh)
+    else bash "$(dirname "${BASH_SOURCE[0]}")/update.sh"; fi )
+}
+
+# אחרי החלפת קונטיינר: קובץ הקישור נעלם, אבל הסשן רשום בלוח — אותו ערוץ, אסימון חדש,
+# בלי לשאול מספר פרויקט (השרת לוקח אותו מהערוץ). בשקט: מצליח או לא, בלי לעצור.
+silent_register() {
+  [ -n "${CLAUDE_TASKS_TOKEN:-}" ] || return 1
+  local sid body f out
+  sid="$(session_id)"; [ -n "$sid" ] || return 1
+  body="$(jq -n --arg s "$sid" --arg u "$(session_url)" --arg v "$BRIDGE_VERSION" '{session_id:$s, session_url:$u, bridge_version:$v}')"
+  f="$(mktemp)"; board_call channel-register "$body" "$CLAUDE_TASKS_TOKEN" 10 > "$f" || { rm -f "$f"; return 1; }
+  out="$(cat "$f")"; rm -f "$f"
+  mkdir -p "$(dirname "$BOARD_LINK")"; umask 077
+  jq -n --argjson r "$out" --arg url "$(board_url)" --arg cookie "$(board_cookie)" --arg s "$sid" \
+        '{url:$url, cookie:$cookie, channel_id:$r.channel_id, channel_token:$r.channel_token,
+          project_id:$r.project_id, name:$r.name, session_id:$s, registered_at:(now|floor), pending_reply_to:null,
+          notify_session:($r.notify_session // null)}' > "$BOARD_LINK"
+  chmod 600 "$BOARD_LINK"
+  echo "✓ נרשם מחדש אחרי החלפת קונטיינר: ערוץ #$(link_get channel_id) · $(link_get name)"
+  run_update >/dev/null 2>&1 || true
 }
 
 cmd="${1:-status}"; shift || true
@@ -52,7 +86,8 @@ case "$cmd" in
     sid="$(session_id)"; [ -n "$sid" ] || die "אין מזהה סשן (CLAUDE_CODE_REMOTE_SESSION_ID)"
     [ -n "$name" ] || name="צ'אט ${sid: -6}"
     body="$(jq -n --argjson p "$project" --arg n "$name" --arg r "$role" --arg s "$sid" --arg u "$(session_url)" --arg x "$replaces" \
-             '{project_id:$p, name:$n, role:$r, session_id:$s, session_url:$u} + (if $x != "" then {replaces: ($x|tonumber)} else {} end)')"
+             --arg v "$BRIDGE_VERSION" \
+             '{project_id:$p, name:$n, role:$r, session_id:$s, session_url:$u, bridge_version:$v} + (if $x != "" then {replaces: ($x|tonumber)} else {} end)')"
     mkdir -p "$(dirname "$BOARD_LINK")"
     # בלי $( ) — כדי ש-BOARD_HTTP (שנקבע בתוך board_call) לא ילך לאיבוד בתת-מעטפת
     tmp_out="$(mktemp)"; board_call channel-register "$body" "$CLAUDE_TASKS_TOKEN" > "$tmp_out"; rc=$?
@@ -76,10 +111,15 @@ case "$cmd" in
     [ -n "$replaces" ] && echo "✓ מחליף את ערוץ #$replaces — המטלות שנשאלו בו עברו לכאן"
     nt="$(echo "$out" | jq -r '.notify_session // empty')"
     [ -n "$nt" ] && echo "→ הודעת ההצטרפות: create_trigger ל-$nt"
+    run_update >/dev/null 2>&1 || true   # עותק הריצה של ה-hooks (§5.10.1)
+    ;;
+
+  update)
+    run_update
     ;;
 
   status)
-    need_link
+    [ -f "$BOARD_LINK" ] || silent_register || die "הצ'אט לא רשום — link.sh register --project <id>"
     out="$(board_call channel-inbox '{}' "$(token)")" || die "הלוח לא ענה (HTTP $BOARD_HTTP) — אולי הערוץ נותק; link.sh register מחדש"
     echo "ערוץ #$(link_get channel_id) · $(link_get name) · $(board_url)"
     echo "ממתינות: $(echo "$out" | jq '.messages | length')"
@@ -139,5 +179,5 @@ case "$cmd" in
     echo "✓ נותק"
     ;;
 
-  *) die "פקודה לא מוכרת: $cmd (register | status | pending | ack | post | handoff | archive)" ;;
+  *) die "פקודה לא מוכרת: $cmd (register | status | update | pending | ack | post | handoff | archive)" ;;
 esac
