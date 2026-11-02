@@ -95,7 +95,7 @@ test('PSD — כתיבה וקריאה בשכבות ובקבוצות, שמות ב
   assert.equal(back.layers[1].visible, false);
   assert.equal(back.layers[1].children[0].name, 'בפנים');
   assert.deepEqual([...back.layers[1].children[0].rgba], [...RGBA]);
-  assert.throws(() => IO.decodePSD(new Uint8Array([1, 2, 3, 4])), IO.PSDError);
+  assert.throws(() => IO.decodePSD(new Uint8Array([1, 2, 3, 4])), e => e instanceof IO.PSDError && e.code === 'psd-signature' && e.message.startsWith('image-io: ') && /[א-ת]/.test(e.message));
 });
 
 test('ZIP — zipStore ואחריו unzip: אותם קבצים, mimetype ראשון', async () => {

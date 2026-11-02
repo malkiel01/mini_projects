@@ -39,6 +39,10 @@ apps.json             מי משתמש
 
 **פיקסלים:** `rgba` — `Uint8Array` / `Uint8ClampedArray` של `w×h×4`, אלפא **ישר** (לא מוכפל), שורה 0 למעלה.
 **עץ שכבות** (PSD, ORA) — מלמטה למעלה, כמו במסמך; קבוצה = `{ type: 'group', …, children }`.
+**מה חוזר:** הכול מחזיר `Uint8Array`, חוץ מ-`encodeImage`, שמחזיר `Blob` (כי זה מה שהקנבס נותן). `download` של ui-core
+(`files.js`) מקבל `Blob` בלבד. לכן `Uint8Array` עוטפים כך: `download(new Blob([bytes], { type: MIME.png }), name)`.
+**שגיאות:** `message` בעברית, ומתחיל ב-`image-io:`. `code` הוא קוד קבוע באנגלית (`psd-depth`, `avif-unsupported`…).
+האפליקציה בוחרת מה להציג **לפי `code`**, לא לפי ההודעה.
 
 | פונקציה | מה |
 | --- | --- |
@@ -47,7 +51,7 @@ apps.json             מי משתמש
 | `await sha256Hex(bytes)` → hex | לשמות ב-`media/` של ‎`.mbe` |
 | `encodeTIFF(rgba, w, h, dpi = 72)` → `Uint8Array` | משוטחת, RGBA בלי דחיסה, רצועה אחת (פוטושופ, GIMP, Affinity, Preview) |
 | `encodePSD({ width, height, layers, composite })` → `Uint8Array` | שכבה: `{ name, x, y, w, h, rgba, opacity, visible, blend }`; קבוצות; שמות בעברית (luni); `composite` — התמונה המשולבת |
-| `decodePSD(bytes)` → `{ width, height, layers, composite }` | אותו עץ. בלי דחיסה ו-RLE; 16 / 32 ביט, CMYK, Lab, PSB, ZIP — `PSDError` עם הודעה ברורה. מסכות, סגנונות וטקסט של פוטושופ — לא נקראים (השכבה בפיקסלים שלה) |
+| `decodePSD(bytes)` → `{ width, height, layers, composite }` | אותו עץ. בלי דחיסה ו-RLE; 16 / 32 ביט, CMYK, Lab, PSB, ZIP — `PSDError` (`code`: `psd-signature` · `psd-depth` · `psd-mode` · `psd-psb` · `psd-compression` · `psd-truncated` · `psd-layer`). מסכות, סגנונות וטקסט של פוטושופ — לא נקראים (השכבה בפיקסלים שלה) |
 | `isPSD(bytes)` | `8BPS` בתחילת הקובץ |
 | `zipStore([{ name, data }])` → `Uint8Array` | שיטת "שמור" (התוכן כבר דחוס), לפי הסדר — `mimetype` ראשון ל-ORA. בלי ZIP64 |
 | `await unzip(bytes, limits = LIMITS)` | שמור / deflate. נתיב עם `..` או `/` מוביל — נדחה; תקרות: מספר קבצים, גודל פתוח, יחס דחיסה (zip-bomb) |
@@ -56,7 +60,7 @@ apps.json             מי משתמש
 | `sniff(bytes)` → סוג או `null` | לפי הבתים הראשונים: `png` · `jpeg` · `gif` · `webp` · `avif` · `heic` · `tiff` · `psd` · `bmp` · `zip`. `zip` כולל ORA, ‎`.mbe` ו-docx — מה שבפנים מכריע |
 | `MIME[type]` | ה-MIME של מה ש-`sniff` החזיר |
 | `await canEncode(type)` → `boolean` | **דפדפן.** האם הדפדפן יודע לכתוב את הסוג (נבדק פעם אחת לכל סוג) |
-| `await encodeImage(rgba, w, h, type, { quality, background }?)` → `Blob` | **דפדפן.** `image/jpeg` · `image/webp` · `image/avif`. ל-JPEG רקע לבן כברירת מחדל. סוג שהדפדפן לא כותב — `Error('<סוג>-unsupported')` |
+| `await encodeImage(rgba, w, h, type, { quality, background }?)` → `Blob` | **דפדפן.** `image/jpeg` · `image/webp` · `image/avif`. ל-JPEG רקע לבן כברירת מחדל. סוג שהדפדפן לא כותב — `Error` עם `code: '<סוג>-unsupported'` |
 
 **פענוח** של JPEG / WebP / AVIF / HEIC / PNG רגיל — הדפדפן (`createImageBitmap`), ולא כאן.
 
