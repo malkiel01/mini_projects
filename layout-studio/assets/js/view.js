@@ -7,7 +7,7 @@
 import { layoutDoc, contentBox, runningItems, headsByPage, pagesOf, masterOf, pageAt, ptToMm } from './pages.js';
 import { framesOnPage, drawingsOnPage, frameAt, isImage, imagePlacement, allItems } from './frames.js';
 import { drawItems } from './vector.js';
-import { drawGlyphs, shapeLine, advance } from './shaper.js';
+import { drawGlyphs, shapeLine, advance } from './text-core/shaper.js';
 import { nextStep, wheelPixels } from './ui-core/viewport.js';
 import { handles } from './ui-core/handles.js';
 import { snapper } from './ui-core/snap.js';

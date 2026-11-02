@@ -450,9 +450,10 @@ test('שינוי צורה: הבחירה זזה עם התוכן', () => {
 });
 
 // ---- קבצים: PNG, ZIP, ORA, ‎.mbe ----
-import { encodePNG, crc32, sha256Hex } from '../assets/js/engine/png.js';
-import { zipStore } from '../assets/js/engine/zip.js';
-import { oraStack, parseOraStack, mbeDocument, gapsFor, mediaRefs, canvasSurface, editSurface } from '../assets/js/engine/formats.js';
+import { encodePNG, crc32, sha256Hex } from '../assets/js/image-io/png.js';
+import { zipStore } from '../assets/js/image-io/zip.js';
+import { oraStack, parseOraStack } from '../assets/js/image-io/ora.js';
+import { mbeDocument, gapsFor, mediaRefs, canvasSurface, editSurface } from '../assets/js/engine/formats.js';
 import { inflateSync } from 'node:zlib';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
@@ -543,7 +544,7 @@ test('פערים: ORA — מיזוג; PNG — שכבות ומוסתרות; JPG �
 });
 
 // ---- קריאת ZIP (לפתיחת ORA) ----
-import { unzip } from '../assets/js/engine/unzip.js';
+import { unzip } from '../assets/js/image-io/unzip.js';
 
 test('unzip: קורא את מה ש-zipStore כתב', async () => {
   const z = zipStore([{ name: 'mimetype', data: 'image/openraster' }, { name: 'data/א.png', data: new Uint8Array([9, 8, 7]) }]);
@@ -944,7 +945,7 @@ test('שיפור קצוות: הרחבה, כיווץ, ריכוך וניגודיו
 });
 
 test('PSD: כתיבה וקריאה — שכבות, שם בעברית, מיקום, אטימות, הסתרה, מיזוג וקבוצה', async () => {
-  const { encodePSD, decodePSD, isPSD } = await import('../assets/js/engine/psd.js');
+  const { encodePSD, decodePSD, isPSD } = await import('../assets/js/image-io/psd.js');
   const px = (w, h, c) => { const a = new Uint8Array(w * h * 4); for (let i = 0; i < w * h; i++) a.set(c, i * 4); return a; };
   const layers = [
     { name: 'רקע', x: 0, y: 0, w: 4, h: 3, rgba: px(4, 3, [255, 255, 255, 255]), opacity: 1, visible: true, blend: 'normal' },
@@ -968,7 +969,7 @@ test('PSD: כתיבה וקריאה — שכבות, שם בעברית, מיקום
 });
 
 test('PSD: RLE (PackBits), ושגיאה ברורה על 16 ביט', async () => {
-  const { decodePSD, encodePSD } = await import('../assets/js/engine/psd.js');
+  const { decodePSD, encodePSD } = await import('../assets/js/image-io/psd.js');
   // קובץ בלי שכבות עם תמונה משולבת ב-RLE: 2×1, RGB
   const parts = [];
   const u16 = v => [v >> 8, v & 255], u32 = v => [v >>> 24, (v >> 16) & 255, (v >> 8) & 255, v & 255];
@@ -984,7 +985,7 @@ test('PSD: RLE (PackBits), ושגיאה ברורה על 16 ביט', async () => 
 });
 
 test('TIFF: כותרת, תגיות, והפיקסלים במקומם', async () => {
-  const { encodeTIFF } = await import('../assets/js/engine/tiff.js');
+  const { encodeTIFF } = await import('../assets/js/image-io/tiff.js');
   const rgba = Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 8]);
   const t = encodeTIFF(rgba, 2, 1);
   const v = new DataView(t.buffer);

@@ -7,7 +7,7 @@
 
 import { newMask, TILE } from './engine/doc.js';
 import { decodeImage } from './engine/webgl2.js';
-import { encodePNG } from './engine/png.js';
+import { encodePNG } from './image-io/png.js';
 import { rasterTile } from './engine/selection.js';
 import { layerPNG } from './export.js';
 import { createLayerAI } from './layer-ai.js';

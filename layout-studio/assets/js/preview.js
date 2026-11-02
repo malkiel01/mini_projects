@@ -4,7 +4,7 @@
 import { pageSize, runningItems, headsByPage } from './pages.js';
 import { framesOnPage, drawingsOnPage, isImage, imagePlacement } from './frames.js';
 import { drawItems, imageRefs } from './vector.js';
-import { drawGlyphs, shapeLine, advance } from './shaper.js';
+import { drawGlyphs, shapeLine, advance } from './text-core/shaper.js';
 
 const MAX = 1024;
 

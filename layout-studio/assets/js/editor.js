@@ -13,7 +13,7 @@ import { placeDrawing, moveDrawing, isDrawing, drawItems, imageRefs, drawingToDo
 import { openIn } from './mbe/handoff.js';
 import { layoutFlows } from './flow.js';
 import { imagePlacement } from './frames.js';
-import { loadFont, fontVariant } from './shaper.js';
+import { loadFont, fontVariant } from './text-core/shaper.js';
 import { drawList, drawingSegments, rasterKey } from './pdf.js';
 import { toast } from './ui-core/toast.js';
 import { initDialogs, confirm, choose, prompt } from './ui-core/dialog.js';
