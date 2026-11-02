@@ -31,11 +31,20 @@ while read -r PAIR SRC REV; do
   M="$W/src/$PAIR"
   rm -rf "$M"
   python - "$SRC" "$REV" "$M" <<'PY'
-import sys
+import sys, time
 from huggingface_hub import snapshot_download
-snapshot_download(sys.argv[1], revision=sys.argv[2], local_dir=sys.argv[3],
-                  allow_patterns=["config.json", "generation_config.json", "pytorch_model.bin", "*.spm",
-                                  "vocab.json", "tokenizer_config.json", "README.md"])
+# ‏Hugging Face נופל לפעמים לרגע מה-runner ("check your internet connection") — 4 נסיונות: 30, 90, 180 ש'
+for i, wait in enumerate([0, 30, 90, 180]):
+    time.sleep(wait)
+    try:
+        snapshot_download(sys.argv[1], revision=sys.argv[2], local_dir=sys.argv[3],
+                          allow_patterns=["config.json", "generation_config.json", "pytorch_model.bin", "*.spm",
+                                          "vocab.json", "tokenizer_config.json", "README.md"])
+        break
+    except Exception as e:
+        print(f"::warning::הורדה מ-Hugging Face נכשלה (נסיון {i + 1}): {e}", flush=True)
+else:
+    sys.exit("לא הצלחתי להוריד את המודל מ-Hugging Face")
 PY
   # ייצוא ב-Optimum (fp32) — בלי onnxslim (ראו fold_q8.py) ובלי הכימות שלו
   (cd "$W/tjs" && python -m scripts.convert --model_id "$M" --task text2text-generation-with-past --skip_onnxslim)
