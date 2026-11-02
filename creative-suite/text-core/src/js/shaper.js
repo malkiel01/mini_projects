@@ -1,14 +1,17 @@
-// עיצוב גליפים (shaping) ב-HarfBuzz — אותו מיקום לכל אות וסימן ניקוד בכל דפדפן, ובהמשך גם ב-PDF.
+// text-core — עיצוב טקסט עברי משותף לחבילת היצירה (מ2 ב-work-order.md). נחלץ מהעימוד (layout-studio/assets/js/shaper.js).
+// עורכים רק ב-creative-suite/text-core/src ומריצים tools/sync.php — העותק באפליקציה נבדק בשער הפריסה.
+//
+// עיצוב גליפים (shaping) ב-HarfBuzz — אותו מיקום לכל אות וסימן ניקוד בכל דפדפן, וגם ב-PDF.
 // הדפדפן לא משמש למדידה ולא לציור טקסט: כל גליף הוא נתיב מהגופן עצמו, במקום ש-HarfBuzz קבע.
 //
-// HarfBuzz (harfbuzzjs, MIT) — assets/vendor/harfbuzzjs; נטען רק כשצריך טקסט.
-// bidi (bidi-js, MIT, UAX #9) — assets/vendor/bidi-js: HarfBuzz רק ממקם גליפים; את סדר הרצפים בשורה
+// HarfBuzz (harfbuzzjs, MIT) — vendor/harfbuzzjs; נטען רק כשצריך טקסט.
+// bidi (bidi-js, MIT, UAX #9) — vendor/bidi-js: HarfBuzz רק ממקם גליפים; את סדר הרצפים בשורה
 // מעורבת ("פרק 12: Genesis") קובע אלגוריתם ה-bidi, לפני העיצוב.
 
-import bidiFactory from '../vendor/bidi-js/bidi.mjs';
+import bidiFactory from './vendor/bidi-js/bidi.mjs';
 
 let hbPromise = null;
-const hb = () => (hbPromise ||= import('../vendor/harfbuzzjs/index.mjs'));
+const hb = () => (hbPromise ||= import('./vendor/harfbuzzjs/index.mjs'));
 let bidi = null;
 
 /**
@@ -169,4 +172,67 @@ export function shapeLine(fonts, text, base = 'rtl', spans = null) {
     }
   }
   return out;
+}
+
+/**
+ * מידות הגופן ביחידות הגופן: { upem, ascender, descender (שלילי), lineGap }.
+ */
+export function fontMetrics(f) {
+  if (!f.metrics) f.metrics = { upem: f.upem, ...f.font.hExtents() };
+  return f.metrics;
+}
+
+/**
+ * מדידת שורה: רוחב, עלייה וירידה — ביחידות של size (למשל נקודות או פיקסלים).
+ * fonts, text, base, spans — כמו ב-shapeLine. glyphs — אם השורה כבר עוצבה, כדי לא לעצב פעמיים.
+ *   → { width, ascent, descent, lineGap, glyphs }   (descent חיובי — מתחת לקו הבסיס)
+ */
+export function measure(fonts, text, size, base = 'rtl', spans = null, glyphs = null) {
+  const f = Array.isArray(fonts) ? fonts[0] : fonts;
+  const g = glyphs || shapeLine(fonts, text, base, spans);
+  const m = fontMetrics(f), s = size / f.upem;
+  return { width: advance(g) * s, ascent: m.ascender * s, descent: -m.descender * s, lineGap: m.lineGap * s, glyphs: g };
+}
+
+/** קווי המתאר של גליף — פקודות { type: 'M'|'L'|'Q'|'C'|'Z', values } ביחידות הגופן, y למעלה. במטמון. */
+export function glyphOutline(f, gid) {
+  f.outlines ||= new Map();
+  let o = f.outlines.get(gid);
+  if (!o) { o = f.font.glyphToJson(gid); f.outlines.set(gid, o); }
+  return o;
+}
+
+const num = v => { const r = Math.round(v * 1000) / 1000; return Object.is(r, -0) ? '0' : String(r); };
+
+/**
+ * טקסט לקווי מתאר: רצף מעוצב (מ-shapeLine) ל-d של SVG — פקודות מוחלטות M L Q C Z, y למטה, כמו בפורמט וב-`path`
+ * של pdf-core. (x, y) — תחילת קו הבסיס משמאל; size — גודל הגופן ביחידות היעד. גליף מגופן חלופי (g.f) — מהגופן שלו.
+ * אותו מיקום בדיוק כמו drawGlyphs.
+ */
+export function glyphsToPath(f, glyphs, x, y, size) {
+  const s = size / f.upem;
+  const out = [];
+  let pen = 0;
+  for (const g of glyphs) {
+    const gf = g.f || f, ps = s * f.upem / gf.upem;
+    const ox = x + (pen + g.dx) * s, oy = y - g.dy * s;
+    for (const c of glyphOutline(gf, g.gid)) {
+      if (c.type === 'Z') { out.push('Z'); continue; }
+      const v = c.values, pts = [];
+      for (let i = 0; i < v.length; i += 2) pts.push(num(ox + v[i] * ps), num(oy - v[i + 1] * ps));
+      out.push(c.type + pts.join(' '));
+    }
+    pen += g.ax;
+  }
+  return out.join('');
+}
+
+/**
+ * קיצור: עיצוב שורה והמרה לקווי מתאר. opts: { size, x = 0, y = 0, base = 'rtl', spans }.
+ *   → { d, width }   (width ביחידות של size)
+ */
+export function textToPath(fonts, text, { size, x = 0, y = 0, base = 'rtl', spans = null } = {}) {
+  const f = Array.isArray(fonts) ? fonts[0] : fonts;
+  const glyphs = shapeLine(fonts, text, base, spans);
+  return { d: glyphsToPath(f, glyphs, x, y, size), width: advance(glyphs) * size / f.upem };
 }

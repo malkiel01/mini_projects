@@ -10,7 +10,7 @@
 //
 // הפלט — במידות העמוד (pt), מוכן לציור (view.js) ובהמשך ל-PDF: אותן שורות, אותם גליפים.
 
-import { shapeLine, advance } from './shaper.js';
+import { shapeLine, advance } from './text-core/shaper.js';
 import { thread, styleOf, docBlocks, wrapRects } from './frames.js';
 
 const wordCache = new Map();   // מפתח: גופנים + מסכת הדגשה + מילה → רוחב ביחידות הגופן

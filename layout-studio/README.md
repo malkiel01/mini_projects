@@ -224,7 +224,7 @@ IDML, CMYK והפרדות צבע, צורות לא-מלבניות (מגיעות �
 
 - **ניקוד וטעמים** יושבים נכון, זהה לדפדפן; ב-Noto Serif Hebrew הרוחב זהה לדפדפן עד עשירית פיקסל.
 - **bidi:** HarfBuzz רק ממקם גליפים — שורה מעורבת ("פרק 12: Genesis") צריכה קודם את אלגוריתם ה-bidi (UAX #9).
-  `shapeLine` (`assets/js/shaper.js`): רמות הטבעה (bidi-js), כל רצף מעוצב בכיוון שלו, וסדר חזותי לפי L2. אחרי זה
+  `shapeLine` (`assets/js/text-core/shaper.js` — עותק מסונכרן של המודול המשותף `creative-suite/text-core`): רמות הטבעה (bidi-js), כל רצף מעוצב בכיוון שלו, וסדר חזותי לפי L2. אחרי זה
   השורה זהה לדפדפן.
 - **גופנים:** Noto Serif Hebrew — 0 סימנים חסרים; ב-Frank Ruhl Libre אין טעמים בכלל (U+0591–05AF). **גופן חלופי:**
   `shapeLine([ראשי, חלופי], …)` — אשכול (אות וכל סימניה) שחסר בו גליף בראשי מעוצב כולו בחלופי, כך שהטעם נשאר
@@ -235,10 +235,12 @@ IDML, CMYK והפרדות צבע, צורות לא-מלבניות (מגיעות �
 
 | ספרייה / גופן | גרסה | רישיון | איפה |
 | --- | --- | --- | --- |
-| harfbuzzjs (HarfBuzz 15.0.0) | 1.6.4 | MIT | `assets/vendor/harfbuzzjs/` |
-| bidi-js | 1.1.0 | MIT | `assets/vendor/bidi-js/` |
+| harfbuzzjs (HarfBuzz 15.0.0) | 1.6.4 | MIT | `assets/js/text-core/vendor/harfbuzzjs/` (מ-`text-core`) |
+| bidi-js | 1.1.0 | MIT | `assets/js/text-core/vendor/bidi-js/` (מ-`text-core`) |
 | ProseMirror (model 1.25, view 1.42, state, commands, keymap, history) | נארז ב-esbuild | MIT | `assets/vendor/prosemirror/` |
 | Noto Serif Hebrew | Google Fonts | OFL | `assets/fonts/` |
 | Frank Ruhl Libre | Google Fonts | OFL | `assets/fonts/` |
 
-**בדיקות:** `node --test layout-studio/tests/shaper.test.mjs` (8) — כיסוי הגופנים, גופן חלופי, מיקום סימנים, סדר חזותי, bidi וטווח מספרים.
+**עיצוב הגליפים עבר למודול המשותף `creative-suite/text-core`** (מ2): `assets/js/text-core/` הוא עותק מסונכרן — לא עורכים
+אותו כאן, אלא במקור, ומריצים `php creative-suite/text-core/tools/sync.php`. הבדיקות שלו (כיסוי הגופנים, גופן חלופי, מיקום
+סימנים, סדר חזותי, bidi, טווח מספרים, מדידה וקווי מתאר): `node --test creative-suite/text-core/tests/*.test.mjs`.
