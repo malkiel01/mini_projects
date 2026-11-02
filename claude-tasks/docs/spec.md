@@ -559,7 +559,11 @@ quantized ONNX: en→he ≈ 147 MB, he→en ≈ 365 MB. The Translator API is no
   Actions job, **not in the repo**, with `--exclude` in `deploy.yml` (CLAUDE.md: runtime files need their own exclude).
   Same origin → no CORS issue, no dependency on a third-party repo that may vanish. Attribution line in the settings sheet
   ("Opus-MT, University of Helsinki, Apache-2.0").
-- If the cached en→he translation is over 5 s on the owner's phone → stop and report; no translate button.
+- ~~If the cached en→he translation is over 5 s on the owner's phone → stop and report.~~ **Replaced (owner, 2026-11-02:
+  "why is translation not done yet"):** translate **progressively, sentence by sentence**, showing each sentence as soon as it is
+  ready (measured: first sentence 0.1–0.4 s, a whole reply 4.2–4.7 s on a 4-core container). The gate becomes: **first sentence on
+  screen ≤ 1 s** from the cache on the owner's phone, and the screen never freezes (Web Worker). Build 12e now — right after the
+  §5.10.1 fix — and take the phone numbers from the measurement page in parallel; if the first sentence is over 1 s there, report.
 
 **Before building 12e — measure on the owner's Android phone** (record the numbers here): download size and time for `en→he`;
 time to load the model from cache; time to translate a typical chat reply (≈ 150 words, with a code block left untouched);
