@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # הגשר החי — הקישור של הצ'אט לערוץ בלוח (docs/spec.md §5.5–5.6).
 #
-#   link.sh register --project <id> [--name <שם>] [--role <תפקיד>]
-#                    רישום (או רישום מחדש עם אותו session_id). אסימון ההרשמה: $CLAUDE_TASKS_TOKEN
+#   link.sh register --project <id> [--name <שם>] [--role <תפקיד>] [--replaces <ערוץ>]
+#                    רישום (או רישום מחדש עם אותו session_id). אסימון ההרשמה: $CLAUDE_TASKS_TOKEN —
+#                    של השורש, אחד לכל הסביבה. מספר הפרויקט מגיע רק מהפרומפט (§5.9.1);
+#                    CLAUDE_TASKS_PROJECT לא נקרא יותר. --replaces — צ'אט המשך (§5.9.4)
+#   link.sh handoff <קובץ>  תקציר העברה לצ'אט ההמשך (אחרי handoff_request מהלוח)
 #   link.sh status   הערוץ, ומה ממתין
 #   link.sh pending  ההודעות שממתינות לטיפול, כל אחת במסגרת קבועה; זוכר את האחרונה לתשובה (reply_to)
 #   link.sh ack <id>…   סימון "טופל" — רק אחרי שטופלו, לא לפני
@@ -25,30 +28,53 @@ frame() {   # מסגרת קבועה להודעה מהלוח — כדי שלא ת
 cmd="${1:-status}"; shift || true
 case "$cmd" in
   register)
-    project="${CLAUDE_TASKS_PROJECT:-}"; name=""; role=""
+    project=""; name=""; role=""; replaces=""
     while [ $# -gt 0 ]; do
       case "$1" in
-        --project) project="$2"; shift 2 ;;
-        --name)    name="$2"; shift 2 ;;
-        --role)    role="$2"; shift 2 ;;
+        --project)  project="$2"; shift 2 ;;
+        --name)     name="$2"; shift 2 ;;
+        --role)     role="$2"; shift 2 ;;
+        --replaces) replaces="$2"; shift 2 ;;
         *) die "פרמטר לא מוכר: $1" ;;
       esac
     done
-    [ -n "${CLAUDE_TASKS_TOKEN:-}" ] || die "חסר CLAUDE_TASKS_TOKEN (אסימון ההרשמה) בהגדרות הסביבה"
-    [ -n "$project" ] || die "חסר --project <id>"
+    # preflight (§5.9.2): כל כשל — שורה אחת בעברית שאומרת בדיוק מה לעשות
+    if [ -n "${CLAUDE_TASKS_PROJECT:-}" ]; then
+      echo "⚠ CLAUDE_TASKS_PROJECT=$CLAUDE_TASKS_PROJECT מוגדר בסביבה ולא נקרא — מספר הפרויקט מגיע רק מהפרומפט. כדאי למחוק את השורה מהגדרות הסביבה." >&2
+    fi
+    if [ -z "${CLAUDE_TASKS_TOKEN:-}" ]; then
+      env_name="$(board_call chat-env '{}' "" 5 2>/dev/null | jq -r '.environment // empty' 2>/dev/null)"
+      die "הצ'אט נפתח בסביבה בלי האסימון. פתחו צ'אט חדש בסביבה${env_name:+ \"$env_name\"} (הסביבה שבה שמור CLAUDE_TASKS_TOKEN)."
+    fi
+    [[ "$project" =~ ^[0-9]+$ ]] || die "חסר מספר פרויקט (--project). הפרומפט מהלוח (⚙ ← 🆕 צ'אט חדש) כבר כולל אותו — העתיקו אותו משם."
+    [ -z "$replaces" ] || [[ "$replaces" =~ ^[0-9]+$ ]] || die "--replaces: מספר הערוץ שמוחלף"
     sid="$(session_id)"; [ -n "$sid" ] || die "אין מזהה סשן (CLAUDE_CODE_REMOTE_SESSION_ID)"
     [ -n "$name" ] || name="צ'אט ${sid: -6}"
-    body="$(jq -n --argjson p "$project" --arg n "$name" --arg r "$role" --arg s "$sid" --arg u "$(session_url)" \
-             '{project_id:$p, name:$n, role:$r, session_id:$s, session_url:$u}')"
+    body="$(jq -n --argjson p "$project" --arg n "$name" --arg r "$role" --arg s "$sid" --arg u "$(session_url)" --arg x "$replaces" \
+             '{project_id:$p, name:$n, role:$r, session_id:$s, session_url:$u} + (if $x != "" then {replaces: ($x|tonumber)} else {} end)')"
     mkdir -p "$(dirname "$BOARD_LINK")"
-    out="$(board_call channel-register "$body" "$CLAUDE_TASKS_TOKEN")" || die "הרישום נכשל (HTTP $BOARD_HTTP): $(echo "$out" | jq -r '.error // .' 2>/dev/null)"
+    # בלי $( ) — כדי ש-BOARD_HTTP (שנקבע בתוך board_call) לא ילך לאיבוד בתת-מעטפת
+    tmp_out="$(mktemp)"; board_call channel-register "$body" "$CLAUDE_TASKS_TOKEN" > "$tmp_out"; rc=$?
+    out="$(cat "$tmp_out")"; rm -f "$tmp_out"
+    if [ $rc != 0 ]; then
+      err="$(echo "$out" | jq -r '.error // empty' 2>/dev/null)"
+      case "$BOARD_HTTP" in
+        401) env_name="$(board_call chat-env '{}' "" 5 2>/dev/null | jq -r '.environment // empty' 2>/dev/null)"
+             die "האסימון שבסביבה${env_name:+ \"$env_name\"} לא מוכר ללוח (אולי הוחלף). העתיקו מחדש את האסימון של השורש: ⚙ של השורש ← אסימון לצ'אטים, ושימו אותו ב-CLAUDE_TASKS_TOKEN." ;;
+        *)   die "${err:-הרישום נכשל (HTTP $BOARD_HTTP)}" ;;
+      esac
+    fi
     umask 077
     jq -n --argjson r "$out" --arg url "$(board_url)" --arg cookie "$(board_cookie)" --arg n "$name" \
           --argjson p "$project" --arg s "$sid" \
           '{url:$url, cookie:$cookie, channel_id:$r.channel_id, channel_token:$r.channel_token,
-            project_id:$p, name:$n, session_id:$s, registered_at:(now|floor), pending_reply_to:null}' > "$BOARD_LINK"
+            project_id:$p, name:$n, session_id:$s, registered_at:(now|floor), pending_reply_to:null,
+            notify_session:($r.notify_session // null)}' > "$BOARD_LINK"
     chmod 600 "$BOARD_LINK"
-    echo "✓ רשום: ערוץ #$(link_get channel_id) · $name · פרויקט $project$(echo "$out" | jq -r 'if .renewed then " (רישום חוזר — אסימון חדש)" else "" end')"
+    echo "✓ רשום: ערוץ #$(link_get channel_id) · $name · פרויקט #$project $(echo "$out" | jq -r '(.project_path // "") + (if .renewed then " (רישום חוזר — אסימון חדש)" else "" end)')"
+    [ -n "$replaces" ] && echo "✓ מחליף את ערוץ #$replaces — המטלות שנשאלו בו עברו לכאן"
+    nt="$(echo "$out" | jq -r '.notify_session // empty')"
+    [ -n "$nt" ] && echo "→ הודעת ההצטרפות: create_trigger ל-$nt"
     ;;
 
   status)
@@ -97,6 +123,14 @@ case "$cmd" in
     board_call channel-post "$body" "$(token)" >/dev/null && echo "✓ נשלח" || die "השליחה נכשלה (HTTP $BOARD_HTTP)"
     ;;
 
+  handoff)
+    need_link
+    f="${1:-}"; [ -n "$f" ] && [ -f "$f" ] || die "שימוש: link.sh handoff <קובץ התקציר>"
+    body="$(jq -n --arg b "$(clip "$(cat "$f")")" '{author_role:"chat", kind:"handoff", body:$b}')"
+    board_call channel-post "$body" "$(token)" >/dev/null && echo "✓ התקציר נשלח ללוח — בעל המערכת יפתח ממנו את צ'אט ההמשך" \
+      || die "שליחת התקציר נכשלה (HTTP $BOARD_HTTP)"
+    ;;
+
   archive)
     need_link
     board_call channel-archive '{}' "$(token)" >/dev/null || echo "הלוח לא אישר (HTTP $BOARD_HTTP) — מוחק את הקישור בכל זאת" >&2
@@ -104,5 +138,5 @@ case "$cmd" in
     echo "✓ נותק"
     ;;
 
-  *) die "פקודה לא מוכרת: $cmd (register | status | pending | ack | post | archive)" ;;
+  *) die "פקודה לא מוכרת: $cmd (register | status | pending | ack | post | handoff | archive)" ;;
 esac

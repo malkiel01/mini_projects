@@ -7,6 +7,7 @@
 
 import { $, $$, el, api, toast, state, on, PLATFORM_HINT } from './core.js';
 import { openPolicySheet, policySubline } from './policy.js';
+import { loadChatSheet, chatSheetLine, openNewChat } from './newchat.js';
 
 /* ── חיבורים (docs/spec.md §10.1) ─────────────────────────────────
  *
@@ -345,6 +346,7 @@ export async function openProject(id) {
   renderCard();
   renderRows();
   loadSkills().then(renderRows).catch(() => {});
+  loadChatSheet(id).then(renderRows).catch(() => {});
   loadPolicyLine();
   $('#pvFile').hidden = true;
   $('#projectView').showModal();
@@ -360,7 +362,7 @@ function renderCard() {
   $('#pvCard').replaceChildren(
     el('span', { class: 'ic', 'aria-hidden': 'true', text: p.icon || '📁' }),
     el('div', { class: 'body' }, [
-      el('b', { text: p.name }),
+      el('b', {}, [p.name, ' ', el('span', { class: 'pid', dir: 'ltr', title: 'מספר הפרויקט בלוח', text: `#${p.id}` })]),
       el('span', { class: 'l2', dir: 'ltr', text: p.repo_name ? `${p.repo_owner}/${p.repo_name}${p.path ? ' › ' + p.path : ''} · ${p.default_branch}` : 'ללא ריפו' }),
       el('div', { class: 'chips' }, chips),
     ]),
@@ -379,7 +381,10 @@ function renderRows() {
     p.repo_name && ['🔗', 'חיבור הגיטהאב שלי', gh ? `${github.chosen ? '' : 'אוטומטי · '}${gh.label || gh.login}${gh.login && gh.label !== gh.login ? ' · ' + gh.login : ''}` : 'אין חיבור גיטהאב', 'pvsGithub'],
     ['🧩', 'סקילים', skills === null ? '…' : (skills.length ? String(skills.length) : 'אין עדיין'), 'pvsSkills'],
     p.repo_name && ['⚙️', 'מנוע ההרצה', `${engine.engine === 'claude-code' ? '🤖 Claude Code' : '🔁 לולאה'} · ${engine.installed ? 'מותקן' : 'לא מותקן'}${engine.check_command && engine.engine !== 'claude-code' ? ' · ' + engine.check_command : ''}`, 'pvsEngine'],
-    owner && admin && ['🔑', "אסימון לצ'אטים", 'הצגה', 'pvsToken'],
+    ['🆕', "צ'אט חדש", chatSheetLine(), 'pvsNewChat'],
+    // אסימון אחד לסביבה — של השורש (§5.9.1). תת-פרויקט מפנה אליו
+    owner && admin && !p.parent_id && ['🔑', "אסימון לצ'אטים", 'אחד לכל הסביבה · הצגה', 'pvsToken'],
+    owner && p.parent_id && ['🔑', "אסימון לצ'אטים", `משתמש באסימון של ${rootOf(p).name} · פתיחה`, 'rootToken'],
     p.repo_name && ['📂', 'קבצים', 'עיון בריפו', 'pvsFiles'],
     ['🧭', 'מי עונה', routeLabel(p.id), 'pvsRoute'],
     ['🔐', 'אישורים', state.pv.policy ?? '…', 'pvsPolicy'],
@@ -405,7 +410,22 @@ function renderRows() {
   $('#peDelete').disabled = !!why;
 }
 
+/** השורש של פרויקט — מהרשימה שבזיכרון. */
+function rootOf(p) {
+  const all = state.projects || [];
+  let cur = p;
+  for (let i = 0; i < 16 && cur?.parent_id; i++) cur = all.find((x) => x.id === cur.parent_id) || null;
+  return cur || p;
+}
+
 async function openSheet(id) {
+  if (id === 'pvsNewChat') return openNewChat(state.openProject.id);
+  if (id === 'rootToken') {
+    const root = rootOf(state.openProject);
+    $('#projectView').close();
+    await openProject(root.id);
+    return openSheet('pvsToken');
+  }
   if (id === 'pvsFiles') { $('#pvFile').hidden = true; browse(state.openProject.path || '').catch(() => {}); }
   if (id === 'pvsGithub') renderGithubChoice();
   if (id === 'pvsRoute') renderRouteSheet();
@@ -598,7 +618,9 @@ function renderOwnerTools(project) {
 on('#pvChatTokenShow', 'click', async () => {
   try {
     const r = await api('chat-token', { project_id: state.openProject.id });
-    $('#pvChatTokenValue').textContent = `CLAUDE_TASKS_TOKEN=${r.token}\nCLAUDE_TASKS_URL=${r.url}\nCLAUDE_TASKS_PROJECT=${r.project_id}`;
+    // שורה אחת: מספר הפרויקט מגיע מהפרומפט, וכתובת הלוח היא ברירת המחדל (§5.9.1).
+    // ‏CLAUDE_TASKS_PROJECT בסביבה היה המלכודת — הוא נכון לצ'אט אחד ושגוי לכל השאר.
+    $('#pvChatTokenValue').textContent = `CLAUDE_TASKS_TOKEN=${r.token}`;
     $('#pvChatTokenShow').hidden = true;
     $('#pvChatTokenCopy').hidden = false;
   } catch (ex) { toast(ex.message, 'error'); }
@@ -1069,3 +1091,6 @@ on('#adminBtn', 'click', () => {
   showAdminTab('diag');
   adminCounters();
 });
+
+// התבנית נשמרה — השורה "🆕 צ'אט חדש" מתעדכנת
+document.addEventListener('ct:chat-sheet', () => { if (state.openProject) renderRows(); });

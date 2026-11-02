@@ -18,6 +18,7 @@ require_once __DIR__ . '/lib/github.php';
 require_once __DIR__ . '/lib/projects.php';
 require_once __DIR__ . '/lib/engine.php';
 require_once __DIR__ . '/lib/choices.php';
+require_once __DIR__ . '/lib/templates.php';
 require_once __DIR__ . '/lib/skills.php';
 require_once __DIR__ . '/lib/platform.php';
 require_once __DIR__ . '/lib/channels.php';
@@ -26,9 +27,9 @@ header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: same-origin');
 
-function fail(string $message, int $code = 400) {
+function fail(string $message, int $code = 400, string $errorCode = '') {
     http_response_code($code);
-    echo json_encode(['success' => false, 'error' => $message], JSON_UNESCAPED_UNICODE);
+    echo json_encode(['success' => false, 'error' => $message] + ($errorCode !== '' ? ['code' => $errorCode] : []), JSON_UNESCAPED_UNICODE);
     exit;
 }
 
@@ -149,7 +150,8 @@ function accessibleTask(?array $user, ?array $scope, int $id, string $minLevel):
  * פעולות פתוחות: כניסה, והרשמה כל עוד אין אף משתמש. ההרשמה נסגרת מאליה
  * ברגע שקיים משתמש ראשון, כדי שהמערכת לא תישאר פתוחה להרשמה לכל עובר.
  */
-$public = ['login', 'bootstrap-status', 'register-first', 'platform-new', 'platform-link'];
+// chat-env — רק שם הסביבה, כדי ש-link.sh יגיד "פתחו צ'אט בסביבה X" כשאין אסימון (§5.9.2). לא סוד.
+$public = ['login', 'bootstrap-status', 'register-first', 'platform-new', 'platform-link', 'chat-env'];
 
 if (!in_array($action, $public, true) && !$user && !$worker) {
     fail('נדרשת התחברות', 401);
@@ -1472,8 +1474,36 @@ try {
         if (!$worker) fail('נדרש אסימון הרשמה', 401);
         $url = url_field($in, 'session_url') ?? '';
         ok(registerChannel($scope, (int) ($in['project_id'] ?? 0), str_field($in, 'name', 80),
-                           str_field($in, 'role', 40), str_field($in, 'session_id', 120), $url));
+                           str_field($in, 'role', 40), str_field($in, 'session_id', 120), $url, int_or_null($in, 'replaces')));
     }
+
+    /* ── פתיחת צ'אטים (§5.9) ── */
+
+    /** שם הסביבה — בלי התחברות: link.sh אומר "פתחו צ'אט בסביבה X" כשאין אסימון. רק שם, לא סוד. */
+    case 'chat-env':
+        ok(['environment' => chatEnvironmentName()]);
+
+    case 'chat-sheet':
+        ok(chatSheet(requireUser($user), (int) ($in['project_id'] ?? 0)));
+
+    case 'template-save':
+        ok(['template' => saveTemplate(requireUser($user), (int) ($in['project_id'] ?? 0), (array) ($in['fields'] ?? []))]);
+
+    case 'chat-environment':
+        ok(['environment' => setChatEnvironment(requireUser($user), str_field($in, 'name', 80))]);
+
+    /** מה-hook של Stop, פעם ב-5 דקות: גודל ה-transcript, תורות ודחיסות. נשמר על הערוץ, לא כהודעה. */
+    case 'channel-health': {
+        $ch = $scope['channel'] ?? null;
+        if (!$ch) fail('נדרש אסימון ערוץ', 403);
+        ok(['health' => channelHealth($ch, (int) ($in['bytes'] ?? 0), (int) ($in['turns'] ?? 0), (int) ($in['compactions'] ?? 0))]);
+    }
+
+    case 'handoff-request':
+        ok(handoffRequest(requireUser($user), (int) ($in['channel_id'] ?? 0)));
+
+    case 'handoff-prompt':
+        ok(handoffPrompt(requireUser($user), (int) ($in['channel_id'] ?? 0), !empty($in['fallback'])));
 
     case 'channel-post': {
         $ch = $scope['channel'] ?? null;
@@ -1533,7 +1563,7 @@ try {
     }
 } catch (AppError $e) {
     // שגיאה שנוסחה עבור המשתמש — מגיעה אליו כלשונה.
-    fail($e->getMessage(), $e->status);
+    fail($e->getMessage(), $e->status, $e->errorCode);
 } catch (InvalidArgumentException $e) {
     fail($e->getMessage());
 } catch (Throwable $e) {

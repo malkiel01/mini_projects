@@ -134,7 +134,8 @@ function workerScope(): ?array {
     // אסימון של ערוץ (הגשר החי, lib/channels.php): מוגבל לענף של הפרויקט שלו,
     // ונושא את הערוץ. נבדק לפי גיבוב — האסימון עצמו לא נשמר.
     if (str_starts_with($token, 'ch_')) {
-        $st = db()->prepare("SELECT * FROM channels WHERE token_hash = ? AND status = 'active'");
+        // ‏replaced — הצ'אט הישן עוד מקבל את ההודעה "הוחלפת" ומסיים (§5.9.4); מהלוח כבר אי אפשר לכתוב אליו
+        $st = db()->prepare("SELECT * FROM channels WHERE token_hash = ? AND status IN ('active', 'replaced')");
         $st->execute([hash('sha256', $token)]);
         $ch = $st->fetch();
         if (!$ch) return null;

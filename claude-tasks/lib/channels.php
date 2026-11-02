@@ -27,7 +27,8 @@ require_once __DIR__ . '/config.php';
 
 if (!defined('BELL_DIR')) define('BELL_DIR', __DIR__ . '/../data/bell');
 
-const MESSAGE_KINDS   = ['text', 'question', 'answer', 'approval', 'decision', 'status', 'choice', 'choice_answer'];
+const MESSAGE_KINDS   = ['text', 'question', 'answer', 'approval', 'decision', 'status', 'choice', 'choice_answer',
+                         'handoff_request', 'handoff'];
 /** מי כותב בכיוון out (שיקוף מהצ'אט). owner = "בעל המערכת כתב בצ'אט" — מידע, לא הוראה. */
 const OUT_ROLES       = ['owner', 'chat', 'system'];
 const MAX_MESSAGE     = 20000;
@@ -69,6 +70,9 @@ function getChannel(int $id): ?array {
 function publicChannel(array $c): array {
     unset($c['token_hash']);
     foreach (['id', 'project_id', 'last_seen_at', 'listening_until', 'created_at'] as $k) $c[$k] = (int) $c[$k];
+    foreach (['health_bytes', 'health_turns', 'health_compactions', 'health_at'] as $k) $c[$k] = (int) ($c[$k] ?? 0);
+    $c['replaced_by'] = isset($c['replaced_by']) ? (int) $c['replaced_by'] : null;
+    $c['health'] = healthLevel($c);
     return $c;
 }
 
@@ -99,14 +103,19 @@ function messageRows(string $where, array $args, int $limit = 200): array {
  * אותו session_id → אותו ערוץ, אסימון חדש; הישן נפסל מיד.
  */
 function registerChannel(array $scope, int $projectId, string $name, string $role,
-                         string $sessionId, string $sessionUrl): array {
+                         string $sessionId, string $sessionUrl, ?int $replaces = null): array {
     if (!empty($scope['channel_id'])) throw new AppError('אסימון של ערוץ אינו רושם ערוצים — נדרש אסימון הרשמה', 403);
     $p = db()->prepare('SELECT id FROM projects WHERE id = ? AND archived = 0');
     $p->execute([$projectId]);
-    if (!$p->fetch()) throw new AppError('הפרויקט לא נמצא', 404);
+    if (!$p->fetch()) throw new AppError("פרויקט #$projectId לא נמצא בלוח — בדקו את המספר בפרומפט", 404, 'no_project');
     if (($scope['project_id'] ?? null) !== null && !in_array($projectId, projectSubtree((int) $scope['project_id']), true)) {
-        throw new AppError('הפרויקט אינו בתחום של אסימון ההרשמה', 403);
+        // ההודעה אומרת בדיוק מה לתקן (§5.9.2): של מי האסימון, ואיזה אסימון צריך במקומו
+        $own = projectChain((int) $scope['project_id'])[0][1] ?? ('#' . $scope['project_id']);
+        $root = projectRoot($projectId);
+        throw new AppError("האסימון בסביבה הזו שייך ל-\"$own\", ולא מכסה את #$projectId. "
+            . "שימו בסביבה את האסימון של \"{$root['name']}\" (⚙ של \"{$root['name']}\" ← אסימון לצ'אטים).", 403, 'token_scope');
     }
+    if ($replaces !== null) assertReplaceable($scope, $replaces, $projectId);
     $sessionId = trim($sessionId);
     if (!preg_match('/^[A-Za-z0-9_.:-]{6,120}$/', $sessionId)) throw new InvalidArgumentException('session_id אינו תקין');
     $name = mb_substr(trim($name), 0, 80);
@@ -137,7 +146,15 @@ function registerChannel(array $scope, int $projectId, string $name, string $rol
         $id = (int) db()->lastInsertId();
     }
     logEvent(null, 'channel.register', "channel:$id", true, "$name · project:$projectId" . ($old ? ' · חוזר' : ''));
-    return ['channel_id' => $id, 'channel_token' => $token, 'renewed' => (bool) $old];
+    // צ'אט המשך (§5.9.4): הישן מוחלף, והמטלות שנשאלו בו עוברות לכאן
+    $replaced = null;
+    if ($replaces !== null && $replaces !== $id) {
+        $replaced = getChannel($replaces);
+        replaceChannel($scope, $replaces, $id);
+    }
+    if (!$old || $replaced) channelJoined($id, $replaced);
+    return ['channel_id' => $id, 'channel_token' => $token, 'renewed' => (bool) $old,
+            'notify_session' => templateResolved($projectId)['notify_session'], 'project_path' => projectPathName($projectId)];
 }
 
 /* ── צ'אט ← לוח ────────────────────────────────────────────────── */
@@ -293,8 +310,9 @@ function channelsFor(array $user, int $projectId): array {
                 (SELECT COUNT(*) FROM messages m WHERE m.channel_id = c.id AND m.direction = 'in' AND m.delivered_at IS NULL) pending_in,
                 (SELECT COUNT(*) FROM tasks t WHERE t.asked_channel_id = c.id AND t.status = 'blocked') open_questions,
                 (SELECT COUNT(*) FROM messages m WHERE m.channel_id = c.id AND m.kind = 'choice' AND m.status = 'open') open_choices,
-                (SELECT MAX(m.created_at) FROM messages m WHERE m.channel_id = c.id) last_message_at
-           FROM channels c WHERE c.project_id IN ($in) ORDER BY c.status = 'archived', c.last_seen_at DESC");
+                (SELECT MAX(m.created_at) FROM messages m WHERE m.channel_id = c.id) last_message_at,
+                (SELECT r.name FROM channels r WHERE r.id = c.replaced_by) replaced_by_name
+           FROM channels c WHERE c.project_id IN ($in) ORDER BY c.status <> 'active', c.status = 'archived', c.last_seen_at DESC");
     $st->execute($ids);
     return array_map(function ($c) {
         $out = publicChannel($c);
@@ -302,6 +320,7 @@ function channelsFor(array $user, int $projectId): array {
         $out['last_message_at'] = $c['last_message_at'] === null ? null : (int) $c['last_message_at'];
         $out['listening'] = $out['status'] === 'active' && $out['listening_until'] > nowTs();
         $out['route_effective'] = channelRoute($c);   // הערוץ גובר על הפרויקט
+        $out['replaced_by_name'] = $c['replaced_by_name'];
         return $out;
     }, $st->fetchAll());
 }

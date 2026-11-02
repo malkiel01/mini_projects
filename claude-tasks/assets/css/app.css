@@ -619,3 +619,46 @@ details.what p { margin-top: var(--s2); }
 .choice--done summary { cursor: pointer; color: var(--muted); font-size: .85rem; }
 .choice-done-list { margin: 4px 0 0; padding-inline-start: 1.2em; display: grid; gap: 2px; }
 .bubble:has(.choice) { max-width: min(92%, 520px); }
+
+/* ── פתיחת צ'אטים (§5.9) ──────────────────────────────────────── */
+.pid { font-weight: 400; color: var(--muted); font-size: .85em; }
+.linklike { border: 0; background: none; padding: 0; color: var(--brand); font: inherit; font-size: .8rem;
+  text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.inherit { color: var(--muted); font-size: .78rem; font-weight: 400; }
+.nc-env { margin: 0; padding: var(--s2) var(--s3); border-radius: var(--r); background: var(--brand-soft); line-height: 1.5; }
+.nc-env b { unicode-bidi: isolate; }
+.nc-env small { display: block; color: var(--muted); }
+.nc-roles { margin-top: 2px; }
+.nc-role { display: grid; justify-items: start; gap: 2px; min-height: 64px; padding: var(--s2) var(--s3); text-align: start;
+  border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); color: var(--ink); font: inherit; cursor: pointer; }
+.nc-role .ic { font-size: 1.3rem; line-height: 1; }
+.nc-role small { color: var(--muted); font-size: .76rem; }
+.nc-role[aria-checked="true"] { border-color: var(--brand); background: var(--brand-soft); box-shadow: inset 0 0 0 1px var(--brand); }
+.nc-role:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+.nc-prompt-wrap { display: grid; gap: var(--s2); }
+.nc-prompt { margin: 0; max-height: 42vh; overflow: auto; padding: var(--s3); border: 1px solid var(--line); border-radius: var(--r);
+  background: color-mix(in srgb, var(--ink) 4%, var(--surface)); white-space: pre-wrap; overflow-wrap: anywhere;
+  font: .82rem/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; unicode-bidi: plaintext; text-align: start; }
+.nc-prompt .nc-line { display: block; unicode-bidi: plaintext; text-align: start; }
+.nc-prompt .nc-cmd { display: block; margin: 4px 0; padding: 6px 8px; border-radius: 6px; overflow-x: auto; white-space: pre;
+  text-align: left; background: color-mix(in srgb, var(--ink) 7%, transparent); font: inherit; }
+.nc-wait { display: flex; align-items: center; gap: var(--s2); margin: 0; }
+.spin { inline-size: 16px; block-size: 16px; border: 2px solid var(--line); border-top-color: var(--brand); border-radius: 50%;
+  animation: spin .9s linear infinite; flex: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+.tpl-role { display: grid; gap: 6px; margin: 0; padding: var(--s2); border: 1px solid var(--line); border-radius: var(--r); min-width: 0; }
+.tpl-role legend { font-size: .78rem; color: var(--muted); padding: 0 4px; }
+.tpl-role-top { display: grid; grid-template-columns: 3em minmax(0, 1fr) minmax(0, .8fr) auto; gap: 6px; align-items: center; }
+.tpl-role :is(input, textarea), #tplBody :is(input, textarea) { min-width: 0; width: 100%; }
+.tpl-icon { text-align: center; }
+/* "הצ'אט מתארך" — שבב בשורה, ופס בראש השיחה */
+.badge.health--warn { background: color-mix(in srgb, var(--star) 18%, var(--surface)); color: var(--ink); }
+.badge.health--alert { background: var(--danger-soft); color: var(--danger); }
+.cv-health { display: flex; align-items: center; gap: var(--s2); padding: var(--s2) var(--s3); border-bottom: 1px solid var(--line); }
+.cv-health[hidden] { display: none; }
+.cv-health .body { display: grid; gap: 2px; flex: 1; min-width: 0; }
+.cv-health small { color: var(--muted); font-size: .78rem; }
+.cv-health--warn { background: color-mix(in srgb, var(--star) 14%, var(--surface)); }
+.cv-health--alert { background: var(--danger-soft); }
+.cv-health .btn { flex: none; }

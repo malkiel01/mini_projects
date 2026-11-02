@@ -92,7 +92,8 @@ $regToken = bin2hex(random_bytes(16));
 db()->prepare('UPDATE projects SET agent_token = ? WHERE id = ?')->execute([encryptSecret($regToken), $root]);
 $_SERVER['HTTP_X_WORKER_TOKEN'] = $regToken;
 $ch = getChannel(registerChannel(workerScope(), $root, 'כותב הקוד', 'קוד', 'session_USAGE1', '')['channel_id']);
-$sys = fn () => (int) db()->query("SELECT COUNT(*) FROM messages WHERE channel_id = {$ch['id']} AND author_role = 'system'")->fetchColumn();
+// הודעות המכסה בלבד — בלי "<שם> הצטרף" שהרישום מוסיף (שלב 11, §5.9.5)
+$sys = fn () => (int) db()->query("SELECT COUNT(*) FROM messages WHERE channel_id = {$ch['id']} AND author_role = 'system' AND body NOT LIKE '%הצטרף%'")->fetchColumn();
 
 recordUsage(['user_id' => 1, 'kind' => 'develop'], 'anthropic', 'claude-opus-5-5', 0, 400_000);   // $8
 check('80% — warn', quotaState(1)['state'], 'warn');

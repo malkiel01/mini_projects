@@ -315,6 +315,7 @@
       <button type="button" class="icon-btn" id="cvMore" aria-label="אפשרויות הצ'אט" title="אפשרויות הצ'אט" hidden>⋯</button>
       <button type="button" class="icon-btn" id="cvArchive" aria-label="ניתוק הצ'אט" title="ניתוק הצ'אט" hidden>🔌</button>
     </header>
+    <div class="cv-health" id="cvHealth" hidden></div>
     <ol class="chat-log" id="chatLog" aria-live="polite" aria-label="ההודעות"></ol>
     <form class="composer" id="chatForm">
       <p class="hint" id="cvNote" hidden></p>
@@ -343,6 +344,11 @@
       </div>
       <p class="hint"><b>בלוח</b> — כשהצ'אט שואל שאלת בחירה, היא מגיעה לכאן עם כפתור לכל אפשרות, והצ'אט מדפיס אותה גם אצלו ממוספרת. עונים כאן בנגיעה, או מקלידים בצ'אט. הצ'אט לא נתקע על חלון שאף אחד לא רואה.<br>
       <b>באפליקציה</b> — החלון נפתח באפליקציית Claude כרגיל, והלוח רק מראה את השאלה ואת התשובה. כשעובדים מול המחשב.</p>
+      <div id="cmHandoffBox" hidden>
+        <h3>🔁 צ'אט המשך</h3>
+        <p class="hint">הצ'אט הזה כותב תקציר, והלוח מכין ממנו פרומפט לצ'אט חדש שימשיך אותו — עם כל הערכים והנתונים העיקריים. הישן מסומן "הוחלף".</p>
+        <button type="button" class="btn ghost" id="cmHandoff">🔁 פתיחת צ'אט המשך</button>
+      </div>
     </div>
   </div>
 </dialog>
@@ -629,16 +635,48 @@
       <span></span>
     </header>
     <div class="sheet-body">
-      <p class="hint">הצ'אטים נרשמים איתו לערוץ בפרויקט הזה ובתתי-הפרויקטים שלו.</p>
+      <p class="hint">הצ'אטים נרשמים איתו לערוץ בפרויקט הזה ובכל תתי-הפרויקטים שלו. אסימון אחד לכל הסביבה — מספר הפרויקט מגיע מהפרומפט (⚙ ← 🆕 צ'אט חדש).</p>
       <div class="token" id="pvChatToken"><code id="pvChatTokenValue" dir="ltr">••••••••</code>
         <button type="button" class="btn ghost" id="pvChatTokenShow">הצגה</button></div>
       <div class="row-btns"><button type="button" class="btn ghost" id="pvChatTokenCopy" hidden>העתקה</button></div>
       <details class="what"><summary>מה זה?</summary>
-        <p class="hint">מדביקים את שלוש השורות פעם אחת בהגדרות הסביבה של Claude: claude.ai ← Claude Code ← תפריט הסביבה בכותרת ← Edit ← Environment variables. כל צ'אט חדש בסביבה הזו יוכל להתחבר ללוח בעצמו (הסקיל claude-tasks-live). לא מדביקים אותו בצ'אט.</p>
+        <p class="hint">מדביקים את השורה פעם אחת בהגדרות הסביבה של Claude: claude.ai ← Claude Code ← תפריט הסביבה בכותרת ← Edit ← Environment variables. כל צ'אט חדש בסביבה הזו יוכל להתחבר ללוח בעצמו (הסקיל claude-tasks-live). לא מדביקים אותו בצ'אט, ולא מוסיפים CLAUDE_TASKS_PROJECT — הוא לא נקרא יותר.</p>
       </details>
     </div>
   </div>
 </dialog>
+<!-- ── 🆕 צ'אט חדש (§5.9) ─────────────────────────────────────── -->
+<dialog id="pvsNewChat" aria-labelledby="pvsNewChatT">
+  <div class="sheet-wrap">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close="pvsNewChat" aria-label="סגירה">✕</button>
+      <h2 id="pvsNewChatT">צ'אט חדש</h2>
+      <button type="button" class="icon-btn" id="ncEdit" aria-label="עריכת התבנית" title="עריכת התבנית" hidden>✏️</button>
+    </header>
+    <div class="sheet-body" id="ncBody"></div>
+  </div>
+</dialog>
+<dialog id="pvsTemplate" aria-labelledby="pvsTemplateT">
+  <form class="sheet-wrap" id="tplForm">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close="pvsTemplate" aria-label="סגירה">✕</button>
+      <h2 id="pvsTemplateT">תבנית הצ'אטים</h2>
+      <button type="submit" class="btn primary" id="tplSave">שמירה</button>
+    </header>
+    <div class="sheet-body" id="tplBody"></div>
+  </form>
+</dialog>
+<dialog id="handoffSheet" aria-labelledby="handoffT">
+  <div class="sheet-wrap">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close="handoffSheet" aria-label="סגירה">✕</button>
+      <h2 id="handoffT">🔁 צ'אט המשך</h2>
+      <span></span>
+    </header>
+    <div class="sheet-body" id="handoffBody"></div>
+  </div>
+</dialog>
+
 <dialog id="pvsFiles" aria-labelledby="pvsFilesT">
   <div class="sheet-wrap">
     <header class="sheet-head">
