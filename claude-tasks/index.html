@@ -583,6 +583,12 @@
       <span></span>
     </header>
     <div class="sheet-body">
+      <!-- איזה מנוע (§11): הלולאה (run.mjs, כל ספק) או Claude Code עצמו (Anthropic) -->
+      <div class="seg route-seg" id="pvEngineSeg" role="radiogroup" aria-label="המנוע">
+        <button type="button" role="radio" data-engine="loop" aria-checked="false">🔁 לולאה</button>
+        <button type="button" role="radio" data-engine="claude-code" aria-checked="false">🤖 Claude Code</button>
+      </div>
+      <p class="hint" id="pvEngineHint"></p>
       <p class="engine-state" id="pvEngineState">בודק…</p>
       <label class="field"><span>פקודת בדיקה (רצה לפני כל דחיפה)</span>
         <input type="text" id="pvCheck" dir="ltr" placeholder="לדוגמה: npm test · composer test · pytest"></label>

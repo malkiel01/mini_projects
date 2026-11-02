@@ -378,7 +378,7 @@ function renderRows() {
     ['👥', 'חברים', `${members.length} · ${members.slice(0, 2).map((m) => `${m.display_name} (${LEVEL[m.level]})`).join(', ')}${members.length > 2 ? ', …' : ''}`, 'pvsMembers'],
     p.repo_name && ['🔗', 'חיבור הגיטהאב שלי', gh ? `${github.chosen ? '' : 'אוטומטי · '}${gh.label || gh.login}${gh.login && gh.label !== gh.login ? ' · ' + gh.login : ''}` : 'אין חיבור גיטהאב', 'pvsGithub'],
     ['🧩', 'סקילים', skills === null ? '…' : (skills.length ? String(skills.length) : 'אין עדיין'), 'pvsSkills'],
-    p.repo_name && ['⚙️', 'מנוע ההרצה', engine.installed ? `מותקן${engine.check_command ? ' · ' + engine.check_command : ''}` : 'לא מותקן', 'pvsEngine'],
+    p.repo_name && ['⚙️', 'מנוע ההרצה', `${engine.engine === 'claude-code' ? '🤖 Claude Code' : '🔁 לולאה'} · ${engine.installed ? 'מותקן' : 'לא מותקן'}${engine.check_command && engine.engine !== 'claude-code' ? ' · ' + engine.check_command : ''}`, 'pvsEngine'],
     owner && admin && ['🔑', "אסימון לצ'אטים", 'הצגה', 'pvsToken'],
     p.repo_name && ['📂', 'קבצים', 'עיון בריפו', 'pvsFiles'],
     ['🧭', 'מי עונה', routeLabel(p.id), 'pvsRoute'],
@@ -758,8 +758,22 @@ on('#pvSkillForm', 'submit', async (e) => {
 
 /* ── מנוע ההרצה ────────────────────────────────────────────────── */
 
+const ENGINE_HINT = {
+  loop: 'הלולאה (run.mjs): כל ספק — Anthropic, OpenAI או Gemini. קוראת, כותבת, מריצה את הבדיקה ופותחת PR.',
+  'claude-code': 'Claude Code עצמו ב-GitHub Actions — עם ה-CLAUDE.md, הסקילים וה-settings.json של הריפו. רק פותח PR: לא ממזג ולא פורס. דורש חיבור Anthropic, והעלות נרשמת במכסה של מי שהריץ.',
+};
+
 function renderEngine(project, engine) {
   const box = $('#pvEngineState');
+  const admin0 = project.my_level === 'admin';
+  $$('#pvEngineSeg [data-engine]').forEach((b) => {
+    b.setAttribute('aria-checked', String(b.dataset.engine === (engine.engine || 'loop')));
+    b.disabled = !admin0 || !project.repo_name;
+  });
+  $('#pvEngineHint').textContent = (ENGINE_HINT[engine.engine] || ENGINE_HINT.loop)
+    + (engine.engine_own ? '' : (project.parent_id ? ' · יורש מהפרויקט האב' : ' · ברירת המחדל'));
+  // ב-Claude Code הבדיקות רצות לפי ה-CLAUDE.md של הריפו — פקודת הבדיקה לא נשלחת
+  $('#pvCheck').closest('label').hidden = engine.engine === 'claude-code';
   $('#pvCheck').value = engine.check_command || '';
   const admin = project.my_level === 'admin';
   // כפתור ראשי אחד: לא מותקן — "התקנה"; מותקן — "שמירה". "התקנה מחדש" — משני, בשורה נפרדת
@@ -796,6 +810,19 @@ async function install(btn) {
   btn.textContent = was;
   btn.disabled = false;
 }
+
+on('#pvEngineSeg', 'click', async (e) => {
+  const b = e.target.closest('[data-engine]');
+  if (!b || b.disabled || b.dataset.engine === state.pv.engine.engine) return;
+  try {
+    await api('update-project', { id: state.openProject.id, engine: b.dataset.engine });
+    const { engine } = await api('engine-status', { project_id: state.openProject.id });
+    state.pv.engine = engine;
+    renderEngine(state.openProject, engine);
+    renderRows();
+    toast('המנוע הוחלף — צריך להתקין אותו בריפו', 'ok');
+  } catch (ex) { toast(ex.message, 'error'); }
+});
 
 on('#pvInstall', 'click', async (e) => {
   if (!state.pv.engine.installed) return install(e.currentTarget);

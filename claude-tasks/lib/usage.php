@@ -127,11 +127,14 @@ function recordUsage(array $ctx, string $provider, string $model, int $in, int $
     if ($uid <= 0) return 0.0;
     $kind = in_array($ctx['kind'] ?? '', USAGE_KINDS, true) ? $ctx['kind'] : 'monitor';
     [, , $known] = modelPrice($provider, $model);
-    $cost = usageCost($provider, $model, max(0, $in), max(0, $out));
+    // עלות שהמנוע כבר חישב (Claude Code: total_cost_usd) — נרשמת כמו שהיא
+    $given = isset($ctx['cost_usd']) && is_numeric($ctx['cost_usd']) ? max(0.0, (float) $ctx['cost_usd']) : null;
+    $cost = $given ?? usageCost($provider, $model, max(0, $in), max(0, $out));
+    if ($given !== null) $known = true;
     db()->prepare('INSERT INTO usage (at, user_id, project_id, task_id, channel_id, connection_id, kind, provider, model,
                                       tokens_in, tokens_out, cost_usd) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
         ->execute([nowTs(), $uid, $ctx['project_id'] ?? null, $ctx['task_id'] ?? null, $ctx['channel_id'] ?? null,
-                   $ctx['connection_id'] ?? null, $kind, $provider, mb_substr($model, 0, 120), $in, $out, $cost]);
+                   $ctx['connection_id'] ?? null, $kind, $provider, mb_substr($model, 0, 120), $in, $out, round($cost, 6)]);
     if (!$known) logEvent(null, 'usage.unknown_model', "$provider:$model", false, 'תומחר לפי המחיר הגבוה של הספק');
     usageAlerts($uid);
     return $cost;
