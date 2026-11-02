@@ -93,11 +93,8 @@ editor.html              העורך
 api.php                  me · list · get · create · save · delete · thumb · versions · restore
 lib/db.php · auth.php    SQLite (data/vector.sqlite — לא בגיט, מוחרג ב-deploy.yml, גם data/files/) · משתמשים מהשער
 lib/drawings.php         הספרייה: ציורים של כל משתמש, שמירה עם rev (409 בהתנגשות), גרסה כל 10 דקות (30 אחרונות)
-assets/js/geometry/      גאומטריה ונתיבים — המודול המשותף שבבעלותנו (בלי DOM; נבדק ב-node)
-  path.js                d של SVG → M L C Q Z מוחלטים (כולל S T H V A), כתיבה, טרנספורמציה, תיבה חוסמת
-  matrix.js · shapes.js  מטריצות [a b c d e f] · צורות חיות (מלבן, אליפסה, מצולע, כוכב, קו) → d
-  nodes.js               נקודות עיגון וידיות ⇄ d, פיצול מקטע, חלקה ↔ פינה, הנקודה הקרובה
-  boolean.js             פעולות צורה: שיטוח עקומות + polygon-clipping (vendor, MIT), והעקומות חוזרות בתוצאה
+assets/js/geometry/      גאומטריה ונתיבים — עותק מסונכרן מ-creative-suite/geometry-core/src/js (המודול המשותף, בבעלותנו).
+                         **לא עורכים כאן** — עורכים במקור ומריצים php creative-suite/geometry-core/tools/sync.php. ה-API: README של המודול
 assets/js/model.js       המסמך בצורת document.json; הזזה ושינוי גודל נאפים ל-d ולפרמטרי הצורה
 assets/js/render.js      ציור הקנבס ובדיקת פגיעה (isPointInPath / isPointInStroke)
 assets/js/editor.js      קלט, היסטוריה, שמירה אוטומטית · props.js — לוח המאפיינים · library.js — ה-API · drafts.js — טיוטות ישנות וגיבוי
@@ -112,13 +109,13 @@ assets/js/text.js        טקסט: שורות, גלישה, מדידה (מוזר�
 assets/js/outline.js     טקסט → קווי מתאר (opentype.js), וסדר חזותי לעברית (bidi מקוצר)
 assets/js/export.js      SVG ו-PDF וקטוריים (PDF — כותב משלנו, עמוד לכל לוח) עם דוח פערים
 assets/js/import.js      ייבוא SVG: צורות חיות, סגנון ותורשה, טרנספורמציות, viewBox; דוח על מה שלא עבר
-assets/js/vendor/        opentype.js 2.0.0 (MIT) — נטען רק בייצוא · polygon-clipping 0.15.7 (MIT, עם תלויותיו) — רק בפעולות צורה
+assets/js/vendor/        opentype.js 2.0.0 (MIT) — נטען רק בייצוא (polygon-clipping — בתוך geometry/vendor, של המודול)
                          · pdfjs/ — pdf.js 4.10.38, legacy (Apache-2.0) — רק כשנפתח מסמך של אפליקציה אחרת
 assets/js/mbefile.js     ‎.mbe: בנייה (גופנים ל-media, preview / svg / pdf עם gaps) וקריאה, דרך הליבה
 assets/js/mbe/ · lib/mbe/  ליבת ‎.mbe — עותק מסונכרן מ-creative-suite/mbe-core/src. **לא עורכים כאן**
 assets/fonts/            7 גופנים עבריים חופשיים (OFL, הרישיונות לידם): Heebo, Rubik, Assistant, פרנק רוהל, דוד, Secular One, Amatic
 tests/run.php            php vector-studio/tests/run.php
-tests/geometry.test.mjs  node --test vector-studio/tests/geometry.test.mjs
+tests/                   הבדיקות של הגאומטריה עברו למודול: node --test creative-suite/geometry-core/tests/*.test.mjs
 tests/arrange.test.mjs   node --test vector-studio/tests/arrange.test.mjs
 tests/export.test.mjs    node --test vector-studio/tests/export.test.mjs (גם pdfinfo אם מותקן)
 tests/mbe.test.mjs       node --test vector-studio/tests/mbe.test.mjs — גם Mbe::validate של PHP
