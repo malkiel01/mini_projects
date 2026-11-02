@@ -391,7 +391,9 @@ details.what p { margin-top: var(--s2); }
   display: flex; flex-direction: column; gap: var(--s2); background: var(--bg); overscroll-behavior: contain; }
 .chat-log .empty { margin: auto; text-align: center; }
 /* RTL: out (מה שקרה בצ'אט) מימין, in (מה שנכתב בלוח) משמאל */
-.bubble { max-width: 85%; display: grid; gap: 4px; padding: var(--s2) var(--s3); border-radius: 14px;
+/* העמודה של ה-grid לא גדלה מעבר לבועה: minmax(0,1fr) + min-width:0 לילדים. בלי זה פריט רחב
+   (קוד, כתובת, טבלה) ניפח את העמודה, והטקסט נדחף ונחתך בטלפון */
+.bubble { max-width: 85%; display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; padding: var(--s2) var(--s3); border-radius: 14px;
   background: var(--surface); border: 1px solid var(--line); }
 .bubble--out { align-self: flex-start; border-start-start-radius: 4px; }
 .bubble--in { align-self: flex-end; border-start-end-radius: 4px; background: var(--brand-soft); border-color: transparent; }
@@ -400,7 +402,9 @@ details.what p { margin-top: var(--s2); }
 .b-meta time { margin-inline-start: auto; }
 .b-body { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
 /* Markdown בבועה — כמו בצ'אט: כותרות, הדגשות, ציטוט, רשימות, טבלה וקוד. צפוף, כי זו בועה */
-.b-body.md { white-space: normal; min-width: 0; display: grid; gap: 6px; }
+.bubble > * { min-width: 0; max-width: 100%; }
+.b-body.md { white-space: normal; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+.md > *, .md li, .md blockquote > * { min-width: 0; max-width: 100%; }
 .md > *, .md blockquote > *, .md li > * { margin: 0; }
 .md :is(p, h3, h4, h5, h6, th, td) { unicode-bidi: plaintext; text-align: start; }
 .md :is(h3, h4, h5, h6) { font-size: 1rem; line-height: 1.35; font-weight: 700; margin-block-start: 4px; }
@@ -426,13 +430,14 @@ details.what p { margin-top: var(--s2); }
 .md .md-task { margin-inline-end: 6px; color: var(--muted); }
 .md code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .86em;
   padding: 1px 5px; border-radius: 5px; background: color-mix(in srgb, var(--ink) 7%, transparent); unicode-bidi: isolate; }
-/* קוד בשורה לא נשבר באמצע (greeting-cards/ היה מתפצל ומתהפך בעברית); ארוך — גולל */
-.md :not(pre) > code { display: inline-block; max-width: 100%; overflow-x: auto; white-space: nowrap;
-  vertical-align: bottom; overflow-wrap: normal; }
-.md pre { overflow-x: auto; padding: var(--s2); border-radius: 8px; background: color-mix(in srgb, var(--ink) 6%, transparent);
+/* קוד בשורה: inline-block — יחידה אחת, כך שבעברית החלקים לא מתהפכים (greeting-cards/ התפצל במקף).
+   ארוך — נשבר בתוך הקופסה שלו. לא nowrap: קוד ארוך בלי שבירה ניפח את הבועה מעבר למסך */
+.md :not(pre) > code { display: inline-block; max-width: 100%; white-space: normal; overflow-wrap: anywhere;
+  word-break: break-word; vertical-align: bottom; }
+.md pre { overflow-x: auto; max-width: 100%; padding: var(--s2); border-radius: 8px; background: color-mix(in srgb, var(--ink) 6%, transparent);
   text-align: left; line-height: 1.45; }
 .md pre code { padding: 0; background: none; font-size: .82rem; white-space: pre; }
-.md-table { overflow-x: auto; max-width: 100%; border: 1px solid var(--line); border-radius: 8px; }
+.md-table { display: block; overflow-x: auto; max-width: 100%; border: 1px solid var(--line); border-radius: 8px; }
 .md table { border-collapse: collapse; font-size: .86rem; min-width: 100%; }
 .md :is(th, td) { padding: 5px 8px; border-bottom: 1px solid var(--line); vertical-align: top; overflow-wrap: normal; word-break: normal; }
 .md td { min-width: 3.5em; }
