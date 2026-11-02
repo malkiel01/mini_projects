@@ -10,8 +10,8 @@
 const $ = (s) => document.querySelector(s);
 const TJS = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.6';
 const CACHE = 'transformers-cache';   // שם המטמון של transformers.js בדפדפן
-// המרה קהילתית, מוצמדת ל-commit — לא תשתנה מתחתינו (12e עצמו — המרה שלנו מהמודל הרשמי)
-const MODEL = { id: 'sivelsguy/opus-mt-en-he-onnx', revision: 'fc3befc3af12cd004ae65e9c36ea77858c19157c' };
+// ההמרה שלנו מהמודל הרשמי (12e.7), מהשרת שלנו: models/en-he/1/ — אותו מודל שהלוח מוריד
+const MODEL = { id: 'en-he', revision: '1' };
 const FILES = ['onnx/encoder_model_quantized.onnx', 'onnx/decoder_model_merged_quantized.onnx'];
 
 // שלוש תשובות בנוסח של צ'אט: כותרת, רשימה, קוד בשורה ובלוק קוד
@@ -166,7 +166,10 @@ const codeBlocks = (md) => md.match(/```[\s\S]*?```/g) || [];
 /* ── 3 · Opus-MT ──────────────────────────────────────────── */
 let tjs = null;
 async function lib() {
-  if (!tjs) { tjs = await import(TJS); tjs.env.allowLocalModels = false; }
+  if (!tjs) {
+    tjs = await import(TJS); tjs.env.allowLocalModels = false;
+    tjs.env.remoteHost = new URL('../models/', location.href).href; tjs.env.remotePathTemplate = '{model}/{revision}/';
+  }
   return tjs;
 }
 async function loadModel(deviceKind, onBytes) {

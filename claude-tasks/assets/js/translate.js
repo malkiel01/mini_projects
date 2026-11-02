@@ -12,16 +12,16 @@ import { segment, assemble, needsTranslation } from './translate-text.js';
 
 export { needsTranslation };
 
-// שפה חדשה = שורה כאן (+ השפה ב-api.php translate-lang). כל מודל מוצמד ל-commit, עם הגודל המדויק
-// של כל קובץ — המכנה של פס ההתקדמות קבוע, גם כשהשרת לא שולח גודל.
+// שפה חדשה = שורה כאן (+ השפה ב-api.php translate-lang, + זוג ב-tools/models/build.json). המודלים — ההמרה שלנו
+// מהמודלים הרשמיים של Helsinki-NLP (12e.7), מהשרת שלנו: models/<id>/<revision>/ (tools/models/convert.sh).
+// הגודל המדויק של כל קובץ — מה-checksums.json של אותו build: המכנה של פס ההתקדמות קבוע.
 const ENC = 'onnx/encoder_model_quantized.onnx', DEC = 'onnx/decoder_model_merged_quantized.onnx';
+export const MODELS_BASE = new URL('../../models/', import.meta.url).href;
 export const TRANSLATE_LANGS = {
-  // עברית: ההמרה הקהילתית (§5.11.1) — עד שההמרה שלנו מ-Helsinki-NLP תוגש מהשרת
-  he: { name: 'עברית', heName: 'עברית', flag: '🇮🇱', label: 'אנגלית ← עברית', from: 'אנגלית', id: 'sivelsguy/opus-mt-en-he-onnx',
-        revision: 'fc3befc3af12cd004ae65e9c36ea77858c19157c', sizes: { [ENC]: 53150455, [DEC]: 94015921 } },
-  // ספרדית: ההמרה של Xenova למודל הרשמי Helsinki-NLP/opus-mt-en-es
-  es: { name: 'Español', heName: 'ספרדית', flag: '🇪🇸', label: 'אנגלית ← ספרדית', from: 'אנגלית', id: 'Xenova/opus-mt-en-es',
-        revision: '4b002a4c7edd54a7ced58877258b87f7efd3f892', sizes: { [ENC]: 52899742, [DEC]: 60212804 } },
+  he: { name: 'עברית', heName: 'עברית', flag: '🇮🇱', label: 'אנגלית ← עברית', from: 'אנגלית', id: 'en-he',
+        revision: '1', sizes: { [ENC]: 53215822, [DEC]: 94243270 } },
+  es: { name: 'Español', heName: 'ספרדית', flag: '🇪🇸', label: 'אנגלית ← ספרדית', from: 'אנגלית', id: 'en-es',
+        revision: '1', sizes: { [ENC]: 52786767, [DEC]: 93381807 } },
 };
 export const TR_CREDIT = 'Opus-MT · University of Helsinki · Apache-2.0';
 const CACHE = 'transformers-cache';
@@ -41,11 +41,27 @@ export const needs = (md) => needsTranslation(md, LANG);
 
 /* ── איזה מנוע יש ───────────────────────────────────────────── */
 
+/* ── המודלים הקודמים (מ-Hugging Face, עד 12e.7) — מפנים פעם אחת ─────────────
+ * ‏‎~260MB‎ שכבר לא בשימוש: הקבצים במטמון של transformers.js, וחתיכות הורדה שלא הסתיימה. */
+const OLD_HOST = 'https://huggingface.co/';
+let dropped = null;
+export function dropOldModels() {
+  dropped ??= (async () => {
+    try {
+      const c = await caches.open(CACHE);
+      for (const req of await c.keys()) if (req.url.startsWith(OLD_HOST)) await c.delete(req);
+    } catch { /* אין */ }
+    try { await idbStore('chunks', 'readwrite', (st) => st.delete(IDBKeyRange.bound(OLD_HOST, `${OLD_HOST}\uffff`))); } catch { /* אין */ }
+  })();
+  return dropped;
+}
+
 let enginePromise = null;
 /** ‏{ kind: 'api' | 'model' | null, reason } — נבדק פעם אחת; refresh אחרי הורדה/הסרה. */
 export function engine(refresh = false) {
   if (refresh) enginePromise = null;
   enginePromise ??= (async () => {
+    await dropOldModels();
     if ('Translator' in self) {
       try {
         const a = await Promise.race([
@@ -73,7 +89,7 @@ export async function availableFor(l) {
   return (await modelCached(l)) ? 'model' : null;
 }
 
-const fileUrl = (m, f) => `https://huggingface.co/${m.id}/resolve/${m.revision}/${f}`;
+const fileUrl = (m, f) => `${MODELS_BASE}${m.id}/${m.revision}/${f}`;   // כמו env.remotePathTemplate ב-Worker
 export async function modelCached(l = LANG) {
   const m = model(l);
   try {
@@ -177,6 +193,24 @@ async function fetchChunk(url, start, end, onBytes, onRetry) {
   }
 }
 
+/** ה-checksums.json של ה-build (tools/models/convert.sh): גודל ו-sha256 לכל קובץ. */
+async function fetchChecksums(m) {
+  const url = `${MODELS_BASE}${m.id}/${m.revision}/checksums.json`;
+  for (let attempt = 1; ; attempt++) {
+    await waitOnline();
+    try {
+      const r = await fetch(url, { cache: 'no-store' });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return await r.json();
+    } catch (e) {
+      if (attempt >= 6) throw new Error(`לא הצלחתי לקרוא את רשימת הקבצים של המודל (${e.message})`);
+      await sleep(1000 * 2 ** attempt);
+    }
+  }
+}
+const sha256 = async (blob) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', await blob.arrayBuffer()))]
+  .map((b) => b.toString(16).padStart(2, '0')).join('');
+
 /**
  * ⬇️ הורדת המודל של השפה ‎l‎ (הסכמה מפורשת, §5.11.1).
  * onProgress({ loaded, total, etaSec, resumedFrom, retrying }) — ‏resumedFrom: כמה כבר היה במכשיר בהתחלה.
@@ -192,6 +226,11 @@ export async function downloadModel(onProgress, l = LANG) {
     onProgress?.({ loaded, total, resumedFrom: have, etaSec: fresh > 2e6 && rate > 0 ? Math.round((total - loaded) / rate) : null, ...extra });
   };
   report();
+  // הקבצים נבדקים מול ה-checksums.json של השרת: גודל לפני ההורדה, sha256 אחרי ההרכבה (12e.7)
+  const man = await fetchChecksums(MODEL);
+  for (const f of MODEL.files) {
+    if (man.files?.[f]?.size !== MODEL.sizes[f]) throw new Error('המודל בשרת התעדכן — רעננו את הדף ונסו שוב');
+  }
   const c = await caches.open(CACHE);
   for (const f of MODEL.files) {
     const url = fileUrl(MODEL, f);
@@ -212,6 +251,11 @@ export async function downloadModel(onProgress, l = LANG) {
     for (let i = 0; i < n; i++) blobs.push(await idbStore('chunks', 'readonly', (st) => st.get(chunkKey(url, i))));
     const full = new Blob(blobs, { type: 'application/octet-stream' });
     if (full.size !== size) throw new Error(`הקובץ ${f} לא שלם (${full.size} מתוך ${size}) — נסו שוב`);
+    if (await sha256(full) !== man.files[f].sha256) {
+      // חתיכה פגומה — לא שומרים; מוחקים את החתיכות של הקובץ, וההורדה הבאה מורידה אותו מחדש
+      await idbStore('chunks', 'readwrite', (st) => st.delete(IDBKeyRange.bound(`${url}#`, `${url}#\uffff`)));
+      throw new Error(`הקובץ ${f} הגיע פגום (sha256 שונה) — נמחק; לחצו שוב להורדה`);
+    }
     await c.put(url, new Response(full, { headers: { 'Content-Type': 'application/octet-stream', 'Content-Length': String(size) } }));
     await idbStore('chunks', 'readwrite', (st) => st.delete(IDBKeyRange.bound(`${url}#`, `${url}#\uffff`)));
   }
@@ -232,7 +276,7 @@ export async function removeModel(l = LANG) {
     for (const req of await c.keys()) if (req.url.includes(`/${m.id}/`)) await c.delete(req);
   } catch { /* אין */ }
   try {
-    const prefix = `https://huggingface.co/${m.id}/`;
+    const prefix = `${MODELS_BASE}${m.id}/`;
     await idbStore('chunks', 'readwrite', (st) => st.delete(IDBKeyRange.bound(prefix, `${prefix}\uffff`)));
   } catch { /* אין */ }
   try {

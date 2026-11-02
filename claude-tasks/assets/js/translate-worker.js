@@ -9,6 +9,9 @@
 import { pipeline, env } from '../vendor/transformers-3.7.6.min.js';
 
 env.allowLocalModels = false;
+// המודלים מהשרת שלנו (12e.7): models/<id>/<revision>/ — אותה כתובת ש-translate.js מוריד אליה בחתיכות
+env.remoteHost = new URL('../../models/', import.meta.url).href;
+env.remotePathTemplate = '{model}/{revision}/';
 // ה-WASM של onnxruntime — מ-jsDelivr באותה גרסה מוצמדת (‎~21MB‎, נשמר במטמון הדפדפן; לא בריפו)
 env.backends.onnx.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.6/dist/';
 

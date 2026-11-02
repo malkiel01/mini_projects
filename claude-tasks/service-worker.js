@@ -41,6 +41,7 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
   if (/\.php$/.test(url.pathname) || url.pathname.includes('/data/')) return;   // נתונים: תמיד רשת
+  if (url.pathname.includes('/models/')) return;   // מודלי התרגום: translate.js מוריד ושומר בעצמו (בחתיכות, Range)
   event.respondWith(
     fetch(req).then((res) => {
       // הפניה (השער שולח לכניסה) — לא נשמרת במקום הדף עצמו
