@@ -154,3 +154,18 @@ lives, and that the `Stop` hook receives the last message. If waking does not wo
 - **Nothing in your code.** The "היצירה v2" chats get the skill and register themselves.
 - The owner: `CLAUDE_TASKS_TOKEN` and `CLAUDE_TASKS_URL` in the environment settings (spec 5.5).
 - **Status:** a row per deployed stage will be added here.
+
+| Date | What is live | PR |
+| --- | --- | --- |
+| 2026-11-01 | Safety: `author_role`, `owner_only` (inherited), `projects?root_id=`, subtree tokens, Origin check | #1086 |
+| 2026-11-01 | Bridge — server: channels, messages, `channel-*` actions, one inbox | #1096 |
+| 2026-11-01 | Bridge — chat side: `claude-tasks/bridge/`, hooks, the `claude-tasks-live` skill | #1100 |
+| 2026-11-01 | Bridge — board UI: 💬 chats tab, conversation screen | #1104 |
+| 2026-11-01 | Approvals and policy (`awaiting_approval`, `ask-approval`, `decide`) | #1105 |
+| 2026-11-01 | One route switch `chat \| platform` (`X-Worker-Route`) | #1108 |
+| 2026-11-02 | Per-user monthly quota + usage graph; approvals per project | #1111, #1112 |
+| 2026-11-02 | Platform answers in the channel (☁️), lazy monitoring | #1113 |
+| 2026-11-02 | Claude Code engine (`projects.engine = claude-code`), PR only | #1118 |
+
+**Not yet:** the live "Done" check (a chat wakes and answers in under a minute on the real board) waits for the owner to put
+`CLAUDE_TASKS_TOKEN` in the environment settings. Until then the "היצירה v2" chats can install the skill but not register.
