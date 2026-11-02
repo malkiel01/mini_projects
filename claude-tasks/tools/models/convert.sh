@@ -6,7 +6,7 @@
 #
 # יוצא: <workdir>/dist/<pair>/<build>/ — בדיוק מה שעולה לשרת אל claude-tasks/models/:
 #   config.json generation_config.json tokenizer.json tokenizer_config.json README.md (כרטיס המודל)
-#   onnx/encoder_model_quantized.onnx onnx/decoder_model_merged_quantized.onnx manifest.json (גדלים, sha256)
+#   onnx/encoder_model_quantized.onnx onnx/decoder_model_merged_quantized.onnx checksums.json (גדלים, sha256)
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 W="$(mkdir -p "$1" && cd "$1" && pwd)"
@@ -70,7 +70,7 @@ for root, _, names in os.walk(d):
         files[rel] = {"size": os.path.getsize(p), "sha256": h.hexdigest()}
 json.dump({"pair": pair, "build": build, "source": src, "revision": rev, "license": "apache-2.0",
            "credit": "Opus-MT · University of Helsinki · Apache-2.0", "converter": f"transformers.js {tjs} + fold_q8.py (q8)",
-           "files": files}, open(os.path.join(d, "manifest.json"), "w"), indent=1, ensure_ascii=False)
+           "files": files}, open(os.path.join(d, "checksums.json"), "w"), indent=1, ensure_ascii=False)
 for k, v in files.items(): print(f"{v['size']:>10}  {k}")
 PY
   rm -rf "$M"

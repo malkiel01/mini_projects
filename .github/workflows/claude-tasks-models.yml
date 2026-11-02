@@ -120,9 +120,10 @@ jobs:
           echo "::error::לא הצלחתי להעלות את המודלים לשרת"
           exit 1
 
-      # מהאינטרנט, כמו הדפדפן: manifest זהה, וקובץ גדול עונה ל-Range ב-206 עם הגודל הנכון.
+      # מהאינטרנט, כמו הדפדפן: checksums.json זהה, וקובץ גדול עונה ל-Range ב-206 עם הגודל הנכון.
+      # לא manifest.json: השער של הפלטפורמה מתייחס לכל manifest.json כ-manifest של PWA ומשנה אותו בהגשה.
       # ‏models/** ציבורי ב-app.json; עד שהפריסה של אותו מיזוג בונה את השער — מחכים (עד 10 דקות).
-      - name: Verify from the web (manifest + Range)
+      - name: Verify from the web (checksums + Range)
         env:
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
         run: |
@@ -130,8 +131,8 @@ jobs:
           WEB="https://mbe-plus.com${DEPLOY_PATH#*/public_html}/claude-tasks/models"
           cd "$RUNNER_TEMP/m/dist"
           fail=0
-          for man in */*/manifest.json; do
-            d="${man%/manifest.json}"
+          for man in */*/checksums.json; do
+            d="${man%/checksums.json}"
             ok=0
             for i in $(seq 1 20); do
               got=$(curl -sS -o "$RUNNER_TEMP/got.json" -w '%{http_code} %{content_type} %{redirect_url}' "$WEB/$man" 2>&1 || true)
@@ -139,13 +140,13 @@ jobs:
               echo "נסיון $i: $got — $(head -c 120 "$RUNNER_TEMP/got.json" 2>/dev/null | tr '\n' ' ')"
               sleep 30
             done
-            [ "$ok" = 1 ] || { echo "::error::$d: manifest.json לא נגיש או שונה ($WEB/$man): $got"; fail=1; continue; }
+            [ "$ok" = 1 ] || { echo "::error::$d: checksums.json לא נגיש או שונה ($WEB/$man): $got"; fail=1; continue; }
             f=onnx/decoder_model_merged_quantized.onnx
             size=$(stat -c %s "$d/$f")
             h=$(curl -sS -o /dev/null -D - -r 0-1048575 "$WEB/$d/$f" | tr -d '\r')
             code=$(printf '%s\n' "$h" | head -1 | awk '{print $2}')
             total=$(printf '%s\n' "$h" | grep -i '^content-range:' | sed 's#.*/##')
-            if [ "$code" = 206 ] && [ "$total" = "$size" ]; then echo "ok $d: manifest זהה, Range 206, $size בתים"
+            if [ "$code" = 206 ] && [ "$total" = "$size" ]; then echo "ok $d: checksums זהה, Range 206, $size בתים"
             else echo "::error::$d/$f: קוד $code, Content-Range total=${total:-none} (צפוי 206, $size)"; fail=1; fi
           done
           exit $fail
