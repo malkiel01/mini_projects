@@ -77,7 +77,7 @@ const EMPTY = 'עוד אין היסטוריה. היא נרשמת בכל שמיר
 export function versionsList(el, opts) {
     const { load, restore, app = '', empty = EMPTY, confirmRestore = true, onRestored } = opts || {};
     if (typeof load !== 'function') throw new Error('versions: חסרה הפונקציה load');
-    el.classList.add('versions');
+    el.classList.add('versions-box');   // לא '.versions' — שם תפוס ברסטר (app.css)
     const sum = h('p.hint.versions-sum', { 'aria-live': 'polite' });
     const ul = h('ul.list.versions-list');
     el.replaceChildren(sum, ul);
