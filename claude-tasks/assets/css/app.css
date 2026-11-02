@@ -753,3 +753,24 @@ details.what p { margin-top: var(--s2); }
 .lbl-form { display: grid; gap: 6px; margin-top: 6px; }
 .lbl-form .seg { width: 100%; }
 .lbl-row .lbl { font-size: .85rem; }
+
+/* ── 🔎 חיפוש וסינון (§5.11, 12d) ──────────────────────────────── */
+.cv-filter { display: grid; gap: 4px; padding: 6px var(--s3); border-bottom: 1px solid var(--line); background: var(--brand-soft); }
+.cv-filter[hidden] { display: none; }
+.fchips { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
+.fchip { display: inline-flex; align-items: center; gap: 2px; max-width: 100%; padding: 0 2px 0 8px; border-radius: 99px;
+  background: var(--surface); border: 1px solid var(--line); font-size: .78rem; min-width: 0; }
+.fchip > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; unicode-bidi: plaintext; }
+.fchip-x { border: 0; background: none; color: var(--muted); min-width: 24px; min-height: 24px; cursor: pointer; font-size: .75rem; border-radius: 50%; }
+.fchip-x:focus-visible { outline: 2px solid var(--brand); }
+.fnav { display: flex; align-items: center; gap: 2px; }
+.fcount { font-size: .8rem; color: var(--muted); margin-inline-end: auto; font-variant-numeric: tabular-nums; }
+.fnav .icon-btn { min-width: 36px; min-height: 32px; }
+mark.hit { background: color-mix(in srgb, var(--star) 45%, transparent); color: inherit; border-radius: 3px; padding: 0 1px; }
+.ftoggles { display: flex; flex-wrap: wrap; gap: 6px; }
+.ftoggle { min-height: 36px; padding: 0 12px; border: 1px solid var(--line); border-radius: 99px; background: var(--surface);
+  color: var(--ink); font: inherit; font-size: .85rem; cursor: pointer; }
+.ftoggle[aria-pressed="true"] { border-color: var(--brand); background: var(--brand-soft); color: var(--brand); font-weight: 600; }
+.ftoggle:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+.fdates { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); }
+.fdates input { min-width: 0; width: 100%; }

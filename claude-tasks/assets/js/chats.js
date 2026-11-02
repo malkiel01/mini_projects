@@ -229,9 +229,12 @@ async function makeTask(task, btn) {
 function renderLog(stick) {
   const log = $('#chatLog');
   const atEnd = stick || log.scrollHeight - log.scrollTop - log.clientHeight < 80;
-  log.replaceChildren(...(conv.messages.length ? conv.messages.map(bubble)
-    : [el('li', { class: 'empty', text: 'עוד אין הודעות. מה שתכתוב כאן יגיע לצ\'אט ויעיר אותו.' })]));
-  if (atEnd) log.scrollTop = log.scrollHeight;
+  // סינון פעיל (12d) — רק ההודעות שמתאימות; אחרת כל השיחה
+  const list = conv.view || conv.messages;
+  log.replaceChildren(...(list.length ? list.map(bubble)
+    : [el('li', { class: 'empty', text: conv.view ? 'אין הודעות שמתאימות לסינון.' : 'עוד אין הודעות. מה שתכתוב כאן יגיע לצ\'אט ויעיר אותו.' })]));
+  if (conv.filter?.q) highlight(log, conv.filter.q);
+  if (atEnd && !conv.filter) log.scrollTop = log.scrollHeight;
 }
 
 /** ‏after — מהמוקדמת שעוד לא נמסרה, כדי ש-✓ יתעדכן ל-✓✓. */
@@ -274,7 +277,8 @@ function startTimer() {
 function stopTimer() { if (conv.timer) clearInterval(conv.timer); conv.timer = null; }
 
 export async function openConversation(id) {
-  Object.assign(conv, { id, channel: null, messages: [], pins: [] });
+  Object.assign(conv, { id, channel: null, messages: [], pins: [], filter: null, view: null, matches: [], matchAt: -1 });
+  $('#cvFilter').hidden = true;
   setReply(null);
   $('#cvPins').hidden = true;
   $('#chatLog').replaceChildren();
@@ -355,6 +359,8 @@ function renderSettings() {
     ['ℹ️', 'על הצ\'אט', `${c.role || 'בלי תפקיד'} · נראה ${c.last_seen_at ? timeAgo(c.last_seen_at) : 'אף פעם'}`, () => openAbout()],
     c.can_edit && ['✏️', 'שם, סמל וצבע', `${channelIcon(c)} ${c.name}${c.color ? ' · ' + COLOR_NAME[c.color] : ''}`, () => openEdit()],
     ['📌', 'מוצמדות', conv.pins?.length ? `${conv.pins.length} · ${conv.pins.filter((x) => x.visibility === 'private').length ? 'כולל שלך 🔒' : 'לכולם'}` : 'אין', () => openPinList(conv.pins || [], (id) => { $('#chatSettings').close(); scrollToMessage(id); })],
+    ['🔎', 'חיפוש וסינון', conv.filter ? `פעיל · ${filterSummary(conv.filter).join(' · ')}` : 'טקסט, תוויות, מוצמדות, סוג, מי כתב, תאריכים', () => { $('#chatSettings').close(); openSearch(); }],
+    ['⬇️', 'ייצוא', conv.view ? 'כל השיחה, או רק המסוננות' : 'כל השיחה כקובץ Markdown', () => exportChat()],
     ['🏷', 'ניהול תוויות', 'יצירה, עריכה ומחיקה — משותפות ופרטיות', () => openManageLabels(conv.channel, () => reload())],
     ['🔔', 'השתקה', c.muted ? 'מושתק — לא נספר ב"ממתין לך" · נגיעה מבטלת' : 'כבויה — נגיעה משתיקה', () => toggleMute(), { pressed: c.muted }],
     isOwner() && ['🧭', 'מי עונה', `${c.route_own ? ROUTE_LABEL[c.route_own] : 'כמו הפרויקט'} · בפועל: ${ROUTE_LABEL[c.route_effective]}`, () => openRoute()],
@@ -629,5 +635,164 @@ async function pin(m, visibility, pinned) {
     renderLog(false);
     await loadPins();
     toast(pinned ? (visibility === 'shared' ? 'הוצמדה לכולם' : 'הוצמדה לך') : 'ההצמדה בוטלה', 'ok');
+  } catch (ex) { toast(ex.message, 'error'); }
+}
+
+/* ── 🔎 חיפוש, 🏷 סינון ו-⬇️ ייצוא (§5.11, שלב 12d) ─────────────────── */
+
+const KIND_LABEL = { question: '❓ שאלות', decision: '🔐 החלטות', answer: '💡 תשובות', task: '📋 מטלות', system: '⚙ מערכת' };
+const AUTHOR_LABEL = { chat: '💬 הצ\'אט', board: '👤 אנשים בלוח', platform: '☁️ Platform', system: '⚙ מערכת' };
+const emptyFilter = () => ({ q: '', labels: [], pinned: false, kinds: [], authors: [], from: '', to: '' });
+let labelNames = {};
+
+function filterSummary(f) {
+  return [
+    f.q && `"${f.q}"`,
+    ...f.labels.map((id) => `🏷 ${labelNames[id] || id}`),
+    f.pinned && '📌 מוצמדות',
+    ...f.kinds.map((k) => KIND_LABEL[k]),
+    ...f.authors.map((a) => AUTHOR_LABEL[a]),
+    f.from && `מ-${f.from}`, f.to && `עד ${f.to}`,
+  ].filter(Boolean);
+}
+/** רק טקסט? אז מציגים את כל השיחה ומדגישים; כל סינון אחר — מצמצם את הרשימה. */
+const narrows = (f) => f.labels.length || f.pinned || f.kinds.length || f.authors.length || f.from || f.to;
+
+/** מסמן את ההתאמות בטקסט שבבועות (צמתי טקסט בלבד — בלי לגעת במבנה). */
+function highlight(root, q) {
+  const needle = q.toLocaleLowerCase();
+  root.querySelectorAll('.b-body, .choice').forEach((body) => {
+    const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+    const hits = [];
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) if (n.nodeValue.toLocaleLowerCase().includes(needle)) hits.push(n);
+    hits.forEach((n) => {
+      const frag = document.createDocumentFragment();
+      let text = n.nodeValue, low = text.toLocaleLowerCase(), i;
+      while ((i = low.indexOf(needle)) !== -1) {
+        if (i) frag.append(text.slice(0, i));
+        frag.append(el('mark', { class: 'hit', text: text.slice(i, i + q.length) }));
+        text = text.slice(i + q.length); low = low.slice(i + q.length);
+      }
+      if (text) frag.append(text);
+      n.replaceWith(frag);
+    });
+  });
+}
+
+function chip(text, onRemove) {
+  return el('span', { class: 'fchip' }, [el('span', { dir: 'auto', text }),
+    el('button', { type: 'button', class: 'fchip-x', 'aria-label': `הסרת ${text}`, text: '✕', onclick: onRemove })]);
+}
+
+function renderFilterBar() {
+  const f = conv.filter;
+  const bar = $('#cvFilter');
+  bar.hidden = !f;
+  if (!f) { bar.replaceChildren(); return; }
+  const drop = (patch) => () => { applyFilter({ ...conv.filter, ...patch }); };
+  const chips = [
+    f.q ? chip(`"${f.q}"`, drop({ q: '' })) : null,
+    ...f.labels.map((id) => chip(`🏷 ${labelNames[id] || id}`, drop({ labels: f.labels.filter((x) => x !== id) }))),
+    f.pinned ? chip('📌 מוצמדות', drop({ pinned: false })) : null,
+    ...f.kinds.map((k) => chip(KIND_LABEL[k], drop({ kinds: f.kinds.filter((x) => x !== k) }))),
+    ...f.authors.map((a) => chip(AUTHOR_LABEL[a], drop({ authors: f.authors.filter((x) => x !== a) }))),
+    f.from ? chip(`מ-${f.from}`, drop({ from: '' })) : null,
+    f.to ? chip(`עד ${f.to}`, drop({ to: '' })) : null,
+  ].filter(Boolean);
+  const n = conv.matches.length;
+  bar.replaceChildren(...[
+    el('div', { class: 'fchips' }, chips),
+    el('div', { class: 'fnav' }, [
+      el('span', { class: 'fcount', 'aria-live': 'polite', text: n ? `${conv.matchAt + 1} / ${n}` : 'אין תוצאות' }),
+      el('button', { type: 'button', class: 'icon-btn', 'aria-label': 'התוצאה הקודמת', text: '▲', disabled: !n, onclick: () => step(-1) }),
+      el('button', { type: 'button', class: 'icon-btn', 'aria-label': 'התוצאה הבאה', text: '▼', disabled: !n, onclick: () => step(1) }),
+      el('button', { type: 'button', class: 'linklike', text: 'ניקוי', onclick: () => applyFilter(null) }),
+    ]),
+  ]);
+}
+
+function step(dir) {
+  const n = conv.matches.length;
+  if (!n) return;
+  conv.matchAt = (conv.matchAt + dir + n) % n;
+  renderFilterBar();
+  const id = conv.matches[conv.matchAt];
+  if (!$(`#chatLog [data-id="${id}"]`)) { toast('ההודעה עוד לא נטענה במסך', ''); return; }
+  scrollToMessage(id);
+}
+
+async function applyFilter(f) {
+  const empty = !f || !filterSummary(f).length;
+  if (empty) {
+    conv.filter = null; conv.view = null; conv.matches = []; conv.matchAt = -1;
+    renderFilterBar(); renderLog(true);
+    return;
+  }
+  try {
+    const { messages } = await api('channel-search', { channel_id: conv.id, filter: f });
+    conv.filter = f;
+    conv.view = narrows(f) ? messages : null;
+    conv.matches = messages.map((m) => m.id);
+    conv.matchAt = conv.matches.length ? conv.matches.length - 1 : -1;   // מהחדשה
+    renderFilterBar();
+    renderLog(false);
+    if (conv.matches.length) setTimeout(() => scrollToMessage(conv.matches[conv.matchAt]), 30);
+  } catch (ex) { toast(ex.message, 'error'); }
+}
+
+function toggleBtn(text, pressed, onToggle) {
+  return el('button', { type: 'button', class: 'ftoggle', 'aria-pressed': String(!!pressed),
+    onclick: (e) => { const on = e.currentTarget.getAttribute('aria-pressed') !== 'true'; e.currentTarget.setAttribute('aria-pressed', String(on)); onToggle(on); } }, [text]);
+}
+
+async function openSearch() {
+  if (!conv.id) return;
+  const f = structuredClone(conv.filter || emptyFilter());
+  let labels = [];
+  try { ({ labels } = await api('labels', { channel_id: conv.id })); } catch { /* בלי תוויות — שאר הסינון עובד */ }
+  labelNames = Object.fromEntries(labels.map((l) => [l.id, l.name]));
+  const setIn = (arr, v, on) => { const i = arr.indexOf(v); if (on && i < 0) arr.push(v); if (!on && i >= 0) arr.splice(i, 1); };
+  const q = el('input', { type: 'search', id: 'ssQ', value: f.q, dir: 'auto', placeholder: 'מה לחפש בהודעות', 'aria-label': 'טקסט לחיפוש', enterkeyhint: 'search' });
+  const from = el('input', { type: 'date', value: f.from, 'aria-label': 'מתאריך' });
+  const to = el('input', { type: 'date', value: f.to, 'aria-label': 'עד תאריך' });
+  $('#ssBody').replaceChildren(...[
+    el('label', { class: 'field' }, [el('span', { text: '🔎 טקסט' }), q]),
+    el('p', { class: 'hint', text: 'טקסט לבד — מדגיש בתוך השיחה, ו-▲▼ עוברים בין התוצאות. כל סינון אחר — מציג רק את ההודעות שמתאימות.' }),
+    labels.length ? el('h3', { text: '🏷 תוויות (כל אחת מהן)' }) : null,
+    labels.length ? el('div', { class: 'ftoggles' }, labels.map((l) => toggleBtn(`${l.visibility === 'private' ? '🔒 ' : ''}${l.name}`, f.labels.includes(l.id), (on) => setIn(f.labels, l.id, on)))) : null,
+    el('h3', { text: 'עוד' }),
+    el('div', { class: 'ftoggles' }, [toggleBtn('📌 מוצמדות', f.pinned, (on) => { f.pinned = on; })]),
+    el('h3', { text: 'סוג' }),
+    el('div', { class: 'ftoggles' }, Object.entries(KIND_LABEL).map(([k, t]) => toggleBtn(t, f.kinds.includes(k), (on) => setIn(f.kinds, k, on)))),
+    el('h3', { text: 'מי כתב' }),
+    el('div', { class: 'ftoggles' }, Object.entries(AUTHOR_LABEL).map(([k, t]) => toggleBtn(t, f.authors.includes(k), (on) => setIn(f.authors, k, on)))),
+    el('h3', { text: 'תאריכים' }),
+    el('div', { class: 'fdates' }, [el('label', { class: 'field' }, [el('span', { text: 'מ-' }), from]), el('label', { class: 'field' }, [el('span', { text: 'עד' }), to])]),
+    el('div', { class: 'row-btns' }, [
+      el('button', { type: 'button', class: 'btn ghost', text: 'ניקוי', onclick: () => { $('#searchSheet').close(); applyFilter(null); } }),
+      el('button', { type: 'button', class: 'btn ghost', text: '⬇️ ייצוא', onclick: () => exportChat() }),
+    ]),
+  ].filter(Boolean));
+  $('#ssForm').onsubmit = (e) => {
+    e.preventDefault();
+    f.q = q.value.trim(); f.from = from.value; f.to = to.value;
+    $('#searchSheet').close();
+    applyFilter(f);
+  };
+  $('#searchSheet').showModal();
+  q.focus();
+}
+on('#cvSearch', 'click', openSearch);
+
+/** ⬇️ קובץ Markdown — כל השיחה, או המסוננות כשיש סינון. */
+async function exportChat() {
+  if (!conv.id) return;
+  const filtered = conv.filter && confirm(`לייצא רק את ההודעות שמתאימות לסינון (${conv.matches.length})?\nביטול — כל השיחה.`);
+  try {
+    const r = await api('channel-export', { channel_id: conv.id, filter: filtered ? conv.filter : {} });
+    const a = el('a', { href: URL.createObjectURL(new Blob([r.markdown], { type: 'text/markdown;charset=utf-8' })), download: r.filename });
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    toast(`יוצאו ${r.count} הודעות`, 'ok');
   } catch (ex) { toast(ex.message, 'error'); }
 }
