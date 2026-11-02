@@ -3,7 +3,10 @@
 **By:** the "מטלות לקלוד - אפיון" chat, 2026-11-01. **Implemented by:** "מטלות לקלוד – כותב הקוד".
 **Sources:** `creative-suite/docs/requests/claude-tasks-command-center.md` (14 items + the 7-PR plan),
 `creative-suite/docs/requests/claude-tasks-live-bridge.md`, and the owner's feedback on the board (#1053, #1069).
-**Status:** draft, awaiting the owner's approval. Decisions already made are marked ✅.
+**Status (2026-11-02):** approved 2026-11-01; **stages 1–10 built and deployed** (see §14). Still open — not code:
+(1) the live check of the bridge on the real board waits for `CLAUDE_TASKS_TOKEN` in the environment settings;
+(2) Platform answers and the Claude Code engine were tested only against fake providers; (3) every repo with the engine
+installed needs "התקנה מחדש" (cookie fix + usage reporting) — the owner postponed it. Decisions are marked ✅.
 
 > **Language rule (owner, 2026-11-01):** this spec and every skill built from it are written in **English**.
 > UI strings stay Hebrew (the board is `lang="he" dir="rtl"`). Questions to the owner are asked in Hebrew.
