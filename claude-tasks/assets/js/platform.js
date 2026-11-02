@@ -6,6 +6,7 @@
  */
 
 import { $, $$, el, api, toast, state, on, PLATFORM_HINT } from './core.js';
+import { openPolicySheet, policySubline } from './policy.js';
 
 /* ── חיבורים (docs/spec.md §10.1) ─────────────────────────────────
  *
@@ -344,6 +345,7 @@ export async function openProject(id) {
   renderCard();
   renderRows();
   loadSkills().then(renderRows).catch(() => {});
+  loadPolicyLine();
   $('#pvFile').hidden = true;
   $('#projectView').showModal();
 }
@@ -380,6 +382,7 @@ function renderRows() {
     owner && admin && ['🔑', "אסימון לצ'אטים", 'הצגה', 'pvsToken'],
     p.repo_name && ['📂', 'קבצים', 'עיון בריפו', 'pvsFiles'],
     ['🧭', 'מי עונה', routeLabel(p.id), 'pvsRoute'],
+    ['🔐', 'אישורים', state.pv.policy ?? '…', 'pvsPolicy'],
     owner && ['🏗️', 'מבנה', parent ? `בתוך: ${parent.name}` : 'רמה עליונה', 'pvsStructure'],
   ].filter(Boolean);
   $('#pvRows').replaceChildren(...rows.map(([ic, title, sub, sheet]) => el('li', {
@@ -406,9 +409,19 @@ async function openSheet(id) {
   if (id === 'pvsFiles') { $('#pvFile').hidden = true; browse(state.openProject.path || '').catch(() => {}); }
   if (id === 'pvsGithub') renderGithubChoice();
   if (id === 'pvsRoute') renderRouteSheet();
+  if (id === 'pvsPolicy') return openPolicySheet(state.openProject.id, state.openProject.name);
   if (id === 'pvsToken') { $('#pvChatTokenValue').textContent = '••••••••'; $('#pvChatTokenShow').hidden = false; $('#pvChatTokenCopy').hidden = true; }
   $('#' + id).showModal();
 }
+
+/* ── אישורים (§6.1) ───────────────────────────────────────── */
+
+function loadPolicyLine() {
+  const id = state.openProject?.id;
+  state.pv.policy = null;
+  policySubline(id).then((t) => { if (state.openProject?.id === id) { state.pv.policy = t; renderRows(); } }).catch(() => {});
+}
+document.addEventListener('ct:policy-changed', (e) => { if (e.detail !== null && e.detail === state.openProject?.id) loadPolicyLine(); });
 
 /* ── מי עונה (§7) ─────────────────────────────────────────── */
 

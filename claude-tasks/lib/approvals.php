@@ -37,14 +37,6 @@ const DECISION_LABEL = ['once' => 'אושר פעם אחת', 'always' => 'אוש�
 
 function migrateApprovals(PDO $pdo): void {
     $pdo->exec("
-        CREATE TABLE IF NOT EXISTS policy (
-            type        TEXT PRIMARY KEY,
-            decision    TEXT NOT NULL,
-            by_user     INTEGER,
-            at          INTEGER NOT NULL,
-            prev        TEXT NOT NULL DEFAULT '',
-            source_task INTEGER
-        );
         CREATE TABLE IF NOT EXISTS policy_log (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             type        TEXT NOT NULL,
@@ -54,6 +46,44 @@ function migrateApprovals(PDO $pdo): void {
             prev        TEXT NOT NULL DEFAULT '',
             source_task INTEGER
         );
+    ");
+    addColumn($pdo, 'policy_log', 'project_id', 'INTEGER');
+
+    /*
+     * שלב 7b (§6.1): כלל לכל פרויקט. המפתח (project_id, type), ו-NULL = כל הלוח.
+     * SQLite לא משנה מפתח ראשי — בונים טבלה חדשה ומעתיקים: הכללים הקיימים נשארים
+     * כלליים לכל הלוח, כך ששום התנהגות לא משתנה בפריסה.
+     */
+    $has = $pdo->query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'policy'")->fetchColumn();
+    $cols = $has ? array_column($pdo->query('PRAGMA table_info(policy)')->fetchAll(), 'name') : [];
+    if ($has && !in_array('project_id', $cols, true)) {
+        $pdo->beginTransaction();
+        try {
+            $pdo->exec('ALTER TABLE policy RENAME TO policy_v1');
+            policyTable($pdo);
+            $pdo->exec('INSERT INTO policy (project_id, type, decision, by_user, at, prev, source_task)
+                        SELECT NULL, type, decision, by_user, at, prev, source_task FROM policy_v1');
+            $pdo->exec('DROP TABLE policy_v1');
+            $pdo->commit();
+        } catch (Throwable $e) { $pdo->rollBack(); throw $e; }
+    } elseif (!$has) {
+        policyTable($pdo);
+    }
+}
+
+function policyTable(PDO $pdo): void {
+    $pdo->exec("
+        CREATE TABLE policy (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id  INTEGER,
+            type        TEXT NOT NULL,
+            decision    TEXT NOT NULL,
+            by_user     INTEGER,
+            at          INTEGER NOT NULL,
+            prev        TEXT NOT NULL DEFAULT '',
+            source_task INTEGER
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_policy_key ON policy(IFNULL(project_id, 0), type);
     ");
 }
 
@@ -67,39 +97,137 @@ function approvalTypes(): array {
     return $out;
 }
 
+/** הכלל שנקבע במקום אחד בדיוק (פרויקט, או null = כל הלוח). */
+function localPolicy(string $type, ?int $projectId): ?array {
+    $st = $projectId === null
+        ? db()->prepare('SELECT * FROM policy WHERE project_id IS NULL AND type = ?')
+        : db()->prepare('SELECT * FROM policy WHERE project_id = ? AND type = ?');
+    $st->execute($projectId === null ? [$type] : [$projectId, $type]);
+    return $st->fetch() ?: null;
+}
+
+/** הפרויקט ואבותיו, מהקרוב לרחוק: [[id, name], …]. */
+function projectChain(?int $projectId): array {
+    $out = [];
+    $st = db()->prepare('SELECT id, name, parent_id FROM projects WHERE id = ?');
+    for ($id = $projectId, $i = 0; $id && $i < 16; $i++) {
+        $st->execute([$id]);
+        $r = $st->fetch();
+        if (!$r) break;
+        $out[] = [(int) $r['id'], (string) $r['name']];
+        $id = (int) ($r['parent_id'] ?? 0);
+    }
+    return $out;
+}
+
+/**
+ * פתרון (§6.1): הפרויקט ← כל אב עד השורש ← כל הלוח ← ask. הקרוב גובר.
+ * ‏source: {project_id, name} | 'board' | null.
+ */
+function policyResolve(string $type, ?int $projectId = null): array {
+    $type = approvalType($type);
+    foreach (projectChain($projectId) as [$pid, $name]) {
+        if ($r = localPolicy($type, $pid)) return ['verdict' => $r['decision'], 'source' => ['project_id' => $pid, 'name' => $name]];
+    }
+    if ($r = localPolicy($type, null)) return ['verdict' => $r['decision'], 'source' => 'board'];
+    return ['verdict' => 'ask', 'source' => null];
+}
+
 /** allow | deny | ask */
-function policyVerdict(string $type): string {
-    $st = db()->prepare('SELECT decision FROM policy WHERE type = ?');
-    $st->execute([approvalType($type)]);
-    return (string) ($st->fetchColumn() ?: 'ask');
+function policyVerdict(string $type, ?int $projectId = null): string {
+    return policyResolve($type, $projectId)['verdict'];
 }
 
-/** ‏$decision: allow | deny | '' (ביטול). כל שינוי נרשם ביומן. */
-function setPolicy(string $type, string $decision, ?array $user, ?int $taskId): void {
-    $prev = policyVerdict($type);
+/** ‏$decision: allow | deny | '' (מחיקת הכלל המקומי). כל שינוי נרשם ביומן, עם מה שהיה כאן. */
+function setPolicy(string $type, string $decision, ?array $user, ?int $taskId, ?int $projectId = null): void {
+    $prev = (string) (localPolicy($type, $projectId)['decision'] ?? 'ask');
     $by = $user ? (int) $user['id'] : null;
-    if ($decision === '') db()->prepare('DELETE FROM policy WHERE type = ?')->execute([$type]);
-    else db()->prepare('INSERT INTO policy (type, decision, by_user, at, prev, source_task) VALUES (?,?,?,?,?,?)
-                        ON CONFLICT(type) DO UPDATE SET decision = excluded.decision, by_user = excluded.by_user,
-                                                        at = excluded.at, prev = excluded.prev, source_task = excluded.source_task')
-        ->execute([$type, $decision, $by, nowTs(), $prev, $taskId]);
-    db()->prepare('INSERT INTO policy_log (type, decision, by_user, at, prev, source_task) VALUES (?,?,?,?,?,?)')
-        ->execute([$type, $decision === '' ? 'ask' : $decision, $by, nowTs(), $prev, $taskId]);
+    // מחיקה והכנסה (ולא upsert על אינדקס של ביטוי) — עובד בכל גרסת SQLite שבשרת
+    $projectId === null
+        ? db()->prepare('DELETE FROM policy WHERE project_id IS NULL AND type = ?')->execute([$type])
+        : db()->prepare('DELETE FROM policy WHERE project_id = ? AND type = ?')->execute([$projectId, $type]);
+    if ($decision !== '') {
+        db()->prepare('INSERT INTO policy (project_id, type, decision, by_user, at, prev, source_task) VALUES (?,?,?,?,?,?,?)')
+            ->execute([$projectId, $type, $decision, $by, nowTs(), $prev, $taskId]);
+    }
+    db()->prepare('INSERT INTO policy_log (project_id, type, decision, by_user, at, prev, source_task) VALUES (?,?,?,?,?,?,?)')
+        ->execute([$projectId, $type, $decision === '' ? 'ask' : $decision, $by, nowTs(), $prev, $taskId]);
 }
 
-function policyList(): array {
-    $cast = function (array $r): array {
-        foreach (['by_user', 'source_task'] as $k) $r[$k] = $r[$k] === null ? null : (int) $r[$k];
-        $r['at'] = (int) $r['at'];
-        if (isset($r['id'])) $r['id'] = (int) $r['id'];
-        return $r;
-    };
-    $q = fn ($sql) => array_map($cast, db()->query($sql)->fetchAll());
-    return [
-        'policy' => $q('SELECT p.*, u.display_name by_name FROM policy p LEFT JOIN users u ON u.id = p.by_user ORDER BY p.type'),
-        'log'    => $q('SELECT l.*, u.display_name by_name FROM policy_log l LEFT JOIN users u ON u.id = l.by_user ORDER BY l.id DESC LIMIT 200'),
-        'types'  => approvalTypes(),
-    ];
+/** מי רשאי לקבוע כלל: בפרויקט — מי שרשאי להחליט בו (canAnswer); לכל הלוח — בעל הלוח. */
+function requirePolicyWriter(array $user, ?int $projectId): void {
+    if ($projectId === null) {
+        if (authorRole($user) !== 'owner') throw new AppError('אישורים כלליים לכל הלוח — בעל הלוח בלבד', 403);
+        return;
+    }
+    requireProject($projectId, $user, 'read');
+    if (!canAnswer($user, ['project_id' => $projectId])) {
+        throw new AppError(projectOwnerOnly($projectId) ? 'בענף הזה רק בעל הלוח מחליט' : 'נדרשת הרשאת כתיבה בפרויקט', 403);
+    }
+}
+
+/**
+ * ‏policy-set: ask | allow | deny. ‏ask מוחק רק את הכלל של המקום הזה (והירושה חוזרת).
+ * אותן מגבלות כמו ב-decide: no — בלי allow; warn + allow — להקליד את שם הסוג; other — אין כללים.
+ */
+function policySet(array $user, ?int $projectId, string $type, string $verdict, string $confirmType = ''): array {
+    if (!isset(APPROVAL_TYPES[$type])) throw new InvalidArgumentException('סוג לא מוכר');
+    if (!in_array($verdict, ['ask', 'allow', 'deny'], true)) throw new InvalidArgumentException('verdict: ask, allow או deny');
+    requirePolicyWriter($user, $projectId);
+    $m = APPROVAL_TYPES[$type];
+    if ($type === 'other' && $verdict !== 'ask') throw new AppError('לבקשה בלי סוג מהקטלוג אין כללים — תמיד שואל', 422);
+    if ($verdict === 'allow' && $m['always'] === 'no') throw new AppError("לסוג \"{$m['label']}\" אין \"תמיד מותר\"", 422);
+    if ($verdict === 'allow' && $m['always'] === 'warn' && trim($confirmType) !== $type) {
+        throw new AppError("\"תמיד מותר\" לסוג הזה דורש להקליד את שמו: $type", 422);
+    }
+    $now = (string) (localPolicy($type, $projectId)['decision'] ?? 'ask');
+    if ($now !== $verdict) {
+        setPolicy($type, $verdict === 'ask' ? '' : $verdict, $user, null, $projectId);
+        logEvent($user, 'policy.set', ($projectId === null ? 'board' : "project:$projectId") . ":$type", true, "$now → $verdict");
+    }
+    return policyResolve($type, $projectId) + ['local' => $verdict === 'ask' ? null : $verdict];
+}
+
+/**
+ * ‏policy-list: לכל סוג בקטלוג — הערך האפקטיבי, מאיפה הוא, והכלל המקומי; ויומן של
+ * המקום הזה (100 אחרונים), כולל ההחלטות החד-פעמיות (once / deny) על מטלות הפרויקט.
+ */
+function policyList(?int $projectId = null): array {
+    $rows = [];
+    foreach (APPROVAL_TYPES as $type => $m) {
+        if ($type === 'other') continue;
+        $local = localPolicy($type, $projectId);
+        $rows[] = ['type' => $type, 'label' => $m['label'], 'always' => $m['always'],
+                   'local' => $local['decision'] ?? null, 'local_at' => $local ? (int) $local['at'] : null]
+                  + policyResolve($type, $projectId);
+    }
+    $log = db()->prepare('SELECT l.*, u.display_name by_name, t.title task_title FROM policy_log l
+                            LEFT JOIN users u ON u.id = l.by_user LEFT JOIN tasks t ON t.id = l.source_task
+                           WHERE ' . ($projectId === null ? 'l.project_id IS NULL' : 'l.project_id = ?') . '
+                           ORDER BY l.id DESC LIMIT 100');
+    $log->execute($projectId === null ? [] : [$projectId]);
+    $history = array_map(fn ($r) => ['at' => (int) $r['at'], 'kind' => 'rule', 'type' => $r['type'],
+        'label' => APPROVAL_TYPES[$r['type']]['label'] ?? $r['type'], 'prev' => $r['prev'], 'decision' => $r['decision'],
+        'by_name' => $r['by_name'], 'task_id' => $r['source_task'] === null ? null : (int) $r['source_task'],
+        'task_title' => $r['task_title']], $log->fetchAll());
+    // החלטות של פעם אחת על מטלות של הפרויקט — כדי שיראו כל מה שאושר ונדחה, לא רק כללים
+    if ($projectId !== null) {
+        $n = db()->prepare("SELECT n.body, n.created_at, n.author, n.task_id, t.title FROM notes n JOIN tasks t ON t.id = n.task_id
+                             WHERE n.kind = 'decision' AND t.project_id = ? ORDER BY n.id DESC LIMIT 100");
+        $n->execute([$projectId]);
+        foreach ($n->fetchAll() as $r) {
+            $d = json_decode((string) $r['body'], true) ?: [];
+            if (!in_array($d['decision'] ?? '', ['once', 'deny'], true)) continue;   // always/never — כבר ביומן הכללים
+            $t = approvalType((string) ($d['type'] ?? ''));
+            $history[] = ['at' => (int) $r['created_at'], 'kind' => 'once', 'type' => $t, 'label' => APPROVAL_TYPES[$t]['label'],
+                          'prev' => '', 'decision' => $d['decision'], 'by_name' => $r['author'], 'note' => (string) ($d['note'] ?? ''),
+                          'task_id' => (int) $r['task_id'], 'task_title' => $r['title']];
+        }
+    }
+    usort($history, fn ($a, $b) => $b['at'] <=> $a['at']);
+    return ['project_id' => $projectId, 'types' => $rows, 'history' => array_slice($history, 0, 100),
+            'counts' => ['allow' => count(array_filter($rows, fn ($r) => $r['local'] === 'allow')),
+                         'deny'  => count(array_filter($rows, fn ($r) => $r['local'] === 'deny'))]];
 }
 
 /** הבקשה האחרונה על המטלה (הערת approval), מפוענחת. */
@@ -136,7 +264,7 @@ function askApproval(array $task, string $worker, array $in, ?array $channel = n
         db()->prepare('UPDATE tasks SET asked_channel_id = ? WHERE id = ?')->execute([$channel['id'], $id]);
         channelPost($channel, 'chat', "🔐 {$data['summary']}", null, $id, 'approval');
     }
-    return ['type' => $type, 'verdict' => policyVerdict($type)];
+    return ['type' => $type, 'verdict' => policyVerdict($type, $task['project_id'] === null ? null : (int) $task['project_id'])];
 }
 
 /**
@@ -164,7 +292,9 @@ function decide(array $user, array $task, string $decision, string $note = '', s
     $body = json_encode(['decision' => $decision, 'type' => $type, 'note' => $note], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     addNote(db(), (int) $task['id'], (string) $user['display_name'], 'decision', $body, authorRole($user), (int) $user['id']);
     db()->prepare("UPDATE tasks SET status = 'answered', updated_at = ? WHERE id = ?")->execute([nowTs(), $task['id']]);
-    if ($forever) setPolicy($type, $decision === 'always' ? 'allow' : 'deny', $user, (int) $task['id']);
+    // ‏"תמיד" / "אף פעם" — כלל על הפרויקט של המטלה (§6.1). מטלה בלי פרויקט — לכל הלוח
+    $pid = $task['project_id'] === null ? null : (int) $task['project_id'];
+    if ($forever) setPolicy($type, $decision === 'always' ? 'allow' : 'deny', $user, (int) $task['id'], $pid);
     logEvent($user, 'approval.decide', "task:{$task['id']}", true, "$type → $decision");
 
     // הבקשה הגיעה מערוץ — ההחלטה חוזרת אליו כהודעה נכנסת
@@ -174,13 +304,10 @@ function decide(array $user, array $task, string $decision, string $note = '', s
         $text = '🔐 ' . DECISION_LABEL[$decision] . ": {$a['summary']}" . ($note !== '' ? "\n$note" : '');
         $msg = channelInsertIn((int) $cid, authorRole($user), (int) $user['id'], $text, 'decision', (int) $task['id']);
     }
-    return ['decision' => $decision, 'type' => $type, 'verdict' => policyVerdict($type), 'channel_message_id' => $msg];
+    return ['decision' => $decision, 'type' => $type, 'verdict' => policyVerdict($type, $pid), 'channel_message_id' => $msg];
 }
 
-function revokePolicy(array $user, string $type): void {
-    if (authorRole($user) !== 'owner') throw new AppError('ביטול מדיניות — בעל הלוח בלבד', 403);
-    if (!isset(APPROVAL_TYPES[$type])) throw new InvalidArgumentException('סוג לא מוכר');
-    if (policyVerdict($type) === 'ask') return;
-    setPolicy($type, '', $user, null);
-    logEvent($user, 'policy.revoke', $type);
+/** הקיצור הישן: חזרה ל-ask במקום אחד (ברירת מחדל — כל הלוח). */
+function revokePolicy(array $user, string $type, ?int $projectId = null): void {
+    policySet($user, $projectId, $type, 'ask');
 }

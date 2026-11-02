@@ -3,6 +3,7 @@ import { loadConnections, loadProviders, runTask, openProject, modelPicker } fro
 import { loadChannels } from './chats.js';
 import { approvalCard, noteText } from './approvals.js';
 import { loadUsage, usageCard, usageMini } from './usage.js';
+import { openPolicySheet } from './policy.js';
 
 /**
  * מטלות לקלוד — ממשק.
@@ -996,6 +997,10 @@ on('#search', 'input', (e) => {
 });
 
 on('#menuBtn', 'click', openDrawer);
+// הגדרות ← מערכת ← אישורים כלליים לכל הלוח (§6.1)
+on('#boardPolicyBtn', 'click', () => openPolicySheet(null));
+on('#boardPolicyBtn', 'keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openPolicySheet(null); } });
+
 // שורת מטלה בבועה של שיחה — פותחת את המטלה מעל השיחה
 document.addEventListener('ct:open-task', (e) => openTask(e.detail).catch((ex) => toast(ex.message, 'error')));
 

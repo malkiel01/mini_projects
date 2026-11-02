@@ -101,9 +101,9 @@ check('deny → גם answered (הצ\'אט צריך לקבל את הדחייה)',
 $t3 = task('תמיד', $root);
 askApproval($t3, 'bot', ['type' => 'merge-own-pr', 'summary' => 'למזג']);
 decide($dana, $T($t3), 'always');
-check('always → policy allow', policyVerdict('merge-own-pr'), 'allow');
-$pol = policyList();
-check('policy: מי, ומאיזו מטלה', [$pol['policy'][0]['by_user'], $pol['policy'][0]['source_task'], $pol['policy'][0]['prev']],
+check('always → policy allow (על הפרויקט של המטלה)', policyVerdict('merge-own-pr', $root), 'allow');
+$pol = localPolicy('merge-own-pr', $root);
+check('policy: מי, ומאיזו מטלה', [(int) $pol['by_user'], (int) $pol['source_task'], $pol['prev']],
       [2, (int) $t3['id'], 'ask']);
 
 $t4 = task('אף פעם', $root);
@@ -111,14 +111,14 @@ askApproval($t4, 'bot', ['type' => 'delete-files', 'summary' => 'למחוק קב
 throws('no + always → 422', fn () => decide($boss, $T($t4), 'always'), 422);
 check('…והמטלה עדיין ממתינה', $T($t4)['status'], 'awaiting_approval');
 decide($boss, $T($t4), 'never');
-check('no + never → policy deny', policyVerdict('delete-files'), 'deny');
+check('no + never → policy deny', policyVerdict('delete-files', $root), 'deny');
 
 $t5 = task('אזהרה', $root);
 askApproval($t5, 'bot', ['type' => 'add-exclude', 'summary' => 'exclude לנתונים']);
 throws('warn + always בלי הקלדה → 422', fn () => decide($boss, $T($t5), 'always'), 422);
 throws('warn + always עם שם שגוי → 422', fn () => decide($boss, $T($t5), 'always', '', 'add-exclud'), 422);
 decide($boss, $T($t5), 'always', '', 'add-exclude');
-check('warn + always עם השם המדויק → allow', policyVerdict('add-exclude'), 'allow');
+check('warn + always עם השם המדויק → allow', policyVerdict('add-exclude', $root), 'allow');
 
 throws('other + always → 422', fn () => decide($boss, $T($tOther), 'always'), 422);
 throws('other + never → 422', fn () => decide($boss, $T($tOther), 'never'), 422);
@@ -133,12 +133,13 @@ decide($boss, $T($t6), 'once');
 check('בעל הלוח מחליט גם בענף owner_only', $T($t6)['status'], 'answered');
 
 echo "\n— המדיניות והיומן —\n";
-throws('ביטול — רק בעל הלוח', fn () => revokePolicy($dana, 'merge-own-pr'), 403);
-revokePolicy($boss, 'merge-own-pr');
-check('ביטול → חזרה ל-ask', policyVerdict('merge-own-pr'), 'ask');
-$log = policyList()['log'];
-check('היומן: הביטול רשום, עם מה היה קודם', [$log[0]['type'], $log[0]['decision'], $log[0]['prev'], $log[0]['by_user']],
-      ['merge-own-pr', 'ask', 'allow', 1]);
+throws('ביטול כללי לכל הלוח — רק בעל הלוח', fn () => revokePolicy($dana, 'merge-own-pr'), 403);
+throws('ביטול בפרויקט — read לא רשאי', fn () => revokePolicy($rami, 'merge-own-pr', $root), 403);
+revokePolicy($boss, 'merge-own-pr', $root);
+check('ביטול → חזרה ל-ask', policyVerdict('merge-own-pr', $root), 'ask');
+$log = array_values(array_filter(policyList($root)['history'], fn ($h) => $h['kind'] === 'rule'));
+check('היומן: הביטול רשום, עם מה היה קודם', [$log[0]['type'], $log[0]['decision'], $log[0]['prev'], $log[0]['by_name']],
+      ['merge-own-pr', 'ask', 'allow', 'בעל הלוח']);
 check('היומן: כל שינוי שורה (always, never, always, ביטול)', count($log), 4);
 
 echo "\n— ערוץ —\n";

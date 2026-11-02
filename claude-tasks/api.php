@@ -1287,18 +1287,43 @@ try {
                   str_field($in, 'confirm_type', 60)));
     }
 
-    /** עובד ואדם: מה המדיניות לסוג — allow | deny | ask. לשאול לפני ask-approval. */
+    /**
+     * עובד ואדם: מה המדיניות לסוג — allow | deny | ask, ומאיפה (§6.1). לשאול לפני ask-approval.
+     * הפרויקט: project_id, או task_id, או (לעובד בלי שניהם) הפרויקט של האסימון / הערוץ.
+     */
     case 'policy': {
         $type = approvalType(str_field($in, 'type', 60));
-        ok(['type' => $type, 'verdict' => policyVerdict($type), 'always' => APPROVAL_TYPES[$type]['always']]);
+        $pid  = int_or_null($in, 'project_id');
+        if ($pid === null && ($tid = int_or_null($in, 'task_id')) !== null) {
+            $t = accessibleTask($user, $scope, $tid, 'read');
+            $pid = $t['project_id'] === null ? null : (int) $t['project_id'];
+        }
+        if ($pid === null && !$user && !empty($scope['project_id'])) $pid = (int) $scope['project_id'];
+        if ($pid !== null && $user) requireProject($pid, $user, 'read');
+        if ($pid !== null && !$user) {
+            $ids = scopeProjects($scope);
+            if ($ids !== null && !in_array($pid, $ids, true)) fail('הפרויקט אינו בתחום של האסימון', 403);
+        }
+        ok(['type' => $type, 'project_id' => $pid, 'always' => APPROVAL_TYPES[$type]['always']] + policyResolve($type, $pid));
     }
 
-    case 'policy-list':
-        requireUser($user);
-        ok(policyList());
+    /** כל סוג בקטלוג: ערך אפקטיבי, מקור, כלל מקומי; ויומן. בלי project_id — כל הלוח. */
+    case 'policy-list': {
+        $me  = requireUser($user);
+        $pid = int_or_null($in, 'project_id');
+        if ($pid !== null) requireProject($pid, $me, 'read');
+        $out = policyList($pid);
+        $out['can_edit'] = $pid === null ? authorRole($me) === 'owner' : canAnswer($me, ['project_id' => $pid]);
+        ok($out);
+    }
 
+    case 'policy-set':
+        ok(policySet(requireUser($user), int_or_null($in, 'project_id'), str_field($in, 'type', 60),
+                     str_field($in, 'verdict', 10), str_field($in, 'confirm_type', 60)));
+
+    /** הקיצור הישן — כמו policy-set עם ask. */
     case 'policy-revoke':
-        revokePolicy(requireUser($user), str_field($in, 'type', 60));
+        revokePolicy(requireUser($user), str_field($in, 'type', 60), int_or_null($in, 'project_id'));
         ok(['verdict' => 'ask']);
 
     /* ── מכסה ושימוש (docs/spec.md §8, lib/usage.php) ─────────── */
