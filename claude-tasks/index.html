@@ -924,6 +924,20 @@
           <p class="hint" id="meUser"></p>
           <div class="row-btns"><button type="submit" class="btn primary">שמירה</button></div>
         </form>
+        <!-- 🌐 תרגום במכשיר (§5.11, 12e) — הורדה בהסכמה, הסרה, ייחוס -->
+        <section class="tr-set" aria-labelledby="trSetT">
+          <hr>
+          <h3 id="trSetT">🌐 תרגום במכשיר</h3>
+          <p class="hint">הודעות באנגלית מתורגמות לעברית בטלפון עצמו — בלי שרת, בלי AI ובלי עלות. הטקסט לא יוצא מהמכשיר.</p>
+          <p class="tr-state" id="trState" role="status">בודק…</p>
+          <progress id="trProg" max="100" value="0" hidden></progress>
+          <div class="row-btns">
+            <button type="button" class="btn primary" id="trDownload" hidden>⬇️ הורדה (≈147MB)</button>
+            <button type="button" class="btn ghost" id="trRemove" hidden>🗑 הסרה</button>
+          </div>
+          <p class="hint" id="trWifi" hidden>פעם אחת לכל מכשיר — עדיף ב-Wi-Fi. נשמר בדפדפן; "הסרה" מפנה את המקום.</p>
+          <p class="hint tr-credit">מודל התרגום: Opus-MT · University of Helsinki · Apache-2.0</p>
+        </section>
         <section id="oldAccount" hidden>
           <hr>
           <h3>יש לי כבר חשבון ישן</h3>

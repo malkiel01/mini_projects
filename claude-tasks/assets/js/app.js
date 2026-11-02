@@ -2,6 +2,7 @@ import { $, $$, el, toast, api, state, timeAgo, on, set, PLATFORM_HINT } from '.
 import { loadConnections, loadProviders, runTask, openProject, modelPicker, renderUsersInto } from './platform.js';
 import { loadChannels, openConversation, openFromHash } from './chats.js';
 import { approvalCard, noteText } from './approvals.js';
+import { engine as trEngine, downloadModel, removeModel, modelCached, MODEL as TR_MODEL } from './translate.js';
 import { loadUsage, usageCard, usageMini } from './usage.js';
 import { openPolicySheet } from './policy.js';
 
@@ -1220,11 +1221,44 @@ function showSetTab(tab) {
   $$('#setTabs [data-set]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.set === tab)));
   $$('#settings .set-panel').forEach((p) => { p.hidden = p.dataset.panel !== tab; });
   if (tab === 'users') renderUsersInto($('#usersBox'));
+  if (tab === 'me') renderTranslateSettings();
   try { sessionStorage.setItem('ct:set', tab); } catch { /* פרטי */ }
 }
 on('#setTabs', 'click', (e) => {
   const b = e.target.closest('[data-set]');
   if (b) showSetTab(b.dataset.set);
+});
+
+/* ── 🌐 תרגום במכשיר (§5.11, 12e) — הורדה בהסכמה עם התקדמות אמיתית, הסרה ── */
+const mb = (b) => (b / 1e6).toFixed(0);
+async function renderTranslateSettings() {
+  const eng = await trEngine(true);
+  const has = await modelCached();
+  $('#trState').textContent = eng.kind === 'api' ? '✓ פעיל — התרגום המובנה של Chrome (בלי הורדה)'
+    : has ? '✓ פעיל — המודל במכשיר' : 'כבוי — צריך להוריד את המודל פעם אחת';
+  set('#trDownload', 'hidden', eng.kind === 'api' || has);
+  set('#trWifi', 'hidden', eng.kind === 'api' || has);
+  set('#trRemove', 'hidden', !has);
+}
+on('#trDownload', 'click', async () => {
+  if (!confirm(`להוריד את מודל התרגום (≈${TR_MODEL.approxMB}MB)? פעם אחת למכשיר — עדיף ב-Wi-Fi.`)) return;
+  const btn = $('#trDownload'), prog = $('#trProg');
+  btn.disabled = true; prog.hidden = false; prog.value = 0;
+  try {
+    await downloadModel(({ loaded, total, etaSec }) => {
+      prog.value = total ? Math.round((loaded / total) * 100) : 0;
+      $('#trState').textContent = `מוריד: ${mb(loaded)} מתוך ${mb(total)} MB${etaSec != null ? ` · ~${etaSec < 60 ? `${etaSec} שנ'` : `${Math.round(etaSec / 60)} דק'`} נותרו` : ''}`;
+    });
+    toast('מודל התרגום מוכן — 🌐 על הודעה באנגלית', 'ok');
+  } catch (ex) { toast(`ההורדה נכשלה: ${ex.message}`, 'error'); }
+  btn.disabled = false; prog.hidden = true;
+  renderTranslateSettings();
+});
+on('#trRemove', 'click', async () => {
+  if (!confirm('להסיר את מודל התרגום ואת התרגומים השמורים מהמכשיר?')) return;
+  await removeModel();
+  toast('הוסר', 'ok');
+  renderTranslateSettings();
 });
 
 on('#meForm', 'submit', async (e) => {
