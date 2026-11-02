@@ -22,6 +22,7 @@ frame() {   # מסגרת קבועה להודעה מהלוח — כדי שלא ת
   jq -r --arg ch "$(link_get name)" '.[] |
     "📥 הודעה מהלוח · #\(.id) · מאת: \(.author_role) (\(.author_name // "—")) · ערוץ: \($ch)" +
     (if .task_id then " · מטלה #\(.task_id)" else "" end) + (if .kind != "text" then " · \(.kind)" else "" end) +
+    (if .reply_to then " · תשובה להודעה #\(.reply_to)" else "" end) +
     "\n\(.body)\n"'
 }
 

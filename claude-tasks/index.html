@@ -318,6 +318,10 @@
     <ol class="chat-log" id="chatLog" aria-live="polite" aria-label="ההודעות"></ol>
     <form class="composer" id="chatForm">
       <p class="hint" id="cvNote" hidden></p>
+      <div class="reply-chip" id="cvReply" hidden>
+        <span class="body"><b>↩ משיב ל</b> <span id="cvReplyText" dir="auto"></span></span>
+        <button type="button" class="icon-btn" id="cvReplyX" aria-label="ביטול התשובה">✕</button>
+      </div>
       <div class="composer-row">
         <label class="sr-only" for="chatInput">הודעה לצ'אט</label>
         <textarea id="chatInput" rows="1" placeholder="הודעה לצ'אט" maxlength="20000"></textarea>
@@ -349,6 +353,20 @@
     </div>
   </div>
 </dialog>
+<!-- ── פעולות על הודעה (§5.11, 12b) — נגיעה ארוכה / ⋯ ───────────────── -->
+<dialog id="msgMenu" class="msg-menu" aria-labelledby="mmT">
+  <div class="sheet-wrap">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close="msgMenu" aria-label="סגירה">✕</button>
+      <h2 id="mmT">הודעה</h2>
+      <span></span>
+    </header>
+    <div class="sheet-body">
+      <p class="mm-preview" id="mmPreview" dir="auto"></p>
+      <div class="mm-actions" id="mmActions" role="menu" aria-labelledby="mmT"></div>
+    </div>
+  </div>
+</dialog>
 <dialog id="csAbout" aria-labelledby="csAboutT">
   <div class="sheet-wrap">
     <header class="sheet-head">
@@ -363,12 +381,15 @@
   <form class="sheet-wrap" id="csEditForm">
     <header class="sheet-head">
       <button type="button" class="icon-btn" data-close="csEdit" aria-label="סגירה">✕</button>
-      <h2 id="csEditT">שם, תפקיד וצבע</h2>
+      <h2 id="csEditT">שם, סמל וצבע</h2>
       <button type="submit" class="btn primary">שמירה</button>
     </header>
     <div class="sheet-body">
       <label class="field"><span>שם</span><input type="text" id="csName" maxlength="80" required dir="auto"></label>
       <label class="field"><span>תפקיד</span><input type="text" id="csRole" maxlength="40" dir="auto"></label>
+      <p class="hint" id="csIconL">סמל</p>
+      <div class="cs-icons" id="csIcons" role="radiogroup" aria-labelledby="csIconL"></div>
+      <label class="field"><span>או אימוג'י אחר</span><input type="text" id="csIcon" maxlength="8" dir="ltr" placeholder="🙂" autocomplete="off"></label>
       <p class="hint" id="csColorL">צבע הריבוע</p>
       <div class="cs-colors" id="csColors" role="radiogroup" aria-labelledby="csColorL"></div>
     </div>

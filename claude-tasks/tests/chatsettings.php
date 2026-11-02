@@ -65,6 +65,11 @@ check('כתיבה בענף — משנה שם, תפקיד וצבע', [$u['name'],
 throws('שם ריק — נדחה', fn () => channelUpdate($dana, $a, ['name' => '  ']));
 throws('צבע שאינו מ-8 הקבועים — נדחה', fn () => channelUpdate($dana, $a, ['color' => '#ff0000']));
 check('צבע ריק — חוזר ללפי התפקיד', channelUpdate($dana, $a, ['color' => ''])['color'], '');
+check('סמל — אימוג\'י (גם עם מתאם)', [channelUpdate($dana, $a, ['icon' => '🧭'])['icon'], channelUpdate($dana, $a, ['icon' => '🖌️'])['icon']], ['🧭', '🖌️']);
+throws('סמל — לא טקסט', fn () => channelUpdate($dana, $a, ['icon' => 'abc']));
+throws('סמל — לא HTML', fn () => channelUpdate($dana, $a, ['icon' => '<b>']));
+check('סמל ריק — חוזר ללפי התפקיד', channelUpdate($dana, $a, ['icon' => ''])['icon'], '');
+throws('צפייה בלבד — לא משנה סמל', fn () => channelUpdate($rami, $a, ['icon' => '🎨']), 403);
 throws('מי עונה — לא לדנה', fn () => channelUpdate($dana, $a, ['route' => 'platform']), 403);
 $r = channelUpdate($boss, $a, ['route' => 'platform']);
 check('בעל הלוח: ☁️ לצ\'אט הזה — גובר על הפרויקט', [$r['route_own'], $r['route_effective']], ['platform', 'platform']);
@@ -99,6 +104,16 @@ channelSetHidden($boss, $b, false);
 check('החזרה מהארכיון — שוב ברשימה, ועדיין מנותק', [in_array($b, array_column(channelsFor($boss, $root), 'id'), true), getChannel($b)['status']],
       [true, 'archived']);
 throws('ניתוק — לא לדנה', fn () => archiveChannel($a, $dana), 403);
+
+echo "\n— ↩ תשובה להודעה (12b) —\n";
+$c3 = registerChannel($scope, $sub, 'שלישי', 'x', 'session_cs_c', '')['channel_id'];
+$orig = channelPost(getChannel($c3), 'chat', 'הודעה מקורית');
+$other = channelPost(getChannel($a), 'chat', 'הודעה בערוץ אחר');
+$r1 = channelSend($dana, $c3, 'תשובה', null, $orig);
+check('תשובה להודעה מאותו ערוץ — נשמר reply_to', messageRows('m.id = ?', [$r1])[0]['reply_to'], $orig);
+$r2 = channelSend($dana, $c3, 'תשובה לזר', null, $other);
+check('reply_to להודעה מערוץ אחר — נשמר בלי הקישור', messageRows('m.id = ?', [$r2])[0]['reply_to'], null);
+check('…וההודעה עצמה נמסרת כרגיל', in_array($r2, array_column(channelInbox(getChannel($c3)), 'id'), true), true);
 
 echo "\n════ עברו: $pass · נכשלו: $fail ════\n";
 exec('rm -rf ' . escapeshellarg($tmp));

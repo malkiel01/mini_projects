@@ -686,3 +686,39 @@ details.what p { margin-top: var(--s2); }
 .cs-color:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
 .chan-hidden { list-style: none; padding: var(--s2) var(--s3); text-align: center; }
 #chanRows .card.is-hidden { opacity: .7; }
+
+/* ── פעולות על הודעה (§5.11, 12b) ──────────────────────────────── */
+/* ⋯ בשורת המטא: מופיע ב-hover / focus (דסקטופ); בטלפון — נגיעה ארוכה, והכפתור נשאר נגיש למקלדת */
+.b-more { border: 0; background: none; color: var(--muted); font: inherit; font-size: 1rem; line-height: 1; padding: 0 4px;
+  min-width: 28px; min-height: 24px; border-radius: 6px; cursor: pointer; opacity: 0; }
+.bubble:hover .b-more, .bubble:focus-within .b-more, .b-more:focus-visible { opacity: 1; }
+.b-more:focus-visible { outline: 2px solid var(--brand); }
+@media (hover: none) { .b-more { opacity: 0; } .b-more:focus-visible { opacity: 1; } }
+.b-reply { justify-self: stretch; text-align: start; border: 0; border-inline-start: 3px solid var(--brand);
+  background: color-mix(in srgb, var(--brand) 8%, transparent); color: var(--muted); font: inherit; font-size: .8rem;
+  padding: 4px 8px; border-radius: 6px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  unicode-bidi: plaintext; min-width: 0; }
+.bubble.is-flash { animation: flash 1.6s ease-out; }
+@keyframes flash { 0%, 30% { box-shadow: 0 0 0 3px var(--brand); } 100% { box-shadow: 0 0 0 0 transparent; } }
+@media (prefers-reduced-motion: reduce) { .bubble.is-flash { animation: none; outline: 3px solid var(--brand); } }
+.bubble { -webkit-touch-callout: none; }
+.reply-chip { display: flex; align-items: center; gap: var(--s2); padding: 4px 4px 4px var(--s2); margin-bottom: 6px;
+  border-inline-start: 3px solid var(--brand); border-radius: 6px; background: var(--brand-soft); min-width: 0; }
+.reply-chip[hidden] { display: none; }
+.reply-chip .body { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .85rem; }
+.mm-preview { margin: 0; padding: var(--s2) var(--s3); border-radius: var(--r); background: color-mix(in srgb, var(--ink) 4%, var(--surface));
+  color: var(--muted); font-size: .88rem; line-height: 1.5; unicode-bidi: plaintext; text-align: start; overflow-wrap: anywhere; }
+.mm-actions { display: grid; gap: 6px; }
+.mm-act { display: flex; align-items: center; gap: var(--s3); width: 100%; min-height: 52px; padding: 8px var(--s3); text-align: start;
+  border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); color: var(--ink); font: inherit; cursor: pointer; }
+.mm-act .ic { font-size: 1.15rem; flex: none; inline-size: 1.4em; text-align: center; }
+.mm-act .body { display: grid; gap: 2px; min-width: 0; }
+.mm-act small { color: var(--muted); font-size: .78rem; }
+.mm-act:hover { border-color: var(--brand); }
+.mm-act:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+.cs-icons { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: var(--s2); }
+.cs-icon { block-size: 44px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); font-size: 1.3rem;
+  cursor: pointer; color: var(--ink); }
+.cs-icon[data-icon=""] { font-size: .72rem; color: var(--muted); border-style: dashed; }
+.cs-icon[aria-checked="true"] { border: 2px solid var(--brand); background: var(--brand-soft); }
+.cs-icon:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
