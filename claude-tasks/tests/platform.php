@@ -13,6 +13,7 @@ declare(strict_types=1);
 if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 
 $tmp = sys_get_temp_dir() . '/ctp-' . getmypid();
+exec('rm -rf ' . escapeshellarg($tmp));   // שארית מהרצה קודמת עם אותו מזהה תהליך
 @mkdir($tmp, 0777, true);
 define('DB_FILE', $tmp . '/t.sqlite');
 define('CONFIG_FILE', $tmp . '/c.json');

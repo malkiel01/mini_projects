@@ -270,6 +270,9 @@ function migrate(PDO $pdo): void {
     migrateRoutes($pdo);
     // מכסה ושימוש (lib/usage.php)
     migrateUsage($pdo);
+    // Platform עונה בערוץ, ומעקב (lib/answers.php, lib/monitor.php)
+    migrateAnswers($pdo);
+    migrateMonitor($pdo);
 }
 
 /** ALTER TABLE ADD COLUMN אינו מכיר IF NOT EXISTS ב-SQLite — בודקים לבד. */
@@ -447,3 +450,5 @@ require_once __DIR__ . '/connections.php';
 require_once __DIR__ . '/approvals.php';
 require_once __DIR__ . '/routes.php';
 require_once __DIR__ . '/usage.php';
+require_once __DIR__ . '/answers.php';
+require_once __DIR__ . '/monitor.php';

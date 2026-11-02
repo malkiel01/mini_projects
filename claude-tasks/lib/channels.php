@@ -83,6 +83,10 @@ function messageRows(string $where, array $args, int $limit = 200): array {
             $m[$k] = $m[$k] === null ? null : (int) $m[$k];
         }
         $m['created_at'] = (int) $m['created_at'];
+        // הצעת מטלה מתשובה של Platform (§9)
+        $m['meta'] = ($m['meta'] ?? '') !== '' ? (json_decode((string) $m['meta'], true) ?: null) : null;
+        $m['platform_pending'] = $m['direction'] === 'in' && $m['delivered_at'] === null
+                                 && str_starts_with((string) ($m['answered_by'] ?? ''), 'platform');
         return $m;
     }, $st->fetchAll());
 }
@@ -200,13 +204,14 @@ function canSendToChannel(array $user, array $channel): bool {
 
 /** הודעה נכנסת (in) — מאדם בלוח, או מהמערכת עצמה (תשובה על מטלה). מצלצלת. */
 function channelInsertIn(int $channelId, string $role, ?int $userId, string $body, string $kind = 'text',
-                         ?int $taskId = null, ?int $replyTo = null): int {
+                         ?int $taskId = null, ?int $replyTo = null, bool $ring = true, string $answeredBy = ''): int {
     db()->prepare("INSERT INTO messages (channel_id, task_id, direction, author_role, author_user_id, kind, body,
-                                         reply_to, created_at) VALUES (?,?, 'in', ?,?,?,?,?,?)")
+                                         reply_to, answered_by, created_at) VALUES (?,?, 'in', ?,?,?,?,?,?,?)")
         ->execute([$channelId, $taskId, $role, $userId, in_array($kind, MESSAGE_KINDS, true) ? $kind : 'text',
-                   cleanBody($body), $replyTo, nowTs()]);
+                   cleanBody($body), $replyTo, $answeredBy, nowTs()]);
     $id = (int) db()->lastInsertId();
-    ringBell($channelId);
+    // ‏status (מה ש-Platform ענה) והודעה שממתינה ל-Platform — לא מעירים את הצ'אט (§9)
+    if ($ring) ringBell($channelId);
     return $id;
 }
 
@@ -220,14 +225,20 @@ function channelSend(array $user, int $channelId, string $body, ?int $taskId = n
     }
     if ($channel['status'] !== 'active') throw new AppError('הערוץ מנותק', 409);
     $taskId = channelTaskOk($channel, $taskId);
-    return channelInsertIn($channelId, authorRole($user), (int) $user['id'], $body, 'text', $taskId, $replyTo);
+    // במסלול ☁️ — Platform עונה (platform-reply), והצ'אט לא מתעורר
+    $platform = channelRoute($channel) === 'platform';
+    return channelInsertIn($channelId, authorRole($user), (int) $user['id'], $body, 'text', $taskId, $replyTo,
+                           !$platform, $platform ? 'platform' : '');
 }
 
 /** ההודעות שעוד לא נמסרו לצ'אט. לא מסמן — רק channelAck מסמן. */
 function channelInbox(array $channel): array {
     touchChannel((int) $channel['id']);
-    return messageRows("m.channel_id = ? AND m.direction = 'in' AND m.delivered_at IS NULL", [$channel['id']]);
+    return messageRows("m.channel_id = ? AND m.direction = 'in' AND m.delivered_at IS NULL AND m.answered_by NOT LIKE 'platform%'", [$channel['id']]);
 }
+
+/** מה שמעיר את הצ'אט: התיבה, בלי status (מה ש-Platform כבר ענה — הצ'אט יקרא בפעם הבאה). */
+const WAKE_FILTER = "m.direction = 'in' AND m.delivered_at IS NULL AND m.answered_by NOT LIKE 'platform%' AND m.kind <> 'status'";
 
 function channelAck(array $channel, array $ids): int {
     $ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
@@ -251,7 +262,7 @@ function channelWait(array $channel, int $wait, ?callable $sleep = null): array 
     $sleep ??= fn () => sleep(1);
 
     $bell = bellValue($id);                 // לפני הבדיקה — צלצול שבא אחריה לא ייבלע
-    $msgs = channelInbox($channel);
+    $msgs = messageRows('m.channel_id = ? AND ' . WAKE_FILTER, [$id]);
     if ($msgs || $wait === 0) return $msgs;
     if (function_exists('set_time_limit')) @set_time_limit($wait + 15);
 
@@ -261,7 +272,7 @@ function channelWait(array $channel, int $wait, ?callable $sleep = null): array 
         $now = bellValue($id);
         if ($now !== $bell) {
             $bell = $now;
-            $msgs = messageRows("m.channel_id = ? AND m.direction = 'in' AND m.delivered_at IS NULL", [$id]);
+            $msgs = messageRows('m.channel_id = ? AND ' . WAKE_FILTER, [$id]);
             if ($msgs) return $msgs;
         }
     }
@@ -308,7 +319,7 @@ function channelMessages(array $user, int $channelId, int $after = 0): array {
         ];
     }
     unset($m);
-    return ['channel' => publicChannel($channel) + ['can_send' => canSendToChannel($user, $channel)],
+    return ['channel' => publicChannel($channel) + ['can_send' => canSendToChannel($user, $channel), 'route_effective' => channelRoute($channel)],
             'messages' => $messages];
 }
 

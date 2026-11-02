@@ -6,7 +6,7 @@ import { $, el, api, toast, state, on, timeAgo } from './core.js';
 import { approvalCard } from './approvals.js';
 
 const POLL_MS = 4000;
-const conv = { id: null, channel: null, messages: [], timer: null, busy: false };
+const conv = { id: null, channel: null, messages: [], timer: null, busy: false, thinking: new Set() };
 
 /* ── רשימת הערוצים ─────────────────────────────────────────── */
 
@@ -72,6 +72,7 @@ const isOwner = () => state.user?.role === 'admin';
 
 /** מי כתב: אתה בצ'אט / אתה בלוח / הצ'אט / המערכת. */
 function author(m) {
+  if (m.author_role === 'platform') return '☁️ Platform';
   if (m.author_role === 'system') return '☁️ מערכת';
   if (m.direction === 'out') {
     if (m.author_role === 'chat') return '💬 צ\'אט';
@@ -90,7 +91,9 @@ function clock(ts) {
 
 function bubble(m) {
   const meta = [el('span', { text: author(m) }), el('time', { text: clock(m.created_at) })];
-  if (m.direction === 'in') {
+  if (m.platform_pending) {
+    meta.push(el('span', { class: 'b-wait', text: conv.thinking.has(m.id) ? '☁️ חושב…' : '⏳ ממתין ל-Platform' }));
+  } else if (m.direction === 'in') {
     meta.push(el('span', {
       class: `tick${m.delivered_at ? ' is-done' : ''}`,
       title: m.delivered_at ? 'נמסרה לצ\'אט' : 'נשלחה — הצ\'אט עוד לא קרא',
@@ -99,12 +102,17 @@ function bubble(m) {
     }));
   }
   const kind = { question: '❓ שאלה', answer: '💡 תשובה', decision: '🔐 החלטה' }[m.kind];
-  return el('li', { class: `bubble bubble--${m.direction}${m.author_role === 'system' ? ' bubble--sys' : ''}`, dataset: { id: String(m.id) } }, [
+  return el('li', { class: `bubble bubble--${m.direction}${m.author_role === 'system' ? ' bubble--sys' : ''}${m.author_role === 'platform' ? ' bubble--platform' : ''}`, dataset: { id: String(m.id) } }, [
     el('div', { class: 'b-meta' }, meta),
     kind ? el('span', { class: 'badge', text: kind }) : null,
     m.kind === 'approval' && m.approval?.type
       ? approvalCard(m.approval, m.task_id, { canDecide: m.approval.can_decide, pending: m.approval.pending, onDone: reload })
       : el('div', { class: 'b-body', dir: 'auto', text: m.body }),
+    // Platform לא כותב קוד: כשצריך — מציע מטלה, ונגיעה יוצרת אותה ומריצה (§9)
+    m.meta?.task ? el('button', {
+      type: 'button', class: 'btn ghost sm b-mktask',
+      onclick: (e) => makeTask(m.meta.task, e.currentTarget),
+    }, [`📋 הפוך למטלה: ${m.meta.task.title}`]) : null,
     m.task_id ? el('button', {
       type: 'button', class: 'b-task',
       onclick: () => document.dispatchEvent(new CustomEvent('ct:open-task', { detail: m.task_id })),
@@ -124,6 +132,40 @@ function renderHead() {
   $('#cvNote').textContent = blocked;
   $('#chatInput').disabled = !!blocked;
   $('#chatSend').disabled = !!blocked;
+  $('#chatInput').placeholder = c.route_effective === 'platform' ? 'הודעה — ☁️ Platform יענה כאן' : 'הודעה לצ\'אט';
+}
+
+/* ── ☁️ Platform עונה (§9) ───────────────────────────────────── */
+
+/** עונה על הודעה שממתינה ל-Platform — בתוך הבקשה. בזמן הזה: "☁️ חושב…". */
+async function platformAnswer(id) {
+  if (conv.thinking.has(id)) return;
+  conv.thinking.add(id);
+  renderLog(true);
+  try {
+    const r = await api('platform-reply', { message_id: id });
+    if (r.handed_to_chat) toast(`Platform לא ענה — עבר לצ'אט: ${r.reason}`, '');
+  } catch (ex) { toast(ex.message, 'error'); }
+  conv.thinking.delete(id);
+  await poll(true);
+}
+
+/** בפתיחה: מה שנשאר "ממתין ל-Platform" (המסך נסגר באמצע) — משלימים, אחד אחד. */
+async function completePending() {
+  const ids = conv.messages.filter((m) => m.platform_pending && !conv.thinking.has(m.id)).map((m) => m.id);
+  for (const id of ids) { if (conv.id) await platformAnswer(id); }
+}
+
+async function makeTask(task, btn) {
+  if (!confirm(`ליצור מטלה "${task.title}" ולהריץ אותה במנוע?`)) return;
+  btn.disabled = true;
+  try {
+    const { id } = await api('create-task', { title: task.title, body: task.body || '', project_id: conv.channel.project_id });
+    try {
+      await api('run-task', { id });
+      toast(`נוצרה מטלה #${id} ונשלחה להרצה`, 'ok');
+    } catch (ex) { toast(`נוצרה מטלה #${id}, אבל ההרצה לא התחילה: ${ex.message}`, 'error'); }
+  } catch (ex) { toast(ex.message, 'error'); btn.disabled = false; }
 }
 
 function renderLog(stick) {
@@ -179,6 +221,7 @@ export async function openConversation(id) {
   $('#chatView').showModal();
   await poll(true);
   startTimer();
+  completePending();
 }
 
 on('#chatView', 'close', () => {
@@ -194,10 +237,12 @@ on('#chatForm', 'submit', async (e) => {
   if (!body || !conv.id) return;
   $('#chatSend').disabled = true;
   try {
-    await api('channel-send', { channel_id: conv.id, body });
+    const { id: sent } = await api('channel-send', { channel_id: conv.id, body });
     $('#chatInput').value = '';
     autosize();
     await poll(true);
+    // במסלול ☁️ — Platform עונה עכשיו, בתוך הבקשה
+    if (conv.messages.find((m) => m.id === sent)?.platform_pending) platformAnswer(sent);
   } catch (ex) { toast(ex.message, 'error'); }
   $('#chatSend').disabled = false;
   $('#chatInput').focus();

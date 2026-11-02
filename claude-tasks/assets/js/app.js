@@ -200,6 +200,7 @@ async function enterApp() {
   loadConnections().catch(() => {});
   loadProviders().catch(() => {});
   refreshQuotaWarn();
+  monitorLazy();
 }
 
 /* ── נושאים ────────────────────────────────────────────────── */
@@ -479,8 +480,55 @@ function renderRouteBar(cur) {
   // נבחר ☁️, אבל למשלם אין מכסה או שהיא נגמרה — בפועל הצ'אטים עונים (§8)
   if (cur.route_wanted === 'platform' && eff !== 'platform') notes.push('☁️ נבחר, אבל למשלם אין מכסה פעילה — עד שתהיה, הצ\'אטים עונים.');
   renderRouteUsage(cur);
+  renderMonitor(cur);
   $('#routeHint').hidden = !notes.length;
   $('#routeHint').textContent = notes.join(' · ');
+}
+
+/* ── מעקב (§9): הסיכום והממתינים בראש מסך הפרויקט ─────────── */
+
+const TYPE_LABEL = { 'merge-own-pr': 'מיזוג PR', 'push-own-branch': 'push', 'send-team-message': 'הודעה לצוות',
+  'format-change-request': 'שינוי פורמט', 'add-vendor-lib': 'ספרייה ל-vendor', 'add-exclude': 'exclude ב-deploy',
+  'change-deploy': 'שינוי deploy', 'delete-files': 'מחיקת קבצים', 'delete-user-data': 'מחיקת נתונים',
+  secrets: 'סודות', 'touch-other-project': 'פרויקט אחר' };
+
+async function renderMonitor(cur) {
+  const box = $('#monitorCard');
+  let m;
+  try { m = await api('project-monitor', { project_id: cur.id }); } catch { box.hidden = true; return; }
+  if (state.projectId !== cur.id) return;
+  const lines = m.summary?.lines || [];
+  const waiting = m.waiting || [];
+  if (!lines.length && !waiting.length) { box.hidden = true; return; }
+  const wrow = (w) => el('li', {}, [el('button', {
+    type: 'button', class: 'mon-item', onclick: () => openTask(w.task_id).catch((ex) => toast(ex.message, 'error')),
+  }, [
+    el('span', { class: 'ic', 'aria-hidden': 'true', text: w.status === 'awaiting_approval' ? '🔐' : '❓' }),
+    el('span', { class: 'body' }, [
+      el('b', { text: w.title }),
+      el('small', { text: [timeAgo(w.waiting_since),
+        w.already_asked ? `נשאל כבר (#${w.already_asked.task_id}): ${w.already_asked.answer}` : '',
+        w.suggested_type ? `סוג מוצע: ${TYPE_LABEL[w.suggested_type] || w.suggested_type}` : ''].filter(Boolean).join(' · ') }),
+    ]),
+    el('span', { class: 'go', 'aria-hidden': 'true', text: '‹' }),
+  ])]);
+  box.replaceChildren(
+    lines.length ? el('div', { class: 'mon-head' }, [el('b', { text: '☁️ סיכום' }),
+      el('small', { text: m.summary?.at ? timeAgo(m.summary.at) : '' })]) : null,
+    lines.length ? el('ul', { class: 'mon-lines' }, lines.map((l) => el('li', { text: l }))) : null,
+    waiting.length ? el('div', { class: 'mon-head' }, [el('b', { text: `ממתין לך · ${waiting.length}` })]) : null,
+    waiting.length ? el('ul', { class: 'mon-wait' }, waiting.slice(0, 3).map(wrow)) : null,
+  );
+  box.hidden = false;
+}
+
+/** פתיחת הלוח (בעל הלוח): מעקב "בעצלות" — רק אם עברה שעה. לא חוסם את המסך. */
+function monitorLazy() {
+  if (state.user?.role !== 'admin') return;
+  api('monitor-lazy').then((r) => {
+    const cur = state.projectId ? byId(state.projectId) : null;
+    if (cur && r.ran && r.ran[cur.id]) renderMonitor(cur);
+  }).catch(() => {});
 }
 
 /** הפס המוקטן ליד ☁️: המכסה של מי שמשלם על הענף (בעל השורש). רואים — הוא, או מנהל. */
