@@ -415,9 +415,10 @@ node claude-tasks/tests/markdown.mjs   # Markdown בבועות הצ'אט: עיצ
 - **שפות:** הגדרות ← חשבון ← "שפה לתרגום" (`users.translate_lang`): **עברית** או **ספרדית** — תמיד מאנגלית. לכל שפה
   מודל משלה, שמורידים ומסירים בנפרד. שפה חדשה = שורה ב-`TRANSLATE_LANGS` (`assets/js/translate.js`) + השפה
   ב-`translate-lang` (`api.php`); בספרדית "כנראה לא בשפה" נבדק לפי מילים נפוצות (אותו אלפבית כמו באנגלית).
-- **המודלים:** עברית — ההמרה הקהילתית `sivelsguy/opus-mt-en-he-onnx` (`fc3befc`, ≈147MB); ספרדית —
-  `Xenova/opus-mt-en-es` (`4b002a4`, ≈113MB). שניהם מוצמדים ל-commit. הספרייה מקומית
-  (`assets/vendor/`); ה-WASM של onnxruntime מ-jsDelivr באותה גרסה.
+- **המודלים** (12e.7b): ההמרה שלנו מהמודלים הרשמיים של Helsinki-NLP — `models/en-he/1/` (≈147MB) ו-`models/en-es/1/`
+  (≈146MB), מהשרת שלנו, לא מ-Hugging Face. ב-`TRANSLATE_LANGS`: ‏`id` = הזוג, `revision` = ה-build, והגודל של כל קובץ
+  מה-`manifest.json`. מי שהוריד את המודלים הקודמים — הם נמחקים מהמכשיר בפעם הראשונה (‎~260MB‎), ומורידים שוב.
+  הספרייה מקומית (`assets/vendor/`); ה-WASM של onnxruntime מ-jsDelivr באותה גרסה.
 - **ההמרה שלנו** (12e.7a): `tools/models/convert.sh` ממיר את המודלים הרשמיים של Helsinki-NLP (מוצמדים ב-`build.json`) ל-q8,
   וה-workflow ‏`claude-tasks-models.yml` בודק ומעלה ל-`models/<pair>/<build>/` בשרת — לא בריפו, ו-`deploy.yml` מחריג את
   `models/`. מפעילים אותו בשינוי של `tools/models/` (למשל `build` חדש). ההשוואה: `docs/translate-quality.md`.

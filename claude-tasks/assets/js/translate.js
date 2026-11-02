@@ -12,16 +12,16 @@ import { segment, assemble, needsTranslation } from './translate-text.js';
 
 export { needsTranslation };
 
-// שפה חדשה = שורה כאן (+ השפה ב-api.php translate-lang). כל מודל מוצמד ל-commit, עם הגודל המדויק
-// של כל קובץ — המכנה של פס ההתקדמות קבוע, גם כשהשרת לא שולח גודל.
+// שפה חדשה = שורה כאן (+ השפה ב-api.php translate-lang, + זוג ב-tools/models/build.json). המודלים — ההמרה שלנו
+// מהמודלים הרשמיים של Helsinki-NLP (12e.7), מהשרת שלנו: models/<id>/<revision>/ (tools/models/convert.sh).
+// הגודל המדויק של כל קובץ — מה-manifest.json של אותו build: המכנה של פס ההתקדמות קבוע.
 const ENC = 'onnx/encoder_model_quantized.onnx', DEC = 'onnx/decoder_model_merged_quantized.onnx';
+export const MODELS_BASE = new URL('../../models/', import.meta.url).href;
 export const TRANSLATE_LANGS = {
-  // עברית: ההמרה הקהילתית (§5.11.1) — עד שההמרה שלנו מ-Helsinki-NLP תוגש מהשרת
-  he: { name: 'עברית', heName: 'עברית', flag: '🇮🇱', label: 'אנגלית ← עברית', from: 'אנגלית', id: 'sivelsguy/opus-mt-en-he-onnx',
-        revision: 'fc3befc3af12cd004ae65e9c36ea77858c19157c', sizes: { [ENC]: 53150455, [DEC]: 94015921 } },
-  // ספרדית: ההמרה של Xenova למודל הרשמי Helsinki-NLP/opus-mt-en-es
-  es: { name: 'Español', heName: 'ספרדית', flag: '🇪🇸', label: 'אנגלית ← ספרדית', from: 'אנגלית', id: 'Xenova/opus-mt-en-es',
-        revision: '4b002a4c7edd54a7ced58877258b87f7efd3f892', sizes: { [ENC]: 52899742, [DEC]: 60212804 } },
+  he: { name: 'עברית', heName: 'עברית', flag: '🇮🇱', label: 'אנגלית ← עברית', from: 'אנגלית', id: 'en-he',
+        revision: '1', sizes: { [ENC]: 53215822, [DEC]: 94243306 } },
+  es: { name: 'Español', heName: 'ספרדית', flag: '🇪🇸', label: 'אנגלית ← ספרדית', from: 'אנגלית', id: 'en-es',
+        revision: '1', sizes: { [ENC]: 52786767, [DEC]: 93381843 } },
 };
 export const TR_CREDIT = 'Opus-MT · University of Helsinki · Apache-2.0';
 const CACHE = 'transformers-cache';
@@ -41,11 +41,27 @@ export const needs = (md) => needsTranslation(md, LANG);
 
 /* ── איזה מנוע יש ───────────────────────────────────────────── */
 
+/* ── המודלים הקודמים (מ-Hugging Face, עד 12e.7) — מפנים פעם אחת ─────────────
+ * ‏‎~260MB‎ שכבר לא בשימוש: הקבצים במטמון של transformers.js, וחתיכות הורדה שלא הסתיימה. */
+const OLD_HOST = 'https://huggingface.co/';
+let dropped = null;
+export function dropOldModels() {
+  dropped ??= (async () => {
+    try {
+      const c = await caches.open(CACHE);
+      for (const req of await c.keys()) if (req.url.startsWith(OLD_HOST)) await c.delete(req);
+    } catch { /* אין */ }
+    try { await idbStore('chunks', 'readwrite', (st) => st.delete(IDBKeyRange.bound(OLD_HOST, `${OLD_HOST}\uffff`))); } catch { /* אין */ }
+  })();
+  return dropped;
+}
+
 let enginePromise = null;
 /** ‏{ kind: 'api' | 'model' | null, reason } — נבדק פעם אחת; refresh אחרי הורדה/הסרה. */
 export function engine(refresh = false) {
   if (refresh) enginePromise = null;
   enginePromise ??= (async () => {
+    await dropOldModels();
     if ('Translator' in self) {
       try {
         const a = await Promise.race([
@@ -73,7 +89,7 @@ export async function availableFor(l) {
   return (await modelCached(l)) ? 'model' : null;
 }
 
-const fileUrl = (m, f) => `https://huggingface.co/${m.id}/resolve/${m.revision}/${f}`;
+const fileUrl = (m, f) => `${MODELS_BASE}${m.id}/${m.revision}/${f}`;   // כמו env.remotePathTemplate ב-Worker
 export async function modelCached(l = LANG) {
   const m = model(l);
   try {
@@ -232,7 +248,7 @@ export async function removeModel(l = LANG) {
     for (const req of await c.keys()) if (req.url.includes(`/${m.id}/`)) await c.delete(req);
   } catch { /* אין */ }
   try {
-    const prefix = `https://huggingface.co/${m.id}/`;
+    const prefix = `${MODELS_BASE}${m.id}/`;
     await idbStore('chunks', 'readwrite', (st) => st.delete(IDBKeyRange.bound(prefix, `${prefix}\uffff`)));
   } catch { /* אין */ }
   try {
