@@ -774,3 +774,21 @@ mark.hit { background: color-mix(in srgb, var(--star) 45%, transparent); color: 
 .ftoggle:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
 .fdates { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); }
 .fdates input { min-width: 0; width: 100%; }
+
+/* ── 🌐 תרגום במכשיר (§5.11, 12e) ── */
+.b-tr-btn { background: none; border: 0; padding: 0 .15em; font: inherit; cursor: pointer; line-height: 1; opacity: .8; }
+.b-tr-btn[aria-pressed="true"] { opacity: 1; filter: drop-shadow(0 0 1px currentColor); }
+.b-tr-btn[aria-disabled="true"] { opacity: .35; }
+.b-tr-btn:focus-visible { outline: 2px solid var(--accent, currentColor); outline-offset: 2px; border-radius: 4px; }
+.b-trline { margin: 0; font-size: .8rem; color: var(--muted, inherit); }
+.b-trline .linklike { font-size: inherit; }
+.tr-set h3 { margin: 0 0 var(--s2, 8px); font-size: 1rem; }
+.tr-set progress { width: 100%; }
+.tr-state { margin: var(--s2, 8px) 0; font-weight: 600; }
+.tr-credit { font-size: .78rem; }
+.tr-stay { margin: var(--s2, 8px) 0; padding: var(--s2, 8px) var(--s3, 12px); border-radius: var(--r, 10px); font-size: .88rem; font-weight: 600; background: color-mix(in srgb, currentColor 7%, transparent); }
+/* 12e.4: לתרגם ל, ורשימת שפות */
+.tr-sub { margin: var(--s3, 12px) 0 var(--s2, 8px); font-size: .92rem; }
+.tr-target button:disabled { opacity: .45; }
+.tr-lang progress { width: 100%; margin-top: 4px; }
+.tr-native { font-weight: 400; opacity: .7; }

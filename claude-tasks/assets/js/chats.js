@@ -8,6 +8,7 @@ import { renderMarkdown } from './markdown.js';
 import { choiceCard } from './choices.js';
 import { HEALTH, healthDetail, openHandoff } from './newchat.js';
 import { labelChip, openLabelsForMessage, openManageLabels, renderPinStrip, openPinList } from './labels.js';
+import { needs as trNeeds, lang as trLang, TRANSLATE_LANGS, engine as trEngine, translate, cached as trCached, setShow as trSetShow } from './translate.js';
 
 const POLL_MS = 4000;
 const conv = { id: null, channel: null, messages: [], timer: null, busy: false, thinking: new Set() };
@@ -140,6 +141,11 @@ function bubble(m) {
   // 📌 ותוויות (12c) — בשורת המטא, קטנים
   if (m.pinned?.shared || m.pinned?.mine) meta.push(el('span', { class: 'b-pin', title: m.pinned.shared ? 'מוצמדת לכולם' : 'מוצמדת לך', text: m.pinned.shared ? '📌' : '📌🔒' }));
   (m.labels || []).forEach((l) => meta.push(labelChip(l)));
+  // 🌐 תרגום במכשיר (12e) — רק כשההודעה כנראה לא בעברית
+  const tr = translatable(m) ? trLive.get(trKey(m)) : null;
+  if (translatable(m)) meta.push(el('button', { type: 'button', class: 'b-tr-btn', 'aria-pressed': String(tr?.state === 'on'),
+    'aria-label': tr?.state === 'on' ? 'הצגת המקור' : `תרגום ${trTo()}`, title: tr?.state === 'on' ? 'הצג מקור' : `תרגום ${trTo()} (במכשיר)`,
+    text: '🌐', onclick: (e) => { e.stopPropagation(); toggleTranslate(m); } }));
   // ⋯ — תפריט הפעולות (§5.11, 12b). בטלפון — נגיעה ארוכה על הבועה; הכפתור מופיע ב-hover/focus
   meta.push(el('button', { type: 'button', class: 'b-more', 'aria-label': 'פעולות על ההודעה', 'aria-haspopup': 'menu',
     title: 'פעולות', text: '⋯', onclick: (e) => { e.stopPropagation(); openMsgMenu(m); } }));
@@ -157,7 +163,8 @@ function bubble(m) {
       : m.kind === 'choice' && m.meta?.questions
         ? choiceCard(m, { canAnswer: conv.channel?.can_send && conv.channel?.status === 'active', onDone: reload })
       // הצ'אט כותב Markdown — מוצג מעוצב כמו בצ'אט (בונה צמתים, אף פעם לא HTML)
-        : el('div', { class: 'b-body md', dir: 'auto' }, [renderMarkdown(m.body)]),
+        : el('div', { class: 'b-body md', dir: 'auto' }, [renderMarkdown(tr && tr.state !== 'off' ? tr.md : m.body)]),
+    tr && tr.state !== 'off' ? trLine(m, tr) : null,
     // Platform לא כותב קוד: כשצריך — מציע מטלה, ונגיעה יוצרת אותה ומריצה (§9)
     m.meta?.task ? el('button', {
       type: 'button', class: 'btn ghost sm b-mktask',
@@ -238,6 +245,73 @@ function renderLog(stick) {
     : [el('li', { class: 'empty', text: conv.view ? 'אין הודעות שמתאימות לסינון.' : 'עוד אין הודעות. מה שתכתוב כאן יגיע לצ\'אט ויעיר אותו.' })]));
   if (conv.filter?.q) highlight(log, conv.filter.q);
   if (atEnd && !conv.filter) log.scrollTop = log.scrollHeight;
+  hydrateTranslations(list);
+}
+
+/* ── 🌐 תרגום במכשיר (§5.11, 12e) ─────────────────────────────
+ * המצב לפי מזהה הודעה (לא לפי ה-DOM): רענון של השיחה מצייר את הבועות מחדש, והתרגום שבאמצע
+ * ממשיך ומעדכן את הבועה שמוצגת עכשיו. state: busy · on · off. */
+const trLive = new Map();   // ‎<lang>:<id>‎ → { state, md, done, total }
+const trKey = (m) => `${trLang()}:${m.id}`;
+const trTo = () => `ל${TRANSLATE_LANGS[trLang()].heName}`;
+
+function translatable(m) {
+  return !m.platform_pending && m.kind !== 'approval' && m.kind !== 'choice' && trNeeds(m.body);
+}
+
+function trLine(m, tr) {
+  if (tr.state === 'busy') {
+    return el('p', { class: 'b-trline', role: 'status' }, [tr.total ? `🌐 מתרגם… ${tr.done}/${tr.total}` : '🌐 מתרגם…']);
+  }
+  return el('p', { class: 'b-trline' }, ['🌐 תורגם מאנגלית · ',
+    el('button', { type: 'button', class: 'linklike', text: 'הצג מקור', onclick: (e) => { e.stopPropagation(); toggleTranslate(m); } })]);
+}
+
+/** מצייר מחדש רק את הבועה של ההודעה (אם היא על המסך). */
+function redrawBubble(m) {
+  const li = $(`#chatLog .bubble[data-id="${m.id}"]`);
+  if (li) li.replaceWith(bubble(m));
+}
+
+async function toggleTranslate(m) {
+  const cur = trLive.get(trKey(m));
+  if (cur?.state === 'busy') return;
+  if (cur?.state === 'on') {
+    trLive.set(trKey(m), { ...cur, state: 'off' });
+    redrawBubble(m);
+    trSetShow(m.id, false);
+    return;
+  }
+  const eng = await trEngine();
+  if (!eng.kind) { toast(eng.reason, 'error'); return; }
+  trLive.set(trKey(m), { state: 'busy', md: m.body, done: 0, total: 0 });
+  redrawBubble(m);
+  try {
+    const md = await translate(m.id, m.body, (partial, done, total) => {
+      trLive.set(trKey(m), { state: 'busy', md: partial, done, total });
+      redrawBubble(m);
+    });
+    trLive.set(trKey(m), { state: 'on', md });
+  } catch (ex) {
+    trLive.delete(trKey(m));
+    toast(`התרגום נכשל: ${ex.message}`, 'error');
+  }
+  redrawBubble(m);
+}
+
+/** תרגום שנשמר במכשיר ונבחר "תרגום" — מוצג שוב בכניסה הבאה לשיחה. ובלי מנוע — 🌐 מסומן כבוי, עם הסיבה. */
+async function hydrateTranslations(list) {
+  const ids = list.filter(translatable);
+  if (!ids.length) return;
+  for (const m of ids) {
+    if (trLive.has(trKey(m))) continue;
+    const rec = await trCached(m.id);
+    if (rec?.text && rec.show) { trLive.set(trKey(m), { state: 'on', md: rec.text }); redrawBubble(m); }
+  }
+  const eng = await trEngine();
+  if (!eng.kind) {
+    $$('#chatLog .b-tr-btn').forEach((b) => { b.setAttribute('aria-disabled', 'true'); b.title = eng.reason; });
+  }
 }
 
 /** ‏after — מהמוקדמת שעוד לא נמסרה, כדי ש-✓ יתעדכן ל-✓✓. */
@@ -583,6 +657,8 @@ function openMsgMenu(m) {
     canSend ? act('📌', m.pinned?.shared ? 'ביטול הצמדה לכולם' : 'הצמד לכולם', () => pin(m, 'shared', !m.pinned?.shared), 'בפס בראש השיחה, אצל כל מי שרואה אותה') : null,
     act('📌', m.pinned?.mine ? 'ביטול ההצמדה שלי' : 'הצמד לי', () => pin(m, 'private', !m.pinned?.mine), '🔒 רק אתה רואה'),
     act('🏷', 'תוויות', () => openLabelsForMessage(conv.channel, m, () => renderLog(false)), (m.labels || []).map((l) => l.name).join(' · ') || 'סימון ההודעה בתווית'),
+    translatable(m) ? act('🌐', trLive.get(trKey(m))?.state === 'on' ? 'הצג מקור' : `תרגום ${trTo()}`, () => toggleTranslate(m),
+      trLive.get(trKey(m))?.state === 'on' ? 'חזרה לטקסט המקורי' : 'במכשיר, בלי שרת — משפט אחר משפט') : null,
     act('➕', 'הפיכה למטלה', () => makeTaskFrom(m), 'מטלה בפרויקט של הצ\'אט, עם ההודעה בגוף'),
     act('🔗', 'העתקת קישור', () => copy(messageLink(m), 'הקישור הועתק'), 'פותח את השיחה בהודעה הזו'),
   ].filter(Boolean));

@@ -2,6 +2,7 @@ import { $, $$, el, toast, api, state, timeAgo, on, set, PLATFORM_HINT } from '.
 import { loadConnections, loadProviders, runTask, openProject, modelPicker, renderUsersInto } from './platform.js';
 import { loadChannels, openConversation, openFromHash } from './chats.js';
 import { approvalCard, noteText } from './approvals.js';
+import { downloadModel as trDownload, removeModel as trRemove, availableFor as trAvailableFor, downloadedBytes as trHave, model as trModel, setLang as trSetLang, TRANSLATE_LANGS } from './translate.js';
 import { loadUsage, usageCard, usageMini } from './usage.js';
 import { openPolicySheet } from './policy.js';
 
@@ -211,6 +212,7 @@ on('#oldForm', 'submit', async (e) => {
 
 async function enterApp() {
   set('#app', 'hidden', false);
+  trSetLang(state.user?.translate_lang || 'he');   // 🌐 שפת התרגום של המשתמש (12e)
   set('#adminBtn', 'hidden', state.user?.role !== 'admin');
   // דרך הפלטפורמה: היציאה היא מהפלטפורמה, לא מכאן.
   set('#logoutBtn', 'hidden', state.platform);
@@ -1220,12 +1222,108 @@ function showSetTab(tab) {
   $$('#setTabs [data-set]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.set === tab)));
   $$('#settings .set-panel').forEach((p) => { p.hidden = p.dataset.panel !== tab; });
   if (tab === 'users') renderUsersInto($('#usersBox'));
+  if (tab === 'me') renderTranslateSettings();
   try { sessionStorage.setItem('ct:set', tab); } catch { /* פרטי */ }
 }
 on('#setTabs', 'click', (e) => {
   const b = e.target.closest('[data-set]');
   if (b) showSetTab(b.dataset.set);
 });
+
+/* ── 🌐 תרגום במכשיר (§5.11, 12e) — "לתרגם ל" (רק שפה שאפשר להשתמש בה), ורשימת שפות להורדה ── */
+const mb = (b) => (b / 1e6).toFixed(0);
+let trBusy = null;   // השפה שמורידים עכשיו (אחת בכל פעם)
+
+async function renderTranslateSettings() {
+  const cur = state.user?.translate_lang || 'he';
+  const avail = {}, part = {};
+  await Promise.all(Object.keys(TRANSLATE_LANGS).map(async (k) => {
+    avail[k] = await trAvailableFor(k);
+    // הורדה שהופסקה באמצע — כמה כבר במכשיר (12e.5)
+    if (avail[k] !== 'model') { const h = await trHave(k); if (h.have > 0 && !h.complete) part[k] = h; }
+  }));
+  // לתרגם ל — כפתור לכל שפה; שפה שלא הורדה (ואין לה תרגום מובנה) כבויה
+  $('#trTarget').replaceChildren(...Object.entries(TRANSLATE_LANGS).map(([k, l]) => el('button', {
+    type: 'button', role: 'radio', 'aria-checked': String(k === cur), disabled: !avail[k],
+    title: avail[k] ? '' : 'צריך להוריד קודם', onclick: () => chooseTarget(k),
+  }, [`${l.flag} ${l.heName}`])));
+  $('#trTargetHint').textContent = avail[cur]
+    ? `הודעות באנגלית יתורגמו ל${TRANSLATE_LANGS[cur].heName}${avail[cur] === 'api' ? ' — בתרגום המובנה של Chrome' : ''}.`
+    : `כדי לתרגם ל${TRANSLATE_LANGS[cur].heName} — הורידו אותה ברשימה למטה.`;
+  // שפות להורדה — מצב, גודל, והורדה / הסרה
+  $('#trLangs').replaceChildren(...Object.entries(TRANSLATE_LANGS).map(([k, l]) => {
+    const m = trModel(k);
+    const busy = trBusy === k;
+    const has = avail[k] === 'model';
+    return el('li', { class: 'card tr-lang', dataset: { lang: k } }, [
+      el('span', { class: 'ic', 'aria-hidden': 'true', text: l.flag }),
+      el('div', { class: 'body' }, [
+        el('div', { class: 'l1' }, [el('span', { text: `${l.heName}` }), el('small', { class: 'tr-native', text: l.name !== l.heName ? ` · ${l.name}` : '' })]),
+        el('div', { class: 'l2 tr-lang-state', text: busy ? 'מתחיל…' : has ? `✓ במכשיר · ${m.approxMB}MB`
+          : part[k] ? `⏸ הופסקה ב-${mb(part[k].have)} מתוך ${mb(part[k].total)}MB — ממשיכים מאותה נקודה`
+          : avail[k] === 'api' ? 'זמין בתרגום המובנה של Chrome' : `לא הורדה · ≈${m.approxMB}MB` }),
+        busy ? el('progress', { max: '100', value: '0' }) : null,
+      ].filter(Boolean)),
+      has ? el('button', { type: 'button', class: 'btn ghost sm', 'aria-label': `הסרת ${l.heName}`, text: '🗑', disabled: !!trBusy, onclick: () => removeLang(k) })
+        : el('button', { type: 'button', class: 'btn primary sm', text: busy ? '…' : part[k] ? '⬇️ המשך' : '⬇️ הורדה', disabled: !!trBusy, onclick: () => downloadLang(k) }),
+    ]);
+  }));
+}
+
+async function chooseTarget(lang) {
+  try {
+    const r = await api('translate-lang', { lang });
+    state.user.translate_lang = r.lang;
+    trSetLang(r.lang);
+    toast(`מעכשיו: תרגום ל${TRANSLATE_LANGS[r.lang].heName}`, 'ok');
+  } catch (ex) { toast(ex.message, 'error'); }
+  renderTranslateSettings();
+}
+
+async function downloadLang(k) {
+  const m = trModel(k);
+  if (!confirm(`להוריד את ${TRANSLATE_LANGS[k].heName} (≈${m.approxMB}MB)? פעם אחת למכשיר — עדיף ב-Wi-Fi.`)) return;
+  trBusy = k;
+  // מיד — בלי לחכות לבדיקת הזמינות (עד 4 ש' כש-Chrome לא עונה)
+  $$('#trLangs button').forEach((b) => { b.disabled = true; });
+  const row0 = $(`#trLangs .tr-lang[data-lang="${k}"]`);
+  row0.querySelector('.tr-lang-state').textContent = 'מתחיל…';
+  row0.querySelector('.body').append(el('progress', { max: '100', value: '0' }));
+  set('#trStay', 'hidden', false);
+  // המסך לא נכבה מעצמו בזמן ההורדה — מסך נעול מקפיא את הדף ועוצר אותה (Wake Lock; בלי — ממשיכים בלעדיו)
+  let lock = null;
+  const takeLock = async () => { try { lock = await navigator.wakeLock?.request('screen'); } catch { lock = null; } };
+  const onVisible = () => { if (document.visibilityState === 'visible' && trBusy) takeLock(); };
+  await takeLock();
+  document.addEventListener('visibilitychange', onVisible);
+  try {
+    await trDownload(({ loaded, total, etaSec, resumedFrom, retrying }) => {
+      const row = $(`#trLangs .tr-lang[data-lang="${k}"]`);
+      if (!row) return;
+      if (!row.querySelector('progress')) row.querySelector('.body').append(el('progress', { max: '100', value: '0' }));
+      row.querySelector('progress').value = total ? Math.round((loaded / total) * 100) : 0;
+      row.querySelector('.tr-lang-state').textContent = retrying
+        ? `⏳ החיבור נפל — מנסה שוב (${retrying})… מה שירד (${mb(loaded)}MB) שמור`
+        : `${resumedFrom && loaded - resumedFrom < 4e6 ? `ממשיך מ-${mb(resumedFrom)}MB · ` : ''}מוריד ${mb(loaded)} מתוך ${mb(total)}MB${etaSec != null ? ` · עוד ~${etaSec < 60 ? `${etaSec} שנ'` : `${Math.round(etaSec / 60)} דק'`}` : ''}`;
+    }, k);
+    toast(`${TRANSLATE_LANGS[k].heName} במכשיר`, 'ok');
+    trBusy = null;
+    // השפה הראשונה שהורדה — הופכת לשפת התרגום, אם השפה הנוכחית עוד לא זמינה
+    if (!(await trAvailableFor(state.user?.translate_lang || 'he'))) await chooseTarget(k);
+  } catch (ex) { toast(`ההורדה נכשלה: ${ex.message}`, 'error'); }
+  trBusy = null;
+  document.removeEventListener('visibilitychange', onVisible);
+  try { await lock?.release(); } catch { /* כבר שוחרר */ }
+  set('#trStay', 'hidden', true);
+  renderTranslateSettings();
+}
+
+async function removeLang(k) {
+  if (!confirm(`להסיר את ${TRANSLATE_LANGS[k].heName} מהמכשיר? גם התרגומים השמורים בשפה הזו יימחקו.`)) return;
+  await trRemove(k);
+  toast(`${TRANSLATE_LANGS[k].heName} הוסרה`, 'ok');
+  renderTranslateSettings();
+}
 
 on('#meForm', 'submit', async (e) => {
   e.preventDefault();

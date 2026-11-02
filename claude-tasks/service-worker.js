@@ -29,7 +29,8 @@ self.addEventListener('install', (event) => {
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE_VERSION).map((k) => caches.delete(k))))
+    // רק גרסאות קודמות של השלד — לא מטמונים אחרים באותו מקור (מודל התרגום, 12e: transformers-cache)
+    caches.keys().then((keys) => Promise.all(keys.filter((k) => k.startsWith('claude-tasks-') && k !== CACHE_VERSION).map((k) => caches.delete(k))))
       .then(() => self.clients.claim()),
   );
 });
