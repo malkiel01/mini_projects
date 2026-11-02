@@ -1,4 +1,5 @@
 <?php
+// ריצה חוזרת 10:25
 // זמני: קריאה בלבד — האם החסימה (429) השתחררה, וכמה בקשות ללוח בדקות האחרונות.
 $out = [];
 foreach (['https://mbe-plus.com/mini_projects/platform/home/', 'https://mbe-plus.com/mini_projects/platform/api.php?action=me'] as $u) {
