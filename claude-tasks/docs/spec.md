@@ -508,6 +508,19 @@ Tests for `choice-answer`, the race, and the typed-answer path.
 - **Re-register after a container change:** the hourly backup (and the first prompt after a wake) runs `link.sh status`; a missing
   link file with a known `session_id` re-registers silently (same channel).
 
+**The owner's screenshot (14:01, "היצירה v2 - המתכלל") is a second, different block — a tool permission prompt**
+("Allow Claude to Claude Code Remote: create trigger?"), not a question. `.claude/settings.json` already allows
+`mcp__claude-code-remote__create_trigger` and `mcp__Claude_Code_Remote__create_trigger`, but in cloud sessions the same server
+can appear under a **generated name** (`mcp__<uuid>__create_trigger`) — this session's own tools did — so the allow-list misses
+it and the chat stops for a tap in the app. Rules:
+- **Auto-allow by suffix in a registered chat:** a `PreToolUse` hook (matcher: any tool whose name ends with
+  `__create_trigger`, `__send_later`, `__get_session`, `__list_sessions`, `__get_trigger`, `__list_triggers`) returns
+  `permissionDecision: "allow"` — exactly the set the owner already allowed by name, nothing more. Logged to the board as a
+  `system` line only when it fires for a name not in the settings list (so a new alias is visible).
+- **Any other permission prompt is mirrored, not answered:** a `Notification` hook posts to the board a `system` message
+  "⏸ הצ'אט ממתין לאישור באפליקציה: <tool>" with a 🔗 to the session, and the channel row shows ⏸ — so the owner knows why the
+  chat went quiet. The board cannot approve a tool; that stays in the app (and in the settings allow-list for good).
+
 **Done when:** with the board paused, a registered chat's `AskUserQuestion` prints the options in the chat and ends the turn (no
 dialog); after unpausing, the typed answer marks the board bubble; a hook change merged to `main` reaches a running chat within
 one backup cycle without touching its git status; an old chat shows "⚠ גרסה ישנה" and is fixed by the one update message.
