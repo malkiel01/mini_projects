@@ -5,11 +5,13 @@
  *   import { pdfDraw } from './pdf-core/draw.js';
  *   const bytes = await pdfDraw(list, key => bytesOf(key));   // Uint8Array; resolve — Uint8Array / ArrayBuffer / Promise / null
  *
- * נתמך: image (PNG, JPEG), rect, line, path, clip … restore, מעבר צבע (גם שקיפות בעצירות), שקיפות — כמו ב-PHP, וזרם התוכן של כל עמוד
- * זהה לזה של draw.php (נבדק ב-tests/draw.test.mjs). **glyphs — עוד לא ב-JS** (גופנים ו-subset — רק כשיידרש); מי
- * שצריך טקסט ממיר אותו לקווי מתאר (path), או מצייר בשרת.
+ * נתמך: glyphs (טקסט אמיתי — גופן TrueType מוטמע עם subset ו-ToUnicode, font.js), image (PNG, JPEG), rect, line, path,
+ * clip … restore, מעבר צבע (גם שקיפות בעצירות), שקיפות — כמו ב-PHP. זרם התוכן של כל עמוד, אובייקטי הגופן וקובץ הגופן
+ * המוקטן זהים לאלה של draw.php (נבדק ב-tests/draw.test.mjs). רשימת הגליפים — מ-shapeLine של text-core.
  * שונה מ-PHP: תמונת PNG לא מוקטנת (ב-PHP — עד 1600 בצלע), והשקיפות שלה מדויקת (ב-GD — 7 סיביות).
  */
+
+import { TtfFont, subset, toUnicode } from './font.js';
 
 const enc = new TextEncoder();
 const bad = msg => new TypeError(msg);   // כמו InvalidArgumentException ב-PHP
@@ -138,7 +140,13 @@ async function pngDecode(b) {
 // ---------- הכותב ----------
 
 class Writer {
-    constructor() { this.pages = []; this.images = new Map(); this.gstates = new Map(); this.patterns = []; this.masks = []; }
+    constructor() { this.pages = []; this.fonts = new Map(); this.images = new Map(); this.gstates = new Map(); this.patterns = []; this.masks = []; }
+
+    /** גופן → '/F1'; אותו אובייקט — אותו שם */
+    font(f) {
+        if (!this.fonts.has(f)) this.fonts.set(f, '/F' + (this.fonts.size + 1));
+        return this.fonts.get(f);
+    }
 
     addPage(w, h, bleed = 0) {
         this.pages.push({ w: w + 2 * bleed, h: h + 2 * bleed, bleed, main: '' });
@@ -189,6 +197,22 @@ class Writer {
         const alloc = () => next++;
         const stream = (dict, data, flate = false) => [`<< ${dict}${flate ? ' /Filter /FlateDecode' : ''} /Length ${data.length} >>\nstream\n`, data, '\nendstream'];
         const catalog = alloc(), pagesId = alloc(), info = alloc();
+        // גופנים — Type0 + CIDFontType2, Identity-H, ToUnicode; קובץ הגופן — subset (כמו ב-PHP עם subset = true)
+        let fontRefs = '';
+        for (const [f, name] of this.fonts) {
+            if (!f.used.size) continue;
+            const type0 = alloc(), cid = alloc(), desc = alloc(), file = alloc(), tou = alloc();
+            const p = f.pdfParts();
+            objs[type0] = `<< /Type /Font /Subtype /Type0 /BaseFont /${p.base} /Encoding /Identity-H /DescendantFonts [${cid} 0 R] /ToUnicode ${tou} 0 R >>`;
+            objs[cid] = `<< /Type /Font /Subtype /CIDFontType2 /BaseFont /${p.base} /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >>`
+                + ` /FontDescriptor ${desc} 0 R /DW 0 /W [ ${p.w}] /CIDToGIDMap /Identity >>`;
+            objs[desc] = `<< /Type /FontDescriptor /FontName /${p.base} /Flags 32 /FontBBox [${p.bbox}] /ItalicAngle 0 /Ascent ${p.ascent}`
+                + ` /Descent ${p.descent} /CapHeight ${p.capHeight} /StemV 80 /FontFile2 ${file} 0 R >>`;
+            const sfnt = subset(f.sfnt, p.used.map(([gid]) => gid));
+            objs[file] = stream(`/Length1 ${sfnt.length}`, await deflate(sfnt), true);
+            objs[tou] = stream('', await deflate(enc.encode(toUnicode(p.used))), true);
+            fontRefs += `${name} ${type0} 0 R `;
+        }
         let imgRefs = '';
         for (const im of this.images.values()) {
             const id = alloc();
@@ -216,7 +240,7 @@ class Writer {
                 + ` /Resources << /Shading << /Sh0 ${sh} >> >>`, enc.encode('/Sh0 sh'));
             gs += `/SM${i + 1} << /Type /ExtGState /SMask << /Type /Mask /S /Luminosity /G ${id} 0 R >> >> `;
         }
-        objs[res] = `<< /Font << >> /XObject << ${imgRefs}>>` + (gs ? ` /ExtGState << ${gs}>>` : '') + (pat ? ` /Pattern << ${pat}>>` : '') + ' /ProcSet [/PDF /Text /ImageB /ImageC] >>';
+        objs[res] = `<< /Font << ${fontRefs}>> /XObject << ${imgRefs}>>` + (gs ? ` /ExtGState << ${gs}>>` : '') + (pat ? ` /Pattern << ${pat}>>` : '') + ' /ProcSet [/PDF /Text /ImageB /ImageC] >>';
         const pids = this.pages.map(() => alloc());
         const kids = [];
         for (const [pn, p] of this.pages.entries()) {
@@ -261,9 +285,13 @@ class Writer {
 
 // ---------- רשימת הציור ----------
 
+/** שם הקובץ בלי תיקייה ובלי סיומת — כמו pathinfo(..., PATHINFO_FILENAME) */
+const fileName = key => { const b = key.split('/').pop(); const i = b.lastIndexOf('.'); return i < 0 ? b : b.slice(0, i); };
+
 /** @param {(key: string) => Uint8Array|ArrayBuffer|null|Promise<Uint8Array|ArrayBuffer|null>} resolve */
 export async function pdfDraw(list, resolve) {
     const w = new Writer();
+    const fonts = new Map();
     const isNum = v => typeof v === 'number' && Number.isFinite(v);
     const num = (v, where) => { if (!isNum(v)) throw bad(`מספר חסר: ${where}`); return v; };
     const unit = (v, where) => { const x = num(v, where); if (x < 0 || x > 1) throw bad(`ערך בין 0 ל-1: ${where}`); return x; };
@@ -377,8 +405,31 @@ export async function pdfDraw(list, resolve) {
         for (const [oi, op] of (page.ops || []).entries()) {
             const where = `${at}, פעולה ${oi + 1}`;
             switch (op?.op ?? '') {
-                case 'glyphs':
-                    throw bad(`glyphs — עוד לא ב-pdf-core של JS (טקסט כקווי מתאר — path, או ציור בשרת): ${where}`);
+                case 'glyphs': {
+                    const key = String(op.font ?? '');
+                    if (!fonts.has(key)) fonts.set(key, await TtfFont.fromBytes(await bytes(key, 'גופן'), fileName(key)));
+                    const f = fonts.get(key);
+                    const fname = w.font(f);
+                    const size = num(op.size ?? null, where);
+                    const x = num(op.x ?? null, where);
+                    const y = num(op.y ?? null, where);
+                    const gl = op.glyphs ?? null;
+                    if (!Array.isArray(gl)) throw bad(`glyphs: ${where}`);
+                    if (!gl.length) break;   // בלי גליפים — בלי BT (אחרת Tf מפנה לגופן שלא נכנס למשאבים)
+                    const text = String(op.text ?? '');
+                    c += (text !== '' ? `/Span << /ActualText ${textHex(text)} >> BDC\n` : '')
+                        + `BT ${color(op.color ?? '#000000', where)} rg ${fname} ${n(size)} Tf\n`;
+                    let pen = 0;
+                    for (const g of gl) {
+                        if (!Array.isArray(g) || g.length !== 4 || !Number.isInteger(g[0]) || g[0] < 0 || g[0] >= f.numGlyphs())
+                            throw bad(`גליף [gid, dx, dy, adv]: ${where}`);
+                        const [gid, dx, dy, adv] = [g[0], num(g[1], where), num(g[2], where), num(g[3], where)];
+                        c += `1 0 0 1 ${n(X(x + pen + dx))} ${n(Y(y) + dy)} Tm <${f.encodeGid(gid)}> Tj\n`;
+                        pen += adv;
+                    }
+                    c += 'ET\n' + (text !== '' ? 'EMC\n' : '');
+                    break;
+                }
                 case 'image': {
                     const im = await w.image(await bytes(String(op.src ?? ''), 'תמונה'));
                     if (!im) throw bad(`תמונה בפורמט שלא נתמך: ${where}`);
