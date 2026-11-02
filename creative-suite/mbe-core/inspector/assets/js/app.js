@@ -78,7 +78,8 @@ function render() {
             h('div', { class: 'chips tight' },
                 errors ? h('span', { class: 'chip bad' }, `${errors} שגיאות`) : h('span', { class: 'chip ok' }, 'תקין'),
                 warnings ? h('span', { class: 'chip warn' }, `${warnings} אזהרות`) : null,
-                f.renditions().some(r => r.stale) ? h('span', { class: 'chip warn' }, 'יש ייצוגים מיושנים') : null))));
+                f.renditions().some(r => r.stale) ? h('span', { class: 'chip warn' }, 'יש ייצוגים מיושנים') : null),
+            colorLine(f.document))));
     $('#n-issues').textContent = f.issues.length || '';
     $('#n-layers').textContent = countLayers(f.document) || '';
     $('#n-renditions').textContent = f.renditions().length || '';
@@ -87,6 +88,19 @@ function render() {
     try { tab = sessionStorage.getItem(TAB_KEY) || tab; } catch { /* בלי אחסון — לשונית ברירת מחדל */ }
     if (tab === 'issues' && !f.issues.length && f.document) tab = 'layers';
     show(tab);
+}
+
+// מרחב הצבע של המסמך (פ4.3): sRGB הוא ברירת המחדל ולא מוצג; אחר — עם הפרופיל וכוונת הפלט
+function colorLine(doc) {
+    const c = doc?.color;
+    if (!c || typeof c !== 'object') return null;
+    const bits = [];
+    if (typeof c.space === 'string' && c.space !== 'sRGB') bits.push(c.space);
+    if (typeof c.profile === 'string') bits.push('ICC');
+    if (c.output && typeof c.output === 'object') bits.push(`פלט ${typeof c.output.condition === 'string' ? c.output.condition : ''}`.trim());
+    const spots = doc.swatches && typeof doc.swatches === 'object' ? Object.values(doc.swatches).filter(s => s?.spot === true).length : 0;
+    if (spots) bits.push(`${spots} ספוט`);
+    return bits.length ? h('div', { class: 'muted one' }, `🎨 צבע: ${bits.join(' · ')}`) : null;
 }
 
 function countLayers(doc) {
@@ -164,6 +178,23 @@ function vectorThumb(l) {
     return svg;
 }
 
+// פורמט 1.2 (פ1–פ4): מה יש לפריט או לשכבה — אפקטים, מראה, פילטרים, התאמה, אפייה וצבע להדפסה. רק טקסט קצר.
+const names = list => list.filter(x => x && typeof x === 'object' && typeof x.type === 'string').map(x => x.type + (x.enabled === false ? ' (כבוי)' : ''));
+function styleBits(o) {
+    const bits = [];
+    if (Array.isArray(o.effects) && o.effects.length) bits.push(`אפקטים: ${names(o.effects).join(', ')}`);
+    if (o.bake && typeof o.bake === 'object') bits.push(o.bake.replace ? 'אפוי (מחליף)' : 'אפוי');
+    const fl = Array.isArray(o.fills) ? o.fills.length : 0, st = Array.isArray(o.strokes) ? o.strokes.length : 0;
+    if (fl || st) bits.push(`מראה: ${fl} מילויים, ${st} מתארים`);
+    if (Array.isArray(o.filters) && o.filters.length) bits.push(`פילטרים: ${names(o.filters).join(', ')}`);
+    if (o.adjust && typeof o.adjust === 'object' && typeof o.adjust.type === 'string') bits.push(`התאמה: ${o.adjust.type}`);
+    const paints = [o.fill, o.stroke, ...(Array.isArray(o.fills) ? o.fills : []), ...(Array.isArray(o.strokes) ? o.strokes : [])].filter(p => p && typeof p === 'object');
+    if (paints.some(p => Array.isArray(p.cmyk))) bits.push('CMYK');
+    if (paints.some(p => typeof p.swatch === 'string')) bits.push('דוגמית');
+    if (paints.some(p => p.overprint === true)) bits.push('הדפסה מעל');
+    return bits;
+}
+
 function layersView(f) {
     const doc = f.document;
     if (!doc) return h('p', { class: 'empty' }, 'document.json לא נקרא — ראו בלשונית "בעיות".');
@@ -183,8 +214,9 @@ function layersView(f) {
         if (kind === 'group' && p.boolean) bits.push(`בוליאני: ${p.boolean}`);
         if (kind === 'text' && typeof p.text === 'string') bits.push(`"${p.text.replace(/\s+/g, ' ').slice(0, 40)}"`);
         if (typeof p.d === 'string') { const bad = pathProblem(p.d); bits.push(bad ? `⛔ d: ${bad}` : `${(p.d.match(/[MLCQZ]/g) || []).length} פקודות`); }
-        if (p.fill?.gradient) bits.push('מעבר צבע');
+        if (p.fill?.gradient) bits.push(`מעבר צבע${typeof p.fill.gradient.type === 'string' ? ' ' + p.fill.gradient.type : ''}`);
         if (p.stroke) bits.push('קו');
+        bits.push(...styleBits(p));
         const kids = Array.isArray(p.children) && p.children.length ? h('ul', { class: 'tree' }, p.children.map(c => pathItem(c, depth + 1))) : null;
         return h('li', {}, node(PATH_IC[kind] || '❔', p.name || p.id || '—', bits.filter(Boolean).join(' · ')), kids);
     };
@@ -197,6 +229,7 @@ function layersView(f) {
         if (l.locked) bits.push('🔒');
         if (l.flow) bits.push(`שטף ${l.flow}${flows[l.flow]?.engine ? ' (' + flows[l.flow].engine + ')' : ''}`);
         if (l.vectorMask) bits.push('מסכה וקטורית');
+        bits.push(...styleBits(l));
         const isVec = l.type === 'vector' && Array.isArray(l.paths);
         if (isVec) bits.push(`${l.paths.length} פריטים`);
         const kids = [

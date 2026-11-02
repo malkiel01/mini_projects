@@ -14,7 +14,7 @@ import { SCHEMAS } from './schemas.js';
 export { canonicalJson, LIMITS };
 
 export const FORMAT = 'mbe';
-export const VERSION = '1.1';
+export const VERSION = '1.2';
 export const CURRENT_MAJOR = 1;
 export const MIMETYPE = 'application/vnd.mbe+zip';
 export const PREVIEW = 'renditions/preview.png';
@@ -307,7 +307,10 @@ export async function open(bytes, { limits = LIMITS } = {}) {
     for (const [p, d] of raw) if (!RESERVED.has(p)) f.files.set(p, d);
     await checkParts(f, issue);
     await checkHistory(f, issue);
-    if (f.document && typeof f.document === 'object' && !Array.isArray(f.document)) checkDocument(f, issue);
+    if (f.document && typeof f.document === 'object' && !Array.isArray(f.document)) {
+        checkDocument(f, issue);
+        await checkStyle(f, issue);
+    }
     return f;
 }
 
@@ -528,13 +531,172 @@ function checkDocument(f, issue) {
         if (depth > 300 || v === null || typeof v !== 'object') return;
         for (const k of Object.keys(v).sort()) {
             const x = v[k], at = `${where}/${k}`;
-            if ((k === 'src' || k === 'embedded') && typeof x === 'string' && !Array.isArray(v)) {
+            // pattern (מילוי / overlay) ו-profile (ICC) — אותו כלל, כשהם מפנים ל-media/ (פורמט 1.2, פ2.2 / פ4.3)
+            if ((k === 'src' || k === 'embedded' || ((k === 'pattern' || k === 'profile') && typeof x === 'string' && x.startsWith('media/')))
+                && typeof x === 'string' && !Array.isArray(v)) {
                 if (!MEDIA_RE.test(x)) issue('error', 'external-ref', 'הפניה למשאב מחוץ לקובץ — כל משאב חייב להיות ב-media/', 'document.json#' + at);
                 else if (!f.files.has(x)) issue('error', 'ref-missing', `המשאב ${x} לא נמצא בקובץ`, 'document.json#' + at);
             } else walk(x, at, depth + 1);
         }
     };
     walk(f.document, '', 0);
+}
+
+/**
+ * פורמט 1.2 (mbe-format.md, "אפקטים, פילטרים, מראה וצבע"; requests/format-p1-p4.md): הפרמטרים לפי type. כלל לשדה:
+ * [min, max] — מספר (null = בלי גבול); ["a", "b"] — אחד מהערכים; { len, range } — רשימה באורך קבוע; "curve" — נקודות עקומה.
+ * שדה חסר — תקין (ברירת המחדל). type לא מוכר — לא נבדק (רשימה פתוחה). אותה טבלה ב-PHP (Mbe::STYLE_SPEC).
+ */
+export const STYLE_SPEC = {
+    effect: {
+        'shadow': { dx: [null, null], dy: [null, null], blur: [0, null], spread: [0, 1] },
+        'inner-shadow': { dx: [null, null], dy: [null, null], blur: [0, null], spread: [0, 1] },
+        'glow': { blur: [0, null], spread: [0, 1] },
+        'inner-glow': { blur: [0, null], spread: [0, 1] },
+        'stroke': { width: [0, null], position: ['outside', 'center', 'inside'] },
+        'overlay': {},
+        'blur': { radius: [0, null] },
+    },
+    filter: {
+        'brightness-contrast': { brightness: [-100, 100], contrast: [-100, 100] },
+        'hue-saturation': { hue: [-180, 180], saturation: [-100, 100], lightness: [-100, 100] },
+        'gaussian-blur': { radius: [0, null] },
+        'motion-blur': { angle: [null, null], distance: [0, null] },
+        'unsharp': { amount: [0, 500], radius: [0, null], threshold: [0, 255] },
+        'high-pass': { radius: [0, null] },
+        'noise': { amount: [0, 100] },
+    },
+    adjust: {
+        'brightness-contrast': { brightness: [-100, 100], contrast: [-100, 100] },
+        'hue-saturation': { hue: [-180, 180], saturation: [-100, 100], lightness: [-100, 100] },
+        'levels': { black: [0, 255], white: [0, 255], gamma: [0.1, 10], outBlack: [0, 255], outWhite: [0, 255], channel: ['rgb', 'r', 'g', 'b'] },
+        'curves': { rgb: 'curve', r: 'curve', g: 'curve', b: 'curve' },
+        'color-balance': { shadows: { len: 3, range: [-100, 100] }, midtones: { len: 3, range: [-100, 100] }, highlights: { len: 3, range: [-100, 100] } },
+        'black-white': { reds: [-200, 300], yellows: [-200, 300], greens: [-200, 300], cyans: [-200, 300], blues: [-200, 300], magentas: [-200, 300] },
+        'channel-mixer': { r: { len: 4, range: [-200, 200] }, g: { len: 4, range: [-200, 200] }, b: { len: 4, range: [-200, 200] } },
+        'exposure': { exposure: [-20, 20], offset: [-0.5, 0.5], gamma: [0.01, 9.99] },
+        'vibrance': { vibrance: [-100, 100], saturation: [-100, 100] },
+        'photo-filter': { density: [0, 100] },
+        'posterize': { levels: [2, 255] },
+        'threshold': { level: [1, 255] },
+    },
+};
+
+/** ICC: כותרת 'acsp' בבית 36, ולא יותר מ-4MB (פ4.3). */
+export const ICC_MAX_BYTES = 4 * 1024 * 1024;
+
+const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
+const isNum = v => typeof v === 'number' && Number.isFinite(v);
+const inRange = (v, r) => isNum(v) && (r[0] === null || v >= r[0]) && (r[1] === null || v <= r[1]);
+
+function ruleOk(v, rule) {
+    if (rule === 'curve') {
+        if (!Array.isArray(v) || v.length < 2) return false;
+        let prev = -Infinity;
+        for (const p of v) {
+            if (!Array.isArray(p) || p.length !== 2 || !inRange(p[0], [0, 255]) || !inRange(p[1], [0, 255]) || p[0] <= prev) return false;
+            prev = p[0];
+        }
+        return true;
+    }
+    if (Array.isArray(rule)) return typeof rule[0] === 'string' ? rule.includes(v) : inRange(v, rule);
+    return Array.isArray(v) && v.length === rule.len && v.every(x => inRange(x, rule.range));
+}
+
+/** תיאור הכלל להודעה — זהה ל-Mbe::ruleText ב-PHP. */
+function ruleText(rule) {
+    if (rule === 'curve') return 'נקודות [in, out] ב-0–255, in עולה, לפחות 2';
+    if (Array.isArray(rule) && typeof rule[0] === 'string') return 'אחד מ: ' + rule.join(' / ');
+    const r = Array.isArray(rule) ? rule : rule.range;
+    const span = r[0] === null && r[1] === null ? '' : r[0] === null ? ` עד ${r[1]}` : r[1] === null ? ` ${r[0]} ומעלה` : ` ${r[0]}–${r[1]}`;
+    return Array.isArray(rule) ? `מספר${span}` : `${rule.len} מספרים${span}`;
+}
+
+/** בדיקות 1.2 — אחרי checkDocument, באותו סדר כמו ב-PHP. כולן אזהרות, חוץ מ-ICC פגום (שגיאה). */
+async function checkStyle(f, issue) {
+    const doc = f.document;
+    const bakes = [];
+    const params = (kind, code, o, at) => {
+        if (!isObj(o) || typeof o.type !== 'string' || !Object.hasOwn(STYLE_SPEC[kind], o.type)) return;
+        const spec = STYLE_SPEC[kind][o.type];
+        for (const k of Object.keys(spec)) {
+            if (Object.hasOwn(o, k) && !ruleOk(o[k], spec[k])) {
+                issue('warning', code, `${o.type}.${k}: צריך ${ruleText(spec[k])}`, `document.json#${at}/${k}`);
+            }
+        }
+    };
+    const gradient = (g, at) => {
+        if (!isObj(g)) return;
+        const pt = v => Array.isArray(v) && v.length === 2 && isNum(v[0]) && isNum(v[1]);
+        const bad = why => issue('warning', 'gradient-invalid', `מעבר צבע: ${why}`, `document.json#${at}`);
+        if (g.type === 'linear' && !(pt(g.from) && pt(g.to))) bad('ל-linear חסרים from / to');
+        if (g.type === 'radial' && !(pt(g.center) && isNum(g.radius) && g.radius > 0)) bad('ל-radial חסרים center / radius גדול מ-0');
+        if (Array.isArray(g.stops)) {
+            for (let i = 1; i < g.stops.length; i++) {
+                if (isNum(g.stops[i]?.at) && isNum(g.stops[i - 1]?.at) && g.stops[i].at < g.stops[i - 1].at) { bad('העצירות (at) לא בסדר עולה'); break; }
+            }
+        }
+    };
+    const paint = (p, at) => { if (isObj(p)) gradient(p.gradient, `${at}/gradient`); };
+    const style = (o, at, layer) => {
+        for (const k of ['fill', 'stroke']) paint(o[k], `${at}/${k}`);
+        for (const k of ['fills', 'strokes']) if (Array.isArray(o[k])) o[k].forEach((p, i) => paint(p, `${at}/${k}/${i}`));
+        if (Array.isArray(o.effects)) o.effects.forEach((e, i) => {
+            params('effect', 'effect-param', e, `${at}/effects/${i}`);
+            if (isObj(e)) gradient(e.gradient, `${at}/effects/${i}/gradient`);
+        });
+        if (layer) {
+            if (Array.isArray(o.filters)) o.filters.forEach((x, i) => params('filter', 'filter-range', x, `${at}/filters/${i}`));
+            if (isObj(o.adjust)) {
+                params('adjust', 'filter-range', o.adjust, `${at}/adjust`);
+                if (o.adjust.type === 'gradient-map') gradient(o.adjust.gradient, `${at}/adjust/gradient`);
+            }
+        }
+        if (isObj(o.bake)) bakes.push([o, at]);
+    };
+    const items = (list, where) => {
+        if (!Array.isArray(list)) return;
+        list.forEach((p, i) => {
+            if (!isObj(p)) return;
+            style(p, `${where}/${i}`, false);
+            items(p.children, `${where}/${i}/children`);
+        });
+    };
+    const layers = (list, where) => {
+        if (!Array.isArray(list)) return;
+        list.forEach((l, i) => {
+            if (!isObj(l)) return;
+            style(l, `${where}/${i}`, true);
+            layers(l.children, `${where}/${i}/children`);
+            items(l.paths, `${where}/${i}/paths`);
+        });
+    };
+    (Array.isArray(doc.surfaces) ? doc.surfaces : []).forEach((s, i) => { if (isObj(s)) layers(s.layers, `/surfaces/${i}/layers`); });
+    const symbols = isObj(doc.symbols) ? doc.symbols : {};
+    for (const sid of Object.keys(symbols).sort()) if (isObj(symbols[sid])) items(symbols[sid].paths, `/symbols/${sid}/paths`);
+    // ספוט (פ4.2): דוגמית עם spot — cmyk חובה (החלופה למי שמדפיס בלי הדיו)
+    const swatches = isObj(doc.swatches) ? doc.swatches : {};
+    for (const id of Object.keys(swatches).sort()) {
+        const s = swatches[id];
+        if (isObj(s) && s.spot === true && !Array.isArray(s.cmyk)) issue('warning', 'spot-cmyk', `לדוגמית הספוט "${id}" חסר cmyk`, `document.json#/swatches/${id}`);
+    }
+    // פרופילי ICC (פ4.3): ההפניה נבדקת עם כל ההפניות; כאן — שזה באמת ICC
+    const color = isObj(doc.color) ? doc.color : {};
+    const icc = (ref, at) => {
+        if (typeof ref !== 'string' || !f.files.has(ref)) return;
+        const b = f.files.get(ref);
+        const ok = b.length >= 128 && b.length <= ICC_MAX_BYTES && b[36] === 0x61 && b[37] === 0x63 && b[38] === 0x73 && b[39] === 0x70;
+        if (!ok) issue('error', 'icc-invalid', `${ref} אינו פרופיל ICC (או גדול מ-4MB)`, `document.json#${at}`);
+    };
+    icc(color.profile, '/color/profile');
+    if (isObj(color.output)) icc(color.output.profile, '/color/output/profile');
+    // ייצוג אפוי (פ1.2): of = sha256 של הפריט הקנוני בלי bake. לא תואם — האפייה מיושנת
+    for (const [o, at] of bakes) {
+        const { bake, ...rest } = o;
+        let sha = null;
+        try { sha = await sha256(utf8(canonicalJson(rest))); } catch { /* מסמך לא קנוני — כבר דווח */ }
+        if (sha !== null && bake.of !== sha) issue('warning', 'bake-stale', 'האפייה (bake) לא תואמת לפריט — קורא שלא מכיר את האפקטים יצייר בלעדיהם', `document.json#${at}/bake`);
+    }
 }
 
 const PATH_ARGS = { M: 2, L: 2, C: 6, Q: 4, Z: 0 };

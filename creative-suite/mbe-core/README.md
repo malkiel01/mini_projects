@@ -136,6 +136,18 @@ acceptHandoff(({ file, from }) => openFile(file), { defaultName: 'ציור.mbe' 
   משלה; `transform` — 6 מספרים, `box` — 4. פריט עם `type` לא מוכר — נשמר ולא נבדק.
 - **סמלים (`document.symbols`, וקטורי גרסה 2):** הפריטים בתוך כל הגדרה נבדקים כמו פריטים בשכבה, ומזהיהם ייחודיים בכל
   המסמך (`duplicate-id`). מופע `{ "type": "use", "symbol" }` שמפנה לסמל שלא קיים — אזהרה `symbol-missing` (המופע לא מצויר).
+- **אפקטים, פילטרים, מראה וצבע (מגרסת פורמט 1.2, `requests/format-p1-p4.md`):** טבלה אחת — `STYLE_SPEC` (JS) /
+  `Mbe::STYLE_SPEC` (PHP) — עם השדות והטווחים לכל `type` מוכר. כל השאר — אזהרות, כי הקובץ עדיין נפתח והמראה ב-`src` /
+  `renditions/` נכון:
+  - `effect-param` — שדה של אפקט לא בטווח (למשל `position` שאינו `outside` / `center` / `inside`).
+  - `filter-range` — שדה של `filters` או `adjust` לא בטווח, או עקומה פגומה.
+  - `gradient-invalid` — ל-`linear` חסרים `from` / `to`, ל-`radial` חסר `center` או `radius` > 0, או עצירות לא בסדר עולה.
+  - `bake-stale` — `bake.of` אינו ה-sha256 של הפריט הקנוני בלי `bake`. כלומר, הפריט נערך אחרי האפייה.
+  - `spot-cmyk` — דוגמית ספוט בלי `cmyk`.
+  - `icc-invalid` (**שגיאה**) — `color.profile` / `color.output.profile` שאינו ICC (`acsp` בבית 36) או גדול מ-4MB.
+
+  `type` לא מוכר — לא נבדק. `pattern` / `profile` שמפנים ל-`media/` נבדקים כמו כל `src`. הסכמה בודקת רק צורה
+  (`paint`, ‏`gradient`, ‏`effects`, ‏`bake`, ‏`cmyk` ב-0–1).
 - **סדר השרשור:** כל מזהה ב-`flows.<id>.frames` — שכבת `frame` קיימת שה-`flow` שלה הוא השטף הזה, פעם אחת
   (`flow-frames`). שטף בלי `frames` — חוקי.
 - **משאבים:** כל `src` / `embedded` במסמך — רק `media/<sha256>.<ext>` שקיים בקובץ. קישורים בטקסט (`href`) מותרים.

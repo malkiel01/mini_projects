@@ -250,6 +250,53 @@ async function hostile() {
         { s1: { name: 'כוכב', paths: [{ id: 'sp', d: 'M0 0 L1 1' }] } }))), ['symbol-missing'], { ok: true });
     add('group-geometry', zip(await base(vec([{ id: 'g', type: 'group', d: 'M0 0 L1 1', children: [] }]))), ['group-geometry']);
     {
+        // פורמט 1.2 (requests/format-p1-p4.md, ל1): אפקטים, פילטרים, התאמות, מעבר צבע, bake, ספוט ו-ICC
+        const withMedia = async (doc, list) => {
+            const media = [], more = [];
+            for (const [ext, data, type] of list) {
+                const sha = await M.sha256(data);
+                media.push({ path: `media/${sha}.${ext}`, sha256: sha, type, bytes: data.length });
+                more.push({ name: `media/${sha}.${ext}`, data });
+            }
+            return base(doc, { media }, more);
+        };
+        const art = png(2, 2, [200, 10, 10]);
+        const artRef = `media/${await M.sha256(art)}.png`;
+        const icc = new Uint8Array(132).map((_, i) => i);
+        icc.set(utf8('acsp'), 36);
+        const iccRef = `media/${await M.sha256(icc)}.icc`;
+        const grad = { type: 'linear', from: [0, 0], to: [10, 0], spread: 'pad', stops: [{ at: 0, color: '#000000', opacity: 1, cmyk: [0, 0, 0, 1] }, { at: 1, color: '#ffffff', opacity: 1 }] };
+        const item = { id: 'p1', d: 'M0 0 L10 0 L10 10 Z', fill: { color: '#000000', gradient: grad, opacity: 1, overprint: true },
+            fills: [{ color: '#ff0000', opacity: 1, blend: 'normal', visible: true }, { color: '#000000', gradient: grad, opacity: 1, visible: true }],
+            effects: [{ type: 'shadow', dx: 2, dy: 2, blur: 4, spread: 0.1, color: '#000000', opacity: 0.5, enabled: true, blend: 'multiply' },
+                { type: 'stroke', width: 1, position: 'outside', color: '#00ff00', opacity: 1 }, { type: 'bevel', depth: 3 }] };
+        item.bake = { src: artRef, box: [-2, -2, 16, 16], replace: false, of: await M.sha256(utf8(canonicalJson(item))) };
+        const raster = { id: 'r', type: 'raster', src: artRef, baked: artRef.slice(6, 70),
+            filters: [{ type: 'gaussian-blur', radius: 2 }, { type: 'unsharp', amount: 80, radius: 1, threshold: 3 }, { type: 'oil-paint', brush: 9 }] };
+        const adj = adjust => ({ id: 'adj', type: 'raster', src: artRef, baked: artRef.slice(6, 70), adjust });
+        const doc = layers => ({ color: { space: 'cmyk', profile: iccRef, intent: 'relative', output: { profile: iccRef, condition: 'FOGRA39' } },
+            swatches: { gold: { name: 'זהב', color: '#b59a5b', cmyk: [0.2, 0.3, 0.7, 0.15], spot: true } },
+            surfaces: [{ id: 'a', type: 'artboard', layers }] });
+        const ok = [['png', art, 'image/png'], ['icc', icc, 'application/vnd.iccprofile']];
+        add('style-ok', zip(await withMedia(doc([{ id: 'v', type: 'vector', paths: [item] }, raster,
+            adj({ type: 'curves', rgb: [[0, 0], [128, 140], [255, 255]] }),
+            { id: 'adj2', type: 'raster', src: artRef, baked: artRef.slice(6, 70), adjust: { type: 'gradient-map', gradient: grad } }]), ok)), [], { ok: true });
+        add('effect-param', zip(await withMedia(doc([{ id: 'v', type: 'vector', paths: [{ id: 'p', d: 'M0 0 L1 1',
+            effects: [{ type: 'shadow', dx: '2', dy: 1 }, { type: 'stroke', position: 'middle' }] }] }]), ok)), ['effect-param'], { ok: true });
+        add('filter-range', zip(await withMedia(doc([{ ...raster, filters: [{ type: 'hue-saturation', hue: 400 }] },
+            adj({ type: 'curves', rgb: [[0, 0], [200, 10], [100, 255]] }),
+            { id: 'adj2', type: 'raster', src: artRef, baked: artRef.slice(6, 70), adjust: { type: 'levels', gamma: 20, channel: 'x' } }]), ok)), ['filter-range'], { ok: true });
+        add('gradient-invalid', zip(await withMedia(doc([{ id: 'v', type: 'vector', paths: [
+            { id: 'p', d: 'M0 0 L1 1', fill: { color: '#000000', gradient: { type: 'radial', center: [0, 0], radius: 0, stops: [{ at: 0.8, color: '#000000' }, { at: 0.2, color: '#ffffff' }] } } }] }]), ok)),
+            ['gradient-invalid'], { ok: true });
+        add('bake-stale', zip(await withMedia(doc([{ id: 'v', type: 'vector', paths: [{ ...item, d: 'M0 0 L20 0 L20 20 Z' }] }]), ok)), ['bake-stale'], { ok: true });
+        add('spot-cmyk', zip(await withMedia({ ...doc([]), swatches: { s: { name: 'כתום', color: '#ff8800', spot: true } } }, ok)), ['spot-cmyk'], { ok: true });
+        add('icc-invalid', zip(await withMedia({ ...doc([]), color: { space: 'cmyk', profile: artRef } }, ok)), ['icc-invalid']);
+        add('pattern-missing', zip(await withMedia(doc([{ id: 'f', type: 'raster', fill: { pattern: `media/${'d'.repeat(64)}.png` } }]), ok)), ['ref-missing']);
+        add('cmyk-bad', zip(await withMedia(doc([{ id: 'v', type: 'vector', paths: [{ id: 'p', d: 'M0 0 L1 1', fill: { color: '#000000', cmyk: [0, 0, 1.5] } }] }]), ok)),
+            ['document-schema']);
+    }
+    {
         // flows.<id>.frames (סעיף 3, "מסגרות, שטפים"): מזהה שלא קיים, מזהה כפול, שכבה שאינה frame, מסגרת של שטף אחר
         const page = { id: 'p', type: 'page', layers: [
             { id: 'a', type: 'frame', flow: 's1' }, { id: 'b', type: 'frame', flow: 's2' }, { id: 'r', type: 'raster', src: undefined }] };
