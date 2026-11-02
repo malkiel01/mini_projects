@@ -236,3 +236,53 @@ export function textToPath(fonts, text, { size, x = 0, y = 0, base = 'rtl', span
   const glyphs = shapeLine(fonts, text, base, spans);
   return { d: glyphsToPath(f, glyphs, x, y, size), width: advance(glyphs) * size / f.upem };
 }
+
+/**
+ * טקסט על נתיב: כל גליף מוצב כך שאמצע ההתקדמות שלו יושב על הנתיב, ומסובב לפי המשיק שם.
+ * path — מדידת הנתיב: { length, at(s) → { x, y, angle } | null } — בדיוק מה ש-measure(segs) של geometry-core מחזיר
+ *        (text-core לא מייבא אותו: כל מודול מסונכרן לתיקייה משלו באפליקציה, והאפליקציה מחברת ביניהם).
+ * glyphs — מ-shapeLine, בסדר חזותי. הגליף השמאלי ביותר מוצב ראשון בכיוון הנתיב, בדיוק כמו בשורה ישרה משמאל לימין.
+ * opts: { size, offset = 0 (מרחק מתחילת הנתיב, ביחידות size), align = 'start' | 'center' | 'end' (יחסית ל-offset
+ *        ולאורך הנתיב: 'end' — הטקסט נגמר בסוף הנתיב פחות offset), shift = 0 (הזזת קו הבסיס מהנתיב, חיובי — למעלה) }
+ *   → { d, placed: [{ gid, x, y, angle }], overflow }
+ * d — קווי מתאר כמו ב-glyphsToPath (מוחלט, y למטה). placed — ראשית כל גליף (על קו הבסיס, בהתחשב ב-dx/dy) והזווית.
+ * overflow — כמה גליפים לא נכנסו (נפלו מחוץ לנתיב) ולא צוירו.
+ */
+export function glyphsOnPath(f, glyphs, path, { size, offset = 0, align = 'start', shift = 0 } = {}) {
+  const s = size / f.upem;
+  const width = advance(glyphs) * s;
+  let start = offset;
+  if (align === 'center') start = (path.length - width) / 2 + offset;
+  else if (align === 'end') start = path.length - width - offset;
+  const out = [], placed = [];
+  let pen = 0, overflow = 0;
+  for (const g of glyphs) {
+    const gf = g.f || f, ps = s * f.upem / gf.upem;
+    const half = g.ax * s / 2;
+    const at = path.at(start + pen * s + half);
+    pen += g.ax;
+    if (!at) { overflow++; continue; }
+    const cos = Math.cos(at.angle), sin = Math.sin(at.angle);
+    // מערכת מקומית: u לאורך המשיק, v ניצב (y למטה). ראשית: אמצע ההתקדמות על הנתיב.
+    const u0 = g.dx * s - half, v0 = -(g.dy * s) - shift;
+    const P = (u, v) => [at.x + u * cos - v * sin, at.y + u * sin + v * cos];
+    const [ox, oy] = P(u0, v0);
+    placed.push({ gid: g.gid, x: ox, y: oy, angle: at.angle });
+    for (const c of glyphOutline(gf, g.gid)) {
+      if (c.type === 'Z') { out.push('Z'); continue; }
+      const v = c.values, pts = [];
+      for (let i = 0; i < v.length; i += 2) {
+        const [x, y] = P(u0 + v[i] * ps, v0 - v[i + 1] * ps);
+        pts.push(num(x), num(y));
+      }
+      out.push(c.type + pts.join(' '));
+    }
+  }
+  return { d: out.join(''), placed, overflow };
+}
+
+/** קיצור: shapeLine + glyphsOnPath. opts — כמו ב-glyphsOnPath, ועוד base ו-spans. */
+export function textOnPath(fonts, text, path, { base = 'rtl', spans = null, ...opts } = {}) {
+  const f = Array.isArray(fonts) ? fonts[0] : fonts;
+  return glyphsOnPath(f, shapeLine(fonts, text, base, spans), path, opts);
+}

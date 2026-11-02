@@ -132,3 +132,4 @@ IDML, CMYK והפרדות צבע, חלונות צף מתקדמים, תוכן ע�
 - 2026-11-01 — בורר הגופנים של ui-core (`fontPicker`) בסגנונות (שורה 14 🟡 — הקטלוג `woff2`, העימוד צריך TTF; בקשה לקוד המשותף).
 - 2026-11-01 — "פנים" (שורה 5 ✅): PDF מוחתם ב-XMP (pdf-core #1047), שלב "יצא · pdf" ביומן, ו-📂 פותח את המסמך ש-PDF יצא ממנו.
 - 2026-11-02 — **מ2 `text-core`:** `shaper.js` (HarfBuzz + bidi) וה-vendor שלו חולצו ל-`creative-suite/text-core`, עם מדידה (`measure`, `fontMetrics`) וטקסט לקווי מתאר (`glyphsToPath`, `textToPath`). העימוד עבר מיד לעותק המסונכרן `assets/js/text-core/` (שורה 22 ✅); שער בפריסה. טקסט על נתיב — אחרי מ1.
+- 2026-11-02 — text-core: **טקסט על נתיב** (`glyphsOnPath` / `textOnPath`), עם `measure` של geometry-core (מ1) בלי ייבוא בין המודולים. על קו ישר זהה לשורה רגילה. ה-API אושר בסקירת הקוד המשותף; הקטלוג כ-TTF — `ttfFile` של ui-core.
