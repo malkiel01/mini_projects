@@ -164,6 +164,13 @@
 
 האפיון: `docs/spec.md` §5.9; הבדיקות: `tests/templates.php`.
 
+### ⚙ הגדרות הצ'אט
+
+במסך השיחה, ⚙ (במקום 🔌) פותח גיליון כמו ⚙ של פרויקט: ℹ️ על הצ'אט (פרויקט ו-#id, ערוץ, סשן, מתי נרשם ונראה, מאזין,
+מי עונה) · ✏️ שם, תפקיד וצבע (8 צבעים קבועים) · 🔔 השתקה (אישית — הצ'אט לא נספר ב"ממתין לך") · 🧭 מי עונה בצ'אט
+הזה (בעל הלוח) · 🔘 שאלות בחירה · 📏 אורך הצ'אט ו-🔁 צ'אט המשך. בתחתית, אזור אדום (בעל הלוח): 🔌 ניתוק, ו-🗄 ארכיון —
+הצ'אט יורד מהרשימה ל"🗄 N בארכיון" בתחתיתה, ואפשר להחזיר. הבדיקות: `tests/chatsettings.php`.
+
 ### שאלות בחירה (AskUserQuestion) בלוח
 
 כשצ'אט רשום שואל בכלי השאלות, ה-hook `bridge/hook-choice.sh` (PreToolUse) שולח את השאלות ללוח (`channel-post`
@@ -347,6 +354,7 @@ php claude-tasks/tests/projects.php    # עץ הפרויקטים
 php claude-tasks/tests/login.php       # כניסה דרך הכלים הדיגיטליים
 php claude-tasks/tests/safety.php      # author_role, owner_only, אסימון לענף, Origin, שיוך מטלות
 php claude-tasks/tests/channels.php    # הגשר: הרשמה, אסימון ערוץ, inbox/ack, המתנה, מטלה ↔ ערוץ
+php claude-tasks/tests/chatsettings.php # ⚙ הגדרות הצ'אט: עריכה, השתקה, ניתוק וארכיון
 php claude-tasks/tests/templates.php    # תבנית בירושה, שגיאות הרישום, צ'אט המשך, "הצ'אט מתארך"
 php claude-tasks/tests/choices.php      # שאלות בחירה: מענה מהלוח, מרוץ, הקלדה בצ'אט, מצב אפליקציה
 node claude-tasks/tests/markdown.mjs   # Markdown בבועות הצ'אט: עיצוב, ובטיחות (בלי HTML, קישורים רק http/https)

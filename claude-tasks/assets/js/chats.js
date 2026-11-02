@@ -16,8 +16,9 @@ const conv = { id: null, channel: null, messages: [], timer: null, busy: false, 
 /** טוען את הערוצים של הפרויקט הנוכחי. מחזיר את מספר הפעילים (למונה הלשונית). */
 export async function loadChannels() {
   if (!state.projectId) { state.channels = []; return 0; }
-  const { channels } = await api('channels', { project_id: state.projectId });
+  const { channels, hidden_count: hidden } = await api('channels', { project_id: state.projectId, include_hidden: !!state.showHidden });
   state.channels = channels;
+  state.hiddenChannels = hidden || 0;
   renderChannels();
   return channels.filter((c) => c.status === 'active').length;
 }
@@ -32,6 +33,11 @@ function roleIcon(role) {
   if (/עיצוב|design/i.test(r)) return '🎨';
   return '💬';
 }
+
+/** 8 הצבעים הקבועים (§5.11) — גוון; '' — לפי התפקיד. */
+const COLORS = { blue: 215, teal: 180, green: 140, olive: 85, amber: 45, orange: 22, red: 355, violet: 270 };
+const COLOR_NAME = { blue: 'כחול', teal: 'טורקיז', green: 'ירוק', olive: 'זית', amber: 'ענבר', orange: 'כתום', red: 'אדום', violet: 'סגול' };
+const channelHue = (c) => COLORS[c.color] ?? roleHue(c.role);
 
 /** גוון קבוע לכל תפקיד — הריבוע הצבעוני. */
 function roleHue(role) {
@@ -50,18 +56,19 @@ function channelSub(c) {
   if (last) parts.push(timeAgo(last));
   if (c.open_questions) parts.push(`❓ ${c.open_questions}`);
   if (c.open_choices) parts.push(`🔘 ${c.open_choices} ממתינה לך`);
+  if (c.muted) parts.push('🔕 מושתק');
   return parts.join(' · ');
 }
 
 export function renderChannels() {
   const list = state.channels || [];
   $('#chanRows').replaceChildren(...list.map((c) => el('li', {
-    class: `card${c.status !== 'active' ? ' is-off' : ''}`, tabindex: '0', role: 'button',
+    class: `card${c.status !== 'active' ? ' is-off' : ''}${c.hidden ? ' is-hidden' : ''}`, tabindex: '0', role: 'button',
     'aria-label': `${c.name}${c.role ? ' · ' + c.role : ''}`,
     onclick: () => openConversation(c.id),
     onkeydown: (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openConversation(c.id); } },
   }, [
-    el('span', { class: 'ic role-ic', 'aria-hidden': 'true', style: `--hue:${roleHue(c.role)}`, text: roleIcon(c.role) }),
+    el('span', { class: 'ic role-ic', 'aria-hidden': 'true', style: `--hue:${channelHue(c)}`, text: roleIcon(c.role) }),
     el('div', { class: 'body' }, [
       el('div', { class: 'l1' }, [el('span', { text: c.name })]),
       el('div', { class: 'l2', text: channelSub(c) }),
@@ -71,7 +78,15 @@ export function renderChannels() {
     c.pending_in ? el('span', { class: 'badge', title: 'ממתינות לצ\'אט', text: `✉️ ${c.pending_in}` }) : null,
     el('span', { class: 'go', 'aria-hidden': 'true', text: '‹' }),
   ])));
-  $('#chanEmpty').hidden = list.length > 0;
+  // 🗄 N בארכיון — בתחתית; נגיעה מציגה / מסתירה אותם
+  if (state.hiddenChannels) {
+    $('#chanRows').append(el('li', { class: 'chan-hidden' }, [el('button', {
+      type: 'button', class: 'linklike', 'aria-expanded': String(!!state.showHidden),
+      text: state.showHidden ? `הסתרת הארכיון (${state.hiddenChannels})` : `🗄 ${state.hiddenChannels} בארכיון`,
+      onclick: () => { state.showHidden = !state.showHidden; loadChannels().catch((ex) => toast(ex.message, 'error')); },
+    })]));
+  }
+  $('#chanEmpty').hidden = list.length > 0 || state.hiddenChannels > 0;
 }
 
 /* ── מסך השיחה ─────────────────────────────────────────────── */
@@ -147,9 +162,7 @@ function renderHead() {
       isOwner() ? el('button', { type: 'button', class: 'btn ghost sm', text: '🔁 צ\'אט המשך', onclick: () => openHandoff(conv.channel) }) : null,
     ].filter(Boolean));
   }
-  $('#cmHandoffBox').hidden = !(isOwner() && c.status === 'active');
-  $('#cvArchive').hidden = !(isOwner() && c.status === 'active');
-  $('#cvMore').hidden = !((c.can_send || isOwner()) && c.status === 'active');
+
   const blocked = c.status === 'replaced' ? 'הצ\'אט הוחלף בצ\'אט המשך — אי אפשר לכתוב אליו. השיחה נשארת לקריאה.'
     : c.status !== 'active' ? 'הצ\'אט מנותק — אי אפשר לכתוב אליו.'
     : !c.can_send ? 'אין לך הרשאה לכתוב לצ\'אט הזה (צפייה בלבד).' : '';
@@ -287,32 +300,171 @@ function autosize() {
 }
 on('#chatInput', 'input', autosize);
 
-on('#cvArchive', 'click', async () => {
-  const c = conv.channel;
-  if (!c || !confirm(`לנתק את "${c.name}"? האסימון שלו ייפסל, והוא יצטרך להירשם מחדש.`)) return;
+
+/* ── ⚙ הגדרות הצ'אט (§5.11, שלב 12a) ─────────────────────────────── */
+
+const cs = { info: null };
+const ROUTE_LABEL = { chat: '💬 הצ\'אט', platform: '☁️ Platform' };
+
+async function loadInfo() {
+  const { channel } = await api('channel-info', { channel_id: conv.id });
+  cs.info = channel;
+  return channel;
+}
+
+function renderSettings() {
+  const c = cs.info;
+  const status = c.status === 'active' ? (c.listening ? '🟢 מאזין' : '⚪ לא מאזין')
+    : c.status === 'replaced' ? `הוחלף ← ${c.replaced_by_name || '#' + c.replaced_by}` : '🔌 מנותק';
+  $('#csCard').replaceChildren(
+    el('span', { class: 'ic role-ic', 'aria-hidden': 'true', style: `--hue:${channelHue(c)}`, text: roleIcon(c.role) }),
+    el('div', { class: 'body' }, [
+      el('b', {}, [c.name, ' ', el('span', { class: 'pid', dir: 'ltr', text: `ערוץ #${c.id}` })]),
+      el('span', { class: 'l2', text: `${c.project_path} · #${c.project_id}` }),
+      el('div', { class: 'chips' }, [el('span', { class: 'badge', text: status }),
+        c.muted ? el('span', { class: 'badge', text: '🔕 מושתק' }) : null].filter(Boolean)),
+    ]),
+  );
+  const active = c.status === 'active';
+  const health = HEALTH[c.health];
+  const rows = [
+    ['ℹ️', 'על הצ\'אט', `${c.role || 'בלי תפקיד'} · נראה ${c.last_seen_at ? timeAgo(c.last_seen_at) : 'אף פעם'}`, () => openAbout()],
+    c.can_edit && ['✏️', 'שם, תפקיד וצבע', `${c.name}${c.color ? ' · ' + COLOR_NAME[c.color] : ''}`, () => openEdit()],
+    ['🔔', 'השתקה', c.muted ? 'מושתק — לא נספר ב"ממתין לך" · נגיעה מבטלת' : 'כבויה — נגיעה משתיקה', () => toggleMute(), { pressed: c.muted }],
+    isOwner() && ['🧭', 'מי עונה', `${c.route_own ? ROUTE_LABEL[c.route_own] : 'כמו הפרויקט'} · בפועל: ${ROUTE_LABEL[c.route_effective]}`, () => openRoute()],
+    c.can_edit && active && ['🔘', 'שאלות בחירה', c.questions === 'app' ? 'באפליקציה' : 'בלוח', () => openQuestions()],
+    active && ['📏', 'אורך הצ\'אט', c.health_at ? `${health ? health.chip + ' · ' : ''}${healthDetail(c)}` : 'עוד לא דיווח',
+      isOwner() ? () => { $('#chatSettings').close(); openHandoff(conv.channel); } : null, { sub2: isOwner() ? '🔁 צ\'אט המשך' : '' }],
+  ].filter(Boolean);
+  $('#csRows').replaceChildren(...rows.map(([ic, title, sub, fn, opt = {}]) => el('li', {
+    class: `card${fn ? '' : ' is-static'}`, tabindex: fn ? '0' : null, role: fn ? 'button' : null, 'aria-label': title,
+    'aria-pressed': opt.pressed === undefined ? null : String(opt.pressed),
+    onclick: fn, onkeydown: fn ? (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); fn(); } } : null,
+  }, [
+    el('span', { class: 'ic', 'aria-hidden': 'true', text: opt.pressed === undefined ? ic : (opt.pressed ? '🔕' : '🔔') }),
+    el('div', { class: 'body' }, [el('div', { class: 'l1' }, [el('span', { text: title })]), el('div', { class: 'l2', text: sub }),
+      opt.sub2 ? el('div', { class: 'l2 cs-action', text: opt.sub2 }) : null].filter(Boolean)),
+    fn ? el('span', { class: 'go', 'aria-hidden': 'true', text: opt.pressed === undefined ? '‹' : '' }) : null,
+  ].filter(Boolean))));
+  // אזור אדום — בעל הלוח: ניתוק (רק צ'אט פעיל), ארכיון / החזרה
+  $('#csDanger').hidden = !isOwner();
+  $('#csDisconnect').hidden = !active;
+  $('#csHide').textContent = c.hidden ? '↩ החזרה מהארכיון' : '🗄 ארכיון';
+}
+
+async function openSettings() {
+  if (!conv.id) return;
+  try { await loadInfo(); } catch (ex) { toast(ex.message, 'error'); return; }
+  renderSettings();
+  $('#chatSettings').showModal();
+}
+on('#cvSettings', 'click', openSettings);
+
+function openAbout() {
+  const c = cs.info;
+  const when = (ts) => (ts ? `${new Date(ts * 1000).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' })} (${timeAgo(ts)})` : '—');
+  const rows = [
+    ['שם', c.name], ['תפקיד', c.role || '—'], ['פרויקט', `${c.project_path} · #${c.project_id}`], ['ערוץ', `#${c.id}`],
+    ['סשן', c.session_url ? el('a', { href: c.session_url, target: '_blank', rel: 'noopener', dir: 'ltr', text: c.session_id }) : c.session_id],
+    ['נרשם', when(c.created_at)], ['נראה לאחרונה', when(c.last_seen_at)],
+    ['מאזין', c.status !== 'active' ? 'לא — הצ\'אט אינו פעיל' : c.listening ? `כן, עד ${new Date(c.listening_until * 1000).toLocaleTimeString('he-IL', { timeStyle: 'short' })}` : 'לא כרגע'],
+    ['מי עונה', `${ROUTE_LABEL[c.route_effective]}${c.route_own ? '' : ' (כמו הפרויקט)'}`],
+    ['שאלות בחירה', c.questions === 'app' ? 'באפליקציה' : 'בלוח'],
+    ['אורך', c.health_at ? healthDetail(c) : 'עוד לא דיווח'],
+  ];
+  $('#csAboutList').replaceChildren(...rows.flatMap(([k, v]) => [el('dt', { text: k }), el('dd', { dir: 'auto' }, [v])]));
+  $('#csAbout').showModal();
+}
+
+function renderColors(selected) {
+  $('#csColors').replaceChildren(...['', ...Object.keys(COLORS)].map((k) => el('button', {
+    type: 'button', role: 'radio', class: 'cs-color', 'aria-checked': String(k === selected), dataset: { color: k },
+    'aria-label': k ? COLOR_NAME[k] : 'לפי התפקיד', title: k ? COLOR_NAME[k] : 'לפי התפקיד',
+    style: `--hue:${k ? COLORS[k] : roleHue(cs.info.role)}`,
+    onclick: () => renderColors(k),
+  }, [k ? '' : 'אוטו'])));
+}
+function openEdit() {
+  $('#csName').value = cs.info.name;
+  $('#csRole').value = cs.info.role || '';
+  renderColors(cs.info.color || '');
+  $('#csEdit').showModal();
+}
+on('#csEditForm', 'submit', async (e) => {
+  e.preventDefault();
+  const color = $('#csColors [aria-checked="true"]')?.dataset.color ?? '';
   try {
-    await api('channel-archive', { channel_id: c.id });
-    toast('הצ\'אט נותק', 'ok');
+    const { channel } = await api('channel-update', { channel_id: conv.id, name: $('#csName').value, role: $('#csRole').value, color });
+    cs.info = channel;
+    $('#csEdit').close();
+    renderSettings();
+    await poll(true);
+    toast('נשמר', 'ok');
+  } catch (ex) { toast(ex.message, 'error'); }
+});
+
+async function toggleMute() {
+  try {
+    const { muted } = await api('channel-mute', { channel_id: conv.id, muted: !cs.info.muted });
+    cs.info.muted = muted;
+    renderSettings();
+    toast(muted ? 'הצ\'אט הושתק — לא ייספר ב"ממתין לך"' : 'ההשתקה בוטלה', 'ok');
+  } catch (ex) { toast(ex.message, 'error'); }
+}
+
+function renderRouteSeg() {
+  const own = cs.info.route_own || '';
+  $$('#csRouteSeg button').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.route === own)));
+  $('#csRouteHint').textContent = `בפועל עכשיו: ${ROUTE_LABEL[cs.info.route_effective]}. "כמו הפרויקט" — לפי ⚙ של הפרויקט. ☁️ Platform עונה רק כשיש מכסה; בלעדיה — הצ'אט.`;
+}
+function openRoute() { renderRouteSeg(); $('#csRoute').showModal(); }
+on('#csRouteSeg', 'click', async (e) => {
+  const b = e.target.closest('button[data-route]');
+  if (!b) return;
+  try {
+    const { channel } = await api('channel-update', { channel_id: conv.id, route: b.dataset.route });
+    cs.info = channel;
+    renderRouteSeg();
+    renderSettings();
     await poll(true);
   } catch (ex) { toast(ex.message, 'error'); }
 });
 
-/* ── ⋯ — שאלות בחירה: בלוח / באפליקציה (§5.10) ─────────────────── */
-
 function renderQuestionsSeg() {
-  const mode = conv.channel?.questions || 'board';
+  const mode = cs.info?.questions || conv.channel?.questions || 'board';
   $$('#cvQuestionsSeg button').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.mode === mode)));
 }
-on('#cvMore', 'click', () => { renderQuestionsSeg(); $('#chatMenu').showModal(); });
+function openQuestions() { renderQuestionsSeg(); $('#csQuestions').showModal(); }
 on('#cvQuestionsSeg', 'click', async (e) => {
   const b = e.target.closest('button[data-mode]');
   if (!b || !conv.id) return;
   try {
     await api('channel-questions', { channel_id: conv.id, mode: b.dataset.mode });
+    cs.info.questions = b.dataset.mode;
     conv.channel.questions = b.dataset.mode;
     renderQuestionsSeg();
+    renderSettings();
     toast(b.dataset.mode === 'board' ? 'שאלות בחירה יגיעו ללוח' : 'שאלות בחירה ייפתחו בחלון באפליקציה', 'ok');
   } catch (ex) { toast(ex.message, 'error'); }
 });
 
-on('#cmHandoff', 'click', () => { $('#chatMenu').close(); openHandoff(conv.channel); });
+on('#csDisconnect', 'click', async () => {
+  const c = cs.info;
+  if (!c || !confirm(`לנתק את "${c.name}"? האסימון שלו ייפסל, והוא יצטרך להירשם מחדש.`)) return;
+  try {
+    await api('channel-archive', { channel_id: c.id });
+    toast('הצ\'אט נותק', 'ok');
+    await loadInfo(); renderSettings(); await poll(true);
+  } catch (ex) { toast(ex.message, 'error'); }
+});
+on('#csHide', 'click', async () => {
+  const c = cs.info;
+  const hide = !c.hidden;
+  if (hide && !confirm(`להעביר את "${c.name}" לארכיון?${c.status === 'active' ? ' הוא מחובר — הוא יתנתק קודם.' : ''} אפשר להחזיר אותו אחר כך.`)) return;
+  try {
+    await api('channel-hide', { channel_id: c.id, hidden: hide });
+    toast(hide ? 'הועבר לארכיון' : 'הוחזר מהארכיון', 'ok');
+    $('#chatSettings').close();
+    if (hide) $('#chatView').close(); else { await loadInfo(); renderSettings(); }
+  } catch (ex) { toast(ex.message, 'error'); }
+});

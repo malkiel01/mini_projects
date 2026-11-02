@@ -312,8 +312,7 @@
         <h2 id="cvTitle"></h2>
         <small id="cvSub"></small>
       </div>
-      <button type="button" class="icon-btn" id="cvMore" aria-label="אפשרויות הצ'אט" title="אפשרויות הצ'אט" hidden>⋯</button>
-      <button type="button" class="icon-btn" id="cvArchive" aria-label="ניתוק הצ'אט" title="ניתוק הצ'אט" hidden>🔌</button>
+      <button type="button" class="icon-btn" id="cvSettings" aria-label="הגדרות הצ'אט" title="הגדרות הצ'אט">⚙</button>
     </header>
     <div class="cv-health" id="cvHealth" hidden></div>
     <ol class="chat-log" id="chatLog" aria-live="polite" aria-label="ההודעות"></ol>
@@ -329,26 +328,83 @@
 </dialog>
 
 <!-- ── ⋯ אפשרויות הצ'אט (§5.10) ───────────────────────────────── -->
-<dialog id="chatMenu" aria-labelledby="cmT">
+<dialog id="chatSettings" aria-labelledby="csT">
   <div class="sheet-wrap">
     <header class="sheet-head">
-      <button type="button" class="icon-btn" data-close="chatMenu" aria-label="סגירה">✕</button>
-      <h2 id="cmT">אפשרויות הצ'אט</h2>
+      <button type="button" class="icon-btn" data-close="chatSettings" aria-label="סגירה">✕</button>
+      <h2 id="csT">הגדרות הצ'אט</h2>
       <span></span>
     </header>
     <div class="sheet-body">
-      <h3 id="cvQuestionsL">🔘 שאלות בחירה</h3>
-      <div class="seg" id="cvQuestionsSeg" role="radiogroup" aria-labelledby="cvQuestionsL">
+      <div class="proj-card" id="csCard"></div>
+      <ul class="list" id="csRows"></ul>
+      <div class="danger-zone" id="csDanger" hidden>
+        <b>ניתוק וארכיון</b>
+        <p class="hint">ניתוק — האסימון של הצ'אט נפסל והוא מפסיק לקבל הודעות; הוא נשאר ברשימה, מנותק. ארכיון — יורד מהרשימה לקבוצה "בארכיון" (צ'אט פעיל מתנתק קודם). אפשר להחזיר.</p>
+        <div class="row-btns">
+          <button type="button" class="btn ghost danger-text" id="csDisconnect">🔌 ניתוק</button>
+          <button type="button" class="btn ghost danger-text" id="csHide">🗄 ארכיון</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</dialog>
+<dialog id="csAbout" aria-labelledby="csAboutT">
+  <div class="sheet-wrap">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close="csAbout" aria-label="סגירה">✕</button>
+      <h2 id="csAboutT">על הצ'אט</h2>
+      <span></span>
+    </header>
+    <div class="sheet-body"><dl class="cs-about" id="csAboutList"></dl></div>
+  </div>
+</dialog>
+<dialog id="csEdit" aria-labelledby="csEditT">
+  <form class="sheet-wrap" id="csEditForm">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close="csEdit" aria-label="סגירה">✕</button>
+      <h2 id="csEditT">שם, תפקיד וצבע</h2>
+      <button type="submit" class="btn primary">שמירה</button>
+    </header>
+    <div class="sheet-body">
+      <label class="field"><span>שם</span><input type="text" id="csName" maxlength="80" required dir="auto"></label>
+      <label class="field"><span>תפקיד</span><input type="text" id="csRole" maxlength="40" dir="auto"></label>
+      <p class="hint" id="csColorL">צבע הריבוע</p>
+      <div class="cs-colors" id="csColors" role="radiogroup" aria-labelledby="csColorL"></div>
+    </div>
+  </form>
+</dialog>
+<dialog id="csQuestions" aria-labelledby="csQuestionsT">
+  <div class="sheet-wrap">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close="csQuestions" aria-label="סגירה">✕</button>
+      <h2 id="csQuestionsT">🔘 שאלות בחירה</h2>
+      <span></span>
+    </header>
+    <div class="sheet-body">
+      <div class="seg" id="cvQuestionsSeg" role="radiogroup" aria-labelledby="csQuestionsT">
         <button type="button" role="radio" data-mode="board" aria-checked="true">בלוח</button>
         <button type="button" role="radio" data-mode="app" aria-checked="false">באפליקציה</button>
       </div>
       <p class="hint"><b>בלוח</b> — כשהצ'אט שואל שאלת בחירה, היא מגיעה לכאן עם כפתור לכל אפשרות, והצ'אט מדפיס אותה גם אצלו ממוספרת. עונים כאן בנגיעה, או מקלידים בצ'אט. הצ'אט לא נתקע על חלון שאף אחד לא רואה.<br>
       <b>באפליקציה</b> — החלון נפתח באפליקציית Claude כרגיל, והלוח רק מראה את השאלה ואת התשובה. כשעובדים מול המחשב.</p>
-      <div id="cmHandoffBox" hidden>
-        <h3>🔁 צ'אט המשך</h3>
-        <p class="hint">הצ'אט הזה כותב תקציר, והלוח מכין ממנו פרומפט לצ'אט חדש שימשיך אותו — עם כל הערכים והנתונים העיקריים. הישן מסומן "הוחלף".</p>
-        <button type="button" class="btn ghost" id="cmHandoff">🔁 פתיחת צ'אט המשך</button>
+    </div>
+  </div>
+</dialog>
+<dialog id="csRoute" aria-labelledby="csRouteT">
+  <div class="sheet-wrap">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close="csRoute" aria-label="סגירה">✕</button>
+      <h2 id="csRouteT">🧭 מי עונה בצ'אט הזה</h2>
+      <span></span>
+    </header>
+    <div class="sheet-body">
+      <div class="seg" id="csRouteSeg" role="radiogroup" aria-labelledby="csRouteT">
+        <button type="button" role="radio" data-route="">כמו הפרויקט</button>
+        <button type="button" role="radio" data-route="chat">💬 הצ'אט</button>
+        <button type="button" role="radio" data-route="platform">☁️ Platform</button>
       </div>
+      <p class="hint" id="csRouteHint"></p>
     </div>
   </div>
 </dialog>

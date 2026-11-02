@@ -170,13 +170,13 @@ function monitorLazy(array $user, int $max = 2, ?callable $transport = null): ar
 }
 
 /** לתצוגה: הסיכום האחרון והממתינים. */
-function projectMonitor(int $projectId): array {
+function projectMonitor(int $projectId, ?int $userId = null): array {
     $st = db()->prepare('SELECT monitor_summary FROM projects WHERE id = ?');
     $st->execute([$projectId]);
     $s = json_decode((string) ($st->fetchColumn() ?: ''), true);
     $payer = projectPayer($projectId);
     return ['summary' => is_array($s) ? $s : null, 'waiting' => waitingItems($projectId),
             // שאלות בחירה פתוחות בצ'אטים של הענף (§5.10) — גם הן ממתינות לך
-            'choices' => openChoices(projectSubtree($projectId)),
+            'choices' => openChoices(projectSubtree($projectId), $userId),   // בלי צ'אטים מושתקים (12a)
             'monitor' => $payer && platformAvailable($payer) ? 'on' : 'off'];
 }

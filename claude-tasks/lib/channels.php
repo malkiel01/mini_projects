@@ -73,6 +73,8 @@ function publicChannel(array $c): array {
     foreach (['health_bytes', 'health_turns', 'health_compactions', 'health_at'] as $k) $c[$k] = (int) ($c[$k] ?? 0);
     $c['replaced_by'] = isset($c['replaced_by']) ? (int) $c['replaced_by'] : null;
     $c['health'] = healthLevel($c);
+    $c['hidden'] = (bool) (int) ($c['hidden'] ?? 0);
+    $c['color'] = (string) ($c['color'] ?? '');
     return $c;
 }
 
@@ -302,7 +304,7 @@ function channelWait(array $channel, int $wait, ?callable $sleep = null): array 
 /* ── ממשק ──────────────────────────────────────────────────────── */
 
 /** הערוצים בענף של פרויקט, עם מונים: ממתינות למסירה, ושאלות פתוחות (מטלות חסומות שנשאלו בו). */
-function channelsFor(array $user, int $projectId): array {
+function channelsFor(array $user, int $projectId, bool $includeHidden = false): array {
     requireProject($projectId, $user, 'read');
     $ids = projectSubtree($projectId);
     $in  = implode(',', array_fill(0, count($ids), '?'));
@@ -312,15 +314,20 @@ function channelsFor(array $user, int $projectId): array {
                 (SELECT COUNT(*) FROM messages m WHERE m.channel_id = c.id AND m.kind = 'choice' AND m.status = 'open') open_choices,
                 (SELECT MAX(m.created_at) FROM messages m WHERE m.channel_id = c.id) last_message_at,
                 (SELECT r.name FROM channels r WHERE r.id = c.replaced_by) replaced_by_name
-           FROM channels c WHERE c.project_id IN ($in) ORDER BY c.status <> 'active', c.status = 'archived', c.last_seen_at DESC");
+           FROM channels c WHERE c.project_id IN ($in)" . ($includeHidden ? '' : ' AND c.hidden = 0') . "
+          ORDER BY c.hidden, c.status <> 'active', c.status = 'archived', c.last_seen_at DESC");
     $st->execute($ids);
-    return array_map(function ($c) {
+    $muted = mutedChannelIds((int) $user['id']);
+    return array_map(function ($c) use ($muted) {
         $out = publicChannel($c);
         foreach (['pending_in', 'open_questions', 'open_choices'] as $k) $out[$k] = (int) $c[$k];
         $out['last_message_at'] = $c['last_message_at'] === null ? null : (int) $c['last_message_at'];
         $out['listening'] = $out['status'] === 'active' && $out['listening_until'] > nowTs();
         $out['route_effective'] = channelRoute($c);   // הערוץ גובר על הפרויקט
         $out['replaced_by_name'] = $c['replaced_by_name'];
+        $out['muted'] = in_array($out['id'], $muted, true);
+        $out['hidden'] = (bool) (int) ($c['hidden'] ?? 0);
+        $out['color'] = (string) ($c['color'] ?? '');
         return $out;
     }, $st->fetchAll());
 }

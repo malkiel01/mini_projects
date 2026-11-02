@@ -19,6 +19,7 @@ require_once __DIR__ . '/lib/projects.php';
 require_once __DIR__ . '/lib/engine.php';
 require_once __DIR__ . '/lib/choices.php';
 require_once __DIR__ . '/lib/templates.php';
+require_once __DIR__ . '/lib/chatsettings.php';
 require_once __DIR__ . '/lib/skills.php';
 require_once __DIR__ . '/lib/platform.php';
 require_once __DIR__ . '/lib/channels.php';
@@ -1380,7 +1381,7 @@ try {
         $me  = requireUser($user);
         $pid = (int) ($in['project_id'] ?? 0);
         requireProject($pid, $me, 'read');
-        ok(projectMonitor($pid));
+        ok(projectMonitor($pid, (int) $me['id']));
     }
 
     /** פתיחת הלוח (בעל הלוח): מעקב "בעצלות" לעד שני פרויקטים שעברה שעה. */
@@ -1547,7 +1548,24 @@ try {
     }
 
     case 'channels':
-        ok(['channels' => channelsFor(requireUser($user), (int) ($in['project_id'] ?? 0))]);
+        ok(['channels' => channelsFor(requireUser($user), (int) ($in['project_id'] ?? 0), !empty($in['include_hidden'])),
+            'hidden_count' => channelsHiddenCount(requireUser($user), (int) ($in['project_id'] ?? 0))]);
+
+    /* ── ⚙ הגדרות הצ'אט (§5.11, 12a) ── */
+
+    case 'channel-info':
+        ok(['channel' => channelInfo(requireUser($user), (int) ($in['channel_id'] ?? 0))]);
+
+    case 'channel-update':
+        ok(['channel' => channelUpdate(requireUser($user), (int) ($in['channel_id'] ?? 0),
+            array_intersect_key($in, array_flip(['name', 'role', 'color', 'route'])))]);
+
+    case 'channel-mute':
+        ok(['muted' => channelMute(requireUser($user), (int) ($in['channel_id'] ?? 0), !empty($in['muted']))]);
+
+    case 'channel-hide':
+        channelSetHidden(requireUser($user), (int) ($in['channel_id'] ?? 0), !empty($in['hidden']));
+        ok();
 
     case 'channel-messages':
         ok(channelMessages(requireUser($user), (int) ($in['channel_id'] ?? 0), (int) ($in['after'] ?? 0)));
