@@ -787,3 +787,8 @@ mark.hit { background: color-mix(in srgb, var(--star) 45%, transparent); color: 
 .tr-state { margin: var(--s2, 8px) 0; font-weight: 600; }
 .tr-credit { font-size: .78rem; }
 .tr-stay { margin: var(--s2, 8px) 0; padding: var(--s2, 8px) var(--s3, 12px); border-radius: var(--r, 10px); font-size: .88rem; font-weight: 600; background: color-mix(in srgb, currentColor 7%, transparent); }
+/* 12e.4: לתרגם ל, ורשימת שפות */
+.tr-sub { margin: var(--s3, 12px) 0 var(--s2, 8px); font-size: .92rem; }
+.tr-target button:disabled { opacity: .45; }
+.tr-lang progress { width: 100%; margin-top: 4px; }
+.tr-native { font-weight: 400; opacity: .7; }
