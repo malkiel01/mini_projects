@@ -19,7 +19,7 @@ const ENC = 'onnx/encoder_model_quantized.onnx', DEC = 'onnx/decoder_model_merge
 export const MODELS_BASE = new URL('../../models/', import.meta.url).href;
 export const TRANSLATE_LANGS = {
   he: { name: 'עברית', heName: 'עברית', flag: '🇮🇱', label: 'אנגלית ← עברית', from: 'אנגלית', id: 'en-he',
-        revision: '1', sizes: { [ENC]: 53215822, [DEC]: 94243306 } },
+        revision: '1', sizes: { [ENC]: 53215822, [DEC]: 94243270 } },
   es: { name: 'Español', heName: 'ספרדית', flag: '🇪🇸', label: 'אנגלית ← ספרדית', from: 'אנגלית', id: 'en-es',
         revision: '1', sizes: { [ENC]: 52786767, [DEC]: 93381843 } },
 };
@@ -193,6 +193,24 @@ async function fetchChunk(url, start, end, onBytes, onRetry) {
   }
 }
 
+/** ה-manifest.json של ה-build (tools/models/convert.sh): גודל ו-sha256 לכל קובץ. */
+async function fetchManifest(m) {
+  const url = `${MODELS_BASE}${m.id}/${m.revision}/manifest.json`;
+  for (let attempt = 1; ; attempt++) {
+    await waitOnline();
+    try {
+      const r = await fetch(url, { cache: 'no-store' });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return await r.json();
+    } catch (e) {
+      if (attempt >= 6) throw new Error(`לא הצלחתי לקרוא את רשימת הקבצים של המודל (${e.message})`);
+      await sleep(1000 * 2 ** attempt);
+    }
+  }
+}
+const sha256 = async (blob) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', await blob.arrayBuffer()))]
+  .map((b) => b.toString(16).padStart(2, '0')).join('');
+
 /**
  * ⬇️ הורדת המודל של השפה ‎l‎ (הסכמה מפורשת, §5.11.1).
  * onProgress({ loaded, total, etaSec, resumedFrom, retrying }) — ‏resumedFrom: כמה כבר היה במכשיר בהתחלה.
@@ -208,6 +226,11 @@ export async function downloadModel(onProgress, l = LANG) {
     onProgress?.({ loaded, total, resumedFrom: have, etaSec: fresh > 2e6 && rate > 0 ? Math.round((total - loaded) / rate) : null, ...extra });
   };
   report();
+  // הקבצים נבדקים מול ה-manifest של השרת: גודל לפני ההורדה, sha256 אחרי ההרכבה (12e.7)
+  const man = await fetchManifest(MODEL);
+  for (const f of MODEL.files) {
+    if (man.files?.[f]?.size !== MODEL.sizes[f]) throw new Error('המודל בשרת התעדכן — רעננו את הדף ונסו שוב');
+  }
   const c = await caches.open(CACHE);
   for (const f of MODEL.files) {
     const url = fileUrl(MODEL, f);
@@ -228,6 +251,11 @@ export async function downloadModel(onProgress, l = LANG) {
     for (let i = 0; i < n; i++) blobs.push(await idbStore('chunks', 'readonly', (st) => st.get(chunkKey(url, i))));
     const full = new Blob(blobs, { type: 'application/octet-stream' });
     if (full.size !== size) throw new Error(`הקובץ ${f} לא שלם (${full.size} מתוך ${size}) — נסו שוב`);
+    if (await sha256(full) !== man.files[f].sha256) {
+      // חתיכה פגומה — לא שומרים; מוחקים את החתיכות של הקובץ, וההורדה הבאה מורידה אותו מחדש
+      await idbStore('chunks', 'readwrite', (st) => st.delete(IDBKeyRange.bound(`${url}#`, `${url}#\uffff`)));
+      throw new Error(`הקובץ ${f} הגיע פגום (sha256 שונה) — נמחק; לחצו שוב להורדה`);
+    }
     await c.put(url, new Response(full, { headers: { 'Content-Type': 'application/octet-stream', 'Content-Length': String(size) } }));
     await idbStore('chunks', 'readwrite', (st) => st.delete(IDBKeyRange.bound(`${url}#`, `${url}#\uffff`)));
   }
