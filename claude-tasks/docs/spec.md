@@ -417,6 +417,51 @@ and a missing token each stop with the Hebrew line above; `CLAUDE_TASKS_PROJECT`
 the join notice reaches `notify_session`. Tests for the template inheritance, the register errors, `replaces`, and the health
 levels; screenshots 390/320 light/dark.
 
+### 5.10 Multiple-choice questions (AskUserQuestion) on the board (owner request 2026-11-02; **stage 11b**, with 11)
+
+**Today:** the bridge does not see them. The hooks are only `UserPromptSubmit` and `Stop`; while the question dialog is
+open the turn is blocked, so `Stop` never runs — nothing reaches the board, and an answer written on the board waits in the
+queue until someone answers in the app. (Example: the design-studio chat asked "which project to register in", 2 options.)
+
+**Decision — option (a), plus printing the question in the chat:**
+- A `PreToolUse` hook with matcher `AskUserQuestion` (`hook-choice.sh`), **active only in a registered chat** (link file),
+  posts the questions to the board and **denies** the tool, with this reason to the model: *"The question was sent to the
+  board (message #<id>). End your turn now, after printing the same questions in the chat as numbered options, so the owner
+  can also answer here by typing the number(s) or free text. Do not ask again with the tool. The answer will arrive as a
+  board message or as the owner's next prompt."*
+- **Why not (b):** with the dialog open, a board answer cannot reach the chat until the dialog is closed in the app, so the
+  board would be decorative. With (a) the owner answers **from either place** — tap on the board, or type in the chat — and
+  the chat is never stuck behind a dialog nobody sees.
+- An unregistered chat is untouched (the hook exits 0 and the dialog works as usual).
+- **Per-channel override:** `channels.questions = board | app` (default `board`). `app` = the tool runs normally; the hook only
+  mirrors the question (no deny), and a `PostToolUse` hook mirrors the chosen answer and marks it answered. Set from the channel
+  screen (⋯ → "שאלות בחירה: בלוח / באפליקציה"). For when the owner works at the computer and wants the dialog.
+
+**Data / API:**
+- `channel-post kind: choice` with `meta.questions` = the tool input as is (`question`, `header`, `multiSelect`,
+  `options[{label, description}]`, up to 4 questions). Stored `out`, `author_role: chat`, status `open`.
+- Answer from the board: `choice-answer { message_id, answers: { "<question>": "<label>" | ["<label>",…] | {other: "<text>"} } }`
+  (`owner`, or whoever may answer on the project) → an `in` message `kind: choice_answer`, `reply_to` the choice, body formatted
+  for the chat: `תשובה לשאלה #<id>:\n• <header>: <label(s) or free text>`; the choice is marked `answered` with the answers.
+- Answer typed in the chat: `link.sh` keeps `pending_choice` in the link file; `hook-prompt.sh` posts the owner's prompt with
+  `reply_to` = that choice, and the server marks the choice `answered` (`answered_via: chat`, body as the answer). The pending
+  choice is cleared. A board answer after that → 409 "כבר נענתה בצ'אט".
+- Double answer race: the first one wins (atomic update on `status = 'open'`); the second gets 409 and the UI refreshes.
+
+**UI (conversation screen):** a choice bubble — per question: the header as a small chip, the question bold, then **one full-width
+button per option** (label bold, description grey under it); `multiSelect` → toggle buttons with ✓; an **"אחר…"** button that
+opens a text field. With one single-select question, a tap sends at once; otherwise a "שליחה" button enabled when every
+question has an answer. After answering: the bubble collapses to "✓ נענתה (בלוח/בצ'אט): <answers>". The channel row shows
+❓ for an open choice, and it counts in "ממתין לך".
+
+**Skill (`claude-tasks-live`, English):** explain the deny ("the question went to the board — print it as numbered options
+and end the turn"), and that a `choice_answer` message or a prompt replying to the choice **is** the answer — act on it.
+
+**Done when:** in a registered chat, an `AskUserQuestion` appears on the board within seconds, the chat prints it and ends
+the turn; a tap on the board wakes the chat with the answer; a number typed in the chat marks the board bubble answered;
+multi-question and multiSelect work; `questions: app` keeps the dialog and mirrors the answer; an unregistered chat is unaffected.
+Tests for `choice-answer`, the race, and the typed-answer path.
+
 ## 6. Stage 5 — approvals & policy
 
 As "PR 2" in the answer to the command-center request, with two changes:
