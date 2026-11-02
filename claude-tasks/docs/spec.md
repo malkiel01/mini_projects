@@ -551,7 +551,11 @@ Where this section is silent, that proposal holds.
 **Model finding (code writer, 2026-11-02) and decision:** `Xenova/opus-mt-en-he` / `he-en` do not exist. Official:
 `Helsinki-NLP/opus-mt-en-he` (Apache-2.0, no ONNX); for he→en only `opus-mt-tc-big-he-en` (CC-BY-4.0, large). Community
 quantized ONNX: en→he ≈ 147 MB, he→en ≈ 365 MB. The Translator API is not on Android. Decision:
-- **Phase 1 = en→he only.** The need is reading the chats' English replies in Hebrew; the chats read Hebrew fine, so he→en is
+- **Languages (updated 2026-11-02, owner request via the code writer, #1162):** target = **Hebrew and Spanish**; the source is
+  always English. `users.translate_lang` (`he` | `es`), set in Settings → Account. `TRANSLATE_LANGS` in code is the template —
+  **a new language = one row** (an official Opus-MT `en-xx` model, pinned revision, size). A wider language picker is **not a
+  stage on its own**: a language is added when the owner asks for it.
+- **Phase 1 = en→he only** (superseded by the line above: he + es). The need is reading the chats' English replies in Hebrew; the chats read Hebrew fine, so he→en is
   dropped for now (no 365 MB download, no CC-BY attribution).
 - **Measure with the community en→he ONNX, pinned to a commit** (measurement page only).
 - **Ship from our own conversion:** convert the official Apache-2.0 `Helsinki-NLP/opus-mt-en-he` once with Optimum (int8),
