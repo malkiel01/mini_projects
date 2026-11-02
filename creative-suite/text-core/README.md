@@ -55,11 +55,19 @@ apps.json                    מי משתמש
 עם `s = size / upem` — **אותו קובץ גופן** שעוצב איתו. גליף מגופן חלופי — ב-op נפרד בגופן שלו (ראו `layout-studio/assets/js/pdf.js`).
 טקסט שחייב להיות קווי מתאר (בתוך ציור) — `textToPath` → `{ op: 'path', d }`.
 
+## גופנים מהקטלוג המשותף
+
+WOFF2 לא נטען (HarfBuzz קורא טבלאות TTF). את הקובץ נותן `ttfFile(family, weight)` של `ui-core` (`fonts.js`, הקבצים ב-
+`ui-core/src/fonts-ttf`, סוג `"fonts-ttf"` ב-`ui-core/apps.json`, #1074) → `{ file, variable, weight }`. כש-`variable`
+(Heebo, Assistant, Rubik, Frank Ruhl) — `loadFont` פעם אחת, ולכל משקל `fontVariant(font, { wght: weight })`.
+המעבר: `docs/shared-code/migrate/fonts.md`.
+
+שגיאות מתחילות ב-`text-core:` ובעברית.
+
 ## מה עוד לא כאן
 
 - **טקסט על נתיב** — תלוי ב-מ1 (`geometry-core`: אורך, נקודה ומשיק על נתיב). בתיאום עם וקטורי.
 - **שבירת שורות ופסקאות** — נשארות אצל כל אפליקציה (העימוד: `flow.js`; עורך התמלילים: שלו).
-- גופני WOFF2 — לא; הקטלוג המשותף צריך גרסת TTF (בקשה פתוחה לקוד המשותף, שורה 14 ב-`integration.md`).
 
 ## מי משתמש
 
