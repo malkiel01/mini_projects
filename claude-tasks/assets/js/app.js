@@ -1244,6 +1244,14 @@ on('#trDownload', 'click', async () => {
   if (!confirm(`להוריד את מודל התרגום (≈${TR_MODEL.approxMB}MB)? פעם אחת למכשיר — עדיף ב-Wi-Fi.`)) return;
   const btn = $('#trDownload'), prog = $('#trProg');
   btn.disabled = true; prog.hidden = false; prog.value = 0;
+  set('#trStay', 'hidden', false);
+  // המסך לא נכבה מעצמו בזמן ההורדה — מסך נעול מקפיא את הדף ועוצר אותה (Wake Lock; בלי — ממשיכים בלעדיו)
+  let lock = null;
+  const takeLock = async () => { try { lock = await navigator.wakeLock?.request('screen'); } catch { lock = null; } };
+  // חזרה לדף (אחרי שהמסך כבה בכל זאת) — הדפדפן משחרר את הנעילה, אז מבקשים שוב
+  const onVisible = () => { if (document.visibilityState === 'visible' && btn.disabled) takeLock(); };
+  await takeLock();
+  document.addEventListener('visibilitychange', onVisible);
   try {
     await downloadModel(({ loaded, total, etaSec }) => {
       prog.value = total ? Math.round((loaded / total) * 100) : 0;
@@ -1251,7 +1259,10 @@ on('#trDownload', 'click', async () => {
     });
     toast('מודל התרגום מוכן — 🌐 על הודעה באנגלית', 'ok');
   } catch (ex) { toast(`ההורדה נכשלה: ${ex.message}`, 'error'); }
+  document.removeEventListener('visibilitychange', onVisible);
+  try { await lock?.release(); } catch { /* כבר שוחרר */ }
   btn.disabled = false; prog.hidden = true;
+  set('#trStay', 'hidden', true);
   renderTranslateSettings();
 });
 on('#trRemove', 'click', async () => {
