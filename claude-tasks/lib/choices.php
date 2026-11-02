@@ -193,17 +193,19 @@ function setChannelQuestions(array $user, int $channelId, string $mode): void {
 }
 
 /** שאלות פתוחות בענף — ל"ממתין לך". */
-function openChoices(array $projectIds): array {
+function openChoices(array $projectIds, ?int $userId = null): array {
     if (!$projectIds) return [];
+    $muted = $userId ? mutedChannelIds($userId) : [];
     $in = implode(',', array_fill(0, count($projectIds), '?'));
     $st = db()->prepare("SELECT m.id, m.channel_id, m.meta, m.created_at, c.name channel_name FROM messages m
                            JOIN channels c ON c.id = m.channel_id
                           WHERE m.kind = 'choice' AND m.status = 'open' AND c.status = 'active' AND c.project_id IN ($in)
                           ORDER BY m.id LIMIT 30");
     $st->execute($projectIds);
+    $rows = array_values(array_filter($st->fetchAll(), fn ($r) => !in_array((int) $r['channel_id'], $muted, true)));
     return array_map(function ($r) {
         $q = (json_decode((string) $r['meta'], true) ?: [])['questions'][0] ?? [];
         return ['message_id' => (int) $r['id'], 'channel_id' => (int) $r['channel_id'], 'channel_name' => $r['channel_name'],
                 'title' => (string) ($q['question'] ?? 'שאלה'), 'waiting_since' => (int) $r['created_at']];
-    }, $st->fetchAll());
+    }, $rows);
 }

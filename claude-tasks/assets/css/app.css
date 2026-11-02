@@ -662,3 +662,22 @@ details.what p { margin-top: var(--s2); }
 .cv-health--warn { background: color-mix(in srgb, var(--star) 14%, var(--surface)); }
 .cv-health--alert { background: var(--danger-soft); }
 .cv-health .btn { flex: none; }
+
+/* ── ⚙ הגדרות הצ'אט (§5.11, 12a) ──────────────────────────────── */
+#csDanger b { color: var(--danger); font-size: .9rem; }
+#csRows .card.is-static { cursor: default; }
+#csRows .card[aria-pressed="true"] .l2 { color: var(--ink); }
+.cs-action { color: var(--brand) !important; font-weight: 500; }
+.cs-about { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px var(--s3); margin: 0; }
+.cs-about dt { color: var(--muted); font-size: .85rem; }
+.cs-about dd { margin: 0; overflow-wrap: anywhere; unicode-bidi: plaintext; }
+.cs-colors { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: var(--s2); }
+.cs-color { block-size: 44px; border: 2px solid transparent; border-radius: 10px; cursor: pointer; font: inherit; font-size: .72rem;
+  color: var(--muted); background: hsl(var(--hue) 70% 86%); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .cs-color { background: hsl(var(--hue) 35% 30%); } }
+:root[data-theme="dark"] .cs-color { background: hsl(var(--hue) 35% 30%); }
+.cs-color[data-color=""] { background: var(--surface); border-color: var(--line); border-style: dashed; }
+.cs-color[aria-checked="true"] { border-color: var(--ink); box-shadow: 0 0 0 2px var(--surface) inset; }
+.cs-color:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.chan-hidden { list-style: none; padding: var(--s2) var(--s3); text-align: center; }
+#chanRows .card.is-hidden { opacity: .7; }
