@@ -5,7 +5,11 @@ q8 לקובץ ONNX אחד, כמו ב-transformers.js — ולפני כן מקפ�
 בכל טוקן. בלי הקיפול ה-MatMul לא מכומת ("non constant B") — כל טוקן איטי פי 5–7. onnxslim היה מקפל
 את זה בעצמו, אבל עם קיפול הקבועים הוא שובר את הענף של ה-If במפענח המאוחד ("Starts must be a 1-D array").
 
-    python fold_q8.py <in.onnx> <out.onnx> [--slim]   # ‏--slim: ‏onnxslim בלי הסקת צורות ובלי קיפול קבועים
+    python fold_q8.py <in.onnx> <out.onnx> [--slim] [--lm-head]
+      ‏--slim: ‏onnxslim בלי הסקת צורות ובלי קיפול קבועים
+      ‏--lm-head: אחרי הכימות — נכשל אם ה-lm_head לא MatMulInteger (כלומר לא מכומת; פי 5–7 איטי)
+יש ייצוא שכותב את ה-lm_head כ-Transpose (מקופל כאן), ויש שכותב אותו כקבוע מראש (למשל בלי accelerate) —
+הבדיקה שאחרי הכימות תופסת את שניהם.
 מחייב PYTHONPATH לתיקייה שבה scripts/ של transformers.js.
 """
 import sys
@@ -49,3 +53,16 @@ if slim:
 wt = QuantType.QUInt8 if any(x in QUINT8_OPS for x in get_operators(m)) else QuantType.QInt8
 quantize_q8(m, dst, per_channel=False, reduce_range=False, weight_type=wt, op_block_list=None)
 print(f'-> {dst}', flush=True)
+
+if '--lm-head' in sys.argv[3:]:
+    q = onnx.load(dst, load_external_data=False)
+    ops = []
+    def walk(g):
+        for nd in g.node:
+            if 'lm_head' in nd.name: ops.append(nd.op_type)
+            for a in nd.attribute:
+                if a.g: walk(a.g)
+    walk(q.graph)
+    print(f'lm_head: {ops}', flush=True)
+    if 'MatMulInteger' not in ops or 'MatMul' in ops:
+        sys.exit('lm_head לא מכומת — המודל היה איטי פי 5–7')

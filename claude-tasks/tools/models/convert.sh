@@ -41,8 +41,7 @@ PY
   (cd "$W/tjs" && python -m scripts.convert --model_id "$M" --task text2text-generation-with-past --skip_onnxslim)
   ls "$M/onnx/encoder_model.onnx" "$M/onnx/decoder_model_merged.onnx"
   (cd "$W/tjs" && PYTHONPATH="$W/tjs" python "$HERE/fold_q8.py" "$M/onnx/encoder_model.onnx" "$M/q-enc.onnx")
-  (cd "$W/tjs" && PYTHONPATH="$W/tjs" python "$HERE/fold_q8.py" "$M/onnx/decoder_model_merged.onnx" "$M/q-dec.onnx" --slim) | tee "$M/fold.log"
-  grep -q 'folded [1-9]' "$M/fold.log" || { echo "::error::$PAIR: lm_head לא קופל — המודל היה איטי פי 5"; exit 1; }
+  (cd "$W/tjs" && PYTHONPATH="$W/tjs" python "$HERE/fold_q8.py" "$M/onnx/decoder_model_merged.onnx" "$M/q-dec.onnx" --slim --lm-head)
 
   D="$W/dist/$PAIR/$BUILD"
   rm -rf "$D"; mkdir -p "$D/onnx"
