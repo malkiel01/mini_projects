@@ -87,6 +87,13 @@ jobs:
       - name: pdf-core gate (every copy matches creative-suite/pdf-core/src)
         run: php creative-suite/pdf-core/tools/sync.php --check
 
+      # קריאה וכתיבה של קובצי תמונה (creative-suite/image-io/src/js) — PNG (+ "פנים"), TIFF, PSD, ZIP, ORA, זיהוי סוג וקידוד
+      # בדפדפן. מועתק לאפליקציות שב-creative-suite/image-io/apps.json. עותק ששונה בתוך אפליקציה — נעצר כאן.
+      - name: image-io gate + tests (every copy matches creative-suite/image-io/src)
+        run: |
+          php creative-suite/image-io/tools/sync.php --check
+          node --test creative-suite/image-io/tests/*.test.mjs
+
       # עיצוב הטקסט המשותף (creative-suite/text-core/src/js) — HarfBuzz + bidi, מדידה וקווי מתאר. מועתק לאפליקציות שב-
       # creative-suite/text-core/apps.json. עותק ששונה בתוך אפליקציה — נעצר כאן. עורכים במקור ומריצים sync.php.
       - name: text-core gate + tests (every copy matches creative-suite/text-core/src)
@@ -229,6 +236,7 @@ jobs:
             --exclude='/creative-suite/pdf-core/tools/' \
             --exclude='/creative-suite/pdf-core/tests/' \
             --exclude='/creative-suite/text-core/tools/' --exclude='/creative-suite/text-core/tests/' \
+            --exclude='/creative-suite/image-io/tools/' --exclude='/creative-suite/image-io/tests/' \
             --exclude='git-deploy/data/config.json' \
             --exclude='git-deploy/data/logs/' --exclude='git-deploy/data/cache/' \
             --exclude='renovation-punchlist/data/config.json' \

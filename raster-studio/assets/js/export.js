@@ -1,10 +1,12 @@
 // ייצוא: PNG / JPG / WebP / TIFF (משוטחת), ORA (שכבות — GIMP, Krita) ו-PSD (שכבות — פוטושופ). ‎.mbe — ב-mbe-io.js.
 
-import { encodePNG } from './engine/png.js';
-import { zipStore } from './engine/zip.js';
-import { encodePSD } from './engine/psd.js';
-import { encodeTIFF } from './engine/tiff.js';
-import { oraStack, effectsOf } from './engine/formats.js';
+import { encodePNG } from './image-io/png.js';
+import { zipStore } from './image-io/zip.js';
+import { encodePSD } from './image-io/psd.js';
+import { encodeTIFF } from './image-io/tiff.js';
+import { oraStack } from './image-io/ora.js';
+import { encodeImage, canEncode } from './image-io/canvas.js';
+import { effectsOf } from './engine/formats.js';
 import { fileName as uiFileName } from './ui-core/files.js';
 
 /** התמונה המשוטחת (רק שכבות גלויות): Promise ל-RGBA ישר של 8 ביט בגודל הקנבס */
@@ -42,28 +44,11 @@ export async function exportPNG(renderer, doc) {
   return new Blob([await encodePNG(await flatRGBA(renderer, doc), doc.width, doc.height)], { type: 'image/png' });
 }
 
-/** קידוד בדפדפן (WebP / AVIF): עם שקיפות. דפדפן שלא יודע לכתוב את הסוג (מחזיר PNG) — שגיאה <סוג>-unsupported */
-async function encodeIn(renderer, doc, type, quality) {
-  const rgba = await flatRGBA(renderer, doc);
-  const cv = new OffscreenCanvas(doc.width, doc.height);
-  cv.getContext('2d').putImageData(new ImageData(rgba, doc.width, doc.height), 0, 0);
-  const blob = await cv.convertToBlob({ type, quality });
-  if (blob.type !== type) throw new Error(type.split('/')[1] + '-unsupported');
-  return blob;
-}
+/** קידוד בדפדפן (WebP / AVIF): עם שקיפות. דפדפן שלא יודע לכתוב את הסוג — שגיאה <סוג>-unsupported (image-io) */
+const encodeIn = async (renderer, doc, type, quality) => encodeImage(await flatRGBA(renderer, doc), doc.width, doc.height, type, { quality });
 export const exportWEBP = (renderer, doc, quality = 0.92) => encodeIn(renderer, doc, 'image/webp', quality);
 export const exportAVIF = (renderer, doc, quality = 0.85) => encodeIn(renderer, doc, 'image/avif', quality);
-
-/** הדפדפן יודע לכתוב את הסוג? (בדיקה על קנבס של פיקסל אחד, פעם אחת) */
-const canCache = new Map();
-export function canEncode(type) {
-  if (!canCache.has(type)) {
-    canCache.set(type, (async () => {
-      try { return (await new OffscreenCanvas(1, 1).convertToBlob({ type })).type === type; } catch { return false; }
-    })());
-  }
-  return canCache.get(type);
-}
+export { canEncode };
 
 /** TIFF: משוטחת, RGBA בלי דחיסה (הכי תואם — פוטושופ, GIMP, דפוס) */
 export async function exportTIFF(renderer, doc) {
@@ -104,17 +89,7 @@ export async function exportPSD(renderer, doc) {
 }
 
 /** JPG: בלי שקיפות — מעל לבן */
-export async function exportJPG(renderer, doc, quality = 0.92) {
-  const rgba = await flatRGBA(renderer, doc);
-  const bmp = await createImageBitmap(new ImageData(rgba, doc.width, doc.height), { premultiplyAlpha: 'none' });
-  const cv = new OffscreenCanvas(doc.width, doc.height);
-  const ctx = cv.getContext('2d');
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(0, 0, doc.width, doc.height);
-  ctx.drawImage(bmp, 0, 0);
-  bmp.close();
-  return cv.convertToBlob({ type: 'image/jpeg', quality });
-}
+export const exportJPG = (renderer, doc, quality = 0.92) => encodeIn(renderer, doc, 'image/jpeg', quality);
 
 /** ORA — שכבה לכל שכבה, mergedimage.png ותמונה ממוזערת. מחזיר Uint8Array. */
 export async function buildORA(renderer, doc) {
