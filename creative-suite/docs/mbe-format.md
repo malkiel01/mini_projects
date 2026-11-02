@@ -1,4 +1,4 @@
-# פורמט ‎`.mbe` — אפיון (גרסת פורמט 1.1)
+# פורמט ‎`.mbe` — אפיון (גרסת פורמט 1.2)
 
 הקובץ המשותף של חבילת האפליקציות. **לב הפרויקט** — כל אפליקציה בחבילה קוראת וכותבת אותו. המסמך הזה
 מחייב את כל הצ'אטים; שינוי בו עובר רק דרך הצ'אט המתכלל.
@@ -6,6 +6,8 @@
 > סטטוס: **גרסה 1.0 — ממומשת בליבה** (`creative-suite/mbe-core/`, 2026-10-23). **1.1 — הוכרעה 2026-10-25, ממתינה למימוש
 > בליבה:** `id` במניפסט, `history/`, מזהה פסקה, פנים עם מזהה ומיזוג (סעיף 7). הסעיפים המסומנים 🧪 הם השערות שצריך
 > לאמת בניסוי לפני שננעלים. הסכמות הרשמיות: `creative-suite/mbe-core/schema/`.
+> **1.2 — הוכרעה 2026-11-02** (`requests/format-p1-p4.md`): אפקטים, פילטרים, התאמות, מעבר צבע, Appearance, עריכה משותפת
+> וצבע שאינו sRGB — סעיף 3, "אפקטים, פילטרים, מראה וצבע". הליבה כותבת `1.2` ובודקת את הכללים מפריט ל1.
 
 ---
 
@@ -154,7 +156,7 @@ my-book.mbe                 ZIP (Deflate; בלי ZIP64 בגרסה 1 — סעיף
 | `id` | כן | ייחודי בכל המסמך — יחד עם משטחים ושכבות |
 | `d` | כן | תחביר נתיב של SVG, **רק פקודות מוחלטות `M L C Q Z`**, ב-`pt` של המשטח. כל קורא מצייר אותו בלי ספרייה |
 | `transform` | לא | `[a b c d e f]` כמו ב-SVG; ברירת מחדל — זהות |
-| `fill` / `stroke` | לא | `null` = בלי. ‏`color` — `#rrggbb` ‏(sRGB), ‏`opacity` בנפרד. ב-`fill` אפשר `gradient` במקום `color`: `{ type: "linear", from, to, stops: [{ at, color, opacity }] }` או `{ type: "radial", center, radius, stops }` (מרכז בקואורדינטות הנתיב, רדיוס ב-`pt` גדול מ-0, בלי מוקד; מעבר להיקף — הצבע האחרון). סוג מעבר לא מוכר — מציירים בצבע העצירה הראשונה ושומרים כמו שהוא. ‏`stroke`: ‏`width`, ‏`cap` (butt/round/square), ‏`join` (miter/round/bevel), ‏`miter`, ‏`dash` (ב-`pt`) |
+| `fill` / `stroke` | לא | `null` = בלי. ‏`color` — `#rrggbb` ‏(sRGB), ‏`opacity` בנפרד. ב-`fill` אפשר `gradient` לצד `color` (`color` = הגיבוי למי שלא מכיר את המעבר; המבנה המלא — "אפקטים, פילטרים, מראה וצבע", פ2): `{ type: "linear", from, to, stops: [{ at, color, opacity }] }` או `{ type: "radial", center, radius, stops }` (מרכז בקואורדינטות הנתיב, רדיוס ב-`pt` גדול מ-0, בלי מוקד; מעבר להיקף — הצבע האחרון). סוג מעבר לא מוכר — מציירים בצבע העצירה הראשונה ושומרים כמו שהוא. ‏`stroke`: ‏`width`, ‏`cap` (butt/round/square), ‏`join` (miter/round/bevel), ‏`miter`, ‏`dash` (ב-`pt`) |
 | `fillRule` | לא | `nonzero` / `evenodd` |
 | `shape` | לא | פרמטרים של צורה חיה (`rect`, `ellipse`, `polygon`, `star`, `line`). **`d` הוא תמיד האמת**; מי שלא מכיר `shape` מצייר את `d` ושומר את `shape` כמו שהוא |
 | `name` | לא | שם בלוח השכבות |
@@ -178,9 +180,11 @@ my-book.mbe                 ZIP (Deflate; בלי ZIP64 בגרסה 1 — סעיף
 
 - **מתאר:** `stroke.gradient` — כמו ב-`fill` (במקום `color`). ‏`stroke.start` / `stroke.end` — קצה נתיב פתוח: `none`
   (ברירת מחדל) / `arrow` / `circle` / `bar`, בגודל יחסי לעובי.
-- **אפקטים:** `effects` על כל פריט (נתיב, טקסט, קבוצה, מופע) — רשימה בסדר הציור:
+- **אפקטים:** `effects` על כל פריט (נתיב, טקסט, קבוצה, מופע). השדות, ברירות המחדל וסדר הציור (קבוע לפי סוג) — "אפקטים,
+  פילטרים, מראה וצבע", פ1. למשל:
   `{ "type": "shadow", "dx", "dy", "blur", "color", "opacity" }` · `{ "type": "glow", "blur", "color", "opacity" }` ·
-  `{ "type": "blur", "radius" }`. מרחקים ב-`pt`. בפלט שלא תומך באפקט (PDF) — האפקט כתמונה מתחת לפריט, ונכתב ב-`gaps`.
+  `{ "type": "blur", "radius" }`. מרחקים ב-`pt`. בפלט שלא תומך באפקט (PDF) — האפקט כתמונה מתחת לפריט, ונכתב ב-`gaps`;
+  את התמונה אפשר לשמור בפריט כ-`bake` (פ1.2).
   **המבנה הזה משותף:** אפליקציה אחרת שתוסיף צל / זוהר / טשטוש — באותם שמות ושדות.
 - **סמלים:** הגדרות ב-`document.symbols` — `{ "<id>": { "name", "paths": [ …פריטים כמו בשכבה… ] } }`, בקואורדינטות משלהן;
   מופע — פריט `{ "id", "type": "use", "symbol": "<id>", "transform" }`. עריכת ההגדרה משנה את כל המופעים; "פירוק מופע" מעתיק
@@ -202,7 +206,8 @@ my-book.mbe                 ZIP (Deflate; בלי ZIP64 בגרסה 1 — סעיף
   `stroke` שלה). מי שלא מכיר — מצייר את `d` של הקבוצה ולא את הילדים. **חריג מוצהר** לכלל "קבוצה בלי `d`": בדיקת
   `group-geometry` בליבה לא חלה על קבוצה עם `boolean`.
 - **Appearance:** `fills: [...]` ו-`strokes: [...]` — כל אחד במבנה של `fill` / `stroke`, ועוד `blend` ו-`visible`. ‏`fill` / `stroke`
-  הבודדים נשארים, ושווים **לראשון** ברשימה — כך קורא ישן מצייר נכון.
+  הבודדים נשארים, ושווים **לאחרון שנראה** ברשימה (העליון) — כך קורא ישן מצייר את מה שהכי נראה (1.2; היה "לראשון").
+  הסדר — כמו `paths`: הראשון מאחור. ‏`effects` — על הפריט כולו, אחרי כל המילויים והמתארים.
 - **דוגמיות גלובליות:** `document.swatches: { "<id>": { "name", "color" } }`; בכל צבע אפשר `swatch: "<id>"` **לצד** `color` —
   הצבע תמיד כתוב, ושינוי דוגמית משכתב את כל ה-`color` שמפנים אליה. מזהי הדוגמיות — ייחודיים יחד עם שאר המזהים.
 - **מתאר:** `stroke.align` — `center` (ברירת מחדל) / `inside` / `outside`; ‏`stroke.profile: [{ "at": 0–1, "w": <pt> }]` — רוחב
@@ -210,7 +215,7 @@ my-book.mbe                 ZIP (Deflate; בלי ZIP64 בגרסה 1 — סעיף
 - **טקסט באזור:** בפריט `text` — `area: "<id של נתיב>"`: הטקסט זורם בתוך הנתיב. מי שלא מכיר — ב-`box`.
 - **צורות חיות חדשות:** `shape.type` — `spiro` (`points`), `spiral`, `arc`, `grid`; ובכל צורה `corners: [{ "at", "type":
   "round" | "chamfer" | "inverse", "r" }]`. כמו תמיד — **`d` הוא האמת**, ו-`shape` לעריכה.
-- **עריכה משותפת — לא בקובץ:** מצב ה-CRDT לא נכנס ל-`.mbe` (`docs/spec/collab.md`).
+- **עריכה משותפת — לא בקובץ:** מצב ה-CRDT לא נכנס ל-`.mbe` (`docs/spec/collab.md`; חוק לכל החבילה — פ3).
 
 **לאפליקציות שמציגות שכבות `vector` של אחרים** (עימוד, רסטר): `use` ו-`clip` הם הראשונים שכדאי לתמוך בהם — בלעדיהם תוכן
 חסר או גולש. עד אז — להציג את `renditions/drawing.svg`.
@@ -242,11 +247,111 @@ my-book.mbe                 ZIP (Deflate; בלי ZIP64 בגרסה 1 — סעיף
 | `fill` | שכבת מילוי: `{ color }` / `{ gradient }` (כמו ב-`vector`) / `{ pattern: "media/…" }` |
 | `smart` | Smart Object: `{ src: "media/…", size: [w, h] }` — המקור המוטמע (תמונה או `.mbe`), יחד עם `transform` ו-`filters` |
 
-**`effects` — מבנה אחד לכל החבילה (השלמה בהכרעה):** הצל נשמר ב-**`dx` / `dy`** (כמו שאושר לווקטורי), לא ב-`angle` /
+**`effects` — מבנה אחד לכל החבילה (השלמה בהכרעה; הקטלוג המלא — "אפקטים, פילטרים, מראה וצבע", פ1):** הצל נשמר ב-**`dx` / `dy`** (כמו שאושר לווקטורי), לא ב-`angle` /
 `distance` — אלה רק תצוגה בממשק (`dx = distance·cos(angle)`, ‏`dy = distance·sin(angle)`). ‏`spread` — תוספת רשות לצל ולזוהר.
 סוגים: `shadow`, `inner-shadow`, `glow`, `inner-glow`, `stroke`, `overlay`, `blur` — אותם שמות בכל אפליקציה.
 
-**לא כאן:** CMYK, ‏Lab, ‏ICC ו-16 / 32 ביט — בקשת "צבע" נפרדת לכל החבילה. ערוצים ובחירות שמורות — ב-`apps/raster-studio/`.
+**`src` כולל את האפקטים, ו-`source` — בלעדיהם.** הפרמטרים של `filters` ו-`adjust` לכל `type` — פ1.3–פ1.4 למטה.
+CMYK, ספוט ו-ICC — פ4 למטה; 16 / 32 ביט ו-Lab בפיקסלים — מ11. ערוצים ובחירות שמורות — ב-`apps/raster-studio/`.
+
+### אפקטים, פילטרים, מראה וצבע — לכל החבילה (1.2, הכרעה 2026-11-02, `requests/format-p1-p4.md`)
+
+**מחייב כל אפליקציה שכותבת את השדות האלה — אותם שמות, שדות ויחידות.** הכול תוספת: `color` (‏`#rrggbb`), ‏`d`, ‏`src` ו-
+`renditions/` נשארים האמת לקורא שלא מכיר. הנימוקים וההפניות לקוד — בבקשה.
+
+**מוסכמות:** מרחקים (`dx`, ‏`dy`, ‏`blur`, ‏`radius`, ‏`width`, ‏`distance`) — ביחידות המשטח. ‏`blur` / `radius` הם רדיוס:
+**σ של גאוס = ערך / 2**. **כותב כותב כל שדה במפורש**; ברירות המחדל למטה — לקורא, כשהשדה חסר.
+
+#### פ1.1 ‏`effects` — על כל פריט ב-`paths` ועל כל שכבה
+
+לכל אפקט: `type` · `enabled` (`true`) · `opacity` 0–1 (1) · `blend` (`normal`).
+
+| `type` | שדות (ברירת מחדל) |
+| --- | --- |
+| `shadow` · `inner-shadow` | `dx`, ‏`dy`, ‏`blur` (0), ‏`spread` 0–1 (0), ‏`color` (`#000000`) |
+| `glow` · `inner-glow` | `blur` (0), ‏`spread` 0–1 (0), ‏`color` (`#000000`) |
+| `stroke` | `width` (1), ‏`position` `outside` / `center` / `inside` (`outside`), ‏`color` או `gradient` — מתאר סביב הצורה הנראית (לא `stroke` של נתיב) |
+| `overlay` | `color` / `gradient` / `pattern: "media/…"` |
+| `blur` | `radius` (0) — מטשטש את הפריט עצמו |
+
+**סדר הציור — קבוע לפי סוג:** `shadow` → `glow` → הפריט (מטושטש אם יש `blur`) → `overlay` → `inner-glow` → `inner-shadow` →
+`stroke`; כמה מאותו סוג — לפי סדר הרשימה. **אפקט לא מוכר** — מציירים בלעדיו ושומרים.
+
+#### פ1.2 ייצוג אפוי — `bake` (רשות, בפריט וקטורי ובמסגרת)
+
+`"bake": { "src": "media/<sha256>.png", "box": [x, y, w, h], "replace": false, "of": "<sha256>" }` — האפקטים כתמונה
+(`replace: true` — הפריט עם האפקטים, במקומו); `box` ביחידות המשטח אחרי כל `transform`; **`of` = sha256 של ה-JSON הקנוני
+(RFC 8785) של הפריט בלי `bake`.**
+קורא שמכיר את כל האפקטים — מתעלם. לא מכיר, ו-`of` תואם — מצייר את `bake`. לא תואם — בלי האפקטים שלא מכיר, ו-`gaps`.
+אפליקציה שערכה פריט ולא יודעת לאפות — **מוחקת את `bake`**. ‏`gaps` אחיד: `effects → תמונה`.
+**ברסטר:** `src` הוא המראה עם האפקטים, ו-`source` — בלעדיהם (ר2); אין `bake`.
+
+#### פ1.3 ‏`filters` — מתכון על פיקסלים (שכבת `raster`, ‏`smart`), לפי סדר הרשימה
+
+| `type` | שדות (טווח · ברירת מחדל) |
+| --- | --- |
+| `brightness-contrast` | `brightness`, ‏`contrast` (‎−100–100 · 0) |
+| `hue-saturation` | `hue` (‎−180–180 · 0), ‏`saturation`, ‏`lightness` (‎−100–100 · 0) |
+| `gaussian-blur` | `radius` (≥0) |
+| `motion-blur` | `angle` (מעלות; 0 = ימינה, בכיוון השעון), ‏`distance` (≥0) |
+| `unsharp` | `amount` (0–500), ‏`radius` (≥0), ‏`threshold` (0–255) |
+| `high-pass` | `radius` (≥0) |
+| `noise` | `amount` (0–100), ‏`mono` (`false`) |
+
+שם שמופיע גם ב-`adjust` — אותם שדות ואותם טווחים. ‏`enabled` / `opacity` — כמו באפקט. לא מוכר — מציגים `src` (ר2).
+
+#### פ1.4 ‏`adjust` — הפרמטרים לכל `type`
+
+| `type` | שדות (טווח · ברירת מחדל) |
+| --- | --- |
+| `brightness-contrast` · `hue-saturation` | כמו ב-`filters` |
+| `levels` | `black`, ‏`white` (0–255 · 0, 255), ‏`gamma` (0.1–10 · 1), ‏`outBlack`, ‏`outWhite` (0, 255), ‏`channel` (`rgb` / `r` / `g` / `b`) |
+| `curves` | `rgb`, ‏`r`, ‏`g`, ‏`b` — `[[in, out], …]` ב-0–255, ‏`in` עולה, לפחות 2; ערוץ חסר = קו ישר |
+| `color-balance` | `shadows`, ‏`midtones`, ‏`highlights` — `[ציאן↔אדום, מג'נטה↔ירוק, צהוב↔כחול]` ב-‎−100–100; ‏`preserveLuminosity` (`true`) |
+| `black-white` | `reds`, ‏`yellows`, ‏`greens`, ‏`cyans`, ‏`blues`, ‏`magentas` (‎−200–300 · 40, 60, 40, 60, 20, 80); ‏`tint` — צבע או `null` |
+| `gradient-map` | `gradient` (פ2.1; רק `stops` נקרא) |
+| `channel-mixer` | `r`, ‏`g`, ‏`b` — `[R, G, B, קבוע]` ב-‎−200–200; ‏`mono` (`false`) |
+| `exposure` | `exposure` (‎−20–20 · 0), ‏`offset` (‎−0.5–0.5 · 0), ‏`gamma` (0.01–9.99 · 1) |
+| `vibrance` | `vibrance`, ‏`saturation` (‎−100–100 · 0) |
+| `photo-filter` | `color`, ‏`density` (0–100 · 25), ‏`preserveLuminosity` (`true`) |
+| `invert` · `posterize` · `threshold` | — · `levels` (2–255 · 4) · `level` (1–255 · 128) |
+| `lut` | `src: "media/….cube"` |
+
+#### פ2.1 מעבר צבע — מבנה אחד
+
+`{ "type": "linear", "from": [x, y], "to": [x, y], "stops" }` · `{ "type": "radial", "center": [x, y], "radius", "focus"?, "stops" }`
+- `stops: [{ "at": 0–1 לא יורד, "color", "opacity" (1) }]`, לפחות אחת; כל עצירה יכולה לשאת שדות פ4.
+- קואורדינטות **במרחב של הבעלים**: בנתיב — כמו `d`; בטקסט — כמו `box`; בשכבת `fill` — יחידות המשטח.
+- `focus` (רשות, `radial`) — מי שלא מכיר: במרכז. ‏`spread` (רשות): `pad` (ברירת מחדל) / `reflect` / `repeat`.
+- **סוג לא מוכר** — צבע העצירה הראשונה, שומרים, ו-`gaps: ["gradient:<type> → צבע אחיד"]`.
+
+#### פ2.2 ‏`paint` — ‏`fill`, ‏`stroke`, כל רשומה ב-`fills` / `strokes`, ‏`fill` של שכבת מילוי
+
+`color` (`#rrggbb`, **כתוב גם לצד `gradient`** — הגיבוי; חסר — העצירה הראשונה) · `gradient` · `pattern` (בשכבת מילוי
+וב-`overlay`) · `opacity` · `swatch` · `cmyk` · `tint` · `overprint`.
+**Appearance:** רשומה ב-`fills` / `strokes` — `paint` ועוד `blend`, ‏`visible`, ‏`opacity`; ב-`strokes` גם כל שדות המתאר.
+על נתיב, טקסט וקבוצה בוליאנית.
+
+#### פ3 עריכה משותפת — לא בקובץ
+
+**`.mbe` הוא תמונת מצב.** מצב CRDT (Y.Doc), כולל תגובות, **אסור** בקובץ: לא בשורש ולא ב-`apps/<app>/`. בכל שמירה ה-Y.Doc
+מומר ל-`document.json` דרך הליבה; עבודה מנותקת חוזרת דרך `reconcile` (סעיף 7). הקישור למסמך החי — `manifest.id` ו-`history/`.
+המיפוי ↔ Y.Doc — `docs/spec/collab.md` §3.
+
+#### פ4 צבע שאינו sRGB
+
+**`color` (‏`#rrggbb` sRGB) נשאר תמיד וכתוב תמיד; כל מרחב אחר — שדה לצדו.** בכל `paint`, עצירה, אפקט, דוגמית ו-`photo-filter`:
+- `cmyk: [c, m, y, k]` ב-0–1 — הערכים להדפסה; בפלט CMYK — כמו שהם, בלי המרה. מי שמשנה `cmyk` מעדכן גם את `color`.
+- `tint` 0–1 (1) — גוון של דוגמית ספוט. ‏`overprint` (`false`) — רק ב-`paint`.
+- **ספוט** = דוגמית עם `spot: true`, ‏`name` (שם הדיו) ו-`cmyk` (חובה בספוט — החלופה). שימוש: `{ "color", "swatch", "tint" }`.
+- **מרחב עתידי** (למשל `lab`) — עוד שדה לצד `color`; `color` לא הופך לאובייקט.
+
+`document.color`: `space` — `sRGB` (ברירת מחדל) / `cmyk` · `profile` — `media/<sha256>.icc` · `intent` — `perceptual` /
+`relative` (ברירת מחדל) / `saturation` / `absolute` · `output: { "profile", "condition" }` — כוונת פלט ל-PDF/X.
+פרופילי ICC — ב-`media/` כמו כל משאב.
+
+**שכבת `raster`:** `src` נשאר PNG ב-sRGB. השם `deep: { "src", "space", "depth" }` שמור לפיקסלים עמוקים / CMYK / Lab — הקידוד
+ב-מ11; עד אז הליבה לא בודקת אותו, ומי שלא מכיר מציג `src`.
 
 ### הגדרות עימוד (`layout`) ועמודי אב (הכרעה 2026-10-24, מבקשת העימוד)
 
@@ -434,6 +539,9 @@ ZIP64 (סעיף 8), PSD אמיתי (מבנה בינארי מורכב; ora מכס
 
 **עדכון 2026-10-25:** שיתוף בזמן אמת ו-CMYK / ספוט **הוכרעו לבנייה** (הווקטורי — `projects/vector-studio-full.md`). ייכנסו
 לפורמט כ-minor, רק דרך בקשה שתאושר — מודל אחד לכל החבילה.
+
+**עדכון 2026-11-02 (1.2, `requests/format-p1-p4.md`):** CMYK, ספוט ו-ICC — **בפורמט** (סעיף 3, פ4); ההפרדות עצמן — בפלט
+(מ11). שיתוף בזמן אמת — **קיים, ובכוונה מחוץ לקובץ** (פ3). פיקסלים עמוקים ו-Lab — שם שמור בלבד (`deep`), הקידוד ב-מ11.
 
 ## 10. אבטחה
 

@@ -8,7 +8,12 @@
     "units": { "$ref": "#/$defs/token" },
     "color": {
       "type": "object",
-      "properties": { "space": { "type": "string", "maxLength": 64 } }
+      "properties": {
+        "space": { "type": "string", "maxLength": 64 },
+        "profile": { "$ref": "#/$defs/mediaRef" },
+        "intent": { "$ref": "#/$defs/token" },
+        "output": { "type": "object", "properties": { "profile": { "$ref": "#/$defs/mediaRef" }, "condition": { "type": "string", "maxLength": 200 } } }
+      }
     },
     "fonts": {
       "type": "array",
@@ -54,7 +59,7 @@
       "maxItems": 100000,
       "items": { "$ref": "#/$defs/surface" }
     },
-    "swatches": { "type": "object", "additionalProperties": { "type": "object", "properties": { "name": { "type": "string", "maxLength": 200 }, "color": { "type": "string", "maxLength": 64 }, "lib": { "$ref": "#/$defs/lib" } } } },
+    "swatches": { "type": "object", "additionalProperties": { "type": "object", "properties": { "name": { "type": "string", "maxLength": 200 }, "color": { "type": "string", "maxLength": 64 }, "cmyk": { "$ref": "#/$defs/cmyk" }, "spot": { "type": "boolean" }, "lib": { "$ref": "#/$defs/lib" } } } },
     "flows": {
       "type": "object",
       "additionalProperties": { "$ref": "#/$defs/flow" }
@@ -65,6 +70,68 @@
     "token": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,31}$" },
     "lib": { "type": "object", "required": ["cloud", "item"], "properties": { "cloud": { "type": "string", "maxLength": 128 }, "item": { "type": "string", "maxLength": 128 }, "rev": { "type": "string", "pattern": "^[0-9a-f]{64}$" } } },
     "mediaRef": { "type": "string", "pattern": "^media/[0-9a-f]{64}(\\.[a-z0-9]{1,8})?$" },
+    "point": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "number" } },
+    "unit": { "type": "number", "minimum": 0, "maximum": 1 },
+    "cmyk": { "type": "array", "minItems": 4, "maxItems": 4, "items": { "$ref": "#/$defs/unit" } },
+    "gradient": {
+      "description": "מעבר צבע — מבנה אחד לכל החבילה (mbe-format.md, פ2.1). type פתוח; לא מוכר — צבע העצירה הראשונה.",
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "$ref": "#/$defs/token" },
+        "from": { "$ref": "#/$defs/point" }, "to": { "$ref": "#/$defs/point" },
+        "center": { "$ref": "#/$defs/point" }, "focus": { "$ref": "#/$defs/point" },
+        "radius": { "type": "number", "minimum": 0 },
+        "spread": { "$ref": "#/$defs/token" },
+        "stops": { "type": "array", "minItems": 1, "maxItems": 256, "items": { "type": "object", "properties": {
+          "at": { "$ref": "#/$defs/unit" }, "opacity": { "$ref": "#/$defs/unit" }, "cmyk": { "$ref": "#/$defs/cmyk" }
+        } } }
+      }
+    },
+    "paint": {
+      "description": "fill / stroke / רשומה ב-fills ו-strokes / fill של שכבת מילוי (mbe-format.md, פ2.2). שאר השדות פתוחים.",
+      "type": ["object", "null"],
+      "properties": {
+        "gradient": { "$ref": "#/$defs/gradient" },
+        "pattern": { "$ref": "#/$defs/mediaRef" },
+        "opacity": { "$ref": "#/$defs/unit" },
+        "swatch": { "type": "string", "maxLength": 128 },
+        "cmyk": { "$ref": "#/$defs/cmyk" },
+        "tint": { "$ref": "#/$defs/unit" },
+        "overprint": { "type": "boolean" },
+        "blend": { "$ref": "#/$defs/token" },
+        "visible": { "type": "boolean" }
+      }
+    },
+    "effects": {
+      "description": "effects — קטלוג אחד לכל החבילה (mbe-format.md, פ1.1). השדות לפי type — בבדיקת הליבה, לא בסכמה.",
+      "type": "array", "maxItems": 100,
+      "items": { "type": "object", "required": ["type"], "properties": {
+        "type": { "$ref": "#/$defs/token" },
+        "enabled": { "type": "boolean" },
+        "opacity": { "$ref": "#/$defs/unit" },
+        "blend": { "$ref": "#/$defs/token" },
+        "blur": { "type": "number", "minimum": 0 },
+        "radius": { "type": "number", "minimum": 0 },
+        "width": { "type": "number", "minimum": 0 },
+        "spread": { "$ref": "#/$defs/unit" },
+        "position": { "$ref": "#/$defs/token" },
+        "gradient": { "$ref": "#/$defs/gradient" },
+        "pattern": { "$ref": "#/$defs/mediaRef" },
+        "cmyk": { "$ref": "#/$defs/cmyk" }
+      } }
+    },
+    "bake": {
+      "description": "ייצוג אפוי של האפקטים (mbe-format.md, פ1.2). of = sha256 של הפריט הקנוני בלי bake.",
+      "type": "object",
+      "required": ["src", "box", "of"],
+      "properties": {
+        "src": { "$ref": "#/$defs/mediaRef" },
+        "box": { "type": "array", "minItems": 4, "maxItems": 4, "items": { "type": "number" } },
+        "replace": { "type": "boolean" },
+        "of": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
     "surface": {
       "type": "object",
       "required": ["id", "type"],
@@ -116,10 +183,12 @@
         "mask": { "type": "object", "properties": { "src": { "$ref": "#/$defs/mediaRef" }, "density": { "type": "number", "minimum": 0, "maximum": 1 }, "feather": { "type": "number", "minimum": 0 }, "enabled": { "type": "boolean" } } },
         "vectorMask": { "type": "object", "properties": { "d": { "type": "string", "pattern": "^[\\s,]*M[MLCQZ0-9eE.,+\\s-]*$" }, "feather": { "type": "number", "minimum": 0 }, "enabled": { "type": "boolean" } } },
         "clipToBelow": { "type": "boolean" },
-        "filters": { "type": "array", "maxItems": 100, "items": { "type": "object", "required": ["type"], "properties": { "type": { "$ref": "#/$defs/token" } } } },
-        "effects": { "type": "array", "maxItems": 100, "items": { "type": "object", "required": ["type"], "properties": { "type": { "$ref": "#/$defs/token" } } } },
+        "filters": { "type": "array", "maxItems": 100, "items": { "type": "object", "required": ["type"], "properties": { "type": { "$ref": "#/$defs/token" }, "enabled": { "type": "boolean" }, "opacity": { "$ref": "#/$defs/unit" } } } },
+        "effects": { "$ref": "#/$defs/effects" },
+        "bake": { "$ref": "#/$defs/bake" },
+        "deep": { "type": "object" },
         "adjust": { "type": ["object", "null"] },
-        "fill": { "type": ["object", "null"] },
+        "fill": { "$ref": "#/$defs/paint" },
         "smart": { "type": ["object", "null"] },
         "paths": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/pathItem" } },
         "children": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/layer" } }
@@ -136,16 +205,18 @@
         "d": { "type": "string", "pattern": "^[\\s,]*M[MLCQZ0-9eE.,+\\s-]*$" },
         "transform": { "type": "array", "minItems": 6, "maxItems": 6, "items": { "type": "number" } },
         "box": { "type": "array", "minItems": 4, "maxItems": 4, "items": { "type": "number" } },
-        "fill": { "type": ["object", "null"] },
-        "stroke": { "type": ["object", "null"] },
+        "fill": { "$ref": "#/$defs/paint" },
+        "stroke": { "$ref": "#/$defs/paint" },
         "fillRule": { "$ref": "#/$defs/token" },
         "shape": { "type": "object" },
         "text": { "type": "string" },
         "src": { "$ref": "#/$defs/mediaRef" },
         "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
         "boolean": { "$ref": "#/$defs/token" },
-        "fills": { "type": "array", "maxItems": 100, "items": { "type": "object" } },
-        "strokes": { "type": "array", "maxItems": 100, "items": { "type": "object" } },
+        "fills": { "type": "array", "maxItems": 100, "items": { "$ref": "#/$defs/paint" } },
+        "strokes": { "type": "array", "maxItems": 100, "items": { "$ref": "#/$defs/paint" } },
+        "effects": { "$ref": "#/$defs/effects" },
+        "bake": { "$ref": "#/$defs/bake" },
         "area": { "type": "string" },
         "children": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/pathItem" } }
       }
