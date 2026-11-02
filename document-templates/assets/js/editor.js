@@ -218,7 +218,7 @@
     stage.addEventListener('touchend', (e) => { if (e.touches.length < 2) pinch = null; });
     // הקשה כפולה (לא על שדה) — 200% / חזרה
     stage.addEventListener('dblclick', (e) => {
-      if (e.target.closest('input, textarea, button, select, .field')) return;
+      if (e.target.closest('input, textarea, button, select, .field, .word-mark-p')) return;   // בסימון ב-Word — הקשה כפולה בוחרת מילה
       set(z > 1.2 ? 1 : 2, e.clientX, e.clientY);
     });
     // Ctrl+גלגלת (וצביטה במשטח מגע במחשב)
@@ -339,7 +339,8 @@
     const pageEls = [];
     const isWord = tpl.mime === DOCX;
     const isAuthored = tpl.mime === AUTHORED;
-    if (isWord || isAuthored) { viewer.bar.hidden = true; addBtn.hidden = true; }   // בלי דפים — בלי זום; השדות מהטקסט
+    // Word: זום לתצוגת הקובץ בתוך החלון (לא לכל האתר) — גם בסימון שדות. נכתב בכלי — טקסט שנערך, בלי זום
+    if (isWord || isAuthored) { viewer.bar.hidden = isAuthored; addBtn.hidden = true; }
     if (isAuthored) {
       pagesBox.classList.add('word', 'authored');   // הגוף מצויר בסוף הפתיחה, כשהכול מאותחל
     } else if (isWord) {
@@ -348,19 +349,22 @@
       // שדה חדש — מסמנים אותו כאן, על הטקסט של הקובץ (בלי לחזור ל-Word): ראה markWord למטה.
       pagesBox.classList.add('word');
       const previewBox = el('div');
-      const markBtn = el('button', { class: 'primary', onclick: () => markWord(previewBox, markBtn) }, '🖍️ סימון שדות בטקסט');
+      // ההסבר והכפתורים — מעל החלון של הזום, כדי שרק הקובץ יגדל
+      const wordTop = el('div', { class: 'word-top' });
+      designView.insertBefore(wordTop, viewer.box);
+      const markBtn = el('button', { class: 'primary', onclick: () => markWord(previewBox, markBtn, wordTop) }, '🖍️ סימון שדות בטקסט');
       // 15.8: עורך התמלילים. הגדרות שלא נשמרו — קודם נשמרות, כי הסגירה פותחת את העורך מחדש
       const wpEdit = async (ro) => { if (dirty && !ro) { await save(); if (dirty) return; } wpEditor(id, tpl, ro, () => open(id)); };
-      pagesBox.replaceChildren(el('p', { class: 'notice' }, schema.fields.length
+      wordTop.replaceChildren(el('p', { class: 'notice' }, schema.fields.length
         ? '📝 תבנית Word — השדות הם הסימונים {{...}} שבקובץ. שדה נוסף: "סימון שדות בטקסט" — בוחרים טקסט ' +
           '(למשל ______ או שם) והופכים אותו לשדה. כאן גם מגדירים לכל שדה סוג, חובה, מי ממלא ומילוי מאיש קשר.'
         : '📝 בקובץ עוד אין שדות. לוחצים "סימון שדות בטקסט", בוחרים את מה שמשתנה בכל מסמך — שם, תאריך, ______ — ' +
           'ולוחצים "הפוך לשדה". הקובץ נשאר כמו שהוא, רק במקום הטקסט שבחרתם נכנס השדה.'),
         el('div', { class: 'word-mark-open' }, readOnly ? null : markBtn,
-          el('button', { type: 'button', onclick: () => wpEdit(readOnly) }, readOnly ? '📝 צפייה בעורך התמלילים' : '📝 עריכה בעורך התמלילים')),
-        previewBox);
+          el('button', { type: 'button', onclick: () => wpEdit(readOnly) }, readOnly ? '📝 צפייה בעורך התמלילים' : '📝 עריכה בעורך התמלילים')));
+      pagesBox.replaceChildren(previewBox);
       if (markAgain === id && !readOnly) {
-        markWord(previewBox, markBtn);
+        markWord(previewBox, markBtn, wordTop);
       } else {
         try {
           const res = await fetch('api.php?action=tpl_asset&id=' + id, { credentials: 'same-origin' });
@@ -2040,7 +2044,7 @@
         } }, '↩ ביטול סימון')), out));
     }
 
-    async function markWord(box, openBtn) {
+    async function markWord(box, openBtn, top) {
       openBtn.hidden = true;
       const list = el('div', { class: 'word-mark-text' });
       const what = el('span', { class: 'word-mark-what' });
@@ -2064,12 +2068,13 @@
           out.replaceChildren(notice(err.message, 'bad'));
         } finally { go.disabled = false; }
       } }, what, nameIn, go, out);
-      box.replaceChildren(el('div', { class: 'word-mark-head' },
+      top.replaceChildren(el('div', { class: 'word-mark-head' },
         el('span', {}, el('strong', {}, '🖍️ סימון שדות'), ' — בוחרים טקסט בפסקה ולוחצים "הפוך לשדה". ',
           el('span', { class: 'word-mark-ph' }, 'מסומן'), ' = כבר שדה; לחיצה עליו — שינוי שם או ביטול.'),
         el('div', { class: 'row-btns' },
-          el('button', { type: 'button', class: 'small', onclick: () => { plainMark = !plainMark; markWord(box, openBtn); } }, plainMark ? '📄 בעיצוב' : '☰ טקסט בלבד'),
-          el('button', { type: 'button', class: 'small', onclick: () => open(id) }, 'סיום'))), list, bar);
+          el('button', { type: 'button', class: 'small', onclick: () => { plainMark = !plainMark; markWord(box, openBtn, top); } }, plainMark ? '📄 בעיצוב' : '☰ טקסט בלבד'),
+          el('button', { type: 'button', class: 'small', onclick: () => open(id) }, 'סיום'))));
+      box.replaceChildren(list, bar);
       let paras;
       try {
         paras = (await api('tpl_word_text', undefined, { id })).paragraphs;

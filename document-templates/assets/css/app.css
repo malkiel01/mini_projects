@@ -1059,3 +1059,4 @@ body.wp-open { overflow: hidden; }
   padding: var(--s2) var(--s3) calc(var(--s2) + env(safe-area-inset-bottom)); box-shadow: 0 -4px 18px rgba(0, 0, 0, .18); z-index: 50; }
 @media (min-width: 900px) { .word-mark-bar { inset-inline: auto; right: 50%; transform: translateX(50%); width: min(720px, 92vw); } }
 .word-mark-text:has(~ .word-mark-bar:not([hidden])) { padding-bottom: 140px; }
+body:has(.word-mark-bar:not([hidden])) .zoom-bar { bottom: calc(132px + env(safe-area-inset-bottom)); }   /* מעל פס "הפוך לשדה" */
