@@ -315,6 +315,7 @@ php claude-tasks/tests/projects.php    # עץ הפרויקטים
 php claude-tasks/tests/login.php       # כניסה דרך הכלים הדיגיטליים
 php claude-tasks/tests/safety.php      # author_role, owner_only, אסימון לענף, Origin, שיוך מטלות
 php claude-tasks/tests/channels.php    # הגשר: הרשמה, אסימון ערוץ, inbox/ack, המתנה, מטלה ↔ ערוץ
+node claude-tasks/tests/markdown.mjs   # Markdown בבועות הצ'אט: עיצוב, ובטיחות (בלי HTML, קישורים רק http/https)
 ```
 
 כולן רצות על מסד זמני ומחליפות כל פנייה חיצונית בתעבורה מזויפת — בלי מפתחות, בלי עלות, ובלי תלות ברשת.

@@ -399,6 +399,47 @@ details.what p { margin-top: var(--s2); }
 .b-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--muted); font-size: .75rem; }
 .b-meta time { margin-inline-start: auto; }
 .b-body { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
+/* Markdown בבועה — כמו בצ'אט: כותרות, הדגשות, ציטוט, רשימות, טבלה וקוד. צפוף, כי זו בועה */
+.b-body.md { white-space: normal; min-width: 0; display: grid; gap: 6px; }
+.md > *, .md blockquote > *, .md li > * { margin: 0; }
+.md :is(p, h3, h4, h5, h6, th, td) { unicode-bidi: plaintext; text-align: start; }
+.md :is(h3, h4, h5, h6) { font-size: 1rem; line-height: 1.35; font-weight: 700; margin-block-start: 4px; }
+.md .md-h1 { font-size: 1.12rem; }
+.md .md-h2 { font-size: 1.05rem; }
+.md :is(h5, h6) { font-size: .92rem; color: var(--muted); }
+.md strong { font-weight: 700; }
+.md a { color: var(--brand); text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
+.md hr { margin: 2px 0; }
+.md blockquote { display: grid; gap: 4px; padding: 2px var(--s2); border-inline-start: 3px solid var(--line);
+  color: var(--muted); }
+/* רשימה: הכיוון לפי התוכן (dir=auto על הרשימה), והתבליט בצד שלו */
+.md :is(ul, ol) { padding-inline-start: 1.4em; }
+/* הבועה עצמה היא li — בלי זה התבליט הראשון יוצא ◦ של רמה שנייה */
+.md ul { list-style-type: disc; }
+.md ul ul { list-style-type: circle; }
+.md ul ul ul { list-style-type: square; }
+.md li + li { margin-block-start: 2px; }
+.md li > :is(ul, ol) { margin-block-start: 2px; }
+.md li > p + * { margin-block-start: 2px; }
+.md li::marker { color: var(--muted); }
+.md .md-task-item { list-style: none; }
+.md .md-task { margin-inline-end: 6px; color: var(--muted); }
+.md code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .86em;
+  padding: 1px 5px; border-radius: 5px; background: color-mix(in srgb, var(--ink) 7%, transparent); unicode-bidi: isolate; }
+/* קוד בשורה לא נשבר באמצע (greeting-cards/ היה מתפצל ומתהפך בעברית); ארוך — גולל */
+.md :not(pre) > code { display: inline-block; max-width: 100%; overflow-x: auto; white-space: nowrap;
+  vertical-align: bottom; overflow-wrap: normal; }
+.md pre { overflow-x: auto; padding: var(--s2); border-radius: 8px; background: color-mix(in srgb, var(--ink) 6%, transparent);
+  text-align: left; line-height: 1.45; }
+.md pre code { padding: 0; background: none; font-size: .82rem; white-space: pre; }
+.md-table { overflow-x: auto; max-width: 100%; border: 1px solid var(--line); border-radius: 8px; }
+.md table { border-collapse: collapse; font-size: .86rem; min-width: 100%; }
+.md :is(th, td) { padding: 5px 8px; border-bottom: 1px solid var(--line); vertical-align: top; overflow-wrap: normal; word-break: normal; }
+.md td { min-width: 3.5em; }
+.md th { font-weight: 700; background: color-mix(in srgb, var(--ink) 4%, transparent); white-space: nowrap; }
+.md tr:last-child td { border-bottom: 0; }
+.md :is(th, td) + :is(th, td) { border-inline-start: 1px solid var(--line); }
+.md :is(pre, .md-table):focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
 .bubble > .badge { justify-self: start; }
 .tick { color: var(--muted); letter-spacing: -2px; }
 .tick.is-done { color: var(--brand); }
