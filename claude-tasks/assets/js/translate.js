@@ -16,6 +16,8 @@ export const MODEL = {
   id: 'sivelsguy/opus-mt-en-he-onnx',
   revision: 'fc3befc3af12cd004ae65e9c36ea77858c19157c',
   files: ['onnx/encoder_model_quantized.onnx', 'onnx/decoder_model_merged_quantized.onnx'],
+  // הגודל המדויק של כל קובץ ב-revision המוצמד — המכנה של פס ההתקדמות קבוע, גם כשהשרת לא שולח גודל
+  sizes: { 'onnx/encoder_model_quantized.onnx': 53150455, 'onnx/decoder_model_merged_quantized.onnx': 94015921 },
   approxMB: 147,
   credit: 'Opus-MT · University of Helsinki · Apache-2.0',
 };
@@ -63,6 +65,13 @@ let jobSeq = 0;
 function getWorker() {
   if (worker) return worker;
   worker = new Worker(new URL('./translate-worker.js', import.meta.url), { type: 'module' });
+  // ה-Worker נפל (בטלפון — בדרך כלל זיכרון): הודעה ברורה, לא פס שנתקע
+  worker.onerror = (e) => {
+    const err = new Error(`תהליך התרגום נעצר${e?.message ? ` (${e.message})` : ''} — אולי חסר זיכרון בטלפון. סגרו לשוניות אחרות ונסו שוב.`);
+    loadWaiters.forEach((w) => w.reject(err)); loadWaiters = [];
+    jobs.forEach((j) => j.reject(err)); jobs.clear();
+    worker = null;
+  };
   worker.onmessage = ({ data }) => {
     if (data.type === 'progress' || data.type === 'ready') {
       loadWaiters.forEach((w) => (data.type === 'ready' ? w.resolve() : w.onProgress?.(data)));
@@ -89,17 +98,17 @@ function getWorker() {
 export function downloadModel(onProgress) {
   const seen = {};
   const t0 = performance.now();
+  const total = Object.values(MODEL.sizes).reduce((a, b) => a + b, 0);
+  let shown = 0;   // הפס לא חוזר אחורה
   return new Promise((resolve, reject) => {
     loadWaiters.push({
       resolve: () => { engine(true); resolve(); },
       reject,
       onProgress: (p) => {
         if (!MODEL.files.includes(p.file)) return;
-        seen[p.file] = p;
-        const loaded = Object.values(seen).reduce((a, x) => a + x.loaded, 0);
-        // עד שהקובץ השני מתחיל — הגודל הידוע של שניהם, לא רק של הראשון
-        const known = Object.values(seen).reduce((a, x) => a + x.total, 0);
-        const total = Object.keys(seen).length < MODEL.files.length ? Math.max(known, MODEL.approxMB * 1e6) : known;
+        // לכל קובץ — כמה ירד ממנו (לא יותר מהגודל הידוע); הסכום מול הגודל הקבוע של שניהם
+        seen[p.file] = Math.max(seen[p.file] || 0, Math.min(p.loaded, MODEL.sizes[p.file]));
+        const loaded = shown = Math.max(shown, Object.values(seen).reduce((a, x) => a + x, 0));
         const rate = loaded / Math.max(1, (performance.now() - t0) / 1000);
         // הערכת זמן רק אחרי שירד משהו — אחרת היא קופצת
         onProgress?.({ loaded, total, etaSec: loaded > 2e6 && rate > 0 ? Math.round((total - loaded) / rate) : null });
