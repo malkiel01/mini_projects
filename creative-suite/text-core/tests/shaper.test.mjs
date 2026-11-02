@@ -1,10 +1,10 @@
-// בדיקות עיצוב הגליפים: node --test layout-studio/tests/shaper.test.mjs
+// בדיקות text-core: node --test creative-suite/text-core/tests/*.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { loadFont, shape, shapeLine, advance } from '../assets/js/shaper.js';
+import { loadFont, shape, shapeLine, advance } from '../src/js/shaper.js';
 
-const buf = name => { const b = readFileSync(new URL('../assets/fonts/' + name, import.meta.url)); return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength); };
+const buf = name => { const b = readFileSync(new URL('../../../suite-cloud/fonts/builtin/' + name, import.meta.url)); return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength); };
 const noto = await loadFont(buf('NotoSerifHebrew.ttf'));
 const frank = await loadFont(buf('FrankRuhlLibre.ttf'));
 

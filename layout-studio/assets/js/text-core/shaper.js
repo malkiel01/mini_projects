@@ -1,0 +1,238 @@
+// text-core — עיצוב טקסט עברי משותף לחבילת היצירה (מ2 ב-work-order.md). נחלץ מהעימוד (layout-studio/assets/js/shaper.js).
+// עורכים רק ב-creative-suite/text-core/src ומריצים tools/sync.php — העותק באפליקציה נבדק בשער הפריסה.
+//
+// עיצוב גליפים (shaping) ב-HarfBuzz — אותו מיקום לכל אות וסימן ניקוד בכל דפדפן, וגם ב-PDF.
+// הדפדפן לא משמש למדידה ולא לציור טקסט: כל גליף הוא נתיב מהגופן עצמו, במקום ש-HarfBuzz קבע.
+//
+// HarfBuzz (harfbuzzjs, MIT) — vendor/harfbuzzjs; נטען רק כשצריך טקסט.
+// bidi (bidi-js, MIT, UAX #9) — vendor/bidi-js: HarfBuzz רק ממקם גליפים; את סדר הרצפים בשורה
+// מעורבת ("פרק 12: Genesis") קובע אלגוריתם ה-bidi, לפני העיצוב.
+
+import bidiFactory from './vendor/bidi-js/bidi.mjs';
+
+let hbPromise = null;
+const hb = () => (hbPromise ||= import('./vendor/harfbuzzjs/index.mjs'));
+let bidi = null;
+
+/**
+ * עותק של גופן בציר משתנה אחר (למשל wght 700 — מודגש), מאותו קובץ: בלי טעינה נוספת. הנתיבים מצוירים במשקל החדש.
+ */
+export function fontVariant(f, axes) {
+  const font = new f.H.Font(f.face);
+  font.setVariations(Object.entries(axes).map(([tag, v]) => new f.H.Variation(tag, v)));
+  const key = Object.entries(axes).map(([t, v]) => t + v).join(',');
+  return { ...f, font, name: f.name + '@' + key, paths: new Map() };
+}
+
+/**
+ * טעינת גופן (TTF/OTF — לא woff2: HarfBuzz קורא את הטבלאות עצמן). src — כתובת, או ArrayBuffer (בבדיקות).
+ * name — שם הגופן (מפתח למטמונים של המדידה).
+ */
+export async function loadFont(src, name = typeof src === 'string' ? src : 'font') {
+  const H = await hb();
+  let data = src;
+  if (typeof src === 'string') {
+    const res = await fetch(src, { credentials: 'same-origin' });
+    if (!res.ok) throw new Error('font ' + res.status);
+    data = await res.arrayBuffer();
+  }
+  const face = new H.Face(new H.Blob(data));
+  const font = new H.Font(face);
+  return { name, H, face, font, upem: face.upem, paths: new Map(), cmap: new Set(face.collectUnicodes()) };
+}
+
+/** האם בגופן יש גליף לכל התווים במחרוזת. */
+const covers = (f, str) => { for (const ch of str) if (!f.cmap.has(ch.codePointAt(0))) return false; return true; };
+
+/** אשכולות: אות וכל הסימנים שאחריה (ניקוד, טעמים, דגש) — יחידה אחת שלא מפצלים בין גופנים. */
+function clusters(text) {
+  const out = [];
+  for (let i = 0; i < text.length; ) {
+    let j = i + (text.codePointAt(i) > 0xffff ? 2 : 1);
+    while (j < text.length && /\p{M}/u.test(text[j])) j++;
+    out.push([i, j]);
+    i = j;
+  }
+  return out;
+}
+
+/**
+ * עיצוב רצף טקסט. מחזיר את הגליפים בסדר חזותי (משמאל לימין, גם בעברית) ביחידות הגופן:
+ *   [{ gid, cluster, ax, dx, dy }]  — ax: התקדמות, dx/dy: היסט (לסימני ניקוד וטעמים)
+ * dir: 'rtl' | 'ltr' | undefined (ניחוש לפי הטקסט).
+ */
+export function shape(f, text, dir) {
+  const { H, font } = f;
+  const buf = new H.Buffer();
+  buf.addText(text);
+  if (dir === 'rtl') {
+    buf.setDirection(H.Direction.RTL);
+    buf.setScript('Hebr');
+    buf.setLanguage('he');
+  } else if (dir === 'ltr') {
+    buf.setDirection(H.Direction.LTR);
+  }
+  buf.guessSegmentProperties();
+  H.shape(font, buf);
+  const inf = buf.getGlyphInfos(), pos = buf.getGlyphPositions();
+  const out = new Array(inf.length);
+  for (let i = 0; i < inf.length; i++) {
+    out[i] = { gid: inf[i].codepoint, cluster: inf[i].cluster, ax: pos[i].xAdvance, dx: pos[i].xOffset, dy: pos[i].yOffset };
+  }
+  return out;
+}
+
+/** רוחב הרצף ביחידות הגופן. */
+export const advance = glyphs => glyphs.reduce((a, g) => a + g.ax, 0);
+
+/** נתיב הגליף (Path2D ביחידות הגופן, y למעלה) — במטמון. */
+export function glyphPath(f, gid) {
+  let p = f.paths.get(gid);
+  if (!p) { p = new Path2D(f.font.glyphToPath(gid)); f.paths.set(gid, p); }
+  return p;
+}
+
+/**
+ * ציור רצף מעוצב על קנבס. (x, y) — תחילת קו הבסיס משמאל; size — גודל הגופן ביחידות של ההקשר.
+ * גליף מגופן חלופי (g.f) — הנתיב שלו מאותו גופן, והמידות כבר ביחידות של הגופן הראשי.
+ */
+export function drawGlyphs(ctx, f, glyphs, x, y, size) {
+  const s = size / f.upem;
+  let pen = 0;
+  for (const g of glyphs) {
+    const gf = g.f || f, ps = s * f.upem / gf.upem;
+    ctx.save();
+    ctx.translate(x + (pen + g.dx) * s, y - g.dy * s);
+    ctx.scale(ps, -ps);
+    ctx.fill(glyphPath(gf, g.gid));
+    ctx.restore();
+    pen += g.ax;
+  }
+}
+
+/**
+ * עיצוב שורה שלמה עם bidi: רצפים לפי רמות ההטבעה (UAX #9), כל רצף בכיוון שלו, וסדר חזותי לפי L2.
+ * מחזיר גליפים בסדר חזותי (משמאל לימין); cluster — אינדקס בטקסט המקורי.
+ * fonts: גופן, או [ראשי, חלופי…] — אשכול (אות וסימניה) שחסר בו גליף בראשי מעוצב כולו בחלופי הראשון שמכסה אותו
+ *        (למשל טעמים, שאין ב-Frank Ruhl Libre). הגליף מסומן ב-f, ומידותיו מומרות ליחידות הגופן הראשי.
+ * base: 'rtl' (ברירת מחדל — פסקה עברית) או 'ltr'.
+ * spans: טווחים עם גופנים אחרים (מודגש) — שוברים רצפים בגבולות שלהם, וה-bidi נשאר של השורה כולה.
+ */
+export function shapeLine(fonts, text, base = 'rtl', spans = null) {
+  bidi ||= bidiFactory();
+  const list = Array.isArray(fonts) ? fonts : [fonts];
+  const f = list[0];
+  // spans: [{ start, end, fonts }] — טווחים בטקסט עם רשימת גופנים משלהם (למשל מודגש); מחוץ להם — fonts
+  const listAt = i => { if (spans) for (const s of spans) if (i >= s.start && i < s.end) return s.fonts; return list; };
+  // טווח מספרים "3–4": לפי UAX #9 המקף (U+2013) ניטרלי, ובפסקה עברית הוא הופך את הסדר ל-"4–3". בספר מצפים ל-3–4,
+  // ולכן לחישוב הכיוון בלבד מקף בין שתי ספרות נחשב כמו מקף רגיל (ES). התו עצמו לא משתנה.
+  const forLevels = text.replace(/(?<=\d)[\u2012\u2013\u2212](?=\d)/g, '-');
+  const { levels } = bidi.getEmbeddingLevels(forLevels, base);
+  // רצפים לוגיים של אותה רמה
+  const runs = [];
+  for (let i = 0; i < text.length; i++) {
+    const last = runs[runs.length - 1];
+    if (last && last.level === levels[i]) last.end = i + 1;
+    else runs.push({ start: i, end: i + 1, level: levels[i] });
+  }
+  // L2: מהרמה הגבוהה ועד הנמוכה האי-זוגית — הופכים כל רצף רציף של רצפים ברמה הזו ומעלה
+  let max = 0, minOdd = Infinity;
+  for (const r of runs) { max = Math.max(max, r.level); if (r.level % 2) minOdd = Math.min(minOdd, r.level); }
+  const order = runs.slice();
+  for (let lv = max; lv >= minOdd && lv > 0; lv--) {
+    for (let i = 0; i < order.length; ) {
+      if (order[i].level < lv) { i++; continue; }
+      let j = i;
+      while (j < order.length && order[j].level >= lv) j++;
+      order.splice(i, j - i, ...order.slice(i, j).reverse());
+      i = j;
+    }
+  }
+  const out = [];
+  for (const r of order) {
+    const dir = r.level % 2 ? 'rtl' : 'ltr';
+    // תתי-רצפים לפי גופן: אשכולות רצופים שאותו גופן מכסה
+    const parts = [];
+    for (const [a, b] of clusters(text.slice(r.start, r.end))) {
+      const piece = text.slice(r.start + a, r.start + b);
+      const here = listAt(r.start + a);
+      const pick = here.find(x => covers(x, piece)) || here[0];   // אף גופן לא מכסה — הראשי (ריבוע, ונספר כחסר)
+      const last = parts[parts.length - 1];
+      if (last && last.font === pick) last.end = r.start + b;
+      else parts.push({ font: pick, start: r.start + a, end: r.start + b });
+    }
+    if (dir === 'rtl') parts.reverse();
+    for (const p of parts) {
+      const k = f.upem / p.font.upem;
+      for (const x of shape(p.font, text.slice(p.start, p.end), dir)) {
+        x.cluster += p.start;
+        if (p.font !== f) { x.f = p.font; x.ax *= k; x.dx *= k; x.dy *= k; }
+        out.push(x);
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * מידות הגופן ביחידות הגופן: { upem, ascender, descender (שלילי), lineGap }.
+ */
+export function fontMetrics(f) {
+  if (!f.metrics) f.metrics = { upem: f.upem, ...f.font.hExtents() };
+  return f.metrics;
+}
+
+/**
+ * מדידת שורה: רוחב, עלייה וירידה — ביחידות של size (למשל נקודות או פיקסלים).
+ * fonts, text, base, spans — כמו ב-shapeLine. glyphs — אם השורה כבר עוצבה, כדי לא לעצב פעמיים.
+ *   → { width, ascent, descent, lineGap, glyphs }   (descent חיובי — מתחת לקו הבסיס)
+ */
+export function measure(fonts, text, size, base = 'rtl', spans = null, glyphs = null) {
+  const f = Array.isArray(fonts) ? fonts[0] : fonts;
+  const g = glyphs || shapeLine(fonts, text, base, spans);
+  const m = fontMetrics(f), s = size / f.upem;
+  return { width: advance(g) * s, ascent: m.ascender * s, descent: -m.descender * s, lineGap: m.lineGap * s, glyphs: g };
+}
+
+/** קווי המתאר של גליף — פקודות { type: 'M'|'L'|'Q'|'C'|'Z', values } ביחידות הגופן, y למעלה. במטמון. */
+export function glyphOutline(f, gid) {
+  f.outlines ||= new Map();
+  let o = f.outlines.get(gid);
+  if (!o) { o = f.font.glyphToJson(gid); f.outlines.set(gid, o); }
+  return o;
+}
+
+const num = v => { const r = Math.round(v * 1000) / 1000; return Object.is(r, -0) ? '0' : String(r); };
+
+/**
+ * טקסט לקווי מתאר: רצף מעוצב (מ-shapeLine) ל-d של SVG — פקודות מוחלטות M L Q C Z, y למטה, כמו בפורמט וב-`path`
+ * של pdf-core. (x, y) — תחילת קו הבסיס משמאל; size — גודל הגופן ביחידות היעד. גליף מגופן חלופי (g.f) — מהגופן שלו.
+ * אותו מיקום בדיוק כמו drawGlyphs.
+ */
+export function glyphsToPath(f, glyphs, x, y, size) {
+  const s = size / f.upem;
+  const out = [];
+  let pen = 0;
+  for (const g of glyphs) {
+    const gf = g.f || f, ps = s * f.upem / gf.upem;
+    const ox = x + (pen + g.dx) * s, oy = y - g.dy * s;
+    for (const c of glyphOutline(gf, g.gid)) {
+      if (c.type === 'Z') { out.push('Z'); continue; }
+      const v = c.values, pts = [];
+      for (let i = 0; i < v.length; i += 2) pts.push(num(ox + v[i] * ps), num(oy - v[i + 1] * ps));
+      out.push(c.type + pts.join(' '));
+    }
+    pen += g.ax;
+  }
+  return out.join('');
+}
+
+/**
+ * קיצור: עיצוב שורה והמרה לקווי מתאר. opts: { size, x = 0, y = 0, base = 'rtl', spans }.
+ *   → { d, width }   (width ביחידות של size)
+ */
+export function textToPath(fonts, text, { size, x = 0, y = 0, base = 'rtl', spans = null } = {}) {
+  const f = Array.isArray(fonts) ? fonts[0] : fonts;
+  const glyphs = shapeLine(fonts, text, base, spans);
+  return { d: glyphsToPath(f, glyphs, x, y, size), width: advance(glyphs) * size / f.upem };
+}
