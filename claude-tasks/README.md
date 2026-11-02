@@ -416,8 +416,8 @@ node claude-tasks/tests/markdown.mjs   # Markdown בבועות הצ'אט: עיצ
   מודל משלה, שמורידים ומסירים בנפרד. שפה חדשה = שורה ב-`TRANSLATE_LANGS` (`assets/js/translate.js`) + השפה
   ב-`translate-lang` (`api.php`); בספרדית "כנראה לא בשפה" נבדק לפי מילים נפוצות (אותו אלפבית כמו באנגלית).
 - **המודלים** (12e.7b): ההמרה שלנו מהמודלים הרשמיים של Helsinki-NLP — `models/en-he/1/` (≈147MB) ו-`models/en-es/1/`
-  (≈146MB), מהשרת שלנו, לא מ-Hugging Face. ב-`TRANSLATE_LANGS`: ‏`id` = הזוג, `revision` = ה-build, והגודל של כל קובץ
-  מה-`manifest.json`. מי שהוריד את המודלים הקודמים — הם נמחקים מהמכשיר בפעם הראשונה (‎~260MB‎), ומורידים שוב.
+  (≈146MB), מהשרת שלנו, לא מ-Hugging Face. ב-`TRANSLATE_LANGS`: ‏`id` = הזוג, `revision` = ה-build, והגודל וה-sha256 של כל קובץ
+  מה-`checksums.json`. מי שהוריד את המודלים הקודמים — הם נמחקים מהמכשיר בפעם הראשונה (‎~260MB‎), ומורידים שוב.
   הספרייה מקומית (`assets/vendor/`); ה-WASM של onnxruntime מ-jsDelivr באותה גרסה.
 - **ההמרה שלנו** (12e.7a): `tools/models/convert.sh` ממיר את המודלים הרשמיים של Helsinki-NLP (מוצמדים ב-`build.json`) ל-q8,
   וה-workflow ‏`claude-tasks-models.yml` בודק ומעלה ל-`models/<pair>/<build>/` בשרת — לא בריפו, ו-`deploy.yml` מחריג את

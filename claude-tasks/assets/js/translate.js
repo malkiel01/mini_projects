@@ -14,7 +14,7 @@ export { needsTranslation };
 
 // שפה חדשה = שורה כאן (+ השפה ב-api.php translate-lang, + זוג ב-tools/models/build.json). המודלים — ההמרה שלנו
 // מהמודלים הרשמיים של Helsinki-NLP (12e.7), מהשרת שלנו: models/<id>/<revision>/ (tools/models/convert.sh).
-// הגודל המדויק של כל קובץ — מה-manifest.json של אותו build: המכנה של פס ההתקדמות קבוע.
+// הגודל המדויק של כל קובץ — מה-checksums.json של אותו build: המכנה של פס ההתקדמות קבוע.
 const ENC = 'onnx/encoder_model_quantized.onnx', DEC = 'onnx/decoder_model_merged_quantized.onnx';
 export const MODELS_BASE = new URL('../../models/', import.meta.url).href;
 export const TRANSLATE_LANGS = {
@@ -193,9 +193,9 @@ async function fetchChunk(url, start, end, onBytes, onRetry) {
   }
 }
 
-/** ה-manifest.json של ה-build (tools/models/convert.sh): גודל ו-sha256 לכל קובץ. */
-async function fetchManifest(m) {
-  const url = `${MODELS_BASE}${m.id}/${m.revision}/manifest.json`;
+/** ה-checksums.json של ה-build (tools/models/convert.sh): גודל ו-sha256 לכל קובץ. */
+async function fetchChecksums(m) {
+  const url = `${MODELS_BASE}${m.id}/${m.revision}/checksums.json`;
   for (let attempt = 1; ; attempt++) {
     await waitOnline();
     try {
@@ -226,8 +226,8 @@ export async function downloadModel(onProgress, l = LANG) {
     onProgress?.({ loaded, total, resumedFrom: have, etaSec: fresh > 2e6 && rate > 0 ? Math.round((total - loaded) / rate) : null, ...extra });
   };
   report();
-  // הקבצים נבדקים מול ה-manifest של השרת: גודל לפני ההורדה, sha256 אחרי ההרכבה (12e.7)
-  const man = await fetchManifest(MODEL);
+  // הקבצים נבדקים מול ה-checksums.json של השרת: גודל לפני ההורדה, sha256 אחרי ההרכבה (12e.7)
+  const man = await fetchChecksums(MODEL);
   for (const f of MODEL.files) {
     if (man.files?.[f]?.size !== MODEL.sizes[f]) throw new Error('המודל בשרת התעדכן — רעננו את הדף ונסו שוב');
   }
