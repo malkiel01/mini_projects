@@ -82,8 +82,10 @@ It is **not** a `block`: it has its own status, `awaiting_approval`, and a card 
 
 1. **Ask the policy first — always, before asking a human:**
    ```
-   POST ?action=policy   {"type": "merge-own-pr"}     → {"verdict": "allow" | "deny" | "ask", "always": "yes|warn|no"}
+   POST ?action=policy   {"type": "merge-own-pr", "task_id": N}   → {"verdict": "allow" | "deny" | "ask", "source": …}
    ```
+   **The policy is per project** (stage 7b, spec §6.1): the task's project → its parents → board-wide → `ask`; the nearest
+   rule wins. Pass `task_id` (or `project_id`); with neither, a project or channel token uses its own project.
    - `allow` — go ahead, no request. Note in `add-note` that you acted under the policy.
    - `deny` — do **not** ask. Choose another way, or `block` with an explanation of why you are stuck.
    - `ask` — request approval (2).

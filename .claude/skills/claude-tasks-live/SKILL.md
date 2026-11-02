@@ -17,6 +17,7 @@ the owner sees the conversation there and can write to the chat from the board. 
 Everything goes through `claude-tasks/bridge/link.sh`, which sends the hosting's bot-protection cookie for you, and
 `X-Worker-Route: chat` (stage 6, spec §7): this chat works the `chat` route only. A project or channel switched to
 ☁️ Platform is answered by Platform (once a quota exists) — its tasks will not come to you, and that is deliberate.
+Approvals (`policy`) are per project — pass the `task_id`; see `claude-tasks-worker` §3a.
 
 ## Prerequisites (the owner sets these once, in the Claude environment settings — never in the chat)
 

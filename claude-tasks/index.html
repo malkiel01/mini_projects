@@ -621,6 +621,22 @@
     </div>
   </div>
 </dialog>
+<dialog id="pvsPolicy" aria-labelledby="pvsPolicyT">
+  <div class="sheet-wrap">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close="pvsPolicy" aria-label="סגירה">✕</button>
+      <h2 id="pvsPolicyT">אישורים</h2>
+      <span></span>
+    </header>
+    <div class="sheet-body">
+      <p class="hint" id="polHint"></p>
+      <ul class="list pol-list" id="polRows"></ul>
+      <h3>מה הוחלט</h3>
+      <div id="polHistory"></div>
+    </div>
+  </div>
+</dialog>
+
 <dialog id="pvsRoute" aria-labelledby="pvsRouteT">
   <div class="sheet-wrap">
     <header class="sheet-head">
@@ -736,6 +752,13 @@
 
       <!-- ── מערכת (מנהל) ── -->
       <section class="set-panel" data-panel="sys" hidden>
+        <ul class="list">
+          <li class="card" tabindex="0" role="button" id="boardPolicyBtn" aria-label="אישורים כלליים">
+            <span class="ic" aria-hidden="true">🔐</span>
+            <div class="body"><div class="l1"><span>אישורים כלליים</span></div><div class="l2">לכל הלוח — מה שפרויקט לא קבע לעצמו</div></div>
+            <span class="go" aria-hidden="true">‹</span>
+          </li>
+        </ul>
         <div class="conns">
           <details class="conn">
             <summary>
