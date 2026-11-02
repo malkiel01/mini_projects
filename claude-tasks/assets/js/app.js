@@ -2,7 +2,7 @@ import { $, $$, el, toast, api, state, timeAgo, on, set, PLATFORM_HINT } from '.
 import { loadConnections, loadProviders, runTask, openProject, modelPicker, renderUsersInto } from './platform.js';
 import { loadChannels, openConversation, openFromHash } from './chats.js';
 import { approvalCard, noteText } from './approvals.js';
-import { engine as trEngine, downloadModel, removeModel, modelCached, MODEL as TR_MODEL } from './translate.js';
+import { engine as trEngine, downloadModel, removeModel, modelCached, model as trModel, setLang as trSetLang, TRANSLATE_LANGS } from './translate.js';
 import { loadUsage, usageCard, usageMini } from './usage.js';
 import { openPolicySheet } from './policy.js';
 
@@ -212,6 +212,7 @@ on('#oldForm', 'submit', async (e) => {
 
 async function enterApp() {
   set('#app', 'hidden', false);
+  trSetLang(state.user?.translate_lang || 'he');   // 🌐 שפת התרגום של המשתמש (12e)
   set('#adminBtn', 'hidden', state.user?.role !== 'admin');
   // דרך הפלטפורמה: היציאה היא מהפלטפורמה, לא מכאן.
   set('#logoutBtn', 'hidden', state.platform);
@@ -1232,16 +1233,33 @@ on('#setTabs', 'click', (e) => {
 /* ── 🌐 תרגום במכשיר (§5.11, 12e) — הורדה בהסכמה עם התקדמות אמיתית, הסרה ── */
 const mb = (b) => (b / 1e6).toFixed(0);
 async function renderTranslateSettings() {
+  const sel = $('#trLang');
+  if (!sel.options.length) {
+    sel.replaceChildren(...Object.entries(TRANSLATE_LANGS).map(([k, l]) => el('option', { value: k, text: `${l.name} · ${l.label}` })));
+  }
+  sel.value = state.user?.translate_lang || 'he';
+  const m = trModel();
+  $('#trDownload').textContent = `⬇️ הורדה (≈${m.approxMB}MB)`;
   const eng = await trEngine(true);
   const has = await modelCached();
-  $('#trState').textContent = eng.kind === 'api' ? '✓ פעיל — התרגום המובנה של Chrome (בלי הורדה)'
-    : has ? '✓ פעיל — המודל במכשיר' : 'כבוי — צריך להוריד את המודל פעם אחת';
+  $('#trState').textContent = eng.kind === 'api' ? `✓ פעיל — ${m.label}, בתרגום המובנה של Chrome (בלי הורדה)`
+    : has ? `✓ פעיל — ${m.label}, המודל במכשיר` : `כבוי — ${m.label}: צריך להוריד את המודל פעם אחת`;
   set('#trDownload', 'hidden', eng.kind === 'api' || has);
   set('#trWifi', 'hidden', eng.kind === 'api' || has);
   set('#trRemove', 'hidden', !has);
 }
+on('#trLang', 'change', async (e) => {
+  try {
+    const { lang } = await api('translate-lang', { lang: e.target.value });
+    state.user.translate_lang = lang;
+    trSetLang(lang);
+    toast(`שפת התרגום: ${TRANSLATE_LANGS[lang].heName}`, 'ok');
+  } catch (ex) { toast(ex.message, 'error'); }
+  renderTranslateSettings();
+});
 on('#trDownload', 'click', async () => {
-  if (!confirm(`להוריד את מודל התרגום (≈${TR_MODEL.approxMB}MB)? פעם אחת למכשיר — עדיף ב-Wi-Fi.`)) return;
+  const m = trModel();
+  if (!confirm(`להוריד את מודל התרגום ${m.label} (≈${m.approxMB}MB)? פעם אחת למכשיר — עדיף ב-Wi-Fi.`)) return;
   const btn = $('#trDownload'), prog = $('#trProg');
   btn.disabled = true; prog.hidden = false; prog.value = 0;
   set('#trStay', 'hidden', false);
@@ -1266,7 +1284,7 @@ on('#trDownload', 'click', async () => {
   renderTranslateSettings();
 });
 on('#trRemove', 'click', async () => {
-  if (!confirm('להסיר את מודל התרגום ואת התרגומים השמורים מהמכשיר?')) return;
+  if (!confirm(`להסיר את מודל התרגום ${trModel().label} ואת התרגומים השמורים בשפה הזו מהמכשיר?`)) return;
   await removeModel();
   toast('הוסר', 'ok');
   renderTranslateSettings();

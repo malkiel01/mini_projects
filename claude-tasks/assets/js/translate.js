@@ -1,5 +1,6 @@
 /*
- * 🌐 תרגום במכשיר — docs/spec.md §5.11, שלב 12e. שלב 1: אנגלית ← עברית בלבד.
+ * 🌐 תרגום במכשיר — docs/spec.md §5.11, שלב 12e. המקור — אנגלית; היעד — שפת התרגום של המשתמש
+ * (users.translate_lang): עברית או ספרדית. כל שפה — מודל משלה, שמורידים בנפרד.
  *
  * מנוע: (1) Translator API של Chrome כשיש (מחשב, Chrome 138+); (2) אחרת Opus-MT במכשיר דרך transformers.js
  * ב-Web Worker — רק אחרי שבעל המכשיר הוריד אותו (הגדרות ← חשבון). אין מנוע — 🌐 כבוי, עם הסיבה.
@@ -11,18 +12,32 @@ import { segment, assemble, needsTranslation } from './translate-text.js';
 
 export { needsTranslation };
 
-// שלב 1: ההמרה הקהילתית, מוצמדת ל-commit (§5.11.1) — עד שההמרה שלנו מ-Helsinki-NLP תוגש מהשרת
-export const MODEL = {
-  id: 'sivelsguy/opus-mt-en-he-onnx',
-  revision: 'fc3befc3af12cd004ae65e9c36ea77858c19157c',
-  files: ['onnx/encoder_model_quantized.onnx', 'onnx/decoder_model_merged_quantized.onnx'],
-  // הגודל המדויק של כל קובץ ב-revision המוצמד — המכנה של פס ההתקדמות קבוע, גם כשהשרת לא שולח גודל
-  sizes: { 'onnx/encoder_model_quantized.onnx': 53150455, 'onnx/decoder_model_merged_quantized.onnx': 94015921 },
-  approxMB: 147,
-  credit: 'Opus-MT · University of Helsinki · Apache-2.0',
+// שפה חדשה = שורה כאן (+ השפה ב-api.php translate-lang). כל מודל מוצמד ל-commit, עם הגודל המדויק
+// של כל קובץ — המכנה של פס ההתקדמות קבוע, גם כשהשרת לא שולח גודל.
+const ENC = 'onnx/encoder_model_quantized.onnx', DEC = 'onnx/decoder_model_merged_quantized.onnx';
+export const TRANSLATE_LANGS = {
+  // עברית: ההמרה הקהילתית (§5.11.1) — עד שההמרה שלנו מ-Helsinki-NLP תוגש מהשרת
+  he: { name: 'עברית', heName: 'עברית', label: 'אנגלית ← עברית', from: 'אנגלית', id: 'sivelsguy/opus-mt-en-he-onnx',
+        revision: 'fc3befc3af12cd004ae65e9c36ea77858c19157c', sizes: { [ENC]: 53150455, [DEC]: 94015921 } },
+  // ספרדית: ההמרה של Xenova למודל הרשמי Helsinki-NLP/opus-mt-en-es
+  es: { name: 'Español', heName: 'ספרדית', label: 'אנגלית ← ספרדית', from: 'אנגלית', id: 'Xenova/opus-mt-en-es',
+        revision: '4b002a4c7edd54a7ced58877258b87f7efd3f892', sizes: { [ENC]: 52899742, [DEC]: 60212804 } },
 };
+export const TR_CREDIT = 'Opus-MT · University of Helsinki · Apache-2.0';
 const CACHE = 'transformers-cache';
-const LANG = 'he';
+
+// השפה הנוכחית — של המשתמש (state.user.translate_lang); app.js קובע אותה בכניסה ובשינוי
+let LANG = 'he';
+export function setLang(lang) {
+  if (TRANSLATE_LANGS[lang] && lang !== LANG) { LANG = lang; engine(true); }
+}
+export const lang = () => LANG;
+export const model = (l = LANG) => {
+  const m = TRANSLATE_LANGS[l];
+  return { ...m, lang: l, files: Object.keys(m.sizes), approxMB: Math.round(Object.values(m.sizes).reduce((a, b) => a + b, 0) / 1e6) };
+};
+/** כנראה צריך תרגום לשפה הנוכחית. */
+export const needs = (md) => needsTranslation(md, LANG);
 
 /* ── איזה מנוע יש ───────────────────────────────────────────── */
 
@@ -41,16 +56,17 @@ export function engine(refresh = false) {
       } catch { /* ממשיכים למודל */ }
     }
     if (await modelCached()) return { kind: 'model', reason: 'מודל במכשיר' };
-    return { kind: null, reason: 'אין מנוע תרגום במכשיר — הגדרות ← חשבון ← 🌐 תרגום במכשיר' };
+    return { kind: null, reason: `אין מודל ל${TRANSLATE_LANGS[LANG].heName} במכשיר — הגדרות ← חשבון ← 🌐 תרגום במכשיר` };
   })();
   return enginePromise;
 }
 
-const fileUrl = (f) => `https://huggingface.co/${MODEL.id}/resolve/${MODEL.revision}/${f}`;
-export async function modelCached() {
+const fileUrl = (m, f) => `https://huggingface.co/${m.id}/resolve/${m.revision}/${f}`;
+export async function modelCached(l = LANG) {
+  const m = model(l);
   try {
     const c = await caches.open(CACHE);
-    for (const f of MODEL.files) if (!(await c.match(fileUrl(f)))) return false;
+    for (const f of m.files) if (!(await c.match(fileUrl(m, f)))) return false;
     return true;
   } catch { return false; }
 }
@@ -96,6 +112,7 @@ function getWorker() {
  * אחרי ההורדה המודל במטמון הדפדפן, ו-engine() יחזיר 'model'.
  */
 export function downloadModel(onProgress) {
+  const MODEL = model();
   const seen = {};
   const t0 = performance.now();
   const total = Object.values(MODEL.sizes).reduce((a, b) => a + b, 0);
@@ -118,11 +135,18 @@ export function downloadModel(onProgress) {
   });
 }
 
-/** 🗑 הסרה — מפנה את המטמון של המודל, ואת התרגומים השמורים. */
+/** 🗑 הסרה של מודל השפה הנוכחית — הקבצים שלו בלבד, והתרגומים השמורים לשפה הזו. */
 export async function removeModel() {
+  const m = model();
   worker?.terminate(); worker = null; jobs.clear(); loadWaiters = [];
-  try { await caches.delete(CACHE); } catch { /* אין */ }
-  try { await idb('readwrite', (s) => s.clear()); } catch { /* אין */ }
+  try {
+    const c = await caches.open(CACHE);
+    for (const req of await c.keys()) if (req.url.includes(`/${m.id}/`)) await c.delete(req);
+  } catch { /* אין */ }
+  try {
+    const keys = await idb('readonly', (s) => s.getAllKeys());
+    await idb('readwrite', (s) => keys.filter((k) => String(k).endsWith(`:${m.lang}`)).forEach((k) => s.delete(k)));
+  } catch { /* אין */ }
   engine(true);
 }
 
@@ -177,6 +201,7 @@ export async function translate(id, md, onProgress, stats = {}) {
     onProgress?.(assemble(parts, done), done.filter((x) => x !== undefined).length, total);
   };
   const list = parts.filter((p) => 'tr' in p).map((p) => p.tr);
+  const MODEL = model();
   if (eng.kind === 'api') {
     const tr = await Translator.create({ sourceLanguage: 'en', targetLanguage: LANG });
     for (const [i, s] of list.entries()) step(i, await tr.translate(s));

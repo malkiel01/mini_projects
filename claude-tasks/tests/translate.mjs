@@ -50,5 +50,10 @@ check('עברית עם הרבה קוד ונתיבים', needsTranslation('תיק
 check('קצר מדי', needsTranslation('OK, done.'), false);
 check('אנגלית עם מעט עברית', needsTranslation('The board shows "המאזינים מושהים" until you resume the listeners in settings.'), true);
 
+console.log('\n— יעד ספרדית —');
+check('אנגלית → כן', needsTranslation('I merged the pull request and the deploy finished successfully.', 'es'), true);
+check('ספרדית → לא', needsTranslation('Fusioné la petición de retirada y el despliegue terminó con éxito.', 'es'), false);
+check('עברית → לא (המקור רק אנגלית)', needsTranslation('מיזגתי את ה-PR והפריסה הסתיימה בהצלחה, הכול עובד.', 'es'), false);
+
 console.log(`\n════ עברו: ${pass} · נכשלו: ${fail} ════`);
 process.exit(fail ? 1 : 0);

@@ -4,7 +4,7 @@
  * הודעות פנימה:  { type:'load', model, revision }   ← טעינה (או הורדה), עם התקדמות
  *                { type:'translate', job, sentences }  ← משפט אחר משפט
  * הודעות החוצה:  progress {file, loaded, total} · ready · sentence {job, i, text} · done {job} · error {job?, error}
- * העבודות רצות בתור, אחת אחרי השנייה (מודל אחד בזיכרון).
+ * העבודות רצות בתור, אחת אחרי השנייה. מודל אחד בזיכרון: מעבר לשפה אחרת משחרר את הקודם.
  */
 import { pipeline, env } from '../vendor/transformers-3.7.6.min.js';
 
@@ -12,17 +12,22 @@ env.allowLocalModels = false;
 // ה-WASM של onnxruntime — מ-jsDelivr באותה גרסה מוצמדת (‎~21MB‎, נשמר במטמון הדפדפן; לא בריפו)
 env.backends.onnx.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.6/dist/';
 
-let ready = null;
+let cur = { model: null, ready: null };
 let queue = Promise.resolve();
 
 function load(model, revision) {
-  ready ??= pipeline('translation', model, {
+  if (cur.model !== model) {
+    const old = cur.ready;
+    cur = { model, ready: null };
+    old?.then((t) => t.dispose?.()).catch(() => {});
+  }
+  cur.ready ??= pipeline('translation', model, {
     revision, dtype: 'q8', device: 'wasm',
     progress_callback: (p) => {
       if (p.status === 'progress' && p.total) postMessage({ type: 'progress', file: p.file, loaded: p.loaded, total: p.total });
     },
-  }).catch((e) => { ready = null; throw e; });
-  return ready;
+  }).catch((e) => { cur = { model: null, ready: null }; throw e; });
+  return cur.ready;
 }
 
 onmessage = ({ data }) => {

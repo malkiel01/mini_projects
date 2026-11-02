@@ -8,7 +8,7 @@ import { renderMarkdown } from './markdown.js';
 import { choiceCard } from './choices.js';
 import { HEALTH, healthDetail, openHandoff } from './newchat.js';
 import { labelChip, openLabelsForMessage, openManageLabels, renderPinStrip, openPinList } from './labels.js';
-import { needsTranslation, engine as trEngine, translate, cached as trCached, setShow as trSetShow } from './translate.js';
+import { needs as trNeeds, lang as trLang, TRANSLATE_LANGS, engine as trEngine, translate, cached as trCached, setShow as trSetShow } from './translate.js';
 
 const POLL_MS = 4000;
 const conv = { id: null, channel: null, messages: [], timer: null, busy: false, thinking: new Set() };
@@ -142,9 +142,9 @@ function bubble(m) {
   if (m.pinned?.shared || m.pinned?.mine) meta.push(el('span', { class: 'b-pin', title: m.pinned.shared ? 'מוצמדת לכולם' : 'מוצמדת לך', text: m.pinned.shared ? '📌' : '📌🔒' }));
   (m.labels || []).forEach((l) => meta.push(labelChip(l)));
   // 🌐 תרגום במכשיר (12e) — רק כשההודעה כנראה לא בעברית
-  const tr = translatable(m) ? trLive.get(m.id) : null;
+  const tr = translatable(m) ? trLive.get(trKey(m)) : null;
   if (translatable(m)) meta.push(el('button', { type: 'button', class: 'b-tr-btn', 'aria-pressed': String(tr?.state === 'on'),
-    'aria-label': tr?.state === 'on' ? 'הצגת המקור' : 'תרגום לעברית', title: tr?.state === 'on' ? 'הצג מקור' : 'תרגום לעברית (במכשיר)',
+    'aria-label': tr?.state === 'on' ? 'הצגת המקור' : `תרגום ${trTo()}`, title: tr?.state === 'on' ? 'הצג מקור' : `תרגום ${trTo()} (במכשיר)`,
     text: '🌐', onclick: (e) => { e.stopPropagation(); toggleTranslate(m); } }));
   // ⋯ — תפריט הפעולות (§5.11, 12b). בטלפון — נגיעה ארוכה על הבועה; הכפתור מופיע ב-hover/focus
   meta.push(el('button', { type: 'button', class: 'b-more', 'aria-label': 'פעולות על ההודעה', 'aria-haspopup': 'menu',
@@ -251,10 +251,12 @@ function renderLog(stick) {
 /* ── 🌐 תרגום במכשיר (§5.11, 12e) ─────────────────────────────
  * המצב לפי מזהה הודעה (לא לפי ה-DOM): רענון של השיחה מצייר את הבועות מחדש, והתרגום שבאמצע
  * ממשיך ומעדכן את הבועה שמוצגת עכשיו. state: busy · on · off. */
-const trLive = new Map();   // id → { state, md, done, total }
+const trLive = new Map();   // ‎<lang>:<id>‎ → { state, md, done, total }
+const trKey = (m) => `${trLang()}:${m.id}`;
+const trTo = () => `ל${TRANSLATE_LANGS[trLang()].heName}`;
 
 function translatable(m) {
-  return !m.platform_pending && m.kind !== 'approval' && m.kind !== 'choice' && needsTranslation(m.body);
+  return !m.platform_pending && m.kind !== 'approval' && m.kind !== 'choice' && trNeeds(m.body);
 }
 
 function trLine(m, tr) {
@@ -272,26 +274,26 @@ function redrawBubble(m) {
 }
 
 async function toggleTranslate(m) {
-  const cur = trLive.get(m.id);
+  const cur = trLive.get(trKey(m));
   if (cur?.state === 'busy') return;
   if (cur?.state === 'on') {
-    trLive.set(m.id, { ...cur, state: 'off' });
+    trLive.set(trKey(m), { ...cur, state: 'off' });
     redrawBubble(m);
     trSetShow(m.id, false);
     return;
   }
   const eng = await trEngine();
   if (!eng.kind) { toast(eng.reason, 'error'); return; }
-  trLive.set(m.id, { state: 'busy', md: m.body, done: 0, total: 0 });
+  trLive.set(trKey(m), { state: 'busy', md: m.body, done: 0, total: 0 });
   redrawBubble(m);
   try {
     const md = await translate(m.id, m.body, (partial, done, total) => {
-      trLive.set(m.id, { state: 'busy', md: partial, done, total });
+      trLive.set(trKey(m), { state: 'busy', md: partial, done, total });
       redrawBubble(m);
     });
-    trLive.set(m.id, { state: 'on', md });
+    trLive.set(trKey(m), { state: 'on', md });
   } catch (ex) {
-    trLive.delete(m.id);
+    trLive.delete(trKey(m));
     toast(`התרגום נכשל: ${ex.message}`, 'error');
   }
   redrawBubble(m);
@@ -302,9 +304,9 @@ async function hydrateTranslations(list) {
   const ids = list.filter(translatable);
   if (!ids.length) return;
   for (const m of ids) {
-    if (trLive.has(m.id)) continue;
+    if (trLive.has(trKey(m))) continue;
     const rec = await trCached(m.id);
-    if (rec?.text && rec.show) { trLive.set(m.id, { state: 'on', md: rec.text }); redrawBubble(m); }
+    if (rec?.text && rec.show) { trLive.set(trKey(m), { state: 'on', md: rec.text }); redrawBubble(m); }
   }
   const eng = await trEngine();
   if (!eng.kind) {
@@ -655,8 +657,8 @@ function openMsgMenu(m) {
     canSend ? act('📌', m.pinned?.shared ? 'ביטול הצמדה לכולם' : 'הצמד לכולם', () => pin(m, 'shared', !m.pinned?.shared), 'בפס בראש השיחה, אצל כל מי שרואה אותה') : null,
     act('📌', m.pinned?.mine ? 'ביטול ההצמדה שלי' : 'הצמד לי', () => pin(m, 'private', !m.pinned?.mine), '🔒 רק אתה רואה'),
     act('🏷', 'תוויות', () => openLabelsForMessage(conv.channel, m, () => renderLog(false)), (m.labels || []).map((l) => l.name).join(' · ') || 'סימון ההודעה בתווית'),
-    translatable(m) ? act('🌐', trLive.get(m.id)?.state === 'on' ? 'הצג מקור' : 'תרגום לעברית', () => toggleTranslate(m),
-      trLive.get(m.id)?.state === 'on' ? 'חזרה לטקסט המקורי' : 'במכשיר, בלי שרת — משפט אחר משפט') : null,
+    translatable(m) ? act('🌐', trLive.get(trKey(m))?.state === 'on' ? 'הצג מקור' : `תרגום ${trTo()}`, () => toggleTranslate(m),
+      trLive.get(trKey(m))?.state === 'on' ? 'חזרה לטקסט המקורי' : 'במכשיר, בלי שרת — משפט אחר משפט') : null,
     act('➕', 'הפיכה למטלה', () => makeTaskFrom(m), 'מטלה בפרויקט של הצ\'אט, עם ההודעה בגוף'),
     act('🔗', 'העתקת קישור', () => copy(messageLink(m), 'הקישור הועתק'), 'פותח את השיחה בהודעה הזו'),
   ].filter(Boolean));
