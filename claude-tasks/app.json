@@ -13,7 +13,8 @@
     "manifest.webmanifest",
     "service-worker.js",
     "assets/icons/**",
-    "assets/icon.svg"
+    "assets/icon.svg",
+    "models/**"
   ],
   "install": {
     "release": "claude-tasks-store"

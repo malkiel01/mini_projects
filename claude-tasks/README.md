@@ -417,7 +417,10 @@ node claude-tasks/tests/markdown.mjs   # Markdown בבועות הצ'אט: עיצ
   ב-`translate-lang` (`api.php`); בספרדית "כנראה לא בשפה" נבדק לפי מילים נפוצות (אותו אלפבית כמו באנגלית).
 - **המודלים:** עברית — ההמרה הקהילתית `sivelsguy/opus-mt-en-he-onnx` (`fc3befc`, ≈147MB); ספרדית —
   `Xenova/opus-mt-en-es` (`4b002a4`, ≈113MB). שניהם מוצמדים ל-commit. הספרייה מקומית
-  (`assets/vendor/`); ה-WASM של onnxruntime מ-jsDelivr באותה גרסה. ההמרה שלנו מהמודל הרשמי — בהמשך (§5.11.1).
+  (`assets/vendor/`); ה-WASM של onnxruntime מ-jsDelivr באותה גרסה.
+- **ההמרה שלנו** (12e.7a): `tools/models/convert.sh` ממיר את המודלים הרשמיים של Helsinki-NLP (מוצמדים ב-`build.json`) ל-q8,
+  וה-workflow ‏`claude-tasks-models.yml` בודק ומעלה ל-`models/<pair>/<build>/` בשרת — לא בריפו, ו-`deploy.yml` מחריג את
+  `models/`. מפעילים אותו בשינוי של `tools/models/` (למשל `build` חדש). ההשוואה: `docs/translate-quality.md`.
 
 ### מדידת תרגום לפני 12e — `lab/translate-check.html`
 
