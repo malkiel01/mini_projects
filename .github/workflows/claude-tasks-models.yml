@@ -18,9 +18,15 @@ on:
       - '.github/workflows/claude-tasks-models.yml'
   workflow_dispatch: {}
 
+# קבוצה נפרדת מ-production-deploy בכוונה: באותה קבוצה הרצה ממתינה מחליפה את הקודמת — המרה הייתה עלולה
+# לבטל פריסה שמחכה. במקום זה, לפני ה-SSH מחכים שאין פריסה רצה (ראו "Wait for deploy"): חיבור SSH אחד בכל רגע.
 concurrency:
   group: claude-tasks-models
   cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
 
 jobs:
   convert:
@@ -76,6 +82,24 @@ jobs:
           SSH_ASKPASS="$RUNNER_TEMP/askpass" SSH_ASKPASS_REQUIRE=force ssh-add ~/.ssh/deploy_key
           rm -f "$RUNNER_TEMP/askpass"
 
+      # השרת חוסם כששני חיבורי SSH באים יחד (CLAUDE.md, "כשהפריסה נכשלת") — והפריסה של אותו מיזוג רצה
+      # במקביל להמרה. לכן: מחכים עד שאין הרצה פעילה של deploy.yml (עד 30 דקות), ורק אז מעלים.
+      - name: Wait for deploy (one SSH connection at a time)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          for i in $(seq 1 60); do
+            n=0
+            for st in in_progress queued; do
+              c=$(gh api "repos/${{ github.repository }}/actions/workflows/deploy.yml/runs?status=$st&per_page=1" --jq '.total_count' 2>/dev/null || echo 1)
+              n=$((n + c))
+            done
+            [ "$n" -eq 0 ] && { echo "אין פריסה רצה — מעלים"; exit 0; }
+            echo "פריסה רצה או ממתינה ($n) — מחכה 30 שניות"; sleep 30
+          done
+          echo "::warning::פריסה עדיין רצה אחרי 30 דקות — מעלים בכל זאת, עם הנסיונות החוזרים"
+
       # החסימה בשרת משתחררת בדקות (CLAUDE.md, "כשהפריסה נכשלת") — 30, 90, 180 שניות.
       # ‏rsync בלי --delete, ומעלה רק את תיקיות המודלים: נסיון חוזר בטוח.
       - name: Upload to claude-tasks/models/ (no --delete)
@@ -96,9 +120,10 @@ jobs:
           echo "::error::לא הצלחתי להעלות את המודלים לשרת"
           exit 1
 
-      # מהאינטרנט, כמו הדפדפן: manifest זהה, וקובץ גדול עונה ל-Range ב-206 עם הגודל הנכון.
-      # ‏models/** ציבורי ב-app.json; עד שהפריסה של אותו מיזוג בונה את השער — מחכים (עד 20 דקות).
-      - name: Verify from the web (manifest + Range)
+      # מהאינטרנט, כמו הדפדפן: checksums.json זהה, וקובץ גדול עונה ל-Range ב-206 עם הגודל הנכון.
+      # לא manifest.json: השער של הפלטפורמה מתייחס לכל manifest.json כ-manifest של PWA ומשנה אותו בהגשה.
+      # ‏models/** ציבורי ב-app.json; עד שהפריסה של אותו מיזוג בונה את השער — מחכים (עד 10 דקות).
+      - name: Verify from the web (checksums + Range)
         env:
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
         run: |
@@ -106,20 +131,22 @@ jobs:
           WEB="https://mbe-plus.com${DEPLOY_PATH#*/public_html}/claude-tasks/models"
           cd "$RUNNER_TEMP/m/dist"
           fail=0
-          for man in */*/manifest.json; do
-            d="${man%/manifest.json}"
+          for man in */*/checksums.json; do
+            d="${man%/checksums.json}"
             ok=0
-            for i in $(seq 1 40); do
-              if curl -sSf "$WEB/$man" -o "$RUNNER_TEMP/got.json" 2>/dev/null && cmp -s "$RUNNER_TEMP/got.json" "$man"; then ok=1; break; fi
+            for i in $(seq 1 20); do
+              got=$(curl -sS -o "$RUNNER_TEMP/got.json" -w '%{http_code} %{content_type} %{redirect_url}' "$WEB/$man" 2>&1 || true)
+              if [ "${got%% *}" = 200 ] && cmp -s "$RUNNER_TEMP/got.json" "$man"; then ok=1; break; fi
+              echo "נסיון $i: $got — $(head -c 120 "$RUNNER_TEMP/got.json" 2>/dev/null | tr '\n' ' ')"
               sleep 30
             done
-            [ "$ok" = 1 ] || { echo "::error::$d: manifest.json לא נגיש או שונה ($WEB/$man)"; fail=1; continue; }
+            [ "$ok" = 1 ] || { echo "::error::$d: checksums.json לא נגיש או שונה ($WEB/$man): $got"; fail=1; continue; }
             f=onnx/decoder_model_merged_quantized.onnx
             size=$(stat -c %s "$d/$f")
             h=$(curl -sS -o /dev/null -D - -r 0-1048575 "$WEB/$d/$f" | tr -d '\r')
             code=$(printf '%s\n' "$h" | head -1 | awk '{print $2}')
             total=$(printf '%s\n' "$h" | grep -i '^content-range:' | sed 's#.*/##')
-            if [ "$code" = 206 ] && [ "$total" = "$size" ]; then echo "ok $d: manifest זהה, Range 206, $size בתים"
+            if [ "$code" = 206 ] && [ "$total" = "$size" ]; then echo "ok $d: checksums זהה, Range 206, $size בתים"
             else echo "::error::$d/$f: קוד $code, Content-Range total=${total:-none} (צפוי 206, $size)"; fail=1; fi
           done
           exit $fail

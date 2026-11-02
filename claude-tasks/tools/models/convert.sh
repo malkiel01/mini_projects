@@ -6,7 +6,7 @@
 #
 # יוצא: <workdir>/dist/<pair>/<build>/ — בדיוק מה שעולה לשרת אל claude-tasks/models/:
 #   config.json generation_config.json tokenizer.json tokenizer_config.json README.md (כרטיס המודל)
-#   onnx/encoder_model_quantized.onnx onnx/decoder_model_merged_quantized.onnx manifest.json (גדלים, sha256)
+#   onnx/encoder_model_quantized.onnx onnx/decoder_model_merged_quantized.onnx checksums.json (גדלים, sha256)
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 W="$(mkdir -p "$1" && cd "$1" && pwd)"
@@ -31,18 +31,26 @@ while read -r PAIR SRC REV; do
   M="$W/src/$PAIR"
   rm -rf "$M"
   python - "$SRC" "$REV" "$M" <<'PY'
-import sys
+import sys, time
 from huggingface_hub import snapshot_download
-snapshot_download(sys.argv[1], revision=sys.argv[2], local_dir=sys.argv[3],
-                  allow_patterns=["config.json", "generation_config.json", "pytorch_model.bin", "*.spm",
-                                  "vocab.json", "tokenizer_config.json", "README.md"])
+# ‏Hugging Face נופל לפעמים לרגע מה-runner ("check your internet connection") — 4 נסיונות: 30, 90, 180 ש'
+for i, wait in enumerate([0, 30, 90, 180]):
+    time.sleep(wait)
+    try:
+        snapshot_download(sys.argv[1], revision=sys.argv[2], local_dir=sys.argv[3],
+                          allow_patterns=["config.json", "generation_config.json", "pytorch_model.bin", "*.spm",
+                                          "vocab.json", "tokenizer_config.json", "README.md"])
+        break
+    except Exception as e:
+        print(f"::warning::הורדה מ-Hugging Face נכשלה (נסיון {i + 1}): {e}", flush=True)
+else:
+    sys.exit("לא הצלחתי להוריד את המודל מ-Hugging Face")
 PY
   # ייצוא ב-Optimum (fp32) — בלי onnxslim (ראו fold_q8.py) ובלי הכימות שלו
   (cd "$W/tjs" && python -m scripts.convert --model_id "$M" --task text2text-generation-with-past --skip_onnxslim)
   ls "$M/onnx/encoder_model.onnx" "$M/onnx/decoder_model_merged.onnx"
   (cd "$W/tjs" && PYTHONPATH="$W/tjs" python "$HERE/fold_q8.py" "$M/onnx/encoder_model.onnx" "$M/q-enc.onnx")
-  (cd "$W/tjs" && PYTHONPATH="$W/tjs" python "$HERE/fold_q8.py" "$M/onnx/decoder_model_merged.onnx" "$M/q-dec.onnx" --slim) | tee "$M/fold.log"
-  grep -q 'folded [1-9]' "$M/fold.log" || { echo "::error::$PAIR: lm_head לא קופל — המודל היה איטי פי 5"; exit 1; }
+  (cd "$W/tjs" && PYTHONPATH="$W/tjs" python "$HERE/fold_q8.py" "$M/onnx/decoder_model_merged.onnx" "$M/q-dec.onnx" --slim --lm-head)
 
   D="$W/dist/$PAIR/$BUILD"
   rm -rf "$D"; mkdir -p "$D/onnx"
@@ -62,7 +70,7 @@ for root, _, names in os.walk(d):
         files[rel] = {"size": os.path.getsize(p), "sha256": h.hexdigest()}
 json.dump({"pair": pair, "build": build, "source": src, "revision": rev, "license": "apache-2.0",
            "credit": "Opus-MT · University of Helsinki · Apache-2.0", "converter": f"transformers.js {tjs} + fold_q8.py (q8)",
-           "files": files}, open(os.path.join(d, "manifest.json"), "w"), indent=1, ensure_ascii=False)
+           "files": files}, open(os.path.join(d, "checksums.json"), "w"), indent=1, ensure_ascii=False)
 for k, v in files.items(): print(f"{v['size']:>10}  {k}")
 PY
   rm -rf "$M"
