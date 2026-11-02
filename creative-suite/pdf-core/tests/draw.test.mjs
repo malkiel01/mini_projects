@@ -61,6 +61,10 @@ const shape = buf => {
         patterns: Object.values(objs).filter(o => /\/Type \/Pattern/.test(o.dict)).map(o => o.dict),
         images: Object.values(objs).filter(o => /\/Subtype \/Image/.test(o.dict)).map(o => norm(o.dict)),
         forms: Object.values(objs).filter(o => /\/Subtype \/Form/.test(o.dict)).map(o => norm(o.dict) + o.data.toString('latin1')),
+        // גופנים: Type0 / CIDFontType2 / FontDescriptor, קובץ הגופן המוקטן (בבתים) ו-ToUnicode
+        fonts: Object.values(objs).filter(o => /\/Type \/Font(Descriptor)? /.test(o.dict)).map(o => norm(o.dict)),
+        fontFiles: Object.values(objs).filter(o => /\/Length1 /.test(o.dict)).map(o => norm(o.dict) + ' ' + o.data.toString('hex')),
+        cmaps: Object.values(objs).filter(o => o.data && /begincmap/.test(o.data.toString('latin1'))).map(o => o.data.toString('latin1')),
     };
 };
 
@@ -80,6 +84,10 @@ async function same(label, list, media = {}) {
     ok(`${label}: זרמי התוכן זהים`, p.contents.length > 0 && p.contents.every(c => c.length > 20) && JSON.stringify(p.contents) === JSON.stringify(j.contents), firstDiff(p.contents.join('\n'), j.contents.join('\n')));
     ok(`${label}: עמודים, משאבים, תבניות, תמונות ומסכות — אותו מבנה`, JSON.stringify([p.boxes, p.res, p.patterns, p.images, p.forms]) === JSON.stringify([j.boxes, j.res, j.patterns, j.images, j.forms]),
         firstDiff(JSON.stringify([p.boxes, p.res, p.patterns, p.images, p.forms]), JSON.stringify([j.boxes, j.res, j.patterns, j.images, j.forms])));
+    if (p.fonts.length || j.fonts.length) {
+        ok(`${label}: גופנים — אותם אובייקטים (שם, רוחבים, מידות) ואותו ToUnicode`, JSON.stringify([p.fonts, p.cmaps]) === JSON.stringify([j.fonts, j.cmaps]), firstDiff(JSON.stringify([p.fonts, p.cmaps]), JSON.stringify([j.fonts, j.cmaps])));
+        ok(`${label}: קובץ הגופן המוקטן (subset) — זהה בבתים`, p.fontFiles.length > 0 && JSON.stringify(p.fontFiles) === JSON.stringify(j.fontFiles), `PHP ${p.fontFiles.map(x => x.length)} / JS ${j.fontFiles.map(x => x.length)}`);
+    }
     if (hasPoppler) {
         const [ra, rb] = [raster(a, label.replace(/\W+/g, '') + 'p'), raster(b, label.replace(/\W+/g, '') + 'j')];
         let diff = 0;
@@ -146,6 +154,90 @@ await same('תמונות: PNG עם שקיפות (SMask), PNG אטום, JPEG, ח�
     { op: 'image', src: 'media/c.jpg', box: [0, 0, 20, 15], transform: [0, 1, -1, 0, 60, 50], clip: [0, 0, 10, 15] },
 ]}, { size: [50, 50], ops: [{ op: 'rect', box: [0, 0, 50, 50], fill: '#eeeeee' }] }] }, media);
 
+// glyphs (מ6): טקסט אמיתי מ-text-core — shapeLine עם ניקוד וטעמים ו-bidi, גופן חלופי ב-op נפרד (כמו בעימוד)
+const { loadFont, shapeLine, fontMetrics } = await import('../../text-core/src/js/shaper.js');
+const fontsDir = join(here, '../../../suite-cloud/fonts/builtin/');
+const fontBytes = name => readFileSync(fontsDir + name);
+const ab = b => b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);
+const fmedia = { 'media/noto.ttf': fontBytes('NotoSerifHebrew.ttf'), 'media/frank.ttf': fontBytes('FrankRuhlLibre.ttf'), 'media/Heebo.ttf': fontBytes('Heebo.ttf') };
+const tc = { 'media/noto.ttf': await loadFont(ab(fmedia['media/noto.ttf']), 'noto'), 'media/frank.ttf': await loadFont(ab(fmedia['media/frank.ttf']), 'frank'),
+    'media/Heebo.ttf': await loadFont(ab(fmedia['media/Heebo.ttf']), 'heebo') };
+const keyOf = f => Object.keys(tc).find(k => tc[k] === f);
+/** שורה → פעולות glyphs (op לכל רצף גופן, כמו layout-studio/assets/js/pdf.js) */
+const line = (fonts, text, size, x, y, color = '#000000', base = 'rtl') => {
+    const gl = shapeLine(fonts, text, base);
+    const main = Array.isArray(fonts) ? fonts[0] : fonts;
+    const s = size / fontMetrics(main).upem;
+    const ops = [];
+    let pen = 0, cur = null;
+    for (const g of gl) {
+        const f = g.f || main;
+        if (!cur || cur.f !== f) { cur = { f, op: { op: 'glyphs', font: keyOf(f), size, color, x: x + pen, y, glyphs: [], text: ops.length ? '' : text } }; ops.push(cur); }
+        // גליף מגופן חלופי — המידות כבר ביחידות של הראשי
+        cur.op.glyphs.push([g.gid, g.dx * s, g.dy * s, g.ax * s]);
+        pen += g.ax * s;
+    }
+    return ops.map(o => o.op);
+};
+const TAAMIM = 'בְּרֵאשִׁ֖ית בָּרָ֣א אֱלֹהִ֑ים';
+await same('glyphs: עברית עם ניקוד, טעמים בגופן חלופי, שורה מעורבת, גלישה, ושני עמודים', { title: 'טקסט', pages: [{ size: [300, 160], bleed: 9, ops: [
+    ...line(tc['media/noto.ttf'], 'בָּרוּךְ אַתָּה ה׳ אֱלֹהֵינוּ', 20, 20, 40),
+    ...line([tc['media/frank.ttf'], tc['media/noto.ttf']], TAAMIM, 18, 20, 80, '#663300'),
+    ...line(tc['media/Heebo.ttf'], 'מחיר: 3–4 ש"ח (PDF 1.7)', 14, 20, 120),
+    { op: 'rect', box: [20, 130, 100, 2], fill: '#ff0000' },
+]}, { size: [100, 50], ops: [...line(tc['media/Heebo.ttf'], 'עמוד 2', 12, 10, 30)] }] }, fmedia);
+{
+    // מה שנבנה מ-JS נקרא בחזרה: הטקסט בר-חיפוש (pdftotext), והגופנים מוטמעים כ-subset (pdffonts)
+    const list = { pages: [{ size: [200, 60], ops: line(tc['media/Heebo.ttf'], 'שלום עולם', 16, 10, 30) }] };
+    const b = await js(list, fmedia);
+    writeFileSync(join(tmp, 'text.pdf'), b);
+    const has = cmd => { try { execFileSync(cmd, ['-v'], { stdio: 'ignore' }); return true; } catch { return false; } };
+    if (has('pdftotext')) {
+        const t = execFileSync('pdftotext', [join(tmp, 'text.pdf'), '-']).toString();
+        // pdftotext קורא כל גליף לפי ToUnicode, בסדר החזותי (כל גליף ממוקם לבד); הסדר הלוגי — ב-ActualText
+        const rev = w => [...w].reverse().join('');
+        ok('glyphs ב-JS: הטקסט בר-חיפוש — ToUnicode (pdftotext מוצא את האותיות של "שלום" ו"עולם")', [t, rev(t)].some(x => x.includes('שלום') && x.includes('עולם')), t);
+    }
+    if (has('pdffonts')) {
+        const t = execFileSync('pdffonts', [join(tmp, 'text.pdf')]).toString();
+        ok('glyphs ב-JS: הגופן מוטמע כ-subset (pdffonts: emb yes, sub yes)', /\+Heebo\s+CID TrueType\s+Identity-H\s+yes\s+yes\s+yes/.test(t), t);
+    }
+    ok('glyphs ב-JS: ActualText נושא את הטקסט הלוגי (חיפוש והעתקה בסדר הנכון)', shape(b).contents[0].includes('/ActualText <FEFF05E905DC05D505DD002005E205D505DC05DD>'));
+    const small = b.length, full = fmedia['media/Heebo.ttf'].length;
+    ok('glyphs ב-JS: ה-subset קטן מהגופן המלא', small < full / 2, `${small} מול ${full}`);
+    // גופן בלי גליפים בשימוש — לא נכנס לקובץ (כמו ב-PHP)
+    await same('glyphs: רשימה ריקה — הגופן לא מוטמע, ושאר הציור כרגיל', { pages: [{ size: [50, 50], ops: [
+        { op: 'glyphs', font: 'media/Heebo.ttf', size: 10, x: 0, y: 10, glyphs: [] }, { op: 'rect', box: [0, 0, 50, 50], fill: '#00ff00' }] }] }, fmedia);
+}
+// WOFF 1.0 — מפורק לאותו sfnt בשתי השפות (PHP: zlib_decode; JS: DecompressionStream)
+{
+    const { deflateSync } = await import('node:zlib');
+    const sf = fmedia['media/Heebo.ttf'];
+    const num = sf.readUInt16BE(4);
+    const ents = [];
+    for (let i = 0; i < num; i++) {
+        const e = 12 + i * 16;
+        const off = sf.readUInt32BE(e + 8), len = sf.readUInt32BE(e + 12);
+        const orig = sf.subarray(off, off + len), comp = deflateSync(orig);
+        ents.push({ tag: sf.subarray(e, e + 4), chk: sf.readUInt32BE(e + 4), orig, data: comp.length < orig.length ? comp : orig });
+    }
+    let off = 44 + 20 * num;
+    const head = Buffer.alloc(44 + 20 * num);
+    head.write('wOFF', 0); head.writeUInt32BE(sf.readUInt32BE(0), 4); head.writeUInt16BE(num, 12);
+    const bodies = [];
+    ents.forEach((e, i) => {
+        const p = 44 + i * 20;
+        e.tag.copy(head, p); head.writeUInt32BE(off, p + 4); head.writeUInt32BE(e.data.length, p + 8); head.writeUInt32BE(e.orig.length, p + 12); head.writeUInt32BE(e.chk, p + 16);
+        const pad = Buffer.alloc((4 - e.data.length % 4) % 4);
+        bodies.push(e.data, pad); off += e.data.length + pad.length;
+    });
+    const woff = Buffer.concat([head, ...bodies]);
+    woff.writeUInt32BE(woff.length, 8);
+    const wm = { 'media/Heebo.woff': woff };
+    const ops = line(tc['media/Heebo.ttf'], 'גופן WOFF', 16, 10, 30).map(o => ({ ...o, font: 'media/Heebo.woff' }));
+    await same('glyphs: גופן WOFF 1.0', { pages: [{ size: [200, 60], ops }] }, wm);
+}
+
 // XMP (שורה 5 "פנים"): זרם Metadata לא דחוס בקטלוג, אותו דבר בשתי השפות; בלי xmp — בלי Metadata
 {
     const xmp = '<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?><x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description xmlns:mbe="https://mbe-plus.com/ns/mbe/1.0/" mbe:docId="d-אבג" mbe:base="7"/></rdf:RDF></x:xmpmeta><?xpacket end="w"?>';
@@ -198,15 +290,21 @@ const errs = [
     { pages: [{ size: [10, 10], ops: [{ op: 'path', d: 'M0 0 L5 5 Z', fill: { gradient: { type: 'linear', x1: 0, y1: 0, x2: 5, y2: 0, stops: [{ offset: 0, color: '#000000', opacity: 1.5 }] } } }] }] },
     { pages: [{ size: [10, 10], ops: [{ op: 'image', src: 'media/none.png', box: [0, 0, 1, 1] }] }] },
     { xmp: 5, pages: [{ size: [10, 10], ops: [] }] },
+    { pages: [{ size: [10, 10], ops: [{ op: 'glyphs', font: 'media/none.ttf', size: 9, x: 0, y: 0, glyphs: [] }] }] },
+    { pages: [{ size: [10, 10], ops: [{ op: 'glyphs', font: 'media/c.jpg', size: 9, x: 0, y: 0, glyphs: [] }] }] },
+    { pages: [{ size: [10, 10], ops: [{ op: 'glyphs', font: 'media/Heebo.ttf', size: 9, x: 0, glyphs: [] }] }] },
+    { pages: [{ size: [10, 10], ops: [{ op: 'glyphs', font: 'media/Heebo.ttf', size: 9, x: 0, y: 0, glyphs: 'אבג' }] }] },
+    { pages: [{ size: [10, 10], ops: [{ op: 'glyphs', font: 'media/Heebo.ttf', size: 9, x: 0, y: 0, glyphs: [[99999, 0, 0, 1]] }] }] },
+    { pages: [{ size: [10, 10], ops: [{ op: 'glyphs', font: 'media/Heebo.ttf', size: 9, x: 0, y: 0, glyphs: [[5, 0, 0]] }] }] },
+    { pages: [{ size: [10, 10], ops: [{ op: 'glyphs', font: 'media/Heebo.ttf', size: 9, x: 0, y: 0, color: 'red', glyphs: [[5, 0, 0, 1]] }] }] },
 ];
+const emedia = { ...media, 'media/Heebo.ttf': fmedia['media/Heebo.ttf'] };
 const mism = [];
 for (const list of errs) {
-    const [a, b] = [php(list).toString(), (await js(list)).toString()];
+    const [a, b] = [php(list, emedia).toString(), (await js(list, emedia)).toString()];
     if (!a.startsWith('ERR:') || a !== b) mism.push(`PHP «${a.slice(0, 90)}» / JS «${b.slice(0, 90)}»`);
 }
 ok(`שגיאות: ${errs.length} רשימות פגומות — אותה הודעה בשתי השפות`, !mism.length, mism.join(' | '));
-const g = (await js({ pages: [{ size: [10, 10], ops: [{ op: 'glyphs', font: 'x', size: 9, x: 0, y: 0, glyphs: [] }] }] })).toString();
-ok('glyphs ב-JS — שגיאה ברורה (עוד לא), עם המקום', g.startsWith('ERR:glyphs') && g.includes('עמוד 1, פעולה 1'), g);
 
 rmSync(tmp, { recursive: true, force: true });
 console.log(fail ? `\n✗ ${fail} נכשלו, ${pass} עברו` : `\n✓ כל ${pass} הבדיקות עברו`);

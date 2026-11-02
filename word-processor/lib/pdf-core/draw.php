@@ -193,6 +193,7 @@ function pdf_draw(array $list, callable $resolve): string
                     $y = $num($op['y'] ?? null, $where);
                     $gl = $op['glyphs'] ?? null;
                     if (!is_array($gl)) throw new InvalidArgumentException("glyphs: $where");
+                    if (!$gl) break;   // בלי גליפים — בלי BT (אחרת Tf מפנה לגופן שלא נכנס למשאבים)
                     $text = (string)($op['text'] ?? '');
                     $c .= ($text !== '' ? '/Span << /ActualText ' . PdfWriter::text($text) . " >> BDC\n" : '')
                         . 'BT ' . $color($op['color'] ?? '#000000', $where) . " rg $fname " . $n($size) . " Tf\n";

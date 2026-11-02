@@ -8,8 +8,8 @@
 
 ```
 src/php/       writer.php (PdfWriter) · font.php (TtfFont) · subset.php (TtfSubset) · draw.php (pdf_draw)
-src/js/        draw.js (pdfDraw) — אותה רשימת ציור בדפדפן, בלי שרת (שלב 3)
-tests/         draw.test.mjs — JS מול PHP: אותה רשימה, אותו PDF במבנה (רץ ב-CI של עורך התמלילים)
+src/js/        draw.js (pdfDraw) — אותה רשימת ציור בדפדפן, בלי שרת (שלב 3) · font.js — גופנים ו-subset (מ6)
+tests/         draw.test.mjs — JS מול PHP: אותה רשימה, אותו PDF במבנה, וקובץ הגופן המוקטן זהה בבתים
 tools/sync.php מעתיק את src/php ו-src/js לאפליקציות שב-apps.json; ‎--check — שער בפריסה
 apps.json      האפליקציות שמשתמשות. אפליקציה נכנסת רק בהסכמת הצ'אט שלה
 ```
@@ -48,7 +48,7 @@ $pdf = pdf_draw($list, fn(string $key) => file_get_contents(...)); // $key — �
 ```
 
 - **`size` / `bleed`:** `size` הוא העמוד (TrimBox). `bleed` מרחיב את MediaBox ו-BleedBox לכל צד; מותר לצייר בגלישה (x, y שליליים).
-- **`glyphs`:** (x, y) — קו הבסיס. כל גליף: מזהה בגופן, היסט (dx ימינה, **dy למעלה** — כמו HarfBuzz) והתקדמות, בנקודות.
+- **`glyphs`:** (x, y) — קו הבסיס. רשימה ריקה — לא מצייר כלום. כל גליף: מזהה בגופן, היסט (dx ימינה, **dy למעלה** — כמו HarfBuzz) והתקדמות, בנקודות.
   הגליפים בסדר חזותי (משמאל לימין). `text` — הטקסט הלוגי, ל-`ActualText` (חיפוש והעתקה).
 - **גופן:** TrueType (TTF או WOFF 1), **אותו קובץ** שעוצב איתו — מוטמע עם subset, ומזהי הגליפים נשמרים.
 - **`path`** (שלב 1, #971)**:** `d` — פקודות **מוחלטות** בלבד, `M L C Q Z` (כמו בפורמט). `Q` הופך ל-`C`; זוגות נוספים אחרי
@@ -81,13 +81,18 @@ const bytes = await pdfDraw(list, key => bytesOf(key));   // Uint8Array; resolve
 
 - **אותה רשימה ואותן הודעות שגיאה** (`TypeError`), וזרם התוכן של כל עמוד **זהה** לזה של PHP — נבדק ב-`tests/draw.test.mjs`
   על כל הפעולות, ועל 20 רשימות פגומות. ציור ב-`pdftoppm` של שני הקבצים — אותו דבר.
-- **`glyphs` — עוד לא ב-JS** (גופנים ו-subset — רק כשמישהו יצטרך): שגיאה ברורה. טקסט — כקווי מתאר (`path`), או ציור בשרת.
+- **`glyphs` — טקסט אמיתי (מ6):** גופן TrueType / WOFF 1 מוטמע עם subset, ToUnicode ו-ActualText — טקסט בר-חיפוש ובר-העתקה,
+  לא קווי מתאר. הכול כמו ב-PHP: אובייקטי הגופן, הרוחבים, תג ה-subset, ו**קובץ הגופן המוקטן זהה בבתים** (`font.js`).
+  רשימת הגליפים — מ-`shapeLine` של `text-core`, כמו שכתוב שם ב"ל-PDF":
+  ```js
+  const gl = shapeLine([font, fallback], text, 'rtl'), s = size / fontMetrics(font).upem;
+  { op: 'glyphs', font: 'media/….ttf', size, x, y, text, glyphs: gl.map(g => [g.gid, g.dx * s, g.dy * s, g.ax * s]) }
+  ```
+  גליף מגופן חלופי (`g.f`) — ב-op נפרד עם הגופן שלו (ראו `layout-studio/assets/js/pdf.js`). `glyphs: []` — לא מצייר כלום.
 - **תמונות:** PNG (8 / 16 סיביות, פלטה, אפור; בלי interlace) ו-JPEG. שונה מ-PHP: PNG לא מוקטן (ב-PHP — עד 1600 בצלע),
   והשקיפות שלו מדויקת (ב-GD — 7 סיביות). דורש `CompressionStream` ו-`crypto.subtle` (דפדפן מודרני, https; Node 18+).
 
 ## עוד לא
-
-- **`glyphs` ב-JS** — גופנים ו-subset, כשמישהו יצטרך.
 
 - **CMYK והפרדות** — לפי `mbe-format.md` סעיף 9.
 - **subset לגופני CFF** (OTF עם קווי מתאר PostScript) — מוטמעים בשלמותם.
