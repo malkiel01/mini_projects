@@ -1,10 +1,13 @@
 <?php
-// זמני: בעל המערכת ביקש (2026-10-31) — הרשמה בלי אישור: כל מי שירצה נרשם ונכנס אחרי אימות המייל.
-$p = new PDO('sqlite:platform/data/platform.sqlite');
-$p->exec('PRAGMA busy_timeout = 5000');
-$before = $p->query("SELECT value FROM settings WHERE key = 'require_approval'")->fetchColumn();
-$p->prepare("INSERT INTO settings (key, value) VALUES ('require_approval', '0') ON CONFLICT(key) DO UPDATE SET value = excluded.value")->execute();
-$after = $p->query("SELECT value FROM settings WHERE key = 'require_approval'")->fetchColumn();
-$grants = $p->query("SELECT value FROM settings WHERE key = 'default_grants'")->fetchColumn();
-$pending = (int)$p->query("SELECT COUNT(*) FROM users WHERE status = 'pending'")->fetchColumn();
-echo json_encode(['before' => $before, 'after' => $after, 'default_grants' => $grants, 'pending_users' => $pending], JSON_UNESCAPED_UNICODE);
+// זמני: קריאה בלבד — האם דף הבית של האפליקציה המותקנת עונה, ומה ביומני השגיאות.
+$out = [];
+foreach (['https://mbe-plus.com/mini_projects/platform/home/', 'https://mbe-plus.com/mini_projects/', 'https://mbe-plus.com/mini_projects/family-sw.js', 'https://mbe-plus.com/mini_projects/platform/manifest.webmanifest', 'https://mbe-plus.com/mini_projects/platform/api.php?action=me'] as $u) {
+    $ch = curl_init($u);
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 15, CURLOPT_HEADER => true]);
+    $r = (string)curl_exec($ch);
+    $hs = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+    $out['http'][$u] = ['code' => curl_getinfo($ch, CURLINFO_HTTP_CODE), 'err' => curl_error($ch), 'bytes' => strlen($r) - $hs, 'start' => substr($r, $hs, 120)];
+}
+foreach (['platform/home/error_log', 'platform/error_log', 'error_log'] as $f) if (is_file($f)) $out['errors'][$f] = array_slice(array_map('trim', file($f)), -6);
+$out['load'] = sys_getloadavg();
+echo json_encode($out, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
