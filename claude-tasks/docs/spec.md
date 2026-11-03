@@ -908,6 +908,32 @@ The request asked for two caps **in the server settings only**. The owner decide
 
 ---
 
+### 9.1 Platform can ask the owner (owner report 2026-11-03; **stage 8b**)
+
+**The report:** *"I talked to the chat through Platform — it was supposed to send me a question. It thought for a long time, then
+suddenly said I had answered the question and moved on. Questions from Platform don't really work."* **Cause:** `platform-reply`
+is one `aiComplete` call that must produce an answer; it has no way to ask, so it guesses and continues. The "you answered" line was
+the `status` copy meant for the chat, shown on the board (fixed separately: folded to a grey line).
+
+**Decision — Platform asks with the same choice bubble as the chats (§5.10), stateless, one round at a time:**
+- `platform-reply` asks the model for **structured output**: either `{"answer": "…"}` or
+  `{"ask": {"questions": [ … same shape as AskUserQuestion: header, question, multiSelect, options[{label, description}] … ]},
+  "why": "…"}` (or both: a short answer plus a question). The system prompt says: when the owner's decision is needed (a choice
+  between options, missing information, anything irreversible) — **ask, never assume**.
+- An `ask` is stored as an `out` message `kind: choice` with `author_role: platform` — the board shows the same bubble, buttons and
+  "אחר…". Answering it (`choice-answer`) triggers the next `platform-reply` with the whole thread as context (last 30 messages, as
+  today), so Platform "continues" from the owner's answer. No process waits; every round is one request.
+- Each round is logged in `usage` (`kind: answer`) and counts toward the quota; a round that ends in a question is not charged twice.
+- **Limits:** at most **3 questions in a row** without an answer in between; after that Platform must answer with what it has or
+  propose "📋 להפוך למטלה". Platform still has **no tools** — it cannot ask for permissions or run anything (that is the engine, §11,
+  and the gate, §5.13).
+- The `status` copy to the chat (§9) is written as "הודעה מבעל הלוח: … / Platform ענה: …" (or "Platform שאל: …") and is never
+  shown on the board except as a grey "📨 עודכן לצ'אט" line.
+
+**Done when:** in a ☁️ channel, a message that needs a decision gets a choice bubble from Platform (not a guessed answer); tapping
+an option makes Platform continue from it; three unanswered questions in a row are refused; the board shows no "you answered"
+text. Tests with a fake provider for: answer, ask, ask→answer→continue, the 3-question limit.
+
 ## 10. Stage 9 — the remaining screens (per taste.md)
 
 | Screen | What is clunky today | Fix |
