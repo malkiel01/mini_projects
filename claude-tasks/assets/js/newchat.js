@@ -287,8 +287,25 @@ function renderHandoff() {
     try { await api('handoff-request', { channel_id: ho.channel.id }); } catch (ex) { toast(ex.message, 'error'); }
     pollHandoff();
   } });
+  // בעל הלוח 2026-11-03: צ'אט שלא מאזין לא יענה עד שעה — לא מחכים לו. סיכום חכם עכשיו (קריאה אחת, כ-10 שניות),
+  // או לבקש מהצ'אט הישן ישירות (בתוך Claude Code — שניות), או בלי תקציר
+  const smart = el('button', { type: 'button', class: 'btn primary', text: '📝 סיכום חכם עכשיו (כ-10 שניות)', onclick: async (e) => {
+    const b = e.currentTarget; b.disabled = true; b.textContent = '📝 מסכם…';
+    try { await api('channel-summary', { channel_id: ho.channel.id }); await showHandoffPrompt(true); }
+    catch (ex) { toast(`${ex.message} — אפשר "בלי תקציר"`, 'error'); b.disabled = false; b.textContent = '📝 סיכום חכם עכשיו (כ-10 שניות)'; }
+  } });
+  const askText = 'תכתוב עכשיו תקציר העברה במבנה הקבוע (מצב וערכים עיקריים · החלטות ולמה · מה פתוח · קבצים שנגעת בהם · sessions וענף · מה הצ\'אט הבא צריך לעשות קודם), ושלח אותו ללוח: claude-tasks/bridge/link.sh handoff <קובץ>';
+  const direct = el('details', { class: 'what' }, [
+    el('summary', { text: `⚡ הכי מדויק: לבקש מ"${name}" ישירות` }),
+    el('p', { class: 'hint', text: 'פותחים את הצ\'אט הישן ב-Claude Code ומדביקים את ההודעה הזו. הוא כותב את התקציר תוך שניות, והגיליון כאן ממשיך לבד.' }),
+    el('button', { type: 'button', class: 'btn ghost', text: '📋 העתקת ההודעה לצ\'אט הישן', onclick: async (e) => {
+      try { await navigator.clipboard.writeText(askText); e.currentTarget.textContent = '✓ הועתק — הדבק בצ\'אט הישן'; }
+      catch { toast(askText, ''); }
+    } }),
+  ]);
   let body;
   if (st.state === 'waiting' && st.listening) {
+    smart.className = 'btn ghost';   // צ'אט שמאזין עונה לבד — הסיכום החכם הוא רק אפשרות נוספת
     body = [
       el('p', { class: 'nc-wait', role: 'status' }, [el('span', { class: 'spin', 'aria-hidden': 'true' }),
         ` ממתין לתקציר מ"${name}" · `, el('b', { id: 'hoElapsed', text: mmss(elapsed()) })]),
@@ -296,20 +313,24 @@ function renderHandoff() {
         ? el('div', { class: 'ho-expect' }, [el('progress', { id: 'hoBar', max: '100', value: '0', 'aria-label': 'התקדמות משוערת' }),
             el('small', { id: 'hoExpect', text: `בדרך כלל כ-${secs(st.expected_seconds)}` })])
         : el('p', { class: 'hint', text: 'לא ידוע כמה זמן — עוד אין מספיק העברות קודמות להערכה.' }),
-      el('p', { class: 'hint', id: 'hoLate', hidden: true, text: 'אין תגובה כבר 5 דקות. אפשר לפתוח בלי תקציר, או להמשיך לחכות ברקע.' }),
+      el('p', { class: 'hint', id: 'hoLate', hidden: true, text: 'אין תגובה כבר 5 דקות. אפשר סיכום חכם עכשיו, בלי תקציר, או להמשיך לחכות ברקע.' }),
       el('p', { class: 'hint', text: 'הצ\'אט כותב תקציר העברה: מצב, החלטות, מה פתוח, קבצים, ענף, ומה הצ\'אט הבא עושה קודם. הסגירה (✕) לא מבטלת — ממשיכים לחכות ברקע.' }),
-      el('div', { class: 'row-btns' }, [background, fallback]), cancel,
+      el('div', { class: 'row-btns' }, [background, fallback]),
+      el('div', { class: 'row-btns' }, [smart]), cancel,
     ];
   } else if (st.state === 'waiting') {
     // לא מאזין — לא "חושב": בלי ספינר, ההסבר, ו"בלי תקציר" הוא הכפתור הראשי
     body = [
-      el('p', { class: 'nc-wait', role: 'status' }, [`⚪ "${name}" לא מאזין — התקציר יגיע רק כשיבדוק את הלוח (עד כשעה). עברו `,
+      el('p', { class: 'nc-wait', role: 'status' }, [`⚪ "${name}" לא מאזין — הוא יראה את הבקשה רק כשיבדוק את הלוח (עד כשעה). לא צריך לחכות לו. עברו `,
         el('b', { id: 'hoElapsed', text: mmss(elapsed()) })]),
-      el('p', { class: 'hint', text: 'בלי תקציר — הפרומפט ייבנה מההודעות האחרונות בערוץ. ✕ לא מבטל את הבקשה.' }),
+      (fallback.className = 'btn ghost', el('div', { class: 'row-btns' }, [smart])),
+      el('p', { class: 'hint', text: 'סיכום חכם — Platform מסכם את השיחה בקריאה אחת (על חשבון המכסה), והצ\'אט החדש נפתח ממנו. בלי תקציר — רק ההודעות האחרונות, בחינם.' }),
+      direct,
       el('div', { class: 'row-btns' }, [fallback, background]), cancel,
     ];
   } else if (st.state === 'expired') {
-    body = [el('p', { class: 'nc-wait', text: '⌛ הבקשה נסגרה — שעה בלי תשובה מהצ\'אט.' }), el('div', { class: 'row-btns' }, [fallback, again])];
+    body = [el('p', { class: 'nc-wait', text: '⌛ הבקשה נסגרה — שעה בלי תשובה מהצ\'אט. אפשר לפתוח עכשיו בלי לחכות לו:' }),
+      el('div', { class: 'row-btns' }, [smart]), el('div', { class: 'row-btns' }, [(fallback.className = 'btn ghost', fallback), (again.className = 'btn ghost', again)])];
   } else if (st.state === 'cancelled') {
     body = [el('p', { class: 'nc-wait', text: 'הבקשה בוטלה.' }), el('div', { class: 'row-btns' }, [again, fallback])];
   } else {
