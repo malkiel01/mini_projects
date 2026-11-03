@@ -860,3 +860,9 @@ mark.hit { background: color-mix(in srgb, var(--star) 45%, transparent); color: 
 .nc-help summary { cursor: pointer; color: var(--brand); min-height: 44px; display: flex; align-items: center; }
 .nc-help ol, .nc-steps { margin: var(--s2) 0; padding-inline-start: 1.4em; display: grid; gap: 6px; font-size: .875rem; }
 .nc-steps code { overflow-wrap: anywhere; }
+
+/* שלב 8b — Platform: הועבר לצ'אט, ותיאור של פעולה שלא קרתה */
+.b-needs { margin: 6px 0 0; padding: 6px 10px; border-radius: var(--r); background: var(--surface); border: 1px dashed var(--line);
+  font-size: .82rem; color: var(--muted); }
+.b-warn { margin: 6px 0 0; padding: 6px 10px; border-radius: var(--r); background: var(--danger-soft); color: var(--danger);
+  font-size: .82rem; font-weight: 600; }

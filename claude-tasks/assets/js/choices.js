@@ -54,8 +54,10 @@ export function choiceCard(m, { canAnswer, onDone }) {
     const answers = Object.fromEntries(picks);
     box.querySelectorAll('button, input, textarea').forEach((b) => { b.disabled = true; });
     try {
-      await api('choice-answer', { message_id: m.id, answers });
-      toast('התשובה נשלחה לצ\'אט', 'ok');
+      const r = await api('choice-answer', { message_id: m.id, answers });
+      toast(r.platform ? 'התשובה נשלחה — ☁️ Platform ממשיך' : 'התשובה נשלחה לצ\'אט', 'ok');
+      onDone?.(r);
+      return;
     } catch (ex) { toast(ex.message, 'error'); }
     onDone?.();
   };
@@ -120,6 +122,7 @@ export function choiceCard(m, { canAnswer, onDone }) {
   send.addEventListener('click', submit);
   const note = inApp ? 'השאלה פתוחה בחלון באפליקציה — עונים שם.'
     : !canAnswer ? 'אין לך הרשאה לענות לצ\'אט הזה.'
+    : m.author_role === 'platform' ? '☁️ Platform מחכה להחלטה שלך — התשובה תמשיך את השיחה.'
     : 'הצ\'אט עצר ומחכה לתשובה. אפשר לענות כאן, או להקליד בצ\'אט.';
   const box = el('div', { class: 'choice' }, [
     ...blocks,
