@@ -1173,6 +1173,23 @@ async function viewGrid(id) {
         r.inputs[k] = inp;
         return h(`td.num.c-${k}`, inp, note ? h('small.cell-note', note) : null);
     };
+    // מחיקה / השבתה מתוך הטבלה — כשאין שינויים שלא נשמרו (אחרת הם היו הולכים לאיבוד בטעינה מחדש)
+    const unsaved = () => rows.some(changed) || notes.some(x => x.ta.value !== x.orig);
+    const guard = fn => () => unsaved() ? toast('יש שינויים שלא נשמרו — קודם שמירה או ביטול', true) : fn();
+    const reload = () => { window.onbeforeunload = null; viewGrid(id); };
+    const rowActions = l => guard(() => {
+        const off = l.transfer ? null : h('button.btn.ghost', { type: 'button' }, '⏸️ השבתה — נשארת, מחוץ לחישוב ולמסמך');
+        off?.addEventListener('click', busy(off, async () => {
+            await api('line_disable', { budget_id: b.id, id: l.id, disabled: 1 }); sheet.close(); toast('השורה הושבתה — מופיעה מתחת לטבלה, ואפשר להחזיר'); reload();
+        }));
+        const rm = h('button.btn.ghost.danger', { type: 'button' }, l.transfer ? '🗑️ מחיקת ההעברה (שני הצדדים)' : '🗑️ מחיקת השורה');
+        rm.addEventListener('click', busy(rm, async () => {
+            if (!confirm(l.transfer ? 'למחוק את ההעברה — השורה כאן והשורה בקופה השנייה?' : `למחוק את "${l.title}"?`)) return;
+            await api('line_delete', { budget_id: b.id, id: l.id }); sheet.close(); toast('נמחק — אפשר לחזור מ"🕘 גרסאות"'); reload();
+        }));
+        openSheet(l.title, [h('p.hint', `${money(l.amount)}${l.subtitle ? ' · ' + l.subtitle : ''}`),
+            l.transfer ? h('p.hint', '🔁 שורת העברה — לא מושבתת (הצד השני היה נשאר לבד); אפשר למחוק את שני הצדדים.') : null, off, rm]);
+    })();
     const rowEl = (r, i) => {
         const l = r.line;
         const lock = lockedAmount(l);
@@ -1188,8 +1205,11 @@ async function viewGrid(id) {
             r.sel = h('input.sel', { type: 'checkbox', 'aria-label': `סימון למחיקה — ${l.title}` });
             r.sel.addEventListener('change', updSel);
         }
+        const act = l && edit ? h('button.row-act', { type: 'button', 'aria-label': `פעולות — ${l.title}`, title: 'השבתה / מחיקה',
+            onmousedown: e => e.preventDefault(),   // בלי לגנוב פוקוס: יציאה מתא מסתירה שורה שנייה ריקה, והכפתור זז לפני שהלחיצה נגמרת
+            onclick: () => rowActions(l) }, '⋯') : null;
         r.tr = h('tr',
-            h('td.n', r.sel || null, l ? `${i + 1}.` : '+',
+            h('td.n', r.sel || null, l ? `${i + 1}.` : '+', act,
                 l && (l.transfer || l.lease || l.calc || l.summary_only) ? h('small', l.transfer ? '🔁' : '', l.lease ? '🏠' : '', l.calc ? '🧮' : '', l.summary_only ? '∑' : '') : null),
             h('th.title', { scope: 'row' }, h('div', r.inputs.title, r.inputs.subtitle, r.msg)),
             ...NUMS.map(([k]) => numCell(r, k, l ? l[k] : null, k === 'amount' ? lock : (k !== 'actual' ? recvLock : ''), k === 'amount' ? note : '')));
@@ -1278,11 +1298,22 @@ async function viewGrid(id) {
     const doc = h('div.grid-doc.sel-off', ...d.funds.map(f => {
         fundBal[f.id] = h('span.grid-bal');
         const dirs = b.expense_first ? ['expense', 'income'] : ['income', 'expense'];
+        const offL = d.disabled.lines.filter(l => l.fund_id === f.id);
         return h('section.grid-fund',
-            h('div.grid-head', h('h3', FUND_IC[f.kind], ' ', `הכנסות והוצאות – ${f.name}`), fundBal[f.id]),
+            h('div.grid-head', h('h3', FUND_IC[f.kind], ' ', `הכנסות והוצאות – ${f.name}`), fundBal[f.id],
+                edit ? h('button.icon-btn', { type: 'button', 'aria-label': `פעולות על הקופה — ${f.name}`, title: 'השבתה / הוצאה מההצעה',
+                    onclick: guard(() => fundActions(d, f, reload)) }, '⋯') : null),
             f.address ? h('p.grid-addr', f.address) : null,
-            ...dirs.flatMap(dir => table(f, dir)));
-    }));
+            ...dirs.flatMap(dir => table(f, dir)),
+            offL.length ? h('div.grid-off', h('b', '⏸️ מושבתות: '), ...offL.map(l => h('span.off-item', `${l.title} (${DIR_LABEL[l.direction]}, ${money(l.amount)})`,
+                edit ? h('button.btn.sm.ghost', { type: 'button', onclick: guard(async () => {
+                    await api('line_disable', { budget_id: b.id, id: l.id, disabled: 0 }).catch(e => toast(e.message, true)); reload();
+                }) }, '↩ החזרה') : null))) : null);
+    }),
+        d.disabled.funds.length ? h('section.grid-fund.grid-off', h('b', '⏸️ קופות מושבתות: '), ...d.disabled.funds.map(f => h('span.off-item', `${f.name} (${f.lines} שורות)`,
+            edit ? h('button.btn.sm.ghost', { type: 'button', onclick: guard(async () => {
+                await api('bfund_disable', { budget_id: b.id, fund_id: f.id, disabled: 0 }).catch(e => toast(e.message, true)); reload();
+            }) }, '↩ החזרה') : null))) : null);
     const zLabel = h('output.z-val', { 'aria-live': 'polite' });
     const zoomKey = 'ob-grid-zoom';
     const fitZoom = () => {
@@ -1310,7 +1341,7 @@ async function viewGrid(id) {
 
     put(main, h('div.grid-top', sumCard,
             h('p.hint', edit
-                ? 'כל הקופות כמו במסמך. משנים כמה שרוצים ושומרים פעם אחת; ההערות והאזהרות מתעדכנות תוך כדי הקלדה. 🧮 חודשית ו-🔁 העברה מכמה קופות — הסכום נגזר, ומשנים אותו בעריכת השורה. 🏠 שכירות · ∑ רק בריכוז.'
+                ? 'כל הקופות כמו במסמך. משנים כמה שרוצים ושומרים פעם אחת; ההערות והאזהרות מתעדכנות תוך כדי הקלדה. ⋯ ליד שורה — השבתה / מחיקה; ⋯ ליד שם הקופה — השבתה / הוצאה מההצעה; ☑️ — מחיקת כמה שורות. 🧮 חודשית ו-🔁 העברה מכמה קופות — הסכום נגזר, ומשנים אותו בעריכת השורה. 🏠 שכירות · ∑ רק בריכוז.'
                 : 'ההצעה ' + STATUS_CHIP[b.status][0] + ' — לקריאה בלבד. לעריכה — להחזיר לטיוטה (⋯ במסך ההצעה).')),
         zoomBox,
         edit && d.lines.length ? h('div.toolbar', { style: 'justify-content:flex-end;flex-wrap:wrap' }, selBtn, delBtn) : null,
@@ -1890,12 +1921,13 @@ async function versionView(d, v, canRestore) {
 }
 
 /** קופה בתוך ההצעה: השבתה (הפיכה) או הוצאה מההצעה עם כל השורות. */
-function fundActions(d, f) {
+function fundActions(d, f, after = null) {
     const b = d.budget;
+    const done = () => after ? after() : (location.hash = `#/budget/${b.id}`);
     const off = h('button.btn.ghost', { type: 'button' }, '⏸️ השבתה בהצעה הזו');
     off.addEventListener('click', busy(off, async () => {
         await api('bfund_disable', { budget_id: b.id, fund_id: f.id, disabled: 1 });
-        sheet.close(); toast('הקופה הושבתה — אפשר להחזיר מרשימת הקופות'); location.hash = `#/budget/${b.id}`;
+        sheet.close(); toast('הקופה הושבתה — אפשר להחזיר מרשימת הקופות'); done();
     }));
     const rm = h('button.btn.ghost.danger', { type: 'button' }, '🗑️ הוצאה מההצעה…');
     rm.addEventListener('click', busy(rm, async () => {
@@ -1910,7 +1942,7 @@ function fundActions(d, f) {
             h('p.hint', 'לפני ההוצאה נשמרת גרסה — אפשר לשחזר מ"🕘 גרסאות".'),
         ], async x => {
             await api('bfund_remove', { budget_id: b.id, fund_id: f.id, confirm: x.confirm, archive: x.archive ? 1 : 0 });
-            toast(`"${p.name}" הוצאה מההצעה`); location.hash = `#/budget/${b.id}`;
+            toast(`"${p.name}" הוצאה מההצעה`); done();
         });
     }));
     openSheet(f.name, [
