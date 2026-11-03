@@ -11,7 +11,7 @@
 #   .claude/board-listen.log    יומן המאזין (חסימות, 508, שגיאות רשת)
 
 # גרסת הגשר — לעדכן יחד עם BRIDGE_VERSION_CURRENT ב-lib/bridgever.php (§5.10.1)
-BRIDGE_VERSION="2026-11-03.2"
+BRIDGE_VERSION="2026-11-03.3"
 # עותק הריצה: hook.sh ו-link.sh מריצים ממנו כשקיים. link.sh update מרענן אותו מ-origin/main
 # בלי לגעת בעץ העבודה של הצ'אט (update.sh)
 BRIDGE_RUNTIME="$HOME/.claude-tasks-bridge"

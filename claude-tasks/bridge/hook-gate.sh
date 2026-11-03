@@ -6,12 +6,15 @@
 #   ☁️ Platform (CT_GATE_KIND=platform, ב-Actions) — ask → ask-approval על המטלה, ונדחה "נשלח לאישור".
 #
 # 1. סיווג מקומי (php classify.php — אותו קוד שהשרת מריץ). לא ממופה → בלי החלטה, יוצאים מיד.
-# 2. לא רשום: ללא השגחה → נדחה (אין מדיניות לבדוק); אינטראקטיבי → בלי החלטה.
+# 2. לא רשום: ללא השגחה → רק המסוכן נדחה (GATE_UNREGISTERED_BLOCK, בעל הלוח 2026-11-03); כתיבה רגילה
+#    ו-push לענף משלו — עוברים (בלי רישום אין תיקיית פרויקט, וכל כתיבה הייתה "פרויקט אחר"). אינטראקטיבי → בלי החלטה.
 # 3. פסק דין allow / deny שמור 5 דקות לכל סוג. אחרת — gate-check בלוח (השרת מסווג שוב, ומכריע).
 # 4. הלוח לא עונה / ⏸: ללא השגחה → נדחה (fail-closed); אינטראקטיבי → בלי החלטה (כמו שלב 13).
 # יוצא תמיד 0. בלי פלט = בלי החלטה = Claude Code ממשיך כרגיל.
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh" 2>/dev/null || exit 0
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# צ'אט לא רשום, ללא השגחה: רק הסוגים האלה נחסמים. השאר (כתיבה בריפו, push לענף משלו, הודעה לצוות) — עוברים
+GATE_UNREGISTERED_BLOCK="push-protected change-gate run-remote-script change-deploy secrets delete-files merge-own-pr unknown"
 input="$(cat)"
 tool="$(printf '%s' "$input" | jq -r '.tool_name // empty' 2>/dev/null)"
 [ -n "$tool" ] || exit 0
@@ -38,7 +41,7 @@ else
   # אין php — רק ללא השגחה, ורק הגס: פקודות שעלולות להרוס
   [ "$unattended" = 1 ] || exit 0
   cmd="$(printf '%s' "$input" | jq -r '.tool_input.command // empty')"
-  printf '%s' "$cmd" | grep -Eq '(^|[;&|[:space:]])(rm|git[[:space:]]+push|gh[[:space:]]+pr[[:space:]]+merge)([[:space:]]|$)|curl[^|]*\|' || exit 0
+  printf '%s' "$cmd" | grep -Eq '(^|[;&|[:space:]])(rm|gh[[:space:]]+pr[[:space:]]+merge)([[:space:]]|$)|git[[:space:]]+push[^;&|]*([[:space:]](-f|--force[^[:space:]]*|main|master)([[:space:]]|$)|[[:space:]]\+)|curl[^|]*\|' || exit 0
   type="unknown"
 fi
 [ -n "$type" ] || exit 0
@@ -49,7 +52,12 @@ if [ "$kind" = platform ]; then
   [ -n "$token" ] && [ -n "${TASK_ID:-}" ] || deny_unattended "$type (אין אסימון לוח)"
 else
   token="$(link_get channel_token)"
-  if [ -z "$token" ] || [ ! -f "$BOARD_LINK" ]; then deny_unattended "$type (הצ'אט לא רשום בלוח)"; fi
+  if [ -z "$token" ] || [ ! -f "$BOARD_LINK" ]; then
+    case " $GATE_UNREGISTERED_BLOCK " in
+      *" $type "*) deny_unattended "$type (הצ'אט לא רשום בלוח)" ;;
+      *) exit 0 ;;
+    esac
+  fi
 fi
 
 # 3. מטמון — 5 דקות לסוג
