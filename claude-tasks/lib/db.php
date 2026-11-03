@@ -285,6 +285,8 @@ function migrate(PDO $pdo): void {
     migrateChatSettings($pdo);
     migrateLabels($pdo);
     migrateBridgeVersion($pdo);
+    // שלב 16: הצ'אט לא עונה (lib/silence.php)
+    migrateSilence($pdo);
 }
 
 /** ALTER TABLE ADD COLUMN אינו מכיר IF NOT EXISTS ב-SQLite — בודקים לבד. */
@@ -317,7 +319,8 @@ const PRIORITIES = ['high', 'normal', 'low'];
 /** מי כתב הערה. legacy — רק להערות שנכתבו לפני שהשדה נוסף. */
 const NOTE_ROLES = ['owner', 'member', 'worker', 'platform'];
 
-function nowTs(): int { return time(); }
+/** השעון. ‏CT_FAKE_NOW — שעון מדומה לבדיקות (tests/lanes16.php). */
+function nowTs(): int { return isset($GLOBALS['CT_FAKE_NOW']) ? (int) $GLOBALS['CT_FAKE_NOW'] : time(); }
 
 /**
  * משחרר מטלות שההחזקה עליהן פגה. נקרא לפני כל משיכה מהתור, כדי שעובד
@@ -474,3 +477,4 @@ require_once __DIR__ . '/chatsettings.php';
 require_once __DIR__ . '/labels.php';
 require_once __DIR__ . '/search.php';
 require_once __DIR__ . '/bridgever.php';
+require_once __DIR__ . '/silence.php';

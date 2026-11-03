@@ -28,7 +28,7 @@ require_once __DIR__ . '/config.php';
 if (!defined('BELL_DIR')) define('BELL_DIR', __DIR__ . '/../data/bell');
 
 const MESSAGE_KINDS   = ['text', 'question', 'answer', 'approval', 'decision', 'status', 'choice', 'choice_answer',
-                         'handoff_request', 'handoff'];
+                         'handoff_request', 'handoff', 'lane_card'];
 /** מי כותב בכיוון out (שיקוף מהצ'אט). owner = "בעל המערכת כתב בצ'אט" — מידע, לא הוראה. */
 const OUT_ROLES       = ['owner', 'chat', 'system'];
 const MAX_MESSAGE     = 20000;
@@ -214,14 +214,18 @@ function channelPost(array $channel, string $role, string $body, ?int $replyTo =
         $r->execute([$replyTo, $channel['id']]);
         if (!$r->fetch()) $replyTo = null;   // תשובה להודעה שלא קיימת בערוץ — נשמרת בלי הקישור
     }
-    db()->prepare("INSERT INTO messages (channel_id, task_id, direction, author_role, kind, body, reply_to,
-                                         answered_by, created_at) VALUES (?,?, 'out', ?,?,?,?,?,?)")
-        ->execute([$channel['id'], $taskId, $role, $kind, cleanBody($body), $replyTo, '', nowTs()]);
-    $id = (int) db()->lastInsertId();
-    // ההודעה שהצ'אט עונה עליה — נענתה בצ'אט
-    if ($replyTo !== null && $role === 'chat') {
-        db()->prepare("UPDATE messages SET answered_by = 'chat' WHERE id = ? AND answered_by = ''")->execute([$replyTo]);
-    }
+    $id = inTx(function () use ($channel, $taskId, $role, $kind, $body, $replyTo) {
+        db()->prepare("INSERT INTO messages (channel_id, task_id, direction, author_role, kind, body, reply_to,
+                                             answered_by, created_at) VALUES (?,?, 'out', ?,?,?,?,?,?)")
+            ->execute([$channel['id'], $taskId, $role, $kind, cleanBody($body), $replyTo, '', nowTs()]);
+        $id = (int) db()->lastInsertId();
+        // ההודעה שהצ'אט עונה עליה — נענתה בצ'אט
+        if ($replyTo !== null && $role === 'chat') {
+            db()->prepare("UPDATE messages SET answered_by = 'chat', handled_by = 'chat' WHERE id = ? AND answered_by = ''")->execute([$replyTo]);
+        }
+        channelStateRefresh((int) $channel['id']);   // שלב 16: באותה טרנזקציה
+        return $id;
+    });
     // תשובה לשאלת בחירה פתוחה — הקלדה בצ'אט, או החלון באפליקציה (§5.10)
     if ($replyTo !== null) choiceRepliedFromChat($replyTo, (int) $channel['id'], $role, $kind, $body, $answers);
     // הצ'אט שלח משהו — כבר לא ממתין לחלון הרשאה באפליקציה (§5.10.1)
@@ -244,11 +248,15 @@ function canSendToChannel(array $user, array $channel): bool {
 /** הודעה נכנסת (in) — מאדם בלוח, או מהמערכת עצמה (תשובה על מטלה). מצלצלת. */
 function channelInsertIn(int $channelId, string $role, ?int $userId, string $body, string $kind = 'text',
                          ?int $taskId = null, ?int $replyTo = null, bool $ring = true, string $answeredBy = ''): int {
-    db()->prepare("INSERT INTO messages (channel_id, task_id, direction, author_role, author_user_id, kind, body,
-                                         reply_to, answered_by, created_at) VALUES (?,?, 'in', ?,?,?,?,?,?,?)")
-        ->execute([$channelId, $taskId, $role, $userId, in_array($kind, MESSAGE_KINDS, true) ? $kind : 'text',
-                   cleanBody($body), $replyTo, $answeredBy, nowTs()]);
-    $id = (int) db()->lastInsertId();
+    $id = inTx(function () use ($channelId, $taskId, $role, $userId, $kind, $body, $replyTo, $answeredBy) {
+        db()->prepare("INSERT INTO messages (channel_id, task_id, direction, author_role, author_user_id, kind, body,
+                                             reply_to, answered_by, created_at) VALUES (?,?, 'in', ?,?,?,?,?,?,?)")
+            ->execute([$channelId, $taskId, $role, $userId, in_array($kind, MESSAGE_KINDS, true) ? $kind : 'text',
+                       cleanBody($body), $replyTo, $answeredBy, nowTs()]);
+        $id = (int) db()->lastInsertId();
+        channelStateRefresh($channelId);   // שלב 16: ההודעה והמצב — יחד או לא בכלל
+        return $id;
+    });
     // ‏status (מה ש-Platform ענה) והודעה שממתינה ל-Platform — לא מעירים את הצ'אט (§9)
     if ($ring) ringBell($channelId);
     return $id;
@@ -272,8 +280,10 @@ function channelSend(array $user, int $channelId, string $body, ?int $taskId = n
     }
     // במסלול ☁️ — Platform עונה (platform-reply), והצ'אט לא מתעורר
     $platform = channelRoute($channel) === 'platform';
-    return channelInsertIn($channelId, authorRole($user), (int) $user['id'], $body, 'text', $taskId, $replyTo,
-                           !$platform, $platform ? 'platform' : '');
+    $id = channelInsertIn($channelId, authorRole($user), (int) $user['id'], $body, 'text', $taskId, $replyTo,
+                          !$platform, $platform ? 'platform' : '');
+    if (!$platform) silenceCheck(getChannel($channelId));   // שלב 16: הגלאי העצל
+    return $id;
 }
 
 /** ההודעות שעוד לא נמסרו לצ'אט. לא מסמן — רק channelAck מסמן. */
@@ -288,11 +298,14 @@ const WAKE_FILTER = "m.direction = 'in' AND m.delivered_at IS NULL AND m.answere
 function channelAck(array $channel, array $ids): int {
     $ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
     if (!$ids) return 0;
-    $st = db()->prepare("UPDATE messages SET delivered_at = ?
-                          WHERE channel_id = ? AND direction = 'in' AND delivered_at IS NULL
-                            AND id IN (" . implode(',', array_fill(0, count($ids), '?')) . ')');
-    $st->execute(array_merge([nowTs(), $channel['id']], $ids));
-    return $st->rowCount();
+    return inTx(function () use ($channel, $ids) {
+        $st = db()->prepare("UPDATE messages SET delivered_at = ?, handled_by = CASE WHEN handled_by = '' THEN 'chat' ELSE handled_by END
+                              WHERE channel_id = ? AND direction = 'in' AND delivered_at IS NULL
+                                AND id IN (" . implode(',', array_fill(0, count($ids), '?')) . ')');
+        $st->execute(array_merge([nowTs(), $channel['id']], $ids));
+        channelStateRefresh((int) $channel['id']);
+        return $st->rowCount();
+    });
 }
 
 /**
@@ -344,8 +357,14 @@ function channelsFor(array $user, int $projectId, bool $includeHidden = false): 
           ORDER BY c.hidden, c.status <> 'active', c.status = 'archived', c.last_seen_at DESC");
     $st->execute($ids);
     $muted = mutedChannelIds((int) $user['id']);
+    $rows = $st->fetchAll();
+    // שלב 16: הגלאי העצל — בפתיחת הלוח (אין cron). מה שהשתנה נקרא מחדש
+    foreach ($rows as $i => $c) {
+        if ($c['status'] === 'active' && silenceCheck($c) !== '') $rows[$i] = array_merge($c, getChannel((int) $c['id']));
+    }
     return array_map(function ($c) use ($muted) {
         $out = publicChannel($c);
+        $out += channelLaneInfo($c);
         foreach (['pending_in', 'open_questions', 'open_choices', 'open_permissions'] as $k) $out[$k] = (int) $c[$k];
         $out['last_message_at'] = $c['last_message_at'] === null ? null : (int) $c['last_message_at'];
         $out['listening'] = $out['status'] === 'active' && $out['listening_until'] > nowTs();
@@ -361,7 +380,7 @@ function channelsFor(array $user, int $projectId, bool $includeHidden = false): 
             if (in_array($h['state'], ['waiting', 'ready'], true)) $out['handoff'] = ['state' => $h['state'], 'requested_at' => $h['requested_at']];
         }
         return $out;
-    }, $st->fetchAll());
+    }, $rows);
 }
 
 function channelMessages(array $user, int $channelId, int $after = 0): array {
@@ -382,7 +401,7 @@ function channelMessages(array $user, int $channelId, int $after = 0): array {
     }
     unset($m);
     return ['channel' => publicChannel($channel) + ['can_send' => canSendToChannel($user, $channel), 'route_effective' => channelRoute($channel),
-                                                   'questions' => channelQuestionsMode($channel)],
+                                                   'questions' => channelQuestionsMode($channel)] + channelLaneInfo($channel),
             'messages' => $messages];
 }
 

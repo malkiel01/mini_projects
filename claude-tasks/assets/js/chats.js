@@ -73,6 +73,14 @@ function channelSub(c) {
 }
 
 let chanHandoffTimer = null;
+const laneRunning = new Set();
+async function laneRunOnce(id) {
+  if (laneRunning.has(id)) return;
+  laneRunning.add(id);
+  try { const r = await api('lane-run', { channel_id: id }); if (r.ran?.length) loadChannels().catch(() => {}); }
+  catch { /* בפעם הבאה שהלוח נפתח */ }
+  laneRunning.delete(id);
+}
 setInterval(() => {
   for (const b of document.querySelectorAll('.ho-live .ho-t')) b.textContent = mmss(Math.floor(Date.now() / 1000) - Number(b.closest('.ho-live').dataset.at));
 }, 1000);
@@ -94,6 +102,9 @@ export function renderChannels() {
     // "הצ'אט מתארך" (§5.9.3) — רק כשהצ'אט דיווח; בלי דיווח — בלי ניחוש
     c.status === 'active' && HEALTH[c.health] ? el('span', { class: `badge health health--${c.health}`, title: healthDetail(c), text: HEALTH[c.health].chip }) : null,
     c.pending_in ? el('span', { class: 'badge', title: 'ממתינות לצ\'אט', text: `✉️ ${c.pending_in}` }) : null,
+    // §15.12.1: הצ'אט לא עונה / הגיע למגבלה
+    c.status === 'active' && c.unresponsive_since > 0 ? el('span', { class: 'badge badge--blocked', title: c.route_effective === 'platform' ? '☁️ Platform עונה במקומו' : 'ההודעות ממתינות',
+      text: c.unresponsive_reason === 'limit' ? '🔴 מגבלה' : '🔴 לא עונה' }) : null,
     // §15.13: צ'אט המשך ברקע — טיימר חי; התקציר מוכן — שבב שפותח את הגיליון (לא נפתח מעצמו)
     c.handoff?.state === 'waiting' ? el('span', { class: 'badge ho-live', dataset: { at: String(c.handoff.requested_at) }, title: 'מכין תקציר לצ\'אט המשך' }, [
       '🔁 ', el('span', { class: 'ho-word', text: 'מכין תקציר… ' }),
@@ -102,6 +113,8 @@ export function renderChannels() {
       onclick: (e) => { e.stopPropagation(); openHandoff(c); } }) : null,
     el('span', { class: 'go', 'aria-hidden': 'true', text: '‹' }),
   ])));
+  // §15.12.1: מה שעבר ל-☁️ כשהצ'אט לא ענה — הלוח מפעיל את Platform (אין cron; מי שפתח את הלוח מפעיל)
+  for (const c of list) if (c.platform_queue > 0) laneRunOnce(c.id);
   // יש העברה שממתינה — בודקים שוב בעוד 15 שנ' (כך השבב "מוכן" מופיע גם כשהגיליון סגור)
   clearTimeout(chanHandoffTimer);
   if (list.some((c) => c.handoff?.state === 'waiting')) chanHandoffTimer = setTimeout(() => loadChannels().catch(() => {}), 15000);
@@ -188,6 +201,9 @@ function bubble(m) {
         ? choiceCard(m, { canAnswer: conv.channel?.can_send && conv.channel?.status === 'active',
             // §9.1: תשובה לשאלה של Platform — Platform ממשיך מיד מהתשובה
             onDone: (r) => { reload(); if (r?.platform) platformAnswer(r.id); } })
+      // §15.12.1: הצ'אט לא עונה — כרטיס אחד לאפיזודה, לבעל הלוח
+      : m.kind === 'lane_card'
+        ? laneCard(m)
       // בקשת הרשאה (§5.12): הפקודה המלאה וכפתורי אישור — בעל הלוח
       : m.kind === 'permission' && m.meta?.tool_name
         ? permCard(permFromMessage(m), { onDone: () => { reload(); refreshPermStrip(); } })
@@ -210,6 +226,57 @@ function bubble(m) {
   ]);
 }
 
+/* ── שלב 16: הצ'אט לא עונה (§15.12.1) ─────────────────────────── */
+
+const ago = (t) => { const s = Math.max(0, Math.floor(Date.now() / 1000) - t); return s < 3600 ? `${Math.max(1, Math.round(s / 60))} דק'` : `${Math.round(s / 3600)} שע'`; };
+const utcTime = (t) => new Date(t * 1000).toLocaleString('he-IL', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+/** "💬 הצ'אט לא עונה — <שם>": כמה ממתינות, מתי הישנה, כמה נשאר מהתקרה, ☁️ / ⏳. */
+function laneCard(m) {
+  const x = m.meta || {};
+  const done = m.status !== 'open';
+  const facts = [
+    x.why,
+    `${x.waiting} ${x.waiting === 1 ? 'הודעה ממתינה' : 'הודעות ממתינות'}${x.oldest_at ? ` · הישנה לפני ${ago(x.oldest_at)}` : ''}`,
+    x.platform_ok ? `נשאר למעברים אוטומטיים: $${Number(x.ceiling_left || 0).toFixed(2)} (${x.ceiling_by})` : null,
+    x.resets_at ? `המגבלה מתאפסת ב-${utcTime(x.resets_at)}` : null,
+  ].filter(Boolean);
+  const answer = async (choice, btn) => {
+    btn.disabled = true;
+    try {
+      const r = await api('lane-card-answer', { card_id: m.id, choice });
+      toast(choice === 'platform' ? `☁️ Platform עונה — הועברו ${r.moved}` : '⏳ מחכים לצ\'אט', 'ok');
+      for (const id of r.run || []) await platformAnswer(id);
+    } catch (ex) { toast(ex.message, 'error'); btn.disabled = false; }
+    reload();
+  };
+  return el('div', { class: 'lane-card' }, [
+    el('b', { text: m.body }),
+    el('ul', { class: 'lane-facts' }, facts.map((f) => el('li', { dir: 'auto', text: f }))),
+    x.blocked ? el('p', { class: 'b-warn', text: x.blocked }) : null,
+    done ? el('p', { class: 'hint', text: m.status === 'resolved' ? '💬 הצ\'אט חזר — הכרטיס נסגר.'
+      : x.decision === 'platform' ? '☁️ הוחלט: Platform עונה עד שהצ\'אט יחזור.' : '⏳ הוחלט: מחכים לצ\'אט.' })
+      : isOwner() ? el('div', { class: 'row-btns' }, [
+        x.platform_ok ? el('button', { type: 'button', class: 'btn primary', text: '☁️ שיענה Platform', onclick: (e) => answer('platform', e.currentTarget) }) : null,
+        el('button', { type: 'button', class: 'btn ghost', text: '⏳ נחכה', onclick: (e) => answer('wait', e.currentTarget) }),
+      ].filter(Boolean)) : el('p', { class: 'hint', text: 'ממתין להחלטה של בעל הלוח.' }),
+  ]);
+}
+
+/** הפס בראש השיחה: הצ'אט לא עונה מאז…, ומה קורה עכשיו. */
+function renderLaneStrip(c) {
+  const on = c.status === 'active' && c.unresponsive_since > 0;
+  $('#cvLane').hidden = !on;
+  if (!on) return;
+  const limit = c.unresponsive_reason === 'limit';
+  const what = c.route_effective === 'platform' ? '☁️ Platform עונה במקומו עד שיחזור'
+    : c.lane_decision === 'wait' ? '⏳ ההודעות ממתינות לו' : '❓ ממתין להחלטה שלך (בכרטיס למטה)';
+  $('#cvLane').replaceChildren(el('div', { class: 'body' }, [
+    el('b', { text: `🔴 ${limit ? 'הצ\'אט הגיע למגבלה' : 'הצ\'אט לא עונה'} · מאז ${clock(c.unresponsive_since)}` }),
+    el('small', { text: `${what}${c.limit_resets_at ? ` · מתאפס ב-${utcTime(c.limit_resets_at)}` : ''}` }),
+  ]));
+}
+
 /** ההעתק שהשרת שומר לצ'אט אחרי ש-Platform ענה בשמו — גם בנוסח הישן ("☁️ Platform ענה בלוח."). */
 function isPlatformRelay(m) {
   return m.kind === 'status' && m.author_role === 'system' && m.direction === 'in' && m.reply_to
@@ -221,6 +288,7 @@ function renderHead() {
   $('#cvTitle').textContent = c.name;
   $('#cvSub').textContent = [c.role, c.status === 'active' ? (c.listening_until > Date.now() / 1000 ? '🟢 מאזין' : '⚪ לא מאזין')
     : c.status === 'replaced' ? 'הוחלף' : '🔌 מנותק'].filter(Boolean).join(' · ');
+  renderLaneStrip(c);
   // פס "הצ'אט מתארך" בראש השיחה, עם 🔁 צ'אט המשך בתוכו
   const h = c.status === 'active' ? HEALTH[c.health] : null;
   $('#cvHealth').hidden = !h;
@@ -492,6 +560,7 @@ function renderSettings() {
     active && isOwner() && ['📨', 'גרסת הגשר', c.bridge_outdated
       ? `⚠ ${c.bridge_version ? 'גרסה ' + c.bridge_version : 'מלפני התיקון'} · נגיעה שולחת הוראת עדכון` : `✓ עדכנית (${c.bridge_version})`,
       c.bridge_outdated ? () => sendBridgeUpdate() : null, { sub2: c.bridge_outdated ? '📨 שלח הוראת עדכון' : '' }],
+    isOwner() && ['📝', 'סיכום חכם', 'קריאה אחת למודל, על חשבון המשלם · נשמר מוצמד בשיחה, ומזין את צ\'אט ההמשך', () => smartSummary()],
     active && ['📏', 'אורך הצ\'אט', c.health_at ? `${health ? health.chip + ' · ' : ''}${healthDetail(c)}` : 'עוד לא דיווח',
       isOwner() ? () => { $('#chatSettings').close(); openHandoff(conv.channel); } : null, { sub2: isOwner() ? '🔁 צ\'אט המשך' : '' }],
   ].filter(Boolean);
@@ -583,6 +652,19 @@ async function sendBridgeUpdate() {
     toast('ההוראה נשלחה — הצ\'אט יבצע אותה כשיקרא את ההודעה', 'ok');
     $('#chatSettings').close();
     reload();
+  } catch (ex) { toast(ex.message, 'error'); }
+}
+
+/** 📝 סיכום חכם (§15.5): קריאה אחת, נשמר מוצמד. שוב בלי הודעות חדשות — אותו סיכום, בלי לשלם שוב. */
+async function smartSummary() {
+  if (!confirm('ליצור סיכום חכם של הערוץ? זו קריאה אחת למודל, על חשבון המשלם של הפרויקט.')) return;
+  toast('📝 מסכם…', '');
+  try {
+    const r = await api('channel-summary', { channel_id: conv.id });
+    toast(r.cached ? 'אין הודעות חדשות מאז הסיכום הקודם — מוצג הקיים' : '📝 הסיכום נשמר ומוצמד בשיחה', 'ok');
+    $('#chatSettings').close();
+    reload(); loadPins();
+    setTimeout(() => scrollToMessage(r.message.id), 400);
   } catch (ex) { toast(ex.message, 'error'); }
 }
 

@@ -1510,7 +1510,8 @@ try {
         }
         $reg = registerChannel($scope, $pid, $name, $role, str_field($in, 'session_id', 120), $url, int_or_null($in, 'replaces'));
         channelSetVersion(getChannel($reg['channel_id']), str_field($in, 'bridge_version', 40));
-        ok($reg);
+        // שלב 16: הצ'אט חזר — האפיזודה נסגרת, והתקציר "מה קרה בלעדיך" חוזר אליו
+        ok($reg + ['digest' => laneReturn(getChannel($reg['channel_id']))]);
     }
 
     /* ── פתיחת צ'אטים (§5.9) ── */
@@ -1532,10 +1533,41 @@ try {
     case 'channel-health': {
         $ch = $scope['channel'] ?? null;
         if (!$ch) fail('נדרש אסימון ערוץ', 403);
-        ok(['health' => channelHealth($ch, (int) ($in['bytes'] ?? 0), (int) ($in['turns'] ?? 0), (int) ($in['compactions'] ?? 0),
-                                      str_field($in, 'bridge_version', 40)),
-            'bridge_current' => BRIDGE_VERSION_CURRENT]);
+        $health = channelHealth($ch, (int) ($in['bytes'] ?? 0), (int) ($in['turns'] ?? 0), (int) ($in['compactions'] ?? 0),
+                                str_field($in, 'bridge_version', 40));
+        ok(['health' => $health, 'bridge_current' => BRIDGE_VERSION_CURRENT, 'digest' => laneReturn(getChannel((int) $ch['id']))]);
     }
+
+    /* ── שלב 16: הצ'אט לא עונה (lib/silence.php) ── */
+
+    /** ה-hook של StopFailure: הצ'אט נעצר (מגבלה / חיוב). */
+    case 'channel-limit': {
+        $ch = $scope['channel'] ?? null;
+        if (!$ch) fail('נדרש אסימון ערוץ', 403);
+        ok(channelLimit($ch, str_field($in, 'error', 40), str_field($in, 'details', 2000)));
+    }
+
+    case 'channel-digest': {
+        $ch = $scope['channel'] ?? null;
+        if (!$ch) fail('נדרש אסימון ערוץ', 403);
+        ok(['digest' => channelDigest($ch), 'state' => channelState((int) $ch['id'])]);
+    }
+
+    /** ‏link.sh show <id> — הטקסט המלא של הודעה מהתקציר. */
+    case 'channel-show': {
+        $ch = $scope['channel'] ?? null;
+        if (!$ch) fail('נדרש אסימון ערוץ', 403);
+        ok(['message' => channelShow($ch, (int) ($in['id'] ?? 0))]);
+    }
+
+    case 'lane-card-answer':
+        ok(laneCardAnswer(requireUser($user), (int) ($in['card_id'] ?? 0), str_field($in, 'choice', 10)));
+
+    case 'lane-run':
+        ok(laneRun(requireUser($user), (int) ($in['channel_id'] ?? 0)));
+
+    case 'channel-summary':
+        ok(channelSummary(requireUser($user), (int) ($in['channel_id'] ?? 0)));
 
     /* ── §5.10.1: חלון הרשאה באפליקציה, והוראת עדכון לצ'אט ישן ── */
     case 'channel-waiting': {
@@ -1630,13 +1662,15 @@ try {
     case 'channel-inbox': {
         $ch = $scope['channel'] ?? null;
         if (!$ch) fail('נדרש אסימון ערוץ', 403);
-        ok(['messages' => channelInbox($ch)]);
+        // ‏link.sh pending: הצ'אט כאן — האפיזודה נסגרת; התקציר מודפס לפני ההודעות
+        $digest = laneReturn($ch);
+        ok(['messages' => channelInbox(getChannel((int) $ch['id'])), 'digest' => $digest]);
     }
 
     case 'channel-ack': {
         $ch = $scope['channel'] ?? null;
         if (!$ch) fail('נדרש אסימון ערוץ', 403);
-        ok(['acked' => channelAck($ch, is_array($in['ids'] ?? null) ? $in['ids'] : [])]);
+        ok(channelAckDetailed($ch, is_array($in['ids'] ?? null) ? $in['ids'] : []));
     }
 
     case 'channel-wait': {
