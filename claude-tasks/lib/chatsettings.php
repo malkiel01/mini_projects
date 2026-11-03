@@ -99,6 +99,7 @@ function channelUpdate(array $user, int $channelId, array $fields): array {
     if (array_key_exists('route', $fields)) {
         if (authorRole($user) !== 'owner') throw new AppError('מי עונה — בעל הלוח בלבד', 403);
         $set[] = 'route = ?'; $args[] = (string) $fields['route'] === '' ? '' : normalizeRoute((string) $fields['route']);
+        $set[] = "lane_decision = ''";   // בעל הלוח בחר מסלול — ההחלטה של האפיזודה (שלב 16) מתבטלת
     }
     if ($set) {
         $args[] = $channelId;

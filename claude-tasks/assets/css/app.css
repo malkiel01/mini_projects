@@ -876,3 +876,8 @@ mark.hit { background: color-mix(in srgb, var(--star) 45%, transparent); color: 
   font-size: .82rem; color: var(--muted); }
 .b-warn { margin: 6px 0 0; padding: 6px 10px; border-radius: var(--r); background: var(--danger-soft); color: var(--danger);
   font-size: .82rem; font-weight: 600; }
+/* שלב 16: הצ'אט לא עונה — הכרטיס בשיחה והפס בראשה */
+.lane-card { display: grid; gap: var(--s2); }
+.lane-facts { margin: 0; padding-inline-start: 1.1em; display: grid; gap: 2px; font-size: .85rem; }
+.lane-card .row-btns { margin-top: var(--s1, 4px); }
+.cv-lane { background: color-mix(in srgb, var(--danger) 10%, var(--surface)); }

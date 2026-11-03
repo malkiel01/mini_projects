@@ -437,10 +437,13 @@ function handoffPrompt(array $user, int $channelId, bool $fallback = false): arr
                                 'listening' => $listening];
         // §15.13: "בלי תקציר" תמיד זמין — בעל הלוח לא מחכה בכוח (ב-120 שנ' הכפתור רק נעשה הראשי)
         db()->prepare("UPDATE messages SET status = 'fallback' WHERE id = ? AND status IN ('', 'waiting', 'ready')")->execute([$r['id']]);
-        $rows = messageRows("m.channel_id = ? AND m.kind NOT IN ('handoff_request', 'status')", [$channelId], 1000);
+        // שלב 16: סיכום חכם קיים — הוא הבסיס, ואחריו רק מה שנכתב מאז (במקום 30 הודעות "עיוורות")
+        $sum = latestSummary($channelId);
+        $rows = messageRows("m.channel_id = ? AND m.kind NOT IN ('handoff_request', 'status', 'lane_card')" . ($sum ? ' AND m.id > ' . (int) $sum['id'] : ''), [$channelId], 1000);
         $rows = array_slice($rows, -HANDOFF_FALLBACK_MESSAGES);
         $who = ['owner' => 'בעל המערכת', 'chat' => 'הצ\'אט', 'system' => 'מערכת', 'platform' => 'Platform'];
-        $body = "(הצ'אט הקודם לא החזיר תקציר — אלה " . count($rows) . " ההודעות האחרונות בערוץ, מהישנה לחדשה)\n\n"
+        $body = ($sum ? trim((string) $sum['body']) . "\n\n" : '')
+              . "(הצ'אט הקודם לא החזיר תקציר — אלה " . count($rows) . ($sum ? ' ההודעות שאחרי הסיכום' : ' ההודעות האחרונות בערוץ') . ", מהישנה לחדשה)\n\n"
               . implode("\n\n", array_map(fn ($m) => '[' . ($who[$m['author_role']] ?? $m['author_role']) . '] '
                   . mb_substr((string) $m['body'], 0, 800), $rows));
         $source = 'messages';

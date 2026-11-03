@@ -38,6 +38,17 @@
         ]
       }
     ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "timeout": 10,
+            "command": "f=\"$HOME/.claude-tasks-bridge/hook.sh\"; [ -f \"$f\" ] || f=\"$CLAUDE_PROJECT_DIR/claude-tasks/bridge/hook.sh\"; [ -f \"$f\" ] && bash \"$f\" stopfail; exit 0"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": ".*",

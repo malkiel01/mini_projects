@@ -182,7 +182,9 @@ function platformReply(array $user, int $messageId, ?callable $transport = null)
     try {
         $openAsks = platformOpenAsks((int) $channel['id']);
         [$system, $prompt] = platformPrompt($channel, $project, platformContext($channel, $project, $payer) + ['open_asks' => $openAsks], $m);
-        $ctx = ['kind' => 'answer', 'project_id' => (int) $project['id'], 'channel_id' => (int) $channel['id'], 'enforce' => false];
+        $ctx = ['kind' => 'answer', 'project_id' => (int) $project['id'], 'channel_id' => (int) $channel['id'], 'enforce' => false,
+                // שלב 16: תשובה במקום צ'אט שלא עונה, אחרי מעבר אוטומטי — נספרת מול התקרה
+                'auto' => (int) ($channel['unresponsive_since'] ?? 0) > 0 && lanePrefs((int) $payer['id'])['on_stop'] === 'auto'];
         $conn = $chain[0] + ['chain' => $chain, 'user' => $payer, 'usage' => $ctx];
         $out = parsePlatformReply(aiComplete($conn, $system, $prompt, 1500, $transport));
     } catch (Throwable $e) {
@@ -238,7 +240,8 @@ function platformReply(array $user, int $messageId, ?callable $transport = null)
                        json_encode(['questions' => $ask, 'mode' => 'board', 'platform' => true], JSON_UNESCAPED_UNICODE), nowTs()]);
         $askId = (int) db()->lastInsertId();
     }
-    db()->prepare("UPDATE messages SET answered_by = 'platform', delivered_at = ? WHERE id = ?")->execute([nowTs(), $messageId]);
+    db()->prepare("UPDATE messages SET answered_by = 'platform', handled_by = 'platform', lease_until = 0, delivered_at = ? WHERE id = ?")->execute([nowTs(), $messageId]);
+    channelStateRefresh((int) $channel['id']);
     touchChannel($cid);
 
     if ($need) {

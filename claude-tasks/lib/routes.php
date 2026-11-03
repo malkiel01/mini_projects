@@ -76,7 +76,13 @@ function projectRoute(?int $projectId): string {
 function channelRoute(array $channel): string {
     $route = in_array($channel['route'] ?? '', ROUTES, true) ? $channel['route'] : projectRoute((int) $channel['project_id']);
     // ההגדרות של המשלם (§15.11): חזרה לשיטה המועדפת כשהיא זמינה, ו-☁️ שנעצר — לפי מה שהוא בחר
-    return laneResolve($route, (int) $channel['project_id'] ?: null);
+    $route = laneResolve($route, (int) $channel['project_id'] ?: null);
+    // שלב 16: הצ'אט לא ענה, והוחלט (אוטומטי / בעל הלוח) ש-☁️ עונה — עד שהוא חוזר, ולפי "לחזור לשיטה המועדפת"
+    if ($route === 'chat' && ($channel['lane_decision'] ?? '') === 'platform') {
+        $payer = projectPayer((int) $channel['project_id']);
+        if ($payer && laneAvailable('platform', $payer)) $route = 'platform';
+    }
+    return $route;
 }
 
 /** המסלול של מטלה: שנלקחה — שלה; אחרת לפי הפרויקט; בלי פרויקט — chat. */

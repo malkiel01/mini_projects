@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # הדיספצ'ר של ה-hooks (docs/spec.md §5.10.1). ‎.claude/settings.json‎ רושם כל אירוע פעם אחת:
 #
-#   hook.sh prompt | stop | choice | choice-done | allow | notify | permission | resolved | gate
+#   hook.sh prompt | stop | stopfail | choice | choice-done | allow | notify | permission | resolved | gate
 #
 # מריץ את העותק שב-‎$HOME/.claude-tasks-bridge‎ (link.sh update מרענן אותו מ-origin/main), ואם אין —
 # את העותק שבריפו. כך תיקון ב-hooks מגיע לצ'אט רץ בלי שהענף שלו ישתנה.
@@ -10,6 +10,7 @@ event="${1:-}"
 case "$event" in
   prompt)      f=hook-prompt.sh ;;
   stop)        f=hook-stop.sh ;;
+  stopfail)    f=hook-stopfail.sh ;;    # §15.12.1 — הצ'אט נעצר (מגבלה)
   choice)      f=hook-choice.sh ;;
   choice-done) f=hook-choice-done.sh ;;
   allow)       f=hook-allow.sh ;;

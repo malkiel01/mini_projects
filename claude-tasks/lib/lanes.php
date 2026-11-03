@@ -16,9 +16,9 @@ declare(strict_types=1);
 
 /** ‏0 = רק ידנית ("נסה שוב" / שינוי בחיבור). */
 const BREAKER_RETRY = ['rate_limited' => 300, 'down' => 1800, 'credit_exhausted' => 0, 'key_rejected' => 0];
-const LANE_PREFS_DEFAULT = ['preferred' => '', 'on_stop' => 'ask', 'return_preferred' => 'no'];
+const LANE_PREFS_DEFAULT = ['preferred' => '', 'on_stop' => 'ask', 'return_preferred' => 'no', 'silence_minutes' => '10'];
 const LANE_PREFS_VALUES = ['preferred' => ['', 'chat', 'platform'], 'on_stop' => ['auto', 'ask', 'wait'],
-                           'return_preferred' => ['yes', 'no']];
+                           'return_preferred' => ['yes', 'no'], 'silence_minutes' => ['5', '10', '20', '30']];
 
 function migrateLanes(PDO $pdo): void {
     addColumn($pdo, 'users', 'lane_prefs', "TEXT NOT NULL DEFAULT ''");
@@ -47,6 +47,7 @@ function lanePrefs(int $userId): array {
     // הגרסה הראשונה של שלב 15 שמרה platform_stop — handover = אוטומטי, wait = ממתין
     if (isset($p['platform_stop']) && !isset($p['on_stop'])) $p['on_stop'] = $p['platform_stop'] === 'handover' ? 'auto' : 'wait';
     foreach ($p as $k => $v) {
+        if (is_int($v)) $v = (string) $v;
         if (isset(LANE_PREFS_VALUES[$k]) && in_array($v, LANE_PREFS_VALUES[$k], true)) $out[$k] = $v;
     }
     return $out;
@@ -58,6 +59,7 @@ function setLanePrefs(array $user, array $in): array {
     unset($cur['platform_stop']);
     foreach ($in as $k => $v) {
         if (!isset(LANE_PREFS_VALUES[$k])) continue;
+        if (is_int($v)) $v = (string) $v;
         if (!in_array($v, LANE_PREFS_VALUES[$k], true)) throw new InvalidArgumentException("ערך לא מוכר ל-$k");
         $cur[$k] = $v;
     }
@@ -222,7 +224,7 @@ function platformRetry(array $user, ?callable $transport = null): array {
 
 /* ── השיטה המועדפת ─────────────────────────────────────── */
 
-/** השיטה זמינה למשלם? ☁️ — מכסה ומפסק סגור. 💬 — כן (צ'אט שנעצר מזוהה בשלב 16). */
+/** השיטה זמינה למשלם? ☁️ — מכסה ומפסק סגור. 💬 — כן (צ'אט שנעצר — לכל ערוץ לחוד, channelRoute / lib/silence.php). */
 function laneAvailable(string $lane, int $userId): bool {
     if ($lane === 'platform') return platformAvailable($userId) && !breakerBlocks($userId);
     return $lane === 'chat';

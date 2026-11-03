@@ -9,7 +9,9 @@
 #   link.sh status   הערוץ, ומה ממתין. אין קובץ קישור (הקונטיינר הוחלף) והסשן כבר רשום —
 #                    רישום מחדש שקט לאותו ערוץ (§5.10.1)
 #   link.sh update   מרענן את עותק הריצה של הגשר מ-origin/main (‎$HOME/.claude-tasks-bridge‎)
-#   link.sh pending  ההודעות שממתינות לטיפול, כל אחת במסגרת קבועה; זוכר את האחרונה לתשובה (reply_to)
+#   link.sh pending  ההודעות שממתינות לטיפול, כל אחת במסגרת קבועה; זוכר את האחרונה לתשובה (reply_to).
+#                    לפניהן — "מה קרה בלעדיך" (§15.5): מה ש-Platform ענה בינתיים. לא מטפלים בזה שוב.
+#   link.sh show <id>  הטקסט המלא של הודעה מהתקציר
 #   link.sh ack <id>…   סימון "טופל" — רק אחרי שטופלו, לא לפני
 #   link.sh post <owner|chat|system> <טקסט>   שיקוף ידני
 #   link.sh archive  ניתוק: האסימון נפסל וקובץ הקישור נמחק
@@ -131,6 +133,9 @@ case "$cmd" in
     if out="$(board_call channel-inbox '{}' "$(token)")"; then msgs="$(echo "$out" | jq '.messages')"
     elif [ -f "$BOARD_PENDING" ]; then msgs="$(cat "$BOARD_PENDING")"
     else die "הלוח לא ענה (HTTP $BOARD_HTTP)"; fi
+    # §15.5: התקציר קודם — מה שקרה במסלול אחר בזמן שהצ'אט לא ענה
+    dg="$(printf '%s' "${out:-}" | jq -r '.digest // empty' 2>/dev/null)"
+    [ -n "$dg" ] && printf '%s\n\n' "$dg"
     n="$(echo "$msgs" | jq 'length')"
     if [ "$n" = 0 ]; then echo "אין הודעות ממתינות."; rm -f "$BOARD_PENDING"; exit 0; fi
     echo "$msgs" | frame
@@ -150,6 +155,8 @@ case "$cmd" in
     ids="$(printf '%s\n' "$@" | jq -R 'tonumber' | jq -s '{ids: .}')"
     out="$(board_call channel-ack "$ids" "$(token)")" || die "ack נכשל (HTTP $BOARD_HTTP)"
     echo "✓ סומנו: $(echo "$out" | jq '.acked')"
+    ah="$(echo "$out" | jq -r '(.already_handled // []) | map(tostring) | join(" ")')"
+    [ -n "$ah" ] && echo "ℹ️ כבר טופלו במסלול אחר (Platform) — לא לטפל שוב: $ah"
     if [ -f "$BOARD_PENDING" ]; then
       jq --argjson ids "$(echo "$ids" | jq '.ids')" '[.[] | select(.id as $i | $ids | index($i) | not)]' "$BOARD_PENDING" > "$BOARD_PENDING.tmp" \
         && mv "$BOARD_PENDING.tmp" "$BOARD_PENDING"
@@ -172,6 +179,13 @@ case "$cmd" in
       || die "שליחת התקציר נכשלה (HTTP $BOARD_HTTP)"
     ;;
 
+  show)
+    need_link
+    [ -n "${1:-}" ] || die "שימוש: link.sh show <id>"
+    out="$(board_call channel-show "$(jq -n --argjson i "$1" '{id:$i}')" "$(token)")" || die "לא נמצא (HTTP $BOARD_HTTP)"
+    echo "$out" | jq -r '.message | "#\(.id) · \(.author_role) · \(.kind)" + (if .reply_to then " · על #\(.reply_to)" else "" end) + "\n\(.body)"'
+    ;;
+
   archive)
     need_link
     board_call channel-archive '{}' "$(token)" >/dev/null || echo "הלוח לא אישר (HTTP $BOARD_HTTP) — מוחק את הקישור בכל זאת" >&2
@@ -179,5 +193,5 @@ case "$cmd" in
     echo "✓ נותק"
     ;;
 
-  *) die "פקודה לא מוכרת: $cmd (register | status | update | pending | ack | post | handoff | archive)" ;;
+  *) die "פקודה לא מוכרת: $cmd (register | status | update | pending | ack | show | post | handoff | archive)" ;;
 esac

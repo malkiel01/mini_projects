@@ -131,10 +131,12 @@ function recordUsage(array $ctx, string $provider, string $model, int $in, int $
     $given = isset($ctx['cost_usd']) && is_numeric($ctx['cost_usd']) ? max(0.0, (float) $ctx['cost_usd']) : null;
     $cost = $given ?? usageCost($provider, $model, max(0, $in), max(0, $out));
     if ($given !== null) $known = true;
+    // ‏auto — שימוש של מעבר אוטומטי (שלב 16): נספר מול התקרה (§15.11a)
     db()->prepare('INSERT INTO usage (at, user_id, project_id, task_id, channel_id, connection_id, kind, provider, model,
-                                      tokens_in, tokens_out, cost_usd) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
+                                      tokens_in, tokens_out, cost_usd, auto) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)')
         ->execute([nowTs(), $uid, $ctx['project_id'] ?? null, $ctx['task_id'] ?? null, $ctx['channel_id'] ?? null,
-                   $ctx['connection_id'] ?? null, $kind, $provider, mb_substr($model, 0, 120), $in, $out, round($cost, 6)]);
+                   $ctx['connection_id'] ?? null, $kind, $provider, mb_substr($model, 0, 120), $in, $out, round($cost, 6),
+                   empty($ctx['auto']) ? 0 : 1]);
     if (!$known) logEvent(null, 'usage.unknown_model', "$provider:$model", false, 'תומחר לפי המחיר הגבוה של הספק');
     usageAlerts($uid);
     return $cost;
