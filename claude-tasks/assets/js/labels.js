@@ -156,13 +156,14 @@ export function renderPinStrip(pins, jump) {
   box.hidden = !pins.length;
   if (!pins.length) { box.replaceChildren(); return; }
   const last = pins[0];
-  box.replaceChildren(
+  // replaceChildren הופך null לטקסט "null" — עם מוצמדת אחת אין ▾, ולכן מסננים (כך הופיע "null" בפס)
+  box.replaceChildren(...[
     el('button', { type: 'button', class: 'pins-last', onclick: () => jump(last.message_id) }, [
       el('b', { text: `📌 ${pins.length === 1 ? 'מוצמדת' : `${pins.length} מוצמדות`}` }),
       el('span', { dir: 'auto', text: `${last.visibility === 'private' ? '🔒 ' : ''}${plainText(last.body, 70)}` }),
     ]),
     pins.length > 1 ? el('button', { type: 'button', class: 'icon-btn', 'aria-label': 'כל המוצמדות', text: '▾', onclick: () => openPinList(pins, jump) }) : null,
-  );
+  ].filter(Boolean));
 }
 
 export function openPinList(pins, jump) {
