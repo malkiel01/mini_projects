@@ -122,6 +122,9 @@ function publicConnection(array $c): array {
         'label' => (string) $c['label'], 'login' => (string) $c['login'],
         'scopes' => array_values(array_filter(explode(',', (string) $c['scopes']))),
         'model' => (string) $c['model'], 'priority' => (int) $c['priority'],
+        // שלב 20: רמת החשיבה כברירת מחדל, והרמות שהמודל תומך בהן
+        'effort' => (string) ($c['effort'] ?? '') ?: 'auto', 'effort_label' => EFFORT_LABEL[(string) ($c['effort'] ?? '') ?: 'auto'] ?? '',
+        'efforts' => $c['kind'] !== 'github' ? effortLevels((string) $c['kind'], (string) $c['model']) : [],
         'tail' => secretTail($secret), 'connected' => $secret !== '',
         'status' => $failing ? 'failing' : 'ok', 'last_error' => (string) $c['last_error'],
         'failing_until' => (int) $c['failing_until'], 'last_ok_at' => (int) $c['last_ok_at'],
@@ -195,9 +198,13 @@ function updateConnection(array $user, int $id, array $patch): void {
         $sets[] = 'secret = ?'; $args[] = encryptSecret(trim((string) $patch['secret']));
         $sets[] = "status = 'ok'"; $sets[] = "last_error = ''"; $sets[] = 'failing_until = 0';
     }
-    if (!$sets) return;
+    if (!$sets && !array_key_exists('effort', $patch)) return;
+    if ($sets) {
     $args[] = $id;
     db()->prepare('UPDATE connections SET ' . implode(', ', $sets) . ' WHERE id = ?')->execute($args);
+    }
+    // שלב 20: הרמה נבדקת מול המודל אחרי שהמודל עודכן
+    if ($row['kind'] !== 'github' && array_key_exists('effort', $patch)) setConnectionEffort($user, $id, (string) $patch['effort']);
     logEvent($user, 'connection.update', $row['kind'], true, "#$id");
     breakerArm((int) $user['id']);
 }

@@ -157,6 +157,12 @@ function platformReply(array $user, int $messageId, ?callable $transport = null)
         if (str_starts_with((string) $m['answered_by'], 'platform')) return handToChat($messageId, (int) $channel['id'], 'הערוץ חזר למסלול הצ\'אטים');
         throw new AppError('הערוץ במסלול הצ\'אטים — הצ\'אט עונה', 409);
     }
+    // שלב 20: ממתינה להחלטה בכרטיס המכסה — לא קוראים לספק עד שבעל הלוח בוחר
+    if (($m['answered_by'] ?? '') === 'platform-hold') {
+        $card = db()->prepare("SELECT id FROM messages WHERE kind = 'ai_card' AND reply_to = ? AND status = 'open' ORDER BY id DESC LIMIT 1");
+        $card->execute([$messageId]);
+        return ['answered' => false, 'preflight' => true, 'card_id' => (int) $card->fetchColumn(), 'reason' => 'ממתינה להחלטה בכרטיס'];
+    }
     // תפיסה: רק מי שהצליח לסמן busy עונה. busy ישן (בקשה שמתה באמצע) — אפשר לתפוס מחדש
     $claim = db()->prepare("UPDATE messages SET answered_by = ? WHERE id = ? AND delivered_at IS NULL
                               AND (answered_by = 'platform' OR (answered_by LIKE 'platform-busy:%'
@@ -168,8 +174,11 @@ function platformReply(array $user, int $messageId, ?callable $transport = null)
     if (!$payer) return handToChat($messageId, (int) $channel['id'], 'אין משלם לענף');
     try { requireQuota((int) $payer['id'], 'answer'); }
     catch (AppError $e) { return handToChat($messageId, (int) $channel['id'], $e->getMessage()); }
-    $chain = aiChain($payer);
-    if (!$chain) return handToChat($messageId, (int) $channel['id'], 'למשלם אין חיבור לספק בינה');
+    // שלב 20: מי עונה — הודעה › צ'אט › חיבור (resolveAi). בחירה של ספק — רק חיבורים של אותו ספק
+    $ai = resolveAi($payer, $channel, $m);
+    $chain = $ai['chain'];
+    if (!$chain) return handToChat($messageId, (int) $channel['id'], $ai['source'] === 'connection'
+        ? 'למשלם אין חיבור לספק בינה' : 'אין חיבור פעיל ל-' . (PROVIDERS[$ai['provider']]['label'] ?? $ai['provider']) . " בשביל {$ai['model']} — לא עוברים לספק אחר בלי לשאול");
     // ‏§15.3: המפסק פתוח — לא קוראים לספק. מעבירים לצ'אט, או ממתינים (לפי ההגדרה של המשלם)
     if (breakerBlocks((int) $payer['id'])) {
         $b = platformBreaker((int) $payer['id']);
@@ -185,8 +194,16 @@ function platformReply(array $user, int $messageId, ?callable $transport = null)
         $ctx = ['kind' => 'answer', 'project_id' => (int) $project['id'], 'channel_id' => (int) $channel['id'], 'enforce' => false,
                 // שלב 16: תשובה במקום צ'אט שלא עונה, אחרי מעבר אוטומטי — נספרת מול התקרה
                 'auto' => (int) ($channel['unresponsive_since'] ?? 0) > 0 && laneEffectivePrefs((int) $payer['id'], (int) $project['id'])['on_stop'] === 'auto'];
-        $conn = $chain[0] + ['chain' => $chain, 'user' => $payer, 'usage' => $ctx];
-        $out = parsePlatformReply(aiComplete($conn, $system, $prompt, 1500, $transport));
+        // §16.4: ההערכה עוברת את מה שנשאר במכסה — לא קוראים לספק; כרטיס ("שלח ב-<מודל הצ'אט>" / "בטל")
+        if ($pf = aiPreflight($payer, $channel, $m, $ai, mb_strlen($system . $prompt), 1500)) {
+            return ['answered' => false, 'preflight' => true, 'card_id' => $pf['card_id'],
+                    'reason' => sprintf('השאלה ב-%s עלולה לעלות עד $%.2f — נותרו $%.2f. ההחלטה בכרטיס.', modelShortName($ai['model']), $pf['estimate'], $pf['left'])];
+        }
+        unset($GLOBALS['CT_AI_LAST']);
+        $chainCtx = array_map(fn ($c) => $c + ['usage' => $ctx], $chain);
+        [$rawText, , $fellBack] = aiCompleteChain($chainCtx, $system, $prompt, 1500, $transport, $payer);
+        $aiUsed = aiUsedRecord($ai, $fellBack);
+        $out = parsePlatformReply($rawText);
     } catch (Throwable $e) {
         // ‏§15.3: לא נשאר תלוי. הספק נעצר (קרדיט / מפתח / עומס / תקלה) — המפסק נפתח: הודעה אחת לכל ערוץ,
         // וכל מה שממתין עובר לצ'אט במעבר אחד (או ממתין, לפי ההגדרה). כשל של ההודעה הזו בלבד — לצ'אט, עם הסיבה
@@ -225,19 +242,19 @@ function platformReply(array $user, int $messageId, ?callable $transport = null)
     ], fn ($v) => $v !== null);
     $answerId = null;
     if ($reply !== '' || !$ask) {
-        db()->prepare("INSERT INTO messages (channel_id, task_id, direction, author_role, kind, body, reply_to, answered_by, meta, created_at)
-                       VALUES (?,?, 'out', 'platform', 'answer', ?,?, '', ?,?)")
+        db()->prepare("INSERT INTO messages (channel_id, task_id, direction, author_role, kind, body, reply_to, answered_by, meta, ai_used, created_at)
+                       VALUES (?,?, 'out', 'platform', 'answer', ?,?, '', ?,?,?)")
             ->execute([$cid, $tid, cleanBody($reply !== '' ? $reply : '…'), $messageId,
-                       $meta ? json_encode($meta, JSON_UNESCAPED_UNICODE) : '', nowTs()]);
+                       $meta ? json_encode($meta, JSON_UNESCAPED_UNICODE) : '', $aiUsed, nowTs()]);
         $answerId = (int) db()->lastInsertId();
     }
     $askId = null;
     if ($ask) {
         // אותה בועת בחירה כמו של הצ'אטים (§5.10); התשובה מפעילה את Platform שוב, עם כל השרשור
-        db()->prepare("INSERT INTO messages (channel_id, task_id, direction, author_role, kind, body, reply_to, answered_by, meta, status, created_at)
-                       VALUES (?,?, 'out', 'platform', 'choice', ?,?, '', ?, 'open', ?)")
+        db()->prepare("INSERT INTO messages (channel_id, task_id, direction, author_role, kind, body, reply_to, answered_by, meta, status, ai_used, created_at)
+                       VALUES (?,?, 'out', 'platform', 'choice', ?,?, '', ?, 'open', ?, ?)")
             ->execute([$cid, $tid, cleanBody(choiceBody($ask)), $messageId,
-                       json_encode(['questions' => $ask, 'mode' => 'board', 'platform' => true], JSON_UNESCAPED_UNICODE), nowTs()]);
+                       json_encode(['questions' => $ask, 'mode' => 'board', 'platform' => true], JSON_UNESCAPED_UNICODE), $aiUsed, nowTs()]);
         $askId = (int) db()->lastInsertId();
     }
     db()->prepare("UPDATE messages SET answered_by = 'platform', handled_by = 'platform', lease_until = 0, delivered_at = ? WHERE id = ?")->execute([nowTs(), $messageId]);

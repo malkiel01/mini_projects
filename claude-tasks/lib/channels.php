@@ -28,7 +28,7 @@ require_once __DIR__ . '/config.php';
 if (!defined('BELL_DIR')) define('BELL_DIR', __DIR__ . '/../data/bell');
 
 const MESSAGE_KINDS   = ['text', 'question', 'answer', 'approval', 'decision', 'status', 'choice', 'choice_answer',
-                         'handoff_request', 'handoff', 'lane_card'];
+                         'handoff_request', 'handoff', 'lane_card', 'ai_card'];
 /** מי כותב בכיוון out (שיקוף מהצ'אט). owner = "בעל המערכת כתב בצ'אט" — מידע, לא הוראה. */
 const OUT_ROLES       = ['owner', 'chat', 'system'];
 const MAX_MESSAGE     = 20000;
@@ -98,7 +98,9 @@ function messageRows(string $where, array $args, int $limit = 200): array {
         // הצעת מטלה מתשובה של Platform (§9)
         $m['meta'] = ($m['meta'] ?? '') !== '' ? (json_decode((string) $m['meta'], true) ?: null) : null;
         $m['platform_pending'] = $m['direction'] === 'in' && $m['delivered_at'] === null
-                                 && str_starts_with((string) ($m['answered_by'] ?? ''), 'platform');
+                                 && str_starts_with((string) ($m['answered_by'] ?? ''), 'platform') && ($m['answered_by'] ?? '') !== 'platform-hold';
+        // שלב 20: הבחירה של ההודעה ומה באמת ענה
+        foreach (['ai_pref', 'ai_used'] as $k) $m[$k] = isset($m[$k]) && $m[$k] !== '' ? (json_decode((string) $m[$k], true) ?: null) : null;
         $m += messageLane($m);   // שלב 17: תג מסלול ומצב — מ-handled_by / answered_by, לא מהטקסט
         return $m;
     }, $st->fetchAll());
@@ -263,7 +265,7 @@ function channelInsertIn(int $channelId, string $role, ?int $userId, string $bod
     return $id;
 }
 
-function channelSend(array $user, int $channelId, string $body, ?int $taskId = null, ?int $replyTo = null): int {
+function channelSend(array $user, int $channelId, string $body, ?int $taskId = null, ?int $replyTo = null, ?array $aiPref = null): int {
     $channel = getChannel($channelId);
     if (!$channel) throw new AppError('הערוץ לא נמצא', 404);
     requireProject((int) $channel['project_id'], $user, 'read');
@@ -281,8 +283,11 @@ function channelSend(array $user, int $channelId, string $body, ?int $taskId = n
     }
     // במסלול ☁️ — Platform עונה (platform-reply), והצ'אט לא מתעורר
     $platform = channelRoute($channel) === 'platform';
+    // שלב 20: מודל להודעה הזו בלבד — נבדק מול החיבורים של המשלם לפני שנשמר
+    $pref = $aiPref ? aiPrefValidate((int) projectPayer((int) $channel['project_id']), $aiPref) : null;
     $id = channelInsertIn($channelId, authorRole($user), (int) $user['id'], $body, 'text', $taskId, $replyTo,
                           !$platform, $platform ? 'platform' : '');
+    if ($pref) db()->prepare('UPDATE messages SET ai_pref = ? WHERE id = ?')->execute([json_encode($pref), $id]);
     if (!$platform) silenceCheck(getChannel($channelId));   // שלב 16: הגלאי העצל
     return $id;
 }
@@ -402,7 +407,7 @@ function channelMessages(array $user, int $channelId, int $after = 0): array {
     }
     unset($m);
     return ['channel' => publicChannel($channel) + ['can_send' => canSendToChannel($user, $channel), 'route_effective' => channelRoute($channel),
-                                                   'questions' => channelQuestionsMode($channel)] + channelLaneInfo($channel),
+                                                   'questions' => channelQuestionsMode($channel), 'ai' => channelAiInfo($channel)] + channelLaneInfo($channel),
             'messages' => $messages];
 }
 
