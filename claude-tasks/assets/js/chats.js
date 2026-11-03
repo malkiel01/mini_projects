@@ -226,6 +226,8 @@ function bubble(m) {
     // §9.1: מה שרק הצ'אט יכול — הועבר אליו (ואם הוא לא מאזין, כתוב)
     m.meta?.needs_chat ? el('p', { class: 'b-needs', dir: 'auto', text: `☁️ Platform לא יכול לבצע את זה — הועבר ל${m.meta.needs_chat.to}`
       + (m.meta.needs_chat.listening ? '' : ' · לא מאזין עכשיו, יקבל כשיתעורר') + `: ${m.meta.needs_chat.what}` }) : null,
+    m.author_role === 'platform' && !m.meta?.needs_chat && conv.messages.some((x) => isPlatformRelay(x) && x.reply_to === m.reply_to)
+      ? el('p', { class: 'hint b-copied', text: '📨 התשובה נמסרה גם לצ\'אט, כדי שיידע מה נענה בשמו' }) : null,
     m.meta?.claimed_action ? el('p', { class: 'b-warn', text: '⚠ Platform תיאר פעולה שלא בוצעה — אין לו כלים. כשצריך פעולה, כותבים לצ\'אט עצמו.' }) : null,
     // Platform לא כותב קוד: כשצריך — מציע מטלה, ונגיעה יוצרת אותה ומריצה (§9)
     m.meta?.task ? el('button', {
@@ -337,6 +339,13 @@ function renderLaneStrip(c) {
     el('b', { text: `🔴 ${limit ? 'הצ\'אט הגיע למגבלה' : 'הצ\'אט לא עונה'} · מאז ${clock(c.unresponsive_since)}` }),
     el('small', { text: `${what}${c.limit_resets_at ? ` · מתאפס ב-${utcTime(c.limit_resets_at)}` : ''}` }),
   ]));
+}
+
+/** העתק לצ'אט בלבד: Platform ענה בשמך, או "לא יכול לבצע — הועבר לצ'אט". הבועה של Platform כבר אומרת את זה. */
+function isChatCopy(m) {
+  // ההעברה לצ'אט נשמרת כ-text (כדי שתעיר אותו) — לכן לפי המחבר והנוסח, לא לפי הסוג
+  return isPlatformRelay(m) || ((m.kind === 'status' || m.kind === 'text') && m.author_role === 'system' && m.direction === 'in' && m.reply_to
+    && /^☁️ Platform לא יכול לבצע את זה בעצמו/u.test(m.body || ''));
 }
 
 /** ההעתק שהשרת שומר לצ'אט אחרי ש-Platform ענה בשמו — גם בנוסח הישן ("☁️ Platform ענה בלוח."). */
@@ -452,7 +461,8 @@ function renderLog(stick) {
   const log = $('#chatLog');
   const atEnd = stick || log.scrollHeight - log.scrollTop - log.clientHeight < 80;
   // סינון פעיל (12d) — רק ההודעות שמתאימות; אחרת כל השיחה
-  const list = conv.view || conv.messages;
+  // העתקים שנשמרים לצ'אט (Platform ענה / הועבר לצ'אט) — לא בלוח: התשובה כבר בבועה של Platform, וההודעה בבועה שלך
+  const list = (conv.view || conv.messages).filter((m) => !isChatCopy(m));
   log.replaceChildren(...(list.length ? list.map(bubble)
     : [el('li', { class: 'empty', text: conv.view ? 'אין הודעות שמתאימות לסינון.' : 'עוד אין הודעות. מה שתכתוב כאן יגיע לצ\'אט ויעיר אותו.' })]));
   if (conv.filter?.q) highlight(log, conv.filter.q);
