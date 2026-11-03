@@ -930,6 +930,19 @@ the `status` copy meant for the chat, shown on the board (fixed separately: fold
 - The `status` copy to the chat (§9) is written as "הודעה מבעל הלוח: … / Platform ענה: …" (or "Platform שאל: …") and is never
   shown on the board except as a grey "📨 עודכן לצ'אט" line.
 
+**Platform must never claim an action it did not take (owner report 2026-11-03, "issue 5").** Platform said it had passed a
+message to the raster chat; nothing arrived — Platform has no tools, and it imitated the real chat's earlier "שלחתי לרסטר…" lines.
+Rules (approved, part of stage 8b):
+- **(a) The prompt names what Platform cannot do:** wake or message another chat, run tools, change files, wait. It never writes that
+  it did any of these; when one is needed it says so and offers the alternative below. *(Shipped immediately, prompt text only.)*
+- **(b) `needs_chat`:** the structured output may include `"needs_chat": "<what must be done>"`. The board then keeps Platform's short
+  reply **and** hands the owner's message to **this channel's real chat** (bell, as `handToChat`), with a line saying what is needed.
+  The card says "☁️ Platform לא יכול לבצע את זה — הועבר ל<chat name>"; if that chat is not listening, the card says so (not swallowed).
+  Messaging *another* chat stays the real chat's job (it has `create_trigger`). The route of that one message switches to `chat`.
+- **(c)** asking the owner = the `ask` output above (choice bubble).
+- **Guard in code, not only the prompt:** a Platform reply containing a claimed send/wake/run ("שלחתי", "העברתי ל", "הערתי", "sent to",
+  "ran ") without `needs_chat` is flagged on the card "⚠ Platform תיאר פעולה שלא בוצעה" so a missed case is visible.
+
 **Done when:** in a ☁️ channel, a message that needs a decision gets a choice bubble from Platform (not a guessed answer); tapping
 an option makes Platform continue from it; three unanswered questions in a row are refused; the board shows no "you answered"
 text. Tests with a fake provider for: answer, ask, ask→answer→continue, the 3-question limit.
