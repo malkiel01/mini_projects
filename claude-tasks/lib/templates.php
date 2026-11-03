@@ -222,8 +222,10 @@ function routinePrompt(int $projectId, array $role): string {
         '   אין claude-tasks/bridge/link.sh בתיקייה — המשימה נוצרה בלי הריפו mini_projects: עצור ודווח.',
         '   הרישום נכשל — עצור ודווח את ההודעה כפי שהיא.',
         '2. קרא: ' . implode(', ', array_merge(['CLAUDE.md'], $files)),
-        '3. המשימה: {מה לעשות בכל הרצה}',
-        '4. בסוף — דווח בקצרה מה נעשה, ומה לא נעשה ולמה (פעולה שנחסמה — בשמה), ואז: claude-tasks/bridge/link.sh archive',
+        '3. המשימה: {מה לעשות בכל הרצה} — רק בתיקייה {התיקייה}, ורק המשימה הזו. שום דבר מעבר לה.',
+        '   משנה קוד — ענף משלך ו-PR בלבד. לעולם לא מיזוג, לא push ל-main, לא הפעלת workflows.',
+        '4. בסוף — דוח בערוץ, כהודעת system: claude-tasks/bridge/link.sh post system "<מה נעשה, עם קישור ל-PR אם יש> · נחסם: <כל פעולה שלא רצה — שמה והסיבה, או: כלום>"',
+        '   ואז: claude-tasks/bridge/link.sh archive',
     ]);
 }
 
