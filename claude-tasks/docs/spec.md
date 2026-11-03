@@ -1410,3 +1410,96 @@ The Anthropic 400 credit text is confirmed in step 5 with a workspace that reall
 - **Two-sided enforcement:** a sub-project's ceiling cannot exceed the ceiling above it (the parent project, or the user's); and a ceiling above cannot be lowered under one already set below — the server refuses and names the project that blocks.
 - **Relation to the quota (§8):** ✅ the ceiling is **part of** `users.quota_usd`, not a second quota, and applies only to automatic switches. So automatic use can never pass `quota_usd`, nor any ceiling above it.
 - Applies to stages 16 (the silence card shows the remaining ceiling) and 18 (the settings sheet and the server checks). Tests: a child above its parent is refused; a parent lowered under a child is refused with the project's name; an automatic switch that would pass the nearest ceiling becomes a card.
+
+---
+
+## 16. Model and thinking level — per connection, per chat, per message (owner request 2026-11-03 21:14, via the code writer; **stage 20**)
+
+**The owner:** the model (and its version) chosen when a key is connected is the **default**; each chat may use another model; and
+in the middle of a conversation, a single question that needs more or less processing may get **another model and another thinking
+level**.
+
+**Scope.** This governs only what the board pays for: ☁️ Platform and 🤖 the engine. A Claude Code chat runs on the owner's subscription
+and the session's own model — the board never sets it (the owner switches it in the chat with `/model`). On the 💬 route the pickers
+below are hidden, not greyed.
+
+### 16.1 Decisions (mine — the owner asked for a spec that decides)
+
+| # | Question | Decision |
+| --- | --- | --- |
+| 1 | Where is the choice? | Three levels, the nearest wins: **message › chat (channel) › connection**. Nothing at project level (not asked; one level less to explain) |
+| 2 | What is chosen? | A **model** (family → version, from `provider-models`) and a **thinking level**: `אוטומטי · נמוכה · בינונית · גבוהה · מרבית`. "Automatic" = what the code does today (`effort: low` where supported) |
+| 3 | A message choice | Applies to **that one message only**, then the composer returns to the chat's choice. A link in the sheet, "השאר לשיחה הזו", saves it as the chat's choice instead |
+| 4 | Override and fallback (§10.1) | An override names a **provider + model**. Fallback stays, but only among the user's connections **of the same provider**. If none is left → the stage-15 hand-over with the reason, never a silent switch to another provider's model |
+| 5 | Quota and ceiling | Real cost is already logged per model (§8), so a stronger model simply uses more of the same quota. Added: a **pre-flight check** (16.4) and a cost hint in the picker |
+| 6 | Automatic lane switches (§15.11) | Use the **chat's** choice (not a one-message override); the ceiling check (§15.11a) is computed at that model's price |
+| 7 | Monitoring, catalog, digest helpers | Always the **connection default**, thinking "automatic". Never an override — background work stays cheap |
+| 8 | The engine | Yes: the task sheet gets the same model + thinking picker (default = the channel's choice when the task was made from a channel, otherwise the connection default). Stored on the task, passed to `run.mjs`; the `claude-code` engine passes `--model`. Thinking for the engine: the same mapping where the engine's API call supports it, otherwise hidden |
+| 9 | What the reply bubble shows | A meta line under every ☁️/🤖 reply (16.5) |
+
+### 16.2 Data
+
+```
+connections.effort TEXT NULL            -- default thinking for this connection; NULL = automatic
+channels.ai_pref TEXT NULL              -- JSON {provider, model, effort} ; NULL = connection default
+messages.ai_pref TEXT NULL              -- JSON, the one-message override, on the owner's message
+messages.ai_used TEXT NULL              -- JSON on the reply: {connection_id, provider, model, effort, tokens_in, tokens_out,
+                                        --   thinking_tokens, cost_usd, fell_back_from}
+tasks.model TEXT NULL, tasks.effort TEXT NULL
+```
+
+Resolution is **one server function** (`resolveAi(user, channel, message|task)`) used by `platform-reply`, `choice-answer` (8b continues
+on the model that asked) and `run-task`. The UI never resolves.
+
+**Validation (server, 422 with a Hebrew line):** the model must be in `provider-models` for a connection the **payer** owns; the effort
+must be supported by that model. A saved channel/connection choice that became invalid (model retired, connection removed) falls back
+to the next level, and the chat's ⚙ shows "המודל שנבחר כבר לא זמין — חזר לברירת המחדל".
+
+### 16.3 Thinking — one table per provider, in `lib/ai.php`
+
+`effortFor(provider, model, level)` maps the board's five levels to the provider's own parameter (Anthropic `output_config.effort` on
+models where `anthropicTakesEffort()` is true; OpenAI `reasoning_effort` on reasoning models; Gemini `thinkingConfig`). A model with no
+such control shows only "אוטומטי". **The mapping is verified against each provider's current documentation when built** and covered by
+a test per provider with a fake transport. `max_tokens` grows with the level (the thinking counts against it — `MIN_OUTPUT_TOKENS` is
+the floor for "automatic" only).
+
+### 16.4 Quota and ceiling — pre-flight
+
+Before the call: `estimate = context tokens × input price + max_tokens × output price` (the price table that §8 already has).
+
+- estimate > what is left of `quota_usd` → **no call**; a card: "השאלה הזו ב-<model> עלולה לעלות עד $X ונותרו $Y" with buttons
+  **שלח ב-<the chat's model>** · **בטל**. Never a silent downgrade.
+- An automatic switch (§15.11) whose estimate passes the nearest ceiling (§15.11a) becomes a card — the rule that already exists, now at the
+  chosen model's price.
+- The usage graph (§8) gets a split by model (stacked colour per model family), so the owner sees what the expensive questions cost.
+
+### 16.5 UI
+
+**Connection sheet (§10.1):** under the model picker, "רמת חשיבה כברירת מחדל" (the five-level segmented control). The connection row's
+subline shows "claude-opus-… · חשיבה בינונית".
+
+**Chat ⚙ (§5.11):** a row "🧠 מודל לשיחה הזו" → sheet: "ברירת מחדל (<model of the first connection>)" first, then the models of my
+connections grouped by provider, then the thinking control. Shown only when the channel's route can reach ☁️.
+
+**Composer — per message:** a small chip at the start of the input row, e.g. **"Sonnet · אוטומטי"** (it shows the chat's current
+choice). Tap → the same sheet, titled "להודעה הבאה בלבד", each model with a relative cost hint ("×1", "×5"), and the link "השאר לשיחה הזו".
+After a one-message choice the chip is filled (accent) until the message is sent, then returns to normal. `aria-label` "בחירת מודל
+להודעה הבאה". On 💬 the chip is not rendered.
+
+**Reply bubble:** a muted meta line: **"☁️ Opus 4.x · חשיבה גבוהה · $0.04"**. Tap → a small sheet: connection label, tokens
+in/out/thinking, cost, and — if it happened — "עבר מ-<connection>: <reason>". A one-message override is marked "⚡ למשאלה הזו". Engine
+task results show the same line on the task card.
+
+### 16.6 Done when
+
+- Tests (fake transports): resolution order message › channel › connection; same-provider-only fallback with an override; the 422s;
+  an invalid saved choice falls back with the notice; `effortFor` per provider; the pre-flight card at the quota edge; an automatic switch
+  priced at the chosen model; monitoring ignores overrides; `choice-answer` reuses the asking model.
+- `messages.ai_used` filled on every ☁️ reply; the usage graph split by model.
+- Screenshots 390 light / 320 dark: the connection sheet, the chat ⚙ sheet, the composer chip (normal / filled), the bubble meta line
+  and its sheet, the pre-flight card. No horizontal scroll.
+- The real-provider check of thinking levels joins stage 19's live list (one question at "נמוכה" and one at "גבוהה" — the
+  `thinking_tokens` must differ).
+
+**Order:** independent of stages 16–19; the code writer may build it while stage 16 waits for its request. Any new runtime file
+under `data/` → `--exclude` in the same PR (none expected — columns only).
