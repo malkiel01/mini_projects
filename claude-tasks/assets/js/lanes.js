@@ -71,7 +71,29 @@ const GROUPS = [
     opts: [['auto', '🔁 לעבור אוטומטית לשנייה'], ['ask', '❓ לשאול אותי'], ['wait', '⏳ להמתין']] },
   { key: 'return_preferred', title: 'לעבור לשיטה המועדפת גם באמצע שיח, כשהיא זמינה', hint: 'כן — שיח שעובד בשיטה השנייה עובר לבד למועדפת ברגע שאפשר.',
     opts: [['yes', 'כן'], ['no', 'לא']] },
+  // שלב 18 (§15.11)
+  { key: 'silence_minutes', title: 'כמה זמן שתיקה עד "הצ\'אט לא עונה"', hint: 'הודעה שהצ\'אט לא קרא, והמאזין שלו כבוי — אחרי כמה דקות זה נחשב שהוא לא עונה.',
+    opts: [['5', '5 דק\''], ['10', '10 דק\''], ['20', '20 דק\''], ['30', '30 דק\'']] },
+  { key: 'engine', title: 'כש-Platform מחליף צ\'אט שלא עונה', hint: 'רק תשובות — בטקסט, זול. מנוע — "📋 הפוך למטלה" מריץ קוד, וכל ריצה כזו מחכה לאישור שלך בכרטיס.',
+    opts: [['answers', '💬 רק תשובות'], ['card', '🤖 גם המנוע, אחרי אישור']] },
 ];
+
+/** התקרה החודשית למעברים אוטומטיים (§15.11a) — חלק מהמכסה. מוצג מה מעליה, וכמה כבר הוצא. */
+function ceilingBlock(info, save, { title = 'תקרה חודשית למעברים אוטומטיים', editable = true } = {}) {
+  const input = el('input', { type: 'number', min: '0', step: '0.5', inputmode: 'decimal', value: info.ceiling ? String(info.ceiling) : '',
+    placeholder: 'אין', 'aria-label': title, disabled: !editable });
+  return el('div', { class: 'lane-pref' }, [
+    el('b', { text: title }),
+    el('div', { class: 'ceil-row' }, [el('span', { text: '$' }), input,
+      editable ? el('button', { type: 'button', class: 'btn sm', text: 'שמירה', onclick: () => save(Number(input.value || 0)) }) : null].filter(Boolean)),
+    el('small', { class: 'hint', text: [
+      info.ceiling ? `הוצא החודש במעברים אוטומטיים: $${Number(info.spent || 0).toFixed(2)}${info.left !== null && info.left !== undefined ? ` · נשאר: $${Number(info.left).toFixed(2)}` : ''}`
+        : 'בלי תקרה — אין מעבר אוטומטי שעולה כסף: שואלים בכרטיס.',
+      info.above ? `לא יותר מ-$${Number(info.above).toFixed(2)} (${info.above_by}).` : '',
+      'ריק או 0 — אין תקרה.',
+    ].filter(Boolean).join(' ') }),
+  ]);
+}
 
 const SUMMARY = {
   auto: 'נעצרת — עוברים מיד לשיטה השנייה, והצ\'אט מקבל שורה אחת על כך.',
@@ -96,7 +118,39 @@ export async function renderLanesPanel(box) {
         type: 'button', role: 'radio', 'aria-checked': String(prefs[g.key] === v), onclick: () => set(g.key, v) }, [t]))),
       el('small', { class: 'hint', text: g.key === 'on_stop' ? SUMMARY[prefs.on_stop] : g.hint }),
     ])),
-    el('p', { class: 'hint', text: 'צ\'אט שנגמרו לו הטוקנים — זיהוי אוטומטי בשלב הבא. עד אז ההגדרה חלה כש-☁️ Platform נעצר.' }),
+    ceilingBlock(ceiling, async (usd) => {
+      try { ({ ceiling } = await api('lane-ceiling', { usd })); toast('נשמר', 'ok'); } catch (ex) { toast(ex.message, 'error'); }
+      draw();
+    }),
+    el('p', { class: 'hint', text: 'צ\'אט שלא עונה (שתיקה, או שהגיע למגבלה) — מזוהה לבד. פרויקט יכול לעקוף את ההגדרות האלה (בעל הלוח, בהגדרות הפרויקט ← מי עונה).' }),
+  );
+  let ceiling = { ceiling: 0, above: 0, above_by: '', spent: 0, left: null };
+  try { ({ ceiling } = await api('lane-ceiling')); } catch { /* מוצג בלי מספרים */ }
+  draw();
+}
+
+/** הגדרות הפרויקט ← מי עונה: עקיפה של ההגדרות לפרויקט, ותקרה לפרויקט / תת-פרויקט (בעל הלוח). */
+export async function renderProjectLanes(box, projectId) {
+  if (!box) return;
+  let d;
+  const load = async () => { d = await api('project-lanes', { project_id: projectId }); };
+  try { await load(); } catch (ex) { box.replaceChildren(el('p', { class: 'hint', text: ex.message })); return; }
+  const save = async (body) => {
+    try { d = await api('project-lanes', { project_id: projectId, ...body }); toast('נשמר', 'ok'); } catch (ex) { toast(ex.message, 'error'); }
+    draw();
+  };
+  const ROWS = GROUPS.filter((g) => ['on_stop', 'return_preferred', 'silence_minutes', 'engine'].includes(g.key));
+  const draw = () => box.replaceChildren(
+    el('h3', { text: '🔀 מסלולים בפרויקט הזה' }),
+    el('p', { class: 'hint', text: d.can_edit ? 'עקיפה של ההגדרות של המשלם, רק לפרויקט הזה ולתתי-הפרויקטים שלו. "כמו המשלם" — בלי עקיפה.' : 'רק בעל הלוח משנה את זה.' }),
+    ...ROWS.map((g) => el('div', { class: 'lane-pref' }, [
+      el('b', { text: g.title }),
+      el('div', { class: 'seg seg--wrap', role: 'radiogroup', 'aria-label': g.title }, [['', 'כמו המשלם'], ...g.opts].map(([v, t]) => el('button', {
+        type: 'button', role: 'radio', disabled: !d.can_edit, 'aria-checked': String((d.prefs[g.key] ?? '') === v),
+        onclick: () => save({ prefs: { [g.key]: v } }) }, [t]))),
+      el('small', { class: 'hint', text: `בפועל: ${(g.opts.find(([v]) => v === d.effective[g.key]) || [, d.effective[g.key]])[1]}` }),
+    ])),
+    ceilingBlock(d.ceiling_info, (usd) => save({ ceiling: usd }), { title: 'תקרה לפרויקט הזה', editable: d.can_edit }),
   );
   draw();
 }

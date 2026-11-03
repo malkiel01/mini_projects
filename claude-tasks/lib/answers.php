@@ -184,7 +184,7 @@ function platformReply(array $user, int $messageId, ?callable $transport = null)
         [$system, $prompt] = platformPrompt($channel, $project, platformContext($channel, $project, $payer) + ['open_asks' => $openAsks], $m);
         $ctx = ['kind' => 'answer', 'project_id' => (int) $project['id'], 'channel_id' => (int) $channel['id'], 'enforce' => false,
                 // שלב 16: תשובה במקום צ'אט שלא עונה, אחרי מעבר אוטומטי — נספרת מול התקרה
-                'auto' => (int) ($channel['unresponsive_since'] ?? 0) > 0 && lanePrefs((int) $payer['id'])['on_stop'] === 'auto'];
+                'auto' => (int) ($channel['unresponsive_since'] ?? 0) > 0 && laneEffectivePrefs((int) $payer['id'], (int) $project['id'])['on_stop'] === 'auto'];
         $conn = $chain[0] + ['chain' => $chain, 'user' => $payer, 'usage' => $ctx];
         $out = parsePlatformReply(aiComplete($conn, $system, $prompt, 1500, $transport));
     } catch (Throwable $e) {

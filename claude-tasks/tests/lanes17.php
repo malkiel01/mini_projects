@@ -43,6 +43,7 @@ $boss = ['id' => 1, 'role' => 'admin', 'username' => 'boss', 'display_name' => '
 $root = createProject($boss, 'mini_projects', 'malkiel01', 'mini_projects');
 addConnection($boss, 'anthropic', 'sk-ant-bossbossbossbossboss', 'אישי', 'claude-opus-5-5');
 setQuota($boss, 1, 25);
+db()->exec('UPDATE users SET auto_ceiling_usd = 10 WHERE id = 1');   // §15.11: מעבר אוטומטי רק עם תקרה
 $regToken = bin2hex(random_bytes(16));
 db()->prepare('UPDATE projects SET agent_token = ? WHERE id = ?')->execute([encryptSecret($regToken), $root]);
 $_SERVER['HTTP_X_WORKER_TOKEN'] = $regToken;
@@ -96,7 +97,7 @@ channelSend($boss, $c, 'x'); $tick(11 * 60);
 $m0 = $mark($c);
 silenceCheck(getChannel($c));
 check('cap_reached — 1 ו-1 (והכרטיס שואל)', [$delta($c, $m0), $reasons($c), (int) $col("SELECT COUNT(*) FROM messages WHERE channel_id = $c AND kind = 'lane_card'")], [[1, 1], ['cap_reached'], 1]);
-db()->exec('UPDATE users SET auto_ceiling_usd = 0 WHERE id = 1');
+db()->exec('UPDATE users SET auto_ceiling_usd = 10 WHERE id = 1');
 // Platform נעצר: ערוץ ☁️ → platform_credit; "לעבור" → שוב platform_credit עם מי; חזר → recovered
 $p = $mk('ענן');
 db()->prepare("UPDATE channels SET route = 'platform' WHERE id = ?")->execute([$p]);

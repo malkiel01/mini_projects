@@ -16,9 +16,11 @@ declare(strict_types=1);
 
 /** ‏0 = רק ידנית ("נסה שוב" / שינוי בחיבור). */
 const BREAKER_RETRY = ['rate_limited' => 300, 'down' => 1800, 'credit_exhausted' => 0, 'key_rejected' => 0];
-const LANE_PREFS_DEFAULT = ['preferred' => '', 'on_stop' => 'ask', 'return_preferred' => 'no', 'silence_minutes' => '10'];
+const LANE_PREFS_DEFAULT = ['preferred' => '', 'on_stop' => 'ask', 'return_preferred' => 'no', 'silence_minutes' => '10', 'engine' => 'answers'];
 const LANE_PREFS_VALUES = ['preferred' => ['', 'chat', 'platform'], 'on_stop' => ['auto', 'ask', 'wait'],
-                           'return_preferred' => ['yes', 'no'], 'silence_minutes' => ['5', '10', '20', '30']];
+                           'return_preferred' => ['yes', 'no'], 'silence_minutes' => ['5', '10', '20', '30'],
+                           // שלב 18: Platform בזמן מעבר — רק תשובות (ברירת המחדל, החלטה 3), או גם המנוע אחרי כרטיס אישור
+                           'engine' => ['answers', 'card']];
 
 function migrateLanes(PDO $pdo): void {
     addColumn($pdo, 'users', 'lane_prefs', "TEXT NOT NULL DEFAULT ''");

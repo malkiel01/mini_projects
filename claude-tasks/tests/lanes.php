@@ -78,7 +78,7 @@ $cid = (int) $ch['id'];
 $ch2 = getChannel(registerChannel(workerScope(), $root, 'רסטר', 'רסטר', 'session_LANES2', '')['channel_id']);
 $systemCount = fn (int $c, string $like) => (int) db()->query("SELECT COUNT(*) FROM messages WHERE channel_id = $c AND author_role = 'system' AND body LIKE '%$like%'")->fetchColumn();
 check('המסלול ☁️, המפסק סגור', [channelRoute(getChannel($cid)), platformBreaker(1)['open']], ['platform', false]);
-check('ברירת המחדל: לשאול, בלי שיטה מועדפת, בלי חזרה אוטומטית, שתיקה 10 דק\'', lanePrefs(1), ['preferred' => '', 'on_stop' => 'ask', 'return_preferred' => 'no', 'silence_minutes' => '10']);
+check('ברירת המחדל: לשאול, בלי שיטה מועדפת, בלי חזרה אוטומטית, שתיקה 10 דק\'', lanePrefs(1), ['preferred' => '', 'on_stop' => 'ask', 'return_preferred' => 'no', 'silence_minutes' => '10', 'engine' => 'answers']);
 
 echo "\n— ההגדרה \"לשאול\" (ברירת המחדל): שאלה בלוח, וממתין עד שעונים —\n";
 $q1 = channelSend($boss, $cid, 'הודעה כשאין עוד החלטה');

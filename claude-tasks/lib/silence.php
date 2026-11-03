@@ -159,13 +159,18 @@ function autoSpent(int $userId, ?array $projectIds = null): float {
     return (float) $st->fetchColumn();
 }
 
-/** כמה נשאר למעברים אוטומטיים: ‏left, ומי חוסם (שם הפרויקט / "המכסה החודשית"). */
+/**
+ * כמה נשאר למעברים אוטומטיים: ‏left, ומי חוסם (שם הפרויקט / "התקרה שלך" / "המכסה החודשית").
+ * §15.11: בלי שום תקרה (לא של המשתמש ולא בשרשרת הפרויקטים) — אין מעבר אוטומטי שעולה כסף: left = 0.
+ */
 function autoCeilingLeft(int $payer, int $projectId): array {
     $q = quotaState($payer);
     $best = ['left' => $q['state'] === 'off' ? 0.0 : (float) $q['left'], 'by' => 'המכסה החודשית', 'ceiling' => (float) $q['quota']];
+    $any = false;
     $u = db()->prepare('SELECT auto_ceiling_usd FROM users WHERE id = ?');
     $u->execute([$payer]);
     if (($uc = (float) $u->fetchColumn()) > 0) {
+        $any = true;
         $left = max(0.0, $uc - autoSpent($payer));
         if ($left < $best['left']) $best = ['left' => $left, 'by' => 'התקרה שלך', 'ceiling' => $uc];
     }
@@ -176,11 +181,13 @@ function autoCeilingLeft(int $payer, int $projectId): array {
         $p = $st->fetch();
         if (!$p) break;
         if (($pc = (float) $p['auto_ceiling_usd']) > 0) {
+            $any = true;
             $left = max(0.0, $pc - autoSpent($payer, projectSubtree((int) $p['id'])));
             if ($left < $best['left']) $best = ['left' => $left, 'by' => (string) $p['name'], 'ceiling' => $pc];
         }
         $id = (int) ($p['parent_id'] ?? 0);
     }
+    if (!$any) return ['left' => 0.0, 'by' => 'לא הוגדרה תקרה', 'ceiling' => 0.0, 'none' => true];
     $best['left'] = round($best['left'], 4);
     return $best;
 }
@@ -197,6 +204,7 @@ function platformCanTakeOver(int $payer, int $projectId, bool $auto): array {
     if (!aiChain(getUserById($payer) ?? ['id' => $payer])) return ['ok' => false, 'why' => 'למשלם אין חיבור לספק בינה.'];
     if ($auto) {
         $c = autoCeilingLeft($payer, $projectId);
+        if (!empty($c['none'])) return ['ok' => false, 'why' => 'לא הוגדרה תקרה חודשית למעברים אוטומטיים — עד שמגדירים (הגדרות ← 🔀 מסלולים), שואלים.', 'ceiling' => true];
         if ($c['left'] < AUTO_USE_ESTIMATE) return ['ok' => false, 'why' => "מעבר אוטומטי היה עובר את התקרה ({$c['by']}) — לכן שואלים.", 'ceiling' => true];
     }
     return ['ok' => true, 'why' => ''];
@@ -210,8 +218,8 @@ function getUserById(int $id): ?array {
 
 /* ── האפיזודה ─────────────────────────────────────────────── */
 
-function silenceMinutes(int $payer): int {
-    $m = (string) (lanePrefs($payer)['silence_minutes'] ?? '10');
+function silenceMinutes(int $payer, ?int $projectId = null): int {
+    $m = (string) (laneEffectivePrefs($payer, $projectId)['silence_minutes'] ?? '10');
     return in_array($m, SILENCE_MINUTES_VALUES, true) ? (int) $m : 10;
 }
 
@@ -237,7 +245,7 @@ function silenceCheck(array $channel, bool $force = false): string {
     if (!$force) {
         if (!$waiting) return '';
         if ((int) $channel['listening_until'] > nowTs()) return '';
-        if ((int) $waiting[0]['created_at'] > nowTs() - silenceMinutes($payer) * 60) return '';
+        if ((int) $waiting[0]['created_at'] > nowTs() - silenceMinutes($payer, $pid) * 60) return '';
     }
     return inTx(function () use ($channel, $payer, $pid, $force, $waiting) {
         $cid = (int) $channel['id'];
@@ -245,8 +253,8 @@ function silenceCheck(array $channel, bool $force = false): string {
         $st = db()->prepare("UPDATE channels SET unresponsive_since = ?, unresponsive_reason = ?, lane_decision = '' WHERE id = ? AND unresponsive_since = 0");
         $st->execute([nowTs(), $force ? 'limit' : 'silence', $cid]);
         if ($st->rowCount() === 0) return '';
-        $onStop = lanePrefs($payer)['on_stop'];
-        $why = $force ? 'הצ\'אט נעצר — ' . limitText((string) ($channel['limit_status'] ?? '')) : 'הצ\'אט לא עונה ' . silenceMinutes($payer) . ' דק\'';
+        $onStop = laneEffectivePrefs($payer, $pid)['on_stop'];
+        $why = $force ? 'הצ\'אט נעצר — ' . limitText((string) ($channel['limit_status'] ?? '')) : 'הצ\'אט לא עונה ' . silenceMinutes($payer, $pid) . ' דק\'';
         $res = 'waiting';
         if ($onStop === 'auto') {
             $can = platformCanTakeOver($payer, $pid, true);
@@ -385,7 +393,7 @@ function laneReturn(array $channel): string {
         $digest = channelDigest($channel);   // המצב של האפיזודה — לפני שה-since מתאפס
         db()->prepare("UPDATE messages SET status = 'resolved' WHERE channel_id = ? AND kind = 'lane_card' AND status = 'open'")->execute([$cid]);
         $payer = (int) projectPayer((int) $channel['project_id']);
-        $p = lanePrefs($payer);
+        $p = laneEffectivePrefs($payer, (int) $channel['project_id']);
         $was = (string) $channel['lane_decision'];
         $back = $was !== 'platform' || ($p['return_preferred'] === 'yes' && $p['preferred'] !== 'platform');
         if ($back) db()->prepare("UPDATE channels SET lane_decision = '' WHERE id = ?")->execute([$cid]);

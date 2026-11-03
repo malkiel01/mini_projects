@@ -483,6 +483,10 @@ try {
         ]);
         $id = (int) db()->lastInsertId();
         if ($connId !== null) db()->prepare('UPDATE tasks SET connection_id = ? WHERE id = ?')->execute([$connId, $id]);
+        // שלב 18: מטלה מתשובה של Platform בזמן שהצ'אט לא ענה — origin: failover (אישור לפני הריצה הראשונה)
+        if (($origin = taskOriginFromMessage(int_or_null($in, 'from_message'))) !== '') {
+            db()->prepare('UPDATE tasks SET origin = ? WHERE id = ?')->execute([$origin, $id]);
+        }
 
         // סידור לפי כללים בלבד: זה קורה בכל הוספה, ואסור שיעלה כסף או
         // ישהה את התגובה. סידור עם מודל מופעל ידנית מהמגירה.
@@ -1117,6 +1121,8 @@ try {
 
         // מכסה (§8): הריצה על חשבון מי שמריץ — המפתח שלו. נגמרה / לא הוגדרה → 402
         requireQuota((int) $me['id'], 'develop');
+        // שלב 18: מטלה מתוך מעבר ל-☁️ — לפי ההגדרה, רק Claude Code (השער), והריצה הראשונה אחרי כרטיס אישור
+        if ($gate = failoverRunCheck($me, $task, $project)) ok($gate);
         $r = dispatchTask($me, $project, $task, $conn);
         // המנוע מדווח על השימוש (report-usage), והוא נזקף למי שהריץ
         db()->prepare('UPDATE tasks SET run_user_id = ?, run_connection_id = ? WHERE id = ?')
@@ -1564,6 +1570,22 @@ try {
     }
 
     /* ── שלב 17: היומן והמעבר הידני (lib/lanelog.php) ── */
+    /* ── שלב 18: התקרה ועקיפה לפרויקט (lib/lanesettings.php) ── */
+    case 'lane-ceiling':
+        $me = requireUser($user);
+        ok(['ceiling' => isset($in['usd']) ? setUserCeiling($me, (float) $in['usd']) : ceilingInfo((int) $me['id'], null)]);
+
+    case 'project-lanes': {
+        $me = requireUser($user);
+        $pid = (int) ($in['project_id'] ?? 0);
+        requireProject($pid, $me, 'read');
+        if (isset($in['prefs']) && is_array($in['prefs'])) setProjectLanePrefs($me, $pid, $in['prefs']);
+        if (isset($in['ceiling'])) setProjectCeiling($me, $pid, (float) $in['ceiling']);
+        $payer = (int) projectPayer($pid);
+        ok(projectLanePrefs($pid) + ['effective' => laneEffectivePrefs($payer, $pid), 'ceiling_info' => ceilingInfo($payer, $pid),
+            'can_edit' => authorRole($me) === 'owner']);
+    }
+
     case 'lane-log':
         ok(['log' => laneLogFor(requireUser($user), (int) ($in['channel_id'] ?? 0))]);
 

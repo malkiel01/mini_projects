@@ -51,6 +51,8 @@ $boss = ['id' => 1, 'role' => 'admin', 'username' => 'boss', 'display_name' => '
 $root = createProject($boss, 'mini_projects', 'malkiel01', 'mini_projects');
 addConnection($boss, 'anthropic', 'sk-ant-bossbossbossbossboss', 'אישי', 'claude-opus-5-5');
 setQuota($boss, 1, 25);
+// §15.11: בלי תקרה אין מעבר אוטומטי שעולה כסף — כאן מגדירים תקרה, ובשלב 18 בודקים גם בלעדיה
+db()->exec('UPDATE users SET auto_ceiling_usd = 10 WHERE id = 1');
 $regToken = bin2hex(random_bytes(16));
 db()->prepare('UPDATE projects SET agent_token = ? WHERE id = ?')->execute([encryptSecret($regToken), $root]);
 $_SERVER['HTTP_X_WORKER_TOKEN'] = $regToken;
@@ -133,7 +135,7 @@ check('…והכרטיס אומר למה', [str_contains($cm['blocked'], 'התק
 check('…אבל בעל הלוח יכול לבחור ☁️ (התקרה רק למעבר אוטומטי)', laneCardAnswer($boss, (int) getChannel($ce)['silence_card_id'], 'platform')['decision'], 'platform');
 db()->exec("UPDATE projects SET auto_ceiling_usd = 0.5 WHERE id = $root");
 check('תקרת הפרויקט נמוכה משלי — היא החוסמת, בשמה', autoCeilingLeft(1, $root)['by'], 'mini_projects');
-db()->exec('UPDATE users SET auto_ceiling_usd = 0 WHERE id = 1'); db()->exec("UPDATE projects SET auto_ceiling_usd = 0 WHERE id = $root");
+db()->exec('UPDATE users SET auto_ceiling_usd = 10 WHERE id = 1'); db()->exec("UPDATE projects SET auto_ceiling_usd = 0 WHERE id = $root");
 db()->prepare('INSERT INTO usage (at, user_id, project_id, kind, provider, model, cost_usd) VALUES (?,1,?,?,?,?,?)')
     ->execute([nowTs(), $root, 'answer', 'anthropic', 'claude-opus-5-5', 30]);
 $q = $mk('מכסה');

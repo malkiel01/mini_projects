@@ -8,6 +8,7 @@
 import { $, $$, el, api, toast, state, on, PLATFORM_HINT } from './core.js';
 import { openPolicySheet, policySubline } from './policy.js';
 import { loadChatSheet, chatSheetLine, openNewChat } from './newchat.js';
+import { renderProjectLanes } from './lanes.js';
 
 /* ── חיבורים (docs/spec.md §10.1) ─────────────────────────────────
  *
@@ -428,7 +429,7 @@ async function openSheet(id) {
   }
   if (id === 'pvsFiles') { $('#pvFile').hidden = true; browse(state.openProject.path || '').catch(() => {}); }
   if (id === 'pvsGithub') renderGithubChoice();
-  if (id === 'pvsRoute') renderRouteSheet();
+  if (id === 'pvsRoute') { renderRouteSheet(); renderProjectLanes($('#pvLanes'), state.openProject.id); }
   if (id === 'pvsPolicy') return openPolicySheet(state.openProject.id, state.openProject.name);
   if (id === 'pvsToken') { $('#pvChatTokenValue').textContent = '••••••••'; $('#pvChatTokenShow').hidden = false; $('#pvChatTokenCopy').hidden = true; }
   $('#' + id).showModal();
