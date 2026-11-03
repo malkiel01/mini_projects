@@ -355,6 +355,11 @@ function channelsFor(array $user, int $projectId, bool $includeHidden = false): 
         $out['hidden'] = (bool) (int) ($c['hidden'] ?? 0);
         $out['color'] = (string) ($c['color'] ?? '');
         $out['icon'] = (string) ($c['icon'] ?? '');
+        // §15.13: בקשה לצ'אט המשך שממתינה ברקע, או תקציר שמוכן — לשורה
+        if ($out['status'] === 'active') {
+            $h = handoffState($c);
+            if (in_array($h['state'], ['waiting', 'ready'], true)) $out['handoff'] = ['state' => $h['state'], 'requested_at' => $h['requested_at']];
+        }
         return $out;
     }, $st->fetchAll());
 }

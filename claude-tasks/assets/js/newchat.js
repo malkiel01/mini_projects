@@ -229,54 +229,128 @@ on('#tplForm', 'submit', async (e) => {
   $('#tplSave').disabled = false;
 });
 
-/* ── 🔁 צ'אט המשך ─────────────────────────────────────────────── */
+/* ── 🔁 צ'אט המשך (§5.9.4, §15.13) ───────────────────────────── */
+/*
+ * שום המתנה לא תופסת את המסך: ✕ תמיד סוגר ולעולם לא מבטל (הבקשה נשארת בשרת, והשורה של הערוץ מראה
+ * "🔁 מכין תקציר… m:ss"); יש זמן שעבר וזמן צפוי — או "לא ידוע" ביושר; צ'אט שלא מאזין לא "חושב" (בלי ספינר).
+ */
 
-const ho = { channel: null, timer: null };
+const ho = { channel: null, timer: null, tick: null, gen: 0, status: null, base: 0 };
+export const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.max(0, s) % 60).padStart(2, '0')}`;
+const secs = (s) => (s < 90 ? `${s} שניות` : `${Math.round(s / 60)} דקות`);
 
-function stopHandoff() { if (ho.timer) clearTimeout(ho.timer); ho.timer = null; }
+function stopHandoff() {
+  clearTimeout(ho.timer); clearInterval(ho.tick);
+  ho.timer = null; ho.tick = null; ho.gen++;
+}
+const elapsed = () => (ho.status ? ho.status.waited + Math.floor((Date.now() - ho.base) / 1000) : 0);
 
-async function pollHandoff(fallback = false) {
-  stopHandoff();
+async function pollHandoff() {
+  clearTimeout(ho.timer);
   if (!ho.channel || !$('#handoffSheet').open) return;
-  let r;
-  try { r = await api('handoff-prompt', { channel_id: ho.channel.id, fallback }); } catch (ex) { toast(ex.message, 'error'); return; }
-  if (!r.ready) {
-    // replaceChildren הופך null לטקסט "null" — מסננים
-    $('#handoffBody').replaceChildren(...[
-      el('p', { class: 'nc-wait' }, [el('span', { class: 'spin', 'aria-hidden': 'true' }), ` ממתין לתקציר מ"${ho.channel.name}"… (${r.waited} שנ׳)`]),
-      el('p', { class: 'hint', text: 'הצ\'אט קיבל בקשה לכתוב תקציר העברה: מצב וערכים עיקריים, החלטות, מה פתוח, קבצים, sessions וענף, ומה הצ\'אט הבא עושה קודם.' }),
-      r.can_fallback
-        ? el('div', {}, [el('p', { class: 'hint', text: r.listening === false
-            ? `"${ho.channel.name}" לא מאזין עכשיו — הבקשה לתקציר תגיע אליו רק כשיבדוק את הלוח (בבדיקה השעתית, או כשתכתבו לו). אפשר להמשיך כבר עכשיו בלי תקציר: הפרומפט ייבנה מ-30 ההודעות האחרונות בערוץ.`
-            : 'עברו 2 דקות בלי תקציר — אולי הצ\'אט לא פעיל. אפשר להמשיך בלי תקציר: הפרומפט ייבנה מ-30 ההודעות האחרונות בערוץ.' }),
-            el('button', { type: 'button', class: 'btn ghost', text: 'בלי תקציר — מההודעות האחרונות', onclick: () => pollHandoff(true) })])
-        : null,
-    ].filter(Boolean));
-    ho.timer = setTimeout(() => pollHandoff(), 4000);
-    return;
+  const gen = ho.gen;
+  let st;
+  try { st = await api('handoff-status', { channel_id: ho.channel.id }); } catch (ex) { if (gen === ho.gen) toast(ex.message, 'error'); return; }
+  if (gen !== ho.gen || !$('#handoffSheet').open) return;   // נסגר / נפתח מחדש בינתיים
+  ho.status = st; ho.base = Date.now();
+  if (st.state === 'ready') { showHandoffPrompt(false); return; }
+  renderHandoff();
+  if (st.state === 'waiting') ho.timer = setTimeout(pollHandoff, 4000);
+}
+
+/** מתעדכן כל שנייה בלי לפנות לשרת: הזמן, הפס, ו"לוקח יותר מהרגיל". */
+function tickHandoff() {
+  const t = elapsed(), st = ho.status;
+  const e = $('#hoElapsed'); if (e) e.textContent = mmss(t);
+  const bar = $('#hoBar');
+  if (bar && st?.expected_seconds) {
+    const pct = Math.min(100, Math.round((t / st.expected_seconds) * 100));
+    bar.value = pct; bar.setAttribute('aria-valuenow', String(pct));
+    $('#hoExpect').textContent = t > st.expected_seconds ? `לוקח יותר מהרגיל (בדרך כלל כ-${secs(st.expected_seconds)})` : `בדרך כלל כ-${secs(st.expected_seconds)}`;
   }
+  const fb = $('#hoFallback');
+  if (fb && st?.listening) fb.className = `btn ${t >= 120 ? 'primary' : 'ghost'}`;
+  const late = $('#hoLate'); if (late) late.hidden = t < 300;
+}
+
+function renderHandoff() {
+  const st = ho.status, name = ho.channel.name;
+  const fallback = el('button', { type: 'button', id: 'hoFallback', class: `btn ${!st.listening || elapsed() >= 120 ? 'primary' : 'ghost'}`,
+    text: 'בלי תקציר — לפתוח עכשיו', onclick: () => showHandoffPrompt(true) });
+  const background = el('button', { type: 'button', class: 'btn ghost', text: 'להמשיך לחכות ברקע',
+    onclick: () => { $('#handoffSheet').close(); toast('ממשיכים לחכות ברקע — השורה של הערוץ תראה כשהתקציר מוכן', 'ok'); } });
+  const cancel = el('button', { type: 'button', class: 'linklike', text: 'ביטול הבקשה', onclick: async () => {
+    try { await api('handoff-cancel', { channel_id: ho.channel.id }); toast('הבקשה בוטלה', 'ok'); } catch (ex) { toast(ex.message, 'error'); }
+    pollHandoff();
+  } });
+  const again = el('button', { type: 'button', class: 'btn primary', text: '🔁 בקשה חדשה', onclick: async () => {
+    try { await api('handoff-request', { channel_id: ho.channel.id }); } catch (ex) { toast(ex.message, 'error'); }
+    pollHandoff();
+  } });
+  let body;
+  if (st.state === 'waiting' && st.listening) {
+    body = [
+      el('p', { class: 'nc-wait', role: 'status' }, [el('span', { class: 'spin', 'aria-hidden': 'true' }),
+        ` ממתין לתקציר מ"${name}" · `, el('b', { id: 'hoElapsed', text: mmss(elapsed()) })]),
+      st.expected_seconds
+        ? el('div', { class: 'ho-expect' }, [el('progress', { id: 'hoBar', max: '100', value: '0', 'aria-label': 'התקדמות משוערת' }),
+            el('small', { id: 'hoExpect', text: `בדרך כלל כ-${secs(st.expected_seconds)}` })])
+        : el('p', { class: 'hint', text: 'לא ידוע כמה זמן — עוד אין מספיק העברות קודמות להערכה.' }),
+      el('p', { class: 'hint', id: 'hoLate', hidden: true, text: 'אין תגובה כבר 5 דקות. אפשר לפתוח בלי תקציר, או להמשיך לחכות ברקע.' }),
+      el('p', { class: 'hint', text: 'הצ\'אט כותב תקציר העברה: מצב, החלטות, מה פתוח, קבצים, ענף, ומה הצ\'אט הבא עושה קודם. הסגירה (✕) לא מבטלת — ממשיכים לחכות ברקע.' }),
+      el('div', { class: 'row-btns' }, [background, fallback]), cancel,
+    ];
+  } else if (st.state === 'waiting') {
+    // לא מאזין — לא "חושב": בלי ספינר, ההסבר, ו"בלי תקציר" הוא הכפתור הראשי
+    body = [
+      el('p', { class: 'nc-wait', role: 'status' }, [`⚪ "${name}" לא מאזין — התקציר יגיע רק כשיבדוק את הלוח (עד כשעה). עברו `,
+        el('b', { id: 'hoElapsed', text: mmss(elapsed()) })]),
+      el('p', { class: 'hint', text: 'בלי תקציר — הפרומפט ייבנה מההודעות האחרונות בערוץ. ✕ לא מבטל את הבקשה.' }),
+      el('div', { class: 'row-btns' }, [fallback, background]), cancel,
+    ];
+  } else if (st.state === 'expired') {
+    body = [el('p', { class: 'nc-wait', text: '⌛ הבקשה נסגרה — שעה בלי תשובה מהצ\'אט.' }), el('div', { class: 'row-btns' }, [fallback, again])];
+  } else if (st.state === 'cancelled') {
+    body = [el('p', { class: 'nc-wait', text: 'הבקשה בוטלה.' }), el('div', { class: 'row-btns' }, [again, fallback])];
+  } else {
+    body = [el('p', { class: 'hint', text: '…' })];
+  }
+  $('#handoffBody').replaceChildren(...body);
+  clearInterval(ho.tick);
+  if (st.state === 'waiting') { ho.tick = setInterval(tickHandoff, 1000); tickHandoff(); }
+}
+
+async function showHandoffPrompt(fallback) {
+  stopHandoff();
+  const gen = ho.gen;
+  let r;
+  try { r = await api('handoff-prompt', { channel_id: ho.channel.id, fallback }); } catch (ex) { toast(ex.message, 'error'); return pollHandoff(); }
+  if (gen !== ho.gen || !$('#handoffSheet').open) return;
+  if (!r.ready) { pollHandoff(); return; }
   $('#handoffBody').replaceChildren(
     envLine(r.environment),
     el('p', { class: 'hint', text: r.source === 'handoff'
       ? `התקציר הגיע. כשהצ'אט החדש יירשם, "${r.name}" יסומן "הוחלף" והמטלות שנשאלו בו יעברו אליו.`
-      : 'בלי תקציר — הפרומפט כולל את 30 ההודעות האחרונות בערוץ.' }),
+      : 'בלי תקציר — הפרומפט כולל את ההודעות האחרונות בערוץ.' }),
     promptBlock(r.prompt, 'הפרומפט לצ\'אט ההמשך'),
   );
+  document.dispatchEvent(new CustomEvent('ct:reload-channels'));
 }
 
 export async function openHandoff(channel) {
-  ho.channel = channel;
+  stopHandoff();
+  ho.channel = channel; ho.status = null;
   $('#handoffBody').replaceChildren(el('p', { class: 'hint', text: '…' }));
   $('#handoffSheet').showModal();
   try {
-    // בקשה מהעשר דקות האחרונות שעוד מחכה לתקציר — ממשיכים לחכות לה, לא שולחים שוב
-    const cur = await api('handoff-prompt', { channel_id: channel.id }).catch(() => null);
-    const waiting = cur && cur.requested && !cur.ready && cur.waited < 600;
-    if (!waiting) await api('handoff-request', { channel_id: channel.id });
-  } catch (ex) { toast(ex.message, 'error'); $('#handoffSheet').close(); return; }
+    // בקשה שממתינה או תקציר שמוכן — ממשיכים מהם; אחרת בקשה חדשה (השרת לא שולח שנייה כשיש אחת שממתינה)
+    const cur = await api('handoff-status', { channel_id: channel.id });
+    if (!['waiting', 'ready'].includes(cur.state)) await api('handoff-request', { channel_id: channel.id });
+  } catch (ex) { toast(ex.message, 'error'); return; }
   pollHandoff();
 }
-on('#handoffSheet', 'close', stopHandoff);
+// ✕ / Escape / "ברקע" — סוגרים בלבד. הבקשה ממשיכה בשרת, והשורה של הערוץ מתעדכנת
+on('#handoffSheet', 'close', () => { stopHandoff(); document.dispatchEvent(new CustomEvent('ct:reload-channels')); });
 
 /* ── רמת "הצ'אט מתארך" ────────────────────────────────────────── */
 

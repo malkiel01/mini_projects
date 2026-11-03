@@ -7,7 +7,7 @@ import { approvalCard } from './approvals.js';
 import { renderMarkdown } from './markdown.js';
 import { choiceCard } from './choices.js';
 import { permCard, permFromMessage, refreshPermStrip } from './permissions.js';
-import { HEALTH, healthDetail, openHandoff } from './newchat.js';
+import { HEALTH, healthDetail, openHandoff, mmss } from './newchat.js';
 import { labelChip, openLabelsForMessage, openManageLabels, renderPinStrip, openPinList, pinsMode, setPinsMode } from './labels.js';
 import { needs as trNeeds, lang as trLang, TRANSLATE_LANGS, engine as trEngine, translate, cached as trCached, setShow as trSetShow } from './translate.js';
 
@@ -72,6 +72,12 @@ function channelSub(c) {
   return parts.join(' · ');
 }
 
+let chanHandoffTimer = null;
+setInterval(() => {
+  for (const b of document.querySelectorAll('.ho-live .ho-t')) b.textContent = mmss(Math.floor(Date.now() / 1000) - Number(b.closest('.ho-live').dataset.at));
+}, 1000);
+document.addEventListener('ct:reload-channels', () => { if (state.projectId) loadChannels().catch(() => {}); });
+
 export function renderChannels() {
   const list = state.channels || [];
   $('#chanRows').replaceChildren(...list.map((c) => el('li', {
@@ -88,8 +94,17 @@ export function renderChannels() {
     // "הצ'אט מתארך" (§5.9.3) — רק כשהצ'אט דיווח; בלי דיווח — בלי ניחוש
     c.status === 'active' && HEALTH[c.health] ? el('span', { class: `badge health health--${c.health}`, title: healthDetail(c), text: HEALTH[c.health].chip }) : null,
     c.pending_in ? el('span', { class: 'badge', title: 'ממתינות לצ\'אט', text: `✉️ ${c.pending_in}` }) : null,
+    // §15.13: צ'אט המשך ברקע — טיימר חי; התקציר מוכן — שבב שפותח את הגיליון (לא נפתח מעצמו)
+    c.handoff?.state === 'waiting' ? el('span', { class: 'badge ho-live', dataset: { at: String(c.handoff.requested_at) }, title: 'מכין תקציר לצ\'אט המשך' }, [
+      '🔁 ', el('span', { class: 'ho-word', text: 'מכין תקציר… ' }),
+      el('span', { class: 'ho-t', text: mmss(Math.floor(Date.now() / 1000) - c.handoff.requested_at) })]) : null,
+    c.handoff?.state === 'ready' ? el('button', { type: 'button', class: 'badge ho-ready', text: '✅ התקציר מוכן', 'aria-label': 'התקציר מוכן — לפתוח צ\'אט המשך',
+      onclick: (e) => { e.stopPropagation(); openHandoff(c); } }) : null,
     el('span', { class: 'go', 'aria-hidden': 'true', text: '‹' }),
   ])));
+  // יש העברה שממתינה — בודקים שוב בעוד 15 שנ' (כך השבב "מוכן" מופיע גם כשהגיליון סגור)
+  clearTimeout(chanHandoffTimer);
+  if (list.some((c) => c.handoff?.state === 'waiting')) chanHandoffTimer = setTimeout(() => loadChannels().catch(() => {}), 15000);
   // 🗄 N בארכיון — בתחתית; נגיעה מציגה / מסתירה אותם
   if (state.hiddenChannels) {
     $('#chanRows').append(el('li', { class: 'chan-hidden' }, [el('button', {

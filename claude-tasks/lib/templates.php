@@ -18,8 +18,14 @@ const NOTIFY_SESSION_DEFAULT = 'session_018g4NYGkLv7LXXa1DqxwnRS';
 const DEFAULT_NAME_PATTERN = '{project} - {role}';
 const HANDOFF_WAIT_SECONDS = 120;
 const HANDOFF_FALLBACK_MESSAGES = 30;
+/** §15.13: בקשת תקציר נשארת פתוחה שעה, ואז נסגרת בשורה אפורה. ההערכה — מ-20 ההעברות האחרונות של המשלם, מ-3 ומעלה. */
+const HANDOFF_EXPIRE_SECONDS = 3600;
+const HANDOFF_STATS_KEEP = 20;
+const HANDOFF_STATS_MIN = 3;
 
 function migrateTemplates(PDO $pdo): void {
+    $pdo->exec('CREATE TABLE IF NOT EXISTS handoff_stats (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL,
+                                                           seconds INTEGER NOT NULL, at INTEGER NOT NULL)');
     // שדה NULL — יורש מהאב הקרוב שמגדיר אותו
     $pdo->exec("
         CREATE TABLE IF NOT EXISTS chat_templates (
@@ -309,8 +315,92 @@ function handoffRequest(array $user, int $channelId): array {
     if (!$channel) throw new AppError('הערוץ לא נמצא', 404);
     requireProject((int) $channel['project_id'], $user, 'read');
     if ($channel['status'] !== 'active') throw new AppError('הערוץ אינו פעיל', 409);
+    // בקשה שעוד ממתינה — ממשיכים אותה; הצ'אט הישן לא מקבל בקשה שנייה (§15.13)
+    $cur = handoffState($channel);
+    if ($cur['state'] === 'waiting') return ['id' => $cur['request_id'], 'existing' => true] + $cur;
     $id = channelInsertIn($channelId, 'owner', (int) $user['id'], HANDOFF_ASK, 'handoff_request');
-    return ['id' => $id];
+    db()->prepare("UPDATE messages SET status = 'waiting' WHERE id = ?")->execute([$id]);
+    return ['id' => $id, 'existing' => false] + handoffState(getChannel($channelId));
+}
+
+/** המשלם של הערוץ — אליו נרשמים זמני ההעברה (ההערכה היא לכל משלם). */
+function handoffPayer(array $channel): int {
+    return projectPayer((int) $channel['project_id']) ?: 0;
+}
+
+/** כמה זמן לוקחת העברה בדרך כלל: חציון של 20 האחרונות, או null כשיש פחות מ-3. */
+function handoffExpected(int $payer): array {
+    $st = db()->prepare('SELECT seconds FROM handoff_stats WHERE user_id = ? ORDER BY id DESC LIMIT ' . HANDOFF_STATS_KEEP);
+    $st->execute([$payer]);
+    $s = array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
+    if (count($s) < HANDOFF_STATS_MIN) return ['expected_seconds' => null, 'samples' => count($s)];
+    sort($s);
+    $n = count($s);
+    $median = $n % 2 ? $s[intdiv($n, 2)] : intdiv($s[$n / 2 - 1] + $s[$n / 2], 2);
+    return ['expected_seconds' => max(1, $median), 'samples' => $n];
+}
+
+/**
+ * מצב הבקשה האחרונה לצ'אט המשך (§15.13), בלי לשנות דבר מלבד מעברים טבעיים: תקציר הגיע → ready (ונרשם הזמן);
+ * שעה בלי תקציר → expired (שורה אפורה בערוץ). ‏state: none | waiting | ready | used | fallback | cancelled | expired.
+ */
+function handoffState(array $channel): array {
+    $cid = (int) $channel['id'];
+    $req = db()->prepare("SELECT id, created_at, status FROM messages WHERE channel_id = ? AND kind = 'handoff_request' ORDER BY id DESC LIMIT 1");
+    $req->execute([$cid]);
+    $r = $req->fetch();
+    $listening = ($channel['status'] ?? '') === 'active' && (int) ($channel['listening_until'] ?? 0) > nowTs();
+    if (!$r) return ['state' => 'none', 'listening' => $listening];
+    // בקשה מלפני §15.13 (status ריק — לפני שהיה "waiting") נחשבת סגורה: אחרת כל ערוץ ישן היה מקבל שבב "התקציר מוכן"
+    $state = in_array($r['status'], ['ready', 'used', 'fallback', 'cancelled', 'expired'], true) ? $r['status']
+           : ($r['status'] === 'waiting' ? 'waiting' : 'used');
+    $at = (int) $r['created_at'];
+    if ($state === 'waiting') {
+        $h = db()->prepare("SELECT created_at FROM messages WHERE channel_id = ? AND kind = 'handoff' AND id > ? ORDER BY id LIMIT 1");
+        $h->execute([$cid, $r['id']]);
+        $got = $h->fetchColumn();
+        if ($got !== false) {
+            $state = 'ready';
+            $upd = db()->prepare("UPDATE messages SET status = 'ready' WHERE id = ? AND status IN ('', 'waiting')");
+            $upd->execute([$r['id']]);
+            if ($upd->rowCount() === 1 && ($payer = handoffPayer($channel))) {
+                db()->prepare('INSERT INTO handoff_stats (user_id, seconds, at) VALUES (?,?,?)')->execute([$payer, max(1, (int) $got - $at), nowTs()]);
+            }
+        } elseif (nowTs() - $at >= HANDOFF_EXPIRE_SECONDS) {
+            $state = 'expired';
+            $upd = db()->prepare("UPDATE messages SET status = 'expired' WHERE id = ? AND status IN ('', 'waiting')");
+            $upd->execute([$r['id']]);
+            // שורה אפורה — רק לבקשה מהיממה האחרונה (בקשות ישנות מלפני השלב הזה נסגרות בשקט)
+            if ($upd->rowCount() === 1 && nowTs() - $at < 86400) {
+                channelInsertIn($cid, 'system', null, '🔁 בקשת התקציר לצ\'אט המשך נסגרה — שעה בלי תשובה.', 'status', null, (int) $r['id'], false);
+            }
+        }
+    }
+    return ['state' => $state, 'request_id' => (int) $r['id'], 'requested_at' => $at, 'waited' => nowTs() - $at,
+            'listening' => $listening] + handoffExpected(handoffPayer($channel));
+}
+
+function handoffChannel(array $user, int $channelId): array {
+    if (authorRole($user) !== 'owner') throw new AppError('צ\'אט המשך — בעל הלוח בלבד', 403);
+    $channel = getChannel($channelId);
+    if (!$channel) throw new AppError('הערוץ לא נמצא', 404);
+    requireProject((int) $channel['project_id'], $user, 'read');
+    return $channel;
+}
+
+/** ‏handoff-status — מה שהגיליון והשורה צריכים. לא שולח כלום לצ'אט. */
+function handoffStatus(array $user, int $channelId): array {
+    return handoffState(handoffChannel($user, $channelId));
+}
+
+/** ‏handoff-cancel — ביטול מפורש (✕ לעולם לא מבטל). */
+function handoffCancel(array $user, int $channelId): array {
+    $channel = handoffChannel($user, $channelId);
+    $s = handoffState($channel);
+    if ($s['state'] !== 'waiting') throw new AppError('אין בקשה שממתינה', 409);
+    db()->prepare("UPDATE messages SET status = 'cancelled' WHERE id = ?")->execute([$s['request_id']]);
+    logEvent($user, 'handoff.cancel', "channel:$channelId", true, '');
+    return handoffState($channel);
 }
 
 /** התפקיד של ערוץ קיים בתבנית — או תפקיד שנבנה מהערוץ עצמו (נרשם לפני התבניות). */
@@ -345,7 +435,8 @@ function handoffPrompt(array $user, int $channelId, bool $fallback = false): arr
     if ($body === false) {
         if (!$fallback) return ['ready' => false, 'requested' => true, 'waited' => $waited, 'can_fallback' => $canFallback,
                                 'listening' => $listening];
-        if (!$canFallback) throw new AppError('ממתינים לתקציר עוד ' . (HANDOFF_WAIT_SECONDS - $waited) . ' שניות', 409);
+        // §15.13: "בלי תקציר" תמיד זמין — בעל הלוח לא מחכה בכוח (ב-120 שנ' הכפתור רק נעשה הראשי)
+        db()->prepare("UPDATE messages SET status = 'fallback' WHERE id = ? AND status IN ('', 'waiting', 'ready')")->execute([$r['id']]);
         $rows = messageRows("m.channel_id = ? AND m.kind NOT IN ('handoff_request', 'status')", [$channelId], 1000);
         $rows = array_slice($rows, -HANDOFF_FALLBACK_MESSAGES);
         $who = ['owner' => 'בעל המערכת', 'chat' => 'הצ\'אט', 'system' => 'מערכת', 'platform' => 'Platform'];
@@ -353,6 +444,10 @@ function handoffPrompt(array $user, int $channelId, bool $fallback = false): arr
               . implode("\n\n", array_map(fn ($m) => '[' . ($who[$m['author_role']] ?? $m['author_role']) . '] '
                   . mb_substr((string) $m['body'], 0, 800), $rows));
         $source = 'messages';
+    }
+    if ($source === 'handoff') {
+        handoffState($channel);   // ready + זמן ההעברה, אם עוד לא נרשמו
+        db()->prepare("UPDATE messages SET status = 'used' WHERE id = ? AND status IN ('', 'waiting', 'ready')")->execute([$r['id']]);
     }
     $role = channelRoleFor($channel);
     $block = "## העברה מהצ'אט הקודם — \"{$channel['name']}\" (ערוץ #{$channel['id']})\n"

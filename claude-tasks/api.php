@@ -1550,6 +1550,12 @@ try {
     case 'handoff-request':
         ok(handoffRequest(requireUser($user), (int) ($in['channel_id'] ?? 0)));
 
+    case 'handoff-status':
+        ok(handoffStatus(requireUser($user), (int) ($in['channel_id'] ?? 0)));
+
+    case 'handoff-cancel':
+        ok(handoffCancel(requireUser($user), (int) ($in['channel_id'] ?? 0)));
+
     case 'handoff-prompt':
         ok(handoffPrompt(requireUser($user), (int) ($in['channel_id'] ?? 0), !empty($in['fallback'])));
 
