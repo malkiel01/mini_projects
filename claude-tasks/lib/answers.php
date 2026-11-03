@@ -162,7 +162,7 @@ function platformReply(array $user, int $messageId, ?callable $transport = null)
         if ($class !== '' && $class !== 'bad_request') {
             breakerTrip($pid, $class, $e->getMessage(), (string) ($chain[0]['provider'] ?? ''));
             $why = '☁️ Platform נעצר — ' . breakerShort($class, $e->getMessage());
-            if (lanePrefs($pid)['platform_stop'] === 'handover') return handToChat($messageId, (int) $channel['id'], $why);
+            if (platformBreaker($pid)['handover']) return handToChat($messageId, (int) $channel['id'], $why);
             db()->prepare("UPDATE messages SET answered_by = 'platform' WHERE id = ?")->execute([$messageId]);
             return ['answered' => false, 'waiting' => true, 'reason' => "$why — ההודעה ממתינה עד שיחזור"];
         }

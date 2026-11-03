@@ -848,3 +848,9 @@ mark.hit { background: color-mix(in srgb, var(--star) 45%, transparent); color: 
 .platform-stop .ps-acts .btn { min-height: 40px; }
 .lane-pref { display: grid; gap: var(--s2); padding: var(--s3); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
 .lane-pref .seg button { min-height: 44px; }
+.platform-stop--ask .ps-ask .btn { flex: 1 1 10em; min-height: 44px; }
+.lane-pref + .lane-pref { margin-top: var(--s2); }
+.lane-pref .seg { display: grid; grid-auto-flow: row; grid-template-columns: 1fr; width: 100%; }
+.lane-pref .seg button { border-inline-start: 0; border-top: 1px solid var(--line); white-space: normal; text-align: start;
+  padding: var(--s2) var(--s3); font-size: .875rem; }
+.lane-pref .seg button:first-child { border-top: 0; }

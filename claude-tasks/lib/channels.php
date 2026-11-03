@@ -148,9 +148,10 @@ function registerChannel(array $scope, int $projectId, string $name, string $rol
             ->execute([$projectId, $name, $role, $sessionUrl, $hash, $now, $old['id']]);
         $id = (int) $old['id'];
     } else {
+        // §15.11: שיח חדש נפתח בשיטה המועדפת של המשלם ('' — לפי הפרויקט)
         db()->prepare('INSERT INTO channels (project_id, name, role, session_id, session_url, token_hash,
-                                             last_seen_at, created_at) VALUES (?,?,?,?,?,?,?,?)')
-            ->execute([$projectId, $name, $role, $sessionId, $sessionUrl, $hash, $now, $now]);
+                                             last_seen_at, created_at, route) VALUES (?,?,?,?,?,?,?,?,?)')
+            ->execute([$projectId, $name, $role, $sessionId, $sessionUrl, $hash, $now, $now, preferredLane($projectId)]);
         $id = (int) db()->lastInsertId();
     }
     logEvent(null, 'channel.register', "channel:$id", true, "$name · project:$projectId" . ($old ? ' · חוזר' : ''));
