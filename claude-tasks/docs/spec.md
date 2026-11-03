@@ -643,7 +643,14 @@ answering: the bubble collapses to "✓ אושר פעם אחת · 21:40 · מל�
 **Done when:** in a registered chat, a `Bash` command that needs approval appears on the board; "פעם אחת" runs it with no visit to the
 chat; "⛔ לא" with a reason reaches the chat; "תמיד בצ'אט הזה" works for an allowed prefix and is refused (UI and server) for a deny-listed
 command; no answer for 10 minutes → the app dialog appears and the board shows "⌛ עבר לאפליקציה"; with the board paused → straight to the
-app; a Routine opened from the template registers and its request reaches the board. Tests for the deny-list, the budget, and
+app; a Routine opened from the template registers and **reports to its channel** (see the revision below).
+
+**Revision (2026-11-03, after the code writer's finding):** a Routine that opens a fresh session runs in `permission_mode: auto` —
+it never asks; what the automatic checker refuses is refused silently. So there is **no permission request to bring to the board**.
+New Done-when for Routines: it registers at start; at the end it posts to its channel a `system` summary — what it did, and **every
+action that was refused, by name and reason** — so nothing is silently lost; a refused action the owner wants can then be re-run
+in a normal chat. And, written down: in `auto` a Routine runs commands (even `rm -rf` inside its working folder) with no human
+step, so a Routine's prompt must name the folder and the task narrowly, and Routines that change code open a PR only, never merge. Tests for the deny-list, the budget, and
 `permission-answer` permissions.
 
 ### 5.11 The conversation screen — translate, pin, label, and ⚙ chat settings (owner request 2026-11-02; **stage 12a–e**)
