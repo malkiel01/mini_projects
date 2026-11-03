@@ -1227,10 +1227,10 @@ A chat out of tokens cannot report it, so detection comes from **two signals the
 - **(a) A limit signal from the chat before it dies.** The Claude Code session exposes `rate_limit_info` (status `allowed_warning`, `resetsAt`) — visible in the session metadata. `channel-health` (already sent every 5 min by the Stop hook) gains `limit: {status, resets_at}`. `allowed_warning` → the row shows "🟡 הצ'אט קרוב למגבלה"; a `rejected` status → "🔴 נגמרו הטוקנים עד <שעה>". **To verify first (stage 16, step 0):** whether a hook receives the limit state, or whether the chat must read it from `get_session`; if neither works, only signal (b) remains.
 - **(b) Silence.** A chat-lane message not acked within `chat_silence_minutes` (default 10) while `listening_until` has lapsed → the chat is *unresponsive*. This also covers a closed tab, a dead container, and the 429 back-off of the listener.
 
-**What happens when the chat is unresponsive** (a card on the board, once per episode, with the owner's saved choice — decision 2):
-- **☁️ ענה Platform** — the waiting messages move to the Platform lane; replies are answers only (cheap). Code needs → "📋 הפוך למטלה" for the engine, which needs approval (decision 3).
-- **⏳ חכה** — nothing changes; the card shows the reset time if known.
-- **Per-user monthly cap** on automatic Platform use for this purpose (inside the existing quota; 20% by default) — beyond it, the card asks again.
+**What happens when the chat is unresponsive** follows the user's own setting **"when the current lane stops"** (§15.11 — the same setting as for Platform, in the other direction): 🔁 automatic · ❓ ask (a card on the board, once per episode; the messages wait until the owner answers) · ⏳ wait.
+- **🔁 / the card's "☁️ שיענה Platform"** — the waiting messages move to the Platform lane; replies are answers only (cheap). Code needs → "📋 הפוך למטלה" for the engine, which needs approval (decision 3).
+- **⏳ / the card's "נחכה"** — nothing changes; the card shows the reset time if known.
+- **The monthly ceiling (§15.11a)** applies to every *automatic* switch; beyond it the setting behaves as "ask".
 
 **Return of the chat:** the first `register`/`status`/`pending` after silence returns the digest and clears the *unresponsive* flag; the lane goes back to `chat` automatically (decision 4). Messages Platform answered are **not** re-processed — they are marked handled, shown to the chat as the digest.
 
@@ -1287,19 +1287,118 @@ directions (Platform stopped → chat, chat stopped → Platform): **the preferr
 **switch to the preferred lane mid-conversation when it is available** — yes / no. Default for a user who never chose: ask, no
 preferred lane, no mid-conversation switch. Built in stage 15.1 for the Platform side; the chat side follows in stage 16.
 
-Where: **הגדרות ← 🔀 מסלולים** (each user, for the projects they pay for; a project may override, owner only). Saved on the server (`users.lane_prefs`), enforced on the server, never only in the UI.
+Where: **הגדרות ← 🔀 מסלולים** (each user, for the projects they pay for; a project may override, owner only). Saved on the server (`users.lane_prefs`: `preferred`, `on_stop`, `return_preferred`; the old `platform_stop` reads as auto / wait), enforced on the server, never only in the UI.
 
 | Setting | Values | Default |
 | --- | --- | --- |
-| Platform stopped (credit / key) → hand the messages to the chat | ✅ automatically · ❌ no, they wait | automatically |
-| The chat does not answer → move to Platform | ❓ ask with a card each time · ✅ automatically up to **$X per month** · ❌ never | ask |
-| Platform in that case may also run the code engine | ❌ answers only · ❓ engine after an approval card | answers only (decision 3) |
-| When the chat returns | ↩ back to the chat automatically · ✋ stay until I press "החזר לצ'אט" | automatically |
+| Preferred lane (a new conversation opens in it) | 💬 · ☁️ · by the project | none |
+| When the current lane stops (either direction) | 🔁 switch automatically · ❓ ask (a card) · ⏳ wait | ask |
+| Switch back to the preferred lane in the middle of a conversation when both are available | yes · no | no |
 | Silence before "the chat does not answer" | 5 / **10** / 20 / 30 minutes | 10 |
-| Smart summary | on demand only | — |
+| Platform in that case may also run the code engine | answers only · engine after an approval card | answers only (decision 3) |
+| Monthly ceiling for automatic switches (§15.11a) | $ amount · none | none (= automatic switches off until set) |
 
-The default for a user who never opened the settings is the safe column (nothing spends money without a card). The cap is checked in the server on every automatic use and counts inside the user's monthly quota (§8); beyond it the setting behaves as "ask". Each automatic switch is a line in `lane_log` with the setting that allowed it.
+Nothing spends money without a card unless the user chose "automatic" **and** the ceiling allows it. Each automatic switch is a line in `lane_log` with the setting that allowed it. Smart summary: on demand only.
 
 ### 15.10 Rules for the code writer
 
 Stage by stage, each: branch, PR, merge, `conclusion: success`, a row in §14. English for code and docs. No new secret in chat or code. Any new runtime file under `claude-tasks/data/` needs its `--exclude` in `deploy.yml` in the same PR. Tests with fake transports only — the live check is stage 19. No stage may change `bridge/` without bumping `BRIDGE_VERSION`.
+
+### 15.12 Stages 16–19 — detail, acceptance tests and screens (spec chat, 2026-11-03)
+
+**Review of stage 15 / 15.1 (verified, runs 41657734518 and 41663220155 `conclusion: success`, `tests/lanes.php` 64).** Approved: only `platform-reply` and the connection test open the breaker (monitoring and the engine behave as before — their failures show in the ledger, stage 17, and do not trip it). The Anthropic 400 credit text is from documentation — **confirmed live in stage 19**.
+
+#### 15.12.1 Stage 16 — the chat does not answer, the digest, the return
+
+**Step 0 — spike (before any code; the result goes into §14):** what does a Claude Code session expose about its own usage limit? Check in this order: (a) the `Stop` / `StopFailure` hook payload — a rate-limit or billing reason?; (b) `get_session` → `external_metadata.rate_limit_info` (`status`, `resetsAt`, `rateLimitType`) — visible from another session, can the chat read its own?; (c) nothing — then only silence is used. Do not build `limit` before this answer.
+
+**Data** (existing SQLite; no new file under `data/`): `channel_state(channel_id PK, lane, since, counts_json, waiting_json, last_by_thread_json, updated_at)` — written in the **same transaction** as the event that changes it (message, ack, answer, task change, lane switch, permission decision), never by a model; `messages.handled_by` (`chat | platform | engine | ''`) and `lease_until`; `channels.limit_status`, `limit_resets_at` (only if step 0 allows), `unresponsive_since`, `silence_card_id`.
+
+**Server:**
+- Silence detector, lazy (on `channels` / board open and on `channel-send`; no cron): a chat-lane `in` message unacked for `silence_minutes` **and** `listening_until` lapsed → `unresponsive_since`, then the user's **"when the current lane stops"** setting: 🔁 → move (inside the ceiling) · ❓ → one card (`kind: lane_card`) per episode · ⏳ → one grey line.
+- `lane-card-answer` (owner): ☁️ / ⏳. Checked on the server at every automatic use: the ceiling (§15.11a, two-sided), the quota (§8), the breaker (a stopped Platform cannot take over — the card says so).
+- Lease: a message Platform takes gets `handled_by='platform'` + a lease; the chat's `channel-ack` on a message already handled → `already_handled`, no second processing.
+- Return: the first `channel-register` / `channel-health` / `pending` after `unresponsive_since` clears it, applies "switch back" (§15.11), writes one `system` line, returns the digest.
+- **Digest** (`channel-digest`, a read of `channel_state`): ≤ 1,500 characters — counts per lane, waiting items, the last answer per thread (≤ 300 chars), ids for `link.sh show <id>`. `link.sh pending` prints it **first**, then the unprocessed messages. `BRIDGE_VERSION` bumped.
+- Smart summary (`channel-summary`, owner, on demand): one model call, `kind: answer`, quota-checked, stored as a pinned `system` message; it feeds the new-chat prompt (§5.9.4) before the 30-message fallback.
+
+**Acceptance tests** (`tests/lanes16.php`, fake transport, fake clock):
+1. Unacked + not listening: below `silence_minutes` → nothing; at it → exactly one card / move / line per the setting; a second message in the same episode → none.
+2. ⏳ → nothing moves and the card shows the reset time; ☁️ → the waiting messages get `handled_by='platform'`.
+3. Ceiling: the use that would pass the nearest ceiling becomes a card; quota at 100% → "המכסה נגמרה".
+4. Breaker open + silent chat → the card says Platform cannot take over; nothing is sent to Platform.
+5. The chat acks a message Platform already handled → `already_handled`.
+6. Return: the digest has counts / waiting / last-per-thread, ≤ 1,500 chars, printed before the messages; with "switch back: no" the lane stays.
+7. `channel_state` and the event are one transaction (kill between the insert and the state → both or neither).
+8. No model call on the silence → card/move → digest path (assert the transport was never called).
+9. Smart summary: charged to the payer, refused at 100% quota, stored once.
+
+**Screens** (390 light / 320 dark, no horizontal scroll): the card "הצ'אט לא עונה — <שם>" with the waiting count, the age of the oldest message, the buttons, and the remaining ceiling; a chip on the row "🟡 קרוב למגבלה / 🔴 לא עונה" (🟡 only if step 0 allows); the one-line `system` message on return; "📝 סיכום חכם" in the chat's ⚙; the live status strip at the top of the conversation.
+
+#### 15.12.2 Stage 17 — ledger, badges, manual switch
+
+`lane_log(at, channel_id, project_id, from_lane, to_lane, reason, setting, by)` (reasons as §15.6); every switch → one `system` line. A lane badge (💬 / ☁️ / 🤖) and a state on every message and task row; "ממתין לך" gains the lane; engine / monitor failures of class credit / key appear as grey ledger lines (no breaker). A "העבר ל…" button (owner) in the conversation header: this batch only, refused while the breaker is open (it says why). **Tests** (`tests/lanes17.php`): each reason writes exactly one log row and one `system` line; the manual switch never changes the project's route; an `in_progress` task never moves; badges derive from `handled_by` / `tasks.route`, never from text. **Screens:** the badge row, the ledger sheet, the header button and its refusal.
+
+#### 15.12.3 Stage 18 — the rest of the settings, the engine approval, the ceiling
+
+The remaining rows of §15.11 (silence minutes, engine in the Platform lane, the ceiling with its two-sided enforcement — user ↔ project ↔ sub-project) in the settings sheet; project override (owner). An engine task started by a failover has `origin: failover`, always runs with the stage-14 gate, and its **first run needs an approval card** (type `engine-failover`, no "always"). **Tests** (`tests/lanes18.php`): the defaults are the safe column; a user who never opened the settings never spends without a card; a child ceiling above its parent is refused; a parent lowered under a child is refused and names the project; the ceiling and the quota are checked server-side on every automatic use; an engine task with `origin: failover` cannot start without an approval; **the req. ב matrix, one assertion per lane**: a sensitive action in the chat (13), in Routine / engine (14), and Platform (text-only, no tools) produces a board request or a denial with a reason — never a silent run. **Screens:** the settings sheet (a row per setting, the ceiling input with the parent's value shown), the engine-approval card.
+
+#### 15.12.4 Stage 19 — the live check: what the owner does, exactly
+
+| # | Owner action (click path) | Then verified |
+| --- | --- | --- |
+| 1 | In the Claude environment settings: add `CLAUDE_TASKS_TOKEN` (board → the root project → ⚙ → "אסימון לצ'אטים" → הצגה → העתקה). Never in a chat. Then register each chat from ⚙ → 🆕 צ'אט חדש (including the spec chat — without it the gate blocks its writes) | A real chat registers and a board message reaches it |
+| 2 | Board → הגדרות → חיבורים → "+ חיבור" → Anthropic → paste the key (workspace `Development-Chat`) → "בדיקה" | The connection shows 🟢 |
+| 3 | Delete the temporary key file in the server's `claude-secrets/` folder (hosting file manager → the file → Delete; no chat has server access) | The key exists only in the board |
+| 4 | — | One real ☁️ answer (a cheap prompt); a `usage` row with a real price |
+| 5 | Use a wrong key for one test (or a second deliberately wrong connection) | The breaker opens, the message reaches the chat, one `system` line, the red strip; "נסה שוב" after fixing → closed |
+| 6 | Close a test chat | The silence handling (per the setting); the chat returns → digest, no re-processing |
+| 7 | — | A sensitive action in each lane → a card on the board |
+| 8 | — | All test files pass; `conclusion: success`; §14 rows complete |
+
+The Anthropic 400 credit text is confirmed in step 5 with a workspace that really has no credit, **or** recorded "not confirmable — classified by the documented text" with the owner's agreement.
+
+**Order:** 15.3 (§15.13, urgent) → 16 → 17 → 18 → 19, one PR each. I review each report against this section and reply with notes before the next starts.
+
+### 15.13 Follow-up chat — the owner is never held hostage (owner report 2026-11-03 18:51; **stage 15.3 — urgent, before 16**)
+
+**The report (screenshot):** *"I try to move a chat to a new chat. It holds me hostage — thinking and thinking, I have no idea when it will end, and I cannot close it. That is wrong. Even if it takes time, show how long. And if it does not know how long — keep it thinking in the background."*
+
+**What the screen showed:** the "🔁 צ'אט המשך" sheet — a spinner and "ממתין לתקציר מ"<chat>"… (68 שנ')", and the text "the chat is not listening right now — the request reaches it only when it checks the board (the hourly check), or when you write to it". So the wait may be **up to an hour**, the counter only counts up, and the only exit is the button "בלי תקציר — מההודעות האחרונות". The ✕ did not feel like an exit.
+
+**Rule (applies to every waiting screen on the board, not only this one):** *no waiting state holds the screen.* Every wait has (1) a way out that always works, (2) the elapsed time **and an expected time, or an honest "unknown"**, (3) the work continuing in the background and the result waiting where the owner will find it.
+
+**Decisions (spec chat — the owner may change them):**
+
+| # | Decision |
+| --- | --- |
+| 1 | **✕ always closes the sheet and never cancels the request.** The handoff keeps waiting on the server (`handoff_requested_at` is already server-side) and survives a reload. A second button, "ביטול הבקשה", cancels it explicitly |
+| 2 | **Expected time.** The server keeps the last 20 handoff durations per payer (`handoff_stats`). With ≥ 3 samples: "בדרך כלל כ-40 שניות" and a bar; with fewer: no number — "לא ידוע כמה זמן" |
+| 3 | **A chat that is not listening is not "thinking".** No spinner: "הצ'אט הישן לא מאזין — התקציר יגיע רק כשיבדוק את הלוח (עד כשעה)". The primary button is "בלי תקציר" and the second is "להמשיך לחכות ברקע" |
+| 4 | **Background.** After ✕ or "להמשיך לחכות ברקע": the channel row shows "🔁 מכין תקציר… 1:08" (live) and, when it arrives, a chip "התקציר מוכן — לפתוח צ'אט המשך" (tap = the sheet with the prompt). Nothing ever opens by itself over what the owner is doing |
+| 5 | **Time limits.** At 120 s the fallback button gets the primary style; at 5 min the line "אין תגובה" appears; the request itself stays open for an hour, then closes with a grey line in the channel |
+| 6 | **Better fallback than "the last 30 messages":** when stage 16 exists, "בלי תקציר" builds the prompt from the **live status** (`channel_state`, §15.5 — free, instant); a third choice "📝 סיכום חכם מהלוח" (one model call, charged to the payer's quota, shows its cost estimate first) |
+| 7 | **No dead end:** the sheet is a plain overlay with the page behind it still usable; no `await` blocks the UI; polling uses `AbortController`, stops on close and restarts on reopen |
+
+**Server:** `handoff-status` returns `{state: waiting|ready|cancelled|expired, requested_at, listening, expected_seconds|null, samples}`; `handoff-cancel` (owner); the duration is stored when `ready`. No change to what the chat does (`link.sh handoff`).
+
+**Acceptance tests** (`tests/templates.php` additions + a browser run):
+1. ✕ at every state (waiting, not listening, ready, expired) closes the sheet; the request stays `waiting`; reopening shows the same elapsed time.
+2. Reload the page mid-wait → the channel row still shows "🔁 מכין תקציר… m:ss".
+3. ≥ 3 samples → an expected time and a bar that never exceeds 100% (past the estimate it says "לוקח יותר מהרגיל"); < 3 samples → "לא ידוע כמה זמן", no bar and no invented number.
+4. Chat not listening → no spinner, the explanation, both buttons; the primary is "בלי תקציר".
+5. The summary arrives while the sheet is closed → the chip appears; tapping opens the sheet with the prompt; it does not open by itself.
+6. "ביטול הבקשה" → `cancelled`, the row clears, the old chat gets no second request.
+7. The request expires after an hour → a grey line, the row clears.
+8. The page stays usable while waiting (a click elsewhere works in the same second; no long task on the main thread).
+
+**Screens** (390 light / 320 dark, no horizontal scroll): (a) waiting, listening, with an estimate; (b) waiting, **not listening** (no spinner); (c) the closed state: the channel row with the live timer; (d) ready: the chip and the sheet; (e) expired.
+
+**Where to build:** `assets/js` (the handoff sheet) and `lib/templates.php` (`handoff-status` / `handoff-cancel`). A small PR, merged before stage 16.
+
+### 15.11a Monthly ceiling — ✅ owner decisions 2026-11-03 (approved in the code writer's chat)
+
+- A **monthly ceiling for automatic switches** is a setting in the user's general settings; a **ceiling per sub-project** is allowed too.
+- **Two-sided enforcement:** a sub-project's ceiling cannot exceed the ceiling above it (the parent project, or the user's); and a ceiling above cannot be lowered under one already set below — the server refuses and names the project that blocks.
+- **Relation to the quota (§8):** ✅ the ceiling is **part of** `users.quota_usd`, not a second quota, and applies only to automatic switches. So automatic use can never pass `quota_usd`, nor any ceiling above it.
+- Applies to stages 16 (the silence card shows the remaining ceiling) and 18 (the settings sheet and the server checks). Tests: a child above its parent is refused; a parent lowered under a child is refused with the project's name; an automatic switch that would pass the nearest ceiling becomes a card.
