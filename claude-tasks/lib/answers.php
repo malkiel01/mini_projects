@@ -61,7 +61,12 @@ function platformPrompt(array $channel, array $project, array $ctx, array $quest
             . "(שם הצ'אט: {$channel['role']}). ענה בעברית, קצר וענייני, למי שקורא בטלפון. "
             . "אינך כותב קוד ואינך משנה קבצים. אם התשובה דורשת עבודת קוד — הסבר בקצרה מה צריך, והצע מטלה. "
             . PLATFORM_LIMITS
-            . 'ענה JSON בלבד: {"reply": "התשובה", "task": null או {"title": "כותרת קצרה", "body": "מה בדיוק לעשות"}}';
+            . (($ctx['open_asks'] ?? 0) >= PLATFORM_MAX_OPEN_ASKS
+                ? 'כבר שאלת ' . PLATFORM_MAX_OPEN_ASKS . ' שאלות שבעל הלוח עוד לא ענה עליהן — אסור לשאול עוד ("ask": null). ענה עם מה שיש, או הצע מטלה. '
+                : '')
+            . 'ענה JSON בלבד: {"reply": "התשובה (או ריק כששואלים בלבד)", "task": null או {"title": "כותרת קצרה", "body": "מה בדיוק לעשות"}, '
+            . '"ask": null או {"questions": [{"header": "עד 12 תווים", "question": "השאלה", "multiSelect": false, '
+            . '"options": [{"label": "אפשרות", "description": "מה היא אומרת"}]}]}, "needs_chat": null או "מה הצ\'אט צריך לעשות"}';
     $prompt = "## README של התיקייה\n" . ($ctx['readme'] !== '' ? $ctx['readme'] : '(אין)')
             . "\n\n## מטלות פתוחות בפרויקט\n" . ($tasks ? implode("\n", $tasks) : '(אין)')
             . "\n\n## השיחה עד עכשיו (מהישן לחדש)\n" . implode("\n", $lines)
@@ -69,18 +74,39 @@ function platformPrompt(array $channel, array $project, array $ctx, array $quest
     return [$system, $prompt];
 }
 
-/** מפענח את תשובת המודל. JSON שבור — הטקסט כולו הוא התשובה, בלי הצעת מטלה. */
+/**
+ * מפענח את תשובת המודל (§9.1): reply · task · ask (שאלות בצורה של AskUserQuestion) · needs_chat.
+ * JSON שבור — הטקסט כולו הוא התשובה. שאלה בצורה לא תקינה — נזרקת (התשובה נשארת).
+ */
 function parsePlatformReply(string $text): array {
+    $out = ['reply' => trim($text), 'task' => null, 'ask' => null, 'needs_chat' => null];
     try {
         $d = extractJson($text);
-        $reply = trim((string) ($d['reply'] ?? ''));
-        $task = $d['task'] ?? null;
-        $task = is_array($task) && trim((string) ($task['title'] ?? '')) !== ''
-            ? ['title' => mb_substr(trim((string) $task['title']), 0, 200), 'body' => mb_substr((string) ($task['body'] ?? ''), 0, 5000)]
-            : null;
-        if ($reply !== '') return [$reply, $task];
-    } catch (Throwable) { /* לא JSON */ }
-    return [trim($text), null];
+    } catch (Throwable) { return $out; }
+    $out['reply'] = trim((string) ($d['reply'] ?? $d['answer'] ?? ''));
+    $task = $d['task'] ?? null;
+    $out['task'] = is_array($task) && trim((string) ($task['title'] ?? '')) !== ''
+        ? ['title' => mb_substr(trim((string) $task['title']), 0, 200), 'body' => mb_substr((string) ($task['body'] ?? ''), 0, 5000)]
+        : null;
+    if (is_array($d['ask'] ?? null)) {
+        try { $out['ask'] = normalizeChoiceQuestions($d['ask']['questions'] ?? $d['ask']); } catch (Throwable) { $out['ask'] = null; }
+    }
+    $need = trim((string) ($d['needs_chat'] ?? ''));
+    $out['needs_chat'] = $need !== '' ? mb_substr($need, 0, 1000) : null;
+    if ($out['reply'] === '' && !$out['ask'] && !$out['needs_chat']) $out['reply'] = trim($text);
+    return $out;
+}
+
+/** "שלחתי", "העברתי ל", "הערתי"… בלי needs_chat — Platform תיאר פעולה שלא קרתה (אין לו כלים). מסומן בכרטיס. */
+function platformClaimsAction(string $reply): bool {
+    return (bool) preg_match('/שלחתי|העברתי\s+ל|הערתי|הפעלתי|הרצתי|\bsent (it )?to\b|\bran\s|\bforwarded\b|\bwoke\b/ui', $reply);
+}
+
+/** כמה שאלות של Platform בערוץ עוד פתוחות. */
+function platformOpenAsks(int $channelId): int {
+    $st = db()->prepare("SELECT COUNT(*) FROM messages WHERE channel_id = ? AND kind = 'choice' AND author_role = 'platform' AND status = 'open'");
+    $st->execute([$channelId]);
+    return (int) $st->fetchColumn();
 }
 
 /** מחזיר הודעה לצ'אט: Platform לא יכול לענות (אין מכסה / אין חיבור). מצלצל. */
@@ -103,10 +129,14 @@ function handToChat(int $messageId, int $channelId, string $why): array {
  * האמיתי ("שלחתי לרסטר…"), והמודל חיקה אותן וכתב שעשה פעולה שלא קרתה.
  */
 const PLATFORM_LIMITS = "אין לך שום כלי: אינך יכול לשלוח הודעה לצ'אט אחר או להעיר אותו, לפתוח צ'אט, להריץ פקודה, "
-    . "לשנות את הלוח, או לשאול ולחכות לתשובה — התשובה הזאת היא כל מה שתעשה. לעולם אל תכתוב שעשית, שלחת, העברת "
+    . "לשנות קבצים או את הלוח, או לחכות — התשובה הזאת היא כל מה שתעשה. לעולם אל תכתוב שעשית, שלחת, העברת "
     . "או הפעלת משהו, וגם לא \"אעשה\" / \"אשלח\". ההודעות של הצ'אט בשיחה נכתבו על ידי הצ'אט עצמו, שיש לו כלים — לא על ידך. "
-    . "כשהבקשה דורשת פעולה כזו — כתוב במפורש: \"אני (Platform) לא יכול לעשות את זה מהלוח\", ומה בעל הלוח יכול לעשות "
-    . "(להעביר את הערוץ למסלול הצ'אטים, או לכתוב לצ'אט עצמו). כשחסר לך מידע — אמור מה חסר, ואל תניח שקיבלת תשובה. ";
+    . "כשצריך החלטה של בעל הלוח (בחירה בין אפשרויות, מידע שחסר, משהו שאי אפשר לבטל) — שאל אותו בשדה ask; לעולם אל תניח "
+    . "שענה. כשצריך פעולה שרק הצ'אט יכול לעשות (להעיר או לשלוח לצ'אט אחר, להריץ, לשנות קוד) — כתוב מה צריך בשדה needs_chat: "
+    . "ההודעה תועבר לצ'אט האמיתי של הערוץ, ובתשובה כתוב רק שהעברת את הבקשה אליו. ";
+
+/** §9.1: לכל היותר 3 שאלות פתוחות ברצף — אחר כך Platform עונה עם מה שיש, או מציע מטלה. */
+const PLATFORM_MAX_OPEN_ASKS = 3;
 
 const PLATFORM_RELAY_PREFIX = '📨 לצ\'אט: Platform ענה בשמך בלוח.';
 
@@ -150,10 +180,11 @@ function platformReply(array $user, int $messageId, ?callable $transport = null)
     }
 
     try {
-        [$system, $prompt] = platformPrompt($channel, $project, platformContext($channel, $project, $payer), $m);
+        $openAsks = platformOpenAsks((int) $channel['id']);
+        [$system, $prompt] = platformPrompt($channel, $project, platformContext($channel, $project, $payer) + ['open_asks' => $openAsks], $m);
         $ctx = ['kind' => 'answer', 'project_id' => (int) $project['id'], 'channel_id' => (int) $channel['id'], 'enforce' => false];
         $conn = $chain[0] + ['chain' => $chain, 'user' => $payer, 'usage' => $ctx];
-        [$reply, $task] = parsePlatformReply(aiComplete($conn, $system, $prompt, 1500, $transport));
+        $out = parsePlatformReply(aiComplete($conn, $system, $prompt, 1500, $transport));
     } catch (Throwable $e) {
         // ‏§15.3: לא נשאר תלוי. הספק נעצר (קרדיט / מפתח / עומס / תקלה) — המפסק נפתח: הודעה אחת לכל ערוץ,
         // וכל מה שממתין עובר לצ'אט במעבר אחד (או ממתין, לפי ההגדרה). כשל של ההודעה הזו בלבד — לצ'אט, עם הסיבה
@@ -174,16 +205,54 @@ function platformReply(array $user, int $messageId, ?callable $transport = null)
     // הצליח — ואם זו הייתה בדיקה של מפסק פתוח, הוא נסגר (הודעה אחת: חזר)
     if (platformBreaker((int) $payer['id'])['open']) breakerReset((int) $payer['id']);
 
-    db()->prepare("INSERT INTO messages (channel_id, task_id, direction, author_role, kind, body, reply_to, answered_by, meta, created_at)
-                   VALUES (?,?, 'out', 'platform', 'answer', ?,?, '', ?,?)")
-        ->execute([$channel['id'], $m['task_id'], cleanBody($reply), $messageId,
-                   $task ? json_encode(['task' => $task], JSON_UNESCAPED_UNICODE) : '', nowTs()]);
-    $answerId = (int) db()->lastInsertId();
+    ['reply' => $reply, 'task' => $task, 'ask' => $ask, 'needs_chat' => $need] = $out;
+    $cid = (int) $channel['id'];
+    $tid = $m['task_id'] === null ? null : (int) $m['task_id'];
+    // §9.1: לא יותר מ-3 שאלות פתוחות ברצף — גם אם המודל ניסה
+    if ($ask && $openAsks >= PLATFORM_MAX_OPEN_ASKS) {
+        $ask = null;
+        if ($reply === '') $reply = 'יש כבר ' . PLATFORM_MAX_OPEN_ASKS . ' שאלות שמחכות לתשובה שלך — עונים עליהן קודם, או: 📋 להפוך למטלה.';
+    }
+    $listening = ($channel['status'] ?? '') === 'active' && (int) ($channel['listening_until'] ?? 0) > nowTs();
+    $meta = array_filter([
+        'task' => $task,
+        // ‏needs_chat: מה צריך מהצ'אט, ולמי הועבר — הכרטיס אומר את זה, וגם אם הצ'אט לא מאזין
+        'needs_chat' => $need ? ['what' => $need, 'to' => (string) $channel['name'], 'listening' => $listening] : null,
+        // שמירה בקוד, לא רק בפרומפט: תיאור של פעולה שלא קרתה
+        'claimed_action' => !$need && $reply !== '' && platformClaimsAction($reply) ? true : null,
+    ], fn ($v) => $v !== null);
+    $answerId = null;
+    if ($reply !== '' || !$ask) {
+        db()->prepare("INSERT INTO messages (channel_id, task_id, direction, author_role, kind, body, reply_to, answered_by, meta, created_at)
+                       VALUES (?,?, 'out', 'platform', 'answer', ?,?, '', ?,?)")
+            ->execute([$cid, $tid, cleanBody($reply !== '' ? $reply : '…'), $messageId,
+                       $meta ? json_encode($meta, JSON_UNESCAPED_UNICODE) : '', nowTs()]);
+        $answerId = (int) db()->lastInsertId();
+    }
+    $askId = null;
+    if ($ask) {
+        // אותה בועת בחירה כמו של הצ'אטים (§5.10); התשובה מפעילה את Platform שוב, עם כל השרשור
+        db()->prepare("INSERT INTO messages (channel_id, task_id, direction, author_role, kind, body, reply_to, answered_by, meta, status, created_at)
+                       VALUES (?,?, 'out', 'platform', 'choice', ?,?, '', ?, 'open', ?)")
+            ->execute([$cid, $tid, cleanBody(choiceBody($ask)), $messageId,
+                       json_encode(['questions' => $ask, 'mode' => 'board', 'platform' => true], JSON_UNESCAPED_UNICODE), nowTs()]);
+        $askId = (int) db()->lastInsertId();
+    }
     db()->prepare("UPDATE messages SET answered_by = 'platform', delivered_at = ? WHERE id = ?")->execute([nowTs(), $messageId]);
+    touchChannel($cid);
 
-    // הצ'אט נשאר מעודכן — status בתיבה, בלי פעמון ובלי להעיר את המאזין
-    channelInsertIn((int) $channel['id'], 'system', null,
-                    PLATFORM_RELAY_PREFIX . "\n💬 הודעה מבעל הלוח:\n" . mb_substr((string) $m['body'], 0, 2000) . "\n\n☁️ Platform ענה:\n" . mb_substr($reply, 0, 4000),
-                    'status', $m['task_id'] === null ? null : (int) $m['task_id'], $messageId, false);
-    return ['answered' => true, 'message' => messageRows('m.id = ?', [$answerId])[0]];
+    if ($need) {
+        // ההודעה עוברת לצ'אט האמיתי של הערוץ — עם מה שצריך. מצלצל (כמו handToChat)
+        channelInsertIn($cid, 'system', null, "☁️ Platform לא יכול לבצע את זה בעצמו — צריך ממך: $need\n\n💬 ההודעה של בעל הלוח:\n"
+                        . mb_substr((string) $m['body'], 0, 3000), 'text', $tid, $messageId, true, '');
+    } else {
+        // הצ'אט נשאר מעודכן — status בתיבה, בלי פעמון ובלי להעיר את המאזין
+        $said = ($reply !== '' ? "\n\n☁️ Platform ענה:\n" . mb_substr($reply, 0, 4000) : '')
+              . ($ask ? "\n\n☁️ Platform שאל:\n" . mb_substr(choiceBody($ask), 0, 2000) : '');
+        channelInsertIn($cid, 'system', null, PLATFORM_RELAY_PREFIX . "\n💬 הודעה מבעל הלוח:\n" . mb_substr((string) $m['body'], 0, 2000) . $said,
+                        'status', $tid, $messageId, false);
+    }
+    $rows = messageRows('m.id IN (' . implode(',', array_filter([$answerId, $askId])) . ')', []);
+    return ['answered' => true, 'message' => $rows[0], 'messages' => $rows, 'asked' => $askId !== null, 'handed_to_chat' => $need !== null,
+            'listening' => $listening];
 }

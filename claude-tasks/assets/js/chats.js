@@ -163,20 +163,26 @@ function bubble(m) {
     kind ? el('span', { class: 'badge', text: kind }) : null,
     // העתק לצ'אט של תשובת Platform (§9) — התשובה כבר בבועה של Platform; כאן שורה מקופלת בלבד
     isPlatformRelay(m) ? el('details', { class: 'b-relay' }, [
-      el('summary', { text: `📨 עודכן לצ'אט: Platform ענה על הודעה #${m.reply_to}` }),
+      el('summary', { text: `📨 עודכן לצ'אט: Platform ${/☁️ Platform שאל:/u.test(m.body || '') && !/☁️ Platform ענה:/u.test(m.body || '') ? 'שאל' : 'ענה'} על הודעה #${m.reply_to}` }),
       el('div', { class: 'b-body md', dir: 'auto' }, [renderMarkdown(m.body)]),
     ]) :
     m.kind === 'approval' && m.approval?.type
       ? approvalCard(m.approval, m.task_id, { canDecide: m.approval.can_decide, pending: m.approval.pending, onDone: reload })
       // שאלת בחירה (§5.10): כפתור לכל אפשרות; אחרי מענה — מקופלת
       : m.kind === 'choice' && m.meta?.questions
-        ? choiceCard(m, { canAnswer: conv.channel?.can_send && conv.channel?.status === 'active', onDone: reload })
+        ? choiceCard(m, { canAnswer: conv.channel?.can_send && conv.channel?.status === 'active',
+            // §9.1: תשובה לשאלה של Platform — Platform ממשיך מיד מהתשובה
+            onDone: (r) => { reload(); if (r?.platform) platformAnswer(r.id); } })
       // בקשת הרשאה (§5.12): הפקודה המלאה וכפתורי אישור — בעל הלוח
       : m.kind === 'permission' && m.meta?.tool_name
         ? permCard(permFromMessage(m), { onDone: () => { reload(); refreshPermStrip(); } })
       // הצ'אט כותב Markdown — מוצג מעוצב כמו בצ'אט (בונה צמתים, אף פעם לא HTML)
         : el('div', { class: 'b-body md', dir: 'auto' }, [renderMarkdown(tr && tr.state !== 'off' ? tr.md : m.body)]),
     tr && tr.state !== 'off' ? trLine(m, tr) : null,
+    // §9.1: מה שרק הצ'אט יכול — הועבר אליו (ואם הוא לא מאזין, כתוב)
+    m.meta?.needs_chat ? el('p', { class: 'b-needs', dir: 'auto', text: `☁️ Platform לא יכול לבצע את זה — הועבר ל${m.meta.needs_chat.to}`
+      + (m.meta.needs_chat.listening ? '' : ' · לא מאזין עכשיו, יקבל כשיתעורר') + `: ${m.meta.needs_chat.what}` }) : null,
+    m.meta?.claimed_action ? el('p', { class: 'b-warn', text: '⚠ Platform תיאר פעולה שלא בוצעה — אין לו כלים. כשצריך פעולה, כותבים לצ\'אט עצמו.' }) : null,
     // Platform לא כותב קוד: כשצריך — מציע מטלה, ונגיעה יוצרת אותה ומריצה (§9)
     m.meta?.task ? el('button', {
       type: 'button', class: 'btn ghost sm b-mktask',
@@ -230,7 +236,9 @@ async function platformAnswer(id) {
   renderLog(true);
   try {
     const r = await api('platform-reply', { message_id: id });
-    if (r.handed_to_chat) toast(`Platform לא ענה — עבר לצ'אט: ${r.reason}`, '');
+    if (r.handed_to_chat && !r.answered) toast(`Platform לא ענה — עבר לצ'אט: ${r.reason}`, '');
+    else if (r.asked) toast('☁️ Platform שואל — בחר תשובה בבועה', '');
+    else if (r.waiting) toast(r.reason, '');
   } catch (ex) { toast(ex.message, 'error'); }
   conv.thinking.delete(id);
   await poll(true);

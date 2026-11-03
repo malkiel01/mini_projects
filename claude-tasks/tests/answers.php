@@ -145,7 +145,8 @@ echo "\n— Platform יודע שאין לו כלים (תקלות 4–5) —\n";
 [$sys] = platformPrompt(['name' => 'מתכלל', 'role' => 'dev'], ['name' => 'p'], ['messages' => [], 'tasks' => [], 'readme' => ''], ['body' => 'תפעיל את הרסטר']);
 check('בפרומפט: אינו יכול לשלוח לצ\'אט אחר', str_contains($sys, 'אינך יכול לשלוח הודעה לצ\'אט אחר'), true);
 check('בפרומפט: לעולם לא לכתוב שעשה', str_contains($sys, 'לעולם אל תכתוב שעשית'), true);
-check('בפרומפט: לא לשאול ולחכות', str_contains($sys, 'לשאול ולחכות'), true);
+check('בפרומפט: לא לחכות — ולהחלטה: לשאול ב-ask', [str_contains($sys, 'או לחכות'), str_contains($sys, 'שאל אותו בשדה ask')], [true, true]);
+check('בפרומפט: פעולה של הצ\'אט — needs_chat', str_contains($sys, 'needs_chat'), true);
 
 echo "\n════ עברו: $pass · נכשלו: $fail ════\n";
 exec('rm -rf ' . escapeshellarg($tmp));

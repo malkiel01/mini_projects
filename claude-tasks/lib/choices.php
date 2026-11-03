@@ -158,9 +158,12 @@ function choiceAnswer(array $user, int $messageId, $answers): array {
     $questions = $choice['meta']['questions'] ?? [];
     $clean = validateChoiceAnswers($questions, $answers);
     if (!markChoiceAnswered($choice, $clean, 'board', (int) $user['id'])) throw new AppError('כבר נענתה', 409);
+    // שאלה של Platform (§9.1): התשובה מפעילה את Platform שוב — לא מעירה את הצ'אט (אם הערוץ עדיין ב-☁️)
+    $toPlatform = ($choice['author_role'] ?? '') === 'platform' && channelRoute($channel) === 'platform';
     $id = channelInsertIn((int) $channel['id'], authorRole($user), (int) $user['id'],
-                          choiceAnswerBody($messageId, $questions, $clean), 'choice_answer', null, $messageId);
-    return ['id' => $id, 'answers' => $clean];
+                          choiceAnswerBody($messageId, $questions, $clean), 'choice_answer', null, $messageId,
+                          !$toPlatform, $toPlatform ? 'platform' : '');
+    return ['id' => $id, 'answers' => $clean, 'platform' => $toPlatform];
 }
 
 /**
