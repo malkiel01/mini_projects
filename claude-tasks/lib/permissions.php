@@ -15,7 +15,7 @@ declare(strict_types=1);
 const PERMISSION_MODES = ['board', 'app'];
 const PERMISSION_WAIT = 600;          // ‏10 דקות — אחר כך ה-hook מפסיק לחכות
 const PERMISSION_POLL_EVERY = 8;      // ‏permission-status: בקשה אחת לכל 8 ש' לאסימון (ה-hook שואל כל 10)
-const PERMISSION_DECISIONS = ['once', 'always', 'deny'];
+const PERMISSION_DECISIONS = ['once', 'always', 'deny', 'project-always', 'project-never'];
 
 /** פקודות שלעולם לא מקבלות "תמיד" (§5.12.1) — רק "פעם אחת". */
 const PERMISSION_DENY_PATTERNS = [
@@ -117,10 +117,21 @@ function permissionPost(array $channel, array $in): array {
     $command = permissionCommand($tool, $input);
     $description = mb_substr(trim((string) ($input['description'] ?? '')), 0, 500);
     $always = permissionAlways($tool, $input);
+    // שלב 14: הסוג מהקטלוג (אם הפעולה ממופה) — לכרטיס, ול"תמיד / אף פעם בפרויקט הזה"
+    $gate = is_array($in['gate'] ?? null) ? $in['gate'] : [];
+    $gtype = (string) ($gate['type'] ?? '') ?: gateTypeFor($tool, $input, (int) $channel['project_id'] ?: null, $in);
+    if ($gtype !== null && $gtype !== '' && isset(APPROVAL_TYPES[$gtype])) {
+        $gate = ['type' => $gtype, 'label' => APPROVAL_TYPES[$gtype]['label'], 'always' => APPROVAL_TYPES[$gtype]['always'],
+                 'kind' => (string) ($gate['kind'] ?? 'chat')];
+        // השער (PreToolUse) שואל בכל פעם — כלל session לא יעזור. במקומו: "תמיד בפרויקט הזה"
+        $always = ['ok' => false, 'rule' => null, 'label' => '', 'reason' => 'פעולה מסוג "' . $gate['label'] . '" — ההחלטה הקבועה היא לפרויקט'];
+    } else {
+        $gate = null;
+    }
     $now = nowTs();
     $meta = ['tool_name' => $tool, 'tool_input' => $input, 'command' => $command, 'description' => $description,
              'always' => $always, 'alias' => permissionAliasTool($tool), 'deadline' => $now + PERMISSION_WAIT,
-             'key' => mb_substr((string) ($in['key'] ?? ''), 0, 64)];
+             'key' => mb_substr((string) ($in['key'] ?? ''), 0, 64), 'gate' => $gate];
     $body = "🔐 בקשת הרשאה: $tool" . ($description !== '' ? " — $description" : '') . "\n" . mb_substr($command, 0, 2000);
     db()->prepare("INSERT INTO messages (channel_id, direction, author_role, kind, body, answered_by, meta, status, created_at)
                    VALUES (?, 'out', 'chat', 'permission', ?, '', ?, 'open', ?)")
@@ -157,6 +168,17 @@ function permissionAnswer(array $user, int $messageId, string $decision, string 
     $m = getPermission($messageId);
     $channel = getChannel((int) $m['channel_id']);
     requireProject((int) $channel['project_id'], $user, 'read');
+    $project = str_starts_with($decision, 'project-');
+    if ($project && $m['status'] !== 'open' || $project && nowTs() > (int) ($m['meta']['deadline'] ?? 0)) {
+        // מאוחר — הכלי כבר נדחה, אבל ההחלטה נרשמת למדיניות (חלה בהרצה הבאה)
+        $r = gateProjectDecision($user, $m, $channel, $decision);
+        $meta = $m['meta'];
+        $meta['late_decision'] = $decision; $meta['late_by_name'] = (string) ($user['display_name'] ?? ''); $meta['late_at'] = nowTs();
+        db()->prepare('UPDATE messages SET meta = ? WHERE id = ?')->execute([json_encode($meta, JSON_UNESCAPED_UNICODE), $messageId]);
+        gateLog((int) $channel['project_id'] ?: null, (int) $channel['id'], null, (string) ($meta['gate']['kind'] ?? 'chat'), $r['type'],
+                (string) $meta['tool_name'], (string) $meta['command'], $r['policy'], 'late', $messageId, (string) ($user['display_name'] ?? ''));
+        return ['status' => (string) $m['status'], 'decision' => $decision, 'late' => true];
+    }
     if ($m['status'] !== 'open') throw new AppError(PERMISSION_CLOSED_LABEL[$m['status']] ?? 'הבקשה כבר נסגרה', 409);
     if (nowTs() > (int) ($m['meta']['deadline'] ?? 0)) throw new AppError('עבר הזמן — הבקשה עברה לאפליקציה', 409);
     // השרת בודק שוב — לא רק הממשק (§5.12.1)
@@ -164,6 +186,13 @@ function permissionAnswer(array $user, int $messageId, string $decision, string 
         $always = permissionAlways((string) $m['meta']['tool_name'], (array) ($m['meta']['tool_input'] ?? []));
         if (!$always['ok']) throw new AppError('"תמיד" לא מותר לפקודה הזו: ' . $always['reason'], 422);
         $m['meta']['always'] = $always;
+    }
+    if ($project) {
+        gateProjectDecision($user, $m, $channel, $decision);
+        $meta = $m['meta'];
+        $meta['project_decision'] = $decision;
+        $m['meta'] = $meta;
+        $decision = $decision === 'project-always' ? 'once' : 'deny';
     }
     $reason = mb_substr(trim($reason), 0, 1000);
     $meta = $m['meta'] + [];
@@ -176,6 +205,11 @@ function permissionAnswer(array $user, int $messageId, string $decision, string 
     $st->execute([json_encode($meta, JSON_UNESCAPED_UNICODE), $messageId]);
     if ($st->rowCount() !== 1) throw new AppError('הבקשה כבר נסגרה', 409);
     ringBell((int) $channel['id']);
+    if (!empty($meta['gate']['type'])) {
+        gateLog((int) $channel['project_id'] ?: null, (int) $channel['id'], null, (string) ($meta['gate']['kind'] ?? 'chat'),
+                (string) $meta['gate']['type'], (string) $meta['tool_name'], (string) $meta['command'],
+                $decision === 'deny' ? 'deny' : 'allow', 'answered', $messageId, (string) $meta['decided_by_name']);
+    }
     logEvent($user, 'permission.' . $decision, "channel:{$channel['id']}", true,
              mb_substr((string) $m['meta']['tool_name'] . ': ' . (string) $m['meta']['command'], 0, 900));
     return ['status' => 'answered', 'decision' => $decision];
@@ -195,7 +229,13 @@ function permissionClose(array $channel, int $messageId, string $how): bool {
     $meta['closed_at'] = nowTs();
     $st = db()->prepare("UPDATE messages SET status = ?, meta = ? WHERE id = ? AND status = 'open'");
     $st->execute([PERMISSION_CLOSE_HOW[$how], json_encode($meta, JSON_UNESCAPED_UNICODE), $messageId]);
-    return $st->rowCount() === 1;
+    $closed = $st->rowCount() === 1;
+    // Routine שלא נענה בזמן — נדחה (אין אדם באפליקציה), ונרשם
+    if ($closed && $how === 'timeout' && ($meta['gate']['kind'] ?? '') === 'routine') {
+        gateLog((int) $channel['project_id'] ?: null, (int) $channel['id'], null, 'routine', (string) $meta['gate']['type'],
+                (string) ($meta['tool_name'] ?? ''), (string) ($meta['command'] ?? ''), 'deny', 'timeout', $messageId);
+    }
+    return $closed;
 }
 
 /** בקשה פתוחה שעבר זמנה ולא נסגרה (ה-hook מת) — בכל קריאה נסגרת כ"עברה לאפליקציה". */
@@ -236,6 +276,8 @@ function permissionPublicMeta(array $meta): array {
             'always_reason' => (string) ($meta['always']['reason'] ?? ''), 'alias' => !empty($meta['alias']),
             'decision' => $meta['decision'] ?? null, 'reason' => (string) ($meta['reason'] ?? ''),
             'decided_by_name' => (string) ($meta['decided_by_name'] ?? ''), 'decided_at' => (int) ($meta['decided_at'] ?? 0),
+            'gate' => is_array($meta['gate'] ?? null) ? $meta['gate'] + ['kind_label' => GATE_KINDS[$meta['gate']['kind'] ?? ''] ?? ''] : null,
+            'project_decision' => (string) ($meta['project_decision'] ?? ''), 'late_decision' => (string) ($meta['late_decision'] ?? ''),
             'closed_how' => (string) ($meta['closed_how'] ?? ''), 'closed_at' => (int) ($meta['closed_at'] ?? 0)];
 }
 

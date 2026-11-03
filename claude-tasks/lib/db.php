@@ -279,6 +279,7 @@ function migrate(PDO $pdo): void {
     migrateEngine($pdo);
     migrateChoices($pdo);
     migratePermissions($pdo);
+    migrateGate($pdo);
     migrateTemplates($pdo);
     migrateChatSettings($pdo);
     migrateLabels($pdo);
@@ -465,6 +466,7 @@ require_once __DIR__ . '/monitor.php';
 require_once __DIR__ . '/engine.php';
 require_once __DIR__ . '/choices.php';
 require_once __DIR__ . '/permissions.php';
+require_once __DIR__ . '/gate.php';
 require_once __DIR__ . '/templates.php';
 require_once __DIR__ . '/chatsettings.php';
 require_once __DIR__ . '/labels.php';

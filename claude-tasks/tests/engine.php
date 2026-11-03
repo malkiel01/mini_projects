@@ -69,8 +69,9 @@ $anthropic = ['provider' => 'anthropic', 'key' => 'sk-ant-keykeykeykeykeykey', '
 throws('Claude Code בלי Anthropic — נעצר', fn () => installEngine($boss, $P($root), ['provider' => 'openai', 'key' => 'sk-x', 'model' => 'gpt-5'], $gh), 'Anthropic');
 $calls = [];
 $res = installEngine($boss, $P($root), $anthropic, $gh);
-check('הותקנו קובצי Claude Code (ולא run.mjs)', array_keys($res['files']),
-      ['.github/workflows/claude-code-agent.yml', '.github/claude-agent/finish.mjs']);
+check('הותקנו קובצי Claude Code (ולא run.mjs) — ושער המדיניות', array_keys($res['files']),
+      ['.github/workflows/claude-code-agent.yml', '.github/claude-agent/finish.mjs', '.github/claude-agent/hook-gate.sh',
+       '.github/claude-agent/lib.sh', '.github/claude-agent/classify.php']);
 $secrets = array_values(array_map(fn ($c) => basename(parse_url($c['url'], PHP_URL_PATH)),
     array_filter($calls, fn ($c) => $c['method'] === 'PUT' && str_contains($c['url'], '/actions/secrets/'))));
 check('סודות: AGENT_BOARD_TOKEN ו-ANTHROPIC_API_KEY', $secrets, ['AGENT_BOARD_TOKEN', 'ANTHROPIC_API_KEY']);

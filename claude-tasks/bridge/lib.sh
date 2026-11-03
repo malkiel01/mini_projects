@@ -11,7 +11,7 @@
 #   .claude/board-listen.log    יומן המאזין (חסימות, 508, שגיאות רשת)
 
 # גרסת הגשר — לעדכן יחד עם BRIDGE_VERSION_CURRENT ב-lib/bridgever.php (§5.10.1)
-BRIDGE_VERSION="2026-11-03.1"
+BRIDGE_VERSION="2026-11-03.2"
 # עותק הריצה: hook.sh ו-link.sh מריצים ממנו כשקיים. link.sh update מרענן אותו מ-origin/main
 # בלי לגעת בעץ העבודה של הצ'אט (update.sh)
 BRIDGE_RUNTIME="$HOME/.claude-tasks-bridge"
@@ -48,7 +48,7 @@ board_call() {
   for try in 1 2; do
     out="$(curl -sS -m "$max" -D "$hdr" -w $'\n%{http_code}' -X POST \
             -H 'Content-Type: application/json' -H "X-Worker-Token: $token" \
-            -H "X-Worker-Name: ${BOARD_WORKER_NAME:-chat}" -H 'X-Worker-Route: chat' -b "$cookie" \
+            -H "X-Worker-Name: ${BOARD_WORKER_NAME:-chat}" -H "X-Worker-Route: ${BOARD_ROUTE:-chat}" -b "$cookie" \
             --data-binary "$body" "$(board_url)?action=$action" 2>/dev/null)" || { BOARD_HTTP=0; BOARD_RETRY_AFTER=0; rm -f "$hdr"; return 2; }
     code="${out##*$'\n'}"; out="${out%$'\n'*}"; BOARD_HTTP="$code"
     BOARD_RETRY_AFTER="$(tr -d '\r' < "$hdr" | awk 'tolower($1)=="retry-after:" && $2 ~ /^[0-9]+$/ {v=$2} END {print v+0}')"

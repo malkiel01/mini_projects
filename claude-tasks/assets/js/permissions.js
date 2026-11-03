@@ -21,38 +21,70 @@ export function permFromMessage(m) {
     deadline: x.deadline || 0, always_ok: !!x.always?.ok, always_label: x.always?.label || '', always_reason: x.always?.reason || '',
     alias: !!x.alias, decision: x.decision || null, reason: x.reason || '', decided_by_name: x.decided_by_name || '',
     decided_at: x.decided_at || 0, closed_how: x.closed_how || '', closed_at: x.closed_at || 0,
+    gate: x.gate ? { ...x.gate, kind_label: { chat: '💬 צ\'אט', routine: '🔁 Routine', platform: '☁️ Platform' }[x.gate.kind] || '' } : null,
+    project_decision: x.project_decision || '', late_decision: x.late_decision || '',
   };
 }
 
 /** השורה המקופלת אחרי שהבקשה נסגרה. */
-function closedLine(p) {
+function closedLine(p, onDone) {
   const who = [hhmm(p.decided_at || p.closed_at), p.decided_by_name].filter(Boolean).join(' · ');
   let text;
   if (p.status === 'answered') {
-    text = p.decision === 'once' ? '✓ אושר פעם אחת'
+    text = p.project_decision === 'project-always' ? `✓ אושר — ותמיד בפרויקט הזה (${p.gate?.label || ''})`
+      : p.project_decision === 'project-never' ? `⛔ נדחה — ואף פעם בפרויקט הזה (${p.gate?.label || ''})`
+      : p.decision === 'once' ? '✓ אושר פעם אחת'
       : p.decision === 'always' ? `✓ אושר תמיד בצ'אט הזה${p.always_label ? ` (${p.always_label})` : ''}`
       : `⛔ נדחה${p.reason ? ` — ${p.reason}` : ''}`;
+  } else if (p.status === 'moved_to_app' && p.gate?.kind === 'routine') {
+    text = '⌛ לא אושר בזמן — נדחה. ב-Routine אין מי שיענה באפליקציה';
   } else if (p.status === 'moved_to_app') {
     text = '⌛ עבר לאפליקציה — לא נענה בלוח תוך 10 דקות';
   } else {
     text = p.closed_how === 'stop' ? '✓ הוכרע באפליקציה' : '✓ אושר באפליקציה / אוטומטית';
   }
-  return el('div', { class: `perm perm--done perm--${p.status === 'answered' && p.decision === 'deny' ? 'deny' : 'ok'}` }, [
+  const late = p.late_decision ? el('p', { class: 'hint', text: p.late_decision === 'project-always'
+    ? '✓ נקבע אחר כך: תמיד בפרויקט הזה — חל מההרצה הבאה' : '⛔ נקבע אחר כך: אף פעם בפרויקט הזה' }) : null;
+  // נדחה כי לא נענה בזמן — עדיין אפשר לקבוע לפרויקט (חל בהרצה הבאה, §5.13.1)
+  const lateActs = !late && p.gate && p.status === 'moved_to_app' && isOwner() ? projectButtons(p, onDone, true) : null;
+  return el('div', { class: `perm perm--done perm--${(p.status === 'answered' && p.decision === 'deny') || (p.status === 'moved_to_app' && p.gate?.kind === 'routine') ? 'deny' : 'ok'}` }, [
     el('p', { class: 'perm-done-head' }, [el('span', { text }), who ? el('small', { text: ` · ${who}` }) : null].filter(Boolean)),
+    late, lateActs,
     el('details', {}, [el('summary', { text: `🔐 ${p.tool_name}` }), el('pre', { class: 'perm-cmd', dir: 'ltr' }, [el('code', { text: p.command })])]),
   ]);
+}
+
+/** "✅ תמיד בפרויקט הזה" / "⛔ אף פעם בפרויקט הזה" — לכרטיס של השער (שלב 14). */
+function projectButtons(p, onDone, late = false) {
+  const send = async (decision, btn) => {
+    btn.closest('.perm-proj').querySelectorAll('button').forEach((b) => { b.disabled = true; });
+    try {
+      await api('permission-answer', { message_id: p.message_id, decision });
+      toast(decision === 'project-always' ? 'נשמר: תמיד בפרויקט הזה' : 'נשמר: אף פעם בפרויקט הזה', 'ok');
+    } catch (ex) { toast(ex.message, 'error'); }
+    onDone?.();
+  };
+  const always = p.gate.always === 'yes'
+    ? el('button', { type: 'button', class: 'btn ghost', text: late ? '✅ מעכשיו: תמיד בפרויקט' : '✅ תמיד בפרויקט הזה',
+        onclick: (e) => send('project-always', e.currentTarget) }) : null;
+  const never = el('button', { type: 'button', class: 'btn ghost perm-deny', text: late ? '⛔ מעכשיו: אף פעם' : '⛔ אף פעם בפרויקט הזה',
+    onclick: (e) => send('project-never', e.currentTarget) });
+  return el('div', { class: 'perm-acts perm-proj' }, [always, never].filter(Boolean));
 }
 
 /**
  * הכרטיס. ‏opts.onDone — אחרי מענה (רענון). ‏opts.channel — שם הצ'אט (בפס הראשי).
  */
 export function permCard(p, { onDone, channel } = {}) {
-  if (p.status && p.status !== 'open') return closedLine(p);
+  if (p.status && p.status !== 'open') return closedLine(p, onDone);
   const owner = isOwner();
   const countdown = el('p', { class: 'perm-timer', role: 'timer', 'aria-live': 'off' });
   const tick = () => {
     const left = Math.max(0, (p.deadline || 0) - Math.floor(Date.now() / 1000));
-    countdown.textContent = left > 0 ? `עוד ${mmss(left)} · אפשר לענות גם בחלון באפליקציה` : 'עבר הזמן — עונים באפליקציה';
+    const routine = p.gate?.kind === 'routine';
+    countdown.textContent = left > 0
+      ? `עוד ${mmss(left)} · ${routine ? 'אין תשובה — נדחה (אין מי שיענה ב-Routine)' : 'אפשר לענות גם בחלון באפליקציה'}`
+      : (routine ? 'עבר הזמן — נדחה' : 'עבר הזמן — עונים באפליקציה');
     if (!countdown.isConnected && countdown.dataset.started) clearInterval(timer);
     countdown.dataset.started = '1';
   };
@@ -78,6 +110,8 @@ export function permCard(p, { onDone, channel } = {}) {
   box.replaceChildren(...[
     el('p', { class: 'perm-head' }, [el('b', { text: '🔐 בקשת הרשאה' }), channel ? el('span', { text: ` · ${channel}` }) : null,
       el('code', { class: 'perm-tool', dir: 'ltr', text: p.tool_name })].filter(Boolean)),
+    p.gate ? el('p', { class: 'perm-gate' }, [el('span', { class: 'badge', text: p.gate.kind_label || '' }),
+      el('b', { text: ` ${p.gate.label}` })]) : null,
     p.description ? el('p', { class: 'perm-desc', dir: 'auto', text: p.description }) : null,
     el('pre', { class: 'perm-cmd', dir: 'ltr', tabindex: '0', 'aria-label': 'הפקודה המלאה' }, [el('code', { text: p.command })]),
     owner ? el('div', { class: 'perm-acts' }, [
@@ -87,6 +121,7 @@ export function permCard(p, { onDone, channel } = {}) {
       denyBtn,
     ].filter(Boolean)) : el('p', { class: 'hint', text: 'רק בעל הלוח מאשר הרשאות.' }),
     owner ? reasonBox : null,
+    owner && p.gate ? projectButtons(p, () => { clearInterval(timer); onDone?.(); }) : null,
     owner && p.always_ok && p.always_label ? el('p', { class: 'hint', dir: 'auto', text: `"תמיד" יאשר בצ'אט הזה כל פקודה שמתחילה ב: ${p.always_label}` }) : null,
     owner && !p.always_ok && p.always_reason ? el('p', { class: 'hint', text: `אין "תמיד": ${p.always_reason}` }) : null,
     p.alias ? el('p', { class: 'hint', text: 'כלי בשם מחולל — ייתכן שאפשר לאשר אותו רק באפליקציה.' }) : null,

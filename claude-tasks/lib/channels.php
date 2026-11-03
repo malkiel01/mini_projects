@@ -169,7 +169,8 @@ function registerChannel(array $scope, int $projectId, string $name, string $rol
     }
     if (!$old || $replaced) channelJoined($id, $replaced);
     return ['channel_id' => $id, 'channel_token' => $token, 'renewed' => (bool) $old, 'name' => $name, 'project_id' => $projectId,
-            'notify_session' => templateResolved($projectId)['notify_session'], 'project_path' => projectPathName($projectId)];
+            'notify_session' => templateResolved($projectId)['notify_session'], 'project_path' => projectPathName($projectId),
+            'project_folder' => gateProjectPath($projectId)];   // שלב 14: לסיווג המקומי של השער
 }
 
 /* ── צ'אט ← לוח ────────────────────────────────────────────────── */

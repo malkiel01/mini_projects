@@ -14,7 +14,7 @@ declare(strict_types=1);
 
 if (!defined('THROTTLE_DIR')) define('THROTTLE_DIR', __DIR__ . '/../data/throttle');
 
-const BRIDGE_GUARDED   = ['channel-wait', 'channel-inbox', 'permission-status'];
+const BRIDGE_GUARDED   = ['channel-wait', 'channel-inbox', 'permission-status', 'gate-check'];
 const BRIDGE_PAUSE_RETRY = 3600;
 const BRIDGE_WAIT_EVERY  = 10;   // שניות בין שתי בקשות channel-wait של אותו אסימון
 

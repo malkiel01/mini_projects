@@ -1556,6 +1556,15 @@ try {
     case 'choice-answer':
         ok(choiceAnswer(requireUser($user), (int) ($in['message_id'] ?? 0), $in['answers'] ?? null));
 
+    /* ── 🔐 שער המדיניות (§5.13, שלב 14) — PreToolUse מצ'אט / Routine (אסימון ערוץ) או Platform (אסימון עובד + task_id) ── */
+    case 'gate-check': {
+        $ch = $scope['channel'] ?? null;
+        if ($ch) ok(gateCheck($ch, null, $in));
+        if ($user) fail('gate-check — רק מה-hook', 403);
+        $task = accessibleTask(null, $scope, (int) ($in['task_id'] ?? 0), 'read');
+        ok(gateCheck(null, $task, $in, workerName() ?? 'claude-code'));
+    }
+
     /* ── 🔐 אישור הרשאות מהלוח (§5.12, שלב 13) ── */
     case 'permission-status': {
         $ch = $scope['channel'] ?? null;
