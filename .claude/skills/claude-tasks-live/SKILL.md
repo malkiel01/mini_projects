@@ -146,7 +146,10 @@ starting "The question was sent to the board (message #<id>)". That denial is ex
 
 **Permission prompts.** The six bridge tools (`…__create_trigger`, `…__send_later`, `…__get_session`,
 `…__list_sessions`, `…__get_trigger`, `…__list_triggers`) are approved by a hook in a registered chat, under any server
-alias. Any other permission dialog still needs a tap in the app; the board shows "⏸ הצ'אט ממתין לאישור באפליקציה" meanwhile.
+alias. Any other permission request also goes **to the board** (spec §5.12, a `PermissionRequest` hook): the owner sees
+the exact command and answers "✅ פעם אחת" / "✅ תמיד בצ'אט הזה" / "⛔ לא" (+ reason). The app dialog stays open in parallel —
+whichever answers first decides. A refusal from the board reaches you as the tool's error text, starting "בעל הלוח דחה את
+הבקשה בלוח": do **not** retry the same command another way; ask the owner if you need it. Nothing else changes for you.
 
 With `questions: app` (the owner chose it in the channel's ⋯ menu) the dialog opens in the app as usual; the board only
 mirrors it, and a `PostToolUse` hook reports the choice. Nothing changes for you. An unregistered chat is unaffected.

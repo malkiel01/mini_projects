@@ -5,6 +5,7 @@ import { approvalCard, noteText } from './approvals.js';
 import { downloadModel as trDownload, removeModel as trRemove, availableFor as trAvailableFor, downloadedBytes as trHave, model as trModel, setLang as trSetLang, TRANSLATE_LANGS } from './translate.js';
 import { loadUsage, usageCard, usageMini } from './usage.js';
 import { openPolicySheet } from './policy.js';
+import { startPermStrip } from './permissions.js';
 
 /**
  * מטלות לקלוד — ממשק.
@@ -221,6 +222,7 @@ async function enterApp() {
   await loadTree();
   await loadTopics();
   await refresh();
+  startPermStrip();   // 🔐 בקשות הרשאה בראש המסך (§5.12.3) — בעל הלוח
 
   // כישלון בטעינת ההגדרות לא אמור למנוע עבודה על מטלות.
   loadConnections().catch(() => {});
@@ -1106,6 +1108,8 @@ on('#boardPolicyBtn', 'keydown', (e) => { if (e.key === 'Enter' || e.key === ' '
 
 // שורת מטלה בבועה של שיחה — פותחת את המטלה מעל השיחה
 document.addEventListener('ct:open-task', (e) => openTask(e.detail).catch((ex) => toast(ex.message, 'error')));
+// 🔐 מהפס בראש המסך — לשיחה של הבקשה (§5.12.3)
+document.addEventListener('ct:open-channel', (e) => openConversation(e.detail).catch((ex) => toast(ex.message, 'error')));
 
 on('#drawer', 'click', (e) => { if (e.target === $('#drawer')) closeDrawer(); });
 $$('[data-close]').forEach((b) => b.addEventListener('click', () => {

@@ -792,3 +792,26 @@ mark.hit { background: color-mix(in srgb, var(--star) 45%, transparent); color: 
 .tr-target button:disabled { opacity: .45; }
 .tr-lang progress { width: 100%; margin-top: 4px; }
 .tr-native { font-weight: 400; opacity: .7; }
+
+/* ── 🔐 בקשת הרשאה (§5.12.3) ─────────────────────────────── */
+.perm { display: grid; gap: var(--s2); min-width: 0; padding: var(--s3); border: 1px solid color-mix(in srgb, var(--star) 45%, var(--line));
+  border-radius: var(--r); background: color-mix(in srgb, var(--star) 8%, var(--surface)); }
+.perm-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0; }
+.perm-tool { margin-inline-start: auto; font-size: .8rem; padding: 1px 6px; border-radius: 6px; background: var(--bg); border: 1px solid var(--line);
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.perm-desc { margin: 0; color: var(--muted); font-size: .88rem; }
+.perm-cmd { margin: 0; max-height: 14em; overflow: auto; padding: var(--s2) var(--s3); border-radius: 8px; background: var(--bg);
+  border: 1px solid var(--line); font: .82rem/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap;
+  overflow-wrap: anywhere; text-align: left; }
+.perm-acts { display: flex; flex-wrap: wrap; gap: var(--s2); }
+.perm-acts .btn { flex: 1 1 8em; min-height: 44px; }
+.perm-reason { width: 100%; min-height: 3em; }
+.perm-timer { margin: 0; font-size: .8rem; color: var(--muted); }
+.perm--done { background: var(--surface); border-color: var(--line); padding: var(--s2) var(--s3); }
+.perm--done.perm--deny .perm-done-head span { color: var(--danger); }
+.perm-done-head { margin: 0; font-weight: 600; }
+.perm-done-head small { font-weight: 400; color: var(--muted); }
+.perm--done summary { cursor: pointer; color: var(--muted); font-size: .82rem; }
+.perm-strip { display: grid; gap: var(--s2); padding: var(--s2) var(--s3); }
+.perm-strip-item { display: grid; gap: 6px; min-width: 0; }
+.perm-strip-item > .btn { justify-self: end; }

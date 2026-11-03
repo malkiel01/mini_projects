@@ -335,6 +335,7 @@ function channelsFor(array $user, int $projectId, bool $includeHidden = false): 
                 (SELECT COUNT(*) FROM messages m WHERE m.channel_id = c.id AND m.direction = 'in' AND m.delivered_at IS NULL) pending_in,
                 (SELECT COUNT(*) FROM tasks t WHERE t.asked_channel_id = c.id AND t.status = 'blocked') open_questions,
                 (SELECT COUNT(*) FROM messages m WHERE m.channel_id = c.id AND m.kind = 'choice' AND m.status = 'open') open_choices,
+                (SELECT COUNT(*) FROM messages m WHERE m.channel_id = c.id AND m.kind = 'permission' AND m.status = 'open') open_permissions,
                 (SELECT MAX(m.created_at) FROM messages m WHERE m.channel_id = c.id) last_message_at,
                 (SELECT r.name FROM channels r WHERE r.id = c.replaced_by) replaced_by_name
            FROM channels c WHERE c.project_id IN ($in)" . ($includeHidden ? '' : ' AND c.hidden = 0') . "
@@ -343,7 +344,7 @@ function channelsFor(array $user, int $projectId, bool $includeHidden = false): 
     $muted = mutedChannelIds((int) $user['id']);
     return array_map(function ($c) use ($muted) {
         $out = publicChannel($c);
-        foreach (['pending_in', 'open_questions', 'open_choices'] as $k) $out[$k] = (int) $c[$k];
+        foreach (['pending_in', 'open_questions', 'open_choices', 'open_permissions'] as $k) $out[$k] = (int) $c[$k];
         $out['last_message_at'] = $c['last_message_at'] === null ? null : (int) $c['last_message_at'];
         $out['listening'] = $out['status'] === 'active' && $out['listening_until'] > nowTs();
         $out['route_effective'] = channelRoute($c);   // הערוץ גובר על הפרויקט

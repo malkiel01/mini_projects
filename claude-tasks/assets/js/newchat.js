@@ -87,6 +87,12 @@ function renderNewChat() {
         r.reports_to ? el('small', { text: `מדווח ל: ${r.reports_to}` }) : null]))),
     role ? el('h3', { text: role.name }) : null,
     role ? promptBlock(role.prompt, `הפרומפט ל${role.label}`) : null,
+    // ⚡ גרסת Routine (§5.12.5): משימה מתוזמנת שנרשמת בתחילת כל הרצה — כך בקשות ההרשאה שלה מגיעות ללוח
+    role?.routine_prompt ? el('details', { class: 'nc-routine' }, [
+      el('summary', { text: '⚡ גרסת Routine — משימה מתוזמנת' }),
+      el('p', { class: 'hint', text: 'ליצור את המשימה ב-claude.ai עם הריפו mini_projects (בלעדיו אין את ה-hooks של הלוח), ולהחליף את {מה לעשות בכל הרצה}. כל הרצה נרשמת ללוח בהתחלה ומתנתקת בסוף.' }),
+      promptBlock(role.routine_prompt, `פרומפט Routine ל${role.label}`),
+    ]) : null,
     s.roles.length === 1 && s.can_edit ? el('p', { class: 'hint', text: 'יש רק תפקיד אחד (ברירת המחדל). ✏️ — להגדיר את התפקידים של הצוות פעם אחת, וכל תת-פרויקט יקבל אותם.' }) : null,
   ].filter(Boolean));
 }

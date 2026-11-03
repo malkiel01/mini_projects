@@ -6,6 +6,7 @@ import { $, $$, el, api, toast, state, on, timeAgo } from './core.js';
 import { approvalCard } from './approvals.js';
 import { renderMarkdown } from './markdown.js';
 import { choiceCard } from './choices.js';
+import { permCard, permFromMessage, refreshPermStrip } from './permissions.js';
 import { HEALTH, healthDetail, openHandoff } from './newchat.js';
 import { labelChip, openLabelsForMessage, openManageLabels, renderPinStrip, openPinList } from './labels.js';
 import { needs as trNeeds, lang as trLang, TRANSLATE_LANGS, engine as trEngine, translate, cached as trCached, setShow as trSetShow } from './translate.js';
@@ -64,6 +65,7 @@ function channelSub(c) {
   if (last) parts.push(timeAgo(last));
   if (c.open_questions) parts.push(`❓ ${c.open_questions}`);
   if (c.open_choices) parts.push(`🔘 ${c.open_choices} ממתינה לך`);
+  if (c.open_permissions) parts.push(`🔐 ${c.open_permissions} ממתינה לאישור`);
   if (c.muted) parts.push('🔕 מושתק');
   return parts.join(' · ');
 }
@@ -151,7 +153,7 @@ function bubble(m) {
     title: 'פעולות', text: '⋯', onclick: (e) => { e.stopPropagation(); openMsgMenu(m); } }));
   // תשובה להודעה — ציטוט קצר של המקור, נגיעה קופצת אליו
   const orig = m.reply_to ? conv.messages.find((x) => x.id === m.reply_to) : null;
-  const kind = { question: '❓ שאלה', answer: '💡 תשובה', decision: '🔐 החלטה', choice: '🔘 שאלת בחירה', choice_answer: '🔘 תשובה' }[m.kind];
+  const kind = { question: '❓ שאלה', answer: '💡 תשובה', decision: '🔐 החלטה', choice: '🔘 שאלת בחירה', choice_answer: '🔘 תשובה', permission: '🔐 הרשאה' }[m.kind];
   return el('li', { class: `bubble bubble--${m.direction}${m.author_role === 'system' ? ' bubble--sys' : ''}${m.author_role === 'platform' ? ' bubble--platform' : ''}`, dataset: { id: String(m.id) } }, [
     el('div', { class: 'b-meta' }, meta),
     orig && m.kind !== 'choice_answer' ? el('button', { type: 'button', class: 'b-reply', dir: 'auto', title: 'מעבר להודעה',
@@ -162,6 +164,9 @@ function bubble(m) {
       // שאלת בחירה (§5.10): כפתור לכל אפשרות; אחרי מענה — מקופלת
       : m.kind === 'choice' && m.meta?.questions
         ? choiceCard(m, { canAnswer: conv.channel?.can_send && conv.channel?.status === 'active', onDone: reload })
+      // בקשת הרשאה (§5.12): הפקודה המלאה וכפתורי אישור — בעל הלוח
+      : m.kind === 'permission' && m.meta?.tool_name
+        ? permCard(permFromMessage(m), { onDone: () => { reload(); refreshPermStrip(); } })
       // הצ'אט כותב Markdown — מוצג מעוצב כמו בצ'אט (בונה צמתים, אף פעם לא HTML)
         : el('div', { class: 'b-body md', dir: 'auto' }, [renderMarkdown(tr && tr.state !== 'off' ? tr.md : m.body)]),
     tr && tr.state !== 'off' ? trLine(m, tr) : null,
@@ -317,7 +322,7 @@ async function hydrateTranslations(list) {
 /** ‏after — מהמוקדמת שעוד לא נמסרה, כדי ש-✓ יתעדכן ל-✓✓. */
 function afterId() {
   // גם שאלת בחירה פתוחה — כדי שתשובה שהוקלדה בצ'אט תקפל את הבועה
-  const pending = conv.messages.find((m) => (m.direction === 'in' && !m.delivered_at) || (m.kind === 'choice' && m.status === 'open'));
+  const pending = conv.messages.find((m) => (m.direction === 'in' && !m.delivered_at) || ((m.kind === 'choice' || m.kind === 'permission') && m.status === 'open'));
   const last = conv.messages.length ? conv.messages[conv.messages.length - 1].id : 0;
   return pending ? Math.min(pending.id - 1, last) : last;
 }
@@ -442,6 +447,7 @@ function renderSettings() {
     ['🔔', 'השתקה', c.muted ? 'מושתק — לא נספר ב"ממתין לך" · נגיעה מבטלת' : 'כבויה — נגיעה משתיקה', () => toggleMute(), { pressed: c.muted }],
     isOwner() && ['🧭', 'מי עונה', `${c.route_own ? ROUTE_LABEL[c.route_own] : 'כמו הפרויקט'} · בפועל: ${ROUTE_LABEL[c.route_effective]}`, () => openRoute()],
     c.can_edit && active && ['🔘', 'שאלות בחירה', c.questions === 'app' ? 'באפליקציה' : 'בלוח', () => openQuestions()],
+    isOwner() && active && ['🔐', 'אישורי הרשאות', c.permissions === 'app' ? 'באפליקציה בלבד' : 'בלוח — ובמקביל באפליקציה', () => openPerms()],
     // גרסת הגשר (§5.10.1): צ'אט ישן — הוראת עדכון חד-פעמית, שהסקיל הישן כבר יודע לבצע
     active && isOwner() && ['📨', 'גרסת הגשר', c.bridge_outdated
       ? `⚠ ${c.bridge_version ? 'גרסה ' + c.bridge_version : 'מלפני התיקון'} · נגיעה שולחת הוראת עדכון` : `✓ עדכנית (${c.bridge_version})`,
@@ -483,6 +489,7 @@ function openAbout() {
     ['מאזין', c.status !== 'active' ? 'לא — הצ\'אט אינו פעיל' : c.listening ? `כן, עד ${new Date(c.listening_until * 1000).toLocaleTimeString('he-IL', { timeStyle: 'short' })}` : 'לא כרגע'],
     ['מי עונה', `${ROUTE_LABEL[c.route_effective]}${c.route_own ? '' : ' (כמו הפרויקט)'}`],
     ['שאלות בחירה', c.questions === 'app' ? 'באפליקציה' : 'בלוח'],
+    ['אישורי הרשאות', c.permissions === 'app' ? 'באפליקציה בלבד' : 'בלוח'],
     ['אורך', c.health_at ? healthDetail(c) : 'עוד לא דיווח'],
   ];
   $('#csAboutList').replaceChildren(...rows.flatMap(([k, v]) => [el('dt', { text: k }), el('dd', { dir: 'auto' }, [v])]));
@@ -581,6 +588,23 @@ on('#cvQuestionsSeg', 'click', async (e) => {
     renderQuestionsSeg();
     renderSettings();
     toast(b.dataset.mode === 'board' ? 'שאלות בחירה יגיעו ללוח' : 'שאלות בחירה ייפתחו בחלון באפליקציה', 'ok');
+  } catch (ex) { toast(ex.message, 'error'); }
+});
+
+function renderPermsSeg() {
+  const mode = cs.info?.permissions || 'board';
+  $$('#cvPermsSeg button').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.mode === mode)));
+}
+function openPerms() { renderPermsSeg(); $('#csPerms').showModal(); }
+on('#cvPermsSeg', 'click', async (e) => {
+  const b = e.target.closest('button[data-mode]');
+  if (!b || !conv.id) return;
+  try {
+    await api('channel-permissions', { channel_id: conv.id, mode: b.dataset.mode });
+    cs.info.permissions = b.dataset.mode;
+    renderPermsSeg();
+    renderSettings();
+    toast(b.dataset.mode === 'board' ? 'בקשות הרשאה יגיעו ללוח' : 'בקשות הרשאה — באפליקציה בלבד', 'ok');
   } catch (ex) { toast(ex.message, 'error'); }
 });
 

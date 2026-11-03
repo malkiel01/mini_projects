@@ -11,7 +11,7 @@
 #   .claude/board-listen.log    יומן המאזין (חסימות, 508, שגיאות רשת)
 
 # גרסת הגשר — לעדכן יחד עם BRIDGE_VERSION_CURRENT ב-lib/bridgever.php (§5.10.1)
-BRIDGE_VERSION="2026-11-02.2"
+BRIDGE_VERSION="2026-11-03.1"
 # עותק הריצה: hook.sh ו-link.sh מריצים ממנו כשקיים. link.sh update מרענן אותו מ-origin/main
 # בלי לגעת בעץ העבודה של הצ'אט (update.sh)
 BRIDGE_RUNTIME="$HOME/.claude-tasks-bridge"
@@ -100,4 +100,15 @@ flush_local_choice() {
     link_set pending_choice null; link_set pending_choice_answer null
   fi
   return 0
+}
+
+# 🔐 בקשות הרשאה (§5.12): סמנים מקומיים — מחוץ לריפו, כדי שלא ילכלכו את git status
+# ‏open-<key> = מזהה הבקשה בלוח; resolved-<key> = הכלי כבר רץ / נדחה (PostToolUse, PermissionDenied)
+perm_dir() {
+  local d="${TMPDIR:-/tmp}/claude-tasks-perm-$(printf '%s' "$BOARD_LINK" | sha256sum | cut -c1-12)"
+  mkdir -p "$d" 2>/dev/null; printf '%s' "$d"
+}
+# perm_key <hook-input-json> — אותו מפתח ב-PermissionRequest וב-PostToolUse (אין tool_use_id בראשון)
+perm_key() {
+  printf '%s' "$1" | jq -cS '[.tool_name, .tool_input]' 2>/dev/null | sha256sum | cut -c1-32
 }
