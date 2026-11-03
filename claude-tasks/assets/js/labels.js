@@ -151,10 +151,28 @@ const plainText = (s, n) => {
 };
 
 /** הפס: "📌 N מוצמדות · <האחרונה>" — נגיעה קופצת אליה; ▾ פותח את כולן. */
+/* ── 📌 פס המוצמדות: פס / בועה צפה / מוסתר — לכל מכשיר ──────────────
+ * ✕ בפס הופך אותו לבועה צפה. את הבועה גוררים לכל מקום (המיקום נשמר); גרירה אל ה-✕ שמופיע למטה בזמן
+ * הגרירה מסירה אותה. ⚙ ← "פס המוצמדות" מחזיר את הפס. נגיעה בבועה — רשימת המוצמדות. */
+const PINS_MODE_KEY = 'ct-pins-mode', PINS_POS_KEY = 'ct-pins-pos';
+const store = {
+  get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
+  set: (k, v) => { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch { /* פרטי / חסום */ } },
+};
+export const pinsMode = () => (['strip', 'bubble', 'hidden'].includes(store.get(PINS_MODE_KEY)) ? store.get(PINS_MODE_KEY) : 'strip');
+let lastPins = [], lastJump = () => {};
+export function setPinsMode(mode) {
+  store.set(PINS_MODE_KEY, mode === 'strip' ? null : mode);
+  renderPinStrip(lastPins, lastJump);
+}
+
 export function renderPinStrip(pins, jump) {
+  lastPins = pins; lastJump = jump;
   const box = $('#cvPins');
-  box.hidden = !pins.length;
-  if (!pins.length) { box.replaceChildren(); return; }
+  const mode = pinsMode();
+  box.hidden = !pins.length || mode !== 'strip';
+  renderPinBubble(pins, jump, mode === 'bubble' && pins.length > 0);
+  if (box.hidden) { box.replaceChildren(); return; }
   const last = pins[0];
   // replaceChildren הופך null לטקסט "null" — עם מוצמדת אחת אין ▾, ולכן מסננים (כך הופיע "null" בפס)
   box.replaceChildren(...[
@@ -163,7 +181,56 @@ export function renderPinStrip(pins, jump) {
       el('span', { dir: 'auto', text: `${last.visibility === 'private' ? '🔒 ' : ''}${plainText(last.body, 70)}` }),
     ]),
     pins.length > 1 ? el('button', { type: 'button', class: 'icon-btn', 'aria-label': 'כל המוצמדות', text: '▾', onclick: () => openPinList(pins, jump) }) : null,
+    el('button', { type: 'button', class: 'icon-btn pins-close', 'aria-label': 'הסתרת הפס — יהפוך לבועה צפה', title: 'הסתרה — לבועה צפה',
+      text: '✕', onclick: () => setPinsMode('bubble') }),
   ].filter(Boolean));
+}
+
+function renderPinBubble(pins, jump, show) {
+  const b = $('#pinBubble');
+  if (!b) return;
+  b.hidden = !show;
+  if (!show) return;
+  b.textContent = `📌${pins.length > 1 ? ` ${pins.length}` : ''}`;
+  b.setAttribute('aria-label', `${pins.length === 1 ? 'מוצמדת אחת' : `${pins.length} מוצמדות`} — נגיעה פותחת, גרירה מזיזה`);
+  const pos = (() => { try { return JSON.parse(store.get(PINS_POS_KEY) || 'null'); } catch { return null; } })();
+  const place = (x, y) => {
+    const r = b.getBoundingClientRect();
+    b.style.left = `${Math.max(4, Math.min(innerWidth - r.width - 4, x))}px`;
+    b.style.top = `${Math.max(4, Math.min(innerHeight - r.height - 4, y))}px`;
+  };
+  if (pos) place(pos.x * innerWidth, pos.y * innerHeight); else { b.style.left = ''; b.style.top = ''; }
+  if (b.dataset.wired) return;
+  b.dataset.wired = '1';
+  const drop = $('#pinDrop');
+  let start = null, moved = false;
+  const overDrop = (e) => { const r = drop.getBoundingClientRect(); return e.clientX >= r.left - 12 && e.clientX <= r.right + 12 && e.clientY >= r.top - 12 && e.clientY <= r.bottom + 12; };
+  b.addEventListener('pointerdown', (e) => {
+    const r = b.getBoundingClientRect();
+    start = { x: e.clientX, y: e.clientY, dx: e.clientX - r.left, dy: e.clientY - r.top };
+    moved = false; b.setPointerCapture(e.pointerId);
+  });
+  b.addEventListener('pointermove', (e) => {
+    if (!start) return;
+    if (!moved && Math.hypot(e.clientX - start.x, e.clientY - start.y) < 8) return;
+    moved = true; drop.hidden = false; b.classList.add('is-dragging');
+    place(e.clientX - start.dx, e.clientY - start.dy);
+    drop.classList.toggle('is-over', overDrop(e));
+  });
+  const end = (e) => {
+    if (!start) return;
+    const wasMove = moved; start = null; b.classList.remove('is-dragging');
+    if (wasMove) {
+      const remove = overDrop(e);
+      drop.hidden = true; drop.classList.remove('is-over');
+      if (remove) { setPinsMode('hidden'); return; }
+      const r = b.getBoundingClientRect();
+      store.set(PINS_POS_KEY, JSON.stringify({ x: r.left / innerWidth, y: r.top / innerHeight }));
+    }
+  };
+  b.addEventListener('pointerup', end);
+  b.addEventListener('pointercancel', end);
+  b.addEventListener('click', () => { if (!moved) openPinList(lastPins, lastJump); });
 }
 
 export function openPinList(pins, jump) {

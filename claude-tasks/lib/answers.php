@@ -93,6 +93,12 @@ function handToChat(int $messageId, int $channelId, string $why): array {
  * ‏platform-reply: עונה על הודעה נכנסת בערוץ ☁️. ‏$transport — לבדיקות.
  * מחזיר את הודעת התשובה (out, author_role platform, kind answer, reply_to).
  */
+/**
+ * העתק לצ'אט של מה ש-Platform ענה בשמו (status, בלי פעמון). בלוח הוא מקופל לשורה אחת — התשובה עצמה
+ * כבר בבועה של Platform. ("שאלה: … תשובה: …" הישן נראה כאילו בעל הלוח ענה על שאלה.)
+ */
+const PLATFORM_RELAY_PREFIX = '📨 לצ\'אט: Platform ענה בשמך בלוח.';
+
 function platformReply(array $user, int $messageId, ?callable $transport = null): array {
     $st = db()->prepare('SELECT * FROM messages WHERE id = ?');
     $st->execute([$messageId]);
@@ -144,7 +150,7 @@ function platformReply(array $user, int $messageId, ?callable $transport = null)
 
     // הצ'אט נשאר מעודכן — status בתיבה, בלי פעמון ובלי להעיר את המאזין
     channelInsertIn((int) $channel['id'], 'system', null,
-                    "☁️ Platform ענה בלוח.\nשאלה: " . mb_substr((string) $m['body'], 0, 2000) . "\nתשובה: " . mb_substr($reply, 0, 4000),
+                    PLATFORM_RELAY_PREFIX . "\n💬 הודעה מבעל הלוח:\n" . mb_substr((string) $m['body'], 0, 2000) . "\n\n☁️ Platform ענה:\n" . mb_substr($reply, 0, 4000),
                     'status', $m['task_id'] === null ? null : (int) $m['task_id'], $messageId, false);
     return ['answered' => true, 'message' => messageRows('m.id = ?', [$answerId])[0]];
 }

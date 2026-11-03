@@ -319,9 +319,13 @@ function handoffPrompt(array $user, int $channelId, bool $fallback = false): arr
     $h->execute([$channelId, $r['id']]);
     $body = $h->fetchColumn();
     $source = 'handoff';
+    // צ'אט שלא מאזין לא יקבל את הבקשה עד הבדיקה השעתית שלו — אין טעם לחכות 2 דקות; "בלי תקציר" מיד
+    $listening = $channel['status'] === 'active' && (int) $channel['listening_until'] > nowTs();
+    $canFallback = $waited >= HANDOFF_WAIT_SECONDS || !$listening;
     if ($body === false) {
-        if (!$fallback) return ['ready' => false, 'requested' => true, 'waited' => $waited, 'can_fallback' => $waited >= HANDOFF_WAIT_SECONDS];
-        if ($waited < HANDOFF_WAIT_SECONDS) throw new AppError('ממתינים לתקציר עוד ' . (HANDOFF_WAIT_SECONDS - $waited) . ' שניות', 409);
+        if (!$fallback) return ['ready' => false, 'requested' => true, 'waited' => $waited, 'can_fallback' => $canFallback,
+                                'listening' => $listening];
+        if (!$canFallback) throw new AppError('ממתינים לתקציר עוד ' . (HANDOFF_WAIT_SECONDS - $waited) . ' שניות', 409);
         $rows = messageRows("m.channel_id = ? AND m.kind NOT IN ('handoff_request', 'status')", [$channelId], 1000);
         $rows = array_slice($rows, -HANDOFF_FALLBACK_MESSAGES);
         $who = ['owner' => 'בעל המערכת', 'chat' => 'הצ\'אט', 'system' => 'מערכת', 'platform' => 'Platform'];

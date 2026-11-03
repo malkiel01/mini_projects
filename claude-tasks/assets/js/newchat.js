@@ -225,7 +225,9 @@ async function pollHandoff(fallback = false) {
       el('p', { class: 'nc-wait' }, [el('span', { class: 'spin', 'aria-hidden': 'true' }), ` ממתין לתקציר מ"${ho.channel.name}"… (${r.waited} שנ׳)`]),
       el('p', { class: 'hint', text: 'הצ\'אט קיבל בקשה לכתוב תקציר העברה: מצב וערכים עיקריים, החלטות, מה פתוח, קבצים, sessions וענף, ומה הצ\'אט הבא עושה קודם.' }),
       r.can_fallback
-        ? el('div', {}, [el('p', { class: 'hint', text: 'עברו 2 דקות בלי תקציר — אולי הצ\'אט לא פעיל. אפשר להמשיך בלי תקציר: הפרומפט ייבנה מ-30 ההודעות האחרונות בערוץ.' }),
+        ? el('div', {}, [el('p', { class: 'hint', text: r.listening === false
+            ? `"${ho.channel.name}" לא מאזין עכשיו — הבקשה לתקציר תגיע אליו רק כשיבדוק את הלוח (בבדיקה השעתית, או כשתכתבו לו). אפשר להמשיך כבר עכשיו בלי תקציר: הפרומפט ייבנה מ-30 ההודעות האחרונות בערוץ.`
+            : 'עברו 2 דקות בלי תקציר — אולי הצ\'אט לא פעיל. אפשר להמשיך בלי תקציר: הפרומפט ייבנה מ-30 ההודעות האחרונות בערוץ.' }),
             el('button', { type: 'button', class: 'btn ghost', text: 'בלי תקציר — מההודעות האחרונות', onclick: () => pollHandoff(true) })])
         : null,
     ].filter(Boolean));

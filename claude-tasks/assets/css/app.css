@@ -815,3 +815,19 @@ mark.hit { background: color-mix(in srgb, var(--star) 45%, transparent); color: 
 .perm-strip { display: grid; gap: var(--s2); padding: var(--s2) var(--s3); }
 .perm-strip-item { display: grid; gap: 6px; min-width: 0; }
 .perm-strip-item > .btn { justify-self: end; }
+
+/* העתק לצ'אט של תשובת Platform — שורה אפורה אחת (§9) */
+.b-relay summary { cursor: pointer; color: var(--muted); font-size: .82rem; }
+.b-relay[open] summary { margin-bottom: 6px; }
+
+/* 📌 בועה צפה (במקום הפס) ומטרת ה-✕ לגרירה */
+.cv-pins .pins-close { flex: none; font-size: .85rem; color: var(--muted); }
+.pin-bubble { position: fixed; z-index: 30; inset-block-end: 96px; inset-inline-end: 16px; min-width: 48px; height: 48px; padding: 0 12px;
+  border-radius: 24px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-size: 1rem;
+  box-shadow: 0 4px 14px rgb(0 0 0 / .18); touch-action: none; cursor: grab; }
+.pin-bubble[style*="left"] { inset-block-end: auto; inset-inline-end: auto; }
+.pin-bubble.is-dragging { cursor: grabbing; box-shadow: 0 8px 22px rgb(0 0 0 / .28); }
+.pin-bubble[hidden], .pin-drop[hidden] { display: none; }
+.pin-drop { position: fixed; z-index: 29; left: 50%; bottom: 28px; translate: -50% 0; width: 56px; height: 56px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 1.3rem; color: #fff; background: color-mix(in srgb, var(--danger) 75%, transparent); }
+.pin-drop.is-over { scale: 1.25; background: var(--danger); }
