@@ -82,7 +82,8 @@ check('ההקשר: השיחה והמטלות הפתוחות בהנחיה', [str_
 $orig = db()->query("SELECT answered_by, delivered_at FROM messages WHERE id = $m1")->fetch();
 check('ההודעה המקורית — נענתה ונמסרה', [$orig['answered_by'], $orig['delivered_at'] !== null], ['platform', true]);
 $inbox = channelInbox($ch);
-check('הצ\'אט מקבל status בתיבה — עם השאלה והתשובה', [count($inbox), $inbox[0]['kind'] ?? null, str_contains($inbox[0]['body'] ?? '', 'הפריסה עברה')], [1, 'status', true]);
+// §18.3 (22א): אין יותר העתק כהודעה — הצ'אט רואה את זה בתקציר (link.sh pending)
+check('אין העתק בתיבה של הצ\'אט — רק בתקציר', [count($inbox), str_contains(channelDigest(getChannel($cid)), 'Platform ענה על 1')], [0, true]);
 check('…אבל status לא מעיר אותו', count(channelWait($ch, 0)), 0);
 check('…ובלי פעמון', $bell(), $b0);
 check('השימוש נרשם כ-answer, עם הערוץ', db()->query("SELECT kind, channel_id FROM usage ORDER BY id DESC LIMIT 1")->fetch(PDO::FETCH_NUM), ['answer', $cid]);

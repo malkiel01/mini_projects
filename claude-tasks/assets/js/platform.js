@@ -357,6 +357,7 @@ export async function openProject(id) {
   loadSkills().then(renderRows).catch(() => {});
   loadChatSheet(id).then(renderRows).catch(() => {});
   loadPolicyLine();
+  loadCheckLine();
   $('#pvFile').hidden = true;
   $('#projectView').showModal();
 }
@@ -396,6 +397,7 @@ function renderRows() {
     owner && p.parent_id && ['🔑', "אסימון לצ'אטים", `משתמש באסימון של ${rootOf(p).name} · פתיחה`, 'rootToken'],
     p.repo_name && ['📂', 'קבצים', 'עיון בריפו', 'pvsFiles'],
     ['🧭', 'מי עונה', routeLabel(p.id), 'pvsRoute'],
+    p.repo_name && ['🩺', 'מה Platform רואה', checkLine(state.pv.check), 'pvsCheck'],
     ['🔐', 'אישורים', state.pv.policy ?? '…', 'pvsPolicy'],
     owner && ['🏗️', 'מבנה', parent ? `בתוך: ${parent.name}` : 'רמה עליונה', 'pvsStructure'],
   ].filter(Boolean);
@@ -429,6 +431,7 @@ function rootOf(p) {
 
 async function openSheet(id) {
   if (id === 'pvsNewChat') return openNewChat(state.openProject.id);
+  if (id === 'pvsCheck') { loadCheckLine(); renderRows(); return toast('בודק שוב…', ''); }
   if (id === 'rootToken') {
     const root = rootOf(state.openProject);
     $('#projectView').close();
@@ -444,6 +447,24 @@ async function openSheet(id) {
 }
 
 /* ── אישורים (§6.1) ───────────────────────────────────────── */
+
+/* ── §18.3 (22א.2): מה Platform רואה — תיקייה, README, גיטהאב ── */
+
+function loadCheckLine() {
+  const id = state.openProject?.id;
+  state.pv.check = null;
+  api('project-check', { project_id: id })
+    .then((r) => { if (state.openProject?.id === id) { state.pv.check = r.check; renderRows(); } })
+    .catch((ex) => { if (state.openProject?.id === id) { state.pv.check = { error: ex.message }; renderRows(); } });
+}
+
+function checkLine(c) {
+  if (!c) return '…';
+  if (c.error) return `⚠ ${c.error}`;
+  const gh = c.github.ok ? `גיטהאב: ${c.github.login} ✓` : `⚠ גיטהאב: ${c.github.why}`;
+  const rd = c.readme.ok ? 'README ✓' : `⚠ README לא נקרא: ${c.readme.why}`;
+  return `📁 ${c.path ? c.path + '/' : 'שורש הריפו'} · ${rd} · ${gh}`;
+}
 
 function loadPolicyLine() {
   const id = state.openProject?.id;

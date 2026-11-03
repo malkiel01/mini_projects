@@ -65,8 +65,8 @@ check('ההנחיה אומרת לשאול ולא להניח', str_contains($seen
 check('Platform שאל — בועת choice פתוחה, author platform', [$r['asked'], $r['message']['kind'], $r['message']['author_role'], $r['message']['status']], [true, 'choice', 'platform', 'open']);
 check('…בלי תשובה מנוחשת לצדה', count($r['messages']), 1);
 $choiceId = (int) $r['message']['id'];
-$relay = db()->query("SELECT body FROM messages WHERE kind = 'status' ORDER BY id DESC LIMIT 1")->fetchColumn();
-check('העתק לצ\'אט: "Platform שאל", לא "ענית"', [str_contains($relay, 'Platform שאל'), str_contains($relay, 'ענית')], [true, false]);
+// §18.3 (22א): אין העתק לצ'אט כהודעה
+check('אין שורת status / system שמעתיקה את השאלה', (int) db()->query("SELECT COUNT(*) FROM messages WHERE reply_to = $m2 AND author_role = 'system'")->fetchColumn(), 0);
 check('ההודעה המקורית נמסרה (לא ממתינה)', db()->query("SELECT delivered_at IS NOT NULL FROM messages WHERE id = $m2")->fetchColumn(), 1);
 
 echo "\n— תשובה לשאלה → Platform ממשיך —\n";
@@ -103,10 +103,12 @@ $r = platformReply($boss, $m5, model(['reply' => 'העברתי את הבקשה �
 $nc = $r['message']['meta']['needs_chat'] ?? [];
 check('התשובה הקצרה נשמרת, עם מה שצריך ולמי', [$r['handed_to_chat'], $nc['what'] ?? null, $nc['to'] ?? null], [true, 'לשלוח לצ\'אט של הרסטר את המשימה', 'המתכלל']);
 check('…והכרטיס יודע שהצ\'אט לא מאזין', $nc['listening'] ?? null, false);
-$toChat = db()->query("SELECT body, answered_by, kind FROM messages WHERE direction = 'in' AND author_role = 'system' AND reply_to = $m5 ORDER BY id DESC LIMIT 1")->fetch();
-check('הצ\'אט האמיתי מקבל את ההודעה עם מה שצריך — ומתעורר', [str_contains($toChat['body'], 'צריך ממך'), str_contains($toChat['body'], 'תפעיל את הרסטר'),
-      $toChat['answered_by'], $toChat['kind'], bellValue($cid) !== $b0], [true, true, '', 'text', true]);
-check('…והיא בתיבה של הצ\'אט', count(array_filter(channelInbox(getChannel($cid)), fn ($x) => (int) $x['reply_to'] === $m5)), 1);
+// §18.3 (22א): ההודעה המקורית עצמה נפתחת מחדש לצ'אט, עם הערה — בלי הודעת system שנייה
+$orig = db()->query("SELECT answered_by, handled_by, delivered_at, meta FROM messages WHERE id = $m5")->fetch();
+check('ההודעה המקורית נפתחת לצ\'אט עם ההערה — ומצלצלת', [$orig['answered_by'], $orig['handled_by'], $orig['delivered_at'],
+      json_decode($orig['meta'], true)['platform_note'] ?? null, bellValue($cid) !== $b0], ['', 'chat', null, 'לשלוח לצ\'אט של הרסטר את המשימה', true]);
+check('…אין הודעת system שמעתיקה אותה', (int) db()->query("SELECT COUNT(*) FROM messages WHERE reply_to = $m5 AND author_role = 'system'")->fetchColumn(), 0);
+check('…והיא בתיבה של הצ\'אט, פעם אחת', count(array_filter(channelInbox(getChannel($cid)), fn ($x) => (int) $x['id'] === $m5)), 1);
 check('"העברתי" עם needs_chat — לא מסומן כתיאור שקרי', $r['message']['meta']['claimed_action'] ?? false, false);
 
 echo "\n— שמירה בקוד: תיאור של פעולה שלא קרתה —\n";

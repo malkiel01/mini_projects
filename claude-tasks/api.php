@@ -1732,6 +1732,25 @@ try {
         ok(['connections' => userConnections((int) $me['id'])]);
     }
 
+    /* §18.3 (22א.2): מה Platform רואה בפרויקט */
+    case 'project-check':
+        ok(['check' => platformCheck(requireUser($user), (int) ($in['project_id'] ?? 0))]);
+
+    /* §18.3 (22א.5): "⏳ ימתין לצ'אט" — ההחלטה נשמרת על התשובה של Platform */
+    case 'needs-chat-wait': {
+        $me = requireUser($user);
+        $st = db()->prepare("SELECT * FROM messages WHERE id = ? AND author_role = 'platform'");
+        $st->execute([(int) ($in['message_id'] ?? 0)]);
+        $row = $st->fetch();
+        if (!$row) fail('ההודעה לא נמצאה', 404);
+        requireProject((int) getChannel((int) $row['channel_id'])['project_id'], $me, 'read');
+        $meta = json_decode((string) $row['meta'], true) ?: [];
+        if (empty($meta['needs_chat'])) fail('אין כאן העברה לצ\'אט', 409);
+        $meta['needs_chat']['decision'] = 'wait';
+        db()->prepare('UPDATE messages SET meta = ? WHERE id = ?')->execute([json_encode($meta, JSON_UNESCAPED_UNICODE), $row['id']]);
+        ok();
+    }
+
     case 'ai-card-answer':
         ok(aiCardAnswer(requireUser($user), (int) ($in['card_id'] ?? 0), str_field($in, 'choice', 10)));
 
