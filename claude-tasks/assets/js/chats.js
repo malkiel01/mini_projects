@@ -74,7 +74,7 @@ function channelSub(c) {
 
 let chanHandoffTimer = null;
 setInterval(() => {
-  for (const b of document.querySelectorAll('.ho-live')) b.textContent = `🔁 מכין תקציר… ${mmss(Math.floor(Date.now() / 1000) - Number(b.dataset.at))}`;
+  for (const b of document.querySelectorAll('.ho-live .ho-t')) b.textContent = mmss(Math.floor(Date.now() / 1000) - Number(b.closest('.ho-live').dataset.at));
 }, 1000);
 document.addEventListener('ct:reload-channels', () => { if (state.projectId) loadChannels().catch(() => {}); });
 
@@ -95,8 +95,9 @@ export function renderChannels() {
     c.status === 'active' && HEALTH[c.health] ? el('span', { class: `badge health health--${c.health}`, title: healthDetail(c), text: HEALTH[c.health].chip }) : null,
     c.pending_in ? el('span', { class: 'badge', title: 'ממתינות לצ\'אט', text: `✉️ ${c.pending_in}` }) : null,
     // §15.13: צ'אט המשך ברקע — טיימר חי; התקציר מוכן — שבב שפותח את הגיליון (לא נפתח מעצמו)
-    c.handoff?.state === 'waiting' ? el('span', { class: 'badge ho-live', dataset: { at: String(c.handoff.requested_at) },
-      text: `🔁 מכין תקציר… ${mmss(Math.floor(Date.now() / 1000) - c.handoff.requested_at)}` }) : null,
+    c.handoff?.state === 'waiting' ? el('span', { class: 'badge ho-live', dataset: { at: String(c.handoff.requested_at) }, title: 'מכין תקציר לצ\'אט המשך' }, [
+      '🔁 ', el('span', { class: 'ho-word', text: 'מכין תקציר… ' }),
+      el('span', { class: 'ho-t', text: mmss(Math.floor(Date.now() / 1000) - c.handoff.requested_at) })]) : null,
     c.handoff?.state === 'ready' ? el('button', { type: 'button', class: 'badge ho-ready', text: '✅ התקציר מוכן', 'aria-label': 'התקציר מוכן — לפתוח צ\'אט המשך',
       onclick: (e) => { e.stopPropagation(); openHandoff(c); } }) : null,
     el('span', { class: 'go', 'aria-hidden': 'true', text: '‹' }),

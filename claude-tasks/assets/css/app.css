@@ -659,6 +659,7 @@ details.what p { margin-top: var(--s2); }
 .ho-expect small { color: var(--muted); }
 .ho-live, .ho-ready { color: var(--c); border-color: color-mix(in srgb, var(--c) 40%, transparent); background: color-mix(in srgb, var(--c) 10%, var(--surface)); }
 .ho-live { --c: var(--brand); font-variant-numeric: tabular-nums; }
+@media (max-width: 360px) { .ho-word { display: none; } }
 .ho-ready { --c: var(--ok); cursor: pointer; font: inherit; font-size: .78rem; white-space: normal; }
 #handoffBody > .linklike { justify-self: start; margin-top: var(--s2); }
 .tpl-role { display: grid; gap: 6px; margin: 0; padding: var(--s2); border: 1px solid var(--line); border-radius: var(--r); min-width: 0; }
