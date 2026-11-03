@@ -38,7 +38,7 @@ function connSub(c) {
   if (c.status === 'failing') return `🔴 נכשל · ${c.last_error || 'שגיאה'}${c.last_ok_at ? ` · ${ago(c.last_ok_at)}` : ''}`;
   const bits = ['🟢 מחובר'];
   if (c.kind === 'github') bits.push(c.login || `…${c.tail}`);
-  else bits.push(c.model, `…${c.tail}`);
+  else bits.push(c.model + (c.effort && c.effort !== 'auto' ? ` · חשיבה ${c.effort_label}` : ''), `…${c.tail}`);
   return bits.join(' · ');
 }
 
@@ -113,6 +113,14 @@ function openConn(c) {
     $('#csModelSlot').replaceChildren(connPicker.el);
     connPicker.load();
   } else { connPicker = null; $('#csModelSlot').replaceChildren(); }
+  // שלב 20: רמת חשיבה כברירת מחדל — רק הרמות שהמודל השמור תומך בהן (אחרי שינוי מודל — השרת בודק שוב)
+  $('#csEffortWrap').hidden = !c.ai;
+  state.connEffort = c.effort || 'auto';
+  const LBL = { auto: 'אוטומטי', low: 'נמוכה', medium: 'בינונית', high: 'גבוהה', max: 'מרבית' };
+  const paint = () => $('#csEffort').replaceChildren(...Object.keys(LBL).map((v) => el('button', {
+    type: 'button', role: 'radio', 'aria-checked': String(state.connEffort === v), text: LBL[v],
+    disabled: !(c.efforts || ['auto']).includes(v), onclick: () => { state.connEffort = v; paint(); } })));
+  if (c.ai) paint();
   $('#connSheet').showModal();
 }
 
@@ -120,7 +128,7 @@ on('#csForm', 'submit', async (e) => {
   e.preventDefault();
   const c = state.openConn;
   const patch = { id: c.id, label: $('#csLabel').value };
-  if (c.ai) { patch.model = connPicker?.value || c.model; if ($('#csKey').value.trim()) patch.secret = $('#csKey').value.trim(); }
+  if (c.ai) { patch.model = connPicker?.value || c.model; if ($('#csKey').value.trim()) patch.secret = $('#csKey').value.trim(); patch.effort = state.connEffort || 'auto'; }
   try {
     await api('connection-update', patch);
     $('#connSheet').close();

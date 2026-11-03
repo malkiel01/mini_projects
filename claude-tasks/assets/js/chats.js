@@ -9,6 +9,7 @@ import { choiceCard } from './choices.js';
 import { permCard, permFromMessage, refreshPermStrip } from './permissions.js';
 import { HEALTH, healthDetail, openHandoff, mmss } from './newchat.js';
 import { labelChip, openLabelsForMessage, openManageLabels, renderPinStrip, openPinList, pinsMode, setPinsMode } from './labels.js';
+import { openAiSheet, aiChipText, aiUsedLine, aiCard } from './aipick.js';
 import { needs as trNeeds, lang as trLang, TRANSLATE_LANGS, engine as trEngine, translate, cached as trCached, setShow as trSetShow } from './translate.js';
 
 const POLL_MS = 4000;
@@ -211,12 +212,17 @@ function bubble(m) {
       // §15.12.1: הצ'אט לא עונה — כרטיס אחד לאפיזודה, לבעל הלוח
       : m.kind === 'lane_card'
         ? laneCard(m)
+      // שלב 20: ההערכה עוברת את המכסה — כרטיס לפני הקריאה
+      : m.kind === 'ai_card'
+        ? aiCard(m, { canDecide: isOwner(), onDone: async (r) => { await reload(); for (const id of r.run || []) await platformAnswer(id); } })
       // בקשת הרשאה (§5.12): הפקודה המלאה וכפתורי אישור — בעל הלוח
       : m.kind === 'permission' && m.meta?.tool_name
         ? permCard(permFromMessage(m), { onDone: () => { reload(); refreshPermStrip(); } })
       // הצ'אט כותב Markdown — מוצג מעוצב כמו בצ'אט (בונה צמתים, אף פעם לא HTML)
         : el('div', { class: 'b-body md', dir: 'auto' }, [renderMarkdown(tr && tr.state !== 'off' ? tr.md : m.body)]),
     tr && tr.state !== 'off' ? trLine(m, tr) : null,
+    // שלב 20: מי ענה — מודל, רמה, עלות; נגיעה — הפירוט
+    m.author_role === 'platform' ? aiUsedLine(m, m.ai_used?.source === 'message') : null,
     // §9.1: מה שרק הצ'אט יכול — הועבר אליו (ואם הוא לא מאזין, כתוב)
     m.meta?.needs_chat ? el('p', { class: 'b-needs', dir: 'auto', text: `☁️ Platform לא יכול לבצע את זה — הועבר ל${m.meta.needs_chat.to}`
       + (m.meta.needs_chat.listening ? '' : ' · לא מאזין עכשיו, יקבל כשיתעורר') + `: ${m.meta.needs_chat.what}` }) : null,
@@ -339,12 +345,49 @@ function isPlatformRelay(m) {
     && /^(📨 לצ'אט: Platform ענה|☁️ Platform ענה בלוח\.)/u.test(m.body || '');
 }
 
+/* ── שלב 20: מודל לשיחה ולהודעה ── */
+
+/** ☁️ בפועל, או צ'אט שלא נעול ל-💬 (יכול לעבור ל-Platform). ב-💬 בלבד — הבוחרים לא מוצגים (§16). */
+function aiReachable(c) {
+  return c.status === 'active' && (c.route_effective === 'platform' || c.route_own !== 'chat');
+}
+
+async function saveChannelAi(pref) {
+  try {
+    await api('channel-ai', { channel_id: conv.id, ai: pref });
+    toast(pref ? 'נשמר לשיחה' : 'חזר לברירת המחדל', 'ok');
+    await reload();
+    if ($('#chatSettings').open) renderSettings();
+  } catch (ex) { toast(ex.message, 'error'); }
+}
+
+/** השבב בשורת הכתיבה — רק כש-Platform עונה בפועל. מלא (accent) כשיש בחירה להודעה הבאה. */
+function renderAiChip() {
+  const c = conv.channel;
+  const show = !!c && isOwner() && c.status === 'active' && c.route_effective === 'platform' && !!c.ai?.model;
+  const b = $('#cvAi');
+  b.hidden = !show;
+  if (!show) return;
+  b.textContent = aiChipText(conv.nextAi || c.ai);
+  b.classList.toggle('is-set', !!conv.nextAi);
+}
+
+on('#cvAi', 'click', () => openAiSheet({
+  channelId: conv.id, mode: 'message', current: conv.nextAi || conv.channel?.ai,
+  onPick: (p, { keep }) => {
+    if (keep) { conv.nextAi = null; saveChannelAi(p); }
+    else conv.nextAi = p;
+    renderAiChip();
+  },
+}));
+
 function renderHead() {
   const c = conv.channel;
   $('#cvTitle').textContent = c.name;
   $('#cvSub').textContent = [c.role, c.status === 'active' ? (c.listening_until > Date.now() / 1000 ? '🟢 מאזין' : '⚪ לא מאזין')
     : c.status === 'replaced' ? 'הוחלף' : '🔌 מנותק'].filter(Boolean).join(' · ');
   renderLaneStrip(c);
+  renderAiChip();
   $('#cvLaneBtn').hidden = !(isOwner() && c.status === 'active');
   // פס "הצ'אט מתארך" בראש השיחה, עם 🔁 צ'אט המשך בתוכו
   const h = c.status === 'active' ? HEALTH[c.health] : null;
@@ -376,7 +419,8 @@ async function platformAnswer(id) {
   renderLog(true);
   try {
     const r = await api('platform-reply', { message_id: id });
-    if (r.handed_to_chat && !r.answered) toast(`Platform לא ענה — עבר לצ'אט: ${r.reason}`, '');
+    if (r.preflight) toast('💰 ' + r.reason, '');
+    else if (r.handed_to_chat && !r.answered) toast(`Platform לא ענה — עבר לצ'אט: ${r.reason}`, '');
     else if (r.asked) toast('☁️ Platform שואל — בחר תשובה בבועה', '');
     else if (r.waiting) toast(r.reason, '');
   } catch (ex) { toast(ex.message, 'error'); }
@@ -551,8 +595,11 @@ on('#chatForm', 'submit', async (e) => {
   if (!body || !conv.id) return;
   $('#chatSend').disabled = true;
   try {
-    const { id: sent } = await api('channel-send', { channel_id: conv.id, body, ...(conv.replyTo ? { reply_to: conv.replyTo.id } : {}) });
+    const { id: sent } = await api('channel-send', { channel_id: conv.id, body, ...(conv.replyTo ? { reply_to: conv.replyTo.id } : {}),
+      ...(conv.nextAi ? { ai: conv.nextAi } : {}) });
     setReply(null);
+    conv.nextAi = null;   // שלב 20: הבחירה להודעה אחת — חוזרים לבחירה של השיחה
+    renderAiChip();
     $('#chatInput').value = '';
     autosize();
     await poll(true);
@@ -612,6 +659,8 @@ function renderSettings() {
     ['⬇️', 'ייצוא', conv.view ? 'כל השיחה, או רק המסוננות' : 'כל השיחה כקובץ Markdown', () => exportChat()],
     ['🏷', 'ניהול תוויות', 'יצירה, עריכה ומחיקה — משותפות ופרטיות', () => openManageLabels(conv.channel, () => reload())],
     ['🔔', 'השתקה', c.muted ? 'מושתק — לא נספר ב"ממתין לך" · נגיעה מבטלת' : 'כבויה — נגיעה משתיקה', () => toggleMute(), { pressed: c.muted }],
+    isOwner() && aiReachable(c) && ['🧠', 'מודל לשיחה הזו', `${aiChipText(c.ai)}${c.ai?.source === 'channel' ? '' : ' · ברירת מחדל'}${c.ai?.notice ? ' · ⚠ ' + c.ai.notice : ''}`,
+      () => openAiSheet({ channelId: c.id, mode: 'channel', current: c.ai?.own, onPick: (p) => saveChannelAi(p) })],
     isOwner() && ['🧭', 'מי עונה', `${c.route_own ? ROUTE_LABEL[c.route_own] : 'כמו הפרויקט'} · בפועל: ${ROUTE_LABEL[c.route_effective]}`, () => openRoute()],
     c.can_edit && active && ['🔘', 'שאלות בחירה', c.questions === 'app' ? 'באפליקציה' : 'בלוח', () => openQuestions()],
     isOwner() && active && ['🔐', 'אישורי הרשאות', c.permissions === 'app' ? 'באפליקציה בלבד' : 'בלוח — ובמקביל באפליקציה', () => openPerms()],

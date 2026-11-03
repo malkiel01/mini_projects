@@ -893,3 +893,25 @@ mark.hit { background: color-mix(in srgb, var(--star) 45%, transparent); color: 
 .ceil-row { display: flex; align-items: center; gap: var(--s2); }
 .ceil-row input { inline-size: 7em; min-width: 0; }
 .seg--wrap { flex-wrap: wrap; }
+
+/* ── שלב 20: מודל ורמת חשיבה ── */
+.ai-chip { flex: none; align-self: flex-end; min-height: 44px; max-width: 34%; padding: 0 var(--s2); border: 1px solid var(--line);
+  border-radius: var(--r); background: var(--surface); color: var(--ink-2, var(--ink)); font: inherit; font-size: .78rem;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.ai-chip.is-set { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }
+.b-aiused { display: block; margin-top: var(--s1); padding: 0; border: 0; background: none; color: var(--muted, #6b7280);
+  font: inherit; font-size: .75rem; text-align: start; cursor: pointer; }
+.b-aiused:hover, .b-aiused:focus-visible { text-decoration: underline; }
+#aiModels .card.is-on { border-color: var(--brand); }
+#aiModels .card .ic { color: var(--brand); }
+#aiEffort { display: flex; width: 100%; margin-bottom: var(--s1); }
+#aiEffort button, #csEffort button { flex: 1 1 auto; min-height: 40px; }
+#aiEffort button[aria-checked="true"], #csEffort button[aria-checked="true"] { background: var(--brand); color: var(--brand-ink); }
+#csEffort { display: flex; width: 100%; }
+#aiKeep { margin-top: var(--s2); width: 100%; }
+.kv-list { display: grid; gap: var(--s1); }
+.kv-list .kv { display: flex; justify-content: space-between; gap: var(--s2); padding: var(--s1) 0; border-bottom: 1px solid var(--line); }
+.kv-list .kv b { text-align: end; overflow-wrap: anywhere; }
+.usage-models { list-style: none; margin: var(--s2) 0 0; padding: 0; display: grid; gap: 4px; }
+.usage-models li { display: grid; grid-template-columns: 1fr auto; gap: var(--s2); font-size: .85rem; }
+.usage-models .bar { grid-column: 1 / -1; height: 6px; border-radius: 3px; background: var(--brand); opacity: .75; }
