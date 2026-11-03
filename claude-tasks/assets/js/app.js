@@ -1,5 +1,6 @@
 import { $, $$, el, toast, api, state, timeAgo, on, set, PLATFORM_HINT } from './core.js';
 import { loadConnections, loadProviders, runTask, openProject, modelPicker, renderUsersInto } from './platform.js';
+import { renderPlatformStrip, renderLanesPanel } from './lanes.js';
 import { loadChannels, openConversation, openFromHash } from './chats.js';
 import { approvalCard, noteText } from './approvals.js';
 import { downloadModel as trDownload, removeModel as trRemove, availableFor as trAvailableFor, downloadedBytes as trHave, model as trModel, setLang as trSetLang, TRANSLATE_LANGS } from './translate.js';
@@ -1209,6 +1210,8 @@ async function renderUsageTab() {
 function renderQuotaWarn(s) {
   const w = $('#quotaWarn');
   if (!w) return;
+  // §15.3: Platform נעצר — הפס האדום גובר על אזהרת המכסה
+  if (renderPlatformStrip(w, s, { onChange: refreshQuotaWarn, openConnections: () => { $('#settings').showModal(); showSetTab('conn'); } })) return;
   const on = s && (s.state === 'warn' || s.state === 'over');
   w.hidden = !on;
   if (!on) return;
@@ -1227,6 +1230,7 @@ function showSetTab(tab) {
   $$('#settings .set-panel').forEach((p) => { p.hidden = p.dataset.panel !== tab; });
   if (tab === 'users') renderUsersInto($('#usersBox'));
   if (tab === 'me') renderTranslateSettings();
+  if (tab === 'lanes') renderLanesPanel($('#lanesBox'));
   try { sessionStorage.setItem('ct:set', tab); } catch { /* פרטי */ }
 }
 on('#setTabs', 'click', (e) => {

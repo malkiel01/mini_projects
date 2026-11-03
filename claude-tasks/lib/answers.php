@@ -140,6 +140,14 @@ function platformReply(array $user, int $messageId, ?callable $transport = null)
     catch (AppError $e) { return handToChat($messageId, (int) $channel['id'], $e->getMessage()); }
     $chain = aiChain($payer);
     if (!$chain) return handToChat($messageId, (int) $channel['id'], 'למשלם אין חיבור לספק בינה');
+    // ‏§15.3: המפסק פתוח — לא קוראים לספק. מעבירים לצ'אט, או ממתינים (לפי ההגדרה של המשלם)
+    if (breakerBlocks((int) $payer['id'])) {
+        $b = platformBreaker((int) $payer['id']);
+        $why = '☁️ Platform נעצר — ' . breakerShort($b['state'], $b['reason']);
+        if ($b['handover']) return handToChat($messageId, (int) $channel['id'], $why);
+        db()->prepare("UPDATE messages SET answered_by = 'platform' WHERE id = ?")->execute([$messageId]);
+        return ['answered' => false, 'waiting' => true, 'reason' => "$why — ההודעה ממתינה עד שיחזור"];
+    }
 
     try {
         [$system, $prompt] = platformPrompt($channel, $project, platformContext($channel, $project, $payer), $m);
@@ -147,10 +155,24 @@ function platformReply(array $user, int $messageId, ?callable $transport = null)
         $conn = $chain[0] + ['chain' => $chain, 'user' => $payer, 'usage' => $ctx];
         [$reply, $task] = parsePlatformReply(aiComplete($conn, $system, $prompt, 1500, $transport));
     } catch (Throwable $e) {
-        // נכשל — חוזר להמתין ל-Platform (הפתיחה הבאה תנסה שוב), ולא נבלע
-        db()->prepare("UPDATE messages SET answered_by = 'platform' WHERE id = ?")->execute([$messageId]);
-        throw $e;
+        // ‏§15.3: לא נשאר תלוי. הספק נעצר (קרדיט / מפתח / עומס / תקלה) — המפסק נפתח: הודעה אחת לכל ערוץ,
+        // וכל מה שממתין עובר לצ'אט במעבר אחד (או ממתין, לפי ההגדרה). כשל של ההודעה הזו בלבד — לצ'אט, עם הסיבה
+        $class = $e instanceof AppError ? $e->aiClass : '';
+        $pid = (int) $payer['id'];
+        if ($class !== '' && $class !== 'bad_request') {
+            breakerTrip($pid, $class, $e->getMessage(), (string) ($chain[0]['provider'] ?? ''));
+            $why = '☁️ Platform נעצר — ' . breakerShort($class, $e->getMessage());
+            if (lanePrefs($pid)['platform_stop'] === 'handover') return handToChat($messageId, (int) $channel['id'], $why);
+            db()->prepare("UPDATE messages SET answered_by = 'platform' WHERE id = ?")->execute([$messageId]);
+            return ['answered' => false, 'waiting' => true, 'reason' => "$why — ההודעה ממתינה עד שיחזור"];
+        }
+        channelInsertIn((int) $channel['id'], 'system', null, '☁️ Platform לא הצליח לענות על ההודעה הזו — '
+                        . mb_substr($e->getMessage(), 0, 300) . '. היא עברה לצ\'אט.', 'status',
+                        $m['task_id'] === null ? null : (int) $m['task_id'], $messageId, false);
+        return handToChat($messageId, (int) $channel['id'], $e->getMessage());
     }
+    // הצליח — ואם זו הייתה בדיקה של מפסק פתוח, הוא נסגר (הודעה אחת: חזר)
+    if (platformBreaker((int) $payer['id'])['open']) breakerReset((int) $payer['id']);
 
     db()->prepare("INSERT INTO messages (channel_id, task_id, direction, author_role, kind, body, reply_to, answered_by, meta, created_at)
                    VALUES (?,?, 'out', 'platform', 'answer', ?,?, '', ?,?)")

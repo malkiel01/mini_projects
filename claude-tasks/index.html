@@ -920,6 +920,7 @@
       <div class="seg-tabs" id="setTabs" role="tablist" aria-label="הגדרות">
         <button type="button" role="tab" data-set="usage" aria-selected="true">📊 שימוש</button>
         <button type="button" role="tab" data-set="conn" aria-selected="false">🔌 חיבורים</button>
+        <button type="button" role="tab" data-set="lanes" aria-selected="false">🔀 מסלולים</button>
         <button type="button" role="tab" data-set="me" aria-selected="false">👤 חשבון</button>
         <button type="button" role="tab" data-set="users" aria-selected="false" id="setUsersTab" hidden>👥 משתמשים</button>
         <button type="button" role="tab" data-set="sys" aria-selected="false" id="setSysTab" hidden>🛠 מערכת</button>
@@ -938,6 +939,11 @@
           <button type="button" class="btn primary sm" id="connAddBtn"><span aria-hidden="true">+</span> חיבור</button>
         </div>
         <div id="connList"></div>
+      </section>
+
+      <!-- ── מסלולים: מה קורה כשמסלול נעצר (§15.11) ── -->
+      <section class="set-panel" data-panel="lanes" hidden>
+        <div id="lanesBox"><p class="hint">טוען…</p></div>
       </section>
 
       <!-- ── חשבון ── -->
