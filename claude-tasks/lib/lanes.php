@@ -129,7 +129,9 @@ function breakerTrip(int $userId, string $class, string $reason, string $provide
         'ask'   => "☁️ Platform נעצר — $short. ההודעות ממתינות להחלטה של בעל החשבון בלוח: לעבור לצ'אט או להמתין.",
         default => "☁️ Platform נעצר — $short. לפי ההגדרה של בעל החשבון ההודעות ממתינות עד שיחזור.",
     };
-    foreach (platformChannels($userId) as $ch) channelInsertIn((int) $ch['id'], 'system', null, $text, 'status', null, null, false);
+    // שלב 17: שורה אחת ביומן ואחת בשיחה, לכל ערוץ
+    foreach (platformChannels($userId) as $ch) laneLogAdd((int) $ch['id'], 'platform', $onStop === 'auto' ? 'chat' : 'platform',
+                                                          laneReasonForBreaker($class), $text, null, $onStop);
     if ($onStop === 'auto') handOverWaiting($userId, $short);
     return true;
 }
@@ -148,8 +150,8 @@ function breakerDecide(array $user, string $decision): array {
     if ($decision === 'handover' && $b['on_stop'] === 'ask') {
         $short = breakerShort($b['state'], $b['reason']);
         foreach (platformChannels($uid) as $ch) {
-            channelInsertIn((int) $ch['id'], 'system', null, "☁️ בעל החשבון החליט: עוברים לצ'אט עד ש-Platform יחזור ($short). מכאן הערוץ אצלך.",
-                            'status', null, null, false);
+            laneLogAdd((int) $ch['id'], 'platform', 'chat', laneReasonForBreaker($b['state']),
+                       "☁️ בעל החשבון החליט: עוברים לצ'אט עד ש-Platform יחזור ($short). מכאן הערוץ אצלך.", $uid, 'ask');
         }
         handOverWaiting($uid, $short);
     }
@@ -163,7 +165,7 @@ function breakerReset(int $userId): bool {
     if ($st->rowCount() === 0) return false;
     logEvent(null, 'platform.breaker', "user:$userId", true, 'recovered');
     foreach (platformChannels($userId) as $ch) {
-        channelInsertIn((int) $ch['id'], 'system', null, '☁️ Platform חזר — הערוץ שוב עונה ב-☁️.', 'status', null, null, false);
+        laneLogAdd((int) $ch['id'], 'chat', 'platform', 'recovered', '☁️ Platform חזר — הערוץ שוב עונה ב-☁️.');
     }
     return true;
 }

@@ -373,6 +373,9 @@ try {
         $st = db()->prepare($sql);
         $st->execute($args);
         $rows = $st->fetchAll();
+        // שלב 17: תג מסלול לכל מטלה — מ-tasks.route / הפרויקט (taskRoute), לא מהטקסט
+        foreach ($rows as &$r) $r['lane'] = taskLane($r);
+        unset($r);
 
         // המונים — לפי אותו תחום ואותו נושא, בלי סינון הסטטוס והחיפוש.
         // ‏by_project — אותו דבר, לכל פרויקט בנפרד (מטלה בלי פרויקט לא נספרת שם).
@@ -1559,6 +1562,13 @@ try {
         if (!$ch) fail('נדרש אסימון ערוץ', 403);
         ok(['message' => channelShow($ch, (int) ($in['id'] ?? 0))]);
     }
+
+    /* ── שלב 17: היומן והמעבר הידני (lib/lanelog.php) ── */
+    case 'lane-log':
+        ok(['log' => laneLogFor(requireUser($user), (int) ($in['channel_id'] ?? 0))]);
+
+    case 'lane-switch':
+        ok(laneSwitchManual(requireUser($user), (int) ($in['channel_id'] ?? 0), str_field($in, 'to', 10)));
 
     case 'lane-card-answer':
         ok(laneCardAnswer(requireUser($user), (int) ($in['card_id'] ?? 0), str_field($in, 'choice', 10)));

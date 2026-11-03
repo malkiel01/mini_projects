@@ -881,3 +881,11 @@ mark.hit { background: color-mix(in srgb, var(--star) 45%, transparent); color: 
 .lane-facts { margin: 0; padding-inline-start: 1.1em; display: grid; gap: 2px; font-size: .85rem; }
 .lane-card .row-btns { margin-top: var(--s1, 4px); }
 .cv-lane { background: color-mix(in srgb, var(--danger) 10%, var(--surface)); }
+/* שלב 17: תג מסלול בהודעה, "העבר ל…", היומן */
+.b-lane { font-size: .7rem; color: var(--muted); white-space: nowrap; }
+.b-lane--owner { color: var(--danger); }
+.b-lane--platform { color: var(--brand); }
+.lane-opts { display: grid; gap: var(--s2); }
+.lane-log { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s2); }
+.lane-log li { display: grid; gap: 2px; padding: var(--s2) 0; border-bottom: 1px solid var(--line); }
+.lane-log small { color: var(--muted); }

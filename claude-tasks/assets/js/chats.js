@@ -170,6 +170,9 @@ function bubble(m) {
       text: m.delivered_at ? '✓✓' : '✓',
     }));
   }
+  // שלב 17: תג מסלול ומצב — מהשרת (handled_by / answered_by), לא מהטקסט
+  const lt = laneTag(m);
+  if (lt) meta.push(lt);
   // 📌 ותוויות (12c) — בשורת המטא, קטנים
   if (m.pinned?.shared || m.pinned?.mine) meta.push(el('span', { class: 'b-pin', title: m.pinned.shared ? 'מוצמדת לכולם' : 'מוצמדת לך', text: m.pinned.shared ? '📌' : '📌🔒' }));
   (m.labels || []).forEach((l) => meta.push(labelChip(l)));
@@ -224,6 +227,55 @@ function bubble(m) {
       onclick: () => document.dispatchEvent(new CustomEvent('ct:open-task', { detail: m.task_id })),
     }, [el('span', { text: `📋 מטלה #${m.task_id}` }), el('span', { 'aria-hidden': 'true', text: '‹' })]) : null,
   ]);
+}
+
+/* ── שלב 17: תגים, "העבר ל…", היומן (§15.6) ───────────────────── */
+
+export const LANE_ICON = { chat: '💬', platform: '☁️', engine: '🤖' };
+const LANE_STATE = { owner: 'ממתין לבעל הלוח', chat: 'ממתין לצ\'אט', platform: 'ממתין ל-Platform', done: 'טופל' };
+
+function laneTag(m) {
+  if (!m.lane || !m.lane_state) return null;
+  return el('span', { class: `b-lane b-lane--${m.lane_state}`, title: `${LANE_ICON[m.lane]} · ${LANE_STATE[m.lane_state]}`,
+    text: `${LANE_ICON[m.lane] || ''} ${LANE_STATE[m.lane_state]}` });
+}
+
+function openLaneSwitch() {
+  const c = conv.channel;
+  const toChat = conv.messages.filter((m) => m.platform_pending).length;
+  const toPlat = conv.messages.filter((m) => m.lane_state === 'chat').length;
+  $('#laneSwitchHint').textContent = `עכשיו: ${toPlat} ממתינות לצ'אט · ${toChat} ממתינות ל-Platform. המסלול של הערוץ: ${LANE_ICON[c.route_effective] || ''} ${c.route_effective === 'platform' ? 'Platform' : 'הצ\'אט'}.`;
+  const go = async (to, btn) => {
+    btn.disabled = true;
+    try {
+      const r = await api('lane-switch', { channel_id: conv.id, to });
+      toast(`🔀 הועברו ${r.moved}`, 'ok');
+      $('#laneSwitch').close();
+      reload();
+      for (const id of r.run || []) await platformAnswer(id);
+    } catch (ex) { toast(ex.message, 'error'); btn.disabled = false; }
+  };
+  $('#laneSwitchOpts').replaceChildren(
+    el('button', { type: 'button', class: 'btn primary', disabled: !toPlat, onclick: (e) => go('platform', e.currentTarget) },
+      [`☁️ ל-Platform (${toPlat})`]),
+    el('button', { type: 'button', class: 'btn ghost', disabled: !toChat, onclick: (e) => go('chat', e.currentTarget) },
+      [`💬 לצ'אט (${toChat})`]),
+  );
+  $('#laneSwitch').showModal();
+}
+on('#cvLaneBtn', 'click', () => openLaneSwitch());
+
+async function openLaneLog() {
+  $('#laneLogRows').replaceChildren(el('li', { class: 'hint', text: '…' }));
+  $('#laneLog').showModal();
+  try {
+    const { log } = await api('lane-log', { channel_id: conv.id });
+    $('#laneLogRows').replaceChildren(...(log.length ? log.map((l) => el('li', {}, [
+      el('b', { text: `${LANE_ICON[l.from] || l.from} ← ${LANE_ICON[l.to] || l.to} · ${l.reason_text}` }),
+      el('small', { text: [timeAgo(l.at), l.by ? `👤 ${l.by}` : 'אוטומטי', l.setting_text ? `ההגדרה: ${l.setting_text}` : '', l.moved ? `הועברו: ${l.moved}` : '']
+        .filter(Boolean).join(' · ') }),
+    ])) : [el('li', { class: 'hint', text: 'עוד לא היה מעבר בין מסלולים בערוץ הזה.' })]));
+  } catch (ex) { toast(ex.message, 'error'); }
 }
 
 /* ── שלב 16: הצ'אט לא עונה (§15.12.1) ─────────────────────────── */
@@ -289,6 +341,7 @@ function renderHead() {
   $('#cvSub').textContent = [c.role, c.status === 'active' ? (c.listening_until > Date.now() / 1000 ? '🟢 מאזין' : '⚪ לא מאזין')
     : c.status === 'replaced' ? 'הוחלף' : '🔌 מנותק'].filter(Boolean).join(' · ');
   renderLaneStrip(c);
+  $('#cvLaneBtn').hidden = !(isOwner() && c.status === 'active');
   // פס "הצ'אט מתארך" בראש השיחה, עם 🔁 צ'אט המשך בתוכו
   const h = c.status === 'active' ? HEALTH[c.health] : null;
   $('#cvHealth').hidden = !h;
@@ -560,6 +613,7 @@ function renderSettings() {
     active && isOwner() && ['📨', 'גרסת הגשר', c.bridge_outdated
       ? `⚠ ${c.bridge_version ? 'גרסה ' + c.bridge_version : 'מלפני התיקון'} · נגיעה שולחת הוראת עדכון` : `✓ עדכנית (${c.bridge_version})`,
       c.bridge_outdated ? () => sendBridgeUpdate() : null, { sub2: c.bridge_outdated ? '📨 שלח הוראת עדכון' : '' }],
+    ['🔀', 'יומן המסלולים', 'כל מעבר בין 💬 / ☁️ — מתי, למה, ומי', () => { $('#chatSettings').close(); openLaneLog(); }],
     isOwner() && ['📝', 'סיכום חכם', 'קריאה אחת למודל, על חשבון המשלם · נשמר מוצמד בשיחה, ומזין את צ\'אט ההמשך', () => smartSummary()],
     active && ['📏', 'אורך הצ\'אט', c.health_at ? `${health ? health.chip + ' · ' : ''}${healthDetail(c)}` : 'עוד לא דיווח',
       isOwner() ? () => { $('#chatSettings').close(); openHandoff(conv.channel); } : null, { sub2: isOwner() ? '🔁 צ\'אט המשך' : '' }],

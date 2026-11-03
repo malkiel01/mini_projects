@@ -287,6 +287,8 @@ function migrate(PDO $pdo): void {
     migrateBridgeVersion($pdo);
     // שלב 16: הצ'אט לא עונה (lib/silence.php)
     migrateSilence($pdo);
+    // שלב 17: יומן המעברים (lib/lanelog.php)
+    migrateLaneLog($pdo);
 }
 
 /** ALTER TABLE ADD COLUMN אינו מכיר IF NOT EXISTS ב-SQLite — בודקים לבד. */
@@ -478,3 +480,4 @@ require_once __DIR__ . '/labels.php';
 require_once __DIR__ . '/search.php';
 require_once __DIR__ . '/bridgever.php';
 require_once __DIR__ . '/silence.php';
+require_once __DIR__ . '/lanelog.php';
