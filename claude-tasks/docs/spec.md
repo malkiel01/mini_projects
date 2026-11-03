@@ -1168,3 +1168,103 @@ After approval: a `בקשה` message with **stage 1**. Every stage — branch, P
 | 13.2 | #1199 | Owner bug report 2026-11-03 (4 issues), diagnoses sent to spec | **null in the pinned strip**: `replaceChildren` turns `null` into the text "null" — `core.js` now filters null/undefined/false in `replaceChildren` across the whole board, and the strip filters its own children. **Pinned strip can be dismissed**: ✕ on the strip turns it into a floating 📌 bubble (drag anywhere, position saved per device in `localStorage` `ct-pins-pos`; tap opens the pinned list); while dragging an ✕ target appears at the bottom — dropping on it hides the bubble; Settings → "📌 פס המוצמדות ↩ להחזיר את הפס" restores the strip (`ct-pins-mode` strip/bubble/hidden, per device — pending spec approval). **Follow-up chat did not start**: the handoff waited 2 minutes for a summary from a chat that was not listening — `handoffPrompt` returns `listening`, and the fallback (start without a summary) is offered at once when the old chat is not listening, with a hint. **Platform 'answered the question'**: Platform answers in one call and cannot ask or wait; the status relay repeated the owner's message labelled as a question — now `PLATFORM_RELAY_PREFIX` with clear wording, collapsed in the board as "📨 עודכן לצ'אט: Platform ענה על הודעה #n". Platform asking the owner — awaits spec. Checked in Chromium at 390 light / 320 dark, no horizontal scroll. `tests/templates.php` 54 |
 | 13.3 | #1200 | Owner bug 5 (2026-11-03): the coordinator channel on ☁️ Platform said it sent to the raster chat; nothing arrived | Platform is one model call with no tools, and the chat's own messages in the context ("sent to raster…") were imitated. `PLATFORM_LIMITS` in the system prompt: no tools — cannot message or wake another chat, open a chat, run a command, change the board, or ask and wait; never write that it did or will do such an action; say "I (Platform) can't do this from the board" and what the owner can do instead. The proposed `needs_chat` hand-off and a Platform `choice` (asking the owner) — sent to spec, not built. `tests/answers.php` 35 |
 | 14 | (this PR) | §5.13 (#1198): one policy gate (PreToolUse) for chats, Routines and Platform | `bridge/classify.php` (one file — server `require` + hook CLI; fixtures `tests/gate-fixtures.json` through both), `lib/gate.php` (`gate-check`: re-classify, `policyResolve` → allow / deny / ask by session kind; `gate_log`; project always/never incl. late), `bridge/hook-gate.sh` (PreToolUse `.*`, 5-min verdict cache, fail-closed unattended, no decision for interactive), stage-13 card with type + session badge + project buttons, new types `push-protected` / `change-gate` / `run-remote-script` (no always), ⚙ → 🔐: "מה נחשב" per type and the gate's decisions in "מה הוחלט". Platform: gate in `.claude/settings.local.json`, files in `.github/claude-agent/`. `link.sh register` stores `project_folder`. BRIDGE_VERSION 2026-11-03.2. Local e2e with `claude -p --permission-mode auto`: rm -rf / push --force / curl\|sh all blocked. `tests/gate.php` 171, `tests/gatecheck.php` 29, all 23 test files pass. Details: §5.13.5 |
+
+---
+
+## 15. Two lanes, one conversation — Chat tokens and Platform credits (owner request 2026-11-03; **stages 15–19**)
+
+**The owner:** *"All other projects are stopped until Claude Tasks is 100% ready. The app must be 100% in sync and work with both the chat's
+tokens and Claude Platform's credits — full convenience and full use of the credits on both sides."* Requirements (א–ה):
+
+| # | Requirement |
+| --- | --- |
+| א | Processing on one side, **update on the other without processing** (no wasted tokens), both directions |
+| ב | Every permission request goes to the board, on both lanes, no exceptions |
+| ג | Platform credits run out: what happens, and how the chat catches up and continues from the same point |
+| ד | The chats' (Claude Code) tokens run out: what happens, how they are updated on return, and the move to Platform |
+| ה | Continuity: what was done, what is waiting, who answered — no lost context |
+
+### 15.1 What exists (checked in code, 2026-11-03) and the real gaps
+
+| Req. | Built | Gap found |
+| --- | --- | --- |
+| א | `status` messages reach the chat without waking it (§9); the hooks mirror the chat to the board; Platform reads the last 30 messages | Works only **inside a channel**. The engine (Actions) writes nothing to the channel. The chat receives the full text of what Platform said — tokens spent reading it |
+| ב | Chat: stage 13. All sessions: stage 14 (gate, merged 2026-11-03) | Not verified on the live board. Platform has no tools, so nothing to approve there |
+| ג | Own quota at 100% → ☁️ becomes 💬 (`projectRoutes`) | **Provider-side exhaustion is not handled.** `platformReply` catches the failure, resets `answered_by='platform'` and rethrows — the message **waits for the next board open and never reaches the chat**. `shouldFallOver` returns false for HTTP 400, and Anthropic reports an empty credit balance as 400 *(to verify against the real API in stage 15)* — so it is neither failed over nor named |
+| ד | Manual route per project/channel; follow-up chat with a summary (§5.9.4); `listening_until` | **Nothing detects a chat that stopped because of its usage limit.** A message to a dead chat waits for ever. No automatic move to Platform, no "what happened while you were away" on return |
+| ה | `tasks.route` pins a task to its lane; every message has `author_role` and `answered_by` | No single view of "what is waiting, for whom, and who answered"; lane switches are not recorded |
+
+### 15.2 The model — **one conversation, two lanes, a ledger on the board**
+
+- **Lane** = who spends tokens: `chat` (the owner's Claude Code subscription) or `platform` (API credits: ☁️ answers, and 🤖 the engine for code tasks).
+- **The board is the only memory.** Neither lane keeps state the other needs; each reads the channel when it acts.
+- **Exactly one processor per message.** A message gets a *lease*: `handled_by` (`chat` | `platform` | `engine`), `lease_until`. Whoever holds the lease processes; the other lane sees the result as `status` (context only). An expired lease may be taken by the other lane — atomic `UPDATE … WHERE`, like `platform-busy` today.
+- **Update without processing:** results of the other lane arrive as a *digest* built **mechanically** (no model call): counts, the last answer per thread cut to a fixed size, links to the full text. The chat reads the digest, not the whole exchange.
+
+### 15.3 Stage 15 — Platform runs out (req. ג)
+
+1. **Classify provider failures** (`lib/ai.php`): `credit_exhausted` (credit/billing text, 402, Anthropic 400 with a credit message), `key_rejected` (401/403), `rate_limited` (429/529), `down` (5xx/network), `bad_request` (other 400/404/422). Only `bad_request` stops the fail-over chain. Each has a Hebrew line for the board.
+2. **Circuit breaker per payer** (`platform_state`: `ok | credit_exhausted | key_rejected | rate_limited`, `since`, `retry_at`): set when a whole chain fails with a non-`bad_request` class. While open, `channelRoute` resolves ☁️ as 💬 (computed, like the quota rule), so new messages go straight to the chat. `retry_at` = +30 min (`rate_limited` +5 min); `credit_exhausted` and `key_rejected` stay open until the owner changes the connection or presses "נסה שוב" — one probe call, then closed.
+3. **Hand-over, not waiting:** a failed `platformReply` calls `handToChat` with the Hebrew reason (today it only rethrows). Messages already waiting for Platform when the breaker opens are handed over in one pass.
+4. **The chat is told once**, as a `system` message: "☁️ Platform נעצר — <reason>. מכאן הערוץ אצלך." and, on recovery, "☁️ Platform חזר". Never one per message.
+5. **Owner sees it:** red strip on the board while open, with the reason and the exact place to fix it (הגדרות ← חיבורים), and the user's remaining credit line is replaced by the state.
+6. **Where the chat continues from:** it receives the digest (15.5) — everything Platform answered or decided since the chat's last `ack`.
+
+### 15.4 Stage 16 — the chat runs out (req. ד)
+
+A chat out of tokens cannot report it, so detection comes from **two signals the server can see**:
+
+- **(a) A limit signal from the chat before it dies.** The Claude Code session exposes `rate_limit_info` (status `allowed_warning`, `resetsAt`) — visible in the session metadata. `channel-health` (already sent every 5 min by the Stop hook) gains `limit: {status, resets_at}`. `allowed_warning` → the row shows "🟡 הצ'אט קרוב למגבלה"; a `rejected` status → "🔴 נגמרו הטוקנים עד <שעה>". **To verify first (stage 16, step 0):** whether a hook receives the limit state, or whether the chat must read it from `get_session`; if neither works, only signal (b) remains.
+- **(b) Silence.** A chat-lane message not acked within `chat_silence_minutes` (default 10) while `listening_until` has lapsed → the chat is *unresponsive*. This also covers a closed tab, a dead container, and the 429 back-off of the listener.
+
+**What happens when the chat is unresponsive** (a card on the board, once per episode, with the owner's saved choice — decision 2):
+- **☁️ ענה Platform** — the waiting messages move to the Platform lane; replies are answers only (cheap). Code needs → "📋 הפוך למטלה" for the engine, which needs approval (decision 3).
+- **⏳ חכה** — nothing changes; the card shows the reset time if known.
+- **Per-user monthly cap** on automatic Platform use for this purpose (inside the existing quota; 20% by default) — beyond it, the card asks again.
+
+**Return of the chat:** the first `register`/`status`/`pending` after silence returns the digest and clears the *unresponsive* flag; the lane goes back to `chat` automatically (decision 4). Messages Platform answered are **not** re-processed — they are marked handled, shown to the chat as the digest.
+
+### 15.5 The digest — "what happened without you" (req. א, ה)
+
+Built by the server from the ledger, no model: for the channel, since the chat's last `ack`:
+`☁️ Platform ענה על N הודעות (הארוכה: …) · 🤖 המנוע סגר K מטלות (PR …) · ❓ ממתינות לבעל הלוח: M · 🔐 הוחלט על P בקשות`, plus the last answer per thread (≤ 300 chars) and ids to pull the full text. `link.sh pending` prints the digest first, then the real unprocessed messages. Ceiling ~1,500 characters; more → "ועוד N — `link.sh show <id>`". The same digest, in the other direction, is what Platform receives as context after the chat worked alone (replaces blind reading of 30 raw messages: summary of older ones + the last 10 raw).
+
+### 15.6 Stage 17 — the ledger and the switch (req. ה)
+
+- `lane_log(at, channel_id, project_id, from, to, reason, by)`: reasons `manual | platform_credit | platform_key | platform_rate | chat_silent | chat_limit | recovered | cap_reached`. Every switch appears in the conversation as a one-line `system` message.
+- Every message and task row carries a lane badge (💬 / ☁️ / 🤖) and a state: `ממתין לבעל הלוח · ממתין לצ'אט · ממתין ל-Platform · טופל`. "ממתין לך" already lists the owner's items; it gains the lane.
+- A manual **"העבר ל…"** button in the conversation header (owner): 💬 / ☁️ for this message batch, without changing the project's route.
+- A lane switch never rewrites history and never moves a task already `in_progress` (existing rule): it finishes on its lane or is released by its lease.
+
+### 15.7 Stage 18 — policy and permissions across the lanes (req. ב)
+
+- **A lane switch that spends money is a decision, not an event:** default asks (card), "תמיד עד $X בחודש" stores the choice; the cap is checked server-side on every automatic use.
+- **Permissions:** unchanged contract — chat (13) and engine/Routine (14) ask the board; Platform answers in text and has no tools. Added: an **engine task started by a failover** carries `origin: failover` and always runs with the gate on, whatever the project's policy default, and its first run needs the owner's approval card.
+- **Acceptance (req. ב):** a test per lane that each sensitive action produces a board request or a denial with a reason, never a silent run — `tests/lanes.php`, fake transport, plus the stage-14 fixtures.
+
+### 15.8 Stage 19 — real verification, then closed (the owner's "100%")
+
+Done only when all pass **on the live board**, in this order:
+1. `CLAUDE_TASKS_TOKEN` set; a real chat registers and receives a board message (open since stage 3).
+2. The Anthropic key entered in הגדרות ← חיבורים (the file `claude-secrets/anthropic.key` on the server is then deleted — owner action, I give the exact click path).
+3. A real ☁️ answer (one cheap call), and a deliberately rejected key → breaker opens, the message reaches the chat, one `system` line.
+4. A chat made silent → the card appears; ☁️ answers; the chat returns → digest, no re-processing, lane back.
+5. Each lane tried on a sensitive action → a card on the board.
+6. All test files pass; deploy `conclusion: success`.
+
+### 15.9 Decisions for the owner
+
+| # | Question | Recommendation |
+| --- | --- | --- |
+| 1 | Platform out of credit/key: hand over to the chat **automatically** | ✅ **Yes** — costs nothing, and waiting is worse |
+| 2 | Chat out of tokens: move to Platform **automatically**, ask each time, or never | **Ask on a card the first time**, with "תמיד עד $X בחודש"; the saved choice applies after |
+| 3 | In the Platform lane while the chat is down: answers only, or also run the engine on code tasks | **Answers automatically; engine only after an approval card** |
+| 4 | When the chat returns: back to the chat automatically | **Yes**, automatically |
+| 5 | The "what happened" digest | **Mechanical (no tokens)**, as in 15.5 |
+| 6 | Retry of Platform after a rate limit / outage | **5 min / 30 min**; credit and key stay closed until you fix them or press "נסה שוב" |
+| 7 | `chat_silence_minutes` | **10** |
+| 8 | Order | 15 → 16 (step 0 is the limit-signal check) → 17 → 18 → 19 |
+
+### 15.10 Rules for the code writer
+
+Stage by stage, each: branch, PR, merge, `conclusion: success`, a row in §14. English for code and docs. No new secret in chat or code. Any new runtime file under `claude-tasks/data/` needs its `--exclude` in `deploy.yml` in the same PR. Tests with fake transports only — the live check is stage 19. No stage may change `bridge/` without bumping `BRIDGE_VERSION`.
