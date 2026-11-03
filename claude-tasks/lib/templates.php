@@ -204,12 +204,36 @@ function chatPrompt(int $projectId, array $role, ?int $replaces = null, string $
     return implode("\n", $lines);
 }
 
+/**
+ * ⚡ גרסת Routine (§5.12.5): משימה מתוזמנת שפותחת סשן חדש בכל הפעלה. הסשן נרשם בתחילת ההרצה
+ * (--role routine), ולכן בקשות ההרשאה שלו מגיעות ללוח כמו של כל צ'אט. בסוף — מתנתק.
+ * ‏{מה לעשות} — בעל הלוח ממלא לפני שהוא שומר את המשימה.
+ */
+function routinePrompt(int $projectId, array $role): string {
+    $t = templateResolved($projectId);
+    $st = db()->prepare('SELECT name FROM projects WHERE id = ?');
+    $st->execute([$projectId]);
+    $name = chatName($t['name_pattern'], ['label' => 'Routine'] + $role, (string) $st->fetchColumn());
+    $files = array_values(array_diff(array_filter(array_map('trim', explode("\n", $t['context_files']))), ['CLAUDE.md']));
+    return implode("\n", [
+        "אתה \"$name\" — הרצה של משימה מתוזמנת (Routine) בפרויקט \"" . projectPathName($projectId) . "\" (#$projectId) בלוח \"מטלות לקלוד\".",
+        '1. הפעל את הסקיל claude-tasks-live והירשם — לפני כל דבר אחר, כדי שבקשות הרשאה יגיעו ללוח:',
+        "   claude-tasks/bridge/link.sh register --project $projectId --name \"$name\" --role \"routine\"",
+        '   אין claude-tasks/bridge/link.sh בתיקייה — המשימה נוצרה בלי הריפו mini_projects: עצור ודווח.',
+        '   הרישום נכשל — עצור ודווח את ההודעה כפי שהיא.',
+        '2. קרא: ' . implode(', ', array_merge(['CLAUDE.md'], $files)),
+        '3. המשימה: {מה לעשות בכל הרצה}',
+        '4. בסוף — דווח בקצרה מה נעשה, ומה לא נעשה ולמה (פעולה שנחסמה — בשמה), ואז: claude-tasks/bridge/link.sh archive',
+    ]);
+}
+
 /** הגיליון "🆕 צ'אט חדש": התפקידים והפרומפט המוכן לכל אחד, הסביבה, ומה עובר בירושה. */
 function chatSheet(array $user, int $projectId): array {
     $project = requireProject($projectId, $user, 'read');
     $t = templateResolved($projectId);
     $roles = array_map(fn ($r) => $r + ['name' => chatName($t['name_pattern'], $r, (string) $project['name']),
-                                        'prompt' => chatPrompt($projectId, $r)], $t['roles']);
+                                        'prompt' => chatPrompt($projectId, $r),
+                                        'routine_prompt' => routinePrompt($projectId, $r)], $t['roles']);
     return [
         'project'     => ['id' => $projectId, 'name' => $project['name'], 'path' => projectPathName($projectId)],
         'root'        => projectRoot($projectId),

@@ -14,7 +14,7 @@ declare(strict_types=1);
 
 if (!defined('THROTTLE_DIR')) define('THROTTLE_DIR', __DIR__ . '/../data/throttle');
 
-const BRIDGE_GUARDED   = ['channel-wait', 'channel-inbox'];
+const BRIDGE_GUARDED   = ['channel-wait', 'channel-inbox', 'permission-status'];
 const BRIDGE_PAUSE_RETRY = 3600;
 const BRIDGE_WAIT_EVERY  = 10;   // שניות בין שתי בקשות channel-wait של אותו אסימון
 
@@ -27,7 +27,7 @@ function bridgeVerdict(string $action, array $config, ?int $budgetRetry): ?array
     if (!empty($config['bridge_paused'])) {
         return [503, BRIDGE_PAUSE_RETRY, 'bridge_paused', 'המאזינים מושהים בידי בעל הלוח — המאזין יוצא; הפעלה מחדש רק אחרי שהעצירה תוסר'];
     }
-    if ($action === 'channel-wait' && $budgetRetry !== null && $budgetRetry > 0) {
+    if (in_array($action, ['channel-wait', 'permission-status'], true) && $budgetRetry !== null && $budgetRetry > 0) {
         return [429, $budgetRetry, 'rate_limited', 'יותר מדי בקשות מהערוץ הזה — בקשה אחת לכל ' . BRIDGE_WAIT_EVERY . ' שניות'];
     }
     return null;
@@ -60,9 +60,11 @@ function bridgeGuard(string $action): void {
     if (!in_array($action, BRIDGE_GUARDED, true)) return;
     $config = config();
     $retry = null;
-    if ($action === 'channel-wait' && empty($config['bridge_paused'])) {
+    if (empty($config['bridge_paused'])) {
         $token = (string) ($_SERVER['HTTP_X_WORKER_TOKEN'] ?? '');
-        if ($token !== '') $retry = bridgeBudget($token);
+        // מונה נפרד לכל סוג (§5.12.1): המתנה להרשאה לא גוזלת מה-channel-wait של המאזין
+        if ($token !== '' && $action === 'channel-wait') $retry = bridgeBudget($token);
+        if ($token !== '' && $action === 'permission-status') $retry = bridgeBudget("$token:perm", null, 8);
     }
     $v = bridgeVerdict($action, $config, $retry);
     if (!$v) return;

@@ -56,6 +56,7 @@ function channelInfo(array $user, int $channelId): array {
         'route_own'        => (string) $c['route'],
         'route_effective'  => channelRoute($c),
         'questions'        => channelQuestionsMode($c),
+        'permissions'      => channelPermissionsMode($c),
         'muted'            => in_array((int) $c['id'], mutedChannelIds((int) $user['id']), true),
         'listening'        => $c['status'] === 'active' && (int) $c['listening_until'] > nowTs(),
         'replaced_by_name' => $replacedBy,

@@ -87,6 +87,8 @@
     <!-- 80% / 100% מהמכסה החודשית (§8) -->
     <p class="quota-warn" id="quotaWarn" role="status" hidden></p>
     <!-- ⏸ עצירת המאזינים (§5.6, אחרי ה-429) — לכל הלוח -->
+    <!-- 🔐 בקשות הרשאה מצ'אטים (§5.12.3) — בכל מסך, בעל הלוח בלבד -->
+    <section class="perm-strip" id="permStrip" aria-label="בקשות הרשאה" aria-live="polite" hidden></section>
     <p class="quota-warn quota-warn--over" id="bridgePausedStrip" role="status" hidden>⏸ המאזינים מושהים — הצ'אטים לא מקבלים הודעות מהלוח עד שבעל הלוח יחזיר אותם (הגדרות ← מערכת).</p>
     <nav class="crumbs" id="crumbs" aria-label="מיקום" hidden></nav>
 
@@ -446,6 +448,24 @@
       </div>
       <p class="hint"><b>בלוח</b> — כשהצ'אט שואל שאלת בחירה, היא מגיעה לכאן עם כפתור לכל אפשרות, והצ'אט מדפיס אותה גם אצלו ממוספרת. עונים כאן בנגיעה, או מקלידים בצ'אט. הצ'אט לא נתקע על חלון שאף אחד לא רואה.<br>
       <b>באפליקציה</b> — החלון נפתח באפליקציית Claude כרגיל, והלוח רק מראה את השאלה ואת התשובה. כשעובדים מול המחשב.</p>
+    </div>
+  </div>
+</dialog>
+<dialog id="csPerms" aria-labelledby="csPermsT">
+  <div class="sheet-wrap">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close="csPerms" aria-label="סגירה">✕</button>
+      <h2 id="csPermsT">🔐 אישורי הרשאות</h2>
+      <span></span>
+    </header>
+    <div class="sheet-body">
+      <div class="seg" id="cvPermsSeg" role="radiogroup" aria-labelledby="csPermsT">
+        <button type="button" role="radio" data-mode="board" aria-checked="true">בלוח</button>
+        <button type="button" role="radio" data-mode="app" aria-checked="false">באפליקציה בלבד</button>
+      </div>
+      <p class="hint"><b>בלוח</b> — כשהצ'אט צריך אישור לפקודה, היא מגיעה לכאן ולראש המסך, עם הפקודה המלאה: "פעם אחת", "תמיד בצ'אט הזה" או "לא". החלון באפליקציה נשאר פתוח במקביל — מי שעונה ראשון קובע. אחרי 10 דקות בלי תשובה עונים באפליקציה.<br>
+      <b>באפליקציה בלבד</b> — הבקשות לא מגיעות ללוח. כשעובדים מול המחשב.</p>
+      <p class="hint">מי שנכנס ללוח כבעל הלוח יכול לאשר פקודות בצ'אט. כל החלטה נרשמת בשיחה וביומן.</p>
     </div>
   </div>
 </dialog>

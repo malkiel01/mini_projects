@@ -70,6 +70,16 @@
             "command": "f=\"$HOME/.claude-tasks-bridge/hook.sh\"; [ -f \"$f\" ] || f=\"$CLAUDE_PROJECT_DIR/claude-tasks/bridge/hook.sh\"; [ -f \"$f\" ] && bash \"$f\" choice-done; exit 0"
           }
         ]
+      },
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "timeout": 5,
+            "command": "f=\"$HOME/.claude-tasks-bridge/hook.sh\"; [ -f \"$f\" ] || f=\"$CLAUDE_PROJECT_DIR/claude-tasks/bridge/hook.sh\"; [ -f \"$f\" ] && bash \"$f\" resolved; exit 0"
+          }
+        ]
       }
     ],
     "Notification": [
@@ -79,6 +89,30 @@
             "type": "command",
             "timeout": 10,
             "command": "f=\"$HOME/.claude-tasks-bridge/hook.sh\"; [ -f \"$f\" ] || f=\"$CLAUDE_PROJECT_DIR/claude-tasks/bridge/hook.sh\"; [ -f \"$f\" ] && bash \"$f\" notify; exit 0"
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "timeout": 620,
+            "command": "f=\"$HOME/.claude-tasks-bridge/hook.sh\"; [ -f \"$f\" ] || f=\"$CLAUDE_PROJECT_DIR/claude-tasks/bridge/hook.sh\"; [ -f \"$f\" ] && bash \"$f\" permission; exit 0"
+          }
+        ]
+      }
+    ],
+    "PermissionDenied": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "timeout": 5,
+            "command": "f=\"$HOME/.claude-tasks-bridge/hook.sh\"; [ -f \"$f\" ] || f=\"$CLAUDE_PROJECT_DIR/claude-tasks/bridge/hook.sh\"; [ -f \"$f\" ] && bash \"$f\" resolved; exit 0"
           }
         ]
       }

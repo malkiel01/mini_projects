@@ -8,6 +8,15 @@
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh" 2>/dev/null || exit 0
 [ -f "$BOARD_LINK" ] || exit 0
 input="$(cat)"
+# 🔐 בקשת הרשאה שעוד פתוחה בסוף התור — הוכרעה באפליקציה (§5.12.2a, 2). הסמן resolved עוצר את ה-hook שממתין.
+pdir="$(perm_dir)"
+for o in "$pdir"/open-*; do
+  [ -f "$o" ] || continue
+  k="${o##*/open-}"; pid="$(cat "$o")"
+  : > "$pdir/resolved-$k"; rm -f "$o"
+  [ -n "$pid" ] && board_call permission-close "$(jq -n --argjson i "$pid" '{message_id:$i, how:"stop"}')" \
+                     "$(link_get channel_token)" 5 >/dev/null 2>&1
+done
 text="$(printf '%s' "$input" | jq -r '.last_assistant_message // empty' 2>/dev/null)"
 [ -n "$text" ] || exit 0
 flush_local_choice   # שאלה ששמורה מקומית — אם הלוח חזר (§5.10.1)

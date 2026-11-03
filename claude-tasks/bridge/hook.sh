@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # הדיספצ'ר של ה-hooks (docs/spec.md §5.10.1). ‎.claude/settings.json‎ רושם כל אירוע פעם אחת:
 #
-#   hook.sh prompt | stop | choice | choice-done | allow | notify
+#   hook.sh prompt | stop | choice | choice-done | allow | notify | permission | resolved
 #
 # מריץ את העותק שב-‎$HOME/.claude-tasks-bridge‎ (link.sh update מרענן אותו מ-origin/main), ואם אין —
 # את העותק שבריפו. כך תיקון ב-hooks מגיע לצ'אט רץ בלי שהענף שלו ישתנה.
@@ -14,6 +14,8 @@ case "$event" in
   choice-done) f=hook-choice-done.sh ;;
   allow)       f=hook-allow.sh ;;
   notify)      f=hook-notify.sh ;;
+  permission)  f=hook-permission.sh ;;   # §5.12
+  resolved)    f=hook-resolved.sh ;;
   *) exit 0 ;;
 esac
 rt="$HOME/.claude-tasks-bridge"
