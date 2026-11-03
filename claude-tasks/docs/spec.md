@@ -645,13 +645,76 @@ chat; "⛔ לא" with a reason reaches the chat; "תמיד בצ'אט הזה" wor
 command; no answer for 10 minutes → the app dialog appears and the board shows "⌛ עבר לאפליקציה"; with the board paused → straight to the
 app; a Routine opened from the template registers and **reports to its channel** (see the revision below).
 
-**Revision (2026-11-03, after the code writer's finding):** a Routine that opens a fresh session runs in `permission_mode: auto` —
+**Revision (2026-11-03, after the code writer's finding — superseded by §5.13, which gates Routines):** a Routine that opens a fresh session runs in `permission_mode: auto` —
 it never asks; what the automatic checker refuses is refused silently. So there is **no permission request to bring to the board**.
 New Done-when for Routines: it registers at start; at the end it posts to its channel a `system` summary — what it did, and **every
 action that was refused, by name and reason** — so nothing is silently lost; a refused action the owner wants can then be re-run
 in a normal chat. And, written down: in `auto` a Routine runs commands (even `rm -rf` inside its working folder) with no human
 step, so a Routine's prompt must name the folder and the task narrowly, and Routines that change code open a PR only, never merge. Tests for the deny-list, the budget, and
 `permission-answer` permissions.
+
+### 5.13 One policy gate (PreToolUse) for chats, Routines and Platform (owner request 2026-11-03; **stage 14**)
+
+**The owner:** *"A chat I open asks both in the chat and on the board (✅ stage 13). A Routine skipping silently is not OK — it must
+ask. Platform — if I set in the settings that it asks, it must ask on the board."*
+
+**What the code writer verified (`claude -p --permission-mode auto`, as a Routine opens):** the automatic checker blocked
+**nothing** — `curl … | sh`, `git push --force` and `rm -rf` all ran; `PermissionDenied` never fired; `PermissionRequest` never fired.
+So a Routine does not "skip silently" — it **approves everything silently**. A `PreToolUse` hook that returns `deny` **does** win in
+`auto`. On Platform (`agent/claude-code.yml`, `acceptEdits`) the board's policy (§6.1) is only a sentence in the prompt — nothing
+enforces it. This supersedes the "Revision (2026-11-03)" note in §5.12.6: a Routine must be **gated**, not only report.
+
+#### 5.13.1 Decisions
+
+| Question | Decision |
+| --- | --- |
+| The approach | ✅ **One `PreToolUse` gate, every tool, in all three kinds of session**: classify the action → `policyVerdict(type, project)` (§6.1, with inheritance) → `always` allow · `never` deny with the reason · `ask` → a board request. Unmapped actions are not touched by the gate (stage 13 / the session's mode decide) |
+| The mapping | **Fixed in code**, like the catalog (`lib/approvals.php` + `bridge/classify.sh` generated from one table, so the server and the hook can't disagree). **Not** owner-defined patterns: a wrong regex silently opens or closes everything. The ⚙ → 🔐 sheet shows, read-only, under each type, "what counts as this" (the patterns in plain words). A new mapping = a PR |
+| No answer in 10 min — Routine & Platform | **Deny** ("לא אושר בזמן"), reported on the board. There is no one in the app to fall back to. The request stays visible; an answer given later is recorded (and an "always" applies to the next run); for Platform, `decide` re-queues the task as today |
+| No answer — interactive chat | As stage 13: the app path was open all along |
+| Unregistered session | Decided by `permission_mode` in the hook input: **unattended** (`auto`, `bypassPermissions`, `dontAsk`) → **deny every mapped type whose verdict is not `always`** (safe, and reported to the board with the registration token if present). **Interactive** (`default`, `acceptEdits`, `plan`) and unregistered → the gate does nothing; the normal dialog asks the human who is there |
+| Board unreachable (429 / 503 / `bridge_paused` / network) | Unattended → deny mapped non-`always` (fail-closed). Interactive → no decision (fail-open to the app), as stage 13 |
+
+#### 5.13.2 The mapping (initial table — the code writer's list, confirmed)
+
+| Action | Type |
+| --- | --- |
+| `git push` (own branch) | `push-own-branch` |
+| `git push --force` / `-f` / `+ref`, push to `main` / the default branch | `push-protected` (new type, `always` **not** allowed) |
+| `gh pr merge`, `mcp__*__merge_pull_request` | `merge-own-pr` |
+| `rm`, `git rm`, `find … -delete`, Write/Edit that deletes **outside the session's folder** | `delete-files` |
+| Edit/Write `.github/workflows/*` | `change-deploy` |
+| Edit/Write `.claude/settings*.json`, `claude-tasks/bridge/*` in the chat's tree | `change-gate` (new, `always` not allowed — the gate must not be able to switch itself off) |
+| `create_trigger` / `send_later` to **another** session | `send-team-message` |
+| Read/Write `.env*`, `*secret*`, `*.key`, `config.json` under `data/` | `secrets` |
+| Write in a top-level folder that is not the session's project path | `touch-other-project` |
+| `curl` / `wget` piped to a shell, `bash <(curl …)` | `run-remote-script` (new, `always` not allowed) |
+
+Shell commands are classified on the **parsed** command, with the stage-13 rules (several commands in one line, `VAR=`, wrappers
+`bash -c` / `env` / `xargs` / `timeout` / `find -exec`): any part that maps → the strictest type wins.
+
+#### 5.13.3 Where the gate lives
+
+- **Chat and Routine:** `.claude/settings.json` → the dispatcher (§5.10.1) → `hook-gate.sh`. A Routine must be **created with the repo**
+  (without it there are no hooks — `create_trigger` with no sources ran as `no-git-repo`); the Routine template (§5.12.5) says so and
+  registers first.
+- **Platform:** `agent/claude-code.yml` writes a `settings.json` with the same gate (repo copy of `bridge/`), using `AGENT_BOARD_TOKEN`.
+  On `ask`: `ask-approval` (stage 5), the hook returns `deny` "נשלח לאישור #id — המטלה ממתינה", and the model `block`s the task.
+- **Policy cache:** the verdict per (type, project) is cached in the session for **5 minutes** (one board call per type, inside the §5.4
+  budget); a `decide` on the board invalidates it through the next `permission-status` / inbox reply.
+
+#### 5.13.4 Board
+
+The request card is stage 13's, plus the **type** (label from the catalog) and, when the type allows, "✅ תמיד בפרויקט הזה" /
+"⛔ אף פעם בפרויקט הזה" — written to the project policy (§6.1), not only the session. Session kind shown on the card: 💬 צ'אט ·
+🔁 Routine · ☁️ Platform. Every gate decision (allow by policy, deny by policy, asked) is logged in `policy_log`-style history visible
+in ⚙ → 🔐 ("מה הוחלט"), so the owner sees what the gate let through without asking.
+
+**Done when:** with the gate installed — an `auto` session (Routine) running `rm -rf`, `git push --force` and `curl … | sh` is denied
+for each (no `always` set) and the board shows it; with `delete-files: always` on the project, `rm` runs; `ask` in a Routine creates a
+board card, "✅ פעם אחת" lets it run, no answer → denied after 10 min and reported; Platform with `ask` blocks the task with an
+approval card; an interactive unregistered chat behaves as today; `change-gate` cannot be set to `always`. Tests for the classifier
+table (each row, compound commands, wrappers) — shared fixtures for PHP and shell.
 
 ### 5.11 The conversation screen — translate, pin, label, and ⚙ chat settings (owner request 2026-11-02; **stage 12a–e**)
 
