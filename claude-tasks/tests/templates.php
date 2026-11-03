@@ -175,6 +175,14 @@ throws('replaces של ערוץ מעץ אחר — token_scope', fn () => register
 check('…ולא נשאר ערוץ מהרישום שנדחה', (int) db()->query("SELECT COUNT(*) FROM channels WHERE session_id = 'session_thief'")->fetchColumn(), 0);
 check('…והערוץ הזר לא נגע', getChannel($foreign['channel_id'])['status'], 'active');
 
+echo "\n— Routine: בדיקת השער בצעד 0 (§5.13.3) —\n";
+$rp = routinePrompt($root, ['key' => 'dev', 'label' => 'קוד']);
+preg_match("/grep -qF '([^']+)' \\.claude\/settings\\.json/", $rp, $gm);
+check('צעד 0 בודק את השער לפני הרישום', strpos($rp, 'GATE-OK') < strpos($rp, 'link.sh register'), true);
+check('…והבדיקה באמת מוצאת את השער ב-settings.json של הריפו', isset($gm[1]) && str_contains((string) file_get_contents(__DIR__ . '/../../.claude/settings.json'), $gm[1]), true);
+check('…ובלי השער — דיווח ב-routine-alert', str_contains($rp, 'action=routine-alert'), true);
+check('הגיליון נותן את הריפו והענף ל-Routine', array_keys(chatSheet($boss, $root)['repo']), ['url', 'branch']);
+
 echo "\n════ עברו: $pass · נכשלו: $fail ════\n";
 exec('rm -rf ' . escapeshellarg($tmp));
 exit($fail ? 1 : 0);

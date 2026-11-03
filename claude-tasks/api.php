@@ -1568,6 +1568,18 @@ try {
     case 'choice-answer':
         ok(choiceAnswer(requireUser($user), (int) ($in['message_id'] ?? 0), $in['answers'] ?? null));
 
+    /**
+     * Routine שנפתח בלי הריפו (§5.13.3): אין לו link.sh ולא hooks — רק curl עם אסימון ההרשמה. נרשם ביומן
+     * הלוח ככשל (אדום ב"ניהול ← יומן"), עם הפרויקט של האסימון. לא יוצר ערוץ ולא מטלה.
+     */
+    case 'routine-alert': {
+        if ($user || !$worker) fail('routine-alert — רק עם אסימון הרשמה', 403);
+        $pid = $scope['project_id'] ?? null;
+        logEvent(null, 'routine.no-gate', $pid === null ? 'board' : "project:$pid", false,
+                 mb_substr(trim((string) ($in['text'] ?? '')), 0, 300) ?: 'Routine בלי הריפו');
+        ok(['logged' => true]);
+    }
+
     /* ── 🔐 שער המדיניות (§5.13, שלב 14) — PreToolUse מצ'אט / Routine (אסימון ערוץ) או Platform (אסימון עובד + task_id) ── */
     case 'gate-check': {
         $ch = $scope['channel'] ?? null;

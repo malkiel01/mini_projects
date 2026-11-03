@@ -159,6 +159,19 @@ function projectPathName(int $projectId): string {
     return implode(' › ', array_map(fn ($p) => $p[1], array_reverse(projectChain($projectId))));
 }
 
+/** הריפו של הפרויקט — שלו, או של האב הקרוב שהגדיר: {url, branch}. ריק — לא הוגדר. */
+function projectRepo(int $projectId): array {
+    $st = db()->prepare('SELECT repo_owner, repo_name, default_branch FROM projects WHERE id = ?');
+    foreach (projectChain($projectId) as [$pid]) {
+        $st->execute([$pid]);
+        $r = $st->fetch();
+        if ($r && $r['repo_owner'] !== '' && $r['repo_name'] !== '') {
+            return ['url' => "https://github.com/{$r['repo_owner']}/{$r['repo_name']}", 'branch' => (string) ($r['default_branch'] ?: 'main')];
+        }
+    }
+    return ['url' => '', 'branch' => ''];
+}
+
 /** השורש — האסימון היחיד שצריך בסביבה (§5.9.1). */
 function projectRoot(int $projectId): array {
     $chain = projectChain($projectId);
@@ -217,6 +230,11 @@ function routinePrompt(int $projectId, array $role): string {
     $files = array_values(array_diff(array_filter(array_map('trim', explode("\n", $t['context_files']))), ['CLAUDE.md']));
     return implode("\n", [
         "אתה \"$name\" — הרצה של משימה מתוזמנת (Routine) בפרויקט \"" . projectPathName($projectId) . "\" (#$projectId) בלוח \"מטלות לקלוד\".",
+        // §5.13.3: בלי הריפו אין hooks — ובלי hooks אין שער. בודקים לפני כל דבר, ולא עובדים בלעדיו
+        '0. לפני הכול — שער הלוח קיים? הרץ: grep -qF \'bash \"$f\" gate\' .claude/settings.json && echo GATE-OK',
+        '   לא הודפס GATE-OK — אל תעשה שום דבר אחר. דווח ללוח והסתיים:',
+        '   curl -s -X POST -H "X-Worker-Token: $CLAUDE_TASKS_TOKEN" -H \'Content-Type: application/json\' -b humans_21909=1 '
+            . '--data \'{"text":"Routine נפתח בלי הריפו — לא בוצע כלום"}\' "' . boardUrl() . '?action=routine-alert"',
         '1. הפעל את הסקיל claude-tasks-live והירשם — לפני כל דבר אחר, כדי שבקשות הרשאה יגיעו ללוח:',
         "   claude-tasks/bridge/link.sh register --project $projectId --name \"$name\" --role \"routine\"",
         '   אין claude-tasks/bridge/link.sh בתיקייה — המשימה נוצרה בלי הריפו mini_projects: עצור ודווח.',
@@ -239,6 +257,7 @@ function chatSheet(array $user, int $projectId): array {
                                         'routine_prompt' => routinePrompt($projectId, $r)], $t['roles']);
     return [
         'project'     => ['id' => $projectId, 'name' => $project['name'], 'path' => projectPathName($projectId)],
+        'repo'        => projectRepo($projectId),   // §5.13.3: הוראות יצירה מלאות ל-Routine
         'root'        => projectRoot($projectId),
         'environment' => chatEnvironmentName(),
         'roles'       => $roles,
