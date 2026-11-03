@@ -652,6 +652,15 @@ details.what p { margin-top: var(--s2); }
   animation: spin .9s linear infinite; flex: none; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+.nc-wait { flex-wrap: wrap; }
+/* §15.13 צ'אט המשך: זמן צפוי, שורה בערוץ, שבב "מוכן" */
+.ho-expect { display: grid; gap: 4px; }
+.ho-expect progress { inline-size: 100%; block-size: 8px; accent-color: var(--brand); }
+.ho-expect small { color: var(--muted); }
+.ho-live, .ho-ready { color: var(--c); border-color: color-mix(in srgb, var(--c) 40%, transparent); background: color-mix(in srgb, var(--c) 10%, var(--surface)); }
+.ho-live { --c: var(--brand); font-variant-numeric: tabular-nums; }
+.ho-ready { --c: var(--ok); cursor: pointer; font: inherit; font-size: .78rem; white-space: normal; }
+#handoffBody > .linklike { justify-self: start; margin-top: var(--s2); }
 .tpl-role { display: grid; gap: 6px; margin: 0; padding: var(--s2); border: 1px solid var(--line); border-radius: var(--r); min-width: 0; }
 .tpl-role legend { font-size: .78rem; color: var(--muted); padding: 0 4px; }
 .tpl-role-top { display: grid; grid-template-columns: 3em minmax(0, 1fr) minmax(0, .8fr) auto; gap: 6px; align-items: center; }

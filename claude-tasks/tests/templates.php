@@ -140,7 +140,7 @@ check('הבקשה מגיעה לצ\'אט (in, handoff_request, מעירה)', [in_
 db()->prepare('UPDATE channels SET listening_until = ? WHERE id = ?')->execute([nowTs() + 600, $r1['channel_id']]);
 $st = handoffPrompt($boss, $r1['channel_id']);
 check('מאזין, עוד אין תקציר — ממתינים, ואי אפשר "בלי תקציר" לפני 2 דקות', [$st['ready'], $st['can_fallback'], $st['listening']], [false, false, true]);
-throws('"בלי תקציר" מוקדם מדי — 409', fn () => handoffPrompt($boss, $r1['channel_id'], true), 409);
+// §15.13: "בלי תקציר" לא נחסם עוד לפני 2 דקות — רק לא מוצע ככפתור הראשי (נבדק בלי לצרוך את הבקשה)
 // צ'אט שלא מאזין לא יקבל את הבקשה עד הבדיקה השעתית — "בלי תקציר" מיד
 db()->prepare('UPDATE channels SET listening_until = 0 WHERE id = ?')->execute([$r1['channel_id']]);
 $st = handoffPrompt($boss, $r1['channel_id']);
@@ -174,6 +174,52 @@ $foreign = registerChannel(['project_id' => null, 'channel_id' => null], $other,
 throws('replaces של ערוץ מעץ אחר — token_scope', fn () => registerChannel(scopeOf($rootToken), $studio, 'n', 'r', 'session_thief', '', $foreign['channel_id']), 403, 'token_scope');
 check('…ולא נשאר ערוץ מהרישום שנדחה', (int) db()->query("SELECT COUNT(*) FROM channels WHERE session_id = 'session_thief'")->fetchColumn(), 0);
 check('…והערוץ הזר לא נגע', getChannel($foreign['channel_id'])['status'], 'active');
+
+echo "\n— §15.13: צ'אט המשך לא תופס את המסך —\n";
+$hc = registerChannel(scopeOf($rootToken), $studio, 'ערוץ להעברה', 'design-studio', 'session_ho_1513', '');
+$hcid = (int) $hc['channel_id'];
+$hch = getChannel($hcid);
+check('בלי בקשה — none', handoffStatus($boss, $hcid)['state'], 'none');
+$a = handoffRequest($boss, $hcid);
+check('בקשה — waiting, בלי הערכה כשאין היסטוריה', [$a['state'], $a['expected_seconds'], $a['existing']], ['waiting', null, false]);
+$b = handoffRequest($boss, $hcid);
+check('בקשה שנייה בזמן שממתינים — אותה בקשה, בלי לשלוח שוב', [$b['existing'], $b['id'],
+      (int) db()->query("SELECT COUNT(*) FROM messages WHERE channel_id = $hcid AND kind = 'handoff_request'")->fetchColumn()], [true, $a['id'], 1]);
+$row = array_values(array_filter(channelsFor($boss, $root), fn ($c) => $c['id'] === $hcid))[0];
+check('השורה יודעת שממתינים (טיימר ברקע)', [$row['handoff']['state'] ?? null, $row['handoff']['requested_at'] ?? null], ['waiting', $a['requested_at']]);
+$c = handoffCancel($boss, $hcid);
+check('"ביטול הבקשה" — cancelled, והשורה מתנקה', [$c['state'], isset(array_values(array_filter(channelsFor($boss, $root), fn ($x) => $x['id'] === $hcid))[0]['handoff'])], ['cancelled', false]);
+throws('ביטול כשאין מה לבטל — 409', fn () => handoffCancel($boss, $hcid), 409);
+throws('דנה — לא רואה את המצב', fn () => handoffStatus($dana, $hcid), 403);
+db()->exec('DELETE FROM handoff_stats');   // הסעיף הקודם כבר רשם העברה לאותו משלם
+// שלוש העברות שהגיעו אחרי 30, 40 ו-50 שניות — הערכה (חציון)
+foreach ([30, 40, 50] as $sec) {
+    $q = handoffRequest($boss, $hcid);
+    db()->prepare('UPDATE messages SET created_at = ? WHERE id = ?')->execute([nowTs() - $sec, $q['id']]);
+    channelPost($hch, 'chat', "## מצב\nתקציר $sec", null, null, 'handoff');
+    check("תקציר אחרי $sec שנ' — ready", handoffStatus($boss, $hcid)['state'], 'ready');
+    handoffPrompt($boss, $hcid);
+}
+check('3 העברות — "בדרך כלל כ-40 שניות"', [handoffStatus($boss, $hcid)['expected_seconds'], handoffStatus($boss, $hcid)['samples']], [40, 3]);
+check('אחרי שהפרומפט הוצג — used, והשורה בלי שבב', [handoffStatus($boss, $hcid)['state'],
+      isset(array_values(array_filter(channelsFor($boss, $root), fn ($x) => $x['id'] === $hcid))[0]['handoff'])], ['used', false]);
+$q = handoffRequest($boss, $hcid);
+channelPost($hch, 'chat', "## מצב\nהגיע כשהגיליון סגור", null, null, 'handoff');
+$row = array_values(array_filter(channelsFor($boss, $root), fn ($c) => $c['id'] === $hcid))[0];
+check('התקציר הגיע כשהגיליון סגור — השורה מציגה "מוכן"', $row['handoff']['state'] ?? null, 'ready');
+handoffPrompt($boss, $hcid);
+// שעה בלי תקציר — נסגרת בשורה אפורה
+$q = handoffRequest($boss, $hcid);
+db()->prepare('UPDATE messages SET created_at = ? WHERE id = ?')->execute([nowTs() - 3601, $q['id']]);
+check('שעה בלי תקציר — expired', handoffStatus($boss, $hcid)['state'], 'expired');
+check('…ושורה אפורה אחת בערוץ', (int) db()->query("SELECT COUNT(*) FROM messages WHERE channel_id = $hcid AND body LIKE '%שעה בלי תשובה%'")->fetchColumn(), 1);
+handoffStatus($boss, $hcid);
+check('…לא שוב בקריאה נוספת', (int) db()->query("SELECT COUNT(*) FROM messages WHERE channel_id = $hcid AND body LIKE '%שעה בלי תשובה%'")->fetchColumn(), 1);
+// בקשה מלפני השלב (status ריק) שאחריה תקציר — סגורה, לא "מוכן" (אחרת כל ערוץ ישן היה מקבל שבב)
+$legacy = channelInsertIn($hcid, 'owner', (int) $boss['id'], HANDOFF_ASK, 'handoff_request');
+channelInsertIn($hcid, 'chat', null, 'תקציר ישן', 'handoff');
+check('בקשה ישנה (בלי status) — used, לא ready', handoffStatus($boss, $hcid)['state'], 'used');
+check('…ולא בשורת הערוץ', array_key_exists('handoff', array_values(array_filter(channelsFor($boss, (int) getChannel($hcid)['project_id']), fn ($c) => (int) $c['id'] === $hcid))[0] ?? []), false);
 
 echo "\n— Routine: בדיקת השער בצעד 0 (§5.13.3) —\n";
 $rp = routinePrompt($root, ['key' => 'dev', 'label' => 'קוד']);
