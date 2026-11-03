@@ -1503,3 +1503,105 @@ task results show the same line on the task card.
 
 **Order:** independent of stages 16–19; the code writer may build it while stage 16 waits for its request. Any new runtime file
 under `data/` → `--exclude` in the same PR (none expected — columns only).
+
+---
+
+## 17. "Working…" — what the other side is doing right now (owner request 2026-11-03 21:19, via the code writer; **stage 21**)
+
+**The owner:** after sending a message on the board — on ☁️ or on 💬 — show whether the system is in the middle of work and whether
+there is something to wait for. Best: see the steps the chat runs, as in Claude Code. At least: "typing…" dots, as in WhatsApp.
+
+### 17.1 Decisions (mine — the owner asked for a spec that decides)
+
+| # | Question | Decision |
+| --- | --- | --- |
+| 1 | (א) only, or (ב) too? | **Both.** (א) "💬 עובד…" from the turn's start to `Stop`. (ב) **one** "now" line, replaced in place — never a list of steps, never the command itself |
+| 2 | Where | The **strip above the composer** (main place) · the **channel row** in the list ("עובד…" in place of the last-message preview, like WhatsApp) · **not** in "ממתין לך" (that list is what waits for *the owner*) |
+| 3 | When it counts as stuck | By the time since the **last sign of life**, not the turn's length (a test run can take minutes): 5 min → grey "אין סימן חיים 5 דק'"; `silence_minutes` (§15.11, default 10) → "❔ הצ'אט הפסיק לדווח" with actions |
+| 4 | What is stored | **Current state only**, one row per channel, overwritten. **No step history** in the database or the log. On `Stop`, two numbers go on the reply: duration and step count |
+| 5 | Dependency on stage 16 | Independent, but **stage 16 must read it**: a chat with a fresh sign of life is busy, not silent. Build 21 before 16, or add that condition to 16's detector if 16 lands first |
+
+### 17.2 Chat side (bridge)
+
+| Hook | Sends | Notes |
+| --- | --- | --- |
+| `UserPromptSubmit` (`hook-prompt.sh`) | `activity start` | also when the turn starts from a board message |
+| `PreToolUse` (`hook-gate.sh`) | `activity step "<text>"` | **at most one per 15 s**, and only if the text changed; otherwise dropped (not queued) |
+| `Stop` (`hook-stop.sh`) | `activity stop` | always sent |
+| `StopFailure` (`hook-stopfail.sh`) | `activity stop failed "<reason>"` | the reason line from stage 16's spike; "🔴 נעצר: <reason>" |
+
+- **Never delays the gate.** The request is sent in the background (`link.sh activity …&`, `--max-time 3`), after the gate's decision
+  is written. A failure is ignored.
+- **Throttle (§5.4 incident rules).** Activity shares the channel token's budget (1 request / 10 s). It is the **first thing dropped**:
+  a 429 on activity is ignored and never triggers the listener's backoff. `start` and `stop` may each wait up to 10 s for the budget;
+  `step` never waits.
+- **The "now" text is built from a whitelist, never from the command:**
+
+  | Tool | Text |
+  | --- | --- |
+  | Bash | "🔧 " + the tool's `description` (≤ 60 chars, after the redaction filter); no description → "🔧 מריץ פקודה" |
+  | Edit / Write / NotebookEdit | "📝 עורך <basename>" |
+  | Read / Grep / Glob | "🔍 קורא קבצים" (no paths — a search pattern may hold anything) |
+  | Agent / Task | "🤖 סוכן משנה" |
+  | WebFetch / WebSearch | "🌐 מחפש ברשת" (no URL, no query) |
+  | `mcp__<server>__*` | "🔌 <server>" |
+  | anything else | "⚙️ <tool name>" |
+
+  **Redaction filter** (in `lib.sh`, tested): drop the text, fall back to the generic line, if it contains anything shaped like a
+  token or key (`sk-`, `ghp_`, `gho_`, `github_pat_`, `xox`, `AKIA`, `Bearer`, 32+ hex/base64 chars), `=` followed by a value, or a URL
+  with a query string. The **server applies the same filter again** before storing (never trust the client).
+- `BRIDGE_VERSION` bumped. A chat on an older bridge sends nothing (17.4).
+
+### 17.3 Server
+
+```
+channel_activity(channel_id PK, state working|idle|failed, turn_started_at, last_at, now_text, steps INTEGER,
+                 fail_reason, bridge_version)
+messages.turn_meta TEXT NULL   -- JSON on the chat's reply after Stop: {seconds, steps}
+```
+
+- `channel-activity` (channel token): `start` → `working`, `steps=0`; `step` → `now_text`, `steps+1`, `last_at`; `stop` → `idle`,
+  and `turn_meta` goes on the **next** `out` message of that channel within 60 s (or is dropped). Any other bridge request from the
+  chat (`ack`, `send`, mirror) also refreshes `last_at` — it is a sign of life too.
+- Ordering: a `step` that arrives after `stop` (background requests) is ignored — `stop` wins until the next `start`.
+- **Platform (☁️) needs no server change:** the board already knows `platform-busy`. Only the display changes (17.5).
+- The activity is returned **inside the responses the conversation screen already fetches** — no new endpoint for the UI. While the
+  state is `working` and the screen is visible, that refresh runs every 5 s; otherwise, the existing cadence. A hidden tab never polls faster.
+
+### 17.4 "No information" — said explicitly, never a fake sign
+
+On 💬, after the owner sends, if the channel has no activity support (bridge older than this stage, or never registered, or hooks
+missing per `channel-health`), the strip says **"ℹ️ לצ'אט הזה אין חיווי פעילות"** with **"📨 שלח הוראת עדכון"** (the existing
+update instruction). No dots, no spinner. Without a `start` within 60 s of the message being acked (the chat took it but reported
+nothing), the same line appears.
+
+### 17.5 UI
+
+**The strip above the composer** (one line, `role="status"`, `aria-live="polite"` — announced on change of state, not on each step):
+
+| State | Strip |
+| --- | --- |
+| ☁️ thinking | "☁️ חושב · 0:12" + three dots |
+| 💬 working | "💬 עובד · 1:42 · 🔧 מריץ בדיקות" + three dots |
+| 💬 no sign of life 5 min | grey: "💬 עובד · 7:10 · אין סימן חיים 5 דק'" — dots stop |
+| 💬 past `silence_minutes` | "❔ הצ'אט הפסיק לדווח (12 דק')" + **פתח את הצ'אט** (the session link) · **העבר ל-☁️** (the stage-16 card; shown only when Platform can take over) |
+| 💬 failed | "🔴 נעצר: <reason>" + the same two actions |
+| 💬 sent, waiting for the chat to take it | "💬 נשלח · ממתין שהצ'אט יקלוט" (until the ack) |
+| no support | 17.4 |
+
+- The dots animate only without `prefers-reduced-motion`; with it, a static "…".
+- Elapsed time is counted by the client from `turn_started_at`, so the timer runs between refreshes.
+- **The strip never blocks the composer** — the owner can keep writing (§15.13: waiting never holds the screen).
+- **Channel row:** the preview becomes the accent-coloured "עובד…" (☁️: "חושב…"); grey "אין סימן חיים" after 5 min; 🔴 on failure.
+- **Reply bubble:** the meta line gains "עבד 3:12 · 14 צעדים" from `turn_meta`.
+
+### 17.6 Done when
+
+- Tests: the whitelist per tool; the redaction filter (client **and** server) on each secret shape; step throttle (15 s, dropped not
+  queued); `step` after `stop` ignored; 429 on activity does not touch the listener's backoff; `gate` decision written before the
+  activity request starts (time it); `turn_meta` attached to the next `out` only; the 5-min / `silence_minutes` thresholds with a fake clock;
+  "no support" for an old bridge and for no-start-after-ack.
+- If stage 16 is already built: its detector ignores a channel whose `last_at` is fresher than `silence_minutes` (test).
+- Screens 390 light / 320 dark: each state in the 17.5 table, and the channel row in working / no-sign / failed. No horizontal scroll.
+- Live check joins stage 19's list: one real turn shows start → at least one step → stop on the board, and nothing secret in the
+  stored `now_text`.
