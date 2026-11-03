@@ -136,10 +136,14 @@ const isOwner = () => state.user?.role === 'admin';
 
 /** מי כתב: אתה בצ'אט / אתה בלוח / הצ'אט / המערכת. */
 function author(m) {
-  if (m.author_role === 'platform') return '☁️ Platform';
-  if (m.author_role === 'system') return '☁️ מערכת';
+  // §18.3 (22א.6): כל בועה אומרת מי כתב. Platform — גם מה הוא קרא; מערכת — לא ☁️ (זה לא Platform)
+  if (m.author_role === 'platform') {
+    const read = (m.meta?.sources || []).filter((s) => s.ok).map((s) => s.name);
+    return `☁️ Platform${read.length ? ' · קרא: ' + read.join(', ') : ''}`;
+  }
+  if (m.author_role === 'system') return '⚙️ מערכת';
   if (m.direction === 'out') {
-    if (m.author_role === 'chat') return '💬 צ\'אט';
+    if (m.author_role === 'chat') return `💬 ${conv.channel?.name || 'צ\'אט'}`;
     return isOwner() ? '👤 אתה בצ\'אט' : '👤 בעל הלוח בצ\'אט';
   }
   if (m.author_user_id && m.author_user_id === state.user?.id) return '👤 אתה בלוח';
@@ -224,8 +228,9 @@ function bubble(m) {
     // שלב 20: מי ענה — מודל, רמה, עלות; נגיעה — הפירוט
     m.author_role === 'platform' ? aiUsedLine(m, m.ai_used?.source === 'message') : null,
     // §9.1: מה שרק הצ'אט יכול — הועבר אליו (ואם הוא לא מאזין, כתוב)
-    m.meta?.needs_chat ? el('p', { class: 'b-needs', dir: 'auto', text: `☁️ Platform לא יכול לבצע את זה — הועבר ל${m.meta.needs_chat.to}`
-      + (m.meta.needs_chat.listening ? '' : ' · לא מאזין עכשיו, יקבל כשיתעורר') + `: ${m.meta.needs_chat.what}` }) : null,
+    // §18.3 (22א.1): מקור שלא נקרא — נאמר, עם הסיבה (לעולם לא "אין")
+    ...(m.meta?.sources || []).filter((s) => !s.ok).map((s) => el('p', { class: 'b-warn' }, ['⚠ לא נקרא: ', s.name, ' — ', el('bdi', { text: s.why })])),
+    m.meta?.needs_chat ? needsChatCard(m) : null,
     m.author_role === 'platform' && !m.meta?.needs_chat && conv.messages.some((x) => isPlatformRelay(x) && x.reply_to === m.reply_to)
       ? el('p', { class: 'hint b-copied', text: '📨 התשובה נמסרה גם לצ\'אט, כדי שיידע מה נענה בשמו' }) : null,
     m.meta?.claimed_action ? el('p', { class: 'b-warn', text: '⚠ Platform תיאר פעולה שלא בוצעה — אין לו כלים. כשצריך פעולה, כותבים לצ\'אט עצמו.' }) : null,
@@ -339,6 +344,31 @@ function renderLaneStrip(c) {
     el('b', { text: `🔴 ${limit ? 'הצ\'אט הגיע למגבלה' : 'הצ\'אט לא עונה'} · מאז ${clock(c.unresponsive_since)}` }),
     el('small', { text: `${what}${c.limit_resets_at ? ` · מתאפס ב-${utcTime(c.limit_resets_at)}` : ''}` }),
   ]));
+}
+
+/**
+ * §9.1 + §18.3 (22א.5): מה שרק הצ'אט יכול — הועבר אליו. צ'אט שלא מאזין — לא מבוי סתום: צ'אט חדש עם הפרומפט, או להמתין.
+ * (🤖 לפתח עם Platform — בשלב 22ג, כשהמנוע מותקן.)
+ */
+function needsChatCard(m) {
+  const n = m.meta.needs_chat;
+  // רק כשההודעה עדיין ממתינה לצ'אט (כרטיס ישן שהצ'אט כבר טיפל בו — בלי כפתורים)
+  const orig = conv.messages.find((x) => x.id === m.reply_to);
+  const deaf = !n.listening && n.decision !== 'wait' && orig && !orig.delivered_at
+    && conv.channel?.status === 'active' && !(conv.channel?.listening_until > Date.now() / 1000);
+  const wait = async (btn) => {
+    btn.disabled = true;
+    try { await api('needs-chat-wait', { message_id: m.id }); toast('⏳ ההודעה ממתינה לצ\'אט — הוא יקבל אותה כשיתעורר', 'ok'); reload(); }
+    catch (ex) { toast(ex.message, 'error'); btn.disabled = false; }
+  };
+  return el('div', { class: 'b-needs' }, [
+    el('p', { dir: 'auto', text: `☁️ Platform לא יכול לבצע את זה בעצמו — הועבר ל${n.to}: ${n.what}` }),
+    deaf ? el('p', { class: 'hint', text: '⚪ הצ\'אט לא מאזין עכשיו. מה עושים?' }) : null,
+    deaf && isOwner() ? el('div', { class: 'row-btns' }, [
+      el('button', { type: 'button', class: 'btn primary sm', text: '💬 צ\'אט חדש עם הפרומפט', onclick: () => openHandoff(conv.channel) }),
+      el('button', { type: 'button', class: 'btn ghost sm', text: '⏳ ימתין לצ\'אט', onclick: (e) => wait(e.currentTarget) }),
+    ]) : n.decision === 'wait' ? el('p', { class: 'hint', text: '⏳ ממתינה לצ\'אט — יקבל אותה כשיתעורר.' }) : null,
+  ]);
 }
 
 /** העתק לצ'אט בלבד: Platform ענה בשמך, או "לא יכול לבצע — הועבר לצ'אט". הבועה של Platform כבר אומרת את זה. */

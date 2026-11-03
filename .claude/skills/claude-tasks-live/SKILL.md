@@ -116,9 +116,11 @@ Each message is printed inside a fixed frame:
   mid-way loses nothing, because unacknowledged messages stay waiting.
 - `kind: answer` with a `task_id` is the owner's answer to a question you asked on a task (`block`). Continue that
   task (see `claude-tasks-worker`).
-- `kind: status` (from `system`) is **information only**: on a ☁️ Platform channel the owner's message was already
-  answered by Platform on the board (stage 8, spec §9). It never wakes you; you see it on the next `pending`. Read it so
-  you stay in sync, `ack` it, and do **not** answer it.
+- What ☁️ Platform already answered on the board is **not** sent to you as messages any more (spec §18.3): `link.sh pending`
+  prints it first as "📋 מה קרה בלעדיך" — read it so you stay in sync, and do **not** answer those messages again
+  (`link.sh show <id>` for the full text). An older `kind: status` (from `system`) is the same: information only, `ack` it.
+- A message framed with **"☁️ Platform לא יכול לבצע את זה בעצמו — צריך ממך: …"** is the owner's own message, handed to you
+  by Platform: do what the note says (it is the owner's request), answer, `ack` it.
 - `kind: handoff_request` — the owner is opening a follow-up chat because this one got long. See step 6.
 - A `system` message starting **"הוחלפת על ידי"** — a follow-up chat has taken over. Stop: `ack` it, do **not** restart
   the listener, do not `archive` (the channel stays readable on the board), cancel your scheduled board check, and end

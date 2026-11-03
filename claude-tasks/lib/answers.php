@@ -29,24 +29,70 @@ function payerUser(int $projectId): ?array {
 }
 
 /** ההקשר: 30 ההודעות האחרונות, המטלות הפתוחות בענף, וה-README של התיקייה. */
+/**
+ * §18.3 (22א.4): ההקשר של Platform = תורות של השיחה בלבד — בעל הלוח, הצ'אט, Platform, המנוע. לעולם לא system / status,
+ * כרטיסים או צנרת של בחירות והרשאות (בחירה — פעם אחת, כשאלה ותשובה). כך העתקים ישנים ("📨 לצ'אט: …", "לא יכול לבצע…")
+ * לא חוזרים למודל, והוא לא קורא את הסירוב הקודם שלו כ"עובדה של המערכת".
+ */
+const PLATFORM_CONTEXT_WHERE = "m.channel_id = ? AND m.author_role <> 'system'
+    AND m.kind NOT IN ('status', 'lane_card', 'ai_card', 'handoff_request', 'handoff', 'permission', 'approval')";
+
+function platformContextMessages(int $channelId): array {
+    $from = db()->prepare('SELECT m.id FROM messages m WHERE ' . PLATFORM_CONTEXT_WHERE . ' ORDER BY m.id DESC LIMIT 1 OFFSET ' . (PLATFORM_CONTEXT_MESSAGES - 1));
+    $from->execute([$channelId]);
+    return messageRows(PLATFORM_CONTEXT_WHERE . ' AND m.id >= ?', [$channelId, (int) ($from->fetchColumn() ?: 0)]);
+}
+
+/**
+ * מה נקרא ומה לא (§18.3, 22א.1): README שלא נקרא — אומרים "לא נקרא — <למה>", לעולם לא "אין". ‏sources: [{name, ok, why}].
+ */
+function platformReadme(array $project, ?array $payer): array {
+    $path = trim((string) ($project['path'] ?? ''), '/');
+    $file = ($path !== '' ? "$path/" : '') . 'README.md';
+    if (($project['repo_name'] ?? '') === '') return ['', ['name' => 'README', 'ok' => false, 'why' => 'לפרויקט לא מוגדר ריפו']];
+    if (!$payer) return ['', ['name' => 'README', 'ok' => false, 'why' => 'אין משלם לפרויקט']];
+    try {
+        $f = ghContents(githubTokenFor($payer, $project), (string) $project['repo_owner'], (string) $project['repo_name'],
+                        $file, (string) ($project['default_branch'] ?? ''));
+        if (($f['kind'] ?? '') !== 'file') return ['', ['name' => 'README', 'ok' => false, 'why' => "$file אינו קובץ"]];
+        $text = (string) $f['content'];
+        if (trim($text) === '') return ['', ['name' => 'README', 'ok' => false, 'why' => "$file ריק"]];
+        return [mb_substr($text, 0, 6000), ['name' => 'README', 'ok' => true, 'why' => '', 'path' => $file]];
+    } catch (Throwable $e) {
+        return ['', ['name' => 'README', 'ok' => false, 'why' => mb_substr("$file — " . $e->getMessage(), 0, 200)]];
+    }
+}
+
+/**
+ * §18.3 (22א.2): מה Platform רואה בפרויקט — שורת בדיקה ב-⚙ של הפרויקט: התיקייה, README, וחיבור הגיטהאב של המשלם.
+ * כל כשל — בשמו, עם המקום שמתקנים בו.
+ */
+function platformCheck(array $user, int $projectId): array {
+    $project = requireProject($projectId, $user, 'read');
+    $payer = payerUser($projectId);
+    $path = trim((string) ($project['path'] ?? ''), '/');
+    $gh = ['ok' => false, 'login' => '', 'why' => ''];
+    if (($project['repo_name'] ?? '') === '') $gh['why'] = 'לפרויקט לא מוגדר ריפו — ⚙ ← פרטים';
+    elseif (!$payer) $gh['why'] = 'אין משלם לפרויקט';
+    else {
+        try { $c = githubConnectionFor($payer, $project); $gh = ['ok' => true, 'login' => (string) $c['login'], 'why' => '']; }
+        catch (Throwable $e) { $gh['why'] = $e->getMessage(); }
+    }
+    [, $readme] = $gh['ok'] ? platformReadme($project, $payer) : ['', ['name' => 'README', 'ok' => false, 'why' => 'אין חיבור גיטהאב']];
+    if (!$readme['ok'] && $path === '' && !empty($project['parent_id'])) $readme['why'] .= ' · לתת-פרויקט אין תיקייה — ⚙ ← פרטים ← תיקייה';
+    return ['path' => $path, 'repo' => ($project['repo_owner'] ?? '') . '/' . ($project['repo_name'] ?? ''),
+            'branch' => (string) ($project['default_branch'] ?? ''), 'readme' => $readme, 'github' => $gh,
+            'payer' => $payer ? (string) ($payer['display_name'] ?? $payer['username']) : ''];
+}
+
 function platformContext(array $channel, array $project, ?array $payer): array {
-    $from = db()->prepare('SELECT id FROM messages WHERE channel_id = ? ORDER BY id DESC LIMIT 1 OFFSET ' . (PLATFORM_CONTEXT_MESSAGES - 1));
-    $from->execute([$channel['id']]);
-    $msgs = messageRows('m.channel_id = ? AND m.id >= ?', [$channel['id'], (int) ($from->fetchColumn() ?: 0)]);
+    $msgs = platformContextMessages((int) $channel['id']);
     $ids = projectSubtree((int) $project['id']);
     $st = db()->prepare('SELECT id, title, status FROM tasks WHERE status NOT IN (\'done\',\'cancelled\') AND project_id IN ('
                         . implode(',', array_fill(0, count($ids), '?')) . ') ORDER BY updated_at DESC LIMIT 30');
     $st->execute($ids);
-    $readme = '';
-    if ($payer && ($project['repo_name'] ?? '') !== '') {
-        try {
-            $path = trim((string) ($project['path'] ?? ''), '/');
-            $f = ghContents(githubTokenFor($payer, $project), (string) $project['repo_owner'], (string) $project['repo_name'],
-                            ($path !== '' ? "$path/" : '') . 'README.md', (string) ($project['default_branch'] ?? ''));
-            if (($f['kind'] ?? '') === 'file') $readme = mb_substr((string) $f['content'], 0, 6000);
-        } catch (Throwable) { /* בלי README — עונים בלי */ }
-    }
-    return ['messages' => $msgs, 'tasks' => $st->fetchAll(), 'readme' => $readme];
+    [$readme, $src] = platformReadme($project, $payer);
+    return ['messages' => $msgs, 'tasks' => $st->fetchAll(), 'readme' => $readme, 'sources' => [$src]];
 }
 
 function platformPrompt(array $channel, array $project, array $ctx, array $question): array {
@@ -56,18 +102,24 @@ function platformPrompt(array $channel, array $project, array $ctx, array $quest
         $lines[] = '[' . ($who[$m['author_role']] ?? $m['author_role']) . ($m['direction'] === 'out' ? ' · בצ\'אט' : ' · בלוח') . '] '
                  . mb_substr((string) $m['body'], 0, 1500);
     }
+    // §18.3: מקור שלא נקרא — נאמר במפורש, עם הסיבה
+    $readmeSrc = null;
+    foreach ($ctx['sources'] ?? [] as $s) if ($s['name'] === 'README') $readmeSrc = $s;
+    $readmeText = $ctx['readme'] !== '' ? $ctx['readme']
+        : ($readmeSrc && !$readmeSrc['ok'] ? "README: לא נקרא — {$readmeSrc['why']}. (זה לא אומר שאין README — רק שלא הצלחנו לקרוא אותו.)" : '(אין)');
     $tasks = array_map(fn ($t) => "#{$t['id']} [{$t['status']}] {$t['title']}", $ctx['tasks']);
     $system = "אתה Platform — עונה בלוח המטלות בשם הפרויקט \"{$project['name']}\", בערוץ \"{$channel['name']}\" "
             . "(שם הצ'אט: {$channel['role']}). ענה בעברית, קצר וענייני, למי שקורא בטלפון. "
             . "אינך כותב קוד ואינך משנה קבצים. אם התשובה דורשת עבודת קוד — הסבר בקצרה מה צריך, והצע מטלה. "
             . PLATFORM_LIMITS
+            . 'כשמקור מסומן "לא נקרא" — אמור שלא הצלחת לקרוא אותו ולמה; לעולם אל תאמר שהוא לא קיים. '
             . (($ctx['open_asks'] ?? 0) >= PLATFORM_MAX_OPEN_ASKS
                 ? 'כבר שאלת ' . PLATFORM_MAX_OPEN_ASKS . ' שאלות שבעל הלוח עוד לא ענה עליהן — אסור לשאול עוד ("ask": null). ענה עם מה שיש, או הצע מטלה. '
                 : '')
             . 'ענה JSON בלבד: {"reply": "התשובה (או ריק כששואלים בלבד)", "task": null או {"title": "כותרת קצרה", "body": "מה בדיוק לעשות"}, '
             . '"ask": null או {"questions": [{"header": "עד 12 תווים", "question": "השאלה", "multiSelect": false, '
             . '"options": [{"label": "אפשרות", "description": "מה היא אומרת"}]}]}, "needs_chat": null או "מה הצ\'אט צריך לעשות"}';
-    $prompt = "## README של התיקייה\n" . ($ctx['readme'] !== '' ? $ctx['readme'] : '(אין)')
+    $prompt = "## README של התיקייה\n" . $readmeText
             . "\n\n## מטלות פתוחות בפרויקט\n" . ($tasks ? implode("\n", $tasks) : '(אין)')
             . "\n\n## השיחה עד עכשיו (מהישן לחדש)\n" . implode("\n", $lines)
             . "\n\n## ההודעה שעליה עונים\n" . $question['body'];
@@ -190,7 +242,9 @@ function platformReply(array $user, int $messageId, ?callable $transport = null)
 
     try {
         $openAsks = platformOpenAsks((int) $channel['id']);
-        [$system, $prompt] = platformPrompt($channel, $project, platformContext($channel, $project, $payer) + ['open_asks' => $openAsks], $m);
+        $pctx = platformContext($channel, $project, $payer);
+        $platformSources = $pctx['sources'];
+        [$system, $prompt] = platformPrompt($channel, $project, $pctx + ['open_asks' => $openAsks], $m);
         $ctx = ['kind' => 'answer', 'project_id' => (int) $project['id'], 'channel_id' => (int) $channel['id'], 'enforce' => false,
                 // שלב 16: תשובה במקום צ'אט שלא עונה, אחרי מעבר אוטומטי — נספרת מול התקרה
                 'auto' => (int) ($channel['unresponsive_since'] ?? 0) > 0 && laneEffectivePrefs((int) $payer['id'], (int) $project['id'])['on_stop'] === 'auto'];
@@ -204,6 +258,7 @@ function platformReply(array $user, int $messageId, ?callable $transport = null)
         [$rawText, , $fellBack] = aiCompleteChain($chainCtx, $system, $prompt, 1500, $transport, $payer);
         $aiUsed = aiUsedRecord($ai, $fellBack);
         $out = parsePlatformReply($rawText);
+        $sources = $platformSources ?? [];
     } catch (Throwable $e) {
         // ‏§15.3: לא נשאר תלוי. הספק נעצר (קרדיט / מפתח / עומס / תקלה) — המפסק נפתח: הודעה אחת לכל ערוץ,
         // וכל מה שממתין עובר לצ'אט במעבר אחד (או ממתין, לפי ההגדרה). כשל של ההודעה הזו בלבד — לצ'אט, עם הסיבה
@@ -239,6 +294,8 @@ function platformReply(array $user, int $messageId, ?callable $transport = null)
         'needs_chat' => $need ? ['what' => $need, 'to' => (string) $channel['name'], 'listening' => $listening] : null,
         // שמירה בקוד, לא רק בפרומפט: תיאור של פעולה שלא קרתה
         'claimed_action' => !$need && $reply !== '' && platformClaimsAction($reply) ? true : null,
+        // §18.3: מה נקרא ומה לא — שורת המחבר בבועה ("☁️ Platform · קרא: README" / "⚠ לא נקרא: README (…)")
+        'sources' => $sources ?: null,
     ], fn ($v) => $v !== null);
     $answerId = null;
     if ($reply !== '' || !$ask) {
@@ -261,16 +318,15 @@ function platformReply(array $user, int $messageId, ?callable $transport = null)
     channelStateRefresh((int) $channel['id']);
     touchChannel($cid);
 
+    // §18.3 (22א.3): אין יותר העתקים כהודעות. הצ'אט רואה מה Platform ענה בתקציר (link.sh pending — channelDigest).
     if ($need) {
-        // ההודעה עוברת לצ'אט האמיתי של הערוץ — עם מה שצריך. מצלצל (כמו handToChat)
-        channelInsertIn($cid, 'system', null, "☁️ Platform לא יכול לבצע את זה בעצמו — צריך ממך: $need\n\n💬 ההודעה של בעל הלוח:\n"
-                        . mb_substr((string) $m['body'], 0, 3000), 'text', $tid, $messageId, true, '');
-    } else {
-        // הצ'אט נשאר מעודכן — status בתיבה, בלי פעמון ובלי להעיר את המאזין
-        $said = ($reply !== '' ? "\n\n☁️ Platform ענה:\n" . mb_substr($reply, 0, 4000) : '')
-              . ($ask ? "\n\n☁️ Platform שאל:\n" . mb_substr(choiceBody($ask), 0, 2000) : '');
-        channelInsertIn($cid, 'system', null, PLATFORM_RELAY_PREFIX . "\n💬 הודעה מבעל הלוח:\n" . mb_substr((string) $m['body'], 0, 2000) . $said,
-                        'status', $tid, $messageId, false);
+        // ההודעה המקורית עצמה נפתחת מחדש לצ'אט, עם הערה (שורה אחת, בועה אחת) — וצלצול
+        $om = json_decode((string) ($m['meta'] ?? ''), true) ?: [];
+        $om['platform_note'] = mb_substr($need, 0, 1000);
+        db()->prepare("UPDATE messages SET answered_by = '', handled_by = 'chat', delivered_at = NULL, lease_until = 0, meta = ? WHERE id = ?")
+            ->execute([json_encode($om, JSON_UNESCAPED_UNICODE), $messageId]);
+        channelStateRefresh($cid);
+        ringBell($cid);
     }
     $rows = messageRows('m.id IN (' . implode(',', array_filter([$answerId, $askId])) . ')', []);
     return ['answered' => true, 'message' => $rows[0], 'messages' => $rows, 'asked' => $askId !== null, 'handed_to_chat' => $need !== null,

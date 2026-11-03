@@ -32,6 +32,7 @@ frame() {   # מסגרת קבועה להודעה מהלוח — כדי שלא ת
     "📥 הודעה מהלוח · #\(.id) · מאת: \(.author_role) (\(.author_name // "—")) · ערוץ: \($ch)" +
     (if .task_id then " · מטלה #\(.task_id)" else "" end) + (if .kind != "text" then " · \(.kind)" else "" end) +
     (if .reply_to then " · תשובה להודעה #\(.reply_to)" else "" end) +
+    (if (.meta | type) == "object" and .meta.platform_note then "\n☁️ Platform לא יכול לבצע את זה בעצמו — צריך ממך: \(.meta.platform_note)" else "" end) +
     "\n\(.body)\n"'
 }
 
