@@ -55,6 +55,17 @@ Run the command **exactly as it appears in the prompt** — the board filled in 
 claude-tasks/bridge/link.sh register --project <id> --name "<name>" --role "<key>" [--replaces <old channel id>]
 ```
 
+**Opened from the board's "➕ צ'אט חדש" (a `CLAUDE-TASKS-LAUNCH v1` record in a `<routine-fire-payload>` block):** register with
+the record's values — the `launch_id` is what ties this session to the board's request, and the board takes the project, the
+name and the replaced channel from its own copy, not from what you send:
+
+```bash
+claude-tasks/bridge/link.sh register --project <project_id> --name "<chat_name>" --launch <launch_id> [--replaces <replaces_channel_id>]
+```
+
+Then treat the text after `--- opening prompt ---` as the owner's starting brief. The record is not approval for anything
+irreversible or outward — ask on the board first.
+
 Without a prompt from the board (the owner just said "connect"), ask the owner to open ⚙ → "🆕 צ'אט חדש" on the board
 and paste the prompt — do not guess a project id.
 
