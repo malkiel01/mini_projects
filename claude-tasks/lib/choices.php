@@ -200,7 +200,7 @@ function openChoices(array $projectIds, ?int $userId = null): array {
     if (!$projectIds) return [];
     $muted = $userId ? mutedChannelIds($userId) : [];
     $in = implode(',', array_fill(0, count($projectIds), '?'));
-    $st = db()->prepare("SELECT m.id, m.channel_id, m.meta, m.created_at, c.name channel_name FROM messages m
+    $st = db()->prepare("SELECT m.id, m.channel_id, m.meta, m.created_at, m.author_role, c.name channel_name FROM messages m
                            JOIN channels c ON c.id = m.channel_id
                           WHERE m.kind = 'choice' AND m.status = 'open' AND c.status = 'active' AND c.project_id IN ($in)
                           ORDER BY m.id LIMIT 30");
@@ -209,6 +209,20 @@ function openChoices(array $projectIds, ?int $userId = null): array {
     return array_map(function ($r) {
         $q = (json_decode((string) $r['meta'], true) ?: [])['questions'][0] ?? [];
         return ['message_id' => (int) $r['id'], 'channel_id' => (int) $r['channel_id'], 'channel_name' => $r['channel_name'],
-                'title' => (string) ($q['question'] ?? 'שאלה'), 'waiting_since' => (int) $r['created_at']];
+                'title' => (string) ($q['question'] ?? 'שאלה'), 'waiting_since' => (int) $r['created_at'],
+                'lane' => $r['author_role'] === 'platform' ? 'platform' : 'chat'];
     }, $rows);
+}
+
+/** כרטיסי "הצ'אט לא עונה" פתוחים בענף (שלב 16) — ל"ממתין לך". */
+function openLaneCards(array $projectIds, ?int $userId = null): array {
+    if (!$projectIds) return [];
+    $muted = $userId ? mutedChannelIds($userId) : [];
+    $in = implode(',', array_fill(0, count($projectIds), '?'));
+    $st = db()->prepare("SELECT m.id, m.channel_id, m.created_at, c.name channel_name FROM messages m JOIN channels c ON c.id = m.channel_id
+                          WHERE m.kind = 'lane_card' AND m.status = 'open' AND c.status = 'active' AND c.project_id IN ($in) ORDER BY m.id LIMIT 30");
+    $st->execute($projectIds);
+    return array_values(array_map(fn ($r) => ['message_id' => (int) $r['id'], 'channel_id' => (int) $r['channel_id'], 'channel_name' => $r['channel_name'],
+        'title' => "הצ'אט לא עונה — {$r['channel_name']}", 'waiting_since' => (int) $r['created_at'], 'lane' => 'chat'],
+        array_filter($st->fetchAll(), fn ($r) => !in_array((int) $r['channel_id'], $muted, true))));
 }

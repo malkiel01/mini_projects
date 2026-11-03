@@ -79,7 +79,7 @@ function waitingItems(int $projectId): array {
     foreach ($st->fetchAll() as $t) {
         $q->execute([$t['id']]);
         $body = (string) ($q->fetchColumn() ?: '');
-        $item = ['task_id' => (int) $t['id'], 'title' => $t['title'], 'status' => $t['status'],
+        $item = ['task_id' => (int) $t['id'], 'title' => $t['title'], 'status' => $t['status'], 'lane' => taskLane(getTask(db(), (int) $t['id'])),
                  'waiting_since' => (int) $t['updated_at'], 'already_asked' => null, 'suggested_type' => null];
         if ($t['status'] === 'blocked' && $body !== '') {
             $best = null; $score = 0.0;
@@ -178,5 +178,7 @@ function projectMonitor(int $projectId, ?int $userId = null): array {
     return ['summary' => is_array($s) ? $s : null, 'waiting' => waitingItems($projectId),
             // שאלות בחירה פתוחות בצ'אטים של הענף (§5.10) — גם הן ממתינות לך
             'choices' => openChoices(projectSubtree($projectId), $userId),   // בלי צ'אטים מושתקים (12a)
+            // שלב 16–17: "הצ'אט לא עונה" שמחכה להחלטה שלך — גם הוא ממתין לך
+            'lane_cards' => openLaneCards(projectSubtree($projectId), $userId),
             'monitor' => $payer && platformAvailable($payer) ? 'on' : 'off'];
 }

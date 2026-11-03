@@ -531,16 +531,17 @@ async function renderMonitor(cur) {
   if (state.projectId !== cur.id) return;
   const lines = m.summary?.lines || [];
   // שאלות בחירה פתוחות בצ'אטים (§5.10) — ראשונות: הצ'אט עצר ומחכה להן
-  const waiting = [...(m.choices || []).map((c) => ({ ...c, status: 'choice' })), ...(m.waiting || [])];
+  const waiting = [...(m.lane_cards || []).map((c) => ({ ...c, status: 'lane_card' })),
+    ...(m.choices || []).map((c) => ({ ...c, status: 'choice' })), ...(m.waiting || [])];
   if (!lines.length && !waiting.length) { box.hidden = true; return; }
   const wrow = (w) => el('li', {}, [el('button', {
     type: 'button', class: 'mon-item',
-    onclick: () => (w.status === 'choice' ? openConversation(w.channel_id) : openTask(w.task_id)).catch((ex) => toast(ex.message, 'error')),
+    onclick: () => (w.status === 'choice' || w.status === 'lane_card' ? openConversation(w.channel_id) : openTask(w.task_id)).catch((ex) => toast(ex.message, 'error')),
   }, [
-    el('span', { class: 'ic', 'aria-hidden': 'true', text: w.status === 'awaiting_approval' ? '🔐' : w.status === 'choice' ? '🔘' : '❓' }),
+    el('span', { class: 'ic', 'aria-hidden': 'true', text: w.status === 'awaiting_approval' ? '🔐' : w.status === 'choice' ? '🔘' : w.status === 'lane_card' ? '🔴' : '❓' }),
     el('span', { class: 'body' }, [
       el('b', { text: w.title }),
-      el('small', { text: [timeAgo(w.waiting_since), w.channel_name ? `💬 ${w.channel_name}` : '',
+      el('small', { text: [timeAgo(w.waiting_since), w.lane ? { chat: '💬', platform: '☁️', engine: '🤖' }[w.lane] : '', w.channel_name ? `💬 ${w.channel_name}` : '',
         w.already_asked ? `נשאל כבר (#${w.already_asked.task_id}): ${w.already_asked.answer}` : '',
         w.suggested_type ? `סוג מוצע: ${TYPE_LABEL[w.suggested_type] || w.suggested_type}` : ''].filter(Boolean).join(' · ') }),
     ]),
@@ -719,6 +720,8 @@ function taskCard(t) {
   bits.push(KIND[t.kind] || t.kind);
   if (Number(t.note_count) > 0) bits.push(`💬 ${t.note_count}`);
   if (t.claimed_by) bits.push(`🤖 ${t.claimed_by}`);
+  // שלב 17: תג מסלול — מהשרת (tasks.route / הפרויקט)
+  if (t.lane) bits.push({ chat: '💬 צ\'אט', engine: '🤖 מנוע', platform: '☁️ Platform' }[t.lane] || t.lane);
   const l2 = [];
   if (t.priority === 'high') l2.push(el('span', { class: 'urgent', text: 'דחוף' }), el('i', { class: 'sep', 'aria-hidden': 'true', text: '·' }));
   bits.forEach((b, i) => {

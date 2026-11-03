@@ -252,10 +252,15 @@ function silenceCheck(array $channel, bool $force = false): string {
             $can = platformCanTakeOver($payer, $pid, true);
             if ($can['ok']) {
                 $n = laneMoveToPlatform($cid);
-                channelInsertIn($cid, 'system', null, "💬 $why — ☁️ Platform עונה במקומו עד שיחזור (ההגדרה: אוטומטי). הועברו: $n.", 'status', null, null, false);
+                laneLogAdd($cid, 'chat', 'platform', $force ? 'chat_limit' : 'chat_silent',
+                           "💬 $why — ☁️ Platform עונה במקומו עד שיחזור (ההגדרה: אוטומטי). הועברו: $n.", null, 'auto', $n);
                 $res = 'moved';
             } else {
                 laneCardPost($channel, $waiting, $why, $can['why']);
+                // מעבר אוטומטי שנעצר בתקרה / במכסה — נרשם (cap_reached), והכרטיס שואל
+                if (!empty($can['ceiling']) || str_contains($can['why'], 'המכסה')) {
+                    laneLogAdd($cid, 'chat', 'chat', 'cap_reached', "💬 $why — מעבר אוטומטי ל-☁️ נעצר: {$can['why']} ההחלטה בכרטיס.", null, 'auto');
+                }
                 $res = 'card';
             }
         } elseif ($onStop === 'ask') {
@@ -332,7 +337,8 @@ function laneCardAnswer(array $user, int $cardId, string $choice): array {
         $moved = 0;
         if ($choice === 'platform') {
             $moved = laneMoveToPlatform($cid);
-            channelInsertIn($cid, 'system', null, "💬 בעל הלוח החליט: ☁️ Platform עונה עד שהצ'אט יחזור. הועברו: $moved.", 'status', null, null, false);
+            laneLogAdd($cid, 'chat', 'platform', getChannel($cid)['unresponsive_reason'] === 'limit' ? 'chat_limit' : 'chat_silent',
+                       "💬 בעל הלוח החליט: ☁️ Platform עונה עד שהצ'אט יחזור. הועברו: $moved.", (int) $user['id'], 'ask', $moved);
         } else {
             db()->prepare("UPDATE channels SET lane_decision = 'wait' WHERE id = ?")->execute([$cid]);
             channelInsertIn($cid, 'system', null, '💬 בעל הלוח החליט: מחכים לצ\'אט.' . limitResetLine(getChannel($cid)), 'status', null, null, false);
@@ -386,7 +392,9 @@ function laneReturn(array $channel): string {
         $answered = (int) (channelState($cid)['counts']['platform_answered'] ?? 0);
         $text = '💬 הצ\'אט חזר' . ($answered ? " — Platform ענה בינתיים על $answered הודעות, והצ'אט קיבל תקציר" : '')
               . ($was === 'platform' ? ($back ? '. הערוץ חזר ל-💬.' : '. הערוץ נשאר ב-☁️ (ההגדרה: לא לעבור באמצע שיחה) — אפשר להחזיר ב-⚙ ← מי עונה.') : '.');
-        channelInsertIn($cid, 'system', null, $text, 'status', null, null, false);
+        // חזרה ל-💬 היא מעבר (יומן + שורה); נשאר ב-☁️ או לא היה מעבר — רק השורה
+        if ($was === 'platform' && $back) laneLogAdd($cid, 'platform', 'chat', 'recovered', $text, null, 'return_preferred');
+        else channelInsertIn($cid, 'system', null, $text, 'status', null, null, false);
         channelStateRefresh($cid);
         logEvent(null, 'lanes.return', "channel:$cid", true, $back ? 'chat' : 'platform');
         return $digest;

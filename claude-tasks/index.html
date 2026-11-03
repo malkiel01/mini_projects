@@ -316,6 +316,7 @@
         <h2 id="cvTitle"></h2>
         <small id="cvSub"></small>
       </div>
+      <button type="button" class="icon-btn" id="cvLaneBtn" aria-label="העבר ל… — מי עונה על ההודעות שממתינות" title="העבר ל…" hidden>🔀</button>
       <button type="button" class="icon-btn" id="cvSearch" aria-label="חיפוש וסינון" title="חיפוש וסינון">🔎</button>
       <button type="button" class="icon-btn" id="cvSettings" aria-label="הגדרות הצ'אט" title="הגדרות הצ'אט">⚙</button>
     </header>
@@ -488,6 +489,33 @@
       </div>
       <p class="hint" id="csRouteHint"></p>
     </div>
+  </div>
+</dialog>
+
+<!-- ── שלב 17: "העבר ל…" והיומן (§15.6) ─────────────────────── -->
+<dialog id="laneSwitch" aria-labelledby="laneSwitchT">
+  <div class="sheet-wrap">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close="laneSwitch" aria-label="סגירה">✕</button>
+      <h2 id="laneSwitchT">🔀 העבר ל…</h2>
+      <span></span>
+    </header>
+    <div class="sheet-body">
+      <p class="hint" id="laneSwitchHint"></p>
+      <div class="lane-opts" id="laneSwitchOpts"></div>
+      <p class="hint">רק ההודעות שממתינות עכשיו. ההודעות הבאות — לפי המסלול הרגיל (⚙ ← מי עונה). מטלה שכבר רצה לא זזה.</p>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="laneLog" aria-labelledby="laneLogT">
+  <div class="sheet-wrap">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close="laneLog" aria-label="סגירה">✕</button>
+      <h2 id="laneLogT">🔀 יומן המסלולים</h2>
+      <span></span>
+    </header>
+    <div class="sheet-body"><ol class="lane-log" id="laneLogRows"></ol></div>
   </div>
 </dialog>
 

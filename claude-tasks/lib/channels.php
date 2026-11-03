@@ -99,6 +99,7 @@ function messageRows(string $where, array $args, int $limit = 200): array {
         $m['meta'] = ($m['meta'] ?? '') !== '' ? (json_decode((string) $m['meta'], true) ?: null) : null;
         $m['platform_pending'] = $m['direction'] === 'in' && $m['delivered_at'] === null
                                  && str_starts_with((string) ($m['answered_by'] ?? ''), 'platform');
+        $m += messageLane($m);   // שלב 17: תג מסלול ומצב — מ-handled_by / answered_by, לא מהטקסט
         return $m;
     }, $st->fetchAll());
 }
