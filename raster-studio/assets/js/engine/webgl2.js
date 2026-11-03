@@ -10,6 +10,9 @@
 // מוסכמה: שורה 0 של כל אריח ושל כל FBO = הקצה העליון (y של המסמך גדל למטה). רק המסך עצמו הפוך.
 
 import { TILE, BLEND_MODES, tilesInRect, newMask } from './doc.js';
+import { GLSL_DECODE, GLSL_ENCODE, srgbToLinear } from '../render-core/color.js';
+import { GLSL_BLEND } from '../render-core/blend.js';
+import { webgl2Supported } from '../render-core/backend.js';
 import { adjustOf, fillRamp, fillGeometry, effectsOf, effectsReach } from './formats.js';
 import { rasterTile, selectionBox } from './selection.js';
 import { matrix as xfMatrix, bounds as xfBounds } from './transform.js';
@@ -59,17 +62,8 @@ void main() {
   gl_Position = vec4(p.x / u_size.x * 2.0 - 1.0, p.y / u_size.y * 2.0 - 1.0, 0.0, 1.0);
 }`;
 
-const DECODE = `
-vec3 dec(vec3 s) {
-  s = clamp(s, 0.0, 1.0);
-  return mix(s / 12.92, pow((s + 0.055) / 1.055, vec3(2.4)), step(0.04045, s));
-}`;
-
-const ENCODE = `
-vec3 enc(vec3 l) {
-  l = clamp(l, 0.0, 1.0);
-  return mix(l * 12.92, 1.055 * pow(l, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, l));
-}`;
+const DECODE = GLSL_DECODE;
+const ENCODE = GLSL_ENCODE;
 
 const FRAG = {
   // sRGB ישר (המרקם כבר מפענח ללינארי) → לינארי מוכפל
@@ -94,24 +88,13 @@ uniform float u_opacity;
 uniform int u_mode, u_useMask, u_useVm;
 in vec2 v_uv; out vec4 o;
 ${ENCODE}
-vec3 screenB(vec3 b, vec3 s) { return b + s - b * s; }
-// s ≤ 0.5 → multiply(b, 2s); אחרת screen(b, 2s − 1). ב-0.5 שני הענפים שווים.
-vec3 hardLight(vec3 b, vec3 s) {
-  return mix(b * 2.0 * s, screenB(b, 2.0 * s - 1.0), step(0.5, s));
-}
+${GLSL_BLEND}
 void main() {
   vec4 b = texture(u_dst, v_uv);
   vec4 s = texture(u_src, v_uv) * u_opacity;
   if (u_useMask == 1) s *= enc(vec3(texture(u_msk, v_uv).r)).r;
   if (u_useVm == 1) s *= texture(u_vm, v_uv).r;   // מסכה וקטורית: כיסוי 0–1 (R8)
-  float ab = b.a, as_ = s.a;
-  vec3 Cb = ab > 0.0 ? clamp(b.rgb / ab, 0.0, 1.0) : vec3(0.0);
-  vec3 Cs = as_ > 0.0 ? clamp(s.rgb / as_, 0.0, 1.0) : vec3(0.0);
-  vec3 B = Cs;
-  if (u_mode == 1) B = Cb * Cs;
-  else if (u_mode == 2) B = screenB(Cb, Cs);
-  else if (u_mode == 3) B = hardLight(Cs, Cb);   // overlay = hard-light עם הסדר ההפוך
-  o = vec4(s.rgb * (1.0 - ab) + b.rgb * (1.0 - as_) + as_ * ab * B, as_ + ab * (1.0 - as_));
+  o = blendOver(b, s, u_mode);
 }`,
 
   // נקודת מכחול במסכת המשיכה: v_uv = המרחק מהמרכז בפיקסלים. רך → קשה לפי u_hard, ולפחות פיקסל של החלקה
@@ -523,18 +506,10 @@ const hexLinear = h => [1, 3, 5].map(i => srgbToLinear(parseInt(h.slice(i, i + 2
 const FX_POS = ['outside', 'inside', 'center'];
 
 /** sRGB של 8 ביט → לינארי (0–1) */
-export const srgbToLinear = v => {
-  const c = v / 255;
-  return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-};
+export { srgbToLinear };
 
 export class WebGL2Renderer {
-  static supported() {
-    try {
-      const gl = document.createElement('canvas').getContext('webgl2');
-      return !!(gl && (gl.getExtension('EXT_color_buffer_float') || gl.getExtension('EXT_color_buffer_half_float')));
-    } catch { return false; }
-  }
+  static supported() { return webgl2Supported(); }
 
   constructor(canvas) {
     const gl = canvas.getContext('webgl2', { alpha: true, premultipliedAlpha: true, antialias: false, depth: false, stencil: false });

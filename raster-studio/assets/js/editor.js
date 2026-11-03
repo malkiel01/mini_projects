@@ -7,7 +7,7 @@ import { RasterDocument } from './engine/doc.js';
 import { WebGL2Renderer, decodeImage } from './engine/webgl2.js';
 import { WebGPURenderer } from './engine/webgpu.js';
 import * as V from './engine/view.js';
-import { deviceBudget, suggestSize, megapixels, perfFactor, perfLabel, perfCacheValid } from './engine/budget.js';
+import { deviceBudget, suggestSize, megapixels, perfFactor, perfLabel, perfCacheValid } from './render-core/budget.js';
 import { createLayersPanel } from './layers-panel.js';
 import { History } from './engine/history.js';
 import { createTools } from './tools.js';

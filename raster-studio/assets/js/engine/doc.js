@@ -2,7 +2,7 @@
 // כל אחת עם opacity / blend / visible / locked. הפיקסלים עצמם — באריחים שהרנדרר מחזיק (layer.tiles).
 
 export const TILE = 256;
-export const BLEND_MODES = ['normal', 'multiply', 'screen', 'overlay'];
+export { BLEND_MODES } from '../render-core/blend.js';
 
 let seq = 0;
 const newId = prefix => prefix + Date.now().toString(36) + (seq++).toString(36);

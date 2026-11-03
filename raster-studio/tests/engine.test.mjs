@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as V from '../assets/js/engine/view.js';
-import { deviceBudget, suggestSize, megapixels, BYTES_PER_PIXEL } from '../assets/js/engine/budget.js';
+import { deviceBudget, suggestSize, megapixels, BYTES_PER_PIXEL } from '../assets/js/render-core/budget.js';
 import { RasterDocument, tilesInRect, TILE } from '../assets/js/engine/doc.js';
 
 const near = (a, b, eps = 1e-9) => assert.ok(Math.abs(a - b) < eps, `${a} ≉ ${b}`);
@@ -649,7 +649,7 @@ test('‎.mbe: קבוצה עם children', () => {
 });
 
 // ---- מדידת ביצועים ----
-import { perfFactor, perfLabel, perfCacheValid, PERF_FAST, PERF_SLOW } from '../assets/js/engine/budget.js';
+import { perfFactor, perfLabel, perfCacheValid, PERF_FAST, PERF_SLOW } from '../assets/js/render-core/budget.js';
 
 test('ביצועים: מקדם התקציב בין 0.5 ל-1, עולה עם הציון', () => {
   assert.equal(perfFactor(undefined), 1, 'לא נמדד — לא מקטינים');
