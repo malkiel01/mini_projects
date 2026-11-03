@@ -138,7 +138,18 @@ export function usageCard(s) {
       el('small', { text: `${Math.round(p.tokens / 1000).toLocaleString('he-IL')}K טוקנים` }),
       el('b', { text: usd(p.cost) }),
     ]))) : el('p', { class: 'hint', text: 'עוד אין שימוש החודש.' }),
+    // שלב 20 (§16.4): כמה עלה כל מודל — כדי לראות מה עולות השאלות היקרות
+    ...byModel(s.by_model || []),
   ]);
+}
+
+function byModel(rows) {
+  if (!rows.length) return [];
+  const max = Math.max(...rows.map((r) => r.cost), 0.0001);
+  return [el('h3', { text: 'לפי מודל' }), el('ul', { class: 'usage-models', 'aria-label': 'שימוש לפי מודל' }, rows.map((r) => el('li', {}, [
+    el('span', { dir: 'auto', text: `${r.name} · ${r.calls} קריאות` }), el('b', { text: usd(r.cost) }),
+    el('span', { class: 'bar', 'aria-hidden': 'true', style: `width:${Math.max(2, Math.round(r.cost / max * 100))}%` }),
+  ])))];
 }
 
 /** הגרסה המוקטנת — ליד ☁️ במסך הפרויקט: פס ושורה אחת. */

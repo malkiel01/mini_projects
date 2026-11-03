@@ -193,7 +193,7 @@ function autoCeilingLeft(int $payer, int $projectId): array {
 }
 
 /** האם Platform יכול לקחת עכשיו: ‏ok, ואם לא — למה (בעברית). ‏$auto — מעבר אוטומטי (התקרה חלה רק עליו). */
-function platformCanTakeOver(int $payer, int $projectId, bool $auto): array {
+function platformCanTakeOver(int $payer, int $projectId, bool $auto, ?array $channel = null): array {
     if (breakerBlocks($payer)) {
         $b = platformBreaker($payer);
         return ['ok' => false, 'why' => '☁️ Platform נעצר גם הוא — ' . breakerShort($b['state'], $b['reason']) . '. אי אפשר להעביר אליו.'];
@@ -205,7 +205,10 @@ function platformCanTakeOver(int $payer, int $projectId, bool $auto): array {
     if ($auto) {
         $c = autoCeilingLeft($payer, $projectId);
         if (!empty($c['none'])) return ['ok' => false, 'why' => 'לא הוגדרה תקרה חודשית למעברים אוטומטיים — עד שמגדירים (הגדרות ← 🔀 מסלולים), שואלים.', 'ceiling' => true];
-        if ($c['left'] < AUTO_USE_ESTIMATE) return ['ok' => false, 'why' => "מעבר אוטומטי היה עובר את התקרה ({$c['by']}) — לכן שואלים.", 'ceiling' => true];
+        // שלב 20 (§16.1): מעבר אוטומטי מתומחר במודל של הצ'אט (לא בבחירה של הודעה אחת)
+        $need = AUTO_USE_ESTIMATE;
+        if ($channel) { $ai = channelAiInfo($channel); if (($ai['model'] ?? '') !== '') $need = max($need, aiEstimate($ai['provider'], $ai['model'], $ai['effort'], 12000, 1500)); }
+        if ($c['left'] < $need) return ['ok' => false, 'why' => "מעבר אוטומטי היה עובר את התקרה ({$c['by']}) — לכן שואלים.", 'ceiling' => true];
     }
     return ['ok' => true, 'why' => ''];
 }
@@ -257,7 +260,7 @@ function silenceCheck(array $channel, bool $force = false): string {
         $why = $force ? 'הצ\'אט נעצר — ' . limitText((string) ($channel['limit_status'] ?? '')) : 'הצ\'אט לא עונה ' . silenceMinutes($payer, $pid) . ' דק\'';
         $res = 'waiting';
         if ($onStop === 'auto') {
-            $can = platformCanTakeOver($payer, $pid, true);
+            $can = platformCanTakeOver($payer, $pid, true, $channel);
             if ($can['ok']) {
                 $n = laneMoveToPlatform($cid);
                 laneLogAdd($cid, 'chat', 'platform', $force ? 'chat_limit' : 'chat_silent',

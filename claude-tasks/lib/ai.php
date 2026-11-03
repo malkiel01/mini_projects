@@ -96,14 +96,65 @@ function anthropicTakesEffort(string $model): bool {
     return (bool) preg_match('/^claude-(opus|sonnet|haiku|fable|mythos)-(5|4-[678])/', $model);
 }
 
-/** מחזיר [url, headers, body] לפנייה. */
-function providerRequest(string $provider, string $model, string $system, string $prompt, int $maxTokens): array {
-    $maxTokens = max($maxTokens, MIN_OUTPUT_TOKENS);
+/* ── רמת החשיבה (שלב 20, §16.3) ─────────────────────────────────
+ * חמש רמות של הלוח → הפרמטר של כל ספק. אומת מול התיעוד (2026-11-03): Anthropic ‏output_config.effort —
+ * low / medium / high / xhigh / max במודלים הנוכחיים; Opus 4.6 ו-Sonnet 4.6 בלי xhigh; Opus 4.5 רק low–high;
+ * Haiku 4.5 / Sonnet 4.5 ומטה — אין. OpenAI ‏reasoning_effort (low / medium / high) במודלי חשיבה (gpt-5, o*).
+ * Gemini 2.5 ‏thinkingConfig.thinkingBudget. מודל בלי שליטה — רק "אוטומטי".
+ * ‏max_tokens גדל עם הרמה: החשיבה נספרת מתוכו. */
+const EFFORT_LEVELS = ['auto', 'low', 'medium', 'high', 'max'];
+const EFFORT_LABEL = ['auto' => 'אוטומטי', 'low' => 'נמוכה', 'medium' => 'בינונית', 'high' => 'גבוהה', 'max' => 'מרבית'];
+const EFFORT_MAX_TOKENS = ['auto' => MIN_OUTPUT_TOKENS, 'low' => MIN_OUTPUT_TOKENS, 'medium' => 4096, 'high' => 8192, 'max' => 16000];
+
+/** הרמות שהמודל תומך בהן — תמיד כולל "אוטומטי". */
+function effortLevels(string $provider, string $model): array {
+    if ($provider === 'anthropic') {
+        if (anthropicTakesEffort($model) || str_starts_with($model, 'claude-opus-4-5')) return EFFORT_LEVELS;
+        return ['auto'];
+    }
+    if ($provider === 'openai') return preg_match('/^(gpt-5|o\d)/', $model) ? EFFORT_LEVELS : ['auto'];
+    if ($provider === 'google') return preg_match('/^gemini-2\.5/', $model) ? EFFORT_LEVELS : ['auto'];
+    return ['auto'];
+}
+
+/** הרמה → [שדות לגוף הבקשה, max_tokens]. רמה שהמודל לא תומך בה → כמו "אוטומטי". */
+function effortFor(string $provider, string $model, string $level): array {
+    if (!in_array($level, effortLevels($provider, $model), true)) $level = 'auto';
+    $max = EFFORT_MAX_TOKENS[$level];
+    if ($provider === 'anthropic') {
+        if ($level === 'auto') return [anthropicTakesEffort($model) ? ['output_config' => ['effort' => 'low']] : [], $max];
+        $v = $level;
+        // Opus 4.5 — רק low–high; ‏max יורד ל-high
+        if ($v === 'max' && str_starts_with($model, 'claude-opus-4-5')) $v = 'high';
+        return [['output_config' => ['effort' => $v]], $max];
+    }
+    if ($provider === 'openai') {
+        if ($level === 'auto') return [[], $max];
+        return [['reasoning_effort' => $level === 'max' ? 'high' : $level], $max];
+    }
+    if ($provider === 'google') {
+        if ($level === 'auto') return [[], $max];
+        $budget = ['low' => 1024, 'medium' => 4096, 'high' => 16384, 'max' => 24576][$level];
+        return [['generationConfig' => ['thinkingConfig' => ['thinkingBudget' => $budget], 'maxOutputTokens' => max($max, $budget + 2048)]], max($max, $budget + 2048)];
+    }
+    return [[], $max];
+}
+
+/** טוקני החשיבה מתוך התשובה, כשהספק מפרט אותם (OpenAI, Gemini). Anthropic כוללת אותם בפלט — null. */
+function aiThinkingTokens(string $provider, array $data): ?int {
+    if ($provider === 'openai') { $v = $data['usage']['completion_tokens_details']['reasoning_tokens'] ?? null; return $v === null ? null : (int) $v; }
+    if ($provider === 'google') { $v = $data['usageMetadata']['thoughtsTokenCount'] ?? null; return $v === null ? null : (int) $v; }
+    return null;
+}
+
+/** מחזיר [url, headers, body] לפנייה. ‏$effort — רמת החשיבה (שלב 20); 'auto' — כמו קודם. */
+function providerRequest(string $provider, string $model, string $system, string $prompt, int $maxTokens, string $effort = 'auto'): array {
+    [$extra, $effMax] = effortFor($provider, $model, $effort);
+    $maxTokens = max($maxTokens, MIN_OUTPUT_TOKENS, $effMax);
     switch ($provider) {
         case 'anthropic':
             $body = ['model' => $model, 'max_tokens' => $maxTokens, 'system' => $system,
-                     'messages' => [['role' => 'user', 'content' => $prompt]]];
-            if (anthropicTakesEffort($model)) $body['output_config'] = ['effort' => 'low'];
+                     'messages' => [['role' => 'user', 'content' => $prompt]]] + $extra;
             return [
                 'https://api.anthropic.com/v1/messages',
                 ['Content-Type: application/json', 'anthropic-version: 2023-06-01'],
@@ -117,7 +168,7 @@ function providerRequest(string $provider, string $model, string $system, string
                 ['Content-Type: application/json'],
                 ['model' => $model, 'max_completion_tokens' => $maxTokens,
                  'messages' => [['role' => 'system', 'content' => $system],
-                                ['role' => 'user',   'content' => $prompt]]],
+                                ['role' => 'user',   'content' => $prompt]]] + $extra,
             ];
 
         case 'google':
@@ -128,7 +179,7 @@ function providerRequest(string $provider, string $model, string $system, string
                 ['Content-Type: application/json'],
                 ['system_instruction' => ['parts' => [['text' => $system]]],
                  'contents' => [['role' => 'user', 'parts' => [['text' => $prompt]]]],
-                 'generationConfig' => ['maxOutputTokens' => $maxTokens]],
+                 'generationConfig' => ($extra['generationConfig'] ?? []) + ['maxOutputTokens' => $maxTokens]],
             ];
     }
     throw new InvalidArgumentException('ספק לא מוכר: ' . $provider);
@@ -217,7 +268,8 @@ function aiComplete(array $conn, string $system, string $prompt,
     if ($key === '')   throw new AppError('לא הוגדר מפתח עבור ' . PROVIDERS[$provider]['label']);
     if ($model === '') throw new AppError('לא הוגדר מודל עבור ' . PROVIDERS[$provider]['label']);
 
-    [$url, $headers, $body] = providerRequest($provider, $model, $system, $prompt, $maxTokens);
+    $effort   = in_array($conn['effort'] ?? 'auto', EFFORT_LEVELS, true) ? (string) ($conn['effort'] ?? 'auto') : 'auto';
+    [$url, $headers, $body] = providerRequest($provider, $model, $system, $prompt, $maxTokens, $effort);
 
     // כל ספק ממקם את המפתח במקום אחר.
     if ($provider === 'anthropic')   $headers[] = 'x-api-key: ' . $key;
@@ -249,11 +301,16 @@ function aiComplete(array $conn, string $system, string $prompt,
     }
 
     // נרשם גם כשהתשובה ריקה — הטוקנים נצרכו
+    [$tin, $tout] = usageFromResponse($provider, $data);
+    $cost = 0.0;
     if (!empty($conn['user_id'])) {
-        [$tin, $tout] = usageFromResponse($provider, $data);
-        recordUsage(['user_id' => (int) $conn['user_id'], 'connection_id' => $conn['connection_id'] ?? null] + $ctx,
-                    $provider, $model, $tin, $tout);
+        $cost = recordUsage(['user_id' => (int) $conn['user_id'], 'connection_id' => $conn['connection_id'] ?? null] + $ctx,
+                            $provider, $model, $tin, $tout);
     }
+    // שלב 20: מה באמת ענה — לבועה (messages.ai_used)
+    $GLOBALS['CT_AI_LAST'] = ['connection_id' => $conn['connection_id'] ?? null, 'provider' => $provider, 'model' => $model,
+        'effort' => $effort, 'tokens_in' => $tin, 'tokens_out' => $tout, 'thinking_tokens' => aiThinkingTokens($provider, $data),
+        'cost_usd' => round($cost, 6), 'label' => (string) ($conn['label'] ?? '')];
 
     $text = providerText($provider, $data);
     if (trim($text) === '') {

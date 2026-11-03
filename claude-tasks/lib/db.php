@@ -291,6 +291,8 @@ function migrate(PDO $pdo): void {
     migrateLaneLog($pdo);
     // שלב 18: שאר ההגדרות, התקרה, מטלת מעבר (lib/lanesettings.php)
     migrateLaneSettings($pdo);
+    // שלב 20: מודל ורמת חשיבה (lib/aipref.php)
+    migrateAiPref($pdo);
 }
 
 /** ALTER TABLE ADD COLUMN אינו מכיר IF NOT EXISTS ב-SQLite — בודקים לבד. */
@@ -484,3 +486,4 @@ require_once __DIR__ . '/bridgever.php';
 require_once __DIR__ . '/silence.php';
 require_once __DIR__ . '/lanelog.php';
 require_once __DIR__ . '/lanesettings.php';
+require_once __DIR__ . '/aipref.php';

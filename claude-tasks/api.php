@@ -487,6 +487,15 @@ try {
         if (($origin = taskOriginFromMessage(int_or_null($in, 'from_message'))) !== '') {
             db()->prepare('UPDATE tasks SET origin = ? WHERE id = ?')->execute([$origin, $id]);
         }
+        // שלב 20 (§16.1, 8): מטלה מתוך ערוץ בלי מודל מפורש — המודל של הצ'אט (אם נבחר לו), מאותו ספק
+        if (str_field($in, 'model', 80) === '' && ($fm = int_or_null($in, 'from_message')) !== null) {
+            $q = db()->prepare('SELECT c.ai_pref FROM messages m JOIN channels c ON c.id = m.channel_id WHERE m.id = ?');
+            $q->execute([$fm]);
+            $cp = json_decode((string) ($q->fetchColumn() ?: ''), true);
+            if (is_array($cp) && ($cp['model'] ?? '') !== '' && ($provider === '' || $provider === ($cp['provider'] ?? ''))) {
+                db()->prepare('UPDATE tasks SET provider = ?, model = ? WHERE id = ?')->execute([$cp['provider'], $cp['model'], $id]);
+            }
+        }
 
         // סידור לפי כללים בלבד: זה קורה בכל הוספה, ואסור שיעלה כסף או
         // ישהה את התגובה. סידור עם מודל מופעל ידנית מהמגירה.
@@ -820,12 +829,13 @@ try {
             catch (Throwable $e) { logEvent($me, 'github.connect', '', false, $e->getMessage()); fail($e->getMessage()); }
         }
         $id = addConnection($me, $kind, $secret, str_field($in, 'label', 40), str_field($in, 'model', 80), $gh);
+        if ($kind !== 'github' && str_field($in, 'effort', 10) !== '') setConnectionEffort($me, $id, str_field($in, 'effort', 10));   // שלב 20
         ok(['id' => $id, 'connections' => userConnections((int) $me['id'])]);
     }
 
     case 'connection-update': {
         $me = requireUser($user);
-        updateConnection($me, (int) ($in['id'] ?? 0), array_intersect_key($in, array_flip(['label', 'model', 'secret'])));
+        updateConnection($me, (int) ($in['id'] ?? 0), array_intersect_key($in, array_flip(['label', 'model', 'secret', 'effort'])));
         ok(['connections' => userConnections((int) $me['id'])]);
     }
 
@@ -1692,7 +1702,38 @@ try {
 
     case 'channel-send':
         ok(['id' => channelSend(requireUser($user), (int) ($in['channel_id'] ?? 0), (string) ($in['body'] ?? ''),
-                                int_or_null($in, 'task_id'), int_or_null($in, 'reply_to'))]);
+                                int_or_null($in, 'task_id'), int_or_null($in, 'reply_to'),
+                                isset($in['ai']) && is_array($in['ai']) ? $in['ai'] : null)]);
+
+    /* ── שלב 20: מודל ורמת חשיבה (lib/aipref.php) ── */
+    case 'ai-options': {
+        $me = requireUser($user);
+        $cid = (int) ($in['channel_id'] ?? 0);
+        $payer = (int) $me['id'];
+        $ch = null;
+        if ($cid) {
+            $ch = getChannel($cid);
+            if (!$ch) fail('הערוץ לא נמצא', 404);
+            requireProject((int) $ch['project_id'], $me, 'read');
+            $payer = (int) projectPayer((int) $ch['project_id']);
+        }
+        if ($payer !== (int) $me['id'] && authorRole($me) !== 'owner') fail('בעל הלוח בלבד', 403);
+        ok(['connections' => aiOptions($payer, !empty($in['refresh'])), 'levels' => EFFORT_LABEL,
+            'channel' => $ch ? channelAiInfo($ch) : null]);
+    }
+
+    case 'channel-ai':
+        ok(['ai' => setChannelAiPref(requireUser($user), (int) ($in['channel_id'] ?? 0),
+                                     isset($in['ai']) && is_array($in['ai']) ? $in['ai'] : null)]);
+
+    case 'connection-effort': {
+        $me = requireUser($user);
+        setConnectionEffort($me, (int) ($in['id'] ?? 0), str_field($in, 'effort', 10));
+        ok(['connections' => userConnections((int) $me['id'])]);
+    }
+
+    case 'ai-card-answer':
+        ok(aiCardAnswer(requireUser($user), (int) ($in['card_id'] ?? 0), str_field($in, 'choice', 10)));
 
     case 'channel-inbox': {
         $ch = $scope['channel'] ?? null;

@@ -247,7 +247,8 @@ function usageSummary(int $userId): array {
                                        'cost' => round((float) $r['c'], 4), 'tokens' => (int) $r['t']], $p->fetchAll());
     return quotaState($userId) + ['user_id' => $userId, 'month' => monthKey(), 'today' => (int) gmdate('j'),
                                   'daily' => $daily, 'projects' => $projects,
-                                  'platform' => platformBreaker($userId), 'lane_prefs' => lanePrefs($userId)];   // §15.3
+                                  'platform' => platformBreaker($userId), 'lane_prefs' => lanePrefs($userId),   // §15.3
+                                  'by_model' => usageByModel($userId)];   // שלב 20: פירוט לפי מודל
 }
 
 function setQuota(array $admin, int $userId, float $usd): void {

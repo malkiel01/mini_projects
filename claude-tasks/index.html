@@ -213,6 +213,8 @@
       <label class="field"><span>שם (למשל אישי, עבודה)</span><input type="text" id="csLabel" maxlength="40"></label>
       <label class="field" id="csKeyWrap"><span>מפתח חדש</span><input type="password" id="csKey" dir="ltr" autocomplete="off"></label>
       <div id="csModelSlot"></div>
+      <div class="field" id="csEffortWrap"><span>רמת חשיבה כברירת מחדל</span>
+        <div class="seg seg--wrap" id="csEffort" role="radiogroup" aria-label="רמת חשיבה כברירת מחדל"></div></div>
       <div class="row-btns"><button type="button" class="btn ghost" id="csTest">בדיקה עכשיו</button></div>
       <div class="danger-zone">
         <button type="button" class="btn ghost danger-text" id="csRemove">🔌 ניתוק החיבור</button>
@@ -334,6 +336,7 @@
         <span class="body"><b>↩ משיב ל</b> <span id="cvReplyText" dir="auto"></span></span>
         <button type="button" class="icon-btn" id="cvReplyX" aria-label="ביטול התשובה">✕</button>
       </div>
+      <button type="button" class="ai-chip" id="cvAi" aria-label="בחירת מודל להודעה הבאה" hidden></button>
       <div class="composer-row">
         <label class="sr-only" for="chatInput">הודעה לצ'אט</label>
         <textarea id="chatInput" rows="1" placeholder="הודעה לצ'אט" maxlength="20000"></textarea>
@@ -493,6 +496,37 @@
 </dialog>
 
 <!-- ── שלב 17: "העבר ל…" והיומן (§15.6) ─────────────────────── -->
+<!-- ── שלב 20: מודל ורמת חשיבה ── -->
+<dialog id="aiSheet" aria-labelledby="aiSheetT">
+  <div class="sheet-wrap">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close="aiSheet" aria-label="סגירה">✕</button>
+      <h2 id="aiSheetT">🧠 מודל לשיחה הזו</h2>
+      <button type="button" class="btn primary" id="aiApply">בחירה</button>
+    </header>
+    <div class="sheet-body">
+      <p class="hint" id="aiSheetHint"></p>
+      <p class="b-warn" id="aiSheetNotice" hidden></p>
+      <ul class="list" id="aiModels" role="radiogroup" aria-label="מודל"></ul>
+      <h3 class="conn-group">רמת חשיבה</h3>
+      <div class="seg seg--wrap" id="aiEffort" role="radiogroup" aria-label="רמת חשיבה"></div>
+      <p class="hint" id="aiEffortHint"></p>
+      <button type="button" class="btn ghost" id="aiKeep" hidden>📌 השאר לשיחה הזו</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="aiUsed" aria-labelledby="aiUsedT">
+  <div class="sheet-wrap">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close="aiUsed" aria-label="סגירה">✕</button>
+      <h2 id="aiUsedT">☁️ מי ענה</h2>
+      <span></span>
+    </header>
+    <div class="sheet-body"><div class="kv-list" id="aiUsedRows"></div></div>
+  </div>
+</dialog>
+
 <dialog id="laneSwitch" aria-labelledby="laneSwitchT">
   <div class="sheet-wrap">
     <header class="sheet-head">
