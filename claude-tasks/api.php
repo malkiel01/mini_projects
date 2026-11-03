@@ -1617,6 +1617,9 @@ try {
     case 'handoff-status':
         ok(handoffStatus(requireUser($user), (int) ($in['channel_id'] ?? 0)));
 
+    case 'handoff-distill':
+        ok(handoffDistill(requireUser($user), (int) ($in['channel_id'] ?? 0)));
+
     case 'handoff-cancel':
         ok(handoffCancel(requireUser($user), (int) ($in['channel_id'] ?? 0)));
 

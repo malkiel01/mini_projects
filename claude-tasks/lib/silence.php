@@ -507,3 +507,59 @@ function channelLaneInfo(array $c): array {
             'lane_decision' => (string) ($c['lane_decision'] ?? ''),
             'platform_queue' => $since > 0 || ($c['lane_decision'] ?? '') === 'platform' ? count(platformQueue((int) $c['id'])) : 0];
 }
+
+/* ── 🔁 צ'אט המשך: זיקוק השיחה לפרומפט (בעל הלוח 2026-11-03) ───────── */
+
+/**
+ * הנחיית הזיקוק: לא "סיכום" אלא זיכרון עבודה לצ'אט החדש — כל מה שעוד תקף, בלי מה שכבר לא רלוונטי.
+ * בעל הלוח לא קורא אותו; הצ'אט החדש פותח ממנו.
+ */
+const HANDOFF_DISTILL_SYSTEM = "אתה מעביר שיחת עבודה ארוכה לצ'אט חדש שימשיך אותה בזיכרון נקי. מתוך השיחה, כתוב בעברית את הזיכרון "
+    . "שהצ'אט החדש צריך — ורק אותו. שמור: כללי עבודה, חוקים ושיטות שנקבעו (במילים המדויקות כשזה כלל); החלטות ולמה; "
+    . "מצב נוכחי וערכים עיקריים (מספרים, שמות, ענפים, PR, sessions, קבצים); מה באמצע ומה הצעד הבא בו; נקודות פתוחות; "
+    . "שאלות שנשאלו והתשובות שניתנו (רק מה שעוד תקף); דברים שבעל הלוח ביקש במפורש לא לעשות. "
+    . "השמט: ניסיונות שנכשלו ונזנחו, החלטות שהוחלפו (כתוב רק את התקפה), שיחת חולין, פלט ארוך, חזרות. "
+    . "אל תמציא דבר שלא כתוב בשיחה. כותרות קצרות לכל חלק, נקודות קצרות. בסוף: \"מה הצ'אט הבא עושה קודם\" — 1–3 צעדים. "
+    . "בלי הקדמה ובלי סיום מנומס.";
+const HANDOFF_DISTILL_BUDGET = 60000;   // תווים מהשיחה, מהסוף אחורה
+
+/**
+ * בעל הלוח: "לסכם את הצ'אט למעבר לצ'אט חדש". קריאה אחת למודל (על חשבון המשלם, במכסה), והתוצאה נשמרת כתקציר
+ * ההעברה של הבקשה (kind handoff) — כך שהגיליון מציג מיד פרומפט מוכן, כאילו הצ'אט הישן כתב אותו.
+ */
+function handoffDistill(array $user, int $channelId, ?callable $transport = null): array {
+    if (authorRole($user) !== 'owner') throw new AppError('צ\'אט המשך — בעל הלוח בלבד', 403);
+    $c = getChannel($channelId);
+    if (!$c) throw new AppError('הערוץ לא נמצא', 404);
+    $project = requireProject((int) $c['project_id'], $user, 'read');
+    $payer = payerUser((int) $project['id']);
+    if (!$payer) throw new AppError('אין משלם לענף', 409);
+    requireQuota((int) $payer['id'], 'answer');
+    $chain = aiChain($payer);
+    if (!$chain) throw new AppError('למשלם אין חיבור לספק בינה — הגדרות ← חיבורים');
+    // בקשה שממתינה — אליה מצרפים; אין — פותחים (בלי לחכות לצ'אט הישן)
+    $st = handoffState($c);
+    if ($st['state'] !== 'waiting') handoffRequest($user, $channelId);
+    $req = (int) handoffState(getChannel($channelId))['request_id'];
+    $rows = messageRows("m.channel_id = ? AND m.kind NOT IN ('status', 'lane_card', 'handoff_request')", [$channelId], 500);
+    $who = ['owner' => 'בעל הלוח', 'chat' => 'הצ\'אט', 'system' => 'מערכת', 'platform' => 'Platform', 'member' => 'חבר צוות'];
+    $lines = []; $used = 0;
+    foreach (array_reverse($rows) as $m) {
+        $line = '[' . ($who[$m['author_role']] ?? $m['author_role']) . '] ' . mb_substr(trim((string) $m['body']), 0, 3000);
+        if ($used + mb_strlen($line) > HANDOFF_DISTILL_BUDGET) break;
+        $lines[] = $line; $used += mb_strlen($line);
+    }
+    $log = implode("\n\n", array_reverse($lines));
+    $conn = $chain[0] + ['chain' => $chain, 'user' => $payer,
+                         'usage' => ['kind' => 'answer', 'project_id' => (int) $project['id'], 'channel_id' => $channelId, 'enforce' => false]];
+    $text = trim(aiComplete($conn, HANDOFF_DISTILL_SYSTEM, "השיחה עם \"{$c['name']}\" (מהישנה לחדשה):\n\n" . $log, 3000, $transport));
+    if ($text === '') throw new AppError('המודל החזיר זיכרון ריק — נסו שוב, או "בלי תקציר"');
+    inTx(function () use ($channelId, $text, $req) {
+        db()->prepare("INSERT INTO messages (channel_id, direction, author_role, kind, body, reply_to, answered_by, created_at)
+                       VALUES (?, 'out', 'system', 'handoff', ?, ?, '', ?)")
+            ->execute([$channelId, cleanBody($text), $req, nowTs()]);
+        channelStateRefresh($channelId);
+    });
+    logEvent($user, 'handoff.distill', "channel:$channelId", true, mb_strlen($text) . ' תווים');
+    return handoffPrompt($user, $channelId, false);
+}
