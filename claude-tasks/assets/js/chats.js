@@ -8,7 +8,7 @@ import { renderMarkdown } from './markdown.js';
 import { choiceCard } from './choices.js';
 import { permCard, permFromMessage, refreshPermStrip } from './permissions.js';
 import { HEALTH, healthDetail, openHandoff } from './newchat.js';
-import { labelChip, openLabelsForMessage, openManageLabels, renderPinStrip, openPinList } from './labels.js';
+import { labelChip, openLabelsForMessage, openManageLabels, renderPinStrip, openPinList, pinsMode, setPinsMode } from './labels.js';
 import { needs as trNeeds, lang as trLang, TRANSLATE_LANGS, engine as trEngine, translate, cached as trCached, setShow as trSetShow } from './translate.js';
 
 const POLL_MS = 4000;
@@ -156,9 +156,14 @@ function bubble(m) {
   const kind = { question: '❓ שאלה', answer: '💡 תשובה', decision: '🔐 החלטה', choice: '🔘 שאלת בחירה', choice_answer: '🔘 תשובה', permission: '🔐 הרשאה' }[m.kind];
   return el('li', { class: `bubble bubble--${m.direction}${m.author_role === 'system' ? ' bubble--sys' : ''}${m.author_role === 'platform' ? ' bubble--platform' : ''}`, dataset: { id: String(m.id) } }, [
     el('div', { class: 'b-meta' }, meta),
-    orig && m.kind !== 'choice_answer' ? el('button', { type: 'button', class: 'b-reply', dir: 'auto', title: 'מעבר להודעה',
+    orig && m.kind !== 'choice_answer' && !isPlatformRelay(m) ? el('button', { type: 'button', class: 'b-reply', dir: 'auto', title: 'מעבר להודעה',
       onclick: () => scrollToMessage(orig.id) }, [`↩ ${plain(orig.body, 90)}`]) : null,
     kind ? el('span', { class: 'badge', text: kind }) : null,
+    // העתק לצ'אט של תשובת Platform (§9) — התשובה כבר בבועה של Platform; כאן שורה מקופלת בלבד
+    isPlatformRelay(m) ? el('details', { class: 'b-relay' }, [
+      el('summary', { text: `📨 עודכן לצ'אט: Platform ענה על הודעה #${m.reply_to}` }),
+      el('div', { class: 'b-body md', dir: 'auto' }, [renderMarkdown(m.body)]),
+    ]) :
     m.kind === 'approval' && m.approval?.type
       ? approvalCard(m.approval, m.task_id, { canDecide: m.approval.can_decide, pending: m.approval.pending, onDone: reload })
       // שאלת בחירה (§5.10): כפתור לכל אפשרות; אחרי מענה — מקופלת
@@ -180,6 +185,12 @@ function bubble(m) {
       onclick: () => document.dispatchEvent(new CustomEvent('ct:open-task', { detail: m.task_id })),
     }, [el('span', { text: `📋 מטלה #${m.task_id}` }), el('span', { 'aria-hidden': 'true', text: '‹' })]) : null,
   ]);
+}
+
+/** ההעתק שהשרת שומר לצ'אט אחרי ש-Platform ענה בשמו — גם בנוסח הישן ("☁️ Platform ענה בלוח."). */
+function isPlatformRelay(m) {
+  return m.kind === 'status' && m.author_role === 'system' && m.direction === 'in' && m.reply_to
+    && /^(📨 לצ'אט: Platform ענה|☁️ Platform ענה בלוח\.)/u.test(m.body || '');
 }
 
 function renderHead() {
@@ -363,6 +374,7 @@ export async function openConversation(id) {
   $('#cvFilter').hidden = true;
   setReply(null);
   $('#cvPins').hidden = true;
+  $('#pinBubble').hidden = true;
   $('#chatLog').replaceChildren();
   $('#chatInput').value = '';
   const c = (state.channels || []).find((x) => x.id === id);
@@ -441,6 +453,9 @@ function renderSettings() {
     ['ℹ️', 'על הצ\'אט', `${c.role || 'בלי תפקיד'} · נראה ${c.last_seen_at ? timeAgo(c.last_seen_at) : 'אף פעם'}`, () => openAbout()],
     c.can_edit && ['✏️', 'שם, סמל וצבע', `${channelIcon(c)} ${c.name}${c.color ? ' · ' + COLOR_NAME[c.color] : ''}`, () => openEdit()],
     ['📌', 'מוצמדות', conv.pins?.length ? `${conv.pins.length} · ${conv.pins.filter((x) => x.visibility === 'private').length ? 'כולל שלך 🔒' : 'לכולם'}` : 'אין', () => openPinList(conv.pins || [], (id) => { $('#chatSettings').close(); scrollToMessage(id); })],
+    // פס המוצמדות הוסתר (בועה / מוסתר) — כאן מחזירים אותו
+    pinsMode() !== 'strip' && ['📌', 'פס המוצמדות', pinsMode() === 'bubble' ? 'בועה צפה — נגיעה מחזירה את הפס' : 'מוסתר — נגיעה מחזירה את הפס',
+      () => { setPinsMode('strip'); renderSettings(); toast('פס המוצמדות חזר', 'ok'); }, { sub2: '↩ להחזיר את הפס' }],
     ['🔎', 'חיפוש וסינון', conv.filter ? `פעיל · ${filterSummary(conv.filter).join(' · ')}` : 'טקסט, תוויות, מוצמדות, סוג, מי כתב, תאריכים', () => { $('#chatSettings').close(); openSearch(); }],
     ['⬇️', 'ייצוא', conv.view ? 'כל השיחה, או רק המסוננות' : 'כל השיחה כקובץ Markdown', () => exportChat()],
     ['🏷', 'ניהול תוויות', 'יצירה, עריכה ומחיקה — משותפות ופרטיות', () => openManageLabels(conv.channel, () => reload())],

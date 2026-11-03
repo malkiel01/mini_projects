@@ -6,6 +6,16 @@
  * לנעילה הדדית, והדף פשוט אינו נטען.
  */
 
+// ‏replaceChildren של הדפדפן הופך null / undefined / false לטקסט ("null" הופיע בפס המוצמדות ובכרטיס המעקב).
+// ב-el הם מסוננים ממילא; כאן — אותו כלל לכל replaceChildren בלוח, כדי שהבאג הזה לא יחזור במקום אחר.
+for (const P of [Element.prototype, DocumentFragment.prototype, Document.prototype]) {
+  const orig = P.replaceChildren;
+  if (orig && !orig.ctSafe) {
+    P.replaceChildren = function (...nodes) { return orig.apply(this, nodes.filter((n) => n !== null && n !== undefined && n !== false)); };
+    P.replaceChildren.ctSafe = true;
+  }
+}
+
 export const $ = (s, r = document) => r.querySelector(s);
 export const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 

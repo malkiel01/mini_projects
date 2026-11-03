@@ -136,9 +136,15 @@ check('לפני בקשה — "לא התבקש" (בלי שגיאה)', handoffProm
 $hr = handoffRequest($boss, $r1['channel_id']);
 check('הבקשה מגיעה לצ\'אט (in, handoff_request, מעירה)', [in_array($hr['id'], array_column(channelInbox($old), 'id'), true),
       messageRows('m.id = ?', [$hr['id']])[0]['kind']], [true, 'handoff_request']);
+// צ'אט מאזין — מחכים לתקציר עד 2 דקות
+db()->prepare('UPDATE channels SET listening_until = ? WHERE id = ?')->execute([nowTs() + 600, $r1['channel_id']]);
 $st = handoffPrompt($boss, $r1['channel_id']);
-check('עוד אין תקציר — ממתינים, ואי אפשר "בלי תקציר" לפני 2 דקות', [$st['ready'], $st['can_fallback']], [false, false]);
+check('מאזין, עוד אין תקציר — ממתינים, ואי אפשר "בלי תקציר" לפני 2 דקות', [$st['ready'], $st['can_fallback'], $st['listening']], [false, false, true]);
 throws('"בלי תקציר" מוקדם מדי — 409', fn () => handoffPrompt($boss, $r1['channel_id'], true), 409);
+// צ'אט שלא מאזין לא יקבל את הבקשה עד הבדיקה השעתית — "בלי תקציר" מיד
+db()->prepare('UPDATE channels SET listening_until = 0 WHERE id = ?')->execute([$r1['channel_id']]);
+$st = handoffPrompt($boss, $r1['channel_id']);
+check('לא מאזין — "בלי תקציר" מוצע מיד', [$st['ready'], $st['can_fallback'], $st['listening']], [false, true, false]);
 channelPost($old, 'chat', "## מצב\nמ4 נפרסה.\n## מה הצ'אט הבא צריך לעשות קודם\nלבדוק את לוח השכבות.", null, null, 'handoff');
 $hp = handoffPrompt($boss, $r1['channel_id']);
 check('יש תקציר — הפרומפט מוכן, עם --replaces והתקציר', [$hp['ready'], $hp['source'], str_contains($hp['prompt'], "--replaces {$r1['channel_id']}"),
