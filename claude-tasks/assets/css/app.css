@@ -895,9 +895,11 @@ mark.hit { background: color-mix(in srgb, var(--star) 45%, transparent); color: 
 .seg--wrap { flex-wrap: wrap; }
 
 /* ── שלב 20: מודל ורמת חשיבה ── */
-.ai-chip { flex: none; align-self: flex-end; min-height: 44px; max-width: 34%; padding: 0 var(--s2); border: 1px solid var(--line);
+.ai-chip { display: inline-flex; align-items: center; gap: 4px; min-height: 32px; max-width: 100%; margin-bottom: var(--s1); padding: 0 var(--s2); border: 1px solid var(--line);
   border-radius: var(--r); background: var(--surface); color: var(--ink-2, var(--ink)); font: inherit; font-size: .78rem;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.ai-chip[hidden] { display: none; }
+.ai-chip::before { content: '🧠'; }
 .ai-chip.is-set { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }
 .b-aiused { display: block; margin-top: var(--s1); padding: 0; border: 0; background: none; color: var(--muted, #6b7280);
   font: inherit; font-size: .75rem; text-align: start; cursor: pointer; }

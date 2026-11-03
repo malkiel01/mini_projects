@@ -12,7 +12,7 @@ export function shortModel(id = '') {
   return m ? `${m[1][0].toUpperCase()}${m[1].slice(1)} ${m[2]}${m[3] ? '.' + m[3] : ''}` : id;
 }
 
-export const aiChipText = (ai) => ai?.model ? `${shortModel(ai.model)} · ${EFFORT_LABEL[ai.effort] || 'אוטומטי'}` : '🧠 מודל';
+export const aiChipText = (ai) => ai?.model ? `${shortModel(ai.model)} · חשיבה ${ai.effort && ai.effort !== 'auto' ? EFFORT_LABEL[ai.effort] : 'אוטומטית'}` : 'מודל';
 
 /**
  * הגיליון. mode: 'channel' (⚙ — נשמר לשיחה) | 'message' (השבב — להודעה הבאה בלבד, עם "השאר לשיחה הזו").
@@ -82,13 +82,13 @@ export async function openAiSheet({ channelId, mode, current, onPick }) {
 export function aiUsedLine(m, override) {
   const u = m.ai_used;
   if (!u?.model) return null;
-  const txt = `☁️ ${shortModel(u.model)} · חשיבה ${EFFORT_LABEL[u.effort] || 'אוטומטית'} · $${Number(u.cost_usd || 0).toFixed(2)}${override ? ' · ⚡ להודעה הזו' : ''}${u.fell_back_from ? ' · ↪' : ''}`;
+  const txt = `☁️ ${shortModel(u.model)} · חשיבה ${u.effort && u.effort !== 'auto' ? EFFORT_LABEL[u.effort] : 'אוטומטית'} · $${Number(u.cost_usd || 0).toFixed(2)}${override ? ' · ⚡ להודעה הזו' : ''}${u.fell_back_from ? ' · ↪' : ''}`;
   return el('button', { type: 'button', class: 'b-aiused', text: txt, 'aria-label': `פרטי המודל שענה: ${txt}`, onclick: () => openAiUsed(u, override) });
 }
 
 function openAiUsed(u, override) {
   const rows = [
-    ['מודל', u.model], ['חיבור', u.label || '—'], ['רמת חשיבה', EFFORT_LABEL[u.effort] || 'אוטומטית'],
+    ['מודל', u.model], ['חיבור', u.label || '—'], ['רמת חשיבה', u.effort && u.effort !== 'auto' ? EFFORT_LABEL[u.effort] : 'אוטומטית'],
     ['טוקנים — קלט', String(u.tokens_in ?? '—')], ['טוקנים — פלט', String(u.tokens_out ?? '—')],
     ['טוקנים — חשיבה', u.thinking_tokens == null ? 'כלולים בפלט' : String(u.thinking_tokens)],
     ['עלות', `$${Number(u.cost_usd || 0).toFixed(4)}`],
