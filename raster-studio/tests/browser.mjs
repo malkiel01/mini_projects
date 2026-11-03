@@ -188,6 +188,30 @@ async function main() {
   check('שכבה מוסתרת — בלי השפעה', blends.hidden);
   check('אטימות 0 ← 1 — ההרכבה מתעדכנת', blends.zero && blends.black);
 
+  // render-core: המרכיב במעבד (composite) נותן את מה שהמנוע מצייר — אותה נוסחה, גם בקבוצה מבודדת עם אטימות
+  const cpu = await page.evaluate(async () => {
+    const { RasterDocument } = await import('./assets/js/engine/doc.js');
+    const { composite } = await import('./assets/js/render-core/composite.js');
+    const r = __rs.renderer;
+    const bg = [120, 200, 40, 255], fg = [200, 60, 180, 160], g2 = [30, 240, 90, 255];
+    const one = c => ({ rgba: new Uint8Array(c), w: 1, h: 1 });
+    const res = [];
+    for (const mode of ['normal', 'multiply', 'screen', 'overlay']) {
+      const d = new RasterDocument(40, 40);
+      r.fill(d, d.addLayer(), bg);
+      const g = d.addGroup({ blend: mode, opacity: 0.7 });
+      r.fill(d, d.addLayer({ parent: g }), g2);
+      r.fill(d, d.addLayer({ parent: g, blend: 'multiply', opacity: 0.6 }), fg);
+      const got = Array.from(await r.readPixels(d, 20, 20, 1, 1));
+      const tree = [one(bg), { type: 'group', blend: mode, opacity: 0.7, children: [one(g2), { ...one(fg), blend: 'multiply', opacity: 0.6 }] }];
+      const exp = Array.from(composite({ width: 1, height: 1, layers: tree }));
+      const inGroup = d.layers[1]?.type === 'group' && d.layers[1].children.length === 2;
+      res.push({ mode, got: got.join(), exp: exp.join(), ok: inGroup && Math.max(...exp.map((v, i) => Math.abs(v - got[i]))) <= 1 });
+    }
+    return res;
+  });
+  for (const c of cpu) check(`render-core — המרכיב במעבד כמו המנוע (${c.mode}, קבוצה)`, c.ok, `מנוע ${c.got}, מעבד ${c.exp}`);
+
   // ---- זום והזזה ----
   await openEd(page);
   await page.waitForFunction(() => window.__rs?.doc);

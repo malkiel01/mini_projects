@@ -12,6 +12,8 @@
 // מוסכמה: שורה 0 של כל מרקם = הקצה העליון — כמו ב-WebGL2. ב-WebGPU גם היעד וגם המסך כך, בלי היפוך.
 
 import { TILE, BLEND_MODES, tilesInRect, newMask } from './doc.js';
+import { WGSL_COLOR } from '../render-core/color.js';
+import { WGSL_BLEND } from '../render-core/blend.js';
 import { rasterTile, selectionBox } from './selection.js';
 import { matrix as xfMatrix, bounds as xfBounds } from './transform.js';
 import { meshBounds, meshCells } from './warp.js';
@@ -73,14 +75,7 @@ fn corner(vi: u32) -> vec2f { return vec2f(f32(vi & 1u), f32(vi >> 1u)); }
 }
 
 // select ולא mix: pow(0, …) יכול להחזיר NaN, ו-mix היה מעביר אותו גם כשהענף לא נבחר
-fn enc(l0: vec3f) -> vec3f {
-  let l = clamp(l0, vec3f(0.0), vec3f(1.0));
-  return select(l * 12.92, 1.055 * pow(max(l, vec3f(1e-9)), vec3f(1.0 / 2.4)) - 0.055, l > vec3f(0.0031308));
-}
-fn dec(s0: vec3f) -> vec3f {
-  let s = clamp(s0, vec3f(0.0), vec3f(1.0));
-  return select(s / 12.92, pow((s + 0.055) / 1.055, vec3f(2.4)), s > vec3f(0.04045));
-}
+${WGSL_COLOR}
 
 // sRGB ישר (המרקם rgba8unorm-srgb מפענח בחומרה) → לינארי מוכפל
 @fragment fn upload(i: VO) -> @location(0) vec4f {
@@ -90,9 +85,7 @@ fn dec(s0: vec3f) -> vec3f {
 
 @fragment fn fill(i: VO) -> @location(0) vec4f { return u.a; }
 
-fn screenB(b: vec3f, s: vec3f) -> vec3f { return b + s - b * s; }
-// s ≤ 0.5 → multiply(b, 2s); אחרת screen(b, 2s − 1)
-fn hardLight(b: vec3f, s: vec3f) -> vec3f { return mix(b * 2.0 * s, screenB(b, 2.0 * s - 1.0), step(vec3f(0.5), s)); }
+${WGSL_BLEND}
 
 // W3C Compositing: t0 = הרקע, t1 = השכבה, t2 = מסכת השכבה; a.x = אטימות, m.x = מצב, m.y = יש מסכה
 // (הערוץ r, בגווני אפור של sRGB — 50% אפור = חצי שקוף)
@@ -104,17 +97,7 @@ fn hardLight(b: vec3f, s: vec3f) -> vec3f { return mix(b * 2.0 * s, screenB(b, 2
   // מסכה וקטורית: t3, כיסוי 0–1 (m.z = יש)
   let vm = textureSample(t3, smp, i.uv).r;
   if (u.m.z == 1) { s = s * vm; }
-  let ab = b.a;
-  let sa = s.a;
-  var Cb = vec3f(0.0);
-  if (ab > 0.0) { Cb = clamp(b.rgb / ab, vec3f(0.0), vec3f(1.0)); }
-  var Cs = vec3f(0.0);
-  if (sa > 0.0) { Cs = clamp(s.rgb / sa, vec3f(0.0), vec3f(1.0)); }
-  var B = Cs;
-  if (u.m.x == 1) { B = Cb * Cs; }
-  else if (u.m.x == 2) { B = screenB(Cb, Cs); }
-  else if (u.m.x == 3) { B = hardLight(Cs, Cb); }   // overlay = hard-light עם הסדר ההפוך
-  return vec4f(s.rgb * (1.0 - ab) + b.rgb * (1.0 - sa) + sa * ab * B, sa + ab * (1.0 - sa));
+  return blendOver(b, s, u.m.x);
 }
 
 // נקודת מכחול: uv = המרחק מהמרכז בפיקסלים; a = (רדיוס, קשיות, עוצמה)
