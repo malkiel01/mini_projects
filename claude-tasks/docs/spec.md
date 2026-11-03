@@ -1606,3 +1606,142 @@ nothing), the same line appears.
 - Screens 390 light / 320 dark: each state in the 17.5 table, and the channel row in working / no-sign / failed. No horizontal scroll.
 - Live check joins stage 19's list: one real turn shows start → at least one step → stop on the board, and nothing secret in the
   stored `now_text`.
+
+---
+
+## 18. Diagnosis — "Platform isn't connected to the code? Then what have we been doing?" (owner report 2026-11-03 23:31; **stages 22a–22c**)
+
+**The owner** (screenshot, channel "שעון נוכחות - צ'אט", ⚪ not listening, route ☁️) asked "tell me exactly what we built in the
+time clock, what is in the middle and what is not done yet". Platform answered "I have no information from here… no README, no open
+tasks… only the chat can", handed it to a chat that was not listening, and a "system" bubble repeated it all. He asked "why can't
+you — do you need to be connected to git?"; Platform: "no access to files, code or git". Again a system copy. His words: *"every
+message is written here 10 times… I can't tell what was asked and what was answered… who answered me and why. And what do you mean
+Platform is not connected to the code? Then what is it connected to? I wanted it to develop the project exactly like the chat
+develops it. If it has no access to the code — what have we done until now, are we laughing at ourselves?"* He asked for a deep
+diagnosis before any fix.
+
+### 18.1 Findings — what is wrong, and where
+
+| # | Finding | Where | Evidence |
+| --- | --- | --- | --- |
+| F1 | **The expectation was right; the spec split it and the UI hid the split.** The source request (command-center, item 7) says: *"the Platform route must work in the same process as the chats"* — Claude Code with the repo's `CLAUDE.md` and skills. This spec turned that into **two things**: ☁️ "Platform" in the conversation = one model call **with no tools** (§9), and 🤖 the engine = Claude Code in Actions, reachable only through "📋 Turn into a task" (§11). §15 then called both "the platform lane". The owner talks to the toolless one under the name that was promised as the developer. **Nowhere was he told, in plain words, that ☁️ in a conversation cannot see code.** | **Spec** (mine) | request item 7 vs. §9 / §11 / §15.2 |
+| F2 | **Even inside its own design, Platform failed this question.** `time-clock/README.md` exists and opens with a status table per stage (v1 ✅ stages 1–7, v2 ✅, v3 …) — exactly the answer. Platform said "no README". `platformContext()` wraps the fetch in `catch (Throwable) {}` and passes `(אין)` — so **any** failure (empty or wrong `path` on project #39, GitHub connection not resolving for the payer, 404, rate limit) reads to the model as "this project has no README". | **Code** (silent catch) + **spec** (§9 named the source, not its failure) | `lib/answers.php` `platformContext`; `time-clock/README.md` lines 1–30. The exact cause on #39 is **not verified** (no live access) — 22a checks it |
+| F3 | **The "10 times" is structural.** Every Platform exchange is stored **as messages in the same channel**: the owner's message, the answer, a `status` copy for the chat that repeats both ("📨 לצ'אט: Platform ענה בשמך…"), and on `needs_chat` a `text` system message that repeats the owner's message. #1223 hid the copies on the board, but they are still rows in `messages` — and `platformContext()` feeds the **last 30 messages, copies included**, back to the model. Each exchange is seen 2–3 times; the 30-message window holds ~10 real turns; the model reads its own previous refusal as a "system" fact and repeats it. That is the loop the owner felt. | **Spec** (§9 "delivered as `kind: status`") + code | `platformReply()` inserts via `channelInsertIn(..., 'status' / 'text' ...)` |
+| F4 | **Dead end.** `needs_chat` hands to the channel's chat even when it is not listening. The card says "not listening", and then nothing — no next step offered, and the board does nothing on its own. | Spec (§9.1 b) | screenshot |
+| F5 | **"Who answered and why" is not answerable from the screen.** A conversation can hold: owner · chat · ☁️ Platform · system (relay, needs_chat, lane switch, breaker, return) · choice / permission / approval bubbles · `lane_card` (16) · `handoff` (15.13) · `ai_card` (20) · and soon the activity strip (21). Several are "system" with no stated reason. | Spec | kinds in `lib/channels.php`, `lib/answers.php`, `lib/silence.php` |
+| F6 | **The engine — the part that really develops — has never run here.** `mini_projects` has no `claude-code-agent.yml` (not installed); it was tested only with fake providers (§0 status line, item 2). So even the "📋 Turn into a task" path is unproven. | Not built-out / not verified | `.github/workflows/` |
+| F7 | **§15 / §16 promise "Platform takes over when the chat stops".** For development work that promise is empty while ☁️ has no tools: the takeover hands a coding conversation to something that can only talk. | Spec (§15.2, §15.12.1) | — |
+
+**Root cause in one line:** the board named a toolless chatbot "Platform" and put it where the owner expected a developer;
+the developer exists (the engine) but sits behind a button, never ran, and does not talk in the conversation.
+
+### 18.2 Decisions (mine — the owner asked for a diagnosis that decides)
+
+| # | Decision |
+| --- | --- |
+| 1 | **Platform = one name for one thing that can work on the project**: it **reads the code** itself (22b) and **develops through the engine** (22c), in the same conversation. The toolless "answer only" mode stops being a separate thing |
+| 2 | **Reading = read-only tools in the board's own request (PHP), through the GitHub API** with the payer's GitHub connection. Not Actions: reading must answer in seconds, and costs one answer |
+| 3 | **Developing = the engine (Claude Code in Actions, §11) attached to the conversation** — no second developer is built. It loads the repo's `CLAUDE.md` and skills, passes the gate (§5.13), pushes a branch and opens a PR, **never deploys or merges**. Its progress and its result appear **in the same conversation** |
+| 4 | **Develop starts with one tap by default** (a card with an estimate). A lane setting "start developing without asking" exists, **inside the ceiling** (§15.11a) |
+| 5 | **No copies as messages.** A channel holds only real turns. The chat learns what Platform did from the **digest** (§15.5), and a handed message travels **as itself** with a note — never as a second message |
+| 6 | **Every bubble says who wrote it and why it is there.** System lines exist only when the owner can act on them, or when the conversation would be misleading without them |
+| 7 | **A failure to read is said, never turned into "there is none".** |
+| 8 | **Order:** 22a (urgent, small — bugs and honesty) → 22b (reader) → 22c (engine in the conversation). 22a goes **right after stage 20**, before 21 and 16 |
+
+### 18.3 Stage 22a — honesty and one bubble per turn (urgent, small)
+
+1. **Read failures are named.** `platformContext()` returns `sources: [{name, ok, why}]`. A failed README fetch passes the model
+   "README: could not be read — <why>" (never `(אין)`), and the answer's meta line shows "⚠ לא נקרא: README (<why>)". Same for every
+   source added in 22b.
+2. **Project #39 checked and fixed:** the code writer reads its `path`, `repo_owner/repo_name` (with `withRepo`), `default_branch` and the
+   payer's GitHub resolution (§10.1), reports what was wrong, and fixes the data or the code. **Project ⚙ gets a check line:**
+   "📁 time-clock/ · README ✓ · גיטהאב: <login> ✓" — or the exact failure, with the fix place.
+3. **Copies stop being messages.** No new `status` relay rows and no `text` system row on `needs_chat`. Instead:
+   - an answered message keeps `handled_by='platform'`; the chat sees the exchange in the **digest** (`link.sh pending` prints it first —
+     §15.12.1, built in stage 16; until then `pending` prints a short "☁️ Platform answered N messages: <ids>" line, read with `link.sh show`);
+   - `needs_chat`: the owner's **original** message is re-opened for the chat (`handled_by='chat'`, bell) with `meta.platform_note` =
+     what is needed; the bridge prints the note above the message. One row, one bubble.
+   - Existing relay rows (prefix `PLATFORM_RELAY_PREFIX`, and the `needs_chat` system texts) stay hidden on the board and are
+     **excluded from Platform's context**.
+4. **Platform's context = conversation turns only:** owner · chat · platform · engine messages; never `system`, `status`, cards, or
+   choice/permission plumbing (a choice is included as "Q: … / A: …" once).
+5. **Dead end gets a way out (F4).** When `needs_chat` targets a chat that is not listening, the card offers, in this order:
+   **🤖 לפתח עם Platform** (22c; shown only when the engine is installed and the request is code work) · **💬 צ'אט חדש עם הפרומפט**
+   (§5.9.4, one tap) · **⏳ ימתין לצ'אט** (the message stays open for the chat). Never only "not listening".
+6. **Who wrote it (F5)** — every bubble gets a small author line; system lines follow the table below.
+
+| Author | Line on the bubble | Shown when |
+| --- | --- | --- |
+| Owner | (none — own bubble side) | always |
+| Chat | "💬 <chat name>" | always |
+| Platform reading | "☁️ Platform · קרא: README, 12 קומיטים" | always |
+| Platform → engine | "🤖 Platform מפתח · ריצה #<n>" | always |
+| System: lane switched / breaker / chat returned | one grey line, with the reason | always (it explains who answers next) |
+| System: relay to chat, "delivered", leases | **not shown** | never |
+| Cards (choice, permission, approval, lane, handoff, ai, develop) | the card names who asks: "☁️ Platform שואל", "💬 <chat> מבקש אישור" | while open; then one grey line "נענה: <option>" |
+
+**Done when (22a):** tests — a failed README fetch produces "could not be read" in the prompt and "⚠ לא נקרא" in meta; no `status`/`text`
+copy rows are inserted by `platform-reply`; Platform's context excludes old relay rows (fixture with the screenshot's sequence); the
+not-listening card shows the three ways out; #39's check line is green on the live board (the owner confirms with a screenshot).
+
+### 18.4 Stage 22b — Platform reads the code
+
+**Tools** (a tool loop in `lib/answers.php`, the model's native tool use; read-only; every call through `lib/github.php`):
+
+| Tool | Does | Bounds |
+| --- | --- | --- |
+| `list_dir(path)` | folder listing | inside the project's folder, plus the repo root's `CLAUDE.md` |
+| `read_file(path, from?, to?)` | file text | same bounds; ≤ 400 lines or 40 KB per call; binary refused |
+| `search_code(query)` | GitHub code search | `repo:` + `path:` of the project; ≤ 20 hits |
+| `git_log(path?, n?)` | commits touching the folder | ≤ 50, message + date + PR number |
+| `list_prs(state)` / `read_pr(n)` | PRs touching the folder, their description and status | ≤ 20 |
+| `deploy_status()` | last runs of the deploy workflow named in the repo | ≤ 5, with `conclusion` |
+| `board_tasks(status?)` | the project's tasks on the board | — |
+
+- **Budget per answer:** ≤ 8 tool calls, ≤ 120 s wall (`set_time_limit`, as `LONG_AI_SECONDS` already does), ≤ 60 KB of tool output
+  in total. When a bound is hit, Platform answers with what it has and says what it did not read; the bubble offers "המשך לקרוא".
+- **Token:** the payer's GitHub connection (§10.1), never a server token. A repo the payer's connection cannot reach → the
+  "could not be read" path (22a.1). **No write tool exists in this loop** — it is not hidden, it is absent.
+- **Secrets:** files matching `.env*`, `*secret*`, `*token*`, `config.json` under `data/`, keys (`*.pem`, `*.key`) are refused by
+  `read_file`, and tool output passes the §17 redaction filter before reaching the model.
+- **Cost:** the whole loop is one `answer` in `usage`, at the chosen model (§16), checked by the pre-flight (§16.4).
+- **"📊 מצב הפרויקט"** — a quick action under the composer (and the answer to "מה פיתחנו / מה באמצע / מה חסר"): a fixed recipe —
+  README status section → `SPEC.md` / `docs/` index → `git_log` (30) → open and recently merged PRs (14 days) → board tasks →
+  `deploy_status` — answered in three headed parts: **✅ נבנה · 🔄 באמצע · ⏳ עוד לא**, each line with its source (commit, PR, file).
+  Cached 10 minutes per project; the cache is dropped on a new commit or PR.
+
+**Done when (22b):** tests with a fake GitHub and a fake provider — each tool's bounds (outside the folder refused, secret paths refused,
+size cut), the 8-call and 120-s budgets end in a partial answer that says so, the quick action returns the three parts with sources;
+live (stage 19 list): "📊 מצב הפרויקט" on שעון נוכחות matches the README table and the last PRs.
+
+### 18.5 Stage 22c — Platform develops (the engine in the conversation)
+
+- **Trigger:** Platform's structured output gains `"develop": {"title", "plan", "estimate_usd"}` when the request needs a change to code.
+  The board shows a **develop card**: the plan in three lines, the estimate, the payer, the remaining ceiling, and **🤖 לפתח** · **✏️ לשנות** ·
+  **בטל**. With the setting "start developing without asking" (and inside the ceiling) it starts at once and the card says so.
+- **Run:** a task is created on the board (route `platform`, linked to the channel and the message) and the engine (§11, `claude-code`)
+  is dispatched with the plan and the thread summary. The engine already loads `CLAUDE.md`, the skills and the gate (§5.13).
+- **It talks in the conversation:** the engine's runs post to the **channel** (author `engine`, with the project agent token, only to
+  channels of its project): "התחלתי", the activity strip (§17 — the engine has the same hooks), the result: branch, PR link, tests run,
+  and what was not done. **No merge, no deploy** — merging stays with the owner or a chat (§11 unchanged).
+- **It can ask:** a headless run cannot hold a dialog, so a question becomes `block` with the choice bubble (§5.10 shape) in the
+  conversation; the answer **dispatches a continuation run** on the same branch with the answer and the thread (the 8b pattern, for the
+  engine).
+- **Permissions:** everything the gate maps to `ask` while unattended is **denied, never assumed** (§5.13 fail-closed) — the run reports
+  it as a question in the conversation; the owner's answer feeds the continuation run.
+- **Prerequisite the owner does once:** "התקנה" of the engine on the repo (project ⚙ → מנוע) — it needs his GitHub connection with
+  `workflow` scope and writes two secrets. Until then the develop card says "המנוע לא מותקן בריפו — התקנה" instead of 🤖 לפתח.
+- **§15 / §16 corrected (F7):** when the chat stops and the lane switches to Platform, a message that needs code goes to the develop card
+  (or straight to the engine with the setting), not to a text answer.
+
+**Done when (22c):** tests — the develop card's estimate passes the pre-flight and the ceiling; a run posts start / activity / result to the
+right channel only; a question in a run becomes a choice bubble and its answer dispatches a continuation with that answer; an `ask`-mapped
+permission in an unattended run is denied and reported. **Live (stage 19 list, owner present):** one real request on שעון נוכחות from the
+conversation → a PR with a description, tests run in the run's log, and the conversation shows the whole path; nothing merged.
+
+### 18.6 What changes in the earlier sections
+
+- §9: "Context" and "the chat stays in sync" are replaced by 22a.3–4 and 22b; the "📋 Turn into a task" button becomes the develop card (22c).
+- §9.1 (b) `needs_chat`: kept for work only a **chat** can do (another chat, the owner's session); code work goes to 22c.
+- §15.2: the platform lane = Platform reading + the engine developing; §15.12.1's takeover follows 22c.
+- §17: the activity strip covers engine runs too.
