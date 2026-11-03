@@ -87,10 +87,31 @@ function renderNewChat() {
         r.reports_to ? el('small', { text: `מדווח ל: ${r.reports_to}` }) : null]))),
     role ? el('h3', { text: role.name }) : null,
     role ? promptBlock(role.prompt, `הפרומפט ל${role.label}`) : null,
+    // §9 (תקלה 3): link.sh מדפיס את השגיאה בעברית — וכאן שלוש הסיבות השכיחות, למי שלא רואה את הצ'אט
+    role ? el('details', { class: 'nc-help' }, [
+      el('summary', { text: 'לא נרשם תוך 10 דק\'? מה לבדוק' }),
+      el('ol', {}, [
+        el('li', {}, [el('b', { text: 'סביבה לא נכונה. ' }), s.environment
+          ? `הצ'אט נפתח בסביבה אחרת. פותחים צ'אט חדש ובוחרים בסביבה "${s.environment}".`
+          : 'הצ\'אט נפתח בסביבה שאין בה את האסימון. פותחים צ\'אט חדש בסביבה שבה הוא שמור.']),
+        el('li', {}, [el('b', { text: 'אסימון חסר. ' }),
+          'בהגדרות הסביבה (תפריט הסביבה בכותרת הצ\'אט ← Edit) חסר CLAUDE_TASKS_TOKEN. מוסיפים אותו שם — לעולם לא בצ\'אט — ופותחים צ\'אט חדש.']),
+        el('li', {}, [el('b', { text: 'אסימון של תת-פרויקט. ' }),
+          `האסימון שבסביבה שייך לענף אחר. צריך את האסימון של "${s.root?.name || 'השורש'}" — הוא פותח את כל הענפים.`]),
+      ]),
+    ]) : null,
     // ⚡ גרסת Routine (§5.12.5): משימה מתוזמנת שנרשמת בתחילת כל הרצה — כך בקשות ההרשאה שלה מגיעות ללוח
     role?.routine_prompt ? el('details', { class: 'nc-routine' }, [
       el('summary', { text: '⚡ גרסת Routine — משימה מתוזמנת' }),
-      el('p', { class: 'hint', text: 'ליצור את המשימה ב-claude.ai עם הריפו mini_projects (בלעדיו אין את ה-hooks של הלוח), ולהחליף את {מה לעשות בכל הרצה}. כל הרצה נרשמת ללוח בהתחלה ומתנתקת בסוף.' }),
+      el('p', { class: 'hint', text: 'כל הרצה נרשמת ללוח בהתחלה ומתנתקת בסוף. בלי הריפו אין את השער של הלוח — ההרצה עוצרת ומדווחת.' }),
+      // §5.13.3: הוראות יצירה מלאות — כך העתקה אחת יוצרת Routine נכון
+      el('ol', { class: 'nc-steps' }, [
+        el('li', {}, ['משימה מתוזמנת חדשה ב-claude.ai ← Code.']),
+        el('li', {}, ['ריפו: ', s.repo?.url ? el('code', { dir: 'ltr', text: s.repo.url }) : el('b', { text: 'mini_projects' }),
+          s.repo?.branch ? [' · ענף ', el('code', { dir: 'ltr', text: s.repo.branch })] : null].flat().filter(Boolean)),
+        el('li', {}, ['סביבה: ', s.environment ? el('b', { dir: 'ltr', text: s.environment }) : 'זו שבה שמור האסימון']),
+        el('li', {}, ['הפרומפט — למטה. מחליפים את {מה לעשות בכל הרצה} ואת {התיקייה}.']),
+      ]),
       promptBlock(role.routine_prompt, `פרומפט Routine ל${role.label}`),
     ]) : null,
     s.roles.length === 1 && s.can_edit ? el('p', { class: 'hint', text: 'יש רק תפקיד אחד (ברירת המחדל). ✏️ — להגדיר את התפקידים של הצוות פעם אחת, וכל תת-פרויקט יקבל אותם.' }) : null,

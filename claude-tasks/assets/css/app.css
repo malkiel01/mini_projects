@@ -854,3 +854,9 @@ mark.hit { background: color-mix(in srgb, var(--star) 45%, transparent); color: 
 .lane-pref .seg button { border-inline-start: 0; border-top: 1px solid var(--line); white-space: normal; text-align: start;
   padding: var(--s2) var(--s3); font-size: .875rem; }
 .lane-pref .seg button:first-child { border-top: 0; }
+
+/* השלמות: "לא נרשם?" והוראות יצירה ל-Routine */
+.nc-help { margin-top: var(--s2); font-size: .875rem; }
+.nc-help summary { cursor: pointer; color: var(--brand); min-height: 44px; display: flex; align-items: center; }
+.nc-help ol, .nc-steps { margin: var(--s2) 0; padding-inline-start: 1.4em; display: grid; gap: 6px; font-size: .875rem; }
+.nc-steps code { overflow-wrap: anywhere; }

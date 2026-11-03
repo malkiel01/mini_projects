@@ -61,6 +61,8 @@ function channelSub(c) {
   // §5.10.1: חלון הרשאה פתוח באפליקציה; גשר ישן שצריך הוראת עדכון
   if (c.status === 'active' && c.waiting_at) parts.push(`⏸ ממתין לאישור באפליקציה${c.waiting_tool ? `: ${c.waiting_tool}` : ''}`);
   if (c.bridge_outdated) parts.push('⚠ גרסה ישנה — צריך עדכון');
+  // §5.13.3: Routine — יש לו את השער של הלוח? (מגרסת הגשר 2026-11-03.2, שמדווחת ב-channel-health)
+  if (c.role === 'routine' && c.status === 'active') parts.push((c.bridge_version || '') >= '2026-11-03.2' ? '🛡 שער פעיל' : '⚠ בלי שער');
   const last = c.last_message_at || c.last_seen_at;
   if (last) parts.push(timeAgo(last));
   if (c.open_questions) parts.push(`❓ ${c.open_questions}`);

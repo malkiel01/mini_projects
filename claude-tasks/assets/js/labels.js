@@ -164,6 +164,7 @@ let lastPins = [], lastJump = () => {};
 export function setPinsMode(mode) {
   store.set(PINS_MODE_KEY, mode === 'strip' ? null : mode);
   renderPinStrip(lastPins, lastJump);
+  if (mode === 'hidden') toast('הבועה הוסתרה — מחזירים ב-⚙ של הצ\'אט ← "📌 פס המוצמדות"', 'ok');
 }
 
 export function renderPinStrip(pins, jump) {
@@ -192,13 +193,20 @@ function renderPinBubble(pins, jump, show) {
   b.hidden = !show;
   if (!show) return;
   b.textContent = `📌${pins.length > 1 ? ` ${pins.length}` : ''}`;
-  b.setAttribute('aria-label', `${pins.length === 1 ? 'מוצמדת אחת' : `${pins.length} מוצמדות`} — נגיעה פותחת, גרירה מזיזה`);
+  b.setAttribute('aria-label', `${pins.length === 1 ? 'מוצמדת אחת' : `${pins.length} מוצמדות`} — Enter פותח, חיצים מזיזים, Delete מסיר`);
   const pos = (() => { try { return JSON.parse(store.get(PINS_POS_KEY) || 'null'); } catch { return null; } })();
+  // שדה הכתיבה — הבועה לעולם לא מכסה אותו (גם באמצע גרירה)
+  const floor = () => {
+    const f = $('#chatForm');
+    const top = f && f.offsetParent !== null ? f.getBoundingClientRect().top : innerHeight;
+    return Math.min(innerHeight, top);
+  };
   const place = (x, y) => {
     const r = b.getBoundingClientRect();
     b.style.left = `${Math.max(4, Math.min(innerWidth - r.width - 4, x))}px`;
-    b.style.top = `${Math.max(4, Math.min(innerHeight - r.height - 4, y))}px`;
+    b.style.top = `${Math.max(4, Math.min(floor() - r.height - 8, y))}px`;
   };
+  const save = () => { const r = b.getBoundingClientRect(); store.set(PINS_POS_KEY, JSON.stringify({ x: r.left / innerWidth, y: r.top / innerHeight })); };
   if (pos) place(pos.x * innerWidth, pos.y * innerHeight); else { b.style.left = ''; b.style.top = ''; }
   if (b.dataset.wired) return;
   b.dataset.wired = '1';
@@ -213,6 +221,7 @@ function renderPinBubble(pins, jump, show) {
   b.addEventListener('pointermove', (e) => {
     if (!start) return;
     if (!moved && Math.hypot(e.clientX - start.x, e.clientY - start.y) < 8) return;
+    if (!moved) drop.style.bottom = `${innerHeight - floor() + 16}px`;   // מעל שדה הכתיבה
     moved = true; drop.hidden = false; b.classList.add('is-dragging');
     place(e.clientX - start.dx, e.clientY - start.dy);
     drop.classList.toggle('is-over', overDrop(e));
@@ -224,10 +233,21 @@ function renderPinBubble(pins, jump, show) {
       const remove = overDrop(e);
       drop.hidden = true; drop.classList.remove('is-over');
       if (remove) { setPinsMode('hidden'); return; }
-      const r = b.getBoundingClientRect();
-      store.set(PINS_POS_KEY, JSON.stringify({ x: r.left / innerWidth, y: r.top / innerHeight }));
+      save();
     }
   };
+  // מקלדת: Enter / רווח — פותח (כפתור); חיצים — מזיזים; Delete / Backspace — מסיר (כמו גרירה ל-✕)
+  b.addEventListener('keydown', (e) => {
+    const step = e.shiftKey ? 64 : 24;
+    const d = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
+    if (d) {
+      e.preventDefault();
+      const r = b.getBoundingClientRect();
+      place(r.left + d[0], r.top + d[1]); save();
+    } else if (e.key === 'Delete' || e.key === 'Backspace') {
+      e.preventDefault(); setPinsMode('hidden');
+    }
+  });
   b.addEventListener('pointerup', end);
   b.addEventListener('pointercancel', end);
   b.addEventListener('click', () => { if (!moved) openPinList(lastPins, lastJump); });
