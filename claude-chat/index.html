@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>צ'אט Claude</title>
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body>
+<a class="skip" href="#log">דלג לשיחה</a>
+<header class="top">
+  <div class="titles"><h1>צ'אט Claude</h1><div class="sub" id="sub">הפלטפורמה של Claude</div></div>
+  <button class="icon-btn" id="new" type="button" aria-label="שיחה חדשה" title="שיחה חדשה">🗑️</button>
+</header>
+<div class="toolbar-top">
+  <label class="muted" for="model">מודל</label>
+  <select id="model" aria-label="מודל">
+    <option value="claude-sonnet-5-5">Sonnet 5.5 — מאוזן</option>
+    <option value="claude-opus-5-5">Opus 5.5 — חזק</option>
+    <option value="claude-haiku-5-5">Haiku 5.5 — מהיר וזול</option>
+  </select>
+</div>
+<div id="setup" class="setup error" hidden></div>
+<main class="log" id="log" tabindex="-1" aria-live="polite">
+  <div class="log-in" id="msgs"><div class="empty" id="empty">שאל כל דבר. השיחה נשמרת בדפדפן הזה בלבד.</div></div>
+</main>
+<form class="composer" id="form">
+  <label class="skip" for="text">הודעה</label>
+  <textarea id="text" rows="1" placeholder="כתוב הודעה…" enterkeyhint="send"></textarea>
+  <button class="btn primary" id="send" type="submit">שלח</button>
+  <button class="btn ghost" id="stop" type="button" hidden>עצור</button>
+</form>
+<script src="assets/js/app.js"></script>
+</body>
+</html>
