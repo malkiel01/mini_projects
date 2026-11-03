@@ -414,3 +414,11 @@ body.wp-open { overflow: hidden; }
 .off { opacity: .6; }
 .grid-doc.sel-off input.sel { display: none; }
 .grid input.sel { inline-size: 16px; block-size: 16px; margin: 0 0 2px; display: block; accent-color: var(--danger); }
+
+/* מחיקה / השבתה מתוך הטבלה */
+table.grid .row-act { display: block; margin: 2px auto 0; inline-size: 26px; block-size: 22px; border: 1px solid var(--line); border-radius: 6px;
+    background: var(--surface); color: var(--muted); font-size: .8rem; line-height: 1; cursor: pointer; padding: 0; }
+table.grid .row-act:hover { color: var(--danger); border-color: var(--danger); }
+.grid-head .icon-btn { flex: none; }
+.grid-off { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; font-size: .85rem; color: var(--muted); margin-top: var(--s2); }
+.grid-off .off-item { display: inline-flex; align-items: center; gap: 6px; opacity: .8; }
