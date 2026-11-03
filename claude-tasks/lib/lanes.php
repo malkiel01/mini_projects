@@ -3,8 +3,11 @@
  * שני מסלולים, שיחה אחת — docs/spec.md §15. שלב 15: Platform נעצר (§15.3).
  *
  * מפסק לכל משלם (platform_state): כששרשרת החיבורים שלו נכשלת כולה בכשל שאינו "בקשה שגויה" — המפסק נפתח.
- * כל עוד הוא פתוח, ☁️ מחושב כ-💬 (כמו כלל המכסה, lib/routes.php) — אם המשתמש בחר "להעביר לצ'אט אוטומטית"
- * (ההגדרה שלו, §15.11; ברירת המחדל: כן). אחרת ההודעות ממתינות, ו-Platform לא נקרא עד שהמפסק נסגר.
+ * מה קורה אז — ההגדרה של המשתמש (בעל הלוח, 2026-11-03), לא כלל קבוע:
+ *   on_stop  auto — עובר מיד לשיטה השנייה · ask (ברירת מחדל) — שאלה בלוח, וממתין עד שעונים · wait — ממתין.
+ *   preferred chat | platform — השיטה המועדפת: שיח חדש נפתח בה.
+ *   return_preferred yes — גם שיח באמצע עובר לשיטה המועדפת כשהיא זמינה.
+ * אותן הגדרות לשני הכיוונים. בשלב 15 — כש-Platform נעצר; צ'אט שנעצר מזוהה בשלב 16.
  *
  * ניסיון חוזר: עומס — אחרי 5 דק', תקלה — אחרי 30 דק'. קרדיט / מפתח — לא לבד: רק כשהמשתמש מתקן חיבור,
  * או לוחץ "נסה שוב" (קריאת בדיקה אחת). הצ'אט שומע על זה פעם אחת בפתיחה ופעם אחת בחזרה — לא על כל הודעה.
@@ -13,8 +16,9 @@ declare(strict_types=1);
 
 /** ‏0 = רק ידנית ("נסה שוב" / שינוי בחיבור). */
 const BREAKER_RETRY = ['rate_limited' => 300, 'down' => 1800, 'credit_exhausted' => 0, 'key_rejected' => 0];
-const LANE_PREFS_DEFAULT = ['platform_stop' => 'handover'];   // handover | wait — שלבים 16–18 יוסיפו
-const LANE_PREFS_VALUES = ['platform_stop' => ['handover', 'wait']];
+const LANE_PREFS_DEFAULT = ['preferred' => '', 'on_stop' => 'ask', 'return_preferred' => 'no'];
+const LANE_PREFS_VALUES = ['preferred' => ['', 'chat', 'platform'], 'on_stop' => ['auto', 'ask', 'wait'],
+                           'return_preferred' => ['yes', 'no']];
 
 function migrateLanes(PDO $pdo): void {
     addColumn($pdo, 'users', 'lane_prefs', "TEXT NOT NULL DEFAULT ''");
@@ -28,6 +32,8 @@ function migrateLanes(PDO $pdo): void {
             provider  TEXT NOT NULL DEFAULT ''
         );
     ");
+    // ההחלטה של המשתמש באפיזודה הזו, כשההגדרה היא "לשאול": '' — עוד לא ענה · handover · wait
+    addColumn($pdo, 'platform_state', 'decision', "TEXT NOT NULL DEFAULT ''");
 }
 
 /* ── ההגדרה של המשתמש (§15.11) ───────────────────────────── */
@@ -37,7 +43,10 @@ function lanePrefs(int $userId): array {
     $st->execute([$userId]);
     $p = json_decode((string) $st->fetchColumn(), true);
     $out = LANE_PREFS_DEFAULT;
-    foreach (is_array($p) ? $p : [] as $k => $v) {
+    $p = is_array($p) ? $p : [];
+    // הגרסה הראשונה של שלב 15 שמרה platform_stop — handover = אוטומטי, wait = ממתין
+    if (isset($p['platform_stop']) && !isset($p['on_stop'])) $p['on_stop'] = $p['platform_stop'] === 'handover' ? 'auto' : 'wait';
+    foreach ($p as $k => $v) {
         if (isset(LANE_PREFS_VALUES[$k]) && in_array($v, LANE_PREFS_VALUES[$k], true)) $out[$k] = $v;
     }
     return $out;
@@ -46,6 +55,7 @@ function lanePrefs(int $userId): array {
 /** כל משתמש — רק את ההגדרה של עצמו. נאכף כאן, לא רק בממשק. */
 function setLanePrefs(array $user, array $in): array {
     $cur = lanePrefs((int) $user['id']);
+    unset($cur['platform_stop']);
     foreach ($in as $k => $v) {
         if (!isset(LANE_PREFS_VALUES[$k])) continue;
         if (!in_array($v, LANE_PREFS_VALUES[$k], true)) throw new InvalidArgumentException("ערך לא מוכר ל-$k");
@@ -64,11 +74,23 @@ function platformBreaker(int $userId): array {
     $r = $st->fetch() ?: ['state' => 'ok', 'since' => 0, 'retry_at' => 0, 'reason' => '', 'provider' => ''];
     $open = $r['state'] !== 'ok';
     $retry = (int) $r['retry_at'];
+    $onStop = lanePrefs($userId)['on_stop'];
+    $decision = (string) ($r['decision'] ?? '');
     return ['state' => (string) $r['state'], 'since' => (int) $r['since'], 'retry_at' => $retry, 'reason' => (string) $r['reason'],
             'open' => $open, 'manual' => $open && BREAKER_RETRY[$r['state']] === 0 && $retry === 0,
             // הגיע הזמן לנסות שוב: ההודעה הבאה עוברת ל-Platform כבדיקה (half-open)
             'probe_due' => $open && $retry > 0 && nowTs() >= $retry,
-            'handover' => lanePrefs($userId)['platform_stop'] === 'handover'];
+            'on_stop' => $onStop,
+            'handover' => breakerDecisionFor($onStop, $decision) === 'handover',
+            // "לשאול": המשתמש עוד לא החליט — כרטיס בלוח, וההודעות ממתינות
+            'ask_pending' => $open && $onStop === 'ask' && $decision === ''];
+}
+
+/** handover | wait — לפי ההגדרה, ובהגדרה "לשאול" — לפי מה שהמשתמש ענה ('' = עוד לא → ממתין). */
+function breakerDecisionFor(string $onStop, string $decision): string {
+    if ($onStop === 'auto') return 'handover';
+    if ($onStop === 'ask') return $decision === 'handover' ? 'handover' : 'wait';
+    return 'wait';
 }
 
 /** פתוח ועוד לא הגיע זמן לנסות — Platform לא נקרא. */
@@ -79,7 +101,7 @@ function breakerBlocks(int $userId): bool {
 
 /** ‏☁️ מחושב כ-💬: המפסק חוסם, והמשתמש בחר להעביר (lib/routes.php, lib/usage.php platformAvailable). */
 function platformHandsOver(int $userId): bool {
-    return breakerBlocks($userId) && lanePrefs($userId)['platform_stop'] === 'handover';
+    return breakerBlocks($userId) && platformBreaker($userId)['handover'];
 }
 
 /**
@@ -92,25 +114,49 @@ function breakerTrip(int $userId, string $class, string $reason, string $provide
     $retry = BREAKER_RETRY[$class] > 0 ? nowTs() + BREAKER_RETRY[$class] : 0;
     db()->prepare('INSERT INTO platform_state (user_id, state, since, retry_at, reason, provider) VALUES (?,?,?,?,?,?)
                    ON CONFLICT(user_id) DO UPDATE SET state = excluded.state, retry_at = excluded.retry_at,
+                     decision = CASE WHEN platform_state.state = \'ok\' THEN \'\' ELSE platform_state.decision END,
                      reason = excluded.reason, provider = excluded.provider,
                      since = CASE WHEN platform_state.state = \'ok\' THEN excluded.since ELSE platform_state.since END')
         ->execute([$userId, $class, nowTs(), $retry, mb_substr($reason, 0, 500), $provider]);
     logEvent(null, 'platform.breaker', "user:$userId", false, "$class — " . mb_substr($reason, 0, 300));
     if ($before['open']) return false;
-    $handover = lanePrefs($userId)['platform_stop'] === 'handover';
+    $onStop = lanePrefs($userId)['on_stop'];
     $short = breakerShort($class, $reason);
-    foreach (platformChannels($userId) as $ch) {
-        channelInsertIn((int) $ch['id'], 'system', null, $handover
-            ? "☁️ Platform נעצר — $short. מכאן הערוץ אצלך."
-            : "☁️ Platform נעצר — $short. לפי ההגדרה של בעל החשבון ההודעות ממתינות עד שיחזור.", 'status', null, null, false);
-    }
-    if ($handover) handOverWaiting($userId, $short);
+    $text = match ($onStop) {
+        'auto'  => "☁️ Platform נעצר — $short. מכאן הערוץ אצלך.",
+        'ask'   => "☁️ Platform נעצר — $short. ההודעות ממתינות להחלטה של בעל החשבון בלוח: לעבור לצ'אט או להמתין.",
+        default => "☁️ Platform נעצר — $short. לפי ההגדרה של בעל החשבון ההודעות ממתינות עד שיחזור.",
+    };
+    foreach (platformChannels($userId) as $ch) channelInsertIn((int) $ch['id'], 'system', null, $text, 'status', null, null, false);
+    if ($onStop === 'auto') handOverWaiting($userId, $short);
     return true;
+}
+
+/**
+ * התשובה לשאלה "לעבור לצ'אט?" (ההגדרה "לשאול"): handover — מה שממתין עובר עכשיו, והחדשות ישר לצ'אט,
+ * עד ש-Platform חוזר; wait — ממתינות. רק המשלם עצמו, ורק כשהמפסק פתוח.
+ */
+function breakerDecide(array $user, string $decision): array {
+    if (!in_array($decision, ['handover', 'wait'], true)) throw new InvalidArgumentException('decision: handover או wait');
+    $uid = (int) $user['id'];
+    $b = platformBreaker($uid);
+    if (!$b['open']) throw new AppError('☁️ Platform עובד — אין מה להחליט', 409);
+    db()->prepare('UPDATE platform_state SET decision = ? WHERE user_id = ?')->execute([$decision, $uid]);
+    logEvent($user, 'lanes.decide', "user:$uid", true, $decision);
+    if ($decision === 'handover' && $b['on_stop'] === 'ask') {
+        $short = breakerShort($b['state'], $b['reason']);
+        foreach (platformChannels($uid) as $ch) {
+            channelInsertIn((int) $ch['id'], 'system', null, "☁️ בעל החשבון החליט: עוברים לצ'אט עד ש-Platform יחזור ($short). מכאן הערוץ אצלך.",
+                            'status', null, null, false);
+        }
+        handOverWaiting($uid, $short);
+    }
+    return platformBreaker($uid);
 }
 
 /** סגירה (בדיקה שהצליחה). הודעה אחת לכל ערוץ: חזר. */
 function breakerReset(int $userId): bool {
-    $st = db()->prepare("UPDATE platform_state SET state = 'ok', retry_at = 0, reason = '' WHERE user_id = ? AND state != 'ok'");
+    $st = db()->prepare("UPDATE platform_state SET state = 'ok', retry_at = 0, reason = '', decision = '' WHERE user_id = ? AND state != 'ok'");
     $st->execute([$userId]);
     if ($st->rowCount() === 0) return false;
     logEvent(null, 'platform.breaker', "user:$userId", true, 'recovered');
@@ -172,4 +218,33 @@ function platformRetry(array $user, ?callable $transport = null): array {
         return platformBreaker($uid) + ['error' => $e->getMessage()];
     }
     return platformBreaker($uid);
+}
+
+/* ── השיטה המועדפת ─────────────────────────────────────── */
+
+/** השיטה זמינה למשלם? ☁️ — מכסה ומפסק סגור. 💬 — כן (צ'אט שנעצר מזוהה בשלב 16). */
+function laneAvailable(string $lane, int $userId): bool {
+    if ($lane === 'platform') return platformAvailable($userId) && !breakerBlocks($userId);
+    return $lane === 'chat';
+}
+
+/** שיח חדש נפתח בשיטה המועדפת של המשלם ('' — לפי הפרויקט). */
+function preferredLane(?int $projectId): string {
+    $payer = $projectId ? projectPayer($projectId) : null;
+    return $payer ? lanePrefs($payer)['preferred'] : '';
+}
+
+/**
+ * המסלול של שיח אחרי ההגדרות של המשלם: "לחזור לשיטה המועדפת" — גם באמצע, כשהיא זמינה. ואחר כך המפסק:
+ * ☁️ שנעצר עובר ל-💬 רק אם המשתמש בחר (אוטומטי, או ענה "לעבור").
+ */
+function laneResolve(string $route, ?int $projectId): string {
+    $payer = $projectId ? projectPayer($projectId) : null;
+    if (!$payer) return $route;
+    $p = lanePrefs($payer);
+    if ($p['return_preferred'] === 'yes' && $p['preferred'] !== '' && $p['preferred'] !== $route && laneAvailable($p['preferred'], $payer)) {
+        $route = $p['preferred'];
+    }
+    if ($route === 'platform' && platformHandsOver($payer)) $route = 'chat';
+    return $route;
 }

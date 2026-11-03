@@ -1386,6 +1386,10 @@ try {
     case 'platform-retry':
         ok(['platform' => platformRetry(requireUser($user))]);
 
+    /** התשובה לשאלה בלוח "Platform נעצר — לעבור לצ'אט?" (ההגדרה "לשאול"). */
+    case 'lane-decide':
+        ok(['platform' => breakerDecide(requireUser($user), str_field($in, 'decision', 10))]);
+
     case 'lane-prefs':
         $me = requireUser($user);
         ok(['lane_prefs' => isset($in['prefs']) && is_array($in['prefs']) ? setLanePrefs($me, $in['prefs']) : lanePrefs((int) $me['id'])]);

@@ -78,7 +78,24 @@ $cid = (int) $ch['id'];
 $ch2 = getChannel(registerChannel(workerScope(), $root, 'רסטר', 'רסטר', 'session_LANES2', '')['channel_id']);
 $systemCount = fn (int $c, string $like) => (int) db()->query("SELECT COUNT(*) FROM messages WHERE channel_id = $c AND author_role = 'system' AND body LIKE '%$like%'")->fetchColumn();
 check('המסלול ☁️, המפסק סגור', [channelRoute(getChannel($cid)), platformBreaker(1)['open']], ['platform', false]);
-check('ברירת המחדל של המשתמש: להעביר לצ\'אט', lanePrefs(1), ['platform_stop' => 'handover']);
+check('ברירת המחדל: לשאול, בלי שיטה מועדפת, בלי חזרה אוטומטית', lanePrefs(1), ['preferred' => '', 'on_stop' => 'ask', 'return_preferred' => 'no']);
+
+echo "\n— ההגדרה \"לשאול\" (ברירת המחדל): שאלה בלוח, וממתין עד שעונים —\n";
+$q1 = channelSend($boss, $cid, 'הודעה כשאין עוד החלטה');
+$r = platformReply($boss, $q1, provider(400, $credit));
+check('נעצר — ההודעה ממתינה (לא עוברת בלי החלטה)', [$r['waiting'] ?? false, db()->query("SELECT answered_by FROM messages WHERE id = $q1")->fetchColumn()], [true, 'platform']);
+check('המפסק: שאלה פתוחה למשתמש', [platformBreaker(1)['open'], platformBreaker(1)['ask_pending']], [true, true]);
+check('הערוץ נשאר ☁️ עד שעונים', channelRoute(getChannel($cid)), 'platform');
+check('שורת system: ממתין להחלטה', $systemCount($cid, 'ממתינות להחלטה'), 1);
+throws('ערך החלטה לא מוכר', fn () => breakerDecide($boss, 'maybe'));
+$d = breakerDecide($boss, 'handover');
+check('"לעבור לצ\'אט" — השאלה נסגרה, ההודעה עברה', [$d['ask_pending'], $d['handover'], db()->query("SELECT answered_by FROM messages WHERE id = $q1")->fetchColumn()], [false, true, '']);
+check('…והערוץ עכשיו 💬', channelRoute(getChannel($cid)), 'chat');
+check('…שורת system: בעל החשבון החליט', $systemCount($cid, 'בעל החשבון החליט'), 1);
+breakerReset(1);
+check('Platform חזר — ההחלטה מתאפסת לאפיזודה הבאה', [platformBreaker(1)['open'], channelRoute(getChannel($cid))], [false, 'platform']);
+db()->exec("DELETE FROM messages WHERE author_role = 'system'");
+setLanePrefs($boss, ['on_stop' => 'auto']);
 
 echo "\n— קרדיט נגמר: המפסק נפתח, הכול עובר לצ'אט —\n";
 $waiting = channelSend($boss, (int) $ch2['id'], 'הודעה שממתינה ל-Platform בערוץ אחר');
@@ -136,9 +153,9 @@ $r = platformReply($boss, $m5, provider(404, ['error' => ['message' => 'model no
 check('bad_request — המפסק סגור', platformBreaker(1)['open'], false);
 check('…ההודעה עברה לצ\'אט, עם שורת system על ההודעה הזו', [$r['handed_to_chat'] ?? false, $systemCount($cid, 'לא הצליח לענות')], [true, 1]);
 
-echo "\n— ההגדרה כבויה: ההודעות ממתינות —\n";
-throws('ערך לא מוכר', fn () => setLanePrefs($boss, ['platform_stop' => 'maybe']));
-check('המשתמש בוחר "ממתינות"', setLanePrefs($boss, ['platform_stop' => 'wait'])['platform_stop'], 'wait');
+echo "\n— ההגדרה \"להמתין\": ההודעות ממתינות —\n";
+throws('ערך לא מוכר', fn () => setLanePrefs($boss, ['on_stop' => 'maybe']));
+check('המשתמש בוחר "להמתין"', setLanePrefs($boss, ['on_stop' => 'wait'])['on_stop'], 'wait');
 $m6 = channelSend($boss, $cid, 'הודעה כשהקרדיט נגמר וההגדרה כבויה');
 $r = platformReply($boss, $m6, provider(400, $credit));
 check('נעצר — אבל ההודעה ממתינה ל-Platform', [$r['waiting'] ?? false, db()->query("SELECT answered_by FROM messages WHERE id = $m6")->fetchColumn()], [true, 'platform']);
@@ -148,7 +165,25 @@ $calls = 0;
 $m7 = channelSend($boss, $cid, 'עוד אחת');
 $r = platformReply($boss, $m7, provider(200, $okBody, $calls));
 check('בזמן שהמפסק פתוח — הספק לא נקרא, ממתינה', [$calls, $r['waiting'] ?? false], [0, true]);
-check('סיכום השימוש כולל את המפסק ואת ההגדרה', [usageSummary(1)['platform']['state'], usageSummary(1)['lane_prefs']['platform_stop']], ['credit_exhausted', 'wait']);
+check('סיכום השימוש כולל את המפסק ואת ההגדרה', [usageSummary(1)['platform']['state'], usageSummary(1)['lane_prefs']['on_stop']], ['credit_exhausted', 'wait']);
+breakerReset(1);
+
+echo "\n— השיטה המועדפת —\n";
+db()->prepare('UPDATE users SET lane_prefs = ? WHERE id = 1')->execute([json_encode(['platform_stop' => 'handover'])]);
+check('הגרסה הקודמת (platform_stop) נקראת כ"אוטומטי"', lanePrefs(1)['on_stop'], 'auto');
+setLanePrefs($boss, ['preferred' => 'chat', 'return_preferred' => 'no', 'on_stop' => 'ask']);
+$new = getChannel(registerChannel(workerScope(), $root, 'חדש', 'חדש', 'session_LANES3', '')['channel_id']);
+check('שיח חדש נפתח בשיטה המועדפת (💬)', [$new['route'], channelRoute($new)], ['chat', 'chat']);
+check('שיח באמצע ב-☁️ — בלי "חזרה" נשאר ☁️', channelRoute(getChannel($cid)), 'platform');
+setLanePrefs($boss, ['return_preferred' => 'yes']);
+check('עם "לעבור לשיטה המועדפת" — גם שיח באמצע עובר ל-💬', channelRoute(getChannel($cid)), 'chat');
+setLanePrefs($boss, ['preferred' => 'platform']);
+check('מועדפת ☁️ — שיח ב-💬 עובר ל-☁️ כשהוא זמין', channelRoute($new), 'platform');
+setLanePrefs($boss, ['on_stop' => 'auto']);
+breakerTrip(1, 'credit_exhausted', 'x');
+check('…אבל כש-☁️ נעצר — לא עובר אליו (ואוטומטי → 💬)', [channelRoute($new), channelRoute(getChannel($cid))], ['chat', 'chat']);
+breakerReset(1);
+check('☁️ חזר — שוב לשיטה המועדפת', channelRoute($new), 'platform');
 
 echo "\n════ עברו: $pass · נכשלו: $fail ════\n";
 exec('rm -rf ' . escapeshellarg($tmp));
