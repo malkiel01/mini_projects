@@ -40,6 +40,16 @@
     ],
     "PreToolUse": [
       {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "timeout": 620,
+            "command": "f=\"$HOME/.claude-tasks-bridge/hook.sh\"; [ -f \"$f\" ] || f=\"$CLAUDE_PROJECT_DIR/claude-tasks/bridge/hook.sh\"; [ -f \"$f\" ] && bash \"$f\" gate; exit 0"
+          }
+        ]
+      },
+      {
         "matcher": "AskUserQuestion",
         "hooks": [
           {

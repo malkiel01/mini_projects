@@ -224,6 +224,7 @@ function routinePrompt(int $projectId, array $role): string {
         '2. קרא: ' . implode(', ', array_merge(['CLAUDE.md'], $files)),
         '3. המשימה: {מה לעשות בכל הרצה} — רק בתיקייה {התיקייה}, ורק המשימה הזו. שום דבר מעבר לה.',
         '   משנה קוד — ענף משלך ו-PR בלבד. לעולם לא מיזוג, לא push ל-main, לא הפעלת workflows.',
+        '   שער הלוח בודק כל פעולה רגישה: "🔐 … חסם" או "לא אושר בזמן" — אל תנסה דרך עוקפת; רשום אותה ב"נחסם" והמשך.',
         '4. בסוף — דוח בערוץ, כהודעת system: claude-tasks/bridge/link.sh post system "<מה נעשה, עם קישור ל-PR אם יש> · נחסם: <כל פעולה שלא רצה — שמה והסיבה, או: כלום>"',
         '   ואז: claude-tasks/bridge/link.sh archive',
     ]);

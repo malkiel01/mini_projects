@@ -28,6 +28,10 @@ const APPROVAL_TYPES = [
     'delete-user-data'      => ['label' => 'מחיקת נתוני משתמשים / מסד בשרת',     'always' => 'no',   'settings_hint' => 'deny'],
     'secrets'               => ['label' => 'קריאה / כתיבה של סודות',              'always' => 'no',   'settings_hint' => ''],
     'touch-other-project'   => ['label' => 'נגיעה בתיקייה של פרויקט אחר',        'always' => 'no',   'settings_hint' => 'deny'],
+    // שלב 14 (§5.13.2) — בלי "תמיד" בכלל
+    'push-protected'        => ['label' => 'push בכוח, או push ל-main',           'always' => 'no',   'settings_hint' => 'deny'],
+    'change-gate'           => ['label' => 'שינוי השער עצמו — ההגדרות וקובצי הגשר', 'always' => 'no', 'settings_hint' => 'deny'],
+    'run-remote-script'     => ['label' => 'הרצת סקריפט שהורד מהרשת',              'always' => 'no',   'settings_hint' => 'deny'],
     // בקשה בלי סוג מתאים — תמיד פעם אחת: אין לה מדיניות
     'other'                 => ['label' => 'אחר',                                 'always' => 'no',   'settings_hint' => ''],
 ];
@@ -197,7 +201,7 @@ function policyList(?int $projectId = null): array {
     foreach (APPROVAL_TYPES as $type => $m) {
         if ($type === 'other') continue;
         $local = localPolicy($type, $projectId);
-        $rows[] = ['type' => $type, 'label' => $m['label'], 'always' => $m['always'],
+        $rows[] = ['type' => $type, 'label' => $m['label'], 'always' => $m['always'], 'covers' => GATE_COVERS[$type] ?? '',
                    'local' => $local['decision'] ?? null, 'local_at' => $local ? (int) $local['at'] : null]
                   + policyResolve($type, $projectId);
     }
@@ -225,7 +229,7 @@ function policyList(?int $projectId = null): array {
         }
     }
     usort($history, fn ($a, $b) => $b['at'] <=> $a['at']);
-    return ['project_id' => $projectId, 'types' => $rows, 'history' => array_slice($history, 0, 100),
+    return ['project_id' => $projectId, 'types' => $rows, 'history' => array_slice($history, 0, 100), 'gate' => gateHistory($projectId),
             'counts' => ['allow' => count(array_filter($rows, fn ($r) => $r['local'] === 'allow')),
                          'deny'  => count(array_filter($rows, fn ($r) => $r['local'] === 'deny'))]];
 }

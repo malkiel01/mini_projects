@@ -77,10 +77,24 @@ jobs:
           git config user.name  'claude-tasks agent'
           git config user.email 'agent@users.noreply.github.com'
 
+      # שער המדיניות של הלוח (§5.13): PreToolUse על כל כלי. פעולה ממופה — לפי המדיניות של הפרויקט;
+      # "לשאול" → ask-approval על המטלה, והכלי נדחה. הלוח לא עונה → נדחה (אין כאן אדם).
+      - name: Policy gate
+        run: |
+          mkdir -p .claude
+          f=.claude/settings.local.json
+          [ -f "$f" ] || echo '{}' > "$f"
+          jq '.hooks.PreToolUse = ([{"matcher": ".*", "hooks": [{"type": "command", "timeout": 620,
+                "command": "bash \"$CLAUDE_PROJECT_DIR/.github/claude-agent/hook-gate.sh\"; exit 0"}]}] + (.hooks.PreToolUse // []))' \
+             "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+          chmod +x .github/claude-agent/hook-gate.sh
+
       - name: Work the task
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GH_TOKEN:          ${{ github.token }}
+          CT_GATE_KIND:      platform
+          CLAUDE_TASKS_URL:  ${{ github.event.inputs.board_url }}
         run: |
           PROMPT=$(cat <<EOF
           You are running unattended in GitHub Actions on task #${TASK_ID} of the "מטלות לקלוד" board.
@@ -100,6 +114,8 @@ jobs:
           4. POST complete {"id": ${TASK_ID}, "result": "<what you did>", "pr_url": "<the PR>", "session_url": "${RUN_URL}"}.
              If a human decision is needed: POST block {"id": ${TASK_ID}, "question": "..."}.
              Before a sensitive action, ask the policy and, if needed, ask-approval — as the skill says.
+             The board's policy gate checks every tool call. If a tool is denied with "נשלח לאישור", the task is
+             already waiting for approval: stop the run there — do not try another way and do not call block.
           EOF
           )
           claude -p "$PROMPT" ${MODEL:+--model "$MODEL"} \

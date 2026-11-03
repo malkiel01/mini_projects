@@ -36,6 +36,10 @@ const CC_WORKFLOW = 'claude-code-agent.yml';
 const CC_PATHS = [
     '.github/workflows/claude-code-agent.yml' => __DIR__ . '/../agent/claude-code.yml',
     '.github/claude-agent/finish.mjs'         => __DIR__ . '/../agent/finish.mjs',
+    // שער המדיניות (§5.13, שלב 14) — אותם קבצים כמו בגשר, כדי שגם Platform יעבור דרכו
+    '.github/claude-agent/hook-gate.sh'       => __DIR__ . '/../bridge/hook-gate.sh',
+    '.github/claude-agent/lib.sh'             => __DIR__ . '/../bridge/lib.sh',
+    '.github/claude-agent/classify.php'       => __DIR__ . '/../bridge/classify.php',
 ];
 
 function migrateEngine(PDO $pdo): void {

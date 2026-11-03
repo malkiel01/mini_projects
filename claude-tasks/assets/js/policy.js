@@ -9,6 +9,14 @@ import { $, el, api, toast } from './core.js';
 
 const VERDICT = { ask: 'שואל', allow: 'תמיד מותר', deny: 'אף פעם' };
 const ICON = { allow: '✅', once: '✅', deny: '⛔', never: '⛔', ask: '↩︎' };
+/* שלב 14 (§5.13.4): מה השער עשה — לכל הכרעה */
+const GATE_HOW = {
+  policy: (v) => (v === 'allow' ? 'הותר לפי המדיניות' : 'נחסם לפי המדיניות'),
+  asked: () => 'נשאל בלוח',
+  answered: (v) => (v === 'allow' ? 'אושר בלוח' : 'נדחה בלוח'),
+  timeout: () => 'לא נענה בזמן — נדחה',
+  late: (v) => (v === 'allow' ? 'נקבע "תמיד" אחרי שעבר הזמן' : 'נקבע "אף פעם" אחרי שעבר הזמן'),
+};
 let cur = { projectId: null, name: '', data: null };
 
 /** פותח את הגיליון. ‏projectId = null — האישורים הכלליים לכל הלוח. */
@@ -75,12 +83,15 @@ function render() {
       ]),
       seg,
       r.always === 'no' ? el('small', { class: 'pol-why', text: 'פעולה שאין לה "תמיד מותר" — רק פעם אחת, או "אף פעם".' }) : null,
+      r.covers ? el('small', { class: 'pol-covers' }, [el('span', { text: '🔐 מה נחשב: ' }), ...coversParts(r.covers)]) : null,
     ]);
   }));
   if (!d.can_edit) {
     $('#polHint').textContent += cur.projectId === null ? ' רק בעל הלוח משנה.' : ' לשינוי צריך הרשאה להחליט בפרויקט.';
   }
-  renderHistory(d.history);
+  // ההכרעות של השער — באותו ציר זמן
+  const gate = (d.gate || []).map((g) => ({ ...g, kind: 'gate', session: g.kind_label }));
+  renderHistory([...d.history, ...gate].sort((a, b) => b.at - a.at).slice(0, 150));
 }
 
 async function set(r, verdict) {
@@ -96,6 +107,13 @@ async function set(r, verdict) {
     await reload();
     document.dispatchEvent(new CustomEvent('ct:policy-changed', { detail: cur.projectId }));
   } catch (ex) { toast(ex.message, 'error'); }
+}
+
+/** פקודות ונתיבים בתוך המשפט העברי — כל אחד ב-bdi משמאל לימין, שלא יתהפך. */
+function coversParts(text) {
+  // ביטוי שלם בין המפרידים (‎curl … | sh‎) — bdi אחד, כדי שהמילים שלו לא יתהפכו ביניהן
+  return text.split(/(\s*[,·:]\s*)/).filter((t) => t !== '').map((t) => (/[A-Za-z]/.test(t) && !/[\u0590-\u05FF]/.test(t)
+    ? el('bdi', { dir: 'ltr', class: 'pol-tok', text: t.trim() }) : document.createTextNode(t)));
 }
 
 function dayLabel(ts) {
@@ -116,6 +134,18 @@ function renderHistory(items) {
   for (const h of items) {
     const dl = dayLabel(h.at);
     if (dl !== day) { day = dl; out.push(el('div', { class: 'pol-day', text: dl })); }
+    const time0 = new Date(h.at * 1000).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+    if (h.kind === 'gate') {
+      out.push(el('div', { class: 'pol-ev pol-ev--gate' }, [
+        el('span', { class: 'ic', 'aria-hidden': 'true', text: h.verdict === 'allow' ? '✅' : h.verdict === 'deny' ? '⛔' : '🔐' }),
+        el('div', { class: 'body' }, [
+          el('b', { text: h.label }),
+          el('small', { text: [h.session, (GATE_HOW[h.how] || (() => h.how))(h.verdict), h.channel_name, h.by_name, time0].filter(Boolean).join(' · ') }),
+          h.command ? el('code', { class: 'pol-cmd', dir: 'ltr', text: h.command }) : null,
+        ]),
+      ]));
+      continue;
+    }
     const what = h.kind === 'once'
       ? `${h.decision === 'once' ? 'אושר' : 'נדחה'} פעם אחת`
       : `${VERDICT[h.prev] || h.prev} ← ${VERDICT[h.decision] || h.decision}`;

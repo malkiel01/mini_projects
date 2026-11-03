@@ -105,7 +105,7 @@ case "$cmd" in
           --argjson p "$project" --arg s "$sid" \
           '{url:$url, cookie:$cookie, channel_id:$r.channel_id, channel_token:$r.channel_token,
             project_id:$p, name:$n, session_id:$s, registered_at:(now|floor), pending_reply_to:null,
-            notify_session:($r.notify_session // null)}' > "$BOARD_LINK"
+            notify_session:($r.notify_session // null), project_folder:($r.project_folder // "")}' > "$BOARD_LINK"
     chmod 600 "$BOARD_LINK"
     echo "✓ רשום: ערוץ #$(link_get channel_id) · $name · פרויקט #$project $(echo "$out" | jq -r '(.project_path // "") + (if .renewed then " (רישום חוזר — אסימון חדש)" else "" end)')"
     [ -n "$replaces" ] && echo "✓ מחליף את ערוץ #$replaces — המטלות שנשאלו בו עברו לכאן"
