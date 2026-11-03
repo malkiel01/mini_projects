@@ -276,7 +276,8 @@ function aiHttp(string $url, array $headers, string $json): array {
         CURLOPT_POST           => true,
         CURLOPT_POSTFIELDS     => $json,
         CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT        => 25,
+        // ‏25 שנ' לרוב הקריאות; זיקוק / סיכום של שיחה ארוכה לוקח יותר (CT_AI_TIMEOUT, lib/silence.php)
+        CURLOPT_TIMEOUT        => (int) ($GLOBALS['CT_AI_TIMEOUT'] ?? 25),
         CURLOPT_CONNECTTIMEOUT => 8,
         CURLOPT_HTTPHEADER     => $headers,
     ]);
