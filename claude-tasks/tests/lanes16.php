@@ -240,6 +240,20 @@ $hr = handoffRequest($boss, $sm);
 $hp = handoffPrompt($boss, $sm, true);
 check('צ\'אט המשך בלי תקציר — הסיכום החכם הוא הבסיס', str_contains($hp['prompt'], 'שלב 16 בעבודה'), true);
 
+echo "\n— 🔁 צ'אט המשך: זיקוק השיחה לזיכרון (בעל הלוח 2026-11-03) —\n";
+$dz = $mk('זיקוק');
+channelSend($boss, $dz, 'כלל: תמיד לכתוב בעברית');
+channelPost(getChannel($dz), 'chat', 'הבנתי, ועבדתי על שלב 16');
+$sent = null; $calls = 0;
+$spy = function ($provider, $url, $json) use (&$sent, &$calls) { $calls++; $sent = json_decode($json, true);
+    return ['status' => 200, 'body' => json_encode(['content' => [['type' => 'text', 'text' => "## כללי עבודה\n- תמיד בעברית\n## מה הצ'אט הבא עושה קודם\n1. לסיים את שלב 16"]], 'usage' => ['input_tokens' => 100, 'output_tokens' => 50]])]; };
+$r = handoffDistill($boss, $dz, $spy);
+check('קריאה אחת — והפרומפט מוכן מיד, מהזיכרון', [$calls, $r['ready'], $r['source'], str_contains($r['prompt'], 'תמיד בעברית')], [1, true, 'handoff', true]);
+check('…ההנחיה למודל: כללים, החלטות, מה באמצע, מה פתוח — ולהשמיט מה שלא רלוונטי', [str_contains(json_encode($sent, JSON_UNESCAPED_UNICODE), 'כללי עבודה'), str_contains(json_encode($sent, JSON_UNESCAPED_UNICODE), 'השמט')], [true, true]);
+check('…הבקשה סומנה "used", והזיכרון לא נשלח לצ\'אט הישן', [handoffState(getChannel($dz))['state'], in_array('handoff', array_column(channelInbox(getChannel($dz)), 'kind'), true)], ['used', false]);
+check('…נזקף למשלם', (int) $col("SELECT COUNT(*) FROM usage WHERE channel_id = $dz AND kind = 'answer'"), 1);
+throws('רק בעל הלוח', fn () => handoffDistill($member, $dz, $spy), 'בעל הלוח');
+
 echo "\n════ עברו: $pass · נכשלו: $fail ════\n";
 exec('rm -rf ' . escapeshellarg($tmp));
 exit($fail ? 1 : 0);

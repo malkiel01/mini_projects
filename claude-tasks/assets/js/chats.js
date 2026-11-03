@@ -199,6 +199,10 @@ function bubble(m) {
     ]) :
     m.kind === 'approval' && m.approval?.type
       ? approvalCard(m.approval, m.task_id, { canDecide: m.approval.can_decide, pending: m.approval.pending, onDone: reload })
+      // הזיכרון לצ'אט ההמשך — ארוך, ולא לקריאה: מקופל
+      : m.kind === 'handoff'
+        ? el('details', { class: 'b-relay' }, [el('summary', { text: m.author_role === 'system' ? '📝 הזיכרון שהלוח הכין לצ\'אט ההמשך' : '📝 תקציר ההעברה של הצ\'אט' }),
+            el('div', { class: 'b-body md', dir: 'auto' }, [renderMarkdown(m.body)])])
       // שאלת בחירה (§5.10): כפתור לכל אפשרות; אחרי מענה — מקופלת
       : m.kind === 'choice' && m.meta?.questions
         ? choiceCard(m, { canAnswer: conv.channel?.can_send && conv.channel?.status === 'active',

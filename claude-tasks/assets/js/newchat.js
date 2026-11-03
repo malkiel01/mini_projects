@@ -30,14 +30,15 @@ function envLine(env) {
 }
 
 /** הפרומפט, ומתחתיו שני הכפתורים. ‏label — למסך הקורא. */
-function promptBlock(prompt, label) {
+function promptBlock(prompt, label, { collapsed = false } = {}) {
   // שורה לכל שורה, כל אחת בכיוון שלה; שורת הפקודה — משמאל לימין, בשורה אחת שגוללת (אחרת היא מתפצלת ומתהפכת בעברית)
   const pre = el('pre', { class: 'nc-prompt', tabindex: '0', 'aria-label': label }, prompt.split('\n').map((line) =>
     /^\s*claude-tasks\//.test(line)
       ? el('code', { class: 'nc-cmd', dir: 'ltr', text: line.trim() })
       : el('span', { class: 'nc-line', dir: 'auto', text: line || '\u00a0' })));
   return el('div', { class: 'nc-prompt-wrap' }, [
-    pre,
+    // צ'אט המשך: בעל הלוח לא צריך לקרוא את הזיכרון — רק להעתיק ולפתוח. מקופל, ונפתח בנגיעה
+    collapsed ? el('details', { class: 'what' }, [el('summary', { text: 'הצגת הפרומפט (לא חובה)' }), pre]) : pre,
     el('div', { class: 'row-btns' }, [
       el('button', {
         type: 'button', class: 'btn primary', text: '📋 העתקה',
@@ -289,10 +290,12 @@ function renderHandoff() {
   } });
   // בעל הלוח 2026-11-03: צ'אט שלא מאזין לא יענה עד שעה — לא מחכים לו. סיכום חכם עכשיו (קריאה אחת, כ-10 שניות),
   // או לבקש מהצ'אט הישן ישירות (בתוך Claude Code — שניות), או בלי תקציר
-  const smart = el('button', { type: 'button', class: 'btn primary', text: '📝 סיכום חכם עכשיו (כ-10 שניות)', onclick: async (e) => {
+  // "לסכם את הצ'אט למעבר": זיקוק של כל השיח לזיכרון עבודה (כללים, החלטות, מה באמצע, מה פתוח) — בלי מה שכבר לא רלוונטי
+  const SMART = '📝 לסכם את הצ\'אט למעבר לצ\'אט חדש';
+  const smart = el('button', { type: 'button', class: 'btn primary', text: SMART, onclick: async (e) => {
     const b = e.currentTarget; b.disabled = true; b.textContent = '📝 מסכם…';
-    try { await api('channel-summary', { channel_id: ho.channel.id }); await showHandoffPrompt(true); }
-    catch (ex) { toast(`${ex.message} — אפשר "בלי תקציר"`, 'error'); b.disabled = false; b.textContent = '📝 סיכום חכם עכשיו (כ-10 שניות)'; }
+    try { await api('handoff-distill', { channel_id: ho.channel.id }); await showHandoffPrompt(false); }
+    catch (ex) { toast(`${ex.message} — אפשר "בלי תקציר"`, 'error'); b.disabled = false; b.textContent = SMART; }
   } });
   const askText = 'תכתוב עכשיו תקציר העברה במבנה הקבוע (מצב וערכים עיקריים · החלטות ולמה · מה פתוח · קבצים שנגעת בהם · sessions וענף · מה הצ\'אט הבא צריך לעשות קודם), ושלח אותו ללוח: claude-tasks/bridge/link.sh handoff <קובץ>';
   const direct = el('details', { class: 'what' }, [
@@ -324,7 +327,7 @@ function renderHandoff() {
       el('p', { class: 'nc-wait', role: 'status' }, [`⚪ "${name}" לא מאזין — הוא יראה את הבקשה רק כשיבדוק את הלוח (עד כשעה). לא צריך לחכות לו. עברו `,
         el('b', { id: 'hoElapsed', text: mmss(elapsed()) })]),
       (fallback.className = 'btn ghost', el('div', { class: 'row-btns' }, [smart])),
-      el('p', { class: 'hint', text: 'סיכום חכם — Platform מסכם את השיחה בקריאה אחת (על חשבון המכסה), והצ\'אט החדש נפתח ממנו. בלי תקציר — רק ההודעות האחרונות, בחינם.' }),
+      el('p', { class: 'hint', text: 'הלוח מזקק את כל השיחה לזיכרון לצ\'אט החדש: כללי העבודה, ההחלטות, מה באמצע, מה פתוח, ושאלות ותשובות שעוד תקפות — בלי כל מה שכבר לא רלוונטי (קריאה אחת, על חשבון המכסה). בלי תקציר — רק ההודעות האחרונות, בחינם.' }),
       direct,
       el('div', { class: 'row-btns' }, [fallback, background]), cancel,
     ];
@@ -353,7 +356,7 @@ async function showHandoffPrompt(fallback) {
     el('p', { class: 'hint', text: r.source === 'handoff'
       ? `התקציר הגיע. כשהצ'אט החדש יירשם, "${r.name}" יסומן "הוחלף" והמטלות שנשאלו בו יעברו אליו.`
       : 'בלי תקציר — הפרומפט כולל את ההודעות האחרונות בערוץ.' }),
-    promptBlock(r.prompt, 'הפרומפט לצ\'אט ההמשך'),
+    promptBlock(r.prompt, 'הפרומפט לצ\'אט ההמשך', { collapsed: true }),
   );
   document.dispatchEvent(new CustomEvent('ct:reload-channels'));
 }
