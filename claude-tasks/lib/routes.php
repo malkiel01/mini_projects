@@ -74,7 +74,14 @@ function projectRoute(?int $projectId): string {
 }
 
 function channelRoute(array $channel): string {
-    return in_array($channel['route'] ?? '', ROUTES, true) ? $channel['route'] : projectRoute((int) $channel['project_id']);
+    if (!in_array($channel['route'] ?? '', ROUTES, true)) return projectRoute((int) $channel['project_id']);
+    // ☁️ שנבחר לערוץ עצמו — נופל ל-💬 כשהמפסק של המשלם פתוח והוא בחר להעביר (§15.3). המכסה — כמו קודם:
+    // נבדקת ב-platform-reply ומעבירה לצ'אט משם
+    if ($channel['route'] === 'platform') {
+        $payer = projectPayer((int) $channel['project_id']);
+        if ($payer && platformHandsOver($payer)) return 'chat';
+    }
+    return $channel['route'];
 }
 
 /** המסלול של מטלה: שנלקחה — שלה; אחרת לפי הפרויקט; בלי פרויקט — chat. */

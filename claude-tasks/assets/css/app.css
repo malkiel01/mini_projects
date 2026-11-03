@@ -839,3 +839,12 @@ mark.hit { background: color-mix(in srgb, var(--star) 45%, transparent); color: 
 .pol-ev--gate .pol-cmd { display: block; margin-top: 2px; font-size: .75rem; color: var(--muted); white-space: pre-wrap;
   overflow-wrap: anywhere; max-height: 3.2em; overflow: hidden; text-align: left; }
 .pol-tok { font-family: var(--mono, ui-monospace, monospace); font-size: .95em; }
+
+/* שלב 15 — ☁️ Platform נעצר: הפס האדום, וההגדרה ב-🔀 מסלולים */
+.platform-stop { display: flex; flex-direction: column; gap: 4px; }
+.platform-stop .ps-sub { font-weight: 500; }
+.platform-stop .ps-sub:empty { display: none; }
+.platform-stop .ps-acts { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: 4px; }
+.platform-stop .ps-acts .btn { min-height: 40px; }
+.lane-pref { display: grid; gap: var(--s2); padding: var(--s3); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+.lane-pref .seg button { min-height: 44px; }

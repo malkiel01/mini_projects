@@ -178,6 +178,7 @@ function addConnection(array $user, string $kind, string $secret, string $label 
     }
     $id = (int) db()->lastInsertId();
     logEvent($user, 'connection.add', $kind, true, $label);
+    breakerArm((int) $user['id']);   // §15.3: חיבור חדש — ☁️ נבדק שוב בהודעה הבאה
     return $id;
 }
 
@@ -198,6 +199,7 @@ function updateConnection(array $user, int $id, array $patch): void {
     $args[] = $id;
     db()->prepare('UPDATE connections SET ' . implode(', ', $sets) . ' WHERE id = ?')->execute($args);
     logEvent($user, 'connection.update', $row['kind'], true, "#$id");
+    breakerArm((int) $user['id']);
 }
 
 /** ניתוק. הפרויקטים שבחרו בחיבור הזה חוזרים לבחירה האוטומטית (ON DELETE CASCADE); מטלות — לסדר. */
@@ -292,6 +294,8 @@ function connLabel(array $r): string {
  * רשת. לא: 400 — הבקשה עצמה שגויה, וספק אחר ייכשל באותו אופן.
  */
 function shouldFallOver(Throwable $e): bool {
+    // ‏§15.3: רק בקשה שגויה עוצרת. קרדיט ריק (גם 400 של Anthropic), מפתח, עומס ותקלה — עוברים לחיבור הבא
+    if ($e instanceof AppError && $e->aiClass !== '') return $e->aiClass !== 'bad_request';
     $status = $e instanceof AppError ? (int) ($e->aiStatus ?? 0) : 0;
     if ($status === 400 || $status === 404 || $status === 422) return false;
     return true;

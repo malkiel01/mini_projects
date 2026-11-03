@@ -177,7 +177,8 @@ function requireQuota(int $userId, string $kind = 'develop'): void {
 
 /** ☁️ זמין למשתמש? (יש מכסה, ולא נגמרה) — מזין את המסלול המחושב. */
 function platformAvailable(int $userId): bool {
-    return in_array(quotaState($userId)['state'], ['ok', 'warn'], true);
+    // §15.3: גם המפסק — ספק שנעצר (קרדיט / מפתח / עומס) והמשתמש בחר להעביר לצ'אט
+    return in_array(quotaState($userId)['state'], ['ok', 'warn'], true) && !platformHandsOver($userId);
 }
 
 /** 80%: הודעת system בערוצים של המשתמש — פעם אחת בחודש. */
@@ -243,7 +244,8 @@ function usageSummary(int $userId): array {
                                        'name' => $r['name'] ?? 'בלי פרויקט', 'icon' => $r['icon'] ?? '',
                                        'cost' => round((float) $r['c'], 4), 'tokens' => (int) $r['t']], $p->fetchAll());
     return quotaState($userId) + ['user_id' => $userId, 'month' => monthKey(), 'today' => (int) gmdate('j'),
-                                  'daily' => $daily, 'projects' => $projects];
+                                  'daily' => $daily, 'projects' => $projects,
+                                  'platform' => platformBreaker($userId), 'lane_prefs' => lanePrefs($userId)];   // §15.3
 }
 
 function setQuota(array $admin, int $userId, float $usd): void {

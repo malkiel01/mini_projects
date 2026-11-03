@@ -1382,6 +1382,14 @@ try {
         ok(usageSummary($uid));
     }
 
+    /* ── שני מסלולים (§15): המפסק של Platform וההגדרה של המשתמש ── */
+    case 'platform-retry':
+        ok(['platform' => platformRetry(requireUser($user))]);
+
+    case 'lane-prefs':
+        $me = requireUser($user);
+        ok(['lane_prefs' => isset($in['prefs']) && is_array($in['prefs']) ? setLanePrefs($me, $in['prefs']) : lanePrefs((int) $me['id'])]);
+
     case 'set-quota':
         setQuota(requireUser($user), (int) ($in['user_id'] ?? 0), (float) ($in['quota_usd'] ?? -1));
         ok(['usage' => quotaState((int) ($in['user_id'] ?? 0))]);

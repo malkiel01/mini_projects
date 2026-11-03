@@ -16,6 +16,9 @@ class AppError extends RuntimeException {
     /** קוד ה-HTTP שהחזיר ספק הבינה, כשהשגיאה ממנו — כדי להחליט אם לעבור לחיבור הבא. */
     public ?int $aiStatus = null;
 
+    /** סוג הכשל אצל הספק (lib/ai.php aiFailureClass, §15.3): credit_exhausted | key_rejected | rate_limited | down | bad_request. */
+    public string $aiClass = '';
+
     /** קוד שגיאה יציב למכונה (למשל token_scope ל-link.sh), לצד ההודעה לאדם. */
     public string $errorCode = '';
 

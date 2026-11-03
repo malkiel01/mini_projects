@@ -156,6 +156,33 @@ function providerError(string $provider, array $data): string {
     return (string) ($data['error']['message'] ?? $data['message'] ?? '');
 }
 
+/**
+ * סוג הכשל אצל הספק (§15.3). רק bad_request עוצר את המעבר לחיבור הבא — הבקשה עצמה שגויה, וגם הבא ייכשל.
+ * קרדיט ריק: Anthropic מחזירה 400 ‏invalid_request_error "Your credit balance is too low…", ‏OpenAI —
+ * 429 ‏insufficient_quota, ואחרים — 402. לכן קרדיט מזוהה לפי הטקסט, לא רק לפי הקוד.
+ */
+function aiFailureClass(int $status, string $message, string $code = ''): string {
+    $credit = (bool) preg_match('/credit balance|purchase credits|billing|insufficient[_ ]quota|payment required|out of credits|exceeded your current quota/i',
+                                "$message $code");
+    if ($status === 402 || ($credit && in_array($status, [400, 403, 429], true))) return 'credit_exhausted';
+    if ($status === 401 || $status === 403) return 'key_rejected';
+    if ($status === 429 || $status === 529) return 'rate_limited';
+    if ($status === 0 || $status >= 500) return 'down';
+    return 'bad_request';
+}
+
+/** השורה בעברית ללוח, לכל סוג. */
+function aiFailureText(string $class, string $provider): string {
+    $p = PROVIDERS[$provider]['label'] ?? $provider;
+    return match ($class) {
+        'credit_exhausted' => "נגמר הקרדיט אצל $p",
+        'key_rejected'     => "המפתח של $p נדחה",
+        'rate_limited'     => "$p עמוס או הגיע למגבלת קצב",
+        'down'             => "$p לא זמין (תקלה אצל הספק או ברשת)",
+        default            => "$p דחה את הבקשה",
+    };
+}
+
 /* ── הפנייה ────────────────────────────────────────────────────── */
 
 /**
@@ -207,13 +234,17 @@ function aiComplete(array $conn, string $system, string $prompt,
 
     if (($res['status'] ?? 0) !== 200) {
         $msg = providerError($provider, $data);
-        $err = new AppError(match ((int) ($res['status'] ?? 0)) {
-            401, 403 => 'המפתח של ' . PROVIDERS[$provider]['label'] . ' נדחה',
-            429      => PROVIDERS[$provider]['label'] . ': המכסה נגמרה או שהשירות עמוס',
-            404      => "המודל \"$model\" אינו קיים אצל " . PROVIDERS[$provider]['label'],
-            default  => PROVIDERS[$provider]['label'] . " החזיר שגיאה ({$res['status']}) $msg",
+        $status = (int) ($res['status'] ?? 0);
+        $class = aiFailureClass($status, $msg, (string) ($data['error']['type'] ?? $data['error']['code'] ?? $data['error']['status'] ?? ''));
+        $err = new AppError(match (true) {
+            $class === 'credit_exhausted' => aiFailureText($class, $provider) . ($msg !== '' ? " — $msg" : ''),
+            $status === 401, $status === 403 => 'המפתח של ' . PROVIDERS[$provider]['label'] . ' נדחה',
+            $status === 429  => PROVIDERS[$provider]['label'] . ': המכסה נגמרה או שהשירות עמוס',
+            $status === 404  => "המודל \"$model\" אינו קיים אצל " . PROVIDERS[$provider]['label'],
+            default          => PROVIDERS[$provider]['label'] . " החזיר שגיאה ($status) $msg",
         });
-        $err->aiStatus = (int) ($res['status'] ?? 0);
+        $err->aiStatus = $status;
+        $err->aiClass = $class;
         throw $err;
     }
 
@@ -254,7 +285,11 @@ function aiHttp(string $url, array $headers, string $json): array {
     $err  = curl_error($ch);
     curl_close($ch);
 
-    if ($body === false) throw new AppError('הפנייה לספק נכשלה: ' . $err);
+    if ($body === false) {
+        $e = new AppError('הפנייה לספק נכשלה: ' . $err);
+        $e->aiStatus = 0; $e->aiClass = 'down';
+        throw $e;
+    }
     return ['status' => $code, 'body' => (string) $body];
 }
 
@@ -350,6 +385,10 @@ function aiHttpGet(string $url, array $headers): array {
     $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $err  = curl_error($ch);
     curl_close($ch);
-    if ($body === false) throw new AppError('הפנייה לספק נכשלה: ' . $err);
+    if ($body === false) {
+        $e = new AppError('הפנייה לספק נכשלה: ' . $err);
+        $e->aiStatus = 0; $e->aiClass = 'down';
+        throw $e;
+    }
     return ['status' => $code, 'body' => (string) $body];
 }
