@@ -111,6 +111,14 @@ function budgets_migrate(PDO $pdo): void
     add_columns($pdo, 'orgs', ['doc_style TEXT']);
     // תכנית העבודה בעורך התמלילים (lib/plan_doc.php): המזהה, מקור להעתקה, ועותק אחרון של הפלט
     add_columns($pdo, 'budgets', ['plan_doc TEXT', 'plan_src TEXT', 'plan_html TEXT', 'plan_ooxml TEXT', 'plan_at TEXT']);
+    // השבתה: נשאר בהצעה, מחוץ לחישוב ולמסמך (lib/versions.php)
+    add_columns($pdo, 'budget_lines', ['disabled INTEGER NOT NULL DEFAULT 0']);
+    add_columns($pdo, 'budget_funds', ['disabled INTEGER NOT NULL DEFAULT 0']);
+    // גרסאות: תמונה שלמה של ההצעה לפני שינוי (lib/versions.php). data — JSON דחוס
+    $pdo->exec('CREATE TABLE IF NOT EXISTS budget_versions (
+        id INTEGER PRIMARY KEY, budget_id INTEGER NOT NULL REFERENCES budgets(id) ON DELETE CASCADE, at TEXT NOT NULL,
+        user_id INTEGER, label TEXT, hash TEXT, lines INTEGER, income INTEGER, expense INTEGER, data BLOB NOT NULL)');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_versions_budget ON budget_versions(budget_id, id)');
     add_columns($pdo, 'budgets', ['cover_doc TEXT', 'cover_src TEXT', 'cover_html TEXT', 'cover_ooxml TEXT', 'cover_at TEXT']);   // השער — כמו התכנית
 }
 
@@ -213,8 +221,8 @@ function budget_list(array $s, int $orgId): array
 {
     $org = org_access($s, $orgId);
     $st = db()->prepare("SELECT b.*, u.display_name AS creator,
-            (SELECT COALESCE(SUM(amount), 0) FROM budget_lines l WHERE l.budget_id = b.id AND l.direction = 'income') AS income,
-            (SELECT COALESCE(SUM(amount), 0) FROM budget_lines l WHERE l.budget_id = b.id AND l.direction = 'expense') AS expense,
+            (SELECT COALESCE(SUM(amount), 0) FROM budget_lines l WHERE l.budget_id = b.id AND l.direction = 'income' AND l.disabled = 0 AND NOT EXISTS (SELECT 1 FROM budget_funds x WHERE x.budget_id = b.id AND x.fund_id = l.fund_id AND x.disabled = 1)) AS income,
+            (SELECT COALESCE(SUM(amount), 0) FROM budget_lines l WHERE l.budget_id = b.id AND l.direction = 'expense' AND l.disabled = 0 AND NOT EXISTS (SELECT 1 FROM budget_funds x WHERE x.budget_id = b.id AND x.fund_id = l.fund_id AND x.disabled = 1)) AS expense,
             (SELECT COUNT(*) FROM budget_comments c WHERE c.budget_id = b.id AND c.resolved_at IS NULL) AS open_comments
         FROM budgets b JOIN users u ON u.id = b.created_by
         WHERE b.org_id = ? AND b.deleted_at IS NULL ORDER BY b.year DESC, b.id DESC");
@@ -295,10 +303,10 @@ function copy_budget_body(int $fromId, int $toId, int $orgId, callable $tid, boo
     $bf = $pdo->prepare('SELECT * FROM budget_funds WHERE budget_id = ?');
     $bf->execute([$fromId]);
     $had = [];
-    $ins = $pdo->prepare('INSERT INTO budget_funds (budget_id, fund_id, notes_income, notes_expense, row_income, row_expense) VALUES (?, ?, ?, ?, ?, ?)');
+    $ins = $pdo->prepare('INSERT INTO budget_funds (budget_id, fund_id, notes_income, notes_expense, row_income, row_expense, disabled) VALUES (?, ?, ?, ?, ?, ?, ?)');
     foreach ($bf->fetchAll() as $f) {
         if (!in_array($f['fund_id'], $active)) continue;
-        $ins->execute([$toId, $f['fund_id'], $f['notes_income'], $f['notes_expense'], $map($f['row_income']), $map($f['row_expense'])]);
+        $ins->execute([$toId, $f['fund_id'], $f['notes_income'], $f['notes_expense'], $map($f['row_income']), $map($f['row_expense']), (int)$f['disabled']]);
         $had[] = (int)$f['fund_id'];
     }
     foreach (array_diff(array_map('intval', $active), $had) as $fid) {   // קופה שנוספה לארגון מאז
@@ -308,8 +316,8 @@ function copy_budget_body(int $fromId, int $toId, int $orgId, callable $tid, boo
     $lines = $pdo->prepare('SELECT * FROM budget_lines WHERE budget_id = ? ORDER BY id');
     $lines->execute([$fromId]);
     $ins = $pdo->prepare('INSERT INTO budget_lines (budget_id, fund_id, direction, sort, lineage, title, subtitle, contact_id, amount, calc,
-            cell_note, prev_budget, prev_actual, actual, summary_row_id, transfer_id, created_at, updated_at, ' . implode(', ', LINE_EXTRA) . ')
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?' . str_repeat(', ?', count(LINE_EXTRA)) . ')');
+            cell_note, prev_budget, prev_actual, actual, summary_row_id, transfer_id, created_at, updated_at, disabled, ' . implode(', ', LINE_EXTRA) . ')
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?' . str_repeat(', ?', count(LINE_EXTRA)) . ')');
     $now = now_iso();
     foreach ($lines->fetchAll() as $l) {
         if (!in_array($l['fund_id'], $active)) continue;
@@ -318,7 +326,7 @@ function copy_budget_body(int $fromId, int $toId, int $orgId, callable $tid, boo
             $newYear ? $l['amount'] : $l['prev_budget'],
             $newYear ? $l['actual'] : $l['prev_actual'],
             $newYear ? null : $l['actual'],
-            $map($l['summary_row_id']), $tid($l['transfer_id']), $now, $now,
+            $map($l['summary_row_id']), $tid($l['transfer_id']), $now, $now, (int)$l['disabled'],
             ...array_map(fn($c) => $l[$c], LINE_EXTRA)]);
     }
 }
@@ -329,15 +337,22 @@ function budget_get(array $s, int $id): array
     $org = $b['org'];
     $pdo = db();
 
-    $funds = $pdo->prepare('SELECT f.*, bf.notes_income, bf.notes_expense, bf.row_income, bf.row_expense
+    $funds = $pdo->prepare('SELECT f.*, bf.notes_income, bf.notes_expense, bf.row_income, bf.row_expense, bf.disabled AS off
         FROM budget_funds bf JOIN funds f ON f.id = bf.fund_id WHERE bf.budget_id = ? ORDER BY f.sort, f.id');
     $funds->execute([$id]);
     $funds = $funds->fetchAll();
+    // מושבתים — נשארים בהצעה, מחוץ לחישוב, לריכוז ולמסמך (lib/versions.php)
+    $offFunds = array_values(array_filter($funds, fn($f) => $f['off']));
+    $funds = array_values(array_filter($funds, fn($f) => !$f['off']));
+    $offIds = array_map('intval', array_column($offFunds, 'id'));
 
     $lines = $pdo->prepare('SELECT l.*, c.name AS contact_name FROM budget_lines l LEFT JOIN contacts c ON c.id = l.contact_id
         WHERE l.budget_id = ? ORDER BY l.sort, l.id');
     $lines->execute([$id]);
     $lines = $lines->fetchAll();
+    $offLines = array_values(array_filter($lines, fn($l) => $l['disabled'] && !in_array((int)$l['fund_id'], $offIds, true)));
+    $offFundLines = array_count_values(array_map(fn($l) => (int)$l['fund_id'], array_filter($lines, fn($l) => in_array((int)$l['fund_id'], $offIds, true))));
+    $lines = array_values(array_filter($lines, fn($l) => !$l['disabled'] && !in_array((int)$l['fund_id'], $offIds, true)));
 
     // הצד השני של כל העברה: איזו קופה, באיזה ארגון והצעה
     $partners = [];
@@ -419,6 +434,11 @@ function budget_get(array $s, int $id): array
         'categories' => $cats->fetchAll(),
         'versions' => array_map(fn($v) => ['id' => (int)$v['id'], 'year' => (int)$v['year'], 'title' => $v['title'], 'status' => $v['status']], $versions->fetchAll()),
         'labels' => ['status' => BUDGET_STATUS, 'directions' => DIRECTIONS, 'funds' => FUND_KINDS],
+        'disabled' => [
+            'funds' => array_map(fn($f) => ['id' => (int)$f['id'], 'kind' => $f['kind'], 'name' => $f['name'], 'lines' => $offFundLines[(int)$f['id']] ?? 0], $offFunds),
+            'lines' => array_map(fn($l) => ['id' => (int)$l['id'], 'fund_id' => (int)$l['fund_id'], 'direction' => $l['direction'], 'title' => $l['title'],
+                'subtitle' => $l['subtitle'], 'amount' => (int)$l['amount']], $offLines),
+        ],
     ];
 }
 
@@ -906,35 +926,47 @@ function line_delete(array $s, array $b): array
     $pdo = db();
     $pdo->beginTransaction();
     try {
-        $givers = $l['transfer_id'] ? array_filter(transfer_group((string)$l['transfer_id']), fn($p) => $p['direction'] === 'expense') : [];
-        if ($l['transfer_id'] && $l['direction'] === 'expense' && count($givers) > 1) {
-            // אחת מכמה מעבירות: רק היא נמחקת, והמקבלת מחושבת מחדש
-            $pdo->prepare('DELETE FROM budget_lines WHERE id = ?')->execute([$l['id']]);
-            $pdo->prepare('UPDATE budget_comments SET line_id = NULL WHERE line_id = ?')->execute([$l['id']]);
-            recompute_receiver((string)$l['transfer_id']);
-            touch_budget((int)$bud['id']);
-            $pdo->commit();
-            return ['ok' => true, 'partner_deleted' => false];
-        }
-        if ($l['transfer_id']) {
-            $p = $pdo->prepare('SELECT l.id, l.budget_id, b.status FROM budget_lines l JOIN budgets b ON b.id = l.budget_id WHERE l.transfer_id = ? AND l.id != ? AND b.deleted_at IS NULL');
-            $p->execute([$l['transfer_id'], $l['id']]);
-            foreach ($p->fetchAll() as $x) {
-                if ($x['status'] !== 'draft') throw new ApiError('הצד השני של ההעברה נמצא בהצעה נעולה', 409);
-                $pdo->prepare('DELETE FROM budget_lines WHERE id = ?')->execute([$x['id']]);
-                $pdo->prepare('UPDATE budget_comments SET line_id = NULL WHERE line_id = ?')->execute([$x['id']]);
-                touch_budget((int)$x['budget_id']);
-            }
-        }
-        $pdo->prepare('DELETE FROM budget_lines WHERE id = ?')->execute([$l['id']]);
-        $pdo->prepare('UPDATE budget_comments SET line_id = NULL WHERE line_id = ?')->execute([$l['id']]);
+        $partner = line_delete_one($s, $l);
         touch_budget((int)$bud['id']);
         $pdo->commit();
     } catch (Throwable $e) {
         $pdo->rollBack();
         throw $e;
     }
-    return ['ok' => true, 'partner_deleted' => (bool)$l['transfer_id']];
+    return ['ok' => true, 'partner_deleted' => $partner];
+}
+
+/**
+ * מחיקת שורה אחת, בתוך טרנזקציה של הקורא. העברה: אחת מכמה מעבירות — רק היא, והמקבלת מחושבת מחדש;
+ * אחרת — גם הצד השני (גם בהצעה אחרת, אם היא בטיוטה; לפני כן נשמרת לה גרסה). מחזיר: נמחק גם צד שני.
+ */
+function line_delete_one(?array $s, array $l): bool
+{
+    $pdo = db();
+    $gone = function (int $id) use ($pdo) {
+        $pdo->prepare('DELETE FROM budget_lines WHERE id = ?')->execute([$id]);
+        $pdo->prepare('UPDATE budget_comments SET line_id = NULL WHERE line_id = ?')->execute([$id]);
+    };
+    $givers = $l['transfer_id'] ? array_filter(transfer_group((string)$l['transfer_id']), fn($p) => $p['direction'] === 'expense') : [];
+    if ($l['transfer_id'] && $l['direction'] === 'expense' && count($givers) > 1) {
+        $gone((int)$l['id']);
+        recompute_receiver((string)$l['transfer_id']);
+        return false;
+    }
+    if ($l['transfer_id']) {
+        $p = $pdo->prepare('SELECT l.id, l.budget_id, b.status FROM budget_lines l JOIN budgets b ON b.id = l.budget_id WHERE l.transfer_id = ? AND l.id != ? AND b.deleted_at IS NULL');
+        $p->execute([$l['transfer_id'], $l['id']]);
+        foreach ($p->fetchAll() as $x) {
+            if ($x['status'] !== 'draft') throw new ApiError('הצד השני של ההעברה נמצא בהצעה נעולה', 409);
+            if ((int)$x['budget_id'] !== (int)$l['budget_id'] && function_exists('version_point')) {
+                version_point($s, (int)$x['budget_id'], 'הצד השני של העברה נמחק — ' . $l['title'], true);
+            }
+            $gone((int)$x['id']);
+            touch_budget((int)$x['budget_id']);
+        }
+    }
+    $gone((int)$l['id']);
+    return (bool)$l['transfer_id'];
 }
 
 /** סדר השורות בטבלה של קופה וכיוון. */

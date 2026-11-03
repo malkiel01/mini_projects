@@ -500,6 +500,8 @@ const EVENT_LABELS = [
     'contact_create' => 'הוספת גורם', 'contact_update' => 'עדכון גורם', 'contact_archive' => 'הסרת גורם',
     'cat_create' => 'הוספת סעיף', 'cat_update' => 'עדכון סעיף', 'cat_archive' => 'הסרת סעיף',
     'budget_create' => 'פתיחת הצעת תקציב', 'budget_status' => 'שינוי מצב הצעה', 'budget_delete' => 'מחיקת הצעה', 'org_import' => 'ייבוא מקובץ',
+    'budget_restore' => 'שחזור הצעה מסל המחזור', 'fund_restore' => 'החזרת קופה מסל המחזור', 'version_restore' => 'שחזור הצעה לגרסה קודמת',
+    'bfund_remove' => 'הוצאת קופה מהצעה', 'lines_delete' => 'מחיקת כמה שורות',
     'dev_force' => 'פעולת מפתח',
 ];
 

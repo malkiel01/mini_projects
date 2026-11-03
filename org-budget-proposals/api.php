@@ -52,7 +52,8 @@ const POST_ACTIONS   = ['register', 'verify', 'login', 'forgot', 'reset', 'logou
                         'fund_save', 'fund_archive', 'fund_order', 'contact_save', 'contact_archive', 'cat_save', 'cat_archive',
                         'budget_create', 'budget_update', 'budget_status', 'budget_duplicate', 'budget_delete', 'bfund_set', 'bfund_toggle',
                         'line_save', 'lines_batch', 'line_delete', 'line_order', 'transfer_create', 'srow_save', 'srow_delete', 'srow_order',
-                        'comment_add', 'comment_set', 'editor_session', 'plan_sync', 'org_import', 'org_logo_upload', 'platform_link', 'platform_new'];
+                        'comment_add', 'comment_set', 'line_disable', 'bfund_disable', 'bfund_remove', 'lines_delete',
+                        'version_restore', 'budget_restore', 'fund_restore', 'editor_session', 'plan_sync', 'org_import', 'org_logo_upload', 'platform_link', 'platform_new'];
 
 try {
     if (in_array($action, POST_ACTIONS, true) && $method !== 'POST') throw new ApiError('נדרש POST', 405);
@@ -68,6 +69,8 @@ try {
         }
     }
     if (str_starts_with($action, 'dev_') && !$session['is_developer']) throw new ApiError('למפתח בלבד', 403);
+    // גרסה לפני שינוי בהצעה (lib/versions.php) — כך תמיד אפשר לראות מה היה ולשחזר
+    if ($session && $method === 'POST' && isset(VERSIONED[$action])) version_before($session, $action, $body);
 
     $result = match ($action) {
         'health' => (function () {
@@ -129,6 +132,17 @@ try {
         'comment_add'      => comment_add($session, $body),
         'comment_set'      => comment_set($session, $body),
         'org_import'       => org_import($session, $body),
+        // גרסאות, השבתה, הסרה וסל מחזור (lib/versions.php)
+        'versions_list'    => versions_list($session, (int)($_GET['id'] ?? 0)),
+        'version_get'      => version_get($session, $_GET),
+        'version_restore'  => version_restore($session, $body),
+        'line_disable'     => line_disable($session, $body),
+        'bfund_disable'    => bfund_disable($session, $body),
+        'bfund_remove'     => bfund_remove($session, $body),
+        'lines_delete'     => lines_delete($session, $body),
+        'trash_list'       => trash_list($session, (int)($_GET['org_id'] ?? 0)),
+        'budget_restore'   => budget_restore($session, $body),
+        'fund_restore'     => fund_restore($session, $body),
         // תכנית העבודה בעורך התמלילים (lib/plan_doc.php)
         'embed_key'        => wp()->publicKeys(),
         'editor_session'   => editor_session($session, $body),
