@@ -10,7 +10,7 @@
 declare(strict_types=1);
 
 /** הגרסה הנוכחית — לעדכן יחד עם BRIDGE_VERSION ב-bridge/lib.sh. */
-const BRIDGE_VERSION_CURRENT = '2026-11-03.2';
+const BRIDGE_VERSION_CURRENT = '2026-11-03.3';
 
 /** ההוראה שנשלחת לצ'אט ישן. הסקיל הישן כבר פועל לפי הודעת owner; הצ'אט לא מבצע commit לקובץ. */
 const BRIDGE_UPDATE_TEXT = "עדכון הגשר ללוח (חד-פעמי). הרץ בדיוק את זה, ואל תבצע commit לשום קובץ:\n\n"
