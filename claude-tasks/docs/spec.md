@@ -1229,6 +1229,10 @@ A chat out of tokens cannot report it, so detection comes from **two signals the
 Built by the server from the ledger, no model: for the channel, since the chat's last `ack`:
 `☁️ Platform ענה על N הודעות (הארוכה: …) · 🤖 המנוע סגר K מטלות (PR …) · ❓ ממתינות לבעל הלוח: M · 🔐 הוחלט על P בקשות`, plus the last answer per thread (≤ 300 chars) and ids to pull the full text. `link.sh pending` prints the digest first, then the real unprocessed messages. Ceiling ~1,500 characters; more → "ועוד N — `link.sh show <id>`". The same digest, in the other direction, is what Platform receives as context after the chat worked alone (replaces blind reading of 30 raw messages: summary of older ones + the last 10 raw).
 
+**Two kinds of summary (decision 5).**
+- **The live status — mechanical, always on.** `channel_state` is updated in the same transaction as every event (message, ack, answer, task change, lane switch, permission decision): counts per lane, what waits for whom, the last answer per thread, the current lane, `since`. No model, no tokens. The digest above is a read of this row, so any chat — new, returning, or replaced — gets the exact status at any time, and the board shows it at the top of the conversation.
+- **The smart summary — on demand, with a model.** A button "📝 סיכום חכם" (owner) writes a readable summary of the conversation, charged to the user's quota (`kind: answer`, within the existing 20% rule for background use). It feeds the **new-chat prompt** (§5.9.4 `handoff` fallback) and may be pinned. It is never run automatically and never required for a chat to continue.
+
 ### 15.6 Stage 17 — the ledger and the switch (req. ה)
 
 - `lane_log(at, channel_id, project_id, from, to, reason, by)`: reasons `manual | platform_credit | platform_key | platform_rate | chat_silent | chat_limit | recovered | cap_reached`. Every switch appears in the conversation as a one-line `system` message.
@@ -1252,18 +1256,33 @@ Done only when all pass **on the live board**, in this order:
 5. Each lane tried on a sensitive action → a card on the board.
 6. All test files pass; deploy `conclusion: success`.
 
-### 15.9 Decisions for the owner
+### 15.9 Decisions — ✅ answered by the owner (2026-11-03)
 
-| # | Question | Recommendation |
+| # | Question | Decision |
 | --- | --- | --- |
-| 1 | Platform out of credit/key: hand over to the chat **automatically** | ✅ **Yes** — costs nothing, and waiting is worse |
-| 2 | Chat out of tokens: move to Platform **automatically**, ask each time, or never | **Ask on a card the first time**, with "תמיד עד $X בחודש"; the saved choice applies after |
-| 3 | In the Platform lane while the chat is down: answers only, or also run the engine on code tasks | **Answers automatically; engine only after an approval card** |
-| 4 | When the chat returns: back to the chat automatically | **Yes**, automatically |
-| 5 | The "what happened" digest | **Mechanical (no tokens)**, as in 15.5 |
-| 6 | Retry of Platform after a rate limit / outage | **5 min / 30 min**; credit and key stay closed until you fix them or press "נסה שוב" |
-| 7 | `chat_silence_minutes` | **10** |
+| 1 | Platform out of credit / key rejected: hand over to the chat | ✅ **Not a fixed rule — a per-user setting** (15.11). The user decides in their own settings |
+| 2 | The chat out of tokens: move to Platform | ✅ **A per-user setting** (15.11), same |
+| 3 | While the chat does not answer ("down" = out of tokens or closed; a message gets no answer): what Platform does, when the user enabled the move | ✅ **Answers questions; the code engine only after the owner's approval card** |
+| 4 | When the chat returns: does the board hand the conversation back by itself | ✅ **A per-user setting** — the user picks their preferred behaviour (15.11) |
+| 5 | The "what happened without you" summary | ✅ **A mechanical summary that is always running** (kept up to date on every event, no model, no tokens), so the chat can always read the current status. **A smart (model) summary on demand** — mainly for opening a new chat (15.5) |
+| 6 | Platform retry after a failure | ✅ **Approved:** overload 5 min · general fault 30 min · credit exhausted or key rejected — never, until the owner fixes it and presses "נסה שוב" |
+| 7 | Silence window before a chat counts as not answering | Default **10 minutes**, a per-user setting (15.11). *Not asked separately — the owner may change it there* |
 | 8 | Order | 15 → 16 (step 0 is the limit-signal check) → 17 → 18 → 19 |
+
+### 15.11 Per-user lane settings (decisions 1, 2, 4, 7)
+
+Where: **הגדרות ← 🔀 מסלולים** (each user, for the projects they pay for; a project may override, owner only). Saved on the server (`users.lane_prefs`), enforced on the server, never only in the UI.
+
+| Setting | Values | Default |
+| --- | --- | --- |
+| Platform stopped (credit / key) → hand the messages to the chat | ✅ automatically · ❌ no, they wait | automatically |
+| The chat does not answer → move to Platform | ❓ ask with a card each time · ✅ automatically up to **$X per month** · ❌ never | ask |
+| Platform in that case may also run the code engine | ❌ answers only · ❓ engine after an approval card | answers only (decision 3) |
+| When the chat returns | ↩ back to the chat automatically · ✋ stay until I press "החזר לצ'אט" | automatically |
+| Silence before "the chat does not answer" | 5 / **10** / 20 / 30 minutes | 10 |
+| Smart summary | on demand only | — |
+
+The default for a user who never opened the settings is the safe column (nothing spends money without a card). The cap is checked in the server on every automatic use and counts inside the user's monthly quota (§8); beyond it the setting behaves as "ask". Each automatic switch is a line in `lane_log` with the setting that allowed it.
 
 ### 15.10 Rules for the code writer
 
