@@ -32,6 +32,8 @@ const APPROVAL_TYPES = [
     'push-protected'        => ['label' => 'push בכוח, או push ל-main',           'always' => 'no',   'settings_hint' => 'deny'],
     'change-gate'           => ['label' => 'שינוי השער עצמו — ההגדרות וקובצי הגשר', 'always' => 'no', 'settings_hint' => 'deny'],
     'run-remote-script'     => ['label' => 'הרצת סקריפט שהורד מהרשת',              'always' => 'no',   'settings_hint' => 'deny'],
+    // שלב 18 (§15.7): מטלת מנוע שנוצרה בזמן מעבר ל-☁️ — כל אחת מאושרת בנפרד
+    'engine-failover'       => ['label' => 'הרצת המנוע למטלה מתוך מעבר ל-☁️',     'always' => 'no',   'settings_hint' => ''],
     // בקשה בלי סוג מתאים — תמיד פעם אחת: אין לה מדיניות
     'other'                 => ['label' => 'אחר',                                 'always' => 'no',   'settings_hint' => ''],
 ];

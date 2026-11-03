@@ -220,7 +220,7 @@ function bubble(m) {
     // Platform לא כותב קוד: כשצריך — מציע מטלה, ונגיעה יוצרת אותה ומריצה (§9)
     m.meta?.task ? el('button', {
       type: 'button', class: 'btn ghost sm b-mktask',
-      onclick: (e) => makeTask(m.meta.task, e.currentTarget),
+      onclick: (e) => makeTask(m.meta.task, e.currentTarget, m.id),
     }, [`📋 הפוך למטלה: ${m.meta.task.title}`]) : null,
     m.task_id ? el('button', {
       type: 'button', class: 'b-task',
@@ -386,13 +386,15 @@ async function completePending() {
   for (const id of ids) { if (conv.id) await platformAnswer(id); }
 }
 
-async function makeTask(task, btn) {
+async function makeTask(task, btn, fromMessage) {
   if (!confirm(`ליצור מטלה "${task.title}" ולהריץ אותה במנוע?`)) return;
   btn.disabled = true;
   try {
-    const { id } = await api('create-task', { title: task.title, body: task.body || '', project_id: conv.channel.project_id });
+    const { id } = await api('create-task', { title: task.title, body: task.body || '', project_id: conv.channel.project_id, from_message: fromMessage });
     try {
-      await api('run-task', { id });
+      const r = await api('run-task', { id });
+      // שלב 18: מטלה מתוך מעבר ל-☁️ — כרטיס אישור לפני הריצה הראשונה
+      if (r.needs_approval) { toast(`נוצרה מטלה #${id} — ממתינה לאישור שלך לפני הריצה (🔐 בכרטיס המטלה)`, ''); return; }
       toast(`נוצרה מטלה #${id} ונשלחה להרצה`, 'ok');
     } catch (ex) { toast(`נוצרה מטלה #${id}, אבל ההרצה לא התחילה: ${ex.message}`, 'error'); }
   } catch (ex) { toast(ex.message, 'error'); btn.disabled = false; }
