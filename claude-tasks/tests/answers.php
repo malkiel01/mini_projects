@@ -141,6 +141,12 @@ db()->exec('UPDATE projects SET monitor_at = 0');
 check('פתיחת הלוח (lazy) — רץ על פרויקט שעברה שעה', monitorLazy($boss, 2, fake('{"lines":["א","ב","ג"]}')), [$root => 'on']);
 check('…ושוב מיד — לא רץ', monitorLazy($boss, 2, fake('x')), []);
 
+echo "\n— Platform יודע שאין לו כלים (תקלות 4–5) —\n";
+[$sys] = platformPrompt(['name' => 'מתכלל', 'role' => 'dev'], ['name' => 'p'], ['messages' => [], 'tasks' => [], 'readme' => ''], ['body' => 'תפעיל את הרסטר']);
+check('בפרומפט: אינו יכול לשלוח לצ\'אט אחר', str_contains($sys, 'אינך יכול לשלוח הודעה לצ\'אט אחר'), true);
+check('בפרומפט: לעולם לא לכתוב שעשה', str_contains($sys, 'לעולם אל תכתוב שעשית'), true);
+check('בפרומפט: לא לשאול ולחכות', str_contains($sys, 'לשאול ולחכות'), true);
+
 echo "\n════ עברו: $pass · נכשלו: $fail ════\n";
 exec('rm -rf ' . escapeshellarg($tmp));
 exit($fail ? 1 : 0);
