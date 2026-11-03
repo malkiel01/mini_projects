@@ -484,7 +484,7 @@ function channelSummary(array $user, int $channelId, ?callable $transport = null
             . 'מה הצעד הבא. אל תמציא דבר שלא כתוב בשיחה. עד 2,000 תווים, בלי הקדמה.';
     $conn = $chain[0] + ['chain' => $chain, 'user' => $payer,
                          'usage' => ['kind' => 'answer', 'project_id' => (int) $project['id'], 'channel_id' => $channelId, 'enforce' => false]];
-    $text = trim(aiComplete($conn, $system, "השיחה (מהישנה לחדשה):\n" . $log, 1200, $transport));
+    $text = trim(withLongAi(fn () => aiComplete($conn, $system, "השיחה (מהישנה לחדשה):\n" . $log, 1200, $transport)));
     if ($text === '') throw new AppError('המודל החזיר סיכום ריק');
     $id = inTx(function () use ($channelId, $text, $user) {
         db()->prepare("INSERT INTO messages (channel_id, direction, author_role, kind, body, answered_by, created_at)
@@ -521,7 +521,18 @@ const HANDOFF_DISTILL_SYSTEM = "אתה מעביר שיחת עבודה ארוכה
     . "השמט: ניסיונות שנכשלו ונזנחו, החלטות שהוחלפו (כתוב רק את התקפה), שיחת חולין, פלט ארוך, חזרות. "
     . "אל תמציא דבר שלא כתוב בשיחה. כותרות קצרות לכל חלק, נקודות קצרות. בסוף: \"מה הצ'אט הבא עושה קודם\" — 1–3 צעדים. "
     . "בלי הקדמה ובלי סיום מנומס.";
-const HANDOFF_DISTILL_BUDGET = 60000;   // תווים מהשיחה, מהסוף אחורה
+const HANDOFF_DISTILL_BUDGET = 45000;   // תווים מהשיחה, מהסוף אחורה
+/** שיחה ארוכה → קריאה ארוכה: עד 150 שנ' לספק (במקום 25). בעל הלוח 2026-11-03: נכשל ב-25 שנ'. */
+const LONG_AI_SECONDS = 150;
+
+/** מריץ קריאה ארוכה למודל: זמן המתנה ארוך לספק, וזמן ריצה ארוך ל-PHP — ומחזיר אחר כך. */
+function withLongAi(callable $fn) {
+    $prev = $GLOBALS['CT_AI_TIMEOUT'] ?? null;
+    $GLOBALS['CT_AI_TIMEOUT'] = LONG_AI_SECONDS;
+    if (function_exists('set_time_limit')) @set_time_limit(LONG_AI_SECONDS * 2 + 30);
+    try { return $fn(); }
+    finally { if ($prev === null) unset($GLOBALS['CT_AI_TIMEOUT']); else $GLOBALS['CT_AI_TIMEOUT'] = $prev; }
+}
 
 /**
  * בעל הלוח: "לסכם את הצ'אט למעבר לצ'אט חדש". קריאה אחת למודל (על חשבון המשלם, במכסה), והתוצאה נשמרת כתקציר
@@ -552,7 +563,7 @@ function handoffDistill(array $user, int $channelId, ?callable $transport = null
     $log = implode("\n\n", array_reverse($lines));
     $conn = $chain[0] + ['chain' => $chain, 'user' => $payer,
                          'usage' => ['kind' => 'answer', 'project_id' => (int) $project['id'], 'channel_id' => $channelId, 'enforce' => false]];
-    $text = trim(aiComplete($conn, HANDOFF_DISTILL_SYSTEM, "השיחה עם \"{$c['name']}\" (מהישנה לחדשה):\n\n" . $log, 3000, $transport));
+    $text = trim(withLongAi(fn () => aiComplete($conn, HANDOFF_DISTILL_SYSTEM, "השיחה עם \"{$c['name']}\" (מהישנה לחדשה):\n\n" . $log, 2500, $transport)));
     if ($text === '') throw new AppError('המודל החזיר זיכרון ריק — נסו שוב, או "בלי תקציר"');
     inTx(function () use ($channelId, $text, $req) {
         db()->prepare("INSERT INTO messages (channel_id, direction, author_role, kind, body, reply_to, answered_by, created_at)
