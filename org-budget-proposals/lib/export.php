@@ -15,7 +15,8 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/import.php';
-require_once __DIR__ . '/plan_doc.php';   // תכנית העבודה בעורך התמלילים
+require_once __DIR__ . '/plan_doc.php';
+require_once __DIR__ . '/versions.php';   // גרסאות, השבתה, הסרה וסל מחזור   // תכנית העבודה בעורך התמלילים
 
 const LOGO_MAX_BYTES = 1_500_000;
 const LOGO_TYPES = ['image/png' => 'png', 'image/jpeg' => 'jpg'];

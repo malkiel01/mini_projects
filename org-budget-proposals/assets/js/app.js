@@ -628,6 +628,7 @@ async function viewOrg(id) {
     S.org = d;
     setHeader(o.name, o.parent ? `תת-ארגון · ${o.parent.name}` : `${ROLE_LABEL[o.role]}${o.subtitle ? ' · ' + o.subtitle : ''}`, true, [
         h('button.icon-btn', { type: 'button', 'aria-label': 'היסטוריה', title: 'היסטוריה', onclick: () => orgHistory(o) }, '🕓'),
+        edit ? h('button.icon-btn', { type: 'button', 'aria-label': 'סל מחזור', title: 'סל מחזור — הצעות וקופות שהוסרו', onclick: () => trashSheet(o) }, '🗑️') : null,
         edit ? h('button.icon-btn', { type: 'button', 'aria-label': 'פרטי הארגון', title: 'פרטי הארגון', onclick: () => orgSettings(d) }, '✏️') : null,
     ]);
 
@@ -999,6 +1000,7 @@ async function viewBudget(id, fundId = null) {
     setHeader(`הצעת תקציב ${b.year}${b.title ? ' · ' + b.title : ''}`, `${d.org.name} · ${sl}`, true, [
         h('a.icon-btn', { href: `#/budget/${id}/grid`, 'aria-label': 'עריכה כטבלה', title: 'עריכה כטבלה' }, '▦'),
         h('a.icon-btn', { href: `#/budget/${id}/print`, 'aria-label': 'המסמך להדפסה', title: 'המסמך' }, '📄'),
+        h('button.icon-btn', { type: 'button', 'aria-label': 'גרסאות קודמות', title: 'גרסאות', onclick: () => versionsSheet(d) }, '🕘'),
         h('button.icon-btn', { type: 'button', 'aria-label': 'פעולות על ההצעה', title: 'פעולות', onclick: () => budgetActions(d) }, '⋯'),
     ]);
     const sm = d.summary;
@@ -1024,7 +1026,7 @@ async function viewBudget(id, fundId = null) {
 
 function budFunds(box, d) {
     const bal = Object.fromEntries(d.summary.balance.map(x => [x.fund_id, x]));
-    const notIn = d.targets.filter(t => t.org_id === d.org.id && !d.funds.some(f => f.id === t.id));
+    const notIn = d.targets.filter(t => t.org_id === d.org.id && !d.funds.some(f => f.id === t.id) && !d.disabled.funds.some(f => f.id === t.id));
     put(box, 
         h('div.toolbar', { style: 'justify-content:space-between;align-items:center' },
             h('p.hint', { style: 'margin:0' }, 'כל קופה — דף במסמך: הכנסות מול הוצאות. לחיצה פותחת את השורות.'),
@@ -1036,6 +1038,14 @@ function budFunds(box, d) {
                 h('span.use-tx', h('b.one', f.name), h('small', `הכנסות ${money(x.income)} · הוצאות ${money(x.expense)}`)),
                 balChip(x.diff)));
         })),
+        d.disabled.funds.length ? h('section.group', { style: 'margin-top:12px' }, h('h3', '⏸️ קופות מושבתות', h('small', 'בהצעה, מחוץ לחישוב ולמסמך')),
+            h('ul.list', ...d.disabled.funds.map(f => h('li.off', { style: 'display:flex;align-items:center;gap:8px' },
+                h('span.use-ic', { 'aria-hidden': 'true' }, FUND_IC[f.kind]),
+                h('span.use-tx', { style: 'flex:1' }, h('b.one', f.name), h('small', `${f.lines} שורות`)),
+                d.edit ? h('button.btn.sm.ghost', { type: 'button', onclick: async () => {
+                    await api('bfund_disable', { budget_id: d.budget.id, fund_id: f.id, disabled: 0 }).catch(e => toast(e.message, true));
+                    toast('הקופה הוחזרה'); viewBudget(d.budget.id);
+                } }, '↩ החזרה') : null)))) : null,
         d.edit && notIn.length ? h('div.row-btns', { style: 'margin-top:12px' }, h('button.btn.ghost', { type: 'button', onclick: () => {
             const pick = h('div.tiles', ...notIn.map(t => h('button.tile', { type: 'button', onclick: async () => {
                 await api('bfund_toggle', { budget_id: d.budget.id, fund_id: t.id, include: 1 }).catch(e => toast(e.message, true));
@@ -1174,8 +1184,12 @@ async function viewGrid(id) {
         r.summaryOnly = !!l?.summary_only;
         r.msg = h('div.row-msg');
         const note = l ? [l.calc_note, l.cell_note].filter(Boolean).join(' · ') : '';
+        if (l && edit) {
+            r.sel = h('input.sel', { type: 'checkbox', 'aria-label': `סימון למחיקה — ${l.title}` });
+            r.sel.addEventListener('change', updSel);
+        }
         r.tr = h('tr',
-            h('td.n', l ? `${i + 1}.` : '+',
+            h('td.n', r.sel || null, l ? `${i + 1}.` : '+',
                 l && (l.transfer || l.lease || l.calc || l.summary_only) ? h('small', l.transfer ? '🔁' : '', l.lease ? '🏠' : '', l.calc ? '🧮' : '', l.summary_only ? '∑' : '') : null),
             h('th.title', { scope: 'row' }, h('div', r.inputs.title, r.inputs.subtitle, r.msg)),
             ...NUMS.map(([k]) => numCell(r, k, l ? l[k] : null, k === 'amount' ? lock : (k !== 'actual' ? recvLock : ''), k === 'amount' ? note : '')));
@@ -1233,10 +1247,35 @@ async function viewGrid(id) {
         toast(`נשמר: ${out.length} שורות${nchg.length ? ` ו-${nchg.length} הערות` : ''}`);
         viewGrid(id);
     }));
+    // מחיקת כמה שורות: מצב סימון — ריבוע ליד כל שורה, ומחיקה אחת לכל המסומנות
+    const selBtn = h('button.btn.ghost', { type: 'button' }, '☑️ סימון למחיקה');
+    const delBtn = h('button.btn.ghost.danger', { type: 'button', hidden: true });
+    function updSel() {
+        const n = rows.filter(r => r.sel?.checked).length;
+        delBtn.textContent = `🗑️ מחיקת ${n} מסומנות`;
+        delBtn.disabled = !n;
+    }
+    selBtn.addEventListener('click', () => {
+        const on = !doc.classList.toggle('sel-off');
+        selBtn.textContent = on ? '✓ סיום סימון' : '☑️ סימון למחיקה';
+        delBtn.hidden = !on;
+        if (!on) rows.forEach(r => r.sel && (r.sel.checked = false));
+        updSel();
+    });
+    delBtn.addEventListener('click', busy(delBtn, async () => {
+        const picked = rows.filter(r => r.sel?.checked);
+        if (rows.some(changed)) return toast('יש שינויים שלא נשמרו — קודם שמירה או ביטול', true);
+        const tr = picked.filter(r => r.line.transfer).length;
+        if (!confirm(`למחוק ${picked.length} שורות?${tr ? `\n${tr} מהן העברות — גם הצד השני שלהן יימחק.` : ''}\nאפשר לחזור מ"🕘 גרסאות".`)) return;
+        const r = await api('lines_delete', { budget_id: b.id, ids: picked.map(x => x.line.id) });
+        toast(`נמחקו ${r.deleted} שורות`);
+        window.onbeforeunload = null;
+        viewGrid(id);
+    }));
     bar.append(save, undo);
 
     // גודל התצוגה: ברירת המחדל — מה שמתאים למסך (כל העמודות נראות, בטלפון לא פחות מ-80%); אפשר להקטין ולהגדיל
-    const doc = h('div.grid-doc', ...d.funds.map(f => {
+    const doc = h('div.grid-doc.sel-off', ...d.funds.map(f => {
         fundBal[f.id] = h('span.grid-bal');
         const dirs = b.expense_first ? ['expense', 'income'] : ['income', 'expense'];
         return h('section.grid-fund',
@@ -1274,6 +1313,7 @@ async function viewGrid(id) {
                 ? 'כל הקופות כמו במסמך. משנים כמה שרוצים ושומרים פעם אחת; ההערות והאזהרות מתעדכנות תוך כדי הקלדה. 🧮 חודשית ו-🔁 העברה מכמה קופות — הסכום נגזר, ומשנים אותו בעריכת השורה. 🏠 שכירות · ∑ רק בריכוז.'
                 : 'ההצעה ' + STATUS_CHIP[b.status][0] + ' — לקריאה בלבד. לעריכה — להחזיר לטיוטה (⋯ במסך ההצעה).')),
         zoomBox,
+        edit && d.lines.length ? h('div.toolbar', { style: 'justify-content:flex-end;flex-wrap:wrap' }, selBtn, delBtn) : null,
         h('div.grid-layout', doc, issuesBox),
         bar);
     recalc();
@@ -1293,8 +1333,10 @@ function viewBudgetFund(d, fundId) {
     const f = d.funds.find(x => x.id === fundId);
     if (!f) { location.hash = `#/budget/${b.id}`; return; }
     const dir = sessionStorage.getItem('ob-fund-dir') || (b.expense_first ? 'expense' : 'income');
-    setHeader(f.name, `הצעת ${b.year} · ${f.address || d.org.name}`, true);
+    setHeader(f.name, `הצעת ${b.year} · ${f.address || d.org.name}`, true,
+        d.edit ? [h('button.icon-btn', { type: 'button', 'aria-label': 'פעולות על הקופה', title: 'השבתה / הוצאה מההצעה', onclick: () => fundActions(d, f) }, '⋯')] : []);
     const bal = d.summary.balance.find(x => x.fund_id === fundId);
+    const offLines = d.disabled.lines.filter(l => l.fund_id === fundId && l.direction === dir);
     const lines = d.lines.filter(l => l.fund_id === fundId && l.direction === dir);
     const sorting = d.edit && sessionStorage.getItem('ob-line-sort') === '1';
     const cmt = Object.groupBy ? Object.groupBy(d.comments.filter(c => !c.resolved && c.line_id), c => c.line_id) : {};
@@ -1344,6 +1386,13 @@ function viewBudgetFund(d, fundId) {
                 h('div.l1', h('span', 'סה"כ'), h('span.t', { style: 'font-weight:700;color:var(--ink);font-size:.95rem' }, money(total('amount')))),
                 h('div.l2', `קודם ${money(total('prev_budget'))} · ניצול ${money(total('prev_actual'))}`))))
             : h('p.empty', d.edit ? `אין עדיין ${DIR_LABEL[dir]}. "+ שורה" כדי להוסיף.` : `אין ${DIR_LABEL[dir]}`),
+        offLines.length ? h('section.group', h('h3', '⏸️ מושבתות', h('small', 'מחוץ לסה"כ, לריכוז ולמסמך')),
+            h('ul.list', ...offLines.map(l => h('li.card.off', { style: 'cursor:default' }, h('div.body',
+                h('div.l1', h('span', l.title), h('span.t', money(l.amount))), l.subtitle ? h('div.l2', l.subtitle) : null),
+                d.edit ? h('button.btn.sm.ghost', { type: 'button', onclick: async () => {
+                    await api('line_disable', { budget_id: b.id, id: l.id, disabled: 0 }).catch(e => toast(e.message, true));
+                    toast('השורה הוחזרה'); viewBudget(b.id, fundId);
+                } }, '↩ החזרה') : null)))) : null,
         h('p.sec-title', 'הערות אחרי הטבלה'), notes);
 }
 
@@ -1408,7 +1457,11 @@ function lineSheet(d, f, dir, l = null) {
             if (!confirm(l.transfer ? 'למחוק את ההעברה — השורה כאן והשורה בקופה השנייה?' : `למחוק את "${l.title}"?`)) return;
             await api('line_delete', { budget_id: b.id, id: l.id }); sheet.close(); toast('נמחק'); viewBudget(b.id, f.id);
         }));
-        extra.push(h('div.row-btns', rm));
+        const off = l.transfer ? null : h('button.btn.ghost', { type: 'button', title: 'נשארת בהצעה, מחוץ לחישוב ולמסמך — ואפשר להחזיר' }, '⏸️ השבתה');
+        off?.addEventListener('click', busy(off, async () => {
+            await api('line_disable', { budget_id: b.id, id: l.id, disabled: 1 }); sheet.close(); toast('השורה הושבתה — אפשר להחזיר מתחתית הרשימה'); viewBudget(b.id, f.id);
+        }));
+        extra.push(h('div.row-btns', off, rm));
         if (commentBox) extra.push(commentBox);
     }
     formSheet(l ? 'עריכת שורה' : `שורת ${dir === 'income' ? 'הכנסה' : 'הוצאה'} — ${f.name}`, [
@@ -1783,6 +1836,114 @@ function budComments(box, d) {
 
 // ── פעולות על ההצעה ──
 
+// ── גרסאות, השבתה, הוצאת קופה וסל מחזור (lib/versions.php) ──
+
+/** הגרסאות של ההצעה: לפני כל שינוי נשמרת תמונה שלמה; לחיצה — מה השתנה מאז, ושחזור. */
+async function versionsSheet(d) {
+    const b = d.budget;
+    let r;
+    try { r = await api('versions_list', null, `&id=${b.id}`); } catch (e) { return toast(e.message, true); }
+    const sum = x => `${x.lines} שורות · הכנסות ${money(x.income)} · הוצאות ${money(x.expense)}`;
+    openSheet('🕘 גרסאות קודמות', [
+        h('p.hint', 'לפני כל שינוי בהצעה נשמרת גרסה (שינויים רצופים של אותו אדם — אחת לכל 10 דקות; לפני מחיקה — תמיד). '
+            + 'לחיצה על גרסה מראה מה השתנה מאז, ומשם אפשר לשחזר. השחזור עצמו שומר קודם גרסה — כך שגם אותו אפשר לבטל. '
+            + 'השער ותכנית העבודה — לגרסאות שלהם: 🕘 בתוך העורך.'),
+        h('div.summary', h('div.line', h('b', 'עכשיו'), h('span.muted', sum(r.now)))),
+        r.versions.length ? h('ul.list', ...r.versions.map(v => h('li', h('button.use-row', { type: 'button', onclick: () => versionView(d, v, r.can_restore) },
+            h('span.use-tx', h('b.one', fmtDate(v.at), v.by ? ` · ${v.by}` : ''), h('small', v.label), h('small', sum(v))),
+            h('span.use-go', { 'aria-hidden': 'true' }, '‹')))))
+            : h('p.empty', 'עוד אין גרסאות — הראשונה נשמרת לפני השינוי הראשון.'),
+    ]);
+}
+
+async function versionView(d, v, canRestore) {
+    const b = d.budget;
+    let r;
+    try { r = await api('version_get', null, `&budget_id=${b.id}&id=${v.id}`); } catch (e) { return toast(e.message, true); }
+    const df = r.diff;
+    const li = (...x) => h('li', { style: 'padding:6px 0;border-bottom:1px solid var(--line)' }, ...x);
+    const group = (title, items) => items.length ? h('section.group', h('h3', title, h('small', String(items.length))), h('ul', { style: 'list-style:none;padding:0;margin:0' }, ...items)) : null;
+    const ln = l => [h('b', l.title), h('span.muted', ` · ${l.fund} · ${l.direction} · ${money(l.amount)}`)];
+    const restore = h('button.btn.primary', { type: 'button' }, '↩ שחזור ההצעה לגרסה הזו');
+    restore.addEventListener('click', busy(restore, async () => {
+        if (!confirm(`לשחזר את ההצעה למצב של ${fmtDate(v.at)}?\nהמצב הנוכחי נשמר כגרסה — אפשר לחזור אליו.`)) return;
+        const x = await api('version_restore', { budget_id: b.id, id: v.id });
+        sheet.close();
+        toast('שוחזר' + (x.fixed ? ` · ${x.fixed} העברות שהצד השני שלהן כבר לא קיים הפכו לשורות רגילות` : '')
+            + (x.orphans.length ? ` · שימו לב: בצד השני נשארו ${x.orphans.length} העברות בלי בן זוג (${x.orphans.slice(0, 3).join(', ')})` : ''));
+        viewBudget(b.id);
+    }));
+    openSheet(`גרסה מ-${fmtDate(v.at)}`, [
+        h('dl.kv', h('dt', 'מי'), h('dd', v.by || '—'), h('dt', 'נשמרה'), h('dd', v.label),
+            h('dt', 'אז'), h('dd', `${r.stats.lines} שורות · הכנסות ${money(r.stats.income)} · הוצאות ${money(r.stats.expense)}`),
+            h('dt', 'עכשיו'), h('dd', `${r.now.lines} שורות · הכנסות ${money(r.now.income)} · הוצאות ${money(r.now.expense)}`)),
+        df.same ? h('p.empty', 'אין הבדל בין הגרסה הזו למצב הנוכחי.') : h('p.hint', 'מה השתנה מאז הגרסה הזו — ומה השחזור יחזיר:'),
+        group('🗑️ נמחקו מאז — יחזרו', df.removed.map(l => li(...ln(l)))),
+        group('✏️ שונו מאז', df.changed.map(l => li(...ln(l), h('div', { style: 'font-size:.85rem' },
+            ...l.changes.map(c => h('div', `${c.label}: היה `, h('b', c.then), ' · עכשיו ', c.now)))))),
+        group('➕ נוספו מאז — יימחקו', df.added.map(l => li(...ln(l)))),
+        group('🏦 קופות', df.funds.map(f => li(h('b', f.name), ` — ${f.change} מאז`))),
+        group('📊 שורות ריכוז', df.rows.map(x => li(h('b', x.label), ` — ${x.change} מאז`))),
+        group('📝 פרטי ההצעה', df.fields.map(x => li(`${x.label}: היה `, h('b', x.then), ' · עכשיו ', x.now))),
+        canRestore && !df.same ? restore : !canRestore ? h('p.hint', 'שחזור — רק לעורך, ורק בטיוטה.') : null,
+    ]);
+}
+
+/** קופה בתוך ההצעה: השבתה (הפיכה) או הוצאה מההצעה עם כל השורות. */
+function fundActions(d, f) {
+    const b = d.budget;
+    const off = h('button.btn.ghost', { type: 'button' }, '⏸️ השבתה בהצעה הזו');
+    off.addEventListener('click', busy(off, async () => {
+        await api('bfund_disable', { budget_id: b.id, fund_id: f.id, disabled: 1 });
+        sheet.close(); toast('הקופה הושבתה — אפשר להחזיר מרשימת הקופות'); location.hash = `#/budget/${b.id}`;
+    }));
+    const rm = h('button.btn.ghost.danger', { type: 'button' }, '🗑️ הוצאה מההצעה…');
+    rm.addEventListener('click', busy(rm, async () => {
+        const p = await api('bfund_remove', { budget_id: b.id, fund_id: f.id, preview: 1 });
+        const tr = p.transfers.map(t => h('li', `${t.title} (${money(t.amount)}) ↔ `, t.with.map(w => `${w.fund} · ${w.org}${w.same_budget ? '' : ` · ${w.year}`}${w.locked ? ' 🔒' : ''}`).join(', ') || 'בלי צד שני'));
+        formSheet(`הוצאת "${p.name}" מההצעה`, [
+            h('dl.kv', h('dt', 'שורות'), h('dd', String(p.lines)), h('dt', 'הכנסות'), h('dd', money(p.income)), h('dt', 'הוצאות'), h('dd', money(p.expense))),
+            p.transfers.length ? h('div', h('p.error', `${p.transfers.length} העברות — יימחק גם הצד השני שלהן:`), h('ul', ...tr)) : null,
+            p.blocked ? h('p.error', '🔒 הצד השני של אחת ההעברות נמצא בהצעה נעולה — קודם להחזיר אותה לטיוטה.') : null,
+            h('label.switch', h('input', { type: 'checkbox', name: 'archive', value: '1' }), h('span', 'גם להסיר את הקופה מהארגון — לא תיכנס להצעות הבאות (אפשר להחזיר מסל המחזור)')),
+            field(`לאישור — הקלידו את שם הקופה: ${p.name}`, 'confirm', '', { wide: true, max: 120 }),
+            h('p.hint', 'לפני ההוצאה נשמרת גרסה — אפשר לשחזר מ"🕘 גרסאות".'),
+        ], async x => {
+            await api('bfund_remove', { budget_id: b.id, fund_id: f.id, confirm: x.confirm, archive: x.archive ? 1 : 0 });
+            toast(`"${p.name}" הוצאה מההצעה`); location.hash = `#/budget/${b.id}`;
+        });
+    }));
+    openSheet(f.name, [
+        h('p.hint', 'השבתה — הקופה נשארת בהצעה עם כל השורות, מחוץ לחישוב, לריכוז ולמסמך, ומוחזרת בלחיצה. מתאים כשאולי תחזור.'),
+        off,
+        h('p.hint', 'הוצאה — הקופה וכל השורות שלה נמחקות מההצעה (וגם הצד השני של ההעברות שלה). אפשר לבחור להסיר אותה גם מהארגון.'),
+        rm,
+    ]);
+}
+
+/** סל המחזור של הארגון: הצעות שנמחקו וקופות שהוסרו — ושחזור. */
+async function trashSheet(o) {
+    let r;
+    try { r = await api('trash_list', null, `&org_id=${o.id}`); } catch (e) { return toast(e.message, true); }
+    const back = (label, fn) => {
+        const btn = h('button.btn.sm.ghost', { type: 'button' }, label);
+        btn.addEventListener('click', busy(btn, async () => { await fn(); sheet.close(); toast('שוחזר'); viewOrg(o.id); }));
+        return btn;
+    };
+    openSheet('🗑️ סל מחזור', [
+        h('p.hint', 'מה שנמחק או הוסר — נשמר כאן, עם כל התוכן, ואפשר להחזיר. הצעה שהוגשה — רק בעלים מחזיר.'),
+        h('section.group', h('h3', '📑 הצעות שנמחקו', h('small', String(r.budgets.length))),
+            r.budgets.length ? h('ul.list', ...r.budgets.map(x => h('li', { style: 'display:flex;align-items:center;gap:8px' },
+                h('span.use-tx', { style: 'flex:1' }, h('b.one', `הצעת ${x.year}${x.title ? ' · ' + x.title : ''}`), h('small', `${STATUS_CHIP[x.status][0]} · נמחקה ${fmtDate(x.at)}`)),
+                x.status === 'draft' || r.is_owner ? back('↩ שחזור', () => api('budget_restore', { budget_id: x.id })) : null))) : h('p.empty', 'אין')),
+        h('section.group', h('h3', '🏦 קופות שהוסרו מהארגון', h('small', String(r.funds.length))),
+            r.funds.length ? h('ul.list', ...r.funds.map(x => h('li', { style: 'display:flex;align-items:center;gap:8px' },
+                h('span.use-ic', { 'aria-hidden': 'true' }, FUND_IC[x.kind]),
+                h('span.use-tx', { style: 'flex:1' }, h('b.one', x.name), h('small', `הוסרה ${fmtDate(x.at)} · אחרי ההחזרה — נכנסת להצעות חדשות; להצעה קיימת: "+ קופה שלא בהצעה"`)),
+                back('↩ החזרה', () => api('fund_restore', { org_id: o.id, id: x.id }))))) : h('p.empty', 'אין')),
+    ]);
+}
+
 function budgetActions(d) {
     const b = d.budget, role = d.org.role;
     const go = (label, fn, cls = 'ghost') => {
@@ -1801,7 +1962,7 @@ function budgetActions(d) {
     }));
     const del = h('button.btn.ghost.danger', { type: 'button' }, '🗑️ מחיקת ההצעה');
     del.addEventListener('click', () => formSheet('מחיקת הצעה', [
-        h('p.error', 'ההצעה תימחק. העברות שלה ימשיכו להופיע בצד השני כשורות רגילות.'),
+        h('p.error', 'ההצעה תעבור לסל המחזור של הארגון (🗑️ במסך הארגון) — ומשם אפשר לשחזר. העברות שלה ימשיכו להופיע בצד השני כשורות רגילות.'),
         field(`לאישור — הקלידו את השנה ${b.year}`, 'confirm', '', { wide: true, max: 4, attrs: { inputMode: 'numeric', dir: 'ltr' } }),
     ], async x => {
         await api('budget_delete', { budget_id: b.id, confirm: x.confirm });
