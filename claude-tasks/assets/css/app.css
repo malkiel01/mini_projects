@@ -917,3 +917,16 @@ mark.hit { background: color-mix(in srgb, var(--star) 45%, transparent); color: 
 .usage-models { list-style: none; margin: var(--s2) 0 0; padding: 0; display: grid; gap: 4px; }
 .usage-models li { display: grid; grid-template-columns: 1fr auto; gap: var(--s2); font-size: .85rem; }
 .usage-models .bar { grid-column: 1 / -1; height: 6px; border-radius: 3px; background: var(--brand); opacity: .75; }
+
+/* ── שלב 23: ➕ צ'אט חדש מהלוח ── */
+.chan-top { justify-content: flex-start; margin-bottom: var(--s2); }
+#launchRows:empty { display: none; }
+#launchRows { margin-bottom: var(--s2); }
+.launch-row .btn { flex: none; }
+#lnModes { display: flex; width: 100%; }
+#lnModes button { flex: 1 1 auto; min-height: 40px; }
+.guide-steps { list-style: none; margin: 0 0 var(--s3); padding: 0; display: grid; gap: var(--s2); }
+.guide-steps li { display: grid; gap: 6px; padding: var(--s2); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+.guide-steps li .btn { justify-self: start; }
+.guide-steps pre { max-height: 180px; overflow: auto; font-size: .72rem; white-space: pre-wrap; margin: 0; }
+.check { display: flex; gap: var(--s2); align-items: flex-start; font-size: .9rem; margin: var(--s2) 0; }

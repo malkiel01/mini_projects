@@ -10,6 +10,7 @@ import { permCard, permFromMessage, refreshPermStrip } from './permissions.js';
 import { HEALTH, healthDetail, openHandoff, mmss } from './newchat.js';
 import { labelChip, openLabelsForMessage, openManageLabels, renderPinStrip, openPinList, pinsMode, setPinsMode } from './labels.js';
 import { openAiSheet, aiChipText, aiUsedLine, aiCard } from './aipick.js';
+import { openLaunchSheet, renderLaunchRows } from './launch.js';
 import { needs as trNeeds, lang as trLang, TRANSLATE_LANGS, engine as trEngine, translate, cached as trCached, setShow as trSetShow } from './translate.js';
 
 const POLL_MS = 4000;
@@ -86,9 +87,13 @@ setInterval(() => {
   for (const b of document.querySelectorAll('.ho-live .ho-t')) b.textContent = mmss(Math.floor(Date.now() / 1000) - Number(b.closest('.ho-live').dataset.at));
 }, 1000);
 document.addEventListener('ct:reload-channels', () => { if (state.projectId) loadChannels().catch(() => {}); });
+on('#chanNew', 'click', () => openLaunchSheet({ projectId: state.projectId, mode: 'template' }));
 
 export function renderChannels() {
   const list = state.channels || [];
+  // שלב 23: ➕ צ'אט חדש (בעל הלוח) ושורות "🚀 נפתח…"
+  $('#chanNew').hidden = !isOwner();
+  if (isOwner()) renderLaunchRows(state.projectId);
   $('#chanRows').replaceChildren(...list.map((c) => el('li', {
     class: `card${c.status !== 'active' ? ' is-off' : ''}${c.hidden ? ' is-hidden' : ''}`, tabindex: '0', role: 'button',
     'aria-label': `${c.name}${c.role ? ' · ' + c.role : ''}`,

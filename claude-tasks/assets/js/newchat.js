@@ -11,6 +11,7 @@
  * claude.ai/code לא מקבל פרומפט בכתובת (לא נמצאה דרך מתועדת) — לכן תמיד: העתקה, ואז פתיחה.
  */
 import { $, el, api, toast, state, on } from './core.js';
+import { openLaunchSheet } from './launch.js';
 
 const CODE_URL = 'https://claude.ai/code';
 const nc = { sheet: null, role: null };
@@ -356,6 +357,11 @@ async function showHandoffPrompt(fallback) {
     el('p', { class: 'hint', text: r.source === 'handoff'
       ? `התקציר הגיע. כשהצ'אט החדש יירשם, "${r.name}" יסומן "הוחלף" והמטלות שנשאלו בו יעברו אליו.`
       : 'בלי תקציר — הפרומפט כולל את ההודעות האחרונות בערוץ.' }),
+    // שלב 23: בלחיצה אחת — המשיק פותח את צ'אט ההמשך עם הפרומפט (בלי להעתיק ולהדביק)
+    el('div', { class: 'row-btns' }, [el('button', { type: 'button', class: 'btn primary', text: '🚀 לפתוח את צ\'אט ההמשך בלחיצה',
+      onclick: () => { const c = ho.channel; $('#handoffSheet').close();
+        openLaunchSheet({ projectId: c.project_id, name: r.name, mode: 'followup', replaces: c.id, replacesName: c.name }); } })]),
+    el('p', { class: 'hint', text: 'או ידנית:' }),
     promptBlock(r.prompt, 'הפרומפט לצ\'אט ההמשך', { collapsed: true }),
   );
   document.dispatchEvent(new CustomEvent('ct:reload-channels'));

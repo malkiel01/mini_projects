@@ -1527,7 +1527,12 @@ try {
         if ($pid === 0 && ($known = sessionChannelDefaults(str_field($in, 'session_id', 120)))) {
             $pid = $known['project_id']; $name = $name ?: $known['name']; $role = $role ?: $known['role'];
         }
-        $reg = registerChannel($scope, $pid, $name, $role, str_field($in, 'session_id', 120), $url, int_or_null($in, 'replaces'));
+        // שלב 23 (§19.2, 5): צ'אט שנפתח מהלוח — הרשומה קובעת פרויקט, שם והחלפה (לא מה שהצ'אט שלח)
+        $launch = str_field($in, 'launch', 64) !== '' ? launchClaim($scope, str_field($in, 'launch', 64)) : null;
+        if ($launch) { $pid = $launch['project_id']; $name = $launch['name']; }
+        $reg = registerChannel($scope, $pid, $name, $role, str_field($in, 'session_id', 120), $url,
+                               $launch ? $launch['replaces'] : int_or_null($in, 'replaces'));
+        if ($launch) launchRegistered($launch['id'], (int) $reg['channel_id']);
         channelSetVersion(getChannel($reg['channel_id']), str_field($in, 'bridge_version', 40));
         // שלב 16: הצ'אט חזר — האפיזודה נסגרת, והתקציר "מה קרה בלעדיך" חוזר אליו
         ok($reg + ['digest' => laneReturn(getChannel($reg['channel_id']))]);
@@ -1730,6 +1735,39 @@ try {
         $me = requireUser($user);
         setConnectionEffort($me, (int) ($in['id'] ?? 0), str_field($in, 'effort', 10));
         ok(['connections' => userConnections((int) $me['id'])]);
+    }
+
+    /* ── שלב 23: "➕ צ'אט חדש" מהלוח (lib/launcher.php) ── */
+    case 'launchers': {
+        $me = requireUser($user);
+        ok(['launchers' => userLaunchers((int) $me['id']), 'guide' => launcherGuide($me, (int) ($in['project_id'] ?? 0))]);
+    }
+
+    case 'launcher-save': {
+        $me = requireUser($user);
+        ok(['launcher' => launcherSave($me, $in), 'launchers' => userLaunchers((int) $me['id'])]);
+    }
+
+    case 'launcher-remove': {
+        $me = requireUser($user);
+        launcherRemove($me, (int) ($in['id'] ?? 0));
+        ok(['launchers' => userLaunchers((int) $me['id'])]);
+    }
+
+    case 'project-launcher':
+        setProjectLauncher(requireUser($user), (int) ($in['project_id'] ?? 0), int_or_null($in, 'launcher_id'));
+        ok();
+
+    case 'launch-chat':
+        ok(launchChat(requireUser($user), (int) ($in['project_id'] ?? 0), (string) ($in['name'] ?? ''),
+                      str_field($in, 'mode', 12), int_or_null($in, 'replaces_channel_id')));
+
+    case 'launches': {
+        $me = requireUser($user);
+        $pid = (int) ($in['project_id'] ?? 0);
+        requireProject($pid, $me, 'read');
+        $l = launcherFor($me, $pid);
+        ok(['launches' => pendingLaunches($me, $pid), 'launcher' => $l ? launcherPublic($l) : null]);
     }
 
     /* §18.3 (22א.2): מה Platform רואה בפרויקט */

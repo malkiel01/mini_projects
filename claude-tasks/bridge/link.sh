@@ -66,13 +66,14 @@ silent_register() {
 cmd="${1:-status}"; shift || true
 case "$cmd" in
   register)
-    project=""; name=""; role=""; replaces=""
+    project=""; name=""; role=""; replaces=""; launch=""
     while [ $# -gt 0 ]; do
       case "$1" in
         --project)  project="$2"; shift 2 ;;
         --name)     name="$2"; shift 2 ;;
         --role)     role="$2"; shift 2 ;;
         --replaces) replaces="$2"; shift 2 ;;
+        --launch)   launch="$2"; shift 2 ;;   # שלב 23: צ'אט שנפתח מהלוח — הרשומה קובעת פרויקט, שם והחלפה
         *) die "פרמטר לא מוכר: $1" ;;
       esac
     done
@@ -86,11 +87,14 @@ case "$cmd" in
     fi
     [[ "$project" =~ ^[0-9]+$ ]] || die "חסר מספר פרויקט (--project). הפרומפט מהלוח (⚙ ← 🆕 צ'אט חדש) כבר כולל אותו — העתיקו אותו משם."
     [ -z "$replaces" ] || [[ "$replaces" =~ ^[0-9]+$ ]] || die "--replaces: מספר הערוץ שמוחלף"
+    [ -z "$launch" ] || [[ "$launch" =~ ^L-[0-9a-f]{8,64}$ ]] || die "--launch: ה-launch_id מרשומת הפתיחה (L-…)"
     sid="$(session_id)"; [ -n "$sid" ] || die "אין מזהה סשן (CLAUDE_CODE_REMOTE_SESSION_ID)"
     [ -n "$name" ] || name="צ'אט ${sid: -6}"
     body="$(jq -n --argjson p "$project" --arg n "$name" --arg r "$role" --arg s "$sid" --arg u "$(session_url)" --arg x "$replaces" \
              --arg v "$BRIDGE_VERSION" \
-             '{project_id:$p, name:$n, role:$r, session_id:$s, session_url:$u, bridge_version:$v} + (if $x != "" then {replaces: ($x|tonumber)} else {} end)')"
+             --arg l "$launch" \
+             '{project_id:$p, name:$n, role:$r, session_id:$s, session_url:$u, bridge_version:$v} + (if $x != "" then {replaces: ($x|tonumber)} else {} end)
+              + (if $l != "" then {launch: $l} else {} end)')"
     mkdir -p "$(dirname "$BOARD_LINK")"
     # בלי $( ) — כדי ש-BOARD_HTTP (שנקבע בתוך board_call) לא ילך לאיבוד בתת-מעטפת
     tmp_out="$(mktemp)"; board_call channel-register "$body" "$CLAUDE_TASKS_TOKEN" > "$tmp_out"; rc=$?

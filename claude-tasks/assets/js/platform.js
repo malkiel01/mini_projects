@@ -6,6 +6,8 @@
  */
 
 import { $, $$, el, api, toast, state, on, PLATFORM_HINT } from './core.js';
+import { openLauncherGuide, renderLaunchers } from './launch.js';
+document.addEventListener('ct:launchers-changed', () => { if ($('#connLaunchers')) renderLaunchers($('#connLaunchers')); });
 import { openPolicySheet, policySubline } from './policy.js';
 import { loadChatSheet, chatSheetLine, openNewChat } from './newchat.js';
 import { renderProjectLanes } from './lanes.js';
@@ -48,6 +50,7 @@ function renderConnections() {
   const ai = list.filter((c) => c.ai).sort((a, b) => a.priority - b.priority);
   $('#connCount').textContent = list.length ? `מחוברים (${list.length})` : 'חיבורים';
   const box = $('#connList');
+  renderLaunchers($('#connLaunchers'));
   if (!list.length) {
     box.replaceChildren(el('p', { class: 'empty', text: 'אין חיבורים עדיין. ‎+ חיבור כדי להתחבר לגיטהאב או לספק בינה.' }));
     return;
@@ -161,6 +164,8 @@ on('#connAddBtn', 'click', () => {
 on('#caTiles', 'click', (e) => {
   const t = e.target.closest('[data-kind]');
   if (!t) return;
+  // שלב 23: משיק צ'אטים — מדריך וטופס משלו (לא ספק בינה)
+  if (t.dataset.kind === 'launcher') { $('#connAdd').close(); openLauncherGuide(); return; }
   addKind = t.dataset.kind;
   const meta = (state.providers || []).find((p) => p.provider === addKind);
   $('#caTitle').textContent = `חיבור ${KIND_NAME[addKind]}`;
