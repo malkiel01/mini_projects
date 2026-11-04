@@ -654,5 +654,53 @@ foreach (glob(dirname(DB_FILE) . '/certs/*') as $f) @unlink($f);
 @rmdir(dirname(DB_FILE) . '/certs');
 unset($GLOBALS['TC_NOW']);
 
+// ===== גרסה 3ב: מקרי קצה — שעון קיץ, גבול חודש וגבול שנה =====
+$GLOBALS['TC_NOW'] = $z('2028-02-01 10:00');
+// חברה נפרדת, עם ברירות המחדל של הכללים — בחברה הראשית נקבעו כללים משלה במבחנים הקודמים
+$edgeCid = companyCreate(as_(['sub' => 'u-owner']), ['name' => 'מקרי קצה', 'days_per_week' => 5, 'daily_minutes' => 504])['company']['id'];
+$edgeEmp = function (string $name) use ($edgeCid) {
+    $o = as_(['sub' => 'u-owner']);
+    return empAdd($o, ['company_id' => $edgeCid, 'name' => $name, 'start_date' => '2027-01-01', 'days_per_week' => 5, 'daily_minutes' => 504])['employee']['id'];
+};
+$shift = function (int $m, string $a, string $b) use ($z) { recordPunch($m, 'in', 'phone', null, null, $z($a)); recordPunch($m, 'out', 'phone', null, null, $z($b)); };
+$sumB = fn(array $d) => array_sum($d['b']);
+
+// מעבר לשעון קיץ (שישי 26.3.2027, 02:00 ← 03:00): משמרת לילה שחוצה אותו היא 7 שעות בפועל, לא 8
+$e1 = $edgeEmp('קיץ');
+$shift($e1, '2027-03-25 22:00', '2027-03-26 06:00');
+$dr = daysReport($e1, '2027-03-25', '2027-03-26', $tz);
+$cl = classifyMonth($e1, '2027-03', $tz)['days'];
+check('שעון קיץ: משמרת 22:00–06:00 היא 7 שעות בפועל', $dr[0]['minutes'] === 420 && $sumB($cl['2027-03-25']) === 420);
+check('שעון קיץ: סיווג לילה — 7 שעות רגילות, בלי נוספות', $cl['2027-03-25']['night'] && $cl['2027-03-25']['b']['reg'] === 420 && $cl['2027-03-25']['b']['ot1'] === 0);
+
+// חזרה לשעון חורף (ראשון 31.10.2027, 02:00 ← 01:00): משמרת ממוצאי שבת היא 9 שעות בפועל
+$e2 = $edgeEmp('חורף');
+$shift($e2, '2027-10-30 22:00', '2027-10-31 06:00');
+$dr = daysReport($e2, '2027-10-30', '2027-10-31', $tz);
+$cl = classifyMonth($e2, '2027-10', $tz)['days'];
+check('שעון חורף: משמרת 22:00–06:00 היא 9 שעות בפועל', $dr[0]['minutes'] === 540 && $sumB($cl['2027-10-30']) === 540);
+check('שעון חורף: שעתיים בשבת הן מנוחה, והסלים מסתכמים בדיוק בדקות', $cl['2027-10-30']['b']['rest'] === 120);
+
+// גבול חודש: משמרת ראשון 31.1.2027 22:00 עד 1.2 06:00 שייכת לינואר, ולא נספרת בפברואר
+$e3 = $edgeEmp('גבול חודש');
+$shift($e3, '2027-01-31 22:00', '2027-02-01 06:00');
+$jan = classifyMonth($e3, '2027-01', $tz); $feb = classifyMonth($e3, '2027-02', $tz);
+check('גבול חודש: כל 8 השעות בינואר', array_sum($jan['summary']) === 480 && array_sum($feb['summary']) === 0);
+check('גבול חודש: monthReport — ינואר 480 דקות, פברואר 0', monthReport($e3, '2027-01', $tz)['summary']['minutes'] === 480 && monthReport($e3, '2027-02', $tz)['summary']['minutes'] === 0);
+
+// שבוע שחוצה חודש (ראשון 31.1 עד שבת 6.2): 5 × 8:36 = 43 שעות — השעה העודפת ביום האחרון, בפברואר
+$e4 = $edgeEmp('שבוע חוצה חודש');
+foreach (['2027-01-31', '2027-02-01', '2027-02-02', '2027-02-03', '2027-02-04'] as $d) $shift($e4, "$d 08:00", "$d 16:36");
+$jan = classifyMonth($e4, '2027-01', $tz); $feb = classifyMonth($e4, '2027-02', $tz);
+check('שבוע חוצה חודש: החריגה השבועית בפברואר, לא בינואר', $jan['summary']['ot1'] === 0 && $feb['summary']['ot1'] === 60 && $feb['days']['2027-02-04']['b']['ot1'] === 60);
+check('שבוע חוצה חודש: סך הדקות נשמר בין החודשים', array_sum($jan['summary']) + array_sum($feb['summary']) === 5 * 516);
+
+// גבול שנה: שישי 31.12.2027 22:00 עד שבת 1.1.2028 04:00 — עד חצות רגיל, אחריו מנוחה
+$e5 = $edgeEmp('גבול שנה');
+$shift($e5, '2027-12-31 22:00', '2028-01-01 04:00');
+$cl = classifyMonth($e5, '2027-12', $tz)['days'];
+check('גבול שנה: שעתיים רגילות וארבע שעות מנוחה', $cl['2027-12-31']['b']['reg'] === 120 && $cl['2027-12-31']['b']['rest'] === 240 && classifyMonth($e5, '2028-01', $tz)['summary']['rest'] === 0);
+unset($GLOBALS['TC_NOW']);
+
 echo "\n" . ($n - $fails) . "/$n עברו\n";
 exit($fails ? 1 : 0);
