@@ -43,17 +43,14 @@ on('#lnForm', 'submit', async (e) => {
   e.preventDefault();
   const btn = $('#lnGo');
   btn.disabled = true; btn.textContent = '🚀 פותח…';
-  // חלון שנפתח אחרי await נחסם בטלפון — פותחים אותו כבר בנגיעה, ומפנים אותו כשהכתובת חוזרת
-  const w = window.open('', '_blank');
+  // §21.7 #5: לעולם לא מעבר ל-claude.ai מעצמו — השורה "🚀 נפתח…" מופיעה, עם "פתח" לבחירה
   try {
     const r = await api('launch-chat', { project_id: launchCtx.projectId, name: $('#lnName').value, mode: launchCtx.mode,
       ...(launchCtx.replaces ? { replaces_channel_id: launchCtx.replaces } : {}) });
-    if (w) w.location.href = r.session_url; else window.open(r.session_url, '_blank', 'noopener');
     $('#launchSheet').close();
-    toast(`🚀 "${r.name}" נפתח ב-Claude — הוא יירשם כאן לבד תוך דקה-שתיים`, 'ok');
+    toast(`🚀 "${r.name}" נפתח — הוא יירשם כאן לבד תוך דקה-שתיים`, 'ok');
     document.dispatchEvent(new CustomEvent('ct:reload-channels'));
   } catch (ex) {
-    if (w) w.close();
     $('#lnErr').hidden = false;
     $('#lnErr').textContent = ex.message;
   }

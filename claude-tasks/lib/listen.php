@@ -67,13 +67,15 @@ function listenReport(array $channel, array $in): void {
  * 503 עם קוד, כדי שגם מאזין ישן (שלא מכיר את הקודים) ייסוג ולא ימשיך לדפוק.
  */
 function listenGate(array $channel): void {
+    // שלב 25: המנהל הוא המאזין היחיד — המתג לא חל עליו (חוץ מ-⏸, שנבדק לפני כן) והוא לא נספר בתקרה
+    if (function_exists('isDispatcherChannel') && isDispatcherChannel($channel)) { listenReport($channel, ['listen_state' => 'running']); return; }
     $mode = listenersMode();
     if ($mode !== 'on') {
         listenReport($channel, ['listen_state' => 'off_policy']);
         if (!headers_sent()) header('Retry-After: 3600');
         throw new AppError('המאזינים כבויים — המאזין יוצא. הצ\'אט קורא את הלוח בתור הבא שלו', 503, 'listeners_off');
     }
-    $st = db()->prepare('SELECT COUNT(*) FROM channels WHERE status = ? AND listening_until > ? AND id <> ?');
+    $st = db()->prepare("SELECT COUNT(*) FROM channels WHERE status = ? AND listening_until > ? AND id <> ? AND role <> 'dispatcher'");
     $st->execute(['active', nowTs(), (int) $channel['id']]);
     if ((int) $st->fetchColumn() >= LISTENERS_CAP && (int) $channel['listening_until'] <= nowTs()) {
         listenReport($channel, ['listen_state' => 'slots_full']);
@@ -108,7 +110,7 @@ function meterSweep(?int $now = null): void {
 }
 
 function listenersInfo(): array {
-    $st = db()->prepare("SELECT COUNT(*) FROM channels WHERE status = 'active' AND listening_until > ?");
+    $st = db()->prepare("SELECT COUNT(*) FROM channels WHERE status = 'active' AND listening_until > ? AND role <> 'dispatcher'");
     $st->execute([nowTs()]);
     return ['mode' => listenersMode(), 'cap' => LISTENERS_CAP, 'listening' => (int) $st->fetchColumn(),
             'per_min' => round(meterCount('wait', METER_WINDOW_MIN) / METER_WINDOW_MIN, 1),
@@ -140,14 +142,15 @@ function channelListen(array $c, ?string $mode = null): array {
 function wontWake(array $user, int $projectId): array {
     requireProject($projectId, $user, 'read');
     $ids = projectSubtree($projectId);
-    $st = db()->prepare("SELECT * FROM channels WHERE status = 'active' AND hidden = 0 AND project_id IN (" . implode(',', array_fill(0, count($ids), '?')) . ')');
+    $st = db()->prepare("SELECT * FROM channels WHERE status = 'active' AND hidden = 0 AND role <> 'dispatcher' AND project_id IN (" . implode(',', array_fill(0, count($ids), '?')) . ')');
     $st->execute($ids);
     $mode = listenersMode();
     $out = [];
     foreach ($st->fetchAll() as $c) {
         $l = channelListen($c, $mode);
         if (in_array($l['state'], ['old_bridge', 'no_check', 'stale'], true)) {
-            $out[] = ['id' => (int) $c['id'], 'name' => (string) $c['name'], 'session_url' => (string) $c['session_url'], 'listen' => $l];
+            $out[] = ['id' => (int) $c['id'], 'name' => (string) $c['name'], 'session_url' => (string) $c['session_url'], 'listen' => $l,
+                      'wake' => function_exists('wakeInfo') ? wakeInfo($c) : null];
         }
     }
     return $out;

@@ -1530,9 +1530,12 @@ try {
         // שלב 23 (§19.2, 5): צ'אט שנפתח מהלוח — הרשומה קובעת פרויקט, שם והחלפה (לא מה שהצ'אט שלח)
         $launch = str_field($in, 'launch', 64) !== '' ? launchClaim($scope, str_field($in, 'launch', 64)) : null;
         if ($launch) { $pid = $launch['project_id']; $name = $launch['name']; }
+        // שלב 25: צ'אט מנהל — אחד בכל רגע; מנהל שני נדחה, אלא בהחלפה שבעל הלוח פתח
+        if ($role === 'dispatcher') dispatcherPrecheck(str_field($in, 'session_id', 120), !empty($in['replaces_dispatcher']));
         $reg = registerChannel($scope, $pid, $name, $role, str_field($in, 'session_id', 120), $url,
                                $launch ? $launch['replaces'] : int_or_null($in, 'replaces'));
         if ($launch) launchRegistered($launch['id'], (int) $reg['channel_id']);
+        if ($role === 'dispatcher') dispatcherClaim(getChannel((int) $reg['channel_id']));
         listenReport(getChannel((int) $reg['channel_id']), $in);   // שלב 24א
         channelSetVersion(getChannel($reg['channel_id']), str_field($in, 'bridge_version', 40));
         // שלב 16: הצ'אט חזר — האפיזודה נסגרת, והתקציר "מה קרה בלעדיך" חוזר אליו
@@ -1826,8 +1829,45 @@ try {
         // שלב 24א: רק כשהמתג "🎧 פעילים", ועד 5 מאזינים יחד; המד סופר
         listenGate($ch);
         meterBump('wait');
+        // שלב 25: המנהל — ה-lease מתחדש בכל בדיקה; בקשות העירה בתור מעירות אותו; מנהל שהוחלף — retired
+        if (isDispatcherChannel($ch)) {
+            $st = dispatcherRenew($ch);
+            ok(['messages' => $st === 'retired' ? [] : channelWait($ch, 0), 'listeners' => 'on', 'dispatcher' => $st,
+                'dispatch' => $st === 'retired' ? 0 : dispatchQueuedCount()]);
+        }
         ok(['messages' => channelWait($ch, (int) ($in['wait'] ?? 20)), 'listeners' => 'on']);
     }
+
+    /* ── שלב 25: צ'אט המנהל (lib/dispatch.php) ── */
+    case 'dispatch-pending': {
+        $ch = $scope['channel'] ?? null;
+        if (!$ch) fail('נדרש אסימון ערוץ', 403);
+        touchChannel((int) $ch['id']);
+        ok(dispatchPending($ch));
+    }
+
+    case 'dispatch-done': {
+        $ch = $scope['channel'] ?? null;
+        if (!$ch) fail('נדרש אסימון ערוץ', 403);
+        ok(['request' => dispatchDone($ch, (int) ($in['id'] ?? 0), !empty($in['ok']), str_field($in, 'error', 200))]);
+    }
+
+    case 'wake':
+        ok(['request' => queueWake(requireUser($user), (int) ($in['channel_id'] ?? 0), str_field($in, 'reason', 80))]);
+
+    case 'wake-all':
+        ok(wakeAllSleeping(requireUser($user), (int) ($in['project_id'] ?? 0)));
+
+    case 'dispatcher-info':
+        requireUser($user);
+        ok(['dispatcher' => dispatcherInfo()]);
+
+    case 'dispatcher-handover':
+        ok(['dispatcher' => dispatcherStartHandover(requireUser($user))]);
+
+    case 'channel-wake-on-write':
+        setChannelWakeOnWrite(requireUser($user), (int) ($in['channel_id'] ?? 0), !empty($in['on']));
+        ok();
 
     /* ── שלב 24א: הבדיקה העצמית של הצ'אט, המתג, המד, היומן ── */
     case 'channel-checkin': {

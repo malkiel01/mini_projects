@@ -518,6 +518,17 @@
   </div>
 </dialog>
 
+<dialog id="dispatcherSheet" aria-labelledby="dsT">
+  <div class="sheet-wrap">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close="dispatcherSheet" aria-label="סגירה">✕</button>
+      <h2 id="dsT">🛰 צ'אט המנהל</h2>
+      <span></span>
+    </header>
+    <div class="sheet-body" id="dsBody"></div>
+  </div>
+</dialog>
+
 <dialog id="serverErrs" aria-labelledby="seT">
   <div class="sheet-wrap">
     <header class="sheet-head">
@@ -1130,6 +1141,11 @@
 
       <section class="set-panel" data-panel="sys" hidden>
         <ul class="list">
+          <li class="card" tabindex="0" role="button" id="dispatcherBtn" aria-label="צ'אט המנהל">
+            <span class="ic" aria-hidden="true">🛰</span>
+            <div class="body"><div class="l1"><span>צ'אט המנהל</span></div><div class="l2" id="dispatcherSub">מעיר צ'אטים ישנים ברקע</div></div>
+            <span class="go" aria-hidden="true">‹</span>
+          </li>
           <li class="card" tabindex="0" role="button" id="bridgePauseBtn" aria-label="עצירת המאזינים">
             <span class="ic" aria-hidden="true" id="bridgePauseIc">⏸</span>
             <div class="body"><div class="l1"><span id="bridgePauseT">מאזינים</span></div><div class="l2" id="bridgePauseSub">💤 כבויים · 🎧 מותרים · ⏸ עצורים</div></div>
