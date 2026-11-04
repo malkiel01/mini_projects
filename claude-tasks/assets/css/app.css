@@ -931,3 +931,4 @@ mark.hit { background: color-mix(in srgb, var(--star) 45%, transparent); color: 
 .guide-steps pre { max-height: 180px; overflow: auto; font-size: .72rem; white-space: pre-wrap; margin: 0; }
 .check { display: flex; gap: var(--s2); align-items: flex-start; font-size: .9rem; margin: var(--s2) 0; }
 .l2.l2-wrap { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
+.b-unread { margin: 4px 0 0; font-size: .78rem; }

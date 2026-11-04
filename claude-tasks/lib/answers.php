@@ -59,7 +59,10 @@ function platformReadme(array $project, ?array $payer): array {
         if (trim($text) === '') return ['', ['name' => 'README', 'ok' => false, 'why' => "$file ריק"]];
         return [mb_substr($text, 0, 6000), ['name' => 'README', 'ok' => true, 'why' => '', 'path' => $file]];
     } catch (Throwable $e) {
-        return ['', ['name' => 'README', 'ok' => false, 'why' => mb_substr("$file — " . $e->getMessage(), 0, 200)]];
+        $why = $path === '' && !empty($project['parent_id'])
+            ? "לפרויקט \"{$project['name']}\" לא מוגדרת תיקייה בריפו, ולכן חיפשתי README בשורש ולא מצאתי — ⚙ של הפרויקט ← פרטים ← תיקייה"
+            : mb_substr("$file — " . $e->getMessage(), 0, 200);
+        return ['', ['name' => 'README', 'ok' => false, 'why' => $why]];
     }
 }
 
@@ -79,7 +82,6 @@ function platformCheck(array $user, int $projectId): array {
         catch (Throwable $e) { $gh['why'] = $e->getMessage(); }
     }
     [, $readme] = $gh['ok'] ? platformReadme($project, $payer) : ['', ['name' => 'README', 'ok' => false, 'why' => 'אין חיבור גיטהאב']];
-    if (!$readme['ok'] && $path === '' && !empty($project['parent_id'])) $readme['why'] .= ' · לתת-פרויקט אין תיקייה — ⚙ ← פרטים ← תיקייה';
     return ['path' => $path, 'repo' => ($project['repo_owner'] ?? '') . '/' . ($project['repo_name'] ?? ''),
             'branch' => (string) ($project['default_branch'] ?? ''), 'readme' => $readme, 'github' => $gh,
             'payer' => $payer ? (string) ($payer['display_name'] ?? $payer['username']) : ''];

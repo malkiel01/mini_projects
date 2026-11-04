@@ -131,7 +131,7 @@ function laneSwitchManual(array $user, int $channelId, string $to): array {
         if ($to === 'platform') {
             $st = db()->prepare("UPDATE messages SET answered_by = 'platform', handled_by = 'platform', lease_until = ?
                                   WHERE channel_id = ? AND direction = 'in' AND delivered_at IS NULL AND answered_by NOT LIKE 'platform%'
-                                    AND kind <> 'status' AND author_role <> 'system'");
+                                    AND kind <> 'status' AND author_role <> 'system'" . CHAT_ONLY_SQL);
             $st->execute([nowTs() + PLATFORM_LEASE_SECONDS, $channelId]);
         } else {
             $st = db()->prepare("UPDATE messages SET answered_by = '', handled_by = '', lease_until = 0
