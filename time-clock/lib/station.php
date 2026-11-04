@@ -1,6 +1,6 @@
 <?php
 /**
- * עמדה בעסק (האפיון: S1, S2; שלב 4).
+ * עמדה בעסק (האפיון: S1, S2; גרסה 1).
  *
  * הצמדה: המנהל יוצר עמדה בהגדרות ומקבל קוד בן 6 ספרות (10 דקות). בטאבלט פותחים את s/ ומקלידים
  * אותו, והמכשיר מקבל עוגייה `tc_station` לשנה. ביטול עמדה — מיד.
@@ -201,7 +201,7 @@ function stationVerify(array $s, array $in): array {
     return $emp;
 }
 
-/** שלב 1: מי אני ומה הצפוי. */
+/** מצב העמדה: מי אני ומה הצפוי. */
 function stationCheck(array $in): array {
     $s = currentStation();
     $emp = stationVerify($s, $in);
@@ -209,7 +209,7 @@ function stationCheck(array $in): array {
     return ['name' => $emp['name'], 'next' => $now['next'], 'open_since' => $now['open_since']];
 }
 
-/** שלב 2: הדיווח (הקוד נבדק שוב — אין "אישור" שנשמר בין הבקשות). */
+/** הדיווח (הקוד נבדק שוב — אין "אישור" שנשמר בין הבקשות). */
 function stationPunch(array $in): array {
     $s = currentStation();
     $emp = stationVerify($s, $in);

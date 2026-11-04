@@ -125,7 +125,7 @@ function migrate(PDO $pdo): void {
             revoked_at TEXT
         );
 
-        -- דיווח נוכחות. לא משתנה ולא נמחק אף פעם: תיקון (שלב 5) הוא רשומה נפרדת.
+        -- דיווח נוכחות. לא משתנה ולא נמחק אף פעם: תיקון (גרסה 1, תיקונים) הוא רשומה נפרדת.
         CREATE TABLE IF NOT EXISTS punches (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
             member_id  INTEGER NOT NULL REFERENCES members(id),

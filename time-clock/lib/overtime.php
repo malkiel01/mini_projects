@@ -89,7 +89,7 @@ function memberRestDay(array $m): int {
     return REST_BY_RELIGION[$m['religion'] ?? 'jewish'] ?? 6;
 }
 
-/** חג באותו יום לעובד (שם), או null. הלוחות — שלב 2 (lib/holidays.php). */
+/** חג באותו יום לעובד (שם), או null. הלוחות — lib/holidays.php (גרסה 2). */
 function holidayName(int $companyId, ?string $religion, string $date): ?string {
     return function_exists('holidayOn') ? holidayOn($companyId, $religion ?? 'jewish', $date) : null;
 }
