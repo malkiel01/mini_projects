@@ -1888,5 +1888,12 @@ try {
 } catch (Throwable $e) {
     // תקלה לא צפויה: נרשמת אצלנו, ולא נחשפת החוצה.
     error_log('claude-tasks: ' . $e->getMessage());
-    fail('שגיאת שרת', 500);
+    // 2026-11-04: "שגיאת שרת" קפצה אצל בעל הלוח בלי שום רמז, ואין גישה ליומן של השרת. עכשיו: הפעולה ומספר אירוע לכולם;
+    // לבעל הלוח בלבד — גם הסוג, ההודעה והמקום בקוד (בלי סודות: הודעות חריגה של PHP, לא קלט). נרשם גם ב-events
+    $where = basename($e->getFile()) . ':' . $e->getLine();
+    $detail = mb_substr(get_class($e) . ': ' . $e->getMessage(), 0, 300) . " @ $where";
+    try { logEvent($user ?? null, 'server.error', (string) $action, false, $detail); $ref = (int) db()->lastInsertId(); }
+    catch (Throwable) { $ref = 0; }
+    $owner = isset($user) && is_array($user) && ($user['role'] ?? '') === 'admin';
+    fail("שגיאת שרת ב-\"$action\"" . ($ref ? " · אירוע #$ref" : '') . ($owner ? " — $detail" : ''), 500);
 }
