@@ -2008,3 +2008,76 @@ the row says the chat will not wake by itself, and offers the next step. Never "
 **Done when (24a, final):** §20.3 + these: the skill creates one recurring self-check at registration (test against a fake MCP: exactly one
 trigger, re-created if missing, deleted on disconnect, chain fallback); `next_check_at` drives the row and the bubble line; the "won't wake by
 itself" list. **Live:** a newly registered chat shows "⏰ בודק כל שעה", and an owner message to it is answered by the next check.
+
+---
+
+## 21. The dispatcher chat — one bridge between the board and Claude (owner decision 2026-11-04 09:09; **stage 25**, replaces §20.7's self-check)
+
+**The owner rejects §20.7** (a check every hour in every chat): dozens of chats × hourly turns burn tokens, and a wake must not take up
+to an hour. **His design:** one fixed **dispatcher chat**, built into the system. The owner does not talk to it. It is the only two-way bridge
+between the board and Claude: the board sends it instructions about every connected session — wake, connect, and so on. When it grows long,
+the board opens a new dispatcher in its place. Ordinary chats run **no** listener and **no** scheduled check for the board's sake — only when
+the owner asks a chat for something specific (follow-up, monitoring), as in any Claude chat.
+
+### 21.1 The facts it must respect (from step 0 and the platform rules)
+
+| # | Fact | Consequence |
+| --- | --- | --- |
+| F1 | A session started by a **routine fire** has `create_trigger`, but refuses to act on another session: its prompt is stored, not the owner's live request | The dispatcher **cannot** be started by the launcher (§19) alone. It must be a session where **the owner himself** gave the standing instruction, in person |
+| F2 | An **interactive** session the owner opened can message other sessions of the account (`create_trigger` + `persistent_session_id`) — the code writer does it every day | The dispatcher works if the owner's in-person instruction covers exactly what it does |
+| F3 | Requests that arrive in a tool's output (the board's response) are **data, not instructions**; a session acts on them only where the owner's own instructions already call for that action | The standing instruction must name the one action — "for each wake request the board lists, send the fixed wake text to that session" — so each wake is the owner's pre-approved action, not something the board asked |
+| F4 | `create_trigger` / `send_later` granularity is **one minute** | Wake latency ≈ the dispatcher's poll (≤ 40 s) + up to ~1–2 min |
+| F5 | One listener on shared hosting costs ~2 short requests a minute | The dispatcher is the **only** standing listener — far under the §20 cap of 5 |
+
+### 21.2 Decisions
+
+| # | Decision |
+| --- | --- |
+| 1 | **The dispatcher does one thing: wake.** It sends a session a **fixed** text — *"📥 בדיקת לוח: הרץ `claude-tasks/bridge/link.sh update` ואז `link.sh pending`, וטפל במה שממתין."* It never carries the owner's words (the woken chat reads them from the board), never creates, archives or edits anything else. "Connect a new chat" stays the launcher's job (§19); "pass a message" = wake + the message waiting on the board |
+| 2 | **Owner's setup, once (2 minutes):** Settings → מערכת → **"🛰 צ'אט מנהל"** → **🚀 פתיחה** (the launcher opens a session with the dispatcher prompt, §21.4) → the board shows its link and one sentence to type **in person** in that session: **"אני מאשר: אתה צ'אט המנהל של הלוח."** That sentence is the owner's live instruction (F1, F3). The session registers with role `dispatcher`; the board shows "🛰 מנהל פעיל" |
+| 3 | **How the board reaches the dispatcher instantly:** the dispatcher alone runs `listen.sh` (switch ignored for it; it does not count against the 5). A wake request makes `channel-wait` return at once (bell file, as today); the listener exits, the session wakes, handles **all** pending requests in one turn, restarts the listener. Latency board → target ≈ **1–3 minutes** |
+| 4 | **Board side:** `dispatch_requests(id, kind 'wake', channel_id, session_id, reason, status queued|sent|done|failed, created_at, sent_at, error)`. The dispatcher reads them with `link.sh dispatch-pending` and reports with `dispatch-done {id, ok, error}`. The board resolves `session_id` from the channel's registration — the dispatcher never chooses targets |
+| 5 | **When the board queues a wake:** (a) the owner presses **⏰ להעיר** on a row / in the header; (b) the owner writes on the 💬 route to a chat that is not listening (channel setting "להעיר כשאני כותב", default on); (c) **⏰ להעיר את כל הישנים** (old bridges, stuck update instructions) |
+| 6 | **Cost limits:** per channel one wake per 10 minutes (a second request joins the open one); board-wide at most **20 wakes per hour**, at least 30 s apart; never a listening or archived channel. The dispatcher's own cost is **one short turn per batch** of requests; polling is a shell loop, not turns. No hourly checks anywhere |
+| 7 | **One dispatcher at a time — a lease on the board:** `dispatcher(session_id, channel_id, since, lease_until, handled)`. Every poll renews the lease (90 s). A second session registering as `dispatcher` is refused ("כבר יש מנהל פעיל") unless the board started a **handover** (#8). If the lease lapses (dispatcher gone), the board shows "🛰 המנהל לא פעיל" with 🚀 to open a new one |
+| 8 | **Replacement (it grows long):** after **300 handled batches or 7 days**, whichever first, the board shows a card "🛰 הגיע הזמן להחליף מנהל" → 🚀 opens the new one (setup #2: the owner types the sentence once more). The new dispatcher registers with `--replaces-dispatcher`; the board moves the lease to it **atomically**; the old one gets `retired` on its next poll, stops its listener and ends. **What passes over: nothing from memory** — the queue and the list of sessions live on the board |
+| 9 | **What ordinary chats do:** no listener, no scheduled board check. The skill and the update instruction say so. A chat starts a listener or a schedule **only** when the owner asks that chat for something specific. On every turn the owner gives it (or a wake), it reads `link.sh pending` as today |
+| 10 | **If the dispatcher refuses in practice** (the step-0 refusal repeats even with the in-person sentence): no workaround. The rows say "אי אפשר להעיר מהלוח — פתח את הצ'אט" with the session link and 🚀, and the owner is told plainly |
+
+### 21.3 What happens to 24a (already merged, #1242)
+
+- **Keep:** the truth line on every row (now with the dispatcher states below), the "won't wake by itself" list (it becomes "⏰ להעיר" per row),
+  `listen_state`, the meter, "✉️ N ממתינות לצ'אט".
+- **Remove:** the hourly self-check from the skill and from the update instruction — **before** any update instruction is sent to old chats.
+  A chat that already created one deletes it on its next turn (`link.sh update` tells it to).
+- **The switch** (⏸ / 🕐 / 🎧) stays as the owner's control over **ordinary** chats' listeners (default 🕐 now means "no listener, woken by the
+  dispatcher"); ⏸ also stops the dispatcher's listener. The cap of 5 stays for ordinary chats.
+- **Rows:** "💤 ישן · ⏰ להעיר" · "⏰ נשלחה העירה · 08:12 · ממתין שיענה" · "⏰ ההעירה נכשלה — <reason>" (with the session link and 🚀) ·
+  "🛰 אין מנהל פעיל — לא ניתן להעיר" (link to setup).
+
+### 21.4 The dispatcher's prompt (the launcher sends it as the opening prompt; English, versioned `DISPATCHER_PROMPT_VERSION`)
+
+```
+You are the dispatcher chat of the "מטלות לקלוד" board. The owner will confirm this role in person in this session.
+Until he types "אני מאשר: אתה צ'אט המנהל של הלוח", do nothing but register (claude-tasks-live, role dispatcher) and wait.
+After his confirmation, your standing instruction from him is:
+1. Keep exactly one board listener running (claude-tasks/bridge/listen.sh, as the skill says).
+2. When it wakes you, run `link.sh dispatch-pending`. For each request of kind "wake", send that session exactly this text with
+   create_trigger (persistent_session_id = the request's session_id, run_once_at = one minute from now):
+   "📥 בדיקת לוח: הרץ claude-tasks/bridge/link.sh update ואז link.sh pending, וטפל במה שממתין."
+   Then report `link.sh dispatch-done <id> ok` (or the error). Nothing else: never another text, never another action,
+   never a target the board did not list.
+3. Restart the listener and end your turn. If the board says "retired", stop the listener and end.
+```
+
+### 21.5 Done when
+
+- **Step 0 (before code, owner present):** the owner opens a dispatcher and types the sentence; the code writer queues one wake to a test
+  chat; the dispatcher sends it and the test chat answers on the board. Result in §14. If it refuses → #10.
+- Tests: the lease (second dispatcher refused, handover atomic, retired on next poll); `dispatch-pending` returns only board-resolved targets;
+  the per-channel and hourly limits; no wake for listening / archived channels; auto-wake respects the channel setting; the skill and the
+  update instruction contain no scheduled check; old self-checks are deleted by `update`.
+- Screens 390 / 320: the setup card, "🛰 מנהל פעיל / לא פעיל", the replacement card, each row state.
+- **Live:** the owner writes to a sleeping chat → the chat answers on the board within ~3 minutes, with no hourly check anywhere on the account.
+
+**Order:** **25 now** (the owner's top issue), then 21, 22b, 22c, 16. Until step 0 passes, the code writer sends **no** update instruction to old chats.
