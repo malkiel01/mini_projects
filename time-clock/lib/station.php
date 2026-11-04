@@ -64,8 +64,8 @@ function stationOut(array $s): array {
 
 function stationList(array $person, array $in): array {
     $companyId = intIn($in, 'company_id');
-    $me = requireMember($person, $companyId, ['owner', 'manager', 'branch_manager']);
-    $site = $me['role'] === 'branch_manager' ? (int) $me['site_id'] : null;
+    $me = requireMember($person, $companyId, EDIT_ROLES);
+    $site = branchSite($me);
     $st = db()->prepare('SELECT * FROM stations WHERE company_id = ? AND revoked_at IS NULL' . ($site !== null ? ' AND site_id = ?' : '') . ' ORDER BY name');
     $st->execute($site !== null ? [$companyId, $site] : [$companyId]);
     return ['stations' => array_map('stationOut', $st->fetchAll()), 'site_only' => $site];
@@ -74,7 +74,7 @@ function stationList(array $person, array $in): array {
 /** קוד הצמדה חדש — לעמדה חדשה, או מחדש לעמדה קיימת (טאבלט שהוחלף). מבטל את המכשיר הקודם. */
 function stationCreate(array $person, array $in): array {
     $companyId = intIn($in, 'company_id');
-    $me = requireMember($person, $companyId, ['owner', 'manager', 'branch_manager']);
+    $me = requireMember($person, $companyId, EDIT_ROLES);
     $code = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
     $exp = gmdate('Y-m-d\TH:i:s\Z', time() + PAIR_MINUTES * 60);
     $id = intIn($in, 'id');
@@ -86,7 +86,7 @@ function stationCreate(array $person, array $in): array {
     } else {
         $name = str($in, 'name', 60);
         if ($name === '') throw new AppError('חסר שם לעמדה');
-        $siteId = $me['role'] === 'branch_manager' ? (int) $me['site_id'] : (intIn($in, 'site_id') ?: null);
+        $siteId = branchSite($me) ?? (intIn($in, 'site_id') ?: null);
         if ($siteId !== null) siteOf($companyId, $siteId);
         db()->prepare('INSERT INTO stations (company_id, site_id, name, pair_hash, pair_expires, created_by, created_at) VALUES (?,?,?,?,?,?,?)')
             ->execute([$companyId, $siteId, $name, tokenHash($code), $exp, $person['id'], nowIso()]);
@@ -100,13 +100,13 @@ function stationRow(int $companyId, int $id, array $me): array {
     $st = db()->prepare('SELECT * FROM stations WHERE id = ? AND company_id = ? AND revoked_at IS NULL');
     $st->execute([$id, $companyId]);
     $s = $st->fetch();
-    if (!$s || ($me['role'] === 'branch_manager' && (int) $s['site_id'] !== (int) $me['site_id'])) throw new AppError('העמדה לא נמצאה', 404);
+    if (!$s || (branchSite($me) !== null && (int) $s['site_id'] !== branchSite($me))) throw new AppError('העמדה לא נמצאה', 404);
     return $s;
 }
 
 function stationRevoke(array $person, array $in): array {
     $companyId = intIn($in, 'company_id');
-    $me = requireMember($person, $companyId, ['owner', 'manager', 'branch_manager']);
+    $me = requireMember($person, $companyId, EDIT_ROLES);
     $s = stationRow($companyId, intIn($in, 'id'), $me);
     db()->prepare('UPDATE stations SET revoked_at = ?, token_hash = NULL, pair_hash = NULL WHERE id = ?')->execute([nowIso(), $s['id']]);
     audit($companyId, (int) $person['id'], 'station.revoke', 'stations:' . $s['id'], ['name' => $s['name']], null);

@@ -654,5 +654,19 @@ foreach (glob(dirname(DB_FILE) . '/certs/*') as $f) @unlink($f);
 @rmdir(dirname(DB_FILE) . '/certs');
 unset($GLOBALS['TC_NOW']);
 
+// ===== גרסה 3ב: תפקידים ועוזרים משותפים =====
+$checkSql = (string) db()->query("SELECT sql FROM sqlite_master WHERE name = 'members'")->fetchColumn();
+preg_match("/role\\s+TEXT NOT NULL CHECK \\(role IN \\(([^)]*)\\)\\)/", $checkSql, $mm);
+$dbRoles = array_map(fn($x) => trim($x, " '"), explode(',', $mm[1] ?? ''));
+check('ROLES זהה ל-CHECK של members.role במסד', $dbRoles === ROLES);
+check('קבוצות התפקידים הן תתי-קבוצות של ROLES',
+      array_diff(array_merge(MANAGE_ROLES, EDIT_ROLES, TEAM_ROLES), ROLES) === [] && array_diff(EDIT_ROLES, MANAGE_ROLES) === []
+      && array_diff(TEAM_ROLES, MANAGE_ROLES) === [] && !in_array('employee', MANAGE_ROLES, true));
+check('branchSite: מנהל סניף — הסניף שלו; אחרים — כל החברה',
+      branchSite(['role' => 'branch_manager', 'site_id' => '7']) === 7 && branchSite(['role' => 'manager', 'site_id' => null]) === null
+      && branchSite(['role' => 'owner', 'site_id' => 3]) === null);
+check('todayIn: ברירת המחדל היא שעון ישראל', todayIn() === todayIn(DEFAULT_TZ) && DEFAULT_TZ === 'Asia/Jerusalem');
+throws('validDate: תאריך שלא קיים', fn() => validDate('2026-02-30', 'בדיקה'));
+
 echo "\n" . ($n - $fails) . "/$n עברו\n";
 exit($fails ? 1 : 0);
