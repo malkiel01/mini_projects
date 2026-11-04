@@ -6,7 +6,6 @@
  */
 
 const ROLE = { owner: 'בעלים', manager: 'מנהל', branch_manager: 'מנהל סניף', payroll: 'מנהלת שכר', employee: 'עובד' };
-const $ = (s, el = document) => el.querySelector(s);
 const main = $('#main');
 const state = { me: null, companies: [], companyId: null, data: null, backTo: '#/' };
 const PAY = { monthly: 'חודשי', hourly: 'שעתי' };
@@ -17,32 +16,10 @@ const INVITE = { pending: ['warn', 'ממתין להפעלה'], expired: ['bad', 
   const set = () => document.documentElement.style.setProperty('--vvh', Math.round(vv.height) + 'px');
   vv.addEventListener('resize', set); set(); })();
 
-function toast(msg, err = false) {
-  const el = $('.toast'); el.textContent = msg; el.classList.toggle('err', err); el.hidden = false;
-  clearTimeout(toast.t); toast.t = setTimeout(() => { el.hidden = true; }, 2600);
-}
-
-function esc(s) {
-  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
-
-async function api(action, body = {}) {
-  const res = await fetch('api.php?action=' + encodeURIComponent(action), {
-    method: action === 'me' ? 'GET' : 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: action === 'me' ? undefined : JSON.stringify(body),
-    credentials: 'same-origin',
-  });
-  let data = null;
-  try { data = await res.json(); } catch { /* תשובה שאינה JSON — למשל דף שגיאה */ }
-  if (!data || !data.success) {
-    const e = new Error(data?.error || 'שגיאת תקשורת'); e.status = res.status; throw e;
-  }
-  return data;
-}
+const api = (action, body = {}) => apiCall('api.php?action=' + encodeURIComponent(action),
+  action === 'me' ? { method: 'GET' } : { body });
 
 /** "8:24" ⇄ 504 דקות */
-const hm = m => Math.floor(m / 60) + ':' + String(m % 60).padStart(2, '0');
 function parseHm(s) {
   const m = String(s).trim().match(/^(\d{1,2})(?::(\d{2}))?$/);
   if (!m || +(m[2] || 0) > 59) return NaN;
@@ -196,7 +173,6 @@ function openCompanyPicker() {
 
 /* ===== M2 · היום ===== */
 
-const TZ = 'Asia/Jerusalem';
 const clock = iso => new Date(iso).toLocaleTimeString('he-IL', { timeZone: TZ, hour: '2-digit', minute: '2-digit' });
 
 async function renderHome() {

@@ -5,31 +5,14 @@
  * בעמדה לא מוצג שום מידע אישי מלבד השם. אחרי חוסר פעילות — חוזרים לרשימה ושוכחים את הקוד.
  */
 
-const $ = s => document.querySelector(s);
 const main = $('#main');
-const TZ = 'Asia/Jerusalem';
 const IDLE_MS = 20000, DONE_MS = 2500;
 let data = null, idle = null;
 
-function esc(s) {
-  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
-function toast(msg, err = false) {
-  const el = $('.toast'); el.textContent = msg; el.classList.toggle('err', err); el.hidden = false;
-  clearTimeout(toast.t); toast.t = setTimeout(() => { el.hidden = true; }, 2600);
-}
 const time = (d = new Date()) => d.toLocaleTimeString('he-IL', { timeZone: TZ, hour: '2-digit', minute: '2-digit' });
 const dateLong = () => new Date().toLocaleDateString('he-IL', { timeZone: TZ, weekday: 'long', day: 'numeric', month: 'long' });
 
-async function api(action, body = {}) {
-  const res = await fetch('../api.php?action=' + action, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), credentials: 'same-origin',
-  });
-  let d = null;
-  try { d = await res.json(); } catch { /* */ }
-  if (!d || !d.success) { const e = new Error(d?.error || 'אין חיבור לשרת'); e.status = res.status; throw e; }
-  return d;
-}
+const api = (action, body = {}) => apiCall('../api.php?action=' + action, { body, fallback: 'אין חיבור לשרת' });
 
 /** חזרה לרשימה אחרי חוסר פעילות — כדי שהקוד והשם לא יישארו על המסך. */
 function armIdle(ms = IDLE_MS) { clearTimeout(idle); idle = setTimeout(list, ms); }

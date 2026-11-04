@@ -6,27 +6,10 @@
  * הקישור ב-# — כדי שלא יגיע ליומני השרת; אחרי ההפעלה הוא נמחק מהכתובת.
  */
 
-const $ = s => document.querySelector(s);
 const main = $('#main');
 
-function esc(s) {
-  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
-function toast(msg, err = false) {
-  const el = $('.toast'); el.textContent = msg; el.classList.toggle('err', err); el.hidden = false;
-  clearTimeout(toast.t); toast.t = setTimeout(() => { el.hidden = true; }, 2600);
-}
-const hm = m => Math.floor(m / 60) + ':' + String(m % 60).padStart(2, '0');
 
-async function api(action, body = {}) {
-  const res = await fetch('../api.php?action=' + action, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), credentials: 'same-origin',
-  });
-  let data = null;
-  try { data = await res.json(); } catch { /* */ }
-  if (!data || !data.success) { const e = new Error(data?.error || 'שגיאת תקשורת'); e.status = res.status; throw e; }
-  return data;
-}
+const api = (action, body = {}) => apiCall('../api.php?action=' + action, { body });
 
 function message(icon, title, text) {
   main.innerHTML = `<div class="gate"><div class="logo" aria-hidden="true">${icon}</div><h2>${esc(title)}</h2><p class="hint">${esc(text)}</p></div>`;
@@ -79,7 +62,6 @@ async function activation(token) {
 
 /* ===== E2 · בית: כניסה / יציאה ===== */
 
-const TZ = 'Asia/Jerusalem';
 const time = iso => new Date(iso).toLocaleTimeString('he-IL', { timeZone: TZ, hour: '2-digit', minute: '2-digit' });
 const SRC = { phone: 'טלפון', station: 'עמדה', manager: 'מנהל' };
 let st = null, tick = null;
