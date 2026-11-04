@@ -15,6 +15,7 @@
 #
 # קוד יציאה: 0 — הודעה או סוף הזמן; 3 — הערוץ נותק/האסימון נפסל (צריך register);
 #            4 — נסיגה: עומס או "המאזינים מושהים" (לא להפעיל לפני backoff_until).
+#            5 — המתג בלוח לא "🎧 פעילים", או 5 מקומות תפוסים (שלב 24א): לא תקלה — הבדיקה העצמית בודקת את הלוח.
 set -u
 # עותק הריצה (§5.10.1) גובר על העותק שבריפו — כך צ'אט על ענף ישן מקבל את הגשר העדכני
 _rt="$HOME/.claude-tasks-bridge"
@@ -42,6 +43,7 @@ if [ "$until_ts" -gt "$(date +%s)" ]; then
 fi
 
 log "start pid=$$ until=$(date -u -d "@$END" +%T 2>/dev/null)"
+listen_state running
 
 back_off() {   # back_off <reason>
   local level delay now after
@@ -54,6 +56,7 @@ back_off() {   # back_off <reason>
   link_set backoff_level "$level"
   link_set backoff_until "$(( now + delay ))"
   link_set backoff_reason "$(jq -Rn --arg r "$1" '$r')"
+  listen_state "backoff:$(( now + delay )):$1"
   log "backoff level=$level delay=${delay}s reason=$1"
   echo "🛑 הלוח לא זמין ($1) — המאזין יצא, ולא יחזור לפני $(hhmm $(( now + delay ))). לא להפעיל ידנית לפני כן."
   exit 4
@@ -80,8 +83,14 @@ while [ "$(date +%s)" -lt "$END" ]; do
       exit 3
     fi
     case "$BOARD_HTTP" in
-      503) [ "$(echo "$out" | jq -r '.code // empty' 2>/dev/null)" = bridge_paused ] \
-             && back_off "המאזינים מושהים בלוח" || back_off "HTTP 503" ;;
+      503) code="$(echo "$out" | jq -r '.code // empty' 2>/dev/null)"
+           # שלב 24א: המתג לא "🎧" / כל המקומות תפוסים — לא תקלה: יוצאים לבדיקה העצמית, בלי נסיגה
+           if [ "$code" = listeners_off ]; then listen_state off_policy; log "listeners_off"
+             echo "🕐 הלוח במצב \"בדיקה שעתית\" — המאזין יצא (לא תקלה). אל תפעיל אותו שוב; הבדיקה העצמית שלך תבדוק את הלוח"; exit 5
+           elif [ "$code" = listener_slots_full ]; then listen_state slots_full; log "slots_full"
+             echo "🎧 כל המקומות למאזינים תפוסים — המאזין יצא (לא תקלה). הבדיקה העצמית שלך תבדוק את הלוח"; exit 5
+           elif [ "$code" = bridge_paused ]; then listen_state paused; back_off "המאזינים מושהים בלוח"
+           else back_off "HTTP 503"; fi ;;
       429|508|5??) back_off "HTTP $BOARD_HTTP" ;;
       0) back_off "רשת או timeout" ;;
       *) [ $rc = 2 ] && back_off "HTTP $BOARD_HTTP" ;;   # 4xx אחר — הבקשה עצמה; ממשיכים בקצב הרגיל
@@ -96,5 +105,6 @@ while [ "$(date +%s)" -lt "$END" ]; do
   fi
 done
 log "timeout"
+listen_state ended
 echo "⏱ המאזין הסתיים (זמן) — להפעיל מחדש"
 exit 0

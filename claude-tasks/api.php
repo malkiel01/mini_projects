@@ -1533,9 +1533,10 @@ try {
         $reg = registerChannel($scope, $pid, $name, $role, str_field($in, 'session_id', 120), $url,
                                $launch ? $launch['replaces'] : int_or_null($in, 'replaces'));
         if ($launch) launchRegistered($launch['id'], (int) $reg['channel_id']);
+        listenReport(getChannel((int) $reg['channel_id']), $in);   // שלב 24א
         channelSetVersion(getChannel($reg['channel_id']), str_field($in, 'bridge_version', 40));
         // שלב 16: הצ'אט חזר — האפיזודה נסגרת, והתקציר "מה קרה בלעדיך" חוזר אליו
-        ok($reg + ['digest' => laneReturn(getChannel($reg['channel_id']))]);
+        ok($reg + ['digest' => laneReturn(getChannel($reg['channel_id'])), 'listeners' => listenersMode()]);
     }
 
     /* ── פתיחת צ'אטים (§5.9) ── */
@@ -1805,7 +1806,8 @@ try {
         if (!$ch) fail('נדרש אסימון ערוץ', 403);
         // ‏link.sh pending: הצ'אט כאן — האפיזודה נסגרת; התקציר מודפס לפני ההודעות
         $digest = laneReturn($ch);
-        ok(['messages' => channelInbox(getChannel((int) $ch['id'])), 'digest' => $digest]);
+        listenReport($ch, $in);   // שלב 24א: מה הגשר מדווח — מצב ההאזנה והבדיקה הבאה
+        ok(['messages' => channelInbox(getChannel((int) $ch['id'])), 'digest' => $digest, 'listeners' => listenersMode()]);
     }
 
     case 'channel-ack': {
@@ -1819,8 +1821,34 @@ try {
         if (!$ch) fail('נדרש אסימון ערוץ', 403);
         // הסשן נסגר לפני ההמתנה — אחרת הוא נועל את קובץ הסשן לכל משך ההמתנה
         if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
-        ok(['messages' => channelWait($ch, (int) ($in['wait'] ?? 20))]);
+        // שלב 24א: רק כשהמתג "🎧 פעילים", ועד 5 מאזינים יחד; המד סופר
+        listenGate($ch);
+        meterBump('wait');
+        ok(['messages' => channelWait($ch, (int) ($in['wait'] ?? 20)), 'listeners' => 'on']);
     }
+
+    /* ── שלב 24א: הבדיקה העצמית של הצ'אט, המתג, המד, היומן ── */
+    case 'channel-checkin': {
+        $ch = $scope['channel'] ?? null;
+        if (!$ch) fail('נדרש אסימון ערוץ', 403);
+        listenReport($ch, $in);
+        touchChannel((int) $ch['id']);
+        ok(['listeners' => listenersMode(), 'listen' => channelListen(getChannel((int) $ch['id']))]);
+    }
+
+    case 'listeners':
+        requireUser($user);
+        meterSweep();
+        ok(['listeners' => listenersInfo()]);
+
+    case 'listeners-mode':
+        ok(['listeners' => setListenersMode(requireUser($user), str_field($in, 'mode', 10))]);
+
+    case 'listeners-log':
+        ok(['channels' => listenersLog(requireUser($user)), 'listeners' => listenersInfo()]);
+
+    case 'wont-wake':
+        ok(['channels' => wontWake(requireUser($user), (int) ($in['project_id'] ?? 0))]);
 
     /* ── ⏸ עצירת המאזינים (§5.6, אחרי ה-429) ── */
     case 'bridge-pause':

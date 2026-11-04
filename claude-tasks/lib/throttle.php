@@ -69,6 +69,7 @@ function bridgeGuard(string $action): void {
     $v = bridgeVerdict($action, $config, $retry);
     if (!$v) return;
     [$status, $after, $code, $message] = $v;
+    if (function_exists('meterBump')) meterBump('err');   // שלב 24א: המד סופר 429/503
     header('Retry-After: ' . $after);
     fail($message, $status, $code);
 }

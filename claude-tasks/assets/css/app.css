@@ -932,3 +932,13 @@ mark.hit { background: color-mix(in srgb, var(--star) 45%, transparent); color: 
 .check { display: flex; gap: var(--s2); align-items: flex-start; font-size: .9rem; margin: var(--s2) 0; }
 .l2.l2-wrap { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
 .b-unread { margin: 4px 0 0; font-size: .78rem; }
+
+/* ── שלב 24א: מאזינים ── */
+.b-eta { font-size: .72rem; color: var(--muted); }
+.b-eta:empty { display: none; }
+.wont-wake { margin-bottom: var(--s2); }
+.wont-wake summary { color: var(--danger, #b42318); font-weight: 600; }
+.wont-wake .card { gap: var(--s1); }
+#lsModes { display: flex; width: 100%; }
+#lsModes button { flex: 1 1 auto; min-height: 42px; }
+.ls-meter { font-size: .82rem; padding: var(--s2); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }

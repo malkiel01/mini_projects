@@ -79,29 +79,41 @@ handoff block in your prompt is where you continue from — do its "what the nex
 The same session re-registering gets the same channel and a new token (the old one is revoked). The link is kept
 in `.claude/board-link.json` (outside git). If the container was replaced, that file is gone — register again.
 
-## 2. Start the listener — in the background
+## 2. Start the listener — only when the board says so
 
-Run with the Bash tool, `run_in_background: true`, `timeout: 7000000` (just under two hours):
+`link.sh register`, `status` and `pending` print one line about the board's switch (spec §20.3). Do what it says — never guess:
 
-```bash
-claude-tasks/bridge/listen.sh
-```
+- **"מאזינים: 🎧 פעילים"** (`listeners: on`) → start the listener **once**, with the Bash tool, `run_in_background: true`,
+  `timeout: 7000000` (just under two hours), then end your turn normally. Do not poll, do not sleep:
 
-Then end your turn normally. Do not poll, do not sleep.
+  ```bash
+  claude-tasks/bridge/listen.sh
+  ```
+- **"מאזינים: 🕐 בדיקה שעתית"** (`hourly`, the default) → **do not** start it. Your self-check (step 3) is how you hear the board.
+- **"מאזינים: ⏸ עצורים"** (`paused`) → do not start it; `link.sh pending` may also get 503 — report "המאזינים מושהים" and carry on.
 
-**Start it only while the owner has the listeners on.** After the 2026-11-02 incident they stay off until the owner
-approves (spec §5.6). If the owner said the listeners are off, skip this step and rely on the hourly board check
-(step 3). The board-wide brake (⚙ → מערכת → "⏸ עצירת המאזינים") makes every listener exit by itself; while it is on,
-`link.sh pending` also gets 503 — report "המאזינים מושהים" and carry on with your work.
+The listener exits **5** when the switch is not 🎧 or all 5 listener places are taken: not a failure — do not restart it;
+the self-check covers you. It exits **4** on back-off (429/503/5xx): do not restart before the time it printed.
 
-## 3. Schedule the backup
+## 3. Your self-check — one recurring trigger into this session (do this at registration)
 
-One `send_later`, 60 minutes out, with the message: *"Board check: run `claude-tasks/bridge/link.sh update`, then
-`claude-tasks/bridge/link.sh status` and `link.sh pending`, handle anything waiting, and make sure the listener is
-running."* `status` re-registers by itself, silently and to the same channel, when the container was replaced (the link
-file is gone but the board knows this session). When it fires, do exactly that and schedule
-the next one. Stop scheduling when you disconnect. "Make sure it is running" means: start it **once** if it is not
-running and the owner has the listeners on — if it exits 4 (back-off), leave it; the next hourly check tries again.
+The board **cannot** wake a sleeping chat (spec §20.7, step 0): a chat hears the board only while its session runs, or when
+it wakes itself. So right after registering, create **one recurring** check into **this** session:
+
+- `create_trigger` with `cron_expression` `"0 * * * *"` (hourly; the server spreads the minute), **no** `persistent_session_id`
+  (it defaults to this session), `initiation` `"own_followup"`, name `"בדיקת לוח · <channel name>"`, and the prompt:
+  *"Board check: run `claude-tasks/bridge/link.sh update`, then `claude-tasks/bridge/link.sh status` and `link.sh pending`,
+  handle anything waiting, start the listener only if status says 🎧, and run `link.sh checkin <this trigger id>`."*
+- Report it: `claude-tasks/bridge/link.sh checkin <trigger_id>` — the board then shows "⏰ בודק כל שעה · הבא HH:MM" on your row.
+- **Only if the recurring trigger is refused**, fall back to a chain: one `send_later` 60 minutes out with the same message,
+  re-scheduled at every check, and `link.sh checkin <its trigger_id>` each time.
+- On every check: if your trigger is missing (`list_triggers`), create it again and `checkin` again. `status` warns
+  "⚠ אין לך בדיקה עצמית" when the board has none for you.
+- After 24 hours with nothing waiting on the board, you may move it to every 3 hours (`update_trigger`, `"0 */3 * * *"`, then
+  `link.sh checkin <id> 180`); back to hourly on the next message.
+- When you disconnect (`link.sh archive`, or "הוחלפת"), **delete the trigger** (`delete_trigger`) — `archive` reminds you.
+
+`status` re-registers by itself, silently and to the same channel, when the container was replaced.
 
 ## 4. When the listener wakes you
 
@@ -203,7 +215,7 @@ If you do not answer within 2 minutes, the owner can build the follow-up prompt 
 claude-tasks/bridge/link.sh archive
 ```
 
-Revokes the channel token and removes the link file. Cancel the pending backup `send_later`.
+Revokes the channel token and removes the link file. Delete your self-check trigger (`delete_trigger <check_trigger_id>`) — `archive` prints its id.
 
 ## Rules
 

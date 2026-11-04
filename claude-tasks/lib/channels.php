@@ -78,6 +78,9 @@ function publicChannel(array $c): array {
     $c['icon'] = (string) ($c['icon'] ?? '');
     // גרסת הגשר והמתנה לאישור באפליקציה (§5.10.1)
     $c['bridge_version'] = (string) ($c['bridge_version'] ?? '');
+    // שלב 24א: מה מצב ההאזנה ומתי הצ'אט יבדוק את הלוח — השורה והכותרת בונות מזה את הטקסט
+    if (array_key_exists('listen_state', $c) && function_exists('channelListen')) $c['listen'] = channelListen($c);
+    foreach (['listen_state_at', 'next_check_at'] as $k) if (isset($c[$k])) $c[$k] = (int) $c[$k];
     $c['bridge_outdated'] = bridgeOutdated($c);
     $c['waiting_tool'] = (string) ($c['waiting_tool'] ?? '');
     $c['waiting_at'] = (int) ($c['waiting_at'] ?? 0);
