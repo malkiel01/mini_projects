@@ -464,7 +464,7 @@ function loadCheckLine() {
     .catch((ex) => { if (state.openProject?.id === id) { state.pv.check = { error: ex.message }; renderRows(); } });
 }
 
-function checkLine(c) {
+export function checkLine(c) {
   if (!c) return '…';
   if (c.error) return `⚠ ${c.error}`;
   const gh = c.github.ok ? `גיטהאב: ${c.github.login} ✓` : `⚠ גיטהאב: ${c.github.why}`;

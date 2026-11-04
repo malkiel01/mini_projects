@@ -11,6 +11,7 @@ import { HEALTH, healthDetail, openHandoff, mmss } from './newchat.js';
 import { labelChip, openLabelsForMessage, openManageLabels, renderPinStrip, openPinList, pinsMode, setPinsMode } from './labels.js';
 import { openAiSheet, aiChipText, aiUsedLine, aiCard } from './aipick.js';
 import { openLaunchSheet, renderLaunchRows } from './launch.js';
+import { checkLine } from './platform.js';
 import { needs as trNeeds, lang as trLang, TRANSLATE_LANGS, engine as trEngine, translate, cached as trCached, setShow as trSetShow } from './translate.js';
 
 const POLL_MS = 4000;
@@ -706,6 +707,7 @@ function renderSettings() {
     ['🔔', 'השתקה', c.muted ? 'מושתק — לא נספר ב"ממתין לך" · נגיעה מבטלת' : 'כבויה — נגיעה משתיקה', () => toggleMute(), { pressed: c.muted }],
     isOwner() && aiReachable(c) && ['🧠', 'מודל לשיחה הזו', `${aiChipText(c.ai)}${c.ai?.source === 'channel' ? '' : ' · ברירת מחדל'}${c.ai?.notice ? ' · ⚠ ' + c.ai.notice : ''}`,
       () => openAiSheet({ channelId: c.id, mode: 'channel', current: c.ai?.own, onPick: (p) => saveChannelAi(p) })],
+    isOwner() && ['🩺', 'מה Platform רואה', checkLine(conv.check), () => { loadChatCheck(); toast('בודק שוב…', ''); }, { wrap: true }],
     isOwner() && ['🧭', 'מי עונה', `${c.route_own ? ROUTE_LABEL[c.route_own] : 'כמו הפרויקט'} · בפועל: ${ROUTE_LABEL[c.route_effective]}`, () => openRoute()],
     c.can_edit && active && ['🔘', 'שאלות בחירה', c.questions === 'app' ? 'באפליקציה' : 'בלוח', () => openQuestions()],
     isOwner() && active && ['🔐', 'אישורי הרשאות', c.permissions === 'app' ? 'באפליקציה בלבד' : 'בלוח — ובמקביל באפליקציה', () => openPerms()],
@@ -724,7 +726,7 @@ function renderSettings() {
     onclick: fn, onkeydown: fn ? (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); fn(); } } : null,
   }, [
     el('span', { class: 'ic', 'aria-hidden': 'true', text: opt.pressed === undefined ? ic : (opt.pressed ? '🔕' : '🔔') }),
-    el('div', { class: 'body' }, [el('div', { class: 'l1' }, [el('span', { text: title })]), el('div', { class: 'l2', text: sub }),
+    el('div', { class: 'body' }, [el('div', { class: 'l1' }, [el('span', { text: title })]), el('div', { class: opt.wrap ? 'l2 l2-wrap' : 'l2', text: sub }),
       opt.sub2 ? el('div', { class: 'l2 cs-action', text: opt.sub2 }) : null].filter(Boolean)),
     fn ? el('span', { class: 'go', 'aria-hidden': 'true', text: opt.pressed === undefined ? '‹' : '' }) : null,
   ].filter(Boolean))));
@@ -739,6 +741,16 @@ async function openSettings() {
   try { await loadInfo(); } catch (ex) { toast(ex.message, 'error'); return; }
   renderSettings();
   $('#chatSettings').showModal();
+  loadChatCheck();
+}
+
+/** §18.3 (22א.2): "🩺 מה Platform רואה" גם ב-⚙ של הצ'אט — לפרויקט של הצ'אט עצמו (שם בעל הלוח מחפש) */
+async function loadChatCheck() {
+  const c = conv.channel;
+  if (!c || !isOwner()) return;
+  conv.check = null;
+  try { conv.check = (await api('project-check', { project_id: c.project_id })).check; } catch (ex) { conv.check = { error: ex.message }; }
+  if ($('#chatSettings').open && conv.channel === c) renderSettings();
 }
 on('#cvSettings', 'click', openSettings);
 
