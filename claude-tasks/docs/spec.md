@@ -1980,3 +1980,30 @@ the optional hourly check creates exactly one recurring trigger and the row show
 "⚠ גרסה ישנה" is woken from its row, updates its bridge, and answers the waiting message on the board within ~3 minutes.
 
 **Order:** **24a (with the wake, step 0 first)** → 21 → 22b → 22c → 16. 24b as a separate stage is folded in.
+
+### 20.7 Step 0 result — the board cannot wake an existing chat; **each chat checks itself** (code writer, 2026-11-04 08:50)
+
+**Result:** (a) a session started by a routine **has** `create_trigger` / `send_later`, but **did not use them** to message another session —
+a fired routine treats its prompt as stored, not as the owner's live request, and declines an outward action the owner did not ask for in
+person. The tool exists; the policy refuses. This is by design and must not be worked around. (b) Waking an idle session **works**: the spec
+chat is woken between messages, and one channel (session_018g4NYDVSeAxRWZqzYUiTGG) has woken itself every hour all night through its own
+`send_later` chain, every run `SUCCEEDED`. (c) Archived — not tested (no real session touched).
+
+**Decisions (replace §20.6 #1–#4; #5–#7 stay, #5 changed):**
+
+| # | Decision |
+| --- | --- |
+| 1 | **The relay wake ("⏰ מעיר צ'אטים") is dropped.** The board never fires a routine to message a chat |
+| 2 | **Each chat schedules its own check — the primary mechanism, on by default.** At registration (and on every hourly check, if missing) the chat creates **one recurring trigger into itself** (`create_trigger`, cron hourly, default target = this session) — **not a `send_later` chain**, which ends silently when one link is missed. If recurring creation is refused, it falls back to the chain. It reports `check_trigger_id` and `next_check_at` to the board; `disconnect` deletes the trigger |
+| 3 | **The check itself:** `link.sh update` → `status` → `pending` → handle → start the listener only if the server says `listeners: on`. No model work when nothing waits beyond reading the result |
+| 4 | **Rows:** "⏰ בודק כל שעה · הבא 07:36" · "✗ אין בדיקה שעתית — ⚠ הצ'אט לא יתעורר לבד" (with 🚀 continuation chat) · "💤 ישן · ייבדק ב-07:36". **No "⏰ להעיר עכשיו" button** — instead, the row says honestly when the chat will look, and offers 🚀 or "open the chat in Claude" (the session link) |
+| 5 | **An owner message to a sleeping chat** shows on its bubble "יגיע לצ'אט עד 07:36" (from `next_check_at`), never only "⏳ ממתין" |
+| 6 | **Old chats with "⚠ גרסה ישנה" and no check:** they cannot be reached from the board. The board lists them in one place ("צ'אטים שלא יתעוררו לבד") with, per row, **open in Claude** and **🚀 continuation chat**. The owner opens each once; on its next turn it updates its bridge and schedules its own check |
+| 7 | Cost: one short turn per chat per hour on the owner's subscription. A chat with no board activity for 24 h moves its trigger to every 3 hours (and back to hourly on the next message) |
+
+**What we promise (replaces §20.5):** 🎧 listening → about a minute; ⏰ self-check → up to an hour, with the exact time on the row; neither →
+the row says the chat will not wake by itself, and offers the next step. Never "waking now" from the board.
+
+**Done when (24a, final):** §20.3 + these: the skill creates one recurring self-check at registration (test against a fake MCP: exactly one
+trigger, re-created if missing, deleted on disconnect, chain fallback); `next_check_at` drives the row and the bubble line; the "won't wake by
+itself" list. **Live:** a newly registered chat shows "⏰ בודק כל שעה", and an owner message to it is answered by the next check.
