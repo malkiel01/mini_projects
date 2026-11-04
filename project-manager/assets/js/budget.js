@@ -3,15 +3,18 @@
  * טיוטה: סכום לכל שלב, "בלתי צפוי" באחוזים, שמירה ושליחה לאישור. ממתינה: מה נשלח, רישום אישור ידני, ביטול.
  * נעולה: ראשוני · היום · סוכם · חריגה לכל שלב, "✏️ שינוי תקציב" (שוב לאישור), ויומן כל הגרסאות.
  * מע"מ: בורר "כולל מע"מ / לפני מע"מ" — איך רואים ועורכים. בשרת הכול נשמר כולל מע"מ (כמו שאר הכספים), וההמרה כאן.
+ * שיוך: לכל שורה — בעל המקצוע והספק של השלב ("🏷️ שיוך" עורך אותם במקום). מזה — סינון (fin-filter.js) וחלוקה:
+ * כמה עולה כל בעל מקצוע / ספק, וכמה מזה על כל דירה (שלב משותף — לפי אחוזי החלוקה).
  */
 const Budget = (() => {
-    let project = null, data = null, editing = false, bound = false;
+    let project = null, data = null, editing = false, bound = false, assigning = false, supplierContacts = [];
     const contactOf = id => project.team.find(m => m.id === id);
 
     async function show(p) {
         project = p;
         bind();
-        try { data = await api('budget', { params: { project_id: p.project.id } }); } catch (e) { toast(e.message, true); return; }
+        try { [data, supplierContacts] = await Promise.all([api('budget', { params: { project_id: p.project.id } }), contactsOf('supplier').catch(() => [])]); }
+        catch (e) { toast(e.message, true); return; }
         editing = false;
         render();
     }
@@ -24,10 +27,15 @@ const Budget = (() => {
             const b = e.target.closest('[data-b]');
             if (!b) return;
             ({ save, send, edit: () => { editing = true; render(); }, stop: () => { editing = false; render(); },
+               assign: () => { assigning = !assigning; render(); },
                cancel: cancelPending, manual: manualApprove, share: shareLink })[b.dataset.b]?.();
         });
-        root.addEventListener('input', e => { if (e.target.matches('[data-amt], [name=cont]')) totals(); });
-        root.addEventListener('change', e => { if (e.target.name === 'bd-vat') setVat(e.target.value); });
+        root.addEventListener('input', e => { if (e.target.matches('[data-amt], [name=cont]')) { totals(); if (e.target.matches('[data-amt]')) breakdown(); } });
+        root.addEventListener('change', e => {
+            if (e.target.name === 'bd-vat') setVat(e.target.value);
+            if (e.target.matches('[data-as]')) assign(e.target);
+        });
+        FinFilter.bind(root, 'bd', () => project.project.id, () => { filterRows(); breakdown(); totals(); });
     }
 
     const canEdit = () => data.state === 'draft' || editing;
@@ -78,6 +86,7 @@ const Budget = (() => {
                 </div>
                 ${intro ? `<p class="hint">${esc(intro)}</p>` : ''}
                 ${B.pending ? pending(B.pending) : ''}
+                ${B.lines.length ? `<div id="bd-ff"></div><div class="row-btns wrap"><button type="button" class="btn ghost sm${assigning ? ' on' : ''}" data-b="assign" aria-pressed="${assigning}">🏷️ ${esc(assigning ? t('סיום השיוך') : t('שיוך לבעלי מקצוע וספקים'))}</button></div>` : ''}
                 ${rows || `<p class="empty">${esc(t('עוד אין שלבים בפרויקט.'))}</p>`}
                 <dl class="bd-tot" id="bd-tot"></dl>
                 ${editable && editing ? `<label class="f wide"><span>${esc(t('למה השינוי'))} *</span><textarea name="note" rows="2" maxlength="1000"></textarea></label>` : ''}
@@ -85,21 +94,118 @@ const Budget = (() => {
                 <div class="row-btns wrap">${buttons()}</div>
             </section>
             ${B.state === 'locked' && !editing ? `<p class="hint">${esc(t('ראשוני — מה שאושר בהצעה. היום — אחרי השינויים שאושרו. סוכם — הצעות ותוספות שאושרו בפועל. חריגה — סוכם מעל התקציב של השלב.'))}</p>` : ''}
+            <section class="fin-card" id="bd-split"></section>
             ${units.length > 1 ? `<section class="fin-card"><h3 class="sec-title">🏢 ${esc(t('לפי דירות'))}</h3><ul class="list bd-units">${units.map(u => `<li><span>${esc(u.name)} <small class="muted">${esc(t('{n}% מהמשותף', { n: u.pct }))}</small></span><b>${esc(fv(u.budget))}</b></li>`).join('')}</ul>
                 <p class="hint">${esc(t('כל דירה — השלבים שלה, וחלקה בשלבים המשותפים לפי האחוזים ב"⚙️ הגדרות" שבסיכום הכספים.'))}</p></section>` : ''}
             ${log()}`;
+        filterRows();
+        breakdown();
         totals();
+    }
+
+    // ---- שיוך, סינון וחלוקה ----
+
+    const stageOf = l => project.stages.find(s => s.id === l.stage_id);
+    const tradesOf = l => FinFilter.tradesOf(stageOf(l), stageOf(l)?.supplier_id, supplierContacts);
+    const supplierOf = l => stageOf(l)?.supplier_id || 0;
+    const supplierName = id => (id ? project.stages.find(s => s.supplier_id === id)?.supplier_name || supplierContacts.find(c => c.id === id)?.name || '' : t('בלי ספק'));
+    const filter = () => FinFilter.get('bd', project.project.id);
+    const shownLines = () => { const f = filter(); return data.lines.filter(l => FinFilter.match(f, tradesOf(l), supplierOf(l))); };
+
+    /** מתחת לשם השלב: בעל המקצוע והספק — או, במצב "🏷️ שיוך", שני שדות בחירה ששומרים מיד. */
+    function tag(l) {
+        const s = stageOf(l);
+        if (!s) return '';
+        if (assigning) {
+            // ספקי הפרויקט קודם, ואחריהם — ספקים מהתחום של השלב, ואז כל השאר
+            const own = new Set(project.team.filter(m => m.kind === 'supplier').map(m => m.id));
+            const live = supplierContacts.filter(c => !c.archived || c.id === s.supplier_id);
+            const grp = (label, list) => list.length ? `<optgroup label="${esc(label)}">${options(list.map(c => ({ value: c.id, label: c.name })), s.supplier_id)}</optgroup>` : '';
+            const inProject = live.filter(c => own.has(c.id)), inTrade = live.filter(c => !own.has(c.id) && s.trade_id && c.trades.includes(s.trade_id));
+            const rest = live.filter(c => !inProject.includes(c) && !inTrade.includes(c));
+            return `<div class="bd-as"><select data-as="trade" data-stage="${s.id}" aria-label="${esc(t('בעל מקצוע'))}">${options(state.trades.map(x => ({ value: x.id, label: t(x.name) })), s.trade_id, t('בלי בעל מקצוע'))}</select>
+                <select data-as="supplier" data-stage="${s.id}" aria-label="${esc(t('ספק'))}"><option value="">${esc(t('בלי ספק'))}</option>${grp(t('בפרויקט'), inProject)}${grp(t('בתחום'), inTrade)}${grp(t('כל הספקים'), rest)}</select></div>`;
+        }
+        const tr = tradesOf(l);
+        const parts = [tr.length ? tr.map(FinFilter.tradeName).join(', ') : '', s.supplier_name || ''].filter(Boolean);
+        return parts.length ? `<div class="bd-tag muted">🏷️ ${parts.map(esc).join('<i class="sep" aria-hidden="true">·</i>')}</div>` : '';
+    }
+
+    /** שיוך מהתקציב — אותו שמירה של חלון השלב (api stage), עם כל שאר השדות כמו שהם. */
+    async function assign(sel) {
+        const s = project.stages.find(x => x.id === Number(sel.dataset.stage));
+        const body = { id: s.id, name: s.name, trade_id: s.trade_id || '', supplier_id: s.supplier_id || '', status: s.status,
+            needs_lawyer: s.needs_lawyer ? 1 : '', plan_start: s.plan_start, plan_end: s.plan_end };
+        body[sel.dataset.as === 'trade' ? 'trade_id' : 'supplier_id'] = sel.value;
+        sel.disabled = true;
+        try {
+            await api('stage', { body });
+            if (sel.dataset.as === 'trade') s.trade_id = Number(sel.value) || null;
+            else { s.supplier_id = Number(sel.value) || null; s.supplier_name = supplierContacts.find(c => c.id === s.supplier_id)?.name || null; }
+            render();
+            toast(t('נשמר'));
+        } catch (e) { toast(e.message, true); sel.disabled = false; }
+    }
+
+    /** הבורר מעל השורות, והסתרת השורות שלא עוברות (בעריכה — רק מוסתרות, הסכומים שלהן נשמרים). */
+    function filterRows() {
+        const f = filter(), box = $('#bd-ff');
+        if (!box) return;
+        const uniq = (list, name) => [...new Map(list.map(x => [x, { id: x, name: name(x) }])).values()].sort((a, b) => a.name.localeCompare(b.name, I18n.locale()));
+        box.innerHTML = FinFilter.html('bd', f, {
+            trades: uniq(data.lines.flatMap(l => tradesOf(l).length ? tradesOf(l) : [0]), FinFilter.tradeName),
+            suppliers: uniq(data.lines.map(supplierOf), supplierName),
+        });
+        const ok = new Set(shownLines().map(l => l.stage_id));
+        $$('#fin-budget .bd-row').forEach(li => { li.hidden = !ok.has(Number(li.dataset.stage)); });
+        $$('#fin-budget .bd-unit').forEach(h => { const ul = h.nextElementSibling; h.hidden = ul && !$$('.bd-row', ul).some(li => !li.hidden); });
+    }
+
+    /** הסכום של שורה כמו שמוצג עכשיו — בעריכה מהשדה, אחרת "היום". */
+    const amountOf = l => {
+        const i = $(`#fin-budget [data-amt="${l.stage_id}"]`);
+        return i ? Number(i.value.replace(/[^\d.]/g, '')) || 0 : l.today / k();
+    };
+
+    /** כמה עולה כל בעל מקצוע / ספק — וכמה מזה על כל דירה (שלב של דירה — שלה; משותף — לפי האחוזים). */
+    function breakdown() {
+        const root = $('#bd-split');
+        if (!root) return;
+        const f = filter(), units = data.units || [];
+        const lines = shownLines();
+        if (!data.lines.length) { root.hidden = true; return; }
+        root.hidden = false;
+        const groups = new Map();
+        for (const l of lines) {
+            const id = f.by === 'supplier' ? supplierOf(l) : (tradesOf(l)[0] || 0);
+            const g = groups.get(id) || groups.set(id, { name: f.by === 'supplier' ? supplierName(id) : FinFilter.tradeName(id), total: 0, u: {} }).get(id);
+            const a = amountOf(l);
+            g.total += a;
+            if (units.length > 1) for (const u of units) g.u[u.id] = (g.u[u.id] || 0) + (l.unit_id ? (l.unit_id === u.id ? a : 0) : a * u.pct / 100);
+        }
+        const list = [...groups.values()].sort((a, b) => b.total - a.total);
+        const multi = units.length > 1;
+        const td = v => `<td class="n">${v ? esc(fmt(v)) : '—'}</td>`;
+        const sum = fn => list.reduce((a, g) => a + fn(g), 0);
+        root.innerHTML = `<h3 class="sec-title">📊 ${esc(t('כמה עולה כל אחד'))}</h3>
+            ${FinFilter.byHtml('bd', f)}
+            <div class="fin-units"><div class="tbl-wrap"><table>
+                <thead><tr><th>${esc(f.by === 'supplier' ? t('ספק') : t('בעל מקצוע'))}</th><th class="n">${esc(t('סה"כ'))}</th>${multi ? units.map(u => `<th class="n">${esc(u.name)}</th>`).join('') : ''}</tr></thead>
+                <tbody>${list.map(g => `<tr><th>${esc(g.name)}</th>${td(g.total)}${multi ? units.map(u => td(g.u[u.id])).join('') : ''}</tr>`).join('')}</tbody>
+                <tfoot><tr><th>${esc(FinFilter.active(f) ? t('סה"כ מסונן') : t('סה"כ שלבים'))}</th>${td(sum(g => g.total))}${multi ? units.map(u => td(sum(g => g.u[u.id] || 0))).join('') : ''}</tr></tfoot></table></div>
+            <p class="hint">${esc([data.vat_mode === 'net' ? t('לפני מע"מ') : t('כולל מע"מ'), t('בלי שכר טרחה ו"בלתי צפוי"'),
+                multi ? t('שלב משותף — לפי אחוזי החלוקה בין הדירות') : ''].filter(Boolean).join(' · '))}</p></div>`;
     }
 
     function line(l, editable) {
         if (editable) {
             const v = l.today ? r2(l.today / k()) : '';
-            return `<li class="bd-row"><span class="one">${esc(t(l.name))}</span>
-                <input data-amt="${l.stage_id}" inputmode="decimal" dir="ltr" maxlength="12" value="${esc(String(v))}" placeholder="0" aria-label="${esc(t('סכום ל{stage}', { stage: t(l.name) }))}"></li>`;
+            return `<li class="bd-row bd-ro" data-stage="${l.stage_id}"><div class="bd-l1"><span class="one">${esc(t(l.name))}</span>
+                <input data-amt="${l.stage_id}" inputmode="decimal" dir="ltr" maxlength="12" value="${esc(String(v))}" placeholder="0" aria-label="${esc(t('סכום ל{stage}', { stage: t(l.name) }))}"></div>${tag(l)}</li>`;
         }
         const over = l.over > 0 ? `<span class="chip fin-late">${esc(t('חריגה {amount}', { amount: fv(l.over) }))}</span>` : '';
         const changed = data.approved_once && Math.abs(l.today - l.initial) >= 0.01;
-        return `<li class="bd-row bd-ro"><div class="bd-l1"><span class="one">${esc(t(l.name))}</span><b>${esc(fv(l.today))}</b></div>
+        return `<li class="bd-row bd-ro" data-stage="${l.stage_id}"><div class="bd-l1"><span class="one">${esc(t(l.name))}</span><b>${esc(fv(l.today))}</b></div>${tag(l)}
             <div class="bd-l2 muted">${[data.approved_once ? t('ראשוני {amount}', { amount: fv(l.initial) }) : '',
                 changed ? t('שינוי {amount}', { amount: (l.today > l.initial ? '+' : '−') + fv(Math.abs(l.today - l.initial)) }) : '',
                 t('סוכם {amount}', { amount: fv(l.committed) })].filter(Boolean).map(esc).join('<i class="sep" aria-hidden="true">·</i>')}${over}</div></li>`;
@@ -120,7 +226,10 @@ const Budget = (() => {
         const root = $('#bd-tot');
         if (!root) return;
         const keep = document.activeElement?.name === 'cont';
+        const f = filter();
+        const part = FinFilter.active(f) ? shownLines().reduce((a, l) => a + amountOf(l), 0) : null;
         root.innerHTML = `<div><dt>${esc(t('שלבים'))}</dt><dd>${esc(fmt(stages))}</dd></div>
+            ${part !== null ? `<div class="bd-part"><dt>${esc(t('מזה — מה שבסינון'))}</dt><dd>${esc(fmt(part))}</dd></div>` : ''}
             ${fee ? `<div><dt>${esc(B.fee_type === 'percent' ? t('שכר טרחה {n}%', { n: B.fee_value }) : t('שכר טרחה'))}</dt><dd>${esc(fmt(fee))}</dd></div>` : ''}
             <div><dt>${esc(t('בלתי צפוי'))} <span class="bd-cont">${contCell}</span></dt><dd>${esc(fmt(cont))}</dd></div>
             <div class="bd-sum"><dt>${esc(t('סה"כ תקציב'))} <small class="muted">${esc(B.vat_mode === 'net' ? t('לפני מע"מ') : t('כולל מע"מ'))}</small></dt><dd>${esc(fmt(total))}</dd></div>
