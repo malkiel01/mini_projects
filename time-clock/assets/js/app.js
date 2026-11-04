@@ -599,6 +599,25 @@ async function paneOt(pane) {
 
 /* ===== M7 · חגים (גרסה 2) ===== */
 
+/** הלוחות המובנים לכל דת, עם מקור, תאריך אימות ואזהרות (ריק / לא אומת / מסתיים בקרוב). */
+function calendarSections(r, dd) {
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: TZ });
+  return Object.entries(r.calendars).filter(([, c]) => c.has_file).map(([rel, c]) => {
+    const warn = [];
+    if (!c.count) warn.push('הלוח ריק — החגים של הדת הזו עדיין לא הוזנו. עד אז מוסיפים אותם ידנית כ"יום של החברה".');
+    else {
+      if (!c.verified_at) warn.push('לא אומת מול מקור רשמי.');
+      if (+c.last.slice(0, 4) <= +today.slice(0, 4)) warn.push(`הלוח מכסה עד ${c.last.slice(0, 4)} בלבד — צריך להזין את השנה הבאה.`);
+    }
+    const days = r.builtin[rel];
+    return `<h3 class="sec-title">חגי ${esc(c.label)} — מובנה</h3>
+    ${warn.map(w => `<p class="hint"><span class="chip warn">שימו לב</span> ${esc(w)}</p>`).join('')}
+    <ul class="list">${days.length ? days.map(h => `<li class="card"><div class="body"><div class="l1"><span>${esc(h.name)}</span><span class="t">${dd(h.date)}</span></div></div></li>`).join('')
+      : `<li class="empty">${c.count ? 'אין ימים בשנה הזו.' : 'אין ימים בלוח.'}</li>`}</ul>
+    <p class="hint" style="margin-top:8px">${c.source ? `מקור: ${esc(c.source)}` : 'אין מקור רשום.'}${c.verified_at ? ` · אומת ב-${c.verified_at}` : ''}${c.count ? ` · ${c.count} ימים, ${c.first.slice(0, 4)}–${c.last.slice(0, 4)}` : ''}</p>`;
+  }).join('');
+}
+
 async function paneHolidays(pane, year = null) {
   let r;
   try { r = await api('holidays_get', { company_id: state.companyId, year }); }
@@ -619,11 +638,8 @@ async function paneHolidays(pane, year = null) {
         <div class="body"><div class="l1"><span>${esc(h.name)}</span><span class="t">${dd(h.date)}</span></div><div class="l2">${relText(h)}</div></div>
         ${r.can_edit ? `<button class="icon-btn" type="button" data-del="${h.id}" aria-label="מחיקת ${esc(h.name)}">🗑️</button>` : ''}</li>`).join('')
       : '<li class="empty">אין ימים של החברה בשנה הזו.</li>'}</ul>
-    <p class="hint" style="margin-top:8px">חגי המוסלמים, הנוצרים והדרוזים נקבעים בהחלטת ממשלה, ומוסיפים אותם כאן עם הדתות שהם חלים עליהן (החגים המוסלמיים תלויים גם בראיית הירח).</p>
-    <h3 class="sec-title">חגי ישראל — מובנה (לעובדים יהודים)</h3>
-    <ul class="list">${r.jewish.length ? r.jewish.map(h => `<li class="card"><div class="body"><div class="l1"><span>${esc(h.name)}</span><span class="t">${dd(h.date)}</span></div></div></li>`).join('')
-      : `<li class="empty">הלוח המובנה עד ${r.built_in_until.slice(0, 4)}.</li>`}</ul>
-    <p class="hint" style="margin-top:8px">מחושב מהלוח העברי: ימי המנוחה של סעיף 18א לפקודת סדרי השלטון והמשפט, ויום העצמאות (כולל הקדמה ודחייה).</p>
+    <p class="hint" style="margin-top:8px">יום שהחברה מוסיפה חל בנוסף ללוחות המובנים למטה, למשל יום סגירה של החברה או תיקון של יום חג.</p>
+    ${calendarSections(r, dd)}
   </div>`;
   const view = pane.firstElementChild;
   view.querySelector('#hy-prev').addEventListener('click', () => paneHolidays(pane, r.year - 1));
