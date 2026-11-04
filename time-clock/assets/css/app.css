@@ -39,7 +39,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .hint { color: var(--muted); font-size: .85rem; margin: 0 0 var(--s2); }
 .empty { text-align: center; color: var(--muted); padding: var(--s4) var(--s2); }
 .error { color: var(--danger); background: var(--danger-soft); border-radius: var(--r); padding: var(--s2) var(--s3); }
-.sep { font-style: normal; margin: 0 6px; }                                               /* <i class="sep" aria-hidden="true">·</i> */
 main { max-width: 860px; margin: 0 auto; padding: var(--s2) var(--s3) calc(var(--s4) + env(safe-area-inset-bottom)); outline: 0; }
 .sec-title { font-size: .9rem; font-weight: 600; margin: var(--s3) 0 var(--s2); }
 
@@ -159,8 +158,6 @@ button:disabled { opacity: .55; cursor: default; }
 .summary .line { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px; font-size: .9rem; }
 .summary .line b { font-size: 1.05rem; }
 .summary .pct { margin-inline-start: auto; font-weight: 600; color: var(--ok); }
-.track { display: block; block-size: 6px; border-radius: 99px; background: var(--bg); overflow: hidden; }
-.track > span { display: block; block-size: 100%; background: var(--ok); border-radius: 99px; }
 .cells { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 140px), 1fr)); gap: var(--s2); margin: 0; }
 .cells div { border: 1px solid var(--line); border-radius: var(--r); padding: var(--s2); background: var(--surface); }
 .cells dt { font-size: .75rem; color: var(--muted); } .cells dd { margin: 0; font-weight: 600; }
@@ -174,9 +171,6 @@ dialog > form { display: flex; flex-direction: column; max-height: inherit; heig
 .sheet-head h2 { flex: 1; font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sheet-body { overflow-y: auto; flex: 1 1 auto; min-height: 0; padding: var(--s3); display: grid; grid-auto-rows: max-content; align-content: start;
     gap: var(--s3); overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
-.group { display: grid; gap: var(--s2); padding-top: var(--s3); border-top: 1px solid var(--line); }
-.group h3 { font-size: .9rem; font-weight: 600; }
-.group h3 small { font-weight: 400; color: var(--muted); margin-inline-start: var(--s1); }
 @media (max-width: 599px) {
     /* --vvh — הגובה הנראה בלי המקלדת (VisualViewport, ראה components.md) */
     dialog { width: 100vw; max-width: 100vw; height: var(--vvh, 100dvh); max-height: var(--vvh, 100dvh); border-radius: 0; margin: 0; inset: 0 0 auto; }
