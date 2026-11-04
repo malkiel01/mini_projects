@@ -667,6 +667,32 @@ check('branchSite: מנהל סניף — הסניף שלו; אחרים — כל 
       && branchSite(['role' => 'owner', 'site_id' => 3]) === null);
 check('todayIn: ברירת המחדל היא שעון ישראל', todayIn() === todayIn(DEFAULT_TZ) && DEFAULT_TZ === 'Asia/Jerusalem');
 throws('validDate: תאריך שלא קיים', fn() => validDate('2026-02-30', 'בדיקה'));
+// ===== גרסה 3ב: הקשחה =====
+// מכסה יומית לקוד אישי: 15 שגויים ב-24 שעות נועלים לשעה, גם אחרי שנעילת הדקה פגה
+db()->exec("DELETE FROM throttle");
+$hs = stationCreate(as_(['sub' => 'u-owner']), ['company_id' => $cid, 'name' => 'הקשחה', 'site_id' => $s1]);
+writeStationCookie(stationPair(['code' => $hs['code']]));
+$lockedDay = false;
+for ($k = 0; $k < 20 && !$lockedDay; $k++) {
+    db()->exec("UPDATE throttle SET locked_until = NULL WHERE k = 'pin:$dana'");   // כמו שעברה דקה
+    try { stationCheck(['member_id' => $dana, 'pin' => '0004']); } catch (AppError $e) { $lockedDay = str_contains($e->getMessage(), 'היום'); }
+}
+check('מכסה יומית: נעילה אחרי 15 שגויים', $lockedDay && $k === 15);
+db()->exec("UPDATE throttle SET locked_until = NULL WHERE k = 'pin:$dana'");
+throws('נעול לשעה גם עם הקוד הנכון', fn() => stationCheck(['member_id' => $dana, 'pin' => '5839']), 429);
+db()->exec("UPDATE throttle SET locked_until = '2000-01-01T00:00:00Z' WHERE k = 'pinday:$dana'");
+check('אחרי שעה — הקוד הנכון עובד, והמונה היומי לא התאפס בהצלחה', stationCheck(['member_id' => $dana, 'pin' => '5839'])['name'] === 'דנה לוי'
+      && (int) db()->query("SELECT fails FROM throttle WHERE k = 'pinday:$dana'")->fetchColumn() >= 1);
+db()->exec("DELETE FROM throttle");
+// api.php: בקשה מאתר אחר נחסמת, וזהה-אתר ממשיכה כרגיל (401 — אין כניסה)
+$api = function (string $site) {
+    $w = tempnam(sys_get_temp_dir(), 'api');
+    file_put_contents($w, "<?php define('DB_FILE', " . var_export(DB_FILE, true) . "); \$_SERVER['REQUEST_METHOD'] = 'POST'; \$_SERVER['HTTP_SEC_FETCH_SITE'] = " . var_export($site, true) . "; \$_GET['action'] = 'emp_state'; require " . var_export(realpath(__DIR__ . '/../api.php'), true) . ';');
+    $out = (string) shell_exec('php ' . escapeshellarg($w) . ' 2>&1'); @unlink($w);
+    return json_decode($out, true) ?: ['raw' => $out];
+};
+check('api.php: בקשה cross-site נחסמת', ($api('cross-site')['error'] ?? '') === 'בקשה מאתר אחר נחסמה');
+check('api.php: same-origin ממשיכה (אין כניסה, לא חסימה)', str_contains($api('same-origin')['error'] ?? '', 'לא מחובר'));
 
 echo "\n" . ($n - $fails) . "/$n עברו\n";
 exit($fails ? 1 : 0);

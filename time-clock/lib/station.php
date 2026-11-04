@@ -19,6 +19,10 @@ const STATION_COOKIE = 'tc_station';
 const PAIR_MINUTES = 10;
 const PIN_FAILS = 5;
 const PIN_LOCK_SECONDS = 60;
+// בנוסף: ניחוש איטרי של קוד בן 4 ספרות (5 ניסיונות בדקה = כל הצירופים תוך יום-יומיים) נעצר במכסה יומית — 15 שגויים ב-24 שעות נועלים לשעה
+const PIN_DAY_FAILS = 15;
+const PIN_DAY_WINDOW_SECONDS = 86400;
+const PIN_DAY_LOCK_SECONDS = 3600;
 const PAIR_FAILS = 10;            // קודי הצמדה שגויים מאותה כתובת בתוך רבע שעה
 const PAIR_WINDOW_SECONDS = 900;
 
@@ -189,15 +193,18 @@ function stationVerify(array $s, array $in): array {
     if (!$emp) throw new AppError('העובד לא נמצא בעמדה הזו', 404);
     $key = 'pin:' . $id;
     throttleCheck($key, 'יותר מדי ניסיונות. נסו שוב בעוד דקה.');
+    throttleCheck('pinday:' . $id, 'יותר מדי ניסיונות היום. נסו שוב בעוד שעה, או פנו למנהל.');
     $st = db()->prepare('SELECT pin_hash FROM members WHERE id = ?');
     $st->execute([$id]);
     $hash = $st->fetchColumn();
     if (!$hash) throw new AppError('עוד אין לך קוד. פתחו קודם את הקישור מהמנהל.');
     if (!password_verify(str($in, 'pin', 4), (string) $hash)) {
         $locked = throttleFail($key, PIN_FAILS, 300, PIN_LOCK_SECONDS);
-        throw new AppError($locked ? 'יותר מדי ניסיונות. נסו שוב בעוד דקה.' : 'הקוד שגוי', $locked ? 429 : 400);
+        $lockedDay = throttleFail('pinday:' . $id, PIN_DAY_FAILS, PIN_DAY_WINDOW_SECONDS, PIN_DAY_LOCK_SECONDS);
+        throw new AppError($lockedDay ? 'יותר מדי ניסיונות היום. נסו שוב בעוד שעה, או פנו למנהל.' : ($locked ? 'יותר מדי ניסיונות. נסו שוב בעוד דקה.' : 'הקוד שגוי'),
+                           $locked || $lockedDay ? 429 : 400);
     }
-    throttleClear($key);
+    throttleClear($key);   // המונה היומי לא מתאפס בהצלחה — אחרת מי שמנחש היה מתאפס בכל פעם שהעובד עצמו נכנס
     return $emp;
 }
 
