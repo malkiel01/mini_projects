@@ -13,6 +13,9 @@ declare(strict_types=1);
 const BRIDGE_VERSION_CURRENT = '2026-11-03.6';
 
 /** ההוראה שנשלחת לצ'אט ישן. הסקיל הישן כבר פועל לפי הודעת owner; הצ'אט לא מבצע commit לקובץ. */
+/** הוראות שרק הצ'אט עצמו מבצע — לא עוברות ל-Platform במעבר מסלול (Platform אינו יכול להריץ פקודות). */
+const CHAT_ONLY_SQL = " AND body NOT LIKE 'עדכון הגשר ללוח (חד-פעמי)%'";
+
 const BRIDGE_UPDATE_TEXT = "עדכון הגשר ללוח (חד-פעמי). הרץ בדיוק את זה, ואל תבצע commit לשום קובץ:\n\n"
     . "```\n"
     . "git fetch origin main && git show origin/main:.claude/settings.json > .claude/settings.json && bash <(git show origin/main:claude-tasks/bridge/update.sh)\n"

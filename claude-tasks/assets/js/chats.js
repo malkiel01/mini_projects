@@ -235,7 +235,7 @@ function bubble(m) {
     m.author_role === 'platform' ? aiUsedLine(m, m.ai_used?.source === 'message') : null,
     // §9.1: מה שרק הצ'אט יכול — הועבר אליו (ואם הוא לא מאזין, כתוב)
     // §18.3 (22א.1): מקור שלא נקרא — נאמר, עם הסיבה (לעולם לא "אין")
-    ...(m.meta?.sources || []).filter((s) => !s.ok).map((s) => el('p', { class: 'b-warn' }, ['⚠ לא נקרא: ', s.name, ' — ', el('bdi', { text: s.why })])),
+    ...(m.meta?.sources || []).filter((s) => !s.ok).map((s) => el('p', { class: 'hint b-unread' }, ['ⓘ לא נקרא: ', s.name, ' — ', el('bdi', { text: s.why })])),
     m.meta?.needs_chat ? needsChatCard(m) : null,
     m.author_role === 'platform' && !m.meta?.needs_chat && conv.messages.some((x) => isPlatformRelay(x) && x.reply_to === m.reply_to)
       ? el('p', { class: 'hint b-copied', text: '📨 התשובה נמסרה גם לצ\'אט, כדי שיידע מה נענה בשמו' }) : null,
